@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DataDog/dd-trace-go/v2/datastreams"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
@@ -23,7 +24,7 @@ import (
 func genTestSpans(t *testing.T, serviceOverride string) []*mocktracer.Span {
 	var opts []Option
 	if serviceOverride != "" {
-		opts = append(opts, WithService(serviceOverride))
+		opts = append(opts, WithServiceName(serviceOverride))
 	}
 	mt := mocktracer.Start()
 	defer mt.Stop()
@@ -115,7 +116,7 @@ func TestConsumer(t *testing.T) {
 	}
 	defer consumer.Close()
 
-	consumer = WrapConsumer(consumer)
+	consumer = WrapConsumer(consumer, WithDataStreams())
 
 	partitionConsumer, err := consumer.ConsumePartition("test-topic", 0, 0)
 	if err != nil {
@@ -145,6 +146,12 @@ func TestConsumer(t *testing.T) {
 		assert.Equal(t, "IBM/sarama", s.Tag(ext.Component))
 		assert.Equal(t, ext.SpanKindConsumer, s.Tag(ext.SpanKind))
 		assert.Equal(t, "kafka", s.Tag(ext.MessagingSystem))
+		p, ok := datastreams.PathwayFromContext(datastreams.ExtractFromBase64Carrier(context.Background(), NewConsumerMessageCarrier(msg1)))
+		assert.True(t, ok)
+		expectedCtx, _ := tracer.SetDataStreamsCheckpoint(context.Background(), "direction:in", "topic:test-topic", "type:kafka")
+		expected, _ := datastreams.PathwayFromContext(expectedCtx)
+		assert.NotEqual(t, expected.GetHash(), 0)
+		assert.Equal(t, expected.GetHash(), p.GetHash())
 	}
 	{
 		s := spans[1]
@@ -162,6 +169,12 @@ func TestConsumer(t *testing.T) {
 		assert.Equal(t, "IBM/sarama", s.Tag(ext.Component))
 		assert.Equal(t, ext.SpanKindConsumer, s.Tag(ext.SpanKind))
 		assert.Equal(t, "kafka", s.Tag(ext.MessagingSystem))
+		p, ok := datastreams.PathwayFromContext(datastreams.ExtractFromBase64Carrier(context.Background(), NewConsumerMessageCarrier(msg1)))
+		assert.True(t, ok)
+		expectedCtx, _ := tracer.SetDataStreamsCheckpoint(context.Background(), "direction:in", "topic:test-topic", "type:kafka")
+		expected, _ := datastreams.PathwayFromContext(expectedCtx)
+		assert.NotEqual(t, expected.GetHash(), 0)
+		assert.Equal(t, expected.GetHash(), p.GetHash())
 	}
 }
 
@@ -176,23 +189,25 @@ func TestSyncProducer(t *testing.T) {
 	defer leader.Close()
 
 	metadataResponse := new(sarama.MetadataResponse)
+	metadataResponse.Version = 1
 	metadataResponse.AddBroker(leader.Addr(), leader.BrokerID())
 	metadataResponse.AddTopicPartition("my_topic", 0, leader.BrokerID(), nil, nil, nil, sarama.ErrNoError)
 	seedBroker.Returns(metadataResponse)
 
 	prodSuccess := new(sarama.ProduceResponse)
+	prodSuccess.Version = 2
 	prodSuccess.AddTopicPartition("my_topic", 0, sarama.ErrNoError)
 	leader.Returns(prodSuccess)
 
 	cfg := sarama.NewConfig()
-	cfg.Version = sarama.MinVersion
+	cfg.Version = sarama.V0_11_0_0 // first version that supports headers
 	cfg.Producer.Return.Successes = true
 
 	producer, err := sarama.NewSyncProducer([]string{seedBroker.Addr()}, cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
-	producer = WrapSyncProducer(cfg, producer)
+	producer = WrapSyncProducer(cfg, producer, WithDataStreams())
 
 	msg1 := &sarama.ProducerMessage{
 		Topic:    "my_topic",
@@ -214,6 +229,12 @@ func TestSyncProducer(t *testing.T) {
 		assert.Equal(t, "IBM/sarama", s.Tag(ext.Component))
 		assert.Equal(t, ext.SpanKindProducer, s.Tag(ext.SpanKind))
 		assert.Equal(t, "kafka", s.Tag(ext.MessagingSystem))
+		p, ok := datastreams.PathwayFromContext(datastreams.ExtractFromBase64Carrier(context.Background(), NewProducerMessageCarrier(msg1)))
+		assert.True(t, ok)
+		expectedCtx, _ := tracer.SetDataStreamsCheckpoint(context.Background(), "direction:out", "topic:my_topic", "type:kafka")
+		expected, _ := datastreams.PathwayFromContext(expectedCtx)
+		assert.NotEqual(t, expected.GetHash(), 0)
+		assert.Equal(t, expected.GetHash(), p.GetHash())
 	}
 }
 
@@ -283,7 +304,7 @@ func TestAsyncProducer(t *testing.T) {
 		broker := newMockBroker(t)
 
 		cfg := sarama.NewConfig()
-		cfg.Version = sarama.V0_11_0_0
+		cfg.Version = sarama.MaxVersion
 		producer, err := sarama.NewAsyncProducer([]string{broker.Addr()}, cfg)
 		if err != nil {
 			t.Fatal(err)

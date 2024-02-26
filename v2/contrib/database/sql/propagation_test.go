@@ -37,6 +37,7 @@ func TestDBMPropagation(t *testing.T) {
 		opts     []Option
 		callDB   func(ctx context.Context, db *sql.DB) error
 		prepared []string
+		dsn      string
 		executed []*regexp.Regexp
 	}{
 		{
@@ -73,7 +74,8 @@ func TestDBMPropagation(t *testing.T) {
 				_, err := db.PrepareContext(ctx, "SELECT 1 from DUAL")
 				return err
 			},
-			prepared: []string{"/*dddbs='test.db',dde='test-env',ddps='test-service',ddpv='1.0.0'*/ SELECT 1 from DUAL"},
+			dsn:      "postgres://postgres:postgres@127.0.0.1:5432/fakepreparedb?sslmode=disable",
+			prepared: []string{"/*dddbs='test.db',dde='test-env',ddps='test-service',ddpv='1.0.0',ddh='127.0.0.1',dddb='fakepreparedb'*/ SELECT 1 from DUAL"},
 		},
 		{
 			name: "query",
@@ -109,7 +111,8 @@ func TestDBMPropagation(t *testing.T) {
 				_, err := db.QueryContext(ctx, "SELECT 1 from DUAL")
 				return err
 			},
-			executed: []*regexp.Regexp{regexp.MustCompile("/\\*dddbs='test.db',dde='test-env',ddps='test-service',ddpv='1.0.0',traceparent='00-00000000000000000000000000000001-[\\da-f]{16}-01'\\*/ SELECT 1 from DUAL")},
+			dsn:      "postgres://postgres:postgres@127.0.0.1:5432/fakequerydb?sslmode=disable",
+			executed: []*regexp.Regexp{regexp.MustCompile("/\\*dddbs='test.db',dde='test-env',ddps='test-service',ddpv='1.0.0',traceparent='00-00000000000000000000000000000001-[\\da-f]{16}-01',ddh='127.0.0.1',dddb='fakequerydb'\\*/ SELECT 1 from DUAL")},
 		},
 		{
 			name: "exec",
@@ -145,7 +148,8 @@ func TestDBMPropagation(t *testing.T) {
 				_, err := db.ExecContext(ctx, "SELECT 1 from DUAL")
 				return err
 			},
-			executed: []*regexp.Regexp{regexp.MustCompile("/\\*dddbs='test.db',dde='test-env',ddps='test-service',ddpv='1.0.0',traceparent='00-00000000000000000000000000000001-[\\da-f]{16}-01'\\*/ SELECT 1 from DUAL")},
+			dsn:      "postgres://postgres:postgres@127.0.0.1:5432/fakeexecdb?sslmode=disable",
+			executed: []*regexp.Regexp{regexp.MustCompile("/\\*dddbs='test.db',dde='test-env',ddps='test-service',ddpv='1.0.0',traceparent='00-00000000000000000000000000000001-[\\da-f]{16}-01',ddh='127.0.0.1',dddb='fakeexecdb'\\*/ SELECT 1 from DUAL")},
 		},
 	}
 
@@ -163,9 +167,12 @@ func TestDBMPropagation(t *testing.T) {
 			Register("test", d, tc.opts...)
 			defer unregister("test")
 
-			db, err := Open("test", "dn")
+			dsn := "dn"
+			if tc.dsn != "" {
+				dsn = tc.dsn
+			}
+			db, err := Open("test", dsn)
 			require.NoError(t, err)
-
 			s, ctx := tracer.StartSpanFromContext(context.Background(), "test.call", tracer.WithSpanID(1))
 			err = tc.callDB(ctx, db)
 			s.Finish()

@@ -20,6 +20,8 @@ type config struct {
 	consumerSpanName    string
 	producerSpanName    string
 	analyticsRate       float64
+	dataStreamsEnabled  bool
+	groupID             string
 }
 
 func defaults(cfg *config) {
@@ -37,28 +39,33 @@ func defaults(cfg *config) {
 	}
 }
 
-// Option describes options for the Sarama integration.
-type Option interface {
-	apply(*config)
-}
+// An Option is used to customize the config for the sarama tracer.
+type Option func(cfg *config)
 
-// OptionFn represents options applicable to WrapConsumer, WrapPartitionConsumer, WrapAsyncProducer and WrapSyncProducer.
-type OptionFn func(*config)
-
-func (fn OptionFn) apply(cfg *config) {
-	fn(cfg)
-}
-
-// WithService sets the given service name for the intercepted client.
-func WithService(name string) OptionFn {
+// WithServiceName sets the given service name for the intercepted client.
+func WithServiceName(name string) Option {
 	return func(cfg *config) {
 		cfg.consumerServiceName = name
 		cfg.producerServiceName = name
 	}
 }
 
+// WithDataStreams enables the Data Streams monitoring product features: https://www.datadoghq.com/product/data-streams-monitoring/
+func WithDataStreams() Option {
+	return func(cfg *config) {
+		cfg.dataStreamsEnabled = true
+	}
+}
+
+// WithGroupID tags the produced data streams metrics with the given groupID (aka consumer group)
+func WithGroupID(groupID string) Option {
+	return func(cfg *config) {
+		cfg.groupID = groupID
+	}
+}
+
 // WithAnalytics enables Trace Analytics for all started spans.
-func WithAnalytics(on bool) OptionFn {
+func WithAnalytics(on bool) Option {
 	return func(cfg *config) {
 		if on {
 			cfg.analyticsRate = 1.0
@@ -70,7 +77,7 @@ func WithAnalytics(on bool) OptionFn {
 
 // WithAnalyticsRate sets the sampling rate for Trace Analytics events
 // correlated to started spans.
-func WithAnalyticsRate(rate float64) OptionFn {
+func WithAnalyticsRate(rate float64) Option {
 	return func(cfg *config) {
 		if rate >= 0.0 && rate <= 1.0 {
 			cfg.analyticsRate = rate
