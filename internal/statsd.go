@@ -128,7 +128,7 @@ func (t Timing) Rate() float64 {
 	return t.rate
 }
 
-// StatsCarrier collects stats on its contribStats channel and submits them to the Datadog agent via a statsd client
+// StatsCarrier collects stats on its contribStats channel and submits them through a statsd client
 type StatsCarrier struct {
 	contribStats chan Stat
 	statsd       StatsdClient
