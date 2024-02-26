@@ -195,6 +195,8 @@ jobs:
         exclude:
           - go-version: "1.21"
             distribution: buster
+          - go-version: "1.22"
+            distribution: buster
         include:
           - platform: linux/arm64
             go-version: "1"
