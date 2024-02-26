@@ -131,6 +131,9 @@ func TestPostgres(t *testing.T) {
 func TestOpenOptions(t *testing.T) {
 	driverName := "postgres"
 	dsn := "postgres://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable"
+	// shorten `interval` for the `WithDBStats` test
+	// interval must get reassigned outside of a subtest to avoid a data race
+	interval = 500 * time.Millisecond
 
 	t.Run("Open", func(t *testing.T) {
 		Register(driverName, &pq.Driver{}, WithServiceName("postgres-test"), WithAnalyticsRate(0.2))
@@ -284,15 +287,15 @@ func TestOpenOptions(t *testing.T) {
 		defer sc.Stop()
 		globalconfig.SetStatsCarrier(sc)
 
-		// check that within 13s, at least one round of `pollDBStats` has completed
-		deadline := time.Now().Add(13 * time.Second)
+		// The polling interval has been reduced to 500ms for the sake of this test, so at least one round of `pollDBStats` has completed in 1s
+		deadline := time.Now().Add(1 * time.Second)
 		for {
 			if time.Now().After(deadline) {
 				t.Fatalf("Stats not collected in expected interval of %v", interval)
 			}
 			calls := tg.CallNames()
 			if len(calls) < 9 {
-				time.Sleep(100 * time.Millisecond)
+				time.Sleep(50 * time.Millisecond)
 				continue
 			}
 			if containsAllStats(calls) {

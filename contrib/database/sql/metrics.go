@@ -29,7 +29,7 @@ const (
 	MaxLifetimeClosed  = tracerPrefix + "sql.db.connections.closed.max_lifetime"
 )
 
-const interval = 10 * time.Second
+var interval = 10 * time.Second
 
 // pollDBStats calls (*DB).Stats on the db at a predetermined interval. It pushes the DBStats off to the StatsCarrier which ultimately sends them through a statsd client.
 // TODO: Perhaps grant a way for pollDBStats to grab the drivername so that it doesn't have to be passed in as a param
