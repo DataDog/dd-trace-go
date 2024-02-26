@@ -223,18 +223,17 @@ func (c *Client) updateState() {
 	}()
 
 	if sc := resp.StatusCode; sc != http.StatusOK {
-		log.Info("remoteconfig: http request error: response status code is not 200 (OK) but %s", http.StatusText(sc))
+		log.Debug("remoteconfig: http request error: response status code is not 200 (OK) but %s", http.StatusText(sc))
 		return
 	}
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
-		log.Error("remoteconfig: http request error: could not read the response body: %v", err)
+		log.Debug("remoteconfig: http request error: could not read the response body: %v", err)
 		return
 	}
 
 	if body := string(respBody); body == `{}` || body == `null` {
-		log.Error("remoteconfig: empty body %s\n", body)
 		return
 	}
 

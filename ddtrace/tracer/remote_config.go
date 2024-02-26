@@ -78,14 +78,17 @@ func (t *tags) toMap() *map[string]interface{} {
 
 func (t *tracer) dynamicInstrumentationRCUpdate(u remoteconfig.ProductUpdate) map[string]state.ApplyStatus {
 
+	applyStatus := map[string]state.ApplyStatus{}
+
 	for k, v := range u {
-		log.Info("rc configuration for %s:\n\t%s\n", k, v)
+		log.Debug("Received dynamic instrumentation RC configuration for %s\n", k)
+		applyStatus[k] = state.ApplyStatus{State: state.ApplyStateUnknown}
 		passFullConfiguration(k, string(v))
 	}
 
 	// XXX: This function would typically respond with a status to say if the config was acknowledged
 	// but since we're extracting from BPF, we do not have a feedback loop and
-	return nil
+	return applyStatus
 }
 
 // passFullConfiguration is used as a stable interface to find the configuration in via bpf. Go-DI attaches
