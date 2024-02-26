@@ -23,14 +23,19 @@ func TestHeaderTag(t *testing.T) {
 }
 
 func TestSetStatsCarrier(t *testing.T) {
+	t.Cleanup(ResetGlobalConfig)
 	sc := internal.NewStatsCarrier(&statsd.NoOpClient{})
 	SetStatsCarrier(sc)
 	assert.NotNil(t, cfg.statsCarrier)
-	//reset globalconfig for other tests
-	cfg.statsCarrier = nil
+
 }
 
+// Reset globalconfig for running multiple tests
+func ResetGlobalConfig() {
+	cfg.statsCarrier = nil
+}
 func TestPushStat(t *testing.T) {
+	t.Cleanup(ResetGlobalConfig)
 	var tg statsdtest.TestStatsdClient
 	sc := internal.NewStatsCarrier(&tg)
 	sc.Start()
@@ -41,8 +46,6 @@ func TestPushStat(t *testing.T) {
 	calls := tg.CallNames()
 	assert.Len(t, calls, 1)
 	assert.Contains(t, calls, "name")
-	//reset globalconfig for other tests
-	cfg.statsCarrier = nil
 }
 
 func TestStatsCarrier(t *testing.T) {
@@ -50,10 +53,9 @@ func TestStatsCarrier(t *testing.T) {
 		assert.False(t, StatsCarrier())
 	})
 	t.Run("exists", func(t *testing.T) {
+		t.Cleanup(ResetGlobalConfig)
 		sc := internal.NewStatsCarrier(&statsd.NoOpClient{})
 		cfg.statsCarrier = sc
 		assert.True(t, StatsCarrier())
-		//reset globalconfig for other tests
-		cfg.statsCarrier = nil
 	})
 }
