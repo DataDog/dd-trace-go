@@ -47,8 +47,8 @@ func pollDBStats(db *sql.DB, tags []string) {
 		globalconfig.PushStat(internal.NewGauge(Idle, float64(stat.Idle), tags, 1))
 		globalconfig.PushStat(internal.NewGauge(WaitCount, float64(stat.WaitCount), tags, 1))
 		globalconfig.PushStat(internal.NewTiming(WaitDuration, stat.WaitDuration, tags, 1))
-		globalconfig.PushStat(internal.NewCount(MaxIdleClosed, int64(stat.MaxIdleClosed), tags, 1))
-		globalconfig.PushStat(internal.NewCount(MaxIdleTimeClosed, int64(stat.MaxIdleTimeClosed), tags, 1))
-		globalconfig.PushStat(internal.NewCount(MaxLifetimeClosed, int64(stat.MaxLifetimeClosed), tags, 1))
+		globalconfig.PushStat(internal.NewGauge(MaxIdleClosed, float64(stat.MaxIdleClosed), tags, 1))
+		globalconfig.PushStat(internal.NewGauge(MaxIdleTimeClosed, float64(stat.MaxIdleTimeClosed), tags, 1))
+		globalconfig.PushStat(internal.NewGauge(MaxLifetimeClosed, float64(stat.MaxLifetimeClosed), tags, 1))
 	}
 }
