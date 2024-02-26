@@ -242,7 +242,8 @@ func (tq *Query) Iter() *Iter {
 	if tIter.Host() != nil {
 		tIter.span.SetTag(ext.TargetHost, tIter.Iter.Host().HostID())
 		tIter.span.SetTag(ext.TargetPort, strconv.Itoa(tIter.Iter.Host().Port()))
-		tIter.span.SetTag(ext.CassandraCluster, tIter.Iter.Host().DataCenter())
+		tIter.span.SetTag(ext.CassandraCluster, tIter.Iter.Host().ClusterName())
+		tIter.span.SetTag(ext.CassandraDatacenter, tIter.Iter.Host().DataCenter())
 	}
 	return tIter
 }
