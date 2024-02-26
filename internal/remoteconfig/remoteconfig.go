@@ -212,7 +212,7 @@ func (c *Client) updateState() {
 
 	resp, err := c.HTTP.Do(req)
 	if err != nil {
-		log.Info("remoteconfig: http request error: %v", err)
+		log.Debug("remoteconfig: http request error: %v", err)
 		return
 	}
 
