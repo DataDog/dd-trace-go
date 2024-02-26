@@ -215,7 +215,6 @@ func (c *Client) updateState() {
 		log.Debug("remoteconfig: http request error: %v", err)
 		return
 	}
-
 	// Flush and close the response body when returning (cf. https://pkg.go.dev/net/http#Client.Do)
 	defer func() {
 		io.ReadAll(resp.Body)
@@ -229,7 +228,7 @@ func (c *Client) updateState() {
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
-		log.Debug("remoteconfig: http request error: could not read the response body: %v", err)
+		log.Error("remoteconfig: http request error: could not read the response body: %v", err)
 		return
 	}
 
