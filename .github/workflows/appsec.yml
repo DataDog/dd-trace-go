@@ -95,7 +95,7 @@ jobs:
     strategy:
       matrix:
         runs-on: [ macos-11, macos-14 ] # oldest and newest macos runners available - macos-14 mainly is here to cover the fact it is an ARM machine
-        go-version: [ "1.21", "1.20", "1.19" ]
+        go-version: [ "1.22", "1.21", "1.20" ]
       fail-fast: true # saving some CI time - macos runners too long to get
     steps:
       - uses: actions/checkout@v4
@@ -124,7 +124,7 @@ jobs:
         run: |
           set -euxo pipefail
           cgocheck="GOEXPERIMENT=cgocheck2"
-          if [[ "$(go version)" =~ (go1.20)|(go1.19) ]]; then
+          if [[ "$(go version)" =~ go1.20 ]]; then
             cgocheck="GODEBUG=cgocheck=2"
           fi
           for cgo in "0" "1"; do
@@ -189,11 +189,11 @@ jobs:
     needs: go-mod-caching
     strategy:
       matrix:
-        go-version: [ "1.21", "1.20", "1.19" ]
+        go-version: [ "1.22", "1.21", "1.20" ]
         distribution: [ bookworm, bullseye, buster, alpine ]
         platform: [ linux/amd64 ] # qemu-arm64 is too slow to run on all the matrix dimensions - we test include it for a specific and good-enough set of dimensions above
         exclude:
-          - go-version: "1.21"
+          - go-version: "1.22"
             distribution: buster
         include:
           - platform: linux/arm64
