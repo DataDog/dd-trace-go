@@ -99,7 +99,7 @@ might be running versions different from the vendored one, creating hard to debu
 To run integration tests locally, you should set the `INTEGRATION` environment variable. The dependencies of the integration tests are best run via Docker. To get an
 idea about the versions and the set-up take a look at our [docker-compose config](./docker-compose.yaml).
 
-The best way to run the entire test suite is using the [test.sh](./test.sh) script. You'll need Docker and docker-compose installed. Run `./test.sh --all` to run all of the integration tests through the docker-compose environment. Run `./test.sh --help` for more options.
+The best way to run the entire test suite is using the [test.sh](./test.sh) script. You'll need Docker and docker-compose installed. If this is your first time running the tests, you should run `./test.sh -t` to install any missing test tools/dependencies. Run `./test.sh --all` to run all of the integration tests through the docker-compose environment. Run `./test.sh --help` for more options.
 
 If you're only interested in the tests for a specific integration it can be useful to spin up just the required containers via docker-compose.
 For example if you're running tests that need the `mysql` database container to be up:
