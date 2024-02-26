@@ -108,7 +108,6 @@ func Example_dbmPropagation() {
 }
 
 func Example_dbStats() {
-	// You can pass WithDBStats to the Register or the Open methods
 	sqltrace.Register("postgres", &pq.Driver{}, sqltrace.WithDBStats())
 	db, err := sqltrace.Open("postgres", "postgres://pqgotest:password@localhost/pqgotest?sslmode=disable" /*WithDBStats()*/)
 
