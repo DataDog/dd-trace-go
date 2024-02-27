@@ -134,6 +134,9 @@ func TestOpenOptions(t *testing.T) {
 	// shorten `interval` for the `WithDBStats` test
 	// interval must get reassigned outside of a subtest to avoid a data race
 	interval = 500 * time.Millisecond
+	t.Cleanup(func() {
+		interval = 10 * time.Second // resetting back to original value
+	})
 
 	t.Run("Open", func(t *testing.T) {
 		Register(driverName, &pq.Driver{}, WithServiceName("postgres-test"), WithAnalyticsRate(0.2))
@@ -289,41 +292,21 @@ func TestOpenOptions(t *testing.T) {
 
 		// The polling interval has been reduced to 500ms for the sake of this test, so at least one round of `pollDBStats` has completed in 1s
 		deadline := time.Now().Add(1 * time.Second)
+		wantStats := []string{MaxOpenConnections, OpenConnections, InUse, Idle, WaitCount, WaitDuration, MaxIdleClosed, MaxIdleTimeClosed, MaxLifetimeClosed}
 		for {
 			if time.Now().After(deadline) {
 				t.Fatalf("Stats not collected in expected interval of %v", interval)
 			}
 			calls := tg.CallNames()
-			if len(calls) < 9 {
+			if len(calls) < len(wantStats) {
 				time.Sleep(50 * time.Millisecond)
 				continue
 			}
-			if containsAllStats(calls) {
-				break
+			for _, s := range wantStats {
+				assert.Contains(t, calls, s)
 			}
-			t.Fatalf("Some stats missing")
 		}
 	})
-}
-
-func containsAllStats(calls []string) bool {
-	wantStats := []string{MaxOpenConnections, OpenConnections, InUse, Idle, WaitCount, WaitDuration, MaxIdleClosed, MaxIdleTimeClosed, MaxLifetimeClosed}
-	for _, s := range wantStats {
-		if !contains(calls, s) {
-			return false
-		}
-	}
-	return true
-}
-
-func contains(s []string, str string) bool {
-	for _, v := range s {
-		if v == str {
-			return true
-		}
-	}
-
-	return false
 }
 
 func TestMySQLUint64(t *testing.T) {
