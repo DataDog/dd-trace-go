@@ -1045,13 +1045,9 @@ func parseTracestate(ctx *spanContext, header string) {
 			} else if key == "p" {
 				foundP = true
 				if val == "" {
-					if ctx.span != nil {
-						ctx.span.setMeta("_dd.parent_id", "0000000000000000")
-					}
+					ctx.reparentID = "0000000000000000"
 				} else {
-					if ctx.span != nil {
-						ctx.span.setMeta("_dd.parent_id", val)
-					}
+					ctx.reparentID = val
 				}
 
 			} else if strings.HasPrefix(key, "t.dm") {
@@ -1068,9 +1064,7 @@ func parseTracestate(ctx *spanContext, header string) {
 
 		if !foundP {
 			// indicate that backend could reparent this as a root
-			if ctx.span != nil {
-				ctx.span.setMeta("_dd.parent_id", "0000000000000000")
-			}
+			ctx.reparentID = "0000000000000000"
 		}
 	}
 }
