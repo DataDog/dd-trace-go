@@ -6,8 +6,9 @@
 package tracer
 
 import (
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 	"testing"
+
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
