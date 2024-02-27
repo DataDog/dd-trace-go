@@ -990,6 +990,7 @@ func parseTraceparent(ctx *spanContext, header string) error {
 // The keys to the “dd“ values have been shortened as follows to save space:
 // `sampling_priority` = `s`
 // `origin` = `o`
+// `last parent` = `p`
 // `_dd.p.` prefix = `t.`
 func parseTracestate(ctx *spanContext, header string) {
 	if header == "" {
@@ -1006,6 +1007,8 @@ func parseTracestate(ctx *spanContext, header string) {
 		}
 		ddMembers := strings.Split(group[len("dd="):], ";")
 		dropDM := false
+		foundP := false
+
 		for _, member := range ddMembers {
 			keyVal := strings.SplitN(member, ":", 2)
 			if len(keyVal) != 2 {
@@ -1039,6 +1042,18 @@ func parseTracestate(ctx *spanContext, header string) {
 					ctx.setSamplingPriority(0, samplernames.Unknown)
 					dropDM = true
 				}
+			} else if key == "p" {
+				foundP = true
+				if val == "" {
+					if ctx.span != nil {
+						ctx.span.setMeta("_dd.parent_id", "0000000000000000")
+					}
+				} else {
+					if ctx.span != nil {
+						ctx.span.setMeta("_dd.parent_id", val)
+					}
+				}
+
 			} else if strings.HasPrefix(key, "t.dm") {
 				if ctx.trace.hasPropagatingTag(keyDecisionMaker) || dropDM {
 					continue
@@ -1048,6 +1063,13 @@ func parseTracestate(ctx *spanContext, header string) {
 				keySuffix := key[len("t."):]
 				val = strings.ReplaceAll(val, "~", "=")
 				setPropagatingTag(ctx, "_dd.p."+keySuffix, val)
+			}
+		}
+
+		if !foundP {
+			// indicate that backend could reparent this as a root
+			if ctx.span != nil {
+				ctx.span.setMeta("_dd.parent_id", "0000000000000000")
 			}
 		}
 	}
