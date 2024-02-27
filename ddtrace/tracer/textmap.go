@@ -819,6 +819,7 @@ func isValidID(id string) bool {
 // composeTracestate creates a tracestateHeader from the spancontext.
 // The Datadog tracing library is only responsible for managing the list member with key dd,
 // which holds the values of the sampling decision(`s:<value>`), origin(`o:<origin>`),
+// the last parent ID of a Datadog span (`p:<parent_id>`),
 // and propagated tags prefixed with `t.`(e.g. _dd.p.usr.id:usr_id tag will become `t.usr.id:usr_id`).
 func composeTracestate(ctx *spanContext, priority int, oldState string) string {
 	var b strings.Builder
@@ -831,6 +832,8 @@ func composeTracestate(ctx *spanContext, priority int, oldState string) string {
 		b.WriteString(fmt.Sprintf(";o:%s",
 			strings.ReplaceAll(oWithSub, "=", "~")))
 	}
+
+	b.WriteString(fmt.Sprintf(";p:%016x", ctx.spanID))
 
 	ctx.trace.iteratePropagatingTags(func(k, v string) bool {
 		if !strings.HasPrefix(k, "_dd.p.") {
