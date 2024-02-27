@@ -218,7 +218,7 @@ func (t *tracer) startRemoteConfig(rcConfig remoteconfig.ClientConfig) error {
 	)
 
 	if apmTracingError != nil || dynamicInstrumentationError != nil {
-		return fmt.Errorf("could not subscribe to at least one remote config product: %w, %w",
+		return fmt.Errorf("could not subscribe to at least one remote config product: %s; %s",
 			apmTracingError, dynamicInstrumentationError)
 	}
 
