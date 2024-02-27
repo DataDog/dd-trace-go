@@ -533,6 +533,10 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 				span.setMeta(keyOrigin, context.origin)
 			}
 		}
+
+		if context.reparentID != "" {
+			span.setMeta(keyReparentID, context.reparentID)
+		}
 	}
 	span.context = newSpanContext(span, context)
 	span.setMetric(ext.Pid, float64(t.pid))

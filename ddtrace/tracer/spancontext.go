@@ -87,9 +87,10 @@ type spanContext struct {
 
 	// the below group should propagate only locally
 
-	trace  *trace // reference to the trace that this span belongs too
-	span   *span  // reference to the span that hosts this context
-	errors int32  // number of spans with errors in this trace
+	trace      *trace // reference to the trace that this span belongs too
+	span       *span  // reference to the span that hosts this context
+	errors     int32  // number of spans with errors in this trace
+	reparentID string // alternative parent span ID to store in child spans
 
 	// the below group should propagate cross-process
 
