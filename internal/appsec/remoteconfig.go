@@ -72,7 +72,7 @@ updateLoop:
 		case rc.ProductASMDD:
 			removalFound := false
 			var newBasePath string
-			var newBaseData []byte = nil
+			var newBaseData []byte
 			for path, data := range u {
 				// Already seen a removal or an update, return an error
 				if (data == nil && removalFound) || (data != nil && newBaseData != nil) {
