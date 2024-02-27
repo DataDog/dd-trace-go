@@ -749,16 +749,7 @@ func (*propagatorW3c) injectTextMap(spanCtx ddtrace.SpanContext, writer TextMapW
 		}
 	}
 	writer.Set(traceparentHeader, fmt.Sprintf("00-%s-%016x-%v", traceID, ctx.spanID, flags))
-	// if context priority / origin / tags were updated after extraction,
-	// or the tracestateHeader doesn't start with `dd=`
-	// we need to recreate tracestate
-	if ctx.updated ||
-		(ctx.trace != nil && !strings.HasPrefix(ctx.trace.propagatingTag(tracestateHeader), "dd=")) ||
-		ctx.trace.propagatingTagsLen() == 0 {
-		writer.Set(tracestateHeader, composeTracestate(ctx, p, ctx.trace.propagatingTag(tracestateHeader)))
-	} else {
-		writer.Set(tracestateHeader, ctx.trace.propagatingTag(tracestateHeader))
-	}
+	writer.Set(tracestateHeader, ctx.trace.propagatingTag(tracestateHeader))
 	return nil
 }
 
@@ -833,6 +824,7 @@ func composeTracestate(ctx *spanContext, priority int, oldState string) string {
 			strings.ReplaceAll(oWithSub, "=", "~")))
 	}
 
+	// encode this spanContext's SpanID to be used by the backend to reparent spans if necessary
 	b.WriteString(fmt.Sprintf(";p:%016x", ctx.spanID))
 
 	ctx.trace.iteratePropagatingTags(func(k, v string) bool {
