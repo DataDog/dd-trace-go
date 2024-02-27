@@ -568,8 +568,8 @@ func TestOnRCUpdate(t *testing.T) {
 				"rules/path2": rules,
 			},
 			statuses: map[string]rc.ApplyStatus{
-				"rules/path1": genApplyStatus(true, errors.New("more than one config received for ASM_DD")),
-				"rules/path2": genApplyStatus(true, errors.New("more than one config received for ASM_DD")),
+				"rules/path1": genApplyStatus(true, errors.New("more than one config switch received for ASM_DD")),
+				"rules/path2": genApplyStatus(true, errors.New("more than one config switch received for ASM_DD")),
 			},
 		},
 		{

@@ -70,14 +70,19 @@ updateLoop:
 			statuses = mergeMaps(statuses, status)
 			r.AddEdit("asmdata", config.RulesFragment{RulesData: rulesData})
 		case rc.ProductASMDD:
-			removalFound := false
-			var newBasePath string
-			var newBaseData []byte
+			var (
+				removalFound = false
+				newBasePath  string
+				newBaseData  []byte
+			)
 			for path, data := range u {
+				if data == nil && removalFound {
+					err = errors.New("more than one config removal received for ASM_DD")
+				} else if data != nil && newBaseData != nil {
+					err = errors.New("more than one config switch received for ASM_DD")
+				}
 				// Already seen a removal or an update, return an error
-				if (data == nil && removalFound) || (data != nil && newBaseData != nil) {
-					// Multiple real updates in the map, return an error
-					err = errors.New("more than one config received for ASM_DD")
+				if err != nil {
 					statuses = mergeMaps(statuses, statusesFromUpdate(u, true, err))
 					break updateLoop
 				}
