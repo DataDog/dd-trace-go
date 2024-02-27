@@ -70,29 +70,54 @@ updateLoop:
 			statuses = mergeMaps(statuses, status)
 			r.AddEdit("asmdata", config.RulesFragment{RulesData: rulesData})
 		case rc.ProductASMDD:
-			// Switch the base rules of the RulesManager if the config received through ASM_DD is valid
-			// If the config was removed, switch back to the static recommended rules
-			if len(u) > 1 { // Don't process configs if more than one is received for ASM_DD
-				log.Debug("appsec: Remote config: more than one config received for ASM_DD. Updates won't be applied")
-				err = errors.New("more than one config received for ASM_DD")
-				statuses = mergeMaps(statuses, statusesFromUpdate(u, true, err))
-				break updateLoop
-			}
+			var (
+				removalFound = false
+				newBasePath  string
+				newBaseData  []byte
+			)
 			for path, data := range u {
-				if data == nil {
-					log.Debug("appsec: Remote config: ASM_DD config removed. Switching back to default rules")
-					r.ChangeBase(config.DefaultRulesFragment(), "")
-					break
+				if data == nil && removalFound {
+					err = errors.New("more than one config removal received for ASM_DD")
+				} else if data != nil && newBaseData != nil {
+					err = errors.New("more than one config switch received for ASM_DD")
 				}
-				var newBase config.RulesFragment
-				if err = json.Unmarshal(data, &newBase); err != nil {
-					log.Debug("appsec: Remote config: could not unmarshall ASM_DD rules: %v", err)
-					statuses[path] = genApplyStatus(true, err)
+				// Already seen a removal or an update, return an error
+				if err != nil {
+					statuses = mergeMaps(statuses, statusesFromUpdate(u, true, err))
 					break updateLoop
 				}
-				log.Debug("appsec: Remote config: switching to %s as the base rules file", path)
-				r.ChangeBase(newBase, path)
+
+				if data == nil {
+					removalFound = true
+					continue
+				}
+
+				// Save the new base path and data and only make the update after cycle through all received configs
+				// This makes sure that we don't update the ruleset in case the update is invalid (ex: several non nil configs)
+				newBasePath = path
+				newBaseData = data
 			}
+			// update with data = nil means the config was removed, so we switch back to the default rules
+			// only happens if no update was found, otherwise it could revert the switch to the new base rules
+			if newBaseData == nil {
+				if removalFound {
+					log.Debug("appsec: Remote config: ASM_DD config removed. Switching back to default rules")
+					r.ChangeBase(config.DefaultRulesFragment(), "")
+					statuses = mergeMaps(statuses, statusesFromUpdate(u, true, nil))
+				}
+				continue
+			}
+
+			// Switch the base rules of the RulesManager if the config received through ASM_DD is valid
+			var newBase config.RulesFragment
+			if err := json.Unmarshal(newBaseData, &newBase); err != nil {
+				log.Debug("appsec: Remote config: could not unmarshall ASM_DD rules: %v", err)
+				statuses[newBasePath] = genApplyStatus(true, err)
+				break updateLoop
+			}
+			log.Debug("appsec: Remote config: switching to %s as the base rules file", newBasePath)
+			r.ChangeBase(newBase, newBasePath)
+			statuses[newBasePath] = genApplyStatus(true, nil)
 		case rc.ProductASM:
 			// Store each config received through ASM as an edit entry in the RulesManager
 			// Those entries will get merged together when the final rules are compiled
