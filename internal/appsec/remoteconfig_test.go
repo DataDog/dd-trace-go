@@ -448,7 +448,6 @@ type testRulesOverrideEntry struct {
 func TestOnRCUpdate(t *testing.T) {
 
 	BaseRuleset, err := config.NewRulesManeger(nil)
-	BaseRuleset.BasePath = "default/rules"
 	require.NoError(t, err)
 	BaseRuleset.Compile()
 
@@ -618,6 +617,14 @@ func TestOnRCUpdate(t *testing.T) {
 
 			// Compare rulesets base paths to make sure the updates were processed correctly
 			require.Equal(t, tc.expectedBasePath, activeAppSec.cfg.RulesManager.BasePath)
+
+			if len(tc.edits) == 1 {
+				if _, ok := tc.edits[tc.removal]; ok {
+					require.Equal(t, BaseRuleset.Base.Rules, activeAppSec.cfg.RulesManager.Base.Rules)
+				} else {
+					require.Equal(t, tc.edits[tc.expectedBasePath].Rules, activeAppSec.cfg.RulesManager.Base.Rules)
+				}
+			}
 		})
 	}
 
