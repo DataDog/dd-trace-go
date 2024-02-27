@@ -290,7 +290,7 @@ func TestOpenOptions(t *testing.T) {
 		defer sc.Stop()
 		globalconfig.SetStatsCarrier(sc)
 
-		// The polling interval has been reduced to 500ms for the sake of this test, so at least one round of `pollDBStats` has completed in 1s
+		// The polling interval has been reduced to 500ms for the sake of this test, so at least one round of `pollDBStats` should be complete in 1s
 		deadline := time.Now().Add(1 * time.Second)
 		wantStats := []string{MaxOpenConnections, OpenConnections, InUse, Idle, WaitCount, WaitDuration, MaxIdleClosed, MaxIdleTimeClosed, MaxLifetimeClosed}
 		for {
@@ -298,13 +298,18 @@ func TestOpenOptions(t *testing.T) {
 				t.Fatalf("Stats not collected in expected interval of %v", interval)
 			}
 			calls := tg.CallNames()
-			if len(calls) < len(wantStats) {
-				time.Sleep(50 * time.Millisecond)
-				continue
+			// if the expected volume of stats has been collected, ensure 9/9 of the DB Stats are included
+			if len(calls) >= len(wantStats) {
+				for _, s := range wantStats {
+					if !assert.Contains(t, calls, s) {
+						t.Fatalf("Missing stat %s", s)
+					}
+				}
+				// all expected stats have been collected; exit out of loop, test should pass
+				break
 			}
-			for _, s := range wantStats {
-				assert.Contains(t, calls, s)
-			}
+			// not all stats have been collected yet, try again in 50ms
+			time.Sleep(50 * time.Millisecond)
 		}
 	})
 }
