@@ -86,8 +86,6 @@ func (t *tracer) dynamicInstrumentationRCUpdate(u remoteconfig.ProductUpdate) ma
 		passFullConfiguration(k, string(v))
 	}
 
-	// XXX: This function would typically respond with a status to say if the config was acknowledged
-	// but since we're extracting from BPF, we do not have a feedback loop and
 	return applyStatus
 }
 
