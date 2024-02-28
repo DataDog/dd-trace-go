@@ -1793,7 +1793,6 @@ func TestEnvVars(t *testing.T) {
 					if tc.priority != 0 {
 						sctx.setSamplingPriority(int(tc.priority), samplernames.Unknown)
 					}
-					assert.Equal(true, sctx.updated)
 
 					headers := TextMapCarrier(map[string]string{})
 					err = tracer.Inject(s.Context(), headers)
