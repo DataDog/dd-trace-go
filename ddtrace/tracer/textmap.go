@@ -749,7 +749,7 @@ func (*propagatorW3c) injectTextMap(spanCtx ddtrace.SpanContext, writer TextMapW
 		}
 	}
 	writer.Set(traceparentHeader, fmt.Sprintf("00-%s-%016x-%v", traceID, ctx.spanID, flags))
-	writer.Set(tracestateHeader, ctx.trace.propagatingTag(tracestateHeader))
+	writer.Set(tracestateHeader, composeTracestate(ctx, p, ctx.trace.propagatingTag(tracestateHeader)))
 	return nil
 }
 
