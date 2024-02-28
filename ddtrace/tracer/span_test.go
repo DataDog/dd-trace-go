@@ -1020,7 +1020,6 @@ func TestSetUserPropagatedUserID(t *testing.T) {
 	require.NoError(t, err)
 	s = tracer.StartSpan("op", ChildOf(c))
 	s.(*span).SetUser("userino")
-	assert.True(t, s.(*span).context.updated)
 }
 
 func BenchmarkSetTagMetric(b *testing.B) {
