@@ -327,6 +327,7 @@ func (p *propagatorW3c) propagateTracestate(ctx *spanContext, carrier interface{
 	ts := w3cCtx.(*spanContext).trace.propagatingTag(tracestateHeader)
 	priority, _ := ctx.SamplingPriority()
 	setPropagatingTag(ctx, tracestateHeader, composeTracestate(ctx, priority, ts))
+	ctx.reparentID = w3cCtx.(*spanContext).reparentID
 }
 
 // propagator implements Propagator and injects/extracts span contexts
