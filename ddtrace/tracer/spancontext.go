@@ -85,10 +85,19 @@ func (t *traceID) UpperHex() string {
 type spanContext struct {
 	// the below group should propagate only locally
 
-	trace      *trace // reference to the trace that this span belongs too
-	span       *span  // reference to the span that hosts this context
-	errors     int32  // number of spans with errors in this trace
-	reparentID string // alternative parent span ID to store in child spans
+	trace  *trace // reference to the trace that this span belongs too
+	span   *span  // reference to the span that hosts this context
+	errors int32  // number of spans with errors in this trace
+
+	// The 16-character hex string of the last seen Datadog Span ID
+	// this value will be added as the _dd.parent_id tag to spans
+	// created from this spanContext.
+	// This value is extracted from the `p` sub-key within the tracestate.
+	// The backend will use the _dd.parent_id tag to reparent spans in
+	// distributed traces if they were missing their parent span.
+	// Missing parent span could occur when a W3C-compliant tracer
+	// propagated this context, but didn't send any spans to Datadog.
+	reparentID string
 
 	// the below group should propagate cross-process
 
