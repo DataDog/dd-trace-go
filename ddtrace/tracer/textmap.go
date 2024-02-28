@@ -1007,8 +1007,9 @@ func parseTracestate(ctx *spanContext, header string) {
 		}
 		ddMembers := strings.Split(group[len("dd="):], ";")
 		dropDM := false
-		foundP := false
-
+		// indicate that backend could reparent this as a root
+		// if there is a p key it's value will override this one
+		ctx.reparentID = "0000000000000000"
 		for _, member := range ddMembers {
 			keyVal := strings.SplitN(member, ":", 2)
 			if len(keyVal) != 2 {
@@ -1043,10 +1044,7 @@ func parseTracestate(ctx *spanContext, header string) {
 					dropDM = true
 				}
 			} else if key == "p" {
-				foundP = true
-				if val == "" {
-					ctx.reparentID = "0000000000000000"
-				} else {
+				if val != "" {
 					ctx.reparentID = val
 				}
 
@@ -1060,11 +1058,6 @@ func parseTracestate(ctx *spanContext, header string) {
 				val = strings.ReplaceAll(val, "~", "=")
 				setPropagatingTag(ctx, "_dd.p."+keySuffix, val)
 			}
-		}
-
-		if !foundP {
-			// indicate that backend could reparent this as a root
-			ctx.reparentID = "0000000000000000"
 		}
 	}
 }
