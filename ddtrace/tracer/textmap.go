@@ -994,6 +994,11 @@ func parseTraceparent(ctx *spanContext, header string) error {
 // `last parent` = `p`
 // `_dd.p.` prefix = `t.`
 func parseTracestate(ctx *spanContext, header string) {
+	// if there is a p key it's value will override this one
+	// if there is no tracestate we can tell the backend
+	// that this span can be reparented as the root span of
+	// the trace if necessary
+	ctx.reparentID = "0000000000000000"
 	if header == "" {
 		// The W3C spec says tracestate can be empty but should avoid sending it.
 		// https://www.w3.org/TR/trace-context-1/#tracestate-header-field-values
@@ -1009,8 +1014,6 @@ func parseTracestate(ctx *spanContext, header string) {
 		ddMembers := strings.Split(group[len("dd="):], ";")
 		dropDM := false
 		// indicate that backend could reparent this as a root
-		// if there is a p key it's value will override this one
-		ctx.reparentID = "0000000000000000"
 		for _, member := range ddMembers {
 			keyVal := strings.SplitN(member, ":", 2)
 			if len(keyVal) != 2 {
