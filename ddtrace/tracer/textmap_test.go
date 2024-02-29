@@ -1393,7 +1393,8 @@ func TestEnvVars(t *testing.T) {
 					checkSameElements(assert, tc.outHeaders[traceparentHeader], headers[traceparentHeader])
 					checkSameElements(assert, tc.outHeaders[tracestateHeader], headers[tracestateHeader])
 					ddTag := strings.SplitN(headers[tracestateHeader], ",", 2)[0]
-					assert.LessOrEqual(len(ddTag), 256)
+					// -3 as we don't count dd= as part of the "value" length limit
+					assert.LessOrEqual(len(ddTag)-3, 256)
 				})
 			}
 		}
@@ -1592,7 +1593,8 @@ func TestEnvVars(t *testing.T) {
 					}
 					checkSameElements(assert, tc.out[tracestateHeader], headers[tracestateHeader])
 					ddTag := strings.SplitN(headers[tracestateHeader], ",", 2)[0]
-					assert.LessOrEqual(len(ddTag), 256)
+					// -3 as we don't count dd= as part of the "value" length limit
+					assert.LessOrEqual(len(ddTag)-3, 256)
 				})
 
 				t.Run(fmt.Sprintf("w3c inject with env=%q / testing tag list-member limit", testEnv), func(t *testing.T) {
@@ -1685,7 +1687,8 @@ func TestEnvVars(t *testing.T) {
 				assert.Empty(root.Meta["_dd.parent_id"], "extraction happened from DD headers, so _dd.parent_id mustn't be set")
 
 				ddTag := strings.SplitN(headers[tracestateHeader], ",", 2)[0]
-				assert.LessOrEqual(len(ddTag), 256)
+				// -3 as we don't count dd= as part of the "value" length limit
+				assert.LessOrEqual(len(ddTag)-3, 256)
 			})
 		}
 	})
@@ -1761,7 +1764,8 @@ func TestEnvVars(t *testing.T) {
 					checkSameElements(assert, tc.outMap[traceparentHeader], headers[traceparentHeader])
 					checkSameElements(assert, tc.outMap[tracestateHeader], headers[tracestateHeader])
 					ddTag := strings.SplitN(headers[tracestateHeader], ",", 2)[0]
-					assert.LessOrEqual(len(ddTag), 256)
+					// -3 as we don't count dd= as part of the "value" length limit
+					assert.LessOrEqual(len(ddTag)-3, 256)
 				})
 			}
 		}
@@ -1829,7 +1833,8 @@ func TestEnvVars(t *testing.T) {
 					checkSameElements(assert, tc.outMap[traceparentHeader], headers[traceparentHeader])
 					checkSameElements(assert, tc.outMap[tracestateHeader], headers[tracestateHeader])
 					ddTag := strings.SplitN(headers[tracestateHeader], ",", 2)[0]
-					assert.LessOrEqual(len(ddTag), 256)
+					// -3 as we don't count dd= as part of the "value" length limit
+					assert.LessOrEqual(len(ddTag)-3, 256)
 				})
 			}
 		}
