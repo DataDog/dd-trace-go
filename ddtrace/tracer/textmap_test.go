@@ -417,19 +417,19 @@ func Test257CharacterDDTracestateLengh(t *testing.T) {
 	ctx.trace.propagatingTags = map[string]string{
 		"tracestate": "valid_vendor=a:1",
 	}
-	// need to create a tracestate where the dd portion will be 257 chars long
+	// need to create a tracestate where the dd= list-member portion will be 257 chars long
 	// we currently have:
-	// 3 chars ->  dd=
+	// 0 chars ->  dd= (the identifier doesn't count toward the value length limit)
 	// 4 chars ->  s:2;
 	// 6 chars ->  o:rum;
-	// 13 in total - so 244 characters left
+	// 10 in total - so 247 characters left
 	// shortest propagated key/val is `t.a:0` 5 chars
 	// plus 1 for the `;` between tags
-	// so 19 including a propagated tag, leaving 238 chars to hit 257
-	// acount for the t._:0 characters, leaves us with 234 characters for the key
-	// this will give us a tracestate 257 characters long
+	// so 16 including a propagated tag, leaving 241 chars to hit 257
+	// acount for the t.:0 characters, leaves us with 237 characters for the key
+	// this will give us a tracestate list-member value 257 characters long
 	// note that there is no ending `;`
-	longKey := strings.Repeat("a", 234) // 234 is correct num for 257
+	longKey := strings.Repeat("a", 237) // 237 is correct num for 257
 	shortKey := "a"
 
 	ctx.trace.propagatingTags[fmt.Sprintf("_dd.p.%s", shortKey)] = "0"
@@ -445,7 +445,8 @@ func Test257CharacterDDTracestateLengh(t *testing.T) {
 	ddTag := strings.SplitN(headers[tracestateHeader], ",", 2)[0]
 	assert.Contains(ddTag, "s:2")
 	assert.Regexp(regexp.MustCompile("dd=[\\w:,]+"), ddTag)
-	assert.LessOrEqual(len(ddTag), 256) // one of the propagated tags will not be propagated
+	// -3 as we don't count dd= as part of the "value" length limit
+	assert.LessOrEqual(len(ddTag)-3, 256) // one of the propagated tags will not be propagated
 }
 
 func TestTextMapPropagator(t *testing.T) {
