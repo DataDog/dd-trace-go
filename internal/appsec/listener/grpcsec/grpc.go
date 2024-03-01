@@ -128,8 +128,8 @@ func (l *wafEventListener) onEvent(op *types.HandlerOperation, handlerArgs types
 
 	values := make(map[string]any, 2) // 2 because the method and client ip addresses are commonly present in the rules
 	if l.isSecAddressListened(GRPCServerMethodAddr) {
-		values[GRPCServerMethodAddr] = handlerArgs.Method
 		// Note that this address is passed asap for the passlist, which are created per grpc method
+		values[GRPCServerMethodAddr] = handlerArgs.Method
 	}
 	if l.isSecAddressListened(HTTPClientIPAddr) && handlerArgs.ClientIP.IsValid() {
 		values[HTTPClientIPAddr] = handlerArgs.ClientIP.String()
