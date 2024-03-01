@@ -195,7 +195,7 @@ func defaultConfig() (*config, error) {
 		maxGoroutinesWait:    1000, // arbitrary value, should limit STW to ~30ms
 		deltaProfiles:        internal.BoolEnv("DD_PROFILING_DELTA", true),
 		logStartup:           internal.BoolEnv("DD_TRACE_STARTUP_LOGS", true),
-		endpointCountEnabled: internal.BoolEnv(traceprof.EndpointCountEnvVar, false),
+		endpointCountEnabled: internal.BoolEnv(traceprof.EndpointCountEnvVar, true),
 	}
 	c.tags = c.tags.Append(fmt.Sprintf("process_id:%d", os.Getpid()))
 	for _, t := range defaultProfileTypes {
