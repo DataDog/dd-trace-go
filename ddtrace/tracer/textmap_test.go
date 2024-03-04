@@ -1563,7 +1563,7 @@ func TestEnvVars(t *testing.T) {
 					ddTag := strings.SplitN(headers[tracestateHeader], ",", 2)[0]
 					assert.Contains(ddTag, "s:2")
 					assert.Contains(ddTag, "s:2")
-					assert.Regexp(regexp.MustCompile("dd=[\\w:,]+"), ddTag)
+					assert.Regexp(regexp.MustCompile(`dd=[\w:,]+`), ddTag)
 					assert.LessOrEqual(len(ddTag), 256)
 				})
 			}

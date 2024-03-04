@@ -137,7 +137,7 @@ func TestLogWriter(t *testing.T) {
 		s.Metrics["-inf"] = math.Inf(-1)
 		h.add([]*span{s})
 		h.flush()
-		json := string(buf.Bytes())
+		json := buf.String()
 		assert.NotContains(json, `"nan":`)
 		assert.NotContains(json, `"+inf":`)
 		assert.NotContains(json, `"-inf":`)
