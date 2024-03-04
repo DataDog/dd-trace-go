@@ -829,7 +829,7 @@ func BenchmarkStartSpan(b *testing.B) {
 }
 
 // startTestTracer returns a Tracer with a DummyTransport
-func startTestTracer(t testing.TB, opts ...StartOption) (trc ddtrace.Tracer, stop func()) {
+func startTestTracer(_ testing.TB, opts ...StartOption) (trc ddtrace.Tracer, stop func()) {
 	o := append([]StartOption{
 		v2.WithTestDefaults(nil),
 	}, opts...)

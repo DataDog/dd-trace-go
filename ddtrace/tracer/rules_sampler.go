@@ -51,6 +51,8 @@ type SamplingRule struct {
 type SamplingRuleType = v2.SamplingRuleType
 
 const (
+	SamplingRuleUndefined SamplingRuleType = 0
+
 	// SamplingRuleTrace specifies a sampling rule that applies to the entire trace if any spans satisfy the criteria.
 	// If a sampling rule is of type SamplingRuleTrace, such rule determines the sampling rate to apply
 	// to trace spans. If a span matches that rule, it will impact the trace sampling decision.
@@ -68,8 +70,9 @@ const (
 // to spans that match the service name provided.
 func ServiceRule(service string, rate float64) SamplingRule {
 	return SamplingRule{
-		Service: globMatch(service),
-		Rate:    rate,
+		Service:  globMatch(service),
+		ruleType: SamplingRuleTrace,
+		Rate:     rate,
 	}
 }
 
@@ -77,8 +80,9 @@ func ServiceRule(service string, rate float64) SamplingRule {
 // to spans that match the operation name provided.
 func NameRule(name string, rate float64) SamplingRule {
 	return SamplingRule{
-		Name: globMatch(name),
-		Rate: rate,
+		Name:     globMatch(name),
+		ruleType: SamplingRuleTrace,
+		Rate:     rate,
 	}
 }
 
@@ -86,16 +90,18 @@ func NameRule(name string, rate float64) SamplingRule {
 // to spans matching both the operation and service names provided.
 func NameServiceRule(name string, service string, rate float64) SamplingRule {
 	return SamplingRule{
-		Service: globMatch(service),
-		Name:    globMatch(name),
-		Rate:    rate,
+		Service:  globMatch(service),
+		Name:     globMatch(name),
+		ruleType: SamplingRuleTrace,
+		Rate:     rate,
 	}
 }
 
 // RateRule returns a SamplingRule that applies the provided sampling rate to all spans.
 func RateRule(rate float64) SamplingRule {
 	return SamplingRule{
-		Rate: rate,
+		Rate:     rate,
+		ruleType: SamplingRuleTrace,
 	}
 }
 
@@ -240,7 +246,7 @@ func (sr *SamplingRule) MarshalJSON() ([]byte, error) {
 		Resource     string            `json:"resource,omitempty"`
 		Rate         float64           `json:"sample_rate"`
 		Tags         map[string]string `json:"tags,omitempty"`
-		Type         string            `json:"type"`
+		Type         *string           `json:"type,omitempty"`
 		MaxPerSecond *float64          `json:"max_per_second,omitempty"`
 	}{}
 	if sr.Service != nil {
@@ -256,7 +262,10 @@ func (sr *SamplingRule) MarshalJSON() ([]byte, error) {
 		s.Resource = sr.Resource.String()
 	}
 	s.Rate = sr.Rate
-	s.Type = fmt.Sprintf("%v(%d)", sr.ruleType.String(), sr.ruleType)
+	if v := sr.ruleType.String(); v != "" {
+		t := fmt.Sprintf("%v(%d)", v, sr.ruleType)
+		s.Type = &t
+	}
 	s.Tags = make(map[string]string, len(sr.Tags))
 	for k, v := range sr.Tags {
 		if v != nil {

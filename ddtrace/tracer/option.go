@@ -511,6 +511,13 @@ func WithHeaderTags(headerAsTags []string) StartOption {
 	return v2.WithHeaderTags(headerAsTags)
 }
 
+// WithContribStats opens up a channel of communication between tracer and contrib libraries
+// for submitting stats from contribs to Datadog via the tracer's statsd client
+// It is enabled by default but can be disabled with `WithContribStats(false)`
+func WithContribStats(enabled bool) StartOption {
+	return v2.WithContribStats(enabled)
+}
+
 // UserMonitoringConfig is used to configure what is used to identify a user.
 // This configuration can be set by combining one or several UserMonitoringOption with a call to SetUser().
 type UserMonitoringConfig = v2.UserMonitoringConfig

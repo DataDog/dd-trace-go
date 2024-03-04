@@ -49,11 +49,13 @@ const (
 // of a sqlcommenter formatted comment prepended to the original query text.
 // See https://google.github.io/sqlcommenter/spec/ for more details.
 type SQLCommentCarrier struct {
-	Query         string
-	Mode          DBMPropagationMode
-	DBServiceName string
-	SpanID        uint64
-	v2carrier     *v2.SQLCommentCarrier
+	Query          string
+	Mode           DBMPropagationMode
+	DBServiceName  string
+	SpanID         uint64
+	PeerDBHostname string
+	PeerDBName     string
+	v2carrier      *v2.SQLCommentCarrier
 }
 
 // Inject injects a span context in the carrier's Query field as a comment.
@@ -73,6 +75,12 @@ func (c *SQLCommentCarrier) Inject(spanCtx ddtrace.SpanContext) error {
 	}
 	if c.v2carrier.SpanID != c.SpanID {
 		c.v2carrier.SpanID = c.SpanID
+	}
+	if c.v2carrier.PeerDBHostname != c.PeerDBHostname {
+		c.v2carrier.PeerDBHostname = c.PeerDBHostname
+	}
+	if c.v2carrier.PeerDBName != c.PeerDBName {
+		c.v2carrier.PeerDBName = c.PeerDBName
 	}
 	var ctx *v2.SpanContext
 	if spanCtx != nil {
