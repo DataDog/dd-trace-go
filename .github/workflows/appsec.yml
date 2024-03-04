@@ -200,7 +200,7 @@ jobs:
         include:
           - platform: linux/arm64
             go-version: "1"
-            distribution: alpine
+            distribution: bookworm
           - platform: linux/arm64
             go-version: "1"
             distribution: alpine
