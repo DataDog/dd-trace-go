@@ -7,6 +7,7 @@ package appsec
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"reflect"
 	"sort"
@@ -451,86 +452,148 @@ func TestOnRCUpdate(t *testing.T) {
 	BaseRuleset.Compile()
 
 	rules := config.RulesFragment{
-		Version: BaseRuleset.Latest.Version,
+		Version:  BaseRuleset.Latest.Version,
+		Metadata: BaseRuleset.Latest.Metadata,
 		Rules: []interface{}{
 			BaseRuleset.Base.Rules[0],
 		},
 	}
 
-	overrides1 := config.RulesFragment{
-		Overrides: []interface{}{
-			testRulesOverrideEntry{
-				ID:      "crs-941-290",
-				Enabled: false,
-			},
-			testRulesOverrideEntry{
-				ID:      "crs-930-100",
-				Enabled: false,
-			},
-		},
-	}
-	overrides2 := config.RulesFragment{
-		Overrides: []interface{}{
-			testRulesOverrideEntry{
-				ID:      "crs-941-300",
-				Enabled: false,
-			},
-			testRulesOverrideEntry{
-				Enabled: false,
-				ID:      "crs-921-160",
-			},
-		},
-	}
-
-	for _, tc := range []struct {
-		name    string
-		ruleset *config.RulesManager
-	}{
-		{
-			name:    "no-updates",
-			ruleset: BaseRuleset,
-		},
-		{
-			name: "ASM/overrides/1-config",
-			ruleset: &config.RulesManager{
-				Base:     BaseRuleset.Base,
-				BasePath: BaseRuleset.BasePath,
-				Edits: map[string]config.RulesFragment{
-					"overrides1/path": overrides1,
+	// Test rules overrides
+	t.Run("Overrides", func(t *testing.T) {
+		overrides1 := config.RulesFragment{
+			Overrides: []interface{}{
+				testRulesOverrideEntry{
+					ID:      "crs-941-290",
+					Enabled: false,
+				},
+				testRulesOverrideEntry{
+					ID:      "crs-930-100",
+					Enabled: false,
 				},
 			},
-		},
-		{
-			name: "ASM/overrides/2-configs",
-			ruleset: &config.RulesManager{
-				Base:     BaseRuleset.Base,
-				BasePath: BaseRuleset.BasePath,
-				Edits: map[string]config.RulesFragment{
+		}
+		overrides2 := config.RulesFragment{
+			Overrides: []interface{}{
+				testRulesOverrideEntry{
+					ID:      "crs-941-300",
+					Enabled: false,
+				},
+				testRulesOverrideEntry{
+					Enabled: false,
+					ID:      "crs-921-160",
+				},
+			},
+		}
+
+		for _, tc := range []struct {
+			name     string
+			edits    map[string]config.RulesFragment
+			statuses map[string]rc.ApplyStatus
+		}{
+			{
+				name:     "no-updates",
+				statuses: map[string]rc.ApplyStatus{},
+			},
+			{
+				name: "ASM/overrides/1-config",
+				edits: map[string]config.RulesFragment{
+					"overrides1/path": overrides1,
+				},
+				statuses: map[string]rc.ApplyStatus{
+					"overrides1/path": genApplyStatus(true, nil),
+				},
+			},
+			{
+				name: "ASM/overrides/2-configs",
+				edits: map[string]config.RulesFragment{
 					"overrides1/path": overrides1,
 					"overrides2/path": overrides2,
 				},
+				statuses: map[string]rc.ApplyStatus{
+					"overrides1/path": genApplyStatus(true, nil),
+					"overrides2/path": genApplyStatus(true, nil),
+				},
 			},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				Start(config.WithRCConfig(remoteconfig.DefaultClientConfig()))
+				defer Stop()
+				if !Enabled() {
+					t.Skip()
+				}
+
+				// Craft and process the RC updates
+				updates := craftRCUpdates(tc.edits)
+				statuses := activeAppSec.onRCRulesUpdate(updates)
+				require.Equal(t, tc.statuses, statuses)
+
+				// Make sure edits are added to the active ruleset
+				require.Equal(t, len(tc.edits), len(activeAppSec.cfg.RulesManager.Edits))
+				for cfg := range tc.edits {
+					require.Contains(t, activeAppSec.cfg.RulesManager.Edits, cfg)
+				}
+			})
+		}
+
+	})
+
+	// Test rules update (ASM_DD)
+	for _, tc := range []struct {
+		name             string
+		initialBasePath  string
+		expectedBasePath string
+		edits            map[string]config.RulesFragment
+		statuses         map[string]rc.ApplyStatus
+		removal          string
+	}{
+		{
+			name:     "no-updates",
+			statuses: map[string]rc.ApplyStatus{},
 		},
 		{
-			name: "ASM_DD/1-config",
-			ruleset: &config.RulesManager{
-				Base:     rules,
-				BasePath: "rules/path",
-				Edits: map[string]config.RulesFragment{
-					"rules/path": rules,
-				},
+			name:             "ASM_DD/1-config",
+			expectedBasePath: "rules/path",
+			edits: map[string]config.RulesFragment{
+				"rules/path": rules,
+			},
+			statuses: map[string]rc.ApplyStatus{
+				"rules/path": genApplyStatus(true, nil),
 			},
 		},
 		{
 			name: "ASM_DD/2-configs (invalid)",
-			ruleset: &config.RulesManager{
-				Base:     BaseRuleset.Base,
-				BasePath: BaseRuleset.BasePath,
-				Edits: map[string]config.RulesFragment{
-					"rules/path1": rules,
-					"rules/path2": rules,
-				},
+			edits: map[string]config.RulesFragment{
+				"rules/path1": rules,
+				"rules/path2": rules,
 			},
+			statuses: map[string]rc.ApplyStatus{
+				"rules/path1": genApplyStatus(true, errors.New("more than one config switch received for ASM_DD")),
+				"rules/path2": genApplyStatus(true, errors.New("more than one config switch received for ASM_DD")),
+			},
+		},
+		{
+			name:             "ASM_DD/1-config-1-removal",
+			expectedBasePath: "rules/path1",
+			edits: map[string]config.RulesFragment{
+				"rules/path1": rules,
+			},
+			statuses: map[string]rc.ApplyStatus{
+				"rules/path1": genApplyStatus(true, nil),
+				"rules/v1":    genApplyStatus(true, nil),
+			},
+			removal: "rules/v1",
+		},
+		{
+			name:            "ASM_DD/1-removal",
+			initialBasePath: "rules/path",
+			edits: map[string]config.RulesFragment{
+				"rules/path": rules,
+			},
+			statuses: map[string]rc.ApplyStatus{
+				"rules/path": genApplyStatus(true, nil),
+			},
+			removal: "rules/path",
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -540,12 +603,28 @@ func TestOnRCUpdate(t *testing.T) {
 				t.Skip()
 			}
 
-			tc.ruleset.Compile()
+			activeAppSec.cfg.RulesManager.BasePath = tc.initialBasePath
+			activeAppSec.cfg.RulesManager.Compile()
+
 			// Craft and process the RC updates
-			updates := craftRCUpdates(tc.ruleset.Edits)
-			activeAppSec.onRCRulesUpdate(updates)
-			// Compare rulesets
-			require.Equal(t, activeAppSec.cfg.RulesManager.Raw(), activeAppSec.cfg.RulesManager.Raw())
+			updates := craftRCUpdates(tc.edits)
+			if tc.removal != "" {
+				updates[rc.ProductASMDD][tc.removal] = nil
+			}
+
+			statuses := activeAppSec.onRCRulesUpdate(updates)
+			require.Equal(t, tc.statuses, statuses)
+
+			// Compare rulesets base paths to make sure the updates were processed correctly
+			require.Equal(t, tc.expectedBasePath, activeAppSec.cfg.RulesManager.BasePath)
+
+			if len(tc.edits) == 1 {
+				if _, ok := tc.edits[tc.removal]; ok {
+					require.Equal(t, BaseRuleset.Base.Rules, activeAppSec.cfg.RulesManager.Base.Rules)
+				} else {
+					require.Equal(t, tc.edits[tc.expectedBasePath].Rules, activeAppSec.cfg.RulesManager.Base.Rules)
+				}
+			}
 		})
 	}
 
@@ -574,10 +653,9 @@ func TestOnRCUpdate(t *testing.T) {
 		activeAppSec.onRemoteActivation(updates)
 		require.False(t, Enabled())
 		// Make sure rules did not get updated (callback gets short circuited when activeAppsec.started == false)
-		RulesManager := activeAppSec.cfg.RulesManager
 		statuses := activeAppSec.onRCRulesUpdate(updates)
 		require.Empty(t, statuses)
-		require.True(t, reflect.DeepEqual(RulesManager, activeAppSec.cfg.RulesManager))
+		require.NotContains(t, activeAppSec.cfg.RulesManager.Edits, "irrelevant/config")
 
 	})
 }

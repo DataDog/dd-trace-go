@@ -19,11 +19,12 @@ import (
 	"context"
 	"database/sql"
 	"database/sql/driver"
+	"fmt"
 	"reflect"
 	"sync"
 	"time"
 
-	"github.com/DataDog/dd-trace-go/v2/contrib/database/sql/internal"
+	sqlinternal "github.com/DataDog/dd-trace-go/v2/contrib/database/sql/internal"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
@@ -154,7 +155,7 @@ func (t *tracedConnector) Connect(ctx context.Context) (driver.Conn, error) {
 		cfg:        t.cfg,
 	}
 	if dsn != "" {
-		tp.meta, _ = internal.ParseDSN(t.driverName, dsn)
+		tp.meta, _ = sqlinternal.ParseDSN(t.driverName, dsn)
 	}
 	start := time.Now()
 	ctx, end := startTraceTask(ctx, string(QueryTypeConnect))
@@ -209,7 +210,11 @@ func OpenDB(c driver.Connector, opts ...Option) *sql.DB {
 		driverName: driverName,
 		cfg:        cfg,
 	}
-	return sql.OpenDB(tc)
+	db := sql.OpenDB(tc)
+	if cfg.dbStats {
+		go pollDBStats(db, []string{fmt.Sprintf("drivername:%v", driverName)})
+	}
+	return db
 }
 
 // Open returns connection to a DB using the traced version of the given driver. The driver may

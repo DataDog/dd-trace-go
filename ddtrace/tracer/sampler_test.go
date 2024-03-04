@@ -273,13 +273,13 @@ func TestRuleEnvVars(t *testing.T) {
 				// invalid rule ignored
 				value:  `[{"service": "abcd", "sample_rate": 42.0}, {"service": "abcd", "sample_rate": 0.2}]`,
 				ruleN:  1,
-				errStr: "\n\tat index 0: ignoring rule {Service:abcd Name: Rate:42.0 MaxPerSecond:0 Resource: Tags:map[]}: rate is out of [0.0, 1.0] range",
+				errStr: "\n\tat index 0: ignoring rule {Service:abcd Rate:42.0}: rate is out of [0.0, 1.0] range",
 			},
 			{
 				// invalid rule ignored
 				value:  `[{"service": "abcd", "sample_rate": 42.0}, {"service": "abcd", "sample_rate": 0.2}]`,
 				ruleN:  1,
-				errStr: "\n\tat index 0: ignoring rule {Service:abcd Name: Rate:42.0 MaxPerSecond:0 Resource: Tags:map[]}: rate is out of [0.0, 1.0] range",
+				errStr: "\n\tat index 0: ignoring rule {Service:abcd Rate:42.0}: rate is out of [0.0, 1.0] range",
 			},
 			{
 				value:  `not JSON at all`,
@@ -336,7 +336,7 @@ func TestRuleEnvVars(t *testing.T) {
 				// invalid rule ignored
 				value:  `[{"service": "abcd", "sample_rate": 42.0}, {"service": "abcd", "sample_rate": 0.2}]`,
 				ruleN:  1,
-				errStr: "\n\tat index 0: ignoring rule {Service:abcd Name: Rate:42.0 MaxPerSecond:0 Resource: Tags:map[]}: rate is out of [0.0, 1.0] range",
+				errStr: "\n\tat index 0: ignoring rule {Service:abcd Rate:42.0}: rate is out of [0.0, 1.0] range",
 			},
 			{
 				value:  `not JSON at all`,
@@ -1008,14 +1008,121 @@ func TestRulesSampler(t *testing.T) {
 	})
 }
 
+func TestSamplingRuleUnmarshal(t *testing.T) {
+	isEqual := func(actual, expected SamplingRule) error {
+		if actual.Service != nil && actual.Service.String() != expected.Service.String() {
+			return fmt.Errorf("service: %s != %s", actual.Service.String(), expected.Service.String())
+		}
+		if actual.Name != nil && actual.Name.String() != expected.Name.String() {
+			return fmt.Errorf("name: %s != %s", actual.Name.String(), expected.Name.String())
+		}
+		if actual.Resource != nil && actual.Resource.String() != expected.Resource.String() {
+			return fmt.Errorf("resource: %s != %s", actual.Resource.String(), expected.Resource.String())
+		}
+		if actual.Rate != expected.Rate {
+			return fmt.Errorf("rate: %v != %v", actual.Rate, expected.Rate)
+		}
+		if len(actual.Tags) != len(expected.Tags) {
+			return fmt.Errorf("tags length is not equal: %v != %v", len(actual.Tags), len(expected.Tags))
+		}
+		for k, v := range actual.Tags {
+			if v.String() != expected.Tags[k].String() {
+				return fmt.Errorf("tag %s: %s != %s", k, v.String(), expected.Tags[k].String())
+			}
+		}
+		if actual.ruleType != expected.ruleType {
+			return fmt.Errorf("ruleType: %v != %v", actual.ruleType, expected.ruleType)
+		}
+		return nil
+	}
+	t.Run("unmarshal", func(t *testing.T) {
+		for i, tt := range []struct {
+			rule     string
+			expected SamplingRule
+		}{
+			{
+				rule: `{"service": "web.service", "sample_rate": 1.0}`,
+				expected: SamplingRule{
+					Service:  globMatch("web.service"),
+					Name:     globMatch(""),
+					Resource: globMatch(""),
+					Tags:     map[string]*regexp.Regexp{},
+					Rate:     1,
+				},
+			},
+			{
+				rule: `{"service": "web.service","type":1, "sample_rate": 1.0}`,
+				expected: SamplingRule{
+					Service:  globMatch("web.service"),
+					Name:     globMatch(""),
+					Resource: globMatch(""),
+					Tags:     map[string]*regexp.Regexp{},
+					Rate:     1,
+					ruleType: SamplingRuleTrace,
+				},
+			},
+			{
+				rule: `{"name": "web.request", "sample_rate": 1.0}`,
+				expected: SamplingRule{
+					Name:     globMatch("web.request"),
+					Service:  globMatch(""),
+					Resource: globMatch(""),
+					Tags:     map[string]*regexp.Regexp{},
+					Rate:     1,
+				},
+			},
+			{
+				rule: `{"resource": "web.resource", "sample_rate": 1.0}`,
+				expected: SamplingRule{
+					Service:  globMatch(""),
+					Name:     globMatch(""),
+					Resource: globMatch("web.resource"),
+					Tags:     map[string]*regexp.Regexp{},
+					Rate:     1,
+				},
+			},
+			{
+				rule: `{"tags": {"host": "hn-30"}, "sample_rate": 1.0}`,
+
+				expected: SamplingRule{
+					Service:  globMatch(""),
+					Name:     globMatch(""),
+					Resource: globMatch(""),
+					Tags:     map[string]*regexp.Regexp{"host": globMatch("hn-30")},
+					Rate:     1,
+				},
+			},
+			{
+				rule: `{"service": "web.service", "name": "web.request", "sample_rate": 1.0}`,
+				expected: SamplingRule{
+					Service:  globMatch("web.service"),
+					Name:     globMatch("web.request"),
+					Resource: globMatch(""),
+					Tags:     nil,
+					Rate:     1,
+				},
+			},
+		} {
+			t.Run(fmt.Sprintf("%v", i), func(t *testing.T) {
+				var r SamplingRule
+				err := r.UnmarshalJSON([]byte(tt.rule))
+				assert.Nil(t, err)
+				assert.NoError(t, isEqual(r, tt.expected))
+			})
+		}
+	})
+
+}
+
 func TestRulesSamplerConcurrency(t *testing.T) {
 	rules := TraceSamplingRules(
 		Rule{ServiceGlob: "test-service", Rate: 1.0},
 		Rule{NameGlob: "db.query", ServiceGlob: "postgres.db", Rate: 1.0},
-		Rule{NameGlob: "notweb.request", Rate: 1.0})
+		Rule{NameGlob: "notweb.request", Rate: 1.0},
+	)
 	tracer, err := newTracer(WithSamplingRules(rules))
-	defer tracer.Stop()
 	assert.NoError(t, err)
+	defer tracer.Stop()
 	span := func(wg *sync.WaitGroup) {
 		defer wg.Done()
 		tracer.StartSpan("db.query", ServiceName("postgres.db")).Finish()
@@ -1309,25 +1416,25 @@ func TestSamplingRuleMarshall(t *testing.T) {
 		in  SamplingRule
 		out string
 	}{
-		{SamplingRule{regexp.MustCompile("srv.[0-9]+"), nil, 0, 0, nil, nil, 0, nil},
-			`{"service":"srv.[0-9]+","sample_rate":0,"type":"trace(0)"}`},
-		{SamplingRule{regexp.MustCompile("srv.*"), regexp.MustCompile("ops.[0-9]+"), 0, 0, nil, nil, 0, nil},
-			`{"service":"srv.*","name":"ops.[0-9]+","sample_rate":0,"type":"trace(0)"}`},
-		{SamplingRule{regexp.MustCompile("srv.[0-9]+"), regexp.MustCompile("ops.[0-9]+"), 0.55, 0, nil, nil, 0, nil},
-			`{"service":"srv.[0-9]+","name":"ops.[0-9]+","sample_rate":0.55,"type":"trace(0)"}`},
-		{SamplingRule{nil, nil, 0.35, 0, regexp.MustCompile("http_get"), nil, 0, nil},
-			`{"resource":"http_get","sample_rate":0.35,"type":"trace(0)"}`},
-		{SamplingRule{nil, nil, 0.35, 0, regexp.MustCompile("http_get"), map[string]*regexp.Regexp{"host": regexp.MustCompile("hn-*")}, 0, nil},
-			`{"resource":"http_get","sample_rate":0.35,"tags":{"host":"hn-*"},"type":"trace(0)"}`},
-		{SamplingRule{regexp.MustCompile("srv.[0-9]+"), regexp.MustCompile("ops.[0-9]+"), 0.55, 0, nil, nil, 1, nil},
-			`{"service":"srv.[0-9]+","name":"ops.[0-9]+","sample_rate":0.55,"type":"span(1)"}`},
-		{SamplingRule{regexp.MustCompile("srv.[0-9]+"), regexp.MustCompile("ops.[0-9]+"), 0.55, 1000, nil, nil, 1, nil},
-			`{"service":"srv.[0-9]+","name":"ops.[0-9]+","sample_rate":0.55,"type":"span(1)","max_per_second":1000}`},
-		{SamplingRule{nil, nil, 1, 0, regexp.MustCompile("//bar"), nil, 0, nil},
-			`{"resource":"//bar","sample_rate":1,"type":"trace(0)"}`},
+		{SamplingRule{regexp.MustCompile("srv.[0-9]+"), nil, 0, 0, nil, nil, SamplingRuleTrace, nil},
+			`{"service":"srv.[0-9]+","sample_rate":0,"type":"trace(1)"}`},
+		{SamplingRule{regexp.MustCompile("srv.*"), regexp.MustCompile("ops.[0-9]+"), 0, 0, nil, nil, SamplingRuleTrace, nil},
+			`{"service":"srv.*","name":"ops.[0-9]+","sample_rate":0,"type":"trace(1)"}`},
+		{SamplingRule{regexp.MustCompile("srv.[0-9]+"), regexp.MustCompile("ops.[0-9]+"), 0.55, 0, nil, nil, SamplingRuleTrace, nil},
+			`{"service":"srv.[0-9]+","name":"ops.[0-9]+","sample_rate":0.55,"type":"trace(1)"}`},
+		{SamplingRule{nil, nil, 0.35, 0, regexp.MustCompile("http_get"), nil, SamplingRuleTrace, nil},
+			`{"resource":"http_get","sample_rate":0.35,"type":"trace(1)"}`},
+		{SamplingRule{nil, nil, 0.35, 0, regexp.MustCompile("http_get"), map[string]*regexp.Regexp{"host": regexp.MustCompile("hn-*")}, SamplingRuleTrace, nil},
+			`{"resource":"http_get","sample_rate":0.35,"tags":{"host":"hn-*"},"type":"trace(1)"}`},
+		{SamplingRule{regexp.MustCompile("srv.[0-9]+"), regexp.MustCompile("ops.[0-9]+"), 0.55, 0, nil, nil, SamplingRuleSpan, nil},
+			`{"service":"srv.[0-9]+","name":"ops.[0-9]+","sample_rate":0.55,"type":"span(2)"}`},
+		{SamplingRule{regexp.MustCompile("srv.[0-9]+"), regexp.MustCompile("ops.[0-9]+"), 0.55, 1000, nil, nil, SamplingRuleSpan, nil},
+			`{"service":"srv.[0-9]+","name":"ops.[0-9]+","sample_rate":0.55,"type":"span(2)","max_per_second":1000}`},
+		{SamplingRule{nil, nil, 1, 0, regexp.MustCompile("//bar"), nil, SamplingRuleTrace, nil},
+			`{"resource":"//bar","sample_rate":1,"type":"trace(1)"}`},
 		{SamplingRule{nil, nil, 1, 0, regexp.MustCompile("//bar"),
-			map[string]*regexp.Regexp{"tag_key": regexp.MustCompile("tag_value.[0-9]+")}, 0, nil},
-			`{"resource":"//bar","sample_rate":1,"tags":{"tag_key":"tag_value.[0-9]+"},"type":"trace(0)"}`},
+			map[string]*regexp.Regexp{"tag_key": regexp.MustCompile("tag_value.[0-9]+")}, SamplingRuleTrace, nil},
+			`{"resource":"//bar","sample_rate":1,"tags":{"tag_key":"tag_value.[0-9]+"},"type":"trace(1)"}`},
 	} {
 		m, err := tt.in.MarshalJSON()
 		assert.Nil(t, err)

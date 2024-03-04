@@ -27,14 +27,18 @@ import (
 )
 
 // UnaryHandler wrapper to use when AppSec is enabled to monitor its execution.
-func appsecUnaryHandlerMiddleware(span *tracer.Span, handler grpc.UnaryHandler) grpc.UnaryHandler {
+func appsecUnaryHandlerMiddleware(method string, span *tracer.Span, handler grpc.UnaryHandler) grpc.UnaryHandler {
 	trace.SetAppSecEnabledTags(span)
 	return func(ctx context.Context, req interface{}) (interface{}, error) {
 		var err error
 		var blocked bool
 		md, _ := metadata.FromIncomingContext(ctx)
 		clientIP := setClientIP(ctx, span, md)
-		args := types.HandlerOperationArgs{Metadata: md, ClientIP: clientIP}
+		args := types.HandlerOperationArgs{
+			Method:   method,
+			Metadata: md,
+			ClientIP: clientIP,
+		}
 		ctx, op := grpcsec.StartHandlerOperation(ctx, args, nil, func(op *types.HandlerOperation) {
 			dyngo.OnData(op, func(a *sharedsec.Action) {
 				code, e := a.GRPC()(md)
@@ -67,7 +71,7 @@ func appsecUnaryHandlerMiddleware(span *tracer.Span, handler grpc.UnaryHandler) 
 }
 
 // StreamHandler wrapper to use when AppSec is enabled to monitor its execution.
-func appsecStreamHandlerMiddleware(span *tracer.Span, handler grpc.StreamHandler) grpc.StreamHandler {
+func appsecStreamHandlerMiddleware(method string, span *tracer.Span, handler grpc.StreamHandler) grpc.StreamHandler {
 	trace.SetAppSecEnabledTags(span)
 	return func(srv interface{}, stream grpc.ServerStream) error {
 		var err error
@@ -77,7 +81,12 @@ func appsecStreamHandlerMiddleware(span *tracer.Span, handler grpc.StreamHandler
 		clientIP := setClientIP(ctx, span, md)
 		grpctrace.SetRequestMetadataTags(span, md)
 
-		ctx, op := grpcsec.StartHandlerOperation(ctx, types.HandlerOperationArgs{Metadata: md, ClientIP: clientIP}, nil, func(op *types.HandlerOperation) {
+		args := types.HandlerOperationArgs{
+			Method:   method,
+			Metadata: md,
+			ClientIP: clientIP,
+		}
+		ctx, op := grpcsec.StartHandlerOperation(ctx, args, nil, func(op *types.HandlerOperation) {
 			dyngo.OnData(op, func(a *sharedsec.Action) {
 				code, e := a.GRPC()(md)
 				blocked = a.Blocking()

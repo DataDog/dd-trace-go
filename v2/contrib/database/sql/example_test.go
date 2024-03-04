@@ -106,3 +106,19 @@ func Example_dbmPropagation() {
 	}
 	defer rows.Close()
 }
+
+func Example_dbStats() {
+	sqltrace.Register("postgres", &pq.Driver{}, sqltrace.WithDBStats())
+	db, err := sqltrace.Open("postgres", "postgres://pqgotest:password@localhost/pqgotest?sslmode=disable")
+
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// Tracing is now enabled. Continue to use the database/sql package as usual
+	rows, err := db.Query("SELECT name FROM users WHERE age=?", 27)
+	if err != nil {
+		log.Fatal(err)
+	}
+	rows.Close()
+}

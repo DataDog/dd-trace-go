@@ -1,0 +1,79 @@
+{
+  "version": "2.2",
+  "metadata": {
+    "rules_version": "5.6.7"
+  },
+  "rules": [
+    {
+      "id": "custom-1",
+      "name": "Custom Rule",
+      "tags": {
+        "type": "zouzou_scanner_1",
+        "category": "attack_attempt_1"
+      },
+      "conditions": [
+        {
+          "operator": "match_regex",
+          "parameters": {
+            "inputs": [
+              {
+                "address": "grpc.server.request.metadata"
+              }
+            ],
+            "regex": "zouzou"
+          }
+        }
+      ]
+    },
+    {
+      "id": "custom-2",
+      "name": "Custom Rule",
+      "tags": {
+        "type": "zouzou_scanner_2",
+        "category": "attack_attempt_2"
+      },
+      "conditions": [
+        {
+          "operator": "match_regex",
+          "parameters": {
+            "inputs": [
+              {
+                "address": "grpc.server.request.metadata"
+              }
+            ],
+            "regex": "zouzou"
+          }
+        }
+      ]
+    }
+  ],
+  "exclusions": [
+    {
+      "id": "exclusion-1",
+      "conditions": [
+        {
+          "operator": "phrase_match",
+          "parameters": {
+            "inputs": [
+              {
+                "address": "grpc.server.method"
+              }
+            ],
+            "options": {
+              "case_sensitive": false
+            },
+            "list": [
+              "/grpc.Fixture/Ping",
+              "/grpc.Fixture/StreamPing"
+            ]
+          }
+        }
+      ],
+      "rules_target": [
+        {
+          "id": "custom-1"
+        }
+      ]
+    }
+  ]
+}

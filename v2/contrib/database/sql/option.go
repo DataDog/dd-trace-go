@@ -29,6 +29,7 @@ type config struct {
 	errCheck           func(err error) bool
 	tags               map[string]interface{}
 	dbmPropagationMode tracer.DBMPropagationMode
+	dbStats            bool
 }
 
 func (c *config) checkDBMPropagation(driverName string, driver driver.Driver, dsn string) {
@@ -146,6 +147,7 @@ func defaults(cfg *config, driverName string, rc *registerConfig) {
 		cfg.errCheck = rc.errCheck
 		cfg.ignoreQueryTypes = rc.ignoreQueryTypes
 		cfg.childSpansOnly = rc.childSpansOnly
+		cfg.dbStats = rc.dbStats
 	}
 }
 
@@ -257,5 +259,14 @@ func WithCustomTag(key string, value interface{}) OptionFn {
 func WithDBMPropagation(mode tracer.DBMPropagationMode) OptionFn {
 	return func(cfg *config) {
 		cfg.dbmPropagationMode = mode
+	}
+}
+
+// WithDBStats enables polling of DBStats metrics
+// ref: https://pkg.go.dev/database/sql#DBStats
+// These metrics are submitted to Datadog and are not billed as custom metrics
+func WithDBStats() OptionFn {
+	return func(cfg *config) {
+		cfg.dbStats = true
 	}
 }

@@ -263,7 +263,7 @@ func TestDebugAbandonedSpansOff(t *testing.T) {
 	t.Run("default", func(t *testing.T) {
 		assert.False(tracer.config.debugAbandonedSpans)
 		assert.Equal(time.Duration(0), tracer.config.spanTimeout)
-		expected := fmt.Sprintf("Abandoned spans logs enabled.")
+		expected := "Abandoned spans logs enabled."
 		s := tracer.StartSpan("operation", StartTime(spanStart))
 		time.Sleep(100 * time.Millisecond)
 		assert.NotContains(tp.Logs(), expected)

@@ -19,8 +19,11 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
+	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/contrib/namingschematest"
 	"github.com/DataDog/dd-trace-go/v2/internal/contrib/sqltest"
+	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
+	"github.com/DataDog/dd-trace-go/v2/internal/statsdtest"
 
 	mssql "github.com/denisenkom/go-mssqldb"
 	"github.com/go-sql-driver/mysql"
@@ -128,6 +131,12 @@ func TestPostgres(t *testing.T) {
 func TestOpenOptions(t *testing.T) {
 	driverName := "postgres"
 	dsn := "postgres://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable"
+	// shorten `interval` for the `WithDBStats` test
+	// interval must get reassigned outside of a subtest to avoid a data race
+	interval = 500 * time.Millisecond
+	t.Cleanup(func() {
+		interval = 10 * time.Second // resetting back to original value
+	})
 
 	t.Run("Open", func(t *testing.T) {
 		Register(driverName, &pq.Driver{}, WithService("postgres-test"), WithAnalyticsRate(0.2))
@@ -267,6 +276,41 @@ func TestOpenOptions(t *testing.T) {
 
 		s0 := spans[0]
 		assert.Equal(t, "register-override", s0.Tag(ext.ServiceName))
+	})
+
+	t.Run("WithDBStats", func(t *testing.T) {
+		Register(driverName, &pq.Driver{})
+		defer unregister(driverName)
+		_, err := Open(driverName, dsn, WithDBStats())
+		require.NoError(t, err)
+
+		var tg statsdtest.TestStatsdClient
+		sc := internal.NewStatsCarrier(&tg)
+		sc.Start()
+		defer sc.Stop()
+		globalconfig.SetStatsCarrier(sc)
+
+		// The polling interval has been reduced to 500ms for the sake of this test, so at least one round of `pollDBStats` should be complete in 1s
+		deadline := time.Now().Add(1 * time.Second)
+		wantStats := []string{MaxOpenConnections, OpenConnections, InUse, Idle, WaitCount, WaitDuration, MaxIdleClosed, MaxIdleTimeClosed, MaxLifetimeClosed}
+		for {
+			if time.Now().After(deadline) {
+				t.Fatalf("Stats not collected in expected interval of %v", interval)
+			}
+			calls := tg.CallNames()
+			// if the expected volume of stats has been collected, ensure 9/9 of the DB Stats are included
+			if len(calls) >= len(wantStats) {
+				for _, s := range wantStats {
+					if !assert.Contains(t, calls, s) {
+						t.Fatalf("Missing stat %s", s)
+					}
+				}
+				// all expected stats have been collected; exit out of loop, test should pass
+				break
+			}
+			// not all stats have been collected yet, try again in 50ms
+			time.Sleep(50 * time.Millisecond)
+		}
 	})
 }
 
