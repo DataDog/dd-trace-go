@@ -83,7 +83,7 @@ jobs:
         run: go mod download -x
 
   macos:
-    name: macos ${{ toJSON(matrix) }}
+    name: ${{ matrix.runs-on }} go${{ matrix.go-version }}
     runs-on: macos-11 # oldest macos runner available - the full macOS matrix is in go-libddwaf
     needs: go-mod-caching
     strategy:
@@ -134,7 +134,7 @@ jobs:
 
   # Tests cases were appsec end up being disabled at compilation time
   disabled:
-    name: disabled ${{ toJSON(matrix) }}
+    name: ${{ matrix.runs-on }} (AppSec disabled)
     needs: go-mod-caching
     runs-on: ${{ matrix.runs-on }}
     strategy:
@@ -178,7 +178,7 @@ jobs:
 
   # Same tests but on the official golang container for linux
   golang-linux-container:
-    name: golang-containers ${{ toJSON(matrix) }}
+    name: ${{ matrix.platform }} golang:${{ matrix.go-version }}-${{ matrix.distribution }}
     # We use ARM runners when needed to avoid the performance hit of QEMU
     runs-on: ${{ matrix.platform == 'linux/amd64' && 'ubuntu-latest-16-cores' || 'arm-4core-linux' }}
     needs: go-mod-caching
