@@ -109,6 +109,8 @@ func PushStat(stat internal.Stat) {
 		log.Debug("No stats carrier found; dropping stat %v", stat.Name())
 		return
 	}
+	cfg.mu.Lock()
+	defer cfg.mu.Unlock()
 	cfg.statsCarrier.Add(stat)
 }
 
