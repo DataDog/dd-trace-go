@@ -220,15 +220,15 @@ jobs:
           echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | sudo tee /etc/apt/sources.list.d/docker.list
           sudo apt update
           sudo apt install -y docker-ce docker-ce-cli containerd.io
-          sudo usermod -aG docker $(whoami)
-          sudo chgrp docker /var/run/docker.sock
-          exec newgrp docker
 
       - name: go test
         env:
           GOMODCACHE: ${{ github.workspace }}/${{ needs.go-mod-caching.outputs.path }}
+        # NOTE: "sudo docker" is necessary on ARM platforms, as we cannot properly add the runner user to the docker
+        # group, so the docker socker won't allow non-root users to run containers. This will most certainly become
+        # redundant once the ARM runners hit GA and the image is no longer so minimal.
         run: |
-          cat <<EOF | docker run --rm -i -v "$PWD:$PWD" -w "$PWD" -v "$GOMODCACHE:$GOMODCACHE" \
+          cat <<EOF | sudo docker run --rm -i -v "$PWD:$PWD" -w "$PWD" -v "$GOMODCACHE:$GOMODCACHE" \
             -eGOMODCACHE -eDD_APPSEC_WAF_TIMEOUT golang:${{ matrix.go-version }}-${{ matrix.distribution }}
               set -euxo pipefail
               if ${{ matrix.distribution == 'alpine' }}; then
