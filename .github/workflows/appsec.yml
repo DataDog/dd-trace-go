@@ -16,13 +16,7 @@ on:
       - 'appsec/**'
       - 'contrib/**/appsec.go'
       - '**/go.mod'
-  merge_group: # on merge groups touching appsec files
-    paths:
-      - '.github/workflows/appsec.yml'
-      - 'internal/appsec/**'
-      - 'appsec/**'
-      - 'contrib/**/appsec.go'
-      - '**/go.mod'
+  merge_group:
   push:
     branches: release-v*
 env:
@@ -185,25 +179,19 @@ jobs:
   # Same tests but on the official golang container for linux
   golang-linux-container:
     name: golang-containers ${{ toJSON(matrix) }}
-    runs-on: ubuntu-latest-16-cores
+    # We use ARM runners when needed to avoid the performance hit of QEMU
+    runs-on: ${{ matrix.platform == 'linux/amd64' && 'ubuntu-latest-16-cores' || 'arm-4core-linux' }}
     needs: go-mod-caching
     strategy:
       matrix:
         go-version: [ "1.22", "1.21", "1.20" ]
         distribution: [ bookworm, bullseye, buster, alpine ]
-        platform: [ linux/amd64 ] # qemu-arm64 is too slow to run on all the matrix dimensions - we test include it for a specific and good-enough set of dimensions above
+        platform: [ linux/amd64, linux/arm64 ]
         exclude:
           - go-version: "1.21"
             distribution: buster
           - go-version: "1.22"
             distribution: buster
-        include:
-          - platform: linux/arm64
-            go-version: "1"
-            distribution: bookworm
-          - platform: linux/arm64
-            go-version: "1"
-            distribution: alpine
 
       fail-fast: false
     steps:
@@ -218,11 +206,12 @@ jobs:
           enableCrossOsArchive: true
           fail-on-cache-miss: true
 
-      - name: Set up qemu for arm64
-        if: matrix.platform == 'linux/arm64'
-        uses: docker/setup-qemu-action@v3
-        with:
-          platforms: arm64
+      # Docker is not present on early-access ARM runners
+      - name: Prepare ARM Runner
+        if: runner.name == 'arm-4core-linux'
+        run: |-
+          sudo apt update
+          sudo apt install -y docker docker.io
 
       - name: go test
         env:
