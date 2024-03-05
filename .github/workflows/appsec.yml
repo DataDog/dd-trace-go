@@ -227,27 +227,42 @@ jobs:
           sudo apt update
           sudo apt install -y docker-ce docker-ce-cli containerd.io
 
-      - name: go test
+      - name: Create container
         env:
           GOMODCACHE: ${{ github.workspace }}/${{ needs.go-mod-caching.outputs.path }}
-        # NOTE: "sudo docker" is necessary on ARM platforms, as we cannot properly add the runner user to the docker
-        # group, so the docker socker won't allow non-root users to run containers. This will most certainly become
-        # redundant once the ARM runners hit GA and the image is no longer so minimal.
-        run: |
-          cat <<EOF | sudo docker run --rm -i -v "$PWD:$PWD" -w "$PWD" -v "$GOMODCACHE:$GOMODCACHE" \
-            -eGOMODCACHE -eDD_APPSEC_WAF_TIMEOUT golang:${{ matrix.go-version }}-${{ matrix.distribution }}
-              set -euxo pipefail
-              if ${{ matrix.distribution == 'alpine' }}; then
-                apk add gcc musl-dev libc6-compat
-              fi
-              go env
-              env CGO_ENABLED=0 go test -v $TESTS                         # cgo disabled + undefined appsec state
-              env CGO_ENABLED=0 DD_APPSEC_ENABLED=false go test -v $TESTS # cgo disabled + appsec disabled
-              env CGO_ENABLED=0 DD_APPSEC_ENABLED=true go test -v $TESTS  # cgo disabled + appsec enabled
-              env CGO_ENABLED=1 go test -v $TESTS                         # cgo enabled + undefined appsec state
-              env CGO_ENABLED=1 DD_APPSEC_ENABLED=false go test -v $TESTS # cgo enabled + appsec disabled
-              env CGO_ENABLED=1 DD_APPSEC_ENABLED=true go test -v $TESTS  # cgo enabled + appsec enabled
-          EOF
+        run: |-
+          sudo docker run                                                       \
+            --rm                                                                \
+            -di                                                                 \
+            --name test.runner                                                  \
+            -v "${GOMODCACHE}:${GOMODCACHE}"                                    \
+            -e "GOMODCACHE=${GOMODCACHE}"                                       \
+            -v "$PWD:$PWD"                                                      \
+            -w "$PWD"                                                           \
+            -e "DD_APPSEC_WAF_TIMEOUT=${{ env.DD_APPSEC_WAF_TIMEOUT }}"         \
+            golang:${{ matrix.go-version }}-${{ matrix.distribution }}
+      - name: Install pre-requisites on Alpine
+        if: matrix.distribution == 'alpine'
+        run: sudo docker exec -i test.runner apk add gcc musl-dev libc6-compat
+      - name: Output go env
+        run: sudo docker exec -i test.runner go env
+
+      - name: NOCGO, undefined appsec state
+        run: sudo docker exec -i test.runner env CGO_ENABLED=0 go test -v $TESTS
+      - name: NOCGO, appsec disabled
+        run: sudo docker exec -i test.runner env CGO_ENABLED=0 DD_APPSEC_ENABLED=false go test -v $TESTS
+      - name: NOCGO, appsec enabled
+        run: sudo docker exec -i test.runner env CGO_ENABLED=0 DD_APPSEC_ENABLED=true go test -v $TESTS
+      - name: CGO, undefined appsec state
+        run: sudo docker exec -i test.runner env CGO_ENABLED=1 go test -v $TESTS
+      - name: CGO, appsec disabled
+        run: sudo docker exec -i test.runner env CGO_ENABLED=1 DD_APPSEC_ENABLED=false go test -v $TESTS
+      - name: CGO, appsec enabled
+        run: sudo docker exec -i test.runner env CGO_ENABLED=1 DD_APPSEC_ENABLED=true go test -v $TESTS
+
+      - name: Clean up
+        if: always()
+        run: sudo docker rm --force test.runner || echo "Could not remove container"
 
   test-app-smoke-tests:
     name: Smoke Tests
