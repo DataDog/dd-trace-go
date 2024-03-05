@@ -208,7 +208,7 @@ jobs:
 
       # Docker is not present on early-access ARM runners
       - name: Prepare ARM Runner
-        if: runner.name == 'arm-4core-linux'
+        if: runner.arch == 'ARM64' || runner.arch == 'ARM'
         run: |-
           sudo apt update
           sudo apt install -y docker docker.io
