@@ -105,18 +105,13 @@ func SetStatsCarrier(sc *internal.StatsCarrier) {
 
 // PushStat pushes the stat onto the StatsCarrier's stats channel, via the Add method
 func PushStat(stat internal.Stat) {
-	if !StatsCarrier() {
+	cfg.mu.RLock()
+	sc := cfg.statsCarrier
+	cfg.mu.RUnlock()
+
+	if sc == nil {
 		log.Debug("No stats carrier found; dropping stat %v", stat.Name())
 		return
 	}
-	cfg.mu.Lock()
-	defer cfg.mu.Unlock()
-	cfg.statsCarrier.Add(stat)
-}
-
-// StatsCarrier returns true if there is a StatsCarrier on the globalconfig, else false
-func StatsCarrier() bool {
-	cfg.mu.RLock()
-	defer cfg.mu.RUnlock()
-	return cfg.statsCarrier != nil
+	sc.Add(stat)
 }

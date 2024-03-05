@@ -219,6 +219,6 @@ func (sc *StatsCarrier) Add(s Stat) {
 	select {
 	case sc.contribStats <- s:
 	default:
-		log.Debug("StatsCarrier's contribStats channel is full; dropping stat %v", s.Name())
+		log.Debug("Stats carrier channel is full; dropping stat %v", s.Name())
 	}
 }

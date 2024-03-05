@@ -47,15 +47,3 @@ func TestPushStat(t *testing.T) {
 	assert.Len(t, calls, 1)
 	assert.Contains(t, calls, "name")
 }
-
-func TestStatsCarrier(t *testing.T) {
-	t.Run("default none", func(t *testing.T) {
-		assert.False(t, StatsCarrier())
-	})
-	t.Run("exists", func(t *testing.T) {
-		t.Cleanup(ResetGlobalConfig)
-		sc := internal.NewStatsCarrier(&statsd.NoOpClient{})
-		cfg.statsCarrier = sc
-		assert.True(t, StatsCarrier())
-	})
-}
