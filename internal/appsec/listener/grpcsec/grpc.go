@@ -112,7 +112,7 @@ func (l *wafEventListener) onEvent(op *types.HandlerOperation, handlerArgs types
 			values := map[string]any{
 				UserIDAddr: args.UserID,
 			}
-			wafResult := shared.RunWAF(wafCtx, waf.RunAddressData{Persistent: values}, l.config.WAFTimeout)
+			wafResult := shared.RunWAF(wafCtx, waf.RunAddressData{Persistent: values}, l.config.WAFTimeout, &op.TagsHolder)
 			if wafResult.HasActions() || wafResult.HasEvents() {
 				for _, id := range wafResult.Actions {
 					if a, ok := l.actions[id]; ok && a.Blocking() {
@@ -135,7 +135,7 @@ func (l *wafEventListener) onEvent(op *types.HandlerOperation, handlerArgs types
 		values[HTTPClientIPAddr] = handlerArgs.ClientIP.String()
 	}
 
-	wafResult := shared.RunWAF(wafCtx, waf.RunAddressData{Persistent: values}, l.config.WAFTimeout)
+	wafResult := shared.RunWAF(wafCtx, waf.RunAddressData{Persistent: values}, l.config.WAFTimeout, &op.TagsHolder)
 	if wafResult.HasActions() || wafResult.HasEvents() {
 		interrupt := shared.ProcessActions(op, l.actions, wafResult.Actions)
 		shared.AddSecurityEvents(op, l.limiter, wafResult.Events)
@@ -172,7 +172,7 @@ func (l *wafEventListener) onEvent(op *types.HandlerOperation, handlerArgs types
 
 		// Run the WAF, ignoring the returned actions - if any - since blocking after the request handler's
 		// response is not supported at the moment.
-		wafResult := shared.RunWAF(wafCtx, values, l.config.WAFTimeout)
+		wafResult := shared.RunWAF(wafCtx, values, l.config.WAFTimeout, &op.TagsHolder)
 
 		if wafResult.HasEvents() {
 			log.Debug("appsec: attack detected by the grpc waf")

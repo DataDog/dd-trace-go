@@ -779,7 +779,7 @@ func TestWafRCUpdate(t *testing.T) {
 			httpsec.ServerRequestPathParamsAddr: "/rfiinc.txt",
 		}
 		// Make sure the rule matches as expected
-		result := sharedsec.RunWAF(wafCtx, waf.RunAddressData{Persistent: values}, cfg.WAFTimeout)
+		result := sharedsec.RunWAF(wafCtx, waf.RunAddressData{Persistent: values}, cfg.WAFTimeout, nil)
 		require.Contains(t, jsonString(t, result.Events), "crs-913-120")
 		require.Empty(t, result.Actions)
 		// Simulate an RC update that disables the rule
@@ -795,7 +795,7 @@ func TestWafRCUpdate(t *testing.T) {
 		newWafCtx := waf.NewContext(newWafHandle)
 		defer newWafCtx.Close()
 		// Make sure the rule returns a blocking action when matching
-		result = sharedsec.RunWAF(newWafCtx, waf.RunAddressData{Persistent: values}, cfg.WAFTimeout)
+		result = sharedsec.RunWAF(newWafCtx, waf.RunAddressData{Persistent: values}, cfg.WAFTimeout, nil)
 		require.Contains(t, jsonString(t, result.Events), "crs-913-120")
 		require.Contains(t, result.Actions, "block")
 	})

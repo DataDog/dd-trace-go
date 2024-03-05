@@ -7,6 +7,8 @@ package sharedsec
 
 import (
 	"encoding/json"
+	"fmt"
+	"slices"
 	"time"
 
 	"github.com/DataDog/appsec-internal-go/limiter"
@@ -15,15 +17,39 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/sharedsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/trace"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 )
 
-func RunWAF(wafCtx *waf.Context, values waf.RunAddressData, timeout time.Duration) waf.Result {
+func RunWAF(wafCtx *waf.Context, values waf.RunAddressData, timeout time.Duration, tags trace.TagSetter) waf.Result {
 	result, err := wafCtx.Run(values, timeout)
 	if err == waf.ErrTimeout {
 		log.Debug("appsec: waf timeout value of %s reached", timeout)
 	} else if err != nil {
 		log.Error("appsec: unexpected waf error: %v", err)
 	}
+
+	trunc := 0 // Combined trucation reason flags
+	for reason, values := range result.Truncations {
+		if len(values) == 0 {
+			continue
+		}
+		val := slices.Max(values)
+		telemetry.GlobalClient.Record(
+			telemetry.NamespaceAppSec,
+			telemetry.MetricKindDist,
+			"truncated_value_size",
+			float64(val),
+			[]string{
+				fmt.Sprintf("truncation_reason:%d", reason),
+			},
+			true, // Not language-specific
+		)
+		trunc |= int(reason)
+	}
+	if trunc != 0 && tags != nil {
+		tags.SetTag("_dd.appsec.waf.input_truncated", trunc)
+	}
+
 	return result
 }
 
