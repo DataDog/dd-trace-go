@@ -19,6 +19,7 @@ on:
   merge_group:
   push:
     branches: release-v*
+
 env:
   DD_APPSEC_WAF_TIMEOUT: 1m
   TESTS: >-
@@ -34,6 +35,11 @@ env:
     ./contrib/99designs/gqlgen/...
     ./contrib/graphql-go/graphql/...
     ./contrib/graph-gophers/graphql-go/...
+
+concurrency:
+  # Automatically cancel previous runs if a new one is triggered to conserve resources.
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+
 jobs:
   # Prepare the cache of Go modules to share it will the other jobs.
   # This maximizes cache hits and minimizes the time spent downloading Go modules.
