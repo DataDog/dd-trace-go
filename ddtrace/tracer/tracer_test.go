@@ -2244,13 +2244,6 @@ func (w *testTraceWriter) flush() {
 
 func (w *testTraceWriter) stop() {}
 
-func (w *testTraceWriter) reset() {
-	w.mu.Lock()
-	w.flushed = w.flushed[:0]
-	w.buf = w.buf[:0]
-	w.mu.Unlock()
-}
-
 // Buffered returns the spans buffered by the writer.
 func (w *testTraceWriter) Buffered() []*span {
 	w.mu.RLock()
