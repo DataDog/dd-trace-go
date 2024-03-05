@@ -139,7 +139,7 @@ type StatsCarrier struct {
 
 func NewStatsCarrier(statsd StatsdClient) *StatsCarrier {
 	return &StatsCarrier{
-		contribStats: make(chan Stat),
+		contribStats: make(chan Stat, 10),
 		statsd:       statsd,
 		stopped:      1,
 	}
@@ -216,5 +216,9 @@ func (sc *StatsCarrier) push(s Stat) {
 
 // Add pushes the Stat, s, onto the StatsCarrier's contribStats channel
 func (sc *StatsCarrier) Add(s Stat) {
-	sc.contribStats <- s
+	select {
+	case sc.contribStats <- s:
+	default:
+		log.Debug("StatsCarrier's contribStats channel is full; dropping stat %v", s.Name())
+	}
 }
