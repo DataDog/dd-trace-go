@@ -84,6 +84,43 @@ type SamplingRule struct {
 	globRule *jsonRule
 }
 
+// Poor-man's comparison of two regex for equality without resorting to fancy symbolic computation.
+// The result is false negative: whenever the function returns true, we know the two regex must be
+// equal. The reverse is not true. Two regex can be equivalent while reported as not.
+// This is good for use as an indication of optimization that applies when two regex are equals.
+func regexEqualsFalseNegative(a, b *regexp.Regexp) bool {
+	if (a == nil) != (b == nil) {
+		return false
+	}
+	if a == nil {
+		return true
+	}
+	return a.String() == b.String()
+}
+
+func (r *SamplingRule) Equals(other *SamplingRule) bool {
+	if (r == nil) != (other == nil) {
+		return false
+	}
+	if r == nil {
+		return true
+	}
+	if r.Rate != other.Rate || r.ruleType != other.ruleType ||
+		!regexEqualsFalseNegative(r.Service, other.Service) ||
+		!regexEqualsFalseNegative(r.Name, other.Name) ||
+		!regexEqualsFalseNegative(r.Resource, other.Resource) ||
+		len(r.Tags) != len(other.Tags) {
+		return false
+	}
+	for k, v := range r.Tags {
+		if vo, ok := other.Tags[k]; !ok || !regexEqualsFalseNegative(v, vo) {
+			return false
+		}
+	}
+	// TODO
+	return true
+}
+
 // match returns true when the span's details match all the expected values in the rule.
 func (sr *SamplingRule) match(s *span) bool {
 	if sr.Service != nil && !sr.Service.MatchString(s.Service) {
@@ -307,6 +344,18 @@ func (rs *traceRulesSampler) enabled() bool {
 	return len(rs.rules) > 0 || !math.IsNaN(rs.globalRate)
 }
 
+func Equals(a, b []SamplingRule) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i, r := range a {
+		if !r.Equals(&b[i]) {
+			return false
+		}
+	}
+	return true
+}
+
 // setGlobalSampleRate sets the global sample rate to the given value.
 // Returns whether the value was changed or not.
 func (rs *traceRulesSampler) setGlobalSampleRate(rate float64) bool {
@@ -325,6 +374,15 @@ func (rs *traceRulesSampler) setGlobalSampleRate(rate float64) bool {
 		return false
 	}
 	rs.globalRate = rate
+	return true
+}
+
+// Assumes the new rules are different from the old rules.
+func (rs *traceRulesSampler) setTraceSampleRules(rules []SamplingRule) bool {
+	if Equals(rs.rules, rules) {
+		return false
+	}
+	rs.rules = rules
 	return true
 }
 
@@ -760,4 +818,12 @@ func (sr *SamplingRule) MarshalJSON() ([]byte, error) {
 		s.Type = &t
 	}
 	return json.Marshal(&s)
+}
+
+func (sr SamplingRule) String() string {
+	s, err := sr.MarshalJSON()
+	if err != nil {
+		log.Error("Error marshalling SamplingRule to json: %v", err)
+	}
+	return string(s)
 }

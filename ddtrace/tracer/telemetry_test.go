@@ -6,6 +6,7 @@
 package tracer
 
 import (
+	"regexp"
 	"testing"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
@@ -29,6 +30,12 @@ func TestTelemetryEnabled(t *testing.T) {
 			WithPeerServiceMapping("key", "val"),
 			WithPeerServiceDefaults(true),
 			WithHeaderTags([]string{"key:val", "key2:val2"}),
+			WithSamplingRules(
+				[]SamplingRule{TagsResourceRule(
+					map[string]*regexp.Regexp{"tag-a": regexp.MustCompile("tv-a.*")},
+					"resource-*", "op-name", "test-serv", 0.1),
+				},
+			),
 		)
 		defer globalconfig.SetServiceName("")
 		defer Stop()
@@ -46,6 +53,8 @@ func TestTelemetryEnabled(t *testing.T) {
 		telemetry.Check(t, telemetryClient.Configuration, "orchestrion_enabled", false)
 		telemetry.Check(t, telemetryClient.Configuration, "trace_sample_rate", nil) // default value is NaN which is sanitized to nil
 		telemetry.Check(t, telemetryClient.Configuration, "trace_header_tags", "key:val,key2:val2")
+		telemetry.Check(t, telemetryClient.Configuration, "trace_sample_rules",
+			`[{"service":"test-serv", "name:":"op-name", "resource":"resource-*","sample_rate":0.1, "tags":{"tag-a":"tv-a*"},"type":"trace(1)"}]`)
 		if metrics, ok := telemetryClient.Metrics[telemetry.NamespaceGeneral]; ok {
 			if initTime, ok := metrics["init_time"]; ok {
 				assert.True(t, initTime > 0)
