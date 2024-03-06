@@ -14,17 +14,14 @@ echo "  DD_APPSEC_ENABLED=$DD_APPSEC_ENABLED"
 echo "  DD_APPSEC_WAF_TIMEOUT=$DD_APPSEC_WAF_TIMEOUT"
 echo "  GO_TAGS=$GO_TAGS"
 
-function gotestsum_runner() {
-  report=$1; shift
+function gotest_runner() {
   wd=$1; shift
   cd "$wd"
-  gotestsum --junitfile "$report" -- -v $GO_TAGS "$@"
+  go test -v $GO_TAGS "$@"
   cd -
 }
 
 function docker_runner() {
-  # ignore the first argument, which is the JUnit report
-  shift
   # capture the working directory for the test run
   WD=$(realpath "$1"); shift
   docker run \
@@ -36,14 +33,14 @@ function docker_runner() {
     golang go test -v $GO_TAGS "$@"
 }
 
-runner="gotestsum_runner"
+runner="gotest_runner"
 if [[ "$1" == "docker" ]]; then
   runner="docker_runner"; shift
   PLATFORM=$1
   [[ -z "$PLATFORM" ]] && PLATFORM="linux/arm64"
 fi
 
-$runner "$JUNIT_REPORT.xml" "." ./appsec/... ./internal/appsec/...
+$runner "." ./appsec/... ./internal/appsec/...
 
 SCOPES=(
   "gin-gonic/gin" \
@@ -60,5 +57,5 @@ SCOPES=(
 for SCOPE in "${SCOPES[@]}"; do
   contrib=$(basename "$SCOPE")
   echo "Running appsec tests for contrib/$SCOPE"
-  $runner "$JUNIT_REPORT.$contrib.xml" "./v2/contrib/$SCOPE" "."
+  $runner "./v2/contrib/$SCOPE" "."
 done
