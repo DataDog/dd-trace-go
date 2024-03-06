@@ -49,7 +49,7 @@ func TestAppSec(t *testing.T) {
 
 		// Send a XSS attack in the payload along with the canary value in the RPC metadata
 		ctx := metadata.NewOutgoingContext(context.Background(), metadata.Pairs("dd-canary", "dd-test-scanner-log"))
-		res, err := client.Ping(ctx, &FixtureRequest{Name: "<script>evilJSCode;</script>"})
+		res, err := client.Ping(ctx, &FixtureRequest{Name: "<script>window.location;</script>"})
 		// Check that the handler was properly called
 		require.NoError(t, err)
 		require.Equal(t, "passed", res.Message)
@@ -60,8 +60,8 @@ func TestAppSec(t *testing.T) {
 		// The request should have the attack attempts
 		event, _ := finished[0].Tag("_dd.appsec.json").(string)
 		require.NotNil(t, event)
-		require.True(t, strings.Contains(event, "crs-941-110")) // XSS attack attempt
-		require.True(t, strings.Contains(event, "ua0-600-55x")) // canary rule attack attempt
+		require.Contains(t, event, "crs-941-180") // XSS attack attempt
+		require.Contains(t, event, "ua0-600-55x") // canary rule attack attempt
 	})
 
 	t.Run("stream", func(t *testing.T) {
@@ -74,7 +74,7 @@ func TestAppSec(t *testing.T) {
 		require.NoError(t, err)
 
 		// Send a XSS attack
-		err = stream.Send(&FixtureRequest{Name: "<script>evilJSCode;</script>"})
+		err = stream.Send(&FixtureRequest{Name: "<script>window.location;</script>"})
 		require.NoError(t, err)
 
 		// Check that the handler was properly called
@@ -122,7 +122,7 @@ func TestAppSec(t *testing.T) {
 			histogram[tr.Rule.ID]++
 		}
 
-		require.EqualValues(t, 1, histogram["crs-941-110"]) // XSS attack attempt
+		require.EqualValues(t, 1, histogram["crs-941-180"]) // XSS attack attempt
 		require.EqualValues(t, 5, histogram["crs-942-270"]) // SQL-injection attack attempt
 		require.EqualValues(t, 1, histogram["ua0-600-55x"]) // canary rule attack attempt
 

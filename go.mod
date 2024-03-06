@@ -3,11 +3,11 @@ module github.com/DataDog/dd-trace-go/v2
 go 1.19
 
 require (
-	github.com/DataDog/appsec-internal-go v1.4.1
+	github.com/DataDog/appsec-internal-go v1.5.0
 	github.com/DataDog/datadog-agent/pkg/obfuscate v0.48.0
 	github.com/DataDog/datadog-agent/pkg/remoteconfig/state v0.48.1
 	github.com/DataDog/datadog-go/v5 v5.3.0
-	github.com/DataDog/go-libddwaf/v2 v2.3.1
+	github.com/DataDog/go-libddwaf/v2 v2.3.2
 	github.com/DataDog/gostackparse v0.7.0
 	github.com/DataDog/sketches-go v1.4.3
 	github.com/golang/protobuf v1.5.3

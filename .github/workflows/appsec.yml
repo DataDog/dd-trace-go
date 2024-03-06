@@ -16,15 +16,10 @@ on:
       - 'appsec/**'
       - 'contrib/**/appsec.go'
       - '**/go.mod'
-  merge_group: # on merge groups touching appsec files
-    paths:
-      - '.github/workflows/appsec.yml'
-      - 'internal/appsec/**'
-      - 'appsec/**'
-      - 'contrib/**/appsec.go'
-      - '**/go.mod'
+  merge_group:
   push:
     branches: release-v*
+
 env:
   DD_APPSEC_WAF_TIMEOUT: 1m
   # Adapt to v2 submodules
@@ -41,6 +36,11 @@ env:
     ./contrib/99designs/gqlgen/...
     ./contrib/graphql-go/graphql/...
     ./contrib/graph-gophers/graphql-go/...
+
+concurrency:
+  # Automatically cancel previous runs if a new one is triggered to conserve resources.
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+
 jobs:
   # Prepare the cache of Go modules to share it will the other jobs.
   # This maximizes cache hits and minimizes the time spent downloading Go modules.
@@ -90,7 +90,7 @@ jobs:
         run: go mod download -x
 
   macos:
-    name: macos ${{ toJSON(matrix) }}
+    name: ${{ matrix.runs-on }} go${{ matrix.go-version }}
     runs-on: macos-11 # oldest macos runner available - the full macOS matrix is in go-libddwaf
     needs: go-mod-caching
     strategy:
@@ -141,7 +141,7 @@ jobs:
 
   # Tests cases were appsec end up being disabled at compilation time
   disabled:
-    name: disabled ${{ toJSON(matrix) }}
+    name: ${{ matrix.runs-on }} (AppSec disabled)
     needs: go-mod-caching
     runs-on: ${{ matrix.runs-on }}
     strategy:
@@ -187,26 +187,20 @@ jobs:
 
   # Same tests but on the official golang container for linux
   golang-linux-container:
-    name: golang-containers ${{ toJSON(matrix) }}
-    runs-on: ubuntu-latest-16-cores
+    name: ${{ matrix.platform }} golang:${{ matrix.go-version }}-${{ matrix.distribution }}
+    # We use ARM runners when needed to avoid the performance hit of QEMU
+    runs-on: ${{ matrix.platform == 'linux/amd64' && 'ubuntu-latest-16-cores' || 'arm-4core-linux' }}
     needs: go-mod-caching
     strategy:
       matrix:
         go-version: [ "1.22", "1.21", "1.20" ]
         distribution: [ bookworm, bullseye, buster, alpine ]
-        platform: [ linux/amd64 ] # qemu-arm64 is too slow to run on all the matrix dimensions - we test include it for a specific and good-enough set of dimensions above
+        platform: [ linux/amd64, linux/arm64 ]
         exclude:
           - go-version: "1.21"
             distribution: buster
           - go-version: "1.22"
             distribution: buster
-        include:
-          - platform: linux/arm64
-            go-version: "1"
-            distribution: bookworm
-          - platform: linux/arm64
-            go-version: "1"
-            distribution: alpine
 
       fail-fast: false
     steps:
@@ -221,33 +215,61 @@ jobs:
           enableCrossOsArchive: true
           fail-on-cache-miss: true
 
-      - name: Set up qemu for arm64
-        if: matrix.platform == 'linux/arm64'
-        uses: docker/setup-qemu-action@v3
-        with:
-          platforms: arm64
+      # Docker is not present on early-access ARM runners
+      - name: Prepare ARM Runner
+        if: runner.arch == 'ARM64' || runner.arch == 'ARM'
+        run: |-
+          for pkg in docker.io docker-doc docker-compose docker-compose-v2 podman-docker containerd runc; do sudo apt-get remove -y $pkg || echo "Not present: $pkg"; done
 
-      - name: go test
+          sudo apt update
+          sudo apt install -y ca-certificates curl
+          sudo install -m 0755 -d /etc/apt/keyrings
+          sudo curl -fsSL "https://download.docker.com/linux/ubuntu/gpg" -o /etc/apt/keyrings/docker.asc
+          sudo chmod a+r /etc/apt/keyrings/docker.asc
+          echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | sudo tee /etc/apt/sources.list.d/docker.list
+          sudo apt update
+          sudo apt install -y docker-ce docker-ce-cli containerd.io
+
+      - name: Create container
         env:
           GOMODCACHE: ${{ github.workspace }}/${{ needs.go-mod-caching.outputs.path }}
-        run: |
-          cat <<EOF | docker run -i --platform=${{ matrix.platform }} -v "$PWD:$PWD" -w "$PWD" -v "$GOMODCACHE:$GOMODCACHE" \
-            -eGOMODCACHE -eDD_APPSEC_WAF_TIMEOUT golang:${{ matrix.go-version }}-${{ matrix.distribution }}
-              set -euxo pipefail
-              if ${{ matrix.distribution == 'alpine' }}; then
-                apk add gcc musl-dev libc6-compat
-              fi
-              go env
-              env CGO_ENABLED=0 go test -v $TESTS                         # cgo disabled + undefined appsec state
-              env CGO_ENABLED=0 DD_APPSEC_ENABLED=false go test -v $TESTS # cgo disabled + appsec disabled
-              env CGO_ENABLED=0 DD_APPSEC_ENABLED=true go test -v $TESTS  # cgo disabled + appsec enabled
-              env CGO_ENABLED=1 go test -v $TESTS                         # cgo enabled + undefined appsec state
-              env CGO_ENABLED=1 DD_APPSEC_ENABLED=false go test -v $TESTS # cgo enabled + appsec disabled
-              env CGO_ENABLED=1 DD_APPSEC_ENABLED=true go test -v $TESTS  # cgo enabled + appsec enabled
-          EOF
+        run: |-
+          sudo docker run                                                       \
+            --rm                                                                \
+            -di                                                                 \
+            --name test.runner                                                  \
+            -v "${GOMODCACHE}:${GOMODCACHE}"                                    \
+            -e "GOMODCACHE=${GOMODCACHE}"                                       \
+            -v "$PWD:$PWD"                                                      \
+            -w "$PWD"                                                           \
+            -e "DD_APPSEC_WAF_TIMEOUT=${{ env.DD_APPSEC_WAF_TIMEOUT }}"         \
+            golang:${{ matrix.go-version }}-${{ matrix.distribution }}
+      - name: Install pre-requisites on Alpine
+        if: matrix.distribution == 'alpine'
+        run: sudo docker exec -i test.runner apk add gcc musl-dev libc6-compat
+      - name: Output go env
+        run: sudo docker exec -i test.runner go env
+
+      - name: NOCGO, undefined appsec state
+        run: sudo docker exec -i test.runner env CGO_ENABLED=0 go test -v $TESTS
+      - name: NOCGO, appsec disabled
+        run: sudo docker exec -i test.runner env CGO_ENABLED=0 DD_APPSEC_ENABLED=false go test -v $TESTS
+      - name: NOCGO, appsec enabled
+        run: sudo docker exec -i test.runner env CGO_ENABLED=0 DD_APPSEC_ENABLED=true go test -v $TESTS
+      - name: CGO, undefined appsec state
+        run: sudo docker exec -i test.runner env CGO_ENABLED=1 go test -v $TESTS
+      - name: CGO, appsec disabled
+        run: sudo docker exec -i test.runner env CGO_ENABLED=1 DD_APPSEC_ENABLED=false go test -v $TESTS
+      - name: CGO, appsec enabled
+        run: sudo docker exec -i test.runner env CGO_ENABLED=1 DD_APPSEC_ENABLED=true go test -v $TESTS
+
+      - name: Clean up
+        if: always()
+        run: sudo docker rm --force test.runner || echo "Could not remove container"
 
   # TODO(darccio): revert to use main on release
   test-app-smoke-tests:
+    name: Smoke Tests
     uses: DataDog/appsec-go-test-app/.github/workflows/smoke-tests.yml@dario.castane/AIT-3705/dd-trace-go.v2
     with:
       dd-trace-go-version: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
