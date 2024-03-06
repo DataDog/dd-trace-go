@@ -253,23 +253,6 @@ jobs:
         if: always()
         run: sudo docker rm --force test.runner || echo "Could not remove container"
 
-      - name: NOCGO, undefined appsec state
-        run: sudo docker exec -i test.runner env CGO_ENABLED=0 ./.github/workflows/apps/appsec-test-contrib-submodules.sh
-      - name: NOCGO, appsec disabled
-        run: sudo docker exec -i test.runner env CGO_ENABLED=0 DD_APPSEC_ENABLED=false ./.github/workflows/apps/appsec-test-contrib-submodules.sh
-      - name: NOCGO, appsec enabled
-        run: sudo docker exec -i test.runner env CGO_ENABLED=0 DD_APPSEC_ENABLED=true ./.github/workflows/apps/appsec-test-contrib-submodules.sh
-      - name: CGO, undefined appsec state
-        run: sudo docker exec -i test.runner env CGO_ENABLED=1 ./.github/workflows/apps/appsec-test-contrib-submodules.sh
-      - name: CGO, appsec disabled
-        run: sudo docker exec -i test.runner env CGO_ENABLED=1 DD_APPSEC_ENABLED=false ./.github/workflows/apps/appsec-test-contrib-submodules.sh
-      - name: CGO, appsec enabled
-        run: sudo docker exec -i test.runner env CGO_ENABLED=1 DD_APPSEC_ENABLED=true ./.github/workflows/apps/appsec-test-contrib-submodules.sh
-
-      - name: Clean up
-        if: always()
-        run: sudo docker rm --force test.runner || echo "Could not remove container"
-
   # TODO(darccio): revert to use main on release
   test-app-smoke-tests:
     name: Smoke Tests
