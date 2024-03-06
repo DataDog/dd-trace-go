@@ -108,7 +108,7 @@ func Example_dbmPropagation() {
 }
 
 func Example_dbStats() {
-	sqltrace.Register("postgres", &pq.Driver{}, sqltrace.WithDBStats())
+	sqltrace.Register("postgres", &pq.Driver{})
 	db, err := sqltrace.Open("postgres", "postgres://pqgotest:password@localhost/pqgotest?sslmode=disable")
 
 	if err != nil {
