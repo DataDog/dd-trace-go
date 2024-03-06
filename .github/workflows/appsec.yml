@@ -194,8 +194,8 @@ jobs:
 
               for submodule in $SUBMODULES; do
                 cd $submodule
-                if ! env CGO_ENABLED=$cgo $appsec_enabled_env $cgocheck_env go test -v .; then
-                  echo "Failed: env CGO_ENABLED=$cgo $appsec_enabled_env $cgocheck_env go test -v ."
+                if ! env $appsec_enabled_env go test -v $go_tags .; then
+                  echo "Failed: env $appsec_enabled_env go test -v $go_tags ."
                   exit 1
                 fi
                 cd -
