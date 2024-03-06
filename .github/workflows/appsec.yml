@@ -117,8 +117,8 @@ jobs:
           for cgo in "0" "1"; do
             for appsec_enabled_env in "" "DD_APPSEC_ENABLED=true" "DD_APPSEC_ENABLED=false"; do
                 for cgocheck_env in "" "$cgocheck"; do
-                  if ! env CGO_ENABLED=$cgo $appsec_enabled_env $cgocheck_env /home/runner/work/dd-trace-go/dd-trace-go/.github/workflows/apps/appsec-test-contrib-submodules.sh/workflows/apps/appsec-test-contrib-submodules.sh; then
-                    echo "Failed: env CGO_ENABLED=$cgo $appsec_enabled_env $cgocheck_env /home/runner/work/dd-trace-go/dd-trace-go/.github/workflows/apps/appsec-test-contrib-submodules.sh/workflows/apps/appsec-test-contrib-submodules.sh"
+                  if ! env CGO_ENABLED=$cgo $appsec_enabled_env $cgocheck_env /home/runner/work/dd-trace-go/dd-trace-go/.github/workflows/apps/appsec-test-contrib-submodules.sh; then
+                    echo "Failed: env CGO_ENABLED=$cgo $appsec_enabled_env $cgocheck_env /home/runner/work/dd-trace-go/dd-trace-go/.github/workflows/apps/appsec-test-contrib-submodules.sh"
                     exit 1
                   fi
                 done
@@ -164,8 +164,8 @@ jobs:
           set -euxo pipefail
           for appsec_enabled_env in "" "DD_APPSEC_ENABLED=true" "DD_APPSEC_ENABLED=false"; do
             for go_tags in "" "-tags datadog.no_waf"; do
-              if ! env $appsec_enabled_env GO_TAGS="$go_tags" /home/runner/work/dd-trace-go/dd-trace-go/.github/workflows/apps/appsec-test-contrib-submodules.sh/workflows/apps/appsec-test-contrib-submodules.sh; then
-                echo "Failed: env $appsec_enabled_env GO_TAGS=\"$go_tags\" /home/runner/work/dd-trace-go/dd-trace-go/.github/workflows/apps/appsec-test-contrib-submodules.sh/workflows/apps/appsec-test-contrib-submodules.sh"
+              if ! env $appsec_enabled_env GO_TAGS="$go_tags" /home/runner/work/dd-trace-go/dd-trace-go/.github/workflows/apps/appsec-test-contrib-submodules.sh; then
+                echo "Failed: env $appsec_enabled_env GO_TAGS=\"$go_tags\" /home/runner/work/dd-trace-go/dd-trace-go/.github/workflows/apps/appsec-test-contrib-submodules.sh"
                 exit 1
               fi
             done
@@ -237,17 +237,17 @@ jobs:
         run: sudo docker exec -i test.runner go env
 
       - name: NOCGO, undefined appsec state
-        run: sudo docker exec -i test.runner env CGO_ENABLED=0 /home/runner/work/dd-trace-go/dd-trace-go/.github/workflows/apps/appsec-test-contrib-submodules.sh/workflows/apps/appsec-test-contrib-submodules.sh
+        run: sudo docker exec -i test.runner env CGO_ENABLED=0 /home/runner/work/dd-trace-go/dd-trace-go/.github/workflows/apps/appsec-test-contrib-submodules.sh
       - name: NOCGO, appsec disabled
-        run: sudo docker exec -i test.runner env CGO_ENABLED=0 DD_APPSEC_ENABLED=false /home/runner/work/dd-trace-go/dd-trace-go/.github/workflows/apps/appsec-test-contrib-submodules.sh/workflows/apps/appsec-test-contrib-submodules.sh
+        run: sudo docker exec -i test.runner env CGO_ENABLED=0 DD_APPSEC_ENABLED=false /home/runner/work/dd-trace-go/dd-trace-go/.github/workflows/apps/appsec-test-contrib-submodules.sh
       - name: NOCGO, appsec enabled
-        run: sudo docker exec -i test.runner env CGO_ENABLED=0 DD_APPSEC_ENABLED=true /home/runner/work/dd-trace-go/dd-trace-go/.github/workflows/apps/appsec-test-contrib-submodules.sh/workflows/apps/appsec-test-contrib-submodules.sh
+        run: sudo docker exec -i test.runner env CGO_ENABLED=0 DD_APPSEC_ENABLED=true /home/runner/work/dd-trace-go/dd-trace-go/.github/workflows/apps/appsec-test-contrib-submodules.sh
       - name: CGO, undefined appsec state
-        run: sudo docker exec -i test.runner env CGO_ENABLED=1 /home/runner/work/dd-trace-go/dd-trace-go/.github/workflows/apps/appsec-test-contrib-submodules.sh/workflows/apps/appsec-test-contrib-submodules.sh
+        run: sudo docker exec -i test.runner env CGO_ENABLED=1 /home/runner/work/dd-trace-go/dd-trace-go/.github/workflows/apps/appsec-test-contrib-submodules.sh
       - name: CGO, appsec disabled
-        run: sudo docker exec -i test.runner env CGO_ENABLED=1 DD_APPSEC_ENABLED=false /home/runner/work/dd-trace-go/dd-trace-go/.github/workflows/apps/appsec-test-contrib-submodules.sh/workflows/apps/appsec-test-contrib-submodules.sh
+        run: sudo docker exec -i test.runner env CGO_ENABLED=1 DD_APPSEC_ENABLED=false /home/runner/work/dd-trace-go/dd-trace-go/.github/workflows/apps/appsec-test-contrib-submodules.sh
       - name: CGO, appsec enabled
-        run: sudo docker exec -i test.runner env CGO_ENABLED=1 DD_APPSEC_ENABLED=true /home/runner/work/dd-trace-go/dd-trace-go/.github/workflows/apps/appsec-test-contrib-submodules.sh/workflows/apps/appsec-test-contrib-submodules.sh
+        run: sudo docker exec -i test.runner env CGO_ENABLED=1 DD_APPSEC_ENABLED=true /home/runner/work/dd-trace-go/dd-trace-go/.github/workflows/apps/appsec-test-contrib-submodules.sh
 
       - name: Clean up
         if: always()
