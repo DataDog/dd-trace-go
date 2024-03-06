@@ -88,7 +88,7 @@ func testAsyncSpanRace(t *testing.T) {
 				<-done
 				root.Finish()
 				for i := 0; i < 500; i++ {
-					for range root.(*span).Metrics {
+					for range root.metrics {
 						// this range simulates iterating over the metrics map
 						// as we do when encoding msgpack upon flushing.
 						continue
@@ -101,7 +101,7 @@ func testAsyncSpanRace(t *testing.T) {
 				<-done
 				root.Finish()
 				for i := 0; i < 500; i++ {
-					for range root.(*span).Meta {
+					for range root.meta {
 						// this range simulates iterating over the meta map
 						// as we do when encoding msgpack upon flushing.
 						continue
