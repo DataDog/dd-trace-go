@@ -272,9 +272,8 @@ jobs:
         run: |
           sudo docker exec -i test.runner env CGO_ENABLED=0 go test -v $PACKAGES
           for submodule in $SUBMODULES; do
-            cd $submodule
-            if ! sudo docker exec -i test.runner env CGO_ENABLED=0 go test -v .; then
-              echo "Failed: env CGO_ENABLED=0 go test -v . (submodule: $submodule)"
+            if ! sudo docker exec -i test.runner env CGO_ENABLED=0 cd $submodule && go test -v .; then
+              echo "Failed: env CGO_ENABLED=0 cd $submodule && go test -v . (submodule: $submodule)"
               exit 1
             fi
             cd -
@@ -283,9 +282,8 @@ jobs:
         run: |
           sudo docker exec -i test.runner env CGO_ENABLED=0 DD_APPSEC_ENABLED=false go test -v $PACKAGES
           for submodule in $SUBMODULES; do
-            cd $submodule
-            if ! sudo docker exec -i test.runner env CGO_ENABLED=0 DD_APPSEC_ENABLED=false go test -v .; then
-              echo "Failed: env CGO_ENABLED=0 DD_APPSEC_ENABLED=false go test -v . (submodule: $submodule)"
+            if ! sudo docker exec -i test.runner env CGO_ENABLED=0 DD_APPSEC_ENABLED=false cd $submodule && go test -v .; then
+              echo "Failed: env CGO_ENABLED=0 DD_APPSEC_ENABLED=false cd $submodule && go test -v . (submodule: $submodule)"
               exit 1
             fi
             cd -
@@ -295,8 +293,8 @@ jobs:
           sudo docker exec -i test.runner env CGO_ENABLED=0 DD_APPSEC_ENABLED=true go test -v $PACKAGES
           for submodule in $SUBMODULES; do
             cd $submodule
-            if ! sudo docker exec -i test.runner env CGO_ENABLED=0 DD_APPSEC_ENABLED=true go test -v .; then
-              echo "Failed: env CGO_ENABLED=0 DD_APPSEC_ENABLED=true go test -v . (submodule: $submodule)"
+            if ! sudo docker exec -i test.runner env CGO_ENABLED=0 DD_APPSEC_ENABLED=true cd $submodule && go test -v .; then
+              echo "Failed: env CGO_ENABLED=0 DD_APPSEC_ENABLED=true cd $submodule && go test -v . (submodule: $submodule)"
               exit 1
             fi
             cd -
@@ -306,8 +304,8 @@ jobs:
           sudo docker exec -i test.runner env CGO_ENABLED=1 go test -v $PACKAGES
           for submodule in $SUBMODULES; do
             cd $submodule
-            if ! sudo docker exec -i test.runner env CGO_ENABLED=1 go test -v .; then
-              echo "Failed: env CGO_ENABLED=1 go test -v . (submodule: $submodule)"
+            if ! sudo docker exec -i test.runner env CGO_ENABLED=1 cd $submodule && go test -v .; then
+              echo "Failed: env CGO_ENABLED=1 cd $submodule && go test -v . (submodule: $submodule)"
               exit 1
             fi
             cd -
@@ -317,8 +315,8 @@ jobs:
           sudo docker exec -i test.runner env CGO_ENABLED=1 DD_APPSEC_ENABLED=false go test -v $PACKAGES
           for submodule in $SUBMODULES; do
             cd $submodule
-            if ! sudo docker exec -i test.runner env CGO_ENABLED=1 DD_APPSEC_ENABLED=false go test -v .; then
-              echo "Failed: env CGO_ENABLED=1 DD_APPSEC_ENABLED=false go test -v . (submodule: $submodule)"
+            if ! sudo docker exec -i test.runner env CGO_ENABLED=1 DD_APPSEC_ENABLED=false cd $submodule && go test -v .; then
+              echo "Failed: env CGO_ENABLED=1 DD_APPSEC_ENABLED=false cd $submodule && go test -v . (submodule: $submodule)"
               exit 1
             fi
             cd -
@@ -328,8 +326,8 @@ jobs:
           sudo docker exec -i test.runner env CGO_ENABLED=1 DD_APPSEC_ENABLED=true go test -v $PACKAGES
           for submodule in $SUBMODULES; do
             cd $submodule
-            if ! sudo docker exec -i test.runner env CGO_ENABLED=1 DD_APPSEC_ENABLED=true go test -v .; then
-              echo "Failed: env CGO_ENABLED=1 DD_APPSEC_ENABLED=true go test -v . (submodule: $submodule)"
+            if ! sudo docker exec -i test.runner env CGO_ENABLED=1 DD_APPSEC_ENABLED=true cd $submodule && go test -v .; then
+              echo "Failed: env CGO_ENABLED=1 DD_APPSEC_ENABLED=true cd $submodule && go test -v . (submodule: $submodule)"
               exit 1
             fi
             cd -
