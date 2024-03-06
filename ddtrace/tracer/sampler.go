@@ -44,7 +44,7 @@ func (*customSampler) Rate() float64 {
 }
 
 // SetRate implements RateSampler.
-func (*customSampler) SetRate(rate float64) {
+func (*customSampler) SetRate(_ float64) {
 	// noop
 }
 
