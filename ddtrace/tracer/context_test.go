@@ -40,9 +40,7 @@ func TestSpanFromContext(t *testing.T) {
 		assert.Nil(span)
 		span, ok = SpanFromContext(nil)
 		assert.False(ok)
-		//_, ok = span.(*traceinternal.NoopSpan)
 		assert.Nil(span)
-		//assert.True(ok)
 	})
 }
 
