@@ -164,8 +164,8 @@ jobs:
           set -euxo pipefail
           for appsec_enabled_env in "" "DD_APPSEC_ENABLED=true" "DD_APPSEC_ENABLED=false"; do
             for go_tags in "" "-tags datadog.no_waf"; do
-              if ! env $appsec_enabled_env GO_TAGS=$go_tags ./.github/workflows/apps/appsec-test-contrib-submodules.sh; then
-                echo "Failed: env $appsec_enabled_env GO_TAGS=$go_tags ./.github/workflows/apps/appsec-test-contrib-submodules.sh"
+              if ! env $appsec_enabled_env GO_TAGS="$go_tags" ./.github/workflows/apps/appsec-test-contrib-submodules.sh; then
+                echo "Failed: env $appsec_enabled_env GO_TAGS=\"$go_tags\" ./.github/workflows/apps/appsec-test-contrib-submodules.sh"
                 exit 1
               fi
             done
