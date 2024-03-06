@@ -110,7 +110,7 @@ func WithResourceNamer(fn func(*fiber.Ctx) string) OptionFn {
 
 // WithIgnoreRequest specifies a function which will be used to
 // determining if the incoming HTTP request tracing should be skipped.
-func WithIgnoreRequest(fn func(*fiber.Ctx) bool) Option {
+func WithIgnoreRequest(fn func(*fiber.Ctx) bool) OptionFn {
 	return func(cfg *config) {
 		cfg.ignoreRequest = fn
 	}
