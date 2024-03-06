@@ -22,6 +22,20 @@ on:
 
 env:
   DD_APPSEC_WAF_TIMEOUT: 1m
+  PACKAGES: >-
+    ./appsec/...
+    ./internal/appsec/...
+  SUBMODULES: >-
+    ./contrib/gin-gonic/gin/...
+    ./contrib/google.golang.org/grpc/...
+    ./contrib/net/http/...
+    ./contrib/gorilla/mux/...
+    ./contrib/go-chi/chi/...
+    ./contrib/go-chi/chi.v5/...
+    ./contrib/labstack/echo.v4/...
+    ./contrib/99designs/gqlgen/...
+    ./contrib/graphql-go/graphql/...
+    ./contrib/graph-gophers/graphql-go/...
 
 concurrency:
   # Automatically cancel previous runs if a new one is triggered to conserve resources.
@@ -117,10 +131,19 @@ jobs:
           for cgo in "0" "1"; do
             for appsec_enabled_env in "" "DD_APPSEC_ENABLED=true" "DD_APPSEC_ENABLED=false"; do
                 for cgocheck_env in "" "$cgocheck"; do
-                  if ! env CGO_ENABLED=$cgo $appsec_enabled_env $cgocheck_env /home/runner/work/dd-trace-go/dd-trace-go/.github/workflows/apps/appsec-test-contrib-submodules.sh; then
-                    echo "Failed: env CGO_ENABLED=$cgo $appsec_enabled_env $cgocheck_env /home/runner/work/dd-trace-go/dd-trace-go/.github/workflows/apps/appsec-test-contrib-submodules.sh"
+                  if ! env CGO_ENABLED=$cgo $appsec_enabled_env $cgocheck_env go test -v $PACKAGES; then
+                    echo "Failed: env CGO_ENABLED=$cgo $appsec_enabled_env $cgocheck_env go test -v $PACKAGES"
                     exit 1
                   fi
+
+                  for submodule in $SUBMODULES; do
+                    cd $submodule
+                    if ! env CGO_ENABLED=$cgo $appsec_enabled_env $cgocheck_env go test -v .; then
+                      echo "Failed: env CGO_ENABLED=$cgo $appsec_enabled_env $cgocheck_env go test -v ."
+                      exit 1
+                    fi
+                    cd -
+                  done
                 done
             done
           done
@@ -164,10 +187,19 @@ jobs:
           set -euxo pipefail
           for appsec_enabled_env in "" "DD_APPSEC_ENABLED=true" "DD_APPSEC_ENABLED=false"; do
             for go_tags in "" "-tags datadog.no_waf"; do
-              if ! env $appsec_enabled_env GO_TAGS="$go_tags" /home/runner/work/dd-trace-go/dd-trace-go/.github/workflows/apps/appsec-test-contrib-submodules.sh; then
-                echo "Failed: env $appsec_enabled_env GO_TAGS=\"$go_tags\" /home/runner/work/dd-trace-go/dd-trace-go/.github/workflows/apps/appsec-test-contrib-submodules.sh"
+              if ! env $appsec_enabled_env go test -v $go_tags $PACKAGES; then
+                echo "Failed: env $appsec_enabled_env go test -v $go_tags $PACKAGES"
                 exit 1
               fi
+
+              for submodule in $SUBMODULES; do
+                cd $submodule
+                if ! env CGO_ENABLED=$cgo $appsec_enabled_env $cgocheck_env go test -v .; then
+                  echo "Failed: env CGO_ENABLED=$cgo $appsec_enabled_env $cgocheck_env go test -v ."
+                  exit 1
+                fi
+                cd -
+              done
             done
           done
 
@@ -237,17 +269,71 @@ jobs:
         run: sudo docker exec -i test.runner go env
 
       - name: NOCGO, undefined appsec state
-        run: sudo docker exec -i test.runner env CGO_ENABLED=0 /home/runner/work/dd-trace-go/dd-trace-go/.github/workflows/apps/appsec-test-contrib-submodules.sh
+        run: |
+          sudo docker exec -i test.runner env CGO_ENABLED=0 go test -v $PACKAGES
+          for submodule in $SUBMODULES; do
+            cd $submodule
+            if ! env CGO_ENABLED=0 go test -v .; then
+              echo "Failed: env CGO_ENABLED=0 go test -v ."
+              exit 1
+            fi
+            cd -
+          done
       - name: NOCGO, appsec disabled
-        run: sudo docker exec -i test.runner env CGO_ENABLED=0 DD_APPSEC_ENABLED=false /home/runner/work/dd-trace-go/dd-trace-go/.github/workflows/apps/appsec-test-contrib-submodules.sh
+        run: |
+          sudo docker exec -i test.runner env CGO_ENABLED=0 DD_APPSEC_ENABLED=false go test -v $PACKAGES
+          for submodule in $SUBMODULES; do
+            cd $submodule
+            if ! env CGO_ENABLED=0 DD_APPSEC_ENABLED=false go test -v .; then
+              echo "Failed: env CGO_ENABLED=0 DD_APPSEC_ENABLED=false go test -v ."
+              exit 1
+            fi
+            cd -
+          done
       - name: NOCGO, appsec enabled
-        run: sudo docker exec -i test.runner env CGO_ENABLED=0 DD_APPSEC_ENABLED=true /home/runner/work/dd-trace-go/dd-trace-go/.github/workflows/apps/appsec-test-contrib-submodules.sh
+        run: |
+          sudo docker exec -i test.runner env CGO_ENABLED=0 DD_APPSEC_ENABLED=true go test -v $PACKAGES
+          for submodule in $SUBMODULES; do
+            cd $submodule
+            if ! env CGO_ENABLED=0 DD_APPSEC_ENABLED=true go test -v .; then
+              echo "Failed: env CGO_ENABLED=0 DD_APPSEC_ENABLED=true go test -v ."
+              exit 1
+            fi
+            cd -
+          done
       - name: CGO, undefined appsec state
-        run: sudo docker exec -i test.runner env CGO_ENABLED=1 /home/runner/work/dd-trace-go/dd-trace-go/.github/workflows/apps/appsec-test-contrib-submodules.sh
+        run: |
+          sudo docker exec -i test.runner env CGO_ENABLED=1 go test -v $PACKAGES
+          for submodule in $SUBMODULES; do
+            cd $submodule
+            if ! env CGO_ENABLED=1 go test -v .; then
+              echo "Failed: env CGO_ENABLED=1 go test -v ."
+              exit 1
+            fi
+            cd -
+          done
       - name: CGO, appsec disabled
-        run: sudo docker exec -i test.runner env CGO_ENABLED=1 DD_APPSEC_ENABLED=false /home/runner/work/dd-trace-go/dd-trace-go/.github/workflows/apps/appsec-test-contrib-submodules.sh
+        run: |
+          sudo docker exec -i test.runner env CGO_ENABLED=1 DD_APPSEC_ENABLED=false go test -v $PACKAGES
+          for submodule in $SUBMODULES; do
+            cd $submodule
+            if ! env CGO_ENABLED=1 DD_APPSEC_ENABLED=false go test -v .; then
+              echo "Failed: env CGO_ENABLED=1 DD_APPSEC_ENABLED=false go test -v ."
+              exit 1
+            fi
+            cd -
+          done
       - name: CGO, appsec enabled
-        run: sudo docker exec -i test.runner env CGO_ENABLED=1 DD_APPSEC_ENABLED=true /home/runner/work/dd-trace-go/dd-trace-go/.github/workflows/apps/appsec-test-contrib-submodules.sh
+        run: |
+          sudo docker exec -i test.runner env CGO_ENABLED=1 DD_APPSEC_ENABLED=true go test -v $PACKAGES
+          for submodule in $SUBMODULES; do
+            cd $submodule
+            if ! env CGO_ENABLED=1 DD_APPSEC_ENABLED=true go test -v .; then
+              echo "Failed: env CGO_ENABLED=1 DD_APPSEC_ENABLED=true go test -v ."
+              exit 1
+            fi
+            cd -
+          done
 
       - name: Clean up
         if: always()
