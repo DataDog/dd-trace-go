@@ -12,12 +12,13 @@ echo "  GOEXPERIMENT=$GOEXPERIMENT"
 echo "  CGO_ENABLED=$CGO_ENABLED"
 echo "  DD_APPSEC_ENABLED=$DD_APPSEC_ENABLED"
 echo "  DD_APPSEC_WAF_TIMEOUT=$DD_APPSEC_WAF_TIMEOUT"
+echo "  GO_TAGS=$GO_TAGS"
 
 function gotestsum_runner() {
   report=$1; shift
   wd=$1; shift
   cd "$wd"
-  gotestsum --junitfile "$report" -- -v "$@"
+  gotestsum --junitfile "$report" -- -v $GO_TAGS "$@"
   cd -
 }
 
@@ -32,7 +33,7 @@ function docker_runner() {
     -eCGO_ENABLED="$CGO_ENABLED" \
     -eDD_APPSEC_ENABLED="$DD_APPSEC_ENABLED" \
     -eDD_APPSEC_WAF_TIMEOUT="$DD_APPSEC_WAF_TIMEOUT" \
-    golang go test -v "$@"
+    golang go test -v $GO_TAGS "$@"
 }
 
 runner="gotestsum_runner"
@@ -47,8 +48,10 @@ $runner "$JUNIT_REPORT.xml" "." ./appsec/... ./internal/appsec/...
 SCOPES=(
   "gin-gonic/gin" \
   "google.golang.org/grpc" \
-  "net/http" "gorilla/mux" \
-  "go-chi/chi" "go-chi/chi.v5" \
+  "net/http" \
+  "gorilla/mux" \
+  "go-chi/chi" \
+  "go-chi/chi.v5" \
   "labstack/echo.v4" \
   "99designs/gqlgen" \
   "graphql-go/graphql" \

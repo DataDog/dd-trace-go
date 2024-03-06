@@ -22,20 +22,6 @@ on:
 
 env:
   DD_APPSEC_WAF_TIMEOUT: 1m
-  # Adapt to v2 submodules
-  TESTS: >-
-    ./appsec/...
-    ./internal/appsec/...
-    ./contrib/gin-gonic/gin/...
-    ./contrib/google.golang.org/grpc/...
-    ./contrib/net/http/...
-    ./contrib/gorilla/mux/...
-    ./contrib/go-chi/chi/...
-    ./contrib/go-chi/chi.v5/...
-    ./contrib/labstack/echo.v4/...
-    ./contrib/99designs/gqlgen/...
-    ./contrib/graphql-go/graphql/...
-    ./contrib/graph-gophers/graphql-go/...
 
 concurrency:
   # Automatically cancel previous runs if a new one is triggered to conserve resources.
@@ -131,8 +117,8 @@ jobs:
           for cgo in "0" "1"; do
             for appsec_enabled_env in "" "DD_APPSEC_ENABLED=true" "DD_APPSEC_ENABLED=false"; do
                 for cgocheck_env in "" "$cgocheck"; do
-                  if ! env CGO_ENABLED=$cgo $appsec_enabled_env $cgocheck_env go test -v $TESTS; then
-                    echo "Failed: env CGO_ENABLED=$cgo $appsec_enabled_env $cgocheck_env go test -v $TESTS"
+                  if ! env CGO_ENABLED=$cgo $appsec_enabled_env $cgocheck_env ./.github/workflows/apps/appsec-test-contrib-submodules.sh; then
+                    echo "Failed: env CGO_ENABLED=$cgo $appsec_enabled_env $cgocheck_env ./.github/workflows/apps/appsec-test-contrib-submodules.sh"
                     exit 1
                   fi
                 done
@@ -178,8 +164,8 @@ jobs:
           set -euxo pipefail
           for appsec_enabled_env in "" "DD_APPSEC_ENABLED=true" "DD_APPSEC_ENABLED=false"; do
             for go_tags in "" "-tags datadog.no_waf"; do
-              if ! env $appsec_enabled_env go test -v $go_tags $TESTS; then
-                echo "Failed: env $appsec_enabled_env go test -v $go_tags $TESTS"
+              if ! env $appsec_enabled_env GO_TAGS=$go_tags ./.github/workflows/apps/appsec-test-contrib-submodules.sh; then
+                echo "Failed: env $appsec_enabled_env ./.github/workflows/apps/appsec-test-contrib-submodules.sh"
                 exit 1
               fi
             done
@@ -251,34 +237,34 @@ jobs:
         run: sudo docker exec -i test.runner go env
 
       - name: NOCGO, undefined appsec state
-        run: sudo docker exec -i test.runner env CGO_ENABLED=0 go test -v $TESTS
+        run: sudo docker exec -i test.runner env CGO_ENABLED=0 ./.github/workflows/apps/appsec-test-contrib-submodules.sh
       - name: NOCGO, appsec disabled
-        run: sudo docker exec -i test.runner env CGO_ENABLED=0 DD_APPSEC_ENABLED=false go test -v $TESTS
+        run: sudo docker exec -i test.runner env CGO_ENABLED=0 DD_APPSEC_ENABLED=false ./.github/workflows/apps/appsec-test-contrib-submodules.sh
       - name: NOCGO, appsec enabled
-        run: sudo docker exec -i test.runner env CGO_ENABLED=0 DD_APPSEC_ENABLED=true go test -v $TESTS
+        run: sudo docker exec -i test.runner env CGO_ENABLED=0 DD_APPSEC_ENABLED=true ./.github/workflows/apps/appsec-test-contrib-submodules.sh
       - name: CGO, undefined appsec state
-        run: sudo docker exec -i test.runner env CGO_ENABLED=1 go test -v $TESTS
+        run: sudo docker exec -i test.runner env CGO_ENABLED=1 ./.github/workflows/apps/appsec-test-contrib-submodules.sh
       - name: CGO, appsec disabled
-        run: sudo docker exec -i test.runner env CGO_ENABLED=1 DD_APPSEC_ENABLED=false go test -v $TESTS
+        run: sudo docker exec -i test.runner env CGO_ENABLED=1 DD_APPSEC_ENABLED=false ./.github/workflows/apps/appsec-test-contrib-submodules.sh
       - name: CGO, appsec enabled
-        run: sudo docker exec -i test.runner env CGO_ENABLED=1 DD_APPSEC_ENABLED=true go test -v $TESTS
+        run: sudo docker exec -i test.runner env CGO_ENABLED=1 DD_APPSEC_ENABLED=true ./.github/workflows/apps/appsec-test-contrib-submodules.sh
 
       - name: Clean up
         if: always()
         run: sudo docker rm --force test.runner || echo "Could not remove container"
 
       - name: NOCGO, undefined appsec state
-        run: sudo docker exec -i test.runner env CGO_ENABLED=0 go test -v $TESTS
+        run: sudo docker exec -i test.runner env CGO_ENABLED=0 ./.github/workflows/apps/appsec-test-contrib-submodules.sh
       - name: NOCGO, appsec disabled
-        run: sudo docker exec -i test.runner env CGO_ENABLED=0 DD_APPSEC_ENABLED=false go test -v $TESTS
+        run: sudo docker exec -i test.runner env CGO_ENABLED=0 DD_APPSEC_ENABLED=false ./.github/workflows/apps/appsec-test-contrib-submodules.sh
       - name: NOCGO, appsec enabled
-        run: sudo docker exec -i test.runner env CGO_ENABLED=0 DD_APPSEC_ENABLED=true go test -v $TESTS
+        run: sudo docker exec -i test.runner env CGO_ENABLED=0 DD_APPSEC_ENABLED=true ./.github/workflows/apps/appsec-test-contrib-submodules.sh
       - name: CGO, undefined appsec state
-        run: sudo docker exec -i test.runner env CGO_ENABLED=1 go test -v $TESTS
+        run: sudo docker exec -i test.runner env CGO_ENABLED=1 ./.github/workflows/apps/appsec-test-contrib-submodules.sh
       - name: CGO, appsec disabled
-        run: sudo docker exec -i test.runner env CGO_ENABLED=1 DD_APPSEC_ENABLED=false go test -v $TESTS
+        run: sudo docker exec -i test.runner env CGO_ENABLED=1 DD_APPSEC_ENABLED=false ./.github/workflows/apps/appsec-test-contrib-submodules.sh
       - name: CGO, appsec enabled
-        run: sudo docker exec -i test.runner env CGO_ENABLED=1 DD_APPSEC_ENABLED=true go test -v $TESTS
+        run: sudo docker exec -i test.runner env CGO_ENABLED=1 DD_APPSEC_ENABLED=true ./.github/workflows/apps/appsec-test-contrib-submodules.sh
 
       - name: Clean up
         if: always()
