@@ -264,7 +264,7 @@ jobs:
             golang:${{ matrix.go-version }}-${{ matrix.distribution }}
       - name: Install pre-requisites on Alpine
         if: matrix.distribution == 'alpine'
-        run: sudo docker exec -i test.runner apk add gcc musl-dev libc6-compat
+        run: sudo docker exec -i test.runner apk add gcc musl-dev libc6-compat bash
       - name: Output go env
         run: sudo docker exec -i test.runner go env
 
@@ -288,7 +288,7 @@ jobs:
           done
       - name: NOCGO, appsec enabled
         run: |
-          sudo docker exec -i -e CGO_ENABLED=0 -e DD_APPSEC_ENABLED=true go test -v $PACKAGES
+          sudo docker exec -i -e CGO_ENABLED=0 -e DD_APPSEC_ENABLED=true test.runner go test -v $PACKAGES
           for submodule in $SUBMODULES; do
             if ! sudo docker exec -i -e CGO_ENABLED=0 -e DD_APPSEC_ENABLED=true test.runner bash -c "cd $submodule && go test -v ."; then
               echo "Failed: env CGO_ENABLED=0 DD_APPSEC_ENABLED=true bash -c \"cd $submodule && go test -v .\" (submodule: $submodule)"
