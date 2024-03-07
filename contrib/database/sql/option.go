@@ -264,12 +264,3 @@ func WithDBMPropagation(mode tracer.DBMPropagationMode) Option {
 		cfg.dbmPropagationMode = mode
 	}
 }
-
-// WithDBStats enables polling of DBStats metrics
-// ref: https://pkg.go.dev/database/sql#DBStats
-// These metrics are submitted to Datadog and are not billed as custom metrics
-func WithDBStats() Option {
-	return func(cfg *config) {
-		cfg.dbStats = true
-	}
-}
