@@ -7,7 +7,7 @@
 package fasthttp // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/valyala/fasthttp.v1"
 
 import (
-	v2 "github.com/DataDog/dd-trace-go/v2/contrib/valyala/fasthttp.v1"
+	v2 "github.com/DataDog/dd-trace-go/v2/contrib/valyala/fasthttp"
 	"github.com/valyala/fasthttp"
 )
 
