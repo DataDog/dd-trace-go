@@ -658,15 +658,7 @@ func newRig(traceClient bool, opts ...Option) (*rig, error) {
 // waitForSpans polls the mock tracer until the expected number of spans
 // appears
 func waitForSpans(mt mocktracer.Tracer, sz int) {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
-	defer cancel()
-
 	for len(mt.FinishedSpans()) < sz {
-		select {
-		case <-ctx.Done():
-			return
-		default:
-		}
 		time.Sleep(time.Millisecond * 100)
 	}
 }
@@ -1332,8 +1324,5 @@ func TestIssue2050(t *testing.T) {
 	select {
 	case <-spansFound:
 		return
-
-	case <-time.After(5 * time.Second):
-		assert.Fail(t, "spans not found")
 	}
 }

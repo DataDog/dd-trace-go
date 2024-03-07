@@ -16,6 +16,7 @@ import (
 	"testing"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/statsdtest"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -136,7 +137,7 @@ func TestLogWriter(t *testing.T) {
 		s.Metrics["-inf"] = math.Inf(-1)
 		h.add([]*span{s})
 		h.flush()
-		json := string(buf.Bytes())
+		json := buf.String()
 		assert.NotContains(json, `"nan":`)
 		assert.NotContains(json, `"+inf":`)
 		assert.NotContains(json, `"-inf":`)
@@ -243,7 +244,7 @@ func TestLogWriterOverflow(t *testing.T) {
 	t.Run("single-too-big", func(t *testing.T) {
 		assert := assert.New(t)
 		var buf bytes.Buffer
-		var tg testStatsdClient
+		var tg statsdtest.TestStatsdClient
 		cfg := newConfig(withStatsdClient(&tg))
 		statsd, err := newStatsdClient(cfg)
 		require.NoError(t, err)
@@ -263,7 +264,7 @@ func TestLogWriterOverflow(t *testing.T) {
 	t.Run("split", func(t *testing.T) {
 		assert := assert.New(t)
 		var buf bytes.Buffer
-		var tg testStatsdClient
+		var tg statsdtest.TestStatsdClient
 		cfg := newConfig(withStatsdClient(&tg))
 		statsd, err := newStatsdClient(cfg)
 		require.NoError(t, err)
@@ -393,7 +394,7 @@ func TestTraceWriterFlushRetries(t *testing.T) {
 				c.transport = p
 				c.sendRetries = test.configRetries
 			})
-			var statsd testStatsdClient
+			var statsd statsdtest.TestStatsdClient
 
 			h := newAgentTraceWriter(c, nil, &statsd)
 			h.add(ss)
@@ -404,14 +405,12 @@ func TestTraceWriterFlushRetries(t *testing.T) {
 			assert.Equal(test.expAttempts, p.sendAttempts)
 			assert.Equal(test.tracesSent, p.tracesSent)
 
-			statsd.mu.Lock()
-			assert.Equal(1, len(statsd.timingCalls))
+			assert.Equal(1, len(statsd.TimingCalls()))
 			if test.tracesSent {
-				assert.Equal(sentCounts, statsd.counts)
+				assert.Equal(sentCounts, statsd.Counts())
 			} else {
-				assert.Equal(droppedCounts, statsd.counts)
+				assert.Equal(droppedCounts, statsd.Counts())
 			}
-			statsd.mu.Unlock()
 		})
 	}
 }

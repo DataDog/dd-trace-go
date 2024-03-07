@@ -30,6 +30,7 @@ import (
 	maininternal "gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/statsdtest"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 
 	"github.com/stretchr/testify/assert"
@@ -670,6 +671,37 @@ func TestTracerRuntimeMetrics(t *testing.T) {
 		tracer := newTracer(WithRuntimeMetrics(), WithLogger(tp), WithDebugMode(true))
 		defer tracer.Stop()
 		assert.Contains(t, tp.Logs()[0], "DEBUG: Runtime metrics enabled")
+	})
+}
+
+func TestTracerContribStats(t *testing.T) {
+	t.Run("default on", func(t *testing.T) {
+		tp := new(log.RecordLogger)
+		tracer := newTracer(WithDebugMode(true), WithLogger(tp))
+		defer tracer.Stop()
+		assert.NotNil(t, tracer.statsCarrier)
+	})
+	t.Run("off", func(t *testing.T) {
+		tp := new(log.RecordLogger)
+		tracer := newTracer(WithContribStats(false), WithLogger(tp), WithDebugMode(true))
+		defer tracer.Stop()
+		assert.Nil(t, tracer.statsCarrier)
+	})
+	t.Run("env", func(t *testing.T) {
+		os.Setenv("DD_TRACE_CONTRIB_STATS_ENABLED", "false")
+		defer os.Unsetenv("DD_TRACE_CONTRIB_STATS_ENABLED")
+		tp := new(log.RecordLogger)
+		tracer := newTracer(WithLogger(tp), WithDebugMode(true))
+		defer tracer.Stop()
+		assert.Nil(t, tracer.statsCarrier)
+	})
+	t.Run("env override", func(t *testing.T) {
+		os.Setenv("DD_TRACE_CONTRIB_STATS_ENABLED", "false")
+		defer os.Unsetenv("DD_TRACE_CONTRIB_STATS_ENABLED")
+		tp := new(log.RecordLogger)
+		tracer := newTracer(WithLogger(tp), WithDebugMode(true), WithContribStats(true))
+		defer tracer.Stop()
+		assert.NotNil(t, tracer.statsCarrier)
 	})
 }
 
@@ -2212,13 +2244,6 @@ func (w *testTraceWriter) flush() {
 
 func (w *testTraceWriter) stop() {}
 
-func (w *testTraceWriter) reset() {
-	w.mu.Lock()
-	w.flushed = w.flushed[:0]
-	w.buf = w.buf[:0]
-	w.mu.Unlock()
-}
-
 // Buffered returns the spans buffered by the writer.
 func (w *testTraceWriter) Buffered() []*span {
 	w.mu.RLock()
@@ -2240,7 +2265,7 @@ func TestFlush(t *testing.T) {
 	tw := newTestTraceWriter()
 	tr.traceWriter = tw
 
-	ts := &testStatsdClient{}
+	ts := &statsdtest.TestStatsdClient{}
 	tr.statsd = ts
 
 	transport := newDummyTransport()
@@ -2275,11 +2300,11 @@ loop:
 	c.add(as)
 
 	assert.Len(t, tw.Flushed(), 0)
-	assert.Zero(t, ts.flushed)
+	assert.Zero(t, ts.Flushed())
 	assert.Len(t, transport.Stats(), 0)
 	tr.flushSync()
 	assert.Len(t, tw.Flushed(), 1)
-	assert.Equal(t, 1, ts.flushed)
+	assert.Equal(t, 1, ts.Flushed())
 	assert.Len(t, transport.Stats(), 1)
 }
 

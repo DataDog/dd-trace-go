@@ -26,6 +26,8 @@ func TestSQLCommentCarrier(t *testing.T) {
 		mode               DBMPropagationMode
 		injectSpan         bool
 		samplingPriority   int
+		peerDBHostname     string
+		peerDBName         string
 		expectedQuery      string
 		expectedSpanIDGen  bool
 		expectedExtractErr error
@@ -35,6 +37,8 @@ func TestSQLCommentCarrier(t *testing.T) {
 			query:              "SELECT * from FOO",
 			mode:               DBMPropagationModeFull,
 			injectSpan:         true,
+			peerDBHostname:     "",
+			peerDBName:         "",
 			expectedQuery:      "/*dddbs='whiskey-db',dde='test-env',ddps='whiskey-service%20%21%23%24%25%26%27%28%29%2A%2B%2C%2F%3A%3B%3D%3F%40%5B%5D',ddpv='1.0.0',traceparent='00-0000000000000000000000000000000a-<span_id>-00'*/ SELECT * from FOO",
 			expectedSpanIDGen:  true,
 			expectedExtractErr: nil,
@@ -44,6 +48,8 @@ func TestSQLCommentCarrier(t *testing.T) {
 			query:              "SELECT * from FOO",
 			mode:               DBMPropagationModeService,
 			injectSpan:         true,
+			peerDBHostname:     "",
+			peerDBName:         "",
 			expectedQuery:      "/*dddbs='whiskey-db',dde='test-env',ddps='whiskey-service%20%21%23%24%25%26%27%28%29%2A%2B%2C%2F%3A%3B%3D%3F%40%5B%5D',ddpv='1.0.0'*/ SELECT * from FOO",
 			expectedSpanIDGen:  false,
 			expectedExtractErr: ErrSpanContextNotFound,
@@ -52,6 +58,8 @@ func TestSQLCommentCarrier(t *testing.T) {
 			name:               "no-trace",
 			query:              "SELECT * from FOO",
 			mode:               DBMPropagationModeFull,
+			peerDBHostname:     "",
+			peerDBName:         "",
 			expectedQuery:      "/*dddbs='whiskey-db',ddps='whiskey-service%20%21%23%24%25%26%27%28%29%2A%2B%2C%2F%3A%3B%3D%3F%40%5B%5D',traceparent='00-0000000000000000<span_id>-<span_id>-00'*/ SELECT * from FOO",
 			expectedSpanIDGen:  true,
 			expectedExtractErr: nil,
@@ -61,6 +69,8 @@ func TestSQLCommentCarrier(t *testing.T) {
 			query:              "",
 			mode:               DBMPropagationModeFull,
 			injectSpan:         true,
+			peerDBHostname:     "",
+			peerDBName:         "",
 			expectedQuery:      "/*dddbs='whiskey-db',dde='test-env',ddps='whiskey-service%20%21%23%24%25%26%27%28%29%2A%2B%2C%2F%3A%3B%3D%3F%40%5B%5D',ddpv='1.0.0',traceparent='00-0000000000000000000000000000000a-<span_id>-00'*/",
 			expectedSpanIDGen:  true,
 			expectedExtractErr: nil,
@@ -91,7 +101,45 @@ func TestSQLCommentCarrier(t *testing.T) {
 			mode:               DBMPropagationModeFull,
 			injectSpan:         true,
 			samplingPriority:   1,
+			peerDBHostname:     "",
+			peerDBName:         "",
 			expectedQuery:      "/*dddbs='whiskey-db',dde='test-env',ddps='whiskey-service%20%21%23%24%25%26%27%28%29%2A%2B%2C%2F%3A%3B%3D%3F%40%5B%5D',ddpv='1.0.0',traceparent='00-0000000000000000000000000000000a-<span_id>-01'*/ /* c */ SELECT * from FOO /**/",
+			expectedSpanIDGen:  true,
+			expectedExtractErr: nil,
+		},
+		{
+			name:               "peer_entity_tags_dddb",
+			query:              "/* c */ SELECT * from FOO /**/",
+			mode:               DBMPropagationModeFull,
+			injectSpan:         true,
+			samplingPriority:   1,
+			peerDBName:         "fake-database",
+			peerDBHostname:     "",
+			expectedQuery:      "/*dddbs='whiskey-db',dde='test-env',ddps='whiskey-service%20%21%23%24%25%26%27%28%29%2A%2B%2C%2F%3A%3B%3D%3F%40%5B%5D',ddpv='1.0.0',traceparent='00-0000000000000000000000000000000a-<span_id>-01',dddb='fake-database'*/ /* c */ SELECT * from FOO /**/",
+			expectedSpanIDGen:  true,
+			expectedExtractErr: nil,
+		},
+		{
+			name:               "peer_entity_tags_ddh",
+			query:              "/* c */ SELECT * from FOO /**/",
+			mode:               DBMPropagationModeFull,
+			injectSpan:         true,
+			samplingPriority:   1,
+			peerDBHostname:     "fake-hostname",
+			peerDBName:         "",
+			expectedQuery:      "/*dddbs='whiskey-db',dde='test-env',ddps='whiskey-service%20%21%23%24%25%26%27%28%29%2A%2B%2C%2F%3A%3B%3D%3F%40%5B%5D',ddpv='1.0.0',traceparent='00-0000000000000000000000000000000a-<span_id>-01',ddh='fake-hostname'*/ /* c */ SELECT * from FOO /**/",
+			expectedSpanIDGen:  true,
+			expectedExtractErr: nil,
+		},
+		{
+			name:               "peer_entity_tags_dddb_and_ddh",
+			query:              "/* c */ SELECT * from FOO /**/",
+			mode:               DBMPropagationModeFull,
+			injectSpan:         true,
+			samplingPriority:   1,
+			peerDBHostname:     "fake-hostname",
+			peerDBName:         "fake-database",
+			expectedQuery:      "/*dddbs='whiskey-db',dde='test-env',ddps='whiskey-service%20%21%23%24%25%26%27%28%29%2A%2B%2C%2F%3A%3B%3D%3F%40%5B%5D',ddpv='1.0.0',traceparent='00-0000000000000000000000000000000a-<span_id>-01',ddh='fake-hostname',dddb='fake-database'*/ /* c */ SELECT * from FOO /**/",
 			expectedSpanIDGen:  true,
 			expectedExtractErr: nil,
 		},
@@ -114,7 +162,7 @@ func TestSQLCommentCarrier(t *testing.T) {
 				spanCtx = root.Context()
 			}
 
-			carrier := SQLCommentCarrier{Query: tc.query, Mode: tc.mode, DBServiceName: "whiskey-db"}
+			carrier := SQLCommentCarrier{Query: tc.query, Mode: tc.mode, DBServiceName: "whiskey-db", PeerDBHostname: tc.peerDBHostname, PeerDBName: tc.peerDBName}
 			err := carrier.Inject(spanCtx)
 			require.NoError(t, err)
 			expected := strings.ReplaceAll(tc.expectedQuery, "<span_id>", fmt.Sprintf("%016s", strconv.FormatUint(carrier.SpanID, 16)))
@@ -147,9 +195,9 @@ func TestExtractOpenTelemetryTraceInformation(t *testing.T) {
 	// open-telemetry supports 128 bit trace ids
 	traceID := "5bd66ef5095369c7b0d1f8f4bd33716a"
 	ss := "c532cb4098ac3dd2"
-	upper, err := strconv.ParseUint(traceID[:16], 16, 64)
-	lower, err := strconv.ParseUint(traceID[16:], 16, 64)
-	spanID, err := strconv.ParseUint(ss, 16, 64)
+	upper, _ := strconv.ParseUint(traceID[:16], 16, 64)
+	lower, _ := strconv.ParseUint(traceID[16:], 16, 64)
+	spanID, _ := strconv.ParseUint(ss, 16, 64)
 	ps := "1"
 	priority, err := strconv.Atoi(ps)
 	require.NoError(t, err)
@@ -209,7 +257,7 @@ func FuzzSpanContextFromTraceComment(f *testing.F) {
 		b.WriteString(ts)
 		ts = b.String()
 
-		traceIDUpper, err := strconv.ParseUint(ts[:16], 16, 64)
+		traceIDUpper, _ := strconv.ParseUint(ts[:16], 16, 64)
 		traceIDLower, err := strconv.ParseUint(ts[16:], 16, 64)
 		if err != nil {
 			t.Skip()
