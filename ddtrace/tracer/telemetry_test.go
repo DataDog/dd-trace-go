@@ -32,7 +32,7 @@ func TestTelemetryEnabled(t *testing.T) {
 			WithHeaderTags([]string{"key:val", "key2:val2"}),
 			WithSamplingRules(
 				[]SamplingRule{TagsResourceRule(
-					map[string]*regexp.Regexp{"tag-a": regexp.MustCompile("tv-a.*")},
+					map[string]*regexp.Regexp{"tag-a": regexp.MustCompile("tv-a..")},
 					"resource-*", "op-name", "test-serv", 0.1),
 				},
 			),
@@ -54,7 +54,7 @@ func TestTelemetryEnabled(t *testing.T) {
 		telemetry.Check(t, telemetryClient.Configuration, "trace_sample_rate", nil) // default value is NaN which is sanitized to nil
 		telemetry.Check(t, telemetryClient.Configuration, "trace_header_tags", "key:val,key2:val2")
 		telemetry.Check(t, telemetryClient.Configuration, "trace_sample_rules",
-			`[{"service":"test-serv", "name:":"op-name", "resource":"resource-*","sample_rate":0.1, "tags":{"tag-a":"tv-a*"},"type":"trace(1)"}]`)
+			`[{"service":"test-serv", "name:":"op-name", "resource":"resource-*","sample_rate":0.1, "tags":{"tag-a":"tv-a??"},"type":"trace(1)"}]`)
 		if metrics, ok := telemetryClient.Metrics[telemetry.NamespaceGeneral]; ok {
 			if initTime, ok := metrics["init_time"]; ok {
 				assert.True(t, initTime > 0)
@@ -64,6 +64,24 @@ func TestTelemetryEnabled(t *testing.T) {
 		}
 		t.Fatalf("could not find tracer namespace in telemetry client metrics")
 	})
+
+	t.Run("tracer start with empty rules", func(t *testing.T) {
+		telemetryClient := new(telemetrytest.MockClient)
+		defer telemetry.MockGlobalClient(telemetryClient)()
+
+		t.Setenv("DD_TRACE_SAMPLING_RULES", "")
+		Start()
+		defer globalconfig.SetServiceName("")
+		defer Stop()
+
+		assert.True(t, telemetryClient.Started)
+		var cfgs []telemetry.Configuration
+		for _, c := range telemetryClient.Configuration {
+			cfgs = append(cfgs, telemetry.Sanitize(c))
+		}
+		telemetry.Check(t, cfgs, "trace_sample_rules", "[]")
+	})
+
 	t.Run("profiler start, tracer start", func(t *testing.T) {
 		telemetryClient := new(telemetrytest.MockClient)
 		defer telemetry.MockGlobalClient(telemetryClient)()

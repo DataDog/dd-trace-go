@@ -777,7 +777,7 @@ func validateRules(jsonRules []jsonRule, spanType SamplingRuleType) ([]SamplingR
 }
 
 // MarshalJSON implements the json.Marshaler interface.
-func (sr *SamplingRule) MarshalJSON() ([]byte, error) {
+func (sr SamplingRule) MarshalJSON() ([]byte, error) {
 	s := struct {
 		Service      string            `json:"service,omitempty"`
 		Name         string            `json:"name,omitempty"`
