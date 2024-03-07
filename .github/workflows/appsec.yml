@@ -273,7 +273,7 @@ jobs:
           sudo docker exec -i -e CGO_ENABLED=0 test.runner go test -v $PACKAGES
           for submodule in $SUBMODULES; do
             if ! sudo docker exec -i -e CGO_ENABLED=0 test.runner bash -c "cd $submodule && go test -v ."; then
-              echo "Failed: env CGO_ENABLED=0 bash -c "cd $submodule && go test -v .\" (submodule: $submodule)"
+              echo "Failed: env CGO_ENABLED=0 bash -c \"cd $submodule && go test -v .\" (submodule: $submodule)"
               exit 1
             fi
           done
@@ -282,7 +282,7 @@ jobs:
           sudo docker exec -i -e CGO_ENABLED=0 -e DD_APPSEC_ENABLED=false test.runner go test -v $PACKAGES
           for submodule in $SUBMODULES; do
             if ! sudo docker exec -i -e CGO_ENABLED=0 -e DD_APPSEC_ENABLED=false test.runner bash -c "cd $submodule && go test -v ."; then
-              echo "Failed: env CGO_ENABLED=0 DD_APPSEC_ENABLED=false bash -c "cd $submodule && go test -v .\" (submodule: $submodule)"
+              echo "Failed: env CGO_ENABLED=0 DD_APPSEC_ENABLED=false bash -c \"cd $submodule && go test -v .\" (submodule: $submodule)"
               exit 1
             fi
           done
@@ -291,7 +291,7 @@ jobs:
           sudo docker exec -i -e CGO_ENABLED=0 -e DD_APPSEC_ENABLED=true go test -v $PACKAGES
           for submodule in $SUBMODULES; do
             if ! sudo docker exec -i -e CGO_ENABLED=0 -e DD_APPSEC_ENABLED=true test.runner bash -c "cd $submodule && go test -v ."; then
-              echo "Failed: env CGO_ENABLED=0 DD_APPSEC_ENABLED=true bash -c "cd $submodule && go test -v .\" (submodule: $submodule)"
+              echo "Failed: env CGO_ENABLED=0 DD_APPSEC_ENABLED=true bash -c \"cd $submodule && go test -v .\" (submodule: $submodule)"
               exit 1
             fi
           done
@@ -300,7 +300,7 @@ jobs:
           sudo docker exec -i -e CGO_ENABLED=1 test.runner go test -v $PACKAGES
           for submodule in $SUBMODULES; do
             if ! sudo docker exec -i -e CGO_ENABLED=1 test.runner bash -c "cd $submodule && go test -v ."; then
-              echo "Failed: env CGO_ENABLED=1 bash -c "cd $submodule && go test -v .\" (submodule: $submodule)"
+              echo "Failed: env CGO_ENABLED=1 bash -c \"cd $submodule && go test -v .\" (submodule: $submodule)"
               exit 1
             fi
           done
@@ -309,7 +309,7 @@ jobs:
           sudo docker exec -i -e CGO_ENABLED=1 -e DD_APPSEC_ENABLED=false test.runner go test -v $PACKAGES
           for submodule in $SUBMODULES; do
             if ! sudo docker exec -i -e CGO_ENABLED=1 -e DD_APPSEC_ENABLED=false test.runner bash -c "cd $submodule && go test -v ."; then
-              echo "Failed: env CGO_ENABLED=1 DD_APPSEC_ENABLED=false bash -c "cd $submodule && go test -v .\" (submodule: $submodule)"
+              echo "Failed: env CGO_ENABLED=1 DD_APPSEC_ENABLED=false bash -c \"cd $submodule && go test -v .\" (submodule: $submodule)"
               exit 1
             fi
           done
@@ -318,7 +318,7 @@ jobs:
           sudo docker exec -i -e CGO_ENABLED=1 -e DD_APPSEC_ENABLED=true test.runner go test -v $PACKAGES
           for submodule in $SUBMODULES; do
             if ! sudo docker exec -i -e CGO_ENABLED=1 -e DD_APPSEC_ENABLED=true test.runner bash -c "cd $submodule && go test -v ."; then
-              echo "Failed: env CGO_ENABLED=1 DD_APPSEC_ENABLED=true bash -c "cd $submodule && go test -v .\" (submodule: $submodule)"
+              echo "Failed: env CGO_ENABLED=1 DD_APPSEC_ENABLED=true bash -c \"cd $submodule && go test -v .\" (submodule: $submodule)"
               exit 1
             fi
           done
