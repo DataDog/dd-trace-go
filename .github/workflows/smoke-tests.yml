@@ -61,6 +61,8 @@ jobs:
       - name: Compile dd-trace-go
         run: go build $PACKAGES
       - name: Test dd-trace-go
+        env:
+          DD_APPSEC_WAF_TIMEOUT: 1h
         run: go test $PACKAGES
 
   # TODO: macos setup requirements (xcode tools installation, etc.)
