@@ -153,7 +153,6 @@ func (n *nilStringer) String() string {
 }
 
 type panicStringer struct {
-	s string
 }
 
 // String causes panic which SetTag should not handle.

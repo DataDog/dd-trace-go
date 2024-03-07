@@ -5,7 +5,7 @@ go 1.19
 require (
 	cloud.google.com/go/pubsub v1.33.0
 	github.com/99designs/gqlgen v0.17.36
-	github.com/DataDog/appsec-internal-go v1.4.1
+	github.com/DataDog/appsec-internal-go v1.5.0
 	github.com/DataDog/dd-trace-go/v2 v2.0.0-20240304142048-4f446ac8d290
 	github.com/DataDog/dd-trace-go/v2/contrib/99designs/gqlgen v0.0.0-20240216140524-914f0c30cab1
 	github.com/DataDog/dd-trace-go/v2/contrib/database/sql v0.0.0-20240304142048-4f446ac8d290
