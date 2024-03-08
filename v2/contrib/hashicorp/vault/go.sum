@@ -8,8 +8,6 @@ github.com/DataDog/datadog-go/v5 v5.4.0 h1:Ea3eXUVwrVV28F/fo3Dr3aa+TL/Z7Xi6SUPKW
 github.com/DataDog/datadog-go/v5 v5.4.0/go.mod h1:K9kcYBlxkcPP8tvvjZZKs/m1edNAUFzBbdpTUKfCsuw=
 github.com/DataDog/dd-trace-go/v2 v2.0.0-20240307140101-1887b044eecd h1:oOAEOUUkFCxhsp+ReGMSvMC5a1Y+dZRVDFK6d/9J36Q=
 github.com/DataDog/dd-trace-go/v2 v2.0.0-20240307140101-1887b044eecd/go.mod h1:j5JXNatApsln+VHjV6PFZjsqfbn1HXYBNWwT3Zs8CVc=
-github.com/DataDog/dd-trace-go/v2/contrib/net/http v0.0.0-20240125124054-68de6a751ca1 h1:tzLHz/p3CY2OVN7pGoNPIYPwvRDFGuoJAgK2Y2qVHtY=
-github.com/DataDog/dd-trace-go/v2/contrib/net/http v0.0.0-20240125124054-68de6a751ca1/go.mod h1:Egv1mBi64A3Nlw98p77lxkMhrK3z/FlLSPNA5GjJiz0=
 github.com/DataDog/dd-trace-go/v2/contrib/net/http v0.0.0-20240307140101-1887b044eecd h1:zTyscrmcIvfjM0CkPGCWbEnwaS1S33j2vOQX4D5ZKtQ=
 github.com/DataDog/dd-trace-go/v2/contrib/net/http v0.0.0-20240307140101-1887b044eecd/go.mod h1:dYxmWEGZWTvq8CJOKXLthOlIImlEaBaMNN4MRa7Qxrw=
 github.com/DataDog/go-libddwaf/v2 v2.3.2 h1:pdi9xjWW57IpOpTeOyPuNveEDFLmmInsHDeuZk3TY34=
@@ -56,7 +54,6 @@ github.com/golang/protobuf v1.5.3/go.mod h1:XVQd3VNwM+JqD3oG2Ue2ip4fOMUkwXdXDdiu
 github.com/google/go-cmp v0.5.0/go.mod h1:v8dTdLbMG2kIc/vJvl+f65V22dbkXbowE6jgT/gNBxE=
 github.com/google/go-cmp v0.5.5/go.mod h1:v8dTdLbMG2kIc/vJvl+f65V22dbkXbowE6jgT/gNBxE=
 github.com/google/go-cmp v0.6.0 h1:ofyhxvXcZhMsU5ulbFiLKl/XBFqE1GSq7atu8tAmTRI=
-github.com/google/go-cmp v0.6.0/go.mod h1:17dUlkBOakJ0+DkrSSNjCkIjxS6bF9zb3elmeNGIjoY=
 github.com/google/gofuzz v1.2.0 h1:xRy4A+RhZaiKjJ1bPfwQ8sedCA+YS2YcCHW6ec7JMi0=
 github.com/google/gofuzz v1.2.0/go.mod h1:dBl0BpW6vV/+mYPU4Po3pmUjxk6FQPldtuIdl/M65Eg=
 github.com/google/pprof v0.0.0-20230817174616-7a8ec2ada47b h1:h9U78+dx9a4BKdQkBBos92HalKpaGKHrp+3Uo6yTodo=
