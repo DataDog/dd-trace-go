@@ -6,7 +6,7 @@ require (
 	cloud.google.com/go/pubsub v1.33.0
 	github.com/99designs/gqlgen v0.17.36
 	github.com/DataDog/appsec-internal-go v1.5.0
-	github.com/DataDog/dd-trace-go/v2 v2.0.0-20240307095510-98e0a0e69bc5
+	github.com/DataDog/dd-trace-go/v2 v2.0.0-20240307140101-1887b044eecd
 	github.com/DataDog/dd-trace-go/v2/contrib/99designs/gqlgen v0.0.0-20240307095510-98e0a0e69bc5
 	github.com/DataDog/dd-trace-go/v2/contrib/database/sql v0.0.0-20240307095510-98e0a0e69bc5
 	github.com/DataDog/dd-trace-go/v2/contrib/emicklei/go-restful.v3 v0.0.0-20240307095510-98e0a0e69bc5
@@ -123,6 +123,7 @@ require (
 	github.com/DataDog/datadog-agent/pkg/obfuscate v0.50.0 // indirect
 	github.com/DataDog/datadog-agent/pkg/remoteconfig/state v0.50.0 // indirect
 	github.com/DataDog/datadog-go/v5 v5.4.0 // indirect
+	github.com/DataDog/dd-trace-go/v2/contrib/aws/aws-sdk-go v0.0.0-20240307140101-1887b044eecd // indirect
 	github.com/DataDog/go-libddwaf/v2 v2.3.2 // indirect
 	github.com/DataDog/go-sqllexer v0.0.10 // indirect
 	github.com/DataDog/go-tuf v1.0.2-0.5.2 // indirect
