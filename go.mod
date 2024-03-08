@@ -8,6 +8,7 @@ require (
 	github.com/DataDog/appsec-internal-go v1.5.0
 	github.com/DataDog/dd-trace-go/v2 v2.0.0-20240308141714-cc13161300f3
 	github.com/DataDog/dd-trace-go/v2/contrib/99designs/gqlgen v0.0.0-20240308141714-cc13161300f3
+	github.com/DataDog/dd-trace-go/v2/contrib/IBM/sarama v0.0.0-20240308141714-cc13161300f3
 	github.com/DataDog/dd-trace-go/v2/contrib/aws/aws-sdk-go v0.0.0-20240308141714-cc13161300f3
 	github.com/DataDog/dd-trace-go/v2/contrib/aws/aws-sdk-go-v2 v0.0.0-20240308141714-cc13161300f3
 	github.com/DataDog/dd-trace-go/v2/contrib/database/sql v0.0.0-20240308141714-cc13161300f3
