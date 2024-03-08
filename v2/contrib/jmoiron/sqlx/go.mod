@@ -5,10 +5,10 @@ go 1.19
 require (
 	github.com/DataDog/dd-trace-go/v2 v2.0.0-20240307140101-1887b044eecd
 	github.com/DataDog/dd-trace-go/v2/contrib/database/sql v0.0.0-20240125124054-68de6a751ca1
-	github.com/denisenkom/go-mssqldb v0.12.3
-	github.com/go-sql-driver/mysql v1.7.1
+	github.com/denisenkom/go-mssqldb v0.11.0
+	github.com/go-sql-driver/mysql v1.6.0
 	github.com/jmoiron/sqlx v1.3.5
-	github.com/lib/pq v1.10.9
+	github.com/lib/pq v1.10.2
 )
 
 require (
@@ -26,7 +26,6 @@ require (
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/ebitengine/purego v0.6.0-alpha.5 // indirect
 	github.com/golang-sql/civil v0.0.0-20220223132316-b832511892a9 // indirect
-	github.com/golang-sql/sqlexp v0.1.0 // indirect
 	github.com/golang/protobuf v1.5.3 // indirect
 	github.com/google/go-cmp v0.6.0 // indirect
 	github.com/google/uuid v1.5.0 // indirect
