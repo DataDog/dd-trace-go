@@ -4,7 +4,7 @@ go 1.19
 
 require (
 	github.com/DataDog/dd-trace-go/v2 v2.0.0-20240307140101-1887b044eecd
-	github.com/miekg/dns v1.1.57
+	github.com/miekg/dns v1.1.55
 	github.com/stretchr/testify v1.8.4
 )
 
