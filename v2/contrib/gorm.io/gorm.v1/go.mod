@@ -4,10 +4,10 @@ go 1.19
 
 require (
 	github.com/DataDog/dd-trace-go/v2 v2.0.0-20240307140101-1887b044eecd
-	github.com/DataDog/dd-trace-go/v2/contrib/database/sql v0.0.0-20240125124054-68de6a751ca1
-	github.com/go-sql-driver/mysql v1.7.1
-	github.com/jackc/pgx/v5 v5.3.1
-	github.com/lib/pq v1.10.9
+	github.com/DataDog/dd-trace-go/v2/contrib/database/sql v0.0.0-20240308135759-198d2b96ecb8
+	github.com/go-sql-driver/mysql v1.6.0
+	github.com/jackc/pgx/v5 v5.4.2
+	github.com/lib/pq v1.10.2
 	github.com/microsoft/go-mssqldb v0.21.0
 	github.com/stretchr/testify v1.8.4
 	gorm.io/driver/mysql v1.0.1
@@ -34,7 +34,6 @@ require (
 	github.com/golang-sql/civil v0.0.0-20220223132316-b832511892a9 // indirect
 	github.com/golang-sql/sqlexp v0.1.0 // indirect
 	github.com/golang/protobuf v1.5.3 // indirect
-	github.com/google/go-cmp v0.6.0 // indirect
 	github.com/google/uuid v1.5.0 // indirect
 	github.com/hashicorp/errwrap v1.1.0 // indirect
 	github.com/hashicorp/go-multierror v1.1.1 // indirect
