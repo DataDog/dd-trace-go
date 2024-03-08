@@ -8,6 +8,8 @@ require (
 	github.com/DataDog/appsec-internal-go v1.5.0
 	github.com/DataDog/dd-trace-go/v2 v2.0.0-20240307140101-1887b044eecd
 	github.com/DataDog/dd-trace-go/v2/contrib/99designs/gqlgen v0.0.0-20240307095510-98e0a0e69bc5
+	github.com/DataDog/dd-trace-go/v2/contrib/aws/aws-sdk-go v0.0.0-20240307140101-1887b044eecd
+	github.com/DataDog/dd-trace-go/v2/contrib/aws/aws-sdk-go-v2 v0.0.0-20240307140101-1887b044eecd
 	github.com/DataDog/dd-trace-go/v2/contrib/database/sql v0.0.0-20240307095510-98e0a0e69bc5
 	github.com/DataDog/dd-trace-go/v2/contrib/emicklei/go-restful.v3 v0.0.0-20240307095510-98e0a0e69bc5
 	github.com/DataDog/dd-trace-go/v2/contrib/gin-gonic/gin v0.0.0-20240307095510-98e0a0e69bc5
@@ -29,7 +31,7 @@ require (
 	github.com/Shopify/sarama v1.38.1
 	github.com/aws/aws-sdk-go v1.44.327
 	github.com/aws/aws-sdk-go-v2 v1.25.0
-	github.com/aws/aws-sdk-go-v2/config v1.27.0
+	github.com/aws/aws-sdk-go-v2/config v1.19.0
 	github.com/aws/aws-sdk-go-v2/service/dynamodb v1.21.4
 	github.com/aws/aws-sdk-go-v2/service/ec2 v1.93.2
 	github.com/aws/aws-sdk-go-v2/service/eventbridge v1.20.4
@@ -38,7 +40,6 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/sfn v1.19.4
 	github.com/aws/aws-sdk-go-v2/service/sns v1.21.4
 	github.com/aws/aws-sdk-go-v2/service/sqs v1.24.4
-	github.com/aws/smithy-go v1.20.0
 	github.com/bradfitz/gomemcache v0.0.0-20230611145640-acc696258285
 	github.com/confluentinc/confluent-kafka-go v1.9.2
 	github.com/confluentinc/confluent-kafka-go/v2 v2.2.0
@@ -123,7 +124,6 @@ require (
 	github.com/DataDog/datadog-agent/pkg/obfuscate v0.50.0 // indirect
 	github.com/DataDog/datadog-agent/pkg/remoteconfig/state v0.50.0 // indirect
 	github.com/DataDog/datadog-go/v5 v5.4.0 // indirect
-	github.com/DataDog/dd-trace-go/v2/contrib/aws/aws-sdk-go v0.0.0-20240307140101-1887b044eecd // indirect
 	github.com/DataDog/go-libddwaf/v2 v2.3.2 // indirect
 	github.com/DataDog/go-sqllexer v0.0.10 // indirect
 	github.com/DataDog/go-tuf v1.0.2-0.5.2 // indirect
@@ -147,6 +147,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/sso v1.19.0 // indirect
 	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.22.0 // indirect
 	github.com/aws/aws-sdk-go-v2/service/sts v1.27.0 // indirect
+	github.com/aws/smithy-go v1.20.0 // indirect
 	github.com/bytedance/sonic v1.10.0 // indirect
 	github.com/cenkalti/backoff/v3 v3.2.2 // indirect
 	github.com/cespare/xxhash/v2 v2.2.0 // indirect
