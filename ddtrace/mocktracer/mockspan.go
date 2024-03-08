@@ -122,9 +122,23 @@ func (msa MockspanV2Adapter) String() string {
 func (msa MockspanV2Adapter) Tag(k string) interface{} {
 	switch k {
 	case ext.Error:
-		v := msa.Span.Tag(ext.ErrorMsg).(string)
-		err := errors.New(v)
+		v := msa.Span.Tag(ext.ErrorMsg)
+		if v == nil {
+			return nil
+		}
+		err := errors.New(v.(string))
 		return err
+	case ext.HTTPCode, ext.NetworkDestinationPort:
+		v := msa.Span.Tag(k)
+		if v == nil {
+			return nil
+		}
+		switch v := v.(type) {
+		case float64:
+			return int(v)
+		default:
+			return v
+		}
 	case ext.SamplingPriority:
 		v := msa.Span.Tag("_sampling_priority_v1").(float64)
 		return int(v)
