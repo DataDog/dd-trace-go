@@ -14,7 +14,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/sfn v1.19.4
 	github.com/aws/aws-sdk-go-v2/service/sns v1.21.4
 	github.com/aws/aws-sdk-go-v2/service/sqs v1.24.4
-	github.com/aws/smithy-go v1.17.0
+	github.com/aws/smithy-go v1.14.2
 	github.com/stretchr/testify v1.8.4
 )
 
@@ -28,14 +28,14 @@ require (
 	github.com/DataDog/go-tuf v1.0.2-0.5.2 // indirect
 	github.com/DataDog/sketches-go v1.4.3 // indirect
 	github.com/Microsoft/go-winio v0.6.1 // indirect
-	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.5.1 // indirect
+	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.4.13 // indirect
 	github.com/aws/aws-sdk-go-v2/credentials v1.13.34 // indirect
 	github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.13.10 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/configsources v1.1.40 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.4.34 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/ini v1.7.1 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/v4a v1.1.3 // indirect
-	github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.10.1 // indirect
+	github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.9.14 // indirect
 	github.com/aws/aws-sdk-go-v2/service/internal/checksum v1.1.35 // indirect
 	github.com/aws/aws-sdk-go-v2/service/internal/endpoint-discovery v1.7.34 // indirect
 	github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.9.34 // indirect

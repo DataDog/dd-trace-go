@@ -83,6 +83,7 @@ github.com/aws/aws-sdk-go-v2/service/ssooidc v1.15.4/go.mod h1:4pdlNASc29u0j9bq2
 github.com/aws/aws-sdk-go-v2/service/sts v1.21.4 h1:zj4jxK3L54tGyqKleKDMK4vHolENxlq11dF0v1oBkJo=
 github.com/aws/aws-sdk-go-v2/service/sts v1.21.4/go.mod h1:CQRMCzYvl5eeAQW3AWkRLS+zGGXCucBnsiQlrs+tCeo=
 github.com/aws/smithy-go v1.13.5/go.mod h1:Tg+OJXh4MB2R/uN61Ko2f6hTZwB/ZYGOtib8J3gBHzA=
+github.com/aws/smithy-go v1.14.2 h1:MJU9hqBGbvWZdApzpvoF2WAIJDbtjK2NDJSiJP7HblQ=
 github.com/aws/smithy-go v1.14.2/go.mod h1:Tg+OJXh4MB2R/uN61Ko2f6hTZwB/ZYGOtib8J3gBHzA=
 github.com/aws/smithy-go v1.17.0 h1:wWJD7LX6PBV6etBUwO0zElG0nWN9rUhp0WdYeHSHAaI=
 github.com/aws/smithy-go v1.17.0/go.mod h1:NukqUGpCZIILqqiV0NIjeFh24kd/FAa4beRb6nbIUPE=
