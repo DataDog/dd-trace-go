@@ -8,6 +8,7 @@ package kafka
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"strings"
 	"testing"
@@ -30,10 +31,14 @@ var (
 	testTopic   = "gotest"
 )
 
+const (
+	componentName = "confluentinc/confluent-kafka-go/kafka"
+)
+
 type consumerActionFn func(c *Consumer) (*kafka.Message, error)
 
-func produceThenConsume(t *testing.T, consumerAction consumerActionFn, producerOpts []Option, consumerOpts []Option) ([]mocktracer.Span, *kafka.Message) {
-	if _, ok := os.LookupEnv("INTEGRATION"); !ok {
+func produceThenConsume(t *testing.T, consumerAction consumerActionFn, producerOpts []Option, consumerOpts []Option, dataStreamsEnabled bool) ([]mocktracer.Span, *kafka.Message) {
+	if _, ok := os.LookupEnv("INTEGRATION"); ok {
 		t.Skip("to enable integration test, set the INTEGRATION environment variable")
 	}
 	mt := mocktracer.Start()
@@ -89,7 +94,7 @@ func produceThenConsume(t *testing.T, consumerAction consumerActionFn, producerO
 	// they should be linked via headers
 	assert.Equal(t, spans[0].TraceID(), spans[1].TraceID())
 
-	if c.cfg.dataStreamsEnabled {
+	if dataStreamsEnabled {
 		backlogs := mt.SentDSMBacklogs()
 		toMap := func(b []internaldsm.Backlog) map[string]struct{} {
 			m := make(map[string]struct{})
@@ -162,9 +167,9 @@ func TestConsumerChannel(t *testing.T) {
 		assert.Equal(t, "kafka", s.Tag(ext.ServiceName))
 		assert.Equal(t, "Consume Topic gotest", s.Tag(ext.ResourceName))
 		assert.Equal(t, "queue", s.Tag(ext.SpanType))
-		assert.Equal(t, int32(1), s.Tag(ext.MessagingKafkaPartition))
+		assert.Equal(t, 1., s.Tag(ext.MessagingKafkaPartition))
 		assert.Equal(t, 0.3, s.Tag(ext.EventSampleRate))
-		assert.Equal(t, kafka.Offset(i+1), s.Tag("offset"))
+		assert.Equal(t, fmt.Sprintf("%d", i+1), s.Tag("offset"))
 		assert.Equal(t, componentName, s.Tag(ext.Component))
 		assert.Equal(t, ext.SpanKindConsumer, s.Tag(ext.SpanKind))
 		assert.Equal(t, "kafka", s.Tag(ext.MessagingSystem))
@@ -227,7 +232,7 @@ func TestConsumerFunctional(t *testing.T) {
 		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			spans, msg := produceThenConsume(t, tt.action, []Option{WithAnalyticsRate(0.1), WithDataStreams()}, []Option{WithDataStreams()})
+			spans, msg := produceThenConsume(t, tt.action, []Option{WithAnalyticsRate(0.1), WithDataStreams()}, []Option{WithDataStreams()}, true)
 
 			s0 := spans[0] // produce
 			assert.Equal(t, "kafka.produce", s0.OperationName())
@@ -247,7 +252,7 @@ func TestConsumerFunctional(t *testing.T) {
 			assert.Equal(t, "Consume Topic gotest", s1.Tag(ext.ResourceName))
 			assert.Equal(t, nil, s1.Tag(ext.EventSampleRate))
 			assert.Equal(t, "queue", s1.Tag(ext.SpanType))
-			assert.Equal(t, int32(0), s1.Tag(ext.MessagingKafkaPartition))
+			assert.Equal(t, 0., s1.Tag(ext.MessagingKafkaPartition))
 			assert.Equal(t, componentName, s1.Tag(ext.Component))
 			assert.Equal(t, ext.SpanKindConsumer, s1.Tag(ext.SpanKind))
 			assert.Equal(t, "kafka", s1.Tag(ext.MessagingSystem))
@@ -377,7 +382,9 @@ func TestCustomTags(t *testing.T) {
 	s := spans[0]
 
 	assert.Equal(t, "bar", s.Tag("foo"))
-	assert.Equal(t, []byte("key1"), s.Tag("key"))
+	for i, c := range "key1" {
+		assert.Equal(t, float64(c), s.Tag(fmt.Sprintf("key.%d", i)))
+	}
 }
 
 func TestNamingSchema(t *testing.T) {
@@ -389,7 +396,7 @@ func TestNamingSchema(t *testing.T) {
 		consumerAction := consumerActionFn(func(c *Consumer) (*kafka.Message, error) {
 			return c.ReadMessage(3000 * time.Millisecond)
 		})
-		spans, _ := produceThenConsume(t, consumerAction, opts, opts)
+		spans, _ := produceThenConsume(t, consumerAction, opts, opts, false)
 		return spans
 	}
 	namingschematest.NewKafkaTest(genSpans)(t)

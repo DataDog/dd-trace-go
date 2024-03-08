@@ -650,6 +650,8 @@ github.com/DataDog/dd-trace-go/v2/contrib/bradfitz/gomemcache v0.0.0-20240308141
 github.com/DataDog/dd-trace-go/v2/contrib/bradfitz/gomemcache v0.0.0-20240308141714-cc13161300f3/go.mod h1:gzgFOgdDZJ4qE+/0d5HC/LNBcHLdxkGwIUZRjBzeDIo=
 github.com/DataDog/dd-trace-go/v2/contrib/cloud.google.com/go/pubsub.v1 v0.0.0-20240308141714-cc13161300f3 h1:Ph13S1FYph0lZCbFX1xRk9S0Tv+5Yx77MUcIG/9x9io=
 github.com/DataDog/dd-trace-go/v2/contrib/cloud.google.com/go/pubsub.v1 v0.0.0-20240308141714-cc13161300f3/go.mod h1:M8guh6WEokA04FjIlQvp2GXzOAbw9u4oycvBMwJcrks=
+github.com/DataDog/dd-trace-go/v2/contrib/confluentinc/confluent-kafka-go/kafka v0.0.0-20240308141714-cc13161300f3 h1:bewqV19wciRfw4KN4z9Dhk+1tyJU4X4I6O7JFWMVZhI=
+github.com/DataDog/dd-trace-go/v2/contrib/confluentinc/confluent-kafka-go/kafka v0.0.0-20240308141714-cc13161300f3/go.mod h1:KMvceJ7vNMoVr5E7aQ+3BRvHOJVwYTr3lHe0lpnFsCg=
 github.com/DataDog/dd-trace-go/v2/contrib/database/sql v0.0.0-20240308141714-cc13161300f3 h1:K1VtU4pvGaJk9AvRO7J6vpXwVe1cKU9EkJ5WAlt5HR8=
 github.com/DataDog/dd-trace-go/v2/contrib/database/sql v0.0.0-20240308141714-cc13161300f3/go.mod h1:NV66NXlVYSNU1nqNFLub+8NCFwtgeUQzkKTYZJiit6Q=
 github.com/DataDog/dd-trace-go/v2/contrib/emicklei/go-restful.v3 v0.0.0-20240308141714-cc13161300f3 h1:OY1Nj+THF/nZffdyvdRO8kgJmbxaqThYtLJla6u+DRY=
