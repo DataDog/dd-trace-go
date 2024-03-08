@@ -646,6 +646,8 @@ github.com/DataDog/dd-trace-go/v2/contrib/aws/aws-sdk-go v0.0.0-20240308141714-c
 github.com/DataDog/dd-trace-go/v2/contrib/aws/aws-sdk-go v0.0.0-20240308141714-cc13161300f3/go.mod h1:qvgNgRyBzXGqj1dqPs7wgeNmqYswPEzDFrfmLjuHM6U=
 github.com/DataDog/dd-trace-go/v2/contrib/aws/aws-sdk-go-v2 v0.0.0-20240308141714-cc13161300f3 h1:UWmlRkfHFphf2lJcpdZokrH9FdCCGJEwqi++uEtgEdA=
 github.com/DataDog/dd-trace-go/v2/contrib/aws/aws-sdk-go-v2 v0.0.0-20240308141714-cc13161300f3/go.mod h1:UaUL9mR/BTS3q0iMbkHiglUeKJMXpPVID2jS3nCIbp4=
+github.com/DataDog/dd-trace-go/v2/contrib/bradfitz/gomemcache v0.0.0-20240308141714-cc13161300f3 h1:Xav9T1cMUQ9zEyTBBPJOvRNXPu9YAYDHHs1yU25j/Fo=
+github.com/DataDog/dd-trace-go/v2/contrib/bradfitz/gomemcache v0.0.0-20240308141714-cc13161300f3/go.mod h1:gzgFOgdDZJ4qE+/0d5HC/LNBcHLdxkGwIUZRjBzeDIo=
 github.com/DataDog/dd-trace-go/v2/contrib/database/sql v0.0.0-20240308141714-cc13161300f3 h1:K1VtU4pvGaJk9AvRO7J6vpXwVe1cKU9EkJ5WAlt5HR8=
 github.com/DataDog/dd-trace-go/v2/contrib/database/sql v0.0.0-20240308141714-cc13161300f3/go.mod h1:NV66NXlVYSNU1nqNFLub+8NCFwtgeUQzkKTYZJiit6Q=
 github.com/DataDog/dd-trace-go/v2/contrib/emicklei/go-restful.v3 v0.0.0-20240308141714-cc13161300f3 h1:OY1Nj+THF/nZffdyvdRO8kgJmbxaqThYtLJla6u+DRY=
