@@ -292,6 +292,11 @@ func runAllOperations(t *testing.T, opts ...Option) {
 	require.NoError(t, err)
 }
 
+const (
+	componentName      = "jackc/pgx.v5"
+	defaultServiceName = "postgres.db"
+)
+
 func assertCommonTags(t *testing.T, s mocktracer.Span) {
 	assert.Equal(t, defaultServiceName, s.Tag(ext.ServiceName))
 	assert.Equal(t, ext.SpanTypeSQL, s.Tag(ext.SpanType))

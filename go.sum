@@ -702,6 +702,8 @@ github.com/DataDog/dd-trace-go/v2/contrib/hashicorp/consul v0.0.0-20240308141714
 github.com/DataDog/dd-trace-go/v2/contrib/hashicorp/consul v0.0.0-20240308141714-cc13161300f3/go.mod h1:ejvxw0fzedAP39+igWNH23WxI25KnlKUkFKGtoUELQM=
 github.com/DataDog/dd-trace-go/v2/contrib/hashicorp/vault v0.0.0-20240308141714-cc13161300f3 h1:/kB882SU3TBTql5tbWGNp76Nh2+28b5tmVKNIcaG89k=
 github.com/DataDog/dd-trace-go/v2/contrib/hashicorp/vault v0.0.0-20240308141714-cc13161300f3/go.mod h1:ZOeoFN1d1XZ18Ac5cQgdnHE6ONEq2e/EiuuuXm/gorI=
+github.com/DataDog/dd-trace-go/v2/contrib/jackc/pgx.v5 v0.0.0-20240308141714-cc13161300f3 h1:cv2+5yIANI0rm5ah4Cs1hDhQM+O+gXtMiNtUq3hVUfI=
+github.com/DataDog/dd-trace-go/v2/contrib/jackc/pgx.v5 v0.0.0-20240308141714-cc13161300f3/go.mod h1:zBoPXwd+9k2EFWdQv1BnGZqcXC1Fi5XG08RDGTLrbeU=
 github.com/DataDog/dd-trace-go/v2/contrib/julienschmidt/httprouter v0.0.0-20240308141714-cc13161300f3 h1:GcZBlBuKrw+LongzTyh6PbW94w08ANbL+wdNM968nQA=
 github.com/DataDog/dd-trace-go/v2/contrib/julienschmidt/httprouter v0.0.0-20240308141714-cc13161300f3/go.mod h1:ipASoR8CcGmulU0i3dCQiTBL/sujRw3LsdJ2jCJT27A=
 github.com/DataDog/dd-trace-go/v2/contrib/k8s.io/client-go v0.0.0-20240308141714-cc13161300f3 h1:fnub7airo+ShOEtmoXYZpA00+Q6Ff6DvCF4gtSt4lDI=
@@ -1595,8 +1597,8 @@ github.com/jackc/pgx/v5 v5.2.0/go.mod h1:Ptn7zmohNsWEsdxRawMzk3gaKma2obW+NWTnKa0
 github.com/jackc/pgx/v5 v5.4.2 h1:u1gmGDwbdRUZiwisBm/Ky2M14uQyUP65bG8+20nnyrg=
 github.com/jackc/pgx/v5 v5.4.2/go.mod h1:q6iHT8uDNXWiFNOlRqJzBTaSH3+2xCXkokxHZC5qWFY=
 github.com/jackc/puddle/v2 v2.1.2/go.mod h1:2lpufsF5mRHO6SuZkm0fNYxM6SWHfvyFj62KwNzgels=
-github.com/jackc/puddle/v2 v2.2.0 h1:RdcDk92EJBuBS55nQMMYFXTxwstHug4jkhT5pq8VxPk=
-github.com/jackc/puddle/v2 v2.2.0/go.mod h1:vriiEXHvEE654aYKXXjOvZM39qJ0q+azkZFrfEOc3H4=
+github.com/jackc/puddle/v2 v2.2.1 h1:RhxXJtFG022u4ibrCSMSiu5aOq1i77R3OHKNJj77OAk=
+github.com/jackc/puddle/v2 v2.2.1/go.mod h1:vriiEXHvEE654aYKXXjOvZM39qJ0q+azkZFrfEOc3H4=
 github.com/jcmturner/aescts/v2 v2.0.0 h1:9YKLH6ey7H4eDBXW8khjYslgyqG2xZikXP0EQFKrle8=
 github.com/jcmturner/aescts/v2 v2.0.0/go.mod h1:AiaICIRyfYg35RUkr8yESTqvSy7csK90qZ5xfvvsoNs=
 github.com/jcmturner/dnsutils/v2 v2.0.0 h1:lltnkeZGL0wILNvrNiVCR6Ro5PGU/SeBvVO/8c/iPbo=
