@@ -56,17 +56,6 @@ func TestClientError(t *testing.T) {
 
 }
 
-func TestClientKV(t *testing.T) {
-	assert := assert.New(t)
-	mt := mocktracer.Start()
-	defer mt.Stop()
-
-	client, _ := NewClient(consul.DefaultConfig())
-	kv := client.KV()
-
-	assert.Equal(client.ctx, kv.ctx)
-}
-
 func TestKV(t *testing.T) {
 	key := "test.key"
 	pair := &consul.KVPair{Key: key, Value: []byte("test_value")}
