@@ -17,6 +17,7 @@ require (
 	github.com/DataDog/dd-trace-go/v2/contrib/confluentinc/confluent-kafka-go/kafka.v2 v0.0.0-20240308141714-cc13161300f3
 	github.com/DataDog/dd-trace-go/v2/contrib/database/sql v0.0.0-20240308141714-cc13161300f3
 	github.com/DataDog/dd-trace-go/v2/contrib/dimfeld/httptreemux.v5 v0.0.0-20240308141714-cc13161300f3
+	github.com/DataDog/dd-trace-go/v2/contrib/elastic/go-elasticsearch.v6 v0.0.0-20240308141714-cc13161300f3
 	github.com/DataDog/dd-trace-go/v2/contrib/emicklei/go-restful.v3 v0.0.0-20240308141714-cc13161300f3
 	github.com/DataDog/dd-trace-go/v2/contrib/gin-gonic/gin v0.0.0-20240308141714-cc13161300f3
 	github.com/DataDog/dd-trace-go/v2/contrib/go-chi/chi v0.0.0-20240308141714-cc13161300f3
@@ -166,7 +167,7 @@ require (
 	github.com/eapache/go-xerial-snappy v0.0.0-20230731223053-c322873962e3 // indirect
 	github.com/eapache/queue v1.1.0 // indirect
 	github.com/ebitengine/purego v0.6.0-alpha.5 // indirect
-	github.com/elastic/elastic-transport-go/v8 v8.1.0 // indirect
+	github.com/elastic/elastic-transport-go/v8 v8.3.0 // indirect
 	github.com/fatih/color v1.15.0 // indirect
 	github.com/felixge/httpsnoop v1.0.3 // indirect
 	github.com/gabriel-vasile/mimetype v1.4.2 // indirect
