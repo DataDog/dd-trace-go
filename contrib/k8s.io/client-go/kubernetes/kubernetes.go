@@ -13,12 +13,6 @@ import (
 	httptrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http"
 )
 
-const (
-	prefixCoreAPI  = "/api/v1/"
-	prefixNamedAPI = "/apis/"
-	prefixWatch    = "watch/"
-)
-
 // WrapRoundTripperFunc creates a new WrapTransport function using the given set of
 // RoundTripperOption. It is useful when desiring to enable Trace Analytics or setting
 // up a RoundTripperAfterFunc.
