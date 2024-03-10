@@ -40,6 +40,7 @@ require (
 	github.com/DataDog/dd-trace-go/v2/contrib/hashicorp/consul v0.0.0-20240308141714-cc13161300f3
 	github.com/DataDog/dd-trace-go/v2/contrib/hashicorp/vault v0.0.0-20240308141714-cc13161300f3
 	github.com/DataDog/dd-trace-go/v2/contrib/jackc/pgx.v5 v0.0.0-20240308141714-cc13161300f3
+	github.com/DataDog/dd-trace-go/v2/contrib/jmoiron/sqlx v0.0.0-20240308141714-cc13161300f3
 	github.com/DataDog/dd-trace-go/v2/contrib/julienschmidt/httprouter v0.0.0-20240308141714-cc13161300f3
 	github.com/DataDog/dd-trace-go/v2/contrib/k8s.io/client-go v0.0.0-20240308141714-cc13161300f3
 	github.com/DataDog/dd-trace-go/v2/contrib/labstack/echo.v4 v0.0.0-20240308141714-cc13161300f3
