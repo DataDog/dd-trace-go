@@ -692,6 +692,8 @@ github.com/DataDog/dd-trace-go/v2/contrib/google.golang.org/grpc v0.0.0-20240308
 github.com/DataDog/dd-trace-go/v2/contrib/google.golang.org/grpc v0.0.0-20240308141714-cc13161300f3/go.mod h1:tAgCz8QMQT+6V26WuvfqLLcw8BwyEOlGcsUDMzCjnns=
 github.com/DataDog/dd-trace-go/v2/contrib/gorilla/mux v0.0.0-20240308141714-cc13161300f3 h1:NXXr6/6NLT51dDM8ZX1u+BPQILBc0XMybPhZ7VraqEc=
 github.com/DataDog/dd-trace-go/v2/contrib/gorilla/mux v0.0.0-20240308141714-cc13161300f3/go.mod h1:vh9Sb1lUc2YfKI2PZabtgDGEW9r36iZuk4pnr4ymjk4=
+github.com/DataDog/dd-trace-go/v2/contrib/gorm.io/gorm.v1 v0.0.0-20240308141714-cc13161300f3 h1:hjvyr8wmx0r518sQWIgWyENE13wNcPp7FzS1LdLrJqY=
+github.com/DataDog/dd-trace-go/v2/contrib/gorm.io/gorm.v1 v0.0.0-20240308141714-cc13161300f3/go.mod h1:mPYaK092M7MjxSr0QU3FiyQVsneflpIsYWwX8wmud+0=
 github.com/DataDog/dd-trace-go/v2/contrib/graph-gophers/graphql-go v0.0.0-20240308141714-cc13161300f3 h1:769Cy60FXdPf5T7RRRjCpwZ9FBFAVeYxYnCS+cgGuMQ=
 github.com/DataDog/dd-trace-go/v2/contrib/graph-gophers/graphql-go v0.0.0-20240308141714-cc13161300f3/go.mod h1:SGKxHhfVoeAETwEowT7KlyvQVJ0dOv4vhj8fjImWq5w=
 github.com/DataDog/dd-trace-go/v2/contrib/graphql-go/graphql v0.0.0-20240308141714-cc13161300f3 h1:IK3BQdi9fCopwa6JbKm43Pcm6rvu3XA5FC/QxNaxUss=

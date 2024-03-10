@@ -34,6 +34,7 @@ require (
 	github.com/DataDog/dd-trace-go/v2/contrib/google.golang.org/api v0.0.0-20240308141714-cc13161300f3
 	github.com/DataDog/dd-trace-go/v2/contrib/google.golang.org/grpc v0.0.0-20240308141714-cc13161300f3
 	github.com/DataDog/dd-trace-go/v2/contrib/gorilla/mux v0.0.0-20240308141714-cc13161300f3
+	github.com/DataDog/dd-trace-go/v2/contrib/gorm.io/gorm.v1 v0.0.0-20240308141714-cc13161300f3
 	github.com/DataDog/dd-trace-go/v2/contrib/graph-gophers/graphql-go v0.0.0-20240308141714-cc13161300f3
 	github.com/DataDog/dd-trace-go/v2/contrib/graphql-go/graphql v0.0.0-20240308141714-cc13161300f3
 	github.com/DataDog/dd-trace-go/v2/contrib/hashicorp/vault v0.0.0-20240308141714-cc13161300f3
