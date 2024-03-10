@@ -165,7 +165,7 @@ func TestCustomError(t *testing.T) {
 	assert.Equal("http.request", span.OperationName())
 	assert.Equal("foobar", span.Tag(ext.ServiceName))
 	assert.Equal("400", span.Tag(ext.HTTPCode))
-	assert.Equal(fiber.ErrBadRequest, span.Tag(ext.Error).(*fiber.Error))
+	assert.Equal(fiber.ErrBadRequest.Error(), span.Tag(ext.Error).(error).Error())
 	assert.Equal(ext.SpanKindServer, span.Tag(ext.SpanKind))
 	assert.Equal("gofiber/fiber.v2", span.Tag(ext.Component))
 	assert.Equal("/err", span.Tag(ext.HTTPRoute))
