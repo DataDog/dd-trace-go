@@ -128,7 +128,9 @@ func (msa MockspanV2Adapter) Tag(k string) interface{} {
 		}
 		err := errors.New(v.(string))
 		return err
-	case ext.HTTPCode, ext.NetworkDestinationPort:
+	case ext.HTTPCode,
+		ext.NetworkDestinationPort,
+		ext.RedisDatabaseIndex:
 		v := msa.Span.Tag(k)
 		if v == nil {
 			return nil
