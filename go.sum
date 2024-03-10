@@ -684,6 +684,8 @@ github.com/DataDog/dd-trace-go/v2/contrib/gocql/gocql v0.0.0-20240308141714-cc13
 github.com/DataDog/dd-trace-go/v2/contrib/gocql/gocql v0.0.0-20240308141714-cc13161300f3/go.mod h1:SCmgX9He8TXkN9FHp6V2+LqsXNKtplHSmkeZUCvdYVI=
 github.com/DataDog/dd-trace-go/v2/contrib/gofiber/fiber.v2 v0.0.0-20240308141714-cc13161300f3 h1:w9KeZkXG8cEmAzUMk0W858p4xi0JW9dfUlsdf+knkuo=
 github.com/DataDog/dd-trace-go/v2/contrib/gofiber/fiber.v2 v0.0.0-20240308141714-cc13161300f3/go.mod h1:vUZeF99wc+Gv5GiKe+MB/q3Ii45Em5TJbE6bWWbXMbc=
+github.com/DataDog/dd-trace-go/v2/contrib/gomodule/redigo v0.0.0-20240308141714-cc13161300f3 h1:LnFddPW3Qmkj0ACalmgUrnTo0GQHZKmlNbSPD+GSy38=
+github.com/DataDog/dd-trace-go/v2/contrib/gomodule/redigo v0.0.0-20240308141714-cc13161300f3/go.mod h1:tsIUfrLVppqKhevBrf4K3fjIpI42qXr794l0iceg59A=
 github.com/DataDog/dd-trace-go/v2/contrib/google.golang.org/api v0.0.0-20240308141714-cc13161300f3 h1:OmCP90FIA+CPeihTMvEqZm4tWtHr78R+TL73jw5U79g=
 github.com/DataDog/dd-trace-go/v2/contrib/google.golang.org/api v0.0.0-20240308141714-cc13161300f3/go.mod h1:yNy6qDgfzIt3pytCiiMMiLKFhymOkK3QkSHdYMqyTGs=
 github.com/DataDog/dd-trace-go/v2/contrib/google.golang.org/grpc v0.0.0-20240308141714-cc13161300f3 h1:y/jDZcAv1XwRiwsmqqzBEXk2ginrg/+i2DONjQ8ugB0=

@@ -72,7 +72,7 @@ func TestCommandError(t *testing.T) {
 	assert.Len(spans, 1)
 	span := spans[0]
 
-	assert.Equal(err, span.Tag(ext.Error).(error))
+	assert.Equal(err.Error(), span.Tag(ext.Error).(error).Error())
 	assert.Equal("redis.command", span.OperationName())
 	assert.Equal("my-service", span.Tag(ext.ServiceName))
 	assert.Equal("NOT_A_COMMAND", span.Tag(ext.ResourceName))
