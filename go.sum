@@ -712,6 +712,8 @@ github.com/DataDog/dd-trace-go/v2/contrib/k8s.io/client-go v0.0.0-20240308141714
 github.com/DataDog/dd-trace-go/v2/contrib/k8s.io/client-go v0.0.0-20240308141714-cc13161300f3/go.mod h1:ErAS1S9h4PVneqnUPa5D30XxcWHe5UYpIgPHbZG4qjU=
 github.com/DataDog/dd-trace-go/v2/contrib/labstack/echo.v4 v0.0.0-20240308141714-cc13161300f3 h1:AtcyPnUQtUzPSv/pPO3eP3ndSeYiiPUyd2xfEGLa1Hg=
 github.com/DataDog/dd-trace-go/v2/contrib/labstack/echo.v4 v0.0.0-20240308141714-cc13161300f3/go.mod h1:p8XuCb5/8lHYOnyoTI+OhyCL1nSVHYywGjTBMytNIoQ=
+github.com/DataDog/dd-trace-go/v2/contrib/miekg/dns v0.0.0-20240308141714-cc13161300f3 h1:EIKHj7azz1qm/vZAHvFrNoDobeHywPxx+eY5DYVdSPs=
+github.com/DataDog/dd-trace-go/v2/contrib/miekg/dns v0.0.0-20240308141714-cc13161300f3/go.mod h1:q2M0LIOMyP0r+Rgc9PRiJgx3zoqzl20/7Mf2x1Ovmyg=
 github.com/DataDog/dd-trace-go/v2/contrib/net/http v0.0.0-20240308141714-cc13161300f3 h1:3Xhx5IEpV5389kjTe/HEFgtdKKQ/3NWR4Zqbta4HuDY=
 github.com/DataDog/dd-trace-go/v2/contrib/net/http v0.0.0-20240308141714-cc13161300f3/go.mod h1:/oTOcjIVVvBEpjK1c+grPgClhkyJ02k7i7ZfPjfb4Zs=
 github.com/DataDog/dd-trace-go/v2/contrib/valyala/fasthttp v0.0.0-20240308141714-cc13161300f3 h1:TWowvvTobZxCR7z2RCZ0kt8r8AQvz43Q0FIUms7yggU=
