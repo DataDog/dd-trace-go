@@ -38,7 +38,7 @@ const (
 type consumerActionFn func(c *Consumer) (*kafka.Message, error)
 
 func produceThenConsume(t *testing.T, consumerAction consumerActionFn, producerOpts []Option, consumerOpts []Option, dataStreamsEnabled bool) ([]mocktracer.Span, *kafka.Message) {
-	if _, ok := os.LookupEnv("INTEGRATION"); ok {
+	if _, ok := os.LookupEnv("INTEGRATION"); !ok {
 		t.Skip("to enable integration test, set the INTEGRATION environment variable")
 	}
 	mt := mocktracer.Start()
