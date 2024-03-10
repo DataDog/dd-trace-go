@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/namingschematest"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
@@ -24,11 +23,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
-
-const debug = false
-
-// ensure it's a redis.Hook
-var _ redis.Hook = (*datadogHook)(nil)
 
 func TestMain(m *testing.M) {
 	_, ok := os.LookupEnv("INTEGRATION")
@@ -233,67 +227,6 @@ func TestWrapClient(t *testing.T) {
 	}
 }
 
-func TestAdditionalTagsFromClient(t *testing.T) {
-	t.Run("simple-client", func(t *testing.T) {
-		simpleClientOpts := &redis.UniversalOptions{Addrs: []string{"127.0.0.1:6379"}}
-		simpleClient := redis.NewUniversalClient(simpleClientOpts)
-		config := &ddtrace.StartSpanConfig{}
-		expectedTags := map[string]interface{}{
-			"out.db":                  "0",
-			"out.host":                "127.0.0.1",
-			"out.port":                "6379",
-			"db.redis.database_index": 0,
-		}
-
-		additionalTagOptions := additionalTagOptions(simpleClient)
-		for _, t := range additionalTagOptions {
-			t(config)
-		}
-		assert.Equal(t, expectedTags, config.Tags)
-	})
-
-	t.Run("failover-client", func(t *testing.T) {
-		failoverClientOpts := &redis.UniversalOptions{
-			MasterName: "leader.redis.host",
-			Addrs: []string{
-				"127.0.0.1:6379",
-				"127.0.0.2:6379",
-			}}
-		failoverClient := redis.NewUniversalClient(failoverClientOpts)
-		config := &ddtrace.StartSpanConfig{}
-		expectedTags := map[string]interface{}{
-			"out.db":                  "0",
-			"db.redis.database_index": 0,
-		}
-
-		additionalTagOptions := additionalTagOptions(failoverClient)
-		for _, t := range additionalTagOptions {
-			t(config)
-		}
-		assert.Equal(t, expectedTags, config.Tags)
-	})
-
-	t.Run("cluster-client", func(t *testing.T) {
-		clusterClientOpts := &redis.UniversalOptions{
-			Addrs: []string{
-				"127.0.0.1:6379",
-				"127.0.0.2:6379",
-			},
-			DialTimeout: 1}
-		clusterClient := redis.NewUniversalClient(clusterClientOpts)
-		config := &ddtrace.StartSpanConfig{}
-		expectedTags := map[string]interface{}{
-			"addrs": "127.0.0.1:6379, 127.0.0.2:6379",
-		}
-
-		additionalTagOptions := additionalTagOptions(clusterClient)
-		for _, t := range additionalTagOptions {
-			t(config)
-		}
-		assert.Equal(t, expectedTags, config.Tags)
-	})
-}
-
 func TestPipeline(t *testing.T) {
 	ctx := context.Background()
 	opts := &redis.Options{Addr: "127.0.0.1:6379"}
@@ -427,7 +360,7 @@ func TestError(t *testing.T) {
 
 		assert.Equal("redis.command", span.OperationName())
 		assert.NotNil(err)
-		assert.Equal(err, span.Tag(ext.Error))
+		assert.Equal(err.Error(), span.Tag(ext.Error).(error).Error())
 		assert.Equal("127.0.0.1", span.Tag(ext.TargetHost))
 		assert.Equal("6378", span.Tag(ext.TargetPort))
 		assert.Equal("get key:", span.Tag("redis.raw_command"))

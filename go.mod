@@ -26,6 +26,7 @@ require (
 	github.com/DataDog/dd-trace-go/v2/contrib/go-pg/pg.v10 v0.0.0-20240308141714-cc13161300f3
 	github.com/DataDog/dd-trace-go/v2/contrib/go-redis/redis v0.0.0-20240308141714-cc13161300f3
 	github.com/DataDog/dd-trace-go/v2/contrib/go-redis/redis.v7 v0.0.0-20240308141714-cc13161300f3
+	github.com/DataDog/dd-trace-go/v2/contrib/go-redis/redis.v8 v0.0.0-20240308141714-cc13161300f3
 	github.com/DataDog/dd-trace-go/v2/contrib/google.golang.org/api v0.0.0-20240308141714-cc13161300f3
 	github.com/DataDog/dd-trace-go/v2/contrib/google.golang.org/grpc v0.0.0-20240308141714-cc13161300f3
 	github.com/DataDog/dd-trace-go/v2/contrib/gorilla/mux v0.0.0-20240308141714-cc13161300f3
