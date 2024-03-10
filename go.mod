@@ -14,6 +14,7 @@ require (
 	github.com/DataDog/dd-trace-go/v2/contrib/bradfitz/gomemcache v0.0.0-20240308141714-cc13161300f3
 	github.com/DataDog/dd-trace-go/v2/contrib/cloud.google.com/go/pubsub.v1 v0.0.0-20240308141714-cc13161300f3
 	github.com/DataDog/dd-trace-go/v2/contrib/confluentinc/confluent-kafka-go/kafka v0.0.0-20240308141714-cc13161300f3
+	github.com/DataDog/dd-trace-go/v2/contrib/confluentinc/confluent-kafka-go/kafka.v2 v0.0.0-20240308141714-cc13161300f3
 	github.com/DataDog/dd-trace-go/v2/contrib/database/sql v0.0.0-20240308141714-cc13161300f3
 	github.com/DataDog/dd-trace-go/v2/contrib/emicklei/go-restful.v3 v0.0.0-20240308141714-cc13161300f3
 	github.com/DataDog/dd-trace-go/v2/contrib/gin-gonic/gin v0.0.0-20240308141714-cc13161300f3
