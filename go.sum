@@ -680,6 +680,8 @@ github.com/DataDog/dd-trace-go/v2/contrib/go-redis/redis.v8 v0.0.0-2024030814171
 github.com/DataDog/dd-trace-go/v2/contrib/go-redis/redis.v8 v0.0.0-20240308141714-cc13161300f3/go.mod h1:WXZ/6XSedd2AG1bPjbSl2U3yZIp9LTw/xcKKeUyQqvQ=
 github.com/DataDog/dd-trace-go/v2/contrib/go.mongodb.org/mongo-driver v0.0.0-20240308141714-cc13161300f3 h1:nILCFgvL7FhoUdodzzWNehHKLv3Vy/WxMorOmtB+wrM=
 github.com/DataDog/dd-trace-go/v2/contrib/go.mongodb.org/mongo-driver v0.0.0-20240308141714-cc13161300f3/go.mod h1:xBs5pXTd6ZLN62i4noOx+t8Oj9cmXK5IIqgdwiBeRrE=
+github.com/DataDog/dd-trace-go/v2/contrib/gocql/gocql v0.0.0-20240308141714-cc13161300f3 h1:ptY0k8D8WsZ+pI9dQQUQv+XZV/wVoZ2bPzGcsTWUsgk=
+github.com/DataDog/dd-trace-go/v2/contrib/gocql/gocql v0.0.0-20240308141714-cc13161300f3/go.mod h1:SCmgX9He8TXkN9FHp6V2+LqsXNKtplHSmkeZUCvdYVI=
 github.com/DataDog/dd-trace-go/v2/contrib/google.golang.org/api v0.0.0-20240308141714-cc13161300f3 h1:OmCP90FIA+CPeihTMvEqZm4tWtHr78R+TL73jw5U79g=
 github.com/DataDog/dd-trace-go/v2/contrib/google.golang.org/api v0.0.0-20240308141714-cc13161300f3/go.mod h1:yNy6qDgfzIt3pytCiiMMiLKFhymOkK3QkSHdYMqyTGs=
 github.com/DataDog/dd-trace-go/v2/contrib/google.golang.org/grpc v0.0.0-20240308141714-cc13161300f3 h1:y/jDZcAv1XwRiwsmqqzBEXk2ginrg/+i2DONjQ8ugB0=
