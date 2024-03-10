@@ -664,6 +664,8 @@ github.com/DataDog/dd-trace-go/v2/contrib/emicklei/go-restful.v3 v0.0.0-20240308
 github.com/DataDog/dd-trace-go/v2/contrib/emicklei/go-restful.v3 v0.0.0-20240308141714-cc13161300f3/go.mod h1:xfFjIIY7IQv2/qdspxb4Vs8OEzXQ0fIPwNC9fgkkfoY=
 github.com/DataDog/dd-trace-go/v2/contrib/gin-gonic/gin v0.0.0-20240308141714-cc13161300f3 h1:YFv6JKNQxLF1l3yZGOaIGO3suAUExO2Y3pA8JkDCXrM=
 github.com/DataDog/dd-trace-go/v2/contrib/gin-gonic/gin v0.0.0-20240308141714-cc13161300f3/go.mod h1:+SFTYDEZO8sXW+WK5K7WiVrzrvvPS2TAYGPz1DPZQgU=
+github.com/DataDog/dd-trace-go/v2/contrib/globalsign/mgo v0.0.0-20240308141714-cc13161300f3 h1:lYl77FGU5BQXiAzFELKWBZW5TLO+LBYtxYzimXXc9M8=
+github.com/DataDog/dd-trace-go/v2/contrib/globalsign/mgo v0.0.0-20240308141714-cc13161300f3/go.mod h1:PWOGFRdnE71rAs/EjVvsFqrotxO4oL4YcWZuzoFmxzA=
 github.com/DataDog/dd-trace-go/v2/contrib/go-chi/chi v0.0.0-20240308141714-cc13161300f3 h1:3eh9IOps/HtkVVXbQ03CpWu15ugAiDWKyzsuAJP7iiU=
 github.com/DataDog/dd-trace-go/v2/contrib/go-chi/chi v0.0.0-20240308141714-cc13161300f3/go.mod h1:WBpKvsJPfklRnYRxRZnvntGNO1acBsZ8x3Fx3G5Zekg=
 github.com/DataDog/dd-trace-go/v2/contrib/go-chi/chi.v5 v0.0.0-20240308141714-cc13161300f3 h1:tU5czko/riVmnMViPpC7iJ9n/2hE56NcDp36EDNjX54=
