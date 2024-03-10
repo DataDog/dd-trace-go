@@ -656,6 +656,8 @@ github.com/DataDog/dd-trace-go/v2/contrib/confluentinc/confluent-kafka-go/kafka.
 github.com/DataDog/dd-trace-go/v2/contrib/confluentinc/confluent-kafka-go/kafka.v2 v0.0.0-20240308141714-cc13161300f3/go.mod h1:wEvgSK/m61R3knLI82EcFEEJZPMr58xtUStrVpQfkxY=
 github.com/DataDog/dd-trace-go/v2/contrib/database/sql v0.0.0-20240308141714-cc13161300f3 h1:K1VtU4pvGaJk9AvRO7J6vpXwVe1cKU9EkJ5WAlt5HR8=
 github.com/DataDog/dd-trace-go/v2/contrib/database/sql v0.0.0-20240308141714-cc13161300f3/go.mod h1:NV66NXlVYSNU1nqNFLub+8NCFwtgeUQzkKTYZJiit6Q=
+github.com/DataDog/dd-trace-go/v2/contrib/dimfeld/httptreemux.v5 v0.0.0-20240308141714-cc13161300f3 h1:T8MqF+6MQ0U3mr9iDL1YlOpWIOajDHYE2TvUJjJvrhY=
+github.com/DataDog/dd-trace-go/v2/contrib/dimfeld/httptreemux.v5 v0.0.0-20240308141714-cc13161300f3/go.mod h1:2/Q1Bog1IwMTnPGH0HIfHowF4adxOFrRamqYlL+Vxrs=
 github.com/DataDog/dd-trace-go/v2/contrib/emicklei/go-restful.v3 v0.0.0-20240308141714-cc13161300f3 h1:OY1Nj+THF/nZffdyvdRO8kgJmbxaqThYtLJla6u+DRY=
 github.com/DataDog/dd-trace-go/v2/contrib/emicklei/go-restful.v3 v0.0.0-20240308141714-cc13161300f3/go.mod h1:xfFjIIY7IQv2/qdspxb4Vs8OEzXQ0fIPwNC9fgkkfoY=
 github.com/DataDog/dd-trace-go/v2/contrib/gin-gonic/gin v0.0.0-20240308141714-cc13161300f3 h1:YFv6JKNQxLF1l3yZGOaIGO3suAUExO2Y3pA8JkDCXrM=

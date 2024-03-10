@@ -564,14 +564,20 @@ func WithPropagation() UserMonitoringOption {
 	return v2.WithPropagation()
 }
 
+// BuildStartSpanConfigV2 returns a new StartSpanConfig with the given set of options.
+// This is not intended for use outside of contribs. It'll be removed when v1 is deprecated.
 func BuildStartSpanConfigV2(opts ...StartSpanOption) *v2.StartSpanConfig {
 	return internal.BuildStartSpanConfigV2(opts...)
 }
 
+// BuildFinishConfigV2 returns a new FinishConfig with the given set of options.
+// This is not intended for use outside of contribs. It'll be removed when v1 is deprecated.
 func BuildFinishConfigV2(opts ...FinishOption) *v2.FinishConfig {
 	return internal.BuildFinishConfigV2(opts...)
 }
 
+// WrapSpanV2 wraps a v2.Span into a ddtrace.Span.
+// This is not intended for external use. It'll be removed when v1 is deprecated.
 func WrapSpanV2(span *v2.Span) ddtrace.Span {
 	return &internal.SpanV2Adapter{Span: span}
 }
