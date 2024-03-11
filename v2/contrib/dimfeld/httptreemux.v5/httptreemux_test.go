@@ -43,7 +43,7 @@ func TestHttpTracer200(t *testing.T) {
 	assert.Equal("GET", s.Tag(ext.HTTPMethod))
 	assert.Equal("http://example.com"+url, s.Tag(ext.HTTPURL))
 	assert.Equal("testvalue", s.Tag("testkey"))
-	assert.Equal(nil, s.Tag(ext.Error))
+	assert.Zero(s.Tag(ext.Error))
 	assert.Equal("/200", s.Tag(ext.HTTPRoute))
 }
 
@@ -71,7 +71,7 @@ func TestHttpTracer404(t *testing.T) {
 	assert.Equal("GET", s.Tag(ext.HTTPMethod))
 	assert.Equal("http://example.com"+url, s.Tag(ext.HTTPURL))
 	assert.Equal("testvalue", s.Tag("testkey"))
-	assert.Equal(nil, s.Tag(ext.Error))
+	assert.Zero(s.Tag(ext.Error))
 	assert.NotContains(s.Tags(), ext.HTTPRoute)
 }
 
@@ -172,7 +172,7 @@ func TestDefaultResourceNamer(t *testing.T) {
 			assert.Equal("200", s.Tag(ext.HTTPCode))
 			assert.Equal(tc.method, s.Tag(ext.HTTPMethod))
 			assert.Equal("http://example.com"+tc.url, s.Tag(ext.HTTPURL))
-			assert.Equal(nil, s.Tag(ext.Error))
+			assert.Zero(s.Tag(ext.Error))
 			assert.Equal(tc.path, s.Tag(ext.HTTPRoute))
 		})
 	}
@@ -215,7 +215,7 @@ func TestResourceNamer(t *testing.T) {
 	assert.Equal("GET", s.Tag(ext.HTTPMethod))
 	assert.Equal("http://example.com"+url, s.Tag(ext.HTTPURL))
 	assert.Equal("testvalue", s.Tag("testkey"))
-	assert.Equal(nil, s.Tag(ext.Error))
+	assert.Zero(s.Tag(ext.Error))
 }
 
 func TestNamingSchema(t *testing.T) {
