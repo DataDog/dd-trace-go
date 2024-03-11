@@ -5,7 +5,7 @@ go 1.19
 require (
 	github.com/DataDog/dd-trace-go/v2 v2.0.0-20240307140101-1887b044eecd
 	github.com/aws/aws-sdk-go-v2 v1.20.3
-	github.com/aws/aws-sdk-go-v2/config v1.18.35
+	github.com/aws/aws-sdk-go-v2/config v1.18.21
 	github.com/aws/aws-sdk-go-v2/service/dynamodb v1.21.4
 	github.com/aws/aws-sdk-go-v2/service/ec2 v1.93.2
 	github.com/aws/aws-sdk-go-v2/service/eventbridge v1.20.4
