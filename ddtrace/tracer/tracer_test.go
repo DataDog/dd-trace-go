@@ -14,6 +14,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"runtime"
 	rt "runtime/trace"
 	"strconv"
 	"sync"
@@ -799,6 +800,63 @@ func BenchmarkConcurrentTracing(b *testing.B) {
 	}
 }
 
+// BenchmarkPartialFlushing tests the performance of creating a lot of spans in a single thread
+// while partial flushing is enabled.
+func BenchmarkPartialFlushing(b *testing.B) {
+	b.Run("Enabled", func(b *testing.B) {
+		b.Setenv("DD_TRACE_PARTIAL_FLUSH_ENABLED", "true")
+		b.Setenv("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", "500")
+		genBigTraces(b)
+	})
+	b.Run("Disabled", func(b *testing.B) {
+		genBigTraces(b)
+	})
+}
+
+func genBigTraces(b *testing.B) {
+	tracer, stop := startTestTracer(b, WithLogger(log.DiscardLogger{}))
+	defer stop()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	wg := sync.WaitGroup{}
+	wg.Add(1)
+	tick := time.NewTicker(100 * time.Millisecond)
+	defer tick.Stop()
+	m := runtime.MemStats{}
+	sumHeapUsageMB := float64(0)
+	heapCounts := 0
+	go func() {
+		defer wg.Done()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-tick.C:
+				runtime.ReadMemStats(&m)
+				heapCounts++
+				sumHeapUsageMB += float64(m.HeapInuse) / 1_000_000
+			}
+		}
+	}()
+
+	b.ResetTimer()
+	for n := 0; n < b.N; n++ {
+		for i := 0; i < 10; i++ {
+			parent := tracer.StartSpan("pylons.request", ResourceName("/"))
+			for i := 0; i < 10_000; i++ {
+				sp := tracer.StartSpan("redis.command", ChildOf(parent.Context()))
+				sp.SetTag("someKey", "some much larger value to create some fun memory usage here")
+				sp.Finish()
+			}
+			parent.Finish()
+		}
+	}
+	b.StopTimer()
+	cancel()
+	wg.Wait()
+	b.ReportMetric(sumHeapUsageMB/float64(heapCounts), "avgHeapInUse(Mb)")
+}
+
 // BenchmarkTracerAddSpans tests the performance of creating and finishing a root
 // span. It should include the encoding overhead.
 func BenchmarkTracerAddSpans(b *testing.B) {
@@ -849,6 +907,56 @@ func BenchmarkTracerStackFrames(b *testing.B) {
 		span := tracer.StartSpan("test")
 		span.Finish(StackFrames(64, 0))
 	}
+}
+
+func BenchmarkSingleSpanRetention(b *testing.B) {
+	b.Run("no-rules", func(b *testing.B) {
+		tracer, stop := startTestTracer(b, v2.WithService("test_service"), v2.WithSampler(v2.NewRateSampler(0)))
+		defer stop()
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			span := tracer.StartSpan("name_1")
+			for i := 0; i < 100; i++ {
+				child := tracer.StartSpan("name_2", ChildOf(span.Context()))
+				child.Finish()
+			}
+			span.Finish()
+		}
+	})
+
+	b.Run("with-rules/match-half", func(b *testing.B) {
+		b.Setenv("DD_SPAN_SAMPLING_RULES", `[{"service": "test_*","name":"*_1", "sample_rate": 1.0, "max_per_second": 15.0}]`)
+		tracer, stop := startTestTracer(b, v2.WithService("test_service"), v2.WithSampler(v2.NewRateSampler(0)))
+		defer stop()
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			span := tracer.StartSpan("name_1")
+			for i := 0; i < 50; i++ {
+				child := tracer.StartSpan("name_2", ChildOf(span.Context()))
+				child.Finish()
+			}
+			for i := 0; i < 50; i++ {
+				child := tracer.StartSpan("name", ChildOf(span.Context()))
+				child.Finish()
+			}
+			span.Finish()
+		}
+	})
+
+	b.Run("with-rules/match-all", func(b *testing.B) {
+		b.Setenv("DD_SPAN_SAMPLING_RULES", `[{"service": "test_*","name":"*_1", "sample_rate": 1.0, "max_per_second": 15.0}]`)
+		tracer, stop := startTestTracer(b, v2.WithService("test_service"), v2.WithSampler(v2.NewRateSampler(0)))
+		defer stop()
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			span := tracer.StartSpan("name_1")
+			for i := 0; i < 100; i++ {
+				child := tracer.StartSpan("name_2", ChildOf(span.Context()))
+				child.Finish()
+			}
+			span.Finish()
+		}
+	})
 }
 
 func TestExecutionTraceSpanTagged(t *testing.T) {

@@ -14,6 +14,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/DataDog/dd-trace-go/v2/v1internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 
@@ -407,4 +408,30 @@ func TestMalformedTID(t *testing.T) {
 		rm := root.(internal.SpanV2Adapter).Span.AsMap()
 		assert.Equal(t, "640cfd8d00000000", rm[keyTraceID128])
 	})
+}
+
+func BenchmarkInjectW3C(b *testing.B) {
+	b.Setenv(headerPropagationStyleInject, "tracecontext")
+	tracer := newTracer()
+	defer tracer.Stop()
+	root := tracer.StartSpan("test")
+	defer root.Finish()
+
+	ctx := root.Context().(internal.SpanContextV2Adapter)
+
+	v1internal.SetPropagatingTag(ctx.Ctx, tracestateHeader,
+		"othervendor=t61rcWkgMzE,dd=s:2;o:rum;t.dm:-4;t.usr.id:baz64~~")
+
+	for i := 0; i < 100; i++ {
+		// _dd.p. prefix is needed for w3c
+		k := fmt.Sprintf("_dd.p.k%d", i)
+		v := fmt.Sprintf("v%d", i)
+		v1internal.SetPropagatingTag(ctx.Ctx, k, v)
+	}
+	dst := map[string]string{}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		tracer.Inject(root.Context(), TextMapCarrier(dst))
+	}
 }
