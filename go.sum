@@ -638,6 +638,8 @@ github.com/DataDog/datadog-go/v5 v5.4.0 h1:Ea3eXUVwrVV28F/fo3Dr3aa+TL/Z7Xi6SUPKW
 github.com/DataDog/datadog-go/v5 v5.4.0/go.mod h1:K9kcYBlxkcPP8tvvjZZKs/m1edNAUFzBbdpTUKfCsuw=
 github.com/DataDog/dd-trace-go/v2 v2.0.0-20240311164243-cf3d5231c0c5 h1:CvpxVv9yoTGL0E8f7qHcsJp7KAZd+/mxAbHxBOL2X90=
 github.com/DataDog/dd-trace-go/v2 v2.0.0-20240311164243-cf3d5231c0c5/go.mod h1:j5JXNatApsln+VHjV6PFZjsqfbn1HXYBNWwT3Zs8CVc=
+github.com/DataDog/dd-trace-go/v2 v2.0.0-20240311170227-e86899c4ee93 h1:ETtitGThJPPc6fByKbu8JKEdh9Y9kcUMBXksPTK6ENE=
+github.com/DataDog/dd-trace-go/v2 v2.0.0-20240311170227-e86899c4ee93/go.mod h1:j5JXNatApsln+VHjV6PFZjsqfbn1HXYBNWwT3Zs8CVc=
 github.com/DataDog/dd-trace-go/v2/contrib/99designs/gqlgen v0.0.0-20240308141714-cc13161300f3 h1:UpfoWK0FL94xV+TbYjjM+JyQRsOgyJ4CkwA3ucX3tPw=
 github.com/DataDog/dd-trace-go/v2/contrib/99designs/gqlgen v0.0.0-20240308141714-cc13161300f3/go.mod h1:yTF54Z9X1OAE+GXUTQNFXA9lyyoWonVYEf2KQ7TiZ08=
 github.com/DataDog/dd-trace-go/v2/contrib/IBM/sarama v0.0.0-20240308141714-cc13161300f3 h1:PjwFntwKGxNFbM8YlWU8zuSyRPKFH0ULEgP1oWMLv88=
