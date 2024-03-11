@@ -732,6 +732,8 @@ github.com/DataDog/dd-trace-go/v2/contrib/tidwall/buntdb v0.0.0-20240308141714-c
 github.com/DataDog/dd-trace-go/v2/contrib/tidwall/buntdb v0.0.0-20240308141714-cc13161300f3/go.mod h1:9eLZhNYnarVdaVeG+ZYCa+WGtxDOZJPMmTey6PiEdOI=
 github.com/DataDog/dd-trace-go/v2/contrib/twitchtv/twirp v0.0.0-20240308141714-cc13161300f3 h1:IiJr+lMCZ+Jkmh5A4PDCs3hlBwBjCaVnoDg8gHLY8e4=
 github.com/DataDog/dd-trace-go/v2/contrib/twitchtv/twirp v0.0.0-20240308141714-cc13161300f3/go.mod h1:AOoDNIravSIEHBZTvlN4edfWPWcC/4vr2mzFpQUdv8s=
+github.com/DataDog/dd-trace-go/v2/contrib/urfave/negroni v0.0.0-20240308141714-cc13161300f3 h1:jsJv83wZ9dcYIC5rNtg4V8AWnzwpMmZrZpjWbYIZ2JA=
+github.com/DataDog/dd-trace-go/v2/contrib/urfave/negroni v0.0.0-20240308141714-cc13161300f3/go.mod h1:Pgy1Hf4wJXYOvy1LZU44pzhgjsxbPCvdOraBi22bN08=
 github.com/DataDog/dd-trace-go/v2/contrib/valyala/fasthttp v0.0.0-20240308141714-cc13161300f3 h1:TWowvvTobZxCR7z2RCZ0kt8r8AQvz43Q0FIUms7yggU=
 github.com/DataDog/dd-trace-go/v2/contrib/valyala/fasthttp v0.0.0-20240308141714-cc13161300f3/go.mod h1:zFQVUJvD+loJfj42pBRI9pq9w4tlsB5wnNLIOX+OCQ8=
 github.com/DataDog/go-libddwaf/v2 v2.3.2 h1:pdi9xjWW57IpOpTeOyPuNveEDFLmmInsHDeuZk3TY34=

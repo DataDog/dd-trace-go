@@ -54,6 +54,7 @@ require (
 	github.com/DataDog/dd-trace-go/v2/contrib/syndtr/goleveldb v0.0.0-20240308141714-cc13161300f3
 	github.com/DataDog/dd-trace-go/v2/contrib/tidwall/buntdb v0.0.0-20240308141714-cc13161300f3
 	github.com/DataDog/dd-trace-go/v2/contrib/twitchtv/twirp v0.0.0-20240308141714-cc13161300f3
+	github.com/DataDog/dd-trace-go/v2/contrib/urfave/negroni v0.0.0-20240308141714-cc13161300f3
 	github.com/DataDog/dd-trace-go/v2/contrib/valyala/fasthttp v0.0.0-20240308141714-cc13161300f3
 	github.com/DataDog/gostackparse v0.7.0
 	github.com/IBM/sarama v1.40.0
