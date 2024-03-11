@@ -7,25 +7,15 @@
 package logrus
 
 import (
+	v2 "github.com/DataDog/dd-trace-go/v2/contrib/sirupsen/logrus"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 
 	"github.com/sirupsen/logrus"
 )
 
-const componentName = "sirupsen/logrus"
-
-func init() {
-	telemetry.LoadIntegration(componentName)
-	tracer.MarkIntegrationImported("github.com/sirupsen/logrus")
-}
-
 // DDContextLogHook ensures that any span in the log context is correlated to log output.
-type DDContextLogHook struct{}
-
-// Levels implements logrus.Hook interface, this hook applies to all defined levels
-func (d *DDContextLogHook) Levels() []logrus.Level {
-	return []logrus.Level{logrus.PanicLevel, logrus.FatalLevel, logrus.ErrorLevel, logrus.WarnLevel, logrus.InfoLevel, logrus.DebugLevel, logrus.TraceLevel}
+type DDContextLogHook struct {
+	v2.DDContextLogHook
 }
 
 // Fire implements logrus.Hook interface, attaches trace and span details found in entry context
@@ -34,7 +24,9 @@ func (d *DDContextLogHook) Fire(e *logrus.Entry) error {
 	if !found {
 		return nil
 	}
+	d.DDContextLogHook.Fire(e)
+	// To keep v1 behavior, we set the trace_id as 64-bit integer.
+	// This is not the default behavior in v2.
 	e.Data["dd.trace_id"] = span.Context().TraceID()
-	e.Data["dd.span_id"] = span.Context().SpanID()
 	return nil
 }
