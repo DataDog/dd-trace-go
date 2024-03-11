@@ -5,6 +5,7 @@
 
 // Package telemetry implements a client for sending telemetry information to
 // Datadog regarding usage of an APM library such as tracing or profiling.
+// This package is not intended for use by external consumers, no API stability is guaranteed.
 package telemetry
 
 import (
@@ -13,6 +14,7 @@ import (
 
 // Disabled returns whether instrumentation telemetry is disabled
 // according to the DD_INSTRUMENTATION_TELEMETRY_ENABLED env var
+// This function is not intended for use by external consumers, no API stability is guaranteed.
 func Disabled() bool {
 	return telemetry.Disabled()
 }

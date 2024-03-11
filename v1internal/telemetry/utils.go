@@ -5,22 +5,17 @@
 
 // Package telemetry implements a client for sending telemetry information to
 // Datadog regarding usage of an APM library such as tracing or profiling.
+// This package is not intended for use by external consumers, no API stability is guaranteed.
 package telemetry
 
 import (
-	"testing"
-
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 )
 
 // MockGlobalClient replaces the global telemetry client with a custom
 // implementation of TelemetryClient. It returns a function that can be deferred
 // to reset the global telemetry client to its previous value.
+// This function is not intended for use by external consumers, no API stability is guaranteed.
 func MockGlobalClient(client telemetry.Client) func() {
 	return telemetry.MockGlobalClient(client)
-}
-
-// Check is a testing utility to assert that a target key in config contains the expected value
-func Check(t *testing.T, configuration []telemetry.Configuration, key string, expected interface{}) {
-	telemetry.Check(t, configuration, key, expected)
 }
