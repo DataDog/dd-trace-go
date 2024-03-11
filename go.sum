@@ -642,6 +642,8 @@ github.com/DataDog/dd-trace-go/v2/contrib/99designs/gqlgen v0.0.0-20240308141714
 github.com/DataDog/dd-trace-go/v2/contrib/99designs/gqlgen v0.0.0-20240308141714-cc13161300f3/go.mod h1:yTF54Z9X1OAE+GXUTQNFXA9lyyoWonVYEf2KQ7TiZ08=
 github.com/DataDog/dd-trace-go/v2/contrib/IBM/sarama v0.0.0-20240308141714-cc13161300f3 h1:PjwFntwKGxNFbM8YlWU8zuSyRPKFH0ULEgP1oWMLv88=
 github.com/DataDog/dd-trace-go/v2/contrib/IBM/sarama v0.0.0-20240308141714-cc13161300f3/go.mod h1:MHSVu0DgwCbpTpQGfqQ4LNwIfBvqva/2GYCbxw/x22g=
+github.com/DataDog/dd-trace-go/v2/contrib/Shopify/sarama v0.0.0-20240308141714-cc13161300f3 h1:e7e24Bjr4fVpnaTW22u8H845c9DpcXIJZd2nbPayAHE=
+github.com/DataDog/dd-trace-go/v2/contrib/Shopify/sarama v0.0.0-20240308141714-cc13161300f3/go.mod h1:La4MbSTKmQu6F5CuU4kNvXo9PHuyMSElR9QIYbv1bsE=
 github.com/DataDog/dd-trace-go/v2/contrib/aws/aws-sdk-go v0.0.0-20240308141714-cc13161300f3 h1:WnQeTLZ2RHVX/98RqwjeOg91DmcJpHhof8G5ayoIsuk=
 github.com/DataDog/dd-trace-go/v2/contrib/aws/aws-sdk-go v0.0.0-20240308141714-cc13161300f3/go.mod h1:qvgNgRyBzXGqj1dqPs7wgeNmqYswPEzDFrfmLjuHM6U=
 github.com/DataDog/dd-trace-go/v2/contrib/aws/aws-sdk-go-v2 v0.0.0-20240308141714-cc13161300f3 h1:UWmlRkfHFphf2lJcpdZokrH9FdCCGJEwqi++uEtgEdA=
