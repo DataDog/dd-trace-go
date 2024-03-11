@@ -262,7 +262,7 @@ func TestTrailingSlashRoutes(t *testing.T) {
 		assert.Equal("GET", s.Tag(ext.HTTPMethod))
 		assert.Equal("http://example.com/unknown/", s.Tag(ext.HTTPURL))
 		assert.Equal("testvalue", s.Tag("testkey"))
-		assert.Nil(s.Tag(ext.Error))
+		assert.Zero(s.Tag(ext.Error))
 		assert.NotContains(s.Tags(), ext.HTTPRoute)
 	})
 
@@ -289,7 +289,7 @@ func TestTrailingSlashRoutes(t *testing.T) {
 		assert.Equal("GET", s.Tag(ext.HTTPMethod))
 		assert.Equal("http://example.com/api/paramvalue/", s.Tag(ext.HTTPURL))
 		assert.Equal("testvalue", s.Tag("testkey"))
-		assert.Nil(s.Tag(ext.Error))
+		assert.Zero(s.Tag(ext.Error))
 		assert.Contains(s.Tags(), ext.HTTPRoute)
 	})
 }

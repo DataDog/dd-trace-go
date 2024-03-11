@@ -298,7 +298,7 @@ func TestStreaming(t *testing.T) {
 func TestSpanTree(t *testing.T) {
 	assertSpan := func(t *testing.T, span, parent *mocktracer.Span, operationName, resourceName string) {
 		require.NotNil(t, span)
-		assert.Nil(t, span.Tag(ext.Error))
+		assert.Zero(t, span.Tag(ext.Error))
 		assert.Equal(t, operationName, span.OperationName())
 		assert.Equal(t, "grpc", span.Tag(ext.ServiceName))
 		assert.Equal(t, span.Tag(ext.ResourceName), resourceName)
@@ -449,7 +449,7 @@ func TestPass(t *testing.T) {
 	assert.Len(spans, 1)
 
 	s := spans[0]
-	assert.Nil(s.Tag(ext.Error))
+	assert.Zero(s.Tag(ext.Error))
 	assert.Equal(s.OperationName(), "grpc.server")
 	assert.Equal(s.Tag(ext.ServiceName), "grpc")
 	assert.Equal(s.Tag(ext.ResourceName), "/grpc.Fixture/Ping")
