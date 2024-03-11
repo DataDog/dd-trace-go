@@ -13,13 +13,10 @@ package appsec
 
 import (
 	"context"
-	"sync"
 
 	v2 "github.com/DataDog/dd-trace-go/v2/appsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
-
-var appsecDisabledLog sync.Once
 
 // MonitorParsedHTTPBody runs the security monitoring rules on the given *parsed*
 // HTTP request body and returns if the HTTP request is suspicious and configured to be blocked.
