@@ -674,6 +674,37 @@ func TestTracerRuntimeMetrics(t *testing.T) {
 	})
 }
 
+func TestTracerContribStats(t *testing.T) {
+	t.Run("default on", func(t *testing.T) {
+		tp := new(log.RecordLogger)
+		tracer := newTracer(WithDebugMode(true), WithLogger(tp))
+		defer tracer.Stop()
+		assert.NotNil(t, tracer.statsCarrier)
+	})
+	t.Run("off", func(t *testing.T) {
+		tp := new(log.RecordLogger)
+		tracer := newTracer(WithContribStats(false), WithLogger(tp), WithDebugMode(true))
+		defer tracer.Stop()
+		assert.Nil(t, tracer.statsCarrier)
+	})
+	t.Run("env", func(t *testing.T) {
+		os.Setenv("DD_TRACE_CONTRIB_STATS_ENABLED", "false")
+		defer os.Unsetenv("DD_TRACE_CONTRIB_STATS_ENABLED")
+		tp := new(log.RecordLogger)
+		tracer := newTracer(WithLogger(tp), WithDebugMode(true))
+		defer tracer.Stop()
+		assert.Nil(t, tracer.statsCarrier)
+	})
+	t.Run("env override", func(t *testing.T) {
+		os.Setenv("DD_TRACE_CONTRIB_STATS_ENABLED", "false")
+		defer os.Unsetenv("DD_TRACE_CONTRIB_STATS_ENABLED")
+		tp := new(log.RecordLogger)
+		tracer := newTracer(WithLogger(tp), WithDebugMode(true), WithContribStats(true))
+		defer tracer.Stop()
+		assert.NotNil(t, tracer.statsCarrier)
+	})
+}
+
 func TestTracerStartSpanOptions(t *testing.T) {
 	tracer := newTracer()
 	defer tracer.Stop()
@@ -2212,13 +2243,6 @@ func (w *testTraceWriter) flush() {
 }
 
 func (w *testTraceWriter) stop() {}
-
-func (w *testTraceWriter) reset() {
-	w.mu.Lock()
-	w.flushed = w.flushed[:0]
-	w.buf = w.buf[:0]
-	w.mu.Unlock()
-}
 
 // Buffered returns the spans buffered by the writer.
 func (w *testTraceWriter) Buffered() []*span {
