@@ -68,6 +68,8 @@ jobs:
           mkdir -p $TEST_RESULTS
           ./.github/workflows/apps/test-contrib-submodules.sh smoke
       - name: Test dd-trace-go
+        env:
+          DD_APPSEC_WAF_TIMEOUT: 1h
         run: go test $PACKAGES
 
   # TODO: macos setup requirements (xcode tools installation, etc.)
