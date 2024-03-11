@@ -8,64 +8,35 @@
 package namingschema
 
 import (
-	"strings"
-	"sync"
-	"sync/atomic"
+	"github.com/DataDog/dd-trace-go/v2/v1internal/namingschema"
 )
 
 // Version represents the available naming schema versions.
-type Version int
+type Version = namingschema.Version
 
 const (
 	// SchemaV0 represents naming schema v0.
-	SchemaV0 Version = iota
+	SchemaV0 Version = namingschema.SchemaV0
 	// SchemaV1 represents naming schema v1.
-	SchemaV1
+	SchemaV1 = namingschema.SchemaV1
 )
-
-const (
-	defaultSchemaVersion = SchemaV0
-)
-
-var (
-	sv int32
-
-	useGlobalServiceName   bool
-	useGlobalServiceNameMu sync.RWMutex
-)
-
-// ParseVersion attempts to parse the version string.
-func ParseVersion(v string) (Version, bool) {
-	switch strings.ToLower(v) {
-	case "", "v0":
-		return SchemaV0, true
-	case "v1":
-		return SchemaV1, true
-	default:
-		return SchemaV0, false
-	}
-}
 
 // GetVersion returns the global naming schema version used for this application.
 func GetVersion() Version {
-	return Version(atomic.LoadInt32(&sv))
+	return namingschema.GetVersion()
 }
 
 // SetVersion sets the global naming schema version used for this application.
 func SetVersion(v Version) {
-	atomic.StoreInt32(&sv, int32(v))
+	namingschema.SetVersion(v)
 }
 
 // UseGlobalServiceName returns the value of the useGlobalServiceName setting for this application.
 func UseGlobalServiceName() bool {
-	useGlobalServiceNameMu.RLock()
-	defer useGlobalServiceNameMu.RUnlock()
-	return useGlobalServiceName
+	return namingschema.UseGlobalServiceName()
 }
 
 // SetUseGlobalServiceName sets the value of the useGlobalServiceName setting used for this application.
 func SetUseGlobalServiceName(v bool) {
-	useGlobalServiceNameMu.Lock()
-	defer useGlobalServiceNameMu.Unlock()
-	useGlobalServiceName = v
+	namingschema.SetUseGlobalServiceName(v)
 }
