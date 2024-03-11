@@ -47,6 +47,7 @@ require (
 	github.com/DataDog/dd-trace-go/v2/contrib/miekg/dns v0.0.0-20240308141714-cc13161300f3
 	github.com/DataDog/dd-trace-go/v2/contrib/net/http v0.0.0-20240308141714-cc13161300f3
 	github.com/DataDog/dd-trace-go/v2/contrib/olivere/elastic.v5 v0.0.0-20240308141714-cc13161300f3
+	github.com/DataDog/dd-trace-go/v2/contrib/redis/go-redis.v9 v0.0.0-20240308141714-cc13161300f3
 	github.com/DataDog/dd-trace-go/v2/contrib/valyala/fasthttp v0.0.0-20240308141714-cc13161300f3
 	github.com/DataDog/gostackparse v0.7.0
 	github.com/IBM/sarama v1.40.0
