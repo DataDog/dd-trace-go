@@ -60,15 +60,6 @@ func (s *Span) Tag(k string) interface{} {
 	if !ok {
 		return nil
 	}
-	if k == ext.Error {
-		// This is a special case because the mocktracer doesn't set the error tag
-		// if there is no error. The tests expect a nil value but the tracer returns
-		// an int32(0) which is not nil.
-		v := v.(int32)
-		if v == 0 {
-			return nil
-		}
-	}
 	return v
 }
 
