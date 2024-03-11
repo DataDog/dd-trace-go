@@ -80,7 +80,7 @@ func TestOptions(t *testing.T) {
 			}
 			assert.NotNil(root)
 			tt.test(assert, root)
-			assert.Nil(root.Tag(ext.Error))
+			assert.Zero(root.Tag(ext.Error))
 		})
 	}
 }
@@ -146,7 +146,7 @@ func TestChildSpans(t *testing.T) {
 	assert.ElementsMatch(resNames, []string{readOp, parsingOp, validationOp, "Query.name", `{ name }`})
 	assert.ElementsMatch(opNames, []string{readOp, parsingOp, validationOp, fieldOp, "graphql.query"})
 	assert.NotNil(root)
-	assert.Nil(root.Tag(ext.Error))
+	assert.Zero(root.Tag(ext.Error))
 }
 
 func TestNamingSchema(t *testing.T) {
