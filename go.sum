@@ -726,6 +726,8 @@ github.com/DataDog/dd-trace-go/v2/contrib/segmentio/kafka-go v0.0.0-202403081417
 github.com/DataDog/dd-trace-go/v2/contrib/segmentio/kafka-go v0.0.0-20240308141714-cc13161300f3/go.mod h1:nRotWGF196vvbF131Nbcs8Eos7XQT5ygwxtphDbcZAs=
 github.com/DataDog/dd-trace-go/v2/contrib/sirupsen/logrus v0.0.0-20240308141714-cc13161300f3 h1:PFsyYyxzvXotOVOU1p2IS+BUH+J0y76faHtmAMK082w=
 github.com/DataDog/dd-trace-go/v2/contrib/sirupsen/logrus v0.0.0-20240308141714-cc13161300f3/go.mod h1:+orSJDjT723gAAh4EKN7uhIEjjKeqcCY6DL7Hb+UvuI=
+github.com/DataDog/dd-trace-go/v2/contrib/syndtr/goleveldb v0.0.0-20240308141714-cc13161300f3 h1:kKmEoggTEAK6FgyOaSuA7+aR1obfkBIL7GE7zRel2yM=
+github.com/DataDog/dd-trace-go/v2/contrib/syndtr/goleveldb v0.0.0-20240308141714-cc13161300f3/go.mod h1:k+jSPkHU6Tq4E/yei9EM1vNnAya4v/Ci9shkwu4EJSs=
 github.com/DataDog/dd-trace-go/v2/contrib/valyala/fasthttp v0.0.0-20240308141714-cc13161300f3 h1:TWowvvTobZxCR7z2RCZ0kt8r8AQvz43Q0FIUms7yggU=
 github.com/DataDog/dd-trace-go/v2/contrib/valyala/fasthttp v0.0.0-20240308141714-cc13161300f3/go.mod h1:zFQVUJvD+loJfj42pBRI9pq9w4tlsB5wnNLIOX+OCQ8=
 github.com/DataDog/go-libddwaf/v2 v2.3.2 h1:pdi9xjWW57IpOpTeOyPuNveEDFLmmInsHDeuZk3TY34=
