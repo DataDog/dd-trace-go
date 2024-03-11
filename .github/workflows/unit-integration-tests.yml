@@ -294,6 +294,8 @@ jobs:
           go-version: ${{ inputs.go-version }}
 
       - name: Test Core
+        env:
+          DD_APPSEC_WAF_TIMEOUT: 1h
         run: |
             mkdir -p $TEST_RESULTS
             PACKAGE_NAMES=$(go list ./... | grep -v /contrib/)
