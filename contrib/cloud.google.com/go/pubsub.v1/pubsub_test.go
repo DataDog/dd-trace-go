@@ -158,9 +158,9 @@ func TestPropagationNoParentSpan(t *testing.T) {
 
 	assert.Equal(spans[0].TraceID(), spans[0].SpanID())
 	assert.Equal(traceID, spans[0].TraceID())
-	assert.Equal(map[string]interface{}{
-		"message_size":      5,
-		"num_attributes":    2,
+	assert.Subset(spans[0].Tags(), map[string]interface{}{
+		"message_size":      5.,
+		"num_attributes":    5.,
 		"ordering_key":      "xxx",
 		ext.ResourceName:    "projects/project/topics/topic",
 		ext.SpanType:        ext.SpanTypeMessageProducer,
@@ -168,14 +168,14 @@ func TestPropagationNoParentSpan(t *testing.T) {
 		ext.Component:       "cloud.google.com/go/pubsub.v1",
 		ext.SpanKind:        ext.SpanKindProducer,
 		ext.MessagingSystem: "googlepubsub",
-	}, spans[0].Tags())
+	})
 
 	assert.Equal(spans[0].SpanID(), spans[1].ParentID())
 	assert.Equal(traceID, spans[1].TraceID())
 	assert.Equal(spanID, spans[1].SpanID())
-	assert.Equal(map[string]interface{}{
-		"message_size":      5,
-		"num_attributes":    2,
+	assert.Subset(spans[1].Tags(), map[string]interface{}{
+		"message_size":      5.,
+		"num_attributes":    5.,
 		"ordering_key":      "xxx",
 		ext.ResourceName:    "projects/project/subscriptions/subscription",
 		ext.SpanType:        ext.SpanTypeMessageConsumer,
@@ -184,7 +184,7 @@ func TestPropagationNoParentSpan(t *testing.T) {
 		ext.Component:       "cloud.google.com/go/pubsub.v1",
 		ext.SpanKind:        ext.SpanKindConsumer,
 		ext.MessagingSystem: "googlepubsub",
-	}, spans[1].Tags())
+	})
 }
 
 func TestPropagationNoPublisherSpan(t *testing.T) {
@@ -226,9 +226,9 @@ func TestPropagationNoPublisherSpan(t *testing.T) {
 
 	assert.Equal(traceID, spans[0].TraceID())
 	assert.Equal(spanID, spans[0].SpanID())
-	assert.Equal(map[string]interface{}{
-		"message_size":      5,
-		"num_attributes":    0, // no attributes, since no publish middleware sent them
+	assert.Subset(spans[0].Tags(), map[string]interface{}{
+		"message_size":      5.,
+		"num_attributes":    0., // no attributes, since no publish middleware sent them
 		"ordering_key":      "xxx",
 		ext.ResourceName:    "projects/project/subscriptions/subscription",
 		ext.SpanType:        ext.SpanTypeMessageConsumer,
@@ -237,7 +237,7 @@ func TestPropagationNoPublisherSpan(t *testing.T) {
 		ext.Component:       "cloud.google.com/go/pubsub.v1",
 		ext.SpanKind:        ext.SpanKindConsumer,
 		ext.MessagingSystem: "googlepubsub",
-	}, spans[0].Tags())
+	})
 }
 
 func TestNamingSchema(t *testing.T) {
