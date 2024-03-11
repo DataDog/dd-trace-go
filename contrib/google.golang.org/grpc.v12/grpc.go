@@ -3,7 +3,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
-//go:generate protoc -I . fixtures_test.proto --go_out=plugins=grpc:.
+//go:generate protoc -I . fixtures_test.proto  --go-grpc_opt=require_unimplemented_servers=false,paths=source_relative --go_opt=paths=source_relative --go-grpc_out=. --go_out=.
 
 // Package grpc provides functions to trace the google.golang.org/grpc package v1.2.
 package grpc // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/google.golang.org/grpc.v12"
@@ -75,7 +75,7 @@ func startServerSpanFromContext(ctx context.Context, method string, cfg *interce
 	// we will add the items in extraOpts
 	optsLocal := options.Copy(cfg.spanOpts...)
 	optsLocal = append(optsLocal, extraOpts...)
-	md, _ := metadata.FromContext(ctx) // nil is ok
+	md, _ := metadata.FromIncomingContext(ctx) // nil is ok
 	if sctx, err := tracer.Extract(grpcutil.MDCarrier(md)); err == nil {
 		optsLocal = append(optsLocal, tracer.ChildOf(sctx))
 	}
@@ -108,12 +108,12 @@ func UnaryClientInterceptor(opts ...InterceptorOption) grpc.UnaryClientIntercept
 			tracer.Tag(ext.GRPCFullMethod, method),
 		)
 		span, ctx = tracer.StartSpanFromContext(ctx, cfg.spanName, spanopts...)
-		md, ok := metadata.FromContext(ctx)
+		md, ok := metadata.FromIncomingContext(ctx)
 		if !ok {
 			md = metadata.MD{}
 		}
 		_ = tracer.Inject(span.Context(), grpcutil.MDCarrier(md))
-		ctx = metadata.NewContext(ctx, md)
+		ctx = metadata.NewOutgoingContext(ctx, md)
 		opts = append(opts, grpc.Peer(&p))
 		err := invoker(ctx, method, req, reply, cc, opts...)
 		if p.Addr != nil {
