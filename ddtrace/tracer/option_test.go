@@ -1564,7 +1564,7 @@ func TestWithStartSpanConfigNonEmptyTags(t *testing.T) {
 	)
 	cfg := NewStartSpanConfig(
 		Tag("key", "value"),
-		Tag("k2", "shouldnt_override"),
+		Tag("k2", "should_override"),
 	)
 
 	tracer, err := newTracer()
@@ -1575,10 +1575,11 @@ func TestWithStartSpanConfigNonEmptyTags(t *testing.T) {
 		"test",
 		Tag("k2", "v2"),
 		WithStartSpanConfig(cfg),
+		Tag("key", "after_start_span_config"),
 	)
 	defer s.Finish()
-	assert.Equal("v2", s.meta["k2"])
-	assert.Equal("value", s.meta["key"])
+	assert.Equal("should_override", s.meta["k2"])
+	assert.Equal("after_start_span_config", s.meta["key"])
 }
 
 func optsTestConsumer(opts ...StartSpanOption) {
