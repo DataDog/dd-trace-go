@@ -13,11 +13,19 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/DataDog/dd-trace-go/v2/ddtrace"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
 )
+
+func init() {
+	// Push the private API for a propagating tag into the internal package.
+	internal.SetPropagatingTag = func(ctx ddtrace.SpanContext, k, v string) {
+		setPropagatingTag(ctx.(*SpanContext), k, v)
+	}
+}
 
 // HTTPHeadersCarrier wraps an http.Header as a TextMapWriter and TextMapReader, allowing
 // it to be used using the provided Propagator implementation.

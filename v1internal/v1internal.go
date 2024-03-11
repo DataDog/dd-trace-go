@@ -7,3 +7,14 @@
 // Note that this package is for dd-trace-go internal usage only.
 // This package is not intended for use by external consumers, no API stability is guaranteed.
 package v1internal
+
+import (
+	"github.com/DataDog/dd-trace-go/v2/ddtrace"
+	"github.com/DataDog/dd-trace-go/v2/internal"
+)
+
+// SetPropagatingTag sets the key/value pair as a trace propagating tag.
+// This function is not intended for use by external consumers, no API stability is guaranteed.
+func SetPropagatingTag(ctx ddtrace.SpanContext, k, v string) {
+	internal.SetPropagatingTag(ctx, k, v)
+}
