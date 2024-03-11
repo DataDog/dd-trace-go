@@ -1230,10 +1230,7 @@ func WithStartSpanConfig(cfg *StartSpanConfig) StartSpanOption {
 			c.Tags = cfg.Tags
 		} else if cfg.Tags != nil {
 			for k, v := range cfg.Tags {
-				// only set the tag if it's not already set
-				if _, ok := c.Tags[k]; !ok {
-					c.Tags[k] = v
-				}
+				c.Tags[k] = v
 			}
 		}
 	}
