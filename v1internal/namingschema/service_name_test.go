@@ -3,7 +3,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2023 Datadog, Inc.
 
-package namingschema_test
+package namingschema
 
 import (
 	"testing"
@@ -29,35 +29,35 @@ func TestServiceName(t *testing.T) {
 			name:          "v0",
 			schemaVersion: namingschema.SchemaV0,
 			ddService:     "",
-			call:          func() string { return namingschema.ServiceName(defaultServiceName) },
+			call:          func() string { return ServiceName(defaultServiceName) },
 			want:          "default",
 		},
 		{
 			name:          "v0-DD_SERVICE",
 			schemaVersion: namingschema.SchemaV0,
 			ddService:     "dd-service",
-			call:          func() string { return namingschema.ServiceName(defaultServiceName) },
+			call:          func() string { return ServiceName(defaultServiceName) },
 			want:          "dd-service",
 		},
 		{
 			name:          "v0-override",
 			schemaVersion: namingschema.SchemaV0,
 			ddService:     "dd-service",
-			call:          func() string { return namingschema.ServiceNameOverrideV0(defaultServiceName, "override-v0") },
+			call:          func() string { return ServiceNameOverrideV0(defaultServiceName, "override-v0") },
 			want:          "override-v0",
 		},
 		{
 			name:          "v1",
 			schemaVersion: namingschema.SchemaV1,
 			ddService:     "",
-			call:          func() string { return namingschema.ServiceName(defaultServiceName) },
+			call:          func() string { return ServiceName(defaultServiceName) },
 			want:          "default",
 		},
 		{
 			name:          "v1-DD_SERVICE",
 			schemaVersion: namingschema.SchemaV1,
 			ddService:     "dd-service",
-			call:          func() string { return namingschema.ServiceName(defaultServiceName) },
+			call:          func() string { return ServiceName(defaultServiceName) },
 			want:          "dd-service",
 		},
 		{
@@ -71,7 +71,7 @@ func TestServiceName(t *testing.T) {
 					namingschema.SetUseGlobalServiceName(prev)
 				}
 			},
-			call: func() string { return namingschema.ServiceNameOverrideV0(defaultServiceName, "override-v0") },
+			call: func() string { return ServiceNameOverrideV0(defaultServiceName, "override-v0") },
 			want: "dd-service",
 		},
 		{
@@ -85,7 +85,7 @@ func TestServiceName(t *testing.T) {
 					namingschema.SetUseGlobalServiceName(prev)
 				}
 			},
-			call: func() string { return namingschema.ServiceNameOverrideV0(defaultServiceName, "override-v0") },
+			call: func() string { return ServiceNameOverrideV0(defaultServiceName, "override-v0") },
 			want: "dd-service",
 		},
 	}
