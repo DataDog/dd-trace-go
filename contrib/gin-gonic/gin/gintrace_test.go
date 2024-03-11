@@ -324,7 +324,7 @@ func TestPropagation(t *testing.T) {
 	router.GET("/user/:id", func(c *gin.Context) {
 		span, ok := tracer.SpanFromContext(c.Request.Context())
 		assert.True(ok)
-		assert.Equal(span.(mocktracer.Span).ParentID(), pspan.(mocktracer.Span).SpanID())
+		assert.Equal(span.(mocktracer.MockspanV2Adapter).ParentID(), pspan.Context().SpanID())
 	})
 
 	router.ServeHTTP(w, r)

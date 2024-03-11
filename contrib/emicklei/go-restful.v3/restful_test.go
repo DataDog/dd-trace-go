@@ -214,7 +214,7 @@ func TestPropagation(t *testing.T) {
 	ws.Route(ws.GET("/user/{id}").To(func(request *restful.Request, response *restful.Response) {
 		span, ok := tracer.SpanFromContext(request.Request.Context())
 		assert.True(ok)
-		assert.Equal(span.(mocktracer.Span).ParentID(), pspan.(mocktracer.Span).SpanID())
+		assert.Equal(span.(mocktracer.MockspanV2Adapter).ParentID(), pspan.Context().SpanID())
 	}))
 
 	container := restful.NewContainer()

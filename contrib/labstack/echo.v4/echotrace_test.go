@@ -706,7 +706,7 @@ func TestWithErrorCheck(t *testing.T) {
 				assert.NotContains(t, span.Tags(), ext.Error)
 				return
 			}
-			assert.Equal(t, tt.wantErr, span.Tag(ext.Error))
+			assert.Equal(t, tt.wantErr.Error(), span.Tag(ext.ErrorMsg))
 		})
 	}
 }
