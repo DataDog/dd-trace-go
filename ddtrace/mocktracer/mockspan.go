@@ -50,8 +50,8 @@ func (s *Span) Tag(k string) interface{} {
 	if s == nil {
 		return nil
 	}
-	// It's possible that a tag wasn't set through our mocktracer.Span, in which case we need to
-	// retrieve it from the underlying tracer.Span.
+	// It's possible that a tag wasn't set through mocktracer.Span.SetTag,
+	// in which case we need to retrieve it from the underlying tracer.Span.
 	v := s.sp.Tag(k)
 	if v != nil {
 		return v
@@ -97,9 +97,6 @@ func extractTags(src, m map[string]interface{}) {
 		case ext.MapSpanParentID:
 			continue
 		case ext.MapSpanError:
-			continue
-		}
-		if _, ok := m[k]; ok {
 			continue
 		}
 		m[k] = v
