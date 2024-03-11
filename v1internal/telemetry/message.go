@@ -16,3 +16,8 @@ type Integration = telemetry.Integration
 // that should be initialized through StringConfig, IntConfig, FloatConfig, or BoolConfig
 // This type is not intended for use by external consumers, no API stability is guaranteed.
 type Configuration = telemetry.Configuration
+
+// Namespace describes an APM product to distinguish telemetry coming from
+// different products used by the same application
+// This type is not intended for use by external consumers, no API stability is guaranteed.
+type Namespace = telemetry.Namespace

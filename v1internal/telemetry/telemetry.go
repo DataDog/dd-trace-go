@@ -24,3 +24,7 @@ func LoadIntegration(name string) {
 	}
 	telemetry.LoadIntegration(name)
 }
+
+func Count(namespace Namespace, name string, value float64, tags []string, common bool) {
+	telemetry.GlobalClient.Count(namespace, name, value, tags, common)
+}
