@@ -207,7 +207,7 @@ func TestErrNotFound(t *testing.T) {
 		span := spans[1]
 		assert.Equal(span.OperationName(), "cassandra.query")
 		assert.Equal(span.Tag(ext.ResourceName), "SELECT name, age FROM trace.person WHERE name = 'This does not exist'")
-		assert.Nil(span.Tag(ext.Error), "trace is not marked as an error, it just has no data")
+		assert.Zero(span.Tag(ext.Error), "trace is not marked as an error, it just has no data")
 	})
 }
 
