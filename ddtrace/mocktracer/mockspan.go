@@ -50,12 +50,16 @@ func (s *Span) Tag(k string) interface{} {
 	if s == nil {
 		return nil
 	}
-	if v, ok := s.m[k]; ok {
-		return v
-	}
 	// It's possible that a tag wasn't set through our mocktracer.Span, in which case we need to
 	// retrieve it from the underlying tracer.Span.
 	v := s.sp.Tag(k)
+	if v != nil {
+		return v
+	}
+	v, ok := s.m[k]
+	if !ok {
+		return nil
+	}
 	if k == ext.Error {
 		// This is a special case because the mocktracer doesn't set the error tag
 		// if there is no error. The tests expect a nil value but the tracer returns
