@@ -56,3 +56,8 @@ func StartSpanFromContext(ctx context.Context, operationName string, opts ...Sta
 	}
 	return s, ctx
 }
+
+// SpanContextV2Adapter is an adapter for the v2 SpanContext type.
+// This is not intended for direct use, but rather to be used by the
+// contribs.
+type SpanContextV2Adapter = internal.SpanContextV2Adapter
