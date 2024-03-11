@@ -56,12 +56,6 @@ func SetVersion(v Version) {
 	atomic.StoreInt32(&sv, int32(v))
 }
 
-// SetDefaultVersion sets the default global naming schema version.
-func SetDefaultVersion() Version {
-	SetVersion(defaultSchemaVersion)
-	return defaultSchemaVersion
-}
-
 // UseGlobalServiceName returns the value of the useGlobalServiceName setting for this application.
 func UseGlobalServiceName() bool {
 	useGlobalServiceNameMu.RLock()

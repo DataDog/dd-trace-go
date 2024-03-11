@@ -192,7 +192,7 @@ func TestError(t *testing.T) {
 	span := spans[0]
 	assert.Equal("http.request", span.OperationName())
 	assert.Equal("500", span.Tag(ext.HTTPCode))
-	assert.Equal(wantErr.Error(), span.Tag(ext.Error).(error).Error())
+	assert.Equal(wantErr.Error(), span.Tag(ext.ErrorMsg))
 	assert.Equal(ext.SpanKindServer, span.Tag(ext.SpanKind))
 	assert.Equal("emicklei/go-restful", span.Tag(ext.Component))
 }

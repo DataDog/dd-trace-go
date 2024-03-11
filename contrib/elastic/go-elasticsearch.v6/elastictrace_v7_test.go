@@ -132,7 +132,7 @@ func TestClientV7Failure(t *testing.T) {
 
 	spans := mt.FinishedSpans()
 	assert.NotEmpty(spans[0].Tag(ext.Error))
-	assert.Equal("*net.OpError", fmt.Sprintf("%T", spans[0].Tag(ext.Error).(error)))
+	assert.Equal("*net.OpError", spans[0].Tag(ext.ErrorType))
 }
 
 func TestResourceNamerSettingsV7(t *testing.T) {

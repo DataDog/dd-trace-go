@@ -91,7 +91,7 @@ func TestErrorWrapper(t *testing.T) {
 	assert.Len(spans, 1)
 	span := spans[0]
 
-	assert.Equal(span.Tag(ext.Error).(error).Error(), err.Error())
+	assert.Equal(span.Tag(ext.ErrorMsg), err.Error())
 	assert.Equal(span.OperationName(), "cassandra.query")
 	assert.Equal(span.Tag(ext.ResourceName), "CREATE KEYSPACE")
 	assert.Equal(span.Tag(ext.ServiceName), "ServiceName")

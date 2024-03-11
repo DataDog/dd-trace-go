@@ -11,6 +11,7 @@ import (
 	"time"
 
 	v2 "github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
+	v2tracer "github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
@@ -65,7 +66,8 @@ func (msa MockspanV2Adapter) Finish(opts ...ddtrace.FinishOption) {
 	t := internal.GetGlobalTracer().(internal.TracerV2Adapter)
 	sp := msa.Span.Unwrap()
 	t.Tracer.(v2.Tracer).FinishSpan(sp)
-	sp.Finish()
+	fc := internal.BuildFinishConfigV2(opts...)
+	sp.Finish(v2tracer.WithFinishConfig(fc))
 }
 
 // SetBaggageItem implements ddtrace.Span.
@@ -145,6 +147,19 @@ func (msa MockspanV2Adapter) Tag(k string) interface{} {
 	case ext.SamplingPriority:
 		v := msa.Span.Tag("_sampling_priority_v1").(float64)
 		return int(v)
+	case ext.ErrorStack:
+		v := msa.Span.Tag(k)
+		if v == nil {
+			// If ext.ErrorStack is not set, but ext.Error is, then we can assume that the
+			// stack trace is disabled.
+			if msa.Span.Tag(ext.Error) != nil {
+				return "<debug stack disabled>"
+			}
+
+			// Otherwise, we can assume that the error is not set.
+			return nil
+		}
+		return v
 	}
 
 	return msa.Span.Tag(k)

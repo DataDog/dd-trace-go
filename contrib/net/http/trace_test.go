@@ -51,7 +51,7 @@ func TestTraceAndServe(t *testing.T) {
 		assert.Equal("GET", span.Tag(ext.HTTPMethod))
 		assert.Equal("/path?<redacted>", span.Tag(ext.HTTPURL))
 		assert.Equal("503", span.Tag(ext.HTTPCode))
-		assert.Equal("503: Service Unavailable", span.Tag(ext.Error).(error).Error())
+		assert.Equal("503: Service Unavailable", span.Tag(ext.ErrorMsg))
 	})
 
 	t.Run("custom", func(t *testing.T) {
@@ -87,7 +87,7 @@ func TestTraceAndServe(t *testing.T) {
 		assert.Equal("GET", span.Tag(ext.HTTPMethod))
 		assert.Equal("/path?<redacted>", span.Tag(ext.HTTPURL))
 		assert.Equal("503", span.Tag(ext.HTTPCode))
-		assert.Equal("503: Service Unavailable", span.Tag(ext.Error).(error).Error())
+		assert.Equal("503: Service Unavailable", span.Tag(ext.ErrorMsg))
 	})
 
 	t.Run("query-params", func(t *testing.T) {

@@ -163,7 +163,7 @@ func TestClientErrorCutoffV5(t *testing.T) {
 	assert.Error(err)
 
 	span := mt.FinishedSpans()[0]
-	assert.True(strings.HasPrefix(span.Tag(ext.Error).(error).Error(), `{"error":{`))
+	assert.True(strings.HasPrefix(span.Tag(ext.ErrorMsg).(string), `{"error":{`))
 }
 
 func TestClientV3(t *testing.T) {
@@ -227,7 +227,7 @@ func TestClientV3Failure(t *testing.T) {
 	checkPUTTrace(assert, mt, "127.0.0.1")
 
 	assert.NotEmpty(spans[0].Tag(ext.Error))
-	assert.Contains(err.Error(), spans[0].Tag(ext.Error).(error).Error())
+	assert.Equal("*net.OpError", spans[0].Tag(ext.ErrorType))
 }
 
 func TestClientV5Failure(t *testing.T) {
@@ -256,7 +256,7 @@ func TestClientV5Failure(t *testing.T) {
 	checkPUTTrace(assert, mt, "127.0.0.1")
 
 	assert.NotEmpty(spans[0].Tag(ext.Error))
-	assert.Contains(err.Error(), spans[0].Tag(ext.Error).(error).Error())
+	assert.Equal("*net.OpError", spans[0].Tag(ext.ErrorType))
 }
 
 func checkPUTTrace(assert *assert.Assertions, mt mocktracer.Tracer, host string) {

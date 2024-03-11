@@ -10,7 +10,7 @@ import (
 	"testing"
 
 	v2mock "github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
-	namingschematest "github.com/DataDog/dd-trace-go/v2/testing/v1adapter"
+	namingschematest "github.com/DataDog/dd-trace-go/v2/v1internal/namingschematest"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 )
 

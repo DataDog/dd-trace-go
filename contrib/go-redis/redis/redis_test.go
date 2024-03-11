@@ -294,7 +294,7 @@ func TestError(t *testing.T) {
 
 		assert.Equal("redis.command", span.OperationName())
 		assert.NotNil(err)
-		assert.Equal(err.Error(), span.Tag(ext.Error).(error).Error())
+		assert.Equal(err.Error(), span.Tag(ext.ErrorMsg))
 		assert.Equal("127.0.0.1", span.Tag(ext.TargetHost))
 		assert.Equal("6378", span.Tag(ext.TargetPort))
 		assert.Equal("get key: ", span.Tag("redis.raw_command"))
