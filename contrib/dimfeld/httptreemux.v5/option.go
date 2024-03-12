@@ -10,7 +10,6 @@ import (
 	"net/http"
 
 	v2 "github.com/DataDog/dd-trace-go/v2/contrib/dimfeld/httptreemux.v5"
-	v2tracer "github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 
@@ -27,8 +26,7 @@ func WithServiceName(name string) RouterOption {
 
 // WithSpanOptions applies the given set of options to the span started by the router.
 func WithSpanOptions(opts ...ddtrace.StartSpanOption) RouterOption {
-	ssc := tracer.BuildStartSpanConfigV2(opts...)
-	return v2.WithSpanOptions(v2tracer.WithStartSpanConfig(ssc))
+	return v2.WithSpanOptions(tracer.ApplyV1Options(opts...))
 }
 
 // WithResourceNamer specifies a function which will be used to obtain the

@@ -53,8 +53,7 @@ func WithAnalyticsRate(rate float64) MuxOption {
 // WithSpanOptions defines a set of additional ddtrace.StartSpanOption to be added
 // to spans started by the integration.
 func WithSpanOptions(opts ...ddtrace.StartSpanOption) Option {
-	cfg := tracer.BuildStartSpanConfigV2(opts...)
-	return v2.WithSpanOptions(v2tracer.WithStartSpanConfig(cfg))
+	return v2.WithSpanOptions(tracer.ApplyV1Options(opts...))
 }
 
 // WithResourceNamer populates the name of a resource based on a custom function.
@@ -114,8 +113,7 @@ func RTWithSpanNamer(namer func(req *http.Request) string) RoundTripperOption {
 // RTWithSpanOptions defines a set of additional ddtrace.StartSpanOption to be added
 // to spans started by the integration.
 func RTWithSpanOptions(opts ...ddtrace.StartSpanOption) RoundTripperOption {
-	cfg := tracer.BuildStartSpanConfigV2(opts...)
-	return v2.WithSpanOptions(v2tracer.WithStartSpanConfig(cfg))
+	return v2.WithSpanOptions(tracer.ApplyV1Options(opts...))
 }
 
 // RTWithServiceName sets the given service name for the RoundTripper.

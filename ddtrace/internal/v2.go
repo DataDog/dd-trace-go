@@ -44,27 +44,44 @@ func (ta TracerV2Adapter) Inject(context ddtrace.SpanContext, carrier interface{
 
 // StartSpan implements ddtrace.Tracer.
 func (ta TracerV2Adapter) StartSpan(operationName string, opts ...ddtrace.StartSpanOption) ddtrace.Span {
-	cfg := BuildStartSpanConfigV2(opts...)
-	s := ta.Tracer.StartSpan(operationName, v2.WithStartSpanConfig(cfg))
+	s := ta.Tracer.StartSpan(operationName, ApplyV1Options(opts...))
 	return SpanV2Adapter{Span: s}
 }
 
-func BuildStartSpanConfigV2(opts ...ddtrace.StartSpanOption) *v2.StartSpanConfig {
-	ssc := new(ddtrace.StartSpanConfig)
-	for _, o := range opts {
-		o(ssc)
-	}
-	var parent *v2.SpanContext
-	if ssc.Parent != nil {
-		parent = resolveSpantContextV2(ssc.Parent)
-	}
-	return &v2.StartSpanConfig{
-		Context:   ssc.Context,
-		Parent:    parent,
-		SpanID:    ssc.SpanID,
-		SpanLinks: ssc.SpanLinks,
-		StartTime: ssc.StartTime,
-		Tags:      ssc.Tags,
+// ApplyV1Options consumes a list of v1 StartSpanOptions and returns a function
+// that can be used to set the corresponding v2 StartSpanConfig fields.
+// This is used to adapt the v1 StartSpanOptions to the v2 StartSpanConfig.
+func ApplyV1Options(opts ...ddtrace.StartSpanOption) v2.StartSpanOption {
+	return func(cfg *v2.StartSpanConfig) {
+		ssc := new(ddtrace.StartSpanConfig)
+		for _, o := range opts {
+			o(ssc)
+		}
+		if ssc.Parent != nil {
+			cfg.Parent = resolveSpantContextV2(ssc.Parent)
+		}
+		if ssc.Context != nil {
+			cfg.Context = ssc.Context
+		}
+		if ssc.SpanID != 0 {
+			cfg.SpanID = ssc.SpanID
+		}
+		if ssc.SpanLinks != nil && len(ssc.SpanLinks) > 0 {
+			cfg.SpanLinks = ssc.SpanLinks
+		}
+		if !ssc.StartTime.IsZero() {
+			cfg.StartTime = ssc.StartTime
+		}
+		if ssc.Tags == nil {
+			return
+		}
+		if cfg.Tags == nil {
+			cfg.Tags = ssc.Tags
+		} else {
+			for k, v := range ssc.Tags {
+				cfg.Tags[k] = v
+			}
+		}
 	}
 }
 

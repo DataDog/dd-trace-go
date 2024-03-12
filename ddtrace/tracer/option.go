@@ -564,10 +564,8 @@ func WithPropagation() UserMonitoringOption {
 	return v2.WithPropagation()
 }
 
-// BuildStartSpanConfigV2 returns a new StartSpanConfig with the given set of options.
-// This is not intended for use outside of contribs. It'll be removed when v1 is deprecated.
-func BuildStartSpanConfigV2(opts ...StartSpanOption) *v2.StartSpanConfig {
-	return internal.BuildStartSpanConfigV2(opts...)
+func ApplyV1Options(opts ...ddtrace.StartSpanOption) v2.StartSpanOption {
+	return internal.ApplyV1Options(opts...)
 }
 
 // BuildFinishConfigV2 returns a new FinishConfig with the given set of options.

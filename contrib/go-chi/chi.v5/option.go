@@ -9,7 +9,6 @@ import (
 	"net/http"
 
 	v2 "github.com/DataDog/dd-trace-go/v2/contrib/go-chi/chi.v5"
-	v2tracer "github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
@@ -25,8 +24,7 @@ func WithServiceName(name string) Option {
 // WithSpanOptions applies the given set of options to the spans started
 // by the router.
 func WithSpanOptions(opts ...ddtrace.StartSpanOption) Option {
-	cfg := tracer.BuildStartSpanConfigV2(opts...)
-	return v2.WithSpanOptions(v2tracer.WithStartSpanConfig(cfg))
+	return v2.WithSpanOptions(tracer.ApplyV1Options(opts...))
 }
 
 // WithAnalytics enables Trace Analytics for all started spans.

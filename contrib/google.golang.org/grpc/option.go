@@ -7,7 +7,6 @@ package grpc
 
 import (
 	v2 "github.com/DataDog/dd-trace-go/v2/contrib/google.golang.org/grpc"
-	v2tracer "github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 
@@ -107,6 +106,5 @@ func WithCustomTag(key string, value interface{}) Option {
 // WithSpanOptions defines a set of additional ddtrace.StartSpanOption to be added
 // to spans started by the integration.
 func WithSpanOptions(opts ...ddtrace.StartSpanOption) Option {
-	cfg := tracer.BuildStartSpanConfigV2(opts...)
-	return v2.WithSpanOptions(v2tracer.WithStartSpanConfig(cfg))
+	return v2.WithSpanOptions(tracer.ApplyV1Options(opts...))
 }

@@ -46,8 +46,7 @@ func SpanFromContext(ctx context.Context) (Span, bool) {
 // is found in the context, it will be used as the parent of the resulting span. If the ChildOf
 // option is passed, it will only be used as the parent if there is no span found in `ctx`.
 func StartSpanFromContext(ctx context.Context, operationName string, opts ...StartSpanOption) (Span, context.Context) {
-	cfg := internal.BuildStartSpanConfigV2(opts...)
-	span, ctx := v2.StartSpanFromContext(ctx, operationName, v2.WithStartSpanConfig(cfg))
+	span, ctx := v2.StartSpanFromContext(ctx, operationName, internal.ApplyV1Options(opts...))
 	var s Span
 	if mocktracer.IsActive() {
 		s = mocktracer.MockspanV2Adapter{Span: v2mock.MockSpan(span)}
