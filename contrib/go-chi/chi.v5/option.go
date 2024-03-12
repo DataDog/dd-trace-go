@@ -27,6 +27,7 @@ type config struct {
 	modifyResourceName func(resourceName string) string
 	headerTags         *internal.LockMap
 	resourceNamer      func(r *http.Request) string
+	appsecEnabled      bool
 }
 
 // Option represents an option that can be passed to NewRouter.
@@ -45,6 +46,7 @@ func defaults(cfg *config) {
 	cfg.modifyResourceName = func(s string) string { return s }
 	// for backward compatibility with modifyResourceName, initialize resourceName as nil.
 	cfg.resourceNamer = nil
+	cfg.appsecEnabled = true
 }
 
 // WithServiceName sets the given service name for the router.
@@ -128,5 +130,14 @@ func WithHeaderTags(headers []string) Option {
 func WithResourceNamer(fn func(r *http.Request) string) Option {
 	return func(cfg *config) {
 		cfg.resourceNamer = fn
+	}
+}
+
+// WithAppsecEnabled specifies whether to enable the AppSec middleware.
+// Ignored if DD_APPSEC_ENABLED env var != "true"
+// This is intended to allow applications to override the global setting on a per-call basis.
+func WithAppsecEnabled(enabled bool) Option {
+	return func(cfg *config) {
+		cfg.appsecEnabled = enabled
 	}
 }
