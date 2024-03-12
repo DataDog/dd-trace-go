@@ -496,8 +496,8 @@ func handler500(w http.ResponseWriter, _ *http.Request) {
 }
 
 func BenchmarkHttpServeTrace(b *testing.B) {
-	mt := mocktracer.Start()
-	defer mt.Stop()
+	tracer.Start()
+	defer tracer.Stop()
 	header, tag := normalizer.HeaderTag("3header")
 	globalconfig.SetHeaderTag(header, tag)
 
