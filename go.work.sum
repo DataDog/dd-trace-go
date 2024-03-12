@@ -99,9 +99,9 @@ cloud.google.com/go/cloudtasks v1.12.3 h1:ajm0DZTTaGKeawbwuFXZfPC7IIeLg6eYJFH125
 cloud.google.com/go/cloudtasks v1.12.3/go.mod h1:GPVXhIOSGEaR+3xT4Fp72ScI+HjHffSS4B8+BaBB5Ys=
 cloud.google.com/go/cloudtasks v1.12.4 h1:5xXuFfAjg0Z5Wb81j2GAbB3e0bwroCeSF+5jBn/L650=
 cloud.google.com/go/cloudtasks v1.12.4/go.mod h1:BEPu0Gtt2dU6FxZHNqqNdGqIG86qyWKBPGnsb7udGY0=
-cloud.google.com/go/compute v1.19.3/go.mod h1:qxvISKp/gYnXkSAD1ppcSOveRAmzxicEv/JlizULFrI=
 cloud.google.com/go/compute v1.20.1/go.mod h1:4tCnrn48xsqlwSAiLf1HXMQk8CONslYbdiEZc9FEIbM=
 cloud.google.com/go/compute v1.23.0/go.mod h1:4tCnrn48xsqlwSAiLf1HXMQk8CONslYbdiEZc9FEIbM=
+cloud.google.com/go/compute v1.23.1/go.mod h1:CqB3xpmPKKt3OJpW2ndFIXnA9A4xAy/F3Xp1ixncW78=
 cloud.google.com/go/compute v1.23.2 h1:nWEMDhgbBkBJjfpVySqU4jgWdc22PLR0o4vEexZHers=
 cloud.google.com/go/contactcenterinsights v1.11.2 h1:xTLvUYWMwNdQeAr9FECdenht43In0s/KAyFHSuKuZR4=
 cloud.google.com/go/contactcenterinsights v1.11.2/go.mod h1:A9PIR5ov5cRcd28KlDbmmXE8Aay+Gccer2h4wzkYFso=
