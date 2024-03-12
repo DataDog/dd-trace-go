@@ -3,20 +3,20 @@ module github.com/DataDog/dd-trace-go/v2/contrib/google.golang.org/api
 go 1.19
 
 require (
-	github.com/DataDog/dd-trace-go/v2 v2.0.0-20240312074639-894b1b13d24a
-	github.com/DataDog/dd-trace-go/v2/contrib/net/http v0.0.0-20240312074639-894b1b13d24a
+	github.com/DataDog/dd-trace-go/v2 v2.0.0-20240312080715-54a5c5c43ac4
 	github.com/stretchr/testify v1.8.4
-	golang.org/x/oauth2 v0.13.0
-	google.golang.org/api v0.128.0
+	golang.org/x/oauth2 v0.9.0
+	google.golang.org/api v0.121.0
 )
 
 require (
-	cloud.google.com/go/compute v1.23.1 // indirect
+	cloud.google.com/go/compute v1.19.2 // indirect
 	cloud.google.com/go/compute/metadata v0.2.3 // indirect
 	github.com/DataDog/appsec-internal-go v1.5.0 // indirect
 	github.com/DataDog/datadog-agent/pkg/obfuscate v0.50.0 // indirect
 	github.com/DataDog/datadog-agent/pkg/remoteconfig/state v0.50.0 // indirect
 	github.com/DataDog/datadog-go/v5 v5.4.0 // indirect
+	github.com/DataDog/dd-trace-go/v2/contrib/net/http v0.0.0-20240312080715-54a5c5c43ac4 // indirect
 	github.com/DataDog/go-libddwaf/v2 v2.3.2 // indirect
 	github.com/DataDog/go-sqllexer v0.0.10 // indirect
 	github.com/DataDog/go-tuf v1.0.2-0.5.2 // indirect
@@ -31,7 +31,7 @@ require (
 	github.com/google/s2a-go v0.1.5 // indirect
 	github.com/google/uuid v1.5.0 // indirect
 	github.com/googleapis/enterprise-certificate-proxy v0.3.2 // indirect
-	github.com/googleapis/gax-go/v2 v2.12.0 // indirect
+	github.com/googleapis/gax-go/v2 v2.8.0 // indirect
 	github.com/hashicorp/errwrap v1.1.0 // indirect
 	github.com/hashicorp/go-multierror v1.1.1 // indirect
 	github.com/outcaste-io/ristretto v0.2.3 // indirect
