@@ -14,69 +14,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
-	v2traceinternal "gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 )
-
-var contribIntegrations = map[string]struct {
-	name     string // user readable name for startup logs
-	imported bool   // true if the user has imported the integration
-}{
-	"github.com/99designs/gqlgen":                   {"gqlgen", false},
-	"github.com/aws/aws-sdk-go":                     {"AWS SDK", false},
-	"github.com/aws/aws-sdk-go-v2":                  {"AWS SDK v2", false},
-	"github.com/bradfitz/gomemcache":                {"Memcache", false},
-	"cloud.google.com/go/pubsub.v1":                 {"Pub/Sub", false},
-	"github.com/confluentinc/confluent-kafka-go":    {"Kafka (confluent)", false},
-	"github.com/confluentinc/confluent-kafka-go/v2": {"Kafka (confluent) v2", false},
-	"database/sql":                                  {"SQL", false},
-	"github.com/dimfeld/httptreemux/v5":             {"HTTP Treemux", false},
-	"github.com/elastic/go-elasticsearch/v6":        {"Elasticsearch v6", false},
-	"github.com/emicklei/go-restful":                {"go-restful", false},
-	"github.com/emicklei/go-restful/v3":             {"go-restful v3", false},
-	"github.com/garyburd/redigo":                    {"Redigo (dep)", false},
-	"github.com/gin-gonic/gin":                      {"Gin", false},
-	"github.com/globalsign/mgo":                     {"MongoDB (mgo)", false},
-	"github.com/go-chi/chi":                         {"chi", false},
-	"github.com/go-chi/chi/v5":                      {"chi v5", false},
-	"github.com/go-pg/pg/v10":                       {"go-pg v10", false},
-	"github.com/go-redis/redis":                     {"Redis", false},
-	"github.com/go-redis/redis/v7":                  {"Redis v7", false},
-	"github.com/go-redis/redis/v8":                  {"Redis v8", false},
-	"go.mongodb.org/mongo-driver":                   {"MongoDB", false},
-	"github.com/gocql/gocql":                        {"Cassandra", false},
-	"github.com/gofiber/fiber/v2":                   {"Fiber", false},
-	"github.com/gomodule/redigo":                    {"Redigo", false},
-	"google.golang.org/api":                         {"Google API", false},
-	"google.golang.org/grpc":                        {"gRPC", false},
-	"google.golang.org/grpc/v12":                    {"gRPC v12", false},
-	"gopkg.in/jinzhu/gorm.v1":                       {"Gorm (gopkg)", false},
-	"github.com/gorilla/mux":                        {"Gorilla Mux", false},
-	"gorm.io/gorm.v1":                               {"Gorm v1", false},
-	"github.com/graph-gophers/graphql-go":           {"GraphQL", false},
-	"github.com/hashicorp/consul/api":               {"Consul", false},
-	"github.com/hashicorp/vault/api":                {"Vault", false},
-	"github.com/jinzhu/gorm":                        {"Gorm", false},
-	"github.com/jmoiron/sqlx":                       {"SQLx", false},
-	"github.com/julienschmidt/httprouter":           {"HTTP Router", false},
-	"k8s.io/client-go/kubernetes":                   {"Kubernetes", false},
-	"github.com/labstack/echo":                      {"echo", false},
-	"github.com/labstack/echo/v4":                   {"echo v4", false},
-	"github.com/miekg/dns":                          {"miekg/dns", false},
-	"net/http":                                      {"HTTP", false},
-	"gopkg.in/olivere/elastic.v5":                   {"Elasticsearch v5", false},
-	"gopkg.in/olivere/elastic.v3":                   {"Elasticsearch v3", false},
-	"github.com/redis/go-redis/v9":                  {"Redis v9", false},
-	"github.com/segmentio/kafka-go":                 {"Kafka v0", false},
-	"github.com/IBM/sarama":                         {"IBM sarama", false},
-	"github.com/Shopify/sarama":                     {"Shopify sarama", false},
-	"github.com/sirupsen/logrus":                    {"Logrus", false},
-	"github.com/syndtr/goleveldb":                   {"LevelDB", false},
-	"github.com/tidwall/buntdb":                     {"BuntDB", false},
-	"github.com/twitchtv/twirp":                     {"Twirp", false},
-	"github.com/urfave/negroni":                     {"Negroni", false},
-	"github.com/valyala/fasthttp":                   {"FastHTTP", false},
-	"github.com/zenazn/goji":                        {"Goji", false},
-}
 
 var (
 	// defaultMaxTagsHeaderLen specifies the default maximum length of the X-Datadog-Tags header value.
@@ -205,7 +143,7 @@ type samplerV1Adapter struct {
 
 // Sample implements tracer.Sampler.
 func (sa *samplerV1Adapter) Sample(span *v2.Span) bool {
-	s := &v2traceinternal.SpanV2Adapter{Span: span}
+	s := &internal.SpanV2Adapter{Span: span}
 	return sa.sampler.Sample(s)
 }
 
