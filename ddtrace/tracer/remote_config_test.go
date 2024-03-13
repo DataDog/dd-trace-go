@@ -45,14 +45,14 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 
 		//Apply RC with sampling rules. Assert _dd.rule_psr shows the corresponding rule matched rate.
 		input = remoteconfig.ProductUpdate{
-			"path": []byte(`{"lib_config": {"tracing_sampling_rate": 0.5, 
+			"path": []byte(`{"lib_config": {"tracing_sampling_rate": 0.5,
 			"tracing_sampling_rules":[{
 				"service": "my-service",
 				"name": "web.request",
 				"resource": "*",
 				"provenance": "customer",
 				"sample_rate": 1.0
-			}]}, 
+			}]},
 			"service_target": {"service": "my-service", "env": "my-env"}}`),
 		}
 		applyStatus = tracer.onRemoteConfigUpdate(input)
@@ -139,7 +139,7 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 				"resource": "abc",
 				"provenance": "customer",
 				"sample_rate": 0.2
-			}]}, 
+			}]},
 			"service_target": {"service": "my-service", "env": "my-env"}}`),
 		}
 		applyStatus := tracer.onRemoteConfigUpdate(input)

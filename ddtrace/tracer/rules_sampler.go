@@ -117,7 +117,6 @@ func (r *SamplingRule) Equals(other *SamplingRule) bool {
 			return false
 		}
 	}
-	// TODO
 	return true
 }
 
