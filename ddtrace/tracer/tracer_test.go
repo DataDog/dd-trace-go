@@ -815,6 +815,7 @@ func BenchmarkPartialFlushing(b *testing.B) {
 
 func genBigTraces(b *testing.B) {
 	tracer, stop := startTestTracer(b, WithLogger(log.DiscardLogger{}))
+	flush := tracer.(internal.TracerV2Adapter).Tracer.Flush
 	defer stop()
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -849,6 +850,7 @@ func genBigTraces(b *testing.B) {
 				sp.Finish()
 			}
 			parent.Finish()
+			go flush()
 		}
 	}
 	b.StopTimer()
