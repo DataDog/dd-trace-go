@@ -234,12 +234,13 @@ func (s *Span) AddLink(spanContext *SpanContext, attributes map[string]string) {
 	traceIDHigh, _ := strconv.ParseUint(traceIDHighHex, 16, 64)
 
 	samplingDecision, hasSamplingDecision := spanContext.SamplingPriority()
-	flags := uint32(0)
-	if hasSamplingDecision {
-		// To distinguish between "not sampled" and "not set", Datadog
-		// will rely on the highest bit being set. The OTel API doesn't
-		// differentiate this, so we will just always mark it as set.
-		flags = uint32(1<<31 | samplingDecision)
+	var flags uint32
+	if hasSamplingDecision && samplingDecision >= ext.PriorityAutoKeep {
+		flags = uint32(1<<31 | 1)
+	} else if hasSamplingDecision {
+		flags = uint32(1<<31 | 0)
+	} else {
+		flags = uint32(0)
 	}
 
 	// TODO: Add support for setting tracestate
