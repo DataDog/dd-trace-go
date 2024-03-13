@@ -14,7 +14,7 @@ import (
 	"github.com/go-chi/chi/v5"
 )
 
-func withAppsec(next http.Handler, r *http.Request, span tracer.Span) http.Handler {
+func withAppsec(next http.Handler, r *http.Request, span tracer.Span, opts ...httpsec.WrapHandlerOption) http.Handler {
 	rctx := chi.RouteContext(r.Context())
 	if rctx == nil {
 		return httpsec.WrapHandler(next, span, nil)
@@ -28,5 +28,5 @@ func withAppsec(next http.Handler, r *http.Request, span tracer.Span) http.Handl
 			pathParams[key] = values[i]
 		}
 	}
-	return httpsec.WrapHandler(next, span, pathParams)
+	return httpsec.WrapHandlerOpts(next, span, pathParams, opts...)
 }

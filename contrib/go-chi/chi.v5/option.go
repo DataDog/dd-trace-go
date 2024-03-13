@@ -11,6 +11,7 @@ import (
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/httpsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/normalizer"
@@ -28,6 +29,7 @@ type config struct {
 	headerTags         *internal.LockMap
 	resourceNamer      func(r *http.Request) string
 	appsecEnabled      bool
+	appsecOptions      []httpsec.WrapHandlerOption
 }
 
 // Option represents an option that can be passed to NewRouter.
@@ -141,3 +143,11 @@ func WithAppsecEnabled(enabled bool) Option {
 		cfg.appsecEnabled = enabled
 	}
 }
+
+func WithAppsecOptions(opts ...httpsec.WrapHandlerOption) Option {
+	return func(cfg *config) {
+		cfg.appsecOptions = opts
+	}
+}
+
+var WithResponseHdrFetcher = httpsec.WithResponseHdrFetcher
