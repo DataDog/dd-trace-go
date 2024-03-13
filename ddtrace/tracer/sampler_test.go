@@ -535,17 +535,11 @@ func TestRulesSampler(t *testing.T) {
 			{ServiceRule("test-service", 1.0)},
 			{NameRule("http.request", 1.0)},
 			{NameServiceRule("http.request", "test-service", 1.0)},
-			{{Service: regexp.MustCompile("^test-"), Name: regexp.MustCompile(`http\..*`), Rate: 1.0}},
+			{NameServiceRule("http.*", "test-*", 1.0)},
 			{ServiceRule("other-service-1", 0.0), ServiceRule("other-service-2", 0.0), ServiceRule("test-service", 1.0)},
-			{TagsResourceRule(
-				map[string]*regexp.Regexp{"hostname": regexp.MustCompile("hn-[0-9]+")},
-				"", "", "", 1.0)},
-			{TagsResourceRule(
-				map[string]*regexp.Regexp{"hostname": regexp.MustCompile("hn-3*")},
-				"res-1*", "", "", 1.0)},
-			{TagsResourceRule(
-				map[string]*regexp.Regexp{"hostname": regexp.MustCompile("hn-[0-9]+")},
-				"", "", "", 1.0)},
+			{TagsResourceRule(map[string]string{"hostname": "hn-*"}, "", "", "", 1.0)},
+			{TagsResourceRule(map[string]string{"hostname": "hn-3*"}, "res-1*", "", "", 1.0)},
+			{TagsResourceRule(map[string]string{"hostname": "hn-*"}, "", "", "", 1.0)},
 		}
 		for _, v := range traceRules {
 			t.Run("", func(t *testing.T) {
@@ -566,15 +560,11 @@ func TestRulesSampler(t *testing.T) {
 			{ServiceRule("toast-service", 1.0)},
 			{NameRule("grpc.request", 1.0)},
 			{NameServiceRule("http.request", "toast-service", 1.0)},
-			{{Service: regexp.MustCompile("^toast-"), Name: regexp.MustCompile(`http\..*`), Rate: 1.0}},
-			{{Service: regexp.MustCompile("^test-"), Name: regexp.MustCompile(`grpc\..*`), Rate: 1.0}},
+			{NameServiceRule("http.*", "toast-", 1.0)},
+			{NameServiceRule("grpc.*", "test*", 1.0)},
 			{ServiceRule("other-service-1", 0.0), ServiceRule("other-service-2", 0.0), ServiceRule("toast-service", 1.0)},
-			{TagsResourceRule(
-				map[string]*regexp.Regexp{"hostname": regexp.MustCompile("hn--1")},
-				"", "", "", 1.0)},
-			{TagsResourceRule(
-				map[string]*regexp.Regexp{"host": regexp.MustCompile("hn-1")},
-				"", "", "", 1.0)},
+			{TagsResourceRule(map[string]string{"hostname": "hn--1"}, "", "", "", 1.0)},
+			{TagsResourceRule(map[string]string{"host": "hn-1"}, "", "", "", 1.0)},
 			{TagsResourceRule(nil, "res", "", "", 1.0)},
 		}
 		for _, v := range traceRules {
@@ -1410,25 +1400,15 @@ func TestSamplingRuleMarshall(t *testing.T) {
 		in  SamplingRule
 		out string
 	}{
-		{SamplingRule{regexp.MustCompile("srv.[0-9]+"), nil, 0, 0, nil, nil, SamplingRuleTrace, nil, nil},
-			`{"service":"srv.[0-9]+","sample_rate":0,"type":"1"}`},
-		{SamplingRule{regexp.MustCompile("srv.*"), regexp.MustCompile("ops.[0-9]+"), 0, 0, nil, nil, SamplingRuleTrace, nil, nil},
-			`{"service":"srv.*","name":"ops.[0-9]+","sample_rate":0,"type":"1"}`},
-		{SamplingRule{regexp.MustCompile("srv.[0-9]+"), regexp.MustCompile("ops.[0-9]+"), 0.55, 0, nil, nil, SamplingRuleTrace, nil, nil},
-			`{"service":"srv.[0-9]+","name":"ops.[0-9]+","sample_rate":0.55,"type":"1"}`},
-		{SamplingRule{nil, nil, 0.35, 0, regexp.MustCompile("http_get"), nil, SamplingRuleTrace, nil, nil},
-			`{"resource":"http_get","sample_rate":0.35,"type":"1"}`},
-		{SamplingRule{nil, nil, 0.35, 0, regexp.MustCompile("http_get"), map[string]*regexp.Regexp{"host": regexp.MustCompile("hn-*")}, SamplingRuleTrace, nil, nil},
-			`{"resource":"http_get","sample_rate":0.35,"tags":{"host":"hn-*"},"type":"1"}`},
-		{SamplingRule{regexp.MustCompile("srv.[0-9]+"), regexp.MustCompile("ops.[0-9]+"), 0.55, 0, nil, nil, SamplingRuleSpan, nil, nil},
-			`{"service":"srv.[0-9]+","name":"ops.[0-9]+","sample_rate":0.55,"type":"2"}`},
-		{SamplingRule{regexp.MustCompile("srv.[0-9]+"), regexp.MustCompile("ops.[0-9]+"), 0.55, 1000, nil, nil, SamplingRuleSpan, nil, nil},
-			`{"service":"srv.[0-9]+","name":"ops.[0-9]+","sample_rate":0.55,"type":"2","max_per_second":1000}`},
-		{SamplingRule{nil, nil, 1, 0, regexp.MustCompile("//bar"), nil, SamplingRuleTrace, nil, nil},
-			`{"resource":"//bar","sample_rate":1,"type":"1"}`},
-		{SamplingRule{nil, nil, 1, 0, regexp.MustCompile("//bar"),
-			map[string]*regexp.Regexp{"tag_key": regexp.MustCompile("tag_value.[0-9]+")}, SamplingRuleTrace, nil, nil},
-			`{"resource":"//bar","sample_rate":1,"tags":{"tag_key":"tag_value.[0-9]+"},"type":"1"}`},
+		{ServiceRule("srv.*", 0), `{"service":"srv.*","sample_rate":0,"type":"1"}`},
+		{NameServiceRule("ops.*", "srv.*", 0), `{"service":"srv.*","name":"ops.*","sample_rate":0,"type":"1"}`},
+		{NameServiceRule("ops.*", "srv.*", 0.55), `{"service":"srv.*","name":"ops.*","sample_rate":0.55,"type":"1"}`},
+		{TagsResourceRule(nil, "http_get", "", "", 0.55), `{"resource":"http_get","sample_rate":0.55,"type":"1"}`},
+		{TagsResourceRule(map[string]string{"host": "hn-*"}, "http_get", "", "", 0.35), `{"resource":"http_get","sample_rate":0.35,"tags":{"host":"hn-*"},"type":"1"}`},
+		{SpanNameServiceRule("ops.*", "srv.*", 0.55), `{"service":"srv.*","name":"ops.*","sample_rate":0.55,"type":"2"}`},
+		{SpanNameServiceMPSRule("ops.*", "srv.*", 0.55, 1000), `{"service":"srv.*","name":"ops.*","sample_rate":0.55,"type":"2","max_per_second":1000}`},
+		{TagsResourceRule(nil, "//bar", "", "", 1), `{"resource":"//bar","sample_rate":1,"type":"1"}`},
+		{TagsResourceRule(map[string]string{"tag_key": "tag_value.*"}, "//bar", "", "", 1), `{"resource":"//bar","sample_rate":1,"tags":{"tag_key":"tag_value.*"},"type":"1"}`},
 	} {
 		m, err := tt.in.MarshalJSON()
 		assert.Nil(t, err)
