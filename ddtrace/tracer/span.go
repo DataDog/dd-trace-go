@@ -230,8 +230,8 @@ func (s *Span) SetTag(key string, value interface{}) {
 // stores details about the link in an attributes map.
 func (s *Span) AddLink(spanContext *SpanContext, attributes map[string]string) {
 	//  traceIDUpper uint64
-	traceIDHighHex := spanContext.TraceID()[:16]
-	traceIDHigh, _ := strconv.ParseUint(traceIDHighHex, 16, 64)
+	traceIDHex := spanContext.TraceID()
+	traceIDHigh, _ := strconv.ParseUint(traceIDHex[:8], 16, 64)
 
 	samplingDecision, hasSamplingDecision := spanContext.SamplingPriority()
 	var flags uint32
