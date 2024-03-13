@@ -9,12 +9,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"os"
 	"regexp"
 	"strings"
 	"sync"
 	"time"
 
 	v2 "github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 
 	"golang.org/x/time/rate"
 )
@@ -45,6 +47,8 @@ type SamplingRule struct {
 
 	ruleType SamplingRuleType
 	limiter  *rateLimiter
+
+	globRule *jsonRule
 }
 
 // SamplingRuleType represents a type of sampling rule spans are matched against.
@@ -238,6 +242,164 @@ func globMatch(pattern string) *regexp.Regexp {
 	return regexp.MustCompile(fmt.Sprintf("^%s$", pattern))
 }
 
+// samplingRulesFromEnv parses sampling rules from
+// the DD_TRACE_SAMPLING_RULES, DD_TRACE_SAMPLING_RULES_FILE
+// DD_SPAN_SAMPLING_RULES and DD_SPAN_SAMPLING_RULES_FILE environment variables.
+func samplingRulesFromEnv() (trace, span []SamplingRule, err error) {
+	var errs []string
+	defer func() {
+		if len(errs) != 0 {
+			err = fmt.Errorf("\n\t%s", strings.Join(errs, "\n\t"))
+		}
+	}()
+
+	rulesByType := func(spanType SamplingRuleType) (rules []SamplingRule, errs []string) {
+		env := fmt.Sprintf("DD_%s_SAMPLING_RULES", strings.ToUpper(spanType.String()))
+		rulesEnv := os.Getenv(fmt.Sprintf("DD_%s_SAMPLING_RULES", strings.ToUpper(spanType.String())))
+		rules, err := unmarshalSamplingRules([]byte(rulesEnv), spanType)
+		if err != nil {
+			errs = append(errs, err.Error())
+		}
+		rulesFile := os.Getenv(env + "_FILE")
+		if len(rules) != 0 {
+			if rulesFile != "" {
+				log.Warn("DIAGNOSTICS Error(s): %s is available and will take precedence over %s_FILE", env, env)
+			}
+			return rules, errs
+		}
+		if rulesFile == "" {
+			return rules, errs
+		}
+		rulesFromEnvFile, err := os.ReadFile(rulesFile)
+		if err != nil {
+			errs = append(errs, fmt.Sprintf("Couldn't read file from %s_FILE: %v", env, err))
+		}
+		rules, err = unmarshalSamplingRules(rulesFromEnvFile, spanType)
+		if err != nil {
+			errs = append(errs, err.Error())
+		}
+		return rules, errs
+	}
+
+	trace, tErrs := rulesByType(SamplingRuleTrace)
+	if len(tErrs) != 0 {
+		errs = append(errs, tErrs...)
+	}
+	span, sErrs := rulesByType(SamplingRuleSpan)
+	if len(sErrs) != 0 {
+		errs = append(errs, sErrs...)
+	}
+	return trace, span, err
+}
+
+func (sr *SamplingRule) UnmarshalJSON(b []byte) error {
+	if len(b) == 0 {
+		return nil
+	}
+	var v jsonRule
+	if err := json.Unmarshal(b, &v); err != nil {
+		return err
+	}
+	rules, err := validateRules([]jsonRule{v}, SamplingRuleUndefined)
+	if err != nil {
+		return err
+	}
+	*sr = rules[0]
+	return nil
+}
+
+type jsonRule struct {
+	Service      string            `json:"service"`
+	Name         string            `json:"name"`
+	Rate         json.Number       `json:"sample_rate"`
+	MaxPerSecond float64           `json:"max_per_second"`
+	Resource     string            `json:"resource"`
+	Tags         map[string]string `json:"tags"`
+	Type         *SamplingRuleType `json:"type,omitempty"`
+}
+
+func (j jsonRule) String() string {
+	var s []string
+	if j.Service != "" {
+		s = append(s, fmt.Sprintf("Service:%s", j.Service))
+	}
+	if j.Name != "" {
+		s = append(s, fmt.Sprintf("Name:%s", j.Name))
+	}
+	if j.Rate != "" {
+		s = append(s, fmt.Sprintf("Rate:%s", j.Rate))
+	}
+	if j.MaxPerSecond != 0 {
+		s = append(s, fmt.Sprintf("MaxPerSecond:%f", j.MaxPerSecond))
+	}
+	if j.Resource != "" {
+		s = append(s, fmt.Sprintf("Resource:%s", j.Resource))
+	}
+	if len(j.Tags) != 0 {
+		s = append(s, fmt.Sprintf("Tags:%v", j.Tags))
+	}
+	if j.Type != nil {
+		s = append(s, fmt.Sprintf("Type: %v", *j.Type))
+	}
+	return fmt.Sprintf("{%s}", strings.Join(s, " "))
+}
+
+// unmarshalSamplingRules unmarshals JSON from b and returns the sampling rules found, attributing
+// the type t to them. If any errors are occurred, they are returned.
+func unmarshalSamplingRules(b []byte, spanType SamplingRuleType) ([]SamplingRule, error) {
+	if len(b) == 0 {
+		return nil, nil
+	}
+	var jsonRules []jsonRule
+	//	 if the JSON is an array, unmarshal it as an array of rules
+	err := json.Unmarshal(b, &jsonRules)
+	if err != nil {
+		return nil, fmt.Errorf("error unmarshalling JSON: %v", err)
+	}
+	return validateRules(jsonRules, spanType)
+}
+
+func validateRules(jsonRules []jsonRule, spanType SamplingRuleType) ([]SamplingRule, error) {
+	var errs []string
+	rules := make([]SamplingRule, 0, len(jsonRules))
+	for i, v := range jsonRules {
+		if v.Rate == "" {
+			v.Rate = "1"
+		}
+		if v.Type != nil && *v.Type != spanType {
+			spanType = *v.Type
+		}
+		rate, err := v.Rate.Float64()
+		if err != nil {
+			errs = append(errs, fmt.Sprintf("at index %d: %v", i, err))
+			continue
+		}
+		if rate < 0.0 || rate > 1.0 {
+			errs = append(errs, fmt.Sprintf("at index %d: ignoring rule %s: rate is out of [0.0, 1.0] range", i, v.String()))
+			continue
+		}
+		tagGlobs := make(map[string]*regexp.Regexp, len(v.Tags))
+		for k, g := range v.Tags {
+			tagGlobs[k] = globMatch(g)
+		}
+		rules = append(rules, SamplingRule{
+			Service:      globMatch(v.Service),
+			Name:         globMatch(v.Name),
+			Rate:         rate,
+			MaxPerSecond: v.MaxPerSecond,
+			Resource:     globMatch(v.Resource),
+			Tags:         tagGlobs,
+			ruleType:     spanType,
+			limiter:      newSingleSpanRateLimiter(v.MaxPerSecond),
+			globRule:     &jsonRules[i],
+		})
+	}
+	if len(errs) != 0 {
+		return rules, fmt.Errorf("%s", strings.Join(errs, "\n\t"))
+	}
+	return rules, nil
+}
+
 // MarshalJSON implements the json.Marshaler interface.
 func (sr *SamplingRule) MarshalJSON() ([]byte, error) {
 	s := struct {
@@ -249,28 +411,35 @@ func (sr *SamplingRule) MarshalJSON() ([]byte, error) {
 		Type         *string           `json:"type,omitempty"`
 		MaxPerSecond *float64          `json:"max_per_second,omitempty"`
 	}{}
-	if sr.Service != nil {
-		s.Service = sr.Service.String()
-	}
-	if sr.Name != nil {
-		s.Name = sr.Name.String()
+	if sr.globRule != nil {
+		s.Service = sr.globRule.Service
+		s.Name = sr.globRule.Name
+		s.Resource = sr.globRule.Resource
+		s.Tags = sr.globRule.Tags
+	} else {
+		if sr.Service != nil {
+			s.Service = sr.Service.String()
+		}
+		if sr.Name != nil {
+			s.Name = sr.Name.String()
+		}
+		if sr.Resource != nil {
+			s.Resource = sr.Resource.String()
+		}
+		s.Tags = make(map[string]string, len(sr.Tags))
+		for k, v := range sr.Tags {
+			if v != nil {
+				s.Tags[k] = v.String()
+			}
+		}
 	}
 	if sr.MaxPerSecond != 0 {
 		s.MaxPerSecond = &sr.MaxPerSecond
 	}
-	if sr.Resource != nil {
-		s.Resource = sr.Resource.String()
-	}
 	s.Rate = sr.Rate
 	if v := sr.ruleType.String(); v != "" {
-		t := fmt.Sprintf("%v(%d)", v, sr.ruleType)
+		t := fmt.Sprintf("%d", sr.ruleType)
 		s.Type = &t
-	}
-	s.Tags = make(map[string]string, len(sr.Tags))
-	for k, v := range sr.Tags {
-		if v != nil {
-			s.Tags[k] = v.String()
-		}
 	}
 	return json.Marshal(&s)
 }
