@@ -106,11 +106,11 @@ func TestSamplingRuleEquals(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			var rule_1, rule_2 SamplingRule
-			assert.NoError(t, json.Unmarshal([]byte(test.rule1), &rule_1))
-			assert.NoError(t, json.Unmarshal([]byte(test.rule2), &rule_2))
-			assert.False(t, rule_1.Equals(nil))
-			assert.Equal(t, test.expectedEqual, rule_1.Equals(&rule_2))
+			var rule1, rule2 SamplingRule
+			assert.NoError(t, json.Unmarshal([]byte(test.rule1), &rule1))
+			assert.NoError(t, json.Unmarshal([]byte(test.rule2), &rule2))
+			assert.False(t, rule1.Equals(nil))
+			assert.Equal(t, test.expectedEqual, rule1.Equals(&rule2))
 		})
 	}
 }
@@ -173,10 +173,10 @@ func TestSamplingRuleSlicesEqual(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			var ruleset_1, ruleset_2 []SamplingRule
-			assert.NoError(t, json.Unmarshal([]byte(test.ruleset1), &ruleset_1))
-			assert.NoError(t, json.Unmarshal([]byte(test.ruleset2), &ruleset_2))
-			assert.Equal(t, test.expectedEqual, Equals(ruleset_1, ruleset_2))
+			var ruleset1, ruleset2 []SamplingRule
+			assert.NoError(t, json.Unmarshal([]byte(test.ruleset1), &ruleset1))
+			assert.NoError(t, json.Unmarshal([]byte(test.ruleset2), &ruleset2))
+			assert.Equal(t, test.expectedEqual, Equals(ruleset1, ruleset2))
 		})
 	}
 }
