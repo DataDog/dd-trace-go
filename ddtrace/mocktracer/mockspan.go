@@ -46,6 +46,31 @@ func (s *Span) SetTag(k string, v interface{}) {
 	s.sp.SetTag(k, v)
 }
 
+func (s *Span) AddLink(spanContext *tracer.SpanContext, attributes map[string]string) {
+	//  traceIDUpper uint64
+	traceIDHex := spanContext.TraceID()
+	traceIDHigh, _ := strconv.ParseUint(traceIDHex[:8], 16, 64)
+
+	samplingDecision, hasSamplingDecision := spanContext.SamplingPriority()
+	var flags uint32
+	if hasSamplingDecision && samplingDecision >= ext.PriorityAutoKeep {
+		flags = uint32(1<<31 | 1)
+	} else if hasSamplingDecision {
+		flags = uint32(1<<31 | 0)
+	} else {
+		flags = uint32(0)
+	}
+
+	// TODO: Add support for setting tracestate
+	s.sp.spanLinks = append(s.sp.spanLinks, SpanLink{
+		TraceID:     spanContext.TraceIDLower(),
+		TraceIDHigh: traceIDHigh,
+		SpanID:      spanContext.SpanID(),
+		Attributes:  attributes,
+		Flags:       flags,
+	})
+}
+
 func (s *Span) Tag(k string) interface{} {
 	if s == nil {
 		return nil

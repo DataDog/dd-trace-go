@@ -141,8 +141,8 @@ func TestAddSpanLink(t *testing.T) {
 	rootSpan.AddLink(linkedSpanSampled.Context(), map[string]string{})
 	assert.Equal(len(rootSpan.spanLinks), 2)
 	spanLinkSampled := rootSpan.spanLinks[1]
-	assert.Equal(spanLink.TraceID, uint64(0x3))
-	assert.Equal(spanLink.SpanID, uint64(0x4))
+	assert.Equal(spanLinkSampled.TraceID, uint64(0x4))
+	assert.Equal(spanLinkSampled.SpanID, uint64(0x3))
 	assert.Equal(spanLinkSampled.Flags, uint32(2147483649))
 }
 
