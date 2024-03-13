@@ -73,7 +73,7 @@ func newWafEventListener(wafHandle *waf.Handle, cfg *config.Config, limiter limi
 // NewWAFEventListener returns the WAF event listener to register in order
 // to enable it.
 func (l *wafEventListener) onEvent(request *types.RequestOperation, _ types.RequestOperationArgs) {
-	wafCtx := waf.NewContext(l.wafHandle)
+	wafCtx := waf.NewContextWithBudget(l.wafHandle, l.config.WAFTimeout)
 	if wafCtx == nil {
 		return
 	}
@@ -113,10 +113,8 @@ func (l *wafEventListener) onEvent(request *types.RequestOperation, _ types.Requ
 	dyngo.OnFinish(request, func(request *types.RequestOperation, res types.RequestOperationRes) {
 		defer wafCtx.Close()
 
-		overall, internal := wafCtx.TotalRuntime()
-		nbTimeouts := wafCtx.TotalTimeouts()
-		shared.AddWAFMonitoringTags(request, l.wafDiags.Version, overall, internal, nbTimeouts)
-
+		stats := wafCtx.Stats()
+		shared.AddWAFMonitoringTags(request, l.wafDiags.Version, stats.Metrics())
 		trace.SetEventSpanTags(request, request.Events())
 	})
 }
