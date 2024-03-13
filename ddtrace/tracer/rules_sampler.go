@@ -80,6 +80,8 @@ type SamplingRule struct {
 
 	ruleType SamplingRuleType
 	limiter  *rateLimiter
+
+	globRule *jsonRule
 }
 
 // match returns true when the span's details match all the expected values in the rule.
@@ -143,6 +145,7 @@ func ServiceRule(service string, rate float64) SamplingRule {
 		Service:  globMatch(service),
 		ruleType: SamplingRuleTrace,
 		Rate:     rate,
+		globRule: &jsonRule{Service: service},
 	}
 }
 
@@ -153,6 +156,7 @@ func NameRule(name string, rate float64) SamplingRule {
 		Name:     globMatch(name),
 		ruleType: SamplingRuleTrace,
 		Rate:     rate,
+		globRule: &jsonRule{Name: name},
 	}
 }
 
@@ -163,6 +167,7 @@ func NameServiceRule(name string, service string, rate float64) SamplingRule {
 		Service:  globMatch(service),
 		Name:     globMatch(name),
 		ruleType: SamplingRuleTrace,
+		globRule: &jsonRule{Name: name, Service: service},
 		Rate:     rate,
 	}
 }
@@ -177,13 +182,20 @@ func RateRule(rate float64) SamplingRule {
 
 // TagsResourceRule returns a SamplingRule that applies the provided sampling rate to traces with spans that match
 // resource, name, service and tags provided.
-func TagsResourceRule(tags map[string]*regexp.Regexp, resource, name, service string, rate float64) SamplingRule {
+func TagsResourceRule(tags map[string]string, resource, name, service string, rate float64) SamplingRule {
+	globTags := make(map[string]*regexp.Regexp, len(tags))
+	for k, v := range tags {
+		if g := globMatch(v); g != nil {
+			globTags[k] = g
+		}
+	}
 	return SamplingRule{
 		Service:  globMatch(service),
 		Name:     globMatch(name),
 		Resource: globMatch(resource),
 		Rate:     rate,
-		Tags:     tags,
+		Tags:     globTags,
+		globRule: &jsonRule{Name: name, Service: service, Resource: resource, Tags: tags},
 		ruleType: SamplingRuleTrace,
 	}
 }
@@ -204,6 +216,7 @@ func SpanTagsResourceRule(tags map[string]string, resource, name, service string
 		Rate:     rate,
 		Tags:     globTags,
 		ruleType: SamplingRuleSpan,
+		globRule: &jsonRule{Name: name, Service: service, Resource: resource, Tags: tags},
 	}
 }
 
@@ -217,6 +230,7 @@ func SpanNameServiceRule(name, service string, rate float64) SamplingRule {
 		Rate:     rate,
 		ruleType: SamplingRuleSpan,
 		limiter:  newSingleSpanRateLimiter(0),
+		globRule: &jsonRule{Name: name, Service: service},
 	}
 }
 
@@ -232,6 +246,7 @@ func SpanNameServiceMPSRule(name, service string, rate, limit float64) SamplingR
 		Rate:         rate,
 		ruleType:     SamplingRuleSpan,
 		limiter:      newSingleSpanRateLimiter(limit),
+		globRule:     &jsonRule{Name: name, Service: service},
 	}
 }
 
@@ -694,6 +709,7 @@ func validateRules(jsonRules []jsonRule, spanType SamplingRuleType) ([]SamplingR
 			Tags:         tagGlobs,
 			ruleType:     spanType,
 			limiter:      newSingleSpanRateLimiter(v.MaxPerSecond),
+			globRule:     &jsonRules[i],
 		})
 	}
 	if len(errs) != 0 {
@@ -713,28 +729,35 @@ func (sr *SamplingRule) MarshalJSON() ([]byte, error) {
 		Type         *string           `json:"type,omitempty"`
 		MaxPerSecond *float64          `json:"max_per_second,omitempty"`
 	}{}
-	if sr.Service != nil {
-		s.Service = sr.Service.String()
-	}
-	if sr.Name != nil {
-		s.Name = sr.Name.String()
+	if sr.globRule != nil {
+		s.Service = sr.globRule.Service
+		s.Name = sr.globRule.Name
+		s.Resource = sr.globRule.Resource
+		s.Tags = sr.globRule.Tags
+	} else {
+		if sr.Service != nil {
+			s.Service = sr.Service.String()
+		}
+		if sr.Name != nil {
+			s.Name = sr.Name.String()
+		}
+		if sr.Resource != nil {
+			s.Resource = sr.Resource.String()
+		}
+		s.Tags = make(map[string]string, len(sr.Tags))
+		for k, v := range sr.Tags {
+			if v != nil {
+				s.Tags[k] = v.String()
+			}
+		}
 	}
 	if sr.MaxPerSecond != 0 {
 		s.MaxPerSecond = &sr.MaxPerSecond
 	}
-	if sr.Resource != nil {
-		s.Resource = sr.Resource.String()
-	}
 	s.Rate = sr.Rate
 	if v := sr.ruleType.String(); v != "" {
-		t := fmt.Sprintf("%v(%d)", v, sr.ruleType)
+		t := fmt.Sprintf("%d", sr.ruleType)
 		s.Type = &t
-	}
-	s.Tags = make(map[string]string, len(sr.Tags))
-	for k, v := range sr.Tags {
-		if v != nil {
-			s.Tags[k] = v.String()
-		}
 	}
 	return json.Marshal(&s)
 }
