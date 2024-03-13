@@ -638,6 +638,8 @@ github.com/DataDog/datadog-go/v5 v5.4.0 h1:Ea3eXUVwrVV28F/fo3Dr3aa+TL/Z7Xi6SUPKW
 github.com/DataDog/datadog-go/v5 v5.4.0/go.mod h1:K9kcYBlxkcPP8tvvjZZKs/m1edNAUFzBbdpTUKfCsuw=
 github.com/DataDog/dd-trace-go/v2 v2.0.0-20240312082540-5ff3b32fda5e h1:GDbNnA6BYwfK2KebmvB7cPebJ/Oea0cFMXBTTnIiZW0=
 github.com/DataDog/dd-trace-go/v2 v2.0.0-20240312082540-5ff3b32fda5e/go.mod h1:VU2ck5uRrILA0JYrMRiMaLo8jXGdwey3CZLm20L494g=
+github.com/DataDog/dd-trace-go/v2 v2.0.0-20240313115006-62e6edb7bfa7 h1:MQvcIKDH6slv25HWA2nbXIfUd8+1rqraB7uzVuqNk1M=
+github.com/DataDog/dd-trace-go/v2 v2.0.0-20240313115006-62e6edb7bfa7/go.mod h1:VU2ck5uRrILA0JYrMRiMaLo8jXGdwey3CZLm20L494g=
 github.com/DataDog/dd-trace-go/v2/contrib/99designs/gqlgen v0.0.0-20240308141714-cc13161300f3 h1:UpfoWK0FL94xV+TbYjjM+JyQRsOgyJ4CkwA3ucX3tPw=
 github.com/DataDog/dd-trace-go/v2/contrib/99designs/gqlgen v0.0.0-20240308141714-cc13161300f3/go.mod h1:yTF54Z9X1OAE+GXUTQNFXA9lyyoWonVYEf2KQ7TiZ08=
 github.com/DataDog/dd-trace-go/v2/contrib/IBM/sarama v0.0.0-20240308141714-cc13161300f3 h1:PjwFntwKGxNFbM8YlWU8zuSyRPKFH0ULEgP1oWMLv88=
@@ -664,6 +666,8 @@ github.com/DataDog/dd-trace-go/v2/contrib/elastic/go-elasticsearch.v6 v0.0.0-202
 github.com/DataDog/dd-trace-go/v2/contrib/elastic/go-elasticsearch.v6 v0.0.0-20240308141714-cc13161300f3/go.mod h1:BPp7cQpqGQICfhbvzZ9oCk+3Q4W7yofcoLKzOfOaCZU=
 github.com/DataDog/dd-trace-go/v2/contrib/emicklei/go-restful.v3 v0.0.0-20240308141714-cc13161300f3 h1:OY1Nj+THF/nZffdyvdRO8kgJmbxaqThYtLJla6u+DRY=
 github.com/DataDog/dd-trace-go/v2/contrib/emicklei/go-restful.v3 v0.0.0-20240308141714-cc13161300f3/go.mod h1:xfFjIIY7IQv2/qdspxb4Vs8OEzXQ0fIPwNC9fgkkfoY=
+github.com/DataDog/dd-trace-go/v2/contrib/emicklei/go-restful.v3 v0.0.0-20240313115006-62e6edb7bfa7 h1:gGXnpjESpVNPsd0+xt7URq066L9vvAocrUZshZDZkyQ=
+github.com/DataDog/dd-trace-go/v2/contrib/emicklei/go-restful.v3 v0.0.0-20240313115006-62e6edb7bfa7/go.mod h1:xfFjIIY7IQv2/qdspxb4Vs8OEzXQ0fIPwNC9fgkkfoY=
 github.com/DataDog/dd-trace-go/v2/contrib/gin-gonic/gin v0.0.0-20240308141714-cc13161300f3 h1:YFv6JKNQxLF1l3yZGOaIGO3suAUExO2Y3pA8JkDCXrM=
 github.com/DataDog/dd-trace-go/v2/contrib/gin-gonic/gin v0.0.0-20240308141714-cc13161300f3/go.mod h1:+SFTYDEZO8sXW+WK5K7WiVrzrvvPS2TAYGPz1DPZQgU=
 github.com/DataDog/dd-trace-go/v2/contrib/globalsign/mgo v0.0.0-20240308141714-cc13161300f3 h1:lYl77FGU5BQXiAzFELKWBZW5TLO+LBYtxYzimXXc9M8=
