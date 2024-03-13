@@ -242,7 +242,7 @@ func (s *Span) AddLink(spanContext *SpanContext, attributes map[string]string) {
 		flags = uint32(1<<31 | samplingDecision)
 	}
 
-	// TODO: Add support for setting tracestate and traceflags
+	// TODO: Add support for setting tracestate
 	s.spanLinks = append(s.spanLinks, SpanLink{
 		TraceID:     spanContext.TraceIDLower(),
 		TraceIDHigh: traceIDHigh,
