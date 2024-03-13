@@ -37,7 +37,19 @@ type contribPkg struct {
 	Dir        string
 }
 
-var TelemetryImport = "gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
+var (
+	TelemetryImport = "gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
+	V2Import        = "github.com/DataDog/dd-trace-go/v2"
+)
+
+func (p *contribPkg) isV2Frontend() bool {
+	for _, imp := range p.Imports {
+		if strings.HasPrefix(imp, V2Import) {
+			return true
+		}
+	}
+	return false
+}
 
 func (p *contribPkg) hasTelemetryImport() bool {
 	for _, imp := range p.Imports {
@@ -66,6 +78,9 @@ func TestTelemetryEnabled(t *testing.T) {
 	}
 	for _, pkg := range packages {
 		if strings.Contains(pkg.ImportPath, "/test") || strings.Contains(pkg.ImportPath, "/internal") {
+			continue
+		}
+		if pkg.isV2Frontend() {
 			continue
 		}
 		if !pkg.hasTelemetryImport() {

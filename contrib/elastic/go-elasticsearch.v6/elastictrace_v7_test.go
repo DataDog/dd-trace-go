@@ -106,7 +106,7 @@ func TestClientErrorCutoffV7(t *testing.T) {
 	assert.NoError(err)
 
 	span := mt.FinishedSpans()[1]
-	assert.Equal(`{"error":{`, span.Tag(ext.Error).(error).Error())
+	assert.True(strings.HasPrefix(span.Tag(ext.ErrorMsg).(string), `{"error":{`))
 }
 
 func TestClientV7Failure(t *testing.T) {
