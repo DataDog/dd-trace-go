@@ -226,6 +226,32 @@ func (s *Span) SetTag(key string, value interface{}) {
 	s.setMeta(key, fmt.Sprint(value))
 }
 
+// AddLink sets a casuality link to another span via a spanContext. It also
+// stores details about the link in an attributes map.
+func (s *Span) AddLink(spanContext *SpanContext, attributes map[string]string) {
+	//  traceIDUpper uint64
+	traceIDHighHex := spanContext.TraceID()[:16]
+	traceIDHigh, _ := strconv.ParseUint(traceIDHighHex, 16, 64)
+
+	samplingDecision, hasSamplingDecision := spanContext.SamplingPriority()
+	flags := uint32(0)
+	if hasSamplingDecision {
+		// To distinguish between "not sampled" and "not set", Datadog
+		// will rely on the highest bit being set. The OTel API doesn't
+		// differentiate this, so we will just always mark it as set.
+		flags = uint32(1<<31 | samplingDecision)
+	}
+
+	// TODO: Add support for setting tracestate and traceflags
+	s.spanLinks = append(s.spanLinks, SpanLink{
+		TraceID:     spanContext.TraceIDLower(),
+		TraceIDHigh: traceIDHigh,
+		SpanID:      spanContext.SpanID(),
+		Attributes:  attributes,
+		Flags:       flags,
+	})
+}
+
 // Tag returns the value for a given tag key.
 // If the key does not exist, Tag returns nil.
 // All values may be of type string, float64, or int32 (only for ext.Error).
