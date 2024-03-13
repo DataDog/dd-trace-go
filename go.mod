@@ -10,7 +10,6 @@ require (
 	github.com/DataDog/go-libddwaf/v2 v2.3.2
 	github.com/DataDog/gostackparse v0.7.0
 	github.com/DataDog/sketches-go v1.4.3
-	github.com/emicklei/go-restful/v3 v3.12.0
 	github.com/golang/protobuf v1.5.3
 	github.com/google/pprof v0.0.0-20230817174616-7a8ec2ada47b
 	github.com/google/uuid v1.5.0
