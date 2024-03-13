@@ -97,7 +97,7 @@ func (l *wafEventListener) onEvent(op *types.HandlerOperation, handlerArgs types
 		mu     sync.Mutex // events mutex
 	)
 
-	wafCtx := waf.NewContext(l.wafHandle)
+	wafCtx := waf.NewContextWithBudget(l.wafHandle, l.config.WAFTimeout)
 	if wafCtx == nil {
 		// The WAF event listener got concurrently released
 		return
@@ -186,8 +186,8 @@ func (l *wafEventListener) onEvent(op *types.HandlerOperation, handlerArgs types
 	// When the gRPC handler finishes
 	dyngo.OnFinish(op, func(op *types.HandlerOperation, _ types.HandlerOperationRes) {
 		defer wafCtx.Close()
-		overallRuntimeNs, internalRuntimeNs := wafCtx.TotalRuntime()
-		shared.AddWAFMonitoringTags(op, l.wafDiags.Version, overallRuntimeNs, internalRuntimeNs, wafCtx.TotalTimeouts())
+		stats := wafCtx.Stats()
+		shared.AddWAFMonitoringTags(op, l.wafDiags.Version, stats.Metrics())
 
 		// Log the following metrics once per instantiation of a WAF handle
 		l.once.Do(func() {
