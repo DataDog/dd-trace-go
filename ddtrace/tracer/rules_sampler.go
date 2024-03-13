@@ -80,6 +80,8 @@ type SamplingRule struct {
 
 	ruleType SamplingRuleType
 	limiter  *rateLimiter
+
+	globRule *jsonRule
 }
 
 // match returns true when the span's details match all the expected values in the rule.
@@ -694,6 +696,7 @@ func validateRules(jsonRules []jsonRule, spanType SamplingRuleType) ([]SamplingR
 			Tags:         tagGlobs,
 			ruleType:     spanType,
 			limiter:      newSingleSpanRateLimiter(v.MaxPerSecond),
+			globRule:     &jsonRules[i],
 		})
 	}
 	if len(errs) != 0 {
@@ -713,28 +716,35 @@ func (sr *SamplingRule) MarshalJSON() ([]byte, error) {
 		Type         *string           `json:"type,omitempty"`
 		MaxPerSecond *float64          `json:"max_per_second,omitempty"`
 	}{}
-	if sr.Service != nil {
-		s.Service = sr.Service.String()
-	}
-	if sr.Name != nil {
-		s.Name = sr.Name.String()
+	if sr.globRule != nil {
+		s.Service = sr.globRule.Service
+		s.Name = sr.globRule.Name
+		s.Resource = sr.globRule.Resource
+		s.Tags = sr.globRule.Tags
+	} else {
+		if sr.Service != nil {
+			s.Service = sr.Service.String()
+		}
+		if sr.Name != nil {
+			s.Name = sr.Name.String()
+		}
+		if sr.Resource != nil {
+			s.Resource = sr.Resource.String()
+		}
+		s.Tags = make(map[string]string, len(sr.Tags))
+		for k, v := range sr.Tags {
+			if v != nil {
+				s.Tags[k] = v.String()
+			}
+		}
 	}
 	if sr.MaxPerSecond != 0 {
 		s.MaxPerSecond = &sr.MaxPerSecond
 	}
-	if sr.Resource != nil {
-		s.Resource = sr.Resource.String()
-	}
 	s.Rate = sr.Rate
 	if v := sr.ruleType.String(); v != "" {
-		t := fmt.Sprintf("%v(%d)", v, sr.ruleType)
+		t := fmt.Sprintf("%d", sr.ruleType)
 		s.Type = &t
-	}
-	s.Tags = make(map[string]string, len(sr.Tags))
-	for k, v := range sr.Tags {
-		if v != nil {
-			s.Tags[k] = v.String()
-		}
 	}
 	return json.Marshal(&s)
 }
