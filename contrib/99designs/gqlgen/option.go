@@ -28,3 +28,8 @@ func WithAnalyticsRate(rate float64) Option {
 func WithServiceName(name string) Option {
 	return v2.WithService(name)
 }
+
+// WithCustomTag will attach the value to the span tagged by the key.
+func WithCustomTag(key string, value interface{}) Option {
+	return v2.WithCustomTag(key, value)
+}
