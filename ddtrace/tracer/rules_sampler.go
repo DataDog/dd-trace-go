@@ -696,7 +696,7 @@ func validateRules(jsonRules []jsonRule, spanType SamplingRuleType) ([]SamplingR
 			Tags:         tagGlobs,
 			ruleType:     spanType,
 			limiter:      newSingleSpanRateLimiter(v.MaxPerSecond),
-			globRule:     &v,
+			globRule:     &jsonRules[i],
 		})
 	}
 	if len(errs) != 0 {
