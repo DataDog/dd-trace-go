@@ -757,8 +757,8 @@ func TestIgnoredMethods(t *testing.T) {
 		}{
 			{ignore: []string{}, exp: 2},
 			{ignore: []string{"/some/endpoint"}, exp: 2},
-			{ignore: []string{"/grpc.Fixture/Ping"}, exp: 1},
-			{ignore: []string{"/grpc.Fixture/Ping", "/additional/endpoint"}, exp: 1},
+			{ignore: []string{"/grpc.Fixture/Ping"}, exp: 0},
+			{ignore: []string{"/grpc.Fixture/Ping", "/additional/endpoint"}, exp: 0},
 		} {
 			rig, err := newRig(true, WithIgnoredMethods(c.ignore...))
 			if err != nil {
