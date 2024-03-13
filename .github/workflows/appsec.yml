@@ -247,7 +247,8 @@ jobs:
         run: sudo docker exec -i test.runner apk add gcc musl-dev libc6-compat
       - name: Output go env
         run: sudo docker exec -i test.runner go env
-
+      - name: Ensure go.mod is up to date
+        run: sudo docker exec -i test.runner go mod tidy
       - name: NOCGO, undefined appsec state
         run: sudo docker exec -i test.runner env CGO_ENABLED=0 go test -v $TESTS
       - name: NOCGO, appsec disabled
