@@ -98,21 +98,21 @@ func regexEqualsFalseNegative(a, b *regexp.Regexp) bool {
 	return a.String() == b.String()
 }
 
-func (r *SamplingRule) Equals(other *SamplingRule) bool {
-	if (r == nil) != (other == nil) {
+func (sr *SamplingRule) Equals(other *SamplingRule) bool {
+	if (sr == nil) != (other == nil) {
 		return false
 	}
-	if r == nil {
+	if sr == nil {
 		return true
 	}
-	if r.Rate != other.Rate || r.ruleType != other.ruleType ||
-		!regexEqualsFalseNegative(r.Service, other.Service) ||
-		!regexEqualsFalseNegative(r.Name, other.Name) ||
-		!regexEqualsFalseNegative(r.Resource, other.Resource) ||
-		len(r.Tags) != len(other.Tags) {
+	if sr.Rate != other.Rate || sr.ruleType != other.ruleType ||
+		!regexEqualsFalseNegative(sr.Service, other.Service) ||
+		!regexEqualsFalseNegative(sr.Name, other.Name) ||
+		!regexEqualsFalseNegative(sr.Resource, other.Resource) ||
+		len(sr.Tags) != len(other.Tags) {
 		return false
 	}
-	for k, v := range r.Tags {
+	for k, v := range sr.Tags {
 		if vo, ok := other.Tags[k]; !ok || !regexEqualsFalseNegative(v, vo) {
 			return false
 		}
