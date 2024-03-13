@@ -419,9 +419,9 @@ func TestSpanTree(t *testing.T) {
 				serverSpans++
 				if !reqMsgFound {
 					assert.Equal("{\"name\":\"break\"}", ms.Tag(tagRequest))
-					metadataTag := ms.Tag(tagMetadataPrefix + "custom_metadata_key").([]string)
-					assert.Len(metadataTag, 1)
-					assert.Equal("custom_metadata_value", metadataTag[0])
+					metadataTag := ms.Tag(tagMetadataPrefix + "custom_metadata_key.0").(string)
+					assert.NotEmpty(metadataTag)
+					assert.Equal("custom_metadata_value", metadataTag)
 					reqMsgFound = true
 				}
 			}
