@@ -53,8 +53,8 @@ func WithAnalyticsRate(rate float64) OptionFn {
 	}
 }
 
-// WithServiceName sets the given service name for the gqlgen server.
-func WithServiceName(name string) OptionFn {
+// WithService sets the given service name for the gqlgen server.
+func WithService(name string) OptionFn {
 	return func(cfg *config) {
 		cfg.serviceName = name
 	}

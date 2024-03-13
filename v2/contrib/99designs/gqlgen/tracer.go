@@ -46,7 +46,6 @@ import (
 	"math"
 	"time"
 
-	"github.com/DataDog/dd-trace-go/v2/ddtrace"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/emitter/graphqlsec"
@@ -175,7 +174,7 @@ func (*gqlTracer) InterceptResponse(ctx context.Context, next graphql.ResponseHa
 // returned as those may run indefinitely and would be problematic. This function
 // also creates child spans (orphans in the case of a subscription) for the
 // read, parsing and validation phases of the operation.
-func (t *gqlTracer) createRootSpan(ctx context.Context, opCtx *graphql.OperationContext) (ddtrace.Span, context.Context) {
+func (t *gqlTracer) createRootSpan(ctx context.Context, opCtx *graphql.OperationContext) (*tracer.Span, context.Context) {
 	opts := make([]tracer.StartSpanOption, 0, 7+len(t.cfg.tags))
 	for k, v := range t.cfg.tags {
 		opts = append(opts, tracer.Tag(k, v))

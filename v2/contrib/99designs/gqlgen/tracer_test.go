@@ -70,7 +70,7 @@ func TestOptions(t *testing.T) {
 				WithCustomTag("customTag1", "customValue1"),
 				WithCustomTag("customTag2", "customValue2"),
 			},
-			test: func(assert *assert.Assertions, root mocktracer.Span) {
+			test: func(assert *assert.Assertions, root *mocktracer.Span) {
 				assert.Equal("customValue1", root.Tag("customTag1"))
 				assert.Equal("customValue2", root.Tag("customTag2"))
 			},
