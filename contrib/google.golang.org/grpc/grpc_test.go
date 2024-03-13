@@ -489,7 +489,7 @@ func TestPreservesMetadata(t *testing.T) {
 	assert.NotContains(t, s.Tags(), tagMetadataPrefix+"x-datadog-trace-id")
 	assert.NotContains(t, s.Tags(), tagMetadataPrefix+"x-datadog-parent-id")
 	assert.NotContains(t, s.Tags(), tagMetadataPrefix+"x-datadog-sampling-priority")
-	assert.Equal(t, s.Tag(tagMetadataPrefix+"test-key"), []string{"test-value"})
+	assert.Equal(t, s.Tag(tagMetadataPrefix+"test-key.0"), "test-value")
 }
 
 func TestStreamSendsErrorCode(t *testing.T) {
@@ -787,8 +787,8 @@ func TestIgnoredMethods(t *testing.T) {
 			// server span: 1 send + 2 recv(OK + EOF) + 1 stream finish(EOF)
 			{ignore: []string{}, exp: 7},
 			{ignore: []string{"/some/endpoint"}, exp: 7},
-			{ignore: []string{"/grpc.Fixture/StreamPing"}, exp: 3},
-			{ignore: []string{"/grpc.Fixture/StreamPing", "/additional/endpoint"}, exp: 3},
+			{ignore: []string{"/grpc.Fixture/StreamPing"}, exp: 0},
+			{ignore: []string{"/grpc.Fixture/StreamPing", "/additional/endpoint"}, exp: 0},
 		} {
 			rig, err := newRig(true, WithIgnoredMethods(c.ignore...))
 			if err != nil {
