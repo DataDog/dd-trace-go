@@ -113,8 +113,7 @@ func (l *wafEventListener) onEvent(request *types.RequestOperation, _ types.Requ
 	dyngo.OnFinish(request, func(request *types.RequestOperation, res types.RequestOperationRes) {
 		defer wafCtx.Close()
 
-		stats := wafCtx.Stats()
-		shared.AddWAFMonitoringTags(request, l.wafDiags.Version, stats.Metrics())
+		shared.AddWAFMonitoringTags(request, l.wafDiags.Version, wafCtx.Stats().Metrics())
 		trace.SetEventSpanTags(request, request.Events())
 	})
 }
