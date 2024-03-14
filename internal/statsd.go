@@ -10,6 +10,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/DataDog/datadog-go/v5/statsd"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
@@ -20,6 +21,22 @@ type StatsdClient interface {
 	Timing(name string, value time.Duration, tags []string, rate float64) error
 	Flush() error
 	Close() error
+}
+
+func NewStatsdClient(addr string, globalTags []string) (StatsdClient, error) {
+	if addr == "" {
+		addr = DefaultDogstatsdAddr()
+	}
+	log.Debug("Attempting to create new statsd client with destination %v", addr)
+	client, err := statsd.New(addr, statsd.WithMaxMessagesPerPayload(40), statsd.WithTags(globalTags))
+	if err != nil {
+		return &statsd.NoOpClient{}, err
+	}
+	return client, nil
+}
+
+func DefaultDogstatsdAddr() string {
+	return "localhost:8125"
 }
 
 type Stat interface {

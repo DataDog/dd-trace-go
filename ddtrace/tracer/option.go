@@ -497,6 +497,7 @@ func newConfig(opts ...StartOption) *config {
 			}
 			// not a valid TCP address, leave it as it is (could be a socket connection)
 		}
+		globalconfig.SetDogstatsdAddr(addr)
 		c.dogstatsdAddr = addr
 	}
 	// Re-initialize the globalTags config with the value constructed from the environment and start options
@@ -510,12 +511,7 @@ func newStatsdClient(c *config) (internal.StatsdClient, error) {
 	if c.statsdClient != nil {
 		return c.statsdClient, nil
 	}
-
-	client, err := statsd.New(c.dogstatsdAddr, statsd.WithMaxMessagesPerPayload(40), statsd.WithTags(statsTags(c)))
-	if err != nil {
-		return &statsd.NoOpClient{}, err
-	}
-	return client, nil
+	return internal.NewStatsdClient(c.dogstatsdAddr, statsTags(c))
 }
 
 // defaultHTTPClient returns the default http.Client to start the tracer with.
@@ -986,6 +982,7 @@ func WithRuntimeMetrics() StartOption {
 func WithDogstatsdAddress(addr string) StartOption {
 	return func(cfg *config) {
 		cfg.dogstatsdAddr = addr
+		globalconfig.SetDogstatsdAddr(addr)
 	}
 }
 

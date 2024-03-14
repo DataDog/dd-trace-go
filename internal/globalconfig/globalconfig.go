@@ -30,6 +30,7 @@ type config struct {
 	runtimeID     string
 	headersAsTags *internal.LockMap
 	statsCarrier  *internal.StatsCarrier
+	dogstatsdAddr string
 }
 
 // AnalyticsRate returns the sampling rate at which events should be marked. It uses
@@ -60,6 +61,20 @@ func SetServiceName(name string) {
 	cfg.mu.Lock()
 	defer cfg.mu.Unlock()
 	cfg.serviceName = name
+}
+
+// DogstatsdAddr returns the destination for tracer and contrib statsd clients
+func DogstatsdAddr() string {
+	cfg.mu.RLock()
+	defer cfg.mu.RUnlock()
+	return cfg.dogstatsdAddr
+}
+
+// SetDogstatsdAddr sets the destination for statsd clients to be used by tracer and contrib packages
+func SetDogstatsdAddr(addr string) {
+	cfg.mu.Lock()
+	defer cfg.mu.Unlock()
+	cfg.dogstatsdAddr = addr
 }
 
 // RuntimeID returns this process's unique runtime id.
