@@ -9,6 +9,8 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"fmt"
+	"sync"
+	"time"
 
 	v2 "github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
@@ -44,16 +46,26 @@ func (ta TracerV2Adapter) Inject(context ddtrace.SpanContext, carrier interface{
 
 // StartSpan implements ddtrace.Tracer.
 func (ta TracerV2Adapter) StartSpan(operationName string, opts ...ddtrace.StartSpanOption) ddtrace.Span {
-	s := ta.Tracer.StartSpan(operationName, ApplyV1Options(opts...))
+	s := ta.Tracer.StartSpan(operationName)
 	return WrapSpan(s)
 }
+
+var (
+	zeroTime            = time.Time{}
+	startSpanConfigPool = sync.Pool{
+		New: func() interface{} {
+			return new(ddtrace.StartSpanConfig)
+		},
+	}
+)
 
 // ApplyV1Options consumes a list of v1 StartSpanOptions and returns a function
 // that can be used to set the corresponding v2 StartSpanConfig fields.
 // This is used to adapt the v1 StartSpanOptions to the v2 StartSpanConfig.
 func ApplyV1Options(opts ...ddtrace.StartSpanOption) v2.StartSpanOption {
 	return func(cfg *v2.StartSpanConfig) {
-		ssc := new(ddtrace.StartSpanConfig)
+		ssc := startSpanConfigPool.Get().(*ddtrace.StartSpanConfig)
+		defer releaseStartSpanConfig(ssc)
 		for _, o := range opts {
 			o(ssc)
 		}
@@ -95,6 +107,16 @@ func resolveSpantContextV2(ctx ddtrace.SpanContext) *v2.SpanContext {
 	// Other SpanContext may fall through here, but they are not guaranteed to be
 	// fully supported, as the resulting v2.SpanContext may be missing data.
 	return v2.FromGenericCtx(&SpanContextV1Adapter{Ctx: ctx})
+}
+
+func releaseStartSpanConfig(ssc *ddtrace.StartSpanConfig) {
+	ssc.Parent = nil
+	ssc.Context = nil
+	ssc.SpanID = 0
+	ssc.SpanLinks = nil
+	ssc.StartTime = zeroTime
+	ssc.Tags = nil
+	startSpanConfigPool.Put(ssc)
 }
 
 // Stop implements ddtrace.Tracer.
