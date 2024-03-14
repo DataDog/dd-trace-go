@@ -38,14 +38,13 @@ type ServeConfig struct {
 // TraceAndServe serves the handler h using the given ResponseWriter and Request, applying tracing
 // according to the specified config.
 func TraceAndServe(h http.Handler, w http.ResponseWriter, r *http.Request, cfg *ServeConfig) {
-	fc := tracer.BuildFinishConfigV2(cfg.FinishOpts...)
 	c := &v2.ServeConfig{
 		Service:     cfg.Service,
 		Resource:    cfg.Resource,
 		QueryParams: cfg.QueryParams,
 		Route:       cfg.Route,
 		RouteParams: cfg.RouteParams,
-		FinishOpts:  []v2tracer.FinishOption{v2tracer.WithFinishConfig(fc)},
+		FinishOpts:  []v2tracer.FinishOption{tracer.ApplyV1FinishOptions(cfg.FinishOpts...)},
 		SpanOpts:    []v2tracer.StartSpanOption{tracer.ApplyV1Options(cfg.SpanOpts...)},
 	}
 	v2.TraceAndServe(h, w, r, c)

@@ -39,7 +39,7 @@ func SpanFromContext(ctx context.Context) (Span, bool) {
 	if mocktracer.IsActive() {
 		return mocktracer.MockspanV2Adapter{Span: v2mock.MockSpan(s)}, true
 	}
-	return internal.SpanV2Adapter{Span: s}, true
+	return internal.WrapSpan(s), true
 }
 
 // StartSpanFromContext returns a new span with the given operation name and options. If a span
@@ -51,7 +51,7 @@ func StartSpanFromContext(ctx context.Context, operationName string, opts ...Sta
 	if mocktracer.IsActive() {
 		s = mocktracer.MockspanV2Adapter{Span: v2mock.MockSpan(span)}
 	} else {
-		s = internal.SpanV2Adapter{Span: span}
+		s = internal.WrapSpan(span)
 	}
 	return s, ctx
 }

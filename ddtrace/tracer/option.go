@@ -143,7 +143,7 @@ type samplerV1Adapter struct {
 
 // Sample implements tracer.Sampler.
 func (sa *samplerV1Adapter) Sample(span *v2.Span) bool {
-	s := &internal.SpanV2Adapter{Span: span}
+	s := internal.WrapSpan(span)
 	return sa.sampler.Sample(s)
 }
 
@@ -502,14 +502,18 @@ func WithPropagation() UserMonitoringOption {
 	return v2.WithPropagation()
 }
 
+// ApplyV1Options consumes a list of v1 StartSpanOptions and returns a function
+// that can be used to set the corresponding v2 StartSpanConfig fields.
+// This is used to adapt the v1 StartSpanOptions to the v2 StartSpanConfig.
 func ApplyV1Options(opts ...ddtrace.StartSpanOption) v2.StartSpanOption {
 	return internal.ApplyV1Options(opts...)
 }
 
-// BuildFinishConfigV2 returns a new FinishConfig with the given set of options.
-// This is not intended for use outside of contribs. It'll be removed when v1 is deprecated.
-func BuildFinishConfigV2(opts ...FinishOption) *v2.FinishConfig {
-	return internal.BuildFinishConfigV2(opts...)
+// ApplyV1Options consumes a list of v1 FinishOption and returns a function
+// that can be used to set the corresponding v2 FinishConfig fields.
+// This is used to adapt the v1 FinishConfig to the v2 FinishConfig.
+func ApplyV1FinishOptions(opts ...ddtrace.FinishOption) v2.FinishOption {
+	return internal.ApplyV1FinishOptions(opts...)
 }
 
 // WrapSpanV2 wraps a v2.Span into a ddtrace.Span.

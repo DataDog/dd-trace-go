@@ -22,7 +22,7 @@ import (
 func TestSpanFromContext(t *testing.T) {
 	t.Run("regular", func(t *testing.T) {
 		assert := assert.New(t)
-		want := traceinternal.SpanV2Adapter{Span: &v2.Span{}}
+		want := traceinternal.WrapSpan(&v2.Span{})
 		ctx := ContextWithSpan(context.Background(), want)
 		got, ok := SpanFromContext(ctx)
 		assert.True(ok)

@@ -11,7 +11,6 @@ import (
 	"time"
 
 	v2 "github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
-	v2tracer "github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
@@ -66,8 +65,7 @@ func (msa MockspanV2Adapter) Finish(opts ...ddtrace.FinishOption) {
 	t := internal.GetGlobalTracer().(internal.TracerV2Adapter)
 	sp := msa.Span.Unwrap()
 	t.Tracer.(v2.Tracer).FinishSpan(sp)
-	fc := internal.BuildFinishConfigV2(opts...)
-	sp.Finish(v2tracer.WithFinishConfig(fc))
+	sp.Finish(internal.ApplyV1FinishOptions(opts...))
 }
 
 // SetBaggageItem implements ddtrace.Span.

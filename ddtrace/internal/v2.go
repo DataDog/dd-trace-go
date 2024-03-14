@@ -45,7 +45,7 @@ func (ta TracerV2Adapter) Inject(context ddtrace.SpanContext, carrier interface{
 // StartSpan implements ddtrace.Tracer.
 func (ta TracerV2Adapter) StartSpan(operationName string, opts ...ddtrace.StartSpanOption) ddtrace.Span {
 	s := ta.Tracer.StartSpan(operationName, ApplyV1Options(opts...))
-	return SpanV2Adapter{Span: s}
+	return WrapSpan(s)
 }
 
 // ApplyV1Options consumes a list of v1 StartSpanOptions and returns a function
@@ -106,6 +106,10 @@ type SpanV2Adapter struct {
 	Span *v2.Span
 }
 
+func WrapSpan(span *v2.Span) SpanV2Adapter {
+	return SpanV2Adapter{Span: span}
+}
+
 // BaggageItem implements ddtrace.Span.
 func (sa SpanV2Adapter) BaggageItem(key string) string {
 	return sa.Span.BaggageItem(key)
@@ -119,21 +123,30 @@ func (sa SpanV2Adapter) Context() ddtrace.SpanContext {
 
 // Finish implements ddtrace.Span.
 func (sa SpanV2Adapter) Finish(opts ...ddtrace.FinishOption) {
-	cfg := BuildFinishConfigV2(opts...)
-	sa.Span.Finish(v2.WithFinishConfig(cfg))
+	sa.Span.Finish(ApplyV1FinishOptions(opts...))
 }
 
-func BuildFinishConfigV2(opts ...ddtrace.FinishOption) *v2.FinishConfig {
-	fc := new(ddtrace.FinishConfig)
-	for _, o := range opts {
-		o(fc)
-	}
-	return &v2.FinishConfig{
-		Error:           fc.Error,
-		FinishTime:      fc.FinishTime,
-		NoDebugStack:    fc.NoDebugStack,
-		SkipStackFrames: fc.SkipStackFrames,
-		StackFrames:     fc.StackFrames,
+func ApplyV1FinishOptions(opts ...ddtrace.FinishOption) v2.FinishOption {
+	return func(cfg *v2.FinishConfig) {
+		fc := new(ddtrace.FinishConfig)
+		for _, o := range opts {
+			o(fc)
+		}
+		if fc.Error != nil {
+			cfg.Error = fc.Error
+		}
+		if !fc.FinishTime.IsZero() {
+			cfg.FinishTime = fc.FinishTime
+		}
+		if fc.NoDebugStack {
+			cfg.NoDebugStack = fc.NoDebugStack
+		}
+		if fc.SkipStackFrames != 0 {
+			cfg.SkipStackFrames = fc.SkipStackFrames
+		}
+		if fc.StackFrames != 0 {
+			cfg.StackFrames = fc.StackFrames
+		}
 	}
 }
 
@@ -161,7 +174,7 @@ func (sa SpanV2Adapter) Root() ddtrace.Span {
 	if r == nil {
 		return nil
 	}
-	return SpanV2Adapter{Span: r}
+	return WrapSpan(r)
 }
 
 // Format implements fmt.Formatter.
