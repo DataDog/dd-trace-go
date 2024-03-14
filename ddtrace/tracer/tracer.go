@@ -256,7 +256,7 @@ func newUnstartedTracer(opts ...StartOption) *tracer {
 	rulesSampler := newRulesSampler(c.traceRules, c.spanRules, globalRate)
 	c.traceSampleRate = newDynamicConfig("trace_sample_rate", globalRate, rulesSampler.traces.setGlobalSampleRate, equal[float64])
 	c.traceSampleRules = newDynamicConfig("trace_sample_rules", c.traceRules,
-		rulesSampler.traces.setTraceSampleRules, Equals)
+		rulesSampler.traces.setTraceSampleRules, EqualsFalseNegative)
 	var dataStreamsProcessor *datastreams.Processor
 	if c.dataStreamsMonitoringEnabled {
 		dataStreamsProcessor = datastreams.NewProcessor(statsd, c.env, c.serviceName, c.version, c.agentURL, c.httpClient, func() bool {

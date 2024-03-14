@@ -98,7 +98,7 @@ func regexEqualsFalseNegative(a, b *regexp.Regexp) bool {
 	return a.String() == b.String()
 }
 
-func (sr *SamplingRule) Equals(other *SamplingRule) bool {
+func (sr *SamplingRule) EqualsFalseNegative(other *SamplingRule) bool {
 	if (sr == nil) != (other == nil) {
 		return false
 	}
@@ -343,12 +343,18 @@ func (rs *traceRulesSampler) enabled() bool {
 	return len(rs.rules) > 0 || !math.IsNaN(rs.globalRate)
 }
 
-func Equals(a, b []SamplingRule) bool {
+// Tests whether two sets of the rules are the same.
+// This returns result that can be false negative. If the result is true, then the two sets of rules
+// are guaranteed to be the same.
+// On the other hand, false can be returned while the two rulesets are logically the same.
+// This function can be used to detect optimization opportunities when two rulesets are the same.
+// For example, an update of one ruleset is not needed if it's the same as the previous one.
+func EqualsFalseNegative(a, b []SamplingRule) bool {
 	if len(a) != len(b) {
 		return false
 	}
 	for i, r := range a {
-		if !r.Equals(&b[i]) {
+		if !r.EqualsFalseNegative(&b[i]) {
 			return false
 		}
 	}
@@ -378,7 +384,7 @@ func (rs *traceRulesSampler) setGlobalSampleRate(rate float64) bool {
 
 // Assumes the new rules are different from the old rules.
 func (rs *traceRulesSampler) setTraceSampleRules(rules []SamplingRule) bool {
-	if Equals(rs.rules, rules) {
+	if EqualsFalseNegative(rs.rules, rules) {
 		return false
 	}
 	rs.rules = rules

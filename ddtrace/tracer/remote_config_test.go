@@ -155,7 +155,9 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 		require.Equal(t, 0.5, s.Metrics[keyRulesSamplerAppliedRate])
 
 		telemetryClient.AssertNumberOfCalls(t, "ConfigChange", 1)
-		//telemetryClient.AssertCalled(t, "ConfigChange", []telemetry.Configuration{{Name: "trace_sample_rules", Value: 0.1, Origin: ""}})
+		telemetryClient.AssertCalled(t, "ConfigChange", []telemetry.Configuration{
+			{Name: "trace_sample_rate", Value: 0.5, Origin: "remote_config"},
+			{Name: "trace_sample_rules", Value: `[{"service":"my-service","name":"web.request","resource":"abc","sample_rate":0.2}]`, Origin: "remote_config"}})
 	})
 
 	t.Run("RC header tags = X-Test-Header:my-tag-name is applied and can be reverted", func(t *testing.T) {

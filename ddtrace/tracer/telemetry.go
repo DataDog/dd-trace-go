@@ -95,7 +95,6 @@ func startTelemetry(c *config) {
 		telemetryConfigs = append(telemetryConfigs,
 			telemetry.Configuration{Name: fmt.Sprintf("sr_%s_(%s)_(%s)", rule.ruleType.String(), service, name),
 				Value: fmt.Sprintf("rate:%f_maxPerSecond:%f", rule.Rate, rule.MaxPerSecond)})
-		// TODO: encode provenance
 	}
 	if c.orchestrionCfg.Enabled {
 		for k, v := range c.orchestrionCfg.Metadata {

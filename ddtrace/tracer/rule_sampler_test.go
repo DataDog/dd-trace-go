@@ -109,23 +109,23 @@ func TestSamplingRuleEquals(t *testing.T) {
 			var rule1, rule2 SamplingRule
 			assert.NoError(t, json.Unmarshal([]byte(test.rule1), &rule1))
 			assert.NoError(t, json.Unmarshal([]byte(test.rule2), &rule2))
-			assert.False(t, rule1.Equals(nil))
-			assert.Equal(t, test.expectedEqual, rule1.Equals(&rule2))
+			assert.False(t, rule1.EqualsFalseNegative(nil))
+			assert.Equal(t, test.expectedEqual, rule1.EqualsFalseNegative(&rule2))
 		})
 	}
 }
 
 func TestSamplingRuleNilSlicesEqual(t *testing.T) {
-	assert.True(t, Equals(nil, nil))
+	assert.True(t, EqualsFalseNegative(nil, nil))
 	{
 		var rules []SamplingRule
 		assert.NoError(t, json.Unmarshal([]byte(`[{"service":"abc"}]`), &rules))
-		assert.False(t, Equals(nil, rules))
+		assert.False(t, EqualsFalseNegative(nil, rules))
 	}
 	{
 		var rules []SamplingRule
 		assert.NoError(t, json.Unmarshal([]byte(`[{"service":"abc"}]`), &rules))
-		assert.False(t, Equals(rules, nil))
+		assert.False(t, EqualsFalseNegative(rules, nil))
 	}
 }
 
@@ -176,7 +176,7 @@ func TestSamplingRuleSlicesEqual(t *testing.T) {
 			var ruleset1, ruleset2 []SamplingRule
 			assert.NoError(t, json.Unmarshal([]byte(test.ruleset1), &ruleset1))
 			assert.NoError(t, json.Unmarshal([]byte(test.ruleset2), &ruleset2))
-			assert.Equal(t, test.expectedEqual, Equals(ruleset1, ruleset2))
+			assert.Equal(t, test.expectedEqual, EqualsFalseNegative(ruleset1, ruleset2))
 		})
 	}
 }
