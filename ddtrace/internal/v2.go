@@ -57,6 +57,11 @@ var (
 			return new(ddtrace.StartSpanConfig)
 		},
 	}
+	finishConfigPool = sync.Pool{
+		New: func() interface{} {
+			return new(ddtrace.FinishConfig)
+		},
+	}
 )
 
 // ApplyV1Options consumes a list of v1 StartSpanOptions and returns a function
@@ -150,7 +155,8 @@ func (sa SpanV2Adapter) Finish(opts ...ddtrace.FinishOption) {
 
 func ApplyV1FinishOptions(opts ...ddtrace.FinishOption) v2.FinishOption {
 	return func(cfg *v2.FinishConfig) {
-		fc := new(ddtrace.FinishConfig)
+		fc := finishConfigPool.Get().(*ddtrace.FinishConfig)
+		defer releaseFinishConfig(fc)
 		for _, o := range opts {
 			o(fc)
 		}
@@ -170,6 +176,15 @@ func ApplyV1FinishOptions(opts ...ddtrace.FinishOption) v2.FinishOption {
 			cfg.StackFrames = fc.StackFrames
 		}
 	}
+}
+
+func releaseFinishConfig(fc *ddtrace.FinishConfig) {
+	fc.Error = nil
+	fc.FinishTime = zeroTime
+	fc.NoDebugStack = false
+	fc.SkipStackFrames = 0
+	fc.StackFrames = 0
+	finishConfigPool.Put(fc)
 }
 
 // SetBaggageItem implements ddtrace.Span.

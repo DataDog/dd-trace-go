@@ -6,6 +6,7 @@
 package tracer
 
 import (
+	"fmt"
 	"testing"
 
 	v2 "github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
@@ -20,6 +21,18 @@ func BenchmarkApplyV1Options(b *testing.B) {
 		// Tag("key", "value"),
 	}
 	f := ApplyV1Options(opts...)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		f(cfg)
+	}
+}
+
+func BenchmarkApplyV1FinishOptions(b *testing.B) {
+	cfg := new(v2.FinishConfig)
+	opts := []ddtrace.FinishOption{
+		WithError(fmt.Errorf("error")),
+	}
+	f := ApplyV1FinishOptions(opts...)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		f(cfg)
