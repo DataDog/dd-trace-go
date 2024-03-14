@@ -196,8 +196,7 @@ func (l *wafEventListener) onEvent(op *types.Operation, args types.HandlerOperat
 		wafResult := shared.RunWAF(wafCtx, waf.RunAddressData{Persistent: values}, l.config.WAFTimeout)
 
 		// Add WAF metrics.
-		stats := wafCtx.Stats()
-		shared.AddWAFMonitoringTags(op, l.wafDiags.Version, stats.Metrics())
+		shared.AddWAFMonitoringTags(op, l.wafDiags.Version, wafCtx.Stats().Metrics())
 
 		// Add the following metrics once per instantiation of a WAF handle
 		l.once.Do(func() {

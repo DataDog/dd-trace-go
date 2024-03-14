@@ -34,11 +34,13 @@ func TestTagsTypes(t *testing.T) {
 	AddRulesMonitoringTags(&th, &wafDiags)
 
 	stats := map[string]any{
-		"_dd.appsec.waf.duration":          10,
-		"_dd.appsec.waf.duration_ext":      20,
-		"_dd.appsec.waf.timeouts":          0,
+		wafDurationTag:                     10,
+		wafDurationExtTag:                  20,
+		wafTimeoutTag:                      0,
 		"_dd.appsec.waf.truncations.depth": []int{1, 2, 3},
+		"_dd.appsec.waf.run":               12000,
 	}
+
 	AddWAFMonitoringTags(&th, "1.2.3", stats)
 
 	tags := th.Tags()

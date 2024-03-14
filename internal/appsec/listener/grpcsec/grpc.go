@@ -186,8 +186,7 @@ func (l *wafEventListener) onEvent(op *types.HandlerOperation, handlerArgs types
 	// When the gRPC handler finishes
 	dyngo.OnFinish(op, func(op *types.HandlerOperation, _ types.HandlerOperationRes) {
 		defer wafCtx.Close()
-		stats := wafCtx.Stats()
-		shared.AddWAFMonitoringTags(op, l.wafDiags.Version, stats.Metrics())
+		shared.AddWAFMonitoringTags(op, l.wafDiags.Version, wafCtx.Stats().Metrics())
 
 		// Log the following metrics once per instantiation of a WAF handle
 		l.once.Do(func() {
