@@ -3,8 +3,8 @@ module github.com/DataDog/dd-trace-go/v2/contrib/gorm.io/gorm.v1
 go 1.19
 
 require (
-	github.com/DataDog/dd-trace-go/v2 v2.0.0-20240307140101-1887b044eecd
-	github.com/DataDog/dd-trace-go/v2/contrib/database/sql v0.0.0-20240308135759-198d2b96ecb8
+	github.com/DataDog/dd-trace-go/v2 v2.0.0-20240315154142-163dd885ab4e
+	github.com/DataDog/dd-trace-go/v2/contrib/database/sql v0.0.0-20240315154142-163dd885ab4e
 	github.com/go-sql-driver/mysql v1.6.0
 	github.com/jackc/pgx/v5 v5.4.2
 	github.com/lib/pq v1.10.2

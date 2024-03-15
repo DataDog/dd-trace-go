@@ -4,7 +4,7 @@ go 1.19
 
 require (
 	github.com/DataDog/appsec-internal-go v1.5.0
-	github.com/DataDog/dd-trace-go/v2 v2.0.0-20240307140101-1887b044eecd
+	github.com/DataDog/dd-trace-go/v2 v2.0.0-20240315154142-163dd885ab4e
 	github.com/golang/protobuf v1.5.3
 	github.com/stretchr/testify v1.8.4
 	github.com/tinylib/msgp v1.1.9

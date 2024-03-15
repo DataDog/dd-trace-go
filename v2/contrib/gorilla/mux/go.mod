@@ -3,8 +3,8 @@ module github.com/DataDog/dd-trace-go/v2/contrib/gorilla/mux
 go 1.19
 
 require (
-	github.com/DataDog/dd-trace-go/v2 v2.0.0-20240307140101-1887b044eecd
-	github.com/DataDog/dd-trace-go/v2/contrib/net/http v0.0.0-20240125124054-68de6a751ca1
+	github.com/DataDog/dd-trace-go/v2 v2.0.0-20240315154142-163dd885ab4e
+	github.com/DataDog/dd-trace-go/v2/contrib/net/http v0.0.0-20240315154142-163dd885ab4e
 	github.com/gorilla/mux v1.8.0
 	github.com/stretchr/testify v1.8.4
 )

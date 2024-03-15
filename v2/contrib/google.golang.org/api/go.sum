@@ -13,10 +13,10 @@ github.com/DataDog/datadog-agent/pkg/remoteconfig/state v0.50.0 h1:/V/WtjIQCDNJp
 github.com/DataDog/datadog-agent/pkg/remoteconfig/state v0.50.0/go.mod h1:Vc+snp0Bey4MrrJyiV2tVxxJb6BmLomPvN1RgAvjGaQ=
 github.com/DataDog/datadog-go/v5 v5.4.0 h1:Ea3eXUVwrVV28F/fo3Dr3aa+TL/Z7Xi6SUPKW8L99aI=
 github.com/DataDog/datadog-go/v5 v5.4.0/go.mod h1:K9kcYBlxkcPP8tvvjZZKs/m1edNAUFzBbdpTUKfCsuw=
-github.com/DataDog/dd-trace-go/v2 v2.0.0-20240312080715-54a5c5c43ac4 h1:y6se8OWUPhXZDhW7NmX7jKW9FV/BEog4jxm9I6GvgIU=
-github.com/DataDog/dd-trace-go/v2 v2.0.0-20240312080715-54a5c5c43ac4/go.mod h1:VU2ck5uRrILA0JYrMRiMaLo8jXGdwey3CZLm20L494g=
-github.com/DataDog/dd-trace-go/v2/contrib/net/http v0.0.0-20240312080715-54a5c5c43ac4 h1:YtJDgcvZ+oMNAqFyjmSL2V9nojuaEdUUSb8bJJwsQI8=
-github.com/DataDog/dd-trace-go/v2/contrib/net/http v0.0.0-20240312080715-54a5c5c43ac4/go.mod h1:8SjYSr8RIgugQycCLoZ4YmaaJll0ifB79VInOhZTD6U=
+github.com/DataDog/dd-trace-go/v2 v2.0.0-20240315154142-163dd885ab4e h1:FHLo0G7jp9IvCi8j12FFWxRtbNHboBNKN1HpeotUdNI=
+github.com/DataDog/dd-trace-go/v2 v2.0.0-20240315154142-163dd885ab4e/go.mod h1:VU2ck5uRrILA0JYrMRiMaLo8jXGdwey3CZLm20L494g=
+github.com/DataDog/dd-trace-go/v2/contrib/net/http v0.0.0-20240315154142-163dd885ab4e h1:JnCsG4ZSV4KkcFduTtRPe00aETvGKIPly6RrdErs+BY=
+github.com/DataDog/dd-trace-go/v2/contrib/net/http v0.0.0-20240315154142-163dd885ab4e/go.mod h1:8SjYSr8RIgugQycCLoZ4YmaaJll0ifB79VInOhZTD6U=
 github.com/DataDog/go-libddwaf/v2 v2.3.2 h1:pdi9xjWW57IpOpTeOyPuNveEDFLmmInsHDeuZk3TY34=
 github.com/DataDog/go-libddwaf/v2 v2.3.2/go.mod h1:gsCdoijYQfj8ce/T2bEDNPZFIYnmHluAgVDpuQOWMZE=
 github.com/DataDog/go-sqllexer v0.0.10 h1:u07DuRfdlPPmOX/dclb1gcn/zaqWxUiURRRVenKILxc=

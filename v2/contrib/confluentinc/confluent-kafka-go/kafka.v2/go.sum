@@ -612,8 +612,8 @@ github.com/DataDog/datadog-agent/pkg/remoteconfig/state v0.50.0 h1:/V/WtjIQCDNJp
 github.com/DataDog/datadog-agent/pkg/remoteconfig/state v0.50.0/go.mod h1:Vc+snp0Bey4MrrJyiV2tVxxJb6BmLomPvN1RgAvjGaQ=
 github.com/DataDog/datadog-go/v5 v5.4.0 h1:Ea3eXUVwrVV28F/fo3Dr3aa+TL/Z7Xi6SUPKW8L99aI=
 github.com/DataDog/datadog-go/v5 v5.4.0/go.mod h1:K9kcYBlxkcPP8tvvjZZKs/m1edNAUFzBbdpTUKfCsuw=
-github.com/DataDog/dd-trace-go/v2 v2.0.0-20240307140101-1887b044eecd h1:oOAEOUUkFCxhsp+ReGMSvMC5a1Y+dZRVDFK6d/9J36Q=
-github.com/DataDog/dd-trace-go/v2 v2.0.0-20240307140101-1887b044eecd/go.mod h1:j5JXNatApsln+VHjV6PFZjsqfbn1HXYBNWwT3Zs8CVc=
+github.com/DataDog/dd-trace-go/v2 v2.0.0-20240315154142-163dd885ab4e h1:FHLo0G7jp9IvCi8j12FFWxRtbNHboBNKN1HpeotUdNI=
+github.com/DataDog/dd-trace-go/v2 v2.0.0-20240315154142-163dd885ab4e/go.mod h1:VU2ck5uRrILA0JYrMRiMaLo8jXGdwey3CZLm20L494g=
 github.com/DataDog/go-libddwaf/v2 v2.3.2 h1:pdi9xjWW57IpOpTeOyPuNveEDFLmmInsHDeuZk3TY34=
 github.com/DataDog/go-libddwaf/v2 v2.3.2/go.mod h1:gsCdoijYQfj8ce/T2bEDNPZFIYnmHluAgVDpuQOWMZE=
 github.com/DataDog/go-sqllexer v0.0.10 h1:u07DuRfdlPPmOX/dclb1gcn/zaqWxUiURRRVenKILxc=
@@ -2309,7 +2309,7 @@ google.golang.org/grpc v1.50.1/go.mod h1:ZgQEeidpAuNRZ8iRrlBKXZQP1ghovWIVhdJRyCD
 google.golang.org/grpc v1.51.0/go.mod h1:wgNDFcnuBGmxLKI/qn4T+m5BtEBYXJPvibbUPsAIPww=
 google.golang.org/grpc v1.53.0/go.mod h1:OnIrk0ipVdj4N5d9IUoFUx72/VlD7+jUsHwZgwSMQpw=
 google.golang.org/grpc v1.54.0/go.mod h1:PUSEXI6iWghWaB6lXM4knEgpJNu2qUcKfDtNci3EC2g=
-google.golang.org/grpc v1.60.1 h1:26+wFr+cNqSGFcOXcabYC0lUVJVRa2Sb2ortSK7VrEU=
+google.golang.org/grpc v1.57.1 h1:upNTNqv0ES+2ZOOqACwVtS3Il8M12/+Hz41RCPzAjQg=
 google.golang.org/grpc/cmd/protoc-gen-go-grpc v1.1.0/go.mod h1:6Kw0yEErY5E/yWrBtf03jp27GLLJujG4z/JK95pnjjw=
 google.golang.org/protobuf v0.0.0-20200109180630-ec00e32a8dfd/go.mod h1:DFci5gLYBciE7Vtevhsrf46CRTquxDuWsQurQQe4oz8=
 google.golang.org/protobuf v0.0.0-20200221191635-4d8936d0db64/go.mod h1:kwYJMbMJ01Woi6D6+Kah6886xMZcty6N08ah7+eCXa0=

@@ -3,8 +3,8 @@ module github.com/DataDog/dd-trace-go/v2/contrib/google.golang.org/api
 go 1.19
 
 require (
-	github.com/DataDog/dd-trace-go/v2 v2.0.0-20240312080715-54a5c5c43ac4
-	github.com/DataDog/dd-trace-go/v2/contrib/net/http v0.0.0-20240312080715-54a5c5c43ac4
+	github.com/DataDog/dd-trace-go/v2 v2.0.0-20240315154142-163dd885ab4e
+	github.com/DataDog/dd-trace-go/v2/contrib/net/http v0.0.0-20240315154142-163dd885ab4e
 	github.com/stretchr/testify v1.8.4
 	golang.org/x/oauth2 v0.9.0
 	google.golang.org/api v0.128.0

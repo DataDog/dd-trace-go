@@ -6,10 +6,10 @@ github.com/DataDog/datadog-agent/pkg/remoteconfig/state v0.50.0 h1:/V/WtjIQCDNJp
 github.com/DataDog/datadog-agent/pkg/remoteconfig/state v0.50.0/go.mod h1:Vc+snp0Bey4MrrJyiV2tVxxJb6BmLomPvN1RgAvjGaQ=
 github.com/DataDog/datadog-go/v5 v5.4.0 h1:Ea3eXUVwrVV28F/fo3Dr3aa+TL/Z7Xi6SUPKW8L99aI=
 github.com/DataDog/datadog-go/v5 v5.4.0/go.mod h1:K9kcYBlxkcPP8tvvjZZKs/m1edNAUFzBbdpTUKfCsuw=
-github.com/DataDog/dd-trace-go/v2 v2.0.0-20240307140101-1887b044eecd h1:oOAEOUUkFCxhsp+ReGMSvMC5a1Y+dZRVDFK6d/9J36Q=
-github.com/DataDog/dd-trace-go/v2 v2.0.0-20240307140101-1887b044eecd/go.mod h1:j5JXNatApsln+VHjV6PFZjsqfbn1HXYBNWwT3Zs8CVc=
-github.com/DataDog/dd-trace-go/v2/contrib/net/http v0.0.0-20240308135759-198d2b96ecb8 h1:9gxGHEVpbDJu0QDjZb+X3z2lT9dVbrEEuC6dBAH6N0I=
-github.com/DataDog/dd-trace-go/v2/contrib/net/http v0.0.0-20240308135759-198d2b96ecb8/go.mod h1:/oTOcjIVVvBEpjK1c+grPgClhkyJ02k7i7ZfPjfb4Zs=
+github.com/DataDog/dd-trace-go/v2 v2.0.0-20240315154142-163dd885ab4e h1:FHLo0G7jp9IvCi8j12FFWxRtbNHboBNKN1HpeotUdNI=
+github.com/DataDog/dd-trace-go/v2 v2.0.0-20240315154142-163dd885ab4e/go.mod h1:VU2ck5uRrILA0JYrMRiMaLo8jXGdwey3CZLm20L494g=
+github.com/DataDog/dd-trace-go/v2/contrib/net/http v0.0.0-20240315154142-163dd885ab4e h1:JnCsG4ZSV4KkcFduTtRPe00aETvGKIPly6RrdErs+BY=
+github.com/DataDog/dd-trace-go/v2/contrib/net/http v0.0.0-20240315154142-163dd885ab4e/go.mod h1:8SjYSr8RIgugQycCLoZ4YmaaJll0ifB79VInOhZTD6U=
 github.com/DataDog/go-libddwaf/v2 v2.3.2 h1:pdi9xjWW57IpOpTeOyPuNveEDFLmmInsHDeuZk3TY34=
 github.com/DataDog/go-libddwaf/v2 v2.3.2/go.mod h1:gsCdoijYQfj8ce/T2bEDNPZFIYnmHluAgVDpuQOWMZE=
 github.com/DataDog/go-sqllexer v0.0.10 h1:u07DuRfdlPPmOX/dclb1gcn/zaqWxUiURRRVenKILxc=
@@ -42,8 +42,8 @@ github.com/golang/mock v1.6.0/go.mod h1:p6yTPP+5HYm5mzsMV8JkE6ZKdX+/wYM6Hr+Licev
 github.com/golang/protobuf v1.5.0/go.mod h1:FsONVRAS9T7sI+LIUmWTfcYkHO4aIWwzhcaSAoJOfIk=
 github.com/golang/protobuf v1.5.3 h1:KhyjKVUg7Usr/dYsdSqoFveMYd5ko72D+zANwlG1mmg=
 github.com/golang/protobuf v1.5.3/go.mod h1:XVQd3VNwM+JqD3oG2Ue2ip4fOMUkwXdXDdiuN0vRsmY=
+github.com/google/go-cmp v0.5.5 h1:Khx7svrCpmxxtHBq5j2mp/xVjsi8hQMfNLvJFAlrGgU=
 github.com/google/go-cmp v0.5.5/go.mod h1:v8dTdLbMG2kIc/vJvl+f65V22dbkXbowE6jgT/gNBxE=
-github.com/google/go-cmp v0.6.0 h1:ofyhxvXcZhMsU5ulbFiLKl/XBFqE1GSq7atu8tAmTRI=
 github.com/google/gofuzz v1.2.0 h1:xRy4A+RhZaiKjJ1bPfwQ8sedCA+YS2YcCHW6ec7JMi0=
 github.com/google/gofuzz v1.2.0/go.mod h1:dBl0BpW6vV/+mYPU4Po3pmUjxk6FQPldtuIdl/M65Eg=
 github.com/google/pprof v0.0.0-20230817174616-7a8ec2ada47b h1:h9U78+dx9a4BKdQkBBos92HalKpaGKHrp+3Uo6yTodo=
@@ -136,7 +136,7 @@ golang.org/x/xerrors v0.0.0-20191204190536-9bdfabe68543/go.mod h1:I/5z698sn9Ka8T
 golang.org/x/xerrors v0.0.0-20200804184101-5ec99f83aff1/go.mod h1:I/5z698sn9Ka8TeJc9MKroUUfqBBauWjQqLJ2OPfmY0=
 golang.org/x/xerrors v0.0.0-20231012003039-104605ab7028 h1:+cNy6SZtPcJQH3LJVLOSmiC7MMxXNOb3PU/VUEz+EhU=
 golang.org/x/xerrors v0.0.0-20231012003039-104605ab7028/go.mod h1:NDW/Ps6MPRej6fsCIbMTohpP40sJ/P/vI1MoTEGwX90=
-google.golang.org/grpc v1.60.1 h1:26+wFr+cNqSGFcOXcabYC0lUVJVRa2Sb2ortSK7VrEU=
+google.golang.org/grpc v1.57.1 h1:upNTNqv0ES+2ZOOqACwVtS3Il8M12/+Hz41RCPzAjQg=
 google.golang.org/protobuf v1.26.0-rc.1/go.mod h1:jlhhOSvTdKEhbULTjvd4ARK9grFBp09yW+WbY/TyQbw=
 google.golang.org/protobuf v1.26.0/go.mod h1:9q0QmTI4eRPtz6boOQmLYwt+qCgq0jsYwAQnmE0givc=
 google.golang.org/protobuf v1.28.0/go.mod h1:HV8QOd/L58Z+nl8r43ehVNZIU/HEI6OcFqwMG9pJV4I=

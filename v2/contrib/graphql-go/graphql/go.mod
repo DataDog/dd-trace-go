@@ -3,7 +3,7 @@ module github.com/DataDog/dd-trace-go/v2/contrib/graphql-go/graphql
 go 1.19
 
 require (
-	github.com/DataDog/dd-trace-go/v2 v2.0.0-20240307140101-1887b044eecd
+	github.com/DataDog/dd-trace-go/v2 v2.0.0-20240315154142-163dd885ab4e
 	github.com/graphql-go/graphql v0.8.1
 	github.com/graphql-go/handler v0.2.3
 	github.com/hashicorp/go-multierror v1.1.1
