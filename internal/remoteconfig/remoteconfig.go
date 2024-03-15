@@ -71,7 +71,7 @@ const (
 	// APMTracingCustomTags enables APM client to set custom tags on all spans
 	APMTracingCustomTags
 	// APMTracingSampleRules represents the sampling rate using matching rules from APM client libraries
-	APMTracingSampleRules
+	APMTracingSampleRules = 29
 )
 
 // APMTracingEnabled enables APM tracing
