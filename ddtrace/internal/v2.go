@@ -46,7 +46,7 @@ func (ta TracerV2Adapter) Inject(context ddtrace.SpanContext, carrier interface{
 
 // StartSpan implements ddtrace.Tracer.
 func (ta TracerV2Adapter) StartSpan(operationName string, opts ...ddtrace.StartSpanOption) ddtrace.Span {
-	s := ta.Tracer.StartSpan(operationName)
+	s := ta.Tracer.StartSpan(operationName, ApplyV1Options(opts...))
 	return WrapSpan(s)
 }
 
