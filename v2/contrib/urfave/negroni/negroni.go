@@ -34,7 +34,7 @@ type DatadogMiddleware struct {
 }
 
 func (m *DatadogMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
-	opts := options.Copy(m.cfg.spanOpts...) // opts must be a copy of m.cfg.spanOpts, locally scoped, to avoid races.
+	opts := options.Expand(m.cfg.spanOpts, 0, 4) // opts must be a copy of m.cfg.spanOpts, locally scoped, to avoid races.
 	opts = append(opts,
 		tracer.ServiceName(m.cfg.serviceName),
 		tracer.ResourceName(m.cfg.resourceNamer(r)),

@@ -17,6 +17,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/internal/contrib/namingschematest"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/normalizer"
 
 	"github.com/stretchr/testify/assert"
@@ -496,7 +497,7 @@ func handler500(w http.ResponseWriter, _ *http.Request) {
 }
 
 func BenchmarkHttpServeTrace(b *testing.B) {
-	err := tracer.Start()
+	err := tracer.Start(tracer.WithLogger(log.DiscardLogger{}))
 	assert.NoError(b, err)
 	defer tracer.Stop()
 	header, tag := normalizer.HeaderTag("3header")
