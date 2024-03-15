@@ -19,7 +19,6 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/grpcsec/types"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/sharedsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener/httpsec"
 	shared "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener/sharedsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/samplernames"
@@ -30,8 +29,6 @@ const (
 	GRPCServerMethodAddr          = "grpc.server.method"
 	GRPCServerRequestMessageAddr  = "grpc.server.request.message"
 	GRPCServerRequestMetadataAddr = "grpc.server.request.metadata"
-	HTTPClientIPAddr              = httpsec.HTTPClientIPAddr
-	UserIDAddr                    = httpsec.UserIDAddr
 )
 
 // List of gRPC rule addresses currently supported by the WAF
@@ -39,8 +36,9 @@ var supportedAddresses = listener.AddressSet{
 	GRPCServerMethodAddr:          {},
 	GRPCServerRequestMessageAddr:  {},
 	GRPCServerRequestMetadataAddr: {},
-	HTTPClientIPAddr:              {},
-	UserIDAddr:                    {},
+	shared.HTTPClientIPAddr:       {},
+	shared.UserIDAddr:             {},
+	shared.ServerIoNetURLAddr:     {},
 }
 
 // Install registers the gRPC WAF Event Listener on the given root operation.
@@ -103,14 +101,18 @@ func (l *wafEventListener) onEvent(op *types.HandlerOperation, handlerArgs types
 		return
 	}
 
+	if _, ok := l.addresses[shared.ServerIoNetURLAddr]; ok {
+		shared.RegisterRoundTripper(op, wafCtx, l.limiter, l.config.WAFTimeout)
+	}
+
 	// Listen to the UserID address if the WAF rules are using it
-	if l.isSecAddressListened(UserIDAddr) {
+	if l.isSecAddressListened(shared.UserIDAddr) {
 		// UserIDOperation happens when appsec.SetUser() is called. We run the WAF and apply actions to
 		// see if the associated user should be blocked. Since we don't control the execution flow in this case
 		// (SetUser is SDK), we delegate the responsibility of interrupting the handler to the user.
 		dyngo.On(op, func(userIDOp *sharedsec.UserIDOperation, args sharedsec.UserIDOperationArgs) {
 			values := map[string]any{
-				UserIDAddr: args.UserID,
+				shared.UserIDAddr: args.UserID,
 			}
 			wafResult := shared.RunWAF(wafCtx, waf.RunAddressData{Persistent: values}, l.config.WAFTimeout)
 			if wafResult.HasActions() || wafResult.HasEvents() {
@@ -131,8 +133,8 @@ func (l *wafEventListener) onEvent(op *types.HandlerOperation, handlerArgs types
 		// Note that this address is passed asap for the passlist, which are created per grpc method
 		values[GRPCServerMethodAddr] = handlerArgs.Method
 	}
-	if l.isSecAddressListened(HTTPClientIPAddr) && handlerArgs.ClientIP.IsValid() {
-		values[HTTPClientIPAddr] = handlerArgs.ClientIP.String()
+	if l.isSecAddressListened(shared.HTTPClientIPAddr) && handlerArgs.ClientIP.IsValid() {
+		values[shared.HTTPClientIPAddr] = handlerArgs.ClientIP.String()
 	}
 
 	wafResult := shared.RunWAF(wafCtx, waf.RunAddressData{Persistent: values}, l.config.WAFTimeout)

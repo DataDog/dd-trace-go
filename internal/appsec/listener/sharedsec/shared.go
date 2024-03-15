@@ -7,6 +7,7 @@ package sharedsec
 
 import (
 	"encoding/json"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/httpsec/types"
 	"time"
 
 	"github.com/DataDog/appsec-internal-go/limiter"
@@ -15,6 +16,12 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/sharedsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/trace"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+)
+
+const (
+	ServerIoNetURLAddr = "server.io.net.url"
+	HTTPClientIPAddr   = "http.client_ip"
+	UserIDAddr         = "usr.id"
 )
 
 func RunWAF(wafCtx *waf.Context, values waf.RunAddressData, timeout time.Duration) waf.Result {
@@ -29,6 +36,11 @@ func RunWAF(wafCtx *waf.Context, values waf.RunAddressData, timeout time.Duratio
 
 type securityEventsAdder interface {
 	AddSecurityEvents(events []any)
+}
+
+type operationWithEvents interface {
+	dyngo.Operation
+	securityEventsAdder
 }
 
 // Helper function to add sec events to an operation taking into account the rate limiter.
@@ -88,4 +100,22 @@ func ProcessActions(op dyngo.Operation, actions sharedsec.Actions, actionIds []s
 		}
 	}
 	return interrupt
+}
+
+// RegisterRoundTripper registers a listener on outgoing requests to run the WAF.
+func RegisterRoundTripper(op operationWithEvents, wafCtx *waf.Context, limiter limiter.Limiter, timeout time.Duration) {
+	dyngo.On(op, func(operation *types.RoundTripOperation, args types.RoundTripOperationArgs) {
+		wafResult := RunWAF(wafCtx, waf.RunAddressData{Persistent: map[string]any{ServerIoNetURLAddr: args.URL}}, timeout)
+
+		// TODO: stacktrace
+		if wafResult.HasEvents() {
+			// TODO: put this in dyngo
+			for _, event := range wafResult.Events {
+				event.(map[string]any)["span_id"] = args.SpanID
+			}
+
+			AddSecurityEvents(op, limiter, wafResult.Events)
+			log.Debug("appsec: WAF detected a suspicious outgoing request URL: %s", args.URL)
+		}
+	})
 }

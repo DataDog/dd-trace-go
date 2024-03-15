@@ -7,7 +7,10 @@ package http
 
 import (
 	"fmt"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/httpsec"
 	"math"
+	"math/rand"
 	"net/http"
 	"os"
 	"strconv"
@@ -39,6 +42,11 @@ func (rt *roundTripper) RoundTrip(req *http.Request) (res *http.Response, err er
 		tracer.Tag(ext.Component, componentName),
 		tracer.Tag(ext.SpanKind, ext.SpanKindClient),
 		tracer.Tag(ext.NetworkDestinationName, url.Hostname()),
+	}
+	var appsecSpanID uint64
+	if appsec.Enabled() {
+		appsecSpanID = rand.Uint64()
+		opts = append(opts, tracer.WithSpanID(appsecSpanID))
 	}
 	if !math.IsNaN(rt.cfg.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, rt.cfg.analyticsRate))
@@ -75,7 +83,17 @@ func (rt *roundTripper) RoundTrip(req *http.Request) (res *http.Response, err er
 			fmt.Fprintf(os.Stderr, "contrib/net/http.Roundtrip: failed to inject http headers: %v\n", err)
 		}
 	}
-	res, err = rt.base.RoundTrip(r2)
+	if appsec.Enabled() {
+		res, err = httpsec.RoundTrip(httpsec.RoundTripArgs{
+			SpanID: appsecSpanID,
+			Span:   span,
+			Ctx:    ctx,
+			Req:    r2,
+			Rt:     rt.base,
+		})
+	} else {
+		res, err = rt.base.RoundTrip(r2)
+	}
 	if err != nil {
 		span.SetTag("http.errors", err.Error())
 		if rt.cfg.errCheck == nil || rt.cfg.errCheck(err) {
