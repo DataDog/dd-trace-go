@@ -10,29 +10,16 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
-	"strings"
 	"sync"
 	"testing"
 
 	"github.com/DataDog/dd-trace-go/v2/v1internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 
 	"github.com/stretchr/testify/assert"
 )
-
-func traceIDFrom64Bits(i uint64) traceID {
-	t := traceID{}
-	t.SetLower(i)
-	return t
-}
-
-func traceIDFrom128Bits(u, l uint64) traceID {
-	t := traceID{}
-	t.SetLower(l)
-	t.SetUpper(u)
-	return t
-}
 
 func TestHTTPHeadersCarrierSet(t *testing.T) {
 	h := http.Header{}
@@ -222,12 +209,6 @@ func TestTextMapPropagator(t *testing.T) {
 	})
 }
 
-func checkSameElements(assert *assert.Assertions, want, got string) {
-	gotInner, wantInner := strings.TrimPrefix(got, "dd="), strings.TrimPrefix(want, "dd=")
-	gotInnerList, wantInnerList := strings.Split(gotInner, ";"), strings.Split(wantInner, ";")
-	assert.ElementsMatch(gotInnerList, wantInnerList)
-}
-
 func TestNonePropagator(t *testing.T) {
 	t.Run("inject/none", func(t *testing.T) {
 		t.Setenv(headerPropagationStyleInject, "none")
@@ -305,10 +286,6 @@ func TestNonePropagator(t *testing.T) {
 			assert.Equal(err, ErrSpanContextNotFound)
 		})
 	})
-}
-
-func assertTraceTags(t *testing.T, expected, actual string) {
-	assert.ElementsMatch(t, strings.Split(expected, ","), strings.Split(actual, ","))
 }
 
 func BenchmarkExtractDatadog(b *testing.B) {
@@ -412,7 +389,7 @@ func TestMalformedTID(t *testing.T) {
 
 func BenchmarkInjectW3C(b *testing.B) {
 	b.Setenv(headerPropagationStyleInject, "tracecontext")
-	tracer := newTracer()
+	tracer := newTracer(WithLogger(log.DiscardLogger{}))
 	defer tracer.Stop()
 	root := tracer.StartSpan("test")
 	defer root.Finish()
