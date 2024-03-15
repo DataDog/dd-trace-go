@@ -43,7 +43,7 @@ go122-baseline:
     ENABLE_PROFILING: "false"
     ENABLE_APPSEC: "false"
     DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
-    GO_VERSION: "1.22.0"
+    GO_VERSION: "1.22.1"
     LOAD_TESTS: normal_operation_io-bound,high_load_io-bound|normal_operation_cpu-bound,high_load_cpu-bound|normal_operation_cgo-cpu-bound,high_load_cgo-cpu-bound|normal_operation_cpu-bound-x-client-ip-enabled,high_load_cpu-bound-x-client-ip-enabled
     PARALLELIZE: "true"
 go122-only-trace:
@@ -54,7 +54,7 @@ go122-only-trace:
     ENABLE_PROFILING: "false"
     ENABLE_APPSEC: "false"
     DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
-    GO_VERSION: "1.22.0"
+    GO_VERSION: "1.22.1"
     LOAD_TESTS: normal_operation_io-bound,high_load_io-bound|normal_operation_cpu-bound,high_load_cpu-bound|normal_operation_cgo-cpu-bound,high_load_cgo-cpu-bound|normal_operation_cpu-bound-x-client-ip-enabled,high_load_cpu-bound-x-client-ip-enabled
     PARALLELIZE: "true"
 go122-only-profile:
@@ -65,7 +65,7 @@ go122-only-profile:
     ENABLE_PROFILING: "true"
     ENABLE_APPSEC: "false"
     DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
-    GO_VERSION: "1.22.0"
+    GO_VERSION: "1.22.1"
     LOAD_TESTS: normal_operation_io-bound,high_load_io-bound|normal_operation_cpu-bound,high_load_cpu-bound|normal_operation_cgo-cpu-bound,high_load_cgo-cpu-bound|normal_operation_cpu-bound-x-client-ip-enabled,high_load_cpu-bound-x-client-ip-enabled
     PARALLELIZE: "true"
 go122-profile-trace:
@@ -76,7 +76,7 @@ go122-profile-trace:
     ENABLE_PROFILING: "true"
     ENABLE_APPSEC: "false"
     DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
-    GO_VERSION: "1.22.0"
+    GO_VERSION: "1.22.1"
     LOAD_TESTS: normal_operation_io-bound,high_load_io-bound|normal_operation_cpu-bound,high_load_cpu-bound|normal_operation_cgo-cpu-bound,high_load_cgo-cpu-bound|normal_operation_cpu-bound-x-client-ip-enabled,high_load_cpu-bound-x-client-ip-enabled
     PARALLELIZE: "true"
 go122-trace-asm:
@@ -87,7 +87,7 @@ go122-trace-asm:
     ENABLE_PROFILING: "false"
     ENABLE_APPSEC: "true"
     DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
-    GO_VERSION: "1.22.0"
+    GO_VERSION: "1.22.1"
     LOAD_TESTS: normal_operation_io-bound,high_load_io-bound|normal_operation_cpu-bound,high_load_cpu-bound|normal_operation_cgo-cpu-bound,high_load_cgo-cpu-bound|normal_operation_cpu-bound-x-client-ip-enabled,high_load_cpu-bound-x-client-ip-enabled
     PARALLELIZE: "true"
 go122-profile-trace-asm:
@@ -98,10 +98,10 @@ go122-profile-trace-asm:
     ENABLE_PROFILING: "true"
     ENABLE_APPSEC: "true"
     DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
-    GO_VERSION: "1.22.0"
+    GO_VERSION: "1.22.1"
     LOAD_TESTS: normal_operation_io-bound,high_load_io-bound|normal_operation_cpu-bound,high_load_cpu-bound|normal_operation_cgo-cpu-bound,high_load_cgo-cpu-bound|normal_operation_cpu-bound-x-client-ip-enabled,high_load_cpu-bound-x-client-ip-enabled
     PARALLELIZE: "true"
-go119-baseline:
+go120-baseline:
   extends: .benchmarks
   variables:
     ENABLE_DDPROF: "false"
@@ -109,10 +109,10 @@ go119-baseline:
     ENABLE_PROFILING: "false"
     ENABLE_APPSEC: "false"
     DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
-    GO_VERSION: "1.19.13"
+    GO_VERSION: "1.20.14"
     LOAD_TESTS: normal_operation_io-bound,high_load_io-bound|normal_operation_cpu-bound,high_load_cpu-bound|normal_operation_cgo-cpu-bound,high_load_cgo-cpu-bound|normal_operation_cpu-bound-x-client-ip-enabled,high_load_cpu-bound-x-client-ip-enabled
     PARALLELIZE: "true"
-go119-only-trace:
+go120-only-trace:
   extends: .benchmarks
   variables:
     ENABLE_DDPROF: "false"
@@ -120,10 +120,10 @@ go119-only-trace:
     ENABLE_PROFILING: "false"
     ENABLE_APPSEC: "false"
     DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
-    GO_VERSION: "1.19.13"
+    GO_VERSION: "1.20.14"
     LOAD_TESTS: normal_operation_io-bound,high_load_io-bound|normal_operation_cpu-bound,high_load_cpu-bound|normal_operation_cgo-cpu-bound,high_load_cgo-cpu-bound|normal_operation_cpu-bound-x-client-ip-enabled,high_load_cpu-bound-x-client-ip-enabled
     PARALLELIZE: "true"
-go119-only-profile:
+go120-only-profile:
   extends: .benchmarks
   variables:
     ENABLE_DDPROF: "false"
@@ -131,10 +131,10 @@ go119-only-profile:
     ENABLE_PROFILING: "true"
     ENABLE_APPSEC: "false"
     DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
-    GO_VERSION: "1.19.13"
+    GO_VERSION: "1.20.14"
     LOAD_TESTS: normal_operation_io-bound,high_load_io-bound|normal_operation_cpu-bound,high_load_cpu-bound|normal_operation_cgo-cpu-bound,high_load_cgo-cpu-bound|normal_operation_cpu-bound-x-client-ip-enabled,high_load_cpu-bound-x-client-ip-enabled
     PARALLELIZE: "true"
-go119-profile-trace:
+go120-profile-trace:
   extends: .benchmarks
   variables:
     ENABLE_DDPROF: "false"
@@ -142,10 +142,10 @@ go119-profile-trace:
     ENABLE_PROFILING: "true"
     ENABLE_APPSEC: "false"
     DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
-    GO_VERSION: "1.19.13"
+    GO_VERSION: "1.20.14"
     LOAD_TESTS: normal_operation_io-bound,high_load_io-bound|normal_operation_cpu-bound,high_load_cpu-bound|normal_operation_cgo-cpu-bound,high_load_cgo-cpu-bound|normal_operation_cpu-bound-x-client-ip-enabled,high_load_cpu-bound-x-client-ip-enabled
     PARALLELIZE: "true"
-go119-trace-asm:
+go120-trace-asm:
   extends: .benchmarks
   variables:
     ENABLE_DDPROF: "false"
@@ -153,10 +153,10 @@ go119-trace-asm:
     ENABLE_PROFILING: "false"
     ENABLE_APPSEC: "true"
     DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
-    GO_VERSION: "1.19.13"
+    GO_VERSION: "1.20.14"
     LOAD_TESTS: normal_operation_io-bound,high_load_io-bound|normal_operation_cpu-bound,high_load_cpu-bound|normal_operation_cgo-cpu-bound,high_load_cgo-cpu-bound|normal_operation_cpu-bound-x-client-ip-enabled,high_load_cpu-bound-x-client-ip-enabled
     PARALLELIZE: "true"
-go119-profile-trace-asm:
+go120-profile-trace-asm:
   extends: .benchmarks
   variables:
     ENABLE_DDPROF: "false"
@@ -164,6 +164,6 @@ go119-profile-trace-asm:
     ENABLE_PROFILING: "true"
     ENABLE_APPSEC: "true"
     DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
-    GO_VERSION: "1.19.13"
+    GO_VERSION: "1.20.14"
     LOAD_TESTS: normal_operation_io-bound,high_load_io-bound|normal_operation_cpu-bound,high_load_cpu-bound|normal_operation_cgo-cpu-bound,high_load_cgo-cpu-bound|normal_operation_cpu-bound-x-client-ip-enabled,high_load_cpu-bound-x-client-ip-enabled
     PARALLELIZE: "true"

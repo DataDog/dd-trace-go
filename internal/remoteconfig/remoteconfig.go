@@ -70,6 +70,8 @@ const (
 	APMTracingHTTPHeaderTags
 	// APMTracingCustomTags enables APM client to set custom tags on all spans
 	APMTracingCustomTags
+	// APMTracingSampleRules represents the sampling rate using matching rules from APM client libraries
+	APMTracingSampleRules
 )
 
 // APMTracingEnabled enables APM tracing
