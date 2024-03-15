@@ -10,9 +10,21 @@ import (
 	"github.com/DataDog/appsec-internal-go/limiter"
 	waf "github.com/DataDog/go-libddwaf/v3"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/httpsec/types"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/sharedsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/trace"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+)
+
+const (
+	ServerIoNetURLAddr   = "server.io.net.url"
+	HTTPClientIPAddr     = "http.client_ip"
+	UserIDAddr           = "usr.id"
+	eventRulesVersionTag = "_dd.appsec.event_rules.version"
+	eventRulesErrorsTag  = "_dd.appsec.event_rules.errors"
+	eventRulesLoadedTag  = "_dd.appsec.event_rules.loaded"
+	eventRulesFailedTag  = "_dd.appsec.event_rules.error_count"
+	wafVersionTag        = "_dd.appsec.waf.version"
 )
 
 func RunWAF(wafCtx *waf.Context, values waf.RunAddressData) waf.Result {
@@ -29,20 +41,17 @@ type securityEventsAdder interface {
 	AddSecurityEvents(events []any)
 }
 
+type operationWithEvents interface {
+	dyngo.Operation
+	securityEventsAdder
+}
+
 // AddSecurityEvents is a helper function to add sec events to an operation taking into account the rate limiter.
 func AddSecurityEvents(op securityEventsAdder, limiter limiter.Limiter, matches []any) {
 	if len(matches) > 0 && limiter.Allow() {
 		op.AddSecurityEvents(matches)
 	}
 }
-
-const (
-	eventRulesVersionTag = "_dd.appsec.event_rules.version"
-	eventRulesErrorsTag  = "_dd.appsec.event_rules.errors"
-	eventRulesLoadedTag  = "_dd.appsec.event_rules.loaded"
-	eventRulesFailedTag  = "_dd.appsec.event_rules.error_count"
-	wafVersionTag        = "_dd.appsec.waf.version"
-)
 
 // AddRulesMonitoringTags adds the tags related to security rules monitoring
 func AddRulesMonitoringTags(th trace.TagSetter, wafDiags *waf.Diagnostics) {
@@ -115,4 +124,22 @@ func ActionsFromEntry(actionType string, params any) []sharedsec.Action {
 		log.Debug("appsec: unknown action type `%s`", actionType)
 		return nil
 	}
+}
+
+// RegisterRoundTripper registers a listener on outgoing requests to run the WAF.
+func RegisterRoundTripper(op operationWithEvents, wafCtx *waf.Context, limiter limiter.Limiter) {
+	dyngo.On(op, func(operation *types.RoundTripOperation, args types.RoundTripOperationArgs) {
+		wafResult := RunWAF(wafCtx, waf.RunAddressData{Persistent: map[string]any{ServerIoNetURLAddr: args.URL}})
+
+		// TODO: stacktrace
+		if wafResult.HasEvents() {
+			// TODO: put this in dyngo
+			for _, event := range wafResult.Events {
+				event.(map[string]any)["span_id"] = args.SpanID
+			}
+
+			AddSecurityEvents(op, limiter, wafResult.Events)
+			log.Debug("appsec: WAF detected a suspicious outgoing request URL: %s", args.URL)
+		}
+	})
 }

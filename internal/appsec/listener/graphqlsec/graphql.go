@@ -29,6 +29,7 @@ const (
 // List of GraphQL rule addresses currently supported by the WAF
 var supportedAddresses = listener.AddressSet{
 	graphQLServerResolverAddr: {},
+	shared.ServerIoNetURLAddr: {},
 }
 
 // Install registers the GraphQL WAF Event Listener on the given root operation.
@@ -81,6 +82,10 @@ func (l *wafEventListener) onEvent(request *types.RequestOperation, _ types.Requ
 	// - err is not nil, meaning context creation failed
 	if wafCtx == nil || err != nil {
 		return
+	}
+
+	if _, ok := l.addresses[shared.ServerIoNetURLAddr]; ok {
+		shared.RegisterRoundTripper(request, wafCtx, l.limiter, l.config.WAFTimeout)
 	}
 
 	// Add span tags notifying this trace is AppSec-enabled
