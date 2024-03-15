@@ -6,20 +6,35 @@
 package internal // import "gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 
 import (
+	"sync/atomic"
+
 	v2 "github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
+)
+
+var (
+	// globalTracer stores the current tracer as *TracerV2Adapter to reduce memory allocations. The
+	// atomic.Value type requires types to be consistent, which requires using *TracerV2Adapter.
+	globalTracer atomic.Value
 )
 
 // SetGlobalTracer sets the global tracer to t.
 func SetGlobalTracer(t ddtrace.Tracer) {
 	rt := t.(TracerV2Adapter)
 	v2.SetGlobalTracer(rt.Tracer)
+	globalTracer.Swap(&rt)
 }
 
 // GetGlobalTracer returns the currently active tracer.
 func GetGlobalTracer() ddtrace.Tracer {
-	t := v2.GetGlobalTracer()
-	return TracerV2Adapter{Tracer: t}
+	gt := globalTracer.Load()
+	if gt != nil {
+		return gt.(*TracerV2Adapter)
+	}
+	tr := v2.GetGlobalTracer()
+	t := TracerV2Adapter{Tracer: tr}
+	globalTracer.Swap(&t)
+	return t
 }
 
 var NoopTracerV2 = TracerV2Adapter{Tracer: v2.NoopTracer{}}
