@@ -29,7 +29,7 @@ func SetGlobalTracer(t ddtrace.Tracer) {
 func GetGlobalTracer() ddtrace.Tracer {
 	gt := globalTracer.Load()
 	if gt != nil {
-		return gt.(*TracerV2Adapter)
+		return *(gt.(*TracerV2Adapter))
 	}
 	tr := v2.GetGlobalTracer()
 	t := TracerV2Adapter{Tracer: tr}
