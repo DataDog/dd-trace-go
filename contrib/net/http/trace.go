@@ -7,11 +7,23 @@ package http // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http"
 
 import (
 	"net/http"
+	"sync"
 
 	v2 "github.com/DataDog/dd-trace-go/v2/contrib/net/http"
 	v2tracer "github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+)
+
+var (
+	serveConfigPool = sync.Pool{
+		New: func() interface{} {
+			return &v2.ServeConfig{
+				FinishOpts: make([]v2tracer.FinishOption, 1),
+				SpanOpts:   make([]v2tracer.StartSpanOption, 1),
+			}
+		},
+	}
 )
 
 // ServeConfig specifies the tracing configuration when using TraceAndServe.
@@ -38,14 +50,14 @@ type ServeConfig struct {
 // TraceAndServe serves the handler h using the given ResponseWriter and Request, applying tracing
 // according to the specified config.
 func TraceAndServe(h http.Handler, w http.ResponseWriter, r *http.Request, cfg *ServeConfig) {
-	c := &v2.ServeConfig{
-		Service:     cfg.Service,
-		Resource:    cfg.Resource,
-		QueryParams: cfg.QueryParams,
-		Route:       cfg.Route,
-		RouteParams: cfg.RouteParams,
-		FinishOpts:  []v2tracer.FinishOption{tracer.ApplyV1FinishOptions(cfg.FinishOpts...)},
-		SpanOpts:    []v2tracer.StartSpanOption{tracer.ApplyV1Options(cfg.SpanOpts...)},
-	}
+	c := serveConfigPool.Get().(*v2.ServeConfig)
+	defer serveConfigPool.Put(c)
+	c.Service = cfg.Service
+	c.Resource = cfg.Resource
+	c.QueryParams = cfg.QueryParams
+	c.Route = cfg.Route
+	c.RouteParams = cfg.RouteParams
+	c.FinishOpts[0] = tracer.ApplyV1FinishOptions(cfg.FinishOpts...)
+	c.SpanOpts[0] = tracer.ApplyV1Options(cfg.SpanOpts...)
 	v2.TraceAndServe(h, w, r, c)
 }
