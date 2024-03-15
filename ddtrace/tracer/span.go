@@ -229,7 +229,6 @@ func (s *Span) SetTag(key string, value interface{}) {
 // AddLink sets a casuality link to another span via a spanContext. It also
 // stores details about the link in an attributes map.
 func (s *Span) AddLink(spanContext *SpanContext, attributes map[string]string) {
-	//  traceIDUpper uint64
 	traceIDHex := spanContext.TraceID()
 	traceIDHigh, _ := strconv.ParseUint(traceIDHex[:8], 16, 64)
 
@@ -243,7 +242,6 @@ func (s *Span) AddLink(spanContext *SpanContext, attributes map[string]string) {
 		flags = uint32(0)
 	}
 
-	// TODO: Add support for setting tracestate
 	s.spanLinks = append(s.spanLinks, SpanLink{
 		TraceID:     spanContext.TraceIDLower(),
 		TraceIDHigh: traceIDHigh,
