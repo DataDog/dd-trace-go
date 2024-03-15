@@ -17,6 +17,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/normalizer"
 
 	"github.com/stretchr/testify/assert"
@@ -496,7 +497,7 @@ func handler500(w http.ResponseWriter, _ *http.Request) {
 }
 
 func BenchmarkHttpServeTrace(b *testing.B) {
-	tracer.Start()
+	tracer.Start(tracer.WithLogger(log.DiscardLogger{}))
 	defer tracer.Stop()
 	header, tag := normalizer.HeaderTag("3header")
 	globalconfig.SetHeaderTag(header, tag)
