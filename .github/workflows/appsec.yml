@@ -67,7 +67,7 @@ jobs:
         id: cfg
         run: |
           echo "key=go-pkg-mod-${{ hashFiles('**/go.sum') }}" >> $GITHUB_OUTPUT
-          echo "path=$(go env GOMODCACHE)" >> $GITHUB_OUTPUT
+          echo "path=go_pkg_mod_cache" >> $GITHUB_OUTPUT
 
       - uses: actions/setup-go@v5
         with:
@@ -84,6 +84,8 @@ jobs:
 
       - name: Download Go modules
         if: steps.cache.outputs.cache-hit != 'true'
+        env:
+          GOMODCACHE: ${{ github.workspace }}/${{ steps.cfg.outputs.path }}
         run: go mod download -x
 
   macos:
@@ -117,6 +119,8 @@ jobs:
       # reruns under different settings.
       - name: go test
         shell: bash
+        env:
+          GOMODCACHE: ${{ github.workspace }}/${{ needs.go-mod-caching.outputs.path }}
         run: |
           set -euxo pipefail
           cgocheck="GOEXPERIMENT=cgocheck2"
@@ -160,6 +164,11 @@ jobs:
         with:
           go-version: stable
           cache: false # we manage the caching ourselves
+
+      - run: go env -w GOMODCACHE=${{ github.workspace }}\${{ needs.go-mod-caching.outputs.path }}
+        if: runner.os == 'Windows'
+      - run: go env -w GOMODCACHE=${{ github.workspace }}/${{ needs.go-mod-caching.outputs.path }}
+        if: runner.os != 'Windows'
 
       - name: go test
         shell: bash
@@ -221,6 +230,8 @@ jobs:
           sudo apt install -y docker-ce docker-ce-cli containerd.io
 
       - name: Create container
+        env:
+          GOMODCACHE: ${{ github.workspace }}/${{ needs.go-mod-caching.outputs.path }}
         run: |-
           sudo docker run                                                       \
             --rm                                                                \
