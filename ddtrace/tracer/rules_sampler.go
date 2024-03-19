@@ -77,6 +77,7 @@ func ServiceRule(service string, rate float64) SamplingRule {
 		Service:  globMatch(service),
 		ruleType: SamplingRuleTrace,
 		Rate:     rate,
+		globRule: &jsonRule{Service: service},
 	}
 }
 
@@ -87,6 +88,7 @@ func NameRule(name string, rate float64) SamplingRule {
 		Name:     globMatch(name),
 		ruleType: SamplingRuleTrace,
 		Rate:     rate,
+		globRule: &jsonRule{Name: name},
 	}
 }
 
@@ -97,6 +99,7 @@ func NameServiceRule(name string, service string, rate float64) SamplingRule {
 		Service:  globMatch(service),
 		Name:     globMatch(name),
 		ruleType: SamplingRuleTrace,
+		globRule: &jsonRule{Name: name, Service: service},
 		Rate:     rate,
 	}
 }
@@ -111,13 +114,20 @@ func RateRule(rate float64) SamplingRule {
 
 // TagsResourceRule returns a SamplingRule that applies the provided sampling rate to traces with spans that match
 // resource, name, service and tags provided.
-func TagsResourceRule(tags map[string]*regexp.Regexp, resource, name, service string, rate float64) SamplingRule {
+func TagsResourceRule(tags map[string]string, resource, name, service string, rate float64) SamplingRule {
+	globTags := make(map[string]*regexp.Regexp, len(tags))
+	for k, v := range tags {
+		if g := globMatch(v); g != nil {
+			globTags[k] = g
+		}
+	}
 	return SamplingRule{
 		Service:  globMatch(service),
 		Name:     globMatch(name),
 		Resource: globMatch(resource),
 		Rate:     rate,
-		Tags:     tags,
+		Tags:     globTags,
+		globRule: &jsonRule{Name: name, Service: service, Resource: resource, Tags: tags},
 		ruleType: SamplingRuleTrace,
 	}
 }
@@ -138,6 +148,7 @@ func SpanTagsResourceRule(tags map[string]string, resource, name, service string
 		Rate:     rate,
 		Tags:     globTags,
 		ruleType: SamplingRuleSpan,
+		globRule: &jsonRule{Name: name, Service: service, Resource: resource, Tags: tags},
 	}
 }
 
@@ -151,6 +162,7 @@ func SpanNameServiceRule(name, service string, rate float64) SamplingRule {
 		Rate:     rate,
 		ruleType: SamplingRuleSpan,
 		limiter:  newSingleSpanRateLimiter(0),
+		globRule: &jsonRule{Name: name, Service: service},
 	}
 }
 
@@ -166,6 +178,7 @@ func SpanNameServiceMPSRule(name, service string, rate, limit float64) SamplingR
 		Rate:         rate,
 		ruleType:     SamplingRuleSpan,
 		limiter:      newSingleSpanRateLimiter(limit),
+		globRule:     &jsonRule{Name: name, Service: service},
 	}
 }
 
@@ -401,7 +414,7 @@ func validateRules(jsonRules []jsonRule, spanType SamplingRuleType) ([]SamplingR
 }
 
 // MarshalJSON implements the json.Marshaler interface.
-func (sr *SamplingRule) MarshalJSON() ([]byte, error) {
+func (sr SamplingRule) MarshalJSON() ([]byte, error) {
 	s := struct {
 		Service      string            `json:"service,omitempty"`
 		Name         string            `json:"name,omitempty"`
@@ -442,4 +455,12 @@ func (sr *SamplingRule) MarshalJSON() ([]byte, error) {
 		s.Type = &t
 	}
 	return json.Marshal(&s)
+}
+
+func (sr SamplingRule) String() string {
+	s, err := sr.MarshalJSON()
+	if err != nil {
+		log.Error("Error marshalling SamplingRule to json: %v", err)
+	}
+	return string(s)
 }

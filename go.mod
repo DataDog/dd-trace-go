@@ -1,6 +1,6 @@
 module gopkg.in/DataDog/dd-trace-go.v1
 
-go 1.19
+go 1.20
 
 require (
 	cloud.google.com/go/pubsub v1.33.0
