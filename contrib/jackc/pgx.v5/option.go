@@ -13,7 +13,7 @@ type Option = v2.Option
 
 // WithServiceName sets the service name to use for all spans.
 func WithServiceName(name string) Option {
-	return v2.WithServiceName(name)
+	return v2.WithService(name)
 }
 
 // WithTraceQuery enables tracing query operations.
