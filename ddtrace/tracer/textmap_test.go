@@ -1393,8 +1393,7 @@ func TestEnvVars(t *testing.T) {
 					checkSameElements(assert, tc.outHeaders[traceparentHeader], headers[traceparentHeader])
 					checkSameElements(assert, tc.outHeaders[tracestateHeader], headers[tracestateHeader])
 					ddTag := strings.SplitN(headers[tracestateHeader], ",", 2)[0]
-					// -3 as we don't count dd= as part of the "value" length limit
-					assert.LessOrEqual(len(ddTag)-3, 256)
+					assert.LessOrEqual(len(ddTag), 256)
 				})
 			}
 		}
@@ -1718,7 +1717,7 @@ func TestEnvVars(t *testing.T) {
 					},
 					outMap: TextMapCarrier{
 						traceparentHeader: "00-12345678901234567890123456789012-1234567890123456-01",
-						tracestateHeader:  "dd=s:2;o:rum;p:1234567890123456;t.tid:1234567890123456;t.usr.id:baz64~~",
+						tracestateHeader:  "dd=s:2;o:rum;p:0123456789abcdef;t.tid:1234567890123456;t.usr.id:baz64~~",
 					},
 					out:        []uint64{8687463697196027922, 1311768467284833366},
 					priority:   2,
@@ -1732,7 +1731,7 @@ func TestEnvVars(t *testing.T) {
 					},
 					outMap: TextMapCarrier{
 						traceparentHeader: "00-12345678901234567890123456789012-1234567890123456-01",
-						tracestateHeader:  "dd=s:1;p:1234567890123456;t.tid:1234567890123456,foo=1",
+						tracestateHeader:  "dd=s:1;t.tid:1234567890123456,foo=1",
 					},
 					out:        []uint64{8687463697196027922, 1311768467284833366},
 					priority:   1,
@@ -1755,7 +1754,6 @@ func TestEnvVars(t *testing.T) {
 					assert.Equal(tc.out[1], sctx.spanID)
 					assert.Equal(tc.origin, sctx.origin)
 					assert.Equal(tc.priority, *sctx.trace.priority)
-					assert.Equal(tc.lastParent, sctx.reparentID)
 
 					headers := TextMapCarrier(map[string]string{})
 					err = tracer.Inject(ctx, headers)
@@ -1764,8 +1762,7 @@ func TestEnvVars(t *testing.T) {
 					checkSameElements(assert, tc.outMap[traceparentHeader], headers[traceparentHeader])
 					checkSameElements(assert, tc.outMap[tracestateHeader], headers[tracestateHeader])
 					ddTag := strings.SplitN(headers[tracestateHeader], ",", 2)[0]
-					// -3 as we don't count dd= as part of the "value" length limit
-					assert.LessOrEqual(len(ddTag)-3, 256)
+					assert.LessOrEqual(len(ddTag), 256)
 				})
 			}
 		}

@@ -534,9 +534,17 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 			}
 		}
 
+		// a remote context that was lacking the p: tracestate key
+		// the zero value indicates to the backend this could be the reparented
+		// as the root span of a trace
+		if context.isRemote && context.reparentID == "" {
+			span.setMeta(keyReparentID, "0000000000000000")
+		}
+
 		if context.reparentID != "" {
 			span.setMeta(keyReparentID, context.reparentID)
 		}
+
 	}
 	span.context = newSpanContext(span, context)
 	span.setMetric(ext.Pid, float64(t.pid))
