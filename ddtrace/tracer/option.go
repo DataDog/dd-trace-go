@@ -334,7 +334,9 @@ func newConfig(opts ...StartOption) *config {
 	}
 	c.headerAsTags = newDynamicConfig("trace_header_tags", nil, setHeaderTags, equalSlice[string])
 	if v := os.Getenv("DD_TRACE_HEADER_TAGS"); v != "" {
-		WithHeaderTags(strings.Split(v, ","))(c)
+		c.headerAsTags.update(strings.Split(v, ","), originEnvVar)
+		// Required to ensure that the startup header tags are set on reset.
+		c.headerAsTags.startup = c.headerAsTags.current
 	}
 	if v := os.Getenv("DD_TAGS"); v != "" {
 		tags := internal.ParseTagString(v)
