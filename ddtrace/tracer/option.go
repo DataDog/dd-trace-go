@@ -472,7 +472,7 @@ func newConfig(opts ...StartOption) *config {
 	}
 
 	// if using stdout or traces are disabled, agent is disabled
-	agentDisabled := c.logToStdout || !c.enabled
+	agentDisabled := c.logToStdout || !c.enabled.current
 	c.agent = loadAgentFeatures(agentDisabled, c.agentURL, c.httpClient)
 	info, ok := debug.ReadBuildInfo()
 	if !ok {
