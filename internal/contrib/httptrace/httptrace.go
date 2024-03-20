@@ -35,11 +35,11 @@ func StartRequestSpan(r *http.Request, opts ...tracer.StartSpanOption) (*tracer.
 	if cfg.traceClientIP {
 		ipTags, _ = httptrace.ClientIPTags(r.Header, true, r.RemoteAddr)
 	}
-	nopts := make([]tracer.StartSpanOption, 0, len(opts)+1+len(ipTags))
+	nopts := make([]tracer.StartSpanOption, 0, len(opts)+1)
 	nopts = append(nopts,
 		func(cfg *tracer.StartSpanConfig) {
 			if cfg.Tags == nil {
-				cfg.Tags = make(map[string]interface{})
+				cfg.Tags = make(map[string]interface{}, len(ipTags)+6)
 			}
 			cfg.Tags[ext.SpanType] = ext.SpanTypeWeb
 			cfg.Tags[ext.HTTPMethod] = r.Method
