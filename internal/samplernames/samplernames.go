@@ -22,7 +22,7 @@ const (
 	// RemoteRate specifies that the span was sampled
 	// with a dynamically calculated remote rate.
 	RemoteRate SamplerName = 2
-	// RuleRate specifies that the span was sampled by the RuleSampler.
+	// RuleRate specifies that the span was sampled by the local RuleSampler.
 	RuleRate SamplerName = 3
 	// Manual specifies that the span was sampled manually by user.
 	Manual SamplerName = 4
@@ -34,4 +34,10 @@ const (
 	// SingleSpan specifies that the span was sampled by single
 	// span sampling rules.
 	SingleSpan SamplerName = 8
+	// RemoteUserRule specifies that the span was sampled by a rule the user configured remotely
+	// through Datadog UI.
+	RemoteUserRule SamplerName = 9
+	// RemoteDynamicRule specifies that the span was sampled by a rule configured by Datadog
+	// Dynamic Sampling.
+	RemoteDynamicRule SamplerName = 10
 )
