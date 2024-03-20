@@ -78,7 +78,7 @@ func TestUnary(t *testing.T) {
 				assert.Error(err)
 			} else {
 				assert.NoError(err)
-				assert.Equal(resp.Message, tt.wantMessage)
+				assert.Equal(tt.wantMessage, resp.Message)
 			}
 
 			spans := mt.FinishedSpans()
@@ -103,26 +103,26 @@ func TestUnary(t *testing.T) {
 			assert.NotNil(rootSpan)
 
 			// this tag always contains the resolved address
-			assert.Equal(clientSpan.Tag(ext.TargetHost), "127.0.0.1")
-			assert.Equal(clientSpan.Tag(ext.PeerHostname), "localhost")
-			assert.Equal(clientSpan.Tag(ext.TargetPort), rig.port)
-			assert.Equal(clientSpan.Tag(tagCode), tt.wantCode.String())
-			assert.Equal(clientSpan.TraceID(), rootSpan.TraceID())
-			assert.Equal(clientSpan.Tag(tagMethodKind), methodKindUnary)
-			assert.Equal(clientSpan.Tag(ext.Component), "google.golang.org/grpc")
-			assert.Equal(clientSpan.Tag(ext.SpanKind), ext.SpanKindClient)
+			assert.Equal("127.0.0.1", clientSpan.Tag(ext.TargetHost))
+			assert.Equal("localhost", clientSpan.Tag(ext.PeerHostname))
+			assert.Equal(rig.port, clientSpan.Tag(ext.TargetPort))
+			assert.Equal(tt.wantCode.String(), clientSpan.Tag(tagCode))
+			assert.Equal(rootSpan.TraceID(), clientSpan.TraceID())
+			assert.Equal(methodKindUnary, clientSpan.Tag(tagMethodKind))
+			assert.Equal("google.golang.org/grpc", clientSpan.Tag(ext.Component))
+			assert.Equal(ext.SpanKindClient, clientSpan.Tag(ext.SpanKind))
 			assert.Equal("grpc", clientSpan.Tag(ext.RPCSystem))
 			assert.Equal("grpc.Fixture", clientSpan.Tag(ext.RPCService))
 			assert.Equal("/grpc.Fixture/Ping", clientSpan.Tag(ext.GRPCFullMethod))
 
-			assert.Equal(serverSpan.Tag(ext.ServiceName), "grpc")
-			assert.Equal(serverSpan.Tag(ext.ResourceName), "/grpc.Fixture/Ping")
-			assert.Equal(serverSpan.Tag(tagCode), tt.wantCode.String())
-			assert.Equal(serverSpan.TraceID(), rootSpan.TraceID())
-			assert.Equal(serverSpan.Tag(tagMethodKind), methodKindUnary)
-			assert.Equal(serverSpan.Tag(tagRequest), tt.wantReqTag)
-			assert.Equal(serverSpan.Tag(ext.Component), "google.golang.org/grpc")
-			assert.Equal(serverSpan.Tag(ext.SpanKind), ext.SpanKindServer)
+			assert.Equal("grpc", serverSpan.Tag(ext.ServiceName))
+			assert.Equal("/grpc.Fixture/Ping", serverSpan.Tag(ext.ResourceName))
+			assert.Equal(tt.wantCode.String(), serverSpan.Tag(tagCode))
+			assert.Equal(rootSpan.TraceID(), serverSpan.TraceID())
+			assert.Equal(methodKindUnary, serverSpan.Tag(tagMethodKind))
+			assert.Equal(tt.wantReqTag, serverSpan.Tag(tagRequest))
+			assert.Equal("google.golang.org/grpc", serverSpan.Tag(ext.Component))
+			assert.Equal(ext.SpanKindServer, serverSpan.Tag(ext.SpanKind))
 			assert.Equal("grpc", serverSpan.Tag(ext.RPCSystem))
 			assert.Equal("grpc.Fixture", serverSpan.Tag(ext.RPCService))
 			assert.Equal("/grpc.Fixture/Ping", serverSpan.Tag(ext.GRPCFullMethod))
@@ -142,7 +142,7 @@ func TestStreaming(t *testing.T) {
 
 			resp, err := stream.Recv()
 			assert.NoError(t, err)
-			assert.Equal(t, resp.Message, "passed")
+			assert.Equal(t, "passed", resp.Message)
 		}
 		stream.CloseSend()
 		// to flush the spans
@@ -302,7 +302,7 @@ func TestSpanTree(t *testing.T) {
 		assert.Nil(t, span.Tag(ext.Error))
 		assert.Equal(t, operationName, span.OperationName())
 		assert.Equal(t, "grpc", span.Tag(ext.ServiceName))
-		assert.Equal(t, span.Tag(ext.ResourceName), resourceName)
+		assert.Equal(t, resourceName, span.Tag(ext.ResourceName))
 		assert.True(t, span.FinishTime().Sub(span.StartTime()) >= 0)
 
 		if parent == nil {
@@ -371,7 +371,7 @@ func TestSpanTree(t *testing.T) {
 			assert.NoError(err)
 			resp, err := stream.Recv()
 			assert.Nil(err)
-			assert.Equal(resp.Message, "passed")
+			assert.Equal("passed", resp.Message)
 			err = stream.CloseSend()
 			assert.NoError(err)
 			cancel()
@@ -445,17 +445,17 @@ func TestPass(t *testing.T) {
 	ctx = metadata.AppendToOutgoingContext(ctx, "test-key", "test-value")
 	resp, err := client.Ping(ctx, &FixtureRequest{Name: "pass"})
 	assert.Nil(err)
-	assert.Equal(resp.Message, "passed")
+	assert.Equal("passed", resp.Message)
 
 	spans := mt.FinishedSpans()
 	assert.Len(spans, 1)
 
 	s := spans[0]
 	assert.Nil(s.Tag(ext.Error))
-	assert.Equal(s.OperationName(), "grpc.server")
-	assert.Equal(s.Tag(ext.ServiceName), "grpc")
-	assert.Equal(s.Tag(ext.ResourceName), "/grpc.Fixture/Ping")
-	assert.Equal(s.Tag(ext.SpanType), ext.AppTypeRPC)
+	assert.Equal("grpc.server", s.OperationName())
+	assert.Equal("grpc", s.Tag(ext.ServiceName))
+	assert.Equal("/grpc.Fixture/Ping", s.Tag(ext.ResourceName))
+	assert.Equal(ext.AppTypeRPC, s.Tag(ext.SpanType))
 	assert.NotContains(s.Tags(), tagRequest)
 	assert.NotContains(s.Tags(), tagMetadataPrefix+"test-key")
 	assert.True(s.FinishTime().Sub(s.StartTime()) >= 0)
@@ -489,7 +489,7 @@ func TestPreservesMetadata(t *testing.T) {
 	assert.NotContains(t, s.Tags(), tagMetadataPrefix+"x-datadog-trace-id")
 	assert.NotContains(t, s.Tags(), tagMetadataPrefix+"x-datadog-parent-id")
 	assert.NotContains(t, s.Tags(), tagMetadataPrefix+"x-datadog-sampling-priority")
-	assert.Equal(t, s.Tag(tagMetadataPrefix+"test-key.0"), "test-value")
+	assert.Equal(t, "test-value", s.Tag(tagMetadataPrefix+"test-key.0"))
 }
 
 func TestStreamSendsErrorCode(t *testing.T) {
@@ -533,7 +533,7 @@ func TestStreamSendsErrorCode(t *testing.T) {
 
 	// ensure that last span contains error code also
 	gotLastSpanCode := spans[len(spans)-1].Tag(tagCode)
-	assert.Equal(t, gotLastSpanCode, wantCode, "last span should contain error code")
+	assert.Equal(t, wantCode, gotLastSpanCode, "last span should contain error code")
 }
 
 // fixtureServer a dummy implementation of our grpc fixtureServer.
@@ -674,7 +674,7 @@ func TestAnalyticsSettings(t *testing.T) {
 		client := rig.client
 		resp, err := client.Ping(context.Background(), &FixtureRequest{Name: "pass"})
 		assert.Nil(t, err)
-		assert.Equal(t, resp.Message, "passed")
+		assert.Equal(t, "passed", resp.Message)
 
 		spans := mt.FinishedSpans()
 		assert.Len(t, spans, 2)
@@ -767,7 +767,7 @@ func TestIgnoredMethods(t *testing.T) {
 			client := rig.client
 			resp, err := client.Ping(context.Background(), &FixtureRequest{Name: "pass"})
 			assert.Nil(t, err)
-			assert.Equal(t, resp.Message, "passed")
+			assert.Equal(t, "passed", resp.Message)
 
 			spans := mt.FinishedSpans()
 			assert.Len(t, spans, c.exp)
@@ -805,7 +805,7 @@ func TestIgnoredMethods(t *testing.T) {
 
 			resp, err := stream.Recv()
 			assert.NoError(t, err)
-			assert.Equal(t, resp.Message, "passed")
+			assert.Equal(t, "passed", resp.Message)
 
 			assert.NoError(t, stream.CloseSend())
 			done() // close stream from client side
@@ -840,7 +840,7 @@ func TestUntracedMethods(t *testing.T) {
 			client := rig.client
 			resp, err := client.Ping(context.Background(), &FixtureRequest{Name: "pass"})
 			assert.Nil(t, err)
-			assert.Equal(t, resp.Message, "passed")
+			assert.Equal(t, "passed", resp.Message)
 
 			spans := mt.FinishedSpans()
 			assert.Len(t, spans, c.exp)
@@ -878,7 +878,7 @@ func TestUntracedMethods(t *testing.T) {
 
 			resp, err := stream.Recv()
 			assert.NoError(t, err)
-			assert.Equal(t, resp.Message, "passed")
+			assert.Equal(t, "passed", resp.Message)
 
 			assert.NoError(t, stream.CloseSend())
 			done() // close stream from client side
@@ -900,9 +900,9 @@ func TestIgnoredMetadata(t *testing.T) {
 		ignore []string
 		exp    int
 	}{
-		{ignore: []string{}, exp: 5},
-		{ignore: []string{"test-key"}, exp: 4},
-		{ignore: []string{"test-key", "test-key2"}, exp: 3},
+		{ignore: []string{}, exp: 8},
+		{ignore: []string{"test-key"}, exp: 7},
+		{ignore: []string{"test-key", "test-key2"}, exp: 6},
 	} {
 		rig, err := newRig(true, WithMetadataTags(), WithIgnoredMetadata(c.ignore...))
 		if err != nil {
@@ -947,13 +947,13 @@ func TestSpanOpts(t *testing.T) {
 		client := rig.client
 		resp, err := client.Ping(context.Background(), &FixtureRequest{Name: "pass"})
 		assert.Nil(t, err)
-		assert.Equal(t, resp.Message, "passed")
+		assert.Equal(t, "passed", resp.Message)
 
 		spans := mt.FinishedSpans()
 		assert.Len(t, spans, 2)
 
 		for _, span := range spans {
-			assert.Equal(t, span.Tags()["foo"], "bar")
+			assert.Equal(t, "bar", span.Tags()["foo"])
 		}
 		rig.Close()
 		mt.Reset()
@@ -977,7 +977,7 @@ func TestSpanOpts(t *testing.T) {
 
 		resp, err := stream.Recv()
 		assert.NoError(t, err)
-		assert.Equal(t, resp.Message, "passed")
+		assert.Equal(t, "passed", resp.Message)
 
 		assert.NoError(t, stream.CloseSend())
 		done() // close stream from client side
@@ -988,7 +988,7 @@ func TestSpanOpts(t *testing.T) {
 		spans := mt.FinishedSpans()
 		assert.Len(t, spans, 7)
 		for _, span := range spans {
-			assert.Equal(t, span.Tags()["foo"], "bar")
+			assert.Equal(t, "bar", span.Tags()["foo"])
 		}
 		mt.Reset()
 	})
@@ -1002,7 +1002,7 @@ func TestCustomTag(t *testing.T) {
 		value interface{}
 	}{
 		{key: "foo", value: "bar"},
-		{key: "val", value: 123},
+		{key: "val", value: float64(123)},
 	} {
 		rig, err := newRig(true, WithCustomTag(c.key, c.value))
 		if err != nil {
