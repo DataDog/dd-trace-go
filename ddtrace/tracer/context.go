@@ -9,6 +9,7 @@ import (
 	"context"
 
 	"github.com/DataDog/dd-trace-go/v2/internal"
+	"github.com/DataDog/dd-trace-go/v2/internal/contrib/options"
 )
 
 // ContextWithSpan returns a copy of the given context which includes the span s.
@@ -39,9 +40,7 @@ func SpanFromContext(ctx context.Context) (*Span, bool) {
 func StartSpanFromContext(ctx context.Context, operationName string, opts ...StartSpanOption) (*Span, context.Context) {
 	// copy opts in case the caller reuses the slice in parallel
 	// we will add at least 1, at most 2 items
-	optsLocal := make([]StartSpanOption, len(opts), len(opts)+2)
-	copy(optsLocal, opts)
-
+	optsLocal := options.Expand(opts, 0, 2)
 	if ctx == nil {
 		// default to context.Background() to avoid panics on Go >= 1.15
 		ctx = context.Background()
