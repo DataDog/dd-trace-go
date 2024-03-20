@@ -61,6 +61,9 @@ func newConfig(opts ...Option) *config {
 	cfg.producerSpanName = namingschema.OpName(namingschema.KafkaOutbound)
 
 	for _, opt := range opts {
+		if opt == nil {
+			continue
+		}
 		opt.apply(cfg)
 	}
 	return cfg
