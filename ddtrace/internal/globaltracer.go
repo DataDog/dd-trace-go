@@ -28,13 +28,17 @@ func SetGlobalTracer(t ddtrace.Tracer) {
 // GetGlobalTracer returns the currently active tracer.
 func GetGlobalTracer() ddtrace.Tracer {
 	gt := globalTracer.Load()
-	if gt != nil {
+	if gt != nil && gt.(*TracerV2Adapter) != nil {
 		return *(gt.(*TracerV2Adapter))
 	}
 	tr := v2.GetGlobalTracer()
 	t := TracerV2Adapter{Tracer: tr}
 	globalTracer.Swap(&t)
 	return t
+}
+
+func ResetGlobalTracer() {
+	globalTracer.Swap((*TracerV2Adapter)(nil))
 }
 
 var NoopTracerV2 = TracerV2Adapter{Tracer: v2.NoopTracer{}}
