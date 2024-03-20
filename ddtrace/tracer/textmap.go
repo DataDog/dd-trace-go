@@ -328,6 +328,7 @@ func (p *propagatorW3c) propagateTracestate(ctx *spanContext, carrier interface{
 	priority, _ := ctx.SamplingPriority()
 	setPropagatingTag(ctx, tracestateHeader, composeTracestate(ctx, priority, ts))
 	ctx.reparentID = w3cCtx.(*spanContext).reparentID
+	ctx.isRemote = (w3cCtx.(*spanContext).isRemote)
 }
 
 // propagator implements Propagator and injects/extracts span contexts
@@ -825,8 +826,19 @@ func composeTracestate(ctx *spanContext, priority int, oldState string) string {
 			strings.ReplaceAll(oWithSub, "=", "~")))
 	}
 
-	// encode this spanContext's SpanID to be used by the backend to reparent spans if necessary
-	b.WriteString(fmt.Sprintf(";p:%016x", ctx.spanID))
+	// if the context is remote and there is a reparentID, set p as reparentId
+	// if the context is remote and there is no reparentID, don't set p
+	// if the context is not remote, set p as context.spanId
+	// this ID can be used by downstream tracers to set a _dd.parent_id tag
+	// to allow the backend to reparent orphaned spans if necessary
+
+	if ctx.isRemote && ctx.reparentID != "" {
+		b.WriteString(fmt.Sprintf(";p:%s", ctx.reparentID))
+	}
+
+	if !ctx.isRemote || ctx.isRemote && ctx.trace.root != nil {
+		b.WriteString(fmt.Sprintf(";p:%016x", ctx.spanID))
+	}
 
 	ctx.trace.iteratePropagatingTags(func(k, v string) bool {
 		if !strings.HasPrefix(k, "_dd.p.") {
@@ -876,6 +888,7 @@ func (*propagatorW3c) extractTextMap(reader TextMapReader) (ddtrace.SpanContext,
 	var parentHeader string
 	var stateHeader string
 	var ctx spanContext
+	ctx.isRemote = true
 	// to avoid parsing tracestate header(s) if traceparent is invalid
 	if err := reader.ForeachKey(func(k, v string) error {
 		key := strings.ToLower(k)
@@ -994,11 +1007,6 @@ func parseTraceparent(ctx *spanContext, header string) error {
 // `last parent` = `p`
 // `_dd.p.` prefix = `t.`
 func parseTracestate(ctx *spanContext, header string) {
-	// if there is a p key it's value will override this one
-	// if there is no tracestate we can tell the backend
-	// that this span can be reparented as the root span of
-	// the trace if necessary
-	ctx.reparentID = "0000000000000000"
 	if header == "" {
 		// The W3C spec says tracestate can be empty but should avoid sending it.
 		// https://www.w3.org/TR/trace-context-1/#tracestate-header-field-values

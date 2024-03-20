@@ -98,6 +98,7 @@ type spanContext struct {
 	// Missing parent span could occur when a W3C-compliant tracer
 	// propagated this context, but didn't send any spans to Datadog.
 	reparentID string
+	isRemote   bool
 
 	// the below group should propagate cross-process
 
@@ -120,6 +121,7 @@ func newSpanContext(span *span, parent *spanContext) *spanContext {
 		spanID: span.SpanID,
 		span:   span,
 	}
+
 	context.traceID.SetLower(span.TraceID)
 	if parent != nil {
 		context.traceID.SetUpper(parent.traceID.Upper())
