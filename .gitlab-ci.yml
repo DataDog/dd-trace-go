@@ -4,12 +4,12 @@ stages:
   - test-apps
 
 variables:
-  # This base image is created here: https://gitlab.ddbuild.io/DataDog/apm-reliability/benchmarking-platform/-/pipelines/30087677
-  BASE_CI_IMAGE: 486234852809.dkr.ecr.us-east-1.amazonaws.com/ci/benchmarking-platform:dd-trace-go-30087677
+  # This base image is created here: https://gitlab.ddbuild.io/DataDog/apm-reliability/benchmarking-platform/-/pipelines/30441279
+  BASE_CI_IMAGE: 486234852809.dkr.ecr.us-east-1.amazonaws.com/ci/benchmarking-platform:dd-trace-go-30441279
   INDEX_FILE: index.txt
   KUBERNETES_SERVICE_ACCOUNT_OVERWRITE: dd-trace-go
   FF_USE_LEGACY_KUBERNETES_EXECUTION_STRATEGY: "true"
-  BENCHMARK_TARGETS: "BenchmarkStartRequestSpan|BenchmarkHttpServeTrace|BenchmarkTracerAddSpans|BenchmarkStartSpan|BenchmarkSingleSpanRetention|BenchmarkOTelApiWithCustomTags|BenchmarkInjectW3C|BenchmarkExtractW3C|BenchmarkPartialFlushing|BenchmarkGraphQL"
+  BENCHMARK_TARGETS: "BenchmarkStartRequestSpan|BenchmarkHttpServeTrace|BenchmarkTracerAddSpans|BenchmarkStartSpan|BenchmarkSingleSpanRetention|BenchmarkOTelApiWithCustomTags|BenchmarkInjectW3C|BenchmarkExtractW3C|BenchmarkPartialFlushing|BenchmarkGraphQL|BenchmarkSampleWAFContext"
 
 include:
   - ".gitlab/benchmarks.yml"
