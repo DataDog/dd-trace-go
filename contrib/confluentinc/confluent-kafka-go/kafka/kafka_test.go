@@ -291,6 +291,7 @@ func TestDeprecatedContext(t *testing.T) {
 		"session.timeout.ms":       10,
 		"enable.auto.offset.store": false,
 	}, WithContext(ctx)) // Adds the parent context containing a span
+	assert.NoError(t, err)
 
 	err = c.Subscribe(testTopic, nil)
 	assert.NoError(t, err)
@@ -313,30 +314,28 @@ func TestDeprecatedContext(t *testing.T) {
 
 		// Inject the span context in the message to be produced
 		carrier := NewMessageCarrier(msg)
-		tracer.Inject(messageSpan.Context(), carrier)
+		tracer.Inject(parentSpan.Context(), carrier)
 
 		c.Consumer.Events() <- msg
-
 	}()
 
 	msg := (<-c.Events()).(*kafka.Message)
 
 	// Extract the context from the message
 	carrier := NewMessageCarrier(msg)
-	spanContext, err := tracer.Extract(carrier)
+	rcvMsgSpanContext, err := tracer.Extract(carrier)
 	assert.NoError(t, err)
 
 	parentContext := parentSpan.Context()
 
 	/// The context passed is the one from the parent context
-	assert.EqualValues(t, parentContext.TraceID(), spanContext.TraceID())
+	assert.EqualValues(t, parentContext.TraceID(), rcvMsgSpanContext.TraceID())
 	/// The context passed is not the one passed in the message
-	assert.NotEqualValues(t, messageSpanContext.TraceID(), spanContext.TraceID())
+	assert.NotEqualValues(t, messageSpanContext.TraceID(), rcvMsgSpanContext.TraceID())
 
 	c.Close()
 	// wait for the events channel to be closed
 	<-c.Events()
-
 }
 
 func TestCustomTags(t *testing.T) {
