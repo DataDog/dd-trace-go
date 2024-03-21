@@ -841,9 +841,7 @@ func composeTracestate(ctx *spanContext, priority int, oldState string) string {
 		tag := fmt.Sprintf("t.%s:%s",
 			keyRgx.ReplaceAllString(k[len("_dd.p."):], "_"),
 			strings.ReplaceAll(valueRgx.ReplaceAllString(v, "_"), "=", "~"))
-		// the -3 here is to ignore the `dd=` portion as it is not apart of _this_ 256 character max
-		// the +1 here is to account for the `;` needed between the tags
-		if b.Len()-3+len(tag)+1 > 256 {
+		if b.Len()+len(tag)+1 > 256 { // the +1 here is to account for the `;` needed between the tags
 			return false
 		}
 		b.WriteString(";")
