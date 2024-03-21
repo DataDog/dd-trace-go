@@ -226,6 +226,31 @@ func (s *Span) SetTag(key string, value interface{}) {
 	s.setMeta(key, fmt.Sprint(value))
 }
 
+// AddLink sets a casuality link to another span via a spanContext. It also
+// stores details about the link in an attributes map.
+func (s *Span) AddLink(spanContext *SpanContext, attributes map[string]string) {
+	traceIDHex := spanContext.TraceID()
+	traceIDHigh, _ := strconv.ParseUint(traceIDHex[:8], 16, 64)
+
+	samplingDecision, hasSamplingDecision := spanContext.SamplingPriority()
+	var flags uint32
+	if hasSamplingDecision && samplingDecision >= ext.PriorityAutoKeep {
+		flags = uint32(1<<31 | 1)
+	} else if hasSamplingDecision {
+		flags = uint32(1<<31 | 0)
+	} else {
+		flags = uint32(0)
+	}
+
+	s.spanLinks = append(s.spanLinks, SpanLink{
+		TraceID:     spanContext.TraceIDLower(),
+		TraceIDHigh: traceIDHigh,
+		SpanID:      spanContext.SpanID(),
+		Attributes:  attributes,
+		Flags:       flags,
+	})
+}
+
 // Tag returns the value for a given tag key.
 // If the key does not exist, Tag returns nil.
 // All values may be of type string, float64, or int32 (only for ext.Error).

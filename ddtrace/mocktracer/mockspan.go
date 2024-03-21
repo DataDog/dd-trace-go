@@ -46,6 +46,10 @@ func (s *Span) SetTag(k string, v interface{}) {
 	s.sp.SetTag(k, v)
 }
 
+func (s *Span) AddLink(spanContext *tracer.SpanContext, attributes map[string]string) {
+	s.sp.AddLink(spanContext, attributes)
+}
+
 func (s *Span) Tag(k string) interface{} {
 	if s == nil {
 		return nil

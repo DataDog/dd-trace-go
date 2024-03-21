@@ -117,6 +117,35 @@ func TestSpanContext(t *testing.T) {
 	assert.NotNil(span.Context())
 }
 
+func TestAddSpanLink(t *testing.T) {
+	assert := assert.New(t)
+
+	rootSpan := newSpan("root", "service", "res", 123, 456, 0)
+	linkedSpan := newSpan("linked", "service", "res", 1, 2, 0)
+
+	attrs := map[string]string{"key1": "val1"}
+	rootSpan.AddLink(linkedSpan.Context(), attrs)
+
+	assert.Equal(len(rootSpan.spanLinks), 1)
+	// Test adding a link with attributes
+	spanLink := rootSpan.spanLinks[0]
+	assert.Equal(spanLink.TraceID, uint64(0x2))
+	assert.Equal(spanLink.SpanID, uint64(0x1))
+	assert.Equal(spanLink.Attributes["key1"], "val1")
+	assert.Equal(spanLink.Tracestate, "")
+	assert.Equal(spanLink.Flags, uint32(0))
+
+	// Test adding a link with a sampling decision
+	linkedSpanSampled := newSpan("linked_sampled", "service", "res", 3, 4, 0)
+	linkedSpanSampled.Context().setSamplingPriority(2, samplernames.Manual)
+	rootSpan.AddLink(linkedSpanSampled.Context(), map[string]string{})
+	assert.Equal(len(rootSpan.spanLinks), 2)
+	spanLinkSampled := rootSpan.spanLinks[1]
+	assert.Equal(spanLinkSampled.TraceID, uint64(0x4))
+	assert.Equal(spanLinkSampled.SpanID, uint64(0x3))
+	assert.Equal(spanLinkSampled.Flags, uint32(2147483649))
+}
+
 func TestSpanOperationName(t *testing.T) {
 	assert := assert.New(t)
 
