@@ -1240,27 +1240,6 @@ func TestWithHeaderTags(t *testing.T) {
 	assert.Equal(t, 0, globalconfig.HeaderTagsLen())
 }
 
-func TestContribStatsEnabled(t *testing.T) {
-	t.Run("Default", func(t *testing.T) {
-		c := newConfig()
-		assert.True(t, c.contribStats)
-	})
-	t.Run("Disable", func(t *testing.T) {
-		c := newConfig(WithContribStats(false))
-		assert.False(t, c.contribStats)
-	})
-	t.Run("Disable with ENV", func(t *testing.T) {
-		t.Setenv("DD_TRACE_CONTRIB_STATS_ENABLED", "false")
-		c := newConfig()
-		assert.False(t, c.contribStats)
-	})
-	t.Run("Env override", func(t *testing.T) {
-		t.Setenv("DD_TRACE_CONTRIB_STATS_ENABLED", "false")
-		c := newConfig(WithContribStats(true))
-		assert.True(t, c.contribStats)
-	})
-}
-
 func TestHostnameDisabled(t *testing.T) {
 	t.Run("DisabledWithUDS", func(t *testing.T) {
 		t.Setenv("DD_TRACE_AGENT_URL", "unix://somefakesocket")

@@ -32,8 +32,7 @@ const (
 
 var interval = 10 * time.Second
 
-// pollDBStats calls (*DB).Stats on the db at a predetermined interval. It pushes the DBStats off to the StatsCarrier which ultimately sends them through a statsd client.
-// TODO: Perhaps grant a way for pollDBStats to grab the drivername so that it doesn't have to be passed in as a param
+// pollDBStats calls (*DB).Stats on the db at a predetermined interval. It pushes the DBStats off to the statsd client.
 func pollDBStats(statsd internal.StatsdClient, db *sql.DB) {
 	if db == nil {
 		log.Debug("No traced DB connection found; cannot pull DB stats.")
@@ -41,6 +40,7 @@ func pollDBStats(statsd internal.StatsdClient, db *sql.DB) {
 	}
 	log.Debug("Traced DB connection found: DB stats will be gathered and sent every %v.", interval)
 	for range time.NewTicker(interval).C {
+		log.Debug("Reporting DB.Stats metrics...")
 		stat := db.Stats()
 		statsd.Gauge(MaxOpenConnections, float64(stat.MaxOpenConnections), []string{}, 1)
 		statsd.Gauge(OpenConnections, float64(stat.OpenConnections), []string{}, 1)
@@ -63,12 +63,7 @@ func statsTags(c *config) []string {
 	if c.serviceName != "" {
 		tags = append(tags, "service:"+c.serviceName)
 	}
-	// if c.env != "" {
-	// 	tags = append(tags, "env:"+c.env)
-	// }
-	// if c.hostname != "" {
-	// 	tags = append(tags, "host:"+c.hostname)
-	// }
+	// TODO: grab tracer config's env and hostname for globaltags
 	for k, v := range c.tags {
 		if vstr, ok := v.(string); ok {
 			tags = append(tags, k+":"+vstr)

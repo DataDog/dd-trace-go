@@ -38,9 +38,9 @@ type config struct {
 // NOTE: For now, the only use-case for a statsdclient is the dbStats feature. If a statsdclient becomes necessary for other items in future work, then this logic should change
 func (c *config) checkStatsdRequired() {
 	if c.dbStats && c.statsdClient == nil {
-		// contrib/database/sql's statsdclient should always inherit its address from the tracer's statsdclient
+		// contrib/database/sql's statsdclient should always inherit its address from the tracer's statsdclient via the globalconfig
 		// destination is not user-configurable
-		sc, err := internal.NewStatsdClient(globalconfig.DogstatsdAddr(), statsTags(c)) // use NewWithTransport
+		sc, err := internal.NewStatsdClient(globalconfig.DogstatsdAddr(), statsTags(c))
 		if err == nil {
 			c.statsdClient = sc
 		} else {

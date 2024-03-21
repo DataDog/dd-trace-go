@@ -23,7 +23,6 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
 	appsecConfig "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/config"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/datastreams"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/hostname"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/remoteconfig"
@@ -106,8 +105,6 @@ type tracer struct {
 	// abandonedSpansDebugger specifies where and how potentially abandoned spans are stored
 	// when abandoned spans debugging is enabled.
 	abandonedSpansDebugger *abandonedSpansDebugger
-
-	statsCarrier *globalinternal.StatsCarrier
 }
 
 const (
@@ -262,10 +259,6 @@ func newUnstartedTracer(opts ...StartOption) *tracer {
 			return f.DataStreams
 		})
 	}
-	var statsCarrier *globalinternal.StatsCarrier
-	if c.contribStats {
-		statsCarrier = globalinternal.NewStatsCarrier(statsd)
-	}
 	t := &tracer{
 		config:           c,
 		traceWriter:      writer,
@@ -285,9 +278,8 @@ func newUnstartedTracer(opts ...StartOption) *tracer {
 				Cache:            c.agent.HasFlag("sql_cache"),
 			},
 		}),
-		statsd:       statsd,
-		dataStreams:  dataStreamsProcessor,
-		statsCarrier: statsCarrier,
+		statsd:      statsd,
+		dataStreams: dataStreamsProcessor,
 	}
 	return t
 }
@@ -331,10 +323,6 @@ func newTracer(opts ...StartOption) *tracer {
 		t.reportHealthMetrics(statsInterval)
 	}()
 	t.stats.Start()
-	if sc := t.statsCarrier; sc != nil {
-		sc.Start()
-		globalconfig.SetStatsCarrier(sc)
-	}
 	return t
 }
 
@@ -669,9 +657,6 @@ func (t *tracer) Stop() {
 	t.statsd.Close()
 	if t.dataStreams != nil {
 		t.dataStreams.Stop()
-	}
-	if t.statsCarrier != nil {
-		t.statsCarrier.Stop()
 	}
 	appsec.Stop()
 	remoteconfig.Stop()
