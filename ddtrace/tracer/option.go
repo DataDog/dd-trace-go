@@ -258,6 +258,9 @@ type config struct {
 	// traceSampleRate holds the trace sample rate.
 	traceSampleRate dynamicConfig[float64]
 
+	// traceSampleRules holds the trace sampling rules
+	traceSampleRules dynamicConfig[[]SamplingRule]
+
 	// headerAsTags holds the header as tags configuration.
 	headerAsTags dynamicConfig[[]string]
 

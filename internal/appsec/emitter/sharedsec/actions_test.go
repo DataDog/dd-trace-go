@@ -157,6 +157,8 @@ func TestNewBlockRequestAction(t *testing.T) {
 func TestNewRedirectRequestAction(t *testing.T) {
 	mux := http.NewServeMux()
 	srv := httptest.NewServer(mux)
+	mux.HandleFunc("/redirect-default-status", NewRedirectRequestAction(100, "/redirected").HTTP().ServeHTTP)
+	mux.HandleFunc("/redirect-no-location", NewRedirectRequestAction(303, "").HTTP().ServeHTTP)
 	mux.HandleFunc("/redirect1", NewRedirectRequestAction(http.StatusFound, "/redirect2").HTTP().ServeHTTP)
 	mux.HandleFunc("/redirect2", NewRedirectRequestAction(http.StatusFound, "/redirected").HTTP().ServeHTTP)
 	mux.HandleFunc("/redirected", func(w http.ResponseWriter, r *http.Request) {
@@ -200,4 +202,36 @@ func TestNewRedirectRequestAction(t *testing.T) {
 		})
 	}
 
+	// These tests check that redirect actions can handle bad parameter values
+	// - empty location: revert to default blocking action instead
+	// - status code outside of [300, 399]: default to 303
+	t.Run("no-location", func(t *testing.T) {
+		srv.Client().CheckRedirect = func(req *http.Request, via []*http.Request) error {
+			return nil
+		}
+		req, err := http.NewRequest("POST", srv.URL+"/redirect-no-location", nil)
+		require.NoError(t, err)
+		res, err := srv.Client().Do(req)
+		require.NoError(t, err)
+		defer res.Body.Close()
+		body, err := io.ReadAll(res.Body)
+		require.Equal(t, http.StatusForbidden, res.StatusCode)
+		require.Equal(t, blockedTemplateJSON, body)
+	})
+
+	t.Run("bad-status-code", func(t *testing.T) {
+		srv.Client().CheckRedirect = func(req *http.Request, via []*http.Request) error {
+			require.Equal(t, len(via), 1)
+			require.Equal(t, "/redirect-default-status", via[0].URL.Path)
+			require.Equal(t, 303, req.Response.StatusCode)
+			return nil
+		}
+		req, err := http.NewRequest("POST", srv.URL+"/redirect-default-status", nil)
+		require.NoError(t, err)
+		res, err := srv.Client().Do(req)
+		require.NoError(t, err)
+		defer res.Body.Close()
+		body, err := io.ReadAll(res.Body)
+		require.Equal(t, "Redirected", string(body))
+	})
 }

@@ -2015,6 +2015,7 @@ func BenchmarkTracerAddSpans(b *testing.B) {
 	tracer, _, _, stop := startTestTracer(b, WithLogger(log.DiscardLogger{}), WithSampler(NewRateSampler(0)))
 	defer stop()
 
+	b.ResetTimer()
 	for n := 0; n < b.N; n++ {
 		span := tracer.StartSpan("pylons.request", ServiceName("pylons"), ResourceName("/"))
 		span.Finish()
