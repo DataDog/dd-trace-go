@@ -754,7 +754,7 @@ func TestOnRCUpdateStatuses(t *testing.T) {
 				}
 			} else {
 				require.Len(t, statuses, len(tc.expected))
-				require.True(t, reflect.DeepEqual(tc.expected, statuses), "expectedC: %#v\nactual:   %#v", tc.expected, statuses)
+				require.True(t, reflect.DeepEqual(tc.expected, statuses), "expected: %#v\nactual:   %#v", tc.expected, statuses)
 			}
 		})
 	}
@@ -788,7 +788,7 @@ func TestWafRCUpdate(t *testing.T) {
 		values := map[string]interface{}{
 			httpsec.ServerRequestPathParamsAddr: "/rfiinc.txt",
 		}
-		// Make sure the rule matches as expectedC
+		// Make sure the rule matches as expected
 		result := sharedsec.RunWAF(wafCtx, waf.RunAddressData{Persistent: values}, cfg.WAFTimeout)
 		require.Contains(t, jsonString(t, result.Events), "crs-913-120")
 		require.Empty(t, result.Actions)

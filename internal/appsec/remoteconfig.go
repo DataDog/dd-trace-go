@@ -382,7 +382,6 @@ func (a *appsec) enableRCBlocking() {
 	if _, isSet := os.LookupEnv(internal.EnvRules); isSet {
 		log.Debug("appsec: Remote config: using rules from %s, blocking capabilities won't be enabled", a.cfg.RulesManager.BasePath)
 		return
-
 	}
 
 	products := []string{rc.ProductASM, rc.ProductASMDD, rc.ProductASMData}
