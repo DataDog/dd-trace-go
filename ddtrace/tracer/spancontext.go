@@ -83,13 +83,22 @@ func (t *traceID) UpperHex() string {
 // spawn a direct descendant of the span that it belongs to. It can be used
 // to create distributed tracing by propagating it using the provided interfaces.
 type spanContext struct {
-	updated bool // updated is tracking changes for priority / origin / x-datadog-tags
-
 	// the below group should propagate only locally
 
 	trace  *trace // reference to the trace that this span belongs too
 	span   *span  // reference to the span that hosts this context
 	errors int32  // number of spans with errors in this trace
+
+	// The 16-character hex string of the last seen Datadog Span ID
+	// this value will be added as the _dd.parent_id tag to spans
+	// created from this spanContext.
+	// This value is extracted from the `p` sub-key within the tracestate.
+	// The backend will use the _dd.parent_id tag to reparent spans in
+	// distributed traces if they were missing their parent span.
+	// Missing parent span could occur when a W3C-compliant tracer
+	// propagated this context, but didn't send any spans to Datadog.
+	reparentID string
+	isRemote   bool
 
 	// the below group should propagate cross-process
 
@@ -112,6 +121,7 @@ func newSpanContext(span *span, parent *spanContext) *spanContext {
 		spanID: span.SpanID,
 		span:   span,
 	}
+
 	context.traceID.SetLower(span.TraceID)
 	if parent != nil {
 		context.traceID.SetUpper(parent.traceID.Upper())
@@ -141,10 +151,6 @@ func newSpanContext(span *span, parent *spanContext) *spanContext {
 	}
 	// put span in context's trace
 	context.trace.push(span)
-	// setting context.updated to false here is necessary to distinguish
-	// between initializing properties of the span (priority)
-	// and updating them after extracting context through propagators
-	context.updated = false
 	return context
 }
 
@@ -185,10 +191,7 @@ func (c *spanContext) setSamplingPriority(p int, sampler samplernames.SamplerNam
 	if c.trace == nil {
 		c.trace = newTrace()
 	}
-	if c.trace.setSamplingPriority(p, sampler) {
-		// the trace's sampling priority was updated: mark this as updated
-		c.updated = true
-	}
+	c.trace.setSamplingPriority(p, sampler)
 }
 
 func (c *spanContext) SamplingPriority() (p int, ok bool) {

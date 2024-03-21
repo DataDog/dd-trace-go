@@ -241,12 +241,10 @@ func (s *span) SetUser(id string, opts ...UserMonitoringOption) {
 		delete(root.Meta, keyUserID)
 		idenc := base64.StdEncoding.EncodeToString([]byte(id))
 		trace.setPropagatingTag(keyPropagatedUserID, idenc)
-		s.context.updated = true
 	} else {
 		if trace.hasPropagatingTag(keyPropagatedUserID) {
 			// Unset the propagated user ID so that a propagated user ID coming from upstream won't be propagated anymore.
 			trace.unsetPropagatingTag(keyPropagatedUserID)
-			s.context.updated = true
 		}
 		delete(root.Meta, keyPropagatedUserID)
 	}
@@ -720,6 +718,7 @@ const (
 	keyDecisionMaker        = "_dd.p.dm"
 	keyServiceHash          = "_dd.dm.service_hash"
 	keyOrigin               = "_dd.origin"
+	keyReparentID           = "_dd.parent_id"
 	// keyHostname can be used to override the agent's hostname detection when using `WithHostname`. Not to be confused with keyTracerHostname
 	// which is set via auto-detection.
 	keyHostname                = "_dd.hostname"
