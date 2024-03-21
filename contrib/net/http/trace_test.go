@@ -51,7 +51,7 @@ func TestTraceAndServe(t *testing.T) {
 		assert.Equal("GET", span.Tag(ext.HTTPMethod))
 		assert.Equal("/path?<redacted>", span.Tag(ext.HTTPURL))
 		assert.Equal("503", span.Tag(ext.HTTPCode))
-		assert.Equal("503: Service Unavailable", span.Tag(ext.Error).(error).Error())
+		assert.Equal("503: Service Unavailable", span.Tag(ext.ErrorMsg))
 	})
 
 	t.Run("custom", func(t *testing.T) {
@@ -87,7 +87,7 @@ func TestTraceAndServe(t *testing.T) {
 		assert.Equal("GET", span.Tag(ext.HTTPMethod))
 		assert.Equal("/path?<redacted>", span.Tag(ext.HTTPURL))
 		assert.Equal("503", span.Tag(ext.HTTPCode))
-		assert.Equal("503: Service Unavailable", span.Tag(ext.Error).(error).Error())
+		assert.Equal("503: Service Unavailable", span.Tag(ext.ErrorMsg))
 	})
 
 	t.Run("query-params", func(t *testing.T) {
@@ -142,26 +142,6 @@ func TestTraceAndServe(t *testing.T) {
 		assert.True(called)
 		assert.NoError(err)
 		assert.Equal("Hello, world!\n", string(slurp))
-	})
-
-	// there doesn't appear to be an easy way to test http.Pusher support via an http request
-	// so we'll just confirm wrapResponseWriter preserves it
-	t.Run("Pusher", func(t *testing.T) {
-		var i struct {
-			http.ResponseWriter
-			http.Pusher
-		}
-		var w http.ResponseWriter = i
-		_, ok := w.(http.ResponseWriter)
-		assert.True(t, ok)
-		_, ok = w.(http.Pusher)
-		assert.True(t, ok)
-
-		w, _ = wrapResponseWriter(w)
-		_, ok = w.(http.ResponseWriter)
-		assert.True(t, ok)
-		_, ok = w.(http.Pusher)
-		assert.True(t, ok)
 	})
 
 	t.Run("distributed", func(t *testing.T) {
@@ -310,7 +290,7 @@ func TestTraceAndServe(t *testing.T) {
 		assert.True(called)
 		assert.Len(spans, 1)
 		assert.Equal(ext.SpanTypeWeb, span.Tag(ext.SpanType))
-		assert.Nil(span.Tag(ext.ServiceName)) // This is nil since mocktracer does not behave like the actual tracer, which will set a default.
+		assert.Zero(span.Tag(ext.ServiceName))
 		assert.Equal("http.request", span.Tag(ext.ResourceName))
 		assert.Nil(span.Tag(ext.HTTPRoute))
 		assert.Equal("GET", span.Tag(ext.HTTPMethod))

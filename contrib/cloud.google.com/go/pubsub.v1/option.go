@@ -6,41 +6,21 @@
 package pubsub
 
 import (
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
+	v2 "github.com/DataDog/dd-trace-go/v2/contrib/cloud.google.com/go/pubsub.v1"
 )
 
-type config struct {
-	serviceName     string
-	publishSpanName string
-	receiveSpanName string
-	measured        bool
-}
-
-func defaultConfig() *config {
-	return &config{
-		serviceName:     namingschema.ServiceNameOverrideV0("", ""),
-		publishSpanName: namingschema.OpName(namingschema.GCPPubSubOutbound),
-		receiveSpanName: namingschema.OpName(namingschema.GCPPubSubInbound),
-		measured:        false,
-	}
-}
-
 // A Option is used to customize spans started by WrapReceiveHandler or Publish.
-type Option func(cfg *config)
+type Option = v2.Option
 
 // A ReceiveOption has been deprecated in favor of Option.
 type ReceiveOption = Option
 
 // WithServiceName sets the service name tag for traces started by WrapReceiveHandler or Publish.
 func WithServiceName(serviceName string) Option {
-	return func(cfg *config) {
-		cfg.serviceName = serviceName
-	}
+	return v2.WithService(serviceName)
 }
 
 // WithMeasured sets the measured tag for traces started by WrapReceiveHandler or Publish.
 func WithMeasured() Option {
-	return func(cfg *config) {
-		cfg.measured = true
-	}
+	return v2.WithMeasured()
 }

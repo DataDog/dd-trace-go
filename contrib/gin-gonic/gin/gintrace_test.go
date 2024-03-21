@@ -206,7 +206,7 @@ func TestError(t *testing.T) {
 		assert.Equal("500", span.Tag(ext.HTTPCode))
 		assert.Equal(fmt.Sprintf("Error #01: %s\n", responseErr), span.Tag("gin.errors"))
 		// server errors set the ext.Error tag
-		assert.Equal("500: Internal Server Error", span.Tag(ext.Error).(error).Error())
+		assert.Equal("500: Internal Server Error", span.Tag(ext.ErrorMsg))
 		assert.Equal(ext.SpanKindServer, span.Tag(ext.SpanKind))
 		assert.Equal("gin-gonic/gin", span.Tag(ext.Component))
 	})
@@ -324,7 +324,7 @@ func TestPropagation(t *testing.T) {
 	router.GET("/user/:id", func(c *gin.Context) {
 		span, ok := tracer.SpanFromContext(c.Request.Context())
 		assert.True(ok)
-		assert.Equal(span.(mocktracer.Span).ParentID(), pspan.(mocktracer.Span).SpanID())
+		assert.Equal(span.(mocktracer.MockspanV2Adapter).ParentID(), pspan.Context().SpanID())
 	})
 
 	router.ServeHTTP(w, r)

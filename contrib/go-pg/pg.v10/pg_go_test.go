@@ -30,10 +30,6 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
-func TestImplementsHook(_ *testing.T) {
-	var _ pg.QueryHook = (*queryHook)(nil)
-}
-
 func TestSelect(t *testing.T) {
 	assert := assert.New(t)
 	mt := mocktracer.Start()

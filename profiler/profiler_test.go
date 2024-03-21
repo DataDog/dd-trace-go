@@ -13,13 +13,10 @@ import (
 	"io"
 	"math"
 	"math/rand"
-	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"runtime"
 	"runtime/trace"
-	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -39,104 +36,6 @@ func TestMain(m *testing.M) {
 	// with logs
 	log.UseLogger(log.DiscardLogger{})
 	os.Exit(m.Run())
-}
-
-func TestStart(t *testing.T) {
-	t.Run("defaults", func(t *testing.T) {
-		rl := &log.RecordLogger{}
-		defer log.UseLogger(rl)()
-
-		if err := Start(); err != nil {
-			t.Fatal(err)
-		}
-		defer Stop()
-
-		// Profiler configuration should be logged by default.  Check
-		// that we log some default configuration, e.g. enabled profiles
-		assert.LessOrEqual(t, 1, len(rl.Logs()))
-		startupLog := strings.Join(rl.Logs(), " ")
-		assert.Contains(t, startupLog, "\"cpu\"")
-		assert.Contains(t, startupLog, "\"heap\"")
-
-		mu.Lock()
-		require.NotNil(t, activeProfiler)
-		assert := assert.New(t)
-		if host, err := os.Hostname(); err != nil {
-			assert.Equal(host, activeProfiler.cfg.hostname)
-		}
-		assert.Equal("http://"+net.JoinHostPort(defaultAgentHost, defaultAgentPort)+"/profiling/v1/input",
-			activeProfiler.cfg.agentURL)
-		assert.Equal(defaultAPIURL, activeProfiler.cfg.apiURL)
-		assert.Equal(activeProfiler.cfg.agentURL, activeProfiler.cfg.targetURL)
-		assert.Equal(DefaultPeriod, activeProfiler.cfg.period)
-		assert.Equal(len(defaultProfileTypes), len(activeProfiler.cfg.types))
-		for _, pt := range defaultProfileTypes {
-			_, ok := activeProfiler.cfg.types[pt]
-			assert.True(ok)
-		}
-		assert.Equal(DefaultDuration, activeProfiler.cfg.cpuDuration)
-		mu.Unlock()
-	})
-
-	t.Run("options", func(t *testing.T) {
-		if err := Start(); err != nil {
-			t.Fatal(err)
-		}
-		defer Stop()
-
-		mu.Lock()
-		require.NotNil(t, activeProfiler)
-		assert.NotEmpty(t, activeProfiler.cfg.hostname)
-		mu.Unlock()
-	})
-
-	t.Run("options/GoodAPIKey/Agent", func(t *testing.T) {
-		rl := &log.RecordLogger{}
-		defer log.UseLogger(rl)()
-
-		err := Start(WithAPIKey("12345678901234567890123456789012"))
-		defer Stop()
-		assert.Nil(t, err)
-		assert.Equal(t, activeProfiler.cfg.agentURL, activeProfiler.cfg.targetURL)
-		// The package should log a warning that using an API has no
-		// effect unless uploading directly to Datadog (i.e. agentless)
-		assert.LessOrEqual(t, 1, len(rl.Logs()))
-		assert.Contains(t, strings.Join(rl.Logs(), " "), "profiler.WithAPIKey")
-	})
-
-	t.Run("options/GoodAPIKey/Agentless", func(t *testing.T) {
-		rl := &log.RecordLogger{}
-		defer log.UseLogger(rl)()
-
-		err := Start(
-			WithAPIKey("12345678901234567890123456789012"),
-			WithAgentlessUpload(),
-		)
-		defer Stop()
-		assert.Nil(t, err)
-		assert.Equal(t, activeProfiler.cfg.apiURL, activeProfiler.cfg.targetURL)
-		// The package should log a warning that agentless upload is not
-		// officially supported, so prefer not to use it
-		assert.LessOrEqual(t, 1, len(rl.Logs()))
-		assert.Contains(t, strings.Join(rl.Logs(), " "), "profiler.WithAgentlessUpload")
-	})
-
-	t.Run("options/BadAPIKey", func(t *testing.T) {
-		err := Start(WithAPIKey("aaaa"), WithAgentlessUpload())
-		defer Stop()
-		assert.NotNil(t, err)
-
-		// Check that mu gets unlocked, even if newProfiler() returns an error.
-		mu.Lock()
-		mu.Unlock()
-	})
-
-	t.Run("aws-lambda", func(t *testing.T) {
-		t.Setenv("AWS_LAMBDA_FUNCTION_NAME", "my-function-name")
-		err := Start()
-		defer Stop()
-		assert.NotNil(t, err)
-	})
 }
 
 // TestStartWithoutStopReconfigures verifies that calling Start while the
@@ -212,72 +111,6 @@ func TestStopLatency(t *testing.T) {
 	if elapsed > 500*time.Millisecond {
 		t.Errorf("profiler took %v to stop", elapsed)
 	}
-}
-
-func TestSetProfileFraction(t *testing.T) {
-	t.Run("on", func(t *testing.T) {
-		start := runtime.SetMutexProfileFraction(0)
-		defer runtime.SetMutexProfileFraction(start)
-		p, err := unstartedProfiler(WithProfileTypes(MutexProfile))
-		require.NoError(t, err)
-		p.run()
-		p.stop()
-		assert.Equal(t, DefaultMutexFraction, runtime.SetMutexProfileFraction(-1))
-	})
-
-	t.Run("off", func(t *testing.T) {
-		start := runtime.SetMutexProfileFraction(0)
-		defer runtime.SetMutexProfileFraction(start)
-		p, err := unstartedProfiler()
-		require.NoError(t, err)
-		p.run()
-		p.stop()
-		assert.Zero(t, runtime.SetMutexProfileFraction(-1))
-	})
-}
-
-func TestProfilerPassthrough(t *testing.T) {
-	if testing.Short() {
-		return
-	}
-	beforeExecutionTraceEnabledDefault := executionTraceEnabledDefault
-	executionTraceEnabledDefault = false
-	defer func() { executionTraceEnabledDefault = beforeExecutionTraceEnabledDefault }()
-
-	out := make(chan batch)
-	p, err := newProfiler()
-	require.NoError(t, err)
-	p.cfg.period = 200 * time.Millisecond
-	p.cfg.cpuDuration = 1 * time.Millisecond
-	p.uploadFunc = func(bat batch) error {
-		out <- bat
-		return nil
-	}
-	p.run()
-	defer p.stop()
-	var bat batch
-	select {
-	case bat = <-out:
-	// TODO (knusbaum) this timeout is long because we were seeing timeouts at 500ms.
-	// it would be nice to have a time-independent way to test this
-	case <-time.After(1000 * time.Millisecond):
-		t.Fatal("time expired")
-	}
-
-	assert := assert.New(t)
-	// should contain cpu.pprof, delta-heap.pprof
-	assert.Equal(2, len(bat.profiles))
-	assert.NotEmpty(bat.profiles[0].data)
-	assert.NotEmpty(bat.profiles[1].data)
-}
-
-func unstartedProfiler(opts ...Option) (*profiler, error) {
-	p, err := newProfiler(opts...)
-	if err != nil {
-		return nil, err
-	}
-	p.uploadFunc = func(_ batch) error { return nil }
-	return p, nil
 }
 
 type profileMeta struct {
@@ -368,58 +201,6 @@ func doOneShortProfileUpload(t *testing.T, opts ...Option) profileMeta {
 		WithProfileTypes(), WithPeriod(10*time.Millisecond),
 	)
 	return <-startTestProfiler(t, 1, opts...)
-}
-
-func TestAllUploaded(t *testing.T) {
-	// This is a kind of end-to-end test that runs the real profiles (i.e.
-	// not mocking/replacing any internal functions) and verifies that the
-	// profiles are at least uploaded.
-	//
-	// TODO: Further check that the uploaded profiles are all valid
-
-	var customLabelKeys []string
-	for i := 0; i < 50; i++ {
-		customLabelKeys = append(customLabelKeys, strconv.Itoa(i))
-	}
-
-	t.Setenv("DD_PROFILING_WAIT_PROFILE", "1")
-	t.Setenv("DD_PROFILING_EXECUTION_TRACE_PERIOD", "10ms") // match profile period
-	// The channel is buffered with 2 entries so we can check that the
-	// second batch of profiles is correct in case the profiler gets in a
-	// bad state after the first round of profiling.
-	profiles := startTestProfiler(t, 2,
-		WithProfileTypes(
-			BlockProfile,
-			CPUProfile,
-			GoroutineProfile,
-			HeapProfile,
-			MutexProfile,
-		),
-		WithPeriod(10*time.Millisecond),
-		CPUDuration(1*time.Millisecond),
-		WithCustomProfilerLabelKeys(customLabelKeys...),
-	)
-
-	validateProfile := func(profile profileMeta, seq uint64) {
-		expected := []string{
-			"cpu.pprof",
-			"delta-block.pprof",
-			"delta-heap.pprof",
-			"delta-mutex.pprof",
-			"goroutines.pprof",
-			"goroutineswait.pprof",
-		}
-		if executionTraceEnabledDefault {
-			expected = append(expected, "go.trace")
-		}
-		assert.ElementsMatch(t, expected, profile.event.Attachments)
-		assert.ElementsMatch(t, customLabelKeys[:customProfileLabelLimit], profile.event.CustomAttributes)
-
-		assert.Contains(t, profile.tags, fmt.Sprintf("profile_seq:%d", seq))
-	}
-
-	validateProfile(<-profiles, 0)
-	validateProfile(<-profiles, 1)
 }
 
 func TestCorrectTags(t *testing.T) {

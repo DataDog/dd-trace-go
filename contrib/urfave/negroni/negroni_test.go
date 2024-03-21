@@ -230,7 +230,7 @@ func TestError(t *testing.T) {
 		assert.Equal("http.request", span.OperationName())
 		assert.Equal(strconv.Itoa(code), span.Tag(ext.HTTPCode))
 		wantErr := fmt.Sprintf("%d: %s", code, http.StatusText(code))
-		assert.Equal(wantErr, span.Tag(ext.Error).(error).Error())
+		assert.Equal(wantErr, span.Tag(ext.ErrorMsg))
 	}
 
 	t.Run("default", func(t *testing.T) {
@@ -329,7 +329,7 @@ func TestPropagation(t *testing.T) {
 	mux.HandleFunc("/user", func(w http.ResponseWriter, r *http.Request) {
 		span, ok := tracer.SpanFromContext(r.Context())
 		assert.True(ok)
-		assert.Equal(span.(mocktracer.Span).ParentID(), pspan.(mocktracer.Span).SpanID())
+		assert.Equal(span.(mocktracer.MockspanV2Adapter).ParentID(), pspan.Context().SpanID())
 		w.WriteHeader(200)
 	})
 

@@ -226,8 +226,8 @@ func TestCopyFrom(t *testing.T) {
 	assert.Equal(t, "Copy From", s.Tag(ext.ResourceName))
 	assert.Equal(t, "Copy From", s.Tag("db.operation"))
 	assert.Equal(t, nil, s.Tag(ext.DBStatement))
-	assert.EqualValues(t, []string{"numbers"}, s.Tag("db.copy_from.tables"))
-	assert.EqualValues(t, []string{"number"}, s.Tag("db.copy_from.columns"))
+	assert.EqualValues(t, "numbers", s.Tag("db.copy_from.tables.0"))
+	assert.EqualValues(t, "number", s.Tag("db.copy_from.columns.0"))
 	assert.Equal(t, ps.SpanID(), s.ParentID())
 }
 
@@ -291,6 +291,11 @@ func runAllOperations(t *testing.T, opts ...Option) {
 	_, err = conn.CopyFrom(ctx, []string{"numbers"}, []string{"number"}, copyFromSource)
 	require.NoError(t, err)
 }
+
+const (
+	componentName      = "jackc/pgx.v5"
+	defaultServiceName = "postgres.db"
+)
 
 func assertCommonTags(t *testing.T, s mocktracer.Span) {
 	assert.Equal(t, defaultServiceName, s.Tag(ext.ServiceName))

@@ -5,36 +5,12 @@
 
 package namingschema
 
-import "gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
+import "github.com/DataDog/dd-trace-go/v2/v1internal/namingschema"
 
 func ServiceName(fallback string) string {
-	switch GetVersion() {
-	case SchemaV1:
-		if svc := globalconfig.ServiceName(); svc != "" {
-			return svc
-		}
-		return fallback
-	default:
-		if svc := globalconfig.ServiceName(); svc != "" {
-			return svc
-		}
-		return fallback
-	}
+	return namingschema.ServiceName(fallback)
 }
 
 func ServiceNameOverrideV0(fallback, overrideV0 string) string {
-	switch GetVersion() {
-	case SchemaV1:
-		if svc := globalconfig.ServiceName(); svc != "" {
-			return svc
-		}
-		return fallback
-	default:
-		if UseGlobalServiceName() {
-			if svc := globalconfig.ServiceName(); svc != "" {
-				return svc
-			}
-		}
-		return overrideV0
-	}
+	return namingschema.ServiceNameOverrideV0(fallback, overrideV0)
 }
