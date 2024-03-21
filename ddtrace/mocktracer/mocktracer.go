@@ -16,7 +16,6 @@ import (
 	"sync/atomic"
 
 	v2 "github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/datastreams"
 )
 
@@ -93,7 +92,6 @@ func (mta *mocktracerV2Adapter) SentDSMBacklogs() []datastreams.Backlog {
 func (mta *mocktracerV2Adapter) Stop() {
 	mta.tracer.Stop()
 	mta.tracer = nil
-	internal.ResetGlobalTracer()
 	setActive(false)
 }
 

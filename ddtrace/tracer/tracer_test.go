@@ -244,7 +244,6 @@ func TestTracerStartSpanOptions(t *testing.T) {
 
 func TestTracerStartSpanOptions128(t *testing.T) {
 	tracer := newTracer()
-	internal.SetGlobalTracer(tracer)
 	defer tracer.Stop()
 	t.Run("64-bit-trace-id", func(t *testing.T) {
 		assert := assert.New(t)

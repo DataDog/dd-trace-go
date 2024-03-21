@@ -339,10 +339,7 @@ func TestPropagatingTagsConcurrency(_ *testing.T) {
 
 func TestMalformedTID(t *testing.T) {
 	tracer := newTracer()
-	defer func() {
-		tracer.Stop()
-		internal.SetGlobalTracer(internal.NoopTracerV2)
-	}()
+	defer tracer.Stop()
 
 	t.Run("datadog, short tid", func(t *testing.T) {
 		headers := TextMapCarrier(map[string]string{
