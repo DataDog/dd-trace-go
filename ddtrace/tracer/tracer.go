@@ -290,6 +290,8 @@ func newUnstartedTracer(opts ...StartOption) (*tracer, error) {
 	globalRate := globalSampleRate()
 	rulesSampler := newRulesSampler(c.traceRules, c.spanRules, globalRate)
 	c.traceSampleRate = newDynamicConfig("trace_sample_rate", globalRate, rulesSampler.traces.setGlobalSampleRate, equal[float64])
+	c.traceSampleRules = newDynamicConfig("trace_sample_rules", c.traceRules,
+		rulesSampler.traces.setTraceSampleRules, EqualsFalseNegative)
 	var dataStreamsProcessor *datastreams.Processor
 	if c.dataStreamsMonitoringEnabled {
 		dataStreamsProcessor = datastreams.NewProcessor(statsd, c.env, c.serviceName, c.version, c.agentURL, c.httpClient, func() bool {
@@ -550,9 +552,9 @@ func SpanStart(operationName string, options ...StartSpanOption) *Span {
 		traceID:  id,
 		start:    startTime,
 	}
-	for _, link := range opts.SpanLinks {
-		span.spanLinks = append(span.spanLinks, link)
-	}
+
+	span.spanLinks = append(span.spanLinks, opts.SpanLinks...)
+
 	if context != nil {
 		// this is a child span
 		span.traceID = context.traceID.Lower()

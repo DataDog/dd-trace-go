@@ -379,6 +379,10 @@ func (a *appsec) enableRCBlocking() {
 		log.Debug("appsec: Remote config: no valid remote configuration client")
 		return
 	}
+	if _, isSet := os.LookupEnv(internal.EnvRules); isSet {
+		log.Debug("appsec: Remote config: using rules from %s, blocking capabilities won't be enabled", a.cfg.RulesManager.BasePath)
+		return
+	}
 
 	products := []string{rc.ProductASM, rc.ProductASMDD, rc.ProductASMData}
 	for _, p := range products {
@@ -391,11 +395,9 @@ func (a *appsec) enableRCBlocking() {
 		log.Debug("appsec: Remote config: couldn't register callback: %v", err)
 	}
 
-	if _, isSet := os.LookupEnv(internal.EnvRules); !isSet {
-		for _, c := range blockingCapabilities {
-			if err := a.registerRCCapability(c); err != nil {
-				log.Debug("appsec: Remote config: couldn't register capability %v: %v", c, err)
-			}
+	for _, c := range blockingCapabilities {
+		if err := a.registerRCCapability(c); err != nil {
+			log.Debug("appsec: Remote config: couldn't register capability %v: %v", c, err)
 		}
 	}
 }

@@ -412,14 +412,15 @@ func BenchmarkTraceAndServe(b *testing.B) {
 	if err != nil {
 		b.Fatal(err)
 	}
+	cfg := ServeConfig{
+		Service:     "service-name",
+		Resource:    "resource-name",
+		FinishOpts:  []tracer.FinishOption{},
+		SpanOpts:    []tracer.StartSpanOption{},
+		QueryParams: false,
+	}
+	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		cfg := ServeConfig{
-			Service:     "service-name",
-			Resource:    "resource-name",
-			FinishOpts:  []tracer.FinishOption{},
-			SpanOpts:    []tracer.StartSpanOption{},
-			QueryParams: false,
-		}
 		TraceAndServe(handler, noopWriter{}, req, &cfg)
 	}
 }
