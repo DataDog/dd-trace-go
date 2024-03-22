@@ -63,6 +63,8 @@ jobs:
       path: ${{ steps.cfg.outputs.path }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.ref }}
 
       - name: Compute cache configuration
         id: cfg
@@ -100,6 +102,8 @@ jobs:
       fail-fast: true # saving some CI time - macos runners too long to get
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.ref }}
 
       - name: Restore Go modules cache
         uses: actions/cache/restore@v4
@@ -223,6 +227,8 @@ jobs:
       fail-fast: false
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.ref }}
 
       - name: Restore Go modules cache
         uses: actions/cache/restore@v4
