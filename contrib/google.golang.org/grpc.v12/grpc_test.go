@@ -165,6 +165,11 @@ func TestPass(t *testing.T) {
 // fixtureServer a dummy implemenation of our grpc fixtureServer.
 type fixtureServer struct{}
 
+func (s *fixtureServer) mustEmbedUnimplementedFixtureServer() {
+	//TODO implement me
+	panic("implement me")
+}
+
 func (s *fixtureServer) Ping(ctx context.Context, in *FixtureRequest) (*FixtureReply, error) {
 	switch {
 	case in.Name == "child":

@@ -21,13 +21,19 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 
-	"github.com/golang/protobuf/proto"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/encoding/prototext"
+	"google.golang.org/protobuf/proto"
 )
 
 const componentName = "google.golang.org/grpc"
+
+var protoTextMarshaller = prototext.MarshalOptions{
+	Multiline: false,
+	Indent:    "",
+}
 
 func init() {
 	telemetry.LoadIntegration(componentName)
@@ -88,7 +94,7 @@ func finishWithError(span ddtrace.Span, err error, cfg *config) {
 	if e, ok := status.FromError(err); ok && cfg.withErrorDetailTags {
 		for i, d := range e.Details() {
 			if d, ok := d.(proto.Message); ok {
-				span.SetTag(tagStatusDetailsPrefix+fmt.Sprintf("_%d", i), d.String())
+				span.SetTag(tagStatusDetailsPrefix+fmt.Sprintf("_%d", i), protoTextMarshaller.Format(d))
 			}
 		}
 	}
