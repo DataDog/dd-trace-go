@@ -34,10 +34,11 @@ const (
 	// SingleSpan specifies that the span was sampled by single
 	// span sampling rules.
 	SingleSpan SamplerName = 8
+	// Sampler name 9 is reserved/used by OTel ingestion.
 	// RemoteUserRule specifies that the span was sampled by a rule the user configured remotely
 	// through Datadog UI.
-	RemoteUserRule SamplerName = 9
+	RemoteUserRule SamplerName = 10
 	// RemoteDynamicRule specifies that the span was sampled by a rule configured by Datadog
 	// Dynamic Sampling.
-	RemoteDynamicRule SamplerName = 10
+	RemoteDynamicRule SamplerName = 11
 )
