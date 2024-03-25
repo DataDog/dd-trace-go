@@ -29,6 +29,7 @@ type config struct {
 	errCheck           func(err error) bool
 	tags               map[string]interface{}
 	dbmPropagationMode tracer.DBMPropagationMode
+	dbStats            bool
 }
 
 func (c *config) checkDBMPropagation(driverName string, driver driver.Driver, dsn string) {
@@ -140,6 +141,7 @@ func defaults(cfg *config, driverName string, rc *registerConfig) {
 		cfg.errCheck = rc.errCheck
 		cfg.ignoreQueryTypes = rc.ignoreQueryTypes
 		cfg.childSpansOnly = rc.childSpansOnly
+		cfg.dbStats = rc.dbStats
 	}
 }
 

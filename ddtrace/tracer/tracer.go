@@ -23,6 +23,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
 	appsecConfig "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/config"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/datastreams"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/hostname"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/remoteconfig"
@@ -105,6 +106,8 @@ type tracer struct {
 	// abandonedSpansDebugger specifies where and how potentially abandoned spans are stored
 	// when abandoned spans debugging is enabled.
 	abandonedSpansDebugger *abandonedSpansDebugger
+
+	statsCarrier *globalinternal.StatsCarrier
 }
 
 const (
@@ -252,12 +255,18 @@ func newUnstartedTracer(opts ...StartOption) *tracer {
 	globalRate := globalSampleRate()
 	rulesSampler := newRulesSampler(c.traceRules, c.spanRules, globalRate)
 	c.traceSampleRate = newDynamicConfig("trace_sample_rate", globalRate, rulesSampler.traces.setGlobalSampleRate, equal[float64])
+	c.traceSampleRules = newDynamicConfig("trace_sample_rules", c.traceRules,
+		rulesSampler.traces.setTraceSampleRules, EqualsFalseNegative)
 	var dataStreamsProcessor *datastreams.Processor
 	if c.dataStreamsMonitoringEnabled {
 		dataStreamsProcessor = datastreams.NewProcessor(statsd, c.env, c.serviceName, c.version, c.agentURL, c.httpClient, func() bool {
 			f := loadAgentFeatures(c.logToStdout, c.agentURL, c.httpClient)
 			return f.DataStreams
 		})
+	}
+	var statsCarrier *globalinternal.StatsCarrier
+	if c.contribStats {
+		statsCarrier = globalinternal.NewStatsCarrier(statsd)
 	}
 	t := &tracer{
 		config:           c,
@@ -278,8 +287,9 @@ func newUnstartedTracer(opts ...StartOption) *tracer {
 				Cache:            c.agent.HasFlag("sql_cache"),
 			},
 		}),
-		statsd:      statsd,
-		dataStreams: dataStreamsProcessor,
+		statsd:       statsd,
+		dataStreams:  dataStreamsProcessor,
+		statsCarrier: statsCarrier,
 	}
 	return t
 }
@@ -323,6 +333,10 @@ func newTracer(opts ...StartOption) *tracer {
 		t.reportHealthMetrics(statsInterval)
 	}()
 	t.stats.Start()
+	if sc := t.statsCarrier; sc != nil {
+		sc.Start()
+		globalconfig.SetStatsCarrier(sc)
+	}
 	return t
 }
 
@@ -506,9 +520,8 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 		Start:        startTime,
 		noDebugStack: t.config.noDebugStack,
 	}
-	for _, link := range opts.SpanLinks {
-		span.SpanLinks = append(span.SpanLinks, link)
-	}
+
+	span.SpanLinks = append(span.SpanLinks, opts.SpanLinks...)
 
 	if t.config.hostname != "" {
 		span.setMeta(keyHostname, t.config.hostname)
@@ -657,6 +670,9 @@ func (t *tracer) Stop() {
 	t.statsd.Close()
 	if t.dataStreams != nil {
 		t.dataStreams.Stop()
+	}
+	if t.statsCarrier != nil {
+		t.statsCarrier.Stop()
 	}
 	appsec.Stop()
 	remoteconfig.Stop()
