@@ -55,6 +55,7 @@ RUN if [ "${go_libddwaf_ref}" != "" ]; then \
 RUN go mod tidy
 
 ARG build_with_vendoring
+ARG go
 RUN set -ex; if [ "$build_with_vendoring" = "y" ]; then \
       if [ "$go" = "1.20" -o "$go" = "1.21" ]; then \
         go mod vendor; \
