@@ -56,13 +56,13 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 		}
 		applyStatus = tracer.onRemoteConfigUpdate(input)
 		require.Equal(t, state.ApplyStateAcknowledged, applyStatus["path"].State)
-		s = tracer.StartSpan("web.request").(*span)
+		s = tracer.StartSpan("web.request")
 		s.Finish()
-		require.Equal(t, 1.0, s.Metrics[keyRulesSamplerAppliedRate])
+		require.Equal(t, 1.0, s.metrics[keyRulesSamplerAppliedRate])
 		// Spans not matching the rule still gets the global rate
-		s = tracer.StartSpan("not.web.request").(*span)
+		s = tracer.StartSpan("not.web.request")
 		s.Finish()
-		require.Equal(t, 0.5, s.Metrics[keyRulesSamplerAppliedRate])
+		require.Equal(t, 0.5, s.metrics[keyRulesSamplerAppliedRate])
 
 		// Unset RC. Assert _dd.rule_psr is not set
 		input = remoteconfig.ProductUpdate{"path": []byte(`{"lib_config": {}, "service_target": {"service": "my-service", "env": "my-env"}}`)}
@@ -124,12 +124,13 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 				"resource": "*",
 				"sample_rate": 0.1
 			}]`)
-		tracer, _, _, stop := startTestTracer(t, WithService("my-service"), WithEnv("my-env"))
+		tracer, _, _, stop, err := startTestTracer(t, WithService("my-service"), WithEnv("my-env"))
 		defer stop()
+		require.NoError(t, err)
 
-		s := tracer.StartSpan("web.request").(*span)
+		s := tracer.StartSpan("web.request")
 		s.Finish()
-		require.Equal(t, 0.1, s.Metrics[keyRulesSamplerAppliedRate])
+		require.Equal(t, 0.1, s.metrics[keyRulesSamplerAppliedRate])
 
 		input := remoteconfig.ProductUpdate{
 			"path": []byte(`{"lib_config": {"tracing_sampling_rate": 0.5,
@@ -144,15 +145,15 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 		}
 		applyStatus := tracer.onRemoteConfigUpdate(input)
 		require.Equal(t, state.ApplyStateAcknowledged, applyStatus["path"].State)
-		s = tracer.StartSpan("web.request").(*span)
-		s.Resource = "abc"
+		s = tracer.StartSpan("web.request")
+		s.resource = "abc"
 		s.Finish()
-		require.Equal(t, 0.2, s.Metrics[keyRulesSamplerAppliedRate])
+		require.Equal(t, 0.2, s.metrics[keyRulesSamplerAppliedRate])
 		// Spans not matching the rule gets the global rate, but not the local rule, which is no longer in effect
-		s = tracer.StartSpan("web.request").(*span)
-		s.Resource = "not_abc"
+		s = tracer.StartSpan("web.request")
+		s.resource = "not_abc"
 		s.Finish()
-		require.Equal(t, 0.5, s.Metrics[keyRulesSamplerAppliedRate])
+		require.Equal(t, 0.5, s.metrics[keyRulesSamplerAppliedRate])
 
 		telemetryClient.AssertNumberOfCalls(t, "ConfigChange", 1)
 		telemetryClient.AssertCalled(t, "ConfigChange", []telemetry.Configuration{

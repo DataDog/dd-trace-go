@@ -1413,20 +1413,28 @@ func TestGlobMatch(t *testing.T) {
 
 func TestSamplingRuleMarshall(t *testing.T) {
 	for i, tt := range []struct {
-		in  SamplingRule
-		out string
+		in       Rule
+		ruleType SamplingRuleType
+		out      string
 	}{
-		{ServiceRule("srv.*", 0), `{"service":"srv.*","sample_rate":0,"type":"1"}`},
-		{NameServiceRule("ops.*", "srv.*", 0), `{"service":"srv.*","name":"ops.*","sample_rate":0,"type":"1"}`},
-		{NameServiceRule("ops.*", "srv.*", 0.55), `{"service":"srv.*","name":"ops.*","sample_rate":0.55,"type":"1"}`},
-		{TagsResourceRule(nil, "http_get", "", "", 0.55), `{"resource":"http_get","sample_rate":0.55,"type":"1"}`},
-		{TagsResourceRule(map[string]string{"host": "hn-*"}, "http_get", "", "", 0.35), `{"resource":"http_get","sample_rate":0.35,"tags":{"host":"hn-*"},"type":"1"}`},
-		{SpanNameServiceRule("ops.*", "srv.*", 0.55), `{"service":"srv.*","name":"ops.*","sample_rate":0.55,"type":"2"}`},
-		{SpanNameServiceMPSRule("ops.*", "srv.*", 0.55, 1000), `{"service":"srv.*","name":"ops.*","sample_rate":0.55,"type":"2","max_per_second":1000}`},
-		{TagsResourceRule(nil, "//bar", "", "", 1), `{"resource":"//bar","sample_rate":1,"type":"1"}`},
-		{TagsResourceRule(map[string]string{"tag_key": "tag_value.*"}, "//bar", "", "", 1), `{"resource":"//bar","sample_rate":1,"tags":{"tag_key":"tag_value.*"},"type":"1"}`},
+		{Rule{ServiceGlob: "srv.*"}, SamplingRuleTrace, `{"service":"srv.*","sample_rate":0,"type":"1"}`},
+		{Rule{NameGlob: "ops.*", ServiceGlob: "srv.*"}, SamplingRuleTrace, `{"service":"srv.*","name":"ops.*","sample_rate":0,"type":"1"}`},
+		{Rule{NameGlob: "ops.*", ServiceGlob: "srv.*", Rate: 0.55}, SamplingRuleTrace, `{"service":"srv.*","name":"ops.*","sample_rate":0.55,"type":"1"}`},
+		{Rule{Tags: nil, ResourceGlob: "http_get", Rate: 0.55}, SamplingRuleTrace, `{"resource":"http_get","sample_rate":0.55,"type":"1"}`},
+		{Rule{Tags: map[string]string{"host": "hn-*"}, ResourceGlob: "http_get", Rate: 0.35}, SamplingRuleTrace, `{"resource":"http_get","sample_rate":0.35,"tags":{"host":"hn-*"},"type":"1"}`},
+		{Rule{NameGlob: "ops.*", ServiceGlob: "srv.*", Rate: 0.55}, SamplingRuleSpan, `{"service":"srv.*","name":"ops.*","sample_rate":0.55,"type":"2"}`},
+		{Rule{NameGlob: "ops.*", ServiceGlob: "srv.*", Rate: 0.55, MaxPerSecond: 1000}, SamplingRuleSpan, `{"service":"srv.*","name":"ops.*","sample_rate":0.55,"type":"2","max_per_second":1000}`},
+		{Rule{Tags: nil, ResourceGlob: "//bar", Rate: 1}, SamplingRuleTrace, `{"resource":"//bar","sample_rate":1,"type":"1"}`},
+		{Rule{Tags: map[string]string{"tag_key": "tag_value.*"}, ResourceGlob: "//bar", Rate: 1}, SamplingRuleTrace, `{"resource":"//bar","sample_rate":1,"tags":{"tag_key":"tag_value.*"},"type":"1"}`},
 	} {
-		m, err := tt.in.MarshalJSON()
+		var sr SamplingRule
+		switch tt.ruleType {
+		case SamplingRuleTrace:
+			sr = TraceSamplingRules(tt.in)[0]
+		case SamplingRuleSpan:
+			sr = SpanSamplingRules(tt.in)[0]
+		}
+		m, err := sr.MarshalJSON()
 		assert.Nil(t, err)
 		assert.Equal(t, tt.out, string(m), "at %d index", i)
 	}

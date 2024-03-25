@@ -30,10 +30,15 @@ func TestTelemetryEnabled(t *testing.T) {
 			WithPeerServiceDefaults(true),
 			WithHeaderTags([]string{"key:val", "key2:val2"}),
 			WithSamplingRules(
-				[]SamplingRule{TagsResourceRule(
-					map[string]string{"tag-a": "tv-a??"},
-					"resource-*", "op-name", "test-serv", 0.1),
-				},
+				TraceSamplingRules(
+					Rule{
+						Tags:         map[string]string{"tag-a": "tv-a??"},
+						ResourceGlob: "resource-*",
+						NameGlob:     "op-name",
+						ServiceGlob:  "test-serv",
+						Rate:         0.1,
+					},
+				),
 			),
 		)
 		defer globalconfig.SetServiceName("")
