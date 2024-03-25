@@ -77,8 +77,7 @@ type (
 	SDKBodyOperationRes struct{}
 
 	RoundTripOperationArgs struct {
-		URL    string
-		SpanID uint64
+		URL string
 	}
 
 	RoundTripOperationRes struct{}
