@@ -3,19 +3,19 @@ module github.com/DataDog/dd-trace-go/v2/contrib/k8s.io/client-go
 go 1.19
 
 require (
-	github.com/DataDog/dd-trace-go/v2 v2.0.0-20240223105017-0206562b3b5d
-	github.com/DataDog/dd-trace-go/v2/contrib/net/http v0.0.0-20240125124054-68de6a751ca1
+	github.com/DataDog/dd-trace-go/v2 v2.0.0-20240315154142-163dd885ab4e
+	github.com/DataDog/dd-trace-go/v2/contrib/net/http v0.0.0-20240315154142-163dd885ab4e
 	github.com/stretchr/testify v1.8.4
 	k8s.io/apimachinery v0.23.17
 	k8s.io/client-go v0.23.17
 )
 
 require (
-	github.com/DataDog/appsec-internal-go v1.4.1 // indirect
+	github.com/DataDog/appsec-internal-go v1.5.0 // indirect
 	github.com/DataDog/datadog-agent/pkg/obfuscate v0.50.0 // indirect
 	github.com/DataDog/datadog-agent/pkg/remoteconfig/state v0.50.0 // indirect
 	github.com/DataDog/datadog-go/v5 v5.4.0 // indirect
-	github.com/DataDog/go-libddwaf/v2 v2.3.1 // indirect
+	github.com/DataDog/go-libddwaf/v2 v2.3.2 // indirect
 	github.com/DataDog/go-sqllexer v0.0.10 // indirect
 	github.com/DataDog/go-tuf v1.0.2-0.5.2 // indirect
 	github.com/DataDog/sketches-go v1.4.3 // indirect

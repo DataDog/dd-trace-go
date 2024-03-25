@@ -114,6 +114,7 @@ func (r *RulesManager) Clone() (clone RulesManager) {
 	for k, v := range r.Edits {
 		clone.Edits[k] = v
 	}
+	clone.BasePath = r.BasePath
 	clone.Base = r.Base.clone()
 	clone.Latest = r.Latest.clone()
 	return

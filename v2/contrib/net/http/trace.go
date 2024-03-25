@@ -53,7 +53,10 @@ func TraceAndServe(h http.Handler, w http.ResponseWriter, r *http.Request, cfg *
 	if cfg == nil {
 		cfg = new(ServeConfig)
 	}
-	opts := options.Copy(cfg.SpanOpts...) // make a copy of cfg.SpanOpts to avoid races
+	opts := options.Expand(cfg.SpanOpts, 2, 3) // make a copy of cfg.SpanOpts to avoid races.
+	// Pre-append span.kind and component tags to the options so that they can be overridden.
+	opts[0] = tracer.Tag(ext.SpanKind, ext.SpanKindServer)
+	opts[1] = tracer.Tag(ext.Component, componentName)
 	if cfg.Service != "" {
 		opts = append(opts, tracer.ServiceName(cfg.Service))
 	}
@@ -63,14 +66,11 @@ func TraceAndServe(h http.Handler, w http.ResponseWriter, r *http.Request, cfg *
 	if cfg.Route != "" {
 		opts = append(opts, tracer.Tag(ext.HTTPRoute, cfg.Route))
 	}
-	// Pre-append span.kind and component tags to the options so that they can be overridden.
-	opts = append([]tracer.StartSpanOption{tracer.Tag(ext.SpanKind, ext.SpanKindServer), tracer.Tag(ext.Component, componentName)}, opts...)
 	span, ctx := httptrace.StartRequestSpan(r, opts...)
 	rw, ddrw := wrapResponseWriter(w)
 	defer func() {
 		httptrace.FinishRequestSpan(span, ddrw.status, cfg.FinishOpts...)
 	}()
-
 	if appsec.Enabled() {
 		h = httpsec.WrapHandler(h, span, cfg.RouteParams)
 	}

@@ -99,7 +99,7 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		match mux.RouteMatch
 		route string
 	)
-	spanopts := options.Copy(r.config.spanOpts...)
+	spanopts := options.Expand(r.config.spanOpts, 0, 2)
 	// get the resource associated to this request
 	if r.Match(req, &match) && match.Route != nil {
 		if h, err := match.Route.GetHostTemplate(); err == nil {

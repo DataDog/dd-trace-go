@@ -6,32 +6,39 @@
 package options
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-
-	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 )
+
+func consumeTagPair(dst map[string]string, v string) {
+	values := strings.Split(v, ":")
+	if len(values) != 2 {
+		panic("invalid tag pair")
+	}
+	dst[values[0]] = values[1]
+}
 
 func TestStringSliceModify(t *testing.T) {
 	t.Run("modify-original", func(t *testing.T) {
-		opts := []tracer.StartSpanOption{tracer.Tag("mytag", "myvalue")}
-		optsCopy := Copy(opts...)
-		opts[0] = tracer.ResourceName("somethingelse")
-		cfg := new(tracer.StartSpanConfig)
-		for _, fn := range optsCopy {
-			fn(cfg)
+		opts := []string{"mytag:myvalue"}
+		optsCopy := Copy(opts)
+		opts[0] = "mytag:somethingelse"
+		cfg := make(map[string]string, len(optsCopy))
+		for _, v := range optsCopy {
+			consumeTagPair(cfg, v)
 		}
-		assert.Equal(t, "myvalue", cfg.Tags["mytag"])
+		assert.Equal(t, "myvalue", cfg["mytag"])
 	})
 	t.Run("modify-copy", func(t *testing.T) {
-		opts := []tracer.StartSpanOption{tracer.Tag("mytag", "myvalue")}
-		optsCopy := Copy(opts...)
-		optsCopy[0] = tracer.ResourceName("somethingelse")
-		cfg := new(tracer.StartSpanConfig)
-		for _, fn := range opts {
-			fn(cfg)
+		opts := []string{"mytag:myvalue"}
+		optsCopy := Copy(opts)
+		optsCopy[0] = "mytag:somethingelse"
+		cfg := make(map[string]string, len(opts))
+		for _, v := range opts {
+			consumeTagPair(cfg, v)
 		}
-		assert.Equal(t, "myvalue", cfg.Tags["mytag"])
+		assert.Equal(t, "myvalue", cfg["mytag"])
 	})
 }

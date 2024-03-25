@@ -17,6 +17,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/internal/contrib/namingschematest"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/normalizer"
 
 	"github.com/stretchr/testify/assert"
@@ -164,7 +165,7 @@ func TestHttpTracer200(t *testing.T) {
 	assert.Equal("200", s.Tag(ext.HTTPCode))
 	assert.Equal("GET", s.Tag(ext.HTTPMethod))
 	assert.Equal("http://example.com"+url, s.Tag(ext.HTTPURL))
-	assert.Equal(nil, s.Tag(ext.Error))
+	assert.Zero(s.Tag(ext.Error))
 	assert.Equal("bar", s.Tag("foo"))
 	assert.Equal(ext.SpanKindServer, s.Tag(ext.SpanKind))
 	assert.Equal("net/http", s.Tag(ext.Component))
@@ -226,7 +227,7 @@ func TestWrapHandler200(t *testing.T) {
 	assert.Equal("200", s.Tag(ext.HTTPCode))
 	assert.Equal("GET", s.Tag(ext.HTTPMethod))
 	assert.Equal("http://example.com"+url, s.Tag(ext.HTTPURL))
-	assert.Equal(nil, s.Tag(ext.Error))
+	assert.Zero(s.Tag(ext.Error))
 	assert.Equal("bar", s.Tag("foo"))
 	assert.Equal(ext.SpanKindServer, s.Tag(ext.SpanKind))
 	assert.Equal("net/http", s.Tag(ext.Component))
@@ -283,7 +284,7 @@ func TestServeMuxUsesResourceNamer(t *testing.T) {
 	assert.Equal("200", s.Tag(ext.HTTPCode))
 	assert.Equal("GET", s.Tag(ext.HTTPMethod))
 	assert.Equal("http://example.com"+url, s.Tag(ext.HTTPURL))
-	assert.Equal(nil, s.Tag(ext.Error))
+	assert.Zero(s.Tag(ext.Error))
 	assert.Equal("bar", s.Tag("foo"))
 	assert.Equal(ext.SpanKindServer, s.Tag(ext.SpanKind))
 	assert.Equal("net/http", s.Tag(ext.Component))
@@ -496,8 +497,9 @@ func handler500(w http.ResponseWriter, _ *http.Request) {
 }
 
 func BenchmarkHttpServeTrace(b *testing.B) {
-	mt := mocktracer.Start()
-	defer mt.Stop()
+	err := tracer.Start(tracer.WithLogger(log.DiscardLogger{}))
+	assert.NoError(b, err)
+	defer tracer.Stop()
 	header, tag := normalizer.HeaderTag("3header")
 	globalconfig.SetHeaderTag(header, tag)
 

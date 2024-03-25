@@ -72,8 +72,13 @@ const (
 	APMTracingCustomTags
 )
 
-// APMTracingEnabled enables APM tracing
-const APMTracingEnabled Capability = 19
+// Additional capability bit index values that are non-consecutive from above.
+const (
+	// APMTracingEnabled enables APM tracing
+	APMTracingEnabled Capability = 19
+	// APMTracingSampleRules represents the sampling rate using matching rules from APM client libraries
+	APMTracingSampleRules = 29
+)
 
 // ErrClientNotStarted is returned when the remote config client is not started.
 var ErrClientNotStarted = errors.New("remote config client not started")

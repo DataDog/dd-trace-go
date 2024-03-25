@@ -46,24 +46,23 @@ func (s *Span) SetTag(k string, v interface{}) {
 	s.sp.SetTag(k, v)
 }
 
+func (s *Span) AddLink(spanContext *tracer.SpanContext, attributes map[string]string) {
+	s.sp.AddLink(spanContext, attributes)
+}
+
 func (s *Span) Tag(k string) interface{} {
 	if s == nil {
 		return nil
 	}
-	if v, ok := s.m[k]; ok {
+	// It's possible that a tag wasn't set through mocktracer.Span.SetTag,
+	// in which case we need to retrieve it from the underlying tracer.Span.
+	v := s.sp.Tag(k)
+	if v != nil {
 		return v
 	}
-	// It's possible that a tag wasn't set through our mocktracer.Span, in which case we need to
-	// retrieve it from the underlying tracer.Span.
-	v := s.sp.Tag(k)
-	if k == ext.Error {
-		// This is a special case because the mocktracer doesn't set the error tag
-		// if there is no error. The tests expect a nil value but the tracer returns
-		// an int32(0) which is not nil.
-		v := v.(int32)
-		if v == 0 {
-			return nil
-		}
+	v, ok := s.m[k]
+	if !ok {
+		return nil
 	}
 	return v
 }
@@ -93,9 +92,6 @@ func extractTags(src, m map[string]interface{}) {
 		case ext.MapSpanParentID:
 			continue
 		case ext.MapSpanError:
-			continue
-		}
-		if _, ok := m[k]; ok {
 			continue
 		}
 		m[k] = v

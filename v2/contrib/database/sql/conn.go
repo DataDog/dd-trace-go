@@ -285,7 +285,7 @@ func (tp *traceParams) tryTrace(ctx context.Context, qtype QueryType, query stri
 		return
 	}
 	dbSystem, _ := normalizeDBSystem(tp.driverName)
-	opts := options.Copy(spanOpts...)
+	opts := options.Expand(spanOpts, 0, 6+len(tp.cfg.tags)+1)
 	opts = append(opts,
 		tracer.ServiceName(tp.cfg.serviceName),
 		tracer.SpanType(ext.SpanTypeSQL),

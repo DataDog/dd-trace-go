@@ -141,6 +141,8 @@ type tracer struct {
 	// abandonedSpansDebugger specifies where and how potentially abandoned spans are stored
 	// when abandoned spans debugging is enabled.
 	abandonedSpansDebugger *abandonedSpansDebugger
+
+	statsCarrier *globalinternal.StatsCarrier
 }
 
 const (
@@ -288,12 +290,18 @@ func newUnstartedTracer(opts ...StartOption) (*tracer, error) {
 	globalRate := globalSampleRate()
 	rulesSampler := newRulesSampler(c.traceRules, c.spanRules, globalRate)
 	c.traceSampleRate = newDynamicConfig("trace_sample_rate", globalRate, rulesSampler.traces.setGlobalSampleRate, equal[float64])
+	c.traceSampleRules = newDynamicConfig("trace_sample_rules", c.traceRules,
+		rulesSampler.traces.setTraceSampleRules, EqualsFalseNegative)
 	var dataStreamsProcessor *datastreams.Processor
 	if c.dataStreamsMonitoringEnabled {
 		dataStreamsProcessor = datastreams.NewProcessor(statsd, c.env, c.serviceName, c.version, c.agentURL, c.httpClient, func() bool {
 			f := loadAgentFeatures(c.logToStdout, c.agentURL, c.httpClient)
 			return f.DataStreams
 		})
+	}
+	var statsCarrier *globalinternal.StatsCarrier
+	if c.contribStats {
+		statsCarrier = globalinternal.NewStatsCarrier(statsd)
 	}
 	t := &tracer{
 		config:           c,
@@ -314,8 +322,9 @@ func newUnstartedTracer(opts ...StartOption) (*tracer, error) {
 				Cache:            c.agent.HasFlag("sql_cache"),
 			},
 		}),
-		statsd:      statsd,
-		dataStreams: dataStreamsProcessor,
+		statsd:       statsd,
+		dataStreams:  dataStreamsProcessor,
+		statsCarrier: statsCarrier,
 	}
 	return t, nil
 }
@@ -362,6 +371,10 @@ func newTracer(opts ...StartOption) (*tracer, error) {
 		t.reportHealthMetrics(statsInterval)
 	}()
 	t.stats.Start()
+	if sc := t.statsCarrier; sc != nil {
+		sc.Start()
+		globalconfig.SetStatsCarrier(sc)
+	}
 	return t, nil
 }
 
@@ -539,9 +552,9 @@ func SpanStart(operationName string, options ...StartSpanOption) *Span {
 		traceID:  id,
 		start:    startTime,
 	}
-	for _, link := range opts.SpanLinks {
-		span.spanLinks = append(span.spanLinks, link)
-	}
+
+	span.spanLinks = append(span.spanLinks, opts.SpanLinks...)
+
 	if context != nil {
 		// this is a child span
 		span.traceID = context.traceID.Lower()
@@ -711,6 +724,9 @@ func (t *tracer) Stop() {
 	t.statsd.Close()
 	if t.dataStreams != nil {
 		t.dataStreams.Stop()
+	}
+	if t.statsCarrier != nil {
+		t.statsCarrier.Stop()
 	}
 	appsec.Stop()
 	remoteconfig.Stop()

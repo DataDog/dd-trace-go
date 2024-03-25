@@ -49,7 +49,7 @@ func TestAppSec(t *testing.T) {
 
 		// Send a XSS attack in the payload along with the canary value in the RPC metadata
 		ctx := metadata.NewOutgoingContext(context.Background(), metadata.Pairs("dd-canary", "dd-test-scanner-log"))
-		res, err := client.Ping(ctx, &FixtureRequest{Name: "<script>evilJSCode;</script>"})
+		res, err := client.Ping(ctx, &FixtureRequest{Name: "<script>window.location;</script>"})
 		// Check that the handler was properly called
 		require.NoError(t, err)
 		require.Equal(t, "passed", res.Message)
@@ -60,8 +60,8 @@ func TestAppSec(t *testing.T) {
 		// The request should have the attack attempts
 		event, _ := finished[0].Tag("_dd.appsec.json").(string)
 		require.NotNil(t, event)
-		require.True(t, strings.Contains(event, "crs-941-110")) // XSS attack attempt
-		require.True(t, strings.Contains(event, "ua0-600-55x")) // canary rule attack attempt
+		require.Contains(t, event, "crs-941-180") // XSS attack attempt
+		require.Contains(t, event, "ua0-600-55x") // canary rule attack attempt
 	})
 
 	t.Run("stream", func(t *testing.T) {
@@ -74,7 +74,7 @@ func TestAppSec(t *testing.T) {
 		require.NoError(t, err)
 
 		// Send a XSS attack
-		err = stream.Send(&FixtureRequest{Name: "<script>evilJSCode;</script>"})
+		err = stream.Send(&FixtureRequest{Name: "<script>window.location;</script>"})
 		require.NoError(t, err)
 
 		// Check that the handler was properly called
@@ -122,7 +122,7 @@ func TestAppSec(t *testing.T) {
 			histogram[tr.Rule.ID]++
 		}
 
-		require.EqualValues(t, 1, histogram["crs-941-110"]) // XSS attack attempt
+		require.EqualValues(t, 1, histogram["crs-941-180"]) // XSS attack attempt
 		require.EqualValues(t, 5, histogram["crs-942-270"]) // SQL-injection attack attempt
 		require.EqualValues(t, 1, histogram["ua0-600-55x"]) // canary rule attack attempt
 
@@ -352,6 +352,87 @@ func TestUserBlocking(t *testing.T) {
 		event, _ := finished[0].Tag("_dd.appsec.json").(string)
 		require.NotNil(t, event)
 		require.True(t, strings.Contains(event, "blk-001-001"))
+	})
+}
+
+func TestPasslist(t *testing.T) {
+	// This custom rule file includes two rules detecting the same sec event, a grpc metadata value containing "zouzou",
+	// but only one of them is passlisted (custom-1 is passlisted, custom-2 is not and must trigger).
+	t.Setenv("DD_APPSEC_RULES", "../../../internal/appsec/testdata/passlist.json")
+
+	appsec.Start()
+	defer appsec.Stop()
+	if !appsec.Enabled() {
+		t.Skip("appsec disabled")
+	}
+
+	setup := func() (FixtureClient, mocktracer.Tracer, func()) {
+		rig, err := newRig(false)
+		require.NoError(t, err)
+
+		mt := mocktracer.Start()
+
+		return rig.client, mt, func() {
+			rig.Close()
+			mt.Stop()
+		}
+	}
+
+	t.Run("unary", func(t *testing.T) {
+		client, mt, cleanup := setup()
+		defer cleanup()
+
+		// Send the payload triggering the sec event thanks to the "zouzou" value in the RPC metadata
+		ctx := metadata.NewOutgoingContext(context.Background(), metadata.Pairs("dd-canary", "zouzou"))
+		res, err := client.Ping(ctx, &FixtureRequest{Name: "hello"})
+
+		// Check that the handler was properly called
+		require.NoError(t, err)
+		require.Equal(t, "passed", res.Message)
+
+		finished := mt.FinishedSpans()
+		require.Len(t, finished, 1)
+
+		// The service entry span must include the sec event
+		event, _ := finished[0].Tag("_dd.appsec.json").(string)
+		require.NotNil(t, event)
+		require.NotContains(t, event, "custom-1") // custom-1 is in the passlist of this gRPC method
+		require.Contains(t, event, "custom-2")    // custom-2 is not passlisted and must trigger an event
+	})
+
+	t.Run("stream", func(t *testing.T) {
+		client, mt, cleanup := setup()
+		defer cleanup()
+
+		// Open the steam triggering the sec event thanks to the "zouzou" value in the RPC metadata
+		ctx := metadata.NewOutgoingContext(context.Background(), metadata.Pairs("dd-canary", "zouzou"))
+		stream, err := client.StreamPing(ctx)
+		require.NoError(t, err)
+
+		// Send some messages
+		for i := 0; i < 5; i++ {
+			err = stream.Send(&FixtureRequest{Name: "hello"})
+			require.NoError(t, err)
+
+			// Check that the handler was properly called
+			res, err := stream.Recv()
+			require.Equal(t, "passed", res.Message)
+			require.NoError(t, err)
+		}
+
+		err = stream.CloseSend()
+		require.NoError(t, err)
+		// Flush the spans
+		stream.Recv()
+
+		finished := mt.FinishedSpans()
+		require.Len(t, finished, 12)
+
+		// The service entry span must include the sec event
+		event := finished[len(finished)-1].Tag("_dd.appsec.json")
+		require.NotNil(t, event, "the _dd.appsec.json tag was not found")
+		require.NotContains(t, event, "custom-1") // custom-1 is in the passlist of this gRPC method
+		require.Contains(t, event, "custom-2")    // custom-2 is not passlisted and must trigger an event
 	})
 }
 

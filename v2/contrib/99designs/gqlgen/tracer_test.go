@@ -65,6 +65,16 @@ func TestOptions(t *testing.T) {
 				assert.Equal(0.5, root.Tag(ext.EventSampleRate))
 			},
 		},
+		"WithCustomTag": {
+			tracerOpts: []Option{
+				WithCustomTag("customTag1", "customValue1"),
+				WithCustomTag("customTag2", "customValue2"),
+			},
+			test: func(assert *assert.Assertions, root *mocktracer.Span) {
+				assert.Equal("customValue1", root.Tag("customTag1"))
+				assert.Equal("customValue2", root.Tag("customTag2"))
+			},
+		},
 	} {
 		t.Run(name, func(t *testing.T) {
 			assert := assert.New(t)
@@ -80,7 +90,7 @@ func TestOptions(t *testing.T) {
 			}
 			assert.NotNil(root)
 			tt.test(assert, root)
-			assert.Nil(root.Tag(ext.Error))
+			assert.Zero(root.Tag(ext.Error))
 		})
 	}
 }
@@ -146,7 +156,7 @@ func TestChildSpans(t *testing.T) {
 	assert.ElementsMatch(resNames, []string{readOp, parsingOp, validationOp, "Query.name", `{ name }`})
 	assert.ElementsMatch(opNames, []string{readOp, parsingOp, validationOp, fieldOp, "graphql.query"})
 	assert.NotNil(root)
-	assert.Nil(root.Tag(ext.Error))
+	assert.Zero(root.Tag(ext.Error))
 }
 
 func TestNamingSchema(t *testing.T) {

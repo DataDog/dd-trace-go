@@ -260,8 +260,17 @@ type config struct {
 	// traceSampleRate holds the trace sample rate.
 	traceSampleRate dynamicConfig[float64]
 
+	// traceSampleRules holds the trace sampling rules
+	traceSampleRules dynamicConfig[[]SamplingRule]
+
 	// headerAsTags holds the header as tags configuration.
 	headerAsTags dynamicConfig[[]string]
+
+	contribStats bool
+
+	// dynamicInstrumentationEnabled controls if the target application can be modified by Dynamic Instrumentation or not.
+	// Value from DD_DYNAMIC_INSTRUMENTATION_ENABLED, default false.
+	dynamicInstrumentationEnabled bool
 }
 
 // orchestrionConfig contains Orchestrion configuration.
@@ -343,6 +352,7 @@ func newConfig(opts ...StartOption) (*config, error) {
 		c.logToStdout = true
 	}
 	c.logStartup = internal.BoolEnv("DD_TRACE_STARTUP_LOGS", true)
+	c.contribStats = internal.BoolEnv("DD_TRACE_CONTRIB_STATS_ENABLED", true)
 	c.runtimeMetrics = internal.BoolEnv("DD_RUNTIME_METRICS_ENABLED", false)
 	c.debug = internal.BoolEnv("DD_TRACE_DEBUG", false)
 	c.enabled = newDynamicConfig("tracing_enabled", internal.BoolEnv("DD_TRACE_ENABLED", true), func(b bool) bool { return true }, equal[bool])
@@ -367,6 +377,8 @@ func newConfig(opts ...StartOption) (*config, error) {
 	// TODO(partialFlush): consider logging a warning if DD_TRACE_PARTIAL_FLUSH_MIN_SPANS
 	// is set, but DD_TRACE_PARTIAL_FLUSH_ENABLED is not true. Or just assume it should be enabled
 	// if it's explicitly set, and don't require both variables to be configured.
+
+	c.dynamicInstrumentationEnabled = internal.BoolEnv("DD_DYNAMIC_INSTRUMENTATION_ENABLED", false)
 
 	schemaVersionStr := os.Getenv("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA")
 	if v, ok := namingschema.ParseVersion(schemaVersionStr); ok {
@@ -862,8 +874,8 @@ func WithServiceMapping(from, to string) StartOption {
 }
 
 // WithPeerServiceDefaults sets default calculation for peer.service.
+// Related documentation: https://docs.datadoghq.com/tracing/guide/inferred-service-opt-in/?tab=go#apm-tracer-configuration
 func WithPeerServiceDefaults(enabled bool) StartOption {
-	// TODO: add link to public docs
 	return func(c *config) {
 		c.peerServiceDefaultsEnabled = enabled
 	}
@@ -1221,10 +1233,7 @@ func WithStartSpanConfig(cfg *StartSpanConfig) StartSpanOption {
 			c.Tags = cfg.Tags
 		} else if cfg.Tags != nil {
 			for k, v := range cfg.Tags {
-				// only set the tag if it's not already set
-				if _, ok := c.Tags[k]; !ok {
-					c.Tags[k] = v
-				}
+				c.Tags[k] = v
 			}
 		}
 	}
@@ -1343,6 +1352,15 @@ func setHeaderTags(headerAsTags []string) bool {
 		globalconfig.SetHeaderTag(header, tag)
 	}
 	return true
+}
+
+// WithContribStats opens up a channel of communication between tracer and contrib libraries
+// for submitting stats from contribs to Datadog via the tracer's statsd client
+// It is enabled by default but can be disabled with `WithContribStats(false)`
+func WithContribStats(enabled bool) StartOption {
+	return func(c *config) {
+		c.contribStats = enabled
+	}
 }
 
 // UserMonitoringConfig is used to configure what is used to identify a user.

@@ -37,14 +37,10 @@ func TestSpanFromContext(t *testing.T) {
 		assert := assert.New(t)
 		span, ok := SpanFromContext(context.Background())
 		assert.False(ok)
-		//_, ok = span.(*traceinternal.NoopSpan)
 		assert.Nil(span)
-		//assert.True(ok)
 		span, ok = SpanFromContext(nil)
 		assert.False(ok)
-		//_, ok = span.(*traceinternal.NoopSpan)
 		assert.Nil(span)
-		//assert.True(ok)
 	})
 }
 
@@ -91,7 +87,6 @@ func TestStartSpanFromContextRace(t *testing.T) {
 
 	// Start 100 goroutines that create child spans with StartSpanFromContext in parallel,
 	// with a shared options slice. The child spans should get parented to the correct spans
-	const contextKey = "key"
 	const numContexts = 100
 	options := make([]StartSpanOption, 0, 3)
 	outputValues := make(chan string, numContexts)
@@ -155,7 +150,7 @@ func TestStartSpanFromNilContext(t *testing.T) {
 	assert.Nil(t, err)
 	defer stop()
 
-	child, ctx := StartSpanFromContext(nil, "http.request")
+	child, ctx := StartSpanFromContext(context.TODO(), "http.request")
 	assert := assert.New(t)
 	// ensure the returned context works
 	assert.Nil(ctx.Value("not_found_key"))

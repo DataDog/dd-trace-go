@@ -128,6 +128,12 @@ func TestPostgres(t *testing.T) {
 func TestOpenOptions(t *testing.T) {
 	driverName := "postgres"
 	dsn := "postgres://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable"
+	// shorten `interval` for the `WithDBStats` test
+	// interval must get reassigned outside of a subtest to avoid a data race
+	interval = 500 * time.Millisecond
+	t.Cleanup(func() {
+		interval = 10 * time.Second // resetting back to original value
+	})
 
 	t.Run("Open", func(t *testing.T) {
 		Register(driverName, &pq.Driver{}, WithService("postgres-test"), WithAnalyticsRate(0.2))

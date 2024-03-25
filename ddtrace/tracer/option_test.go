@@ -1385,6 +1385,31 @@ func TestWithHeaderTags(t *testing.T) {
 	assert.Equal(t, 0, globalconfig.HeaderTagsLen())
 }
 
+func TestContribStatsEnabled(t *testing.T) {
+	t.Run("Default", func(t *testing.T) {
+		c, err := newConfig()
+		assert.NoError(t, err)
+		assert.True(t, c.contribStats)
+	})
+	t.Run("Disable", func(t *testing.T) {
+		c, err := newConfig(WithContribStats(false))
+		assert.NoError(t, err)
+		assert.False(t, c.contribStats)
+	})
+	t.Run("Disable with ENV", func(t *testing.T) {
+		t.Setenv("DD_TRACE_CONTRIB_STATS_ENABLED", "false")
+		c, err := newConfig()
+		assert.NoError(t, err)
+		assert.False(t, c.contribStats)
+	})
+	t.Run("Env override", func(t *testing.T) {
+		t.Setenv("DD_TRACE_CONTRIB_STATS_ENABLED", "false")
+		c, err := newConfig(WithContribStats(true))
+		assert.NoError(t, err)
+		assert.True(t, c.contribStats)
+	})
+}
+
 func TestHostnameDisabled(t *testing.T) {
 	t.Run("DisabledWithUDS", func(t *testing.T) {
 		t.Setenv("DD_TRACE_AGENT_URL", "unix://somefakesocket")
@@ -1539,7 +1564,7 @@ func TestWithStartSpanConfigNonEmptyTags(t *testing.T) {
 	)
 	cfg := NewStartSpanConfig(
 		Tag("key", "value"),
-		Tag("k2", "shouldnt_override"),
+		Tag("k2", "should_override"),
 	)
 
 	tracer, err := newTracer()
@@ -1550,10 +1575,11 @@ func TestWithStartSpanConfigNonEmptyTags(t *testing.T) {
 		"test",
 		Tag("k2", "v2"),
 		WithStartSpanConfig(cfg),
+		Tag("key", "after_start_span_config"),
 	)
 	defer s.Finish()
-	assert.Equal("v2", s.meta["k2"])
-	assert.Equal("value", s.meta["key"])
+	assert.Equal("should_override", s.meta["k2"])
+	assert.Equal("after_start_span_config", s.meta["key"])
 }
 
 func optsTestConsumer(opts ...StartSpanOption) {

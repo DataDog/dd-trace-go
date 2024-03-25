@@ -47,7 +47,7 @@ func Middleware(opts ...Option) func(next http.Handler) http.Handler {
 				next.ServeHTTP(w, r)
 				return
 			}
-			opts := options.Copy(spanOpts...) // opts must be a copy of spanOpts, locally scoped, to avoid races.
+			opts := options.Expand(spanOpts, 0, 2) // opts must be a copy of spanOpts, locally scoped, to avoid races.
 			if !math.IsNaN(cfg.analyticsRate) {
 				opts = append(opts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
 			}

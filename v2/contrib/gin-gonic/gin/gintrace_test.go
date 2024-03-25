@@ -238,7 +238,7 @@ func TestError(t *testing.T) {
 		assert.Equal("418", span.Tag(ext.HTTPCode))
 		assert.Equal(fmt.Sprintf("Error #01: %s\n", responseErr), span.Tag("gin.errors"))
 		// client errors do not set the ext.Error tag
-		assert.Equal(nil, span.Tag(ext.Error))
+		assert.Zero(span.Tag(ext.Error))
 		assert.Equal(ext.SpanKindServer, span.Tag(ext.SpanKind))
 		assert.Equal("gin-gonic/gin", span.Tag(ext.Component))
 	})

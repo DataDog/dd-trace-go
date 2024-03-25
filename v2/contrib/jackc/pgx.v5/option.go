@@ -29,8 +29,8 @@ func defaultConfig() *config {
 
 type Option func(*config)
 
-// WithServiceName sets the service name to use for all spans.
-func WithServiceName(name string) Option {
+// WithService sets the service name to use for all spans.
+func WithService(name string) Option {
 	return func(c *config) {
 		c.serviceName = name
 	}
