@@ -11,6 +11,8 @@ import (
 	"github.com/DataDog/datadog-go/v5/statsd"
 )
 
+const DefaultDogstatsdAddr = "localhost:8125"
+
 type StatsdClient interface {
 	Incr(name string, tags []string, rate float64) error
 	Count(name string, value int64, tags []string, rate float64) error
@@ -23,15 +25,11 @@ type StatsdClient interface {
 // NewStatsdClient returns a new statsd client with the provided address and globaltags
 func NewStatsdClient(addr string, globalTags []string) (StatsdClient, error) {
 	if addr == "" {
-		addr = DefaultDogstatsdAddr()
+		addr = DefaultDogstatsdAddr
 	}
 	client, err := statsd.New(addr, statsd.WithMaxMessagesPerPayload(40), statsd.WithTags(globalTags))
 	if err != nil {
 		return &statsd.NoOpClient{}, err
 	}
 	return client, nil
-}
-
-func DefaultDogstatsdAddr() string {
-	return "localhost:8125"
 }
