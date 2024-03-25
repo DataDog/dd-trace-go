@@ -33,13 +33,15 @@ jobs:
         with:
           ref: ${{ inputs.ref || github.ref }}
 
-      - name: golangci-lint
-        uses: reviewdog/action-golangci-lint@v2
-        with:
-          go_version: ${{ inputs.go-version }}
-          golangci_lint_version: v1.52.2
-          fail_on_error: true
-          reporter: github-pr-review
+      ## Disabled for v2 until the main PR is merged,
+      ## as it's too large for reviewdog: https://github.com/DataDog/dd-trace-go/actions/runs/8423412332/job/23064985838#step:3:94
+      # - name: golangci-lint
+      #   uses: reviewdog/action-golangci-lint@v2
+      #   with:
+      #     go_version: ${{ inputs.go-version }}
+      #     golangci_lint_version: v1.52.2
+      #     fail_on_error: true
+      #     reporter: github-pr-review
 
   test-contrib:
     runs-on:
