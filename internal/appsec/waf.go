@@ -6,6 +6,8 @@
 package appsec
 
 import (
+	"encoding/json"
+	"fmt"
 	"github.com/DataDog/appsec-internal-go/limiter"
 	waf "github.com/DataDog/go-libddwaf/v2"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/config"
@@ -74,7 +76,66 @@ func actionFromEntry(e *config.ActionEntry) *sharedsec.Action {
 	}
 }
 
+const raspSSRFRule = `
+{
+	"id": "rasp-934-100",
+	"name": "Server-side request forgery exploit",
+	"tags": {
+		"type": "ssrf",
+		"category": "vulnerability_trigger",
+		"cwe": "918",
+		"capec": "1000/225/115/664",
+		"confidence": "0",
+		"module": "rasp"
+	},
+	"conditions": [
+		{
+			"parameters": {
+				"resource": [
+					{
+						"address": "server.io.net.url"
+					}
+				],
+				"params": [
+					{
+						"address": "server.request.query"
+					},
+					{
+						"address": "server.request.body"
+					},
+					{
+						"address": "server.request.path_params"
+					},
+					{
+						"address": "grpc.server.request.message"
+					},
+					{
+						"address": "graphql.server.all_resolvers"
+					},
+					{
+						"address": "graphql.server.resolver"
+					}
+				]
+			},
+			"operator": "ssrf_detector"
+		}
+	],
+	"transformers": [],
+	"on_match": [
+		"stack_trace"
+	]
+}
+`
+
 func newWAFHandle(rules config.RulesFragment, cfg *config.Config) (*wafHandle, error) {
+	var parsedSSRFRule map[string]interface{}
+	err := json.Unmarshal([]byte(raspSSRFRule), &parsedSSRFRule)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse RASP SSRF rule: %v", err)
+	}
+
+	rules.Rules = append(rules.Rules, parsedSSRFRule)
+
 	handle, err := waf.NewHandle(rules, cfg.Obfuscator.KeyRegex, cfg.Obfuscator.ValueRegex)
 	actions := sharedsec.Actions{
 		// Default built-in block action
