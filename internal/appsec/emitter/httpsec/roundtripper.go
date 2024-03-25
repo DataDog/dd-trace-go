@@ -22,8 +22,7 @@ type RoundTripArgs struct {
 func RoundTrip(args RoundTripArgs) (*http.Response, error) {
 	url := args.Req.URL.String()
 	opArgs := types.RoundTripOperationArgs{
-		URL:    url,
-		SpanID: args.SpanID,
+		URL: url,
 	}
 
 	parent := fromContext(args.Ctx)
