@@ -487,7 +487,7 @@ func TestPreservesMetadata(t *testing.T) {
 	assert.NotContains(t, s.Tags(), tagMetadataPrefix+"x-datadog-trace-id")
 	assert.NotContains(t, s.Tags(), tagMetadataPrefix+"x-datadog-parent-id")
 	assert.NotContains(t, s.Tags(), tagMetadataPrefix+"x-datadog-sampling-priority")
-	assert.Equal(t, []string{"test-value"}, s.Tag(tagMetadataPrefix+"test-key.0"))
+	assert.Equal(t, "test-value", s.Tag(tagMetadataPrefix+"test-key.0"))
 }
 
 func TestStreamSendsErrorCode(t *testing.T) {
