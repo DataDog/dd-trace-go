@@ -202,6 +202,7 @@ type Rule struct {
 // TraceSamplingRules creates a sampling rule that applies to the entire trace if any spans satisfy the criteria.
 func TraceSamplingRules(rules ...Rule) []SamplingRule {
 	var samplingRules []SamplingRule
+	var typ SamplingRuleType = SamplingRuleTrace
 	for _, r := range rules {
 		sr := SamplingRule{
 			Service:  globMatch(r.ServiceGlob),
@@ -209,6 +210,15 @@ func TraceSamplingRules(rules ...Rule) []SamplingRule {
 			Resource: globMatch(r.ResourceGlob),
 			Rate:     r.Rate,
 			ruleType: SamplingRuleTrace,
+			globRule: &jsonRule{
+				Service:      r.ServiceGlob,
+				Name:         r.NameGlob,
+				Rate:         json.Number(strconv.FormatFloat(r.Rate, 'f', -1, 64)),
+				MaxPerSecond: r.MaxPerSecond,
+				Resource:     r.ResourceGlob,
+				Tags:         r.Tags,
+				Type:         &typ,
+			},
 		}
 		if len(r.Tags) != 0 {
 			sr.Tags = make(map[string]*regexp.Regexp, len(r.Tags))
@@ -226,6 +236,7 @@ func TraceSamplingRules(rules ...Rule) []SamplingRule {
 // SpanSamplingRules creates a sampling rule that applies to a single span without affecting the entire trace.
 func SpanSamplingRules(rules ...Rule) []SamplingRule {
 	var samplingRules []SamplingRule
+	var typ SamplingRuleType = SamplingRuleSpan
 	for _, r := range rules {
 		sr := SamplingRule{
 			Service:      globMatch(r.ServiceGlob),
@@ -235,6 +246,15 @@ func SpanSamplingRules(rules ...Rule) []SamplingRule {
 			ruleType:     SamplingRuleSpan,
 			MaxPerSecond: r.MaxPerSecond,
 			limiter:      newSingleSpanRateLimiter(r.MaxPerSecond),
+			globRule: &jsonRule{
+				Service:      r.ServiceGlob,
+				Name:         r.NameGlob,
+				Rate:         json.Number(strconv.FormatFloat(r.Rate, 'f', -1, 64)),
+				MaxPerSecond: r.MaxPerSecond,
+				Resource:     r.ResourceGlob,
+				Tags:         r.Tags,
+				Type:         &typ,
+			},
 		}
 		if len(r.Tags) != 0 {
 			sr.Tags = make(map[string]*regexp.Regexp, len(r.Tags))
