@@ -57,10 +57,6 @@ type Tracer interface {
 // spans in a request, buffer and submit them to the server.
 type Span interface {
 	// SetTag sets a key/value pair as metadata on the span.
-	// The value can be of any trivial type that can be encoded as a string or support the fmt.Stringer interface.
-	// Structs implementing the msgp.Marshaler interface are also supported using msgp.AppendIntf.
-	// It can also be a map[string]any composed recursively of trivial types or msgp.Encodable types.
-	// Cf. https://pkg.go.dev/github.com/tinylib/msgp/msgp#AppendIntf
 	SetTag(key string, value interface{})
 
 	// SetOperationName sets the operation name for this span. An operation name should be
@@ -97,6 +93,8 @@ type SpanContext interface {
 	// false.
 	ForeachBaggageItem(handler func(k, v string) bool)
 }
+
+type MetaStructValue any
 
 // SpanLink represents a reference to a span that exists outside of the trace.
 //
