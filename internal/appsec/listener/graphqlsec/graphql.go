@@ -96,6 +96,7 @@ func (l *wafEventListener) onEvent(request *types.RequestOperation, _ types.Requ
 						},
 					},
 					l.config.WAFTimeout,
+					query.TagSetter,
 				)
 				shared.AddSecurityEvents(field, l.limiter, wafResult.Events)
 			}
