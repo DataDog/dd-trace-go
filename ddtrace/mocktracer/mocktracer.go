@@ -190,7 +190,6 @@ func (t *mocktracer) TracerConf() tracer.TracerConf {
 	return tracer.TracerConf{}
 }
 
-func (t *mocktracer) SubmitStats(*tracer.Span)               {}
-func (t *mocktracer) SubmitAbandonedSpan(*tracer.Span, bool) {}
-func (t *mocktracer) SubmitChunk(_ any)                      {}
-func (t *mocktracer) Flush()                                 {}
+func (t *mocktracer) Submit(*tracer.Span)       {}
+func (t *mocktracer) SubmitChunk(*tracer.Chunk) {}
+func (t *mocktracer) Flush()                    {}

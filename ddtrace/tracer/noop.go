@@ -29,13 +29,10 @@ func (NoopTracer) Inject(_ *SpanContext, _ interface{}) error { return nil }
 // Stop implements Tracer.
 func (NoopTracer) Stop() {}
 
-// TODO(kjn v2): These should be removed. They are here temporarily to facilitate
-// the shift to the v2 API.
 func (NoopTracer) TracerConf() TracerConf {
 	return TracerConf{}
 }
 
-func (NoopTracer) SubmitStats(*Span)               {}
-func (NoopTracer) SubmitAbandonedSpan(*Span, bool) {}
-func (NoopTracer) SubmitChunk(any)                 {}
-func (NoopTracer) Flush()                          {}
+func (NoopTracer) Submit(*Span)       {}
+func (NoopTracer) SubmitChunk(*Chunk) {}
+func (NoopTracer) Flush()             {}
