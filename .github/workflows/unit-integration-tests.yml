@@ -256,7 +256,7 @@ jobs:
               git clone https://github.com/grpc/grpc-go grpc && cd grpc
               git fetch origin && git checkout v1.2.0 && cd ../../..
 
-              # Checkout sketches-go@v1.0.0
+              # Checkout sketches-go@v1.1.0
               cd vendor/github.com/DataDog && rm -rf sketches-go
               git clone https://github.com/DataDog/sketches-go && cd sketches-go
               git fetch origin && git checkout v1.1.0 && cd ../../../..
