@@ -43,4 +43,17 @@ func TestAnalyticsSettings(t *testing.T) {
 		cfg := newConfig(WithAnalyticsRate(0.2))
 		assert.Equal(t, 0.2, cfg.analyticsRate)
 	})
+
+	t.Run("withEnv", func(t *testing.T) {
+		t.Setenv("DD_DATA_STREAMS_ENABLED", "true")
+		cfg := newConfig()
+		assert.True(t, cfg.dataStreamsEnabled)
+	})
+
+	t.Run("optionOverridesEnv", func(t *testing.T) {
+		t.Setenv("DD_DATA_STREAMS_ENABLED", "false")
+		cfg := newConfig()
+		WithDataStreams()(cfg)
+		assert.True(t, cfg.dataStreamsEnabled)
+	})
 }
