@@ -368,25 +368,29 @@ func TestRemoteActivationScenarios(t *testing.T) {
 	})
 }
 
-func TestCapabilities(t *testing.T) {
+func TestCapabilitiesAndProducts(t *testing.T) {
 	for _, tc := range []struct {
-		name     string
-		env      map[string]string
-		expected []remoteconfig.Capability
+		name      string
+		env       map[string]string
+		expectedC []remoteconfig.Capability
+		expectedP []string
 	}{
 		{
-			name:     "appsec-unspecified",
-			expected: []remoteconfig.Capability{remoteconfig.ASMActivation},
+			name:      "appsec-unspecified",
+			expectedC: []remoteconfig.Capability{remoteconfig.ASMActivation},
+			expectedP: []string{rc.ProductASMFeatures},
 		},
 		{
-			name:     "appsec-enabled/default-RulesManager",
-			env:      map[string]string{config.EnvEnabled: "1"},
-			expected: blockingCapabilities[:],
+			name:      "appsec-enabled/default-RulesManager",
+			env:       map[string]string{config.EnvEnabled: "1"},
+			expectedC: blockingCapabilities[:],
+			expectedP: []string{rc.ProductASM, rc.ProductASMData, rc.ProductASMDD},
 		},
 		{
-			name:     "appsec-enabled/RulesManager-from-env",
-			env:      map[string]string{config.EnvEnabled: "1", internal.EnvRules: "testdata/blocking.json"},
-			expected: []remoteconfig.Capability{},
+			name:      "appsec-enabled/RulesManager-from-env",
+			env:       map[string]string{config.EnvEnabled: "1", internal.EnvRules: "testdata/blocking.json"},
+			expectedC: []remoteconfig.Capability{},
+			expectedP: []string{},
 		},
 	} {
 
@@ -401,8 +405,14 @@ func TestCapabilities(t *testing.T) {
 			if !Enabled() && activeAppSec == nil {
 				t.Skip()
 			}
-			for _, cap := range tc.expected {
+
+			for _, cap := range tc.expectedC {
 				found, err := remoteconfig.HasCapability(cap)
+				require.NoError(t, err)
+				require.True(t, found)
+			}
+			for _, p := range tc.expectedP {
+				found, err := remoteconfig.HasProduct(p)
 				require.NoError(t, err)
 				require.True(t, found)
 			}
