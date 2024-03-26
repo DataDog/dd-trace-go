@@ -11,46 +11,45 @@ import (
 	"math/big"
 	"math/rand"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
-// random holds a thread-safe source of random numbers.
-var random *rand.Rand
-
-func init() {
-	var seed int64
-	n, err := cryptorand.Int(cryptorand.Reader, big.NewInt(math.MaxInt64))
-	if err == nil {
-		seed = n.Int64()
-	} else {
-		log.Warn("cannot generate random seed: %v; using current time", err)
-		seed = time.Now().UnixNano()
+var (
+	random   randT
+	warnOnce sync.Once
+	seedSeq  int64
+	randPool = sync.Pool{
+		New: func() interface{} {
+			var seed int64
+			n, err := cryptorand.Int(cryptorand.Reader, big.NewInt(math.MaxInt64))
+			if err == nil {
+				seed = n.Int64()
+			} else {
+				warnOnce.Do(func() {
+					log.Warn("cannot generate random seed: %v; using current time", err)
+				})
+				seed = time.Now().UnixNano()
+			}
+			// seedSeq makes sure we don't create two generators with the same seed
+			// by accident.
+			return rand.New(rand.NewSource(seed + atomic.AddInt64(&seedSeq, 1)))
+		},
 	}
-	random = rand.New(&safeSource{
-		source: rand.NewSource(seed),
-	})
-}
+)
 
-// safeSource holds a thread-safe implementation of rand.Source64.
-type safeSource struct {
-	source rand.Source
-	sync.Mutex
-}
+type randT struct{}
 
-func (rs *safeSource) Int63() int64 {
-	rs.Lock()
-	n := rs.source.Int63()
-	rs.Unlock()
-
-	return n
-}
-
-func (rs *safeSource) Uint64() uint64 { return uint64(rs.Int63()) }
-
-func (rs *safeSource) Seed(seed int64) {
-	rs.Lock()
-	rs.source.Seed(seed)
-	rs.Unlock()
+// Uint64 returns a random number. It's optimized for concurrent access.
+func (randT) Uint64() uint64 {
+	// sync.Pool is optimized so we end up with one *rand.Rand per P under load.
+	// This is pretty much optimal for avoiding contention.
+	r := randPool.Get().(*rand.Rand)
+	// NOTE: TestTextMapPropagator fails if we return r.Uint64() here. Seems like
+	// span ids are expected to be 64 bit with the first bit being 0?
+	v := uint64(r.Int63())
+	randPool.Put(r)
+	return v
 }
