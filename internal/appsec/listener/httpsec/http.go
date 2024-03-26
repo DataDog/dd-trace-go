@@ -34,8 +34,6 @@ const (
 	ServerRequestBodyAddr              = "server.request.body"
 	ServerResponseStatusAddr           = "server.response.status"
 	ServerResponseHeadersNoCookiesAddr = "server.response.headers.no_cookies"
-	HTTPClientIPAddr                   = "http.client_ip"
-	UserIDAddr                         = "usr.id"
 )
 
 // List of HTTP rule addresses currently supported by the WAF
@@ -49,8 +47,9 @@ var supportedAddresses = listener.AddressSet{
 	ServerRequestBodyAddr:              {},
 	ServerResponseStatusAddr:           {},
 	ServerResponseHeadersNoCookiesAddr: {},
-	HTTPClientIPAddr:                   {},
-	UserIDAddr:                         {},
+	shared.HTTPClientIPAddr:            {},
+	shared.UserIDAddr:                  {},
+	shared.ServerIoNetURLAddr:          {},
 }
 
 // Install registers the HTTP WAF Event Listener on the given root operation.
@@ -101,12 +100,16 @@ func (l *wafEventListener) onEvent(op *types.Operation, args types.HandlerOperat
 		return
 	}
 
-	if _, ok := l.addresses[UserIDAddr]; ok {
+	if _, ok := l.addresses[shared.ServerIoNetURLAddr]; ok {
+		shared.RegisterRoundTripper(op, wafCtx, l.limiter, l.config.WAFTimeout)
+	}
+
+	if _, ok := l.addresses[shared.UserIDAddr]; ok {
 		// OnUserIDOperationStart happens when appsec.SetUser() is called. We run the WAF and apply actions to
 		// see if the associated user should be blocked. Since we don't control the execution flow in this case
 		// (SetUser is SDK), we delegate the responsibility of interrupting the handler to the user.
 		dyngo.On(op, func(operation *sharedsec.UserIDOperation, args sharedsec.UserIDOperationArgs) {
-			wafResult := shared.RunWAF(wafCtx, waf.RunAddressData{Persistent: map[string]any{UserIDAddr: args.UserID}}, l.config.WAFTimeout)
+			wafResult := shared.RunWAF(wafCtx, waf.RunAddressData{Persistent: map[string]any{shared.UserIDAddr: args.UserID}}, l.config.WAFTimeout)
 			if wafResult.HasActions() || wafResult.HasEvents() {
 				processHTTPSDKAction(operation, l.actions, wafResult.Actions)
 				shared.AddSecurityEvents(op, l.limiter, wafResult.Events)
@@ -118,9 +121,9 @@ func (l *wafEventListener) onEvent(op *types.Operation, args types.HandlerOperat
 	values := make(map[string]any, 8)
 	for addr := range l.addresses {
 		switch addr {
-		case HTTPClientIPAddr:
+		case shared.HTTPClientIPAddr:
 			if args.ClientIP.IsValid() {
-				values[HTTPClientIPAddr] = args.ClientIP.String()
+				values[shared.HTTPClientIPAddr] = args.ClientIP.String()
 			}
 		case ServerRequestMethodAddr:
 			values[ServerRequestMethodAddr] = args.Method

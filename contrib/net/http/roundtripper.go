@@ -7,6 +7,8 @@ package http
 
 import (
 	"fmt"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/httpsec"
 	"math"
 	"net/http"
 	"os"
@@ -75,7 +77,16 @@ func (rt *roundTripper) RoundTrip(req *http.Request) (res *http.Response, err er
 			fmt.Fprintf(os.Stderr, "contrib/net/http.Roundtrip: failed to inject http headers: %v\n", err)
 		}
 	}
-	res, err = rt.base.RoundTrip(r2)
+	if appsec.Enabled() {
+		span.SetTag("_dd.appsec.rasp", "1")
+		res, err = httpsec.RoundTrip(httpsec.RoundTripArgs{
+			Ctx: ctx,
+			Req: r2,
+			Rt:  rt.base,
+		})
+	} else {
+		res, err = rt.base.RoundTrip(r2)
+	}
 	if err != nil {
 		span.SetTag("http.errors", err.Error())
 		if rt.cfg.errCheck == nil || rt.cfg.errCheck(err) {
