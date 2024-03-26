@@ -105,6 +105,16 @@ func LoadIntegration(name string) {
 	contribPackages = append(contribPackages, Integration{Name: name, Enabled: true})
 }
 
+// RegisterAppConfig allows to register a globally-defined application configuration.
+// This configuration will be sent when the telemetry client is started.
+func RegisterAppConfig(name string, value interface{}, origin string) {
+	globalAppConfig = append(globalAppConfig, Configuration{
+		Name:   name,
+		Value:  value,
+		Origin: origin,
+	})
+}
+
 // Time is used to track a distribution metric that measures the time (ms)
 // of some portion of code. It returns a function that should be called when
 // the desired code finishes executing.

@@ -44,9 +44,13 @@ var (
 	GlobalClient Client
 	globalClient sync.Mutex
 
-	// integrations tracks the the integrations enabled
+	// integrations tracks the integrations enabled
 	contribPackages []Integration
 	contrib         sync.Mutex
+
+	// Globally registered application configuration sent in the app-started request, along with the locally-defined
+	// configuration of the  event.
+	globalAppConfig []Configuration
 
 	// copied from dd-trace-go/profiler
 	defaultHTTPClient = &http.Client{
@@ -191,8 +195,13 @@ func (c *client) start(configuration []Configuration, namespace Namespace) {
 			Enabled: namespace == NamespaceProfilers,
 		},
 	}
+
+	var cfg []Configuration
+	cfg = append(cfg, globalAppConfig...)
+	cfg = append(cfg, configuration...)
+
 	payload := &AppStarted{
-		Configuration: configuration,
+		Configuration: cfg,
 		Products:      productInfo,
 	}
 	appStarted := c.newRequest(RequestTypeAppStarted)
