@@ -22,7 +22,7 @@ import (
 
 func TestProductEnabled(t *testing.T) {
 	client := new(client)
-	client.start(nil, NamespaceTracers)
+	client.start(nil, NamespaceTracers, true)
 	client.productChange(NamespaceProfilers, true)
 	// should just contain app-product-change
 	require.Len(t, client.requests, 1)
@@ -35,7 +35,7 @@ func TestProductEnabled(t *testing.T) {
 
 func TestConfigChange(t *testing.T) {
 	client := new(client)
-	client.start(nil, NamespaceTracers)
+	client.start(nil, NamespaceTracers, true)
 	client.configChange([]Configuration{BoolConfig("delta_profiles", true)})
 	require.Len(t, client.requests, 1)
 
@@ -137,4 +137,32 @@ func TestProductChange(t *testing.T) {
 			}
 		})
 	}
+}
+
+// Test that globally registered app config is sent in telemetry requests including the configuration state.
+func TestRegisterAppConfig(t *testing.T) {
+	client := new(client)
+	client.RegisterAppConfig("key1", "val1", "origin1")
+
+	// Test that globally registered app config is sent in app-started payloads
+	client.start([]Configuration{{Name: "key2", Value: "val2", Origin: "origin2"}}, NamespaceTracers, false)
+
+	req := client.requests[0].Body
+	require.Equal(t, RequestTypeAppStarted, req.RequestType)
+	appStarted := req.Payload.(*AppStarted)
+	cfg := appStarted.Configuration
+	require.Len(t, cfg, 2)
+	require.Contains(t, cfg, Configuration{Name: "key1", Value: "val1", Origin: "origin1"})
+	require.Contains(t, cfg, Configuration{Name: "key2", Value: "val2", Origin: "origin2"})
+
+	// Test that globally registered app config is sent in app-client-configuration-change payloads
+	client.ProductChange(NamespaceTracers, true, []Configuration{{Name: "key3", Value: "val3", Origin: "origin3"}})
+
+	req = client.requests[2].Body
+	require.Equal(t, RequestTypeAppClientConfigurationChange, req.RequestType)
+	appConfigChange := req.Payload.(*ConfigurationChange)
+	cfg = appConfigChange.Configuration
+	require.Len(t, cfg, 2)
+	require.Contains(t, cfg, Configuration{Name: "key1", Value: "val1", Origin: "origin1"})
+	require.Contains(t, cfg, Configuration{Name: "key3", Value: "val3", Origin: "origin3"})
 }

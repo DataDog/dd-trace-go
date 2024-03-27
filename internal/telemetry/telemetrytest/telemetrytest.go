@@ -27,6 +27,10 @@ type MockClient struct {
 	Metrics         map[telemetry.Namespace]map[string]float64
 }
 
+func (c *MockClient) RegisterAppConfig(name string, val interface{}, origin string) {
+	_ = c.Called(name, val, origin)
+}
+
 // ProductChange starts and adds configuration data to the mock client.
 func (c *MockClient) ProductChange(namespace telemetry.Namespace, enabled bool, configuration []telemetry.Configuration) {
 	c.mu.Lock()

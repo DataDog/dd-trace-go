@@ -30,6 +30,7 @@ import (
 // Client buffers and sends telemetry messages to Datadog (possibly through an
 // agent).
 type Client interface {
+	RegisterAppConfig(name string, val interface{}, origin string)
 	ProductChange(namespace Namespace, enabled bool, configuration []Configuration)
 	ConfigChange(configuration []Configuration)
 	Record(namespace Namespace, metric MetricKind, name string, value float64, tags []string, common bool)
@@ -44,7 +45,7 @@ var (
 	GlobalClient Client
 	globalClient sync.Mutex
 
-	// integrations tracks the the integrations enabled
+	// integrations tracks the integrations enabled
 	contribPackages []Integration
 	contrib         sync.Mutex
 
@@ -144,11 +145,25 @@ type client struct {
 	// metrics are sent
 	metrics    map[Namespace]map[string]*metric
 	newMetrics bool
+
+	// Globally registered application configuration sent in the app-started request, along with the locally-defined
+	// configuration of the  event.
+	globalAppConfig []Configuration
 }
 
 func log(msg string, args ...interface{}) {
 	// Debug level so users aren't spammed with telemetry info.
 	logger.Debug(fmt.Sprintf(LogPrefix+msg, args...))
+}
+
+// RegisterAppConfig allows to register a globally-defined application configuration.
+// This configuration will be sent when the telemetry client is started and over related configuration updates.
+func (c *client) RegisterAppConfig(name string, value interface{}, origin string) {
+	c.globalAppConfig = append(c.globalAppConfig, Configuration{
+		Name:   name,
+		Value:  value,
+		Origin: origin,
+	})
 }
 
 // start registers that the app has begun running with the app-started event.
@@ -158,7 +173,7 @@ func log(msg string, args ...interface{}) {
 // DD_TELEMETRY_HEARTBEAT_INTERVAL, DD_INSTRUMENTATION_TELEMETRY_DEBUG,
 // and DD_TELEMETRY_DEPENDENCY_COLLECTION_ENABLED.
 // TODO: implement passing in error information about tracer start
-func (c *client) start(configuration []Configuration, namespace Namespace) {
+func (c *client) start(configuration []Configuration, namespace Namespace, flush bool) {
 	if Disabled() {
 		return
 	}
@@ -191,8 +206,13 @@ func (c *client) start(configuration []Configuration, namespace Namespace) {
 			Enabled: namespace == NamespaceProfilers,
 		},
 	}
+
+	var cfg []Configuration
+	cfg = append(cfg, c.globalAppConfig...)
+	cfg = append(cfg, configuration...)
+
 	payload := &AppStarted{
-		Configuration: configuration,
+		Configuration: cfg,
 		Products:      productInfo,
 	}
 	appStarted := c.newRequest(RequestTypeAppStarted)
@@ -222,7 +242,9 @@ func (c *client) start(configuration []Configuration, namespace Namespace) {
 		c.scheduleSubmit(req)
 	}
 
-	c.flush()
+	if flush {
+		c.flush()
+	}
 	c.heartbeatInterval = heartbeatInterval()
 	c.heartbeatT = time.AfterFunc(c.heartbeatInterval, c.backgroundHeartbeat)
 }
