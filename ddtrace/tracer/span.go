@@ -164,12 +164,6 @@ func (s *span) SetTag(key string, value interface{}) {
 		return
 	}
 
-	// Can be sent as messagepack in `meta_struct` instead of `meta`
-	if value, ok := value.(ddtrace.MetaStructValue); ok {
-		s.setMetaStruct(key, value)
-		return
-	}
-
 	if value != nil {
 		// Arrays will be translated to dot notation. e.g.
 		// {"myarr.0": "foo", "myarr.1": "bar"}
@@ -188,7 +182,15 @@ func (s *span) SetTag(key string, value interface{}) {
 			}
 			return
 		}
+
+		// Can be sent as messagepack in `meta_struct` instead of `meta`
+		// reserved for internal use only
+		if v, ok := value.(sharedinternal.MetaStructValue); ok {
+			s.setMetaStruct(key, v.Value)
+			return
+		}
 	}
+
 	// not numeric, not a string, not a fmt.Stringer, not a bool, and not an error
 	s.setMeta(key, fmt.Sprint(value))
 }
