@@ -77,21 +77,3 @@ func HeaderTagsLen() int {
 func ClearHeaderTags() {
 	globalconfig.ClearHeaderTags()
 }
-
-// SetStatsCarrier sets the provided StatsCarrier onto the globalconfig.
-// This function is not intended for use by external consumers, no API stability is guaranteed.
-func SetStatsCarrier(sc *internal.StatsCarrier) {
-	globalconfig.SetStatsCarrier(sc)
-}
-
-// PushStat pushes the stat onto the StatsCarrier's stats channel, via the Add method.
-// This function is not intended for use by external consumers, no API stability is guaranteed.
-func PushStat(stat internal.Stat) {
-	globalconfig.PushStat(stat)
-}
-
-// StatsCarrier returns true if there is a StatsCarrier on the globalconfig, else false.
-// This function is not intended for use by external consumers, no API stability is guaranteed.
-func StatsCarrier() bool {
-	return globalconfig.StatsCarrier()
-}
