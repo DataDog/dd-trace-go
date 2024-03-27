@@ -73,6 +73,9 @@ const (
 	// CassandraCluster specifies the tag name that is used to set the cluster.
 	CassandraCluster = "cassandra.cluster"
 
+	// CassandraDatacenter specifies the tag name that is used to set the datacenter.
+	CassandraDatacenter = "cassandra.datacenter"
+
 	// CassandraRowCount specifies the tag name to use when settings the row count.
 	CassandraRowCount = "cassandra.row_count"
 
