@@ -173,7 +173,7 @@ func (c *client) RegisterAppConfig(name string, value interface{}, origin string
 // DD_TELEMETRY_HEARTBEAT_INTERVAL, DD_INSTRUMENTATION_TELEMETRY_DEBUG,
 // and DD_TELEMETRY_DEPENDENCY_COLLECTION_ENABLED.
 // TODO: implement passing in error information about tracer start
-func (c *client) start(configuration []Configuration, namespace Namespace) {
+func (c *client) start(configuration []Configuration, namespace Namespace, flush bool) {
 	if Disabled() {
 		return
 	}
@@ -242,7 +242,9 @@ func (c *client) start(configuration []Configuration, namespace Namespace) {
 		c.scheduleSubmit(req)
 	}
 
-	c.flush()
+	if flush {
+		c.flush()
+	}
 	c.heartbeatInterval = heartbeatInterval()
 	c.heartbeatT = time.AfterFunc(c.heartbeatInterval, c.backgroundHeartbeat)
 }

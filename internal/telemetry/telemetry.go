@@ -28,14 +28,14 @@ func (c *client) ProductChange(namespace Namespace, enabled bool, configuration 
 			// Namespace is not enabled & telemetry isn't started, won't start it now.
 			return
 		}
-		c.start(configuration, namespace)
+		c.start(configuration, namespace, true)
 		return
 	}
 
 	var cfg []Configuration
 	cfg = append(cfg, c.globalAppConfig...)
 	cfg = append(cfg, configuration...)
-	c.configChange(configuration)
+	c.configChange(cfg)
 
 	switch namespace {
 	case NamespaceTracers, NamespaceProfilers, NamespaceAppSec:
