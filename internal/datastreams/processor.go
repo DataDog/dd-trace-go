@@ -321,7 +321,7 @@ func (p *Processor) run(tick <-chan time.Time) {
 			p.sendToAgent(p.flush(time.Now().Add(bucketDuration * 10)))
 			close(done)
 		case <-p.stop:
-			// drop in flight payloads on the input channel
+			p.flushInput()
 			p.sendToAgent(p.flush(time.Now().Add(bucketDuration * 10)))
 			return
 		default:
