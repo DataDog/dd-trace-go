@@ -31,7 +31,12 @@ func (c *client) ProductChange(namespace Namespace, enabled bool, configuration 
 		c.start(configuration, namespace)
 		return
 	}
+
+	var cfg []Configuration
+	cfg = append(cfg, c.globalAppConfig...)
+	cfg = append(cfg, configuration...)
 	c.configChange(configuration)
+
 	switch namespace {
 	case NamespaceTracers, NamespaceProfilers, NamespaceAppSec:
 		c.productChange(namespace, enabled)
@@ -103,16 +108,6 @@ func LoadIntegration(name string) {
 	contrib.Lock()
 	defer contrib.Unlock()
 	contribPackages = append(contribPackages, Integration{Name: name, Enabled: true})
-}
-
-// RegisterAppConfig allows to register a globally-defined application configuration.
-// This configuration will be sent when the telemetry client is started.
-func RegisterAppConfig(name string, value interface{}, origin string) {
-	globalAppConfig = append(globalAppConfig, Configuration{
-		Name:   name,
-		Value:  value,
-		Origin: origin,
-	})
 }
 
 // Time is used to track a distribution metric that measures the time (ms)
