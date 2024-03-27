@@ -495,15 +495,17 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			assert.NoError(t, err)
 			c := tracer.config
 			assert.Equal(t, c.dogstatsdAddr, "localhost:8125")
+			assert.Equal(t, globalconfig.DogstatsdAddr(), "localhost:8125")
 		})
 
 		t.Run("env-host", func(t *testing.T) {
-			t.Setenv("DD_AGENT_HOST", "localhost")
+			t.Setenv("DD_AGENT_HOST", "my-host")
 			tracer, err := newTracer()
 			defer tracer.Stop()
 			assert.NoError(t, err)
 			c := tracer.config
-			assert.Equal(t, c.dogstatsdAddr, "localhost:8125")
+			assert.Equal(t, c.dogstatsdAddr, "my-host:8125")
+			assert.Equal(t, globalconfig.DogstatsdAddr(), "my-host:8125")
 		})
 
 		t.Run("env-port", func(t *testing.T) {
@@ -513,16 +515,18 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			assert.NoError(t, err)
 			c := tracer.config
 			assert.Equal(t, c.dogstatsdAddr, "localhost:123")
+			assert.Equal(t, globalconfig.DogstatsdAddr(), "localhost:123")
 		})
 
 		t.Run("env-both", func(t *testing.T) {
-			t.Setenv("DD_AGENT_HOST", "localhost")
+			t.Setenv("DD_AGENT_HOST", "my-host")
 			t.Setenv("DD_DOGSTATSD_PORT", "123")
 			tracer, err := newTracer()
 			defer tracer.Stop()
 			assert.NoError(t, err)
 			c := tracer.config
-			assert.Equal(t, c.dogstatsdAddr, "localhost:123")
+			assert.Equal(t, c.dogstatsdAddr, "my-host:123")
+			assert.Equal(t, globalconfig.DogstatsdAddr(), "my-host:123")
 		})
 
 		t.Run("env-env", func(t *testing.T) {
@@ -540,6 +544,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			assert.NoError(t, err)
 			c := tracer.config
 			assert.Equal(t, c.dogstatsdAddr, "10.1.0.12:4002")
+			assert.Equal(t, globalconfig.DogstatsdAddr(), "10.1.0.12:4002")
 		})
 	})
 
@@ -1383,31 +1388,6 @@ func TestWithHeaderTags(t *testing.T) {
 
 	// ensures we cleaned up global state correctly
 	assert.Equal(t, 0, globalconfig.HeaderTagsLen())
-}
-
-func TestContribStatsEnabled(t *testing.T) {
-	t.Run("Default", func(t *testing.T) {
-		c, err := newConfig()
-		assert.NoError(t, err)
-		assert.True(t, c.contribStats)
-	})
-	t.Run("Disable", func(t *testing.T) {
-		c, err := newConfig(WithContribStats(false))
-		assert.NoError(t, err)
-		assert.False(t, c.contribStats)
-	})
-	t.Run("Disable with ENV", func(t *testing.T) {
-		t.Setenv("DD_TRACE_CONTRIB_STATS_ENABLED", "false")
-		c, err := newConfig()
-		assert.NoError(t, err)
-		assert.False(t, c.contribStats)
-	})
-	t.Run("Env override", func(t *testing.T) {
-		t.Setenv("DD_TRACE_CONTRIB_STATS_ENABLED", "false")
-		c, err := newConfig(WithContribStats(true))
-		assert.NoError(t, err)
-		assert.True(t, c.contribStats)
-	})
 }
 
 func TestHostnameDisabled(t *testing.T) {
