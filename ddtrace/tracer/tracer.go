@@ -62,21 +62,23 @@ type Tracer interface {
 	// Inject injects a span context into the given carrier.
 	Inject(context *SpanContext, carrier interface{}) error
 
-	// Stop stops the tracer. Calls to Stop should be idempotent.
-	Stop()
+	// Submit submits a span to the tracer.
+	Submit(s *Span)
 
-	// TODO(kjn v2): These can be removed / consolidated. These are
-	// here temporarily as we figure out a sensible API.
+	// SubmitChunk submits a trace chunk to the tracer.
+	SubmitChunk(c *Chunk)
+
+	// TracerConf returns a snapshot of the current configuration of the tracer.
 	TracerConf() TracerConf
 
-	SubmitStats(*Span)
-	SubmitAbandonedSpan(*Span, bool)
-	SubmitChunk(any) // This is a horrible signature. This will eventually become SubmitChunk(Chunk)
-	Flush()          // Synchronous flushing
+	// Flush flushes any buffered traces. Flush is in effect only if a tracer
+	// is started. Users do not have to call Flush in order to ensure that
+	// traces reach Datadog. It is a convenience method dedicated to specific
+	// use cases.
+	Flush()
 
-	// TODO(kjn v2): Not sure if this belongs in the tracer.
-	// May be better to have a separate stats counting package / type.
-	//	Signal(Event)
+	// Stop stops the tracer. Calls to Stop should be idempotent.
+	Stop()
 }
 
 var _ Tracer = (*tracer)(nil)
@@ -400,7 +402,7 @@ func (t *tracer) worker(tick <-chan time.Time) {
 		select {
 		case trace := <-t.out:
 			t.sampleChunk(trace)
-			t.traceWriter.add(trace.Spans)
+			t.traceWriter.add(trace.spans)
 		case <-tick:
 			t.statsd.Incr("datadog.tracer.flush_triggered", []string{"reason:scheduled"}, 1)
 			t.traceWriter.flush()
@@ -423,7 +425,7 @@ func (t *tracer) worker(tick <-chan time.Time) {
 				select {
 				case trace := <-t.out:
 					t.sampleChunk(trace)
-					t.traceWriter.add(trace.Spans)
+					t.traceWriter.add(trace.spans)
 				default:
 					break loop
 				}
@@ -433,19 +435,25 @@ func (t *tracer) worker(tick <-chan time.Time) {
 	}
 }
 
-// Chunk holds information about a trace Chunk to be flushed, including its spans.
-// The Chunk may be a fully finished local trace Chunk, or only a portion of the local trace Chunk in the case of
+// Chunk holds information about a trace chunk to be flushed, including its spans.
+// The chunk may be a fully finished local trace chunk, or only a portion of the local trace chunk in the case of
 // partial flushing.
 type Chunk struct {
-	// TODO:(kjn v2) Should probably not be public, or be a different type.
-	Spans    []*Span
+	spans    []*Span
 	willSend bool // willSend indicates whether the trace will be sent to the agent.
+}
+
+func NewChunk(spans []*Span, willSend bool) *Chunk {
+	return &Chunk{
+		spans:    spans,
+		willSend: willSend,
+	}
 }
 
 // sampleChunk applies single-span sampling to the provided trace.
 func (t *tracer) sampleChunk(c *Chunk) {
-	if len(c.Spans) > 0 {
-		if p, ok := c.Spans[0].context.SamplingPriority(); ok && p > 0 {
+	if len(c.spans) > 0 {
+		if p, ok := c.spans[0].context.SamplingPriority(); ok && p > 0 {
 			// The trace is kept, no need to run single span sampling rules.
 			return
 		}
@@ -453,12 +461,12 @@ func (t *tracer) sampleChunk(c *Chunk) {
 	var kept []*Span
 	if t.rulesSampling.HasSpanRules() {
 		// Apply sampling rules to individual spans in the trace.
-		for _, span := range c.Spans {
+		for _, span := range c.spans {
 			if t.rulesSampling.SampleSpan(span) {
 				kept = append(kept, span)
 			}
 		}
-		if len(kept) > 0 && len(kept) < len(c.Spans) {
+		if len(kept) > 0 && len(kept) < len(c.spans) {
 			// Some spans in the trace were kept, so a partial trace will be sent.
 			tracerstats.Signal(tracerstats.PartialTraces, 1)
 		}
@@ -466,22 +474,14 @@ func (t *tracer) sampleChunk(c *Chunk) {
 	if len(kept) == 0 {
 		tracerstats.Signal(tracerstats.DroppedP0Traces, 1)
 	}
-	tracerstats.Signal(tracerstats.DroppedP0Spans, uint32(len(c.Spans)-len(kept)))
+	tracerstats.Signal(tracerstats.DroppedP0Spans, uint32(len(c.spans)-len(kept)))
 	if !c.willSend {
-		c.Spans = kept
+		c.spans = kept
 	}
 }
 
-func (t *tracer) SubmitChunk(c any) {
-	// TODO(kjn v2): This will be unified with pushChunk, and only one function will exist.
-	// This is here right now because of the lack of appropriate exported types.
-
-	ch := c.(*Chunk) // TODO(kjn v2): This can panic. Once the appropriate types are moved, this assertion will be removed.
-	t.pushChunk(ch)
-}
-
 func (t *tracer) pushChunk(trace *Chunk) {
-	tracerstats.Signal(tracerstats.SpansFinished, uint32(len(trace.Spans)))
+	tracerstats.Signal(tracerstats.SpansFinished, uint32(len(trace.spans)))
 	select {
 	case <-t.stop:
 		return
@@ -490,7 +490,7 @@ func (t *tracer) pushChunk(trace *Chunk) {
 	select {
 	case t.out <- trace:
 	default:
-		log.Error("payload queue full, dropping %d traces", len(trace.Spans))
+		log.Error("payload queue full, dropping %d traces", len(trace.spans))
 	}
 }
 
@@ -776,7 +776,22 @@ func (t *tracer) TracerConf() TracerConf {
 	}
 }
 
-func (t *tracer) SubmitStats(s *Span) {
+func (t *tracer) Submit(s *Span) {
+	tc := t.TracerConf()
+	if !tc.Disabled {
+		// we have an active tracer
+		if tc.CanComputeStats && shouldComputeStats(s) {
+			// the agent supports computed stats
+			t.submitStats(s)
+		}
+		if tc.DebugAbandonedSpans {
+			// the tracer supports debugging abandoned spans
+			t.submitAbandonedSpan(s, true)
+		}
+	}
+}
+
+func (t *tracer) submitStats(s *Span) {
 	select {
 	case t.stats.In <- newAggregableSpan(s, t.obfuscator):
 		// ok
@@ -785,13 +800,17 @@ func (t *tracer) SubmitStats(s *Span) {
 	}
 }
 
-func (t *tracer) SubmitAbandonedSpan(s *Span, finished bool) {
+func (t *tracer) submitAbandonedSpan(s *Span, finished bool) {
 	select {
 	case t.abandonedSpansDebugger.In <- newAbandonedSpanCandidate(s, finished):
 		// ok
 	default:
 		log.Error("Abandoned spans channel full, disregarding span.")
 	}
+}
+
+func (t *tracer) SubmitChunk(c *Chunk) {
+	t.pushChunk(c)
 }
 
 // sampleRateMetricKey is the metric key holding the applied sample rate. Has to be the same as the Agent.

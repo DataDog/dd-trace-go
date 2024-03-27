@@ -642,20 +642,10 @@ func (s *Span) finish(finishTime int64) {
 	keep := true
 	if t := GetGlobalTracer(); t != nil {
 		tc := t.TracerConf()
-		if !tc.Disabled {
-			// we have an active tracer
-			if tc.CanComputeStats && shouldComputeStats(s) {
-				// the agent supports computed stats
-				t.SubmitStats(s)
-			}
-			if tc.CanDropP0s {
-				// the agent supports dropping p0's in the client
-				keep = shouldKeep(s)
-			}
-			if tc.DebugAbandonedSpans {
-				// the tracer supports debugging abandoned spans
-				t.SubmitAbandonedSpan(s, true)
-			}
+		t.Submit(s)
+		if tc.CanDropP0s {
+			// the agent supports dropping p0's in the client
+			keep = shouldKeep(s)
 		}
 	}
 	if keep {
