@@ -499,13 +499,13 @@ func TestTracerOptionsDefaults(t *testing.T) {
 		})
 
 		t.Run("env-host", func(t *testing.T) {
-			t.Setenv("DD_AGENT_HOST", "my-host")
+			t.Setenv("DD_AGENT_HOST", "localhost")
 			tracer, err := newTracer()
 			defer tracer.Stop()
 			assert.NoError(t, err)
 			c := tracer.config
-			assert.Equal(t, c.dogstatsdAddr, "my-host:8125")
-			assert.Equal(t, globalconfig.DogstatsdAddr(), "my-host:8125")
+			assert.Equal(t, c.dogstatsdAddr, "localhost:8125")
+			assert.Equal(t, globalconfig.DogstatsdAddr(), "localhost:8125")
 		})
 
 		t.Run("env-port", func(t *testing.T) {
@@ -519,14 +519,14 @@ func TestTracerOptionsDefaults(t *testing.T) {
 		})
 
 		t.Run("env-both", func(t *testing.T) {
-			t.Setenv("DD_AGENT_HOST", "my-host")
+			t.Setenv("DD_AGENT_HOST", "localhost")
 			t.Setenv("DD_DOGSTATSD_PORT", "123")
 			tracer, err := newTracer()
 			defer tracer.Stop()
 			assert.NoError(t, err)
 			c := tracer.config
-			assert.Equal(t, c.dogstatsdAddr, "my-host:123")
-			assert.Equal(t, globalconfig.DogstatsdAddr(), "my-host:123")
+			assert.Equal(t, c.dogstatsdAddr, "localhost:123")
+			assert.Equal(t, globalconfig.DogstatsdAddr(), "localhost:123")
 		})
 
 		t.Run("env-env", func(t *testing.T) {
