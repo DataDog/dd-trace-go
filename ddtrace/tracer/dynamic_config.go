@@ -11,6 +11,12 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 )
 
+const (
+	originDefault      = "default"
+	originEnvVar       = "env_var"
+	originRemoteConfig = "remote_config"
+)
+
 // dynamicConfig is a thread-safe generic data structure to represent configuration fields.
 // It's designed to satisfy the dynamic configuration semantics (i.e reset, update, apply configuration changes).
 // This structure will be extended to track the origin of configuration values as well (e.g remote_config, env_var).
@@ -26,11 +32,12 @@ type dynamicConfig[T any] struct {
 
 func newDynamicConfig[T any](name string, val T, apply func(T) bool, equal func(x, y T) bool) dynamicConfig[T] {
 	return dynamicConfig[T]{
-		cfgName: name,
-		current: val,
-		startup: val,
-		apply:   apply,
-		equal:   equal,
+		cfgName:   name,
+		current:   val,
+		startup:   val,
+		apply:     apply,
+		equal:     equal,
+		cfgOrigin: originDefault,
 	}
 }
 
@@ -61,7 +68,8 @@ func (dc *dynamicConfig[T]) reset() bool {
 		return false
 	}
 	dc.current = dc.startup
-	dc.cfgOrigin = ""
+	// TODO: set the origin to the startup value's origin
+	dc.cfgOrigin = originDefault
 	return dc.apply(dc.startup)
 }
 
@@ -69,7 +77,7 @@ func (dc *dynamicConfig[T]) reset() bool {
 // Returns whether the configuration value has been updated or not
 func (dc *dynamicConfig[T]) handleRC(val *T) bool {
 	if val != nil {
-		return dc.update(*val, "remote_config")
+		return dc.update(*val, originRemoteConfig)
 	}
 	return dc.reset()
 }
