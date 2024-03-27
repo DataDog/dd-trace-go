@@ -1,6 +1,8 @@
 # go
 bin/
 go.work*
+!/go.work
+!/go.work.sum
 
 # profiling
 *.test
@@ -15,7 +17,7 @@ go.work*
 dd-trace-go.iml
 vendor
 
-/contrib/google.golang.org/grpc.v12/vendor/
-/contrib_coverage.txt
+contrib_coverage*.txt
 /core_coverage.txt
-/gotestsum-report.xml
+gotestsum-report*.xml
+/internal/apps/unit-of-work/unit-of-work

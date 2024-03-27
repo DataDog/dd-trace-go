@@ -10,9 +10,9 @@ import (
 	"fmt"
 	"testing"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
-	grpcsec "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/grpcsec"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/grpcsec/types"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec/dyngo"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec/emitter/grpcsec"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec/emitter/grpcsec/types"
 
 	"github.com/stretchr/testify/require"
 )

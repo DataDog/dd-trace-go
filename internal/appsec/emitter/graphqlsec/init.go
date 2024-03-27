@@ -6,8 +6,8 @@
 package graphqlsec
 
 import (
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener/graphqlsec"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec/listener/graphqlsec"
 )
 
 func init() {

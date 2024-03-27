@@ -8,8 +8,8 @@ package types
 import (
 	"net/netip"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/trace"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec/dyngo"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec/trace"
 )
 
 // Abstract gRPC server handler operation definitions. It is based on two

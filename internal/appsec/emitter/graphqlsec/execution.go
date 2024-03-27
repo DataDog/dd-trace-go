@@ -12,9 +12,9 @@ package graphqlsec
 import (
 	"context"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/graphqlsec/types"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/trace"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec/dyngo"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec/emitter/graphqlsec/types"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec/trace"
 )
 
 // StartExecutionOperation starts a new GraphQL query operation, along with the given arguments, and

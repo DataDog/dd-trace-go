@@ -15,14 +15,38 @@ import (
 
 	internal "github.com/DataDog/appsec-internal-go/appsec"
 	waf "github.com/DataDog/go-libddwaf/v2"
-	pAppsec "gopkg.in/DataDog/dd-trace-go.v1/appsec"
-	httptrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/config"
+
+	pAppsec "github.com/DataDog/dd-trace-go/v2/appsec"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec/config"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec/emitter/httpsec"
+	"github.com/DataDog/dd-trace-go/v2/internal/contrib/httptrace"
 
 	"github.com/stretchr/testify/require"
 )
+
+type mockServeMux struct {
+	*http.ServeMux
+}
+
+func (mux *mockServeMux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	span, ctx := httptrace.StartRequestSpan(r)
+	defer func() {
+		httptrace.FinishRequestSpan(span, http.StatusOK)
+	}()
+	h := http.Handler(mux.ServeMux)
+	if appsec.Enabled() {
+		h = httpsec.WrapHandler(h, span, make(map[string]string))
+	}
+	h.ServeHTTP(w, r.WithContext(ctx))
+}
+
+func newMockServeMux() *mockServeMux {
+	return &mockServeMux{
+		http.NewServeMux(),
+	}
+}
 
 func TestCustomRules(t *testing.T) {
 	t.Setenv("DD_APPSEC_RULES", "testdata/custom_rules.json")
@@ -34,7 +58,7 @@ func TestCustomRules(t *testing.T) {
 	}
 
 	// Start and trace an HTTP server
-	mux := httptrace.NewServeMux()
+	mux := newMockServeMux()
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("Hello World!\n"))
 	})
@@ -91,7 +115,7 @@ func TestUserRules(t *testing.T) {
 	}
 
 	// Start and trace an HTTP server
-	mux := httptrace.NewServeMux()
+	mux := newMockServeMux()
 	mux.HandleFunc("/hello", func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("Hello World!\n"))
 	})
@@ -157,7 +181,7 @@ func TestWAF(t *testing.T) {
 	}
 
 	// Start and trace an HTTP server
-	mux := httptrace.NewServeMux()
+	mux := newMockServeMux()
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("Hello World!\n"))
 	})
@@ -313,7 +337,7 @@ func TestBlocking(t *testing.T) {
 	)
 
 	// Start and trace an HTTP server
-	mux := httptrace.NewServeMux()
+	mux := newMockServeMux()
 	mux.HandleFunc("/ip", func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("Hello World!\n"))
 	})
@@ -425,7 +449,6 @@ func TestBlocking(t *testing.T) {
 				require.Len(t, spans, 1)
 				require.Contains(t, spans[0].Tag("_dd.appsec.json"), tc.ruleMatch)
 			}
-
 		})
 	}
 }
@@ -437,7 +460,7 @@ func TestAPISecurity(t *testing.T) {
 	if wafOK, err := waf.Health(); !wafOK {
 		t.Skipf("WAF must be usable for this test to run correctly: %v", err)
 	}
-	mux := httptrace.NewServeMux()
+	mux := newMockServeMux()
 	mux.HandleFunc("/apisec", func(w http.ResponseWriter, r *http.Request) {
 		pAppsec.MonitorParsedHTTPBody(r.Context(), "plain body")
 		w.Write([]byte("Hello World!\n"))

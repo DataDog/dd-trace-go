@@ -6,8 +6,8 @@
 package grpcsec
 
 import (
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener/grpcsec"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec/listener/grpcsec"
 )
 
 func init() {

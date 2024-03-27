@@ -17,14 +17,13 @@ import (
 	"net/http"
 	"strings"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/httpsec/types"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/sharedsec"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/trace"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/trace/httptrace"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec/dyngo"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec/emitter/httpsec/types"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec/emitter/sharedsec"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec/listener"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec/trace"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec/trace/httptrace"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 
 	"github.com/DataDog/appsec-internal-go/netip"
 )
@@ -62,7 +61,7 @@ func ExecuteSDKBodyOperation(parent dyngo.Operation, args types.SDKBodyOperation
 // context since it uses a queue of handlers and it's the only way to make
 // sure other queued handlers don't get executed.
 // TODO: this patch must be removed/improved when we rework our actions/operations system
-func WrapHandler(handler http.Handler, span ddtrace.Span, pathParams map[string]string, onBlock ...func()) http.Handler {
+func WrapHandler(handler http.Handler, span trace.TagSetter, pathParams map[string]string, onBlock ...func()) http.Handler {
 	trace.SetAppSecEnabledTags(span)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ipTags, clientIP := httptrace.ClientIPTags(r.Header, true, r.RemoteAddr)

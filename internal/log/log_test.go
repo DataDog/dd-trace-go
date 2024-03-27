@@ -21,6 +21,8 @@ type testLogger struct {
 	lines []string
 }
 
+var _ Logger = &testLogger{}
+
 // Print implements Logger.
 func (tp *testLogger) Log(msg string) {
 	tp.mu.Lock()
@@ -56,7 +58,7 @@ func TestLog(t *testing.T) {
 	t.Run("Debug", func(t *testing.T) {
 		t.Run("on", func(t *testing.T) {
 			tp.Reset()
-			defer func(old Level) { level = old }(level)
+			defer func(old Level) { levelThreshold = old }(levelThreshold)
 			SetLevel(LevelDebug)
 			assert.True(t, DebugEnabled())
 
