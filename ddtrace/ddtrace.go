@@ -94,8 +94,6 @@ type SpanContext interface {
 	ForeachBaggageItem(handler func(k, v string) bool)
 }
 
-type MetaStructValue any
-
 // SpanLink represents a reference to a span that exists outside of the trace.
 //
 //go:generate msgp -unexported -marshal=false -o=span_link_msgp.go -tests=false
