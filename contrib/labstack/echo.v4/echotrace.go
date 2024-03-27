@@ -52,11 +52,7 @@ func Middleware(opts ...Option) echo.MiddlewareFunc {
 		return func(c echo.Context) error {
 			// If we have an ignoreRequestFunc, use it to see if we proceed with tracing
 			if cfg.ignoreRequestFunc != nil && cfg.ignoreRequestFunc(c) {
-				if err := next(c); err != nil {
-					c.Error(err)
-					return err
-				}
-				return nil
+				return next(c)
 			}
 
 			request := c.Request()
@@ -90,9 +86,6 @@ func Middleware(opts ...Option) echo.MiddlewareFunc {
 			// serve the request to the next middleware
 			err := next(c)
 			if err != nil && !shouldIgnoreError(cfg, err) {
-				// invokes the registered HTTP error handler
-				c.Error(err)
-
 				// It is impossible to determine what the final status code of a request is in echo.
 				// This is the best we can do.
 				if echoErr, ok := cfg.translateError(err); ok {
