@@ -31,3 +31,6 @@ go.sum
 # Gitlab configuration
 .gitlab-ci.yml                  @DataDog/dd-trace-go-guild @DataDog/apm-core-reliability-and-performance
 /.gitlab-ci                     @DataDog/dd-trace-go-guild @DataDog/apm-core-reliability-and-performance
+
+# Security
+/.gitlab/software_composition_analysis.yaml  @DataDog/software-integrity-and-trust
