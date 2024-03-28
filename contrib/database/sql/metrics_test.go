@@ -29,11 +29,13 @@ func resetGlobalConfig() {
 // Test that statsTags(*config) returns tags from the provided *config + whatever is on the globalconfig
 func TestStatsTags(t *testing.T) {
 	t.Run("default none", func(t *testing.T) {
+		resetGlobalConfig()
 		cfg := new(config)
 		tags := statsTags(cfg)
 		assert.Len(t, tags, 0)
 	})
 	t.Run("cfg only", func(t *testing.T) {
+		resetGlobalConfig()
 		cfg := new(config)
 		cfg.applyTags()
 		tags := statsTags(cfg)
@@ -42,14 +44,15 @@ func TestStatsTags(t *testing.T) {
 		assert.Contains(t, tags, "tag:value")
 	})
 	t.Run("inherit globalconfig", func(t *testing.T) {
+		resetGlobalConfig()
 		cfg := new(config)
 		setGlobalCfgTags()
 		tags := statsTags(cfg)
 		assert.Len(t, tags, 1)
 		assert.Contains(t, tags, "globaltag:globalvalue")
-		resetGlobalConfig()
 	})
 	t.Run("both", func(t *testing.T) {
+		resetGlobalConfig()
 		cfg := new(config)
 		cfg.applyTags()
 		setGlobalCfgTags()
@@ -58,6 +61,6 @@ func TestStatsTags(t *testing.T) {
 		assert.Contains(t, tags, "globaltag:globalvalue")
 		assert.Contains(t, tags, "service:my-svc")
 		assert.Contains(t, tags, "tag:value")
-		resetGlobalConfig()
 	})
+	resetGlobalConfig()
 }
