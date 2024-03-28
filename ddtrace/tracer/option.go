@@ -701,11 +701,7 @@ func (c *config) canDropP0s() bool {
 func statsTags(c *config) []string {
 	tags := []string{
 		"lang:go",
-		"version:" + version.Tag,
 		"lang_version:" + runtime.Version(),
-	}
-	if c.serviceName != "" {
-		tags = append(tags, "service:"+c.serviceName)
 	}
 	if c.env != "" {
 		tags = append(tags, "env:"+c.env)
@@ -717,6 +713,11 @@ func statsTags(c *config) []string {
 		if vstr, ok := v.(string); ok {
 			tags = append(tags, k+":"+vstr)
 		}
+	}
+	globalconfig.SetStatsTags(tags)
+	tags = append(tags, version.Tag)
+	if c.serviceName != "" {
+		tags = append(tags, "service:"+c.serviceName)
 	}
 	return tags
 }
