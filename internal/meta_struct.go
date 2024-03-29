@@ -8,5 +8,5 @@ package internal
 // MetaStructValue is a custom type wrapper used to send metadata to the agent via the `meta_struct` field
 // instead of the `meta` inside a span.
 type MetaStructValue struct {
-	Value any
+	Value any // TODO: further constraining Value's type, especially if it becomes public
 }
