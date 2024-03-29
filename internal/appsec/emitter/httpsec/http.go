@@ -86,7 +86,7 @@ func WrapHandlerOpts(handler http.Handler, span ddtrace.Span, pathParams map[str
 			// in case we are instrumenting the Gin framework
 			if blocking {
 				op.SetTag(trace.BlockedRequestTag, true)
-				for _, f := range cfg.onBlock {
+				for _, f := range cfg.OnBlock {
 					f()
 				}
 			}
@@ -99,7 +99,7 @@ func WrapHandlerOpts(handler http.Handler, span ddtrace.Span, pathParams map[str
 			// extra headers have been added such as the Host header which is removed from the original Go request headers
 			// map
 			setRequestHeadersTags(span, args.Headers)
-			setResponseHeadersTags(span, cfg.responseHdrFetcher(w))
+			setResponseHeadersTags(span, cfg.ResponseHdrFetcher(w))
 			trace.SetTags(span, op.Tags())
 			if len(events) > 0 {
 				httptrace.SetSecurityEventsTags(span, events)

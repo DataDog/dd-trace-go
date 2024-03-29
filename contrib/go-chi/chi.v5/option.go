@@ -28,7 +28,7 @@ type config struct {
 	modifyResourceName func(resourceName string) string
 	headerTags         *internal.LockMap
 	resourceNamer      func(r *http.Request) string
-	appsecEnabled      bool
+	appsecDisabled     bool
 	appsecOptions      []httpsec.WrapHandlerOption
 }
 
@@ -48,7 +48,7 @@ func defaults(cfg *config) {
 	cfg.modifyResourceName = func(s string) string { return s }
 	// for backward compatibility with modifyResourceName, initialize resourceName as nil.
 	cfg.resourceNamer = nil
-	cfg.appsecEnabled = true
+	cfg.appsecDisabled = false
 }
 
 // WithServiceName sets the given service name for the router.
@@ -135,19 +135,26 @@ func WithResourceNamer(fn func(r *http.Request) string) Option {
 	}
 }
 
-// WithAppsecEnabled specifies whether to enable the AppSec middleware.
-// Ignored if DD_APPSEC_ENABLED env var != "true"
-// This is intended to allow applications to override the global setting on a per-call basis.
-func WithAppsecEnabled(enabled bool) Option {
+// WithAppsecDisabled specifies whether to enable the AppSec middleware at run-time.
+// This has not effect if AppSec is not enabled globally via the DD_APPSEC_ENABLED environment variable,
+// and is intended to allow applications to disable AppSec at runtime.
+func WithAppsecDisabled(disabled bool) Option {
 	return func(cfg *config) {
-		cfg.appsecEnabled = enabled
+		cfg.appsecDisabled = disabled
 	}
 }
 
+// WithAppsecOptions allows for specifying options for the AppSec middleware.
 func WithAppsecOptions(opts ...httpsec.WrapHandlerOption) Option {
 	return func(cfg *config) {
 		cfg.appsecOptions = opts
 	}
 }
 
-var WithResponseHdrFetcher = httpsec.WithResponseHdrFetcher
+// WithResponseHdrFetcher provides a function to fetch the response headers from the http.ResponseWriter.
+// This allows for custom implementations as needed if you over-ride the default http.ResponseWriter.
+func WithResponseHdrFetcher(f func(http.ResponseWriter) http.Header) httpsec.WrapHandlerOption {
+	return func(cfg *httpsec.WrapHandlerCfg) {
+		cfg.ResponseHdrFetcher = f
+	}
+}
