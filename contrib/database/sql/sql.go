@@ -19,7 +19,6 @@ import (
 	"context"
 	"database/sql"
 	"database/sql/driver"
-	"fmt"
 	"reflect"
 	"sync"
 	"time"
@@ -212,7 +211,7 @@ func OpenDB(c driver.Connector, opts ...Option) *sql.DB {
 	}
 	db := sql.OpenDB(tc)
 	if cfg.dbStats {
-		go pollDBStats(db, []string{fmt.Sprintf("drivername:%v", driverName)})
+		go pollDBStats(cfg.statsdClient, db)
 	}
 	return db
 }
@@ -254,4 +253,5 @@ func processOptions(cfg *config, driverName string, driver driver.Driver, dsn st
 		fn(cfg)
 	}
 	cfg.checkDBMPropagation(driverName, driver, dsn)
+	cfg.checkStatsdRequired()
 }

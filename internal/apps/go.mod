@@ -1,6 +1,6 @@
 module github.com/DataDog/dd-trace-go/internal/apps
 
-go 1.19
+go 1.20
 
 require (
 	golang.org/x/sync v0.3.0
@@ -9,7 +9,7 @@ require (
 
 require (
 	github.com/DataDog/appsec-internal-go v1.5.0 // indirect
-	github.com/DataDog/go-libddwaf/v2 v2.3.2 // indirect
+	github.com/DataDog/go-libddwaf/v2 v2.4.2 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/ebitengine/purego v0.6.0-alpha.5 // indirect
 	github.com/golang/protobuf v1.5.3 // indirect

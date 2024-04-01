@@ -1,6 +1,6 @@
 module gopkg.in/DataDog/dd-trace-go.v1
 
-go 1.19
+go 1.20
 
 require (
 	cloud.google.com/go/pubsub v1.33.0
@@ -9,7 +9,7 @@ require (
 	github.com/DataDog/datadog-agent/pkg/obfuscate v0.48.0
 	github.com/DataDog/datadog-agent/pkg/remoteconfig/state v0.48.1
 	github.com/DataDog/datadog-go/v5 v5.3.0
-	github.com/DataDog/go-libddwaf/v2 v2.3.2
+	github.com/DataDog/go-libddwaf/v2 v2.4.2
 	github.com/DataDog/gostackparse v0.7.0
 	github.com/DataDog/sketches-go v1.4.2
 	github.com/IBM/sarama v1.40.0
@@ -47,11 +47,11 @@ require (
 	github.com/go-redis/redis/v8 v8.11.5
 	github.com/go-sql-driver/mysql v1.6.0
 	github.com/gocql/gocql v0.0.0-20220224095938-0eacd3183625
-	github.com/gofiber/fiber/v2 v2.50.0
+	github.com/gofiber/fiber/v2 v2.52.1
 	github.com/golang/protobuf v1.5.3
 	github.com/gomodule/redigo v1.8.9
 	github.com/google/pprof v0.0.0-20230817174616-7a8ec2ada47b
-	github.com/google/uuid v1.3.1
+	github.com/google/uuid v1.5.0
 	github.com/gorilla/mux v1.8.0
 	github.com/graph-gophers/graphql-go v1.5.0
 	github.com/graphql-go/graphql v0.8.1
@@ -60,7 +60,7 @@ require (
 	github.com/hashicorp/go-multierror v1.1.1
 	github.com/hashicorp/vault/api v1.9.2
 	github.com/hashicorp/vault/sdk v0.9.2
-	github.com/jackc/pgx/v5 v5.4.2
+	github.com/jackc/pgx/v5 v5.5.4
 	github.com/jinzhu/gorm v1.9.16
 	github.com/jmoiron/sqlx v1.3.5
 	github.com/julienschmidt/httprouter v1.3.0
@@ -82,7 +82,7 @@ require (
 	github.com/tinylib/msgp v1.1.8
 	github.com/twitchtv/twirp v8.1.3+incompatible
 	github.com/urfave/negroni v1.0.0
-	github.com/valyala/fasthttp v1.50.0
+	github.com/valyala/fasthttp v1.51.0
 	github.com/vektah/gqlparser/v2 v2.5.8
 	github.com/zenazn/goji v1.0.1
 	go.mongodb.org/mongo-driver v1.12.1
@@ -191,7 +191,7 @@ require (
 	github.com/imdario/mergo v0.3.12 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
 	github.com/jackc/pgservicefile v0.0.0-20221227161230-091c0ba34f0a // indirect
-	github.com/jackc/puddle/v2 v2.2.0 // indirect
+	github.com/jackc/puddle/v2 v2.2.1 // indirect
 	github.com/jcmturner/aescts/v2 v2.0.0 // indirect
 	github.com/jcmturner/dnsutils/v2 v2.0.0 // indirect
 	github.com/jcmturner/gofork v1.7.6 // indirect

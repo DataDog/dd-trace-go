@@ -6,6 +6,8 @@
 package appsec_test
 
 import (
+	"encoding/json"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener/httpsec"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -490,4 +492,77 @@ func TestAPISecurity(t *testing.T) {
 		require.Nil(t, spans[0].Tag("_dd.appsec.s.req.query"))
 		require.Nil(t, spans[0].Tag("_dd.appsec.s.req.body"))
 	})
+}
+
+// BenchmarkSampleWAFContext benchmarks the creation of a WAF context and running the WAF on a request/response pair
+// This is a basic sample of what could happen in a real-world scenario.
+func BenchmarkSampleWAFContext(b *testing.B) {
+	rules, err := internal.DefaultRuleset()
+	if err != nil {
+		b.Fatalf("error loading rules: %v", err)
+	}
+
+	var parsedRuleset map[string]any
+	err = json.Unmarshal(rules, &parsedRuleset)
+	if err != nil {
+		b.Fatalf("error parsing rules: %v", err)
+	}
+
+	handle, err := waf.NewHandle(parsedRuleset, internal.DefaultObfuscatorKeyRegex, internal.DefaultObfuscatorValueRegex)
+	for i := 0; i < b.N; i++ {
+		ctx := waf.NewContext(handle)
+		if ctx == nil {
+			b.Fatal("nil context")
+		}
+
+		// Request WAF Run
+		_, err := ctx.Run(
+			waf.RunAddressData{
+				Persistent: map[string]any{
+					httpsec.HTTPClientIPAddr:        "1.1.1.1",
+					httpsec.ServerRequestMethodAddr: "GET",
+					httpsec.ServerRequestRawURIAddr: "/",
+					httpsec.ServerRequestHeadersNoCookiesAddr: map[string][]string{
+						"host":            {"example.com"},
+						"content-length":  {"0"},
+						"Accept":          {"application/json"},
+						"User-Agent":      {"curl/7.64.1"},
+						"Accept-Encoding": {"gzip"},
+						"Connection":      {"close"},
+					},
+					httpsec.ServerRequestCookiesAddr: map[string][]string{
+						"cookie": {"session=1234"},
+					},
+					httpsec.ServerRequestQueryAddr: map[string][]string{
+						"query": {"value"},
+					},
+					httpsec.ServerRequestPathParamsAddr: map[string]string{
+						"param": "value",
+					},
+				},
+			}, 0)
+
+		if err != nil {
+			b.Fatalf("error running waf: %v", err)
+		}
+
+		// Response WAF Run
+		_, err = ctx.Run(
+			waf.RunAddressData{
+				Persistent: map[string]any{
+					httpsec.ServerResponseHeadersNoCookiesAddr: map[string][]string{
+						"content-type":   {"application/json"},
+						"content-length": {"0"},
+						"Connection":     {"close"},
+					},
+					httpsec.ServerResponseStatusAddr: 200,
+				},
+			}, 0)
+
+		if err != nil {
+			b.Fatalf("error running waf: %v", err)
+		}
+
+		ctx.Close()
+	}
 }

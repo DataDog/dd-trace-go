@@ -43,9 +43,6 @@ const (
 	eventRulesErrorsTag  = "_dd.appsec.event_rules.errors"
 	eventRulesLoadedTag  = "_dd.appsec.event_rules.loaded"
 	eventRulesFailedTag  = "_dd.appsec.event_rules.error_count"
-	wafDurationTag       = "_dd.appsec.waf.duration"
-	wafDurationExtTag    = "_dd.appsec.waf.duration_ext"
-	wafTimeoutTag        = "_dd.appsec.waf.timeouts"
 	wafVersionTag        = "_dd.appsec.waf.version"
 )
 
@@ -70,12 +67,14 @@ func AddRulesMonitoringTags(th trace.TagSetter, wafDiags *waf.Diagnostics) {
 }
 
 // Add the tags related to the monitoring of the WAF
-func AddWAFMonitoringTags(th trace.TagSetter, rulesVersion string, overallRuntimeNs, internalRuntimeNs, timeouts uint64) {
+func AddWAFMonitoringTags(th trace.TagSetter, rulesVersion string, stats map[string]any) {
 	// Rules version is set for every request to help the backend associate WAF duration metrics with rule version
 	th.SetTag(eventRulesVersionTag, rulesVersion)
-	th.SetTag(wafTimeoutTag, timeouts)
-	th.SetTag(wafDurationTag, float64(internalRuntimeNs)/1e3)   // ns to us
-	th.SetTag(wafDurationExtTag, float64(overallRuntimeNs)/1e3) // ns to us
+
+	// Report the stats sent by the WAF
+	for k, v := range stats {
+		th.SetTag(k, v)
+	}
 }
 
 // ProcessActions sends the relevant actions to the operation's data listener.

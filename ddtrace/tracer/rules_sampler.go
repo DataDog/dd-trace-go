@@ -80,6 +80,44 @@ type SamplingRule struct {
 
 	ruleType SamplingRuleType
 	limiter  *rateLimiter
+
+	globRule *jsonRule
+}
+
+// Poor-man's comparison of two regex for equality without resorting to fancy symbolic computation.
+// The result is false negative: whenever the function returns true, we know the two regex must be
+// equal. The reverse is not true. Two regex can be equivalent while reported as not.
+// This is good for use as an indication of optimization that applies when two regex are equals.
+func regexEqualsFalseNegative(a, b *regexp.Regexp) bool {
+	if (a == nil) != (b == nil) {
+		return false
+	}
+	if a == nil {
+		return true
+	}
+	return a.String() == b.String()
+}
+
+func (sr *SamplingRule) EqualsFalseNegative(other *SamplingRule) bool {
+	if (sr == nil) != (other == nil) {
+		return false
+	}
+	if sr == nil {
+		return true
+	}
+	if sr.Rate != other.Rate || sr.ruleType != other.ruleType ||
+		!regexEqualsFalseNegative(sr.Service, other.Service) ||
+		!regexEqualsFalseNegative(sr.Name, other.Name) ||
+		!regexEqualsFalseNegative(sr.Resource, other.Resource) ||
+		len(sr.Tags) != len(other.Tags) {
+		return false
+	}
+	for k, v := range sr.Tags {
+		if vo, ok := other.Tags[k]; !ok || !regexEqualsFalseNegative(v, vo) {
+			return false
+		}
+	}
+	return true
 }
 
 // match returns true when the span's details match all the expected values in the rule.
@@ -143,6 +181,7 @@ func ServiceRule(service string, rate float64) SamplingRule {
 		Service:  globMatch(service),
 		ruleType: SamplingRuleTrace,
 		Rate:     rate,
+		globRule: &jsonRule{Service: service},
 	}
 }
 
@@ -153,6 +192,7 @@ func NameRule(name string, rate float64) SamplingRule {
 		Name:     globMatch(name),
 		ruleType: SamplingRuleTrace,
 		Rate:     rate,
+		globRule: &jsonRule{Name: name},
 	}
 }
 
@@ -163,6 +203,7 @@ func NameServiceRule(name string, service string, rate float64) SamplingRule {
 		Service:  globMatch(service),
 		Name:     globMatch(name),
 		ruleType: SamplingRuleTrace,
+		globRule: &jsonRule{Name: name, Service: service},
 		Rate:     rate,
 	}
 }
@@ -177,13 +218,20 @@ func RateRule(rate float64) SamplingRule {
 
 // TagsResourceRule returns a SamplingRule that applies the provided sampling rate to traces with spans that match
 // resource, name, service and tags provided.
-func TagsResourceRule(tags map[string]*regexp.Regexp, resource, name, service string, rate float64) SamplingRule {
+func TagsResourceRule(tags map[string]string, resource, name, service string, rate float64) SamplingRule {
+	globTags := make(map[string]*regexp.Regexp, len(tags))
+	for k, v := range tags {
+		if g := globMatch(v); g != nil {
+			globTags[k] = g
+		}
+	}
 	return SamplingRule{
 		Service:  globMatch(service),
 		Name:     globMatch(name),
 		Resource: globMatch(resource),
 		Rate:     rate,
-		Tags:     tags,
+		Tags:     globTags,
+		globRule: &jsonRule{Name: name, Service: service, Resource: resource, Tags: tags},
 		ruleType: SamplingRuleTrace,
 	}
 }
@@ -204,6 +252,7 @@ func SpanTagsResourceRule(tags map[string]string, resource, name, service string
 		Rate:     rate,
 		Tags:     globTags,
 		ruleType: SamplingRuleSpan,
+		globRule: &jsonRule{Name: name, Service: service, Resource: resource, Tags: tags},
 	}
 }
 
@@ -217,6 +266,7 @@ func SpanNameServiceRule(name, service string, rate float64) SamplingRule {
 		Rate:     rate,
 		ruleType: SamplingRuleSpan,
 		limiter:  newSingleSpanRateLimiter(0),
+		globRule: &jsonRule{Name: name, Service: service},
 	}
 }
 
@@ -232,6 +282,7 @@ func SpanNameServiceMPSRule(name, service string, rate, limit float64) SamplingR
 		Rate:         rate,
 		ruleType:     SamplingRuleSpan,
 		limiter:      newSingleSpanRateLimiter(limit),
+		globRule:     &jsonRule{Name: name, Service: service},
 	}
 }
 
@@ -292,6 +343,24 @@ func (rs *traceRulesSampler) enabled() bool {
 	return len(rs.rules) > 0 || !math.IsNaN(rs.globalRate)
 }
 
+// Tests whether two sets of the rules are the same.
+// This returns result that can be false negative. If the result is true, then the two sets of rules
+// are guaranteed to be the same.
+// On the other hand, false can be returned while the two rulesets are logically the same.
+// This function can be used to detect optimization opportunities when two rulesets are the same.
+// For example, an update of one ruleset is not needed if it's the same as the previous one.
+func EqualsFalseNegative(a, b []SamplingRule) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i, r := range a {
+		if !r.EqualsFalseNegative(&b[i]) {
+			return false
+		}
+	}
+	return true
+}
+
 // setGlobalSampleRate sets the global sample rate to the given value.
 // Returns whether the value was changed or not.
 func (rs *traceRulesSampler) setGlobalSampleRate(rate float64) bool {
@@ -310,6 +379,15 @@ func (rs *traceRulesSampler) setGlobalSampleRate(rate float64) bool {
 		return false
 	}
 	rs.globalRate = rate
+	return true
+}
+
+// Assumes the new rules are different from the old rules.
+func (rs *traceRulesSampler) setTraceSampleRules(rules []SamplingRule) bool {
+	if EqualsFalseNegative(rs.rules, rules) {
+		return false
+	}
+	rs.rules = rules
 	return true
 }
 
@@ -694,6 +772,7 @@ func validateRules(jsonRules []jsonRule, spanType SamplingRuleType) ([]SamplingR
 			Tags:         tagGlobs,
 			ruleType:     spanType,
 			limiter:      newSingleSpanRateLimiter(v.MaxPerSecond),
+			globRule:     &jsonRules[i],
 		})
 	}
 	if len(errs) != 0 {
@@ -703,7 +782,7 @@ func validateRules(jsonRules []jsonRule, spanType SamplingRuleType) ([]SamplingR
 }
 
 // MarshalJSON implements the json.Marshaler interface.
-func (sr *SamplingRule) MarshalJSON() ([]byte, error) {
+func (sr SamplingRule) MarshalJSON() ([]byte, error) {
 	s := struct {
 		Service      string            `json:"service,omitempty"`
 		Name         string            `json:"name,omitempty"`
@@ -713,28 +792,43 @@ func (sr *SamplingRule) MarshalJSON() ([]byte, error) {
 		Type         *string           `json:"type,omitempty"`
 		MaxPerSecond *float64          `json:"max_per_second,omitempty"`
 	}{}
-	if sr.Service != nil {
-		s.Service = sr.Service.String()
-	}
-	if sr.Name != nil {
-		s.Name = sr.Name.String()
+	if sr.globRule != nil {
+		s.Service = sr.globRule.Service
+		s.Name = sr.globRule.Name
+		s.Resource = sr.globRule.Resource
+		s.Tags = sr.globRule.Tags
+	} else {
+		if sr.Service != nil {
+			s.Service = sr.Service.String()
+		}
+		if sr.Name != nil {
+			s.Name = sr.Name.String()
+		}
+		if sr.Resource != nil {
+			s.Resource = sr.Resource.String()
+		}
+		s.Tags = make(map[string]string, len(sr.Tags))
+		for k, v := range sr.Tags {
+			if v != nil {
+				s.Tags[k] = v.String()
+			}
+		}
 	}
 	if sr.MaxPerSecond != 0 {
 		s.MaxPerSecond = &sr.MaxPerSecond
 	}
-	if sr.Resource != nil {
-		s.Resource = sr.Resource.String()
-	}
 	s.Rate = sr.Rate
 	if v := sr.ruleType.String(); v != "" {
-		t := fmt.Sprintf("%v(%d)", v, sr.ruleType)
+		t := fmt.Sprintf("%d", sr.ruleType)
 		s.Type = &t
 	}
-	s.Tags = make(map[string]string, len(sr.Tags))
-	for k, v := range sr.Tags {
-		if v != nil {
-			s.Tags[k] = v.String()
-		}
-	}
 	return json.Marshal(&s)
+}
+
+func (sr SamplingRule) String() string {
+	s, err := sr.MarshalJSON()
+	if err != nil {
+		log.Error("Error marshalling SamplingRule to json: %v", err)
+	}
+	return string(s)
 }
