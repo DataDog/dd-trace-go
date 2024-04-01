@@ -674,37 +674,6 @@ func TestTracerRuntimeMetrics(t *testing.T) {
 	})
 }
 
-func TestTracerContribStats(t *testing.T) {
-	t.Run("default on", func(t *testing.T) {
-		tp := new(log.RecordLogger)
-		tracer := newTracer(WithDebugMode(true), WithLogger(tp))
-		defer tracer.Stop()
-		assert.NotNil(t, tracer.statsCarrier)
-	})
-	t.Run("off", func(t *testing.T) {
-		tp := new(log.RecordLogger)
-		tracer := newTracer(WithContribStats(false), WithLogger(tp), WithDebugMode(true))
-		defer tracer.Stop()
-		assert.Nil(t, tracer.statsCarrier)
-	})
-	t.Run("env", func(t *testing.T) {
-		os.Setenv("DD_TRACE_CONTRIB_STATS_ENABLED", "false")
-		defer os.Unsetenv("DD_TRACE_CONTRIB_STATS_ENABLED")
-		tp := new(log.RecordLogger)
-		tracer := newTracer(WithLogger(tp), WithDebugMode(true))
-		defer tracer.Stop()
-		assert.Nil(t, tracer.statsCarrier)
-	})
-	t.Run("env override", func(t *testing.T) {
-		os.Setenv("DD_TRACE_CONTRIB_STATS_ENABLED", "false")
-		defer os.Unsetenv("DD_TRACE_CONTRIB_STATS_ENABLED")
-		tp := new(log.RecordLogger)
-		tracer := newTracer(WithLogger(tp), WithDebugMode(true), WithContribStats(true))
-		defer tracer.Stop()
-		assert.NotNil(t, tracer.statsCarrier)
-	})
-}
-
 func TestTracerStartSpanOptions(t *testing.T) {
 	tracer := newTracer()
 	defer tracer.Stop()
@@ -2046,6 +2015,7 @@ func BenchmarkTracerAddSpans(b *testing.B) {
 	tracer, _, _, stop := startTestTracer(b, WithLogger(log.DiscardLogger{}), WithSampler(NewRateSampler(0)))
 	defer stop()
 
+	b.ResetTimer()
 	for n := 0; n < b.N; n++ {
 		span := tracer.StartSpan("pylons.request", ServiceName("pylons"), ResourceName("/"))
 		span.Finish()

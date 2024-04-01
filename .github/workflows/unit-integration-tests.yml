@@ -245,18 +245,26 @@ jobs:
       - name: Testing outlier gRPC v1.2
         run: |
               # This hacky approach is necessary because running the tests regularly
-              # do not allow using grpc-go@v1.2.0 alongside sketches-go@v1.0.0
+              # do not allow using grpc-go@v1.2.0 alongside sketches-go@v1.1.0.
+              # sketches-go@v1.0.0 is no longer possible to test because internal/datastreams/propagator.go
+              # expects sketches-go to have the package `github.com/DataDog/sketches-go/ddsketch/encoding` which
+              # is only present from v1.1.0 onwards.
               go mod vendor
 
               # Checkout grpc-go@v1.2.0
               cd vendor/google.golang.org && rm -rf grpc
               git clone https://github.com/grpc/grpc-go grpc && cd grpc
-              git fetch origin && git checkout v1.2.0 && cd ../..
+              git fetch origin && git checkout v1.2.0 && cd ../../..
 
-              # Checkout sketches-go@v1.0.0
+              # Checkout sketches-go@v1.1.0
               cd vendor/github.com/DataDog && rm -rf sketches-go
               git clone https://github.com/DataDog/sketches-go && cd sketches-go
-              git fetch origin && git checkout v1.0.0 && cd ../..
+              git fetch origin && git checkout v1.1.0 && cd ../../../..
+
+              # Revert to old metadata functions as FromIncomingContext and NewOutgoingContext are not present in v1.2.0.
+              # These functions were updated to current versions to avoid compilation errors in the development environments.
+              sed  -i 's/metadata\.FromIncomingContext/metadata.FromContext/g' ./contrib/google.golang.org/grpc.v12/*
+              sed  -i 's/metadata\.NewOutgoingContext/metadata.NewContext/g' ./contrib/google.golang.org/grpc.v12/*
 
               go test -mod=vendor -v ./contrib/google.golang.org/grpc.v12/...
 

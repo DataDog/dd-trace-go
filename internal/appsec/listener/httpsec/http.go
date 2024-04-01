@@ -95,7 +95,7 @@ func newWafEventListener(wafHandle *waf.Handle, actions sharedsec.Actions, cfg *
 
 // NewWAFEventListener returns the WAF event listener to register in order to enable it.
 func (l *wafEventListener) onEvent(op *types.Operation, args types.HandlerOperationArgs) {
-	wafCtx := waf.NewContext(l.wafHandle)
+	wafCtx := waf.NewContextWithBudget(l.wafHandle, l.config.WAFTimeout)
 	if wafCtx == nil {
 		// The WAF event listener got concurrently released
 		return
@@ -196,8 +196,7 @@ func (l *wafEventListener) onEvent(op *types.Operation, args types.HandlerOperat
 		wafResult := shared.RunWAF(wafCtx, waf.RunAddressData{Persistent: values}, l.config.WAFTimeout)
 
 		// Add WAF metrics.
-		overallRuntimeNs, internalRuntimeNs := wafCtx.TotalRuntime()
-		shared.AddWAFMonitoringTags(op, l.wafDiags.Version, overallRuntimeNs, internalRuntimeNs, wafCtx.TotalTimeouts())
+		shared.AddWAFMonitoringTags(op, l.wafDiags.Version, wafCtx.Stats().Metrics())
 
 		// Add the following metrics once per instantiation of a WAF handle
 		l.once.Do(func() {
