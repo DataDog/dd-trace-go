@@ -126,6 +126,13 @@ func (p *profiler) lookupProfile(name string, w io.Writer, debug int) error {
 	return prof.WriteTo(w, debug)
 }
 
+func (p *profiler) randFloat64() float64 {
+	if p.cfg.rng != nil {
+		return p.cfg.rng.Float64()
+	}
+	return rand.Float64()
+}
+
 // newProfiler creates a new, unstarted profiler.
 func newProfiler(opts ...Option) (*profiler, error) {
 	if os.Getenv("AWS_LAMBDA_FUNCTION_NAME") != "" {
@@ -319,7 +326,7 @@ func (p *profiler) collect(ticker <-chan time.Time) {
 		// we will always record a trace
 		// We do multiplication here instead of division to defensively guard against
 		// division by 0
-		shouldTraceRandomly := rand.Float64()*float64(p.cfg.traceConfig.Period) < float64(p.cfg.period)
+		shouldTraceRandomly := p.randFloat64()*float64(p.cfg.traceConfig.Period) < float64(p.cfg.period)
 		// As a special case, we want to trace during the first
 		// profiling cycle since startup activity is generally much
 		// different than regular operation

@@ -9,6 +9,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math/rand"
 	"net"
 	"net/http"
 	"net/url"
@@ -111,6 +112,7 @@ type config struct {
 	logStartup           bool
 	traceConfig          executionTraceConfig
 	endpointCountEnabled bool
+	rng                  *rand.Rand
 }
 
 // logStartup records the configuration to the configured logger in JSON format
@@ -572,5 +574,12 @@ func (e *executionTraceConfig) Refresh() {
 func WithCustomProfilerLabelKeys(keys ...string) Option {
 	return func(cfg *config) {
 		cfg.customProfilerLabels = append(cfg.customProfilerLabels, keys...)
+	}
+}
+
+// withRNG provides a seeded RNG, for reliable testing
+func withRNG(r *rand.Rand) Option {
+	return func(cfg *config) {
+		cfg.rng = r
 	}
 }
