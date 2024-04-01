@@ -180,3 +180,43 @@ func TestSamplingRuleSlicesEqual(t *testing.T) {
 		})
 	}
 }
+
+func TestSamplingRuleProvenanceMarshal(t *testing.T) {
+	tests := []struct {
+		name    string
+		rule    SamplingRule
+		jsonStr string
+	}{
+		{
+			name: "marshal and unmarshal",
+			rule: SamplingRule{
+				Service:  regexp.MustCompile("svc"),
+				Name:     regexp.MustCompile("op-name"),
+				Resource: regexp.MustCompile("abc-.*"),
+				Rate:     0.1,
+				globRule: &jsonRule{Name: "op-name", Service: "svc", Resource: "abc-*"},
+			},
+			jsonStr: `{"service":"svc","name":"op-name","resource":"abc-*","sample_rate":0.1}`,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			// Same rule with provenance "customer"
+			for prov, provName := range ProvenanceName {
+				test.rule.Provenance = prov
+				data, err := json.Marshal(test.rule)
+				assert.NoError(t, err)
+				jsonWithprov := test.jsonStr[:len(test.jsonStr)-1] + `,"provenance":"` + provName + `"}`
+				if prov == Local {
+					assert.Equal(t, []byte(test.jsonStr), data)
+				} else {
+					assert.Equal(t, []byte(jsonWithprov), data)
+				}
+				var unmarshalledRule SamplingRule
+				assert.NoError(t, json.Unmarshal(data, &unmarshalledRule))
+				assert.Equal(t, prov, unmarshalledRule.Provenance)
+			}
+		})
+	}
+}

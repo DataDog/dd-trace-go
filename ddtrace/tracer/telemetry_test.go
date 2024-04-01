@@ -6,6 +6,7 @@
 package tracer
 
 import (
+	"fmt"
 	"testing"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
@@ -62,6 +63,30 @@ func TestTelemetryEnabled(t *testing.T) {
 			t.Fatalf("could not find general init time in telemetry client metrics")
 		}
 		t.Fatalf("could not find tracer namespace in telemetry client metrics")
+	})
+
+	t.Run("telemetry customer or dynamic rules", func(t *testing.T) {
+		rule := TagsResourceRule(map[string]string{"tag-a": "tv-a??"},
+			"resource-*", "op-name", "test-serv", 0.1)
+
+		for prov, provName := range ProvenanceName {
+			if prov == Local {
+				continue
+			}
+			rule.Provenance = prov
+
+			telemetryClient := new(telemetrytest.MockClient)
+			defer telemetry.MockGlobalClient(telemetryClient)()
+			Start(WithService("test-serv"),
+				WithSamplingRules([]SamplingRule{rule}),
+			)
+			defer globalconfig.SetServiceName("")
+			defer Stop()
+
+			assert.True(t, telemetryClient.Started)
+			telemetry.Check(t, telemetryClient.Configuration, "trace_sample_rules",
+				fmt.Sprintf(`[{"service":"test-serv","name":"op-name","resource":"resource-*","sample_rate":0.1,"tags":{"tag-a":"tv-a??"},"type":"1","provenance":"%s"}]`, provName))
+		}
 	})
 
 	t.Run("tracer start with empty rules", func(t *testing.T) {
