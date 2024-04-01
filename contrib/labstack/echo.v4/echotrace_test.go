@@ -167,7 +167,6 @@ func TestError(t *testing.T) {
 		called = true
 
 		err := wantErr
-		c.Error(err)
 		return err
 	})
 	r := httptest.NewRequest("GET", "/err", nil)
