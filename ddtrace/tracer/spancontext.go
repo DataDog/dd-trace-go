@@ -331,7 +331,6 @@ func (t *trace) setSamplingPriorityAndDecisionMakerLocked(p int, sampler sampler
 		return false
 	}
 
-	dm := samplerToDM(sampler)
 	updatedPriority := t.priority == nil || *t.priority != float64(p)
 
 	if t.priority == nil {
@@ -339,8 +338,7 @@ func (t *trace) setSamplingPriorityAndDecisionMakerLocked(p int, sampler sampler
 	}
 	*t.priority = float64(p)
 	curDM, ok := t.propagatingTags[keyDecisionMaker]
-	updatedDM := false
-	if p > 0 && sampler != samplernames.Unknown && (!ok || dm != curDM) {
+	if p > 0 && sampler != samplernames.Unknown {
 		// We have a positive priority and the sampling mechanism isn't set.
 		// Send nothing when sampler is `Unknown` for RFC compliance.
 		// If a global sampling rate is set, it'll always be applied first. And this call can be
@@ -348,14 +346,23 @@ func (t *trace) setSamplingPriorityAndDecisionMakerLocked(p int, sampler sampler
 		// the decision maker will be different. So we compare the decision makers as well.
 		// Note that once global rate sampling is deprecated, we no longer need to compare
 		// the DMs. Sampling priority is sufficient to distinguish a change in DM.
-		t.setPropagatingTagLocked(keyDecisionMaker, "-"+strconv.Itoa(int(sampler)))
-		updatedDM = true
+		updatedDM := !ok
+		if ok {
+			dm := samplerToDM(sampler)
+			updatedDM = dm != curDM
+		} else {
+			updatedDM = true
+		}
+		if updatedDM {
+			t.setPropagatingTagLocked(keyDecisionMaker, "-"+strconv.Itoa(int(sampler)))
+			return true
+		}
 	}
 	if p <= 0 && ok {
 		delete(t.propagatingTags, keyDecisionMaker)
 	}
 
-	return updatedPriority || updatedDM
+	return updatedPriority
 }
 
 func (t *trace) isLocked() bool {
