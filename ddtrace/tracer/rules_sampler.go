@@ -99,9 +99,8 @@ func ParseProvenance(p string) (Provenance, error) {
 	v, ok := ProvenanceValue[strings.TrimSpace(strings.ToLower(p))]
 	if !ok {
 		return Customer, fmt.Errorf("Invalid Provenance: \"%v\"", p)
-	} else {
-		return Provenance(v), nil
 	}
+	return v, nil
 }
 
 // SamplingRule is used for applying sampling rates to spans that match
