@@ -181,12 +181,12 @@ func (c *spanContext) ForeachBaggageItem(handler func(k, v string) bool) {
 	}
 }
 
-func (c *spanContext) setSamplingPriority(p int, sampler samplernames.SamplerName) {
+func (c *spanContext) setSamplingPriorityAndDecisionMaker(p int, sampler samplernames.SamplerName) {
 	if c.trace == nil {
 		c.trace = newTrace()
 	}
-	if c.trace.setSamplingPriority(p, sampler) {
-		// the trace's sampling priority was updated: mark this as updated
+	if c.trace.setSamplingPriorityAndDecisionMaker(p, sampler) {
+		// the trace's sampling priority or sampler was updated: mark this as updated
 		c.updated = true
 	}
 }
@@ -293,11 +293,12 @@ func (t *trace) samplingPriority() (p int, ok bool) {
 	return t.samplingPriorityLocked()
 }
 
-// setSamplingPriority sets the sampling priority and returns true if it was modified.
-func (t *trace) setSamplingPriority(p int, sampler samplernames.SamplerName) bool {
+// setSamplingPriorityAndDecisionMaker sets the sampling priority and the decision maker
+// and returns true if it was modified.
+func (t *trace) setSamplingPriorityAndDecisionMaker(p int, sampler samplernames.SamplerName) bool {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	return t.setSamplingPriorityLocked(p, sampler)
+	return t.setSamplingPriorityAndDecisionMakerLocked(p, sampler)
 }
 
 func (t *trace) keep() {
@@ -321,28 +322,40 @@ func (t *trace) setTagLocked(key, value string) {
 	t.tags[key] = value
 }
 
-func (t *trace) setSamplingPriorityLocked(p int, sampler samplernames.SamplerName) bool {
+func samplerToDM(sampler samplernames.SamplerName) string {
+	return "-" + strconv.Itoa(int(sampler))
+}
+
+func (t *trace) setSamplingPriorityAndDecisionMakerLocked(p int, sampler samplernames.SamplerName) bool {
 	if t.locked {
 		return false
 	}
 
+	dm := samplerToDM(sampler)
 	updatedPriority := t.priority == nil || *t.priority != float64(p)
 
 	if t.priority == nil {
 		t.priority = new(float64)
 	}
 	*t.priority = float64(p)
-	_, ok := t.propagatingTags[keyDecisionMaker]
-	if p > 0 && !ok && sampler != samplernames.Unknown {
+	curDM, ok := t.propagatingTags[keyDecisionMaker]
+	updatedDM := false
+	if p > 0 && sampler != samplernames.Unknown && (!ok || dm != curDM) {
 		// We have a positive priority and the sampling mechanism isn't set.
 		// Send nothing when sampler is `Unknown` for RFC compliance.
+		// If a global sampling rate is set, it'll always be applied first. And this call can be
+		// triggered by applying a rule sampler. The sampling priority will be the same, but
+		// the decision maker will be different. So we compare the decision makers as well.
+		// Note that once global rate sampling is deprecated, we no longer need to compare
+		// the DMs. Sampling priority is sufficient to distinguish a change in DM.
 		t.setPropagatingTagLocked(keyDecisionMaker, "-"+strconv.Itoa(int(sampler)))
+		updatedDM = true
 	}
 	if p <= 0 && ok {
 		delete(t.propagatingTags, keyDecisionMaker)
 	}
 
-	return updatedPriority
+	return updatedPriority || updatedDM
 }
 
 func (t *trace) isLocked() bool {
@@ -377,7 +390,7 @@ func (t *trace) push(sp *span) {
 		return
 	}
 	if v, ok := sp.Metrics[keySamplingPriority]; ok {
-		t.setSamplingPriorityLocked(int(v), samplernames.Unknown)
+		t.setSamplingPriorityAndDecisionMakerLocked(int(v), samplernames.Unknown)
 	}
 	t.spans = append(t.spans, sp)
 	if haveTracer {

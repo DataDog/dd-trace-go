@@ -18,6 +18,7 @@ import (
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/samplernames"
 
 	"github.com/stretchr/testify/assert"
 	"golang.org/x/time/rate"
@@ -1136,7 +1137,7 @@ func TestRulesSamplerInternals(t *testing.T) {
 		now := time.Now()
 		rs := &rulesSampler{}
 		span := makeSpanAt("http.request", "test-service", now)
-		rs.traces.applyRate(span, 0.0, now)
+		rs.traces.applyRate(span, 0.0, now, samplernames.RuleRate)
 		assert.Equal(0.0, span.Metrics[keyRulesSamplerAppliedRate])
 		_, ok := span.Metrics[keyRulesSamplerLimiterRate]
 		assert.False(ok)
@@ -1152,7 +1153,7 @@ func TestRulesSamplerInternals(t *testing.T) {
 		rs.traces.limiter.seen = 1
 
 		span := makeSpanAt("http.request", "test-service", now)
-		rs.traces.applyRate(span, 1.0, now)
+		rs.traces.applyRate(span, 1.0, now, samplernames.RuleRate)
 		assert.Equal(1.0, span.Metrics[keyRulesSamplerAppliedRate])
 		assert.Equal(1.0, span.Metrics[keyRulesSamplerLimiterRate])
 	})
@@ -1168,12 +1169,12 @@ func TestRulesSamplerInternals(t *testing.T) {
 		rs.traces.limiter.seen = 2
 		// first span kept, second dropped
 		span := makeSpanAt("http.request", "test-service", now)
-		rs.traces.applyRate(span, 1.0, now)
+		rs.traces.applyRate(span, 1.0, now, samplernames.RuleRate)
 		assert.EqualValues(ext.PriorityUserKeep, span.Metrics[keySamplingPriority])
 		assert.Equal(1.0, span.Metrics[keyRulesSamplerAppliedRate])
 		assert.Equal(1.0, span.Metrics[keyRulesSamplerLimiterRate])
 		span = makeSpanAt("http.request", "test-service", now)
-		rs.traces.applyRate(span, 1.0, now)
+		rs.traces.applyRate(span, 1.0, now, samplernames.RuleRate)
 		assert.EqualValues(ext.PriorityUserReject, span.Metrics[keySamplingPriority])
 		assert.Equal(1.0, span.Metrics[keyRulesSamplerAppliedRate])
 		assert.Equal(0.75, span.Metrics[keyRulesSamplerLimiterRate])

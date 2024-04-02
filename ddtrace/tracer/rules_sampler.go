@@ -460,7 +460,13 @@ func (rs *traceRulesSampler) sampleGlobalRate(span *span) bool {
 		return false
 	}
 
-	rs.applyRate(span, rate, time.Now())
+	// global rate is a degenerated case of rule rate.
+	// Technically speaking, global rate also has two possible provenance: local or remote.
+	// We just apply the the sampler name corresponding to local rule rate because global rate is
+	// being deprecated in favor of sampling rules.
+	// Note that this just preserves an existing behavior even though it is not correct.
+	sampler := samplernames.RuleRate
+	rs.applyRate(span, rate, time.Now(), sampler)
 	return true
 }
 
@@ -477,10 +483,16 @@ func (rs *traceRulesSampler) sampleRules(span *span) bool {
 	rs.m.RLock()
 	rate := rs.globalRate
 	rs.m.RUnlock()
+	sampler := samplernames.RuleRate
 	for _, rule := range rs.rules {
 		if rule.match(span) {
 			matched = true
 			rate = rule.Rate
+			if rule.Provenance == Customer {
+				sampler = samplernames.RemoteUserRule
+			} else if rule.Provenance == Dynamic {
+				sampler = samplernames.RemoteDynamicRule
+			}
 			break
 		}
 	}
@@ -490,22 +502,22 @@ func (rs *traceRulesSampler) sampleRules(span *span) bool {
 		return false
 	}
 
-	rs.applyRate(span, rate, time.Now())
+	rs.applyRate(span, rate, time.Now(), sampler)
 	return true
 }
 
-func (rs *traceRulesSampler) applyRate(span *span, rate float64, now time.Time) {
+func (rs *traceRulesSampler) applyRate(span *span, rate float64, now time.Time, sampler samplernames.SamplerName) {
 	span.SetTag(keyRulesSamplerAppliedRate, rate)
 	if !sampledByRate(span.TraceID, rate) {
-		span.setSamplingPriority(ext.PriorityUserReject, samplernames.RuleRate)
+		span.setSamplingPriorityAndDecisionMaker(ext.PriorityUserReject, sampler)
 		return
 	}
 
 	sampled, rate := rs.limiter.allowOne(now)
 	if sampled {
-		span.setSamplingPriority(ext.PriorityUserKeep, samplernames.RuleRate)
+		span.setSamplingPriorityAndDecisionMaker(ext.PriorityUserKeep, sampler)
 	} else {
-		span.setSamplingPriority(ext.PriorityUserReject, samplernames.RuleRate)
+		span.setSamplingPriorityAndDecisionMaker(ext.PriorityUserReject, sampler)
 	}
 	span.SetTag(keyRulesSamplerLimiterRate, rate)
 }

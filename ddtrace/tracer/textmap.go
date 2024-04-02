@@ -446,7 +446,7 @@ func (p *propagator) extractTextMap(reader TextMapReader) (ddtrace.SpanContext, 
 			if err != nil {
 				return ErrSpanContextCorrupted
 			}
-			ctx.setSamplingPriority(priority, samplernames.Unknown)
+			ctx.setSamplingPriorityAndDecisionMaker(priority, samplernames.Unknown)
 		case originHeader:
 			ctx.origin = v
 		case traceTagsHeader:
@@ -589,7 +589,7 @@ func (*propagatorB3) extractTextMap(reader TextMapReader) (ddtrace.SpanContext, 
 			if err != nil {
 				return ErrSpanContextCorrupted
 			}
-			ctx.setSamplingPriority(priority, samplernames.Unknown)
+			ctx.setSamplingPriorityAndDecisionMaker(priority, samplernames.Unknown)
 		default:
 		}
 		return nil
@@ -674,9 +674,9 @@ func (*propagatorB3SingleHeader) extractTextMap(reader TextMapReader) (ddtrace.S
 					case "":
 						break
 					case "1", "d": // Treat 'debug' traces as priority 1
-						ctx.setSamplingPriority(1, samplernames.Unknown)
+						ctx.setSamplingPriorityAndDecisionMaker(1, samplernames.Unknown)
 					case "0":
-						ctx.setSamplingPriority(0, samplernames.Unknown)
+						ctx.setSamplingPriorityAndDecisionMaker(0, samplernames.Unknown)
 					default:
 						return ErrSpanContextCorrupted
 					}
@@ -984,7 +984,7 @@ func parseTraceparent(ctx *spanContext, header string) error {
 	if err != nil {
 		return ErrSpanContextCorrupted
 	}
-	ctx.setSamplingPriority(int(f)&0x1, samplernames.Unknown)
+	ctx.setSamplingPriorityAndDecisionMaker(int(f)&0x1, samplernames.Unknown)
 	return nil
 }
 
@@ -1033,15 +1033,15 @@ func parseTracestate(ctx *spanContext, header string) {
 				parentP, _ := ctx.SamplingPriority()
 				if (parentP == 1 && stateP > 0) || (parentP == 0 && stateP <= 0) {
 					// As extracted from tracestate
-					ctx.setSamplingPriority(stateP, samplernames.Unknown)
+					ctx.setSamplingPriorityAndDecisionMaker(stateP, samplernames.Unknown)
 				}
 				if parentP == 1 && stateP <= 0 {
 					// Auto keep (1) and set the decision maker to default
-					ctx.setSamplingPriority(1, samplernames.Default)
+					ctx.setSamplingPriorityAndDecisionMaker(1, samplernames.Default)
 				}
 				if parentP == 0 && stateP > 0 {
 					// Auto drop (0) and drop the decision maker
-					ctx.setSamplingPriority(0, samplernames.Unknown)
+					ctx.setSamplingPriorityAndDecisionMaker(0, samplernames.Unknown)
 					dropDM = true
 				}
 			} else if strings.HasPrefix(key, "t.dm") {

@@ -241,7 +241,7 @@ func spanContextFromTraceComment(c string) (*spanContext, error) {
 			ctx.traceID.SetLower(traceIDLower)
 			ctx.traceID.SetUpper(traceIDUpper)
 			ctx.spanID = spanID
-			ctx.setSamplingPriority(sampled, samplernames.Unknown)
+			ctx.setSamplingPriorityAndDecisionMaker(sampled, samplernames.Unknown)
 		default:
 		}
 	}

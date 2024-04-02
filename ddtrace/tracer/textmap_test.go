@@ -365,9 +365,10 @@ func TestTextMapPropagatorTraceTagsWithoutPriority(t *testing.T) {
 	assert.True(t, ok)
 	child := tracer.StartSpan("test", ChildOf(sctx))
 	childSpanID := child.Context().(*spanContext).spanID
+	// PrioritySampler applied AgentRate
 	assert.Equal(t, map[string]string{
 		"hello":    "world",
-		"_dd.p.dm": "934086a6-4",
+		"_dd.p.dm": "-1",
 	}, sctx.trace.propagatingTags)
 	dst := map[string]string{}
 	err = tracer.Inject(child.Context(), TextMapCarrier(dst))
@@ -376,7 +377,7 @@ func TestTextMapPropagatorTraceTagsWithoutPriority(t *testing.T) {
 	assert.Equal(t, strconv.Itoa(int(childSpanID)), dst["x-datadog-parent-id"])
 	assert.Equal(t, "1", dst["x-datadog-trace-id"])
 	assert.Equal(t, "1", dst["x-datadog-sampling-priority"])
-	assertTraceTags(t, "hello=world,_dd.p.dm=934086a6-4", dst["x-datadog-tags"])
+	assertTraceTags(t, "hello=world,_dd.p.dm=-1", dst["x-datadog-tags"])
 }
 
 func TestExtractOriginSynthetics(t *testing.T) {
@@ -817,7 +818,7 @@ func TestEnvVars(t *testing.T) {
 				require.True(t, ok)
 				ctx.traceID = traceIDFrom64Bits(tc.in[0])
 				ctx.spanID = tc.in[1]
-				ctx.setSamplingPriority(int(tc.in[2]), samplernames.Unknown)
+				ctx.setSamplingPriorityAndDecisionMaker(int(tc.in[2]), samplernames.Unknown)
 				headers := TextMapCarrier(map[string]string{})
 				err := tracer.Inject(ctx, headers)
 				require.Nil(t, err)
@@ -1745,7 +1746,7 @@ func TestEnvVars(t *testing.T) {
 					assert.True(ok)
 					// changing priority must set ctx.updated = true
 					if tc.priority != 0 {
-						sctx.setSamplingPriority(int(tc.priority), samplernames.Unknown)
+						sctx.setSamplingPriorityAndDecisionMaker(int(tc.priority), samplernames.Unknown)
 					}
 					assert.Equal(true, sctx.updated)
 
