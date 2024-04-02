@@ -87,11 +87,11 @@ func IsEnabled() (enabled bool, set bool, err error) {
 // parsing rules). When false, it also returns whether the env var was actually set or not.
 // In case of a parsing error, it returns a detailed error.
 func parseBoolEnvVar(env string) (enabled bool, set bool, err error) {
-	enabledStr, set := os.LookupEnv(env)
-	if enabledStr == "" {
+	str, set := os.LookupEnv(env)
+	if str == "" {
 		return false, set, nil
-	} else if enabled, err = strconv.ParseBool(enabledStr); err != nil {
-		return false, set, fmt.Errorf("could not parse %s value `%s` as a boolean value", env, enabledStr)
+	} else if enabled, err = strconv.ParseBool(str); err != nil {
+		return false, set, fmt.Errorf("could not parse %s value `%s` as a boolean value", env, str)
 	}
 
 	return enabled, set, nil
