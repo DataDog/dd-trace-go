@@ -31,20 +31,22 @@ func registerAppConfigTelemetry() {
 // Report over telemetry whether SCA's enablement env var was set or not along with its value. Nothing is reported in
 // case of an error or if the env var is not set.
 func registerSCAAppConfigTelemetry(client telemetry.Client) {
-	val, defined, err := parseBoolEnvVar(SCAEnabledEnv)
+	val, defined, err := parseBoolEnvVar(EnvSCAEnabled)
 	if err != nil {
 		log.Error("appsec: %v", err)
 		return
 	}
 	if defined {
-		client.RegisterAppConfig(SCAEnabledEnv, val, "env_var")
+		client.RegisterAppConfig(EnvSCAEnabled, val, "env_var")
 	}
 }
 
-// EnvEnabled is the env var used to enable/disable appsec
+// The following environment variables dictate the enablement of different the ASM products.
 const (
-	EnvEnabled    = "DD_APPSEC_ENABLED"
-	SCAEnabledEnv = "DD_APPSEC_SCA_ENABLED"
+	// EnvEnabled controls ASM Threats Protection's enablement.
+	EnvEnabled = "DD_APPSEC_ENABLED"
+	// EnvSCAEnabled controls ASM Software Composition Analysis (SCA)'s enablement.
+	EnvSCAEnabled = "DD_APPSEC_SCA_ENABLED"
 )
 
 // StartOption is used to customize the AppSec configuration when invoked with appsec.Start()

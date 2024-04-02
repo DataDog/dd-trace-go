@@ -45,16 +45,16 @@ func TestSCAEnable(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if tc.envVarVal != "" {
-				t.Setenv(SCAEnabledEnv, tc.envVarVal)
+				t.Setenv(EnvSCAEnabled, tc.envVarVal)
 			}
 
 			telemetryClient := new(telemetrytest.MockClient)
-			telemetryClient.On("RegisterAppConfig", SCAEnabledEnv, tc.expectedValue, "env_var").Return()
+			telemetryClient.On("RegisterAppConfig", EnvSCAEnabled, tc.expectedValue, "env_var").Return()
 
 			registerSCAAppConfigTelemetry(telemetryClient)
 
 			if tc.telemetryExpected {
-				telemetryClient.AssertCalled(t, "RegisterAppConfig", SCAEnabledEnv, tc.expectedValue, "env_var")
+				telemetryClient.AssertCalled(t, "RegisterAppConfig", EnvSCAEnabled, tc.expectedValue, "env_var")
 				telemetryClient.AssertNumberOfCalls(t, "RegisterAppConfig", 1)
 			} else {
 				telemetryClient.AssertNumberOfCalls(t, "RegisterAppConfig", 0)
