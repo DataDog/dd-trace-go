@@ -11,7 +11,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry/telemetrytest"
 )
 
-func TestSCAEnable(t *testing.T) {
+func TestSCAEnabled(t *testing.T) {
 	for _, tc := range []struct {
 		name              string
 		envVarVal         string
