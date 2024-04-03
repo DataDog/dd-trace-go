@@ -125,7 +125,8 @@ func NewRedirectRequestAction(status int, loc string) *Action {
 	}
 	action := &Action{
 		// gRPC is not handled by our SRB RFCs so far - use the default block handler
-		grpc: newGRPCBlockHandler(10),
+		grpc:     newGRPCBlockHandler(10),
+		blocking: true,
 	}
 	// If location is not set we fall back on a default block action
 	if loc == "" {
