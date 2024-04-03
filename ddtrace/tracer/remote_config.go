@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"strings"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/remoteconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
@@ -78,13 +79,12 @@ func (t *tags) toMap() *map[string]interface{} {
 }
 
 func (t *tracer) dynamicInstrumentationRCUpdate(u remoteconfig.ProductUpdate) map[string]state.ApplyStatus {
-
 	applyStatus := map[string]state.ApplyStatus{}
 
 	for k, v := range u {
 		log.Debug("Received dynamic instrumentation RC configuration for %s\n", k)
 		applyStatus[k] = state.ApplyStatus{State: state.ApplyStateUnknown}
-		passFullConfiguration(k, string(v))
+		passFullConfiguration(globalconfig.RuntimeID(), k, string(v))
 	}
 
 	return applyStatus
@@ -94,7 +94,7 @@ func (t *tracer) dynamicInstrumentationRCUpdate(u remoteconfig.ProductUpdate) ma
 // a bpf program to this function and extracts the raw bytes accordingly.
 //
 //go:noinline
-func passFullConfiguration(_, _ string) {}
+func passFullConfiguration(_, _, _ string) {}
 
 // onRemoteConfigUpdate is a remote config callaback responsible for processing APM_TRACING RC-product updates.
 func (t *tracer) onRemoteConfigUpdate(u remoteconfig.ProductUpdate) map[string]state.ApplyStatus {
