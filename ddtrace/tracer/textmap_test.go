@@ -818,7 +818,7 @@ func TestEnvVars(t *testing.T) {
 				require.True(t, ok)
 				ctx.traceID = traceIDFrom64Bits(tc.in[0])
 				ctx.spanID = tc.in[1]
-				ctx.setSamplingPriorityAndDecisionMaker(int(tc.in[2]), samplernames.Unknown)
+				ctx.setSamplingPriority(int(tc.in[2]), samplernames.Unknown)
 				headers := TextMapCarrier(map[string]string{})
 				err := tracer.Inject(ctx, headers)
 				require.Nil(t, err)
@@ -1746,7 +1746,7 @@ func TestEnvVars(t *testing.T) {
 					assert.True(ok)
 					// changing priority must set ctx.updated = true
 					if tc.priority != 0 {
-						sctx.setSamplingPriorityAndDecisionMaker(int(tc.priority), samplernames.Unknown)
+						sctx.setSamplingPriority(int(tc.priority), samplernames.Unknown)
 					}
 					assert.Equal(true, sctx.updated)
 

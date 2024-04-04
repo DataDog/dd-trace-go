@@ -181,11 +181,12 @@ func (c *spanContext) ForeachBaggageItem(handler func(k, v string) bool) {
 	}
 }
 
-func (c *spanContext) setSamplingPriorityAndDecisionMaker(p int, sampler samplernames.SamplerName) {
+// sets the sampling priority and decision maker (based on `sampler`).
+func (c *spanContext) setSamplingPriority(p int, sampler samplernames.SamplerName) {
 	if c.trace == nil {
 		c.trace = newTrace()
 	}
-	if c.trace.setSamplingPriorityAndDecisionMaker(p, sampler) {
+	if c.trace.setSamplingPriority(p, sampler) {
 		// the trace's sampling priority or sampler was updated: mark this as updated
 		c.updated = true
 	}
@@ -293,12 +294,12 @@ func (t *trace) samplingPriority() (p int, ok bool) {
 	return t.samplingPriorityLocked()
 }
 
-// setSamplingPriorityAndDecisionMaker sets the sampling priority and the decision maker
+// setSamplingPriority sets the sampling priority and the decision maker
 // and returns true if it was modified.
-func (t *trace) setSamplingPriorityAndDecisionMaker(p int, sampler samplernames.SamplerName) bool {
+func (t *trace) setSamplingPriority(p int, sampler samplernames.SamplerName) bool {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	return t.setSamplingPriorityAndDecisionMakerLocked(p, sampler)
+	return t.setSamplingPriorityLocked(p, sampler)
 }
 
 func (t *trace) keep() {
@@ -326,7 +327,7 @@ func samplerToDM(sampler samplernames.SamplerName) string {
 	return "-" + strconv.Itoa(int(sampler))
 }
 
-func (t *trace) setSamplingPriorityAndDecisionMakerLocked(p int, sampler samplernames.SamplerName) bool {
+func (t *trace) setSamplingPriorityLocked(p int, sampler samplernames.SamplerName) bool {
 	if t.locked {
 		return false
 	}
@@ -392,7 +393,7 @@ func (t *trace) push(sp *span) {
 		return
 	}
 	if v, ok := sp.Metrics[keySamplingPriority]; ok {
-		t.setSamplingPriorityAndDecisionMakerLocked(int(v), samplernames.Unknown)
+		t.setSamplingPriorityLocked(int(v), samplernames.Unknown)
 	}
 	t.spans = append(t.spans, sp)
 	if haveTracer {

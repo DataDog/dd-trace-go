@@ -508,15 +508,15 @@ func (rs *traceRulesSampler) sampleRules(span *span) bool {
 func (rs *traceRulesSampler) applyRate(span *span, rate float64, now time.Time, sampler samplernames.SamplerName) {
 	span.SetTag(keyRulesSamplerAppliedRate, rate)
 	if !sampledByRate(span.TraceID, rate) {
-		span.setSamplingPriorityAndDecisionMaker(ext.PriorityUserReject, sampler)
+		span.setSamplingPriority(ext.PriorityUserReject, sampler)
 		return
 	}
 
 	sampled, rate := rs.limiter.allowOne(now)
 	if sampled {
-		span.setSamplingPriorityAndDecisionMaker(ext.PriorityUserKeep, sampler)
+		span.setSamplingPriority(ext.PriorityUserKeep, sampler)
 	} else {
-		span.setSamplingPriorityAndDecisionMaker(ext.PriorityUserReject, sampler)
+		span.setSamplingPriority(ext.PriorityUserReject, sampler)
 	}
 	span.SetTag(keyRulesSamplerLimiterRate, rate)
 }

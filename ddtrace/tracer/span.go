@@ -185,12 +185,12 @@ func (s *span) SetTag(key string, value interface{}) {
 	s.setMeta(key, fmt.Sprint(value))
 }
 
-// setSamplingPriorityAndDecisionMaker locks then span, then updates the sampling priority.
+// setSamplingPriority locks then span, then updates the sampling priority.
 // It also updates the trace's sampling priority.
-func (s *span) setSamplingPriorityAndDecisionMaker(priority int, sampler samplernames.SamplerName) {
+func (s *span) setSamplingPriority(priority int, sampler samplernames.SamplerName) {
 	s.Lock()
 	defer s.Unlock()
-	s.setSamplingPriorityAndDecisionMakerLocked(priority, sampler)
+	s.setSamplingPriorityLocked(priority, sampler)
 }
 
 // Root returns the root span of the span's trace. The return value shouldn't be
@@ -270,9 +270,9 @@ func (s *span) SetUser(id string, opts ...UserMonitoringOption) {
 	}
 }
 
-// setSamplingPriorityAndDecisionMakerLocked updates the sampling priority.
+// setSamplingPriorityLocked updates the sampling priority.
 // It also updates the trace's sampling priority.
-func (s *span) setSamplingPriorityAndDecisionMakerLocked(priority int, sampler samplernames.SamplerName) {
+func (s *span) setSamplingPriorityLocked(priority int, sampler samplernames.SamplerName) {
 	// We don't lock spans when flushing, so we could have a data race when
 	// modifying a span as it's being flushed. This protects us against that
 	// race, since spans are marked `finished` before we flush them.
@@ -280,7 +280,7 @@ func (s *span) setSamplingPriorityAndDecisionMakerLocked(priority int, sampler s
 		return
 	}
 	s.setMetric(keySamplingPriority, float64(priority))
-	s.context.setSamplingPriorityAndDecisionMaker(priority, sampler)
+	s.context.setSamplingPriority(priority, sampler)
 }
 
 // setTagError sets the error tag. It accounts for various valid scenarios.
@@ -401,11 +401,11 @@ func (s *span) setTagBool(key string, v bool) {
 		}
 	case ext.ManualDrop:
 		if v {
-			s.setSamplingPriorityAndDecisionMakerLocked(ext.PriorityUserReject, samplernames.Manual)
+			s.setSamplingPriorityLocked(ext.PriorityUserReject, samplernames.Manual)
 		}
 	case ext.ManualKeep:
 		if v {
-			s.setSamplingPriorityAndDecisionMakerLocked(ext.PriorityUserKeep, samplernames.Manual)
+			s.setSamplingPriorityLocked(ext.PriorityUserKeep, samplernames.Manual)
 		}
 	default:
 		if v {
@@ -426,12 +426,12 @@ func (s *span) setMetric(key string, v float64) {
 	switch key {
 	case ext.ManualKeep:
 		if v == float64(samplernames.AppSec) {
-			s.setSamplingPriorityAndDecisionMakerLocked(ext.PriorityUserKeep, samplernames.AppSec)
+			s.setSamplingPriorityLocked(ext.PriorityUserKeep, samplernames.AppSec)
 		}
 	case ext.SamplingPriority:
 		// ext.SamplingPriority is deprecated in favor of ext.ManualKeep and ext.ManualDrop.
 		// We have it here for backward compatibility.
-		s.setSamplingPriorityAndDecisionMakerLocked(int(v), samplernames.Manual)
+		s.setSamplingPriorityLocked(int(v), samplernames.Manual)
 	default:
 		s.Metrics[key] = v
 	}

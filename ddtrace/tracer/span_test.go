@@ -397,7 +397,7 @@ func TestTraceManualKeepAndManualDrop(t *testing.T) {
 			tracer := newTracer()
 			defer tracer.Stop()
 			spanCtx := &spanContext{traceID: traceIDFrom64Bits(42), spanID: 42}
-			spanCtx.setSamplingPriorityAndDecisionMaker(scenario.p, samplernames.RemoteRate)
+			spanCtx.setSamplingPriority(scenario.p, samplernames.RemoteRate)
 			span := tracer.StartSpan("non-local root span", ChildOf(spanCtx)).(*span)
 			span.SetTag(scenario.tag, true)
 			assert.Equal(t, scenario.keep, shouldKeep(span))
