@@ -116,7 +116,7 @@ jobs:
 
       - uses: ./binaries/dd-trace-go/.github/actions/pr-metadata
         with:
-          text: ${{ github.event.pull_request.description }}
+          text: ${{ github.event.pull_request.body }}
 
       - name: Build weblog
         run: ./build.sh -i weblog

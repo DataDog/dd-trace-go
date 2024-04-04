@@ -7,7 +7,7 @@ inputs:
 outputs:
   metadata:
     description: "JSON metadata from the input text"
-    value: ${{ fromJSON(steps.random.outputs.metadata) }}
+    value: ${{ fromJSON(steps.parse.outputs.metadata) }}
 runs:
   using: "composite"
   steps:
