@@ -18,4 +18,4 @@ runs:
     - name: Parse Text Metadata
       id: parse
       shell: bash
-      run: echo "metadata=$(go run .github/actions/pr-metadata/re.go "${{ inputs.text }}") >> $GITHUB_OUTPUT
+      run: echo "metadata=$(go run .github/actions/pr-metadata/re.go \"${{ inputs.text }}\") >> $GITHUB_OUTPUT
