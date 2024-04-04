@@ -29,6 +29,8 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 		tracer, _, _, stop := startTestTracer(t, WithService("my-service"), WithEnv("my-env"))
 		defer stop()
 
+		require.Equal(t, originDefault, tracer.config.traceSampleRate.cfgOrigin)
+
 		// Apply RC. Assert _dd.rule_psr shows the RC sampling rate (0.5) is applied
 		input := remoteconfig.ProductUpdate{
 			"path": []byte(`{"lib_config": {"tracing_sampling_rate": 0.5}, "service_target": {"service": "my-service", "env": "my-env"}}`),
@@ -87,6 +89,8 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 		tracer, _, _, stop := startTestTracer(t, WithService("my-service"), WithEnv("my-env"))
 		defer stop()
 
+		require.Equal(t, originEnvVar, tracer.config.traceSampleRate.cfgOrigin)
+
 		// Apply RC. Assert _dd.rule_psr shows the RC sampling rate (0.2) is applied
 		input := remoteconfig.ProductUpdate{
 			"path": []byte(`{"lib_config": {"tracing_sampling_rate": 0.2}, "service_target": {"service": "my-service", "env": "my-env"}}`),
@@ -126,6 +130,8 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 			}]`)
 		tracer, _, _, stop := startTestTracer(t, WithService("my-service"), WithEnv("my-env"))
 		defer stop()
+
+		require.Equal(t, originDefault, tracer.config.traceSampleRate.cfgOrigin)
 
 		s := tracer.StartSpan("web.request").(*span)
 		s.Finish()
@@ -168,6 +174,8 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 		tracer, _, _, stop := startTestTracer(t, WithService("my-service"), WithEnv("my-env"))
 		defer stop()
 
+		require.Equal(t, originDefault, tracer.config.traceSampleRate.cfgOrigin)
+
 		// Apply RC. Assert global config shows the RC header tag is applied
 		input := remoteconfig.ProductUpdate{
 			"path": []byte(`{"lib_config": {"tracing_header_tags": [{"header": "X-Test-Header", "tag_name": "my-tag-name"}]}, "service_target": {"service": "my-service", "env": "my-env"}}`),
@@ -195,15 +203,15 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 		telemetryClient := new(telemetrytest.MockClient)
 		defer telemetry.MockGlobalClient(telemetryClient)()
 
-		Start(WithService("my-service"), WithEnv("my-env"))
-		defer Stop()
+		tr, _, _, stop := startTestTracer(t, WithService("my-service"), WithEnv("my-env"))
+		defer stop()
+
+		require.Equal(t, originDefault, tr.config.traceSampleRate.cfgOrigin)
 
 		input := remoteconfig.ProductUpdate{
 			"path": []byte(`{"lib_config": {"tracing_enabled": false}, "service_target": {"service": "my-service", "env": "my-env"}}`),
 		}
 
-		tr, ok := internal.GetGlobalTracer().(*tracer)
-		require.Equal(t, true, ok)
 		applyStatus := tr.onRemoteConfigUpdate(input)
 		require.Equal(t, state.ApplyStateAcknowledged, applyStatus["path"].State)
 		require.Equal(t, false, tr.config.enabled.current)
@@ -250,6 +258,8 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 		tracer, _, _, stop := startTestTracer(t, WithService("my-service"), WithEnv("my-env"))
 		defer stop()
 
+		require.Equal(t, originDefault, tracer.config.traceSampleRate.cfgOrigin)
+
 		// Apply RC. Assert global config shows the RC header tag is applied
 		input := remoteconfig.ProductUpdate{
 			"path": []byte(`{"lib_config": {"tracing_header_tags": [{"header": "X-Test-Header", "tag_name": "my-tag-name-from-rc"}]}, "service_target": {"service": "my-service", "env": "my-env"}}`),
@@ -283,6 +293,8 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 		tracer, _, _, stop := startTestTracer(t, WithService("my-service"), WithEnv("my-env"), WithHeaderTags([]string{"X-Test-Header:my-tag-name-in-code"}))
 		defer stop()
 
+		require.Equal(t, originDefault, tracer.config.traceSampleRate.cfgOrigin)
+
 		// Apply RC. Assert global config shows the RC header tag is applied
 		input := remoteconfig.ProductUpdate{
 			"path": []byte(`{"lib_config": {"tracing_header_tags": [{"header": "X-Test-Header", "tag_name": "my-tag-name-from-rc"}]}, "service_target": {"service": "my-service", "env": "my-env"}}`),
@@ -315,6 +327,8 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 		tracer, _, _, stop := startTestTracer(t, WithService("my-service"), WithEnv("my-env"))
 		defer stop()
 
+		require.Equal(t, originDefault, tracer.config.traceSampleRate.cfgOrigin)
+
 		input := remoteconfig.ProductUpdate{
 			"path": []byte(`{"lib_config": {"tracing_sampling_rate": "string value", "service_target": {"service": "my-service", "env": "my-env"}}}`),
 		}
@@ -332,6 +346,8 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 
 		tracer, _, _, stop := startTestTracer(t, WithServiceName("my-service"), WithEnv("my-env"))
 		defer stop()
+
+		require.Equal(t, originDefault, tracer.config.traceSampleRate.cfgOrigin)
 
 		input := remoteconfig.ProductUpdate{
 			"path": []byte(`{"lib_config": {}, "service_target": {"service": "other-service", "env": "my-env"}}`),
@@ -351,6 +367,8 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 		tracer, _, _, stop := startTestTracer(t, WithServiceName("my-service"), WithEnv("my-env"))
 		defer stop()
 
+		require.Equal(t, originDefault, tracer.config.traceSampleRate.cfgOrigin)
+
 		input := remoteconfig.ProductUpdate{
 			"path": []byte(`{"lib_config": {}, "service_target": {"service": "my-service", "env": "other-env"}}`),
 		}
@@ -369,6 +387,8 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 		t.Setenv("DD_TAGS", "key0:val0,key1:val1")
 		tracer, _, _, stop := startTestTracer(t, WithService("my-service"), WithEnv("my-env"), WithGlobalTag("key2", "val2"))
 		defer stop()
+
+		require.Equal(t, originDefault, tracer.config.traceSampleRate.cfgOrigin)
 
 		// Apply RC. Assert global tags have the RC tags key3:val3,key4:val4 applied + runtime ID
 		input := remoteconfig.ProductUpdate{
@@ -418,6 +438,8 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 		t.Setenv("DD_TAGS", "ddtag:from-env")
 		tracer, _, _, stop := startTestTracer(t, WithService("my-service"), WithEnv("my-env"))
 		defer stop()
+
+		require.Equal(t, originEnvVar, tracer.config.traceSampleRate.cfgOrigin)
 
 		// Apply RC. Assert configuration is updated to the RC values.
 		input := remoteconfig.ProductUpdate{
