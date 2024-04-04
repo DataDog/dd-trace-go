@@ -114,6 +114,10 @@ jobs:
           ref: ${{ inputs.branch_ref || github.ref }}
           path: 'binaries/dd-trace-go'
 
+      - uses: binaries/dd-trace-go/.github/actions/pr-metadata
+        with:
+          text: ${{ github.event.pull_request.description }}
+
       - name: Build weblog
         run: ./build.sh -i weblog
 
@@ -122,10 +126,6 @@ jobs:
 
       - name: Build agent
         run: ./build.sh -i agent
-
-      - uses: ./.github/actions/pr-metadata
-        with:
-          text: ${{ github.event.pull_request.description }}
 
       - name: Run
         run: exit 1; env ${{ matrix.env }} ./run.sh ${{ matrix.scenario }}
