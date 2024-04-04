@@ -1,0 +1,21 @@
+name: 'Pull Request Metadata'
+description: 'Read JSON metadata from Pull Request descriptions'
+inputs:
+  text:
+    description: 'Text to parse for metadata'
+    required: true
+outputs:
+  metadata:
+    description: "JSON metadata from the input text"
+    value: ${{ fromJSON(steps.random.outputs.metadata) }}
+runs:
+  using: "composite"
+  steps:
+    - uses: actions/setup-go@v5
+      with:
+        cache: false
+
+    - name: Parse Text Metadata
+      id: parse
+      shell: bash
+      run: echo "metadata=$(go run .github/actions/pr-metadata/re.go "${{ inputs.text }}") >> $GITHUB_OUTPUT
