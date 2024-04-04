@@ -115,6 +115,8 @@ jobs:
           path: 'binaries/dd-trace-go'
 
       - uses: ./binaries/dd-trace-go/.github/actions/pr-metadata
+        env:
+          GH_TOKEN: ${{ github.token }}
 
       - name: Build weblog
         run: ./build.sh -i weblog
