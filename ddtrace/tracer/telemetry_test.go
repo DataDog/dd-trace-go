@@ -69,7 +69,7 @@ func TestTelemetryEnabled(t *testing.T) {
 		rule := TagsResourceRule(map[string]string{"tag-a": "tv-a??"},
 			"resource-*", "op-name", "test-serv", 0.1)
 
-		for prov, provName := range ProvenanceName {
+		for prov, provName := range provenanceName {
 			if prov == Local {
 				continue
 			}

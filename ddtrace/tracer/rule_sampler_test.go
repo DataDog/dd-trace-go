@@ -203,7 +203,7 @@ func TestSamplingRuleProvenanceMarshal(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			// Same rule with provenance "customer"
-			for prov, provName := range ProvenanceName {
+			for prov, provName := range provenanceName {
 				test.rule.Provenance = prov
 				data, err := json.Marshal(test.rule)
 				assert.NoError(t, err)

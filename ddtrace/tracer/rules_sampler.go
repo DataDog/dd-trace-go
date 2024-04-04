@@ -63,12 +63,13 @@ const (
 )
 
 var (
-	ProvenanceName = map[provenance]string{
+	// Note provenanceName and provenanceValue should
+	provenanceName = map[provenance]string{
 		Local:    "local",
 		Customer: "customer",
 		Dynamic:  "dynamic",
 	}
-	ProvenanceValue = map[string]provenance{
+	provenanceValue = map[string]provenance{
 		"local":    Local,
 		"customer": Customer,
 		"dynamic":  Dynamic,
@@ -76,7 +77,7 @@ var (
 )
 
 func (p provenance) String() string {
-	return ProvenanceName[p]
+	return provenanceName[p]
 }
 
 func (p provenance) MarshalJSON() ([]byte, error) {
@@ -89,14 +90,14 @@ func (p *provenance) UnmarshalJSON(data []byte) error {
 	if err = json.Unmarshal(data, &prov); err != nil {
 		return err
 	}
-	if *p, err = ParseProvenance(prov); err != nil {
+	if *p, err = parseProvenance(prov); err != nil {
 		return err
 	}
 	return nil
 }
 
-func ParseProvenance(p string) (provenance, error) {
-	v, ok := ProvenanceValue[strings.TrimSpace(strings.ToLower(p))]
+func parseProvenance(p string) (provenance, error) {
+	v, ok := provenanceValue[strings.TrimSpace(strings.ToLower(p))]
 	if !ok {
 		return Customer, fmt.Errorf("Invalid Provenance: \"%v\"", p)
 	}
@@ -787,7 +788,7 @@ func (j jsonRule) String() string {
 		s = append(s, fmt.Sprintf("Type: %v", *j.Type))
 	}
 	if j.Provenance != Local {
-		s = append(s, fmt.Sprintf("Provenance: %v", ProvenanceName[j.Provenance]))
+		s = append(s, fmt.Sprintf("Provenance: %v", provenanceName[j.Provenance]))
 	}
 	return fmt.Sprintf("{%s}", strings.Join(s, " "))
 }
@@ -892,7 +893,7 @@ func (sr SamplingRule) MarshalJSON() ([]byte, error) {
 		s.Type = &t
 	}
 	if sr.Provenance != Local {
-		s.Provenance = ProvenanceName[sr.Provenance]
+		s.Provenance = provenanceName[sr.Provenance]
 	}
 	return json.Marshal(&s)
 }
