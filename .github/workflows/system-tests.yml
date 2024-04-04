@@ -114,7 +114,7 @@ jobs:
           ref: ${{ inputs.branch_ref || github.ref }}
           path: 'binaries/dd-trace-go'
 
-      - uses: binaries/dd-trace-go/.github/actions/pr-metadata
+      - uses: ./binaries/dd-trace-go/.github/actions/pr-metadata
         with:
           text: ${{ github.event.pull_request.description }}
 
