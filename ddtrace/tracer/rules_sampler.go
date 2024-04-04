@@ -54,36 +54,36 @@ func (r *rulesSampler) HasSpanRules() bool { return r.spans.enabled() }
 
 func (r *rulesSampler) TraceRateLimit() (float64, bool) { return r.traces.limit() }
 
-type Provenance int32
+type provenance int32
 
 const (
-	Local    Provenance = iota
-	Customer Provenance = 1
-	Dynamic  Provenance = 2
+	Local    provenance = iota
+	Customer provenance = 1
+	Dynamic  provenance = 2
 )
 
 var (
-	ProvenanceName = map[Provenance]string{
+	ProvenanceName = map[provenance]string{
 		Local:    "local",
 		Customer: "customer",
 		Dynamic:  "dynamic",
 	}
-	ProvenanceValue = map[string]Provenance{
+	ProvenanceValue = map[string]provenance{
 		"local":    Local,
 		"customer": Customer,
 		"dynamic":  Dynamic,
 	}
 )
 
-func (p Provenance) String() string {
+func (p provenance) String() string {
 	return ProvenanceName[p]
 }
 
-func (p Provenance) MarshalJSON() ([]byte, error) {
+func (p provenance) MarshalJSON() ([]byte, error) {
 	return json.Marshal(p.String())
 }
 
-func (p *Provenance) UnmarshalJSON(data []byte) error {
+func (p *provenance) UnmarshalJSON(data []byte) error {
 	var prov string
 	var err error
 	if err = json.Unmarshal(data, &prov); err != nil {
@@ -95,7 +95,7 @@ func (p *Provenance) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-func ParseProvenance(p string) (Provenance, error) {
+func ParseProvenance(p string) (provenance, error) {
 	v, ok := ProvenanceValue[strings.TrimSpace(strings.ToLower(p))]
 	if !ok {
 		return Customer, fmt.Errorf("Invalid Provenance: \"%v\"", p)
@@ -127,7 +127,7 @@ type SamplingRule struct {
 	// Tags specifies the map of key-value patterns that span tags must match.
 	Tags map[string]*regexp.Regexp
 
-	Provenance Provenance
+	Provenance provenance
 
 	ruleType SamplingRuleType
 	limiter  *rateLimiter
@@ -760,7 +760,7 @@ type jsonRule struct {
 	Resource     string            `json:"resource"`
 	Tags         map[string]string `json:"tags"`
 	Type         *SamplingRuleType `json:"type,omitempty"`
-	Provenance   Provenance        `json:"provenance,omitempty"`
+	Provenance   provenance        `json:"provenance,omitempty"`
 }
 
 func (j jsonRule) String() string {
