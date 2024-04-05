@@ -64,19 +64,20 @@ type errorConfig struct {
 type span struct {
 	sync.RWMutex `msg:"-"` // all fields are protected by this RWMutex
 
-	Name      string             `msg:"name"`              // operation name
-	Service   string             `msg:"service"`           // service name (i.e. "grpc.server", "http.request")
-	Resource  string             `msg:"resource"`          // resource name (i.e. "/user?id=123", "SELECT * FROM users")
-	Type      string             `msg:"type"`              // protocol associated with the span (i.e. "web", "db", "cache")
-	Start     int64              `msg:"start"`             // span start time expressed in nanoseconds since epoch
-	Duration  int64              `msg:"duration"`          // duration of the span expressed in nanoseconds
-	Meta      map[string]string  `msg:"meta,omitempty"`    // arbitrary map of metadata
-	Metrics   map[string]float64 `msg:"metrics,omitempty"` // arbitrary map of numeric metrics
-	SpanID    uint64             `msg:"span_id"`           // identifier of this span
-	TraceID   uint64             `msg:"trace_id"`          // lower 64-bits of the root span identifier
-	ParentID  uint64             `msg:"parent_id"`         // identifier of the span's direct parent
-	Error     int32              `msg:"error"`             // error status of the span; 0 means no errors
-	SpanLinks []ddtrace.SpanLink `msg:"span_links"`        // links to other spans
+	Name       string             `msg:"name"`                  // operation name
+	Service    string             `msg:"service"`               // service name (i.e. "grpc.server", "http.request")
+	Resource   string             `msg:"resource"`              // resource name (i.e. "/user?id=123", "SELECT * FROM users")
+	Type       string             `msg:"type"`                  // protocol associated with the span (i.e. "web", "db", "cache")
+	Start      int64              `msg:"start"`                 // span start time expressed in nanoseconds since epoch
+	Duration   int64              `msg:"duration"`              // duration of the span expressed in nanoseconds
+	Meta       map[string]string  `msg:"meta,omitempty"`        // arbitrary map of metadata
+	MetaStruct metaStructMap      `msg:"meta_struct,omitempty"` // arbitrary map of metadata with structured values
+	Metrics    map[string]float64 `msg:"metrics,omitempty"`     // arbitrary map of numeric metrics
+	SpanID     uint64             `msg:"span_id"`               // identifier of this span
+	TraceID    uint64             `msg:"trace_id"`              // lower 64-bits of the root span identifier
+	ParentID   uint64             `msg:"parent_id"`             // identifier of the span's direct parent
+	Error      int32              `msg:"error"`                 // error status of the span; 0 means no errors
+	SpanLinks  []ddtrace.SpanLink `msg:"span_links"`            // links to other spans
 
 	goExecTraced bool         `msg:"-"`
 	noDebugStack bool         `msg:"-"` // disables debug stack traces
@@ -162,6 +163,7 @@ func (s *span) SetTag(key string, value interface{}) {
 		s.setMeta(key, v.String())
 		return
 	}
+
 	if value != nil {
 		// Arrays will be translated to dot notation. e.g.
 		// {"myarr.0": "foo", "myarr.1": "bar"}
@@ -180,7 +182,15 @@ func (s *span) SetTag(key string, value interface{}) {
 			}
 			return
 		}
+
+		// Can be sent as messagepack in `meta_struct` instead of `meta`
+		// reserved for internal use only
+		if v, ok := value.(sharedinternal.MetaStructValue); ok {
+			s.setMetaStruct(key, v.Value)
+			return
+		}
 	}
+
 	// not numeric, not a string, not a fmt.Stringer, not a bool, and not an error
 	s.setMeta(key, fmt.Sprint(value))
 }
@@ -388,6 +398,13 @@ func (s *span) setMeta(key, v string) {
 	default:
 		s.Meta[key] = v
 	}
+}
+
+func (s *span) setMetaStruct(key string, v any) {
+	if s.MetaStruct == nil {
+		s.MetaStruct = make(metaStructMap, 1)
+	}
+	s.MetaStruct[key] = v
 }
 
 // setTagBool sets a boolean tag on the span.
