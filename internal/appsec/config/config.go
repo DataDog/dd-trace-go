@@ -12,11 +12,42 @@ import (
 	"time"
 
 	internal "github.com/DataDog/appsec-internal-go/appsec"
+
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/remoteconfig"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 )
 
-// EnvEnabled is the env var used to enable/disable appsec
-const EnvEnabled = "DD_APPSEC_ENABLED"
+func init() {
+	registerAppConfigTelemetry()
+}
+
+// Register the global app telemetry configuration.
+func registerAppConfigTelemetry() {
+	registerSCAAppConfigTelemetry(telemetry.GlobalClient)
+}
+
+// Register the global app telemetry configuration related to the Software Composition Analysis (SCA) product.
+// Report over telemetry whether SCA's enablement env var was set or not along with its value. Nothing is reported in
+// case of an error or if the env var is not set.
+func registerSCAAppConfigTelemetry(client telemetry.Client) {
+	val, defined, err := parseBoolEnvVar(EnvSCAEnabled)
+	if err != nil {
+		log.Error("appsec: %v", err)
+		return
+	}
+	if defined {
+		client.RegisterAppConfig(EnvSCAEnabled, val, "env_var")
+	}
+}
+
+// The following environment variables dictate the enablement of different the ASM products.
+const (
+	// EnvEnabled controls ASM Threats Protection's enablement.
+	EnvEnabled = "DD_APPSEC_ENABLED"
+	// EnvSCAEnabled controls ASM Software Composition Analysis (SCA)'s enablement.
+	EnvSCAEnabled = "DD_APPSEC_SCA_ENABLED"
+)
 
 // StartOption is used to customize the AppSec configuration when invoked with appsec.Start()
 type StartOption func(c *Config)
@@ -45,15 +76,22 @@ func WithRCConfig(cfg remoteconfig.ClientConfig) StartOption {
 	}
 }
 
-// IsEnabled returns true when appsec is enabled when the environment variable
-// DD_APPSEC_ENABLED is set to true.
-// It also returns whether the env var is actually set in the env or not.
+// IsEnabled returns true when appsec is enabled by the environment variable DD_APPSEC_ENABLED (as of strconv's boolean
+// parsing rules). When false, it also returns whether the env var was actually set or not.
+// In case of a parsing error, it returns a detailed error.
 func IsEnabled() (enabled bool, set bool, err error) {
-	enabledStr, set := os.LookupEnv(EnvEnabled)
-	if enabledStr == "" {
+	return parseBoolEnvVar(EnvEnabled)
+}
+
+// Return true when the given environment variable is defined and set to true (as of strconv's
+// parsing rules). When false, it also returns whether the env var was actually set or not.
+// In case of a parsing error, it returns a detailed error.
+func parseBoolEnvVar(env string) (enabled bool, set bool, err error) {
+	str, set := os.LookupEnv(env)
+	if str == "" {
 		return false, set, nil
-	} else if enabled, err = strconv.ParseBool(enabledStr); err != nil {
-		return false, set, fmt.Errorf("could not parse %s value `%s` as a boolean value", EnvEnabled, enabledStr)
+	} else if enabled, err = strconv.ParseBool(str); err != nil {
+		return false, set, fmt.Errorf("could not parse %s value `%s` as a boolean value", env, str)
 	}
 
 	return enabled, set, nil
