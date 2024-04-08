@@ -69,7 +69,7 @@ func TestTelemetryEnabled(t *testing.T) {
 		rule := TagsResourceRule(map[string]string{"tag-a": "tv-a??"},
 			"resource-*", "op-name", "test-serv", 0.1)
 
-		for prov, provName := range provenanceName {
+		for _, prov := range provenances {
 			if prov == Local {
 				continue
 			}
@@ -85,7 +85,7 @@ func TestTelemetryEnabled(t *testing.T) {
 
 			assert.True(t, telemetryClient.Started)
 			telemetry.Check(t, telemetryClient.Configuration, "trace_sample_rules",
-				fmt.Sprintf(`[{"service":"test-serv","name":"op-name","resource":"resource-*","sample_rate":0.1,"tags":{"tag-a":"tv-a??"},"type":"1","provenance":"%s"}]`, provName))
+				fmt.Sprintf(`[{"service":"test-serv","name":"op-name","resource":"resource-*","sample_rate":0.1,"tags":{"tag-a":"tv-a??"},"type":"1","provenance":"%s"}]`, prov.String()))
 		}
 	})
 

@@ -203,15 +203,15 @@ func TestSamplingRuleProvenanceMarshal(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			// Same rule with provenance "customer"
-			for prov, provName := range provenanceName {
+			for _, prov := range provenances {
 				test.rule.Provenance = prov
-				data, err := json.Marshal(test.rule)
+				data, err := test.rule.MarshalJSON()
 				assert.NoError(t, err)
-				jsonWithprov := test.jsonStr[:len(test.jsonStr)-1] + `,"provenance":"` + provName + `"}`
+				jsonWithprov := test.jsonStr[:len(test.jsonStr)-1] + `,"provenance":"` + prov.String() + `"}`
 				if prov == Local {
-					assert.Equal(t, []byte(test.jsonStr), data)
+					assert.Equal(t, test.jsonStr, string(data))
 				} else {
-					assert.Equal(t, []byte(jsonWithprov), data)
+					assert.Equal(t, jsonWithprov, string(data))
 				}
 				var unmarshalledRule SamplingRule
 				assert.NoError(t, json.Unmarshal(data, &unmarshalledRule))

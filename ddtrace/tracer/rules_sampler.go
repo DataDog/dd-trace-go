@@ -62,22 +62,19 @@ const (
 	Dynamic  provenance = 2
 )
 
-var (
-	// Note provenanceName and provenanceValue should
-	provenanceName = map[provenance]string{
-		Local:    "local",
-		Customer: "customer",
-		Dynamic:  "dynamic",
-	}
-	provenanceValue = map[string]provenance{
-		"local":    Local,
-		"customer": Customer,
-		"dynamic":  Dynamic,
-	}
-)
+var provenances = []provenance{Local, Customer, Dynamic}
 
 func (p provenance) String() string {
-	return provenanceName[p]
+	switch p {
+	case Local:
+		return "local"
+	case Customer:
+		return "customer"
+	case Dynamic:
+		return "dynamic"
+	default:
+		return ""
+	}
 }
 
 func (p provenance) MarshalJSON() ([]byte, error) {
@@ -97,11 +94,12 @@ func (p *provenance) UnmarshalJSON(data []byte) error {
 }
 
 func parseProvenance(p string) (provenance, error) {
-	v, ok := provenanceValue[strings.TrimSpace(strings.ToLower(p))]
-	if !ok {
-		return Customer, fmt.Errorf("Invalid Provenance: \"%v\"", p)
+	for _, v := range provenances {
+		if strings.EqualFold(strings.TrimSpace(strings.ToLower(p)), v.String()) {
+			return v, nil
+		}
 	}
-	return v, nil
+	return Customer, fmt.Errorf("Invalid Provenance: \"%v\"", p)
 }
 
 // SamplingRule is used for applying sampling rates to spans that match
@@ -788,7 +786,7 @@ func (j jsonRule) String() string {
 		s = append(s, fmt.Sprintf("Type: %v", *j.Type))
 	}
 	if j.Provenance != Local {
-		s = append(s, fmt.Sprintf("Provenance: %v", provenanceName[j.Provenance]))
+		s = append(s, fmt.Sprintf("Provenance: %v", j.Provenance.String()))
 	}
 	return fmt.Sprintf("{%s}", strings.Join(s, " "))
 }
@@ -893,7 +891,7 @@ func (sr SamplingRule) MarshalJSON() ([]byte, error) {
 		s.Type = &t
 	}
 	if sr.Provenance != Local {
-		s.Provenance = provenanceName[sr.Provenance]
+		s.Provenance = sr.Provenance.String()
 	}
 	return json.Marshal(&s)
 }
