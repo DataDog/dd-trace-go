@@ -89,7 +89,7 @@ func WithAnalyticsRate(rate float64) OptionFn {
 }
 
 // WithDataStreams enables the Data Streams monitoring product features: https://www.datadoghq.com/product/data-streams-monitoring/
-func WithDataStreams() Option {
+func WithDataStreams() OptionFn {
 	return func(cfg *config) {
 		cfg.dataStreamsEnabled = true
 	}
