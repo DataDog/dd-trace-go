@@ -95,7 +95,7 @@ func TestNilSpan(t *testing.T) {
 		t.Errorf("expected empty string, got %s", v)
 	}
 	span.SetTag("key", "value")
-	if v := span.Tag("key"); v != nil {
+	if v := span.AsMap()["key"]; v != nil {
 		t.Errorf("expected nil, got %s", v)
 	}
 	span.SetUser("user")
@@ -367,37 +367,27 @@ func TestSpanSetTag(t *testing.T) {
 	assert := assert.New(t)
 	span := newBasicSpan("web.request")
 	assert.Equal("web.request", span.name)
-	assert.Equal("web.request", span.Tag(ext.SpanName))
 
 	span.SetTag("component", "tracer")
 	assert.Equal("tracer", span.meta["component"])
-	assert.Equal("tracer", span.Tag("component"))
 
 	span.SetTag("tagInt", 1234)
 	assert.Equal(float64(1234), span.metrics["tagInt"])
-	assert.Equal(float64(1234), span.Tag("tagInt"))
 
 	span.SetTag("tagStruct", struct{ A, B int }{1, 2})
 	assert.Equal("{1 2}", span.meta["tagStruct"])
-	assert.Equal("{1 2}", span.Tag("tagStruct"))
 
 	span.SetTag(ext.Error, true)
 	assert.Equal(int32(1), span.error)
-	assert.Equal(int32(1), span.Tag(ext.Error))
 
 	span.SetTag(ext.Error, nil)
 	assert.Equal(int32(0), span.error)
-	assert.Equal(int32(0), span.Tag(ext.Error))
 
 	span.SetTag(ext.Error, errors.New("abc"))
 	assert.Equal(int32(1), span.error)
-	assert.Equal(int32(1), span.Tag(ext.Error))
 	assert.Equal("abc", span.meta[ext.ErrorMsg])
-	assert.Equal("abc", span.Tag(ext.ErrorMsg))
 	assert.Equal("*errors.errorString", span.meta[ext.ErrorType])
-	assert.Equal("*errors.errorString", span.Tag(ext.ErrorType))
 	assert.NotEmpty(span.meta[ext.ErrorStack])
-	assert.Equal(span.meta[ext.ErrorStack], span.Tag(ext.ErrorStack))
 
 	span.SetTag(ext.Error, "something else")
 	assert.Equal(int32(1), span.error)
@@ -407,19 +397,15 @@ func TestSpanSetTag(t *testing.T) {
 
 	span.SetTag("some.bool", true)
 	assert.Equal("true", span.meta["some.bool"])
-	assert.Equal("true", span.Tag("some.bool"))
 
 	span.SetTag("some.other.bool", false)
 	assert.Equal("false", span.meta["some.other.bool"])
-	assert.Equal("false", span.Tag("some.other.bool"))
 
 	span.SetTag("time", (*time.Time)(nil))
 	assert.Equal("<nil>", span.meta["time"])
-	assert.Equal("<nil>", span.Tag("time"))
 
 	span.SetTag("nilStringer", (*nilStringer)(nil))
 	assert.Equal("<nil>", span.meta["nilStringer"])
-	assert.Equal("<nil>", span.Tag("nilStringer"))
 
 	span.SetTag("somestrings", []string{"foo", "bar"})
 	assert.Equal("foo", span.meta["somestrings.0"])
@@ -466,9 +452,10 @@ func TestSpanTagsStartSpan(t *testing.T) {
 
 	span := tr.StartSpan("operation-name", ServiceName("service"), Tag("tag", "value"))
 
-	assert.Equal("value", span.Tag("tag"))
-	assert.Equal("service", span.Tag(ext.ServiceName))
-	assert.Equal("operation-name", span.Tag(ext.SpanName))
+	tags := span.AsMap()
+	assert.Equal("value", tags["tag"])
+	assert.Equal("service", tags[ext.ServiceName])
+	assert.Equal("operation-name", tags[ext.SpanName])
 }
 
 type testMsgpStruct struct {

@@ -261,40 +261,6 @@ func (s *Span) AddLink(spanContext *SpanContext, attributes map[string]string) {
 	})
 }
 
-// Tag returns the value for a given tag key.
-// If the key does not exist, Tag returns nil.
-// All values may be of type string, float64, or int32 (only for ext.Error).
-// If the original tag value was not one of these types, Tag will return a string
-// representation of the value.
-// Use ext.Error to check if the span has an error, and ext.ErrorMsg, ext.ErrorType,
-// and ext.ErrorStack to get the error details.
-func (s *Span) Tag(k string) interface{} {
-	if s == nil {
-		return nil
-	}
-	s.RLock()
-	defer s.RUnlock()
-	switch k {
-	case ext.Error:
-		return s.error
-	case ext.SpanName:
-		return s.name
-	case ext.ServiceName:
-		return s.service
-	case ext.ResourceName:
-		return s.resource
-	case ext.SpanType:
-		return s.spanType
-	}
-	if v, ok := s.meta[k]; ok {
-		return v
-	}
-	if v, ok := s.metrics[k]; ok {
-		return v
-	}
-	return nil
-}
-
 // setSamplingPriority locks then span, then updates the sampling priority.
 // It also updates the trace's sampling priority.
 func (s *Span) setSamplingPriority(priority int, sampler samplernames.SamplerName) {

@@ -56,7 +56,7 @@ func (s *Span) Tag(k string) interface{} {
 	}
 	// It's possible that a tag wasn't set through mocktracer.Span.SetTag,
 	// in which case we need to retrieve it from the underlying tracer.Span.
-	v := s.sp.Tag(k)
+	v := s.sp.AsMap()[k]
 	if v != nil {
 		return v
 	}
