@@ -31,6 +31,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/namingschema"
 	"github.com/DataDog/dd-trace-go/v2/internal/traceprof"
+	"github.com/DataDog/dd-trace-go/v2/internal/version"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -1255,6 +1256,16 @@ func TestStatsTags(t *testing.T) {
 	assert.Contains(tags, "service:serviceName")
 	assert.Contains(tags, "env:envName")
 	assert.Contains(tags, "host:hostName")
+
+	st := globalconfig.StatsTags()
+	// all of the tracer tags except `service` and `version` should be on `st`
+	assert.Len(st, len(tags)-2)
+	assert.Contains(st, "env:envName")
+	assert.Contains(st, "host:hostName")
+	assert.Contains(st, "lang:go")
+	assert.Contains(st, "lang_version:"+runtime.Version())
+	assert.NotContains(st, "version:"+version.Tag)
+	assert.NotContains(st, "service:serviceName")
 }
 
 func TestGlobalTag(t *testing.T) {

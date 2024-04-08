@@ -114,7 +114,7 @@ func TestLogWriter(t *testing.T) {
 		v := struct{ Traces [][]map[string]interface{} }{}
 		d := json.NewDecoder(&buf)
 		err = d.Decode(&v)
-		assert.NoError(err)
+		assert.NoError(err, string(buf.Bytes()))
 		assert.Len(v.Traces, 20, "Expected 20 traces, but have %d", len(v.Traces))
 		for _, t := range v.Traces {
 			assert.Len(t, 2, "Expected 2 spans, but have %d", len(t))
@@ -156,17 +156,18 @@ func TestLogWriter(t *testing.T) {
 		h := newLogTraceWriter(cfg, statsd)
 		h.w = &buf
 		type jsonSpan struct {
-			TraceID  string             `json:"trace_id"`
-			SpanID   string             `json:"span_id"`
-			ParentID string             `json:"parent_id"`
-			Name     string             `json:"name"`
-			Resource string             `json:"resource"`
-			Error    int32              `json:"error"`
-			Meta     map[string]string  `json:"meta"`
-			Metrics  map[string]float64 `json:"metrics"`
-			Start    int64              `json:"start"`
-			Duration int64              `json:"duration"`
-			Service  string             `json:"service"`
+			TraceID    string             `json:"trace_id"`
+			SpanID     string             `json:"span_id"`
+			ParentID   string             `json:"parent_id"`
+			Name       string             `json:"name"`
+			Resource   string             `json:"resource"`
+			Error      int32              `json:"error"`
+			Meta       map[string]string  `json:"meta"`
+			MetaStruct map[string]any     `json:"meta_struct"`
+			Metrics    map[string]float64 `json:"metrics"`
+			Start      int64              `json:"start"`
+			Duration   int64              `json:"duration"`
+			Service    string             `json:"service"`
 		}
 		type jsonPayload struct {
 			Traces [][]jsonSpan `json:"traces"`
@@ -178,6 +179,11 @@ func TestLogWriter(t *testing.T) {
 			meta: map[string]string{
 				"env":     "prod",
 				"version": "1.26.0",
+			},
+			metaStruct: map[string]any{
+				"_dd.stack": map[string]string{
+					"0": "github.com/DataDog/dd-trace-go/v1/internal/tracer.TestLogWriter",
+				},
 			},
 			metrics: map[string]float64{
 				"widgets": 1e26,
@@ -200,9 +206,11 @@ func TestLogWriter(t *testing.T) {
 			Service:  "basicService",
 			Resource: "basicResource",
 			Meta: map[string]string{
-				"env":     "prod",
-				"version": "1.26.0",
+				"env":       "prod",
+				"version":   "1.26.0",
+				"_dd.stack": "{\"0\":\"github.com/DataDog/dd-trace-go/v1/internal/tracer.TestLogWriter\"}",
 			},
+			MetaStruct: nil,
 			Metrics: map[string]float64{
 				"widgets": 1e26,
 				"zero":    0.0,
@@ -380,7 +388,7 @@ func TestTraceWriterFlushRetries(t *testing.T) {
 
 	sentCounts := map[string]int64{
 		"datadog.tracer.decode_error": 1,
-		"datadog.tracer.flush_bytes":  184,
+		"datadog.tracer.flush_bytes":  197,
 		"datadog.tracer.flush_traces": 1,
 	}
 	droppedCounts := map[string]int64{

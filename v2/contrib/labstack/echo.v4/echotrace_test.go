@@ -16,9 +16,10 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
-	"github.com/DataDog/dd-trace-go/v2/internal/contrib/namingschematest"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/normalizer"
+	"github.com/DataDog/dd-trace-go/v2/v1internal/namingschematest"
 
 	"github.com/labstack/echo/v4"
 	"github.com/stretchr/testify/assert"
@@ -747,4 +748,36 @@ func TestWithCustomTags(t *testing.T) {
 	assert.Equal("customValue1", span.Tag("customTag1"))
 	assert.Equal("customValue2", span.Tag("customTag2"))
 	assert.Equal("server", span.Tag(ext.SpanKind))
+}
+
+func BenchmarkEchoNoTracing(b *testing.B) {
+	mux := echo.New()
+	mux.GET("/200", func(c echo.Context) error {
+		return c.NoContent(200)
+	})
+	r := httptest.NewRequest("GET", "/200", nil)
+	w := httptest.NewRecorder()
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		mux.ServeHTTP(w, r)
+	}
+}
+
+func BenchmarkEchoWithTracing(b *testing.B) {
+	tracer.Start(tracer.WithLogger(log.DiscardLogger{}))
+	defer tracer.Stop()
+
+	mux := echo.New()
+	mux.Use(Middleware())
+	mux.GET("/200", func(c echo.Context) error {
+		return c.NoContent(200)
+	})
+	r := httptest.NewRequest("GET", "/200", nil)
+	w := httptest.NewRecorder()
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		mux.ServeHTTP(w, r)
+	}
 }

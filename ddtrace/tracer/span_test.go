@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	sharedinternal "github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
 	"github.com/DataDog/dd-trace-go/v2/internal/traceprof"
@@ -439,6 +440,19 @@ func TestSpanSetTag(t *testing.T) {
 	assert.Equal("[]", span.meta["someslices.2"])
 	assert.Equal("[e, f]", span.meta["someslices.3"])
 
+	mapStrStr := map[string]string{"b": "c"}
+	span.SetTag("map", sharedinternal.MetaStructValue{Value: map[string]string{"b": "c"}})
+	assert.Equal(mapStrStr, span.metaStruct["map"])
+
+	mapOfMap := map[string]map[string]any{"a": {"b": "c"}}
+	span.SetTag("mapOfMap", sharedinternal.MetaStructValue{Value: mapOfMap})
+	assert.Equal(mapOfMap, span.metaStruct["mapOfMap"])
+
+	// testMsgpStruct is a struct that implements the msgp.Marshaler interface
+	testValue := &testMsgpStruct{A: "test"}
+	span.SetTag("struct", sharedinternal.MetaStructValue{Value: testValue})
+	require.Equal(t, testValue, span.metaStruct["struct"])
+
 	assert.Panics(func() {
 		span.SetTag("panicStringer", &panicStringer{})
 	})
@@ -455,6 +469,14 @@ func TestSpanTagsStartSpan(t *testing.T) {
 	assert.Equal("value", span.Tag("tag"))
 	assert.Equal("service", span.Tag(ext.ServiceName))
 	assert.Equal("operation-name", span.Tag(ext.SpanName))
+}
+
+type testMsgpStruct struct {
+	A string
+}
+
+func (t *testMsgpStruct) MarshalMsg(_ []byte) ([]byte, error) {
+	return nil, nil
 }
 
 func TestSpanSetTagError(t *testing.T) {

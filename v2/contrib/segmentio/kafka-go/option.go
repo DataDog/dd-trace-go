@@ -20,6 +20,7 @@ type config struct {
 	consumerSpanName    string
 	producerSpanName    string
 	analyticsRate       float64
+	dataStreamsEnabled  bool
 }
 
 // Option describes options for the Kafka integration.
@@ -42,6 +43,8 @@ func newConfig(opts ...Option) *config {
 	if internal.BoolEnv("DD_TRACE_KAFKA_ANALYTICS_ENABLED", false) {
 		cfg.analyticsRate = 1.0
 	}
+
+	cfg.dataStreamsEnabled = internal.BoolEnv("DD_DATA_STREAMS_ENABLED", false)
 
 	cfg.consumerServiceName = namingschema.ServiceName(defaultServiceName)
 	cfg.producerServiceName = namingschema.ServiceNameOverrideV0(defaultServiceName, defaultServiceName)
@@ -82,5 +85,12 @@ func WithAnalyticsRate(rate float64) OptionFn {
 		} else {
 			cfg.analyticsRate = math.NaN()
 		}
+	}
+}
+
+// WithDataStreams enables the Data Streams monitoring product features: https://www.datadoghq.com/product/data-streams-monitoring/
+func WithDataStreams() Option {
+	return func(cfg *config) {
+		cfg.dataStreamsEnabled = true
 	}
 }

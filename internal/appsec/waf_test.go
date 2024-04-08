@@ -6,6 +6,7 @@
 package appsec_test
 
 import (
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -17,36 +18,14 @@ import (
 	waf "github.com/DataDog/go-libddwaf/v2"
 
 	pAppsec "github.com/DataDog/dd-trace-go/v2/appsec"
+	httptrace "github.com/DataDog/dd-trace-go/v2/contrib/net/http"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/config"
-	"github.com/DataDog/dd-trace-go/v2/internal/appsec/emitter/httpsec"
-	"github.com/DataDog/dd-trace-go/v2/internal/contrib/httptrace"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec/listener/httpsec"
 
 	"github.com/stretchr/testify/require"
 )
-
-type mockServeMux struct {
-	*http.ServeMux
-}
-
-func (mux *mockServeMux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	span, ctx := httptrace.StartRequestSpan(r)
-	defer func() {
-		httptrace.FinishRequestSpan(span, http.StatusOK)
-	}()
-	h := http.Handler(mux.ServeMux)
-	if appsec.Enabled() {
-		h = httpsec.WrapHandler(h, span, make(map[string]string))
-	}
-	h.ServeHTTP(w, r.WithContext(ctx))
-}
-
-func newMockServeMux() *mockServeMux {
-	return &mockServeMux{
-		http.NewServeMux(),
-	}
-}
 
 func TestCustomRules(t *testing.T) {
 	t.Setenv("DD_APPSEC_RULES", "testdata/custom_rules.json")
@@ -58,7 +37,7 @@ func TestCustomRules(t *testing.T) {
 	}
 
 	// Start and trace an HTTP server
-	mux := newMockServeMux()
+	mux := httptrace.NewServeMux()
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("Hello World!\n"))
 	})
@@ -115,7 +94,7 @@ func TestUserRules(t *testing.T) {
 	}
 
 	// Start and trace an HTTP server
-	mux := newMockServeMux()
+	mux := httptrace.NewServeMux()
 	mux.HandleFunc("/hello", func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("Hello World!\n"))
 	})
@@ -181,7 +160,7 @@ func TestWAF(t *testing.T) {
 	}
 
 	// Start and trace an HTTP server
-	mux := newMockServeMux()
+	mux := httptrace.NewServeMux()
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("Hello World!\n"))
 	})
@@ -337,7 +316,7 @@ func TestBlocking(t *testing.T) {
 	)
 
 	// Start and trace an HTTP server
-	mux := newMockServeMux()
+	mux := httptrace.NewServeMux()
 	mux.HandleFunc("/ip", func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("Hello World!\n"))
 	})
@@ -460,7 +439,7 @@ func TestAPISecurity(t *testing.T) {
 	if wafOK, err := waf.Health(); !wafOK {
 		t.Skipf("WAF must be usable for this test to run correctly: %v", err)
 	}
-	mux := newMockServeMux()
+	mux := httptrace.NewServeMux()
 	mux.HandleFunc("/apisec", func(w http.ResponseWriter, r *http.Request) {
 		pAppsec.MonitorParsedHTTPBody(r.Context(), "plain body")
 		w.Write([]byte("Hello World!\n"))
@@ -513,4 +492,77 @@ func TestAPISecurity(t *testing.T) {
 		require.Nil(t, spans[0].Tag("_dd.appsec.s.req.query"))
 		require.Nil(t, spans[0].Tag("_dd.appsec.s.req.body"))
 	})
+}
+
+// BenchmarkSampleWAFContext benchmarks the creation of a WAF context and running the WAF on a request/response pair
+// This is a basic sample of what could happen in a real-world scenario.
+func BenchmarkSampleWAFContext(b *testing.B) {
+	rules, err := internal.DefaultRuleset()
+	if err != nil {
+		b.Fatalf("error loading rules: %v", err)
+	}
+
+	var parsedRuleset map[string]any
+	err = json.Unmarshal(rules, &parsedRuleset)
+	if err != nil {
+		b.Fatalf("error parsing rules: %v", err)
+	}
+
+	handle, err := waf.NewHandle(parsedRuleset, internal.DefaultObfuscatorKeyRegex, internal.DefaultObfuscatorValueRegex)
+	for i := 0; i < b.N; i++ {
+		ctx := waf.NewContext(handle)
+		if ctx == nil {
+			b.Fatal("nil context")
+		}
+
+		// Request WAF Run
+		_, err := ctx.Run(
+			waf.RunAddressData{
+				Persistent: map[string]any{
+					httpsec.HTTPClientIPAddr:        "1.1.1.1",
+					httpsec.ServerRequestMethodAddr: "GET",
+					httpsec.ServerRequestRawURIAddr: "/",
+					httpsec.ServerRequestHeadersNoCookiesAddr: map[string][]string{
+						"host":            {"example.com"},
+						"content-length":  {"0"},
+						"Accept":          {"application/json"},
+						"User-Agent":      {"curl/7.64.1"},
+						"Accept-Encoding": {"gzip"},
+						"Connection":      {"close"},
+					},
+					httpsec.ServerRequestCookiesAddr: map[string][]string{
+						"cookie": {"session=1234"},
+					},
+					httpsec.ServerRequestQueryAddr: map[string][]string{
+						"query": {"value"},
+					},
+					httpsec.ServerRequestPathParamsAddr: map[string]string{
+						"param": "value",
+					},
+				},
+			}, 0)
+
+		if err != nil {
+			b.Fatalf("error running waf: %v", err)
+		}
+
+		// Response WAF Run
+		_, err = ctx.Run(
+			waf.RunAddressData{
+				Persistent: map[string]any{
+					httpsec.ServerResponseHeadersNoCookiesAddr: map[string][]string{
+						"content-type":   {"application/json"},
+						"content-length": {"0"},
+						"Connection":     {"close"},
+					},
+					httpsec.ServerResponseStatusAddr: 200,
+				},
+			}, 0)
+
+		if err != nil {
+			b.Fatalf("error running waf: %v", err)
+		}
+
+		ctx.Close()
+	}
 }
