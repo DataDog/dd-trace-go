@@ -71,7 +71,7 @@ func TraceAndServe(h http.Handler, w http.ResponseWriter, r *http.Request, cfg *
 	}()
 
 	if appsec.Enabled() {
-		h = httpsec.WrapHandler(h, span, cfg.RouteParams)
+		h = httpsec.WrapHandler(h, span, cfg.RouteParams, nil)
 	}
 	h.ServeHTTP(rw, r.WithContext(ctx))
 }

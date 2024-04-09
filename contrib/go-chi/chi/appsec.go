@@ -17,7 +17,7 @@ import (
 func withAppsec(next http.Handler, r *http.Request, span tracer.Span) http.Handler {
 	rctx := chi.RouteContext(r.Context())
 	if rctx == nil {
-		return httpsec.WrapHandler(next, span, nil)
+		return httpsec.WrapHandler(next, span, nil, nil)
 	}
 	var pathParams map[string]string
 	keys := rctx.URLParams.Keys
@@ -28,5 +28,5 @@ func withAppsec(next http.Handler, r *http.Request, span tracer.Span) http.Handl
 			pathParams[key] = values[i]
 		}
 	}
-	return httpsec.WrapHandler(next, span, pathParams)
+	return httpsec.WrapHandler(next, span, pathParams, nil)
 }
