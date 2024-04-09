@@ -47,7 +47,7 @@ func newV1Usage() *knownChange {
 	d.ctx = make(context)
 	d.probes = []func(context, ast.Node, *analysis.Pass) bool{
 		isFuncCall,
-		hasPackagePrefix("github.com/DataDog/dd-trace-go/v2/"),
+		hasPackagePrefix("gopkg.in/DataDog/dd-trace-go.v1/"),
 	}
 	d.message = func() string {
 		fn, ok := d.ctx["fn"].(*types.Func)
