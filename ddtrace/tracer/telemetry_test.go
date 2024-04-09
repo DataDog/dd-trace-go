@@ -6,6 +6,7 @@
 package tracer
 
 import (
+	"fmt"
 	"testing"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
@@ -29,6 +30,12 @@ func TestTelemetryEnabled(t *testing.T) {
 			WithPeerServiceMapping("key", "val"),
 			WithPeerServiceDefaults(true),
 			WithHeaderTags([]string{"key:val", "key2:val2"}),
+			WithSamplingRules(
+				[]SamplingRule{TagsResourceRule(
+					map[string]string{"tag-a": "tv-a??"},
+					"resource-*", "op-name", "test-serv", 0.1),
+				},
+			),
 		)
 		defer globalconfig.SetServiceName("")
 		defer Stop()
@@ -46,6 +53,8 @@ func TestTelemetryEnabled(t *testing.T) {
 		telemetry.Check(t, telemetryClient.Configuration, "orchestrion_enabled", false)
 		telemetry.Check(t, telemetryClient.Configuration, "trace_sample_rate", nil) // default value is NaN which is sanitized to nil
 		telemetry.Check(t, telemetryClient.Configuration, "trace_header_tags", "key:val,key2:val2")
+		telemetry.Check(t, telemetryClient.Configuration, "trace_sample_rules",
+			`[{"service":"test-serv","name":"op-name","resource":"resource-*","sample_rate":0.1,"tags":{"tag-a":"tv-a??"},"type":"1"}]`)
 		if metrics, ok := telemetryClient.Metrics[telemetry.NamespaceGeneral]; ok {
 			if initTime, ok := metrics["init_time"]; ok {
 				assert.True(t, initTime > 0)
@@ -55,6 +64,48 @@ func TestTelemetryEnabled(t *testing.T) {
 		}
 		t.Fatalf("could not find tracer namespace in telemetry client metrics")
 	})
+
+	t.Run("telemetry customer or dynamic rules", func(t *testing.T) {
+		rule := TagsResourceRule(map[string]string{"tag-a": "tv-a??"},
+			"resource-*", "op-name", "test-serv", 0.1)
+
+		for _, prov := range provenances {
+			if prov == Local {
+				continue
+			}
+			rule.Provenance = prov
+
+			telemetryClient := new(telemetrytest.MockClient)
+			defer telemetry.MockGlobalClient(telemetryClient)()
+			Start(WithService("test-serv"),
+				WithSamplingRules([]SamplingRule{rule}),
+			)
+			defer globalconfig.SetServiceName("")
+			defer Stop()
+
+			assert.True(t, telemetryClient.Started)
+			telemetry.Check(t, telemetryClient.Configuration, "trace_sample_rules",
+				fmt.Sprintf(`[{"service":"test-serv","name":"op-name","resource":"resource-*","sample_rate":0.1,"tags":{"tag-a":"tv-a??"},"type":"1","provenance":"%s"}]`, prov.String()))
+		}
+	})
+
+	t.Run("tracer start with empty rules", func(t *testing.T) {
+		telemetryClient := new(telemetrytest.MockClient)
+		defer telemetry.MockGlobalClient(telemetryClient)()
+
+		t.Setenv("DD_TRACE_SAMPLING_RULES", "")
+		Start()
+		defer globalconfig.SetServiceName("")
+		defer Stop()
+
+		assert.True(t, telemetryClient.Started)
+		var cfgs []telemetry.Configuration
+		for _, c := range telemetryClient.Configuration {
+			cfgs = append(cfgs, telemetry.Sanitize(c))
+		}
+		telemetry.Check(t, cfgs, "trace_sample_rules", "[]")
+	})
+
 	t.Run("profiler start, tracer start", func(t *testing.T) {
 		telemetryClient := new(telemetrytest.MockClient)
 		defer telemetry.MockGlobalClient(telemetryClient)()

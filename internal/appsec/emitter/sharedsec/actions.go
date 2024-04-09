@@ -119,12 +119,23 @@ func NewBlockRequestAction(httpStatus, grpcStatus int, template string) *Action 
 
 // NewRedirectRequestAction creates an action for the "redirect" action type
 func NewRedirectRequestAction(status int, loc string) *Action {
-	return &Action{
-		http: http.RedirectHandler(loc, status),
-		// gRPC is not handled by our SRB RFCs so far
-		// Use the default block handler for now
-		grpc: newGRPCBlockHandler(10),
+	// Default to 303 if status is out of redirection codes bounds
+	if status < 300 || status >= 400 {
+		status = 303
 	}
+	action := &Action{
+		// gRPC is not handled by our SRB RFCs so far - use the default block handler
+		grpc:     newGRPCBlockHandler(10),
+		blocking: true,
+	}
+	// If location is not set we fall back on a default block action
+	if loc == "" {
+		action.http = NewBlockHandler(403, string(blockedTemplateJSON))
+	} else {
+		action.http = http.RedirectHandler(loc, status)
+	}
+
+	return action
 }
 
 // HTTP returns the HTTP handler linked to the action object

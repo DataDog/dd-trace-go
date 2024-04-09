@@ -18,6 +18,7 @@ import (
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/samplernames"
 
 	"github.com/stretchr/testify/assert"
 	"golang.org/x/time/rate"
@@ -535,17 +536,11 @@ func TestRulesSampler(t *testing.T) {
 			{ServiceRule("test-service", 1.0)},
 			{NameRule("http.request", 1.0)},
 			{NameServiceRule("http.request", "test-service", 1.0)},
-			{{Service: regexp.MustCompile("^test-"), Name: regexp.MustCompile(`http\..*`), Rate: 1.0}},
+			{NameServiceRule("http.*", "test-*", 1.0)},
 			{ServiceRule("other-service-1", 0.0), ServiceRule("other-service-2", 0.0), ServiceRule("test-service", 1.0)},
-			{TagsResourceRule(
-				map[string]*regexp.Regexp{"hostname": regexp.MustCompile("hn-[0-9]+")},
-				"", "", "", 1.0)},
-			{TagsResourceRule(
-				map[string]*regexp.Regexp{"hostname": regexp.MustCompile("hn-3*")},
-				"res-1*", "", "", 1.0)},
-			{TagsResourceRule(
-				map[string]*regexp.Regexp{"hostname": regexp.MustCompile("hn-[0-9]+")},
-				"", "", "", 1.0)},
+			{TagsResourceRule(map[string]string{"hostname": "hn-*"}, "", "", "", 1.0)},
+			{TagsResourceRule(map[string]string{"hostname": "hn-3*"}, "res-1*", "", "", 1.0)},
+			{TagsResourceRule(map[string]string{"hostname": "hn-*"}, "", "", "", 1.0)},
 		}
 		for _, v := range traceRules {
 			t.Run("", func(t *testing.T) {
@@ -566,15 +561,11 @@ func TestRulesSampler(t *testing.T) {
 			{ServiceRule("toast-service", 1.0)},
 			{NameRule("grpc.request", 1.0)},
 			{NameServiceRule("http.request", "toast-service", 1.0)},
-			{{Service: regexp.MustCompile("^toast-"), Name: regexp.MustCompile(`http\..*`), Rate: 1.0}},
-			{{Service: regexp.MustCompile("^test-"), Name: regexp.MustCompile(`grpc\..*`), Rate: 1.0}},
+			{NameServiceRule("http.*", "toast-", 1.0)},
+			{NameServiceRule("grpc.*", "test*", 1.0)},
 			{ServiceRule("other-service-1", 0.0), ServiceRule("other-service-2", 0.0), ServiceRule("toast-service", 1.0)},
-			{TagsResourceRule(
-				map[string]*regexp.Regexp{"hostname": regexp.MustCompile("hn--1")},
-				"", "", "", 1.0)},
-			{TagsResourceRule(
-				map[string]*regexp.Regexp{"host": regexp.MustCompile("hn-1")},
-				"", "", "", 1.0)},
+			{TagsResourceRule(map[string]string{"hostname": "hn--1"}, "", "", "", 1.0)},
+			{TagsResourceRule(map[string]string{"host": "hn-1"}, "", "", "", 1.0)},
 			{TagsResourceRule(nil, "res", "", "", 1.0)},
 		}
 		for _, v := range traceRules {
@@ -1146,7 +1137,7 @@ func TestRulesSamplerInternals(t *testing.T) {
 		now := time.Now()
 		rs := &rulesSampler{}
 		span := makeSpanAt("http.request", "test-service", now)
-		rs.traces.applyRate(span, 0.0, now)
+		rs.traces.applyRate(span, 0.0, now, samplernames.RuleRate)
 		assert.Equal(0.0, span.Metrics[keyRulesSamplerAppliedRate])
 		_, ok := span.Metrics[keyRulesSamplerLimiterRate]
 		assert.False(ok)
@@ -1162,7 +1153,7 @@ func TestRulesSamplerInternals(t *testing.T) {
 		rs.traces.limiter.seen = 1
 
 		span := makeSpanAt("http.request", "test-service", now)
-		rs.traces.applyRate(span, 1.0, now)
+		rs.traces.applyRate(span, 1.0, now, samplernames.RuleRate)
 		assert.Equal(1.0, span.Metrics[keyRulesSamplerAppliedRate])
 		assert.Equal(1.0, span.Metrics[keyRulesSamplerLimiterRate])
 	})
@@ -1178,12 +1169,12 @@ func TestRulesSamplerInternals(t *testing.T) {
 		rs.traces.limiter.seen = 2
 		// first span kept, second dropped
 		span := makeSpanAt("http.request", "test-service", now)
-		rs.traces.applyRate(span, 1.0, now)
+		rs.traces.applyRate(span, 1.0, now, samplernames.RuleRate)
 		assert.EqualValues(ext.PriorityUserKeep, span.Metrics[keySamplingPriority])
 		assert.Equal(1.0, span.Metrics[keyRulesSamplerAppliedRate])
 		assert.Equal(1.0, span.Metrics[keyRulesSamplerLimiterRate])
 		span = makeSpanAt("http.request", "test-service", now)
-		rs.traces.applyRate(span, 1.0, now)
+		rs.traces.applyRate(span, 1.0, now, samplernames.RuleRate)
 		assert.EqualValues(ext.PriorityUserReject, span.Metrics[keySamplingPriority])
 		assert.Equal(1.0, span.Metrics[keyRulesSamplerAppliedRate])
 		assert.Equal(0.75, span.Metrics[keyRulesSamplerLimiterRate])
@@ -1410,29 +1401,63 @@ func TestSamplingRuleMarshall(t *testing.T) {
 		in  SamplingRule
 		out string
 	}{
-		{SamplingRule{regexp.MustCompile("srv.[0-9]+"), nil, 0, 0, nil, nil, SamplingRuleTrace, nil},
-			`{"service":"srv.[0-9]+","sample_rate":0,"type":"trace(1)"}`},
-		{SamplingRule{regexp.MustCompile("srv.*"), regexp.MustCompile("ops.[0-9]+"), 0, 0, nil, nil, SamplingRuleTrace, nil},
-			`{"service":"srv.*","name":"ops.[0-9]+","sample_rate":0,"type":"trace(1)"}`},
-		{SamplingRule{regexp.MustCompile("srv.[0-9]+"), regexp.MustCompile("ops.[0-9]+"), 0.55, 0, nil, nil, SamplingRuleTrace, nil},
-			`{"service":"srv.[0-9]+","name":"ops.[0-9]+","sample_rate":0.55,"type":"trace(1)"}`},
-		{SamplingRule{nil, nil, 0.35, 0, regexp.MustCompile("http_get"), nil, SamplingRuleTrace, nil},
-			`{"resource":"http_get","sample_rate":0.35,"type":"trace(1)"}`},
-		{SamplingRule{nil, nil, 0.35, 0, regexp.MustCompile("http_get"), map[string]*regexp.Regexp{"host": regexp.MustCompile("hn-*")}, SamplingRuleTrace, nil},
-			`{"resource":"http_get","sample_rate":0.35,"tags":{"host":"hn-*"},"type":"trace(1)"}`},
-		{SamplingRule{regexp.MustCompile("srv.[0-9]+"), regexp.MustCompile("ops.[0-9]+"), 0.55, 0, nil, nil, SamplingRuleSpan, nil},
-			`{"service":"srv.[0-9]+","name":"ops.[0-9]+","sample_rate":0.55,"type":"span(2)"}`},
-		{SamplingRule{regexp.MustCompile("srv.[0-9]+"), regexp.MustCompile("ops.[0-9]+"), 0.55, 1000, nil, nil, SamplingRuleSpan, nil},
-			`{"service":"srv.[0-9]+","name":"ops.[0-9]+","sample_rate":0.55,"type":"span(2)","max_per_second":1000}`},
-		{SamplingRule{nil, nil, 1, 0, regexp.MustCompile("//bar"), nil, SamplingRuleTrace, nil},
-			`{"resource":"//bar","sample_rate":1,"type":"trace(1)"}`},
-		{SamplingRule{nil, nil, 1, 0, regexp.MustCompile("//bar"),
-			map[string]*regexp.Regexp{"tag_key": regexp.MustCompile("tag_value.[0-9]+")}, SamplingRuleTrace, nil},
-			`{"resource":"//bar","sample_rate":1,"tags":{"tag_key":"tag_value.[0-9]+"},"type":"trace(1)"}`},
+		{ServiceRule("srv.*", 0), `{"service":"srv.*","sample_rate":0,"type":"1"}`},
+		{NameServiceRule("ops.*", "srv.*", 0), `{"service":"srv.*","name":"ops.*","sample_rate":0,"type":"1"}`},
+		{NameServiceRule("ops.*", "srv.*", 0.55), `{"service":"srv.*","name":"ops.*","sample_rate":0.55,"type":"1"}`},
+		{TagsResourceRule(nil, "http_get", "", "", 0.55), `{"resource":"http_get","sample_rate":0.55,"type":"1"}`},
+		{TagsResourceRule(map[string]string{"host": "hn-*"}, "http_get", "", "", 0.35), `{"resource":"http_get","sample_rate":0.35,"tags":{"host":"hn-*"},"type":"1"}`},
+		{SpanNameServiceRule("ops.*", "srv.*", 0.55), `{"service":"srv.*","name":"ops.*","sample_rate":0.55,"type":"2"}`},
+		{SpanNameServiceMPSRule("ops.*", "srv.*", 0.55, 1000), `{"service":"srv.*","name":"ops.*","sample_rate":0.55,"type":"2","max_per_second":1000}`},
+		{TagsResourceRule(nil, "//bar", "", "", 1), `{"resource":"//bar","sample_rate":1,"type":"1"}`},
+		{TagsResourceRule(map[string]string{"tag_key": "tag_value.*"}, "//bar", "", "", 1), `{"resource":"//bar","sample_rate":1,"tags":{"tag_key":"tag_value.*"},"type":"1"}`},
 	} {
 		m, err := tt.in.MarshalJSON()
 		assert.Nil(t, err)
 		assert.Equal(t, tt.out, string(m), "at %d index", i)
+	}
+}
+
+func TestSamplingRuleMarshallGlob(t *testing.T) {
+	for i, tt := range []struct {
+		pattern string
+		input   string
+		rgx     *regexp.Regexp
+		marshal string
+	}{
+		// pattern with *
+		{"test*", "test", regexp.MustCompile("^test.*$"), `{"service":"test*","sample_rate":1,"type":"1"}`},
+		{"*test", "a-test", regexp.MustCompile("^.*test$"), `{"service":"*test","sample_rate":1,"type":"1"}`},
+		{"a*case", "acase", regexp.MustCompile("^a.*case$"), `{"service":"a*case","sample_rate":1,"type":"1"}`},
+		// pattern regexp.MustCompile(), ``, with ?
+		{"a?case", "a-case", regexp.MustCompile("^a.case$"), `{"service":"a?case","sample_rate":1,"type":"1"}`},
+		{"a?test?case", "a-test-case", regexp.MustCompile("^a.test.case$"), `{"service":"a?test?case","sample_rate":1,"type":"1"}`},
+		//// pattern with ? regexp.MustCompile(), ``, and *
+		{"?test*", "atest", regexp.MustCompile("^.test.*$"), `{"service":"?test*","sample_rate":1,"type":"1"}`},
+		{"test*case", "testcase", regexp.MustCompile("^test.*case$"), `{"service":"test*case","sample_rate":1,"type":"1"}`},
+		{"a?test*", "a-test-case", regexp.MustCompile("^a.test.*$"), `{"service":"a?test*","sample_rate":1,"type":"1"}`},
+		{"a*test?", "a-test-", regexp.MustCompile("^a.*test.$"), `{"service":"a*test?","sample_rate":1,"type":"1"}`},
+		{"a*test?case", "a--test-case", regexp.MustCompile("^a.*test.case$"), `{"service":"a*test?case","sample_rate":1,"type":"1"}`},
+		{"a?test*case", "a-testing--case", regexp.MustCompile("^a.test.*case$"), `{"service":"a?test*case","sample_rate":1,"type":"1"}`},
+		//// valid non-glob regex regexp.MustCompile(), ``, pattern
+		{"*/*", `a/123`, regexp.MustCompile("^.*/.*$"), `{"service":"*/*","sample_rate":1,"type":"1"}`},
+		{`*\/*`, `a\/123`, regexp.MustCompile("^.*/.*$"), `{"service":"*/*","sample_rate":1,"type":"1"}`},
+	} {
+		t.Run(fmt.Sprintf("%d", i), func(t *testing.T) {
+			// the goal of this test is
+			// 1. to verify that the glob pattern is correctly converted to a regex
+			// 2. to verify that the rule is correctly marshalled
+
+			rules, _ := unmarshalSamplingRules([]byte(fmt.Sprintf(`[{"service": "%s", "sample_rate": 1.0}]`, tt.pattern)),
+				SamplingRuleTrace)
+			rule := rules[0]
+
+			assert.Regexp(t, rules[0].Service, tt.input)
+			assert.Equal(t, tt.rgx.String(), rule.Service.String())
+
+			m, err := rule.MarshalJSON()
+			assert.Nil(t, err)
+			assert.Equal(t, tt.marshal, string(m))
+		})
 	}
 }
 
