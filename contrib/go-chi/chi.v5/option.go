@@ -29,7 +29,7 @@ type config struct {
 	headerTags         *internal.LockMap
 	resourceNamer      func(r *http.Request) string
 	appsecDisabled     bool
-	appsecOptions      []httpsec.WrapHandlerOption
+	appsecConfig       httpsec.Config
 }
 
 // Option represents an option that can be passed to NewRouter.
@@ -144,17 +144,21 @@ func WithAppsecDisabled(disabled bool) Option {
 	}
 }
 
-// WithAppsecOptions allows for specifying options for the AppSec middleware.
-func WithAppsecOptions(opts ...httpsec.WrapHandlerOption) Option {
+// WithAppsecOnBlock configures callbacks to be invoked when an AppSec blocking decision is made.
+// This has no effect if AppSec is not in use.
+func WithAppsecOnBlock(fs ...func()) Option {
 	return func(cfg *config) {
-		cfg.appsecOptions = opts
+		cfg.appsecConfig.OnBlock = append(cfg.appsecConfig.OnBlock, fs...)
 	}
 }
 
-// WithResponseHdrFetcher provides a function to fetch the response headers from the http.ResponseWriter.
-// This allows for custom implementations as needed if you over-ride the default http.ResponseWriter.
-func WithResponseHdrFetcher(f func(http.ResponseWriter) http.Header) httpsec.WrapHandlerOption {
-	return func(cfg *httpsec.WrapHandlerCfg) {
-		cfg.ResponseHdrFetcher = f
+// WithAppsecResponseHeaderCopier provides a function to fetch the response headers from the
+// http.ResponseWriter. This allows for custom implementations as needed if you over-ride the
+// default http.ResponseWriter, such as to add synchronization. Provided functions may elect to
+// return a copy of the http.Header map instead of a reference to the original (e.g: to not risk
+// breaking synchronization). This has no effect if AppSec is not in use.
+func WithAppsecResponseHeaderCopier(f func(http.ResponseWriter) http.Header) Option {
+	return func(cfg *config) {
+		cfg.appsecConfig.ResponseHeaderCopier = f
 	}
 }

@@ -55,11 +55,18 @@ func ExecuteSDKBodyOperation(parent dyngo.Operation, args types.SDKBodyOperation
 	return err
 }
 
-// WrapHandlerOpts is WrapHandler with support for flexible options.
-func WrapHandlerOpts(handler http.Handler, span ddtrace.Span, pathParams map[string]string, opts ...WrapHandlerOption) http.Handler {
-	cfg := defaultWrapHandlerCfg()
-	for _, opt := range opts {
-		opt(cfg)
+// WrapHandler wraps the given HTTP handler with the abstract HTTP operation defined by HandlerOperationArgs and
+// HandlerOperationRes.
+// The onBlock params are used to cleanup the context when needed.
+// It is a specific patch meant for Gin, for which we must abort the
+// context since it uses a queue of handlers and it's the only way to make
+// sure other queued handlers don't get executed.
+// TODO: this patch must be removed/improved when we rework our actions/operations system
+func WrapHandler(handler http.Handler, span ddtrace.Span, pathParams map[string]string, opts *Config) http.Handler {
+	if opts == nil {
+		opts = defaultWrapHandlerConfig
+	} else if opts.ResponseHeaderCopier == nil {
+		opts.ResponseHeaderCopier = defaultWrapHandlerConfig.ResponseHeaderCopier
 	}
 
 	trace.SetAppSecEnabledTags(span)
@@ -86,7 +93,7 @@ func WrapHandlerOpts(handler http.Handler, span ddtrace.Span, pathParams map[str
 			// in case we are instrumenting the Gin framework
 			if blocking {
 				op.SetTag(trace.BlockedRequestTag, true)
-				for _, f := range cfg.OnBlock {
+				for _, f := range opts.OnBlock {
 					f()
 				}
 			}
@@ -99,7 +106,7 @@ func WrapHandlerOpts(handler http.Handler, span ddtrace.Span, pathParams map[str
 			// extra headers have been added such as the Host header which is removed from the original Go request headers
 			// map
 			setRequestHeadersTags(span, args.Headers)
-			setResponseHeadersTags(span, cfg.ResponseHdrFetcher(w))
+			setResponseHeadersTags(span, opts.ResponseHeaderCopier(w))
 			trace.SetTags(span, op.Tags())
 			if len(events) > 0 {
 				httptrace.SetSecurityEventsTags(span, events)
@@ -112,17 +119,6 @@ func WrapHandlerOpts(handler http.Handler, span ddtrace.Span, pathParams map[str
 		}
 		handler.ServeHTTP(w, r)
 	})
-}
-
-// WrapHandler wraps the given HTTP handler with the abstract HTTP operation defined by HandlerOperationArgs and
-// HandlerOperationRes.
-// The onBlock params are used to cleanup the context when needed.
-// It is a specific patch meant for Gin, for which we must abort the
-// context since it uses a queue of handlers and it's the only way to make
-// sure other queued handlers don't get executed.
-// TODO: this patch must be removed/improved when we rework our actions/operations system
-func WrapHandler(handler http.Handler, span ddtrace.Span, pathParams map[string]string, onBlock ...func()) http.Handler {
-	return WrapHandlerOpts(handler, span, pathParams, WithOnBlock(onBlock...))
 }
 
 // MakeHandlerOperationArgs creates the HandlerOperationArgs value.
