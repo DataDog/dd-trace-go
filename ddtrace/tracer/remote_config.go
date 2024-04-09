@@ -124,6 +124,10 @@ func (t *tracer) onRemoteConfigUpdate(u remoteconfig.ProductUpdate) map[string]s
 		if updated {
 			telemConfigs = append(telemConfigs, t.config.traceSampleRate.toTelemetry())
 		}
+		updated = t.config.traceSampleRules.reset()
+		if updated {
+			telemConfigs = append(telemConfigs, t.config.traceSampleRules.toTelemetry())
+		}
 		updated = t.config.headerAsTags.reset()
 		if updated {
 			telemConfigs = append(telemConfigs, t.config.headerAsTags.toTelemetry())
