@@ -42,7 +42,6 @@ func (c V1Usage) String() string {
 	if !ok {
 		return "unknown"
 	}
-
 	return fn.FullName()
 }
 
@@ -55,13 +54,11 @@ func TestSimple(t *testing.T) {
 
 func testRunner(t *testing.T) func(*analysis.Analyzer) {
 	t.Helper()
-
 	cwd, err := os.Getwd()
 	if err != nil {
 		t.Error(err)
 		return nil
 	}
-
 	return func(a *analysis.Analyzer) {
 		analysistest.Run(t, path.Join(cwd, "..", "_stage"), a)
 	}

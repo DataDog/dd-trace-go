@@ -25,11 +25,9 @@ func (c Checker) Run(handler func(*analysis.Analyzer)) {
 		Requires: []*analysis.Analyzer{inspect.Analyzer},
 		Run:      c.runner(),
 	}
-
 	if handler == nil {
 		return
 	}
-
 	handler(analyzer)
 }
 
@@ -41,7 +39,6 @@ func (c Checker) runner() func(*analysis.Pass) (interface{}, error) {
 			(*ast.CallExpr)(nil),
 			(*ast.ImportSpec)(nil),
 		}
-
 		ins, ok := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
 		if !ok {
 			return nil, errors.New("analyzer is not type *inspector.Inspector")
@@ -57,7 +54,6 @@ func (c Checker) runner() func(*analysis.Pass) (interface{}, error) {
 			if k == nil {
 				return
 			}
-
 			pass.Report(analysis.Diagnostic{
 				Pos:            n.Pos(),
 				End:            n.End(),
@@ -68,7 +64,6 @@ func (c Checker) runner() func(*analysis.Pass) (interface{}, error) {
 				Related:        nil,
 			})
 		})
-
 		return nil, nil
 	}
 }

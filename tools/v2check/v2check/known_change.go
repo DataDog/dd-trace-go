@@ -43,6 +43,5 @@ func eval(k KnownChange, n ast.Node, pass *analysis.Pass) bool {
 
 		k.UpdateContext(ctx)
 	}
-
 	return true
 }
