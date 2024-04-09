@@ -37,6 +37,10 @@ func Middleware(opts ...Option) func(c *fiber.Ctx) error {
 	}
 	log.Debug("gofiber/fiber.v2: Middleware: %#v", cfg)
 	return func(c *fiber.Ctx) error {
+		if cfg.ignoreRequest(c) {
+			return c.Next()
+		}
+
 		opts := []ddtrace.StartSpanOption{
 			tracer.SpanType(ext.SpanTypeWeb),
 			tracer.ServiceName(cfg.serviceName),

@@ -2015,6 +2015,7 @@ func BenchmarkTracerAddSpans(b *testing.B) {
 	tracer, _, _, stop := startTestTracer(b, WithLogger(log.DiscardLogger{}), WithSampler(NewRateSampler(0)))
 	defer stop()
 
+	b.ResetTimer()
 	for n := 0; n < b.N; n++ {
 		span := tracer.StartSpan("pylons.request", ServiceName("pylons"), ResourceName("/"))
 		span.Finish()
@@ -2212,13 +2213,6 @@ func (w *testTraceWriter) flush() {
 }
 
 func (w *testTraceWriter) stop() {}
-
-func (w *testTraceWriter) reset() {
-	w.mu.Lock()
-	w.flushed = w.flushed[:0]
-	w.buf = w.buf[:0]
-	w.mu.Unlock()
-}
 
 // Buffered returns the spans buffered by the writer.
 func (w *testTraceWriter) Buffered() []*span {

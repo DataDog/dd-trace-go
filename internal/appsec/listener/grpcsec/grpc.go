@@ -12,6 +12,7 @@ import (
 
 	"github.com/DataDog/appsec-internal-go/limiter"
 	waf "github.com/DataDog/go-libddwaf/v2"
+
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/config"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
@@ -26,18 +27,20 @@ import (
 
 // gRPC rule addresses currently supported by the WAF
 const (
-	GRPCServerRequestMessage  = "grpc.server.request.message"
-	GRPCServerRequestMetadata = "grpc.server.request.metadata"
-	HTTPClientIPAddr          = httpsec.HTTPClientIPAddr
-	UserIDAddr                = httpsec.UserIDAddr
+	GRPCServerMethodAddr          = "grpc.server.method"
+	GRPCServerRequestMessageAddr  = "grpc.server.request.message"
+	GRPCServerRequestMetadataAddr = "grpc.server.request.metadata"
+	HTTPClientIPAddr              = httpsec.HTTPClientIPAddr
+	UserIDAddr                    = httpsec.UserIDAddr
 )
 
 // List of gRPC rule addresses currently supported by the WAF
 var supportedAddresses = listener.AddressSet{
-	GRPCServerRequestMessage:  {},
-	GRPCServerRequestMetadata: {},
-	HTTPClientIPAddr:          {},
-	UserIDAddr:                {},
+	GRPCServerMethodAddr:          {},
+	GRPCServerRequestMessageAddr:  {},
+	GRPCServerRequestMetadataAddr: {},
+	HTTPClientIPAddr:              {},
+	UserIDAddr:                    {},
 }
 
 // Install registers the gRPC WAF Event Listener on the given root operation.
@@ -80,8 +83,8 @@ func newWafEventListener(wafHandle *waf.Handle, actions sharedsec.Actions, cfg *
 	}
 }
 
-// NewWAFEventListener returns the WAF event listener to register in order
-// to enable it.
+// NewWAFEventListener returns the WAF event listener to register in order to enable it, listening to gRPC handler
+// events.
 func (l *wafEventListener) onEvent(op *types.HandlerOperation, handlerArgs types.HandlerOperationArgs) {
 	// Limit the maximum number of security events, as a streaming RPC could
 	// receive unlimited number of messages where we could find security events
@@ -94,41 +97,42 @@ func (l *wafEventListener) onEvent(op *types.HandlerOperation, handlerArgs types
 		mu     sync.Mutex // events mutex
 	)
 
-	wafCtx := waf.NewContext(l.wafHandle)
+	wafCtx := waf.NewContextWithBudget(l.wafHandle, l.config.WAFTimeout)
 	if wafCtx == nil {
 		// The WAF event listener got concurrently released
 		return
 	}
 
-	// OnUserIDOperationStart happens when appsec.SetUser() is called. We run the WAF and apply actions to
-	// see if the associated user should be blocked. Since we don't control the execution flow in this case
-	// (SetUser is SDK), we delegate the responsibility of interrupting the handler to the user.
-	dyngo.On(op, func(userIDOp *sharedsec.UserIDOperation, args sharedsec.UserIDOperationArgs) {
-		values := make(map[string]any, 1)
-		for addr := range l.addresses {
-			if addr == UserIDAddr {
-				values[UserIDAddr] = args.UserID
+	// Listen to the UserID address if the WAF rules are using it
+	if l.isSecAddressListened(UserIDAddr) {
+		// UserIDOperation happens when appsec.SetUser() is called. We run the WAF and apply actions to
+		// see if the associated user should be blocked. Since we don't control the execution flow in this case
+		// (SetUser is SDK), we delegate the responsibility of interrupting the handler to the user.
+		dyngo.On(op, func(userIDOp *sharedsec.UserIDOperation, args sharedsec.UserIDOperationArgs) {
+			values := map[string]any{
+				UserIDAddr: args.UserID,
 			}
-		}
-		wafResult := shared.RunWAF(wafCtx, waf.RunAddressData{Persistent: values}, l.config.WAFTimeout)
-		if wafResult.HasActions() || wafResult.HasEvents() {
-			for _, id := range wafResult.Actions {
-				if a, ok := l.actions[id]; ok && a.Blocking() {
-					code, err := a.GRPC()(map[string][]string{})
-					dyngo.EmitData(userIDOp, types.NewMonitoringError(err.Error(), code))
+			wafResult := shared.RunWAF(wafCtx, waf.RunAddressData{Persistent: values}, l.config.WAFTimeout)
+			if wafResult.HasActions() || wafResult.HasEvents() {
+				for _, id := range wafResult.Actions {
+					if a, ok := l.actions[id]; ok && a.Blocking() {
+						code, err := a.GRPC()(map[string][]string{})
+						dyngo.EmitData(userIDOp, types.NewMonitoringError(err.Error(), code))
+					}
 				}
+				shared.AddSecurityEvents(op, l.limiter, wafResult.Events)
+				log.Debug("appsec: WAF detected an authenticated user attack: %s", args.UserID)
 			}
-			shared.AddSecurityEvents(op, l.limiter, wafResult.Events)
-			log.Debug("appsec: WAF detected an authenticated user attack: %s", args.UserID)
-		}
-	})
+		})
+	}
 
-	// The same address is used for gRPC and http when it comes to client ip
-	values := make(map[string]any, 1)
-	for addr := range l.addresses {
-		if addr == HTTPClientIPAddr && handlerArgs.ClientIP.IsValid() {
-			values[HTTPClientIPAddr] = handlerArgs.ClientIP.String()
-		}
+	values := make(map[string]any, 2) // 2 because the method and client ip addresses are commonly present in the rules
+	if l.isSecAddressListened(GRPCServerMethodAddr) {
+		// Note that this address is passed asap for the passlist, which are created per grpc method
+		values[GRPCServerMethodAddr] = handlerArgs.Method
+	}
+	if l.isSecAddressListened(HTTPClientIPAddr) && handlerArgs.ClientIP.IsValid() {
+		values[HTTPClientIPAddr] = handlerArgs.ClientIP.String()
 	}
 
 	wafResult := shared.RunWAF(wafCtx, waf.RunAddressData{Persistent: values}, l.config.WAFTimeout)
@@ -142,6 +146,7 @@ func (l *wafEventListener) onEvent(op *types.HandlerOperation, handlerArgs types
 		}
 	}
 
+	// When the gRPC handler receives a message
 	dyngo.OnFinish(op, func(_ types.ReceiveOperation, res types.ReceiveOperationRes) {
 		if nbEvents.Load() == maxWAFEventsPerRequest {
 			logOnce.Do(func() {
@@ -150,16 +155,21 @@ func (l *wafEventListener) onEvent(op *types.HandlerOperation, handlerArgs types
 			return
 		}
 
-		// Run the WAF on the rule addresses available in the args
-		// Note that we don't check if the address is present in the rules
-		// as we only support one at the moment, so this callback cannot be
-		// set when the address is not present.
-		values := waf.RunAddressData{
-			Ephemeral: map[string]any{GRPCServerRequestMessage: res.Message},
+		// Run the WAF on the rule addresses available and listened to by the sec rules
+		var values waf.RunAddressData
+		// Add the gRPC message to the values if the WAF rules are using it.
+		// Note that it is an ephemeral address as they can happen more than once per RPC.
+		if l.isSecAddressListened(GRPCServerRequestMessageAddr) {
+			values.Ephemeral = map[string]any{GRPCServerRequestMessageAddr: res.Message}
 		}
-		if md := handlerArgs.Metadata; len(md) > 0 {
-			values.Persistent = map[string]any{GRPCServerRequestMetadata: md}
+
+		// Add the metadata to the values if the WAF rules are using it.
+		if l.isSecAddressListened(GRPCServerRequestMetadataAddr) {
+			if md := handlerArgs.Metadata; len(md) > 0 {
+				values.Persistent = map[string]any{GRPCServerRequestMetadataAddr: md}
+			}
 		}
+
 		// Run the WAF, ignoring the returned actions - if any - since blocking after the request handler's
 		// response is not supported at the moment.
 		wafResult := shared.RunWAF(wafCtx, values, l.config.WAFTimeout)
@@ -173,10 +183,10 @@ func (l *wafEventListener) onEvent(op *types.HandlerOperation, handlerArgs types
 		}
 	})
 
+	// When the gRPC handler finishes
 	dyngo.OnFinish(op, func(op *types.HandlerOperation, _ types.HandlerOperationRes) {
 		defer wafCtx.Close()
-		overallRuntimeNs, internalRuntimeNs := wafCtx.TotalRuntime()
-		shared.AddWAFMonitoringTags(op, l.wafDiags.Version, overallRuntimeNs, internalRuntimeNs, wafCtx.TotalTimeouts())
+		shared.AddWAFMonitoringTags(op, l.wafDiags.Version, wafCtx.Stats().Metrics())
 
 		// Log the following metrics once per instantiation of a WAF handle
 		l.once.Do(func() {
@@ -186,4 +196,9 @@ func (l *wafEventListener) onEvent(op *types.HandlerOperation, handlerArgs types
 
 		shared.AddSecurityEvents(op, l.limiter, events)
 	})
+}
+
+func (l *wafEventListener) isSecAddressListened(addr string) bool {
+	_, listened := l.addresses[addr]
+	return listened
 }

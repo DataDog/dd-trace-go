@@ -34,6 +34,7 @@ jobs:
     #  Related to issue https://github.com/DataDog/dd-trace-go/issues/1607
     name: 'go get -u smoke test'
     runs-on: ubuntu-latest
+    if: github.repository_owner == 'DataDog' # only run on DataDog's repository, not in forks
     env:
       PACKAGES: ./internal/... ./ddtrace/... ./profiler/... ./appsec/...
     steps:
@@ -61,6 +62,8 @@ jobs:
       - name: Compile dd-trace-go
         run: go build $PACKAGES
       - name: Test dd-trace-go
+        env:
+          DD_APPSEC_WAF_TIMEOUT: 1h
         run: go test $PACKAGES
 
   # TODO: macos setup requirements (xcode tools installation, etc.)
@@ -73,12 +76,13 @@ jobs:
     # must be considered breaking changes.
     name: 'Build and deployment requirements smoke tests'
     runs-on: ubuntu-latest
+    if: github.repository_owner == 'DataDog' # only run on DataDog's repository, not in forks
     strategy:
       fail-fast: false
       matrix:
         # TODO: cross-compilation from/to different hardware architectures once
         #       github provides native ARM runners.
-        go: [ "1.21", "1.20", "1.19" ]
+        go: [ "1.20", "1.21", "1.22" ]
         build-env: [ alpine, bookworm, bullseye ]
         build-with-cgo: [ 0, 1 ]
         deployment-env: [ alpine, debian11, debian12, al2, al2023, busybox, scratch ]

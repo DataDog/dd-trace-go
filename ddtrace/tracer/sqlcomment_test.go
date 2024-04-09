@@ -195,9 +195,9 @@ func TestExtractOpenTelemetryTraceInformation(t *testing.T) {
 	// open-telemetry supports 128 bit trace ids
 	traceID := "5bd66ef5095369c7b0d1f8f4bd33716a"
 	ss := "c532cb4098ac3dd2"
-	upper, err := strconv.ParseUint(traceID[:16], 16, 64)
-	lower, err := strconv.ParseUint(traceID[16:], 16, 64)
-	spanID, err := strconv.ParseUint(ss, 16, 64)
+	upper, _ := strconv.ParseUint(traceID[:16], 16, 64)
+	lower, _ := strconv.ParseUint(traceID[16:], 16, 64)
+	spanID, _ := strconv.ParseUint(ss, 16, 64)
 	ps := "1"
 	priority, err := strconv.Atoi(ps)
 	require.NoError(t, err)
@@ -257,7 +257,7 @@ func FuzzSpanContextFromTraceComment(f *testing.F) {
 		b.WriteString(ts)
 		ts = b.String()
 
-		traceIDUpper, err := strconv.ParseUint(ts[:16], 16, 64)
+		traceIDUpper, _ := strconv.ParseUint(ts[:16], 16, 64)
 		traceIDLower, err := strconv.ParseUint(ts[16:], 16, 64)
 		if err != nil {
 			t.Skip()

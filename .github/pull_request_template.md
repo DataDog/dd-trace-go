@@ -33,9 +33,5 @@
 - [ ] Add an appropriate team label so this PR gets put in the right place for the release notes.
 - [ ] Non-trivial go.mod changes, e.g. adding new modules, are reviewed by @DataDog/dd-trace-go-guild.
 
-For Datadog employees:
-
-- [ ] If this PR touches code that handles credentials of any kind, such as Datadog API keys, I've requested a review from `@DataDog/security-design-and-guidance`.
-- [ ] This PR doesn't touch any of that.
 
 Unsure? Have a question? Request a review!

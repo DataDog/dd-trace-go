@@ -258,8 +258,15 @@ type config struct {
 	// traceSampleRate holds the trace sample rate.
 	traceSampleRate dynamicConfig[float64]
 
+	// traceSampleRules holds the trace sampling rules
+	traceSampleRules dynamicConfig[[]SamplingRule]
+
 	// headerAsTags holds the header as tags configuration.
 	headerAsTags dynamicConfig[[]string]
+
+	// dynamicInstrumentationEnabled controls if the target application can be modified by Dynamic Instrumentation or not.
+	// Value from DD_DYNAMIC_INSTRUMENTATION_ENABLED, default false.
+	dynamicInstrumentationEnabled bool
 }
 
 // orchestrionConfig contains Orchestrion configuration.
@@ -364,6 +371,8 @@ func newConfig(opts ...StartOption) *config {
 	// TODO(partialFlush): consider logging a warning if DD_TRACE_PARTIAL_FLUSH_MIN_SPANS
 	// is set, but DD_TRACE_PARTIAL_FLUSH_ENABLED is not true. Or just assume it should be enabled
 	// if it's explicitly set, and don't require both variables to be configured.
+
+	c.dynamicInstrumentationEnabled = internal.BoolEnv("DD_DYNAMIC_INSTRUMENTATION_ENABLED", false)
 
 	schemaVersionStr := os.Getenv("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA")
 	if v, ok := namingschema.ParseVersion(schemaVersionStr); ok {
@@ -488,6 +497,7 @@ func newConfig(opts ...StartOption) *config {
 			}
 			// not a valid TCP address, leave it as it is (could be a socket connection)
 		}
+		globalconfig.SetDogstatsdAddr(addr)
 		c.dogstatsdAddr = addr
 	}
 	// Re-initialize the globalTags config with the value constructed from the environment and start options
@@ -501,12 +511,7 @@ func newStatsdClient(c *config) (internal.StatsdClient, error) {
 	if c.statsdClient != nil {
 		return c.statsdClient, nil
 	}
-
-	client, err := statsd.New(c.dogstatsdAddr, statsd.WithMaxMessagesPerPayload(40), statsd.WithTags(statsTags(c)))
-	if err != nil {
-		return &statsd.NoOpClient{}, err
-	}
-	return client, nil
+	return internal.NewStatsdClient(c.dogstatsdAddr, statsTags(c))
 }
 
 // defaultHTTPClient returns the default http.Client to start the tracer with.
@@ -696,11 +701,7 @@ func (c *config) canDropP0s() bool {
 func statsTags(c *config) []string {
 	tags := []string{
 		"lang:go",
-		"version:" + version.Tag,
 		"lang_version:" + runtime.Version(),
-	}
-	if c.serviceName != "" {
-		tags = append(tags, "service:"+c.serviceName)
 	}
 	if c.env != "" {
 		tags = append(tags, "env:"+c.env)
@@ -712,6 +713,11 @@ func statsTags(c *config) []string {
 		if vstr, ok := v.(string); ok {
 			tags = append(tags, k+":"+vstr)
 		}
+	}
+	globalconfig.SetStatsTags(tags)
+	tags = append(tags, version.Tag)
+	if c.serviceName != "" {
+		tags = append(tags, "service:"+c.serviceName)
 	}
 	return tags
 }
@@ -862,8 +868,8 @@ func WithServiceMapping(from, to string) StartOption {
 }
 
 // WithPeerServiceDefaults sets default calculation for peer.service.
+// Related documentation: https://docs.datadoghq.com/tracing/guide/inferred-service-opt-in/?tab=go#apm-tracer-configuration
 func WithPeerServiceDefaults(enabled bool) StartOption {
-	// TODO: add link to public docs
 	return func(c *config) {
 		c.peerServiceDefaultsEnabled = enabled
 	}
@@ -977,6 +983,7 @@ func WithRuntimeMetrics() StartOption {
 func WithDogstatsdAddress(addr string) StartOption {
 	return func(cfg *config) {
 		cfg.dogstatsdAddr = addr
+		globalconfig.SetDogstatsdAddr(addr)
 	}
 }
 

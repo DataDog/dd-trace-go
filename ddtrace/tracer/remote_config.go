@@ -7,8 +7,10 @@ package tracer
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/remoteconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
@@ -28,10 +30,11 @@ type target struct {
 }
 
 type libConfig struct {
-	Enabled      *bool       `json:"tracing_enabled,omitempty"`
-	SamplingRate *float64    `json:"tracing_sampling_rate,omitempty"`
-	HeaderTags   *headerTags `json:"tracing_header_tags,omitempty"`
-	Tags         *tags       `json:"tracing_tags,omitempty"`
+	Enabled       *bool           `json:"tracing_enabled,omitempty"`
+	SamplingRate  *float64        `json:"tracing_sampling_rate,omitempty"`
+	SamplingRules *[]SamplingRule `json:"tracing_sampling_rules,omitempty"`
+	HeaderTags    *headerTags     `json:"tracing_header_tags,omitempty"`
+	Tags          *tags           `json:"tracing_tags,omitempty"`
 }
 
 type headerTags []headerTag
@@ -75,6 +78,24 @@ func (t *tags) toMap() *map[string]interface{} {
 	return &m
 }
 
+func (t *tracer) dynamicInstrumentationRCUpdate(u remoteconfig.ProductUpdate) map[string]state.ApplyStatus {
+	applyStatus := map[string]state.ApplyStatus{}
+
+	for k, v := range u {
+		log.Debug("Received dynamic instrumentation RC configuration for %s\n", k)
+		applyStatus[k] = state.ApplyStatus{State: state.ApplyStateUnknown}
+		passFullConfiguration(globalconfig.RuntimeID(), k, string(v))
+	}
+
+	return applyStatus
+}
+
+// passFullConfiguration is used as a stable interface to find the configuration in via bpf. Go-DI attaches
+// a bpf program to this function and extracts the raw bytes accordingly.
+//
+//go:noinline
+func passFullConfiguration(_, _, _ string) {}
+
 // onRemoteConfigUpdate is a remote config callaback responsible for processing APM_TRACING RC-product updates.
 func (t *tracer) onRemoteConfigUpdate(u remoteconfig.ProductUpdate) map[string]state.ApplyStatus {
 	statuses := map[string]state.ApplyStatus{}
@@ -102,6 +123,10 @@ func (t *tracer) onRemoteConfigUpdate(u remoteconfig.ProductUpdate) map[string]s
 		updated := t.config.traceSampleRate.reset()
 		if updated {
 			telemConfigs = append(telemConfigs, t.config.traceSampleRate.toTelemetry())
+		}
+		updated = t.config.traceSampleRules.reset()
+		if updated {
+			telemConfigs = append(telemConfigs, t.config.traceSampleRules.toTelemetry())
 		}
 		updated = t.config.headerAsTags.reset()
 		if updated {
@@ -146,6 +171,10 @@ func (t *tracer) onRemoteConfigUpdate(u remoteconfig.ProductUpdate) map[string]s
 		if updated {
 			telemConfigs = append(telemConfigs, t.config.traceSampleRate.toTelemetry())
 		}
+		updated = t.config.traceSampleRules.handleRC(c.LibConfig.SamplingRules)
+		if updated {
+			telemConfigs = append(telemConfigs, t.config.traceSampleRules.toTelemetry())
+		}
 		updated = t.config.headerAsTags.handleRC(c.LibConfig.HeaderTags.toSlice())
 		if updated {
 			telemConfigs = append(telemConfigs, t.config.headerAsTags.toTelemetry())
@@ -171,19 +200,35 @@ func (t *tracer) onRemoteConfigUpdate(u remoteconfig.ProductUpdate) map[string]s
 	return statuses
 }
 
-// startRemoteConfig starts the remote config client
-// and registers the APM_TRACING product and its callback.
+// startRemoteConfig starts the remote config client.
+// It registers the APM_TRACING product with a callback,
+// and the LIVE_DEBUGGING product without a callback.
 func (t *tracer) startRemoteConfig(rcConfig remoteconfig.ClientConfig) error {
 	err := remoteconfig.Start(rcConfig)
 	if err != nil {
 		return err
 	}
-	return remoteconfig.Subscribe(
+
+	var dynamicInstrumentationError, apmTracingError error
+
+	if t.config.dynamicInstrumentationEnabled {
+		dynamicInstrumentationError = remoteconfig.Subscribe("LIVE_DEBUGGING", t.dynamicInstrumentationRCUpdate)
+	}
+
+	apmTracingError = remoteconfig.Subscribe(
 		state.ProductAPMTracing,
 		t.onRemoteConfigUpdate,
 		remoteconfig.APMTracingSampleRate,
 		remoteconfig.APMTracingHTTPHeaderTags,
 		remoteconfig.APMTracingCustomTags,
 		remoteconfig.APMTracingEnabled,
+		remoteconfig.APMTracingSampleRules,
 	)
+
+	if apmTracingError != nil || dynamicInstrumentationError != nil {
+		return fmt.Errorf("could not subscribe to at least one remote config product: %s; %s",
+			apmTracingError, dynamicInstrumentationError)
+	}
+
+	return nil
 }

@@ -36,13 +36,22 @@ type (
 		trace.TagsHolder
 		trace.SecurityEventsHolder
 	}
+
 	// HandlerOperationArgs is the grpc handler arguments.
 	HandlerOperationArgs struct {
-		// Message received by the gRPC handler.
+		// Method is the gRPC method name.
+		// Corresponds to the address `grpc.server.method`.
+		Method string
+
+		// RPC metadata received by the gRPC handler.
 		// Corresponds to the address `grpc.server.request.metadata`.
 		Metadata map[string][]string
+
+		// ClientIP is the IP address of the client that initiated the gRPC request.
+		// Corresponds to the address `http.client_ip`.
 		ClientIP netip.Addr
 	}
+
 	// HandlerOperationRes is the grpc handler results. Empty as of today.
 	HandlerOperationRes struct{}
 
@@ -51,9 +60,11 @@ type (
 	ReceiveOperation struct {
 		dyngo.Operation
 	}
+
 	// ReceiveOperationArgs is the gRPC handler receive operation arguments
 	// Empty as of today.
 	ReceiveOperationArgs struct{}
+
 	// ReceiveOperationRes is the gRPC handler receive operation results which
 	// contains the message the gRPC handler received.
 	ReceiveOperationRes struct {
