@@ -7,12 +7,11 @@ package sql // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/database/sql"
 
 import (
 	"database/sql"
-	"runtime"
 	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
 )
 
 const tracerPrefix = "datadog.tracer."
@@ -55,11 +54,7 @@ func pollDBStats(statsd internal.StatsdClient, db *sql.DB) {
 }
 
 func statsTags(c *config) []string {
-	tags := []string{
-		"lang:go",
-		"version:" + version.Tag,
-		"lang_version:" + runtime.Version(),
-	}
+	tags := globalconfig.StatsTags()
 	if c.serviceName != "" {
 		tags = append(tags, "service:"+c.serviceName)
 	}
