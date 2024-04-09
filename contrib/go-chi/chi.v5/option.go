@@ -135,29 +135,21 @@ func WithResourceNamer(fn func(r *http.Request) string) Option {
 	}
 }
 
-// WithAppsecDisabled specifies whether to enable the AppSec middleware at run-time.
-// This has not effect if AppSec is not enabled globally via the DD_APPSEC_ENABLED environment variable,
-// and is intended to allow applications to disable AppSec at runtime.
-func WithAppsecDisabled(disabled bool) Option {
+// WithNoAppsec opts this router out of AppSec management. This allows a particular router to bypass
+// appsec, while the rest of the application is still being monitored/managed. This has not effect
+// if AppSec is not enabled globally (e.g, via the DD_APPSEC_ENABLED environment variable).
+func WithNoAppsec(disabled bool) Option {
 	return func(cfg *config) {
 		cfg.appsecDisabled = disabled
 	}
 }
 
-// WithAppsecOnBlock configures callbacks to be invoked when an AppSec blocking decision is made.
-// This has no effect if AppSec is not in use.
-func WithAppsecOnBlock(fs ...func()) Option {
-	return func(cfg *config) {
-		cfg.appsecConfig.OnBlock = append(cfg.appsecConfig.OnBlock, fs...)
-	}
-}
-
-// WithAppsecResponseHeaderCopier provides a function to fetch the response headers from the
+// WithResponseHeaderCopier provides a function to fetch the response headers from the
 // http.ResponseWriter. This allows for custom implementations as needed if you over-ride the
 // default http.ResponseWriter, such as to add synchronization. Provided functions may elect to
 // return a copy of the http.Header map instead of a reference to the original (e.g: to not risk
-// breaking synchronization). This has no effect if AppSec is not in use.
-func WithAppsecResponseHeaderCopier(f func(http.ResponseWriter) http.Header) Option {
+// breaking synchronization). This is currently only used by AppSec.
+func WithResponseHeaderCopier(f func(http.ResponseWriter) http.Header) Option {
 	return func(cfg *config) {
 		cfg.appsecConfig.ResponseHeaderCopier = f
 	}
