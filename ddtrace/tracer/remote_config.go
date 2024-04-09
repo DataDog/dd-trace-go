@@ -9,6 +9,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"sync"
+	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
@@ -17,6 +19,32 @@ import (
 
 	"github.com/DataDog/datadog-agent/pkg/remoteconfig/state"
 )
+
+type dynamicInstrumentationRCFields struct {
+	mu                   *sync.Mutex
+	runtimeID            string
+	productConfigPath    string
+	productConfigContent string
+}
+
+var (
+	dynamicInsturmentationRCState dynamicInstrumentationRCFields
+)
+
+func init() {
+	dynamicInsturmentationRCState = dynamicInstrumentationRCFields{
+		mu: &sync.Mutex{},
+	}
+
+	go func() {
+		for {
+			time.Sleep(time.Second * 5)
+			dynamicInsturmentationRCState.mu.Lock()
+			passFullConfiguration(dynamicInsturmentationRCState)
+			dynamicInsturmentationRCState.mu.Unlock()
+		}
+	}()
+}
 
 type configData struct {
 	Action        string    `json:"action"`
@@ -80,11 +108,15 @@ func (t *tags) toMap() *map[string]interface{} {
 
 func (t *tracer) dynamicInstrumentationRCUpdate(u remoteconfig.ProductUpdate) map[string]state.ApplyStatus {
 	applyStatus := map[string]state.ApplyStatus{}
-
 	for k, v := range u {
 		log.Debug("Received dynamic instrumentation RC configuration for %s\n", k)
 		applyStatus[k] = state.ApplyStatus{State: state.ApplyStateUnknown}
-		passFullConfiguration(globalconfig.RuntimeID(), k, string(v))
+
+		dynamicInsturmentationRCState.mu.Lock()
+		dynamicInsturmentationRCState.runtimeID = globalconfig.RuntimeID()
+		dynamicInsturmentationRCState.productConfigPath = k
+		dynamicInsturmentationRCState.productConfigContent = string(v)
+		dynamicInsturmentationRCState.mu.Unlock()
 	}
 
 	return applyStatus
@@ -94,7 +126,7 @@ func (t *tracer) dynamicInstrumentationRCUpdate(u remoteconfig.ProductUpdate) ma
 // a bpf program to this function and extracts the raw bytes accordingly.
 //
 //go:noinline
-func passFullConfiguration(_, _, _ string) {}
+func passFullConfiguration(_ dynamicInstrumentationRCFields) {}
 
 // onRemoteConfigUpdate is a remote config callaback responsible for processing APM_TRACING RC-product updates.
 func (t *tracer) onRemoteConfigUpdate(u remoteconfig.ProductUpdate) map[string]state.ApplyStatus {
