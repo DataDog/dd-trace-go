@@ -18,8 +18,7 @@ import (
 // It also contains a message function that returns a string describing the change.
 // The probes are evaluated in order, and the first one that returns false
 // will cause the expression to be ignored.
-// A predicate can store information in the context, which is available to the message function and
-// to the following probes.
+// A probe can store information in the context, which is available to the following ones.
 // It is possible to declare fixes that will be suggested to the user or applied automatically.
 type KnownChange interface {
 	fmt.Stringer
@@ -40,7 +39,6 @@ func eval(k KnownChange, n ast.Node, pass *analysis.Pass) bool {
 		if !ok {
 			return false
 		}
-
 		k.UpdateContext(ctx)
 	}
 	return true
