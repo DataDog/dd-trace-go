@@ -11,5 +11,6 @@ import (
 )
 
 func main() {
-	singlechecker.Main(v2check.Analyzer)
+	c := v2check.NewChecker(nil)
+	c.Run(singlechecker.Main)
 }

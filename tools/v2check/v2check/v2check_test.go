@@ -3,49 +3,66 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2023 Datadog, Inc.
 
-package v2check
+package v2check_test
 
 import (
-	"go/ast"
+	"context"
 	"go/types"
 	"os"
 	"path"
 	"testing"
 
+	"github.com/DataDog/dd-trace-go/v2/tools/v2check/v2check"
+
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/analysistest"
 )
 
-// newV1Usage detects the usage of any v1 function.
-func newV1Usage() *knownChange {
-	var d knownChange
-	d.ctx = make(context)
-	d.probes = []func(context, ast.Node, *analysis.Pass) bool{
-		isFuncCall,
-		hasPackagePrefix("gopkg.in/DataDog/dd-trace-go.v1/"),
-	}
-	d.message = func() string {
-		fn, ok := d.ctx["fn"].(*types.Func)
-		if !ok {
-			return "unknown"
-		}
-		return fn.FullName()
-	}
-	return &d
+type V1Usage struct {
+	ctx context.Context
 }
 
-func TestMain(m *testing.M) {
-	knownChanges = []*knownChange{
-		newV1Usage(),
+func (c V1Usage) Context() context.Context {
+	return c.ctx
+}
+
+func (c *V1Usage) UpdateContext(ctx context.Context) {
+	c.ctx = ctx
+}
+
+func (c V1Usage) Probes() []v2check.Probe {
+	return []v2check.Probe{
+		v2check.IsFuncCall,
+		v2check.HasPackagePrefix("gopkg.in/DataDog/dd-trace-go.v1/"),
+	}
+}
+
+func (c V1Usage) String() string {
+	fn, ok := c.ctx.Value("fn").(*types.Func)
+	if !ok {
+		return "unknown"
 	}
 
-	os.Exit(m.Run())
+	return fn.FullName()
 }
 
 func TestSimple(t *testing.T) {
+	c := v2check.NewChecker(&V1Usage{
+		ctx: context.Background(),
+	})
+	c.Run(testRunner(t))
+}
+
+func testRunner(t *testing.T) func(*analysis.Analyzer) {
+	t.Helper()
+
 	cwd, err := os.Getwd()
 	if err != nil {
 		t.Error(err)
+		return nil
 	}
-	_ = analysistest.Run(t, path.Join(cwd, "../_stage"), Analyzer)
+
+	return func(a *analysis.Analyzer) {
+		analysistest.Run(t, path.Join(cwd, "..", "_stage"), a)
+	}
 }

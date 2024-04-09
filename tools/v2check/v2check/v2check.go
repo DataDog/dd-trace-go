@@ -14,44 +14,65 @@ import (
 	"golang.org/x/tools/go/ast/inspector"
 )
 
-var knownChanges = []*knownChange{}
-
-var Analyzer = &analysis.Analyzer{
-	Name:     "v2check",
-	Doc:      "Migration tool to assist with the dd-trace-go v2 upgrade",
-	Requires: []*analysis.Analyzer{inspect.Analyzer},
-	Run:      run,
+type Checker struct {
+	knownChanges []KnownChange
 }
 
-func run(pass *analysis.Pass) (interface{}, error) {
-	ins, ok := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
-	if !ok {
-		return nil, errors.New("analyzer is not type *inspector.Inspector")
+func (c Checker) Run(handler func(*analysis.Analyzer)) {
+	analyzer := &analysis.Analyzer{
+		Name:     "v2check",
+		Doc:      "Migration tool to assist with the dd-trace-go v2 upgrade",
+		Requires: []*analysis.Analyzer{inspect.Analyzer},
+		Run:      c.runner(),
 	}
-	filter := []ast.Node{
-		(*ast.CallExpr)(nil),
-		(*ast.ImportSpec)(nil),
+
+	if handler == nil {
+		return
 	}
-	ins.Preorder(filter, func(n ast.Node) {
-		var k *knownChange
-		for _, c := range knownChanges {
-			if c.eval(n, pass) {
-				k = c
-				break
+
+	handler(analyzer)
+}
+
+func (c Checker) runner() func(*analysis.Pass) (interface{}, error) {
+	knownChanges := c.knownChanges
+
+	return func(pass *analysis.Pass) (interface{}, error) {
+		filter := []ast.Node{
+			(*ast.CallExpr)(nil),
+			(*ast.ImportSpec)(nil),
+		}
+
+		ins, ok := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
+		if !ok {
+			return nil, errors.New("analyzer is not type *inspector.Inspector")
+		}
+		ins.Preorder(filter, func(n ast.Node) {
+			var k KnownChange
+			for _, c := range knownChanges {
+				if eval(c, n, pass) {
+					k = c
+					break
+				}
 			}
-		}
-		if k == nil {
-			return
-		}
-		pass.Report(analysis.Diagnostic{
-			Pos:            n.Pos(),
-			End:            n.End(),
-			Category:       "",
-			Message:        k.message(),
-			URL:            "",
-			SuggestedFixes: nil,
-			Related:        nil,
+			if k == nil {
+				return
+			}
+
+			pass.Report(analysis.Diagnostic{
+				Pos:            n.Pos(),
+				End:            n.End(),
+				Category:       "",
+				Message:        k.String(),
+				URL:            "",
+				SuggestedFixes: nil,
+				Related:        nil,
+			})
 		})
-	})
-	return nil, nil
+
+		return nil, nil
+	}
+}
+
+func NewChecker(knownChanges ...KnownChange) *Checker {
+	return &Checker{knownChanges: knownChanges}
 }
