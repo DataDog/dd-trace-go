@@ -5,9 +5,15 @@
 
 package main
 
-import "gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer" // want `import URL needs to be updated`
+import (
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"    // want `import URL needs to be updated`
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer" // want `import URL needs to be updated`
+)
 
 func main() {
 	tracer.Start()
 	defer tracer.Stop()
+
+	span := tracer.StartSpan("operation", tracer.Tag(ext.SpanType, "test"))
+	defer span.Finish()
 }

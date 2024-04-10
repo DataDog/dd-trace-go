@@ -9,6 +9,7 @@ import (
 	"context"
 	"fmt"
 	"go/ast"
+	"strings"
 
 	"golang.org/x/tools/go/analysis"
 )
@@ -80,6 +81,11 @@ type V1ImportURL struct {
 }
 
 func (c V1ImportURL) Fixes() []analysis.SuggestedFix {
+	path := c.ctx.Value("pkg_path").(string)
+	if path == "" {
+		return nil
+	}
+	path = strings.Replace(path, "gopkg.in/DataDog/dd-trace-go.v1", "github.com/DataDog/dd-trace-go/v2", 1)
 	return []analysis.SuggestedFix{
 		{
 			Message: "update import URL to v2",
@@ -87,7 +93,7 @@ func (c V1ImportURL) Fixes() []analysis.SuggestedFix {
 				{
 					Pos:     c.node.Pos(),
 					End:     c.node.End(),
-					NewText: []byte(`"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"`),
+					NewText: []byte(fmt.Sprintf("%q", path)),
 				},
 			},
 		},
