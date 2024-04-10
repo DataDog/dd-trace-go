@@ -1,6 +1,6 @@
-module github.com/DataDog/dd-trace-go/tools/v2check/_stage
+module github.com/DataDog/dd-trace-go/v2/tools/v2check/_stage
 
-go 1.20
+go 1.19
 
 require gopkg.in/DataDog/dd-trace-go.v1 v1.62.0
 

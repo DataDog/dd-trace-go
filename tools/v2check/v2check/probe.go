@@ -32,6 +32,7 @@ func IsFuncCall(ctx context.Context, n ast.Node, pass *analysis.Pass) (context.C
 	if !ok {
 		return ctx, false
 	}
+	ctx = context.WithValue(ctx, "fn", fn)
 	ctx = context.WithValue(ctx, "pkg_path", fn.Pkg().Path())
 	return ctx, true
 }

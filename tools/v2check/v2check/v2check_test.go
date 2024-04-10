@@ -7,6 +7,7 @@ package v2check_test
 
 import (
 	"context"
+	"fmt"
 	"go/types"
 	"os"
 	"path"
@@ -45,14 +46,14 @@ func (c V1Usage) String() string {
 	return fn.FullName()
 }
 
-func TestSimple(t *testing.T) {
+func TestV1Usage(t *testing.T) {
 	c := v2check.NewChecker(&V1Usage{
 		ctx: context.Background(),
 	})
-	c.Run(testRunner(t))
+	c.Run(testRunner(t, "v1usage"))
 }
 
-func testRunner(t *testing.T) func(*analysis.Analyzer) {
+func testRunner(t *testing.T, name string) func(*analysis.Analyzer) {
 	t.Helper()
 	cwd, err := os.Getwd()
 	if err != nil {
@@ -60,6 +61,6 @@ func testRunner(t *testing.T) func(*analysis.Analyzer) {
 		return nil
 	}
 	return func(a *analysis.Analyzer) {
-		analysistest.Run(t, path.Join(cwd, "..", "_stage"), a)
+		analysistest.Run(t, path.Join(cwd, "..", "_stage"), a, fmt.Sprintf("./%s", name))
 	}
 }
