@@ -6,10 +6,13 @@
 package stacktrace
 
 import (
-	"github.com/stretchr/testify/require"
+	"testing"
+
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 	ddtracer "gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"testing"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestNewEvent(t *testing.T) {
@@ -27,11 +30,18 @@ func TestEventToSpan(t *testing.T) {
 
 	span := ddtracer.StartSpan("op")
 	event := NewEvent(ExceptionEvent, "", "message")
-	event.AddToSpan(span)
+	AddToSpan(span, event)
 	span.Finish()
 
 	spans := mt.FinishedSpans()
 	require.Len(t, spans, 1)
 	require.Equal(t, "op", spans[0].OperationName())
-	require.Equal(t, *event, spans[0].Tag("_dd.stack.exception"))
+
+	eventsMap := spans[0].Tag("_dd.stack").(internal.MetaStructValue).Value.(map[EventCategory][]*Event)
+	require.Len(t, eventsMap, 3)
+
+	eventsCat := eventsMap[ExceptionEvent]
+	require.Len(t, eventsCat, 1)
+
+	require.Equal(t, *event, *eventsCat[0])
 }

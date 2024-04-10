@@ -12,6 +12,8 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+
+	"github.com/hashicorp/go-secure-stdlib/parseutil"
 )
 
 var enabled = true
@@ -24,8 +26,8 @@ const stackTraceDisabledEnvVar = "DD_APPSEC_STACK_TRACE_ENABLE"
 
 func init() {
 	if env := os.Getenv(stackTraceDepthEnvVar); env != "" {
-		if depth, err := strconv.ParseUint(env, 10, 64); err == nil {
-			defaultMaxDepth = int(depth)
+		if depth, err := parseutil.SafeParseInt(env); err == nil {
+			defaultMaxDepth = depth
 		}
 	}
 

@@ -8,7 +8,9 @@
 package stacktrace
 
 import (
-	"fmt"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal"
+
 	"github.com/google/uuid"
 	"github.com/tinylib/msgp/msgp"
 )
@@ -42,11 +44,6 @@ type Event struct {
 	Frames StackTrace `msg:"frames"`
 }
 
-// TagName returns the tag name for the event
-func (e *Event) TagName() string {
-	return fmt.Sprintf("_dd.stack.%s", e.Category)
-}
-
 // NewEvent creates a new stacktrace event with the given category, type and message
 func NewEvent(eventCat EventCategory, eventType, message string) *Event {
 	return &Event{
@@ -72,12 +69,30 @@ func (e *Event) IDLink() string {
 	return e.ID
 }
 
-// AddToSpan uses (*Event).TagName to add the event to a span using span.SetTag
-func (e *Event) AddToSpan(span interface{ SetTag(key string, value any) }) {
-	span.SetTag(e.TagName(), *e)
-}
-
 // Enabled returns whether the stacktrace is enabled
 func Enabled() bool {
 	return enabled
+}
+
+// AddToSpan adds the event to the given span's root span as a tag
+func AddToSpan(span ddtrace.Span, events ...*Event) {
+
+	groupByCategory := map[EventCategory][]*Event{
+		ExceptionEvent:     {},
+		VulnerabilityEvent: {},
+		ExploitEvent:       {},
+	}
+
+	for _, event := range events {
+		groupByCategory[event.Category] = append(groupByCategory[event.Category], event)
+	}
+
+	type rooter interface {
+		Root() ddtrace.Span
+	}
+	if lrs, ok := span.(rooter); ok {
+		span = lrs.Root()
+	}
+
+	span.SetTag("_dd.stack", internal.MetaStructValue{Value: groupByCategory})
 }
