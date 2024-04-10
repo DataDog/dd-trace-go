@@ -29,8 +29,23 @@ type KnownChange interface {
 	// Probes returns a list of probes that must be true to report the analyzed expression.
 	Probes() []Probe
 
-	// UpdateContext updates the context with the given value.
-	UpdateContext(context.Context)
+	// SetContext updates the context with the given value.
+	SetContext(context.Context)
+}
+
+type contextHandler struct {
+	ctx context.Context
+}
+
+func (c contextHandler) Context() context.Context {
+	if c.ctx == nil {
+		c.ctx = context.Background()
+	}
+	return c.ctx
+}
+
+func (c *contextHandler) SetContext(ctx context.Context) {
+	c.ctx = ctx
 }
 
 func eval(k KnownChange, n ast.Node, pass *analysis.Pass) bool {
@@ -39,7 +54,22 @@ func eval(k KnownChange, n ast.Node, pass *analysis.Pass) bool {
 		if !ok {
 			return false
 		}
-		k.UpdateContext(ctx)
+		k.SetContext(ctx)
 	}
 	return true
+}
+
+type V1ImportURL struct {
+	contextHandler
+}
+
+func (V1ImportURL) String() string {
+	return "import URL needs to be updated"
+}
+
+func (V1ImportURL) Probes() []Probe {
+	return []Probe{
+		IsImport,
+		HasPackagePrefix("gopkg.in/DataDog/dd-trace-go.v1/"),
+	}
 }

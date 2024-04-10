@@ -26,7 +26,7 @@ func (c V1Usage) Context() context.Context {
 	return c.ctx
 }
 
-func (c *V1Usage) UpdateContext(ctx context.Context) {
+func (c *V1Usage) SetContext(ctx context.Context) {
 	c.ctx = ctx
 }
 
