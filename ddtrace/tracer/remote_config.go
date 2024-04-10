@@ -21,9 +21,9 @@ import (
 )
 
 type dynamicInstrumentationRCProbeConfig struct {
-	runtimeID            string
-	productConfigPath    string
-	productConfigContent string
+	runtimeID     string
+	configPath    string
+	configContent string
 }
 
 type dynamicInstrumentationRCState struct {
@@ -119,9 +119,9 @@ func (t *tracer) dynamicInstrumentationRCUpdate(u remoteconfig.ProductUpdate) ma
 		applyStatus[k] = state.ApplyStatus{State: state.ApplyStateUnknown}
 
 		diRCState.state[k] = dynamicInstrumentationRCProbeConfig{
-			runtimeID:            globalconfig.RuntimeID(),
-			productConfigPath:    k,
-			productConfigContent: string(v),
+			runtimeID:     globalconfig.RuntimeID(),
+			configPath:    k,
+			configContent: string(v),
 		}
 	}
 
