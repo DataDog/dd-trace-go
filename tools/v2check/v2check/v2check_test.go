@@ -8,6 +8,7 @@ package v2check_test
 import (
 	"context"
 	"fmt"
+	"go/ast"
 	"go/types"
 	"os"
 	"path"
@@ -29,6 +30,12 @@ func (c V1Usage) Context() context.Context {
 
 func (c *V1Usage) SetContext(ctx context.Context) {
 	c.ctx = ctx
+}
+
+func (*V1Usage) SetNode(ast.Node) {}
+
+func (c V1Usage) Fixes() []analysis.SuggestedFix {
+	return nil
 }
 
 func (c V1Usage) Probes() []v2check.Probe {
@@ -53,6 +60,11 @@ func TestV1Usage(t *testing.T) {
 	c.Run(testRunner(t, "v1usage"))
 }
 
+func TestV1ImportURL(t *testing.T) {
+	c := v2check.NewChecker(&v2check.V1ImportURL{})
+	c.Run(testRunner(t, "v1importurl"))
+}
+
 func testRunner(t *testing.T, name string) func(*analysis.Analyzer) {
 	t.Helper()
 	cwd, err := os.Getwd()
@@ -61,6 +73,6 @@ func testRunner(t *testing.T, name string) func(*analysis.Analyzer) {
 		return nil
 	}
 	return func(a *analysis.Analyzer) {
-		analysistest.Run(t, path.Join(cwd, "..", "_stage"), a, fmt.Sprintf("./%s", name))
+		analysistest.RunWithSuggestedFixes(t, path.Join(cwd, "..", "_stage"), a, fmt.Sprintf("./%s", name))
 	}
 }

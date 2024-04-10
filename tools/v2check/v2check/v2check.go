@@ -60,7 +60,7 @@ func (c Checker) runner() func(*analysis.Pass) (interface{}, error) {
 				Category:       "",
 				Message:        k.String(),
 				URL:            "",
-				SuggestedFixes: nil,
+				SuggestedFixes: k.Fixes(),
 				Related:        nil,
 			})
 		})

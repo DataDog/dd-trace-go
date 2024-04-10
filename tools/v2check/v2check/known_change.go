@@ -26,11 +26,17 @@ type KnownChange interface {
 	// Context returns the context associated with the known change.
 	Context() context.Context
 
+	// Fixes returns a list of fixes that can be applied to the analyzed expression.
+	Fixes() []analysis.SuggestedFix
+
 	// Probes returns a list of probes that must be true to report the analyzed expression.
 	Probes() []Probe
 
 	// SetContext updates the context with the given value.
 	SetContext(context.Context)
+
+	// SetNode updates the node with the given value.
+	SetNode(ast.Node)
 }
 
 type contextHandler struct {
@@ -48,6 +54,14 @@ func (c *contextHandler) SetContext(ctx context.Context) {
 	c.ctx = ctx
 }
 
+type nodeHandler struct {
+	node ast.Node
+}
+
+func (c *nodeHandler) SetNode(node ast.Node) {
+	c.node = node
+}
+
 func eval(k KnownChange, n ast.Node, pass *analysis.Pass) bool {
 	for _, p := range k.Probes() {
 		ctx, ok := p(k.Context(), n, pass)
@@ -56,15 +70,28 @@ func eval(k KnownChange, n ast.Node, pass *analysis.Pass) bool {
 		}
 		k.SetContext(ctx)
 	}
+	k.SetNode(n)
 	return true
 }
 
 type V1ImportURL struct {
 	contextHandler
+	nodeHandler
 }
 
-func (V1ImportURL) String() string {
-	return "import URL needs to be updated"
+func (c V1ImportURL) Fixes() []analysis.SuggestedFix {
+	return []analysis.SuggestedFix{
+		{
+			Message: "update import URL to v2",
+			TextEdits: []analysis.TextEdit{
+				{
+					Pos:     c.node.Pos(),
+					End:     c.node.End(),
+					NewText: []byte(`"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"`),
+				},
+			},
+		},
+	}
 }
 
 func (V1ImportURL) Probes() []Probe {
@@ -72,4 +99,8 @@ func (V1ImportURL) Probes() []Probe {
 		IsImport,
 		HasPackagePrefix("gopkg.in/DataDog/dd-trace-go.v1/"),
 	}
+}
+
+func (V1ImportURL) String() string {
+	return "import URL needs to be updated"
 }
