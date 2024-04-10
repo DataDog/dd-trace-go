@@ -20,28 +20,34 @@ import (
 	"github.com/DataDog/datadog-agent/pkg/remoteconfig/state"
 )
 
-type dynamicInstrumentationRCFields struct {
-	mu                   *sync.Mutex
+type dynamicInstrumentationRCProbeConfig struct {
 	runtimeID            string
 	productConfigPath    string
 	productConfigContent string
 }
 
+type dynamicInstrumentationRCState struct {
+	mu    *sync.Mutex
+	state map[string]dynamicInstrumentationRCProbeConfig
+}
+
 var (
-	dynamicInsturmentationRCState dynamicInstrumentationRCFields
+	diRCState dynamicInstrumentationRCState
 )
 
 func init() {
-	dynamicInsturmentationRCState = dynamicInstrumentationRCFields{
+	diRCState = dynamicInstrumentationRCState{
 		mu: &sync.Mutex{},
 	}
 
 	go func() {
 		for {
 			time.Sleep(time.Second * 5)
-			dynamicInsturmentationRCState.mu.Lock()
-			passFullConfiguration(dynamicInsturmentationRCState)
-			dynamicInsturmentationRCState.mu.Unlock()
+			diRCState.mu.Lock()
+			for _, v := range diRCState.state {
+				passFullConfiguration(v)
+			}
+			diRCState.mu.Unlock()
 		}
 	}()
 }
@@ -112,11 +118,11 @@ func (t *tracer) dynamicInstrumentationRCUpdate(u remoteconfig.ProductUpdate) ma
 		log.Debug("Received dynamic instrumentation RC configuration for %s\n", k)
 		applyStatus[k] = state.ApplyStatus{State: state.ApplyStateUnknown}
 
-		dynamicInsturmentationRCState.mu.Lock()
-		dynamicInsturmentationRCState.runtimeID = globalconfig.RuntimeID()
-		dynamicInsturmentationRCState.productConfigPath = k
-		dynamicInsturmentationRCState.productConfigContent = string(v)
-		dynamicInsturmentationRCState.mu.Unlock()
+		diRCState.state[k] = dynamicInstrumentationRCProbeConfig{
+			runtimeID:            globalconfig.RuntimeID(),
+			productConfigPath:    k,
+			productConfigContent: string(v),
+		}
 	}
 
 	return applyStatus
@@ -126,7 +132,7 @@ func (t *tracer) dynamicInstrumentationRCUpdate(u remoteconfig.ProductUpdate) ma
 // a bpf program to this function and extracts the raw bytes accordingly.
 //
 //go:noinline
-func passFullConfiguration(_ dynamicInstrumentationRCFields) {}
+func passFullConfiguration(_ dynamicInstrumentationRCProbeConfig) {}
 
 // onRemoteConfigUpdate is a remote config callaback responsible for processing APM_TRACING RC-product updates.
 func (t *tracer) onRemoteConfigUpdate(u remoteconfig.ProductUpdate) map[string]state.ApplyStatus {
