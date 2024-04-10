@@ -18,7 +18,7 @@ func TestNewEvent(t *testing.T) {
 	require.Equal(t, "go", event.Language)
 	require.Equal(t, "message", event.Message)
 	require.GreaterOrEqual(t, len(event.Frames), 3)
-	require.Equal(t, "gopkg.in/DataDog/dd-trace-go.v1/internal/stacktrace.TestNewEvent", event.Frames[len(event.Frames)-1].Function)
+	require.Equal(t, "TestNewEvent", event.Frames[0].Function)
 }
 
 func TestEventToSpan(t *testing.T) {

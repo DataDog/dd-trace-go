@@ -48,10 +48,10 @@ func (e *Event) TagName() string {
 }
 
 // NewEvent creates a new stacktrace event with the given category, type and message
-func NewEvent(eventCat EventCategory, type_, message string) *Event {
+func NewEvent(eventCat EventCategory, eventType, message string) *Event {
 	return &Event{
 		Category: eventCat,
-		Type:     type_,
+		Type:     eventType,
 		Language: "go",
 		Message:  message,
 		Frames:   TakeWithSkip(defaultCallerSkip + 1),
@@ -75,4 +75,9 @@ func (e *Event) IDLink() string {
 // AddToSpan uses (*Event).TagName to add the event to a span using span.SetTag
 func (e *Event) AddToSpan(span interface{ SetTag(key string, value any) }) {
 	span.SetTag(e.TagName(), *e)
+}
+
+// Enabled returns whether the stacktrace is enabled
+func Enabled() bool {
+	return enabled
 }

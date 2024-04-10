@@ -15,10 +15,10 @@ import (
 )
 
 var enabled = true
-var topFrames = 8
+var defaultTopFrameDepth = 8
 var defaultMaxDepth = 32
 
-const defaultCallerSkip = 4
+const defaultCallerSkip = 3
 const stackTraceDepthEnvVar = "DD_APPSEC_MAX_STACK_TRACE_DEPTH"
 const stackTraceDisabledEnvVar = "DD_APPSEC_STACK_TRACE_ENABLE"
 
@@ -26,12 +26,10 @@ func init() {
 	if env := os.Getenv(stackTraceDepthEnvVar); env != "" {
 		if depth, err := strconv.ParseUint(env, 10, 64); err == nil {
 			defaultMaxDepth = int(depth)
-
-			if defaultMaxDepth < topFrames {
-				topFrames = 0
-			}
 		}
 	}
+
+	defaultTopFrameDepth = defaultMaxDepth / 4
 
 	if env := os.Getenv(stackTraceDisabledEnvVar); env != "" {
 		if e, err := strconv.ParseBool(env); err == nil {
@@ -40,10 +38,10 @@ func init() {
 	}
 }
 
-// StackTrace is intended to be sent over the span tag `_dd.stack`, the first frame is the top of the stack
+// StackTrace is intended to be sent over the span tag `_dd.stack`, the first frame is the current frame
 type StackTrace []StackFrame
 
-// Represents a single frame in the stack trace
+// StackFrame represents a single frame in the stack trace
 type StackFrame struct {
 	Index     uint32 `msg:"id"`                   // Index of the frame (0 = top of the stack)
 	Text      string `msg:"text,omitempty"`       // Text version of the stackframe as a string
@@ -55,41 +53,54 @@ type StackFrame struct {
 	Function  string `msg:"function,omitempty"`   // Function is the fully qualified name of the function where the line of code is
 }
 
-// getPackageFromFunctionName returns the package name from a function name
+// getPackageFromSymbol returns the package name from a function name
 // ex: gopkg.in/DataDog/dd-trace-go.v1/internal/stacktrace.(*Event).NewException -> gopkg.in/DataDog/dd-trace-go.v1/internal/stacktrace
-func getPackageFromFunctionName(name string) string {
-	index := strings.LastIndex(name, ".")
-	if index == -1 || index == 0 {
-		return name
+func getPackageFromSymbol(name string) string {
+	// Find the last slash
+	index := strings.LastIndex(name, "/")
+	if index == -1 {
+		index = 0
 	}
 
-	// If the last character before the last dot is a closing parenthesis, it means that the function is a method
-	// so we need to find the last dot before the receiver
-	if name[index-1] == ')' {
-		index = strings.LastIndex(name[:index], ".")
-		if index == -1 {
-			return name[:index]
-		}
-	}
-
+	// Find the first dot after the last slash
+	index += strings.Index(name[index:], ".")
 	return name[:index]
 }
 
-// getMethodReceiverFromFunctionName returns the receiver of a method from a function name
+// getMethodReceiverFromSymbol returns the receiver of a method from a function name
 // ex: gopkg.in/DataDog/dd-trace-go.v1/internal/stacktrace.(*Event).NewException -> *Event
-func getMethodReceiverFromFunctionName(name string) string {
+func getMethodReceiverFromSymbol(name string) string {
 	startIndex := strings.Index(name, "(")
 	if startIndex == -1 {
-		// There is no classname (method receiver) in the function name
 		return ""
 	}
 
-	index := strings.LastIndex(name, ".")
-	if index == -1 {
-		return name
+	endIndex := strings.LastIndex(name, ")")
+	if endIndex == -1 || endIndex <= startIndex+1 {
+		return ""
 	}
 
-	return name[:index]
+	return name[startIndex+1 : endIndex]
+}
+
+// getFunctionNameFromSymbol returns the function name from a symbol
+// ex: gopkg.in/DataDog/dd-trace-go.v1/internal/stacktrace.(*Event).NewException -> NewException
+func getFunctionNameFromSymbol(name string) string {
+	index := strings.LastIndex(name, ")")
+
+	// If it's a method, we just have to get what's after the last closing parenthesis
+	if index != -1 && index+2 < len(name) {
+		return name[index+2:]
+	}
+
+	// If it's a function, we have to get past the package name and get the end of the string
+	index = strings.LastIndex(name, "/")
+	if index == -1 {
+		index = 0
+	}
+
+	index += strings.Index(name[index:], ".")
+	return name[index+1:]
 }
 
 // Take Create a new stack trace from the current call stack
@@ -99,70 +110,84 @@ func Take() StackTrace {
 
 // TakeWithSkip creates a new stack trace from the current call stack, skipping the first `skip` frames
 func TakeWithSkip(skip int) StackTrace {
-	callers, realDepth := callers(skip, defaultMaxDepth)
+	// callers() and getRealStackDepth() have to be used side by side to keep the same number of `skip`-ed frames
+	realDepth := getRealStackDepth(skip, defaultMaxDepth)
+	callers := callers(skip, realDepth, defaultMaxDepth, defaultTopFrameDepth)
+	frames := callersFrame(callers, defaultMaxDepth, defaultTopFrameDepth)
+	stack := make([]StackFrame, len(frames))
 
-	// There can be way more frames than callers, so we need to check again that we don't store more frames that the depth specified
-	frames := runtime.CallersFrames(callers)
-	framesArray := make([]runtime.Frame, 0, defaultMaxDepth)
-	ok := true
-	var frame runtime.Frame
-	for ok {
-		frame, ok = frames.Next()
-		framesArray = append(framesArray, frame)
-	}
+	for i := 0; i < len(frames); i++ {
+		frame := frames[i]
 
-	if len(framesArray) > defaultMaxDepth {
-		framesArray = append(framesArray[:defaultMaxDepth-topFrames], framesArray[len(framesArray)-topFrames:]...)
-	}
+		// If the top frames are separated from the bottom frames we have to stitch the real index together
+		frameIndex := i
+		if frameIndex >= defaultMaxDepth-defaultTopFrameDepth {
+			frameIndex = realDepth - defaultMaxDepth + i
+		}
 
-	stack := make([]StackFrame, len(framesArray))
-
-	// We revert the order of
-	for i := depth - 1; i >= 0; i-- {
 		stack[i] = StackFrame{
-			Index:     uint32(i),
+			Index:     uint32(frameIndex),
 			Text:      "",
 			File:      frame.File,
 			Line:      uint32(frame.Line),
 			Column:    0, // No column given by the runtime
-			Namespace: getPackageFromFunctionName(frame.Function),
-			ClassName: getMethodReceiverFromFunctionName(frame.Function),
-			Function:  frame.Function,
+			Namespace: getPackageFromSymbol(frame.Function),
+			ClassName: getMethodReceiverFromSymbol(frame.Function),
+			Function:  getFunctionNameFromSymbol(frame.Function),
 		}
 	}
 
 	return stack
 }
 
-// callers returns a maximum of `maxDepth` frames from the call stack, skipping the first `skip` frames
-// of the whole stack is bigger than `maxDepth`, the 8 first and the last `maxDepth-8` frames are returned
-// the depth
-// Lastly, keep in mind that pcs[0] is the current function, not the top of the stack
-// callers also returns the real depth of the stack so that the indexs of the frames can be calculated
-func callers(skip, maxDepth int) ([]uintptr, int) {
-	pcs := make([]uintptr, maxDepth+1)
-	n := runtime.Callers(skip, pcs[:])
+// getRealStackDepth returns the real depth of the stack, skipping the first `skip` frames
+func getRealStackDepth(skip, increment int) int {
+	pcs := make([]uintptr, increment)
 
-	// The stack is smaller or equal to the max depth, return the whole stack
-	if n <= maxDepth+1 {
-		// Find the real depth of the stack (if the stack is smaller than the max depth)
-		for ; maxDepth >= 0; maxDepth-- {
-			if pcs[maxDepth-1] != 0 {
-				break
-			}
+	depth := increment
+	for n := increment; n == increment; depth += n {
+		n = runtime.Callers(depth+skip, pcs[:])
+	}
+
+	return depth
+}
+
+// callers returns an array of function pointers of size stackSize, skipping the first `skip` frames
+// if realDepth of the current call stack if bigger that stackSize, we return the first stackSize - defaultTopFrameDepth frames
+// and the last defaultTopFrameDepth frames of the whole stack
+func callers(skip, realDepth, stackSize, topFrames int) []uintptr {
+	// The stack size is smaller than the max depth, return the whole stack
+	if realDepth <= stackSize {
+		pcs := make([]uintptr, realDepth)
+		runtime.Callers(skip, pcs[:])
+		return pcs
+	}
+
+	// The stack is bigger than the max depth, proceed to find the N start frames and stitch them to the ones we have
+	pcs := make([]uintptr, stackSize)
+	runtime.Callers(skip, pcs[:stackSize-topFrames])
+	runtime.Callers(skip+realDepth-topFrames, pcs[stackSize-topFrames:])
+	return pcs
+}
+
+// callersFrame returns an array of runtime.Frame from an array of function pointers
+// There can be multiple frames for a single function pointer, so we have to cut things again to make sure the final
+// stacktrace is the correct size
+func callersFrame(pcs []uintptr, stackSize, topFrames int) []runtime.Frame {
+	frames := runtime.CallersFrames(pcs)
+	framesArray := make([]runtime.Frame, 0, len(pcs))
+
+	for {
+		frame, more := frames.Next()
+		framesArray = append(framesArray, frame)
+		if !more {
+			break
 		}
-
-		return pcs[:maxDepth], maxDepth
 	}
 
-	// The stack is bigger than the max depth, proceed to find the top 8 frames and stitch them to the ones we have
-	topPcs := make([]uintptr, topFrames)
-	i := 0
-	var topN int
-	for ; topN > 0 && runtime.FuncForPC(topPcs[topN-1]).Name() != "goexit"; i += topFrames {
-		topN = runtime.Callers(skip+maxDepth+i, topPcs)
+	if len(framesArray) > stackSize {
+		framesArray = append(framesArray[:stackSize-topFrames], framesArray[len(framesArray)-topFrames:]...)
 	}
 
-	// stitch the top frames to the ones we have
-	return append(pcs[:maxDepth-topFrames], topPcs[:topN]...), maxDepth + i
+	return framesArray
 }
