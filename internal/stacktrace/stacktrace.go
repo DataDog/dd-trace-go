@@ -8,36 +8,53 @@
 package stacktrace
 
 import (
+	"errors"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"os"
 	"runtime"
-	"strconv"
 	"strings"
 
 	"github.com/hashicorp/go-secure-stdlib/parseutil"
 )
 
-var enabled = true
-var defaultTopFrameDepth = 8
-var defaultMaxDepth = 32
+var (
+	enabled              = true
+	defaultTopFrameDepth = 8
+	defaultMaxDepth      = 32
+)
 
-const defaultCallerSkip = 3
-const stackTraceDepthEnvVar = "DD_APPSEC_MAX_STACK_TRACE_DEPTH"
-const stackTraceDisabledEnvVar = "DD_APPSEC_STACK_TRACE_ENABLE"
+const (
+	defaultCallerSkip    = 4
+	envStackTraceDepth   = "DD_APPSEC_MAX_STACK_TRACE_DEPTH"
+	envStackTraceEnabled = "DD_APPSEC_STACK_TRACE_ENABLE"
+)
 
 func init() {
-	if env := os.Getenv(stackTraceDepthEnvVar); env != "" {
+	if env := os.Getenv(envStackTraceEnabled); env != "" {
+		if e, err := parseutil.ParseBool(env); err == nil {
+			enabled = e
+		} else {
+			log.Error("Failed to parse %s as boolean: %v (using default value: %v)", envStackTraceEnabled, err, enabled)
+		}
+	}
+
+	if env := os.Getenv(envStackTraceDepth); env != "" {
 		if depth, err := parseutil.SafeParseInt(env); err == nil {
 			defaultMaxDepth = depth
+		} else {
+			if depth <= 0 && err == nil {
+				err = errors.New("value is not a strictly positive integer")
+			}
+			log.Error("Failed to parse %s as a positive integer: %v (using default value: %v)", envStackTraceDepth, err, defaultMaxDepth)
 		}
 	}
 
 	defaultTopFrameDepth = defaultMaxDepth / 4
+}
 
-	if env := os.Getenv(stackTraceDisabledEnvVar); env != "" {
-		if e, err := strconv.ParseBool(env); err == nil {
-			enabled = e
-		}
-	}
+// Enabled returns whether stacktrace should be collected
+func Enabled() bool {
+	return enabled
 }
 
 // StackTrace is intended to be sent over the span tag `_dd.stack`, the first frame is the current frame
@@ -107,7 +124,7 @@ func getFunctionNameFromSymbol(name string) string {
 
 // Take Create a new stack trace from the current call stack
 func Take() StackTrace {
-	return TakeWithSkip(4)
+	return TakeWithSkip(defaultCallerSkip)
 }
 
 // TakeWithSkip creates a new stack trace from the current call stack, skipping the first `skip` frames

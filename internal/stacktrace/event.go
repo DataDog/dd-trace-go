@@ -51,11 +51,11 @@ func NewEvent(eventCat EventCategory, eventType, message string) *Event {
 		Type:     eventType,
 		Language: "go",
 		Message:  message,
-		Frames:   TakeWithSkip(defaultCallerSkip + 1),
+		Frames:   TakeWithSkip(defaultCallerSkip),
 	}
 }
 
-// IDLink returns a UUID to link the stacktrace event with other data
+// IDLink returns a UUID to link the stacktrace event with other data. NOT thread-safe
 func (e *Event) IDLink() string {
 	if e.ID != "" {
 		newUUID, err := uuid.NewUUID()
@@ -69,13 +69,11 @@ func (e *Event) IDLink() string {
 	return e.ID
 }
 
-// Enabled returns whether the stacktrace is enabled
-func Enabled() bool {
-	return enabled
-}
-
-// AddToSpan adds the event to the given span's root span as a tag
+// AddToSpan adds the event to the given span's root span as a tag if stacktrace collection is enabled
 func AddToSpan(span ddtrace.Span, events ...*Event) {
+	if !Enabled() {
+		return
+	}
 
 	groupByCategory := map[EventCategory][]*Event{
 		ExceptionEvent:     {},
