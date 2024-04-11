@@ -11,6 +11,9 @@ on:
         required: true
         type: string
 
+env:
+  DD_APPSEC_WAF_TIMEOUT: 1m # Increase time WAF time budget to reduce CI flakiness
+
 jobs:
   copyright:
     runs-on: ubuntu-latest
