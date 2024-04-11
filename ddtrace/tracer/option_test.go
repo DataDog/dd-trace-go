@@ -738,6 +738,13 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			assert.Equal(t, time.Second, c.spanTimeout)
 		})
 	})
+
+	t.Run("agent-timeout", func(t *testing.T) {
+		t.Run("defaults", func(t *testing.T) {
+			c := newConfig()
+			assert.Equal(t, time.Duration(10*time.Second), c.httpClient.Timeout)
+		})
+	})
 }
 
 func TestDefaultHTTPClient(t *testing.T) {
