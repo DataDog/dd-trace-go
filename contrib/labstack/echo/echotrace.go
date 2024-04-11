@@ -76,9 +76,6 @@ func Middleware(opts ...Option) echo.MiddlewareFunc {
 			// serve the request to the next middleware
 			err := next(c)
 			if err != nil {
-				// invokes the registered HTTP error handler
-				c.Error(err)
-
 				// It is impossible to determine what the final status code of a request is in echo.
 				// This is the best we can do.
 				var echoErr *echo.HTTPError
