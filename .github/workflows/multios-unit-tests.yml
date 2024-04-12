@@ -26,6 +26,9 @@ on:
         required: true
         type: string
 
+env:
+  DD_APPSEC_WAF_TIMEOUT: 1m # Increase time WAF time budget to reduce CI flakiness
+
 jobs:
   test-multi-os:
     runs-on: "${{ (inputs.go-version == '1.20' && inputs.runs-on == 'windows-latest') && 'windows-2019' || inputs.runs-on }}"
