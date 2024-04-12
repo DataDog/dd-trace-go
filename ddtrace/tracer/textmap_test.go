@@ -402,6 +402,52 @@ func TestExtractOriginSynthetics(t *testing.T) {
 	assert.Equal(t, sctx.origin, "synthetics")
 }
 
+func Test257CharacterDDTracestateLengh(t *testing.T) {
+	t.Setenv(headerPropagationStyle, "tracecontext")
+
+	tracer := newTracer()
+	defer tracer.Stop()
+	assert := assert.New(t)
+	root := tracer.StartSpan("web.request").(*span)
+	root.SetTag(ext.SamplingPriority, ext.PriorityUserKeep)
+	ctx, ok := root.Context().(*spanContext)
+	ctx.origin = "rum"
+	ctx.traceID = traceIDFrom64Bits(1)
+	ctx.spanID = 2
+	ctx.trace.propagatingTags = map[string]string{
+		"tracestate": "valid_vendor=a:1",
+	}
+	// need to create a tracestate where the dd portion will be 257 chars long
+	// we currently have:
+	// 3 chars ->  dd=
+	// 4 chars ->  s:2;
+	// 6 chars ->  o:rum;
+	// 13 in total - so 244 characters left
+	// shortest propagated key/val is `t.a:0` 5 chars
+	// plus 1 for the `;` between tags
+	// so 19 including a propagated tag, leaving 238 chars to hit 257
+	// acount for the t._:0 characters, leaves us with 234 characters for the key
+	// this will give us a tracestate 257 characters long
+	// note that there is no ending `;`
+	longKey := strings.Repeat("a", 234) // 234 is correct num for 257
+	shortKey := "a"
+
+	ctx.trace.propagatingTags[fmt.Sprintf("_dd.p.%s", shortKey)] = "0"
+	ctx.trace.propagatingTags[fmt.Sprintf("_dd.p.%s", longKey)] = "0"
+
+	headers := TextMapCarrier(map[string]string{})
+	err := tracer.Inject(ctx, headers)
+
+	assert.True(ok)
+	assert.Nil(err)
+	assert.Contains(headers[tracestateHeader], "valid_vendor=a:1")
+	// iterating through propagatingTags map doesn't guarantee order in tracestate header
+	ddTag := strings.SplitN(headers[tracestateHeader], ",", 2)[0]
+	assert.Contains(ddTag, "s:2")
+	assert.Regexp(regexp.MustCompile("dd=[\\w:,]+"), ddTag)
+	assert.LessOrEqual(len(ddTag), 256) // one of the propagated tags will not be propagated
+}
+
 func TestTextMapPropagator(t *testing.T) {
 	bigMap := make(map[string]string)
 	for i := 0; i < 100; i++ {
