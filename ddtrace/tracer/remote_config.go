@@ -191,7 +191,7 @@ type dynamicInstrumentationRCProbeConfig struct {
 }
 
 type dynamicInstrumentationRCState struct {
-	sync.RWMutex
+	sync.Mutex
 	state map[string]dynamicInstrumentationRCProbeConfig
 }
 
@@ -221,15 +221,17 @@ func (t *tracer) dynamicInstrumentationRCUpdate(u remoteconfig.ProductUpdate) ma
 // a bpf program to this function and extracts the raw bytes accordingly.
 //
 //go:noinline
-func passProbeConfiguration(_ dynamicInstrumentationRCProbeConfig) {}
+func passProbeConfiguration(v dynamicInstrumentationRCProbeConfig) {}
 
 func initalizeDynamicInstrumentationRemoteConfigState() {
-	diRCState = dynamicInstrumentationRCState{}
+	diRCState = dynamicInstrumentationRCState{
+		state: map[string]dynamicInstrumentationRCProbeConfig{},
+	}
 
 	go func() {
 		for {
 			time.Sleep(time.Second * 5)
-			diRCState.RLock()
+			diRCState.Lock()
 			for _, v := range diRCState.state {
 				passProbeConfiguration(v)
 			}
