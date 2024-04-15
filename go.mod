@@ -1,15 +1,15 @@
-module gopkg.in/DataDog/dd-trace-go.v1
+module github.com/GuanceCloud/dd-trace-go
 
 go 1.19
 
 require (
 	cloud.google.com/go/pubsub v1.33.0
 	github.com/99designs/gqlgen v0.17.36
-	github.com/DataDog/appsec-internal-go v1.4.1
+	github.com/DataDog/appsec-internal-go v1.5.0
 	github.com/DataDog/datadog-agent/pkg/obfuscate v0.48.0
 	github.com/DataDog/datadog-agent/pkg/remoteconfig/state v0.48.1
 	github.com/DataDog/datadog-go/v5 v5.3.0
-	github.com/DataDog/go-libddwaf/v2 v2.3.1
+	github.com/DataDog/go-libddwaf/v2 v2.3.2
 	github.com/DataDog/gostackparse v0.7.0
 	github.com/DataDog/sketches-go v1.4.2
 	github.com/IBM/sarama v1.40.0
@@ -99,6 +99,7 @@ require (
 	google.golang.org/api v0.128.0
 	google.golang.org/grpc v1.57.1
 	google.golang.org/protobuf v1.30.0
+	gopkg.in/DataDog/dd-trace-go.v1 v1.62.0
 	gopkg.in/jinzhu/gorm.v1 v1.9.2
 	gopkg.in/olivere/elastic.v3 v3.0.75
 	gopkg.in/olivere/elastic.v5 v5.0.86
@@ -161,7 +162,6 @@ require (
 	github.com/go-playground/universal-translator v0.18.1 // indirect
 	github.com/go-playground/validator/v10 v10.15.1 // indirect
 	github.com/goccy/go-json v0.10.2 // indirect
-	github.com/gofrs/uuid v4.4.0+incompatible // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang-sql/civil v0.0.0-20220223132316-b832511892a9 // indirect
 	github.com/golang-sql/sqlexp v0.1.0 // indirect
