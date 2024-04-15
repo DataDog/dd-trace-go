@@ -31,24 +31,38 @@ const (
 
 var interval = 10 * time.Second
 
-// pollDBStats calls (*DB).Stats on the db at a predetermined interval. It pushes the DBStats off to the StatsCarrier which ultimately sends them through a statsd client.
-// TODO: Perhaps grant a way for pollDBStats to grab the drivername so that it doesn't have to be passed in as a param
-func pollDBStats(db *sql.DB, tags []string) {
+// pollDBStats calls (*DB).Stats on the db at a predetermined interval. It pushes the DBStats off to the statsd client.
+func pollDBStats(statsd internal.StatsdClient, db *sql.DB) {
 	if db == nil {
 		log.Debug("No traced DB connection found; cannot pull DB stats.")
 		return
 	}
 	log.Debug("Traced DB connection found: DB stats will be gathered and sent every %v.", interval)
 	for range time.NewTicker(interval).C {
+		log.Debug("Reporting DB.Stats metrics...")
 		stat := db.Stats()
-		globalconfig.PushStat(internal.NewGauge(MaxOpenConnections, float64(stat.MaxOpenConnections), tags, 1))
-		globalconfig.PushStat(internal.NewGauge(OpenConnections, float64(stat.OpenConnections), tags, 1))
-		globalconfig.PushStat(internal.NewGauge(InUse, float64(stat.InUse), tags, 1))
-		globalconfig.PushStat(internal.NewGauge(Idle, float64(stat.Idle), tags, 1))
-		globalconfig.PushStat(internal.NewGauge(WaitCount, float64(stat.WaitCount), tags, 1))
-		globalconfig.PushStat(internal.NewTiming(WaitDuration, stat.WaitDuration, tags, 1))
-		globalconfig.PushStat(internal.NewGauge(MaxIdleClosed, float64(stat.MaxIdleClosed), tags, 1))
-		globalconfig.PushStat(internal.NewGauge(MaxIdleTimeClosed, float64(stat.MaxIdleTimeClosed), tags, 1))
-		globalconfig.PushStat(internal.NewGauge(MaxLifetimeClosed, float64(stat.MaxLifetimeClosed), tags, 1))
+		statsd.Gauge(MaxOpenConnections, float64(stat.MaxOpenConnections), []string{}, 1)
+		statsd.Gauge(OpenConnections, float64(stat.OpenConnections), []string{}, 1)
+		statsd.Gauge(InUse, float64(stat.InUse), []string{}, 1)
+		statsd.Gauge(Idle, float64(stat.Idle), []string{}, 1)
+		statsd.Gauge(WaitCount, float64(stat.WaitCount), []string{}, 1)
+		statsd.Timing(WaitDuration, stat.WaitDuration, []string{}, 1)
+		statsd.Gauge(MaxIdleClosed, float64(stat.MaxIdleClosed), []string{}, 1)
+		statsd.Gauge(MaxIdleTimeClosed, float64(stat.MaxIdleTimeClosed), []string{}, 1)
+		statsd.Gauge(MaxLifetimeClosed, float64(stat.MaxLifetimeClosed), []string{}, 1)
 	}
+}
+
+func statsTags(c *config) []string {
+	tags := globalconfig.StatsTags()
+	if c.serviceName != "" {
+		tags = append(tags, "service:"+c.serviceName)
+	}
+	// TODO: grab tracer config's env and hostname for globaltags
+	for k, v := range c.tags {
+		if vstr, ok := v.(string); ok {
+			tags = append(tags, k+":"+vstr)
+		}
+	}
+	return tags
 }

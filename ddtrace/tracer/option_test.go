@@ -29,6 +29,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/traceprof"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -428,6 +429,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			defer tracer.Stop()
 			c := tracer.config
 			assert.Equal(t, c.dogstatsdAddr, "localhost:8125")
+			assert.Equal(t, globalconfig.DogstatsdAddr(), "localhost:8125")
 		})
 
 		t.Run("env-host", func(t *testing.T) {
@@ -436,6 +438,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			defer tracer.Stop()
 			c := tracer.config
 			assert.Equal(t, c.dogstatsdAddr, "my-host:8125")
+			assert.Equal(t, globalconfig.DogstatsdAddr(), "my-host:8125")
 		})
 
 		t.Run("env-port", func(t *testing.T) {
@@ -444,6 +447,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			defer tracer.Stop()
 			c := tracer.config
 			assert.Equal(t, c.dogstatsdAddr, "localhost:123")
+			assert.Equal(t, globalconfig.DogstatsdAddr(), "localhost:123")
 		})
 
 		t.Run("env-both", func(t *testing.T) {
@@ -453,6 +457,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			defer tracer.Stop()
 			c := tracer.config
 			assert.Equal(t, c.dogstatsdAddr, "my-host:123")
+			assert.Equal(t, globalconfig.DogstatsdAddr(), "my-host:123")
 		})
 
 		t.Run("env-env", func(t *testing.T) {
@@ -468,6 +473,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			defer tracer.Stop()
 			c := tracer.config
 			assert.Equal(t, c.dogstatsdAddr, "10.1.0.12:4002")
+			assert.Equal(t, globalconfig.DogstatsdAddr(), "10.1.0.12:4002")
 		})
 	})
 
@@ -730,6 +736,13 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			WithDebugSpansMode(time.Second)(c)
 			assert.Equal(t, true, c.debugAbandonedSpans)
 			assert.Equal(t, time.Second, c.spanTimeout)
+		})
+	})
+
+	t.Run("agent-timeout", func(t *testing.T) {
+		t.Run("defaults", func(t *testing.T) {
+			c := newConfig()
+			assert.Equal(t, time.Duration(10*time.Second), c.httpClient.Timeout)
 		})
 	})
 }
@@ -1107,6 +1120,16 @@ func TestStatsTags(t *testing.T) {
 	assert.Contains(tags, "service:serviceName")
 	assert.Contains(tags, "env:envName")
 	assert.Contains(tags, "host:hostName")
+
+	st := globalconfig.StatsTags()
+	// all of the tracer tags except `service` and `version` should be on `st`
+	assert.Len(st, len(tags)-2)
+	assert.Contains(st, "env:envName")
+	assert.Contains(st, "host:hostName")
+	assert.Contains(st, "lang:go")
+	assert.Contains(st, "lang_version:"+runtime.Version())
+	assert.NotContains(st, "version:"+version.Tag)
+	assert.NotContains(st, "service:serviceName")
 }
 
 func TestGlobalTag(t *testing.T) {
@@ -1233,27 +1256,6 @@ func TestWithHeaderTags(t *testing.T) {
 
 	// ensures we cleaned up global state correctly
 	assert.Equal(t, 0, globalconfig.HeaderTagsLen())
-}
-
-func TestContribStatsEnabled(t *testing.T) {
-	t.Run("Default", func(t *testing.T) {
-		c := newConfig()
-		assert.True(t, c.contribStats)
-	})
-	t.Run("Disable", func(t *testing.T) {
-		c := newConfig(WithContribStats(false))
-		assert.False(t, c.contribStats)
-	})
-	t.Run("Disable with ENV", func(t *testing.T) {
-		t.Setenv("DD_TRACE_CONTRIB_STATS_ENABLED", "false")
-		c := newConfig()
-		assert.False(t, c.contribStats)
-	})
-	t.Run("Env override", func(t *testing.T) {
-		t.Setenv("DD_TRACE_CONTRIB_STATS_ENABLED", "false")
-		c := newConfig(WithContribStats(true))
-		assert.True(t, c.contribStats)
-	})
 }
 
 func TestHostnameDisabled(t *testing.T) {

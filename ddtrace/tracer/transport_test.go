@@ -25,17 +25,18 @@ import (
 // getTestSpan returns a Span with different fields set
 func getTestSpan() *span {
 	return &span{
-		TraceID:  42,
-		SpanID:   52,
-		ParentID: 42,
-		Type:     "web",
-		Service:  "high.throughput",
-		Name:     "sending.events",
-		Resource: "SEND /data",
-		Start:    1481215590883401105,
-		Duration: 1000000000,
-		Meta:     map[string]string{"http.host": "192.168.0.1"},
-		Metrics:  map[string]float64{"http.monitor": 41.99},
+		TraceID:    42,
+		SpanID:     52,
+		ParentID:   42,
+		Type:       "web",
+		Service:    "high.throughput",
+		Name:       "sending.events",
+		Resource:   "SEND /data",
+		Start:      1481215590883401105,
+		Duration:   1000000000,
+		Meta:       map[string]string{"http.host": "192.168.0.1"},
+		MetaStruct: map[string]any{"_dd.appsec.json": map[string]any{"triggers": []any{map[string]any{"id": "1"}}}},
+		Metrics:    map[string]float64{"http.monitor": 41.99},
 	}
 }
 
