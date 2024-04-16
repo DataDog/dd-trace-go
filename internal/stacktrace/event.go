@@ -51,7 +51,7 @@ func NewEvent(eventCat EventCategory, eventType, message string) *Event {
 		Type:     eventType,
 		Language: "go",
 		Message:  message,
-		Frames:   TakeWithSkip(defaultCallerSkip),
+		Frames:   SkipAndCapture(defaultCallerSkip),
 	}
 }
 

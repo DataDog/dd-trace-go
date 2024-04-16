@@ -9,10 +9,11 @@ package stacktrace
 
 import (
 	"errors"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"os"
+	"regexp"
 	"runtime"
-	"strings"
+
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 
 	"github.com/hashicorp/go-secure-stdlib/parseutil"
 )
@@ -34,18 +35,23 @@ func init() {
 		if e, err := parseutil.ParseBool(env); err == nil {
 			enabled = e
 		} else {
-			log.Error("Failed to parse %s as boolean: %v (using default value: %v)", envStackTraceEnabled, err, enabled)
+			log.Error("Failed to parse %s env var as boolean: %v (using default value: %v)", envStackTraceEnabled, err, enabled)
 		}
 	}
 
 	if env := os.Getenv(envStackTraceDepth); env != "" {
+		if !enabled {
+			log.Warn("Ignoring %s because stacktrace generation is disable", envStackTraceDepth)
+			return
+		}
+
 		if depth, err := parseutil.SafeParseInt(env); err == nil {
 			defaultMaxDepth = depth
 		} else {
 			if depth <= 0 && err == nil {
 				err = errors.New("value is not a strictly positive integer")
 			}
-			log.Error("Failed to parse %s as a positive integer: %v (using default value: %v)", envStackTraceDepth, err, defaultMaxDepth)
+			log.Error("Failed to parse %s env var as a positive integer: %v (using default value: %v)", envStackTraceDepth, err, defaultMaxDepth)
 		}
 	}
 
@@ -72,63 +78,44 @@ type StackFrame struct {
 	Function  string `msg:"function,omitempty"`   // Function is the fully qualified name of the function where the line of code is
 }
 
-// getPackageFromSymbol returns the package name from a function name
-// ex: gopkg.in/DataDog/dd-trace-go.v1/internal/stacktrace.(*Event).NewException -> gopkg.in/DataDog/dd-trace-go.v1/internal/stacktrace
-func getPackageFromSymbol(name string) string {
-	// Find the last slash
-	index := strings.LastIndex(name, "/")
-	if index == -1 {
-		index = 0
-	}
-
-	// Find the first dot after the last slash
-	index += strings.Index(name[index:], ".")
-	return name[:index]
+type symbol struct {
+	Package  string
+	Receiver string
+	Function string
 }
 
-// getMethodReceiverFromSymbol returns the receiver of a method from a function name
-// ex: gopkg.in/DataDog/dd-trace-go.v1/internal/stacktrace.(*Event).NewException -> *Event
-func getMethodReceiverFromSymbol(name string) string {
-	startIndex := strings.Index(name, "(")
-	if startIndex == -1 {
-		return ""
+var symbolRegex = regexp.MustCompile(`^(([^(]+/)?([^(/.]+)?)(\.\(([^/)]+)\))?\.([^/()]+)$`)
+
+// parseSymbol parses a symbol name into its package, receiver and function
+// ex: gopkg.in/DataDog/dd-trace-go.v1/internal/stacktrace.(*Event).NewException
+// -> package: gopkg.in/DataDog/dd-trace-go.v1/internal/stacktrace
+// -> receiver: *Event
+// -> function: NewException
+func parseSymbol(name string) symbol {
+	matches := symbolRegex.FindStringSubmatch(name)
+	if len(matches) != 7 {
+		log.Error("Failed to parse symbol for stacktrace: %s", name)
+		return symbol{
+			Package:  "",
+			Receiver: "",
+			Function: "",
+		}
 	}
 
-	endIndex := strings.LastIndex(name, ")")
-	if endIndex == -1 || endIndex <= startIndex+1 {
-		return ""
+	return symbol{
+		Package:  matches[1],
+		Receiver: matches[5],
+		Function: matches[6],
 	}
-
-	return name[startIndex+1 : endIndex]
 }
 
-// getFunctionNameFromSymbol returns the function name from a symbol
-// ex: gopkg.in/DataDog/dd-trace-go.v1/internal/stacktrace.(*Event).NewException -> NewException
-func getFunctionNameFromSymbol(name string) string {
-	index := strings.LastIndex(name, ")")
-
-	// If it's a method, we just have to get what's after the last closing parenthesis
-	if index != -1 && index+2 < len(name) {
-		return name[index+2:]
-	}
-
-	// If it's a function, we have to get past the package name and get the end of the string
-	index = strings.LastIndex(name, "/")
-	if index == -1 {
-		index = 0
-	}
-
-	index += strings.Index(name[index:], ".")
-	return name[index+1:]
+// Capture create a new stack trace from the current call stack
+func Capture() StackTrace {
+	return SkipAndCapture(defaultCallerSkip)
 }
 
-// Take Create a new stack trace from the current call stack
-func Take() StackTrace {
-	return TakeWithSkip(defaultCallerSkip)
-}
-
-// TakeWithSkip creates a new stack trace from the current call stack, skipping the first `skip` frames
-func TakeWithSkip(skip int) StackTrace {
+// SkipAndCapture creates a new stack trace from the current call stack, skipping the first `skip` frames
+func SkipAndCapture(skip int) StackTrace {
 	// callers() and getRealStackDepth() have to be used side by side to keep the same number of `skip`-ed frames
 	realDepth := getRealStackDepth(skip, defaultMaxDepth)
 	callers := callers(skip, realDepth, defaultMaxDepth, defaultTopFrameDepth)
@@ -144,15 +131,17 @@ func TakeWithSkip(skip int) StackTrace {
 			frameIndex = realDepth - defaultMaxDepth + i
 		}
 
+		parsedSymbol := parseSymbol(frame.Function)
+
 		stack[i] = StackFrame{
 			Index:     uint32(frameIndex),
 			Text:      "",
 			File:      frame.File,
 			Line:      uint32(frame.Line),
 			Column:    0, // No column given by the runtime
-			Namespace: getPackageFromSymbol(frame.Function),
-			ClassName: getMethodReceiverFromSymbol(frame.Function),
-			Function:  getFunctionNameFromSymbol(frame.Function),
+			Namespace: parsedSymbol.Package,
+			ClassName: parsedSymbol.Receiver,
+			Function:  parsedSymbol.Function,
 		}
 	}
 
@@ -172,7 +161,7 @@ func getRealStackDepth(skip, increment int) int {
 }
 
 // callers returns an array of function pointers of size stackSize, skipping the first `skip` frames
-// if realDepth of the current call stack if bigger that stackSize, we return the first stackSize - defaultTopFrameDepth frames
+// if realDepth of the current call stack is bigger that stackSize, we return the first stackSize - defaultTopFrameDepth frames
 // and the last defaultTopFrameDepth frames of the whole stack
 func callers(skip, realDepth, stackSize, topFrames int) []uintptr {
 	// The stack size is smaller than the max depth, return the whole stack

@@ -12,7 +12,7 @@ import (
 )
 
 func TestNewStackTrace(t *testing.T) {
-	stack := Take()
+	stack := Capture()
 	if len(stack) == 0 {
 		t.Error("stacktrace should not be empty")
 	}
@@ -20,7 +20,7 @@ func TestNewStackTrace(t *testing.T) {
 
 func TestStackTraceCurrentFrame(t *testing.T) {
 	// Check last frame for the values of the current function
-	stack := Take()
+	stack := Capture()
 	require.GreaterOrEqual(t, len(stack), 3)
 
 	frame := stack[0]
@@ -34,7 +34,7 @@ func TestStackTraceCurrentFrame(t *testing.T) {
 type Test struct{}
 
 func (t *Test) Method() StackTrace {
-	return Take()
+	return Capture()
 }
 
 func TestStackMethodReceiver(t *testing.T) {
@@ -60,7 +60,7 @@ func recursive[T any](i int, f func() T) T {
 
 func TestTruncatedStack(t *testing.T) {
 	stack := recursive(defaultMaxDepth*2, func() StackTrace {
-		return Take()
+		return Capture()
 	})
 
 	require.Equal(t, defaultMaxDepth, len(stack))
@@ -92,59 +92,70 @@ func TestTruncatedStack(t *testing.T) {
 	require.Equal(t, "", stack[defaultMaxDepth-1].ClassName)
 }
 
-func TestGetPackageFromSymbol(t *testing.T) {
+func TestParseSymbol(t *testing.T) {
 	for _, test := range []struct {
-		name, symbol, expected string
+		name, symbol string
+		expected     symbol
 	}{
-		{"method-receiver", "gopkg.in/DataDog/dd-trace-go.v1/internal/stacktrace.(*Test).Method", "gopkg.in/DataDog/dd-trace-go.v1/internal/stacktrace"},
-		{"sample", "gopkg.in/DataDog/dd-trace-go.v1/internal/stacktrace.TestGetPackageFromSymbol", "gopkg.in/DataDog/dd-trace-go.v1/internal/stacktrace"},
-		{"lambda", "gopkg.in/DataDog/dd-trace-go.v1/internal/stacktrace.TestGetPackageFromSymbol.func1", "gopkg.in/DataDog/dd-trace-go.v1/internal/stacktrace"},
-		{"main", "test.main", "test"},
+		{"method-receiver-pointer", "gopkg.in/DataDog/dd-trace-go.v1/internal/stacktrace.(*Test).Method", symbol{
+			"gopkg.in/DataDog/dd-trace-go.v1/internal/stacktrace",
+			"*Test",
+			"Method",
+		}},
+		{"method-receiver", "gopkg.in/DataDog/dd-trace-go.v1/internal/stacktrace.(Test).Method", symbol{
+			"gopkg.in/DataDog/dd-trace-go.v1/internal/stacktrace",
+			"Test",
+			"Method",
+		}},
+		{"sample", "gopkg.in/DataDog/dd-trace-go.v1/internal/stacktrace.TestGetPackageFromSymbol", symbol{
+			"gopkg.in/DataDog/dd-trace-go.v1/internal/stacktrace",
+			"",
+			"TestGetPackageFromSymbol",
+		}},
+		{"lambda", "gopkg.in/DataDog/dd-trace-go.v1/internal/stacktrace.TestGetPackageFromSymbol.func1", symbol{
+			"gopkg.in/DataDog/dd-trace-go.v1/internal/stacktrace",
+			"",
+			"TestGetPackageFromSymbol.func1",
+		}},
+		{"stdlib-sample", "os/exec.NewCmd", symbol{
+			"os/exec",
+			"",
+			"NewCmd",
+		}},
+		{"stdlib-receiver-lambda", "os/exec.(*Cmd).Run.func1", symbol{
+			"os/exec",
+			"*Cmd",
+			"Run.func1",
+		}},
+		{"main", "test.main", symbol{
+			"test",
+			"",
+			"main",
+		}},
+		{"main-method-receiver", "test.(*Test).Method", symbol{
+			"test",
+			"*Test",
+			"Method",
+		}},
+		{"main-receiver-templated", "test.(*toto).templatedFunc[...]", symbol{
+			"test",
+			"*toto",
+			"templatedFunc[...]",
+		}},
+		{"main-lambda", "test.main.func1", symbol{
+			"test",
+			"",
+			"main.func1",
+		}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			require.Equal(t, test.expected, getPackageFromSymbol(test.symbol))
-		})
-	}
-}
-
-func TestGetMethodReceiverFromSymbol(t *testing.T) {
-	for _, test := range []struct {
-		name, symbol, expected string
-	}{
-		{"method-receiver", "gopkg.in/DataDog/dd-trace-go.v1/internal/stacktrace.(*Test).Method", "*Test"},
-		{"method-receiver", "gopkg.in/DataDog/dd-trace-go.v1/internal/stacktrace.(Test).Method", "Test"},
-		{"sample", "gopkg.in/DataDog/dd-trace-go.v1/internal/stacktrace.TestGetMethodReceiverFromSymbol", ""},
-		{"lambda", "gopkg.in/DataDog/dd-trace-go.v1/internal/stacktrace.TestGetMethodReceiverFromSymbol.func1", ""},
-		{"lambda", "gopkg.in/DataDog/dd-trace-go.v1/internal/stacktrace.(TestGetMethodReceiverFromSymbol).test", "TestGetMethodReceiverFromSymbol"},
-		{"main", "main.main", ""},
-		{"main", "main.(Test).toto", "Test"},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			require.Equal(t, test.expected, getMethodReceiverFromSymbol(test.symbol))
-		})
-	}
-
-}
-
-func TestGetFunctionNameFromSymbol(t *testing.T) {
-	for _, test := range []struct {
-		name, symbol, expected string
-	}{
-		{"method-receiver", "gopkg.in/DataDog/dd-trace-go.v1/internal/stacktrace.(*Test).Method", "Method"},
-		{"sample", "gopkg.in/DataDog/dd-trace-go.v1/internal/stacktrace.TestGetFunctionNameFromSymbol", "TestGetFunctionNameFromSymbol"},
-		{"lambda", "gopkg.in/DataDog/dd-trace-go.v1/internal/stacktrace.TestGetFunctionNameFromSymbol.func1", "TestGetFunctionNameFromSymbol.func1"},
-		{"lambda", "gopkg.in/DataDog/dd-trace-go.v1/internal/stacktrace.TestGetFunctionNameFromSymbol.func2.func1", "TestGetFunctionNameFromSymbol.func2.func1"},
-		{"lambda", "main.templatedFunc[...]", "templatedFunc[...]"},
-		{"main", "test.main", "main"},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			require.Equal(t, test.expected, getFunctionNameFromSymbol(test.symbol))
+			require.Equal(t, test.expected, parseSymbol(test.symbol))
 		})
 	}
 }
 
 func BenchmarkTakeStackTrace(b *testing.B) {
 	for n := 0; n < b.N; n++ {
-		runtime.KeepAlive(Take())
+		runtime.KeepAlive(Capture())
 	}
 }
