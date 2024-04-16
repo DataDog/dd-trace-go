@@ -6,6 +6,7 @@
 package stacktrace
 
 import (
+	"fmt"
 	"github.com/stretchr/testify/require"
 	"runtime"
 	"testing"
@@ -50,18 +51,16 @@ func TestStackMethodReceiver(t *testing.T) {
 	require.Contains(t, frame.File, "stacktrace_test.go")
 }
 
-func recursive[T any](i int, f func() T) T {
+func recursive(i int) StackTrace {
 	if i == 0 {
-		return f()
+		return Capture()
 	}
 
-	return recursive[T](i-1, f)
+	return recursive(i - 1)
 }
 
 func TestTruncatedStack(t *testing.T) {
-	stack := recursive(defaultMaxDepth*2, func() StackTrace {
-		return Capture()
-	})
+	stack := recursive(defaultMaxDepth * 2)
 
 	require.Equal(t, defaultMaxDepth, len(stack))
 
@@ -70,11 +69,11 @@ func TestTruncatedStack(t *testing.T) {
 	require.Contains(t, lambdaFrame.File, "stacktrace_test.go")
 	require.Equal(t, "gopkg.in/DataDog/dd-trace-go.v1/internal/stacktrace", lambdaFrame.Namespace)
 	require.Equal(t, "", lambdaFrame.ClassName)
-	require.Equal(t, "TestTruncatedStack.func1", lambdaFrame.Function)
+	require.Equal(t, "recursive", lambdaFrame.Function)
 
 	for i := 1; i < defaultMaxDepth-defaultTopFrameDepth; i++ {
 		require.EqualValues(t, i, stack[i].Index)
-		require.Equal(t, "recursive[...]", stack[i].Function)
+		require.Equal(t, "recursive", stack[i].Function)
 		require.Contains(t, stack[i].File, "stacktrace_test.go")
 		require.Equal(t, "gopkg.in/DataDog/dd-trace-go.v1/internal/stacktrace", stack[i].Namespace)
 		require.Equal(t, "", stack[i].ClassName)
@@ -154,8 +153,24 @@ func TestParseSymbol(t *testing.T) {
 	}
 }
 
-func BenchmarkTakeStackTrace(b *testing.B) {
-	for n := 0; n < b.N; n++ {
-		runtime.KeepAlive(Capture())
+func recursiveBench(i int, b *testing.B) StackTrace {
+	if i == 0 {
+		b.StartTimer()
+		stack := Capture()
+		b.StopTimer()
+		return stack
+	}
+
+	return recursiveBench(i-1, b)
+}
+
+func BenchmarkCaptureStackTrace(b *testing.B) {
+	for _, depth := range []int{10, 20, 50, 100, 200} {
+		b.Run(fmt.Sprintf("%v", depth), func(b *testing.B) {
+			defaultMaxDepth = depth * 2 // Making sure we are capturing the full stack
+			for n := 0; n < b.N; n++ {
+				runtime.KeepAlive(recursiveBench(depth, b))
+			}
+		})
 	}
 }
