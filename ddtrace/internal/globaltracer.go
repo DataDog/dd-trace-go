@@ -39,6 +39,10 @@ func GetGlobalTracer() ddtrace.Tracer {
 // environment. This value is used by tracer.Start to prevent overriding the GlobalTracer in tests.
 var Testing = false
 
+// TestingWithAgent is set to true when we expect to load Agent features. This is used to imrpove dev experience
+// by allowing to run tests without waiting for the timeout of 10 seconds.
+var TestingWithAgent = true
+
 var _ ddtrace.Tracer = (*NoopTracer)(nil)
 
 // NoopTracer is an implementation of ddtrace.Tracer that is a no-op.

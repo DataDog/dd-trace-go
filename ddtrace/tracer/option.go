@@ -22,6 +22,8 @@ import (
 	"strings"
 	"time"
 
+	traceinternal "gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
+
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
@@ -604,6 +606,9 @@ func (a *agentFeatures) HasFlag(feat string) bool {
 func loadAgentFeatures(agentDisabled bool, agentURL *url.URL, httpClient *http.Client) (features agentFeatures) {
 	if agentDisabled {
 		// there is no agent; all features off
+		return
+	}
+	if !traceinternal.TestingWithAgent {
 		return
 	}
 	resp, err := httpClient.Get(fmt.Sprintf("%s/info", agentURL))

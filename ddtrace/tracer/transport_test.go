@@ -18,6 +18,8 @@ import (
 	"strings"
 	"testing"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -241,6 +243,7 @@ func TestCustomTransport(t *testing.T) {
 }
 
 func TestWithHTTPClient(t *testing.T) {
+	internal.TestingWithAgent = true
 	// disable instrumentation telemetry to prevent flaky number of requests
 	t.Setenv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", "false")
 	t.Setenv("DD_TRACE_STARTUP_LOGS", "0")
