@@ -112,18 +112,26 @@ func getRoute(router *httptreemux.TreeMux, w http.ResponseWriter, req *http.Requ
 	if !found {
 		return "", false
 	}
+	routeLen := len(route)
+	trailingSlash := route[routeLen-1] == '/' && routeLen > 1
 
-	// Check for redirecting route due to trailing slash for parameters.
-	// The redirecting behaviour originates from httptreemux router.
-	if lr.StatusCode == http.StatusMovedPermanently && strings.HasSuffix(route, "/") {
+	// Retry the population of lookup result parameters.
+	// If the initial attempt to populate the parameters fails, clone the request and modify the URI and URL Path.
+	// Depending on whether the route has a trailing slash or not, it will either add or remove the trailing slash and retry the lookup.
+	if routerRedirectEnabled(router) && isSupportedRedirectStatus(lr.StatusCode) && lr.Params == nil {
 		rReq := req.Clone(req.Context())
-		rReq.RequestURI = strings.TrimSuffix(rReq.RequestURI, "/")
-		rReq.URL.Path = strings.TrimSuffix(rReq.URL.Path, "/")
-
-		lr, found = router.Lookup(w, rReq)
-		if !found {
-			return "", false
+		if trailingSlash {
+			// if the route has a trailing slash, remove it
+			rReq.RequestURI = strings.TrimSuffix(rReq.RequestURI, "/")
+			rReq.URL.Path = strings.TrimSuffix(rReq.URL.Path, "/")
+		} else {
+			// if the route does not have a trailing slash, add one
+			rReq.RequestURI = rReq.RequestURI + "/"
+			rReq.URL.Path = rReq.URL.Path + "/"
 		}
+		// no need to check found again
+		// we already matched a route and we are only trying to populate the lookup result params
+		lr, _ = router.Lookup(w, rReq)
 	}
 
 	for k, v := range lr.Params {
@@ -139,5 +147,31 @@ func getRoute(router *httptreemux.TreeMux, w http.ResponseWriter, req *http.Requ
 		newP = "/:" + k
 		route = strings.Replace(route, oldP, newP, 1)
 	}
+
+	// remove trailing slash from route to standardize returned value
+	// the router does not allow you to register two matching routes with the only difference being a trailing slash
+	// this only affects the resulting returned value and not the actual request URL set on tag http.url
+	if trailingSlash {
+		route = strings.TrimSuffix(route, "/")
+	}
+
 	return route, true
+}
+
+// isSupportedRedirectStatus checks if the given HTTP status code is a supported redirect status.
+// It returns true if the status code is either StatusMovedPermanently, StatusTemporaryRedirect, or StatusPermanentRedirect.
+// Otherwise, it returns false.
+func isSupportedRedirectStatus(status int) bool {
+	return status == http.StatusMovedPermanently ||
+		status == http.StatusTemporaryRedirect ||
+		status == http.StatusPermanentRedirect
+}
+
+// routerRedirectEnabled checks if the redirection is enabled on the router.
+// It returns true if either RedirectCleanPath or RedirectTrailingSlash is enabled,
+// and the RedirectBehavior is not set to UseHandler. Otherwise, it returns false.
+// This function is used to determine whether to perform redirections based on the router's configuration.
+func routerRedirectEnabled(router *httptreemux.TreeMux) bool {
+	return (router.RedirectCleanPath || router.RedirectTrailingSlash) &&
+		router.RedirectBehavior != httptreemux.UseHandler
 }
