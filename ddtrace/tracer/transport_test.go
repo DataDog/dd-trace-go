@@ -244,6 +244,7 @@ func TestCustomTransport(t *testing.T) {
 
 func TestWithHTTPClient(t *testing.T) {
 	internal.TestingWithAgent = true
+	defer func() { internal.TestingWithAgent = false }()
 	// disable instrumentation telemetry to prevent flaky number of requests
 	t.Setenv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", "false")
 	t.Setenv("DD_TRACE_STARTUP_LOGS", "0")

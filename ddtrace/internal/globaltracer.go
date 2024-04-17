@@ -39,7 +39,7 @@ func GetGlobalTracer() ddtrace.Tracer {
 // environment. This value is used by tracer.Start to prevent overriding the GlobalTracer in tests.
 var Testing = false
 
-// TestingWithAgent is set to true when we expect to load Agent features. This is used to imrpove dev experience
+// TestingWithAgent is set to true when we expect to load Agent features. This is used to improve dev experience
 // by allowing to run tests without waiting for the timeout of 10 seconds.
 var TestingWithAgent = true
 

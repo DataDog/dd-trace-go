@@ -101,6 +101,7 @@ func TestStatsdUDPConnect(t *testing.T) {
 
 func TestAutoDetectStatsd(t *testing.T) {
 	internal.TestingWithAgent = true
+	defer func() { internal.TestingWithAgent = false }()
 	t.Run("default", func(t *testing.T) {
 		testStatsd(t, newConfig(), net.JoinHostPort(defaultHostname, "8125"))
 	})
@@ -175,6 +176,7 @@ func TestAutoDetectStatsd(t *testing.T) {
 
 func TestLoadAgentFeatures(t *testing.T) {
 	internal.TestingWithAgent = true
+	defer func() { internal.TestingWithAgent = false }()
 	t.Run("zero", func(t *testing.T) {
 		t.Run("disabled", func(t *testing.T) {
 			assert.Zero(t, newConfig(WithLambdaMode(true)).agent)
