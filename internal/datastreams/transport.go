@@ -9,12 +9,13 @@ import (
 	"bytes"
 	"compress/gzip"
 	"fmt"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"io"
 	"net/http"
 	"net/url"
 	"runtime"
 	"strings"
+
+	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 
 	"github.com/tinylib/msgp/msgp"
 )

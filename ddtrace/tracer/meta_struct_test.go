@@ -8,9 +8,10 @@ package tracer
 import (
 	"bytes"
 	"errors"
-	"github.com/stretchr/testify/require"
 	"reflect"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 
 	"github.com/tinylib/msgp/msgp"
 )
