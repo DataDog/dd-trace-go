@@ -183,11 +183,21 @@ func (sr *SamplingRule) match(s *span) bool {
 	}
 	s.Lock()
 	defer s.Unlock()
-	if sr.Tags != nil && s.Meta != nil {
+	if sr.Tags != nil {
 		for k, regex := range sr.Tags {
-			v, ok := s.Meta[k]
-			if !ok || !regex.MatchString(v) {
-				return false
+			if s.Meta != nil {
+				v, ok := s.Meta[k]
+				if ok && regex.MatchString(v) {
+					continue
+				}
+			}
+			if s.Metrics != nil {
+				v, ok := s.Metrics[k]
+				// sampling on numbers with floating point is not supported,
+				// thus 'math.Floor(v) != v'
+				if !ok || math.Floor(v) != v || !regex.MatchString(strconv.FormatFloat(v, 'g', -1, 64)) {
+					return false
+				}
 			}
 		}
 	}
@@ -682,7 +692,7 @@ func globMatch(pattern string) *regexp.Regexp {
 	pattern = strings.Replace(pattern, "\\?", ".", -1)
 	pattern = strings.Replace(pattern, "\\*", ".*", -1)
 	// pattern must match an entire string
-	return regexp.MustCompile(fmt.Sprintf("^%s$", pattern))
+	return regexp.MustCompile(fmt.Sprintf("(?i)^%s$", pattern))
 }
 
 // samplingRulesFromEnv parses sampling rules from

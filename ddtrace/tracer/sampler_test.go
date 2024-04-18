@@ -446,10 +446,10 @@ func TestRulesSampler(t *testing.T) {
 		s.setMeta("hostname", "hn-30")
 		return s
 	}
-	makeFinishedSpan := func(op, svc, resource string, tags map[string]string) *span {
+	makeFinishedSpan := func(op, svc, resource string, tags map[string]interface{}) *span {
 		s := newSpan(op, svc, resource, random.Uint64(), random.Uint64(), 0)
 		for k, v := range tags {
-			s.setMeta(k, v)
+			s.SetTag(k, v)
 		}
 		s.finished = true
 		return s
@@ -469,7 +469,7 @@ func TestRulesSampler(t *testing.T) {
 			spanSrv  string
 			spanName string
 			spanRsc  string
-			spanTags map[string]string
+			spanTags map[string]interface{}
 		}{
 			{
 				rules:   `[{"service": "web.non-matching*", "sample_rate": 0}, {"service": "web*", "sample_rate": 1}]`,
@@ -502,17 +502,17 @@ func TestRulesSampler(t *testing.T) {
 				rules:    `[{"resource": "http_*", "tags":{"host":"COMP-*"}, "sample_rate": 1}]`,
 				spanSrv:  "web.service",
 				spanRsc:  "http_rec",
-				spanTags: map[string]string{"host": "COMP-1234"},
+				spanTags: map[string]interface{}{"host": "COMP-1234"},
 			},
 			{
 				rules:    `[{"tags":{"host":"COMP-*"}, "sample_rate": 1}]`,
 				spanSrv:  "web.service",
-				spanTags: map[string]string{"host": "COMP-1234"},
+				spanTags: map[string]interface{}{"host": "COMP-1234"},
 			},
 			{
 				rules:    `[{"tags":{"host":"COMP-*"}, "sample_rate": 1}]`,
 				spanSrv:  "web.service",
-				spanTags: map[string]string{"host": "COMP-1234"},
+				spanTags: map[string]interface{}{"host": "COMP-1234"},
 			},
 		} {
 			t.Run("", func(t *testing.T) {
@@ -619,7 +619,7 @@ func TestRulesSampler(t *testing.T) {
 				assert := assert.New(t)
 				rs := newRulesSampler(nil, rules, globalSampleRate())
 
-				span := makeFinishedSpan(tt.spanName, tt.spanSrv, "res-10", map[string]string{"hostname": "hn-30"})
+				span := makeFinishedSpan(tt.spanName, tt.spanSrv, "res-10", map[string]interface{}{"hostname": "hn-30"})
 
 				result := rs.SampleSpan(span)
 				assert.True(result)
@@ -631,7 +631,7 @@ func TestRulesSampler(t *testing.T) {
 	})
 
 	t.Run("matching-span-rules", func(t *testing.T) {
-		for _, tt := range []struct {
+		for i, tt := range []struct {
 			rules    []SamplingRule
 			spanSrv  string
 			spanName string
@@ -706,13 +706,42 @@ func TestRulesSampler(t *testing.T) {
 				spanSrv:  "test-service",
 				spanName: "abcde",
 			},
+			{
+				rules:    []SamplingRule{SpanTagsResourceRule(map[string]string{"hostname": "hn*", "tier": "20?"}, "", "abc*", "test*", 1.0)},
+				spanSrv:  "test-service",
+				spanName: "abcde",
+			},
+			{
+				rules:    []SamplingRule{SpanTagsResourceRule(map[string]string{"hostname": "hn*", "tier": "2*"}, "", "abc*", "test*", 1.0)},
+				spanSrv:  "test-service",
+				spanName: "abcde",
+			},
+			{
+				rules:    []SamplingRule{SpanTagsResourceRule(map[string]string{"hostname": "hn*", "tier": "*"}, "", "abc*", "test*", 1.0)},
+				spanSrv:  "test-service",
+				spanName: "abcde",
+			},
+			{
+				rules:    []SamplingRule{SpanNameServiceRule("", "web*", 1.0)},
+				spanSrv:  "wEbServer",
+				spanName: "web.reqUEst",
+			},
+			{
+				rules:    []SamplingRule{SpanTagsResourceRule(map[string]string{"shall-pass": "true"}, "", "abc*", "test*", 1.0)},
+				spanSrv:  "test-service",
+				spanName: "abcde",
+			},
 		} {
-			t.Run("", func(t *testing.T) {
+			t.Run(fmt.Sprintf("%v", i), func(t *testing.T) {
 				assert := assert.New(t)
 				c := newConfig(WithSamplingRules(tt.rules))
 				rs := newRulesSampler(nil, c.spanRules, globalSampleRate())
 
-				span := makeFinishedSpan(tt.spanName, tt.spanSrv, "res-10", map[string]string{"hostname": "hn-30"})
+				span := makeFinishedSpan(tt.spanName, tt.spanSrv, "res-10", map[string]interface{}{"hostname": "hn-30",
+					"tag":        20.1,
+					"tier":       209,
+					"shall-pass": true,
+				})
 				result := rs.SampleSpan(span)
 				assert.True(result)
 				assert.Contains(span.Metrics, keySpanSamplingMechanism)
@@ -776,7 +805,7 @@ func TestRulesSampler(t *testing.T) {
 				assert := assert.New(t)
 				rs := newRulesSampler(nil, rules, globalSampleRate())
 
-				span := makeFinishedSpan(tt.spanName, tt.spanSrv, tt.resName, map[string]string{"hostname": "hn-30"})
+				span := makeFinishedSpan(tt.spanName, tt.spanSrv, tt.resName, map[string]interface{}{"hostname": "hn-30"})
 				result := rs.SampleSpan(span)
 				assert.False(result)
 				assert.NotContains(span.Metrics, keySpanSamplingMechanism)
@@ -859,13 +888,29 @@ func TestRulesSampler(t *testing.T) {
 				spanSrv:  "test-service",
 				spanName: "abcde",
 			},
+
+			{
+				rules:    []SamplingRule{SpanTagsResourceRule(map[string]string{"tag": "20"}, "", "", "", 1.0)},
+				spanSrv:  "wEbServer",
+				spanName: "web.reqUEst",
+			},
+			{
+				rules:    []SamplingRule{SpanTagsResourceRule(map[string]string{"tag": "2*"}, "", "", "", 1.0)},
+				spanSrv:  "wEbServer",
+				spanName: "web.reqUEst",
+			},
+			{
+				rules:    []SamplingRule{SpanTagsResourceRule(map[string]string{"tag": "2?"}, "", "", "", 1.0)},
+				spanSrv:  "wEbServer",
+				spanName: "web.reqUEst",
+			},
 		} {
 			t.Run("", func(t *testing.T) {
 				assert := assert.New(t)
 				c := newConfig(WithSamplingRules(tt.rules))
 				rs := newRulesSampler(nil, c.spanRules, globalSampleRate())
 
-				span := makeFinishedSpan(tt.spanName, tt.spanSrv, "res-10", map[string]string{"hostname": "hn-30"})
+				span := makeFinishedSpan(tt.spanName, tt.spanSrv, "res-10", map[string]interface{}{"hostname": "hn-30"})
 				result := rs.SampleSpan(span)
 				assert.False(result)
 				assert.NotContains(span.Metrics, keySpanSamplingMechanism)
