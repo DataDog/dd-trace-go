@@ -74,7 +74,6 @@ var (
 )
 
 func TestMain(m *testing.M) {
-	internal.TestingWithAgent = false
 	if maininternal.BoolEnv("DD_APPSEC_ENABLED", false) {
 		// things are slower with AppSec; double wait times
 		timeMultiplicator = time.Duration(2)
@@ -1032,7 +1031,7 @@ func TestTracerNoDebugStack(t *testing.T) {
 
 // newDefaultTransport return a default transport for this tracing client
 func newDefaultTransport() transport {
-	return newHTTPTransport(defaultURL, defaultClient)
+	return newHTTPTransport(defaultURL, defaultHTTPClient(0))
 }
 
 func TestNewSpan(t *testing.T) {
@@ -1145,7 +1144,7 @@ func TestTracerPrioritySampler(t *testing.T) {
 	url := "http://" + srv.Listener.Addr().String()
 
 	tr, _, flush, stop := startTestTracer(t,
-		withTransport(newHTTPTransport(url, defaultClient)),
+		withTransport(newHTTPTransport(url, defaultHTTPClient(0))),
 	)
 	defer stop()
 
