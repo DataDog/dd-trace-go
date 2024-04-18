@@ -722,6 +722,11 @@ func TestRulesSampler(t *testing.T) {
 				spanName: "abcde",
 			},
 			{
+				rules:    []SamplingRule{SpanTagsResourceRule(map[string]string{"hostname": "hn*", "tag": "*"}, "", "abc*", "test*", 1.0)},
+				spanSrv:  "test-service",
+				spanName: "abcde",
+			},
+			{
 				rules:    []SamplingRule{SpanNameServiceRule("", "web*", 1.0)},
 				spanSrv:  "wEbServer",
 				spanName: "web.reqUEst",
@@ -904,13 +909,20 @@ func TestRulesSampler(t *testing.T) {
 				spanSrv:  "wEbServer",
 				spanName: "web.reqUEst",
 			},
+			{
+				rules:    []SamplingRule{SpanTagsResourceRule(map[string]string{"hostname": "hn*", "tag": "2*"}, "", "abc*", "test*", 1.0)},
+				spanSrv:  "test-service",
+				spanName: "abcde",
+			},
 		} {
 			t.Run("", func(t *testing.T) {
 				assert := assert.New(t)
 				c := newConfig(WithSamplingRules(tt.rules))
 				rs := newRulesSampler(nil, c.spanRules, globalSampleRate())
 
-				span := makeFinishedSpan(tt.spanName, tt.spanSrv, "res-10", map[string]interface{}{"hostname": "hn-30"})
+				span := makeFinishedSpan(tt.spanName, tt.spanSrv, "res-10", map[string]interface{}{"hostname": "hn-30",
+					"tag": 20.1,
+				})
 				result := rs.SampleSpan(span)
 				assert.False(result)
 				assert.NotContains(span.Metrics, keySpanSamplingMechanism)

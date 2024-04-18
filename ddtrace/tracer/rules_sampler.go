@@ -185,6 +185,9 @@ func (sr *SamplingRule) match(s *span) bool {
 	defer s.Unlock()
 	if sr.Tags != nil {
 		for k, regex := range sr.Tags {
+			if regex == nil {
+				continue
+			}
 			if s.Meta != nil {
 				v, ok := s.Meta[k]
 				if ok && regex.MatchString(v) {
@@ -683,7 +686,7 @@ func newSingleSpanRateLimiter(mps float64) *rateLimiter {
 // globMatch compiles pattern string into glob format, i.e. regular expressions with only '?'
 // and '*' treated as regex metacharacters.
 func globMatch(pattern string) *regexp.Regexp {
-	if pattern == "" {
+	if pattern == "" || pattern == "*" {
 		return nil
 	}
 	// escaping regex characters
