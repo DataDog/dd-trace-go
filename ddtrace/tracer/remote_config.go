@@ -220,8 +220,9 @@ func (t *tracer) dynamicInstrumentationRCUpdate(u remoteconfig.ProductUpdate) ma
 // passProbeConfiguration is used as a stable interface to find the configuration in via bpf. Go-DI attaches
 // a bpf program to this function and extracts the raw bytes accordingly.
 //
+//nolint:all
 //go:noinline
-func passProbeConfiguration(v dynamicInstrumentationRCProbeConfig) {}
+func passProbeConfiguration(runtimeID, configPath, configContent string) {}
 
 func initalizeDynamicInstrumentationRemoteConfigState() {
 	diRCState = dynamicInstrumentationRCState{
@@ -233,7 +234,7 @@ func initalizeDynamicInstrumentationRemoteConfigState() {
 			time.Sleep(time.Second * 5)
 			diRCState.Lock()
 			for _, v := range diRCState.state {
-				passProbeConfiguration(v)
+				passProbeConfiguration(v.runtimeID, v.configPath, v.configContent)
 			}
 			diRCState.Unlock()
 		}
