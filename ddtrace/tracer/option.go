@@ -301,7 +301,7 @@ const partialFlushMinSpansDefault = 1000
 func newConfig(opts ...StartOption) *config {
 	c := new(config)
 	c.sampler = NewAllSampler()
-	c.httpClientTimeout = 10000000000 // 10 seconds
+	c.httpClientTimeout = time.Second * 10 // 10 seconds
 
 	if internal.BoolEnv("DD_TRACE_ANALYTICS_ENABLED", false) {
 		globalconfig.SetAnalyticsRate(1.0)
