@@ -499,9 +499,7 @@ func (s *span) Finish(opts ...ddtrace.FinishOption) {
 	}
 
 	if tr, ok := internal.GetGlobalTracer().(*tracer); ok && tr.rulesSampling.traces.enabled() {
-		if !s.context.trace.isLocked() &&
-			!(s.context.trace.propagatingTags != nil &&
-				s.context.trace.propagatingTags[keyDecisionMaker] == "-4") {
+		if !s.context.trace.isLocked() && s.context.trace.propagatingTag(keyDecisionMaker) != "-4" {
 			tr.rulesSampling.SampleTrace(s)
 		}
 	}

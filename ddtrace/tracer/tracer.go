@@ -693,7 +693,7 @@ func (t *tracer) updateSampling(ctx ddtrace.SpanContext) {
 	}
 
 	// the span was sampled with ManualKeep rules shouldn't override
-	if sctx.trace.propagatingTags != nil && sctx.trace.propagatingTags[keyDecisionMaker] == "-4" {
+	if sctx.trace.propagatingTag(keyDecisionMaker) == "-4" {
 		return
 	}
 	// if sampling was successful, need to lock the trace to prevent further re-sampling
