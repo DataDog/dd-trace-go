@@ -1053,6 +1053,18 @@ func TestRulesSampler(t *testing.T) {
 
 		assert.EqualValues(t, 2, w3cSpan.(*span).Metrics[keySamplingPriority])
 	})
+
+	t.Run("manual keep priority", func(t *testing.T) {
+		t.Setenv("DD_TRACE_SAMPLING_RULES", `[{"resource": "keep_me", "sample_rate": 0}]`)
+		_, _, _, stop := startTestTracer(t)
+		defer stop()
+
+		s, _ := StartSpanFromContext(context.Background(), "whatever")
+		s.SetTag(ext.ManualKeep, true)
+		s.SetTag(ext.ResourceName, "keep_me")
+		s.Finish()
+		assert.EqualValues(t, s.(*span).Metrics[keySamplingPriority], 2)
+	})
 }
 
 func TestSamplingRuleUnmarshal(t *testing.T) {
