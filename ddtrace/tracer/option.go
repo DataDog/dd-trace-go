@@ -166,6 +166,9 @@ type config struct {
 	// transport specifies the Transport interface which will be used to send data to the agent.
 	transport transport
 
+	// httpClientTimeout specifies the timeout for the HTTP client.
+	httpClientTimeout time.Duration
+
 	// propagator propagates span context cross-process
 	propagator Propagator
 
@@ -298,6 +301,7 @@ const partialFlushMinSpansDefault = 1000
 func newConfig(opts ...StartOption) *config {
 	c := new(config)
 	c.sampler = NewAllSampler()
+	c.httpClientTimeout = time.Second * 10 // 10 seconds
 
 	if internal.BoolEnv("DD_TRACE_ANALYTICS_ENABLED", false) {
 		globalconfig.SetAnalyticsRate(1.0)
@@ -410,13 +414,13 @@ func newConfig(opts ...StartOption) *config {
 		// If we're connecting over UDS we can just rely on the agent to provide the hostname
 		log.Debug("connecting to agent over unix, do not set hostname on any traces")
 		c.enableHostnameDetection = false
-		c.httpClient = udsClient(c.agentURL.Path)
+		c.httpClient = udsClient(c.agentURL.Path, c.httpClientTimeout)
 		c.agentURL = &url.URL{
 			Scheme: "http",
 			Host:   fmt.Sprintf("UDS_%s", strings.NewReplacer(":", "_", "/", "_", `\`, "_").Replace(c.agentURL.Path)),
 		}
 	} else if c.httpClient == nil {
-		c.httpClient = defaultClient
+		c.httpClient = defaultHTTPClient(c.httpClientTimeout)
 	}
 	WithGlobalTag(ext.RuntimeID, globalconfig.RuntimeID())(c)
 	globalTags := c.globalTags.get()
@@ -517,17 +521,11 @@ func newStatsdClient(c *config) (internal.StatsdClient, error) {
 	return internal.NewStatsdClient(c.dogstatsdAddr, statsTags(c))
 }
 
-// defaultHTTPClient returns the default http.Client to start the tracer with.
-func defaultHTTPClient() *http.Client {
-	if _, err := os.Stat(defaultSocketAPM); err == nil {
-		// we have the UDS socket file, use it
-		return udsClient(defaultSocketAPM)
-	}
-	return defaultClient
-}
-
 // udsClient returns a new http.Client which connects using the given UDS socket path.
-func udsClient(socketPath string) *http.Client {
+func udsClient(socketPath string, timeout time.Duration) *http.Client {
+	if timeout == 0 {
+		timeout = defaultHTTPTimeout
+	}
 	return &http.Client{
 		Transport: &http.Transport{
 			Proxy: http.ProxyFromEnvironment,
@@ -542,7 +540,7 @@ func udsClient(socketPath string) *http.Client {
 			TLSHandshakeTimeout:   10 * time.Second,
 			ExpectContinueTimeout: 1 * time.Second,
 		},
-		Timeout: defaultHTTPTimeout,
+		Timeout: timeout,
 	}
 }
 
@@ -848,6 +846,13 @@ func WithAgentAddr(addr string) StartOption {
 			Scheme: "http",
 			Host:   addr,
 		}
+	}
+}
+
+// WithAgentTimeout sets the timeout for the agent connection. Timeout is in seconds.
+func WithAgentTimeout(timeout int) StartOption {
+	return func(c *config) {
+		c.httpClientTimeout = time.Duration(timeout) * time.Second
 	}
 }
 
