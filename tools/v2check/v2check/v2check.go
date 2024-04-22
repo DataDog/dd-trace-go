@@ -38,6 +38,8 @@ func (c Checker) runner() func(*analysis.Pass) (interface{}, error) {
 		filter := []ast.Node{
 			(*ast.CallExpr)(nil),
 			(*ast.ImportSpec)(nil),
+			(*ast.ValueSpec)(nil),
+			(*ast.Field)(nil),
 		}
 		ins, ok := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
 		if !ok {

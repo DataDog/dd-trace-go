@@ -65,6 +65,11 @@ func TestV1ImportURL(t *testing.T) {
 	c.Run(testRunner(t, "v1importurl"))
 }
 
+func TestDDTraceTypes(t *testing.T) {
+	c := v2check.NewChecker(&v2check.DDTraceTypes{})
+	c.Run(testRunner(t, "ddtracetypes"))
+}
+
 func testRunner(t *testing.T, name string) func(*analysis.Analyzer) {
 	t.Helper()
 	cwd, err := os.Getwd()

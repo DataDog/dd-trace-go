@@ -9,9 +9,12 @@ import (
 	"context"
 	"fmt"
 	"go/ast"
+	"go/token"
+	"go/types"
 	"strings"
 
 	"golang.org/x/tools/go/analysis"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 )
 
 // KnownChange models code expressions that must be changed to migrate to v2.
@@ -59,8 +62,35 @@ type nodeHandler struct {
 	node ast.Node
 }
 
-func (c *nodeHandler) SetNode(node ast.Node) {
-	c.node = node
+func (n *nodeHandler) SetNode(node ast.Node) {
+	n.node = node
+}
+
+type defaultKnownChange struct {
+	contextHandler
+	nodeHandler
+}
+
+func (d defaultKnownChange) End() token.Pos {
+	end, ok := d.ctx.Value("end").(token.Pos)
+	if ok {
+		return end
+	}
+	if d.node == nil {
+		return token.NoPos
+	}
+	return d.node.End()
+}
+
+func (d defaultKnownChange) Pos() token.Pos {
+	pos, ok := d.ctx.Value("pos").(token.Pos)
+	if ok {
+		return pos
+	}
+	if d.node == nil {
+		return token.NoPos
+	}
+	return d.node.Pos()
 }
 
 func eval(k KnownChange, n ast.Node, pass *analysis.Pass) bool {
@@ -76,8 +106,7 @@ func eval(k KnownChange, n ast.Node, pass *analysis.Pass) bool {
 }
 
 type V1ImportURL struct {
-	contextHandler
-	nodeHandler
+	defaultKnownChange
 }
 
 func (c V1ImportURL) Fixes() []analysis.SuggestedFix {
@@ -91,8 +120,8 @@ func (c V1ImportURL) Fixes() []analysis.SuggestedFix {
 			Message: "update import URL to v2",
 			TextEdits: []analysis.TextEdit{
 				{
-					Pos:     c.node.Pos(),
-					End:     c.node.End(),
+					Pos:     c.Pos(),
+					End:     c.End(),
 					NewText: []byte(fmt.Sprintf("%q", path)),
 				},
 			},
@@ -109,4 +138,46 @@ func (V1ImportURL) Probes() []Probe {
 
 func (V1ImportURL) String() string {
 	return "import URL needs to be updated"
+}
+
+type DDTraceTypes struct {
+	defaultKnownChange
+}
+
+func (c DDTraceTypes) Fixes() []analysis.SuggestedFix {
+	typ, ok := c.ctx.Value("declared_type").(*types.Named)
+	if !ok {
+		return nil
+	}
+	newText := fmt.Sprintf("tracer.%s", typ.Obj().Name())
+	// TODO: how can we add the import automatically?
+	return []analysis.SuggestedFix{
+		{
+			Message: "the declared type is in the ddtrace/tracer package now",
+			TextEdits: []analysis.TextEdit{
+				{
+					Pos:     c.Pos(),
+					End:     c.End(),
+					NewText: []byte(newText),
+				},
+			},
+		},
+	}
+}
+
+func (DDTraceTypes) Probes() []Probe {
+	return []Probe{
+		Or(
+			// TODO: add this in a types registration function used to
+			// filter by, reduce iterations, and drop some probes.
+			Is[*ast.ValueSpec],
+			Is[*ast.Field],
+		),
+		ImportedFrom("gopkg.in/DataDog/dd-trace-go.v1"),
+		Not(DeclaresType[ddtrace.SpanContext]()),
+	}
+}
+
+func (DDTraceTypes) String() string {
+	return "the declared type is in the ddtrace/tracer package now"
 }
