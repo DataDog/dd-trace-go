@@ -6,10 +6,9 @@
 package appsec
 
 import (
-	"github.com/DataDog/appsec-internal-go/limiter"
 	waf "github.com/DataDog/go-libddwaf/v2"
+	"gopkg.in/DataDog/dd-trace-go.v1/dyngo"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/config"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/sharedsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
@@ -34,13 +33,13 @@ func (a *appsec) swapWAF(rules config.RulesFragment) (err error) {
 		}
 	}()
 
-	newRoot := dyngo.NewRootOperation()
-	for _, fn := range wafEventListeners {
-		fn(newHandle.Handle, newHandle.actions, a.cfg, a.limiter, newRoot)
+	// Update the products' configurations... They'll be effective for the new root operation.
+	for _, fn := range dyngoProductConfigurations {
+		fn(newHandle.Handle, newHandle.actions, a.cfg, a.limiter)
 	}
 
-	// Hot-swap dyngo's root operation
-	dyngo.SwapRootOperation(newRoot)
+	// Hot-swap dyngo's root operation, so the updated product configurations take effect.
+	dyngo.SwapToNewRootOperation()
 
 	// Close old handle.
 	// Note that concurrent requests are still using it, and it will be released
@@ -91,19 +90,4 @@ func newWAFHandle(rules config.RulesFragment, cfg *config.Config) (*wafHandle, e
 		Handle:  handle,
 		actions: actions,
 	}, err
-}
-
-type wafEventListener func(*waf.Handle, sharedsec.Actions, *config.Config, limiter.Limiter, dyngo.Operation)
-
-// wafEventListeners is the global list of event listeners registered by contribs at init time. This
-// is thread-safe assuming all writes (via AddWAFEventListener) are performed within `init`
-// functions; so this is written to only during initialization, and is read from concurrently only
-// during runtime when no writes are happening anymore.
-var wafEventListeners []wafEventListener
-
-// AddWAFEventListener adds a new WAF event listener to be registered whenever a new root operation
-// is created. The normal way to use this is to call it from a `func init() {}` so that it is
-// guaranteed to have happened before any listened to event may be emitted.
-func AddWAFEventListener(fn wafEventListener) {
-	wafEventListeners = append(wafEventListeners, fn)
 }

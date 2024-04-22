@@ -3,13 +3,6 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
-package httpsec
-
-import (
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener/httpsec"
-)
-
-func init() {
-	appsec.AddWAFEventListener(httpsec.Install)
-}
+// Package event contains the definitions of Operation events that can be
+// emitted and listened to by dyngo.
+package event

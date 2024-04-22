@@ -11,17 +11,17 @@
 package httpsec
 
 import (
-	"context"
+
 	// Blank import needed to use embed for the default blocked response payloads
 	_ "embed"
 	"net/http"
 	"strings"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/httpsec/types"
+	"gopkg.in/DataDog/dd-trace-go.v1/dyngo"
+	"gopkg.in/DataDog/dd-trace-go.v1/dyngo/domain"
+	"gopkg.in/DataDog/dd-trace-go.v1/dyngo/event/httpevent"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/sharedsec"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/trace"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/trace/httptrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
@@ -29,30 +29,8 @@ import (
 	"github.com/DataDog/appsec-internal-go/netip"
 )
 
-// MonitorParsedBody starts and finishes the SDK body operation.
-// This function should not be called when AppSec is disabled in order to
-// get preciser error logs.
-func MonitorParsedBody(ctx context.Context, body any) error {
-	parent := fromContext(ctx)
-	if parent == nil {
-		log.Error("appsec: parsed http body monitoring ignored: could not find the http handler instrumentation metadata in the request context: the request handler is not being monitored by a middleware function or the provided context is not the expected request context")
-		return nil
-	}
-
-	return ExecuteSDKBodyOperation(parent, types.SDKBodyOperationArgs{Body: body})
-}
-
-// ExecuteSDKBodyOperation starts and finishes the SDK Body operation by emitting a dyngo start and finish events
-// An error is returned if the body associated to that operation must be blocked
-func ExecuteSDKBodyOperation(parent dyngo.Operation, args types.SDKBodyOperationArgs) error {
-	var err error
-	op := &types.SDKBodyOperation{Operation: dyngo.NewOperation(parent)}
-	dyngo.OnData(op, func(e error) {
-		err = e
-	})
-	dyngo.StartOperation(op, args)
-	dyngo.FinishOperation(op, types.SDKBodyOperationRes{})
-	return err
+func init() {
+	domain.HTTP.Activate()
 }
 
 // WrapHandler wraps the given HTTP handler with the abstract HTTP operation defined by HandlerOperationArgs and
@@ -78,7 +56,7 @@ func WrapHandler(handler http.Handler, span ddtrace.Span, pathParams map[string]
 		var bypassHandler http.Handler
 		var blocking bool
 		args := MakeHandlerOperationArgs(r, clientIP, pathParams)
-		ctx, op := StartOperation(r.Context(), args, func(op *types.Operation) {
+		ctx, op := httpevent.StartHandlerOperation(r.Context(), args, func(op *httpevent.HandlerOperation) {
 			dyngo.OnData(op, func(a *sharedsec.Action) {
 				bypassHandler = a.HTTP()
 				blocking = a.Blocking()
@@ -122,11 +100,11 @@ func WrapHandler(handler http.Handler, span ddtrace.Span, pathParams map[string]
 }
 
 // MakeHandlerOperationArgs creates the HandlerOperationArgs value.
-func MakeHandlerOperationArgs(r *http.Request, clientIP netip.Addr, pathParams map[string]string) types.HandlerOperationArgs {
+func MakeHandlerOperationArgs(r *http.Request, clientIP netip.Addr, pathParams map[string]string) httpevent.HandlerOperationArgs {
 	cookies := makeCookies(r) // TODO(Julio-Guerra): avoid actively parsing the cookies thanks to dynamic instrumentation
 	headers := headersRemoveCookies(r.Header)
 	headers["host"] = []string{r.Host}
-	return types.HandlerOperationArgs{
+	return httpevent.HandlerOperationArgs{
 		Method:     r.Method,
 		RequestURI: r.RequestURI,
 		Headers:    headers,
@@ -138,12 +116,12 @@ func MakeHandlerOperationArgs(r *http.Request, clientIP netip.Addr, pathParams m
 }
 
 // MakeHandlerOperationRes creates the HandlerOperationRes value.
-func MakeHandlerOperationRes(w http.ResponseWriter) types.HandlerOperationRes {
+func MakeHandlerOperationRes(w http.ResponseWriter) httpevent.HandlerOperationRes {
 	var status int
 	if mw, ok := w.(interface{ Status() int }); ok {
 		status = mw.Status()
 	}
-	return types.HandlerOperationRes{Status: status, Headers: headersRemoveCookies(w.Header())}
+	return httpevent.HandlerOperationRes{Status: status, Headers: headersRemoveCookies(w.Header())}
 }
 
 // Remove cookies from the request headers and return the map of headers
@@ -172,28 +150,4 @@ func makeCookies(r *http.Request) map[string][]string {
 		cookies[c.Name] = append(cookies[c.Name], c.Value)
 	}
 	return cookies
-}
-
-// StartOperation starts an HTTP handler operation, along with the given
-// context and arguments and emits a start event up in the operation stack.
-// The operation is linked to the global root operation since an HTTP operation
-// is always expected to be first in the operation stack.
-func StartOperation(ctx context.Context, args types.HandlerOperationArgs, setup ...func(*types.Operation)) (context.Context, *types.Operation) {
-	op := &types.Operation{
-		Operation:  dyngo.NewOperation(nil),
-		TagsHolder: trace.NewTagsHolder(),
-	}
-	newCtx := context.WithValue(ctx, listener.ContextKey{}, op)
-	for _, cb := range setup {
-		cb(op)
-	}
-	dyngo.StartOperation(op, args)
-	return newCtx, op
-}
-
-// fromContext returns the Operation object stored in the context, if any
-func fromContext(ctx context.Context) *types.Operation {
-	// Avoid a runtime panic in case of type-assertion error by collecting the 2 return values
-	op, _ := ctx.Value(listener.ContextKey{}).(*types.Operation)
-	return op
 }

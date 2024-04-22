@@ -14,9 +14,10 @@ import (
 	waf "github.com/DataDog/go-libddwaf/v2"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
+	"gopkg.in/DataDog/dd-trace-go.v1/dyngo"
+	"gopkg.in/DataDog/dd-trace-go.v1/dyngo/event/businessevent"
+	"gopkg.in/DataDog/dd-trace-go.v1/dyngo/event/grpcevent"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/config"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/grpcsec/types"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/sharedsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener/httpsec"
@@ -24,6 +25,39 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/samplernames"
 )
+
+type productConfig struct {
+	wafHandle *waf.Handle
+	config    *config.Config
+	actions   sharedsec.Actions
+	limiter   limiter.Limiter
+	mu        sync.RWMutex
+}
+
+var Product = &productConfig{}
+
+func (*productConfig) Name() string {
+	return "appsec.gRPC"
+}
+
+func (c *productConfig) Configure(wafHandle *waf.Handle, actions sharedsec.Actions, cfg *config.Config, lim limiter.Limiter) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	c.wafHandle = wafHandle
+	c.actions = actions
+	c.config = cfg
+	c.limiter = lim
+}
+
+func (c *productConfig) Start(op dyngo.Operation) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	if listener := newWafEventListener(c.wafHandle, c.actions, c.config, c.limiter); listener != nil {
+		dyngo.On(op, listener.onEvent)
+	}
+}
 
 // gRPC rule addresses currently supported by the WAF
 const (
@@ -41,14 +75,6 @@ var supportedAddresses = listener.AddressSet{
 	GRPCServerRequestMetadataAddr: {},
 	HTTPClientIPAddr:              {},
 	UserIDAddr:                    {},
-}
-
-// Install registers the gRPC WAF Event Listener on the given root operation.
-func Install(wafHandle *waf.Handle, actions sharedsec.Actions, cfg *config.Config, lim limiter.Limiter, root dyngo.Operation) {
-	if listener := newWafEventListener(wafHandle, actions, cfg, lim); listener != nil {
-		log.Debug("appsec: registering the gRPC WAF Event Listener")
-		dyngo.On(root, listener.onEvent)
-	}
 }
 
 type wafEventListener struct {
@@ -85,7 +111,7 @@ func newWafEventListener(wafHandle *waf.Handle, actions sharedsec.Actions, cfg *
 
 // NewWAFEventListener returns the WAF event listener to register in order to enable it, listening to gRPC handler
 // events.
-func (l *wafEventListener) onEvent(op *types.HandlerOperation, handlerArgs types.HandlerOperationArgs) {
+func (l *wafEventListener) onEvent(op *grpcevent.HandlerOperation, handlerArgs grpcevent.HandlerOperationArgs) {
 	// Limit the maximum number of security events, as a streaming RPC could
 	// receive unlimited number of messages where we could find security events
 	const maxWAFEventsPerRequest = 10
@@ -108,7 +134,7 @@ func (l *wafEventListener) onEvent(op *types.HandlerOperation, handlerArgs types
 		// UserIDOperation happens when appsec.SetUser() is called. We run the WAF and apply actions to
 		// see if the associated user should be blocked. Since we don't control the execution flow in this case
 		// (SetUser is SDK), we delegate the responsibility of interrupting the handler to the user.
-		dyngo.On(op, func(userIDOp *sharedsec.UserIDOperation, args sharedsec.UserIDOperationArgs) {
+		dyngo.On(op, func(userIDOp *businessevent.UserAuthNOperation, args businessevent.UserAuthNOperationArgs) {
 			values := map[string]any{
 				UserIDAddr: args.UserID,
 			}
@@ -117,7 +143,7 @@ func (l *wafEventListener) onEvent(op *types.HandlerOperation, handlerArgs types
 				for _, id := range wafResult.Actions {
 					if a, ok := l.actions[id]; ok && a.Blocking() {
 						code, err := a.GRPC()(map[string][]string{})
-						dyngo.EmitData(userIDOp, types.NewMonitoringError(err.Error(), code))
+						dyngo.EmitData(userIDOp, grpcevent.NewMonitoringError(err.Error(), code))
 					}
 				}
 				shared.AddSecurityEvents(op, l.limiter, wafResult.Events)
@@ -147,7 +173,7 @@ func (l *wafEventListener) onEvent(op *types.HandlerOperation, handlerArgs types
 	}
 
 	// When the gRPC handler receives a message
-	dyngo.OnFinish(op, func(_ types.ReceiveOperation, res types.ReceiveOperationRes) {
+	dyngo.OnFinish(op, func(_ grpcevent.ReceiveOperation, res grpcevent.ReceiveOperationRes) {
 		if nbEvents.Load() == maxWAFEventsPerRequest {
 			logOnce.Do(func() {
 				log.Debug("appsec: ignoring the rpc message due to the maximum number of security events per grpc call reached")
@@ -184,7 +210,7 @@ func (l *wafEventListener) onEvent(op *types.HandlerOperation, handlerArgs types
 	})
 
 	// When the gRPC handler finishes
-	dyngo.OnFinish(op, func(op *types.HandlerOperation, _ types.HandlerOperationRes) {
+	dyngo.OnFinish(op, func(op *grpcevent.HandlerOperation, _ grpcevent.HandlerOperationRes) {
 		defer wafCtx.Close()
 		shared.AddWAFMonitoringTags(op, l.wafDiags.Version, wafCtx.Stats().Metrics())
 

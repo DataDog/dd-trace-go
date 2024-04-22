@@ -17,6 +17,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/dyngo/domain"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
@@ -29,6 +30,7 @@ const componentName = "labstack/echo.v4"
 func init() {
 	telemetry.LoadIntegration(componentName)
 	tracer.MarkIntegrationImported("github.com/labstack/echo/v4")
+	domain.HTTP.Activate()
 }
 
 // Middleware returns echo middleware which will trace incoming requests.

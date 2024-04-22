@@ -19,6 +19,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/dyngo/domain"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 
 	"github.com/golang/protobuf/proto"
@@ -32,6 +33,7 @@ const componentName = "google.golang.org/grpc"
 func init() {
 	telemetry.LoadIntegration(componentName)
 	tracer.MarkIntegrationImported(componentName)
+	domain.GRPC.Activate()
 }
 
 // cache a constant option: saves one allocation per call

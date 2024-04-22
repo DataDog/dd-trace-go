@@ -3,13 +3,6 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
-package grpcsec
+package operation
 
-import (
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener/grpcsec"
-)
-
-func init() {
-	appsec.AddWAFEventListener(grpcsec.Install)
-}
+type typeID[T any] struct{}

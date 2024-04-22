@@ -11,9 +11,9 @@ import (
 	"github.com/DataDog/appsec-internal-go/limiter"
 	waf "github.com/DataDog/go-libddwaf/v2"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
+	"gopkg.in/DataDog/dd-trace-go.v1/dyngo"
+	"gopkg.in/DataDog/dd-trace-go.v1/dyngo/event/graphqlevent"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/config"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/graphqlsec/types"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/sharedsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener"
 	shared "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener/sharedsec"
@@ -21,6 +21,37 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/samplernames"
 )
+
+type productConfig struct {
+	wafHandle *waf.Handle
+	config    *config.Config
+	limiter   limiter.Limiter
+	mu        sync.RWMutex
+}
+
+var Product = &productConfig{}
+
+func (*productConfig) Name() string {
+	return "appsec.GraphQL"
+}
+
+func (c *productConfig) Configure(wafHandle *waf.Handle, _ sharedsec.Actions, cfg *config.Config, lim limiter.Limiter) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	c.wafHandle = wafHandle
+	c.config = cfg
+	c.limiter = lim
+}
+
+func (c *productConfig) Start(op dyngo.Operation) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	if listener := newWafEventListener(c.wafHandle, c.config, c.limiter); listener != nil {
+		dyngo.On(op, listener.onEvent)
+	}
+}
 
 // GraphQL rule addresses currently supported by the WAF
 const (
@@ -30,14 +61,6 @@ const (
 // List of GraphQL rule addresses currently supported by the WAF
 var supportedAddresses = listener.AddressSet{
 	graphQLServerResolverAddr: {},
-}
-
-// Install registers the GraphQL WAF Event Listener on the given root operation.
-func Install(wafHandle *waf.Handle, _ sharedsec.Actions, cfg *config.Config, lim limiter.Limiter, root dyngo.Operation) {
-	if listener := newWafEventListener(wafHandle, cfg, lim); listener != nil {
-		log.Debug("appsec: registering the GraphQL WAF Event Listener")
-		dyngo.On(root, listener.onEvent)
-	}
 }
 
 type wafEventListener struct {
@@ -72,7 +95,7 @@ func newWafEventListener(wafHandle *waf.Handle, cfg *config.Config, limiter limi
 
 // NewWAFEventListener returns the WAF event listener to register in order
 // to enable it.
-func (l *wafEventListener) onEvent(request *types.RequestOperation, _ types.RequestOperationArgs) {
+func (l *wafEventListener) onEvent(request *graphqlevent.RequestOperation, _ graphqlevent.RequestOperationArgs) {
 	wafCtx := waf.NewContextWithBudget(l.wafHandle, l.config.WAFTimeout)
 	if wafCtx == nil {
 		return
@@ -85,8 +108,8 @@ func (l *wafEventListener) onEvent(request *types.RequestOperation, _ types.Requ
 		request.SetTag(ext.ManualKeep, samplernames.AppSec)
 	})
 
-	dyngo.On(request, func(query *types.ExecutionOperation, args types.ExecutionOperationArgs) {
-		dyngo.On(query, func(field *types.ResolveOperation, args types.ResolveOperationArgs) {
+	dyngo.On(request, func(query *graphqlevent.ExecutionOperation, args graphqlevent.ExecutionOperationArgs) {
+		dyngo.On(query, func(field *graphqlevent.ResolveOperation, args graphqlevent.ResolveOperationArgs) {
 			if _, found := l.addresses[graphQLServerResolverAddr]; found {
 				wafResult := shared.RunWAF(
 					wafCtx,
@@ -100,17 +123,17 @@ func (l *wafEventListener) onEvent(request *types.RequestOperation, _ types.Requ
 				shared.AddSecurityEvents(field, l.limiter, wafResult.Events)
 			}
 
-			dyngo.OnFinish(field, func(field *types.ResolveOperation, res types.ResolveOperationRes) {
+			dyngo.OnFinish(field, func(field *graphqlevent.ResolveOperation, res graphqlevent.ResolveOperationRes) {
 				trace.SetEventSpanTags(field, field.Events())
 			})
 		})
 
-		dyngo.OnFinish(query, func(query *types.ExecutionOperation, res types.ExecutionOperationRes) {
+		dyngo.OnFinish(query, func(query *graphqlevent.ExecutionOperation, res graphqlevent.ExecutionOperationRes) {
 			trace.SetEventSpanTags(query, query.Events())
 		})
 	})
 
-	dyngo.OnFinish(request, func(request *types.RequestOperation, res types.RequestOperationRes) {
+	dyngo.OnFinish(request, func(request *graphqlevent.RequestOperation, res graphqlevent.RequestOperationRes) {
 		defer wafCtx.Close()
 
 		shared.AddWAFMonitoringTags(request, l.wafDiags.Version, wafCtx.Stats().Metrics())

@@ -14,6 +14,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/options"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/dyngo/domain"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
@@ -26,6 +27,7 @@ const componentName = "gin-gonic/gin"
 func init() {
 	telemetry.LoadIntegration(componentName)
 	tracer.MarkIntegrationImported("github.com/gin-gonic/gin")
+	domain.HTTP.Activate()
 }
 
 // Middleware returns middleware that will trace incoming requests. If service is empty then the

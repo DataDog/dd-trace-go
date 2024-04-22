@@ -13,8 +13,8 @@ import (
 	appsecLog "github.com/DataDog/appsec-internal-go/log"
 	waf "github.com/DataDog/go-libddwaf/v2"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/dyngo"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/config"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
@@ -186,7 +186,7 @@ func (a *appsec) stop() {
 	a.disableRCBlocking()
 
 	// Disable the currently applied instrumentation
-	dyngo.SwapRootOperation(nil)
+	dyngo.ClearRootOperation()
 	if a.wafHandle != nil {
 		a.wafHandle.Close()
 		a.wafHandle = nil

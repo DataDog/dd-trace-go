@@ -17,11 +17,16 @@ import (
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/dyngo/domain"
+	"gopkg.in/DataDog/dd-trace-go.v1/dyngo/event/businessevent"
+	"gopkg.in/DataDog/dd-trace-go.v1/dyngo/event/httpevent"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/httpsec"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/sharedsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
+
+func init() {
+	domain.HTTP.Activate()
+}
 
 var appsecDisabledLog sync.Once
 
@@ -38,7 +43,7 @@ func MonitorParsedHTTPBody(ctx context.Context, body interface{}) error {
 		appsecDisabledLog.Do(func() { log.Warn("appsec: not enabled. Body blocking checks won't be performed.") })
 		return nil
 	}
-	return httpsec.MonitorParsedBody(ctx, body)
+	return httpevent.MonitorParsedBody(ctx, body)
 }
 
 // SetUser wraps tracer.SetUser() and extends it with user blocking.
@@ -60,7 +65,7 @@ func SetUser(ctx context.Context, id string, opts ...tracer.UserMonitoringOption
 		appsecDisabledLog.Do(func() { log.Warn("appsec: not enabled. User blocking checks won't be performed.") })
 		return nil
 	}
-	return sharedsec.MonitorUser(ctx, id)
+	return businessevent.MonitorUserAuthentication(ctx, id)
 }
 
 // TrackUserLoginSuccessEvent sets a successful user login event, with the given
