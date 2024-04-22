@@ -11,6 +11,10 @@ import (
 )
 
 func main() {
-	c := v2check.NewChecker(nil)
+	c := v2check.NewChecker(
+		&v2check.V1ImportURL{},
+		&v2check.DDTraceTypes{},
+		&v2check.TracerStructs{},
+	)
 	c.Run(singlechecker.Main)
 }
