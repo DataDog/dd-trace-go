@@ -70,6 +70,11 @@ func TestDDTraceTypes(t *testing.T) {
 	c.Run(testRunner(t, "ddtracetypes"))
 }
 
+func TestTracerStructs(t *testing.T) {
+	c := v2check.NewChecker(&v2check.TracerStructs{})
+	c.Run(testRunner(t, "tracerstructs"))
+}
+
 func testRunner(t *testing.T, name string) func(*analysis.Analyzer) {
 	t.Helper()
 	cwd, err := os.Getwd()

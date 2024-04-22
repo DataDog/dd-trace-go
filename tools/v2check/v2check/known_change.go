@@ -13,6 +13,7 @@ import (
 	"go/types"
 	"strings"
 
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"golang.org/x/tools/go/analysis"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 )
@@ -180,4 +181,45 @@ func (DDTraceTypes) Probes() []Probe {
 
 func (DDTraceTypes) String() string {
 	return "the declared type is in the ddtrace/tracer package now"
+}
+
+type TracerStructs struct {
+	defaultKnownChange
+}
+
+func (c TracerStructs) Fixes() []analysis.SuggestedFix {
+	typ, ok := c.ctx.Value("declared_type").(*types.Named)
+	if !ok {
+		return nil
+	}
+	typeDecl := fmt.Sprintf("%s.%s", typ.Obj().Pkg().Name(), typ.Obj().Name())
+	return []analysis.SuggestedFix{
+		{
+			Message: "the declared type is now a struct, you need to use a pointer",
+			TextEdits: []analysis.TextEdit{
+				{
+					Pos:     c.Pos(),
+					End:     c.End(),
+					NewText: []byte(fmt.Sprintf("*%s", typeDecl)),
+				},
+			},
+		},
+	}
+}
+
+func (TracerStructs) Probes() []Probe {
+	return []Probe{
+		Or(
+			Is[*ast.ValueSpec],
+			Is[*ast.Field],
+		),
+		Or(
+			DeclaresType[tracer.Span](),
+			DeclaresType[tracer.SpanContext](),
+		),
+	}
+}
+
+func (TracerStructs) String() string {
+	return "the declared type is now a struct, you need to use a pointer"
 }

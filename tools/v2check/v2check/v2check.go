@@ -8,6 +8,7 @@ package v2check
 import (
 	"errors"
 	"go/ast"
+	"log"
 
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/inspect"
@@ -32,6 +33,7 @@ func (c Checker) Run(handler func(*analysis.Analyzer)) {
 }
 
 func (c Checker) runner() func(*analysis.Pass) (interface{}, error) {
+	log.Printf("Running v2check with %d known changes", len(c.knownChanges))
 	knownChanges := c.knownChanges
 
 	return func(pass *analysis.Pass) (interface{}, error) {
