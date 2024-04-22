@@ -71,7 +71,7 @@ func TestTracesAgentIntegration(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		transport := newHTTPTransport(defaultURL, defaultClient)
+		transport := newHTTPTransport(defaultURL, defaultHTTPClient(0))
 		p, err := encode(tc.payload)
 		assert.NoError(err)
 		_, err = transport.send(p)
@@ -147,7 +147,7 @@ func TestTransportResponse(t *testing.T) {
 			}))
 			defer ln.Close()
 			url := "http://" + ln.Addr().String()
-			transport := newHTTPTransport(url, defaultClient)
+			transport := newHTTPTransport(url, defaultHTTPClient(0))
 			rc, err := transport.send(newPayload())
 			if tt.err != "" {
 				assert.Equal(tt.err, err.Error())
@@ -187,7 +187,7 @@ func TestTraceCountHeader(t *testing.T) {
 	}))
 	defer srv.Close()
 	for _, tc := range testCases {
-		transport := newHTTPTransport(srv.URL, defaultClient)
+		transport := newHTTPTransport(srv.URL, defaultHTTPClient(0))
 		p, err := encode(tc.payload)
 		assert.NoError(err)
 		_, err = transport.send(p)
@@ -255,7 +255,7 @@ func TestWithHTTPClient(t *testing.T) {
 	assert.NoError(err)
 	c := &http.Client{}
 	rt := wrapRecordingRoundTripper(c)
-	trc := newTracer(WithAgentAddr(u.Host), WithHTTPClient(c))
+	trc := newTracer(WithAgentTimeout(2), WithAgentAddr(u.Host), WithHTTPClient(c))
 	defer trc.Stop()
 
 	p, err := encode(getTestTrace(1, 1))
