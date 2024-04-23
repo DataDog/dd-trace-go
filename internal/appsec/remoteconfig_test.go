@@ -807,7 +807,7 @@ func TestWafRCUpdate(t *testing.T) {
 		// Make sure the rule returns a blocking action when matching
 		result = sharedsec.RunWAF(newWafCtx, waf.RunAddressData{Persistent: values}, cfg.WAFTimeout)
 		require.Contains(t, jsonString(t, result.Events), "crs-913-120")
-		require.Contains(t, result.Actions, "block")
+		require.Contains(t, result.Actions, "block_request")
 	})
 }
 
