@@ -44,8 +44,8 @@ var supportedAddresses = listener.AddressSet{
 }
 
 // Install registers the gRPC WAF Event Listener on the given root operation.
-func Install(wafHandle *waf.Handle, actions sharedsec.Actions, cfg *config.Config, lim limiter.Limiter, root dyngo.Operation) {
-	if listener := newWafEventListener(wafHandle, actions, cfg, lim); listener != nil {
+func Install(wafHandle *waf.Handle, cfg *config.Config, lim limiter.Limiter, root dyngo.Operation) {
+	if listener := newWafEventListener(wafHandle, cfg, lim); listener != nil {
 		log.Debug("appsec: registering the gRPC WAF Event Listener")
 		dyngo.On(root, listener.onEvent)
 	}
@@ -61,7 +61,7 @@ type wafEventListener struct {
 	once      sync.Once
 }
 
-func newWafEventListener(wafHandle *waf.Handle, actions sharedsec.Actions, cfg *config.Config, limiter limiter.Limiter) *wafEventListener {
+func newWafEventListener(wafHandle *waf.Handle, cfg *config.Config, limiter limiter.Limiter) *wafEventListener {
 	if wafHandle == nil {
 		log.Debug("appsec: no WAF Handle available, the gRPC WAF Event Listener will not be registered")
 		return nil
@@ -76,7 +76,6 @@ func newWafEventListener(wafHandle *waf.Handle, actions sharedsec.Actions, cfg *
 	return &wafEventListener{
 		wafHandle: wafHandle,
 		config:    cfg,
-		actions:   actions,
 		addresses: addresses,
 		limiter:   limiter,
 		wafDiags:  wafHandle.Diagnostics(),
@@ -114,8 +113,8 @@ func (l *wafEventListener) onEvent(op *types.HandlerOperation, handlerArgs types
 			}
 			wafResult := shared.RunWAF(wafCtx, waf.RunAddressData{Persistent: values}, l.config.WAFTimeout)
 			if wafResult.HasActions() || wafResult.HasEvents() {
-				for _, id := range wafResult.Actions {
-					if a, ok := l.actions[id]; ok && a.Blocking() {
+				for aType, params := range wafResult.Actions {
+					if a := shared.ActionFromEntry(aType, params); a != nil && a.Blocking() {
 						code, err := a.GRPC()(map[string][]string{})
 						dyngo.EmitData(userIDOp, types.NewMonitoringError(err.Error(), code))
 					}
@@ -137,7 +136,7 @@ func (l *wafEventListener) onEvent(op *types.HandlerOperation, handlerArgs types
 
 	wafResult := shared.RunWAF(wafCtx, waf.RunAddressData{Persistent: values}, l.config.WAFTimeout)
 	if wafResult.HasActions() || wafResult.HasEvents() {
-		interrupt := shared.ProcessActions(op, l.actions, wafResult.Actions)
+		interrupt := shared.ProcessActions(op, wafResult.Actions)
 		shared.AddSecurityEvents(op, l.limiter, wafResult.Events)
 		log.Debug("appsec: WAF detected an attack before executing the request")
 		if interrupt {

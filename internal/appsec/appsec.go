@@ -129,7 +129,7 @@ func setActiveAppSec(a *appsec) {
 type appsec struct {
 	cfg       *config.Config
 	limiter   *limiter.TokenTicker
-	wafHandle *wafHandle
+	wafHandle *waf.Handle
 	started   bool
 }
 

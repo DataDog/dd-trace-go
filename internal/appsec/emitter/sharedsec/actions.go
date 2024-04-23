@@ -12,6 +12,7 @@ import (
 	"os"
 	"strings"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/actions"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
@@ -108,8 +109,31 @@ func newGRPCBlockHandler(status int) GRPCWrapper {
 	}
 }
 
-// NewBlockRequestAction creates an action for the "block" action type
-func NewBlockRequestAction(httpStatus, grpcStatus int, template string) *Action {
+// NewBlockAction creates an action for the "block_request" action type
+func NewBlockAction(params any) *Action {
+	p, ok := params.(actions.BlockActionParams)
+	if !ok {
+		// TODO: log
+		return nil
+	}
+	grpcCode := 10
+	if p.GRPCStatusCode != nil {
+		grpcCode = *p.GRPCStatusCode
+	}
+	return newBlockRequestAction(p.StatusCode, grpcCode, p.Type)
+}
+
+// NewRedirectAction creates an action for the "redirect_request" action type
+func NewRedirectAction(params any) *Action {
+	p, ok := params.(actions.RedirectActionParams)
+	if !ok {
+		//TODO: log
+		return nil
+	}
+	return newRedirectRequestAction(p.StatusCode, p.Location)
+}
+
+func newBlockRequestAction(httpStatus, grpcStatus int, template string) *Action {
 	return &Action{
 		http:     NewBlockHandler(httpStatus, template),
 		grpc:     newGRPCBlockHandler(grpcStatus),
@@ -117,8 +141,7 @@ func NewBlockRequestAction(httpStatus, grpcStatus int, template string) *Action 
 	}
 }
 
-// NewRedirectRequestAction creates an action for the "redirect" action type
-func NewRedirectRequestAction(status int, loc string) *Action {
+func newRedirectRequestAction(status int, loc string) *Action {
 	// Default to 303 if status is out of redirection codes bounds
 	if status < 300 || status >= 400 {
 		status = 303
