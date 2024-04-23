@@ -79,12 +79,27 @@ func AddWAFMonitoringTags(th trace.TagSetter, rulesVersion string, stats map[str
 
 // ProcessActions sends the relevant actions to the operation's data listener.
 // It returns true if at least one of those actions require interrupting the request handler
-func ProcessActions(op dyngo.Operation, actions sharedsec.Actions, actionIds []string) (interrupt bool) {
-	for _, id := range actionIds {
-		if a, ok := actions[id]; ok {
-			dyngo.EmitData(op, actions[id])
-			interrupt = interrupt || a.Blocking()
+func ProcessActions(op dyngo.Operation, actions map[string]any) (interrupt bool) {
+	for aType, params := range actions {
+		action := ActionFromEntry(aType, params)
+		if action == nil {
+			log.Debug("cannot process %s action with params %v", aType, params)
+			continue
 		}
+		dyngo.EmitData(op, action)
+		interrupt = interrupt || action.Blocking()
 	}
 	return interrupt
+}
+
+func ActionFromEntry(actionType string, params any) *sharedsec.Action {
+	switch actionType {
+	case "block_request":
+		return sharedsec.NewBlockAction(params)
+	case "redirect_request":
+		return sharedsec.NewRedirectAction(params)
+	default:
+		log.Debug("appsec: unknown action type `%s`", actionType)
+		return nil
+	}
 }
