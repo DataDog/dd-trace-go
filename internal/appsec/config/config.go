@@ -13,6 +13,7 @@ import (
 
 	internal "github.com/DataDog/appsec-internal-go/appsec"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/actions"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/remoteconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
@@ -108,6 +109,16 @@ func NewConfig() (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	// Default blocking action
+	r.Base.Actions = append(r.Base.Actions, actions.ActionEntry[actions.BlockActionParams]{
+		ID:   "block",
+		Type: "block_request",
+		Parameters: actions.BlockActionParams{
+			Type:       "auto",
+			StatusCode: 403,
+		},
+	})
 
 	return &Config{
 		RulesManager:   r,
