@@ -11,11 +11,12 @@ import (
 	"math"
 	"reflect"
 
+	"github.com/datadog/dd-trace-go/dyngo/domain"
+	"github.com/datadog/dd-trace-go/dyngo/event/graphqlevent"
+	"github.com/datadog/dd-trace-go/dyngo/event/perfevent"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/dyngo/domain"
-	"gopkg.in/DataDog/dd-trace-go.v1/dyngo/event/graphqlevent"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 
 	"github.com/graphql-go/graphql"
@@ -64,7 +65,7 @@ type datadogExtension struct{ config }
 
 type contextKey struct{}
 type contextData struct {
-	serverSpan    tracer.Span
+	serverSpan    *perfevent.MonitoredOperation
 	requestOp     *graphqlevent.RequestOperation
 	variables     map[string]any
 	query         string
@@ -90,16 +91,17 @@ func (i datadogExtension) Init(ctx context.Context, params *graphql.Params) cont
 			ctx = context.TODO()
 		}
 	}
+
 	// This span allows us to regroup parse, validate & resolvers under a single service entry span. It is finished once
 	// the execution is done (or after parse or validate have failed).
-	span, ctx := tracer.StartSpanFromContext(ctx, spanServer,
+	ctx, span := perfevent.StartMonitoredOperation(ctx, spanServer,
 		tracer.ServiceName(i.config.serviceName),
 		spanTagKind,
 		spanTagType,
 		tracer.Tag(ext.Component, componentName),
 		tracer.Measured(),
 	)
-	ctx, request := graphqlevent.StartRequestOperation(ctx, nil, span, graphqlevent.RequestOperationArgs{
+	ctx, request := graphqlevent.StartRequestOperation(ctx, span, graphqlevent.RequestOperationArgs{
 		RawQuery:      params.RequestString,
 		Variables:     params.VariableValues,
 		OperationName: params.OperationName,
@@ -194,7 +196,7 @@ func (i datadogExtension) ExecutionDidStart(ctx context.Context) (context.Contex
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, i.config.analyticsRate))
 	}
 	span, ctx := tracer.StartSpanFromContext(ctx, spanExecute, opts...)
-	ctx, op := graphqlevent.StartExecutionOperation(ctx, nil /* from context */, span, graphqlevent.ExecutionOperationArgs{
+	ctx, op := graphqlevent.StartExecutionOperation(ctx, nil /* from context */, graphqlevent.ExecutionOperationArgs{
 		Query:         data.query,
 		OperationName: data.operationName,
 		Variables:     data.variables,
@@ -241,7 +243,7 @@ func (i datadogExtension) ResolveFieldDidStart(ctx context.Context, info *graphq
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, i.config.analyticsRate))
 	}
 	span, ctx := tracer.StartSpanFromContext(ctx, spanResolve, opts...)
-	ctx, op := graphqlevent.StartResolveOperation(ctx, nil /* from context */, span, graphqlevent.ResolveOperationArgs{
+	ctx, op := graphqlevent.StartResolveOperation(ctx, nil /* from context */, graphqlevent.ResolveOperationArgs{
 		TypeName:  info.ParentType.Name(),
 		FieldName: info.FieldName,
 		Arguments: collectArguments(info),

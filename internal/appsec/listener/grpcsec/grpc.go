@@ -13,15 +13,17 @@ import (
 	"github.com/DataDog/appsec-internal-go/limiter"
 	waf "github.com/DataDog/go-libddwaf/v2"
 
+	"github.com/datadog/dd-trace-go/dyngo"
+	"github.com/datadog/dd-trace-go/dyngo/event/businessevent"
+	"github.com/datadog/dd-trace-go/dyngo/event/grpcevent"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/dyngo"
-	"gopkg.in/DataDog/dd-trace-go.v1/dyngo/event/businessevent"
-	"gopkg.in/DataDog/dd-trace-go.v1/dyngo/event/grpcevent"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/config"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/sharedsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener/httpsec"
 	shared "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener/sharedsec"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/trace"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/samplernames"
 )
@@ -129,6 +131,8 @@ func (l *wafEventListener) onEvent(op *grpcevent.HandlerOperation, handlerArgs g
 		return
 	}
 
+	var handlerEvents trace.SecurityEventsHolder
+
 	// Listen to the UserID address if the WAF rules are using it
 	if l.isSecAddressListened(UserIDAddr) {
 		// UserIDOperation happens when appsec.SetUser() is called. We run the WAF and apply actions to
@@ -146,7 +150,7 @@ func (l *wafEventListener) onEvent(op *grpcevent.HandlerOperation, handlerArgs g
 						dyngo.EmitData(userIDOp, grpcevent.NewMonitoringError(err.Error(), code))
 					}
 				}
-				shared.AddSecurityEvents(op, l.limiter, wafResult.Events)
+				shared.AddSecurityEvents(&handlerEvents, l.limiter, wafResult.Events)
 				log.Debug("appsec: WAF detected an authenticated user attack: %s", args.UserID)
 			}
 		})
@@ -164,7 +168,7 @@ func (l *wafEventListener) onEvent(op *grpcevent.HandlerOperation, handlerArgs g
 	wafResult := shared.RunWAF(wafCtx, waf.RunAddressData{Persistent: values}, l.config.WAFTimeout)
 	if wafResult.HasActions() || wafResult.HasEvents() {
 		interrupt := shared.ProcessActions(op, l.actions, wafResult.Actions)
-		shared.AddSecurityEvents(op, l.limiter, wafResult.Events)
+		shared.AddSecurityEvents(&handlerEvents, l.limiter, wafResult.Events)
 		log.Debug("appsec: WAF detected an attack before executing the request")
 		if interrupt {
 			wafCtx.Close()
@@ -212,15 +216,20 @@ func (l *wafEventListener) onEvent(op *grpcevent.HandlerOperation, handlerArgs g
 	// When the gRPC handler finishes
 	dyngo.OnFinish(op, func(op *grpcevent.HandlerOperation, _ grpcevent.HandlerOperationRes) {
 		defer wafCtx.Close()
-		shared.AddWAFMonitoringTags(op, l.wafDiags.Version, wafCtx.Stats().Metrics())
 
-		// Log the following metrics once per instantiation of a WAF handle
-		l.once.Do(func() {
-			shared.AddRulesMonitoringTags(op, &l.wafDiags)
-			op.SetTag(ext.ManualKeep, samplernames.AppSec)
-		})
+		span, hasSpan := tracer.SpanFromContext(op)
 
-		shared.AddSecurityEvents(op, l.limiter, events)
+		if hasSpan {
+			shared.AddWAFMonitoringTags(span, l.wafDiags.Version, wafCtx.Stats().Metrics())
+
+			// Log the following metrics once per instantiation of a WAF handle
+			l.once.Do(func() {
+				shared.AddRulesMonitoringTags(span, &l.wafDiags)
+				span.SetTag(ext.ManualKeep, samplernames.AppSec)
+			})
+		}
+
+		shared.AddSecurityEvents(&handlerEvents, l.limiter, events)
 	})
 }
 

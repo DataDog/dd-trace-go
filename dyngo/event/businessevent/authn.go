@@ -8,9 +8,9 @@ package businessevent
 import (
 	"context"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/dyngo/internal/opcontext"
-	"gopkg.in/DataDog/dd-trace-go.v1/dyngo/internal/operation"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"github.com/datadog/dd-trace-go/dyngo/internal/opcontext"
+	"github.com/datadog/dd-trace-go/dyngo/internal/operation"
+	"github.com/datadog/dd-trace-go/dyngo/log"
 )
 
 type (
@@ -49,7 +49,7 @@ func FireUserAuthenticationOperation(
 func MonitorUserAuthentication(ctx context.Context, userID string) error {
 	op := opcontext.Operation(ctx)
 	if op == nil {
-		log.Error("dyngo: user ID monitoring ignored, no Operation was found in context. Either the current request is not being monitored, or the provided context is not correct.")
+		log.Errorf("dyngo: user ID monitoring ignored, no Operation was found in context. Either the current request is not being monitored, or the provided context is not correct.\n")
 		return nil
 	}
 	return FireUserAuthenticationOperation(op, UserAuthNOperationArgs{UserID: userID})

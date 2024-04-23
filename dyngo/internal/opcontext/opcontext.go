@@ -3,7 +3,7 @@ package opcontext
 import (
 	"context"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/dyngo/internal/operation"
+	"github.com/datadog/dd-trace-go/dyngo/internal/operation"
 )
 
 type opContextKey[O operation.Operation] struct{}

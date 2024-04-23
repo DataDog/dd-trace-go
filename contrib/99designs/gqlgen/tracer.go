@@ -46,11 +46,11 @@ import (
 	"math"
 	"time"
 
+	"github.com/datadog/dd-trace-go/dyngo/domain"
+	"github.com/datadog/dd-trace-go/dyngo/event/graphqlevent"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/dyngo/domain"
-	"gopkg.in/DataDog/dd-trace-go.v1/dyngo/event/graphqlevent"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 
@@ -105,12 +105,12 @@ func (t *gqlTracer) Validate(_ graphql.ExecutableSchema) error {
 func (t *gqlTracer) InterceptOperation(ctx context.Context, next graphql.OperationHandler) graphql.ResponseHandler {
 	opCtx := graphql.GetOperationContext(ctx)
 	span, ctx := t.createRootSpan(ctx, opCtx)
-	ctx, req := graphqlevent.StartRequestOperation(ctx, nil /* root */, span, graphqlevent.RequestOperationArgs{
+	ctx, req := graphqlevent.StartRequestOperation(ctx, nil /* from context */, graphqlevent.RequestOperationArgs{
 		RawQuery:      opCtx.RawQuery,
 		OperationName: opCtx.OperationName,
 		Variables:     opCtx.Variables,
 	})
-	ctx, query := graphqlevent.StartExecutionOperation(ctx, req, span, graphqlevent.ExecutionOperationArgs{
+	ctx, query := graphqlevent.StartExecutionOperation(ctx, req, graphqlevent.ExecutionOperationArgs{
 		Query:         opCtx.RawQuery,
 		OperationName: opCtx.OperationName,
 		Variables:     opCtx.Variables,
@@ -156,7 +156,7 @@ func (t *gqlTracer) InterceptField(ctx context.Context, next graphql.Resolver) (
 	}
 	span, ctx := tracer.StartSpanFromContext(ctx, fieldOp, opts...)
 	defer func() { span.Finish(tracer.WithError(err)) }()
-	ctx, op := graphqlevent.StartResolveOperation(ctx, nil /* from context */, span, graphqlevent.ResolveOperationArgs{
+	ctx, op := graphqlevent.StartResolveOperation(ctx, nil /* from context */, graphqlevent.ResolveOperationArgs{
 		Arguments: fieldCtx.Args,
 		TypeName:  fieldCtx.Object,
 		FieldName: fieldCtx.Field.Name,

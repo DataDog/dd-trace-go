@@ -14,7 +14,6 @@ import (
 	"runtime"
 	"time"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/osinfo"
@@ -49,7 +48,6 @@ type startupInfo struct {
 	Architecture                string                       `json:"architecture"`                   // Architecture of host machine
 	GlobalService               string                       `json:"global_service"`                 // Global service string. If not-nil should be same as Service. (#614)
 	LambdaMode                  string                       `json:"lambda_mode"`                    // Whether the client has enabled lambda mode
-	AppSec                      bool                         `json:"appsec"`                         // AppSec status: true when started, false otherwise.
 	AgentFeatures               agentFeatures                `json:"agent_features"`                 // Lists the capabilities of the agent.
 	Integrations                map[string]integrationConfig `json:"integrations"`                   // Available tracer integrations
 	PartialFlushEnabled         bool                         `json:"partial_flush_enabled"`          // Whether Partial Flushing is enabled
@@ -116,7 +114,6 @@ func logStartup(t *tracer) {
 		LambdaMode:                  fmt.Sprintf("%t", t.config.logToStdout),
 		AgentFeatures:               t.config.agent,
 		Integrations:                t.config.integrations,
-		AppSec:                      appsec.Enabled(),
 		PartialFlushEnabled:         t.config.partialFlushEnabled,
 		PartialFlushMinSpans:        t.config.partialFlushMinSpans,
 		Orchestrion:                 t.config.orchestrionCfg,

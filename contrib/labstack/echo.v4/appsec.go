@@ -8,8 +8,8 @@ package echo
 import (
 	"net/http"
 
+	"github.com/datadog/dd-trace-go/dyngo/event/httpevent"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/dyngo/event/httpevent"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/httpsec"
 
 	"github.com/labstack/echo/v4"

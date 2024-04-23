@@ -10,18 +10,15 @@ import (
 	"context"
 	"net/netip"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/dyngo/internal/opcontext"
-	"gopkg.in/DataDog/dd-trace-go.v1/dyngo/internal/operation"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/trace"
+	"github.com/datadog/dd-trace-go/dyngo/internal/opcontext"
+	"github.com/datadog/dd-trace-go/dyngo/internal/operation"
 )
 
 type (
 	// HandlerOperation represents a gRPC handler operation.
 	HandlerOperation struct {
 		operation.Operation
-		trace.TagsHolder
-		trace.SecurityEventsHolder
-		Error error
+		context.Context
 	}
 
 	// HandlerOperationArgs is the gRPC handler operation's arguments.
@@ -44,23 +41,18 @@ func StartHandlerOperation(
 	args HandlerOperationArgs,
 	setup ...func(*HandlerOperation),
 ) (context.Context, *HandlerOperation) {
-	op := &HandlerOperation{
-		Operation:  operation.New(parent),
-		TagsHolder: trace.NewTagsHolder(),
-	}
-	ctx = opcontext.WithOperation(ctx, op)
+	op := &HandlerOperation{Operation: operation.New(parent), Context: ctx}
 	for _, cb := range setup {
 		cb(op)
 	}
+
 	operation.Start(op, args)
-	return ctx, op
+	return opcontext.WithOperation(ctx, op), op
 }
 
-// Finish finishes the gRPC handler operation with the provided result, and
-// returns any security events that were observed during the operation.
-func (o *HandlerOperation) Finish(res HandlerOperationRes) []any {
+// Finish finishes the gRPC handler operation with the provided result.
+func (o *HandlerOperation) Finish(res HandlerOperationRes) {
 	operation.Finish(o, res)
-	return o.Events()
 }
 
 func (HandlerOperationArgs) IsArgOf(*HandlerOperation)   {}

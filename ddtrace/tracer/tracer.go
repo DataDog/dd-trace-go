@@ -20,8 +20,6 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 	globalinternal "gopkg.in/DataDog/dd-trace-go.v1/internal"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
-	appsecConfig "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/config"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/datastreams"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/hostname"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
@@ -167,11 +165,13 @@ func Start(opts ...StartOption) {
 	// DD_INSTRUMENTATION_TELEMETRY_ENABLED env var
 	startTelemetry(t.config)
 
-	// appsec.Start() may use the telemetry client to report activation, so it is
-	// important this happens _AFTER_ startTelemetry() has been called, so the
-	// client is appropriately configured.
-	appsec.Start(appsecConfig.WithRCConfig(cfg))
-	_ = t.hostname() // Prime the hostname cache
+	// Start all plugins now...
+	for _, plugin := range plugins {
+		plugin.Start(cfg)
+	}
+
+	// Prime the hostname cache
+	_ = t.hostname()
 }
 
 // Stop stops the started tracer. Subsequent calls are valid but become no-op.
@@ -659,7 +659,12 @@ func (t *tracer) Stop() {
 	if t.dataStreams != nil {
 		t.dataStreams.Stop()
 	}
-	appsec.Stop()
+
+	// Stop all plugins now
+	for _, plugin := range plugins {
+		plugin.Stop()
+	}
+
 	remoteconfig.Stop()
 }
 

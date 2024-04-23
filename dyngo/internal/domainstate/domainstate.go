@@ -9,8 +9,8 @@ import (
 	"sort"
 	"sync"
 
-	"github.com/gofiber/fiber/v2/log"
-	"gopkg.in/DataDog/dd-trace-go.v1/dyngo/internal/operation"
+	"github.com/datadog/dd-trace-go/dyngo/internal/operation"
+	"github.com/datadog/dd-trace-go/dyngo/log"
 )
 
 //go:generate go run golang.org/x/tools/cmd/stringer@latest --type=Domain
@@ -58,7 +58,7 @@ func (d Domain) RegisterProduct(prod Product, prio int) {
 	d.registerProduct(prod, prio)
 	if d.isActive() {
 		if root := operation.CurrentRoot(); root != nil {
-			log.Tracef("dyngo.%s: domain is active, immediately starting product %q\n", d, prod.Name())
+			log.Debugf("dyngo.%s: domain is active, immediately starting product %q\n", d, prod.Name())
 			prod.Start(root)
 		}
 	}
@@ -76,7 +76,7 @@ func StartProducts(dom Domain, root operation.Operation) {
 
 	for _, prio := range state[dom].productPriorities {
 		for _, product := range state[dom].products[prio] {
-			log.Tracef("dyngo.%s: starting product at priority %d: %s\n", dom, prio, product.Name())
+			log.Debugf("dyngo.%s: starting product at priority %d: %s\n", dom, prio, product.Name())
 			product.Start(root)
 		}
 	}
@@ -89,7 +89,7 @@ func (d Domain) Activate() {
 	defer state[d].mu.Unlock()
 
 	if !state[d].active {
-		log.Tracef("Activating domain dyngo.%s...\n", d)
+		log.Debugf("Activating domain dyngo.%s...\n", d)
 		state[d].active = true
 	}
 }

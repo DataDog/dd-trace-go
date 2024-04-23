@@ -10,16 +10,15 @@ import (
 
 	"github.com/DataDog/appsec-internal-go/limiter"
 	waf "github.com/DataDog/go-libddwaf/v2"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/dyngo"
-	"gopkg.in/DataDog/dd-trace-go.v1/dyngo/event/graphqlevent"
+	"github.com/datadog/dd-trace-go/dyngo"
+	"github.com/datadog/dd-trace-go/dyngo/event/graphqlevent"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/config"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/sharedsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener"
 	shared "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener/sharedsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/trace"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/samplernames"
 )
 
 type productConfig struct {
@@ -95,21 +94,27 @@ func newWafEventListener(wafHandle *waf.Handle, cfg *config.Config, limiter limi
 
 // NewWAFEventListener returns the WAF event listener to register in order
 // to enable it.
-func (l *wafEventListener) onEvent(request *graphqlevent.RequestOperation, _ graphqlevent.RequestOperationArgs) {
+func (l *wafEventListener) onEvent(request *graphqlevent.RequestOperation, args graphqlevent.RequestOperationArgs) {
 	wafCtx := waf.NewContextWithBudget(l.wafHandle, l.config.WAFTimeout)
 	if wafCtx == nil {
 		return
 	}
 
-	// Add span tags notifying this trace is AppSec-enabled
-	trace.SetAppSecEnabledTags(request)
-	l.once.Do(func() {
-		shared.AddRulesMonitoringTags(request, &l.wafDiags)
-		request.SetTag(ext.ManualKeep, samplernames.AppSec)
-	})
+	span, hasSpan := tracer.SpanFromContext(request)
+	if hasSpan {
+		// Add span tags notifying this trace is AppSec-enabled
+		trace.SetAppSecEnabledTags(span)
+	}
+
+	var requestEvents trace.SecurityEventsHolder
 
 	dyngo.On(request, func(query *graphqlevent.ExecutionOperation, args graphqlevent.ExecutionOperationArgs) {
+		var queryEvents trace.SecurityEventsHolder
+
 		dyngo.On(query, func(field *graphqlevent.ResolveOperation, args graphqlevent.ResolveOperationArgs) {
+			span, hasSpan = tracer.SpanFromContext(field)
+			var resolveEvents trace.SecurityEventsHolder
+
 			if _, found := l.addresses[graphQLServerResolverAddr]; found {
 				wafResult := shared.RunWAF(
 					wafCtx,
@@ -120,23 +125,32 @@ func (l *wafEventListener) onEvent(request *graphqlevent.RequestOperation, _ gra
 					},
 					l.config.WAFTimeout,
 				)
-				shared.AddSecurityEvents(field, l.limiter, wafResult.Events)
+				if hasSpan {
+					if wafResult.HasEvents() && l.limiter.Allow() {
+						shared.AddSecurityEvents(&resolveEvents, l.limiter, wafResult.Events)
+					}
+				}
 			}
 
-			dyngo.OnFinish(field, func(field *graphqlevent.ResolveOperation, res graphqlevent.ResolveOperationRes) {
-				trace.SetEventSpanTags(field, field.Events())
-			})
+			if hasSpan {
+				dyngo.OnFinish(field, func(field *graphqlevent.ResolveOperation, res graphqlevent.ResolveOperationRes) {
+					trace.SetEventSpanTags(span, resolveEvents.Events())
+				})
+			}
 		})
 
 		dyngo.OnFinish(query, func(query *graphqlevent.ExecutionOperation, res graphqlevent.ExecutionOperationRes) {
-			trace.SetEventSpanTags(query, query.Events())
+			trace.SetEventSpanTags(span, queryEvents.Events())
 		})
 	})
 
 	dyngo.OnFinish(request, func(request *graphqlevent.RequestOperation, res graphqlevent.RequestOperationRes) {
 		defer wafCtx.Close()
 
-		shared.AddWAFMonitoringTags(request, l.wafDiags.Version, wafCtx.Stats().Metrics())
-		trace.SetEventSpanTags(request, request.Events())
+		span, hasSpan = tracer.SpanFromContext(request)
+		if hasSpan {
+			shared.AddWAFMonitoringTags(span, l.wafDiags.Version, wafCtx.Stats().Metrics())
+			trace.SetEventSpanTags(span, requestEvents.Events())
+		}
 	})
 }

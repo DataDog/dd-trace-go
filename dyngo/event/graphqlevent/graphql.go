@@ -9,24 +9,22 @@ package graphqlevent
 import (
 	"context"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/dyngo/internal/opcontext"
-	"gopkg.in/DataDog/dd-trace-go.v1/dyngo/internal/operation"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/trace"
+	"github.com/datadog/dd-trace-go/dyngo/internal/opcontext"
+	"github.com/datadog/dd-trace-go/dyngo/internal/operation"
 )
 
 type (
 	// RequestOperation is the top-level GraphQL operation.
 	RequestOperation struct {
 		operation.Operation
-		trace.TagSetter
-		trace.SecurityEventsHolder
+		context.Context
 	}
 
 	// RequestOperationArgs describes arguments passed to a GraphQL request.
 	RequestOperationArgs struct {
+		Variables     map[string]any // The user-provided variables object for this request
 		RawQuery      string         // The raw, not-yet-parsed GraphQL query
 		OperationName string         // The user-provided operation name for the query
-		Variables     map[string]any // The user-provided variables object for this request
 	}
 
 	// RequestOperationRes describes the results of a GraphQL request operation.
@@ -37,25 +35,21 @@ type (
 )
 
 // StartRequestOperation creates and starts a new GraphQL request operation
-// using the provided parent operation adn arguments. If the parent is nil, the
-// current root operation is used.
+// using the provided parent operation adn arguments. If the parent is nil, an
+// operation will be extracted form the provided context if possible. Otherwise,
+// the current root operation will be used.
 func StartRequestOperation(
 	ctx context.Context,
 	parent operation.Operation,
-	span trace.TagSetter,
 	args RequestOperationArgs,
 ) (context.Context, *RequestOperation) {
-	if span == nil {
-		// The span may be nil (e.g, GraphQL subscriptions are not traced by some contribs)
-		span = trace.NoopTagSetter{}
+	if parent == nil {
+		parent = opcontext.Operation(ctx)
 	}
-	op := &RequestOperation{
-		Operation: operation.New(parent),
-		TagSetter: span,
-	}
-	ctx = opcontext.WithOperation(ctx, op)
+
+	op := &RequestOperation{Operation: operation.New(parent), Context: ctx}
 	operation.Start(op, args)
-	return ctx, op
+	return opcontext.WithOperation(ctx, op), op
 }
 
 // Finish finishes the receiving GraphQL request operation with the provided

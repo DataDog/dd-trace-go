@@ -5,7 +5,7 @@
 
 package domainstate
 
-import "gopkg.in/DataDog/dd-trace-go.v1/dyngo/internal/operation"
+import "github.com/datadog/dd-trace-go/dyngo/internal/operation"
 
 // Product is a component that is interested in listening to one or more
 // domain's operation & data events.

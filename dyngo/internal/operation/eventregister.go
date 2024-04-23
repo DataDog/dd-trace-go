@@ -8,7 +8,7 @@ package operation
 import (
 	"sync"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"github.com/datadog/dd-trace-go/dyngo/log"
 )
 
 type (
@@ -42,22 +42,62 @@ func addEventListener[O Operation, T any](r *eventRegister, l EventListener[O, T
 	}
 }
 
+type (
+	EmitOrder            bool
+	orderIterator[T any] func() (T, bool)
+)
+
+const (
+	EmitOrderNatural EmitOrder = false // Emit in registration order
+	EmitOrderReverse EmitOrder = true  // Emit in reversed registration order
+)
+
+func iterator[T any](order EmitOrder, items []T) orderIterator[T] {
+	switch order {
+	case EmitOrderNatural:
+		nextIdx := 0
+		return func() (item T, end bool) {
+			if end = nextIdx >= len(items); !end {
+				item = items[nextIdx]
+				nextIdx++
+			}
+			return
+		}
+	case EmitOrderReverse:
+		nextIdx := len(items) - 1
+		return func() (item T, end bool) {
+			if end = nextIdx < 0; !end {
+				item = items[nextIdx]
+				nextIdx--
+			}
+			return
+		}
+	default:
+		panic("unreachable")
+	}
+}
+
 // emitEvent propagates the provided value to all listeners registered for its
 // type up the provided operation's stack. If any of the listeners causes a
 // panic, event propagation is aborted by the panic is intercepted and
 // swallowed.
-func emitEvent[O Operation, T any](r *eventRegister, op O, v T) {
+func emitEvent[O Operation, T any](r *eventRegister, op O, v T, order EmitOrder) {
 	defer func() {
 		if r := recover(); r != nil {
-			log.Error("appsec: recovered from an unexpected panic from an event listener: %+v", r)
+			log.Errorf("appsec: recovered from an unexpected panic from an event listener: %+v\n", r)
 		}
 	}()
 
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
-	for _, listener := range r.listeners[typeID[EventListener[O, T]]{}] {
-		listener.(EventListener[O, T])(op, v)
+	next := iterator(order, r.listeners[typeID[EventListener[O, T]]{}])
+	for {
+		if listener, end := next(); !end {
+			listener.(EventListener[O, T])(op, v)
+		} else {
+			break
+		}
 	}
 }
 

@@ -42,16 +42,19 @@ func (m *TagsHolder) SetTag(k string, v any) {
 
 // AddSerializableTag adds the key/value pair to the tags map. Value is serialized as JSON.
 func (m *TagsHolder) AddSerializableTag(k string, v any) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.tags[k] = serializableTag{tag: v}
+	m.SetTag(k, serializableTag{tag: v})
 }
 
 // Tags returns a copy of the aggregated tags map (normal and serialized)
 func (m *TagsHolder) Tags() map[string]any {
-	tags := make(map[string]any, len(m.tags))
 	m.mu.RLock()
 	defer m.mu.RUnlock()
+
+	if len(m.tags) == 0 {
+		return nil
+	}
+
+	tags := make(map[string]any, len(m.tags))
 	for k, v := range m.tags {
 		tags[k] = v
 		marshaler, ok := v.(serializableTag)

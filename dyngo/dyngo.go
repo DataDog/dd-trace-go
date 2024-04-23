@@ -18,8 +18,8 @@
 package dyngo
 
 import (
-	"gopkg.in/DataDog/dd-trace-go.v1/dyngo/internal/domainstate"
-	"gopkg.in/DataDog/dd-trace-go.v1/dyngo/internal/operation"
+	"github.com/datadog/dd-trace-go/dyngo/internal/domainstate"
+	"github.com/datadog/dd-trace-go/dyngo/internal/operation"
 )
 
 type (

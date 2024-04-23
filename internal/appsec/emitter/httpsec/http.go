@@ -17,10 +17,11 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/datadog/dd-trace-go/dyngo"
+	"github.com/datadog/dd-trace-go/dyngo/domain"
+	"github.com/datadog/dd-trace-go/dyngo/event/httpevent"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
-	"gopkg.in/DataDog/dd-trace-go.v1/dyngo"
-	"gopkg.in/DataDog/dd-trace-go.v1/dyngo/domain"
-	"gopkg.in/DataDog/dd-trace-go.v1/dyngo/event/httpevent"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/sharedsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/trace"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/trace/httptrace"
@@ -56,21 +57,28 @@ func WrapHandler(handler http.Handler, span ddtrace.Span, pathParams map[string]
 		var bypassHandler http.Handler
 		var blocking bool
 		args := MakeHandlerOperationArgs(r, clientIP, pathParams)
+		var events []any
 		ctx, op := httpevent.StartHandlerOperation(r.Context(), args, func(op *httpevent.HandlerOperation) {
 			dyngo.OnData(op, func(a *sharedsec.Action) {
 				bypassHandler = a.HTTP()
 				blocking = a.Blocking()
 			})
+			dyngo.OnData(op, func(e sharedsec.SecurityEvent) {
+				events = append(events, e.Event)
+			})
 		})
 		r = r.WithContext(ctx)
 
 		defer func() {
-			events := op.Finish(MakeHandlerOperationRes(w))
+			op.Finish(MakeHandlerOperationRes(w))
+			span, hasSpan := tracer.SpanFromContext(r.Context())
 
 			// Execute the onBlock functions to make sure blocking works properly
 			// in case we are instrumenting the Gin framework
 			if blocking {
-				op.SetTag(trace.BlockedRequestTag, true)
+				if hasSpan {
+					span.SetTag(trace.BlockedRequestTag, true)
+				}
 				for _, f := range opts.OnBlock {
 					f()
 				}
@@ -80,14 +88,16 @@ func WrapHandler(handler http.Handler, span ddtrace.Span, pathParams map[string]
 				bypassHandler.ServeHTTP(w, r)
 			}
 
-			// Add the request headers span tags out of args.Headers instead of r.Header as it was normalized and some
-			// extra headers have been added such as the Host header which is removed from the original Go request headers
-			// map
-			setRequestHeadersTags(span, args.Headers)
-			setResponseHeadersTags(span, opts.ResponseHeaderCopier(w))
-			trace.SetTags(span, op.Tags())
-			if len(events) > 0 {
-				httptrace.SetSecurityEventsTags(span, events)
+			if hasSpan {
+				// Add the request headers span tags out of args.Headers instead of r.Header as it was normalized and some
+				// extra headers have been added such as the Host header which is removed from the original Go request headers
+				// map
+				setRequestHeadersTags(span, args.Headers)
+				setResponseHeadersTags(span, opts.ResponseHeaderCopier(w))
+				// TODO: trace.SetTags(span, op.Tags())
+				if len(events) > 0 {
+					httptrace.SetSecurityEventsTags(span, events)
+				}
 			}
 		}()
 

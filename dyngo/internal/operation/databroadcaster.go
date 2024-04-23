@@ -8,7 +8,7 @@ package operation
 import (
 	"sync"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"github.com/datadog/dd-trace-go/dyngo/log"
 )
 
 type (
@@ -43,7 +43,7 @@ func addDataListener[T any](b *dataBroadcaster, l DataListener[T]) {
 func emitData[T any](b *dataBroadcaster, v T) {
 	defer func() {
 		if r := recover(); r != nil {
-			log.Error("appsec: recovered from an unexpected panic from an event listener: %+v", r)
+			log.Errorf("appsec: recovered from an unexpected panic from an event listener: %+v\n", r)
 		}
 	}()
 

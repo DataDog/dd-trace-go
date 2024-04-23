@@ -10,9 +10,9 @@ import (
 	"fmt"
 	"testing"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/dyngo"
-	"gopkg.in/DataDog/dd-trace-go.v1/dyngo/event/grpcevent"
-	"gopkg.in/DataDog/dd-trace-go.v1/dyngo/internal/operation"
+	"github.com/datadog/dd-trace-go/dyngo"
+	"github.com/datadog/dd-trace-go/dyngo/event/grpcevent"
+	"github.com/datadog/dd-trace-go/dyngo/internal/operation"
 
 	"github.com/stretchr/testify/require"
 )
@@ -41,6 +41,7 @@ func TestUsage(t *testing.T) {
 			}()
 
 			const expectedMessageFormat = "message number %d"
+			var secEvents []any
 
 			dyngo.On(localRootOp, func(handlerOp *grpcevent.HandlerOperation, args grpcevent.HandlerOperationArgs) {
 				handlerStarted++
@@ -53,7 +54,7 @@ func TestUsage(t *testing.T) {
 						require.Equal(t, expectedMessage, res.Message)
 						recvFinished++
 
-						handlerOp.AddSecurityEvents([]any{expectedMessage})
+						secEvents = append(secEvents, expectedMessage)
 					})
 				})
 
@@ -67,7 +68,7 @@ func TestUsage(t *testing.T) {
 				recvOp.Finish(grpcevent.ReceiveOperationRes{Message: fmt.Sprintf(expectedMessageFormat, i)})
 			}
 
-			secEvents := rpcOp.Finish(grpcevent.HandlerOperationRes{})
+			rpcOp.Finish(grpcevent.HandlerOperationRes{})
 
 			require.Len(t, secEvents, expectedRecvOperation)
 			for i, e := range secEvents {

@@ -9,9 +9,9 @@ import (
 	"context"
 	"errors"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/dyngo/internal/opcontext"
-	"gopkg.in/DataDog/dd-trace-go.v1/dyngo/internal/operation"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"github.com/datadog/dd-trace-go/dyngo/internal/opcontext"
+	"github.com/datadog/dd-trace-go/dyngo/internal/operation"
+	"github.com/datadog/dd-trace-go/dyngo/log"
 )
 
 type (
@@ -49,7 +49,7 @@ func FireSDKBodyOperation(parent operation.Operation, args SDKBodyOperationArgs)
 func MonitorParsedBody(ctx context.Context, body any) error {
 	op := opcontext.Operation(ctx)
 	if op == nil {
-		log.Error("dyngo: parsed body monitoring ignored, no Operation was found in context. Either the current request is not being monitored, or the provided context is not correct.")
+		log.Errorf("dyngo: parsed body monitoring ignored, no Operation was found in context. Either the current request is not being monitored, or the provided context is not correct.\n")
 		return nil
 	}
 	return FireSDKBodyOperation(op, SDKBodyOperationArgs{Body: body})

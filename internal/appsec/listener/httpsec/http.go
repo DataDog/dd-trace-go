@@ -12,14 +12,16 @@ import (
 
 	"github.com/DataDog/appsec-internal-go/limiter"
 	waf "github.com/DataDog/go-libddwaf/v2"
+	"github.com/datadog/dd-trace-go/dyngo"
+	"github.com/datadog/dd-trace-go/dyngo/event/businessevent"
+	"github.com/datadog/dd-trace-go/dyngo/event/httpevent"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/dyngo"
-	"gopkg.in/DataDog/dd-trace-go.v1/dyngo/event/businessevent"
-	"gopkg.in/DataDog/dd-trace-go.v1/dyngo/event/httpevent"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/config"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/sharedsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener"
 	shared "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener/sharedsec"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/trace"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/samplernames"
 )
@@ -127,6 +129,8 @@ func (l *wafEventListener) onEvent(op *httpevent.HandlerOperation, args httpeven
 		return
 	}
 
+	var handlerEvents trace.SecurityEventsHolder
+
 	if _, ok := l.addresses[UserIDAddr]; ok {
 		// OnUserIDOperationStart happens when appsec.SetUser() is called. We run the WAF and apply actions to
 		// see if the associated user should be blocked. Since we don't control the execution flow in this case
@@ -135,7 +139,7 @@ func (l *wafEventListener) onEvent(op *httpevent.HandlerOperation, args httpeven
 			wafResult := shared.RunWAF(wafCtx, waf.RunAddressData{Persistent: map[string]any{UserIDAddr: args.UserID}}, l.config.WAFTimeout)
 			if wafResult.HasActions() || wafResult.HasEvents() {
 				processHTTPSDKAction(operation, l.actions, wafResult.Actions)
-				shared.AddSecurityEvents(op, l.limiter, wafResult.Events)
+				shared.AddSecurityEvents(&handlerEvents, l.limiter, wafResult.Events)
 				log.Debug("appsec: WAF detected a suspicious user: %s", args.UserID)
 			}
 		})
@@ -176,13 +180,15 @@ func (l *wafEventListener) onEvent(op *httpevent.HandlerOperation, args httpeven
 		values["waf.context.processor"] = map[string]any{"extract-schema": true}
 	}
 
+	tags := trace.NewTagsHolder()
+
 	wafResult := shared.RunWAF(wafCtx, waf.RunAddressData{Persistent: values}, l.config.WAFTimeout)
 	for tag, value := range wafResult.Derivatives {
-		op.AddSerializableTag(tag, value)
+		tags.AddSerializableTag(tag, value)
 	}
 	if wafResult.HasActions() || wafResult.HasEvents() {
 		interrupt := shared.ProcessActions(op, l.actions, wafResult.Actions)
-		shared.AddSecurityEvents(op, l.limiter, wafResult.Events)
+		shared.AddSecurityEvents(&handlerEvents, l.limiter, wafResult.Events)
 		log.Debug("appsec: WAF detected an attack before executing the request")
 		if interrupt {
 			wafCtx.Close()
@@ -194,11 +200,11 @@ func (l *wafEventListener) onEvent(op *httpevent.HandlerOperation, args httpeven
 		dyngo.On(op, func(sdkBodyOp *httpevent.SDKBodyOperation, args httpevent.SDKBodyOperationArgs) {
 			wafResult := shared.RunWAF(wafCtx, waf.RunAddressData{Persistent: map[string]any{ServerRequestBodyAddr: args.Body}}, l.config.WAFTimeout)
 			for tag, value := range wafResult.Derivatives {
-				op.AddSerializableTag(tag, value)
+				tags.AddSerializableTag(tag, value)
 			}
 			if wafResult.HasActions() || wafResult.HasEvents() {
 				processHTTPSDKAction(sdkBodyOp, l.actions, wafResult.Actions)
-				shared.AddSecurityEvents(op, l.limiter, wafResult.Events)
+				shared.AddSecurityEvents(&handlerEvents, l.limiter, wafResult.Events)
 				log.Debug("appsec: WAF detected a suspicious request body")
 			}
 		})
@@ -222,21 +228,25 @@ func (l *wafEventListener) onEvent(op *httpevent.HandlerOperation, args httpeven
 		wafResult := shared.RunWAF(wafCtx, waf.RunAddressData{Persistent: values}, l.config.WAFTimeout)
 
 		// Add WAF metrics.
-		shared.AddWAFMonitoringTags(op, l.wafDiags.Version, wafCtx.Stats().Metrics())
+		shared.AddWAFMonitoringTags(&tags, l.wafDiags.Version, wafCtx.Stats().Metrics())
 
 		// Add the following metrics once per instantiation of a WAF handle
 		l.once.Do(func() {
-			shared.AddRulesMonitoringTags(op, &l.wafDiags)
-			op.SetTag(ext.ManualKeep, samplernames.AppSec)
+			shared.AddRulesMonitoringTags(&tags, &l.wafDiags)
+			tags.SetTag(ext.ManualKeep, samplernames.AppSec)
 		})
 
 		// Log the attacks if any
 		if wafResult.HasEvents() {
 			log.Debug("appsec: attack detected by the waf")
-			shared.AddSecurityEvents(op, l.limiter, wafResult.Events)
+			shared.AddSecurityEvents(&handlerEvents, l.limiter, wafResult.Events)
 		}
 		for tag, value := range wafResult.Derivatives {
-			op.AddSerializableTag(tag, value)
+			tags.AddSerializableTag(tag, value)
+		}
+
+		if span, hasSpan := tracer.SpanFromContext(op); hasSpan {
+			trace.SetTags(span, tags.Tags())
 		}
 	})
 }

@@ -8,9 +8,8 @@ package graphqlevent
 import (
 	"context"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/dyngo/internal/opcontext"
-	"gopkg.in/DataDog/dd-trace-go.v1/dyngo/internal/operation"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/trace"
+	"github.com/datadog/dd-trace-go/dyngo/internal/opcontext"
+	"github.com/datadog/dd-trace-go/dyngo/internal/operation"
 )
 
 type (
@@ -19,8 +18,6 @@ type (
 	// fulfill a GraphQL request.
 	ExecutionOperation struct {
 		operation.Operation
-		trace.TagSetter
-		trace.SecurityEventsHolder
 	}
 
 	// ExecutionOperationArgs describes arguments passed to a GraphQL query operation.
@@ -44,25 +41,15 @@ type (
 func StartExecutionOperation(
 	ctx context.Context,
 	parent *RequestOperation,
-	span trace.TagSetter,
 	args ExecutionOperationArgs,
 ) (context.Context, *ExecutionOperation) {
-	if span == nil {
-		// The span may be nil (e.g, GraphQL subscriptions are not traced by some contribs)
-		span = trace.NoopTagSetter{}
-	}
-
 	if parent == nil {
 		parent = opcontext.OperationOfType[*RequestOperation](ctx)
 	}
 
-	op := &ExecutionOperation{
-		Operation: operation.New(parent),
-		TagSetter: span,
-	}
-	ctx = opcontext.WithOperation(ctx, op)
+	op := &ExecutionOperation{operation.New(parent)}
 	operation.Start(op, args)
-	return ctx, op
+	return opcontext.WithOperation(ctx, op), op
 }
 
 // Finish the GraphQL execution operation with the given results.

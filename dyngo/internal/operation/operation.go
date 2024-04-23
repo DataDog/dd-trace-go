@@ -115,7 +115,7 @@ func OnData[T any](op Operation, l DataListener[T]) {
 
 func Start[O Operation, E ArgOf[O]](op O, args E) {
 	for current := op.unwrap().parent; current != nil; current = current.parent {
-		emitEvent(&current.eventRegister, op, args)
+		emitEvent(&current.eventRegister, op, args, EmitOrderNatural)
 	}
 }
 
@@ -151,7 +151,7 @@ func Finish[O Operation, E ResultOf[O]](op O, results E) {
 	}
 
 	for current := o; current != nil; current = current.parent {
-		emitEvent(&current.eventRegister, op, results)
+		emitEvent(&current.eventRegister, op, results, EmitOrderReverse)
 	}
 }
 

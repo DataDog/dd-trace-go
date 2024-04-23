@@ -63,6 +63,10 @@ type (
 	//    Such constructors would receive the full appsec config and rules, so that they would be able to build
 	//    specific blocking actions.
 	GRPCWrapper func(map[string][]string) (uint32, error)
+
+	SecurityEvent struct {
+		Event any
+	}
 )
 
 // Blocking returns true if the action object represents a request blocking action

@@ -8,9 +8,9 @@ package grpc
 import (
 	"context"
 
+	"github.com/datadog/dd-trace-go/dyngo"
+	"github.com/datadog/dd-trace-go/dyngo/event/grpcevent"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
-	"gopkg.in/DataDog/dd-trace-go.v1/dyngo"
-	"gopkg.in/DataDog/dd-trace-go.v1/dyngo/event/grpcevent"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/sharedsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/trace"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/trace/grpctrace"
@@ -39,20 +39,24 @@ func appsecUnaryHandlerMiddleware(method string, span ddtrace.Span, handler grpc
 			Metadata: md,
 			ClientIP: clientIP,
 		}
+		var events []any
 		ctx, op := grpcevent.StartHandlerOperation(ctx, nil, args, func(op *grpcevent.HandlerOperation) {
 			dyngo.OnData(op, func(a *sharedsec.Action) {
 				code, e := a.GRPC()(md)
 				blocked = a.Blocking()
 				err = status.Error(codes.Code(code), e.Error())
 			})
+			dyngo.OnData(op, func(e sharedsec.SecurityEvent) {
+				events = append(events, e.Event)
+			})
 		})
 		defer func() {
-			events := op.Finish(grpcevent.HandlerOperationRes{})
+			op.Finish(grpcevent.HandlerOperationRes{})
 			if blocked {
-				op.SetTag(trace.BlockedRequestTag, true)
+				span.SetTag(trace.BlockedRequestTag, true)
 			}
 			grpctrace.SetRequestMetadataTags(span, md)
-			trace.SetTags(span, op.Tags())
+			//TODO: trace.SetTags(span, op.Tags())
 			if len(events) > 0 {
 				grpctrace.SetSecurityEventsTags(span, events)
 			}
@@ -86,11 +90,15 @@ func appsecStreamHandlerMiddleware(method string, span ddtrace.Span, handler grp
 			Metadata: md,
 			ClientIP: clientIP,
 		}
+		var securityEvents []any
 		ctx, op := grpcevent.StartHandlerOperation(ctx, nil, args, func(op *grpcevent.HandlerOperation) {
 			dyngo.OnData(op, func(a *sharedsec.Action) {
 				code, e := a.GRPC()(md)
 				blocked = a.Blocking()
 				err = status.Error(codes.Code(code), e.Error())
+			})
+			dyngo.OnData(op, func(e sharedsec.SecurityEvent) {
+				securityEvents = append(securityEvents, e.Event)
 			})
 		})
 		stream = appsecServerStream{
@@ -99,13 +107,13 @@ func appsecStreamHandlerMiddleware(method string, span ddtrace.Span, handler grp
 			ctx:              ctx,
 		}
 		defer func() {
-			events := op.Finish(grpcevent.HandlerOperationRes{})
+			op.Finish(grpcevent.HandlerOperationRes{})
 			if blocked {
-				op.SetTag(trace.BlockedRequestTag, true)
+				span.SetTag(trace.BlockedRequestTag, true)
 			}
-			trace.SetTags(span, op.Tags())
-			if len(events) > 0 {
-				grpctrace.SetSecurityEventsTags(span, events)
+			//TODO: trace.SetTags(span, op.Tags())
+			if len(securityEvents) > 0 {
+				grpctrace.SetSecurityEventsTags(span, securityEvents)
 			}
 		}()
 

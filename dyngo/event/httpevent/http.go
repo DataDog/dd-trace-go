@@ -9,20 +9,16 @@ package httpevent
 import (
 	"context"
 	"net/netip"
-	"sync"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/dyngo/internal/opcontext"
-	"gopkg.in/DataDog/dd-trace-go.v1/dyngo/internal/operation"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/trace"
+	"github.com/datadog/dd-trace-go/dyngo/internal/opcontext"
+	"github.com/datadog/dd-trace-go/dyngo/internal/operation"
 )
 
 type (
 	// HandlerOperation represents a HTTP handler operation.
 	HandlerOperation struct {
 		operation.Operation
-		trace.TagsHolder
-		trace.SecurityEventsHolder
-		mu sync.Mutex
+		context.Context
 	}
 
 	// HandlerOperationArgs is the HTTP handler operation arguments.
@@ -50,22 +46,17 @@ func StartHandlerOperation(
 	args HandlerOperationArgs,
 	setup ...func(*HandlerOperation),
 ) (context.Context, *HandlerOperation) {
-	op := &HandlerOperation{
-		Operation:  operation.New(nil),
-		TagsHolder: trace.NewTagsHolder(),
-	}
-	ctx = opcontext.WithOperation(ctx, op)
+	op := &HandlerOperation{Operation: operation.New(nil), Context: ctx}
 	for _, fn := range setup {
 		fn(op)
 	}
 	operation.Start(op, args)
-	return ctx, op
+	return opcontext.WithOperation(ctx, op), op
 }
 
 // Finish finishes the receiving HTTP handler operation.
-func (op *HandlerOperation) Finish(res HandlerOperationRes) []any {
+func (op *HandlerOperation) Finish(res HandlerOperationRes) {
 	operation.Finish(op, res)
-	return op.Events()
 }
 
 func (HandlerOperationArgs) IsArgOf(*HandlerOperation)   {}

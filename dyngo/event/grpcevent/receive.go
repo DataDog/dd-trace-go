@@ -5,7 +5,7 @@
 
 package grpcevent
 
-import "gopkg.in/DataDog/dd-trace-go.v1/dyngo/internal/operation"
+import "github.com/datadog/dd-trace-go/dyngo/internal/operation"
 
 type (
 	// ReceiveOperation represents a gRPC server handler operation.

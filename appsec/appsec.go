@@ -15,11 +15,11 @@ import (
 	"context"
 	"sync"
 
+	"github.com/datadog/dd-trace-go/dyngo/domain"
+	"github.com/datadog/dd-trace-go/dyngo/event/businessevent"
+	"github.com/datadog/dd-trace-go/dyngo/event/httpevent"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/dyngo/domain"
-	"gopkg.in/DataDog/dd-trace-go.v1/dyngo/event/businessevent"
-	"gopkg.in/DataDog/dd-trace-go.v1/dyngo/event/httpevent"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )

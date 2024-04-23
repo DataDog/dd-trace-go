@@ -8,17 +8,15 @@ package graphqlevent
 import (
 	"context"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/dyngo/internal/opcontext"
-	"gopkg.in/DataDog/dd-trace-go.v1/dyngo/internal/operation"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/trace"
+	"github.com/datadog/dd-trace-go/dyngo/internal/opcontext"
+	"github.com/datadog/dd-trace-go/dyngo/internal/operation"
 )
 
 type (
 	// RequestOperation represents the execution of a single GraphQL resolver.
 	ResolveOperation struct {
 		operation.Operation
-		trace.TagSetter
-		trace.SecurityEventsHolder
+		context.Context
 	}
 
 	// ResolveOperationArgs describes arguments passed to a GraphQL resolver operation.
@@ -43,20 +41,16 @@ type (
 func StartResolveOperation(
 	ctx context.Context,
 	parent *ExecutionOperation,
-	span trace.TagSetter,
 	args ResolveOperationArgs,
 ) (context.Context, *ResolveOperation) {
 	if parent == nil {
 		parent = opcontext.OperationOfType[*ExecutionOperation](ctx)
 	}
 
-	op := &ResolveOperation{
-		Operation: operation.New(parent),
-		TagSetter: span,
-	}
-	ctx = opcontext.WithOperation(ctx, op)
+	op := &ResolveOperation{Operation: operation.New(parent), Context: ctx}
+
 	operation.Start(op, args)
-	return ctx, op
+	return opcontext.WithOperation(ctx, op), op
 }
 
 // Finish finishes the GraphQL resolve operation with the provided results.
