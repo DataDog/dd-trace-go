@@ -686,7 +686,7 @@ func newSingleSpanRateLimiter(mps float64) *rateLimiter {
 // globMatch compiles pattern string into glob format, i.e. regular expressions with only '?'
 // and '*' treated as regex metacharacters.
 func globMatch(pattern string) *regexp.Regexp {
-	if pattern == "" || pattern == "*" {
+	if pattern == "" || strings.Trim(pattern, "*") == "" {
 		return nil
 	}
 	// escaping regex characters

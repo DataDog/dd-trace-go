@@ -541,6 +541,7 @@ func TestRulesSampler(t *testing.T) {
 			{TagsResourceRule(map[string]string{"hostname": "hn-*"}, "", "", "", 1.0)},
 			{TagsResourceRule(map[string]string{"hostname": "hn-3*"}, "res-1*", "", "", 1.0)},
 			{TagsResourceRule(map[string]string{"hostname": "hn-*"}, "", "", "", 1.0)},
+			{TagsResourceRule(map[string]string{"hostname": "hn-*", "tag": "**"}, "", "", "", 1.0)},
 		}
 		for _, v := range traceRules {
 			t.Run("", func(t *testing.T) {
@@ -548,6 +549,7 @@ func TestRulesSampler(t *testing.T) {
 				rs := newRulesSampler(v, nil, globalSampleRate())
 
 				span := makeSpan("http.request", "test-service")
+				span.setMetric("tag", -0.5)
 				result := rs.SampleTrace(span)
 				assert.True(result)
 				assert.Equal(1.0, span.Metrics[keyRulesSamplerAppliedRate])
@@ -717,7 +719,7 @@ func TestRulesSampler(t *testing.T) {
 				spanName: "abcde",
 			},
 			{
-				rules:    []SamplingRule{SpanTagsResourceRule(map[string]string{"hostname": "hn*", "tier": "*"}, "", "abc*", "test*", 1.0)},
+				rules:    []SamplingRule{SpanTagsResourceRule(map[string]string{"hostname": "hn*", "negative": "*", "tier": "*"}, "", "abc*", "test*", 1.0)},
 				spanSrv:  "test-service",
 				spanName: "abcde",
 			},
@@ -745,6 +747,7 @@ func TestRulesSampler(t *testing.T) {
 				span := makeFinishedSpan(tt.spanName, tt.spanSrv, "res-10", map[string]interface{}{"hostname": "hn-30",
 					"tag":        20.1,
 					"tier":       209,
+					"negative":   -0.5,
 					"shall-pass": true,
 				})
 				result := rs.SampleSpan(span)
