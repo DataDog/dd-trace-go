@@ -11,23 +11,33 @@ import (
 )
 
 type (
+	// ActionEntry represents an entry in the actions field of a rules file
 	ActionEntry[T any] struct {
 		ID         string `json:"id"`
 		Type       string `json:"type"`
 		Parameters T      `json:"parameters"`
 	}
 
+	// BlockActionParams are the dynamic parameters to be provided to a "block_request"
+	// action type upon invocation
 	BlockActionParams struct {
 		GRPCStatusCode *int   `json:"grpc_status_code,omitempty"`
 		StatusCode     int    `json:"status_code"`
 		Type           string `json:"type,omitempty"`
 	}
+	// RedirectActionParams are the dynamic parameters to be provided to a "redirect_request"
+	// action type upon invocation
 	RedirectActionParams struct {
 		Location   string `json:"location,omitempty"`
 		StatusCode int    `json:"status_code"`
 	}
 )
 
+// BlockParamsFromMap fills a BlockActionParams struct from the the map returned by the WAF
+// for a "block_request" action type. This map currently maps all param values to string which
+// is why we first peform a decoding to string, before converting.
+// Future WAF version may get rid of this string-only mapping, which would in turn make this process
+// a lot simpler
 func BlockParamsFromMap(params map[string]any) (BlockActionParams, error) {
 	type blockActionParams struct {
 		GRPCStatusCode string `json:"grpc_status_code,omitempty"`
@@ -64,6 +74,12 @@ func BlockParamsFromMap(params map[string]any) (BlockActionParams, error) {
 	return p, err
 
 }
+
+// RedirectParamsFromMap fills a RedirectActionParams struct from the the map returned by the WAF
+// for a "redirect_request" action type. This map currently maps all param values to string which
+// is why we first peform a decoding to string, before converting.
+// Future WAF version may get rid of this string-only mapping, which would in turn make this process
+// a lot simpler
 func RedirectParamsFromMap(params map[string]any) (RedirectActionParams, error) {
 	type redirectActionParams struct {
 		Location   string `json:"location,omitempty"`
