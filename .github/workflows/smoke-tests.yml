@@ -8,7 +8,7 @@ on:
         required: true
         type: string
       go-libddwaf-ref:
-        description: A git ref to update github.com/DataDog/go-libddwaf/v2 to. No-op if empty.
+        description: A git ref to update github.com/DataDog/go-libddwaf/v3 to. No-op if empty.
         required: false
         type: string
   push:
@@ -57,7 +57,7 @@ jobs:
       - name: Install requested go-libddwaf version
         if: github.event_name == 'workflow_call' && inputs.go-libddwaf-ref != ''
         run: |-
-          go get -u -t github.com/DataDog/go-libddwaf/v2@${{ inputs.go-libddwaf-ref }}
+          go get -u -t github.com/DataDog/go-libddwaf/v3@${{ inputs.go-libddwaf-ref }}
           go mod tidy
       - name: Compile dd-trace-go
         run: go build $PACKAGES
