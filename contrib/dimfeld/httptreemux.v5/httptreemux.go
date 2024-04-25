@@ -159,8 +159,6 @@ func getRoute(router *httptreemux.TreeMux, w http.ResponseWriter, req *http.Requ
 }
 
 // isSupportedRedirectStatus checks if the given HTTP status code is a supported redirect status.
-// It returns true if the status code is either StatusMovedPermanently, StatusTemporaryRedirect, or StatusPermanentRedirect.
-// Otherwise, it returns false.
 func isSupportedRedirectStatus(status int) bool {
 	return status == http.StatusMovedPermanently ||
 		status == http.StatusTemporaryRedirect ||
@@ -168,9 +166,6 @@ func isSupportedRedirectStatus(status int) bool {
 }
 
 // routerRedirectEnabled checks if the redirection is enabled on the router.
-// It returns true if either RedirectCleanPath or RedirectTrailingSlash is enabled,
-// and the RedirectBehavior is not set to UseHandler. Otherwise, it returns false.
-// This function is used to determine whether to perform redirections based on the router's configuration.
 func routerRedirectEnabled(router *httptreemux.TreeMux) bool {
 	return (router.RedirectCleanPath || router.RedirectTrailingSlash) &&
 		router.RedirectBehavior != httptreemux.UseHandler
