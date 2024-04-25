@@ -301,7 +301,7 @@ func TestTrailingSlashRoutesWithBehaviorRedirect301(t *testing.T) {
 		s := spans[0]
 		assert.Equal("http.request", s.OperationName())
 		assert.Equal("my-service", s.Tag(ext.ServiceName))
-		assert.Equal("GET /api/:parameter", s.Tag(ext.ResourceName))
+		assert.Equal("GET /api/:parameter/", s.Tag(ext.ResourceName))
 		assert.Equal("301", s.Tag(ext.HTTPCode))
 		assert.Equal("GET", s.Tag(ext.HTTPMethod))
 		assert.Equal("http://example.com/api/paramvalue/", s.Tag(ext.HTTPURL))
@@ -409,7 +409,7 @@ func TestTrailingSlashRoutesWithBehaviorRedirect307(t *testing.T) {
 		s := spans[0]
 		assert.Equal("http.request", s.OperationName())
 		assert.Equal("my-service", s.Tag(ext.ServiceName))
-		assert.Equal("GET /api/:parameter", s.Tag(ext.ResourceName))
+		assert.Equal("GET /api/:parameter/", s.Tag(ext.ResourceName))
 		assert.Equal("307", s.Tag(ext.HTTPCode))
 		assert.Equal("GET", s.Tag(ext.HTTPMethod))
 		assert.Equal("http://example.com/api/paramvalue/", s.Tag(ext.HTTPURL))
@@ -517,7 +517,7 @@ func TestTrailingSlashRoutesWithBehaviorRedirect308(t *testing.T) {
 		s := spans[0]
 		assert.Equal("http.request", s.OperationName())
 		assert.Equal("my-service", s.Tag(ext.ServiceName))
-		assert.Equal("GET /api/:parameter", s.Tag(ext.ResourceName))
+		assert.Equal("GET /api/:parameter/", s.Tag(ext.ResourceName))
 		assert.Equal("308", s.Tag(ext.HTTPCode))
 		assert.Equal("GET", s.Tag(ext.HTTPMethod))
 		assert.Equal("http://example.com/api/paramvalue/", s.Tag(ext.HTTPURL))
@@ -625,7 +625,7 @@ func TestTrailingSlashRoutesWithBehaviorUseHandler(t *testing.T) {
 		s := spans[0]
 		assert.Equal("http.request", s.OperationName())
 		assert.Equal("my-service", s.Tag(ext.ServiceName))
-		assert.Equal("GET /api/:parameter", s.Tag(ext.ResourceName))
+		assert.Equal("GET /api/:parameter/", s.Tag(ext.ResourceName))
 		assert.Equal("200", s.Tag(ext.HTTPCode))
 		assert.Equal("GET", s.Tag(ext.HTTPMethod))
 		assert.Equal("http://example.com/api/paramvalue/", s.Tag(ext.HTTPURL))

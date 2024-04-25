@@ -147,14 +147,6 @@ func getRoute(router *httptreemux.TreeMux, w http.ResponseWriter, req *http.Requ
 		newP = "/:" + k
 		route = strings.Replace(route, oldP, newP, 1)
 	}
-
-	// remove trailing slash from route to standardize returned value
-	// the router does not allow you to register two matching routes with the only difference being a trailing slash
-	// this only affects the resulting returned value and not the actual request URL set on tag http.url
-	if trailingSlash {
-		route = strings.TrimSuffix(route, "/")
-	}
-
 	return route, true
 }
 
