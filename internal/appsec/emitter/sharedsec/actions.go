@@ -110,24 +110,18 @@ func newGRPCBlockHandler(status int) GRPCWrapper {
 }
 
 // NewBlockAction creates an action for the "block_request" action type
-func NewBlockAction(params any) *Action {
-	p, ok := params.(actions.BlockActionParams)
-	if !ok {
-		// TODO: log
+func NewBlockAction(params map[string]any) *Action {
+	p, err := actions.BlockParamsFromMap(params)
+	if err != nil {
 		return nil
 	}
-	grpcCode := 10
-	if p.GRPCStatusCode != nil {
-		grpcCode = *p.GRPCStatusCode
-	}
-	return newBlockRequestAction(p.StatusCode, grpcCode, p.Type)
+	return newBlockRequestAction(p.StatusCode, *p.GRPCStatusCode, p.Type)
 }
 
 // NewRedirectAction creates an action for the "redirect_request" action type
-func NewRedirectAction(params any) *Action {
-	p, ok := params.(actions.RedirectActionParams)
-	if !ok {
-		//TODO: log
+func NewRedirectAction(params map[string]any) *Action {
+	p, err := actions.RedirectParamsFromMap(params)
+	if err != nil {
 		return nil
 	}
 	return newRedirectRequestAction(p.StatusCode, p.Location)
