@@ -93,11 +93,15 @@ func ProcessActions(op dyngo.Operation, actions map[string]any) (interrupt bool)
 }
 
 func ActionFromEntry(actionType string, params any) *sharedsec.Action {
+	p, ok := params.(map[string]any)
+	if !ok {
+		return nil
+	}
 	switch actionType {
 	case "block_request":
-		return sharedsec.NewBlockAction(params)
+		return sharedsec.NewBlockAction(p)
 	case "redirect_request":
-		return sharedsec.NewRedirectAction(params)
+		return sharedsec.NewRedirectAction(p)
 	default:
 		log.Debug("appsec: unknown action type `%s`", actionType)
 		return nil
