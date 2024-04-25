@@ -52,12 +52,11 @@ func BlockParamsFromMap(params map[string]any) (BlockActionParams, error) {
 		strParams.GRPCStatusCode = "10"
 	}
 
-	if grpcCode, err := strconv.Atoi(strParams.GRPCStatusCode); err != nil {
-		return p, err
-	} else {
+	grpcCode, err := strconv.Atoi(strParams.GRPCStatusCode)
+	if err == nil {
 		p.GRPCStatusCode = &grpcCode
 	}
-	return p, nil
+	return p, err
 
 }
 func RedirectParamsFromMap(params map[string]any) (RedirectActionParams, error) {
