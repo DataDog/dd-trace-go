@@ -737,6 +737,7 @@ const (
 	keyDecisionMaker        = "_dd.p.dm"
 	keyServiceHash          = "_dd.dm.service_hash"
 	keyOrigin               = "_dd.origin"
+	keyReparentID           = "_dd.parent_id"
 	// keyHostname can be used to override the agent's hostname detection when using `WithHostname`. Not to be confused with keyTracerHostname
 	// which is set via auto-detection.
 	keyHostname                = "_dd.hostname"
