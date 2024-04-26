@@ -751,7 +751,20 @@ func (*propagatorW3c) injectTextMap(spanCtx ddtrace.SpanContext, writer TextMapW
 		}
 	}
 	writer.Set(traceparentHeader, fmt.Sprintf("00-%s-%016x-%v", traceID, ctx.spanID, flags))
-	writer.Set(tracestateHeader, composeTracestate(ctx, p, ctx.trace.propagatingTag(tracestateHeader)))
+	// if context priority / origin / tags were updated after extraction,
+	// or if there is a span on the trace
+	// or the tracestateHeader doesn't start with `dd=`
+	// we need to recreate tracestate
+	if ctx.updated ||
+		(!ctx.isRemote || ctx.isRemote && ctx.trace != nil && ctx.trace.root != nil) ||
+		(ctx.trace != nil && !strings.HasPrefix(ctx.trace.propagatingTag(tracestateHeader), "dd=")) ||
+		ctx.trace.propagatingTagsLen() == 0 {
+		// compose a new value for the tracestate
+		writer.Set(tracestateHeader, composeTracestate(ctx, p, ctx.trace.propagatingTag(tracestateHeader)))
+	} else {
+		// use a cached value for the tracestate (e.g., no updating p: key)
+		writer.Set(tracestateHeader, ctx.trace.propagatingTag(tracestateHeader))
+	}
 	return nil
 }
 
