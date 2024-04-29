@@ -169,7 +169,7 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 		telemetryClient.AssertNumberOfCalls(t, "ConfigChange", 1)
 		telemetryClient.AssertCalled(t, "ConfigChange", []telemetry.Configuration{
 			{Name: "trace_sample_rate", Value: 0.5, Origin: "remote_config"},
-			{Name: "trace_sample_rules", Value: `[{"service":"my-service","name":"web.request","resource":"abc","sample_rate":1,"provenance":"customer"}]`, Origin: "remote_config"}})
+			{Name: "trace_sample_rules", Value: `[{"service":"my-service","name":"web.request","resource":"abc","sample_rate":1,"type":"1","provenance":"customer"}]`, Origin: "remote_config"}})
 	})
 
 	t.Run("DD_TRACE_SAMPLING_RULES=0.1 and RC rule rate=1.0 and revert", func(t *testing.T) {
@@ -239,12 +239,54 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 		telemetryClient.AssertCalled(t, "ConfigChange", []telemetry.Configuration{
 			{Name: "trace_sample_rate", Value: 0.5, Origin: "remote_config"},
 			{Name: "trace_sample_rules",
-				Value: `[{"service":"my-service","name":"web.request","resource":"abc","sample_rate":1,"provenance":"customer"} {"service":"my-service","name":"web.request","resource":"*","sample_rate":0.3,"provenance":"dynamic"}]`, Origin: "remote_config"},
+				Value: `[{"service":"my-service","name":"web.request","resource":"abc","sample_rate":1,"type":"1","provenance":"customer"} {"service":"my-service","name":"web.request","resource":"*","sample_rate":0.3,"type":"1","provenance":"dynamic"}]`, Origin: "remote_config"},
 		})
 		telemetryClient.AssertCalled(t, "ConfigChange", []telemetry.Configuration{
 			{Name: "trace_sample_rate", Value: nil, Origin: ""},
 			{Name: "trace_sample_rules", Value: `[{"service":"my-service","name":"web.request","resource":"*","sample_rate":0.1,"type":"1"}]`,
 				Origin: ""},
+		})
+	})
+
+	t.Run("RC rule with tags", func(t *testing.T) {
+		telemetryClient := new(telemetrytest.MockClient)
+		defer telemetry.MockGlobalClient(telemetryClient)()
+		tracer, _, _, stop := startTestTracer(t, WithService("my-service"), WithEnv("my-env"))
+		defer stop()
+
+		input := remoteconfig.ProductUpdate{
+			"path": []byte(`{"lib_config": {"tracing_sampling_rate": 0.5,
+			"tracing_sampling_rules": [{
+				"service": "my-service",
+				"name": "web.request",
+				"resource": "*",
+				"provenance": "customer",
+				"sample_rate": 1.0,
+				"tags": [{"key": "tag-a", "value_glob": "tv-a??"}]
+			}]}, 
+			"service_target": {"service": "my-service", "env": "my-env"}}`),
+		}
+		applyStatus := tracer.onRemoteConfigUpdate(input)
+		require.Equal(t, state.ApplyStateAcknowledged, applyStatus["path"].State)
+
+		// A span with matching tags gets the RC rule rate
+		s := tracer.StartSpan("web.request").(*span)
+		s.SetTag("tag-a", "tv-a11")
+		s.Finish()
+		require.Equal(t, 1.0, s.Metrics[keyRulesSamplerAppliedRate])
+		require.Equal(t, samplerToDM(samplernames.RemoteUserRule), s.context.trace.propagatingTags[keyDecisionMaker])
+
+		// A span with non-matching tags gets the global rate
+		s = tracer.StartSpan("web.request").(*span)
+		s.SetTag("tag-a", "not-matching")
+		s.Resource = "abc"
+		s.Finish()
+		require.Equal(t, 0.5, s.Metrics[keyRulesSamplerAppliedRate])
+
+		telemetryClient.AssertNumberOfCalls(t, "ConfigChange", 1)
+		telemetryClient.AssertCalled(t, "ConfigChange", []telemetry.Configuration{
+			{Name: "trace_sample_rate", Value: 0.5, Origin: "remote_config"},
+			{Name: "trace_sample_rules", Value: `[{"service":"my-service","name":"web.request","resource":"*","sample_rate":1,"tags":{"tag-a":"tv-a??"},"type":"1","provenance":"customer"}]`, Origin: "remote_config"},
 		})
 	})
 

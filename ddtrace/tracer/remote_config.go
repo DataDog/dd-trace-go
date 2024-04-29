@@ -32,11 +32,49 @@ type target struct {
 }
 
 type libConfig struct {
-	Enabled       *bool           `json:"tracing_enabled,omitempty"`
-	SamplingRate  *float64        `json:"tracing_sampling_rate,omitempty"`
-	SamplingRules *[]SamplingRule `json:"tracing_sampling_rules,omitempty"`
-	HeaderTags    *headerTags     `json:"tracing_header_tags,omitempty"`
-	Tags          *tags           `json:"tracing_tags,omitempty"`
+	Enabled       *bool             `json:"tracing_enabled,omitempty"`
+	SamplingRate  *float64          `json:"tracing_sampling_rate,omitempty"`
+	SamplingRules *[]rcSamplingRule `json:"tracing_sampling_rules,omitempty"`
+	HeaderTags    *headerTags       `json:"tracing_header_tags,omitempty"`
+	Tags          *tags             `json:"tracing_tags,omitempty"`
+}
+
+type rcTag struct {
+	Key       string `json:"key"`
+	ValueGlob string `json:"value_glob"`
+}
+
+// Sampling rules provided by the remote config define tags differently other than using a map.
+type rcSamplingRule struct {
+	Service    string     `json:"service"`
+	Provenance provenance `json:"provenance"`
+	Name       string     `json:"name,omitempty"`
+	Resource   string     `json:"resource"`
+	Tags       []rcTag    `json:"tags,omitempty"`
+	SampleRate float64    `json:"sample_rate"`
+}
+
+func convertRemoteSamplingRules(rules *[]rcSamplingRule) *[]SamplingRule {
+	if rules == nil {
+		return nil
+	}
+	var convertedRules []SamplingRule
+	for _, rule := range *rules {
+		if rule.Tags != nil && len(rule.Tags) != 0 {
+			tags := make(map[string]string, len(rule.Tags))
+			for _, tag := range rule.Tags {
+				tags[tag.Key] = tag.ValueGlob
+			}
+			x := TagsResourceRule(tags, rule.Resource, rule.Name, rule.Service, rule.SampleRate)
+			x.Provenance = rule.Provenance
+			convertedRules = append(convertedRules, x)
+		} else {
+			x := NameServiceResourceRule(rule.Name, rule.Service, rule.Resource, rule.SampleRate)
+			x.Provenance = rule.Provenance
+			convertedRules = append(convertedRules, x)
+		}
+	}
+	return &convertedRules
 }
 
 type headerTags []headerTag
@@ -155,7 +193,7 @@ func (t *tracer) onRemoteConfigUpdate(u remoteconfig.ProductUpdate) map[string]s
 		if updated {
 			telemConfigs = append(telemConfigs, t.config.traceSampleRate.toTelemetry())
 		}
-		updated = t.config.traceSampleRules.handleRC(c.LibConfig.SamplingRules)
+		updated = t.config.traceSampleRules.handleRC(convertRemoteSamplingRules(c.LibConfig.SamplingRules))
 		if updated {
 			telemConfigs = append(telemConfigs, t.config.traceSampleRules.toTelemetry())
 		}
