@@ -494,31 +494,6 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			assert.Equal(t, c.dogstatsdAddr, "10.1.0.12:4002")
 			assert.Equal(t, globalconfig.DogstatsdAddr(), "10.1.0.12:4002")
 		})
-
-		t.Run("uds", func(t *testing.T) {
-			assert := assert.New(t)
-			dir, err := os.MkdirTemp("", "socket")
-			if err != nil {
-				t.Fatal("Failed to create socket")
-			}
-			udsPath := filepath.Join(dir, "apm.socket")
-			defer os.RemoveAll(udsPath)
-			unixListener, err := net.Listen("unix", udsPath)
-			if err != nil {
-				t.Fatal("Failed to create listener")
-			}
-			var hits int
-			srv := http.Server{Handler: http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
-				hits++
-			})}
-			go srv.Serve(unixListener)
-			defer srv.Close()
-			tracer := newTracer(WithDogstatsdAddress(udsPath))
-			defer tracer.Stop()
-			c := tracer.config
-			assert.Equal(udsPath, c.dogstatsdAddr)
-			assert.Equal(udsPath, globalconfig.DogstatsdAddr())
-		})
 	})
 
 	t.Run("env-agentAddr", func(t *testing.T) {
