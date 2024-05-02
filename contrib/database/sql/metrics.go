@@ -38,7 +38,11 @@ func pollDBStats(statsd internal.StatsdClient, db *sql.DB) {
 		log.Debug("No traced DB connection found; cannot pull DB stats.")
 		return
 	}
-	log.Debug("Traced DB connection found: DB stats will be gathered and sent every %v.", interval)
+	if statsd == nil {
+		log.Debug("No statsd client found; cannot submit DB stats.")
+		return
+	}
+	log.Debug("DB stats will be gathered and sent every %v.", interval)
 	for range time.NewTicker(interval).C {
 		log.Debug("Reporting DB.Stats metrics...")
 		stat := db.Stats()
