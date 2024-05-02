@@ -11,8 +11,8 @@ go.mod
 go.sum
 
 # tracing
-/contrib                        @DataDog/apm-go
-/ddtrace                        @DataDog/apm-go
+/contrib                        @DataDog/apm-go @Datadog/apm-idm-go
+/ddtrace                        @DataDog/apm-go @Datadog/apm-idm-go
 
 # profiling
 /profiler                       @DataDog/profiling-go
