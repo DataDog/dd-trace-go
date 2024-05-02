@@ -32,6 +32,7 @@ const (
 var interval = 10 * time.Second
 
 // pollDBStats calls (*DB).Stats on the db at a predetermined interval. It pushes the DBStats off to the statsd client.
+// the caller should always ensure that statsd is non-nil
 func pollDBStats(statsd internal.StatsdClient, db *sql.DB) {
 	if db == nil {
 		log.Debug("No traced DB connection found; cannot pull DB stats.")
