@@ -327,6 +327,8 @@ func (p *propagatorW3c) propagateTracestate(ctx *spanContext, carrier interface{
 	ts := w3cCtx.(*spanContext).trace.propagatingTag(tracestateHeader)
 	priority, _ := ctx.SamplingPriority()
 	setPropagatingTag(ctx, tracestateHeader, composeTracestate(ctx, priority, ts))
+	ctx.reparentID = w3cCtx.(*spanContext).reparentID
+	ctx.isRemote = (w3cCtx.(*spanContext).isRemote)
 }
 
 // propagator implements Propagator and injects/extracts span contexts
@@ -750,13 +752,17 @@ func (*propagatorW3c) injectTextMap(spanCtx ddtrace.SpanContext, writer TextMapW
 	}
 	writer.Set(traceparentHeader, fmt.Sprintf("00-%s-%016x-%v", traceID, ctx.spanID, flags))
 	// if context priority / origin / tags were updated after extraction,
+	// or if there is a span on the trace
 	// or the tracestateHeader doesn't start with `dd=`
 	// we need to recreate tracestate
 	if ctx.updated ||
+		(!ctx.isRemote || ctx.isRemote && ctx.trace != nil && ctx.trace.root != nil) ||
 		(ctx.trace != nil && !strings.HasPrefix(ctx.trace.propagatingTag(tracestateHeader), "dd=")) ||
 		ctx.trace.propagatingTagsLen() == 0 {
+		// compose a new value for the tracestate
 		writer.Set(tracestateHeader, composeTracestate(ctx, p, ctx.trace.propagatingTag(tracestateHeader)))
 	} else {
+		// use a cached value for the tracestate (e.g., no updating p: key)
 		writer.Set(tracestateHeader, ctx.trace.propagatingTag(tracestateHeader))
 	}
 	return nil
@@ -819,6 +825,7 @@ func isValidID(id string) bool {
 // composeTracestate creates a tracestateHeader from the spancontext.
 // The Datadog tracing library is only responsible for managing the list member with key dd,
 // which holds the values of the sampling decision(`s:<value>`), origin(`o:<origin>`),
+// the last parent ID of a Datadog span (`p:<parent_id>`),
 // and propagated tags prefixed with `t.`(e.g. _dd.p.usr.id:usr_id tag will become `t.usr.id:usr_id`).
 func composeTracestate(ctx *spanContext, priority int, oldState string) string {
 	var b strings.Builder
@@ -832,6 +839,20 @@ func composeTracestate(ctx *spanContext, priority int, oldState string) string {
 			strings.ReplaceAll(oWithSub, "=", "~")))
 	}
 
+	// if the context is remote and there is a reparentID, set p as reparentId
+	// if the context is remote and there is no reparentID, don't set p
+	// if the context is not remote, set p as context.spanId
+	// this ID can be used by downstream tracers to set a _dd.parent_id tag
+	// to allow the backend to reparent orphaned spans if necessary
+
+	if ctx.isRemote && ctx.reparentID != "" {
+		b.WriteString(fmt.Sprintf(";p:%s", ctx.reparentID))
+	}
+
+	if !ctx.isRemote || ctx.isRemote && ctx.trace.root != nil {
+		b.WriteString(fmt.Sprintf(";p:%016x", ctx.spanID))
+	}
+
 	ctx.trace.iteratePropagatingTags(func(k, v string) bool {
 		if !strings.HasPrefix(k, "_dd.p.") {
 			return true
@@ -841,7 +862,7 @@ func composeTracestate(ctx *spanContext, priority int, oldState string) string {
 		tag := fmt.Sprintf("t.%s:%s",
 			keyRgx.ReplaceAllString(k[len("_dd.p."):], "_"),
 			strings.ReplaceAll(valueRgx.ReplaceAllString(v, "_"), "=", "~"))
-		if b.Len()+len(tag) > 256 {
+		if b.Len()+len(tag)+1 > 256 { // the +1 here is to account for the `;` needed between the tags
 			return false
 		}
 		b.WriteString(";")
@@ -880,6 +901,7 @@ func (*propagatorW3c) extractTextMap(reader TextMapReader) (ddtrace.SpanContext,
 	var parentHeader string
 	var stateHeader string
 	var ctx spanContext
+	ctx.isRemote = true
 	// to avoid parsing tracestate header(s) if traceparent is invalid
 	if err := reader.ForeachKey(func(k, v string) error {
 		key := strings.ToLower(k)
@@ -995,6 +1017,7 @@ func parseTraceparent(ctx *spanContext, header string) error {
 // The keys to the “dd“ values have been shortened as follows to save space:
 // `sampling_priority` = `s`
 // `origin` = `o`
+// `last parent` = `p`
 // `_dd.p.` prefix = `t.`
 func parseTracestate(ctx *spanContext, header string) {
 	if header == "" {
@@ -1011,6 +1034,7 @@ func parseTracestate(ctx *spanContext, header string) {
 		}
 		ddMembers := strings.Split(group[len("dd="):], ";")
 		dropDM := false
+		// indicate that backend could reparent this as a root
 		for _, member := range ddMembers {
 			keyVal := strings.SplitN(member, ":", 2)
 			if len(keyVal) != 2 {
@@ -1044,6 +1068,11 @@ func parseTracestate(ctx *spanContext, header string) {
 					ctx.setSamplingPriority(0, samplernames.Unknown)
 					dropDM = true
 				}
+			} else if key == "p" {
+				if val != "" {
+					ctx.reparentID = val
+				}
+
 			} else if strings.HasPrefix(key, "t.dm") {
 				if ctx.trace.hasPropagatingTag(keyDecisionMaker) || dropDM {
 					continue

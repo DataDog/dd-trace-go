@@ -54,6 +54,54 @@ func (r *rulesSampler) HasSpanRules() bool { return r.spans.enabled() }
 
 func (r *rulesSampler) TraceRateLimit() (float64, bool) { return r.traces.limit() }
 
+type provenance int32
+
+const (
+	Local    provenance = iota
+	Customer provenance = 1
+	Dynamic  provenance = 2
+)
+
+var provenances = []provenance{Local, Customer, Dynamic}
+
+func (p provenance) String() string {
+	switch p {
+	case Local:
+		return "local"
+	case Customer:
+		return "customer"
+	case Dynamic:
+		return "dynamic"
+	default:
+		return ""
+	}
+}
+
+func (p provenance) MarshalJSON() ([]byte, error) {
+	return json.Marshal(p.String())
+}
+
+func (p *provenance) UnmarshalJSON(data []byte) error {
+	var prov string
+	var err error
+	if err = json.Unmarshal(data, &prov); err != nil {
+		return err
+	}
+	if *p, err = parseProvenance(prov); err != nil {
+		return err
+	}
+	return nil
+}
+
+func parseProvenance(p string) (provenance, error) {
+	for _, v := range provenances {
+		if strings.EqualFold(strings.TrimSpace(strings.ToLower(p)), v.String()) {
+			return v, nil
+		}
+	}
+	return Customer, fmt.Errorf("Invalid Provenance: \"%v\"", p)
+}
+
 // SamplingRule is used for applying sampling rates to spans that match
 // the service name, operation name or both.
 // For basic usage, consider using the helper functions ServiceRule, NameRule, etc.
@@ -77,6 +125,8 @@ type SamplingRule struct {
 
 	// Tags specifies the map of key-value patterns that span tags must match.
 	Tags map[string]*regexp.Regexp
+
+	Provenance provenance
 
 	ruleType SamplingRuleType
 	limiter  *rateLimiter
@@ -133,11 +183,24 @@ func (sr *SamplingRule) match(s *span) bool {
 	}
 	s.Lock()
 	defer s.Unlock()
-	if sr.Tags != nil && s.Meta != nil {
+	if sr.Tags != nil {
 		for k, regex := range sr.Tags {
-			v, ok := s.Meta[k]
-			if !ok || !regex.MatchString(v) {
-				return false
+			if regex == nil {
+				continue
+			}
+			if s.Meta != nil {
+				v, ok := s.Meta[k]
+				if ok && regex.MatchString(v) {
+					continue
+				}
+			}
+			if s.Metrics != nil {
+				v, ok := s.Metrics[k]
+				// sampling on numbers with floating point is not supported,
+				// thus 'math.Floor(v) != v'
+				if !ok || math.Floor(v) != v || !regex.MatchString(strconv.FormatFloat(v, 'g', -1, 64)) {
+					return false
+				}
 			}
 		}
 	}
@@ -408,7 +471,13 @@ func (rs *traceRulesSampler) sampleGlobalRate(span *span) bool {
 		return false
 	}
 
-	rs.applyRate(span, rate, time.Now())
+	// global rate is a degenerated case of rule rate.
+	// Technically speaking, global rate also has two possible provenance: local or remote.
+	// We just apply the the sampler name corresponding to local rule rate because global rate is
+	// being deprecated in favor of sampling rules.
+	// Note that this just preserves an existing behavior even though it is not correct.
+	sampler := samplernames.RuleRate
+	rs.applyRate(span, rate, time.Now(), sampler)
 	return true
 }
 
@@ -425,10 +494,16 @@ func (rs *traceRulesSampler) sampleRules(span *span) bool {
 	rs.m.RLock()
 	rate := rs.globalRate
 	rs.m.RUnlock()
+	sampler := samplernames.RuleRate
 	for _, rule := range rs.rules {
 		if rule.match(span) {
 			matched = true
 			rate = rule.Rate
+			if rule.Provenance == Customer {
+				sampler = samplernames.RemoteUserRule
+			} else if rule.Provenance == Dynamic {
+				sampler = samplernames.RemoteDynamicRule
+			}
 			break
 		}
 	}
@@ -438,22 +513,22 @@ func (rs *traceRulesSampler) sampleRules(span *span) bool {
 		return false
 	}
 
-	rs.applyRate(span, rate, time.Now())
+	rs.applyRate(span, rate, time.Now(), sampler)
 	return true
 }
 
-func (rs *traceRulesSampler) applyRate(span *span, rate float64, now time.Time) {
+func (rs *traceRulesSampler) applyRate(span *span, rate float64, now time.Time, sampler samplernames.SamplerName) {
 	span.SetTag(keyRulesSamplerAppliedRate, rate)
 	if !sampledByRate(span.TraceID, rate) {
-		span.setSamplingPriority(ext.PriorityUserReject, samplernames.RuleRate)
+		span.setSamplingPriority(ext.PriorityUserReject, sampler)
 		return
 	}
 
 	sampled, rate := rs.limiter.allowOne(now)
 	if sampled {
-		span.setSamplingPriority(ext.PriorityUserKeep, samplernames.RuleRate)
+		span.setSamplingPriority(ext.PriorityUserKeep, sampler)
 	} else {
-		span.setSamplingPriority(ext.PriorityUserReject, samplernames.RuleRate)
+		span.setSamplingPriority(ext.PriorityUserReject, sampler)
 	}
 	span.SetTag(keyRulesSamplerLimiterRate, rate)
 }
@@ -611,7 +686,7 @@ func newSingleSpanRateLimiter(mps float64) *rateLimiter {
 // globMatch compiles pattern string into glob format, i.e. regular expressions with only '?'
 // and '*' treated as regex metacharacters.
 func globMatch(pattern string) *regexp.Regexp {
-	if pattern == "" {
+	if pattern == "" || pattern == "*" {
 		return nil
 	}
 	// escaping regex characters
@@ -620,7 +695,7 @@ func globMatch(pattern string) *regexp.Regexp {
 	pattern = strings.Replace(pattern, "\\?", ".", -1)
 	pattern = strings.Replace(pattern, "\\*", ".*", -1)
 	// pattern must match an entire string
-	return regexp.MustCompile(fmt.Sprintf("^%s$", pattern))
+	return regexp.MustCompile(fmt.Sprintf("(?i)^%s$", pattern))
 }
 
 // samplingRulesFromEnv parses sampling rules from
@@ -697,6 +772,7 @@ type jsonRule struct {
 	Resource     string            `json:"resource"`
 	Tags         map[string]string `json:"tags"`
 	Type         *SamplingRuleType `json:"type,omitempty"`
+	Provenance   provenance        `json:"provenance,omitempty"`
 }
 
 func (j jsonRule) String() string {
@@ -721,6 +797,9 @@ func (j jsonRule) String() string {
 	}
 	if j.Type != nil {
 		s = append(s, fmt.Sprintf("Type: %v", *j.Type))
+	}
+	if j.Provenance != Local {
+		s = append(s, fmt.Sprintf("Provenance: %v", j.Provenance.String()))
 	}
 	return fmt.Sprintf("{%s}", strings.Join(s, " "))
 }
@@ -770,6 +849,7 @@ func validateRules(jsonRules []jsonRule, spanType SamplingRuleType) ([]SamplingR
 			MaxPerSecond: v.MaxPerSecond,
 			Resource:     globMatch(v.Resource),
 			Tags:         tagGlobs,
+			Provenance:   v.Provenance,
 			ruleType:     spanType,
 			limiter:      newSingleSpanRateLimiter(v.MaxPerSecond),
 			globRule:     &jsonRules[i],
@@ -791,6 +871,7 @@ func (sr SamplingRule) MarshalJSON() ([]byte, error) {
 		Tags         map[string]string `json:"tags,omitempty"`
 		Type         *string           `json:"type,omitempty"`
 		MaxPerSecond *float64          `json:"max_per_second,omitempty"`
+		Provenance   string            `json:"provenance,omitempty"`
 	}{}
 	if sr.globRule != nil {
 		s.Service = sr.globRule.Service
@@ -821,6 +902,9 @@ func (sr SamplingRule) MarshalJSON() ([]byte, error) {
 	if v := sr.ruleType.String(); v != "" {
 		t := fmt.Sprintf("%d", sr.ruleType)
 		s.Type = &t
+	}
+	if sr.Provenance != Local {
+		s.Provenance = sr.Provenance.String()
 	}
 	return json.Marshal(&s)
 }

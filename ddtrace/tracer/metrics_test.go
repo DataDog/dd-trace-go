@@ -12,6 +12,7 @@ import (
 	globalinternal "gopkg.in/DataDog/dd-trace-go.v1/internal"
 
 	"github.com/stretchr/testify/assert"
+
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/statsdtest"
 )
 

@@ -67,8 +67,8 @@ func Middleware(opts ...Option) func(next http.Handler) http.Handler {
 			r = r.WithContext(ctx)
 
 			next := next // avoid modifying the value of next in the outer closure scope
-			if appsec.Enabled() {
-				next = withAppsec(next, r, span)
+			if appsec.Enabled() && !cfg.appsecDisabled {
+				next = withAppsec(next, r, span, &cfg.appsecConfig)
 				// Note that the following response writer passed to the handler
 				// implements the `interface { Status() int }` expected by httpsec.
 			}

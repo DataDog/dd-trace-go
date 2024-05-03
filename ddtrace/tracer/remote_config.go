@@ -9,6 +9,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"sync"
+	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
@@ -78,24 +80,6 @@ func (t *tags) toMap() *map[string]interface{} {
 	return &m
 }
 
-func (t *tracer) dynamicInstrumentationRCUpdate(u remoteconfig.ProductUpdate) map[string]state.ApplyStatus {
-	applyStatus := map[string]state.ApplyStatus{}
-
-	for k, v := range u {
-		log.Debug("Received dynamic instrumentation RC configuration for %s\n", k)
-		applyStatus[k] = state.ApplyStatus{State: state.ApplyStateUnknown}
-		passFullConfiguration(globalconfig.RuntimeID(), k, string(v))
-	}
-
-	return applyStatus
-}
-
-// passFullConfiguration is used as a stable interface to find the configuration in via bpf. Go-DI attaches
-// a bpf program to this function and extracts the raw bytes accordingly.
-//
-//go:noinline
-func passFullConfiguration(_, _, _ string) {}
-
 // onRemoteConfigUpdate is a remote config callaback responsible for processing APM_TRACING RC-product updates.
 func (t *tracer) onRemoteConfigUpdate(u remoteconfig.ProductUpdate) map[string]state.ApplyStatus {
 	statuses := map[string]state.ApplyStatus{}
@@ -123,6 +107,10 @@ func (t *tracer) onRemoteConfigUpdate(u remoteconfig.ProductUpdate) map[string]s
 		updated := t.config.traceSampleRate.reset()
 		if updated {
 			telemConfigs = append(telemConfigs, t.config.traceSampleRate.toTelemetry())
+		}
+		updated = t.config.traceSampleRules.reset()
+		if updated {
+			telemConfigs = append(telemConfigs, t.config.traceSampleRules.toTelemetry())
 		}
 		updated = t.config.headerAsTags.reset()
 		if updated {
@@ -196,6 +184,63 @@ func (t *tracer) onRemoteConfigUpdate(u remoteconfig.ProductUpdate) map[string]s
 	return statuses
 }
 
+type dynamicInstrumentationRCProbeConfig struct {
+	runtimeID     string
+	configPath    string
+	configContent string
+}
+
+type dynamicInstrumentationRCState struct {
+	sync.Mutex
+	state map[string]dynamicInstrumentationRCProbeConfig
+}
+
+var (
+	diRCState   dynamicInstrumentationRCState
+	initalizeRC sync.Once
+)
+
+func (t *tracer) dynamicInstrumentationRCUpdate(u remoteconfig.ProductUpdate) map[string]state.ApplyStatus {
+	applyStatus := map[string]state.ApplyStatus{}
+
+	diRCState.Lock()
+	for k, v := range u {
+		log.Debug("Received dynamic instrumentation RC configuration for %s\n", k)
+		applyStatus[k] = state.ApplyStatus{State: state.ApplyStateUnknown}
+		diRCState.state[k] = dynamicInstrumentationRCProbeConfig{
+			runtimeID:     globalconfig.RuntimeID(),
+			configPath:    k,
+			configContent: string(v),
+		}
+	}
+	diRCState.Unlock()
+	return applyStatus
+}
+
+// passProbeConfiguration is used as a stable interface to find the configuration in via bpf. Go-DI attaches
+// a bpf program to this function and extracts the raw bytes accordingly.
+//
+//nolint:all
+//go:noinline
+func passProbeConfiguration(runtimeID, configPath, configContent string) {}
+
+func initalizeDynamicInstrumentationRemoteConfigState() {
+	diRCState = dynamicInstrumentationRCState{
+		state: map[string]dynamicInstrumentationRCProbeConfig{},
+	}
+
+	go func() {
+		for {
+			time.Sleep(time.Second * 5)
+			diRCState.Lock()
+			for _, v := range diRCState.state {
+				passProbeConfiguration(v.runtimeID, v.configPath, v.configContent)
+			}
+			diRCState.Unlock()
+		}
+	}()
+}
+
 // startRemoteConfig starts the remote config client.
 // It registers the APM_TRACING product with a callback,
 // and the LIVE_DEBUGGING product without a callback.
@@ -210,6 +255,8 @@ func (t *tracer) startRemoteConfig(rcConfig remoteconfig.ClientConfig) error {
 	if t.config.dynamicInstrumentationEnabled {
 		dynamicInstrumentationError = remoteconfig.Subscribe("LIVE_DEBUGGING", t.dynamicInstrumentationRCUpdate)
 	}
+
+	initalizeRC.Do(initalizeDynamicInstrumentationRemoteConfigState)
 
 	apmTracingError = remoteconfig.Subscribe(
 		state.ProductAPMTracing,
