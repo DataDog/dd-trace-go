@@ -7,8 +7,6 @@ package sharedsec
 
 import (
 	"encoding/json"
-	"time"
-
 	"github.com/DataDog/appsec-internal-go/limiter"
 	waf "github.com/DataDog/go-libddwaf/v3"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
@@ -17,10 +15,10 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
-func RunWAF(wafCtx *waf.Context, values waf.RunAddressData, timeout time.Duration) waf.Result {
-	result, err := wafCtx.Run(values, timeout)
+func RunWAF(wafCtx *waf.Context, values waf.RunAddressData) waf.Result {
+	result, err := wafCtx.Run(values)
 	if err == waf.ErrTimeout {
-		log.Debug("appsec: waf timeout value of %s reached", timeout)
+		log.Debug("appsec: waf timeout value of reached: %v", err)
 	} else if err != nil {
 		log.Error("appsec: unexpected waf error: %v", err)
 	}

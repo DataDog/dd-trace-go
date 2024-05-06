@@ -93,8 +93,11 @@ func newWafEventListener(wafHandle *waf.Handle, cfg *config.Config, limiter limi
 
 // NewWAFEventListener returns the WAF event listener to register in order to enable it.
 func (l *wafEventListener) onEvent(op *types.Operation, args types.HandlerOperationArgs) {
-	wafCtx := waf.NewContextWithBudget(l.wafHandle, l.config.WAFTimeout)
-	if wafCtx == nil {
+	wafCtx, err := l.wafHandle.NewContextWithBudget(l.config.WAFTimeout)
+	if err != nil {
+		log.Debug("appsec: could not create budgeted WAF context: %v", err)
+	}
+	if wafCtx == nil || err != nil {
 		// The WAF event listener got concurrently released
 		return
 	}
@@ -104,7 +107,7 @@ func (l *wafEventListener) onEvent(op *types.Operation, args types.HandlerOperat
 		// see if the associated user should be blocked. Since we don't control the execution flow in this case
 		// (SetUser is SDK), we delegate the responsibility of interrupting the handler to the user.
 		dyngo.On(op, func(operation *sharedsec.UserIDOperation, args sharedsec.UserIDOperationArgs) {
-			wafResult := shared.RunWAF(wafCtx, waf.RunAddressData{Persistent: map[string]any{UserIDAddr: args.UserID}}, l.config.WAFTimeout)
+			wafResult := shared.RunWAF(wafCtx, waf.RunAddressData{Persistent: map[string]any{UserIDAddr: args.UserID}})
 			if wafResult.HasActions() || wafResult.HasEvents() {
 				processHTTPSDKAction(operation, wafResult.Actions)
 				shared.AddSecurityEvents(op, l.limiter, wafResult.Events)
@@ -148,7 +151,7 @@ func (l *wafEventListener) onEvent(op *types.Operation, args types.HandlerOperat
 		values["waf.context.processor"] = map[string]any{"extract-schema": true}
 	}
 
-	wafResult := shared.RunWAF(wafCtx, waf.RunAddressData{Persistent: values}, l.config.WAFTimeout)
+	wafResult := shared.RunWAF(wafCtx, waf.RunAddressData{Persistent: values})
 	for tag, value := range wafResult.Derivatives {
 		op.AddSerializableTag(tag, value)
 	}
@@ -164,7 +167,7 @@ func (l *wafEventListener) onEvent(op *types.Operation, args types.HandlerOperat
 
 	if _, ok := l.addresses[ServerRequestBodyAddr]; ok {
 		dyngo.On(op, func(sdkBodyOp *types.SDKBodyOperation, args types.SDKBodyOperationArgs) {
-			wafResult := shared.RunWAF(wafCtx, waf.RunAddressData{Persistent: map[string]any{ServerRequestBodyAddr: args.Body}}, l.config.WAFTimeout)
+			wafResult := shared.RunWAF(wafCtx, waf.RunAddressData{Persistent: map[string]any{ServerRequestBodyAddr: args.Body}})
 			for tag, value := range wafResult.Derivatives {
 				op.AddSerializableTag(tag, value)
 			}
@@ -191,7 +194,7 @@ func (l *wafEventListener) onEvent(op *types.Operation, args types.HandlerOperat
 
 		// Run the WAF, ignoring the returned actions - if any - since blocking after the request handler's
 		// response is not supported at the moment.
-		wafResult := shared.RunWAF(wafCtx, waf.RunAddressData{Persistent: values}, l.config.WAFTimeout)
+		wafResult := shared.RunWAF(wafCtx, waf.RunAddressData{Persistent: values})
 
 		// Add WAF metrics.
 		shared.AddWAFMonitoringTags(op, l.wafDiags.Version, wafCtx.Stats().Metrics())

@@ -512,13 +512,13 @@ func BenchmarkSampleWAFContext(b *testing.B) {
 
 	handle, err := waf.NewHandle(parsedRuleset, internal.DefaultObfuscatorKeyRegex, internal.DefaultObfuscatorValueRegex)
 	for i := 0; i < b.N; i++ {
-		ctx := waf.NewContext(handle)
-		if ctx == nil {
+		ctx, err := handle.NewContext()
+		if err != nil || ctx == nil {
 			b.Fatal("nil context")
 		}
 
 		// Request WAF Run
-		_, err := ctx.Run(
+		_, err = ctx.Run(
 			waf.RunAddressData{
 				Persistent: map[string]any{
 					httpsec.HTTPClientIPAddr:        "1.1.1.1",
@@ -542,7 +542,7 @@ func BenchmarkSampleWAFContext(b *testing.B) {
 						"param": "value",
 					},
 				},
-			}, 0)
+			})
 
 		if err != nil {
 			b.Fatalf("error running waf: %v", err)
@@ -559,7 +559,7 @@ func BenchmarkSampleWAFContext(b *testing.B) {
 					},
 					httpsec.ServerResponseStatusAddr: 200,
 				},
-			}, 0)
+			})
 
 		if err != nil {
 			b.Fatalf("error running waf: %v", err)

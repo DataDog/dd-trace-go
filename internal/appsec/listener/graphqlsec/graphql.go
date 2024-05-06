@@ -72,8 +72,11 @@ func newWafEventListener(wafHandle *waf.Handle, cfg *config.Config, limiter limi
 // NewWAFEventListener returns the WAF event listener to register in order
 // to enable it.
 func (l *wafEventListener) onEvent(request *types.RequestOperation, _ types.RequestOperationArgs) {
-	wafCtx := waf.NewContextWithBudget(l.wafHandle, l.config.WAFTimeout)
-	if wafCtx == nil {
+	wafCtx, err := l.wafHandle.NewContextWithBudget(l.config.WAFTimeout)
+	if err != nil {
+		log.Debug("appsec: could not create budgeted WAF context: %v", err)
+	}
+	if wafCtx == nil || err != nil {
 		return
 	}
 
@@ -94,7 +97,6 @@ func (l *wafEventListener) onEvent(request *types.RequestOperation, _ types.Requ
 							graphQLServerResolverAddr: map[string]any{args.FieldName: args.Arguments},
 						},
 					},
-					l.config.WAFTimeout,
 				)
 				shared.AddSecurityEvents(field, l.limiter, wafResult.Events)
 			}

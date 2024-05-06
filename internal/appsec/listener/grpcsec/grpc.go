@@ -96,9 +96,11 @@ func (l *wafEventListener) onEvent(op *types.HandlerOperation, handlerArgs types
 		mu     sync.Mutex // events mutex
 	)
 
-	wafCtx := waf.NewContextWithBudget(l.wafHandle, l.config.WAFTimeout)
-	if wafCtx == nil {
-		// The WAF event listener got concurrently released
+	wafCtx, err := l.wafHandle.NewContextWithBudget(l.config.WAFTimeout)
+	if err != nil {
+		log.Debug("appsec: could not create budgeted WAF context: %v", err)
+	}
+	if wafCtx == nil || err != nil {
 		return
 	}
 
@@ -111,7 +113,7 @@ func (l *wafEventListener) onEvent(op *types.HandlerOperation, handlerArgs types
 			values := map[string]any{
 				UserIDAddr: args.UserID,
 			}
-			wafResult := shared.RunWAF(wafCtx, waf.RunAddressData{Persistent: values}, l.config.WAFTimeout)
+			wafResult := shared.RunWAF(wafCtx, waf.RunAddressData{Persistent: values})
 			if wafResult.HasActions() || wafResult.HasEvents() {
 				for aType, params := range wafResult.Actions {
 					if a := shared.ActionFromEntry(aType, params); a != nil && a.Blocking() {
@@ -134,7 +136,7 @@ func (l *wafEventListener) onEvent(op *types.HandlerOperation, handlerArgs types
 		values[HTTPClientIPAddr] = handlerArgs.ClientIP.String()
 	}
 
-	wafResult := shared.RunWAF(wafCtx, waf.RunAddressData{Persistent: values}, l.config.WAFTimeout)
+	wafResult := shared.RunWAF(wafCtx, waf.RunAddressData{Persistent: values})
 	if wafResult.HasActions() || wafResult.HasEvents() {
 		interrupt := shared.ProcessActions(op, wafResult.Actions)
 		shared.AddSecurityEvents(op, l.limiter, wafResult.Events)
@@ -171,7 +173,7 @@ func (l *wafEventListener) onEvent(op *types.HandlerOperation, handlerArgs types
 
 		// Run the WAF, ignoring the returned actions - if any - since blocking after the request handler's
 		// response is not supported at the moment.
-		wafResult := shared.RunWAF(wafCtx, values, l.config.WAFTimeout)
+		wafResult := shared.RunWAF(wafCtx, values)
 
 		if wafResult.HasEvents() {
 			log.Debug("appsec: attack detected by the grpc waf")
