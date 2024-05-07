@@ -8,6 +8,7 @@ package tracer
 import (
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -61,16 +62,38 @@ func convertRemoteSamplingRules(rules *[]rcSamplingRule) *[]SamplingRule {
 	var convertedRules []SamplingRule
 	for _, rule := range *rules {
 		if rule.Tags != nil && len(rule.Tags) != 0 {
-			tags := make(map[string]string, len(rule.Tags))
+			tags := make(map[string]*regexp.Regexp, len(rule.Tags))
+			tagsStrs := make(map[string]string, len(rule.Tags))
 			for _, tag := range rule.Tags {
-				tags[tag.Key] = tag.ValueGlob
+				tags[tag.Key] = globMatch(tag.ValueGlob)
+				tagsStrs[tag.Key] = tag.ValueGlob
 			}
-			x := TagsResourceRule(tags, rule.Resource, rule.Name, rule.Service, rule.SampleRate)
-			x.Provenance = rule.Provenance
+			x := SamplingRule{
+				Service:    globMatch(rule.Service),
+				Name:       globMatch(rule.Name),
+				Resource:   globMatch(rule.Resource),
+				Rate:       rule.SampleRate,
+				Tags:       tags,
+				Provenance: rule.Provenance,
+				globRule: &jsonRule{
+					Name:     rule.Name,
+					Service:  rule.Service,
+					Resource: rule.Resource,
+					Tags:     tagsStrs,
+				},
+			}
+
 			convertedRules = append(convertedRules, x)
 		} else {
-			x := NameServiceResourceRule(rule.Name, rule.Service, rule.Resource, rule.SampleRate)
-			x.Provenance = rule.Provenance
+			x := SamplingRule{
+				Service:    globMatch(rule.Service),
+				Name:       globMatch(rule.Name),
+				Resource:   globMatch(rule.Resource),
+				Rate:       rule.SampleRate,
+				Provenance: rule.Provenance,
+				globRule:   &jsonRule{Name: rule.Name, Service: rule.Service, Resource: rule.Resource},
+			}
+
 			convertedRules = append(convertedRules, x)
 		}
 	}
@@ -179,7 +202,11 @@ func (t *tracer) onRemoteConfigUpdate(u remoteconfig.ProductUpdate) map[string]s
 			continue
 		}
 		if c.ServiceTarget.Service != t.config.serviceName {
-			log.Debug("Skipping config for service %s. Current service is %s", c.ServiceTarget.Service, t.config.serviceName)
+			log.Debug(
+				"Skipping config for service %s. Current service is %s",
+				c.ServiceTarget.Service,
+				t.config.serviceName,
+			)
 			statuses[path] = state.ApplyStatus{State: state.ApplyStateError, Error: "service mismatch"}
 			continue
 		}

@@ -271,17 +271,6 @@ func NameServiceRule(name string, service string, rate float64) SamplingRule {
 	}
 }
 
-func NameServiceResourceRule(name, service, resource string, rate float64) SamplingRule {
-	return SamplingRule{
-		Service:  globMatch(service),
-		Name:     globMatch(name),
-		Resource: globMatch(resource),
-		Rate:     rate,
-		ruleType: SamplingRuleTrace,
-		globRule: &jsonRule{Name: name, Service: service, Resource: resource},
-	}
-}
-
 // RateRule returns a SamplingRule that applies the provided sampling rate to all spans.
 func RateRule(rate float64) SamplingRule {
 	return SamplingRule{
@@ -846,7 +835,10 @@ func validateRules(jsonRules []jsonRule, spanType SamplingRuleType) ([]SamplingR
 			continue
 		}
 		if rate < 0.0 || rate > 1.0 {
-			errs = append(errs, fmt.Sprintf("at index %d: ignoring rule %s: rate is out of [0.0, 1.0] range", i, v.String()))
+			errs = append(
+				errs,
+				fmt.Sprintf("at index %d: ignoring rule %s: rate is out of [0.0, 1.0] range", i, v.String()),
+			)
 			continue
 		}
 		tagGlobs := make(map[string]*regexp.Regexp, len(v.Tags))
