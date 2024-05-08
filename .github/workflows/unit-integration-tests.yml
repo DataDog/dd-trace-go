@@ -160,19 +160,23 @@ jobs:
         ports:
           - 11211:11211
       zookeeper:
-        image: bitnami/zookeeper:latest
+        image: confluentinc/cp-zookeeper:latest
         env:
-          ALLOW_ANONYMOUS_LOGIN: "yes"
+          ZOOKEEPER_CLIENT_PORT: "2181"
+          ZOOKEEPER_TICK_TIME: "2000"
         ports:
           - 2181:2181
       kafka:
-        image: wurstmeister/kafka:2.13-2.8.1
+        image: confluentinc/cp-kafka:latest
         env:
-          KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
-          KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
-          KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092
-          KAFKA_CREATE_TOPICS: gotest:1:1,gosegtest:1:1
-          KAFKA_BROKER_ID: 1
+          KAFKA_BROKER_ID: "1"
+          KAFKA_ZOOKEEPER_CONNECT: "zookeeper:2181"
+          KAFKA_LISTENERS: "PLAINTEXT://0.0.0.0:9092"
+          KAFKA_ADVERTISED_LISTENERS: "PLAINTEXT://localhost:9092"
+          KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: "PLAINTEXT:PLAINTEXT"
+          KAFKA_INTER_BROKER_LISTENER_NAME: "PLAINTEXT"
+          KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: "1"
+          KAFKA_GROUP_ID: "gotest"
         ports:
           - 9092:9092
       localstack:
