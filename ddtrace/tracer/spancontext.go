@@ -498,7 +498,7 @@ func (t *trace) finishedOne(s *Span) {
 		return
 	}
 	tc := tr.TracerConf()
-	setPeerService(s, tr)
+	setPeerService(s, tc.PeerServiceDefaults, tc.PeerServiceMappings)
 
 	// attach the _dd.base_service tag only when the globally configured service name is different from the
 	// span service name.
@@ -529,7 +529,7 @@ func (t *trace) finishedOne(s *Span) {
 
 	if len(t.spans) == t.finished { // perform a full flush of all spans
 		t.finishChunk(tr, &Chunk{
-			Spans:    t.spans,
+			spans:    t.spans,
 			willSend: decisionKeep == samplingDecision(atomic.LoadUint32((*uint32)(&t.samplingDecision))),
 		})
 		t.spans = nil
@@ -560,29 +560,26 @@ func (t *trace) finishedOne(s *Span) {
 		t.setTraceTags(finishedSpans[0])
 	}
 	t.finishChunk(tr, &Chunk{
-		Spans:    finishedSpans,
+		spans:    finishedSpans,
 		willSend: decisionKeep == samplingDecision(atomic.LoadUint32((*uint32)(&t.samplingDecision))),
 	})
 	t.spans = leftoverSpans
 }
 
 func (t *trace) finishChunk(tr Tracer, ch *Chunk) {
-	//atomic.AddUint32(&tr.spansFinished, uint32(len(ch.spans)))
-	//tr.pushChunk(ch)
 	tr.SubmitChunk(ch)
 	t.finished = 0 // important, because a buffer can be used for several flushes
 }
 
 // setPeerService sets the peer.service, _dd.peer.service.source, and _dd.peer.service.remapped_from
 // tags as applicable for the given span.
-func setPeerService(s *Span, t Tracer) {
-	tc := t.TracerConf()
+func setPeerService(s *Span, peerServiceDefaults bool, peerServiceMappings map[string]string) {
 	if _, ok := s.meta[ext.PeerService]; ok { // peer.service already set on the span
 		s.setMeta(keyPeerServiceSource, ext.PeerService)
 	} else { // no peer.service currently set
 		spanKind := s.meta[ext.SpanKind]
 		isOutboundRequest := spanKind == ext.SpanKindClient || spanKind == ext.SpanKindProducer
-		shouldSetDefaultPeerService := isOutboundRequest && tc.PeerServiceDefaults
+		shouldSetDefaultPeerService := isOutboundRequest && peerServiceDefaults
 		if !shouldSetDefaultPeerService {
 			return
 		}
@@ -595,7 +592,7 @@ func setPeerService(s *Span, t Tracer) {
 	}
 	// Overwrite existing peer.service value if remapped by the user
 	ps := s.meta[ext.PeerService]
-	if to, ok := tc.PeerServiceMappings[ps]; ok {
+	if to, ok := peerServiceMappings[ps]; ok {
 		s.setMeta(keyPeerServiceRemappedFrom, ps)
 		s.setMeta(ext.PeerService, to)
 	}
