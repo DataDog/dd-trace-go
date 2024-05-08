@@ -1065,6 +1065,19 @@ func TestRulesSampler(t *testing.T) {
 		s.Finish()
 		assert.EqualValues(t, s.(*span).Metrics[keySamplingPriority], 2)
 	})
+
+	t.Run("no-agent_psr-with-rules-sampling", func(t *testing.T) {
+		t.Setenv("DD_TRACE_SAMPLING_RULES", `[{"resource": "keep_me", "sample_rate": 0}]`)
+		_, _, _, stop := startTestTracer(t)
+		defer stop()
+
+		s, _ := StartSpanFromContext(context.Background(), "whatever")
+		s.SetTag(ext.ResourceName, "keep_me")
+		s.Finish()
+		span := s.(*span)
+		assert.NotContains(t, span.Metrics, keySamplingPriorityRate)
+		assert.Contains(t, span.Metrics, keyRulesSamplerAppliedRate)
+	})
 }
 
 func TestSamplingRuleUnmarshal(t *testing.T) {
