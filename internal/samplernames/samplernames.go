@@ -35,10 +35,11 @@ const (
 	// span sampling rules.
 	SingleSpan SamplerName = 8
 	// Sampler name 9 is reserved/used by OTel ingestion.
+	// Sampler name 10 is reserved for Data jobs (spark, databricks etc)
 	// RemoteUserRule specifies that the span was sampled by a rule the user configured remotely
 	// through Datadog UI.
-	RemoteUserRule SamplerName = 10
+	RemoteUserRule SamplerName = 11
 	// RemoteDynamicRule specifies that the span was sampled by a rule configured by Datadog
 	// Dynamic Sampling.
-	RemoteDynamicRule SamplerName = 11
+	RemoteDynamicRule SamplerName = 12
 )
