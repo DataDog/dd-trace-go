@@ -837,7 +837,10 @@ func validateRules(jsonRules []jsonRule, spanType SamplingRuleType) ([]SamplingR
 			continue
 		}
 		if rate < 0.0 || rate > 1.0 {
-			errs = append(errs, fmt.Sprintf("at index %d: ignoring rule %s: rate is out of [0.0, 1.0] range", i, v.String()))
+			errs = append(
+				errs,
+				fmt.Sprintf("at index %d: ignoring rule %s: rate is out of [0.0, 1.0] range", i, v.String()),
+			)
 			continue
 		}
 		tagGlobs := make(map[string]*regexp.Regexp, len(v.Tags))
