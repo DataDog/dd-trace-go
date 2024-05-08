@@ -166,7 +166,7 @@ jobs:
         ports:
           - 2181:2181
       kafka:
-        image: bitnami/kafka:latest
+        image: darccio/kafka:latest  # temporary workaround for the missing wurstmeister image
         env:
           KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
           KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
