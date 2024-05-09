@@ -29,7 +29,7 @@ func TestImplementsTraceWriter(t *testing.T) {
 
 // makeSpan returns a span, adding n entries to meta and metrics each.
 func makeSpan(n int) *span {
-	s := newSpan("encodeName", "encodeService", "encodeResource", random.Uint64(), random.Uint64(), random.Uint64())
+	s := newSpan("encodeName", "encodeService", "encodeResource", randUint64(), randUint64(), randUint64())
 	for i := 0; i < n; i++ {
 		istr := fmt.Sprintf("%0.10d", i)
 		s.Meta[istr] = istr
