@@ -135,6 +135,8 @@ func TestAutoDetectStatsd(t *testing.T) {
 		require.NoError(t, err)
 		defer statsd.Close()
 		require.Equal(t, cfg.dogstatsdAddr, "unix://"+addr)
+		// Ensure globalconfig also gets the auto-detected UDS address
+		require.Equal(t, "unix://"+addr, globalconfig.DogstatsdAddr())
 		statsd.Count("name", 1, []string{"tag"}, 1)
 
 		buf := make([]byte, 17)
@@ -500,7 +502,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			if err != nil {
 				t.Fatal("Failed to create socket")
 			}
-			udsPath := filepath.Join(dir, "apm.socket")
+			udsPath := filepath.Join(dir, "dsd.socket")
 			defer os.RemoveAll(udsPath)
 			unixListener, err := net.Listen("unix", udsPath)
 			if err != nil {
