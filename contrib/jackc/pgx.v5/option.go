@@ -5,7 +5,12 @@
 
 package pgx
 
-import "gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
+import (
+	"gopkg.in/DataDog/dd-trace-go.v1/internal"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
+)
 
 type config struct {
 	serviceName   string
@@ -14,6 +19,8 @@ type config struct {
 	traceCopyFrom bool
 	tracePrepare  bool
 	traceConnect  bool
+	poolStats     bool
+	statsdClient  internal.StatsdClient
 }
 
 func defaultConfig() *config {
@@ -24,6 +31,21 @@ func defaultConfig() *config {
 		traceCopyFrom: true,
 		tracePrepare:  true,
 		traceConnect:  true,
+	}
+}
+
+// checkStatsdRequired adds a statsdClient onto the config if poolStats is enabled
+// NOTE: For now, the only use-case for a statsdclient is the poolStats feature. If a statsdclient becomes necessary for other items in future work, then this logic should change
+func (c *config) checkStatsdRequired() {
+	if c.poolStats && c.statsdClient == nil {
+		// contrib/database/pgx's statsdclient should always inherit its address from the tracer's statsdclient via the globalconfig
+		// destination is not user-configurable
+		sc, err := internal.NewStatsdClient(globalconfig.DogstatsdAddr(), statsTags(c))
+		if err == nil {
+			c.statsdClient = sc
+		} else {
+			log.Warn("Error creating statsd client for database/sql contrib package; Pool stats will be dropped: %v", err)
+		}
 	}
 }
 
@@ -79,5 +101,14 @@ func WithTracePrepare(enabled bool) Option {
 func WithTraceConnect(enabled bool) Option {
 	return func(c *config) {
 		c.traceConnect = enabled
+	}
+}
+
+// WithPoolStats enables polling of pgxpool.Stat metrics
+// ref: https://pkg.go.dev/github.com/jackc/pgx/v5/pgxpool#Stat
+// These metrics are submitted to Datadog and are not billed as custom metrics
+func WithPoolStats() Option {
+	return func(cfg *config) {
+		cfg.poolStats = true
 	}
 }

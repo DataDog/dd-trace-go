@@ -7,6 +7,7 @@ package pgx
 
 import (
 	"context"
+
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
@@ -59,6 +60,7 @@ func newPgxTracer(opts ...Option) *pgxTracer {
 	for _, opt := range opts {
 		opt(cfg)
 	}
+	cfg.checkStatsdRequired()
 	return &pgxTracer{cfg: cfg}
 }
 
