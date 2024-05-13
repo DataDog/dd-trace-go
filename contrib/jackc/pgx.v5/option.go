@@ -38,13 +38,13 @@ func defaultConfig() *config {
 // NOTE: For now, the only use-case for a statsdclient is the poolStats feature. If a statsdclient becomes necessary for other items in future work, then this logic should change
 func (c *config) checkStatsdRequired() {
 	if c.poolStats && c.statsdClient == nil {
-		// contrib/database/pgx's statsdclient should always inherit its address from the tracer's statsdclient via the globalconfig
+		// contrib/jackc/pgx's statsdclient should always inherit its address from the tracer's statsdclient via the globalconfig
 		// destination is not user-configurable
 		sc, err := internal.NewStatsdClient(globalconfig.DogstatsdAddr(), statsTags(c))
 		if err == nil {
 			c.statsdClient = sc
 		} else {
-			log.Warn("Error creating statsd client for database/sql contrib package; Pool stats will be dropped: %v", err)
+			log.Warn("Error creating statsd client for jackc/pgx contrib package; Pool stats will be dropped: %v", err)
 		}
 	}
 }
