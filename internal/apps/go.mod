@@ -9,7 +9,7 @@ require (
 
 require (
 	github.com/DataDog/appsec-internal-go v1.5.0 // indirect
-	github.com/DataDog/go-libddwaf/v3 v3.1.0 // indirect
+	github.com/DataDog/go-libddwaf/v3 v3.2.0 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/ebitengine/purego v0.7.1 // indirect
 	github.com/kr/pretty v0.3.0 // indirect
