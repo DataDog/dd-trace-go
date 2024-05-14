@@ -39,9 +39,9 @@ func pollPoolStats(statsd internal.StatsdClient, pool *pgxpool.Pool) {
 		log.Debug("No traced pool connection found; cannot pull pool stats.")
 		return
 	}
-	log.Debug("Traced pool connection found: Pool stats will be gathered and sent every %v.", interval)
+	log.Debug("contrib/jackc/pgx.v5: Traced pool connection found: Pool stats will be gathered and sent every %v.", interval)
 	for range time.NewTicker(interval).C {
-		log.Debug("Reporting pgxpool.Stat metrics...")
+		log.Debug("contrib/jackc/pgx.v5: Reporting pgxpool.Stat metrics...")
 		stat := pool.Stat()
 		statsd.Gauge(AcquireCount, float64(stat.AcquireCount()), []string{}, 1)
 		statsd.Timing(AcquireDuration, stat.AcquireDuration(), []string{}, 1)
