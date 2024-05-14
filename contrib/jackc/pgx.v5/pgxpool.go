@@ -26,7 +26,7 @@ func NewPoolWithConfig(ctx context.Context, config *pgxpool.Config, opts ...Opti
 	if err != nil {
 		return nil, err
 	}
-	if tracer.cfg.poolStats {
+	if tracer.cfg.poolStats && tracer.cfg.statsdClient != nil {
 		go pollPoolStats(tracer.cfg.statsdClient, pool)
 	}
 	return pool, nil
