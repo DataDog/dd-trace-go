@@ -93,6 +93,49 @@ func TestOptions(t *testing.T) {
 			assert.Nil(root.Tag(ext.Error))
 		})
 	}
+
+	// WithSkipFieldsForIntrospectionQuery tested here since we are specifically checking against an IntrosepctionQuery operation.
+	query = `query IntrospectionQuery { __schema { queryType { name } } }`
+	for name, tt := range map[string]struct {
+		tracerOpts []Option
+		test       func(assert *assert.Assertions, spans []mocktracer.Span)
+	}{
+		"WithSkipFieldsForIntrospectionQuery/false": {
+			tracerOpts: []Option{WithSkipFieldsForIntrospectionQuery(false)},
+			test: func(assert *assert.Assertions, spans []mocktracer.Span) {
+				var hasFieldSpan bool
+				for _, span := range spans {
+					if span.OperationName() == fieldOp {
+						hasFieldSpan = true
+						break
+					}
+				}
+				assert.Equal(true, hasFieldSpan)
+			},
+		},
+		"WithSkipFieldsForIntrospectionQuery/true": {
+			tracerOpts: []Option{WithSkipFieldsForIntrospectionQuery(true)},
+			test: func(assert *assert.Assertions, spans []mocktracer.Span) {
+				var hasFieldSpan bool
+				for _, span := range spans {
+					if span.OperationName() == fieldOp {
+						hasFieldSpan = true
+						break
+					}
+				}
+				assert.Equal(false, hasFieldSpan)
+			},
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			assert := assert.New(t)
+			mt := mocktracer.Start()
+			defer mt.Stop()
+			c := newTestClient(t, testserver.New(), NewTracer(tt.tracerOpts...))
+			c.MustPost(query, &testServerResponse{}, client.Operation("IntrospectionQuery"))
+			tt.test(assert, mt.FinishedSpans())
+		})
+	}
 }
 
 func TestError(t *testing.T) {
