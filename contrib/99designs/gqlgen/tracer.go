@@ -139,6 +139,10 @@ func (t *gqlTracer) InterceptOperation(ctx context.Context, next graphql.Operati
 func (t *gqlTracer) InterceptField(ctx context.Context, next graphql.Resolver) (res any, err error) {
 	opCtx := graphql.GetOperationContext(ctx)
 	fieldCtx := graphql.GetFieldContext(ctx)
+	if t.cfg.skipFieldsWithoutMethods && !fieldCtx.IsMethod {
+		res, err = next(ctx)
+		return
+	}
 	opts := make([]tracer.StartSpanOption, 0, 6+len(t.cfg.tags))
 	for k, v := range t.cfg.tags {
 		opts = append(opts, tracer.Tag(k, v))

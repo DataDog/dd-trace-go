@@ -15,9 +15,10 @@ import (
 const defaultServiceName = "graphql"
 
 type config struct {
-	serviceName   string
-	analyticsRate float64
-	tags          map[string]interface{}
+	serviceName              string
+	analyticsRate            float64
+	skipFieldsWithoutMethods bool
+	tags                     map[string]interface{}
 }
 
 // An Option configures the gqlgen integration.
@@ -48,6 +49,13 @@ func WithAnalyticsRate(rate float64) Option {
 func WithServiceName(name string) Option {
 	return func(cfg *config) {
 		cfg.serviceName = name
+	}
+}
+
+// WithSkipFieldsWithoutMethods skips creating spans for fields that don't use a method.
+func WithSkipFieldsWithoutMethods(skip bool) Option {
+	return func(cfg *config) {
+		cfg.skipFieldsWithoutMethods = skip
 	}
 }
 
