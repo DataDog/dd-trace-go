@@ -18,7 +18,7 @@ type config struct {
 	serviceName                     string
 	analyticsRate                   float64
 	skipFieldsForIntrospectionQuery bool
-	skipFieldsWithoutMethods        bool
+	skipFieldsWithTrivialResolver   bool
 	tags                            map[string]interface{}
 }
 
@@ -60,10 +60,11 @@ func WithSkipFieldsForIntrospectionQuery(skip bool) Option {
 	}
 }
 
-// WithSkipFieldsWithoutMethods skips creating spans for fields that don't use a method.
-func WithSkipFieldsWithoutMethods(skip bool) Option {
+// WithSkipFieldsWithTrivialResolver skips creating spans for fields that have a trivial resolver.
+// For example, a field resolved from an object w/o requiring a custom method is considered trivial.
+func WithSkipFieldsWithTrivialResolver(skip bool) Option {
 	return func(cfg *config) {
-		cfg.skipFieldsWithoutMethods = skip
+		cfg.skipFieldsWithTrivialResolver = skip
 	}
 }
 

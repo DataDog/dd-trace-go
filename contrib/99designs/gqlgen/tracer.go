@@ -144,7 +144,8 @@ func (t *gqlTracer) InterceptField(ctx context.Context, next graphql.Resolver) (
 	}
 
 	fieldCtx := graphql.GetFieldContext(ctx)
-	if t.cfg.skipFieldsWithoutMethods && !fieldCtx.IsMethod {
+	isTrivial := !(fieldCtx.IsMethod || fieldCtx.IsResolver)
+	if t.cfg.skipFieldsWithTrivialResolver && isTrivial {
 		res, err = next(ctx)
 		return
 	}
@@ -171,7 +172,7 @@ func (t *gqlTracer) InterceptField(ctx context.Context, next graphql.Resolver) (
 		Arguments: fieldCtx.Args,
 		TypeName:  fieldCtx.Object,
 		FieldName: fieldCtx.Field.Name,
-		Trivial:   !(fieldCtx.IsMethod || fieldCtx.IsResolver), // TODO: Is this accurate?
+		Trivial:   isTrivial,
 	})
 	defer func() { op.Finish(types.ResolveOperationRes{Data: res, Error: err}) }()
 
