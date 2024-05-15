@@ -136,6 +136,43 @@ func TestOptions(t *testing.T) {
 			tt.test(assert, mt.FinishedSpans())
 		})
 	}
+
+	// WithSkipFieldsWithTrivialResolver tested here since we are specifically checking a non-trivial query field.
+	query = `{ find(id: 1) }`
+	for name, tt := range map[string]struct {
+		tracerOpts []Option
+		resNames   []string
+		opNames    []string
+	}{
+		"WithSkipFieldsWithTrivialResolver/false": {
+			tracerOpts: []Option{WithSkipFieldsWithTrivialResolver(false)},
+			resNames:   []string{readOp, parsingOp, validationOp, "Query.name", query},
+			opNames:    []string{readOp, parsingOp, validationOp, fieldOp, "graphql.query"},
+		},
+		"WithSkipFieldsWithTrivialResolver/true": {
+			tracerOpts: []Option{WithSkipFieldsWithTrivialResolver(true)},
+			resNames:   []string{readOp, parsingOp, validationOp, query},
+			opNames:    []string{readOp, parsingOp, validationOp, "graphql.query"},
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			assert := assert.New(t)
+			mt := mocktracer.Start()
+			defer mt.Stop()
+			c := newTestClient(t, testserver.New(), NewTracer(tt.tracerOpts...))
+			err := c.Post(query, &testServerResponse{})
+			assert.Nil(err)
+			var resNames []string
+			var opNames []string
+			for _, span := range mt.FinishedSpans() {
+				resNames = append(resNames, span.Tag(ext.ResourceName).(string))
+				opNames = append(opNames, span.OperationName())
+				assert.Equal("99designs/gqlgen", span.Tag(ext.Component))
+			}
+			assert.ElementsMatch(resNames, tt.resNames)
+			assert.ElementsMatch(opNames, tt.opNames)
+		})
+	}
 }
 
 func TestError(t *testing.T) {
