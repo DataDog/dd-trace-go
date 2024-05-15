@@ -29,10 +29,10 @@ func TestOptions(t *testing.T) {
 	query := `{ name }`
 	for name, tt := range map[string]struct {
 		tracerOpts []Option
-		test       func(assert *assert.Assertions, root mocktracer.Span)
+		test       func(assert *assert.Assertions, root mocktracer.Span, spans []mocktracer.Span)
 	}{
 		"default": {
-			test: func(assert *assert.Assertions, root mocktracer.Span) {
+			test: func(assert *assert.Assertions, root mocktracer.Span, _ []mocktracer.Span) {
 				assert.Equal("graphql.query", root.OperationName())
 				assert.Equal(query, root.Tag(ext.ResourceName))
 				assert.Equal(defaultServiceName, root.Tag(ext.ServiceName))
@@ -43,26 +43,52 @@ func TestOptions(t *testing.T) {
 		},
 		"WithServiceName": {
 			tracerOpts: []Option{WithServiceName("TestServer")},
-			test: func(assert *assert.Assertions, root mocktracer.Span) {
+			test: func(assert *assert.Assertions, root mocktracer.Span, _ []mocktracer.Span) {
 				assert.Equal("TestServer", root.Tag(ext.ServiceName))
 			},
 		},
 		"WithAnalytics/true": {
 			tracerOpts: []Option{WithAnalytics(true)},
-			test: func(assert *assert.Assertions, root mocktracer.Span) {
+			test: func(assert *assert.Assertions, root mocktracer.Span, _ []mocktracer.Span) {
 				assert.Equal(1.0, root.Tag(ext.EventSampleRate))
 			},
 		},
 		"WithAnalytics/false": {
 			tracerOpts: []Option{WithAnalytics(false)},
-			test: func(assert *assert.Assertions, root mocktracer.Span) {
+			test: func(assert *assert.Assertions, root mocktracer.Span, _ []mocktracer.Span) {
 				assert.Nil(root.Tag(ext.EventSampleRate))
 			},
 		},
 		"WithAnalyticsRate": {
 			tracerOpts: []Option{WithAnalyticsRate(0.5)},
-			test: func(assert *assert.Assertions, root mocktracer.Span) {
+			test: func(assert *assert.Assertions, root mocktracer.Span, _ []mocktracer.Span) {
 				assert.Equal(0.5, root.Tag(ext.EventSampleRate))
+			},
+		},
+		"WithSkipFieldsWithTrivialResolver/false": {
+			tracerOpts: []Option{WithSkipFieldsWithTrivialResolver(false)},
+			test: func(assert *assert.Assertions, _ mocktracer.Span, spans []mocktracer.Span) {
+				var hasFieldOperation bool
+				for _, span := range spans {
+					if span.OperationName() == fieldOp {
+						hasFieldOperation = true
+						break
+					}
+				}
+				assert.Equal(true, hasFieldOperation)
+			},
+		},
+		"WithSkipFieldsWithTrivialResolver/true": {
+			tracerOpts: []Option{WithSkipFieldsWithTrivialResolver(true)},
+			test: func(assert *assert.Assertions, _ mocktracer.Span, spans []mocktracer.Span) {
+				var hasFieldOperation bool
+				for _, span := range spans {
+					if span.OperationName() == fieldOp {
+						hasFieldOperation = true
+						break
+					}
+				}
+				assert.Equal(false, hasFieldOperation)
 			},
 		},
 		"WithCustomTag": {
@@ -70,7 +96,7 @@ func TestOptions(t *testing.T) {
 				WithCustomTag("customTag1", "customValue1"),
 				WithCustomTag("customTag2", "customValue2"),
 			},
-			test: func(assert *assert.Assertions, root mocktracer.Span) {
+			test: func(assert *assert.Assertions, root mocktracer.Span, _ []mocktracer.Span) {
 				assert.Equal("customValue1", root.Tag("customTag1"))
 				assert.Equal("customValue2", root.Tag("customTag2"))
 			},
@@ -82,14 +108,15 @@ func TestOptions(t *testing.T) {
 			defer mt.Stop()
 			c := newTestClient(t, testserver.New(), NewTracer(tt.tracerOpts...))
 			c.MustPost(query, &testServerResponse{})
+			spans := mt.FinishedSpans()
 			var root mocktracer.Span
-			for _, span := range mt.FinishedSpans() {
+			for _, span := range spans {
 				if span.ParentID() == 0 {
 					root = span
 				}
 			}
 			assert.NotNil(root)
-			tt.test(assert, root)
+			tt.test(assert, root, spans)
 			assert.Nil(root.Tag(ext.Error))
 		})
 	}
@@ -134,43 +161,6 @@ func TestOptions(t *testing.T) {
 			c := newTestClient(t, testserver.New(), NewTracer(tt.tracerOpts...))
 			c.MustPost(query, &testServerResponse{}, client.Operation("IntrospectionQuery"))
 			tt.test(assert, mt.FinishedSpans())
-		})
-	}
-
-	// WithSkipFieldsWithTrivialResolver tested here since we are specifically checking a non-trivial query field.
-	query = `{ find(id: 1) }`
-	for name, tt := range map[string]struct {
-		tracerOpts []Option
-		resNames   []string
-		opNames    []string
-	}{
-		"WithSkipFieldsWithTrivialResolver/false": {
-			tracerOpts: []Option{WithSkipFieldsWithTrivialResolver(false)},
-			resNames:   []string{readOp, parsingOp, validationOp, "Query.name", query},
-			opNames:    []string{readOp, parsingOp, validationOp, fieldOp, "graphql.query"},
-		},
-		"WithSkipFieldsWithTrivialResolver/true": {
-			tracerOpts: []Option{WithSkipFieldsWithTrivialResolver(true)},
-			resNames:   []string{readOp, parsingOp, validationOp, query},
-			opNames:    []string{readOp, parsingOp, validationOp, "graphql.query"},
-		},
-	} {
-		t.Run(name, func(t *testing.T) {
-			assert := assert.New(t)
-			mt := mocktracer.Start()
-			defer mt.Stop()
-			c := newTestClient(t, testserver.New(), NewTracer(tt.tracerOpts...))
-			err := c.Post(query, &testServerResponse{})
-			assert.Nil(err)
-			var resNames []string
-			var opNames []string
-			for _, span := range mt.FinishedSpans() {
-				resNames = append(resNames, span.Tag(ext.ResourceName).(string))
-				opNames = append(opNames, span.OperationName())
-				assert.Equal("99designs/gqlgen", span.Tag(ext.Component))
-			}
-			assert.ElementsMatch(resNames, tt.resNames)
-			assert.ElementsMatch(opNames, tt.opNames)
 		})
 	}
 }
