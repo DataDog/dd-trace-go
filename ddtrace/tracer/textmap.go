@@ -274,11 +274,24 @@ func (p *chainedPropagator) Extract(carrier interface{}) (ddtrace.SpanContext, e
 	for _, v := range p.extractors {
 		if ctx != nil {
 			// A local trace context has already been extracted.
-			p, isW3C := v.(*propagatorW3c)
+			prop, isW3C := v.(*propagatorW3c)
 			if !isW3C {
 				continue // Ignore other propagators.
 			}
-			p.propagateTracestate(ctx.(*spanContext), carrier)
+			prop.propagateTracestate(ctx.(*spanContext), carrier)
+			if ctx.(*spanContext).reparentID == "" {
+				var ddctx ddtrace.SpanContext
+				for _, v2 := range p.extractors {
+					p2, isDatadog := (v2).(*propagator)
+					if isDatadog {
+						ddctx, _ = p2.Extract(carrier)
+						break
+					}
+				}
+				if ddctx != nil {
+					ctx.(*spanContext).reparentID = strconv.FormatUint(ddctx.(*spanContext).spanID, 10)
+				}
+			}
 			break
 		}
 		var err error
