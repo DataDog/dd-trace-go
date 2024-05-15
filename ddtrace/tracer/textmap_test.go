@@ -1878,6 +1878,16 @@ func TestEnvVars(t *testing.T) {
 					out: []uint64{1, 1},
 					tid: traceIDFrom64Bits(1),
 				},
+				{
+					in: TextMapCarrier{
+						traceparentHeader:     "00-00000000000000000000000000000001-0000000000000001-01",
+						DefaultTraceIDHeader:  "1",
+						DefaultParentIDHeader: "2",
+						DefaultPriorityHeader: "1",
+					},
+					out: []uint64{1, 1},
+					tid: traceIDFrom64Bits(1),
+				},
 			}
 			for i, tc := range tests {
 				t.Run(fmt.Sprintf("#%v extract with env=%q", i, testEnv), func(t *testing.T) {
