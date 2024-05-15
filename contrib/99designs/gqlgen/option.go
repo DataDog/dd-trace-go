@@ -15,10 +15,11 @@ import (
 const defaultServiceName = "graphql"
 
 type config struct {
-	serviceName              string
-	analyticsRate            float64
-	skipFieldsWithoutMethods bool
-	tags                     map[string]interface{}
+	serviceName                     string
+	analyticsRate                   float64
+	skipFieldsForIntrospectionQuery bool
+	skipFieldsWithoutMethods        bool
+	tags                            map[string]interface{}
 }
 
 // An Option configures the gqlgen integration.
@@ -49,6 +50,13 @@ func WithAnalyticsRate(rate float64) Option {
 func WithServiceName(name string) Option {
 	return func(cfg *config) {
 		cfg.serviceName = name
+	}
+}
+
+// WithSkipFieldsForIntrospectionQuery skips creating spans for fields when the operation name is IntrospectionQuery.
+func WithSkipFieldsForIntrospectionQuery(skip bool) Option {
+	return func(cfg *config) {
+		cfg.skipFieldsForIntrospectionQuery = skip
 	}
 }
 
