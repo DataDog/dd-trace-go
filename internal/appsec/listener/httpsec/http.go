@@ -109,7 +109,7 @@ func (l *wafEventListener) onEvent(op *types.Operation, args types.HandlerOperat
 		dyngo.On(op, func(operation *sharedsec.UserIDOperation, args sharedsec.UserIDOperationArgs) {
 			wafResult := shared.RunWAF(wafCtx, waf.RunAddressData{Persistent: map[string]any{UserIDAddr: args.UserID}})
 			if wafResult.HasActions() || wafResult.HasEvents() {
-				processHTTPSDKAction(operation, wafResult.Actions)
+				shared.ProcessActions(operation, wafResult.Actions, types.NewMonitoringError("Request blocked"))
 				shared.AddSecurityEvents(op, l.limiter, wafResult.Events)
 				log.Debug("appsec: WAF detected a suspicious user: %s", args.UserID)
 			}
@@ -156,7 +156,7 @@ func (l *wafEventListener) onEvent(op *types.Operation, args types.HandlerOperat
 		op.AddSerializableTag(tag, value)
 	}
 	if wafResult.HasActions() || wafResult.HasEvents() {
-		interrupt := shared.ProcessActions(op, wafResult.Actions)
+		interrupt := shared.ProcessActions(op, wafResult.Actions, nil)
 		shared.AddSecurityEvents(op, l.limiter, wafResult.Events)
 		log.Debug("appsec: WAF detected an attack before executing the request")
 		if interrupt {
@@ -172,7 +172,7 @@ func (l *wafEventListener) onEvent(op *types.Operation, args types.HandlerOperat
 				op.AddSerializableTag(tag, value)
 			}
 			if wafResult.HasActions() || wafResult.HasEvents() {
-				processHTTPSDKAction(sdkBodyOp, wafResult.Actions)
+				shared.ProcessActions(sdkBodyOp, wafResult.Actions, types.NewMonitoringError("Request blocked"))
 				shared.AddSecurityEvents(op, l.limiter, wafResult.Events)
 				log.Debug("appsec: WAF detected a suspicious request body")
 			}
@@ -220,24 +220,4 @@ func (l *wafEventListener) onEvent(op *types.Operation, args types.HandlerOperat
 // allows extracting schemas
 func (l *wafEventListener) canExtractSchemas() bool {
 	return l.config.APISec.Enabled && l.config.APISec.SampleRate >= rand.Float64()
-}
-
-// processHTTPSDKAction does two things:
-//   - send actions to the parent operation's data listener, for their handlers to be executed after the user handler
-//   - send an error to the current operation's data listener (created by an SDK call), to signal users to interrupt
-//     their handler.
-func processHTTPSDKAction(op dyngo.Operation, actions map[string]any) {
-	for aType, params := range actions {
-		action := shared.ActionFromEntry(aType, params)
-		if action == nil {
-			log.Debug("cannot process %s action with params %v", aType, params)
-			continue
-		}
-		if op.Parent() != nil {
-			dyngo.EmitData(op, action) // Send the action so that the handler gets executed
-		}
-		if action.Blocking() { // Send the error to be returned by the SDK
-			dyngo.EmitData(op, types.NewMonitoringError("Request blocked")) // Send error
-		}
-	}
 }

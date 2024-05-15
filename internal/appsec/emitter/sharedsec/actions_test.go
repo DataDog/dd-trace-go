@@ -14,12 +14,12 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestNewBlockRequestAction(t *testing.T) {
+func TestNewHTTPBlockRequestAction(t *testing.T) {
 	mux := http.NewServeMux()
 	srv := httptest.NewServer(mux)
-	mux.HandleFunc("/json", newBlockRequestAction(403, 10, "json").HTTP().ServeHTTP)
-	mux.HandleFunc("/html", newBlockRequestAction(403, 10, "html").HTTP().ServeHTTP)
-	mux.HandleFunc("/auto", newBlockRequestAction(403, 10, "auto").HTTP().ServeHTTP)
+	mux.HandleFunc("/json", newHTTPBlockRequestAction(403, "json").ServeHTTP)
+	mux.HandleFunc("/html", newHTTPBlockRequestAction(403, "html").ServeHTTP)
+	mux.HandleFunc("/auto", newHTTPBlockRequestAction(403, "auto").ServeHTTP)
 	defer srv.Close()
 
 	t.Run("json", func(t *testing.T) {
@@ -157,10 +157,10 @@ func TestNewBlockRequestAction(t *testing.T) {
 func TestNewRedirectRequestAction(t *testing.T) {
 	mux := http.NewServeMux()
 	srv := httptest.NewServer(mux)
-	mux.HandleFunc("/redirect-default-status", newRedirectRequestAction(100, "/redirected").HTTP().ServeHTTP)
-	mux.HandleFunc("/redirect-no-location", newRedirectRequestAction(303, "").HTTP().ServeHTTP)
-	mux.HandleFunc("/redirect1", newRedirectRequestAction(http.StatusFound, "/redirect2").HTTP().ServeHTTP)
-	mux.HandleFunc("/redirect2", newRedirectRequestAction(http.StatusFound, "/redirected").HTTP().ServeHTTP)
+	mux.HandleFunc("/redirect-default-status", newRedirectRequestAction(100, "/redirected").ServeHTTP)
+	mux.HandleFunc("/redirect-no-location", newRedirectRequestAction(303, "").ServeHTTP)
+	mux.HandleFunc("/redirect1", newRedirectRequestAction(http.StatusFound, "/redirect2").ServeHTTP)
+	mux.HandleFunc("/redirect2", newRedirectRequestAction(http.StatusFound, "/redirected").ServeHTTP)
 	mux.HandleFunc("/redirected", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK) // Shouldn't matter since we write 302 before arriving here
 		w.Write([]byte("Redirected"))

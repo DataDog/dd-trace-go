@@ -77,20 +77,38 @@ func AddWAFMonitoringTags(th trace.TagSetter, rulesVersion string, stats map[str
 
 // ProcessActions sends the relevant actions to the operation's data listener.
 // It returns true if at least one of those actions require interrupting the request handler
-func ProcessActions(op dyngo.Operation, actions map[string]any) (interrupt bool) {
+// When SDKError is not nil, this error is sent to the op with EmitData so that the invoked SDK can return it
+func ProcessActions(op dyngo.Operation, actions map[string]any, SDKError error) (interrupt bool) {
 	for aType, params := range actions {
-		action := ActionFromEntry(aType, params)
-		if action == nil {
+		actionArray := ActionsFromEntry(aType, params)
+		if actionArray == nil {
 			log.Debug("cannot process %s action with params %v", aType, params)
 			continue
 		}
-		dyngo.EmitData(op, action)
-		interrupt = interrupt || action.Blocking()
+		for _, a := range actionArray {
+			if realA, ok := a.(*sharedsec.HTTPAction); ok {
+				dyngo.EmitData(op, realA)
+				interrupt = true
+			} else if realA, ok := a.(*sharedsec.GRPCAction); ok {
+				dyngo.EmitData(op, realA)
+				interrupt = true
+			} else if realA, ok := a.(*sharedsec.StackTraceAction); ok {
+				dyngo.EmitData(op, realA)
+			} else {
+				continue
+			}
+
+			if a.Blocking() && SDKError != nil { // Send the error to be returned by the SDK
+				dyngo.EmitData(op, SDKError) // Send error
+			}
+		}
 	}
 	return interrupt
 }
 
-func ActionFromEntry(actionType string, params any) *sharedsec.Action {
+// ActionsFromEntry returns one or several actions generated from the WAF returned action entry
+// Several actions are returned when the action is of block_request type since we could be blocking HTTP or GRPC
+func ActionsFromEntry(actionType string, params any) []sharedsec.Action {
 	p, ok := params.(map[string]any)
 	if !ok {
 		return nil
@@ -99,7 +117,7 @@ func ActionFromEntry(actionType string, params any) *sharedsec.Action {
 	case "block_request":
 		return sharedsec.NewBlockAction(p)
 	case "redirect_request":
-		return sharedsec.NewRedirectAction(p)
+		return []sharedsec.Action{sharedsec.NewRedirectAction(p)}
 	default:
 		log.Debug("appsec: unknown action type `%s`", actionType)
 		return nil

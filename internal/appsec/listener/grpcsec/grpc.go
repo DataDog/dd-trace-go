@@ -54,7 +54,6 @@ func Install(wafHandle *waf.Handle, cfg *config.Config, lim limiter.Limiter, roo
 type wafEventListener struct {
 	wafHandle *waf.Handle
 	config    *config.Config
-	actions   sharedsec.Actions
 	addresses map[string]struct{}
 	limiter   limiter.Limiter
 	wafDiags  waf.Diagnostics
@@ -116,9 +115,12 @@ func (l *wafEventListener) onEvent(op *types.HandlerOperation, handlerArgs types
 			wafResult := shared.RunWAF(wafCtx, waf.RunAddressData{Persistent: values})
 			if wafResult.HasActions() || wafResult.HasEvents() {
 				for aType, params := range wafResult.Actions {
-					if a := shared.ActionFromEntry(aType, params); a != nil && a.Blocking() {
-						code, err := a.GRPC()(map[string][]string{})
-						dyngo.EmitData(userIDOp, types.NewMonitoringError(err.Error(), code))
+					for _, act := range shared.ActionsFromEntry(aType, params) {
+						if a, ok := act.(*sharedsec.GRPCAction); ok {
+							code, err := a.GRPCWrapper(map[string][]string{})
+							dyngo.EmitData(userIDOp, types.NewMonitoringError(err.Error(), code))
+
+						}
 					}
 				}
 				shared.AddSecurityEvents(op, l.limiter, wafResult.Events)
@@ -138,7 +140,7 @@ func (l *wafEventListener) onEvent(op *types.HandlerOperation, handlerArgs types
 
 	wafResult := shared.RunWAF(wafCtx, waf.RunAddressData{Persistent: values})
 	if wafResult.HasActions() || wafResult.HasEvents() {
-		interrupt := shared.ProcessActions(op, wafResult.Actions)
+		interrupt := shared.ProcessActions(op, wafResult.Actions, nil)
 		shared.AddSecurityEvents(op, l.limiter, wafResult.Events)
 		log.Debug("appsec: WAF detected an attack before executing the request")
 		if interrupt {

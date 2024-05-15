@@ -12,6 +12,7 @@ package httpsec
 
 import (
 	"context"
+
 	// Blank import needed to use embed for the default blocked response payloads
 	_ "embed"
 	"net/http"
@@ -25,6 +26,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/trace"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/trace/httptrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/stacktrace"
 
 	"github.com/DataDog/appsec-internal-go/netip"
 )
@@ -76,12 +78,17 @@ func WrapHandler(handler http.Handler, span ddtrace.Span, pathParams map[string]
 		trace.SetTags(span, ipTags)
 
 		var bypassHandler http.Handler
+		var stacktrace stacktrace.StackTrace
 		var blocking bool
 		args := MakeHandlerOperationArgs(r, clientIP, pathParams)
 		ctx, op := StartOperation(r.Context(), args, func(op *types.Operation) {
-			dyngo.OnData(op, func(a *sharedsec.Action) {
-				bypassHandler = a.HTTP()
-				blocking = a.Blocking()
+			dyngo.OnData(op, func(a *sharedsec.HTTPAction) {
+				blocking = true
+				bypassHandler = a.Handler
+			})
+			dyngo.OnData(op, func(a *sharedsec.StackTraceAction) {
+				stacktrace = a.StackTrace
+				stacktrace.Msgsize() // useless for now but keeps lint from complaining
 			})
 		})
 		r = r.WithContext(ctx)

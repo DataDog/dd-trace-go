@@ -14,6 +14,7 @@ import (
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/actions"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/stacktrace"
 )
 
 // blockedTemplateJSON is the default JSON template used to write responses for blocked requests
@@ -45,17 +46,19 @@ func init() {
 }
 
 type (
-	// Action represents a WAF action.
-	// It holds the HTTP and gRPC handlers to be used instead of the regular
-	// request handler when said action is executed.
-	Action struct {
-		http     http.Handler
-		grpc     GRPCWrapper
-		blocking bool
+	Action interface {
+		Blocking() bool
 	}
 
-	// Actions represents a set of action bindings to an action name.
-	Actions map[string]*Action
+	HTTPAction struct {
+		http.Handler
+	}
+	GRPCAction struct {
+		GRPCWrapper
+	}
+	StackTraceAction struct {
+		StackTrace stacktrace.StackTrace
+	}
 
 	// GRPCWrapper is an opaque prototype abstraction for a gRPC handler (to avoid importing grpc)
 	// that takes metadata as input and returns a status code and an error
@@ -66,10 +69,9 @@ type (
 	GRPCWrapper func(map[string][]string) (uint32, error)
 )
 
-// Blocking returns true if the action object represents a request blocking action
-func (a *Action) Blocking() bool {
-	return a.blocking
-}
+func (a *HTTPAction) Blocking() bool       { return true }
+func (a *GRPCAction) Blocking() bool       { return true }
+func (a *StackTraceAction) Blocking() bool { return false }
 
 // NewBlockHandler creates, initializes and returns a new BlockRequestAction
 func NewBlockHandler(status int, template string) http.Handler {
@@ -110,7 +112,7 @@ func newGRPCBlockHandler(status int) GRPCWrapper {
 }
 
 // NewBlockAction creates an action for the "block_request" action type
-func NewBlockAction(params map[string]any) *Action {
+func NewBlockAction(params map[string]any) []Action {
 	p, err := actions.BlockParamsFromMap(params)
 	if err != nil {
 		return nil
@@ -119,7 +121,7 @@ func NewBlockAction(params map[string]any) *Action {
 }
 
 // NewRedirectAction creates an action for the "redirect_request" action type
-func NewRedirectAction(params map[string]any) *Action {
+func NewRedirectAction(params map[string]any) *HTTPAction {
 	p, err := actions.RedirectParamsFromMap(params)
 	if err != nil {
 		return nil
@@ -127,40 +129,31 @@ func NewRedirectAction(params map[string]any) *Action {
 	return newRedirectRequestAction(p.StatusCode, p.Location)
 }
 
-func newBlockRequestAction(httpStatus, grpcStatus int, template string) *Action {
-	return &Action{
-		http:     NewBlockHandler(httpStatus, template),
-		grpc:     newGRPCBlockHandler(grpcStatus),
-		blocking: true,
+func newHTTPBlockRequestAction(status int, template string) *HTTPAction {
+	return &HTTPAction{Handler: NewBlockHandler(status, template)}
+}
+
+func newGRPCBlockRequestAction(status int) *GRPCAction {
+	return &GRPCAction{GRPCWrapper: newGRPCBlockHandler(status)}
+
+}
+
+func newBlockRequestAction(httpStatus, grpcStatus int, template string) []Action {
+	return []Action{
+		newHTTPBlockRequestAction(httpStatus, template),
+		newGRPCBlockRequestAction(grpcStatus),
 	}
 }
 
-func newRedirectRequestAction(status int, loc string) *Action {
+func newRedirectRequestAction(status int, loc string) *HTTPAction {
 	// Default to 303 if status is out of redirection codes bounds
 	if status < 300 || status >= 400 {
 		status = 303
 	}
-	action := &Action{
-		// gRPC is not handled by our SRB RFCs so far - use the default block handler
-		grpc:     newGRPCBlockHandler(10),
-		blocking: true,
-	}
+
 	// If location is not set we fall back on a default block action
 	if loc == "" {
-		action.http = NewBlockHandler(403, string(blockedTemplateJSON))
-	} else {
-		action.http = http.RedirectHandler(loc, status)
+		return &HTTPAction{Handler: NewBlockHandler(403, string(blockedTemplateJSON))}
 	}
-
-	return action
-}
-
-// HTTP returns the HTTP handler linked to the action object
-func (a *Action) HTTP() http.Handler {
-	return a.http
-}
-
-// GRPC returns the gRPC handler linked to the action object
-func (a *Action) GRPC() GRPCWrapper {
-	return a.grpc
+	return &HTTPAction{Handler: http.RedirectHandler(loc, status)}
 }
