@@ -507,7 +507,7 @@ func getDefaultPropagator(cp *chainedPropagator) *propagator {
 // if the reparenting ID is not set on the context, the span ID from datadog headers is used.
 func overrideDatadogParentID(ctx *spanContext, w3cCtx *spanContext, ddSpanCtx ddtrace.SpanContext) {
 	ctx.spanID = w3cCtx.spanID
-	if ctx.reparentID != "" && ctx.reparentID != "0000000000000000" {
+	if w3cCtx.reparentID != "" && w3cCtx.reparentID != "0000000000000000" {
 		ctx.reparentID = w3cCtx.reparentID
 	} else if ddSpanCtx != nil && ddSpanCtx.(*spanContext) != nil {
 		ctx.reparentID = fmt.Sprintf("%016x", ddSpanCtx.SpanID())
@@ -869,13 +869,10 @@ func composeTracestate(ctx *spanContext, priority int, oldState string) string {
 	// if the context is not remote, set p as context.spanId
 	// this ID can be used by downstream tracers to set a _dd.parent_id tag
 	// to allow the backend to reparent orphaned spans if necessary
-
-	if ctx.isRemote && ctx.reparentID != "" {
+	if !ctx.isRemote {
+		b.WriteString(fmt.Sprintf(";p:%016x", ctx.SpanID()))
+	} else if ctx.reparentID != "" && ctx.reparentID != "0000000000000000" {
 		b.WriteString(fmt.Sprintf(";p:%s", ctx.reparentID))
-	}
-
-	if !ctx.isRemote || ctx.isRemote && ctx.trace.root != nil {
-		b.WriteString(fmt.Sprintf(";p:%016x", ctx.spanID))
 	}
 
 	ctx.trace.iteratePropagatingTags(func(k, v string) bool {
@@ -1094,12 +1091,7 @@ func parseTracestate(ctx *spanContext, header string) {
 					dropDM = true
 				}
 			} else if key == "p" {
-				if val != "" {
-					ctx.reparentID = val
-				} else {
-					ctx.reparentID = "0000000000000000"
-				}
-
+				ctx.reparentID = val
 			} else if strings.HasPrefix(key, "t.dm") {
 				if ctx.trace.hasPropagatingTag(keyDecisionMaker) || dropDM {
 					continue
@@ -1110,6 +1102,10 @@ func parseTracestate(ctx *spanContext, header string) {
 				val = strings.ReplaceAll(val, "~", "=")
 				setPropagatingTag(ctx, "_dd.p."+keySuffix, val)
 			}
+		}
+		// if dd list-member is present and last parent is not set, set it to zeros
+		if ctx.reparentID == "" {
+			ctx.reparentID = "0000000000000000"
 		}
 	}
 }

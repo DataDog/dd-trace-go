@@ -1357,7 +1357,7 @@ func TestEnvVars(t *testing.T) {
 				{
 					inHeaders: TextMapCarrier{
 						traceparentHeader: "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-00",
-						tracestateHeader:  "foo=1,dd=s:-1",
+						tracestateHeader:  "foo=1,dd=s:-1;p:00f067aa0ba902b7",
 					},
 					outHeaders: TextMapCarrier{
 						traceparentHeader:     "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-00",
