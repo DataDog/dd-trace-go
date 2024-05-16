@@ -168,6 +168,16 @@ func ImportedFrom(pkgPath string) Probe {
 	}
 }
 
+func WithFunctionName(name string) Probe {
+	return func(ctx context.Context, n ast.Node, pass *analysis.Pass) (context.Context, bool) {
+		fn, ok := ctx.Value("fn").(*types.Func)
+		if !ok {
+			return ctx, false
+		}
+		return ctx, fn.Name() == name
+	}
+}
+
 // Not returns the inverse of the given probe.
 func Not(p Probe) Probe {
 	return func(ctx context.Context, n ast.Node, pass *analysis.Pass) (context.Context, bool) {
