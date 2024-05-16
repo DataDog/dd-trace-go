@@ -86,19 +86,9 @@ func ProcessActions(op dyngo.Operation, actions map[string]any, SDKError error) 
 			continue
 		}
 		for _, a := range actionArray {
-			if realA, ok := a.(*sharedsec.HTTPAction); ok {
-				dyngo.EmitData(op, realA)
-				interrupt = true
-			} else if realA, ok := a.(*sharedsec.GRPCAction); ok {
-				dyngo.EmitData(op, realA)
-				interrupt = true
-			} else if realA, ok := a.(*sharedsec.StackTraceAction); ok {
-				dyngo.EmitData(op, realA)
-			} else {
-				continue
-			}
-
+			a.EmitData(op)
 			if a.Blocking() && SDKError != nil { // Send the error to be returned by the SDK
+				interrupt = true
 				dyngo.EmitData(op, SDKError) // Send error
 			}
 		}

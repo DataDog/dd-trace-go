@@ -12,6 +12,7 @@ import (
 	"os"
 	"strings"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/stacktrace"
 
@@ -51,6 +52,7 @@ type (
 	// Action is a generic interface that represents any WAF action
 	Action interface {
 		Blocking() bool
+		EmitData(op dyngo.Operation)
 	}
 
 	// HTTPAction are actions that interact with an HTTP request flow (block, redirect...)
@@ -90,9 +92,14 @@ type (
 	}
 )
 
-func (a *HTTPAction) Blocking() bool       { return true }
-func (a *GRPCAction) Blocking() bool       { return true }
-func (a *StackTraceAction) Blocking() bool { return false }
+func (a *HTTPAction) Blocking() bool              { return true }
+func (a *HTTPAction) EmitData(op dyngo.Operation) { dyngo.EmitData(op, a) }
+
+func (a *GRPCAction) Blocking() bool              { return true }
+func (a *GRPCAction) EmitData(op dyngo.Operation) { dyngo.EmitData(op, a) }
+
+func (a *StackTraceAction) Blocking() bool              { return false }
+func (a *StackTraceAction) EmitData(op dyngo.Operation) { dyngo.EmitData(op, a) }
 
 // NewStackTraceAction creates an action for the "stacktrace" action type
 func NewStackTraceAction(params map[string]any) Action {
@@ -110,6 +117,7 @@ func NewStackTraceAction(params map[string]any) Action {
 func NewBlockAction(params map[string]any) []Action {
 	p, err := blockParamsFromMap(params)
 	if err != nil {
+		log.Debug("appsec: couldn't decode redirect action parameters")
 		return nil
 	}
 	return []Action{
@@ -120,8 +128,7 @@ func NewBlockAction(params map[string]any) []Action {
 
 // NewRedirectAction creates an action for the "redirect_request" action type
 func NewRedirectAction(params map[string]any) *HTTPAction {
-	var p redirectActionParams
-	err := mapstructure.Decode(params, &p)
+	p, err := redirectParamsFromMap(params)
 	if err != nil {
 		log.Debug("appsec: couldn't decode redirect action parameters")
 		return nil
