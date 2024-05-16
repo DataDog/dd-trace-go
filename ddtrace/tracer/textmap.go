@@ -507,10 +507,10 @@ func getDefaultPropagator(cp *chainedPropagator) *propagator {
 // if the reparenting ID is not set on the context, the span ID from datadog headers is used.
 func overrideDatadogParentID(ctx *spanContext, w3cCtx *spanContext, ddSpanCtx ddtrace.SpanContext) {
 	ctx.spanID = w3cCtx.spanID
-	if ctx.reparentID == "" {
-		if ddSpanCtx != nil && ddSpanCtx.(*spanContext) != nil {
-			ctx.reparentID = fmt.Sprintf("%016x", ddSpanCtx.SpanID())
-		}
+	if ctx.reparentID != "" && ctx.reparentID != "0000000000000000" {
+		ctx.reparentID = w3cCtx.reparentID
+	} else if ddSpanCtx != nil && ddSpanCtx.(*spanContext) != nil {
+		ctx.reparentID = fmt.Sprintf("%016x", ddSpanCtx.SpanID())
 	}
 }
 
