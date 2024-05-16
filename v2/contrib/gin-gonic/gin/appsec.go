@@ -28,7 +28,7 @@ func useAppSec(c *gin.Context, span *tracer.Span) {
 		c.Request = r
 		c.Next()
 	})
-	httpsec.WrapHandler(httpWrapper, span, params, func() {
-		c.Abort()
+	httpsec.WrapHandler(httpWrapper, span, params, &httpsec.Config{
+		OnBlock: []func(){func() { c.Abort() }},
 	}).ServeHTTP(c.Writer, c.Request)
 }

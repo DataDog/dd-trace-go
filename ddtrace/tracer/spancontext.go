@@ -18,7 +18,6 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/internal/tracerstats"
-	ginternal "github.com/DataDog/dd-trace-go/v2/internal"
 	sharedinternal "github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
@@ -92,6 +91,17 @@ type SpanContext struct {
 	span   *Span  // reference to the span that hosts this context
 	errors int32  // number of spans with errors in this trace
 
+	// The 16-character hex string of the last seen Datadog Span ID
+	// this value will be added as the _dd.parent_id tag to spans
+	// created from this spanContext.
+	// This value is extracted from the `p` sub-key within the tracestate.
+	// The backend will use the _dd.parent_id tag to reparent spans in
+	// distributed traces if they were missing their parent span.
+	// Missing parent span could occur when a W3C-compliant tracer
+	// propagated this context, but didn't send any spans to Datadog.
+	reparentID string
+	isRemote   bool
+
 	// the below group should propagate cross-process
 
 	traceID traceID
@@ -147,6 +157,7 @@ func newSpanContext(span *Span, parent *SpanContext) *SpanContext {
 		spanID: span.spanID,
 		span:   span,
 	}
+
 	context.traceID.SetLower(span.traceID)
 	if parent != nil {
 		context.traceID.SetUpper(parent.traceID.Upper())
@@ -461,7 +472,7 @@ func (t *trace) setTraceTags(s *Span) { //tr *tracer) {
 	for k, v := range t.propagatingTags {
 		s.setMeta(k, v)
 	}
-	for k, v := range ginternal.GetTracerGitMetadataTags() {
+	for k, v := range sharedinternal.GetTracerGitMetadataTags() {
 		s.setMeta(k, v)
 	}
 	if s.context != nil && s.context.traceID.HasUpper() {

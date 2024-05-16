@@ -1,8 +1,11 @@
 module github.com/DataDog/dd-trace-go/v2/contrib/database/sql
 
-go 1.19
+go 1.21
+
+toolchain go1.21.5
 
 require (
+	github.com/DataDog/datadog-go/v5 v5.4.0
 	github.com/DataDog/dd-trace-go/v2 v2.0.0-20240315154142-163dd885ab4e
 	github.com/denisenkom/go-mssqldb v0.11.0
 	github.com/go-sql-driver/mysql v1.6.0
@@ -16,7 +19,6 @@ require (
 	github.com/DataDog/appsec-internal-go v1.5.0 // indirect
 	github.com/DataDog/datadog-agent/pkg/obfuscate v0.50.0 // indirect
 	github.com/DataDog/datadog-agent/pkg/remoteconfig/state v0.50.0 // indirect
-	github.com/DataDog/datadog-go/v5 v5.4.0 // indirect
 	github.com/DataDog/go-libddwaf/v2 v2.3.2 // indirect
 	github.com/DataDog/go-sqllexer v0.0.10 // indirect
 	github.com/DataDog/go-tuf v1.0.2-0.5.2 // indirect

@@ -9,7 +9,6 @@ import (
 	"testing"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
-
 	"github.com/stretchr/testify/assert"
 )
 

@@ -17,6 +17,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/dyngo"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/emitter/httpsec/types"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/emitter/sharedsec"
@@ -61,7 +62,13 @@ func ExecuteSDKBodyOperation(parent dyngo.Operation, args types.SDKBodyOperation
 // context since it uses a queue of handlers and it's the only way to make
 // sure other queued handlers don't get executed.
 // TODO: this patch must be removed/improved when we rework our actions/operations system
-func WrapHandler(handler http.Handler, span trace.TagSetter, pathParams map[string]string, onBlock ...func()) http.Handler {
+func WrapHandler(handler http.Handler, span *tracer.Span, pathParams map[string]string, opts *Config) http.Handler {
+	if opts == nil {
+		opts = defaultWrapHandlerConfig
+	} else if opts.ResponseHeaderCopier == nil {
+		opts.ResponseHeaderCopier = defaultWrapHandlerConfig.ResponseHeaderCopier
+	}
+
 	trace.SetAppSecEnabledTags(span)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ipTags, clientIP := httptrace.ClientIPTags(r.Header, true, r.RemoteAddr)
@@ -86,7 +93,7 @@ func WrapHandler(handler http.Handler, span trace.TagSetter, pathParams map[stri
 			// in case we are instrumenting the Gin framework
 			if blocking {
 				op.SetTag(trace.BlockedRequestTag, true)
-				for _, f := range onBlock {
+				for _, f := range opts.OnBlock {
 					f()
 				}
 			}
@@ -99,7 +106,7 @@ func WrapHandler(handler http.Handler, span trace.TagSetter, pathParams map[stri
 			// extra headers have been added such as the Host header which is removed from the original Go request headers
 			// map
 			setRequestHeadersTags(span, args.Headers)
-			setResponseHeadersTags(span, w.Header())
+			setResponseHeadersTags(span, opts.ResponseHeaderCopier(w))
 			trace.SetTags(span, op.Tags())
 			if len(events) > 0 {
 				httptrace.SetSecurityEventsTags(span, events)

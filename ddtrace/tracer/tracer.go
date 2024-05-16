@@ -563,6 +563,18 @@ func SpanStart(operationName string, options ...StartSpanOption) *Span {
 				span.setMeta(keyOrigin, context.origin)
 			}
 		}
+
+		// a remote context that was lacking the p: tracestate key
+		// the zero value indicates to the backend this could be the reparented
+		// as the root span of a trace
+		if context.isRemote && context.reparentID == "" {
+			span.setMeta(keyReparentID, "0000000000000000")
+		}
+
+		if context.reparentID != "" {
+			span.setMeta(keyReparentID, context.reparentID)
+		}
+
 	}
 	span.context = newSpanContext(span, context)
 	span.setMeta("language", "go")
@@ -692,7 +704,7 @@ func (t *tracer) applyPPROFLabels(ctx gocontext.Context, span *Span) {
 	}
 }
 
-// spanResourcePIISafe returns true if s.Resource can be considered to not
+// spanResourcePIISafe returns true if s.resource can be considered to not
 // include PII with reasonable confidence. E.g. SQL queries may contain PII,
 // but http, rpc or custom (s.Type == "") span resource names generally do not.
 func spanResourcePIISafe(s *Span) bool {
@@ -746,6 +758,10 @@ func (t *tracer) updateSampling(ctx *SpanContext) {
 		return
 	}
 
+	// the span was sampled with ManualKeep rules shouldn't override
+	if ctx.trace.propagatingTag(keyDecisionMaker) == "-4" {
+		return
+	}
 	// if sampling was successful, need to lock the trace to prevent further re-sampling
 	if t.rulesSampling.SampleTrace(ctx.trace.root) {
 		ctx.trace.setLocked(true)

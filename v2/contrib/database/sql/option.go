@@ -43,8 +43,10 @@ func (c *config) checkStatsdRequired() {
 		sc, err := internal.NewStatsdClient(globalconfig.DogstatsdAddr(), statsTags(c))
 		if err == nil {
 			c.statsdClient = sc
+			log.Debug("Metrics from the database/sql contrib will be sent to %v", globalconfig.DogstatsdAddr())
 		} else {
-			log.Warn("Error creating statsd client for database/sql contrib package; DB Stats will be dropped: %v", err)
+			log.Warn("Error creating statsd client for database/sql contrib; DB Stats disabled: %v", err)
+			c.dbStats = false
 		}
 	}
 }

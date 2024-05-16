@@ -115,6 +115,8 @@ if [[ "$contrib" != "" ]]; then
 
   find . -mindepth 2 -type f -name go.mod | while read -r go_mod_path; do
     dir=$(dirname "$go_mod_path")
+	[ "$dir" = "./tools/v2check/_stage" ] && continue
+
     cd "$dir"
     echo testing "$dir"
     pkgs=$(go list ./... | grep -v -e google.golang.org/api | tr '\n' ' ' | sed 's/ $//g')

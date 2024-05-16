@@ -69,7 +69,7 @@ func TestReadContainerIDFromCgroup(t *testing.T) {
 	cid := "8c046cb0b72cd4c99f51b5591cd5b095967f58ee003710a45280c28ee1a9c7fa"
 	cgroupContents := "10:hugetlb:/kubepods/burstable/podfd52ef25-a87d-11e9-9423-0800271a638e/" + cid
 
-	tmpFile, err := os.CreateTemp(os.TempDir(), "fake-cgroup-")
+	tmpFile, err := os.CreateTemp(os.MkdirTemp(), "fake-cgroup-")
 	if err != nil {
 		t.Fatalf("failed to create fake cgroup file: %v", err)
 	}
@@ -101,7 +101,7 @@ func TestReadEntityIDFallbackOnInode(t *testing.T) {
 	defer func(cid string) { containerID = cid }(containerID)
 	containerID = ""
 
-	sysFsCgroupPath := path.Join(os.TempDir(), "sysfscgroup")
+	sysFsCgroupPath := path.Join(os.MkdirTemp(), "sysfscgroup")
 	groupControllerPath := path.Join(sysFsCgroupPath, "mynode")
 	err := os.MkdirAll(groupControllerPath, 0755)
 	require.NoError(t, err)
@@ -236,7 +236,7 @@ func TestGetCgroupInode(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.description, func(t *testing.T) {
-			sysFsCgroupPath := path.Join(os.TempDir(), "sysfscgroup")
+			sysFsCgroupPath := path.Join(os.MkdirTemp(), "sysfscgroup")
 			groupControllerPath := path.Join(sysFsCgroupPath, tc.controller, tc.cgroupNodeDir)
 			err := os.MkdirAll(groupControllerPath, 0755)
 			require.NoError(t, err)

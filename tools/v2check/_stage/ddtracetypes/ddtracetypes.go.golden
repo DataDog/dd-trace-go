@@ -7,6 +7,8 @@
 package main
 
 import (
+	"time"
+
 	"github.com/DataDog/dd-trace-go/v2/ddtrace"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 )
@@ -22,6 +24,7 @@ func main() {
 		_ tracer.StartSpanConfig // want `the declared type is in the ddtrace/tracer package now`
 		_ tracer.StartSpanOption // want `the declared type is in the ddtrace/tracer package now`
 		_ tracer.Tracer          // want `the declared type is in the ddtrace/tracer package now`
+		_ time.Time
 	)
 }
 

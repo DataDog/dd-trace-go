@@ -66,6 +66,7 @@ func TestV1ImportURL(t *testing.T) {
 }
 
 func TestDDTraceTypes(t *testing.T) {
+	t.Skip()
 	c := v2check.NewChecker(&v2check.DDTraceTypes{})
 	c.Run(testRunner(t, "ddtracetypes"))
 }

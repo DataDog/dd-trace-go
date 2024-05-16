@@ -439,6 +439,19 @@ func TestSpanSetTag(t *testing.T) {
 	span.SetTag("struct", sharedinternal.MetaStructValue{Value: testValue})
 	require.Equal(t, testValue, span.metaStruct["struct"])
 
+	mapStrStr = map[string]string{"b": "c"}
+	span.SetTag("map", sharedinternal.MetaStructValue{Value: map[string]string{"b": "c"}})
+	assert.Equal(mapStrStr, span.metaStruct["map"])
+
+	mapOfMap = map[string]map[string]any{"a": {"b": "c"}}
+	span.SetTag("mapOfMap", sharedinternal.MetaStructValue{Value: mapOfMap})
+	assert.Equal(mapOfMap, span.metaStruct["mapOfMap"])
+
+	// testMsgpStruct is a struct that implements the msgp.Marshaler interface
+	testValue = &testMsgpStruct{A: "test"}
+	span.SetTag("struct", sharedinternal.MetaStructValue{Value: testValue})
+	require.Equal(t, testValue, span.metaStruct["struct"])
+
 	assert.Panics(func() {
 		span.SetTag("panicStringer", &panicStringer{})
 	})

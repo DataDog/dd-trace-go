@@ -11,6 +11,7 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/internal"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec/emitter/httpsec"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/namingschema"
 	"github.com/DataDog/dd-trace-go/v2/internal/normalizer"
@@ -27,6 +28,8 @@ type config struct {
 	modifyResourceName func(resourceName string) string
 	headerTags         *internal.LockMap
 	resourceNamer      func(r *http.Request) string
+	appsecDisabled     bool
+	appsecConfig       httpsec.Config
 }
 
 // Option describes options for the Chi.v5 integration.
@@ -54,6 +57,7 @@ func defaults(cfg *config) {
 	cfg.modifyResourceName = func(s string) string { return s }
 	// for backward compatibility with modifyResourceName, initialize resourceName as nil.
 	cfg.resourceNamer = nil
+	cfg.appsecDisabled = false
 }
 
 // WithService sets the given service name for the router.
@@ -137,5 +141,25 @@ func WithHeaderTags(headers []string) OptionFn {
 func WithResourceNamer(fn func(r *http.Request) string) OptionFn {
 	return func(cfg *config) {
 		cfg.resourceNamer = fn
+	}
+}
+
+// WithNoAppsec opts this router out of AppSec management. This allows a particular router to bypass
+// appsec, while the rest of the application is still being monitored/managed. This has not effect
+// if AppSec is not enabled globally (e.g, via the DD_APPSEC_ENABLED environment variable).
+func WithNoAppsec(disabled bool) OptionFn {
+	return func(cfg *config) {
+		cfg.appsecDisabled = disabled
+	}
+}
+
+// WithResponseHeaderCopier provides a function to fetch the response headers from the
+// http.ResponseWriter. This allows for custom implementations as needed if you over-ride the
+// default http.ResponseWriter, such as to add synchronization. Provided functions may elect to
+// return a copy of the http.Header map instead of a reference to the original (e.g: to not risk
+// breaking synchronization). This is currently only used by AppSec.
+func WithResponseHeaderCopier(f func(http.ResponseWriter) http.Header) OptionFn {
+	return func(cfg *config) {
+		cfg.appsecConfig.ResponseHeaderCopier = f
 	}
 }

@@ -151,7 +151,6 @@ func (c DDTraceTypes) Fixes() []analysis.SuggestedFix {
 		return nil
 	}
 	newText := fmt.Sprintf("tracer.%s", typ.Obj().Name())
-	// TODO: how can we add the import automatically?
 	return []analysis.SuggestedFix{
 		{
 			Message: "the declared type is in the ddtrace/tracer package now",

@@ -161,7 +161,10 @@ func (a *launchConfig) Launch(t *testing.T) (p process) {
 		p.HostPort = "localhost:8080"
 	}
 
-	binPath := filepath.Join(os.TempDir(), a.App)
+	dir, err := os.MkdirTemp("", "")
+	require.NoError(t, err)
+
+	binPath := filepath.Join(dir, a.App)
 	defer os.Remove(binPath)
 
 	// Launch test app as its own binary. This produces a more realistic looking

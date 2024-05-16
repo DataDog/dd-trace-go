@@ -16,11 +16,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/assert"
-	"golang.org/x/time/rate"
-
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
+
+	"github.com/stretchr/testify/assert"
+	"golang.org/x/time/rate"
 )
 
 func TestPrioritySampler(t *testing.T) {
@@ -371,7 +371,7 @@ func TestRuleEnvVars(t *testing.T) {
 			{
 				rules:     `[{"name": "abcd?", "sample_rate": 1.0}]`,
 				srvRegex:  "",
-				nameRegex: "^abcd.$",
+				nameRegex: "(?i)^abcd.$",
 				rate:      1.0,
 			},
 			{
@@ -389,34 +389,34 @@ func TestRuleEnvVars(t *testing.T) {
 			{
 				rules:     `[{"name": "abcd?"}]`,
 				srvRegex:  "",
-				nameRegex: "^abcd.$",
+				nameRegex: "(?i)^abcd.$",
 				rate:      1.0,
 			},
 			{
 				rules:     `[{"service": "*abcd", "sample_rate":0.5}]`,
 				nameRegex: "",
-				srvRegex:  "^.*abcd$",
+				srvRegex:  "(?i)^.*abcd$",
 				rate:      0.5,
 			},
 			{
 				rules:     `[{"service": "*abcd", "sample_rate": 0.5}]`,
 				nameRegex: "",
-				srvRegex:  "^.*abcd$",
+				srvRegex:  "(?i)^.*abcd$",
 				rate:      0.5,
 			},
 			{
 				rules:         `[{"service": "*abcd", "sample_rate": 0.5,"resource": "root", "tags": {"host":"h-1234*"}}]`,
-				resourceRegex: "^root$",
-				tagsRegex:     map[string]string{"host": "^h-1234.*$"},
+				resourceRegex: "(?i)^root$",
+				tagsRegex:     map[string]string{"host": "(?i)^h-1234.*$"},
 				nameRegex:     "",
-				srvRegex:      "^.*abcd$",
+				srvRegex:      "(?i)^.*abcd$",
 				rate:          0.5,
 			},
 			{
 				rules:         `[{"service": "*abcd", "sample_rate": 0.5,"resource": "rsc-[0-9]+" }]`,
-				resourceRegex: "^rsc-\\[0-9\\]\\+$",
+				resourceRegex: "(?i)^rsc-\\[0-9\\]\\+$",
 				nameRegex:     "",
-				srvRegex:      "^.*abcd$",
+				srvRegex:      "(?i)^.*abcd$",
 				rate:          0.5,
 			},
 		} {
@@ -454,10 +454,10 @@ func TestRulesSampler(t *testing.T) {
 		s.setMeta("hostname", "hn-30")
 		return s
 	}
-	makeFinishedSpan := func(op, svc, resource string, tags map[string]string) *Span {
+	makeFinishedSpan := func(op, svc, resource string, tags map[string]interface{}) *Span {
 		s := newSpan(op, svc, resource, random.Uint64(), random.Uint64(), 0)
 		for k, v := range tags {
-			s.setMeta(k, v)
+			s.SetTag(k, v)
 		}
 		s.finished = true
 		return s
@@ -477,7 +477,7 @@ func TestRulesSampler(t *testing.T) {
 			spanSrv  string
 			spanName string
 			spanRsc  string
-			spanTags map[string]string
+			spanTags map[string]interface{}
 		}{
 			{
 				rules:   `[{"service": "web.non-matching*", "sample_rate": 0}, {"service": "web*", "sample_rate": 1}]`,
@@ -510,17 +510,17 @@ func TestRulesSampler(t *testing.T) {
 				rules:    `[{"resource": "http_*", "tags":{"host":"COMP-*"}, "sample_rate": 1}]`,
 				spanSrv:  "web.service",
 				spanRsc:  "http_rec",
-				spanTags: map[string]string{"host": "COMP-1234"},
+				spanTags: map[string]interface{}{"host": "COMP-1234"},
 			},
 			{
 				rules:    `[{"tags":{"host":"COMP-*"}, "sample_rate": 1}]`,
 				spanSrv:  "web.service",
-				spanTags: map[string]string{"host": "COMP-1234"},
+				spanTags: map[string]interface{}{"host": "COMP-1234"},
 			},
 			{
 				rules:    `[{"tags":{"host":"COMP-*"}, "sample_rate": 1}]`,
 				spanSrv:  "web.service",
-				spanTags: map[string]string{"host": "COMP-1234"},
+				spanTags: map[string]interface{}{"host": "COMP-1234"},
 			},
 		} {
 			t.Run("", func(t *testing.T) {
@@ -627,7 +627,7 @@ func TestRulesSampler(t *testing.T) {
 				assert := assert.New(t)
 				rs := newRulesSampler(nil, rules, globalSampleRate())
 
-				span := makeFinishedSpan(tt.spanName, tt.spanSrv, "res-10", map[string]string{"hostname": "hn-30"})
+				span := makeFinishedSpan(tt.spanName, tt.spanSrv, "res-10", map[string]interface{}{"hostname": "hn-30"})
 
 				result := rs.SampleSpan(span)
 				assert.True(result)
@@ -639,7 +639,7 @@ func TestRulesSampler(t *testing.T) {
 	})
 
 	t.Run("matching-span-rules", func(t *testing.T) {
-		for _, tt := range []struct {
+		for i, tt := range []struct {
 			rules    []SamplingRule
 			spanSrv  string
 			spanName string
@@ -714,14 +714,48 @@ func TestRulesSampler(t *testing.T) {
 				spanSrv:  "test-service",
 				spanName: "abcde",
 			},
+			{
+				rules:    SpanSamplingRules(Rule{Tags: map[string]string{"hostname": "hn*", "tier": "20?"}, NameGlob: "abc*", ServiceGlob: "test*", Rate: 1}),
+				spanSrv:  "test-service",
+				spanName: "abcde",
+			},
+			{
+				rules:    SpanSamplingRules(Rule{Tags: map[string]string{"hostname": "hn*", "tier": "2*"}, NameGlob: "abc*", ServiceGlob: "test*", Rate: 1}),
+				spanSrv:  "test-service",
+				spanName: "abcde",
+			},
+			{
+				rules:    SpanSamplingRules(Rule{Tags: map[string]string{"hostname": "hn*", "tier": "*"}, NameGlob: "abc*", ServiceGlob: "test*", Rate: 1}),
+				spanSrv:  "test-service",
+				spanName: "abcde",
+			},
+			{
+				rules:    SpanSamplingRules(Rule{Tags: map[string]string{"hostname": "hn*", "tag": "*"}, NameGlob: "abc*", ServiceGlob: "test*", Rate: 1}),
+				spanSrv:  "test-service",
+				spanName: "abcde",
+			},
+			{
+				rules:    SpanSamplingRules(Rule{ServiceGlob: "web*", Rate: 1.0}),
+				spanSrv:  "wEbServer",
+				spanName: "web.reqUEst",
+			},
+			{
+				rules:    SpanSamplingRules(Rule{Tags: map[string]string{"shall-pass": "true"}, NameGlob: "abc*", ServiceGlob: "test*", Rate: 1}),
+				spanSrv:  "test-service",
+				spanName: "abcde",
+			},
 		} {
-			t.Run("", func(t *testing.T) {
+			t.Run(fmt.Sprintf("%v", i), func(t *testing.T) {
 				assert := assert.New(t)
 				c, err := newConfig(WithSamplingRules(tt.rules))
 				assert.NoError(err)
 				rs := newRulesSampler(nil, c.spanRules, globalSampleRate())
 
-				span := makeFinishedSpan(tt.spanName, tt.spanSrv, "res-10", map[string]string{"hostname": "hn-30"})
+				span := makeFinishedSpan(tt.spanName, tt.spanSrv, "res-10", map[string]interface{}{"hostname": "hn-30",
+					"tag":        20.1,
+					"tier":       209,
+					"shall-pass": true,
+				})
 				result := rs.SampleSpan(span)
 				assert.True(result)
 				assert.Contains(span.metrics, keySpanSamplingMechanism)
@@ -785,7 +819,7 @@ func TestRulesSampler(t *testing.T) {
 				assert := assert.New(t)
 				rs := newRulesSampler(nil, rules, globalSampleRate())
 
-				span := makeFinishedSpan(tt.spanName, tt.spanSrv, tt.resName, map[string]string{"hostname": "hn-30"})
+				span := makeFinishedSpan(tt.spanName, tt.spanSrv, tt.resName, map[string]interface{}{"hostname": "hn-30"})
 				result := rs.SampleSpan(span)
 				assert.False(result)
 				assert.NotContains(span.metrics, keySpanSamplingMechanism)
@@ -866,6 +900,27 @@ func TestRulesSampler(t *testing.T) {
 				spanSrv:  "test-service",
 				spanName: "abcde",
 			},
+
+			{
+				rules:    SpanSamplingRules(Rule{Tags: map[string]string{"tag": "20"}, Rate: 1}),
+				spanSrv:  "wEbServer",
+				spanName: "web.reqUEst",
+			},
+			{
+				rules:    SpanSamplingRules(Rule{Tags: map[string]string{"tag": "2*"}, Rate: 1}),
+				spanSrv:  "wEbServer",
+				spanName: "web.reqUEst",
+			},
+			{
+				rules:    SpanSamplingRules(Rule{Tags: map[string]string{"tag": "2?"}, Rate: 1}),
+				spanSrv:  "wEbServer",
+				spanName: "web.reqUEst",
+			},
+			{
+				rules:    SpanSamplingRules(Rule{Tags: map[string]string{"hostname": "hn*", "tag": "2*"}, NameGlob: "abc*", ServiceGlob: "test*", Rate: 1}),
+				spanSrv:  "test-service",
+				spanName: "abcde",
+			},
 		} {
 			t.Run("", func(t *testing.T) {
 				assert := assert.New(t)
@@ -873,7 +928,9 @@ func TestRulesSampler(t *testing.T) {
 				assert.NoError(err)
 				rs := newRulesSampler(nil, c.spanRules, globalSampleRate())
 
-				span := makeFinishedSpan(tt.spanName, tt.spanSrv, "res-10", map[string]string{"hostname": "hn-30"})
+				span := makeFinishedSpan(tt.spanName, tt.spanSrv, "res-10", map[string]interface{}{"hostname": "hn-30",
+					"tag": 20.1,
+				})
 				result := rs.SampleSpan(span)
 				assert.False(result)
 				assert.NotContains(span.metrics, keySpanSamplingMechanism)
@@ -1006,6 +1063,32 @@ func TestRulesSampler(t *testing.T) {
 		w3cSpan.Finish()
 
 		assert.EqualValues(t, 2, w3cSpan.metrics[keySamplingPriority])
+	})
+
+	t.Run("manual keep priority", func(t *testing.T) {
+		t.Setenv("DD_TRACE_SAMPLING_RULES", `[{"resource": "keep_me", "sample_rate": 0}]`)
+		_, _, _, stop, err := startTestTracer(t)
+		assert.NoError(t, err)
+		defer stop()
+
+		s, _ := StartSpanFromContext(context.Background(), "whatever")
+		s.SetTag(ext.ManualKeep, true)
+		s.SetTag(ext.ResourceName, "keep_me")
+		s.Finish()
+		assert.EqualValues(t, s.metrics[keySamplingPriority], 2)
+	})
+
+	t.Run("no-agent_psr-with-rules-sampling", func(t *testing.T) {
+		t.Setenv("DD_TRACE_SAMPLING_RULES", `[{"resource": "keep_me", "sample_rate": 0}]`)
+		_, _, _, stop, err := startTestTracer(t)
+		assert.NoError(t, err)
+		defer stop()
+
+		span, _ := StartSpanFromContext(context.Background(), "whatever")
+		span.SetTag(ext.ResourceName, "keep_me")
+		span.Finish()
+		assert.NotContains(t, span.metrics, keySamplingPriorityRate)
+		assert.Contains(t, span.metrics, keyRulesSamplerAppliedRate)
 	})
 }
 
@@ -1449,22 +1532,22 @@ func TestSamplingRuleMarshallGlob(t *testing.T) {
 		marshal string
 	}{
 		// pattern with *
-		{"test*", "test", regexp.MustCompile("^test.*$"), `{"service":"test*","sample_rate":1,"type":"1"}`},
-		{"*test", "a-test", regexp.MustCompile("^.*test$"), `{"service":"*test","sample_rate":1,"type":"1"}`},
-		{"a*case", "acase", regexp.MustCompile("^a.*case$"), `{"service":"a*case","sample_rate":1,"type":"1"}`},
+		{"test*", "test", regexp.MustCompile("(?i)^test.*$"), `{"service":"test*","sample_rate":1,"type":"1"}`},
+		{"*test", "a-test", regexp.MustCompile("(?i)^.*test$"), `{"service":"*test","sample_rate":1,"type":"1"}`},
+		{"a*case", "acase", regexp.MustCompile("(?i)^a.*case$"), `{"service":"a*case","sample_rate":1,"type":"1"}`},
 		// pattern regexp.MustCompile(), ``, with ?
-		{"a?case", "a-case", regexp.MustCompile("^a.case$"), `{"service":"a?case","sample_rate":1,"type":"1"}`},
-		{"a?test?case", "a-test-case", regexp.MustCompile("^a.test.case$"), `{"service":"a?test?case","sample_rate":1,"type":"1"}`},
+		{"a?case", "a-case", regexp.MustCompile("(?i)^a.case$"), `{"service":"a?case","sample_rate":1,"type":"1"}`},
+		{"a?test?case", "a-test-case", regexp.MustCompile("(?i)^a.test.case$"), `{"service":"a?test?case","sample_rate":1,"type":"1"}`},
 		//// pattern with ? regexp.MustCompile(), ``, and *
-		{"?test*", "atest", regexp.MustCompile("^.test.*$"), `{"service":"?test*","sample_rate":1,"type":"1"}`},
-		{"test*case", "testcase", regexp.MustCompile("^test.*case$"), `{"service":"test*case","sample_rate":1,"type":"1"}`},
-		{"a?test*", "a-test-case", regexp.MustCompile("^a.test.*$"), `{"service":"a?test*","sample_rate":1,"type":"1"}`},
-		{"a*test?", "a-test-", regexp.MustCompile("^a.*test.$"), `{"service":"a*test?","sample_rate":1,"type":"1"}`},
-		{"a*test?case", "a--test-case", regexp.MustCompile("^a.*test.case$"), `{"service":"a*test?case","sample_rate":1,"type":"1"}`},
-		{"a?test*case", "a-testing--case", regexp.MustCompile("^a.test.*case$"), `{"service":"a?test*case","sample_rate":1,"type":"1"}`},
+		{"?test*", "atest", regexp.MustCompile("(?i)^.test.*$"), `{"service":"?test*","sample_rate":1,"type":"1"}`},
+		{"test*case", "testcase", regexp.MustCompile("(?i)^test.*case$"), `{"service":"test*case","sample_rate":1,"type":"1"}`},
+		{"a?test*", "a-test-case", regexp.MustCompile("(?i)^a.test.*$"), `{"service":"a?test*","sample_rate":1,"type":"1"}`},
+		{"a*test?", "a-test-", regexp.MustCompile("(?i)^a.*test.$"), `{"service":"a*test?","sample_rate":1,"type":"1"}`},
+		{"a*test?case", "a--test-case", regexp.MustCompile("(?i)^a.*test.case$"), `{"service":"a*test?case","sample_rate":1,"type":"1"}`},
+		{"a?test*case", "a-testing--case", regexp.MustCompile("(?i)^a.test.*case$"), `{"service":"a?test*case","sample_rate":1,"type":"1"}`},
 		//// valid non-glob regex regexp.MustCompile(), ``, pattern
-		{"*/*", `a/123`, regexp.MustCompile("^.*/.*$"), `{"service":"*/*","sample_rate":1,"type":"1"}`},
-		{`*\/*`, `a\/123`, regexp.MustCompile("^.*/.*$"), `{"service":"*/*","sample_rate":1,"type":"1"}`},
+		{"*/*", `a/123`, regexp.MustCompile("(?i)^.*/.*$"), `{"service":"*/*","sample_rate":1,"type":"1"}`},
+		{`*\/*`, `a\/123`, regexp.MustCompile("(?i)^.*/.*$"), `{"service":"*/*","sample_rate":1,"type":"1"}`},
 	} {
 		t.Run(fmt.Sprintf("%d", i), func(t *testing.T) {
 			// the goal of this test is

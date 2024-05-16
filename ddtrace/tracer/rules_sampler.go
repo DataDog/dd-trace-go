@@ -198,11 +198,24 @@ func (sr *SamplingRule) match(s *Span) bool {
 	}
 	s.Lock()
 	defer s.Unlock()
-	if sr.Tags != nil && s.meta != nil {
+	if sr.Tags != nil {
 		for k, regex := range sr.Tags {
-			v, ok := s.meta[k]
-			if !ok || !regex.MatchString(v) {
-				return false
+			if regex == nil {
+				continue
+			}
+			if s.meta != nil {
+				v, ok := s.meta[k]
+				if ok && regex.MatchString(v) {
+					continue
+				}
+			}
+			if s.metrics != nil {
+				v, ok := s.metrics[k]
+				// sampling on numbers with floating point is not supported,
+				// thus 'math.Floor(v) != v'
+				if !ok || math.Floor(v) != v || !regex.MatchString(strconv.FormatFloat(v, 'g', -1, 64)) {
+					return false
+				}
 			}
 		}
 	}
@@ -488,7 +501,8 @@ func (rs *traceRulesSampler) sampleRules(span *Span) bool {
 }
 
 func (rs *traceRulesSampler) applyRate(span *Span, rate float64, now time.Time, sampler samplernames.SamplerName) {
-	span.SetTag(keyRulesSamplerAppliedRate, rate)
+	span.setMetric(keyRulesSamplerAppliedRate, rate)
+	delete(span.metrics, keySamplingPriorityRate)
 	if !sampledByRate(span.traceID, rate) {
 		span.setSamplingPriority(ext.PriorityUserReject, sampler)
 		return
@@ -584,6 +598,7 @@ func (rs *singleSpanRulesSampler) apply(span *Span) bool {
 					return false
 				}
 			}
+			delete(span.metrics, keySamplingPriorityRate)
 			span.setMetric(keySpanSamplingMechanism, float64(samplernames.SingleSpan))
 			span.setMetric(keySingleSpanSamplingRuleRate, rate)
 			if rule.MaxPerSecond != 0 {
@@ -656,7 +671,7 @@ func newSingleSpanRateLimiter(mps float64) *rateLimiter {
 // globMatch compiles pattern string into glob format, i.e. regular expressions with only '?'
 // and '*' treated as regex metacharacters.
 func globMatch(pattern string) *regexp.Regexp {
-	if pattern == "" {
+	if pattern == "" || pattern == "*" {
 		return nil
 	}
 	// escaping regex characters
@@ -665,7 +680,7 @@ func globMatch(pattern string) *regexp.Regexp {
 	pattern = strings.Replace(pattern, "\\?", ".", -1)
 	pattern = strings.Replace(pattern, "\\*", ".*", -1)
 	// pattern must match an entire string
-	return regexp.MustCompile(fmt.Sprintf("^%s$", pattern))
+	return regexp.MustCompile(fmt.Sprintf("(?i)^%s$", pattern))
 }
 
 // samplingRulesFromEnv parses sampling rules from
@@ -805,7 +820,10 @@ func validateRules(jsonRules []jsonRule, spanType SamplingRuleType) ([]SamplingR
 			continue
 		}
 		if rate < 0.0 || rate > 1.0 {
-			errs = append(errs, fmt.Sprintf("at index %d: ignoring rule %s: rate is out of [0.0, 1.0] range", i, v.String()))
+			errs = append(
+				errs,
+				fmt.Sprintf("at index %d: ignoring rule %s: rate is out of [0.0, 1.0] range", i, v.String()),
+			)
 			continue
 		}
 		tagGlobs := make(map[string]*regexp.Regexp, len(v.Tags))

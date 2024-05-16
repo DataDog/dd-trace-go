@@ -1060,7 +1060,7 @@ func TestTracerNoDebugStack(t *testing.T) {
 
 // newDefaultTransport return a default transport for this tracing client
 func newDefaultTransport() transport {
-	return newHTTPTransport(defaultURL, defaultClient)
+	return newHTTPTransport(defaultURL, defaultHTTPClient(0))
 }
 
 func TestNewSpan(t *testing.T) {
@@ -1178,7 +1178,7 @@ func TestTracerPrioritySampler(t *testing.T) {
 	url := "http://" + srv.Listener.Addr().String()
 
 	tr, _, flush, stop, err := startTestTracer(t,
-		withTransport(newHTTPTransport(url, defaultClient)),
+		withTransport(newHTTPTransport(url, defaultHTTPClient(0))),
 	)
 	assert.Nil(err)
 	defer stop()

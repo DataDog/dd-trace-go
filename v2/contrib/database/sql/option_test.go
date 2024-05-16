@@ -72,4 +72,12 @@ func TestCheckStatsdRequired(t *testing.T) {
 		_, ok := cfg.statsdClient.(*statsd.Client)
 		assert.True(t, ok)
 	})
+	t.Run("invalid address", func(t *testing.T) {
+		globalconfig.SetDogstatsdAddr("unreachable/socket/path/dsd.socket")
+		cfg := new(config)
+		cfg.dbStats = true
+		cfg.checkStatsdRequired()
+		assert.Nil(t, cfg.statsdClient)
+		assert.False(t, cfg.dbStats)
+	})
 }

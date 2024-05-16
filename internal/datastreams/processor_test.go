@@ -15,14 +15,13 @@ import (
 	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/datastreams/options"
-
 	"github.com/DataDog/dd-trace-go/v2/internal/version"
 
 	"github.com/DataDog/datadog-go/v5/statsd"
 	"github.com/DataDog/sketches-go/ddsketch"
 	"github.com/DataDog/sketches-go/ddsketch/store"
-	"github.com/golang/protobuf/proto"
 	"github.com/stretchr/testify/assert"
+	"google.golang.org/protobuf/proto"
 )
 
 func buildSketch(values ...float64) []byte {

@@ -64,6 +64,9 @@ func (s *Span) Tag(k string) interface{} {
 	if !ok {
 		return nil
 	}
+	if v != nil {
+		return v
+	}
 	return v
 }
 

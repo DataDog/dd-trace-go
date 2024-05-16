@@ -8,7 +8,10 @@ package tracer
 import (
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
@@ -30,11 +33,71 @@ type target struct {
 }
 
 type libConfig struct {
-	Enabled       *bool           `json:"tracing_enabled,omitempty"`
-	SamplingRate  *float64        `json:"tracing_sampling_rate,omitempty"`
-	SamplingRules *[]SamplingRule `json:"tracing_sampling_rules,omitempty"`
-	HeaderTags    *headerTags     `json:"tracing_header_tags,omitempty"`
-	Tags          *tags           `json:"tracing_tags,omitempty"`
+	Enabled       *bool             `json:"tracing_enabled,omitempty"`
+	SamplingRate  *float64          `json:"tracing_sampling_rate,omitempty"`
+	SamplingRules *[]rcSamplingRule `json:"tracing_sampling_rules,omitempty"`
+	HeaderTags    *headerTags       `json:"tracing_header_tags,omitempty"`
+	Tags          *tags             `json:"tracing_tags,omitempty"`
+}
+
+type rcTag struct {
+	Key       string `json:"key"`
+	ValueGlob string `json:"value_glob"`
+}
+
+// Sampling rules provided by the remote config define tags differently other than using a map.
+type rcSamplingRule struct {
+	Service    string     `json:"service"`
+	Provenance provenance `json:"provenance"`
+	Name       string     `json:"name,omitempty"`
+	Resource   string     `json:"resource"`
+	Tags       []rcTag    `json:"tags,omitempty"`
+	SampleRate float64    `json:"sample_rate"`
+}
+
+func convertRemoteSamplingRules(rules *[]rcSamplingRule) *[]SamplingRule {
+	if rules == nil {
+		return nil
+	}
+	var convertedRules []SamplingRule
+	for _, rule := range *rules {
+		if rule.Tags != nil && len(rule.Tags) != 0 {
+			tags := make(map[string]*regexp.Regexp, len(rule.Tags))
+			tagsStrs := make(map[string]string, len(rule.Tags))
+			for _, tag := range rule.Tags {
+				tags[tag.Key] = globMatch(tag.ValueGlob)
+				tagsStrs[tag.Key] = tag.ValueGlob
+			}
+			x := SamplingRule{
+				Service:    globMatch(rule.Service),
+				Name:       globMatch(rule.Name),
+				Resource:   globMatch(rule.Resource),
+				Rate:       rule.SampleRate,
+				Tags:       tags,
+				Provenance: rule.Provenance,
+				globRule: &jsonRule{
+					Name:     rule.Name,
+					Service:  rule.Service,
+					Resource: rule.Resource,
+					Tags:     tagsStrs,
+				},
+			}
+
+			convertedRules = append(convertedRules, x)
+		} else {
+			x := SamplingRule{
+				Service:    globMatch(rule.Service),
+				Name:       globMatch(rule.Name),
+				Resource:   globMatch(rule.Resource),
+				Rate:       rule.SampleRate,
+				Provenance: rule.Provenance,
+				globRule:   &jsonRule{Name: rule.Name, Service: rule.Service, Resource: rule.Resource},
+			}
+
+			convertedRules = append(convertedRules, x)
+		}
+	}
+	return &convertedRules
 }
 
 type headerTags []headerTag
@@ -77,24 +140,6 @@ func (t *tags) toMap() *map[string]interface{} {
 	}
 	return &m
 }
-
-func (t *tracer) dynamicInstrumentationRCUpdate(u remoteconfig.ProductUpdate) map[string]state.ApplyStatus {
-	applyStatus := map[string]state.ApplyStatus{}
-
-	for k, v := range u {
-		log.Debug("Received dynamic instrumentation RC configuration for %s\n", k)
-		applyStatus[k] = state.ApplyStatus{State: state.ApplyStateUnknown}
-		passFullConfiguration(globalconfig.RuntimeID(), k, string(v))
-	}
-
-	return applyStatus
-}
-
-// passFullConfiguration is used as a stable interface to find the configuration in via bpf. Go-DI attaches
-// a bpf program to this function and extracts the raw bytes accordingly.
-//
-//go:noinline
-func passFullConfiguration(_, _, _ string) {}
 
 // onRemoteConfigUpdate is a remote config callaback responsible for processing APM_TRACING RC-product updates.
 func (t *tracer) onRemoteConfigUpdate(u remoteconfig.ProductUpdate) map[string]state.ApplyStatus {
@@ -157,7 +202,11 @@ func (t *tracer) onRemoteConfigUpdate(u remoteconfig.ProductUpdate) map[string]s
 			continue
 		}
 		if c.ServiceTarget.Service != t.config.serviceName {
-			log.Debug("Skipping config for service %s. Current service is %s", c.ServiceTarget.Service, t.config.serviceName)
+			log.Debug(
+				"Skipping config for service %s. Current service is %s",
+				c.ServiceTarget.Service,
+				t.config.serviceName,
+			)
 			statuses[path] = state.ApplyStatus{State: state.ApplyStateError, Error: "service mismatch"}
 			continue
 		}
@@ -171,7 +220,7 @@ func (t *tracer) onRemoteConfigUpdate(u remoteconfig.ProductUpdate) map[string]s
 		if updated {
 			telemConfigs = append(telemConfigs, t.config.traceSampleRate.toTelemetry())
 		}
-		updated = t.config.traceSampleRules.handleRC(c.LibConfig.SamplingRules)
+		updated = t.config.traceSampleRules.handleRC(convertRemoteSamplingRules(c.LibConfig.SamplingRules))
 		if updated {
 			telemConfigs = append(telemConfigs, t.config.traceSampleRules.toTelemetry())
 		}
@@ -200,6 +249,63 @@ func (t *tracer) onRemoteConfigUpdate(u remoteconfig.ProductUpdate) map[string]s
 	return statuses
 }
 
+type dynamicInstrumentationRCProbeConfig struct {
+	runtimeID     string
+	configPath    string
+	configContent string
+}
+
+type dynamicInstrumentationRCState struct {
+	sync.Mutex
+	state map[string]dynamicInstrumentationRCProbeConfig
+}
+
+var (
+	diRCState   dynamicInstrumentationRCState
+	initalizeRC sync.Once
+)
+
+func (t *tracer) dynamicInstrumentationRCUpdate(u remoteconfig.ProductUpdate) map[string]state.ApplyStatus {
+	applyStatus := map[string]state.ApplyStatus{}
+
+	diRCState.Lock()
+	for k, v := range u {
+		log.Debug("Received dynamic instrumentation RC configuration for %s\n", k)
+		applyStatus[k] = state.ApplyStatus{State: state.ApplyStateUnknown}
+		diRCState.state[k] = dynamicInstrumentationRCProbeConfig{
+			runtimeID:     globalconfig.RuntimeID(),
+			configPath:    k,
+			configContent: string(v),
+		}
+	}
+	diRCState.Unlock()
+	return applyStatus
+}
+
+// passProbeConfiguration is used as a stable interface to find the configuration in via bpf. Go-DI attaches
+// a bpf program to this function and extracts the raw bytes accordingly.
+//
+//nolint:all
+//go:noinline
+func passProbeConfiguration(runtimeID, configPath, configContent string) {}
+
+func initalizeDynamicInstrumentationRemoteConfigState() {
+	diRCState = dynamicInstrumentationRCState{
+		state: map[string]dynamicInstrumentationRCProbeConfig{},
+	}
+
+	go func() {
+		for {
+			time.Sleep(time.Second * 5)
+			diRCState.Lock()
+			for _, v := range diRCState.state {
+				passProbeConfiguration(v.runtimeID, v.configPath, v.configContent)
+			}
+			diRCState.Unlock()
+		}
+	}()
+}
+
 // startRemoteConfig starts the remote config client.
 // It registers the APM_TRACING product with a callback,
 // and the LIVE_DEBUGGING product without a callback.
@@ -214,6 +320,8 @@ func (t *tracer) startRemoteConfig(rcConfig remoteconfig.ClientConfig) error {
 	if t.config.dynamicInstrumentationEnabled {
 		dynamicInstrumentationError = remoteconfig.Subscribe("LIVE_DEBUGGING", t.dynamicInstrumentationRCUpdate)
 	}
+
+	initalizeRC.Do(initalizeDynamicInstrumentationRemoteConfigState)
 
 	apmTracingError = remoteconfig.Subscribe(
 		state.ProductAPMTracing,

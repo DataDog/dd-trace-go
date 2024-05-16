@@ -79,7 +79,6 @@ var contribIntegrations = map[string]struct {
 	"github.com/jmoiron/sqlx":                       {"SQLx", false},
 	"github.com/julienschmidt/httprouter":           {"HTTP Router", false},
 	"k8s.io/client-go/kubernetes":                   {"Kubernetes", false},
-	"github.com/labstack/echo":                      {"echo", false},
 	"github.com/labstack/echo/v4":                   {"echo v4", false},
 	"github.com/miekg/dns":                          {"miekg/dns", false},
 	"net/http":                                      {"HTTP", false},
@@ -167,6 +166,9 @@ type config struct {
 
 	// transport specifies the Transport interface which will be used to send data to the agent.
 	transport transport
+
+	// httpClientTimeout specifies the timeout for the HTTP client.
+	httpClientTimeout time.Duration
 
 	// propagator propagates span context cross-process
 	propagator Propagator
@@ -300,6 +302,7 @@ const partialFlushMinSpansDefault = 1000
 func newConfig(opts ...StartOption) (*config, error) {
 	c := new(config)
 	c.sampler = NewAllSampler()
+	c.httpClientTimeout = time.Second * 10 // 10 seconds
 
 	if internal.BoolEnv("DD_TRACE_ANALYTICS_ENABLED", false) {
 		globalconfig.SetAnalyticsRate(1.0)
@@ -416,13 +419,13 @@ func newConfig(opts ...StartOption) (*config, error) {
 		// If we're connecting over UDS we can just rely on the agent to provide the hostname
 		log.Debug("connecting to agent over unix, do not set hostname on any traces")
 		c.enableHostnameDetection = false
-		c.httpClient = udsClient(c.agentURL.Path)
+		c.httpClient = udsClient(c.agentURL.Path, c.httpClientTimeout)
 		c.agentURL = &url.URL{
 			Scheme: "http",
 			Host:   fmt.Sprintf("UDS_%s", strings.NewReplacer(":", "_", "/", "_", `\`, "_").Replace(c.agentURL.Path)),
 		}
 	} else if c.httpClient == nil {
-		c.httpClient = defaultClient
+		c.httpClient = defaultHTTPClient(c.httpClientTimeout)
 	}
 	WithGlobalTag(ext.RuntimeID, globalconfig.RuntimeID())(c)
 	globalTags := c.globalTags.get()
@@ -476,7 +479,10 @@ func newConfig(opts ...StartOption) (*config, error) {
 	if c.debug {
 		log.SetLevel(log.LevelDebug)
 	}
-	c.agent = loadAgentFeatures(c.logToStdout, c.agentURL, c.httpClient)
+
+	// if using stdout or traces are disabled, agent is disabled
+	agentDisabled := c.logToStdout || !c.enabled.current
+	c.agent = loadAgentFeatures(agentDisabled, c.agentURL, c.httpClient)
 	info, ok := debug.ReadBuildInfo()
 	if !ok {
 		c.loadContribIntegrations([]*debug.Module{})
@@ -520,17 +526,11 @@ func newStatsdClient(c *config) (internal.StatsdClient, error) {
 	return internal.NewStatsdClient(c.dogstatsdAddr, statsTags(c))
 }
 
-// defaultHTTPClient returns the default http.Client to start the tracer with.
-func defaultHTTPClient() *http.Client {
-	if _, err := os.Stat(defaultSocketAPM); err == nil {
-		// we have the UDS socket file, use it
-		return udsClient(defaultSocketAPM)
-	}
-	return defaultClient
-}
-
 // udsClient returns a new http.Client which connects using the given UDS socket path.
-func udsClient(socketPath string) *http.Client {
+func udsClient(socketPath string, timeout time.Duration) *http.Client {
+	if timeout == 0 {
+		timeout = defaultHTTPTimeout
+	}
 	return &http.Client{
 		Transport: &http.Transport{
 			Proxy: http.ProxyFromEnvironment,
@@ -545,7 +545,7 @@ func udsClient(socketPath string) *http.Client {
 			TLSHandshakeTimeout:   10 * time.Second,
 			ExpectContinueTimeout: 1 * time.Second,
 		},
-		Timeout: defaultHTTPTimeout,
+		Timeout: timeout,
 	}
 }
 
@@ -604,8 +604,8 @@ func (a *agentFeatures) HasFlag(feat string) bool {
 
 // loadAgentFeatures queries the trace-agent for its capabilities and updates
 // the tracer's behaviour.
-func loadAgentFeatures(logToStdout bool, agentURL *url.URL, httpClient *http.Client) (features agentFeatures) {
-	if logToStdout {
+func loadAgentFeatures(agentDisabled bool, agentURL *url.URL, httpClient *http.Client) (features agentFeatures) {
+	if agentDisabled {
 		// there is no agent; all features off
 		return
 	}
@@ -845,6 +845,13 @@ func WithAgentURL(agentURL string) StartOption {
 		default:
 			log.Warn("Unsupported protocol %q in Agent URL %q. Must be one of: http, https, unix.", u.Scheme, agentURL)
 		}
+	}
+}
+
+// WithAgentTimeout sets the timeout for the agent connection. Timeout is in seconds.
+func WithAgentTimeout(timeout int) StartOption {
+	return func(c *config) {
+		c.httpClientTimeout = time.Duration(timeout) * time.Second
 	}
 }
 

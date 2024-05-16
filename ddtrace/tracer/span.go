@@ -79,6 +79,9 @@ func (s *Span) AsMap() map[string]interface{} {
 	for k, v := range s.metrics {
 		m[k] = v
 	}
+	for k, v := range s.metaStruct {
+		m[k] = v
+	}
 	m[ext.MapSpanID] = s.spanID
 	m[ext.MapSpanTraceID] = s.traceID
 	m[ext.MapSpanParentID] = s.parentID
@@ -574,7 +577,7 @@ func (s *Span) Finish(opts ...FinishOption) {
 	}
 
 	if tr, ok := GetGlobalTracer().(*tracer); ok && tr.rulesSampling.traces.enabled() {
-		if !s.context.trace.isLocked() {
+		if !s.context.trace.isLocked() && s.context.trace.propagatingTag(keyDecisionMaker) != "-4" {
 			tr.rulesSampling.SampleTrace(s)
 		}
 	}
@@ -799,6 +802,7 @@ const (
 	keyDecisionMaker        = "_dd.p.dm"
 	keyServiceHash          = "_dd.dm.service_hash"
 	keyOrigin               = "_dd.origin"
+	keyReparentID           = "_dd.parent_id"
 	// keyHostname can be used to override the agent's hostname detection when using `WithHostname`. Not to be confused with keyTracerHostname
 	// which is set via auto-detection.
 	keyHostname                = "_dd.hostname"

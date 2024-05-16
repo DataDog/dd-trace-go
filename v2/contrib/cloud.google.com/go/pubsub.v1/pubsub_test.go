@@ -69,7 +69,7 @@ func TestPropagation(t *testing.T) {
 
 	assert.Equal(spans[1].SpanID(), spans[0].ParentID())
 	assert.Equal(uint64(42), spans[0].TraceID())
-	assert.Equal(map[string]interface{}{
+	assert.Subset(filterTags(spans[0].Tags()), map[string]interface{}{
 		"message_size":      float64(5),
 		"num_attributes":    float64(5),
 		"ordering_key":      "xxx",
@@ -81,12 +81,12 @@ func TestPropagation(t *testing.T) {
 		ext.SpanKind:        ext.SpanKindProducer,
 		ext.MessagingSystem: "googlepubsub",
 		ext.SpanName:        "pubsub.publish",
-	}, filterTags(spans[0].Tags()))
+	})
 
 	assert.Equal(spans[0].SpanID(), spans[2].ParentID())
 	assert.Equal(uint64(42), spans[2].TraceID())
 	assert.Equal(spanID, spans[2].SpanID())
-	assert.Equal(map[string]interface{}{
+	assert.Subset(filterTags(spans[2].Tags()), map[string]interface{}{
 		"message_size":      float64(5),
 		"num_attributes":    float64(5),
 		"ordering_key":      "xxx",
@@ -99,7 +99,7 @@ func TestPropagation(t *testing.T) {
 		ext.MessagingSystem: "googlepubsub",
 		ext.ServiceName:     "",
 		ext.SpanName:        "pubsub.receive",
-	}, filterTags(spans[2].Tags()))
+	})
 }
 
 func TestPropagationWithServiceName(t *testing.T) {
@@ -164,7 +164,7 @@ func TestPropagationNoParentSpan(t *testing.T) {
 
 	assert.Equal(spans[0].TraceID(), spans[0].SpanID())
 	assert.Equal(traceID, spans[0].Context().TraceID())
-	assert.Equal(map[string]interface{}{
+	assert.Subset(filterTags(spans[0].Tags()), map[string]interface{}{
 		"message_size":      float64(5),
 		"num_attributes":    float64(5),
 		"ordering_key":      "xxx",
@@ -176,12 +176,12 @@ func TestPropagationNoParentSpan(t *testing.T) {
 		ext.MessagingSystem: "googlepubsub",
 		ext.ServiceName:     "",
 		ext.SpanName:        "pubsub.publish",
-	}, filterTags(spans[0].Tags()))
+	})
 
 	assert.Equal(spans[0].SpanID(), spans[1].ParentID())
 	assert.Equal(traceID, spans[1].Context().TraceID())
 	assert.Equal(spanID, spans[1].SpanID())
-	assert.Equal(map[string]interface{}{
+	assert.Subset(filterTags(spans[1].Tags()), map[string]interface{}{
 		"message_size":      float64(5),
 		"num_attributes":    float64(5),
 		"ordering_key":      "xxx",
@@ -194,7 +194,7 @@ func TestPropagationNoParentSpan(t *testing.T) {
 		ext.MessagingSystem: "googlepubsub",
 		ext.ServiceName:     "",
 		ext.SpanName:        "pubsub.receive",
-	}, filterTags(spans[1].Tags()))
+	})
 }
 
 func TestPropagationNoPublisherSpan(t *testing.T) {
@@ -236,7 +236,7 @@ func TestPropagationNoPublisherSpan(t *testing.T) {
 
 	assert.Equal(traceID, spans[0].Context().TraceID())
 	assert.Equal(spanID, spans[0].SpanID())
-	assert.Equal(map[string]interface{}{
+	assert.Subset(filterTags(spans[0].Tags()), map[string]interface{}{
 		"message_size":      float64(5),
 		"num_attributes":    float64(0), // no attributes, since no publish middleware sent them
 		"ordering_key":      "xxx",
@@ -249,7 +249,7 @@ func TestPropagationNoPublisherSpan(t *testing.T) {
 		ext.MessagingSystem: "googlepubsub",
 		ext.ServiceName:     "",
 		ext.SpanName:        "pubsub.receive",
-	}, filterTags(spans[0].Tags()))
+	})
 }
 
 func filterTags(m map[string]interface{}) map[string]interface{} {
