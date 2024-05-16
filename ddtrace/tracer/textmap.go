@@ -279,25 +279,15 @@ func (p *chainedPropagator) Extract(carrier interface{}) (ddtrace.SpanContext, e
 				continue // Ignore other propagators.
 			}
 			w3cCtx, _ := pw3c.Extract(carrier)
-			if w3cCtx == nil {
-				continue
-			}
-
-			pw3c.propagateTracestate(ctx.(*spanContext), w3cCtx.(*spanContext))
-			if ctx.(*spanContext).spanID != w3cCtx.(*spanContext).spanID && ctx.(*spanContext).traceID == w3cCtx.(*spanContext).traceID {
-				ctx.(*spanContext).spanID = w3cCtx.(*spanContext).spanID
-			}
-			if ctx.(*spanContext).reparentID == "" {
-				var ddctx ddtrace.SpanContext
-				for _, v2 := range p.extractors {
-					p2, isDatadog := (v2).(*propagator)
-					if isDatadog {
-						ddctx, _ = p2.Extract(carrier)
-						break
+			if w3cCtx != nil && w3cCtx.TraceID() == ctx.TraceID() {
+				pw3c.propagateTracestate(ctx.(*spanContext), w3cCtx.(*spanContext))
+				if w3cCtx.SpanID() != ctx.SpanID() {
+					var ddCtx ddtrace.SpanContext
+					ddp := getDefaultPropagator(p)
+					if ddp != nil {
+						ddCtx, _ = ddp.Extract(carrier)
 					}
-				}
-				if ddctx != nil {
-					ctx.(*spanContext).reparentID = fmt.Sprintf("%016x", ddctx.(*spanContext).spanID)
+					overrideDatadogParentID(ctx.(*spanContext), w3cCtx.(*spanContext), ddCtx)
 				}
 			}
 			break
@@ -328,12 +318,6 @@ func (p *chainedPropagator) Extract(carrier interface{}) (ddtrace.SpanContext, e
 // will be re-composed based on the composition of the given *spanContext,
 // but will include the non-DD vendors in the W3C trace context's tracestate.
 func (p *propagatorW3c) propagateTracestate(ctx *spanContext, w3cCtx *spanContext) {
-	if w3cCtx == nil {
-		return // It's not valid, so ignore it.
-	}
-	if ctx.TraceID() != w3cCtx.TraceID() {
-		return // The trace-ids must match.
-	}
 	if w3cCtx.trace == nil {
 		return // this shouldn't happen, since it should have a propagating tag already
 	}
@@ -507,6 +491,28 @@ func validateTID(tid string) error {
 		return fmt.Errorf("malformed: %q", tid)
 	}
 	return nil
+}
+
+// getDefaultPropagator returns the Datadog Propagator
+func getDefaultPropagator(cp *chainedPropagator) *propagator {
+	for _, v2 := range cp.extractors {
+		p2, isDatadog := (v2).(*propagator)
+		if isDatadog {
+			return p2
+		}
+	}
+	return nil
+}
+
+// overrideDatadogParentID overrides the span ID of a context with the ID extracted from tracecontext headers
+// if the reparenting ID is not set on the context, the span ID from datadog headers is used.
+func overrideDatadogParentID(ctx *spanContext, w3cCtx *spanContext, ddSpanCtx ddtrace.SpanContext) {
+	ctx.spanID = w3cCtx.spanID
+	if ctx.reparentID == "" {
+		if ddSpanCtx != nil && ddSpanCtx.(*spanContext) != nil {
+			ctx.reparentID = fmt.Sprintf("%016x", ddSpanCtx.SpanID())
+		}
+	}
 }
 
 // unmarshalPropagatingTags unmarshals tags from v into ctx
