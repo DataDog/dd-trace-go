@@ -21,3 +21,4 @@ contrib_coverage*.txt
 /core_coverage.txt
 gotestsum-report*.xml
 /internal/apps/unit-of-work/unit-of-work
+tools/v2check/_stage/v2playground/*

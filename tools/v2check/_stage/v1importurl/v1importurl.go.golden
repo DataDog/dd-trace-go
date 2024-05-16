@@ -1,0 +1,20 @@
+-- update import URL to v2 --
+// Unless explicitly stated otherwise all files in this repository are licensed
+// under the Apache License Version 2.0.
+// This product includes software developed at Datadog (https://www.datadoghq.com/).
+// Copyright 2023 Datadog, Inc.
+
+package main
+
+import (
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"    // want `import URL needs to be updated`
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer" // want `import URL needs to be updated`
+)
+
+func main() {
+	tracer.Start()
+	defer tracer.Stop()
+
+	span := tracer.StartSpan("operation", tracer.Tag(ext.SpanType, "test"))
+	defer span.Finish()
+}
