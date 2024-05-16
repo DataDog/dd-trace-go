@@ -15,6 +15,8 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/actions"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/stacktrace"
+
+	"github.com/google/uuid"
 )
 
 // blockedTemplateJSON is the default JSON template used to write responses for blocked requests
@@ -62,6 +64,7 @@ type (
 	// StackTraceAction are actions that generate a stacktrace
 	StackTraceAction struct {
 		StackTrace stacktrace.StackTrace
+		ID         string
 	}
 
 	// GRPCWrapper is an opaque prototype abstraction for a gRPC handler (to avoid importing grpc)
@@ -77,8 +80,63 @@ func (a *HTTPAction) Blocking() bool       { return true }
 func (a *GRPCAction) Blocking() bool       { return true }
 func (a *StackTraceAction) Blocking() bool { return false }
 
-// NewBlockHandler creates, initializes and returns a new BlockRequestAction
-func NewBlockHandler(status int, template string) http.Handler {
+// NewStackTraceAction creates an action for the "stacktrace" action type
+func NewStackTraceAction(params map[string]any) Action {
+	ID := uuid.NewString()
+	if id, ok := params["stack_id"]; !ok {
+		ID = id.(string)
+	}
+	return &StackTraceAction{
+		StackTrace: stacktrace.Capture(),
+		ID:         ID,
+	}
+}
+
+// NewBlockAction creates an action for the "block_request" action type
+func NewBlockAction(params map[string]any) []Action {
+	p, err := actions.BlockParamsFromMap(params)
+	if err != nil {
+		return nil
+	}
+	return []Action{
+		newHTTPBlockRequestAction(p.StatusCode, p.Type),
+		newGRPCBlockRequestAction(*p.GRPCStatusCode),
+	}
+}
+
+// NewRedirectAction creates an action for the "redirect_request" action type
+func NewRedirectAction(params map[string]any) *HTTPAction {
+	p, err := actions.RedirectParamsFromMap(params)
+	if err != nil {
+		return nil
+	}
+	return newRedirectRequestAction(p.StatusCode, p.Location)
+}
+
+func newHTTPBlockRequestAction(status int, template string) *HTTPAction {
+	return &HTTPAction{Handler: newBlockHandler(status, template)}
+}
+
+func newGRPCBlockRequestAction(status int) *GRPCAction {
+	return &GRPCAction{GRPCWrapper: newGRPCBlockHandler(status)}
+
+}
+
+func newRedirectRequestAction(status int, loc string) *HTTPAction {
+	// Default to 303 if status is out of redirection codes bounds
+	if status < 300 || status >= 400 {
+		status = 303
+	}
+
+	// If location is not set we fall back on a default block action
+	if loc == "" {
+		return &HTTPAction{Handler: newBlockHandler(403, string(blockedTemplateJSON))}
+	}
+	return &HTTPAction{Handler: http.RedirectHandler(loc, status)}
+}
+
+// newBlockHandler creates, initializes and returns a new BlockRequestAction
+func newBlockHandler(status int, template string) http.Handler {
 	htmlHandler := newBlockRequestHandler(status, "text/html", blockedTemplateHTML)
 	jsonHandler := newBlockRequestHandler(status, "application/json", blockedTemplateJSON)
 	switch template {
@@ -113,51 +171,4 @@ func newGRPCBlockHandler(status int) GRPCWrapper {
 	return func(_ map[string][]string) (uint32, error) {
 		return uint32(status), errors.New("Request blocked")
 	}
-}
-
-// NewBlockAction creates an action for the "block_request" action type
-func NewBlockAction(params map[string]any) []Action {
-	p, err := actions.BlockParamsFromMap(params)
-	if err != nil {
-		return nil
-	}
-	return newBlockRequestAction(p.StatusCode, *p.GRPCStatusCode, p.Type)
-}
-
-// NewRedirectAction creates an action for the "redirect_request" action type
-func NewRedirectAction(params map[string]any) *HTTPAction {
-	p, err := actions.RedirectParamsFromMap(params)
-	if err != nil {
-		return nil
-	}
-	return newRedirectRequestAction(p.StatusCode, p.Location)
-}
-
-func newHTTPBlockRequestAction(status int, template string) *HTTPAction {
-	return &HTTPAction{Handler: NewBlockHandler(status, template)}
-}
-
-func newGRPCBlockRequestAction(status int) *GRPCAction {
-	return &GRPCAction{GRPCWrapper: newGRPCBlockHandler(status)}
-
-}
-
-func newBlockRequestAction(httpStatus, grpcStatus int, template string) []Action {
-	return []Action{
-		newHTTPBlockRequestAction(httpStatus, template),
-		newGRPCBlockRequestAction(grpcStatus),
-	}
-}
-
-func newRedirectRequestAction(status int, loc string) *HTTPAction {
-	// Default to 303 if status is out of redirection codes bounds
-	if status < 300 || status >= 400 {
-		status = 303
-	}
-
-	// If location is not set we fall back on a default block action
-	if loc == "" {
-		return &HTTPAction{Handler: NewBlockHandler(403, string(blockedTemplateJSON))}
-	}
-	return &HTTPAction{Handler: http.RedirectHandler(loc, status)}
 }

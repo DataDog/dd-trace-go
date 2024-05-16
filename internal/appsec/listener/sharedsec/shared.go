@@ -118,6 +118,9 @@ func ActionsFromEntry(actionType string, params any) []sharedsec.Action {
 		return sharedsec.NewBlockAction(p)
 	case "redirect_request":
 		return []sharedsec.Action{sharedsec.NewRedirectAction(p)}
+	case "stack_trace":
+		return []sharedsec.Action{sharedsec.NewStackTraceAction(p)}
+
 	default:
 		log.Debug("appsec: unknown action type `%s`", actionType)
 		return nil
