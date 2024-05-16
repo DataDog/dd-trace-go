@@ -18,6 +18,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/DataDog/appsec-internal-go/netip"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/httpsec/types"
@@ -26,9 +27,6 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/trace"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/trace/httptrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/stacktrace"
-
-	"github.com/DataDog/appsec-internal-go/netip"
 )
 
 // MonitorParsedBody starts and finishes the SDK body operation.
@@ -78,7 +76,6 @@ func WrapHandler(handler http.Handler, span ddtrace.Span, pathParams map[string]
 		trace.SetTags(span, ipTags)
 
 		var bypassHandler http.Handler
-		var stacktrace stacktrace.StackTrace
 		var blocking bool
 		args := MakeHandlerOperationArgs(r, clientIP, pathParams)
 		ctx, op := StartOperation(r.Context(), args, func(op *types.Operation) {
@@ -87,8 +84,7 @@ func WrapHandler(handler http.Handler, span ddtrace.Span, pathParams map[string]
 				bypassHandler = a.Handler
 			})
 			dyngo.OnData(op, func(a *sharedsec.StackTraceAction) {
-				stacktrace = a.StackTrace
-				stacktrace.Msgsize() // useless for now but keeps lint from complaining
+				// TODO: do something with the stacktrace
 			})
 		})
 		r = r.WithContext(ctx)

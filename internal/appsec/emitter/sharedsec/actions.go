@@ -16,7 +16,6 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/stacktrace"
 
-	"github.com/google/uuid"
 	"github.com/mitchellh/mapstructure"
 )
 
@@ -65,8 +64,7 @@ type (
 	}
 	// StackTraceAction are actions that generate a stacktrace
 	StackTraceAction struct {
-		StackTrace stacktrace.StackTrace
-		ID         string
+		Event stacktrace.Event
 	}
 
 	// GRPCWrapper is an opaque prototype abstraction for a gRPC handler (to avoid importing grpc)
@@ -103,14 +101,18 @@ func (a *StackTraceAction) EmitData(op dyngo.Operation) { dyngo.EmitData(op, a) 
 
 // NewStackTraceAction creates an action for the "stacktrace" action type
 func NewStackTraceAction(params map[string]any) Action {
-	ID := uuid.NewString()
-	if id, ok := params["stack_id"]; !ok {
-		ID = id.(string)
+	id, ok := params["stack_id"]
+	if !ok {
+		log.Debug("appsec: could not read stack_id parameter for stack_trace action")
+		return nil
 	}
-	return &StackTraceAction{
-		StackTrace: stacktrace.Capture(),
-		ID:         ID,
+	event := stacktrace.NewEvent(stacktrace.ExploitEvent, "", "")
+	if event == nil {
+		log.Debug("appsec: could not generate stacktrace event")
+		return nil
 	}
+	event.ID = id.(string)
+	return &StackTraceAction{Event: *event}
 }
 
 // NewBlockAction creates an action for the "block_request" action type
