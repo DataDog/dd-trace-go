@@ -42,9 +42,11 @@ type (
 func BlockParamsFromMap(params map[string]any) (BlockActionParams, error) {
 	// The weird camel case is there for mapstructure to match the struct fields 1:1 with the map keys
 	type blockActionParams struct {
+		//nolint
 		Grpc_status_code string
-		Status_code      string
-		Type             string
+		//nolint
+		Status_code string
+		Type        string
 	}
 	p := BlockActionParams{
 		StatusCode: 403,
@@ -79,7 +81,8 @@ func BlockParamsFromMap(params map[string]any) (BlockActionParams, error) {
 func RedirectParamsFromMap(params map[string]any) (RedirectActionParams, error) {
 	// The weird camel case is there for mapstructure to match the struct fields 1:1 with the map keys
 	type redirectActionParams struct {
-		Location    string
+		Location string
+		//nolint
 		Status_code string
 	}
 	var p RedirectActionParams
