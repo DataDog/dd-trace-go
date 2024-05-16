@@ -1096,6 +1096,8 @@ func parseTracestate(ctx *spanContext, header string) {
 			} else if key == "p" {
 				if val != "" {
 					ctx.reparentID = val
+				} else {
+					ctx.reparentID = "0000000000000000"
 				}
 
 			} else if strings.HasPrefix(key, "t.dm") {
