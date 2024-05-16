@@ -279,7 +279,7 @@ func (p *chainedPropagator) Extract(carrier interface{}) (ddtrace.SpanContext, e
 				continue // Ignore other propagators.
 			}
 			w3cCtx, _ := pw3c.Extract(carrier)
-			if w3cCtx != nil && w3cCtx.TraceID() == ctx.TraceID() {
+			if w3cCtx != nil && w3cCtx.(*spanContext).TraceID128() == ctx.(*spanContext).TraceID128() {
 				pw3c.propagateTracestate(ctx.(*spanContext), w3cCtx.(*spanContext))
 				if w3cCtx.SpanID() != ctx.SpanID() {
 					var ddCtx ddtrace.SpanContext
