@@ -29,7 +29,7 @@ type securityEventsAdder interface {
 	AddSecurityEvents(events []any)
 }
 
-// Helper function to add sec events to an operation taking into account the rate limiter.
+// AddSecurityEvents is a helper function to add sec events to an operation taking into account the rate limiter.
 func AddSecurityEvents(op securityEventsAdder, limiter limiter.Limiter, matches []any) {
 	if len(matches) > 0 && limiter.Allow() {
 		op.AddSecurityEvents(matches)
@@ -44,7 +44,7 @@ const (
 	wafVersionTag        = "_dd.appsec.waf.version"
 )
 
-// Add the tags related to security rules monitoring
+// AddRulesMonitoringTags adds the tags related to security rules monitoring
 func AddRulesMonitoringTags(th trace.TagSetter, wafDiags *waf.Diagnostics) {
 	rInfo := wafDiags.Rules
 	if rInfo == nil {
@@ -64,7 +64,7 @@ func AddRulesMonitoringTags(th trace.TagSetter, wafDiags *waf.Diagnostics) {
 	th.SetTag(wafVersionTag, waf.Version())
 }
 
-// Add the tags related to the monitoring of the WAF
+// AddWAFMonitoringTags adds the tags related to the monitoring of the WAF
 func AddWAFMonitoringTags(th trace.TagSetter, rulesVersion string, stats map[string]any) {
 	// Rules version is set for every request to help the backend associate WAF duration metrics with rule version
 	th.SetTag(eventRulesVersionTag, rulesVersion)
