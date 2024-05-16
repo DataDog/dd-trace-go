@@ -6,8 +6,9 @@
 package actions
 
 import (
-	"encoding/json"
 	"strconv"
+
+	"github.com/mitchellh/mapstructure"
 )
 
 type (
@@ -39,35 +40,30 @@ type (
 // Future WAF version may get rid of this string-only mapping, which would in turn make this process
 // a lot simpler
 func BlockParamsFromMap(params map[string]any) (BlockActionParams, error) {
+	// The weird camel case is there for mapstructure to match the struct fields 1:1 with the map keys
 	type blockActionParams struct {
-		GRPCStatusCode string `json:"grpc_status_code,omitempty"`
-		StatusCode     string `json:"status_code"`
-		Type           string `json:"type,omitempty"`
+		Grpc_status_code string
+		Status_code      string
+		Type             string
 	}
 	p := BlockActionParams{
 		StatusCode: 403,
 		Type:       "auto",
 	}
+
 	var strParams blockActionParams
 	var err error
-	data, err := json.Marshal(params)
-	if err != nil {
-		return p, err
-	}
-	if err := json.Unmarshal(data, &strParams); err != nil {
-		return p, err
-	}
-
+	mapstructure.Decode(params, &strParams)
 	p.Type = strParams.Type
 
-	if p.StatusCode, err = strconv.Atoi(strParams.StatusCode); err != nil {
+	if p.StatusCode, err = strconv.Atoi(strParams.Status_code); err != nil {
 		return p, err
 	}
-	if strParams.GRPCStatusCode == "" {
-		strParams.GRPCStatusCode = "10"
+	if strParams.Grpc_status_code == "" {
+		strParams.Grpc_status_code = "10"
 	}
 
-	grpcCode, err := strconv.Atoi(strParams.GRPCStatusCode)
+	grpcCode, err := strconv.Atoi(strParams.Grpc_status_code)
 	if err == nil {
 		p.GRPCStatusCode = &grpcCode
 	}
@@ -81,22 +77,19 @@ func BlockParamsFromMap(params map[string]any) (BlockActionParams, error) {
 // Future WAF version may get rid of this string-only mapping, which would in turn make this process
 // a lot simpler
 func RedirectParamsFromMap(params map[string]any) (RedirectActionParams, error) {
+	// The weird camel case is there for mapstructure to match the struct fields 1:1 with the map keys
 	type redirectActionParams struct {
-		Location   string `json:"location,omitempty"`
-		StatusCode string `json:"status_code"`
+		Location    string
+		Status_code string
 	}
-	p := RedirectActionParams{}
+	var p RedirectActionParams
 	var strParams redirectActionParams
-	var err error
-	data, err := json.Marshal(params)
+
+	err := mapstructure.Decode(params, &strParams)
 	if err != nil {
 		return p, err
 	}
-	if err := json.Unmarshal(data, &strParams); err != nil {
-		return p, err
-	}
-
 	p.Location = strParams.Location
-	p.StatusCode, err = strconv.Atoi(strParams.StatusCode)
+	p.StatusCode, err = strconv.Atoi(strParams.Status_code)
 	return p, err
 }
