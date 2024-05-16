@@ -115,11 +115,10 @@ func (l *wafEventListener) onEvent(op *types.HandlerOperation, handlerArgs types
 			wafResult := shared.RunWAF(wafCtx, waf.RunAddressData{Persistent: values})
 			if wafResult.HasActions() || wafResult.HasEvents() {
 				for aType, params := range wafResult.Actions {
-					for _, act := range shared.ActionsFromEntry(aType, params) {
-						if a, ok := act.(*sharedsec.GRPCAction); ok {
-							code, err := a.GRPCWrapper(map[string][]string{})
+					for _, action := range shared.ActionsFromEntry(aType, params) {
+						if grpcAction, ok := action.(*sharedsec.GRPCAction); ok {
+							code, err := grpcAction.GRPCWrapper(map[string][]string{})
 							dyngo.EmitData(userIDOp, types.NewMonitoringError(err.Error(), code))
-
 						}
 					}
 				}
