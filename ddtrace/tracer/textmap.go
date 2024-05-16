@@ -331,7 +331,6 @@ func (p *propagatorW3c) propagateTracestate(ctx *spanContext, w3cCtx *spanContex
 	ts := w3cCtx.trace.propagatingTag(tracestateHeader)
 	priority, _ := ctx.SamplingPriority()
 	setPropagatingTag(ctx, tracestateHeader, composeTracestate(ctx, priority, ts))
-	ctx.reparentID = w3cCtx.reparentID
 	ctx.isRemote = (w3cCtx.isRemote)
 }
 
