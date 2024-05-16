@@ -10,7 +10,6 @@ import (
 	"errors"
 	"net/http"
 	"os"
-	"strconv"
 	"strings"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
@@ -79,15 +78,15 @@ type (
 	// blockActionParams are the dynamic parameters to be provided to a "block_request"
 	// action type upon invocation
 	blockActionParams struct {
-		GRPCStatusCode *int   `json:"grpc_status_code,omitempty"`
-		StatusCode     int    `json:"status_code"`
-		Type           string `json:"type,omitempty"`
+		GRPCStatusCode *int   `mapstructure:"grpc_status_code,omitempty"`
+		StatusCode     int    `mapstructure:"status_code"`
+		Type           string `mapstructure:"type,omitempty"`
 	}
 	// redirectActionParams are the dynamic parameters to be provided to a "redirect_request"
 	// action type upon invocation
 	redirectActionParams struct {
-		Location   string `json:"location,omitempty"`
-		StatusCode int    `json:"status_code"`
+		Location   string `mapstructure:"location,omitempty"`
+		StatusCode int    `mapstructure:"status_code"`
 	}
 )
 
@@ -121,8 +120,10 @@ func NewBlockAction(params map[string]any) []Action {
 
 // NewRedirectAction creates an action for the "redirect_request" action type
 func NewRedirectAction(params map[string]any) *HTTPAction {
-	p, err := redirectParamsFromMap(params)
+	var p redirectActionParams
+	err := mapstructure.Decode(params, &p)
 	if err != nil {
+		log.Debug("appsec: couldn't decode redirect action parameters")
 		return nil
 	}
 	return newRedirectRequestAction(p.StatusCode, p.Location)
@@ -188,20 +189,8 @@ func newGRPCBlockHandler(status int) GRPCWrapper {
 	}
 }
 
-// blockParamsFromMap fills a blockActionParams struct from the the map returned by the WAF
-// for a "block_request" action type. This map currently maps all param values to string which
-// is why we first peform a decoding to string, before converting.
-// Future WAF version may get rid of this string-only mapping, which would in turn make this process
-// a lot simpler
 func blockParamsFromMap(params map[string]any) (blockActionParams, error) {
 	var (
-		// The snake case is there for mapstructure to match the struct fields 1:1 with the map keys
-		//nolint
-		strParams struct {
-			Grpc_status_code string
-			Status_code      string
-			Type             string
-		}
 		err error
 	)
 	p := blockActionParams{
@@ -209,45 +198,18 @@ func blockParamsFromMap(params map[string]any) (blockActionParams, error) {
 		Type:       "auto",
 	}
 
-	mapstructure.Decode(params, &strParams)
-	p.Type = strParams.Type
+	mapstructure.WeakDecode(params, &p)
 
-	if p.StatusCode, err = strconv.Atoi(strParams.Status_code); err != nil {
-		return p, err
-	}
-	if strParams.Grpc_status_code == "" {
-		strParams.Grpc_status_code = "10"
-	}
-
-	grpcCode, err := strconv.Atoi(strParams.Grpc_status_code)
-	if err == nil {
+	grpcCode := 10
+	if p.GRPCStatusCode == nil {
 		p.GRPCStatusCode = &grpcCode
 	}
 	return p, err
 
 }
 
-// redirectParamsFromMap fills a redirectActionParams struct from the the map returned by the WAF
-// for a "redirect_request" action type. This map currently maps all param values to string which
-// is why we first peform a decoding to string, before converting.
-// Future WAF version may get rid of this string-only mapping, which would in turn make this process
-// a lot simpler
 func redirectParamsFromMap(params map[string]any) (redirectActionParams, error) {
-	var (
-		// The snake case is there for mapstructure to match the struct fields 1:1 with the map keys
-		//nolint
-		strParams struct {
-			Location    string
-			Status_code string
-		}
-		p redirectActionParams
-	)
-
-	err := mapstructure.Decode(params, &strParams)
-	if err != nil {
-		return p, err
-	}
-	p.Location = strParams.Location
-	p.StatusCode, err = strconv.Atoi(strParams.Status_code)
+	var p redirectActionParams
+	err := mapstructure.WeakDecode(params, &p)
 	return p, err
 }
