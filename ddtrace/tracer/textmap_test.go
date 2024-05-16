@@ -111,6 +111,7 @@ func TestTextMapExtractTracestatePropagation(t *testing.T) {
 		name, propagationStyle, traceparent string
 		onlyExtractFirst                    bool // value of DD_TRACE_PROPAGATION_EXTRACT_FIRST
 		wantTracestatePropagation           bool
+		conflictingParentID                 bool
 	}{
 		{
 			/*
@@ -131,6 +132,7 @@ func TestTextMapExtractTracestatePropagation(t *testing.T) {
 			propagationStyle:          "datadog,b3,tracecontext",
 			traceparent:               "00-00000000000000000000000000000004-2222222222222222-01",
 			wantTracestatePropagation: true,
+			conflictingParentID:       true,
 		},
 		{
 			/*
@@ -141,6 +143,7 @@ func TestTextMapExtractTracestatePropagation(t *testing.T) {
 			propagationStyle:          "datadog,tracecontext",
 			traceparent:               "00-00000000000000000000000000000004-2222222222222222-01",
 			wantTracestatePropagation: true,
+			conflictingParentID:       true,
 		},
 		{
 			/*
@@ -197,7 +200,7 @@ func TestTextMapExtractTracestatePropagation(t *testing.T) {
 				originHeader:          "synthetics",
 				b3TraceIDHeader:       "0021dc1807524785",
 				traceparentHeader:     tc.traceparent,
-				tracestateHeader:      "dd=s:2;o:rum;p:0000000000000005;t.tid:1230000000000000~~,othervendor=t61rcWkgMzE",
+				tracestateHeader:      "dd=s:2;o:rum;p:0000000000000001;t.tid:1230000000000000~~,othervendor=t61rcWkgMzE",
 			})
 
 			ctx, err := tracer.Extract(headers)
@@ -205,10 +208,16 @@ func TestTextMapExtractTracestatePropagation(t *testing.T) {
 			sctx, ok := ctx.(*spanContext)
 			assert.True(ok)
 			assert.Equal("00000000000000000000000000000004", sctx.traceID.HexEncoded())
-			assert.Equal(uint64(1), sctx.spanID)    // should use x-datadog-parent-id, not the id in the tracestate
+			if tc.conflictingParentID == true {
+				// tracecontext span id should be used
+				assert.Equal(uint64(0x2222222222222222), sctx.spanID)
+			} else {
+				// should use x-datadog-parent-id, not the id in the tracestate
+				assert.Equal(uint64(1), sctx.spanID)
+			}
 			assert.Equal("synthetics", sctx.origin) // should use x-datadog-origin, not the origin in the tracestate
 			if tc.wantTracestatePropagation {
-				assert.Equal("0000000000000005", sctx.reparentID)
+				assert.Equal("0000000000000001", sctx.reparentID)
 				assert.Equal("dd=s:0;o:synthetics;p:0000000000000001,othervendor=t61rcWkgMzE", sctx.trace.propagatingTag(tracestateHeader))
 			} else if sctx.trace != nil {
 				assert.False(sctx.trace.hasPropagatingTag(tracestateHeader))
