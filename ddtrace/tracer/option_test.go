@@ -440,6 +440,7 @@ func compareHTTPClients(t *testing.T, x, y http.Client) {
 	assert.Equal(t, x.Transport.(*http.Transport).TLSHandshakeTimeout, y.Transport.(*http.Transport).TLSHandshakeTimeout)
 	assert.Equal(t, x.Transport.(*http.Transport).ExpectContinueTimeout, y.Transport.(*http.Transport).ExpectContinueTimeout)
 }
+
 func getFuncName(f any) string {
 	return runtime.FuncForPC(reflect.ValueOf(f).Pointer()).Name()
 }

@@ -15,7 +15,6 @@ require (
 	github.com/DataDog/go-libddwaf/v2 v2.4.2 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/ebitengine/purego v0.6.0-alpha.5 // indirect
-	github.com/golang/protobuf v1.5.3 // indirect
 	github.com/hashicorp/errwrap v1.1.0 // indirect
 	github.com/hashicorp/go-multierror v1.1.1 // indirect
 	github.com/outcaste-io/ristretto v0.2.3 // indirect
