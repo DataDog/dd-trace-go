@@ -10,13 +10,14 @@ import (
 	"errors"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/actions"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/stacktrace"
 
 	"github.com/google/uuid"
+	"github.com/mitchellh/mapstructure"
 )
 
 // blockedTemplateJSON is the default JSON template used to write responses for blocked requests
@@ -74,6 +75,20 @@ type (
 	//    Such constructors would receive the full appsec config and rules, so that they would be able to build
 	//    specific blocking actions.
 	GRPCWrapper func(map[string][]string) (uint32, error)
+
+	// blockActionParams are the dynamic parameters to be provided to a "block_request"
+	// action type upon invocation
+	blockActionParams struct {
+		GRPCStatusCode *int   `json:"grpc_status_code,omitempty"`
+		StatusCode     int    `json:"status_code"`
+		Type           string `json:"type,omitempty"`
+	}
+	// redirectActionParams are the dynamic parameters to be provided to a "redirect_request"
+	// action type upon invocation
+	redirectActionParams struct {
+		Location   string `json:"location,omitempty"`
+		StatusCode int    `json:"status_code"`
+	}
 )
 
 func (a *HTTPAction) Blocking() bool       { return true }
@@ -94,7 +109,7 @@ func NewStackTraceAction(params map[string]any) Action {
 
 // NewBlockAction creates an action for the "block_request" action type
 func NewBlockAction(params map[string]any) []Action {
-	p, err := actions.BlockParamsFromMap(params)
+	p, err := blockParamsFromMap(params)
 	if err != nil {
 		return nil
 	}
@@ -106,7 +121,7 @@ func NewBlockAction(params map[string]any) []Action {
 
 // NewRedirectAction creates an action for the "redirect_request" action type
 func NewRedirectAction(params map[string]any) *HTTPAction {
-	p, err := actions.RedirectParamsFromMap(params)
+	p, err := redirectParamsFromMap(params)
 	if err != nil {
 		return nil
 	}
@@ -171,4 +186,68 @@ func newGRPCBlockHandler(status int) GRPCWrapper {
 	return func(_ map[string][]string) (uint32, error) {
 		return uint32(status), errors.New("Request blocked")
 	}
+}
+
+// blockParamsFromMap fills a blockActionParams struct from the the map returned by the WAF
+// for a "block_request" action type. This map currently maps all param values to string which
+// is why we first peform a decoding to string, before converting.
+// Future WAF version may get rid of this string-only mapping, which would in turn make this process
+// a lot simpler
+func blockParamsFromMap(params map[string]any) (blockActionParams, error) {
+	var (
+		// The snake case is there for mapstructure to match the struct fields 1:1 with the map keys
+		//nolint
+		strParams struct {
+			Grpc_status_code string
+			Status_code      string
+			Type             string
+		}
+		err error
+	)
+	p := blockActionParams{
+		StatusCode: 403,
+		Type:       "auto",
+	}
+
+	mapstructure.Decode(params, &strParams)
+	p.Type = strParams.Type
+
+	if p.StatusCode, err = strconv.Atoi(strParams.Status_code); err != nil {
+		return p, err
+	}
+	if strParams.Grpc_status_code == "" {
+		strParams.Grpc_status_code = "10"
+	}
+
+	grpcCode, err := strconv.Atoi(strParams.Grpc_status_code)
+	if err == nil {
+		p.GRPCStatusCode = &grpcCode
+	}
+	return p, err
+
+}
+
+// redirectParamsFromMap fills a redirectActionParams struct from the the map returned by the WAF
+// for a "redirect_request" action type. This map currently maps all param values to string which
+// is why we first peform a decoding to string, before converting.
+// Future WAF version may get rid of this string-only mapping, which would in turn make this process
+// a lot simpler
+func redirectParamsFromMap(params map[string]any) (redirectActionParams, error) {
+	var (
+		// The snake case is there for mapstructure to match the struct fields 1:1 with the map keys
+		//nolint
+		strParams struct {
+			Location    string
+			Status_code string
+		}
+		p redirectActionParams
+	)
+
+	err := mapstructure.Decode(params, &strParams)
+	if err != nil {
+		return p, err
+	}
+	p.Location = strParams.Location
+	p.StatusCode, err = strconv.Atoi(strParams.Status_code)
+	return p, err
 }

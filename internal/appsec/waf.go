@@ -8,14 +8,13 @@ package appsec
 import (
 	"github.com/DataDog/appsec-internal-go/limiter"
 	waf "github.com/DataDog/go-libddwaf/v3"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/actions"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/config"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
 )
 
 func (a *appsec) swapWAF(rules config.RulesFragment) (err error) {
 	// Instantiate a new WAF handle and verify its state
-	newHandle, err := newWAFHandle(rules, a.cfg)
+	newHandle, err := waf.NewHandle(rules, a.cfg.Obfuscator.KeyRegex, a.cfg.Obfuscator.ValueRegex)
 	if err != nil {
 		return err
 	}
@@ -49,19 +48,6 @@ func (a *appsec) swapWAF(rules config.RulesFragment) (err error) {
 	}
 
 	return nil
-}
-
-func newWAFHandle(rules config.RulesFragment, cfg *config.Config) (*waf.Handle, error) {
-	// Default block action
-	rules.Actions = append(rules.Actions, actions.ActionEntry[actions.BlockActionParams]{
-		ID:   "block",
-		Type: "block_request",
-		Parameters: actions.BlockActionParams{
-			Type:       "auto",
-			StatusCode: 403,
-		},
-	})
-	return waf.NewHandle(rules, cfg.Obfuscator.KeyRegex, cfg.Obfuscator.ValueRegex)
 }
 
 type wafEventListener func(*waf.Handle, *config.Config, limiter.Limiter, dyngo.Operation)
