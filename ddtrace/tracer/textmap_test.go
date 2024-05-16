@@ -1878,16 +1878,6 @@ func TestEnvVars(t *testing.T) {
 					out: []uint64{1, 1},
 					tid: traceIDFrom64Bits(1),
 				},
-				{
-					in: TextMapCarrier{
-						traceparentHeader:     "00-00000000000000000000000000000001-0000000000000001-01",
-						DefaultTraceIDHeader:  "1",
-						DefaultParentIDHeader: "2",
-						DefaultPriorityHeader: "1",
-					},
-					out: []uint64{1, 1},
-					tid: traceIDFrom64Bits(1),
-				},
 			}
 			for i, tc := range tests {
 				t.Run(fmt.Sprintf("#%v extract with env=%q", i, testEnv), func(t *testing.T) {
@@ -1916,6 +1906,27 @@ func checkSameElements(assert *assert.Assertions, want, got string) {
 	gotInner, wantInner := strings.TrimPrefix(got, "dd="), strings.TrimPrefix(want, "dd=")
 	gotInnerList, wantInnerList := strings.Split(gotInner, ";"), strings.Split(wantInner, ";")
 	assert.ElementsMatch(gotInnerList, wantInnerList)
+}
+
+func TestTraceContextPrecedence(t *testing.T) {
+	t.Setenv(headerPropagationStyleExtract, "datadog,b3,tracecontext")
+	tracer := newTracer()
+	defer tracer.Stop()
+	ctx, err := tracer.Extract(TextMapCarrier{
+		traceparentHeader:     "00-00000000000000000000000000000001-0000000000000001-01",
+		DefaultTraceIDHeader:  "1",
+		DefaultParentIDHeader: "22",
+		DefaultPriorityHeader: "2",
+		b3SingleHeader:        "1-333",
+	})
+	assert.NoError(t, err)
+
+	sctx, _ := ctx.(*spanContext)
+	assert := assert.New(t)
+	assert.Equal(traceIDFrom64Bits(1), sctx.traceID)
+	assert.Equal(uint64(0x1), sctx.spanID)
+	p, _ := sctx.SamplingPriority()
+	assert.Equal(2, p)
 }
 
 func TestW3CExtractsBaggage(t *testing.T) {

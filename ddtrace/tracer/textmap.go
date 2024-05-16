@@ -274,11 +274,15 @@ func (p *chainedPropagator) Extract(carrier interface{}) (ddtrace.SpanContext, e
 	for _, v := range p.extractors {
 		if ctx != nil {
 			// A local trace context has already been extracted.
-			prop, isW3C := v.(*propagatorW3c)
+			pw3c, isW3C := v.(*propagatorW3c)
 			if !isW3C {
 				continue // Ignore other propagators.
 			}
-			prop.propagateTracestate(ctx.(*spanContext), carrier)
+			w3cCtx, _ := pw3c.Extract(carrier)
+			pw3c.propagateTracestate(ctx.(*spanContext), w3cCtx.(*spanContext))
+			if ctx.(*spanContext).spanID != w3cCtx.(*spanContext).spanID && ctx.(*spanContext).traceID == w3cCtx.(*spanContext).traceID {
+				ctx.(*spanContext).spanID = w3cCtx.(*spanContext).spanID
+			}
 			if ctx.(*spanContext).reparentID == "" {
 				var ddctx ddtrace.SpanContext
 				for _, v2 := range p.extractors {
@@ -289,7 +293,7 @@ func (p *chainedPropagator) Extract(carrier interface{}) (ddtrace.SpanContext, e
 					}
 				}
 				if ddctx != nil {
-					ctx.(*spanContext).reparentID = strconv.FormatUint(ddctx.(*spanContext).spanID, 10)
+					ctx.(*spanContext).reparentID = fmt.Sprintf("%016x", ddctx.(*spanContext).spanID)
 				}
 			}
 			break
@@ -319,15 +323,14 @@ func (p *chainedPropagator) Extract(carrier interface{}) (ddtrace.SpanContext, e
 // provided by the given *spanContext. If it matches, then the tracestate
 // will be re-composed based on the composition of the given *spanContext,
 // but will include the non-DD vendors in the W3C trace context's tracestate.
-func (p *propagatorW3c) propagateTracestate(ctx *spanContext, carrier interface{}) {
-	w3cCtx, _ := p.Extract(carrier)
+func (p *propagatorW3c) propagateTracestate(ctx *spanContext, w3cCtx *spanContext) {
 	if w3cCtx == nil {
 		return // It's not valid, so ignore it.
 	}
 	if ctx.TraceID() != w3cCtx.TraceID() {
 		return // The trace-ids must match.
 	}
-	if w3cCtx.(*spanContext).trace == nil {
+	if w3cCtx.trace == nil {
 		return // this shouldn't happen, since it should have a propagating tag already
 	}
 	if ctx.trace == nil {
@@ -337,11 +340,11 @@ func (p *propagatorW3c) propagateTracestate(ctx *spanContext, carrier interface{
 	// it to the span context that will be returned.
 	// Note: Other trace context fields like sampling priority, propagated tags,
 	// and origin will remain unchanged.
-	ts := w3cCtx.(*spanContext).trace.propagatingTag(tracestateHeader)
+	ts := w3cCtx.trace.propagatingTag(tracestateHeader)
 	priority, _ := ctx.SamplingPriority()
 	setPropagatingTag(ctx, tracestateHeader, composeTracestate(ctx, priority, ts))
-	ctx.reparentID = w3cCtx.(*spanContext).reparentID
-	ctx.isRemote = (w3cCtx.(*spanContext).isRemote)
+	ctx.reparentID = w3cCtx.reparentID
+	ctx.isRemote = (w3cCtx.isRemote)
 }
 
 // propagator implements Propagator and injects/extracts span contexts
