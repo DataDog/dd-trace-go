@@ -109,6 +109,13 @@ func WithAgentAddr(addr string) StartOption {
 	return v2.WithAgentAddr(addr)
 }
 
+// WithAgentTimeout sets the timeout for the agent connection. Timeout is in seconds.
+func WithAgentTimeout(timeout int) StartOption {
+	return func(c *config) {
+		c.httpClientTimeout = time.Duration(timeout) * time.Second
+	}
+}
+
 // WithEnv sets the environment to which all traces started by the tracer will be submitted.
 // The default value is the environment variable DD_ENV, if it is set.
 func WithEnv(env string) StartOption {
@@ -122,6 +129,7 @@ func WithServiceMapping(from, to string) StartOption {
 }
 
 // WithPeerServiceDefaults sets default calculation for peer.service.
+// Related documentation: https://docs.datadoghq.com/tracing/guide/inferred-service-opt-in/?tab=go#apm-tracer-configuration
 func WithPeerServiceDefaults(enabled bool) StartOption {
 	return v2.WithPeerServiceDefaults(enabled)
 }

@@ -33,9 +33,9 @@ var (
 		"cf-connecting-ip6",
 	}
 
-	// defaultNonIPHeaders is the base list of non-IP HTTP headers collected and
-	// sent to the WAF (and tagged on trace spans).
-	defaultNonIPHeaders = []string{
+	// defaultCollectedHeaders is the default list of HTTP headers collected as
+	// request span tags when appsec is enabled.
+	defaultCollectedHeaders = append([]string{
 		"host",
 		"content-length",
 		"content-type",
@@ -47,16 +47,24 @@ var (
 		"accept",
 		"accept-encoding",
 		"accept-language",
-	}
+		"x-amzn-trace-id",
+		"cloudfront-viewer-ja3-fingerprint",
+		"cf-ray",
+		"x-cloud-trace-context",
+		"x-appgw-trace-id",
+		"akamai-user-risk",
+		"x-sigsci-requestid",
+		"x-sigsci-tags",
+	}, defaultIPHeaders...)
 
-	// collectedHTTPHeaders is the list of HTTP headers retained by
-	// NormalizeHTTPHeaders, and which will be collected to be processed by the
-	// WAF and tagged on trace spans.
-	collectedHTTPHeaders map[string]struct{}
+	// collectedHeadersLookupMap is a helper lookup map of HTTP headers to
+	// collect as request span tags when appsec is enabled. It is computed at
+	// init-time based on defaultCollectedHeaders and leveraged by NormalizeHTTPHeaders.
+	collectedHeadersLookupMap map[string]struct{}
 
 	// monitoredClientIPHeadersCfg is the list of IP-related headers leveraged to
 	// retrieve the public client IP address in ClientIP. This is defined at init
-	// time in dunction of the value of the envClientIPHeader environment variable.
+	// time in function of the value of the envClientIPHeader environment variable.
 	monitoredClientIPHeadersCfg []string
 )
 
@@ -71,20 +79,27 @@ func ClientIPTags(headers map[string][]string, hasCanonicalHeaders bool, remoteA
 }
 
 func init() {
-	collectedHTTPHeaders = make(map[string]struct{}, len(defaultIPHeaders)+len(defaultNonIPHeaders)+1)
-	for _, h := range defaultIPHeaders {
-		collectedHTTPHeaders[h] = struct{}{}
-	}
-	for _, h := range defaultNonIPHeaders {
-		collectedHTTPHeaders[h] = struct{}{}
-	}
+	makeCollectedHTTPHeadersLookupMap()
+	readMonitoredClientIPHeadersConfig()
+}
 
-	if cfg := os.Getenv(envClientIPHeader); cfg != "" {
-		// Add this header to the list of collected headers
-		collectedHTTPHeaders[cfg] = struct{}{}
+func makeCollectedHTTPHeadersLookupMap() {
+	collectedHeadersLookupMap = make(map[string]struct{}, len(defaultCollectedHeaders))
+	for _, h := range defaultCollectedHeaders {
+		collectedHeadersLookupMap[h] = struct{}{}
+	}
+}
+
+func readMonitoredClientIPHeadersConfig() {
+	if header := os.Getenv(envClientIPHeader); header != "" {
 		// Make this header the only one to consider in ClientIP
-		monitoredClientIPHeadersCfg = []string{cfg}
+		monitoredClientIPHeadersCfg = []string{header}
+
+		// Add this header to the list of collected headers
+		header = normalizeHTTPHeaderName(header)
+		collectedHeadersLookupMap[header] = struct{}{}
 	} else {
+		// No specific IP header was configured, use the default list
 		monitoredClientIPHeadersCfg = defaultIPHeaders
 	}
 }

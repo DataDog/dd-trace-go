@@ -3,7 +3,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
-package httptrace
+package httptrace_test
 
 import (
 	"net"
@@ -12,6 +12,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/metadata"
+
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/trace/httptrace"
 )
 
 func TestClientIP(t *testing.T) {
@@ -54,7 +56,7 @@ func TestClientIP(t *testing.T) {
 	} {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
-			_, clientIP := ClientIPTags(tc.md, false, tc.addr.String())
+			_, clientIP := httptrace.ClientIPTags(tc.md, false, tc.addr.String())
 			expectedClientIP, _ := netip.ParseAddr(tc.expectedClientIP)
 			require.Equal(t, expectedClientIP.String(), clientIP.String())
 		})

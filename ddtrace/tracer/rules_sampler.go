@@ -45,6 +45,8 @@ type SamplingRule struct {
 	// Tags specifies the map of key-value patterns that span tags must match.
 	Tags map[string]*regexp.Regexp
 
+	Provenance provenance
+
 	ruleType SamplingRuleType
 	limiter  *rateLimiter
 
@@ -243,7 +245,7 @@ func newSingleSpanRateLimiter(mps float64) *rateLimiter {
 // globMatch compiles pattern string into glob format, i.e. regular expressions with only '?'
 // and '*' treated as regex metacharacters.
 func globMatch(pattern string) *regexp.Regexp {
-	if pattern == "" {
+	if pattern == "" || pattern == "*" {
 		return nil
 	}
 	// escaping regex characters
@@ -252,7 +254,7 @@ func globMatch(pattern string) *regexp.Regexp {
 	pattern = strings.Replace(pattern, "\\?", ".", -1)
 	pattern = strings.Replace(pattern, "\\*", ".*", -1)
 	// pattern must match an entire string
-	return regexp.MustCompile(fmt.Sprintf("^%s$", pattern))
+	return regexp.MustCompile(fmt.Sprintf("(?i)^%s$", pattern))
 }
 
 // samplingRulesFromEnv parses sampling rules from
@@ -329,6 +331,7 @@ type jsonRule struct {
 	Resource     string            `json:"resource"`
 	Tags         map[string]string `json:"tags"`
 	Type         *SamplingRuleType `json:"type,omitempty"`
+	Provenance   provenance        `json:"provenance,omitempty"`
 }
 
 func (j jsonRule) String() string {
@@ -353,6 +356,9 @@ func (j jsonRule) String() string {
 	}
 	if j.Type != nil {
 		s = append(s, fmt.Sprintf("Type: %v", *j.Type))
+	}
+	if j.Provenance != Local {
+		s = append(s, fmt.Sprintf("Provenance: %v", j.Provenance.String()))
 	}
 	return fmt.Sprintf("{%s}", strings.Join(s, " "))
 }
@@ -388,7 +394,10 @@ func validateRules(jsonRules []jsonRule, spanType SamplingRuleType) ([]SamplingR
 			continue
 		}
 		if rate < 0.0 || rate > 1.0 {
-			errs = append(errs, fmt.Sprintf("at index %d: ignoring rule %s: rate is out of [0.0, 1.0] range", i, v.String()))
+			errs = append(
+				errs,
+				fmt.Sprintf("at index %d: ignoring rule %s: rate is out of [0.0, 1.0] range", i, v.String()),
+			)
 			continue
 		}
 		tagGlobs := make(map[string]*regexp.Regexp, len(v.Tags))
@@ -402,6 +411,7 @@ func validateRules(jsonRules []jsonRule, spanType SamplingRuleType) ([]SamplingR
 			MaxPerSecond: v.MaxPerSecond,
 			Resource:     globMatch(v.Resource),
 			Tags:         tagGlobs,
+			Provenance:   v.Provenance,
 			ruleType:     spanType,
 			limiter:      newSingleSpanRateLimiter(v.MaxPerSecond),
 			globRule:     &jsonRules[i],
@@ -423,6 +433,7 @@ func (sr SamplingRule) MarshalJSON() ([]byte, error) {
 		Tags         map[string]string `json:"tags,omitempty"`
 		Type         *string           `json:"type,omitempty"`
 		MaxPerSecond *float64          `json:"max_per_second,omitempty"`
+		Provenance   string            `json:"provenance,omitempty"`
 	}{}
 	if sr.globRule != nil {
 		s.Service = sr.globRule.Service
@@ -453,6 +464,9 @@ func (sr SamplingRule) MarshalJSON() ([]byte, error) {
 	if v := sr.ruleType.String(); v != "" {
 		t := fmt.Sprintf("%d", sr.ruleType)
 		s.Type = &t
+	}
+	if sr.Provenance != Local {
+		s.Provenance = sr.Provenance.String()
 	}
 	return json.Marshal(&s)
 }

@@ -143,22 +143,22 @@ func TestSamplingRuleMarshallGlob(t *testing.T) {
 		marshal string
 	}{
 		// pattern with *
-		{"test*", "test", regexp.MustCompile("^test.*$"), `{"service":"test*","sample_rate":1,"type":"1"}`},
-		{"*test", "a-test", regexp.MustCompile("^.*test$"), `{"service":"*test","sample_rate":1,"type":"1"}`},
-		{"a*case", "acase", regexp.MustCompile("^a.*case$"), `{"service":"a*case","sample_rate":1,"type":"1"}`},
+		{"test*", "test", regexp.MustCompile("(?i)^test.*$"), `{"service":"test*","sample_rate":1,"type":"1"}`},
+		{"*test", "a-test", regexp.MustCompile("(?i)^.*test$"), `{"service":"*test","sample_rate":1,"type":"1"}`},
+		{"a*case", "acase", regexp.MustCompile("(?i)^a.*case$"), `{"service":"a*case","sample_rate":1,"type":"1"}`},
 		// pattern regexp.MustCompile(), ``, with ?
-		{"a?case", "a-case", regexp.MustCompile("^a.case$"), `{"service":"a?case","sample_rate":1,"type":"1"}`},
-		{"a?test?case", "a-test-case", regexp.MustCompile("^a.test.case$"), `{"service":"a?test?case","sample_rate":1,"type":"1"}`},
+		{"a?case", "a-case", regexp.MustCompile("(?i)^a.case$"), `{"service":"a?case","sample_rate":1,"type":"1"}`},
+		{"a?test?case", "a-test-case", regexp.MustCompile("(?i)^a.test.case$"), `{"service":"a?test?case","sample_rate":1,"type":"1"}`},
 		//// pattern with ? regexp.MustCompile(), ``, and *
-		{"?test*", "atest", regexp.MustCompile("^.test.*$"), `{"service":"?test*","sample_rate":1,"type":"1"}`},
-		{"test*case", "testcase", regexp.MustCompile("^test.*case$"), `{"service":"test*case","sample_rate":1,"type":"1"}`},
-		{"a?test*", "a-test-case", regexp.MustCompile("^a.test.*$"), `{"service":"a?test*","sample_rate":1,"type":"1"}`},
-		{"a*test?", "a-test-", regexp.MustCompile("^a.*test.$"), `{"service":"a*test?","sample_rate":1,"type":"1"}`},
-		{"a*test?case", "a--test-case", regexp.MustCompile("^a.*test.case$"), `{"service":"a*test?case","sample_rate":1,"type":"1"}`},
-		{"a?test*case", "a-testing--case", regexp.MustCompile("^a.test.*case$"), `{"service":"a?test*case","sample_rate":1,"type":"1"}`},
+		{"?test*", "atest", regexp.MustCompile("(?i)^.test.*$"), `{"service":"?test*","sample_rate":1,"type":"1"}`},
+		{"test*case", "testcase", regexp.MustCompile("(?i)^test.*case$"), `{"service":"test*case","sample_rate":1,"type":"1"}`},
+		{"a?test*", "a-test-case", regexp.MustCompile("(?i)^a.test.*$"), `{"service":"a?test*","sample_rate":1,"type":"1"}`},
+		{"a*test?", "a-test-", regexp.MustCompile("(?i)^a.*test.$"), `{"service":"a*test?","sample_rate":1,"type":"1"}`},
+		{"a*test?case", "a--test-case", regexp.MustCompile("(?i)^a.*test.case$"), `{"service":"a*test?case","sample_rate":1,"type":"1"}`},
+		{"a?test*case", "a-testing--case", regexp.MustCompile("(?i)^a.test.*case$"), `{"service":"a?test*case","sample_rate":1,"type":"1"}`},
 		//// valid non-glob regex regexp.MustCompile(), ``, pattern
-		{"*/*", `a/123`, regexp.MustCompile("^.*/.*$"), `{"service":"*/*","sample_rate":1,"type":"1"}`},
-		{`*\/*`, `a\/123`, regexp.MustCompile("^.*/.*$"), `{"service":"*/*","sample_rate":1,"type":"1"}`},
+		{"*/*", `a/123`, regexp.MustCompile("(?i)^.*/.*$"), `{"service":"*/*","sample_rate":1,"type":"1"}`},
+		{`*\/*`, `a\/123`, regexp.MustCompile("(?i)^.*/.*$"), `{"service":"*/*","sample_rate":1,"type":"1"}`},
 	} {
 		t.Run(fmt.Sprintf("%d", i), func(t *testing.T) {
 			// the goal of this test is

@@ -27,3 +27,10 @@ func WithAnalytics(on bool) Option {
 func WithAnalyticsRate(rate float64) Option {
 	return v2.WithAnalyticsRate(rate)
 }
+
+// WithDataStreams enables the Data Streams monitoring product features: https://www.datadoghq.com/product/data-streams-monitoring/
+func WithDataStreams() Option {
+	return func(cfg *config) {
+		cfg.dataStreamsEnabled = true
+	}
+}

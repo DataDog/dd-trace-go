@@ -312,8 +312,6 @@ func TestExecutionTraceMisconfiguration(t *testing.T) {
 }
 
 func TestExecutionTraceRandom(t *testing.T) {
-	t.Skip("flaky test, see: https://github.com/DataDog/dd-trace-go/issues/2529")
-
 	collectTraces := func(t *testing.T, profilePeriod, tracePeriod time.Duration, count int) int {
 		t.Setenv("DD_PROFILING_EXECUTION_TRACE_ENABLED", "true")
 		t.Setenv("DD_PROFILING_EXECUTION_TRACE_PERIOD", tracePeriod.String())
@@ -366,12 +364,12 @@ func TestExecutionTraceRandom(t *testing.T) {
 		name := fmt.Sprintf("rate-%f", rate)
 		t.Run(name, func(t *testing.T) {
 			// We should be within 2 standard deviations ~95% of the time
-			// with a correct implementation. If we do this twice, then
+			// with a correct implementation. If we do this four times, then
 			// we have a ~99.999% chance of succeeding with a correct
 			// implementation. We keep a reasonably tight tolerance
 			// to ensure that an incorrect implementation is more likely
-			// to fail both times
-			for i := 0; i < 2; i++ {
+			// to fail each time
+			for i := 0; i < 4; i++ {
 				if doTrial(t, rate, 2.0) {
 					return
 				}

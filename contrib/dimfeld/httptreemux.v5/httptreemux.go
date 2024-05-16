@@ -7,7 +7,10 @@
 package httptreemux // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/dimfeld/httptreemux.v5"
 
 import (
+	"net/http"
+
 	v2 "github.com/DataDog/dd-trace-go/v2/contrib/dimfeld/httptreemux.v5"
+	"github.com/dimfeld/httptreemux/v5"
 )
 
 // Router is a traced version of httptreemux.TreeMux.
@@ -26,4 +29,17 @@ type ContextRouter = v2.ContextRouter
 // the context.
 func NewWithContext(opts ...RouterOption) *ContextRouter {
 	return v2.NewWithContext(opts...)
+}
+
+// isSupportedRedirectStatus checks if the given HTTP status code is a supported redirect status.
+func isSupportedRedirectStatus(status int) bool {
+	return status == http.StatusMovedPermanently ||
+		status == http.StatusTemporaryRedirect ||
+		status == http.StatusPermanentRedirect
+}
+
+// routerRedirectEnabled checks if the redirection is enabled on the router.
+func routerRedirectEnabled(router *httptreemux.TreeMux) bool {
+	return (router.RedirectCleanPath || router.RedirectTrailingSlash) &&
+		router.RedirectBehavior != httptreemux.UseHandler
 }
