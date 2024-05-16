@@ -46,16 +46,20 @@ func init() {
 }
 
 type (
+	// Action is a generic interface that represents any WAF action
 	Action interface {
 		Blocking() bool
 	}
 
+	// HTTPAction are actions that interact with an HTTP request flow (block, redirect...)
 	HTTPAction struct {
 		http.Handler
 	}
+	// GRPCAction are actions that interact with a GRPC request flow
 	GRPCAction struct {
 		GRPCWrapper
 	}
+	// StackTraceAction are actions that generate a stacktrace
 	StackTraceAction struct {
 		StackTrace stacktrace.StackTrace
 	}
