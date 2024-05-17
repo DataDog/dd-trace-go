@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"strings"
 	"testing"
 
@@ -151,7 +152,6 @@ func TestUserRules(t *testing.T) {
 // the WAF is properly detecting an LFI attempt and that the corresponding security event is being sent to the agent.
 // Additionally, verifies that rule matching through SDK body instrumentation works as expected
 func TestWAF(t *testing.T) {
-	t.Setenv(internal.EnvWAFTimeout, "1s")
 	appsec.Start()
 	defer appsec.Stop()
 
@@ -436,7 +436,6 @@ func TestBlocking(t *testing.T) {
 // Test that API Security schemas get collected when API security is enabled
 func TestAPISecurity(t *testing.T) {
 	// Start and trace an HTTP server
-	t.Setenv(internal.EnvWAFTimeout, "1s")
 	t.Setenv(config.EnvEnabled, "true")
 	if wafOK, err := waf.Health(); !wafOK {
 		t.Skipf("WAF must be usable for this test to run correctly: %v", err)
@@ -566,5 +565,13 @@ func BenchmarkSampleWAFContext(b *testing.B) {
 		}
 
 		ctx.Close()
+	}
+}
+
+func init() {
+	// This permits running the tests locally without defining the env var manually
+	// We do this because the default go-libddwaf timeout value is too small and makes the tests timeout for no reason
+	if _, ok := os.LookupEnv(internal.EnvWAFTimeout); !ok {
+		os.Setenv(internal.EnvWAFTimeout, "1s")
 	}
 }
