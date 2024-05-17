@@ -326,10 +326,9 @@ func TestSpanContextWithStartOptions(t *testing.T) {
 	)
 
 	_, child := tr.Start(ctx, "child")
-	ddChild := child.(*span)
 	// this verifies that options passed to the parent, such as tracer.WithSpanID(spanID)
 	// weren't passed down to the child
-	assert.NotEqual(spanID, ddChild.DD.Context().SpanID())
+	assert.NotEqual(spanID, child.SpanContext().SpanID())
 	child.End()
 
 	EndOptions(sp, tracer.FinishTime(startTime.Add(duration)))
@@ -341,7 +340,6 @@ func TestSpanContextWithStartOptions(t *testing.T) {
 		t.Fatalf(err.Error())
 	}
 	p := traces[0]
-	t.Logf("%v", p[0])
 	assert.Len(p, 2)
 	assert.Equal("persisted_srv", p[0]["service"])
 	assert.Equal("persisted_ctx_rsc", p[0]["resource"])

@@ -8,18 +8,15 @@ package pgx
 import (
 	"context"
 
+	v2 "github.com/DataDog/dd-trace-go/v2/contrib/jackc/pgx.v5"
+
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 func NewPool(ctx context.Context, connString string, opts ...Option) (*pgxpool.Pool, error) {
-	config, err := pgxpool.ParseConfig(connString)
-	if err != nil {
-		return nil, err
-	}
-	return NewPoolWithConfig(ctx, config, opts...)
+	return v2.NewPool(ctx, connString, opts...)
 }
 
 func NewPoolWithConfig(ctx context.Context, config *pgxpool.Config, opts ...Option) (*pgxpool.Pool, error) {
-	config.ConnConfig.Tracer = newPgxTracer(opts...)
-	return pgxpool.NewWithConfig(ctx, config)
+	return v2.NewPoolWithConfig(ctx, config, opts...)
 }

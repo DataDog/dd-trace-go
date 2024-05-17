@@ -251,7 +251,7 @@ func TestReadError(t *testing.T) {
 	assert.Equal(http.MethodGet+" "+fullPath, span.Tag(ext.ResourceName))
 	assert.Equal(ext.SpanTypeHTTP, span.Tag(ext.SpanType))
 	assert.Equal(404, span.Tag(ext.HTTPCode))
-	assert.Equal(true, span.Tag(ext.Error))
+	assert.Error(span.Tag(ext.Error).(error))
 	assert.NotNil(span.Tag(ext.ErrorMsg))
 	assert.Nil(span.Tag("vault.namespace"))
 	assert.Equal("hashicorp/vault", span.Tag(ext.Component))

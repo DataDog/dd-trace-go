@@ -6,67 +6,24 @@
 package sarama
 
 import (
-	"math"
-
-	"gopkg.in/DataDog/dd-trace-go.v1/internal"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
+	v2 "github.com/DataDog/dd-trace-go/v2/contrib/IBM/sarama"
 )
 
-const defaultServiceName = "kafka"
-
-type config struct {
-	consumerServiceName string
-	producerServiceName string
-	consumerSpanName    string
-	producerSpanName    string
-	analyticsRate       float64
-}
-
-func defaults(cfg *config) {
-	cfg.consumerServiceName = namingschema.ServiceName(defaultServiceName)
-	cfg.producerServiceName = namingschema.ServiceNameOverrideV0(defaultServiceName, defaultServiceName)
-
-	cfg.consumerSpanName = namingschema.OpName(namingschema.KafkaInbound)
-	cfg.producerSpanName = namingschema.OpName(namingschema.KafkaOutbound)
-
-	// cfg.analyticsRate = globalconfig.AnalyticsRate()
-	if internal.BoolEnv("DD_TRACE_SARAMA_ANALYTICS_ENABLED", false) {
-		cfg.analyticsRate = 1.0
-	} else {
-		cfg.analyticsRate = math.NaN()
-	}
-}
-
 // An Option is used to customize the config for the sarama tracer.
-type Option func(cfg *config)
+type Option = v2.Option
 
 // WithServiceName sets the given service name for the intercepted client.
 func WithServiceName(name string) Option {
-	return func(cfg *config) {
-		cfg.consumerServiceName = name
-		cfg.producerServiceName = name
-	}
+	return v2.WithService(name)
 }
 
 // WithAnalytics enables Trace Analytics for all started spans.
 func WithAnalytics(on bool) Option {
-	return func(cfg *config) {
-		if on {
-			cfg.analyticsRate = 1.0
-		} else {
-			cfg.analyticsRate = math.NaN()
-		}
-	}
+	return v2.WithAnalytics(on)
 }
 
 // WithAnalyticsRate sets the sampling rate for Trace Analytics events
 // correlated to started spans.
 func WithAnalyticsRate(rate float64) Option {
-	return func(cfg *config) {
-		if rate >= 0.0 && rate <= 1.0 {
-			cfg.analyticsRate = rate
-		} else {
-			cfg.analyticsRate = math.NaN()
-		}
-	}
+	return v2.WithAnalyticsRate(rate)
 }

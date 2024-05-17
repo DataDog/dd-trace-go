@@ -185,7 +185,7 @@ func TestError(t *testing.T) {
 	assert.Equal("http.request", span.OperationName())
 	assert.Equal("foobar", span.Tag(ext.ServiceName))
 	assert.Equal("500", span.Tag(ext.HTTPCode))
-	assert.Equal(wantErr.Error(), span.Tag(ext.Error).(error).Error())
+	assert.Equal(wantErr.Error(), span.Tag(ext.ErrorMsg))
 	assert.Equal("labstack/echo.v4", span.Tag(ext.Component))
 	assert.Equal(ext.SpanKindServer, span.Tag(ext.SpanKind))
 }
@@ -225,7 +225,7 @@ func TestErrorHandling(t *testing.T) {
 	assert.Equal("http.request", span.OperationName())
 	assert.Equal("foobar", span.Tag(ext.ServiceName))
 	assert.Equal("500", span.Tag(ext.HTTPCode))
-	assert.Equal(wantErr.Error(), span.Tag(ext.Error).(error).Error())
+	assert.Equal(wantErr.Error(), span.Tag(ext.ErrorMsg))
 	assert.Equal("labstack/echo.v4", span.Tag(ext.Component))
 	assert.Equal(ext.SpanKindServer, span.Tag(ext.SpanKind))
 }
@@ -392,7 +392,7 @@ func TestNoDebugStack(t *testing.T) {
 	require.Len(t, spans, 1)
 
 	span := spans[0]
-	assert.Equal(wantErr.Error(), span.Tag(ext.Error).(error).Error())
+	assert.Equal(wantErr.Error(), span.Tag(ext.ErrorMsg))
 	assert.Equal("<debug stack disabled>", span.Tag(ext.ErrorStack))
 	assert.Equal("labstack/echo.v4", span.Tag(ext.Component))
 	assert.Equal(ext.SpanKindServer, span.Tag(ext.SpanKind))
@@ -710,7 +710,7 @@ func TestWithErrorCheck(t *testing.T) {
 				assert.NotContains(t, span.Tags(), ext.Error)
 				return
 			}
-			assert.Equal(t, tt.wantErr, span.Tag(ext.Error))
+			assert.Equal(t, tt.wantErr.Error(), span.Tag(ext.ErrorMsg))
 		})
 	}
 }

@@ -211,7 +211,7 @@ func TestRetries(t *testing.T) {
 	assert.Same(t, expectedError, err)
 	assert.Len(t, mt.OpenSpans(), 0)
 	assert.Len(t, mt.FinishedSpans(), 1)
-	assert.Equal(t, mt.FinishedSpans()[0].Tag("aws.retry_count"), 3)
+	assert.Equal(t, mt.FinishedSpans()[0].Tag("aws.retry_count"), 3.)
 }
 
 func TestHTTPCredentials(t *testing.T) {

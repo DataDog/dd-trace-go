@@ -193,7 +193,7 @@ func TestError(t *testing.T) {
 	span := spans[0]
 	assert.Equal("http.request", span.OperationName())
 	assert.Equal("500", span.Tag(ext.HTTPCode))
-	assert.Equal(wantErr.Error(), span.Tag(ext.Error).(error).Error())
+	assert.Equal("500: Internal Server Error", span.Tag(ext.ErrorMsg))
 	assert.Equal(ext.SpanKindServer, span.Tag(ext.SpanKind))
 	assert.Equal("emicklei/go-restful.v3", span.Tag(ext.Component))
 }
@@ -214,7 +214,7 @@ func TestPropagation(t *testing.T) {
 	ws.Route(ws.GET("/user/{id}").To(func(request *restful.Request, response *restful.Response) {
 		span, ok := tracer.SpanFromContext(request.Request.Context())
 		assert.True(ok)
-		assert.Equal(span.(mocktracer.Span).ParentID(), pspan.(mocktracer.Span).SpanID())
+		assert.Equal(span.(mocktracer.MockspanV2Adapter).ParentID(), pspan.Context().SpanID())
 	}))
 
 	container := restful.NewContainer()
