@@ -1,6 +1,8 @@
 module gopkg.in/DataDog/dd-trace-go.v1
 
-go 1.20
+go 1.21
+
+toolchain go1.21.5
 
 require (
 	cloud.google.com/go/pubsub v1.33.0
@@ -95,11 +97,13 @@ require (
 	github.com/golang/protobuf v1.5.3
 	github.com/gomodule/redigo v1.8.9
 	github.com/google/pprof v0.0.0-20230817174616-7a8ec2ada47b
+	github.com/google/uuid v1.5.0
 	github.com/gorilla/mux v1.8.0
 	github.com/graph-gophers/graphql-go v1.5.0
 	github.com/graphql-go/graphql v0.8.1
 	github.com/graphql-go/handler v0.2.3
 	github.com/hashicorp/consul/api v1.24.0
+	github.com/hashicorp/go-secure-stdlib/parseutil v0.1.7
 	github.com/hashicorp/vault/api v1.9.2
 	github.com/jackc/pgx/v5 v5.4.2
 	github.com/jinzhu/gorm v1.9.16
@@ -127,7 +131,7 @@ require (
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.44.0
 	go.opentelemetry.io/otel v1.20.0
 	go.opentelemetry.io/otel/trace v1.20.0
-	golang.org/x/net v0.19.0
+	golang.org/x/net v0.23.0
 	golang.org/x/time v0.5.0
 	google.golang.org/api v0.149.0
 	google.golang.org/grpc v1.60.1
@@ -210,7 +214,6 @@ require (
 	github.com/google/go-cmp v0.6.0 // indirect
 	github.com/google/gofuzz v1.2.0 // indirect
 	github.com/google/s2a-go v0.1.7 // indirect
-	github.com/google/uuid v1.5.0 // indirect
 	github.com/googleapis/enterprise-certificate-proxy v0.3.2 // indirect
 	github.com/googleapis/gax-go/v2 v2.12.0 // indirect
 	github.com/googleapis/gnostic v0.5.5 // indirect
@@ -302,8 +305,8 @@ require (
 	golang.org/x/mod v0.14.0 // indirect
 	golang.org/x/oauth2 v0.13.0 // indirect
 	golang.org/x/sync v0.5.0 // indirect
-	golang.org/x/sys v0.16.0 // indirect
-	golang.org/x/term v0.15.0 // indirect
+	golang.org/x/sys v0.18.0 // indirect
+	golang.org/x/term v0.18.0 // indirect
 	golang.org/x/text v0.14.0 // indirect
 	golang.org/x/tools v0.16.1 // indirect
 	golang.org/x/xerrors v0.0.0-20231012003039-104605ab7028 // indirect
