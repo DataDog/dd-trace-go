@@ -137,10 +137,15 @@ func TestParseSymbol(t *testing.T) {
 			"*Test",
 			"Method",
 		}},
-		{"main-receiver-templated", "test.(*toto).templatedFunc[...]", symbol{
+		{"main-receiver-templated-func", "test.(*toto).templatedFunc[...]", symbol{
 			"test",
 			"*toto",
 			"templatedFunc[...]",
+		}},
+		{"main-templated-receiver", "test.(*toto[...]).func", symbol{
+			"test",
+			"*toto[...]",
+			"func",
 		}},
 		{"main-lambda", "test.main.func1", symbol{
 			"test",
