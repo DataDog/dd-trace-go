@@ -12,9 +12,11 @@ import (
 	"os"
 	"regexp"
 	"runtime"
+	"strings"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 
+	"github.com/eapache/queue/v2"
 	"github.com/hashicorp/go-secure-stdlib/parseutil"
 )
 
@@ -22,6 +24,16 @@ var (
 	enabled              = true
 	defaultTopFrameDepth = 8
 	defaultMaxDepth      = 32
+
+	// internalPackagesPrefixes is the list of prefixes for internal packages that should be hidden in the stack trace
+	internalSymbolPrefixes = []string{
+		"gopkg.in/DataDog/dd-trace-go.v1",
+		"github.com/DataDog/dd-trace-go",
+		"github.com/DataDog/go-libddwaf",
+		"github.com/DataDog/datadog-agent",
+		"github.com/DataDog/appsec-internal-go",
+		"github.com/DataDog/orchestrion",
+	}
 )
 
 const (
@@ -116,25 +128,104 @@ func Capture() StackTrace {
 
 // SkipAndCapture creates a new stack trace from the current call stack, skipping the first `skip` frames
 func SkipAndCapture(skip int) StackTrace {
-	// callers() and getRealStackDepth() have to be used side by side to keep the same number of `skip`-ed frames
-	realDepth := getRealStackDepth(skip, defaultMaxDepth)
-	callers := callers(skip, realDepth, defaultMaxDepth, defaultTopFrameDepth)
-	frames := callersFrame(callers, defaultMaxDepth, defaultTopFrameDepth)
-	stack := make([]StackFrame, len(frames))
+	return skipAndCapture(skip, defaultMaxDepth, internalSymbolPrefixes)
+}
 
-	for i := 0; i < len(frames); i++ {
-		frame := frames[i]
+func skipAndCapture(skip int, maxDepth int, symbolSkip []string) StackTrace {
+	iter := iterator(skip, maxDepth, symbolSkip)
+	stack := make([]StackFrame, defaultMaxDepth)
+	nbStoredFrames := 0
+	topFramesQueue := queue.New[StackFrame]()
 
-		// If the top frames are separated from the bottom frames we have to stitch the real index together
-		frameIndex := i
-		if frameIndex >= defaultMaxDepth-defaultTopFrameDepth {
-			frameIndex = realDepth - defaultMaxDepth + i
+	// We have to make sure we don't store more than maxDepth frames
+	// if there is more than maxDepth frames, we get X frames from the bottom of the stack and Y from the top
+	for frame, ok := iter.Next(); ok; frame, ok = iter.Next() {
+		// we reach the top frames: start to use the queue
+		if nbStoredFrames >= defaultMaxDepth-defaultTopFrameDepth {
+			topFramesQueue.Add(frame)
+			// queue is full, remove the oldest frame
+			if topFramesQueue.Length() > defaultTopFrameDepth {
+				topFramesQueue.Remove()
+			}
+			continue
+		}
+
+		// Bottom frames: directly store them in the stack
+		stack[nbStoredFrames] = frame
+		nbStoredFrames++
+	}
+
+	// Stitch the top frames to the stack
+	for topFramesQueue.Length() > 0 {
+		stack[nbStoredFrames] = topFramesQueue.Remove()
+		nbStoredFrames++
+	}
+
+	return stack[:nbStoredFrames]
+}
+
+// framesIterator is an iterator over the frames of a call stack
+// It skips internal packages and caches the frames to avoid multiple calls to runtime.Callers
+// It also skips the first `skip` frames
+// It is not thread-safe
+type framesIterator struct {
+	skipPrefixes []string
+	cache        []uintptr
+	frames       *queue.Queue[runtime.Frame]
+	cacheDepth   int
+	cacheSize    int
+	currDepth    int
+}
+
+func iterator(skip, cacheSize int, internalPrefixSkip []string) framesIterator {
+	return framesIterator{
+		skipPrefixes: internalPrefixSkip,
+		cache:        make([]uintptr, cacheSize),
+		frames:       queue.New[runtime.Frame](),
+		cacheDepth:   skip,
+		cacheSize:    cacheSize,
+		currDepth:    0,
+	}
+}
+
+// next returns the next runtime.Frame in the call stack, filling the cache if needed
+func (it *framesIterator) next() (runtime.Frame, bool) {
+	if it.frames.Length() == 0 {
+		n := runtime.Callers(it.cacheDepth, it.cache)
+		if n == 0 {
+			return runtime.Frame{}, false
+		}
+
+		frames := runtime.CallersFrames(it.cache[:n])
+		for {
+			frame, more := frames.Next()
+			it.frames.Add(frame)
+			it.cacheDepth++
+			if !more {
+				break
+			}
+		}
+	}
+
+	it.currDepth++
+	return it.frames.Remove(), true
+}
+
+// Next returns the next StackFrame in the call stack, skipping internal packages and refurbishing the cache if needed
+func (it *framesIterator) Next() (StackFrame, bool) {
+	for {
+		frame, ok := it.next()
+		if !ok {
+			return StackFrame{}, false
+		}
+
+		if it.skipSymbol(frame.Function) {
+			continue
 		}
 
 		parsedSymbol := parseSymbol(frame.Function)
-
-		stack[i] = StackFrame{
-			Index:     uint32(frameIndex),
+		return StackFrame{
+			Index:     uint32(it.currDepth - 1),
 			Text:      "",
 			File:      frame.File,
 			Line:      uint32(frame.Line),
@@ -142,60 +233,16 @@ func SkipAndCapture(skip int) StackTrace {
 			Namespace: parsedSymbol.Package,
 			ClassName: parsedSymbol.Receiver,
 			Function:  parsedSymbol.Function,
+		}, true
+	}
+}
+
+func (it *framesIterator) skipSymbol(symbol string) bool {
+	for _, prefix := range it.skipPrefixes {
+		if strings.HasPrefix(symbol, prefix) {
+			return true
 		}
 	}
 
-	return stack
-}
-
-// getRealStackDepth returns the real depth of the stack, skipping the first `skip` frames
-func getRealStackDepth(skip, increment int) int {
-	pcs := make([]uintptr, increment)
-
-	depth := increment
-	for n := increment; n == increment; depth += n {
-		n = runtime.Callers(depth+skip, pcs[:])
-	}
-
-	return depth
-}
-
-// callers returns an array of function pointers of size stackSize, skipping the first `skip` frames
-// if realDepth of the current call stack is bigger that stackSize, we return the first stackSize - defaultTopFrameDepth frames
-// and the last defaultTopFrameDepth frames of the whole stack
-func callers(skip, realDepth, stackSize, topFrames int) []uintptr {
-	// The stack size is smaller than the max depth, return the whole stack
-	if realDepth <= stackSize {
-		pcs := make([]uintptr, realDepth)
-		runtime.Callers(skip, pcs[:])
-		return pcs
-	}
-
-	// The stack is bigger than the max depth, proceed to find the N start frames and stitch them to the ones we have
-	pcs := make([]uintptr, stackSize)
-	runtime.Callers(skip, pcs[:stackSize-topFrames])
-	runtime.Callers(skip+realDepth-topFrames, pcs[stackSize-topFrames:])
-	return pcs
-}
-
-// callersFrame returns an array of runtime.Frame from an array of function pointers
-// There can be multiple frames for a single function pointer, so we have to cut things again to make sure the final
-// stacktrace is the correct size
-func callersFrame(pcs []uintptr, stackSize, topFrames int) []runtime.Frame {
-	frames := runtime.CallersFrames(pcs)
-	framesArray := make([]runtime.Frame, 0, len(pcs))
-
-	for {
-		frame, more := frames.Next()
-		framesArray = append(framesArray, frame)
-		if !more {
-			break
-		}
-	}
-
-	if len(framesArray) > stackSize {
-		framesArray = append(framesArray[:stackSize-topFrames], framesArray[len(framesArray)-topFrames:]...)
-	}
-
-	return framesArray
+	return false
 }

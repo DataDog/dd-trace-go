@@ -20,8 +20,7 @@ func TestNewEvent(t *testing.T) {
 	require.Equal(t, ExceptionEvent, event.Category)
 	require.Equal(t, "go", event.Language)
 	require.Equal(t, "message", event.Message)
-	require.GreaterOrEqual(t, len(event.Frames), 3)
-	require.Equal(t, "TestNewEvent", event.Frames[0].Function)
+	require.GreaterOrEqual(t, len(event.Frames), 2)
 }
 
 func TestEventToSpan(t *testing.T) {
