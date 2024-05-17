@@ -14,18 +14,29 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 
 	"golang.org/x/mod/modfile"
 )
 
-func main() {
-	pin("internal/apps/go.mod", "1.21.3")
-	pin("internal/**/**/go.mod", "1.19.9")
-	pin("v2/contrib/**/**/go.mod", "1.19.9")
-	pin("v2/contrib/**/**/**/go.mod", "1.19.9")
+const netHTTPPath = "github.com/DataDog/dd-trace-go/v2/contrib/net/http"
+
+type pinning struct {
+	headCommit string
 }
 
-func pin(pattern, goVersion string) {
+func (p *pinning) loadHeadCommit() {
+	cmd := exec.Command("git", "rev-parse", "HEAD")
+	out, err := cmd.Output()
+	if err != nil {
+		panic(err)
+	}
+	p.headCommit = strings.TrimSpace(string(out))
+	p.headCommit = p.headCommit[:12]
+	fmt.Println("# HEAD commit:", p.headCommit)
+}
+
+func (p pinning) pin(pattern, goVersion string) {
 	contribs, err := filepath.Glob(pattern)
 	if err != nil {
 		panic(err)
@@ -36,8 +47,8 @@ func pin(pattern, goVersion string) {
 		if err = os.Chdir(d); err != nil {
 			panic(err)
 		}
-		fmt.Println(d)
-		mods, err := loadDDTraceMods()
+		fmt.Printf("# %s\n", d)
+		mods, err := p.loadOutdatedDDTraceMods()
 		if err != nil {
 			panic(err)
 		}
@@ -52,10 +63,11 @@ func pin(pattern, goVersion string) {
 		if err = os.Chdir(pwd); err != nil {
 			panic(err)
 		}
+		fmt.Println()
 	}
 }
 
-func loadDDTraceMods() ([]string, error) {
+func (p pinning) loadOutdatedDDTraceMods() ([]string, error) {
 	mod, err := os.Open("go.mod")
 	if err != nil {
 		return nil, err
@@ -65,13 +77,31 @@ func loadDDTraceMods() ([]string, error) {
 	if _, err = buf.ReadFrom(mod); err != nil {
 		return nil, err
 	}
-	deps, err := modfile.Parse("go.mod", buf.Bytes(), nil)
+	deps, err := modfile.ParseLax("go.mod", buf.Bytes(), nil)
 	if err != nil {
 		return nil, err
 	}
-	mods := make([]string, 0, len(deps.Replace))
-	for _, dep := range deps.Replace {
-		mods = append(mods, dep.Old.Path)
+	mods := make([]string, 0, 2) // On average, we expect to pin 1 or 2 modules, so we start with a small capacity.
+	foundNetHTTP := false
+	for _, dep := range deps.Require {
+		if !strings.HasPrefix(dep.Mod.Path, "github.com/DataDog/dd-trace-go/v2") {
+			continue
+		}
+		if dep.Mod.Path == netHTTPPath {
+			foundNetHTTP = true
+		}
+		// Skip if the module is already pinned to the head commit.
+		if strings.HasSuffix(dep.Mod.Version, p.headCommit) {
+			continue
+		}
+		mods = append(mods, dep.Mod.Path)
+	}
+	if !foundNetHTTP {
+		if deps.Module.Mod.Path == netHTTPPath {
+			return mods, nil
+		}
+		// Add the net/http contrib module if not present because it's used by appsec.
+		mods = append(mods, netHTTPPath)
 	}
 	return mods, nil
 }
@@ -79,14 +109,26 @@ func loadDDTraceMods() ([]string, error) {
 func pinMod(path string) error {
 	importPath := fmt.Sprintf("%s@v2-dev", path)
 	cmd := exec.Command("go", "get", "-u", importPath)
+	fmt.Println(cmd.String())
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	return cmd.Run()
 }
 
 func modTidy(goVersion string) error {
-	cmd := exec.Command(fmt.Sprintf("go%s", goVersion), "mod", "tidy")
+	majorVersion := strings.Join(strings.Split(goVersion, ".")[0:2], ".")
+	cmd := exec.Command(fmt.Sprintf("go%s", goVersion), "mod", "tidy", "-go", majorVersion)
+	fmt.Println(cmd.String())
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	return cmd.Run()
+}
+
+func main() {
+	p := pinning{}
+	p.loadHeadCommit()
+	p.pin("internal/apps/go.mod", "1.21.10")
+	p.pin("internal/**/**/go.mod", "1.20.14")
+	p.pin("v2/contrib/**/**/go.mod", "1.20.14")
+	p.pin("v2/contrib/**/**/**/go.mod", "1.20.14")
 }

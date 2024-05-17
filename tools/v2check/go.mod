@@ -1,6 +1,6 @@
 module github.com/DataDog/dd-trace-go/v2/tools/v2check
 
-go 1.19
+go 1.20
 
 require (
 	golang.org/x/tools v0.20.0
@@ -12,6 +12,7 @@ require (
 	github.com/DataDog/datadog-agent/pkg/obfuscate v0.52.1 // indirect
 	github.com/DataDog/datadog-agent/pkg/remoteconfig/state v0.52.1 // indirect
 	github.com/DataDog/datadog-go/v5 v5.5.0 // indirect
+	github.com/DataDog/dd-trace-go/v2 v2.0.0-20240516153256-8d6fa2bea61d // indirect
 	github.com/DataDog/go-libddwaf/v2 v2.4.2 // indirect
 	github.com/DataDog/go-sqllexer v0.0.11 // indirect
 	github.com/DataDog/go-tuf v1.1.0-0.5.2 // indirect

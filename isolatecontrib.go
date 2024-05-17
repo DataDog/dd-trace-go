@@ -22,7 +22,7 @@ import (
 
 const tmpl = `module {{.ImportPath}}
 
-go 1.19
+go 1.20
 
 require (
 	{{.DependencyPath}} {{.DependencyVersion}}
