@@ -8,7 +8,7 @@ require (
 	cloud.google.com/go/pubsub v1.33.0
 	github.com/99designs/gqlgen v0.17.36
 	github.com/DataDog/appsec-internal-go v1.5.0
-	github.com/DataDog/dd-trace-go/v2 v2.0.0-20240320152540-7ebff8f16ee3
+	github.com/DataDog/dd-trace-go/v2 v2.0.0-20240516153256-8d6fa2bea61d
 	github.com/DataDog/dd-trace-go/v2/contrib/99designs/gqlgen v0.0.0-20240320152540-7ebff8f16ee3
 	github.com/DataDog/dd-trace-go/v2/contrib/IBM/sarama v0.0.0-20240320152540-7ebff8f16ee3
 	github.com/DataDog/dd-trace-go/v2/contrib/Shopify/sarama v0.0.0-20240320152540-7ebff8f16ee3
@@ -18,14 +18,14 @@ require (
 	github.com/DataDog/dd-trace-go/v2/contrib/cloud.google.com/go/pubsub.v1 v0.0.0-20240320152540-7ebff8f16ee3
 	github.com/DataDog/dd-trace-go/v2/contrib/confluentinc/confluent-kafka-go/kafka v0.0.0-20240320152540-7ebff8f16ee3
 	github.com/DataDog/dd-trace-go/v2/contrib/confluentinc/confluent-kafka-go/kafka.v2 v0.0.0-20240320152540-7ebff8f16ee3
-	github.com/DataDog/dd-trace-go/v2/contrib/database/sql v0.0.0-20240320152540-7ebff8f16ee3
+	github.com/DataDog/dd-trace-go/v2/contrib/database/sql v0.0.0-20240516153256-8d6fa2bea61d
 	github.com/DataDog/dd-trace-go/v2/contrib/dimfeld/httptreemux.v5 v0.0.0-20240320152540-7ebff8f16ee3
 	github.com/DataDog/dd-trace-go/v2/contrib/elastic/go-elasticsearch.v6 v0.0.0-20240320152540-7ebff8f16ee3
 	github.com/DataDog/dd-trace-go/v2/contrib/emicklei/go-restful.v3 v0.0.0-20240320152540-7ebff8f16ee3
 	github.com/DataDog/dd-trace-go/v2/contrib/gin-gonic/gin v0.0.0-20240320152540-7ebff8f16ee3
 	github.com/DataDog/dd-trace-go/v2/contrib/globalsign/mgo v0.0.0-20240320152540-7ebff8f16ee3
 	github.com/DataDog/dd-trace-go/v2/contrib/go-chi/chi v0.0.0-20240320152540-7ebff8f16ee3
-	github.com/DataDog/dd-trace-go/v2/contrib/go-chi/chi.v5 v0.0.0-20240320152540-7ebff8f16ee3
+	github.com/DataDog/dd-trace-go/v2/contrib/go-chi/chi.v5 v0.0.0-20240516153256-8d6fa2bea61d
 	github.com/DataDog/dd-trace-go/v2/contrib/go-pg/pg.v10 v0.0.0-20240320152540-7ebff8f16ee3
 	github.com/DataDog/dd-trace-go/v2/contrib/go-redis/redis v0.0.0-20240320152540-7ebff8f16ee3
 	github.com/DataDog/dd-trace-go/v2/contrib/go-redis/redis.v7 v0.0.0-20240320152540-7ebff8f16ee3
@@ -51,7 +51,7 @@ require (
 	github.com/DataDog/dd-trace-go/v2/contrib/net/http v0.0.0-20240320152540-7ebff8f16ee3
 	github.com/DataDog/dd-trace-go/v2/contrib/olivere/elastic.v5 v0.0.0-20240320152540-7ebff8f16ee3
 	github.com/DataDog/dd-trace-go/v2/contrib/redis/go-redis.v9 v0.0.0-20240320152540-7ebff8f16ee3
-	github.com/DataDog/dd-trace-go/v2/contrib/segmentio/kafka-go v0.0.0-20240320152540-7ebff8f16ee3
+	github.com/DataDog/dd-trace-go/v2/contrib/segmentio/kafka-go v0.0.0-20240516153256-8d6fa2bea61d
 	github.com/DataDog/dd-trace-go/v2/contrib/sirupsen/logrus v0.0.0-20240320152540-7ebff8f16ee3
 	github.com/DataDog/dd-trace-go/v2/contrib/syndtr/goleveldb v0.0.0-20240320152540-7ebff8f16ee3
 	github.com/DataDog/dd-trace-go/v2/contrib/tidwall/buntdb v0.0.0-20240320152540-7ebff8f16ee3
@@ -103,7 +103,7 @@ require (
 	github.com/graphql-go/graphql v0.8.1
 	github.com/graphql-go/handler v0.2.3
 	github.com/hashicorp/consul/api v1.24.0
-	github.com/hashicorp/go-secure-stdlib/parseutil v0.1.7
+	github.com/hashicorp/go-secure-stdlib/parseutil v0.1.8
 	github.com/hashicorp/vault/api v1.9.2
 	github.com/jackc/pgx/v5 v5.4.2
 	github.com/jinzhu/gorm v1.9.16
@@ -156,7 +156,7 @@ require (
 	github.com/DataDog/datadog-agent/pkg/obfuscate v0.50.0 // indirect
 	github.com/DataDog/datadog-agent/pkg/remoteconfig/state v0.50.0 // indirect
 	github.com/DataDog/datadog-go/v5 v5.4.0 // indirect
-	github.com/DataDog/go-libddwaf/v2 v2.3.2 // indirect
+	github.com/DataDog/go-libddwaf/v2 v2.4.2 // indirect
 	github.com/DataDog/go-sqllexer v0.0.10 // indirect
 	github.com/DataDog/go-tuf v1.0.2-0.5.2 // indirect
 	github.com/DataDog/sketches-go v1.4.3 // indirect
@@ -227,7 +227,7 @@ require (
 	github.com/hashicorp/go-retryablehttp v0.7.4 // indirect
 	github.com/hashicorp/go-rootcerts v1.0.2 // indirect
 	github.com/hashicorp/go-secure-stdlib/strutil v0.1.2 // indirect
-	github.com/hashicorp/go-sockaddr v1.0.2 // indirect
+	github.com/hashicorp/go-sockaddr v1.0.5 // indirect
 	github.com/hashicorp/go-uuid v1.0.3 // indirect
 	github.com/hashicorp/golang-lru v1.0.2 // indirect
 	github.com/hashicorp/golang-lru/v2 v2.0.3 // indirect

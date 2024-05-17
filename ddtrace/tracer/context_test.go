@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	v2 "github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	traceinternal "gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
@@ -68,11 +69,12 @@ func TestStartSpanFromContext(t *testing.T) {
 	assert.Equal(gotctx, got)
 
 	sm := got.AsMap()
+	st := mocktracer.MockSpan(got)
 	assert.Equal(parent.Context().TraceID(), sm[ext.MapSpanTraceID])
 	assert.Equal(parent.Context().SpanID(), sm[ext.MapSpanParentID])
-	assert.Equal("http.request", got.Tag(ext.SpanName))
-	assert.Equal("gin", got.Tag(ext.ServiceName))
-	assert.Equal("/", got.Tag(ext.ResourceName))
+	assert.Equal("http.request", st.Tag(ext.SpanName))
+	assert.Equal("gin", st.Tag(ext.ServiceName))
+	assert.Equal("/", st.Tag(ext.ResourceName))
 }
 
 func TestStartSpanFromContextRace(t *testing.T) {
@@ -154,7 +156,7 @@ func TestStartSpanFromNilContext(t *testing.T) {
 
 	sa, ok := child.(traceinternal.SpanV2Adapter)
 	assert.True(ok)
-	internalSpan := sa.Span
+	internalSpan := mocktracer.MockSpan(sa.Span)
 	assert.True(ok)
 	assert.Equal("http.request", internalSpan.Tag(ext.SpanName))
 

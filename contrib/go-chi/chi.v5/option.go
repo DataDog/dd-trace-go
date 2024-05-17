@@ -73,9 +73,7 @@ func WithResourceNamer(fn func(r *http.Request) string) Option {
 // appsec, while the rest of the application is still being monitored/managed. This has not effect
 // if AppSec is not enabled globally (e.g, via the DD_APPSEC_ENABLED environment variable).
 func WithNoAppsec(disabled bool) Option {
-	return func(cfg *config) {
-		cfg.appsecDisabled = disabled
-	}
+	return v2.WithNoAppsec(disabled)
 }
 
 // WithResponseHeaderCopier provides a function to fetch the response headers from the
@@ -84,7 +82,5 @@ func WithNoAppsec(disabled bool) Option {
 // return a copy of the http.Header map instead of a reference to the original (e.g: to not risk
 // breaking synchronization). This is currently only used by AppSec.
 func WithResponseHeaderCopier(f func(http.ResponseWriter) http.Header) Option {
-	return func(cfg *config) {
-		cfg.appsecConfig.ResponseHeaderCopier = f
-	}
+	return v2.WithResponseHeaderCopier(f)
 }

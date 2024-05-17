@@ -89,7 +89,5 @@ func WithDBMPropagation(mode tracer.DBMPropagationMode) Option {
 // ref: https://pkg.go.dev/database/sql#DBStats
 // These metrics are submitted to Datadog and are not billed as custom metrics
 func WithDBStats() Option {
-	return func(cfg *config) {
-		cfg.dbStats = true
-	}
+	return v2.WithDBStats()
 }

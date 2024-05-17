@@ -36,31 +36,23 @@ func SetServiceName(name string) {
 
 // DogstatsdAddr returns the destination for tracer and contrib statsd clients
 func DogstatsdAddr() string {
-	cfg.mu.RLock()
-	defer cfg.mu.RUnlock()
-	return cfg.dogstatsdAddr
+	return v2.DogstatsdAddr()
 }
 
 // SetDogstatsdAddr sets the destination for statsd clients to be used by tracer and contrib packages
 func SetDogstatsdAddr(addr string) {
-	cfg.mu.Lock()
-	defer cfg.mu.Unlock()
-	cfg.dogstatsdAddr = addr
+	v2.SetDogstatsdAddr(addr)
 }
 
 // StatsTags returns a list of tags that apply to statsd payloads for both tracer and contribs
 func StatsTags() []string {
-	cfg.mu.RLock()
-	defer cfg.mu.RUnlock()
-	return cfg.statsTags
+	return v2.StatsTags()
 }
 
 // SetStatsTags configures the list of tags that should be applied to contribs' statsd.Client as global tags
 // It should only be called by the tracer package
 func SetStatsTags(tags []string) {
-	cfg.mu.Lock()
-	defer cfg.mu.Unlock()
-	cfg.statsTags = tags
+	v2.SetStatsTags(tags)
 }
 
 // RuntimeID returns this process's unique runtime id.

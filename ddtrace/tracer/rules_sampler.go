@@ -21,6 +21,54 @@ import (
 	"golang.org/x/time/rate"
 )
 
+type provenance int32
+
+const (
+	Local    provenance = iota
+	Customer provenance = 1
+	Dynamic  provenance = 2
+)
+
+var provenances = []provenance{Local, Customer, Dynamic}
+
+func (p provenance) String() string {
+	switch p {
+	case Local:
+		return "local"
+	case Customer:
+		return "customer"
+	case Dynamic:
+		return "dynamic"
+	default:
+		return ""
+	}
+}
+
+func (p provenance) MarshalJSON() ([]byte, error) {
+	return json.Marshal(p.String())
+}
+
+func (p *provenance) UnmarshalJSON(data []byte) error {
+	var prov string
+	var err error
+	if err = json.Unmarshal(data, &prov); err != nil {
+		return err
+	}
+	if *p, err = parseProvenance(prov); err != nil {
+		return err
+	}
+	return nil
+}
+
+func parseProvenance(p string) (provenance, error) {
+	for _, v := range provenances {
+		if strings.EqualFold(strings.TrimSpace(strings.ToLower(p)), v.String()) {
+			return v, nil
+		}
+	}
+	return Customer, fmt.Errorf("Invalid Provenance: \"%v\"", p)
+}
+
 // SamplingRule is used for applying sampling rates to spans that match
 // the service name, operation name or both.
 // For basic usage, consider using the helper functions ServiceRule, NameRule, etc.

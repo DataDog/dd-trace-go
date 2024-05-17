@@ -6,12 +6,7 @@
 package kafka // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/segmentio/kafka.go.v0"
 
 import (
-	"context"
-
 	v2 "github.com/DataDog/dd-trace-go/v2/contrib/segmentio/kafka-go"
-	"gopkg.in/DataDog/dd-trace-go.v1/datastreams"
-	"gopkg.in/DataDog/dd-trace-go.v1/datastreams/options"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 
 	"github.com/segmentio/kafka-go"
 )
@@ -33,31 +28,6 @@ func WrapReader(c *kafka.Reader, opts ...Option) *Reader {
 
 // A Reader wraps a kafka.Reader.
 type Reader = v2.Reader
-
-func setConsumeCheckpoint(enabled bool, groupID string, msg *kafka.Message) {
-	if !enabled || msg == nil {
-		return
-	}
-	edges := []string{"direction:in", "topic:" + msg.Topic, "type:kafka"}
-	if groupID != "" {
-		edges = append(edges, "group:"+groupID)
-	}
-	carrier := messageCarrier{msg}
-	ctx, ok := tracer.SetDataStreamsCheckpointWithParams(
-		datastreams.ExtractFromBase64Carrier(context.Background(), carrier),
-		options.CheckpointParams{PayloadSize: getConsumerMsgSize(msg)},
-		edges...,
-	)
-	if !ok {
-		return
-	}
-	datastreams.InjectToBase64Carrier(ctx, carrier)
-	if groupID != "" {
-		// only track Kafka lag if a consumer group is set.
-		// since there is no ack mechanism, we consider that messages read are committed right away.
-		tracer.TrackKafkaCommitOffset(groupID, msg.Topic, int32(msg.Partition), msg.Offset)
-	}
-}
 
 // WrapWriter wraps a kafka.Writer so requests are traced.
 func WrapWriter(w *kafka.Writer, opts ...Option) *Writer {

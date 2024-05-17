@@ -111,9 +111,7 @@ func WithAgentAddr(addr string) StartOption {
 
 // WithAgentTimeout sets the timeout for the agent connection. Timeout is in seconds.
 func WithAgentTimeout(timeout int) StartOption {
-	return func(c *config) {
-		c.httpClientTimeout = time.Duration(timeout) * time.Second
-	}
+	return v2.WithAgentTimeout(timeout)
 }
 
 // WithEnv sets the environment to which all traces started by the tracer will be submitted.
@@ -455,13 +453,6 @@ func StackFrames(n, skip uint) FinishOption {
 // Special headers can not be sub-selected. E.g., an entire Cookie header would be transmitted, without the ability to choose specific Cookies.
 func WithHeaderTags(headerAsTags []string) StartOption {
 	return v2.WithHeaderTags(headerAsTags)
-}
-
-// WithContribStats opens up a channel of communication between tracer and contrib libraries
-// for submitting stats from contribs to Datadog via the tracer's statsd client
-// It is enabled by default but can be disabled with `WithContribStats(false)`
-func WithContribStats(enabled bool) StartOption {
-	return v2.WithContribStats(enabled)
 }
 
 // UserMonitoringConfig is used to configure what is used to identify a user.

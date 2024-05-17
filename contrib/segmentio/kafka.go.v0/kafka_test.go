@@ -34,6 +34,42 @@ func skipIntegrationTest(t *testing.T) {
 	}
 }
 
+// A messageCarrier implements TextMapReader/TextMapWriter for extracting/injecting traces on a kafka.Message
+type messageCarrier struct {
+	msg *kafka.Message
+}
+
+var _ interface {
+	tracer.TextMapReader
+	tracer.TextMapWriter
+} = (*messageCarrier)(nil)
+
+// ForeachKey conforms to the TextMapReader interface.
+func (c messageCarrier) ForeachKey(handler func(key, val string) error) error {
+	for _, h := range c.msg.Headers {
+		err := handler(h.Key, string(h.Value))
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// Set implements TextMapWriter
+func (c messageCarrier) Set(key, val string) {
+	// ensure uniqueness of keys
+	for i := 0; i < len(c.msg.Headers); i++ {
+		if string(c.msg.Headers[i].Key) == key {
+			c.msg.Headers = append(c.msg.Headers[:i], c.msg.Headers[i+1:]...)
+			i--
+		}
+	}
+	c.msg.Headers = append(c.msg.Headers, kafka.Header{
+		Key:   key,
+		Value: []byte(val),
+	})
+}
+
 /*
 to setup the integration test locally run:
 	docker-compose -f local_testing.yaml up
@@ -280,42 +316,4 @@ func TestNamingSchema(t *testing.T) {
 		return spans
 	}
 	namingschematest.NewKafkaTest(genSpans)(t)
-}
-
-func BenchmarkReaderStartSpan(b *testing.B) {
-	r := NewReader(kafka.ReaderConfig{
-		Brokers: []string{"localhost:9092", "localhost:9093", "localhost:9094"},
-		GroupID: testGroupID,
-		Topic:   testTopic,
-		MaxWait: testReaderMaxWait,
-	})
-
-	msg := kafka.Message{
-		Key:   []byte("key1"),
-		Value: []byte("value1"),
-	}
-
-	b.ResetTimer()
-	for n := 0; n < b.N; n++ {
-		r.startSpan(nil, &msg)
-	}
-}
-
-func BenchmarkWriterStartSpan(b *testing.B) {
-	kw := &kafka.Writer{
-		Addr:         kafka.TCP("localhost:9092", "localhost:9093", "localhost:9094"),
-		Topic:        testTopic,
-		RequiredAcks: kafka.RequireOne,
-	}
-	w := WrapWriter(kw)
-
-	msg := kafka.Message{
-		Key:   []byte("key1"),
-		Value: []byte("value1"),
-	}
-
-	b.ResetTimer()
-	for n := 0; n < b.N; n++ {
-		w.startSpan(nil, &msg)
-	}
 }
