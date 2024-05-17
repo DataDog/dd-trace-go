@@ -7,7 +7,6 @@ package appsec_test
 
 import (
 	"encoding/json"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener/httpsec"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -17,11 +16,13 @@ import (
 
 	internal "github.com/DataDog/appsec-internal-go/appsec"
 	waf "github.com/DataDog/go-libddwaf/v2"
-	pAppsec "gopkg.in/DataDog/dd-trace-go.v1/appsec"
-	httptrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/config"
+
+	pAppsec "github.com/DataDog/dd-trace-go/v2/appsec"
+	httptrace "github.com/DataDog/dd-trace-go/v2/contrib/net/http"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec/config"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec/listener/httpsec"
 
 	"github.com/stretchr/testify/require"
 )
@@ -427,7 +428,6 @@ func TestBlocking(t *testing.T) {
 				require.Len(t, spans, 1)
 				require.Contains(t, spans[0].Tag("_dd.appsec.json"), tc.ruleMatch)
 			}
-
 		})
 	}
 }

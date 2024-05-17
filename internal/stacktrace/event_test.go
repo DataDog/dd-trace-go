@@ -8,9 +8,8 @@ package stacktrace
 import (
 	"testing"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
-	ddtracer "gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
+	ddtracer "github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 
 	"github.com/stretchr/testify/require"
 )
@@ -37,7 +36,7 @@ func TestEventToSpan(t *testing.T) {
 	require.Len(t, spans, 1)
 	require.Equal(t, "op", spans[0].OperationName())
 
-	eventsMap := spans[0].Tag("_dd.stack").(internal.MetaStructValue).Value.(map[EventCategory][]*Event)
+	eventsMap := spans[0].Tag("_dd.stack").(map[EventCategory][]*Event)
 	require.Len(t, eventsMap, 3)
 
 	eventsCat := eventsMap[ExceptionEvent]

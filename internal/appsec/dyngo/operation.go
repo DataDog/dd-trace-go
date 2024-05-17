@@ -23,7 +23,7 @@ package dyngo
 import (
 	"sync"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 
 	"go.uber.org/atomic"
 )

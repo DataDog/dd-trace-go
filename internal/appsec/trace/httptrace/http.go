@@ -12,8 +12,8 @@ import (
 
 	"github.com/DataDog/appsec-internal-go/httpsec"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/trace"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec/trace"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
 const (

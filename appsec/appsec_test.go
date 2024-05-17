@@ -7,12 +7,13 @@ package appsec_test
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/appsec"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	privateAppsec "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
+	"github.com/DataDog/dd-trace-go/v2/appsec"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	privateAppsec "github.com/DataDog/dd-trace-go/v2/internal/appsec"
 
 	"github.com/stretchr/testify/require"
 )
@@ -30,7 +31,7 @@ func TestTrackUserLoginSuccessEvent(t *testing.T) {
 		require.Len(t, mt.FinishedSpans(), 1)
 		finished := mt.FinishedSpans()[0]
 		expectedEventPrefix := "appsec.events.users.login.success."
-		require.Equal(t, true, finished.Tag(expectedEventPrefix+"track"))
+		require.Equal(t, "true", finished.Tag(expectedEventPrefix+"track"))
 		require.Equal(t, "user id", finished.Tag("usr.id"))
 		require.Equal(t, "us-east-1", finished.Tag(expectedEventPrefix+"region"))
 		require.Equal(t, "username", finished.Tag("usr.name"))
@@ -48,7 +49,7 @@ func TestTrackUserLoginSuccessEvent(t *testing.T) {
 		require.Len(t, mt.FinishedSpans(), 1)
 		finished := mt.FinishedSpans()[0]
 		expectedEventPrefix := "appsec.events.users.login.success."
-		require.Equal(t, true, finished.Tag(expectedEventPrefix+"track"))
+		require.Equal(t, "true", finished.Tag(expectedEventPrefix+"track"))
 		require.Equal(t, "user id", finished.Tag("usr.id"))
 	})
 
@@ -80,9 +81,9 @@ func TestTrackUserLoginFailureEvent(t *testing.T) {
 				require.Len(t, mt.FinishedSpans(), 1)
 				finished := mt.FinishedSpans()[0]
 				expectedEventPrefix := "appsec.events.users.login.failure."
-				require.Equal(t, true, finished.Tag(expectedEventPrefix+"track"))
+				require.Equal(t, "true", finished.Tag(expectedEventPrefix+"track"))
 				require.Equal(t, "user id", finished.Tag(expectedEventPrefix+"usr.id"))
-				require.Equal(t, userExists, finished.Tag(expectedEventPrefix+"usr.exists"))
+				require.Equal(t, fmt.Sprintf("%t", userExists), finished.Tag(expectedEventPrefix+"usr.exists"))
 				require.Equal(t, "us-east-1", finished.Tag(expectedEventPrefix+"region"))
 			}
 		}
@@ -117,7 +118,7 @@ func TestCustomEvent(t *testing.T) {
 		require.Len(t, mt.FinishedSpans(), 1)
 		finished := mt.FinishedSpans()[0]
 		expectedEventPrefix := "appsec.events.my-custom-event."
-		require.Equal(t, true, finished.Tag(expectedEventPrefix+"track"))
+		require.Equal(t, "true", finished.Tag(expectedEventPrefix+"track"))
 		for k, v := range md {
 			require.Equal(t, v, finished.Tag(expectedEventPrefix+k))
 		}

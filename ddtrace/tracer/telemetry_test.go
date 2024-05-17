@@ -9,10 +9,10 @@ import (
 	"fmt"
 	"testing"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry/telemetrytest"
-	"gopkg.in/DataDog/dd-trace-go.v1/profiler"
+	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/telemetrytest"
+	"github.com/DataDog/dd-trace-go/v2/profiler"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -31,10 +31,15 @@ func TestTelemetryEnabled(t *testing.T) {
 			WithPeerServiceDefaults(true),
 			WithHeaderTags([]string{"key:val", "key2:val2"}),
 			WithSamplingRules(
-				[]SamplingRule{TagsResourceRule(
-					map[string]string{"tag-a": "tv-a??"},
-					"resource-*", "op-name", "test-serv", 0.1),
-				},
+				TraceSamplingRules(
+					Rule{
+						Tags:         map[string]string{"tag-a": "tv-a??"},
+						ResourceGlob: "resource-*",
+						NameGlob:     "op-name",
+						ServiceGlob:  "test-serv",
+						Rate:         0.1,
+					},
+				),
 			),
 		)
 		defer globalconfig.SetServiceName("")
@@ -66,8 +71,13 @@ func TestTelemetryEnabled(t *testing.T) {
 	})
 
 	t.Run("telemetry customer or dynamic rules", func(t *testing.T) {
-		rule := TagsResourceRule(map[string]string{"tag-a": "tv-a??"},
-			"resource-*", "op-name", "test-serv", 0.1)
+		rule := TraceSamplingRules(Rule{
+			Tags:         map[string]string{"tag-a": "tv-a??"},
+			ResourceGlob: "resource-*",
+			NameGlob:     "op-name",
+			ServiceGlob:  "test-serv",
+			Rate:         0.1,
+		})[0]
 
 		for _, prov := range provenances {
 			if prov == Local {

@@ -53,7 +53,7 @@ jobs:
       - name: "Runner ${{ matrix.runner-index }}: Test Core and Contrib (No Integration Tests)"
         shell: bash
         run: |
-          go list ./... | grep -v -e grpc.v12 -e google.golang.org/api -e sarama -e confluent-kafka-go -e cmemprof | sort >packages.txt
+          go list ./... | grep -v -e google.golang.org/api -e sarama -e confluent-kafka-go -e cmemprof | sort >packages.txt
           gotestsum --junitfile ${REPORT} -- $(cat packages.txt) -v -coverprofile=coverage.txt -covermode=atomic -timeout 15m
       - name: Upload the results to Datadog CI App
         if: always()

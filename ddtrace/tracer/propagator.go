@@ -7,18 +7,16 @@ package tracer
 
 import (
 	"errors"
-
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 )
 
 // Propagator implementations should be able to inject and extract
 // SpanContexts into an implementation specific carrier.
 type Propagator interface {
 	// Inject takes the SpanContext and injects it into the carrier.
-	Inject(context ddtrace.SpanContext, carrier interface{}) error
+	Inject(context *SpanContext, carrier interface{}) error
 
 	// Extract returns the SpanContext from the given carrier.
-	Extract(carrier interface{}) (ddtrace.SpanContext, error)
+	Extract(carrier interface{}) (*SpanContext, error)
 }
 
 // TextMapWriter allows setting key/value pairs of strings on the underlying
