@@ -7,7 +7,6 @@ package profiler
 
 import (
 	"fmt"
-	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -185,36 +184,6 @@ func TestEntityIDHeader(t *testing.T) {
 
 	profile := <-profiles
 	assert.Equal(t, entityID, profile.headers.Get("Datadog-Entity-Id"))
-}
-
-func BenchmarkDoRequest(b *testing.B) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-		_, err := io.ReadAll(req.Body)
-		if err != nil {
-			b.Fatal(err)
-		}
-		req.Body.Close()
-		w.WriteHeader(200)
-	}))
-	defer srv.Close()
-	prof := profile{
-		name: "heap",
-		data: []byte("my-heap-profile"),
-	}
-	bat := batch{
-		start:    time.Now().Add(-10 * time.Second),
-		end:      time.Now(),
-		host:     "my-host",
-		profiles: []*profile{&prof},
-	}
-	p, err := unstartedProfiler()
-	require.NoError(b, err)
-	b.ReportAllocs()
-	b.ResetTimer()
-
-	for i := 0; i < b.N; i++ {
-		p.doRequest(bat)
-	}
 }
 
 func TestGitMetadata(t *testing.T) {
