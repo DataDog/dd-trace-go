@@ -6,7 +6,7 @@ toolchain go1.21.5
 
 require (
 	github.com/DataDog/dd-trace-go/v2 v2.0.0-20240516153256-8d6fa2bea61d
-	github.com/DataDog/dd-trace-go/v2/contrib/net/http v0.0.0-20240516153256-8d6fa2bea61d
+	github.com/DataDog/dd-trace-go/contrib/net/http v0.0.0-20240516153256-8d6fa2bea61d/v2
 	golang.org/x/sync v0.7.0
 )
 

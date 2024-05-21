@@ -11,7 +11,8 @@
 This repository contains Go packages for the client-side components of the Datadog product suite for Application Performance Monitoring, Continuous Profiling and Application Security Monitoring of Go applications.
 
 - [Datadog Application Performance Monitoring (APM)](https://docs.datadoghq.com/tracing/): Trace requests as they flow across web servers, databases, and microservices so that developers have great visiblity into bottlenecks and troublesome requests.  
-The package [`github.com/DataDog/dd-trace-go/v2/ddtrace/tracer`](https://pkg.go.dev/github.com/DataDog/dd-trace-go/v2/ddtrace/tracer) allows you to trace any piece of your Go code, and commonly used Go libraries can be automatically traced thanks to our out-of-the-box integrations which can be found in the package [`github.com/DataDog/dd-trace-go/v2/ddtrace/contrib`](https://pkg.go.dev/github.com/DataDog/dd-trace-go/v2/contrib).
+The package [`github.com/DataDog/dd-trace-go/v2/ddtrace/tracer`](https://pkg.go.dev/github.com/DataDog/dd-trace-go/v2/ddtrace/tracer) allows you to trace any piece of your Go code, and commonly used Go libraries can be automatically traced thanks to our out-of-the-box integrations which can be found in the package [`github.com/DataDog/dd-trace-go/contrib`](https://pkg.go.dev/github.com/DataDog/dd-trace-go/contrib).
+<!-- # TODO: review contrib URL -->
 
 - [Datadog Go Continuous Profiler](https://docs.datadoghq.com/profiler/): Continuously profile your Go apps to find CPU, memory, and synchronization bottlenecks, broken down by function name, and line number, to significantly reduce end-user latency and infrastructure costs.  
 The package [`github.com/DataDog/dd-trace-go/v2/profiler`](https://pkg.go.dev/github.com/DataDog/dd-trace-go/v2/profiler) allows you to periodically collect and send Go profiles to the Datadog API.
@@ -27,10 +28,10 @@ go get github.com/DataDog/dd-trace-go/v2/ddtrace/tracer
 go get github.com/DataDog/dd-trace-go/v2/profiler
 ```
 
-Additionally there are many [contrib](./contrib) packages, published as nested modules, that can be installed to automatically instrument and trace commonly used Go libraries such as [net/http](https://pkg.go.dev/github.com/DataDog/dd-trace-go/v2/contrib/net/http), [gorilla/mux](https://pkg.go.dev/github.com/DataDog/dd-trace-go/v2/contrib/gorilla/mux) or [database/sql](https://pkg.go.dev/github.com/DataDog/dd-trace-go/v2/contrib/database/sql):
+Additionally there are many [contrib](./contrib) packages, published as nested modules, that can be installed to automatically instrument and trace commonly used Go libraries such as [net/http](https://pkg.go.dev/github.com/DataDog/dd-trace-go/contrib/net/http/v2), [gorilla/mux](https://pkg.go.dev/github.com/DataDog/dd-trace-go/contrib/gorilla/mux/v2) or [database/sql/v2](https://pkg.go.dev/github.com/DataDog/dd-trace-go/contrib/database/sql/v2)
 
 ```
-go get github.com/DataDog/dd-trace-go/v2/contrib/gorilla/mux
+go get github.com/DataDog/dd-trace-go/contrib/gorilla/mux/v2
 ```
 
 If you installed more packages than you intended, you can use `go mod tidy` to remove any unused packages.

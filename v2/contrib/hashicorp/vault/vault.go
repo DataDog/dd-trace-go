@@ -21,7 +21,7 @@ import (
 	"net"
 	"net/http"
 
-	httptrace "github.com/DataDog/dd-trace-go/v2/contrib/net/http"
+	httptrace "github.com/DataDog/dd-trace-go/contrib/net/http"/v2
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"

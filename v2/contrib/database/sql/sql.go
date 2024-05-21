@@ -23,7 +23,7 @@ import (
 	"sync"
 	"time"
 
-	sqlinternal "github.com/DataDog/dd-trace-go/v2/contrib/database/sql/internal"
+	sqlinternal "github.com/DataDog/dd-trace-go/contrib/database/sql/internal"/v2
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"

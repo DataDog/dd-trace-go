@@ -9,7 +9,7 @@ import (
 	"log"
 	"net"
 
-	grpctrace "github.com/DataDog/dd-trace-go/v2/contrib/google.golang.org/grpc"
+	grpctrace "github.com/DataDog/dd-trace-go/contrib/google.golang.org/grpc"/v2
 
 	"google.golang.org/grpc"
 )

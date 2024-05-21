@@ -4,7 +4,7 @@
 // Copyright 2016 Datadog, Inc.
 
 // Package aws provides functions to trace aws/aws-sdk-go (https://github.com/aws/aws-sdk-go).
-package aws // import "github.com/DataDog/dd-trace-go/v2/contrib/aws/aws-sdk-go/aws"
+package aws // import "github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go/aws"/v2
 
 import (
 	"errors"
@@ -40,9 +40,9 @@ func init() {
 
 const (
 	// SendHandlerName is the name of the Datadog NamedHandler for the Send phase of an awsv1 request
-	SendHandlerName = "github.com/DataDog/dd-trace-go/v2/contrib/aws/aws-sdk-go/aws/handlers.Send"
+	SendHandlerName = "github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go/aws/handlers.Send" / v2
 	// CompleteHandlerName is the name of the Datadog NamedHandler for the Complete phase of an awsv1 request
-	CompleteHandlerName = "github.com/DataDog/dd-trace-go/v2/contrib/aws/aws-sdk-go/aws/handlers.Complete"
+	CompleteHandlerName = "github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go/aws/handlers.Complete" / v2
 )
 
 type handlers struct {

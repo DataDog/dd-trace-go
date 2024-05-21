@@ -18,8 +18,8 @@ import (
 	"testing"
 	"time"
 
-	grpctrace "github.com/DataDog/dd-trace-go/v2/contrib/google.golang.org/grpc"
-	httptrace "github.com/DataDog/dd-trace-go/v2/contrib/julienschmidt/httprouter"
+	grpctrace "github.com/DataDog/dd-trace-go/contrib/google.golang.org/grpc"/v2
+	httptrace "github.com/DataDog/dd-trace-go/contrib/julienschmidt/httprouter"/v2
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"

@@ -12,7 +12,7 @@ import (
 	"github.com/graphql-go/graphql"
 	"github.com/graphql-go/handler"
 
-	ddgraphql "github.com/DataDog/dd-trace-go/v2/contrib/graphql-go/graphql"
+	ddgraphql "github.com/DataDog/dd-trace-go/contrib/graphql-go/graphql"/v2
 )
 
 func Example() {

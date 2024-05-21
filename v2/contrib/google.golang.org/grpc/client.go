@@ -9,7 +9,7 @@ import (
 	"context"
 	"net"
 
-	"github.com/DataDog/dd-trace-go/v2/contrib/google.golang.org/grpc/internal/grpcutil"
+	"github.com/DataDog/dd-trace-go/contrib/google.golang.org/grpc/internal/grpcutil"/v2
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"

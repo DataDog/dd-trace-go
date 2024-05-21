@@ -22,7 +22,7 @@
 //		"github.com/99designs/gqlgen/graphql/handler"
 //
 //		"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
-//		gqlgentrace "github.com/DataDog/dd-trace-go/v2/contrib/99designs/gqlgen"
+//		gqlgentrace "github.com/DataDog/dd-trace-go/contrib/99designs/gqlgen"/v2
 //	)
 //
 //	func Example() {

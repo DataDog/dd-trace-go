@@ -9,7 +9,7 @@
 // https://godoc.org/github.com/graph-gophers/graphql-go/trace subpackage.
 // Create a new Tracer with `NewTracer` and pass it as an additional option to
 // `MustParseSchema`.
-package graphql // import "github.com/DataDog/dd-trace-go/v2/contrib/graph-gophers/graphql-go"
+package graphql // import "github.com/DataDog/dd-trace-go/contrib/graph-gophers/graphql-go"/v2
 
 import (
 	"context"

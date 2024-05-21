@@ -18,7 +18,7 @@ import (
 	waf "github.com/DataDog/go-libddwaf/v2"
 
 	pAppsec "github.com/DataDog/dd-trace-go/v2/appsec"
-	httptrace "github.com/DataDog/dd-trace-go/v2/contrib/net/http"
+	httptrace "github.com/DataDog/dd-trace-go/contrib/net/http"/v2
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/config"

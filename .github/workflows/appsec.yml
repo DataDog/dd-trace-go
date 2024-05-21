@@ -26,16 +26,16 @@ env:
     ./appsec/...
     ./internal/appsec/...
   SUBMODULES: >-
-    ./v2/contrib/gin-gonic/gin
-    ./v2/contrib/google.golang.org/grpc
-    ./v2/contrib/net/http
-    ./v2/contrib/gorilla/mux
-    ./v2/contrib/go-chi/chi
-    ./v2/contrib/go-chi/chi.v5
-    ./v2/contrib/labstack/echo.v4
-    ./v2/contrib/99designs/gqlgen
-    ./v2/contrib/graphql-go/graphql
-    ./v2/contrib/graph-gophers/graphql-go
+    ./contrib/gin-gonic/gin
+    ./contrib/google.golang.org/grpc
+    ./contrib/net/http
+    ./contrib/gorilla/mux
+    ./contrib/go-chi/chi
+    ./contrib/go-chi/chi.v5
+    ./contrib/labstack/echo.v4
+    ./contrib/99designs/gqlgen
+    ./contrib/graphql-go/graphql
+    ./contrib/graph-gophers/graphql-go
 
 concurrency:
   # Automatically cancel previous runs if a new one is triggered to conserve resources.

@@ -8,7 +8,7 @@ package sarama_test
 import (
 	"log"
 
-	saramatrace "github.com/DataDog/dd-trace-go/v2/contrib/IBM/sarama"
+	saramatrace "github.com/DataDog/dd-trace-go/contrib/IBM/sarama"/v2
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 
 	"github.com/IBM/sarama"

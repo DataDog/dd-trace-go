@@ -4,7 +4,7 @@
 // Copyright 2016 Datadog, Inc.
 
 // Package kafka provides functions to trace the confluentinc/confluent-kafka-go package (https://github.com/confluentinc/confluent-kafka-go).
-package kafka // import "github.com/DataDog/dd-trace-go/v2/contrib/confluentinc/confluent-kafka-go/kafka"
+package kafka // import "github.com/DataDog/dd-trace-go/contrib/confluentinc/confluent-kafka-go/kafka"/v2
 
 import (
 	"context"

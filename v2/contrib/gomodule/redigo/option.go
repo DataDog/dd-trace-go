@@ -3,7 +3,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
-package redigo // import "github.com/DataDog/dd-trace-go/v2/contrib/gomodule/redigo"
+package redigo // import "github.com/DataDog/dd-trace-go/contrib/gomodule/redigo"/v2
 
 import (
 	"math"

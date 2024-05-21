@@ -8,7 +8,7 @@ package memcache_test
 import (
 	"context"
 
-	memcachetrace "github.com/DataDog/dd-trace-go/v2/contrib/bradfitz/gomemcache/memcache"
+	memcachetrace "github.com/DataDog/dd-trace-go/contrib/bradfitz/gomemcache/memcache"/v2
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 
 	"github.com/bradfitz/gomemcache/memcache"

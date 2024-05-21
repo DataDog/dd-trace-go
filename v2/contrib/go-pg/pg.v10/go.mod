@@ -1,4 +1,4 @@
-module github.com/DataDog/dd-trace-go/v2/contrib/go-pg/pg.v10
+module github.com/DataDog/dd-trace-go/contrib/go-pg/pg.v10/v2
 
 go 1.20
 
@@ -8,7 +8,7 @@ require (
 )
 
 require (
-	github.com/DataDog/dd-trace-go/v2/contrib/net/http v0.0.0-20240516153256-8d6fa2bea61d // indirect
+	github.com/DataDog/dd-trace-go/contrib/net/http v0.0.0-20240516153256-8d6fa2bea61d // indirect/v2
 	github.com/DataDog/go-sqllexer v0.0.11 // indirect
 	github.com/fsnotify/fsnotify v1.5.4 // indirect
 	github.com/google/go-cmp v0.6.0 // indirect

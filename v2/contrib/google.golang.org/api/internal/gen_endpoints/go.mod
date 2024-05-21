@@ -1,4 +1,4 @@
-module github.com/DataDog/dd-trace-go/v2/contrib/google.golang.org/api/internal/gen_endpoints
+module github.com/DataDog/dd-trace-go/contrib/google.golang.org/api/internal/gen_endpoints/v2
 
 go 1.20
 

@@ -4,7 +4,7 @@
 // Copyright 2016 Datadog, Inc.
 
 // Package elastic provides functions to trace the gopkg.in/olivere/elastic.v5 packages.
-package elastic // import "github.com/DataDog/dd-trace-go/v2/contrib/olivere/elastic"
+package elastic // import "github.com/DataDog/dd-trace-go/contrib/olivere/elastic"/v2
 
 import (
 	"bufio"

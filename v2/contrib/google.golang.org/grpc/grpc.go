@@ -6,7 +6,7 @@
 //go:generate sh gen_proto.sh
 
 // Package grpc provides functions to trace the google.golang.org/grpc package v1.2.
-package grpc // import "github.com/DataDog/dd-trace-go/v2/contrib/google.golang.org/grpc"
+package grpc // import "github.com/DataDog/dd-trace-go/contrib/google.golang.org/grpc"/v2
 
 import (
 	"context"
@@ -15,7 +15,7 @@ import (
 	"io"
 	"strings"
 
-	"github.com/DataDog/dd-trace-go/v2/contrib/google.golang.org/grpc/internal/grpcutil"
+	"github.com/DataDog/dd-trace-go/contrib/google.golang.org/grpc/internal/grpcutil"/v2
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"

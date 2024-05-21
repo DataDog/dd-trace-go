@@ -3,7 +3,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
-package internal // import "github.com/DataDog/dd-trace-go/v2/contrib/database/sql/internal"
+package internal // import "github.com/DataDog/dd-trace-go/contrib/database/sql/internal"/v2
 
 import (
 	"net"

@@ -372,7 +372,7 @@ type contribPkg struct {
 }
 
 func TestIntegrationEnabled(t *testing.T) {
-	root, err := filepath.Abs("../../v2/contrib")
+	root, err := filepath.Abs("../../contrib")
 	if err != nil {
 		t.Fatal(err)
 	}

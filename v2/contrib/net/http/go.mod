@@ -1,4 +1,4 @@
-module github.com/DataDog/dd-trace-go/v2/contrib/net/http
+module github.com/DataDog/dd-trace-go/contrib/net/http/v2
 
 go 1.20
 

@@ -35,7 +35,7 @@ func (p *contribPkg) hasTelemetryImport() bool {
 
 // TestTelemetryEnabled verifies that the expected contrib packages leverage instrumentation telemetry
 func TestTelemetryEnabled(t *testing.T) {
-	root, err := filepath.Abs("../../../v2/contrib")
+	root, err := filepath.Abs("../../../contrib")
 	if err != nil {
 		t.Fatal(err)
 	}

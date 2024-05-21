@@ -9,8 +9,8 @@ import (
 	"context"
 	"log"
 
-	sqltrace "github.com/DataDog/dd-trace-go/v2/contrib/database/sql"
-	gormtrace "github.com/DataDog/dd-trace-go/v2/contrib/gorm.io/gorm.v1"
+	sqltrace "github.com/DataDog/dd-trace-go/contrib/database/sql"/v2
+	gormtrace "github.com/DataDog/dd-trace-go/contrib/gorm.io/gorm.v1"/v2
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 

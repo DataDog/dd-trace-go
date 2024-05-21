@@ -19,7 +19,7 @@ import (
 	"golang.org/x/mod/modfile"
 )
 
-const netHTTPPath = "github.com/DataDog/dd-trace-go/v2/contrib/net/http"
+const netHTTPPath = "github.com/DataDog/dd-trace-go/contrib/net/http/v2"
 
 type pinning struct {
 	headCommit string

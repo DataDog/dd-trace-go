@@ -10,7 +10,7 @@ import (
 
 	"github.com/go-pg/pg/v10"
 
-	pg2 "github.com/DataDog/dd-trace-go/v2/contrib/go-pg/pg.v10"
+	pg2 "github.com/DataDog/dd-trace-go/contrib/go-pg/pg.v10"/v2
 )
 
 func Example() {
