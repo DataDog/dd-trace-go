@@ -31,6 +31,7 @@ require (
 	github.com/confluentinc/confluent-kafka-go/v2 v2.2.0
 	github.com/denisenkom/go-mssqldb v0.11.0
 	github.com/dimfeld/httptreemux/v5 v5.5.0
+	github.com/eapache/queue/v2 v2.0.0-20230407133247-75960ed334e4
 	github.com/elastic/go-elasticsearch/v6 v6.8.5
 	github.com/elastic/go-elasticsearch/v7 v7.17.1
 	github.com/elastic/go-elasticsearch/v8 v8.4.0

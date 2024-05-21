@@ -16,12 +16,13 @@ import (
 )
 
 func TestNewEvent(t *testing.T) {
-	event := NewEvent(ExceptionEvent, "", "message")
+	event := NewEvent(ExceptionEvent, WithMessage("message"), WithType("type"), WithID("id"))
 	require.Equal(t, ExceptionEvent, event.Category)
 	require.Equal(t, "go", event.Language)
 	require.Equal(t, "message", event.Message)
-	require.GreaterOrEqual(t, len(event.Frames), 3)
-	require.Equal(t, "TestNewEvent", event.Frames[0].Function)
+	require.Equal(t, "type", event.Type)
+	require.Equal(t, "id", event.ID)
+	require.GreaterOrEqual(t, len(event.Frames), 2)
 }
 
 func TestEventToSpan(t *testing.T) {
@@ -29,7 +30,7 @@ func TestEventToSpan(t *testing.T) {
 	defer mt.Stop()
 
 	span := ddtracer.StartSpan("op")
-	event := NewEvent(ExceptionEvent, "", "message")
+	event := NewEvent(ExceptionEvent, WithMessage("message"))
 	AddToSpan(span, event)
 	span.Finish()
 
