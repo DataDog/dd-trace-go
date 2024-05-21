@@ -86,7 +86,7 @@
 // interfaces. An example alternate implementation is the MDCarrier in our gRPC integration.
 //
 // As an example, injecting a span's context into an HTTP request would look like this.
-// (See the net/http contrib package for more examples https://pkg.go.dev/github.com/DataDog/dd-trace-go/contrib/net/http):/v2
+// (See the net/http contrib package for more examples https://pkg.go.dev/github.com/DataDog/dd-trace-go/contrib/net/http/v2):
 //
 //	req, err := http.NewRequest("GET", "http://example.com", nil)
 //	// ...

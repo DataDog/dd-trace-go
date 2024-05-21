@@ -4,8 +4,8 @@ go 1.20
 
 require (
 	github.com/DataDog/dd-trace-go/v2 v2.0.0-20240516153256-8d6fa2bea61d
-	github.com/DataDog/dd-trace-go/contrib/bradfitz/gomemcache v0.0.0-20240516153256-8d6fa2bea61d/v2
-	github.com/DataDog/dd-trace-go/contrib/miekg/dns v0.0.0-20240516153256-8d6fa2bea61d/v2
+	github.com/DataDog/dd-trace-go/contrib/bradfitz/gomemcache/v2 v0.0.0-20240516153256-8d6fa2bea61d
+	github.com/DataDog/dd-trace-go/contrib/miekg/dns/v2 v0.0.0-20240516153256-8d6fa2bea61d
 	github.com/bradfitz/gomemcache v0.0.0-20230611145640-acc696258285
 	github.com/miekg/dns v1.1.59
 	github.com/stretchr/testify v1.8.4
@@ -16,7 +16,7 @@ require (
 	github.com/DataDog/datadog-agent/pkg/obfuscate v0.52.1 // indirect
 	github.com/DataDog/datadog-agent/pkg/remoteconfig/state v0.52.1 // indirect
 	github.com/DataDog/datadog-go/v5 v5.5.0 // indirect
-	github.com/DataDog/dd-trace-go/contrib/net/http v0.0.0-20240516153256-8d6fa2bea61d // indirect/v2
+	github.com/DataDog/dd-trace-go/contrib/net/http/v2 v0.0.0-20240516153256-8d6fa2bea61d // indirect
 	github.com/DataDog/go-libddwaf/v2 v2.4.2 // indirect
 	github.com/DataDog/go-sqllexer v0.0.11 // indirect
 	github.com/DataDog/go-tuf v1.1.0-0.5.2 // indirect

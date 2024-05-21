@@ -4,7 +4,7 @@ go 1.20
 
 require (
 	github.com/DataDog/dd-trace-go/v2 v2.0.0-20240516153256-8d6fa2bea61d
-	github.com/DataDog/dd-trace-go/contrib/net/http v0.0.0-20240516153256-8d6fa2bea61d/v2
+	github.com/DataDog/dd-trace-go/contrib/net/http/v2 v0.0.0-20240516153256-8d6fa2bea61d
 	github.com/stretchr/testify v1.8.4
 	golang.org/x/oauth2 v0.9.0
 	google.golang.org/api v0.128.0
