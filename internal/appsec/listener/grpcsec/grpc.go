@@ -99,6 +99,9 @@ func (l *wafEventListener) onEvent(op *types.HandlerOperation, handlerArgs types
 	if err != nil {
 		log.Debug("appsec: could not create budgeted WAF context: %v", err)
 	}
+	// Early return in the following cases:
+	// - wafCtx is nil, meaning it was concurrently released
+	// - err is not nil, meaning context creation failed
 	if wafCtx == nil || err != nil {
 		return
 	}

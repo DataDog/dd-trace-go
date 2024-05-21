@@ -106,12 +106,16 @@ func NewStackTraceAction(params map[string]any) Action {
 		log.Debug("appsec: could not read stack_id parameter for stack_trace action")
 		return nil
 	}
-	event := stacktrace.NewEvent(stacktrace.ExploitEvent, "", "")
-	if event == nil {
-		log.Debug("appsec: could not generate stacktrace event")
+
+	strId, ok := id.(string)
+	if !ok {
+		log.Debug("appsec: could not cast stacktrace ID to string")
 		return nil
 	}
-	event.ID = id.(string)
+
+	event := stacktrace.NewEvent(stacktrace.ExploitEvent, "", "")
+	event.ID = strId
+
 	return &StackTraceAction{Event: *event}
 }
 
