@@ -20,7 +20,7 @@ runs:
   steps:
     - if: runner.os == 'Windows'
       shell: bash
-      run: echo "DD_CI_CLI_BUILD=win-x64.exe" >> $GITHUB_ENV
+      run: echo "DD_CI_CLI_BUILD=win-x64" >> $GITHUB_ENV
     - if: runner.os == 'macOS'
       shell: bash
       run: echo "DD_CI_CLI_BUILD=darwin-x64" >> $GITHUB_ENV
