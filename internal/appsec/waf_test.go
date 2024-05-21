@@ -17,12 +17,12 @@ import (
 	internal "github.com/DataDog/appsec-internal-go/appsec"
 	waf "github.com/DataDog/go-libddwaf/v2"
 
-	httptrace "github.com/DataDog/dd-trace-go/contrib/net/http/v2"
 	pAppsec "github.com/DataDog/dd-trace-go/v2/appsec"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/listener/httpsec"
+	httptrace "github.com/DataDog/dd-trace-go/v2/internal/contrib/httptracemock"
 
 	"github.com/stretchr/testify/require"
 )
