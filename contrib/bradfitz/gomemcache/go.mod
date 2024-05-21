@@ -8,7 +8,7 @@ require (
 )
 
 require (
-	github.com/DataDog/dd-trace-go/contrib/net/http v0.0.0-20240516153256-8d6fa2bea61d // indirect/v2
+	github.com/DataDog/dd-trace-go/contrib/net/http/v2 v0.0.0-20240516153256-8d6fa2bea61d // indirect
 	github.com/DataDog/go-sqllexer v0.0.11 // indirect
 	github.com/google/go-cmp v0.6.0 // indirect
 	golang.org/x/crypto v0.23.0 // indirect

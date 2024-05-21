@@ -2,11 +2,11 @@ go 1.21 // Go version must match the highest supported version, not the minimum 
 
 use (
 	.
-	./internal/apps
-	./internal/contrib/validationtest
-	./internal/traceprof/traceproftest
+	// ./internal/apps
+	// ./internal/contrib/validationtest
+	// ./internal/traceprof/traceproftest
 	./tools/v2check
-	./tools/v2check/_stage
+	// ./tools/v2check/_stage
 	// ./contrib/99designs/gqlgen
 	// ./contrib/IBM/sarama
 	// ./contrib/Shopify/sarama
