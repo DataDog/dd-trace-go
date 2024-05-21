@@ -25,9 +25,11 @@ import (
 	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/httpmem"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/traceprof"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -381,6 +383,11 @@ func TestAllUploaded(t *testing.T) {
 		assert.ElementsMatch(t, customLabelKeys[:customProfileLabelLimit], profile.event.CustomAttributes)
 
 		assert.Contains(t, profile.tags, fmt.Sprintf("profile_seq:%d", seq))
+
+		assert.Equal(t, profile.event.Version, "4")
+		assert.Equal(t, profile.event.Family, "go")
+		assert.NotNil(t, profile.event.Start)
+		assert.NotNil(t, profile.event.End)
 	}
 
 	validateProfile(<-profiles, 0)
@@ -402,6 +409,14 @@ func TestCorrectTags(t *testing.T) {
 		"foo:bar",
 		"service:xyz",
 		"host:example",
+		"runtime:go",
+		fmt.Sprintf("process_id:%d", os.Getpid()),
+		fmt.Sprintf("profiler_version:%s", version.Tag),
+		fmt.Sprintf("runtime_version:%s", strings.TrimPrefix(runtime.Version(), "go")),
+		fmt.Sprintf("runtime_compiler:%s", runtime.Compiler),
+		fmt.Sprintf("runtime_arch:%s", runtime.GOARCH),
+		fmt.Sprintf("runtime_os:%s", runtime.GOOS),
+		fmt.Sprintf("runtime-id:%s", globalconfig.RuntimeID()),
 	}
 	for i := 0; i < 20; i++ {
 		// We check the tags we get several times to try to have a
