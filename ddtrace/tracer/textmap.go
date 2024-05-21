@@ -278,14 +278,15 @@ func (p *chainedPropagator) Extract(carrier interface{}) (ddtrace.SpanContext, e
 			if !isW3C {
 				continue // Ignore other propagators.
 			}
-			w3cCtx, _ := pw3c.Extract(carrier)
-			if w3cCtx != nil && w3cCtx.(*spanContext).TraceID128() == ctx.(*spanContext).TraceID128() {
+			w3cCtx, err := pw3c.Extract(carrier)
+			if err == nil && w3cCtx.(*spanContext).TraceID128() == ctx.(*spanContext).TraceID128() {
 				pw3c.propagateTracestate(ctx.(*spanContext), w3cCtx.(*spanContext))
 				if w3cCtx.SpanID() != ctx.SpanID() {
-					var ddCtx ddtrace.SpanContext
-					ddp := getDefaultPropagator(p)
-					if ddp != nil {
-						ddCtx, _ = ddp.Extract(carrier)
+					var ddCtx *spanContext
+					if ddp := getDatadogPropagator(p); ddp != nil {
+						if ddSpanCtx, err := ddp.Extract(carrier); err == nil {
+							ddCtx, _ = ddSpanCtx.(*spanContext)
+						}
 					}
 					overrideDatadogParentID(ctx.(*spanContext), w3cCtx.(*spanContext), ddCtx)
 				}
@@ -492,12 +493,12 @@ func validateTID(tid string) error {
 	return nil
 }
 
-// getDefaultPropagator returns the Datadog Propagator
-func getDefaultPropagator(cp *chainedPropagator) *propagator {
-	for _, v2 := range cp.extractors {
-		p2, isDatadog := (v2).(*propagator)
+// getDatadogPropagator returns the Datadog Propagator
+func getDatadogPropagator(cp *chainedPropagator) *propagator {
+	for _, e := range cp.extractors {
+		p, isDatadog := (e).(*propagator)
 		if isDatadog {
-			return p2
+			return p
 		}
 	}
 	return nil
@@ -505,12 +506,12 @@ func getDefaultPropagator(cp *chainedPropagator) *propagator {
 
 // overrideDatadogParentID overrides the span ID of a context with the ID extracted from tracecontext headers
 // if the reparenting ID is not set on the context, the span ID from datadog headers is used.
-func overrideDatadogParentID(ctx *spanContext, w3cCtx *spanContext, ddSpanCtx ddtrace.SpanContext) {
+func overrideDatadogParentID(ctx, w3cCtx, ddCtx *spanContext) {
 	ctx.spanID = w3cCtx.spanID
 	if w3cCtx.reparentID != "" && w3cCtx.reparentID != "0000000000000000" {
 		ctx.reparentID = w3cCtx.reparentID
-	} else if ddSpanCtx != nil && ddSpanCtx.(*spanContext) != nil {
-		ctx.reparentID = fmt.Sprintf("%016x", ddSpanCtx.SpanID())
+	} else if ddCtx != nil {
+		ctx.reparentID = fmt.Sprintf("%016x", ddCtx.SpanID())
 	}
 }
 
