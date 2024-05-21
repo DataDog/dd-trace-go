@@ -11,7 +11,6 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 
-	"github.com/google/uuid"
 	"github.com/tinylib/msgp/msgp"
 )
 
@@ -45,28 +44,42 @@ type Event struct {
 }
 
 // NewEvent creates a new stacktrace event with the given category, type and message
-func NewEvent(eventCat EventCategory, eventType, message string) *Event {
-	return &Event{
+func NewEvent(eventCat EventCategory, options ...Options) *Event {
+	event := &Event{
 		Category: eventCat,
-		Type:     eventType,
 		Language: "go",
-		Message:  message,
 		Frames:   SkipAndCapture(defaultCallerSkip),
+	}
+
+	for _, opt := range options {
+		opt(event)
+	}
+
+	return event
+}
+
+// Options is a function type to set optional parameters for the event
+type Options func(*Event)
+
+// WithType sets the type of the event
+func WithType(eventType string) Options {
+	return func(event *Event) {
+		event.Type = eventType
 	}
 }
 
-// IDLink returns a UUID to link the stacktrace event with other data. NOT thread-safe
-func (e *Event) IDLink() string {
-	if e.ID != "" {
-		newUUID, err := uuid.NewUUID()
-		if err != nil {
-			return ""
-		}
-
-		e.ID = newUUID.String()
+// WithMessage sets the message of the event
+func WithMessage(message string) Options {
+	return func(event *Event) {
+		event.Message = message
 	}
+}
 
-	return e.ID
+// WithID sets the id of the event
+func WithID(id string) Options {
+	return func(event *Event) {
+		event.ID = id
+	}
 }
 
 // AddToSpan adds the event to the given span's root span as a tag if stacktrace collection is enabled

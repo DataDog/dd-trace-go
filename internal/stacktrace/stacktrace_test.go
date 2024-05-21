@@ -7,13 +7,14 @@ package stacktrace
 
 import (
 	"fmt"
-	"github.com/stretchr/testify/require"
 	"runtime"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestNewStackTrace(t *testing.T) {
-	stack := Capture()
+	stack := skipAndCapture(defaultCallerSkip, defaultMaxDepth, nil)
 	if len(stack) == 0 {
 		t.Error("stacktrace should not be empty")
 	}
@@ -21,7 +22,7 @@ func TestNewStackTrace(t *testing.T) {
 
 func TestStackTraceCurrentFrame(t *testing.T) {
 	// Check last frame for the values of the current function
-	stack := Capture()
+	stack := skipAndCapture(defaultCallerSkip, defaultMaxDepth, nil)
 	require.GreaterOrEqual(t, len(stack), 3)
 
 	frame := stack[0]
@@ -35,7 +36,7 @@ func TestStackTraceCurrentFrame(t *testing.T) {
 type Test struct{}
 
 func (t *Test) Method() StackTrace {
-	return Capture()
+	return skipAndCapture(defaultCallerSkip, defaultMaxDepth, nil)
 }
 
 func TestStackMethodReceiver(t *testing.T) {
@@ -53,7 +54,7 @@ func TestStackMethodReceiver(t *testing.T) {
 
 func recursive(i int) StackTrace {
 	if i == 0 {
-		return Capture()
+		return skipAndCapture(defaultCallerSkip, defaultMaxDepth, nil)
 	}
 
 	return recursive(i - 1)
@@ -136,10 +137,15 @@ func TestParseSymbol(t *testing.T) {
 			"*Test",
 			"Method",
 		}},
-		{"main-receiver-templated", "test.(*toto).templatedFunc[...]", symbol{
+		{"main-receiver-templated-func", "test.(*toto).templatedFunc[...]", symbol{
 			"test",
 			"*toto",
 			"templatedFunc[...]",
+		}},
+		{"main-templated-receiver", "test.(*toto[...]).func", symbol{
+			"test",
+			"*toto[...]",
+			"func",
 		}},
 		{"main-lambda", "test.main.func1", symbol{
 			"test",
@@ -153,15 +159,15 @@ func TestParseSymbol(t *testing.T) {
 	}
 }
 
-func recursiveBench(i int, b *testing.B) StackTrace {
+func recursiveBench(i int, depth int, b *testing.B) StackTrace {
 	if i == 0 {
 		b.StartTimer()
-		stack := Capture()
+		stack := skipAndCapture(defaultCallerSkip, depth*2, nil)
 		b.StopTimer()
 		return stack
 	}
 
-	return recursiveBench(i-1, b)
+	return recursiveBench(i-1, depth, b)
 }
 
 func BenchmarkCaptureStackTrace(b *testing.B) {
@@ -169,7 +175,7 @@ func BenchmarkCaptureStackTrace(b *testing.B) {
 		b.Run(fmt.Sprintf("%v", depth), func(b *testing.B) {
 			defaultMaxDepth = depth * 2 // Making sure we are capturing the full stack
 			for n := 0; n < b.N; n++ {
-				runtime.KeepAlive(recursiveBench(depth, b))
+				runtime.KeepAlive(recursiveBench(depth, depth, b))
 			}
 		})
 	}
