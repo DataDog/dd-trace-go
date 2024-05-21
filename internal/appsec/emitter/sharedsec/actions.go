@@ -113,8 +113,7 @@ func NewStackTraceAction(params map[string]any) Action {
 		return nil
 	}
 
-	event := stacktrace.NewEvent(stacktrace.ExploitEvent, "", "")
-	event.ID = strId
+	event := stacktrace.NewEvent(stacktrace.ExploitEvent, stacktrace.WithID(strId))
 
 	return &StackTraceAction{Event: *event}
 }
