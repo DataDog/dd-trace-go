@@ -12,6 +12,7 @@ package httpsec
 
 import (
 	"context"
+
 	// Blank import needed to use embed for the default blocked response payloads
 	_ "embed"
 	"net/http"
@@ -79,9 +80,12 @@ func WrapHandler(handler http.Handler, span ddtrace.Span, pathParams map[string]
 		var blocking bool
 		args := MakeHandlerOperationArgs(r, clientIP, pathParams)
 		ctx, op := StartOperation(r.Context(), args, func(op *types.Operation) {
-			dyngo.OnData(op, func(a *sharedsec.Action) {
-				bypassHandler = a.HTTP()
-				blocking = a.Blocking()
+			dyngo.OnData(op, func(a *sharedsec.HTTPAction) {
+				blocking = true
+				bypassHandler = a.Handler
+			})
+			dyngo.OnData(op, func(a *sharedsec.StackTraceAction) {
+				// TODO: do something with the stacktrace
 			})
 		})
 		r = r.WithContext(ctx)
