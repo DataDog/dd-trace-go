@@ -1,6 +1,8 @@
 module gopkg.in/DataDog/dd-trace-go.v1/internal/exectracetest
 
-go 1.20
+go 1.21
+
+toolchain go1.22.2
 
 require (
 	github.com/google/pprof v0.0.0-20230817174616-7a8ec2ada47b
