@@ -49,7 +49,7 @@ RUN if [ "${go_libddwaf_ref}" != "" ]; then \
   alpine) apk update && apk add git;; \
   *) apt update && apt install -y git ;; \
   esac; \
-  go get -u github.com/DataDog/go-libddwaf/v2@${go_libddwaf_ref}; \
+  go get -u github.com/DataDog/go-libddwaf/v3@${go_libddwaf_ref}; \
   fi
 
 RUN go mod tidy

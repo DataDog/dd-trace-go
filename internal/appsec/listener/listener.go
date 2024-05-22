@@ -8,7 +8,7 @@
 // types found in gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter.
 package listener
 
-import waf "github.com/DataDog/go-libddwaf/v2"
+import waf "github.com/DataDog/go-libddwaf/v3"
 
 // ContextKey is used as a key to store operations in the request's context (gRPC/HTTP)
 type ContextKey struct{}

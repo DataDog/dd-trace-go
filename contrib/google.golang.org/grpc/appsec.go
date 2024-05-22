@@ -40,8 +40,8 @@ func appsecUnaryHandlerMiddleware(method string, span ddtrace.Span, handler grpc
 			ClientIP: clientIP,
 		}
 		ctx, op := grpcsec.StartHandlerOperation(ctx, args, nil, func(op *types.HandlerOperation) {
-			dyngo.OnData(op, func(a *sharedsec.Action) {
-				code, e := a.GRPC()(md)
+			dyngo.OnData(op, func(a *sharedsec.GRPCAction) {
+				code, e := a.GRPCWrapper(md)
 				blocked = a.Blocking()
 				err = status.Error(codes.Code(code), e.Error())
 			})
@@ -87,8 +87,8 @@ func appsecStreamHandlerMiddleware(method string, span ddtrace.Span, handler grp
 			ClientIP: clientIP,
 		}
 		ctx, op := grpcsec.StartHandlerOperation(ctx, args, nil, func(op *types.HandlerOperation) {
-			dyngo.OnData(op, func(a *sharedsec.Action) {
-				code, e := a.GRPC()(md)
+			dyngo.OnData(op, func(a *sharedsec.GRPCAction) {
+				code, e := a.GRPCWrapper(md)
 				blocked = a.Blocking()
 				err = status.Error(codes.Code(code), e.Error())
 			})
