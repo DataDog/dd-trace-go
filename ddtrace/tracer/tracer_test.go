@@ -2039,6 +2039,44 @@ func BenchmarkStartSpan(b *testing.B) {
 	}
 }
 
+func BenchmarkStartSpanConcurrent(b *testing.B) {
+	tracer, _, _, stop := startTestTracer(b, WithLogger(log.DiscardLogger{}), WithSampler(NewRateSampler(0)))
+	defer stop()
+
+	var wg sync.WaitGroup
+	var wgready sync.WaitGroup
+	start := make(chan struct{})
+	for i := 0; i < 10; i++ {
+		wg.Add(1)
+		wgready.Add(1)
+		go func() {
+			defer wg.Done()
+			root := tracer.StartSpan("pylons.request", ServiceName("pylons"), ResourceName("/"))
+			ctx := ContextWithSpan(context.TODO(), root)
+			wgready.Done()
+			<-start
+			for n := 0; n < b.N; n++ {
+				s, ok := SpanFromContext(ctx)
+				if !ok {
+					b.Fatal("no span")
+				}
+				StartSpan("op", ChildOf(s.Context()))
+			}
+		}()
+	}
+	wgready.Wait()
+	b.ResetTimer()
+	close(start)
+	wg.Wait()
+}
+
+func BenchmarkGenSpanID(b *testing.B) {
+	b.ResetTimer()
+	for n := 0; n < b.N; n++ {
+		generateSpanID(0)
+	}
+}
+
 // startTestTracer returns a Tracer with a DummyTransport
 func startTestTracer(t testing.TB, opts ...StartOption) (trc *tracer, transport *dummyTransport, flush func(n int), stop func()) {
 	transport = newDummyTransport()
