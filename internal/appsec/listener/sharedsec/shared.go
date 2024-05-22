@@ -7,20 +7,18 @@ package sharedsec
 
 import (
 	"encoding/json"
-	"time"
-
 	"github.com/DataDog/appsec-internal-go/limiter"
-	waf "github.com/DataDog/go-libddwaf/v2"
+	waf "github.com/DataDog/go-libddwaf/v3"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/sharedsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/trace"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
-func RunWAF(wafCtx *waf.Context, values waf.RunAddressData, timeout time.Duration) waf.Result {
-	result, err := wafCtx.Run(values, timeout)
+func RunWAF(wafCtx *waf.Context, values waf.RunAddressData) waf.Result {
+	result, err := wafCtx.Run(values)
 	if err == waf.ErrTimeout {
-		log.Debug("appsec: waf timeout value of %s reached", timeout)
+		log.Debug("appsec: waf timeout value of reached: %v", err)
 	} else if err != nil {
 		log.Error("appsec: unexpected waf error: %v", err)
 	}
@@ -31,7 +29,7 @@ type securityEventsAdder interface {
 	AddSecurityEvents(events []any)
 }
 
-// Helper function to add sec events to an operation taking into account the rate limiter.
+// AddSecurityEvents is a helper function to add sec events to an operation taking into account the rate limiter.
 func AddSecurityEvents(op securityEventsAdder, limiter limiter.Limiter, matches []any) {
 	if len(matches) > 0 && limiter.Allow() {
 		op.AddSecurityEvents(matches)
@@ -46,7 +44,7 @@ const (
 	wafVersionTag        = "_dd.appsec.waf.version"
 )
 
-// Add the tags related to security rules monitoring
+// AddRulesMonitoringTags adds the tags related to security rules monitoring
 func AddRulesMonitoringTags(th trace.TagSetter, wafDiags *waf.Diagnostics) {
 	rInfo := wafDiags.Rules
 	if rInfo == nil {
@@ -66,7 +64,7 @@ func AddRulesMonitoringTags(th trace.TagSetter, wafDiags *waf.Diagnostics) {
 	th.SetTag(wafVersionTag, waf.Version())
 }
 
-// Add the tags related to the monitoring of the WAF
+// AddWAFMonitoringTags adds the tags related to the monitoring of the WAF
 func AddWAFMonitoringTags(th trace.TagSetter, rulesVersion string, stats map[string]any) {
 	// Rules version is set for every request to help the backend associate WAF duration metrics with rule version
 	th.SetTag(eventRulesVersionTag, rulesVersion)
@@ -79,12 +77,42 @@ func AddWAFMonitoringTags(th trace.TagSetter, rulesVersion string, stats map[str
 
 // ProcessActions sends the relevant actions to the operation's data listener.
 // It returns true if at least one of those actions require interrupting the request handler
-func ProcessActions(op dyngo.Operation, actions sharedsec.Actions, actionIds []string) (interrupt bool) {
-	for _, id := range actionIds {
-		if a, ok := actions[id]; ok {
-			dyngo.EmitData(op, actions[id])
-			interrupt = interrupt || a.Blocking()
+// When SDKError is not nil, this error is sent to the op with EmitData so that the invoked SDK can return it
+func ProcessActions(op dyngo.Operation, actions map[string]any, SDKError error) (interrupt bool) {
+	for aType, params := range actions {
+		actionArray := ActionsFromEntry(aType, params)
+		if actionArray == nil {
+			log.Debug("cannot process %s action with params %v", aType, params)
+			continue
+		}
+		for _, a := range actionArray {
+			a.EmitData(op)
+			if a.Blocking() && SDKError != nil { // Send the error to be returned by the SDK
+				interrupt = true
+				dyngo.EmitData(op, SDKError) // Send error
+			}
 		}
 	}
 	return interrupt
+}
+
+// ActionsFromEntry returns one or several actions generated from the WAF returned action entry
+// Several actions are returned when the action is of block_request type since we could be blocking HTTP or GRPC
+func ActionsFromEntry(actionType string, params any) []sharedsec.Action {
+	p, ok := params.(map[string]any)
+	if !ok {
+		return nil
+	}
+	switch actionType {
+	case "block_request":
+		return sharedsec.NewBlockAction(p)
+	case "redirect_request":
+		return []sharedsec.Action{sharedsec.NewRedirectAction(p)}
+	case "stack_trace":
+		return []sharedsec.Action{sharedsec.NewStackTraceAction(p)}
+
+	default:
+		log.Debug("appsec: unknown action type `%s`", actionType)
+		return nil
+	}
 }
