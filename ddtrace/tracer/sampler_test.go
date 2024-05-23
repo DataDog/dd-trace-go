@@ -442,12 +442,12 @@ func TestRuleEnvVars(t *testing.T) {
 
 func TestRulesSampler(t *testing.T) {
 	makeSpan := func(op string, svc string) *span {
-		s := newSpan(op, svc, "res-10", random.Uint64(), random.Uint64(), 0)
+		s := newSpan(op, svc, "res-10", randUint64(), randUint64(), 0)
 		s.setMeta("hostname", "hn-30")
 		return s
 	}
 	makeFinishedSpan := func(op, svc, resource string, tags map[string]interface{}) *span {
-		s := newSpan(op, svc, resource, random.Uint64(), random.Uint64(), 0)
+		s := newSpan(op, svc, resource, randUint64(), randUint64(), 0)
 		for k, v := range tags {
 			s.SetTag(k, v)
 		}
