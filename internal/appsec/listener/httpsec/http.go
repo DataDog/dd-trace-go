@@ -69,6 +69,7 @@ type wafEventListener struct {
 	once      sync.Once
 }
 
+// newWAFEventListener returns the WAF event listener to register in order to enable it.
 func newWafEventListener(wafHandle *waf.Handle, cfg *config.Config, limiter limiter.Limiter) *wafEventListener {
 	if wafHandle == nil {
 		log.Debug("appsec: no WAF Handle available, the HTTP WAF Event Listener will not be registered")
@@ -90,7 +91,6 @@ func newWafEventListener(wafHandle *waf.Handle, cfg *config.Config, limiter limi
 	}
 }
 
-// NewWAFEventListener returns the WAF event listener to register in order to enable it.
 func (l *wafEventListener) onEvent(op *types.Operation, args types.HandlerOperationArgs) {
 	wafCtx, err := l.wafHandle.NewContextWithBudget(l.config.WAFTimeout)
 	if err != nil {

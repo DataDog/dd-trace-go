@@ -85,7 +85,7 @@ func (l *wafEventListener) onEvent(request *types.RequestOperation, _ types.Requ
 	}
 
 	if _, ok := l.addresses[shared.ServerIoNetURLAddr]; ok {
-		shared.RegisterRoundTripper(request, wafCtx, l.limiter, l.config.WAFTimeout)
+		shared.RegisterRoundTripper(request, wafCtx, l.limiter)
 	}
 
 	// Add span tags notifying this trace is AppSec-enabled

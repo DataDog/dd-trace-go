@@ -105,7 +105,7 @@ func (l *wafEventListener) onEvent(op *types.HandlerOperation, handlerArgs types
 	}
 
 	if _, ok := l.addresses[shared.ServerIoNetURLAddr]; ok {
-		shared.RegisterRoundTripper(op, wafCtx, l.limiter, l.config.WAFTimeout)
+		shared.RegisterRoundTripper(op, wafCtx, l.limiter)
 	}
 
 	// Listen to the UserID address if the WAF rules are using it
