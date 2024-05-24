@@ -11,8 +11,9 @@ import (
 	"strconv"
 	"time"
 
-	internal "github.com/DataDog/appsec-internal-go/appsec"
+	appsecInternal "github.com/DataDog/appsec-internal-go/appsec"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/remoteconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
@@ -62,11 +63,12 @@ type Config struct {
 	// AppSec trace rate limit (traces per second).
 	TraceRateLimit int64
 	// Obfuscator configuration
-	Obfuscator internal.ObfuscatorConfig
+	Obfuscator appsecInternal.ObfuscatorConfig
 	// APISec configuration
-	APISec internal.APISecConfig
+	APISec appsecInternal.APISecConfig
 	// RC is the remote configuration client used to receive product configuration updates. Nil if RC is disabled (default)
-	RC *remoteconfig.ClientConfig
+	RC   *remoteconfig.ClientConfig
+	RASP bool
 }
 
 // WithRCConfig sets the AppSec remote config client configuration to the specified cfg
@@ -99,7 +101,7 @@ func parseBoolEnvVar(env string) (enabled bool, set bool, err error) {
 
 // NewConfig returns a fresh appsec configuration read from the env
 func NewConfig() (*Config, error) {
-	rules, err := internal.RulesFromEnv()
+	rules, err := appsecInternal.RulesFromEnv()
 	if err != nil {
 		return nil, err
 	}
@@ -111,9 +113,11 @@ func NewConfig() (*Config, error) {
 
 	return &Config{
 		RulesManager:   r,
-		WAFTimeout:     internal.WAFTimeoutFromEnv(),
-		TraceRateLimit: int64(internal.RateLimitFromEnv()),
-		Obfuscator:     internal.NewObfuscatorConfig(),
-		APISec:         internal.NewAPISecConfig(),
+		WAFTimeout:     appsecInternal.WAFTimeoutFromEnv(),
+		TraceRateLimit: int64(appsecInternal.RateLimitFromEnv()),
+		Obfuscator:     appsecInternal.NewObfuscatorConfig(),
+		APISec:         appsecInternal.NewAPISecConfig(),
+		// TODO: use appsecInternal.RASPENabled() when merged and released
+		RASP: internal.BoolEnv("DD_APPSEC_RASP_ENABLED", true),
 	}, nil
 }

@@ -162,6 +162,7 @@ func (a *appsec) start(telemetry *appsecTelemetry) error {
 	}
 
 	a.enableRCBlocking()
+	a.enableRASP()
 
 	a.started = true
 	log.Info("appsec: up and running")
