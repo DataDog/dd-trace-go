@@ -50,57 +50,6 @@ func (a *appsec) swapWAF(rules config.RulesFragment) (err error) {
 	return nil
 }
 
-const raspSSRFRule = `
-{
-	"id": "rasp-934-100",
-	"name": "Server-side request forgery exploit",
-	"tags": {
-		"type": "ssrf",
-		"category": "vulnerability_trigger",
-		"cwe": "918",
-		"capec": "1000/225/115/664",
-		"confidence": "0",
-		"module": "rasp"
-	},
-	"conditions": [
-		{
-			"parameters": {
-				"resource": [
-					{
-						"address": "server.io.net.url"
-					}
-				],
-				"params": [
-					{
-						"address": "server.request.query"
-					},
-					{
-						"address": "server.request.body"
-					},
-					{
-						"address": "server.request.path_params"
-					},
-					{
-						"address": "grpc.server.request.message"
-					},
-					{
-						"address": "graphql.server.all_resolvers"
-					},
-					{
-						"address": "graphql.server.resolver"
-					}
-				]
-			},
-			"operator": "ssrf_detector"
-		}
-	],
-	"transformers": [],
-	"on_match": [
-		"stack_trace"
-	]
-}
-`
-
 type wafEventListener func(*waf.Handle, *config.Config, limiter.Limiter, dyngo.Operation)
 
 // wafEventListeners is the global list of event listeners registered by contribs at init time. This
