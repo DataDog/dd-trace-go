@@ -296,12 +296,74 @@ const maxPropagatedTagsLength = 512
 // partialFlushMinSpansDefault is the default number of spans for partial flushing, if enabled.
 const partialFlushMinSpansDefault = 1000
 
+var otelDdTags = map[string]string {
+	"service.name": "service",
+	"deployment.environment": "env",
+	"service.version": "version",
+}
+
 // newConfig renders the tracer configuration based on defaults, environment variables
 // and passed user opts.
 func newConfig(opts ...StartOption) *config {
 	c := new(config)
 	c.sampler = NewAllSampler()
 	c.httpClientTimeout = time.Second * 10 // 10 seconds
+
+	// MTOFF - OTEL ENV VARS
+	var svc string
+	if svc = os.Getenv("OTEL_SERVICE_NAME"); svc != "" {
+		c.serviceName = svc
+		globalconfig.SetServiceName(svc)
+	}
+	if v := os.Getenv("DD_SERVICE"); v != "" {
+		if svc != "" {
+			fmt.Println("MTOFF: HIDING")
+		}
+		c.serviceName = v
+		globalconfig.SetServiceName(v)
+	}
+	if v := os.Getenv("OTEL_RESOURCE_ATTRIBUTES"); v != "" {
+		count := 0
+		internal.ForEachStringTag(v, internal.OtelDelimeter, func(key, val string) {
+			if count == 10 {
+				fmt.Println("MTOFF: Log about hitting max")
+				return
+			}
+			// map reserved otel tag names to dd tag names
+			if vv, ok := otelDdTags[key]; ok {
+				key = vv
+			}
+			WithGlobalTag(key, val)(c)
+			count++
+		})
+	}
+	if v := os.Getenv("OTEL_METRICS_EXPORTER"); v != "" {
+		if v == "none" {
+			c.runtimeMetrics = false
+		} else {
+			fmt.Println("MTOFF: invalid ?")
+		}
+	}
+	c.runtimeMetrics = internal.BoolEnv("DD_RUNTIME_METRICS_ENABLED", c.runtimeMetrics)
+	if v := os.Getenv("OTEL_LOG_LEVEL"); v != "" {
+		if v == "debug" {	
+			c.debug = true
+		} else {
+			fmt.Println("MTOFF: INVALID")
+		}
+	}
+	c.debug = internal.BoolEnv("DD_TRACE_DEBUG", c.debug)
+	enabled := true
+	if v := os.Getenv("OTEL_TRACES_EXPORTER"); v != "" {
+		if v == "none" {
+			enabled = false
+		} else {
+			// MTOFF: Log a warning
+			fmt.Println("MTOFF: Not supported")
+		}
+	}
+	c.enabled = newDynamicConfig("tracing_enabled", internal.BoolEnv("DD_TRACE_ENABLED", enabled), func(b bool) bool { return true }, equal[bool])
+	// MTOFF - end
 
 	if internal.BoolEnv("DD_TRACE_ANALYTICS_ENABLED", false) {
 		globalconfig.SetAnalyticsRate(1.0)
@@ -324,15 +386,11 @@ func newConfig(opts ...StartOption) *config {
 			return r == ',' || r == ' '
 		})...)(c)
 	}
-	if v := os.Getenv("DD_SERVICE"); v != "" {
-		c.serviceName = v
-		globalconfig.SetServiceName(v)
-	}
 	if ver := os.Getenv("DD_VERSION"); ver != "" {
 		c.version = ver
 	}
 	if v := os.Getenv("DD_SERVICE_MAPPING"); v != "" {
-		internal.ForEachStringTag(v, func(key, val string) { WithServiceMapping(key, val)(c) })
+		internal.ForEachStringTag(v, internal.DdDelimiter, func(key, val string) { WithServiceMapping(key, val)(c) })
 	}
 	c.headerAsTags = newDynamicConfig("trace_header_tags", nil, setHeaderTags, equalSlice[string])
 	if v := os.Getenv("DD_TRACE_HEADER_TAGS"); v != "" {
@@ -351,9 +409,6 @@ func newConfig(opts ...StartOption) *config {
 		c.logToStdout = true
 	}
 	c.logStartup = internal.BoolEnv("DD_TRACE_STARTUP_LOGS", true)
-	c.runtimeMetrics = internal.BoolEnv("DD_RUNTIME_METRICS_ENABLED", false)
-	c.debug = internal.BoolEnv("DD_TRACE_DEBUG", false)
-	c.enabled = newDynamicConfig("tracing_enabled", internal.BoolEnv("DD_TRACE_ENABLED", true), func(b bool) bool { return true }, equal[bool])
 	c.profilerEndpoints = internal.BoolEnv(traceprof.EndpointEnvVar, true)
 	c.profilerHotspots = internal.BoolEnv(traceprof.CodeHotspotsEnvVar, true)
 	c.enableHostnameDetection = internal.BoolEnv("DD_CLIENT_HOSTNAME_ENABLED", true)
@@ -398,7 +453,7 @@ func newConfig(opts ...StartOption) *config {
 	}
 	c.peerServiceMappings = make(map[string]string)
 	if v := os.Getenv("DD_TRACE_PEER_SERVICE_MAPPING"); v != "" {
-		internal.ForEachStringTag(v, func(key, val string) { c.peerServiceMappings[key] = val })
+		internal.ForEachStringTag(v, internal.DdDelimiter, func(key, val string) { c.peerServiceMappings[key] = val })
 	}
 
 	for _, fn := range opts {
@@ -513,6 +568,8 @@ func newConfig(opts ...StartOption) *config {
 
 	return c
 }
+
+
 
 func newStatsdClient(c *config) (internal.StatsdClient, error) {
 	if c.statsdClient != nil {

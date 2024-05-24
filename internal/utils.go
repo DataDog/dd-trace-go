@@ -10,6 +10,9 @@ import (
 	"sync/atomic"
 )
 
+const OtelDelimeter = "="
+const DdDelimiter = ":"
+
 // LockMap uses an RWMutex to synchronize map access to allow for concurrent access.
 // This should not be used for cases with heavy write load and performance concerns.
 type LockMap struct {

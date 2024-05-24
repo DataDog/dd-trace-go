@@ -609,6 +609,7 @@ func TestEnvVars(t *testing.T) {
 			{headerPropagationStyleInject: "b3"},
 			{headerPropagationStyleInjectDeprecated: "b3,none" /* none should have no affect */},
 			{headerPropagationStyle: "b3"},
+			{otelHeaderPropagationStyle: "b3multi"},
 			{headerPropagationStyleInject: "b3multi", headerPropagationStyleInjectDeprecated: "none" /* none should have no affect */},
 			{headerPropagationStyleInject: "b3multi", headerPropagationStyle: "none" /* none should have no affect */},
 		}
@@ -680,6 +681,7 @@ func TestEnvVars(t *testing.T) {
 			{headerPropagationStyleExtract: "b3"},
 			{headerPropagationStyleExtractDeprecated: "b3"},
 			{headerPropagationStyle: "b3,none" /* none should have no affect */},
+			{otelHeaderPropagationStyle: "b3multi"},
 			{headerPropagationStyleExtract: "b3multi", headerPropagationStyleExtractDeprecated: "none" /* none should have no affect */},
 			{headerPropagationStyleExtract: "b3multi", headerPropagationStyle: "none" /* none should have no affect */},
 		}
@@ -746,6 +748,7 @@ func TestEnvVars(t *testing.T) {
 			{headerPropagationStyleExtract: "b3"},
 			{headerPropagationStyleExtractDeprecated: "b3"},
 			{headerPropagationStyle: "b3,none" /* none should have no affect */},
+			{otelHeaderPropagationStyle: "b3multi"},
 			{headerPropagationStyleExtract: "b3multi", headerPropagationStyleExtractDeprecated: "none" /* none should have no affect */},
 			{headerPropagationStyleExtract: "b3multi", headerPropagationStyle: "none" /* none should have no affect */},
 		}
@@ -780,6 +783,7 @@ func TestEnvVars(t *testing.T) {
 			{headerPropagationStyleExtract: "B3 single header"},
 			{headerPropagationStyleExtractDeprecated: "B3 single header"},
 			{headerPropagationStyle: "B3 single header,none" /* none should have no affect */},
+			{otelHeaderPropagationStyle: "b3"},
 		}
 		for _, testEnv := range testEnvs {
 			for k, v := range testEnv {
@@ -879,6 +883,7 @@ func TestEnvVars(t *testing.T) {
 			{headerPropagationStyleInject: "datadog"},
 			{headerPropagationStyleInjectDeprecated: "datadog,none" /* none should have no affect */},
 			{headerPropagationStyle: "datadog"},
+			{otelHeaderPropagationStyle: "datadog"},
 			{headerPropagationStyleInject: "datadog", headerPropagationStyleInjectDeprecated: "none" /* none should have no affect */},
 			{headerPropagationStyleInject: "datadog", headerPropagationStyle: "none" /* none should have no affect */},
 		}
@@ -940,6 +945,7 @@ func TestEnvVars(t *testing.T) {
 			{headerPropagationStyleExtractDeprecated: "Datadog,b3multi"},
 			{headerPropagationStyle: "Datadog,b3"},
 			{headerPropagationStyle: "none,Datadog,b3" /* none should have no affect */},
+			{otelHeaderPropagationStyle: "Datadog,b3multi"},
 		}
 		for _, testEnv := range testEnvs {
 			for k, v := range testEnv {
@@ -1015,6 +1021,7 @@ func TestEnvVars(t *testing.T) {
 			{headerPropagationStyleInjectDeprecated: "datadog", headerPropagationStyleExtractDeprecated: "datadog"},
 			{headerPropagationStyleInject: "datadog", headerPropagationStyle: "datadog"},
 			{headerPropagationStyle: "datadog"},
+			{otelHeaderPropagationStyle: "datadog"},
 		}
 		for _, testEnv := range testEnvs {
 			for k, v := range testEnv {
@@ -1082,6 +1089,7 @@ func TestEnvVars(t *testing.T) {
 			{headerPropagationStyleExtract: "traceContext"},
 			{headerPropagationStyleExtractDeprecated: "traceContext,none" /* none should have no affect */},
 			{headerPropagationStyle: "traceContext"},
+			{otelHeaderPropagationStyle: "traceContext"},
 			{headerPropagationStyleExtract: "traceContext", headerPropagationStyleExtractDeprecated: "none" /* none should have no affect */},
 			{headerPropagationStyleExtract: "traceContext", headerPropagationStyle: "none" /* none should have no affect */},
 		}
@@ -1331,6 +1339,7 @@ func TestEnvVars(t *testing.T) {
 			{headerPropagationStyleExtract: "traceContext"},
 			{headerPropagationStyleExtractDeprecated: "traceContext,none" /* none should have no affect */},
 			{headerPropagationStyle: "traceContext"},
+			{otelHeaderPropagationStyle: "traceContext"},
 		}
 		for _, testEnv := range testEnvs {
 			for k, v := range testEnv {
@@ -1406,6 +1415,7 @@ func TestEnvVars(t *testing.T) {
 			{headerPropagationStyleInjectDeprecated: "tracecontext", headerPropagationStyleExtractDeprecated: "tracecontext"},
 			{headerPropagationStyleInject: "datadog,tracecontext", headerPropagationStyle: "datadog,tracecontext"},
 			{headerPropagationStyle: "datadog,tracecontext"},
+			{otelHeaderPropagationStyle: "datadog,traceContext"},
 		}
 		for _, testEnv := range testEnvs {
 			for k, v := range testEnv {
@@ -2014,6 +2024,27 @@ func TestNonePropagator(t *testing.T) {
 			assert.Equal(err, ErrSpanContextNotFound)
 		})
 		t.Run("", func(t *testing.T) {
+			t.Setenv(otelHeaderPropagationStyle, "NoNe")
+			tracer := newTracer()
+			defer tracer.Stop()
+			root := tracer.StartSpan("web.request").(*span)
+			root.SetTag(ext.SamplingPriority, -1)
+			root.SetBaggageItem("item", "x")
+			ctx, ok := root.Context().(*spanContext)
+			ctx.traceID = traceIDFrom64Bits(1)
+			ctx.spanID = 1
+			headers := TextMapCarrier(map[string]string{})
+			err := tracer.Inject(ctx, headers)
+
+			assert := assert.New(t)
+			assert.True(ok)
+			assert.Nil(err)
+			assert.Len(headers, 0)
+
+			_, err = tracer.Extract(headers)
+			assert.Equal(err, ErrSpanContextNotFound)
+		})
+		t.Run("", func(t *testing.T) {
 			//"DD_TRACE_PROPAGATION_STYLE_EXTRACT": "NoNe",
 			//	"DD_TRACE_PROPAGATION_STYLE_INJECT": "none",
 			t.Setenv(headerPropagationStyleExtract, "NoNe")
@@ -2043,6 +2074,66 @@ func TestNonePropagator(t *testing.T) {
 func assertTraceTags(t *testing.T, expected, actual string) {
 	assert.ElementsMatch(t, strings.Split(expected, ","), strings.Split(actual, ","))
 }
+
+// func TestOverrideChain(t *testing.T) {
+
+// }
+
+func TestOtelPropagator(t *testing.T) {
+	var (
+		tracecontext = "tracecontext"
+		b3 = "b3"
+		b3multi = "b3multi"
+		datadog = "datadog"
+		none = "none"
+		b3single = "b3 single header"
+		defaultPsName = "datadog,tracecontext"
+	)
+	tests := []struct{ 
+		env string
+		result string
+	} {
+		{
+			env: tracecontext,
+			result: tracecontext,
+		},
+		{
+			env: b3,
+			result: b3single,
+		},
+		{
+			env: b3multi,
+			result: b3multi,
+		},
+		{
+			env: datadog,
+			result: datadog,
+		},
+		{
+			env: none,
+			result: "",
+		},
+		{
+			env: "nonesense",
+			result: defaultPsName,
+		},
+		{
+			env: "jaegar",
+			result: defaultPsName,
+		},
+	}
+	for _, test := range tests {
+		t.Setenv(otelHeaderPropagationStyle, test.env)
+		t.Run(fmt.Sprintf("inject with %v=%v", otelHeaderPropagationStyle, test.env), func(t *testing.T){
+			assert := assert.New(t)
+			c := newConfig()
+			cp, ok := c.propagator.(*chainedPropagator)
+			assert.True(ok)
+			assert.Equal(test.result, cp.injectorNames)
+			assert.Equal(test.result, cp.extractorsNames)
+		})
+	}
+} 
 
 func BenchmarkInjectDatadog(b *testing.B) {
 	b.Setenv(headerPropagationStyleInject, "datadog")

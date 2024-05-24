@@ -187,7 +187,7 @@ func TestRateSamplerSetting(t *testing.T) {
 }
 
 func TestRuleEnvVars(t *testing.T) {
-	t.Run("sample-rate", func(t *testing.T) {
+	t.Run("dd-sample-rate", func(t *testing.T) {
 		assert := assert.New(t)
 		for _, tt := range []struct {
 			in  string
@@ -208,6 +208,28 @@ func TestRuleEnvVars(t *testing.T) {
 				assert.Equal(tt.out, res)
 			}
 		}
+	})
+
+	t.Run("otel-sample-rate", func(t *testing.T) {
+		t.Run("parentbased_always_on", func(t *testing.T) {
+			assert := assert.New(t)
+			t.Setenv("OTEL_TRACES_SAMPLER", "parentbased_always_on")
+			res := globalSampleRate()
+			assert.Equal(1.0, res)
+		})
+		t.Run("parentbased_always_off", func(t *testing.T) {
+			assert := assert.New(t)
+			t.Setenv("OTEL_TRACES_SAMPLER", "parentbased_always_off")
+			res := globalSampleRate()
+			assert.Equal(0.0, res)
+		})
+		t.Run("parentbased_traceidratio", func(t *testing.T) {
+			assert := assert.New(t)
+			t.Setenv("OTEL_TRACES_SAMPLER", "parentbased_traceidratio")
+			t.Setenv("OTEL_TRACES_SAMPLER_ARG", "0.5")
+			res := globalSampleRate()
+			assert.Equal(0.5, res)
+		})
 	})
 
 	t.Run("rate-limit", func(t *testing.T) {

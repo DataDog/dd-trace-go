@@ -70,6 +70,7 @@ const (
 	headerPropagationStyleInject  = "DD_TRACE_PROPAGATION_STYLE_INJECT"
 	headerPropagationStyleExtract = "DD_TRACE_PROPAGATION_STYLE_EXTRACT"
 	headerPropagationStyle        = "DD_TRACE_PROPAGATION_STYLE"
+	otelHeaderPropagationStyle = "OTEL_PROPAGATORS"
 
 	headerPropagationStyleInjectDeprecated  = "DD_PROPAGATION_STYLE_INJECT"  // deprecated
 	headerPropagationStyleExtractDeprecated = "DD_PROPAGATION_STYLE_EXTRACT" // deprecated
@@ -203,13 +204,27 @@ func getPropagators(cfg *PropagatorConfig, ps string) ([]Propagator, string) {
 		defaultPs = append(defaultPs, &propagatorB3{})
 		defaultPsName += ",b3"
 	}
+	// MTOFF - begin
 	if ps == "" {
+		if prop := os.Getenv(otelHeaderPropagationStyle); prop != "" {
+			if prop == "b3" {
+				prop = "b3 single header"
+			}
+			ps = prop
+			// MTOFF: INVALID (Add logic for other vals: jaeger, xray, ottrace)
+		}
 		if prop := os.Getenv(headerPropagationStyle); prop != "" {
+			if ps != "" {
+				fmt.Println("MTOFF: HIDING")
+			}
 			ps = prop // use the generic DD_TRACE_PROPAGATION_STYLE if set
-		} else {
+		}
+		// MTOFF - optimize
+		if ps == "" {
 			return defaultPs, defaultPsName // no env set, so use default from configuration
 		}
 	}
+	// MTOFF - end
 	ps = strings.ToLower(ps)
 	if ps == "none" {
 		return nil, ""
@@ -226,6 +241,7 @@ func getPropagators(cfg *PropagatorConfig, ps string) ([]Propagator, string) {
 			list = append(list, dd)
 			listNames = append(listNames, v)
 		case "tracecontext":
+			fmt.Println("MTOFF: in tc")
 			list = append(list, &propagatorW3c{})
 			listNames = append(listNames, v)
 		case "b3", "b3multi":
@@ -238,6 +254,7 @@ func getPropagators(cfg *PropagatorConfig, ps string) ([]Propagator, string) {
 			list = append(list, &propagatorB3SingleHeader{})
 			listNames = append(listNames, v)
 		case "none":
+			fmt.Println("MTOFF: NONE")
 			log.Warn("Propagator \"none\" has no effect when combined with other propagators. " +
 				"To disable the propagator, set to `none`")
 		default:

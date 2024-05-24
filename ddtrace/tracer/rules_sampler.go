@@ -380,12 +380,12 @@ func newTraceRulesSampler(rules []SamplingRule, traceSampleRate float64) *traceR
 	}
 }
 
-// globalSampleRate returns the sampling rate found in the DD_TRACE_SAMPLE_RATE environment variable.
+// globalSampleRate returns the sampling rate specified by DD_TRACE_SAMPLE_RATE or OTEL_SAMPLE_RATE
 // If it is invalid or not within the 0-1 range, NaN is returned.
 func globalSampleRate() float64 {
 	defaultRate := math.NaN()
-	v := os.Getenv("DD_TRACE_SAMPLE_RATE")
-	if v == "" {
+	v, ok := discoverSampleRate()
+	if !ok {
 		return defaultRate
 	}
 	r, err := strconv.ParseFloat(v, 64)
@@ -398,6 +398,33 @@ func globalSampleRate() float64 {
 	}
 	log.Warn("ignoring DD_TRACE_SAMPLE_RATE: out of range %f", r)
 	return defaultRate
+}
+
+func defaultOtelTraceIdRatio() string {
+	if v := os.Getenv("OTEL_TRACES_SAMPLER_ARG"); v != "" {
+		return v
+	}
+	return "1.0"
+} 
+
+// discoverSampleRate the sample rate found in DD_TRACE_SAMPLE_RATE or OTEL_TRACES_SAMPLER env vars
+// if not configured, it returns empty string and false
+func discoverSampleRate() (string, bool) {
+	if v := os.Getenv("DD_TRACE_SAMPLE_RATE"); v != "" {
+		return v, true
+	}
+	if vv := os.Getenv("OTEL_TRACES_SAMPLER"); vv != "" {
+		var otelDdSamplerMapping = map[string]string {
+		"parentbased_always_on": "1.0",
+		"parentbased_always_off": "0.0",
+		"parentbased_traceidratio": defaultOtelTraceIdRatio(),
+		}
+		if vvv, ok :=  otelDdSamplerMapping[vv]; ok {
+			return vvv, true
+		}
+		log.Warn("Unknown sampling configuration %v", vv)
+	}
+	return "", false
 }
 
 func (rs *traceRulesSampler) enabled() bool {
