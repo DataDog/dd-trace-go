@@ -32,7 +32,9 @@ const (
 	defaultServiceName        = "unnamed-go-service"
 )
 
-var sketchMapping, _ = mapping.NewLogarithmicMapping(0.01)
+// use the same gamma and index offset as the Datadog backend, to avoid doing any conversions in
+// the backend that would lead to a loss of precision
+var sketchMapping, _ = mapping.NewLogarithmicMappingWithGamma(1.015625, 1.8761281912861705)
 
 type statsPoint struct {
 	edgeTags       []string

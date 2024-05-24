@@ -8,7 +8,7 @@ package appsec
 import (
 	"runtime"
 
-	waf "github.com/DataDog/go-libddwaf/v2"
+	waf "github.com/DataDog/go-libddwaf/v3"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 )
 
