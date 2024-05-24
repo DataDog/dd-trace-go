@@ -7,10 +7,11 @@ package sharedsec
 
 import (
 	"encoding/json"
+	"errors"
 
 	"github.com/DataDog/appsec-internal-go/limiter"
 	waf "github.com/DataDog/go-libddwaf/v3"
-	"github.com/DataDog/go-libddwaf/v3/errors"
+	wafErrors "github.com/DataDog/go-libddwaf/v3/errors"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/httpsec/types"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/sharedsec"
@@ -31,7 +32,7 @@ const (
 
 func RunWAF(wafCtx *waf.Context, values waf.RunAddressData) waf.Result {
 	result, err := wafCtx.Run(values)
-	if err == errors.ErrTimeout {
+	if err == wafErrors.ErrTimeout {
 		log.Debug("appsec: waf timeout value reached: %v", err)
 	} else if err != nil {
 		log.Error("appsec: unexpected waf error: %v", err)
@@ -132,11 +133,11 @@ func ActionsFromEntry(actionType string, params any) []sharedsec.Action {
 func RegisterRoundTripper(op operationWithEvents, wafCtx *waf.Context, limiter limiter.Limiter) {
 	dyngo.On(op, func(operation *types.RoundTripOperation, args types.RoundTripOperationArgs) {
 		wafResult := RunWAF(wafCtx, waf.RunAddressData{Persistent: map[string]any{ServerIoNetURLAddr: args.URL}})
-
-		// TODO: stacktrace
 		if !wafResult.HasEvents() {
 			return
 		}
+
+		ProcessActions(op, wafResult.Actions, errors.New("Request blocked"))
 
 		AddSecurityEvents(op, limiter, wafResult.Events)
 		log.Debug("appsec: WAF detected a suspicious outgoing request URL: %s", args.URL)

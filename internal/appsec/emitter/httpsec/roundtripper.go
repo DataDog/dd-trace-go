@@ -7,10 +7,11 @@ package httpsec
 
 import (
 	"context"
+	"net/http"
+
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/httpsec/types"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-	"net/http"
 )
 
 type RoundTripArgs struct {
@@ -34,10 +35,11 @@ func RoundTrip(args RoundTripArgs) (*http.Response, error) {
 	op := &types.RoundTripOperation{Operation: dyngo.NewOperation(parent)}
 
 	var err error
+
+	// Listen for errors in case the request gets blocked
 	dyngo.OnData(op, func(e error) {
 		err = e
 	})
-
 	dyngo.StartOperation(op, opArgs)
 	dyngo.FinishOperation(op, types.RoundTripOperationRes{})
 

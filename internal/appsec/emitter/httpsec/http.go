@@ -12,7 +12,6 @@ package httpsec
 
 import (
 	"context"
-
 	// Blank import needed to use embed for the default blocked response payloads
 	_ "embed"
 	"net/http"
@@ -26,6 +25,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/trace"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/trace/httptrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/stacktrace"
 
 	"github.com/DataDog/appsec-internal-go/netip"
 )
@@ -78,6 +78,7 @@ func WrapHandler(handler http.Handler, span ddtrace.Span, pathParams map[string]
 
 		var bypassHandler http.Handler
 		var blocking bool
+		var stackTraces []*stacktrace.Event
 		args := MakeHandlerOperationArgs(r, clientIP, pathParams)
 		ctx, op := StartOperation(r.Context(), args, func(op *types.Operation) {
 			dyngo.OnData(op, func(a *sharedsec.HTTPAction) {
@@ -85,7 +86,7 @@ func WrapHandler(handler http.Handler, span ddtrace.Span, pathParams map[string]
 				bypassHandler = a.Handler
 			})
 			dyngo.OnData(op, func(a *sharedsec.StackTraceAction) {
-				// TODO: do something with the stacktrace
+				stackTraces = append(stackTraces, &a.Event)
 			})
 		})
 		r = r.WithContext(ctx)
@@ -101,6 +102,9 @@ func WrapHandler(handler http.Handler, span ddtrace.Span, pathParams map[string]
 					f()
 				}
 			}
+
+			// Add stacktraces to the span, if any
+			stacktrace.AddToSpan(span, stackTraces...)
 
 			if bypassHandler != nil {
 				bypassHandler.ServeHTTP(w, r)
