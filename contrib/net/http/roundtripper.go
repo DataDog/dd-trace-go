@@ -78,7 +78,6 @@ func (rt *roundTripper) RoundTrip(req *http.Request) (res *http.Response, err er
 		}
 	}
 	if appsec.Enabled() {
-		span.SetTag("_dd.appsec.rasp", "1")
 		res, err = httpsec.RoundTrip(httpsec.RoundTripArgs{
 			Ctx: ctx,
 			Req: r2,
