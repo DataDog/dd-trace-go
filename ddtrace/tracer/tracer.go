@@ -427,11 +427,11 @@ func (t *tracer) sampleChunk(c *chunk) {
 			atomic.AddUint32(&t.partialTraces, 1)
 		}
 	}
-	if len(kept) == 0 {
-		atomic.AddUint32(&t.droppedP0Traces, 1)
-	}
 	atomic.AddUint32(&t.droppedP0Spans, uint32(len(c.spans)-len(kept)))
 	if !c.willSend {
+		if len(kept) == 0 {
+			atomic.AddUint32(&t.droppedP0Traces, 1)
+		}
 		c.spans = kept
 	}
 }
