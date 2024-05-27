@@ -78,7 +78,7 @@ func WrapHandler(handler http.Handler, span ddtrace.Span, pathParams map[string]
 
 		var bypassHandler http.Handler
 		var blocking bool
-		var stackTrace stacktrace.Event
+		var stackTrace *stacktrace.Event
 		args := MakeHandlerOperationArgs(r, clientIP, pathParams)
 		ctx, op := StartOperation(r.Context(), args, func(op *types.Operation) {
 			dyngo.OnData(op, func(a *sharedsec.HTTPAction) {
@@ -86,7 +86,7 @@ func WrapHandler(handler http.Handler, span ddtrace.Span, pathParams map[string]
 				bypassHandler = a.Handler
 			})
 			dyngo.OnData(op, func(a *sharedsec.StackTraceAction) {
-				stackTrace = a.Event
+				stackTrace = &a.Event
 			})
 		})
 		r = r.WithContext(ctx)
@@ -104,7 +104,9 @@ func WrapHandler(handler http.Handler, span ddtrace.Span, pathParams map[string]
 			}
 
 			// Add stacktraces to the span, if any
-			stacktrace.AddToSpan(span, &stackTrace)
+			if stackTrace != nil {
+				stacktrace.AddToSpan(span, stackTrace)
+			}
 
 			if bypassHandler != nil {
 				bypassHandler.ServeHTTP(w, r)
