@@ -959,6 +959,7 @@ func TestServiceName(t *testing.T) {
 
 	t.Run("override-chain", func(t *testing.T) {
 		assert := assert.New(t)
+		t.Setenv("DD_SERVICE", "") // TODO: Figure out why dd_service carried over into this test
 		globalconfig.SetServiceName("")
 		c := newConfig()
 		assert.Equal(c.serviceName, filepath.Base(os.Args[0]))

@@ -287,6 +287,19 @@ func (c *config) HasFeature(f string) bool {
 	return ok
 }
 
+// func (c *config) setServiceName(s string) {
+// 	c.serviceName = s
+// 	globalconfig.SetServiceName(s)
+// }
+
+// func (c *config) setMetrics(b bool) {
+// 	c.runtimeMetrics = b
+// }
+
+// func (c *config) setDebug(b bool) {
+// 	c.debug = b
+// }
+
 // StartOption represents a function that can be provided as a parameter to Start.
 type StartOption func(*config)
 
@@ -296,12 +309,6 @@ const maxPropagatedTagsLength = 512
 // partialFlushMinSpansDefault is the default number of spans for partial flushing, if enabled.
 const partialFlushMinSpansDefault = 1000
 
-var otelDdTags = map[string]string {
-	"service.name": "service",
-	"deployment.environment": "env",
-	"service.version": "version",
-}
-
 // newConfig renders the tracer configuration based on defaults, environment variables
 // and passed user opts.
 func newConfig(opts ...StartOption) *config {
@@ -310,18 +317,32 @@ func newConfig(opts ...StartOption) *config {
 	c.httpClientTimeout = time.Second * 10 // 10 seconds
 
 	// MTOFF - OTEL ENV VARS
-	var svc string
-	if svc = os.Getenv("OTEL_SERVICE_NAME"); svc != "" {
-		c.serviceName = svc
-		globalconfig.SetServiceName(svc)
+	for otEnv, ddEnv := range otelDdEnvvars {
+		if otVal := os.Getenv(otEnv); otVal != "" {
+			if ddVal := os.Getenv(ddEnv); ddVal != "" {
+				log.Warn("Both %v and %v are set, using %v=%v", otEnv, ddEnv, ddEnv, ddVal)
+				continue
+			}
+			if remapper, ok := otelRemapper[otEnv]; ok {
+				if vv := remapper(otVal); vv != "" {
+					os.Setenv(ddEnv, vv)
+				}
+			}
+		}
 	}
 	if v := os.Getenv("DD_SERVICE"); v != "" {
-		if svc != "" {
-			fmt.Println("MTOFF: HIDING")
-		}
 		c.serviceName = v
 		globalconfig.SetServiceName(v)
 	}
+	c.runtimeMetrics = internal.BoolEnv("DD_RUNTIME_METRICS_ENABLED", c.runtimeMetrics)
+	// if v := os.Getenv("OTEL_LOG_LEVEL"); v != "" {
+	// 	if v == "debug" {	
+	// 		c.debug = true
+	// 	} else {
+	// 		fmt.Println("MTOFF: INVALID")
+	// 	}
+	// }
+	c.debug = internal.BoolEnv("DD_TRACE_DEBUG", c.debug)
 	if v := os.Getenv("OTEL_RESOURCE_ATTRIBUTES"); v != "" {
 		count := 0
 		internal.ForEachStringTag(v, internal.OtelDelimeter, func(key, val string) {
@@ -337,22 +358,6 @@ func newConfig(opts ...StartOption) *config {
 			count++
 		})
 	}
-	if v := os.Getenv("OTEL_METRICS_EXPORTER"); v != "" {
-		if v == "none" {
-			c.runtimeMetrics = false
-		} else {
-			fmt.Println("MTOFF: invalid ?")
-		}
-	}
-	c.runtimeMetrics = internal.BoolEnv("DD_RUNTIME_METRICS_ENABLED", c.runtimeMetrics)
-	if v := os.Getenv("OTEL_LOG_LEVEL"); v != "" {
-		if v == "debug" {	
-			c.debug = true
-		} else {
-			fmt.Println("MTOFF: INVALID")
-		}
-	}
-	c.debug = internal.BoolEnv("DD_TRACE_DEBUG", c.debug)
 	enabled := true
 	if v := os.Getenv("OTEL_TRACES_EXPORTER"); v != "" {
 		if v == "none" {
