@@ -442,12 +442,12 @@ func TestRuleEnvVars(t *testing.T) {
 
 func TestRulesSampler(t *testing.T) {
 	makeSpan := func(op string, svc string) *span {
-		s := newSpan(op, svc, "res-10", random.Uint64(), random.Uint64(), 0)
+		s := newSpan(op, svc, "res-10", randUint64(), randUint64(), 0)
 		s.setMeta("hostname", "hn-30")
 		return s
 	}
 	makeFinishedSpan := func(op, svc, resource string, tags map[string]interface{}) *span {
-		s := newSpan(op, svc, resource, random.Uint64(), random.Uint64(), 0)
+		s := newSpan(op, svc, resource, randUint64(), randUint64(), 0)
 		for k, v := range tags {
 			s.SetTag(k, v)
 		}
@@ -1064,6 +1064,19 @@ func TestRulesSampler(t *testing.T) {
 		s.SetTag(ext.ResourceName, "keep_me")
 		s.Finish()
 		assert.EqualValues(t, s.(*span).Metrics[keySamplingPriority], 2)
+	})
+
+	t.Run("no-agent_psr-with-rules-sampling", func(t *testing.T) {
+		t.Setenv("DD_TRACE_SAMPLING_RULES", `[{"resource": "keep_me", "sample_rate": 0}]`)
+		_, _, _, stop := startTestTracer(t)
+		defer stop()
+
+		s, _ := StartSpanFromContext(context.Background(), "whatever")
+		s.SetTag(ext.ResourceName, "keep_me")
+		s.Finish()
+		span := s.(*span)
+		assert.NotContains(t, span.Metrics, keySamplingPriorityRate)
+		assert.Contains(t, span.Metrics, keyRulesSamplerAppliedRate)
 	})
 }
 

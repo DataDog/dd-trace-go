@@ -7,21 +7,22 @@ package appsec_test
 
 import (
 	"encoding/json"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener/httpsec"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"strings"
 	"testing"
 
 	internal "github.com/DataDog/appsec-internal-go/appsec"
-	waf "github.com/DataDog/go-libddwaf/v2"
+	waf "github.com/DataDog/go-libddwaf/v3"
 	pAppsec "gopkg.in/DataDog/dd-trace-go.v1/appsec"
 	httptrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/config"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener/httpsec"
 
 	"github.com/stretchr/testify/require"
 )
@@ -510,13 +511,13 @@ func BenchmarkSampleWAFContext(b *testing.B) {
 
 	handle, err := waf.NewHandle(parsedRuleset, internal.DefaultObfuscatorKeyRegex, internal.DefaultObfuscatorValueRegex)
 	for i := 0; i < b.N; i++ {
-		ctx := waf.NewContext(handle)
-		if ctx == nil {
+		ctx, err := handle.NewContext()
+		if err != nil || ctx == nil {
 			b.Fatal("nil context")
 		}
 
 		// Request WAF Run
-		_, err := ctx.Run(
+		_, err = ctx.Run(
 			waf.RunAddressData{
 				Persistent: map[string]any{
 					httpsec.HTTPClientIPAddr:        "1.1.1.1",
@@ -540,7 +541,7 @@ func BenchmarkSampleWAFContext(b *testing.B) {
 						"param": "value",
 					},
 				},
-			}, 0)
+			})
 
 		if err != nil {
 			b.Fatalf("error running waf: %v", err)
@@ -557,12 +558,20 @@ func BenchmarkSampleWAFContext(b *testing.B) {
 					},
 					httpsec.ServerResponseStatusAddr: 200,
 				},
-			}, 0)
+			})
 
 		if err != nil {
 			b.Fatalf("error running waf: %v", err)
 		}
 
 		ctx.Close()
+	}
+}
+
+func init() {
+	// This permits running the tests locally without defining the env var manually
+	// We do this because the default go-libddwaf timeout value is too small and makes the tests timeout for no reason
+	if _, ok := os.LookupEnv(internal.EnvWAFTimeout); !ok {
+		os.Setenv(internal.EnvWAFTimeout, "1s")
 	}
 }

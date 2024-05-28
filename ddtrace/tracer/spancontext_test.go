@@ -129,7 +129,7 @@ func TestSpanTracePushOne(t *testing.T) {
 	_, transport, flush, stop := startTestTracer(t)
 	defer stop()
 
-	traceID := random.Uint64()
+	traceID := randUint64()
 	root := newSpan("name1", "a-service", "a-resource", traceID, traceID, 0)
 	trace := root.context.trace
 
@@ -229,7 +229,7 @@ func TestSpanTracePushNoFinish(t *testing.T) {
 	assert.NotNil(buffer)
 	assert.Len(buffer.spans, 0)
 
-	traceID := random.Uint64()
+	traceID := randUint64()
 	root := newSpan("name1", "a-service", "a-resource", traceID, traceID, 0)
 	root.context.trace = buffer
 
@@ -254,7 +254,7 @@ func TestSpanTracePushSeveral(t *testing.T) {
 	assert.NotNil(buffer)
 	assert.Len(buffer.spans, 0)
 
-	traceID := random.Uint64()
+	traceID := randUint64()
 	root := trc.StartSpan("name1", WithSpanID(traceID))
 	span2 := trc.StartSpan("name2", ChildOf(root.Context()))
 	span3 := trc.StartSpan("name3", ChildOf(root.Context()))

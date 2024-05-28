@@ -518,7 +518,8 @@ func (rs *traceRulesSampler) sampleRules(span *span) bool {
 }
 
 func (rs *traceRulesSampler) applyRate(span *span, rate float64, now time.Time, sampler samplernames.SamplerName) {
-	span.SetTag(keyRulesSamplerAppliedRate, rate)
+	span.setMetric(keyRulesSamplerAppliedRate, rate)
+	delete(span.Metrics, keySamplingPriorityRate)
 	if !sampledByRate(span.TraceID, rate) {
 		span.setSamplingPriority(ext.PriorityUserReject, sampler)
 		return
@@ -614,6 +615,7 @@ func (rs *singleSpanRulesSampler) apply(span *span) bool {
 					return false
 				}
 			}
+			delete(span.Metrics, keySamplingPriorityRate)
 			span.setMetric(keySpanSamplingMechanism, float64(samplernames.SingleSpan))
 			span.setMetric(keySingleSpanSamplingRuleRate, rate)
 			if rule.MaxPerSecond != 0 {
@@ -835,7 +837,10 @@ func validateRules(jsonRules []jsonRule, spanType SamplingRuleType) ([]SamplingR
 			continue
 		}
 		if rate < 0.0 || rate > 1.0 {
-			errs = append(errs, fmt.Sprintf("at index %d: ignoring rule %s: rate is out of [0.0, 1.0] range", i, v.String()))
+			errs = append(
+				errs,
+				fmt.Sprintf("at index %d: ignoring rule %s: rate is out of [0.0, 1.0] range", i, v.String()),
+			)
 			continue
 		}
 		tagGlobs := make(map[string]*regexp.Regexp, len(v.Tags))
