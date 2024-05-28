@@ -142,27 +142,27 @@ func TestProductChange(t *testing.T) {
 // Test that globally registered app config is sent in telemetry requests including the configuration state.
 func TestRegisterAppConfig(t *testing.T) {
 	client := new(client)
-	client.RegisterAppConfig("key1", "val1", "origin1")
+	client.RegisterAppConfig("key1", "val1", OriginDefault)
 
 	// Test that globally registered app config is sent in app-started payloads
-	client.start([]Configuration{{Name: "key2", Value: "val2", Origin: "origin2"}}, NamespaceTracers, false)
+	client.start([]Configuration{{Name: "key2", Value: "val2", Origin: OriginDDConfig}}, NamespaceTracers, false)
 
 	req := client.requests[0].Body
 	require.Equal(t, RequestTypeAppStarted, req.RequestType)
 	appStarted := req.Payload.(*AppStarted)
 	cfg := appStarted.Configuration
 	require.Len(t, cfg, 2)
-	require.Contains(t, cfg, Configuration{Name: "key1", Value: "val1", Origin: "origin1"})
-	require.Contains(t, cfg, Configuration{Name: "key2", Value: "val2", Origin: "origin2"})
+	require.Contains(t, cfg, Configuration{Name: "key1", Value: "val1", Origin: OriginDefault})
+	require.Contains(t, cfg, Configuration{Name: "key2", Value: "val2", Origin: OriginDDConfig})
 
 	// Test that globally registered app config is sent in app-client-configuration-change payloads
-	client.ProductChange(NamespaceTracers, true, []Configuration{{Name: "key3", Value: "val3", Origin: "origin3"}})
+	client.ProductChange(NamespaceTracers, true, []Configuration{{Name: "key3", Value: "val3", Origin: OriginCode}})
 
 	req = client.requests[2].Body
 	require.Equal(t, RequestTypeAppClientConfigurationChange, req.RequestType)
 	appConfigChange := req.Payload.(*ConfigurationChange)
 	cfg = appConfigChange.Configuration
 	require.Len(t, cfg, 2)
-	require.Contains(t, cfg, Configuration{Name: "key1", Value: "val1", Origin: "origin1"})
-	require.Contains(t, cfg, Configuration{Name: "key3", Value: "val3", Origin: "origin3"})
+	require.Contains(t, cfg, Configuration{Name: "key1", Value: "val1", Origin: OriginDefault})
+	require.Contains(t, cfg, Configuration{Name: "key3", Value: "val3", Origin: OriginCode})
 }

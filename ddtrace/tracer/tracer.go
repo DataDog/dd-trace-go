@@ -258,7 +258,7 @@ func newUnstartedTracer(opts ...StartOption) *tracer {
 	// to distinguish between the case where the environment variable was not set and the case where
 	// it default to NaN.
 	if !math.IsNaN(globalRate) {
-		c.traceSampleRate.cfgOrigin = originEnvVar
+		c.traceSampleRate.cfgOrigin = telemetry.OriginEnvVar
 	}
 	c.traceSampleRules = newDynamicConfig("trace_sample_rules", c.traceRules,
 		rulesSampler.traces.setTraceSampleRules, EqualsFalseNegative)

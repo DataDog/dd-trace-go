@@ -29,6 +29,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/normalizer"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/traceprof"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
 
@@ -336,7 +337,7 @@ func newConfig(opts ...StartOption) *config {
 	}
 	c.headerAsTags = newDynamicConfig("trace_header_tags", nil, setHeaderTags, equalSlice[string])
 	if v := os.Getenv("DD_TRACE_HEADER_TAGS"); v != "" {
-		c.headerAsTags.update(strings.Split(v, ","), originEnvVar)
+		c.headerAsTags.update(strings.Split(v, ","), telemetry.OriginEnvVar)
 		// Required to ensure that the startup header tags are set on reset.
 		c.headerAsTags.startup = c.headerAsTags.current
 	}
