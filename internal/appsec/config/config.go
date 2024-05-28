@@ -117,7 +117,6 @@ func NewConfig() (*Config, error) {
 		TraceRateLimit: int64(appsecInternal.RateLimitFromEnv()),
 		Obfuscator:     appsecInternal.NewObfuscatorConfig(),
 		APISec:         appsecInternal.NewAPISecConfig(),
-		// TODO: use appsecInternal.RASPENabled() when merged and released
-		RASP: internal.BoolEnv("DD_APPSEC_RASP_ENABLED", true),
+		RASP:           internal.BoolEnv("DD_APPSEC_RASP_ENABLED", true),
 	}, nil
 }

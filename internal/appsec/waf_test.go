@@ -15,16 +15,15 @@ import (
 	"strings"
 	"testing"
 
-	internal "github.com/DataDog/appsec-internal-go/appsec"
-	waf "github.com/DataDog/go-libddwaf/v3"
 	pAppsec "gopkg.in/DataDog/dd-trace-go.v1/appsec"
 	httptrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/config"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener/httpsec"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener/sharedsec"
 
+	internal "github.com/DataDog/appsec-internal-go/appsec"
+	waf "github.com/DataDog/go-libddwaf/v3"
 	"github.com/stretchr/testify/require"
 )
 
@@ -521,7 +520,7 @@ func BenchmarkSampleWAFContext(b *testing.B) {
 		_, err = ctx.Run(
 			waf.RunAddressData{
 				Persistent: map[string]any{
-					sharedsec.HTTPClientIPAddr:      "1.1.1.1",
+					httpsec.HTTPClientIPAddr:        "1.1.1.1",
 					httpsec.ServerRequestMethodAddr: "GET",
 					httpsec.ServerRequestRawURIAddr: "/",
 					httpsec.ServerRequestHeadersNoCookiesAddr: map[string][]string{

@@ -78,11 +78,7 @@ func (rt *roundTripper) RoundTrip(req *http.Request) (res *http.Response, err er
 		}
 	}
 	if appsec.Enabled() {
-		res, err = httpsec.RoundTrip(httpsec.RoundTripArgs{
-			Ctx: ctx,
-			Req: r2,
-			Rt:  rt.base,
-		})
+		res, err = httpsec.RoundTrip(ctx, r2, rt.base)
 	} else {
 		res, err = rt.base.RoundTrip(r2)
 	}

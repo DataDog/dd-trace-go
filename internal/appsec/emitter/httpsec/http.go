@@ -12,6 +12,8 @@ package httpsec
 
 import (
 	"context"
+	"gopkg.in/DataDog/dd-trace-go.v1/appsec/events"
+
 	// Blank import needed to use embed for the default blocked response payloads
 	_ "embed"
 	"net/http"
@@ -34,7 +36,7 @@ import (
 // This function should not be called when AppSec is disabled in order to
 // get preciser error logs.
 func MonitorParsedBody(ctx context.Context, body any) error {
-	parent := fromContext(ctx)
+	parent, _ := ctx.Value(listener.ContextKey{}).(*types.Operation)
 	if parent == nil {
 		log.Error("appsec: parsed http body monitoring ignored: could not find the http handler instrumentation metadata in the request context: the request handler is not being monitored by a middleware function or the provided context is not the expected request context")
 		return nil
@@ -48,7 +50,7 @@ func MonitorParsedBody(ctx context.Context, body any) error {
 func ExecuteSDKBodyOperation(parent dyngo.Operation, args types.SDKBodyOperationArgs) error {
 	var err error
 	op := &types.SDKBodyOperation{Operation: dyngo.NewOperation(parent)}
-	dyngo.OnData(op, func(e error) {
+	dyngo.OnData(op, func(e *events.SecurityBlockingEvent) {
 		err = e
 	})
 	dyngo.StartOperation(op, args)
@@ -199,11 +201,4 @@ func StartOperation(ctx context.Context, args types.HandlerOperationArgs, setup 
 	}
 	dyngo.StartOperation(op, args)
 	return newCtx, op
-}
-
-// fromContext returns the Operation object stored in the context, if any
-func fromContext(ctx context.Context) *types.Operation {
-	// Avoid a runtime panic in case of type-assertion error by collecting the 2 return values
-	op, _ := ctx.Value(listener.ContextKey{}).(*types.Operation)
-	return op
 }

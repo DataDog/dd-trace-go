@@ -8,45 +8,49 @@ package httpsec
 import (
 	"context"
 	"net/http"
+	"sync"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/appsec/events"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/httpsec/types"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
-type RoundTripArgs struct {
-	Ctx context.Context
-	Req *http.Request
-	Rt  http.RoundTripper
-}
+var badInputContextOnce sync.Once
 
-func RoundTrip(args RoundTripArgs) (*http.Response, error) {
-	url := args.Req.URL.String()
+func RoundTrip(ctx context.Context, request *http.Request, rt http.RoundTripper) (*http.Response, error) {
+	url := request.URL.String()
 	opArgs := types.RoundTripOperationArgs{
 		URL: url,
 	}
 
-	parent := fromContext(args.Ctx)
+	parent, _ := ctx.Value(listener.ContextKey{}).(dyngo.Operation)
 	if parent == nil { // No parent operation => we can't monitor the request
-		log.Error("appsec: outgoing http request monitoring ignored: could not find the http handler instrumentation metadata in the request context: the request handler is not being monitored by a middleware function or the provided context has not be forwarded correctly")
-		return args.Rt.RoundTrip(args.Req)
+		badInputContextOnce.Do(func() {
+			log.Debug("appsec: outgoing http request monitoring ignored: could not find the http handler " +
+				"instrumentation metadata in the request context: the request handler is not being monitored by a " +
+				"middleware function or the incoming request context has not be forwarded correctly to the roundtripper")
+		})
+		return rt.RoundTrip(request)
 	}
 
-	op := &types.RoundTripOperation{Operation: dyngo.NewOperation(parent)}
+	op := &types.RoundTripOperation{
+		Operation: dyngo.NewOperation(parent),
+	}
 
-	var err error
-
-	// Listen for errors in case the request gets blocked
-	dyngo.OnData(op, func(e error) {
+	var err *events.SecurityBlockingEvent
+	dyngo.OnData(op, func(e *events.SecurityBlockingEvent) {
 		err = e
 	})
+
 	dyngo.StartOperation(op, opArgs)
 	dyngo.FinishOperation(op, types.RoundTripOperationRes{})
 
 	if err != nil {
-		log.Error("appsec: outgoing http request blocked by the WAF on URL: %s", url)
+		log.Debug("appsec: outgoing http request blocked by the WAF on URL: %s", url)
 		return nil, err
 	}
 
-	return args.Rt.RoundTrip(args.Req)
+	return rt.RoundTrip(request)
 }

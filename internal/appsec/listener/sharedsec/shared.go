@@ -8,21 +8,17 @@ package sharedsec
 import (
 	"encoding/json"
 	"errors"
-
 	"github.com/DataDog/appsec-internal-go/limiter"
 	waf "github.com/DataDog/go-libddwaf/v3"
 	wafErrors "github.com/DataDog/go-libddwaf/v3/errors"
+	"gopkg.in/DataDog/dd-trace-go.v1/appsec/events"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/httpsec/types"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/sharedsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/trace"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
 const (
-	ServerIoNetURLAddr   = "server.io.net.url"
-	HTTPClientIPAddr     = "http.client_ip"
-	UserIDAddr           = "usr.id"
 	eventRulesVersionTag = "_dd.appsec.event_rules.version"
 	eventRulesErrorsTag  = "_dd.appsec.event_rules.errors"
 	eventRulesLoadedTag  = "_dd.appsec.event_rules.loaded"
@@ -32,7 +28,7 @@ const (
 
 func RunWAF(wafCtx *waf.Context, values waf.RunAddressData) waf.Result {
 	result, err := wafCtx.Run(values)
-	if err == wafErrors.ErrTimeout {
+	if errors.Is(err, wafErrors.ErrTimeout) {
 		log.Debug("appsec: waf timeout value reached: %v", err)
 	} else if err != nil {
 		log.Error("appsec: unexpected waf error: %v", err)
@@ -40,19 +36,10 @@ func RunWAF(wafCtx *waf.Context, values waf.RunAddressData) waf.Result {
 	return result
 }
 
-type securityEventsAdder interface {
-	AddSecurityEvents(events []any)
-}
-
-type operationWithEvents interface {
-	dyngo.Operation
-	securityEventsAdder
-}
-
 // AddSecurityEvents is a helper function to add sec events to an operation taking into account the rate limiter.
-func AddSecurityEvents(op securityEventsAdder, limiter limiter.Limiter, matches []any) {
+func AddSecurityEvents(holder *trace.SecurityEventsHolder, limiter limiter.Limiter, matches []any) {
 	if len(matches) > 0 && limiter.Allow() {
-		op.AddSecurityEvents(matches)
+		holder.AddSecurityEvents(matches)
 	}
 }
 
@@ -90,7 +77,7 @@ func AddWAFMonitoringTags(th trace.TagSetter, rulesVersion string, stats map[str
 // ProcessActions sends the relevant actions to the operation's data listener.
 // It returns true if at least one of those actions require interrupting the request handler
 // When SDKError is not nil, this error is sent to the op with EmitData so that the invoked SDK can return it
-func ProcessActions(op dyngo.Operation, actions map[string]any, SDKError error) (interrupt bool) {
+func ProcessActions(op dyngo.Operation, actions map[string]any) (interrupt bool) {
 	for aType, params := range actions {
 		actionArray := ActionsFromEntry(aType, params)
 		if actionArray == nil {
@@ -99,9 +86,9 @@ func ProcessActions(op dyngo.Operation, actions map[string]any, SDKError error) 
 		}
 		for _, a := range actionArray {
 			a.EmitData(op)
-			if a.Blocking() && SDKError != nil { // Send the error to be returned by the SDK
+			if a.Blocking() { // Send the error to be returned by the SDK
 				interrupt = true
-				dyngo.EmitData(op, SDKError) // Send error
+				dyngo.EmitData(op, &events.SecurityBlockingEvent{}) // Send error
 			}
 		}
 	}
@@ -127,19 +114,4 @@ func ActionsFromEntry(actionType string, params any) []sharedsec.Action {
 		log.Debug("appsec: unknown action type `%s`", actionType)
 		return nil
 	}
-}
-
-// RegisterRoundTripper registers a listener on outgoing requests to run the WAF.
-func RegisterRoundTripper(op operationWithEvents, wafCtx *waf.Context, limiter limiter.Limiter) {
-	dyngo.On(op, func(operation *types.RoundTripOperation, args types.RoundTripOperationArgs) {
-		wafResult := RunWAF(wafCtx, waf.RunAddressData{Persistent: map[string]any{ServerIoNetURLAddr: args.URL}})
-		if !wafResult.HasEvents() {
-			return
-		}
-
-		ProcessActions(op, wafResult.Actions, errors.New("Request blocked"))
-
-		AddSecurityEvents(op, limiter, wafResult.Events)
-		log.Debug("appsec: WAF detected a suspicious outgoing request URL: %s", args.URL)
-	})
 }

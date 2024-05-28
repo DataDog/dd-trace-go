@@ -10,18 +10,19 @@ import (
 
 	"go.uber.org/atomic"
 
-	"github.com/DataDog/appsec-internal-go/limiter"
-	waf "github.com/DataDog/go-libddwaf/v3"
-
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/config"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/grpcsec/types"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/sharedsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener/httpsec"
 	shared "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener/sharedsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/samplernames"
+
+	"github.com/DataDog/appsec-internal-go/limiter"
+	waf "github.com/DataDog/go-libddwaf/v3"
 )
 
 // gRPC rule addresses currently supported by the WAF
@@ -36,9 +37,9 @@ var supportedAddresses = listener.AddressSet{
 	GRPCServerMethodAddr:          {},
 	GRPCServerRequestMessageAddr:  {},
 	GRPCServerRequestMetadataAddr: {},
-	shared.HTTPClientIPAddr:       {},
-	shared.UserIDAddr:             {},
-	shared.ServerIoNetURLAddr:     {},
+	httpsec.HTTPClientIPAddr:      {},
+	httpsec.UserIDAddr:            {},
+	httpsec.ServerIoNetURLAddr:    {},
 }
 
 // Install registers the gRPC WAF Event Listener on the given root operation.
@@ -104,18 +105,18 @@ func (l *wafEventListener) onEvent(op *types.HandlerOperation, handlerArgs types
 		return
 	}
 
-	if _, ok := l.addresses[shared.ServerIoNetURLAddr]; ok {
-		shared.RegisterRoundTripper(op, wafCtx, l.limiter)
+	if _, ok := l.addresses[httpsec.ServerIoNetURLAddr]; ok {
+		httpsec.RegisterRoundTripperListener(op, &op.SecurityEventsHolder, wafCtx, l.limiter)
 	}
 
 	// Listen to the UserID address if the WAF rules are using it
-	if l.isSecAddressListened(shared.UserIDAddr) {
+	if l.isSecAddressListened(httpsec.UserIDAddr) {
 		// UserIDOperation happens when appsec.SetUser() is called. We run the WAF and apply actions to
 		// see if the associated user should be blocked. Since we don't control the execution flow in this case
 		// (SetUser is SDK), we delegate the responsibility of interrupting the handler to the user.
 		dyngo.On(op, func(userIDOp *sharedsec.UserIDOperation, args sharedsec.UserIDOperationArgs) {
 			values := map[string]any{
-				shared.UserIDAddr: args.UserID,
+				httpsec.UserIDAddr: args.UserID,
 			}
 			wafResult := shared.RunWAF(wafCtx, waf.RunAddressData{Persistent: values})
 			if wafResult.HasActions() || wafResult.HasEvents() {
@@ -127,7 +128,7 @@ func (l *wafEventListener) onEvent(op *types.HandlerOperation, handlerArgs types
 						}
 					}
 				}
-				shared.AddSecurityEvents(op, l.limiter, wafResult.Events)
+				shared.AddSecurityEvents(&op.SecurityEventsHolder, l.limiter, wafResult.Events)
 				log.Debug("appsec: WAF detected an authenticated user attack: %s", args.UserID)
 			}
 		})
@@ -138,14 +139,14 @@ func (l *wafEventListener) onEvent(op *types.HandlerOperation, handlerArgs types
 		// Note that this address is passed asap for the passlist, which are created per grpc method
 		values[GRPCServerMethodAddr] = handlerArgs.Method
 	}
-	if l.isSecAddressListened(shared.HTTPClientIPAddr) && handlerArgs.ClientIP.IsValid() {
-		values[shared.HTTPClientIPAddr] = handlerArgs.ClientIP.String()
+	if l.isSecAddressListened(httpsec.HTTPClientIPAddr) && handlerArgs.ClientIP.IsValid() {
+		values[httpsec.HTTPClientIPAddr] = handlerArgs.ClientIP.String()
 	}
 
 	wafResult := shared.RunWAF(wafCtx, waf.RunAddressData{Persistent: values})
 	if wafResult.HasActions() || wafResult.HasEvents() {
-		interrupt := shared.ProcessActions(op, wafResult.Actions, nil)
-		shared.AddSecurityEvents(op, l.limiter, wafResult.Events)
+		interrupt := shared.ProcessActions(op, wafResult.Actions)
+		shared.AddSecurityEvents(&op.SecurityEventsHolder, l.limiter, wafResult.Events)
 		log.Debug("appsec: WAF detected an attack before executing the request")
 		if interrupt {
 			wafCtx.Close()
@@ -201,7 +202,7 @@ func (l *wafEventListener) onEvent(op *types.HandlerOperation, handlerArgs types
 			op.SetTag(ext.ManualKeep, samplernames.AppSec)
 		})
 
-		shared.AddSecurityEvents(op, l.limiter, events)
+		shared.AddSecurityEvents(&op.SecurityEventsHolder, l.limiter, events)
 	})
 }
 

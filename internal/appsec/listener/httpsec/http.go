@@ -10,8 +10,6 @@ import (
 	"math/rand"
 	"sync"
 
-	"github.com/DataDog/appsec-internal-go/limiter"
-	waf "github.com/DataDog/go-libddwaf/v3"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/config"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
@@ -21,6 +19,9 @@ import (
 	shared "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener/sharedsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/samplernames"
+
+	"github.com/DataDog/appsec-internal-go/limiter"
+	waf "github.com/DataDog/go-libddwaf/v3"
 )
 
 // HTTP rule addresses currently supported by the WAF
@@ -34,6 +35,9 @@ const (
 	ServerRequestBodyAddr              = "server.request.body"
 	ServerResponseStatusAddr           = "server.response.status"
 	ServerResponseHeadersNoCookiesAddr = "server.response.headers.no_cookies"
+	HTTPClientIPAddr                   = "http.client_ip"
+	UserIDAddr                         = "usr.id"
+	ServerIoNetURLAddr                 = "server.io.net.url"
 )
 
 // List of HTTP rule addresses currently supported by the WAF
@@ -47,9 +51,9 @@ var supportedAddresses = listener.AddressSet{
 	ServerRequestBodyAddr:              {},
 	ServerResponseStatusAddr:           {},
 	ServerResponseHeadersNoCookiesAddr: {},
-	shared.HTTPClientIPAddr:            {},
-	shared.UserIDAddr:                  {},
-	shared.ServerIoNetURLAddr:          {},
+	HTTPClientIPAddr:                   {},
+	UserIDAddr:                         {},
+	ServerIoNetURLAddr:                 {},
 }
 
 // Install registers the HTTP WAF Event Listener on the given root operation.
@@ -104,19 +108,19 @@ func (l *wafEventListener) onEvent(op *types.Operation, args types.HandlerOperat
 		return
 	}
 
-	if _, ok := l.addresses[shared.ServerIoNetURLAddr]; ok {
-		shared.RegisterRoundTripper(op, wafCtx, l.limiter)
+	if _, ok := l.addresses[ServerIoNetURLAddr]; ok {
+		RegisterRoundTripperListener(op, &op.SecurityEventsHolder, wafCtx, l.limiter)
 	}
 
-	if _, ok := l.addresses[shared.UserIDAddr]; ok {
+	if _, ok := l.addresses[UserIDAddr]; ok {
 		// OnUserIDOperationStart happens when appsec.SetUser() is called. We run the WAF and apply actions to
 		// see if the associated user should be blocked. Since we don't control the execution flow in this case
 		// (SetUser is SDK), we delegate the responsibility of interrupting the handler to the user.
 		dyngo.On(op, func(operation *sharedsec.UserIDOperation, args sharedsec.UserIDOperationArgs) {
-			wafResult := shared.RunWAF(wafCtx, waf.RunAddressData{Persistent: map[string]any{shared.UserIDAddr: args.UserID}})
+			wafResult := shared.RunWAF(wafCtx, waf.RunAddressData{Persistent: map[string]any{UserIDAddr: args.UserID}})
 			if wafResult.HasActions() || wafResult.HasEvents() {
-				shared.ProcessActions(operation, wafResult.Actions, types.NewMonitoringError("Request blocked"))
-				shared.AddSecurityEvents(op, l.limiter, wafResult.Events)
+				shared.ProcessActions(operation, wafResult.Actions)
+				shared.AddSecurityEvents(&op.SecurityEventsHolder, l.limiter, wafResult.Events)
 				log.Debug("appsec: WAF detected a suspicious user: %s", args.UserID)
 			}
 		})
@@ -125,9 +129,9 @@ func (l *wafEventListener) onEvent(op *types.Operation, args types.HandlerOperat
 	values := make(map[string]any, 8)
 	for addr := range l.addresses {
 		switch addr {
-		case shared.HTTPClientIPAddr:
+		case HTTPClientIPAddr:
 			if args.ClientIP.IsValid() {
-				values[shared.HTTPClientIPAddr] = args.ClientIP.String()
+				values[HTTPClientIPAddr] = args.ClientIP.String()
 			}
 		case ServerRequestMethodAddr:
 			values[ServerRequestMethodAddr] = args.Method
@@ -162,8 +166,8 @@ func (l *wafEventListener) onEvent(op *types.Operation, args types.HandlerOperat
 		op.AddSerializableTag(tag, value)
 	}
 	if wafResult.HasActions() || wafResult.HasEvents() {
-		interrupt := shared.ProcessActions(op, wafResult.Actions, nil)
-		shared.AddSecurityEvents(op, l.limiter, wafResult.Events)
+		interrupt := shared.ProcessActions(op, wafResult.Actions)
+		shared.AddSecurityEvents(&op.SecurityEventsHolder, l.limiter, wafResult.Events)
 		log.Debug("appsec: WAF detected an attack before executing the request")
 		if interrupt {
 			wafCtx.Close()
@@ -178,8 +182,8 @@ func (l *wafEventListener) onEvent(op *types.Operation, args types.HandlerOperat
 				op.AddSerializableTag(tag, value)
 			}
 			if wafResult.HasActions() || wafResult.HasEvents() {
-				shared.ProcessActions(sdkBodyOp, wafResult.Actions, types.NewMonitoringError("Request blocked"))
-				shared.AddSecurityEvents(op, l.limiter, wafResult.Events)
+				shared.ProcessActions(sdkBodyOp, wafResult.Actions)
+				shared.AddSecurityEvents(&op.SecurityEventsHolder, l.limiter, wafResult.Events)
 				log.Debug("appsec: WAF detected a suspicious request body")
 			}
 		})
@@ -214,7 +218,7 @@ func (l *wafEventListener) onEvent(op *types.Operation, args types.HandlerOperat
 		// Log the attacks if any
 		if wafResult.HasEvents() {
 			log.Debug("appsec: attack detected by the waf")
-			shared.AddSecurityEvents(op, l.limiter, wafResult.Events)
+			shared.AddSecurityEvents(&op.SecurityEventsHolder, l.limiter, wafResult.Events)
 		}
 		for tag, value := range wafResult.Derivatives {
 			op.AddSerializableTag(tag, value)

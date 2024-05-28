@@ -70,7 +70,7 @@ type (
 	// SDKBodyOperationArgs is the SDK body operation arguments.
 	SDKBodyOperationArgs struct {
 		// Body corresponds to the address `server.request.body`.
-		Body interface{}
+		Body any
 	}
 
 	// SDKBodyOperationRes is the SDK body operation results.
@@ -81,29 +81,11 @@ type (
 	}
 
 	RoundTripOperationRes struct{}
-
-	// MonitoringError is used to vehicle an HTTP error, usually resurfaced through Appsec SDKs.
-	MonitoringError struct {
-		msg string
-	}
 )
 
 // Finish finishes the SDKBody operation and emits a finish event
 func (op *SDKBodyOperation) Finish() {
 	dyngo.FinishOperation(op, SDKBodyOperationRes{})
-}
-
-// Error implements the Error interface
-func (e *MonitoringError) Error() string {
-	return e.msg
-}
-
-// NewMonitoringError creates and returns a new HTTP monitoring error, wrapped under
-// sharedesec.MonitoringError
-func NewMonitoringError(msg string) error {
-	return &MonitoringError{
-		msg: msg,
-	}
 }
 
 func (SDKBodyOperationArgs) IsArgOf(*SDKBodyOperation)   {}
