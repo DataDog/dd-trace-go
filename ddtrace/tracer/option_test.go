@@ -1032,7 +1032,6 @@ func TestOtelResourceAtttributes(t *testing.T) {
 		// runtime-id tag is added automatically, so we expect runtime-id + our first 10 tags
 		assert.Len(globalTags, 11)
 	})
-
 }
 
 func TestTagSeparators(t *testing.T) {
