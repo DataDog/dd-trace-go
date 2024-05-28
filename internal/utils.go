@@ -10,7 +10,9 @@ import (
 	"sync/atomic"
 )
 
+// OtelDelimeter is the separator between key-val pairs for OTEL env vars
 const OtelDelimeter = "="
+// DdDelimiter is the separator between key-val pairs for DD env vars
 const DdDelimiter = ":"
 
 // LockMap uses an RWMutex to synchronize map access to allow for concurrent access.
