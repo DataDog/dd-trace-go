@@ -5,24 +5,4 @@
 
 package aws_test
 
-import (
-	"context"
-	"log"
-
-	awstrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/aws/aws-sdk-go-v2/aws"
-
-	awscfg "github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/service/sqs"
-)
-
-func Example() {
-	awsCfg, err := awscfg.LoadDefaultConfig(context.Background())
-	if err != nil {
-		log.Fatalf(err.Error())
-	}
-
-	awstrace.AppendMiddleware(&awsCfg)
-
-	sqsClient := sqs.NewFromConfig(awsCfg)
-	sqsClient.ListQueues(context.Background(), &sqs.ListQueuesInput{})
-}
+// The example was moved into the package godoc to avoid adding its dependencies into dd-trace-go's go.mod file.

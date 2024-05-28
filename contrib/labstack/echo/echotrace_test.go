@@ -18,6 +18,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/normalizer"
 
 	"github.com/labstack/echo"
@@ -506,4 +507,36 @@ func TestNamingSchema(t *testing.T) {
 		return mt.FinishedSpans()
 	})
 	namingschematest.NewHTTPServerTest(genSpans, "echo")(t)
+}
+
+func BenchmarkEchoNoTracing(b *testing.B) {
+	mux := echo.New()
+	mux.GET("/200", func(c echo.Context) error {
+		return c.NoContent(200)
+	})
+	r := httptest.NewRequest("GET", "/200", nil)
+	w := httptest.NewRecorder()
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		mux.ServeHTTP(w, r)
+	}
+}
+
+func BenchmarkEchoWithTracing(b *testing.B) {
+	tracer.Start(tracer.WithLogger(log.DiscardLogger{}))
+	defer tracer.Stop()
+
+	mux := echo.New()
+	mux.Use(Middleware())
+	mux.GET("/200", func(c echo.Context) error {
+		return c.NoContent(200)
+	})
+	r := httptest.NewRequest("GET", "/200", nil)
+	w := httptest.NewRecorder()
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		mux.ServeHTTP(w, r)
+	}
 }

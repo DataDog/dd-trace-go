@@ -70,8 +70,8 @@ const (
 	NamespaceTracers Namespace = "tracers"
 	// NamespaceProfilers is for continuous profiling
 	NamespaceProfilers Namespace = "profilers"
-	// NamespaceASM is for application security monitoring
-	NamespaceASM Namespace = "appsec" // This was defined before the appsec -> ASM change
+	// NamespaceAppSec is for application security management
+	NamespaceAppSec Namespace = "appsec"
 )
 
 // Application is identifying information about the app itself
@@ -107,6 +107,7 @@ type AppStarted struct {
 	Products          Products            `json:"products,omitempty"`
 	AdditionalPayload []AdditionalPayload `json:"additional_payload,omitempty"`
 	Error             Error               `json:"error,omitempty"`
+	RemoteConfig      *RemoteConfig       `json:"remote_config,omitempty"`
 }
 
 // IntegrationsChange corresponds to the app-integrations-change requesty type
@@ -127,8 +128,8 @@ type Integration struct {
 // ConfigurationChange corresponds to the `AppClientConfigurationChange` event
 // that contains information about configuration changes since the app-started event
 type ConfigurationChange struct {
-	Configuration []Configuration `json:"conf_key_values"`
-	RemoteConfig  RemoteConfig    `json:"remote_config"`
+	Configuration []Configuration `json:"configuration"`
+	RemoteConfig  *RemoteConfig   `json:"remote_config,omitempty"`
 }
 
 // Configuration is a library-specific configuration value
@@ -165,6 +166,11 @@ func BoolConfig(key string, val bool) Configuration {
 	return Configuration{Name: key, Value: val}
 }
 
+// ProductsPayload is the top-level key for the app-product-change payload.
+type ProductsPayload struct {
+	Products Products `json:"products"`
+}
+
 // Products specifies information about available products.
 type Products struct {
 	AppSec   ProductDetails `json:"appsec,omitempty"`
@@ -194,7 +200,10 @@ type Dependency struct {
 type RemoteConfig struct {
 	UserEnabled     string `json:"user_enabled"`     // whether the library has made a request to fetch remote-config
 	ConfigsRecieved bool   `json:"configs_received"` // whether the library receives a valid config response
-	Error           Error  `json:"error"`
+	RcID            string `json:"rc_id,omitempty"`
+	RcRevision      string `json:"rc_revision,omitempty"`
+	RcVersion       string `json:"rc_version,omitempty"`
+	Error           Error  `json:"error,omitempty"`
 }
 
 // Error stores error information about various tracer events

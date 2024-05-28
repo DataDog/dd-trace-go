@@ -8,6 +8,7 @@ package profiler
 import (
 	"bytes"
 	"compress/gzip"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -185,15 +186,13 @@ var profileTypes = map[ProfileType]profileType{
 		Name:     "execution-trace",
 		Filename: "go.trace",
 		Collect: func(p *profiler) ([]byte, error) {
-			if !p.shouldTrace() {
-				return nil, errors.New("started tracing erroneously, indicating a bug in the profiler")
-			}
 			p.lastTrace = time.Now()
 			buf := new(bytes.Buffer)
 			lt := newLimitedTraceCollector(buf, int64(p.cfg.traceConfig.Limit))
 			if err := trace.Start(lt); err != nil {
 				return nil, err
 			}
+			traceLogCPUProfileRate(p.cfg.cpuProfileRate)
 			select {
 			case <-p.exit: // Profiling was stopped
 			case <-time.After(p.cfg.period): // The profiling cycle has ended
@@ -203,6 +202,19 @@ var profileTypes = map[ProfileType]profileType{
 			return buf.Bytes(), nil
 		},
 	},
+}
+
+// traceLogCPUProfileRate logs the cpuProfileRate to the execution tracer if
+// its not 0. This gives us a better chance to correctly guess the CPU duration
+// of traceEvCPUSample events. It will not work correctly if the user is
+// calling runtime.SetCPUProfileRate() themselves, and there is no way to
+// handle this scenario given the current APIs. See
+// https://github.com/golang/go/issues/60701 for a proposal to improve the
+// situation.
+func traceLogCPUProfileRate(cpuProfileRate int) {
+	if cpuProfileRate != 0 {
+		trace.Log(context.Background(), "cpuProfileRate", fmt.Sprintf("%d", cpuProfileRate))
+	}
 }
 
 // defaultExecutionTraceSizeLimit is the default upper bound, in bytes,
@@ -318,6 +330,9 @@ type batch struct {
 	// extraTags are tags which might vary depending on which profile types
 	// actually run in a given profiling cycle
 	extraTags []string
+	// customAttributes are pprof label keys which should be available as
+	// attributes for filtering profiles in our UI
+	customAttributes []string
 }
 
 func (b *batch) addProfile(p *profile) {
@@ -387,22 +402,6 @@ func (fdp *fastDeltaProfiler) Delta(data []byte) (b []byte, err error) {
 	b = make([]byte, len(fdp.buf.Bytes()))
 	copy(b, fdp.buf.Bytes())
 	return b, nil
-}
-
-// PprofDiff computes the delta between all values b-a and returns them as a new
-// profile. Samples that end up with a delta of 0 are dropped. WARNING: Profile
-// a will be mutated by this function. You should pass a copy if that's
-// undesirable.
-//
-// Deprecated: This function was introduced into our public API unintentionally.
-// It will be removed in the next release. If you need this functionality,
-// it can be implemented in two lines:
-//
-//	a.Scale(-1)
-//	return pprofile.Merge([]*pprofile.Profile{a, b})
-func PprofDiff(a, b *pprofile.Profile) (*pprofile.Profile, error) {
-	a.Scale(-1)
-	return pprofile.Merge([]*pprofile.Profile{a, b})
 }
 
 func goroutineDebug2ToPprof(r io.Reader, w io.Writer, t time.Time) (err error) {

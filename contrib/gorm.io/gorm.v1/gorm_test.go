@@ -44,8 +44,23 @@ func TestMain(m *testing.M) {
 		fmt.Println("--- SKIP: to enable integration test, set the INTEGRATION environment variable")
 		os.Exit(0)
 	}
-	defer sqltest.Prepare(tableName)()
-	os.Exit(m.Run())
+	cleanup := sqltest.Prepare(tableName)
+	testResult := m.Run()
+	cleanup()
+	os.Exit(testResult)
+}
+
+func TestOpenDoesNotPanic(t *testing.T) {
+	defer func() {
+		if r := recover(); r != nil {
+			assert.Fail(t, "Opening connection panicked", r)
+		}
+	}()
+	// None of the following calls should end up in a panic.
+	_, _ = gorm.Open(nil, &gorm.Config{})
+	_, _ = gorm.Open(nil, nil)
+	_, _ = Open(nil, &gorm.Config{})
+	_, _ = Open(nil, nil)
 }
 
 func TestMySQL(t *testing.T) {

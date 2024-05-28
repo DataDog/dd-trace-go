@@ -7,6 +7,7 @@ package tracer
 
 import (
 	gocontext "context"
+	"encoding/binary"
 	"os"
 	"runtime/pprof"
 	rt "runtime/trace"
@@ -20,6 +21,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 	globalinternal "gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
+	appsecConfig "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/config"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/datastreams"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/hostname"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
@@ -136,7 +138,7 @@ func Start(opts ...StartOption) {
 	}
 	defer telemetry.Time(telemetry.NamespaceGeneral, "init_time", nil, true)()
 	t := newTracer(opts...)
-	if !t.config.enabled {
+	if !t.config.enabled.current {
 		// TODO: instrumentation telemetry client won't get started
 		// if tracing is disabled, but we still want to capture this
 		// telemetry information. Will be fixed when the tracer and profiler
@@ -157,10 +159,18 @@ func Start(opts ...StartOption) {
 	cfg.Env = t.config.env
 	cfg.HTTP = t.config.httpClient
 	cfg.ServiceName = t.config.serviceName
-	appsec.Start(appsec.WithRCConfig(cfg))
+	if err := t.startRemoteConfig(cfg); err != nil {
+		log.Warn("Remote config startup error: %s", err)
+	}
+
 	// start instrumentation telemetry unless it is disabled through the
 	// DD_INSTRUMENTATION_TELEMETRY_ENABLED env var
 	startTelemetry(t.config)
+
+	// appsec.Start() may use the telemetry client to report activation, so it is
+	// important this happens _AFTER_ startTelemetry() has been called, so the
+	// client is appropriately configured.
+	appsec.Start(appsecConfig.WithRCConfig(cfg))
 	_ = t.hostname() // Prime the hostname cache
 }
 
@@ -239,6 +249,11 @@ func newUnstartedTracer(opts ...StartOption) *tracer {
 	if spans != nil {
 		c.spanRules = spans
 	}
+	globalRate := globalSampleRate()
+	rulesSampler := newRulesSampler(c.traceRules, c.spanRules, globalRate)
+	c.traceSampleRate = newDynamicConfig("trace_sample_rate", globalRate, rulesSampler.traces.setGlobalSampleRate, equal[float64])
+	c.traceSampleRules = newDynamicConfig("trace_sample_rules", c.traceRules,
+		rulesSampler.traces.setTraceSampleRules, EqualsFalseNegative)
 	var dataStreamsProcessor *datastreams.Processor
 	if c.dataStreamsMonitoringEnabled {
 		dataStreamsProcessor = datastreams.NewProcessor(statsd, c.env, c.serviceName, c.version, c.agentURL, c.httpClient, func() bool {
@@ -252,7 +267,7 @@ func newUnstartedTracer(opts ...StartOption) *tracer {
 		out:              make(chan *chunk, payloadQueueSize),
 		stop:             make(chan struct{}),
 		flush:            make(chan chan<- struct{}),
-		rulesSampling:    newRulesSampler(c.traceRules, c.spanRules),
+		rulesSampling:    rulesSampler,
 		prioritySampling: sampler,
 		pid:              os.Getpid(),
 		stats:            newConcentrator(c, defaultStatsBucketSize),
@@ -359,7 +374,7 @@ func (t *tracer) worker(tick <-chan time.Time) {
 			t.statsd.Flush()
 			t.stats.flushAndSend(time.Now(), withCurrentBucket)
 			// TODO(x): In reality, the traceWriter.flush() call is not synchronous
-			// when using the agent traceWriter. However, this functionnality is used
+			// when using the agent traceWriter. However, this functionality is used
 			// in Lambda so for that purpose this mechanism should suffice.
 			done <- struct{}{}
 
@@ -394,7 +409,7 @@ type chunk struct {
 // sampleChunk applies single-span sampling to the provided trace.
 func (t *tracer) sampleChunk(c *chunk) {
 	if len(c.spans) > 0 {
-		if p, ok := c.spans[0].context.samplingPriority(); ok && p > 0 {
+		if p, ok := c.spans[0].context.SamplingPriority(); ok && p > 0 {
 			// The trace is kept, no need to run single span sampling rules.
 			return
 		}
@@ -436,6 +451,9 @@ func (t *tracer) pushChunk(trace *chunk) {
 
 // StartSpan creates, starts, and returns a new Span with the given `operationName`.
 func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOption) ddtrace.Span {
+	if !t.config.enabled.current {
+		return internal.NoopSpan{}
+	}
 	var opts ddtrace.StartSpanConfig
 	for _, fn := range options {
 		fn(&opts)
@@ -490,6 +508,9 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 		Start:        startTime,
 		noDebugStack: t.config.noDebugStack,
 	}
+
+	span.SpanLinks = append(span.SpanLinks, opts.SpanLinks...)
+
 	if t.config.hostname != "" {
 		span.setMeta(keyHostname, t.config.hostname)
 	}
@@ -497,7 +518,7 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 		// this is a child span
 		span.TraceID = context.traceID.Lower()
 		span.ParentID = context.spanID
-		if p, ok := context.samplingPriority(); ok {
+		if p, ok := context.SamplingPriority(); ok {
 			span.setMetric(keySamplingPriority, float64(p))
 		}
 		if context.span != nil {
@@ -512,6 +533,18 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 				span.setMeta(keyOrigin, context.origin)
 			}
 		}
+
+		// a remote context that was lacking the p: tracestate key
+		// the zero value indicates to the backend this could be the reparented
+		// as the root span of a trace
+		if context.isRemote && context.reparentID == "" {
+			span.setMeta(keyReparentID, "0000000000000000")
+		}
+
+		if context.reparentID != "" {
+			span.setMeta(keyReparentID, context.reparentID)
+		}
+
 	}
 	span.context = newSpanContext(span, context)
 	span.setMetric(ext.Pid, float64(t.pid))
@@ -522,7 +555,7 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 		span.SetTag(k, v)
 	}
 	// add global tags
-	for k, v := range t.config.globalTags {
+	for k, v := range t.config.globalTags.get() {
 		span.SetTag(k, v)
 	}
 	if t.config.serviceMappings != nil {
@@ -548,7 +581,7 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 	if t.config.env != "" {
 		span.setMeta(ext.Environment, t.config.env)
 	}
-	if _, ok := span.context.samplingPriority(); !ok {
+	if _, ok := span.context.SamplingPriority(); !ok {
 		// if not already sampled or a brand new trace, sample it
 		t.sample(span)
 	}
@@ -575,13 +608,6 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 		}
 	}
 	return span
-}
-
-// generateSpanID returns a random uint64 that has been XORd with the startTime.
-// This is done to get around the 32-bit random seed limitation that may create collisions if there is a large number
-// of go services all generating spans.
-func generateSpanID(startTime int64) uint64 {
-	return random.Uint64() ^ uint64(startTime)
 }
 
 // applyPPROFLabels applies pprof labels for the profiler's code hotspots and
@@ -639,15 +665,53 @@ func (t *tracer) Stop() {
 		t.dataStreams.Stop()
 	}
 	appsec.Stop()
+	remoteconfig.Stop()
 }
 
 // Inject uses the configured or default TextMap Propagator.
 func (t *tracer) Inject(ctx ddtrace.SpanContext, carrier interface{}) error {
+	if !t.config.enabled.current {
+		return nil
+	}
+	t.updateSampling(ctx)
 	return t.config.propagator.Inject(ctx, carrier)
+}
+
+// updateSampling runs trace sampling rules on the context, since properties like resource / tags
+// could change and impact the result of sampling. This must be done once before context is propagated.
+func (t *tracer) updateSampling(ctx ddtrace.SpanContext) {
+	sctx, ok := ctx.(*spanContext)
+	if sctx == nil || !ok {
+		return
+	}
+	// without this check some mock spans tests fail
+	if t.rulesSampling == nil || sctx.trace == nil || sctx.trace.root == nil {
+		return
+	}
+	// want to avoid locking the entire trace from a span for long.
+	// if SampleTrace successfully samples the trace,
+	// it will lock the span and the trace mutexes in span.setSamplingPriorityLocked
+	// and trace.setSamplingPriority respectively, so we can't rely on those mutexes.
+	if sctx.trace.isLocked() {
+		// trace sampling decision already taken and locked, no re-sampling shall occur
+		return
+	}
+
+	// the span was sampled with ManualKeep rules shouldn't override
+	if sctx.trace.propagatingTag(keyDecisionMaker) == "-4" {
+		return
+	}
+	// if sampling was successful, need to lock the trace to prevent further re-sampling
+	if t.rulesSampling.SampleTrace(sctx.trace.root) {
+		sctx.trace.setLocked(true)
+	}
 }
 
 // Extract uses the configured or default TextMap Propagator.
 func (t *tracer) Extract(carrier interface{}) (ddtrace.SpanContext, error) {
+	if !t.config.enabled.current {
+		return internal.NoopSpanContext{}, nil
+	}
 	return t.config.propagator.Extract(carrier)
 }
 
@@ -656,7 +720,7 @@ const sampleRateMetricKey = "_sample_rate"
 
 // Sample samples a span with the internal sampler.
 func (t *tracer) sample(span *span) {
-	if _, ok := span.context.samplingPriority(); ok {
+	if _, ok := span.context.SamplingPriority(); ok {
 		// sampling decision was already made
 		return
 	}
@@ -669,7 +733,7 @@ func (t *tracer) sample(span *span) {
 	if rs, ok := sampler.(RateSampler); ok && rs.Rate() < 1 {
 		span.setMetric(sampleRateMetricKey, rs.Rate())
 	}
-	if t.rulesSampling.SampleTrace(span) {
+	if t.rulesSampling.SampleTraceGlobalRate(span) {
 		return
 	}
 	t.prioritySampling.apply(span)
@@ -702,7 +766,12 @@ func startExecutionTracerTask(ctx gocontext.Context, span *span) (gocontext.Cont
 		// skipped.
 		ctx = globalinternal.WithExecutionNotTraced(ctx)
 	}
-	rt.Log(ctx, "span id", strconv.FormatUint(span.SpanID, 10))
+	var b [8]byte
+	binary.LittleEndian.PutUint64(b[:], span.SpanID)
+	// TODO: can we make string(b[:]) not allocate? e.g. with unsafe
+	// shenanigans? rt.Log won't retain the message string, though perhaps
+	// we can't assume that will always be the case.
+	rt.Log(ctx, "datadog.uint64_span_id", string(b[:]))
 	return ctx, end
 }
 

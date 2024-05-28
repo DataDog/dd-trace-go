@@ -7,18 +7,21 @@ package datastreams
 
 import (
 	"context"
+	"net/http"
 	"net/url"
 	"sort"
 	"strings"
 	"testing"
 	"time"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/datastreams/options"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
 
+	"github.com/DataDog/datadog-go/v5/statsd"
 	"github.com/DataDog/sketches-go/ddsketch"
 	"github.com/DataDog/sketches-go/ddsketch/store"
-	"github.com/golang/protobuf/proto"
 	"github.com/stretchr/testify/assert"
+	"google.golang.org/protobuf/proto"
 )
 
 func buildSketch(values ...float64) []byte {
@@ -186,8 +189,9 @@ func TestProcessor(t *testing.T) {
 
 func TestSetCheckpoint(t *testing.T) {
 	processor := Processor{
+		hashCache:  newHashCache(),
 		stopped:    1,
-		in:         make(chan statsPoint, 10),
+		in:         newFastQueue(),
 		service:    "service-1",
 		env:        "env",
 		timeSource: time.Now,
@@ -198,8 +202,8 @@ func TestSetCheckpoint(t *testing.T) {
 	ctx := processor.SetCheckpoint(context.Background(), "direction:in", "type:kafka")
 	pathway, _ := PathwayFromContext(processor.SetCheckpoint(ctx, "direction:out", "type:kafka"))
 
-	statsPt1 := <-processor.in
-	statsPt2 := <-processor.in
+	statsPt1 := processor.in.pop().point
+	statsPt2 := processor.in.pop().point
 
 	assert.Equal(t, []string{"direction:in", "type:kafka"}, statsPt1.edgeTags)
 	assert.Equal(t, hash1, statsPt1.hash)
@@ -238,4 +242,32 @@ func TestKafkaLag(t *testing.T) {
 		},
 	}
 	assert.Equal(t, expectedBacklogs, point.Stats[0].Backlogs)
+}
+
+type noOpTransport struct{}
+
+// RoundTrip does nothing and returns a dummy response.
+func (t *noOpTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	// You can customize the dummy response if needed.
+	return &http.Response{
+		StatusCode:    200,
+		Proto:         "HTTP/1.1",
+		ProtoMajor:    1,
+		ProtoMinor:    1,
+		Request:       req,
+		ContentLength: -1,
+		Body:          http.NoBody,
+	}, nil
+}
+
+func BenchmarkSetCheckpoint(b *testing.B) {
+	client := &http.Client{
+		Transport: &noOpTransport{},
+	}
+	p := NewProcessor(&statsd.NoOpClient{}, "env", "service", "v1", &url.URL{Scheme: "http", Host: "agent-address"}, client, func() bool { return true })
+	p.Start()
+	for i := 0; i < b.N; i++ {
+		p.SetCheckpointWithParams(context.Background(), options.CheckpointParams{PayloadSize: 1000}, "type:edge-1", "direction:in", "type:kafka", "topic:topic1", "group:group1")
+	}
+	p.Stop()
 }

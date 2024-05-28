@@ -17,6 +17,7 @@ import (
 	"strconv"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/httptrace"
+	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/options"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
@@ -50,12 +51,15 @@ func Middleware(opts ...Option) echo.MiddlewareFunc {
 		return func(c echo.Context) error {
 			request := c.Request()
 			resource := request.Method + " " + c.Path()
-			opts := append(spanOpts, tracer.ResourceName(resource))
-
+			opts := options.Copy(spanOpts...) // opts must be a copy of spanOpts, locally scoped, to avoid races.
 			if !math.IsNaN(cfg.analyticsRate) {
 				opts = append(opts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
 			}
-			opts = append(opts, httptrace.HeaderTagsFromRequest(request, cfg.headerTags))
+			opts = append(opts,
+				tracer.ResourceName(resource),
+				httptrace.HeaderTagsFromRequest(request, cfg.headerTags))
+			// TODO: Should this also have an `http.route` tag like the v4 library does?
+
 			var finishOpts []tracer.FinishOption
 			if cfg.noDebugStack {
 				finishOpts = []tracer.FinishOption{tracer.NoDebugStack()}
@@ -63,7 +67,6 @@ func Middleware(opts ...Option) echo.MiddlewareFunc {
 
 			span, ctx := httptrace.StartRequestSpan(request, opts...)
 			defer func() {
-				//httptrace.FinishRequestSpan(span, c.Response().Status, finishOpts...)
 				span.Finish(finishOpts...)
 			}()
 
@@ -73,9 +76,6 @@ func Middleware(opts ...Option) echo.MiddlewareFunc {
 			// serve the request to the next middleware
 			err := next(c)
 			if err != nil {
-				// invokes the registered HTTP error handler
-				c.Error(err)
-
 				// It is impossible to determine what the final status code of a request is in echo.
 				// This is the best we can do.
 				var echoErr *echo.HTTPError

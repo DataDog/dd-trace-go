@@ -25,16 +25,18 @@ type config struct {
 	spanOpts      []ddtrace.StartSpanOption // additional span options to be applied
 	analyticsRate float64
 	resourceNamer func(*fiber.Ctx) string
+	ignoreRequest func(*fiber.Ctx) bool
 }
 
 // Option represents an option that can be passed to NewRouter.
 type Option func(*config)
 
 func defaults(cfg *config) {
-	cfg.serviceName = namingschema.NewDefaultServiceName(defaultServiceName).GetName()
-	cfg.spanName = namingschema.NewHTTPServerOp().GetName()
+	cfg.serviceName = namingschema.ServiceName(defaultServiceName)
+	cfg.spanName = namingschema.OpName(namingschema.HTTPServer)
 	cfg.isStatusError = isServerError
 	cfg.resourceNamer = defaultResourceNamer
+	cfg.ignoreRequest = defaultIgnoreRequest
 
 	if internal.BoolEnv("DD_TRACE_FIBER_ENABLED", false) {
 		cfg.analyticsRate = 1.0
@@ -97,9 +99,21 @@ func WithResourceNamer(fn func(*fiber.Ctx) string) Option {
 	}
 }
 
+// WithIgnoreRequest specifies a function which will be used to
+// determining if the incoming HTTP request tracing should be skipped.
+func WithIgnoreRequest(fn func(*fiber.Ctx) bool) Option {
+	return func(cfg *config) {
+		cfg.ignoreRequest = fn
+	}
+}
+
 func defaultResourceNamer(c *fiber.Ctx) string {
 	r := c.Route()
 	return r.Method + " " + r.Path
+}
+
+func defaultIgnoreRequest(*fiber.Ctx) bool {
+	return false
 }
 
 func isServerError(statusCode int) bool {

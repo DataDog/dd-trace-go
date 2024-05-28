@@ -36,17 +36,14 @@ func defaults(cfg *interceptorConfig) {
 }
 
 func clientDefaults(cfg *interceptorConfig) {
-	cfg.serviceName = namingschema.NewDefaultServiceName(
-		defaultClientServiceName,
-		namingschema.WithOverrideV0(defaultClientServiceName),
-	).GetName()
-	cfg.spanName = namingschema.NewGRPCClientOp().GetName()
+	cfg.serviceName = namingschema.ServiceNameOverrideV0(defaultClientServiceName, defaultClientServiceName)
+	cfg.spanName = namingschema.OpName(namingschema.GRPCClient)
 	defaults(cfg)
 }
 
 func serverDefaults(cfg *interceptorConfig) {
-	cfg.serviceName = namingschema.NewDefaultServiceName(defaultServerServiceName).GetName()
-	cfg.spanName = namingschema.NewGRPCServerOp().GetName()
+	cfg.serviceName = namingschema.ServiceName(defaultServerServiceName)
+	cfg.spanName = namingschema.OpName(namingschema.GRPCServer)
 	defaults(cfg)
 }
 

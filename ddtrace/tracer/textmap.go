@@ -15,6 +15,7 @@ import (
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/samplernames"
 )
@@ -155,11 +156,12 @@ func NewPropagator(cfg *PropagatorConfig, propagators ...Propagator) Propagator 
 	if cfg.PriorityHeader == "" {
 		cfg.PriorityHeader = DefaultPriorityHeader
 	}
+	cp := new(chainedPropagator)
+	cp.onlyExtractFirst = internal.BoolEnv("DD_TRACE_PROPAGATION_EXTRACT_FIRST", false)
 	if len(propagators) > 0 {
-		return &chainedPropagator{
-			injectors:  propagators,
-			extractors: propagators,
-		}
+		cp.injectors = propagators
+		cp.extractors = propagators
+		return cp
 	}
 	injectorsPs := os.Getenv(headerPropagationStyleInject)
 	if injectorsPs == "" {
@@ -173,24 +175,20 @@ func NewPropagator(cfg *PropagatorConfig, propagators ...Propagator) Propagator 
 			log.Warn("%v is deprecated. Please use %v or %v instead.\n", headerPropagationStyleExtractDeprecated, headerPropagationStyleExtract, headerPropagationStyle)
 		}
 	}
-	injectors, injectorNames := getPropagators(cfg, injectorsPs)
-	extractors, extractorsNames := getPropagators(cfg, extractorsPs)
-	return &chainedPropagator{
-		injectors,
-		extractors,
-		injectorNames,
-		extractorsNames,
-	}
+	cp.injectors, cp.injectorNames = getPropagators(cfg, injectorsPs)
+	cp.extractors, cp.extractorsNames = getPropagators(cfg, extractorsPs)
+	return cp
 }
 
 // chainedPropagator implements Propagator and applies a list of injectors and extractors.
 // When injecting, all injectors are called to propagate the span context.
 // When extracting, it tries each extractor, selecting the first successful one.
 type chainedPropagator struct {
-	injectors       []Propagator
-	extractors      []Propagator
-	injectorNames   string
-	extractorsNames string
+	injectors        []Propagator
+	extractors       []Propagator
+	injectorNames    string
+	extractorsNames  string
+	onlyExtractFirst bool // value of DD_TRACE_PROPAGATION_EXTRACT_FIRST
 }
 
 // getPropagators returns a list of propagators based on ps, which is a comma seperated
@@ -199,8 +197,8 @@ type chainedPropagator struct {
 // a warning and be ignored.
 func getPropagators(cfg *PropagatorConfig, ps string) ([]Propagator, string) {
 	dd := &propagator{cfg}
-	defaultPs := []Propagator{&propagatorW3c{}, dd}
-	defaultPsName := "tracecontext,datadog"
+	defaultPs := []Propagator{dd, &propagatorW3c{}}
+	defaultPsName := "datadog,tracecontext"
 	if cfg.B3 {
 		defaultPs = append(defaultPs, &propagatorB3{})
 		defaultPsName += ",b3"
@@ -228,7 +226,7 @@ func getPropagators(cfg *PropagatorConfig, ps string) ([]Propagator, string) {
 			list = append(list, dd)
 			listNames = append(listNames, v)
 		case "tracecontext":
-			list = append([]Propagator{&propagatorW3c{}}, list...)
+			list = append(list, &propagatorW3c{})
 			listNames = append(listNames, v)
 		case "b3", "b3multi":
 			if !cfg.B3 {
@@ -265,21 +263,72 @@ func (p *chainedPropagator) Inject(spanCtx ddtrace.SpanContext, carrier interfac
 	return nil
 }
 
-// Extract implements Propagator.
+// Extract implements Propagator. This method will attempt to extract the context
+// based on the precedence order of the propagators. Generally, the first valid
+// trace context that could be extracted will be returned, and other extractors will
+// be ignored. However, the W3C tracestate header value will always be extracted and
+// stored in the local trace context even if a previous propagator has already succeeded
+// so long as the trace-ids match.
 func (p *chainedPropagator) Extract(carrier interface{}) (ddtrace.SpanContext, error) {
+	var ctx ddtrace.SpanContext
 	for _, v := range p.extractors {
-		ctx, err := v.Extract(carrier)
 		if ctx != nil {
-			// first extractor returns
-			log.Debug("Extracted span context: %#v", ctx)
-			return ctx, nil
+			// A local trace context has already been extracted.
+			p, isW3C := v.(*propagatorW3c)
+			if !isW3C {
+				continue // Ignore other propagators.
+			}
+			p.propagateTracestate(ctx.(*spanContext), carrier)
+			break
 		}
-		if err == ErrSpanContextNotFound {
-			continue
+		var err error
+		ctx, err = v.Extract(carrier)
+		if ctx != nil {
+			if p.onlyExtractFirst {
+				// Return early if the customer configured that only the first successful
+				// extraction should occur.
+				return ctx, nil
+			}
+		} else if err != ErrSpanContextNotFound {
+			return nil, err
 		}
-		return nil, err
 	}
-	return nil, ErrSpanContextNotFound
+	if ctx == nil {
+		return nil, ErrSpanContextNotFound
+	}
+	log.Debug("Extracted span context: %#v", ctx)
+	return ctx, nil
+}
+
+// propagateTracestate will add the tracestate propagating tag to the given
+// *spanContext. The W3C trace context will be extracted from the provided
+// carrier. The trace id of this W3C trace context must match the trace id
+// provided by the given *spanContext. If it matches, then the tracestate
+// will be re-composed based on the composition of the given *spanContext,
+// but will include the non-DD vendors in the W3C trace context's tracestate.
+func (p *propagatorW3c) propagateTracestate(ctx *spanContext, carrier interface{}) {
+	w3cCtx, _ := p.Extract(carrier)
+	if w3cCtx == nil {
+		return // It's not valid, so ignore it.
+	}
+	if ctx.TraceID() != w3cCtx.TraceID() {
+		return // The trace-ids must match.
+	}
+	if w3cCtx.(*spanContext).trace == nil {
+		return // this shouldn't happen, since it should have a propagating tag already
+	}
+	if ctx.trace == nil {
+		ctx.trace = newTrace()
+	}
+	// Get the tracestate header from extracted w3C context, and propagate
+	// it to the span context that will be returned.
+	// Note: Other trace context fields like sampling priority, propagated tags,
+	// and origin will remain unchanged.
+	ts := w3cCtx.(*spanContext).trace.propagatingTag(tracestateHeader)
+	priority, _ := ctx.SamplingPriority()
+	setPropagatingTag(ctx, tracestateHeader, composeTracestate(ctx, priority, ts))
+	ctx.reparentID = w3cCtx.(*spanContext).reparentID
+	ctx.isRemote = (w3cCtx.(*spanContext).isRemote)
 }
 
 // propagator implements Propagator and injects/extracts span contexts
@@ -310,16 +359,17 @@ func (p *propagator) injectTextMap(spanCtx ddtrace.SpanContext, writer TextMapWr
 	}
 	writer.Set(p.cfg.TraceHeader, strconv.FormatUint(ctx.traceID.Lower(), 10))
 	writer.Set(p.cfg.ParentHeader, strconv.FormatUint(ctx.spanID, 10))
-	if sp, ok := ctx.samplingPriority(); ok {
+	if sp, ok := ctx.SamplingPriority(); ok {
 		writer.Set(p.cfg.PriorityHeader, strconv.Itoa(sp))
 	}
 	if ctx.origin != "" {
 		writer.Set(originHeader, ctx.origin)
 	}
-	// propagate OpenTracing baggage
-	for k, v := range ctx.baggage {
+	ctx.ForeachBaggageItem(func(k, v string) bool {
+		// Propagate OpenTracing baggage.
 		writer.Set(p.cfg.BaggagePrefix+k, v)
-	}
+		return true
+	})
 	if p.cfg.MaxTagsHeaderLen <= 0 {
 		return nil
 	}
@@ -346,9 +396,9 @@ func (p *propagator) marshalPropagatingTags(ctx *spanContext) string {
 			properr = "encoding_error"
 			return true
 		}
-		if sb.Len()+len(k)+len(v) > p.cfg.MaxTagsHeaderLen {
+		if tagLen := sb.Len() + len(k) + len(v); tagLen > p.cfg.MaxTagsHeaderLen {
 			sb.Reset()
-			log.Warn("Won't propagate tag: maximum trace tags header len (%d) reached.", p.cfg.MaxTagsHeaderLen)
+			log.Warn("Won't propagate tag: length is (%d) which exceeds the maximum len of (%d).", tagLen, p.cfg.MaxTagsHeaderLen)
 			properr = "inject_max_size"
 			return false
 		}
@@ -502,7 +552,7 @@ func (*propagatorB3) injectTextMap(spanCtx ddtrace.SpanContext, writer TextMapWr
 		writer.Set(b3TraceIDHeader, w3Cctx.TraceID128())
 	}
 	writer.Set(b3SpanIDHeader, fmt.Sprintf("%016x", ctx.spanID))
-	if p, ok := ctx.samplingPriority(); ok {
+	if p, ok := ctx.SamplingPriority(); ok {
 		if p >= ext.PriorityAutoKeep {
 			writer.Set(b3SampledHeader, "1")
 		} else {
@@ -585,7 +635,7 @@ func (*propagatorB3SingleHeader) injectTextMap(spanCtx ddtrace.SpanContext, writ
 		traceID = w3Cctx.TraceID128()
 	}
 	sb.WriteString(fmt.Sprintf("%s-%016x", traceID, ctx.spanID))
-	if p, ok := ctx.samplingPriority(); ok {
+	if p, ok := ctx.SamplingPriority(); ok {
 		if p >= ext.PriorityAutoKeep {
 			sb.WriteString("-1")
 		} else {
@@ -681,7 +731,7 @@ func (*propagatorW3c) injectTextMap(spanCtx ddtrace.SpanContext, writer TextMapW
 		return ErrInvalidSpanContext
 	}
 	flags := ""
-	p, ok := ctx.samplingPriority()
+	p, ok := ctx.SamplingPriority()
 	if ok && p >= ext.PriorityAutoKeep {
 		flags = "01"
 	} else {
@@ -702,13 +752,17 @@ func (*propagatorW3c) injectTextMap(spanCtx ddtrace.SpanContext, writer TextMapW
 	}
 	writer.Set(traceparentHeader, fmt.Sprintf("00-%s-%016x-%v", traceID, ctx.spanID, flags))
 	// if context priority / origin / tags were updated after extraction,
+	// or if there is a span on the trace
 	// or the tracestateHeader doesn't start with `dd=`
 	// we need to recreate tracestate
 	if ctx.updated ||
+		(!ctx.isRemote || ctx.isRemote && ctx.trace != nil && ctx.trace.root != nil) ||
 		(ctx.trace != nil && !strings.HasPrefix(ctx.trace.propagatingTag(tracestateHeader), "dd=")) ||
 		ctx.trace.propagatingTagsLen() == 0 {
+		// compose a new value for the tracestate
 		writer.Set(tracestateHeader, composeTracestate(ctx, p, ctx.trace.propagatingTag(tracestateHeader)))
 	} else {
+		// use a cached value for the tracestate (e.g., no updating p: key)
 		writer.Set(tracestateHeader, ctx.trace.propagatingTag(tracestateHeader))
 	}
 	return nil
@@ -771,6 +825,7 @@ func isValidID(id string) bool {
 // composeTracestate creates a tracestateHeader from the spancontext.
 // The Datadog tracing library is only responsible for managing the list member with key dd,
 // which holds the values of the sampling decision(`s:<value>`), origin(`o:<origin>`),
+// the last parent ID of a Datadog span (`p:<parent_id>`),
 // and propagated tags prefixed with `t.`(e.g. _dd.p.usr.id:usr_id tag will become `t.usr.id:usr_id`).
 func composeTracestate(ctx *spanContext, priority int, oldState string) string {
 	var b strings.Builder
@@ -784,6 +839,20 @@ func composeTracestate(ctx *spanContext, priority int, oldState string) string {
 			strings.ReplaceAll(oWithSub, "=", "~")))
 	}
 
+	// if the context is remote and there is a reparentID, set p as reparentId
+	// if the context is remote and there is no reparentID, don't set p
+	// if the context is not remote, set p as context.spanId
+	// this ID can be used by downstream tracers to set a _dd.parent_id tag
+	// to allow the backend to reparent orphaned spans if necessary
+
+	if ctx.isRemote && ctx.reparentID != "" {
+		b.WriteString(fmt.Sprintf(";p:%s", ctx.reparentID))
+	}
+
+	if !ctx.isRemote || ctx.isRemote && ctx.trace.root != nil {
+		b.WriteString(fmt.Sprintf(";p:%016x", ctx.spanID))
+	}
+
 	ctx.trace.iteratePropagatingTags(func(k, v string) bool {
 		if !strings.HasPrefix(k, "_dd.p.") {
 			return true
@@ -793,7 +862,7 @@ func composeTracestate(ctx *spanContext, priority int, oldState string) string {
 		tag := fmt.Sprintf("t.%s:%s",
 			keyRgx.ReplaceAllString(k[len("_dd.p."):], "_"),
 			strings.ReplaceAll(valueRgx.ReplaceAllString(v, "_"), "=", "~"))
-		if b.Len()+len(tag) > 256 {
+		if b.Len()+len(tag)+1 > 256 { // the +1 here is to account for the `;` needed between the tags
 			return false
 		}
 		b.WriteString(";")
@@ -832,6 +901,7 @@ func (*propagatorW3c) extractTextMap(reader TextMapReader) (ddtrace.SpanContext,
 	var parentHeader string
 	var stateHeader string
 	var ctx spanContext
+	ctx.isRemote = true
 	// to avoid parsing tracestate header(s) if traceparent is invalid
 	if err := reader.ForeachKey(func(k, v string) error {
 		key := strings.ToLower(k)
@@ -947,6 +1017,7 @@ func parseTraceparent(ctx *spanContext, header string) error {
 // The keys to the “dd“ values have been shortened as follows to save space:
 // `sampling_priority` = `s`
 // `origin` = `o`
+// `last parent` = `p`
 // `_dd.p.` prefix = `t.`
 func parseTracestate(ctx *spanContext, header string) {
 	if header == "" {
@@ -963,6 +1034,7 @@ func parseTracestate(ctx *spanContext, header string) {
 		}
 		ddMembers := strings.Split(group[len("dd="):], ";")
 		dropDM := false
+		// indicate that backend could reparent this as a root
 		for _, member := range ddMembers {
 			keyVal := strings.SplitN(member, ":", 2)
 			if len(keyVal) != 2 {
@@ -982,7 +1054,7 @@ func parseTracestate(ctx *spanContext, header string) {
 				// The sampling priority and decision maker values are set based on
 				// the specification in the internal W3C context propagation RFC.
 				// See the document for more details.
-				parentP, _ := ctx.samplingPriority()
+				parentP, _ := ctx.SamplingPriority()
 				if (parentP == 1 && stateP > 0) || (parentP == 0 && stateP <= 0) {
 					// As extracted from tracestate
 					ctx.setSamplingPriority(stateP, samplernames.Unknown)
@@ -996,6 +1068,11 @@ func parseTracestate(ctx *spanContext, header string) {
 					ctx.setSamplingPriority(0, samplernames.Unknown)
 					dropDM = true
 				}
+			} else if key == "p" {
+				if val != "" {
+					ctx.reparentID = val
+				}
+
 			} else if strings.HasPrefix(key, "t.dm") {
 				if ctx.trace.hasPropagatingTag(keyDecisionMaker) || dropDM {
 					continue

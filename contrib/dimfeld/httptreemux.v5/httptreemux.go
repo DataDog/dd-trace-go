@@ -49,11 +49,13 @@ func New(opts ...RouterOption) *Router {
 // ServeHTTP implements http.Handler.
 func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	resource := r.config.resourceNamer(r.TreeMux, w, req)
+	route, _ := getRoute(r.TreeMux, w, req)
 	// pass r.TreeMux to avoid a circular reference panic on calling r.ServeHTTP
 	httptrace.TraceAndServe(r.TreeMux, w, req, &httptrace.ServeConfig{
 		Service:  r.config.serviceName,
 		Resource: resource,
 		SpanOpts: r.config.spanOpts,
+		Route:    route,
 	})
 }
 
@@ -82,11 +84,13 @@ func NewWithContext(opts ...RouterOption) *ContextRouter {
 // ServeHTTP implements http.Handler.
 func (r *ContextRouter) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	resource := r.config.resourceNamer(r.TreeMux, w, req)
+	route, _ := getRoute(r.TreeMux, w, req)
 	// pass r.TreeMux to avoid a circular reference panic on calling r.ServeHTTP
 	httptrace.TraceAndServe(r.TreeMux, w, req, &httptrace.ServeConfig{
 		Service:  r.config.serviceName,
 		Resource: resource,
 		SpanOpts: r.config.spanOpts,
+		Route:    route,
 	})
 }
 
@@ -95,11 +99,41 @@ func (r *ContextRouter) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 // route from the request. If the lookup fails to find a match the route is set
 // to "unknown".
 func defaultResourceNamer(router *httptreemux.TreeMux, w http.ResponseWriter, req *http.Request) string {
+	route, ok := getRoute(router, w, req)
+	if !ok {
+		route = "unknown"
+	}
+	return req.Method + " " + route
+}
+
+func getRoute(router *httptreemux.TreeMux, w http.ResponseWriter, req *http.Request) (string, bool) {
 	route := req.URL.Path
 	lr, found := router.Lookup(w, req)
 	if !found {
-		return req.Method + " unknown"
+		return "", false
 	}
+	routeLen := len(route)
+	trailingSlash := route[routeLen-1] == '/' && routeLen > 1
+
+	// Retry the population of lookup result parameters.
+	// If the initial attempt to populate the parameters fails, clone the request and modify the URI and URL Path.
+	// Depending on whether the route has a trailing slash or not, it will either add or remove the trailing slash and retry the lookup.
+	if routerRedirectEnabled(router) && isSupportedRedirectStatus(lr.StatusCode) && lr.Params == nil {
+		rReq := req.Clone(req.Context())
+		if trailingSlash {
+			// if the route has a trailing slash, remove it
+			rReq.RequestURI = strings.TrimSuffix(rReq.RequestURI, "/")
+			rReq.URL.Path = strings.TrimSuffix(rReq.URL.Path, "/")
+		} else {
+			// if the route does not have a trailing slash, add one
+			rReq.RequestURI = rReq.RequestURI + "/"
+			rReq.URL.Path = rReq.URL.Path + "/"
+		}
+		// no need to check found again
+		// we already matched a route and we are only trying to populate the lookup result params
+		lr, _ = router.Lookup(w, rReq)
+	}
+
 	for k, v := range lr.Params {
 		// replace parameter surrounded by a set of "/", i.e. ".../:param/..."
 		oldP := "/" + v + "/"
@@ -113,5 +147,18 @@ func defaultResourceNamer(router *httptreemux.TreeMux, w http.ResponseWriter, re
 		newP = "/:" + k
 		route = strings.Replace(route, oldP, newP, 1)
 	}
-	return req.Method + " " + route
+	return route, true
+}
+
+// isSupportedRedirectStatus checks if the given HTTP status code is a supported redirect status.
+func isSupportedRedirectStatus(status int) bool {
+	return status == http.StatusMovedPermanently ||
+		status == http.StatusTemporaryRedirect ||
+		status == http.StatusPermanentRedirect
+}
+
+// routerRedirectEnabled checks if the redirection is enabled on the router.
+func routerRedirectEnabled(router *httptreemux.TreeMux) bool {
+	return (router.RedirectCleanPath || router.RedirectTrailingSlash) &&
+		router.RedirectBehavior != httptreemux.UseHandler
 }

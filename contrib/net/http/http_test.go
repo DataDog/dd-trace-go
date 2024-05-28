@@ -17,6 +17,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/normalizer"
 
 	"github.com/stretchr/testify/assert"
@@ -103,6 +104,41 @@ func TestWithHeaderTags(t *testing.T) {
 		}
 		assert.NotContains(s.Tags(), "http.headers.x-datadog-header")
 		assert.NotContains(s.Tags(), globalT)
+	})
+
+	t.Run("wrap-handler", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+		htArgs := []string{"h!e@a-d.e*r", "2header", "3header"}
+
+		handler := WrapHandler(http.HandlerFunc(handler200), "my-service", "my-resource",
+			WithHeaderTags(htArgs),
+		)
+
+		url := "/"
+		r := httptest.NewRequest("GET", url, nil)
+		r.Header.Set("h!e@a-d.e*r", "val")
+		r.Header.Add("h!e@a-d.e*r", "val2")
+		r.Header.Set("2header", "2val")
+		r.Header.Set("3header", "3val")
+		r.Header.Set("x-datadog-header", "value")
+		w := httptest.NewRecorder()
+		handler.ServeHTTP(w, r)
+
+		assert := assert.New(t)
+		assert.Equal(200, w.Code)
+		assert.Equal("OK\n", w.Body.String())
+
+		spans := mt.FinishedSpans()
+		assert.Equal(1, len(spans))
+
+		s := spans[0]
+		assert.Equal("http.request", s.OperationName())
+
+		for _, arg := range htArgs {
+			header, tag := normalizer.HeaderTag(arg)
+			assert.Equal(strings.Join(r.Header.Values(header), ","), s.Tags()[tag])
+		}
 	})
 }
 
@@ -461,8 +497,8 @@ func handler500(w http.ResponseWriter, _ *http.Request) {
 }
 
 func BenchmarkHttpServeTrace(b *testing.B) {
-	mt := mocktracer.Start()
-	defer mt.Stop()
+	tracer.Start(tracer.WithLogger(log.DiscardLogger{}))
+	defer tracer.Stop()
 	header, tag := normalizer.HeaderTag("3header")
 	globalconfig.SetHeaderTag(header, tag)
 

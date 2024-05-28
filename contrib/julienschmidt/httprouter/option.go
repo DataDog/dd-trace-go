@@ -12,6 +12,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/normalizer"
 )
 
 const defaultServiceName = "http.router"
@@ -20,6 +21,7 @@ type routerConfig struct {
 	serviceName   string
 	spanOpts      []ddtrace.StartSpanOption
 	analyticsRate float64
+	headerTags    *internal.LockMap
 }
 
 // RouterOption represents an option that can be passed to New.
@@ -31,7 +33,8 @@ func defaults(cfg *routerConfig) {
 	} else {
 		cfg.analyticsRate = globalconfig.AnalyticsRate()
 	}
-	cfg.serviceName = namingschema.NewDefaultServiceName(defaultServiceName).GetName()
+	cfg.serviceName = namingschema.ServiceName(defaultServiceName)
+	cfg.headerTags = globalconfig.HeaderTagMap()
 }
 
 // WithServiceName sets the given service name for the returned router.
@@ -68,5 +71,16 @@ func WithAnalyticsRate(rate float64) RouterOption {
 		} else {
 			cfg.analyticsRate = math.NaN()
 		}
+	}
+}
+
+// WithHeaderTags enables the integration to attach HTTP request headers as span tags.
+// Warning:
+// Using this feature can risk exposing sensitive data such as authorization tokens to Datadog.
+// Special headers can not be sub-selected. E.g., an entire Cookie header would be transmitted, without the ability to choose specific Cookies.
+func WithHeaderTags(headers []string) RouterOption {
+	headerTagsMap := normalizer.HeaderTagSlice(headers)
+	return func(cfg *routerConfig) {
+		cfg.headerTags = internal.NewLockMap(headerTagsMap)
 	}
 }

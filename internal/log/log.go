@@ -100,9 +100,18 @@ var (
 
 func init() {
 	if v := os.Getenv("DD_LOGGING_RATE"); v != "" {
-		if sec, err := strconv.ParseUint(v, 10, 64); err != nil {
-			Warn("Invalid value for DD_LOGGING_RATE: %v", err)
+		setLoggingRate(v)
+	}
+}
+
+func setLoggingRate(v string) {
+	if sec, err := strconv.ParseInt(v, 10, 64); err != nil {
+		Warn("Invalid value for DD_LOGGING_RATE: %v", err)
+	} else {
+		if sec < 0 {
+			Warn("Invalid value for DD_LOGGING_RATE: negative value")
 		} else {
+			// DD_LOGGING_RATE = 0 allows to log errors immediately.
 			errrate = time.Duration(sec) * time.Second
 		}
 	}

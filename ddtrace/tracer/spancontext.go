@@ -91,6 +91,17 @@ type spanContext struct {
 	span   *span  // reference to the span that hosts this context
 	errors int32  // number of spans with errors in this trace
 
+	// The 16-character hex string of the last seen Datadog Span ID
+	// this value will be added as the _dd.parent_id tag to spans
+	// created from this spanContext.
+	// This value is extracted from the `p` sub-key within the tracestate.
+	// The backend will use the _dd.parent_id tag to reparent spans in
+	// distributed traces if they were missing their parent span.
+	// Missing parent span could occur when a W3C-compliant tracer
+	// propagated this context, but didn't send any spans to Datadog.
+	reparentID string
+	isRemote   bool
+
 	// the below group should propagate cross-process
 
 	traceID traceID
@@ -112,6 +123,7 @@ func newSpanContext(span *span, parent *spanContext) *spanContext {
 		spanID: span.SpanID,
 		span:   span,
 	}
+
 	context.traceID.SetLower(span.TraceID)
 	if parent != nil {
 		context.traceID.SetUpper(parent.traceID.Upper())
@@ -122,7 +134,7 @@ func newSpanContext(span *span, parent *spanContext) *spanContext {
 			context.setBaggageItem(k, v)
 			return true
 		})
-	} else if sharedinternal.BoolEnv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", false) {
+	} else if sharedinternal.BoolEnv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", true) {
 		// add 128 bit trace id, if enabled, formatted as big-endian:
 		// <32-bit unix seconds> <32 bits of zero> <64 random bits>
 		id128 := time.Duration(span.Start) / time.Second
@@ -156,6 +168,9 @@ func (c *spanContext) TraceID() uint64 { return c.traceID.Lower() }
 
 // TraceID128 implements ddtrace.SpanContextW3C.
 func (c *spanContext) TraceID128() string {
+	if c == nil {
+		return ""
+	}
 	return c.traceID.HexEncoded()
 }
 
@@ -178,17 +193,18 @@ func (c *spanContext) ForeachBaggageItem(handler func(k, v string) bool) {
 	}
 }
 
+// sets the sampling priority and decision maker (based on `sampler`).
 func (c *spanContext) setSamplingPriority(p int, sampler samplernames.SamplerName) {
 	if c.trace == nil {
 		c.trace = newTrace()
 	}
-	if c.trace.priority != nil && *c.trace.priority != float64(p) {
+	if c.trace.setSamplingPriority(p, sampler) {
+		// the trace's sampling priority or sampler was updated: mark this as updated
 		c.updated = true
 	}
-	c.trace.setSamplingPriority(p, sampler)
 }
 
-func (c *spanContext) samplingPriority() (p int, ok bool) {
+func (c *spanContext) SamplingPriority() (p int, ok bool) {
 	if c.trace == nil {
 		return 0, false
 	}
@@ -290,10 +306,12 @@ func (t *trace) samplingPriority() (p int, ok bool) {
 	return t.samplingPriorityLocked()
 }
 
-func (t *trace) setSamplingPriority(p int, sampler samplernames.SamplerName) {
+// setSamplingPriority sets the sampling priority and the decision maker
+// and returns true if it was modified.
+func (t *trace) setSamplingPriority(p int, sampler samplernames.SamplerName) bool {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	t.setSamplingPriorityLocked(p, sampler)
+	return t.setSamplingPriorityLocked(p, sampler)
 }
 
 func (t *trace) keep() {
@@ -317,23 +335,54 @@ func (t *trace) setTagLocked(key, value string) {
 	t.tags[key] = value
 }
 
-func (t *trace) setSamplingPriorityLocked(p int, sampler samplernames.SamplerName) {
+func samplerToDM(sampler samplernames.SamplerName) string {
+	return "-" + strconv.Itoa(int(sampler))
+}
+
+func (t *trace) setSamplingPriorityLocked(p int, sampler samplernames.SamplerName) bool {
 	if t.locked {
-		return
+		return false
 	}
+
+	updatedPriority := t.priority == nil || *t.priority != float64(p)
+
 	if t.priority == nil {
 		t.priority = new(float64)
 	}
 	*t.priority = float64(p)
-	_, ok := t.propagatingTags[keyDecisionMaker]
-	if p > 0 && !ok && sampler != samplernames.Unknown {
+	curDM, existed := t.propagatingTags[keyDecisionMaker]
+	if p > 0 && sampler != samplernames.Unknown {
 		// We have a positive priority and the sampling mechanism isn't set.
 		// Send nothing when sampler is `Unknown` for RFC compliance.
-		t.setPropagatingTagLocked(keyDecisionMaker, "-"+strconv.Itoa(int(sampler)))
+		// If a global sampling rate is set, it was always applied first. And this call can be
+		// triggered again by applying a rule sampler. The sampling priority will be the same, but
+		// the decision maker will be different. So we compare the decision makers as well.
+		// Note that once global rate sampling is deprecated, we no longer need to compare
+		// the DMs. Sampling priority is sufficient to distinguish a change in DM.
+		dm := samplerToDM(sampler)
+		updatedDM := !existed || dm != curDM
+		if updatedDM {
+			t.setPropagatingTagLocked(keyDecisionMaker, dm)
+			return true
+		}
 	}
-	if p <= 0 && ok {
+	if p <= 0 && existed {
 		delete(t.propagatingTags, keyDecisionMaker)
 	}
+
+	return updatedPriority
+}
+
+func (t *trace) isLocked() bool {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+	return t.locked
+}
+
+func (t *trace) setLocked(locked bool) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.locked = locked
 }
 
 // push pushes a new span into the trace. If the buffer is full, it returns

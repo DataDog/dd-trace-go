@@ -1,5 +1,11 @@
 name: AppSec Tests
 on:
+  workflow_call: # allows to reuse this workflow
+    inputs:
+      ref:
+        description: 'The branch to run the workflow on'
+        required: true
+        type: string
   workflow_dispatch: # manually
   schedule: # nightly
     - cron: "0 0 * * *"
@@ -9,148 +15,257 @@ on:
       - 'internal/appsec/**'
       - 'appsec/**'
       - 'contrib/**/appsec.go'
-  merge_group: # on merge groups touching appsec files
-    paths:
-      - '.github/workflows/appsec.yml'
-      - 'internal/appsec/**'
-      - 'appsec/**'
-      - 'contrib/**/appsec.go'
+      - '**/go.mod'
+  merge_group:
   push:
     branches: release-v*
+
 env:
-  DD_APPSEC_WAF_TIMEOUT: 5s
-  JUNIT_REPORT: gotestsum-report.xml
-  TO_TEST: ./appsec/... ./internal/appsec/... ./contrib/google.golang.org/grpc/... ./contrib/net/http/... ./contrib/gorilla/mux/... ./contrib/go-chi/... ./contrib/labstack/echo.v4/... ./contrib/gin-gonic/gin/...
+  DD_APPSEC_WAF_TIMEOUT: 1m
+  TESTS: >-
+    ./appsec/...
+    ./internal/appsec/...
+    ./contrib/gin-gonic/gin/...
+    ./contrib/google.golang.org/grpc/...
+    ./contrib/net/http/...
+    ./contrib/gorilla/mux/...
+    ./contrib/go-chi/chi/...
+    ./contrib/go-chi/chi.v5/...
+    ./contrib/labstack/echo.v4/...
+    ./contrib/99designs/gqlgen/...
+    ./contrib/graphql-go/graphql/...
+    ./contrib/graph-gophers/graphql-go/...
+
+concurrency:
+  # Automatically cancel previous runs if a new one is triggered to conserve resources.
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+
 jobs:
-  native:
+  # Prepare the cache of Go modules to share it will the other jobs.
+  # This maximizes cache hits and minimizes the time spent downloading Go modules.
+  # Note 1: @actions/cache is very sensitive and it's easy to mess up. Things to know:
+  #          - doing it after @actions/checkout is required for all the metadata to be available;
+  #          - sharing the cache with windows requires backslashes to be used in the path;
+  #          - sharing the cache between OSes requires the base path to be the same, so a relative one is used;
+  #          - as of writing this doc, @actions/cache doest work inside docker containers, so had to design so
+  #            containerized jobs around this problem, by restoring the cache in the runner and mounting it in the
+  #            container ourselves.
+  # Note 2: a lot of time was spent on making caching work across macos, linux,
+  # windows and golang containers. So this is very sensitive and should be
+  # validated again in case of changes. To do so, you can click on the @actions/cache
+  # actions logs and look for the "Cache hit" or "Cache miss" messages.
+  go-mod-caching:
+    name: Prepare Go modules cache
+    runs-on: ubuntu-latest-16-cores
+    outputs:
+      key: ${{ steps.cfg.outputs.key }}
+      path: ${{ steps.cfg.outputs.path }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compute cache configuration
+        id: cfg
+        run: |
+          echo "key=go-pkg-mod-${{ hashFiles('**/go.sum') }}" >> $GITHUB_OUTPUT
+          echo "path=go_pkg_mod_cache" >> $GITHUB_OUTPUT
+
+      - uses: actions/setup-go@v5
+        with:
+          cache: false
+
+      - name: Cache Go modules
+        id: cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.cfg.outputs.path }}
+          key: ${{ steps.cfg.outputs.key }}
+          enableCrossOsArchive: true
+          lookup-only: true
+
+      - name: Download Go modules
+        if: steps.cache.outputs.cache-hit != 'true'
+        env:
+          GOMODCACHE: ${{ github.workspace }}/${{ steps.cfg.outputs.path }}
+        run: go mod download -x
+
+  macos:
+    name: ${{ matrix.runs-on }} go${{ matrix.go-version }}
+    runs-on: macos-11 # oldest macos runner available - the full macOS matrix is in go-libddwaf
+    needs: go-mod-caching
     strategy:
       matrix:
-        runs-on: [ macos-13, macos-12, macos-11, ubuntu-22.04, ubuntu-20.04, windows-latest ]
-        go-version: [ "1.21", "1.20", "1.19" ]
-        cgo_enabled: # test it compiles with and without cgo
-          - 0
-          - 1
-        build_tags: # test it compiles with and without the appsec build tag
-          - ""
-          - "appsec"
-        appsec_enabled: # test it compiles with and without appsec enabled
-          - true
-          - false
-      fail-fast: false
-    runs-on: ${{ matrix.runs-on }}
+        runs-on: [ macos-11, macos-14 ] # oldest and newest macos runners available - macos-14 mainly is here to cover the fact it is an ARM machine
+        go-version: [ "1.22", "1.21", "1.20" ]
+      fail-fast: true # saving some CI time - macos runners too long to get
     steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-go@v3
+      - uses: actions/checkout@v4
+
+      - name: Restore Go modules cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ needs.go-mod-caching.outputs.path }}
+          key: ${{ needs.go-mod-caching.outputs.key }}
+          restore-keys: go-pkg-mod-
+          enableCrossOsArchive: true
+          fail-on-cache-miss: true
+
+      - uses: actions/setup-go@v5
         with:
           go-version: ${{ matrix.go-version }}
+          cache: false # we manage the caching ourselves
 
-      - name: Go modules cache
-        uses: actions/cache@v3
+      # go test is being manually called multiple times here for the sake of reusing the runner.
+      # Waiting runners is unfortunately so long that we decided to do so for things only requiring recompilation or
+      # reruns under different settings.
+      - name: go test
+        shell: bash
+        env:
+          GOMODCACHE: ${{ github.workspace }}/${{ needs.go-mod-caching.outputs.path }}
+        run: |
+          set -euxo pipefail
+          cgocheck="GOEXPERIMENT=cgocheck2"
+          if [[ "$(go version)" =~ go1.20 ]]; then
+            cgocheck="GODEBUG=cgocheck=2"
+          fi
+          for cgo in "0" "1"; do
+            for appsec_enabled_env in "" "DD_APPSEC_ENABLED=true" "DD_APPSEC_ENABLED=false"; do
+                for cgocheck_env in "" "$cgocheck"; do
+                  if ! env CGO_ENABLED=$cgo $appsec_enabled_env $cgocheck_env go test -v $TESTS; then
+                    echo "Failed: env CGO_ENABLED=$cgo $appsec_enabled_env $cgocheck_env go test -v $TESTS"
+                    exit 1
+                  fi
+                done
+            done
+          done
+
+  # Tests cases were appsec end up being disabled at compilation time
+  disabled:
+    name: ${{ matrix.runs-on }} (AppSec disabled)
+    needs: go-mod-caching
+    runs-on: ${{ matrix.runs-on }}
+    strategy:
+      fail-fast: false
+      matrix:
+        runs-on: [ macos-latest, windows-latest, ubuntu-latest-16-cores ]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Restore Go modules cache
+        uses: actions/cache/restore@v4
         with:
-          path: ~/go/pkg/mod
-          key: go-pkg-mod-${{ hashFiles('**/go.sum') }}
+          path: ${{ needs.go-mod-caching.outputs.path }}
+          key: ${{ needs.go-mod-caching.outputs.key }}
           restore-keys: go-pkg-mod-
+          enableCrossOsArchive: true
+          fail-on-cache-miss: true
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+          cache: false # we manage the caching ourselves
+
+      - run: go env -w GOMODCACHE=${{ github.workspace }}\${{ needs.go-mod-caching.outputs.path }}
+        if: runner.os == 'Windows'
+      - run: go env -w GOMODCACHE=${{ github.workspace }}/${{ needs.go-mod-caching.outputs.path }}
+        if: runner.os != 'Windows'
 
       - name: go test
         shell: bash
         run: |
-          # 1.21 deprecates the GODEBUG=cgocheck=2 value, replacing it with GOEXPERIMENT=cgocheck2
-          # https://go.dev/doc/go1.21 (runtime section)
-          if [[ ${{matrix['go-version']}} == '1.21' ]]; then
-            export GOEXPERIMENT=cgocheck2
-          else
-            export GODEBUG=cgocheck=2
-          fi
-          # Install gotestsum to get the results in a junit file
-          env GOBIN=$PWD go install gotest.tools/gotestsum@latest
-          # Run the tests with gotestsum
-          env CGO_ENABLED=${{ matrix.cgo_enabled }} DD_APPSEC_ENABLED=${{ matrix.appsec_enabled }} ./gotestsum --junitfile $JUNIT_REPORT -- -v -tags="${{matrix.build_tags}}" $TO_TEST
-
-      - name: Upload the results to Datadog CI App
-        uses: ./.github/actions/dd-ci-upload
-        with:
-          dd-api-key: ${{ secrets.DD_CI_API_KEY }}
-          files: ${{ env.JUNIT_REPORT }}
-          tags: go:${{ matrix.go-version }},arch:${{ runner.arch }},os:${{ runner.os }}
+          set -euxo pipefail
+          for appsec_enabled_env in "" "DD_APPSEC_ENABLED=true" "DD_APPSEC_ENABLED=false"; do
+            for go_tags in "" "-tags datadog.no_waf"; do
+              if ! env $appsec_enabled_env go test -v $go_tags $TESTS; then
+                echo "Failed: env $appsec_enabled_env go test -v $go_tags $TESTS"
+                exit 1
+              fi
+            done
+          done
 
   # Same tests but on the official golang container for linux
   golang-linux-container:
-    runs-on: ubuntu-latest
-    container:
-      image: golang:${{ matrix.go-version }}-${{ matrix.distribution }}
+    name: ${{ matrix.platform }} golang:${{ matrix.go-version }}-${{ matrix.distribution }}
+    # We use ARM runners when needed to avoid the performance hit of QEMU
+    runs-on: ${{ matrix.platform == 'linux/amd64' && 'ubuntu-latest-16-cores' || 'arm-4core-linux' }}
+    needs: go-mod-caching
     strategy:
       matrix:
-        go-version: [ "1.21", "1.20", "1.19" ]
+        go-version: [ "1.22", "1.21", "1.20" ]
         distribution: [ bookworm, bullseye, buster, alpine ]
-        build_tags: # test it compiles with and without the appsec build tag
-          - ""
-          - "appsec"
-        cgo_enabled: # test it compiles with and without cgo
-          - 0
-          - 1
-        appsec_enabled: # test it compiles with and without appsec enabled
-          - DD_APPSEC_ENABLED=true
-          - DD_APPSEC_ENABLED=false
-          - "" # the env var is not defined so that the remote-config path can be taken
+        platform: [ linux/amd64, linux/arm64 ]
         exclude:
           - go-version: "1.21"
+            distribution: buster
+          - go-version: "1.22"
             distribution: buster
 
       fail-fast: false
     steps:
-      - uses: actions/checkout@v3
-      # Install gcc and the libc headers on alpine images
-      - if: ${{ matrix.distribution == 'alpine' }}
-        run: apk add gcc musl-dev libc6-compat git
+      - uses: actions/checkout@v4
 
-      - name: Go modules cache
-        uses: actions/cache@v3
+      - name: Restore Go modules cache
+        uses: actions/cache/restore@v4
         with:
-          path: ~/go/pkg/mod
-          key: go-pkg-mod-${{ hashFiles('**/go.sum') }}
+          path: ${{ needs.go-mod-caching.outputs.path }}
+          key: ${{ needs.go-mod-caching.outputs.key }}
           restore-keys: go-pkg-mod-
+          enableCrossOsArchive: true
+          fail-on-cache-miss: true
 
-      - name: go test
-        run: |
-          # Install gotestsum to get the results in a junit file
-          env GOBIN=$PWD go install gotest.tools/gotestsum@latest
-          # Run the tests with gotestsum
-          env CGO_ENABLED=${{ matrix.cgo_enabled }} DD_APPSEC_ENABLED=${{ matrix.appsec_enabled }} ./gotestsum --junitfile $JUNIT_REPORT -- -v -tags="${{matrix.build_tags}}" $TO_TEST
+      # Docker is not present on early-access ARM runners
+      - name: Prepare ARM Runner
+        if: runner.arch == 'ARM64' || runner.arch == 'ARM'
+        run: |-
+          for pkg in docker.io docker-doc docker-compose docker-compose-v2 podman-docker containerd runc; do sudo apt-get remove -y $pkg || echo "Not present: $pkg"; done
 
-      - name: Upload the results to Datadog CI App
-        if: matrix.distribution != 'alpine' # datadog-ci CLI doesn't work on alpine
-        uses: ./.github/actions/dd-ci-upload
-        with:
-          dd-api-key: ${{ secrets.DD_CI_API_KEY }}
-          files: ${{ env.JUNIT_REPORT }}
-          tags: go:${{ matrix.go-version }},arch:${{ runner.arch }},os:${{ runner.os }},distribution:${{ runner.distribution }}
+          sudo apt update
+          sudo apt install -y ca-certificates curl
+          sudo install -m 0755 -d /etc/apt/keyrings
+          sudo curl -fsSL "https://download.docker.com/linux/ubuntu/gpg" -o /etc/apt/keyrings/docker.asc
+          sudo chmod a+r /etc/apt/keyrings/docker.asc
+          echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | sudo tee /etc/apt/sources.list.d/docker.list
+          sudo apt update
+          sudo apt install -y docker-ce docker-ce-cli containerd.io
 
-  linux-arm64:
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        cgo_enabled: # test it compiles with and without the cgo
-          - 0
-          - 1
-        appsec_enabled: # test it compiles with and without appsec enabled
-          - true
-          - false
-      fail-fast: false
-    steps:
-      - uses: actions/checkout@v3
-      - name: Go modules cache
-        uses: actions/cache@v3
-        with:
-          path: ~/go/pkg/mod
-          key: go-pkg-mod-${{ hashFiles('**/go.sum') }}
-          restore-keys: go-pkg-mod-
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v2
-        with:
-          platforms: arm64
-      - run: docker run --platform=linux/arm64 -v $PWD:$PWD -w $PWD -eCGO_ENABLED=${{ matrix.cgo_enabled }} -eDD_APPSEC_ENABLED=${{ matrix.appsec_enabled }} -eDD_APPSEC_WAF_TIMEOUT=$DD_APPSEC_WAF_TIMEOUT golang go test -v -tags appsec $TO_TEST
+      - name: Create container
+        env:
+          GOMODCACHE: ${{ github.workspace }}/${{ needs.go-mod-caching.outputs.path }}
+        run: |-
+          sudo docker run                                                       \
+            --rm                                                                \
+            -di                                                                 \
+            --name test.runner                                                  \
+            -v "${GOMODCACHE}:${GOMODCACHE}"                                    \
+            -e "GOMODCACHE=${GOMODCACHE}"                                       \
+            -v "$PWD:$PWD"                                                      \
+            -w "$PWD"                                                           \
+            -e "DD_APPSEC_WAF_TIMEOUT=${{ env.DD_APPSEC_WAF_TIMEOUT }}"         \
+            golang:${{ matrix.go-version }}-${{ matrix.distribution }}
+      - name: Install pre-requisites on Alpine
+        if: matrix.distribution == 'alpine'
+        run: sudo docker exec -i test.runner apk add gcc musl-dev libc6-compat
+      - name: Output go env
+        run: sudo docker exec -i test.runner go env
 
-  smoke-tests:
+      - name: NOCGO, undefined appsec state
+        run: sudo docker exec -i test.runner env CGO_ENABLED=0 go test -v $TESTS
+      - name: NOCGO, appsec disabled
+        run: sudo docker exec -i test.runner env CGO_ENABLED=0 DD_APPSEC_ENABLED=false go test -v $TESTS
+      - name: NOCGO, appsec enabled
+        run: sudo docker exec -i test.runner env CGO_ENABLED=0 DD_APPSEC_ENABLED=true go test -v $TESTS
+      - name: CGO, undefined appsec state
+        run: sudo docker exec -i test.runner env CGO_ENABLED=1 go test -v $TESTS
+      - name: CGO, appsec disabled
+        run: sudo docker exec -i test.runner env CGO_ENABLED=1 DD_APPSEC_ENABLED=false go test -v $TESTS
+      - name: CGO, appsec enabled
+        run: sudo docker exec -i test.runner env CGO_ENABLED=1 DD_APPSEC_ENABLED=true go test -v $TESTS
+
+      - name: Clean up
+        if: always()
+        run: sudo docker rm --force test.runner || echo "Could not remove container"
+
+  test-app-smoke-tests:
+    name: Smoke Tests
     uses: DataDog/appsec-go-test-app/.github/workflows/smoke-tests.yml@main
     with:
       dd-trace-go-version: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}

@@ -9,7 +9,8 @@ import (
 	"net/http"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/httpsec"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/httpsec"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/httpsec/types"
 
 	"github.com/labstack/echo/v4"
 )
@@ -26,12 +27,12 @@ func withAppSec(next echo.HandlerFunc, span tracer.Span) echo.HandlerFunc {
 			err = next(c)
 			// If the error is a monitoring one, it means appsec actions will take care of writing the response
 			// and handling the error. Don't call the echo error handler in this case
-			if _, ok := err.(*httpsec.MonitoringError); !ok && err != nil {
+			if _, ok := err.(*types.MonitoringError); !ok && err != nil {
 				c.Error(err)
 			}
 		})
 		// Wrap the echo response to allow monitoring of the response status code in httpsec.WrapHandler()
-		httpsec.WrapHandler(handler, span, params).ServeHTTP(&statusResponseWriter{Response: c.Response()}, c.Request())
+		httpsec.WrapHandler(handler, span, params, nil).ServeHTTP(&statusResponseWriter{Response: c.Response()}, c.Request())
 		// If an error occurred, wrap it under an echo.HTTPError. We need to do this so that APM doesn't override
 		// the response code tag with 500 in case it doesn't recognize the error type.
 		if _, ok := err.(*echo.HTTPError); !ok && err != nil {
