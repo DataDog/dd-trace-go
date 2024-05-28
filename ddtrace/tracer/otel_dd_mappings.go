@@ -4,6 +4,8 @@
 // Copyright 2016 Datadog, Inc.
 package tracer
 
+// TODO: Move this into a separate package
+
 import (
 	"os"
 
@@ -11,10 +13,11 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 )
 
-type otelDDConfig int
+// otelDDOpt represents tracer configuration that can be modified by both DD and OTEL env vars
+type otelDDOpt int
 
 const (
-	service otelDDConfig = iota
+	service otelDDOpt = iota
 	metrics
 	debugMode
 	enabled
@@ -22,13 +25,15 @@ const (
 	propagationStyle
 )
 
+// otelDDEnv contains env vars from both dd (DD) and ot (OTEL) that map to the same tracer configuration
+// remapper contains functionality to remap OTEL values to DD values
 type otelDDEnv struct {
 	dd       string
 	ot       string
 	remapper func(string) string
 }
 
-var configs = map[otelDDConfig]*otelDDEnv{
+var otelDDConfigs = map[otelDDOpt]*otelDDEnv{
 	service: {
 		dd:       "DD_SERVICE",
 		ot:       "OTEL_SERVICE_NAME",
@@ -61,8 +66,9 @@ var configs = map[otelDDConfig]*otelDDEnv{
 	},
 }
 
-func assessSource(cfgName otelDDConfig) string {
-	config, ok := configs[cfgName]
+// assessSource determines whether the provided otelDDOpt will be set via DD or OTEL env vars, and returns the value
+func assessSource(cfgName otelDDOpt) string {
+	config, ok := otelDDConfigs[cfgName]
 	if !ok {
 		return ""
 	}
@@ -73,9 +79,9 @@ func assessSource(cfgName otelDDConfig) string {
 			telemetry.GlobalClient.Count(telemetry.NamespaceTracers, "otel.env.hiding", 1.0, []string{config.dd, config.ot}, true)
 		} else {
 			val = config.remapper(otVal)
-			// if val == "" {
-			// 	telemetry.GlobalClient.Count(telemetry.NamespaceTracers, "otel.env.invalid", 1.0, []string{config.dd, config.ot}, true)
-			// }
+			if val == "" {
+				telemetry.GlobalClient.Count(telemetry.NamespaceTracers, "otel.env.invalid", 1.0, []string{config.dd, config.ot}, true)
+			}
 		}
 	}
 	return val

@@ -691,9 +691,9 @@ func TestTracerRuntimeMetrics(t *testing.T) {
 		c := newConfig()
 		assert.True(t, c.runtimeMetrics)
 		// tracer option overrides dd env
-		// t.Setenv("DD_RUNTIME_METRICS_ENABLED", "false")
-		// c = newConfig(WithRuntimeMetrics())
-		// assert.True(t, c.runtimeMetrics)
+		t.Setenv("DD_RUNTIME_METRICS_ENABLED", "false")
+		c = newConfig(WithRuntimeMetrics())
+		assert.True(t, c.runtimeMetrics)
 	})
 }
 
