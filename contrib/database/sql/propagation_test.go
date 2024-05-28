@@ -16,6 +16,7 @@ import (
 	"testing"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/contrib/database/sql/internal"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
@@ -33,12 +34,15 @@ func TestDBMPropagation(t *testing.T) {
 	defer globalconfig.SetServiceName(prevServiceName)
 
 	testCases := []struct {
-		name     string
-		opts     []RegisterOption
-		callDB   func(ctx context.Context, db *sql.DB) error
-		prepared []string
-		dsn      string
-		executed []*regexp.Regexp
+		name                     string
+		opts                     []RegisterOption
+		callDB                   func(ctx context.Context, db *sql.DB) error
+		prepared                 []string
+		dsn                      string
+		executed                 []*regexp.Regexp
+		peerServiceTag           string
+		peerServiceCtx           string
+		peerServiceCustomOpenTag string
 	}{
 		{
 			name: "prepare",
@@ -74,8 +78,9 @@ func TestDBMPropagation(t *testing.T) {
 				_, err := db.PrepareContext(ctx, "SELECT 1 from DUAL")
 				return err
 			},
-			dsn:      "postgres://postgres:postgres@127.0.0.1:5432/fakepreparedb?sslmode=disable",
-			prepared: []string{"/*dddbs='test.db',dde='test-env',ddps='test-service',ddpv='1.0.0',ddh='127.0.0.1',dddb='fakepreparedb'*/ SELECT 1 from DUAL"},
+			dsn:            "postgres://postgres:postgres@127.0.0.1:5432/fakepreparedb?sslmode=disable",
+			prepared:       []string{"/*dddbs='test.db',dde='test-env',ddps='test-service',ddpv='1.0.0',ddh='127.0.0.1',dddb='fakepreparedb',ddprs='test-peer-service'*/ SELECT 1 from DUAL"},
+			peerServiceCtx: "test-peer-service",
 		},
 		{
 			name: "query",
@@ -111,8 +116,9 @@ func TestDBMPropagation(t *testing.T) {
 				_, err := db.QueryContext(ctx, "SELECT 1 from DUAL")
 				return err
 			},
-			dsn:      "postgres://postgres:postgres@127.0.0.1:5432/fakequerydb?sslmode=disable",
-			executed: []*regexp.Regexp{regexp.MustCompile("/\\*dddbs='test.db',dde='test-env',ddps='test-service',ddpv='1.0.0',traceparent='00-00000000000000000000000000000001-[\\da-f]{16}-01',ddh='127.0.0.1',dddb='fakequerydb'\\*/ SELECT 1 from DUAL")},
+			dsn:            "postgres://postgres:postgres@127.0.0.1:5432/fakequerydb?sslmode=disable",
+			executed:       []*regexp.Regexp{regexp.MustCompile("/\\*dddbs='test.db',dde='test-env',ddps='test-service',ddpv='1.0.0',traceparent='00-00000000000000000000000000000001-[\\da-f]{16}-01',ddh='127.0.0.1',dddb='fakequerydb',ddprs='test-peer-service'\\*/ SELECT 1 from DUAL")},
+			peerServiceCtx: "test-peer-service",
 		},
 		{
 			name: "exec",
@@ -148,8 +154,55 @@ func TestDBMPropagation(t *testing.T) {
 				_, err := db.ExecContext(ctx, "SELECT 1 from DUAL")
 				return err
 			},
-			dsn:      "postgres://postgres:postgres@127.0.0.1:5432/fakeexecdb?sslmode=disable",
-			executed: []*regexp.Regexp{regexp.MustCompile("/\\*dddbs='test.db',dde='test-env',ddps='test-service',ddpv='1.0.0',traceparent='00-00000000000000000000000000000001-[\\da-f]{16}-01',ddh='127.0.0.1',dddb='fakeexecdb'\\*/ SELECT 1 from DUAL")},
+			dsn:            "postgres://postgres:postgres@127.0.0.1:5432/fakeexecdb?sslmode=disable",
+			executed:       []*regexp.Regexp{regexp.MustCompile("/\\*dddbs='test.db',dde='test-env',ddps='test-service',ddpv='1.0.0',traceparent='00-00000000000000000000000000000001-[\\da-f]{16}-01',ddh='127.0.0.1',dddb='fakeexecdb',ddprs='test-peer-service'\\*/ SELECT 1 from DUAL")},
+			peerServiceCtx: "test-peer-service",
+		},
+		{
+			name: "exec-full-peer-service-tag",
+			opts: []RegisterOption{WithDBMPropagation(tracer.DBMPropagationModeFull)},
+			callDB: func(ctx context.Context, db *sql.DB) error {
+				_, err := db.ExecContext(ctx, "SELECT 1 from DUAL")
+				return err
+			},
+			dsn:            "postgres://postgres:postgres@127.0.0.1:5432/fakeexecdb?sslmode=disable",
+			executed:       []*regexp.Regexp{regexp.MustCompile("/\\*dddbs='test.db',dde='test-env',ddps='test-service',ddpv='1.0.0',traceparent='00-00000000000000000000000000000001-[\\da-f]{16}-01',ddh='127.0.0.1',dddb='fakeexecdb',ddprs='test-peer-service-tag'\\*/ SELECT 1 from DUAL")},
+			peerServiceTag: "test-peer-service-tag",
+		},
+		{
+			name: "exec-full-peer-service-custom-tag",
+			opts: []RegisterOption{WithDBMPropagation(tracer.DBMPropagationModeFull)},
+			callDB: func(ctx context.Context, db *sql.DB) error {
+				_, err := db.ExecContext(ctx, "SELECT 1 from DUAL")
+				return err
+			},
+			dsn:                      "postgres://postgres:postgres@127.0.0.1:5432/fakeexecdb?sslmode=disable",
+			executed:                 []*regexp.Regexp{regexp.MustCompile("/\\*dddbs='test.db',dde='test-env',ddps='test-service',ddpv='1.0.0',traceparent='00-00000000000000000000000000000001-[\\da-f]{16}-01',ddh='127.0.0.1',dddb='fakeexecdb',ddprs='test-peer-service-custom-tag'\\*/ SELECT 1 from DUAL")},
+			peerServiceCustomOpenTag: "test-peer-service-custom-tag",
+		},
+		{
+			name: "exec-full-peer-service-precedence-tag-over-conn-context",
+			opts: []RegisterOption{WithDBMPropagation(tracer.DBMPropagationModeFull)},
+			callDB: func(ctx context.Context, db *sql.DB) error {
+				_, err := db.ExecContext(ctx, "SELECT 1 from DUAL")
+				return err
+			},
+			dsn:            "postgres://postgres:postgres@127.0.0.1:5432/fakeexecdb?sslmode=disable",
+			executed:       []*regexp.Regexp{regexp.MustCompile("/\\*dddbs='test.db',dde='test-env',ddps='test-service',ddpv='1.0.0',traceparent='00-00000000000000000000000000000001-[\\da-f]{16}-01',ddh='127.0.0.1',dddb='fakeexecdb',ddprs='test-peer-service-tag'\\*/ SELECT 1 from DUAL")},
+			peerServiceCtx: "test-peer-service-ctx",
+			peerServiceTag: "test-peer-service-tag",
+		},
+		{
+			name: "exec-full-peer-service-precedence-conn-context-over-open-custom-tag",
+			opts: []RegisterOption{WithDBMPropagation(tracer.DBMPropagationModeFull)},
+			callDB: func(ctx context.Context, db *sql.DB) error {
+				_, err := db.ExecContext(ctx, "SELECT 1 from DUAL")
+				return err
+			},
+			dsn:                      "postgres://postgres:postgres@127.0.0.1:5432/fakeexecdb?sslmode=disable",
+			executed:                 []*regexp.Regexp{regexp.MustCompile("/\\*dddbs='test.db',dde='test-env',ddps='test-service',ddpv='1.0.0',traceparent='00-00000000000000000000000000000001-[\\da-f]{16}-01',ddh='127.0.0.1',dddb='fakeexecdb',ddprs='test-peer-service-ctx'\\*/ SELECT 1 from DUAL")},
+			peerServiceCtx:           "test-peer-service-ctx",
+			peerServiceCustomOpenTag: "test-peer-service-custom-tag",
 		},
 	}
 
@@ -171,9 +224,22 @@ func TestDBMPropagation(t *testing.T) {
 			if tc.dsn != "" {
 				dsn = tc.dsn
 			}
-			db, err := Open("test", dsn)
+			var options = []Option{}
+			if tc.peerServiceCustomOpenTag != "" {
+				options = append(options, WithCustomTag(ext.PeerService, tc.peerServiceCustomOpenTag))
+			}
+			db, err := Open("test", dsn, options...)
 			require.NoError(t, err)
 			s, ctx := tracer.StartSpanFromContext(context.Background(), "test.call", tracer.WithSpanID(1))
+			if tc.peerServiceCtx != "" {
+				vars := map[string]string{
+					ext.PeerService: tc.peerServiceCtx,
+				}
+				ctx = WithSpanTags(ctx, vars)
+			}
+			if tc.peerServiceTag != "" {
+				s.SetTag(ext.PeerService, tc.peerServiceTag)
+			}
 			err = tc.callDB(ctx, db)
 			s.Finish()
 

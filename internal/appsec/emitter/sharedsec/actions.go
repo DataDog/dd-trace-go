@@ -12,7 +12,11 @@ import (
 	"os"
 	"strings"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/stacktrace"
+
+	"github.com/mitchellh/mapstructure"
 )
 
 // blockedTemplateJSON is the default JSON template used to write responses for blocked requests
@@ -44,17 +48,24 @@ func init() {
 }
 
 type (
-	// Action represents a WAF action.
-	// It holds the HTTP and gRPC handlers to be used instead of the regular
-	// request handler when said action is executed.
-	Action struct {
-		http     http.Handler
-		grpc     GRPCWrapper
-		blocking bool
+	// Action is a generic interface that represents any WAF action
+	Action interface {
+		Blocking() bool
+		EmitData(op dyngo.Operation)
 	}
 
-	// Actions represents a set of action bindings to an action name.
-	Actions map[string]*Action
+	// HTTPAction are actions that interact with an HTTP request flow (block, redirect...)
+	HTTPAction struct {
+		http.Handler
+	}
+	// GRPCAction are actions that interact with a GRPC request flow
+	GRPCAction struct {
+		GRPCWrapper
+	}
+	// StackTraceAction are actions that generate a stacktrace
+	StackTraceAction struct {
+		Event stacktrace.Event
+	}
 
 	// GRPCWrapper is an opaque prototype abstraction for a gRPC handler (to avoid importing grpc)
 	// that takes metadata as input and returns a status code and an error
@@ -63,15 +74,97 @@ type (
 	//    Such constructors would receive the full appsec config and rules, so that they would be able to build
 	//    specific blocking actions.
 	GRPCWrapper func(map[string][]string) (uint32, error)
+
+	// blockActionParams are the dynamic parameters to be provided to a "block_request"
+	// action type upon invocation
+	blockActionParams struct {
+		GRPCStatusCode *int   `mapstructure:"grpc_status_code,omitempty"`
+		StatusCode     int    `mapstructure:"status_code"`
+		Type           string `mapstructure:"type,omitempty"`
+	}
+	// redirectActionParams are the dynamic parameters to be provided to a "redirect_request"
+	// action type upon invocation
+	redirectActionParams struct {
+		Location   string `mapstructure:"location,omitempty"`
+		StatusCode int    `mapstructure:"status_code"`
+	}
 )
 
-// Blocking returns true if the action object represents a request blocking action
-func (a *Action) Blocking() bool {
-	return a.blocking
+func (a *HTTPAction) Blocking() bool              { return true }
+func (a *HTTPAction) EmitData(op dyngo.Operation) { dyngo.EmitData(op, a) }
+
+func (a *GRPCAction) Blocking() bool              { return true }
+func (a *GRPCAction) EmitData(op dyngo.Operation) { dyngo.EmitData(op, a) }
+
+func (a *StackTraceAction) Blocking() bool              { return false }
+func (a *StackTraceAction) EmitData(op dyngo.Operation) { dyngo.EmitData(op, a) }
+
+// NewStackTraceAction creates an action for the "stacktrace" action type
+func NewStackTraceAction(params map[string]any) Action {
+	id, ok := params["stack_id"]
+	if !ok {
+		log.Debug("appsec: could not read stack_id parameter for stack_trace action")
+		return nil
+	}
+
+	strID, ok := id.(string)
+	if !ok {
+		log.Debug("appsec: could not cast stacktrace ID to string")
+		return nil
+	}
+
+	event := stacktrace.NewEvent(stacktrace.ExploitEvent, stacktrace.WithID(strID))
+
+	return &StackTraceAction{Event: *event}
 }
 
-// NewBlockHandler creates, initializes and returns a new BlockRequestAction
-func NewBlockHandler(status int, template string) http.Handler {
+// NewBlockAction creates an action for the "block_request" action type
+func NewBlockAction(params map[string]any) []Action {
+	p, err := blockParamsFromMap(params)
+	if err != nil {
+		log.Debug("appsec: couldn't decode redirect action parameters")
+		return nil
+	}
+	return []Action{
+		newHTTPBlockRequestAction(p.StatusCode, p.Type),
+		newGRPCBlockRequestAction(*p.GRPCStatusCode),
+	}
+}
+
+// NewRedirectAction creates an action for the "redirect_request" action type
+func NewRedirectAction(params map[string]any) *HTTPAction {
+	p, err := redirectParamsFromMap(params)
+	if err != nil {
+		log.Debug("appsec: couldn't decode redirect action parameters")
+		return nil
+	}
+	return newRedirectRequestAction(p.StatusCode, p.Location)
+}
+
+func newHTTPBlockRequestAction(status int, template string) *HTTPAction {
+	return &HTTPAction{Handler: newBlockHandler(status, template)}
+}
+
+func newGRPCBlockRequestAction(status int) *GRPCAction {
+	return &GRPCAction{GRPCWrapper: newGRPCBlockHandler(status)}
+
+}
+
+func newRedirectRequestAction(status int, loc string) *HTTPAction {
+	// Default to 303 if status is out of redirection codes bounds
+	if status < 300 || status >= 400 {
+		status = 303
+	}
+
+	// If location is not set we fall back on a default block action
+	if loc == "" {
+		return &HTTPAction{Handler: newBlockHandler(403, string(blockedTemplateJSON))}
+	}
+	return &HTTPAction{Handler: http.RedirectHandler(loc, status)}
+}
+
+// newBlockHandler creates, initializes and returns a new BlockRequestAction
+func newBlockHandler(status int, template string) http.Handler {
 	htmlHandler := newBlockRequestHandler(status, "text/html", blockedTemplateHTML)
 	jsonHandler := newBlockRequestHandler(status, "application/json", blockedTemplateJSON)
 	switch template {
@@ -108,42 +201,27 @@ func newGRPCBlockHandler(status int) GRPCWrapper {
 	}
 }
 
-// NewBlockRequestAction creates an action for the "block" action type
-func NewBlockRequestAction(httpStatus, grpcStatus int, template string) *Action {
-	return &Action{
-		http:     NewBlockHandler(httpStatus, template),
-		grpc:     newGRPCBlockHandler(grpcStatus),
-		blocking: true,
+func blockParamsFromMap(params map[string]any) (blockActionParams, error) {
+	var (
+		err error
+	)
+	p := blockActionParams{
+		StatusCode: 403,
+		Type:       "auto",
 	}
+
+	mapstructure.WeakDecode(params, &p)
+
+	grpcCode := 10
+	if p.GRPCStatusCode == nil {
+		p.GRPCStatusCode = &grpcCode
+	}
+	return p, err
+
 }
 
-// NewRedirectRequestAction creates an action for the "redirect" action type
-func NewRedirectRequestAction(status int, loc string) *Action {
-	// Default to 303 if status is out of redirection codes bounds
-	if status < 300 || status >= 400 {
-		status = 303
-	}
-	action := &Action{
-		// gRPC is not handled by our SRB RFCs so far - use the default block handler
-		grpc:     newGRPCBlockHandler(10),
-		blocking: true,
-	}
-	// If location is not set we fall back on a default block action
-	if loc == "" {
-		action.http = NewBlockHandler(403, string(blockedTemplateJSON))
-	} else {
-		action.http = http.RedirectHandler(loc, status)
-	}
-
-	return action
-}
-
-// HTTP returns the HTTP handler linked to the action object
-func (a *Action) HTTP() http.Handler {
-	return a.http
-}
-
-// GRPC returns the gRPC handler linked to the action object
-func (a *Action) GRPC() GRPCWrapper {
-	return a.grpc
+func redirectParamsFromMap(params map[string]any) (redirectActionParams, error) {
+	var p redirectActionParams
+	err := mapstructure.WeakDecode(params, &p)
+	return p, err
 }
