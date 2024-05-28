@@ -304,6 +304,7 @@ func newConfig(opts ...StartOption) *config {
 	c.httpClientTimeout = time.Second * 10 // 10 seconds
 
 	// configs that can be applied via DD or OT env vars, and should be assessed within newConfig
+	// note: other otelDDOpts must be assessed outside of newConfig (e.g, sampleRate)
 	initConfigs := []otelDDOpt{service, metrics, debugMode, enabled}
 	for _, name := range initConfigs {
 		val := assessSource(name)
