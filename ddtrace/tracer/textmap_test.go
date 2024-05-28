@@ -111,6 +111,7 @@ func TestTextMapExtractTracestatePropagation(t *testing.T) {
 		name, propagationStyle, traceparent string
 		onlyExtractFirst                    bool // value of DD_TRACE_PROPAGATION_EXTRACT_FIRST
 		wantTracestatePropagation           bool
+		conflictingParentID                 bool
 	}{
 		{
 			/*
@@ -131,6 +132,7 @@ func TestTextMapExtractTracestatePropagation(t *testing.T) {
 			propagationStyle:          "datadog,b3,tracecontext",
 			traceparent:               "00-00000000000000000000000000000004-2222222222222222-01",
 			wantTracestatePropagation: true,
+			conflictingParentID:       true,
 		},
 		{
 			/*
@@ -141,6 +143,7 @@ func TestTextMapExtractTracestatePropagation(t *testing.T) {
 			propagationStyle:          "datadog,tracecontext",
 			traceparent:               "00-00000000000000000000000000000004-2222222222222222-01",
 			wantTracestatePropagation: true,
+			conflictingParentID:       true,
 		},
 		{
 			/*
@@ -197,7 +200,7 @@ func TestTextMapExtractTracestatePropagation(t *testing.T) {
 				originHeader:          "synthetics",
 				b3TraceIDHeader:       "0021dc1807524785",
 				traceparentHeader:     tc.traceparent,
-				tracestateHeader:      "dd=s:2;o:rum;p:0000000000000005;t.tid:1230000000000000~~,othervendor=t61rcWkgMzE",
+				tracestateHeader:      "dd=s:2;o:rum;p:0000000000000001;t.tid:1230000000000000~~,othervendor=t61rcWkgMzE",
 			})
 
 			ctx, err := tracer.Extract(headers)
@@ -205,10 +208,16 @@ func TestTextMapExtractTracestatePropagation(t *testing.T) {
 			sctx, ok := ctx.(*spanContext)
 			assert.True(ok)
 			assert.Equal("00000000000000000000000000000004", sctx.traceID.HexEncoded())
-			assert.Equal(uint64(1), sctx.spanID)    // should use x-datadog-parent-id, not the id in the tracestate
+			if tc.conflictingParentID == true {
+				// tracecontext span id should be used
+				assert.Equal(uint64(0x2222222222222222), sctx.spanID)
+			} else {
+				// should use x-datadog-parent-id, not the id in the tracestate
+				assert.Equal(uint64(1), sctx.spanID)
+			}
 			assert.Equal("synthetics", sctx.origin) // should use x-datadog-origin, not the origin in the tracestate
 			if tc.wantTracestatePropagation {
-				assert.Equal("0000000000000005", sctx.reparentID)
+				assert.Equal("0000000000000001", sctx.reparentID)
 				assert.Equal("dd=s:0;o:synthetics;p:0000000000000001,othervendor=t61rcWkgMzE", sctx.trace.propagatingTag(tracestateHeader))
 			} else if sctx.trace != nil {
 				assert.False(sctx.trace.hasPropagatingTag(tracestateHeader))
@@ -1348,7 +1357,7 @@ func TestEnvVars(t *testing.T) {
 				{
 					inHeaders: TextMapCarrier{
 						traceparentHeader: "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-00",
-						tracestateHeader:  "foo=1,dd=s:-1",
+						tracestateHeader:  "foo=1,dd=s:-1;p:00f067aa0ba902b7",
 					},
 					outHeaders: TextMapCarrier{
 						traceparentHeader:     "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-00",
@@ -1906,6 +1915,27 @@ func checkSameElements(assert *assert.Assertions, want, got string) {
 	gotInner, wantInner := strings.TrimPrefix(got, "dd="), strings.TrimPrefix(want, "dd=")
 	gotInnerList, wantInnerList := strings.Split(gotInner, ";"), strings.Split(wantInner, ";")
 	assert.ElementsMatch(gotInnerList, wantInnerList)
+}
+
+func TestTraceContextPrecedence(t *testing.T) {
+	t.Setenv(headerPropagationStyleExtract, "datadog,b3,tracecontext")
+	tracer := newTracer()
+	defer tracer.Stop()
+	ctx, err := tracer.Extract(TextMapCarrier{
+		traceparentHeader:     "00-00000000000000000000000000000001-0000000000000001-01",
+		DefaultTraceIDHeader:  "1",
+		DefaultParentIDHeader: "22",
+		DefaultPriorityHeader: "2",
+		b3SingleHeader:        "1-333",
+	})
+	assert.NoError(t, err)
+
+	sctx, _ := ctx.(*spanContext)
+	assert := assert.New(t)
+	assert.Equal(traceIDFrom64Bits(1), sctx.traceID)
+	assert.Equal(uint64(0x1), sctx.spanID)
+	p, _ := sctx.SamplingPriority()
+	assert.Equal(2, p)
 }
 
 func TestW3CExtractsBaggage(t *testing.T) {
