@@ -315,7 +315,7 @@ func newConfig(opts ...StartOption) *config {
 	c := new(config)
 	c.sampler = NewAllSampler()
 	c.httpClientTimeout = time.Second * 10 // 10 seconds
-	
+
 	// configs that can be applied via DD or OT env vars, and should be assessed within newConfig
 	initConfigs := []otelDDConfig{service, metrics, debugMode, enabled}
 	for _, name := range initConfigs {
