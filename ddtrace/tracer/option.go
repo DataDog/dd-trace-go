@@ -334,20 +334,14 @@ func newConfig(opts ...StartOption) *config {
 		c.serviceName = v
 		globalconfig.SetServiceName(v)
 	}
-	c.runtimeMetrics = internal.BoolEnv("DD_RUNTIME_METRICS_ENABLED", c.runtimeMetrics)
-	// if v := os.Getenv("OTEL_LOG_LEVEL"); v != "" {
-	// 	if v == "debug" {	
-	// 		c.debug = true
-	// 	} else {
-	// 		fmt.Println("MTOFF: INVALID")
-	// 	}
-	// }
-	c.debug = internal.BoolEnv("DD_TRACE_DEBUG", c.debug)
+	c.runtimeMetrics = internal.BoolEnv("DD_RUNTIME_METRICS_ENABLED", false)
+	c.debug = internal.BoolEnv("DD_TRACE_DEBUG", false)
+	c.enabled = newDynamicConfig("tracing_enabled", internal.BoolEnv("DD_TRACE_ENABLED", true), func(b bool) bool { return true }, equal[bool])
 	if v := os.Getenv("OTEL_RESOURCE_ATTRIBUTES"); v != "" {
 		count := 0
 		internal.ForEachStringTag(v, internal.OtelDelimeter, func(key, val string) {
 			if count == 10 {
-				fmt.Println("MTOFF: Log about hitting max")
+				log.Warn("Limit of 10 tags breached by OTEL_RESOURCE_ATTRIBUTES; dropping subsequent tags to preserve metric cardinality")
 				return
 			}
 			// map reserved otel tag names to dd tag names
@@ -358,18 +352,7 @@ func newConfig(opts ...StartOption) *config {
 			count++
 		})
 	}
-	enabled := true
-	if v := os.Getenv("OTEL_TRACES_EXPORTER"); v != "" {
-		if v == "none" {
-			enabled = false
-		} else {
-			// MTOFF: Log a warning
-			fmt.Println("MTOFF: Not supported")
-		}
-	}
-	c.enabled = newDynamicConfig("tracing_enabled", internal.BoolEnv("DD_TRACE_ENABLED", enabled), func(b bool) bool { return true }, equal[bool])
-	// MTOFF - end
-
+	// END
 	if internal.BoolEnv("DD_TRACE_ANALYTICS_ENABLED", false) {
 		globalconfig.SetAnalyticsRate(1.0)
 	}

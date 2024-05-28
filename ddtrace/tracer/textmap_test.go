@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"os"
 	"reflect"
 	"regexp"
 	"strconv"
@@ -28,6 +29,12 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+const otelHeaderPropagationStyle = "OTEL_PROPAGATORS"
+
+func cleanup() {
+	os.Unsetenv(headerPropagationStyle)
+}
 
 func traceIDFrom64Bits(i uint64) traceID {
 	t := traceID{}
@@ -672,6 +679,7 @@ func TestEnvVars(t *testing.T) {
 					assert.Equal(test.out[b3TraceIDHeader], headers[b3TraceIDHeader])
 					assert.Equal(test.out[b3SpanIDHeader], headers[b3SpanIDHeader])
 				})
+				cleanup()
 			}
 		}
 	})
@@ -739,6 +747,7 @@ func TestEnvVars(t *testing.T) {
 					assert.Equal(test.tid, sctx.traceID)
 					assert.Equal(test.sid, sctx.spanID)
 				})
+				cleanup()
 			}
 		}
 	})
@@ -774,6 +783,7 @@ func TestEnvVars(t *testing.T) {
 					_, err := tracer.Extract(tc.in)
 					assert.NotNil(err)
 				})
+				cleanup()
 			}
 		}
 	})
@@ -841,6 +851,7 @@ func TestEnvVars(t *testing.T) {
 						assert.Equal(float64(tc.out[2]), *sctx.trace.priority)
 					}
 				})
+				cleanup()
 			}
 		}
 	})
@@ -935,6 +946,7 @@ func TestEnvVars(t *testing.T) {
 					assert.Equal(tc.out[b3TraceIDHeader], headers[b3TraceIDHeader])
 					assert.Equal(tc.out[b3SpanIDHeader], headers[b3SpanIDHeader])
 				})
+				cleanup()
 			}
 		}
 	})
@@ -1011,6 +1023,7 @@ func TestEnvVars(t *testing.T) {
 					assert.True(ok)
 					assert.Equal(int(tc.out[2]), p)
 				})
+				cleanup()
 			}
 		}
 	})
@@ -1080,6 +1093,7 @@ func TestEnvVars(t *testing.T) {
 					assert.Equal(ctx.baggage, xctx.baggage)
 					assert.Equal(ctx.trace.priority, xctx.trace.priority)
 				})
+				cleanup()
 			}
 		}
 	})
@@ -1286,6 +1300,7 @@ func TestEnvVars(t *testing.T) {
 
 					assert.Equal(tc.propagatingTags, sctx.trace.propagatingTags)
 				})
+				cleanup()
 			}
 		}
 		for _, testEnv := range testEnvs {
@@ -1330,6 +1345,7 @@ func TestEnvVars(t *testing.T) {
 					assert.NotNil(err)
 					assert.Nil(ctx)
 				})
+				cleanup()
 			}
 		}
 	})
@@ -1404,6 +1420,7 @@ func TestEnvVars(t *testing.T) {
 					ddTag := strings.SplitN(headers[tracestateHeader], ",", 2)[0]
 					assert.LessOrEqual(len(ddTag), 256)
 				})
+				cleanup()
 			}
 		}
 	})
@@ -1605,6 +1622,7 @@ func TestEnvVars(t *testing.T) {
 					// -3 as we don't count dd= as part of the "value" length limit
 					assert.LessOrEqual(len(ddTag)-3, 256)
 				})
+				cleanup()
 
 				t.Run(fmt.Sprintf("w3c inject with env=%q / testing tag list-member limit", testEnv), func(t *testing.T) {
 					tracer := newTracer(WithHTTPClient(c), withStatsdClient(&statsd.NoOpClient{}))
@@ -1637,6 +1655,7 @@ func TestEnvVars(t *testing.T) {
 					assert.Regexp(regexp.MustCompile(`dd=[\w:,]+`), ddTag)
 					assert.LessOrEqual(len(ddTag), 256)
 				})
+				cleanup()
 			}
 		}
 	})
@@ -2024,6 +2043,7 @@ func TestNonePropagator(t *testing.T) {
 			assert.Equal(err, ErrSpanContextNotFound)
 		})
 		t.Run("", func(t *testing.T) {
+			defer cleanup()
 			t.Setenv(otelHeaderPropagationStyle, "NoNe")
 			tracer := newTracer()
 			defer tracer.Stop()
@@ -2074,10 +2094,6 @@ func TestNonePropagator(t *testing.T) {
 func assertTraceTags(t *testing.T, expected, actual string) {
 	assert.ElementsMatch(t, strings.Split(expected, ","), strings.Split(actual, ","))
 }
-
-// func TestOverrideChain(t *testing.T) {
-
-// }
 
 func TestOtelPropagator(t *testing.T) {
 	var (
@@ -2132,6 +2148,7 @@ func TestOtelPropagator(t *testing.T) {
 			assert.Equal(test.result, cp.injectorNames)
 			assert.Equal(test.result, cp.extractorsNames)
 		})
+		cleanup()
 	}
 } 
 
