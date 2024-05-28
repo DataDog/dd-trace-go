@@ -7,6 +7,7 @@ package tracer
 // TODO: Move this into a separate package
 
 import (
+	"fmt"
 	"os"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
@@ -30,7 +31,7 @@ const (
 type otelDDEnv struct {
 	dd       string
 	ot       string
-	remapper func(string) string
+	remapper func(string) (string, error)
 }
 
 var otelDDConfigs = map[otelDDOpt]*otelDDEnv{
@@ -78,10 +79,12 @@ func assessSource(cfgName otelDDOpt) string {
 			log.Warn("Both %v and %v are set, using %v=%v", config.ot, config.dd, config.dd, val)
 			telemetry.GlobalClient.Count(telemetry.NamespaceTracers, "otel.env.hiding", 1.0, []string{config.dd, config.ot}, true)
 		} else {
-			val = config.remapper(otVal)
-			if val == "" {
+			v, err := config.remapper(otVal)
+			if err != nil {
+				log.Warn(err.Error())
 				telemetry.GlobalClient.Count(telemetry.NamespaceTracers, "otel.env.invalid", 1.0, []string{config.dd, config.ot}, true)
 			}
+			val = v
 		}
 	}
 	return val
@@ -93,32 +96,29 @@ var otelDdTags = map[string]string{
 	"service.version":        "version",
 }
 
-func mapService(ot string) string {
-	return ot
+func mapService(ot string) (string, error) {
+	return ot, nil
 }
 
-func mapMetrics(ot string) string {
+func mapMetrics(ot string) (string, error) {
 	if ot == "none" {
-		return "false"
+		return "false", nil
 	}
-	log.Warn("Unrecognized setting: OTEL_METRICS_EXPORTER=%v", ot)
-	return ""
+	return "", fmt.Errorf("unrecognized setting: OTEL_METRICS_EXPORTER=%v", ot)
 }
 
-func mapLogLevel(ot string) string {
+func mapLogLevel(ot string) (string, error) {
 	if ot == "debug" {
-		return "true"
+		return "true", nil
 	}
-	log.Warn("Unrecognized setting: OTEL_LOG_LEVEL=%v", ot)
-	return ""
+	return "", fmt.Errorf("unrecognized setting: OTEL_LOG_LEVEL=%v", ot)
 }
 
-func mapEnabled(ot string) string {
+func mapEnabled(ot string) (string, error) {
 	if ot == "none" {
-		return "false"
+		return "false", nil
 	}
-	log.Warn("Unrecognized setting: OTEL_METRICS_EXPORTER=%v", ot)
-	return ""
+	return "", fmt.Errorf("unrecognized setting: OTEL_METRICS_EXPORTER=%v", ot)
 }
 
 func otelTraceIdRatio() string {
@@ -128,22 +128,21 @@ func otelTraceIdRatio() string {
 	return "1.0"
 }
 
-func mapSampleRate(ot string) string {
+func mapSampleRate(ot string) (string, error) {
 	var otelDdSamplerMapping = map[string]string{
 		"parentbased_always_on":    "1.0",
 		"parentbased_always_off":   "0.0",
 		"parentbased_traceidratio": otelTraceIdRatio(),
 	}
 	if v, ok := otelDdSamplerMapping[ot]; ok {
-		return v
+		return v, nil
 	}
-	log.Warn("Unknown sampling configuration %v", ot)
-	return ""
+	return "", fmt.Errorf("unknown sampling configuration %v", ot)
 }
 
-func mapPropagationStyle(ot string) string {
+func mapPropagationStyle(ot string) (string, error) {
 	if ot == "b3" {
 		ot = "b3 single header"
 	}
-	return ot
+	return ot, nil
 }
