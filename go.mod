@@ -69,7 +69,7 @@ require (
 	github.com/labstack/echo v3.3.10+incompatible
 	github.com/labstack/echo/v4 v4.11.1
 	github.com/lib/pq v1.10.2
-	github.com/mattn/go-sqlite3 v1.14.16
+	github.com/mattn/go-sqlite3 v1.14.18
 	github.com/microsoft/go-mssqldb v0.21.0
 	github.com/miekg/dns v1.1.55
 	github.com/mitchellh/mapstructure v1.5.0
