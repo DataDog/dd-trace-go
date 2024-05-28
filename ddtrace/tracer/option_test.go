@@ -1032,10 +1032,6 @@ func TestOtelResourceAtttributes(t *testing.T) {
 		// runtime-id tag is added automatically, so we expect runtime-id + our first 10 tags
 		assert.Len(globalTags, 11)
 	})
-	// t.Run("parsing", func(t *testing.T) {
-	// 	assert := assert.New(t)
-	// 	t.Setenv("OTEL_RESOURCE_ATTRIBUTES", " t a g = v a l ")
-	// })
 
 }
 
