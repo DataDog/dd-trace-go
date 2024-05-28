@@ -65,8 +65,8 @@ func TestOptions(t *testing.T) {
 				assert.Equal(0.5, root.Tag(ext.EventSampleRate))
 			},
 		},
-		"WithSkipFieldsWithTrivialResolver/false": {
-			tracerOpts: []Option{WithSkipFieldsWithTrivialResolver(false)},
+		"SkipFieldsWithTrivialResolver/false": {
+			tracerOpts: []Option{SkipFieldsWithTrivialResolver(false)},
 			test: func(assert *assert.Assertions, _ mocktracer.Span, spans []mocktracer.Span) {
 				var hasFieldOperation bool
 				for _, span := range spans {
@@ -78,8 +78,8 @@ func TestOptions(t *testing.T) {
 				assert.Equal(true, hasFieldOperation)
 			},
 		},
-		"WithSkipFieldsWithTrivialResolver/true": {
-			tracerOpts: []Option{WithSkipFieldsWithTrivialResolver(true)},
+		"SkipFieldsWithTrivialResolver/true": {
+			tracerOpts: []Option{SkipFieldsWithTrivialResolver(true)},
 			test: func(assert *assert.Assertions, _ mocktracer.Span, spans []mocktracer.Span) {
 				var hasFieldOperation bool
 				for _, span := range spans {
@@ -121,14 +121,14 @@ func TestOptions(t *testing.T) {
 		})
 	}
 
-	// WithSkipFieldsForIntrospectionQuery tested here since we are specifically checking against an IntrosepctionQuery operation.
+	// SkipFieldsForIntrospectionQuery tested here since we are specifically checking against an IntrosepctionQuery operation.
 	query = `query IntrospectionQuery { __schema { queryType { name } } }`
 	for name, tt := range map[string]struct {
 		tracerOpts []Option
 		test       func(assert *assert.Assertions, spans []mocktracer.Span)
 	}{
-		"WithSkipFieldsForIntrospectionQuery/false": {
-			tracerOpts: []Option{WithSkipFieldsForIntrospectionQuery(false)},
+		"SkipFieldsForIntrospectionQuery/false": {
+			tracerOpts: []Option{SkipFieldsForIntrospectionQuery(false)},
 			test: func(assert *assert.Assertions, spans []mocktracer.Span) {
 				var hasFieldSpan bool
 				for _, span := range spans {
@@ -140,8 +140,8 @@ func TestOptions(t *testing.T) {
 				assert.Equal(true, hasFieldSpan)
 			},
 		},
-		"WithSkipFieldsForIntrospectionQuery/true": {
-			tracerOpts: []Option{WithSkipFieldsForIntrospectionQuery(true)},
+		"SkipFieldsForIntrospectionQuery/true": {
+			tracerOpts: []Option{SkipFieldsForIntrospectionQuery(true)},
 			test: func(assert *assert.Assertions, spans []mocktracer.Span) {
 				var hasFieldSpan bool
 				for _, span := range spans {

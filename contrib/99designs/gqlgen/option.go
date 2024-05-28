@@ -53,16 +53,16 @@ func WithServiceName(name string) Option {
 	}
 }
 
-// WithSkipFieldsForIntrospectionQuery skips creating spans for fields when the operation name is IntrospectionQuery.
-func WithSkipFieldsForIntrospectionQuery(skip bool) Option {
+// SkipFieldsForIntrospectionQuery skips creating spans for fields when the operation name is IntrospectionQuery.
+func SkipFieldsForIntrospectionQuery(skip bool) Option {
 	return func(cfg *config) {
 		cfg.skipFieldsForIntrospectionQuery = skip
 	}
 }
 
-// WithSkipFieldsWithTrivialResolver skips creating spans for fields that have a trivial resolver.
+// SkipFieldsWithTrivialResolver skips creating spans for fields that have a trivial resolver.
 // For example, a field resolved from an object w/o requiring a custom method is considered trivial.
-func WithSkipFieldsWithTrivialResolver(skip bool) Option {
+func SkipFieldsWithTrivialResolver(skip bool) Option {
 	return func(cfg *config) {
 		cfg.skipFieldsWithTrivialResolver = skip
 	}
