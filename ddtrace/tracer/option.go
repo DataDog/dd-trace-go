@@ -287,19 +287,6 @@ func (c *config) HasFeature(f string) bool {
 	return ok
 }
 
-// func (c *config) setServiceName(s string) {
-// 	c.serviceName = s
-// 	globalconfig.SetServiceName(s)
-// }
-
-// func (c *config) setMetrics(b bool) {
-// 	c.runtimeMetrics = b
-// }
-
-// func (c *config) setDebug(b bool) {
-// 	c.debug = b
-// }
-
 // StartOption represents a function that can be provided as a parameter to Start.
 type StartOption func(*config)
 
