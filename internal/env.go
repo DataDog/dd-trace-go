@@ -108,3 +108,19 @@ func FloatEnv(key string, def float64) float64 {
 	}
 	return v
 }
+
+func BoolVal(val string, def bool) bool {
+	v, err := strconv.ParseBool(val)
+	if err != nil {
+		return def
+	}
+	return v
+}
+
+func FloatVal(val string, def float64) float64 {
+	v, err := strconv.ParseFloat(val, 64)
+	if err != nil {
+		return def
+	}
+	return v
+}

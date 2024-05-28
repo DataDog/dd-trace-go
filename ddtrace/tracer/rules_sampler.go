@@ -384,7 +384,7 @@ func newTraceRulesSampler(rules []SamplingRule, traceSampleRate float64) *traceR
 // If it is invalid or not within the 0-1 range, NaN is returned.
 func globalSampleRate() float64 {
 	defaultRate := math.NaN()
-	v := os.Getenv("DD_TRACE_SAMPLE_RATE")
+	v := assessSource(sampleRate)
 	if v == "" {
 		return defaultRate
 	}

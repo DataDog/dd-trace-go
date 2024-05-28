@@ -147,7 +147,7 @@ func TestLogSamplingRules(t *testing.T) {
 	t.Setenv("DD_TRACE_SAMPLING_RULES", `[{"service": "some.service", "sample_rate": 0.234}, {"service": "other.service"}, {"service": "last.service", "sample_rate": 0.56}, {"odd": "pairs"}, {"sample_rate": 9.10}]`)
 	_, _, _, stop := startTestTracer(t, WithLogger(tp))
 	defer stop()
-	
+
 	assert.Len(tp.Logs(), 1)
 	assert.Regexp(logPrefixRegexp+` WARN: DIAGNOSTICS Error\(s\) parsing sampling rules: found errors:\n\tat index 4: ignoring rule {Rate:9\.10}: rate is out of \[0\.0, 1\.0] range$`, tp.Logs()[0])
 }

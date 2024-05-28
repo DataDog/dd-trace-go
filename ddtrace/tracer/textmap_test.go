@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"os"
 	"reflect"
 	"regexp"
 	"strconv"
@@ -31,10 +30,6 @@ import (
 )
 
 const otelHeaderPropagationStyle = "OTEL_PROPAGATORS"
-
-func cleanup() {
-	os.Unsetenv(headerPropagationStyle)
-}
 
 func traceIDFrom64Bits(i uint64) traceID {
 	t := traceID{}
@@ -679,7 +674,6 @@ func TestEnvVars(t *testing.T) {
 					assert.Equal(test.out[b3TraceIDHeader], headers[b3TraceIDHeader])
 					assert.Equal(test.out[b3SpanIDHeader], headers[b3SpanIDHeader])
 				})
-				cleanup()
 			}
 		}
 	})
@@ -747,7 +741,6 @@ func TestEnvVars(t *testing.T) {
 					assert.Equal(test.tid, sctx.traceID)
 					assert.Equal(test.sid, sctx.spanID)
 				})
-				cleanup()
 			}
 		}
 	})
@@ -783,7 +776,6 @@ func TestEnvVars(t *testing.T) {
 					_, err := tracer.Extract(tc.in)
 					assert.NotNil(err)
 				})
-				cleanup()
 			}
 		}
 	})
@@ -851,7 +843,6 @@ func TestEnvVars(t *testing.T) {
 						assert.Equal(float64(tc.out[2]), *sctx.trace.priority)
 					}
 				})
-				cleanup()
 			}
 		}
 	})
@@ -946,7 +937,6 @@ func TestEnvVars(t *testing.T) {
 					assert.Equal(tc.out[b3TraceIDHeader], headers[b3TraceIDHeader])
 					assert.Equal(tc.out[b3SpanIDHeader], headers[b3SpanIDHeader])
 				})
-				cleanup()
 			}
 		}
 	})
@@ -1023,7 +1013,6 @@ func TestEnvVars(t *testing.T) {
 					assert.True(ok)
 					assert.Equal(int(tc.out[2]), p)
 				})
-				cleanup()
 			}
 		}
 	})
@@ -1093,7 +1082,6 @@ func TestEnvVars(t *testing.T) {
 					assert.Equal(ctx.baggage, xctx.baggage)
 					assert.Equal(ctx.trace.priority, xctx.trace.priority)
 				})
-				cleanup()
 			}
 		}
 	})
@@ -1300,7 +1288,6 @@ func TestEnvVars(t *testing.T) {
 
 					assert.Equal(tc.propagatingTags, sctx.trace.propagatingTags)
 				})
-				cleanup()
 			}
 		}
 		for _, testEnv := range testEnvs {
@@ -1345,7 +1332,6 @@ func TestEnvVars(t *testing.T) {
 					assert.NotNil(err)
 					assert.Nil(ctx)
 				})
-				cleanup()
 			}
 		}
 	})
@@ -1420,7 +1406,6 @@ func TestEnvVars(t *testing.T) {
 					ddTag := strings.SplitN(headers[tracestateHeader], ",", 2)[0]
 					assert.LessOrEqual(len(ddTag), 256)
 				})
-				cleanup()
 			}
 		}
 	})
@@ -1622,7 +1607,6 @@ func TestEnvVars(t *testing.T) {
 					// -3 as we don't count dd= as part of the "value" length limit
 					assert.LessOrEqual(len(ddTag)-3, 256)
 				})
-				cleanup()
 
 				t.Run(fmt.Sprintf("w3c inject with env=%q / testing tag list-member limit", testEnv), func(t *testing.T) {
 					tracer := newTracer(WithHTTPClient(c), withStatsdClient(&statsd.NoOpClient{}))
@@ -1655,7 +1639,6 @@ func TestEnvVars(t *testing.T) {
 					assert.Regexp(regexp.MustCompile(`dd=[\w:,]+`), ddTag)
 					assert.LessOrEqual(len(ddTag), 256)
 				})
-				cleanup()
 			}
 		}
 	})
@@ -2043,7 +2026,6 @@ func TestNonePropagator(t *testing.T) {
 			assert.Equal(err, ErrSpanContextNotFound)
 		})
 		t.Run("", func(t *testing.T) {
-			defer cleanup()
 			t.Setenv(otelHeaderPropagationStyle, "NoNe")
 			tracer := newTracer()
 			defer tracer.Stop()
@@ -2097,50 +2079,50 @@ func assertTraceTags(t *testing.T, expected, actual string) {
 
 func TestOtelPropagator(t *testing.T) {
 	var (
-		tracecontext = "tracecontext"
-		b3 = "b3"
-		b3multi = "b3multi"
-		datadog = "datadog"
-		none = "none"
-		b3single = "b3 single header"
+		tracecontext  = "tracecontext"
+		b3            = "b3"
+		b3multi       = "b3multi"
+		datadog       = "datadog"
+		none          = "none"
+		b3single      = "b3 single header"
 		defaultPsName = "datadog,tracecontext"
 	)
-	tests := []struct{ 
-		env string
+	tests := []struct {
+		env    string
 		result string
-	} {
+	}{
 		{
-			env: tracecontext,
+			env:    tracecontext,
 			result: tracecontext,
 		},
 		{
-			env: b3,
+			env:    b3,
 			result: b3single,
 		},
 		{
-			env: b3multi,
+			env:    b3multi,
 			result: b3multi,
 		},
 		{
-			env: datadog,
+			env:    datadog,
 			result: datadog,
 		},
 		{
-			env: none,
+			env:    none,
 			result: "",
 		},
 		{
-			env: "nonesense",
+			env:    "nonesense",
 			result: defaultPsName,
 		},
 		{
-			env: "jaegar",
+			env:    "jaegar",
 			result: defaultPsName,
 		},
 	}
 	for _, test := range tests {
 		t.Setenv(otelHeaderPropagationStyle, test.env)
-		t.Run(fmt.Sprintf("inject with %v=%v", otelHeaderPropagationStyle, test.env), func(t *testing.T){
+		t.Run(fmt.Sprintf("inject with %v=%v", otelHeaderPropagationStyle, test.env), func(t *testing.T) {
 			assert := assert.New(t)
 			c := newConfig()
 			cp, ok := c.propagator.(*chainedPropagator)
@@ -2148,9 +2130,8 @@ func TestOtelPropagator(t *testing.T) {
 			assert.Equal(test.result, cp.injectorNames)
 			assert.Equal(test.result, cp.extractorsNames)
 		})
-		cleanup()
 	}
-} 
+}
 
 func BenchmarkInjectDatadog(b *testing.B) {
 	b.Setenv(headerPropagationStyleInject, "datadog")

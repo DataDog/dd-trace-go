@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"io"
 	"math"
-	"os"
 	"regexp"
 	"strings"
 	"sync"
@@ -212,11 +211,7 @@ func TestRuleEnvVars(t *testing.T) {
 	})
 
 	t.Run("otel-sample-rate", func(t *testing.T) {
-		cleanup := func() {
-			os.Unsetenv("DD_TRACE_SAMPLE_RATE")
-		}
 		t.Run("parentbased_always_on", func(t *testing.T) {
-			defer cleanup()
 			assert := assert.New(t)
 			t.Setenv("OTEL_TRACES_SAMPLER", "parentbased_always_on")
 			newConfig()
@@ -224,7 +219,6 @@ func TestRuleEnvVars(t *testing.T) {
 			assert.Equal(1.0, res)
 		})
 		t.Run("parentbased_always_off", func(t *testing.T) {
-			defer cleanup()
 			assert := assert.New(t)
 			t.Setenv("OTEL_TRACES_SAMPLER", "parentbased_always_off")
 			newConfig()
@@ -232,7 +226,6 @@ func TestRuleEnvVars(t *testing.T) {
 			assert.Equal(0.0, res)
 		})
 		t.Run("parentbased_traceidratio", func(t *testing.T) {
-			defer cleanup()
 			assert := assert.New(t)
 			t.Setenv("OTEL_TRACES_SAMPLER", "parentbased_traceidratio")
 			t.Setenv("OTEL_TRACES_SAMPLER_ARG", "0.5")

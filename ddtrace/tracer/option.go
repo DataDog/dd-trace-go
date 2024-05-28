@@ -315,28 +315,26 @@ func newConfig(opts ...StartOption) *config {
 	c := new(config)
 	c.sampler = NewAllSampler()
 	c.httpClientTimeout = time.Second * 10 // 10 seconds
-
-	// MTOFF - OTEL ENV VARS
-	for otEnv, ddEnv := range otelDdEnvvars {
-		if otVal := os.Getenv(otEnv); otVal != "" {
-			if ddVal := os.Getenv(ddEnv); ddVal != "" {
-				log.Warn("Both %v and %v are set, using %v=%v", otEnv, ddEnv, ddEnv, ddVal)
-				continue
+	
+	// configs that can be applied via DD or OT env vars, and should be assessed within newConfig
+	initConfigs := []otelDDConfig{service, metrics, debugMode, enabled}
+	for _, name := range initConfigs {
+		val := assessSource(name)
+		switch name {
+		case service:
+			if val != "" {
+				c.serviceName = val
+				globalconfig.SetServiceName(val)
 			}
-			if remapper, ok := otelRemapper[otEnv]; ok {
-				if vv := remapper(otVal); vv != "" {
-					os.Setenv(ddEnv, vv)
-				}
-			}
+		case debugMode:
+			c.debug = internal.BoolVal(val, false)
+		case metrics:
+			c.runtimeMetrics = internal.BoolVal(val, false)
+		case enabled:
+			c.enabled = newDynamicConfig("tracing_enabled", internal.BoolVal(val, true), func(b bool) bool { return true }, equal[bool])
 		}
 	}
-	if v := os.Getenv("DD_SERVICE"); v != "" {
-		c.serviceName = v
-		globalconfig.SetServiceName(v)
-	}
-	c.runtimeMetrics = internal.BoolEnv("DD_RUNTIME_METRICS_ENABLED", false)
-	c.debug = internal.BoolEnv("DD_TRACE_DEBUG", false)
-	c.enabled = newDynamicConfig("tracing_enabled", internal.BoolEnv("DD_TRACE_ENABLED", true), func(b bool) bool { return true }, equal[bool])
+	// OTEL_RESOURCE_ATTRIBUTES is treated as an addition to DD_TAGS
 	if v := os.Getenv("OTEL_RESOURCE_ATTRIBUTES"); v != "" {
 		count := 0
 		internal.ForEachStringTag(v, internal.OtelDelimeter, func(key, val string) {
@@ -352,7 +350,9 @@ func newConfig(opts ...StartOption) *config {
 			count++
 		})
 	}
-	// END
+	if v := os.Getenv("OTEL_LOGS_EXPORTER"); v != "" {
+		log.Warn("OTEL_LOGS_EXPORTER is not supported")
+	}
 	if internal.BoolEnv("DD_TRACE_ANALYTICS_ENABLED", false) {
 		globalconfig.SetAnalyticsRate(1.0)
 	}
@@ -556,8 +556,6 @@ func newConfig(opts ...StartOption) *config {
 
 	return c
 }
-
-
 
 func newStatsdClient(c *config) (internal.StatsdClient, error) {
 	if c.statsdClient != nil {

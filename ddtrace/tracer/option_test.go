@@ -444,37 +444,29 @@ func TestTracerOptionsDefaults(t *testing.T) {
 	})
 
 	t.Run("debug", func(t *testing.T) {
-		// testing package does not have a t.Unsetenv option, which is critical to these tests, so using os instead
-		cleanup := func() {
-			os.Unsetenv("DD_TRACE_DEBUG")
-			os.Unsetenv("OTEL_LOG_LEVEL")
-		}
 		t.Run("option", func(t *testing.T) {
 			tracer := newTracer(WithDebugMode(true))
 			defer tracer.Stop()
 			c := tracer.config
 			assert.True(t, c.debug)
 		})
-		t.Run("env", func(t *testing.T) {		
+		t.Run("env", func(t *testing.T) {
 			t.Setenv("DD_TRACE_DEBUG", "true")
 			c := newConfig()
 			assert.True(t, c.debug)
 		})
 		t.Run("otel-env-debug", func(t *testing.T) {
-			defer cleanup()
 			t.Setenv("OTEL_LOG_LEVEL", "debug")
 			c := newConfig()
 			assert.True(t, c.debug)
 		})
 		t.Run("otel-env-notdebug", func(t *testing.T) {
-			defer cleanup()
 			// any value other than debug, does nothing
 			t.Setenv("OTEL_LOG_LEVEL", "notdebug")
 			c := newConfig()
 			assert.False(t, c.debug)
 		})
 		t.Run("override-chain", func(t *testing.T) {
-			defer cleanup()
 			assert := assert.New(t)
 			// option override otel
 			t.Setenv("OTEL_LOG_LEVEL", "debug")
@@ -929,10 +921,9 @@ func TestServiceName(t *testing.T) {
 		assert.Equal("api-intake", globalconfig.ServiceName())
 	})
 
-	t.Run("otel-env", func(t *testing.T) { 
-		defer func(){
+	t.Run("otel-env", func(t *testing.T) {
+		defer func() {
 			globalconfig.SetServiceName("")
-			os.Unsetenv("DD_SERVICE")
 		}()
 		t.Setenv("OTEL_SERVICE_NAME", "api-intake")
 		assert := assert.New(t)
@@ -951,9 +942,8 @@ func TestServiceName(t *testing.T) {
 	})
 
 	t.Run("OTEL_RESOURCE_ATTRIBUTES", func(t *testing.T) {
-		defer func(){
+		defer func() {
 			globalconfig.SetServiceName("")
-			os.Unsetenv("DD_SERVICE")
 		}()
 		t.Setenv("OTEL_RESOURCE_ATTRIBUTES", "service.name=api-intake")
 		assert := assert.New(t)
@@ -974,12 +964,10 @@ func TestServiceName(t *testing.T) {
 	})
 
 	t.Run("override-chain", func(t *testing.T) {
-		defer func(){
+		defer func() {
 			globalconfig.SetServiceName("")
-			os.Unsetenv("DD_SERVICE")
 		}()
 		assert := assert.New(t)
-		t.Setenv("DD_SERVICE", "") // TODO: Figure out why dd_service carried over into this test
 		globalconfig.SetServiceName("")
 		c := newConfig()
 		assert.Equal(c.serviceName, filepath.Base(os.Args[0]))
@@ -1334,9 +1322,6 @@ func TestWithTraceEnabled(t *testing.T) {
 	})
 
 	t.Run("otel-env", func(t *testing.T) {
-		defer func() {
-			os.Unsetenv("DD_TRACE_ENABLED")
-		}()
 		assert := assert.New(t)
 		t.Setenv("OTEL_TRACES_EXPORTER", "none")
 		c := newConfig()
