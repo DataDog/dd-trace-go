@@ -241,6 +241,29 @@ func WithSpanTags(ctx context.Context, tags map[string]string) context.Context {
 	return context.WithValue(ctx, spanTagsKey, tags)
 }
 
+// providedPeerService returns the peer service tag if provided manually by the user,
+// derived from a possible sources (span tags, context, ...)
+func (tc *TracedConn) providedPeerService(ctx context.Context) string {
+	// This occurs if the user sets peer.service explicitly while creating the connection
+	// through the use of sqltrace.WithSpanTags
+	if meta, ok := ctx.Value(spanTagsKey).(map[string]string); ok {
+		if peerServiceTag, ok := meta[ext.PeerService]; ok {
+			return peerServiceTag
+		}
+	}
+
+	// This occurs if the SQL Connection is opened or registered using
+	// WithCustomTags.  This is lower precedence than above since it is
+	// less specific
+	if len(tc.cfg.tags) > 0 {
+		if v, ok := tc.cfg.tags[ext.PeerService].(string); ok {
+			return v
+		}
+	}
+
+	return ""
+}
+
 // injectComments returns the query with SQL comments injected according to the comment injection mode along
 // with a span ID injected into SQL comments. The returned span ID should be used when the SQL span is created
 // following the traced database call.
@@ -253,7 +276,8 @@ func (tc *TracedConn) injectComments(ctx context.Context, query string, mode tra
 	if span, ok := tracer.SpanFromContext(ctx); ok {
 		spanCtx = span.Context()
 	}
-	carrier := tracer.SQLCommentCarrier{Query: query, Mode: mode, DBServiceName: tc.cfg.serviceName, PeerDBHostname: tc.meta[ext.TargetHost], PeerDBName: tc.meta[ext.DBName]}
+
+	carrier := tracer.SQLCommentCarrier{Query: query, Mode: mode, DBServiceName: tc.cfg.serviceName, PeerDBHostname: tc.meta[ext.TargetHost], PeerDBName: tc.meta[ext.DBName], PeerService: tc.providedPeerService(ctx)}
 	if err := carrier.Inject(spanCtx); err != nil {
 		// this should never happen
 		log.Warn("contrib/database/sql: failed to inject query comments: %v", err)

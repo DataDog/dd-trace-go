@@ -11,7 +11,7 @@ import (
 	"go.uber.org/atomic"
 
 	"github.com/DataDog/appsec-internal-go/limiter"
-	waf "github.com/DataDog/go-libddwaf/v2"
+	waf "github.com/DataDog/go-libddwaf/v3"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/config"
@@ -44,8 +44,8 @@ var supportedAddresses = listener.AddressSet{
 }
 
 // Install registers the gRPC WAF Event Listener on the given root operation.
-func Install(wafHandle *waf.Handle, actions sharedsec.Actions, cfg *config.Config, lim limiter.Limiter, root dyngo.Operation) {
-	if listener := newWafEventListener(wafHandle, actions, cfg, lim); listener != nil {
+func Install(wafHandle *waf.Handle, cfg *config.Config, lim limiter.Limiter, root dyngo.Operation) {
+	if listener := newWafEventListener(wafHandle, cfg, lim); listener != nil {
 		log.Debug("appsec: registering the gRPC WAF Event Listener")
 		dyngo.On(root, listener.onEvent)
 	}
@@ -54,14 +54,13 @@ func Install(wafHandle *waf.Handle, actions sharedsec.Actions, cfg *config.Confi
 type wafEventListener struct {
 	wafHandle *waf.Handle
 	config    *config.Config
-	actions   sharedsec.Actions
 	addresses map[string]struct{}
 	limiter   limiter.Limiter
 	wafDiags  waf.Diagnostics
 	once      sync.Once
 }
 
-func newWafEventListener(wafHandle *waf.Handle, actions sharedsec.Actions, cfg *config.Config, limiter limiter.Limiter) *wafEventListener {
+func newWafEventListener(wafHandle *waf.Handle, cfg *config.Config, limiter limiter.Limiter) *wafEventListener {
 	if wafHandle == nil {
 		log.Debug("appsec: no WAF Handle available, the gRPC WAF Event Listener will not be registered")
 		return nil
@@ -76,7 +75,6 @@ func newWafEventListener(wafHandle *waf.Handle, actions sharedsec.Actions, cfg *
 	return &wafEventListener{
 		wafHandle: wafHandle,
 		config:    cfg,
-		actions:   actions,
 		addresses: addresses,
 		limiter:   limiter,
 		wafDiags:  wafHandle.Diagnostics(),
@@ -97,9 +95,14 @@ func (l *wafEventListener) onEvent(op *types.HandlerOperation, handlerArgs types
 		mu     sync.Mutex // events mutex
 	)
 
-	wafCtx := waf.NewContextWithBudget(l.wafHandle, l.config.WAFTimeout)
-	if wafCtx == nil {
-		// The WAF event listener got concurrently released
+	wafCtx, err := l.wafHandle.NewContextWithBudget(l.config.WAFTimeout)
+	if err != nil {
+		log.Debug("appsec: could not create budgeted WAF context: %v", err)
+	}
+	// Early return in the following cases:
+	// - wafCtx is nil, meaning it was concurrently released
+	// - err is not nil, meaning context creation failed
+	if wafCtx == nil || err != nil {
 		return
 	}
 
@@ -112,12 +115,14 @@ func (l *wafEventListener) onEvent(op *types.HandlerOperation, handlerArgs types
 			values := map[string]any{
 				UserIDAddr: args.UserID,
 			}
-			wafResult := shared.RunWAF(wafCtx, waf.RunAddressData{Persistent: values}, l.config.WAFTimeout)
+			wafResult := shared.RunWAF(wafCtx, waf.RunAddressData{Persistent: values})
 			if wafResult.HasActions() || wafResult.HasEvents() {
-				for _, id := range wafResult.Actions {
-					if a, ok := l.actions[id]; ok && a.Blocking() {
-						code, err := a.GRPC()(map[string][]string{})
-						dyngo.EmitData(userIDOp, types.NewMonitoringError(err.Error(), code))
+				for aType, params := range wafResult.Actions {
+					for _, action := range shared.ActionsFromEntry(aType, params) {
+						if grpcAction, ok := action.(*sharedsec.GRPCAction); ok {
+							code, err := grpcAction.GRPCWrapper(map[string][]string{})
+							dyngo.EmitData(userIDOp, types.NewMonitoringError(err.Error(), code))
+						}
 					}
 				}
 				shared.AddSecurityEvents(op, l.limiter, wafResult.Events)
@@ -135,9 +140,9 @@ func (l *wafEventListener) onEvent(op *types.HandlerOperation, handlerArgs types
 		values[HTTPClientIPAddr] = handlerArgs.ClientIP.String()
 	}
 
-	wafResult := shared.RunWAF(wafCtx, waf.RunAddressData{Persistent: values}, l.config.WAFTimeout)
+	wafResult := shared.RunWAF(wafCtx, waf.RunAddressData{Persistent: values})
 	if wafResult.HasActions() || wafResult.HasEvents() {
-		interrupt := shared.ProcessActions(op, l.actions, wafResult.Actions)
+		interrupt := shared.ProcessActions(op, wafResult.Actions, nil)
 		shared.AddSecurityEvents(op, l.limiter, wafResult.Events)
 		log.Debug("appsec: WAF detected an attack before executing the request")
 		if interrupt {
@@ -172,7 +177,7 @@ func (l *wafEventListener) onEvent(op *types.HandlerOperation, handlerArgs types
 
 		// Run the WAF, ignoring the returned actions - if any - since blocking after the request handler's
 		// response is not supported at the moment.
-		wafResult := shared.RunWAF(wafCtx, values, l.config.WAFTimeout)
+		wafResult := shared.RunWAF(wafCtx, values)
 
 		if wafResult.HasEvents() {
 			log.Debug("appsec: attack detected by the grpc waf")
