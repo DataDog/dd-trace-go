@@ -347,7 +347,7 @@ func newConfig(opts ...StartOption) *config {
 		for key, val := range tags {
 			WithGlobalTag(key, val)(c)
 		}
-		// TODO: track the origin of these tags individually
+		// TODO: should we track the origin of these tags individually?
 		c.globalTags.cfgOrigin = telemetry.OriginEnvVar
 	}
 	if _, ok := os.LookupEnv("AWS_LAMBDA_FUNCTION_NAME"); ok {
@@ -514,7 +514,8 @@ func newConfig(opts ...StartOption) *config {
 	}
 	// Re-initialize the globalTags config with the value constructed from the environment and start options
 	// This allows persisting the initial value of globalTags for future resets and updates.
-	c.initGlobalTags(c.globalTags.get())
+	globalTagsOrigin := c.globalTags.cfgOrigin
+	c.initGlobalTags(c.globalTags.get(), globalTagsOrigin)
 
 	return c
 }
@@ -903,7 +904,7 @@ func WithPeerServiceMapping(from, to string) StartOption {
 func WithGlobalTag(k string, v interface{}) StartOption {
 	return func(c *config) {
 		if c.globalTags.get() == nil {
-			c.initGlobalTags(map[string]interface{}{})
+			c.initGlobalTags(map[string]interface{}{}, telemetry.OriginDefault)
 		}
 		c.globalTags.Lock()
 		defer c.globalTags.Unlock()
@@ -912,13 +913,14 @@ func WithGlobalTag(k string, v interface{}) StartOption {
 }
 
 // initGlobalTags initializes the globalTags config with the provided init value
-func (c *config) initGlobalTags(init map[string]interface{}) {
+func (c *config) initGlobalTags(init map[string]interface{}, origin telemetry.Origin) {
 	apply := func(map[string]interface{}) bool {
 		// always set the runtime ID on updates
 		c.globalTags.current[ext.RuntimeID] = globalconfig.RuntimeID()
 		return true
 	}
 	c.globalTags = newDynamicConfig("trace_tags", init, apply, equalMap[string])
+	c.globalTags.cfgOrigin = origin
 }
 
 // WithSampler sets the given sampler to be used with the tracer. By default

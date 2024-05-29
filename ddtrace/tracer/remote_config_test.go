@@ -617,6 +617,7 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 		defer stop()
 
 		require.Equal(t, telemetry.OriginDefault, tracer.config.traceSampleRate.cfgOrigin)
+		require.Equal(t, telemetry.OriginEnvVar, tracer.config.globalTags.cfgOrigin)
 
 		// Apply RC. Assert global tags have the RC tags key3:val3,key4:val4 applied + runtime ID
 		input := remoteconfig.ProductUpdate{
