@@ -347,6 +347,8 @@ func newConfig(opts ...StartOption) *config {
 		for key, val := range tags {
 			WithGlobalTag(key, val)(c)
 		}
+		// TODO: track the origin of these tags individually
+		c.globalTags.cfgOrigin = telemetry.OriginEnvVar
 	}
 	if _, ok := os.LookupEnv("AWS_LAMBDA_FUNCTION_NAME"); ok {
 		// AWS_LAMBDA_FUNCTION_NAME being set indicates that we're running in an AWS Lambda environment.
@@ -916,7 +918,7 @@ func (c *config) initGlobalTags(init map[string]interface{}) {
 		c.globalTags.current[ext.RuntimeID] = globalconfig.RuntimeID()
 		return true
 	}
-	c.globalTags = newDynamicConfig[map[string]interface{}]("trace_tags", init, apply, equalMap[string])
+	c.globalTags = newDynamicConfig("trace_tags", init, apply, equalMap[string])
 }
 
 // WithSampler sets the given sampler to be used with the tracer. By default
