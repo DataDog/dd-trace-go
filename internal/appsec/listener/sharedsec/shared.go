@@ -107,7 +107,7 @@ func ActionsFromEntry(actionType string, params any) []sharedsec.Action {
 		return sharedsec.NewBlockAction(p)
 	case "redirect_request":
 		return []sharedsec.Action{sharedsec.NewRedirectAction(p)}
-	case "stack_trace":
+	case "generate_stack":
 		return []sharedsec.Action{sharedsec.NewStackTraceAction(p)}
 
 	default:

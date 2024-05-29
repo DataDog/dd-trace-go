@@ -103,7 +103,7 @@ func (a *StackTraceAction) EmitData(op dyngo.Operation) { dyngo.EmitData(op, a) 
 func NewStackTraceAction(params map[string]any) Action {
 	id, ok := params["stack_id"]
 	if !ok {
-		log.Debug("appsec: could not read stack_id parameter for stack_trace action")
+		log.Debug("appsec: could not read stack_id parameter for generate_stack action")
 		return nil
 	}
 
