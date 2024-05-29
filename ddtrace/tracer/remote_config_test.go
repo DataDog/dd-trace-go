@@ -727,7 +727,7 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 		telemetryClient.AssertCalled(t, "ConfigChange", []telemetry.Configuration{
 			{Name: "trace_sample_rate", Value: 0.1, Origin: telemetry.OriginDefault},
 			{Name: "trace_header_tags", Value: "X-Test-Header:my-tag-from-env", Origin: telemetry.OriginDefault},
-			{Name: "trace_tags", Value: "ddtag:from-env," + ext.RuntimeID + ":" + globalconfig.RuntimeID(), Origin: telemetry.OriginEnvVar},
+			{Name: "trace_tags", Value: "ddtag:from-env," + ext.RuntimeID + ":" + globalconfig.RuntimeID(), Origin: telemetry.OriginDefault},
 		})
 	})
 
