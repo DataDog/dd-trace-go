@@ -79,6 +79,8 @@ func waste(d time.Duration) {
 
 func TestSpanDoubleFinish(t *testing.T) {
 	generate := func(d time.Duration) {
+		tracer.Start(tracer.WithLogger(discardLogger{}))
+		defer tracer.Stop()
 		foo, ctx := tracer.StartSpanFromContext(context.Background(), "foo")
 		bar, _ := tracer.StartSpanFromContext(ctx, "bar")
 		bar.Finish()
@@ -100,11 +102,12 @@ func TestSpanDoubleFinish(t *testing.T) {
 			generate(duration)
 		})
 		focus, _, _, _ := pprof.FilterSamplesByName(regexp.MustCompile("waste"), nil, nil, nil)
-		if focus {
-			break
+		if !focus || len(execTrace) == 0 {
+			// Retry with longer run to reduce flake likelihood
+			duration *= 2
+			continue
 		}
-		// Retry with longer run to reduce flake likelihood
-		duration *= 2
+		break
 	}
 	if retries == maxRetries {
 		t.Fatalf("could not collect sufficient data after %d retries", maxRetries)
