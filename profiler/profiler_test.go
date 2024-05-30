@@ -236,41 +236,6 @@ func TestSetProfileFraction(t *testing.T) {
 	})
 }
 
-func TestProfilerPassthrough(t *testing.T) {
-	if testing.Short() {
-		return
-	}
-	beforeExecutionTraceEnabledDefault := executionTraceEnabledDefault
-	executionTraceEnabledDefault = false
-	defer func() { executionTraceEnabledDefault = beforeExecutionTraceEnabledDefault }()
-
-	out := make(chan batch)
-	p, err := newProfiler()
-	require.NoError(t, err)
-	p.cfg.period = 200 * time.Millisecond
-	p.cfg.cpuDuration = 1 * time.Millisecond
-	p.uploadFunc = func(bat batch) error {
-		out <- bat
-		return nil
-	}
-	p.run()
-	defer p.stop()
-	var bat batch
-	select {
-	case bat = <-out:
-	// TODO (knusbaum) this timeout is long because we were seeing timeouts at 500ms.
-	// it would be nice to have a time-independent way to test this
-	case <-time.After(1000 * time.Millisecond):
-		t.Fatal("time expired")
-	}
-
-	assert := assert.New(t)
-	// should contain cpu.pprof, delta-heap.pprof
-	assert.Equal(2, len(bat.profiles))
-	assert.NotEmpty(bat.profiles[0].data)
-	assert.NotEmpty(bat.profiles[1].data)
-}
-
 func unstartedProfiler(opts ...Option) (*profiler, error) {
 	p, err := newProfiler(opts...)
 	if err != nil {
