@@ -121,7 +121,7 @@ func mapEnabled(ot string) (string, error) {
 	return "", fmt.Errorf("unrecognized setting: OTEL_METRICS_EXPORTER=%v", ot)
 }
 
-func otelTraceIdRatio() string {
+func otelTraceIDRatio() string {
 	if v := os.Getenv("OTEL_TRACES_SAMPLER_ARG"); v != "" {
 		return v
 	}
@@ -132,7 +132,7 @@ func mapSampleRate(ot string) (string, error) {
 	var otelDdSamplerMapping = map[string]string{
 		"parentbased_always_on":    "1.0",
 		"parentbased_always_off":   "0.0",
-		"parentbased_traceidratio": otelTraceIdRatio(),
+		"parentbased_traceidratio": otelTraceIDRatio(),
 	}
 	if v, ok := otelDdSamplerMapping[ot]; ok {
 		return v, nil
