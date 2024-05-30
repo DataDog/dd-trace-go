@@ -171,8 +171,6 @@ func TestTracerCleanStop(t *testing.T) {
 }
 
 func TestTracerStart(t *testing.T) {
-	ddEnv := "DD_TRACE_ENABLED"
-	otEnv := "OTEL_TRACES_EXPORTER"
 	t.Run("normal", func(t *testing.T) {
 		Start()
 		defer Stop()
@@ -195,7 +193,7 @@ func TestTracerStart(t *testing.T) {
 	})
 
 	t.Run("dd_tracing_not_enabled", func(t *testing.T) {
-		t.Setenv(ddEnv, "false")
+		t.Setenv("DD_TRACE_ENABLED", "false")
 		Start()
 		defer Stop()
 		if _, ok := internal.GetGlobalTracer().(*tracer); ok {
@@ -207,7 +205,7 @@ func TestTracerStart(t *testing.T) {
 	})
 
 	t.Run("otel_tracing_not_enabled", func(t *testing.T) {
-		t.Setenv(otEnv, "none")
+		t.Setenv("OTEL_TRACES_EXPORTER", "none")
 		Start()
 		defer Stop()
 		if _, ok := internal.GetGlobalTracer().(*tracer); ok {
