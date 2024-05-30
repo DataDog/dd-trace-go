@@ -627,6 +627,15 @@ func (rs *singleSpanRulesSampler) apply(span *span) bool {
 	return false
 }
 
+// Assumes the new rules are different from the old rules.
+func (rs *singleSpanRulesSampler) setSpanSampleRules(rules []SamplingRule) bool {
+	if EqualsFalseNegative(rs.rules, rules) {
+		return false
+	}
+	rs.rules = rules
+	return true
+}
+
 // rateLimiter is a wrapper on top of golang.org/x/time/rate which implements a rate limiter but also
 // returns the effective rate of allowance.
 type rateLimiter struct {
@@ -874,7 +883,6 @@ func (sr SamplingRule) MarshalJSON() ([]byte, error) {
 		Resource     string            `json:"resource,omitempty"`
 		Rate         float64           `json:"sample_rate"`
 		Tags         map[string]string `json:"tags,omitempty"`
-		Type         *string           `json:"type,omitempty"`
 		MaxPerSecond *float64          `json:"max_per_second,omitempty"`
 		Provenance   string            `json:"provenance,omitempty"`
 	}{}
@@ -904,10 +912,6 @@ func (sr SamplingRule) MarshalJSON() ([]byte, error) {
 		s.MaxPerSecond = &sr.MaxPerSecond
 	}
 	s.Rate = sr.Rate
-	if v := sr.ruleType.String(); v != "" {
-		t := fmt.Sprintf("%d", sr.ruleType)
-		s.Type = &t
-	}
 	if sr.Provenance != Local {
 		s.Provenance = sr.Provenance.String()
 	}
