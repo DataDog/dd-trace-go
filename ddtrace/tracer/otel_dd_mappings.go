@@ -9,6 +9,7 @@ package tracer
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
@@ -61,7 +62,7 @@ var otelDDConfigs = map[otelDDOpt]*otelDDEnv{
 		remapper: mapSampleRate,
 	},
 	propagationStyle: {
-		dd:       headerPropagationStyle,
+		dd:       "DD_TRACE_PROPAGATION_STYLE",
 		ot:       "OTEL_PROPAGATORS",
 		remapper: mapPropagationStyle,
 	},
@@ -104,21 +105,21 @@ func mapMetrics(ot string) (string, error) {
 	if ot == "none" {
 		return "false", nil
 	}
-	return "", fmt.Errorf("unrecognized setting: OTEL_METRICS_EXPORTER=%v", ot)
+	return "", fmt.Errorf("The following configuration is not supported: OTEL_METRICS_EXPORTER=%v", ot)
 }
 
 func mapLogLevel(ot string) (string, error) {
 	if ot == "debug" {
 		return "true", nil
 	}
-	return "", fmt.Errorf("unrecognized setting: OTEL_LOG_LEVEL=%v", ot)
+	return "", fmt.Errorf("The following configuration is not supported: OTEL_LOG_LEVEL=%v", ot)
 }
 
 func mapEnabled(ot string) (string, error) {
 	if ot == "none" {
 		return "false", nil
 	}
-	return "", fmt.Errorf("unrecognized setting: OTEL_METRICS_EXPORTER=%v", ot)
+	return "", fmt.Errorf("The following configuration is not supported: OTEL_METRICS_EXPORTER=%v", ot)
 }
 
 func otelTraceIDRatio() string {
@@ -129,20 +130,44 @@ func otelTraceIDRatio() string {
 }
 
 func mapSampleRate(ot string) (string, error) {
-	var otelDdSamplerMapping = map[string]string{
+	var unsupportedSamplerMapping = map[string]string{
+		"always_on":    "parentbased_always_on",
+		"always_off":   "parentbased_always_off",
+		"traceidratio": "parentbased_traceidratio",
+	}
+	if v, ok := unsupportedSamplerMapping[ot]; ok {
+		log.Warn("The following configuration is not supported: OTEL_TRACES_SAMPLER=%v. %v will be used", ot, v)
+		ot = v
+	}
+	var samplerMapping = map[string]string{
 		"parentbased_always_on":    "1.0",
 		"parentbased_always_off":   "0.0",
 		"parentbased_traceidratio": otelTraceIDRatio(),
 	}
-	if v, ok := otelDdSamplerMapping[ot]; ok {
+	if v, ok := samplerMapping[ot]; ok {
 		return v, nil
 	}
+
 	return "", fmt.Errorf("unknown sampling configuration %v", ot)
 }
 
 func mapPropagationStyle(ot string) (string, error) {
-	if ot == "b3" {
-		ot = "b3 single header"
+	var propagationMapping = map[string]string{
+		"tracecontext": "tracecontext",
+		"b3":           "b3 single header",
+		"b3multi":      "b3multi",
+		"datadog":      "datadog",
+		"none":         "none",
 	}
-	return ot, nil
+
+	supportedStyles := make([]string, 0)
+	for _, otStyle := range strings.Split(ot, ",") {
+		otStyle = strings.TrimSpace(otStyle)
+		if _, ok := propagationMapping[otStyle]; ok {
+			supportedStyles = append(supportedStyles, propagationMapping[otStyle])
+		} else {
+			log.Warn("Invalid configuration: %v is not supported. This propagation style will be ignored.", otStyle)
+		}
+	}
+	return strings.Join(supportedStyles, ","), nil
 }

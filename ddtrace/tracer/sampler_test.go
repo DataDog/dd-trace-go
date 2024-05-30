@@ -211,28 +211,25 @@ func TestRuleEnvVars(t *testing.T) {
 	})
 
 	t.Run("otel-sample-rate", func(t *testing.T) {
-		t.Run("parentbased_always_on", func(t *testing.T) {
-			assert := assert.New(t)
-			t.Setenv("OTEL_TRACES_SAMPLER", "parentbased_always_on")
-			newConfig()
-			res := globalSampleRate()
-			assert.Equal(1.0, res)
-		})
-		t.Run("parentbased_always_off", func(t *testing.T) {
-			assert := assert.New(t)
-			t.Setenv("OTEL_TRACES_SAMPLER", "parentbased_always_off")
-			newConfig()
-			res := globalSampleRate()
-			assert.Equal(0.0, res)
-		})
-		t.Run("parentbased_traceidratio", func(t *testing.T) {
-			assert := assert.New(t)
-			t.Setenv("OTEL_TRACES_SAMPLER", "parentbased_traceidratio")
-			t.Setenv("OTEL_TRACES_SAMPLER_ARG", "0.5")
-			newConfig()
-			res := globalSampleRate()
-			assert.Equal(0.5, res)
-		})
+		for _, tt := range []struct {
+			config string
+			rate   float64
+		}{
+			{config: "parentbased_always_on", rate: 1.0},
+			{config: "parentbased_always_off", rate: 0.0},
+			{config: "parentbased_traceidratio", rate: 0.5},
+			{config: "always_on", rate: 1.0},
+			{config: "always_off", rate: 0.0},
+			{config: "traceidratio", rate: 0.75},
+		} {
+			t.Run(tt.config, func(t *testing.T) {
+				assert := assert.New(t)
+				t.Setenv("OTEL_TRACES_SAMPLER", tt.config)
+				newConfig()
+				res := globalSampleRate()
+				assert.Equal(tt.rate, res)
+			})
+		}
 	})
 
 	t.Run("rate-limit", func(t *testing.T) {

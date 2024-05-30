@@ -2078,46 +2078,29 @@ func assertTraceTags(t *testing.T, expected, actual string) {
 }
 
 func TestOtelPropagator(t *testing.T) {
-	var (
-		tracecontext  = "tracecontext"
-		b3            = "b3"
-		b3multi       = "b3multi"
-		datadog       = "datadog"
-		none          = "none"
-		b3single      = "b3 single header"
-		defaultPsName = "datadog,tracecontext"
-	)
 	tests := []struct {
 		env    string
 		result string
 	}{
 		{
-			env:    tracecontext,
-			result: tracecontext,
+			env:    "tracecontext, b3",
+			result: "tracecontext,b3 single header",
 		},
 		{
-			env:    b3,
-			result: b3single,
+			env:    "b3multi , jaegar , datadog ",
+			result: "b3multi,datadog",
 		},
 		{
-			env:    b3multi,
-			result: b3multi,
-		},
-		{
-			env:    datadog,
-			result: datadog,
-		},
-		{
-			env:    none,
+			env:    "none",
 			result: "",
 		},
 		{
 			env:    "nonesense",
-			result: defaultPsName,
+			result: "datadog,tracecontext",
 		},
 		{
 			env:    "jaegar",
-			result: defaultPsName,
+			result: "datadog,tracecontext",
 		},
 	}
 	for _, test := range tests {
