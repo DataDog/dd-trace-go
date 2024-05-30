@@ -8,6 +8,7 @@ package http // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http"
 
 import (
 	"net/http"
+	"strings"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/httptrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
@@ -49,7 +50,8 @@ func (mux *ServeMux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// get the resource associated to this request
-	_, route := mux.Handler(r)
+	_, pattern := mux.Handler(r)
+	route := patternRoute(pattern)
 	resource := mux.cfg.resourceNamer(r)
 	if resource == "" {
 		resource = r.Method + " " + route
@@ -63,6 +65,19 @@ func (mux *ServeMux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		SpanOpts: so,
 		Route:    route,
 	})
+}
+
+// patternRoute returns the route part of a go1.22 style ServeMux pattern. I.e.
+// it returns "/foo" for the pattern "/foo" as well as the pattern "GET /foo".
+func patternRoute(s string) string {
+	// Support go1.22 serve mux patterns: [METHOD ][HOST]/[PATH]
+	// Consider any text before a space or tab to be the method of the pattern.
+	// See net/http.parsePattern and the link below for more information.
+	// https://pkg.go.dev/net/http#hdr-Patterns
+	if i := strings.IndexAny(s, " \t"); i > 0 && len(s) >= i+1 {
+		return strings.TrimLeft(s[i+1:], " \t")
+	}
+	return s
 }
 
 // WrapHandler wraps an http.Handler with tracing using the given service and resource.
