@@ -62,6 +62,26 @@ var otelDDConfigs = map[string]*otelDDEnv{
 	},
 }
 
+var ddTagsMapping = map[string]string{
+	"service.name":           "service",
+	"deployment.environment": "env",
+	"service.version":        "version",
+}
+
+var unsupportedSamplerMapping = map[string]string{
+	"always_on":    "parentbased_always_on",
+	"always_off":   "parentbased_always_off",
+	"traceidratio": "parentbased_traceidratio",
+}
+
+var propagationMapping = map[string]string{
+	"tracecontext": "tracecontext",
+	"b3":           "b3 single header",
+	"b3multi":      "b3multi",
+	"datadog":      "datadog",
+	"none":         "none",
+}
+
 // getDDorOtelConfig determines whether the provided otelDDOpt will be set via DD or OTEL env vars, and returns the value
 func getDDorOtelConfig(configName string) string {
 	config, ok := otelDDConfigs[configName]
@@ -87,12 +107,6 @@ func getDDorOtelConfig(configName string) string {
 }
 
 func mapDDTags(ot string) (string, error) {
-	var ddTagsMapping = map[string]string{
-		"service.name":           "service",
-		"deployment.environment": "env",
-		"service.version":        "version",
-	}
-
 	ddTags := make([]string, 0)
 	internal.ForEachStringTag(ot, internal.OtelTagsDelimeter, func(key, val string) {
 		// replace otel delimiter with dd delimiter and normalize tag names
@@ -146,16 +160,12 @@ func otelTraceIDRatio() string {
 }
 
 func mapSampleRate(ot string) (string, error) {
-	var unsupportedSamplerMapping = map[string]string{
-		"always_on":    "parentbased_always_on",
-		"always_off":   "parentbased_always_off",
-		"traceidratio": "parentbased_traceidratio",
-	}
 	ot = strings.TrimSpace(strings.ToLower(ot))
 	if v, ok := unsupportedSamplerMapping[ot]; ok {
 		log.Warn("The following configuration is not supported: OTEL_TRACES_SAMPLER=%v. %v will be used", ot, v)
 		ot = v
 	}
+
 	var samplerMapping = map[string]string{
 		"parentbased_always_on":    "1.0",
 		"parentbased_always_off":   "0.0",
@@ -164,19 +174,10 @@ func mapSampleRate(ot string) (string, error) {
 	if v, ok := samplerMapping[ot]; ok {
 		return v, nil
 	}
-
 	return "", fmt.Errorf("unknown sampling configuration %v", ot)
 }
 
 func mapPropagationStyle(ot string) (string, error) {
-	var propagationMapping = map[string]string{
-		"tracecontext": "tracecontext",
-		"b3":           "b3 single header",
-		"b3multi":      "b3multi",
-		"datadog":      "datadog",
-		"none":         "none",
-	}
-
 	ot = strings.TrimSpace(strings.ToLower(ot))
 	supportedStyles := make([]string, 0)
 	for _, otStyle := range strings.Split(ot, ",") {
