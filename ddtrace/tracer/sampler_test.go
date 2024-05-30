@@ -225,6 +225,7 @@ func TestRuleEnvVars(t *testing.T) {
 			t.Run(tt.config, func(t *testing.T) {
 				assert := assert.New(t)
 				t.Setenv("OTEL_TRACES_SAMPLER", tt.config)
+				t.Setenv("OTEL_TRACES_SAMPLER_ARG", fmt.Sprintf("%f", tt.rate))
 				newConfig()
 				res := globalSampleRate()
 				assert.Equal(tt.rate, res)

@@ -129,6 +129,7 @@ func mapService(ot string) (string, error) {
 }
 
 func mapMetrics(ot string) (string, error) {
+	ot = strings.TrimSpace(strings.ToLower(ot))
 	if ot == "none" {
 		return "false", nil
 	}
@@ -136,14 +137,14 @@ func mapMetrics(ot string) (string, error) {
 }
 
 func mapLogLevel(ot string) (string, error) {
-	if ot == "debug" {
+	if strings.TrimSpace(strings.ToLower(ot)) == "debug" {
 		return "true", nil
 	}
 	return "", fmt.Errorf("The following configuration is not supported: OTEL_LOG_LEVEL=%v", ot)
 }
 
 func mapEnabled(ot string) (string, error) {
-	if ot == "none" {
+	if strings.TrimSpace(strings.ToLower(ot)) == "none" {
 		return "false", nil
 	}
 	return "", fmt.Errorf("The following configuration is not supported: OTEL_METRICS_EXPORTER=%v", ot)
@@ -162,6 +163,7 @@ func mapSampleRate(ot string) (string, error) {
 		"always_off":   "parentbased_always_off",
 		"traceidratio": "parentbased_traceidratio",
 	}
+	ot = strings.TrimSpace(strings.ToLower(ot))
 	if v, ok := unsupportedSamplerMapping[ot]; ok {
 		log.Warn("The following configuration is not supported: OTEL_TRACES_SAMPLER=%v. %v will be used", ot, v)
 		ot = v
@@ -187,6 +189,7 @@ func mapPropagationStyle(ot string) (string, error) {
 		"none":         "none",
 	}
 
+	ot = strings.TrimSpace(strings.ToLower(ot))
 	supportedStyles := make([]string, 0)
 	for _, otStyle := range strings.Split(ot, ",") {
 		otStyle = strings.TrimSpace(otStyle)
