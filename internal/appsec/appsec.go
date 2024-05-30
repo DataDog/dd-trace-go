@@ -11,7 +11,7 @@ import (
 
 	"github.com/DataDog/appsec-internal-go/limiter"
 	appsecLog "github.com/DataDog/appsec-internal-go/log"
-	waf "github.com/DataDog/go-libddwaf/v2"
+	waf "github.com/DataDog/go-libddwaf/v3"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/config"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
@@ -129,7 +129,7 @@ func setActiveAppSec(a *appsec) {
 type appsec struct {
 	cfg       *config.Config
 	limiter   *limiter.TokenTicker
-	wafHandle *wafHandle
+	wafHandle *waf.Handle
 	started   bool
 }
 

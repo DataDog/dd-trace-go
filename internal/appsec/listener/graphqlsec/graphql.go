@@ -9,12 +9,11 @@ import (
 	"sync"
 
 	"github.com/DataDog/appsec-internal-go/limiter"
-	waf "github.com/DataDog/go-libddwaf/v2"
+	waf "github.com/DataDog/go-libddwaf/v3"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/config"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/graphqlsec/types"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/sharedsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener"
 	shared "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener/sharedsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/trace"
@@ -33,7 +32,7 @@ var supportedAddresses = listener.AddressSet{
 }
 
 // Install registers the GraphQL WAF Event Listener on the given root operation.
-func Install(wafHandle *waf.Handle, _ sharedsec.Actions, cfg *config.Config, lim limiter.Limiter, root dyngo.Operation) {
+func Install(wafHandle *waf.Handle, cfg *config.Config, lim limiter.Limiter, root dyngo.Operation) {
 	if listener := newWafEventListener(wafHandle, cfg, lim); listener != nil {
 		log.Debug("appsec: registering the GraphQL WAF Event Listener")
 		dyngo.On(root, listener.onEvent)
@@ -73,8 +72,14 @@ func newWafEventListener(wafHandle *waf.Handle, cfg *config.Config, limiter limi
 // NewWAFEventListener returns the WAF event listener to register in order
 // to enable it.
 func (l *wafEventListener) onEvent(request *types.RequestOperation, _ types.RequestOperationArgs) {
-	wafCtx := waf.NewContextWithBudget(l.wafHandle, l.config.WAFTimeout)
-	if wafCtx == nil {
+	wafCtx, err := l.wafHandle.NewContextWithBudget(l.config.WAFTimeout)
+	if err != nil {
+		log.Debug("appsec: could not create budgeted WAF context: %v", err)
+	}
+	// Early return in the following cases:
+	// - wafCtx is nil, meaning it was concurrently released
+	// - err is not nil, meaning context creation failed
+	if wafCtx == nil || err != nil {
 		return
 	}
 
@@ -95,7 +100,6 @@ func (l *wafEventListener) onEvent(request *types.RequestOperation, _ types.Requ
 							graphQLServerResolverAddr: map[string]any{args.FieldName: args.Arguments},
 						},
 					},
-					l.config.WAFTimeout,
 				)
 				shared.AddSecurityEvents(field, l.limiter, wafResult.Events)
 			}

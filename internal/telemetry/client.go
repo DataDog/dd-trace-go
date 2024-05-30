@@ -30,7 +30,7 @@ import (
 // Client buffers and sends telemetry messages to Datadog (possibly through an
 // agent).
 type Client interface {
-	RegisterAppConfig(name string, val interface{}, origin string)
+	RegisterAppConfig(name string, val interface{}, origin Origin)
 	ProductChange(namespace Namespace, enabled bool, configuration []Configuration)
 	ConfigChange(configuration []Configuration)
 	Record(namespace Namespace, metric MetricKind, name string, value float64, tags []string, common bool)
@@ -158,7 +158,7 @@ func log(msg string, args ...interface{}) {
 
 // RegisterAppConfig allows to register a globally-defined application configuration.
 // This configuration will be sent when the telemetry client is started and over related configuration updates.
-func (c *client) RegisterAppConfig(name string, value interface{}, origin string) {
+func (c *client) RegisterAppConfig(name string, value interface{}, origin Origin) {
 	c.globalAppConfig = append(c.globalAppConfig, Configuration{
 		Name:   name,
 		Value:  value,
