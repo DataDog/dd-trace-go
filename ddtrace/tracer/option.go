@@ -29,6 +29,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/normalizer"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/traceprof"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
 
@@ -336,7 +337,9 @@ func newConfig(opts ...StartOption) *config {
 	}
 	c.headerAsTags = newDynamicConfig("trace_header_tags", nil, setHeaderTags, equalSlice[string])
 	if v := os.Getenv("DD_TRACE_HEADER_TAGS"); v != "" {
-		WithHeaderTags(strings.Split(v, ","))(c)
+		c.headerAsTags.update(strings.Split(v, ","), telemetry.OriginEnvVar)
+		// Required to ensure that the startup header tags are set on reset.
+		c.headerAsTags.startup = c.headerAsTags.current
 	}
 	if v := os.Getenv("DD_TAGS"); v != "" {
 		tags := internal.ParseTagString(v)
@@ -344,6 +347,8 @@ func newConfig(opts ...StartOption) *config {
 		for key, val := range tags {
 			WithGlobalTag(key, val)(c)
 		}
+		// TODO: should we track the origin of these tags individually?
+		c.globalTags.cfgOrigin = telemetry.OriginEnvVar
 	}
 	if _, ok := os.LookupEnv("AWS_LAMBDA_FUNCTION_NAME"); ok {
 		// AWS_LAMBDA_FUNCTION_NAME being set indicates that we're running in an AWS Lambda environment.
@@ -354,6 +359,9 @@ func newConfig(opts ...StartOption) *config {
 	c.runtimeMetrics = internal.BoolEnv("DD_RUNTIME_METRICS_ENABLED", false)
 	c.debug = internal.BoolEnv("DD_TRACE_DEBUG", false)
 	c.enabled = newDynamicConfig("tracing_enabled", internal.BoolEnv("DD_TRACE_ENABLED", true), func(b bool) bool { return true }, equal[bool])
+	if _, ok := os.LookupEnv("DD_TRACE_ENABLED"); ok {
+		c.enabled.cfgOrigin = telemetry.OriginEnvVar
+	}
 	c.profilerEndpoints = internal.BoolEnv(traceprof.EndpointEnvVar, true)
 	c.profilerHotspots = internal.BoolEnv(traceprof.CodeHotspotsEnvVar, true)
 	c.enableHostnameDetection = internal.BoolEnv("DD_CLIENT_HOSTNAME_ENABLED", true)
@@ -509,7 +517,8 @@ func newConfig(opts ...StartOption) *config {
 	}
 	// Re-initialize the globalTags config with the value constructed from the environment and start options
 	// This allows persisting the initial value of globalTags for future resets and updates.
-	c.initGlobalTags(c.globalTags.get())
+	globalTagsOrigin := c.globalTags.cfgOrigin
+	c.initGlobalTags(c.globalTags.get(), globalTagsOrigin)
 
 	return c
 }
@@ -898,7 +907,7 @@ func WithPeerServiceMapping(from, to string) StartOption {
 func WithGlobalTag(k string, v interface{}) StartOption {
 	return func(c *config) {
 		if c.globalTags.get() == nil {
-			c.initGlobalTags(map[string]interface{}{})
+			c.initGlobalTags(map[string]interface{}{}, telemetry.OriginDefault)
 		}
 		c.globalTags.Lock()
 		defer c.globalTags.Unlock()
@@ -907,13 +916,14 @@ func WithGlobalTag(k string, v interface{}) StartOption {
 }
 
 // initGlobalTags initializes the globalTags config with the provided init value
-func (c *config) initGlobalTags(init map[string]interface{}) {
+func (c *config) initGlobalTags(init map[string]interface{}, origin telemetry.Origin) {
 	apply := func(map[string]interface{}) bool {
 		// always set the runtime ID on updates
 		c.globalTags.current[ext.RuntimeID] = globalconfig.RuntimeID()
 		return true
 	}
-	c.globalTags = newDynamicConfig[map[string]interface{}]("trace_tags", init, apply, equalMap[string])
+	c.globalTags = newDynamicConfig("trace_tags", init, apply, equalMap[string])
+	c.globalTags.cfgOrigin = origin
 }
 
 // WithSampler sets the given sampler to be used with the tracer. By default

@@ -29,6 +29,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/traceprof"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
 
@@ -548,6 +549,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			defer tracer.Stop()
 			c := tracer.config
 			assert.True(t, c.enabled.current)
+			assert.Equal(t, c.enabled.cfgOrigin, telemetry.OriginDefault)
 		})
 
 		t.Run("override", func(t *testing.T) {
@@ -556,6 +558,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			defer tracer.Stop()
 			c := tracer.config
 			assert.False(t, c.enabled.current)
+			assert.Equal(t, c.enabled.cfgOrigin, telemetry.OriginEnvVar)
 		})
 	})
 
