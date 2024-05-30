@@ -119,10 +119,10 @@ func BoolVal(val string, def bool) bool {
 }
 
 // FloatVal returns the parsed float value of string val, or def if not parseable
-func FloatVal(val string, def float64) float64 {
+func FloatVal(val string, def float64) (float64, error) {
 	v, err := strconv.ParseFloat(val, 64)
 	if err != nil {
-		return def
+		return def, err
 	}
-	return v
+	return v, nil
 }

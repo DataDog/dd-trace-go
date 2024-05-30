@@ -15,19 +15,18 @@ import (
 
 func TestAssessSource(t *testing.T) {
 	t.Run("invalid", func(t *testing.T) {
-		var invalid otelDDOpt = 10
-		v := assessSource(invalid)
+		v := getDDorOtelConfig("invalid")
 		assert.Equal(t, "", v)
 
 	})
 	t.Run("dd", func(t *testing.T) {
 		t.Setenv("DD_SERVICE", "abc")
-		v := assessSource(service)
+		v := getDDorOtelConfig("service")
 		assert.Equal(t, "abc", v)
 	})
 	t.Run("ot", func(t *testing.T) {
 		t.Setenv("OTEL_SERVICE_NAME", "abc")
-		v := assessSource(service)
+		v := getDDorOtelConfig("service")
 		assert.Equal(t, "abc", v)
 	})
 	t.Run("both", func(t *testing.T) {
@@ -36,7 +35,7 @@ func TestAssessSource(t *testing.T) {
 		// DD_SERVICE prevails
 		t.Setenv("DD_SERVICE", "abc")
 		t.Setenv("OTEL_SERVICE_NAME", "123")
-		v := assessSource(service)
+		v := getDDorOtelConfig("service")
 		assert.Equal(t, "abc", v)
 		telemetryClient.AssertCalled(t, "Count", telemetry.NamespaceTracers, "otel.env.hiding", 1.0, []string{"DD_SERVICE", "OTEL_SERVICE_NAME"}, true)
 	})
@@ -44,7 +43,7 @@ func TestAssessSource(t *testing.T) {
 		telemetryClient := new(telemetrytest.MockClient)
 		defer telemetry.MockGlobalClient(telemetryClient)()
 		t.Setenv("OTEL_LOG_LEVEL", "nonesense")
-		v := assessSource(debugMode)
+		v := getDDorOtelConfig("debugMode")
 		assert.Equal(t, "", v)
 		telemetryClient.AssertCalled(t, "Count", telemetry.NamespaceTracers, "otel.env.invalid", 1.0, []string{"DD_TRACE_DEBUG", "OTEL_LOG_LEVEL"}, true)
 	})

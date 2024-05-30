@@ -204,7 +204,7 @@ func getPropagators(cfg *PropagatorConfig, ps string) ([]Propagator, string) {
 		defaultPsName += ",b3"
 	}
 	if ps == "" {
-		v := assessSource(propagationStyle)
+		v := getDDorOtelConfig("propagationStyle")
 		if v == "" {
 			return defaultPs, defaultPsName
 		}

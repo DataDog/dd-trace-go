@@ -271,6 +271,9 @@ type config struct {
 	// dynamicInstrumentationEnabled controls if the target application can be modified by Dynamic Instrumentation or not.
 	// Value from DD_DYNAMIC_INSTRUMENTATION_ENABLED, default false.
 	dynamicInstrumentationEnabled bool
+
+	// globalSampleRate holds sample rate read from environment variables.
+	globalSampleRate float64
 }
 
 // orchestrionConfig contains Orchestrion configuration.
@@ -302,36 +305,16 @@ const partialFlushMinSpansDefault = 1000
 func newConfig(opts ...StartOption) *config {
 	c := new(config)
 	c.sampler = NewAllSampler()
+	defaultRate, err := internal.FloatVal(getDDorOtelConfig("sampleRate"), math.NaN())
+	if err != nil {
+		log.Warn("ignoring DD_TRACE_SAMPLE_RATE, error: %v", err)
+	} else if defaultRate < 0.0 || defaultRate > 1.0 {
+		log.Warn("ignoring DD_TRACE_SAMPLE_RATE: out of range %f", defaultRate)
+		defaultRate = math.NaN()
+	}
+	c.globalSampleRate = defaultRate
 	c.httpClientTimeout = time.Second * 10 // 10 seconds
 
-	// configs that can be applied via DD or OT env vars, and should be assessed within newConfig
-	// note: other otelDDOpts must be assessed outside of newConfig (e.g, sampleRate)
-	for _, name := range []otelDDOpt{service, metrics, debugMode, enabled, resourceAttributes} {
-		val := assessSource(name)
-		switch name {
-		case service:
-			if val != "" {
-				c.serviceName = val
-				globalconfig.SetServiceName(val)
-			}
-		case debugMode:
-			c.debug = internal.BoolVal(val, false)
-		case metrics:
-			c.runtimeMetrics = internal.BoolVal(val, false)
-		case enabled:
-			c.enabled = newDynamicConfig("tracing_enabled", internal.BoolVal(val, true), func(b bool) bool { return true }, equal[bool])
-		case resourceAttributes:
-			if val != "" {
-				tags := internal.ParseTagString(val)
-				internal.CleanGitMetadataTags(tags)
-				for key, val := range tags {
-					WithGlobalTag(key, val)(c)
-				}
-				// TODO: should we track the origin of these tags individually?
-				c.globalTags.cfgOrigin = telemetry.OriginEnvVar
-			}
-		}
-	}
 	if v := os.Getenv("OTEL_LOGS_EXPORTER"); v != "" {
 		log.Warn("OTEL_LOGS_EXPORTER is not supported")
 	}
@@ -356,6 +339,10 @@ func newConfig(opts ...StartOption) *config {
 			return r == ',' || r == ' '
 		})...)(c)
 	}
+	if v := getDDorOtelConfig("service"); v != "" {
+		c.serviceName = v
+		globalconfig.SetServiceName(v)
+	}
 	if ver := os.Getenv("DD_VERSION"); ver != "" {
 		c.version = ver
 	}
@@ -368,12 +355,24 @@ func newConfig(opts ...StartOption) *config {
 		// Required to ensure that the startup header tags are set on reset.
 		c.headerAsTags.startup = c.headerAsTags.current
 	}
+	if v := getDDorOtelConfig("resourceAttributes"); v != "" {
+		tags := internal.ParseTagString(v)
+		internal.CleanGitMetadataTags(tags)
+		for key, val := range tags {
+			WithGlobalTag(key, val)(c)
+		}
+		// TODO: should we track the origin of these tags individually?
+		c.globalTags.cfgOrigin = telemetry.OriginEnvVar
+	}
 	if _, ok := os.LookupEnv("AWS_LAMBDA_FUNCTION_NAME"); ok {
 		// AWS_LAMBDA_FUNCTION_NAME being set indicates that we're running in an AWS Lambda environment.
 		// See: https://docs.aws.amazon.com/lambda/latest/dg/configuration-envvars.html
 		c.logToStdout = true
 	}
 	c.logStartup = internal.BoolEnv("DD_TRACE_STARTUP_LOGS", true)
+	c.runtimeMetrics = internal.BoolVal(getDDorOtelConfig("metrics"), false)
+	c.debug = internal.BoolVal(getDDorOtelConfig("debugMode"), false)
+	c.enabled = newDynamicConfig("tracing_enabled", internal.BoolVal(getDDorOtelConfig("enabled"), true), func(b bool) bool { return true }, equal[bool])
 	if _, ok := os.LookupEnv("DD_TRACE_ENABLED"); ok {
 		c.enabled.cfgOrigin = telemetry.OriginEnvVar
 	}

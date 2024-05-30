@@ -16,19 +16,6 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 )
 
-// otelDDOpt represents tracer configuration that can be modified by both DD and OTEL env vars
-type otelDDOpt int
-
-const (
-	service otelDDOpt = iota
-	metrics
-	debugMode
-	enabled
-	sampleRate
-	propagationStyle
-	resourceAttributes
-)
-
 // otelDDEnv contains env vars from both dd (DD) and ot (OTEL) that map to the same tracer configuration
 // remapper contains functionality to remap OTEL values to DD values
 type otelDDEnv struct {
@@ -37,50 +24,51 @@ type otelDDEnv struct {
 	remapper func(string) (string, error)
 }
 
-var otelDDConfigs = map[otelDDOpt]*otelDDEnv{
-	service: {
+var otelDDConfigs = map[string]*otelDDEnv{
+	"service": {
 		dd:       "DD_SERVICE",
 		ot:       "OTEL_SERVICE_NAME",
 		remapper: mapService,
 	},
-	metrics: {
+	"metrics": {
 		dd:       "DD_RUNTIME_METRICS_ENABLED",
 		ot:       "OTEL_METRICS_EXPORTER",
 		remapper: mapMetrics,
 	},
-	debugMode: {
+	"debugMode": {
 		dd:       "DD_TRACE_DEBUG",
 		ot:       "OTEL_LOG_LEVEL",
 		remapper: mapLogLevel,
 	},
-	enabled: {
+	"enabled": {
 		dd:       "DD_TRACE_ENABLED",
 		ot:       "OTEL_TRACES_EXPORTER",
 		remapper: mapEnabled,
 	},
-	sampleRate: {
+	"sampleRate": {
 		dd:       "DD_TRACE_SAMPLE_RATE",
 		ot:       "OTEL_TRACES_SAMPLER",
 		remapper: mapSampleRate,
 	},
-	propagationStyle: {
+	"propagationStyle": {
 		dd:       "DD_TRACE_PROPAGATION_STYLE",
 		ot:       "OTEL_PROPAGATORS",
 		remapper: mapPropagationStyle,
 	},
-	resourceAttributes: {
+	"resourceAttributes": {
 		dd:       "DD_TAGS",
 		ot:       "OTEL_RESOURCE_ATTRIBUTES",
 		remapper: mapDDTags,
 	},
 }
 
-// assessSource determines whether the provided otelDDOpt will be set via DD or OTEL env vars, and returns the value
-func assessSource(cfgName otelDDOpt) string {
-	config, ok := otelDDConfigs[cfgName]
+// getDDorOtelConfig determines whether the provided otelDDOpt will be set via DD or OTEL env vars, and returns the value
+func getDDorOtelConfig(configName string) string {
+	config, ok := otelDDConfigs[configName]
 	if !ok {
 		return ""
 	}
+
 	val := os.Getenv(config.dd)
 	if otVal := os.Getenv(config.ot); otVal != "" {
 		if val != "" {
