@@ -11,6 +11,7 @@ import (
 	"os"
 	"strings"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 )
@@ -25,6 +26,7 @@ const (
 	enabled
 	sampleRate
 	propagationStyle
+	resourceAttributes
 )
 
 // otelDDEnv contains env vars from both dd (DD) and ot (OTEL) that map to the same tracer configuration
@@ -66,6 +68,11 @@ var otelDDConfigs = map[otelDDOpt]*otelDDEnv{
 		ot:       "OTEL_PROPAGATORS",
 		remapper: mapPropagationStyle,
 	},
+	resourceAttributes: {
+		dd:       "DD_TAGS",
+		ot:       "OTEL_RESOURCE_ATTRIBUTES",
+		remapper: mapDDTags,
+	},
 }
 
 // assessSource determines whether the provided otelDDOpt will be set via DD or OTEL env vars, and returns the value
@@ -91,10 +98,30 @@ func assessSource(cfgName otelDDOpt) string {
 	return val
 }
 
-var otelDdTags = map[string]string{
-	"service.name":           "service",
-	"deployment.environment": "env",
-	"service.version":        "version",
+func mapDDTags(ot string) (string, error) {
+	var ddTagsMapping = map[string]string{
+		"service.name":           "service",
+		"deployment.environment": "env",
+		"service.version":        "version",
+	}
+
+	ddTags := make([]string, 0)
+	internal.ForEachStringTag(ot, internal.OtelTagsDelimeter, func(key, val string) {
+		// replace otel delimiter with dd delimiter and normalize tag names
+		if ddkey, ok := ddTagsMapping[key]; ok {
+			// map reserved otel tag names to dd tag names
+			ddTags = append([]string{ddkey + internal.DDTagsDelimiter + val}, ddTags...)
+		} else {
+			ddTags = append(ddTags, key+internal.DDTagsDelimiter+val)
+		}
+	})
+
+	if len(ddTags) > 10 {
+		log.Warn("The following resource attributes have been dropped: %v. Only the first 10 resource attributes will be applied: %v", ddTags[10:], ddTags[:10])
+		ddTags = ddTags[:10]
+	}
+
+	return strings.Join(ddTags, ","), nil
 }
 
 func mapService(ot string) (string, error) {

@@ -305,8 +305,7 @@ func newConfig(opts ...StartOption) *config {
 
 	// configs that can be applied via DD or OT env vars, and should be assessed within newConfig
 	// note: other otelDDOpts must be assessed outside of newConfig (e.g, sampleRate)
-	initConfigs := []otelDDOpt{service, metrics, debugMode, enabled}
-	for _, name := range initConfigs {
+	for _, name := range []otelDDOpt{service, metrics, debugMode, enabled, resourceAttributes} {
 		val := assessSource(name)
 		switch name {
 		case service:
@@ -320,23 +319,15 @@ func newConfig(opts ...StartOption) *config {
 			c.runtimeMetrics = internal.BoolVal(val, false)
 		case enabled:
 			c.enabled = newDynamicConfig("tracing_enabled", internal.BoolVal(val, true), func(b bool) bool { return true }, equal[bool])
+		case resourceAttributes:
+			if val != "" {
+				tags := internal.ParseTagString(val)
+				internal.CleanGitMetadataTags(tags)
+				for key, val := range tags {
+					WithGlobalTag(key, val)(c)
+				}
+			}
 		}
-	}
-	// OTEL_RESOURCE_ATTRIBUTES is treated as an addition to DD_TAGS
-	if v := os.Getenv("OTEL_RESOURCE_ATTRIBUTES"); v != "" {
-		count := 0
-		internal.ForEachStringTag(v, internal.OtelTagsDelimeter, func(key, val string) {
-			if count == 10 {
-				log.Warn("Limit of 10 tags breached by OTEL_RESOURCE_ATTRIBUTES; dropping subsequent tags to preserve metric cardinality")
-				return
-			}
-			// map reserved otel tag names to dd tag names
-			if vv, ok := otelDdTags[key]; ok {
-				key = vv
-			}
-			WithGlobalTag(key, val)(c)
-			count++
-		})
 	}
 	if v := os.Getenv("OTEL_LOGS_EXPORTER"); v != "" {
 		log.Warn("OTEL_LOGS_EXPORTER is not supported")
@@ -371,13 +362,6 @@ func newConfig(opts ...StartOption) *config {
 	c.headerAsTags = newDynamicConfig("trace_header_tags", nil, setHeaderTags, equalSlice[string])
 	if v := os.Getenv("DD_TRACE_HEADER_TAGS"); v != "" {
 		WithHeaderTags(strings.Split(v, ","))(c)
-	}
-	if v := os.Getenv("DD_TAGS"); v != "" {
-		tags := internal.ParseTagString(v)
-		internal.CleanGitMetadataTags(tags)
-		for key, val := range tags {
-			WithGlobalTag(key, val)(c)
-		}
 	}
 	if _, ok := os.LookupEnv("AWS_LAMBDA_FUNCTION_NAME"); ok {
 		// AWS_LAMBDA_FUNCTION_NAME being set indicates that we're running in an AWS Lambda environment.
