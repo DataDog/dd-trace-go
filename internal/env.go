@@ -90,7 +90,7 @@ func ForEachStringTag(str string, delimiter string, fn func(key string, val stri
 // ParseTagString returns tags parsed from string as map
 func ParseTagString(str string) map[string]string {
 	res := make(map[string]string)
-	ForEachStringTag(str, DdDelimiter, func(key, val string) { res[key] = val })
+	ForEachStringTag(str, DDTagsDelimiter, func(key, val string) { res[key] = val })
 	return res
 }
 
@@ -109,8 +109,7 @@ func FloatEnv(key string, def float64) float64 {
 	return v
 }
 
-// BoolEnv returns the parsed boolean value of string val, or
-// def if not parseable
+// BoolEnv returns the parsed boolean value of string val, or def if not parseable
 func BoolVal(val string, def bool) bool {
 	v, err := strconv.ParseBool(val)
 	if err != nil {
@@ -119,8 +118,7 @@ func BoolVal(val string, def bool) bool {
 	return v
 }
 
-// BoolEnv returns the parsed float value of string val, or
-// def if not parseable
+// FloatVal returns the parsed float value of string val, or def if not parseable
 func FloatVal(val string, def float64) float64 {
 	v, err := strconv.ParseFloat(val, 64)
 	if err != nil {

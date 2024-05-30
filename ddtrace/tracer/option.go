@@ -325,7 +325,7 @@ func newConfig(opts ...StartOption) *config {
 	// OTEL_RESOURCE_ATTRIBUTES is treated as an addition to DD_TAGS
 	if v := os.Getenv("OTEL_RESOURCE_ATTRIBUTES"); v != "" {
 		count := 0
-		internal.ForEachStringTag(v, internal.OtelDelimeter, func(key, val string) {
+		internal.ForEachStringTag(v, internal.OtelTagsDelimeter, func(key, val string) {
 			if count == 10 {
 				log.Warn("Limit of 10 tags breached by OTEL_RESOURCE_ATTRIBUTES; dropping subsequent tags to preserve metric cardinality")
 				return
@@ -366,7 +366,7 @@ func newConfig(opts ...StartOption) *config {
 		c.version = ver
 	}
 	if v := os.Getenv("DD_SERVICE_MAPPING"); v != "" {
-		internal.ForEachStringTag(v, internal.DdDelimiter, func(key, val string) { WithServiceMapping(key, val)(c) })
+		internal.ForEachStringTag(v, internal.DDTagsDelimiter, func(key, val string) { WithServiceMapping(key, val)(c) })
 	}
 	c.headerAsTags = newDynamicConfig("trace_header_tags", nil, setHeaderTags, equalSlice[string])
 	if v := os.Getenv("DD_TRACE_HEADER_TAGS"); v != "" {
@@ -429,7 +429,7 @@ func newConfig(opts ...StartOption) *config {
 	}
 	c.peerServiceMappings = make(map[string]string)
 	if v := os.Getenv("DD_TRACE_PEER_SERVICE_MAPPING"); v != "" {
-		internal.ForEachStringTag(v, internal.DdDelimiter, func(key, val string) { c.peerServiceMappings[key] = val })
+		internal.ForEachStringTag(v, internal.DDTagsDelimiter, func(key, val string) { c.peerServiceMappings[key] = val })
 	}
 
 	for _, fn := range opts {
