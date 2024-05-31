@@ -109,7 +109,7 @@ func FloatEnv(key string, def float64) float64 {
 	return v
 }
 
-// BoolEnv returns the parsed boolean value of string val, or def if not parseable
+// BoolVal returns the parsed boolean value of string val, or def if not parseable
 func BoolVal(val string, def bool) bool {
 	v, err := strconv.ParseBool(val)
 	if err != nil {
