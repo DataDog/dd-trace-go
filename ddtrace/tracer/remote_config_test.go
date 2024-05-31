@@ -198,7 +198,7 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 			{
 				Name:   "trace_sample_rules",
 				Value:  `[{"service":"my-service","name":"web.request","resource":"abc","sample_rate":1,"provenance":"customer"}]`,
-				Origin: telemetry.OriginRemoteConfig
+				Origin: telemetry.OriginRemoteConfig,
 			},
 		})
 	})
