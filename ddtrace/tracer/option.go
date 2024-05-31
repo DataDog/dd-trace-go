@@ -305,9 +305,10 @@ const partialFlushMinSpansDefault = 1000
 func newConfig(opts ...StartOption) *config {
 	c := new(config)
 	c.sampler = NewAllSampler()
-	defaultRate, err := internal.FloatVal(getDDorOtelConfig("sampleRate"), math.NaN())
+	defaultRate, err := strconv.ParseFloat(getDDorOtelConfig("sampleRate"), 64)
 	if err != nil {
 		log.Warn("ignoring DD_TRACE_SAMPLE_RATE, error: %v", err)
+		defaultRate = math.NaN()
 	} else if defaultRate < 0.0 || defaultRate > 1.0 {
 		log.Warn("ignoring DD_TRACE_SAMPLE_RATE: out of range %f", defaultRate)
 		defaultRate = math.NaN()
