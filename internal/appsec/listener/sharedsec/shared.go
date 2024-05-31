@@ -94,7 +94,7 @@ func ProcessActions(op dyngo.Operation, actions map[string]any) (interrupt bool)
 	// If any of the actions are supposed to interrupt the request, emit a blocking event for the SDK operations
 	// to return an error.
 	if interrupt {
-		dyngo.EmitData(op, &events.SecurityBlockingEvent{})
+		dyngo.EmitData(op, &events.BlockingSecurityEvent{})
 	}
 
 	return interrupt

@@ -40,7 +40,7 @@ var userIDOperationArgsType = reflect.TypeOf((*UserIDOperationArgs)(nil)).Elem()
 func ExecuteUserIDOperation(parent dyngo.Operation, args UserIDOperationArgs) error {
 	var err error
 	op := &UserIDOperation{Operation: dyngo.NewOperation(parent)}
-	dyngo.OnData(op, func(e *events.SecurityBlockingEvent) { err = e })
+	dyngo.OnData(op, func(e *events.BlockingSecurityEvent) { err = e })
 	dyngo.StartOperation(op, args)
 	dyngo.FinishOperation(op, UserIDOperationRes{})
 	return err

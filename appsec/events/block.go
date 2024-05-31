@@ -8,15 +8,15 @@
 // Handling these events differently than other errors is crucial to not leak information to an attacker.
 package events
 
-var _ error = (*SecurityBlockingEvent)(nil)
+var _ error = (*BlockingSecurityEvent)(nil)
 
-// SecurityBlockingEvent is an event that signals that a request was blocked by the WAF.
+// BlockingSecurityEvent is an event that signals that a request was blocked by the WAF.
 // It should be handled differently than other errors to avoid leaking information to an attacker.
 // If this error was returned by native types wrapped by dd-trace-go, it means that a 403 response will be written
 // by appsec middleware (or any other status code defined in DataDog's UI). Therefore, the user should not write a
 // response in the handler.
-type SecurityBlockingEvent struct{}
+type BlockingSecurityEvent struct{}
 
-func (*SecurityBlockingEvent) Error() string {
+func (*BlockingSecurityEvent) Error() string {
 	return "request blocked by WAF"
 }

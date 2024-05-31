@@ -50,7 +50,7 @@ func MonitorParsedBody(ctx context.Context, body any) error {
 func ExecuteSDKBodyOperation(parent dyngo.Operation, args types.SDKBodyOperationArgs) error {
 	var err error
 	op := &types.SDKBodyOperation{Operation: dyngo.NewOperation(parent)}
-	dyngo.OnData(op, func(e *events.SecurityBlockingEvent) {
+	dyngo.OnData(op, func(e *events.BlockingSecurityEvent) {
 		err = e
 	})
 	dyngo.StartOperation(op, args)

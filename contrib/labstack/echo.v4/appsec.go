@@ -26,7 +26,7 @@ func withAppSec(next echo.HandlerFunc, span tracer.Span) echo.HandlerFunc {
 			err = next(c)
 			// If the error is a monitoring one, it means appsec actions will take care of writing the response
 			// and handling the error. Don't call the echo error handler in this case
-			if _, ok := err.(*events.SecurityBlockingEvent); !ok && err != nil {
+			if _, ok := err.(*events.BlockingSecurityEvent); !ok && err != nil {
 				c.Error(err)
 			}
 		})

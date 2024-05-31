@@ -654,7 +654,7 @@ func TestAppsec(t *testing.T) {
 			require.NoError(t, err)
 
 			resp, err := client.RoundTrip(req.WithContext(r.Context()))
-			require.ErrorIs(t, err, &events.SecurityBlockingEvent{})
+			require.ErrorIs(t, err, &events.BlockingSecurityEvent{})
 			if resp != nil {
 				defer resp.Body.Close()
 			}

@@ -197,7 +197,7 @@ func newBlockRequestHandler(status int, ct string, payload []byte) http.Handler 
 
 func newGRPCBlockHandler(status int) GRPCWrapper {
 	return func(_ map[string][]string) (uint32, error) {
-		return uint32(status), &events.SecurityBlockingEvent{}
+		return uint32(status), &events.BlockingSecurityEvent{}
 	}
 }
 

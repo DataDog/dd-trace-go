@@ -37,8 +37,8 @@ func ProtectRoundTrip(ctx context.Context, url string) error {
 		Operation: dyngo.NewOperation(parent),
 	}
 
-	var err *events.SecurityBlockingEvent
-	dyngo.OnData(op, func(e *events.SecurityBlockingEvent) {
+	var err *events.BlockingSecurityEvent
+	dyngo.OnData(op, func(e *events.BlockingSecurityEvent) {
 		err = e
 	})
 

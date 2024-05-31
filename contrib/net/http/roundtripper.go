@@ -61,7 +61,7 @@ func (rt *roundTripper) RoundTrip(req *http.Request) (res *http.Response, err er
 		if rt.cfg.after != nil {
 			rt.cfg.after(res, span)
 		}
-		if !errors.Is(err, &events.SecurityBlockingEvent{}) && (rt.cfg.errCheck == nil || rt.cfg.errCheck(err)) {
+		if !errors.Is(err, &events.BlockingSecurityEvent{}) && (rt.cfg.errCheck == nil || rt.cfg.errCheck(err)) {
 			span.Finish(tracer.WithError(err))
 		} else {
 			span.Finish()
