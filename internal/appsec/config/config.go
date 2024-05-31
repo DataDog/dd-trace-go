@@ -37,7 +37,7 @@ func registerSCAAppConfigTelemetry(client telemetry.Client) {
 		return
 	}
 	if defined {
-		client.RegisterAppConfig(EnvSCAEnabled, val, "env_var")
+		client.RegisterAppConfig(EnvSCAEnabled, val, telemetry.OriginEnvVar)
 	}
 }
 
