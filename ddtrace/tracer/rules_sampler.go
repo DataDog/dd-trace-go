@@ -627,15 +627,6 @@ func (rs *singleSpanRulesSampler) apply(span *span) bool {
 	return false
 }
 
-// Assumes the new rules are different from the old rules.
-func (rs *singleSpanRulesSampler) setSpanSampleRules(rules []SamplingRule) bool {
-	if EqualsFalseNegative(rs.rules, rules) {
-		return false
-	}
-	rs.rules = rules
-	return true
-}
-
 // rateLimiter is a wrapper on top of golang.org/x/time/rate which implements a rate limiter but also
 // returns the effective rate of allowance.
 type rateLimiter struct {

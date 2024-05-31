@@ -203,69 +203,6 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 		})
 	})
 
-	t.Run("DD_SPAN_SAMPLING_RULES=0.1, DD_TRACE_SAMPLING_RULES=0.1 and RC rule rate=1.0 and revert", func(t *testing.T) {
-		telemetryClient := new(telemetrytest.MockClient)
-		defer telemetry.MockGlobalClient(telemetryClient)()
-
-		t.Setenv("DD_TRACE_SAMPLING_RULES", `[{
-				"service": "my-service",
-				"name": "web.request",
-				"resource": "*",
-				"sample_rate": 0.1
-			}]`)
-		t.Setenv("DD_SPAN_SAMPLING_RULES", `[{
-			"name": "web.request",
-			"sample_rate": 0.3
-		}]`)
-		tracer, _, _, stop := startTestTracer(t, WithService("my-service"), WithEnv("my-env"))
-		defer stop()
-
-		s := tracer.StartSpan("web.request").(*span)
-		s.Finish()
-		require.Equal(t, 0.1, s.Metrics[keyRulesSamplerAppliedRate])
-
-		input := remoteconfig.ProductUpdate{
-			"path": []byte(`{"lib_config": {"tracing_sampling_rate": 0.5,
-			"tracing_sampling_rules":[{
-				"service": "my-service",
-				"name": "web.request",
-				"resource": "abc",
-				"provenance": "customer",
-				"sample_rate": 1.0
-			},
-			{
-				"service": "my-service",
-				"name": "web.request",
-				"resource": "*",
-				"provenance": "dynamic",
-				"sample_rate": 0.3
-			}]},
-			"service_target": {"service": "my-service", "env": "my-env"}}`),
-		}
-		applyStatus := tracer.onRemoteConfigUpdate(input)
-		require.Equal(t, state.ApplyStateAcknowledged, applyStatus["path"].State)
-
-		// Reset restores local rules
-		input = remoteconfig.ProductUpdate{"path": nil}
-		applyStatus = tracer.onRemoteConfigUpdate(input)
-		require.Equal(t, state.ApplyStateAcknowledged, applyStatus["path"].State)
-
-		telemetryClient.AssertNumberOfCalls(t, "ConfigChange", 2)
-		telemetryClient.AssertCalled(t, "ConfigChange", []telemetry.Configuration{
-			{Name: "trace_sample_rate", Value: 0.5, Origin: telemetry.OriginRemoteConfig},
-			{Name: "trace_sample_rules",
-				Value: `[{"service":"my-service","name":"web.request","resource":"abc","sample_rate":1,"provenance":"customer"} {"service":"my-service","name":"web.request","resource":"*","sample_rate":0.3,"provenance":"dynamic"}]`, Origin: telemetry.OriginRemoteConfig},
-		})
-		telemetryClient.AssertCalled(t, "ConfigChange", []telemetry.Configuration{
-			{Name: "trace_sample_rate", Value: nil, Origin: telemetry.OriginDefault},
-			{
-				Name:   "trace_sample_rules",
-				Value:  `[{"service":"my-service","name":"web.request","resource":"*","sample_rate":0.1}]`,
-				Origin: telemetry.OriginDefault,
-			},
-		})
-	})
-
 	t.Run("DD_TRACE_SAMPLING_RULES=0.1 and RC rule rate=1.0 and revert", func(t *testing.T) {
 		telemetryClient := new(telemetrytest.MockClient)
 		defer telemetry.MockGlobalClient(telemetryClient)()
