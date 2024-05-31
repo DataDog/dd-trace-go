@@ -59,7 +59,7 @@ func startTelemetry(c *config) {
 		c.headerAsTags.toTelemetry(),
 		c.globalTags.toTelemetry(),
 		c.traceSampleRules.toTelemetry(),
-		{Name: "span_sample_rules", Value: c.spanRules},
+		telemetry.Sanitize(telemetry.Configuration{Name: "span_sample_rules", Value: c.spanRules}),
 	}
 	var peerServiceMapping []string
 	for key, value := range c.peerServiceMappings {
