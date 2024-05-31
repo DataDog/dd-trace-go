@@ -854,7 +854,6 @@ func (sr SamplingRule) MarshalJSON() ([]byte, error) {
 		Resource     string            `json:"resource,omitempty"`
 		Rate         float64           `json:"sample_rate"`
 		Tags         map[string]string `json:"tags,omitempty"`
-		Type         *string           `json:"type,omitempty"`
 		MaxPerSecond *float64          `json:"max_per_second,omitempty"`
 		Provenance   string            `json:"provenance,omitempty"`
 	}{}
@@ -884,10 +883,6 @@ func (sr SamplingRule) MarshalJSON() ([]byte, error) {
 		s.MaxPerSecond = &sr.MaxPerSecond
 	}
 	s.Rate = sr.Rate
-	if v := sr.ruleType.String(); v != "" {
-		t := fmt.Sprintf("%d", sr.ruleType)
-		s.Type = &t
-	}
 	if sr.Provenance != Local {
 		s.Provenance = sr.Provenance.String()
 	}
