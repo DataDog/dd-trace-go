@@ -192,8 +192,20 @@ func TestTracerStart(t *testing.T) {
 		internal.Testing = false
 	})
 
-	t.Run("tracing_not_enabled", func(t *testing.T) {
+	t.Run("dd_tracing_not_enabled", func(t *testing.T) {
 		t.Setenv("DD_TRACE_ENABLED", "false")
+		Start()
+		defer Stop()
+		if _, ok := internal.GetGlobalTracer().(*tracer); ok {
+			t.Fail()
+		}
+		if _, ok := internal.GetGlobalTracer().(*internal.NoopTracer); !ok {
+			t.Fail()
+		}
+	})
+
+	t.Run("otel_tracing_not_enabled", func(t *testing.T) {
+		t.Setenv("OTEL_TRACES_EXPORTER", "none")
 		Start()
 		defer Stop()
 		if _, ok := internal.GetGlobalTracer().(*tracer); ok {
@@ -683,7 +695,7 @@ func TestTracerRuntimeMetrics(t *testing.T) {
 		assert.Contains(t, tp.Logs()[0], "DEBUG: Runtime metrics enabled")
 	})
 
-	t.Run("env", func(t *testing.T) {
+	t.Run("dd-env", func(t *testing.T) {
 		t.Setenv("DD_RUNTIME_METRICS_ENABLED", "true")
 		tp := new(log.RecordLogger)
 		tp.Ignore("appsec: ", telemetry.LogPrefix)
@@ -692,13 +704,22 @@ func TestTracerRuntimeMetrics(t *testing.T) {
 		assert.Contains(t, tp.Logs()[0], "DEBUG: Runtime metrics enabled")
 	})
 
-	t.Run("overrideEnv", func(t *testing.T) {
+	t.Run("otel-env", func(t *testing.T) {
+		t.Setenv("OTEL_METRICS_EXPORTER", "none")
+		c := newConfig()
+		assert.False(t, c.runtimeMetrics)
+	})
+
+	t.Run("override-chain", func(t *testing.T) {
+		// dd env overrides otel env
+		t.Setenv("OTEL_METRICS_EXPORTER", "none")
+		t.Setenv("DD_RUNTIME_METRICS_ENABLED", "true")
+		c := newConfig()
+		assert.True(t, c.runtimeMetrics)
+		// tracer option overrides dd env
 		t.Setenv("DD_RUNTIME_METRICS_ENABLED", "false")
-		tp := new(log.RecordLogger)
-		tp.Ignore("appsec: ", telemetry.LogPrefix)
-		tracer := newTracer(WithRuntimeMetrics(), WithLogger(tp), WithDebugMode(true))
-		defer tracer.Stop()
-		assert.Contains(t, tp.Logs()[0], "DEBUG: Runtime metrics enabled")
+		c = newConfig(WithRuntimeMetrics())
+		assert.True(t, c.runtimeMetrics)
 	})
 }
 
