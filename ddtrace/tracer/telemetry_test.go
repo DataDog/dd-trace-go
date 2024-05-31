@@ -68,23 +68,18 @@ func TestTelemetryEnabled(t *testing.T) {
 	})
 
 	t.Run("telemetry customer or dynamic rules", func(t *testing.T) {
-		rules := []SamplingRule{
-			TagsResourceRule(map[string]string{"tag-a": "tv-a??"}, "resource-*", "op-name", "test-serv", 0.1),
-			SpanNameServiceRule("op-name", "test-serv", 0.1),
-		}
+		rule := TagsResourceRule(map[string]string{"tag-a": "tv-a??"}, "resource-*", "op-name", "test-serv", 0.1)
 
 		for _, prov := range provenances {
 			if prov == Local {
 				continue
 			}
-			for i := range rules {
-				rules[i].Provenance = prov
-			}
+			rule.Provenance = prov
 
 			telemetryClient := new(telemetrytest.MockClient)
 			defer telemetry.MockGlobalClient(telemetryClient)()
 			Start(WithService("test-serv"),
-				WithSamplingRules(rules),
+				WithSamplingRules([]SamplingRule{rule}),
 			)
 			defer globalconfig.SetServiceName("")
 			defer Stop()
@@ -92,9 +87,33 @@ func TestTelemetryEnabled(t *testing.T) {
 			assert.True(t, telemetryClient.Started)
 			telemetry.Check(t, telemetryClient.Configuration, "trace_sample_rules",
 				fmt.Sprintf(`[{"service":"test-serv","name":"op-name","resource":"resource-*","sample_rate":0.1,"tags":{"tag-a":"tv-a??"},"provenance":"%s"}]`, prov.String()))
-			telemetry.Check(t, telemetryClient.Configuration, "span_sample_rules",
-				fmt.Sprintf(`[{"service":"test-serv","name":"op-name","sample_rate":0.1,"provenance":"%s"}]`, prov.String()))
 		}
+	})
+
+	t.Run("telemetry local rules", func(t *testing.T) {
+		rules := []SamplingRule{
+			TagsResourceRule(map[string]string{"tag-a": "tv-a??"}, "resource-*", "op-name", "test-serv", 0.1),
+			// Span rules can have only local provenance for now.
+			SpanNameServiceRule("op-name", "test-serv", 0.1),
+		}
+
+		for i := range rules {
+			rules[i].Provenance = Local
+		}
+
+		telemetryClient := new(telemetrytest.MockClient)
+		defer telemetry.MockGlobalClient(telemetryClient)()
+		Start(WithService("test-serv"),
+			WithSamplingRules(rules),
+		)
+		defer globalconfig.SetServiceName("")
+		defer Stop()
+
+		assert.True(t, telemetryClient.Started)
+		telemetry.Check(t, telemetryClient.Configuration, "trace_sample_rules",
+			`[{"service":"test-serv","name":"op-name","resource":"resource-*","sample_rate":0.1,"tags":{"tag-a":"tv-a??"}}]`)
+		telemetry.Check(t, telemetryClient.Configuration, "span_sample_rules",
+			`[{"service":"test-serv","name":"op-name","sample_rate":0.1}]`)
 	})
 
 	t.Run("tracer start with empty rules", func(t *testing.T) {
