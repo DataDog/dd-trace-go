@@ -271,6 +271,9 @@ type config struct {
 	// dynamicInstrumentationEnabled controls if the target application can be modified by Dynamic Instrumentation or not.
 	// Value from DD_DYNAMIC_INSTRUMENTATION_ENABLED, default false.
 	dynamicInstrumentationEnabled bool
+
+	// globalSampleRate holds sample rate read from environment variables.
+	globalSampleRate float64
 }
 
 // orchestrionConfig contains Orchestrion configuration.
@@ -302,8 +305,20 @@ const partialFlushMinSpansDefault = 1000
 func newConfig(opts ...StartOption) *config {
 	c := new(config)
 	c.sampler = NewAllSampler()
+	defaultRate, err := strconv.ParseFloat(getDDorOtelConfig("sampleRate"), 64)
+	if err != nil {
+		log.Warn("ignoring DD_TRACE_SAMPLE_RATE, error: %v", err)
+		defaultRate = math.NaN()
+	} else if defaultRate < 0.0 || defaultRate > 1.0 {
+		log.Warn("ignoring DD_TRACE_SAMPLE_RATE: out of range %f", defaultRate)
+		defaultRate = math.NaN()
+	}
+	c.globalSampleRate = defaultRate
 	c.httpClientTimeout = time.Second * 10 // 10 seconds
 
+	if v := os.Getenv("OTEL_LOGS_EXPORTER"); v != "" {
+		log.Warn("OTEL_LOGS_EXPORTER is not supported")
+	}
 	if internal.BoolEnv("DD_TRACE_ANALYTICS_ENABLED", false) {
 		globalconfig.SetAnalyticsRate(1.0)
 	}
@@ -325,7 +340,7 @@ func newConfig(opts ...StartOption) *config {
 			return r == ',' || r == ' '
 		})...)(c)
 	}
-	if v := os.Getenv("DD_SERVICE"); v != "" {
+	if v := getDDorOtelConfig("service"); v != "" {
 		c.serviceName = v
 		globalconfig.SetServiceName(v)
 	}
@@ -333,7 +348,7 @@ func newConfig(opts ...StartOption) *config {
 		c.version = ver
 	}
 	if v := os.Getenv("DD_SERVICE_MAPPING"); v != "" {
-		internal.ForEachStringTag(v, func(key, val string) { WithServiceMapping(key, val)(c) })
+		internal.ForEachStringTag(v, internal.DDTagsDelimiter, func(key, val string) { WithServiceMapping(key, val)(c) })
 	}
 	c.headerAsTags = newDynamicConfig("trace_header_tags", nil, setHeaderTags, equalSlice[string])
 	if v := os.Getenv("DD_TRACE_HEADER_TAGS"); v != "" {
@@ -341,7 +356,7 @@ func newConfig(opts ...StartOption) *config {
 		// Required to ensure that the startup header tags are set on reset.
 		c.headerAsTags.startup = c.headerAsTags.current
 	}
-	if v := os.Getenv("DD_TAGS"); v != "" {
+	if v := getDDorOtelConfig("resourceAttributes"); v != "" {
 		tags := internal.ParseTagString(v)
 		internal.CleanGitMetadataTags(tags)
 		for key, val := range tags {
@@ -356,9 +371,9 @@ func newConfig(opts ...StartOption) *config {
 		c.logToStdout = true
 	}
 	c.logStartup = internal.BoolEnv("DD_TRACE_STARTUP_LOGS", true)
-	c.runtimeMetrics = internal.BoolEnv("DD_RUNTIME_METRICS_ENABLED", false)
-	c.debug = internal.BoolEnv("DD_TRACE_DEBUG", false)
-	c.enabled = newDynamicConfig("tracing_enabled", internal.BoolEnv("DD_TRACE_ENABLED", true), func(b bool) bool { return true }, equal[bool])
+	c.runtimeMetrics = internal.BoolVal(getDDorOtelConfig("metrics"), false)
+	c.debug = internal.BoolVal(getDDorOtelConfig("debugMode"), false)
+	c.enabled = newDynamicConfig("tracing_enabled", internal.BoolVal(getDDorOtelConfig("enabled"), true), func(b bool) bool { return true }, equal[bool])
 	if _, ok := os.LookupEnv("DD_TRACE_ENABLED"); ok {
 		c.enabled.cfgOrigin = telemetry.OriginEnvVar
 	}
@@ -406,7 +421,7 @@ func newConfig(opts ...StartOption) *config {
 	}
 	c.peerServiceMappings = make(map[string]string)
 	if v := os.Getenv("DD_TRACE_PEER_SERVICE_MAPPING"); v != "" {
-		internal.ForEachStringTag(v, func(key, val string) { c.peerServiceMappings[key] = val })
+		internal.ForEachStringTag(v, internal.DDTagsDelimiter, func(key, val string) { c.peerServiceMappings[key] = val })
 	}
 
 	for _, fn := range opts {

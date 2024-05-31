@@ -204,7 +204,7 @@ func getPropagators(cfg *PropagatorConfig, ps string) ([]Propagator, string) {
 		defaultPsName += ",b3"
 	}
 	if ps == "" {
-		if prop := os.Getenv(headerPropagationStyle); prop != "" {
+		if prop := getDDorOtelConfig("propagationStyle"); prop != "" {
 			ps = prop // use the generic DD_TRACE_PROPAGATION_STYLE if set
 		} else {
 			return defaultPs, defaultPsName // no env set, so use default from configuration
