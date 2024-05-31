@@ -15,10 +15,9 @@ import (
 
 func TestAssessSource(t *testing.T) {
 	t.Run("invalid", func(t *testing.T) {
-		v := getDDorOtelConfig("invalid")
-		assert.Equal(t, "", v)
-
+		assert.Panics(t, func() { getDDorOtelConfig("invalid") }, "invalid config should panic")
 	})
+
 	t.Run("dd", func(t *testing.T) {
 		t.Setenv("DD_SERVICE", "abc")
 		v := getDDorOtelConfig("service")

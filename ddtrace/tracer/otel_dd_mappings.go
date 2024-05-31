@@ -86,7 +86,7 @@ var propagationMapping = map[string]string{
 func getDDorOtelConfig(configName string) string {
 	config, ok := otelDDConfigs[configName]
 	if !ok {
-		return ""
+		panic(fmt.Sprintf("Programming Error: %v not found in supported configurations", configName))
 	}
 
 	val := os.Getenv(config.dd)
