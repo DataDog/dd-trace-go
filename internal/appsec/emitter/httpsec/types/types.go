@@ -76,10 +76,13 @@ type (
 	// SDKBodyOperationRes is the SDK body operation results.
 	SDKBodyOperationRes struct{}
 
+	// RoundTripOperationArgs is the round trip operation arguments.
 	RoundTripOperationArgs struct {
+		// URL corresponds to the address `server.io.net.url`.
 		URL string
 	}
 
+	// RoundTripOperationRes is the round trip operation results.
 	RoundTripOperationRes struct{}
 )
 

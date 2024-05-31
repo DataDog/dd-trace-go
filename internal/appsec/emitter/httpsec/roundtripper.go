@@ -26,7 +26,7 @@ func ProtectRoundTrip(ctx context.Context, url string) error {
 	parent, _ := ctx.Value(listener.ContextKey{}).(dyngo.Operation)
 	if parent == nil { // No parent operation => we can't monitor the request
 		badInputContextOnce.Do(func() {
-			log.Debug("appsec: outgoing http request monitoring ignored: could not find the http handler " +
+			log.Debug("appsec: outgoing http request monitoring ignored: could not find the handler " +
 				"instrumentation metadata in the request context: the request handler is not being monitored by a " +
 				"middleware function or the incoming request context has not be forwarded correctly to the roundtripper")
 		})

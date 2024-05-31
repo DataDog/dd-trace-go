@@ -3,18 +3,20 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2022 Datadog, Inc.
 
-// Package events provides the types and interfaces for the appsec event system.
-// User-facing events can be returned by the appsec package to signal that a request was blocked.
-// Handling these events differently than other errors is crucial to not leak information to an attacker.
+// Package events provides security event types that appsec can return in function calls it monitors when blocking them.
+// It allows finer-grained integrations of appsec into your Go errors' management logic.
 package events
 
 var _ error = (*BlockingSecurityEvent)(nil)
 
-// BlockingSecurityEvent is an event that signals that a request was blocked by the WAF.
-// It should be handled differently than other errors to avoid leaking information to an attacker.
-// If this error was returned by native types wrapped by dd-trace-go, it means that a 403 response will be written
-// by appsec middleware (or any other status code defined in DataDog's UI). Therefore, the user should not write a
-// response in the handler.
+// BlockingSecurityEvent is the error type returned by function calls blocked by appsec.
+// Even though appsec takes care of responding automatically to the blocked requests, it
+// is your duty to abort the request handlers that are calling functions blocked by appsec.
+// For instance, if a gRPC handler performs a SQL query blocked by appsec, the SQL query
+// function call gets blocked and aborted by returning an error of type SecurityBlockingEvent.
+// This allows you to safely abort your request handlers, and to be able to leverage errors.As if
+// necessary in your Go error management logic to be able to tell if the error is a blocking security
+// event or not (eg. to avoid retrying an HTTP client request).
 type BlockingSecurityEvent struct{}
 
 func (*BlockingSecurityEvent) Error() string {
