@@ -264,7 +264,7 @@ type config struct {
 	// traceSampleRules holds the trace sampling rules
 	traceSampleRules dynamicConfig[[]SamplingRule]
 
-	// spanSampleRules holds the trace sampling rules
+	// spanSampleRules holds the span sampling rules
 	spanSampleRules dynamicConfig[[]SamplingRule]
 
 	// headerAsTags holds the header as tags configuration.

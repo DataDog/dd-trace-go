@@ -37,8 +37,8 @@ type startupInfo struct {
 	AnalyticsEnabled            bool                         `json:"analytics_enabled"`              // True if there is a global analytics rate set
 	SampleRate                  string                       `json:"sample_rate"`                    // The default sampling rate for the rules sampler
 	SampleRateLimit             string                       `json:"sample_rate_limit"`              // The rate limit configured with the rules sampler
-	TraceSamplingRules          []SamplingRule               `json:"trace_sampling_rules"`           // Rules used by the rules sampler
-	SpanSamplingRules           []SamplingRule               `json:"span_sampling_rules"`            // Rules used by the rules sampler
+	TraceSamplingRules          []SamplingRule               `json:"trace_sampling_rules"`           // Trace rules used by the rules sampler
+	SpanSamplingRules           []SamplingRule               `json:"span_sampling_rules"`            // Span rules used by the rules sampler
 	SamplingRulesError          string                       `json:"sampling_rules_error"`           // Any errors that occurred while parsing sampling rules
 	ServiceMappings             map[string]string            `json:"service_mappings"`               // Service Mappings
 	Tags                        map[string]string            `json:"tags"`                           // Global tags
