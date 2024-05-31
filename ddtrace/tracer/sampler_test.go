@@ -187,7 +187,7 @@ func TestRateSamplerSetting(t *testing.T) {
 }
 
 func TestRuleEnvVars(t *testing.T) {
-	t.Run("sample-rate", func(t *testing.T) {
+	t.Run("dd-sample-rate", func(t *testing.T) {
 		assert := assert.New(t)
 		for _, tt := range []struct {
 			in  string
@@ -201,12 +201,33 @@ func TestRuleEnvVars(t *testing.T) {
 			{in: "1point0", out: math.NaN()}, // default if invalid value
 		} {
 			t.Setenv("DD_TRACE_SAMPLE_RATE", tt.in)
-			res := globalSampleRate()
+			res := newConfig().globalSampleRate
 			if math.IsNaN(tt.out) {
 				assert.True(math.IsNaN(res))
 			} else {
 				assert.Equal(tt.out, res)
 			}
+		}
+	})
+
+	t.Run("otel-sample-rate", func(t *testing.T) {
+		for _, tt := range []struct {
+			config string
+			rate   float64
+		}{
+			{config: "parentbased_always_on", rate: 1.0},
+			{config: "parentbased_always_off", rate: 0.0},
+			{config: "parentbased_traceidratio", rate: 0.5},
+			{config: "always_on", rate: 1.0},
+			{config: "always_off", rate: 0.0},
+			{config: "traceidratio", rate: 0.75},
+		} {
+			t.Run(tt.config, func(t *testing.T) {
+				assert := assert.New(t)
+				t.Setenv("OTEL_TRACES_SAMPLER", tt.config)
+				t.Setenv("OTEL_TRACES_SAMPLER_ARG", fmt.Sprintf("%f", tt.rate))
+				assert.Equal(tt.rate, newConfig().globalSampleRate)
+			})
 		}
 	})
 
@@ -456,7 +477,7 @@ func TestRulesSampler(t *testing.T) {
 	}
 	t.Run("no-rules", func(t *testing.T) {
 		assert := assert.New(t)
-		rs := newRulesSampler(nil, nil, globalSampleRate())
+		rs := newRulesSampler(nil, nil, newConfig().globalSampleRate)
 
 		span := makeSpan("http.request", "test-service")
 		result := rs.SampleTrace(span)
@@ -521,7 +542,7 @@ func TestRulesSampler(t *testing.T) {
 				assert.Nil(t, err)
 
 				assert := assert.New(t)
-				rs := newRulesSampler(rules, nil, globalSampleRate())
+				rs := newRulesSampler(rules, nil, newConfig().globalSampleRate)
 
 				span := makeFinishedSpan(tt.spanName, tt.spanSrv, tt.spanRsc, tt.spanTags)
 
@@ -545,7 +566,7 @@ func TestRulesSampler(t *testing.T) {
 		for _, v := range traceRules {
 			t.Run("", func(t *testing.T) {
 				assert := assert.New(t)
-				rs := newRulesSampler(v, nil, globalSampleRate())
+				rs := newRulesSampler(v, nil, newConfig().globalSampleRate)
 
 				span := makeSpan("http.request", "test-service")
 				result := rs.SampleTrace(span)
@@ -571,7 +592,7 @@ func TestRulesSampler(t *testing.T) {
 		for _, v := range traceRules {
 			t.Run("", func(t *testing.T) {
 				assert := assert.New(t)
-				rs := newRulesSampler(v, nil, globalSampleRate())
+				rs := newRulesSampler(v, nil, newConfig().globalSampleRate)
 
 				span := makeSpan("http.request", "test-service")
 				result := rs.SampleTrace(span)
@@ -617,7 +638,7 @@ func TestRulesSampler(t *testing.T) {
 				_, rules, err := samplingRulesFromEnv()
 				assert.Nil(t, err)
 				assert := assert.New(t)
-				rs := newRulesSampler(nil, rules, globalSampleRate())
+				rs := newRulesSampler(nil, rules, newConfig().globalSampleRate)
 
 				span := makeFinishedSpan(tt.spanName, tt.spanSrv, "res-10", map[string]interface{}{"hostname": "hn-30"})
 
@@ -740,7 +761,7 @@ func TestRulesSampler(t *testing.T) {
 			t.Run(fmt.Sprintf("%v", i), func(t *testing.T) {
 				assert := assert.New(t)
 				c := newConfig(WithSamplingRules(tt.rules))
-				rs := newRulesSampler(nil, c.spanRules, globalSampleRate())
+				rs := newRulesSampler(nil, c.spanRules, newConfig().globalSampleRate)
 
 				span := makeFinishedSpan(tt.spanName, tt.spanSrv, "res-10", map[string]interface{}{"hostname": "hn-30",
 					"tag":        20.1,
@@ -808,7 +829,8 @@ func TestRulesSampler(t *testing.T) {
 				_, rules, _ := samplingRulesFromEnv()
 
 				assert := assert.New(t)
-				rs := newRulesSampler(nil, rules, globalSampleRate())
+				sampleRate := newConfig().globalSampleRate
+				rs := newRulesSampler(nil, rules, sampleRate)
 
 				span := makeFinishedSpan(tt.spanName, tt.spanSrv, tt.resName, map[string]interface{}{"hostname": "hn-30"})
 				result := rs.SampleSpan(span)
@@ -918,7 +940,7 @@ func TestRulesSampler(t *testing.T) {
 			t.Run("", func(t *testing.T) {
 				assert := assert.New(t)
 				c := newConfig(WithSamplingRules(tt.rules))
-				rs := newRulesSampler(nil, c.spanRules, globalSampleRate())
+				rs := newRulesSampler(nil, c.spanRules, newConfig().globalSampleRate)
 
 				span := makeFinishedSpan(tt.spanName, tt.spanSrv, "res-10", map[string]interface{}{"hostname": "hn-30",
 					"tag": 20.1,
@@ -947,7 +969,7 @@ func TestRulesSampler(t *testing.T) {
 				t.Run("", func(t *testing.T) {
 					assert := assert.New(t)
 					t.Setenv("DD_TRACE_SAMPLE_RATE", fmt.Sprint(rate))
-					rs := newRulesSampler(nil, rules, globalSampleRate())
+					rs := newRulesSampler(nil, rules, newConfig().globalSampleRate)
 
 					span := makeSpan("http.request", "test-service")
 					result := rs.SampleTrace(span)
@@ -1228,7 +1250,7 @@ func TestRulesSamplerInternals(t *testing.T) {
 	t.Run("full-rate", func(t *testing.T) {
 		assert := assert.New(t)
 		now := time.Now()
-		rs := newRulesSampler(nil, nil, globalSampleRate())
+		rs := newRulesSampler(nil, nil, newConfig().globalSampleRate)
 		// set samplingLimiter to specific state
 		rs.traces.limiter.prevTime = now.Add(-1 * time.Second)
 		rs.traces.limiter.allowed = 1
@@ -1243,7 +1265,7 @@ func TestRulesSamplerInternals(t *testing.T) {
 	t.Run("limited-rate", func(t *testing.T) {
 		assert := assert.New(t)
 		now := time.Now()
-		rs := newRulesSampler(nil, nil, globalSampleRate())
+		rs := newRulesSampler(nil, nil, newConfig().globalSampleRate)
 		// force sampling limiter to 1.0 spans/sec
 		rs.traces.limiter.limiter = rate.NewLimiter(rate.Limit(1.0), 1)
 		rs.traces.limiter.prevTime = now.Add(-1 * time.Second)

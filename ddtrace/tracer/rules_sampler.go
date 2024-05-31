@@ -380,26 +380,6 @@ func newTraceRulesSampler(rules []SamplingRule, traceSampleRate float64) *traceR
 	}
 }
 
-// globalSampleRate returns the sampling rate found in the DD_TRACE_SAMPLE_RATE environment variable.
-// If it is invalid or not within the 0-1 range, NaN is returned.
-func globalSampleRate() float64 {
-	defaultRate := math.NaN()
-	v := os.Getenv("DD_TRACE_SAMPLE_RATE")
-	if v == "" {
-		return defaultRate
-	}
-	r, err := strconv.ParseFloat(v, 64)
-	if err != nil {
-		log.Warn("ignoring DD_TRACE_SAMPLE_RATE: error: %v", err)
-		return defaultRate
-	}
-	if r >= 0.0 && r <= 1.0 {
-		return r
-	}
-	log.Warn("ignoring DD_TRACE_SAMPLE_RATE: out of range %f", r)
-	return defaultRate
-}
-
 func (rs *traceRulesSampler) enabled() bool {
 	rs.m.RLock()
 	defer rs.m.RUnlock()
