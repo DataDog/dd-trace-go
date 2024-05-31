@@ -337,6 +337,11 @@ func TestSamplingDecision(t *testing.T) {
 
 	t.Run("sampled", func(t *testing.T) {
 		tracer, _, _, stop := startTestTracer(t)
+		defer func() {
+			// Must check these after tracer is stopped to avoid flakiness
+			assert.Equal(t, uint32(0), tracer.droppedP0Traces)
+			assert.Equal(t, uint32(2), tracer.droppedP0Spans)
+		}()
 		defer stop()
 		tracer.prioritySampling.defaultRate = 0
 		tracer.config.serviceName = "test_service"
@@ -353,6 +358,11 @@ func TestSamplingDecision(t *testing.T) {
 		// Even if DropP0s is enabled, spans should always be kept unless
 		// client-side stats are also enabled.
 		tracer, _, _, stop := startTestTracer(t)
+		defer func() {
+			// Must check these after tracer is stopped to avoid flakiness
+			assert.Equal(t, uint32(0), tracer.droppedP0Traces)
+			assert.Equal(t, uint32(2), tracer.droppedP0Spans)
+		}()
 		defer stop()
 		tracer.config.agent.DropP0s = true
 		tracer.prioritySampling.defaultRate = 0
@@ -368,6 +378,11 @@ func TestSamplingDecision(t *testing.T) {
 
 	t.Run("dropped_stats", func(t *testing.T) {
 		tracer, _, _, stop := startTestTracer(t)
+		defer func() {
+			// Must check these after tracer is stopped to avoid flakiness
+			assert.Equal(t, uint32(1), tracer.droppedP0Traces)
+			assert.Equal(t, uint32(2), tracer.droppedP0Spans)
+		}()
 		defer stop()
 		tracer.config.featureFlags = make(map[string]struct{})
 		tracer.config.featureFlags["discovery"] = struct{}{}
@@ -386,6 +401,11 @@ func TestSamplingDecision(t *testing.T) {
 
 	t.Run("events_sampled", func(t *testing.T) {
 		tracer, _, _, stop := startTestTracer(t)
+		defer func() {
+			// Must check these after tracer is stopped to avoid flakiness
+			assert.Equal(t, uint32(0), tracer.droppedP0Traces)
+			assert.Equal(t, uint32(2), tracer.droppedP0Spans)
+		}()
 		defer stop()
 		tracer.config.agent.DropP0s = true
 		tracer.prioritySampling.defaultRate = 0
@@ -514,6 +534,11 @@ func TestSamplingDecision(t *testing.T) {
 		// Rules are available. Trace sample rate equals 1. Span sample rate equals 1.
 		// The trace should be kept. No single spans extracted.
 		tracer, _, _, stop := startTestTracer(t)
+		defer func() {
+			// Must check these after tracer is stopped to avoid flakiness
+			assert.Equal(t, uint32(0), tracer.droppedP0Traces)
+			assert.Equal(t, uint32(0), tracer.droppedP0Spans)
+		}()
 		defer stop()
 		tracer.config.agent.DropP0s = true
 		tracer.config.featureFlags = make(map[string]struct{})
@@ -573,6 +598,7 @@ func TestSamplingDecision(t *testing.T) {
 		}
 		assert.Equal(t, 50, singleSpans)
 		assert.InDelta(t, 0.8, float64(keptSpans)/float64(len(spans)), 0.19)
+		assert.Equal(t, uint32(0), tracer.droppedP0Traces)
 	})
 
 	t.Run("single_spans_without_max_per_second:rate_1.0", func(t *testing.T) {
@@ -607,6 +633,7 @@ func TestSamplingDecision(t *testing.T) {
 		}
 		assert.Equal(t, 1000, keptSpans+singleSpans)
 		assert.InDelta(t, 0.8, float64(keptSpans)/float64(1000), 0.15)
+		assert.Equal(t, uint32(0), tracer.droppedP0Traces)
 	})
 
 	t.Run("single_spans_without_max_per_second:rate_0.5", func(t *testing.T) {
@@ -643,6 +670,7 @@ func TestSamplingDecision(t *testing.T) {
 		}
 		assert.InDelta(t, 0.5, float64(singleSpans)/(float64(900-keptChildren)), 0.15)
 		assert.InDelta(t, 0.8, float64(keptTotal)/1000, 0.15)
+		assert.Equal(t, uint32(0), tracer.droppedP0Traces)
 	})
 }
 

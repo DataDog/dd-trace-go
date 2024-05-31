@@ -30,6 +30,8 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 		tracer, _, _, stop := startTestTracer(t, WithService("my-service"), WithEnv("my-env"))
 		defer stop()
 
+		require.Equal(t, telemetry.OriginDefault, tracer.config.traceSampleRate.cfgOrigin)
+
 		// Apply RC. Assert _dd.rule_psr shows the RC sampling rate (0.5) is applied
 		input := remoteconfig.ProductUpdate{
 			"path": []byte(
@@ -47,7 +49,7 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 		telemetryClient.AssertCalled(
 			t,
 			"ConfigChange",
-			[]telemetry.Configuration{{Name: "trace_sample_rate", Value: 0.5, Origin: "remote_config"}},
+			[]telemetry.Configuration{{Name: "trace_sample_rate", Value: 0.5, Origin: telemetry.OriginRemoteConfig}},
 		)
 
 		//Apply RC with sampling rules. Assert _dd.rule_psr shows the corresponding rule matched rate.
@@ -100,6 +102,8 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 		tracer, _, _, stop := startTestTracer(t, WithService("my-service"), WithEnv("my-env"))
 		defer stop()
 
+		require.Equal(t, telemetry.OriginEnvVar, tracer.config.traceSampleRate.cfgOrigin)
+
 		// Apply RC. Assert _dd.rule_psr shows the RC sampling rate (0.2) is applied
 		input := remoteconfig.ProductUpdate{
 			"path": []byte(
@@ -117,7 +121,7 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 		telemetryClient.AssertCalled(
 			t,
 			"ConfigChange",
-			[]telemetry.Configuration{{Name: "trace_sample_rate", Value: 0.2, Origin: "remote_config"}},
+			[]telemetry.Configuration{{Name: "trace_sample_rate", Value: 0.2, Origin: telemetry.OriginRemoteConfig}},
 		)
 
 		// Unset RC. Assert _dd.rule_psr shows the previous sampling rate (0.1) is applied
@@ -135,7 +139,7 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 		telemetryClient.AssertCalled(
 			t,
 			"ConfigChange",
-			[]telemetry.Configuration{{Name: "trace_sample_rate", Value: 0.1, Origin: ""}},
+			[]telemetry.Configuration{{Name: "trace_sample_rate", Value: 0.1, Origin: telemetry.OriginDefault}},
 		)
 	})
 
@@ -151,6 +155,8 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 			}]`)
 		tracer, _, _, stop := startTestTracer(t, WithService("my-service"), WithEnv("my-env"))
 		defer stop()
+
+		require.Equal(t, telemetry.OriginDefault, tracer.config.traceSampleRate.cfgOrigin)
 
 		s := tracer.StartSpan("web.request").(*span)
 		s.Finish()
@@ -188,11 +194,11 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 
 		telemetryClient.AssertNumberOfCalls(t, "ConfigChange", 1)
 		telemetryClient.AssertCalled(t, "ConfigChange", []telemetry.Configuration{
-			{Name: "trace_sample_rate", Value: 0.5, Origin: "remote_config"},
+			{Name: "trace_sample_rate", Value: 0.5, Origin: telemetry.OriginRemoteConfig},
 			{
 				Name:   "trace_sample_rules",
 				Value:  `[{"service":"my-service","name":"web.request","resource":"abc","sample_rate":1,"provenance":"customer"}]`,
-				Origin: "remote_config",
+				Origin: telemetry.OriginRemoteConfig
 			},
 		})
 	})
@@ -246,16 +252,16 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 
 		telemetryClient.AssertNumberOfCalls(t, "ConfigChange", 2)
 		telemetryClient.AssertCalled(t, "ConfigChange", []telemetry.Configuration{
-			{Name: "trace_sample_rate", Value: 0.5, Origin: "remote_config"},
+			{Name: "trace_sample_rate", Value: 0.5, Origin: telemetry.OriginRemoteConfig},
 			{Name: "trace_sample_rules",
-				Value: `[{"service":"my-service","name":"web.request","resource":"abc","sample_rate":1,"provenance":"customer"} {"service":"my-service","name":"web.request","resource":"*","sample_rate":0.3,"provenance":"dynamic"}]`, Origin: "remote_config"},
+				Value: `[{"service":"my-service","name":"web.request","resource":"abc","sample_rate":1,"provenance":"customer"} {"service":"my-service","name":"web.request","resource":"*","sample_rate":0.3,"provenance":"dynamic"}]`, Origin: telemetry.OriginRemoteConfig},
 		})
 		telemetryClient.AssertCalled(t, "ConfigChange", []telemetry.Configuration{
-			{Name: "trace_sample_rate", Value: nil, Origin: ""},
+			{Name: "trace_sample_rate", Value: nil, Origin: telemetry.OriginDefault},
 			{
 				Name:   "trace_sample_rules",
 				Value:  `[{"service":"my-service","name":"web.request","resource":"*","sample_rate":0.1}]`,
-				Origin: "",
+				Origin: telemetry.OriginDefault,
 			},
 		})
 	})
@@ -329,16 +335,16 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 		}
 		telemetryClient.AssertNumberOfCalls(t, "ConfigChange", 2)
 		telemetryClient.AssertCalled(t, "ConfigChange", []telemetry.Configuration{
-			{Name: "trace_sample_rate", Value: 0.5, Origin: "remote_config"},
+			{Name: "trace_sample_rate", Value: 0.5, Origin: telemetry.OriginRemoteConfig},
 			{Name: "trace_sample_rules",
-				Value: `[{"service":"my-service","name":"web.request","resource":"abc","sample_rate":1,"provenance":"customer"} {"service":"my-service","name":"web.request","resource":"*","sample_rate":0.3,"provenance":"dynamic"}]`, Origin: "remote_config"},
+				Value: `[{"service":"my-service","name":"web.request","resource":"abc","sample_rate":1,"provenance":"customer"} {"service":"my-service","name":"web.request","resource":"*","sample_rate":0.3,"provenance":"dynamic"}]`, Origin: telemetry.OriginRemoteConfig},
 		})
 		telemetryClient.AssertCalled(t, "ConfigChange", []telemetry.Configuration{
-			{Name: "trace_sample_rate", Value: nil, Origin: ""},
+			{Name: "trace_sample_rate", Value: nil, Origin: telemetry.OriginDefault},
 			{
 				Name:   "trace_sample_rules",
 				Value:  `[{"service":"my-service","name":"web.request","resource":"*","sample_rate":0.1}]`,
-				Origin: "",
+				Origin: telemetry.OriginDefault,
 			},
 		})
 	})
@@ -379,11 +385,11 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 
 		telemetryClient.AssertNumberOfCalls(t, "ConfigChange", 1)
 		telemetryClient.AssertCalled(t, "ConfigChange", []telemetry.Configuration{
-			{Name: "trace_sample_rate", Value: 0.5, Origin: "remote_config"},
+			{Name: "trace_sample_rate", Value: 0.5, Origin: telemetry.OriginRemoteConfig},
 			{
 				Name:   "trace_sample_rules",
 				Value:  `[{"service":"my-service","name":"web.request","resource":"*","sample_rate":1,"tags":{"tag-a":"tv-a??"},"provenance":"customer"}]`,
-				Origin: "remote_config",
+				Origin: telemetry.OriginRemoteConfig,
 			},
 		})
 	})
@@ -395,6 +401,8 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 
 		tracer, _, _, stop := startTestTracer(t, WithService("my-service"), WithEnv("my-env"))
 		defer stop()
+
+		require.Equal(t, telemetry.OriginDefault, tracer.config.traceSampleRate.cfgOrigin)
 
 		// Apply RC. Assert global config shows the RC header tag is applied
 		input := remoteconfig.ProductUpdate{
@@ -412,7 +420,7 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 			t,
 			"ConfigChange",
 			[]telemetry.Configuration{
-				{Name: "trace_header_tags", Value: "X-Test-Header:my-tag-name", Origin: "remote_config"},
+				{Name: "trace_header_tags", Value: "X-Test-Header:my-tag-name", Origin: telemetry.OriginRemoteConfig},
 			},
 		)
 
@@ -429,7 +437,7 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 		telemetryClient.AssertCalled(
 			t,
 			"ConfigChange",
-			[]telemetry.Configuration{{Name: "trace_header_tags", Value: "", Origin: ""}},
+			[]telemetry.Configuration{{Name: "trace_header_tags", Value: "", Origin: telemetry.OriginDefault}},
 		)
 	})
 
@@ -437,8 +445,10 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 		telemetryClient := new(telemetrytest.MockClient)
 		defer telemetry.MockGlobalClient(telemetryClient)()
 
-		Start(WithService("my-service"), WithEnv("my-env"))
-		defer Stop()
+		tr, _, _, stop := startTestTracer(t, WithService("my-service"), WithEnv("my-env"))
+		defer stop()
+
+		require.Equal(t, telemetry.OriginDefault, tr.config.traceSampleRate.cfgOrigin)
 
 		input := remoteconfig.ProductUpdate{
 			"path": []byte(
@@ -446,8 +456,6 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 			),
 		}
 
-		tr, ok := internal.GetGlobalTracer().(*tracer)
-		require.Equal(t, true, ok)
 		applyStatus := tr.onRemoteConfigUpdate(input)
 		require.Equal(t, state.ApplyStateAcknowledged, applyStatus["path"].State)
 		require.Equal(t, false, tr.config.enabled.current)
@@ -515,7 +523,7 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 				t,
 				"ConfigChange",
 				[]telemetry.Configuration{
-					{Name: "trace_header_tags", Value: "X-Test-Header:my-tag-name-from-rc", Origin: "remote_config"},
+					{Name: "trace_header_tags", Value: "X-Test-Header:my-tag-name-from-rc", Origin: telemetry.OriginRemoteConfig},
 				},
 			)
 
@@ -534,7 +542,7 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 				t,
 				"ConfigChange",
 				[]telemetry.Configuration{
-					{Name: "trace_header_tags", Value: "X-Test-Header:my-tag-name-from-env", Origin: ""},
+					{Name: "trace_header_tags", Value: "X-Test-Header:my-tag-name-from-env", Origin: telemetry.OriginDefault},
 				},
 			)
 		},
@@ -572,7 +580,7 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 				t,
 				"ConfigChange",
 				[]telemetry.Configuration{
-					{Name: "trace_header_tags", Value: "X-Test-Header:my-tag-name-from-rc", Origin: "remote_config"},
+					{Name: "trace_header_tags", Value: "X-Test-Header:my-tag-name-from-rc", Origin: telemetry.OriginRemoteConfig},
 				},
 			)
 
@@ -591,7 +599,7 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 				t,
 				"ConfigChange",
 				[]telemetry.Configuration{
-					{Name: "trace_header_tags", Value: "X-Test-Header:my-tag-name-in-code", Origin: ""},
+					{Name: "trace_header_tags", Value: "X-Test-Header:my-tag-name-in-code", Origin: telemetry.OriginDefault},
 				},
 			)
 		},
@@ -603,6 +611,8 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 
 		tracer, _, _, stop := startTestTracer(t, WithService("my-service"), WithEnv("my-env"))
 		defer stop()
+
+		require.Equal(t, telemetry.OriginDefault, tracer.config.traceSampleRate.cfgOrigin)
 
 		input := remoteconfig.ProductUpdate{
 			"path": []byte(
@@ -624,6 +634,8 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 		tracer, _, _, stop := startTestTracer(t, WithServiceName("my-service"), WithEnv("my-env"))
 		defer stop()
 
+		require.Equal(t, telemetry.OriginDefault, tracer.config.traceSampleRate.cfgOrigin)
+
 		input := remoteconfig.ProductUpdate{
 			"path": []byte(`{"lib_config": {}, "service_target": {"service": "other-service", "env": "my-env"}}`),
 		}
@@ -641,6 +653,8 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 
 		tracer, _, _, stop := startTestTracer(t, WithServiceName("my-service"), WithEnv("my-env"))
 		defer stop()
+
+		require.Equal(t, telemetry.OriginDefault, tracer.config.traceSampleRate.cfgOrigin)
 
 		input := remoteconfig.ProductUpdate{
 			"path": []byte(`{"lib_config": {}, "service_target": {"service": "my-service", "env": "other-env"}}`),
@@ -666,6 +680,9 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 		)
 		defer stop()
 
+		require.Equal(t, telemetry.OriginDefault, tracer.config.traceSampleRate.cfgOrigin)
+		require.Equal(t, telemetry.OriginEnvVar, tracer.config.globalTags.cfgOrigin)
+
 		// Apply RC. Assert global tags have the RC tags key3:val3,key4:val4 applied + runtime ID
 		input := remoteconfig.ProductUpdate{
 			"path": []byte(
@@ -690,7 +707,7 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 			t,
 			"ConfigChange",
 			[]telemetry.Configuration{
-				{Name: "trace_tags", Value: "key3:val3,key4:val4," + runtimeIDTag, Origin: "remote_config"},
+				{Name: "trace_tags", Value: "key3:val3,key4:val4," + runtimeIDTag, Origin: telemetry.OriginRemoteConfig},
 			},
 		)
 
@@ -715,7 +732,7 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 			t,
 			"ConfigChange",
 			[]telemetry.Configuration{
-				{Name: "trace_tags", Value: "key0:val0,key1:val1,key2:val2," + runtimeIDTag, Origin: ""},
+				{Name: "trace_tags", Value: "key0:val0,key1:val1,key2:val2," + runtimeIDTag, Origin: telemetry.OriginDefault},
 			},
 		)
 	})
@@ -730,6 +747,8 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 		t.Setenv("DD_TAGS", "ddtag:from-env")
 		tracer, _, _, stop := startTestTracer(t, WithService("my-service"), WithEnv("my-env"))
 		defer stop()
+
+		require.Equal(t, telemetry.OriginEnvVar, tracer.config.traceSampleRate.cfgOrigin)
 
 		// Apply RC. Assert configuration is updated to the RC values.
 		input := remoteconfig.ProductUpdate{
@@ -748,12 +767,12 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 		// Telemetry
 		telemetryClient.AssertNumberOfCalls(t, "ConfigChange", 1)
 		telemetryClient.AssertCalled(t, "ConfigChange", []telemetry.Configuration{
-			{Name: "trace_sample_rate", Value: 0.2, Origin: "remote_config"},
-			{Name: "trace_header_tags", Value: "X-Test-Header:my-tag-from-rc", Origin: "remote_config"},
+			{Name: "trace_sample_rate", Value: 0.2, Origin: telemetry.OriginRemoteConfig},
+			{Name: "trace_header_tags", Value: "X-Test-Header:my-tag-from-rc", Origin: telemetry.OriginRemoteConfig},
 			{
 				Name:   "trace_tags",
 				Value:  "ddtag:from-rc," + ext.RuntimeID + ":" + globalconfig.RuntimeID(),
-				Origin: "remote_config",
+				Origin: telemetry.OriginRemoteConfig,
 			},
 		})
 
@@ -770,9 +789,9 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 		// Telemetry
 		telemetryClient.AssertNumberOfCalls(t, "ConfigChange", 2)
 		telemetryClient.AssertCalled(t, "ConfigChange", []telemetry.Configuration{
-			{Name: "trace_sample_rate", Value: 0.1, Origin: ""},
-			{Name: "trace_header_tags", Value: "X-Test-Header:my-tag-from-env", Origin: ""},
-			{Name: "trace_tags", Value: "ddtag:from-env," + ext.RuntimeID + ":" + globalconfig.RuntimeID(), Origin: ""},
+			{Name: "trace_sample_rate", Value: 0.1, Origin: telemetry.OriginDefault},
+			{Name: "trace_header_tags", Value: "X-Test-Header:my-tag-from-env", Origin: telemetry.OriginDefault},
+			{Name: "trace_tags", Value: "ddtag:from-env," + ext.RuntimeID + ":" + globalconfig.RuntimeID(), Origin: telemetry.OriginDefault},
 		})
 	})
 
