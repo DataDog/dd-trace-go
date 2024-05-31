@@ -20,6 +20,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 )
 
 // getTestSpan returns a Span with different fields set
@@ -102,7 +103,7 @@ func TestResolveAgentAddr(t *testing.T) {
 			if tt.envPort != "" {
 				t.Setenv("DD_TRACE_AGENT_PORT", tt.envPort)
 			}
-			c.agentURL = resolveAgentAddr()
+			c.agentURL = internal.AgentURLFromEnv("/non-existent-path")
 			if tt.inOpt != nil {
 				tt.inOpt(c)
 			}
@@ -116,7 +117,7 @@ func TestResolveAgentAddr(t *testing.T) {
 		require.NoError(t, err)
 		defaultSocketAPM = d // Choose a file we know will exist
 		defer func() { defaultSocketAPM = old }()
-		c.agentURL = resolveAgentAddr()
+		c.agentURL = internal.AgentURLFromEnv(defaultSocketAPM)
 		assert.Equal(t, &url.URL{Scheme: "unix", Path: d}, c.agentURL)
 	})
 }

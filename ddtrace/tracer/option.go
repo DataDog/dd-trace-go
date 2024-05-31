@@ -100,7 +100,7 @@ var contribIntegrations = map[string]struct {
 var (
 	// defaultSocketAPM specifies the socket path to use for connecting to the trace-agent.
 	// Replaced in tests
-	defaultSocketAPM = "/var/run/datadog/apm.socket"
+	defaultSocketAPM = internal.DefaultTraceAgentUDSPath
 
 	// defaultSocketDSD specifies the socket path to use for connecting to the statsd server.
 	// Replaced in tests
@@ -413,10 +413,7 @@ func newConfig(opts ...StartOption) *config {
 		fn(c)
 	}
 	if c.agentURL == nil {
-		c.agentURL = resolveAgentAddr()
-		if url := internal.AgentURLFromEnv(); url != nil {
-			c.agentURL = url
-		}
+		c.agentURL = internal.AgentURLFromEnv(defaultSocketAPM)
 	}
 	if c.agentURL.Scheme == "unix" {
 		// If we're connecting over UDS we can just rely on the agent to provide the hostname

@@ -6,31 +6,62 @@
 package internal
 
 import (
+	"net"
 	"net/url"
 	"os"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
-// AgentURLFromEnv determines the trace agent URL from environment variable
-// DD_TRACE_AGENT_URL. If the determined value is valid and the scheme is
-// supported (unix, http or https), it will return an *url.URL. Otherwise,
-// it returns nil.
-func AgentURLFromEnv() *url.URL {
-	agentURL := os.Getenv("DD_TRACE_AGENT_URL")
-	if agentURL == "" {
-		return nil
+const (
+	DefaultAgentHostname     = "localhost"
+	DefaultTraceAgentPort    = "8126"
+	DefaultTraceAgentUDSPath = "/var/run/datadog/apm.socket"
+)
+
+// AgentURLFromEnv resolves the URL for the trace agent based on
+// the default host/port and UDS path, and via standard environment variables.
+// AgentURLFromEnv has the following priority order:
+//   - First, DD_TRACE_AGENT_URL if it is set
+//   - Then, DD_AGENT_HOST and DD_TRACE_AGENT_PORT if either are set
+//   - Then, the default UDS path given here, if the path exists
+//     (the path is replacable for testing purposes, otherwise use DefaultTraceAgentUDSPath)
+//   - Finally, localhost:8126
+func AgentURLFromEnv(defaultSocketAPM string) *url.URL {
+	if agentURL := os.Getenv("DD_TRACE_AGENT_URL"); agentURL != "" {
+		u, err := url.Parse(agentURL)
+		if err != nil {
+			log.Warn("Failed to parse DD_TRACE_AGENT_URL: %v", err)
+		} else {
+			switch u.Scheme {
+			case "unix", "http", "https":
+				return u
+			default:
+				log.Warn("Unsupported protocol %q in Agent URL %q. Must be one of: http, https, unix.", u.Scheme, agentURL)
+			}
+		}
 	}
-	u, err := url.Parse(agentURL)
-	if err != nil {
-		log.Warn("Failed to parse DD_TRACE_AGENT_URL: %v", err)
-		return nil
+	var host, port string
+	if v := os.Getenv("DD_AGENT_HOST"); v != "" {
+		host = v
 	}
-	switch u.Scheme {
-	case "unix", "http", "https":
-		return u
-	default:
-		log.Warn("Unsupported protocol %q in Agent URL %q. Must be one of: http, https, unix.", u.Scheme, agentURL)
-		return nil
+	if v := os.Getenv("DD_TRACE_AGENT_PORT"); v != "" {
+		port = v
+	}
+	if _, err := os.Stat(defaultSocketAPM); host == "" && port == "" && err == nil {
+		return &url.URL{
+			Scheme: "unix",
+			Path:   defaultSocketAPM,
+		}
+	}
+	if host == "" {
+		host = DefaultAgentHostname
+	}
+	if port == "" {
+		port = DefaultTraceAgentPort
+	}
+	return &url.URL{
+		Scheme: "http",
+		Host:   net.JoinHostPort(host, port),
 	}
 }

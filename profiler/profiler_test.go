@@ -17,6 +17,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path"
 	"runtime"
 	"runtime/trace"
 	"strconv"
@@ -711,4 +712,32 @@ func TestVersionResolution(t *testing.T) {
 		assert.Contains(t, data.tags, "Version:4.5.6")
 		assert.NotContains(t, data.tags, "version:7.8.9")
 	})
+}
+
+func TestUDSDefault(t *testing.T) {
+	dir := t.TempDir()
+	socket := path.Join(dir, "agent.socket")
+
+	orig := defaultSocketAPM
+	defer func() {
+		defaultSocketAPM = orig
+	}()
+	defaultSocketAPM = socket
+
+	profiles := make(chan profileMeta, 1)
+	server := httptest.NewUnstartedServer(&mockBackend{t: t, profiles: profiles})
+	l, err := net.Listen("unix", socket)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer l.Close()
+	server.Listener = l
+	server.Start()
+	defer server.Close()
+
+	err = Start(WithProfileTypes(), WithPeriod(10*time.Millisecond))
+	require.NoError(t, err)
+	defer Stop()
+
+	<-profiles
 }
