@@ -7,7 +7,6 @@ package httpsec
 
 import (
 	"context"
-	"net/http"
 	"sync"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/appsec/events"
@@ -19,8 +18,7 @@ import (
 
 var badInputContextOnce sync.Once
 
-func RoundTrip(ctx context.Context, request *http.Request, rt http.RoundTripper) (*http.Response, error) {
-	url := request.URL.String()
+func ProtectRoundTrip(ctx context.Context, url string) error {
 	opArgs := types.RoundTripOperationArgs{
 		URL: url,
 	}
@@ -32,7 +30,7 @@ func RoundTrip(ctx context.Context, request *http.Request, rt http.RoundTripper)
 				"instrumentation metadata in the request context: the request handler is not being monitored by a " +
 				"middleware function or the incoming request context has not be forwarded correctly to the roundtripper")
 		})
-		return rt.RoundTrip(request)
+		return nil
 	}
 
 	op := &types.RoundTripOperation{
@@ -49,8 +47,8 @@ func RoundTrip(ctx context.Context, request *http.Request, rt http.RoundTripper)
 
 	if err != nil {
 		log.Debug("appsec: outgoing http request blocked by the WAF on URL: %s", url)
-		return nil, err
+		return err
 	}
 
-	return rt.RoundTrip(request)
+	return nil
 }

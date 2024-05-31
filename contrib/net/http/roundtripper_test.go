@@ -8,7 +8,6 @@ package http
 import (
 	"encoding/base64"
 	"fmt"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener/httpsec"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -17,12 +16,14 @@ import (
 	"testing"
 	"time"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/appsec/events"
 	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/namingschematest"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener/httpsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 
 	"github.com/stretchr/testify/assert"
@@ -653,8 +654,10 @@ func TestAppsec(t *testing.T) {
 			require.NoError(t, err)
 
 			resp, err := client.RoundTrip(req.WithContext(r.Context()))
-			defer require.NoError(t, err)
-			defer resp.Body.Close()
+			require.ErrorIs(t, err, &events.SecurityBlockingEvent{})
+			if resp != nil {
+				defer resp.Body.Close()
+			}
 		}), w, r, &ServeConfig{
 			Service:  "service",
 			Resource: "resource",
@@ -665,9 +668,10 @@ func TestAppsec(t *testing.T) {
 		serviceSpan := spans[1]
 
 		require.Contains(t, serviceSpan.Tags(), "_dd.appsec.json")
-
 		appsecJSON := serviceSpan.Tag("_dd.appsec.json")
 		require.Contains(t, appsecJSON, httpsec.ServerIoNetURLAddr)
+
+		require.Contains(t, serviceSpan.Tags(), "_dd.stack")
 
 		// This is a nested event so it should contain the child span id in the service entry span
 		// TODO(eliott.bouhana): uncomment this once we have the child span id in the service entry span

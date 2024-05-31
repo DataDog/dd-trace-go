@@ -49,7 +49,8 @@
             ],
             "transformers": [],
             "on_match": [
-                "stack_trace"
+                "stack_trace",
+                "block"
             ]
         },
         {
@@ -97,7 +98,8 @@
             ],
             "transformers": [],
             "on_match": [
-                "stack_trace"
+                "stack_trace",
+                "block"
             ]
         },
         {
@@ -147,7 +149,8 @@
             ],
             "transformers": [],
             "on_match": [
-                "stack_trace"
+                "stack_trace",
+                "block"
             ]
         }
     ],

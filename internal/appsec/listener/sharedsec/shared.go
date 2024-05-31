@@ -79,6 +79,7 @@ func AddWAFMonitoringTags(th trace.TagSetter, rulesVersion string, stats map[str
 // When SDKError is not nil, this error is sent to the op with EmitData so that the invoked SDK can return it
 func ProcessActions(op dyngo.Operation, actions map[string]any) (interrupt bool) {
 	for aType, params := range actions {
+		log.Debug("appsec: processing %s action with params %v", aType, params)
 		actionArray := ActionsFromEntry(aType, params)
 		if actionArray == nil {
 			log.Debug("cannot process %s action with params %v", aType, params)
@@ -86,12 +87,16 @@ func ProcessActions(op dyngo.Operation, actions map[string]any) (interrupt bool)
 		}
 		for _, a := range actionArray {
 			a.EmitData(op)
-			if a.Blocking() { // Send the error to be returned by the SDK
-				interrupt = true
-				dyngo.EmitData(op, &events.SecurityBlockingEvent{}) // Send error
-			}
+			interrupt = interrupt || a.Blocking()
 		}
 	}
+
+	// If any of the actions are supposed to interrupt the request, emit a blocking event for the SDK operations
+	// to return an error.
+	if interrupt {
+		dyngo.EmitData(op, &events.SecurityBlockingEvent{})
+	}
+
 	return interrupt
 }
 
