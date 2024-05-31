@@ -11,7 +11,7 @@ import (
 	"sync"
 
 	"github.com/DataDog/appsec-internal-go/limiter"
-	waf "github.com/DataDog/go-libddwaf/v2"
+	waf "github.com/DataDog/go-libddwaf/v3"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/config"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
@@ -54,8 +54,8 @@ var supportedAddresses = listener.AddressSet{
 }
 
 // Install registers the HTTP WAF Event Listener on the given root operation.
-func Install(wafHandle *waf.Handle, actions sharedsec.Actions, cfg *config.Config, lim limiter.Limiter, root dyngo.Operation) {
-	if listener := newWafEventListener(wafHandle, actions, cfg, lim); listener != nil {
+func Install(wafHandle *waf.Handle, cfg *config.Config, lim limiter.Limiter, root dyngo.Operation) {
+	if listener := newWafEventListener(wafHandle, cfg, lim); listener != nil {
 		log.Debug("appsec: registering the HTTP WAF Event Listener")
 		dyngo.On(root, listener.onEvent)
 	}
@@ -64,14 +64,13 @@ func Install(wafHandle *waf.Handle, actions sharedsec.Actions, cfg *config.Confi
 type wafEventListener struct {
 	wafHandle *waf.Handle
 	config    *config.Config
-	actions   sharedsec.Actions
 	addresses map[string]struct{}
 	limiter   limiter.Limiter
 	wafDiags  waf.Diagnostics
 	once      sync.Once
 }
 
-func newWafEventListener(wafHandle *waf.Handle, actions sharedsec.Actions, cfg *config.Config, limiter limiter.Limiter) *wafEventListener {
+func newWafEventListener(wafHandle *waf.Handle, cfg *config.Config, limiter limiter.Limiter) *wafEventListener {
 	if wafHandle == nil {
 		log.Debug("appsec: no WAF Handle available, the HTTP WAF Event Listener will not be registered")
 		return nil
@@ -86,7 +85,6 @@ func newWafEventListener(wafHandle *waf.Handle, actions sharedsec.Actions, cfg *
 	return &wafEventListener{
 		wafHandle: wafHandle,
 		config:    cfg,
-		actions:   actions,
 		addresses: addresses,
 		limiter:   limiter,
 		wafDiags:  wafHandle.Diagnostics(),
@@ -95,8 +93,14 @@ func newWafEventListener(wafHandle *waf.Handle, actions sharedsec.Actions, cfg *
 
 // NewWAFEventListener returns the WAF event listener to register in order to enable it.
 func (l *wafEventListener) onEvent(op *types.Operation, args types.HandlerOperationArgs) {
-	wafCtx := waf.NewContextWithBudget(l.wafHandle, l.config.WAFTimeout)
-	if wafCtx == nil {
+	wafCtx, err := l.wafHandle.NewContextWithBudget(l.config.WAFTimeout)
+	if err != nil {
+		log.Debug("appsec: could not create budgeted WAF context: %v", err)
+	}
+	// Early return in the following cases:
+	// - wafCtx is nil, meaning it was concurrently released
+	// - err is not nil, meaning context creation failed
+	if wafCtx == nil || err != nil {
 		// The WAF event listener got concurrently released
 		return
 	}
@@ -106,9 +110,9 @@ func (l *wafEventListener) onEvent(op *types.Operation, args types.HandlerOperat
 		// see if the associated user should be blocked. Since we don't control the execution flow in this case
 		// (SetUser is SDK), we delegate the responsibility of interrupting the handler to the user.
 		dyngo.On(op, func(operation *sharedsec.UserIDOperation, args sharedsec.UserIDOperationArgs) {
-			wafResult := shared.RunWAF(wafCtx, waf.RunAddressData{Persistent: map[string]any{UserIDAddr: args.UserID}}, l.config.WAFTimeout)
+			wafResult := shared.RunWAF(wafCtx, waf.RunAddressData{Persistent: map[string]any{UserIDAddr: args.UserID}})
 			if wafResult.HasActions() || wafResult.HasEvents() {
-				processHTTPSDKAction(operation, l.actions, wafResult.Actions)
+				shared.ProcessActions(operation, wafResult.Actions, types.NewMonitoringError("Request blocked"))
 				shared.AddSecurityEvents(op, l.limiter, wafResult.Events)
 				log.Debug("appsec: WAF detected a suspicious user: %s", args.UserID)
 			}
@@ -150,12 +154,12 @@ func (l *wafEventListener) onEvent(op *types.Operation, args types.HandlerOperat
 		values["waf.context.processor"] = map[string]any{"extract-schema": true}
 	}
 
-	wafResult := shared.RunWAF(wafCtx, waf.RunAddressData{Persistent: values}, l.config.WAFTimeout)
+	wafResult := shared.RunWAF(wafCtx, waf.RunAddressData{Persistent: values})
 	for tag, value := range wafResult.Derivatives {
 		op.AddSerializableTag(tag, value)
 	}
 	if wafResult.HasActions() || wafResult.HasEvents() {
-		interrupt := shared.ProcessActions(op, l.actions, wafResult.Actions)
+		interrupt := shared.ProcessActions(op, wafResult.Actions, nil)
 		shared.AddSecurityEvents(op, l.limiter, wafResult.Events)
 		log.Debug("appsec: WAF detected an attack before executing the request")
 		if interrupt {
@@ -166,12 +170,12 @@ func (l *wafEventListener) onEvent(op *types.Operation, args types.HandlerOperat
 
 	if _, ok := l.addresses[ServerRequestBodyAddr]; ok {
 		dyngo.On(op, func(sdkBodyOp *types.SDKBodyOperation, args types.SDKBodyOperationArgs) {
-			wafResult := shared.RunWAF(wafCtx, waf.RunAddressData{Persistent: map[string]any{ServerRequestBodyAddr: args.Body}}, l.config.WAFTimeout)
+			wafResult := shared.RunWAF(wafCtx, waf.RunAddressData{Persistent: map[string]any{ServerRequestBodyAddr: args.Body}})
 			for tag, value := range wafResult.Derivatives {
 				op.AddSerializableTag(tag, value)
 			}
 			if wafResult.HasActions() || wafResult.HasEvents() {
-				processHTTPSDKAction(sdkBodyOp, l.actions, wafResult.Actions)
+				shared.ProcessActions(sdkBodyOp, wafResult.Actions, types.NewMonitoringError("Request blocked"))
 				shared.AddSecurityEvents(op, l.limiter, wafResult.Events)
 				log.Debug("appsec: WAF detected a suspicious request body")
 			}
@@ -193,7 +197,7 @@ func (l *wafEventListener) onEvent(op *types.Operation, args types.HandlerOperat
 
 		// Run the WAF, ignoring the returned actions - if any - since blocking after the request handler's
 		// response is not supported at the moment.
-		wafResult := shared.RunWAF(wafCtx, waf.RunAddressData{Persistent: values}, l.config.WAFTimeout)
+		wafResult := shared.RunWAF(wafCtx, waf.RunAddressData{Persistent: values})
 
 		// Add WAF metrics.
 		shared.AddWAFMonitoringTags(op, l.wafDiags.Version, wafCtx.Stats().Metrics())
@@ -219,21 +223,4 @@ func (l *wafEventListener) onEvent(op *types.Operation, args types.HandlerOperat
 // allows extracting schemas
 func (l *wafEventListener) canExtractSchemas() bool {
 	return l.config.APISec.Enabled && l.config.APISec.SampleRate >= rand.Float64()
-}
-
-// processHTTPSDKAction does two things:
-//   - send actions to the parent operation's data listener, for their handlers to be executed after the user handler
-//   - send an error to the current operation's data listener (created by an SDK call), to signal users to interrupt
-//     their handler.
-func processHTTPSDKAction(op dyngo.Operation, actions sharedsec.Actions, actionIds []string) {
-	for _, id := range actionIds {
-		if action, ok := actions[id]; ok {
-			if op.Parent() != nil {
-				dyngo.EmitData(op, action) // Send the action so that the handler gets executed
-			}
-			if action.Blocking() { // Send the error to be returned by the SDK
-				dyngo.EmitData(op, types.NewMonitoringError("Request blocked")) // Send error
-			}
-		}
-	}
 }

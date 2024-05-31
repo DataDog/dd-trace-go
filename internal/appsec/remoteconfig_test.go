@@ -21,7 +21,7 @@ import (
 
 	internal "github.com/DataDog/appsec-internal-go/appsec"
 	rc "github.com/DataDog/datadog-agent/pkg/remoteconfig/state"
-	waf "github.com/DataDog/go-libddwaf/v2"
+	waf "github.com/DataDog/go-libddwaf/v3"
 	"github.com/stretchr/testify/require"
 )
 
@@ -783,13 +783,14 @@ func TestWafRCUpdate(t *testing.T) {
 		wafHandle, err := waf.NewHandle(cfg.RulesManager.Latest, cfg.Obfuscator.KeyRegex, cfg.Obfuscator.ValueRegex)
 		require.NoError(t, err)
 		defer wafHandle.Close()
-		wafCtx := waf.NewContext(wafHandle)
+		wafCtx, err := wafHandle.NewContext()
+		require.NoError(t, err)
 		defer wafCtx.Close()
 		values := map[string]interface{}{
 			httpsec.ServerRequestPathParamsAddr: "/rfiinc.txt",
 		}
 		// Make sure the rule matches as expected
-		result := sharedsec.RunWAF(wafCtx, waf.RunAddressData{Persistent: values}, cfg.WAFTimeout)
+		result := sharedsec.RunWAF(wafCtx, waf.RunAddressData{Persistent: values})
 		require.Contains(t, jsonString(t, result.Events), "crs-913-120")
 		require.Empty(t, result.Actions)
 		// Simulate an RC update that disables the rule
@@ -802,12 +803,13 @@ func TestWafRCUpdate(t *testing.T) {
 		newWafHandle, err := waf.NewHandle(cfg.RulesManager.Latest, cfg.Obfuscator.KeyRegex, cfg.Obfuscator.ValueRegex)
 		require.NoError(t, err)
 		defer newWafHandle.Close()
-		newWafCtx := waf.NewContext(newWafHandle)
+		newWafCtx, err := newWafHandle.NewContext()
+		require.NoError(t, err)
 		defer newWafCtx.Close()
 		// Make sure the rule returns a blocking action when matching
-		result = sharedsec.RunWAF(newWafCtx, waf.RunAddressData{Persistent: values}, cfg.WAFTimeout)
+		result = sharedsec.RunWAF(newWafCtx, waf.RunAddressData{Persistent: values})
 		require.Contains(t, jsonString(t, result.Events), "crs-913-120")
-		require.Contains(t, result.Actions, "block")
+		require.Contains(t, result.Actions, "block_request")
 	})
 }
 
