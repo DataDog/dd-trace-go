@@ -219,7 +219,6 @@ func (t *tracer) onRemoteConfigUpdate(u remoteconfig.ProductUpdate) map[string]s
 		if updated {
 			telemConfigs = append(telemConfigs, t.config.traceSampleRate.toTelemetry())
 		}
-		// TODO: report raw sampling rules to telemetry
 		updated = t.config.traceSampleRules.handleRC(convertRemoteSamplingRules(c.LibConfig.TraceSamplingRules))
 		if updated {
 			telemConfigs = append(telemConfigs, t.config.traceSampleRules.toTelemetry())
