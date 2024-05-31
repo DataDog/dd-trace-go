@@ -36,7 +36,6 @@ type libConfig struct {
 	Enabled            *bool             `json:"tracing_enabled,omitempty"`
 	SamplingRate       *float64          `json:"tracing_sampling_rate,omitempty"`
 	TraceSamplingRules *[]rcSamplingRule `json:"tracing_sampling_rules,omitempty"`
-	SpanSamplingRules  *[]rcSamplingRule `json:"span_sampling_rules,omitempty"`
 	HeaderTags         *headerTags       `json:"tracing_header_tags,omitempty"`
 	Tags               *tags             `json:"tracing_tags,omitempty"`
 }
@@ -173,10 +172,6 @@ func (t *tracer) onRemoteConfigUpdate(u remoteconfig.ProductUpdate) map[string]s
 		if updated {
 			telemConfigs = append(telemConfigs, t.config.traceSampleRules.toTelemetry())
 		}
-		updated = t.config.spanSampleRules.reset()
-		if updated {
-			telemConfigs = append(telemConfigs, t.config.spanSampleRules.toTelemetry())
-		}
 		updated = t.config.headerAsTags.reset()
 		if updated {
 			telemConfigs = append(telemConfigs, t.config.headerAsTags.toTelemetry())
@@ -228,10 +223,6 @@ func (t *tracer) onRemoteConfigUpdate(u remoteconfig.ProductUpdate) map[string]s
 		updated = t.config.traceSampleRules.handleRC(convertRemoteSamplingRules(c.LibConfig.TraceSamplingRules))
 		if updated {
 			telemConfigs = append(telemConfigs, t.config.traceSampleRules.toTelemetry())
-		}
-		updated = t.config.spanSampleRules.handleRC(convertRemoteSamplingRules(c.LibConfig.SpanSamplingRules))
-		if updated {
-			telemConfigs = append(telemConfigs, t.config.spanSampleRules.toTelemetry())
 		}
 		updated = t.config.headerAsTags.handleRC(c.LibConfig.HeaderTags.toSlice())
 		if updated {

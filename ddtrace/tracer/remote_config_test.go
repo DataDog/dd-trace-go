@@ -194,7 +194,6 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 				Value:  `[{"service":"my-service","name":"web.request","resource":"abc","sample_rate":1,"provenance":"customer"}]`,
 				Origin: "remote_config",
 			},
-			{Name: "span_sample_rules", Value: nil, Origin: ""},
 		})
 	})
 
@@ -234,8 +233,7 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 				"resource": "*",
 				"provenance": "dynamic",
 				"sample_rate": 0.3
-			}],
-			"span_sampling_rules": [{"name": "web.request", "sample_rate": 0.2}]},
+			}]},
 			"service_target": {"service": "my-service", "env": "my-env"}}`),
 		}
 		applyStatus := tracer.onRemoteConfigUpdate(input)
@@ -251,7 +249,6 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 			{Name: "trace_sample_rate", Value: 0.5, Origin: "remote_config"},
 			{Name: "trace_sample_rules",
 				Value: `[{"service":"my-service","name":"web.request","resource":"abc","sample_rate":1,"provenance":"customer"} {"service":"my-service","name":"web.request","resource":"*","sample_rate":0.3,"provenance":"dynamic"}]`, Origin: "remote_config"},
-			{Name: "span_sample_rules", Value: `[{"name":"web.request","sample_rate":0.2}]`, Origin: "remote_config"},
 		})
 		telemetryClient.AssertCalled(t, "ConfigChange", []telemetry.Configuration{
 			{Name: "trace_sample_rate", Value: nil, Origin: ""},
@@ -260,7 +257,6 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 				Value:  `[{"service":"my-service","name":"web.request","resource":"*","sample_rate":0.1}]`,
 				Origin: "",
 			},
-			{Name: "span_sample_rules", Value: `[{"name":"web.request","sample_rate":0.3}]`, Origin: ""},
 		})
 	})
 
