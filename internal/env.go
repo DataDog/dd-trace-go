@@ -61,8 +61,7 @@ func DurationEnv(key string, def time.Duration) time.Duration {
 
 // ForEachStringTag runs fn on every key val pair encountered in str.
 // str may contain multiple key val pairs separated by either space
-// or comma (but not a mixture of both), where key val relationship is marked by sep.
-// delimeter represents the mark between key and value
+// or comma (but not a mixture of both), and each key val pair is separated by a delimiter.
 func ForEachStringTag(str string, delimiter string, fn func(key string, val string)) {
 	sep := " "
 	if strings.Index(str, ",") > -1 {
