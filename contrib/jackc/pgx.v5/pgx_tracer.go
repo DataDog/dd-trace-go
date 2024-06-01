@@ -7,11 +7,13 @@ package pgx
 
 import (
 	"context"
+
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type operationType string
@@ -22,6 +24,8 @@ const (
 	tagBatchNumQueries = "db.batch.num_queries"
 	tagCopyFromTables  = "db.copy_from.tables"
 	tagCopyFromColumns = "db.copy_from.columns"
+
+	customDataContextKey = "db.pool.acquire.context"
 )
 
 const (
@@ -30,6 +34,8 @@ const (
 	operationTypePrepare                = "Prepare"
 	operationTypeBatch                  = "Batch"
 	operationTypeCopyFrom               = "Copy From"
+	operationTypeAcquire                = "Acquire"
+	operationTypeRelease                = "Release"
 )
 
 type tracedBatchQuery struct {
@@ -47,11 +53,13 @@ type pgxTracer struct {
 }
 
 var (
-	_ pgx.QueryTracer    = (*pgxTracer)(nil)
-	_ pgx.BatchTracer    = (*pgxTracer)(nil)
-	_ pgx.ConnectTracer  = (*pgxTracer)(nil)
-	_ pgx.PrepareTracer  = (*pgxTracer)(nil)
-	_ pgx.CopyFromTracer = (*pgxTracer)(nil)
+	_ pgx.QueryTracer       = (*pgxTracer)(nil)
+	_ pgx.BatchTracer       = (*pgxTracer)(nil)
+	_ pgx.ConnectTracer     = (*pgxTracer)(nil)
+	_ pgx.PrepareTracer     = (*pgxTracer)(nil)
+	_ pgx.CopyFromTracer    = (*pgxTracer)(nil)
+	_ pgxpool.AcquireTracer = (*pgxTracer)(nil)
+	_ pgxpool.ReleaseTracer = (*pgxTracer)(nil)
 )
 
 func newPgxTracer(opts ...Option) *pgxTracer {
@@ -173,6 +181,37 @@ func (t *pgxTracer) TraceConnectEnd(ctx context.Context, data pgx.TraceConnectEn
 		return
 	}
 	finishSpan(ctx, data.Err)
+}
+
+func (t *pgxTracer) TraceAcquireStart(ctx context.Context, pool *pgxpool.Pool, data pgxpool.TraceAcquireStartData) context.Context {
+	if !t.cfg.traceAcquire {
+		return ctx
+	}
+	opts := t.spanOptions(pool.Config().ConnConfig, operationTypeAcquire, "")
+	_, ctx = tracer.StartSpanFromContext(ctx, "pgx.acquire", opts...)
+	return ctx
+}
+
+func (t *pgxTracer) TraceAcquireEnd(ctx context.Context, pool *pgxpool.Pool, data pgxpool.TraceAcquireEndData) {
+	data.Conn.PgConn().CustomData()[customDataContextKey] = ctx
+	if !t.cfg.traceAcquire {
+		return
+	}
+	finishSpan(ctx, data.Err)
+}
+
+func (t *pgxTracer) TraceRelease(pool *pgxpool.Pool, data pgxpool.TraceReleaseData) {
+	if !t.cfg.traceRelease {
+		return
+	}
+	ctx := context.Background()
+	acquireCtx, ok := data.Conn.PgConn().CustomData()[customDataContextKey].(context.Context)
+	if ok {
+		ctx = acquireCtx
+	}
+	opts := t.spanOptions(pool.Config().ConnConfig, operationTypeRelease, "")
+	_, ctx = tracer.StartSpanFromContext(ctx, "pgx.release", opts...)
+	finishSpan(ctx, nil)
 }
 
 func (t *pgxTracer) spanOptions(connConfig *pgx.ConnConfig, op operationType, sqlStatement string, extraOpts ...ddtrace.StartSpanOption) []ddtrace.StartSpanOption {
