@@ -183,7 +183,7 @@ func (t *pgxTracer) TraceConnectEnd(ctx context.Context, data pgx.TraceConnectEn
 	finishSpan(ctx, data.Err)
 }
 
-func (t *pgxTracer) TraceAcquireStart(ctx context.Context, pool *pgxpool.Pool, data pgxpool.TraceAcquireStartData) context.Context {
+func (t *pgxTracer) TraceAcquireStart(ctx context.Context, pool *pgxpool.Pool, _ pgxpool.TraceAcquireStartData) context.Context {
 	if !t.cfg.traceAcquire {
 		return ctx
 	}
@@ -192,7 +192,7 @@ func (t *pgxTracer) TraceAcquireStart(ctx context.Context, pool *pgxpool.Pool, d
 	return ctx
 }
 
-func (t *pgxTracer) TraceAcquireEnd(ctx context.Context, pool *pgxpool.Pool, data pgxpool.TraceAcquireEndData) {
+func (t *pgxTracer) TraceAcquireEnd(ctx context.Context, _ *pgxpool.Pool, data pgxpool.TraceAcquireEndData) {
 	data.Conn.PgConn().CustomData()[customDataContextKey] = ctx
 	if !t.cfg.traceAcquire {
 		return
@@ -204,14 +204,15 @@ func (t *pgxTracer) TraceRelease(pool *pgxpool.Pool, data pgxpool.TraceReleaseDa
 	if !t.cfg.traceRelease {
 		return
 	}
-	ctx := context.Background()
 	acquireCtx, ok := data.Conn.PgConn().CustomData()[customDataContextKey].(context.Context)
-	if ok {
-		ctx = acquireCtx
-	}
 	opts := t.spanOptions(pool.Config().ConnConfig, operationTypeRelease, "")
-	_, ctx = tracer.StartSpanFromContext(ctx, "pgx.release", opts...)
-	finishSpan(ctx, nil)
+	if ok {
+		_, ctx := tracer.StartSpanFromContext(acquireCtx, "pgx.release", opts...)
+		finishSpan(ctx, nil)
+	} else {
+		span := tracer.StartSpan("pgx.release", opts...)
+		span.Finish()
+	}
 }
 
 func (t *pgxTracer) spanOptions(connConfig *pgx.ConnConfig, op operationType, sqlStatement string, extraOpts ...ddtrace.StartSpanOption) []ddtrace.StartSpanOption {
