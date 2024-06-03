@@ -68,12 +68,12 @@ type (
 	}
 
 	// GRPCWrapper is an opaque prototype abstraction for a gRPC handler (to avoid importing grpc)
-	// that takes metadata as input and returns a status code and an error
+	// that returns a status code and an error
 	// TODO: rely on strongly typed actions (with the actual grpc types) by introducing WAF constructors
 	//     living in the contrib packages, along with their dependencies - something like `appsec.RegisterWAFConstructor(newGRPCWAF)`
 	//    Such constructors would receive the full appsec config and rules, so that they would be able to build
 	//    specific blocking actions.
-	GRPCWrapper func(map[string][]string) (uint32, error)
+	GRPCWrapper func() (uint32, error)
 
 	// blockActionParams are the dynamic parameters to be provided to a "block_request"
 	// action type upon invocation
@@ -196,7 +196,7 @@ func newBlockRequestHandler(status int, ct string, payload []byte) http.Handler 
 }
 
 func newGRPCBlockHandler(status int) GRPCWrapper {
-	return func(_ map[string][]string) (uint32, error) {
+	return func() (uint32, error) {
 		return uint32(status), errors.New("Request blocked")
 	}
 }
