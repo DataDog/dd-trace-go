@@ -24,6 +24,9 @@ func isWellFormedEdgeTag(t string) bool {
 				return true
 			}
 		}
+		if t[:i] == "topic" && strings.Contains(t, "arn") {
+			return true
+		}
 	}
 	return false
 }
