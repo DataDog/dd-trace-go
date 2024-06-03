@@ -88,14 +88,16 @@ func AddToSpan(span ddtrace.Span, events ...*Event) {
 		return
 	}
 
-	groupByCategory := map[EventCategory][]*Event{
-		ExceptionEvent:     {},
-		VulnerabilityEvent: {},
-		ExploitEvent:       {},
-	}
+	// TODO(eliott.bouhana): switch to a map[EventCategory][]*Event type when the tinylib/msgp@1.1.10 is out
+	groupByCategory := make(map[string]any, 3)
 
 	for _, event := range events {
-		groupByCategory[event.Category] = append(groupByCategory[event.Category], event)
+		if _, ok := groupByCategory[string(event.Category)]; !ok {
+			groupByCategory[string(event.Category)] = []*Event{event}
+			continue
+		}
+
+		groupByCategory[string(event.Category)] = append(groupByCategory[string(event.Category)].([]*Event), event)
 	}
 
 	type rooter interface {
