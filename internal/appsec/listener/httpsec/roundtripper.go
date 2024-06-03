@@ -6,13 +6,14 @@
 package httpsec
 
 import (
-	"github.com/DataDog/appsec-internal-go/limiter"
-	"github.com/DataDog/go-libddwaf/v3"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/httpsec/types"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener/sharedsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/trace"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+
+	"github.com/DataDog/appsec-internal-go/limiter"
+	"github.com/DataDog/go-libddwaf/v3"
 )
 
 // RegisterRoundTripperListener registers a listener on outgoing HTTP client requests to run the WAF.

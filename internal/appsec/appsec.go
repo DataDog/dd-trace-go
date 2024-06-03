@@ -26,6 +26,13 @@ func Enabled() bool {
 	return activeAppSec != nil && activeAppSec.started
 }
 
+// RASPEnabled returns true when DD_APPSEC_RASP_ENABLED=true or is unset. Granted that AppSec is enabled.
+func RASPEnabled() bool {
+	mu.RLock()
+	defer mu.RUnlock()
+	return activeAppSec != nil && activeAppSec.started && activeAppSec.cfg.RASP
+}
+
 // Start AppSec when enabled is enabled by both using the appsec build tag and
 // setting the environment variable DD_APPSEC_ENABLED to true.
 func Start(opts ...config.StartOption) {

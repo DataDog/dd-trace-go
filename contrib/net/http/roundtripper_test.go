@@ -632,49 +632,68 @@ func (rt *emptyRoundTripper) RoundTrip(_ *http.Request) (*http.Response, error) 
 }
 
 func TestAppsec(t *testing.T) {
-	mt := mocktracer.Start()
-	defer mt.Stop()
-
 	t.Setenv("DD_APPSEC_RULES", "../../../internal/appsec/testdata/rasp.json")
-
-	appsec.Start()
-	if !appsec.Enabled() {
-		t.Skip("appsec not enabled")
-	}
 
 	client := WrapRoundTripper(&emptyRoundTripper{})
 
-	t.Run("event", func(t *testing.T) {
-		w := httptest.NewRecorder()
-		r, err := http.NewRequest("GET", "?value=169.254.169.254", nil)
-		require.NoError(t, err)
+	for _, enabled := range []bool{true, false} {
 
-		TraceAndServe(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			req, err := http.NewRequest("GET", "http://169.254.169.254", nil)
+		t.Run(strconv.FormatBool(enabled), func(t *testing.T) {
+			t.Setenv("DD_APPSEC_RASP_ENABLED", strconv.FormatBool(enabled))
+
+			mt := mocktracer.Start()
+			defer mt.Stop()
+
+			appsec.Start()
+			if !appsec.Enabled() {
+				t.Skip("appsec not enabled")
+			}
+
+			defer appsec.Stop()
+
+			w := httptest.NewRecorder()
+			r, err := http.NewRequest("GET", "?value=169.254.169.254", nil)
 			require.NoError(t, err)
 
-			resp, err := client.RoundTrip(req.WithContext(r.Context()))
-			require.ErrorIs(t, err, &events.BlockingSecurityEvent{})
-			if resp != nil {
-				defer resp.Body.Close()
+			TraceAndServe(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				req, err := http.NewRequest("GET", "http://169.254.169.254", nil)
+				require.NoError(t, err)
+
+				resp, err := client.RoundTrip(req.WithContext(r.Context()))
+
+				if enabled {
+					require.ErrorIs(t, err, &events.BlockingSecurityEvent{})
+				} else {
+					require.NoError(t, err)
+				}
+
+				if resp != nil {
+					defer resp.Body.Close()
+				}
+			}), w, r, &ServeConfig{
+				Service:  "service",
+				Resource: "resource",
+			})
+
+			spans := mt.FinishedSpans()
+			require.Len(t, spans, 2) // service entry serviceSpan & http request serviceSpan
+			serviceSpan := spans[1]
+
+			if !enabled {
+				require.NotContains(t, serviceSpan.Tags(), "_dd.appsec.json")
+				require.NotContains(t, serviceSpan.Tags(), "_dd.stack")
+				return
 			}
-		}), w, r, &ServeConfig{
-			Service:  "service",
-			Resource: "resource",
+
+			require.Contains(t, serviceSpan.Tags(), "_dd.appsec.json")
+			appsecJSON := serviceSpan.Tag("_dd.appsec.json")
+			require.Contains(t, appsecJSON, httpsec.ServerIoNetURLAddr)
+
+			require.Contains(t, serviceSpan.Tags(), "_dd.stack")
+
+			// This is a nested event so it should contain the child span id in the service entry span
+			// TODO(eliott.bouhana): uncomment this once we have the child span id in the service entry span
+			// require.Contains(t, appsecJSON, `"span_id":`+strconv.FormatUint(requestSpan.SpanID(), 10))
 		})
-
-		spans := mt.FinishedSpans()
-		require.Len(t, spans, 2) // service entry serviceSpan & http request serviceSpan
-		serviceSpan := spans[1]
-
-		require.Contains(t, serviceSpan.Tags(), "_dd.appsec.json")
-		appsecJSON := serviceSpan.Tag("_dd.appsec.json")
-		require.Contains(t, appsecJSON, httpsec.ServerIoNetURLAddr)
-
-		require.Contains(t, serviceSpan.Tags(), "_dd.stack")
-
-		// This is a nested event so it should contain the child span id in the service entry span
-		// TODO(eliott.bouhana): uncomment this once we have the child span id in the service entry span
-		// require.Contains(t, appsecJSON, `"span_id":`+strconv.FormatUint(requestSpan.SpanID(), 10))
-	})
+	}
 }

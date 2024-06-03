@@ -26,6 +26,8 @@ type roundTripper struct {
 	cfg  *roundTripperConfig
 }
 
+var securityError = &events.BlockingSecurityEvent{}
+
 func (rt *roundTripper) RoundTrip(req *http.Request) (res *http.Response, err error) {
 	if rt.cfg.ignoreRequest(req) {
 		return rt.base.RoundTrip(req)
@@ -61,7 +63,7 @@ func (rt *roundTripper) RoundTrip(req *http.Request) (res *http.Response, err er
 		if rt.cfg.after != nil {
 			rt.cfg.after(res, span)
 		}
-		if !errors.Is(err, &events.BlockingSecurityEvent{}) && (rt.cfg.errCheck == nil || rt.cfg.errCheck(err)) {
+		if !errors.Is(err, securityError) && (rt.cfg.errCheck == nil || rt.cfg.errCheck(err)) {
 			span.Finish(tracer.WithError(err))
 		} else {
 			span.Finish()
@@ -80,7 +82,7 @@ func (rt *roundTripper) RoundTrip(req *http.Request) (res *http.Response, err er
 		}
 	}
 
-	if appsec.Enabled() {
+	if appsec.RASPEnabled() {
 		if err := httpsec.ProtectRoundTrip(ctx, r2.URL.String()); err != nil {
 			return nil, err
 		}
