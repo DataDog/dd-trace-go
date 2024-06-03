@@ -120,14 +120,7 @@ func (l *wafEventListener) onEvent(op *types.HandlerOperation, handlerArgs types
 			}
 			wafResult := shared.RunWAF(wafCtx, waf.RunAddressData{Persistent: values})
 			if wafResult.HasActions() || wafResult.HasEvents() {
-				for aType, params := range wafResult.Actions {
-					for _, action := range shared.ActionsFromEntry(aType, params) {
-						if grpcAction, ok := action.(*sharedsec.GRPCAction); ok {
-							code, err := grpcAction.GRPCWrapper(map[string][]string{})
-							dyngo.EmitData(userIDOp, types.NewMonitoringError(err.Error(), code))
-						}
-					}
-				}
+				shared.ProcessActions(userIDOp, wafResult.Actions)
 				shared.AddSecurityEvents(&op.SecurityEventsHolder, l.limiter, wafResult.Events)
 				log.Debug("appsec: WAF detected an authenticated user attack: %s", args.UserID)
 			}

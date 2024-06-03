@@ -7,7 +7,6 @@ package grpc
 
 import (
 	"context"
-
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/grpcsec"
@@ -62,11 +61,13 @@ func appsecUnaryHandlerMiddleware(method string, span ddtrace.Span, handler grpc
 			return nil, err
 		}
 		defer grpcsec.StartReceiveOperation(types.ReceiveOperationArgs{}, op).Finish(types.ReceiveOperationRes{Message: req})
-		rv, err := handler(ctx, req)
-		if e, ok := err.(*types.MonitoringError); ok {
-			err = status.Error(codes.Code(e.GRPCStatus()), e.Error())
+
+		rv, downstreamErr := handler(ctx, req)
+		if blocked {
+			return nil, err
 		}
-		return rv, err
+
+		return rv, downstreamErr
 	}
 }
 
@@ -113,11 +114,12 @@ func appsecStreamHandlerMiddleware(method string, span ddtrace.Span, handler grp
 			return err
 		}
 
-		err = handler(srv, stream)
-		if e, ok := err.(*types.MonitoringError); ok {
-			err = status.Error(codes.Code(e.GRPCStatus()), e.Error())
+		downstreamErr := handler(srv, stream)
+		if blocked {
+			return err
 		}
-		return err
+
+		return downstreamErr
 	}
 }
 
