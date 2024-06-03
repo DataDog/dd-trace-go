@@ -6,12 +6,13 @@
 package echo
 
 import (
-	"gopkg.in/DataDog/dd-trace-go.v1/appsec/events"
 	"net/http"
 
-	"github.com/labstack/echo/v4"
+	"gopkg.in/DataDog/dd-trace-go.v1/appsec/events"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/httpsec"
+
+	"github.com/labstack/echo/v4"
 )
 
 func withAppSec(next echo.HandlerFunc, span tracer.Span) echo.HandlerFunc {

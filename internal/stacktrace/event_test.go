@@ -6,7 +6,6 @@
 package stacktrace
 
 import (
-	"github.com/tinylib/msgp/msgp"
 	"testing"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
@@ -14,6 +13,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 
 	"github.com/stretchr/testify/require"
+	"github.com/tinylib/msgp/msgp"
 )
 
 func TestNewEvent(t *testing.T) {

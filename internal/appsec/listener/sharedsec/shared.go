@@ -8,14 +8,16 @@ package sharedsec
 import (
 	"encoding/json"
 	"errors"
-	"github.com/DataDog/appsec-internal-go/limiter"
-	waf "github.com/DataDog/go-libddwaf/v3"
-	wafErrors "github.com/DataDog/go-libddwaf/v3/errors"
+
 	"gopkg.in/DataDog/dd-trace-go.v1/appsec/events"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/sharedsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/trace"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+
+	"github.com/DataDog/appsec-internal-go/limiter"
+	waf "github.com/DataDog/go-libddwaf/v3"
+	wafErrors "github.com/DataDog/go-libddwaf/v3/errors"
 )
 
 const (

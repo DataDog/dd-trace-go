@@ -6,14 +6,13 @@
 package http
 
 import (
-	"errors"
 	"fmt"
+	"gopkg.in/DataDog/dd-trace-go.v1/appsec/events"
 	"math"
 	"net/http"
 	"os"
 	"strconv"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/appsec/events"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
@@ -25,8 +24,6 @@ type roundTripper struct {
 	base http.RoundTripper
 	cfg  *roundTripperConfig
 }
-
-var securityError = &events.BlockingSecurityEvent{}
 
 func (rt *roundTripper) RoundTrip(req *http.Request) (res *http.Response, err error) {
 	if rt.cfg.ignoreRequest(req) {
@@ -63,7 +60,7 @@ func (rt *roundTripper) RoundTrip(req *http.Request) (res *http.Response, err er
 		if rt.cfg.after != nil {
 			rt.cfg.after(res, span)
 		}
-		if !errors.Is(err, securityError) && (rt.cfg.errCheck == nil || rt.cfg.errCheck(err)) {
+		if !events.IsSecurityError(err) && (rt.cfg.errCheck == nil || rt.cfg.errCheck(err)) {
 			span.Finish(tracer.WithError(err))
 		} else {
 			span.Finish()
