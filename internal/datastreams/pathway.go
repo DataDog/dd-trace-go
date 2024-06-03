@@ -21,9 +21,8 @@ func isValidArn(arn string) bool {
 	parts := strings.Split(arn, ":")
 	if len(parts) > 0 && parts[0] == "arn" && len(parts) > 5 {
 		return true
-	} else {
-		return false
 	}
+	return false
 }
 
 func isWellFormedEdgeTag(t string) bool {
