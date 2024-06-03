@@ -17,6 +17,15 @@ import (
 
 var hashableEdgeTags = map[string]struct{}{"event_type": {}, "exchange": {}, "group": {}, "topic": {}, "type": {}, "direction": {}}
 
+func isValidArn(arn string) bool {
+	parts := strings.Split(arn, ":")
+	if len(parts) > 0 && parts[0] == "arn" && len(parts) > 5 {
+		return true
+	} else {
+		return false
+	}
+}
+
 func isWellFormedEdgeTag(t string) bool {
 	if i := strings.IndexByte(t, ':'); i != -1 {
 		if j := strings.LastIndexByte(t, ':'); j == i {
@@ -24,7 +33,7 @@ func isWellFormedEdgeTag(t string) bool {
 				return true
 			}
 		}
-		if t[:i] == "topic" && strings.Contains(t, "arn") {
+		if t[:i] == "topic" && isValidArn(t) {
 			return true
 		}
 	}
