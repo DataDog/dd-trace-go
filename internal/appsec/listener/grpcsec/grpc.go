@@ -127,14 +127,7 @@ func (l *wafEventListener) onEvent(op *types.HandlerOperation, handlerArgs types
 				addEvents(wafResult.Events)
 			}
 			if wafResult.HasActions() {
-				for aType, params := range wafResult.Actions {
-					for _, action := range shared.ActionsFromEntry(aType, params) {
-						if grpcAction, ok := action.(*sharedsec.GRPCAction); ok {
-							code, err := grpcAction.GRPCWrapper()
-							dyngo.EmitData(op, types.NewMonitoringError(err.Error(), code))
-						}
-					}
-				}
+				shared.ProcessActions(op, wafResult.Actions, &types.MonitoringError{})
 				log.Debug("appsec: WAF detected an authenticated user attack: %s", args.UserID)
 			}
 		})
@@ -163,7 +156,7 @@ func (l *wafEventListener) onEvent(op *types.HandlerOperation, handlerArgs types
 	}
 
 	// When the gRPC handler receives a message
-	dyngo.On(op, func(_ types.ReceiveOperation, res types.ReceiveOperationArgs) {
+	dyngo.OnFinish(op, func(_ types.ReceiveOperation, res types.ReceiveOperationRes) {
 		// Run the WAF on the rule addresses available and listened to by the sec rules
 		var values waf.RunAddressData
 		// Add the gRPC message to the values if the WAF rules are using it.
@@ -184,7 +177,6 @@ func (l *wafEventListener) onEvent(op *types.HandlerOperation, handlerArgs types
 		wafResult := shared.RunWAF(wafCtx, values)
 		if wafResult.HasEvents() {
 			log.Debug("appsec: attack detected by the grpc waf")
-
 			addEvents(wafResult.Events)
 		}
 		if wafResult.HasActions() {

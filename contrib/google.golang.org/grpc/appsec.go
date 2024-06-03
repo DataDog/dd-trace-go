@@ -29,9 +29,8 @@ import (
 // UnaryHandler wrapper to use when AppSec is enabled to monitor its execution.
 func appsecUnaryHandlerMiddleware(method string, span ddtrace.Span, handler grpc.UnaryHandler) grpc.UnaryHandler {
 	trace.SetAppSecEnabledTags(span)
-	return func(ctx context.Context, req interface{}) (interface{}, error) {
-		var err error
-		var blocked bool
+	return func(ctx context.Context, req interface{}) (res interface{}, rpcErr error) {
+		var blockedErr error
 		md, _ := metadata.FromIncomingContext(ctx)
 		clientIP := setClientIP(ctx, span, md)
 		args := types.HandlerOperationArgs{
@@ -41,46 +40,50 @@ func appsecUnaryHandlerMiddleware(method string, span ddtrace.Span, handler grpc
 		}
 		ctx, op := grpcsec.StartHandlerOperation(ctx, args, nil, func(op *types.HandlerOperation) {
 			dyngo.OnData(op, func(a *sharedsec.GRPCAction) {
-				code, e := a.GRPCWrapper()
-				blocked = a.Blocking()
-				err = status.Error(codes.Code(code), e.Error())
+				if a.Blocking() {
+					code, err := a.GRPCWrapper()
+					blockedErr = status.Error(codes.Code(code), err.Error())
+				}
 			})
 		})
 		defer func() {
 			events := op.Finish(types.HandlerOperationRes{})
-			if blocked {
-				op.SetTag(trace.BlockedRequestTag, true)
-			}
-			grpctrace.SetRequestMetadataTags(span, md)
-			trace.SetTags(span, op.Tags())
 			if len(events) > 0 {
 				grpctrace.SetSecurityEventsTags(span, events)
 			}
+			if blockedErr != nil {
+				op.SetTag(trace.BlockedRequestTag, true)
+				rpcErr = blockedErr
+			}
+			grpctrace.SetRequestMetadataTags(span, md)
+			trace.SetTags(span, op.Tags())
 		}()
 
-		if err != nil {
-			return nil, err
+		// Check if a blocking condition was detected so far with the start operation event (ip blocking, metadata blocking, etc.)
+		if blockedErr != nil {
+			return nil, blockedErr
 		}
 
-		defer grpcsec.StartReceiveOperation(types.ReceiveOperationArgs{Message: req}, op).Finish(types.ReceiveOperationRes{})
-		if err != nil {
-			return nil, err
+		// As of our gRPC abstract operation definition, we must fake a receive operation for unary RPCs (the same model fits both unary and streaming RPCs)
+		grpcsec.StartReceiveOperation(types.ReceiveOperationArgs{}, op).Finish(types.ReceiveOperationRes{Message: req})
+		// Check if a blocking condition was detected so far with the receive operation events
+		if blockedErr != nil {
+			return nil, blockedErr
 		}
 
-		rv, err := handler(ctx, req)
-		if e, ok := err.(*types.MonitoringError); ok {
-			err = status.Error(codes.Code(e.GRPCStatus()), e.Error())
-		}
-		return rv, err
+		// Call the original handler - let the deferred function above handle the blocking condition and return error
+		return handler(ctx, req)
 	}
 }
 
 // StreamHandler wrapper to use when AppSec is enabled to monitor its execution.
 func appsecStreamHandlerMiddleware(method string, span ddtrace.Span, handler grpc.StreamHandler) grpc.StreamHandler {
 	trace.SetAppSecEnabledTags(span)
-	return func(srv interface{}, stream grpc.ServerStream) error {
-		 appsecStream := &appsecServerStream{
-			ServerStream:     stream,
+	return func(srv interface{}, stream grpc.ServerStream) (rpcErr error) {
+		// Create a ServerStream wrapper with appsec RPC handler operation and the Go context (to implement the ServerStream interface)
+		appsecStream := &appsecServerStream{
+			ServerStream: stream,
+			// note: the blockedErr field is captured by the RPC handler's OnData closure below
 		}
 
 		ctx := stream.Context()
@@ -99,24 +102,28 @@ func appsecStreamHandlerMiddleware(method string, span ddtrace.Span, handler grp
 				if a.Blocking() {
 					code, e := a.GRPCWrapper()
 					appsecStream.blockedErr = status.Error(codes.Code(code), e.Error())
-
 				}
 			})
 		})
 
+		// Finish constructing the appsec stream wrapper and replace the original one
 		appsecStream.handlerOperation = op
 		appsecStream.ctx = ctx
-		stream = appsecStream
 
 		defer func() {
 			events := op.Finish(types.HandlerOperationRes{})
-			if appsecStream.blockedErr != nil {
-				op.SetTag(trace.BlockedRequestTag, true)
-			}
-			trace.SetTags(span, op.Tags())
+
 			if len(events) > 0 {
 				grpctrace.SetSecurityEventsTags(span, events)
 			}
+
+			if appsecStream.blockedErr != nil {
+				op.SetTag(trace.BlockedRequestTag, true)
+				// Change the RPC return error with appsec's
+				rpcErr = appsecStream.blockedErr
+			}
+
+			trace.SetTags(span, op.Tags())
 		}()
 
 		// Check if a blocking condition was detected so far with the start operation event (ip blocking, metadata blocking, etc.)
@@ -124,12 +131,8 @@ func appsecStreamHandlerMiddleware(method string, span ddtrace.Span, handler grp
 			return appsecStream.blockedErr
 		}
 
-		// Call the original handler
-		err := handler(srv, stream)
-		//if e, ok := err.(*types.MonitoringError); ok {
-		//	err = status.Error(codes.Code(e.GRPCStatus()), e.Error())
-		//}
-		return err
+		// Call the original handler - let the deferred function above handle the blocking condition and return error
+		return handler(srv, appsecStream)
 	}
 }
 
@@ -144,18 +147,19 @@ type appsecServerStream struct {
 
 // RecvMsg implements grpc.ServerStream interface method to monitor its
 // execution with AppSec.
-func (ss appsecServerStream) RecvMsg(m interface{}) (err error) {
-	op := grpcsec.StartReceiveOperation(types.ReceiveOperationArgs{Message: m}, ss.handlerOperation)
-	defer op.Finish(types.ReceiveOperationRes{})
-
-	if ss.blockedErr != nil {
-		return ss.blockedErr
-	}
-
+func (ss *appsecServerStream) RecvMsg(m interface{}) (err error) {
+	op := grpcsec.StartReceiveOperation(types.ReceiveOperationArgs{}, ss.handlerOperation)
+	defer func() {
+		op.Finish(types.ReceiveOperationRes{Message: m})
+		if ss.blockedErr != nil {
+			// Change the function call return error with appsec's
+			err = ss.blockedErr
+		}
+	}()
 	return ss.ServerStream.RecvMsg(m)
 }
 
-func (ss appsecServerStream) Context() context.Context {
+func (ss *appsecServerStream) Context() context.Context {
 	return ss.ctx
 }
 

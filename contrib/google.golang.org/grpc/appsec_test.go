@@ -10,7 +10,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
-	"strings"
 	"testing"
 
 	pappsec "gopkg.in/DataDog/dd-trace-go.v1/appsec"
@@ -169,16 +168,17 @@ func TestBlocking(t *testing.T) {
 			},
 			{
 				name:                    "message blocking",
-				md:                      metadata.Pairs("m1", "v1", "x-client-ip", "1.2.3.5", "user-id", "blocked-user-1"),
+				md:                      metadata.Pairs("m1", "v1", "x-client-ip", "1.2.3.5", "user-id", "legit-user-1"),
 				message:                 "$globals",
 				expectedMatchedRules:    []string{"crs-933-130-block"}, // message blocking alone as it comes before user blocking
 				expectedNotMatchedRules: []string{"blk-001-002"},       // no user blocking
 			},
 			{
-				name:                 "user blocking",
-				md:                   metadata.Pairs("m1", "v1", "x-client-ip", "1.2.3.5", "user-id", "blocked-user-1"),
-				message:              "<script>alert('xss');</script>",
-				expectedMatchedRules: []string{"crs-941-110", "blk-001-002"}, // monitoring event + user blocking
+				name:                    "user blocking",
+				md:                      metadata.Pairs("m1", "v1", "x-client-ip", "1.2.3.5", "user-id", "blocked-user-1"),
+				message:                 "<script>alert('xss');</script>",
+				expectedMatchedRules:    []string{"blk-001-002"},       // user blocking alone as it comes first in our test handler
+				expectedNotMatchedRules: []string{"crs-933-130-block"}, // message blocking alone as it comes before user blocking
 			},
 		} {
 			t.Run(tc.name, func(t *testing.T) {
@@ -190,10 +190,10 @@ func TestBlocking(t *testing.T) {
 					do(client)
 
 					finished := mt.FinishedSpans()
-					require.Len(t, finished, 1)
+					require.True(t, len(finished) >= 1) // streaming RPCs will have two spans, unary RPCs will have one
 
 					// The request should have the security events
-					events, _ := finished[0].Tag("_dd.appsec.json").(string)
+					events, _ := finished[len(finished)-1 /* root span */].Tag("_dd.appsec.json").(string)
 					require.NotEmpty(t, events)
 					for _, rule := range tc.expectedMatchedRules {
 						require.Contains(t, events, rule)
@@ -235,28 +235,6 @@ func TestBlocking(t *testing.T) {
 				})
 			})
 		}
-	})
-
-	t.Run("stream-block", func(t *testing.T) {
-		client, mt, cleanup := setup()
-		defer cleanup()
-
-		ctx := metadata.NewOutgoingContext(context.Background(), metadata.Pairs("dd-canary", "dd-test-scanner-log", "x-client-ip", "1.2.3.4"))
-		stream, err := client.StreamPing(ctx)
-		require.NoError(t, err)
-		reply, err := stream.Recv()
-		err = stream.CloseSend()
-		require.NoError(t, err)
-
-		require.Equal(t, codes.Aborted, status.Code(err))
-		require.Nil(t, reply)
-
-		finished := mt.FinishedSpans()
-		require.Len(t, finished, 1)
-		// The request should have the attack attempts
-		event, _ := finished[0].Tag("_dd.appsec.json").(string)
-		require.NotNil(t, event)
-		require.True(t, strings.Contains(event, "blk-001-001"))
 	})
 }
 
@@ -406,17 +384,20 @@ func (s *appsecFixtureServer) StreamPing(stream Fixture_StreamPingServer) (err e
 	ctx := stream.Context()
 	md, _ := metadata.FromIncomingContext(ctx)
 	ids := md.Get("user-id")
-	if err := pappsec.SetUser(ctx, ids[0]); err != nil {
-		return err
+	if len(ids) > 0 {
+		if err := pappsec.SetUser(ctx, ids[0]); err != nil {
+			return err
+		}
 	}
 	return s.s.StreamPing(stream)
 }
 func (s *appsecFixtureServer) Ping(ctx context.Context, in *FixtureRequest) (*FixtureReply, error) {
 	md, _ := metadata.FromIncomingContext(ctx)
 	ids := md.Get("user-id")
-	if err := pappsec.SetUser(ctx, ids[0]); err != nil {
-		return nil, err
+	if len(ids) > 0 {
+		if err := pappsec.SetUser(ctx, ids[0]); err != nil {
+			return nil, err
+		}
 	}
-
 	return s.s.Ping(ctx, in)
 }

@@ -63,15 +63,14 @@ type (
 
 	// ReceiveOperationArgs is the gRPC handler receive operation arguments
 	// Empty as of today.
-	ReceiveOperationArgs struct{
-		// Message received by the gRPC handler.
-		// Corresponds to the address `grpc.server.request.message`.
-		Message interface{}
-	}
+	ReceiveOperationArgs struct{}
 
 	// ReceiveOperationRes is the gRPC handler receive operation results which
 	// contains the message the gRPC handler received.
 	ReceiveOperationRes struct {
+		// Message received by the gRPC handler.
+		// Corresponds to the address `grpc.server.request.message`.
+		Message interface{}
 	}
 
 	// MonitoringError is used to vehicle a gRPC error that also embeds a request status code
