@@ -38,6 +38,7 @@ func ProtectRoundTrip(ctx context.Context, url string) error {
 	}
 
 	var err *events.BlockingSecurityEvent
+	// TODO: move the data listener as a setup function of httpsec.StartRoundTripperOperation(ars, <setup>) 
 	dyngo.OnData(op, func(e *events.BlockingSecurityEvent) {
 		err = e
 	})
