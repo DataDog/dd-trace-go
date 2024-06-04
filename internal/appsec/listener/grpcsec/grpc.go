@@ -148,10 +148,10 @@ func (l *wafEventListener) onEvent(op *types.HandlerOperation, handlerArgs types
 	wafResult := shared.RunWAF(wafCtx, waf.RunAddressData{Persistent: values})
 	if wafResult.HasEvents() {
 		addEvents(wafResult.Events)
+		log.Debug("appsec: WAF detected an attack before executing the request")
 	}
 	if wafResult.HasActions() {
 		interrupt := shared.ProcessActions(op, wafResult.Actions)
-		log.Debug("appsec: WAF detected an attack before executing the request")
 		if interrupt {
 			wafCtx.Close()
 			return
