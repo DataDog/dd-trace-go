@@ -18,8 +18,11 @@ import (
 var hashableEdgeTags = map[string]struct{}{"event_type": {}, "exchange": {}, "group": {}, "topic": {}, "type": {}, "direction": {}}
 
 func isValidArn(arn string) bool {
-	parts := strings.Split(arn, ":")
-	if len(parts) > 0 && parts[0] == "arn" && len(parts) > 5 {
+	separators := strings.Count(arn, ":")
+	if separators < 5 {
+		return false
+	}
+	if strings.HasPrefix(arn, "arn:") {
 		return true
 	}
 	return false
