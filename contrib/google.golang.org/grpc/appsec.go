@@ -29,7 +29,7 @@ import (
 // UnaryHandler wrapper to use when AppSec is enabled to monitor its execution.
 func appsecUnaryHandlerMiddleware(method string, span ddtrace.Span, handler grpc.UnaryHandler) grpc.UnaryHandler {
 	trace.SetAppSecEnabledTags(span)
-	return func(ctx context.Context, req interface{}) (res interface{}, rpcErr error) {
+	return func(ctx context.Context, req any) (res any, rpcErr error) {
 		var blockedErr error
 		md, _ := metadata.FromIncomingContext(ctx)
 		clientIP := setClientIP(ctx, span, md)
@@ -79,7 +79,7 @@ func appsecUnaryHandlerMiddleware(method string, span ddtrace.Span, handler grpc
 // StreamHandler wrapper to use when AppSec is enabled to monitor its execution.
 func appsecStreamHandlerMiddleware(method string, span ddtrace.Span, handler grpc.StreamHandler) grpc.StreamHandler {
 	trace.SetAppSecEnabledTags(span)
-	return func(srv interface{}, stream grpc.ServerStream) (rpcErr error) {
+	return func(srv any, stream grpc.ServerStream) (rpcErr error) {
 		// Create a ServerStream wrapper with appsec RPC handler operation and the Go context (to implement the ServerStream interface)
 		appsecStream := &appsecServerStream{
 			ServerStream: stream,

@@ -93,7 +93,7 @@ func (l *wafEventListener) onEvent(op *types.HandlerOperation, handlerArgs types
 		const maxWAFEventsPerRequest = 10
 		if nbEvents.Load() >= maxWAFEventsPerRequest {
 			logOnce.Do(func() {
-				log.Debug("appsec: ignoring the rpc message due to the maximum number of security events per grpc call reached")
+				log.Debug("appsec: ignoring new WAF event due to the maximum number of security events per grpc call reached")
 			})
 			return
 		}
@@ -128,10 +128,10 @@ func (l *wafEventListener) onEvent(op *types.HandlerOperation, handlerArgs types
 			wafResult := shared.RunWAF(wafCtx, waf.RunAddressData{Persistent: values})
 			if wafResult.HasEvents() {
 				addEvents(wafResult.Events)
+				log.Debug("appsec: WAF detected an authenticated user attack: %s", args.UserID)
 			}
 			if wafResult.HasActions() {
 				shared.ProcessActions(op, wafResult.Actions)
-				log.Debug("appsec: WAF detected an authenticated user attack: %s", args.UserID)
 			}
 		})
 	}
