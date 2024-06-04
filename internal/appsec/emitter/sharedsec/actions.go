@@ -7,11 +7,11 @@ package sharedsec
 
 import (
 	_ "embed" // Blank import
-	"errors"
 	"net/http"
 	"os"
 	"strings"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/appsec/events"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/stacktrace"
@@ -103,7 +103,7 @@ func (a *StackTraceAction) EmitData(op dyngo.Operation) { dyngo.EmitData(op, a) 
 func NewStackTraceAction(params map[string]any) Action {
 	id, ok := params["stack_id"]
 	if !ok {
-		log.Debug("appsec: could not read stack_id parameter for stack_trace action")
+		log.Debug("appsec: could not read stack_id parameter for generate_stack action")
 		return nil
 	}
 
@@ -197,7 +197,7 @@ func newBlockRequestHandler(status int, ct string, payload []byte) http.Handler 
 
 func newGRPCBlockHandler(status int) GRPCWrapper {
 	return func(_ map[string][]string) (uint32, error) {
-		return uint32(status), errors.New("Request blocked")
+		return uint32(status), &events.BlockingSecurityEvent{}
 	}
 }
 
