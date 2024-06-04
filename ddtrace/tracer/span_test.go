@@ -1082,6 +1082,11 @@ func (s *stringer) String() string {
 // concurrent map writes. It seems to only be consistently reproduced with the -count=100
 // flag when running go test, but it's a good test to have.
 func TestConcurrentSpanSetTag(t *testing.T) {
+	testConcurrentSpanSetTag(t)
+	testConcurrentSpanSetTag(t)
+}
+
+func testConcurrentSpanSetTag(t *testing.T) {
 	tracer, _, _, stop := startTestTracer(t, WithSamplingRules([]SamplingRule{NameRule("root", 1.0)}))
 	defer stop()
 
@@ -1093,11 +1098,11 @@ func TestConcurrentSpanSetTag(t *testing.T) {
 	wg.Add(n * 2)
 	for i := 0; i < n; i++ {
 		go func() {
-			span.SetTag("key", "value")
+			tracer.Inject(span.Context(), TextMapCarrier(map[string]string{}))
 			wg.Done()
 		}()
 		go func() {
-			tracer.Inject(span.Context(), TextMapCarrier(map[string]string{}))
+			span.SetTag("key", "value")
 			wg.Done()
 		}()
 	}
