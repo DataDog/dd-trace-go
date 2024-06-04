@@ -1076,3 +1076,30 @@ type stringer struct{}
 func (s *stringer) String() string {
 	return "string"
 }
+
+// TestConcurrentSpanSetTag tests that setting tags concurrently on a span directly or
+// not (through tracer.Inject when trace sampling rules are in place) does not cause
+// concurrent map writes. It seems to only be consistently reproduced with the -count=100
+// flag when running go test, but it's a good test to have.
+func TestConcurrentSpanSetTag(t *testing.T) {
+	tracer, _, _, stop := startTestTracer(t, WithSamplingRules([]SamplingRule{NameRule("root", 1.0)}))
+	defer stop()
+
+	span := tracer.StartSpan("root")
+	defer span.Finish()
+
+	const n = 100
+	wg := sync.WaitGroup{}
+	wg.Add(n * 2)
+	for i := 0; i < n; i++ {
+		go func() {
+			span.SetTag("key", "value")
+			wg.Done()
+		}()
+		go func() {
+			tracer.Inject(span.Context(), TextMapCarrier(map[string]string{}))
+			wg.Done()
+		}()
+	}
+	wg.Wait()
+}
