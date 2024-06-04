@@ -7,11 +7,11 @@ package sharedsec
 
 import (
 	_ "embed" // Blank import
-	"errors"
 	"net/http"
 	"os"
 	"strings"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/appsec/events"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/stacktrace"
@@ -78,6 +78,8 @@ type (
 	// blockActionParams are the dynamic parameters to be provided to a "block_request"
 	// action type upon invocation
 	blockActionParams struct {
+		// GRPCStatusCode is the gRPC status code to be returned. Since 0 is the OK status, the value is nullable to
+		// be able to distinguish between unset and defaulting to Abort (10), or set to OK (0).
 		GRPCStatusCode *int   `mapstructure:"grpc_status_code,omitempty"`
 		StatusCode     int    `mapstructure:"status_code"`
 		Type           string `mapstructure:"type,omitempty"`
@@ -103,7 +105,7 @@ func (a *StackTraceAction) EmitData(op dyngo.Operation) { dyngo.EmitData(op, a) 
 func NewStackTraceAction(params map[string]any) Action {
 	id, ok := params["stack_id"]
 	if !ok {
-		log.Debug("appsec: could not read stack_id parameter for stack_trace action")
+		log.Debug("appsec: could not read stack_id parameter for generate_stack action")
 		return nil
 	}
 
@@ -197,26 +199,26 @@ func newBlockRequestHandler(status int, ct string, payload []byte) http.Handler 
 
 func newGRPCBlockHandler(status int) GRPCWrapper {
 	return func() (uint32, error) {
-		return uint32(status), errors.New("Request blocked")
+		return uint32(status), &events.BlockingSecurityEvent{}
 	}
 }
 
 func blockParamsFromMap(params map[string]any) (blockActionParams, error) {
-	var (
-		err error
-	)
+	grpcCode := 10
 	p := blockActionParams{
-		StatusCode: 403,
-		Type:       "auto",
+		Type:           "auto",
+		StatusCode:     403,
+		GRPCStatusCode: &grpcCode,
 	}
 
-	mapstructure.WeakDecode(params, &p)
+	if err := mapstructure.WeakDecode(params, &p); err != nil {
+		return p, err
+	}
 
-	grpcCode := 10
 	if p.GRPCStatusCode == nil {
 		p.GRPCStatusCode = &grpcCode
 	}
-	return p, err
+	return p, nil
 
 }
 

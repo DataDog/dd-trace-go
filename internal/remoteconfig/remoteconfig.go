@@ -70,6 +70,8 @@ const (
 	APMTracingHTTPHeaderTags
 	// APMTracingCustomTags enables APM client to set custom tags on all spans
 	APMTracingCustomTags
+	// ASMRASPSSRF enables ASM support for runtime protection against SSRF attacks
+	ASMRASPSSRF = 23
 )
 
 // Additional capability bit index values that are non-consecutive from above.

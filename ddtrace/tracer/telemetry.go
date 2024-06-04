@@ -54,11 +54,12 @@ func startTelemetry(c *config) {
 		{Name: "trace_span_attribute_schema", Value: c.spanAttributeSchemaVersion},
 		{Name: "trace_peer_service_defaults_enabled", Value: c.peerServiceDefaultsEnabled},
 		{Name: "orchestrion_enabled", Value: c.orchestrionCfg.Enabled},
-		{Name: "trace_enabled", Value: c.enabled.current},
+		{Name: "trace_enabled", Value: c.enabled.current, Origin: c.enabled.cfgOrigin},
 		c.traceSampleRate.toTelemetry(),
 		c.headerAsTags.toTelemetry(),
 		c.globalTags.toTelemetry(),
 		c.traceSampleRules.toTelemetry(),
+		telemetry.Sanitize(telemetry.Configuration{Name: "span_sample_rules", Value: c.spanRules}),
 	}
 	var peerServiceMapping []string
 	for key, value := range c.peerServiceMappings {
