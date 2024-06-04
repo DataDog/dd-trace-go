@@ -68,16 +68,18 @@ type (
 	}
 
 	// GRPCWrapper is an opaque prototype abstraction for a gRPC handler (to avoid importing grpc)
-	// that takes metadata as input and returns a status code and an error
+	// that returns a status code and an error
 	// TODO: rely on strongly typed actions (with the actual grpc types) by introducing WAF constructors
 	//     living in the contrib packages, along with their dependencies - something like `appsec.RegisterWAFConstructor(newGRPCWAF)`
 	//    Such constructors would receive the full appsec config and rules, so that they would be able to build
 	//    specific blocking actions.
-	GRPCWrapper func(map[string][]string) (uint32, error)
+	GRPCWrapper func() (uint32, error)
 
 	// blockActionParams are the dynamic parameters to be provided to a "block_request"
 	// action type upon invocation
 	blockActionParams struct {
+		// GRPCStatusCode is the gRPC status code to be returned. Since 0 is the OK status, the value is nullable to
+		// be able to distinguish between unset and defaulting to Abort (10), or set to OK (0).
 		GRPCStatusCode *int   `mapstructure:"grpc_status_code,omitempty"`
 		StatusCode     int    `mapstructure:"status_code"`
 		Type           string `mapstructure:"type,omitempty"`
@@ -196,27 +198,27 @@ func newBlockRequestHandler(status int, ct string, payload []byte) http.Handler 
 }
 
 func newGRPCBlockHandler(status int) GRPCWrapper {
-	return func(_ map[string][]string) (uint32, error) {
+	return func() (uint32, error) {
 		return uint32(status), &events.BlockingSecurityEvent{}
 	}
 }
 
 func blockParamsFromMap(params map[string]any) (blockActionParams, error) {
-	var (
-		err error
-	)
+	grpcCode := 10
 	p := blockActionParams{
-		StatusCode: 403,
-		Type:       "auto",
+		Type:           "auto",
+		StatusCode:     403,
+		GRPCStatusCode: &grpcCode,
 	}
 
-	mapstructure.WeakDecode(params, &p)
+	if err := mapstructure.WeakDecode(params, &p); err != nil {
+		return p, err
+	}
 
-	grpcCode := 10
 	if p.GRPCStatusCode == nil {
 		p.GRPCStatusCode = &grpcCode
 	}
-	return p, err
+	return p, nil
 
 }
 
