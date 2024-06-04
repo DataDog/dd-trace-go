@@ -7,6 +7,7 @@ package sharedsec
 
 import (
 	"context"
+	"gopkg.in/DataDog/dd-trace-go.v1/appsec/events"
 	"reflect"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
@@ -39,7 +40,7 @@ var userIDOperationArgsType = reflect.TypeOf((*UserIDOperationArgs)(nil)).Elem()
 func ExecuteUserIDOperation(parent dyngo.Operation, args UserIDOperationArgs) error {
 	var err error
 	op := &UserIDOperation{Operation: dyngo.NewOperation(parent)}
-	dyngo.OnData(op, func(e error) { err = e })
+	dyngo.OnData(op, func(e *events.BlockingSecurityEvent) { err = e })
 	dyngo.StartOperation(op, args)
 	dyngo.FinishOperation(op, UserIDOperationRes{})
 	return err
