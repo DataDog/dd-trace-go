@@ -266,7 +266,7 @@ jobs:
 
   test-app-smoke-tests:
     name: Smoke Tests
-    if: github.repository_owner == 'DataDog' # only run on DataDog's repository, not in forks
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.owner == 'DataDog'
     uses: DataDog/appsec-go-test-app/.github/workflows/smoke-tests.yml@main
     with:
       dd-trace-go-version: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
