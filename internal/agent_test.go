@@ -34,6 +34,8 @@ func TestAgentURLFromEnv(t *testing.T) {
 
 func TestAgentURLPriorityOrder(t *testing.T) {
 	makeTestUDS := func(t *testing.T) string {
+		// NB: We don't try to connect to this, we just check that a
+		// path exists
 		s := t.TempDir()
 		return s
 	}
@@ -44,8 +46,8 @@ func TestAgentURLPriorityOrder(t *testing.T) {
 		t.Setenv("DD_TRACE_AGENT_PORT", "5678")
 		uds := makeTestUDS(t)
 		url := AgentURLFromEnv(uds)
-		assert.Equal(t, url.Scheme, "https")
-		assert.Equal(t, url.Host, "foo:1234")
+		assert.Equal(t, "https", url.Scheme)
+		assert.Equal(t, "foo:1234", url.Host)
 	})
 
 	t.Run("DD_AGENT_HOST-and-DD_TRACE_AGENT_PORT", func(t *testing.T) {
@@ -53,21 +55,37 @@ func TestAgentURLPriorityOrder(t *testing.T) {
 		t.Setenv("DD_TRACE_AGENT_PORT", "5678")
 		uds := makeTestUDS(t)
 		url := AgentURLFromEnv(uds)
-		assert.Equal(t, url.Scheme, "http")
-		assert.Equal(t, url.Host, "bar:5678")
+		assert.Equal(t, "http", url.Scheme)
+		assert.Equal(t, "bar:5678", url.Host)
+	})
+
+	t.Run("DD_AGENT_HOST", func(t *testing.T) {
+		t.Setenv("DD_AGENT_HOST", "bar")
+		uds := makeTestUDS(t)
+		url := AgentURLFromEnv(uds)
+		assert.Equal(t, "http", url.Scheme)
+		assert.Equal(t, "bar:8126", url.Host)
+	})
+
+	t.Run("DD_TRACE_AGENT_PORT", func(t *testing.T) {
+		t.Setenv("DD_TRACE_AGENT_PORT", "5678")
+		uds := makeTestUDS(t)
+		url := AgentURLFromEnv(uds)
+		assert.Equal(t, "http", url.Scheme)
+		assert.Equal(t, "localhost:5678", url.Host)
 	})
 
 	t.Run("UDS", func(t *testing.T) {
 		uds := makeTestUDS(t)
 		url := AgentURLFromEnv(uds)
-		assert.Equal(t, url.Scheme, "unix")
-		assert.Equal(t, url.Host, "")
-		assert.Equal(t, url.Path, uds)
+		assert.Equal(t, "unix", url.Scheme)
+		assert.Equal(t, "", url.Host)
+		assert.Equal(t, uds, url.Path)
 	})
 
 	t.Run("nothing", func(t *testing.T) {
 		url := AgentURLFromEnv("does-not-exist")
-		assert.Equal(t, url.Scheme, "http")
-		assert.Equal(t, url.Host, "localhost:8126")
+		assert.Equal(t, "http", url.Scheme)
+		assert.Equal(t, "localhost:8126", url.Host)
 	})
 }

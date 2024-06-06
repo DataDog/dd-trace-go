@@ -23,7 +23,9 @@ const (
 // the default host/port and UDS path, and via standard environment variables.
 // AgentURLFromEnv has the following priority order:
 //   - First, DD_TRACE_AGENT_URL if it is set
-//   - Then, DD_AGENT_HOST and DD_TRACE_AGENT_PORT if either are set
+//   - Then, if either of DD_AGENT_HOST and DD_TRACE_AGENT_PORT are set,
+//     use http://DD_AGENT_HOST:DD_TRACE_AGENT_PORT,
+//     defaulting to localhost and 8126, respectively
 //   - Then, the default UDS path given here, if the path exists
 //     (the path is replacable for testing purposes, otherwise use DefaultTraceAgentUDSPath)
 //   - Finally, localhost:8126
@@ -41,27 +43,32 @@ func AgentURLFromEnv(defaultSocketAPM string) *url.URL {
 			}
 		}
 	}
-	var host, port string
-	if v := os.Getenv("DD_AGENT_HOST"); v != "" {
-		host = v
+
+	host, providedHost := os.LookupEnv("DD_AGENT_HOST")
+	port, providedPort := os.LookupEnv("DD_TRACE_AGENT_PORT")
+	if host == "" {
+		// We treat set but empty the same as unset
+		providedHost = false
+		host = DefaultAgentHostname
 	}
-	if v := os.Getenv("DD_TRACE_AGENT_PORT"); v != "" {
-		port = v
+	if port == "" {
+		// We treat set but empty the same as unset
+		providedPort = false
+		port = DefaultTraceAgentPort
 	}
-	if _, err := os.Stat(defaultSocketAPM); host == "" && port == "" && err == nil {
+	httpURL := &url.URL{
+		Scheme: "http",
+		Host:   net.JoinHostPort(host, port),
+	}
+	if providedHost || providedPort {
+		return httpURL
+	}
+
+	if _, err := os.Stat(defaultSocketAPM); err == nil {
 		return &url.URL{
 			Scheme: "unix",
 			Path:   defaultSocketAPM,
 		}
 	}
-	if host == "" {
-		host = DefaultAgentHostname
-	}
-	if port == "" {
-		port = DefaultTraceAgentPort
-	}
-	return &url.URL{
-		Scheme: "http",
-		Host:   net.JoinHostPort(host, port),
-	}
+	return httpURL
 }
