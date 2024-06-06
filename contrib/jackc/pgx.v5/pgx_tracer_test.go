@@ -254,11 +254,11 @@ func TestAcquire(t *testing.T) {
 	assert.Equal(t, ps.SpanID(), s.ParentID())
 }
 
-func TestRelease(t *testing.T) {
+func TestHold(t *testing.T) {
 	mt := mocktracer.Start()
 	defer mt.Stop()
 
-	opts := append(tracingAllDisabled(), WithTraceRelease(true))
+	opts := append(tracingAllDisabled(), WithTraceHold(true))
 	runAllOperations(t, opts...)
 
 	spans := mt.FinishedSpans()
@@ -270,9 +270,9 @@ func TestRelease(t *testing.T) {
 
 	s := spans[0]
 	assertCommonTags(t, s)
-	assert.Equal(t, "pgx.release", s.OperationName())
-	assert.Equal(t, "Release", s.Tag(ext.ResourceName))
-	assert.Equal(t, "Release", s.Tag("db.operation"))
+	assert.Equal(t, "pgx.hold", s.OperationName())
+	assert.Equal(t, "Hold", s.Tag(ext.ResourceName))
+	assert.Equal(t, "Hold", s.Tag("db.operation"))
 	assert.Equal(t, nil, s.Tag(ext.DBStatement))
 	assert.Equal(t, ps.SpanID(), s.ParentID())
 }
@@ -285,7 +285,7 @@ func tracingAllDisabled() []Option {
 		WithTraceBatch(false),
 		WithTraceCopyFrom(false),
 		WithTraceAcquire(false),
-		WithTraceRelease(false),
+		WithTraceHold(false),
 	}
 }
 

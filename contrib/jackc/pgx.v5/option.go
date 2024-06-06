@@ -15,7 +15,7 @@ type config struct {
 	tracePrepare  bool
 	traceConnect  bool
 	traceAcquire  bool
-	traceRelease  bool
+	traceHold     bool
 }
 
 func defaultConfig() *config {
@@ -27,7 +27,7 @@ func defaultConfig() *config {
 		tracePrepare:  true,
 		traceConnect:  true,
 		traceAcquire:  true,
-		traceRelease:  true,
+		traceHold:     true,
 	}
 }
 
@@ -68,10 +68,10 @@ func WithTraceAcquire(enabled bool) Option {
 	}
 }
 
-// WithTraceRelease enables tracing pgxpool connection release calls.
-func WithTraceRelease(enabled bool) Option {
+// WithTraceHold enables tracing pgxpool connection holding.
+func WithTraceHold(enabled bool) Option {
 	return func(c *config) {
-		c.traceRelease = enabled
+		c.traceHold = enabled
 	}
 }
 

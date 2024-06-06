@@ -35,7 +35,7 @@ const (
 	operationTypeBatch                  = "Batch"
 	operationTypeCopyFrom               = "Copy From"
 	operationTypeAcquire                = "Acquire"
-	operationTypeRelease                = "Release"
+	operationTypeHold                   = "Hold"
 )
 
 type tracedBatchQuery struct {
@@ -192,28 +192,32 @@ func (t *pgxTracer) TraceAcquireStart(ctx context.Context, pool *pgxpool.Pool, _
 	return ctx
 }
 
-func (t *pgxTracer) TraceAcquireEnd(ctx context.Context, _ *pgxpool.Pool, data pgxpool.TraceAcquireEndData) {
-	data.Conn.PgConn().CustomData()[customDataContextKey] = ctx
+func (t *pgxTracer) TraceAcquireEnd(ctx context.Context, pool *pgxpool.Pool, data pgxpool.TraceAcquireEndData) {
+	if t.cfg.traceHold {
+		opts := t.spanOptions(pool.Config().ConnConfig, operationTypeHold, "")
+		_, holdCtx := tracer.StartSpanFromContext(ctx, "pgx.hold", opts...)
+		data.Conn.PgConn().CustomData()[customDataContextKey] = holdCtx
+	}
+
 	if !t.cfg.traceAcquire {
 		return
 	}
+
 	finishSpan(ctx, data.Err)
 }
 
 func (t *pgxTracer) TraceRelease(pool *pgxpool.Pool, data pgxpool.TraceReleaseData) {
-	if !t.cfg.traceRelease {
+	if !t.cfg.traceHold {
 		return
 	}
-	acquireCtx, ok := data.Conn.PgConn().CustomData()[customDataContextKey].(context.Context)
-	opts := t.spanOptions(pool.Config().ConnConfig, operationTypeRelease, "")
-	if ok {
-		_, ctx := tracer.StartSpanFromContext(acquireCtx, "pgx.release", opts...)
-		finishSpan(ctx, nil)
-		delete(data.Conn.PgConn().CustomData(), customDataContextKey)
-	} else {
-		span := tracer.StartSpan("pgx.release", opts...)
-		span.Finish()
+
+	holdCtx, ok := data.Conn.PgConn().CustomData()[customDataContextKey].(context.Context)
+	if !ok {
+		return
 	}
+
+	finishSpan(holdCtx, nil)
+	delete(data.Conn.PgConn().CustomData(), customDataContextKey)
 }
 
 func (t *pgxTracer) spanOptions(connConfig *pgx.ConnConfig, op operationType, sqlStatement string, extraOpts ...ddtrace.StartSpanOption) []ddtrace.StartSpanOption {
