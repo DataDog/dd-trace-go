@@ -209,6 +209,7 @@ func (t *pgxTracer) TraceRelease(pool *pgxpool.Pool, data pgxpool.TraceReleaseDa
 	if ok {
 		_, ctx := tracer.StartSpanFromContext(acquireCtx, "pgx.release", opts...)
 		finishSpan(ctx, nil)
+		delete(data.Conn.PgConn().CustomData(), customDataContextKey)
 	} else {
 		span := tracer.StartSpan("pgx.release", opts...)
 		span.Finish()
