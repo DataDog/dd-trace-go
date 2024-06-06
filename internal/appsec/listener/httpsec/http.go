@@ -17,6 +17,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/sharedsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener"
 	shared "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener/sharedsec"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener/sqlsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/samplernames"
 
@@ -95,6 +96,14 @@ func newWafEventListener(wafHandle *waf.Handle, cfg *config.Config, limiter limi
 	}
 }
 
+func sqlAddressesPresent(addresses map[string]struct{}) bool {
+	_, queryAddr := addresses[sqlsec.ServerDBStatementAddr]
+	_, driverAddr := addresses[sqlsec.ServerDBTypeAddr]
+
+	return queryAddr || driverAddr
+
+}
+
 func (l *wafEventListener) onEvent(op *types.Operation, args types.HandlerOperationArgs) {
 	wafCtx, err := l.wafHandle.NewContextWithBudget(l.config.WAFTimeout)
 	if err != nil {
@@ -110,6 +119,10 @@ func (l *wafEventListener) onEvent(op *types.Operation, args types.HandlerOperat
 
 	if _, ok := l.addresses[ServerIoNetURLAddr]; ok {
 		RegisterRoundTripperListener(op, &op.SecurityEventsHolder, wafCtx, l.limiter)
+	}
+
+	if sqlAddressesPresent(l.addresses) {
+		sqlsec.RegisterSQLListener(op, &op.SecurityEventsHolder, wafCtx, l.limiter)
 	}
 
 	if _, ok := l.addresses[UserIDAddr]; ok {
