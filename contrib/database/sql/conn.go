@@ -15,6 +15,8 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/sqlsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
@@ -135,6 +137,11 @@ func (tc *TracedConn) ExecContext(ctx context.Context, query string, args []driv
 		cquery, spanID := tc.injectComments(ctx, query, tc.cfg.dbmPropagationMode)
 		ctx, end := startTraceTask(ctx, QueryTypeExec)
 		defer end()
+		if appsec.RASPEnabled() {
+			if err := sqlsec.ProtectSQLOperation(ctx, query, tc.driverName, spanID); err != nil {
+				return nil, err
+			}
+		}
 		r, err := execContext.ExecContext(ctx, cquery, args)
 		tc.tryTrace(ctx, QueryTypeExec, query, start, err, append(withDBMTraceInjectedTag(tc.cfg.dbmPropagationMode), tracer.WithSpanID(spanID))...)
 		return r, err
@@ -152,6 +159,11 @@ func (tc *TracedConn) ExecContext(ctx context.Context, query string, args []driv
 		cquery, spanID := tc.injectComments(ctx, query, tc.cfg.dbmPropagationMode)
 		ctx, end := startTraceTask(ctx, QueryTypeExec)
 		defer end()
+		if appsec.RASPEnabled() {
+			if err := sqlsec.ProtectSQLOperation(ctx, query, tc.driverName, spanID); err != nil {
+				return nil, err
+			}
+		}
 		r, err = execer.Exec(cquery, dargs)
 		tc.tryTrace(ctx, QueryTypeExec, query, start, err, append(withDBMTraceInjectedTag(tc.cfg.dbmPropagationMode), tracer.WithSpanID(spanID))...)
 		return r, err
@@ -332,6 +344,7 @@ func (tp *traceParams) tryTrace(ctx context.Context, qtype QueryType, query stri
 	if query != "" {
 		resource = query
 	}
+
 	span.SetTag("sql.query_type", string(qtype))
 	span.SetTag(ext.ResourceName, resource)
 	for k, v := range tp.meta {
