@@ -191,6 +191,11 @@ func (tc *TracedConn) QueryContext(ctx context.Context, query string, args []dri
 		cquery, spanID := tc.injectComments(ctx, query, tc.cfg.dbmPropagationMode)
 		ctx, end := startTraceTask(ctx, QueryTypeQuery)
 		defer end()
+		if appsec.RASPEnabled() {
+			if err := sqlsec.ProtectSQLOperation(ctx, query, tc.driverName, spanID); err != nil {
+				return nil, err
+			}
+		}
 		rows, err := queryerContext.QueryContext(ctx, cquery, args)
 		tc.tryTrace(ctx, QueryTypeQuery, query, start, err, append(withDBMTraceInjectedTag(tc.cfg.dbmPropagationMode), tracer.WithSpanID(spanID))...)
 		return rows, err
@@ -208,6 +213,11 @@ func (tc *TracedConn) QueryContext(ctx context.Context, query string, args []dri
 		cquery, spanID := tc.injectComments(ctx, query, tc.cfg.dbmPropagationMode)
 		ctx, end := startTraceTask(ctx, QueryTypeQuery)
 		defer end()
+		if appsec.RASPEnabled() {
+			if err := sqlsec.ProtectSQLOperation(ctx, query, tc.driverName, spanID); err != nil {
+				return nil, err
+			}
+		}
 		rows, err = queryer.Query(cquery, dargs)
 		tc.tryTrace(ctx, QueryTypeQuery, query, start, err, append(withDBMTraceInjectedTag(tc.cfg.dbmPropagationMode), tracer.WithSpanID(spanID))...)
 		return rows, err
