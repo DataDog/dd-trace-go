@@ -193,17 +193,15 @@ func (t *pgxTracer) TraceAcquireStart(ctx context.Context, pool *pgxpool.Pool, _
 }
 
 func (t *pgxTracer) TraceAcquireEnd(ctx context.Context, pool *pgxpool.Pool, data pgxpool.TraceAcquireEndData) {
+	if t.cfg.traceAcquire {
+		finishSpan(ctx, data.Err)
+	}
+
 	if t.cfg.traceHold {
 		opts := t.spanOptions(pool.Config().ConnConfig, operationTypeHold, "")
 		_, holdCtx := tracer.StartSpanFromContext(ctx, "pgx.hold", opts...)
 		data.Conn.PgConn().CustomData()[customDataContextKey] = holdCtx
 	}
-
-	if !t.cfg.traceAcquire {
-		return
-	}
-
-	finishSpan(ctx, data.Err)
 }
 
 func (t *pgxTracer) TraceRelease(pool *pgxpool.Pool, data pgxpool.TraceReleaseData) {
