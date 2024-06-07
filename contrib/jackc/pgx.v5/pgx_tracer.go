@@ -204,7 +204,7 @@ func (t *pgxTracer) TraceAcquireEnd(ctx context.Context, pool *pgxpool.Pool, dat
 	}
 }
 
-func (t *pgxTracer) TraceRelease(pool *pgxpool.Pool, data pgxpool.TraceReleaseData) {
+func (t *pgxTracer) TraceRelease(_ *pgxpool.Pool, data pgxpool.TraceReleaseData) {
 	if !t.cfg.traceHold {
 		return
 	}
