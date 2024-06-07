@@ -205,7 +205,7 @@ func defaultConfig() (*config, error) {
 		c.addProfileType(t)
 	}
 
-	url := internal.AgentURLFromEnv(defaultSocketAPM)
+	url := internal.AgentURLFromEnv()
 	if url.Scheme == "unix" {
 		WithUDS(url.Path)(&c)
 	} else {

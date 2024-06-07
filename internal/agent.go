@@ -14,10 +14,12 @@ import (
 )
 
 const (
-	DefaultAgentHostname     = "localhost"
-	DefaultTraceAgentPort    = "8126"
-	DefaultTraceAgentUDSPath = "/var/run/datadog/apm.socket"
+	DefaultAgentHostname  = "localhost"
+	DefaultTraceAgentPort = "8126"
 )
+
+// This is a variable rather than a constant so it can be replaced in unit tests
+var DefaultTraceAgentUDSPath = "/var/run/datadog/apm.socket"
 
 // AgentURLFromEnv resolves the URL for the trace agent based on
 // the default host/port and UDS path, and via standard environment variables.
@@ -26,10 +28,9 @@ const (
 //   - Then, if either of DD_AGENT_HOST and DD_TRACE_AGENT_PORT are set,
 //     use http://DD_AGENT_HOST:DD_TRACE_AGENT_PORT,
 //     defaulting to localhost and 8126, respectively
-//   - Then, the default UDS path given here, if the path exists
-//     (the path is replacable for testing purposes, otherwise use DefaultTraceAgentUDSPath)
+//   - Then, DefaultTraceAgentUDSPath, if the path exists
 //   - Finally, localhost:8126
-func AgentURLFromEnv(defaultSocketAPM string) *url.URL {
+func AgentURLFromEnv() *url.URL {
 	if agentURL := os.Getenv("DD_TRACE_AGENT_URL"); agentURL != "" {
 		u, err := url.Parse(agentURL)
 		if err != nil {
@@ -64,10 +65,10 @@ func AgentURLFromEnv(defaultSocketAPM string) *url.URL {
 		return httpURL
 	}
 
-	if _, err := os.Stat(defaultSocketAPM); err == nil {
+	if _, err := os.Stat(DefaultTraceAgentUDSPath); err == nil {
 		return &url.URL{
 			Scheme: "unix",
-			Path:   defaultSocketAPM,
+			Path:   DefaultTraceAgentUDSPath,
 		}
 	}
 	return httpURL

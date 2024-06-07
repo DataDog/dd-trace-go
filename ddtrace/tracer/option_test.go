@@ -27,6 +27,7 @@ import (
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
@@ -771,9 +772,9 @@ func TestTracerOptionsDefaults(t *testing.T) {
 
 func TestDefaultHTTPClient(t *testing.T) {
 	defTracerClient := func(timeout int) *http.Client {
-		if _, err := os.Stat(defaultSocketAPM); err == nil {
+		if _, err := os.Stat(internal.DefaultTraceAgentUDSPath); err == nil {
 			// we have the UDS socket file, use it
-			return udsClient(defaultSocketAPM, 0)
+			return udsClient(internal.DefaultTraceAgentUDSPath, 0)
 		}
 		return defaultHTTPClient(time.Second * time.Duration(timeout))
 	}
@@ -797,8 +798,8 @@ func TestDefaultHTTPClient(t *testing.T) {
 			t.Fatal(err)
 		}
 		defer os.RemoveAll(f.Name())
-		defer func(old string) { defaultSocketAPM = old }(defaultSocketAPM)
-		defaultSocketAPM = f.Name()
+		defer func(old string) { internal.DefaultTraceAgentUDSPath = old }(internal.DefaultTraceAgentUDSPath)
+		internal.DefaultTraceAgentUDSPath = f.Name()
 		x := *defTracerClient(2)
 		y := *defaultHTTPClient(2)
 		compareHTTPClients(t, x, y)

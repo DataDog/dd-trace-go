@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/httpmem"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
@@ -718,11 +719,11 @@ func TestUDSDefault(t *testing.T) {
 	dir := t.TempDir()
 	socket := path.Join(dir, "agent.socket")
 
-	orig := defaultSocketAPM
+	orig := internal.DefaultTraceAgentUDSPath
 	defer func() {
-		defaultSocketAPM = orig
+		internal.DefaultTraceAgentUDSPath = orig
 	}()
-	defaultSocketAPM = socket
+	internal.DefaultTraceAgentUDSPath = socket
 
 	profiles := make(chan profileMeta, 1)
 	server := httptest.NewUnstartedServer(&mockBackend{t: t, profiles: profiles})
