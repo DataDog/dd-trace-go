@@ -726,7 +726,13 @@ func TestUDSDefault(t *testing.T) {
 	internal.DefaultTraceAgentUDSPath = socket
 
 	profiles := make(chan profileMeta, 1)
-	server := httptest.NewUnstartedServer(&mockBackend{t: t, profiles: profiles})
+	backend := &mockBackend{t: t, profiles: profiles}
+	mux := http.NewServeMux()
+	// Specifically set up a handler for /profiling/v1/input to test that we
+	// don't use the filesystem path to the Unix domain socket in the HTTP
+	// request path.
+	mux.Handle("/profiling/v1/input", backend)
+	server := httptest.NewUnstartedServer(mux)
 	l, err := net.Listen("unix", socket)
 	if err != nil {
 		t.Fatal(err)
