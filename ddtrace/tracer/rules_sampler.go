@@ -518,20 +518,23 @@ func (rs *traceRulesSampler) sampleRules(span *span) bool {
 }
 
 func (rs *traceRulesSampler) applyRate(span *span, rate float64, now time.Time, sampler samplernames.SamplerName) {
+	span.Lock()
+	defer span.Unlock()
+
 	span.setMetric(keyRulesSamplerAppliedRate, rate)
 	delete(span.Metrics, keySamplingPriorityRate)
 	if !sampledByRate(span.TraceID, rate) {
-		span.setSamplingPriority(ext.PriorityUserReject, sampler)
+		span.setSamplingPriorityLocked(ext.PriorityUserReject, sampler)
 		return
 	}
 
 	sampled, rate := rs.limiter.allowOne(now)
 	if sampled {
-		span.setSamplingPriority(ext.PriorityUserKeep, sampler)
+		span.setSamplingPriorityLocked(ext.PriorityUserKeep, sampler)
 	} else {
-		span.setSamplingPriority(ext.PriorityUserReject, sampler)
+		span.setSamplingPriorityLocked(ext.PriorityUserReject, sampler)
 	}
-	span.SetTag(keyRulesSamplerLimiterRate, rate)
+	span.setMetric(keyRulesSamplerLimiterRate, rate)
 }
 
 // limit returns the rate limit set in the rules sampler, controlled by DD_TRACE_RATE_LIMIT, and
