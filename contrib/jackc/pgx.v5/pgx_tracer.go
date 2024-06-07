@@ -188,7 +188,7 @@ func (t *pgxTracer) TraceAcquireStart(ctx context.Context, pool *pgxpool.Pool, _
 		return ctx
 	}
 	opts := t.spanOptions(pool.Config().ConnConfig, operationTypeAcquire, "")
-	_, ctx = tracer.StartSpanFromContext(ctx, "pgx.acquire", opts...)
+	_, ctx = tracer.StartSpanFromContext(ctx, "pgx.pool.acquire", opts...)
 	return ctx
 }
 
@@ -199,7 +199,7 @@ func (t *pgxTracer) TraceAcquireEnd(ctx context.Context, pool *pgxpool.Pool, dat
 
 	if t.cfg.traceHold {
 		opts := t.spanOptions(pool.Config().ConnConfig, operationTypeHold, "")
-		_, holdCtx := tracer.StartSpanFromContext(ctx, "pgx.hold", opts...)
+		_, holdCtx := tracer.StartSpanFromContext(ctx, "pgx.pool.hold", opts...)
 		data.Conn.PgConn().CustomData()[customDataContextKey] = holdCtx
 	}
 }

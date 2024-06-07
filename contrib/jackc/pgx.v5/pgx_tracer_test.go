@@ -247,7 +247,7 @@ func TestAcquire(t *testing.T) {
 
 	s := spans[0]
 	assertCommonTags(t, s)
-	assert.Equal(t, "pgx.acquire", s.OperationName())
+	assert.Equal(t, "pgx.pool.acquire", s.OperationName())
 	assert.Equal(t, "Acquire", s.Tag(ext.ResourceName))
 	assert.Equal(t, "Acquire", s.Tag("db.operation"))
 	assert.Equal(t, nil, s.Tag(ext.DBStatement))
@@ -270,7 +270,7 @@ func TestHold(t *testing.T) {
 
 	s := spans[0]
 	assertCommonTags(t, s)
-	assert.Equal(t, "pgx.hold", s.OperationName())
+	assert.Equal(t, "pgx.pool.hold", s.OperationName())
 	assert.Equal(t, "Hold", s.Tag(ext.ResourceName))
 	assert.Equal(t, "Hold", s.Tag("db.operation"))
 	assert.Equal(t, nil, s.Tag(ext.DBStatement))
