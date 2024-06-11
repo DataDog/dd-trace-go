@@ -13,7 +13,7 @@ variables:
   # If you have a problem with Gitlab cache, see Troubleshooting section in Benchmarking Platform docs
   image: $BENCHMARKS_CI_IMAGE
   script:
-    - git clone --branch go/go-prof-app https://gitlab-ci-token:${CI_JOB_TOKEN}@gitlab.ddbuild.io/DataDog/benchmarking-platform platform && cd platform
+    - git clone --branch fayssal/update-go-macrobenchmark https://gitlab-ci-token:${CI_JOB_TOKEN}@gitlab.ddbuild.io/DataDog/benchmarking-platform platform && cd platform
     - "./generate-run-plan-and-run-benchmarks.sh"
   artifacts:
     name: "artifacts"
