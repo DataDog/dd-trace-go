@@ -18,7 +18,7 @@ import (
 // including the source root, repository URL, branch, commit SHA, author and committer details, and commit message.
 type localGitData struct {
 	SourceRoot     string
-	RepositoryUrl  string
+	RepositoryURL  string
 	Branch         string
 	CommitSha      string
 	AuthorDate     time.Time
@@ -52,7 +52,7 @@ func getLocalGitData() (localGitData, error) {
 	// Extract the repository URL
 	out, err = exec.Command("git", "ls-remote", "--get-url").Output()
 	if err == nil {
-		gitData.RepositoryUrl = filterSensitiveInfo(strings.Trim(string(out), "\n"))
+		gitData.RepositoryURL = filterSensitiveInfo(strings.Trim(string(out), "\n"))
 	}
 
 	// Extract the current branch name

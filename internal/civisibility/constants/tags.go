@@ -14,21 +14,21 @@ const (
 	// This constant is used to tag traces that originate from CIApp test executions.
 	CIAppTestOrigin = "ciapp-test"
 
-	// TestSessionIdTagName defines the test session ID tag name for the CI Visibility Protocol.
+	// TestSessionIDTagName defines the test session ID tag name for the CI Visibility Protocol.
 	// This constant is used to tag traces with the ID of the test session.
-	TestSessionIdTagName string = "test_session_id"
+	TestSessionIDTagName string = "test_session_id"
 
-	// TestModuleIdTagName defines the test module ID tag name for the CI Visibility Protocol.
+	// TestModuleIDTagName defines the test module ID tag name for the CI Visibility Protocol.
 	// This constant is used to tag traces with the ID of the test module.
-	TestModuleIdTagName string = "test_module_id"
+	TestModuleIDTagName string = "test_module_id"
 
-	// TestSuiteIdTagName defines the test suite ID tag name for the CI Visibility Protocol.
+	// TestSuiteIDTagName defines the test suite ID tag name for the CI Visibility Protocol.
 	// This constant is used to tag traces with the ID of the test suite.
-	TestSuiteIdTagName string = "test_suite_id"
+	TestSuiteIDTagName string = "test_suite_id"
 
-	// ItrCorrelationIdTagName defines the correlation ID for the intelligent test runner tag name for the CI Visibility Protocol.
+	// ItrCorrelationIDTagName defines the correlation ID for the intelligent test runner tag name for the CI Visibility Protocol.
 	// This constant is used to tag traces with the correlation ID for intelligent test runs.
-	ItrCorrelationIdTagName string = "itr_correlation_id"
+	ItrCorrelationIDTagName string = "itr_correlation_id"
 )
 
 // Coverage tags

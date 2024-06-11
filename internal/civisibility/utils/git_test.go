@@ -45,7 +45,7 @@ func TestGetLocalGitData(t *testing.T) {
 
 	assert.NoError(t, err)
 	assert.NotEmpty(t, data.SourceRoot)
-	assert.NotEmpty(t, data.RepositoryUrl)
+	assert.NotEmpty(t, data.RepositoryURL)
 	assert.NotEmpty(t, data.CommitSha)
 	assert.NotEmpty(t, data.AuthorName)
 	assert.NotEmpty(t, data.AuthorEmail)

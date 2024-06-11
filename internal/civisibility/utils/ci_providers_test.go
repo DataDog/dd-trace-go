@@ -15,7 +15,7 @@ import (
 	"testing"
 )
 
-func sortJsonKeys(jsonStr string) string {
+func sortJSONKeys(jsonStr string) string {
 	tmp := map[string]string{}
 	_ = json.Unmarshal([]byte(jsonStr), &tmp)
 	jsonBytes, _ := json.Marshal(tmp)
@@ -82,7 +82,7 @@ func TestTags(t *testing.T) {
 					for expectedKey, expectedValue := range tags {
 						if actualValue, ok := providerTags[expectedKey]; ok {
 							if expectedKey == "_dd.ci.env_vars" {
-								expectedValue = sortJsonKeys(expectedValue)
+								expectedValue = sortJSONKeys(expectedValue)
 							}
 							if expectedValue != actualValue {
 								if expectedValue == strings.ReplaceAll(actualValue, "\\", "/") {
