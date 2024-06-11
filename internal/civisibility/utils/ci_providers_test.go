@@ -88,10 +88,20 @@ func TestTags(t *testing.T) {
 				env := line[0]
 				tags := line[1]
 
+				// Because we have a fallback algorithm for some variables
+				// we need to initialize some of them to not use the one set by the github action running this test.
 				if providerName == "github" {
 					// We initialize GITHUB_RUN_ATTEMPT if it doesn't exist to avoid using the one set in the GitHub action.
 					if _, ok := env["GITHUB_RUN_ATTEMPT"]; !ok {
 						env["GITHUB_RUN_ATTEMPT"] = ""
+					}
+					// We initialize GITHUB_HEAD_REF if it doesn't exist to avoid using the one set in the GitHub action.
+					if _, ok := env["GITHUB_HEAD_REF"]; !ok {
+						env["GITHUB_HEAD_REF"] = ""
+					}
+					// We initialize GITHUB_REF if it doesn't exist to avoid using the one set in the GitHub action.
+					if _, ok := env["GITHUB_REF"]; !ok {
+						env["GITHUB_REF"] = ""
 					}
 				}
 
