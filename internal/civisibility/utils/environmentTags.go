@@ -81,7 +81,7 @@ func createCiTagsMap() map[string]string {
 		localTags[constants.CIWorkspacePath] = gitData.SourceRoot
 	}
 	if _, ok := localTags[constants.GitRepositoryURL]; !ok {
-		localTags[constants.GitRepositoryURL] = gitData.RepositoryUrl
+		localTags[constants.GitRepositoryURL] = gitData.RepositoryURL
 	}
 	if _, ok := localTags[constants.GitCommitSHA]; !ok {
 		localTags[constants.GitCommitSHA] = gitData.CommitSha
