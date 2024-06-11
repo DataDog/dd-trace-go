@@ -18,7 +18,7 @@ import (
 
 const (
 	ServerDBStatementAddr = "server.db.statement"
-	ServerDBTypeAddr      = "server.db.type"
+	ServerDBTypeAddr      = "server.db.system"
 )
 
 func RegisterSQLListener(op dyngo.Operation, events *trace.SecurityEventsHolder, wafCtx *waf.Context, limiter limiter.Limiter) {

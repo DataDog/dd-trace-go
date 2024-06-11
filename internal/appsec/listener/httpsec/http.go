@@ -55,6 +55,8 @@ var supportedAddresses = listener.AddressSet{
 	HTTPClientIPAddr:                   {},
 	UserIDAddr:                         {},
 	ServerIoNetURLAddr:                 {},
+	sqlsec.ServerDBStatementAddr:       {},
+	sqlsec.ServerDBTypeAddr:            {},
 }
 
 // Install registers the HTTP WAF Event Listener on the given root operation.
