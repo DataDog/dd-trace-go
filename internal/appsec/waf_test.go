@@ -8,6 +8,7 @@ package appsec_test
 import (
 	"encoding/json"
 	"io"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -16,6 +17,8 @@ import (
 	"testing"
 
 	pAppsec "gopkg.in/DataDog/dd-trace-go.v1/appsec"
+	"gopkg.in/DataDog/dd-trace-go.v1/appsec/events"
+	sqltrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/database/sql"
 	httptrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
@@ -24,6 +27,7 @@ import (
 
 	internal "github.com/DataDog/appsec-internal-go/appsec"
 	waf "github.com/DataDog/go-libddwaf/v3"
+	"github.com/go-sql-driver/mysql"
 	"github.com/stretchr/testify/require"
 )
 
@@ -493,6 +497,89 @@ func TestAPISecurity(t *testing.T) {
 		require.Nil(t, spans[0].Tag("_dd.appsec.s.req.query"))
 		require.Nil(t, spans[0].Tag("_dd.appsec.s.req.body"))
 	})
+}
+
+func TestRASPSQLi(t *testing.T) {
+	t.Setenv("DD_APPSEC_RULES", "testdata/rasp.json")
+	appsec.Start()
+	defer appsec.Stop()
+
+	if !appsec.RASPEnabled() {
+		t.Skip("RASP needs to be enabled for this test")
+	}
+	// Register the driver that we will be using (in this case mysql) under a custom service name.
+	sqltrace.Register("mysql", &mysql.MySQLDriver{}, sqltrace.WithServiceName("my-db"))
+	// Open a connection to the DB using the driver we've just registered with tracing.
+	db, err := sqltrace.Open("mysql", "test:test@tcp(127.0.0.1:3306)/test")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// Setup the http server
+	mux := httptrace.NewServeMux()
+	mux.HandleFunc("/query", func(w http.ResponseWriter, r *http.Request) {
+		// Subsequent spans inherit their parent from context.
+		q := r.URL.Query().Get("query")
+		rows, err := db.QueryContext(r.Context(), q)
+		stm, err := db.PrepareContext()
+		stm.ExecContext()
+		if events.IsSecurityError(err) {
+			w.WriteHeader(403)
+			w.Write([]byte(err.Error()))
+			return
+		}
+		if err == nil {
+			rows.Close()
+		}
+		w.Write([]byte("Hello World!\n"))
+	})
+	mux.HandleFunc("/exec", func(w http.ResponseWriter, r *http.Request) {
+		// Subsequent spans inherit their parent from context.
+		q := r.URL.Query().Get("query")
+		_, err := db.ExecContext(r.Context(), q)
+		if events.IsSecurityError(err) {
+			w.WriteHeader(403)
+			w.Write([]byte(err.Error()))
+			return
+		}
+		w.Write([]byte("Hello World!\n"))
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	for name, tc := range map[string]struct {
+		query    string
+		endpoint string
+		err      error
+	}{
+		"no-error": {
+			query: "SELECT%201",
+		},
+		"injection": {
+			query: "SELECT%20%2A%20FROM%20users%20WHERE%20user%3D%22%22%20UNION%20ALL%20SELECT%20NULL%2Cversion%28%29--",
+			err:   &events.BlockingSecurityEvent{},
+		},
+	} {
+		for _, endpoint := range []string{"/query", "/exec"} {
+			t.Run(name+endpoint, func(t *testing.T) {
+				// Start tracer and appsec
+				mt := mocktracer.Start()
+				defer mt.Stop()
+
+				req, err := http.NewRequest("POST", srv.URL+endpoint+"?query="+tc.query, nil)
+				require.NoError(t, err)
+				res, err := srv.Client().Do(req)
+				require.NoError(t, err)
+
+				if tc.err != nil {
+					require.Equal(t, 403, res.StatusCode)
+				} else {
+					require.Equal(t, 200, res.StatusCode)
+				}
+			})
+		}
+	}
+
 }
 
 // BenchmarkSampleWAFContext benchmarks the creation of a WAF context and running the WAF on a request/response pair
