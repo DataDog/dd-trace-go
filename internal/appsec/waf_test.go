@@ -567,6 +567,7 @@ func TestRASPSQLi(t *testing.T) {
 				require.NoError(t, err)
 				res, err := srv.Client().Do(req)
 				require.NoError(t, err)
+				defer res.Body.Close()
 
 				spans := mt.FinishedSpans()
 
