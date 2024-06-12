@@ -25,6 +25,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/constants"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
@@ -274,6 +275,9 @@ type config struct {
 
 	// globalSampleRate holds sample rate read from environment variables.
 	globalSampleRate float64
+
+	// ciVisibilityEnabled controls if the tracer is loaded with CI Visibility mode. default false
+	ciVisibilityEnabled bool
 }
 
 // orchestrionConfig contains Orchestrion configuration.
@@ -315,6 +319,16 @@ func newConfig(opts ...StartOption) *config {
 	}
 	c.globalSampleRate = defaultRate
 	c.httpClientTimeout = time.Second * 10 // 10 seconds
+
+	// Check if CI Visibility mode is enabled
+	if internal.BoolEnv(constants.CiVisibilityEnabledEnvironmnetVariable, false) {
+		c.ciVisibilityEnabled = true
+		opts = append(opts, func(c *config) {
+			c.httpClientTimeout = time.Second * 45    // 45 seconds
+			c.logStartup = false                      // if we are in CI Visibility mode we don't log the startup to stdout to avoid polluting the output
+			c.transport = newCiVisibilityTransport(c) // Use the CI Visibility transport
+		})
+	}
 
 	if v := os.Getenv("OTEL_LOGS_EXPORTER"); v != "" {
 		log.Warn("OTEL_LOGS_EXPORTER is not supported")
