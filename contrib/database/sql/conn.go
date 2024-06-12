@@ -137,7 +137,7 @@ func (tc *TracedConn) ExecContext(ctx context.Context, query string, args []driv
 		cquery, spanID := tc.injectComments(ctx, query, tc.cfg.dbmPropagationMode)
 		ctx, end := startTraceTask(ctx, QueryTypeExec)
 		defer end()
-		if appsec.RASPEnabled() {
+		if appsec.Enabled() {
 			if err := sqlsec.ProtectSQLOperation(ctx, query, tc.driverName, spanID); err != nil {
 				return nil, err
 			}
@@ -159,7 +159,7 @@ func (tc *TracedConn) ExecContext(ctx context.Context, query string, args []driv
 		cquery, spanID := tc.injectComments(ctx, query, tc.cfg.dbmPropagationMode)
 		ctx, end := startTraceTask(ctx, QueryTypeExec)
 		defer end()
-		if appsec.RASPEnabled() {
+		if appsec.Enabled() {
 			if err := sqlsec.ProtectSQLOperation(ctx, query, tc.driverName, spanID); err != nil {
 				return nil, err
 			}
@@ -191,7 +191,7 @@ func (tc *TracedConn) QueryContext(ctx context.Context, query string, args []dri
 		cquery, spanID := tc.injectComments(ctx, query, tc.cfg.dbmPropagationMode)
 		ctx, end := startTraceTask(ctx, QueryTypeQuery)
 		defer end()
-		if appsec.RASPEnabled() {
+		if appsec.Enabled() {
 			if err := sqlsec.ProtectSQLOperation(ctx, query, tc.driverName, spanID); err != nil {
 				return nil, err
 			}
@@ -213,7 +213,7 @@ func (tc *TracedConn) QueryContext(ctx context.Context, query string, args []dri
 		cquery, spanID := tc.injectComments(ctx, query, tc.cfg.dbmPropagationMode)
 		ctx, end := startTraceTask(ctx, QueryTypeQuery)
 		defer end()
-		if appsec.RASPEnabled() {
+		if appsec.Enabled() {
 			if err := sqlsec.ProtectSQLOperation(ctx, query, tc.driverName, spanID); err != nil {
 				return nil, err
 			}
