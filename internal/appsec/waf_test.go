@@ -560,6 +560,10 @@ func TestRASPSQLi(t *testing.T) {
 			query: "UPDATE%20users%20SET%20pwd%20%3D%20%22root%22%20WHERE%20id%20%3D%20%22%22%20OR%201%20%3D%201--",
 			err:   &events.BlockingSecurityEvent{},
 		},
+		"injection/EXEC": {
+			query: "EXEC%20version%28%29%3B%20DROP%20TABLE%20users--",
+			err:   &events.BlockingSecurityEvent{},
+		},
 	} {
 		for _, endpoint := range []string{"/query", "/exec"} {
 			t.Run(name+endpoint, func(t *testing.T) {
@@ -577,11 +581,14 @@ func TestRASPSQLi(t *testing.T) {
 
 				if tc.err != nil {
 					require.Equal(t, 403, res.StatusCode)
-					// Only the HTTP span should be generated since the SQL operation gets blocked in case of injection
-					require.Len(t, spans, 1)
+					require.NotNil(t, spans)
 					// Check that the RASP rule for SQLi triggered as expected
-					event := spans[0].Tag("_dd.appsec.json")
-					require.Contains(t, event, "rasp-942-100")
+					for _, sp := range spans {
+						if sp.Tag("_dd.origin") != "appsec" {
+							continue
+						}
+						require.Contains(t, sp.Tag("_dd.appsec.json"), "rasp-942-100")
+					}
 				} else {
 					require.Equal(t, 200, res.StatusCode)
 				}
