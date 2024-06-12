@@ -546,9 +546,8 @@ func TestRASPSQLi(t *testing.T) {
 	defer srv.Close()
 
 	for name, tc := range map[string]struct {
-		query    string
-		endpoint string
-		err      error
+		query string
+		err   error
 	}{
 		"no-error": {
 			query: "SELECT%201",
@@ -569,11 +568,19 @@ func TestRASPSQLi(t *testing.T) {
 				res, err := srv.Client().Do(req)
 				require.NoError(t, err)
 
+				spans := mt.FinishedSpans()
+
 				if tc.err != nil {
 					require.Equal(t, 403, res.StatusCode)
+					// Only the HTTP span should be generated since the SQL operation gets blocked in case of injection
+					require.Len(t, spans, 1)
+					// Check that the RASP rule for SQLi triggered as expected
+					event := spans[0].Tag("_dd.appsec.json")
+					require.Contains(t, event, "rasp-942-100")
 				} else {
 					require.Equal(t, 200, res.StatusCode)
 				}
+
 			})
 		}
 	}
