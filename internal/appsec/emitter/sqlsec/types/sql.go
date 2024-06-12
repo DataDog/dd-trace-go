@@ -15,7 +15,9 @@ type (
 	}
 
 	SQLOperationArgs struct {
-		Query  string
+		// Query corresponds to the addres `server.db.statement`
+		Query string
+		// Driver corresponds to the addres `server.db.system`
 		Driver string
 	}
 	SQLOperationRes struct{}
