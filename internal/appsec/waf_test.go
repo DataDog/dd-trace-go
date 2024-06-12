@@ -6,9 +6,12 @@
 package appsec_test
 
 import (
+	"database/sql"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log"
+	"math/rand"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -16,6 +19,8 @@ import (
 	"strings"
 	"testing"
 
+	internal "github.com/DataDog/appsec-internal-go/appsec"
+	waf "github.com/DataDog/go-libddwaf/v3"
 	pAppsec "gopkg.in/DataDog/dd-trace-go.v1/appsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/appsec/events"
 	sqltrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/database/sql"
@@ -25,9 +30,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/config"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener/httpsec"
 
-	internal "github.com/DataDog/appsec-internal-go/appsec"
-	waf "github.com/DataDog/go-libddwaf/v3"
-	"github.com/go-sql-driver/mysql"
+	"github.com/mattn/go-sqlite3"
 	"github.com/stretchr/testify/require"
 )
 
@@ -499,6 +502,60 @@ func TestAPISecurity(t *testing.T) {
 	})
 }
 
+func prepareSQLDB(nbEntries int) (*sql.DB, error) {
+	const tables = `
+CREATE TABLE user (
+   id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+   name  text NOT NULL,
+   email text NOT NULL,
+   password text NOT NULL
+);
+CREATE TABLE product (
+   id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+   name  text NOT NULL,
+   category  text NOT NULL,
+   price  int NOT NULL
+);
+`
+	db, err := sql.Open("sqlite3", ":memory:")
+	if err != nil {
+		log.Fatalln("unexpected sql.Open error:", err)
+	}
+	sqltrace.Register("sqlite3", &sqlite3.SQLiteDriver{})
+	db.Close()
+
+	db, err = sqltrace.Open("sqlite3", ":memory:")
+	if err != nil {
+		log.Fatalln("unexpected sql.Open error:", err)
+	}
+
+	if _, err := db.Exec(tables); err != nil {
+		return nil, err
+	}
+
+	for i := 0; i < nbEntries; i++ {
+		_, err := db.Exec(
+			"INSERT INTO user (name, email, password) VALUES (?, ?, ?)",
+			fmt.Sprintf("User#%d", i),
+			fmt.Sprintf("user%d@mail.com", i),
+			fmt.Sprintf("secret-password#%d", i))
+		if err != nil {
+			return nil, err
+		}
+
+		_, err = db.Exec(
+			"INSERT INTO product (name, category, price) VALUES (?, ?, ?)",
+			fmt.Sprintf("Product %d", i),
+			"sneaker",
+			rand.Intn(500))
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return db, nil
+}
+
 func TestRASPSQLi(t *testing.T) {
 	t.Setenv("DD_APPSEC_RULES", "testdata/rasp.json")
 	appsec.Start()
@@ -507,13 +564,8 @@ func TestRASPSQLi(t *testing.T) {
 	if !appsec.RASPEnabled() {
 		t.Skip("RASP needs to be enabled for this test")
 	}
-	// Register the driver that we will be using (in this case mysql) under a custom service name.
-	sqltrace.Register("mysql", &mysql.MySQLDriver{}, sqltrace.WithServiceName("my-db"))
-	// Open a connection to the DB using the driver we've just registered with tracing.
-	db, err := sqltrace.Open("mysql", "test:test@tcp(127.0.0.1:3306)/test")
-	if err != nil {
-		log.Fatal(err)
-	}
+	db, err := prepareSQLDB(10)
+	require.NoError(t, err)
 
 	// Setup the http server
 	mux := httptrace.NewServeMux()
