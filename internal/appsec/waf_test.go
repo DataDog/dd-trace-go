@@ -521,8 +521,6 @@ func TestRASPSQLi(t *testing.T) {
 		// Subsequent spans inherit their parent from context.
 		q := r.URL.Query().Get("query")
 		rows, err := db.QueryContext(r.Context(), q)
-		stm, err := db.PrepareContext()
-		stm.ExecContext()
 		if events.IsSecurityError(err) {
 			w.WriteHeader(403)
 			w.Write([]byte(err.Error()))
