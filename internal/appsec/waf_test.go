@@ -517,17 +517,11 @@ CREATE TABLE product (
    price  int NOT NULL
 );
 `
-	db, err := sql.Open("sqlite3", ":memory:")
+	db, err := sqltrace.Open("sqlite3", ":memory:")
 	if err != nil {
 		log.Fatalln("unexpected sql.Open error:", err)
 	}
 	sqltrace.Register("sqlite3", &sqlite3.SQLiteDriver{})
-	db.Close()
-
-	db, err = sqltrace.Open("sqlite3", ":memory:")
-	if err != nil {
-		log.Fatalln("unexpected sql.Open error:", err)
-	}
 
 	if _, err := db.Exec(tables); err != nil {
 		return nil, err
