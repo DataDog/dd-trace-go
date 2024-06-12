@@ -495,25 +495,25 @@ func (z *tslvSpan) DecodeMsg(dc *msgp.Reader) (err error) {
 		}
 		switch msgp.UnsafeString(field) {
 		case "test_session_id":
-			z.SessionId, err = dc.ReadUint64()
+			z.SessionID, err = dc.ReadUint64()
 			if err != nil {
 				err = msgp.WrapError(err, "SessionId")
 				return
 			}
 		case "test_module_id":
-			z.ModuleId, err = dc.ReadUint64()
+			z.ModuleID, err = dc.ReadUint64()
 			if err != nil {
 				err = msgp.WrapError(err, "ModuleId")
 				return
 			}
 		case "test_suite_id":
-			z.SuiteId, err = dc.ReadUint64()
+			z.SuiteID, err = dc.ReadUint64()
 			if err != nil {
 				err = msgp.WrapError(err, "SuiteId")
 				return
 			}
 		case "itr_correlation_id":
-			z.CorrelationId, err = dc.ReadString()
+			z.CorrelationID, err = dc.ReadString()
 			if err != nil {
 				err = msgp.WrapError(err, "CorrelationId")
 				return
@@ -655,19 +655,19 @@ func (z *tslvSpan) EncodeMsg(en *msgp.Writer) (err error) {
 	zb0001Len := uint32(16)
 	var zb0001Mask uint16 /* 16 bits */
 	_ = zb0001Mask
-	if z.SessionId == 0 {
+	if z.SessionID == 0 {
 		zb0001Len--
 		zb0001Mask |= 0x1
 	}
-	if z.ModuleId == 0 {
+	if z.ModuleID == 0 {
 		zb0001Len--
 		zb0001Mask |= 0x2
 	}
-	if z.SuiteId == 0 {
+	if z.SuiteID == 0 {
 		zb0001Len--
 		zb0001Mask |= 0x4
 	}
-	if z.CorrelationId == "" {
+	if z.CorrelationID == "" {
 		zb0001Len--
 		zb0001Mask |= 0x8
 	}
@@ -705,9 +705,9 @@ func (z *tslvSpan) EncodeMsg(en *msgp.Writer) (err error) {
 		if err != nil {
 			return
 		}
-		err = en.WriteUint64(z.SessionId)
+		err = en.WriteUint64(z.SessionID)
 		if err != nil {
-			err = msgp.WrapError(err, "SessionId")
+			err = msgp.WrapError(err, "SessionID")
 			return
 		}
 	}
@@ -717,9 +717,9 @@ func (z *tslvSpan) EncodeMsg(en *msgp.Writer) (err error) {
 		if err != nil {
 			return
 		}
-		err = en.WriteUint64(z.ModuleId)
+		err = en.WriteUint64(z.ModuleID)
 		if err != nil {
-			err = msgp.WrapError(err, "ModuleId")
+			err = msgp.WrapError(err, "ModuleID")
 			return
 		}
 	}
@@ -729,9 +729,9 @@ func (z *tslvSpan) EncodeMsg(en *msgp.Writer) (err error) {
 		if err != nil {
 			return
 		}
-		err = en.WriteUint64(z.SuiteId)
+		err = en.WriteUint64(z.SuiteID)
 		if err != nil {
-			err = msgp.WrapError(err, "SuiteId")
+			err = msgp.WrapError(err, "SuiteID")
 			return
 		}
 	}
@@ -741,9 +741,9 @@ func (z *tslvSpan) EncodeMsg(en *msgp.Writer) (err error) {
 		if err != nil {
 			return
 		}
-		err = en.WriteString(z.CorrelationId)
+		err = en.WriteString(z.CorrelationID)
 		if err != nil {
-			err = msgp.WrapError(err, "CorrelationId")
+			err = msgp.WrapError(err, "CorrelationID")
 			return
 		}
 	}
@@ -906,7 +906,7 @@ func (z *tslvSpan) EncodeMsg(en *msgp.Writer) (err error) {
 
 // Msgsize returns an upper bound estimate of the number of bytes occupied by the serialized message
 func (z *tslvSpan) Msgsize() (s int) {
-	s = 3 + 16 + msgp.Uint64Size + 15 + msgp.Uint64Size + 14 + msgp.Uint64Size + 19 + msgp.StringPrefixSize + len(z.CorrelationId) + 5 + msgp.StringPrefixSize + len(z.Name) + 8 + msgp.StringPrefixSize + len(z.Service) + 9 + msgp.StringPrefixSize + len(z.Resource) + 5 + msgp.StringPrefixSize + len(z.Type) + 6 + msgp.Int64Size + 9 + msgp.Int64Size + 8 + msgp.Uint64Size + 9 + msgp.Uint64Size + 10 + msgp.Uint64Size + 6 + msgp.Int32Size + 5 + msgp.MapHeaderSize
+	s = 3 + 16 + msgp.Uint64Size + 15 + msgp.Uint64Size + 14 + msgp.Uint64Size + 19 + msgp.StringPrefixSize + len(z.CorrelationID) + 5 + msgp.StringPrefixSize + len(z.Name) + 8 + msgp.StringPrefixSize + len(z.Service) + 9 + msgp.StringPrefixSize + len(z.Resource) + 5 + msgp.StringPrefixSize + len(z.Type) + 6 + msgp.Int64Size + 9 + msgp.Int64Size + 8 + msgp.Uint64Size + 9 + msgp.Uint64Size + 10 + msgp.Uint64Size + 6 + msgp.Int32Size + 5 + msgp.MapHeaderSize
 	if z.Meta != nil {
 		for za0001, za0002 := range z.Meta {
 			_ = za0002

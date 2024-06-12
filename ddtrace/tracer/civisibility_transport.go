@@ -35,7 +35,7 @@ var _ transport = (*civisibilityTransport)(nil)
 // to the Datadog endpoint, either in agentless mode or through the EVP proxy.
 type civisibilityTransport struct {
 	config           *config           // Configuration for the tracer.
-	testCycleUrlPath string            // URL path for the test cycle endpoint.
+	testCycleURLPath string            // URL path for the test cycle endpoint.
 	headers          map[string]string // HTTP headers to be included in the requests.
 	agentless        bool              // Gets if the transport is configured in agentless mode (eg: Gzip support)
 }
@@ -70,38 +70,38 @@ func newCiVisibilityTransport(config *config) *civisibilityTransport {
 	// Determine if agentless mode is enabled through an environment variable.
 	agentlessEnabled := internal.BoolEnv(constants.CiVisibilityAgentlessEnabledEnvironmentVariable, false)
 
-	testCycleUrl := ""
+	testCycleURL := ""
 	if agentlessEnabled {
 		// Agentless mode is enabled.
 		defaultHeaders["dd-api-key"] = os.Getenv(constants.APIKeyEnvironmentVariable)
 
 		// Check for a custom agentless URL.
-		agentlessUrl := ""
+		agentlessURL := ""
 		if v := os.Getenv(constants.CiVisibilityAgentlessURLEnvironmentVariable); v != "" {
-			agentlessUrl = v
+			agentlessURL = v
 		}
 
-		if agentlessUrl == "" {
+		if agentlessURL == "" {
 			// Use the standard agentless URL format.
 			site := "datadoghq.com"
 			if v := os.Getenv("DD_SITE"); v != "" {
 				site = v
 			}
 
-			testCycleUrl = fmt.Sprintf("https://%s.%s/%s", TestCycleSubdomain, site, TestCyclePath)
+			testCycleURL = fmt.Sprintf("https://%s.%s/%s", TestCycleSubdomain, site, TestCyclePath)
 		} else {
 			// Use the custom agentless URL.
-			testCycleUrl = fmt.Sprintf("%s/%s", agentlessUrl, TestCyclePath)
+			testCycleURL = fmt.Sprintf("%s/%s", agentlessURL, TestCyclePath)
 		}
 	} else {
 		// Use agent mode with the EVP proxy.
 		defaultHeaders["X-Datadog-EVP-Subdomain"] = TestCycleSubdomain
-		testCycleUrl = fmt.Sprintf("%s/%s/%s", config.agentURL.String(), EvpProxyPath, TestCyclePath)
+		testCycleURL = fmt.Sprintf("%s/%s/%s", config.agentURL.String(), EvpProxyPath, TestCyclePath)
 	}
 
 	return &civisibilityTransport{
 		config:           config,
-		testCycleUrlPath: testCycleUrl,
+		testCycleURLPath: testCycleURL,
 		headers:          defaultHeaders,
 		agentless:        agentlessEnabled,
 	}
@@ -139,7 +139,7 @@ func (t *civisibilityTransport) send(p *payload) (body io.ReadCloser, err error)
 		buffer = &gzipBuffer
 	}
 
-	req, err := http.NewRequest("POST", t.testCycleUrlPath, buffer)
+	req, err := http.NewRequest("POST", t.testCycleURLPath, buffer)
 	if err != nil {
 		return nil, fmt.Errorf("cannot create http request: %v", err)
 	}
@@ -190,5 +190,5 @@ func (t *civisibilityTransport) sendStats(*statsPayload) error {
 //
 //	The URL path as a string.
 func (t *civisibilityTransport) endpoint() string {
-	return t.testCycleUrlPath
+	return t.testCycleURLPath
 }

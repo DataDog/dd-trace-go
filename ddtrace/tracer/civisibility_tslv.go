@@ -220,10 +220,10 @@ func (e *ciVisibilityEvent) Context() ddtrace.SpanContext {
 
 // tslvSpan represents the detailed information of a span for CI visibility.
 type tslvSpan struct {
-	SessionId     uint64             `msg:"test_session_id,omitempty"`    // identifier of this session
-	ModuleId      uint64             `msg:"test_module_id,omitempty"`     // identifier of this module
-	SuiteId       uint64             `msg:"test_suite_id,omitempty"`      // identifier of this suite
-	CorrelationId string             `msg:"itr_correlation_id,omitempty"` // Correlation Id for Intelligent Test Runner transactions
+	SessionID     uint64             `msg:"test_session_id,omitempty"`    // identifier of this session
+	ModuleID      uint64             `msg:"test_module_id,omitempty"`     // identifier of this module
+	SuiteID       uint64             `msg:"test_suite_id,omitempty"`      // identifier of this suite
+	CorrelationID string             `msg:"itr_correlation_id,omitempty"` // Correlation Id for Intelligent Test Runner transactions
 	Name          string             `msg:"name"`                         // operation name
 	Service       string             `msg:"service"`                      // service name (i.e. "grpc.server", "http.request")
 	Resource      string             `msg:"resource"`                     // resource name (i.e. "/user?id=123", "SELECT * FROM users")
@@ -273,10 +273,10 @@ func getCiVisibilityEvent(span *span) *ciVisibilityEvent {
 //	A pointer to the created ciVisibilityEvent.
 func createTestEventFromSpan(span *span) *ciVisibilityEvent {
 	tSpan := createTslvSpan(span)
-	tSpan.SessionId = getAndRemoveMetaToUInt64(span, constants.TestSessionIDTagName)
-	tSpan.ModuleId = getAndRemoveMetaToUInt64(span, constants.TestModuleIDTagName)
-	tSpan.SuiteId = getAndRemoveMetaToUInt64(span, constants.TestSuiteIDTagName)
-	tSpan.CorrelationId = getAndRemoveMeta(span, constants.ItrCorrelationIDTagName)
+	tSpan.SessionID = getAndRemoveMetaToUInt64(span, constants.TestSessionIDTagName)
+	tSpan.ModuleID = getAndRemoveMetaToUInt64(span, constants.TestModuleIDTagName)
+	tSpan.SuiteID = getAndRemoveMetaToUInt64(span, constants.TestSuiteIDTagName)
+	tSpan.CorrelationID = getAndRemoveMeta(span, constants.ItrCorrelationIDTagName)
 	tSpan.SpanID = span.SpanID
 	tSpan.TraceID = span.TraceID
 	return &ciVisibilityEvent{
@@ -298,9 +298,9 @@ func createTestEventFromSpan(span *span) *ciVisibilityEvent {
 //	A pointer to the created ciVisibilityEvent.
 func createTestSuiteEventFromSpan(span *span) *ciVisibilityEvent {
 	tSpan := createTslvSpan(span)
-	tSpan.SessionId = getAndRemoveMetaToUInt64(span, constants.TestSessionIDTagName)
-	tSpan.ModuleId = getAndRemoveMetaToUInt64(span, constants.TestModuleIDTagName)
-	tSpan.SuiteId = getAndRemoveMetaToUInt64(span, constants.TestSuiteIDTagName)
+	tSpan.SessionID = getAndRemoveMetaToUInt64(span, constants.TestSessionIDTagName)
+	tSpan.ModuleID = getAndRemoveMetaToUInt64(span, constants.TestModuleIDTagName)
+	tSpan.SuiteID = getAndRemoveMetaToUInt64(span, constants.TestSuiteIDTagName)
 	return &ciVisibilityEvent{
 		span:    span,
 		Type:    constants.SpanTypeTestSuite,
@@ -320,8 +320,8 @@ func createTestSuiteEventFromSpan(span *span) *ciVisibilityEvent {
 //	A pointer to the created ciVisibilityEvent.
 func createTestModuleEventFromSpan(span *span) *ciVisibilityEvent {
 	tSpan := createTslvSpan(span)
-	tSpan.SessionId = getAndRemoveMetaToUInt64(span, constants.TestSessionIDTagName)
-	tSpan.ModuleId = getAndRemoveMetaToUInt64(span, constants.TestModuleIDTagName)
+	tSpan.SessionID = getAndRemoveMetaToUInt64(span, constants.TestSessionIDTagName)
+	tSpan.ModuleID = getAndRemoveMetaToUInt64(span, constants.TestModuleIDTagName)
 	return &ciVisibilityEvent{
 		span:    span,
 		Type:    constants.SpanTypeTestModule,
@@ -341,7 +341,7 @@ func createTestModuleEventFromSpan(span *span) *ciVisibilityEvent {
 //	A pointer to the created ciVisibilityEvent.
 func createTestSessionEventFromSpan(span *span) *ciVisibilityEvent {
 	tSpan := createTslvSpan(span)
-	tSpan.SessionId = getAndRemoveMetaToUInt64(span, constants.TestSessionIDTagName)
+	tSpan.SessionID = getAndRemoveMetaToUInt64(span, constants.TestSessionIDTagName)
 	return &ciVisibilityEvent{
 		span:    span,
 		Type:    constants.SpanTypeTestSession,

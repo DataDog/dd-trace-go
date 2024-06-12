@@ -76,11 +76,11 @@ func runTransportTest(t *testing.T, agentless bool) {
 	}))
 	defer srv.Close()
 
-	parsedUrl, _ := url.Parse(srv.URL)
+	parsedURL, _ := url.Parse(srv.URL)
 	c := config{
 		ciVisibilityEnabled: true,
 		httpClient:          defaultHTTPClient(0),
-		agentURL:            parsedUrl,
+		agentURL:            parsedURL,
 	}
 
 	// Set CI Visibility environment variables for the test
