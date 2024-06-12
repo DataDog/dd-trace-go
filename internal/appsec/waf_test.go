@@ -552,8 +552,12 @@ func TestRASPSQLi(t *testing.T) {
 		"no-error": {
 			query: "SELECT%201",
 		},
-		"injection": {
+		"injection/SELECT": {
 			query: "SELECT%20%2A%20FROM%20users%20WHERE%20user%3D%22%22%20UNION%20ALL%20SELECT%20NULL%2Cversion%28%29--",
+			err:   &events.BlockingSecurityEvent{},
+		},
+		"injection/UPDATE": {
+			query: "UPDATE%20users%20SET%20pwd%20%3D%20%22root%22%20WHERE%20id%20%3D%20%22%22%20OR%201%20%3D%201--",
 			err:   &events.BlockingSecurityEvent{},
 		},
 	} {
