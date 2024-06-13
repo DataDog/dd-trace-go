@@ -56,7 +56,7 @@ func InitializeCiVisibilityMock() mocktracer.Tracer {
 func internalCiVisibilityInitialization(tracerInitializer func([]tracer.StartOption)) {
 	ciVisibilityInitializationOnce.Do(func() {
 		// Since calling this method indicates we are in CI Visibility mode, set the environment variable.
-		_ = os.Setenv(constants.CiVisibilityEnabledEnvironmnetVariable, "1")
+		_ = os.Setenv(constants.CiVisibilityEnabledEnvironmentVariable, "1")
 
 		// Avoid sampling rate warning (in CI Visibility mode we send all data)
 		_ = os.Setenv("DD_TRACE_SAMPLE_RATE", "1")
