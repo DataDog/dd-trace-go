@@ -58,6 +58,9 @@ func internalCiVisibilityInitialization(tracerInitializer func([]tracer.StartOpt
 		// Since calling this method indicates we are in CI Visibility mode, set the environment variable.
 		_ = os.Setenv(constants.CiVisibilityEnabledEnvironmnetVariable, "1")
 
+		// Avoid sampling rate warning (in CI Visibility mode we send all data)
+		_ = os.Setenv("DD_TRACE_SAMPLE_RATE", "1")
+
 		// Preload the CodeOwner file
 		_ = utils.GetCodeOwners()
 
