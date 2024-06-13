@@ -352,11 +352,6 @@ func RunM(m *testing.M) int {
 	return (*M)(m).Run()
 }
 
-// RunAndExit runs the tests and benchmarks and exits with the resulting code.
-func RunAndExit(m *testing.M) {
-	os.Exit(RunM(m))
-}
-
 // checkModuleAndSuite checks and closes the modules and suites if all tests are executed.
 func checkModuleAndSuite(module integrations.DdTestModule, suite integrations.DdTestSuite) {
 	// If all tests in a suite has been executed we can close the suite

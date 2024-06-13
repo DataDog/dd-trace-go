@@ -106,15 +106,7 @@ func (ddt *T) Context() context.Context {
 }
 
 // Fail marks the function as having failed but continues execution.
-func (ddt *T) Fail() {
-	t := (*testing.T)(ddt)
-	ciTest := getCiVisibilityTest(t)
-	if ciTest != nil {
-		ciTest.SetErrorInfo("Fail", "failed test", utils.GetStacktrace(1))
-	}
-
-	t.Fail()
-}
+func (ddt *T) Fail() { ddt.getTWithError("Fail", "failed test").Fail() }
 
 // FailNow marks the function as having failed and stops its execution
 // by calling runtime.Goexit (which then runs all deferred calls in the
@@ -123,79 +115,33 @@ func (ddt *T) Fail() {
 // not from other goroutines created during the test. Calling FailNow does not stop
 // those other goroutines.
 func (ddt *T) FailNow() {
-	t := (*testing.T)(ddt)
-	ciTest := getCiVisibilityTest(t)
-	if ciTest != nil {
-		ciTest.SetErrorInfo("FailNow", "failed test", utils.GetStacktrace(1))
-	}
-
+	t := ddt.getTWithError("FailNow", "failed test")
+	integrations.ExitCiVisibility()
 	t.FailNow()
 }
 
 // Error is equivalent to Log followed by Fail.
-func (ddt *T) Error(args ...any) {
-	t := (*testing.T)(ddt)
-	ciTest := getCiVisibilityTest(t)
-	if ciTest != nil {
-		ciTest.SetErrorInfo("Error", fmt.Sprint(args...), utils.GetStacktrace(1))
-	}
-
-	t.Error(args...)
-}
+func (ddt *T) Error(args ...any) { ddt.getTWithError("Error", fmt.Sprint(args...)).Error(args...) }
 
 // Errorf is equivalent to Logf followed by Fail.
 func (ddt *T) Errorf(format string, args ...any) {
-	t := (*testing.T)(ddt)
-	ciTest := getCiVisibilityTest(t)
-	if ciTest != nil {
-		ciTest.SetErrorInfo("Errorf", fmt.Sprintf(format, args...), utils.GetStacktrace(1))
-	}
-
-	t.Errorf(format, args...)
+	ddt.getTWithError("Errorf", fmt.Sprintf(format, args...)).Errorf(format, args...)
 }
 
 // Fatal is equivalent to Log followed by FailNow.
-func (ddt *T) Fatal(args ...any) {
-	t := (*testing.T)(ddt)
-	ciTest := getCiVisibilityTest(t)
-	if ciTest != nil {
-		ciTest.SetErrorInfo("Fatal", fmt.Sprint(args...), utils.GetStacktrace(1))
-	}
-
-	t.Fatal(args...)
-}
+func (ddt *T) Fatal(args ...any) { ddt.getTWithError("Fatal", fmt.Sprint(args...)).Fatal(args...) }
 
 // Fatalf is equivalent to Logf followed by FailNow.
 func (ddt *T) Fatalf(format string, args ...any) {
-	t := (*testing.T)(ddt)
-	ciTest := getCiVisibilityTest(t)
-	if ciTest != nil {
-		ciTest.SetErrorInfo("Fatalf", fmt.Sprintf(format, args...), utils.GetStacktrace(1))
-	}
-
-	t.Fatalf(format, args...)
+	ddt.getTWithError("Fatalf", fmt.Sprintf(format, args...)).Fatalf(format, args...)
 }
 
 // Skip is equivalent to Log followed by SkipNow.
-func (ddt *T) Skip(args ...any) {
-	t := (*testing.T)(ddt)
-	ciTest := getCiVisibilityTest(t)
-	if ciTest != nil {
-		ciTest.CloseWithFinishTimeAndSkipReason(integrations.ResultStatusSkip, time.Now(), fmt.Sprint(args...))
-	}
-
-	t.Skip(args...)
-}
+func (ddt *T) Skip(args ...any) { ddt.getTWithSkip(fmt.Sprint(args...)).Skip(args...) }
 
 // Skipf is equivalent to Logf followed by SkipNow.
 func (ddt *T) Skipf(format string, args ...any) {
-	t := (*testing.T)(ddt)
-	ciTest := getCiVisibilityTest(t)
-	if ciTest != nil {
-		ciTest.CloseWithFinishTimeAndSkipReason(integrations.ResultStatusSkip, time.Now(), fmt.Sprintf(format, args...))
-	}
-
-	t.Skipf(format, args...)
+	ddt.getTWithSkip(fmt.Sprintf(format, args...)).Skipf(format, args...)
 }
 
 // SkipNow marks the test as having been skipped and stops its execution
@@ -217,9 +163,7 @@ func (ddt *T) SkipNow() {
 // other parallel tests. When a test is run multiple times due to use of
 // -test.count or -test.cpu, multiple instances of a single test never run in
 // parallel with each other.
-func (ddt *T) Parallel() {
-	(*testing.T)(ddt).Parallel()
-}
+func (ddt *T) Parallel() { (*testing.T)(ddt).Parallel() }
 
 // Deadline reports the time at which the test binary will have
 // exceeded the timeout specified by the -timeout flag.
@@ -232,8 +176,24 @@ func (ddt *T) Deadline() (deadline time.Time, ok bool) {
 // restore the environment variable to its original value
 // after the test. Because Setenv affects the whole process,
 // it cannot be used in parallel tests or tests with parallel ancestors.
-func (ddt *T) Setenv(key, value string) {
-	(*testing.T)(ddt).Setenv(key, value)
+func (ddt *T) Setenv(key, value string) { (*testing.T)(ddt).Setenv(key, value) }
+
+func (ddt *T) getTWithError(errType string, errMessage string) *testing.T {
+	t := (*testing.T)(ddt)
+	ciTest := getCiVisibilityTest(t)
+	if ciTest != nil {
+		ciTest.SetErrorInfo(errType, errMessage, utils.GetStacktrace(2))
+	}
+	return t
+}
+
+func (ddt *T) getTWithSkip(skipReason string) *testing.T {
+	t := (*testing.T)(ddt)
+	ciTest := getCiVisibilityTest(t)
+	if ciTest != nil {
+		ciTest.CloseWithFinishTimeAndSkipReason(integrations.ResultStatusSkip, time.Now(), skipReason)
+	}
+	return t
 }
 
 // getCiVisibilityTest retrieves the CI visibility test associated with a given *testing.T.

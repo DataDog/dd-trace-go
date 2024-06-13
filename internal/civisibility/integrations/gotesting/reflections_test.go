@@ -8,19 +8,9 @@ package gotesting
 import (
 	"sync"
 	"testing"
-	"unsafe"
+
+	"github.com/stretchr/testify/assert"
 )
-
-// Mock structs to simulate testing.M
-type mockTestingM struct {
-	deps       testDeps
-	tests      []testing.InternalTest
-	benchmarks []testing.InternalBenchmark
-}
-
-// testDeps is a dummy interface to emulate the memory layout of the original testing.M
-// in order to get the right pointers to tests and benchmarks.
-type testDeps interface{}
 
 // TestGetFieldPointerFrom tests the getFieldPointerFrom function.
 func TestGetFieldPointerFrom(t *testing.T) {
@@ -62,40 +52,42 @@ func TestGetFieldPointerFrom(t *testing.T) {
 
 // TestGetInternalTestArray tests the getInternalTestArray function.
 func TestGetInternalTestArray(t *testing.T) {
-	// Create a mock testing.M with a single test
-	mockM := &mockTestingM{
-		tests: []testing.InternalTest{{Name: "Test1"}},
-	}
+	assert := assert.New(t)
 
 	// Get the internal test array from the mock testing.M
-	tests := getInternalTestArray((*testing.M)(unsafe.Pointer(mockM)))
-	if tests == nil {
-		t.Fatal("Expected a valid pointer to InternalTest array, got nil")
-	}
+	tests := getInternalTestArray(currentM)
+	assert.NotNil(tests)
 
 	// Check that the test array contains the expected test
-	if len(*tests) != 1 || (*tests)[0].Name != "Test1" {
-		t.Fatalf("Expected a single test named 'Test1', got %+v", *tests)
+	var testNames []string
+	for _, v := range *tests {
+		testNames = append(testNames, v.Name)
+		assert.NotNil(v.F)
 	}
+
+	assert.Contains(testNames, "TestGetFieldPointerFrom")
+	assert.Contains(testNames, "TestGetInternalTestArray")
+	assert.Contains(testNames, "TestGetInternalBenchmarkArray")
+	assert.Contains(testNames, "TestCommonPrivateFields_AddLevel")
+	assert.Contains(testNames, "TestGetBenchmarkPrivateFields")
 }
 
 // TestGetInternalBenchmarkArray tests the getInternalBenchmarkArray function.
 func TestGetInternalBenchmarkArray(t *testing.T) {
-	// Create a mock testing.M with a single benchmark
-	mockM := &mockTestingM{
-		benchmarks: []testing.InternalBenchmark{{Name: "Benchmark1"}},
-	}
+	assert := assert.New(t)
 
 	// Get the internal benchmark array from the mock testing.M
-	benchmarks := getInternalBenchmarkArray((*testing.M)(unsafe.Pointer(mockM)))
-	if benchmarks == nil {
-		t.Fatal("Expected a valid pointer to InternalBenchmark array, got nil")
-	}
+	benchmarks := getInternalBenchmarkArray(currentM)
+	assert.NotNil(benchmarks)
 
 	// Check that the benchmark array contains the expected benchmark
-	if len(*benchmarks) != 1 || (*benchmarks)[0].Name != "Benchmark1" {
-		t.Fatalf("Expected a single benchmark named 'Benchmark1', got %+v", *benchmarks)
+	var testNames []string
+	for _, v := range *benchmarks {
+		testNames = append(testNames, v.Name)
+		assert.NotNil(v.F)
 	}
+
+	assert.Contains(testNames, "BenchmarkDummy")
 }
 
 // TestCommonPrivateFields_AddLevel tests the AddLevel method of commonPrivateFields.
@@ -154,3 +146,5 @@ func TestGetBenchmarkPrivateFields(t *testing.T) {
 		t.Fatal("Expected result to be set, got nil")
 	}
 }
+
+func BenchmarkDummy(*testing.B) {}

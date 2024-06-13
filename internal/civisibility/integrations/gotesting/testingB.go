@@ -185,15 +185,7 @@ func (ddb *B) Context() context.Context {
 }
 
 // Fail marks the function as having failed but continues execution.
-func (ddb *B) Fail() {
-	b := (*testing.B)(ddb)
-	ciTest := getCiVisibilityBenchmark(b)
-	if ciTest != nil {
-		ciTest.SetErrorInfo("Fail", "failed test", utils.GetStacktrace(1))
-	}
-
-	b.Fail()
-}
+func (ddb *B) Fail() { ddb.getBWithError("Fail", "failed test").Fail() }
 
 // FailNow marks the function as having failed and stops its execution
 // by calling runtime.Goexit (which then runs all deferred calls in the
@@ -202,80 +194,33 @@ func (ddb *B) Fail() {
 // not from other goroutines created during the test. Calling FailNow does not stop
 // those other goroutines.
 func (ddb *B) FailNow() {
-	b := (*testing.B)(ddb)
-	ciTest := getCiVisibilityBenchmark(b)
-	if ciTest != nil {
-		ciTest.SetErrorInfo("FailNow", "failed test", utils.GetStacktrace(1))
-	}
-
+	b := ddb.getBWithError("FailNow", "failed test")
 	integrations.ExitCiVisibility()
 	b.FailNow()
 }
 
 // Error is equivalent to Log followed by Fail.
-func (ddb *B) Error(args ...any) {
-	b := (*testing.B)(ddb)
-	ciTest := getCiVisibilityBenchmark(b)
-	if ciTest != nil {
-		ciTest.SetErrorInfo("Error", fmt.Sprint(args...), utils.GetStacktrace(1))
-	}
-
-	b.Error(args...)
-}
+func (ddb *B) Error(args ...any) { ddb.getBWithError("Error", fmt.Sprint(args...)).Error(args...) }
 
 // Errorf is equivalent to Logf followed by Fail.
 func (ddb *B) Errorf(format string, args ...any) {
-	b := (*testing.B)(ddb)
-	ciTest := getCiVisibilityBenchmark(b)
-	if ciTest != nil {
-		ciTest.SetErrorInfo("Errorf", fmt.Sprintf(format, args...), utils.GetStacktrace(1))
-	}
-
-	b.Errorf(format, args...)
+	ddb.getBWithError("Errorf", fmt.Sprintf(format, args...)).Errorf(format, args...)
 }
 
 // Fatal is equivalent to Log followed by FailNow.
-func (ddb *B) Fatal(args ...any) {
-	b := (*testing.B)(ddb)
-	ciTest := getCiVisibilityBenchmark(b)
-	if ciTest != nil {
-		ciTest.SetErrorInfo("Fatal", fmt.Sprint(args...), utils.GetStacktrace(1))
-	}
-
-	b.Fatal(args...)
-}
+func (ddb *B) Fatal(args ...any) { ddb.getBWithError("Fatal", fmt.Sprint(args...)).Fatal(args...) }
 
 // Fatalf is equivalent to Logf followed by FailNow.
 func (ddb *B) Fatalf(format string, args ...any) {
-	b := (*testing.B)(ddb)
-	ciTest := getCiVisibilityBenchmark(b)
-	if ciTest != nil {
-		ciTest.SetErrorInfo("Fatalf", fmt.Sprintf(format, args...), utils.GetStacktrace(1))
-	}
-
-	b.Fatalf(format, args...)
+	ddb.getBWithError("Fatalf", fmt.Sprintf(format, args...)).Fatalf(format, args...)
 }
 
 // Skip is equivalent to Log followed by SkipNow.
-func (ddb *B) Skip(args ...any) {
-	b := (*testing.B)(ddb)
-	ciTest := getCiVisibilityBenchmark(b)
-	if ciTest != nil {
-		ciTest.CloseWithFinishTimeAndSkipReason(integrations.ResultStatusSkip, time.Now(), fmt.Sprint(args...))
-	}
-
-	b.Skip(args...)
-}
+func (ddb *B) Skip(args ...any) { ddb.getBWithSkip(fmt.Sprint(args...)).Skip(args...) }
 
 // Skipf is equivalent to Logf followed by SkipNow.
 func (ddb *B) Skipf(format string, args ...any) {
-	b := (*testing.B)(ddb)
-	ciTest := getCiVisibilityBenchmark(b)
-	if ciTest != nil {
-		ciTest.CloseWithFinishTimeAndSkipReason(integrations.ResultStatusSkip, time.Now(), fmt.Sprintf(format, args...))
-	}
-
-	b.Skipf(format, args...)
+	ddb.getBWithSkip(fmt.Sprintf(format, args...)).Skipf(format, args...)
 }
 
 // SkipNow marks the test as having been skipped and stops its execution
@@ -296,28 +241,20 @@ func (ddb *B) SkipNow() {
 // StartTimer starts timing a test. This function is called automatically
 // before a benchmark starts, but it can also be used to resume timing after
 // a call to StopTimer.
-func (ddb *B) StartTimer() {
-	(*testing.B)(ddb).StartTimer()
-}
+func (ddb *B) StartTimer() { (*testing.B)(ddb).StartTimer() }
 
 // StopTimer stops timing a test. This can be used to pause the timer
 // while performing complex initialization that you don't want to measure.
-func (ddb *B) StopTimer() {
-	(*testing.B)(ddb).StopTimer()
-}
+func (ddb *B) StopTimer() { (*testing.B)(ddb).StopTimer() }
 
 // ReportAllocs enables malloc statistics for this benchmark.
 // It is equivalent to setting -test.benchmem, but it only affects the
 // benchmark function that calls ReportAllocs.
-func (ddb *B) ReportAllocs() {
-	(*testing.B)(ddb).ReportAllocs()
-}
+func (ddb *B) ReportAllocs() { (*testing.B)(ddb).ReportAllocs() }
 
 // ResetTimer zeroes the elapsed benchmark time and memory allocation counters
 // and deletes user-reported metrics. It does not affect whether the timer is running.
-func (ddb *B) ResetTimer() {
-	(*testing.B)(ddb).ResetTimer()
-}
+func (ddb *B) ResetTimer() { (*testing.B)(ddb).ResetTimer() }
 
 // Elapsed returns the measured elapsed time of the benchmark.
 // The duration reported by Elapsed matches the one measured by
@@ -335,9 +272,7 @@ func (ddb *B) Elapsed() time.Duration {
 // If unit is a unit normally reported by the benchmark framework itself
 // (such as "allocs/op"), ReportMetric will override that metric.
 // Setting "ns/op" to 0 will suppress that built-in metric.
-func (ddb *B) ReportMetric(n float64, unit string) {
-	(*testing.B)(ddb).ReportMetric(n, unit)
-}
+func (ddb *B) ReportMetric(n float64, unit string) { (*testing.B)(ddb).ReportMetric(n, unit) }
 
 // RunParallel runs a benchmark in parallel.
 // It creates multiple goroutines and distributes b.N iterations among them.
@@ -352,21 +287,33 @@ func (ddb *B) ReportMetric(n float64, unit string) {
 //
 // RunParallel reports ns/op values as wall time for the benchmark as a whole,
 // not the sum of wall time or CPU time over each parallel goroutine.
-func (ddb *B) RunParallel(body func(*testing.PB)) {
-	(*testing.B)(ddb).RunParallel(body)
-}
+func (ddb *B) RunParallel(body func(*testing.PB)) { (*testing.B)(ddb).RunParallel(body) }
 
 // SetBytes records the number of bytes processed in a single operation.
 // If this is called, the benchmark will report ns/op and MB/s.
-func (ddb *B) SetBytes(n int64) {
-	(*testing.B)(ddb).SetBytes(n)
-}
+func (ddb *B) SetBytes(n int64) { (*testing.B)(ddb).SetBytes(n) }
 
 // SetParallelism sets the number of goroutines used by RunParallel to p*GOMAXPROCS.
 // There is usually no need to call SetParallelism for CPU-bound benchmarks.
 // If p is less than 1, this call will have no effect.
-func (ddb *B) SetParallelism(p int) {
-	(*testing.B)(ddb).SetParallelism(p)
+func (ddb *B) SetParallelism(p int) { (*testing.B)(ddb).SetParallelism(p) }
+
+func (ddb *B) getBWithError(errType string, errMessage string) *testing.B {
+	b := (*testing.B)(ddb)
+	ciTest := getCiVisibilityBenchmark(b)
+	if ciTest != nil {
+		ciTest.SetErrorInfo(errType, errMessage, utils.GetStacktrace(2))
+	}
+	return b
+}
+
+func (ddb *B) getBWithSkip(skipReason string) *testing.B {
+	b := (*testing.B)(ddb)
+	ciTest := getCiVisibilityBenchmark(b)
+	if ciTest != nil {
+		ciTest.CloseWithFinishTimeAndSkipReason(integrations.ResultStatusSkip, time.Now(), skipReason)
+	}
+	return b
 }
 
 // getCiVisibilityBenchmark retrieves the CI visibility benchmark associated with a given *testing.B.
