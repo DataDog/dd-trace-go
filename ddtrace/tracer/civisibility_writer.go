@@ -30,7 +30,7 @@ var _ traceWriter = (*ciVisibilityTraceWriter)(nil)
 // to the Datadog backend. It manages the payload size and flushes the data when necessary.
 type ciVisibilityTraceWriter struct {
 	config  *config              // Configuration for the tracer.
-	payload *civisibilitypayload // Encodes and buffers traces in msgpack format.
+	payload *ciVisibilityPayload // Encodes and buffers traces in msgpack format.
 	climit  chan struct{}        // Limits the number of concurrent outgoing connections.
 	wg      sync.WaitGroup       // Waits for all uploads to finish.
 }
@@ -88,7 +88,7 @@ func (w *ciVisibilityTraceWriter) flush() {
 	oldp := w.payload
 	w.payload = newCiVisibilityPayload()
 
-	go func(p *civisibilitypayload) {
+	go func(p *ciVisibilityPayload) {
 		defer func(start time.Time) {
 			// Once the payload has been used, clear the buffer for garbage
 			// collection to avoid a memory leak when references to this object

@@ -14,9 +14,9 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
 )
 
-// civisibilitypayload represents a payload specifically designed for CI Visibility events.
+// ciVisibilityPayload represents a payload specifically designed for CI Visibility events.
 // It embeds the generic payload structure and adds methods to handle CI Visibility specific data.
-type civisibilitypayload struct {
+type ciVisibilityPayload struct {
 	*payload
 }
 
@@ -30,7 +30,7 @@ type civisibilitypayload struct {
 // Returns:
 //
 //	An error if encoding the event fails.
-func (p *civisibilitypayload) push(event *ciVisibilityEvent) error {
+func (p *ciVisibilityPayload) push(event *ciVisibilityEvent) error {
 	p.buf.Grow(event.Msgsize())
 	if err := msgp.Encode(&p.buf, event); err != nil {
 		return err
@@ -45,8 +45,8 @@ func (p *civisibilitypayload) push(event *ciVisibilityEvent) error {
 // Returns:
 //
 //	A pointer to a newly initialized civisibilitypayload instance.
-func newCiVisibilityPayload() *civisibilitypayload {
-	return &civisibilitypayload{newPayload()}
+func newCiVisibilityPayload() *ciVisibilityPayload {
+	return &ciVisibilityPayload{newPayload()}
 }
 
 // GetBuffer retrieves the complete body of the CI Visibility payload, including metadata.
@@ -60,7 +60,7 @@ func newCiVisibilityPayload() *civisibilitypayload {
 //
 //	A pointer to a bytes.Buffer containing the encoded CI Visibility payload.
 //	An error if reading from the buffer or encoding the payload fails.
-func (p *civisibilitypayload) GetBuffer(config *config) (*bytes.Buffer, error) {
+func (p *ciVisibilityPayload) getBuffer(config *config) (*bytes.Buffer, error) {
 
 	/*
 			The Payload format in the CI Visibility protocol is like this:

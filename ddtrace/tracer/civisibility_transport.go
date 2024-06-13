@@ -30,11 +30,11 @@ const (
 )
 
 // Ensure that civisibilityTransport implements the transport interface.
-var _ transport = (*civisibilityTransport)(nil)
+var _ transport = (*ciVisibilityTransport)(nil)
 
-// civisibilityTransport is a structure that handles sending CI Visibility payloads
+// ciVisibilityTransport is a structure that handles sending CI Visibility payloads
 // to the Datadog endpoint, either in agentless mode or through the EVP proxy.
-type civisibilityTransport struct {
+type ciVisibilityTransport struct {
 	config           *config           // Configuration for the tracer.
 	testCycleURLPath string            // URL path for the test cycle endpoint.
 	headers          map[string]string // HTTP headers to be included in the requests.
@@ -52,7 +52,7 @@ type civisibilityTransport struct {
 // Returns:
 //
 //	A pointer to an initialized civisibilityTransport instance.
-func newCiVisibilityTransport(config *config) *civisibilityTransport {
+func newCiVisibilityTransport(config *config) *ciVisibilityTransport {
 	// Initialize the default headers with encoder metadata.
 	defaultHeaders := map[string]string{
 		"Datadog-Meta-Lang":             "go",
@@ -106,7 +106,7 @@ func newCiVisibilityTransport(config *config) *civisibilityTransport {
 		testCycleURL = fmt.Sprintf("%s/%s/%s", config.agentURL.String(), EvpProxyPath, TestCyclePath)
 	}
 
-	return &civisibilityTransport{
+	return &ciVisibilityTransport{
 		config:           config,
 		testCycleURLPath: testCycleURL,
 		headers:          defaultHeaders,
@@ -124,9 +124,9 @@ func newCiVisibilityTransport(config *config) *civisibilityTransport {
 // Returns:
 //
 //	An io.ReadCloser for reading the response body, and an error if the operation fails.
-func (t *civisibilityTransport) send(p *payload) (body io.ReadCloser, err error) {
-	ciVisibilityPayload := &civisibilitypayload{p}
-	buffer, bufferErr := ciVisibilityPayload.GetBuffer(t.config)
+func (t *ciVisibilityTransport) send(p *payload) (body io.ReadCloser, err error) {
+	ciVisibilityPayload := &ciVisibilityPayload{p}
+	buffer, bufferErr := ciVisibilityPayload.getBuffer(t.config)
 	if bufferErr != nil {
 		return nil, fmt.Errorf("cannot create buffer payload: %v", bufferErr)
 	}
@@ -186,7 +186,7 @@ func (t *civisibilityTransport) send(p *payload) (body io.ReadCloser, err error)
 // Returns:
 //
 //	An error indicating that stats are not supported.
-func (t *civisibilityTransport) sendStats(*statsPayload) error {
+func (t *ciVisibilityTransport) sendStats(*statsPayload) error {
 	// Stats are not supported by CI Visibility agentless / EVP proxy.
 	return nil
 }
@@ -196,6 +196,6 @@ func (t *civisibilityTransport) sendStats(*statsPayload) error {
 // Returns:
 //
 //	The URL path as a string.
-func (t *civisibilityTransport) endpoint() string {
+func (t *ciVisibilityTransport) endpoint() string {
 	return t.testCycleURLPath
 }

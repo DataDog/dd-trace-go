@@ -32,7 +32,7 @@ type failingCiVisibilityTransport struct {
 func (t *failingCiVisibilityTransport) send(p *payload) (io.ReadCloser, error) {
 	t.sendAttempts++
 
-	ciVisibilityPayload := &civisibilitypayload{p}
+	ciVisibilityPayload := &ciVisibilityPayload{p}
 
 	var events ciVisibilityEvents
 	err := msgp.Decode(ciVisibilityPayload, &events)
