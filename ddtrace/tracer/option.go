@@ -320,16 +320,6 @@ func newConfig(opts ...StartOption) *config {
 	c.globalSampleRate = defaultRate
 	c.httpClientTimeout = time.Second * 10 // 10 seconds
 
-	// Check if CI Visibility mode is enabled
-	if internal.BoolEnv(constants.CiVisibilityEnabledEnvironmnetVariable, false) {
-		c.ciVisibilityEnabled = true
-		opts = append(opts, func(c *config) {
-			c.httpClientTimeout = time.Second * 45    // 45 seconds
-			c.logStartup = false                      // if we are in CI Visibility mode we don't log the startup to stdout to avoid polluting the output
-			c.transport = newCiVisibilityTransport(c) // Use the CI Visibility transport
-		})
-	}
-
 	if v := os.Getenv("OTEL_LOGS_EXPORTER"); v != "" {
 		log.Warn("OTEL_LOGS_EXPORTER is not supported")
 	}
@@ -548,6 +538,14 @@ func newConfig(opts ...StartOption) *config {
 	// This allows persisting the initial value of globalTags for future resets and updates.
 	globalTagsOrigin := c.globalTags.cfgOrigin
 	c.initGlobalTags(c.globalTags.get(), globalTagsOrigin)
+
+	// Check if CI Visibility mode is enabled
+	if internal.BoolEnv(constants.CiVisibilityEnabledEnvironmnetVariable, false) {
+		c.ciVisibilityEnabled = true              // Enable CI Visibility mode
+		c.httpClientTimeout = time.Second * 45    // Increase timeout up to 45 seconds (same as other tracers in CIVis mode)
+		c.logStartup = false                      // If we are in CI Visibility mode we don't want to log the startup to stdout to avoid polluting the output
+		c.transport = newCiVisibilityTransport(c) // Replace the default transport with the CI Visibility transport
+	}
 
 	return c
 }
