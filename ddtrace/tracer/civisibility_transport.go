@@ -18,6 +18,7 @@ import (
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/constants"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
 )
 
@@ -73,7 +74,13 @@ func newCiVisibilityTransport(config *config) *civisibilityTransport {
 	testCycleURL := ""
 	if agentlessEnabled {
 		// Agentless mode is enabled.
-		defaultHeaders["dd-api-key"] = os.Getenv(constants.APIKeyEnvironmentVariable)
+		APIKeyValue := os.Getenv(constants.APIKeyEnvironmentVariable)
+		if APIKeyValue == "" {
+			log.Error("An API key is required for agentless mode. Use the DD_API_KEY env variable to set it")
+			os.Exit(1)
+		}
+
+		defaultHeaders["dd-api-key"] = APIKeyValue
 
 		// Check for a custom agentless URL.
 		agentlessURL := ""
