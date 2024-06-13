@@ -540,7 +540,7 @@ func newConfig(opts ...StartOption) *config {
 	c.initGlobalTags(c.globalTags.get(), globalTagsOrigin)
 
 	// Check if CI Visibility mode is enabled
-	if internal.BoolEnv(constants.CiVisibilityEnabledEnvironmnetVariable, false) {
+	if internal.BoolEnv(constants.CiVisibilityEnabledEnvironmentVariable, false) {
 		c.ciVisibilityEnabled = true              // Enable CI Visibility mode
 		c.httpClientTimeout = time.Second * 45    // Increase timeout up to 45 seconds (same as other tracers in CIVis mode)
 		c.logStartup = false                      // If we are in CI Visibility mode we don't want to log the startup to stdout to avoid polluting the output
