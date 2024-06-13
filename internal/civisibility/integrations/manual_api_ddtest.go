@@ -53,10 +53,10 @@ func createTest(suite *tslvTestSuite, name string, startTime time.Time) DdTest {
 
 	span, ctx := tracer.StartSpanFromContext(context.Background(), operationName, testOpts...)
 	if suite.module.session != nil {
-		span.SetTag(constants.TestSessionIDTagName, fmt.Sprint(suite.module.session.sessionId))
+		span.SetTag(constants.TestSessionIDTagName, fmt.Sprint(suite.module.session.sessionID))
 	}
-	span.SetTag(constants.TestModuleIDTagName, fmt.Sprint(suite.module.moduleId))
-	span.SetTag(constants.TestSuiteIDTagName, fmt.Sprint(suite.suiteId))
+	span.SetTag(constants.TestModuleIDTagName, fmt.Sprint(suite.module.moduleID))
+	span.SetTag(constants.TestSuiteIDTagName, fmt.Sprint(suite.suiteID))
 
 	t := &tslvTest{
 		suite: suite,

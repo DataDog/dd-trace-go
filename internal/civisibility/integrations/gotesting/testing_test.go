@@ -27,7 +27,7 @@ func TestMain(m *testing.M) {
 }
 
 // TestMyTest02 demonstrates instrumentation of InternalTests
-func TestMyTest01(t *testing.T) {
+func TestMyTest01(*testing.T) {
 }
 
 // TestMyTest02 demonstrates instrumentation of sub-tests.
@@ -99,7 +99,11 @@ func TestWithExternalCalls(oT *testing.T) {
 		// Use the span context here so the http span will appear as a child of the test
 		req = req.WithContext(ctx)
 
-		_, _ = client.Do(req)
+		res, err := client.Do(req)
+		if err != nil {
+			t.FailNow()
+		}
+		_ = res.Body.Close()
 	})
 
 	t.Run("custom-name", func(t *testing.T) {
@@ -131,7 +135,11 @@ func TestWithExternalCalls(oT *testing.T) {
 		// Use the span context here so the http span will appear as a child of the test
 		req = req.WithContext(ctx)
 
-		_, _ = client.Do(req)
+		res, err := client.Do(req)
+		if err != nil {
+			t.FailNow()
+		}
+		_ = res.Body.Close()
 	})
 }
 

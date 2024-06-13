@@ -16,14 +16,14 @@ import (
 	"runtime/coverage"
 	"strconv"
 	"testing"
-	_ "unsafe"
+	_ "unsafe" // This is required to use go:linkname to an internal go func to read the code coverage percentage
 )
 
-// runtime_coverage_processCoverTestDirInternal is an internal runtime function used to process coverage data.
+// runtimeCoverageProcessCoverTestDirInternal is an internal runtime function used to process coverage data.
 // This declaration uses go:linkname to access the unexported function from the runtime package.
 //
-//go:linkname runtime_coverage_processCoverTestDirInternal runtime/coverage.processCoverTestDirInternal
-func runtime_coverage_processCoverTestDirInternal(dir string, cfile string, cm string, cpkg string, w io.Writer) error
+//go:linkname runtimeCoverageProcessCoverTestDirInternal runtime/coverage.processCoverTestDirInternal
+func runtimeCoverageProcessCoverTestDirInternal(dir string, cfile string, cm string, cpkg string, w io.Writer) error
 
 // Ensure the coverage package is included in the binary so the linker can find the symbols.
 var _ = coverage.ClearCounters
@@ -46,7 +46,7 @@ func getCoverage() (float64, error) {
 	}
 
 	buffer := new(bytes.Buffer)
-	err := runtime_coverage_processCoverTestDirInternal(goCoverDir, "", testing.CoverMode(), "", buffer)
+	err := runtimeCoverageProcessCoverTestDirInternal(goCoverDir, "", testing.CoverMode(), "", buffer)
 	if err == nil {
 		re := regexp.MustCompile(`(?si)coverage: (.*)%`)
 		results := re.FindStringSubmatch(buffer.String())

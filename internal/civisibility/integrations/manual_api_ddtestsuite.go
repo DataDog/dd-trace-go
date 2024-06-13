@@ -25,7 +25,7 @@ var _ DdTestSuite = (*tslvTestSuite)(nil)
 type tslvTestSuite struct {
 	ciVisibilityCommon
 	module  *tslvTestModule
-	suiteId uint64
+	suiteID uint64
 	name    string
 }
 
@@ -51,16 +51,16 @@ func createTestSuite(module *tslvTestModule, name string, startTime time.Time) D
 	}), suiteTags...)
 
 	span, ctx := tracer.StartSpanFromContext(context.Background(), operationName, testOpts...)
-	suiteId := span.Context().SpanID()
+	suiteID := span.Context().SpanID()
 	if module.session != nil {
-		span.SetTag(constants.TestSessionIDTagName, fmt.Sprint(module.session.sessionId))
+		span.SetTag(constants.TestSessionIDTagName, fmt.Sprint(module.session.sessionID))
 	}
-	span.SetTag(constants.TestModuleIDTagName, fmt.Sprint(module.moduleId))
-	span.SetTag(constants.TestSuiteIDTagName, fmt.Sprint(suiteId))
+	span.SetTag(constants.TestModuleIDTagName, fmt.Sprint(module.moduleID))
+	span.SetTag(constants.TestSuiteIDTagName, fmt.Sprint(suiteID))
 
 	suite := &tslvTestSuite{
 		module:  module,
-		suiteId: suiteId,
+		suiteID: suiteID,
 		name:    name,
 		ciVisibilityCommon: ciVisibilityCommon{
 			startTime: startTime,

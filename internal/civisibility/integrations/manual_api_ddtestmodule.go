@@ -24,7 +24,7 @@ var _ DdTestModule = (*tslvTestModule)(nil)
 type tslvTestModule struct {
 	ciVisibilityCommon
 	session   *tslvTestSession
-	moduleId  uint64
+	moduleID  uint64
 	name      string
 	framework string
 
@@ -63,15 +63,15 @@ func createTestModule(session *tslvTestSession, name string, framework string, f
 	}), moduleTags...)
 
 	span, ctx := tracer.StartSpanFromContext(context.Background(), operationName, testOpts...)
-	moduleId := span.Context().SpanID()
+	moduleID := span.Context().SpanID()
 	if session != nil {
-		span.SetTag(constants.TestSessionIDTagName, fmt.Sprint(session.sessionId))
+		span.SetTag(constants.TestSessionIDTagName, fmt.Sprint(session.sessionID))
 	}
-	span.SetTag(constants.TestModuleIDTagName, fmt.Sprint(moduleId))
+	span.SetTag(constants.TestModuleIDTagName, fmt.Sprint(moduleID))
 
 	module := &tslvTestModule{
 		session:   session,
-		moduleId:  moduleId,
+		moduleID:  moduleID,
 		name:      name,
 		framework: framework,
 		suites:    map[string]DdTestSuite{},

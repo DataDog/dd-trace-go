@@ -70,14 +70,14 @@ func internalCiVisibilityInitialization(tracerInitializer func([]tracer.StartOpt
 		// Check if DD_SERVICE has been set; otherwise default to the repo name (from the spec).
 		var opts []tracer.StartOption
 		if v := os.Getenv("DD_SERVICE"); v == "" {
-			if repoUrl, ok := ciTags[constants.GitRepositoryURL]; ok {
+			if repoURL, ok := ciTags[constants.GitRepositoryURL]; ok {
 				// regex to sanitize the repository url to be used as a service name
 				repoRegex := regexp.MustCompile(`(?m)/([a-zA-Z0-9\\\-_.]*)$`)
-				matches := repoRegex.FindStringSubmatch(repoUrl)
+				matches := repoRegex.FindStringSubmatch(repoURL)
 				if len(matches) > 1 {
-					repoUrl = strings.TrimSuffix(matches[1], ".git")
+					repoURL = strings.TrimSuffix(matches[1], ".git")
 				}
-				opts = append(opts, tracer.WithService(repoUrl))
+				opts = append(opts, tracer.WithService(repoURL))
 			}
 		}
 

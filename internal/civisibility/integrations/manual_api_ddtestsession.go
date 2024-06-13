@@ -27,7 +27,7 @@ var _ DdTestSession = (*tslvTestSession)(nil)
 // tslvTestSession implements the DdTestSession interface and represents a session for a set of tests.
 type tslvTestSession struct {
 	ciVisibilityCommon
-	sessionId        uint64
+	sessionID        uint64
 	command          string
 	workingDirectory string
 	framework        string
@@ -81,11 +81,11 @@ func CreateTestSessionWith(command string, workingDirectory string, framework st
 	}), sessionTags...)
 
 	span, ctx := tracer.StartSpanFromContext(context.Background(), operationName, testOpts...)
-	sessionId := span.Context().SpanID()
-	span.SetTag(constants.TestSessionIDTagName, fmt.Sprint(sessionId))
+	sessionID := span.Context().SpanID()
+	span.SetTag(constants.TestSessionIDTagName, fmt.Sprint(sessionID))
 
 	s := &tslvTestSession{
-		sessionId:        sessionId,
+		sessionID:        sessionID,
 		command:          command,
 		workingDirectory: workingDirectory,
 		framework:        framework,

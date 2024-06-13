@@ -14,7 +14,6 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
-	_ "unsafe"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/constants"
@@ -128,14 +127,14 @@ func (ddm *M) instrumentInternalTests(internalTests *[]testing.InternalTest) {
 
 			// Initialize module and suite counters if not already present.
 			if _, ok := modulesCounters[moduleName]; !ok {
-				var v int32 = 0
+				var v int32
 				modulesCounters[moduleName] = &v
 			}
 			// Increment the test count in the module.
 			atomic.AddInt32(modulesCounters[moduleName], 1)
 
 			if _, ok := suitesCounters[suiteName]; !ok {
-				var v int32 = 0
+				var v int32
 				suitesCounters[suiteName] = &v
 			}
 			// Increment the test count in the suite.
@@ -216,14 +215,14 @@ func (ddm *M) instrumentInternalBenchmarks(internalBenchmarks *[]testing.Interna
 
 			// Initialize module and suite counters if not already present.
 			if _, ok := modulesCounters[moduleName]; !ok {
-				var v int32 = 0
+				var v int32
 				modulesCounters[moduleName] = &v
 			}
 			// Increment the test count in the module.
 			atomic.AddInt32(modulesCounters[moduleName], 1)
 
 			if _, ok := suitesCounters[suiteName]; !ok {
-				var v int32 = 0
+				var v int32
 				suitesCounters[suiteName] = &v
 			}
 			// Increment the test count in the suite.

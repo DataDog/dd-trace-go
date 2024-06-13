@@ -1,3 +1,8 @@
+// Unless explicitly stated otherwise all files in this repository are licensed
+// under the Apache License Version 2.0.
+// This product includes software developed at Datadog (https://www.datadoghq.com/).
+// Copyright 2024 Datadog, Inc.
+
 package integrations
 
 import (
@@ -50,7 +55,7 @@ func createDDTest(now time.Time) (DdTestSession, DdTestModule, DdTestSuite, DdTe
 	return session, module, suite, test
 }
 
-func commonAssertions(assert *assert.Assertions, now time.Time, sessionSpan mocktracer.Span) {
+func commonAssertions(assert *assert.Assertions, sessionSpan mocktracer.Span) {
 	tags := map[string]interface{}{
 		"my-tag":              "my-value",
 		constants.Origin:      constants.CIAppTestOrigin,
@@ -116,7 +121,7 @@ func sessionAssertions(assert *assert.Assertions, now time.Time, sessionSpan moc
 
 	assert.Subset(spanTags, tags)
 	assert.Contains(spanTags, constants.TestSessionIDTagName)
-	commonAssertions(assert, now, sessionSpan)
+	commonAssertions(assert, sessionSpan)
 }
 
 func TestModule(t *testing.T) {
@@ -163,7 +168,7 @@ func moduleAssertions(assert *assert.Assertions, now time.Time, moduleSpan mockt
 	assert.Subset(spanTags, tags)
 	assert.Contains(spanTags, constants.TestSessionIDTagName)
 	assert.Contains(spanTags, constants.TestModuleIDTagName)
-	commonAssertions(assert, now, moduleSpan)
+	commonAssertions(assert, moduleSpan)
 }
 
 func TestSuite(t *testing.T) {
@@ -214,7 +219,7 @@ func suiteAssertions(assert *assert.Assertions, now time.Time, suiteSpan mocktra
 	assert.Contains(spanTags, constants.TestSessionIDTagName)
 	assert.Contains(spanTags, constants.TestModuleIDTagName)
 	assert.Contains(spanTags, constants.TestSuiteIDTagName)
-	commonAssertions(assert, now, suiteSpan)
+	commonAssertions(assert, suiteSpan)
 }
 
 func Test(t *testing.T) {
@@ -273,5 +278,5 @@ func testAssertions(assert *assert.Assertions, now time.Time, testSpan mocktrace
 	assert.Contains(spanTags, constants.TestSuiteIDTagName)
 	assert.Contains(spanTags, constants.TestSourceFile)
 	assert.Contains(spanTags, constants.TestSourceStartLine)
-	commonAssertions(assert, now, testSpan)
+	commonAssertions(assert, testSpan)
 }
