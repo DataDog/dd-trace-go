@@ -29,7 +29,7 @@ go.sum
 /internal/datastreams           @Datadog/data-streams-monitoring
 
 # civisibility
-/internal/civisibility          @DataDog/ci-app-libraries @DataDog/dd-trace-go-guild
+/internal/civisibility          @DataDog/ci-app-libraries
 
 # Gitlab configuration
 .gitlab-ci.yml                  @DataDog/dd-trace-go-guild @DataDog/apm-core-reliability-and-performance
