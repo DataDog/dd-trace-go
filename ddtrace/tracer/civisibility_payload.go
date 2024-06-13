@@ -49,7 +49,7 @@ func newCiVisibilityPayload() *ciVisibilityPayload {
 	return &ciVisibilityPayload{newPayload()}
 }
 
-// GetBuffer retrieves the complete body of the CI Visibility payload, including metadata.
+// getBuffer retrieves the complete body of the CI Visibility payload, including metadata.
 // It reads the current payload buffer, adds metadata, and encodes the entire payload in MessagePack format.
 //
 // Parameters:
