@@ -16,10 +16,8 @@ import (
 	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/constants"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/integrations"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/utils"
-	logger "gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
 const (
@@ -92,17 +90,6 @@ func (ddm *M) Run() int {
 
 	// Run the tests and benchmarks.
 	var exitCode = m.Run()
-
-	// Check for code coverage if enabled.
-	if testing.CoverMode() != "" {
-		coveragePercentage, err := getCoverage()
-		if err == nil {
-			session.SetTag(constants.CodeCoverageEnabledTagName, "true")
-			session.SetTag(constants.CodeCoveragePercentageOfTotalLines, coveragePercentage)
-		} else {
-			logger.Warn("Error getting coverage percentage: %s", err)
-		}
-	}
 
 	// Close the session and return the exit code.
 	session.Close(exitCode)
