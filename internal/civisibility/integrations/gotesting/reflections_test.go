@@ -40,7 +40,7 @@ func TestGetFieldPointerFrom(t *testing.T) {
 	// Modify the value through the pointer
 	*actualValue = "modified value"
 	if *actualValue != mockStruct.privateField {
-		t.Fatalf("Expected 'testValue', got %s", *actualValue)
+		t.Fatalf("Expected 'modified value', got %s", mockStruct.privateField)
 	}
 
 	// Attempt to get a pointer to a non-existent field
