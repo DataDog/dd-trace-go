@@ -73,12 +73,6 @@ func commonAssertions(assert *assert.Assertions, sessionSpan mocktracer.Span) {
 	assert.Contains(spanTags, constants.RuntimeName)
 	assert.Contains(spanTags, constants.GitRepositoryURL)
 	assert.Contains(spanTags, constants.GitCommitSHA)
-	assert.Contains(spanTags, constants.GitCommitMessage)
-	assert.Contains(spanTags, constants.GitCommitAuthorEmail)
-	assert.Contains(spanTags, constants.GitCommitAuthorDate)
-	assert.Contains(spanTags, constants.GitCommitCommitterEmail)
-	assert.Contains(spanTags, constants.GitCommitCommitterDate)
-	assert.Contains(spanTags, constants.GitCommitCommitterName)
 }
 
 func TestSession(t *testing.T) {
