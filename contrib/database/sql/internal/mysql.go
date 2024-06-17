@@ -48,17 +48,17 @@ var (
 
 // Config is a configuration parsed from a DSN string
 type mySQLConfig struct {
+	Params           map[string]string // Connection parameters
+	Loc              *time.Location    // Location for time.Time values
+	tls              *tls.Config       // TLS configuration
 	User             string            // Username
 	Passwd           string            // Password (requires User)
 	Net              string            // Network type
 	Addr             string            // Network address (requires Net)
 	DBName           string            // Database name
-	Params           map[string]string // Connection parameters
 	Collation        string            // Connection collation
-	Loc              *time.Location    // Location for time.Time values
-	MaxAllowedPacket int               // Max packet size allowed
 	TLSConfig        string            // TLS configuration name
-	tls              *tls.Config       // TLS configuration
+	MaxAllowedPacket int               // Max packet size allowed
 	Timeout          time.Duration     // Dial timeout
 	ReadTimeout      time.Duration     // I/O read timeout
 	WriteTimeout     time.Duration     // I/O write timeout

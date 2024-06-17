@@ -227,8 +227,8 @@ func (tc *TracedConn) ResetSession(ctx context.Context) error {
 // traceParams stores all information related to tracing the driver.Conn
 type traceParams struct {
 	cfg        *config
-	driverName string
 	meta       map[string]string
+	driverName string
 }
 
 type contextKey int

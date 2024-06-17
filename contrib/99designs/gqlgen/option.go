@@ -15,9 +15,9 @@ import (
 const defaultServiceName = "graphql"
 
 type config struct {
+	tags          map[string]interface{}
 	serviceName   string
 	analyticsRate float64
-	tags          map[string]interface{}
 }
 
 // An Option configures the gqlgen integration.

@@ -75,10 +75,10 @@ type SQLCommentCarrier struct {
 	Query          string
 	Mode           DBMPropagationMode
 	DBServiceName  string
-	SpanID         uint64
 	PeerDBHostname string
 	PeerDBName     string
 	PeerService    string
+	SpanID         uint64
 }
 
 // Inject injects a span context in the carrier's Query field as a comment.

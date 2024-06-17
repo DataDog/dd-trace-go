@@ -15,12 +15,12 @@ import (
 const defaultServiceName = "gocql.query"
 
 type queryConfig struct {
-	serviceName, resourceName    string
-	querySpanName, batchSpanName string
-	noDebugStack                 bool
-	analyticsRate                float64
 	errCheck                     func(err error) bool
 	customTags                   map[string]interface{}
+	serviceName, resourceName    string
+	querySpanName, batchSpanName string
+	analyticsRate                float64
+	noDebugStack                 bool
 }
 
 // WrapOption represents an option that can be passed to WrapQuery.

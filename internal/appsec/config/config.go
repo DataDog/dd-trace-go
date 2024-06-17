@@ -57,17 +57,17 @@ type Config struct {
 	// rules loaded via the env var DD_APPSEC_RULES. When not set, the builtin rules will be used
 	// and live-updated with remote configuration.
 	RulesManager *RulesManager
-	// Maximum WAF execution time
-	WAFTimeout time.Duration
-	// AppSec trace rate limit (traces per second).
-	TraceRateLimit int64
+	// RC is the remote configuration client used to receive product configuration updates. Nil if RC is disabled (default)
+	RC *remoteconfig.ClientConfig
 	// Obfuscator configuration
 	Obfuscator internal.ObfuscatorConfig
 	// APISec configuration
 	APISec internal.APISecConfig
-	// RC is the remote configuration client used to receive product configuration updates. Nil if RC is disabled (default)
-	RC   *remoteconfig.ClientConfig
-	RASP bool
+	// Maximum WAF execution time
+	WAFTimeout time.Duration
+	// AppSec trace rate limit (traces per second).
+	TraceRateLimit int64
+	RASP           bool
 }
 
 // WithRCConfig sets the AppSec remote config client configuration to the specified cfg

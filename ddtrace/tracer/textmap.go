@@ -184,10 +184,10 @@ func NewPropagator(cfg *PropagatorConfig, propagators ...Propagator) Propagator 
 // When injecting, all injectors are called to propagate the span context.
 // When extracting, it tries each extractor, selecting the first successful one.
 type chainedPropagator struct {
-	injectors        []Propagator
-	extractors       []Propagator
 	injectorNames    string
 	extractorsNames  string
+	injectors        []Propagator
+	extractors       []Propagator
 	onlyExtractFirst bool // value of DD_TRACE_PROPAGATION_EXTRACT_FIRST
 }
 

@@ -73,29 +73,29 @@ import (
 
 // DeltaComputer calculates the difference between pprof-encoded profiles
 type DeltaComputer struct {
-	// poisoned indicates that the previous delta computation ended
-	// prematurely due to an error. This means the state of the
-	// DeltaComputer is invalid, and the delta computer needs to be re-set
-	poisoned bool
+	// locationIndex associates location IDs (used by the pprof format to
+	// cross-reference locations) to the actual instruction address of the
+	// location
+	locationIndex     locationIndex
+	encoder           pproflite.Encoder
+	deltaMap          *DeltaMap
+	includedFunctions SparseIntSet
+	// strings holds (hashed) copies of every string in the string table
+	// of the current profile, used to hold the names of sample value types,
+	// and the keys and values of labels.
+	strings         *stringTable
+	includedStrings DenseIntSet
 	// fields are the name and types of the values in a sample for which we should
 	// compute the difference.
 	fields []valueType // TODO(fg) would be nice to push this into deltaMap
 
-	decoder           pproflite.Decoder
-	encoder           pproflite.Encoder
-	deltaMap          *DeltaMap
-	includedFunctions SparseIntSet
-	includedStrings   DenseIntSet
-	// locationIndex associates location IDs (used by the pprof format to
-	// cross-reference locations) to the actual instruction address of the
-	// location
-	locationIndex locationIndex
-	// strings holds (hashed) copies of every string in the string table
-	// of the current profile, used to hold the names of sample value types,
-	// and the keys and values of labels.
-	strings          *stringTable
+	decoder          pproflite.Decoder
 	curProfTimeNanos int64
 	durationNanos    pproflite.DurationNanos
+	// poisoned indicates that the previous delta computation ended
+	// prematurely due to an error. This means the state of the
+	// DeltaComputer is invalid, and the delta computer needs to be re-set
+	poisoned bool
 }
 
 // NewDeltaComputer initializes a DeltaComputer which will calculate the

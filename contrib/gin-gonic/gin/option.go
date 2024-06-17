@@ -20,11 +20,11 @@ import (
 const defaultServiceName = "gin.router"
 
 type config struct {
-	analyticsRate float64
 	resourceNamer func(c *gin.Context) string
-	serviceName   string
 	ignoreRequest func(c *gin.Context) bool
 	headerTags    *internal.LockMap
+	serviceName   string
+	analyticsRate float64
 }
 
 func newConfig(serviceName string) *config {

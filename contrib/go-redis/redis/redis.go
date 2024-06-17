@@ -54,10 +54,10 @@ var _ redis.Pipeliner = (*Pipeliner)(nil)
 
 // params holds the tracer and a set of parameters which are recorded with every trace.
 type params struct {
+	config *clientConfig
 	host   string
 	port   string
 	db     int
-	config *clientConfig
 }
 
 // NewClient returns a new Client that is traced with the default tracer under

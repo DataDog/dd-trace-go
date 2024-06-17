@@ -19,9 +19,9 @@ const DDTagsDelimiter = ":"
 // LockMap uses an RWMutex to synchronize map access to allow for concurrent access.
 // This should not be used for cases with heavy write load and performance concerns.
 type LockMap struct {
+	m map[string]string
 	sync.RWMutex
 	c uint32
-	m map[string]string
 }
 
 func NewLockMap(m map[string]string) *LockMap {

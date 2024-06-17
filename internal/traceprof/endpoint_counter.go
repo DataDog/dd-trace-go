@@ -48,10 +48,10 @@ func NewEndpointCounter(limit int) *EndpointCounter {
 // complicated [1]. This will be done in a follow-up PR.
 // [1] https://github.com/felixge/countermap/blob/main/xsync_map_counter_map.go
 type EndpointCounter struct {
-	enabled uint64
-	mu      sync.Mutex
 	counts  map[string]uint64
+	enabled uint64
 	limit   int
+	mu      sync.Mutex
 }
 
 // SetEnabled changes if endpoint counting is enabled or not. The previous

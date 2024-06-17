@@ -65,10 +65,10 @@ type kafkaConfig struct {
 
 // A Reader wraps a kafka.Reader.
 type Reader struct {
-	*kafka.Reader
-	kafkaConfig
-	cfg  *config
 	prev ddtrace.Span
+	*kafka.Reader
+	cfg *config
+	kafkaConfig
 }
 
 func (r *Reader) startSpan(ctx context.Context, msg *kafka.Message) ddtrace.Span {
@@ -184,8 +184,8 @@ func WrapWriter(w *kafka.Writer, opts ...Option) *Writer {
 // Writer wraps a kafka.Writer with tracing config data
 type Writer struct {
 	*kafka.Writer
-	kafkaConfig
 	cfg *config
+	kafkaConfig
 }
 
 func (w *Writer) startSpan(ctx context.Context, msg *kafka.Message) ddtrace.Span {

@@ -22,9 +22,9 @@ import (
 )
 
 type configData struct {
-	Action        string    `json:"action"`
-	ServiceTarget target    `json:"service_target"`
 	LibConfig     libConfig `json:"lib_config"`
+	ServiceTarget target    `json:"service_target"`
+	Action        string    `json:"action"`
 }
 
 type target struct {
@@ -48,11 +48,11 @@ type rcTag struct {
 // Sampling rules provided by the remote config define tags differently other than using a map.
 type rcSamplingRule struct {
 	Service    string     `json:"service"`
-	Provenance provenance `json:"provenance"`
 	Name       string     `json:"name,omitempty"`
 	Resource   string     `json:"resource"`
 	Tags       []rcTag    `json:"tags,omitempty"`
 	SampleRate float64    `json:"sample_rate"`
+	Provenance provenance `json:"provenance"`
 }
 
 func convertRemoteSamplingRules(rules *[]rcSamplingRule) *[]SamplingRule {
@@ -255,8 +255,8 @@ type dynamicInstrumentationRCProbeConfig struct {
 }
 
 type dynamicInstrumentationRCState struct {
-	sync.Mutex
 	state map[string]dynamicInstrumentationRCProbeConfig
+	sync.Mutex
 }
 
 var (

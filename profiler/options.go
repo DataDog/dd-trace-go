@@ -84,8 +84,10 @@ var defaultClient = &http.Client{
 var defaultProfileTypes = []ProfileType{MetricsProfile, CPUProfile, HeapProfile}
 
 type config struct {
-	apiKey    string
-	agentless bool
+	statsd     StatsdClient
+	httpClient *http.Client
+	types      map[ProfileType]struct{}
+	apiKey     string
 	// targetURL is the upload destination URL. It will be set by the profiler on start to either apiURL or agentURL
 	// based on the other options.
 	targetURL            string
@@ -94,11 +96,10 @@ type config struct {
 	service, env         string
 	version              string
 	hostname             string
-	statsd               StatsdClient
-	httpClient           *http.Client
+	outputDir            string
 	tags                 immutable.StringSlice
 	customProfilerLabels []string
-	types                map[ProfileType]struct{}
+	traceConfig          executionTraceConfig
 	period               time.Duration
 	cpuDuration          time.Duration
 	cpuProfileRate       int
@@ -106,10 +107,9 @@ type config struct {
 	maxGoroutinesWait    int
 	mutexFraction        int
 	blockRate            int
-	outputDir            string
+	agentless            bool
 	deltaProfiles        bool
 	logStartup           bool
-	traceConfig          executionTraceConfig
 	endpointCountEnabled bool
 }
 
@@ -514,8 +514,6 @@ func WithHostname(hostname string) Option {
 // executionTraceConfig controls how often, and for how long, runtime execution
 // traces are collected.
 type executionTraceConfig struct {
-	// Enabled indicates whether execution tracing is enabled.
-	Enabled bool
 	// Period is the amount of time between traces.
 	Period time.Duration
 	// Limit is the desired upper bound, in bytes, of a collected trace.
@@ -527,6 +525,9 @@ type executionTraceConfig struct {
 	// of events recorded) than duration, so we use that to decide when to
 	// stop tracing.
 	Limit int
+
+	// Enabled indicates whether execution tracing is enabled.
+	Enabled bool
 
 	// warned is checked to prevent spamming a log every minute if the trace
 	// config is invalid

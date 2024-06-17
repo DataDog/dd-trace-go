@@ -19,13 +19,13 @@ import (
 const defaultServiceName = "fiber"
 
 type config struct {
-	serviceName   string
-	spanName      string
 	isStatusError func(statusCode int) bool
-	spanOpts      []ddtrace.StartSpanOption // additional span options to be applied
-	analyticsRate float64
 	resourceNamer func(*fiber.Ctx) string
 	ignoreRequest func(*fiber.Ctx) bool
+	serviceName   string
+	spanName      string
+	spanOpts      []ddtrace.StartSpanOption // additional span options to be applied
+	analyticsRate float64
 }
 
 // Option represents an option that can be passed to NewRouter.

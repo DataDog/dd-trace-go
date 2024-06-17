@@ -49,6 +49,8 @@ var CustomLabels = map[string]string{"user label": "user val"}
 
 // AppConfig defines the behavior and profiling options for the demo app.
 type AppConfig struct {
+	// AppType is the type of the test app that is being simulated.
+	AppType testAppType
 	// Endpoints is passed to tracer.WithProfilerEndpoints()
 	Endpoints bool
 	// CodeHotspots is passed to tracer.WithProfilerCodeHotspots()
@@ -56,8 +58,6 @@ type AppConfig struct {
 	// ChildOf uses tracer.ChildOf() to declare the parent of cpuSpan instead of
 	// tracer.StartSpanFromContext().
 	ChildOf bool
-	// AppType is the type of the test app that is being simulated.
-	AppType testAppType
 }
 
 type testAppType string

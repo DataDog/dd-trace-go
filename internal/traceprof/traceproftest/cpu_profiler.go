@@ -31,8 +31,8 @@ func StartCPUProfile(t testing.TB) *CPUProfiler {
 // TODO(fg) Would be nice to figure out a clean way to use the actual profiler
 // pkg for this in the future.
 type CPUProfiler struct {
-	buf     bytes.Buffer
 	prof    *CPUProfile
+	buf     bytes.Buffer
 	stopped bool
 }
 
@@ -64,8 +64,8 @@ func NewCPUProfile(data []byte) (*CPUProfile, error) {
 
 // CPUProfile is a test utility to extract data from a CPU profile for testing.
 type CPUProfile struct {
-	data []byte
 	prof *profile.Profile
+	data []byte
 }
 
 // Duration returns the total amont of CPU time in this profile.

@@ -95,8 +95,8 @@ func (s *Session) NewBatch(typ gocql.BatchType) *Batch {
 type params struct {
 	config               *queryConfig
 	keyspace             string
-	paginated            bool
 	clusterContactPoints string
+	paginated            bool
 }
 
 // WrapQuery wraps a gocql.Query into a traced Query under the given service name.

@@ -26,15 +26,15 @@ import (
 var _ oteltrace.Span = (*span)(nil)
 
 type span struct {
-	noop.Span               // https://pkg.go.dev/go.opentelemetry.io/otel/trace#hdr-API_Implementations
-	mu         sync.RWMutex `msg:"-"` // all fields are protected by this RWMutex
 	DD         tracer.Span
-	finished   bool
 	attributes map[string]interface{}
-	spanKind   oteltrace.SpanKind
-	finishOpts []tracer.FinishOption
-	statusInfo
 	*oteltracer
+	statusInfo
+	finishOpts []tracer.FinishOption
+	noop.Span  // https://pkg.go.dev/go.opentelemetry.io/otel/trace#hdr-API_Implementations
+	spanKind   oteltrace.SpanKind
+	mu         sync.RWMutex `msg:"-"` // all fields are protected by this RWMutex
+	finished   bool
 }
 
 func (s *span) TracerProvider() oteltrace.TracerProvider { return s.oteltracer.provider }
@@ -153,8 +153,8 @@ func (s *span) IsRecording() bool {
 }
 
 type statusInfo struct {
-	code        otelcodes.Code
 	description string
+	code        otelcodes.Code
 }
 
 // SetStatus saves state of code and description indicating

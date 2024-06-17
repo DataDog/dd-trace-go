@@ -21,14 +21,14 @@ import (
 const defaultServiceName = "mux.router"
 
 type routerConfig struct {
+	resourceNamer func(*Router, *http.Request) string
+	ignoreRequest func(*http.Request) bool
+	headerTags    *internal.LockMap
 	serviceName   string
 	spanOpts      []ddtrace.StartSpanOption // additional span options to be applied
 	finishOpts    []ddtrace.FinishOption    // span finish options to be applied
 	analyticsRate float64
-	resourceNamer func(*Router, *http.Request) string
-	ignoreRequest func(*http.Request) bool
 	queryParams   bool
-	headerTags    *internal.LockMap
 }
 
 // RouterOption represents an option that can be passed to NewRouter.

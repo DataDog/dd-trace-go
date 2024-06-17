@@ -20,16 +20,16 @@ import (
 const defaultServiceName = "chi.router"
 
 type config struct {
-	serviceName        string
-	spanOpts           []ddtrace.StartSpanOption // additional span options to be applied
-	analyticsRate      float64
+	appsecConfig       httpsec.Config
 	isStatusError      func(statusCode int) bool
 	ignoreRequest      func(r *http.Request) bool
 	modifyResourceName func(resourceName string) string
 	headerTags         *internal.LockMap
 	resourceNamer      func(r *http.Request) string
+	serviceName        string
+	spanOpts           []ddtrace.StartSpanOption // additional span options to be applied
+	analyticsRate      float64
 	appsecDisabled     bool
-	appsecConfig       httpsec.Config
 }
 
 // Option represents an option that can be passed to NewRouter.

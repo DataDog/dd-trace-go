@@ -17,9 +17,9 @@ import (
 const defaultServiceName = "go-restful"
 
 type config struct {
+	headerTags    *internal.LockMap
 	serviceName   string
 	analyticsRate float64
-	headerTags    *internal.LockMap
 }
 
 func newConfig() *config {

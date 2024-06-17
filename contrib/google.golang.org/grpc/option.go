@@ -27,19 +27,19 @@ type Option func(*config)
 
 type config struct {
 	serviceName         func() string
-	spanName            string
 	nonErrorCodes       map[codes.Code]bool
+	ignoredMethods      map[string]struct{}
+	untracedMethods     map[string]struct{}
+	ignoredMetadata     map[string]struct{}
+	tags                map[string]interface{}
+	spanName            string
+	spanOpts            []ddtrace.StartSpanOption
 	traceStreamCalls    bool
 	traceStreamMessages bool
 	noDebugStack        bool
-	ignoredMethods      map[string]struct{}
-	untracedMethods     map[string]struct{}
 	withMetadataTags    bool
-	ignoredMetadata     map[string]struct{}
 	withRequestTags     bool
 	withErrorDetailTags bool
-	spanOpts            []ddtrace.StartSpanOption
-	tags                map[string]interface{}
 }
 
 // InterceptorOption represents an option that can be passed to the grpc unary

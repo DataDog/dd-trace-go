@@ -15,13 +15,13 @@ import (
 // It's designed to satisfy the dynamic configuration semantics (i.e reset, update, apply configuration changes).
 // This structure will be extended to track the origin of configuration values as well (e.g remote_config, env_var).
 type dynamicConfig[T any] struct {
-	sync.RWMutex
 	current   T                 // holds the current configuration value
 	startup   T                 // holds the startup configuration value
-	cfgName   string            // holds the name of the configuration, has to be compatible with telemetry.Configuration.Name
-	cfgOrigin telemetry.Origin  // holds the origin of the current configuration value (currently only supports remote_config, empty otherwise)
 	apply     func(T) bool      // executes any config-specific operations to propagate the update properly, returns whether the update was applied
 	equal     func(x, y T) bool // compares two configuration values, this is used to avoid unnecessary config and telemetry updates
+	cfgName   string            // holds the name of the configuration, has to be compatible with telemetry.Configuration.Name
+	cfgOrigin telemetry.Origin  // holds the origin of the current configuration value (currently only supports remote_config, empty otherwise)
+	sync.RWMutex
 }
 
 func newDynamicConfig[T any](name string, val T, apply func(T) bool, equal func(x, y T) bool) dynamicConfig[T] {

@@ -16,11 +16,11 @@ import (
 const defaultServiceName = "elastic.client"
 
 type clientConfig struct {
+	transport     http.RoundTripper
+	resourceNamer func(url, method string) string
 	serviceName   string
 	operationName string
-	transport     http.RoundTripper
 	analyticsRate float64
-	resourceNamer func(url, method string) string
 }
 
 // ClientOption represents an option that can be used when creating a client.

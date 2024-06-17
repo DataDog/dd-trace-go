@@ -21,9 +21,9 @@ import (
 )
 
 type httpTransport struct {
-	url     string            // the delivery URL for stats
 	client  *http.Client      // the HTTP client used in the POST
 	headers map[string]string // the Transport headers
+	url     string            // the delivery URL for stats
 }
 
 func newHTTPTransport(agentURL *url.URL, client *http.Client) *httpTransport {

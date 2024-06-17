@@ -31,9 +31,10 @@ type Hasher struct {
 	st  *stringTable
 	lx  *locationIndex
 
-	scratch     [8]byte
 	labelHashes byHash
 	scratchHash Hash
+
+	scratch [8]byte
 }
 
 // Sample ...

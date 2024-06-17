@@ -28,9 +28,9 @@ func init() {
 
 // A DB wraps a buntdb.DB, automatically tracing any transactions.
 type DB struct {
+	ctx context.Context
 	*buntdb.DB
 	opts []Option
-	ctx  context.Context
 }
 
 // Open calls buntdb.Open and wraps the result.

@@ -38,8 +38,8 @@ func (e collectionTooFrequent) Error() string {
 
 type metrics struct {
 	collectedAt time.Time
-	snapshot    metricsSnapshot
 	compute     func(*metricsSnapshot, *metricsSnapshot, time.Duration, time.Time) []point
+	snapshot    metricsSnapshot
 }
 
 type metricsSnapshot struct {

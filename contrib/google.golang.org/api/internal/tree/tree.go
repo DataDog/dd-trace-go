@@ -31,14 +31,13 @@ type (
 	}
 	// An Endpoint is an API endpoint associated with a (host, method, path)
 	Endpoint struct {
+		pathMatcher  *regexp.Regexp
 		Hostname     string `json:"hostname"`
 		HTTPMethod   string `json:"http_method"`
 		PathTemplate string `json:"path_template"`
 		PathRegex    string `json:"path_regex"`
 		ServiceName  string `json:"service_name"`
 		ResourceName string `json:"resource_name"`
-
-		pathMatcher *regexp.Regexp
 	}
 )
 

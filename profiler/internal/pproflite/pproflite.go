@@ -138,10 +138,10 @@ func (f *Mapping) encode(ps *molecule.ProtoStream) error {
 
 // Location is field 4.
 type Location struct {
+	Line      []Line
 	ID        uint64
 	MappingID uint64
 	Address   uint64
-	Line      []Line
 	IsFolded  bool
 }
 
@@ -188,9 +188,9 @@ func (f *Location) encode(ps *molecule.ProtoStream) error {
 // LocationFast, the Data value gets written and changes to its other fields
 // are ignored.
 type LocationFast struct {
-	ID         uint64
 	FunctionID []uint64
 	Data       []byte
+	ID         uint64
 }
 
 func (f LocationFast) field() int { return 4 }

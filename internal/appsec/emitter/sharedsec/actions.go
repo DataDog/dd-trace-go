@@ -81,8 +81,8 @@ type (
 		// GRPCStatusCode is the gRPC status code to be returned. Since 0 is the OK status, the value is nullable to
 		// be able to distinguish between unset and defaulting to Abort (10), or set to OK (0).
 		GRPCStatusCode *int   `mapstructure:"grpc_status_code,omitempty"`
-		StatusCode     int    `mapstructure:"status_code"`
 		Type           string `mapstructure:"type,omitempty"`
+		StatusCode     int    `mapstructure:"status_code"`
 	}
 	// redirectActionParams are the dynamic parameters to be provided to a "redirect_request"
 	// action type upon invocation

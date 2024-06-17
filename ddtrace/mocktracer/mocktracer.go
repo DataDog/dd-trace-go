@@ -61,11 +61,11 @@ func Start() Tracer {
 }
 
 type mocktracer struct {
-	sync.RWMutex  // guards below spans
-	finishedSpans []Span
 	openSpans     map[uint64]Span
 	dsmTransport  *mockDSMTransport
 	dsmProcessor  *datastreams.Processor
+	finishedSpans []Span
+	sync.RWMutex  // guards below spans
 }
 
 func (t *mocktracer) SentDSMBacklogs() []datastreams.Backlog {

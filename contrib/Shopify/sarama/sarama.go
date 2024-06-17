@@ -124,8 +124,8 @@ func WrapConsumer(c sarama.Consumer, opts ...Option) sarama.Consumer {
 
 type syncProducer struct {
 	sarama.SyncProducer
-	version sarama.KafkaVersion
 	cfg     *config
+	version sarama.KafkaVersion
 }
 
 // SendMessage calls sarama.SyncProducer.SendMessage and traces the request.

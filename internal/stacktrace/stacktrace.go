@@ -80,14 +80,14 @@ type StackTrace []StackFrame
 
 // StackFrame represents a single frame in the stack trace
 type StackFrame struct {
-	Index     uint32 `msg:"id"`                   // Index of the frame (0 = top of the stack)
 	Text      string `msg:"text,omitempty"`       // Text version of the stackframe as a string
 	File      string `msg:"file,omitempty"`       // File name where the code line is
-	Line      uint32 `msg:"line,omitempty"`       // Line number in the context of the file where the code is
-	Column    uint32 `msg:"column,omitempty"`     // Column where the code ran is
 	Namespace string `msg:"namespace,omitempty"`  // Namespace is the fully qualified name of the package where the code is
 	ClassName string `msg:"class_name,omitempty"` // ClassName is the fully qualified name of the class where the line of code is
 	Function  string `msg:"function,omitempty"`   // Function is the fully qualified name of the function where the line of code is
+	Index     uint32 `msg:"id"`                   // Index of the frame (0 = top of the stack)
+	Line      uint32 `msg:"line,omitempty"`       // Line number in the context of the file where the code is
+	Column    uint32 `msg:"column,omitempty"`     // Column where the code ran is
 }
 
 type symbol struct {
@@ -169,9 +169,9 @@ func skipAndCapture(skip int, maxDepth int, symbolSkip []string) StackTrace {
 // It also skips the first `skip` frames
 // It is not thread-safe
 type framesIterator struct {
+	frames       *queue.Queue[runtime.Frame]
 	skipPrefixes []string
 	cache        []uintptr
-	frames       *queue.Queue[runtime.Frame]
 	cacheDepth   int
 	cacheSize    int
 	currDepth    int

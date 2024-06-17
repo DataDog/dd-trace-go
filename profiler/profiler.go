@@ -75,21 +75,21 @@ func Stop() {
 // profiler collects and sends preset profiles to the Datadog API at a given frequency
 // using a given configuration.
 type profiler struct {
+	testHooks testHooks
+
+	// lastTrace is the last time an execution trace was collected
+	lastTrace       time.Time
 	cfg             *config           // profile configuration
 	out             chan batch        // upload queue
 	uploadFunc      func(batch) error // defaults to (*profiler).upload; replaced in tests
 	exit            chan struct{}     // exit signals the profiler to stop; it is closed after stopping
-	stopOnce        sync.Once         // stopOnce ensures the profiler is stopped exactly once.
-	wg              sync.WaitGroup    // wg waits for all goroutines to exit when stopping.
 	met             *metrics          // metric collector state
 	deltas          map[ProfileType]*fastDeltaProfiler
-	seq             uint64         // seq is the value of the profile_seq tag
+	wg              sync.WaitGroup // wg waits for all goroutines to exit when stopping.
 	pendingProfiles sync.WaitGroup // signal that profile collection is done, for stopping CPU profiling
 
-	testHooks testHooks
-
-	// lastTrace is the last time an execution trace was collected
-	lastTrace time.Time
+	seq      uint64    // seq is the value of the profile_seq tag
+	stopOnce sync.Once // stopOnce ensures the profiler is stopped exactly once.
 }
 
 // testHooks are functions that are replaced during testing which would normally

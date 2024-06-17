@@ -14,11 +14,11 @@ import (
 )
 
 type config struct {
-	serviceName   string
-	analyticsRate float64
-	dsn           string
 	errCheck      func(err error) bool
 	tagFns        map[string]func(db *gorm.DB) interface{}
+	serviceName   string
+	dsn           string
+	analyticsRate float64
 }
 
 // Option represents an option that can be passed to Register, Open or OpenDB.

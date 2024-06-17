@@ -47,13 +47,13 @@ type statsPoint struct {
 }
 
 type statsGroup struct {
+	pathwayLatency *ddsketch.DDSketch
+	edgeLatency    *ddsketch.DDSketch
+	payloadSize    *ddsketch.DDSketch
 	service        string
 	edgeTags       []string
 	hash           uint64
 	parentHash     uint64
-	pathwayLatency *ddsketch.DDSketch
-	edgeLatency    *ddsketch.DDSketch
-	payloadSize    *ddsketch.DDSketch
 }
 
 type bucket struct {
@@ -131,8 +131,8 @@ const (
 )
 
 type processorInput struct {
-	point       statsPoint
 	kafkaOffset kafkaOffset
+	point       statsPoint
 	typ         pointType
 	queuePos    int64
 }
@@ -146,14 +146,14 @@ type processorStats struct {
 }
 
 type partitionKey struct {
-	partition int32
 	topic     string
+	partition int32
 }
 
 type partitionConsumerKey struct {
-	partition int32
 	topic     string
 	group     string
+	partition int32
 }
 
 type offsetType int
@@ -165,35 +165,35 @@ const (
 )
 
 type kafkaOffset struct {
-	offset     int64
 	topic      string
 	group      string
-	partition  int32
+	offset     int64
 	offsetType offsetType
 	timestamp  int64
+	partition  int32
 }
 
 type Processor struct {
+	statsd               internal.StatsdClient
 	in                   *fastQueue
 	hashCache            *hashCache
 	inKafka              chan kafkaOffset
 	tsTypeCurrentBuckets map[int64]bucket
 	tsTypeOriginBuckets  map[int64]bucket
-	wg                   sync.WaitGroup
-	stopped              uint64
 	stop                 chan struct{} // closing this channel triggers shutdown
 	flushRequest         chan chan<- struct{}
-	stats                processorStats
 	transport            *httpTransport
-	statsd               internal.StatsdClient
-	env                  string
-	primaryTag           string
-	service              string
-	version              string
 	// used for tests
 	timeSource                  func() time.Time
-	disableStatsFlushing        uint32
 	getAgentSupportsDataStreams func() bool
+	env                         string
+	primaryTag                  string
+	service                     string
+	version                     string
+	stats                       processorStats
+	wg                          sync.WaitGroup
+	stopped                     uint64
+	disableStatsFlushing        uint32
 }
 
 func (p *Processor) time() time.Time {

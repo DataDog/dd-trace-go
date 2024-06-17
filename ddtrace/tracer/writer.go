@@ -32,6 +32,9 @@ type traceWriter interface {
 }
 
 type agentTraceWriter struct {
+
+	// statsd is used to send metrics
+	statsd globalinternal.StatsdClient
 	// config holds the tracer configuration
 	config *config
 
@@ -41,15 +44,12 @@ type agentTraceWriter struct {
 	// climit limits the number of concurrent outgoing connections
 	climit chan struct{}
 
-	// wg waits for all uploads to finish
-	wg sync.WaitGroup
-
 	// prioritySampling is the prioritySampler into which agentTraceWriter will
 	// read sampling rates sent by the agent
 	prioritySampling *prioritySampler
 
-	// statsd is used to send metrics
-	statsd globalinternal.StatsdClient
+	// wg waits for all uploads to finish
+	wg sync.WaitGroup
 }
 
 func newAgentTraceWriter(c *config, s *prioritySampler, statsdClient globalinternal.StatsdClient) *agentTraceWriter {
@@ -133,11 +133,11 @@ var logWriter io.Writer = os.Stdout
 // (https://github.com/DataDog/datadog-serverless-functions/tree/master/aws/logs_monitoring)
 // and writes them to os.Stdout. This is used to send traces from an AWS Lambda environment.
 type logTraceWriter struct {
+	w         io.Writer
+	statsd    globalinternal.StatsdClient
 	config    *config
 	buf       bytes.Buffer
 	hasTraces bool
-	w         io.Writer
-	statsd    globalinternal.StatsdClient
 }
 
 func newLogTraceWriter(c *config, statsdClient globalinternal.StatsdClient) *logTraceWriter {

@@ -12,9 +12,9 @@ import (
 )
 
 type config struct {
+	errCheck      func(err error) bool
 	serviceName   string
 	analyticsRate float64
-	errCheck      func(err error) bool
 }
 
 // Option represents an option that can be passed to Dial.

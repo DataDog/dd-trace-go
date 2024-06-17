@@ -13,10 +13,10 @@ import (
 
 // MockDriver implements a mock driver that captures and stores prepared and executed statements
 type MockDriver struct {
+	// Hook is an optional function to run during a DB operation
+	Hook     func()
 	Prepared []string
 	Executed []string
-	// Hook is an optional function to run during a DB operation
-	Hook func()
 }
 
 // Open implements the Conn interface
@@ -106,8 +106,8 @@ func (t *mockTx) Rollback() error {
 }
 
 type mockStmt struct {
-	stmt   string
 	driver *MockDriver
+	stmt   string
 }
 
 // Close implements the Stmt interface

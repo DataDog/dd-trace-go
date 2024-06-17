@@ -23,13 +23,13 @@ var cfg = &config{
 }
 
 type config struct {
-	mu            sync.RWMutex
-	analyticsRate float64
+	headersAsTags *internal.LockMap
 	serviceName   string
 	runtimeID     string
-	headersAsTags *internal.LockMap
 	dogstatsdAddr string
 	statsTags     []string
+	analyticsRate float64
+	mu            sync.RWMutex
 }
 
 // AnalyticsRate returns the sampling rate at which events should be marked. It uses

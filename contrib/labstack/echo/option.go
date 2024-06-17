@@ -17,11 +17,11 @@ import (
 const defaultServiceName = "echo"
 
 type config struct {
+	isStatusError func(statusCode int) bool
+	headerTags    *internal.LockMap
 	serviceName   string
 	analyticsRate float64
 	noDebugStack  bool
-	isStatusError func(statusCode int) bool
-	headerTags    *internal.LockMap
 }
 
 // Option represents an option that can be passed to Middleware.

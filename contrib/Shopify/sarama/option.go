@@ -19,9 +19,9 @@ type config struct {
 	producerServiceName string
 	consumerSpanName    string
 	producerSpanName    string
+	groupID             string
 	analyticsRate       float64
 	dataStreamsEnabled  bool
-	groupID             string
 }
 
 func defaults(cfg *config) {

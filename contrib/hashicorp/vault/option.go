@@ -14,9 +14,9 @@ import (
 )
 
 type config struct {
-	analyticsRate float64
 	serviceName   string
 	spanName      string
+	analyticsRate float64
 }
 
 const defaultServiceName = "vault"

@@ -21,15 +21,15 @@ type Request struct {
 
 // Body is the common high-level structure encapsulating a telemetry request body
 type Body struct {
-	APIVersion  string      `json:"api_version"`
-	RequestType RequestType `json:"request_type"`
-	TracerTime  int64       `json:"tracer_time"`
-	RuntimeID   string      `json:"runtime_id"`
-	SeqID       int64       `json:"seq_id"`
-	Debug       bool        `json:"debug"`
 	Payload     interface{} `json:"payload"`
 	Application Application `json:"application"`
 	Host        Host        `json:"host"`
+	APIVersion  string      `json:"api_version"`
+	RequestType RequestType `json:"request_type"`
+	RuntimeID   string      `json:"runtime_id"`
+	TracerTime  int64       `json:"tracer_time"`
+	SeqID       int64       `json:"seq_id"`
+	Debug       bool        `json:"debug"`
 }
 
 // RequestType determines how the Payload of a request should be handled
@@ -107,11 +107,11 @@ type Host struct {
 
 // AppStarted corresponds to the "app-started" request type
 type AppStarted struct {
-	Configuration     []Configuration     `json:"configuration,omitempty"`
-	Products          Products            `json:"products,omitempty"`
-	AdditionalPayload []AdditionalPayload `json:"additional_payload,omitempty"`
-	Error             Error               `json:"error,omitempty"`
 	RemoteConfig      *RemoteConfig       `json:"remote_config,omitempty"`
+	Products          Products            `json:"products,omitempty"`
+	Error             Error               `json:"error,omitempty"`
+	Configuration     []Configuration     `json:"configuration,omitempty"`
+	AdditionalPayload []AdditionalPayload `json:"additional_payload,omitempty"`
 }
 
 // IntegrationsChange corresponds to the app-integrations-change requesty type
@@ -122,18 +122,18 @@ type IntegrationsChange struct {
 // Integration is an integration that is configured to be traced automatically.
 type Integration struct {
 	Name        string `json:"name"`
-	Enabled     bool   `json:"enabled"`
 	Version     string `json:"version,omitempty"`
+	Error       string `json:"error,omitempty"`
+	Enabled     bool   `json:"enabled"`
 	AutoEnabled bool   `json:"auto_enabled,omitempty"`
 	Compatible  bool   `json:"compatible,omitempty"`
-	Error       string `json:"error,omitempty"`
 }
 
 // ConfigurationChange corresponds to the `AppClientConfigurationChange` event
 // that contains information about configuration changes since the app-started event
 type ConfigurationChange struct {
-	Configuration []Configuration `json:"configuration"`
 	RemoteConfig  *RemoteConfig   `json:"remote_config,omitempty"`
+	Configuration []Configuration `json:"configuration"`
 }
 
 type Origin int
@@ -174,11 +174,11 @@ func (o Origin) MarshalJSON() ([]byte, error) {
 // Configuration is a library-specific configuration value
 // that should be initialized through StringConfig, IntConfig, FloatConfig, or BoolConfig
 type Configuration struct {
-	Name  string      `json:"name"`
 	Value interface{} `json:"value"`
+	Error Error       `json:"error"`
+	Name  string      `json:"name"`
 	// origin is the source of the config. It is one of {default, env_var, code, dd_config, remote_config}.
 	Origin      Origin `json:"origin"`
-	Error       Error  `json:"error"`
 	IsOverriden bool   `json:"is_overridden"`
 }
 
@@ -218,9 +218,9 @@ type Products struct {
 
 // ProductDetails specifies details about a product.
 type ProductDetails struct {
-	Enabled bool   `json:"enabled"`
-	Version string `json:"version,omitempty"`
 	Error   Error  `json:"error,omitempty"`
+	Version string `json:"version,omitempty"`
+	Enabled bool   `json:"enabled"`
 }
 
 // Dependencies stores a list of dependencies
@@ -237,25 +237,25 @@ type Dependency struct {
 
 // RemoteConfig contains information about remote-config
 type RemoteConfig struct {
-	UserEnabled     string `json:"user_enabled"`     // whether the library has made a request to fetch remote-config
-	ConfigsRecieved bool   `json:"configs_received"` // whether the library receives a valid config response
+	Error           Error  `json:"error,omitempty"`
+	UserEnabled     string `json:"user_enabled"` // whether the library has made a request to fetch remote-config
 	RcID            string `json:"rc_id,omitempty"`
 	RcRevision      string `json:"rc_revision,omitempty"`
 	RcVersion       string `json:"rc_version,omitempty"`
-	Error           Error  `json:"error,omitempty"`
+	ConfigsRecieved bool   `json:"configs_received"` // whether the library receives a valid config response
 }
 
 // Error stores error information about various tracer events
 type Error struct {
-	Code    int    `json:"code"`
 	Message string `json:"message"`
+	Code    int    `json:"code"`
 }
 
 // AdditionalPayload can be used to add extra information to the app-started
 // event
 type AdditionalPayload struct {
-	Name  string      `json:"name"`
 	Value interface{} `json:"value"`
+	Name  string      `json:"name"`
 }
 
 // Metrics corresponds to the "generate-metrics" request type
@@ -273,20 +273,20 @@ type DistributionMetrics struct {
 // Series is a sequence of observations for a single named metric.
 // The `Points` field will store a timestamp and value.
 type Series struct {
-	Metric string       `json:"metric"`
-	Points [][2]float64 `json:"points"`
+	Metric    string       `json:"metric"`
+	Type      string       `json:"type,omitempty"`
+	Namespace string       `json:"namespace"`
+	Points    [][2]float64 `json:"points"`
+	Tags      []string     `json:"tags"`
 	// Interval is required for gauge and rate metrics
-	Interval int      `json:"interval,omitempty"`
-	Type     string   `json:"type,omitempty"`
-	Tags     []string `json:"tags"`
+	Interval int `json:"interval,omitempty"`
 	// Common distinguishes metrics which are cross-language vs.
 	// language-specific.
 	//
 	// NOTE: If this field isn't present in the request, the API assumes
 	// the metric is common. So we can't "omitempty" even though the
 	// field is technically optional.
-	Common    bool   `json:"common"`
-	Namespace string `json:"namespace"`
+	Common bool `json:"common"`
 }
 
 // DistributionSeries is a sequence of observations for a distribution metric.

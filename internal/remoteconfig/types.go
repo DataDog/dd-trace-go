@@ -9,12 +9,12 @@ import rc "github.com/DataDog/datadog-agent/pkg/remoteconfig/state"
 
 type clientData struct {
 	State        *clientState  `json:"state,omitempty"`
+	ClientTracer *clientTracer `json:"client_tracer,omitempty"`
 	ID           string        `json:"id,omitempty"`
 	Products     []string      `json:"products,omitempty"`
-	IsTracer     bool          `json:"is_tracer,omitempty"`
-	ClientTracer *clientTracer `json:"client_tracer,omitempty"`
-	LastSeen     uint64        `json:"last_seen,omitempty"`
 	Capabilities []byte        `json:"capabilities,omitempty"`
+	LastSeen     uint64        `json:"last_seen,omitempty"`
+	IsTracer     bool          `json:"is_tracer,omitempty"`
 }
 
 type clientTracer struct {
@@ -34,19 +34,19 @@ type clientAgent struct {
 
 type configState struct {
 	ID         string        `json:"id,omitempty"`
-	Version    uint64        `json:"version,omitempty"`
 	Product    string        `json:"product,omitempty"`
-	ApplyState rc.ApplyState `json:"apply_state,omitempty"`
 	ApplyError string        `json:"apply_error,omitempty"`
+	Version    uint64        `json:"version,omitempty"`
+	ApplyState rc.ApplyState `json:"apply_state,omitempty"`
 }
 
 type clientState struct {
+	Error              string         `json:"error,omitempty"`
+	ConfigStates       []*configState `json:"config_states,omitempty"`
+	BackendClientState []byte         `json:"backend_client_state,omitempty"`
 	RootVersion        uint64         `json:"root_version"`
 	TargetsVersion     uint64         `json:"targets_version"`
-	ConfigStates       []*configState `json:"config_states,omitempty"`
 	HasError           bool           `json:"has_error,omitempty"`
-	Error              string         `json:"error,omitempty"`
-	BackendClientState []byte         `json:"backend_client_state,omitempty"`
 }
 
 type targetFileHash struct {
@@ -56,8 +56,8 @@ type targetFileHash struct {
 
 type targetFileMeta struct {
 	Path   string            `json:"path,omitempty"`
-	Length int64             `json:"length,omitempty"`
 	Hashes []*targetFileHash `json:"hashes,omitempty"`
+	Length int64             `json:"length,omitempty"`
 }
 
 type clientGetConfigsRequest struct {
@@ -78,6 +78,6 @@ type file struct {
 }
 
 type fileMetaState struct {
-	Version uint64 `json:"version,omitempty"`
 	Hash    string `json:"hash,omitempty"`
+	Version uint64 `json:"version,omitempty"`
 }

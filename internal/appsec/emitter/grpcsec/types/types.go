@@ -39,17 +39,18 @@ type (
 
 	// HandlerOperationArgs is the grpc handler arguments.
 	HandlerOperationArgs struct {
-		// Method is the gRPC method name.
-		// Corresponds to the address `grpc.server.method`.
-		Method string
+
+		// ClientIP is the IP address of the client that initiated the gRPC request.
+		// Corresponds to the address `http.client_ip`.
+		ClientIP netip.Addr
 
 		// RPC metadata received by the gRPC handler.
 		// Corresponds to the address `grpc.server.request.metadata`.
 		Metadata map[string][]string
 
-		// ClientIP is the IP address of the client that initiated the gRPC request.
-		// Corresponds to the address `http.client_ip`.
-		ClientIP netip.Addr
+		// Method is the gRPC method name.
+		// Corresponds to the address `grpc.server.method`.
+		Method string
 	}
 
 	// HandlerOperationRes is the grpc handler results. Empty as of today.

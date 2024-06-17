@@ -58,13 +58,13 @@ func pathwayHash(nodeHash, parentHash uint64) uint64 {
 // and the start time of the previous service.
 // This allows us to measure the latency of each edge, as well as the latency from origin of any service.
 type Pathway struct {
-	// hash is the hash of the current node, of the parent node, and of the edge that connects the parent node
-	// to this node.
-	hash uint64
 	// pathwayStart is the start of the first node in the Pathway
 	pathwayStart time.Time
 	// edgeStart is the start of the previous node.
 	edgeStart time.Time
+	// hash is the hash of the current node, of the parent node, and of the edge that connects the parent node
+	// to this node.
+	hash uint64
 }
 
 // Merge merges multiple pathways into one.

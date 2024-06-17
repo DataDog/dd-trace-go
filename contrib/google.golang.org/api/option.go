@@ -13,10 +13,10 @@ import (
 )
 
 type config struct {
-	serviceName              string
 	ctx                      context.Context
-	analyticsRate            float64
+	serviceName              string
 	scopes                   []string
+	analyticsRate            float64
 	endpointMetadataDisabled bool
 }
 

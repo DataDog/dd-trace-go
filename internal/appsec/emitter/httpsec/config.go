@@ -8,13 +8,13 @@ package httpsec
 import "net/http"
 
 type Config struct {
-	// OnBlock is a list of callbacks to be invoked when a block decision is made.
-	OnBlock []func()
 	// ResponseHeaderCopier provides a way to access response headers for reading
 	// purposes (the value may be provided by copy). This allows customers to
 	// apply synchronization if they allow http.ResponseWriter objects to be
 	// accessed by multiple goroutines.
 	ResponseHeaderCopier func(http.ResponseWriter) http.Header
+	// OnBlock is a list of callbacks to be invoked when a block decision is made.
+	OnBlock []func()
 }
 
 var defaultWrapHandlerConfig = &Config{

@@ -41,22 +41,22 @@ import (
 // • https://github.com/DataDog/dd-trace-go/pull/549
 // • https://github.com/DataDog/dd-trace-go/pull/976
 type payload struct {
+
+	// reader is used for reading the contents of buf.
+	reader *bytes.Reader
 	// header specifies the first few bytes in the msgpack stream
 	// indicating the type of array (fixarray, array16 or array32)
 	// and the number of items contained in the stream.
 	header []byte
+
+	// buf holds the sequence of msgpack-encoded items.
+	buf bytes.Buffer
 
 	// off specifies the current read position on the header.
 	off int
 
 	// count specifies the number of items in the stream.
 	count uint32
-
-	// buf holds the sequence of msgpack-encoded items.
-	buf bytes.Buffer
-
-	// reader is used for reading the contents of buf.
-	reader *bytes.Reader
 }
 
 var _ io.Reader = (*payload)(nil)

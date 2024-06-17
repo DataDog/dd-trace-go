@@ -15,14 +15,14 @@ import (
 var _ ddtrace.SpanContext = (*spanContext)(nil)
 
 type spanContext struct {
-	sync.RWMutex // guards below fields
-	baggage      map[string]string
-	priority     int
-	hasPriority  bool
+	baggage  map[string]string
+	span     *mockspan // context owner
+	priority int
 
-	spanID  uint64
-	traceID uint64
-	span    *mockspan // context owner
+	spanID       uint64
+	traceID      uint64
+	sync.RWMutex // guards below fields
+	hasPriority  bool
 }
 
 func (sc *spanContext) TraceID() uint64 { return sc.traceID }

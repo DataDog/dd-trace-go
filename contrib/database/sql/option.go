@@ -21,17 +21,17 @@ import (
 )
 
 type config struct {
-	serviceName        string
-	spanName           string
-	analyticsRate      float64
-	dsn                string
+	statsdClient       internal.StatsdClient
 	ignoreQueryTypes   map[QueryType]struct{}
-	childSpansOnly     bool
 	errCheck           func(err error) bool
 	tags               map[string]interface{}
+	serviceName        string
+	spanName           string
+	dsn                string
 	dbmPropagationMode tracer.DBMPropagationMode
+	analyticsRate      float64
+	childSpansOnly     bool
 	dbStats            bool
-	statsdClient       internal.StatsdClient
 }
 
 // checkStatsdRequired adds a statsdclient onto the config if dbstats is enabled

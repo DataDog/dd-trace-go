@@ -22,9 +22,9 @@ import (
 
 type serverStream struct {
 	grpc.ServerStream
+	ctx    context.Context
 	cfg    *config
 	method string
-	ctx    context.Context
 }
 
 // Context returns the ServerStream Context.

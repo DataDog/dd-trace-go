@@ -39,9 +39,9 @@ type spanKey struct {
 }
 
 type monitor struct {
-	sync.Mutex
 	spans map[spanKey]ddtrace.Span
 	cfg   *config
+	sync.Mutex
 }
 
 func (m *monitor) Started(ctx context.Context, evt *event.CommandStartedEvent) {

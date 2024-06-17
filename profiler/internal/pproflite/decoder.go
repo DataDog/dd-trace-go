@@ -50,21 +50,22 @@ func NewDecoder(input []byte) *Decoder {
 
 // Decoder ...
 type Decoder struct {
-	decoders []decoder
-	input    []byte
+	sample       Sample       // 2
+	locationFast LocationFast // 4
+	decoders     []decoder
+	input        []byte
+
+	stringTable StringTable // 6
+	location    Location    // 4
+	mapping     Mapping     // 3
+	function    Function    // 5
 
 	sampleType        SampleType        // 1
-	sample            Sample            // 2
-	mapping           Mapping           // 3
-	location          Location          // 4
-	locationFast      LocationFast      // 4
-	function          Function          // 5
-	stringTable       StringTable       // 6
+	periodType        PeriodType        // 11
 	dropFrames        DropFrames        // 7
 	keepFrames        KeepFrames        // 8
 	timeNanos         TimeNanos         // 9
 	durationNanos     DurationNanos     // 10
-	periodType        PeriodType        // 11
 	period            Period            // 12
 	comment           Comment           // 13
 	defaultSampleType DefaultSampleType // 14

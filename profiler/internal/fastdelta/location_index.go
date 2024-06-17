@@ -8,8 +8,8 @@ package fastdelta
 // locationIndex links location IDs to the addresses, mappings, and function
 // IDs referenced by the location
 type locationIndex struct {
-	fastTable []location
 	slowTable map[uint64]location
+	fastTable []location
 }
 
 type location struct {

@@ -72,9 +72,9 @@ func Publish(ctx context.Context, t *pubsub.Topic, msg *pubsub.Message, opts ...
 
 // PublishResult wraps *pubsub.PublishResult
 type PublishResult struct {
+	span tracer.Span
 	*pubsub.PublishResult
 	once sync.Once
-	span tracer.Span
 }
 
 // Get wraps (pubsub.PublishResult).Get(ctx). When this function returns the publish

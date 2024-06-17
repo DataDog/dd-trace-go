@@ -18,10 +18,10 @@ import (
 const defaultServiceName = "http.router"
 
 type routerConfig struct {
+	headerTags    *internal.LockMap
 	serviceName   string
 	spanOpts      []ddtrace.StartSpanOption
 	analyticsRate float64
-	headerTags    *internal.LockMap
 }
 
 // RouterOption represents an option that can be passed to New.

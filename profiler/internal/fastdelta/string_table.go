@@ -10,12 +10,12 @@ import (
 )
 
 type stringTable struct {
+	hash hash.Hash
+	h    []Hash
 	// Passing a byte slice to hash.Hash causes it to escape to the heap, so
 	// we keep around a single Hash to reuse to avoid a new allocation every
 	// time we add an element to the string table
 	reuse Hash
-	h     []Hash
-	hash  hash.Hash
 }
 
 func newStringTable(h hash.Hash) *stringTable {

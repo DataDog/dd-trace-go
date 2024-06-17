@@ -23,40 +23,40 @@ import (
 
 // startupInfo contains various information about the status of the tracer on startup.
 type startupInfo struct {
-	Date                        string                       `json:"date"`                           // ISO 8601 date and time of start
-	OSName                      string                       `json:"os_name"`                        // Windows, Darwin, Debian, etc.
-	OSVersion                   string                       `json:"os_version"`                     // Version of the OS
-	Version                     string                       `json:"version"`                        // Tracer version
-	Lang                        string                       `json:"lang"`                           // "Go"
-	LangVersion                 string                       `json:"lang_version"`                   // Go version, e.g. go1.13
-	Env                         string                       `json:"env"`                            // Tracer env
-	Service                     string                       `json:"service"`                        // Tracer Service
-	AgentURL                    string                       `json:"agent_url"`                      // The address of the agent
-	AgentError                  string                       `json:"agent_error"`                    // Any error that occurred trying to connect to agent
+	AgentFeatures               agentFeatures                `json:"agent_features"`       // Lists the capabilities of the agent.
+	Orchestrion                 orchestrionConfig            `json:"orchestrion"`          // Orchestrion (auto-instrumentation) configuration.
+	ServiceMappings             map[string]string            `json:"service_mappings"`     // Service Mappings
+	Tags                        map[string]string            `json:"tags"`                 // Global tags
+	Integrations                map[string]integrationConfig `json:"integrations"`         // Available tracer integrations
+	Date                        string                       `json:"date"`                 // ISO 8601 date and time of start
+	OSName                      string                       `json:"os_name"`              // Windows, Darwin, Debian, etc.
+	OSVersion                   string                       `json:"os_version"`           // Version of the OS
+	Version                     string                       `json:"version"`              // Tracer version
+	Lang                        string                       `json:"lang"`                 // "Go"
+	LangVersion                 string                       `json:"lang_version"`         // Go version, e.g. go1.13
+	Env                         string                       `json:"env"`                  // Tracer env
+	Service                     string                       `json:"service"`              // Tracer Service
+	AgentURL                    string                       `json:"agent_url"`            // The address of the agent
+	AgentError                  string                       `json:"agent_error"`          // Any error that occurred trying to connect to agent
+	SampleRate                  string                       `json:"sample_rate"`          // The default sampling rate for the rules sampler
+	SampleRateLimit             string                       `json:"sample_rate_limit"`    // The rate limit configured with the rules sampler
+	SamplingRulesError          string                       `json:"sampling_rules_error"` // Any errors that occurred while parsing sampling rules
+	ApplicationVersion          string                       `json:"dd_version"`           // Version of the user's application
+	Architecture                string                       `json:"architecture"`         // Architecture of host machine
+	GlobalService               string                       `json:"global_service"`       // Global service string. If not-nil should be same as Service. (#614)
+	LambdaMode                  string                       `json:"lambda_mode"`          // Whether the client has enabled lambda mode
+	TraceSamplingRules          []SamplingRule               `json:"trace_sampling_rules"` // Trace rules used by the rules sampler
+	SpanSamplingRules           []SamplingRule               `json:"span_sampling_rules"`  // Span rules used by the rules sampler
+	FeatureFlags                []string                     `json:"feature_flags"`
+	PartialFlushMinSpans        int                          `json:"partial_flush_min_spans"`        // The min number of spans to trigger a partial flush
 	Debug                       bool                         `json:"debug"`                          // Whether debug mode is enabled
 	AnalyticsEnabled            bool                         `json:"analytics_enabled"`              // True if there is a global analytics rate set
-	SampleRate                  string                       `json:"sample_rate"`                    // The default sampling rate for the rules sampler
-	SampleRateLimit             string                       `json:"sample_rate_limit"`              // The rate limit configured with the rules sampler
-	TraceSamplingRules          []SamplingRule               `json:"trace_sampling_rules"`           // Trace rules used by the rules sampler
-	SpanSamplingRules           []SamplingRule               `json:"span_sampling_rules"`            // Span rules used by the rules sampler
-	SamplingRulesError          string                       `json:"sampling_rules_error"`           // Any errors that occurred while parsing sampling rules
-	ServiceMappings             map[string]string            `json:"service_mappings"`               // Service Mappings
-	Tags                        map[string]string            `json:"tags"`                           // Global tags
 	RuntimeMetricsEnabled       bool                         `json:"runtime_metrics_enabled"`        // Whether runtime metrics are enabled
 	HealthMetricsEnabled        bool                         `json:"health_metrics_enabled"`         // Whether health metrics are enabled
 	ProfilerCodeHotspotsEnabled bool                         `json:"profiler_code_hotspots_enabled"` // Whether profiler code hotspots are enabled
 	ProfilerEndpointsEnabled    bool                         `json:"profiler_endpoints_enabled"`     // Whether profiler endpoints are enabled
-	ApplicationVersion          string                       `json:"dd_version"`                     // Version of the user's application
-	Architecture                string                       `json:"architecture"`                   // Architecture of host machine
-	GlobalService               string                       `json:"global_service"`                 // Global service string. If not-nil should be same as Service. (#614)
-	LambdaMode                  string                       `json:"lambda_mode"`                    // Whether the client has enabled lambda mode
 	AppSec                      bool                         `json:"appsec"`                         // AppSec status: true when started, false otherwise.
-	AgentFeatures               agentFeatures                `json:"agent_features"`                 // Lists the capabilities of the agent.
-	Integrations                map[string]integrationConfig `json:"integrations"`                   // Available tracer integrations
 	PartialFlushEnabled         bool                         `json:"partial_flush_enabled"`          // Whether Partial Flushing is enabled
-	PartialFlushMinSpans        int                          `json:"partial_flush_min_spans"`        // The min number of spans to trigger a partial flush
-	Orchestrion                 orchestrionConfig            `json:"orchestrion"`                    // Orchestrion (auto-instrumentation) configuration.
-	FeatureFlags                []string                     `json:"feature_flags"`
 }
 
 // checkEndpoint tries to connect to the URL specified by endpoint.

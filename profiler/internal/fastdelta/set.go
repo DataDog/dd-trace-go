@@ -33,8 +33,8 @@ func (s *SparseIntSet) Contains(i int) bool {
 
 // DenseIntSet ...
 type DenseIntSet struct {
-	index   int
 	members []uint64
+	index   int
 }
 
 // Reset ...

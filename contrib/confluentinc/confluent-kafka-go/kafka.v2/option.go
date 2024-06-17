@@ -21,14 +21,14 @@ const defaultServiceName = "kafka"
 
 type config struct {
 	ctx                 context.Context
+	tagFns              map[string]func(msg *kafka.Message) interface{}
 	consumerServiceName string
 	producerServiceName string
 	consumerSpanName    string
 	producerSpanName    string
-	analyticsRate       float64
 	bootstrapServers    string
 	groupID             string
-	tagFns              map[string]func(msg *kafka.Message) interface{}
+	analyticsRate       float64
 	dataStreamsEnabled  bool
 }
 

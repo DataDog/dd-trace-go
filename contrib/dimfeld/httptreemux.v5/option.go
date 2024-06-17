@@ -18,9 +18,9 @@ import (
 const defaultServiceName = "http.router"
 
 type routerConfig struct {
+	resourceNamer func(*httptreemux.TreeMux, http.ResponseWriter, *http.Request) string
 	serviceName   string
 	spanOpts      []ddtrace.StartSpanOption
-	resourceNamer func(*httptreemux.TreeMux, http.ResponseWriter, *http.Request) string
 }
 
 // RouterOption represents an option that can be passed to New.

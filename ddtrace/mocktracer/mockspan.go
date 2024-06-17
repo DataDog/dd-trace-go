@@ -97,17 +97,17 @@ func newSpan(t *mocktracer, operationName string, cfg *ddtrace.StartSpanConfig) 
 }
 
 type mockspan struct {
-	sync.RWMutex // guards below fields
-	name         string
-	tags         map[string]interface{}
-	finishTime   time.Time
-	finished     bool
+	finishTime time.Time
 
-	startTime time.Time
-	parentID  uint64
-	context   *spanContext
-	tracer    *mocktracer
-	links     []ddtrace.SpanLink
+	startTime    time.Time
+	tags         map[string]interface{}
+	context      *spanContext
+	tracer       *mocktracer
+	name         string
+	links        []ddtrace.SpanLink
+	parentID     uint64
+	sync.RWMutex // guards below fields
+	finished     bool
 }
 
 // SetTag sets a given tag on the span.

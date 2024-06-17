@@ -22,14 +22,14 @@ const (
 
 // ClientConfig contains the required values to configure a remoteconfig client
 type ClientConfig struct {
+	// HTTP is the HTTP client used to receive config updates
+	HTTP *http.Client
 	// The address at which the agent is listening for remoteconfig update requests on
 	AgentURL string
 	// The semantic version of the user's application
 	AppVersion string
 	// The env this tracer is running in
 	Env string
-	// The time interval between two client polls to the agent for updates
-	PollInterval time.Duration
 	// The tracer's runtime id
 	RuntimeID string
 	// The name of the user's application
@@ -38,8 +38,8 @@ type ClientConfig struct {
 	TracerVersion string
 	// The base TUF root metadata file
 	TUFRoot string
-	// HTTP is the HTTP client used to receive config updates
-	HTTP *http.Client
+	// The time interval between two client polls to the agent for updates
+	PollInterval time.Duration
 }
 
 // DefaultClientConfig returns the default remote config client configuration

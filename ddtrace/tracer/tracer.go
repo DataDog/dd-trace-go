@@ -45,15 +45,19 @@ var _ ddtrace.Tracer = (*tracer)(nil)
 // channels. It additionally holds two buffers which accumulates error and trace
 // queues to be processed by the payload encoder.
 type tracer struct {
+
+	// traceWriter is responsible for sending finished traces to their
+	// destination, such as the Trace Agent or Datadog Forwarder.
+	traceWriter traceWriter
+
+	// statsd is used for tracking metrics associated with the runtime and the tracer.
+	statsd globalinternal.StatsdClient
+
 	config *config
 
 	// stats specifies the concentrator used to compute statistics, when client-side
 	// stats are enabled.
 	stats *concentrator
-
-	// traceWriter is responsible for sending finished traces to their
-	// destination, such as the Trace Agent or Datadog Forwarder.
-	traceWriter traceWriter
 
 	// out receives chunk with spans to be added to the payload.
 	out chan *chunk
@@ -65,27 +69,8 @@ type tracer struct {
 	// stop causes the tracer to shut down when closed.
 	stop chan struct{}
 
-	// stopOnce ensures the tracer is stopped exactly once.
-	stopOnce sync.Once
-
-	// wg waits for all goroutines to exit when stopping.
-	wg sync.WaitGroup
-
 	// prioritySampling holds an instance of the priority sampler.
 	prioritySampling *prioritySampler
-
-	// pid of the process
-	pid int
-
-	// These integers track metrics about spans and traces as they are started,
-	// finished, and dropped
-	spansStarted, spansFinished, tracesDropped uint32
-
-	// Records the number of dropped P0 traces and spans.
-	droppedP0Traces, droppedP0Spans uint32
-
-	// partialTrace the number of partially dropped traces.
-	partialTraces uint32
 
 	// rulesSampling holds an instance of the rules sampler used to apply either trace sampling,
 	// or single span sampling rules on spans. These are user-defined
@@ -97,15 +82,31 @@ type tracer struct {
 	// obfuscator may be nil if disabled.
 	obfuscator *obfuscate.Obfuscator
 
-	// statsd is used for tracking metrics associated with the runtime and the tracer.
-	statsd globalinternal.StatsdClient
-
 	// dataStreams processes data streams monitoring information
 	dataStreams *datastreams.Processor
 
 	// abandonedSpansDebugger specifies where and how potentially abandoned spans are stored
 	// when abandoned spans debugging is enabled.
 	abandonedSpansDebugger *abandonedSpansDebugger
+
+	// wg waits for all goroutines to exit when stopping.
+	wg sync.WaitGroup
+
+	// pid of the process
+	pid int
+
+	// stopOnce ensures the tracer is stopped exactly once.
+	stopOnce sync.Once
+
+	// These integers track metrics about spans and traces as they are started,
+	// finished, and dropped
+	spansStarted, spansFinished, tracesDropped uint32
+
+	// Records the number of dropped P0 traces and spans.
+	droppedP0Traces, droppedP0Spans uint32
+
+	// partialTrace the number of partially dropped traces.
+	partialTraces uint32
 }
 
 const (

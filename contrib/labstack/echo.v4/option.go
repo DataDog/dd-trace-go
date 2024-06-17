@@ -20,15 +20,15 @@ import (
 const defaultServiceName = "echo"
 
 type config struct {
-	serviceName       string
-	analyticsRate     float64
-	noDebugStack      bool
 	ignoreRequestFunc IgnoreRequestFunc
 	isStatusError     func(statusCode int) bool
 	translateError    func(err error) (*echo.HTTPError, bool)
 	headerTags        *internal.LockMap
 	errCheck          func(error) bool
 	tags              map[string]interface{}
+	serviceName       string
+	analyticsRate     float64
+	noDebugStack      bool
 }
 
 // Option represents an option that can be passed to Middleware.

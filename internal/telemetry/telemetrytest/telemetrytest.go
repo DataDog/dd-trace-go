@@ -17,14 +17,14 @@ import (
 // MockClient implements Client and is used for testing purposes outside the telemetry package,
 // e.g. the tracer and profiler.
 type MockClient struct {
+	Metrics map[telemetry.Namespace]map[string]float64
 	mock.Mock
-	mu              sync.Mutex
-	Started         bool
 	Configuration   []telemetry.Configuration
 	Integrations    []string
+	mu              sync.Mutex
+	Started         bool
 	ProfilerEnabled bool
 	AsmEnabled      bool
-	Metrics         map[telemetry.Namespace]map[string]float64
 }
 
 func (c *MockClient) RegisterAppConfig(name string, val interface{}, origin telemetry.Origin) {

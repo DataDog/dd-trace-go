@@ -21,13 +21,13 @@ import (
 const defaultServiceName = "http.router"
 
 type config struct {
-	serviceName   string
-	analyticsRate float64
-	spanOpts      []ddtrace.StartSpanOption
-	finishOpts    []ddtrace.FinishOption
 	ignoreRequest func(*http.Request) bool
 	resourceNamer func(*http.Request) string
 	headerTags    *internal.LockMap
+	serviceName   string
+	spanOpts      []ddtrace.StartSpanOption
+	finishOpts    []ddtrace.FinishOption
+	analyticsRate float64
 }
 
 // MuxOption has been deprecated in favor of Option.
@@ -138,14 +138,14 @@ type RoundTripperAfterFunc func(*http.Response, ddtrace.Span)
 type roundTripperConfig struct {
 	before        RoundTripperBeforeFunc
 	after         RoundTripperAfterFunc
-	analyticsRate float64
-	serviceName   string
 	resourceNamer func(req *http.Request) string
 	spanNamer     func(req *http.Request) string
 	ignoreRequest func(*http.Request) bool
-	spanOpts      []ddtrace.StartSpanOption
-	propagation   bool
 	errCheck      func(err error) bool
+	serviceName   string
+	spanOpts      []ddtrace.StartSpanOption
+	analyticsRate float64
+	propagation   bool
 }
 
 func newRoundTripperConfig() *roundTripperConfig {

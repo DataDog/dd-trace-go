@@ -61,10 +61,10 @@ func setCached(now time.Time, newHostname string, newProvider string) {
 }
 
 type provider struct {
+	pf   providerFetch
 	name string
 	// Should we stop going down the list of providers if this one is successful
 	stopIfSuccessful bool
-	pf               providerFetch
 }
 
 type providerFetch func(ctx context.Context, currentHostname string) (string, error)

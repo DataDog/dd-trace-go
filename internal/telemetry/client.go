@@ -97,22 +97,6 @@ func init() {
 // caller since telemetry should not disrupt an application. Metrics are
 // aggregated by the Client.
 type client struct {
-	// URL for the Datadog agent or Datadog telemetry endpoint
-	URL string
-	// APIKey should be supplied if the endpoint is not a Datadog agent,
-	// i.e. you are sending telemetry directly to Datadog
-	APIKey string
-	// The interval for sending a heartbeat signal to the backend.
-	// Configurable with DD_TELEMETRY_HEARTBEAT_INTERVAL. Default 60s.
-	heartbeatInterval time.Duration
-
-	// e.g. "tracers", "profilers", "appsec"
-	Namespace Namespace
-
-	// App-specific information
-	Service string
-	Env     string
-	Version string
 
 	// Client will be used for telemetry uploads. This http.Client, if
 	// provided, should be the same as would be used for any other
@@ -124,6 +108,39 @@ type client struct {
 	// http.DefaultTransport and a 5 second timeout will be used.
 	Client *http.Client
 
+	// heartbeatT is used to schedule heartbeat messages
+	heartbeatT *time.Timer
+	// metrics holds un-sent metrics that will be aggregated the next time
+	// metrics are sent
+	metrics map[Namespace]map[string]*metric
+	// URL for the Datadog agent or Datadog telemetry endpoint
+	URL string
+	// APIKey should be supplied if the endpoint is not a Datadog agent,
+	// i.e. you are sending telemetry directly to Datadog
+	APIKey string
+
+	// e.g. "tracers", "profilers", "appsec"
+	Namespace Namespace
+
+	// App-specific information
+	Service string
+	Env     string
+	Version string
+
+	// requests hold all messages which don't need to be immediately sent
+	requests []*Request
+
+	// Globally registered application configuration sent in the app-started request, along with the locally-defined
+	// configuration of the  event.
+	globalAppConfig []Configuration
+	// The interval for sending a heartbeat signal to the backend.
+	// Configurable with DD_TELEMETRY_HEARTBEAT_INTERVAL. Default 60s.
+	heartbeatInterval time.Duration
+
+	// seqID is a sequence number used to order telemetry messages by
+	// the back end.
+	seqID int64
+
 	// mu guards all of the following fields
 	mu sync.Mutex
 
@@ -133,22 +150,8 @@ type client struct {
 	debug bool
 	// started is true in between when Start() returns and the next call to
 	// Stop()
-	started bool
-	// seqID is a sequence number used to order telemetry messages by
-	// the back end.
-	seqID int64
-	// heartbeatT is used to schedule heartbeat messages
-	heartbeatT *time.Timer
-	// requests hold all messages which don't need to be immediately sent
-	requests []*Request
-	// metrics holds un-sent metrics that will be aggregated the next time
-	// metrics are sent
-	metrics    map[Namespace]map[string]*metric
+	started    bool
 	newMetrics bool
-
-	// Globally registered application configuration sent in the app-started request, along with the locally-defined
-	// configuration of the  event.
-	globalAppConfig []Configuration
 }
 
 func log(msg string, args ...interface{}) {
@@ -317,10 +320,10 @@ var (
 type metric struct {
 	name  string
 	kind  MetricKind
+	tags  []string
 	value float64
 	// Unix timestamp
 	ts     float64
-	tags   []string
 	common bool
 }
 

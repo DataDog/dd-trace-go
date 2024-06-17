@@ -48,7 +48,6 @@ type combinedSampleValue struct {
 
 // DeltaMap ...
 type DeltaMap struct {
-	h  Hasher
 	m  map[Hash]combinedSampleValue
 	st *stringTable
 	// fields are the name and types of the values in a sample for which we should
@@ -58,6 +57,7 @@ type DeltaMap struct {
 	// valueTypeIndices are string table indices of the sample value type names
 	// (e.g.  "alloc_space", "cycles"...) and their types ("count", "bytes")
 	valueTypeIndices [][2]int
+	h                Hasher
 }
 
 // Reset ...

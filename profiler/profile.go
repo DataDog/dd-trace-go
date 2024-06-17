@@ -59,8 +59,9 @@ const (
 
 // profileType holds the implementation details of a ProfileType.
 type profileType struct {
-	// Type gets populated automatically by ProfileType.lookup().
-	Type ProfileType
+	// Collect collects the given profile and returns the data for it. Most
+	// profiles will be in pprof format, i.e. gzip compressed proto buf data.
+	Collect func(p *profiler) ([]byte, error)
 	// Name specifies the profile name as used with pprof.Lookup(name) (in
 	// collectGenericProfile) and returned by ProfileType.String(). For profile
 	// types that don't use this approach (e.g. CPU) the name isn't used for
@@ -72,13 +73,12 @@ type profileType struct {
 	// this isn't done due to idiosyncratic filename used by the
 	// GoroutineProfile.
 	Filename string
-	// Collect collects the given profile and returns the data for it. Most
-	// profiles will be in pprof format, i.e. gzip compressed proto buf data.
-	Collect func(p *profiler) ([]byte, error)
 	// DeltaValues identifies which values in profile samples should be modified
 	// when delta profiling is enabled. Empty DeltaValues means delta profiling is
 	// not supported for this profile type
 	DeltaValues []pprofutils.ValueType
+	// Type gets populated automatically by ProfileType.lookup().
+	Type ProfileType
 }
 
 // profileTypes maps every ProfileType to its implementation.
@@ -226,11 +226,11 @@ func traceLogCPUProfileRate(cpuProfileRate int) {
 const defaultExecutionTraceSizeLimit = 5 * 1024 * 1024
 
 type limitedTraceCollector struct {
-	w       io.Writer
+	w io.Writer
+	// done is closed to signal that the limit has been exceeded
+	done    chan struct{}
 	limit   int64
 	written int64
-	// done is closed to signal that the limit has been exceeded
-	done chan struct{}
 }
 
 func newLimitedTraceCollector(w io.Writer, limit int64) *limitedTraceCollector {
@@ -315,24 +315,24 @@ func (t ProfileType) Tag() string {
 type profile struct {
 	// name indicates profile type and format (e.g. cpu.pprof, metrics.json)
 	name string
-	pt   ProfileType
 	data []byte
+	pt   ProfileType
 }
 
 // batch is a collection of profiles of different types, collected at roughly the same time. It maps
 // to what the Datadog UI calls a profile.
 type batch struct {
-	seq            uint64 // seq is the value of the profile_seq tag
 	start, end     time.Time
+	endpointCounts map[string]uint64
 	host           string
 	profiles       []*profile
-	endpointCounts map[string]uint64
 	// extraTags are tags which might vary depending on which profile types
 	// actually run in a given profiling cycle
 	extraTags []string
 	// customAttributes are pprof label keys which should be available as
 	// attributes for filtering profiles in our UI
 	customAttributes []string
+	seq              uint64 // seq is the value of the profile_seq tag
 }
 
 func (b *batch) addProfile(p *profile) {
@@ -359,9 +359,9 @@ func (p *profiler) runProfile(pt ProfileType) ([]*profile, error) {
 
 type fastDeltaProfiler struct {
 	dc  *fastdelta.DeltaComputer
-	buf bytes.Buffer
-	gzr gzip.Reader
 	gzw *gzip.Writer
+	gzr gzip.Reader
+	buf bytes.Buffer
 }
 
 func newFastDeltaProfiler(v ...pprofutils.ValueType) *fastDeltaProfiler {

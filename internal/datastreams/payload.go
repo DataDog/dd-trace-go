@@ -13,14 +13,14 @@ type StatsPayload struct {
 	Env string
 	// Service is the service of the application
 	Service string
-	// Stats holds all stats buckets computed within this payload.
-	Stats []StatsBucket
 	// TracerVersion is the version of the tracer
 	TracerVersion string
 	// Lang is the language of the tracer
 	Lang string
 	// Version is the version of the service
 	Version string
+	// Stats holds all stats buckets computed within this payload.
+	Stats []StatsBucket
 }
 
 type ProduceOffset struct {
@@ -46,14 +46,14 @@ type Backlog struct {
 
 // StatsBucket specifies a set of stats computed over a duration.
 type StatsBucket struct {
-	// Start specifies the beginning of this bucket in unix nanoseconds.
-	Start uint64
-	// Duration specifies the duration of this bucket in nanoseconds.
-	Duration uint64
 	// Stats contains a set of statistics computed for the duration of this bucket.
 	Stats []StatsPoint
 	// Backlogs store information used to compute queue backlog
 	Backlogs []Backlog
+	// Start specifies the beginning of this bucket in unix nanoseconds.
+	Start uint64
+	// Duration specifies the duration of this bucket in nanoseconds.
+	Duration uint64
 }
 
 // TimestampType can be either current or origin.
@@ -71,14 +71,14 @@ const (
 // StatsPoint contains a set of statistics grouped under various aggregation keys.
 type StatsPoint struct {
 	// These fields indicate the properties under which the stats were aggregated.
-	Service    string // deprecated
-	EdgeTags   []string
-	Hash       uint64
-	ParentHash uint64
+	Service       string // deprecated
+	TimestampType TimestampType
+	EdgeTags      []string
 	// These fields specify the stats for the above aggregation.
 	// those are distributions of latency in seconds.
 	PathwayLatency []byte
 	EdgeLatency    []byte
 	PayloadSize    []byte
-	TimestampType  TimestampType
+	Hash           uint64
+	ParentHash     uint64
 }

@@ -21,10 +21,10 @@ type (
 	// and the `Edits` fragments each represent a remote configuration update that affects the rules.
 	// `BasePath` is either empty if the local Base rules are used, or holds the path of the ASM_DD config.
 	RulesManager struct {
+		Edits    map[string]RulesFragment
+		BasePath string
 		Latest   RulesFragment
 		Base     RulesFragment
-		BasePath string
-		Edits    map[string]RulesFragment
 	}
 	// RulesFragment can represent a full ruleset or a fragment of it.
 	RulesFragment struct {

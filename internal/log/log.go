@@ -209,9 +209,9 @@ func (d DiscardLogger) Log(_ string) {}
 
 // RecordLogger records every call to Log() and makes it available via Logs().
 type RecordLogger struct {
-	m      sync.Mutex
 	logs   []string
 	ignore []string // a log is ignored if it contains a string in ignored
+	m      sync.Mutex
 }
 
 // Ignore adds substrings to the ignore field of RecordLogger, allowing

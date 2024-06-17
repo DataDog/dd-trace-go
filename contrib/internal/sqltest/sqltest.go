@@ -304,10 +304,10 @@ func verifyConnectSpan(span mocktracer.Span, assert *assert.Assertions, cfg *Con
 
 // Config holds the test configuration.
 type Config struct {
-	*sql.DB
 	mockTracer mocktracer.Tracer
+	*sql.DB
+	ExpectTags map[string]interface{}
 	DriverName string
 	TableName  string
 	ExpectName string
-	ExpectTags map[string]interface{}
 }

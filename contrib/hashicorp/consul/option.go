@@ -22,8 +22,8 @@ const (
 type clientConfig struct {
 	serviceName   string
 	spanName      string
-	analyticsRate float64
 	hostname      string
+	analyticsRate float64
 }
 
 // ClientOption represents an option that can be used to create or wrap a client.

@@ -17,9 +17,9 @@ import (
 // otelDDEnv contains env vars from both dd (DD) and ot (OTEL) that map to the same tracer configuration
 // remapper contains functionality to remap OTEL values to DD values
 type otelDDEnv struct {
+	remapper func(string) (string, error)
 	dd       string
 	ot       string
-	remapper func(string) (string, error)
 }
 
 var otelDDConfigs = map[string]*otelDDEnv{

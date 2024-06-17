@@ -15,8 +15,8 @@ const (
 )
 
 type hashCache struct {
-	mu sync.RWMutex
 	m  map[string]uint64
+	mu sync.RWMutex
 }
 
 func getHashKey(edgeTags []string, parentHash uint64) string {

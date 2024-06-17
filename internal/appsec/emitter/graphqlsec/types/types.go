@@ -19,9 +19,9 @@ type (
 
 	// RequestOperationArgs describes arguments passed to a GraphQL request.
 	RequestOperationArgs struct {
+		Variables     map[string]any // The user-provided variables object for this request
 		RawQuery      string         // The raw, not-yet-parsed GraphQL query
 		OperationName string         // The user-provided operation name for the query
-		Variables     map[string]any // The user-provided variables object for this request
 	}
 
 	RequestOperationRes struct {
@@ -84,12 +84,12 @@ type (
 
 	// ResolveOperationArgs describes arguments passed to a GraphQL field operation.
 	ResolveOperationArgs struct {
+		// Arguments is the arguments provided to the field resolver
+		Arguments map[string]any
 		// TypeName is the name of the field's type
 		TypeName string
 		// FieldName is the name of the field
 		FieldName string
-		// Arguments is the arguments provided to the field resolver
-		Arguments map[string]any
 		// Trivial determines whether the resolution is trivial or not. Leave as false if undetermined.
 		Trivial bool
 	}

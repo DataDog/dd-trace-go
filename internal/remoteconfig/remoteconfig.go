@@ -92,25 +92,26 @@ type ProductUpdate map[string][]byte
 // A Client interacts with an Agent to update and track the state of remote
 // configuration
 type Client struct {
-	sync.RWMutex
 	ClientConfig
 
-	clientID   string
-	endpoint   string
+	lastError  error
 	repository *rc.Repository
 	stop       chan struct{}
 
-	// When acquiring several locks and using defer to release them, make sure to acquire the locks in the following order:
-	callbacks               []Callback
-	_callbacksMu            sync.RWMutex
-	products                map[string]struct{}
-	productsMu              sync.RWMutex
-	productsWithCallbacks   map[string]ProductCallback
-	productsWithCallbacksMu sync.RWMutex
-	capabilities            map[Capability]struct{}
-	capabilitiesMu          sync.RWMutex
+	products              map[string]struct{}
+	productsWithCallbacks map[string]ProductCallback
+	capabilities          map[Capability]struct{}
 
-	lastError error
+	clientID string
+	endpoint string
+
+	// When acquiring several locks and using defer to release them, make sure to acquire the locks in the following order:
+	callbacks []Callback
+	sync.RWMutex
+	_callbacksMu            sync.RWMutex
+	productsMu              sync.RWMutex
+	productsWithCallbacksMu sync.RWMutex
+	capabilitiesMu          sync.RWMutex
 }
 
 // client is a RC client singleton that can be accessed by multiple products (tracing, ASM, profiling etc.).

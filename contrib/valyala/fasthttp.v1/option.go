@@ -14,12 +14,12 @@ import (
 const defaultServiceName = "fasthttp"
 
 type config struct {
-	serviceName   string
-	spanName      string
-	spanOpts      []ddtrace.StartSpanOption
 	isStatusError func(int) bool
 	resourceNamer func(*fasthttp.RequestCtx) string
 	ignoreRequest func(*fasthttp.RequestCtx) bool
+	serviceName   string
+	spanName      string
+	spanOpts      []ddtrace.StartSpanOption
 }
 
 type Option func(*config)

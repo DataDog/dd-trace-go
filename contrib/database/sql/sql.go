@@ -137,8 +137,8 @@ func unregister(name string) {
 
 type tracedConnector struct {
 	connector  driver.Connector
-	driverName string
 	cfg        *config
+	driverName string
 }
 
 func (t *tracedConnector) Connect(ctx context.Context) (driver.Conn, error) {
@@ -173,8 +173,8 @@ func (t *tracedConnector) Driver() driver.Driver {
 
 // from Go stdlib implementation of sql.Open
 type dsnConnector struct {
-	dsn    string
 	driver driver.Driver
+	dsn    string
 }
 
 func (t dsnConnector) Connect(_ context.Context) (driver.Conn, error) {

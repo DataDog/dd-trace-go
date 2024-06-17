@@ -20,12 +20,12 @@ import (
 const defaultServiceName = "negroni.router"
 
 type config struct {
-	serviceName   string
-	spanOpts      []ddtrace.StartSpanOption // additional span options to be applied
-	analyticsRate float64
 	isStatusError func(statusCode int) bool
 	resourceNamer func(r *http.Request) string
 	headerTags    *internal.LockMap
+	serviceName   string
+	spanOpts      []ddtrace.StartSpanOption // additional span options to be applied
+	analyticsRate float64
 }
 
 // Option represents an option that can be passed to NewRouter.

@@ -15,11 +15,11 @@ import (
 const defaultServiceName = "redis.client"
 
 type clientConfig struct {
+	errCheck      func(err error) bool
 	serviceName   string
 	spanName      string
 	analyticsRate float64
 	skipRaw       bool
-	errCheck      func(err error) bool
 }
 
 // ClientOption represents an option that can be used to create or wrap a client.

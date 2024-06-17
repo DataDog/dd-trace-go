@@ -112,6 +112,16 @@ type SamplingRule struct {
 	// Name specifies the regex pattern that a span operation name must match.
 	Name *regexp.Regexp
 
+	// Resource specifies the regex pattern that a span resource must match.
+	Resource *regexp.Regexp
+
+	// Tags specifies the map of key-value patterns that span tags must match.
+	Tags map[string]*regexp.Regexp
+
+	limiter *rateLimiter
+
+	globRule *jsonRule
+
 	// Rate specifies the sampling rate that should be applied to spans that match
 	// service and/or name of the rule.
 	Rate float64
@@ -120,18 +130,9 @@ type SamplingRule struct {
 	// If not specified, the default is no limit.
 	MaxPerSecond float64
 
-	// Resource specifies the regex pattern that a span resource must match.
-	Resource *regexp.Regexp
-
-	// Tags specifies the map of key-value patterns that span tags must match.
-	Tags map[string]*regexp.Regexp
+	ruleType SamplingRuleType
 
 	Provenance provenance
-
-	ruleType SamplingRuleType
-	limiter  *rateLimiter
-
-	globRule *jsonRule
 }
 
 // Poor-man's comparison of two regex for equality without resorting to fancy symbolic computation.
@@ -364,10 +365,10 @@ func SpanNameServiceMPSRule(name, service string, rate, limit float64) SamplingR
 // Its value is the number of spans to sample per second.
 // Spans that matched the rules but exceeded the rate limit are not sampled.
 type traceRulesSampler struct {
-	m          sync.RWMutex
+	limiter    *rateLimiter   // used to limit the volume of spans sampled
 	rules      []SamplingRule // the rules to match spans with
 	globalRate float64        // a rate to apply when no rules match a span
-	limiter    *rateLimiter   // used to limit the volume of spans sampled
+	m          sync.RWMutex
 }
 
 // newTraceRulesSampler configures a *traceRulesSampler instance using the given set of rules.
@@ -613,14 +614,15 @@ func (rs *singleSpanRulesSampler) apply(span *span) bool {
 // rateLimiter is a wrapper on top of golang.org/x/time/rate which implements a rate limiter but also
 // returns the effective rate of allowance.
 type rateLimiter struct {
-	limiter *rate.Limiter
+	prevTime time.Time // time at which prevAllowed and prevSeen were set
+	limiter  *rate.Limiter
 
-	mu          sync.Mutex // guards below fields
-	prevTime    time.Time  // time at which prevAllowed and prevSeen were set
-	allowed     float64    // number of spans allowed in the current period
-	seen        float64    // number of spans seen in the current period
-	prevAllowed float64    // number of spans allowed in the previous period
-	prevSeen    float64    // number of spans seen in the previous period
+	allowed     float64 // number of spans allowed in the current period
+	seen        float64 // number of spans seen in the current period
+	prevAllowed float64 // number of spans allowed in the previous period
+	prevSeen    float64 // number of spans seen in the previous period
+
+	mu sync.Mutex // guards below fields
 }
 
 // allowOne returns the rate limiter's decision to allow the span to be sampled, and the
@@ -750,13 +752,13 @@ func (sr *SamplingRule) UnmarshalJSON(b []byte) error {
 }
 
 type jsonRule struct {
+	Tags         map[string]string `json:"tags"`
+	Type         *SamplingRuleType `json:"type,omitempty"`
 	Service      string            `json:"service"`
 	Name         string            `json:"name"`
 	Rate         json.Number       `json:"sample_rate"`
-	MaxPerSecond float64           `json:"max_per_second"`
 	Resource     string            `json:"resource"`
-	Tags         map[string]string `json:"tags"`
-	Type         *SamplingRuleType `json:"type,omitempty"`
+	MaxPerSecond float64           `json:"max_per_second"`
 	Provenance   provenance        `json:"provenance,omitempty"`
 }
 
@@ -852,13 +854,13 @@ func validateRules(jsonRules []jsonRule, spanType SamplingRuleType) ([]SamplingR
 // MarshalJSON implements the json.Marshaler interface.
 func (sr SamplingRule) MarshalJSON() ([]byte, error) {
 	s := struct {
+		Tags         map[string]string `json:"tags,omitempty"`
+		MaxPerSecond *float64          `json:"max_per_second,omitempty"`
 		Service      string            `json:"service,omitempty"`
 		Name         string            `json:"name,omitempty"`
 		Resource     string            `json:"resource,omitempty"`
-		Rate         float64           `json:"sample_rate"`
-		Tags         map[string]string `json:"tags,omitempty"`
-		MaxPerSecond *float64          `json:"max_per_second,omitempty"`
 		Provenance   string            `json:"provenance,omitempty"`
+		Rate         float64           `json:"sample_rate"`
 	}{}
 	if sr.globRule != nil {
 		s.Service = sr.globRule.Service
