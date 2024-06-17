@@ -3,16 +3,15 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
-//go:build appsec
-// +build appsec
-
 package appsec_test
 
 import (
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"strings"
 	"testing"
 
@@ -20,7 +19,11 @@ import (
 	httptrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/config"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener/httpsec"
 
+	internal "github.com/DataDog/appsec-internal-go/appsec"
+	waf "github.com/DataDog/go-libddwaf/v3"
 	"github.com/stretchr/testify/require"
 )
 
@@ -92,8 +95,12 @@ func TestUserRules(t *testing.T) {
 
 	// Start and trace an HTTP server
 	mux := httptrace.NewServeMux()
-	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/hello", func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("Hello World!\n"))
+	})
+	mux.HandleFunc("/response-header", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("match-response-header", "match-response-header")
+		w.WriteHeader(204)
 	})
 
 	srv := httptest.NewServer(mux)
@@ -106,12 +113,18 @@ func TestUserRules(t *testing.T) {
 	}{
 		{
 			name: "custom-001",
+			url:  "/hello",
 			rule: "custom-001",
 		},
 		{
 			name: "custom-action",
-			url:  "?match=match",
+			url:  "/hello?match=match-request-query",
 			rule: "query-002",
+		},
+		{
+			name: "response-headers",
+			url:  "/response-header",
+			rule: "headers-003",
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -417,5 +430,148 @@ func TestBlocking(t *testing.T) {
 			}
 
 		})
+	}
+}
+
+// Test that API Security schemas get collected when API security is enabled
+func TestAPISecurity(t *testing.T) {
+	// Start and trace an HTTP server
+	t.Setenv(config.EnvEnabled, "true")
+	if wafOK, err := waf.Health(); !wafOK {
+		t.Skipf("WAF must be usable for this test to run correctly: %v", err)
+	}
+	mux := httptrace.NewServeMux()
+	mux.HandleFunc("/apisec", func(w http.ResponseWriter, r *http.Request) {
+		pAppsec.MonitorParsedHTTPBody(r.Context(), "plain body")
+		w.Write([]byte("Hello World!\n"))
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	req, err := http.NewRequest("POST", srv.URL+"/apisec?vin=AAAAAAAAAAAAAAAAA", nil)
+	require.NoError(t, err)
+
+	t.Run("enabled", func(t *testing.T) {
+		t.Setenv(internal.EnvAPISecEnabled, "true")
+		t.Setenv(internal.EnvAPISecSampleRate, "1.0")
+		appsec.Start()
+		require.True(t, appsec.Enabled())
+		defer appsec.Stop()
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		res, err := srv.Client().Do(req)
+		require.NoError(t, err)
+		defer res.Body.Close()
+
+		spans := mt.FinishedSpans()
+		require.Len(t, spans, 1)
+
+		// Make sure the addresses that are present are getting extracted as schemas
+		require.NotNil(t, spans[0].Tag("_dd.appsec.s.req.headers"))
+		require.NotNil(t, spans[0].Tag("_dd.appsec.s.req.query"))
+		require.NotNil(t, spans[0].Tag("_dd.appsec.s.req.body"))
+	})
+
+	t.Run("disabled", func(t *testing.T) {
+		t.Setenv(internal.EnvAPISecEnabled, "false")
+		appsec.Start()
+		require.True(t, appsec.Enabled())
+		defer appsec.Stop()
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		res, err := srv.Client().Do(req)
+		require.NoError(t, err)
+		defer res.Body.Close()
+
+		spans := mt.FinishedSpans()
+		require.Len(t, spans, 1)
+
+		// Make sure the addresses that are present are not getting extracted as schemas
+		require.Nil(t, spans[0].Tag("_dd.appsec.s.req.headers"))
+		require.Nil(t, spans[0].Tag("_dd.appsec.s.req.query"))
+		require.Nil(t, spans[0].Tag("_dd.appsec.s.req.body"))
+	})
+}
+
+// BenchmarkSampleWAFContext benchmarks the creation of a WAF context and running the WAF on a request/response pair
+// This is a basic sample of what could happen in a real-world scenario.
+func BenchmarkSampleWAFContext(b *testing.B) {
+	rules, err := internal.DefaultRuleset()
+	if err != nil {
+		b.Fatalf("error loading rules: %v", err)
+	}
+
+	var parsedRuleset map[string]any
+	err = json.Unmarshal(rules, &parsedRuleset)
+	if err != nil {
+		b.Fatalf("error parsing rules: %v", err)
+	}
+
+	handle, err := waf.NewHandle(parsedRuleset, internal.DefaultObfuscatorKeyRegex, internal.DefaultObfuscatorValueRegex)
+	for i := 0; i < b.N; i++ {
+		ctx, err := handle.NewContext()
+		if err != nil || ctx == nil {
+			b.Fatal("nil context")
+		}
+
+		// Request WAF Run
+		_, err = ctx.Run(
+			waf.RunAddressData{
+				Persistent: map[string]any{
+					httpsec.HTTPClientIPAddr:        "1.1.1.1",
+					httpsec.ServerRequestMethodAddr: "GET",
+					httpsec.ServerRequestRawURIAddr: "/",
+					httpsec.ServerRequestHeadersNoCookiesAddr: map[string][]string{
+						"host":            {"example.com"},
+						"content-length":  {"0"},
+						"Accept":          {"application/json"},
+						"User-Agent":      {"curl/7.64.1"},
+						"Accept-Encoding": {"gzip"},
+						"Connection":      {"close"},
+					},
+					httpsec.ServerRequestCookiesAddr: map[string][]string{
+						"cookie": {"session=1234"},
+					},
+					httpsec.ServerRequestQueryAddr: map[string][]string{
+						"query": {"value"},
+					},
+					httpsec.ServerRequestPathParamsAddr: map[string]string{
+						"param": "value",
+					},
+				},
+			})
+
+		if err != nil {
+			b.Fatalf("error running waf: %v", err)
+		}
+
+		// Response WAF Run
+		_, err = ctx.Run(
+			waf.RunAddressData{
+				Persistent: map[string]any{
+					httpsec.ServerResponseHeadersNoCookiesAddr: map[string][]string{
+						"content-type":   {"application/json"},
+						"content-length": {"0"},
+						"Connection":     {"close"},
+					},
+					httpsec.ServerResponseStatusAddr: 200,
+				},
+			})
+
+		if err != nil {
+			b.Fatalf("error running waf: %v", err)
+		}
+
+		ctx.Close()
+	}
+}
+
+func init() {
+	// This permits running the tests locally without defining the env var manually
+	// We do this because the default go-libddwaf timeout value is too small and makes the tests timeout for no reason
+	if _, ok := os.LookupEnv(internal.EnvWAFTimeout); !ok {
+		os.Setenv(internal.EnvWAFTimeout, "1s")
 	}
 }

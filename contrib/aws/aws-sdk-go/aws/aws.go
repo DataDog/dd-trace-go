@@ -13,7 +13,6 @@ import (
 	"strconv"
 	"strings"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/contrib/aws/internal/awsnamingschema"
 	"gopkg.in/DataDog/dd-trace-go.v1/contrib/aws/internal/tags"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
@@ -127,17 +126,13 @@ func (h *handlers) serviceName(req *request.Request) string {
 		return h.cfg.serviceName
 	}
 	defaultName := "aws." + awsService(req)
-	return namingschema.NewDefaultServiceName(
-		defaultName,
-		namingschema.WithOverrideV0(defaultName),
-	).GetName()
+	return namingschema.ServiceNameOverrideV0(defaultName, defaultName)
 }
 
 func spanName(req *request.Request) string {
 	svc := awsService(req)
 	op := awsOperation(req)
-	getSpanNameV0 := func(awsService string) string { return awsService + ".command" }
-	return awsnamingschema.NewAWSOutboundOp(svc, op, getSpanNameV0).GetName()
+	return namingschema.AWSOpName(svc, op, svc+".command")
 }
 
 func awsService(req *request.Request) string {

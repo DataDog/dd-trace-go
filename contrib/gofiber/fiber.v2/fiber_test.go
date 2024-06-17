@@ -70,6 +70,7 @@ func TestTrace200(t *testing.T) {
 		assert.Equal("/user/123", span.Tag(ext.HTTPURL))
 		assert.Equal(ext.SpanKindServer, span.Tag(ext.SpanKind))
 		assert.Equal("gofiber/fiber.v2", span.Tag(ext.Component))
+		assert.Equal("/user/:id", span.Tag(ext.HTTPRoute))
 	}
 
 	t.Run("response", func(t *testing.T) {
@@ -132,6 +133,7 @@ func TestStatusError(t *testing.T) {
 	assert.Equal("http.request", span.OperationName())
 	assert.Equal("foobar", span.Tag(ext.ServiceName))
 	assert.Equal("500", span.Tag(ext.HTTPCode))
+	assert.Equal("/err", span.Tag(ext.HTTPRoute))
 	assert.Equal(wantErr, span.Tag(ext.Error).(error).Error())
 }
 
@@ -166,6 +168,7 @@ func TestCustomError(t *testing.T) {
 	assert.Equal(fiber.ErrBadRequest, span.Tag(ext.Error).(*fiber.Error))
 	assert.Equal(ext.SpanKindServer, span.Tag(ext.SpanKind))
 	assert.Equal("gofiber/fiber.v2", span.Tag(ext.Component))
+	assert.Equal("/err", span.Tag(ext.HTTPRoute))
 }
 
 func TestUserContext(t *testing.T) {
@@ -328,4 +331,34 @@ func TestNamingSchema(t *testing.T) {
 		return mt.FinishedSpans()
 	})
 	namingschematest.NewHTTPServerTest(genSpans, "fiber")(t)
+}
+
+func TestIgnoreRequest(t *testing.T) {
+	assert := assert.New(t)
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	router := fiber.New()
+	router.Use(
+		Middleware(
+			WithIgnoreRequest(func(ctx *fiber.Ctx) bool {
+				return ctx.Method() == "GET" && ctx.Path() == "/ignore"
+			}),
+		),
+	)
+	router.Get("/ignore", func(c *fiber.Ctx) error {
+		return c.SendString("IAMALIVE")
+	})
+
+	r := httptest.NewRequest("GET", "/ignore", nil)
+
+	// do and verify the request
+	resp, err := router.Test(r)
+	assert.Equal(nil, err)
+	defer resp.Body.Close()
+	assert.Equal(resp.StatusCode, 200)
+
+	spans := mt.FinishedSpans()
+
+	assert.Len(spans, 0)
 }

@@ -17,6 +17,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/normalizer"
 
 	"github.com/stretchr/testify/assert"
@@ -103,6 +104,41 @@ func TestWithHeaderTags(t *testing.T) {
 		}
 		assert.NotContains(s.Tags(), "http.headers.x-datadog-header")
 		assert.NotContains(s.Tags(), globalT)
+	})
+
+	t.Run("wrap-handler", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+		htArgs := []string{"h!e@a-d.e*r", "2header", "3header"}
+
+		handler := WrapHandler(http.HandlerFunc(handler200), "my-service", "my-resource",
+			WithHeaderTags(htArgs),
+		)
+
+		url := "/"
+		r := httptest.NewRequest("GET", url, nil)
+		r.Header.Set("h!e@a-d.e*r", "val")
+		r.Header.Add("h!e@a-d.e*r", "val2")
+		r.Header.Set("2header", "2val")
+		r.Header.Set("3header", "3val")
+		r.Header.Set("x-datadog-header", "value")
+		w := httptest.NewRecorder()
+		handler.ServeHTTP(w, r)
+
+		assert := assert.New(t)
+		assert.Equal(200, w.Code)
+		assert.Equal("OK\n", w.Body.String())
+
+		spans := mt.FinishedSpans()
+		assert.Equal(1, len(spans))
+
+		s := spans[0]
+		assert.Equal("http.request", s.OperationName())
+
+		for _, arg := range htArgs {
+			header, tag := normalizer.HeaderTag(arg)
+			assert.Equal(strings.Join(r.Header.Values(header), ","), s.Tags()[tag])
+		}
 	})
 }
 
@@ -252,6 +288,52 @@ func TestServeMuxUsesResourceNamer(t *testing.T) {
 	assert.Equal("bar", s.Tag("foo"))
 	assert.Equal(ext.SpanKindServer, s.Tag(ext.SpanKind))
 	assert.Equal("net/http", s.Tag(ext.Component))
+}
+
+func TestServeMuxGo122Patterns(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	// A mux with go1.21 patterns ("/bar") and go1.22 patterns ("GET /foo")
+	mux := NewServeMux()
+	mux.HandleFunc("/bar", func(w http.ResponseWriter, r *http.Request) {})
+	mux.HandleFunc("GET /foo", func(w http.ResponseWriter, r *http.Request) {})
+
+	// Try to hit both routes
+	barW := httptest.NewRecorder()
+	mux.ServeHTTP(barW, httptest.NewRequest("GET", "/bar", nil))
+	fooW := httptest.NewRecorder()
+	mux.ServeHTTP(fooW, httptest.NewRequest("GET", "/foo", nil))
+
+	// Assert the number of spans
+	assert := assert.New(t)
+	spans := mt.FinishedSpans()
+	assert.Equal(2, len(spans))
+
+	// Check the /bar span
+	barSpan := spans[0]
+	assert.Equal(http.StatusOK, barW.Code)
+	assert.Equal("/bar", barSpan.Tag(ext.HTTPRoute))
+	assert.Equal("GET /bar", barSpan.Tag(ext.ResourceName))
+
+	// Check the /foo span
+	fooSpan := spans[1]
+	if fooW.Code == http.StatusOK {
+		assert.Equal("/foo", fooSpan.Tag(ext.HTTPRoute))
+		assert.Equal("GET /foo", fooSpan.Tag(ext.ResourceName))
+	} else {
+		// Until our go.mod version is go1.22 or greater, the mux will not
+		// understand the "GET /foo" pattern, causing the request to be handled
+		// by the 404 handler. Let's assert what we can, and mark the test as
+		// skipped to highlight the issue.
+		assert.Equal(http.StatusNotFound, fooW.Code)
+		assert.Equal(nil, fooSpan.Tag(ext.HTTPRoute))
+		// Using "GET " as a resource name doesn't seem ideal, but that's how
+		// the mux instrumentation deals with 404s right now.
+		assert.Equal("GET ", fooSpan.Tag(ext.ResourceName))
+		t.Skip("run `go mod edit -go=1.22` to run the full test")
+	}
+
 }
 
 func TestWrapHandlerWithResourceNameNoRace(_ *testing.T) {
@@ -461,8 +543,8 @@ func handler500(w http.ResponseWriter, _ *http.Request) {
 }
 
 func BenchmarkHttpServeTrace(b *testing.B) {
-	mt := mocktracer.Start()
-	defer mt.Stop()
+	tracer.Start(tracer.WithLogger(log.DiscardLogger{}))
+	defer tracer.Stop()
 	header, tag := normalizer.HeaderTag("3header")
 	globalconfig.SetHeaderTag(header, tag)
 

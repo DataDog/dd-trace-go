@@ -27,8 +27,12 @@ type MockClient struct {
 	Metrics         map[telemetry.Namespace]map[string]float64
 }
 
-// ProductStart starts and adds configuration data to the mock client.
-func (c *MockClient) ProductStart(namespace telemetry.Namespace, configuration []telemetry.Configuration) {
+func (c *MockClient) RegisterAppConfig(name string, val interface{}, origin telemetry.Origin) {
+	_ = c.Called(name, val, origin)
+}
+
+// ProductChange starts and adds configuration data to the mock client.
+func (c *MockClient) ProductChange(namespace telemetry.Namespace, enabled bool, configuration []telemetry.Configuration) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.Started = true
@@ -36,10 +40,7 @@ func (c *MockClient) ProductStart(namespace telemetry.Namespace, configuration [
 	if len(c.Metrics) == 0 {
 		c.Metrics = make(map[telemetry.Namespace]map[string]float64)
 	}
-	c.productChange(namespace, true)
-	if namespace == telemetry.NamespaceTracers {
-		c.productChange(telemetry.NamespaceASM, true)
-	}
+	c.productChange(namespace, enabled)
 }
 
 // ProductStop signals a product has stopped and disables that product in the mock client.
@@ -56,7 +57,7 @@ func (c *MockClient) ProductStop(namespace telemetry.Namespace) {
 // ProductChange signals that a certain product is enabled or disabled for the mock client.
 func (c *MockClient) productChange(namespace telemetry.Namespace, enabled bool) {
 	switch namespace {
-	case telemetry.NamespaceASM:
+	case telemetry.NamespaceAppSec:
 		c.AsmEnabled = enabled
 	case telemetry.NamespaceProfilers:
 		c.ProfilerEnabled = enabled
@@ -92,5 +93,11 @@ func (c *MockClient) Stop() {
 // ApplyOps is used to record the number of ApplyOps method calls.
 func (c *MockClient) ApplyOps(args ...telemetry.Option) {
 	c.On("ApplyOps", args).Return()
+	_ = c.Called(args)
+}
+
+// ConfigChange is a mock for the ConfigChange method.
+func (c *MockClient) ConfigChange(args []telemetry.Configuration) {
+	c.On("ConfigChange", args).Return()
 	_ = c.Called(args)
 }

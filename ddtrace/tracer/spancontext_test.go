@@ -78,47 +78,38 @@ func testAsyncSpanRace(t *testing.T) {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				select {
-				case <-done:
-					root.Finish()
-					for i := 0; i < 500; i++ {
-						for range root.(*span).Metrics {
-							// this range simulates iterating over the metrics map
-							// as we do when encoding msgpack upon flushing.
-							continue
-						}
+				<-done
+				root.Finish()
+				for i := 0; i < 500; i++ {
+					for range root.(*span).Metrics {
+						// this range simulates iterating over the metrics map
+						// as we do when encoding msgpack upon flushing.
+						continue
 					}
-					return
 				}
 			}()
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				select {
-				case <-done:
-					root.Finish()
-					for i := 0; i < 500; i++ {
-						for range root.(*span).Meta {
-							// this range simulates iterating over the meta map
-							// as we do when encoding msgpack upon flushing.
-							continue
-						}
+				<-done
+				root.Finish()
+				for i := 0; i < 500; i++ {
+					for range root.(*span).Meta {
+						// this range simulates iterating over the meta map
+						// as we do when encoding msgpack upon flushing.
+						continue
 					}
-					return
 				}
 			}()
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				select {
-				case <-done:
-					for i := 0; i < 50; i++ {
-						// to trigger the bug, the child should be created after the root was finished,
-						// as its being flushed
-						child, _ := StartSpanFromContext(ctx, "child", Tag(ext.SamplingPriority, ext.PriorityUserKeep))
-						child.Finish()
-					}
-					return
+				<-done
+				for i := 0; i < 50; i++ {
+					// to trigger the bug, the child should be created after the root was finished,
+					// as its being flushed
+					child, _ := StartSpanFromContext(ctx, "child", Tag(ext.SamplingPriority, ext.PriorityUserKeep))
+					child.Finish()
 				}
 			}()
 			// closing will attempt trigger the two goroutines at approximately the same time.
@@ -138,7 +129,7 @@ func TestSpanTracePushOne(t *testing.T) {
 	_, transport, flush, stop := startTestTracer(t)
 	defer stop()
 
-	traceID := random.Uint64()
+	traceID := randUint64()
 	root := newSpan("name1", "a-service", "a-resource", traceID, traceID, 0)
 	trace := root.context.trace
 
@@ -161,7 +152,7 @@ func TestPartialFlush(t *testing.T) {
 	t.Setenv("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", "2")
 	t.Run("WithFlush", func(t *testing.T) {
 		telemetryClient := new(telemetrytest.MockClient)
-		telemetryClient.ProductStart(telemetry.NamespaceTracers, nil)
+		telemetryClient.ProductChange(telemetry.NamespaceTracers, true, nil)
 		defer telemetry.MockGlobalClient(telemetryClient)()
 		tracer, transport, flush, stop := startTestTracer(t)
 		defer stop()
@@ -238,7 +229,7 @@ func TestSpanTracePushNoFinish(t *testing.T) {
 	assert.NotNil(buffer)
 	assert.Len(buffer.spans, 0)
 
-	traceID := random.Uint64()
+	traceID := randUint64()
 	root := newSpan("name1", "a-service", "a-resource", traceID, traceID, 0)
 	root.context.trace = buffer
 
@@ -263,7 +254,7 @@ func TestSpanTracePushSeveral(t *testing.T) {
 	assert.NotNil(buffer)
 	assert.Len(buffer.spans, 0)
 
-	traceID := random.Uint64()
+	traceID := randUint64()
 	root := trc.StartSpan("name1", WithSpanID(traceID))
 	span2 := trc.StartSpan("name2", ChildOf(root.Context()))
 	span3 := trc.StartSpan("name3", ChildOf(root.Context()))
@@ -837,12 +828,19 @@ func TestSetSamplingPriorityLocked(t *testing.T) {
 		tr.setSamplingPriorityLocked(1, samplernames.RemoteRate)
 		assert.Equal(t, "-2", tr.propagatingTags[keyDecisionMaker])
 	})
-	t.Run("PriorAndP1IsIgnored", func(t *testing.T) {
+	t.Run("PriorAndP1AndSameDMIsIgnored", func(t *testing.T) {
+		tr := trace{
+			propagatingTags: map[string]string{keyDecisionMaker: "-1"},
+		}
+		tr.setSamplingPriorityLocked(1, samplernames.AgentRate)
+		assert.Equal(t, "-1", tr.propagatingTags[keyDecisionMaker])
+	})
+	t.Run("PriorAndP1DifferentDMAccepted", func(t *testing.T) {
 		tr := trace{
 			propagatingTags: map[string]string{keyDecisionMaker: "-1"},
 		}
 		tr.setSamplingPriorityLocked(1, samplernames.RemoteRate)
-		assert.Equal(t, "-1", tr.propagatingTags[keyDecisionMaker])
+		assert.Equal(t, "-2", tr.propagatingTags[keyDecisionMaker])
 	})
 }
 

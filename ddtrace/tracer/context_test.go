@@ -42,7 +42,7 @@ func TestSpanFromContext(t *testing.T) {
 		assert.False(ok)
 		_, ok = span.(*traceinternal.NoopSpan)
 		assert.True(ok)
-		span, ok = SpanFromContext(nil)
+		span, ok = SpanFromContext(context.TODO())
 		assert.False(ok)
 		_, ok = span.(*traceinternal.NoopSpan)
 		assert.True(ok)
@@ -86,7 +86,6 @@ func TestStartSpanFromContextRace(t *testing.T) {
 
 	// Start 100 goroutines that create child spans with StartSpanFromContext in parallel,
 	// with a shared options slice. The child spans should get parented to the correct spans
-	const contextKey = "key"
 	const numContexts = 100
 	options := make([]StartSpanOption, 0, 3)
 	outputValues := make(chan uint64, numContexts)
@@ -115,41 +114,45 @@ func Test128(t *testing.T) {
 	_, _, _, stop := startTestTracer(t)
 	defer stop()
 
-	span, _ := StartSpanFromContext(context.Background(), "http.request")
-	assert.NotZero(t, span.Context().TraceID())
-	w3cCtx, ok := span.Context().(ddtrace.SpanContextW3C)
-	if !ok {
-		assert.Fail(t, "couldn't cast to ddtrace.SpanContextW3C")
-	}
-	id128 := w3cCtx.TraceID128()
-	assert.Len(t, id128, 32) // ensure there are enough leading zeros
-	idBytes, err := hex.DecodeString(id128)
-	assert.NoError(t, err)
-	assert.Equal(t, uint64(0), binary.BigEndian.Uint64(idBytes[:8])) // high 64 bits should be 0
-	assert.Equal(t, span.Context().TraceID(), binary.BigEndian.Uint64(idBytes[8:]))
+	t.Run("disable 128 bit trace ids", func(t *testing.T) {
+		t.Setenv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", "false")
+		span, _ := StartSpanFromContext(context.Background(), "http.request")
+		assert.NotZero(t, span.Context().TraceID())
+		w3cCtx, ok := span.Context().(ddtrace.SpanContextW3C)
+		if !ok {
+			assert.Fail(t, "couldn't cast to ddtrace.SpanContextW3C")
+		}
+		id128 := w3cCtx.TraceID128()
+		assert.Len(t, id128, 32) // ensure there are enough leading zeros
+		idBytes, err := hex.DecodeString(id128)
+		assert.NoError(t, err)
+		assert.Equal(t, uint64(0), binary.BigEndian.Uint64(idBytes[:8])) // high 64 bits should be 0
+		assert.Equal(t, span.Context().TraceID(), binary.BigEndian.Uint64(idBytes[8:]))
+	})
 
-	// Enable 128 bit trace ids
-	t.Setenv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", "true")
-	span128, _ := StartSpanFromContext(context.Background(), "http.request")
-	assert.NotZero(t, span128.Context().TraceID())
-	w3cCtx, ok = span128.Context().(ddtrace.SpanContextW3C)
-	if !ok {
-		assert.Fail(t, "couldn't cast to ddtrace.SpanContextW3C")
-	}
-	id128bit := w3cCtx.TraceID128()
-	assert.NotEmpty(t, id128bit)
-	assert.Len(t, id128bit, 32)
-	// Ensure that the lower order bits match the span's 64-bit trace id
-	b, err := hex.DecodeString(id128bit)
-	assert.NoError(t, err)
-	assert.Equal(t, span128.Context().TraceID(), binary.BigEndian.Uint64(b[8:]))
+	t.Run("enable 128 bit trace ids", func(t *testing.T) {
+		// DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED is true by default
+		span128, _ := StartSpanFromContext(context.Background(), "http.request")
+		assert.NotZero(t, span128.Context().TraceID())
+		w3cCtx, ok := span128.Context().(ddtrace.SpanContextW3C)
+		if !ok {
+			assert.Fail(t, "couldn't cast to ddtrace.SpanContextW3C")
+		}
+		id128bit := w3cCtx.TraceID128()
+		assert.NotEmpty(t, id128bit)
+		assert.Len(t, id128bit, 32)
+		// Ensure that the lower order bits match the span's 64-bit trace id
+		b, err := hex.DecodeString(id128bit)
+		assert.NoError(t, err)
+		assert.Equal(t, span128.Context().TraceID(), binary.BigEndian.Uint64(b[8:]))
+	})
 }
 
 func TestStartSpanFromNilContext(t *testing.T) {
 	_, _, _, stop := startTestTracer(t)
 	defer stop()
 
-	child, ctx := StartSpanFromContext(nil, "http.request")
+	child, ctx := StartSpanFromContext(context.TODO(), "http.request")
 	assert := assert.New(t)
 	// ensure the returned context works
 	assert.Nil(ctx.Value("not_found_key"))

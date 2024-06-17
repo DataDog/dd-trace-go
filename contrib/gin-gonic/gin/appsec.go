@@ -9,7 +9,7 @@ import (
 	"net/http"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/httpsec"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/httpsec"
 
 	"github.com/gin-gonic/gin"
 )
@@ -28,7 +28,7 @@ func useAppSec(c *gin.Context, span tracer.Span) {
 		c.Request = r
 		c.Next()
 	})
-	httpsec.WrapHandler(httpWrapper, span, params, func() {
-		c.Abort()
+	httpsec.WrapHandler(httpWrapper, span, params, &httpsec.Config{
+		OnBlock: []func(){func() { c.Abort() }},
 	}).ServeHTTP(c.Writer, c.Request)
 }

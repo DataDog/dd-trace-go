@@ -6,6 +6,13 @@ on:
       go-version:
         required: true
         type: string
+      ref:
+        description: 'The branch to run the workflow on'
+        required: true
+        type: string
+
+env:
+  DD_APPSEC_WAF_TIMEOUT: 1m # Increase time WAF time budget to reduce CI flakiness
 
 jobs:
   copyright:
@@ -13,6 +20,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v3
+        with:
+          ref: ${{ inputs.ref || github.ref }}
 
       - name: Copyright
         run: |
@@ -24,15 +33,13 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v3
-
-      - name: Setup Go
-        uses: ./.github/actions/setup-go
         with:
-          go-version: ${{ inputs.go-version }}
+          ref: ${{ inputs.ref || github.ref }}
 
       - name: golangci-lint
         uses: reviewdog/action-golangci-lint@v2
         with:
+          go_version: ${{ inputs.go-version }}
           golangci_lint_version: v1.52.2
           fail_on_error: true
           reporter: github-pr-review
@@ -159,7 +166,7 @@ jobs:
         ports:
           - 2181:2181
       kafka:
-        image: wurstmeister/kafka:2.13-2.8.1
+        image: darccio/kafka:2.13-2.8.1
         env:
           KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
           KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
@@ -175,6 +182,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v3
+        with:
+          ref: ${{ inputs.ref || github.ref }}
 
       - name: Setup Go
         uses: ./.github/actions/setup-go
@@ -193,7 +202,7 @@ jobs:
         uses: ./.github/actions/dd-ci-upload
         with:
           dd-api-key: ${{ secrets.DD_CI_API_KEY }}
-          files: ${{ env.TEST_RESULTS }}/gotestsum-report.xml
+          files: ${{ env.TEST_RESULTS }}/gotestsum-report*.xml
           tags: go:${{ inputs.go-version }},arch:${{ runner.arch }},os:${{ runner.os }},distribution:${{ runner.distribution }}
 
       - name: Upload Coverage
@@ -239,18 +248,26 @@ jobs:
       - name: Testing outlier gRPC v1.2
         run: |
               # This hacky approach is necessary because running the tests regularly
-              # do not allow using grpc-go@v1.2.0 alongside sketches-go@v1.0.0
+              # do not allow using grpc-go@v1.2.0 alongside sketches-go@v1.1.0.
+              # sketches-go@v1.0.0 is no longer possible to test because internal/datastreams/propagator.go
+              # expects sketches-go to have the package `github.com/DataDog/sketches-go/ddsketch/encoding` which
+              # is only present from v1.1.0 onwards.
               go mod vendor
 
               # Checkout grpc-go@v1.2.0
               cd vendor/google.golang.org && rm -rf grpc
               git clone https://github.com/grpc/grpc-go grpc && cd grpc
-              git fetch origin && git checkout v1.2.0 && cd ../..
+              git fetch origin && git checkout v1.2.0 && cd ../../..
 
-              # Checkout sketches-go@v1.0.0
+              # Checkout sketches-go@v1.1.0
               cd vendor/github.com/DataDog && rm -rf sketches-go
               git clone https://github.com/DataDog/sketches-go && cd sketches-go
-              git fetch origin && git checkout v1.0.0 && cd ../..
+              git fetch origin && git checkout v1.1.0 && cd ../../../..
+
+              # Revert to old metadata functions as FromIncomingContext and NewOutgoingContext are not present in v1.2.0.
+              # These functions were updated to current versions to avoid compilation errors in the development environments.
+              sed  -i 's/metadata\.FromIncomingContext/metadata.FromContext/g' ./contrib/google.golang.org/grpc.v12/*
+              sed  -i 's/metadata\.NewOutgoingContext/metadata.NewContext/g' ./contrib/google.golang.org/grpc.v12/*
 
               go test -mod=vendor -v ./contrib/google.golang.org/grpc.v12/...
 
@@ -279,6 +296,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v3
+        with:
+          ref: ${{ inputs.ref || github.ref }}
 
       - name: Setup Go
         uses: ./.github/actions/setup-go
@@ -286,10 +305,14 @@ jobs:
           go-version: ${{ inputs.go-version }}
 
       - name: Test Core
+        env:
+          DD_APPSEC_WAF_TIMEOUT: 1h
         run: |
             mkdir -p $TEST_RESULTS
             PACKAGE_NAMES=$(go list ./... | grep -v /contrib/)
             gotestsum --junitfile ${TEST_RESULTS}/gotestsum-report.xml -- $PACKAGE_NAMES -v -race -coverprofile=coverage.txt -covermode=atomic
+            cd ./internal/exectracetest
+            gotestsum --junitfile ${TEST_RESULTS}/gotestsum-report-exectrace.xml -- -v -race -coverprofile=coverage.txt -covermode=atomic
 
       - name: Upload the results to Datadog CI App
         if: always()
@@ -297,7 +320,7 @@ jobs:
         uses: ./.github/actions/dd-ci-upload
         with:
           dd-api-key: ${{ secrets.DD_CI_API_KEY }}
-          files: ${{ env.TEST_RESULTS }}/gotestsum-report.xml
+          files: ${{ env.TEST_RESULTS }}/gotestsum-report.xml ${{ env.TEST_RESULTS }}/gotestsum-report-exectrace.xml
           tags: go:${{ inputs.go-version }}},arch:${{ runner.arch }},os:${{ runner.os }},distribution:${{ runner.distribution }}
       - name: Upload Coverage
         if: always()

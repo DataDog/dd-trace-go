@@ -1,56 +1,327 @@
+# Code generated via `make test-apps.yml`; DO NOT EDIT.
 name: Test Apps
-
-on:
-  workflow_dispatch: {} # manually
-  schedule:
-    - cron: "0 0 * * *" # nightly
-  pull_request: {} # on pull request
-
+"on":
+  workflow_call:
+    inputs:
+      scenarios:
+        type: string
+        default: '["unit-of-work/v1","unit-of-work/v2","memory-leak/goroutine","memory-leak/heap","memory-leak/goroutine-heap"]'
+        description: Scenarios to run
+      ref:
+        description: The branch to run the workflow on
+        required: false
+        type: string
+      'env: prod':
+        type: boolean
+        default: true
+      'env: staging':
+        type: boolean
+        default: true
+      'arg: rps':
+        type: number
+        default: 5
+        description: Requests per second
+      'arg: scenario_duration':
+        type: string
+        default: 10m
+        description: Scenario duration
+      'arg: profile_period':
+        type: string
+        default: 60s
+        description: Profile period
+      'arg: tags':
+        type: string
+        default: trigger:manual
+        description: Extra DD_TAGS
+  workflow_dispatch:
+    inputs:
+      scenarios:
+        type: string
+        default: '["unit-of-work/v1","unit-of-work/v2","memory-leak/goroutine","memory-leak/heap","memory-leak/goroutine-heap"]'
+        description: Scenarios to run
+      'env: prod':
+        type: boolean
+        default: true
+      'env: staging':
+        type: boolean
+        default: true
+      'arg: rps':
+        type: number
+        default: 5
+        description: Requests per second
+      'arg: scenario_duration':
+        type: string
+        default: 10m
+        description: Scenario duration
+      'arg: profile_period':
+        type: string
+        default: 60s
+        description: Profile period
+      'arg: tags':
+        type: string
+        default: trigger:manual
+        description: Extra DD_TAGS
 env:
   DD_ENV: github
-  DD_TAGS: "github_run_id:${{ github.run_id }} github_run_number:${{ github.run_number }}"
-
+  DD_TAGS: 'github_run_id:${{ github.run_id }} github_run_number:${{ github.run_number }} ${{ inputs[''arg: tags''] }}'
 jobs:
-  unit-of-work:
-    if: github.event_name != 'pull_request' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == 'DataDog/dd-trace-go')
-    strategy:
-      matrix:
-        include:
-          - job_name: prod
-            api_key: "DD_TEST_APP_API_KEY"
-            datadog_site: datadoghq.com
-          - job_name: staging
-            api_key: "DD_TEST_AND_DEMO_API_KEY"
-            datadog_site: datad0g.com
-    name: "unit-of-work (${{ matrix.job_name }})"
-
+  job-0-0:
+    name: unit-of-work/v1 (prod)
     runs-on: ubuntu-latest
+    if: 'contains(fromJSON(inputs[''scenarios'']), ''unit-of-work/v1'') && inputs[''env: prod'']'
     steps:
-      - name: Checkout
+      - name: Checkout Code
         uses: actions/checkout@v3
         with:
-          repository: 'DataDog/dd-trace-go'
-
-      - uses: datadog/agent-github-action@v1.3
+          ref: ${{ inputs.ref || github.ref }}
+      - name: Start Agent
+        uses: datadog/agent-github-action@v1.3
         with:
-            api_key: ${{ secrets[matrix.api_key] }}
-            datadog_site: ${{ matrix.datadog_site }}
-
-      - uses: actions/setup-go@v3
+          api_key: ${{ secrets['DD_TEST_APP_API_KEY'] }}
+          datadog_site: datadoghq.com
+      - name: Setup Go
+        uses: actions/setup-go@v3
         with:
-          go-version: 'stable'
+          go-version: stable
           check-latest: true
           cache: true
-
-      - name: "Configure nightly run to last 10 minutes and add nightly:true tag"
-        if: (github.event_name == 'schedule')
-        run: |
-          # 660s is enough time to capture 10 profiles without missing the last one
-          # (TODO: Implement profiler.StopFlush())
-          echo "DD_TEST_APPS_TOTAL_DURATION=660s" >> $GITHUB_ENV
-          echo "DD_TEST_APPS_PROFILE_PERIOD=60s" >> $GITHUB_ENV
-          echo "DD_TAGS=${DD_TAGS} nightly:true" >> $GITHUB_ENV
-
-      - name: Run unit of work app
-        run: |
-          cd ./internal/apps/unit-of-work && ./run.bash
+      - name: Run Scenario
+        env:
+          DD_TEST_APPS_REQUESTS_PER_SECOND: '${{ inputs[''arg: rps''] }}'
+          DD_TEST_APPS_TOTAL_DURATION: '${{ inputs[''arg: scenario_duration''] }}'
+          DD_TEST_APPS_PROFILE_PERIOD: '${{ inputs[''arg: profile_period''] }}'
+        run: cd ./internal/apps && ./run-scenario.bash 'unit-of-work/v1'
+  job-0-1:
+    name: unit-of-work/v1 (staging)
+    runs-on: ubuntu-latest
+    if: 'contains(fromJSON(inputs[''scenarios'']), ''unit-of-work/v1'') && inputs[''env: staging'']'
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+      - name: Start Agent
+        uses: datadog/agent-github-action@v1.3
+        with:
+          api_key: ${{ secrets['DD_TEST_AND_DEMO_API_KEY'] }}
+          datadog_site: datad0g.com
+      - name: Setup Go
+        uses: actions/setup-go@v3
+        with:
+          go-version: stable
+          check-latest: true
+          cache: true
+      - name: Run Scenario
+        env:
+          DD_TEST_APPS_REQUESTS_PER_SECOND: '${{ inputs[''arg: rps''] }}'
+          DD_TEST_APPS_TOTAL_DURATION: '${{ inputs[''arg: scenario_duration''] }}'
+          DD_TEST_APPS_PROFILE_PERIOD: '${{ inputs[''arg: profile_period''] }}'
+        run: cd ./internal/apps && ./run-scenario.bash 'unit-of-work/v1'
+  job-1-0:
+    name: unit-of-work/v2 (prod)
+    runs-on: ubuntu-latest
+    if: 'contains(fromJSON(inputs[''scenarios'']), ''unit-of-work/v2'') && inputs[''env: prod'']'
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+      - name: Start Agent
+        uses: datadog/agent-github-action@v1.3
+        with:
+          api_key: ${{ secrets['DD_TEST_APP_API_KEY'] }}
+          datadog_site: datadoghq.com
+      - name: Setup Go
+        uses: actions/setup-go@v3
+        with:
+          go-version: stable
+          check-latest: true
+          cache: true
+      - name: Run Scenario
+        env:
+          DD_TEST_APPS_REQUESTS_PER_SECOND: '${{ inputs[''arg: rps''] }}'
+          DD_TEST_APPS_TOTAL_DURATION: '${{ inputs[''arg: scenario_duration''] }}'
+          DD_TEST_APPS_PROFILE_PERIOD: '${{ inputs[''arg: profile_period''] }}'
+        run: cd ./internal/apps && ./run-scenario.bash 'unit-of-work/v2'
+  job-1-1:
+    name: unit-of-work/v2 (staging)
+    runs-on: ubuntu-latest
+    if: 'contains(fromJSON(inputs[''scenarios'']), ''unit-of-work/v2'') && inputs[''env: staging'']'
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+      - name: Start Agent
+        uses: datadog/agent-github-action@v1.3
+        with:
+          api_key: ${{ secrets['DD_TEST_AND_DEMO_API_KEY'] }}
+          datadog_site: datad0g.com
+      - name: Setup Go
+        uses: actions/setup-go@v3
+        with:
+          go-version: stable
+          check-latest: true
+          cache: true
+      - name: Run Scenario
+        env:
+          DD_TEST_APPS_REQUESTS_PER_SECOND: '${{ inputs[''arg: rps''] }}'
+          DD_TEST_APPS_TOTAL_DURATION: '${{ inputs[''arg: scenario_duration''] }}'
+          DD_TEST_APPS_PROFILE_PERIOD: '${{ inputs[''arg: profile_period''] }}'
+        run: cd ./internal/apps && ./run-scenario.bash 'unit-of-work/v2'
+  job-2-0:
+    name: memory-leak/goroutine (prod)
+    runs-on: ubuntu-latest
+    if: 'contains(fromJSON(inputs[''scenarios'']), ''memory-leak/goroutine'') && inputs[''env: prod'']'
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+      - name: Start Agent
+        uses: datadog/agent-github-action@v1.3
+        with:
+          api_key: ${{ secrets['DD_TEST_APP_API_KEY'] }}
+          datadog_site: datadoghq.com
+      - name: Setup Go
+        uses: actions/setup-go@v3
+        with:
+          go-version: stable
+          check-latest: true
+          cache: true
+      - name: Run Scenario
+        env:
+          DD_TEST_APPS_REQUESTS_PER_SECOND: '${{ inputs[''arg: rps''] }}'
+          DD_TEST_APPS_TOTAL_DURATION: '${{ inputs[''arg: scenario_duration''] }}'
+          DD_TEST_APPS_PROFILE_PERIOD: '${{ inputs[''arg: profile_period''] }}'
+        run: cd ./internal/apps && ./run-scenario.bash 'memory-leak/goroutine'
+  job-2-1:
+    name: memory-leak/goroutine (staging)
+    runs-on: ubuntu-latest
+    if: 'contains(fromJSON(inputs[''scenarios'']), ''memory-leak/goroutine'') && inputs[''env: staging'']'
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+      - name: Start Agent
+        uses: datadog/agent-github-action@v1.3
+        with:
+          api_key: ${{ secrets['DD_TEST_AND_DEMO_API_KEY'] }}
+          datadog_site: datad0g.com
+      - name: Setup Go
+        uses: actions/setup-go@v3
+        with:
+          go-version: stable
+          check-latest: true
+          cache: true
+      - name: Run Scenario
+        env:
+          DD_TEST_APPS_REQUESTS_PER_SECOND: '${{ inputs[''arg: rps''] }}'
+          DD_TEST_APPS_TOTAL_DURATION: '${{ inputs[''arg: scenario_duration''] }}'
+          DD_TEST_APPS_PROFILE_PERIOD: '${{ inputs[''arg: profile_period''] }}'
+        run: cd ./internal/apps && ./run-scenario.bash 'memory-leak/goroutine'
+  job-3-0:
+    name: memory-leak/heap (prod)
+    runs-on: ubuntu-latest
+    if: 'contains(fromJSON(inputs[''scenarios'']), ''memory-leak/heap'') && inputs[''env: prod'']'
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+      - name: Start Agent
+        uses: datadog/agent-github-action@v1.3
+        with:
+          api_key: ${{ secrets['DD_TEST_APP_API_KEY'] }}
+          datadog_site: datadoghq.com
+      - name: Setup Go
+        uses: actions/setup-go@v3
+        with:
+          go-version: stable
+          check-latest: true
+          cache: true
+      - name: Run Scenario
+        env:
+          DD_TEST_APPS_REQUESTS_PER_SECOND: '${{ inputs[''arg: rps''] }}'
+          DD_TEST_APPS_TOTAL_DURATION: '${{ inputs[''arg: scenario_duration''] }}'
+          DD_TEST_APPS_PROFILE_PERIOD: '${{ inputs[''arg: profile_period''] }}'
+        run: cd ./internal/apps && ./run-scenario.bash 'memory-leak/heap'
+  job-3-1:
+    name: memory-leak/heap (staging)
+    runs-on: ubuntu-latest
+    if: 'contains(fromJSON(inputs[''scenarios'']), ''memory-leak/heap'') && inputs[''env: staging'']'
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+      - name: Start Agent
+        uses: datadog/agent-github-action@v1.3
+        with:
+          api_key: ${{ secrets['DD_TEST_AND_DEMO_API_KEY'] }}
+          datadog_site: datad0g.com
+      - name: Setup Go
+        uses: actions/setup-go@v3
+        with:
+          go-version: stable
+          check-latest: true
+          cache: true
+      - name: Run Scenario
+        env:
+          DD_TEST_APPS_REQUESTS_PER_SECOND: '${{ inputs[''arg: rps''] }}'
+          DD_TEST_APPS_TOTAL_DURATION: '${{ inputs[''arg: scenario_duration''] }}'
+          DD_TEST_APPS_PROFILE_PERIOD: '${{ inputs[''arg: profile_period''] }}'
+        run: cd ./internal/apps && ./run-scenario.bash 'memory-leak/heap'
+  job-4-0:
+    name: memory-leak/goroutine-heap (prod)
+    runs-on: ubuntu-latest
+    if: 'contains(fromJSON(inputs[''scenarios'']), ''memory-leak/goroutine-heap'') && inputs[''env: prod'']'
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+      - name: Start Agent
+        uses: datadog/agent-github-action@v1.3
+        with:
+          api_key: ${{ secrets['DD_TEST_APP_API_KEY'] }}
+          datadog_site: datadoghq.com
+      - name: Setup Go
+        uses: actions/setup-go@v3
+        with:
+          go-version: stable
+          check-latest: true
+          cache: true
+      - name: Run Scenario
+        env:
+          DD_TEST_APPS_REQUESTS_PER_SECOND: '${{ inputs[''arg: rps''] }}'
+          DD_TEST_APPS_TOTAL_DURATION: '${{ inputs[''arg: scenario_duration''] }}'
+          DD_TEST_APPS_PROFILE_PERIOD: '${{ inputs[''arg: profile_period''] }}'
+        run: cd ./internal/apps && ./run-scenario.bash 'memory-leak/goroutine-heap'
+  job-4-1:
+    name: memory-leak/goroutine-heap (staging)
+    runs-on: ubuntu-latest
+    if: 'contains(fromJSON(inputs[''scenarios'']), ''memory-leak/goroutine-heap'') && inputs[''env: staging'']'
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+      - name: Start Agent
+        uses: datadog/agent-github-action@v1.3
+        with:
+          api_key: ${{ secrets['DD_TEST_AND_DEMO_API_KEY'] }}
+          datadog_site: datad0g.com
+      - name: Setup Go
+        uses: actions/setup-go@v3
+        with:
+          go-version: stable
+          check-latest: true
+          cache: true
+      - name: Run Scenario
+        env:
+          DD_TEST_APPS_REQUESTS_PER_SECOND: '${{ inputs[''arg: rps''] }}'
+          DD_TEST_APPS_TOTAL_DURATION: '${{ inputs[''arg: scenario_duration''] }}'
+          DD_TEST_APPS_PROFILE_PERIOD: '${{ inputs[''arg: profile_period''] }}'
+        run: cd ./internal/apps && ./run-scenario.bash 'memory-leak/goroutine-heap'

@@ -8,6 +8,10 @@
 package telemetry
 
 import (
+	"fmt"
+	"math"
+	"sort"
+	"strings"
 	"testing"
 )
 
@@ -31,7 +35,7 @@ func Check(t *testing.T, configuration []Configuration, key string, expected int
 	for _, kv := range configuration {
 		if kv.Name == key {
 			if kv.Value != expected {
-				t.Errorf("configuration %s: wanted %v, got %v", key, expected, kv.Value)
+				t.Errorf("configuration %s: wanted '%v' type:%T, got '%v' type:%T", key, expected, expected, kv.Value, kv.Value)
 			}
 			return
 		}
@@ -47,4 +51,44 @@ func SetAgentlessEndpoint(endpoint string) string {
 	prev := agentlessURL
 	agentlessURL = endpoint
 	return prev
+}
+
+// Sanitize ensures the configuration values are valid and compatible.
+// It removes NaN and Inf values and converts string slices and maps into comma-separated strings.
+func Sanitize(c Configuration) Configuration {
+	switch val := c.Value.(type) {
+	case float64:
+		if math.IsNaN(val) || math.IsInf(val, 0) {
+			// Those values cause marshalling errors.
+			// https://github.com/golang/go/issues/59627
+			c.Value = nil
+		}
+	case []string:
+		// The telemetry API only supports primitive types.
+		c.Value = strings.Join(val, ",")
+	case map[string]interface{}:
+		// The telemetry API only supports primitive types.
+		// Sort the keys to ensure the order is deterministic.
+		// This is technically not required but makes testing easier + it's not in a hot path.
+		keys := make([]string, 0, len(val))
+		for k := range val {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		var sb strings.Builder
+		for _, k := range keys {
+			if sb.Len() > 0 {
+				sb.WriteString(",")
+			}
+			sb.WriteString(k)
+			sb.WriteString(":")
+			sb.WriteString(fmt.Sprint(val[k]))
+		}
+		c.Value = sb.String()
+	default:
+		var sb strings.Builder
+		sb.WriteString(fmt.Sprint(val))
+		c.Value = sb.String()
+	}
+	return c
 }

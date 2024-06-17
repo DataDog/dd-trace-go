@@ -22,20 +22,20 @@ import (
 
 func TestProductEnabled(t *testing.T) {
 	client := new(client)
-	client.start(nil, NamespaceTracers)
-	client.productEnabled(NamespaceProfilers)
+	client.start(nil, NamespaceTracers, true)
+	client.productChange(NamespaceProfilers, true)
 	// should just contain app-product-change
 	require.Len(t, client.requests, 1)
 	body := client.requests[0].Body
 
 	assert.Equal(t, RequestTypeAppProductChange, body.RequestType)
-	var productsPayload = body.Payload.(*Products)
-	assert.True(t, productsPayload.Profiler.Enabled)
+	var productsPayload = body.Payload.(*ProductsPayload)
+	assert.True(t, productsPayload.Products.Profiler.Enabled)
 }
 
 func TestConfigChange(t *testing.T) {
 	client := new(client)
-	client.start(nil, NamespaceTracers)
+	client.start(nil, NamespaceTracers, true)
 	client.configChange([]Configuration{BoolConfig("delta_profiles", true)})
 	require.Len(t, client.requests, 1)
 
@@ -84,7 +84,7 @@ func mockServer(ctx context.Context, t *testing.T, expectedHits int, genTelemetr
 			genTelemetry()
 			select {
 			case <-ctx.Done():
-				t.Fatal("TestProductStart timed out")
+				t.Fatal("TestProductChange timed out")
 			case <-done:
 			}
 			return messages
@@ -94,7 +94,7 @@ func mockServer(ctx context.Context, t *testing.T, expectedHits int, genTelemetr
 		}
 }
 
-func TestProductStart(t *testing.T) {
+func TestProductChange(t *testing.T) {
 	// this test is meant to ensure that a given sequence of ProductStart/ProductStop calls
 	// emits the expected telemetry events.
 	t.Setenv("DD_TELEMETRY_HEARTBEAT_INTERVAL", "1")
@@ -108,16 +108,16 @@ func TestProductStart(t *testing.T) {
 			name:           "tracer start, profiler start",
 			wantedMessages: []RequestType{RequestTypeAppStarted, RequestTypeDependenciesLoaded, RequestTypeAppClientConfigurationChange, RequestTypeAppProductChange},
 			genTelemetry: func() {
-				GlobalClient.ProductStart(NamespaceTracers, nil)
-				GlobalClient.ProductStart(NamespaceProfilers, []Configuration{{Name: "key", Value: "value"}})
+				GlobalClient.ProductChange(NamespaceTracers, true, nil)
+				GlobalClient.ProductChange(NamespaceProfilers, true, []Configuration{{Name: "key", Value: "value"}})
 			},
 		},
 		{
 			name:           "profiler start, tracer start",
 			wantedMessages: []RequestType{RequestTypeAppStarted, RequestTypeDependenciesLoaded, RequestTypeAppClientConfigurationChange},
 			genTelemetry: func() {
-				GlobalClient.ProductStart(NamespaceProfilers, nil)
-				GlobalClient.ProductStart(NamespaceTracers, []Configuration{{Name: "key", Value: "value"}})
+				GlobalClient.ProductChange(NamespaceProfilers, true, nil)
+				GlobalClient.ProductChange(NamespaceTracers, true, []Configuration{{Name: "key", Value: "value"}})
 			},
 		},
 	}
@@ -137,4 +137,31 @@ func TestProductStart(t *testing.T) {
 			}
 		})
 	}
+}
+
+// Test that globally registered app config is sent in telemetry requests including the configuration state.
+func TestRegisterAppConfig(t *testing.T) {
+	client := new(client)
+	client.RegisterAppConfig("key1", "val1", OriginDefault)
+
+	// Test that globally registered app config is sent in app-started payloads
+	client.start([]Configuration{{Name: "key2", Value: "val2", Origin: OriginDDConfig}}, NamespaceTracers, false)
+
+	req := client.requests[0].Body
+	require.Equal(t, RequestTypeAppStarted, req.RequestType)
+	appStarted := req.Payload.(*AppStarted)
+	cfg := appStarted.Configuration
+	require.Contains(t, cfg, Configuration{Name: "key1", Value: "val1", Origin: OriginDefault})
+	require.Contains(t, cfg, Configuration{Name: "key2", Value: "val2", Origin: OriginDDConfig})
+
+	// Test that globally registered app config is sent in app-client-configuration-change payloads
+	client.ProductChange(NamespaceTracers, true, []Configuration{{Name: "key3", Value: "val3", Origin: OriginCode}})
+
+	req = client.requests[2].Body
+	require.Equal(t, RequestTypeAppClientConfigurationChange, req.RequestType)
+	appConfigChange := req.Payload.(*ConfigurationChange)
+	cfg = appConfigChange.Configuration
+	require.Len(t, cfg, 2)
+	require.Contains(t, cfg, Configuration{Name: "key1", Value: "val1", Origin: OriginDefault})
+	require.Contains(t, cfg, Configuration{Name: "key3", Value: "val3", Origin: OriginCode})
 }

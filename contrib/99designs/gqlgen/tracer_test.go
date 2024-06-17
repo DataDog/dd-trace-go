@@ -65,6 +65,16 @@ func TestOptions(t *testing.T) {
 				assert.Equal(0.5, root.Tag(ext.EventSampleRate))
 			},
 		},
+		"WithCustomTag": {
+			tracerOpts: []Option{
+				WithCustomTag("customTag1", "customValue1"),
+				WithCustomTag("customTag2", "customValue2"),
+			},
+			test: func(assert *assert.Assertions, root mocktracer.Span) {
+				assert.Equal("customValue1", root.Tag("customTag1"))
+				assert.Equal("customValue2", root.Tag("customTag2"))
+			},
+		},
 	} {
 		t.Run(name, func(t *testing.T) {
 			assert := assert.New(t)
@@ -143,8 +153,8 @@ func TestChildSpans(t *testing.T) {
 		opNames = append(opNames, span.OperationName())
 		assert.Equal("99designs/gqlgen", span.Tag(ext.Component))
 	}
-	assert.ElementsMatch(resNames, []string{readOp, validationOp, parsingOp, `{ name }`})
-	assert.ElementsMatch(opNames, []string{readOp, validationOp, parsingOp, "graphql.query"})
+	assert.ElementsMatch(resNames, []string{readOp, parsingOp, validationOp, "Query.name", `{ name }`})
+	assert.ElementsMatch(opNames, []string{readOp, parsingOp, validationOp, fieldOp, "graphql.query"})
 	assert.NotNil(root)
 	assert.Nil(root.Tag(ext.Error))
 }
@@ -168,32 +178,34 @@ func TestNamingSchema(t *testing.T) {
 		return mt.FinishedSpans()
 	})
 	assertOpV0 := func(t *testing.T, spans []mocktracer.Span) {
-		require.Len(t, spans, 8)
+		require.Len(t, spans, 9)
 		assert.Equal(t, "graphql.read", spans[0].OperationName())
 		assert.Equal(t, "graphql.parse", spans[1].OperationName())
 		assert.Equal(t, "graphql.validate", spans[2].OperationName())
-		assert.Equal(t, "graphql.query", spans[3].OperationName())
-		assert.Equal(t, "graphql.read", spans[4].OperationName())
-		assert.Equal(t, "graphql.parse", spans[5].OperationName())
-		assert.Equal(t, "graphql.validate", spans[6].OperationName())
-		assert.Equal(t, "graphql.mutation", spans[7].OperationName())
+		assert.Equal(t, "graphql.field", spans[3].OperationName())
+		assert.Equal(t, "graphql.query", spans[4].OperationName())
+		assert.Equal(t, "graphql.read", spans[5].OperationName())
+		assert.Equal(t, "graphql.parse", spans[6].OperationName())
+		assert.Equal(t, "graphql.validate", spans[7].OperationName())
+		assert.Equal(t, "graphql.mutation", spans[8].OperationName())
 	}
 	assertOpV1 := func(t *testing.T, spans []mocktracer.Span) {
-		require.Len(t, spans, 8)
+		require.Len(t, spans, 9)
 		assert.Equal(t, "graphql.read", spans[0].OperationName())
 		assert.Equal(t, "graphql.parse", spans[1].OperationName())
 		assert.Equal(t, "graphql.validate", spans[2].OperationName())
-		assert.Equal(t, "graphql.server.request", spans[3].OperationName())
-		assert.Equal(t, "graphql.read", spans[4].OperationName())
-		assert.Equal(t, "graphql.parse", spans[5].OperationName())
-		assert.Equal(t, "graphql.validate", spans[6].OperationName())
-		assert.Equal(t, "graphql.server.request", spans[7].OperationName())
+		assert.Equal(t, "graphql.field", spans[3].OperationName())
+		assert.Equal(t, "graphql.server.request", spans[4].OperationName())
+		assert.Equal(t, "graphql.read", spans[5].OperationName())
+		assert.Equal(t, "graphql.parse", spans[6].OperationName())
+		assert.Equal(t, "graphql.validate", spans[7].OperationName())
+		assert.Equal(t, "graphql.server.request", spans[8].OperationName())
 	}
 	serviceOverride := namingschematest.TestServiceOverride
 	wantServiceNameV0 := namingschematest.ServiceNameAssertions{
-		WithDefaults:             lists.RepeatString("graphql", 8),
-		WithDDService:            lists.RepeatString("graphql", 8),
-		WithDDServiceAndOverride: lists.RepeatString(serviceOverride, 8),
+		WithDefaults:             lists.RepeatString("graphql", 9),
+		WithDDService:            lists.RepeatString("graphql", 9),
+		WithDDServiceAndOverride: lists.RepeatString(serviceOverride, 9),
 	}
 	t.Run("ServiceName", namingschematest.NewServiceNameTest(genSpans, wantServiceNameV0))
 	t.Run("SpanName", namingschematest.NewSpanNameTest(genSpans, assertOpV0, assertOpV1))

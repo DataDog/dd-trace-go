@@ -15,6 +15,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestClient(t *testing.T) {
@@ -39,8 +41,8 @@ func TestClient(t *testing.T) {
 		URL: server.URL,
 	}
 	client.mu.Lock()
-	client.start(nil, NamespaceTracers)
-	client.start(nil, NamespaceTracers) // test idempotence
+	client.start(nil, NamespaceTracers, true)
+	client.start(nil, NamespaceTracers, true) // test idempotence
 	client.mu.Unlock()
 	defer client.Stop()
 
@@ -104,7 +106,7 @@ func TestMetrics(t *testing.T) {
 		client := &client{
 			URL: server.URL,
 		}
-		client.start(nil, NamespaceTracers)
+		client.start(nil, NamespaceTracers, true)
 
 		// Records should have the most recent value
 		client.Record(NamespaceTracers, MetricKindGauge, "foobar", 1, nil, false)
@@ -180,7 +182,7 @@ func TestDistributionMetrics(t *testing.T) {
 		client := &client{
 			URL: server.URL,
 		}
-		client.start(nil, NamespaceTracers)
+		client.start(nil, NamespaceTracers, true)
 		// Records should have the most recent value
 		client.Record(NamespaceTracers, MetricKindDist, "soobar", 1, nil, false)
 		client.Record(NamespaceTracers, MetricKindDist, "soobar", 3, nil, false)
@@ -212,7 +214,7 @@ func TestDisabledClient(t *testing.T) {
 	client := &client{
 		URL: server.URL,
 	}
-	client.start(nil, NamespaceTracers)
+	client.start(nil, NamespaceTracers, true)
 	client.Record(NamespaceTracers, MetricKindGauge, "foobar", 1, nil, false)
 	client.Count(NamespaceTracers, "bonk", 4, []string{"org:1"}, false)
 	client.Stop()
@@ -278,7 +280,7 @@ func TestConcurrentClient(t *testing.T) {
 		client := &client{
 			URL: server.URL,
 		}
-		client.start(nil, NamespaceTracers)
+		client.start(nil, NamespaceTracers, true)
 		defer client.Stop()
 
 		var wg sync.WaitGroup
@@ -353,7 +355,7 @@ func TestAgentlessRetry(t *testing.T) {
 	client := &client{
 		URL: brokenServer.URL,
 	}
-	client.start(nil, NamespaceTracers)
+	client.start(nil, NamespaceTracers, true)
 	waitAgentlessEndpoint()
 }
 
@@ -380,10 +382,70 @@ func TestCollectDependencies(t *testing.T) {
 	client := &client{
 		URL: server.URL,
 	}
-	client.start(nil, NamespaceTracers)
+	client.start(nil, NamespaceTracers, true)
 	select {
 	case <-received:
 	case <-ctx.Done():
 		t.Fatalf("Timed out waiting for dependency payload")
 	}
+}
+
+func Test_heartbeatInterval(t *testing.T) {
+	defaultInterval := time.Second * time.Duration(defaultHeartbeatInterval)
+	tests := []struct {
+		name  string
+		setup func(t *testing.T)
+		want  time.Duration
+	}{
+		{
+			name:  "default",
+			setup: func(t *testing.T) {},
+			want:  defaultInterval,
+		},
+		{
+			name:  "float",
+			setup: func(t *testing.T) { t.Setenv("DD_TELEMETRY_HEARTBEAT_INTERVAL", "0.2") },
+			want:  time.Millisecond * 200,
+		},
+		{
+			name:  "integer",
+			setup: func(t *testing.T) { t.Setenv("DD_TELEMETRY_HEARTBEAT_INTERVAL", "2") },
+			want:  time.Second * 2,
+		},
+		{
+			name:  "negative",
+			setup: func(t *testing.T) { t.Setenv("DD_TELEMETRY_HEARTBEAT_INTERVAL", "-1") },
+			want:  defaultInterval,
+		},
+		{
+			name:  "zero",
+			setup: func(t *testing.T) { t.Setenv("DD_TELEMETRY_HEARTBEAT_INTERVAL", "0") },
+			want:  defaultInterval,
+		},
+		{
+			name:  "long",
+			setup: func(t *testing.T) { t.Setenv("DD_TELEMETRY_HEARTBEAT_INTERVAL", "4000") },
+			want:  defaultInterval,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tt.setup(t)
+			assert.Equal(t, tt.want, heartbeatInterval())
+		})
+	}
+}
+
+func TestNoEmptyHeaders(t *testing.T) {
+	c := &client{}
+	req := c.newRequest(RequestTypeAppStarted)
+	assertNotEmpty := func(header string) {
+		headers := *req.Header
+		vals := headers[header]
+		for _, v := range vals {
+			assert.NotEmpty(t, v, "%s header should not be empty", header)
+		}
+	}
+	assertNotEmpty("Datadog-Container-ID")
+	assertNotEmpty("Datadog-Entity-ID")
 }

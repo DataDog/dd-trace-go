@@ -18,8 +18,9 @@ func TestPathway(t *testing.T) {
 	t.Run("test SetCheckpoint", func(t *testing.T) {
 		start := time.Now()
 		processor := Processor{
+			hashCache:  newHashCache(),
 			stopped:    1,
-			in:         make(chan statsPoint, 10),
+			in:         newFastQueue(),
 			service:    "service-1",
 			env:        "env",
 			timeSource: func() time.Time { return start },
@@ -27,13 +28,13 @@ func TestPathway(t *testing.T) {
 		ctx := processor.SetCheckpoint(context.Background())
 		middle := start.Add(time.Hour)
 		processor.timeSource = func() time.Time { return middle }
-		ctx = processor.SetCheckpoint(ctx, "edge-1")
+		ctx = processor.SetCheckpoint(ctx, "topic:topic1")
 		end := middle.Add(time.Hour)
 		processor.timeSource = func() time.Time { return end }
-		ctx = processor.SetCheckpoint(ctx, "edge-2")
+		ctx = processor.SetCheckpoint(ctx, "topic:topic2")
 		hash1 := pathwayHash(nodeHash("service-1", "env", nil), 0)
-		hash2 := pathwayHash(nodeHash("service-1", "env", []string{"edge-1"}), hash1)
-		hash3 := pathwayHash(nodeHash("service-1", "env", []string{"edge-2"}), hash2)
+		hash2 := pathwayHash(nodeHash("service-1", "env", []string{"topic:topic1"}), hash1)
+		hash3 := pathwayHash(nodeHash("service-1", "env", []string{"topic:topic2"}), hash2)
 		p, _ := PathwayFromContext(ctx)
 		assert.Equal(t, hash3, p.GetHash())
 		assert.Equal(t, start, p.PathwayStart())
@@ -45,29 +46,30 @@ func TestPathway(t *testing.T) {
 			timestamp:      start.UnixNano(),
 			pathwayLatency: 0,
 			edgeLatency:    0,
-		}, <-processor.in)
+		}, processor.in.poll(time.Second).point)
 		assert.Equal(t, statsPoint{
-			edgeTags:       []string{"edge-1"},
+			edgeTags:       []string{"topic:topic1"},
 			hash:           hash2,
 			parentHash:     hash1,
 			timestamp:      middle.UnixNano(),
 			pathwayLatency: middle.Sub(start).Nanoseconds(),
 			edgeLatency:    middle.Sub(start).Nanoseconds(),
-		}, <-processor.in)
+		}, processor.in.poll(time.Second).point)
 		assert.Equal(t, statsPoint{
-			edgeTags:       []string{"edge-2"},
+			edgeTags:       []string{"topic:topic2"},
 			hash:           hash3,
 			parentHash:     hash2,
 			timestamp:      end.UnixNano(),
 			pathwayLatency: end.Sub(start).Nanoseconds(),
 			edgeLatency:    end.Sub(middle).Nanoseconds(),
-		}, <-processor.in)
+		}, processor.in.poll(time.Second).point)
 	})
 
 	t.Run("test new pathway creation", func(t *testing.T) {
 		processor := Processor{
+			hashCache:  newHashCache(),
 			stopped:    1,
-			in:         make(chan statsPoint, 10),
+			in:         newFastQueue(),
 			service:    "service-1",
 			env:        "env",
 			timeSource: time.Now,
@@ -84,9 +86,9 @@ func TestPathway(t *testing.T) {
 		assert.Equal(t, hash2, pathwayWith1EdgeTag.GetHash())
 		assert.Equal(t, hash3, pathwayWith2EdgeTags.GetHash())
 
-		var statsPointWithNoEdgeTags = <-processor.in
-		var statsPointWith1EdgeTag = <-processor.in
-		var statsPointWith2EdgeTags = <-processor.in
+		var statsPointWithNoEdgeTags = processor.in.poll(time.Second).point
+		var statsPointWith1EdgeTag = processor.in.poll(time.Second).point
+		var statsPointWith2EdgeTags = processor.in.poll(time.Second).point
 		assert.Equal(t, hash1, statsPointWithNoEdgeTags.hash)
 		assert.Equal(t, []string(nil), statsPointWithNoEdgeTags.edgeTags)
 		assert.Equal(t, hash2, statsPointWith1EdgeTag.hash)
@@ -133,10 +135,11 @@ func TestPathway(t *testing.T) {
 			{"dog:bark", false},
 			{"type:", true},
 			{"type:dog", true},
-			{"type::dog", false},
-			{"type:d:o:g", false},
-			{"type::", false},
+			{"type::dog", true},
+			{"type:d:o:g", true},
+			{"type::", true},
 			{":", false},
+			{"topic:arn:aws:sns:us-east-1:727006795293:dsm-dev-sns-topic", true},
 		} {
 			assert.Equal(t, isWellFormedEdgeTag(tc.s), tc.b)
 		}

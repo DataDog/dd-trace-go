@@ -6,8 +6,12 @@
 package internal
 
 import (
+	"net/url"
 	"os"
+	"runtime/debug"
 	"sync"
+
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
 const (
@@ -56,7 +60,7 @@ func updateAllTags(tags map[string]string, newtags map[string]string) {
 // Get git metadata from environment variables
 func getTagsFromEnv() map[string]string {
 	return map[string]string{
-		TagRepositoryURL: os.Getenv(EnvGitRepositoryURL),
+		TagRepositoryURL: removeCredentials(os.Getenv(EnvGitRepositoryURL)),
 		TagCommitSha:     os.Getenv(EnvGitCommitSha),
 	}
 }
@@ -66,10 +70,36 @@ func getTagsFromDDTags() map[string]string {
 	etags := ParseTagString(os.Getenv(EnvDDTags))
 
 	return map[string]string{
-		TagRepositoryURL: etags[TagRepositoryURL],
+		TagRepositoryURL: removeCredentials(etags[TagRepositoryURL]),
 		TagCommitSha:     etags[TagCommitSha],
 		TagGoPath:        etags[TagGoPath],
 	}
+}
+
+// getTagsFromBinary extracts git metadata from binary metadata
+func getTagsFromBinary() map[string]string {
+	res := make(map[string]string)
+	info, ok := debug.ReadBuildInfo()
+	if !ok {
+		log.Debug("ReadBuildInfo failed, skip source code metadata extracting")
+		return res
+	}
+	goPath := info.Path
+	var vcs, commitSha string
+	for _, s := range info.Settings {
+		if s.Key == "vcs" {
+			vcs = s.Value
+		} else if s.Key == "vcs.revision" {
+			commitSha = s.Value
+		}
+	}
+	if vcs != "git" {
+		log.Debug("Unknown VCS: '%s', skip source code metadata extracting", vcs)
+		return res
+	}
+	res[TagCommitSha] = commitSha
+	res[TagGoPath] = goPath
+	return res
 }
 
 // GetGitMetadataTags returns git metadata tags
@@ -120,4 +150,23 @@ func GetTracerGitMetadataTags() map[string]string {
 	updateTags(res, TraceTagGoPath, tags[TagGoPath])
 
 	return res
+}
+
+// removeCredentials returns the passed url with potential credentials removed.
+// If the input string is not a valid URL, the string is returned as is.
+func removeCredentials(urlStr string) string {
+	if urlStr == "" {
+		return urlStr
+	}
+	u, err := url.Parse(urlStr)
+	if err != nil {
+		// not an url, nothing to remove
+		return urlStr
+	}
+	if u.User == nil {
+		// nothing to remove
+		return urlStr
+	}
+	u.User = nil
+	return u.String()
 }

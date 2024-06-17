@@ -12,6 +12,7 @@ import (
 	"net/http"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/httptrace"
+	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/options"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
@@ -46,7 +47,7 @@ func Middleware(opts ...Option) func(next http.Handler) http.Handler {
 				next.ServeHTTP(w, r)
 				return
 			}
-			opts := spanOpts
+			opts := options.Copy(spanOpts...) // opts must be a copy of spanOpts, locally scoped, to avoid races.
 			if !math.IsNaN(cfg.analyticsRate) {
 				opts = append(opts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
 			}
@@ -66,8 +67,8 @@ func Middleware(opts ...Option) func(next http.Handler) http.Handler {
 			r = r.WithContext(ctx)
 
 			next := next // avoid modifying the value of next in the outer closure scope
-			if appsec.Enabled() {
-				next = withAppsec(next, r, span)
+			if appsec.Enabled() && !cfg.appsecDisabled {
+				next = withAppsec(next, r, span, &cfg.appsecConfig)
 				// Note that the following response writer passed to the handler
 				// implements the `interface { Status() int }` expected by httpsec.
 			}
