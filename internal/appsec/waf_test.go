@@ -30,7 +30,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/config"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener/httpsec"
 
-	"github.com/mattn/go-sqlite3"
+	_ "github.com/glebarez/go-sqlite"
 	"github.com/stretchr/testify/require"
 )
 
@@ -521,7 +521,6 @@ CREATE TABLE product (
 	if err != nil {
 		log.Fatalln("unexpected sql.Open error:", err)
 	}
-	sqltrace.Register("sqlite3", &sqlite3.SQLiteDriver{})
 
 	if _, err := db.Exec(tables); err != nil {
 		return nil, err
