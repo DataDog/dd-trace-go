@@ -138,11 +138,11 @@ func (tc *TracedConn) ExecContext(ctx context.Context, query string, args []driv
 		ctx, end := startTraceTask(ctx, QueryTypeExec)
 		defer end()
 		if appsec.Enabled() {
-			if err := sqlsec.ProtectSQLOperation(ctx, query, tc.driverName, spanID); err != nil {
-				return nil, err
-			}
+			err = sqlsec.ProtectSQLOperation(ctx, query, tc.driverName, spanID)
 		}
-		r, err := execContext.ExecContext(ctx, cquery, args)
+		if err == nil {
+			r, err = execContext.ExecContext(ctx, cquery, args)
+		}
 		tc.tryTrace(ctx, QueryTypeExec, query, start, err, append(withDBMTraceInjectedTag(tc.cfg.dbmPropagationMode), tracer.WithSpanID(spanID))...)
 		return r, err
 	}
@@ -160,11 +160,11 @@ func (tc *TracedConn) ExecContext(ctx context.Context, query string, args []driv
 		ctx, end := startTraceTask(ctx, QueryTypeExec)
 		defer end()
 		if appsec.Enabled() {
-			if err := sqlsec.ProtectSQLOperation(ctx, query, tc.driverName, spanID); err != nil {
-				return nil, err
-			}
+			err = sqlsec.ProtectSQLOperation(ctx, query, tc.driverName, spanID)
 		}
-		r, err = execer.Exec(cquery, dargs)
+		if err == nil {
+			r, err = execer.Exec(cquery, dargs)
+		}
 		tc.tryTrace(ctx, QueryTypeExec, query, start, err, append(withDBMTraceInjectedTag(tc.cfg.dbmPropagationMode), tracer.WithSpanID(spanID))...)
 		return r, err
 	}
@@ -192,11 +192,11 @@ func (tc *TracedConn) QueryContext(ctx context.Context, query string, args []dri
 		ctx, end := startTraceTask(ctx, QueryTypeQuery)
 		defer end()
 		if appsec.Enabled() {
-			if err := sqlsec.ProtectSQLOperation(ctx, query, tc.driverName, spanID); err != nil {
-				return nil, err
-			}
+			err = sqlsec.ProtectSQLOperation(ctx, query, tc.driverName, spanID)
 		}
-		rows, err := queryerContext.QueryContext(ctx, cquery, args)
+		if err == nil {
+			rows, err = queryerContext.QueryContext(ctx, cquery, args)
+		}
 		tc.tryTrace(ctx, QueryTypeQuery, query, start, err, append(withDBMTraceInjectedTag(tc.cfg.dbmPropagationMode), tracer.WithSpanID(spanID))...)
 		return rows, err
 	}
@@ -214,11 +214,11 @@ func (tc *TracedConn) QueryContext(ctx context.Context, query string, args []dri
 		ctx, end := startTraceTask(ctx, QueryTypeQuery)
 		defer end()
 		if appsec.Enabled() {
-			if err := sqlsec.ProtectSQLOperation(ctx, query, tc.driverName, spanID); err != nil {
-				return nil, err
-			}
+			err = sqlsec.ProtectSQLOperation(ctx, query, tc.driverName, spanID)
 		}
-		rows, err = queryer.Query(cquery, dargs)
+		if err == nil {
+			rows, err = queryer.Query(cquery, dargs)
+		}
 		tc.tryTrace(ctx, QueryTypeQuery, query, start, err, append(withDBMTraceInjectedTag(tc.cfg.dbmPropagationMode), tracer.WithSpanID(spanID))...)
 		return rows, err
 	}
