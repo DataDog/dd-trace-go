@@ -517,7 +517,7 @@ CREATE TABLE product (
    price  int NOT NULL
 );
 `
-	db, err := sqltrace.Open("sqlite3", ":memory:")
+	db, err := sqltrace.Open("sqlite", ":memory:")
 	if err != nil {
 		log.Fatalln("unexpected sql.Open error:", err)
 	}
