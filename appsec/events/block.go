@@ -11,8 +11,6 @@ import "errors"
 
 var _ error = (*BlockingSecurityEvent)(nil)
 
-var securityError = &BlockingSecurityEvent{}
-
 // BlockingSecurityEvent is the error type returned by function calls blocked by appsec.
 // Even though appsec takes care of responding automatically to the blocked requests, it
 // is your duty to abort the request handlers that are calling functions blocked by appsec.
@@ -29,5 +27,6 @@ func (*BlockingSecurityEvent) Error() string {
 
 // IsSecurityError returns true if the error is a security event.
 func IsSecurityError(err error) bool {
-	return errors.Is(err, securityError)
+	var secErr *BlockingSecurityEvent
+	return errors.As(err, &secErr)
 }
