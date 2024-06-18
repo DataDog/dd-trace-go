@@ -18,7 +18,7 @@ import (
 
 var badInputContextOnce sync.Once
 
-func ProtectSQLOperation(ctx context.Context, query, driver string, spanID uint64) error {
+func ProtectSQLOperation(ctx context.Context, query, driver string) error {
 	opArgs := types.SQLOperationArgs{
 		Query:  query,
 		Driver: driver,

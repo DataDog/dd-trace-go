@@ -138,7 +138,7 @@ func (tc *TracedConn) ExecContext(ctx context.Context, query string, args []driv
 		ctx, end := startTraceTask(ctx, QueryTypeExec)
 		defer end()
 		if appsec.Enabled() {
-			err = sqlsec.ProtectSQLOperation(ctx, query, tc.driverName, spanID)
+			err = sqlsec.ProtectSQLOperation(ctx, query, tc.driverName)
 		}
 		if err == nil {
 			r, err = execContext.ExecContext(ctx, cquery, args)
@@ -160,7 +160,7 @@ func (tc *TracedConn) ExecContext(ctx context.Context, query string, args []driv
 		ctx, end := startTraceTask(ctx, QueryTypeExec)
 		defer end()
 		if appsec.Enabled() {
-			err = sqlsec.ProtectSQLOperation(ctx, query, tc.driverName, spanID)
+			err = sqlsec.ProtectSQLOperation(ctx, query, tc.driverName)
 		}
 		if err == nil {
 			r, err = execer.Exec(cquery, dargs)
@@ -192,7 +192,7 @@ func (tc *TracedConn) QueryContext(ctx context.Context, query string, args []dri
 		ctx, end := startTraceTask(ctx, QueryTypeQuery)
 		defer end()
 		if appsec.Enabled() {
-			err = sqlsec.ProtectSQLOperation(ctx, query, tc.driverName, spanID)
+			err = sqlsec.ProtectSQLOperation(ctx, query, tc.driverName)
 		}
 		if err == nil {
 			rows, err = queryerContext.QueryContext(ctx, cquery, args)
@@ -214,7 +214,7 @@ func (tc *TracedConn) QueryContext(ctx context.Context, query string, args []dri
 		ctx, end := startTraceTask(ctx, QueryTypeQuery)
 		defer end()
 		if appsec.Enabled() {
-			err = sqlsec.ProtectSQLOperation(ctx, query, tc.driverName, spanID)
+			err = sqlsec.ProtectSQLOperation(ctx, query, tc.driverName)
 		}
 		if err == nil {
 			rows, err = queryer.Query(cquery, dargs)
