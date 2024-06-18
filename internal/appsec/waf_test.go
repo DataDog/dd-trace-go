@@ -568,8 +568,6 @@ func TestRASPSQLi(t *testing.T) {
 		q := r.URL.Query().Get("query")
 		rows, err := db.QueryContext(r.Context(), q)
 		if events.IsSecurityError(err) {
-			w.WriteHeader(403)
-			w.Write([]byte(err.Error()))
 			return
 		}
 		if err == nil {
@@ -582,8 +580,6 @@ func TestRASPSQLi(t *testing.T) {
 		q := r.URL.Query().Get("query")
 		_, err := db.ExecContext(r.Context(), q)
 		if events.IsSecurityError(err) {
-			w.WriteHeader(403)
-			w.Write([]byte(err.Error()))
 			return
 		}
 		w.Write([]byte("Hello World!\n"))
@@ -596,18 +592,18 @@ func TestRASPSQLi(t *testing.T) {
 		err   error
 	}{
 		"no-error": {
-			query: "SELECT%201",
+			query: url.QueryEscape("SELECT 1"),
 		},
 		"injection/SELECT": {
-			query: "SELECT%20%2A%20FROM%20users%20WHERE%20user%3D%22%22%20UNION%20ALL%20SELECT%20NULL%2Cversion%28%29--",
+			query: url.QueryEscape("SELECT * FROM users WHERE user=\"\" UNION ALL SELECT NULL;version()--"),
 			err:   &events.BlockingSecurityEvent{},
 		},
 		"injection/UPDATE": {
-			query: "UPDATE%20users%20SET%20pwd%20%3D%20%22root%22%20WHERE%20id%20%3D%20%22%22%20OR%201%20%3D%201--",
+			query: url.QueryEscape("UPDATE users SET pwd = \"root\" WHERE id = \"\" OR 1 = 1--"),
 			err:   &events.BlockingSecurityEvent{},
 		},
 		"injection/EXEC": {
-			query: "EXEC%20version%28%29%3B%20DROP%20TABLE%20users--",
+			query: url.QueryEscape("EXEC version(); DROP TABLE users--"),
 			err:   &events.BlockingSecurityEvent{},
 		},
 	} {
@@ -634,6 +630,7 @@ func TestRASPSQLi(t *testing.T) {
 							continue
 						}
 						require.Contains(t, sp.Tag("_dd.appsec.json"), "rasp-942-100")
+						require.NotContains(t, sp.Tags(), "error.message")
 					}
 				} else {
 					require.Equal(t, 200, res.StatusCode)
