@@ -11,6 +11,7 @@ import (
 	"math"
 	"time"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/appsec/events"
 	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/options"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
@@ -140,7 +141,7 @@ func (tc *TracedConn) ExecContext(ctx context.Context, query string, args []driv
 		if appsec.Enabled() {
 			err = sqlsec.ProtectSQLOperation(ctx, query, tc.driverName)
 		}
-		if err == nil {
+		if !events.IsSecurityError(err) {
 			r, err = execContext.ExecContext(ctx, cquery, args)
 		}
 		tc.tryTrace(ctx, QueryTypeExec, query, start, err, append(withDBMTraceInjectedTag(tc.cfg.dbmPropagationMode), tracer.WithSpanID(spanID))...)
@@ -162,7 +163,7 @@ func (tc *TracedConn) ExecContext(ctx context.Context, query string, args []driv
 		if appsec.Enabled() {
 			err = sqlsec.ProtectSQLOperation(ctx, query, tc.driverName)
 		}
-		if err == nil {
+		if !events.IsSecurityError(err) {
 			r, err = execer.Exec(cquery, dargs)
 		}
 		tc.tryTrace(ctx, QueryTypeExec, query, start, err, append(withDBMTraceInjectedTag(tc.cfg.dbmPropagationMode), tracer.WithSpanID(spanID))...)
@@ -194,7 +195,7 @@ func (tc *TracedConn) QueryContext(ctx context.Context, query string, args []dri
 		if appsec.Enabled() {
 			err = sqlsec.ProtectSQLOperation(ctx, query, tc.driverName)
 		}
-		if err == nil {
+		if !events.IsSecurityError(err) {
 			rows, err = queryerContext.QueryContext(ctx, cquery, args)
 		}
 		tc.tryTrace(ctx, QueryTypeQuery, query, start, err, append(withDBMTraceInjectedTag(tc.cfg.dbmPropagationMode), tracer.WithSpanID(spanID))...)
@@ -216,7 +217,7 @@ func (tc *TracedConn) QueryContext(ctx context.Context, query string, args []dri
 		if appsec.Enabled() {
 			err = sqlsec.ProtectSQLOperation(ctx, query, tc.driverName)
 		}
-		if err == nil {
+		if !events.IsSecurityError(err) {
 			rows, err = queryer.Query(cquery, dargs)
 		}
 		tc.tryTrace(ctx, QueryTypeQuery, query, start, err, append(withDBMTraceInjectedTag(tc.cfg.dbmPropagationMode), tracer.WithSpanID(spanID))...)
