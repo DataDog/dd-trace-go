@@ -517,7 +517,9 @@ CREATE TABLE product (
    price  int NOT NULL
 );
 `
-	db, err := sqltrace.Open("sqlite", ":memory:")
+	db, err := sqltrace.Open("sqlite", ":memory:", sqltrace.WithErrorCheck(func(err error) bool {
+		return err != nil
+	}))
 	if err != nil {
 		log.Fatalln("unexpected sql.Open error:", err)
 	}
@@ -620,16 +622,18 @@ func TestRASPSQLi(t *testing.T) {
 
 				spans := mt.FinishedSpans()
 
+				require.Len(t, spans, 2)
+
 				if tc.err != nil {
 					require.Equal(t, 403, res.StatusCode)
-					require.NotNil(t, spans)
-					// Check that the RASP rule for SQLi triggered as expected
+
 					for _, sp := range spans {
-						if sp.Tag("_dd.origin") != "appsec" {
-							continue
+						switch sp.OperationName() {
+						case "http.request":
+							require.Contains(t, sp.Tag("_dd.appsec.json"), "rasp-942-100")
+						case "sqlite.query":
+							require.NotContains(t, sp.Tags(), "error")
 						}
-						require.Contains(t, sp.Tag("_dd.appsec.json"), "rasp-942-100")
-						require.NotContains(t, sp.Tags(), "error.message")
 					}
 				} else {
 					require.Equal(t, 200, res.StatusCode)

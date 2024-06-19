@@ -366,7 +366,7 @@ func (tp *traceParams) tryTrace(ctx context.Context, qtype QueryType, query stri
 			span.SetTag(k, v)
 		}
 	}
-	if err != nil && (tp.cfg.errCheck == nil || tp.cfg.errCheck(err)) {
+	if err != nil && !events.IsSecurityError(err) && (tp.cfg.errCheck == nil || tp.cfg.errCheck(err)) {
 		span.SetTag(ext.Error, err)
 	}
 	span.Finish()
