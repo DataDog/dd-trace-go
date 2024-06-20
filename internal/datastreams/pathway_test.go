@@ -135,10 +135,11 @@ func TestPathway(t *testing.T) {
 			{"dog:bark", false},
 			{"type:", true},
 			{"type:dog", true},
-			{"type::dog", false},
-			{"type:d:o:g", false},
-			{"type::", false},
+			{"type::dog", true},
+			{"type:d:o:g", true},
+			{"type::", true},
 			{":", false},
+			{"topic:arn:aws:sns:us-east-1:727006795293:dsm-dev-sns-topic", true},
 		} {
 			assert.Equal(t, isWellFormedEdgeTag(tc.s), tc.b)
 		}

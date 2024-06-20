@@ -662,7 +662,7 @@ func TestAppsec(t *testing.T) {
 				resp, err := client.RoundTrip(req.WithContext(r.Context()))
 
 				if enabled {
-					require.ErrorIs(t, err, &events.BlockingSecurityEvent{})
+					require.True(t, events.IsSecurityError(err))
 				} else {
 					require.NoError(t, err)
 				}
@@ -690,6 +690,7 @@ func TestAppsec(t *testing.T) {
 			require.Contains(t, appsecJSON, httpsec.ServerIoNetURLAddr)
 
 			require.Contains(t, serviceSpan.Tags(), "_dd.stack")
+			require.NotContains(t, serviceSpan.Tags(), "error.message")
 
 			// This is a nested event so it should contain the child span id in the service entry span
 			// TODO(eliott.bouhana): uncomment this once we have the child span id in the service entry span
