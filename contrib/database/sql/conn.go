@@ -11,10 +11,13 @@ import (
 	"math"
 	"time"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/appsec/events"
 	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/options"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/sqlsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
@@ -52,6 +55,15 @@ const (
 type TracedConn struct {
 	driver.Conn
 	*traceParams
+}
+
+// checkQuerySafety runs ASM RASP SQLi checks on the query to verify if it can safely be run.
+// If it's unsafe to run, an *events.BlockingSecurityEvent is returned
+func checkQuerySecurity(ctx context.Context, query, driver string) error {
+	if !appsec.Enabled() {
+		return nil
+	}
+	return sqlsec.ProtectSQLOperation(ctx, query, driver)
 }
 
 // WrappedConn returns the wrapped connection object.
@@ -135,7 +147,9 @@ func (tc *TracedConn) ExecContext(ctx context.Context, query string, args []driv
 		cquery, spanID := tc.injectComments(ctx, query, tc.cfg.dbmPropagationMode)
 		ctx, end := startTraceTask(ctx, QueryTypeExec)
 		defer end()
-		r, err := execContext.ExecContext(ctx, cquery, args)
+		if err = checkQuerySecurity(ctx, query, tc.driverName); !events.IsSecurityError(err) {
+			r, err = execContext.ExecContext(ctx, cquery, args)
+		}
 		tc.tryTrace(ctx, QueryTypeExec, query, start, err, append(withDBMTraceInjectedTag(tc.cfg.dbmPropagationMode), tracer.WithSpanID(spanID))...)
 		return r, err
 	}
@@ -152,7 +166,9 @@ func (tc *TracedConn) ExecContext(ctx context.Context, query string, args []driv
 		cquery, spanID := tc.injectComments(ctx, query, tc.cfg.dbmPropagationMode)
 		ctx, end := startTraceTask(ctx, QueryTypeExec)
 		defer end()
-		r, err = execer.Exec(cquery, dargs)
+		if err = checkQuerySecurity(ctx, query, tc.driverName); !events.IsSecurityError(err) {
+			r, err = execer.Exec(cquery, dargs)
+		}
 		tc.tryTrace(ctx, QueryTypeExec, query, start, err, append(withDBMTraceInjectedTag(tc.cfg.dbmPropagationMode), tracer.WithSpanID(spanID))...)
 		return r, err
 	}
@@ -179,7 +195,9 @@ func (tc *TracedConn) QueryContext(ctx context.Context, query string, args []dri
 		cquery, spanID := tc.injectComments(ctx, query, tc.cfg.dbmPropagationMode)
 		ctx, end := startTraceTask(ctx, QueryTypeQuery)
 		defer end()
-		rows, err := queryerContext.QueryContext(ctx, cquery, args)
+		if err = checkQuerySecurity(ctx, query, tc.driverName); !events.IsSecurityError(err) {
+			rows, err = queryerContext.QueryContext(ctx, cquery, args)
+		}
 		tc.tryTrace(ctx, QueryTypeQuery, query, start, err, append(withDBMTraceInjectedTag(tc.cfg.dbmPropagationMode), tracer.WithSpanID(spanID))...)
 		return rows, err
 	}
@@ -196,7 +214,9 @@ func (tc *TracedConn) QueryContext(ctx context.Context, query string, args []dri
 		cquery, spanID := tc.injectComments(ctx, query, tc.cfg.dbmPropagationMode)
 		ctx, end := startTraceTask(ctx, QueryTypeQuery)
 		defer end()
-		rows, err = queryer.Query(cquery, dargs)
+		if err = checkQuerySecurity(ctx, query, tc.driverName); !events.IsSecurityError(err) {
+			rows, err = queryer.Query(cquery, dargs)
+		}
 		tc.tryTrace(ctx, QueryTypeQuery, query, start, err, append(withDBMTraceInjectedTag(tc.cfg.dbmPropagationMode), tracer.WithSpanID(spanID))...)
 		return rows, err
 	}
@@ -332,6 +352,7 @@ func (tp *traceParams) tryTrace(ctx context.Context, qtype QueryType, query stri
 	if query != "" {
 		resource = query
 	}
+
 	span.SetTag("sql.query_type", string(qtype))
 	span.SetTag(ext.ResourceName, resource)
 	for k, v := range tp.meta {
@@ -342,7 +363,7 @@ func (tp *traceParams) tryTrace(ctx context.Context, qtype QueryType, query stri
 			span.SetTag(k, v)
 		}
 	}
-	if err != nil && (tp.cfg.errCheck == nil || tp.cfg.errCheck(err)) {
+	if err != nil && !events.IsSecurityError(err) && (tp.cfg.errCheck == nil || tp.cfg.errCheck(err)) {
 		span.SetTag(ext.Error, err)
 	}
 	span.Finish()
