@@ -60,7 +60,6 @@ Datadog APM for Go is built upon dependencies defined in specific versions of th
 | 1.22           | [GA](#support-ga)                   |
 | 1.21           | [GA](#support-ga)                   |
 | 1.20           | [Maintenance](#support-maintenance) |
-| 1.19           | [Legacy](#support-legacy)           |
 
 * Datadog's Trace Agent >= 5.21.1
 
