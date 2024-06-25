@@ -31,21 +31,21 @@ const (
 	gormSpanStartTimeKey = key("dd-trace-go:span")
 )
 
-type GormTracePlugin struct {
+type TracePlugin struct {
 	options []Option
 }
 
-func New(opts ...Option) GormTracePlugin {
-	return GormTracePlugin{
+func New(opts ...Option) TracePlugin {
+	return TracePlugin{
 		options: opts,
 	}
 }
 
-func (GormTracePlugin) Name() string {
+func (TracePlugin) Name() string {
 	return "GormTracePlugin"
 }
 
-func (g GormTracePlugin) Initialize(db *gorm.DB) error {
+func (g TracePlugin) Initialize(db *gorm.DB) error {
 	_, err := withCallbacks(db, g.options...)
 	return err
 }

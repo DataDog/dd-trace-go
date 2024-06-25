@@ -7,6 +7,7 @@ package gorm_test
 
 import (
 	"context"
+	"errors"
 	"log"
 
 	sqltrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/database/sql"
@@ -36,6 +37,30 @@ func ExampleOpen() {
 		log.Fatal(err)
 	}
 	var user User
+
+	// All calls through gorm.DB are now traced.
+	db.Where("name = ?", "jinzhu").First(&user)
+}
+
+func ExamplePlugin() {
+	// Register augments the provided driver with tracing, enabling it to be loaded by gorm.Open and the gormtrace.TracePlugin.
+	sqltrace.Register("pgx", &stdlib.Driver{}, sqltrace.WithServiceName("my-service"))
+	sqlDb, err := sqltrace.Open("pgx", "postgres://pqgotest:password@localhost/pqgotest?sslmode=disable")
+	if err != nil {
+		log.Fatal(err)
+	}
+	db, err := gorm.Open(postgres.New(postgres.Config{Conn: sqlDb}), &gorm.Config{})
+	if err != nil {
+		log.Fatal(err)
+	}
+	var user User
+
+	errCheck := gormtrace.WithErrorCheck(func(err error) bool {
+		return !errors.Is(err, gorm.ErrRecordNotFound)
+	})
+	if err := db.Use(gormtrace.New(errCheck)); err != nil {
+		log.Fatal(err)
+	}
 
 	// All calls through gorm.DB are now traced.
 	db.Where("name = ?", "jinzhu").First(&user)
