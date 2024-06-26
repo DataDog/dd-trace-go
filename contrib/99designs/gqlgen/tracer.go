@@ -138,14 +138,14 @@ func (t *gqlTracer) InterceptOperation(ctx context.Context, next graphql.Operati
 
 func (t *gqlTracer) InterceptField(ctx context.Context, next graphql.Resolver) (res any, err error) {
 	opCtx := graphql.GetOperationContext(ctx)
-	if t.cfg.skipFieldsForIntrospectionQuery && opCtx.OperationName == "IntrospectionQuery" {
+	if t.cfg.withoutTraceIntrospectionQuery && opCtx.OperationName == "IntrospectionQuery" {
 		res, err = next(ctx)
 		return
 	}
 
 	fieldCtx := graphql.GetFieldContext(ctx)
 	isTrivial := !(fieldCtx.IsMethod || fieldCtx.IsResolver)
-	if t.cfg.skipFieldsWithTrivialResolver && isTrivial {
+	if t.cfg.withoutTraceTrivialResolvedFields && isTrivial {
 		res, err = next(ctx)
 		return
 	}

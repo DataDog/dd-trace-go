@@ -15,11 +15,11 @@ import (
 const defaultServiceName = "graphql"
 
 type config struct {
-	serviceName                     string
-	analyticsRate                   float64
-	skipFieldsForIntrospectionQuery bool
-	skipFieldsWithTrivialResolver   bool
-	tags                            map[string]interface{}
+	serviceName                       string
+	analyticsRate                     float64
+	withoutTraceIntrospectionQuery    bool
+	withoutTraceTrivialResolvedFields bool
+	tags                              map[string]interface{}
 }
 
 // An Option configures the gqlgen integration.
@@ -53,18 +53,18 @@ func WithServiceName(name string) Option {
 	}
 }
 
-// SkipFieldsForIntrospectionQuery skips creating spans for fields when the operation name is IntrospectionQuery.
-func SkipFieldsForIntrospectionQuery(skip bool) Option {
+// WithoutTraceIntrospectionQuery skips creating spans for fields when the operation name is IntrospectionQuery.
+func WithoutTraceIntrospectionQuery(skip bool) Option {
 	return func(cfg *config) {
-		cfg.skipFieldsForIntrospectionQuery = skip
+		cfg.withoutTraceIntrospectionQuery = skip
 	}
 }
 
-// SkipFieldsWithTrivialResolver skips creating spans for fields that have a trivial resolver.
+// WithoutTraceTrivialResolvedFields skips creating spans for fields that have a trivial resolver.
 // For example, a field resolved from an object w/o requiring a custom method is considered trivial.
-func SkipFieldsWithTrivialResolver(skip bool) Option {
+func WithoutTraceTrivialResolvedFields(skip bool) Option {
 	return func(cfg *config) {
-		cfg.skipFieldsWithTrivialResolver = skip
+		cfg.withoutTraceTrivialResolvedFields = skip
 	}
 }
 
