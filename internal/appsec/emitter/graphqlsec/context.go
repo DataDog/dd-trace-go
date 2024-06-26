@@ -10,6 +10,7 @@ import (
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/orchestrion"
 )
 
 type typed[T dyngo.Operation] struct{}
@@ -29,5 +30,5 @@ func FromContext[T dyngo.Operation](ctx context.Context) T {
 
 // contextWithValue creates a new context with the specified operation stored in it.
 func contextWithValue[T dyngo.Operation](ctx context.Context, value T) context.Context {
-	return context.WithValue(ctx, typed[T]{}, value)
+	return orchestrion.CtxWithValue(ctx, typed[T]{}, value)
 }
