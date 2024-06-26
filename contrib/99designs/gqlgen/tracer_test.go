@@ -65,21 +65,8 @@ func TestOptions(t *testing.T) {
 				assert.Equal(0.5, root.Tag(ext.EventSampleRate))
 			},
 		},
-		"WithoutTraceTrivialResolvedFields/false": {
-			tracerOpts: []Option{WithoutTraceTrivialResolvedFields(false)},
-			test: func(assert *assert.Assertions, _ mocktracer.Span, spans []mocktracer.Span) {
-				var hasFieldOperation bool
-				for _, span := range spans {
-					if span.OperationName() == fieldOp {
-						hasFieldOperation = true
-						break
-					}
-				}
-				assert.Equal(true, hasFieldOperation)
-			},
-		},
-		"WithoutTraceTrivialResolvedFields/true": {
-			tracerOpts: []Option{WithoutTraceTrivialResolvedFields(true)},
+		"WithoutTraceTrivialResolvedFields": {
+			tracerOpts: []Option{WithoutTraceTrivialResolvedFields()},
 			test: func(assert *assert.Assertions, _ mocktracer.Span, spans []mocktracer.Span) {
 				var hasFieldOperation bool
 				for _, span := range spans {
@@ -127,21 +114,8 @@ func TestOptions(t *testing.T) {
 		tracerOpts []Option
 		test       func(assert *assert.Assertions, spans []mocktracer.Span)
 	}{
-		"WithoutTraceIntrospectionQuery/false": {
-			tracerOpts: []Option{WithoutTraceIntrospectionQuery(false)},
-			test: func(assert *assert.Assertions, spans []mocktracer.Span) {
-				var hasFieldSpan bool
-				for _, span := range spans {
-					if span.OperationName() == fieldOp {
-						hasFieldSpan = true
-						break
-					}
-				}
-				assert.Equal(true, hasFieldSpan)
-			},
-		},
-		"WithoutTraceIntrospectionQuery/true": {
-			tracerOpts: []Option{WithoutTraceIntrospectionQuery(true)},
+		"WithoutTraceIntrospectionQuery": {
+			tracerOpts: []Option{WithoutTraceIntrospectionQuery()},
 			test: func(assert *assert.Assertions, spans []mocktracer.Span) {
 				var hasFieldSpan bool
 				for _, span := range spans {

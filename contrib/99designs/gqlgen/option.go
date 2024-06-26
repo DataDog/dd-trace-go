@@ -54,17 +54,17 @@ func WithServiceName(name string) Option {
 }
 
 // WithoutTraceIntrospectionQuery skips creating spans for fields when the operation name is IntrospectionQuery.
-func WithoutTraceIntrospectionQuery(skip bool) Option {
+func WithoutTraceIntrospectionQuery() Option {
 	return func(cfg *config) {
-		cfg.withoutTraceIntrospectionQuery = skip
+		cfg.withoutTraceIntrospectionQuery = true
 	}
 }
 
 // WithoutTraceTrivialResolvedFields skips creating spans for fields that have a trivial resolver.
 // For example, a field resolved from an object w/o requiring a custom method is considered trivial.
-func WithoutTraceTrivialResolvedFields(skip bool) Option {
+func WithoutTraceTrivialResolvedFields() Option {
 	return func(cfg *config) {
-		cfg.withoutTraceTrivialResolvedFields = skip
+		cfg.withoutTraceTrivialResolvedFields = true
 	}
 }
 
