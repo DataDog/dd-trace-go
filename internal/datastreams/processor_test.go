@@ -34,7 +34,7 @@ func buildSketch(values ...float64) []byte {
 }
 
 func TestProcessor(t *testing.T) {
-	p := NewProcessor(nil, "env", "service", "v1", &url.URL{Scheme: "http", Host: "agent-address"}, nil, func() bool { return true })
+	p := NewProcessor(nil, "env", "service", "v1", &url.URL{Scheme: "http", Host: "agent-address"}, nil)
 	tp1 := time.Now().Truncate(bucketDuration)
 	tp2 := tp1.Add(time.Minute)
 
@@ -217,7 +217,7 @@ func TestSetCheckpoint(t *testing.T) {
 }
 
 func TestKafkaLag(t *testing.T) {
-	p := NewProcessor(nil, "env", "service", "v1", &url.URL{Scheme: "http", Host: "agent-address"}, nil, func() bool { return true })
+	p := NewProcessor(nil, "env", "service", "v1", &url.URL{Scheme: "http", Host: "agent-address"}, nil)
 	tp1 := time.Now()
 	p.addKafkaOffset(kafkaOffset{offset: 1, topic: "topic1", partition: 1, group: "group1", offsetType: commitOffset})
 	p.addKafkaOffset(kafkaOffset{offset: 10, topic: "topic2", partition: 1, group: "group1", offsetType: commitOffset})
@@ -264,7 +264,7 @@ func BenchmarkSetCheckpoint(b *testing.B) {
 	client := &http.Client{
 		Transport: &noOpTransport{},
 	}
-	p := NewProcessor(&statsd.NoOpClient{}, "env", "service", "v1", &url.URL{Scheme: "http", Host: "agent-address"}, client, func() bool { return true })
+	p := NewProcessor(&statsd.NoOpClient{}, "env", "service", "v1", &url.URL{Scheme: "http", Host: "agent-address"}, client)
 	p.Start()
 	for i := 0; i < b.N; i++ {
 		p.SetCheckpointWithParams(context.Background(), options.CheckpointParams{PayloadSize: 1000}, "type:edge-1", "direction:in", "type:kafka", "topic:topic1", "group:group1")
