@@ -89,8 +89,8 @@ func getDDorOtelConfig(configName string) string {
 
 	val := os.Getenv(config.dd)
 	if otVal := os.Getenv(config.ot); otVal != "" {
-		ddVarPrefix := "config.datadog:"
-		otelVarPrefix := "config.opentelemetry:"
+		ddPrefix := "config.datadog:"
+		otelPrefix := "config.opentelemetry:"
 		if val != "" {
 			log.Warn("Both %v and %v are set, using %v=%v", config.ot, config.dd, config.dd, val)
 			telemetry.GlobalClient.Count(telemetry.NamespaceTracers, "otel.env.hiding", 1.0, []string{ddVarPrefix + config.dd, otelVarPrefix + config.ot}, true)
