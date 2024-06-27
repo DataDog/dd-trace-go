@@ -64,18 +64,20 @@ type errorConfig struct {
 type span struct {
 	sync.RWMutex `msg:"-"` // all fields are protected by this RWMutex
 
-	Name     string             `msg:"name"`              // operation name
-	Service  string             `msg:"service"`           // service name (i.e. "grpc.server", "http.request")
-	Resource string             `msg:"resource"`          // resource name (i.e. "/user?id=123", "SELECT * FROM users")
-	Type     string             `msg:"type"`              // protocol associated with the span (i.e. "web", "db", "cache")
-	Start    int64              `msg:"start"`             // span start time expressed in nanoseconds since epoch
-	Duration int64              `msg:"duration"`          // duration of the span expressed in nanoseconds
-	Meta     map[string]string  `msg:"meta,omitempty"`    // arbitrary map of metadata
-	Metrics  map[string]float64 `msg:"metrics,omitempty"` // arbitrary map of numeric metrics
-	SpanID   uint64             `msg:"span_id"`           // identifier of this span
-	TraceID  uint64             `msg:"trace_id"`          // lower 64-bits of the root span identifier
-	ParentID uint64             `msg:"parent_id"`         // identifier of the span's direct parent
-	Error    int32              `msg:"error"`             // error status of the span; 0 means no errors
+	Name       string             `msg:"name"`                  // operation name
+	Service    string             `msg:"service"`               // service name (i.e. "grpc.server", "http.request")
+	Resource   string             `msg:"resource"`              // resource name (i.e. "/user?id=123", "SELECT * FROM users")
+	Type       string             `msg:"type"`                  // protocol associated with the span (i.e. "web", "db", "cache")
+	Start      int64              `msg:"start"`                 // span start time expressed in nanoseconds since epoch
+	Duration   int64              `msg:"duration"`              // duration of the span expressed in nanoseconds
+	Meta       map[string]string  `msg:"meta,omitempty"`        // arbitrary map of metadata
+	MetaStruct metaStructMap      `msg:"meta_struct,omitempty"` // arbitrary map of metadata with structured values
+	Metrics    map[string]float64 `msg:"metrics,omitempty"`     // arbitrary map of numeric metrics
+	SpanID     uint64             `msg:"span_id"`               // identifier of this span
+	TraceID    uint64             `msg:"trace_id"`              // lower 64-bits of the root span identifier
+	ParentID   uint64             `msg:"parent_id"`             // identifier of the span's direct parent
+	Error      int32              `msg:"error"`                 // error status of the span; 0 means no errors
+	SpanLinks  []ddtrace.SpanLink `msg:"span_links"`            // links to other spans
 
 	goExecTraced bool         `msg:"-"`
 	noDebugStack bool         `msg:"-"` // disables debug stack traces
@@ -161,6 +163,7 @@ func (s *span) SetTag(key string, value interface{}) {
 		s.setMeta(key, v.String())
 		return
 	}
+
 	if value != nil {
 		// Arrays will be translated to dot notation. e.g.
 		// {"myarr.0": "foo", "myarr.1": "bar"}
@@ -179,7 +182,15 @@ func (s *span) SetTag(key string, value interface{}) {
 			}
 			return
 		}
+
+		// Can be sent as messagepack in `meta_struct` instead of `meta`
+		// reserved for internal use only
+		if v, ok := value.(sharedinternal.MetaStructValue); ok {
+			s.setMetaStruct(key, v.Value)
+			return
+		}
 	}
+
 	// not numeric, not a string, not a fmt.Stringer, not a bool, and not an error
 	s.setMeta(key, fmt.Sprint(value))
 }
@@ -389,6 +400,13 @@ func (s *span) setMeta(key, v string) {
 	}
 }
 
+func (s *span) setMetaStruct(key string, v any) {
+	if s.MetaStruct == nil {
+		s.MetaStruct = make(metaStructMap, 1)
+	}
+	s.MetaStruct[key] = v
+}
+
 // setTagBool sets a boolean tag on the span.
 func (s *span) setTagBool(key string, v bool) {
 	switch key {
@@ -460,9 +478,7 @@ func (s *span) Finish(opts ...ddtrace.FinishOption) {
 			s.Unlock()
 		}
 	}
-	if s.taskEnd != nil {
-		s.taskEnd()
-	}
+
 	if s.goExecTraced && rt.IsEnabled() {
 		// Only tag spans as traced if they both started & ended with
 		// execution tracing enabled. This is technically not sufficient
@@ -481,18 +497,12 @@ func (s *span) Finish(opts ...ddtrace.FinishOption) {
 	}
 
 	if tr, ok := internal.GetGlobalTracer().(*tracer); ok && tr.rulesSampling.traces.enabled() {
-		if !s.context.trace.isLocked() {
+		if !s.context.trace.isLocked() && s.context.trace.propagatingTag(keyDecisionMaker) != "-4" {
 			tr.rulesSampling.SampleTrace(s)
 		}
 	}
 
 	s.finish(t)
-
-	if s.pprofCtxRestore != nil {
-		// Restore the labels of the parent span so any CPU samples after this
-		// point are attributed correctly.
-		pprof.SetGoroutineLabels(s.pprofCtxRestore)
-	}
 }
 
 // SetOperationName sets or changes the operation name.
@@ -525,9 +535,15 @@ func (s *span) finish(finishTime int64) {
 	if s.Duration < 0 {
 		s.Duration = 0
 	}
+	if s.taskEnd != nil {
+		s.taskEnd()
+	}
 
 	keep := true
 	if t, ok := internal.GetGlobalTracer().(*tracer); ok {
+		if !t.config.enabled.current {
+			return
+		}
 		// we have an active tracer
 		if t.config.canComputeStats() && shouldComputeStats(s) {
 			// the agent supports computed stats
@@ -562,6 +578,12 @@ func (s *span) finish(finishTime int64) {
 			s, s.Name, s.Resource, s.Meta, s.Metrics)
 	}
 	s.context.finish()
+
+	if s.pprofCtxRestore != nil {
+		// Restore the labels of the parent span so any CPU samples after this
+		// point are attributed correctly.
+		pprof.SetGoroutineLabels(s.pprofCtxRestore)
+	}
 }
 
 // newAggregableSpan creates a new summary for the span s, within an application
@@ -716,6 +738,7 @@ const (
 	keyDecisionMaker        = "_dd.p.dm"
 	keyServiceHash          = "_dd.dm.service_hash"
 	keyOrigin               = "_dd.origin"
+	keyReparentID           = "_dd.parent_id"
 	// keyHostname can be used to override the agent's hostname detection when using `WithHostname`. Not to be confused with keyTracerHostname
 	// which is set via auto-detection.
 	keyHostname                = "_dd.hostname"

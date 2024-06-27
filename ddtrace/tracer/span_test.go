@@ -8,7 +8,6 @@ package tracer
 import (
 	"errors"
 	"fmt"
-	"os"
 	"runtime"
 	"strings"
 	"sync"
@@ -18,6 +17,7 @@ import (
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
+	sharedinternal "gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/samplernames"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/traceprof"
@@ -272,7 +272,6 @@ func (n *nilStringer) String() string {
 }
 
 type panicStringer struct {
-	s string
 }
 
 // String causes panic which SetTag should not handle.
@@ -357,9 +356,30 @@ func TestSpanSetTag(t *testing.T) {
 	assert.Equal("[]", span.Meta["someslices.2"])
 	assert.Equal("[e, f]", span.Meta["someslices.3"])
 
+	mapStrStr := map[string]string{"b": "c"}
+	span.SetTag("map", sharedinternal.MetaStructValue{Value: map[string]string{"b": "c"}})
+	assert.Equal(mapStrStr, span.MetaStruct["map"])
+
+	mapOfMap := map[string]map[string]any{"a": {"b": "c"}}
+	span.SetTag("mapOfMap", sharedinternal.MetaStructValue{Value: mapOfMap})
+	assert.Equal(mapOfMap, span.MetaStruct["mapOfMap"])
+
+	// testMsgpStruct is a struct that implements the msgp.Marshaler interface
+	testValue := &testMsgpStruct{A: "test"}
+	span.SetTag("struct", sharedinternal.MetaStructValue{Value: testValue})
+	require.Equal(t, testValue, span.MetaStruct["struct"])
+
 	assert.Panics(func() {
 		span.SetTag("panicStringer", &panicStringer{})
 	})
+}
+
+type testMsgpStruct struct {
+	A string
+}
+
+func (t *testMsgpStruct) MarshalMsg(_ []byte) ([]byte, error) {
+	return nil, nil
 }
 
 func TestSpanSetTagError(t *testing.T) {
@@ -567,7 +587,6 @@ func TestSpanProfilingTags(t *testing.T) {
 			require.Equal(t, false, ok)
 		})
 	}
-
 }
 
 func TestSpanError(t *testing.T) {
@@ -775,12 +794,9 @@ func TestSpanLog(t *testing.T) {
 	})
 
 	t.Run("env", func(t *testing.T) {
-		os.Setenv("DD_SERVICE", "tracer.test")
-		defer os.Unsetenv("DD_SERVICE")
-		os.Setenv("DD_VERSION", "1.2.3")
-		defer os.Unsetenv("DD_VERSION")
-		os.Setenv("DD_ENV", "testenv")
-		defer os.Unsetenv("DD_ENV")
+		t.Setenv("DD_SERVICE", "tracer.test")
+		t.Setenv("DD_VERSION", "1.2.3")
+		t.Setenv("DD_ENV", "testenv")
 		assert := assert.New(t)
 		tracer, _, _, stop := startTestTracer(t)
 		defer stop()
@@ -809,12 +825,9 @@ func TestSpanLog(t *testing.T) {
 	})
 
 	t.Run("notracer/env", func(t *testing.T) {
-		os.Setenv("DD_SERVICE", "tracer.test")
-		defer os.Unsetenv("DD_SERVICE")
-		os.Setenv("DD_VERSION", "1.2.3")
-		defer os.Unsetenv("DD_VERSION")
-		os.Setenv("DD_ENV", "testenv")
-		defer os.Unsetenv("DD_ENV")
+		t.Setenv("DD_SERVICE", "tracer.test")
+		t.Setenv("DD_VERSION", "1.2.3")
+		t.Setenv("DD_ENV", "testenv")
 		assert := assert.New(t)
 		tracer, _, _, stop := startTestTracer(t)
 		span := tracer.StartSpan("test.request").(*span)
@@ -1062,4 +1075,36 @@ type stringer struct{}
 
 func (s *stringer) String() string {
 	return "string"
+}
+
+// TestConcurrentSpanSetTag tests that setting tags concurrently on a span directly or
+// not (through tracer.Inject when trace sampling rules are in place) does not cause
+// concurrent map writes. It seems to only be consistently reproduced with the -count=100
+// flag when running go test, but it's a good test to have.
+func TestConcurrentSpanSetTag(t *testing.T) {
+	testConcurrentSpanSetTag(t)
+	testConcurrentSpanSetTag(t)
+}
+
+func testConcurrentSpanSetTag(t *testing.T) {
+	tracer, _, _, stop := startTestTracer(t, WithSamplingRules([]SamplingRule{NameRule("root", 1.0)}))
+	defer stop()
+
+	span := tracer.StartSpan("root")
+	defer span.Finish()
+
+	const n = 100
+	wg := sync.WaitGroup{}
+	wg.Add(n * 2)
+	for i := 0; i < n; i++ {
+		go func() {
+			tracer.Inject(span.Context(), TextMapCarrier(map[string]string{}))
+			wg.Done()
+		}()
+		go func() {
+			span.SetTag("key", "value")
+			wg.Done()
+		}()
+	}
+	wg.Wait()
 }

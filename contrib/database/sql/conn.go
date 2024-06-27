@@ -11,10 +11,13 @@ import (
 	"math"
 	"time"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/appsec/events"
 	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/options"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/sqlsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
@@ -52,6 +55,15 @@ const (
 type TracedConn struct {
 	driver.Conn
 	*traceParams
+}
+
+// checkQuerySafety runs ASM RASP SQLi checks on the query to verify if it can safely be run.
+// If it's unsafe to run, an *events.BlockingSecurityEvent is returned
+func checkQuerySecurity(ctx context.Context, query, driver string) error {
+	if !appsec.Enabled() {
+		return nil
+	}
+	return sqlsec.ProtectSQLOperation(ctx, query, driver)
 }
 
 // WrappedConn returns the wrapped connection object.
@@ -135,7 +147,9 @@ func (tc *TracedConn) ExecContext(ctx context.Context, query string, args []driv
 		cquery, spanID := tc.injectComments(ctx, query, tc.cfg.dbmPropagationMode)
 		ctx, end := startTraceTask(ctx, QueryTypeExec)
 		defer end()
-		r, err := execContext.ExecContext(ctx, cquery, args)
+		if err = checkQuerySecurity(ctx, query, tc.driverName); !events.IsSecurityError(err) {
+			r, err = execContext.ExecContext(ctx, cquery, args)
+		}
 		tc.tryTrace(ctx, QueryTypeExec, query, start, err, append(withDBMTraceInjectedTag(tc.cfg.dbmPropagationMode), tracer.WithSpanID(spanID))...)
 		return r, err
 	}
@@ -152,7 +166,9 @@ func (tc *TracedConn) ExecContext(ctx context.Context, query string, args []driv
 		cquery, spanID := tc.injectComments(ctx, query, tc.cfg.dbmPropagationMode)
 		ctx, end := startTraceTask(ctx, QueryTypeExec)
 		defer end()
-		r, err = execer.Exec(cquery, dargs)
+		if err = checkQuerySecurity(ctx, query, tc.driverName); !events.IsSecurityError(err) {
+			r, err = execer.Exec(cquery, dargs)
+		}
 		tc.tryTrace(ctx, QueryTypeExec, query, start, err, append(withDBMTraceInjectedTag(tc.cfg.dbmPropagationMode), tracer.WithSpanID(spanID))...)
 		return r, err
 	}
@@ -179,7 +195,9 @@ func (tc *TracedConn) QueryContext(ctx context.Context, query string, args []dri
 		cquery, spanID := tc.injectComments(ctx, query, tc.cfg.dbmPropagationMode)
 		ctx, end := startTraceTask(ctx, QueryTypeQuery)
 		defer end()
-		rows, err := queryerContext.QueryContext(ctx, cquery, args)
+		if err = checkQuerySecurity(ctx, query, tc.driverName); !events.IsSecurityError(err) {
+			rows, err = queryerContext.QueryContext(ctx, cquery, args)
+		}
 		tc.tryTrace(ctx, QueryTypeQuery, query, start, err, append(withDBMTraceInjectedTag(tc.cfg.dbmPropagationMode), tracer.WithSpanID(spanID))...)
 		return rows, err
 	}
@@ -196,7 +214,9 @@ func (tc *TracedConn) QueryContext(ctx context.Context, query string, args []dri
 		cquery, spanID := tc.injectComments(ctx, query, tc.cfg.dbmPropagationMode)
 		ctx, end := startTraceTask(ctx, QueryTypeQuery)
 		defer end()
-		rows, err = queryer.Query(cquery, dargs)
+		if err = checkQuerySecurity(ctx, query, tc.driverName); !events.IsSecurityError(err) {
+			rows, err = queryer.Query(cquery, dargs)
+		}
 		tc.tryTrace(ctx, QueryTypeQuery, query, start, err, append(withDBMTraceInjectedTag(tc.cfg.dbmPropagationMode), tracer.WithSpanID(spanID))...)
 		return rows, err
 	}
@@ -241,6 +261,29 @@ func WithSpanTags(ctx context.Context, tags map[string]string) context.Context {
 	return context.WithValue(ctx, spanTagsKey, tags)
 }
 
+// providedPeerService returns the peer service tag if provided manually by the user,
+// derived from a possible sources (span tags, context, ...)
+func (tc *TracedConn) providedPeerService(ctx context.Context) string {
+	// This occurs if the user sets peer.service explicitly while creating the connection
+	// through the use of sqltrace.WithSpanTags
+	if meta, ok := ctx.Value(spanTagsKey).(map[string]string); ok {
+		if peerServiceTag, ok := meta[ext.PeerService]; ok {
+			return peerServiceTag
+		}
+	}
+
+	// This occurs if the SQL Connection is opened or registered using
+	// WithCustomTags.  This is lower precedence than above since it is
+	// less specific
+	if len(tc.cfg.tags) > 0 {
+		if v, ok := tc.cfg.tags[ext.PeerService].(string); ok {
+			return v
+		}
+	}
+
+	return ""
+}
+
 // injectComments returns the query with SQL comments injected according to the comment injection mode along
 // with a span ID injected into SQL comments. The returned span ID should be used when the SQL span is created
 // following the traced database call.
@@ -253,7 +296,8 @@ func (tc *TracedConn) injectComments(ctx context.Context, query string, mode tra
 	if span, ok := tracer.SpanFromContext(ctx); ok {
 		spanCtx = span.Context()
 	}
-	carrier := tracer.SQLCommentCarrier{Query: query, Mode: mode, DBServiceName: tc.cfg.serviceName}
+
+	carrier := tracer.SQLCommentCarrier{Query: query, Mode: mode, DBServiceName: tc.cfg.serviceName, PeerDBHostname: tc.meta[ext.TargetHost], PeerDBName: tc.meta[ext.DBName], PeerService: tc.providedPeerService(ctx)}
 	if err := carrier.Inject(spanCtx); err != nil {
 		// this should never happen
 		log.Warn("contrib/database/sql: failed to inject query comments: %v", err)
@@ -308,6 +352,7 @@ func (tp *traceParams) tryTrace(ctx context.Context, qtype QueryType, query stri
 	if query != "" {
 		resource = query
 	}
+
 	span.SetTag("sql.query_type", string(qtype))
 	span.SetTag(ext.ResourceName, resource)
 	for k, v := range tp.meta {
@@ -318,7 +363,7 @@ func (tp *traceParams) tryTrace(ctx context.Context, qtype QueryType, query stri
 			span.SetTag(k, v)
 		}
 	}
-	if err != nil && (tp.cfg.errCheck == nil || tp.cfg.errCheck(err)) {
+	if err != nil && !events.IsSecurityError(err) && (tp.cfg.errCheck == nil || tp.cfg.errCheck(err)) {
 		span.SetTag(ext.Error, err)
 	}
 	span.Finish()

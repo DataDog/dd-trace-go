@@ -52,11 +52,7 @@ func Middleware(opts ...Option) echo.MiddlewareFunc {
 		return func(c echo.Context) error {
 			// If we have an ignoreRequestFunc, use it to see if we proceed with tracing
 			if cfg.ignoreRequestFunc != nil && cfg.ignoreRequestFunc(c) {
-				if err := next(c); err != nil {
-					c.Error(err)
-					return err
-				}
-				return nil
+				return next(c)
 			}
 
 			request := c.Request()
@@ -89,10 +85,7 @@ func Middleware(opts ...Option) echo.MiddlewareFunc {
 			}
 			// serve the request to the next middleware
 			err := next(c)
-			if err != nil {
-				// invokes the registered HTTP error handler
-				c.Error(err)
-
+			if err != nil && !shouldIgnoreError(cfg, err) {
 				// It is impossible to determine what the final status code of a request is in echo.
 				// This is the best we can do.
 				if echoErr, ok := cfg.translateError(err); ok {
@@ -109,16 +102,28 @@ func Middleware(opts ...Option) echo.MiddlewareFunc {
 				}
 			} else if status := c.Response().Status; status > 0 {
 				if cfg.isStatusError(status) {
-					finishOpts = append(finishOpts, tracer.WithError(fmt.Errorf("%d: %s", status, http.StatusText(status))))
+					if statusErr := errorFromStatusCode(status); !shouldIgnoreError(cfg, statusErr) {
+						finishOpts = append(finishOpts, tracer.WithError(statusErr))
+					}
 				}
 				span.SetTag(ext.HTTPCode, strconv.Itoa(status))
 			} else {
 				if cfg.isStatusError(200) {
-					finishOpts = append(finishOpts, tracer.WithError(fmt.Errorf("%d: %s", 200, http.StatusText(200))))
+					if statusErr := errorFromStatusCode(200); !shouldIgnoreError(cfg, statusErr) {
+						finishOpts = append(finishOpts, tracer.WithError(statusErr))
+					}
 				}
 				span.SetTag(ext.HTTPCode, "200")
 			}
 			return err
 		}
 	}
+}
+
+func errorFromStatusCode(statusCode int) error {
+	return fmt.Errorf("%d: %s", statusCode, http.StatusText(statusCode))
+}
+
+func shouldIgnoreError(cfg *config, err error) bool {
+	return cfg.errCheck != nil && !cfg.errCheck(err)
 }
