@@ -9,11 +9,12 @@ import (
 	"bufio"
 	"errors"
 	"fmt"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/constants"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
+
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/constants"
 
 	logger "gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
@@ -208,7 +209,7 @@ func (co *CodeOwners) GetSection(section string) *Section {
 
 // Match finds the first entry in the CodeOwners that matches the given value.
 // It returns a pointer to the matched entry, or nil if no match is found.
-func (co *CodeOwners) Match(value string) *Entry {
+func (co *CodeOwners) Match(value string) (*Entry, bool) {
 	var matchedEntries []Entry
 
 	for _, section := range co.Sections {
@@ -272,9 +273,9 @@ func (co *CodeOwners) Match(value string) *Entry {
 
 	switch len(matchedEntries) {
 	case 0:
-		return nil
+		return nil, false
 	case 1:
-		return &matchedEntries[0]
+		return &matchedEntries[0], true
 	default:
 		patterns := make([]string, 0)
 		owners := make([]string, 0)
@@ -288,7 +289,7 @@ func (co *CodeOwners) Match(value string) *Entry {
 			Pattern: strings.Join(patterns, " | "),
 			Owners:  owners,
 			Section: strings.Join(sections, " | "),
-		}
+		}, true
 	}
 }
 

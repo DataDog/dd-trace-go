@@ -16,8 +16,12 @@ import (
 func TestCodeOwners(t *testing.T) {
 	codeOwners := GetCodeOwners()
 	assert.NotNil(t, codeOwners)
-	assert.Equal(t, codeOwners.Match("/appsec").GetOwnersString(), "[\"@DataDog/asm-go\"]")
-	assert.Equal(t, codeOwners.Match("/ddtrace").GetOwnersString(), "[\"@DataDog/apm-go\"]")
+
+	appSecMatch, _ := codeOwners.Match("/appsec")
+	assert.Equal(t, appSecMatch.GetOwnersString(), "[\"@DataDog/asm-go\"]")
+
+	ddtraceMatch, _ := codeOwners.Match("/ddtrace")
+	assert.Equal(t, ddtraceMatch.GetOwnersString(), "[\"@DataDog/apm-go\"]")
 }
 
 func TestNewCodeOwners(t *testing.T) {
@@ -75,18 +79,18 @@ func TestMatch(t *testing.T) {
 	codeOwners := &CodeOwners{Sections: sections}
 
 	// Test exact match
-	entry := codeOwners.Match("/path/to/file")
-	assert.NotNil(t, entry)
+	entry, ok := codeOwners.Match("/path/to/file")
+	assert.True(t, ok)
 	assert.Equal(t, entries[0], *entry)
 
 	// Test wildcard match
-	entry = codeOwners.Match("/path/to/anything")
-	assert.NotNil(t, entry)
+	entry, ok = codeOwners.Match("/path/to/anything")
+	assert.True(t, ok)
 	assert.Equal(t, entries[1], *entry)
 
 	// Test no match
-	entry = codeOwners.Match("/no/match")
-	assert.Nil(t, entry)
+	entry, ok = codeOwners.Match("/no/match")
+	assert.False(t, ok)
 }
 
 func TestGetOwnersString(t *testing.T) {
@@ -126,8 +130,8 @@ func TestGithubCodeOwners(t *testing.T) {
 
 	for _, item := range data {
 		t.Run(strings.ReplaceAll(item.value, "/", "_"), func(t *testing.T) {
-			match := cOwners.Match(item.value)
-			assert.NotNil(t, match)
+			match, ok := cOwners.Match(item.value)
+			assert.True(t, ok)
 			assert.EqualValues(t, item.expected, match.GetOwnersString())
 		})
 	}
@@ -158,8 +162,8 @@ func TestGitlabCodeOwners(t *testing.T) {
 
 	for _, item := range data {
 		t.Run(strings.ReplaceAll(item.value, "/", "_"), func(t *testing.T) {
-			match := cOwners.Match(item.value)
-			assert.NotNil(t, match)
+			match, ok := cOwners.Match(item.value)
+			assert.True(t, ok)
 			assert.EqualValues(t, item.expected, match.GetOwnersString())
 		})
 	}
