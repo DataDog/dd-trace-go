@@ -15,28 +15,6 @@ import (
 	"testing"
 )
 
-func setEnvs(env map[string]string) func() {
-	restore := map[string]*string{}
-	for key, value := range env {
-		oldValue, ok := os.LookupEnv(key)
-		if ok {
-			restore[key] = &oldValue
-		} else {
-			restore[key] = nil
-		}
-		_ = os.Setenv(key, value)
-	}
-	return func() {
-		for key, value := range restore {
-			if value == nil {
-				_ = os.Unsetenv(key)
-			} else {
-				_ = os.Setenv(key, *value)
-			}
-		}
-	}
-}
-
 func sortJSONKeys(jsonStr string) string {
 	tmp := map[string]string{}
 	_ = json.Unmarshal([]byte(jsonStr), &tmp)
