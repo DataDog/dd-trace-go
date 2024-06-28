@@ -15,6 +15,12 @@ import (
 	"testing"
 )
 
+func setEnvs(t *testing.T, env map[string]string) {
+	for key, value := range env {
+		t.Setenv(key, value)
+	}
+}
+
 func sortJSONKeys(jsonStr string) string {
 	tmp := map[string]string{}
 	_ = json.Unmarshal([]byte(jsonStr), &tmp)
@@ -84,8 +90,7 @@ func TestTags(t *testing.T) {
 				}
 
 				t.Run(name, func(t *testing.T) {
-					reset := setEnvs(env)
-					defer reset()
+					setEnvs(t, env)
 					providerTags := getProviderTags()
 
 					for expectedKey, expectedValue := range tags {
