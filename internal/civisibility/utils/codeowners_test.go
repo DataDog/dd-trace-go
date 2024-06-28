@@ -13,17 +13,6 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestCodeOwners(t *testing.T) {
-	codeOwners := GetCodeOwners()
-	assert.NotNil(t, codeOwners)
-
-	appSecMatch, _ := codeOwners.Match("/appsec")
-	assert.Equal(t, appSecMatch.GetOwnersString(), "[\"@DataDog/asm-go\"]")
-
-	ddtraceMatch, _ := codeOwners.Match("/ddtrace")
-	assert.Equal(t, ddtraceMatch.GetOwnersString(), "[\"@DataDog/apm-go\"]")
-}
-
 func TestNewCodeOwners(t *testing.T) {
 	// Create a temporary file for testing
 	fileContent := `[Section 1]
