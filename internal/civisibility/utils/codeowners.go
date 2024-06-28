@@ -64,7 +64,7 @@ func GetCodeOwners() *CodeOwners {
 		return codeowners
 	}
 
-	tags := GetCiTags()
+	tags := GetCITags()
 	if v, ok := tags[constants.CIWorkspacePath]; ok {
 		paths := []string{
 			filepath.Join(v, "CODEOWNERS"),
