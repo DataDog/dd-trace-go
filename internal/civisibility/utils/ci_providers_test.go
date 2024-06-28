@@ -68,7 +68,7 @@ func TestTags(t *testing.T) {
 		providerName := strings.TrimSuffix(filepath.Base(path), ".json")
 
 		t.Run(providerName, func(t *testing.T) {
-			fp, err := os.Open(fmt.Sprintf("testdata/fixtures/providers/%s.json", providerName))
+			fp, err := os.Open(path)
 			if err != nil {
 				t.Fatal(err)
 			}
