@@ -107,7 +107,6 @@ func normalizeTags(tags map[string]string) {
 
 // replaceWithUserSpecificTags replaces certain tags with user-specific environment variable values.
 func replaceWithUserSpecificTags(tags map[string]string) {
-
 	replace := func(tagName, envName string) {
 		tags[tagName] = getEnvironmentVariableIfIsNotEmpty(envName, tags[tagName])
 	}
