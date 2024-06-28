@@ -6,19 +6,19 @@
 package constants
 
 const (
-	// CiVisibilityEnabledEnvironmentVariable indicates if CI Visibility mode is enabled.
+	// CIVisibilityEnabledEnvironmentVariable indicates if CI Visibility mode is enabled.
 	// This environment variable should be set to "1" or "true" to enable CI Visibility mode, which activates tracing and other
 	// features related to CI Visibility in the Datadog platform.
-	CiVisibilityEnabledEnvironmentVariable = "DD_CIVISIBILITY_ENABLED"
+	CIVisibilityEnabledEnvironmentVariable = "DD_CIVISIBILITY_ENABLED"
 
-	// CiVisibilityAgentlessEnabledEnvironmentVariable indicates if CI Visibility agentless mode is enabled.
+	// CIVisibilityAgentlessEnabledEnvironmentVariable indicates if CI Visibility agentless mode is enabled.
 	// This environment variable should be set to "1" or "true" to enable agentless mode for CI Visibility, where traces
 	// are sent directly to Datadog without using a local agent.
-	CiVisibilityAgentlessEnabledEnvironmentVariable = "DD_CIVISIBILITY_AGENTLESS_ENABLED"
+	CIVisibilityAgentlessEnabledEnvironmentVariable = "DD_CIVISIBILITY_AGENTLESS_ENABLED"
 
-	// CiVisibilityAgentlessURLEnvironmentVariable forces the agentless URL to a custom one.
+	// CIVisibilityAgentlessURLEnvironmentVariable forces the agentless URL to a custom one.
 	// This environment variable allows you to specify a custom URL for the agentless intake in CI Visibility mode.
-	CiVisibilityAgentlessURLEnvironmentVariable = "DD_CIVISIBILITY_AGENTLESS_URL"
+	CIVisibilityAgentlessURLEnvironmentVariable = "DD_CIVISIBILITY_AGENTLESS_URL"
 
 	// APIKeyEnvironmentVariable indicates the API key to be used for agentless intake.
 	// This environment variable should be set to your Datadog API key, allowing the agentless mode to authenticate and
