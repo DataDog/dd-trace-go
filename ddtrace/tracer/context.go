@@ -23,7 +23,10 @@ func ContextWithSpan(ctx context.Context, s Span) context.Context {
 // value indicates if a span was found in the context. If no span is found, a no-op
 // span is returned.
 func SpanFromContext(ctx context.Context) (Span, bool) {
-	v := orchestrion.CtxOrGLS(ctx).Value(internal.ActiveSpanKey)
+	if ctx == nil {
+		return &traceinternal.NoopSpan{}, false
+	}
+	v := orchestrion.FromCtxOrGLS(ctx).Value(internal.ActiveSpanKey)
 	if s, ok := v.(ddtrace.Span); ok {
 		return s, true
 	}
@@ -39,11 +42,12 @@ func StartSpanFromContext(ctx context.Context, operationName string, opts ...Sta
 	optsLocal := make([]StartSpanOption, len(opts), len(opts)+2)
 	copy(optsLocal, opts)
 
-	ctx = orchestrion.CtxOrGLS(ctx)
-	if s, ok := ctx.Value(internal.ActiveSpanKey).(ddtrace.Span); ok {
+	if ctx == nil {
+		// default to context.Background() to avoid panics on Go >= 1.15
+		ctx = context.Background()
+	} else if s, ok := SpanFromContext(ctx); ok {
 		optsLocal = append(optsLocal, ChildOf(s.Context()))
 	}
-
 	optsLocal = append(optsLocal, withContext(ctx))
 	s := StartSpan(operationName, optsLocal...)
 	if span, ok := s.(*span); ok && span.pprofCtxActive != nil {

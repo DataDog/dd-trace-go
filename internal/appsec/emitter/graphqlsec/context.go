@@ -18,7 +18,7 @@ type typed[T dyngo.Operation] struct{}
 // FromContext returns the operation of the given type from the context. Returns
 // the zero-value of T if no such operation is found.
 func FromContext[T dyngo.Operation](ctx context.Context) T {
-	val := ctx.Value(typed[T]{})
+	val := orchestrion.FromCtxOrGLS(ctx).Value(typed[T]{})
 	if val == nil {
 		var zero T
 		log.Debug("appsec/graphqlsec: no operation of type %T found in context", zero)

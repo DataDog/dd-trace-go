@@ -5,7 +5,10 @@
 
 package orchestrion
 
-import _ "unsafe" // for go:linkname
+import (
+	_ "runtime" // to make sure the symbols we link to are present
+	_ "unsafe"  // for go:linkname
+)
 
 var (
 	// getDDGLS returns the current value from the field inserted in runtime.g by orchestrion.
@@ -16,18 +19,23 @@ var (
 	setDDGLS = func(any) {}
 )
 
-//go:linkname _DdOrchestrionGlsGet __dd_orchestrion_gls_get
-var _DdOrchestrionGlsGet func() any
+// Accessors set by orchestrion in the runtime package. If orchestrion is not enabled, these will be nil as per the default values.
 
-//go:linkname _DdOrchestrionGlsSet __dd_orchestrion_gls_set
-var _DdOrchestrionGlsSet func(any)
+//revive:disable:var-naming
+//go:linkname __dd_orchestrion_gls_get __dd_orchestrion_gls_get
+var __dd_orchestrion_gls_get func() any
+
+//go:linkname __dd_orchestrion_gls_set __dd_orchestrion_gls_set
+var __dd_orchestrion_gls_set func(any)
+
+//revive:enable:var-naming
 
 // Check at Go init time that the two function variable values created by the
 // orchestrion are present, and set the get/set variables to their
 // values.
 func init() {
-	if _DdOrchestrionGlsGet != nil && _DdOrchestrionGlsSet != nil {
-		getDDGLS = _DdOrchestrionGlsGet
-		setDDGLS = _DdOrchestrionGlsSet
+	if __dd_orchestrion_gls_get != nil && __dd_orchestrion_gls_set != nil {
+		getDDGLS = __dd_orchestrion_gls_get
+		setDDGLS = __dd_orchestrion_gls_set
 	}
 }

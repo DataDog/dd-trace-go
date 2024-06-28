@@ -37,7 +37,7 @@ import (
 // This function should not be called when AppSec is disabled in order to
 // get preciser error logs.
 func MonitorParsedBody(ctx context.Context, body any) error {
-	parent, _ := orchestrion.CtxOrGLS(ctx).Value(listener.ContextKey{}).(*types.Operation)
+	parent, _ := orchestrion.FromCtxOrGLS(ctx).Value(listener.ContextKey{}).(*types.Operation)
 	if parent == nil {
 		log.Error("appsec: parsed http body monitoring ignored: could not find the http handler instrumentation metadata in the request context: the request handler is not being monitored by a middleware function or the provided context is not the expected request context")
 		return nil

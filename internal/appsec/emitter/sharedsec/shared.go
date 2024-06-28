@@ -61,7 +61,7 @@ func (f OnUserIDOperationStart) Call(op dyngo.Operation, v interface{}) {
 // A call to the WAF is made to check the user ID and an error is returned if the
 // user should be blocked. The return value is nil otherwise.
 func MonitorUser(ctx context.Context, userID string) error {
-	if parent, ok := orchestrion.CtxOrGLS(ctx).Value(listener.ContextKey{}).(dyngo.Operation); ok {
+	if parent, ok := orchestrion.FromCtxOrGLS(ctx).Value(listener.ContextKey{}).(dyngo.Operation); ok {
 		return ExecuteUserIDOperation(parent, UserIDOperationArgs{UserID: userID})
 	}
 	log.Error("appsec: user ID monitoring ignored: could not find the http handler instrumentation metadata in the request context: the request handler is not being monitored by a middleware function or the provided context is not the expected request context")

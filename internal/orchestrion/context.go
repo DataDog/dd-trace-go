@@ -5,39 +5,54 @@
 
 package orchestrion
 
-import "context"
+import (
+	"context"
+)
 
-// CtxGLS returns the context stored in the compilation-injected field of the runtime.g struct by orchestrion
-func CtxGLS() context.Context {
-	return getDDGLS().(context.Context)
-}
-
-// CtxOrGLS implements the logic to choose between a user given context.Context or the context.Context inserted in
-// the Goroutine Global Storage (GLS) by orchestrion. If orchestrion is not enabled it's only returning the given context.
-func CtxOrGLS(ctx context.Context) context.Context {
-	if ctx != nil {
+// FromCtxOrGLS returns a context that that will check if
+func FromCtxOrGLS(ctx context.Context) context.Context {
+	if !Enabled() {
 		return ctx
 	}
 
-	if !Enabled() {
-		return context.Background()
+	if ctx != nil {
+		if _, ok := ctx.(*glsContext); ok { // avoid (some) double wrapping
+			return ctx
+		}
 	}
 
-	if gls := getDDGLS(); gls != nil {
-		return gls.(context.Context)
+	if ctx == nil {
+		ctx = context.Background()
 	}
 
-	return context.Background()
+	return &glsContext{ctx}
 }
 
 // CtxWithValue runs context.WithValue, adds the result to the GLS slot of orchestrion, and returns it.
-func CtxWithValue(ctx context.Context, key, val any) context.Context {
-	ctx = CtxOrGLS(ctx)
-	ctx = context.WithValue(ctx, key, val)
-
-	if Enabled() {
-		setDDGLS(ctx)
+// If orchestrion is not enabled, it will run context.WithValue and return the result.
+func CtxWithValue(parent context.Context, key, val any) context.Context {
+	if !Enabled() {
+		return context.WithValue(parent, key, val)
 	}
 
-	return ctx
+	getDDContextStack().Push(key, val)
+	return FromCtxOrGLS(parent)
+}
+
+func GLSPopValue(key any) any {
+	return getDDContextStack().Pop(key)
+}
+
+var _ context.Context = (*glsContext)(nil)
+
+type glsContext struct {
+	context.Context
+}
+
+func (g *glsContext) Value(key any) any {
+	if val := getDDContextStack().Peek(key); val != nil {
+		return val
+	}
+
+	return g.Context.Value(key)
 }

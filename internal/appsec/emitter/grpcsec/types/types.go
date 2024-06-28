@@ -9,7 +9,9 @@ import (
 	"net/netip"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/trace"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/orchestrion"
 )
 
 // Abstract gRPC server handler operation definitions. It is based on two
@@ -78,6 +80,7 @@ type (
 // finish event up in the operation stack.
 func (op *HandlerOperation) Finish(res HandlerOperationRes) []any {
 	dyngo.FinishOperation(op, res)
+	orchestrion.GLSPopValue(listener.ContextKey{})
 	return op.Events()
 }
 
@@ -85,6 +88,7 @@ func (op *HandlerOperation) Finish(res HandlerOperationRes) []any {
 // finish event up in the operation stack.
 func (op ReceiveOperation) Finish(res ReceiveOperationRes) {
 	dyngo.FinishOperation(op, res)
+	orchestrion.GLSPopValue(listener.ContextKey{})
 }
 
 func (HandlerOperationArgs) IsArgOf(*HandlerOperation)   {}

@@ -18,7 +18,8 @@ func mockGLSGetterAndSetter() func() {
 	prevSetDDGLS := setDDGLS
 	prevEnabled := enabled
 
-	var glsValue any
+	tmp := contextStack(make(map[any][]any))
+	var glsValue any = &tmp
 	getDDGLS = func() any { return glsValue }
 	setDDGLS = func(a any) {
 		glsValue = a
@@ -31,41 +32,30 @@ func mockGLSGetterAndSetter() func() {
 	}
 }
 
-func TestCtxOrGLS(t *testing.T) {
+func TestFromGLS(t *testing.T) {
 	cleanup := mockGLSGetterAndSetter()
 	defer cleanup()
 
 	t.Run("Enabled() is false, ctx is nil", func(t *testing.T) {
 		enabled = false
-		require.Equal(t, context.Background(), CtxOrGLS(nil))
+		require.Equal(t, nil, FromCtxOrGLS(nil))
 	})
 
 	t.Run("Enabled() is false, ctx is not nil", func(t *testing.T) {
 		enabled = false
-		require.Equal(t, context.Background(), CtxOrGLS(context.Background()))
+		require.Equal(t, context.Background(), FromCtxOrGLS(context.Background()))
 
 	})
 
-	t.Run("Enabled() is true, ctx is nil, gls is nil", func(t *testing.T) {
+	t.Run("Enabled() is true, ctx is nil", func(t *testing.T) {
 		enabled = true
-		require.Equal(t, context.Background(), CtxOrGLS(nil))
-	})
-
-	t.Run("Enabled() is true, ctx is nil, gls is not nil", func(t *testing.T) {
-		enabled = true
-		setDDGLS(context.Background())
-		require.Equal(t, context.Background(), CtxOrGLS(nil))
+		require.Equal(t, &glsContext{context.Background()}, FromCtxOrGLS(nil))
 	})
 
 	t.Run("Enabled() is true, ctx is not nil", func(t *testing.T) {
 		enabled = true
-		require.Equal(t, context.Background(), CtxOrGLS(context.Background()))
-	})
-
-	t.Run("Enabled() is true, ctx is not nil, gls is nil", func(t *testing.T) {
-		enabled = true
-		setDDGLS(nil)
-		require.Equal(t, context.Background(), CtxOrGLS(context.Background()))
+		ctx := context.WithValue(context.Background(), key("key"), "value")
+		require.Equal(t, &glsContext{ctx}, FromCtxOrGLS(ctx))
 	})
 }
 
@@ -73,35 +63,19 @@ func TestCtxWithValue(t *testing.T) {
 	cleanup := mockGLSGetterAndSetter()
 	defer cleanup()
 
-	t.Run("Enabled() is false, ctx is nil", func(t *testing.T) {
-		enabled = false
-		require.Equal(t, context.WithValue(context.Background(), key("key"), "value"), CtxWithValue(nil, key("key"), "value"))
-	})
-
-	t.Run("Enabled() is false, ctx is not nil", func(t *testing.T) {
+	t.Run("false", func(t *testing.T) {
 		enabled = false
 		require.Equal(t, context.WithValue(context.Background(), key("key"), "value"), CtxWithValue(context.Background(), key("key"), "value"))
 	})
 
-	t.Run("Enabled() is true, ctx is nil, gls is nil", func(t *testing.T) {
+	t.Run("true", func(t *testing.T) {
 		enabled = true
-		require.Equal(t, context.WithValue(context.Background(), key("key"), "value"), CtxWithValue(nil, key("key"), "value"))
-	})
-
-	t.Run("Enabled() is true, ctx is nil, gls is not nil", func(t *testing.T) {
-		enabled = true
-		setDDGLS(context.Background())
-		require.Equal(t, context.WithValue(context.Background(), key("key"), "value"), CtxWithValue(nil, key("key"), "value"))
-	})
-
-	t.Run("Enabled() is true, ctx is not nil", func(t *testing.T) {
-		enabled = true
-		require.Equal(t, context.WithValue(context.Background(), key("key"), "value"), CtxWithValue(context.Background(), key("key"), "value"))
-	})
-
-	t.Run("Enabled() is true, ctx is not nil, gls is nil", func(t *testing.T) {
-		enabled = true
-		setDDGLS(nil)
-		require.Equal(t, context.WithValue(context.Background(), key("key"), "value"), CtxWithValue(context.Background(), key("key"), "value"))
+		ctx := CtxWithValue(context.Background(), key("key"), "value")
+		require.Equal(t, &glsContext{context.Background()}, ctx)
+		require.Equal(t, "value", ctx.Value(key("key")))
+		require.Equal(t, "value", getDDContextStack().Peek(key("key")))
+		require.Equal(t, "value", GLSPopValue(key("key")))
+		require.Nil(t, getDDContextStack().Peek(key("key")))
+		require.Nil(t, ctx.Value(key("key")))
 	})
 }

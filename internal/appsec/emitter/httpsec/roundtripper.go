@@ -24,7 +24,7 @@ func ProtectRoundTrip(ctx context.Context, url string) error {
 		URL: url,
 	}
 
-	parent, _ := orchestrion.CtxOrGLS(ctx).Value(listener.ContextKey{}).(dyngo.Operation)
+	parent, _ := orchestrion.FromCtxOrGLS(ctx).Value(listener.ContextKey{}).(dyngo.Operation)
 	if parent == nil { // No parent operation => we can't monitor the request
 		badInputContextOnce.Do(func() {
 			log.Debug("appsec: outgoing http request monitoring ignored: could not find the handler " +
