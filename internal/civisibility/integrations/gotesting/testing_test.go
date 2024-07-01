@@ -29,7 +29,7 @@ var mTracer mocktracer.Tracer
 // TestMain is the entry point for testing and runs before any test.
 func TestMain(m *testing.M) {
 	currentM = m
-	mTracer = integrations.InitializeCiVisibilityMock()
+	mTracer = integrations.InitializeCIVisibilityMock()
 
 	// (*M)(m).Run() cast m to gotesting.M and just run
 	// or use a helper method gotesting.RunM(m)

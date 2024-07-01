@@ -22,7 +22,7 @@ var mockTracer mocktracer.Tracer
 
 func TestMain(m *testing.M) {
 	// Initialize civisibility using the mocktracer for testing
-	mockTracer = InitializeCiVisibilityMock()
+	mockTracer = InitializeCIVisibilityMock()
 
 	// Run tests
 	os.Exit(m.Run())

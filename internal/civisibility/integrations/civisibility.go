@@ -19,15 +19,15 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/utils"
 )
 
-// civisibilityCloseAction defines an action to be executed when CI visibility is closing.
-type civisibilityCloseAction func()
+// ciVisibilityCloseAction defines an action to be executed when CI visibility is closing.
+type ciVisibilityCloseAction func()
 
 var (
 	// ciVisibilityInitializationOnce ensures we initialize the CI visibility tracer only once.
 	ciVisibilityInitializationOnce sync.Once
 
 	// closeActions holds CI visibility close actions.
-	closeActions []civisibilityCloseAction
+	closeActions []ciVisibilityCloseAction
 
 	// closeActionsMutex synchronizes access to closeActions.
 	closeActionsMutex sync.Mutex
@@ -44,8 +44,8 @@ func EnsureCiVisibilityInitialization() {
 	})
 }
 
-// InitializeCiVisibilityMock initialize the mocktracer for CI Visibility usage
-func InitializeCiVisibilityMock() mocktracer.Tracer {
+// InitializeCIVisibilityMock initialize the mocktracer for CI Visibility usage
+func InitializeCIVisibilityMock() mocktracer.Tracer {
 	internalCiVisibilityInitialization(func([]tracer.StartOption) {
 		// Initialize the mocktracer
 		mTracer = mocktracer.Start()
@@ -96,10 +96,10 @@ func internalCiVisibilityInitialization(tracerInitializer func([]tracer.StartOpt
 }
 
 // PushCiVisibilityCloseAction adds a close action to be executed when CI visibility exits.
-func PushCiVisibilityCloseAction(action civisibilityCloseAction) {
+func PushCiVisibilityCloseAction(action ciVisibilityCloseAction) {
 	closeActionsMutex.Lock()
 	defer closeActionsMutex.Unlock()
-	closeActions = append([]civisibilityCloseAction{action}, closeActions...)
+	closeActions = append([]ciVisibilityCloseAction{action}, closeActions...)
 }
 
 // ExitCiVisibility executes all registered close actions and stops the tracer.
@@ -107,7 +107,7 @@ func ExitCiVisibility() {
 	closeActionsMutex.Lock()
 	defer closeActionsMutex.Unlock()
 	defer func() {
-		closeActions = []civisibilityCloseAction{}
+		closeActions = []ciVisibilityCloseAction{}
 
 		tracer.Flush()
 		tracer.Stop()
