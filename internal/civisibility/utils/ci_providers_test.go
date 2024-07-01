@@ -15,25 +15,9 @@ import (
 	"testing"
 )
 
-func setEnvs(env map[string]string) func() {
-	restore := map[string]*string{}
+func setEnvs(t *testing.T, env map[string]string) {
 	for key, value := range env {
-		oldValue, ok := os.LookupEnv(key)
-		if ok {
-			restore[key] = &oldValue
-		} else {
-			restore[key] = nil
-		}
-		_ = os.Setenv(key, value)
-	}
-	return func() {
-		for key, value := range restore {
-			if value == nil {
-				_ = os.Unsetenv(key)
-			} else {
-				_ = os.Setenv(key, *value)
-			}
-		}
+		t.Setenv(key, value)
 	}
 }
 
@@ -68,7 +52,7 @@ func TestTags(t *testing.T) {
 		providerName := strings.TrimSuffix(filepath.Base(path), ".json")
 
 		t.Run(providerName, func(t *testing.T) {
-			fp, err := os.Open(fmt.Sprintf("testdata/fixtures/providers/%s.json", providerName))
+			fp, err := os.Open(path)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -106,8 +90,7 @@ func TestTags(t *testing.T) {
 				}
 
 				t.Run(name, func(t *testing.T) {
-					reset := setEnvs(env)
-					defer reset()
+					setEnvs(t, env)
 					providerTags := getProviderTags()
 
 					for expectedKey, expectedValue := range tags {

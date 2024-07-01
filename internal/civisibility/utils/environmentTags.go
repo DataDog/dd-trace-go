@@ -20,25 +20,25 @@ var (
 	ciTagsMutex sync.Mutex
 )
 
-// GetCiTags retrieves and caches the CI/CD tags from environment variables.
+// GetCITags retrieves and caches the CI/CD tags from environment variables.
 // It initializes the ciTags map if it is not already initialized.
 // This function is thread-safe due to the use of a mutex.
 //
 // Returns:
 //
 //	A map[string]string containing the CI/CD tags.
-func GetCiTags() map[string]string {
+func GetCITags() map[string]string {
 	ciTagsMutex.Lock()
 	defer ciTagsMutex.Unlock()
 
 	if ciTags == nil {
-		ciTags = createCiTagsMap()
+		ciTags = createCITagsMap()
 	}
 
 	return ciTags
 }
 
-// GetRelativePathFromCiTagsSourceRoot calculates the relative path from the CI workspace root to the specified path.
+// GetRelativePathFromCITagsSourceRoot calculates the relative path from the CI workspace root to the specified path.
 // If the CI workspace root is not available in the tags, it returns the original path.
 //
 // Parameters:
@@ -48,8 +48,8 @@ func GetCiTags() map[string]string {
 // Returns:
 //
 //	The relative path from the CI workspace root to the specified path, or the original path if an error occurs.
-func GetRelativePathFromCiTagsSourceRoot(path string) string {
-	tags := GetCiTags()
+func GetRelativePathFromCITagsSourceRoot(path string) string {
+	tags := GetCITags()
 	if v, ok := tags[constants.CIWorkspacePath]; ok {
 		relPath, err := filepath.Rel(v, path)
 		if err == nil {
@@ -60,13 +60,13 @@ func GetRelativePathFromCiTagsSourceRoot(path string) string {
 	return path
 }
 
-// createCiTagsMap creates a map of CI/CD tags by extracting information from environment variables and the local Git repository.
+// createCITagsMap creates a map of CI/CD tags by extracting information from environment variables and the local Git repository.
 // It also adds OS and runtime information to the tags.
 //
 // Returns:
 //
 //	A map[string]string containing the extracted CI/CD tags.
-func createCiTagsMap() map[string]string {
+func createCITagsMap() map[string]string {
 	localTags := getProviderTags()
 	localTags[constants.OSPlatform] = runtime.GOOS
 	localTags[constants.OSVersion] = osinfo.OSVersion()

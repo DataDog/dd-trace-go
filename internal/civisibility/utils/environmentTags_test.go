@@ -6,34 +6,35 @@
 package utils
 
 import (
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/constants"
 	"testing"
+
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/constants"
 
 	"github.com/stretchr/testify/assert"
 )
 
-func TestGetCiTagsCache(t *testing.T) {
+func TestGetCITagsCache(t *testing.T) {
 	ciTags = map[string]string{"key": "value"}
 
 	// First call to initialize ciTags
-	tags := GetCiTags()
+	tags := GetCITags()
 	assert.Equal(t, "value", tags["key"])
 
 	tags["key"] = "newvalue"
-	tags = GetCiTags()
+	tags = GetCITags()
 	assert.Equal(t, "newvalue", tags["key"])
 }
 
-func TestGetRelativePathFromCiTagsSourceRoot(t *testing.T) {
+func TestGetRelativePathFromCITagsSourceRoot(t *testing.T) {
 	ciTags = map[string]string{constants.CIWorkspacePath: "/ci/workspace"}
 	absPath := "/ci/workspace/subdir/file.txt"
 	expectedRelPath := "subdir/file.txt"
 
-	relPath := GetRelativePathFromCiTagsSourceRoot(absPath)
+	relPath := GetRelativePathFromCITagsSourceRoot(absPath)
 	assert.Equal(t, expectedRelPath, relPath)
 
 	// Test case when CIWorkspacePath is not set in ciTags
 	ciTags = map[string]string{}
-	relPath = GetRelativePathFromCiTagsSourceRoot(absPath)
+	relPath = GetRelativePathFromCITagsSourceRoot(absPath)
 	assert.Equal(t, absPath, relPath)
 }

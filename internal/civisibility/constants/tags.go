@@ -14,28 +14,28 @@ const (
 	// This constant is used to tag traces that originate from CIApp test executions.
 	CIAppTestOrigin = "ciapp-test"
 
-	// TestSessionIDTagName defines the test session ID tag name for the CI Visibility Protocol.
+	// TestSessionIDTag defines the test session ID tag for the CI Visibility Protocol.
 	// This constant is used to tag traces with the ID of the test session.
-	TestSessionIDTagName string = "test_session_id"
+	TestSessionIDTag string = "test_session_id"
 
-	// TestModuleIDTagName defines the test module ID tag name for the CI Visibility Protocol.
+	// TestModuleIDTag defines the test module ID tag for the CI Visibility Protocol.
 	// This constant is used to tag traces with the ID of the test module.
-	TestModuleIDTagName string = "test_module_id"
+	TestModuleIDTag string = "test_module_id"
 
-	// TestSuiteIDTagName defines the test suite ID tag name for the CI Visibility Protocol.
+	// TestSuiteIDTag defines the test suite ID tag for the CI Visibility Protocol.
 	// This constant is used to tag traces with the ID of the test suite.
-	TestSuiteIDTagName string = "test_suite_id"
+	TestSuiteIDTag string = "test_suite_id"
 
-	// ItrCorrelationIDTagName defines the correlation ID for the intelligent test runner tag name for the CI Visibility Protocol.
+	// ItrCorrelationIDTag defines the correlation ID for the intelligent test runner tag for the CI Visibility Protocol.
 	// This constant is used to tag traces with the correlation ID for intelligent test runs.
-	ItrCorrelationIDTagName string = "itr_correlation_id"
+	ItrCorrelationIDTag string = "itr_correlation_id"
 )
 
 // Coverage tags
 const (
-	// CodeCoverageEnabledTagName defines if code coverage has been enabled.
+	// CodeCoverageEnabledTag defines if code coverage has been enabled.
 	// This constant is used to tag traces to indicate whether code coverage measurement is enabled.
-	CodeCoverageEnabledTagName string = "test.code_coverage.enabled"
+	CodeCoverageEnabledTag string = "test.code_coverage.enabled"
 
 	// CodeCoveragePercentageOfTotalLines defines the percentage of total code coverage by a session.
 	// This constant is used to tag traces with the percentage of code lines covered during the test session.
