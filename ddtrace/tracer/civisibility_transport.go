@@ -69,7 +69,7 @@ func newCiVisibilityTransport(config *config) *ciVisibilityTransport {
 	}
 
 	// Determine if agentless mode is enabled through an environment variable.
-	agentlessEnabled := internal.BoolEnv(constants.CiVisibilityAgentlessEnabledEnvironmentVariable, false)
+	agentlessEnabled := internal.BoolEnv(constants.CIVisibilityAgentlessEnabledEnvironmentVariable, false)
 
 	testCycleURL := ""
 	if agentlessEnabled {
@@ -84,7 +84,7 @@ func newCiVisibilityTransport(config *config) *ciVisibilityTransport {
 
 		// Check for a custom agentless URL.
 		agentlessURL := ""
-		if v := os.Getenv(constants.CiVisibilityAgentlessURLEnvironmentVariable); v != "" {
+		if v := os.Getenv(constants.CIVisibilityAgentlessURLEnvironmentVariable); v != "" {
 			agentlessURL = v
 		}
 

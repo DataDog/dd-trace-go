@@ -85,8 +85,8 @@ func runTransportTest(t *testing.T, agentless bool) {
 
 	// Set CI Visibility environment variables for the test
 	if agentless {
-		t.Setenv(constants.CiVisibilityAgentlessEnabledEnvironmentVariable, "1")
-		t.Setenv(constants.CiVisibilityAgentlessURLEnvironmentVariable, srv.URL)
+		t.Setenv(constants.CIVisibilityAgentlessEnabledEnvironmentVariable, "1")
+		t.Setenv(constants.CIVisibilityAgentlessURLEnvironmentVariable, srv.URL)
 		t.Setenv(constants.APIKeyEnvironmentVariable, "12345")
 	}
 
