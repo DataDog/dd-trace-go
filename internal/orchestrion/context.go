@@ -9,7 +9,7 @@ import (
 	"context"
 )
 
-// FromCtxOrGLS returns a context that that will check if
+// FromCtxOrGLS returns the GLS-wrapped context if orchestrion is enabled, otherwise it returns the given parameter.
 func FromCtxOrGLS(ctx context.Context) context.Context {
 	if !Enabled() {
 		return ctx
@@ -39,7 +39,15 @@ func CtxWithValue(parent context.Context, key, val any) context.Context {
 	return FromCtxOrGLS(parent)
 }
 
+// GLSPopValue pops the value from the GLS slot of orchestrion and returns it. Using context.Context values usually does
+// not require to pop any stack because the copy of each previous context makes the local variable in the scope disappear
+// when the current function ends. But the GLS is a semi-global variable that can be accessed from any function in the
+// stack, so we need to pop the value when we are done with it.
 func GLSPopValue(key any) any {
+	if !Enabled() {
+		return nil
+	}
+
 	return getDDContextStack().Pop(key)
 }
 
@@ -50,6 +58,10 @@ type glsContext struct {
 }
 
 func (g *glsContext) Value(key any) any {
+	if !Enabled() {
+		return g.Context.Value(key)
+	}
+
 	if val := getDDContextStack().Peek(key); val != nil {
 		return val
 	}

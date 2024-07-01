@@ -14,9 +14,7 @@ import (
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/grpcsec/types"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/trace"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/orchestrion"
 )
 
 // StartHandlerOperation starts an gRPC server handler operation, along with the
@@ -28,12 +26,10 @@ func StartHandlerOperation(ctx context.Context, args types.HandlerOperationArgs,
 		Operation:  dyngo.NewOperation(parent),
 		TagsHolder: trace.NewTagsHolder(),
 	}
-	newCtx := orchestrion.CtxWithValue(ctx, listener.ContextKey{}, op)
 	for _, cb := range setup {
 		cb(op)
 	}
-	dyngo.StartOperation(op, args)
-	return newCtx, op
+	return dyngo.StartAndRegisterOperation(ctx, op, args), op
 }
 
 // StartReceiveOperation starts a receive operation of a gRPC handler, along

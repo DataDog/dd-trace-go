@@ -6,8 +6,6 @@
 package types
 
 import (
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/orchestrion"
 	"net/netip"
 	"sync"
 
@@ -39,7 +37,6 @@ type (
 // finish event up in the operation stack.
 func (op *Operation) Finish(res HandlerOperationRes) []any {
 	dyngo.FinishOperation(op, res)
-	orchestrion.GLSPopValue(listener.ContextKey{})
 	return op.Events()
 }
 

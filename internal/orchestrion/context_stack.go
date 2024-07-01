@@ -5,6 +5,13 @@
 
 package orchestrion
 
+// contextStack is the object put in the GLS slot of runtime.g inserted by orchestrion. it is used to store context values
+// that are shared across the same goroutine.
+// TODO: handle cross-goroutine context values
+type contextStack map[any][]any
+
+// getDDContextStack is a main way to access the GLS slot of runtime.g inserted by orchestrion. This function must not be
+// called if the enabled variable is false.
 func getDDContextStack() *contextStack {
 	if gls := getDDGLS(); gls != nil {
 		return gls.(*contextStack)
@@ -14,8 +21,6 @@ func getDDContextStack() *contextStack {
 	setDDGLS(newStack)
 	return newStack
 }
-
-type contextStack map[any][]any
 
 // Peek returns the top context from the stack without removing it.
 func (s *contextStack) Peek(key any) any {
