@@ -18,10 +18,9 @@ import (
 )
 
 func newCiVisibilityEventsList(n int) []*ciVisibilityEvent {
-	itoa := map[int]string{0: "0", 1: "1", 2: "2", 3: "3", 4: "4", 5: "5"}
 	list := make([]*ciVisibilityEvent, n)
 	for i := 0; i < n; i++ {
-		s := newBasicSpan("span.list." + itoa[i%5+1])
+		s := newBasicSpan("span.list." + strconv.Itoa(i%5+1))
 		s.Start = fixedTime
 		list[i] = getCiVisibilityEvent(s)
 	}

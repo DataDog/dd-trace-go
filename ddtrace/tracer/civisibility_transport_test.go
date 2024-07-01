@@ -21,7 +21,7 @@ import (
 
 func TestCiVisibilityTransport(t *testing.T) {
 	t.Run("agentless", func(t *testing.T) { runTransportTest(t, true) })
-	t.Run("agentbased", func(t *testing.T) { runTransportTest(t, true) })
+	t.Run("agentbased", func(t *testing.T) { runTransportTest(t, false) })
 }
 
 func runTransportTest(t *testing.T, agentless bool) {

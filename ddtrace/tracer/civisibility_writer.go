@@ -30,7 +30,7 @@ var _ traceWriter = (*ciVisibilityTraceWriter)(nil)
 // to the Datadog backend. It manages the payload size and flushes the data when necessary.
 type ciVisibilityTraceWriter struct {
 	config  *config              // Configuration for the tracer.
-	payload *ciVisibilityPayload // Encodes and buffers traces in msgpack format.
+	payload *ciVisibilityPayload // Encodes and buffers events in msgpack format.
 	climit  chan struct{}        // Limits the number of concurrent outgoing connections.
 	wg      sync.WaitGroup       // Waits for all uploads to finish.
 }
@@ -104,16 +104,16 @@ func (w *ciVisibilityTraceWriter) flush() {
 		var err error
 		for attempt := 0; attempt <= w.config.sendRetries; attempt++ {
 			size, count = p.size(), p.itemCount()
-			log.Debug("Sending payload: size: %d traces: %d\n", size, count)
+			log.Debug("Sending payload: size: %d events: %d\n", size, count)
 			_, err = w.config.transport.send(p.payload)
 			if err == nil {
-				log.Debug("sent traces after %d attempts", attempt+1)
+				log.Debug("sent events after %d attempts", attempt+1)
 				return
 			}
-			log.Error("failure sending traces (attempt %d), will retry: %v", attempt+1, err)
+			log.Error("failure sending events (attempt %d), will retry: %v", attempt+1, err)
 			p.reset()
 			time.Sleep(time.Millisecond)
 		}
-		log.Error("lost %d traces: %v", count, err)
+		log.Error("lost %d events: %v", count, err)
 	}(oldp)
 }

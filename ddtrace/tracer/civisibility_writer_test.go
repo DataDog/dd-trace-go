@@ -8,12 +8,12 @@ package tracer
 import (
 	"errors"
 	"fmt"
-	"github.com/tinylib/msgp/msgp"
 	"io"
 	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/tinylib/msgp/msgp"
 )
 
 func TestCIVisibilityImplementsTraceWriter(t *testing.T) {
