@@ -77,7 +77,6 @@ func newCiVisibilityTransport(config *config) *ciVisibilityTransport {
 		APIKeyValue := os.Getenv(constants.APIKeyEnvironmentVariable)
 		if APIKeyValue == "" {
 			log.Error("An API key is required for agentless mode. Use the DD_API_KEY env variable to set it")
-			os.Exit(1)
 		}
 
 		defaultHeaders["dd-api-key"] = APIKeyValue
