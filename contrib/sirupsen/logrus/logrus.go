@@ -7,6 +7,7 @@
 package logrus
 
 import (
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 
@@ -34,7 +35,7 @@ func (d *DDContextLogHook) Fire(e *logrus.Entry) error {
 	if !found {
 		return nil
 	}
-	e.Data["dd.trace_id"] = span.Context().TraceID()
-	e.Data["dd.span_id"] = span.Context().SpanID()
+	e.Data[ext.LogKeyTraceID] = span.Context().TraceID()
+	e.Data[ext.LogKeySpanID] = span.Context().SpanID()
 	return nil
 }
