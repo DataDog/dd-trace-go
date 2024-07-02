@@ -46,12 +46,12 @@ import (
 	"math"
 	"time"
 
+	"github.com/DataDog/dd-trace-go/v2/contrib"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/emitter/graphqlsec"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/emitter/graphqlsec/types"
 	"github.com/DataDog/dd-trace-go/v2/internal/namingschema"
-	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 
 	"github.com/99designs/gqlgen/graphql"
 	"github.com/vektah/gqlparser/v2/ast"
@@ -59,8 +59,10 @@ import (
 
 const componentName = "99designs/gqlgen"
 
+var integration *contrib.Integration
+
 func init() {
-	telemetry.LoadIntegration(componentName)
+	integration = contrib.LoadIntegration(componentName, contrib.WithServiceNameOverrideV0(defaultServiceName, defaultServiceName))
 	tracer.MarkIntegrationImported("github.com/99designs/gqlgen")
 }
 

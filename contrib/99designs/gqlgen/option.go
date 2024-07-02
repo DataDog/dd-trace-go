@@ -7,9 +7,6 @@ package gqlgen
 
 import (
 	"math"
-
-	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
-	"github.com/DataDog/dd-trace-go/v2/internal/namingschema"
 )
 
 const defaultServiceName = "graphql"
@@ -33,8 +30,8 @@ func (fn OptionFn) apply(cfg *config) {
 }
 
 func defaults(cfg *config) {
-	cfg.serviceName = namingschema.ServiceNameOverrideV0(defaultServiceName, defaultServiceName)
-	cfg.analyticsRate = globalconfig.AnalyticsRate()
+	cfg.serviceName = integration.DefaultServiceName()
+	cfg.analyticsRate = integration.DefaultAnalyticsRate()
 	cfg.tags = make(map[string]interface{})
 }
 
