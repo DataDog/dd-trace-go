@@ -10,7 +10,7 @@ package orchestrion
 // TODO: handle cross-goroutine context values
 type contextStack map[any][]any
 
-// getDDContextStack is a main way to access the GLS slot of runtime.g inserted by orchestrion. This function must not be
+// getDDContextStack is a main way to access the GLS slot of runtime.g inserted by orchestrion. This function should not be
 // called if the enabled variable is false.
 func getDDContextStack() *contextStack {
 	if gls := getDDGLS(); gls != nil {
@@ -24,7 +24,7 @@ func getDDContextStack() *contextStack {
 
 // Peek returns the top context from the stack without removing it.
 func (s *contextStack) Peek(key any) any {
-	if len(*s) == 0 {
+	if s == nil {
 		return nil
 	}
 
@@ -38,12 +38,16 @@ func (s *contextStack) Peek(key any) any {
 
 // Push adds a context to the stack.
 func (s *contextStack) Push(key, val any) {
+	if s == nil {
+		return
+	}
+
 	(*s)[key] = append((*s)[key], val)
 }
 
 // Pop removes the top context from the stack and returns it.
 func (s *contextStack) Pop(key any) any {
-	if len(*s) == 0 {
+	if s == nil {
 		return nil
 	}
 
