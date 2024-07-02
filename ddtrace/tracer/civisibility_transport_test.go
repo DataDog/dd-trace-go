@@ -20,11 +20,12 @@ import (
 )
 
 func TestCiVisibilityTransport(t *testing.T) {
-	t.Run("agentless", func(t *testing.T) { runTransportTest(t, true) })
-	t.Run("agentbased", func(t *testing.T) { runTransportTest(t, false) })
+	t.Run("agentless", func(t *testing.T) { runTransportTest(t, true, true) })
+	t.Run("agentless_no_api_key", func(t *testing.T) { runTransportTest(t, true, false) })
+	t.Run("agentbased", func(t *testing.T) { runTransportTest(t, false, true) })
 }
 
-func runTransportTest(t *testing.T, agentless bool) {
+func runTransportTest(t *testing.T, agentless, shouldSetAPIKey bool) {
 	assert := assert.New(t)
 
 	testCases := []struct {
@@ -42,7 +43,7 @@ func runTransportTest(t *testing.T, agentless bool) {
 		metaLang := r.Header.Get("Datadog-Meta-Lang")
 		assert.NotNil(metaLang)
 
-		if agentless {
+		if agentless && shouldSetAPIKey {
 			apikey := r.Header.Get("dd-api-key")
 			assert.Equal("12345", apikey)
 		}
@@ -87,7 +88,9 @@ func runTransportTest(t *testing.T, agentless bool) {
 	if agentless {
 		t.Setenv(constants.CIVisibilityAgentlessEnabledEnvironmentVariable, "1")
 		t.Setenv(constants.CIVisibilityAgentlessURLEnvironmentVariable, srv.URL)
-		t.Setenv(constants.APIKeyEnvironmentVariable, "12345")
+		if shouldSetAPIKey {
+			t.Setenv(constants.APIKeyEnvironmentVariable, "12345")
+		}
 	}
 
 	for _, tc := range testCases {
