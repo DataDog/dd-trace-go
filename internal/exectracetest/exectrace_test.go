@@ -16,7 +16,9 @@ package exectracetest
 import (
 	"bytes"
 	"context"
+	"encoding/binary"
 	"io"
+	"reflect"
 	"regexp"
 	"runtime/pprof"
 	"runtime/trace"
@@ -139,3 +141,59 @@ func TestSpanDoubleFinish(t *testing.T) {
 }
 
 // TODO: move database/sql tests here? likely requires copying over contrib/sql/internal.MockDriver
+
+func TestExecutionTraceSpans(t *testing.T) {
+	var root, child tracer.Span
+	_, execTrace := collectTestData(t, func() {
+		tracer.Start(tracer.WithLogger(discardLogger{}))
+		defer tracer.Stop()
+		var ctx context.Context
+		root, ctx = tracer.StartSpanFromContext(context.Background(), "root")
+		child, _ = tracer.StartSpanFromContext(ctx, "child")
+		root.Finish()
+		child.Finish()
+	})
+
+	type traceSpan struct {
+		name   string
+		parent string
+		spanID uint64
+	}
+
+	spans := make(map[exptrace.TaskID]*traceSpan)
+	for _, ev := range execTrace {
+		switch ev.Kind() {
+		case exptrace.EventTaskBegin:
+			task := ev.Task()
+			var parent string
+			if p, ok := spans[task.Parent]; ok {
+				parent = p.name
+			}
+			spans[task.ID] = &traceSpan{
+				name:   task.Type,
+				parent: parent,
+			}
+		case exptrace.EventLog:
+			span, ok := spans[ev.Log().Task]
+			if !ok {
+				continue
+			}
+			if key := ev.Log().Category; key == "datadog.uint64_span_id" {
+				span.spanID = binary.LittleEndian.Uint64([]byte(ev.Log().Message))
+			}
+		}
+	}
+
+	want := []traceSpan{
+		{name: "root", spanID: root.Context().SpanID()},
+		{name: "child", parent: "root", spanID: child.Context().SpanID()},
+	}
+	var got []traceSpan
+	for _, v := range spans {
+		got = append(got, *v)
+	}
+
+	if !reflect.DeepEqual(want, got) {
+		t.Errorf("wanted spans %+v, got %+v", want, got)
+	}
+}
