@@ -205,6 +205,14 @@ func (tq *Query) MapScan(m map[string]interface{}) error {
 	return err
 }
 
+// MapScanCAS wraps in a span query.MapScanCAS call.
+func (tq *Query) MapScanCAS(m map[string]interface{}) (applied bool, err error) {
+	span := tq.newChildSpan(tq.ctx)
+	applied, err = tq.Query.MapScanCAS(m)
+	tq.finishSpan(span, err)
+	return applied, err
+}
+
 // Scan wraps in a span query.Scan call.
 func (tq *Query) Scan(dest ...interface{}) error {
 	span := tq.newChildSpan(tq.ctx)
