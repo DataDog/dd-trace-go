@@ -13,8 +13,8 @@ jobs:
       id: datadog-static-analysis
       uses: DataDog/datadog-static-analyzer-github-action@v1
       with:
-        dd_api_key: ${{ secrets.SYSTEM_TESTS_E2E_DD_API_KEY }}
-        dd_app_key: ${{ secrets.SYSTEM_TESTS_E2E_DD_APP_KEY }}
+        dd_api_key: ${{ secrets.STATIC_ANALYZER_API_KEY }}
+        dd_app_key: ${{ secrets.STATIC_ANALYZER_APP_KEY }}
         dd_service: dd-trace-go
         dd_env: ci
         dd_site: datadoghq.com
