@@ -1,6 +1,6 @@
 module github.com/DataDog/dd-trace-go/internal/apps
 
-go 1.20
+go 1.21
 
 require (
 	golang.org/x/sync v0.5.0
@@ -45,7 +45,7 @@ require (
 	github.com/richardartoul/molecule v1.0.1-0.20240531184615-7ca0df43c0b3 // indirect
 	github.com/secure-systems-lab/go-securesystemslib v0.7.0 // indirect
 	github.com/spaolacci/murmur3 v1.1.0 // indirect
-	github.com/stretchr/testify v1.8.4
+	github.com/stretchr/testify v1.9.0
 	github.com/tinylib/msgp v1.1.8 // indirect
 	golang.org/x/sys v0.20.0 // indirect
 	golang.org/x/time v0.3.0 // indirect

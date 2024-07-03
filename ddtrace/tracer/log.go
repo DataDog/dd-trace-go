@@ -57,6 +57,8 @@ type startupInfo struct {
 	PartialFlushMinSpans        int                          `json:"partial_flush_min_spans"`        // The min number of spans to trigger a partial flush
 	Orchestrion                 orchestrionConfig            `json:"orchestrion"`                    // Orchestrion (auto-instrumentation) configuration.
 	FeatureFlags                []string                     `json:"feature_flags"`
+	PropagationStyleInject      string                       `json:"propagation_style_inject"`  // Propagation style for inject
+	PropagationStyleExtract     string                       `json:"propagation_style_extract"` // Propagation style for extract
 }
 
 // checkEndpoint tries to connect to the URL specified by endpoint.
@@ -89,6 +91,8 @@ func logStartup(t *tracer) {
 	for f := range t.config.featureFlags {
 		featureFlags = append(featureFlags, f)
 	}
+
+	cp, _ := t.config.propagator.(*chainedPropagator)
 
 	info := startupInfo{
 		Date:                        time.Now().Format(time.RFC3339),
@@ -123,6 +127,8 @@ func logStartup(t *tracer) {
 		PartialFlushMinSpans:        t.config.partialFlushMinSpans,
 		Orchestrion:                 t.config.orchestrionCfg,
 		FeatureFlags:                featureFlags,
+		PropagationStyleInject:      cp.injectorNames,
+		PropagationStyleExtract:     cp.extractorsNames,
 	}
 	if _, _, err := samplingRulesFromEnv(); err != nil {
 		info.SamplingRulesError = fmt.Sprintf("%s", err)

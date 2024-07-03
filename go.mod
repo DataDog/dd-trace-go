@@ -1,6 +1,6 @@
 module gopkg.in/DataDog/dd-trace-go.v1
 
-go 1.20
+go 1.21
 
 require (
 	cloud.google.com/go/pubsub v1.33.0
@@ -49,7 +49,7 @@ require (
 	github.com/go-redis/redis/v8 v8.11.5
 	github.com/go-sql-driver/mysql v1.6.0
 	github.com/gocql/gocql v0.0.0-20220224095938-0eacd3183625
-	github.com/gofiber/fiber/v2 v2.52.1
+	github.com/gofiber/fiber/v2 v2.52.5
 	github.com/golang/protobuf v1.5.3
 	github.com/gomodule/redigo v1.8.9
 	github.com/google/pprof v0.0.0-20230817174616-7a8ec2ada47b
@@ -80,14 +80,14 @@ require (
 	github.com/segmentio/kafka-go v0.4.42
 	github.com/sirupsen/logrus v1.9.3
 	github.com/spaolacci/murmur3 v1.1.0
-	github.com/stretchr/testify v1.8.4
+	github.com/stretchr/testify v1.9.0
 	github.com/syndtr/goleveldb v1.0.1-0.20220721030215-126854af5e6d
 	github.com/tidwall/buntdb v1.3.0
 	github.com/tinylib/msgp v1.1.8
 	github.com/twitchtv/twirp v8.1.3+incompatible
 	github.com/urfave/negroni v1.0.0
 	github.com/valyala/fasthttp v1.51.0
-	github.com/vektah/gqlparser/v2 v2.5.8
+	github.com/vektah/gqlparser/v2 v2.5.16
 	github.com/zenazn/goji v1.0.1
 	go.mongodb.org/mongo-driver v1.12.1
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.44.0
@@ -152,7 +152,7 @@ require (
 	github.com/eapache/queue v1.1.0 // indirect
 	github.com/ebitengine/purego v0.6.0-alpha.5 // indirect
 	github.com/elastic/elastic-transport-go/v8 v8.1.0 // indirect
-	github.com/fatih/color v1.15.0 // indirect
+	github.com/fatih/color v1.16.0 // indirect
 	github.com/felixge/httpsnoop v1.0.3 // indirect
 	github.com/gabriel-vasile/mimetype v1.4.2 // indirect
 	github.com/gin-contrib/sse v0.1.0 // indirect
@@ -180,9 +180,9 @@ require (
 	github.com/hailocab/go-hostpool v0.0.0-20160125115350-e80d13ce29ed // indirect
 	github.com/hashicorp/errwrap v1.1.0 // indirect
 	github.com/hashicorp/go-cleanhttp v0.5.2 // indirect
-	github.com/hashicorp/go-hclog v1.5.0 // indirect
+	github.com/hashicorp/go-hclog v1.6.3 // indirect
 	github.com/hashicorp/go-immutable-radix v1.3.1 // indirect
-	github.com/hashicorp/go-retryablehttp v0.7.4 // indirect
+	github.com/hashicorp/go-retryablehttp v0.7.7 // indirect
 	github.com/hashicorp/go-rootcerts v1.0.2 // indirect
 	github.com/hashicorp/go-secure-stdlib/strutil v0.1.2 // indirect
 	github.com/hashicorp/go-sockaddr v1.0.2 // indirect
@@ -229,7 +229,7 @@ require (
 	github.com/ryanuber/go-glob v1.0.0 // indirect
 	github.com/secure-systems-lab/go-securesystemslib v0.7.0 // indirect
 	github.com/spf13/pflag v1.0.5 // indirect
-	github.com/stretchr/objx v0.5.1 // indirect
+	github.com/stretchr/objx v0.5.2 // indirect
 	github.com/tidwall/btree v1.6.0 // indirect
 	github.com/tidwall/gjson v1.16.0 // indirect
 	github.com/tidwall/grect v0.1.4 // indirect

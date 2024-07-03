@@ -31,7 +31,7 @@ env:
 
 jobs:
   test-multi-os:
-    runs-on: "${{ (inputs.go-version == '1.20' && inputs.runs-on == 'windows-latest') && 'windows-2019' || inputs.runs-on }}"
+    runs-on: "${{ inputs.runs-on }}"
     env:
       REPORT: gotestsum-report.xml # path to where test results will be saved
       DD_APPSEC_WAF_TIMEOUT: 1h
