@@ -138,7 +138,18 @@ func (t *gqlTracer) InterceptOperation(ctx context.Context, next graphql.Operati
 
 func (t *gqlTracer) InterceptField(ctx context.Context, next graphql.Resolver) (res any, err error) {
 	opCtx := graphql.GetOperationContext(ctx)
+	if t.cfg.withoutTraceIntrospectionQuery && opCtx.OperationName == "IntrospectionQuery" {
+		res, err = next(ctx)
+		return
+	}
+
 	fieldCtx := graphql.GetFieldContext(ctx)
+	isTrivial := !(fieldCtx.IsMethod || fieldCtx.IsResolver)
+	if t.cfg.withoutTraceTrivialResolvedFields && isTrivial {
+		res, err = next(ctx)
+		return
+	}
+
 	opts := make([]tracer.StartSpanOption, 0, 6+len(t.cfg.tags))
 	for k, v := range t.cfg.tags {
 		opts = append(opts, tracer.Tag(k, v))
@@ -153,15 +164,18 @@ func (t *gqlTracer) InterceptField(ctx context.Context, next graphql.Resolver) (
 	if !math.IsNaN(t.cfg.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, t.cfg.analyticsRate))
 	}
+
 	span, ctx := tracer.StartSpanFromContext(ctx, fieldOp, opts...)
 	defer func() { span.Finish(tracer.WithError(err)) }()
+
 	ctx, op := graphqlsec.StartResolveOperation(ctx, graphqlsec.FromContext[*types.ExecutionOperation](ctx), span, types.ResolveOperationArgs{
 		Arguments: fieldCtx.Args,
 		TypeName:  fieldCtx.Object,
 		FieldName: fieldCtx.Field.Name,
-		Trivial:   !(fieldCtx.IsMethod || fieldCtx.IsResolver), // TODO: Is this accurate?
+		Trivial:   isTrivial,
 	})
 	defer func() { op.Finish(types.ResolveOperationRes{Data: res, Error: err}) }()
+
 	res, err = next(ctx)
 	return
 }

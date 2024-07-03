@@ -15,9 +15,11 @@ import (
 const defaultServiceName = "graphql"
 
 type config struct {
-	serviceName   string
-	analyticsRate float64
-	tags          map[string]interface{}
+	serviceName                       string
+	analyticsRate                     float64
+	withoutTraceIntrospectionQuery    bool
+	withoutTraceTrivialResolvedFields bool
+	tags                              map[string]interface{}
 }
 
 // An Option configures the gqlgen integration.
@@ -48,6 +50,21 @@ func WithAnalyticsRate(rate float64) Option {
 func WithServiceName(name string) Option {
 	return func(cfg *config) {
 		cfg.serviceName = name
+	}
+}
+
+// WithoutTraceIntrospectionQuery skips creating spans for fields when the operation name is IntrospectionQuery.
+func WithoutTraceIntrospectionQuery() Option {
+	return func(cfg *config) {
+		cfg.withoutTraceIntrospectionQuery = true
+	}
+}
+
+// WithoutTraceTrivialResolvedFields skips creating spans for fields that have a trivial resolver.
+// For example, a field resolved from an object w/o requiring a custom method is considered trivial.
+func WithoutTraceTrivialResolvedFields() Option {
+	return func(cfg *config) {
+		cfg.withoutTraceTrivialResolvedFields = true
 	}
 }
 
