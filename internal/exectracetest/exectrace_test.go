@@ -22,6 +22,7 @@ import (
 	"regexp"
 	"runtime/pprof"
 	"runtime/trace"
+	"sort"
 	"testing"
 	"time"
 
@@ -185,13 +186,14 @@ func TestExecutionTraceSpans(t *testing.T) {
 	}
 
 	want := []traceSpan{
-		{name: "root", spanID: root.Context().SpanID()},
 		{name: "child", parent: "root", spanID: child.Context().SpanID()},
+		{name: "root", spanID: root.Context().SpanID()},
 	}
 	var got []traceSpan
 	for _, v := range spans {
 		got = append(got, *v)
 	}
+	sort.Slice(got, func(i, j int) bool { return got[i].name < got[j].name })
 
 	if !reflect.DeepEqual(want, got) {
 		t.Errorf("wanted spans %+v, got %+v", want, got)
