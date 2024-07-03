@@ -47,6 +47,14 @@ func (s *span) SetName(name string) {
 	s.attributes[ext.SpanName] = strings.ToLower(name)
 }
 
+// TODO: add some encoding for json here
+type spanEvent struct {
+	time_unix_nano int64
+	name           string
+	// TODO: Ensure values can only be string, int or bool
+	attributes map[string]interface{}
+}
+
 func (s *span) End(options ...oteltrace.SpanEndOption) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -72,6 +80,19 @@ func (s *span) End(options ...oteltrace.SpanEndOption) {
 
 	for k, v := range s.attributes {
 		s.DD.SetTag(k, v)
+	}
+	// TODO: Investigate json marshaling to see if that can cut all this down
+	spanEvts := make([]spanEvent, len(s.events))
+	for i, e := range s.events {
+		s := spanEvent{
+			time_unix_nano: e.Time.Unix(),
+			name:           e.Name,
+		}
+		spanEvts[i] = s
+		for _, a := range e.Attributes {
+			s.attributes = make(map[string]interface{})
+			s.attributes[string(a.Key)] = a.Value.AsInterface()
+		}
 	}
 	var finishCfg = oteltrace.NewSpanEndConfig(options...)
 	var opts []tracer.FinishOption

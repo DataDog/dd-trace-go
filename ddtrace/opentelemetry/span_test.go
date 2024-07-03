@@ -204,6 +204,9 @@ func TestSpanEnd(t *testing.T) {
 	}
 	assert.True(sp.IsRecording())
 
+	sp.AddEvent("evt1")
+	sp.AddEvent("evt2", oteltrace.WithAttributes(attribute.String("key1", "value"), attribute.Int("key2", 1234)))
+
 	sp.End()
 	assert.False(sp.IsRecording())
 
@@ -233,6 +236,7 @@ func TestSpanEnd(t *testing.T) {
 	for k, v := range ignoredAttributes {
 		assert.NotContains(meta, fmt.Sprintf("%s:%s", k, v))
 	}
+	// TODO: Assert that span meta contains events array
 }
 
 // This test verifies that setting the status of a span
@@ -310,15 +314,14 @@ func TestSpanAddEvent(t *testing.T) {
 	defer cleanup()
 
 	_, sp := tr.Start(context.Background(), "span_with_events")
-	defer sp.End()
-
-	// Can't capture the time that the event will be added, but we can create start and before "bounds" and assert
+	// We can't capture the exact time that the event is added, but we can create start and end "bounds" and assert
 	// that the event's eventual timestamp is between those bounds
 	timeStartBound := time.Now()
 	sp.AddEvent("My event!", oteltrace.WithAttributes(attribute.Int("pid", 4328), attribute.String("signal", "SIGHUP")))
 	timeEndBound := time.Now()
-
+	sp.End()
 	dd := sp.(*span)
+
 	// Assert event exists under span events
 	assert.Len(dd.events, 1)
 	e := dd.events[0]
@@ -328,42 +331,32 @@ func TestSpanAddEvent(t *testing.T) {
 	// Assert both attributes exist on the event
 	assert.Len(e.Attributes, 2)
 	// Assert attribute key-value fields
-	wantAttrs := []attributeKeyVal{
-		{
-			key:   "pid",
-			value: 4328,
-		},
-		{
-			key:   "signal",
-			value: "SIGHUP",
-		},
+	wantAttrs := map[string]interface{}{
+		"pid":    4328,
+		"signal": "SIGHUP",
 	}
-	for _, w := range wantAttrs {
-		err := attributesContains(e.Attributes, w)
+	for k, v := range wantAttrs {
+		err := attributesContains(e.Attributes, k, v)
 		assert.NoError(err, err)
 	}
-
 }
 
-type attributeKeyVal struct {
-	key   string
-	value interface{}
-}
-
-func attributesContains(attrs []attribute.KeyValue, kv attributeKeyVal) error {
+// attributesContains returns true if attrs contains an attribute.KeyValue with the provided key and val
+func attributesContains(attrs []attribute.KeyValue, key string, val interface{}) error {
 	for _, a := range attrs {
-		if string(a.Key) == kv.key {
-			v, ok := attributeVal(kv.value, a.Value)
+		if string(a.Key) == key {
+			v, ok := attributeValEqual(val, a.Value)
 			if ok {
 				return nil
 			}
-			return fmt.Errorf("Expected %v as value for attribute key %v, but got %v instead", kv.value, kv.key, v)
+			return fmt.Errorf("Expected %v as value for attribute key %v, but got %v instead", val, key, v)
 		}
 	}
-	return fmt.Errorf("Expected key %v not available in attributes", kv.key)
+	return fmt.Errorf("Expected key %v not available in attributes", key)
 }
 
-func attributeVal(expected interface{}, actual attribute.Value) (interface{}, bool) {
+// attributeVal returns whether the "actual" attribute Value is equal to "expected"
+func attributeValEqual(expected interface{}, actual attribute.Value) (interface{}, bool) {
 	switch expected.(type) {
 	case string:
 		v := actual.AsString()
@@ -371,6 +364,9 @@ func attributeVal(expected interface{}, actual attribute.Value) (interface{}, bo
 	case int:
 		v := actual.AsInt64()
 		return v, int(v) == expected
+	case bool:
+		v := actual.AsBool()
+		return v, v == expected
 	default:
 		return nil, false
 	}
