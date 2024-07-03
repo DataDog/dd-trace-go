@@ -216,7 +216,7 @@ func TestNamingSchema(t *testing.T) {
 		err := c.Post(`{ name }`, &testServerResponse{})
 		require.NoError(t, err)
 
-		err = c.Post(`mutation Name() { name }`, &testServerResponse{})
+		err = c.Post(`mutation Name { name }`, &testServerResponse{})
 		assert.ErrorContains(t, err, "mutations are not supported")
 
 		return mt.FinishedSpans()
