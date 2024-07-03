@@ -38,24 +38,24 @@ func TestFromGLS(t *testing.T) {
 
 	t.Run("Enabled() is false, ctx is nil", func(t *testing.T) {
 		enabled = false
-		require.Equal(t, nil, FromCtxOrGLS(nil))
+		require.Equal(t, nil, WrapContext(nil))
 	})
 
 	t.Run("Enabled() is false, ctx is not nil", func(t *testing.T) {
 		enabled = false
-		require.Equal(t, context.Background(), FromCtxOrGLS(context.Background()))
+		require.Equal(t, context.Background(), WrapContext(context.Background()))
 
 	})
 
 	t.Run("Enabled() is true, ctx is nil", func(t *testing.T) {
 		enabled = true
-		require.Equal(t, &glsContext{context.Background()}, FromCtxOrGLS(nil))
+		require.Equal(t, &glsContext{context.Background()}, WrapContext(nil))
 	})
 
 	t.Run("Enabled() is true, ctx is not nil", func(t *testing.T) {
 		enabled = true
 		ctx := context.WithValue(context.Background(), key("key"), "value")
-		require.Equal(t, &glsContext{ctx}, FromCtxOrGLS(ctx))
+		require.Equal(t, &glsContext{ctx}, WrapContext(ctx))
 	})
 }
 

@@ -33,7 +33,7 @@ func WithExecutionTraced(ctx context.Context) context.Context {
 // information from ctx) from being considered covered by a task, when an
 // integration may create its own child span with its own execution trace task.
 func WithExecutionNotTraced(ctx context.Context) context.Context {
-	if orchestrion.FromCtxOrGLS(ctx).Value(executionTracedKey{}) == nil {
+	if orchestrion.WrapContext(ctx).Value(executionTracedKey{}) == nil {
 		// Fast path: if it wasn't marked before, we don't need to wrap
 		// the context
 		return ctx
@@ -44,6 +44,6 @@ func WithExecutionNotTraced(ctx context.Context) context.Context {
 // IsExecutionTraced returns whether ctx is associated with an execution trace
 // task, as indicated via WithExecutionTraced
 func IsExecutionTraced(ctx context.Context) bool {
-	v := orchestrion.FromCtxOrGLS(ctx).Value(executionTracedKey{})
+	v := orchestrion.WrapContext(ctx).Value(executionTracedKey{})
 	return v != nil && v.(bool)
 }

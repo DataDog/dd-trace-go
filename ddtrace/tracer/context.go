@@ -26,7 +26,7 @@ func SpanFromContext(ctx context.Context) (Span, bool) {
 	if ctx == nil {
 		return &traceinternal.NoopSpan{}, false
 	}
-	v := orchestrion.FromCtxOrGLS(ctx).Value(internal.ActiveSpanKey)
+	v := orchestrion.WrapContext(ctx).Value(internal.ActiveSpanKey)
 	if s, ok := v.(ddtrace.Span); ok {
 		return s, true
 	}

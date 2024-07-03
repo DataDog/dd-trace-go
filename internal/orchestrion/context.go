@@ -9,8 +9,8 @@ import (
 	"context"
 )
 
-// FromCtxOrGLS returns the GLS-wrapped context if orchestrion is enabled, otherwise it returns the given parameter.
-func FromCtxOrGLS(ctx context.Context) context.Context {
+// WrapContext returns the GLS-wrapped context if orchestrion is enabled, otherwise it returns the given parameter.
+func WrapContext(ctx context.Context) context.Context {
 	if !Enabled() {
 		return ctx
 	}
@@ -36,7 +36,7 @@ func CtxWithValue(parent context.Context, key, val any) context.Context {
 	}
 
 	getDDContextStack().Push(key, val)
-	return FromCtxOrGLS(parent)
+	return WrapContext(parent)
 }
 
 // GLSPopValue pops the value from the GLS slot of orchestrion and returns it. Using context.Context values usually does

@@ -150,7 +150,7 @@ func NewOperation(parent Operation) Operation {
 
 // FromContext looks into the given context (or the GLS if orchestrion is enabled) for a parent Operation and returns it.
 func FromContext(ctx context.Context) (Operation, bool) {
-	ctx = orchestrion.FromCtxOrGLS(ctx)
+	ctx = orchestrion.WrapContext(ctx)
 	if ctx == nil {
 		return nil, false
 	}
