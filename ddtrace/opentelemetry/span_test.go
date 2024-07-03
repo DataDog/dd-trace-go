@@ -303,6 +303,79 @@ func TestSpanSetStatus(t *testing.T) {
 	}
 }
 
+func TestSpanAddEvent(t *testing.T) {
+	assert := assert.New(t)
+	_, _, cleanup := mockTracerProvider(t)
+	tr := otel.Tracer("")
+	defer cleanup()
+
+	_, sp := tr.Start(context.Background(), "span_with_events")
+	defer sp.End()
+
+	// Can't capture the time that the event will be added, but we can create start and before "bounds" and assert
+	// that the event's eventual timestamp is between those bounds
+	timeStartBound := time.Now()
+	sp.AddEvent("My event!", oteltrace.WithAttributes(attribute.Int("pid", 4328), attribute.String("signal", "SIGHUP")))
+	timeEndBound := time.Now()
+
+	dd := sp.(*span)
+	// Assert event exists under span events
+	assert.Len(dd.events, 1)
+	e := dd.events[0]
+	assert.Equal(e.Name, "My event!")
+	// assert event timestamp is [around] the expected time
+	assert.True((e.Time).After(timeStartBound) && (e.Time).Before(timeEndBound))
+	// Assert both attributes exist on the event
+	assert.Len(e.Attributes, 2)
+	// Assert attribute key-value fields
+	wantAttrs := []attributeKeyVal{
+		{
+			key:   "pid",
+			value: 4328,
+		},
+		{
+			key:   "signal",
+			value: "SIGHUP",
+		},
+	}
+	for _, w := range wantAttrs {
+		err := attributesContains(e.Attributes, w)
+		assert.NoError(err, err)
+	}
+
+}
+
+type attributeKeyVal struct {
+	key   string
+	value interface{}
+}
+
+func attributesContains(attrs []attribute.KeyValue, kv attributeKeyVal) error {
+	for _, a := range attrs {
+		if string(a.Key) == kv.key {
+			v, ok := attributeVal(kv.value, a.Value)
+			if ok {
+				return nil
+			}
+			return fmt.Errorf("Expected %v as value for attribute key %v, but got %v instead", kv.value, kv.key, v)
+		}
+	}
+	return fmt.Errorf("Expected key %v not available in attributes", kv.key)
+}
+
+func attributeVal(expected interface{}, actual attribute.Value) (interface{}, bool) {
+	switch expected.(type) {
+	case string:
+		v := actual.AsString()
+		return v, v == expected
+	case int:
+		v := actual.AsInt64()
+		return v, int(v) == expected
+	default:
+		return nil, false
+	}
+}
+
 func TestSpanContextWithStartOptions(t *testing.T) {
 	assert := assert.New(t)
 	_, payloads, cleanup := mockTracerProvider(t)

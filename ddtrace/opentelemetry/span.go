@@ -19,6 +19,7 @@ import (
 
 	"go.opentelemetry.io/otel/attribute"
 	otelcodes "go.opentelemetry.io/otel/codes"
+	otelsdk "go.opentelemetry.io/otel/sdk/trace"
 	oteltrace "go.opentelemetry.io/otel/trace"
 	"go.opentelemetry.io/otel/trace/noop"
 )
@@ -35,6 +36,7 @@ type span struct {
 	finishOpts []tracer.FinishOption
 	statusInfo
 	*oteltracer
+	events []otelsdk.Event
 }
 
 func (s *span) TracerProvider() oteltrace.TracerProvider { return s.oteltracer.provider }
@@ -168,6 +170,15 @@ func (s *span) SetStatus(code otelcodes.Code, description string) {
 	if code >= s.statusInfo.code {
 		s.statusInfo = statusInfo{code, description}
 	}
+}
+
+func (s *span) AddEvent(name string, opts ...oteltrace.EventOption) {
+	if !s.IsRecording() {
+		return
+	}
+	c := oteltrace.NewEventConfig(opts...)
+	e := otelsdk.Event{Name: name, Attributes: c.Attributes(), Time: c.Timestamp()}
+	s.events = append(s.events, e)
 }
 
 // SetAttributes sets the key-value pairs as tags on the span.
