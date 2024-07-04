@@ -42,7 +42,8 @@ func ExampleOpen() {
 	db.Where("name = ?", "jinzhu").First(&user)
 }
 
-func ExamplePlugin() {
+// ExampleNewTracePlugin illustrates how to trace gorm using the gorm.Plugin api.
+func ExampleNewTracePlugin() {
 	// Register augments the provided driver with tracing, enabling it to be loaded by gorm.Open and the gormtrace.TracePlugin.
 	sqltrace.Register("pgx", &stdlib.Driver{}, sqltrace.WithServiceName("my-service"))
 	sqlDb, err := sqltrace.Open("pgx", "postgres://pqgotest:password@localhost/pqgotest?sslmode=disable")
@@ -58,7 +59,7 @@ func ExamplePlugin() {
 	errCheck := gormtrace.WithErrorCheck(func(err error) bool {
 		return !errors.Is(err, gorm.ErrRecordNotFound)
 	})
-	if err := db.Use(gormtrace.New(errCheck)); err != nil {
+	if err := db.Use(gormtrace.NewTracePlugin(errCheck)); err != nil {
 		log.Fatal(err)
 	}
 

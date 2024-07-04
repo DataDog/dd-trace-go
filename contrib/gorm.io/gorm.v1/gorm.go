@@ -31,21 +31,22 @@ const (
 	gormSpanStartTimeKey = key("dd-trace-go:span")
 )
 
-type TracePlugin struct {
+type tracePlugin struct {
 	options []Option
 }
 
-func New(opts ...Option) TracePlugin {
-	return TracePlugin{
+// NewTracePlugin returns a new gorm.Plugin that enhances the underlying *gorm.DB with tracing.
+func NewTracePlugin(opts ...Option) gorm.Plugin {
+	return tracePlugin{
 		options: opts,
 	}
 }
 
-func (TracePlugin) Name() string {
-	return "GormTracePlugin"
+func (tracePlugin) Name() string {
+	return "DDTracePlugin"
 }
 
-func (g TracePlugin) Initialize(db *gorm.DB) error {
+func (g tracePlugin) Initialize(db *gorm.DB) error {
 	_, err := withCallbacks(db, g.options...)
 	return err
 }

@@ -591,9 +591,9 @@ func TestPlugin(t *testing.T) {
 	opt := WithCustomTag("foo", func(_ *gorm.DB) interface{} {
 		return "bar"
 	})
-	plugin := New(opt)
+	plugin := NewTracePlugin(opt).(tracePlugin)
 
-	assert.Equal(t, "GormTracePlugin", plugin.Name())
+	assert.Equal(t, "DDTracePlugin", plugin.Name())
 	assert.Len(t, plugin.options, 1)
 	require.NoError(t, db.Use(plugin))
 
