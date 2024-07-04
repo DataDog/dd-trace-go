@@ -85,6 +85,8 @@ require (
 	github.com/tidwall/buntdb v1.3.0
 	github.com/tinylib/msgp v1.1.8
 	github.com/twitchtv/twirp v8.1.3+incompatible
+	github.com/uptrace/bun v1.1.17
+	github.com/uptrace/bun/dialect/sqlitedialect v1.1.17
 	github.com/urfave/negroni v1.0.0
 	github.com/valyala/fasthttp v1.51.0
 	github.com/vektah/gqlparser/v2 v2.5.16
@@ -244,7 +246,7 @@ require (
 	github.com/valyala/fasttemplate v1.2.2 // indirect
 	github.com/valyala/tcplisten v1.0.0 // indirect
 	github.com/vmihailenco/bufpool v0.1.11 // indirect
-	github.com/vmihailenco/msgpack/v5 v5.3.5 // indirect
+	github.com/vmihailenco/msgpack/v5 v5.4.1 // indirect
 	github.com/vmihailenco/tagparser v0.1.2 // indirect
 	github.com/vmihailenco/tagparser/v2 v2.0.0 // indirect
 	github.com/xdg-go/pbkdf2 v1.0.0 // indirect
