@@ -502,23 +502,13 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			if err != nil {
 				t.Fatal("Failed to create socket")
 			}
-			udsPath := filepath.Join(dir, "dsd.socket")
-			defer os.RemoveAll(udsPath)
-			unixListener, err := net.Listen("unix", udsPath)
-			if err != nil {
-				t.Fatal("Failed to create listener")
-			}
-			var hits int
-			srv := http.Server{Handler: http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
-				hits++
-			})}
-			go srv.Serve(unixListener)
-			defer srv.Close()
-			tracer := newTracer(WithDogstatsdAddress(udsPath))
+			addr := filepath.Join(dir, "dsd.socket")
+			defer os.RemoveAll(addr)
+			tracer := newTracer(WithDogstatsdAddress("unix://" + addr))
 			defer tracer.Stop()
 			c := tracer.config
-			assert.Equal(udsPath, c.dogstatsdAddr)
-			assert.Equal(udsPath, globalconfig.DogstatsdAddr())
+			assert.Equal("unix://"+addr, c.dogstatsdAddr)
+			assert.Equal("unix://"+addr, globalconfig.DogstatsdAddr())
 		})
 	})
 
