@@ -11,7 +11,7 @@ import (
 
 	"github.com/DataDog/appsec-internal-go/limiter"
 	appsecLog "github.com/DataDog/appsec-internal-go/log"
-	waf "github.com/DataDog/go-libddwaf/v2"
+	waf "github.com/DataDog/go-libddwaf/v3"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/config"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
@@ -24,6 +24,13 @@ func Enabled() bool {
 	mu.RLock()
 	defer mu.RUnlock()
 	return activeAppSec != nil && activeAppSec.started
+}
+
+// RASPEnabled returns true when DD_APPSEC_RASP_ENABLED=true or is unset. Granted that AppSec is enabled.
+func RASPEnabled() bool {
+	mu.RLock()
+	defer mu.RUnlock()
+	return activeAppSec != nil && activeAppSec.started && activeAppSec.cfg.RASP
 }
 
 // Start AppSec when enabled is enabled by both using the appsec build tag and
@@ -129,7 +136,7 @@ func setActiveAppSec(a *appsec) {
 type appsec struct {
 	cfg       *config.Config
 	limiter   *limiter.TokenTicker
-	wafHandle *wafHandle
+	wafHandle *waf.Handle
 	started   bool
 }
 
@@ -162,6 +169,7 @@ func (a *appsec) start(telemetry *appsecTelemetry) error {
 	}
 
 	a.enableRCBlocking()
+	a.enableRASP()
 
 	a.started = true
 	log.Info("appsec: up and running")

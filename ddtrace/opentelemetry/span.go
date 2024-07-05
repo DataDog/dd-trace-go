@@ -212,6 +212,8 @@ func toReservedAttributes(k string, v attribute.Value) (string, interface{}) {
 			rate = 0
 		}
 		return ext.EventSampleRate, rate
+	case "http.response.status_code":
+		return "http.status_code", strconv.FormatInt(v.AsInt64(), 10)
 	default:
 		return k, v.AsInterface()
 	}

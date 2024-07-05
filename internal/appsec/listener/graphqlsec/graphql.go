@@ -8,18 +8,19 @@ package graphqlsec
 import (
 	"sync"
 
-	"github.com/DataDog/appsec-internal-go/limiter"
-	waf "github.com/DataDog/go-libddwaf/v2"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/config"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/graphqlsec/types"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/sharedsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener/httpsec"
 	shared "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener/sharedsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/trace"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/samplernames"
+
+	"github.com/DataDog/appsec-internal-go/limiter"
+	waf "github.com/DataDog/go-libddwaf/v3"
 )
 
 // GraphQL rule addresses currently supported by the WAF
@@ -29,11 +30,12 @@ const (
 
 // List of GraphQL rule addresses currently supported by the WAF
 var supportedAddresses = listener.AddressSet{
-	graphQLServerResolverAddr: {},
+	graphQLServerResolverAddr:  {},
+	httpsec.ServerIoNetURLAddr: {},
 }
 
 // Install registers the GraphQL WAF Event Listener on the given root operation.
-func Install(wafHandle *waf.Handle, _ sharedsec.Actions, cfg *config.Config, lim limiter.Limiter, root dyngo.Operation) {
+func Install(wafHandle *waf.Handle, cfg *config.Config, lim limiter.Limiter, root dyngo.Operation) {
 	if listener := newWafEventListener(wafHandle, cfg, lim); listener != nil {
 		log.Debug("appsec: registering the GraphQL WAF Event Listener")
 		dyngo.On(root, listener.onEvent)
@@ -73,9 +75,19 @@ func newWafEventListener(wafHandle *waf.Handle, cfg *config.Config, limiter limi
 // NewWAFEventListener returns the WAF event listener to register in order
 // to enable it.
 func (l *wafEventListener) onEvent(request *types.RequestOperation, _ types.RequestOperationArgs) {
-	wafCtx := waf.NewContextWithBudget(l.wafHandle, l.config.WAFTimeout)
-	if wafCtx == nil {
+	wafCtx, err := l.wafHandle.NewContextWithBudget(l.config.WAFTimeout)
+	if err != nil {
+		log.Debug("appsec: could not create budgeted WAF context: %v", err)
+	}
+	// Early return in the following cases:
+	// - wafCtx is nil, meaning it was concurrently released
+	// - err is not nil, meaning context creation failed
+	if wafCtx == nil || err != nil {
 		return
+	}
+
+	if _, ok := l.addresses[httpsec.ServerIoNetURLAddr]; ok {
+		httpsec.RegisterRoundTripperListener(request, &request.SecurityEventsHolder, wafCtx, l.limiter)
 	}
 
 	// Add span tags notifying this trace is AppSec-enabled
@@ -95,9 +107,8 @@ func (l *wafEventListener) onEvent(request *types.RequestOperation, _ types.Requ
 							graphQLServerResolverAddr: map[string]any{args.FieldName: args.Arguments},
 						},
 					},
-					l.config.WAFTimeout,
 				)
-				shared.AddSecurityEvents(field, l.limiter, wafResult.Events)
+				shared.AddSecurityEvents(&field.SecurityEventsHolder, l.limiter, wafResult.Events)
 			}
 
 			dyngo.OnFinish(field, func(field *types.ResolveOperation, res types.ResolveOperationRes) {

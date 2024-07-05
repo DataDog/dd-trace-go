@@ -29,6 +29,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/traceprof"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
 
@@ -256,7 +257,7 @@ func TestAgentIntegration(t *testing.T) {
 		defer clearIntegrationsForTests()
 
 		cfg.loadContribIntegrations(nil)
-		assert.Equal(t, len(cfg.integrations), 55)
+		assert.Equal(t, 56, len(cfg.integrations))
 		for integrationName, v := range cfg.integrations {
 			assert.False(t, v.Instrumented, "integrationName=%s", integrationName)
 		}
@@ -400,6 +401,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 		assert.Equal(x.Timeout, y.Timeout)
 		compareHTTPClients(t, x, y)
 		assert.True(getFuncName(x.Transport.(*http.Transport).DialContext) == getFuncName(defaultDialer.DialContext))
+		assert.False(c.debug)
 	})
 
 	t.Run("http-client", func(t *testing.T) {
@@ -441,6 +443,45 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			defer globalconfig.SetAnalyticsRate(math.NaN())
 			newConfig()
 			assert.True(t, math.IsNaN(globalconfig.AnalyticsRate()))
+		})
+	})
+
+	t.Run("debug", func(t *testing.T) {
+		t.Run("option", func(t *testing.T) {
+			tracer := newTracer(WithDebugMode(true))
+			defer tracer.Stop()
+			c := tracer.config
+			assert.True(t, c.debug)
+		})
+		t.Run("env", func(t *testing.T) {
+			t.Setenv("DD_TRACE_DEBUG", "true")
+			c := newConfig()
+			assert.True(t, c.debug)
+		})
+		t.Run("otel-env-debug", func(t *testing.T) {
+			t.Setenv("OTEL_LOG_LEVEL", "debug")
+			c := newConfig()
+			assert.True(t, c.debug)
+		})
+		t.Run("otel-env-notdebug", func(t *testing.T) {
+			// any value other than debug, does nothing
+			t.Setenv("OTEL_LOG_LEVEL", "notdebug")
+			c := newConfig()
+			assert.False(t, c.debug)
+		})
+		t.Run("override-chain", func(t *testing.T) {
+			assert := assert.New(t)
+			// option override otel
+			t.Setenv("OTEL_LOG_LEVEL", "debug")
+			c := newConfig(WithDebugMode(false))
+			assert.False(c.debug)
+			// env override otel
+			t.Setenv("DD_TRACE_DEBUG", "false")
+			c = newConfig()
+			assert.False(c.debug)
+			// option override env
+			c = newConfig(WithDebugMode(true))
+			assert.True(c.debug)
 		})
 	})
 
@@ -564,6 +605,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			defer tracer.Stop()
 			c := tracer.config
 			assert.True(t, c.enabled.current)
+			assert.Equal(t, c.enabled.cfgOrigin, telemetry.OriginDefault)
 		})
 
 		t.Run("override", func(t *testing.T) {
@@ -572,6 +614,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			defer tracer.Stop()
 			c := tracer.config
 			assert.False(t, c.enabled.current)
+			assert.Equal(t, c.enabled.cfgOrigin, telemetry.OriginEnvVar)
 		})
 	})
 
@@ -897,10 +940,34 @@ func TestServiceName(t *testing.T) {
 		assert.Equal("api-intake", globalconfig.ServiceName())
 	})
 
+	t.Run("otel-env", func(t *testing.T) {
+		defer func() {
+			globalconfig.SetServiceName("")
+		}()
+		t.Setenv("OTEL_SERVICE_NAME", "api-intake")
+		assert := assert.New(t)
+		c := newConfig()
+
+		assert.Equal("api-intake", c.serviceName)
+		assert.Equal("api-intake", globalconfig.ServiceName())
+	})
+
 	t.Run("WithGlobalTag", func(t *testing.T) {
 		defer globalconfig.SetServiceName("")
 		assert := assert.New(t)
 		c := newConfig(WithGlobalTag("service", "api-intake"))
+		assert.Equal("api-intake", c.serviceName)
+		assert.Equal("api-intake", globalconfig.ServiceName())
+	})
+
+	t.Run("OTEL_RESOURCE_ATTRIBUTES", func(t *testing.T) {
+		defer func() {
+			globalconfig.SetServiceName("")
+		}()
+		t.Setenv("OTEL_RESOURCE_ATTRIBUTES", "service.name=api-intake")
+		assert := assert.New(t)
+		c := newConfig()
+
 		assert.Equal("api-intake", c.serviceName)
 		assert.Equal("api-intake", globalconfig.ServiceName())
 	})
@@ -916,11 +983,20 @@ func TestServiceName(t *testing.T) {
 	})
 
 	t.Run("override-chain", func(t *testing.T) {
+		defer func() {
+			globalconfig.SetServiceName("")
+		}()
 		assert := assert.New(t)
 		globalconfig.SetServiceName("")
 		c := newConfig()
 		assert.Equal(c.serviceName, filepath.Base(os.Args[0]))
 		assert.Equal("", globalconfig.ServiceName())
+
+		t.Setenv("OTEL_RESOURCE_ATTRIBUTES", "service.name=testService6")
+		globalconfig.SetServiceName("")
+		c = newConfig()
+		assert.Equal(c.serviceName, "testService6")
+		assert.Equal("testService6", globalconfig.ServiceName())
 
 		t.Setenv("DD_TAGS", "service:testService")
 		globalconfig.SetServiceName("")
@@ -933,17 +1009,22 @@ func TestServiceName(t *testing.T) {
 		assert.Equal(c.serviceName, "testService2")
 		assert.Equal("testService2", globalconfig.ServiceName())
 
-		t.Setenv("DD_SERVICE", "testService3")
+		t.Setenv("OTEL_SERVICE_NAME", "testService3")
 		globalconfig.SetServiceName("")
 		c = newConfig(WithGlobalTag("service", "testService2"))
 		assert.Equal(c.serviceName, "testService3")
 		assert.Equal("testService3", globalconfig.ServiceName())
 
+		t.Setenv("DD_SERVICE", "testService4")
 		globalconfig.SetServiceName("")
-		c = newConfig(WithGlobalTag("service", "testService2"), WithService("testService4"))
+		c = newConfig(WithGlobalTag("service", "testService2"))
 		assert.Equal(c.serviceName, "testService4")
 		assert.Equal("testService4", globalconfig.ServiceName())
-		defer globalconfig.SetServiceName("")
+
+		globalconfig.SetServiceName("")
+		c = newConfig(WithGlobalTag("service", "testService2"), WithService("testService5"))
+		assert.Equal(c.serviceName, "testService5")
+		assert.Equal("testService5", globalconfig.ServiceName())
 	})
 }
 
@@ -958,6 +1039,17 @@ func TestStartWithLink(t *testing.T) {
 	assert.Equal(span.SpanLinks[0].SpanID, uint64(2))
 	assert.Equal(span.SpanLinks[1].TraceID, uint64(3))
 	assert.Equal(span.SpanLinks[1].SpanID, uint64(4))
+}
+
+func TestOtelResourceAtttributes(t *testing.T) {
+	t.Run("max 10", func(t *testing.T) {
+		assert := assert.New(t)
+		t.Setenv("OTEL_RESOURCE_ATTRIBUTES", "tag1=val1,tag2=val2,tag3=val3,tag4=val4,tag5=val5,tag6=val6,tag7=val7,tag8=val8,tag9=val9,tag10=val10,tag11=val11,tag12=val12")
+		c := newConfig()
+		globalTags := c.globalTags.get()
+		// runtime-id tag is added automatically, so we expect runtime-id + our first 10 tags
+		assert.Len(globalTags, 11)
+	})
 }
 
 func TestTagSeparators(t *testing.T) {
@@ -1079,6 +1171,14 @@ func TestVersionConfig(t *testing.T) {
 		assert.Equal("1.2.3", c.version)
 	})
 
+	t.Run("OTEL_RESOURCE_ATTRIBUTES", func(t *testing.T) {
+		t.Setenv("OTEL_RESOURCE_ATTRIBUTES", "service.version=1.2.3")
+		assert := assert.New(t)
+		c := newConfig()
+
+		assert.Equal("1.2.3", c.version)
+	})
+
 	t.Run("DD_TAGS", func(t *testing.T) {
 		t.Setenv("DD_TAGS", "version:1.2.3")
 		assert := assert.New(t)
@@ -1091,6 +1191,10 @@ func TestVersionConfig(t *testing.T) {
 		assert := assert.New(t)
 		c := newConfig()
 		assert.Equal(c.version, "")
+
+		t.Setenv("OTEL_RESOURCE_ATTRIBUTES", "service.version=1.1.0")
+		c = newConfig()
+		assert.Equal("1.1.0", c.version)
 
 		t.Setenv("DD_TAGS", "version:1.1.1")
 		c = newConfig()
@@ -1131,6 +1235,14 @@ func TestEnvConfig(t *testing.T) {
 		assert.Equal("testing", c.env)
 	})
 
+	t.Run("OTEL_RESOURCE_ATTRIBUTES", func(t *testing.T) {
+		t.Setenv("OTEL_RESOURCE_ATTRIBUTES", "deployment.environment=testing")
+		assert := assert.New(t)
+		c := newConfig()
+
+		assert.Equal("testing", c.env)
+	})
+
 	t.Run("DD_TAGS", func(t *testing.T) {
 		t.Setenv("DD_TAGS", "env:testing")
 		assert := assert.New(t)
@@ -1143,6 +1255,10 @@ func TestEnvConfig(t *testing.T) {
 		assert := assert.New(t)
 		c := newConfig()
 		assert.Equal(c.env, "")
+
+		t.Setenv("OTEL_RESOURCE_ATTRIBUTES", "deployment.environment=testing0")
+		c = newConfig()
+		assert.Equal("testing0", c.env)
 
 		t.Setenv("DD_TAGS", "env:testing1")
 		c = newConfig()
@@ -1218,18 +1334,30 @@ func TestWithTraceEnabled(t *testing.T) {
 		assert.False(c.enabled.current)
 	})
 
-	t.Run("env", func(t *testing.T) {
+	t.Run("otel-env", func(t *testing.T) {
+		assert := assert.New(t)
+		t.Setenv("OTEL_TRACES_EXPORTER", "none")
+		c := newConfig()
+		assert.False(c.enabled.current)
+	})
+
+	t.Run("dd-env", func(t *testing.T) {
 		assert := assert.New(t)
 		t.Setenv("DD_TRACE_ENABLED", "false")
 		c := newConfig()
 		assert.False(c.enabled.current)
 	})
 
-	t.Run("env-override", func(t *testing.T) {
+	t.Run("override-chain", func(t *testing.T) {
 		assert := assert.New(t)
-		t.Setenv("DD_TRACE_ENABLED", "false")
-		c := newConfig(WithTraceEnabled(true))
+		// dd env overrides otel env
+		t.Setenv("OTEL_TRACES_EXPORTER", "none")
+		t.Setenv("DD_TRACE_ENABLED", "true")
+		c := newConfig()
 		assert.True(c.enabled.current)
+		// tracer option overrides dd env
+		c = newConfig(WithTraceEnabled(false))
+		assert.False(c.enabled.current)
 	})
 }
 

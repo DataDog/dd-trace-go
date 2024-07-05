@@ -8,7 +8,7 @@ package sharedsec
 import (
 	"testing"
 
-	waf "github.com/DataDog/go-libddwaf/v2"
+	waf "github.com/DataDog/go-libddwaf/v3"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/trace"
 )

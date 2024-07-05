@@ -725,6 +725,7 @@ func TestRemapWithMultipleSetAttributes(t *testing.T) {
 	sp.SetAttributes(attribute.String("service.name", "new.service.name"))
 	sp.SetAttributes(attribute.String("span.type", "new.span.type"))
 	sp.SetAttributes(attribute.String("analytics.event", "true"))
+	sp.SetAttributes(attribute.Int("http.response.status_code", 200))
 	sp.End()
 
 	tracer.Flush()
@@ -739,4 +740,6 @@ func TestRemapWithMultipleSetAttributes(t *testing.T) {
 	assert.Equal("new.span.type", p[0]["type"])
 	metrics := fmt.Sprintf("%v", p[0]["metrics"])
 	assert.Contains(metrics, fmt.Sprintf("%s:%s", "_dd1.sr.eausr", "1"))
+	meta := fmt.Sprintf("%v", p[0]["meta"])
+	assert.Contains(meta, fmt.Sprintf("%s:%s", "http.status_code", "200"))
 }

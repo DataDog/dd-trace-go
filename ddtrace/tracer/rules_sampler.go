@@ -380,26 +380,6 @@ func newTraceRulesSampler(rules []SamplingRule, traceSampleRate float64) *traceR
 	}
 }
 
-// globalSampleRate returns the sampling rate found in the DD_TRACE_SAMPLE_RATE environment variable.
-// If it is invalid or not within the 0-1 range, NaN is returned.
-func globalSampleRate() float64 {
-	defaultRate := math.NaN()
-	v := os.Getenv("DD_TRACE_SAMPLE_RATE")
-	if v == "" {
-		return defaultRate
-	}
-	r, err := strconv.ParseFloat(v, 64)
-	if err != nil {
-		log.Warn("ignoring DD_TRACE_SAMPLE_RATE: error: %v", err)
-		return defaultRate
-	}
-	if r >= 0.0 && r <= 1.0 {
-		return r
-	}
-	log.Warn("ignoring DD_TRACE_SAMPLE_RATE: out of range %f", r)
-	return defaultRate
-}
-
 func (rs *traceRulesSampler) enabled() bool {
 	rs.m.RLock()
 	defer rs.m.RUnlock()
@@ -518,19 +498,23 @@ func (rs *traceRulesSampler) sampleRules(span *span) bool {
 }
 
 func (rs *traceRulesSampler) applyRate(span *span, rate float64, now time.Time, sampler samplernames.SamplerName) {
-	span.SetTag(keyRulesSamplerAppliedRate, rate)
+	span.Lock()
+	defer span.Unlock()
+
+	span.setMetric(keyRulesSamplerAppliedRate, rate)
+	delete(span.Metrics, keySamplingPriorityRate)
 	if !sampledByRate(span.TraceID, rate) {
-		span.setSamplingPriority(ext.PriorityUserReject, sampler)
+		span.setSamplingPriorityLocked(ext.PriorityUserReject, sampler)
 		return
 	}
 
 	sampled, rate := rs.limiter.allowOne(now)
 	if sampled {
-		span.setSamplingPriority(ext.PriorityUserKeep, sampler)
+		span.setSamplingPriorityLocked(ext.PriorityUserKeep, sampler)
 	} else {
-		span.setSamplingPriority(ext.PriorityUserReject, sampler)
+		span.setSamplingPriorityLocked(ext.PriorityUserReject, sampler)
 	}
-	span.SetTag(keyRulesSamplerLimiterRate, rate)
+	span.setMetric(keyRulesSamplerLimiterRate, rate)
 }
 
 // limit returns the rate limit set in the rules sampler, controlled by DD_TRACE_RATE_LIMIT, and
@@ -614,6 +598,7 @@ func (rs *singleSpanRulesSampler) apply(span *span) bool {
 					return false
 				}
 			}
+			delete(span.Metrics, keySamplingPriorityRate)
 			span.setMetric(keySpanSamplingMechanism, float64(samplernames.SingleSpan))
 			span.setMetric(keySingleSpanSamplingRuleRate, rate)
 			if rule.MaxPerSecond != 0 {
@@ -835,7 +820,10 @@ func validateRules(jsonRules []jsonRule, spanType SamplingRuleType) ([]SamplingR
 			continue
 		}
 		if rate < 0.0 || rate > 1.0 {
-			errs = append(errs, fmt.Sprintf("at index %d: ignoring rule %s: rate is out of [0.0, 1.0] range", i, v.String()))
+			errs = append(
+				errs,
+				fmt.Sprintf("at index %d: ignoring rule %s: rate is out of [0.0, 1.0] range", i, v.String()),
+			)
 			continue
 		}
 		tagGlobs := make(map[string]*regexp.Regexp, len(v.Tags))
@@ -869,7 +857,6 @@ func (sr SamplingRule) MarshalJSON() ([]byte, error) {
 		Resource     string            `json:"resource,omitempty"`
 		Rate         float64           `json:"sample_rate"`
 		Tags         map[string]string `json:"tags,omitempty"`
-		Type         *string           `json:"type,omitempty"`
 		MaxPerSecond *float64          `json:"max_per_second,omitempty"`
 		Provenance   string            `json:"provenance,omitempty"`
 	}{}
@@ -899,10 +886,6 @@ func (sr SamplingRule) MarshalJSON() ([]byte, error) {
 		s.MaxPerSecond = &sr.MaxPerSecond
 	}
 	s.Rate = sr.Rate
-	if v := sr.ruleType.String(); v != "" {
-		t := fmt.Sprintf("%d", sr.ruleType)
-		s.Type = &t
-	}
 	if sr.Provenance != Local {
 		s.Provenance = sr.Provenance.String()
 	}

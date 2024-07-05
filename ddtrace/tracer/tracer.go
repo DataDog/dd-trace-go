@@ -8,6 +8,7 @@ package tracer
 import (
 	gocontext "context"
 	"encoding/binary"
+	"math"
 	"os"
 	"runtime/pprof"
 	rt "runtime/trace"
@@ -249,17 +250,20 @@ func newUnstartedTracer(opts ...StartOption) *tracer {
 	if spans != nil {
 		c.spanRules = spans
 	}
-	globalRate := globalSampleRate()
-	rulesSampler := newRulesSampler(c.traceRules, c.spanRules, globalRate)
-	c.traceSampleRate = newDynamicConfig("trace_sample_rate", globalRate, rulesSampler.traces.setGlobalSampleRate, equal[float64])
+	rulesSampler := newRulesSampler(c.traceRules, c.spanRules, c.globalSampleRate)
+	c.traceSampleRate = newDynamicConfig("trace_sample_rate", c.globalSampleRate, rulesSampler.traces.setGlobalSampleRate, equal[float64])
+	// If globalSampleRate returns NaN, it means the environment variable was not set or valid.
+	// We could always set the origin to "env_var" inconditionally, but then it wouldn't be possible
+	// to distinguish between the case where the environment variable was not set and the case where
+	// it default to NaN.
+	if !math.IsNaN(c.globalSampleRate) {
+		c.traceSampleRate.cfgOrigin = telemetry.OriginEnvVar
+	}
 	c.traceSampleRules = newDynamicConfig("trace_sample_rules", c.traceRules,
 		rulesSampler.traces.setTraceSampleRules, EqualsFalseNegative)
 	var dataStreamsProcessor *datastreams.Processor
 	if c.dataStreamsMonitoringEnabled {
-		dataStreamsProcessor = datastreams.NewProcessor(statsd, c.env, c.serviceName, c.version, c.agentURL, c.httpClient, func() bool {
-			f := loadAgentFeatures(c.logToStdout, c.agentURL, c.httpClient)
-			return f.DataStreams
-		})
+		dataStreamsProcessor = datastreams.NewProcessor(statsd, c.env, c.serviceName, c.version, c.agentURL, c.httpClient)
 	}
 	t := &tracer{
 		config:           c,
@@ -427,11 +431,11 @@ func (t *tracer) sampleChunk(c *chunk) {
 			atomic.AddUint32(&t.partialTraces, 1)
 		}
 	}
-	if len(kept) == 0 {
-		atomic.AddUint32(&t.droppedP0Traces, 1)
-	}
 	atomic.AddUint32(&t.droppedP0Spans, uint32(len(c.spans)-len(kept)))
 	if !c.willSend {
+		if len(kept) == 0 {
+			atomic.AddUint32(&t.droppedP0Traces, 1)
+		}
 		c.spans = kept
 	}
 }
@@ -534,13 +538,6 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 			}
 		}
 
-		// a remote context that was lacking the p: tracestate key
-		// the zero value indicates to the backend this could be the reparented
-		// as the root span of a trace
-		if context.isRemote && context.reparentID == "" {
-			span.setMeta(keyReparentID, "0000000000000000")
-		}
-
 		if context.reparentID != "" {
 			span.setMeta(keyReparentID, context.reparentID)
 		}
@@ -608,13 +605,6 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 		}
 	}
 	return span
-}
-
-// generateSpanID returns a random uint64 that has been XORd with the startTime.
-// This is done to get around the 32-bit random seed limitation that may create collisions if there is a large number
-// of go services all generating spans.
-func generateSpanID(startTime int64) uint64 {
-	return random.Uint64() ^ uint64(startTime)
 }
 
 // applyPPROFLabels applies pprof labels for the profiler's code hotspots and
