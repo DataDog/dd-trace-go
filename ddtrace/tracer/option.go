@@ -188,6 +188,9 @@ type config struct {
 	// runtimeMetrics specifies whether collection of runtime metrics is enabled.
 	runtimeMetrics bool
 
+	// runtimeMetricsV2 specifies whether collection of runtime metrics v2 is enabled.
+	runtimeMetricsV2 bool
+
 	// dogstatsdAddr specifies the address to connect for sending metrics to the
 	// Datadog Agent. If not set, it defaults to "localhost:8125" or to the
 	// combination of the environment variables DD_AGENT_HOST and DD_DOGSTATSD_PORT.
@@ -377,6 +380,7 @@ func newConfig(opts ...StartOption) *config {
 	}
 	c.logStartup = internal.BoolEnv("DD_TRACE_STARTUP_LOGS", true)
 	c.runtimeMetrics = internal.BoolVal(getDDorOtelConfig("metrics"), false)
+	c.runtimeMetricsV2 = internal.BoolVal("DD_RUNTIME_METRICS_V2_ENABLED", false)
 	c.debug = internal.BoolVal(getDDorOtelConfig("debugMode"), false)
 	c.enabled = newDynamicConfig("tracing_enabled", internal.BoolVal(getDDorOtelConfig("enabled"), true), func(b bool) bool { return true }, equal[bool])
 	if _, ok := os.LookupEnv("DD_TRACE_ENABLED"); ok {

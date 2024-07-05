@@ -62,6 +62,10 @@ func (tg *TestStatsdClient) Gauge(name string, value float64, tags []string, rat
 	})
 }
 
+func (tg *TestStatsdClient) GaugeWithTimestamp(name string, value float64, tags []string, rate float64, timestamp time.Time) error {
+	panic("not implemented yet")
+}
+
 func (tg *TestStatsdClient) Incr(name string, tags []string, rate float64) error {
 	tg.addCount(name, 1)
 	return tg.addMetric(callTypeIncr, tags, TestStatsdCall{
@@ -79,6 +83,10 @@ func (tg *TestStatsdClient) Count(name string, value int64, tags []string, rate 
 		tags:   make([]string, len(tags)),
 		rate:   rate,
 	})
+}
+
+func (tg *TestStatsdClient) CountWithTimestamp(name string, value int64, tags []string, rate float64, timestamp time.Time) error {
+	panic("not implemented yet")
 }
 
 func (tg *TestStatsdClient) Timing(name string, value time.Duration, tags []string, rate float64) error {
