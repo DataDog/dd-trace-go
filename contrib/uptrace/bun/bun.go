@@ -8,7 +8,6 @@ package bun
 
 import (
 	"context"
-	"math"
 
 	"github.com/uptrace/bun"
 	"github.com/uptrace/bun/dialect"
@@ -19,7 +18,10 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 )
 
-const componentName = "uptrace/bun"
+const (
+	componentName      = "uptrace/bun"
+	defaultServiceName = "bun.db"
+)
 
 func init() {
 	telemetry.LoadIntegration(componentName)
@@ -66,9 +68,6 @@ func (qh *queryHook) BeforeQuery(ctx context.Context, qe *bun.QueryEvent) contex
 			tracer.Tag(ext.DBSystem, dbSystem),
 		}
 	)
-	if !math.IsNaN(qh.cfg.analyticsRate) {
-		opts = append(opts, tracer.Tag(ext.EventSampleRate, qh.cfg.analyticsRate))
-	}
 	_, ctx = tracer.StartSpanFromContext(ctx, "bun.query", opts...)
 	return ctx
 }

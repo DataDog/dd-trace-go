@@ -17,6 +17,9 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 
+	_ "github.com/go-sql-driver/mysql"
+	_ "github.com/lib/pq"
+	_ "github.com/microsoft/go-mssqldb"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/uptrace/bun"
@@ -33,10 +36,11 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
-func setupDB(opts ...Option) *bun.DB {
-	sqlite, err := sql.Open("sqlite", "file::memory:?cache=shared")
+func setupDB(t *testing.T, driverName, dataSourceName string, opts ...Option) *bun.DB {
+	t.Helper()
+	sqlite, err := sql.Open(driverName, dataSourceName)
 	if err != nil {
-		panic(err)
+		t.Fatal(err)
 	}
 
 	db := bun.NewDB(sqlite, sqlitedialect.New())
@@ -54,29 +58,64 @@ func TestSelect(t *testing.T) {
 	mt := mocktracer.Start()
 	defer mt.Stop()
 
-	db := setupDB()
-	parentSpan, ctx := tracer.StartSpanFromContext(context.Background(), "http.request",
-		tracer.ServiceName("fake-http-server"),
-		tracer.SpanType(ext.SpanTypeWeb),
-	)
+	tC := []struct {
+		name       string
+		driver     string
+		dataSource string
+		expected   string
+	}{
+		{
+			name:       "SQLite",
+			driver:     "sqlite",
+			dataSource: "file::memory:?cache=shared",
+			expected:   ext.DBSystemOtherSQL,
+		},
+		{
+			name:       "Postgres",
+			driver:     "postgres",
+			dataSource: "postgres://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable",
+			expected:   ext.DBSystemPostgreSQL,
+		},
+		{
+			name:       "MySQL",
+			driver:     "mysql",
+			dataSource: "test:test@tcp(127.0.0.1:3306)/test",
+			expected:   ext.DBSystemMySQL,
+		},
+		{
+			name:       "MSSQL",
+			driver:     "sqlserver",
+			dataSource: "sqlserver://sa:myPassw0rd@127.0.0.1:1433?database=master",
+			expected:   ext.DBSystemMicrosoftSQLServer,
+		},
+	}
+	for _, tt := range tC {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			db := setupDB(t, tt.driver, tt.dataSource)
+			parentSpan, ctx := tracer.StartSpanFromContext(context.Background(), "http.request",
+				tracer.ServiceName("fake-http-server"),
+				tracer.SpanType(ext.SpanTypeWeb),
+			)
 
-	var n, rows int64
-	// Using WithContext will make the postgres span a child of
-	// the span inside ctx (parentSpan)
-	res, err := db.NewSelect().ColumnExpr("1").Exec(ctx, &n)
-	parentSpan.Finish()
-	spans := mt.FinishedSpans()
+			var n, rows int64
+			res, err := db.NewSelect().ColumnExpr("1").Exec(ctx, &n)
+			parentSpan.Finish()
+			spans := mt.FinishedSpans()
 
-	require.NoError(t, err)
-	rows, _ = res.RowsAffected()
-	assert.Equal(int64(1), rows)
-	assert.Equal(2, len(spans))
-	assert.Equal(nil, err)
-	assert.Equal(int64(1), n)
-	assert.Equal("bun.query", spans[0].OperationName())
-	assert.Equal("http.request", spans[1].OperationName())
-	assert.Equal("uptrace/bun", spans[0].Tag(ext.Component))
-	assert.Equal(ext.DBSystemOtherSQL, spans[0].Tag(ext.DBSystem))
+			require.NoError(t, err)
+			rows, _ = res.RowsAffected()
+			assert.Equal(int64(1), rows)
+			assert.Equal(2, len(spans))
+			assert.Equal(nil, err)
+			assert.Equal(int64(1), n)
+			assert.Equal("bun.query", spans[0].OperationName())
+			assert.Equal("http.request", spans[1].OperationName())
+			assert.Equal("uptrace/bun", spans[0].Tag(ext.Component))
+			assert.Equal(ext.DBSystemOtherSQL, spans[0].Tag(ext.DBSystem))
+			mt.Reset()
+		})
+	}
 }
 
 func TestServiceName(t *testing.T) {
@@ -85,7 +124,7 @@ func TestServiceName(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		db := setupDB()
+		db := setupDB(t, "sqlite", "file::memory:?cache=shared")
 		parentSpan, ctx := tracer.StartSpanFromContext(context.Background(), "http.request",
 			tracer.ServiceName("fake-http-server"),
 			tracer.SpanType(ext.SpanTypeWeb),
@@ -120,15 +159,13 @@ func TestServiceName(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		db := setupDB()
+		db := setupDB(t, "sqlite", "file::memory:?cache=shared")
 		parentSpan, ctx := tracer.StartSpanFromContext(context.Background(), "http.request",
 			tracer.ServiceName("fake-http-server"),
 			tracer.SpanType(ext.SpanTypeWeb),
 		)
 
 		var n int
-		// Using WithContext will make the postgres span a child of
-		// the span inside ctx (parentSpan)
 		res, err := db.NewSelect().ColumnExpr("1").Exec(ctx, &n)
 		parentSpan.Finish()
 		spans := mt.FinishedSpans()
@@ -152,15 +189,13 @@ func TestServiceName(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		db := setupDB(WithService("my-service-name"))
+		db := setupDB(t, "sqlite", "file::memory:?cache=shared", WithService("my-service-name"))
 		parentSpan, ctx := tracer.StartSpanFromContext(context.Background(), "http.request",
 			tracer.ServiceName("fake-http-server"),
 			tracer.SpanType(ext.SpanTypeWeb),
 		)
 
 		var n int
-		// Using WithContext will make the postgres span a child of
-		// the span inside ctx (parentSpan)
 		res, err := db.NewSelect().ColumnExpr("1").Exec(ctx, &n)
 		parentSpan.Finish()
 		spans := mt.FinishedSpans()
@@ -177,70 +212,5 @@ func TestServiceName(t *testing.T) {
 		assert.Equal("fake-http-server", spans[1].Tag(ext.ServiceName))
 		assert.Equal("uptrace/bun", spans[0].Tag(ext.Component))
 		assert.Equal(ext.DBSystemOtherSQL, spans[0].Tag(ext.DBSystem))
-	})
-}
-
-func TestAnalyticsSettings(t *testing.T) {
-	assertRate := func(t *testing.T, mt mocktracer.Tracer, rate interface{}, opts ...Option) {
-		db := setupDB(opts...)
-		parentSpan, ctx := tracer.StartSpanFromContext(context.Background(), "http.request",
-			tracer.ServiceName("fake-http-server"),
-			tracer.SpanType(ext.SpanTypeWeb),
-		)
-
-		var n int
-		_, err := db.NewSelect().ColumnExpr("1").Exec(ctx, &n)
-		parentSpan.Finish()
-
-		require.NoError(t, err)
-
-		spans := mt.FinishedSpans()
-		assert.Len(t, spans, 2)
-		s := spans[0]
-		assert.Equal(t, rate, s.Tag(ext.EventSampleRate))
-	}
-
-	t.Run("defaults", func(t *testing.T) {
-		mt := mocktracer.Start()
-		defer mt.Stop()
-
-		assertRate(t, mt, nil)
-	})
-
-	t.Run("global", func(t *testing.T) {
-		t.Skip("global flag disabled")
-		mt := mocktracer.Start()
-		defer mt.Stop()
-
-		rate := globalconfig.AnalyticsRate()
-		defer globalconfig.SetAnalyticsRate(rate)
-		globalconfig.SetAnalyticsRate(0.4)
-
-		assertRate(t, mt, 0.4)
-	})
-
-	t.Run("enabled", func(t *testing.T) {
-		mt := mocktracer.Start()
-		defer mt.Stop()
-
-		assertRate(t, mt, 1.0, WithAnalytics(true))
-	})
-
-	t.Run("disabled", func(t *testing.T) {
-		mt := mocktracer.Start()
-		defer mt.Stop()
-
-		assertRate(t, mt, nil, WithAnalytics(false))
-	})
-
-	t.Run("override", func(t *testing.T) {
-		mt := mocktracer.Start()
-		defer mt.Stop()
-
-		rate := globalconfig.AnalyticsRate()
-		defer globalconfig.SetAnalyticsRate(rate)
-		globalconfig.SetAnalyticsRate(0.4)
-
-		assertRate(t, mt, 0.23, WithAnalyticsRate(0.23))
 	})
 }
