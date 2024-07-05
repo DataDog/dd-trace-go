@@ -92,8 +92,6 @@ func TestServiceName(t *testing.T) {
 		)
 
 		var n int
-		// Using WithContext will make the postgres span a child of
-		// the span inside ctx (parentSpan)
 		res, err := db.NewSelect().ColumnExpr("1").Exec(ctx, &n)
 		parentSpan.Finish()
 		spans := mt.FinishedSpans()
@@ -101,7 +99,7 @@ func TestServiceName(t *testing.T) {
 		require.NoError(t, err)
 		rows, _ := res.RowsAffected()
 		assert.Equal(int64(1), rows)
-		assert.Equal(2, len(spans))
+		assert.Len(spans, 2)
 		assert.Equal(nil, err)
 		assert.Equal(1, n)
 		assert.Equal("bun", spans[0].OperationName())
@@ -110,11 +108,13 @@ func TestServiceName(t *testing.T) {
 		assert.Equal("fake-http-server", spans[1].Tag(ext.ServiceName))
 		assert.Equal("uptrace/bun", spans[0].Tag(ext.Component))
 		assert.Equal(ext.DBSystemOtherSQL, spans[0].Tag(ext.DBSystem))
+		assert.Equal(spans[0].ParentID(), spans[1].SpanID())
 	})
 
 	t.Run("global", func(t *testing.T) {
+		prevName := globalconfig.ServiceName()
+		defer globalconfig.SetServiceName(prevName)
 		globalconfig.SetServiceName("global-service")
-		defer globalconfig.SetServiceName("")
 
 		assert := assert.New(t)
 		mt := mocktracer.Start()
