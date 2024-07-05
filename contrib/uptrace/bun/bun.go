@@ -69,7 +69,7 @@ func (qh *queryHook) BeforeQuery(ctx context.Context, qe *bun.QueryEvent) contex
 	if !math.IsNaN(qh.cfg.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, qh.cfg.analyticsRate))
 	}
-	_, ctx = tracer.StartSpanFromContext(ctx, "bun", opts...)
+	_, ctx = tracer.StartSpanFromContext(ctx, "bun.query", opts...)
 	return ctx
 }
 
