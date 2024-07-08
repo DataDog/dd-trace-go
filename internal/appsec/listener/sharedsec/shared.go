@@ -44,7 +44,7 @@ func MakeWAFRunListener[O dyngo.Operation, T dyngo.ArgOf[O]](events *trace.Secur
 			return
 		}
 
-		log.Debug("appsec: WAF detected a suspicious RASP event")
+		log.Debug("appsec: WAF detected a suspicious WAF event")
 
 		ProcessActions(op, wafResult.Actions)
 		AddSecurityEvents(events, limiter, wafResult.Events)
