@@ -1,0 +1,162 @@
+[
+  [
+    {
+      "CF_BUILD_ID": "6410367cee516146a4c4c66e",
+      "CF_BUILD_URL": "https://g.codefresh.io/build/6410367cee516146a4c4c66e",
+      "CF_PIPELINE_NAME": "My simple project/Example Java Project Pipeline",
+      "CF_STEP_NAME": "mah-job-name"
+    },
+    {
+      "_dd.ci.env_vars": "{\"CF_BUILD_ID\":\"6410367cee516146a4c4c66e\"}",
+      "ci.job.name": "mah-job-name",
+      "ci.pipeline.id": "6410367cee516146a4c4c66e",
+      "ci.pipeline.name": "My simple project/Example Java Project Pipeline",
+      "ci.pipeline.url": "https://g.codefresh.io/build/6410367cee516146a4c4c66e",
+      "ci.provider.name": "codefresh"
+    }
+  ],
+  [
+    {
+      "CF_BRANCH": "origin/master",
+      "CF_BUILD_ID": "6410367cee516146a4c4c66e",
+      "CF_BUILD_URL": "https://g.codefresh.io/build/6410367cee516146a4c4c66e",
+      "CF_PIPELINE_NAME": "My simple project/Example Java Project Pipeline",
+      "CF_STEP_NAME": "mah-job-name"
+    },
+    {
+      "_dd.ci.env_vars": "{\"CF_BUILD_ID\":\"6410367cee516146a4c4c66e\"}",
+      "ci.job.name": "mah-job-name",
+      "ci.pipeline.id": "6410367cee516146a4c4c66e",
+      "ci.pipeline.name": "My simple project/Example Java Project Pipeline",
+      "ci.pipeline.url": "https://g.codefresh.io/build/6410367cee516146a4c4c66e",
+      "ci.provider.name": "codefresh",
+      "git.branch": "master"
+    }
+  ],
+  [
+    {
+      "CF_BRANCH": "refs/heads/feature/one",
+      "CF_BUILD_ID": "6410367cee516146a4c4c66e",
+      "CF_BUILD_URL": "https://g.codefresh.io/build/6410367cee516146a4c4c66e",
+      "CF_PIPELINE_NAME": "My simple project/Example Java Project Pipeline",
+      "CF_STEP_NAME": "mah-job-name"
+    },
+    {
+      "_dd.ci.env_vars": "{\"CF_BUILD_ID\":\"6410367cee516146a4c4c66e\"}",
+      "ci.job.name": "mah-job-name",
+      "ci.pipeline.id": "6410367cee516146a4c4c66e",
+      "ci.pipeline.name": "My simple project/Example Java Project Pipeline",
+      "ci.pipeline.url": "https://g.codefresh.io/build/6410367cee516146a4c4c66e",
+      "ci.provider.name": "codefresh",
+      "git.branch": "feature/one"
+    }
+  ],
+  [
+    {
+      "CF_BRANCH": "origin/tags/0.1.0",
+      "CF_BUILD_ID": "6410367cee516146a4c4c66e",
+      "CF_BUILD_URL": "https://g.codefresh.io/build/6410367cee516146a4c4c66e",
+      "CF_PIPELINE_NAME": "My simple project/Example Java Project Pipeline",
+      "CF_STEP_NAME": "mah-job-name"
+    },
+    {
+      "_dd.ci.env_vars": "{\"CF_BUILD_ID\":\"6410367cee516146a4c4c66e\"}",
+      "ci.job.name": "mah-job-name",
+      "ci.pipeline.id": "6410367cee516146a4c4c66e",
+      "ci.pipeline.name": "My simple project/Example Java Project Pipeline",
+      "ci.pipeline.url": "https://g.codefresh.io/build/6410367cee516146a4c4c66e",
+      "ci.provider.name": "codefresh",
+      "git.tag": "0.1.0"
+    }
+  ],
+  [
+    {
+      "CF_BRANCH": "refs/heads/tags/0.1.0",
+      "CF_BUILD_ID": "6410367cee516146a4c4c66e",
+      "CF_BUILD_URL": "https://g.codefresh.io/build/6410367cee516146a4c4c66e",
+      "CF_PIPELINE_NAME": "My simple project/Example Java Project Pipeline",
+      "CF_STEP_NAME": "mah-job-name"
+    },
+    {
+      "_dd.ci.env_vars": "{\"CF_BUILD_ID\":\"6410367cee516146a4c4c66e\"}",
+      "ci.job.name": "mah-job-name",
+      "ci.pipeline.id": "6410367cee516146a4c4c66e",
+      "ci.pipeline.name": "My simple project/Example Java Project Pipeline",
+      "ci.pipeline.url": "https://g.codefresh.io/build/6410367cee516146a4c4c66e",
+      "ci.provider.name": "codefresh",
+      "git.tag": "0.1.0"
+    }
+  ],
+  [
+    {
+      "CF_BUILD_ID": "6410367cee516146a4c4c66e",
+      "CF_BUILD_URL": "https://g.codefresh.io/build/6410367cee516146a4c4c66e",
+      "CF_PIPELINE_NAME": "My simple project/Example Java Project Pipeline",
+      "CF_STEP_NAME": "mah-job-name",
+      "DD_GIT_BRANCH": "user-supplied-branch",
+      "DD_GIT_COMMIT_AUTHOR_DATE": "usersupplied-authordate",
+      "DD_GIT_COMMIT_AUTHOR_EMAIL": "usersupplied-authoremail",
+      "DD_GIT_COMMIT_AUTHOR_NAME": "usersupplied-authorname",
+      "DD_GIT_COMMIT_COMMITTER_DATE": "usersupplied-comitterdate",
+      "DD_GIT_COMMIT_COMMITTER_EMAIL": "usersupplied-comitteremail",
+      "DD_GIT_COMMIT_COMMITTER_NAME": "usersupplied-comittername",
+      "DD_GIT_COMMIT_MESSAGE": "usersupplied-message",
+      "DD_GIT_COMMIT_SHA": "b9f0fb3fdbb94c9d24b2c75b49663122a529e123",
+      "DD_GIT_REPOSITORY_URL": "git@github.com:DataDog/userrepo.git"
+    },
+    {
+      "_dd.ci.env_vars": "{\"CF_BUILD_ID\":\"6410367cee516146a4c4c66e\"}",
+      "ci.job.name": "mah-job-name",
+      "ci.pipeline.id": "6410367cee516146a4c4c66e",
+      "ci.pipeline.name": "My simple project/Example Java Project Pipeline",
+      "ci.pipeline.url": "https://g.codefresh.io/build/6410367cee516146a4c4c66e",
+      "ci.provider.name": "codefresh",
+      "git.branch": "user-supplied-branch",
+      "git.commit.author.date": "usersupplied-authordate",
+      "git.commit.author.email": "usersupplied-authoremail",
+      "git.commit.author.name": "usersupplied-authorname",
+      "git.commit.committer.date": "usersupplied-comitterdate",
+      "git.commit.committer.email": "usersupplied-comitteremail",
+      "git.commit.committer.name": "usersupplied-comittername",
+      "git.commit.message": "usersupplied-message",
+      "git.commit.sha": "b9f0fb3fdbb94c9d24b2c75b49663122a529e123",
+      "git.repository_url": "git@github.com:DataDog/userrepo.git"
+    }
+  ],
+  [
+    {
+      "CF_BUILD_ID": "6410367cee516146a4c4c66e",
+      "CF_BUILD_URL": "https://g.codefresh.io/build/6410367cee516146a4c4c66e",
+      "CF_PIPELINE_NAME": "My simple project/Example Java Project Pipeline",
+      "CF_STEP_NAME": "mah-job-name",
+      "DD_GIT_COMMIT_AUTHOR_DATE": "usersupplied-authordate",
+      "DD_GIT_COMMIT_AUTHOR_EMAIL": "usersupplied-authoremail",
+      "DD_GIT_COMMIT_AUTHOR_NAME": "usersupplied-authorname",
+      "DD_GIT_COMMIT_COMMITTER_DATE": "usersupplied-comitterdate",
+      "DD_GIT_COMMIT_COMMITTER_EMAIL": "usersupplied-comitteremail",
+      "DD_GIT_COMMIT_COMMITTER_NAME": "usersupplied-comittername",
+      "DD_GIT_COMMIT_MESSAGE": "usersupplied-message",
+      "DD_GIT_COMMIT_SHA": "b9f0fb3fdbb94c9d24b2c75b49663122a529e123",
+      "DD_GIT_REPOSITORY_URL": "git@github.com:DataDog/userrepo.git",
+      "DD_GIT_TAG": "0.0.2"
+    },
+    {
+      "_dd.ci.env_vars": "{\"CF_BUILD_ID\":\"6410367cee516146a4c4c66e\"}",
+      "ci.job.name": "mah-job-name",
+      "ci.pipeline.id": "6410367cee516146a4c4c66e",
+      "ci.pipeline.name": "My simple project/Example Java Project Pipeline",
+      "ci.pipeline.url": "https://g.codefresh.io/build/6410367cee516146a4c4c66e",
+      "ci.provider.name": "codefresh",
+      "git.commit.author.date": "usersupplied-authordate",
+      "git.commit.author.email": "usersupplied-authoremail",
+      "git.commit.author.name": "usersupplied-authorname",
+      "git.commit.committer.date": "usersupplied-comitterdate",
+      "git.commit.committer.email": "usersupplied-comitteremail",
+      "git.commit.committer.name": "usersupplied-comittername",
+      "git.commit.message": "usersupplied-message",
+      "git.commit.sha": "b9f0fb3fdbb94c9d24b2c75b49663122a529e123",
+      "git.repository_url": "git@github.com:DataDog/userrepo.git",
+      "git.tag": "0.0.2"
+    }
+  ]
+]

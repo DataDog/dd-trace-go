@@ -235,7 +235,9 @@ func newUnstartedTracer(opts ...StartOption) *tracer {
 		log.Warn("Runtime and health metrics disabled: %v", err)
 	}
 	var writer traceWriter
-	if c.logToStdout {
+	if c.ciVisibilityEnabled {
+		writer = newCiVisibilityTraceWriter(c)
+	} else if c.logToStdout {
 		writer = newLogTraceWriter(c, statsd)
 	} else {
 		writer = newAgentTraceWriter(c, sampler, statsd)
