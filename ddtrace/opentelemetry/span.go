@@ -49,7 +49,6 @@ func (s *span) SetName(name string) {
 	s.attributes[ext.SpanName] = strings.ToLower(name)
 }
 
-// TODO: add some encoding for json here
 type spanEvent struct {
 	Name           string `json:"name"`
 	Time_unix_nano int64  `json:"time_unix_nano"`
@@ -57,7 +56,18 @@ type spanEvent struct {
 	Attributes map[string]interface{} `json:"attributes,omitempty"`
 }
 
-func marshalOtelEvent(evt otelsdk.Event) string {
+func stringifySpanEvents(evts []otelsdk.Event) (s string) {
+	for i, e := range evts {
+		if i == 0 {
+			s += marshalSpanEvent(e)
+		} else {
+			s += "," + marshalSpanEvent(e)
+		}
+	}
+	return s
+}
+
+func marshalSpanEvent(evt otelsdk.Event) string {
 	spEvt := spanEvent{
 		Time_unix_nano: evt.Time.Unix(),
 		Name:           evt.Name,
@@ -100,11 +110,8 @@ func (s *span) End(options ...oteltrace.SpanEndOption) {
 	for k, v := range s.attributes {
 		s.DD.SetTag(k, v)
 	}
-	evts := []string{}
-	for _, e := range s.events {
-		evts = append(evts, marshalOtelEvent(e))
-	}
-	if len(evts) > 0 {
+	evts := stringifySpanEvents(s.events)
+	if evts != "" {
 		s.DD.SetTag("events", evts)
 	}
 	var finishCfg = oteltrace.NewSpanEndConfig(options...)

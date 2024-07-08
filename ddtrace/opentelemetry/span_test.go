@@ -186,12 +186,12 @@ func TestSpanLink(t *testing.T) {
 	assert.Equal(uint32(0x80000001), spanLinks[0].Flags) // sampled and set
 }
 
-func TestMarshalOtelEvent(t *testing.T) {
+func TestMarshalSpanEvent(t *testing.T) {
 	assert := assert.New(t)
 	now := time.Now()
 	nowUnix := now.Unix()
 	t.Run("attributes", func(t *testing.T) {
-		s := marshalOtelEvent(otelsdk.Event{
+		s := marshalSpanEvent(otelsdk.Event{
 			Name: "evt",
 			Time: now,
 			Attributes: []attribute.KeyValue{
@@ -222,7 +222,7 @@ func TestMarshalOtelEvent(t *testing.T) {
 	})
 	t.Run("unexpected field", func(t *testing.T) {
 		// otelsdk.Event type has field `DroppedAttributeCount`, but we don't use this field
-		s := marshalOtelEvent(otelsdk.Event{
+		s := marshalSpanEvent(otelsdk.Event{
 			Name:                  "evt",
 			Time:                  now,
 			DroppedAttributeCount: 1,
@@ -231,11 +231,26 @@ func TestMarshalOtelEvent(t *testing.T) {
 		assert.Equal(fmt.Sprintf("{\"name\":\"evt\",\"time_unix_nano\":%v}", nowUnix), s)
 	})
 	t.Run("missing fields", func(t *testing.T) {
-		s := marshalOtelEvent(otelsdk.Event{
+		s := marshalSpanEvent(otelsdk.Event{
 			Time: now,
 		})
 		assert.Equal(fmt.Sprintf("{\"name\":\"\",\"time_unix_nano\":%v}", nowUnix), s)
 	})
+}
+
+func TestStringifySpanEvent(t *testing.T) {
+	assert := assert.New(t)
+	evt1 := otelsdk.Event{
+		Name: "abc",
+	}
+	evt2 := otelsdk.Event{
+		Name: "def",
+	}
+	evts := []otelsdk.Event{evt1, evt2}
+	want := marshalSpanEvent(evt1) + "," + marshalSpanEvent(evt2)
+
+	s := stringifySpanEvents(evts)
+	assert.Equal(want, s)
 }
 
 func TestSpanEnd(t *testing.T) {
@@ -289,9 +304,7 @@ func TestSpanEnd(t *testing.T) {
 	for k, v := range ignoredAttributes {
 		assert.NotContains(meta, fmt.Sprintf("%s:%s", k, v))
 	}
-	assert.Contains(meta, "events")
-	// TODO: Figure out expected format of events.meta
-	// assert.Contains(meta, fmt.Sprintf("events:{\"name\":\"evt\",\"time_unix_nano\":%v}", nowUnix))
+	assert.Contains(meta, fmt.Sprintf("events:{\"name\":\"evt\",\"time_unix_nano\":%v,\"attributes\":{\"key1\":\"value\",\"key2\":1234}", nowUnix))
 }
 
 // This test verifies that setting the status of a span
