@@ -55,6 +55,7 @@ func GetRelativePathFromCITagsSourceRoot(path string) string {
 		if err == nil {
 			return relPath
 		}
+		relPath = filepath.ToSlash(path)
 	}
 
 	return path
