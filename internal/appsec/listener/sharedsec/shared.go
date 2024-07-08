@@ -8,7 +8,6 @@ package sharedsec
 import (
 	"encoding/json"
 	"errors"
-
 	"gopkg.in/DataDog/dd-trace-go.v1/appsec/events"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/sharedsec"
@@ -36,6 +35,20 @@ func RunWAF(wafCtx *waf.Context, values waf.RunAddressData) waf.Result {
 		log.Error("appsec: unexpected waf error: %v", err)
 	}
 	return result
+}
+
+func MakeWAFRunListener[O dyngo.Operation, T dyngo.ArgOf[O]](events *trace.SecurityEventsHolder, wafCtx *waf.Context, limiter limiter.Limiter, toRunAddressData func(T) waf.RunAddressData) func(O, T) {
+	return func(op O, args T) {
+		wafResult := RunWAF(wafCtx, toRunAddressData(args))
+		if !wafResult.HasEvents() {
+			return
+		}
+
+		log.Debug("appsec: WAF detected a suspicious RASP event")
+
+		ProcessActions(op, wafResult.Actions)
+		AddSecurityEvents(events, limiter, wafResult.Events)
+	}
 }
 
 // AddSecurityEvents is a helper function to add sec events to an operation taking into account the rate limiter.
