@@ -25,6 +25,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/constants"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
@@ -275,6 +276,9 @@ type config struct {
 
 	// globalSampleRate holds sample rate read from environment variables.
 	globalSampleRate float64
+
+	// ciVisibilityEnabled controls if the tracer is loaded with CI Visibility mode. default false
+	ciVisibilityEnabled bool
 }
 
 // orchestrionConfig contains Orchestrion configuration.
@@ -539,6 +543,14 @@ func newConfig(opts ...StartOption) *config {
 	// This allows persisting the initial value of globalTags for future resets and updates.
 	globalTagsOrigin := c.globalTags.cfgOrigin
 	c.initGlobalTags(c.globalTags.get(), globalTagsOrigin)
+
+	// Check if CI Visibility mode is enabled
+	if internal.BoolEnv(constants.CIVisibilityEnabledEnvironmentVariable, false) {
+		c.ciVisibilityEnabled = true              // Enable CI Visibility mode
+		c.httpClientTimeout = time.Second * 45    // Increase timeout up to 45 seconds (same as other tracers in CIVis mode)
+		c.logStartup = false                      // If we are in CI Visibility mode we don't want to log the startup to stdout to avoid polluting the output
+		c.transport = newCiVisibilityTransport(c) // Replace the default transport with the CI Visibility transport
+	}
 
 	return c
 }
