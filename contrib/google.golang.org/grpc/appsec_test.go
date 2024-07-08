@@ -10,7 +10,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
-	"strings"
 	"testing"
 
 	pappsec "gopkg.in/DataDog/dd-trace-go.v1/appsec"
@@ -32,7 +31,7 @@ func TestAppSec(t *testing.T) {
 	}
 
 	setup := func() (FixtureClient, mocktracer.Tracer, func()) {
-		rig, err := newRig(false)
+		rig, err := newAppsecRig(false)
 		require.NoError(t, err)
 
 		mt := mocktracer.Start()
@@ -49,7 +48,7 @@ func TestAppSec(t *testing.T) {
 
 		// Send a XSS attack in the payload along with the canary value in the RPC metadata
 		ctx := metadata.NewOutgoingContext(context.Background(), metadata.Pairs("dd-canary", "dd-test-scanner-log"))
-		res, err := client.Ping(ctx, &FixtureRequest{Name: "<script>evilJSCode;</script>"})
+		res, err := client.Ping(ctx, &FixtureRequest{Name: "<script>window.location;</script>"})
 		// Check that the handler was properly called
 		require.NoError(t, err)
 		require.Equal(t, "passed", res.Message)
@@ -60,8 +59,8 @@ func TestAppSec(t *testing.T) {
 		// The request should have the attack attempts
 		event, _ := finished[0].Tag("_dd.appsec.json").(string)
 		require.NotNil(t, event)
-		require.True(t, strings.Contains(event, "crs-941-110")) // XSS attack attempt
-		require.True(t, strings.Contains(event, "ua0-600-55x")) // canary rule attack attempt
+		require.Contains(t, event, "crs-941-180") // XSS attack attempt
+		require.Contains(t, event, "ua0-600-55x") // canary rule attack attempt
 	})
 
 	t.Run("stream", func(t *testing.T) {
@@ -74,7 +73,7 @@ func TestAppSec(t *testing.T) {
 		require.NoError(t, err)
 
 		// Send a XSS attack
-		err = stream.Send(&FixtureRequest{Name: "<script>evilJSCode;</script>"})
+		err = stream.Send(&FixtureRequest{Name: "<script>window.location;</script>"})
 		require.NoError(t, err)
 
 		// Check that the handler was properly called
@@ -122,7 +121,7 @@ func TestAppSec(t *testing.T) {
 			histogram[tr.Rule.ID]++
 		}
 
-		require.EqualValues(t, 1, histogram["crs-941-110"]) // XSS attack attempt
+		require.EqualValues(t, 1, histogram["crs-941-180"]) // XSS attack attempt
 		require.EqualValues(t, 5, histogram["crs-942-270"]) // SQL-injection attack attempt
 		require.EqualValues(t, 1, histogram["ua0-600-55x"]) // canary rule attack attempt
 
@@ -132,99 +131,6 @@ func TestAppSec(t *testing.T) {
 
 // Test that http blocking works by using custom rules/rules data
 func TestBlocking(t *testing.T) {
-	t.Setenv("DD_APPSEC_RULES", "../../../internal/appsec/testdata/blocking.json")
-	appsec.Start()
-	defer appsec.Stop()
-	if !appsec.Enabled() {
-		t.Skip("appsec disabled")
-	}
-
-	setup := func() (FixtureClient, mocktracer.Tracer, func()) {
-		rig, err := newRig(false)
-		require.NoError(t, err)
-
-		mt := mocktracer.Start()
-
-		return rig.client, mt, func() {
-			rig.Close()
-			mt.Stop()
-		}
-	}
-
-	t.Run("unary-block", func(t *testing.T) {
-		client, mt, cleanup := setup()
-		defer cleanup()
-
-		// Send a XSS attack in the payload along with the canary value in the RPC metadata
-		ctx := metadata.NewOutgoingContext(context.Background(), metadata.Pairs("dd-canary", "dd-test-scanner-log", "x-client-ip", "1.2.3.4"))
-		reply, err := client.Ping(ctx, &FixtureRequest{Name: "<script>alert('xss');</script>"})
-
-		require.Nil(t, reply)
-		require.Equal(t, codes.Aborted, status.Code(err))
-
-		finished := mt.FinishedSpans()
-		require.Len(t, finished, 1)
-		// The request should have the attack attempts
-		event, _ := finished[0].Tag("_dd.appsec.json").(string)
-		require.NotNil(t, event)
-		require.True(t, strings.Contains(event, "blk-001-001"))
-	})
-
-	t.Run("unary-no-block", func(t *testing.T) {
-		client, _, cleanup := setup()
-		defer cleanup()
-
-		// Send a XSS attack in the payload along with the canary value in the RPC metadata
-		ctx := metadata.NewOutgoingContext(context.Background(), metadata.Pairs("dd-canary", "dd-test-scanner-log", "x-client-ip", "1.2.3.5"))
-		reply, err := client.Ping(ctx, &FixtureRequest{Name: "<script>alert('xss');</script>"})
-
-		require.Equal(t, "passed", reply.Message)
-		require.Equal(t, codes.OK, status.Code(err))
-	})
-
-	t.Run("stream-block", func(t *testing.T) {
-		client, mt, cleanup := setup()
-		defer cleanup()
-
-		ctx := metadata.NewOutgoingContext(context.Background(), metadata.Pairs("dd-canary", "dd-test-scanner-log", "x-client-ip", "1.2.3.4"))
-		stream, err := client.StreamPing(ctx)
-		require.NoError(t, err)
-		reply, err := stream.Recv()
-
-		require.Equal(t, codes.Aborted, status.Code(err))
-		require.Nil(t, reply)
-
-		finished := mt.FinishedSpans()
-		require.Len(t, finished, 1)
-		// The request should have the attack attempts
-		event, _ := finished[0].Tag("_dd.appsec.json").(string)
-		require.NotNil(t, event)
-		require.True(t, strings.Contains(event, "blk-001-001"))
-	})
-
-	t.Run("stream-no-block", func(t *testing.T) {
-		client, _, cleanup := setup()
-		defer cleanup()
-
-		ctx := metadata.NewOutgoingContext(context.Background(), metadata.Pairs("dd-canary", "dd-test-scanner-log", "x-client-ip", "1.2.3.5"))
-		stream, err := client.StreamPing(ctx)
-		require.NoError(t, err)
-
-		// Send a XSS attack
-		err = stream.Send(&FixtureRequest{Name: "<script>alert('xss');</script>"})
-		require.NoError(t, err)
-		reply, err := stream.Recv()
-		require.Equal(t, codes.OK, status.Code(err))
-		require.Equal(t, "passed", reply.Message)
-
-		err = stream.CloseSend()
-		require.NoError(t, err)
-	})
-
-}
-
-// Test that user blocking works by using custom rules/rules data
-func TestUserBlocking(t *testing.T) {
 	t.Setenv("DD_APPSEC_RULES", "../../../internal/appsec/testdata/blocking.json")
 	appsec.Start()
 	defer appsec.Stop()
@@ -245,113 +151,171 @@ func TestUserBlocking(t *testing.T) {
 	}
 
 	t.Run("unary-block", func(t *testing.T) {
+		for _, tc := range []struct {
+			name                    string
+			md                      metadata.MD
+			message                 string
+			expectedBlocked         bool
+			expectedMatchedRules    []string
+			expectedNotMatchedRules []string
+		}{
+			{
+				name:                    "ip blocking",
+				md:                      metadata.Pairs("m1", "v1", "x-client-ip", "1.2.3.4", "user-id", "blocked-user-1"),
+				message:                 "$globals",
+				expectedMatchedRules:    []string{"blk-001-001"},                      // ip blocking alone as it comes first
+				expectedNotMatchedRules: []string{"crs-933-130-block", "blk-001-002"}, // no user blocking or message blocking
+			},
+			{
+				name:                    "message blocking",
+				md:                      metadata.Pairs("m1", "v1", "x-client-ip", "1.2.3.5", "user-id", "legit-user-1"),
+				message:                 "$globals",
+				expectedMatchedRules:    []string{"crs-933-130-block"}, // message blocking alone as it comes before user blocking
+				expectedNotMatchedRules: []string{"blk-001-002"},       // no user blocking
+			},
+			{
+				name:                    "user blocking",
+				md:                      metadata.Pairs("m1", "v1", "x-client-ip", "1.2.3.5", "user-id", "blocked-user-1"),
+				message:                 "<script>alert('xss');</script>",
+				expectedMatchedRules:    []string{"blk-001-002"},       // user blocking alone as it comes first in our test handler
+				expectedNotMatchedRules: []string{"crs-933-130-block"}, // message blocking alone as it comes before user blocking
+			},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				// Helper assertion function to run for the unary and stream tests
+				assert := func(t *testing.T, do func(client FixtureClient)) {
+					client, mt, cleanup := setup()
+					defer cleanup()
+
+					do(client)
+
+					finished := mt.FinishedSpans()
+					require.True(t, len(finished) >= 1) // streaming RPCs will have two spans, unary RPCs will have one
+
+					// The request should have the security events
+					events, _ := finished[len(finished)-1 /* root span */].Tag("_dd.appsec.json").(string)
+					require.NotEmpty(t, events)
+					for _, rule := range tc.expectedMatchedRules {
+						require.Contains(t, events, rule)
+					}
+					for _, rule := range tc.expectedNotMatchedRules {
+						require.NotContains(t, events, rule)
+					}
+				}
+
+				t.Run("unary", func(t *testing.T) {
+					assert(t, func(client FixtureClient) {
+						ctx := metadata.NewOutgoingContext(context.Background(), tc.md)
+						reply, err := client.Ping(ctx, &FixtureRequest{Name: tc.message})
+						require.Nil(t, reply)
+						require.Equal(t, codes.Aborted, status.Code(err))
+					})
+				})
+
+				t.Run("stream", func(t *testing.T) {
+					assert(t, func(client FixtureClient) {
+						ctx := metadata.NewOutgoingContext(context.Background(), tc.md)
+
+						// Open the stream
+						stream, err := client.StreamPing(ctx)
+						require.NoError(t, err)
+						defer func() {
+							require.NoError(t, stream.CloseSend())
+						}()
+
+						// Send a message
+						err = stream.Send(&FixtureRequest{Name: tc.message})
+						require.NoError(t, err)
+
+						// Receive a message
+						reply, err := stream.Recv()
+						require.Equal(t, codes.Aborted, status.Code(err))
+						require.Nil(t, reply)
+					})
+				})
+			})
+		}
+	})
+}
+
+func TestPasslist(t *testing.T) {
+	// This custom rule file includes two rules detecting the same sec event, a grpc metadata value containing "zouzou",
+	// but only one of them is passlisted (custom-1 is passlisted, custom-2 is not and must trigger).
+	t.Setenv("DD_APPSEC_RULES", "../../../internal/appsec/testdata/passlist.json")
+
+	appsec.Start()
+	defer appsec.Stop()
+	if !appsec.Enabled() {
+		t.Skip("appsec disabled")
+	}
+
+	setup := func() (FixtureClient, mocktracer.Tracer, func()) {
+		rig, err := newAppsecRig(false)
+		require.NoError(t, err)
+
+		mt := mocktracer.Start()
+
+		return rig.client, mt, func() {
+			rig.Close()
+			mt.Stop()
+		}
+	}
+
+	t.Run("unary", func(t *testing.T) {
 		client, mt, cleanup := setup()
 		defer cleanup()
 
-		// Send a XSS attack in the payload along with the canary value in the RPC metadata
-		ctx := metadata.NewOutgoingContext(context.Background(), metadata.Pairs("user-id", "blocked-user-1"))
-		reply, err := client.Ping(ctx, &FixtureRequest{Name: "<script>alert('xss');</script>"})
+		// Send the payload triggering the sec event thanks to the "zouzou" value in the RPC metadata
+		ctx := metadata.NewOutgoingContext(context.Background(), metadata.Pairs("dd-canary", "zouzou"))
+		res, err := client.Ping(ctx, &FixtureRequest{Name: "hello"})
 
-		require.Nil(t, reply)
-		require.Equal(t, codes.Aborted, status.Code(err))
+		// Check that the handler was properly called
+		require.NoError(t, err)
+		require.Equal(t, "passed", res.Message)
 
 		finished := mt.FinishedSpans()
 		require.Len(t, finished, 1)
-		// The request should have the XSS and user ID attack attempts
+
+		// The service entry span must include the sec event
 		event, _ := finished[0].Tag("_dd.appsec.json").(string)
 		require.NotNil(t, event)
-		require.True(t, strings.Contains(event, "blk-001-002"))
-		require.True(t, strings.Contains(event, "crs-941-110"))
+		require.NotContains(t, event, "custom-1") // custom-1 is in the passlist of this gRPC method
+		require.Contains(t, event, "custom-2")    // custom-2 is not passlisted and must trigger an event
 	})
 
-	t.Run("unary-no-block", func(t *testing.T) {
-		client, _, cleanup := setup()
-		defer cleanup()
-
-		ctx := metadata.NewOutgoingContext(context.Background(), metadata.Pairs("user-id", "legit user"))
-		reply, err := client.Ping(ctx, &FixtureRequest{Name: "<script>alert('xss');</script>"})
-
-		require.Equal(t, "passed", reply.Message)
-		require.Equal(t, codes.OK, status.Code(err))
-	})
-
-	// This test checks that IP blocking happens BEFORE user blocking, since user blocking needs the request handler
-	// to be invoked while IP blocking doesn't
-	t.Run("unary-mixed-block", func(t *testing.T) {
+	t.Run("stream", func(t *testing.T) {
 		client, mt, cleanup := setup()
 		defer cleanup()
 
-		ctx := metadata.NewOutgoingContext(context.Background(), metadata.Pairs("user-id", "blocked-user-1", "x-forwarded-for", "1.2.3.4"))
-		reply, err := client.Ping(ctx, &FixtureRequest{})
-
-		require.Nil(t, reply)
-		require.Equal(t, codes.Aborted, status.Code(err))
-
-		finished := mt.FinishedSpans()
-		require.Len(t, finished, 1)
-		event, _ := finished[0].Tag("_dd.appsec.json").(string)
-		require.NotNil(t, event)
-		require.True(t, strings.Contains(event, "blk-001-001"))
-	})
-
-	t.Run("stream-block", func(t *testing.T) {
-		client, mt, cleanup := setup()
-		defer cleanup()
-
-		ctx := metadata.NewOutgoingContext(context.Background(), metadata.Pairs("user-id", "blocked-user-1"))
+		// Open the steam triggering the sec event thanks to the "zouzou" value in the RPC metadata
+		ctx := metadata.NewOutgoingContext(context.Background(), metadata.Pairs("dd-canary", "zouzou"))
 		stream, err := client.StreamPing(ctx)
 		require.NoError(t, err)
-		reply, err := stream.Recv()
 
-		require.Equal(t, codes.Aborted, status.Code(err))
-		require.Nil(t, reply)
+		// Send some messages
+		for i := 0; i < 5; i++ {
+			err = stream.Send(&FixtureRequest{Name: "hello"})
+			require.NoError(t, err)
 
-		finished := mt.FinishedSpans()
-		require.Len(t, finished, 1)
-		// The request should have the attack attempts
-		event, _ := finished[0].Tag("_dd.appsec.json").(string)
-		require.NotNil(t, event)
-		require.True(t, strings.Contains(event, "blk-001-002"))
-	})
-
-	t.Run("stream-no-block", func(t *testing.T) {
-		client, _, cleanup := setup()
-		defer cleanup()
-
-		ctx := metadata.NewOutgoingContext(context.Background(), metadata.Pairs("user-id", "legit user"))
-		stream, err := client.StreamPing(ctx)
-		require.NoError(t, err)
-
-		// Send a XSS attack
-		err = stream.Send(&FixtureRequest{Name: "<script>alert('xss');</script>"})
-		require.NoError(t, err)
-		reply, err := stream.Recv()
-		require.Equal(t, codes.OK, status.Code(err))
-		require.Equal(t, "passed", reply.Message)
+			// Check that the handler was properly called
+			res, err := stream.Recv()
+			require.Equal(t, "passed", res.Message)
+			require.NoError(t, err)
+		}
 
 		err = stream.CloseSend()
 		require.NoError(t, err)
-	})
-	// This test checks that IP blocking happens BEFORE user blocking, since user blocking needs the request handler
-	// to be invoked while IP blocking doesn't
-	t.Run("stream-mixed-block", func(t *testing.T) {
-		client, mt, cleanup := setup()
-		defer cleanup()
-
-		ctx := metadata.NewOutgoingContext(context.Background(), metadata.Pairs("user-id", "blocked-user-1", "x-forwarded-for", "1.2.3.4"))
-		stream, err := client.StreamPing(ctx)
-		require.NoError(t, err)
-		reply, err := stream.Recv()
-
-		require.Equal(t, codes.Aborted, status.Code(err))
-		require.Nil(t, reply)
+		// Flush the spans
+		stream.Recv()
 
 		finished := mt.FinishedSpans()
-		require.Len(t, finished, 1)
-		// The request should have IP related the attack attempts
-		event, _ := finished[0].Tag("_dd.appsec.json").(string)
-		require.NotNil(t, event)
-		require.True(t, strings.Contains(event, "blk-001-001"))
+		require.Len(t, finished, 12)
+
+		// The service entry span must include the sec event
+		event := finished[len(finished)-1].Tag("_dd.appsec.json")
+		require.NotNil(t, event, "the _dd.appsec.json tag was not found")
+		require.NotContains(t, event, "custom-1") // custom-1 is in the passlist of this gRPC method
+		require.Contains(t, event, "custom-2")    // custom-2 is not passlisted and must trigger an event
 	})
 }
 
@@ -420,17 +384,20 @@ func (s *appsecFixtureServer) StreamPing(stream Fixture_StreamPingServer) (err e
 	ctx := stream.Context()
 	md, _ := metadata.FromIncomingContext(ctx)
 	ids := md.Get("user-id")
-	if err := pappsec.SetUser(ctx, ids[0]); err != nil {
-		return err
+	if len(ids) > 0 {
+		if err := pappsec.SetUser(ctx, ids[0]); err != nil {
+			return err
+		}
 	}
 	return s.s.StreamPing(stream)
 }
 func (s *appsecFixtureServer) Ping(ctx context.Context, in *FixtureRequest) (*FixtureReply, error) {
 	md, _ := metadata.FromIncomingContext(ctx)
 	ids := md.Get("user-id")
-	if err := pappsec.SetUser(ctx, ids[0]); err != nil {
-		return nil, err
+	if len(ids) > 0 {
+		if err := pappsec.SetUser(ctx, ids[0]); err != nil {
+			return nil, err
+		}
 	}
-
 	return s.s.Ping(ctx, in)
 }

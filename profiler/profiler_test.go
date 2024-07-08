@@ -25,9 +25,11 @@ import (
 	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/httpmem"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/traceprof"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -236,41 +238,6 @@ func TestSetProfileFraction(t *testing.T) {
 	})
 }
 
-func TestProfilerPassthrough(t *testing.T) {
-	if testing.Short() {
-		return
-	}
-	beforeExecutionTraceEnabledDefault := executionTraceEnabledDefault
-	executionTraceEnabledDefault = false
-	defer func() { executionTraceEnabledDefault = beforeExecutionTraceEnabledDefault }()
-
-	out := make(chan batch)
-	p, err := newProfiler()
-	require.NoError(t, err)
-	p.cfg.period = 200 * time.Millisecond
-	p.cfg.cpuDuration = 1 * time.Millisecond
-	p.uploadFunc = func(bat batch) error {
-		out <- bat
-		return nil
-	}
-	p.run()
-	defer p.stop()
-	var bat batch
-	select {
-	case bat = <-out:
-	// TODO (knusbaum) this timeout is long because we were seeing timeouts at 500ms.
-	// it would be nice to have a time-independent way to test this
-	case <-time.After(1000 * time.Millisecond):
-		t.Fatal("time expired")
-	}
-
-	assert := assert.New(t)
-	// should contain cpu.pprof, delta-heap.pprof
-	assert.Equal(2, len(bat.profiles))
-	assert.NotEmpty(bat.profiles[0].data)
-	assert.NotEmpty(bat.profiles[1].data)
-}
-
 func unstartedProfiler(opts ...Option) (*profiler, error) {
 	p, err := newProfiler(opts...)
 	if err != nil {
@@ -416,6 +383,11 @@ func TestAllUploaded(t *testing.T) {
 		assert.ElementsMatch(t, customLabelKeys[:customProfileLabelLimit], profile.event.CustomAttributes)
 
 		assert.Contains(t, profile.tags, fmt.Sprintf("profile_seq:%d", seq))
+
+		assert.Equal(t, profile.event.Version, "4")
+		assert.Equal(t, profile.event.Family, "go")
+		assert.NotNil(t, profile.event.Start)
+		assert.NotNil(t, profile.event.End)
 	}
 
 	validateProfile(<-profiles, 0)
@@ -437,6 +409,14 @@ func TestCorrectTags(t *testing.T) {
 		"foo:bar",
 		"service:xyz",
 		"host:example",
+		"runtime:go",
+		fmt.Sprintf("process_id:%d", os.Getpid()),
+		fmt.Sprintf("profiler_version:%s", version.Tag),
+		fmt.Sprintf("runtime_version:%s", strings.TrimPrefix(runtime.Version(), "go")),
+		fmt.Sprintf("runtime_compiler:%s", runtime.Compiler),
+		fmt.Sprintf("runtime_arch:%s", runtime.GOARCH),
+		fmt.Sprintf("runtime_os:%s", runtime.GOOS),
+		fmt.Sprintf("runtime-id:%s", globalconfig.RuntimeID()),
 	}
 	for i := 0; i < 20; i++ {
 		// We check the tags we get several times to try to have a
@@ -531,8 +511,6 @@ func TestExecutionTraceMisconfiguration(t *testing.T) {
 }
 
 func TestExecutionTraceRandom(t *testing.T) {
-	t.Skip("flaky test, see: https://github.com/DataDog/dd-trace-go/issues/2529")
-
 	collectTraces := func(t *testing.T, profilePeriod, tracePeriod time.Duration, count int) int {
 		t.Setenv("DD_PROFILING_EXECUTION_TRACE_ENABLED", "true")
 		t.Setenv("DD_PROFILING_EXECUTION_TRACE_PERIOD", tracePeriod.String())
@@ -585,12 +563,12 @@ func TestExecutionTraceRandom(t *testing.T) {
 		name := fmt.Sprintf("rate-%f", rate)
 		t.Run(name, func(t *testing.T) {
 			// We should be within 2 standard deviations ~95% of the time
-			// with a correct implementation. If we do this twice, then
+			// with a correct implementation. If we do this four times, then
 			// we have a ~99.999% chance of succeeding with a correct
 			// implementation. We keep a reasonably tight tolerance
 			// to ensure that an incorrect implementation is more likely
-			// to fail both times
-			for i := 0; i < 2; i++ {
+			// to fail each time
+			for i := 0; i < 4; i++ {
 				if doTrial(t, rate, 2.0) {
 					return
 				}

@@ -12,6 +12,8 @@ package httpsec
 
 import (
 	"context"
+	"gopkg.in/DataDog/dd-trace-go.v1/appsec/events"
+
 	// Blank import needed to use embed for the default blocked response payloads
 	_ "embed"
 	"net/http"
@@ -25,6 +27,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/trace"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/trace/httptrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/stacktrace"
 
 	"github.com/DataDog/appsec-internal-go/netip"
 )
@@ -33,7 +36,7 @@ import (
 // This function should not be called when AppSec is disabled in order to
 // get preciser error logs.
 func MonitorParsedBody(ctx context.Context, body any) error {
-	parent := fromContext(ctx)
+	parent, _ := ctx.Value(listener.ContextKey{}).(*types.Operation)
 	if parent == nil {
 		log.Error("appsec: parsed http body monitoring ignored: could not find the http handler instrumentation metadata in the request context: the request handler is not being monitored by a middleware function or the provided context is not the expected request context")
 		return nil
@@ -47,7 +50,7 @@ func MonitorParsedBody(ctx context.Context, body any) error {
 func ExecuteSDKBodyOperation(parent dyngo.Operation, args types.SDKBodyOperationArgs) error {
 	var err error
 	op := &types.SDKBodyOperation{Operation: dyngo.NewOperation(parent)}
-	dyngo.OnData(op, func(e error) {
+	dyngo.OnData(op, func(e *events.BlockingSecurityEvent) {
 		err = e
 	})
 	dyngo.StartOperation(op, args)
@@ -62,7 +65,13 @@ func ExecuteSDKBodyOperation(parent dyngo.Operation, args types.SDKBodyOperation
 // context since it uses a queue of handlers and it's the only way to make
 // sure other queued handlers don't get executed.
 // TODO: this patch must be removed/improved when we rework our actions/operations system
-func WrapHandler(handler http.Handler, span ddtrace.Span, pathParams map[string]string, onBlock ...func()) http.Handler {
+func WrapHandler(handler http.Handler, span ddtrace.Span, pathParams map[string]string, opts *Config) http.Handler {
+	if opts == nil {
+		opts = defaultWrapHandlerConfig
+	} else if opts.ResponseHeaderCopier == nil {
+		opts.ResponseHeaderCopier = defaultWrapHandlerConfig.ResponseHeaderCopier
+	}
+
 	trace.SetAppSecEnabledTags(span)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ipTags, clientIP := httptrace.ClientIPTags(r.Header, true, r.RemoteAddr)
@@ -71,11 +80,15 @@ func WrapHandler(handler http.Handler, span ddtrace.Span, pathParams map[string]
 
 		var bypassHandler http.Handler
 		var blocking bool
+		var stackTrace *stacktrace.Event
 		args := MakeHandlerOperationArgs(r, clientIP, pathParams)
 		ctx, op := StartOperation(r.Context(), args, func(op *types.Operation) {
-			dyngo.OnData(op, func(a *sharedsec.Action) {
-				bypassHandler = a.HTTP()
-				blocking = a.Blocking()
+			dyngo.OnData(op, func(a *sharedsec.HTTPAction) {
+				blocking = true
+				bypassHandler = a.Handler
+			})
+			dyngo.OnData(op, func(a *sharedsec.StackTraceAction) {
+				stackTrace = &a.Event
 			})
 		})
 		r = r.WithContext(ctx)
@@ -87,9 +100,14 @@ func WrapHandler(handler http.Handler, span ddtrace.Span, pathParams map[string]
 			// in case we are instrumenting the Gin framework
 			if blocking {
 				op.SetTag(trace.BlockedRequestTag, true)
-				for _, f := range onBlock {
+				for _, f := range opts.OnBlock {
 					f()
 				}
+			}
+
+			// Add stacktraces to the span, if any
+			if stackTrace != nil {
+				stacktrace.AddToSpan(span, stackTrace)
 			}
 
 			if bypassHandler != nil {
@@ -100,7 +118,7 @@ func WrapHandler(handler http.Handler, span ddtrace.Span, pathParams map[string]
 			// extra headers have been added such as the Host header which is removed from the original Go request headers
 			// map
 			setRequestHeadersTags(span, args.Headers)
-			setResponseHeadersTags(span, w.Header())
+			setResponseHeadersTags(span, opts.ResponseHeaderCopier(w))
 			trace.SetTags(span, op.Tags())
 			if len(events) > 0 {
 				httptrace.SetSecurityEventsTags(span, events)
@@ -183,11 +201,4 @@ func StartOperation(ctx context.Context, args types.HandlerOperationArgs, setup 
 	}
 	dyngo.StartOperation(op, args)
 	return newCtx, op
-}
-
-// fromContext returns the Operation object stored in the context, if any
-func fromContext(ctx context.Context) *types.Operation {
-	// Avoid a runtime panic in case of type-assertion error by collecting the 2 return values
-	op, _ := ctx.Value(listener.ContextKey{}).(*types.Operation)
-	return op
 }

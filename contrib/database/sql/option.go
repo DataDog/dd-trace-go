@@ -15,6 +15,7 @@ import (
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
 )
@@ -29,6 +30,25 @@ type config struct {
 	errCheck           func(err error) bool
 	tags               map[string]interface{}
 	dbmPropagationMode tracer.DBMPropagationMode
+	dbStats            bool
+	statsdClient       internal.StatsdClient
+}
+
+// checkStatsdRequired adds a statsdclient onto the config if dbstats is enabled
+// NOTE: For now, the only use-case for a statsdclient is the dbStats feature. If a statsdclient becomes necessary for other items in future work, then this logic should change
+func (c *config) checkStatsdRequired() {
+	if c.dbStats && c.statsdClient == nil {
+		// contrib/database/sql's statsdclient should always inherit its address from the tracer's statsdclient via the globalconfig
+		// destination is not user-configurable
+		sc, err := internal.NewStatsdClient(globalconfig.DogstatsdAddr(), statsTags(c))
+		if err == nil {
+			c.statsdClient = sc
+			log.Debug("Metrics from the database/sql contrib will be sent to %v", globalconfig.DogstatsdAddr())
+		} else {
+			log.Warn("Error creating statsd client for database/sql contrib; DB Stats disabled: %v", err)
+			c.dbStats = false
+		}
+	}
 }
 
 func (c *config) checkDBMPropagation(driverName string, driver driver.Driver, dsn string) {
@@ -140,6 +160,7 @@ func defaults(cfg *config, driverName string, rc *registerConfig) {
 		cfg.errCheck = rc.errCheck
 		cfg.ignoreQueryTypes = rc.ignoreQueryTypes
 		cfg.childSpansOnly = rc.childSpansOnly
+		cfg.dbStats = rc.dbStats
 	}
 }
 
@@ -260,5 +281,14 @@ func WithSQLCommentInjection(mode tracer.SQLCommentInjectionMode) Option {
 func WithDBMPropagation(mode tracer.DBMPropagationMode) Option {
 	return func(cfg *config) {
 		cfg.dbmPropagationMode = mode
+	}
+}
+
+// WithDBStats enables polling of DBStats metrics
+// ref: https://pkg.go.dev/database/sql#DBStats
+// These metrics are submitted to Datadog and are not billed as custom metrics
+func WithDBStats() Option {
+	return func(cfg *config) {
+		cfg.dbStats = true
 	}
 }

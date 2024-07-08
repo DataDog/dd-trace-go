@@ -204,7 +204,7 @@ func getPropagators(cfg *PropagatorConfig, ps string) ([]Propagator, string) {
 		defaultPsName += ",b3"
 	}
 	if ps == "" {
-		if prop := os.Getenv(headerPropagationStyle); prop != "" {
+		if prop := getDDorOtelConfig("propagationStyle"); prop != "" {
 			ps = prop // use the generic DD_TRACE_PROPAGATION_STYLE if set
 		} else {
 			return defaultPs, defaultPsName // no env set, so use default from configuration
@@ -274,11 +274,23 @@ func (p *chainedPropagator) Extract(carrier interface{}) (ddtrace.SpanContext, e
 	for _, v := range p.extractors {
 		if ctx != nil {
 			// A local trace context has already been extracted.
-			p, isW3C := v.(*propagatorW3c)
+			pw3c, isW3C := v.(*propagatorW3c)
 			if !isW3C {
 				continue // Ignore other propagators.
 			}
-			p.propagateTracestate(ctx.(*spanContext), carrier)
+			w3cCtx, err := pw3c.Extract(carrier)
+			if err == nil && w3cCtx.(*spanContext).TraceID128() == ctx.(*spanContext).TraceID128() {
+				pw3c.propagateTracestate(ctx.(*spanContext), w3cCtx.(*spanContext))
+				if w3cCtx.SpanID() != ctx.SpanID() {
+					var ddCtx *spanContext
+					if ddp := getDatadogPropagator(p); ddp != nil {
+						if ddSpanCtx, err := ddp.Extract(carrier); err == nil {
+							ddCtx, _ = ddSpanCtx.(*spanContext)
+						}
+					}
+					overrideDatadogParentID(ctx.(*spanContext), w3cCtx.(*spanContext), ddCtx)
+				}
+			}
 			break
 		}
 		var err error
@@ -306,15 +318,8 @@ func (p *chainedPropagator) Extract(carrier interface{}) (ddtrace.SpanContext, e
 // provided by the given *spanContext. If it matches, then the tracestate
 // will be re-composed based on the composition of the given *spanContext,
 // but will include the non-DD vendors in the W3C trace context's tracestate.
-func (p *propagatorW3c) propagateTracestate(ctx *spanContext, carrier interface{}) {
-	w3cCtx, _ := p.Extract(carrier)
-	if w3cCtx == nil {
-		return // It's not valid, so ignore it.
-	}
-	if ctx.TraceID() != w3cCtx.TraceID() {
-		return // The trace-ids must match.
-	}
-	if w3cCtx.(*spanContext).trace == nil {
+func (p *propagatorW3c) propagateTracestate(ctx *spanContext, w3cCtx *spanContext) {
+	if w3cCtx.trace == nil {
 		return // this shouldn't happen, since it should have a propagating tag already
 	}
 	if ctx.trace == nil {
@@ -324,9 +329,10 @@ func (p *propagatorW3c) propagateTracestate(ctx *spanContext, carrier interface{
 	// it to the span context that will be returned.
 	// Note: Other trace context fields like sampling priority, propagated tags,
 	// and origin will remain unchanged.
-	ts := w3cCtx.(*spanContext).trace.propagatingTag(tracestateHeader)
+	ts := w3cCtx.trace.propagatingTag(tracestateHeader)
 	priority, _ := ctx.SamplingPriority()
 	setPropagatingTag(ctx, tracestateHeader, composeTracestate(ctx, priority, ts))
+	ctx.isRemote = (w3cCtx.isRemote)
 }
 
 // propagator implements Propagator and injects/extracts span contexts
@@ -485,6 +491,28 @@ func validateTID(tid string) error {
 		return fmt.Errorf("malformed: %q", tid)
 	}
 	return nil
+}
+
+// getDatadogPropagator returns the Datadog Propagator
+func getDatadogPropagator(cp *chainedPropagator) *propagator {
+	for _, e := range cp.extractors {
+		p, isDatadog := (e).(*propagator)
+		if isDatadog {
+			return p
+		}
+	}
+	return nil
+}
+
+// overrideDatadogParentID overrides the span ID of a context with the ID extracted from tracecontext headers
+// if the reparenting ID is not set on the context, the span ID from datadog headers is used.
+func overrideDatadogParentID(ctx, w3cCtx, ddCtx *spanContext) {
+	ctx.spanID = w3cCtx.spanID
+	if w3cCtx.reparentID != "" && w3cCtx.reparentID != "0000000000000000" {
+		ctx.reparentID = w3cCtx.reparentID
+	} else if ddCtx != nil {
+		ctx.reparentID = fmt.Sprintf("%016x", ddCtx.SpanID())
+	}
 }
 
 // unmarshalPropagatingTags unmarshals tags from v into ctx
@@ -750,13 +778,17 @@ func (*propagatorW3c) injectTextMap(spanCtx ddtrace.SpanContext, writer TextMapW
 	}
 	writer.Set(traceparentHeader, fmt.Sprintf("00-%s-%016x-%v", traceID, ctx.spanID, flags))
 	// if context priority / origin / tags were updated after extraction,
+	// or if there is a span on the trace
 	// or the tracestateHeader doesn't start with `dd=`
 	// we need to recreate tracestate
 	if ctx.updated ||
+		(!ctx.isRemote || ctx.isRemote && ctx.trace != nil && ctx.trace.root != nil) ||
 		(ctx.trace != nil && !strings.HasPrefix(ctx.trace.propagatingTag(tracestateHeader), "dd=")) ||
 		ctx.trace.propagatingTagsLen() == 0 {
+		// compose a new value for the tracestate
 		writer.Set(tracestateHeader, composeTracestate(ctx, p, ctx.trace.propagatingTag(tracestateHeader)))
 	} else {
+		// use a cached value for the tracestate (e.g., no updating p: key)
 		writer.Set(tracestateHeader, ctx.trace.propagatingTag(tracestateHeader))
 	}
 	return nil
@@ -819,6 +851,7 @@ func isValidID(id string) bool {
 // composeTracestate creates a tracestateHeader from the spancontext.
 // The Datadog tracing library is only responsible for managing the list member with key dd,
 // which holds the values of the sampling decision(`s:<value>`), origin(`o:<origin>`),
+// the last parent ID of a Datadog span (`p:<parent_id>`),
 // and propagated tags prefixed with `t.`(e.g. _dd.p.usr.id:usr_id tag will become `t.usr.id:usr_id`).
 func composeTracestate(ctx *spanContext, priority int, oldState string) string {
 	var b strings.Builder
@@ -832,6 +865,17 @@ func composeTracestate(ctx *spanContext, priority int, oldState string) string {
 			strings.ReplaceAll(oWithSub, "=", "~")))
 	}
 
+	// if the context is remote and there is a reparentID, set p as reparentId
+	// if the context is remote and there is no reparentID, don't set p
+	// if the context is not remote, set p as context.spanId
+	// this ID can be used by downstream tracers to set a _dd.parent_id tag
+	// to allow the backend to reparent orphaned spans if necessary
+	if !ctx.isRemote {
+		b.WriteString(fmt.Sprintf(";p:%016x", ctx.SpanID()))
+	} else if ctx.reparentID != "" && ctx.reparentID != "0000000000000000" {
+		b.WriteString(fmt.Sprintf(";p:%s", ctx.reparentID))
+	}
+
 	ctx.trace.iteratePropagatingTags(func(k, v string) bool {
 		if !strings.HasPrefix(k, "_dd.p.") {
 			return true
@@ -841,7 +885,7 @@ func composeTracestate(ctx *spanContext, priority int, oldState string) string {
 		tag := fmt.Sprintf("t.%s:%s",
 			keyRgx.ReplaceAllString(k[len("_dd.p."):], "_"),
 			strings.ReplaceAll(valueRgx.ReplaceAllString(v, "_"), "=", "~"))
-		if b.Len()+len(tag) > 256 {
+		if b.Len()+len(tag)+1 > 256 { // the +1 here is to account for the `;` needed between the tags
 			return false
 		}
 		b.WriteString(";")
@@ -880,6 +924,7 @@ func (*propagatorW3c) extractTextMap(reader TextMapReader) (ddtrace.SpanContext,
 	var parentHeader string
 	var stateHeader string
 	var ctx spanContext
+	ctx.isRemote = true
 	// to avoid parsing tracestate header(s) if traceparent is invalid
 	if err := reader.ForeachKey(func(k, v string) error {
 		key := strings.ToLower(k)
@@ -995,6 +1040,7 @@ func parseTraceparent(ctx *spanContext, header string) error {
 // The keys to the “dd“ values have been shortened as follows to save space:
 // `sampling_priority` = `s`
 // `origin` = `o`
+// `last parent` = `p`
 // `_dd.p.` prefix = `t.`
 func parseTracestate(ctx *spanContext, header string) {
 	if header == "" {
@@ -1011,6 +1057,7 @@ func parseTracestate(ctx *spanContext, header string) {
 		}
 		ddMembers := strings.Split(group[len("dd="):], ";")
 		dropDM := false
+		// indicate that backend could reparent this as a root
 		for _, member := range ddMembers {
 			keyVal := strings.SplitN(member, ":", 2)
 			if len(keyVal) != 2 {
@@ -1044,6 +1091,8 @@ func parseTracestate(ctx *spanContext, header string) {
 					ctx.setSamplingPriority(0, samplernames.Unknown)
 					dropDM = true
 				}
+			} else if key == "p" {
+				ctx.reparentID = val
 			} else if strings.HasPrefix(key, "t.dm") {
 				if ctx.trace.hasPropagatingTag(keyDecisionMaker) || dropDM {
 					continue
@@ -1054,6 +1103,10 @@ func parseTracestate(ctx *spanContext, header string) {
 				val = strings.ReplaceAll(val, "~", "=")
 				setPropagatingTag(ctx, "_dd.p."+keySuffix, val)
 			}
+		}
+		// if dd list-member is present and last parent is not set, set it to zeros
+		if ctx.reparentID == "" {
+			ctx.reparentID = "0000000000000000"
 		}
 	}
 }

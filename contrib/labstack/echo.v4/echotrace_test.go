@@ -151,9 +151,13 @@ func TestError(t *testing.T) {
 	mt := mocktracer.Start()
 	defer mt.Stop()
 	var called, traced bool
+	handlerCalled := 0
 
 	// setup
 	router := echo.New()
+	router.HTTPErrorHandler = func(err error, c echo.Context) {
+		handlerCalled++
+	}
 	router.Use(Middleware(WithServiceName("foobar")))
 	wantErr := errors.New("oh no")
 
@@ -163,7 +167,6 @@ func TestError(t *testing.T) {
 		called = true
 
 		err := wantErr
-		c.Error(err)
 		return err
 	})
 	r := httptest.NewRequest("GET", "/err", nil)
@@ -173,6 +176,7 @@ func TestError(t *testing.T) {
 	// verify the errors and status are correct
 	assert.True(called)
 	assert.True(traced)
+	assert.Equal(1, handlerCalled)
 
 	spans := mt.FinishedSpans()
 	require.Len(t, spans, 1)

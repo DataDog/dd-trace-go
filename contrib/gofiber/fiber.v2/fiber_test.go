@@ -332,3 +332,33 @@ func TestNamingSchema(t *testing.T) {
 	})
 	namingschematest.NewHTTPServerTest(genSpans, "fiber")(t)
 }
+
+func TestIgnoreRequest(t *testing.T) {
+	assert := assert.New(t)
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	router := fiber.New()
+	router.Use(
+		Middleware(
+			WithIgnoreRequest(func(ctx *fiber.Ctx) bool {
+				return ctx.Method() == "GET" && ctx.Path() == "/ignore"
+			}),
+		),
+	)
+	router.Get("/ignore", func(c *fiber.Ctx) error {
+		return c.SendString("IAMALIVE")
+	})
+
+	r := httptest.NewRequest("GET", "/ignore", nil)
+
+	// do and verify the request
+	resp, err := router.Test(r)
+	assert.Equal(nil, err)
+	defer resp.Body.Close()
+	assert.Equal(resp.StatusCode, 200)
+
+	spans := mt.FinishedSpans()
+
+	assert.Len(spans, 0)
+}

@@ -70,10 +70,17 @@ const (
 	APMTracingHTTPHeaderTags
 	// APMTracingCustomTags enables APM client to set custom tags on all spans
 	APMTracingCustomTags
+	// ASMRASPSSRF enables ASM support for runtime protection against SSRF attacks
+	ASMRASPSSRF = 23
 )
 
-// APMTracingEnabled enables APM tracing
-const APMTracingEnabled Capability = 19
+// Additional capability bit index values that are non-consecutive from above.
+const (
+	// APMTracingEnabled enables APM tracing
+	APMTracingEnabled Capability = 19
+	// APMTracingSampleRules represents the sampling rate using matching rules from APM client libraries
+	APMTracingSampleRules = 29
+)
 
 // ErrClientNotStarted is returned when the remote config client is not started.
 var ErrClientNotStarted = errors.New("remote config client not started")
@@ -376,6 +383,16 @@ func HasCapability(cap Capability) (bool, error) {
 	return found, nil
 }
 
+func (c *Client) allCapabilities() *big.Int {
+	client.capabilitiesMu.Lock()
+	defer client.capabilitiesMu.Unlock()
+	capa := big.NewInt(0)
+	for i := range c.capabilities {
+		capa.SetBit(capa, int(i), 1)
+	}
+	return capa
+}
+
 func (c *Client) globalCallbacks() []Callback {
 	c._callbacksMu.RLock()
 	defer c._callbacksMu.RUnlock()
@@ -558,10 +575,7 @@ func (c *Client) newUpdateRequest() (bytes.Buffer, error) {
 		}
 	}
 
-	capa := big.NewInt(0)
-	for i := range c.capabilities {
-		capa.SetBit(capa, int(i), 1)
-	}
+	capa := c.allCapabilities()
 	req := clientGetConfigsRequest{
 		Client: &clientData{
 			State: &clientState{

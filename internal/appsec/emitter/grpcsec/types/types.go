@@ -36,13 +36,22 @@ type (
 		trace.TagsHolder
 		trace.SecurityEventsHolder
 	}
+
 	// HandlerOperationArgs is the grpc handler arguments.
 	HandlerOperationArgs struct {
-		// Message received by the gRPC handler.
+		// Method is the gRPC method name.
+		// Corresponds to the address `grpc.server.method`.
+		Method string
+
+		// RPC metadata received by the gRPC handler.
 		// Corresponds to the address `grpc.server.request.metadata`.
 		Metadata map[string][]string
+
+		// ClientIP is the IP address of the client that initiated the gRPC request.
+		// Corresponds to the address `http.client_ip`.
 		ClientIP netip.Addr
 	}
+
 	// HandlerOperationRes is the grpc handler results. Empty as of today.
 	HandlerOperationRes struct{}
 
@@ -51,9 +60,11 @@ type (
 	ReceiveOperation struct {
 		dyngo.Operation
 	}
+
 	// ReceiveOperationArgs is the gRPC handler receive operation arguments
 	// Empty as of today.
 	ReceiveOperationArgs struct{}
+
 	// ReceiveOperationRes is the gRPC handler receive operation results which
 	// contains the message the gRPC handler received.
 	ReceiveOperationRes struct {
@@ -61,32 +72,7 @@ type (
 		// Corresponds to the address `grpc.server.request.message`.
 		Message interface{}
 	}
-
-	// MonitoringError is used to vehicle a gRPC error that also embeds a request status code
-	MonitoringError struct {
-		msg    string
-		status uint32
-	}
 )
-
-// NewMonitoringError creates and returns a new gRPC monitoring error, wrapped under
-// sharedesec.MonitoringError
-func NewMonitoringError(msg string, code uint32) error {
-	return &MonitoringError{
-		msg:    msg,
-		status: code,
-	}
-}
-
-// GRPCStatus returns the gRPC status code embedded in the error
-func (e *MonitoringError) GRPCStatus() uint32 {
-	return e.status
-}
-
-// Error implements the error interface
-func (e *MonitoringError) Error() string {
-	return e.msg
-}
 
 // Finish the gRPC handler operation, along with the given results, and emit a
 // finish event up in the operation stack.
