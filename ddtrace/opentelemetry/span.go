@@ -7,7 +7,9 @@ package opentelemetry
 
 import (
 	"encoding/binary"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"strconv"
 	"strings"
 	"sync"
@@ -49,10 +51,28 @@ func (s *span) SetName(name string) {
 
 // TODO: add some encoding for json here
 type spanEvent struct {
-	time_unix_nano int64
-	name           string
+	Name           string `json:"name"`
+	Time_unix_nano int64  `json:"time_unix_nano"`
 	// TODO: Ensure values can only be string, int or bool
-	attributes map[string]interface{}
+	Attributes map[string]interface{} `json:"attributes,omitempty"`
+}
+
+func marshalOtelEvent(evt otelsdk.Event) string {
+	spEvt := spanEvent{
+		Time_unix_nano: evt.Time.Unix(),
+		Name:           evt.Name,
+	}
+	spEvt.Attributes = make(map[string]interface{})
+	for _, a := range evt.Attributes {
+		spEvt.Attributes[string(a.Key)] = a.Value.AsInterface()
+	}
+	s, err := json.Marshal(spEvt)
+	if err != nil {
+		// log something?
+		log.Debug(fmt.Sprintf("Issue marshaling span event %v:%v", spEvt, err))
+		return ""
+	}
+	return string(s)
 }
 
 func (s *span) End(options ...oteltrace.SpanEndOption) {
@@ -77,22 +97,15 @@ func (s *span) End(options ...oteltrace.SpanEndOption) {
 	if op, ok := s.attributes[ext.SpanName]; !ok || op == "" {
 		s.DD.SetTag(ext.SpanName, strings.ToLower(s.createOperationName()))
 	}
-
 	for k, v := range s.attributes {
 		s.DD.SetTag(k, v)
 	}
-	// TODO: Investigate json marshaling to see if that can cut all this down
-	spanEvts := make([]spanEvent, len(s.events))
-	for i, e := range s.events {
-		s := spanEvent{
-			time_unix_nano: e.Time.Unix(),
-			name:           e.Name,
-		}
-		spanEvts[i] = s
-		for _, a := range e.Attributes {
-			s.attributes = make(map[string]interface{})
-			s.attributes[string(a.Key)] = a.Value.AsInterface()
-		}
+	evts := []string{}
+	for _, e := range s.events {
+		evts = append(evts, marshalOtelEvent(e))
+	}
+	if len(evts) > 0 {
+		s.DD.SetTag("events", evts)
 	}
 	var finishCfg = oteltrace.NewSpanEndConfig(options...)
 	var opts []tracer.FinishOption

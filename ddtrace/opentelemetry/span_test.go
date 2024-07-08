@@ -27,6 +27,7 @@ import (
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
+	otelsdk "go.opentelemetry.io/otel/sdk/trace"
 	oteltrace "go.opentelemetry.io/otel/trace"
 )
 
@@ -185,6 +186,58 @@ func TestSpanLink(t *testing.T) {
 	assert.Equal(uint32(0x80000001), spanLinks[0].Flags) // sampled and set
 }
 
+func TestMarshalOtelEvent(t *testing.T) {
+	assert := assert.New(t)
+	now := time.Now()
+	nowUnix := now.Unix()
+	t.Run("attributes", func(t *testing.T) {
+		s := marshalOtelEvent(otelsdk.Event{
+			Name: "evt",
+			Time: now,
+			Attributes: []attribute.KeyValue{
+				{
+					Key:   attribute.Key("attribute1"),
+					Value: attribute.StringValue("value1"),
+				},
+				{
+					Key:   attribute.Key("attribute2"),
+					Value: attribute.IntValue(123),
+				},
+				{
+					Key:   attribute.Key("attribute3"),
+					Value: attribute.Float64SliceValue([]float64{1.0, 2.0, 3.0}),
+				},
+				{
+					Key:   attribute.Key("attribute4"),
+					Value: attribute.BoolValue(true),
+				},
+				// if two attributes have same key, last-set attribute takes precedence
+				{
+					Key:   attribute.Key("attribute4"),
+					Value: attribute.BoolValue(false),
+				},
+			},
+		})
+		assert.Equal(fmt.Sprintf("{\"name\":\"evt\",\"time_unix_nano\":%v,\"attributes\":{\"attribute1\":\"value1\",\"attribute2\":123,\"attribute3\":[1,2,3],\"attribute4\":false}}", nowUnix), s)
+	})
+	t.Run("unexpected field", func(t *testing.T) {
+		// otelsdk.Event type has field `DroppedAttributeCount`, but we don't use this field
+		s := marshalOtelEvent(otelsdk.Event{
+			Name:                  "evt",
+			Time:                  now,
+			DroppedAttributeCount: 1,
+		})
+		// resulting string should discard DroppedAttributeCount
+		assert.Equal(fmt.Sprintf("{\"name\":\"evt\",\"time_unix_nano\":%v}", nowUnix), s)
+	})
+	t.Run("missing fields", func(t *testing.T) {
+		s := marshalOtelEvent(otelsdk.Event{
+			Time: now,
+		})
+		assert.Equal(fmt.Sprintf("{\"name\":\"\",\"time_unix_nano\":%v}", nowUnix), s)
+	})
+}
+
 func TestSpanEnd(t *testing.T) {
 	assert := assert.New(t)
 	_, payloads, cleanup := mockTracerProvider(t)
@@ -203,9 +256,9 @@ func TestSpanEnd(t *testing.T) {
 		sp.SetAttributes(attribute.String(k, v))
 	}
 	assert.True(sp.IsRecording())
-
-	sp.AddEvent("evt1")
-	sp.AddEvent("evt2", oteltrace.WithAttributes(attribute.String("key1", "value"), attribute.Int("key2", 1234)))
+	now := time.Now()
+	nowUnix := now.Unix()
+	sp.AddEvent("evt", oteltrace.WithTimestamp(now), oteltrace.WithAttributes(attribute.String("key1", "value"), attribute.Int("key2", 1234)))
 
 	sp.End()
 	assert.False(sp.IsRecording())
@@ -236,7 +289,9 @@ func TestSpanEnd(t *testing.T) {
 	for k, v := range ignoredAttributes {
 		assert.NotContains(meta, fmt.Sprintf("%s:%s", k, v))
 	}
-	// TODO: Assert that span meta contains events array
+	assert.Contains(meta, "events")
+	// TODO: Figure out expected format of events.meta
+	// assert.Contains(meta, fmt.Sprintf("events:{\"name\":\"evt\",\"time_unix_nano\":%v}", nowUnix))
 }
 
 // This test verifies that setting the status of a span
