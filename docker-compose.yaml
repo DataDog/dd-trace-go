@@ -1,7 +1,7 @@
 version: "3.3"  # optional since v1.27.0
 services:
   cassandra:
-    image: cassandra:3.7
+    image: cassandra:3.11
     environment:
       JVM_OPTS: "-Xms750m -Xmx750m"
     ports:

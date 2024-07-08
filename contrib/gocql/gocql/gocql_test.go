@@ -158,6 +158,69 @@ func TestChildWrapperSpan(t *testing.T) {
 	}
 }
 
+func TestCompatMode(t *testing.T) {
+	genSpans := func(t *testing.T) []mocktracer.Span {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		cluster := newCassandraCluster()
+		session, err := cluster.CreateSession()
+		require.NoError(t, err)
+
+		q := session.Query("SELECT * FROM trace.person").WithContext(context.Background())
+		tq := WrapQuery(q, WithServiceName("TestServiceName"))
+		iter := tq.Iter()
+		err = iter.Close()
+		require.NoError(t, err)
+
+		spans := mt.FinishedSpans()
+		require.Len(t, spans, 1)
+		return spans
+	}
+	testCases := []struct {
+		name        string
+		gocqlCompat string
+		wantCluster string
+	}{
+		{
+			name:        "== v1.65",
+			gocqlCompat: "v1.65",
+			wantCluster: "datacenter1",
+		},
+		{
+			name:        "< v1.65",
+			gocqlCompat: "v1.64",
+			wantCluster: "datacenter1",
+		},
+		{
+			name:        "> v1.65",
+			gocqlCompat: "v1.66",
+			wantCluster: "Test Cluster",
+		},
+		{
+			name:        "empty",
+			gocqlCompat: "",
+			wantCluster: "Test Cluster",
+		},
+		{
+			name:        "bad version",
+			gocqlCompat: "bad-version",
+			wantCluster: "Test Cluster",
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("DD_TRACE_GOCQL_COMPAT", tc.gocqlCompat)
+			spans := genSpans(t)
+			s := spans[0]
+			assert.Equal(t, s.Tag(ext.TargetPort), "9042")
+			assert.NotEmpty(t, s.Tag(ext.TargetHost))
+			assert.Equal(t, tc.wantCluster, s.Tag(ext.CassandraCluster))
+			assert.Equal(t, "datacenter1", s.Tag(ext.CassandraDatacenter))
+		})
+	}
+}
+
 func TestErrNotFound(t *testing.T) {
 	assert := assert.New(t)
 	mt := mocktracer.Start()
