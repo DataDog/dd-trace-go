@@ -7,12 +7,13 @@ package integrations
 
 import (
 	"errors"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/constants"
 	"os"
 	"runtime"
 	"testing"
 	"time"
+
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/constants"
 
 	"github.com/stretchr/testify/assert"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
@@ -114,7 +115,7 @@ func sessionAssertions(assert *assert.Assertions, now time.Time, sessionSpan moc
 	spanTags := sessionSpan.Tags()
 
 	assert.Subset(spanTags, tags)
-	assert.Contains(spanTags, constants.TestSessionIDTagName)
+	assert.Contains(spanTags, constants.TestSessionIDTag)
 	commonAssertions(assert, sessionSpan)
 }
 
@@ -160,8 +161,8 @@ func moduleAssertions(assert *assert.Assertions, now time.Time, moduleSpan mockt
 	spanTags := moduleSpan.Tags()
 
 	assert.Subset(spanTags, tags)
-	assert.Contains(spanTags, constants.TestSessionIDTagName)
-	assert.Contains(spanTags, constants.TestModuleIDTagName)
+	assert.Contains(spanTags, constants.TestSessionIDTag)
+	assert.Contains(spanTags, constants.TestModuleIDTag)
 	commonAssertions(assert, moduleSpan)
 }
 
@@ -210,9 +211,9 @@ func suiteAssertions(assert *assert.Assertions, now time.Time, suiteSpan mocktra
 	spanTags := suiteSpan.Tags()
 
 	assert.Subset(spanTags, tags)
-	assert.Contains(spanTags, constants.TestSessionIDTagName)
-	assert.Contains(spanTags, constants.TestModuleIDTagName)
-	assert.Contains(spanTags, constants.TestSuiteIDTagName)
+	assert.Contains(spanTags, constants.TestSessionIDTag)
+	assert.Contains(spanTags, constants.TestModuleIDTag)
+	assert.Contains(spanTags, constants.TestSuiteIDTag)
 	commonAssertions(assert, suiteSpan)
 }
 
@@ -267,9 +268,9 @@ func testAssertions(assert *assert.Assertions, now time.Time, testSpan mocktrace
 	spanTags := testSpan.Tags()
 
 	assert.Subset(spanTags, tags)
-	assert.Contains(spanTags, constants.TestSessionIDTagName)
-	assert.Contains(spanTags, constants.TestModuleIDTagName)
-	assert.Contains(spanTags, constants.TestSuiteIDTagName)
+	assert.Contains(spanTags, constants.TestSessionIDTag)
+	assert.Contains(spanTags, constants.TestModuleIDTag)
+	assert.Contains(spanTags, constants.TestSuiteIDTag)
 	assert.Contains(spanTags, constants.TestSourceFile)
 	assert.Contains(spanTags, constants.TestSourceStartLine)
 	commonAssertions(assert, testSpan)

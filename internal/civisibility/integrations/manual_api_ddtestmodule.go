@@ -65,9 +65,9 @@ func createTestModule(session *tslvTestSession, name string, framework string, f
 	span, ctx := tracer.StartSpanFromContext(context.Background(), operationName, testOpts...)
 	moduleID := span.Context().SpanID()
 	if session != nil {
-		span.SetTag(constants.TestSessionIDTagName, fmt.Sprint(session.sessionID))
+		span.SetTag(constants.TestSessionIDTag, fmt.Sprint(session.sessionID))
 	}
-	span.SetTag(constants.TestModuleIDTagName, fmt.Sprint(moduleID))
+	span.SetTag(constants.TestModuleIDTag, fmt.Sprint(moduleID))
 
 	module := &tslvTestModule{
 		session:   session,

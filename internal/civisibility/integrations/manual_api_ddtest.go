@@ -53,10 +53,10 @@ func createTest(suite *tslvTestSuite, name string, startTime time.Time) DdTest {
 
 	span, ctx := tracer.StartSpanFromContext(context.Background(), operationName, testOpts...)
 	if suite.module.session != nil {
-		span.SetTag(constants.TestSessionIDTagName, fmt.Sprint(suite.module.session.sessionID))
+		span.SetTag(constants.TestSessionIDTag, fmt.Sprint(suite.module.session.sessionID))
 	}
-	span.SetTag(constants.TestModuleIDTagName, fmt.Sprint(suite.module.moduleID))
-	span.SetTag(constants.TestSuiteIDTagName, fmt.Sprint(suite.suiteID))
+	span.SetTag(constants.TestModuleIDTag, fmt.Sprint(suite.module.moduleID))
+	span.SetTag(constants.TestSuiteIDTag, fmt.Sprint(suite.suiteID))
 
 	t := &tslvTest{
 		suite: suite,
@@ -135,14 +135,14 @@ func (t *tslvTest) SetTestFunc(fn *runtime.Func) {
 	}
 
 	file, line := fn.FileLine(fn.Entry())
-	file = utils.GetRelativePathFromCiTagsSourceRoot(file)
+	file = utils.GetRelativePathFromCITagsSourceRoot(file)
 	t.SetTag(constants.TestSourceFile, file)
 	t.SetTag(constants.TestSourceStartLine, line)
 
 	codeOwners := utils.GetCodeOwners()
 	if codeOwners != nil {
-		match := codeOwners.Match("/" + file)
-		if match != nil {
+		match, found := codeOwners.Match("/" + file)
+		if found {
 			t.SetTag(constants.TestCodeOwners, match.GetOwnersString())
 		}
 	}

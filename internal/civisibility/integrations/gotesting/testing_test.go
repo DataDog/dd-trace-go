@@ -251,7 +251,7 @@ func assertTest(t *testing.T) {
 
 		// Assert Session
 		if span.Tag(ext.SpanType) == constants.SpanTypeTestSession {
-			assert.Contains(spanTags, constants.TestSessionIDTagName)
+			assert.Contains(spanTags, constants.TestSessionIDTag)
 			assertCommon(assert, span)
 			hasSession = true
 		}
@@ -262,8 +262,8 @@ func assertTest(t *testing.T) {
 				constants.TestModule:    "gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/integrations/gotesting",
 				constants.TestFramework: "golang.org/pkg/testing",
 			})
-			assert.Contains(spanTags, constants.TestSessionIDTagName)
-			assert.Contains(spanTags, constants.TestModuleIDTagName)
+			assert.Contains(spanTags, constants.TestSessionIDTag)
+			assert.Contains(spanTags, constants.TestModuleIDTag)
 			assert.Contains(spanTags, constants.TestFrameworkVersion)
 			assertCommon(assert, span)
 			hasModule = true
@@ -275,9 +275,9 @@ func assertTest(t *testing.T) {
 				constants.TestModule:    "gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/integrations/gotesting",
 				constants.TestFramework: "golang.org/pkg/testing",
 			})
-			assert.Contains(spanTags, constants.TestSessionIDTagName)
-			assert.Contains(spanTags, constants.TestModuleIDTagName)
-			assert.Contains(spanTags, constants.TestSuiteIDTagName)
+			assert.Contains(spanTags, constants.TestSessionIDTag)
+			assert.Contains(spanTags, constants.TestModuleIDTag)
+			assert.Contains(spanTags, constants.TestSuiteIDTag)
 			assert.Contains(spanTags, constants.TestFrameworkVersion)
 			assert.Contains(spanTags, constants.TestSuite)
 			assertCommon(assert, span)
@@ -293,9 +293,9 @@ func assertTest(t *testing.T) {
 				constants.TestName:      t.Name(),
 				constants.TestType:      constants.TestTypeTest,
 			})
-			assert.Contains(spanTags, constants.TestSessionIDTagName)
-			assert.Contains(spanTags, constants.TestModuleIDTagName)
-			assert.Contains(spanTags, constants.TestSuiteIDTagName)
+			assert.Contains(spanTags, constants.TestSessionIDTag)
+			assert.Contains(spanTags, constants.TestModuleIDTag)
+			assert.Contains(spanTags, constants.TestSuiteIDTag)
 			assert.Contains(spanTags, constants.TestFrameworkVersion)
 			assert.Contains(spanTags, constants.TestCodeOwners)
 			assert.Contains(spanTags, constants.TestSourceFile)

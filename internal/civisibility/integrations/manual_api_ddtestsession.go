@@ -51,7 +51,7 @@ func CreateTestSession() DdTestSession {
 	cmd = strings.TrimSpace(cmd)
 	wd, err := os.Getwd()
 	if err == nil {
-		wd = utils.GetRelativePathFromCiTagsSourceRoot(wd)
+		wd = utils.GetRelativePathFromCITagsSourceRoot(wd)
 	}
 	return CreateTestSessionWith(cmd, wd, "", time.Now())
 }
@@ -82,7 +82,7 @@ func CreateTestSessionWith(command string, workingDirectory string, framework st
 
 	span, ctx := tracer.StartSpanFromContext(context.Background(), operationName, testOpts...)
 	sessionID := span.Context().SpanID()
-	span.SetTag(constants.TestSessionIDTagName, fmt.Sprint(sessionID))
+	span.SetTag(constants.TestSessionIDTag, fmt.Sprint(sessionID))
 
 	s := &tslvTestSession{
 		sessionID:        sessionID,

@@ -56,7 +56,7 @@ func InitializeCIVisibilityMock() mocktracer.Tracer {
 func internalCiVisibilityInitialization(tracerInitializer func([]tracer.StartOption)) {
 	ciVisibilityInitializationOnce.Do(func() {
 		// Since calling this method indicates we are in CI Visibility mode, set the environment variable.
-		_ = os.Setenv(constants.CiVisibilityEnabledEnvironmentVariable, "1")
+		_ = os.Setenv(constants.CIVisibilityEnabledEnvironmentVariable, "1")
 
 		// Avoid sampling rate warning (in CI Visibility mode we send all data)
 		_ = os.Setenv("DD_TRACE_SAMPLE_RATE", "1")
@@ -65,7 +65,7 @@ func internalCiVisibilityInitialization(tracerInitializer func([]tracer.StartOpt
 		_ = utils.GetCodeOwners()
 
 		// Preload all CI, Git, and CodeOwners tags.
-		ciTags := utils.GetCiTags()
+		ciTags := utils.GetCITags()
 
 		// Check if DD_SERVICE has been set; otherwise default to the repo name (from the spec).
 		var opts []tracer.StartOption
