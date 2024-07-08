@@ -16,7 +16,9 @@ const DefaultDogstatsdAddr = "localhost:8125"
 type StatsdClient interface {
 	Incr(name string, tags []string, rate float64) error
 	Count(name string, value int64, tags []string, rate float64) error
+	CountWithTimestamp(name string, value int64, tags []string, rate float64, timestamp time.Time) error
 	Gauge(name string, value float64, tags []string, rate float64) error
+	GaugeWithTimestamp(name string, value float64, tags []string, rate float64, timestamp time.Time) error
 	Timing(name string, value time.Duration, tags []string, rate float64) error
 	Flush() error
 	Close() error
