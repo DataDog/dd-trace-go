@@ -188,7 +188,7 @@ func (t *pgxTracer) TraceAcquireStart(ctx context.Context, pool *pgxpool.Pool, _
 	return ctx
 }
 
-func (t *pgxTracer) TraceAcquireEnd(ctx context.Context, pool *pgxpool.Pool, data pgxpool.TraceAcquireEndData) {
+func (t *pgxTracer) TraceAcquireEnd(ctx context.Context, _ *pgxpool.Pool, data pgxpool.TraceAcquireEndData) {
 	if !t.cfg.traceAcquire {
 		return
 	}
