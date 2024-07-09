@@ -52,6 +52,10 @@ import "net/http"
 //
 // This code is generated because we have to account for all the permutations
 // of the interfaces.
+//
+// In case of any new interfaces or methods we didn't consider here, we also
+// implement the rwUnwrapper interface, which is used internally by
+// the standard library: https://github.com/golang/go/blob/6d89b38ed86e0bfa0ddaba08dc4071e6bb300eea/src/net/http/responsecontroller.go#L42-L44
 func wrapResponseWriter(w http.ResponseWriter) (http.ResponseWriter, *responseWriter) {
 {{- range .Interfaces }}
 	h{{.}}, ok{{.}} := w.(http.{{.}})
@@ -61,6 +65,7 @@ func wrapResponseWriter(w http.ResponseWriter) (http.ResponseWriter, *responseWr
 	type monitoredResponseWriter interface {
 		http.ResponseWriter
 		Status() int
+		Unwrap() http.ResponseWriter
 	}
 	switch {
 {{- range .Combinations }}
