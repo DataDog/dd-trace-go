@@ -445,7 +445,7 @@ func attributesContains(attrs []attribute.KeyValue, key string, val interface{})
 	return fmt.Errorf("Expected key %v not available in attributes", key)
 }
 
-// attributeVal returns whether the underlying value of `actual` is equal to `expected`
+// attributeValEqual returns whether the underlying value of `actual` is equal to `expected`
 // see: https://pkg.go.dev/go.opentelemetry.io/otel/attribute#Value
 func attributeValEqual(expected interface{}, actual attribute.Value) (interface{}, bool) {
 	switch expected.(type) {
