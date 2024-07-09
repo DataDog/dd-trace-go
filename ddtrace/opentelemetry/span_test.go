@@ -409,13 +409,13 @@ func TestSpanAddEvent(t *testing.T) {
 		// Assert both attributes exist on the event
 		assert.Len(e.Attributes, 2)
 		// Assert attribute key-value fields
+		// note that attribute.Int("pid", 4328) created an attribute with value int64(4328), hence why the `want` is in int64 format
 		wantAttrs := map[string]interface{}{
-			"pid":    4328,
+			"pid":    int64(4328),
 			"signal": "SIGHUP",
 		}
 		for k, v := range wantAttrs {
-			err := attributesContains(e.Attributes, k, v)
-			assert.NoError(err, err)
+			assert.True(attributesContains(e.Attributes, k, v))
 		}
 	})
 	t.Run("event with timestamp", func(t *testing.T) {
@@ -423,7 +423,7 @@ func TestSpanAddEvent(t *testing.T) {
 		now := time.Now()
 		sp.AddEvent("My event!", oteltrace.WithTimestamp(now))
 		sp.End()
-		
+
 		dd := sp.(*span)
 		assert.Len(dd.events, 1)
 		e := dd.events[0]
@@ -432,35 +432,15 @@ func TestSpanAddEvent(t *testing.T) {
 }
 
 // attributesContains returns true if attrs contains an attribute.KeyValue with the provided key and val
-func attributesContains(attrs []attribute.KeyValue, key string, val interface{}) error {
+func attributesContains(attrs []attribute.KeyValue, key string, val interface{}) bool {
 	for _, a := range attrs {
-		if string(a.Key) == key {
-			v, ok := attributeValEqual(val, a.Value)
-			if ok {
-				return nil
-			}
-			return fmt.Errorf("Expected %v as value for attribute key %v, but got %v instead", val, key, v)
+		fmt.Printf("Looking for %v:%v with types %T:%T; have %v:%v with types %T:%T\n", key, val, key, val, string(a.Key), a.Value.AsInterface(), string(a.Key), a.Value.AsInterface())
+		if string(a.Key) == key && a.Value.AsInterface() == val {
+			fmt.Println("hello?")
+			return true
 		}
 	}
-	return fmt.Errorf("Expected key %v not available in attributes", key)
-}
-
-// attributeValEqual returns whether the underlying value of `actual` is equal to `expected`
-// see: https://pkg.go.dev/go.opentelemetry.io/otel/attribute#Value
-func attributeValEqual(expected interface{}, actual attribute.Value) (interface{}, bool) {
-	switch expected.(type) {
-	case string:
-		v := actual.AsString()
-		return v, v == expected
-	case int:
-		v := actual.AsInt64()
-		return v, int(v) == expected
-	case bool:
-		v := actual.AsBool()
-		return v, v == expected
-	default:
-		return nil, false
-	}
+	return false
 }
 
 func TestSpanContextWithStartOptions(t *testing.T) {
