@@ -423,8 +423,8 @@ func TestSpanAddEvent(t *testing.T) {
 		now := time.Now()
 		sp.AddEvent("My event!", oteltrace.WithTimestamp(now))
 		sp.End()
+		
 		dd := sp.(*span)
-		// Assert event exists under span events
 		assert.Len(dd.events, 1)
 		e := dd.events[0]
 		assert.Equal(e.Time, now)
