@@ -1,6 +1,8 @@
 module gopkg.in/DataDog/dd-trace-go.v1/internal/exectracetest
 
-go 1.20
+go 1.21
+
+toolchain go1.21.0
 
 require (
 	github.com/google/pprof v0.0.0-20230817174616-7a8ec2ada47b
@@ -32,7 +34,7 @@ require (
 	golang.org/x/sys v0.20.0 // indirect
 	golang.org/x/time v0.3.0 // indirect
 	golang.org/x/tools v0.21.0 // indirect
-	golang.org/x/xerrors v0.0.0-20220907171357-04be3eba64a2 // indirect
+	golang.org/x/xerrors v0.0.0-20231012003039-104605ab7028 // indirect
 	google.golang.org/protobuf v1.33.0 // indirect
 )
 

@@ -725,7 +725,7 @@ func TestRemapWithMultipleSetAttributes(t *testing.T) {
 	sp.SetAttributes(attribute.String("service.name", "new.service.name"))
 	sp.SetAttributes(attribute.String("span.type", "new.span.type"))
 	sp.SetAttributes(attribute.String("analytics.event", "true"))
-	sp.SetAttributes(attribute.String("http.response.status_code", "200"))
+	sp.SetAttributes(attribute.Int("http.response.status_code", 200))
 	sp.End()
 
 	tracer.Flush()

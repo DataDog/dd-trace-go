@@ -19,7 +19,7 @@ import (
 // RegisterRoundTripperListener registers a listener on outgoing HTTP client requests to run the WAF.
 func RegisterRoundTripperListener(op dyngo.Operation, events *trace.SecurityEventsHolder, wafCtx *waf.Context, limiter limiter.Limiter) {
 	dyngo.On(op, func(op *types.RoundTripOperation, args types.RoundTripOperationArgs) {
-		wafResult := sharedsec.RunWAF(wafCtx, waf.RunAddressData{Persistent: map[string]any{ServerIoNetURLAddr: args.URL}})
+		wafResult := sharedsec.RunWAF(wafCtx, waf.RunAddressData{Ephemeral: map[string]any{ServerIoNetURLAddr: args.URL}})
 		if !wafResult.HasEvents() {
 			return
 		}

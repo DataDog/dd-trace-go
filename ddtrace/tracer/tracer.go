@@ -235,7 +235,9 @@ func newUnstartedTracer(opts ...StartOption) *tracer {
 		log.Warn("Runtime and health metrics disabled: %v", err)
 	}
 	var writer traceWriter
-	if c.logToStdout {
+	if c.ciVisibilityEnabled {
+		writer = newCiVisibilityTraceWriter(c)
+	} else if c.logToStdout {
 		writer = newLogTraceWriter(c, statsd)
 	} else {
 		writer = newAgentTraceWriter(c, sampler, statsd)
@@ -263,10 +265,7 @@ func newUnstartedTracer(opts ...StartOption) *tracer {
 		rulesSampler.traces.setTraceSampleRules, EqualsFalseNegative)
 	var dataStreamsProcessor *datastreams.Processor
 	if c.dataStreamsMonitoringEnabled {
-		dataStreamsProcessor = datastreams.NewProcessor(statsd, c.env, c.serviceName, c.version, c.agentURL, c.httpClient, func() bool {
-			f := loadAgentFeatures(c.logToStdout, c.agentURL, c.httpClient)
-			return f.DataStreams
-		})
+		dataStreamsProcessor = datastreams.NewProcessor(statsd, c.env, c.serviceName, c.version, c.agentURL, c.httpClient)
 	}
 	t := &tracer{
 		config:           c,

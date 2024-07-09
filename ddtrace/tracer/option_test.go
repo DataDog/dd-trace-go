@@ -136,6 +136,8 @@ func TestAutoDetectStatsd(t *testing.T) {
 		require.NoError(t, err)
 		defer statsd.Close()
 		require.Equal(t, cfg.dogstatsdAddr, "unix://"+addr)
+		// Ensure globalconfig also gets the auto-detected UDS address
+		require.Equal(t, "unix://"+addr, globalconfig.DogstatsdAddr())
 		statsd.Count("name", 1, []string{"tag"}, 1)
 
 		buf := make([]byte, 17)
@@ -255,7 +257,7 @@ func TestAgentIntegration(t *testing.T) {
 		defer clearIntegrationsForTests()
 
 		cfg.loadContribIntegrations(nil)
-		assert.Equal(t, len(cfg.integrations), 55)
+		assert.Equal(t, 56, len(cfg.integrations))
 		for integrationName, v := range cfg.integrations {
 			assert.False(t, v.Instrumented, "integrationName=%s", integrationName)
 		}
@@ -534,6 +536,20 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			c := tracer.config
 			assert.Equal(t, c.dogstatsdAddr, "10.1.0.12:4002")
 			assert.Equal(t, globalconfig.DogstatsdAddr(), "10.1.0.12:4002")
+		})
+		t.Run("uds", func(t *testing.T) {
+			assert := assert.New(t)
+			dir, err := os.MkdirTemp("", "socket")
+			if err != nil {
+				t.Fatal("Failed to create socket")
+			}
+			addr := filepath.Join(dir, "dsd.socket")
+			defer os.RemoveAll(addr)
+			tracer := newTracer(WithDogstatsdAddress("unix://" + addr))
+			defer tracer.Stop()
+			c := tracer.config
+			assert.Equal("unix://"+addr, c.dogstatsdAddr)
+			assert.Equal("unix://"+addr, globalconfig.DogstatsdAddr())
 		})
 	})
 
