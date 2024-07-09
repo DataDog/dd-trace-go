@@ -391,7 +391,7 @@ func TestSpanAddEvent(t *testing.T) {
 
 	t.Run("event with attributes", func(t *testing.T) {
 		_, sp := tr.Start(context.Background(), "span_event")
-		// When no timestamp option is provided, otel will provide a timestamp on the event
+		// When no timestamp option is provided, otel will generate a timestamp for the event
 		// We can't know the exact time that the event is added, but we can create start and end "bounds" and assert
 		// that the event's eventual timestamp is between those bounds
 		timeStartBound := time.Now()
