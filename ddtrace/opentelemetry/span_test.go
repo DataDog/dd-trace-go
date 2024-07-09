@@ -191,6 +191,7 @@ func TestMarshalSpanEvent(t *testing.T) {
 	now := time.Now()
 	nowUnix := now.Unix()
 	t.Run("attributes", func(t *testing.T) {
+		want := fmt.Sprintf("{\"name\":\"evt\",\"time_unix_nano\":%v,\"attributes\":{\"attribute1\":\"value1\",\"attribute2\":123,\"attribute3\":[1,2,3],\"attribute4\":false}}", nowUnix)
 		s := marshalSpanEvent(otelsdk.Event{
 			Name: "evt",
 			Time: now,
@@ -218,7 +219,7 @@ func TestMarshalSpanEvent(t *testing.T) {
 				},
 			},
 		})
-		assert.Equal(fmt.Sprintf("{\"name\":\"evt\",\"time_unix_nano\":%v,\"attributes\":{\"attribute1\":\"value1\",\"attribute2\":123,\"attribute3\":[1,2,3],\"attribute4\":false}}", nowUnix), s)
+		assert.Equal(want, s)
 	})
 	t.Run("unexpected field", func(t *testing.T) {
 		// otelsdk.Event type has field `DroppedAttributeCount`, but we don't use this field
@@ -231,6 +232,7 @@ func TestMarshalSpanEvent(t *testing.T) {
 		assert.Equal(fmt.Sprintf("{\"name\":\"evt\",\"time_unix_nano\":%v}", nowUnix), s)
 	})
 	t.Run("missing fields", func(t *testing.T) {
+		// ensure the `name` field is still included in the json result with value of empty string, even if not set in the struct object
 		s := marshalSpanEvent(otelsdk.Event{
 			Time: now,
 		})
@@ -240,17 +242,23 @@ func TestMarshalSpanEvent(t *testing.T) {
 
 func TestStringifySpanEvent(t *testing.T) {
 	assert := assert.New(t)
-	evt1 := otelsdk.Event{
-		Name: "abc",
-	}
-	evt2 := otelsdk.Event{
-		Name: "def",
-	}
-	evts := []otelsdk.Event{evt1, evt2}
-	want := marshalSpanEvent(evt1) + "," + marshalSpanEvent(evt2)
+	t.Run("multiple events", func(t *testing.T) {
+		evt1 := otelsdk.Event{
+			Name: "abc",
+		}
+		evt2 := otelsdk.Event{
+			Name: "def",
+		}
+		evts := []otelsdk.Event{evt1, evt2}
+		want := marshalSpanEvent(evt1) + "," + marshalSpanEvent(evt2)
 
-	s := stringifySpanEvents(evts)
-	assert.Equal(want, s)
+		s := stringifySpanEvents(evts)
+		assert.Equal(want, s)
+	})
+	t.Run("no events", func(t *testing.T) {
+		s := stringifySpanEvents(nil)
+		assert.Equal("", s)
+	})
 }
 
 func TestSpanEnd(t *testing.T) {
@@ -381,32 +389,46 @@ func TestSpanAddEvent(t *testing.T) {
 	tr := otel.Tracer("")
 	defer cleanup()
 
-	_, sp := tr.Start(context.Background(), "span_with_events")
-	// We can't capture the exact time that the event is added, but we can create start and end "bounds" and assert
-	// that the event's eventual timestamp is between those bounds
-	timeStartBound := time.Now()
-	sp.AddEvent("My event!", oteltrace.WithAttributes(attribute.Int("pid", 4328), attribute.String("signal", "SIGHUP")))
-	timeEndBound := time.Now()
-	sp.End()
-	dd := sp.(*span)
+	t.Run("event with attributes", func(t *testing.T) {
+		_, sp := tr.Start(context.Background(), "span_event")
+		// When no timestamp option is provided, otel will provide a timestamp on the event
+		// We can't know the exact time that the event is added, but we can create start and end "bounds" and assert
+		// that the event's eventual timestamp is between those bounds
+		timeStartBound := time.Now()
+		sp.AddEvent("My event!", oteltrace.WithAttributes(attribute.Int("pid", 4328), attribute.String("signal", "SIGHUP")))
+		timeEndBound := time.Now()
+		sp.End()
+		dd := sp.(*span)
 
-	// Assert event exists under span events
-	assert.Len(dd.events, 1)
-	e := dd.events[0]
-	assert.Equal(e.Name, "My event!")
-	// assert event timestamp is [around] the expected time
-	assert.True((e.Time).After(timeStartBound) && (e.Time).Before(timeEndBound))
-	// Assert both attributes exist on the event
-	assert.Len(e.Attributes, 2)
-	// Assert attribute key-value fields
-	wantAttrs := map[string]interface{}{
-		"pid":    4328,
-		"signal": "SIGHUP",
-	}
-	for k, v := range wantAttrs {
-		err := attributesContains(e.Attributes, k, v)
-		assert.NoError(err, err)
-	}
+		// Assert event exists under span events
+		assert.Len(dd.events, 1)
+		e := dd.events[0]
+		assert.Equal(e.Name, "My event!")
+		// assert event timestamp is [around] the expected time
+		assert.True((e.Time).After(timeStartBound) && (e.Time).Before(timeEndBound))
+		// Assert both attributes exist on the event
+		assert.Len(e.Attributes, 2)
+		// Assert attribute key-value fields
+		wantAttrs := map[string]interface{}{
+			"pid":    4328,
+			"signal": "SIGHUP",
+		}
+		for k, v := range wantAttrs {
+			err := attributesContains(e.Attributes, k, v)
+			assert.NoError(err, err)
+		}
+	})
+	t.Run("event with timestamp", func(t *testing.T) {
+		_, sp := tr.Start(context.Background(), "span_event")
+		now := time.Now()
+		sp.AddEvent("My event!", oteltrace.WithTimestamp(now))
+		sp.End()
+		dd := sp.(*span)
+		// Assert event exists under span events
+		assert.Len(dd.events, 1)
+		e := dd.events[0]
+		assert.Equal(e.Time, now)
+	})
 }
 
 // attributesContains returns true if attrs contains an attribute.KeyValue with the provided key and val
@@ -423,7 +445,8 @@ func attributesContains(attrs []attribute.KeyValue, key string, val interface{})
 	return fmt.Errorf("Expected key %v not available in attributes", key)
 }
 
-// attributeVal returns whether the "actual" attribute Value is equal to "expected"
+// attributeVal returns whether the underlying value of `actual` is equal to `expected`
+// see: https://pkg.go.dev/go.opentelemetry.io/otel/attribute#Value
 func attributeValEqual(expected interface{}, actual attribute.Value) (interface{}, bool) {
 	switch expected.(type) {
 	case string:

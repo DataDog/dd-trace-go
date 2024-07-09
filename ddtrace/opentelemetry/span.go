@@ -49,6 +49,7 @@ func (s *span) SetName(name string) {
 	s.attributes[ext.SpanName] = strings.ToLower(name)
 }
 
+// stringifySpanEvents transforms a slice of otelsdk.Events into a comma separated string
 func stringifySpanEvents(evts []otelsdk.Event) (s string) {
 	for i, e := range evts {
 		if i == 0 {
@@ -60,12 +61,16 @@ func stringifySpanEvents(evts []otelsdk.Event) (s string) {
 	return s
 }
 
+// ddSpanEvent holds information about otelsdk.Event types, with some fields altered and renamed to fit Datadog needs
+// along with json tags for easy marshaling
+type ddSpanEvent struct {
+	Name           string                 `json:"name"`
+	Time_unix_nano int64                  `json:"time_unix_nano"`
+	Attributes     map[string]interface{} `json:"attributes,omitempty"`
+}
+
+// marshalSpanEvent transforms an otelsdk.Event into a JSON-encoded object with "name" and "time_unix_nano" fields, and an optional "attributes" field
 func marshalSpanEvent(evt otelsdk.Event) string {
-	type ddSpanEvent struct {
-		Name           string                 `json:"name"`
-		Time_unix_nano int64                  `json:"time_unix_nano"`
-		Attributes     map[string]interface{} `json:"attributes,omitempty"`
-	}
 	spEvt := ddSpanEvent{
 		Time_unix_nano: evt.Time.Unix(),
 		Name:           evt.Name,
@@ -211,6 +216,7 @@ func (s *span) SetStatus(code otelcodes.Code, description string) {
 	}
 }
 
+// AddEvent adds a span event onto the span with the provided name and EventOptions
 func (s *span) AddEvent(name string, opts ...oteltrace.EventOption) {
 	if !s.IsRecording() {
 		return
