@@ -199,7 +199,8 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 				Name:   "trace_sample_rules",
 				Value:  `[{"service":"my-service","name":"web.request","resource":"abc","sample_rate":1,"provenance":"customer"}]`,
 				Origin: telemetry.OriginRemoteConfig,
-			}})
+			},
+		})
 	})
 
 	t.Run("DD_TRACE_SAMPLING_RULES=0.1 and RC rule rate=1.0 and revert", func(t *testing.T) {
@@ -279,7 +280,7 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 			{Name: "trace_sample_rate", Value: nil, Origin: telemetry.OriginDefault},
 			{
 				Name:   "trace_sample_rules",
-				Value:  `[{"service":"my-service","name":"web.request","resource":"*","sample_rate":0.1,"type":"1"}]`,
+				Value:  `[{"service":"my-service","name":"web.request","resource":"*","sample_rate":0.1}]`,
 				Origin: telemetry.OriginDefault,
 			},
 		})

@@ -205,6 +205,14 @@ func (tq *Query) MapScan(m map[string]interface{}) error {
 	return err
 }
 
+// MapScanCAS wraps in a span query.MapScanCAS call.
+func (tq *Query) MapScanCAS(m map[string]interface{}) (applied bool, err error) {
+	span := tq.newChildSpan(tq.ctx)
+	applied, err = tq.Query.MapScanCAS(m)
+	tq.finishSpan(span, err)
+	return applied, err
+}
+
 // Scan wraps in a span query.Scan call.
 func (tq *Query) Scan(dest ...interface{}) error {
 	span := tq.newChildSpan(tq.ctx)
@@ -242,7 +250,15 @@ func (tq *Query) Iter() *Iter {
 	if tIter.Host() != nil {
 		tIter.span.SetTag(ext.TargetHost, tIter.Iter.Host().HostID())
 		tIter.span.SetTag(ext.TargetPort, strconv.Itoa(tIter.Iter.Host().Port()))
-		tIter.span.SetTag(ext.CassandraCluster, tIter.Iter.Host().DataCenter())
+
+		cluster := tIter.Iter.Host().ClusterName()
+		dc := tIter.Iter.Host().DataCenter()
+		if tq.config.clusterTagLegacyMode {
+			tIter.span.SetTag(ext.CassandraCluster, dc)
+		} else {
+			tIter.span.SetTag(ext.CassandraCluster, cluster)
+		}
+		tIter.span.SetTag(ext.CassandraDatacenter, dc)
 	}
 	return tIter
 }

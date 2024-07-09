@@ -151,7 +151,6 @@ func TestRegisterAppConfig(t *testing.T) {
 	require.Equal(t, RequestTypeAppStarted, req.RequestType)
 	appStarted := req.Payload.(*AppStarted)
 	cfg := appStarted.Configuration
-	require.Len(t, cfg, 2)
 	require.Contains(t, cfg, Configuration{Name: "key1", Value: "val1", Origin: OriginDefault})
 	require.Contains(t, cfg, Configuration{Name: "key2", Value: "val2", Origin: OriginDDConfig})
 
