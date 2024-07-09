@@ -24,8 +24,6 @@ const (
 	tagBatchNumQueries = "db.batch.num_queries"
 	tagCopyFromTables  = "db.copy_from.tables"
 	tagCopyFromColumns = "db.copy_from.columns"
-
-	customDataContextKey = "db.pool.acquire.context"
 )
 
 const (
@@ -35,7 +33,6 @@ const (
 	operationTypeBatch                  = "Batch"
 	operationTypeCopyFrom               = "Copy From"
 	operationTypeAcquire                = "Acquire"
-	operationTypeHold                   = "Hold"
 )
 
 type tracedBatchQuery struct {
@@ -59,7 +56,6 @@ var (
 	_ pgx.PrepareTracer     = (*pgxTracer)(nil)
 	_ pgx.CopyFromTracer    = (*pgxTracer)(nil)
 	_ pgxpool.AcquireTracer = (*pgxTracer)(nil)
-	_ pgxpool.ReleaseTracer = (*pgxTracer)(nil)
 )
 
 func newPgxTracer(opts ...Option) *pgxTracer {
@@ -193,29 +189,11 @@ func (t *pgxTracer) TraceAcquireStart(ctx context.Context, pool *pgxpool.Pool, _
 }
 
 func (t *pgxTracer) TraceAcquireEnd(ctx context.Context, pool *pgxpool.Pool, data pgxpool.TraceAcquireEndData) {
-	if t.cfg.traceAcquire {
-		finishSpan(ctx, data.Err)
-	}
-
-	if t.cfg.traceHold {
-		opts := t.spanOptions(pool.Config().ConnConfig, operationTypeHold, "")
-		_, holdCtx := tracer.StartSpanFromContext(ctx, "pgx.pool.hold", opts...)
-		data.Conn.PgConn().CustomData()[customDataContextKey] = holdCtx
-	}
-}
-
-func (t *pgxTracer) TraceRelease(_ *pgxpool.Pool, data pgxpool.TraceReleaseData) {
-	if !t.cfg.traceHold {
+	if !t.cfg.traceAcquire {
 		return
 	}
 
-	holdCtx, ok := data.Conn.PgConn().CustomData()[customDataContextKey].(context.Context)
-	if !ok {
-		return
-	}
-
-	finishSpan(holdCtx, nil)
-	delete(data.Conn.PgConn().CustomData(), customDataContextKey)
+	finishSpan(ctx, data.Err)
 }
 
 func (t *pgxTracer) spanOptions(connConfig *pgx.ConnConfig, op operationType, sqlStatement string, extraOpts ...ddtrace.StartSpanOption) []ddtrace.StartSpanOption {
