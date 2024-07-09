@@ -250,7 +250,15 @@ func (tq *Query) Iter() *Iter {
 	if tIter.Host() != nil {
 		tIter.span.SetTag(ext.TargetHost, tIter.Iter.Host().HostID())
 		tIter.span.SetTag(ext.TargetPort, strconv.Itoa(tIter.Iter.Host().Port()))
-		tIter.span.SetTag(ext.CassandraCluster, tIter.Iter.Host().DataCenter())
+
+		cluster := tIter.Iter.Host().ClusterName()
+		dc := tIter.Iter.Host().DataCenter()
+		if tq.config.clusterTagLegacyMode {
+			tIter.span.SetTag(ext.CassandraCluster, dc)
+		} else {
+			tIter.span.SetTag(ext.CassandraCluster, cluster)
+		}
+		tIter.span.SetTag(ext.CassandraDatacenter, dc)
 	}
 	return tIter
 }
