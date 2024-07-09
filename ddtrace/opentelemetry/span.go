@@ -49,13 +49,6 @@ func (s *span) SetName(name string) {
 	s.attributes[ext.SpanName] = strings.ToLower(name)
 }
 
-type spanEvent struct {
-	Name           string `json:"name"`
-	Time_unix_nano int64  `json:"time_unix_nano"`
-	// TODO: Ensure values can only be string, int or bool
-	Attributes map[string]interface{} `json:"attributes,omitempty"`
-}
-
 func stringifySpanEvents(evts []otelsdk.Event) (s string) {
 	for i, e := range evts {
 		if i == 0 {
@@ -68,7 +61,12 @@ func stringifySpanEvents(evts []otelsdk.Event) (s string) {
 }
 
 func marshalSpanEvent(evt otelsdk.Event) string {
-	spEvt := spanEvent{
+	type ddSpanEvent struct {
+		Name           string                 `json:"name"`
+		Time_unix_nano int64                  `json:"time_unix_nano"`
+		Attributes     map[string]interface{} `json:"attributes,omitempty"`
+	}
+	spEvt := ddSpanEvent{
 		Time_unix_nano: evt.Time.Unix(),
 		Name:           evt.Name,
 	}
