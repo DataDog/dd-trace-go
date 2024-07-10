@@ -21,11 +21,12 @@
 package dyngo
 
 import (
+	"context"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/orchestrion"
 	"sync"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-
 	"go.uber.org/atomic"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
 // Operation interface type allowing to register event listeners to the
@@ -61,6 +62,9 @@ type ResultOf[O Operation] interface {
 // dispatch calls to the underlying event listener function.
 type EventListener[O Operation, T any] func(O, T)
 
+// contextKey is used to store in a context.Context the ongoing Operation
+type contextKey struct{}
+
 // Atomic *Operation so we can atomically read or swap it.
 var rootOperation atomic.Pointer[Operation]
 
@@ -86,6 +90,10 @@ type operation struct {
 
 	disabled bool
 	mu       sync.RWMutex
+
+	// inContext is used to determine if RegisterOperation was called to put the Operation in the context tree.
+	// If so we need to remove it from the context tree when the Operation is finished.
+	inContext bool
 }
 
 func (o *operation) Parent() Operation {
@@ -140,6 +148,17 @@ func NewOperation(parent Operation) Operation {
 	return &operation{parent: parentOp}
 }
 
+// FromContext looks into the given context (or the GLS if orchestrion is enabled) for a parent Operation and returns it.
+func FromContext(ctx context.Context) (Operation, bool) {
+	ctx = orchestrion.WrapContext(ctx)
+	if ctx == nil {
+		return nil, false
+	}
+
+	op, ok := ctx.Value(contextKey{}).(Operation)
+	return op, ok
+}
+
 // StartOperation starts a new operation along with its arguments and emits a
 // start event with the operation arguments.
 func StartOperation[O Operation, E ArgOf[O]](op O, args E) {
@@ -148,6 +167,19 @@ func StartOperation[O Operation, E ArgOf[O]](op O, args E) {
 	for current := op.unwrap().parent; current != nil; current = current.parent {
 		emitEvent(&current.eventRegister, op, args)
 	}
+}
+
+// StartAndRegisterOperation calls StartOperation and returns RegisterOperation result
+func StartAndRegisterOperation[O Operation, E ArgOf[O]](ctx context.Context, op O, args E) context.Context {
+	StartOperation(op, args)
+	return RegisterOperation(ctx, op)
+}
+
+// RegisterOperation registers the operation in the context tree. All operations that plan to have children operations
+// should call this function to ensure the operation is properly linked in the context tree.
+func RegisterOperation(ctx context.Context, op Operation) context.Context {
+	op.unwrap().inContext = true
+	return context.WithValue(ctx, contextKey{}, op)
 }
 
 // FinishOperation finishes the operation along with its results and emits a
@@ -159,6 +191,10 @@ func FinishOperation[O Operation, E ResultOf[O]](op O, results E) {
 
 	o.mu.RLock()
 	defer o.mu.RUnlock() // Deferred and stacked on top of the previously deferred call to o.disable()
+
+	if o.inContext {
+		orchestrion.GLSPopValue(contextKey{})
+	}
 
 	if o.disabled {
 		return

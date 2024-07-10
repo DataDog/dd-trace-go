@@ -25,6 +25,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/constants"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
@@ -95,6 +96,7 @@ var contribIntegrations = map[string]struct {
 	"github.com/urfave/negroni":                     {"Negroni", false},
 	"github.com/valyala/fasthttp":                   {"FastHTTP", false},
 	"github.com/zenazn/goji":                        {"Goji", false},
+	"log/slog":                                      {"log/slog", false},
 }
 
 var (
@@ -274,6 +276,9 @@ type config struct {
 
 	// globalSampleRate holds sample rate read from environment variables.
 	globalSampleRate float64
+
+	// ciVisibilityEnabled controls if the tracer is loaded with CI Visibility mode. default false
+	ciVisibilityEnabled bool
 }
 
 // orchestrionConfig contains Orchestrion configuration.
@@ -305,15 +310,19 @@ const partialFlushMinSpansDefault = 1000
 func newConfig(opts ...StartOption) *config {
 	c := new(config)
 	c.sampler = NewAllSampler()
-	defaultRate, err := strconv.ParseFloat(getDDorOtelConfig("sampleRate"), 64)
-	if err != nil {
-		log.Warn("ignoring DD_TRACE_SAMPLE_RATE, error: %v", err)
-		defaultRate = math.NaN()
-	} else if defaultRate < 0.0 || defaultRate > 1.0 {
-		log.Warn("ignoring DD_TRACE_SAMPLE_RATE: out of range %f", defaultRate)
-		defaultRate = math.NaN()
+	sampleRate := math.NaN()
+	if r := getDDorOtelConfig("sampleRate"); r != "" {
+		var err error
+		sampleRate, err = strconv.ParseFloat(r, 64)
+		if err != nil {
+			log.Warn("ignoring DD_TRACE_SAMPLE_RATE, error: %v", err)
+			sampleRate = math.NaN()
+		} else if sampleRate < 0.0 || sampleRate > 1.0 {
+			log.Warn("ignoring DD_TRACE_SAMPLE_RATE: out of range %f", sampleRate)
+			sampleRate = math.NaN()
+		}
 	}
-	c.globalSampleRate = defaultRate
+	c.globalSampleRate = sampleRate
 	c.httpClientTimeout = time.Second * 10 // 10 seconds
 
 	if v := os.Getenv("OTEL_LOGS_EXPORTER"); v != "" {
@@ -535,6 +544,14 @@ func newConfig(opts ...StartOption) *config {
 	globalTagsOrigin := c.globalTags.cfgOrigin
 	c.initGlobalTags(c.globalTags.get(), globalTagsOrigin)
 
+	// Check if CI Visibility mode is enabled
+	if internal.BoolEnv(constants.CIVisibilityEnabledEnvironmentVariable, false) {
+		c.ciVisibilityEnabled = true              // Enable CI Visibility mode
+		c.httpClientTimeout = time.Second * 45    // Increase timeout up to 45 seconds (same as other tracers in CIVis mode)
+		c.logStartup = false                      // If we are in CI Visibility mode we don't want to log the startup to stdout to avoid polluting the output
+		c.transport = newCiVisibilityTransport(c) // Replace the default transport with the CI Visibility transport
+	}
+
 	return c
 }
 
@@ -603,10 +620,6 @@ type agentFeatures struct {
 	// the /v0.6/stats endpoint.
 	Stats bool
 
-	// DataStreams reports whether the agent can receive data streams stats on
-	// the /v0.1/pipeline_stats endpoint.
-	DataStreams bool
-
 	// StatsdPort specifies the Dogstatsd port as provided by the agent.
 	// If it's the default, it will be 0, which means 8125.
 	StatsdPort int
@@ -655,8 +668,6 @@ func loadAgentFeatures(agentDisabled bool, agentURL *url.URL, httpClient *http.C
 		switch endpoint {
 		case "/v0.6/stats":
 			features.Stats = true
-		case "/v0.1/pipeline_stats":
-			features.DataStreams = true
 		}
 	}
 	features.featureFlags = make(map[string]struct{}, len(info.FeatureFlags))

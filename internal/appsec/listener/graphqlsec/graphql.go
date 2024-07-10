@@ -45,7 +45,7 @@ func Install(wafHandle *waf.Handle, cfg *config.Config, lim limiter.Limiter, roo
 type wafEventListener struct {
 	wafHandle *waf.Handle
 	config    *config.Config
-	addresses map[string]struct{}
+	addresses listener.AddressSet
 	limiter   limiter.Limiter
 	wafDiags  waf.Diagnostics
 	once      sync.Once
