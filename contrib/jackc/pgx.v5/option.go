@@ -14,6 +14,7 @@ type config struct {
 	traceCopyFrom bool
 	tracePrepare  bool
 	traceConnect  bool
+	traceAcquire  bool
 }
 
 func defaultConfig() *config {
@@ -24,6 +25,7 @@ func defaultConfig() *config {
 		traceCopyFrom: true,
 		tracePrepare:  true,
 		traceConnect:  true,
+		traceAcquire:  true,
 	}
 }
 
@@ -54,6 +56,13 @@ func WithTraceBatch(enabled bool) Option {
 func WithTraceCopyFrom(enabled bool) Option {
 	return func(c *config) {
 		c.traceCopyFrom = enabled
+	}
+}
+
+// WithTraceAcquire enables tracing pgxpool connection acquire calls.
+func WithTraceAcquire(enabled bool) Option {
+	return func(c *config) {
+		c.traceAcquire = enabled
 	}
 }
 

@@ -7,11 +7,13 @@ package pgx
 
 import (
 	"context"
+
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type operationType string
@@ -30,6 +32,7 @@ const (
 	operationTypePrepare                = "Prepare"
 	operationTypeBatch                  = "Batch"
 	operationTypeCopyFrom               = "Copy From"
+	operationTypeAcquire                = "Acquire"
 )
 
 type tracedBatchQuery struct {
@@ -47,11 +50,12 @@ type pgxTracer struct {
 }
 
 var (
-	_ pgx.QueryTracer    = (*pgxTracer)(nil)
-	_ pgx.BatchTracer    = (*pgxTracer)(nil)
-	_ pgx.ConnectTracer  = (*pgxTracer)(nil)
-	_ pgx.PrepareTracer  = (*pgxTracer)(nil)
-	_ pgx.CopyFromTracer = (*pgxTracer)(nil)
+	_ pgx.QueryTracer       = (*pgxTracer)(nil)
+	_ pgx.BatchTracer       = (*pgxTracer)(nil)
+	_ pgx.ConnectTracer     = (*pgxTracer)(nil)
+	_ pgx.PrepareTracer     = (*pgxTracer)(nil)
+	_ pgx.CopyFromTracer    = (*pgxTracer)(nil)
+	_ pgxpool.AcquireTracer = (*pgxTracer)(nil)
 )
 
 func newPgxTracer(opts ...Option) *pgxTracer {
@@ -172,6 +176,23 @@ func (t *pgxTracer) TraceConnectEnd(ctx context.Context, data pgx.TraceConnectEn
 	if !t.cfg.traceConnect {
 		return
 	}
+	finishSpan(ctx, data.Err)
+}
+
+func (t *pgxTracer) TraceAcquireStart(ctx context.Context, pool *pgxpool.Pool, _ pgxpool.TraceAcquireStartData) context.Context {
+	if !t.cfg.traceAcquire {
+		return ctx
+	}
+	opts := t.spanOptions(pool.Config().ConnConfig, operationTypeAcquire, "")
+	_, ctx = tracer.StartSpanFromContext(ctx, "pgx.pool.acquire", opts...)
+	return ctx
+}
+
+func (t *pgxTracer) TraceAcquireEnd(ctx context.Context, _ *pgxpool.Pool, data pgxpool.TraceAcquireEndData) {
+	if !t.cfg.traceAcquire {
+		return
+	}
+
 	finishSpan(ctx, data.Err)
 }
 
