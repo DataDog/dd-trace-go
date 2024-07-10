@@ -329,12 +329,15 @@ func assertCommon(assert *assert.Assertions, span mocktracer.Span) {
 	assert.Contains(spanTags, constants.RuntimeName)
 	assert.Contains(spanTags, constants.GitRepositoryURL)
 	assert.Contains(spanTags, constants.GitCommitSHA)
-	assert.Contains(spanTags, constants.GitCommitMessage)
-	assert.Contains(spanTags, constants.GitCommitAuthorEmail)
-	assert.Contains(spanTags, constants.GitCommitAuthorDate)
-	assert.Contains(spanTags, constants.GitCommitCommitterEmail)
-	assert.Contains(spanTags, constants.GitCommitCommitterDate)
-	assert.Contains(spanTags, constants.GitCommitCommitterName)
+	// GitHub CI does not provide commit details
+	if spanTags[constants.CIProviderName] != "github" {
+		assert.Contains(spanTags, constants.GitCommitMessage)
+		assert.Contains(spanTags, constants.GitCommitAuthorEmail)
+		assert.Contains(spanTags, constants.GitCommitAuthorDate)
+		assert.Contains(spanTags, constants.GitCommitCommitterEmail)
+		assert.Contains(spanTags, constants.GitCommitCommitterDate)
+		assert.Contains(spanTags, constants.GitCommitCommitterName)
+	}
 	assert.Contains(spanTags, constants.CIWorkspacePath)
 }
 

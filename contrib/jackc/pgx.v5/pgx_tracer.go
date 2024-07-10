@@ -63,6 +63,7 @@ func newPgxTracer(opts ...Option) *pgxTracer {
 	for _, opt := range opts {
 		opt(cfg)
 	}
+	cfg.checkStatsdRequired()
 	return &pgxTracer{cfg: cfg}
 }
 
