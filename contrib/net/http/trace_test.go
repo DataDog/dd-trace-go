@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
@@ -18,6 +19,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestTraceAndServe(t *testing.T) {
@@ -357,6 +359,48 @@ func TestTraceAndServeHost(t *testing.T) {
 	})
 }
 
+// TestUnwrap tests the implementation of the rwUnwrapper interface, which is used internally
+// by the standard library: https://github.com/golang/go/blob/6d89b38ed86e0bfa0ddaba08dc4071e6bb300eea/src/net/http/responsecontroller.go#L42-L44
+// See also: https://github.com/DataDog/dd-trace-go/issues/2674
+func TestUnwrap(t *testing.T) {
+	h := WrapHandler(deadlineHandler, "service-name", "resource-name")
+	srv := httptest.NewServer(h)
+	defer srv.Close()
+
+	resp, err := srv.Client().Get(srv.URL + "/")
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	b, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	respText := string(b)
+
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	assert.Equal(t, "OK", respText)
+}
+
+var deadlineHandler = http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	rc := http.NewResponseController(w)
+
+	// Use the SetReadDeadline and SetWriteDeadline methods, which are not explicitly implemented in the trace_gen.go
+	// generated file. Before the Unwrap change, these methods returned a "feature not supported" error.
+
+	err := rc.SetReadDeadline(time.Now().Add(10 * time.Second))
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte(err.Error()))
+		return
+	}
+	err = rc.SetWriteDeadline(time.Now().Add(10 * time.Second))
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte(err.Error()))
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte("OK"))
+})
+
 type noopHandler struct{}
 
 func (noopHandler) ServeHTTP(_ http.ResponseWriter, _ *http.Request) {}
@@ -373,14 +417,15 @@ func BenchmarkTraceAndServe(b *testing.B) {
 	if err != nil {
 		b.Fatal(err)
 	}
+	cfg := ServeConfig{
+		Service:     "service-name",
+		Resource:    "resource-name",
+		FinishOpts:  []ddtrace.FinishOption{},
+		SpanOpts:    []ddtrace.StartSpanOption{},
+		QueryParams: false,
+	}
+	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		cfg := ServeConfig{
-			Service:     "service-name",
-			Resource:    "resource-name",
-			FinishOpts:  []ddtrace.FinishOption{},
-			SpanOpts:    []ddtrace.StartSpanOption{},
-			QueryParams: false,
-		}
 		TraceAndServe(handler, noopWriter{}, req, &cfg)
 	}
 }

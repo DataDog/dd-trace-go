@@ -51,13 +51,15 @@ func startTelemetry(c *config) {
 		{Name: "trace_debug_enabled", Value: !c.noDebugStack},
 		{Name: "profiling_hotspots_enabled", Value: c.profilerHotspots},
 		{Name: "profiling_endpoints_enabled", Value: c.profilerEndpoints},
-		{Name: "trace_enabled", Value: c.enabled},
 		{Name: "trace_span_attribute_schema", Value: c.spanAttributeSchemaVersion},
 		{Name: "trace_peer_service_defaults_enabled", Value: c.peerServiceDefaultsEnabled},
 		{Name: "orchestrion_enabled", Value: c.orchestrionCfg.Enabled},
+		{Name: "trace_enabled", Value: c.enabled.current, Origin: c.enabled.cfgOrigin},
 		c.traceSampleRate.toTelemetry(),
 		c.headerAsTags.toTelemetry(),
 		c.globalTags.toTelemetry(),
+		c.traceSampleRules.toTelemetry(),
+		telemetry.Sanitize(telemetry.Configuration{Name: "span_sample_rules", Value: c.spanRules}),
 	}
 	var peerServiceMapping []string
 	for key, value := range c.peerServiceMappings {
@@ -100,5 +102,5 @@ func startTelemetry(c *config) {
 			telemetryConfigs = append(telemetryConfigs, telemetry.Configuration{Name: "orchestrion_" + k, Value: v})
 		}
 	}
-	telemetry.GlobalClient.ProductStart(telemetry.NamespaceTracers, telemetryConfigs)
+	telemetry.GlobalClient.ProductChange(telemetry.NamespaceTracers, true, telemetryConfigs)
 }

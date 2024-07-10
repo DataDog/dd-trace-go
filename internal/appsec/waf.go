@@ -6,39 +6,15 @@
 package appsec
 
 import (
-	"errors"
-
 	"github.com/DataDog/appsec-internal-go/limiter"
-	waf "github.com/DataDog/go-libddwaf/v2"
+	waf "github.com/DataDog/go-libddwaf/v3"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/config"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/sharedsec"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener/graphqlsec"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener/grpcsec"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener/httpsec"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
-
-const (
-	eventRulesVersionTag = "_dd.appsec.event_rules.version"
-	eventRulesErrorsTag  = "_dd.appsec.event_rules.errors"
-	eventRulesLoadedTag  = "_dd.appsec.event_rules.loaded"
-	eventRulesFailedTag  = "_dd.appsec.event_rules.error_count"
-	wafDurationTag       = "_dd.appsec.waf.duration"
-	wafDurationExtTag    = "_dd.appsec.waf.duration_ext"
-	wafTimeoutTag        = "_dd.appsec.waf.timeouts"
-	wafVersionTag        = "_dd.appsec.waf.version"
-)
-
-type wafHandle struct {
-	*waf.Handle
-	// actions are tightly link to a ruleset, which is linked to a waf handle
-	actions sharedsec.Actions
-}
 
 func (a *appsec) swapWAF(rules config.RulesFragment) (err error) {
 	// Instantiate a new WAF handle and verify its state
-	newHandle, err := newWAFHandle(rules, a.cfg)
+	newHandle, err := waf.NewHandle(rules, a.cfg.Obfuscator.KeyRegex, a.cfg.Obfuscator.ValueRegex)
 	if err != nil {
 		return err
 	}
@@ -50,15 +26,9 @@ func (a *appsec) swapWAF(rules config.RulesFragment) (err error) {
 		}
 	}()
 
-	listeners, err := newWAFEventListeners(newHandle, a.cfg, a.limiter)
-	if err != nil {
-		return err
-	}
-
-	// Register the event listeners now that we know that the new handle is valid
 	newRoot := dyngo.NewRootOperation()
-	for _, l := range listeners {
-		newRoot.On(l)
+	for _, fn := range wafEventListeners {
+		fn(newHandle, a.cfg, a.limiter, newRoot)
 	}
 
 	// Hot-swap dyngo's root operation
@@ -80,91 +50,17 @@ func (a *appsec) swapWAF(rules config.RulesFragment) (err error) {
 	return nil
 }
 
-func actionFromEntry(e *config.ActionEntry) *sharedsec.Action {
-	switch e.Type {
-	case "block_request":
-		grpcCode := 10 // use the grpc.Codes value for "Aborted" by default
-		if e.Parameters.GRPCStatusCode != nil {
-			grpcCode = *e.Parameters.GRPCStatusCode
-		}
-		return sharedsec.NewBlockRequestAction(e.Parameters.StatusCode, grpcCode, e.Parameters.Type)
-	case "redirect_request":
-		return sharedsec.NewRedirectRequestAction(e.Parameters.StatusCode, e.Parameters.Location)
-	default:
-		log.Debug("appsec: unknown action type `%s`", e.Type)
-		return nil
-	}
-}
+type wafEventListener func(*waf.Handle, *config.Config, limiter.Limiter, dyngo.Operation)
 
-func newWAFHandle(rules config.RulesFragment, cfg *config.Config) (*wafHandle, error) {
-	handle, err := waf.NewHandle(rules, cfg.Obfuscator.KeyRegex, cfg.Obfuscator.ValueRegex)
-	actions := sharedsec.Actions{
-		// Default built-in block action
-		"block": sharedsec.NewBlockRequestAction(403, 10, "auto"),
-	}
+// wafEventListeners is the global list of event listeners registered by contribs at init time. This
+// is thread-safe assuming all writes (via AddWAFEventListener) are performed within `init`
+// functions; so this is written to only during initialization, and is read from concurrently only
+// during runtime when no writes are happening anymore.
+var wafEventListeners []wafEventListener
 
-	for _, entry := range rules.Actions {
-		a := actionFromEntry(&entry)
-		if a != nil {
-			actions[entry.ID] = a
-		}
-	}
-	return &wafHandle{
-		Handle:  handle,
-		actions: actions,
-	}, err
-}
-
-func newWAFEventListeners(waf *wafHandle, cfg *config.Config, l limiter.Limiter) (listeners []dyngo.EventListener, err error) {
-	// Check if there are addresses in the rule
-	ruleAddresses := waf.Addresses()
-	if len(ruleAddresses) == 0 {
-		return nil, errors.New("no addresses found in the rule")
-	}
-
-	// Check which addresses are supported by what listener
-	graphQLAddresses := make(map[string]struct{}, graphqlsec.SupportedAddressCount())
-	grpcAddresses := make(map[string]struct{}, grpcsec.SupportedAddressCount())
-	httpAddresses := make(map[string]struct{}, httpsec.SupportedAddressCount())
-	notSupported := make([]string, 0, len(ruleAddresses))
-	for _, address := range ruleAddresses {
-		supported := false
-		if graphqlsec.SupportsAddress(address) {
-			graphQLAddresses[address] = struct{}{}
-			supported = true
-		}
-		if grpcsec.SupportsAddress(address) {
-			grpcAddresses[address] = struct{}{}
-			supported = true
-		}
-		if httpsec.SupportsAddress(address) {
-			httpAddresses[address] = struct{}{}
-			supported = true
-		}
-		if !supported {
-			notSupported = append(notSupported, address)
-		}
-	}
-
-	if len(notSupported) > 0 {
-		log.Debug("appsec: the addresses present in the rules are partially supported: not supported=%v", notSupported)
-	}
-
-	// Register the WAF event listeners
-	if len(graphQLAddresses) > 0 {
-		log.Debug("appsec: creating the GraphQL waf event listener of the rules addresses %v", graphQLAddresses)
-		listeners = append(listeners, graphqlsec.NewWAFEventListener(waf.Handle, waf.actions, graphQLAddresses, cfg.WAFTimeout, l))
-	}
-
-	if len(grpcAddresses) > 0 {
-		log.Debug("appsec: creating the grpc waf event listener of the rules addresses %v", grpcAddresses)
-		listeners = append(listeners, grpcsec.NewWAFEventListener(waf.Handle, waf.actions, grpcAddresses, cfg.WAFTimeout, l))
-	}
-
-	if len(httpAddresses) > 0 {
-		log.Debug("appsec: creating http waf event listener of the rules addresses %v", httpAddresses)
-		listeners = append(listeners, httpsec.NewWAFEventListener(waf.Handle, waf.actions, httpAddresses, cfg.WAFTimeout, &cfg.APISec, l))
-	}
-
-	return listeners, nil
+// AddWAFEventListener adds a new WAF event listener to be registered whenever a new root operation
+// is created. The normal way to use this is to call it from a `func init() {}` so that it is
+// guaranteed to have happened before any listened to event may be emitted.
+func AddWAFEventListener(fn wafEventListener) {
+	wafEventListeners = append(wafEventListeners, fn)
 }

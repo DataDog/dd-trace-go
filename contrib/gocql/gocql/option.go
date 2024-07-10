@@ -7,8 +7,12 @@ package gocql
 
 import (
 	"math"
+	"os"
+
+	"golang.org/x/mod/semver"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
 )
 
@@ -21,6 +25,7 @@ type queryConfig struct {
 	analyticsRate                float64
 	errCheck                     func(err error) bool
 	customTags                   map[string]interface{}
+	clusterTagLegacyMode         bool
 }
 
 // WrapOption represents an option that can be passed to WrapQuery.
@@ -28,19 +33,21 @@ type WrapOption func(*queryConfig)
 
 func defaultConfig() *queryConfig {
 	cfg := &queryConfig{}
-	cfg.serviceName = namingschema.NewDefaultServiceName(
-		defaultServiceName,
-		namingschema.WithOverrideV0(defaultServiceName),
-	).GetName()
-	cfg.querySpanName = namingschema.NewCassandraOutboundOp().GetName()
-	cfg.batchSpanName = namingschema.NewCassandraOutboundOp(
-		namingschema.WithOverrideV0("cassandra.batch"),
-	).GetName()
+	cfg.serviceName = namingschema.ServiceNameOverrideV0(defaultServiceName, defaultServiceName)
+	cfg.querySpanName = namingschema.OpName(namingschema.CassandraOutbound)
+	cfg.batchSpanName = namingschema.OpNameOverrideV0(namingschema.CassandraOutbound, "cassandra.batch")
 	// cfg.analyticsRate = globalconfig.AnalyticsRate()
 	if internal.BoolEnv("DD_TRACE_GOCQL_ANALYTICS_ENABLED", false) {
 		cfg.analyticsRate = 1.0
 	} else {
 		cfg.analyticsRate = math.NaN()
+	}
+	if compatMode := os.Getenv("DD_TRACE_GOCQL_COMPAT"); compatMode != "" {
+		if semver.IsValid(compatMode) {
+			cfg.clusterTagLegacyMode = semver.Compare(semver.MajorMinor(compatMode), "v1.65") <= 0
+		} else {
+			log.Warn("ignoring DD_TRACE_GOCQL_COMPAT: invalid version %q", compatMode)
+		}
 	}
 	cfg.errCheck = func(error) bool { return true }
 	return cfg

@@ -6,20 +6,31 @@
 package appsec_test
 
 import (
+	"database/sql"
+	"encoding/json"
+	"fmt"
 	"io"
+	"log"
+	"math/rand"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"strings"
 	"testing"
 
-	waf "github.com/DataDog/go-libddwaf/v2"
+	internal "github.com/DataDog/appsec-internal-go/appsec"
+	waf "github.com/DataDog/go-libddwaf/v3"
 	pAppsec "gopkg.in/DataDog/dd-trace-go.v1/appsec"
+	"gopkg.in/DataDog/dd-trace-go.v1/appsec/events"
+	sqltrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/database/sql"
 	httptrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/config"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener/httpsec"
 
+	_ "github.com/glebarez/go-sqlite"
 	"github.com/stretchr/testify/require"
 )
 
@@ -448,8 +459,8 @@ func TestAPISecurity(t *testing.T) {
 	require.NoError(t, err)
 
 	t.Run("enabled", func(t *testing.T) {
-		t.Setenv("DD_EXPERIMENTAL_API_SECURITY_ENABLED", "true")
-		t.Setenv("DD_API_SECURITY_REQUEST_SAMPLE_RATE", "1.0")
+		t.Setenv(internal.EnvAPISecEnabled, "true")
+		t.Setenv(internal.EnvAPISecSampleRate, "1.0")
 		appsec.Start()
 		require.True(t, appsec.Enabled())
 		defer appsec.Stop()
@@ -470,7 +481,7 @@ func TestAPISecurity(t *testing.T) {
 	})
 
 	t.Run("disabled", func(t *testing.T) {
-		t.Setenv("DD_EXPERIMENTAL_API_SECURITY_ENABLED", "false")
+		t.Setenv(internal.EnvAPISecEnabled, "false")
 		appsec.Start()
 		require.True(t, appsec.Enabled())
 		defer appsec.Stop()
@@ -489,4 +500,228 @@ func TestAPISecurity(t *testing.T) {
 		require.Nil(t, spans[0].Tag("_dd.appsec.s.req.query"))
 		require.Nil(t, spans[0].Tag("_dd.appsec.s.req.body"))
 	})
+}
+
+func prepareSQLDB(nbEntries int) (*sql.DB, error) {
+	const tables = `
+CREATE TABLE user (
+   id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+   name  text NOT NULL,
+   email text NOT NULL,
+   password text NOT NULL
+);
+CREATE TABLE product (
+   id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+   name  text NOT NULL,
+   category  text NOT NULL,
+   price  int NOT NULL
+);
+`
+	db, err := sqltrace.Open("sqlite", ":memory:", sqltrace.WithErrorCheck(func(err error) bool {
+		return err != nil
+	}))
+	if err != nil {
+		log.Fatalln("unexpected sql.Open error:", err)
+	}
+
+	if _, err := db.Exec(tables); err != nil {
+		return nil, err
+	}
+
+	for i := 0; i < nbEntries; i++ {
+		_, err := db.Exec(
+			"INSERT INTO user (name, email, password) VALUES (?, ?, ?)",
+			fmt.Sprintf("User#%d", i),
+			fmt.Sprintf("user%d@mail.com", i),
+			fmt.Sprintf("secret-password#%d", i))
+		if err != nil {
+			return nil, err
+		}
+
+		_, err = db.Exec(
+			"INSERT INTO product (name, category, price) VALUES (?, ?, ?)",
+			fmt.Sprintf("Product %d", i),
+			"sneaker",
+			rand.Intn(500))
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return db, nil
+}
+
+func TestRASPSQLi(t *testing.T) {
+	t.Setenv("DD_APPSEC_RULES", "testdata/rasp.json")
+	appsec.Start()
+	defer appsec.Stop()
+
+	if !appsec.RASPEnabled() {
+		t.Skip("RASP needs to be enabled for this test")
+	}
+	db, err := prepareSQLDB(10)
+	require.NoError(t, err)
+
+	// Setup the http server
+	mux := httptrace.NewServeMux()
+	mux.HandleFunc("/query", func(w http.ResponseWriter, r *http.Request) {
+		// Subsequent spans inherit their parent from context.
+		q := r.URL.Query().Get("query")
+		rows, err := db.QueryContext(r.Context(), q)
+		if events.IsSecurityError(err) {
+			return
+		}
+		if err == nil {
+			rows.Close()
+		}
+		w.Write([]byte("Hello World!\n"))
+	})
+	mux.HandleFunc("/exec", func(w http.ResponseWriter, r *http.Request) {
+		// Subsequent spans inherit their parent from context.
+		q := r.URL.Query().Get("query")
+		_, err := db.ExecContext(r.Context(), q)
+		if events.IsSecurityError(err) {
+			return
+		}
+		w.Write([]byte("Hello World!\n"))
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	for name, tc := range map[string]struct {
+		query string
+		err   error
+	}{
+		"no-error": {
+			query: url.QueryEscape("SELECT 1"),
+		},
+		"injection/SELECT": {
+			query: url.QueryEscape("SELECT * FROM users WHERE user=\"\" UNION ALL SELECT NULL;version()--"),
+			err:   &events.BlockingSecurityEvent{},
+		},
+		"injection/UPDATE": {
+			query: url.QueryEscape("UPDATE users SET pwd = \"root\" WHERE id = \"\" OR 1 = 1--"),
+			err:   &events.BlockingSecurityEvent{},
+		},
+		"injection/EXEC": {
+			query: url.QueryEscape("EXEC version(); DROP TABLE users--"),
+			err:   &events.BlockingSecurityEvent{},
+		},
+	} {
+		for _, endpoint := range []string{"/query", "/exec"} {
+			t.Run(name+endpoint, func(t *testing.T) {
+				// Start tracer and appsec
+				mt := mocktracer.Start()
+				defer mt.Stop()
+
+				req, err := http.NewRequest("POST", srv.URL+endpoint+"?query="+tc.query, nil)
+				require.NoError(t, err)
+				res, err := srv.Client().Do(req)
+				require.NoError(t, err)
+				defer res.Body.Close()
+
+				spans := mt.FinishedSpans()
+
+				require.Len(t, spans, 2)
+
+				if tc.err != nil {
+					require.Equal(t, 403, res.StatusCode)
+
+					for _, sp := range spans {
+						switch sp.OperationName() {
+						case "http.request":
+							require.Contains(t, sp.Tag("_dd.appsec.json"), "rasp-942-100")
+						case "sqlite.query":
+							require.NotContains(t, sp.Tags(), "error")
+						}
+					}
+				} else {
+					require.Equal(t, 200, res.StatusCode)
+				}
+
+			})
+		}
+	}
+
+}
+
+// BenchmarkSampleWAFContext benchmarks the creation of a WAF context and running the WAF on a request/response pair
+// This is a basic sample of what could happen in a real-world scenario.
+func BenchmarkSampleWAFContext(b *testing.B) {
+	rules, err := internal.DefaultRuleset()
+	if err != nil {
+		b.Fatalf("error loading rules: %v", err)
+	}
+
+	var parsedRuleset map[string]any
+	err = json.Unmarshal(rules, &parsedRuleset)
+	if err != nil {
+		b.Fatalf("error parsing rules: %v", err)
+	}
+
+	handle, err := waf.NewHandle(parsedRuleset, internal.DefaultObfuscatorKeyRegex, internal.DefaultObfuscatorValueRegex)
+	for i := 0; i < b.N; i++ {
+		ctx, err := handle.NewContext()
+		if err != nil || ctx == nil {
+			b.Fatal("nil context")
+		}
+
+		// Request WAF Run
+		_, err = ctx.Run(
+			waf.RunAddressData{
+				Persistent: map[string]any{
+					httpsec.HTTPClientIPAddr:        "1.1.1.1",
+					httpsec.ServerRequestMethodAddr: "GET",
+					httpsec.ServerRequestRawURIAddr: "/",
+					httpsec.ServerRequestHeadersNoCookiesAddr: map[string][]string{
+						"host":            {"example.com"},
+						"content-length":  {"0"},
+						"Accept":          {"application/json"},
+						"User-Agent":      {"curl/7.64.1"},
+						"Accept-Encoding": {"gzip"},
+						"Connection":      {"close"},
+					},
+					httpsec.ServerRequestCookiesAddr: map[string][]string{
+						"cookie": {"session=1234"},
+					},
+					httpsec.ServerRequestQueryAddr: map[string][]string{
+						"query": {"value"},
+					},
+					httpsec.ServerRequestPathParamsAddr: map[string]string{
+						"param": "value",
+					},
+				},
+			})
+
+		if err != nil {
+			b.Fatalf("error running waf: %v", err)
+		}
+
+		// Response WAF Run
+		_, err = ctx.Run(
+			waf.RunAddressData{
+				Persistent: map[string]any{
+					httpsec.ServerResponseHeadersNoCookiesAddr: map[string][]string{
+						"content-type":   {"application/json"},
+						"content-length": {"0"},
+						"Connection":     {"close"},
+					},
+					httpsec.ServerResponseStatusAddr: 200,
+				},
+			})
+
+		if err != nil {
+			b.Fatalf("error running waf: %v", err)
+		}
+
+		ctx.Close()
+	}
+}
+
+func init() {
+	// This permits running the tests locally without defining the env var manually
+	// We do this because the default go-libddwaf timeout value is too small and makes the tests timeout for no reason
+	if _, ok := os.LookupEnv(internal.EnvWAFTimeout); !ok {
+		os.Setenv(internal.EnvWAFTimeout, "1s")
+	}
 }

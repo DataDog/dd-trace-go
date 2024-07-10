@@ -20,6 +20,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	ddtracer "gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/graphqlsec"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/graphqlsec/types"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 
@@ -70,12 +71,12 @@ func (t *Tracer) TraceQuery(ctx context.Context, queryString, operationName stri
 	}
 	span, ctx := ddtracer.StartSpanFromContext(ctx, t.cfg.querySpanName, opts...)
 
-	ctx, request := graphqlsec.StartRequestOperation(ctx, nil, span, graphqlsec.RequestOperationArgs{
+	ctx, request := graphqlsec.StartRequestOperation(ctx, nil, span, types.RequestOperationArgs{
 		RawQuery:      queryString,
 		OperationName: operationName,
 		Variables:     variables,
 	})
-	ctx, query := graphqlsec.StartExecutionOperation(ctx, request, span, graphqlsec.ExecutionOperationArgs{
+	ctx, query := graphqlsec.StartExecutionOperation(ctx, request, span, types.ExecutionOperationArgs{
 		Query:         queryString,
 		OperationName: operationName,
 		Variables:     variables,
@@ -92,8 +93,8 @@ func (t *Tracer) TraceQuery(ctx context.Context, queryString, operationName stri
 			err = fmt.Errorf("%s (and %d more errors)", errs[0], n-1)
 		}
 		defer span.Finish(ddtracer.WithError(err))
-		defer request.Finish(graphqlsec.RequestOperationRes{Error: err})
-		query.Finish(graphqlsec.ExecutionOperationRes{Error: err})
+		defer request.Finish(types.RequestOperationRes{Error: err})
+		query.Finish(types.ExecutionOperationRes{Error: err})
 	}
 }
 
@@ -119,7 +120,7 @@ func (t *Tracer) TraceField(ctx context.Context, _, typeName, fieldName string, 
 	}
 	span, ctx := ddtracer.StartSpanFromContext(ctx, "graphql.field", opts...)
 
-	ctx, field := graphqlsec.StartResolveOperation(ctx, graphqlsec.FromContext[*graphqlsec.ExecutionOperation](ctx), span, graphqlsec.ResolveOperationArgs{
+	ctx, field := graphqlsec.StartResolveOperation(ctx, graphqlsec.FromContext[*types.ExecutionOperation](ctx), span, types.ResolveOperationArgs{
 		TypeName:  typeName,
 		FieldName: fieldName,
 		Arguments: arguments,
@@ -127,7 +128,7 @@ func (t *Tracer) TraceField(ctx context.Context, _, typeName, fieldName string, 
 	})
 
 	return ctx, func(err *errors.QueryError) {
-		field.Finish(graphqlsec.ResolveOperationRes{Error: err})
+		field.Finish(types.ResolveOperationRes{Error: err})
 
 		// must explicitly check for nil, see issue golang/go#22729
 		if err != nil {

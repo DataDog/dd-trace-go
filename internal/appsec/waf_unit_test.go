@@ -7,13 +7,11 @@ package appsec
 
 import (
 	"encoding/json"
-	"testing"
-	"time"
-
 	internal "github.com/DataDog/appsec-internal-go/appsec"
-	waf "github.com/DataDog/go-libddwaf/v2"
+	waf "github.com/DataDog/go-libddwaf/v3"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener/httpsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/trace"
+	"testing"
 
 	"github.com/stretchr/testify/require"
 )
@@ -84,7 +82,8 @@ func TestAPISecuritySchemaCollection(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			wafCtx := waf.NewContext(handle)
+			wafCtx, err := handle.NewContext()
+			require.NoError(t, err)
 			defer wafCtx.Close()
 			runData := waf.RunAddressData{
 				Persistent: map[string]any{
@@ -95,7 +94,7 @@ func TestAPISecuritySchemaCollection(t *testing.T) {
 					},
 				},
 			}
-			res, err := wafCtx.Run(runData, 3*time.Second)
+			res, err := wafCtx.Run(runData)
 			require.NoError(t, err)
 			require.NotNil(t, res)
 			require.True(t, res.HasDerivatives())
@@ -160,7 +159,8 @@ func TestAPISecuritySchemaCollection(t *testing.T) {
 		},
 	} {
 		t.Run("tags/"+tc.name, func(t *testing.T) {
-			wafCtx := waf.NewContext(handle)
+			wafCtx, err := handle.NewContext()
+			require.NoError(t, err)
 			defer wafCtx.Close()
 
 			runData := waf.RunAddressData{
@@ -172,7 +172,7 @@ func TestAPISecuritySchemaCollection(t *testing.T) {
 				runData.Ephemeral[k] = v
 			}
 
-			wafRes, err := wafCtx.Run(runData, 3*time.Second)
+			wafRes, err := wafCtx.Run(runData)
 			require.NoError(t, err)
 			require.True(t, wafRes.HasDerivatives())
 			tagsHolder := trace.NewTagsHolder()

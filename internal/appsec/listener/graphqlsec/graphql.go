@@ -7,17 +7,20 @@ package graphqlsec
 
 import (
 	"sync"
-	"time"
+
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/config"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/graphqlsec/types"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener/httpsec"
+	shared "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener/sharedsec"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/trace"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/samplernames"
 
 	"github.com/DataDog/appsec-internal-go/limiter"
-	waf "github.com/DataDog/go-libddwaf/v2"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/graphqlsec"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/sharedsec"
-	listener "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener/sharedsec"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/trace"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/samplernames"
+	waf "github.com/DataDog/go-libddwaf/v3"
 )
 
 // GraphQL rule addresses currently supported by the WAF
@@ -26,71 +29,102 @@ const (
 )
 
 // List of GraphQL rule addresses currently supported by the WAF
-var supportedAddresses = map[string]struct{}{
-	graphQLServerResolverAddr: {},
+var supportedAddresses = listener.AddressSet{
+	graphQLServerResolverAddr:  {},
+	httpsec.ServerIoNetURLAddr: {},
 }
 
-func SupportedAddressCount() int {
-	return len(supportedAddresses)
+// Install registers the GraphQL WAF Event Listener on the given root operation.
+func Install(wafHandle *waf.Handle, cfg *config.Config, lim limiter.Limiter, root dyngo.Operation) {
+	if listener := newWafEventListener(wafHandle, cfg, lim); listener != nil {
+		log.Debug("appsec: registering the GraphQL WAF Event Listener")
+		dyngo.On(root, listener.onEvent)
+	}
 }
 
-func SupportsAddress(addr string) bool {
-	_, ok := supportedAddresses[addr]
-	return ok
+type wafEventListener struct {
+	wafHandle *waf.Handle
+	config    *config.Config
+	addresses map[string]struct{}
+	limiter   limiter.Limiter
+	wafDiags  waf.Diagnostics
+	once      sync.Once
+}
+
+func newWafEventListener(wafHandle *waf.Handle, cfg *config.Config, limiter limiter.Limiter) *wafEventListener {
+	if wafHandle == nil {
+		log.Debug("appsec: no WAF Handle available, the GraphQL WAF Event Listener will not be registered")
+		return nil
+	}
+
+	addresses := listener.FilterAddressSet(supportedAddresses, wafHandle)
+	if len(addresses) == 0 {
+		log.Debug("appsec: no supported GraphQL address is used by currently loaded WAF rules, the GraphQL WAF Event Listener will not be registered")
+		return nil
+	}
+
+	return &wafEventListener{
+		wafHandle: wafHandle,
+		config:    cfg,
+		addresses: addresses,
+		limiter:   limiter,
+		wafDiags:  wafHandle.Diagnostics(),
+	}
 }
 
 // NewWAFEventListener returns the WAF event listener to register in order
 // to enable it.
-func NewWAFEventListener(handle *waf.Handle, _ sharedsec.Actions, addresses map[string]struct{}, timeout time.Duration, limiter limiter.Limiter) dyngo.EventListener {
-	var rulesMonitoringOnce sync.Once
-	wafDiags := handle.Diagnostics()
+func (l *wafEventListener) onEvent(request *types.RequestOperation, _ types.RequestOperationArgs) {
+	wafCtx, err := l.wafHandle.NewContextWithBudget(l.config.WAFTimeout)
+	if err != nil {
+		log.Debug("appsec: could not create budgeted WAF context: %v", err)
+	}
+	// Early return in the following cases:
+	// - wafCtx is nil, meaning it was concurrently released
+	// - err is not nil, meaning context creation failed
+	if wafCtx == nil || err != nil {
+		return
+	}
 
-	return graphqlsec.OnRequestOperationStart(func(request *graphqlsec.RequestOperation, args graphqlsec.RequestOperationArgs) {
-		wafCtx := waf.NewContext(handle)
-		if wafCtx == nil {
-			return
-		}
+	if _, ok := l.addresses[httpsec.ServerIoNetURLAddr]; ok {
+		httpsec.RegisterRoundTripperListener(request, &request.SecurityEventsHolder, wafCtx, l.limiter)
+	}
 
-		// Add span tags notifying this trace is AppSec-enabled
-		trace.SetAppSecEnabledTags(request)
-		rulesMonitoringOnce.Do(func() {
-			listener.AddRulesMonitoringTags(request, &wafDiags)
-			request.SetTag(ext.ManualKeep, samplernames.AppSec)
+	// Add span tags notifying this trace is AppSec-enabled
+	trace.SetAppSecEnabledTags(request)
+	l.once.Do(func() {
+		shared.AddRulesMonitoringTags(request, &l.wafDiags)
+		request.SetTag(ext.ManualKeep, samplernames.AppSec)
+	})
+
+	dyngo.On(request, func(query *types.ExecutionOperation, args types.ExecutionOperationArgs) {
+		dyngo.On(query, func(field *types.ResolveOperation, args types.ResolveOperationArgs) {
+			if _, found := l.addresses[graphQLServerResolverAddr]; found {
+				wafResult := shared.RunWAF(
+					wafCtx,
+					waf.RunAddressData{
+						Ephemeral: map[string]any{
+							graphQLServerResolverAddr: map[string]any{args.FieldName: args.Arguments},
+						},
+					},
+				)
+				shared.AddSecurityEvents(&field.SecurityEventsHolder, l.limiter, wafResult.Events)
+			}
+
+			dyngo.OnFinish(field, func(field *types.ResolveOperation, res types.ResolveOperationRes) {
+				trace.SetEventSpanTags(field, field.Events())
+			})
 		})
 
-		request.On(graphqlsec.OnExecutionOperationStart(func(query *graphqlsec.ExecutionOperation, args graphqlsec.ExecutionOperationArgs) {
-			query.On(graphqlsec.OnResolveOperationStart(func(field *graphqlsec.ResolveOperation, args graphqlsec.ResolveOperationArgs) {
-				if _, found := addresses[graphQLServerResolverAddr]; found {
-					wafResult := listener.RunWAF(
-						wafCtx,
-						waf.RunAddressData{
-							Ephemeral: map[string]any{
-								graphQLServerResolverAddr: map[string]any{args.FieldName: args.Arguments},
-							},
-						},
-						timeout,
-					)
-					listener.AddSecurityEvents(field, limiter, wafResult.Events)
-				}
+		dyngo.OnFinish(query, func(query *types.ExecutionOperation, res types.ExecutionOperationRes) {
+			trace.SetEventSpanTags(query, query.Events())
+		})
+	})
 
-				field.On(graphqlsec.OnResolveOperationFinish(func(field *graphqlsec.ResolveOperation, res graphqlsec.ResolveOperationRes) {
-					trace.SetEventSpanTags(field, field.Events())
-				}))
-			}))
+	dyngo.OnFinish(request, func(request *types.RequestOperation, res types.RequestOperationRes) {
+		defer wafCtx.Close()
 
-			query.On(graphqlsec.OnExecutionOperationFinish(func(query *graphqlsec.ExecutionOperation, res graphqlsec.ExecutionOperationRes) {
-				trace.SetEventSpanTags(query, query.Events())
-			}))
-		}))
-
-		request.On(graphqlsec.OnRequestOperationFinish(func(request *graphqlsec.RequestOperation, res graphqlsec.RequestOperationRes) {
-			defer wafCtx.Close()
-
-			overall, internal := wafCtx.TotalRuntime()
-			nbTimeouts := wafCtx.TotalTimeouts()
-			listener.AddWAFMonitoringTags(request, wafDiags.Version, overall, internal, nbTimeouts)
-
-			trace.SetEventSpanTags(request, request.Events())
-		}))
+		shared.AddWAFMonitoringTags(request, l.wafDiags.Version, wafCtx.Stats().Metrics())
+		trace.SetEventSpanTags(request, request.Events())
 	})
 }

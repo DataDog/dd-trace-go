@@ -41,8 +41,8 @@ func TestClient(t *testing.T) {
 		URL: server.URL,
 	}
 	client.mu.Lock()
-	client.start(nil, NamespaceTracers)
-	client.start(nil, NamespaceTracers) // test idempotence
+	client.start(nil, NamespaceTracers, true)
+	client.start(nil, NamespaceTracers, true) // test idempotence
 	client.mu.Unlock()
 	defer client.Stop()
 
@@ -106,7 +106,7 @@ func TestMetrics(t *testing.T) {
 		client := &client{
 			URL: server.URL,
 		}
-		client.start(nil, NamespaceTracers)
+		client.start(nil, NamespaceTracers, true)
 
 		// Records should have the most recent value
 		client.Record(NamespaceTracers, MetricKindGauge, "foobar", 1, nil, false)
@@ -182,7 +182,7 @@ func TestDistributionMetrics(t *testing.T) {
 		client := &client{
 			URL: server.URL,
 		}
-		client.start(nil, NamespaceTracers)
+		client.start(nil, NamespaceTracers, true)
 		// Records should have the most recent value
 		client.Record(NamespaceTracers, MetricKindDist, "soobar", 1, nil, false)
 		client.Record(NamespaceTracers, MetricKindDist, "soobar", 3, nil, false)
@@ -214,7 +214,7 @@ func TestDisabledClient(t *testing.T) {
 	client := &client{
 		URL: server.URL,
 	}
-	client.start(nil, NamespaceTracers)
+	client.start(nil, NamespaceTracers, true)
 	client.Record(NamespaceTracers, MetricKindGauge, "foobar", 1, nil, false)
 	client.Count(NamespaceTracers, "bonk", 4, []string{"org:1"}, false)
 	client.Stop()
@@ -280,7 +280,7 @@ func TestConcurrentClient(t *testing.T) {
 		client := &client{
 			URL: server.URL,
 		}
-		client.start(nil, NamespaceTracers)
+		client.start(nil, NamespaceTracers, true)
 		defer client.Stop()
 
 		var wg sync.WaitGroup
@@ -355,7 +355,7 @@ func TestAgentlessRetry(t *testing.T) {
 	client := &client{
 		URL: brokenServer.URL,
 	}
-	client.start(nil, NamespaceTracers)
+	client.start(nil, NamespaceTracers, true)
 	waitAgentlessEndpoint()
 }
 
@@ -382,7 +382,7 @@ func TestCollectDependencies(t *testing.T) {
 	client := &client{
 		URL: server.URL,
 	}
-	client.start(nil, NamespaceTracers)
+	client.start(nil, NamespaceTracers, true)
 	select {
 	case <-received:
 	case <-ctx.Done():
@@ -434,4 +434,18 @@ func Test_heartbeatInterval(t *testing.T) {
 			assert.Equal(t, tt.want, heartbeatInterval())
 		})
 	}
+}
+
+func TestNoEmptyHeaders(t *testing.T) {
+	c := &client{}
+	req := c.newRequest(RequestTypeAppStarted)
+	assertNotEmpty := func(header string) {
+		headers := *req.Header
+		vals := headers[header]
+		for _, v := range vals {
+			assert.NotEmpty(t, v, "%s header should not be empty", header)
+		}
+	}
+	assertNotEmpty("Datadog-Container-ID")
+	assertNotEmpty("Datadog-Entity-ID")
 }

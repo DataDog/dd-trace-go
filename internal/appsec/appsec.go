@@ -11,7 +11,8 @@ import (
 
 	"github.com/DataDog/appsec-internal-go/limiter"
 	appsecLog "github.com/DataDog/appsec-internal-go/log"
-	waf "github.com/DataDog/go-libddwaf/v2"
+	waf "github.com/DataDog/go-libddwaf/v3"
+
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/config"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
@@ -25,9 +26,19 @@ func Enabled() bool {
 	return activeAppSec != nil && activeAppSec.started
 }
 
+// RASPEnabled returns true when DD_APPSEC_RASP_ENABLED=true or is unset. Granted that AppSec is enabled.
+func RASPEnabled() bool {
+	mu.RLock()
+	defer mu.RUnlock()
+	return activeAppSec != nil && activeAppSec.started && activeAppSec.cfg.RASP
+}
+
 // Start AppSec when enabled is enabled by both using the appsec build tag and
 // setting the environment variable DD_APPSEC_ENABLED to true.
 func Start(opts ...config.StartOption) {
+	telemetry := newAppsecTelemetry()
+	defer telemetry.emit()
+
 	// AppSec can start either:
 	// 1. Manually thanks to DD_APPSEC_ENABLED
 	// 2. Remotely when DD_APPSEC_ENABLED is undefined
@@ -37,6 +48,9 @@ func Start(opts ...config.StartOption) {
 	if err != nil {
 		logUnexpectedStartError(err)
 		return
+	}
+	if set {
+		telemetry.addEnvConfig("DD_APPSEC_ENABLED", enabled)
 	}
 
 	// Check if AppSec is explicitly disabled
@@ -86,7 +100,7 @@ func Start(opts ...config.StartOption) {
 			return
 		}
 		log.Debug("appsec: awaiting for possible remote activation")
-	} else if err := appsec.start(); err != nil { // AppSec is specifically enabled
+	} else if err := appsec.start(telemetry); err != nil { // AppSec is specifically enabled
 		logUnexpectedStartError(err)
 		appsec.stopRC()
 		return
@@ -122,7 +136,7 @@ func setActiveAppSec(a *appsec) {
 type appsec struct {
 	cfg       *config.Config
 	limiter   *limiter.TokenTicker
-	wafHandle *wafHandle
+	wafHandle *waf.Handle
 	started   bool
 }
 
@@ -133,7 +147,7 @@ func newAppSec(cfg *config.Config) *appsec {
 }
 
 // Start AppSec by registering its security protections according to the configured the security rules.
-func (a *appsec) start() error {
+func (a *appsec) start(telemetry *appsecTelemetry) error {
 	// Load the waf to catch early errors if any
 	if ok, err := waf.Load(); err != nil {
 		// 1. If there is an error and the loading is not ok: log as an unexpected error case and quit appsec
@@ -148,15 +162,22 @@ func (a *appsec) start() error {
 
 	a.limiter = limiter.NewTokenTicker(a.cfg.TraceRateLimit, a.cfg.TraceRateLimit)
 	a.limiter.Start()
+
 	// Register the WAF operation event listener
 	if err := a.swapWAF(a.cfg.RulesManager.Latest); err != nil {
 		return err
 	}
+
 	a.enableRCBlocking()
+	a.enableRASP()
+
 	a.started = true
 	log.Info("appsec: up and running")
+
 	// TODO: log the config like the APM tracer does but we first need to define
 	//   an user-friendly string representation of our config and its sources
+
+	telemetry.setEnabled()
 	return nil
 }
 
@@ -165,6 +186,9 @@ func (a *appsec) stop() {
 	if !a.started {
 		return
 	}
+	telemetry := newAppsecTelemetry()
+	defer telemetry.emit()
+
 	a.started = false
 	// Disable RC blocking first so that the following is guaranteed not to be concurrent anymore.
 	a.disableRCBlocking()

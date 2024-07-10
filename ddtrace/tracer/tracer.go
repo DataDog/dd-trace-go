@@ -8,6 +8,7 @@ package tracer
 import (
 	gocontext "context"
 	"encoding/binary"
+	"math"
 	"os"
 	"runtime/pprof"
 	rt "runtime/trace"
@@ -138,7 +139,7 @@ func Start(opts ...StartOption) {
 	}
 	defer telemetry.Time(telemetry.NamespaceGeneral, "init_time", nil, true)()
 	t := newTracer(opts...)
-	if !t.config.enabled {
+	if !t.config.enabled.current {
 		// TODO: instrumentation telemetry client won't get started
 		// if tracing is disabled, but we still want to capture this
 		// telemetry information. Will be fixed when the tracer and profiler
@@ -162,10 +163,15 @@ func Start(opts ...StartOption) {
 	if err := t.startRemoteConfig(cfg); err != nil {
 		log.Warn("Remote config startup error: %s", err)
 	}
-	appsec.Start(appsecConfig.WithRCConfig(cfg))
+
 	// start instrumentation telemetry unless it is disabled through the
 	// DD_INSTRUMENTATION_TELEMETRY_ENABLED env var
 	startTelemetry(t.config)
+
+	// appsec.Start() may use the telemetry client to report activation, so it is
+	// important this happens _AFTER_ startTelemetry() has been called, so the
+	// client is appropriately configured.
+	appsec.Start(appsecConfig.WithRCConfig(cfg))
 	_ = t.hostname() // Prime the hostname cache
 }
 
@@ -229,7 +235,9 @@ func newUnstartedTracer(opts ...StartOption) *tracer {
 		log.Warn("Runtime and health metrics disabled: %v", err)
 	}
 	var writer traceWriter
-	if c.logToStdout {
+	if c.ciVisibilityEnabled {
+		writer = newCiVisibilityTraceWriter(c)
+	} else if c.logToStdout {
 		writer = newLogTraceWriter(c, statsd)
 	} else {
 		writer = newAgentTraceWriter(c, sampler, statsd)
@@ -244,15 +252,20 @@ func newUnstartedTracer(opts ...StartOption) *tracer {
 	if spans != nil {
 		c.spanRules = spans
 	}
-	globalRate := globalSampleRate()
-	rulesSampler := newRulesSampler(c.traceRules, c.spanRules, globalRate)
-	c.traceSampleRate = newDynamicConfig("trace_sample_rate", globalRate, rulesSampler.traces.setGlobalSampleRate, equal[float64])
+	rulesSampler := newRulesSampler(c.traceRules, c.spanRules, c.globalSampleRate)
+	c.traceSampleRate = newDynamicConfig("trace_sample_rate", c.globalSampleRate, rulesSampler.traces.setGlobalSampleRate, equal[float64])
+	// If globalSampleRate returns NaN, it means the environment variable was not set or valid.
+	// We could always set the origin to "env_var" inconditionally, but then it wouldn't be possible
+	// to distinguish between the case where the environment variable was not set and the case where
+	// it default to NaN.
+	if !math.IsNaN(c.globalSampleRate) {
+		c.traceSampleRate.cfgOrigin = telemetry.OriginEnvVar
+	}
+	c.traceSampleRules = newDynamicConfig("trace_sample_rules", c.traceRules,
+		rulesSampler.traces.setTraceSampleRules, EqualsFalseNegative)
 	var dataStreamsProcessor *datastreams.Processor
 	if c.dataStreamsMonitoringEnabled {
-		dataStreamsProcessor = datastreams.NewProcessor(statsd, c.env, c.serviceName, c.version, c.agentURL, c.httpClient, func() bool {
-			f := loadAgentFeatures(c.logToStdout, c.agentURL, c.httpClient)
-			return f.DataStreams
-		})
+		dataStreamsProcessor = datastreams.NewProcessor(statsd, c.env, c.serviceName, c.version, c.agentURL, c.httpClient)
 	}
 	t := &tracer{
 		config:           c,
@@ -367,7 +380,7 @@ func (t *tracer) worker(tick <-chan time.Time) {
 			t.statsd.Flush()
 			t.stats.flushAndSend(time.Now(), withCurrentBucket)
 			// TODO(x): In reality, the traceWriter.flush() call is not synchronous
-			// when using the agent traceWriter. However, this functionnality is used
+			// when using the agent traceWriter. However, this functionality is used
 			// in Lambda so for that purpose this mechanism should suffice.
 			done <- struct{}{}
 
@@ -420,11 +433,11 @@ func (t *tracer) sampleChunk(c *chunk) {
 			atomic.AddUint32(&t.partialTraces, 1)
 		}
 	}
-	if len(kept) == 0 {
-		atomic.AddUint32(&t.droppedP0Traces, 1)
-	}
 	atomic.AddUint32(&t.droppedP0Spans, uint32(len(c.spans)-len(kept)))
 	if !c.willSend {
+		if len(kept) == 0 {
+			atomic.AddUint32(&t.droppedP0Traces, 1)
+		}
 		c.spans = kept
 	}
 }
@@ -444,6 +457,9 @@ func (t *tracer) pushChunk(trace *chunk) {
 
 // StartSpan creates, starts, and returns a new Span with the given `operationName`.
 func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOption) ddtrace.Span {
+	if !t.config.enabled.current {
+		return internal.NoopSpan{}
+	}
 	var opts ddtrace.StartSpanConfig
 	for _, fn := range options {
 		fn(&opts)
@@ -498,6 +514,9 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 		Start:        startTime,
 		noDebugStack: t.config.noDebugStack,
 	}
+
+	span.SpanLinks = append(span.SpanLinks, opts.SpanLinks...)
+
 	if t.config.hostname != "" {
 		span.setMeta(keyHostname, t.config.hostname)
 	}
@@ -520,6 +539,11 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 				span.setMeta(keyOrigin, context.origin)
 			}
 		}
+
+		if context.reparentID != "" {
+			span.setMeta(keyReparentID, context.reparentID)
+		}
+
 	}
 	span.context = newSpanContext(span, context)
 	span.setMetric(ext.Pid, float64(t.pid))
@@ -585,13 +609,6 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 	return span
 }
 
-// generateSpanID returns a random uint64 that has been XORd with the startTime.
-// This is done to get around the 32-bit random seed limitation that may create collisions if there is a large number
-// of go services all generating spans.
-func generateSpanID(startTime int64) uint64 {
-	return random.Uint64() ^ uint64(startTime)
-}
-
 // applyPPROFLabels applies pprof labels for the profiler's code hotspots and
 // endpoint filtering feature to span. When span finishes, any pprof labels
 // found in ctx are restored. Additionally, this func informs the profiler how
@@ -652,6 +669,9 @@ func (t *tracer) Stop() {
 
 // Inject uses the configured or default TextMap Propagator.
 func (t *tracer) Inject(ctx ddtrace.SpanContext, carrier interface{}) error {
+	if !t.config.enabled.current {
+		return nil
+	}
 	t.updateSampling(ctx)
 	return t.config.propagator.Inject(ctx, carrier)
 }
@@ -676,6 +696,10 @@ func (t *tracer) updateSampling(ctx ddtrace.SpanContext) {
 		return
 	}
 
+	// the span was sampled with ManualKeep rules shouldn't override
+	if sctx.trace.propagatingTag(keyDecisionMaker) == "-4" {
+		return
+	}
 	// if sampling was successful, need to lock the trace to prevent further re-sampling
 	if t.rulesSampling.SampleTrace(sctx.trace.root) {
 		sctx.trace.setLocked(true)
@@ -684,6 +708,9 @@ func (t *tracer) updateSampling(ctx ddtrace.SpanContext) {
 
 // Extract uses the configured or default TextMap Propagator.
 func (t *tracer) Extract(carrier interface{}) (ddtrace.SpanContext, error) {
+	if !t.config.enabled.current {
+		return internal.NoopSpanContext{}, nil
+	}
 	return t.config.propagator.Extract(carrier)
 }
 

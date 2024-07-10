@@ -5,7 +5,11 @@
 
 package telemetry
 
-import "net/http"
+import (
+	"bytes"
+	"fmt"
+	"net/http"
+)
 
 // Request captures all necessary information for a telemetry event submission
 type Request struct {
@@ -70,8 +74,8 @@ const (
 	NamespaceTracers Namespace = "tracers"
 	// NamespaceProfilers is for continuous profiling
 	NamespaceProfilers Namespace = "profilers"
-	// NamespaceASM is for application security monitoring
-	NamespaceASM Namespace = "appsec" // This was defined before the appsec -> ASM change
+	// NamespaceAppSec is for application security management
+	NamespaceAppSec Namespace = "appsec"
 )
 
 // Application is identifying information about the app itself
@@ -132,13 +136,48 @@ type ConfigurationChange struct {
 	RemoteConfig  *RemoteConfig   `json:"remote_config,omitempty"`
 }
 
+type Origin int
+
+const (
+	OriginDefault Origin = iota
+	OriginCode
+	OriginDDConfig
+	OriginEnvVar
+	OriginRemoteConfig
+)
+
+func (o Origin) String() string {
+	switch o {
+	case OriginDefault:
+		return "default"
+	case OriginCode:
+		return "code"
+	case OriginDDConfig:
+		return "dd_config"
+	case OriginEnvVar:
+		return "env_var"
+	case OriginRemoteConfig:
+		return "remote_config"
+	default:
+		return fmt.Sprintf("unknown origin %d", o)
+	}
+}
+
+func (o Origin) MarshalJSON() ([]byte, error) {
+	var b bytes.Buffer
+	b.WriteString(`"`)
+	b.WriteString(o.String())
+	b.WriteString(`"`)
+	return b.Bytes(), nil
+}
+
 // Configuration is a library-specific configuration value
 // that should be initialized through StringConfig, IntConfig, FloatConfig, or BoolConfig
 type Configuration struct {
 	Name  string      `json:"name"`
 	Value interface{} `json:"value"`
-	// origin is the source of the config. It is one of {env_var, code, dd_config, remote_config}
-	Origin      string `json:"origin"`
+	// origin is the source of the config. It is one of {default, env_var, code, dd_config, remote_config}.
+	Origin      Origin `json:"origin"`
 	Error       Error  `json:"error"`
 	IsOverriden bool   `json:"is_overridden"`
 }
@@ -164,6 +203,11 @@ func FloatConfig(key string, val float64) Configuration {
 // BoolConfig returns a Configuration struct with a bool value
 func BoolConfig(key string, val bool) Configuration {
 	return Configuration{Name: key, Value: val}
+}
+
+// ProductsPayload is the top-level key for the app-product-change payload.
+type ProductsPayload struct {
+	Products Products `json:"products"`
 }
 
 // Products specifies information about available products.

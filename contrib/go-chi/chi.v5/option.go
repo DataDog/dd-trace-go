@@ -11,6 +11,7 @@ import (
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/httpsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/normalizer"
@@ -27,13 +28,15 @@ type config struct {
 	modifyResourceName func(resourceName string) string
 	headerTags         *internal.LockMap
 	resourceNamer      func(r *http.Request) string
+	appsecDisabled     bool
+	appsecConfig       httpsec.Config
 }
 
 // Option represents an option that can be passed to NewRouter.
 type Option func(*config)
 
 func defaults(cfg *config) {
-	cfg.serviceName = namingschema.NewDefaultServiceName(defaultServiceName).GetName()
+	cfg.serviceName = namingschema.ServiceName(defaultServiceName)
 	if internal.BoolEnv("DD_TRACE_CHI_ANALYTICS_ENABLED", false) {
 		cfg.analyticsRate = 1.0
 	} else {
@@ -45,6 +48,7 @@ func defaults(cfg *config) {
 	cfg.modifyResourceName = func(s string) string { return s }
 	// for backward compatibility with modifyResourceName, initialize resourceName as nil.
 	cfg.resourceNamer = nil
+	cfg.appsecDisabled = false
 }
 
 // WithServiceName sets the given service name for the router.
@@ -128,5 +132,25 @@ func WithHeaderTags(headers []string) Option {
 func WithResourceNamer(fn func(r *http.Request) string) Option {
 	return func(cfg *config) {
 		cfg.resourceNamer = fn
+	}
+}
+
+// WithNoAppsec opts this router out of AppSec management. This allows a particular router to bypass
+// appsec, while the rest of the application is still being monitored/managed. This has not effect
+// if AppSec is not enabled globally (e.g, via the DD_APPSEC_ENABLED environment variable).
+func WithNoAppsec(disabled bool) Option {
+	return func(cfg *config) {
+		cfg.appsecDisabled = disabled
+	}
+}
+
+// WithResponseHeaderCopier provides a function to fetch the response headers from the
+// http.ResponseWriter. This allows for custom implementations as needed if you over-ride the
+// default http.ResponseWriter, such as to add synchronization. Provided functions may elect to
+// return a copy of the http.Header map instead of a reference to the original (e.g: to not risk
+// breaking synchronization). This is currently only used by AppSec.
+func WithResponseHeaderCopier(f func(http.ResponseWriter) http.Header) Option {
+	return func(cfg *config) {
+		cfg.appsecConfig.ResponseHeaderCopier = f
 	}
 }

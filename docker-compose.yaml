@@ -1,7 +1,7 @@
 version: "3.3"  # optional since v1.27.0
 services:
   cassandra:
-    image: cassandra:3.7
+    image: cassandra:3.11
     environment:
       JVM_OPTS: "-Xms750m -Xmx750m"
     ports:
@@ -117,7 +117,7 @@ services:
     ports:
       - "2181:2181"
   kafka2:
-    image: wurstmeister/kafka:2.13-2.8.1
+    image: darccio/kafka:2.13-2.8.1
     environment:
       KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
       KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092

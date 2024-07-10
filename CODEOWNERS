@@ -11,7 +11,7 @@ go.mod
 go.sum
 
 # tracing
-/contrib                        @DataDog/apm-go
+/contrib                        @DataDog/apm-go @Datadog/apm-idm-go
 /ddtrace                        @DataDog/apm-go
 
 # profiling
@@ -27,6 +27,9 @@ go.sum
 # datastreams
 /datastreams                    @Datadog/data-streams-monitoring
 /internal/datastreams           @Datadog/data-streams-monitoring
+
+# civisibility
+/internal/civisibility          @DataDog/ci-app-libraries
 
 # Gitlab configuration
 .gitlab-ci.yml                  @DataDog/dd-trace-go-guild @DataDog/apm-core-reliability-and-performance

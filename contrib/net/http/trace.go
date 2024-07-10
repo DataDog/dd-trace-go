@@ -71,7 +71,7 @@ func TraceAndServe(h http.Handler, w http.ResponseWriter, r *http.Request, cfg *
 	}()
 
 	if appsec.Enabled() {
-		h = httpsec.WrapHandler(h, span, cfg.RouteParams)
+		h = httpsec.WrapHandler(h, span, cfg.RouteParams, nil)
 	}
 	h.ServeHTTP(rw, r.WithContext(ctx))
 }
@@ -110,4 +110,9 @@ func (w *responseWriter) WriteHeader(status int) {
 	}
 	w.ResponseWriter.WriteHeader(status)
 	w.status = status
+}
+
+// Unwrap returns the underlying wrapped http.ResponseWriter.
+func (w *responseWriter) Unwrap() http.ResponseWriter {
+	return w.ResponseWriter
 }
