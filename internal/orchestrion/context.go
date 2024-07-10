@@ -30,13 +30,15 @@ func WrapContext(ctx context.Context) context.Context {
 
 // CtxWithValue runs context.WithValue, adds the result to the GLS slot of orchestrion, and returns it.
 // If orchestrion is not enabled, it will run context.WithValue and return the result.
+// Since we don't support cross-goroutine switch of the GLS we still run context.WithValue in the case
+// we are switching goroutines.
 func CtxWithValue(parent context.Context, key, val any) context.Context {
 	if !Enabled() {
 		return context.WithValue(parent, key, val)
 	}
 
 	getDDContextStack().Push(key, val)
-	return WrapContext(parent)
+	return context.WithValue(WrapContext(parent), key, val)
 }
 
 // GLSPopValue pops the value from the GLS slot of orchestrion and returns it. Using context.Context values usually does

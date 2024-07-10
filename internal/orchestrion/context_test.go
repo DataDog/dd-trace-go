@@ -7,8 +7,9 @@ package orchestrion
 
 import (
 	"context"
-	"github.com/stretchr/testify/require"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 type key string
@@ -71,11 +72,18 @@ func TestCtxWithValue(t *testing.T) {
 	t.Run("true", func(t *testing.T) {
 		enabled = true
 		ctx := CtxWithValue(context.Background(), key("key"), "value")
-		require.Equal(t, &glsContext{context.Background()}, ctx)
+		require.Equal(t, context.WithValue(&glsContext{context.Background()}, key("key"), "value"), ctx)
 		require.Equal(t, "value", ctx.Value(key("key")))
 		require.Equal(t, "value", getDDContextStack().Peek(key("key")))
 		require.Equal(t, "value", GLSPopValue(key("key")))
 		require.Nil(t, getDDContextStack().Peek(key("key")))
-		require.Nil(t, ctx.Value(key("key")))
+	})
+
+	t.Run("cross-goroutine switch", func(t *testing.T) {
+		enabled = true
+		ctx := CtxWithValue(context.Background(), key("key"), "value")
+		go func() {
+			require.Equal(t, "value", ctx.Value(key("key")))
+		}()
 	})
 }
