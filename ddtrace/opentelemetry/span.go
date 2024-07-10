@@ -37,7 +37,7 @@ type span struct {
 	finishOpts []tracer.FinishOption
 	statusInfo
 	*oteltracer
-	events []spanEvent
+	events []SpanEvent
 }
 
 func (s *span) TracerProvider() oteltrace.TracerProvider { return s.oteltracer.provider }
@@ -48,16 +48,16 @@ func (s *span) SetName(name string) {
 	s.attributes[ext.SpanName] = strings.ToLower(name)
 }
 
-// spanEvent holds information about otelsdk.Event types, with some fields altered and renamed to fit Datadog needs
+// SpanEvent holds information about otelsdk.Event types, with some fields altered and renamed to fit Datadog needs
 // along with json tags for easy marshaling
-type spanEvent struct {
-	Name           string                 `json:"name"`
-	Time_unix_nano int64                  `json:"time_unix_nano"`
-	Attributes     map[string]interface{} `json:"attributes,omitempty"`
+type SpanEvent struct {
+	Name         string                 `json:"name"`
+	TimeUnixNano int64                  `json:"time_unix_nano"`
+	Attributes   map[string]interface{} `json:"attributes,omitempty"`
 }
 
 // stringifySpanEvents transforms a slice of otelsdk.Events into a comma separated string
-func stringifySpanEvents(evts []spanEvent) (s string) {
+func stringifySpanEvents(evts []SpanEvent) (s string) {
 	for i, e := range evts {
 		if i == 0 {
 			s += marshalSpanEvent(e)
@@ -69,7 +69,7 @@ func stringifySpanEvents(evts []spanEvent) (s string) {
 }
 
 // marshalSpanEvent transforms an otelsdk.Event into a JSON-encoded object with "name" and "time_unix_nano" fields, and an optional "attributes" field
-func marshalSpanEvent(evt spanEvent) string {
+func marshalSpanEvent(evt SpanEvent) string {
 	s, err := json.Marshal(evt)
 	if err != nil {
 		log.Debug(fmt.Sprintf("Issue marshaling span event %v:%v", evt, err))
@@ -216,16 +216,11 @@ func (s *span) AddEvent(name string, opts ...oteltrace.EventOption) {
 	for _, a := range c.Attributes() {
 		attrs[string(a.Key)] = a.Value.AsInterface()
 	}
-	s.events = append(s.events, NewSpanEvent(name, c.Timestamp().Unix(), attrs))
-}
-
-// NewSpanEvent returns a spanEvent with the provided name, time_unix_nano and attributes
-func NewSpanEvent(name string, time_unix_nano int64, attrs map[string]interface{}) spanEvent {
-	return spanEvent{
-		Name:           name,
-		Time_unix_nano: time_unix_nano,
-		Attributes:     attrs,
-	}
+	s.events = append(s.events, SpanEvent{
+		Name:         name,
+		TimeUnixNano: c.Timestamp().Unix(),
+		Attributes:   attrs,
+	})
 }
 
 // SetAttributes sets the key-value pairs as tags on the span.

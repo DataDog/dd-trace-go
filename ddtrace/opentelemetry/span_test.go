@@ -190,9 +190,9 @@ func TestMarshalSpanEvent(t *testing.T) {
 	// now := time.Now()
 	nowUnix := time.Now().Unix()
 	want := fmt.Sprintf("{\"name\":\"evt\",\"time_unix_nano\":%v,\"attributes\":{\"attribute1\":\"value1\",\"attribute2\":123,\"attribute3\":[1,2,3],\"attribute4\":true}}", nowUnix)
-	s := marshalSpanEvent(spanEvent{
-		Name:           "evt",
-		Time_unix_nano: nowUnix,
+	s := marshalSpanEvent(SpanEvent{
+		Name:         "evt",
+		TimeUnixNano: nowUnix,
 		Attributes: map[string]interface{}{
 			"attribute1": "value1",
 			"attribute2": 123,
@@ -206,13 +206,13 @@ func TestMarshalSpanEvent(t *testing.T) {
 func TestStringifySpanEvent(t *testing.T) {
 	assert := assert.New(t)
 	t.Run("multiple events", func(t *testing.T) {
-		evt1 := spanEvent{
+		evt1 := SpanEvent{
 			Name: "abc",
 		}
-		evt2 := spanEvent{
+		evt2 := SpanEvent{
 			Name: "def",
 		}
-		evts := []spanEvent{evt1, evt2}
+		evts := []SpanEvent{evt1, evt2}
 		want := marshalSpanEvent(evt1) + "," + marshalSpanEvent(evt2)
 
 		s := stringifySpanEvents(evts)
@@ -374,8 +374,8 @@ func TestSpanAddEvent(t *testing.T) {
 		e := dd.events[0]
 		assert.Equal(e.Name, "My event!")
 		// assert event timestamp is [around] the expected time
-		fmt.Printf("event time: %v, should be bound btwn start: %v and end: %v\n", e.Time_unix_nano, timeStartBound, timeEndBound)
-		assert.True((e.Time_unix_nano) >= timeStartBound && e.Time_unix_nano <= timeEndBound)
+		fmt.Printf("event time: %v, should be bound btwn start: %v and end: %v\n", e.TimeUnixNano, timeStartBound, timeEndBound)
+		assert.True((e.TimeUnixNano) >= timeStartBound && e.TimeUnixNano <= timeEndBound)
 		// Assert both attributes exist on the event
 		assert.Len(e.Attributes, 3)
 		// Assert attribute key-value fields
@@ -398,7 +398,7 @@ func TestSpanAddEvent(t *testing.T) {
 		dd := sp.(*span)
 		assert.Len(dd.events, 1)
 		e := dd.events[0]
-		assert.Equal(e.Time_unix_nano, now.Unix())
+		assert.Equal(e.TimeUnixNano, now.Unix())
 	})
 }
 
