@@ -27,7 +27,6 @@ import (
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
-	otelsdk "go.opentelemetry.io/otel/sdk/trace"
 	oteltrace "go.opentelemetry.io/otel/trace"
 )
 
@@ -188,68 +187,32 @@ func TestSpanLink(t *testing.T) {
 
 func TestMarshalSpanEvent(t *testing.T) {
 	assert := assert.New(t)
-	now := time.Now()
-	nowUnix := now.Unix()
-	t.Run("attributes", func(t *testing.T) {
-		want := fmt.Sprintf("{\"name\":\"evt\",\"time_unix_nano\":%v,\"attributes\":{\"attribute1\":\"value1\",\"attribute2\":123,\"attribute3\":[1,2,3],\"attribute4\":false}}", nowUnix)
-		s := marshalSpanEvent(otelsdk.Event{
-			Name: "evt",
-			Time: now,
-			Attributes: []attribute.KeyValue{
-				{
-					Key:   attribute.Key("attribute1"),
-					Value: attribute.StringValue("value1"),
-				},
-				{
-					Key:   attribute.Key("attribute2"),
-					Value: attribute.IntValue(123),
-				},
-				{
-					Key:   attribute.Key("attribute3"),
-					Value: attribute.Float64SliceValue([]float64{1.0, 2.0, 3.0}),
-				},
-				{
-					Key:   attribute.Key("attribute4"),
-					Value: attribute.BoolValue(true),
-				},
-				// if two attributes have same key, last-set attribute takes precedence
-				{
-					Key:   attribute.Key("attribute4"),
-					Value: attribute.BoolValue(false),
-				},
-			},
-		})
-		assert.Equal(want, s)
+	// now := time.Now()
+	nowUnix := time.Now().Unix()
+	want := fmt.Sprintf("{\"name\":\"evt\",\"time_unix_nano\":%v,\"attributes\":{\"attribute1\":\"value1\",\"attribute2\":123,\"attribute3\":[1,2,3],\"attribute4\":true}}", nowUnix)
+	s := marshalSpanEvent(spanEvent{
+		Name:           "evt",
+		Time_unix_nano: nowUnix,
+		Attributes: map[string]interface{}{
+			"attribute1": "value1",
+			"attribute2": 123,
+			"attribute3": []float64{1.0, 2.0, 3.0},
+			"attribute4": true,
+		},
 	})
-	t.Run("unexpected field", func(t *testing.T) {
-		// otelsdk.Event type has field `DroppedAttributeCount`, but we don't use this field
-		s := marshalSpanEvent(otelsdk.Event{
-			Name:                  "evt",
-			Time:                  now,
-			DroppedAttributeCount: 1,
-		})
-		// resulting string should discard DroppedAttributeCount
-		assert.Equal(fmt.Sprintf("{\"name\":\"evt\",\"time_unix_nano\":%v}", nowUnix), s)
-	})
-	t.Run("missing fields", func(t *testing.T) {
-		// ensure the `name` field is still included in the json result with value of empty string, even if not set in the struct object
-		s := marshalSpanEvent(otelsdk.Event{
-			Time: now,
-		})
-		assert.Equal(fmt.Sprintf("{\"name\":\"\",\"time_unix_nano\":%v}", nowUnix), s)
-	})
+	assert.Equal(want, s)
 }
 
 func TestStringifySpanEvent(t *testing.T) {
 	assert := assert.New(t)
 	t.Run("multiple events", func(t *testing.T) {
-		evt1 := otelsdk.Event{
+		evt1 := spanEvent{
 			Name: "abc",
 		}
-		evt2 := otelsdk.Event{
+		evt2 := spanEvent{
 			Name: "def",
 		}
-		evts := []otelsdk.Event{evt1, evt2}
+		evts := []spanEvent{evt1, evt2}
 		want := marshalSpanEvent(evt1) + "," + marshalSpanEvent(evt2)
 
 		s := stringifySpanEvents(evts)
@@ -394,9 +357,15 @@ func TestSpanAddEvent(t *testing.T) {
 		// When no timestamp option is provided, otel will generate a timestamp for the event
 		// We can't know the exact time that the event is added, but we can create start and end "bounds" and assert
 		// that the event's eventual timestamp is between those bounds
-		timeStartBound := time.Now()
-		sp.AddEvent("My event!", oteltrace.WithAttributes(attribute.Int("pid", 4328), attribute.String("signal", "SIGHUP")))
-		timeEndBound := time.Now()
+		timeStartBound := time.Now().Unix()
+		sp.AddEvent("My event!", oteltrace.WithAttributes(
+			attribute.Int("pid", 4328),
+			attribute.String("signal", "SIGHUP"),
+			// two attributes with same key, last-set attribute takes precedence
+			attribute.Bool("condition", true),
+			attribute.Bool("condition", false),
+		))
+		timeEndBound := time.Now().Unix()
 		sp.End()
 		dd := sp.(*span)
 
@@ -405,14 +374,16 @@ func TestSpanAddEvent(t *testing.T) {
 		e := dd.events[0]
 		assert.Equal(e.Name, "My event!")
 		// assert event timestamp is [around] the expected time
-		assert.True((e.Time).After(timeStartBound) && (e.Time).Before(timeEndBound))
+		fmt.Printf("event time: %v, should be bound btwn start: %v and end: %v\n", e.Time_unix_nano, timeStartBound, timeEndBound)
+		assert.True((e.Time_unix_nano) >= timeStartBound && e.Time_unix_nano <= timeEndBound)
 		// Assert both attributes exist on the event
-		assert.Len(e.Attributes, 2)
+		assert.Len(e.Attributes, 3)
 		// Assert attribute key-value fields
 		// note that attribute.Int("pid", 4328) created an attribute with value int64(4328), hence why the `want` is in int64 format
 		wantAttrs := map[string]interface{}{
-			"pid":    int64(4328),
-			"signal": "SIGHUP",
+			"pid":       int64(4328),
+			"signal":    "SIGHUP",
+			"condition": false,
 		}
 		for k, v := range wantAttrs {
 			assert.True(attributesContains(e.Attributes, k, v))
@@ -427,16 +398,14 @@ func TestSpanAddEvent(t *testing.T) {
 		dd := sp.(*span)
 		assert.Len(dd.events, 1)
 		e := dd.events[0]
-		assert.Equal(e.Time, now)
+		assert.Equal(e.Time_unix_nano, now.Unix())
 	})
 }
 
 // attributesContains returns true if attrs contains an attribute.KeyValue with the provided key and val
-func attributesContains(attrs []attribute.KeyValue, key string, val interface{}) bool {
-	for _, a := range attrs {
-		fmt.Printf("Looking for %v:%v with types %T:%T; have %v:%v with types %T:%T\n", key, val, key, val, string(a.Key), a.Value.AsInterface(), string(a.Key), a.Value.AsInterface())
-		if string(a.Key) == key && a.Value.AsInterface() == val {
-			fmt.Println("hello?")
+func attributesContains(attrs map[string]interface{}, key string, val interface{}) bool {
+	for k, v := range attrs {
+		if k == key && v == val {
 			return true
 		}
 	}

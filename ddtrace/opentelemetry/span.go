@@ -21,7 +21,6 @@ import (
 
 	"go.opentelemetry.io/otel/attribute"
 	otelcodes "go.opentelemetry.io/otel/codes"
-	otelsdk "go.opentelemetry.io/otel/sdk/trace"
 	oteltrace "go.opentelemetry.io/otel/trace"
 	"go.opentelemetry.io/otel/trace/noop"
 )
@@ -38,7 +37,7 @@ type span struct {
 	finishOpts []tracer.FinishOption
 	statusInfo
 	*oteltracer
-	events []otelsdk.Event
+	events []spanEvent
 }
 
 func (s *span) TracerProvider() oteltrace.TracerProvider { return s.oteltracer.provider }
@@ -49,8 +48,16 @@ func (s *span) SetName(name string) {
 	s.attributes[ext.SpanName] = strings.ToLower(name)
 }
 
+// spanEvent holds information about otelsdk.Event types, with some fields altered and renamed to fit Datadog needs
+// along with json tags for easy marshaling
+type spanEvent struct {
+	Name           string                 `json:"name"`
+	Time_unix_nano int64                  `json:"time_unix_nano"`
+	Attributes     map[string]interface{} `json:"attributes,omitempty"`
+}
+
 // stringifySpanEvents transforms a slice of otelsdk.Events into a comma separated string
-func stringifySpanEvents(evts []otelsdk.Event) (s string) {
+func stringifySpanEvents(evts []spanEvent) (s string) {
 	for i, e := range evts {
 		if i == 0 {
 			s += marshalSpanEvent(e)
@@ -61,28 +68,11 @@ func stringifySpanEvents(evts []otelsdk.Event) (s string) {
 	return s
 }
 
-// ddSpanEvent holds information about otelsdk.Event types, with some fields altered and renamed to fit Datadog needs
-// along with json tags for easy marshaling
-type ddSpanEvent struct {
-	Name           string                 `json:"name"`
-	Time_unix_nano int64                  `json:"time_unix_nano"`
-	Attributes     map[string]interface{} `json:"attributes,omitempty"`
-}
-
 // marshalSpanEvent transforms an otelsdk.Event into a JSON-encoded object with "name" and "time_unix_nano" fields, and an optional "attributes" field
-func marshalSpanEvent(evt otelsdk.Event) string {
-	spEvt := ddSpanEvent{
-		Time_unix_nano: evt.Time.Unix(),
-		Name:           evt.Name,
-	}
-	spEvt.Attributes = make(map[string]interface{})
-	for _, a := range evt.Attributes {
-		spEvt.Attributes[string(a.Key)] = a.Value.AsInterface()
-	}
-	s, err := json.Marshal(spEvt)
+func marshalSpanEvent(evt spanEvent) string {
+	s, err := json.Marshal(evt)
 	if err != nil {
-		// log something?
-		log.Debug(fmt.Sprintf("Issue marshaling span event %v:%v", spEvt, err))
+		log.Debug(fmt.Sprintf("Issue marshaling span event %v:%v", evt, err))
 		return ""
 	}
 	return string(s)
@@ -222,8 +212,20 @@ func (s *span) AddEvent(name string, opts ...oteltrace.EventOption) {
 		return
 	}
 	c := oteltrace.NewEventConfig(opts...)
-	e := otelsdk.Event{Name: name, Attributes: c.Attributes(), Time: c.Timestamp()}
-	s.events = append(s.events, e)
+	attrs := make(map[string]interface{})
+	for _, a := range c.Attributes() {
+		attrs[string(a.Key)] = a.Value.AsInterface()
+	}
+	s.events = append(s.events, NewSpanEvent(name, c.Timestamp().Unix(), attrs))
+}
+
+// NewSpanEvent returns a spanEvent with the provided name, time_unix_nano and attributes
+func NewSpanEvent(name string, time_unix_nano int64, attrs map[string]interface{}) spanEvent {
+	return spanEvent{
+		Name:           name,
+		Time_unix_nano: time_unix_nano,
+		Attributes:     attrs,
+	}
 }
 
 // SetAttributes sets the key-value pairs as tags on the span.
