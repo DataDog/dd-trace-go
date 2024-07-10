@@ -104,12 +104,12 @@ func (t *gqlTracer) Validate(_ graphql.ExecutableSchema) error {
 func (t *gqlTracer) InterceptOperation(ctx context.Context, next graphql.OperationHandler) graphql.ResponseHandler {
 	opCtx := graphql.GetOperationContext(ctx)
 	span, ctx := t.createRootSpan(ctx, opCtx)
-	ctx, req := graphqlsec.StartRequestOperation(ctx, nil /* root */, span, types.RequestOperationArgs{
+	ctx, req := graphqlsec.StartRequestOperation(ctx, span, types.RequestOperationArgs{
 		RawQuery:      opCtx.RawQuery,
 		OperationName: opCtx.OperationName,
 		Variables:     opCtx.Variables,
 	})
-	ctx, query := graphqlsec.StartExecutionOperation(ctx, req, span, types.ExecutionOperationArgs{
+	ctx, query := graphqlsec.StartExecutionOperation(ctx, span, types.ExecutionOperationArgs{
 		Query:         opCtx.RawQuery,
 		OperationName: opCtx.OperationName,
 		Variables:     opCtx.Variables,
@@ -167,8 +167,7 @@ func (t *gqlTracer) InterceptField(ctx context.Context, next graphql.Resolver) (
 
 	span, ctx := tracer.StartSpanFromContext(ctx, fieldOp, opts...)
 	defer func() { span.Finish(tracer.WithError(err)) }()
-
-	ctx, op := graphqlsec.StartResolveOperation(ctx, graphqlsec.FromContext[*types.ExecutionOperation](ctx), span, types.ResolveOperationArgs{
+	ctx, op := graphqlsec.StartResolveOperation(ctx, span, types.ResolveOperationArgs{
 		Arguments: fieldCtx.Args,
 		TypeName:  fieldCtx.Object,
 		FieldName: fieldCtx.Field.Name,

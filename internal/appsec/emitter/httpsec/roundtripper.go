@@ -12,7 +12,6 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/appsec/events"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/httpsec/types"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
@@ -23,7 +22,7 @@ func ProtectRoundTrip(ctx context.Context, url string) error {
 		URL: url,
 	}
 
-	parent, _ := ctx.Value(listener.ContextKey{}).(dyngo.Operation)
+	parent, _ := dyngo.FromContext(ctx)
 	if parent == nil { // No parent operation => we can't monitor the request
 		badInputContextOnce.Do(func() {
 			log.Debug("appsec: outgoing http request monitoring ignored: could not find the handler " +
