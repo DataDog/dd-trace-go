@@ -8,6 +8,7 @@ package sqlsec
 import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/sqlsec/types"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener/sharedsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/trace"
 
@@ -26,7 +27,7 @@ func RegisterSQLListener(op dyngo.Operation, events *trace.SecurityEventsHolder,
 	}))
 }
 
-func SQLAddressesPresent(addresses map[string]struct{}) bool {
+func SQLAddressesPresent(addresses listener.AddressSet) bool {
 	_, queryAddr := addresses[ServerDBStatementAddr]
 	_, driverAddr := addresses[ServerDBTypeAddr]
 
