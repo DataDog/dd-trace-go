@@ -4,7 +4,7 @@
 // Copyright 2016 Datadog, Inc.
 
 // Package kubernetes provides functions to trace k8s.io/client-go (https://github.com/kubernetes/client-go).
-package kubernetes // import "github.com/DataDog/dd-trace-go/contrib/k8s.io/client-go/kubernetes"/v2
+package kubernetes // import "github.com/DataDog/dd-trace-go/contrib/k8s.io/client-go/kubernetes/v2"
 
 import (
 	"net/http"

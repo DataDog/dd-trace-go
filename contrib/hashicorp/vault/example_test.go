@@ -12,7 +12,7 @@ import (
 
 	"github.com/hashicorp/vault/api"
 
-	vaulttrace "github.com/DataDog/dd-trace-go/contrib/hashicorp/vault"/v2
+	vaulttrace "github.com/DataDog/dd-trace-go/contrib/hashicorp/vault/v2"
 )
 
 // This is the most basic way to enable tracing with Vault.

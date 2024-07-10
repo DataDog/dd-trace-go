@@ -11,7 +11,7 @@
 // in some tag values like service.name and resource.name, depending on the google.golang.org/api that you are using in your
 // project. If this is not an acceptable behavior for your use-case, you can disable this feature using the
 // WithEndpointMetadataDisabled option.
-package api // import "github.com/DataDog/dd-trace-go/contrib/google.golang.org/api"/v2
+package api // import "github.com/DataDog/dd-trace-go/contrib/google.golang.org/api/v2"
 
 //go:generate go run ./internal/gen_endpoints -o gen_endpoints.json
 
@@ -21,7 +21,7 @@ import (
 	"math"
 	"net/http"
 
-	"github.com/DataDog/dd-trace-go/contrib/google.golang.org/api/internal/tree"/v2
+	"github.com/DataDog/dd-trace-go/contrib/google.golang.org/api/internal/tree/v2"
 	httptrace "github.com/DataDog/dd-trace-go/contrib/net/http/v2"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"

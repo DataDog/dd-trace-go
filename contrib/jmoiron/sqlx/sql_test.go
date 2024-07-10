@@ -11,7 +11,7 @@ import (
 	"os"
 	"testing"
 
-	sqltrace "github.com/DataDog/dd-trace-go/contrib/database/sql"/v2
+	sqltrace "github.com/DataDog/dd-trace-go/contrib/database/sql/v2"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/internal/contrib/sqltest"
 

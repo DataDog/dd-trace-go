@@ -4,7 +4,7 @@
 // Copyright 2016 Datadog, Inc.
 
 // Package aws provides functions to trace aws/aws-sdk-go (https://github.com/aws/aws-sdk-go).
-package aws // import "github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go/aws"/v2
+package aws // import "github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go/aws/v2"
 
 import (
 	"errors"

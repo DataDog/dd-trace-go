@@ -5,7 +5,7 @@
 
 // Package twirp provides tracing functions for tracing clients and servers generated
 // by the twirp framework (https://github.com/twitchtv/twirp).
-package twirp // import "github.com/DataDog/dd-trace-go/contrib/twitchtv/twirp"/v2
+package twirp // import "github.com/DataDog/dd-trace-go/contrib/twitchtv/twirp/v2"
 
 import (
 	"context"
