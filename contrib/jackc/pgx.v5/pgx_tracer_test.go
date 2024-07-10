@@ -231,6 +231,29 @@ func TestCopyFrom(t *testing.T) {
 	assert.Equal(t, ps.SpanID(), s.ParentID())
 }
 
+func TestAcquire(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	opts := append(tracingAllDisabled(), WithTraceAcquire(true))
+	runAllOperations(t, opts...)
+
+	spans := mt.FinishedSpans()
+	require.Len(t, spans, 5)
+
+	ps := spans[4]
+	assert.Equal(t, "parent", ps.OperationName())
+	assert.Equal(t, "parent", ps.Tag(ext.ResourceName))
+
+	s := spans[0]
+	assertCommonTags(t, s)
+	assert.Equal(t, "pgx.pool.acquire", s.OperationName())
+	assert.Equal(t, "Acquire", s.Tag(ext.ResourceName))
+	assert.Equal(t, "Acquire", s.Tag("db.operation"))
+	assert.Equal(t, nil, s.Tag(ext.DBStatement))
+	assert.Equal(t, ps.SpanID(), s.ParentID())
+}
+
 func tracingAllDisabled() []Option {
 	return []Option{
 		WithTraceConnect(false),
@@ -238,6 +261,7 @@ func tracingAllDisabled() []Option {
 		WithTracePrepare(false),
 		WithTraceBatch(false),
 		WithTraceCopyFrom(false),
+		WithTraceAcquire(false),
 	}
 }
 
@@ -246,9 +270,9 @@ func runAllOperations(t *testing.T, opts ...Option) {
 	defer parent.Finish()
 
 	// Connect
-	conn, err := Connect(ctx, postgresDSN, opts...)
+	conn, err := NewPool(ctx, postgresDSN, opts...)
 	require.NoError(t, err)
-	defer conn.Close(ctx)
+	defer conn.Close()
 
 	// Query
 	var x int
