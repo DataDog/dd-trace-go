@@ -1307,9 +1307,6 @@ func WithHeaderTags(headerAsTags []string) StartOption {
 func setHeaderTags(headerAsTags []string) bool {
 	globalconfig.ClearHeaderTags()
 	for _, h := range headerAsTags {
-		if strings.HasPrefix(h, "x-datadog-") {
-			continue
-		}
 		header, tag := normalizer.HeaderTag(h)
 		globalconfig.SetHeaderTag(header, tag)
 	}
