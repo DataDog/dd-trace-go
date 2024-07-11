@@ -2,8 +2,6 @@ module github.com/DataDog/dd-trace-go/v2/internal/traceprof/traceproftest
 
 go 1.21
 
-toolchain go1.22.5
-
 require (
 	github.com/DataDog/dd-trace-go/contrib/google.golang.org/grpc/v2 v2.0.0-20240516153256-8d6fa2bea61d
 	github.com/DataDog/dd-trace-go/contrib/julienschmidt/httprouter/v2 v2.0.0-20240516153256-8d6fa2bea61d
@@ -50,9 +48,10 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
-replace (
-	github.com/DataDog/dd-trace-go/contrib/google.golang.org/grpc/v2 => ../../../contrib/google.golang.org/grpc
-	github.com/DataDog/dd-trace-go/contrib/julienschmidt/httprouter/v2 => ../../../contrib/julienschmidt/httprouter
-	github.com/DataDog/dd-trace-go/contrib/net/http/v2 => ../../../contrib/net/http
-	github.com/DataDog/dd-trace-go/v2 => ../../..
-)
+replace github.com/DataDog/dd-trace-go/contrib/google.golang.org/grpc/v2 => ../../../contrib/google.golang.org/grpc
+
+replace github.com/DataDog/dd-trace-go/contrib/julienschmidt/httprouter/v2 => ../../../contrib/julienschmidt/httprouter
+
+replace github.com/DataDog/dd-trace-go/v2 => ../../..
+
+replace github.com/DataDog/dd-trace-go/contrib/net/http/v2 => ../../../contrib/net/http

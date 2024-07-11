@@ -46,9 +46,8 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
-replace (
-	github.com/DataDog/dd-trace-go/contrib/bradfitz/gomemcache/v2 => ../../../contrib/bradfitz/gomemcache
-	github.com/DataDog/dd-trace-go/contrib/miekg/dns/v2 => ../../../contrib/miekg/dns
-	github.com/DataDog/dd-trace-go/contrib/net/http/v2 => ../../../contrib/net/http
-	github.com/DataDog/dd-trace-go/v2 => ../../..
-)
+replace github.com/DataDog/dd-trace-go/contrib/bradfitz/gomemcache/v2 => ../../../contrib/bradfitz/gomemcache
+
+replace github.com/DataDog/dd-trace-go/contrib/miekg/dns/v2 => ../../../contrib/miekg/dns
+
+replace github.com/DataDog/dd-trace-go/v2 => ../../..

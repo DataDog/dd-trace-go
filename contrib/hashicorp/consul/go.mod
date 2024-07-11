@@ -2,8 +2,6 @@ module github.com/DataDog/dd-trace-go/contrib/hashicorp/consul/v2
 
 go 1.21
 
-toolchain go1.22.5
-
 require (
 	github.com/DataDog/dd-trace-go/v2 v2.0.0-20240516153256-8d6fa2bea61d
 	github.com/hashicorp/consul/api v1.24.0
@@ -61,5 +59,3 @@ require (
 )
 
 replace github.com/DataDog/dd-trace-go/v2 => ../../..
-
-replace github.com/DataDog/dd-trace-go/contrib/net/http/v2 => ../../net/http

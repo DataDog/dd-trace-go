@@ -2,8 +2,6 @@ module github.com/DataDog/dd-trace-go/contrib/database/sql/v2
 
 go 1.21
 
-toolchain go1.22.5
-
 require (
 	github.com/DataDog/datadog-go/v5 v5.5.0
 	github.com/DataDog/dd-trace-go/v2 v2.0.0-20240516153256-8d6fa2bea61d
@@ -50,5 +48,3 @@ require (
 )
 
 replace github.com/DataDog/dd-trace-go/v2 => ../../..
-
-replace github.com/DataDog/dd-trace-go/contrib/net/http/v2 => ../../net/http

@@ -2,8 +2,6 @@ module github.com/DataDog/dd-trace-go/contrib/go-pg/pg.v10/v2
 
 go 1.21
 
-toolchain go1.22.5
-
 require (
 	github.com/go-pg/pg/v10 v10.11.1
 	github.com/stretchr/testify v1.8.4
@@ -59,5 +57,3 @@ require (
 )
 
 replace github.com/DataDog/dd-trace-go/v2 => ../../..
-
-replace github.com/DataDog/dd-trace-go/contrib/net/http/v2 => ../../net/http
