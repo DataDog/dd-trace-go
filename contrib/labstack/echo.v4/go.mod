@@ -1,10 +1,12 @@
 module github.com/DataDog/dd-trace-go/contrib/labstack/echo.v4/v2
 
-go 1.20
+go 1.21
+
+toolchain go1.22.5
 
 require (
-	github.com/DataDog/dd-trace-go/v2 v2.0.0-20240516153256-8d6fa2bea61d
 	github.com/DataDog/dd-trace-go/contrib/net/http/v2 v2.0.0-20240516153256-8d6fa2bea61d
+	github.com/DataDog/dd-trace-go/v2 v2.0.0-20240516153256-8d6fa2bea61d
 	github.com/labstack/echo/v4 v4.11.1
 	github.com/stretchr/testify v1.8.4
 )
@@ -49,5 +51,6 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
-replace "github.com/DataDog/dd-trace-go/v2" => "../../.."
-replace "github.com/DataDog/dd-trace-go/contrib/net/http/v2" => "../../net/http"
+replace github.com/DataDog/dd-trace-go/v2 => ../../..
+
+replace github.com/DataDog/dd-trace-go/contrib/net/http/v2 => ../../net/http

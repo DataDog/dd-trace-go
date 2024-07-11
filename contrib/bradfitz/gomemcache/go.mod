@@ -46,5 +46,7 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
-replace "github.com/DataDog/dd-trace-go/v2" => "../../.."
-replace "github.com/DataDog/dd-trace-go/contrib/net/http/v2" => "../../net/http"
+replace (
+	"github.com/DataDog/dd-trace-go/v2" => "../../.."
+	"github.com/DataDog/dd-trace-go/contrib/net/http/v2" => "../../net/http"
+)

@@ -8,7 +8,7 @@ package validationtest
 import (
 	"testing"
 
-	memcachetrace "github.com/DataDog/dd-trace-go/contrib/bradfitz/gomemcache/memcache/v2"
+	memcachetrace "github.com/DataDog/dd-trace-go/contrib/bradfitz/gomemcache/v2/memcache"
 
 	"github.com/bradfitz/gomemcache/memcache"
 	"github.com/stretchr/testify/require"

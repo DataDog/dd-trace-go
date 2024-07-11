@@ -1,10 +1,12 @@
 module github.com/DataDog/dd-trace-go/v2/tools/v2check/_stage
 
-go 1.20
+go 1.21
+
+toolchain go1.22.5
 
 require (
-	gopkg.in/DataDog/dd-trace-go.v1 v1.62.0
 	github.com/DataDog/dd-trace-go/v2 v2.0.0-20240516153256-8d6fa2bea61d
+	gopkg.in/DataDog/dd-trace-go.v1 v1.62.0
 )
 
 require (
@@ -12,7 +14,6 @@ require (
 	github.com/DataDog/datadog-agent/pkg/obfuscate v0.52.1 // indirect
 	github.com/DataDog/datadog-agent/pkg/remoteconfig/state v0.52.1 // indirect
 	github.com/DataDog/datadog-go/v5 v5.5.0 // indirect
-	github.com/DataDog/dd-trace-go/contrib/net/http/v2 v2.0.0-20240516153256-8d6fa2bea61d // indirect
 	github.com/DataDog/go-libddwaf/v2 v2.4.2 // indirect
 	github.com/DataDog/go-sqllexer v0.0.11 // indirect
 	github.com/DataDog/go-tuf v1.1.0-0.5.2 // indirect
@@ -43,5 +44,7 @@ require (
 	google.golang.org/protobuf v1.33.0 // indirect
 )
 
-replace "github.com/DataDog/dd-trace-go/v2" => "../../.."
-replace "github.com/DataDog/dd-trace-go/contrib/net/http/v2" => "../../net/http"
+replace (
+	github.com/DataDog/dd-trace-go/contrib/net/http/v2 => ../../../contrib/net/http
+	github.com/DataDog/dd-trace-go/v2 => ../../..
+)
