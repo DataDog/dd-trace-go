@@ -22,7 +22,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/DataDog/dd-trace-go/contrib/database/sql/internal"/v2
+	"github.com/DataDog/dd-trace-go/contrib/database/sql/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/internal/httpmem"
 

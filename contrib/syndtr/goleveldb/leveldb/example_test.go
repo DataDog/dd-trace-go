@@ -8,7 +8,7 @@ package leveldb_test
 import (
 	"context"
 
-	leveldbtrace "github.com/DataDog/dd-trace-go/contrib/syndtr/goleveldb/leveldb"/v2
+	leveldbtrace "github.com/DataDog/dd-trace-go/contrib/syndtr/goleveldb/leveldb/v2"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 )
 

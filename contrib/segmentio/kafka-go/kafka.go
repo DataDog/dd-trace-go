@@ -3,7 +3,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
-package kafka // import "github.com/DataDog/dd-trace-go/contrib/segmentio/kafka-go"/v2
+package kafka // import "github.com/DataDog/dd-trace-go/contrib/segmentio/kafka-go/v2"
 
 import (
 	"context"

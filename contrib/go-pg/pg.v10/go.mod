@@ -8,7 +8,7 @@ require (
 )
 
 require (
-	github.com/DataDog/dd-trace-go/contrib/net/http/v2 v0.0.0-20240516153256-8d6fa2bea61d // indirect
+	github.com/DataDog/dd-trace-go/contrib/net/http/v2 v2.0.0-20240516153256-8d6fa2bea61d // indirect
 	github.com/DataDog/go-sqllexer v0.0.11 // indirect
 	github.com/fsnotify/fsnotify v1.5.4 // indirect
 	github.com/google/go-cmp v0.6.0 // indirect
@@ -56,3 +56,6 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	mellium.im/sasl v0.3.1 // indirect
 )
+
+replace "github.com/DataDog/dd-trace-go/v2" => "../../.."
+replace "github.com/DataDog/dd-trace-go/contrib/net/http/v2" => "../../net/http"

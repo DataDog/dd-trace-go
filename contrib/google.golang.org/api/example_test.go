@@ -8,7 +8,7 @@ package api_test
 import (
 	"fmt"
 
-	apitrace "github.com/DataDog/dd-trace-go/contrib/google.golang.org/api"/v2
+	apitrace "github.com/DataDog/dd-trace-go/contrib/google.golang.org/api/v2"
 
 	cloudresourcemanager "google.golang.org/api/cloudresourcemanager/v1"
 )

@@ -8,8 +8,8 @@ package sqlx_test
 import (
 	"log"
 
-	sqltrace "github.com/DataDog/dd-trace-go/contrib/database/sql"/v2
-	sqlxtrace "github.com/DataDog/dd-trace-go/contrib/jmoiron/sqlx"/v2
+	sqltrace "github.com/DataDog/dd-trace-go/contrib/database/sql/v2"
+	sqlxtrace "github.com/DataDog/dd-trace-go/contrib/jmoiron/sqlx/v2"
 
 	"github.com/jmoiron/sqlx"
 	"github.com/lib/pq"

@@ -4,7 +4,7 @@
 // Copyright 2016 Datadog, Inc.
 
 // Package fiber provides tracing functions for tracing the fiber package (https://github.com/gofiber/fiber).
-package fiber // import "github.com/DataDog/dd-trace-go/contrib/gofiber/fiber.v2"/v2
+package fiber // import "github.com/DataDog/dd-trace-go/contrib/gofiber/fiber.v2/v2"
 
 import (
 	"fmt"
