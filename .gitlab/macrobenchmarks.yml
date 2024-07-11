@@ -46,7 +46,7 @@ go122-baseline:
     ENABLE_PROFILING: "false"
     ENABLE_APPSEC: "false"
     DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
-    GO_VERSION: "1.22.1"
+    GO_VERSION: "1.22.5"
 
 go122-only-trace:
   extends: .benchmarks
@@ -56,7 +56,7 @@ go122-only-trace:
     ENABLE_PROFILING: "false"
     ENABLE_APPSEC: "false"
     DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
-    GO_VERSION: "1.22.1"
+    GO_VERSION: "1.22.5"
 
 go122-only-profile:
   extends: .benchmarks
@@ -66,7 +66,7 @@ go122-only-profile:
     ENABLE_PROFILING: "true"
     ENABLE_APPSEC: "false"
     DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
-    GO_VERSION: "1.22.1"
+    GO_VERSION: "1.22.5"
 
 go122-profile-trace:
   extends: .benchmarks
@@ -76,7 +76,7 @@ go122-profile-trace:
     ENABLE_PROFILING: "true"
     ENABLE_APPSEC: "false"
     DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
-    GO_VERSION: "1.22.1"
+    GO_VERSION: "1.22.5"
 
 go122-trace-asm:
   extends: .benchmarks
@@ -86,7 +86,7 @@ go122-trace-asm:
     ENABLE_PROFILING: "false"
     ENABLE_APPSEC: "true"
     DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
-    GO_VERSION: "1.22.1"
+    GO_VERSION: "1.22.5"
 
 go122-profile-trace-asm:
   extends: .benchmarks
@@ -96,9 +96,9 @@ go122-profile-trace-asm:
     ENABLE_PROFILING: "true"
     ENABLE_APPSEC: "true"
     DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
-    GO_VERSION: "1.22.1"
+    GO_VERSION: "1.22.5"
 
-go120-baseline:
+go121-baseline:
   extends: .benchmarks
   variables:
     ENABLE_DDPROF: "false"
@@ -106,9 +106,9 @@ go120-baseline:
     ENABLE_PROFILING: "false"
     ENABLE_APPSEC: "false"
     DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
-    GO_VERSION: "1.20.14"
+    GO_VERSION: "1.21.12"
 
-go120-only-trace:
+go121-only-trace:
   extends: .benchmarks
   variables:
     ENABLE_DDPROF: "false"
@@ -116,9 +116,9 @@ go120-only-trace:
     ENABLE_PROFILING: "false"
     ENABLE_APPSEC: "false"
     DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
-    GO_VERSION: "1.20.14"
+    GO_VERSION: "1.21.12"
 
-go120-only-profile:
+go121-only-profile:
   extends: .benchmarks
   variables:
     ENABLE_DDPROF: "false"
@@ -126,9 +126,9 @@ go120-only-profile:
     ENABLE_PROFILING: "true"
     ENABLE_APPSEC: "false"
     DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
-    GO_VERSION: "1.20.14"
+    GO_VERSION: "1.21.12"
 
-go120-profile-trace:
+go121-profile-trace:
   extends: .benchmarks
   variables:
     ENABLE_DDPROF: "false"
@@ -136,9 +136,9 @@ go120-profile-trace:
     ENABLE_PROFILING: "true"
     ENABLE_APPSEC: "false"
     DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
-    GO_VERSION: "1.20.14"
+    GO_VERSION: "1.21.12"
 
-go120-trace-asm:
+go121-trace-asm:
   extends: .benchmarks
   variables:
     ENABLE_DDPROF: "false"
@@ -146,9 +146,9 @@ go120-trace-asm:
     ENABLE_PROFILING: "false"
     ENABLE_APPSEC: "true"
     DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
-    GO_VERSION: "1.20.14"
+    GO_VERSION: "1.21.12"
 
-go120-profile-trace-asm:
+go121-profile-trace-asm:
   extends: .benchmarks
   variables:
     ENABLE_DDPROF: "false"
@@ -156,4 +156,4 @@ go120-profile-trace-asm:
     ENABLE_PROFILING: "true"
     ENABLE_APPSEC: "true"
     DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
-    GO_VERSION: "1.20.14"
+    GO_VERSION: "1.21.12"
