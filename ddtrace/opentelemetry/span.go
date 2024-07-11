@@ -37,7 +37,7 @@ type span struct {
 	finishOpts []tracer.FinishOption
 	statusInfo
 	*oteltracer
-	events []SpanEvent
+	events []spanEvent
 }
 
 func (s *span) TracerProvider() oteltrace.TracerProvider { return s.oteltracer.provider }
@@ -48,15 +48,15 @@ func (s *span) SetName(name string) {
 	s.attributes[ext.SpanName] = strings.ToLower(name)
 }
 
-// SpanEvent holds information about span events
-type SpanEvent struct {
+// spanEvent holds information about span events
+type spanEvent struct {
 	Name         string                 `json:"name"`
 	TimeUnixNano int64                  `json:"time_unix_nano"`
 	Attributes   map[string]interface{} `json:"attributes,omitempty"`
 }
 
-// stringifySpanEvents transforms a slice of SpanEvent into a comma separated string
-func stringifySpanEvents(evts []SpanEvent) (s string) {
+// stringifySpanEvents transforms a slice of spanEvent into a comma separated string
+func stringifySpanEvents(evts []spanEvent) (s string) {
 	for i, e := range evts {
 		if i == 0 {
 			s += marshalSpanEvent(e)
@@ -67,8 +67,8 @@ func stringifySpanEvents(evts []SpanEvent) (s string) {
 	return s
 }
 
-// marshalSpanEvent transforms a SpanEvent into a JSON-encoded object with "name" and "time_unix_nano" fields, and an optional "attributes" field
-func marshalSpanEvent(evt SpanEvent) string {
+// marshalSpanEvent transforms a spanEvent into a JSON-encoded object with "name" and "time_unix_nano" fields, and an optional "attributes" field
+func marshalSpanEvent(evt spanEvent) string {
 	s, err := json.Marshal(evt)
 	if err != nil {
 		log.Debug(fmt.Sprintf("Issue marshaling span event %v:%v", evt, err))
@@ -215,7 +215,7 @@ func (s *span) AddEvent(name string, opts ...oteltrace.EventOption) {
 	for _, a := range c.Attributes() {
 		attrs[string(a.Key)] = a.Value.AsInterface()
 	}
-	s.events = append(s.events, SpanEvent{
+	s.events = append(s.events, spanEvent{
 		Name:         name,
 		TimeUnixNano: c.Timestamp().Unix(),
 		Attributes:   attrs,

@@ -190,7 +190,7 @@ func TestMarshalSpanEvent(t *testing.T) {
 	// now := time.Now()
 	nowUnix := time.Now().Unix()
 	want := fmt.Sprintf("{\"name\":\"evt\",\"time_unix_nano\":%v,\"attributes\":{\"attribute1\":\"value1\",\"attribute2\":123,\"attribute3\":[1,2,3],\"attribute4\":true}}", nowUnix)
-	s := marshalSpanEvent(SpanEvent{
+	s := marshalSpanEvent(spanEvent{
 		Name:         "evt",
 		TimeUnixNano: nowUnix,
 		Attributes: map[string]interface{}{
@@ -206,13 +206,13 @@ func TestMarshalSpanEvent(t *testing.T) {
 func TestStringifySpanEvent(t *testing.T) {
 	assert := assert.New(t)
 	t.Run("multiple events", func(t *testing.T) {
-		evt1 := SpanEvent{
+		evt1 := spanEvent{
 			Name: "abc",
 		}
-		evt2 := SpanEvent{
+		evt2 := spanEvent{
 			Name: "def",
 		}
-		evts := []SpanEvent{evt1, evt2}
+		evts := []spanEvent{evt1, evt2}
 		want := marshalSpanEvent(evt1) + "," + marshalSpanEvent(evt2)
 
 		s := stringifySpanEvents(evts)
