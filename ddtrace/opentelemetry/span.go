@@ -48,15 +48,14 @@ func (s *span) SetName(name string) {
 	s.attributes[ext.SpanName] = strings.ToLower(name)
 }
 
-// SpanEvent holds information about otelsdk.Event types, with some fields altered and renamed to fit Datadog needs
-// along with json tags for easy marshaling
+// SpanEvent holds information about span events
 type SpanEvent struct {
 	Name         string                 `json:"name"`
 	TimeUnixNano int64                  `json:"time_unix_nano"`
 	Attributes   map[string]interface{} `json:"attributes,omitempty"`
 }
 
-// stringifySpanEvents transforms a slice of otelsdk.Events into a comma separated string
+// stringifySpanEvents transforms a slice of SpanEvent into a comma separated string
 func stringifySpanEvents(evts []SpanEvent) (s string) {
 	for i, e := range evts {
 		if i == 0 {
@@ -68,7 +67,7 @@ func stringifySpanEvents(evts []SpanEvent) (s string) {
 	return s
 }
 
-// marshalSpanEvent transforms an otelsdk.Event into a JSON-encoded object with "name" and "time_unix_nano" fields, and an optional "attributes" field
+// marshalSpanEvent transforms a SpanEvent into a JSON-encoded object with "name" and "time_unix_nano" fields, and an optional "attributes" field
 func marshalSpanEvent(evt SpanEvent) string {
 	s, err := json.Marshal(evt)
 	if err != nil {
