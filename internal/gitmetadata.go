@@ -117,7 +117,7 @@ func initGitMetadataTags() {
 	}
 }
 
-// RefreshGitMetadataTags reset cashed metadata tags
+// RefreshGitMetadataTags reset cached metadata tags
 func RefreshGitMetadataTags() {
 	initGitMetadataTags()
 }
