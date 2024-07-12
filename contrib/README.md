@@ -39,7 +39,21 @@ Each integration comes with a thorough documentation and usage examples. A good 
 ### Instrumentation telemetry
 
 Every integration is expected to import instrumentation telemetry to gather integration usage (more info [here](https://docs.datadoghq.com/tracing/configure_data_security/#telemetry-collection)). Instrumentation telemetry can be enabled by adding the following `init` function to the new contrib package:
+
 ```golang
 func init() {
     telemetry.LoadIntegration("package/import/path")
 }
+```
+
+### Version pinning
+
+We aim to keep all integrated packages to their minimum working version without known vulnerabilities (based on reported CVEs). As integrated packages have different versioning policies regarding breaking changes,
+there is no guarantee that previously pinned versions will work with next `dd-trace-go` versions.
+
+### Deprecation
+
+Integrations can be deprecated if all the following conditions are true:
+
+* The integrated package is deprecated or archived (no longer maintained).
+* A vulnerability is reported in the latest available version as CVE.
