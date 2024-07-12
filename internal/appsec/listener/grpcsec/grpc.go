@@ -18,6 +18,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener/httpsec"
 	shared "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener/sharedsec"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener/sqlsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/samplernames"
 
@@ -53,7 +54,7 @@ func Install(wafHandle *waf.Handle, cfg *config.Config, lim limiter.Limiter, roo
 type wafEventListener struct {
 	wafHandle *waf.Handle
 	config    *config.Config
-	addresses map[string]struct{}
+	addresses listener.AddressSet
 	limiter   limiter.Limiter
 	wafDiags  waf.Diagnostics
 	once      sync.Once
@@ -112,8 +113,12 @@ func (l *wafEventListener) onEvent(op *types.HandlerOperation, handlerArgs types
 		return
 	}
 
-	if _, ok := l.addresses[httpsec.ServerIoNetURLAddr]; ok {
+	if l.isSecAddressListened(httpsec.ServerIoNetURLAddr) {
 		httpsec.RegisterRoundTripperListener(op, &op.SecurityEventsHolder, wafCtx, l.limiter)
+	}
+
+	if sqlsec.SQLAddressesPresent(l.addresses) {
+		sqlsec.RegisterSQLListener(op, &op.SecurityEventsHolder, wafCtx, l.limiter)
 	}
 
 	// Listen to the UserID address if the WAF rules are using it
@@ -121,19 +126,9 @@ func (l *wafEventListener) onEvent(op *types.HandlerOperation, handlerArgs types
 		// UserIDOperation happens when appsec.SetUser() is called. We run the WAF and apply actions to
 		// see if the associated user should be blocked. Since we don't control the execution flow in this case
 		// (SetUser is SDK), we delegate the responsibility of interrupting the handler to the user.
-		dyngo.On(op, func(op *sharedsec.UserIDOperation, args sharedsec.UserIDOperationArgs) {
-			values := map[string]any{
-				httpsec.UserIDAddr: args.UserID,
-			}
-			wafResult := shared.RunWAF(wafCtx, waf.RunAddressData{Persistent: values})
-			if wafResult.HasEvents() {
-				addEvents(wafResult.Events)
-				log.Debug("appsec: WAF detected an authenticated user attack: %s", args.UserID)
-			}
-			if wafResult.HasActions() {
-				shared.ProcessActions(op, wafResult.Actions)
-			}
-		})
+		dyngo.On(op, shared.MakeWAFRunListener(&op.SecurityEventsHolder, wafCtx, l.limiter, func(args sharedsec.UserIDOperationArgs) waf.RunAddressData {
+			return waf.RunAddressData{Persistent: map[string]any{httpsec.UserIDAddr: args.UserID}}
+		}))
 	}
 
 	values := make(map[string]any, 2) // 2 because the method and client ip addresses are commonly present in the rules

@@ -10,9 +10,6 @@ package listener
 
 import waf "github.com/DataDog/go-libddwaf/v3"
 
-// ContextKey is used as a key to store operations in the request's context (gRPC/HTTP)
-type ContextKey struct{}
-
 // AddressSet is a set of WAF addresses.
 type AddressSet map[string]struct{}
 

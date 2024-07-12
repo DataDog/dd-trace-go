@@ -3,6 +3,14 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2024 Datadog, Inc.
 
-package exectracetest
+package orchestrion
 
-// Placeholder -- the latestgolang.org/x/exp does not support go1.20
+// Orchestrion will change this at build-time
+//
+//dd:orchestrion-enabled
+var enabled = false
+
+// Enabled returns whether the current build was compiled with orchestrion or not.
+func Enabled() bool {
+	return enabled
+}
