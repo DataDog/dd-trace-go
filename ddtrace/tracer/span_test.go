@@ -590,7 +590,6 @@ func TestSpanProfilingTags(t *testing.T) {
 }
 
 func TestSpanError(t *testing.T) {
-	t.Setenv("DD_CLIENT_HOSTNAME_ENABLED", "false") // the host name is inconsistently returning a value, causing the test to flake.
 	assert := assert.New(t)
 	tracer := newTracer(withTransport(newDefaultTransport()))
 	internal.SetGlobalTracer(tracer)

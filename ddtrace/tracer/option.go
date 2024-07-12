@@ -22,6 +22,7 @@ import (
 	"strings"
 	"time"
 
+	"golang.org/x/mod/semver"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
@@ -388,7 +389,13 @@ func newConfig(opts ...StartOption) *config {
 	}
 	c.profilerEndpoints = internal.BoolEnv(traceprof.EndpointEnvVar, true)
 	c.profilerHotspots = internal.BoolEnv(traceprof.CodeHotspotsEnvVar, true)
-	c.enableHostnameDetection = internal.BoolEnv("DD_CLIENT_HOSTNAME_ENABLED", true)
+	if compatMode := os.Getenv("DD_TRACE_CLIENT_HOSTNAME_COMPAT"); compatMode != "" {
+		if semver.IsValid(compatMode) {
+			c.enableHostnameDetection = semver.Compare(semver.MajorMinor(compatMode), "v1.66") <= 0
+		} else {
+			log.Warn("ignoring DD_TRACE_CLIENT_HOSTNAME_COMPAT, invalid version %q", compatMode)
+		}
+	}
 	c.debugAbandonedSpans = internal.BoolEnv("DD_TRACE_DEBUG_ABANDONED_SPANS", false)
 	if c.debugAbandonedSpans {
 		c.spanTimeout = internal.DurationEnv("DD_TRACE_ABANDONED_SPAN_TIMEOUT", 10*time.Minute)
@@ -445,7 +452,6 @@ func newConfig(opts ...StartOption) *config {
 	if c.agentURL.Scheme == "unix" {
 		// If we're connecting over UDS we can just rely on the agent to provide the hostname
 		log.Debug("connecting to agent over unix, do not set hostname on any traces")
-		c.enableHostnameDetection = false
 		c.httpClient = udsClient(c.agentURL.Path, c.httpClientTimeout)
 		c.agentURL = &url.URL{
 			Scheme: "http",
