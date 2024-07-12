@@ -55,28 +55,6 @@ type spanEvent struct {
 	Attributes   map[string]interface{} `json:"attributes,omitempty"`
 }
 
-// stringifySpanEvents transforms a slice of spanEvent into a comma separated string
-func stringifySpanEvents(evts []spanEvent) (s string) {
-	for i, e := range evts {
-		if i == 0 {
-			s += marshalSpanEvent(e)
-		} else {
-			s += "," + marshalSpanEvent(e)
-		}
-	}
-	return s
-}
-
-// marshalSpanEvent transforms a spanEvent into a JSON-encoded object with "name" and "time_unix_nano" fields, and an optional "attributes" field
-func marshalSpanEvent(evt spanEvent) string {
-	s, err := json.Marshal(evt)
-	if err != nil {
-		log.Debug(fmt.Sprintf("Issue marshaling span event %v:%v", evt, err))
-		return ""
-	}
-	return string(s)
-}
-
 func (s *span) End(options ...oteltrace.SpanEndOption) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -102,9 +80,13 @@ func (s *span) End(options ...oteltrace.SpanEndOption) {
 	for k, v := range s.attributes {
 		s.DD.SetTag(k, v)
 	}
-	evts := stringifySpanEvents(s.events)
-	if evts != "" {
-		s.DD.SetTag("events", evts)
+	if s.events != nil {
+		b, err := json.Marshal(s.events)
+		if err == nil {
+			s.DD.SetTag("events", string(b))
+		} else {
+			log.Debug(fmt.Sprintf("Issue marshaling span events; events dropped from span meta\n%v", err))
+		}
 	}
 	var finishCfg = oteltrace.NewSpanEndConfig(options...)
 	var opts []tracer.FinishOption
@@ -215,11 +197,12 @@ func (s *span) AddEvent(name string, opts ...oteltrace.EventOption) {
 	for _, a := range c.Attributes() {
 		attrs[string(a.Key)] = a.Value.AsInterface()
 	}
-	s.events = append(s.events, spanEvent{
+	e := spanEvent{
 		Name:         name,
 		TimeUnixNano: c.Timestamp().Unix(),
 		Attributes:   attrs,
-	})
+	}
+	s.events = append(s.events, e)
 }
 
 // SetAttributes sets the key-value pairs as tags on the span.

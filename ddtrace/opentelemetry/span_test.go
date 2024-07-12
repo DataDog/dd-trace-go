@@ -185,45 +185,6 @@ func TestSpanLink(t *testing.T) {
 	assert.Equal(uint32(0x80000001), spanLinks[0].Flags) // sampled and set
 }
 
-func TestMarshalSpanEvent(t *testing.T) {
-	assert := assert.New(t)
-	// now := time.Now()
-	nowUnix := time.Now().Unix()
-	want := fmt.Sprintf("{\"name\":\"evt\",\"time_unix_nano\":%v,\"attributes\":{\"attribute1\":\"value1\",\"attribute2\":123,\"attribute3\":[1,2,3],\"attribute4\":true}}", nowUnix)
-	s := marshalSpanEvent(spanEvent{
-		Name:         "evt",
-		TimeUnixNano: nowUnix,
-		Attributes: map[string]interface{}{
-			"attribute1": "value1",
-			"attribute2": 123,
-			"attribute3": []float64{1.0, 2.0, 3.0},
-			"attribute4": true,
-		},
-	})
-	assert.Equal(want, s)
-}
-
-func TestStringifySpanEvent(t *testing.T) {
-	assert := assert.New(t)
-	t.Run("multiple events", func(t *testing.T) {
-		evt1 := spanEvent{
-			Name: "abc",
-		}
-		evt2 := spanEvent{
-			Name: "def",
-		}
-		evts := []spanEvent{evt1, evt2}
-		want := marshalSpanEvent(evt1) + "," + marshalSpanEvent(evt2)
-
-		s := stringifySpanEvents(evts)
-		assert.Equal(want, s)
-	})
-	t.Run("no events", func(t *testing.T) {
-		s := stringifySpanEvents(nil)
-		assert.Equal("", s)
-	})
-}
-
 func TestSpanEnd(t *testing.T) {
 	assert := assert.New(t)
 	_, payloads, cleanup := mockTracerProvider(t)
@@ -244,7 +205,8 @@ func TestSpanEnd(t *testing.T) {
 	assert.True(sp.IsRecording())
 	now := time.Now()
 	nowUnix := now.Unix()
-	sp.AddEvent("evt", oteltrace.WithTimestamp(now), oteltrace.WithAttributes(attribute.String("key1", "value"), attribute.Int("key2", 1234)))
+	sp.AddEvent("evt1", oteltrace.WithTimestamp(now))
+	sp.AddEvent("evt2", oteltrace.WithTimestamp(now), oteltrace.WithAttributes(attribute.String("key1", "value"), attribute.Int("key2", 1234)))
 
 	sp.End()
 	assert.False(sp.IsRecording())
@@ -275,7 +237,11 @@ func TestSpanEnd(t *testing.T) {
 	for k, v := range ignoredAttributes {
 		assert.NotContains(meta, fmt.Sprintf("%s:%s", k, v))
 	}
-	assert.Contains(meta, fmt.Sprintf("events:{\"name\":\"evt\",\"time_unix_nano\":%v,\"attributes\":{\"key1\":\"value\",\"key2\":1234}", nowUnix))
+	jsonMeta := fmt.Sprintf(
+		"events:[{\"name\":\"evt1\",\"time_unix_nano\":%v},{\"name\":\"evt2\",\"time_unix_nano\":%v,\"attributes\":{\"key1\":\"value\",\"key2\":1234}}]",
+		nowUnix, nowUnix,
+	)
+	assert.Contains(meta, jsonMeta)
 }
 
 // This test verifies that setting the status of a span
@@ -399,6 +365,15 @@ func TestSpanAddEvent(t *testing.T) {
 		assert.Len(dd.events, 1)
 		e := dd.events[0]
 		assert.Equal(e.TimeUnixNano, now.Unix())
+	})
+	t.Run("mulitple events", func(t *testing.T) {
+		_, sp := tr.Start(context.Background(), "sp")
+		now := time.Now()
+		sp.AddEvent("evt1", oteltrace.WithTimestamp(now))
+		sp.AddEvent("evt2", oteltrace.WithTimestamp(now))
+		sp.End()
+		dd := sp.(*span)
+		assert.Len(dd.events, 2)
 	})
 }
 
