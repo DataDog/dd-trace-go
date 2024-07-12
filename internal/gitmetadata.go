@@ -101,7 +101,7 @@ func getTagsFromBinary(readBuildInfo func() (*debug.BuildInfo, bool)) map[string
 	return res
 }
 
-// GetGitMetadataTags returns git metadata tags
+// GetGitMetadataTags returns git metadata tags. Returned map is read-only
 func GetGitMetadataTags() map[string]string {
 	initOnce.Do(initGitMetadataTags)
 	return gitMetadataTags
@@ -117,7 +117,7 @@ func initGitMetadataTags() {
 	}
 }
 
-// RefreshGitMetadataTags reset cached metadata tags
+// RefreshGitMetadataTags reset cached metadata tags. NOT thread-safe, use for testing only
 func RefreshGitMetadataTags() {
 	initGitMetadataTags()
 }
