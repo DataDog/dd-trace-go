@@ -33,7 +33,7 @@ jobs:
         uses: actions/checkout@v3
         with:
           repository: 'DataDog/system-tests'
-          ref: ${{ inputs.ref }}
+          ref: 51d98c92ce8a315ce00afb5a18c5be0b40081bee
 
       - name: Checkout dd-trace-go
         uses: actions/checkout@v3
