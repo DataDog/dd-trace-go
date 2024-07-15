@@ -199,7 +199,7 @@ func (s *span) AddEvent(name string, opts ...oteltrace.EventOption) {
 	}
 	e := spanEvent{
 		Name:         name,
-		TimeUnixNano: c.Timestamp().Unix(),
+		TimeUnixNano: c.Timestamp().UnixNano(),
 		Attributes:   attrs,
 	}
 	s.events = append(s.events, e)

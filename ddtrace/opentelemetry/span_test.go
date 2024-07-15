@@ -204,7 +204,7 @@ func TestSpanEnd(t *testing.T) {
 	}
 	assert.True(sp.IsRecording())
 	now := time.Now()
-	nowUnix := now.Unix()
+	nowUnixNano := now.UnixNano()
 	sp.AddEvent("evt1", oteltrace.WithTimestamp(now))
 	sp.AddEvent("evt2", oteltrace.WithTimestamp(now), oteltrace.WithAttributes(attribute.String("key1", "value"), attribute.Int("key2", 1234)))
 
@@ -239,7 +239,7 @@ func TestSpanEnd(t *testing.T) {
 	}
 	jsonMeta := fmt.Sprintf(
 		"events:[{\"name\":\"evt1\",\"time_unix_nano\":%v},{\"name\":\"evt2\",\"time_unix_nano\":%v,\"attributes\":{\"key1\":\"value\",\"key2\":1234}}]",
-		nowUnix, nowUnix,
+		nowUnixNano, nowUnixNano,
 	)
 	assert.Contains(meta, jsonMeta)
 }
@@ -323,7 +323,7 @@ func TestSpanAddEvent(t *testing.T) {
 		// When no timestamp option is provided, otel will generate a timestamp for the event
 		// We can't know the exact time that the event is added, but we can create start and end "bounds" and assert
 		// that the event's eventual timestamp is between those bounds
-		timeStartBound := time.Now().Unix()
+		timeStartBound := time.Now().UnixNano()
 		sp.AddEvent("My event!", oteltrace.WithAttributes(
 			attribute.Int("pid", 4328),
 			attribute.String("signal", "SIGHUP"),
@@ -331,7 +331,7 @@ func TestSpanAddEvent(t *testing.T) {
 			attribute.Bool("condition", true),
 			attribute.Bool("condition", false),
 		))
-		timeEndBound := time.Now().Unix()
+		timeEndBound := time.Now().UnixNano()
 		sp.End()
 		dd := sp.(*span)
 
@@ -364,7 +364,7 @@ func TestSpanAddEvent(t *testing.T) {
 		dd := sp.(*span)
 		assert.Len(dd.events, 1)
 		e := dd.events[0]
-		assert.Equal(e.TimeUnixNano, now.Unix())
+		assert.Equal(e.TimeUnixNano, now.UnixNano())
 	})
 	t.Run("mulitple events", func(t *testing.T) {
 		_, sp := tr.Start(context.Background(), "sp")
