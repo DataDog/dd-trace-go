@@ -120,12 +120,10 @@ func TestEntityContainerIDHeaders(t *testing.T) {
 }
 
 func TestGitMetadata(t *testing.T) {
-	maininternal.ResetGitMetadataTags()
-	defer maininternal.ResetGitMetadataTags()
-
 	t.Run("git-metadata-from-dd-tags", func(t *testing.T) {
-		maininternal.ResetGitMetadataTags()
 		t.Setenv(maininternal.EnvDDTags, "git.commit.sha:123456789ABCD git.repository_url:github.com/user/repo go_path:somepath")
+		maininternal.RefreshGitMetadataTags()
+
 		profile := doOneShortProfileUpload(t)
 
 		assert := assert.New(t)
@@ -134,8 +132,9 @@ func TestGitMetadata(t *testing.T) {
 		assert.Contains(profile.tags, "go_path:somepath")
 	})
 	t.Run("git-metadata-from-dd-tags-with-credentials", func(t *testing.T) {
-		maininternal.ResetGitMetadataTags()
 		t.Setenv(maininternal.EnvDDTags, "git.commit.sha:123456789ABCD git.repository_url:http://u@github.com/user/repo go_path:somepath")
+		maininternal.RefreshGitMetadataTags()
+
 		profile := doOneShortProfileUpload(t)
 
 		assert := assert.New(t)
@@ -144,12 +143,13 @@ func TestGitMetadata(t *testing.T) {
 		assert.Contains(profile.tags, "go_path:somepath")
 	})
 	t.Run("git-metadata-from-env", func(t *testing.T) {
-		maininternal.ResetGitMetadataTags()
 		t.Setenv(maininternal.EnvDDTags, "git.commit.sha:123456789ABCD git.repository_url:github.com/user/repo")
 
 		// git metadata env has priority under DD_TAGS
 		t.Setenv(maininternal.EnvGitRepositoryURL, "github.com/user/repo_new")
 		t.Setenv(maininternal.EnvGitCommitSha, "123456789ABCDE")
+		maininternal.RefreshGitMetadataTags()
+
 		profile := doOneShortProfileUpload(t)
 
 		assert := assert.New(t)
@@ -157,9 +157,10 @@ func TestGitMetadata(t *testing.T) {
 		assert.Contains(profile.tags, "git.repository_url:github.com/user/repo_new")
 	})
 	t.Run("git-metadata-from-env-with-credentials", func(t *testing.T) {
-		maininternal.ResetGitMetadataTags()
 		t.Setenv(maininternal.EnvGitRepositoryURL, "https://u@github.com/user/repo_new")
 		t.Setenv(maininternal.EnvGitCommitSha, "123456789ABCDE")
+		maininternal.RefreshGitMetadataTags()
+
 		profile := doOneShortProfileUpload(t)
 
 		assert := assert.New(t)
@@ -168,11 +169,12 @@ func TestGitMetadata(t *testing.T) {
 	})
 
 	t.Run("git-metadata-disabled", func(t *testing.T) {
-		maininternal.ResetGitMetadataTags()
 		t.Setenv(maininternal.EnvGitMetadataEnabledFlag, "false")
 		t.Setenv(maininternal.EnvDDTags, "git.commit.sha:123456789ABCD git.repository_url:github.com/user/repo")
 		t.Setenv(maininternal.EnvGitRepositoryURL, "github.com/user/repo")
 		t.Setenv(maininternal.EnvGitCommitSha, "123456789ABCD")
+		maininternal.RefreshGitMetadataTags()
+
 		profile := doOneShortProfileUpload(t)
 
 		assert := assert.New(t)
