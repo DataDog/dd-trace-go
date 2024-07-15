@@ -340,7 +340,6 @@ func TestSpanAddEvent(t *testing.T) {
 		e := dd.events[0]
 		assert.Equal(e.Name, "My event!")
 		// assert event timestamp is [around] the expected time
-		fmt.Printf("event time: %v, should be bound btwn start: %v and end: %v\n", e.TimeUnixNano, timeStartBound, timeEndBound)
 		assert.True((e.TimeUnixNano) >= timeStartBound && e.TimeUnixNano <= timeEndBound)
 		// Assert both attributes exist on the event
 		assert.Len(e.Attributes, 3)
@@ -360,7 +359,6 @@ func TestSpanAddEvent(t *testing.T) {
 		// generate micro and nano second timestamps
 		now := time.Now()
 		timeMicro := now.UnixMicro()
-		timeNano := now.UnixNano()
 		// pass microsecond timestamp into timestamp option
 		sp.AddEvent("My event!", oteltrace.WithTimestamp(time.UnixMicro(timeMicro)))
 		sp.End()
@@ -369,7 +367,7 @@ func TestSpanAddEvent(t *testing.T) {
 		assert.Len(dd.events, 1)
 		e := dd.events[0]
 		// assert resulting timestamp is in nanoseconds
-		assert.Equal(e.TimeUnixNano, timeNano)
+		assert.Equal(timeMicro*1000, e.TimeUnixNano)
 	})
 	t.Run("mulitple events", func(t *testing.T) {
 		_, sp := tr.Start(context.Background(), "sp")
