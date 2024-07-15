@@ -111,3 +111,8 @@ func (w *responseWriter) WriteHeader(status int) {
 	w.ResponseWriter.WriteHeader(status)
 	w.status = status
 }
+
+// Unwrap returns the underlying wrapped http.ResponseWriter.
+func (w *responseWriter) Unwrap() http.ResponseWriter {
+	return w.ResponseWriter
+}
