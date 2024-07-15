@@ -357,14 +357,19 @@ func TestSpanAddEvent(t *testing.T) {
 	})
 	t.Run("event with timestamp", func(t *testing.T) {
 		_, sp := tr.Start(context.Background(), "span_event")
+		// generate micro and nano second timestamps
 		now := time.Now()
-		sp.AddEvent("My event!", oteltrace.WithTimestamp(now))
+		timeMicro := now.UnixMicro()
+		timeNano := now.UnixNano()
+		// pass microsecond timestamp into timestamp option
+		sp.AddEvent("My event!", oteltrace.WithTimestamp(time.UnixMicro(timeMicro)))
 		sp.End()
 
 		dd := sp.(*span)
 		assert.Len(dd.events, 1)
 		e := dd.events[0]
-		assert.Equal(e.TimeUnixNano, now.UnixNano())
+		// assert resulting timestamp is in nanoseconds
+		assert.Equal(e.TimeUnixNano, timeNano)
 	})
 	t.Run("mulitple events", func(t *testing.T) {
 		_, sp := tr.Start(context.Background(), "sp")
