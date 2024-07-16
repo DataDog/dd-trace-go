@@ -7,7 +7,9 @@ package opentelemetry
 
 import (
 	"encoding/binary"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"strconv"
 	"strings"
 	"sync"
@@ -35,6 +37,7 @@ type span struct {
 	finishOpts []tracer.FinishOption
 	statusInfo
 	*oteltracer
+	events []spanEvent
 }
 
 func (s *span) TracerProvider() oteltrace.TracerProvider { return s.oteltracer.provider }
@@ -43,6 +46,13 @@ func (s *span) SetName(name string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.attributes[ext.SpanName] = strings.ToLower(name)
+}
+
+// spanEvent holds information about span events
+type spanEvent struct {
+	Name         string                 `json:"name"`
+	TimeUnixNano int64                  `json:"time_unix_nano"`
+	Attributes   map[string]interface{} `json:"attributes,omitempty"`
 }
 
 func (s *span) End(options ...oteltrace.SpanEndOption) {
@@ -67,9 +77,16 @@ func (s *span) End(options ...oteltrace.SpanEndOption) {
 	if op, ok := s.attributes[ext.SpanName]; !ok || op == "" {
 		s.DD.SetTag(ext.SpanName, strings.ToLower(s.createOperationName()))
 	}
-
 	for k, v := range s.attributes {
 		s.DD.SetTag(k, v)
+	}
+	if s.events != nil {
+		b, err := json.Marshal(s.events)
+		if err == nil {
+			s.DD.SetTag("events", string(b))
+		} else {
+			log.Debug(fmt.Sprintf("Issue marshaling span events; events dropped from span meta\n%v", err))
+		}
 	}
 	var finishCfg = oteltrace.NewSpanEndConfig(options...)
 	var opts []tracer.FinishOption
@@ -170,6 +187,24 @@ func (s *span) SetStatus(code otelcodes.Code, description string) {
 	}
 }
 
+// AddEvent adds a span event onto the span with the provided name and EventOptions
+func (s *span) AddEvent(name string, opts ...oteltrace.EventOption) {
+	if !s.IsRecording() {
+		return
+	}
+	c := oteltrace.NewEventConfig(opts...)
+	attrs := make(map[string]interface{})
+	for _, a := range c.Attributes() {
+		attrs[string(a.Key)] = a.Value.AsInterface()
+	}
+	e := spanEvent{
+		Name:         name,
+		TimeUnixNano: c.Timestamp().UnixNano(),
+		Attributes:   attrs,
+	}
+	s.events = append(s.events, e)
+}
+
 // SetAttributes sets the key-value pairs as tags on the span.
 // Every value is propagated as an interface.
 // Some attribute keys are reserved and will be remapped to Datadog reserved tags.
@@ -212,6 +247,8 @@ func toReservedAttributes(k string, v attribute.Value) (string, interface{}) {
 			rate = 0
 		}
 		return ext.EventSampleRate, rate
+	case "http.response.status_code":
+		return "http.status_code", strconv.FormatInt(v.AsInt64(), 10)
 	default:
 		return k, v.AsInterface()
 	}

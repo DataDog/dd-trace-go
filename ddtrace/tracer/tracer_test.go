@@ -192,8 +192,20 @@ func TestTracerStart(t *testing.T) {
 		internal.Testing = false
 	})
 
-	t.Run("tracing_not_enabled", func(t *testing.T) {
+	t.Run("dd_tracing_not_enabled", func(t *testing.T) {
 		t.Setenv("DD_TRACE_ENABLED", "false")
+		Start()
+		defer Stop()
+		if _, ok := internal.GetGlobalTracer().(*tracer); ok {
+			t.Fail()
+		}
+		if _, ok := internal.GetGlobalTracer().(*internal.NoopTracer); !ok {
+			t.Fail()
+		}
+	})
+
+	t.Run("otel_tracing_not_enabled", func(t *testing.T) {
+		t.Setenv("OTEL_TRACES_EXPORTER", "none")
 		Start()
 		defer Stop()
 		if _, ok := internal.GetGlobalTracer().(*tracer); ok {
@@ -683,7 +695,7 @@ func TestTracerRuntimeMetrics(t *testing.T) {
 		assert.Contains(t, tp.Logs()[0], "DEBUG: Runtime metrics enabled")
 	})
 
-	t.Run("env", func(t *testing.T) {
+	t.Run("dd-env", func(t *testing.T) {
 		t.Setenv("DD_RUNTIME_METRICS_ENABLED", "true")
 		tp := new(log.RecordLogger)
 		tp.Ignore("appsec: ", telemetry.LogPrefix)
@@ -692,13 +704,22 @@ func TestTracerRuntimeMetrics(t *testing.T) {
 		assert.Contains(t, tp.Logs()[0], "DEBUG: Runtime metrics enabled")
 	})
 
-	t.Run("overrideEnv", func(t *testing.T) {
+	t.Run("otel-env", func(t *testing.T) {
+		t.Setenv("OTEL_METRICS_EXPORTER", "none")
+		c := newConfig()
+		assert.False(t, c.runtimeMetrics)
+	})
+
+	t.Run("override-chain", func(t *testing.T) {
+		// dd env overrides otel env
+		t.Setenv("OTEL_METRICS_EXPORTER", "none")
+		t.Setenv("DD_RUNTIME_METRICS_ENABLED", "true")
+		c := newConfig()
+		assert.True(t, c.runtimeMetrics)
+		// tracer option overrides dd env
 		t.Setenv("DD_RUNTIME_METRICS_ENABLED", "false")
-		tp := new(log.RecordLogger)
-		tp.Ignore("appsec: ", telemetry.LogPrefix)
-		tracer := newTracer(WithRuntimeMetrics(), WithLogger(tp), WithDebugMode(true))
-		defer tracer.Stop()
-		assert.Contains(t, tp.Logs()[0], "DEBUG: Runtime metrics enabled")
+		c = newConfig(WithRuntimeMetrics())
+		assert.True(t, c.runtimeMetrics)
 	})
 }
 
@@ -1841,14 +1862,12 @@ func TestEnvironment(t *testing.T) {
 }
 
 func TestGitMetadata(t *testing.T) {
-	maininternal.ResetGitMetadataTags()
-
 	t.Run("git-metadata-from-dd-tags", func(t *testing.T) {
 		t.Setenv(maininternal.EnvDDTags, "git.commit.sha:123456789ABCD git.repository_url:github.com/user/repo go_path:somepath")
+		maininternal.RefreshGitMetadataTags()
 
 		tracer, _, _, stop := startTestTracer(t)
 		defer stop()
-		defer maininternal.ResetGitMetadataTags()
 
 		assert := assert.New(t)
 		sp := tracer.StartSpan("http.request").(*span)
@@ -1861,10 +1880,10 @@ func TestGitMetadata(t *testing.T) {
 
 	t.Run("git-metadata-from-dd-tags-with-credentials", func(t *testing.T) {
 		t.Setenv(maininternal.EnvDDTags, "git.commit.sha:123456789ABCD git.repository_url:https://user:passwd@github.com/user/repo go_path:somepath")
+		maininternal.RefreshGitMetadataTags()
 
 		tracer, _, _, stop := startTestTracer(t)
 		defer stop()
-		defer maininternal.ResetGitMetadataTags()
 
 		assert := assert.New(t)
 		sp := tracer.StartSpan("http.request").(*span)
@@ -1881,10 +1900,10 @@ func TestGitMetadata(t *testing.T) {
 		// git metadata env has priority over DD_TAGS
 		t.Setenv(maininternal.EnvGitRepositoryURL, "github.com/user/repo_new")
 		t.Setenv(maininternal.EnvGitCommitSha, "123456789ABCDE")
+		maininternal.RefreshGitMetadataTags()
 
 		tracer, _, _, stop := startTestTracer(t)
 		defer stop()
-		defer maininternal.ResetGitMetadataTags()
 
 		assert := assert.New(t)
 		sp := tracer.StartSpan("http.request").(*span)
@@ -1897,10 +1916,10 @@ func TestGitMetadata(t *testing.T) {
 	t.Run("git-metadata-from-env-with-credentials", func(t *testing.T) {
 		t.Setenv(maininternal.EnvGitRepositoryURL, "https://u:t@github.com/user/repo_new")
 		t.Setenv(maininternal.EnvGitCommitSha, "123456789ABCDE")
+		maininternal.RefreshGitMetadataTags()
 
 		tracer, _, _, stop := startTestTracer(t)
 		defer stop()
-		defer maininternal.ResetGitMetadataTags()
 
 		assert := assert.New(t)
 		sp := tracer.StartSpan("http.request").(*span)
@@ -1913,10 +1932,10 @@ func TestGitMetadata(t *testing.T) {
 	t.Run("git-metadata-from-env-and-tags", func(t *testing.T) {
 		t.Setenv(maininternal.EnvDDTags, "git.commit.sha:123456789ABCD")
 		t.Setenv(maininternal.EnvGitRepositoryURL, "github.com/user/repo")
+		maininternal.RefreshGitMetadataTags()
 
 		tracer, _, _, stop := startTestTracer(t)
 		defer stop()
-		defer maininternal.ResetGitMetadataTags()
 
 		assert := assert.New(t)
 		sp := tracer.StartSpan("http.request").(*span)
@@ -1932,10 +1951,10 @@ func TestGitMetadata(t *testing.T) {
 		t.Setenv(maininternal.EnvDDTags, "git.commit.sha:123456789ABCD git.repository_url:github.com/user/repo")
 		t.Setenv(maininternal.EnvGitRepositoryURL, "github.com/user/repo_new")
 		t.Setenv(maininternal.EnvGitCommitSha, "123456789ABCDE")
+		maininternal.RefreshGitMetadataTags()
 
 		tracer, _, _, stop := startTestTracer(t)
 		defer stop()
-		defer maininternal.ResetGitMetadataTags()
 
 		assert := assert.New(t)
 		sp := tracer.StartSpan("http.request").(*span)

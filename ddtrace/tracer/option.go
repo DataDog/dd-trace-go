@@ -25,6 +25,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/constants"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
@@ -95,6 +96,7 @@ var contribIntegrations = map[string]struct {
 	"github.com/urfave/negroni":                     {"Negroni", false},
 	"github.com/valyala/fasthttp":                   {"FastHTTP", false},
 	"github.com/zenazn/goji":                        {"Goji", false},
+	"log/slog":                                      {"log/slog", false},
 }
 
 var (
@@ -267,6 +269,12 @@ type config struct {
 	// dynamicInstrumentationEnabled controls if the target application can be modified by Dynamic Instrumentation or not.
 	// Value from DD_DYNAMIC_INSTRUMENTATION_ENABLED, default false.
 	dynamicInstrumentationEnabled bool
+
+	// globalSampleRate holds sample rate read from environment variables.
+	globalSampleRate float64
+
+	// ciVisibilityEnabled controls if the tracer is loaded with CI Visibility mode. default false
+	ciVisibilityEnabled bool
 }
 
 // orchestrionConfig contains Orchestrion configuration.
@@ -298,8 +306,24 @@ const partialFlushMinSpansDefault = 1000
 func newConfig(opts ...StartOption) *config {
 	c := new(config)
 	c.sampler = NewAllSampler()
+	sampleRate := math.NaN()
+	if r := getDDorOtelConfig("sampleRate"); r != "" {
+		var err error
+		sampleRate, err = strconv.ParseFloat(r, 64)
+		if err != nil {
+			log.Warn("ignoring DD_TRACE_SAMPLE_RATE, error: %v", err)
+			sampleRate = math.NaN()
+		} else if sampleRate < 0.0 || sampleRate > 1.0 {
+			log.Warn("ignoring DD_TRACE_SAMPLE_RATE: out of range %f", sampleRate)
+			sampleRate = math.NaN()
+		}
+	}
+	c.globalSampleRate = sampleRate
 	c.httpClientTimeout = time.Second * 10 // 10 seconds
 
+	if v := os.Getenv("OTEL_LOGS_EXPORTER"); v != "" {
+		log.Warn("OTEL_LOGS_EXPORTER is not supported")
+	}
 	if internal.BoolEnv("DD_TRACE_ANALYTICS_ENABLED", false) {
 		globalconfig.SetAnalyticsRate(1.0)
 	}
@@ -321,7 +345,7 @@ func newConfig(opts ...StartOption) *config {
 			return r == ',' || r == ' '
 		})...)(c)
 	}
-	if v := os.Getenv("DD_SERVICE"); v != "" {
+	if v := getDDorOtelConfig("service"); v != "" {
 		c.serviceName = v
 		globalconfig.SetServiceName(v)
 	}
@@ -329,7 +353,7 @@ func newConfig(opts ...StartOption) *config {
 		c.version = ver
 	}
 	if v := os.Getenv("DD_SERVICE_MAPPING"); v != "" {
-		internal.ForEachStringTag(v, func(key, val string) { WithServiceMapping(key, val)(c) })
+		internal.ForEachStringTag(v, internal.DDTagsDelimiter, func(key, val string) { WithServiceMapping(key, val)(c) })
 	}
 	c.headerAsTags = newDynamicConfig("trace_header_tags", nil, setHeaderTags, equalSlice[string])
 	if v := os.Getenv("DD_TRACE_HEADER_TAGS"); v != "" {
@@ -337,7 +361,7 @@ func newConfig(opts ...StartOption) *config {
 		// Required to ensure that the startup header tags are set on reset.
 		c.headerAsTags.startup = c.headerAsTags.current
 	}
-	if v := os.Getenv("DD_TAGS"); v != "" {
+	if v := getDDorOtelConfig("resourceAttributes"); v != "" {
 		tags := internal.ParseTagString(v)
 		internal.CleanGitMetadataTags(tags)
 		for key, val := range tags {
@@ -352,9 +376,9 @@ func newConfig(opts ...StartOption) *config {
 		c.logToStdout = true
 	}
 	c.logStartup = internal.BoolEnv("DD_TRACE_STARTUP_LOGS", true)
-	c.runtimeMetrics = internal.BoolEnv("DD_RUNTIME_METRICS_ENABLED", false)
-	c.debug = internal.BoolEnv("DD_TRACE_DEBUG", false)
-	c.enabled = newDynamicConfig("tracing_enabled", internal.BoolEnv("DD_TRACE_ENABLED", true), func(b bool) bool { return true }, equal[bool])
+	c.runtimeMetrics = internal.BoolVal(getDDorOtelConfig("metrics"), false)
+	c.debug = internal.BoolVal(getDDorOtelConfig("debugMode"), false)
+	c.enabled = newDynamicConfig("tracing_enabled", internal.BoolVal(getDDorOtelConfig("enabled"), true), func(b bool) bool { return true }, equal[bool])
 	if _, ok := os.LookupEnv("DD_TRACE_ENABLED"); ok {
 		c.enabled.cfgOrigin = telemetry.OriginEnvVar
 	}
@@ -402,7 +426,7 @@ func newConfig(opts ...StartOption) *config {
 	}
 	c.peerServiceMappings = make(map[string]string)
 	if v := os.Getenv("DD_TRACE_PEER_SERVICE_MAPPING"); v != "" {
-		internal.ForEachStringTag(v, func(key, val string) { c.peerServiceMappings[key] = val })
+		internal.ForEachStringTag(v, internal.DDTagsDelimiter, func(key, val string) { c.peerServiceMappings[key] = val })
 	}
 
 	for _, fn := range opts {
@@ -513,6 +537,14 @@ func newConfig(opts ...StartOption) *config {
 	globalTagsOrigin := c.globalTags.cfgOrigin
 	c.initGlobalTags(c.globalTags.get(), globalTagsOrigin)
 
+	// Check if CI Visibility mode is enabled
+	if internal.BoolEnv(constants.CIVisibilityEnabledEnvironmentVariable, false) {
+		c.ciVisibilityEnabled = true              // Enable CI Visibility mode
+		c.httpClientTimeout = time.Second * 45    // Increase timeout up to 45 seconds (same as other tracers in CIVis mode)
+		c.logStartup = false                      // If we are in CI Visibility mode we don't want to log the startup to stdout to avoid polluting the output
+		c.transport = newCiVisibilityTransport(c) // Replace the default transport with the CI Visibility transport
+	}
+
 	return c
 }
 
@@ -581,10 +613,6 @@ type agentFeatures struct {
 	// the /v0.6/stats endpoint.
 	Stats bool
 
-	// DataStreams reports whether the agent can receive data streams stats on
-	// the /v0.1/pipeline_stats endpoint.
-	DataStreams bool
-
 	// StatsdPort specifies the Dogstatsd port as provided by the agent.
 	// If it's the default, it will be 0, which means 8125.
 	StatsdPort int
@@ -633,8 +661,6 @@ func loadAgentFeatures(agentDisabled bool, agentURL *url.URL, httpClient *http.C
 		switch endpoint {
 		case "/v0.6/stats":
 			features.Stats = true
-		case "/v0.1/pipeline_stats":
-			features.DataStreams = true
 		}
 	}
 	features.featureFlags = make(map[string]struct{}, len(info.FeatureFlags))
@@ -1274,9 +1300,6 @@ func WithHeaderTags(headerAsTags []string) StartOption {
 func setHeaderTags(headerAsTags []string) bool {
 	globalconfig.ClearHeaderTags()
 	for _, h := range headerAsTags {
-		if strings.HasPrefix(h, "x-datadog-") {
-			continue
-		}
 		header, tag := normalizer.HeaderTag(h)
 		globalconfig.SetHeaderTag(header, tag)
 	}

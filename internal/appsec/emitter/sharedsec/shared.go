@@ -9,8 +9,8 @@ import (
 	"context"
 	"reflect"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/appsec/events"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
@@ -39,7 +39,7 @@ var userIDOperationArgsType = reflect.TypeOf((*UserIDOperationArgs)(nil)).Elem()
 func ExecuteUserIDOperation(parent dyngo.Operation, args UserIDOperationArgs) error {
 	var err error
 	op := &UserIDOperation{Operation: dyngo.NewOperation(parent)}
-	dyngo.OnData(op, func(e error) { err = e })
+	dyngo.OnData(op, func(e *events.BlockingSecurityEvent) { err = e })
 	dyngo.StartOperation(op, args)
 	dyngo.FinishOperation(op, UserIDOperationRes{})
 	return err
@@ -59,7 +59,7 @@ func (f OnUserIDOperationStart) Call(op dyngo.Operation, v interface{}) {
 // A call to the WAF is made to check the user ID and an error is returned if the
 // user should be blocked. The return value is nil otherwise.
 func MonitorUser(ctx context.Context, userID string) error {
-	if parent, ok := ctx.Value(listener.ContextKey{}).(dyngo.Operation); ok {
+	if parent, ok := dyngo.FromContext(ctx); ok {
 		return ExecuteUserIDOperation(parent, UserIDOperationArgs{UserID: userID})
 	}
 	log.Error("appsec: user ID monitoring ignored: could not find the http handler instrumentation metadata in the request context: the request handler is not being monitored by a middleware function or the provided context is not the expected request context")

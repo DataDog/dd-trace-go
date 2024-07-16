@@ -1,0 +1,62 @@
+[
+  [
+    {
+      "CODEBUILD_BUILD_ARN": "arn:aws:codebuild:eu-north-1:12345678:build/codebuild-demo-project:b1e6661e-e4f2-4156-9ab9-82a19",
+      "CODEBUILD_INITIATOR": "codepipeline/test-pipeline",
+      "DD_ACTION_EXECUTION_ID": "35519dc3-7c45-493c-9ba6-cd78ea11f69d",
+      "DD_GIT_BRANCH": "user-supplied-branch",
+      "DD_GIT_COMMIT_AUTHOR_DATE": "usersupplied-authordate",
+      "DD_GIT_COMMIT_AUTHOR_EMAIL": "usersupplied-authoremail",
+      "DD_GIT_COMMIT_AUTHOR_NAME": "usersupplied-authorname",
+      "DD_GIT_COMMIT_COMMITTER_DATE": "usersupplied-comitterdate",
+      "DD_GIT_COMMIT_COMMITTER_EMAIL": "usersupplied-comitteremail",
+      "DD_GIT_COMMIT_COMMITTER_NAME": "usersupplied-comittername",
+      "DD_GIT_COMMIT_MESSAGE": "usersupplied-message",
+      "DD_GIT_COMMIT_SHA": "b9f0fb3fdbb94c9d24b2c75b49663122a529e123",
+      "DD_GIT_REPOSITORY_URL": "git@github.com:DataDog/userrepo.git",
+      "DD_PIPELINE_EXECUTION_ID": "bb1f15ed-fde2-494d-8e13-88785bca9cc0"
+    },
+    {
+      "_dd.ci.env_vars": "{\"CODEBUILD_BUILD_ARN\":\"arn:aws:codebuild:eu-north-1:12345678:build/codebuild-demo-project:b1e6661e-e4f2-4156-9ab9-82a19\",\"DD_PIPELINE_EXECUTION_ID\":\"bb1f15ed-fde2-494d-8e13-88785bca9cc0\",\"DD_ACTION_EXECUTION_ID\":\"35519dc3-7c45-493c-9ba6-cd78ea11f69d\"}",
+      "ci.pipeline.id": "bb1f15ed-fde2-494d-8e13-88785bca9cc0",
+      "ci.provider.name": "awscodepipeline",
+      "git.branch": "user-supplied-branch",
+      "git.commit.author.date": "usersupplied-authordate",
+      "git.commit.author.email": "usersupplied-authoremail",
+      "git.commit.author.name": "usersupplied-authorname",
+      "git.commit.committer.date": "usersupplied-comitterdate",
+      "git.commit.committer.email": "usersupplied-comitteremail",
+      "git.commit.committer.name": "usersupplied-comittername",
+      "git.commit.message": "usersupplied-message",
+      "git.commit.sha": "b9f0fb3fdbb94c9d24b2c75b49663122a529e123",
+      "git.repository_url": "git@github.com:DataDog/userrepo.git"
+    }
+  ],
+  [
+    {
+      "CODEBUILD_INITIATOR": "lambdafunction/test-lambda",
+      "DD_GIT_BRANCH": "user-supplied-branch",
+      "DD_GIT_COMMIT_AUTHOR_DATE": "usersupplied-authordate",
+      "DD_GIT_COMMIT_AUTHOR_EMAIL": "usersupplied-authoremail",
+      "DD_GIT_COMMIT_AUTHOR_NAME": "usersupplied-authorname",
+      "DD_GIT_COMMIT_COMMITTER_DATE": "usersupplied-comitterdate",
+      "DD_GIT_COMMIT_COMMITTER_EMAIL": "usersupplied-comitteremail",
+      "DD_GIT_COMMIT_COMMITTER_NAME": "usersupplied-comittername",
+      "DD_GIT_COMMIT_MESSAGE": "usersupplied-message",
+      "DD_GIT_COMMIT_SHA": "b9f0fb3fdbb94c9d24b2c75b49663122a529e123",
+      "DD_GIT_REPOSITORY_URL": "git@github.com:DataDog/userrepo.git"
+    },
+    {
+      "git.branch": "user-supplied-branch",
+      "git.commit.author.date": "usersupplied-authordate",
+      "git.commit.author.email": "usersupplied-authoremail",
+      "git.commit.author.name": "usersupplied-authorname",
+      "git.commit.committer.date": "usersupplied-comitterdate",
+      "git.commit.committer.email": "usersupplied-comitteremail",
+      "git.commit.committer.name": "usersupplied-comittername",
+      "git.commit.message": "usersupplied-message",
+      "git.commit.sha": "b9f0fb3fdbb94c9d24b2c75b49663122a529e123",
+      "git.repository_url": "git@github.com:DataDog/userrepo.git"
+    }
+  ]
+]

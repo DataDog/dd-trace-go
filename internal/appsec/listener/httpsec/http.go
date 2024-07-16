@@ -10,8 +10,6 @@ import (
 	"math/rand"
 	"sync"
 
-	"github.com/DataDog/appsec-internal-go/limiter"
-	waf "github.com/DataDog/go-libddwaf/v3"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/config"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
@@ -19,8 +17,12 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/sharedsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener"
 	shared "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener/sharedsec"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener/sqlsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/samplernames"
+
+	"github.com/DataDog/appsec-internal-go/limiter"
+	waf "github.com/DataDog/go-libddwaf/v3"
 )
 
 // HTTP rule addresses currently supported by the WAF
@@ -36,6 +38,7 @@ const (
 	ServerResponseHeadersNoCookiesAddr = "server.response.headers.no_cookies"
 	HTTPClientIPAddr                   = "http.client_ip"
 	UserIDAddr                         = "usr.id"
+	ServerIoNetURLAddr                 = "server.io.net.url"
 )
 
 // List of HTTP rule addresses currently supported by the WAF
@@ -51,6 +54,9 @@ var supportedAddresses = listener.AddressSet{
 	ServerResponseHeadersNoCookiesAddr: {},
 	HTTPClientIPAddr:                   {},
 	UserIDAddr:                         {},
+	ServerIoNetURLAddr:                 {},
+	sqlsec.ServerDBStatementAddr:       {},
+	sqlsec.ServerDBTypeAddr:            {},
 }
 
 // Install registers the HTTP WAF Event Listener on the given root operation.
@@ -64,12 +70,13 @@ func Install(wafHandle *waf.Handle, cfg *config.Config, lim limiter.Limiter, roo
 type wafEventListener struct {
 	wafHandle *waf.Handle
 	config    *config.Config
-	addresses map[string]struct{}
+	addresses listener.AddressSet
 	limiter   limiter.Limiter
 	wafDiags  waf.Diagnostics
 	once      sync.Once
 }
 
+// newWAFEventListener returns the WAF event listener to register in order to enable it.
 func newWafEventListener(wafHandle *waf.Handle, cfg *config.Config, limiter limiter.Limiter) *wafEventListener {
 	if wafHandle == nil {
 		log.Debug("appsec: no WAF Handle available, the HTTP WAF Event Listener will not be registered")
@@ -91,7 +98,6 @@ func newWafEventListener(wafHandle *waf.Handle, cfg *config.Config, limiter limi
 	}
 }
 
-// NewWAFEventListener returns the WAF event listener to register in order to enable it.
 func (l *wafEventListener) onEvent(op *types.Operation, args types.HandlerOperationArgs) {
 	wafCtx, err := l.wafHandle.NewContextWithBudget(l.config.WAFTimeout)
 	if err != nil {
@@ -105,18 +111,23 @@ func (l *wafEventListener) onEvent(op *types.Operation, args types.HandlerOperat
 		return
 	}
 
+	if _, ok := l.addresses[ServerIoNetURLAddr]; ok {
+		dyngo.On(op, shared.MakeWAFRunListener(&op.SecurityEventsHolder, wafCtx, l.limiter, func(args types.RoundTripOperationArgs) waf.RunAddressData {
+			return waf.RunAddressData{Ephemeral: map[string]any{ServerIoNetURLAddr: args.URL}}
+		}))
+	}
+
+	if sqlsec.SQLAddressesPresent(l.addresses) {
+		sqlsec.RegisterSQLListener(op, &op.SecurityEventsHolder, wafCtx, l.limiter)
+	}
+
 	if _, ok := l.addresses[UserIDAddr]; ok {
 		// OnUserIDOperationStart happens when appsec.SetUser() is called. We run the WAF and apply actions to
 		// see if the associated user should be blocked. Since we don't control the execution flow in this case
 		// (SetUser is SDK), we delegate the responsibility of interrupting the handler to the user.
-		dyngo.On(op, func(operation *sharedsec.UserIDOperation, args sharedsec.UserIDOperationArgs) {
-			wafResult := shared.RunWAF(wafCtx, waf.RunAddressData{Persistent: map[string]any{UserIDAddr: args.UserID}})
-			if wafResult.HasActions() || wafResult.HasEvents() {
-				shared.ProcessActions(operation, wafResult.Actions, types.NewMonitoringError("Request blocked"))
-				shared.AddSecurityEvents(op, l.limiter, wafResult.Events)
-				log.Debug("appsec: WAF detected a suspicious user: %s", args.UserID)
-			}
-		})
+		dyngo.On(op, shared.MakeWAFRunListener(&op.SecurityEventsHolder, wafCtx, l.limiter, func(args sharedsec.UserIDOperationArgs) waf.RunAddressData {
+			return waf.RunAddressData{Persistent: map[string]any{UserIDAddr: args.UserID}}
+		}))
 	}
 
 	values := make(map[string]any, 8)
@@ -148,19 +159,11 @@ func (l *wafEventListener) onEvent(op *types.Operation, args types.HandlerOperat
 			}
 		}
 	}
-	if l.canExtractSchemas() {
-		// This address will be passed as persistent. The WAF will keep it in store and trigger schema extraction
-		// for each run.
-		values["waf.context.processor"] = map[string]any{"extract-schema": true}
-	}
 
 	wafResult := shared.RunWAF(wafCtx, waf.RunAddressData{Persistent: values})
-	for tag, value := range wafResult.Derivatives {
-		op.AddSerializableTag(tag, value)
-	}
 	if wafResult.HasActions() || wafResult.HasEvents() {
-		interrupt := shared.ProcessActions(op, wafResult.Actions, nil)
-		shared.AddSecurityEvents(op, l.limiter, wafResult.Events)
+		interrupt := shared.ProcessActions(op, wafResult.Actions)
+		shared.AddSecurityEvents(&op.SecurityEventsHolder, l.limiter, wafResult.Events)
 		log.Debug("appsec: WAF detected an attack before executing the request")
 		if interrupt {
 			wafCtx.Close()
@@ -169,23 +172,21 @@ func (l *wafEventListener) onEvent(op *types.Operation, args types.HandlerOperat
 	}
 
 	if _, ok := l.addresses[ServerRequestBodyAddr]; ok {
-		dyngo.On(op, func(sdkBodyOp *types.SDKBodyOperation, args types.SDKBodyOperationArgs) {
-			wafResult := shared.RunWAF(wafCtx, waf.RunAddressData{Persistent: map[string]any{ServerRequestBodyAddr: args.Body}})
-			for tag, value := range wafResult.Derivatives {
-				op.AddSerializableTag(tag, value)
-			}
-			if wafResult.HasActions() || wafResult.HasEvents() {
-				shared.ProcessActions(sdkBodyOp, wafResult.Actions, types.NewMonitoringError("Request blocked"))
-				shared.AddSecurityEvents(op, l.limiter, wafResult.Events)
-				log.Debug("appsec: WAF detected a suspicious request body")
-			}
-		})
+		dyngo.On(op, shared.MakeWAFRunListener(&op.SecurityEventsHolder, wafCtx, l.limiter, func(args types.SDKBodyOperationArgs) waf.RunAddressData {
+			return waf.RunAddressData{Persistent: map[string]any{ServerRequestBodyAddr: args.Body}}
+		}))
 	}
 
 	dyngo.OnFinish(op, func(op *types.Operation, res types.HandlerOperationRes) {
 		defer wafCtx.Close()
 
-		values = make(map[string]any, 2)
+		values = make(map[string]any, 3)
+		if l.canExtractSchemas() {
+			// This address will be passed as persistent. The WAF will keep it in store and trigger schema extraction
+			// for each run.
+			values["waf.context.processor"] = map[string]any{"extract-schema": true}
+		}
+
 		if _, ok := l.addresses[ServerResponseStatusAddr]; ok {
 			// serverResponseStatusAddr is a string address, so we must format the status code...
 			values[ServerResponseStatusAddr] = fmt.Sprintf("%d", res.Status)
@@ -211,7 +212,7 @@ func (l *wafEventListener) onEvent(op *types.Operation, args types.HandlerOperat
 		// Log the attacks if any
 		if wafResult.HasEvents() {
 			log.Debug("appsec: attack detected by the waf")
-			shared.AddSecurityEvents(op, l.limiter, wafResult.Events)
+			shared.AddSecurityEvents(&op.SecurityEventsHolder, l.limiter, wafResult.Events)
 		}
 		for tag, value := range wafResult.Derivatives {
 			op.AddSerializableTag(tag, value)

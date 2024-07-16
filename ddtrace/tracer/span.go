@@ -29,6 +29,7 @@ import (
 	sharedinternal "gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/orchestrion"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/samplernames"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/traceprof"
 
@@ -478,9 +479,7 @@ func (s *span) Finish(opts ...ddtrace.FinishOption) {
 			s.Unlock()
 		}
 	}
-	if s.taskEnd != nil {
-		s.taskEnd()
-	}
+
 	if s.goExecTraced && rt.IsEnabled() {
 		// Only tag spans as traced if they both started & ended with
 		// execution tracing enabled. This is technically not sufficient
@@ -505,12 +504,7 @@ func (s *span) Finish(opts ...ddtrace.FinishOption) {
 	}
 
 	s.finish(t)
-
-	if s.pprofCtxRestore != nil {
-		// Restore the labels of the parent span so any CPU samples after this
-		// point are attributed correctly.
-		pprof.SetGoroutineLabels(s.pprofCtxRestore)
-	}
+	orchestrion.GLSPopValue(sharedinternal.ActiveSpanKey)
 }
 
 // SetOperationName sets or changes the operation name.
@@ -542,6 +536,9 @@ func (s *span) finish(finishTime int64) {
 	}
 	if s.Duration < 0 {
 		s.Duration = 0
+	}
+	if s.taskEnd != nil {
+		s.taskEnd()
 	}
 
 	keep := true
@@ -583,6 +580,12 @@ func (s *span) finish(finishTime int64) {
 			s, s.Name, s.Resource, s.Meta, s.Metrics)
 	}
 	s.context.finish()
+
+	if s.pprofCtxRestore != nil {
+		// Restore the labels of the parent span so any CPU samples after this
+		// point are attributed correctly.
+		pprof.SetGoroutineLabels(s.pprofCtxRestore)
+	}
 }
 
 // newAggregableSpan creates a new summary for the span s, within an application
