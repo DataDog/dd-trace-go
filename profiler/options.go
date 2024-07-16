@@ -63,9 +63,6 @@ const (
 	defaultAgentPort = "8126"
 )
 
-// Path to the default trace agent Unix domain socket, replaced by tests
-var defaultSocketAPM = internal.DefaultTraceAgentUDSPath
-
 var defaultClient = &http.Client{
 	// We copy the transport to avoid using the default one, as it might be
 	// augmented with tracing and we don't want these calls to be recorded.
