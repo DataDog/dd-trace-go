@@ -7,8 +7,11 @@
 package sarama // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/IBM/sarama"
 
 import (
+	"context"
 	"math"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/datastreams"
+	"gopkg.in/DataDog/dd-trace-go.v1/datastreams/options"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
@@ -127,8 +130,12 @@ type syncProducer struct {
 // SendMessage calls sarama.SyncProducer.SendMessage and traces the request.
 func (p *syncProducer) SendMessage(msg *sarama.ProducerMessage) (partition int32, offset int64, err error) {
 	span := startProducerSpan(p.cfg, p.version, msg)
+	setProduceCheckpoint(p.cfg.dataStreamsEnabled, msg, p.version)
 	partition, offset, err = p.SyncProducer.SendMessage(msg)
 	finishProducerSpan(span, partition, offset, err)
+	if err == nil && p.cfg.dataStreamsEnabled {
+		tracer.TrackKafkaProduceOffset(msg.Topic, partition, offset)
+	}
 	return partition, offset, err
 }
 
@@ -138,11 +145,18 @@ func (p *syncProducer) SendMessages(msgs []*sarama.ProducerMessage) error {
 	// treated individually, so we create a span for each one
 	spans := make([]ddtrace.Span, len(msgs))
 	for i, msg := range msgs {
+		setProduceCheckpoint(p.cfg.dataStreamsEnabled, msg, p.version)
 		spans[i] = startProducerSpan(p.cfg, p.version, msg)
 	}
 	err := p.SyncProducer.SendMessages(msgs)
 	for i, span := range spans {
 		finishProducerSpan(span, msgs[i].Partition, msgs[i].Offset, err)
+	}
+	if err == nil && p.cfg.dataStreamsEnabled {
+		// we only track Kafka lag if messages have been sent successfully. Otherwise, we have no way to know to which partition data was sent to.
+		for _, msg := range msgs {
+			tracer.TrackKafkaProduceOffset(msg.Topic, msg.Partition, msg.Offset)
+		}
 	}
 	return err
 }
@@ -221,6 +235,7 @@ func WrapAsyncProducer(saramaConfig *sarama.Config, p sarama.AsyncProducer, opts
 			select {
 			case msg := <-wrapped.input:
 				span := startProducerSpan(cfg, saramaConfig.Version, msg)
+				setProduceCheckpoint(cfg.dataStreamsEnabled, msg, saramaConfig.Version)
 				p.Input() <- msg
 				if saramaConfig.Producer.Return.Successes {
 					spanID := span.Context().SpanID()
@@ -235,6 +250,10 @@ func WrapAsyncProducer(saramaConfig *sarama.Config, p sarama.AsyncProducer, opts
 				if !ok {
 					// producer was closed, so exit
 					return
+				}
+				if cfg.dataStreamsEnabled {
+					// we only track Kafka lag if returning successes is enabled. Otherwise, we have no way to know to which partition data was sent to.
+					tracer.TrackKafkaProduceOffset(msg.Topic, msg.Partition, msg.Offset)
 				}
 				if spanctx, spanFound := getSpanContext(msg); spanFound {
 					spanID := spanctx.SpanID()
@@ -302,4 +321,58 @@ func getSpanContext(msg *sarama.ProducerMessage) (ddtrace.SpanContext, bool) {
 	}
 
 	return spanctx, true
+}
+
+func setProduceCheckpoint(enabled bool, msg *sarama.ProducerMessage, version sarama.KafkaVersion) {
+	if !enabled || msg == nil {
+		return
+	}
+	edges := []string{"direction:out", "topic:" + msg.Topic, "type:kafka"}
+	carrier := NewProducerMessageCarrier(msg)
+	ctx, ok := tracer.SetDataStreamsCheckpointWithParams(datastreams.ExtractFromBase64Carrier(context.Background(), carrier), options.CheckpointParams{PayloadSize: getProducerMsgSize(msg)}, edges...)
+	if !ok || !version.IsAtLeast(sarama.V0_11_0_0) {
+		return
+	}
+	datastreams.InjectToBase64Carrier(ctx, carrier)
+}
+
+func setConsumeCheckpoint(enabled bool, groupID string, msg *sarama.ConsumerMessage) {
+	if !enabled || msg == nil {
+		return
+	}
+	edges := []string{"direction:in", "topic:" + msg.Topic, "type:kafka"}
+	if groupID != "" {
+		edges = append(edges, "group:"+groupID)
+	}
+	carrier := NewConsumerMessageCarrier(msg)
+	ctx, ok := tracer.SetDataStreamsCheckpointWithParams(datastreams.ExtractFromBase64Carrier(context.Background(), carrier), options.CheckpointParams{PayloadSize: getConsumerMsgSize(msg)}, edges...)
+	if !ok {
+		return
+	}
+	datastreams.InjectToBase64Carrier(ctx, carrier)
+	if groupID != "" {
+		// only track Kafka lag if a consumer group is set.
+		// since there is no ack mechanism, we consider that messages read are committed right away.
+		tracer.TrackKafkaCommitOffset(groupID, msg.Topic, msg.Partition, msg.Offset)
+	}
+}
+
+func getProducerMsgSize(msg *sarama.ProducerMessage) (size int64) {
+	for _, header := range msg.Headers {
+		size += int64(len(header.Key) + len(header.Value))
+	}
+	if msg.Value != nil {
+		size += int64(msg.Value.Length())
+	}
+	if msg.Key != nil {
+		size += int64(msg.Key.Length())
+	}
+	return size
+}
+
+func getConsumerMsgSize(msg *sarama.ConsumerMessage) (size int64) {
+	for _, header := range msg.Headers {
+		size += int64(len(header.Key) + len(header.Value))
+	}
+	return size + int64(len(msg.Value)+len(msg.Key))
 }
