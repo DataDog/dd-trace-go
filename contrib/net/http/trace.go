@@ -11,6 +11,7 @@ import (
 	"net/http"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/instrumentation"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/emitter/httpsec"
@@ -22,6 +23,7 @@ import (
 const componentName = "net/http"
 
 func init() {
+	instrumentation.Load(instrumentation.PackageNetHTTP)
 	telemetry.LoadIntegration(componentName)
 	tracer.MarkIntegrationImported(componentName)
 }

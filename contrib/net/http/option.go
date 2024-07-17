@@ -10,10 +10,10 @@ import (
 	"net/http"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/instrumentation"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
-	"github.com/DataDog/dd-trace-go/v2/internal/namingschema"
 	"github.com/DataDog/dd-trace-go/v2/internal/normalizer"
 )
 
@@ -62,7 +62,7 @@ func defaults(cfg *config) {
 	} else {
 		cfg.analyticsRate = globalconfig.AnalyticsRate()
 	}
-	cfg.serviceName = namingschema.ServiceName(defaultServiceName)
+	cfg.serviceName = instrumentation.DefaultServiceName(instrumentation.PackageNetHTTP, "server", nil)
 	cfg.headerTags = globalconfig.HeaderTagMap()
 	cfg.spanOpts = []tracer.StartSpanOption{tracer.Measured()}
 	if !math.IsNaN(cfg.analyticsRate) {
@@ -180,12 +180,12 @@ func newRoundTripperConfig() *roundTripperConfig {
 	defaultResourceNamer := func(_ *http.Request) string {
 		return "http.request"
 	}
-	spanName := namingschema.OpName(namingschema.HTTPClient)
+	spanName := instrumentation.OperationName(instrumentation.PackageNetHTTP, "client", nil)
 	defaultSpanNamer := func(_ *http.Request) string {
 		return spanName
 	}
 	sharedCfg := commonConfig{
-		serviceName:   namingschema.ServiceNameOverrideV0("", ""),
+		serviceName:   instrumentation.DefaultServiceName(instrumentation.PackageNetHTTP, "client", nil),
 		analyticsRate: globalconfig.AnalyticsRate(),
 		resourceNamer: defaultResourceNamer,
 		ignoreRequest: func(_ *http.Request) bool { return false },

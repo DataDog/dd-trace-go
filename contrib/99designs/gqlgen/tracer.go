@@ -46,24 +46,19 @@ import (
 	"math"
 	"time"
 
-	"github.com/DataDog/dd-trace-go/v2/contrib"
+	"github.com/99designs/gqlgen/graphql"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/instrumentation"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/emitter/graphqlsec"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/emitter/graphqlsec/types"
-	"github.com/DataDog/dd-trace-go/v2/internal/namingschema"
-
-	"github.com/99designs/gqlgen/graphql"
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
-const componentName = "99designs/gqlgen"
-
-var integration *contrib.Integration
+const componentName = instrumentation.Package99DesignsGQLGen
 
 func init() {
-	integration = contrib.LoadIntegration(componentName, contrib.WithServiceNameOverrideV0(defaultServiceName, defaultServiceName))
-	tracer.MarkIntegrationImported("github.com/99designs/gqlgen")
+	instrumentation.Load(instrumentation.Package99DesignsGQLGen)
 }
 
 const (
@@ -219,11 +214,21 @@ func (t *gqlTracer) createRootSpan(ctx context.Context, opCtx *graphql.Operation
 }
 
 func serverSpanName(octx *graphql.OperationContext) string {
-	nameV0 := "graphql.request"
+	//nameV0 := "graphql.request"
+	//if octx != nil && octx.Operation != nil {
+	//	nameV0 = fmt.Sprintf("%s.%s", ext.SpanTypeGraphQL, octx.Operation.Operation)
+	//}
+	graphqlOperation := ""
 	if octx != nil && octx.Operation != nil {
-		nameV0 = fmt.Sprintf("%s.%s", ext.SpanTypeGraphQL, octx.Operation.Operation)
+		graphqlOperation = string(octx.Operation.Operation)
 	}
-	return namingschema.OpNameOverrideV0(namingschema.GraphqlServer, nameV0)
+
+	return instrumentation.OperationName(
+		instrumentation.Package99DesignsGQLGen,
+		"server",
+		instrumentation.OperationContext{
+			"graphql.operation": graphqlOperation,
+		})
 }
 
 // Ensure all of these interfaces are implemented.
