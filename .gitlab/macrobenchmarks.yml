@@ -38,6 +38,15 @@ variables:
   # benchmarks get changed to run on every PR)
   allow_failure: true
 
+  retry:
+    max: 2
+    when:
+      - unknown_failure
+      - data_integrity_failure
+      - runner_system_failure
+      - scheduler_failure
+      - api_failure
+
 
 #
 # Please read next before updating Go version in this file!
