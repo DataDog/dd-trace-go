@@ -38,122 +38,132 @@ variables:
   # benchmarks get changed to run on every PR)
   allow_failure: true
 
-go122-baseline:
+
+#
+# Please read next before updating Go version in this file!
+#
+# In order to update Go version, you need to include it in benchmarks Docker image first:
+# 1. Update version in Dockerfile https://github.com/DataDog/benchmarking-platform/blob/go/go-prof-app/container/Dockerfile#L5
+# 2. Rebuild image in Gitlab CI (build-images CI job in https://gitlab.ddbuild.io/DataDog/apm-reliability/benchmarking-platform/-/pipelines?page=1&scope=all&ref=go%2Fgo-prof-app)
+#
+
+.go121-benchmarks:
   extends: .benchmarks
+  variables:
+    GO_VERSION: "1.21.12"
+
+.go122-benchmarks:
+  extends: .benchmarks
+  variables:
+    GO_VERSION: "1.22.5"
+
+#
+# Specific macrobenchmark configurations are below
+
+go122-baseline:
+  extends: .go122-benchmarks
   variables:
     ENABLE_DDPROF: "false"
     ENABLE_TRACING: "false"
     ENABLE_PROFILING: "false"
     ENABLE_APPSEC: "false"
     DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
-    GO_VERSION: "1.22.5"
 
 go122-only-trace:
-  extends: .benchmarks
+  extends: .go122-benchmarks
   variables:
     ENABLE_DDPROF: "false"
     ENABLE_TRACING: "true"
     ENABLE_PROFILING: "false"
     ENABLE_APPSEC: "false"
     DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
-    GO_VERSION: "1.22.5"
 
 go122-only-profile:
-  extends: .benchmarks
+  extends: .go122-benchmarks
   variables:
     ENABLE_DDPROF: "false"
     ENABLE_TRACING: "false"
     ENABLE_PROFILING: "true"
     ENABLE_APPSEC: "false"
     DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
-    GO_VERSION: "1.22.5"
 
 go122-profile-trace:
-  extends: .benchmarks
+  extends: .go122-benchmarks
   variables:
     ENABLE_DDPROF: "false"
     ENABLE_TRACING: "true"
     ENABLE_PROFILING: "true"
     ENABLE_APPSEC: "false"
     DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
-    GO_VERSION: "1.22.5"
 
 go122-trace-asm:
-  extends: .benchmarks
+  extends: .go122-benchmarks
   variables:
     ENABLE_DDPROF: "false"
     ENABLE_TRACING: "true"
     ENABLE_PROFILING: "false"
     ENABLE_APPSEC: "true"
     DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
-    GO_VERSION: "1.22.5"
 
 go122-profile-trace-asm:
-  extends: .benchmarks
+  extends: .go122-benchmarks
   variables:
     ENABLE_DDPROF: "false"
     ENABLE_TRACING: "true"
     ENABLE_PROFILING: "true"
     ENABLE_APPSEC: "true"
     DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
-    GO_VERSION: "1.22.5"
 
 go121-baseline:
-  extends: .benchmarks
+  extends: .go121-benchmarks
   variables:
     ENABLE_DDPROF: "false"
     ENABLE_TRACING: "false"
     ENABLE_PROFILING: "false"
     ENABLE_APPSEC: "false"
     DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
-    GO_VERSION: "1.21.12"
 
 go121-only-trace:
-  extends: .benchmarks
+  extends: .go121-benchmarks
   variables:
     ENABLE_DDPROF: "false"
     ENABLE_TRACING: "true"
     ENABLE_PROFILING: "false"
     ENABLE_APPSEC: "false"
     DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
-    GO_VERSION: "1.21.12"
 
 go121-only-profile:
-  extends: .benchmarks
+  extends: .go121-benchmarks
   variables:
     ENABLE_DDPROF: "false"
     ENABLE_TRACING: "false"
     ENABLE_PROFILING: "true"
     ENABLE_APPSEC: "false"
     DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
-    GO_VERSION: "1.21.12"
 
 go121-profile-trace:
-  extends: .benchmarks
+  extends: .go121-benchmarks
   variables:
     ENABLE_DDPROF: "false"
     ENABLE_TRACING: "true"
     ENABLE_PROFILING: "true"
     ENABLE_APPSEC: "false"
     DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
-    GO_VERSION: "1.21.12"
 
 go121-trace-asm:
-  extends: .benchmarks
+  extends: .go121-benchmarks
   variables:
     ENABLE_DDPROF: "false"
     ENABLE_TRACING: "true"
     ENABLE_PROFILING: "false"
     ENABLE_APPSEC: "true"
     DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
-    GO_VERSION: "1.21.12"
 
 go121-profile-trace-asm:
-  extends: .benchmarks
+  extends: .go121-benchmarks
   variables:
     ENABLE_DDPROF: "false"
     ENABLE_TRACING: "true"
     ENABLE_PROFILING: "true"
     ENABLE_APPSEC: "true"
     DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
-    GO_VERSION: "1.21.12"
