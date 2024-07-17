@@ -79,6 +79,7 @@ func WrapPartitionConsumer(pc sarama.PartitionConsumer, opts ...Option) sarama.P
 			next := tracer.StartSpan(cfg.consumerSpanName, opts...)
 			// reinject the span context so consumers can pick it up
 			tracer.Inject(next.Context(), carrier)
+			setConsumeCheckpoint(cfg.dataStreamsEnabled, cfg.groupID, msg)
 
 			wrapped.messages <- msg
 
