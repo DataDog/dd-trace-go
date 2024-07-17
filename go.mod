@@ -112,7 +112,6 @@ require (
 	gorm.io/driver/postgres v1.4.6
 	gorm.io/driver/sqlserver v1.4.2
 	gorm.io/gorm v1.25.3
-	honnef.co/go/gotraceui v0.4.0
 	k8s.io/apimachinery v0.23.17
 	k8s.io/client-go v0.23.17
 	modernc.org/sqlite v1.28.0
