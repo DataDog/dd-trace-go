@@ -2429,3 +2429,17 @@ func TestMalformedTID(t *testing.T) {
 		assert.Equal(t, "640cfd8d00000000", root.Meta[keyTraceID128])
 	})
 }
+
+func BenchmarkComposeTracestate(b *testing.B) {
+	ctx := new(spanContext)
+	ctx.trace = newTrace()
+	ctx.origin = "synthetics"
+	ctx.trace.setPropagatingTag("_dd.p.keyOne", "json")
+	ctx.trace.setPropagatingTag("_dd.p.KeyTwo", "123123")
+	ctx.trace.setPropagatingTag("_dd.p.table", "chair")
+	ctx.isRemote = false
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		composeTracestate(ctx, 1, "s:-2;o:synthetics___web")
+	}
+}

@@ -511,6 +511,7 @@ func overrideDatadogParentID(ctx, w3cCtx, ddCtx *spanContext) {
 	if w3cCtx.reparentID != "" && w3cCtx.reparentID != "0000000000000000" {
 		ctx.reparentID = w3cCtx.reparentID
 	} else if ddCtx != nil {
+		// NIT: could be done without using fmt.Sprintf? Is it worth it?
 		ctx.reparentID = fmt.Sprintf("%016x", ddCtx.SpanID())
 	}
 }
@@ -856,13 +857,14 @@ func isValidID(id string) bool {
 func composeTracestate(ctx *spanContext, priority int, oldState string) string {
 	var b strings.Builder
 	b.Grow(128)
-	b.WriteString(fmt.Sprintf("dd=s:%d", priority))
+	b.WriteString("dd=s:")
+	b.WriteString(strconv.Itoa(priority))
 	listLength := 1
 
 	if ctx.origin != "" {
 		oWithSub := originRgx.ReplaceAllString(ctx.origin, "_")
-		b.WriteString(fmt.Sprintf(";o:%s",
-			strings.ReplaceAll(oWithSub, "=", "~")))
+		b.WriteString(";o:")
+		b.WriteString(strings.ReplaceAll(oWithSub, "=", "~"))
 	}
 
 	// if the context is remote and there is a reparentID, set p as reparentId
@@ -871,9 +873,11 @@ func composeTracestate(ctx *spanContext, priority int, oldState string) string {
 	// this ID can be used by downstream tracers to set a _dd.parent_id tag
 	// to allow the backend to reparent orphaned spans if necessary
 	if !ctx.isRemote {
-		b.WriteString(fmt.Sprintf(";p:%016x", ctx.SpanID()))
+		b.WriteString(";p:")
+		b.WriteString(fmt.Sprintf("%016x", ctx.SpanID()))
 	} else if ctx.reparentID != "" && ctx.reparentID != "0000000000000000" {
-		b.WriteString(fmt.Sprintf(";p:%s", ctx.reparentID))
+		b.WriteString(";p:")
+		b.WriteString(ctx.reparentID)
 	}
 
 	ctx.trace.iteratePropagatingTags(func(k, v string) bool {
@@ -882,14 +886,15 @@ func composeTracestate(ctx *spanContext, priority int, oldState string) string {
 		}
 		// Datadog propagating tags must be appended to the tracestateHeader
 		// with the `t.` prefix. Tag value must have all `=` signs replaced with a tilde (`~`).
-		tag := fmt.Sprintf("t.%s:%s",
-			keyRgx.ReplaceAllString(k[len("_dd.p."):], "_"),
-			strings.ReplaceAll(valueRgx.ReplaceAllString(v, "_"), "=", "~"))
-		if b.Len()+len(tag)+1 > 256 { // the +1 here is to account for the `;` needed between the tags
+		key := keyRgx.ReplaceAllString(k[len("_dd.p."):], "_")
+		value := strings.ReplaceAll(valueRgx.ReplaceAllString(v, "_"), "=", "~")
+		if b.Len()+len(key)+len(value)+4 > 256 { // the +4 here is to account for the `t.` prefix, the `;` needed between the tags, and the `:` between the key and value
 			return false
 		}
-		b.WriteString(";")
-		b.WriteString(tag)
+		b.WriteString(";t.")
+		b.WriteString(key)
+		b.WriteString(":")
+		b.WriteString(value)
 		return true
 	})
 	// the old state is split by vendors, must be concatenated with a `,`
@@ -906,7 +911,8 @@ func composeTracestate(ctx *spanContext, priority int, oldState string) string {
 		if listLength > 32 {
 			break
 		}
-		b.WriteString("," + strings.Trim(s, " \t"))
+		b.WriteString(",")
+		b.WriteString(strings.Trim(s, " \t"))
 	}
 	return b.String()
 }
