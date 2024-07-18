@@ -11,33 +11,6 @@
 // any sensitive data in the query will be sent to Datadog as the resource name
 // of the span. To ensure no sensitive data is included in your spans, always
 // use parameterized graphql queries with sensitive data in variables.
-//
-// Usage example:
-//
-//	import (
-//		"log"
-//		"net/http"
-//
-//		"github.com/99designs/gqlgen/_examples/todo"
-//		"github.com/99designs/gqlgen/graphql/handler"
-//
-//		"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
-//		gqlgentrace "github.com/DataDog/dd-trace-go/contrib/99designs/gqlgen/v2"
-//	)
-//
-//	func Example() {
-//		tracer.Start()
-//		defer tracer.Stop()
-//
-//		t := gqlgentrace.NewTracer(
-//			gqlgentrace.WithAnalytics(true),
-//			gqlgentrace.WithService("todo.server"),
-//		)
-//		h := handler.NewDefaultServer(todo.NewExecutableSchema(todo.New()))
-//		h.Use(t)
-//		http.Handle("/query", h)
-//		log.Fatal(http.ListenAndServe(":8080", nil))
-//	}
 package gqlgen
 
 import (
@@ -47,18 +20,21 @@ import (
 	"time"
 
 	"github.com/99designs/gqlgen/graphql"
-	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
-	"github.com/DataDog/dd-trace-go/v2/ddtrace/instrumentation"
-	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
-	"github.com/DataDog/dd-trace-go/v2/internal/appsec/emitter/graphqlsec"
-	"github.com/DataDog/dd-trace-go/v2/internal/appsec/emitter/graphqlsec/types"
 	"github.com/vektah/gqlparser/v2/ast"
+
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/graphqlsec"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/graphqlsec/types"
 )
 
 const componentName = instrumentation.Package99DesignsGQLGen
 
+var instr *instrumentation.Instrumentation
+
 func init() {
-	instrumentation.Load(instrumentation.Package99DesignsGQLGen)
+	instr = instrumentation.Load(instrumentation.Package99DesignsGQLGen)
 }
 
 const (
@@ -214,18 +190,13 @@ func (t *gqlTracer) createRootSpan(ctx context.Context, opCtx *graphql.Operation
 }
 
 func serverSpanName(octx *graphql.OperationContext) string {
-	//nameV0 := "graphql.request"
-	//if octx != nil && octx.Operation != nil {
-	//	nameV0 = fmt.Sprintf("%s.%s", ext.SpanTypeGraphQL, octx.Operation.Operation)
-	//}
 	graphqlOperation := ""
 	if octx != nil && octx.Operation != nil {
 		graphqlOperation = string(octx.Operation.Operation)
 	}
 
-	return instrumentation.OperationName(
-		instrumentation.Package99DesignsGQLGen,
-		"server",
+	return instr.OperationName(
+		instrumentation.ComponentDefault,
 		instrumentation.OperationContext{
 			"graphql.operation": graphqlOperation,
 		})

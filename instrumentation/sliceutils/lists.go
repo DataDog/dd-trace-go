@@ -3,7 +3,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
-package lists
+package sliceutils
 
 // Combinations returns all possible unique selections of size `pick` of a list
 // of strings for which order does not matter
