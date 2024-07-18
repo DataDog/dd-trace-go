@@ -6,21 +6,25 @@
 package appsec_test
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
 	"io"
+	"io/fs"
 	"log"
 	"math/rand"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 
 	internal "github.com/DataDog/appsec-internal-go/appsec"
 	waf "github.com/DataDog/go-libddwaf/v3"
+
 	pAppsec "gopkg.in/DataDog/dd-trace-go.v1/appsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/appsec/events"
 	sqltrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/database/sql"
@@ -28,6 +32,8 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/config"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/ossec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener/httpsec"
 
 	_ "github.com/glebarez/go-sqlite"
@@ -642,7 +648,115 @@ func TestRASPSQLi(t *testing.T) {
 			})
 		}
 	}
+}
 
+func TestRASPLFI(t *testing.T) {
+	t.Setenv("DD_APPSEC_RULES", "testdata/rasp.json")
+	appsec.Start()
+	defer appsec.Stop()
+
+	if !appsec.RASPEnabled() {
+		t.Skip("RASP needs to be enabled for this test")
+	}
+
+	// Simulate what orchestrion does
+	WrappedOpen := func(ctx context.Context, path string, flags int) (file *os.File, err error) {
+		parent, _ := dyngo.FromContext(ctx)
+		op := &ossec.OpenOperation{
+			Operation: dyngo.NewOperation(parent),
+		}
+
+		dyngo.StartOperation(op, &ossec.OpenOperationArgs{
+			Path:  path,
+			Flags: flags,
+			Perms: fs.FileMode(0),
+		})
+
+		var x any = file
+		defer dyngo.FinishOperation(op, &ossec.OpenOperationRes{
+			File: &x,
+			Err:  &err,
+		})
+
+		// Open the file
+		file = &os.File{}
+
+		return
+	}
+
+	mux := httptrace.NewServeMux()
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		// Subsequent spans inherit their parent from context.
+		path := r.URL.Query().Get("path")
+		block := r.URL.Query().Get("block")
+		if block == "true" {
+			// Make sure we don't scan writing operations
+			file, err := WrappedOpen(r.Context(), path, os.O_WRONLY)
+			require.NoError(t, err)
+			require.NotNil(t, file)
+
+			file, err = WrappedOpen(r.Context(), path, os.O_CREATE|os.O_RDWR)
+			require.NoError(t, err)
+			require.NotNil(t, file)
+
+			// Make sure we scan reading operations
+			file, err = WrappedOpen(r.Context(), path, os.O_RDONLY)
+			require.ErrorIs(t, err, &events.BlockingSecurityEvent{})
+			require.Nil(t, file)
+
+			return
+		}
+
+		_, err := WrappedOpen(r.Context(), "/tmp/test", os.O_RDWR)
+		require.NoError(t, err)
+		w.WriteHeader(204)
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	for _, tc := range []struct {
+		name  string
+		path  string
+		block bool
+	}{
+		{
+			name:  "no-error",
+			path:  "",
+			block: false,
+		},
+		{
+			name:  "passwd",
+			path:  "/etc/passwd",
+			block: true,
+		},
+		{
+			name:  "shadow",
+			path:  "/etc/shadow",
+			block: true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			mt := mocktracer.Start()
+			defer mt.Stop()
+
+			req, err := http.NewRequest("GET", srv.URL+"?path="+tc.path+"&block="+strconv.FormatBool(tc.block), nil)
+			require.NoError(t, err)
+			res, err := srv.Client().Do(req)
+			require.NoError(t, err)
+			defer res.Body.Close()
+
+			spans := mt.FinishedSpans()
+			require.Len(t, spans, 1)
+
+			if tc.block {
+				require.Equal(t, 403, res.StatusCode)
+				require.Contains(t, spans[0].Tag("_dd.appsec.json"), "rasp-930-100")
+				require.Contains(t, spans[0].Tags(), "_dd.stack")
+			} else {
+				require.Equal(t, 204, res.StatusCode)
+			}
+		})
+	}
 }
 
 // BenchmarkSampleWAFContext benchmarks the creation of a WAF context and running the WAF on a request/response pair

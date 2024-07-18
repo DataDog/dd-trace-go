@@ -6,53 +6,36 @@
 package ossec
 
 import (
-	"context"
-	"os"
-	"sync"
+	"io/fs"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/appsec/events"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/ossec/types"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
-var badInputContextOnce sync.Once
-
-const readMask = os.O_RDONLY | os.O_RDWR
-
-func ProtectOpen(ctx context.Context, path string, flags int) error {
-	if flags&readMask == 0 { // We only care about read operations
-		return nil
+type (
+	// OpenOperation type embodies any kind of function calls that will result in a call to an open(2) syscall
+	OpenOperation struct {
+		dyngo.Operation
+		blockErr error
 	}
 
-	parent, _ := dyngo.FromContext(ctx)
-	if parent == nil { // No parent operation => we can't monitor the request
-		badInputContextOnce.Do(func() {
-			log.Debug("appsec: file opening monitoring attempt ignored: could not find the handler " +
-				"instrumentation metadata in the request context: the request handler is not being monitored by a " +
-				"middleware function or the incoming request context has not be forwarded correctly to the `os.Open` call")
-		})
-		return nil
+	// OpenOperationArgs is the arguments for an open operation
+	OpenOperationArgs struct {
+		// Path is the path to the file to be opened
+		Path string
+		// Flags are the flags passed to the open(2) syscall
+		Flags int
+		// Perms are the permissions passed to the open(2) syscall if the creation of a file is required
+		Perms fs.FileMode
 	}
 
-	op := &types.OpenOperation{
-		Operation: dyngo.NewOperation(parent),
+	// OpenOperationRes is the result of an open operation
+	OpenOperationRes struct {
+		// File is the file descriptor returned by the open(2) syscall
+		File *any
+		// Err is the error returned by the function
+		Err *error
 	}
+)
 
-	var err *events.BlockingSecurityEvent
-	dyngo.OnData(op, func(e *events.BlockingSecurityEvent) {
-		err = e
-	})
-
-	dyngo.StartOperation(op, types.OpenOperationArgs{
-		Path: path,
-	})
-	dyngo.FinishOperation(op, types.OpenOperationRes{})
-
-	if err != nil {
-		log.Debug("appsec: malicious local file inclusion attack blocked by the WAF on path: %s", path)
-		return err
-	}
-
-	return nil
-}
+func (OpenOperationArgs) IsArgOf(*OpenOperation)   {}
+func (OpenOperationRes) IsResultOf(*OpenOperation) {}
