@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"net/http"
 	"os"
-	"regexp"
 	"strconv"
 	"strings"
 
@@ -801,7 +800,16 @@ var (
 	// equals (reserved for list-member key-value separator),
 	// space and characters outside the ASCII range 0x20 to 0x7E.
 	// Disallowed characters must be replaced with the underscore.
-	keyRgx = regexp.MustCompile(",|=|[^\\x20-\\x7E]+")
+	// Equivalent to regexp.MustCompile(",|=|[^\\x20-\\x7E]+")
+	keyDisallowedFn = func(r rune) rune {
+		switch {
+		case r == ',' || r == '=':
+			return '_'
+		case r < 0x20 || r > 0x7E:
+			return 0x00
+		}
+		return r
+	}
 
 	// valueRgx is used to sanitize the values of the datadog propagating tags.
 	// Disallowed characters are comma (reserved as a list-member separator),
@@ -810,7 +818,18 @@ var (
 	// and characters outside the ASCII range 0x20 to 0x7E.
 	// Equals character must be encoded with a tilde.
 	// Other disallowed characters must be replaced with the underscore.
-	valueRgx = regexp.MustCompile(",|;|~|[^\\x20-\\x7E]+")
+	// Equivalent to regexp.MustCompile(",|;|~|[^\\x20-\\x7E]+")
+	valueDisallowedFn = func(r rune) rune {
+		switch {
+		case r == '=':
+			return '~'
+		case r == ',' || r == '~' || r == ';':
+			return '_'
+		case r < 0x20 || r > 0x7E:
+			return 0x00
+		}
+		return r
+	}
 
 	// originRgx is used to sanitize the value of the datadog origin tag.
 	// Disallowed characters are comma (reserved as a list-member separator),
@@ -819,7 +838,18 @@ var (
 	// and characters outside the ASCII range 0x21 to 0x7E.
 	// Equals character must be encoded with a tilde.
 	// Other disallowed characters must be replaced with the underscore.
-	originRgx = regexp.MustCompile(",|~|;|[^\\x21-\\x7E]+")
+	// Equivalent to regexp.MustCompile(",|~|;|[^\\x21-\\x7E]+")
+	originDisallowedFn = func(r rune) rune {
+		switch {
+		case r == '=':
+			return '~'
+		case r == ',' || r == '~' || r == ';':
+			return '_'
+		case r < 0x21 || r > 0x7E:
+			return 0x00
+		}
+		return r
+	}
 )
 
 const (
@@ -849,6 +879,32 @@ func isValidID(id string) bool {
 	return true
 }
 
+// sanitizeTracestateString replaces disallowed characters in the tracestate string
+// using the provided mapping function. The mapping function should return the
+// replacement character for the disallowed character, or 0x00 if the character
+// should be removed, leaving a single underscore in the place of any run of 0x00
+// characters.
+func sanitizeTracestateString(mapping func(rune) rune, s string) string {
+	if len(s) == 0 {
+		return ""
+	}
+	runes := []rune(strings.Map(mapping, s))
+	for i := 0; i < len(runes); i++ {
+		if runes[i] == 0x00 {
+			runes[i] = '_'
+			var j int
+			for j = i; j < len(runes); j++ {
+				if runes[j] != 0x00 {
+					break
+				}
+			}
+			runes = append(runes[:i+1], runes[j:]...)
+			i = j
+		}
+	}
+	return string(runes)
+}
+
 // composeTracestate creates a tracestateHeader from the spancontext.
 // The Datadog tracing library is only responsible for managing the list member with key dd,
 // which holds the values of the sampling decision(`s:<value>`), origin(`o:<origin>`),
@@ -862,9 +918,9 @@ func composeTracestate(ctx *spanContext, priority int, oldState string) string {
 	listLength := 1
 
 	if ctx.origin != "" {
-		oWithSub := originRgx.ReplaceAllString(ctx.origin, "_")
+		oWithSub := sanitizeTracestateString(originDisallowedFn, ctx.origin)
 		b.WriteString(";o:")
-		b.WriteString(strings.ReplaceAll(oWithSub, "=", "~"))
+		b.WriteString(oWithSub)
 	}
 
 	// if the context is remote and there is a reparentID, set p as reparentId
@@ -886,8 +942,8 @@ func composeTracestate(ctx *spanContext, priority int, oldState string) string {
 		}
 		// Datadog propagating tags must be appended to the tracestateHeader
 		// with the `t.` prefix. Tag value must have all `=` signs replaced with a tilde (`~`).
-		key := keyRgx.ReplaceAllString(k[len("_dd.p."):], "_")
-		value := strings.ReplaceAll(valueRgx.ReplaceAllString(v, "_"), "=", "~")
+		key := sanitizeTracestateString(keyDisallowedFn, k[len("_dd.p."):])
+		value := sanitizeTracestateString(valueDisallowedFn, v)
 		if b.Len()+len(key)+len(value)+4 > 256 { // the +4 here is to account for the `t.` prefix, the `;` needed between the tags, and the `:` between the key and value
 			return false
 		}
