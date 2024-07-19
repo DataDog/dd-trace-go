@@ -2443,3 +2443,50 @@ func BenchmarkComposeTracestate(b *testing.B) {
 		composeTracestate(ctx, 1, "s:-2;o:synthetics___web")
 	}
 }
+
+func TestStringMutator(t *testing.T) {
+	sm := &stringMutator{}
+	rx := regexp.MustCompile(",|~|;|[^\\x21-\\x7E]+")
+	tc := []struct {
+		name  string
+		input string
+	}{
+		{
+			name:  "empty",
+			input: "",
+		},
+		{
+			name:  "no special characters",
+			input: "abcdef",
+		},
+		{
+			name:  "special characters",
+			input: "a,b;c~~~~d;",
+		},
+		{
+			name:  "special characters and non-ascii",
+			input: "a,b👍👍👍;c~d👍;",
+		},
+	}
+	for _, tt := range tc {
+		t.Run(tt.name, func(t *testing.T) {
+			expected := rx.ReplaceAllString(tt.input, "_")
+			actual := sm.Mutate(originDisallowedFn, tt.input)
+			assert.Equal(t, expected, actual)
+		})
+	}
+}
+
+func FuzzStringMutator(f *testing.F) {
+	rx := regexp.MustCompile(",|~|;|[^\\x21-\\x7E]+")
+	f.Add("a,b;c~~~~d;")
+	f.Add("a,b👍👍👍;c~d👍;")
+	f.Fuzz(func(t *testing.T, input string) {
+		sm := &stringMutator{}
+		expected := rx.ReplaceAllString(input, "_")
+		actual := sm.Mutate(originDisallowedFn, input)
+		if expected != actual {
+			t.Fatalf("expected: %s, actual: %s", expected, actual)
+		}
+	})
+}

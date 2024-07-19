@@ -794,6 +794,47 @@ func (*propagatorW3c) injectTextMap(spanCtx ddtrace.SpanContext, writer TextMapW
 	return nil
 }
 
+// stringMutator maps characters in a string to new characters. It is a state machine intended
+// to replace regex patterns for simple character replacement, including collapsing runs of a
+// specific range.
+//
+// It's designed after the `hash#Hash` interface, and to work with `strings.Map`.
+type stringMutator struct {
+	// n is the current state of the mutator. It is used to track runs of characters that should
+	// be collapsed.
+	n int
+	// fn is the function that implements the character replacement logic.
+	fn func(rune) rune
+}
+
+// Mutate the mapped string using `strings.Map` and the provided function implementing the character
+// replacement logic.
+func (sm *stringMutator) Mutate(fn func(rune) rune, s string) string {
+	sm.fn = fn
+	rs := strings.Map(sm.mapping, s)
+	sm.Reset()
+
+	return rs
+}
+
+func (sm *stringMutator) mapping(r rune) rune {
+	v := sm.fn(r)
+	if v >= 0 {
+		sm.n = 0
+		return v
+	}
+	if sm.n == 0 {
+		sm.n--
+		return '_'
+	}
+	return -1
+}
+
+// Reset resets the state of the mutator.
+func (sm *stringMutator) Reset() {
+	sm.n = 0
+}
+
 var (
 	// keyRgx is used to sanitize the keys of the datadog propagating tags.
 	// Disallowed characters are comma (reserved as a list-member separator),
@@ -806,7 +847,7 @@ var (
 		case r == ',' || r == '=':
 			return '_'
 		case r < 0x20 || r > 0x7E:
-			return 0x00
+			return -1
 		}
 		return r
 	}
@@ -826,7 +867,7 @@ var (
 		case r == ',' || r == '~' || r == ';':
 			return '_'
 		case r < 0x20 || r > 0x7E:
-			return 0x00
+			return -1
 		}
 		return r
 	}
@@ -846,7 +887,7 @@ var (
 		case r == ',' || r == '~' || r == ';':
 			return '_'
 		case r < 0x21 || r > 0x7E:
-			return 0x00
+			return -1
 		}
 		return r
 	}
@@ -879,46 +920,24 @@ func isValidID(id string) bool {
 	return true
 }
 
-// sanitizeTracestateString replaces disallowed characters in the tracestate string
-// using the provided mapping function. The mapping function should return the
-// replacement character for the disallowed character, or 0x00 if the character
-// should be removed, leaving a single underscore in the place of any run of 0x00
-// characters.
-func sanitizeTracestateString(mapping func(rune) rune, s string) string {
-	if len(s) == 0 {
-		return ""
-	}
-	runes := []rune(strings.Map(mapping, s))
-	for i := 0; i < len(runes); i++ {
-		if runes[i] == 0x00 {
-			runes[i] = '_'
-			var j int
-			for j = i; j < len(runes); j++ {
-				if runes[j] != 0x00 {
-					break
-				}
-			}
-			runes = append(runes[:i+1], runes[j:]...)
-			i = j
-		}
-	}
-	return string(runes)
-}
-
 // composeTracestate creates a tracestateHeader from the spancontext.
 // The Datadog tracing library is only responsible for managing the list member with key dd,
 // which holds the values of the sampling decision(`s:<value>`), origin(`o:<origin>`),
 // the last parent ID of a Datadog span (`p:<parent_id>`),
 // and propagated tags prefixed with `t.`(e.g. _dd.p.usr.id:usr_id tag will become `t.usr.id:usr_id`).
 func composeTracestate(ctx *spanContext, priority int, oldState string) string {
-	var b strings.Builder
+	var (
+		b  strings.Builder
+		sm = &stringMutator{}
+	)
+
 	b.Grow(128)
 	b.WriteString("dd=s:")
 	b.WriteString(strconv.Itoa(priority))
 	listLength := 1
 
 	if ctx.origin != "" {
-		oWithSub := sanitizeTracestateString(originDisallowedFn, ctx.origin)
+		oWithSub := sm.Mutate(originDisallowedFn, ctx.origin)
 		b.WriteString(";o:")
 		b.WriteString(oWithSub)
 	}
@@ -942,8 +961,8 @@ func composeTracestate(ctx *spanContext, priority int, oldState string) string {
 		}
 		// Datadog propagating tags must be appended to the tracestateHeader
 		// with the `t.` prefix. Tag value must have all `=` signs replaced with a tilde (`~`).
-		key := sanitizeTracestateString(keyDisallowedFn, k[len("_dd.p."):])
-		value := sanitizeTracestateString(valueDisallowedFn, v)
+		key := sm.Mutate(keyDisallowedFn, k[len("_dd.p."):])
+		value := sm.Mutate(valueDisallowedFn, v)
 		if b.Len()+len(key)+len(value)+4 > 256 { // the +4 here is to account for the `t.` prefix, the `;` needed between the tags, and the `:` between the key and value
 			return false
 		}
