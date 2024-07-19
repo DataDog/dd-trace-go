@@ -949,7 +949,7 @@ func composeTracestate(ctx *spanContext, priority int, oldState string) string {
 	// to allow the backend to reparent orphaned spans if necessary
 	if !ctx.isRemote {
 		b.WriteString(";p:")
-		b.WriteString(fmt.Sprintf("%016x", ctx.SpanID()))
+		b.WriteString(spanIDHexEncoded(ctx.SpanID(), 16))
 	} else if ctx.reparentID != "" && ctx.reparentID != "0000000000000000" {
 		b.WriteString(";p:")
 		b.WriteString(ctx.reparentID)

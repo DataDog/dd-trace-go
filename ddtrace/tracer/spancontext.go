@@ -606,3 +606,26 @@ func setPeerServiceFromSource(s *span) string {
 	}
 	return ""
 }
+
+const hexEncodingDigits = "0123456789abcdef"
+
+func spanIDHexEncoded(u uint64, padding int) string {
+	var intbuf [68]byte
+	buf := intbuf[0:]
+	if padding > 68 {
+		buf = make([]byte, padding)
+	}
+	i := len(buf)
+	for u >= 16 {
+		i--
+		buf[i] = hexEncodingDigits[u&0xF]
+		u >>= 4
+	}
+	i--
+	buf[i] = hexEncodingDigits[u]
+	for i > 0 && padding > len(buf)-i {
+		i--
+		buf[i] = '0'
+	}
+	return string(buf[i:])
+}
