@@ -350,7 +350,7 @@ func serviceName(cfg *config, awsService string) string {
 	if cfg.serviceName != "" {
 		return cfg.serviceName
 	}
-	return instr.DefaultServiceName(instrumentation.ComponentDefault, instrumentation.OperationContext{
+	return instr.ServiceName(instrumentation.ComponentDefault, instrumentation.OperationContext{
 		ext.AWSService: awsService,
 	})
 }

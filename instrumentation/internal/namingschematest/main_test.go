@@ -46,6 +46,8 @@ func TestNamingSchema(t *testing.T) {
 		awsSDKV1Messaging,
 		awsSDKV2,
 		awsSDKV2Messaging,
+		netHTTPServer,
+		netHTTPClient,
 	}
 	for _, tc := range testCases {
 		t.Run(strings.ReplaceAll(string(tc.name), "/", "_"), func(t *testing.T) {

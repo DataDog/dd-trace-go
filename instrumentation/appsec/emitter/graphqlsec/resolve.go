@@ -8,7 +8,7 @@ package graphqlsec
 import (
 	"context"
 
-	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/graphqlsec/types"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/graphqlsec/types"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/dyngo"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/trace"
 )

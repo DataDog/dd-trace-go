@@ -3,7 +3,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
-// Package graphql is the GraphQL instrumentation API and contract for AppSec
+// Package graphqlsec is the GraphQL instrumentation API and contract for AppSec
 // defining an abstract run-time representation of AppSec middleware. GraphQL
 // integrations must use this package to enable AppSec features for GraphQL,
 // which listens to this package's operation events.
@@ -12,22 +12,22 @@ package graphqlsec
 import (
 	"context"
 
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/graphqlsec/types"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/dyngo"
-	"github.com/DataDog/dd-trace-go/v2/internal/appsec/emitter/graphqlsec/types"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/trace"
 )
 
-// StartExecutionOperation starts a new GraphQL query operation, along with the given arguments, and
-// emits a start event up in the operation stack. The operation is tracked on the returned context,
-// and can be extracted later on using FromContext.
-func StartExecutionOperation(ctx context.Context, parent *types.RequestOperation, span trace.TagSetter, args types.ExecutionOperationArgs) (context.Context, *types.ExecutionOperation) {
+// StartRequestOperation starts a new GraphQL request operation, along with the given arguments, and
+// emits a start event up in the operation stack. The operation is usually linked to tge global root
+// operation. The operation is tracked on the returned context, and can be extracted later on using
+// FromContext.
+func StartRequestOperation(ctx context.Context, parent dyngo.Operation, span trace.TagSetter, args types.RequestOperationArgs) (context.Context, *types.RequestOperation) {
 	if span == nil {
-		// The span may be nil (e.g: in case of GraphQL subscriptions with certian contribs). Child
-		// operations might have spans however... and these should be used then.
+		// The span may be nil (e.g: in case of GraphQL subscriptions with certian contribs)
 		span = trace.NoopTagSetter{}
 	}
 
-	op := &types.ExecutionOperation{
+	op := &types.RequestOperation{
 		Operation: dyngo.NewOperation(parent),
 		TagSetter: span,
 	}

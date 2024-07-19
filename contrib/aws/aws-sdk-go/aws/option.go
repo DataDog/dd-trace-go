@@ -28,12 +28,6 @@ func (fn OptionFn) apply(cfg *config) {
 }
 
 func defaults(cfg *config) {
-	// cfg.analyticsRate = globalconfig.AnalyticsRate()
-	//if env.BoolEnv("DD_TRACE_AWS_ANALYTICS_ENABLED", false) {
-	//	cfg.analyticsRate = 1.0
-	//} else {
-	//	cfg.analyticsRate = math.NaN()
-	//}
 	cfg.analyticsRate = instr.AnalyticsRate()
 }
 

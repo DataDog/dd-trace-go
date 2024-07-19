@@ -1,8 +1,6 @@
 module github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go-v2/v2
 
-go 1.21.0
-
-toolchain go1.22.5
+go 1.21
 
 require (
 	github.com/DataDog/dd-trace-go/v2 v2.0.0-beta.2
@@ -22,8 +20,8 @@ require (
 
 require (
 	github.com/DataDog/appsec-internal-go v1.7.0 // indirect
-	github.com/DataDog/datadog-agent/pkg/obfuscate v0.55.0 // indirect
-	github.com/DataDog/datadog-agent/pkg/remoteconfig/state v0.55.0 // indirect
+	github.com/DataDog/datadog-agent/pkg/obfuscate v0.48.0 // indirect
+	github.com/DataDog/datadog-agent/pkg/remoteconfig/state v0.48.1 // indirect
 	github.com/DataDog/datadog-go/v5 v5.5.0 // indirect
 	github.com/DataDog/go-libddwaf/v2 v2.4.2 // indirect
 	github.com/DataDog/go-sqllexer v0.0.12 // indirect

@@ -12,15 +12,13 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
-	"github.com/DataDog/dd-trace-go/v2/internal/contrib/namingschematest"
-	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
-	"github.com/DataDog/dd-trace-go/v2/internal/log"
-	"github.com/DataDog/dd-trace-go/v2/internal/normalizer"
-
-	"github.com/stretchr/testify/assert"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 )
 
 func TestWithHeaderTags(t *testing.T) {
@@ -35,81 +33,105 @@ func TestWithHeaderTags(t *testing.T) {
 		router(opts...).ServeHTTP(w, r)
 		return r
 	}
+
+	setGlobalHeaderTags := func(t *testing.T, tags ...string) {
+		var prev []string
+		instr.HTTPHeadersAsTags().Iter(func(_ string, tag string) {
+			prev = append(prev, tag)
+		})
+		t.Cleanup(func() {
+			tracer.Start(tracer.WithHeaderTags(prev), tracer.WithLogger(discardLogger{}))
+			tracer.Stop()
+		})
+		tracer.Start(tracer.WithHeaderTags(tags), tracer.WithLogger(discardLogger{}))
+		tracer.Stop()
+	}
+
 	t.Run("default-off", func(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
-		htArgs := []string{"h!e@a-d.e*r", "2header", "3header", "x-datadog-header"}
+
+		headerTags := instrumentation.NewHeaderTags([]string{"h!e@a-d.e*r", "2header", "3header", "x-datadog-header"})
 		setupReq()
 		spans := mt.FinishedSpans()
 		assert := assert.New(t)
 		assert.Equal(len(spans), 1)
 		s := spans[0]
-		for _, arg := range htArgs {
-			_, tag := normalizer.HeaderTag(arg)
+
+		headerTags.Iter(func(_ string, tag string) {
 			assert.NotContains(s.Tags(), tag)
-		}
+		})
 	})
 	t.Run("integration", func(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
 		htArgs := []string{"h!e@a-d.e*r", "2header:tag"}
+		headerTags := instrumentation.NewHeaderTags(htArgs)
+
 		r := setupReq(WithHeaderTags(htArgs))
 		spans := mt.FinishedSpans()
 		assert := assert.New(t)
 		assert.Equal(len(spans), 1)
 		s := spans[0]
 
-		for _, arg := range htArgs {
-			header, tag := normalizer.HeaderTag(arg)
+		headerTags.Iter(func(header string, tag string) {
 			assert.Equal(strings.Join(r.Header.Values(header), ","), s.Tags()[tag])
-		}
+		})
 		assert.NotContains(s.Tags(), "http.headers.x-datadog-header")
 	})
 
 	t.Run("global", func(t *testing.T) {
+		htArgs := []string{"3header"}
+		setGlobalHeaderTags(t, htArgs...)
+		headerTags := instrumentation.NewHeaderTags(htArgs)
+
 		mt := mocktracer.Start()
 		defer mt.Stop()
-
-		header, tag := normalizer.HeaderTag("3header")
-		globalconfig.SetHeaderTag(header, tag)
 
 		r := setupReq()
 		spans := mt.FinishedSpans()
 		assert := assert.New(t)
-		assert.Equal(len(spans), 1)
+		require.Len(t, spans, 1)
 		s := spans[0]
 
-		assert.Equal(strings.Join(r.Header.Values(header), ","), s.Tags()[tag])
+		headerTags.Iter(func(header string, tag string) {
+			assert.Equal(strings.Join(r.Header.Values(header), ","), s.Tags()[tag])
+		})
 		assert.NotContains(s.Tags(), "http.headers.x-datadog-header")
 	})
 
 	t.Run("override", func(t *testing.T) {
+		htArgsGlobal := []string{"3header"}
+		setGlobalHeaderTags(t, htArgsGlobal...)
+		headerTagsGlobal := instrumentation.NewHeaderTags(htArgsGlobal)
+
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		globalH, globalT := normalizer.HeaderTag("3header")
-		globalconfig.SetHeaderTag(globalH, globalT)
-
 		htArgs := []string{"h!e@a-d.e*r", "2header:tag"}
+		headerTags := instrumentation.NewHeaderTags(htArgs)
+
 		r := setupReq(WithHeaderTags(htArgs))
 		spans := mt.FinishedSpans()
 		assert := assert.New(t)
-		assert.Equal(len(spans), 1)
+		require.Len(t, spans, 1)
 		s := spans[0]
 
-		for _, arg := range htArgs {
-			header, tag := normalizer.HeaderTag(arg)
+		headerTags.Iter(func(header string, tag string) {
 			assert.Equal(strings.Join(r.Header.Values(header), ","), s.Tags()[tag])
-		}
+		})
 		assert.NotContains(s.Tags(), "http.headers.x-datadog-header")
-		assert.NotContains(s.Tags(), globalT)
+		headerTagsGlobal.Iter(func(_ string, tag string) {
+			assert.NotContains(s.Tags(), tag)
+		})
 	})
 
 	t.Run("wrap-handler", func(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 		htArgs := []string{"h!e@a-d.e*r", "2header", "3header"}
+		headerTags := instrumentation.NewHeaderTags(htArgs)
 
 		handler := WrapHandler(http.HandlerFunc(handler200), "my-service", "my-resource",
 			WithHeaderTags(htArgs),
@@ -135,10 +157,9 @@ func TestWithHeaderTags(t *testing.T) {
 		s := spans[0]
 		assert.Equal("http.request", s.OperationName())
 
-		for _, arg := range htArgs {
-			header, tag := normalizer.HeaderTag(arg)
+		headerTags.Iter(func(header string, tag string) {
 			assert.Equal(strings.Join(r.Header.Values(header), ","), s.Tags()[tag])
-		}
+		})
 	})
 }
 
@@ -372,12 +393,10 @@ func TestAnalyticsSettings(t *testing.T) {
 		})
 
 		t.Run("global/"+name, func(t *testing.T) {
+			setGlobalAnalyticsRate(t, 0.4)
+
 			mt := mocktracer.Start()
 			defer mt.Stop()
-
-			rate := globalconfig.AnalyticsRate()
-			defer globalconfig.SetAnalyticsRate(rate)
-			globalconfig.SetAnalyticsRate(0.4)
 
 			test(t, mt, 0.4)
 		})
@@ -397,12 +416,10 @@ func TestAnalyticsSettings(t *testing.T) {
 		})
 
 		t.Run("override/"+name, func(t *testing.T) {
+			setGlobalAnalyticsRate(t, 0.4)
+
 			mt := mocktracer.Start()
 			defer mt.Stop()
-
-			rate := globalconfig.AnalyticsRate()
-			defer globalconfig.SetAnalyticsRate(rate)
-			globalconfig.SetAnalyticsRate(0.4)
 
 			test(t, mt, 0.23, WithAnalyticsRate(0.23))
 		})
@@ -457,26 +474,6 @@ func TestIgnoreRequestOption(t *testing.T) {
 	}
 }
 
-func TestServerNamingSchema(t *testing.T) {
-	genSpans := namingschematest.GenSpansFn(func(t *testing.T, serviceOverride string) []*mocktracer.Span {
-		var opts []Option
-		if serviceOverride != "" {
-			opts = append(opts, WithService(serviceOverride))
-		}
-		mt := mocktracer.Start()
-		defer mt.Stop()
-
-		mux := NewServeMux(opts...)
-		mux.HandleFunc("/200", handler200)
-		r := httptest.NewRequest("GET", "http://localhost/200", nil)
-		w := httptest.NewRecorder()
-		mux.ServeHTTP(w, r)
-
-		return mt.FinishedSpans()
-	})
-	namingschematest.NewHTTPServerTest(genSpans, "http.router")(t)
-}
-
 func router(muxOpts ...Option) http.Handler {
 	defaultOpts := []Option{
 		WithService("my-service"),
@@ -496,12 +493,24 @@ func handler500(w http.ResponseWriter, _ *http.Request) {
 	http.Error(w, "500!", http.StatusInternalServerError)
 }
 
+func setGlobalAnalyticsRate(t *testing.T, rate float64) {
+	prevRate := instr.GlobalAnalyticsRate()
+	t.Cleanup(func() {
+		tracer.Start(tracer.WithAnalyticsRate(prevRate), tracer.WithLogger(discardLogger{}))
+		tracer.Stop()
+	})
+	tracer.Start(tracer.WithAnalyticsRate(rate), tracer.WithLogger(discardLogger{}))
+	tracer.Stop()
+}
+
+type discardLogger struct{}
+
+func (discardLogger) Log(_ string) {}
+
 func BenchmarkHttpServeTrace(b *testing.B) {
-	err := tracer.Start(tracer.WithLogger(log.DiscardLogger{}))
+	err := tracer.Start(tracer.WithLogger(discardLogger{}), tracer.WithHeaderTags([]string{"3header"}))
 	assert.NoError(b, err)
 	defer tracer.Stop()
-	header, tag := normalizer.HeaderTag("3header")
-	globalconfig.SetHeaderTag(header, tag)
 
 	r := httptest.NewRequest("GET", "/200", nil)
 	r.Header.Set("h!e@a-d.e*r", "val")

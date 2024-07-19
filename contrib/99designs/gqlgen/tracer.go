@@ -25,8 +25,8 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
-	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/graphqlsec"
-	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/graphqlsec/types"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/graphqlsec"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/graphqlsec/types"
 )
 
 const componentName = instrumentation.Package99DesignsGQLGen

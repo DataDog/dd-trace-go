@@ -30,8 +30,8 @@ func (fn OptionFn) apply(cfg *config) {
 }
 
 func defaults(cfg *config) {
-	cfg.serviceName = instr.DefaultServiceName(instrumentation.ComponentDefault, nil)
-	cfg.analyticsRate = instr.DefaultAnalyticsRate()
+	cfg.serviceName = instr.ServiceName(instrumentation.ComponentDefault, nil)
+	cfg.analyticsRate = instr.AnalyticsRate()
 	cfg.tags = make(map[string]interface{})
 }
 

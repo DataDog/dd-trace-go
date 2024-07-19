@@ -5,7 +5,7 @@ import (
 	"strings"
 	"sync/atomic"
 
-	"github.com/DataDog/dd-trace-go/v2/ddtrace/env"
+	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
@@ -43,12 +43,12 @@ func LoadFromEnv() {
 	}
 	// Allow DD_TRACE_SPAN_ATTRIBUTE_SCHEMA=v0 users to disable default integration (contrib AKA v0) service names.
 	// These default service names are always disabled for v1 onwards.
-	removeFakeServiceNames = env.BoolEnv("DD_TRACE_REMOVE_INTEGRATION_SERVICE_NAMES_ENABLED", false)
+	removeFakeServiceNames = internal.BoolEnv("DD_TRACE_REMOVE_INTEGRATION_SERVICE_NAMES_ENABLED", false)
 }
 
 func GetConfig() Config {
 	if testMode == nil {
-		v := env.BoolEnv("__DD_TRACE_NAMING_SCHEMA_TEST", false)
+		v := internal.BoolEnv("__DD_TRACE_NAMING_SCHEMA_TEST", false)
 		testMode = &v
 	}
 	if *testMode {

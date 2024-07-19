@@ -2,7 +2,6 @@ package namingschematest
 
 import (
 	"context"
-	"os"
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -21,9 +20,6 @@ import (
 )
 
 func awsSDKV2Config(t *testing.T, opts ...awstrace.Option) aws.Config {
-	if _, ok := os.LookupEnv("INTEGRATION"); !ok {
-		t.Skip("🚧 Skipping integration test (INTEGRATION environment variable is not set)")
-	}
 	awsEndpoint := "http://localhost:4566" // use localstack
 	awsRegion := "us-east-1"
 

@@ -38,9 +38,10 @@ func RegisterPackage(name string, info PackageInfo) error {
 }
 
 type componentNames struct {
-	buildDefaultServiceNameV0 func(opCtx OperationContext) string
-	buildOpNameV0             func(opCtx OperationContext) string
-	buildOpNameV1             func(opCtx OperationContext) string
+	useDDServiceV0     bool
+	buildServiceNameV0 func(opCtx OperationContext) string
+	buildOpNameV0      func(opCtx OperationContext) string
+	buildOpNameV1      func(opCtx OperationContext) string
 }
 
 type PackageInfo struct {
@@ -58,7 +59,7 @@ var packages = map[Package]PackageInfo{
 		EnvVarPrefix:  "GQLGEN",
 		naming: map[Component]componentNames{
 			ComponentDefault: {
-				buildDefaultServiceNameV0: staticName("graphql"),
+				buildServiceNameV0: staticName("graphql"),
 				buildOpNameV0: func(opCtx OperationContext) string {
 					name := "graphql.request"
 					if graphqlOp, ok := opCtx["graphql.operation"]; ok {
@@ -75,7 +76,7 @@ var packages = map[Package]PackageInfo{
 		EnvVarPrefix:  "AWS",
 		naming: map[Component]componentNames{
 			ComponentDefault: {
-				buildDefaultServiceNameV0: awsBuildDefaultServiceNameV0,
+				buildServiceNameV0: awsBuildDefaultServiceNameV0,
 				buildOpNameV0: func(opCtx OperationContext) string {
 					awsService, ok := opCtx[ext.AWSService]
 					if !ok {
@@ -92,7 +93,7 @@ var packages = map[Package]PackageInfo{
 		EnvVarPrefix:  "AWS",
 		naming: map[Component]componentNames{
 			ComponentDefault: {
-				buildDefaultServiceNameV0: awsBuildDefaultServiceNameV0,
+				buildServiceNameV0: awsBuildDefaultServiceNameV0,
 				buildOpNameV0: func(opCtx OperationContext) string {
 					awsService, ok := opCtx[ext.AWSService]
 					if !ok {
@@ -111,14 +112,15 @@ var packages = map[Package]PackageInfo{
 		EnvVarPrefix:  "HTTP",
 		naming: map[Component]componentNames{
 			ComponentServer: {
-				buildDefaultServiceNameV0: staticName("http.router"),
-				buildOpNameV0:             staticName("http.request"),
-				buildOpNameV1:             staticName("http.server.request"),
+				useDDServiceV0:     true,
+				buildServiceNameV0: staticName("http.router"),
+				buildOpNameV0:      staticName("http.request"),
+				buildOpNameV1:      staticName("http.server.request"),
 			},
 			ComponentClient: {
-				buildDefaultServiceNameV0: staticName(""),
-				buildOpNameV0:             staticName("http.request"),
-				buildOpNameV1:             staticName("http.client.request"),
+				buildServiceNameV0: staticName(""),
+				buildOpNameV0:      staticName("http.request"),
+				buildOpNameV1:      staticName("http.client.request"),
 			},
 		},
 	},

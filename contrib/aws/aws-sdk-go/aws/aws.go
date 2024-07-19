@@ -122,7 +122,7 @@ func (h *handlers) serviceName(req *request.Request) string {
 	if h.cfg.serviceName != "" {
 		return h.cfg.serviceName
 	}
-	return instr.DefaultServiceName(
+	return instr.ServiceName(
 		instrumentation.ComponentDefault,
 		instrumentation.OperationContext{
 			ext.AWSService: awsService(req),
