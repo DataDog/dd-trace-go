@@ -20,9 +20,6 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
-	"github.com/DataDog/dd-trace-go/v2/internal/contrib/namingschematest"
-	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
-
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/endpoints"
@@ -144,18 +141,6 @@ func TestAnalyticsSettings(t *testing.T) {
 		assertRate(t, mt, nil)
 	})
 
-	t.Run("global", func(t *testing.T) {
-		t.Skip("global flag disabled")
-		mt := mocktracer.Start()
-		defer mt.Stop()
-
-		rate := globalconfig.AnalyticsRate()
-		defer globalconfig.SetAnalyticsRate(rate)
-		globalconfig.SetAnalyticsRate(0.4)
-
-		assertRate(t, mt, 0.4)
-	})
-
 	t.Run("enabled", func(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
@@ -174,9 +159,9 @@ func TestAnalyticsSettings(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		rate := globalconfig.AnalyticsRate()
-		defer globalconfig.SetAnalyticsRate(rate)
-		globalconfig.SetAnalyticsRate(0.4)
+		//rate := globalconfig.AnalyticsRate()
+		//defer globalconfig.SetAnalyticsRate(rate)
+		//globalconfig.SetAnalyticsRate(0.4)
 
 		assertRate(t, mt, 0.23, WithAnalyticsRate(0.23))
 	})
@@ -505,127 +490,6 @@ func TestExtraTagsForService(t *testing.T) {
 		assert.Equal(t, "DescribeInstances", s0.Tag("aws.operation"))
 		// no extra tags set at this point for EC2
 	})
-}
-
-func TestNamingSchema(t *testing.T) {
-	genSpans := namingschematest.GenSpansFn(func(t *testing.T, serviceOverride string) []*mocktracer.Span {
-		var opts []Option
-		if serviceOverride != "" {
-			opts = append(opts, WithService(serviceOverride))
-		}
-		mt := mocktracer.Start()
-		defer mt.Stop()
-
-		s := newIntegrationTestSession(t, opts...)
-		ec2Client := ec2.New(s)
-		s3Client := s3.New(s)
-		sqsClient := sqs.New(s)
-		snsClient := sns.New(s)
-
-		_, err := ec2Client.DescribeInstances(&ec2.DescribeInstancesInput{})
-		require.NoError(t, err)
-		_, err = s3Client.ListBuckets(&s3.ListBucketsInput{})
-		require.NoError(t, err)
-		_, err = sqsClient.ListQueues(&sqs.ListQueuesInput{})
-		require.NoError(t, err)
-		_, err = snsClient.ListTopics(&sns.ListTopicsInput{})
-		require.NoError(t, err)
-
-		return mt.FinishedSpans()
-	})
-	assertOpV0 := func(t *testing.T, spans []*mocktracer.Span) {
-		require.Len(t, spans, 4)
-		assert.Equal(t, "ec2.command", spans[0].OperationName())
-		assert.Equal(t, "s3.command", spans[1].OperationName())
-		assert.Equal(t, "sqs.command", spans[2].OperationName())
-		assert.Equal(t, "sns.command", spans[3].OperationName())
-	}
-	assertOpV1 := func(t *testing.T, spans []*mocktracer.Span) {
-		require.Len(t, spans, 4)
-		assert.Equal(t, "aws.ec2.request", spans[0].OperationName())
-		assert.Equal(t, "aws.s3.request", spans[1].OperationName())
-		assert.Equal(t, "aws.sqs.request", spans[2].OperationName())
-		assert.Equal(t, "aws.sns.request", spans[3].OperationName())
-	}
-	serviceOverride := namingschematest.TestServiceOverride
-	wantServiceNameV0 := namingschematest.ServiceNameAssertions{
-		WithDefaults:             []string{"aws.ec2", "aws.s3", "aws.sqs", "aws.sns"},
-		WithDDService:            []string{"aws.ec2", "aws.s3", "aws.sqs", "aws.sns"},
-		WithDDServiceAndOverride: []string{serviceOverride, serviceOverride, serviceOverride, serviceOverride},
-	}
-	t.Run("ServiceName", namingschematest.NewServiceNameTest(genSpans, wantServiceNameV0))
-	t.Run("SpanName", namingschematest.NewSpanNameTest(genSpans, assertOpV0, assertOpV1))
-}
-
-func TestMessagingNamingSchema(t *testing.T) {
-	genSpans := namingschematest.GenSpansFn(func(t *testing.T, serviceOverride string) []*mocktracer.Span {
-		var opts []Option
-		if serviceOverride != "" {
-			opts = append(opts, WithService(serviceOverride))
-		}
-		mt := mocktracer.Start()
-		defer mt.Stop()
-
-		s := newIntegrationTestSession(t, opts...)
-		resourceName := "test-naming-schema-aws-v1"
-		sqsClient := sqs.New(s)
-		snsClient := sns.New(s)
-
-		// create a SQS queue
-		sqsResp, err := sqsClient.CreateQueue(&sqs.CreateQueueInput{QueueName: aws.String(resourceName)})
-		require.NoError(t, err)
-
-		msg := &sqs.SendMessageInput{QueueUrl: sqsResp.QueueUrl, MessageBody: aws.String("body")}
-		_, err = sqsClient.SendMessage(msg)
-		require.NoError(t, err)
-
-		batchMsg := &sqs.SendMessageBatchInput{QueueUrl: sqsResp.QueueUrl}
-		entry := &sqs.SendMessageBatchRequestEntry{Id: aws.String("1"), MessageBody: aws.String("body")}
-		batchMsg.SetEntries([]*sqs.SendMessageBatchRequestEntry{entry})
-		_, err = sqsClient.SendMessageBatch(batchMsg)
-		require.NoError(t, err)
-
-		// create an SNS topic
-		snsResp, err := snsClient.CreateTopic(&sns.CreateTopicInput{Name: aws.String(resourceName)})
-		require.NoError(t, err)
-
-		_, err = snsClient.Publish(&sns.PublishInput{TopicArn: snsResp.TopicArn, Message: aws.String("message")})
-		require.NoError(t, err)
-
-		return mt.FinishedSpans()
-	})
-	assertOpV0 := func(t *testing.T, spans []*mocktracer.Span) {
-		require.Len(t, spans, 5)
-		assert.Equal(t, "sqs.command", spans[0].OperationName())
-		assert.Equal(t, "sqs.command", spans[1].OperationName())
-		assert.Equal(t, "sqs.command", spans[2].OperationName())
-		assert.Equal(t, "sns.command", spans[3].OperationName())
-		assert.Equal(t, "sns.command", spans[4].OperationName())
-	}
-	assertOpV1 := func(t *testing.T, spans []*mocktracer.Span) {
-		require.Len(t, spans, 5)
-		assert.Equal(t, "aws.sqs.request", spans[0].OperationName())
-		assert.Equal(t, "aws.sqs.send", spans[1].OperationName())
-		assert.Equal(t, "aws.sqs.send", spans[2].OperationName())
-		assert.Equal(t, "aws.sns.request", spans[3].OperationName())
-		assert.Equal(t, "aws.sns.send", spans[4].OperationName())
-	}
-	serviceOverride := namingschematest.TestServiceOverride
-	wantServiceNameV0 := namingschematest.ServiceNameAssertions{
-		WithDefaults:             []string{"aws.sqs", "aws.sqs", "aws.sqs", "aws.sns", "aws.sns"},
-		WithDDService:            []string{"aws.sqs", "aws.sqs", "aws.sqs", "aws.sns", "aws.sns"},
-		WithDDServiceAndOverride: repeat(serviceOverride, 5),
-	}
-	t.Run("ServiceName", namingschematest.NewServiceNameTest(genSpans, wantServiceNameV0))
-	t.Run("SpanName", namingschematest.NewSpanNameTest(genSpans, assertOpV0, assertOpV1))
-}
-
-func repeat(s string, n int) []string {
-	r := make([]string, n)
-	for i := 0; i < n; i++ {
-		r[i] = s
-	}
-	return r
 }
 
 func prepareSQS(t *testing.T, sess *session.Session, queueName string) string {

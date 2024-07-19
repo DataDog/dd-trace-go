@@ -53,9 +53,7 @@ func GetConfig() Config {
 	}
 	if *testMode {
 		LoadFromEnv()
-		if ddService := os.Getenv("DD_SERVICE"); ddService != "" {
-			globalconfig.SetServiceName(ddService)
-		}
+		globalconfig.SetServiceName(os.Getenv("DD_SERVICE"))
 	}
 	return Config{
 		NamingSchemaVersion:    Version(atomic.LoadInt32(&activeNamingSchema)),

@@ -1,95 +1,129 @@
 package namingschematest
 
 import (
+	"os"
+	"strings"
 	"testing"
 
-	"github.com/99designs/gqlgen/client"
-	"github.com/99designs/gqlgen/graphql"
-	"github.com/99designs/gqlgen/graphql/handler/testserver"
-	"github.com/99designs/gqlgen/graphql/handler/transport"
-	gqlgentrace "github.com/DataDog/dd-trace-go/contrib/99designs/gqlgen/v2"
-
-	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
-	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 )
 
+const (
+	testDDService       = "dd-service"
+	testServiceOverride = "service-override"
+)
+
+type assertSpansFn func(t *testing.T, spans []*mocktracer.Span)
+
+type serviceNameAssertions struct {
+	defaults        []string
+	ddService       []string
+	serviceOverride []string
+}
+
+type testCase struct {
+	name              instrumentation.Package
+	genSpans          func(t *testing.T, serviceOverride string) []*mocktracer.Span
+	wantServiceNameV0 serviceNameAssertions
+	assertOpV0        assertSpansFn
+	assertOpV1        assertSpansFn
+}
+
 func TestNamingSchema(t *testing.T) {
+	if _, ok := os.LookupEnv("INTEGRATION"); !ok {
+		t.Skip("🚧 Skipping integration test (INTEGRATION environment variable is not set)")
+	}
 	t.Setenv("__DD_TRACE_NAMING_SCHEMA_TEST", "1")
 
-	testCases := []struct {
-		name              instrumentation.Package
-		genSpans          GenSpansFn
-		wantServiceNameV0 ServiceNameAssertions
-		assertOpV0        AssertSpansFn
-		assertOpV1        AssertSpansFn
-	}{
-		{
-			name: instrumentation.Package99DesignsGQLGen,
-			genSpans: func(t *testing.T, serviceOverride string) []*mocktracer.Span {
-				type testServerResponse struct {
-					Name string
-				}
-				newTestClient := func(t *testing.T, h *testserver.TestServer, tracer graphql.HandlerExtension) *client.Client {
-					t.Helper()
-					h.AddTransport(transport.POST{})
-					h.Use(tracer)
-					return client.New(h)
-				}
-
-				var opts []gqlgentrace.Option
-				if serviceOverride != "" {
-					opts = append(opts, gqlgentrace.WithService(serviceOverride))
-				}
-				mt := mocktracer.Start()
-				defer mt.Stop()
-
-				c := newTestClient(t, testserver.New(), gqlgentrace.NewTracer(opts...))
-				err := c.Post(`{ name }`, &testServerResponse{})
-				require.NoError(t, err)
-
-				err = c.Post(`mutation { name }`, &testServerResponse{})
-				require.ErrorContains(t, err, "mutations are not supported")
-
-				return mt.FinishedSpans()
-			},
-			wantServiceNameV0: ServiceNameAssertions{
-				WithDefaults:             repeatString("graphql", 9),
-				WithDDService:            repeatString("graphql", 9),
-				WithDDServiceAndOverride: repeatString(TestServiceOverride, 9),
-			},
-			assertOpV0: func(t *testing.T, spans []*mocktracer.Span) {
-				require.Len(t, spans, 9)
-				assert.Equal(t, "graphql.read", spans[0].OperationName())
-				assert.Equal(t, "graphql.parse", spans[1].OperationName())
-				assert.Equal(t, "graphql.validate", spans[2].OperationName())
-				assert.Equal(t, "graphql.field", spans[3].OperationName())
-				assert.Equal(t, "graphql.query", spans[4].OperationName())
-				assert.Equal(t, "graphql.read", spans[5].OperationName())
-				assert.Equal(t, "graphql.parse", spans[6].OperationName())
-				assert.Equal(t, "graphql.validate", spans[7].OperationName())
-				assert.Equal(t, "graphql.mutation", spans[8].OperationName())
-			},
-			assertOpV1: func(t *testing.T, spans []*mocktracer.Span) {
-				require.Len(t, spans, 9)
-				assert.Equal(t, "graphql.read", spans[0].OperationName())
-				assert.Equal(t, "graphql.parse", spans[1].OperationName())
-				assert.Equal(t, "graphql.validate", spans[2].OperationName())
-				assert.Equal(t, "graphql.field", spans[3].OperationName())
-				assert.Equal(t, "graphql.server.request", spans[4].OperationName())
-				assert.Equal(t, "graphql.read", spans[5].OperationName())
-				assert.Equal(t, "graphql.parse", spans[6].OperationName())
-				assert.Equal(t, "graphql.validate", spans[7].OperationName())
-				assert.Equal(t, "graphql.server.request", spans[8].OperationName())
-			},
-		},
+	testCases := []testCase{
+		gqlgen,
+		awsSDKV1,
+		awsSDKV1Messaging,
+		awsSDKV2,
+		awsSDKV2Messaging,
 	}
-
 	for _, tc := range testCases {
-		t.Run(string(tc.name), func(t *testing.T) {
-			t.Run("ServiceName", NewServiceNameTest(tc.genSpans, tc.wantServiceNameV0))
-			t.Run("SpanName", NewSpanNameTest(tc.genSpans, tc.assertOpV0, tc.assertOpV1))
+		t.Run(strings.ReplaceAll(string(tc.name), "/", "_"), func(t *testing.T) {
+			t.Run("ServiceName", func(t *testing.T) {
+				// v0
+				t.Run("v0_defaults", func(t *testing.T) {
+					t.Setenv("DD_SERVICE", "")
+					t.Setenv("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA", "v0")
+					spans := tc.genSpans(t, "")
+					assertServiceNames(t, spans, tc.wantServiceNameV0.defaults)
+				})
+				t.Run("v0_dd_service", func(t *testing.T) {
+					t.Setenv("DD_SERVICE", testDDService)
+					t.Setenv("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA", "v0")
+					spans := tc.genSpans(t, "")
+					assertServiceNames(t, spans, tc.wantServiceNameV0.ddService)
+				})
+				t.Run("v0_dd_service_and_override", func(t *testing.T) {
+					t.Setenv("DD_SERVICE", testDDService)
+					t.Setenv("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA", "v0")
+					spans := tc.genSpans(t, testServiceOverride)
+					assertServiceNames(t, spans, tc.wantServiceNameV0.serviceOverride)
+				})
+
+				// v1
+				t.Run("v1_defaults", func(t *testing.T) {
+					t.Setenv("DD_SERVICE", "")
+					t.Setenv("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA", "v1")
+					spans := tc.genSpans(t, "")
+					assertServiceNames(t, spans, tc.wantServiceNameV0.defaults)
+				})
+				t.Run("v1_dd_service", func(t *testing.T) {
+					t.Setenv("DD_SERVICE", testDDService)
+					t.Setenv("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA", "v1")
+					spans := tc.genSpans(t, "")
+					assertServiceNames(t, spans, repeatString(testDDService, len(tc.wantServiceNameV0.ddService)))
+				})
+				t.Run("v1_dd_service_and_override", func(t *testing.T) {
+					t.Setenv("DD_SERVICE", testDDService)
+					t.Setenv("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA", "v1")
+					spans := tc.genSpans(t, testServiceOverride)
+					assertServiceNames(t, spans, repeatString(testServiceOverride, len(tc.wantServiceNameV0.serviceOverride)))
+				})
+			})
+
+			t.Run("SpanName", func(t *testing.T) {
+				t.Run("v0", func(t *testing.T) {
+					t.Setenv("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA", "v0")
+					spans := tc.genSpans(t, "")
+					tc.assertOpV0(t, spans)
+				})
+				t.Run("v1", func(t *testing.T) {
+					t.Setenv("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA", "v1")
+					spans := tc.genSpans(t, "")
+					tc.assertOpV1(t, spans)
+				})
+			})
 		})
 	}
+}
+
+func assertServiceNames(t *testing.T, spans []*mocktracer.Span, wantServiceNames []string) {
+	t.Helper()
+	require.Len(t, spans, len(wantServiceNames), "the number of spans and number of assertions should be the same")
+	for i := 0; i < len(spans); i++ {
+		want, got, spanName := wantServiceNames[i], spans[i].Tag(ext.ServiceName), spans[i].OperationName()
+		if want == "" {
+			assert.Empty(t, got, "expected empty service name tag for span: %s", spanName)
+		} else {
+			assert.Equal(t, want, got, "incorrect service name for span: %s", spanName)
+		}
+	}
+}
+
+func repeatString(s string, n int) []string {
+	r := make([]string, 0, n)
+	for i := 0; i < n; i++ {
+		r = append(r, s)
+	}
+	return r
 }
