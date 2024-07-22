@@ -19,6 +19,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils"
 )
 
 func TestWithHeaderTags(t *testing.T) {
@@ -32,19 +33,6 @@ func TestWithHeaderTags(t *testing.T) {
 		w := httptest.NewRecorder()
 		router(opts...).ServeHTTP(w, r)
 		return r
-	}
-
-	setGlobalHeaderTags := func(t *testing.T, tags ...string) {
-		var prev []string
-		instr.HTTPHeadersAsTags().Iter(func(_ string, tag string) {
-			prev = append(prev, tag)
-		})
-		t.Cleanup(func() {
-			tracer.Start(tracer.WithHeaderTags(prev), tracer.WithLogger(discardLogger{}))
-			tracer.Stop()
-		})
-		tracer.Start(tracer.WithHeaderTags(tags), tracer.WithLogger(discardLogger{}))
-		tracer.Stop()
 	}
 
 	t.Run("default-off", func(t *testing.T) {
@@ -83,7 +71,7 @@ func TestWithHeaderTags(t *testing.T) {
 
 	t.Run("global", func(t *testing.T) {
 		htArgs := []string{"3header"}
-		setGlobalHeaderTags(t, htArgs...)
+		testutils.SetGlobalHeaderTags(t, htArgs...)
 		headerTags := instrumentation.NewHeaderTags(htArgs)
 
 		mt := mocktracer.Start()
@@ -103,7 +91,7 @@ func TestWithHeaderTags(t *testing.T) {
 
 	t.Run("override", func(t *testing.T) {
 		htArgsGlobal := []string{"3header"}
-		setGlobalHeaderTags(t, htArgsGlobal...)
+		testutils.SetGlobalHeaderTags(t, htArgsGlobal...)
 		headerTagsGlobal := instrumentation.NewHeaderTags(htArgsGlobal)
 
 		mt := mocktracer.Start()
@@ -393,10 +381,10 @@ func TestAnalyticsSettings(t *testing.T) {
 		})
 
 		t.Run("global/"+name, func(t *testing.T) {
-			setGlobalAnalyticsRate(t, 0.4)
-
 			mt := mocktracer.Start()
 			defer mt.Stop()
+
+			testutils.SetGlobalAnalyticsRate(t, 0.4)
 
 			test(t, mt, 0.4)
 		})
@@ -416,10 +404,10 @@ func TestAnalyticsSettings(t *testing.T) {
 		})
 
 		t.Run("override/"+name, func(t *testing.T) {
-			setGlobalAnalyticsRate(t, 0.4)
-
 			mt := mocktracer.Start()
 			defer mt.Stop()
+
+			testutils.SetGlobalAnalyticsRate(t, 0.4)
 
 			test(t, mt, 0.23, WithAnalyticsRate(0.23))
 		})
@@ -491,16 +479,6 @@ func handler200(w http.ResponseWriter, _ *http.Request) {
 
 func handler500(w http.ResponseWriter, _ *http.Request) {
 	http.Error(w, "500!", http.StatusInternalServerError)
-}
-
-func setGlobalAnalyticsRate(t *testing.T, rate float64) {
-	prevRate := instr.GlobalAnalyticsRate()
-	t.Cleanup(func() {
-		tracer.Start(tracer.WithAnalyticsRate(prevRate), tracer.WithLogger(discardLogger{}))
-		tracer.Stop()
-	})
-	tracer.Start(tracer.WithAnalyticsRate(rate), tracer.WithLogger(discardLogger{}))
-	tracer.Stop()
 }
 
 type discardLogger struct{}

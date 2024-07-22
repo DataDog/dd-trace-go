@@ -16,11 +16,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils"
 )
 
 func TestWrapRoundTripperAllowNilTransport(t *testing.T) {
@@ -337,7 +339,7 @@ func TestRoundTripperAnalyticsSettings(t *testing.T) {
 	})
 
 	t.Run("override", func(t *testing.T) {
-		setGlobalAnalyticsRate(t, 0.4)
+		testutils.SetGlobalAnalyticsRate(t, 0.4)
 
 		mt := mocktracer.Start()
 		defer mt.Stop()

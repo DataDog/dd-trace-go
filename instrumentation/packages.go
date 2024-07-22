@@ -13,7 +13,7 @@ const (
 	Package99DesignsGQLGen      Package = "99designs/gqlgen"
 	PackageAWSSDKGo             Package = "aws/aws-sdk-go"
 	PackageAWSSDKGoV2           Package = "aws/aws-sdk-go-v2"
-	PackageBradfitzMemcache     Package = "bradfitz/gomemcache/memcache"
+	PackageBradfitzGoMemcache   Package = "bradfitz/gomemcache"
 	PackageCloudGoogleComPubsub Package = "cloud.google.com/go/pubsub.v1"
 	PackageConfluentKafkaGo     Package = "confluentinc/confluent-kafka-go/kafka"
 	PackageConfluentKafkaGoV2   Package = "confluentinc/confluent-kafka-go/kafka.v2"
@@ -31,11 +31,6 @@ const (
 	ComponentServer
 	ComponentClient
 )
-
-func RegisterPackage(name string, info PackageInfo) error {
-	info.external = true
-	return nil
-}
 
 type componentNames struct {
 	useDDServiceV0     bool
@@ -105,7 +100,18 @@ var packages = map[Package]PackageInfo{
 			},
 		},
 	},
-
+	PackageBradfitzGoMemcache: {
+		TracedPackage: "github.com/bradfitz/gomemcache",
+		EnvVarPrefix:  "MEMCACHE",
+		naming: map[Component]componentNames{
+			ComponentDefault: {
+				useDDServiceV0:     false,
+				buildServiceNameV0: staticName("memcached"),
+				buildOpNameV0:      staticName("memcached.query"),
+				buildOpNameV1:      staticName("memcached.command"),
+			},
+		},
+	},
 	PackageNetHTTP: {
 		external:      false,
 		TracedPackage: "net/http",
