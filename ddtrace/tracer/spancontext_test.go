@@ -869,6 +869,11 @@ func TestSpanIDHexEncoded(t *testing.T) {
 
 	sid = spanIDHexEncoded(math.MaxInt64, 128)
 	assert.Equal(t, fmt.Sprintf("%0128x", math.MaxInt64), sid)
+
+	sid = spanIDHexEncoded(math.MaxUint64, -16)
+	assert.Equal(t, "ffffffffffffffff", sid)
+	assert.Equal(t, spanIDHexEncoded(math.MaxUint64, 0), sid)
+	assert.Equal(t, spanIDHexEncoded(math.MaxUint64, 16), sid)
 }
 
 func BenchmarkSpanIDHexEncoded(b *testing.B) {
@@ -884,7 +889,15 @@ func BenchmarkSpanIDSprintf(b *testing.B) {
 }
 
 func FuzzSpanIDHexEncoded(f *testing.F) {
+	f.Add(-99, uint64(0))
+	f.Add(16, uint64(1))
+	f.Add(32, uint64(16))
+	f.Add(0, uint64(math.MaxUint64))
 	f.Fuzz(func(t *testing.T, p int, v uint64) {
+		// We don't support negative padding nor right-padding.
+		if p < 0 {
+			return
+		}
 		expected := fmt.Sprintf(
 			fmt.Sprintf("%%0%dx", p),
 			v,

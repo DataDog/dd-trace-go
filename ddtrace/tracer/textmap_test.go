@@ -2482,9 +2482,10 @@ func FuzzStringMutator(f *testing.F) {
 	rx := regexp.MustCompile(",|~|;|[^\\x21-\\x7E]+")
 	f.Add("a,b;c~~~~d;")
 	f.Add("a,b👍👍👍;c~d👍;")
+	f.Add("=")
 	f.Fuzz(func(t *testing.T, input string) {
 		sm := &stringMutator{}
-		expected := rx.ReplaceAllString(input, "_")
+		expected := strings.ReplaceAll(rx.ReplaceAllString(input, "_"), "=", "~")
 		actual := sm.Mutate(originDisallowedFn, input)
 		if expected != actual {
 			t.Fatalf("expected: %s, actual: %s", expected, actual)

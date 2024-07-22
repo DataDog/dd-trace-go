@@ -802,7 +802,7 @@ func (*propagatorW3c) injectTextMap(spanCtx ddtrace.SpanContext, writer TextMapW
 type stringMutator struct {
 	// n is the current state of the mutator. It is used to track runs of characters that should
 	// be collapsed.
-	n int
+	n bool
 	// fn is the function that implements the character replacement logic.
 	// It returns the rune to replace or drop (by returning -1), and a bool to tell if next consecutive
 	// characters must be dropped if they fall in the currently matched character set.
@@ -814,7 +814,7 @@ type stringMutator struct {
 func (sm *stringMutator) Mutate(fn func(rune) (rune, bool), s string) string {
 	sm.fn = fn
 	rs := strings.Map(sm.mapping, s)
-	sm.Reset()
+	sm.reset()
 
 	return rs
 }
@@ -823,24 +823,24 @@ func (sm *stringMutator) mapping(r rune) rune {
 	v, dropConsecutiveMatches := sm.fn(r)
 	if v < 0 {
 		// We reset the state machine in any match that is not related to a consecutive run
-		sm.n = 0
+		sm.reset()
 		return -1
 	}
 	if dropConsecutiveMatches {
-		if sm.n == 0 {
-			sm.n--
+		if !sm.n {
+			sm.n = true
 			return v
 		}
 		return -1
 	}
 	// We reset the state machine in any match that is not related to a consecutive run
-	sm.n = 0
+	sm.reset()
 	return v
 }
 
-// Reset resets the state of the mutator.
-func (sm *stringMutator) Reset() {
-	sm.n = 0
+// reset resets the state of the mutator.
+func (sm *stringMutator) reset() {
+	sm.n = false
 }
 
 var (
