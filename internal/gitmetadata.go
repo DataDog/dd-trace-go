@@ -58,6 +58,7 @@ func updateAllTags(tags map[string]string, newtags map[string]string) {
 
 // Get git metadata from environment variables
 func getTagsFromEnv() map[string]string {
+	log.Debug("===== getTagsFromEnv =====")
 	return map[string]string{
 		TagRepositoryURL: removeCredentials(os.Getenv(EnvGitRepositoryURL)),
 		TagCommitSha:     os.Getenv(EnvGitCommitSha),
@@ -66,6 +67,7 @@ func getTagsFromEnv() map[string]string {
 
 // Get git metadata from DD_TAGS
 func getTagsFromDDTags() map[string]string {
+	log.Debug("===== getTagsFromDDTags =====")
 	etags := ParseTagString(os.Getenv(EnvDDTags))
 
 	return map[string]string{
@@ -77,6 +79,7 @@ func getTagsFromDDTags() map[string]string {
 
 // getTagsFromBinary extracts git metadata from binary metadata.
 func getTagsFromBinary(readBuildInfo func() (*debug.BuildInfo, bool)) map[string]string {
+	log.Debug("===== getTagsFromBinary =====")
 	res := make(map[string]string)
 	info, ok := readBuildInfo()
 	if !ok {
@@ -112,8 +115,11 @@ func initGitMetadataTags() {
 
 	if BoolEnv(EnvGitMetadataEnabledFlag, true) {
 		updateAllTags(gitMetadataTags, getTagsFromEnv())
+		log.Debug("=== tags: %s ===", gitMetadataTags)
 		updateAllTags(gitMetadataTags, getTagsFromDDTags())
+		log.Debug("=== tags: %s ===", gitMetadataTags)
 		updateAllTags(gitMetadataTags, getTagsFromBinary(debug.ReadBuildInfo))
+		log.Debug("=== tags: %s ===", gitMetadataTags)
 	}
 }
 
