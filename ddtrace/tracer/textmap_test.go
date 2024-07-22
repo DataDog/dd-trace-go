@@ -2268,11 +2268,12 @@ func FuzzComposeTracestate(f *testing.F) {
 		recvCtx := new(spanContext)
 		recvCtx.trace = newTrace()
 
+		sm := &stringMutator{}
 		tags := map[string]string{key1: val1, key2: val2, key3: val3}
 		totalLen := 0
 		for key, val := range tags {
-			k := "_dd.p." + strings.Map(keyDisallowedFn, key)
-			v := strings.Map(valueDisallowedFn, val)
+			k := "_dd.p." + sm.Mutate(keyDisallowedFn, key)
+			v := sm.Mutate(valueDisallowedFn, val)
 			if strings.ContainsAny(k, ":;") {
 				t.Skipf("Skipping invalid tags")
 			}

@@ -804,12 +804,14 @@ type stringMutator struct {
 	// be collapsed.
 	n int
 	// fn is the function that implements the character replacement logic.
-	fn func(rune) rune
+	// It returns the rune to replace or drop (by returning -1), and a bool to tell if next consecutive
+	// characters must be dropped if they fall in the currently matched character set.
+	fn func(rune) (rune, bool)
 }
 
 // Mutate the mapped string using `strings.Map` and the provided function implementing the character
 // replacement logic.
-func (sm *stringMutator) Mutate(fn func(rune) rune, s string) string {
+func (sm *stringMutator) Mutate(fn func(rune) (rune, bool), s string) string {
 	sm.fn = fn
 	rs := strings.Map(sm.mapping, s)
 	sm.Reset()
@@ -818,16 +820,22 @@ func (sm *stringMutator) Mutate(fn func(rune) rune, s string) string {
 }
 
 func (sm *stringMutator) mapping(r rune) rune {
-	v := sm.fn(r)
-	if v >= 0 {
+	v, dropConsecutiveMatches := sm.fn(r)
+	if v < 0 {
+		// We reset the state machine in any match that is not related to a consecutive run
 		sm.n = 0
-		return v
+		return -1
 	}
-	if sm.n == 0 {
-		sm.n--
-		return '_'
+	if dropConsecutiveMatches {
+		if sm.n == 0 {
+			sm.n--
+			return v
+		}
+		return -1
 	}
-	return -1
+	// We reset the state machine in any match that is not related to a consecutive run
+	sm.n = 0
+	return v
 }
 
 // Reset resets the state of the mutator.
@@ -842,14 +850,14 @@ var (
 	// space and characters outside the ASCII range 0x20 to 0x7E.
 	// Disallowed characters must be replaced with the underscore.
 	// Equivalent to regexp.MustCompile(",|=|[^\\x20-\\x7E]+")
-	keyDisallowedFn = func(r rune) rune {
+	keyDisallowedFn = func(r rune) (rune, bool) {
 		switch {
 		case r == ',' || r == '=':
-			return '_'
+			return '_', false
 		case r < 0x20 || r > 0x7E:
-			return -1
+			return '_', true
 		}
-		return r
+		return r, false
 	}
 
 	// valueRgx is used to sanitize the values of the datadog propagating tags.
@@ -860,16 +868,16 @@ var (
 	// Equals character must be encoded with a tilde.
 	// Other disallowed characters must be replaced with the underscore.
 	// Equivalent to regexp.MustCompile(",|;|~|[^\\x20-\\x7E]+")
-	valueDisallowedFn = func(r rune) rune {
+	valueDisallowedFn = func(r rune) (rune, bool) {
 		switch {
 		case r == '=':
-			return '~'
+			return '~', false
 		case r == ',' || r == '~' || r == ';':
-			return '_'
+			return '_', false
 		case r < 0x20 || r > 0x7E:
-			return -1
+			return '_', true
 		}
-		return r
+		return r, false
 	}
 
 	// originRgx is used to sanitize the value of the datadog origin tag.
@@ -880,16 +888,16 @@ var (
 	// Equals character must be encoded with a tilde.
 	// Other disallowed characters must be replaced with the underscore.
 	// Equivalent to regexp.MustCompile(",|~|;|[^\\x21-\\x7E]+")
-	originDisallowedFn = func(r rune) rune {
+	originDisallowedFn = func(r rune) (rune, bool) {
 		switch {
 		case r == '=':
-			return '~'
+			return '~', false
 		case r == ',' || r == '~' || r == ';':
-			return '_'
+			return '_', false
 		case r < 0x21 || r > 0x7E:
-			return -1
+			return '_', true
 		}
-		return r
+		return r, false
 	}
 )
 
