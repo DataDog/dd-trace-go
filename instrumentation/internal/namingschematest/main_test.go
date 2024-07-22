@@ -49,6 +49,7 @@ func TestNamingSchema(t *testing.T) {
 		netHTTPServer,
 		netHTTPClient,
 		gomemcache,
+		gcpPubsub,
 	}
 	for _, tc := range testCases {
 		t.Run(strings.ReplaceAll(string(tc.name), "/", "_"), func(t *testing.T) {

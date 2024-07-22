@@ -5,9 +5,7 @@
 
 package pubsub
 
-import (
-	"github.com/DataDog/dd-trace-go/v2/internal/namingschema"
-)
+import "github.com/DataDog/dd-trace-go/v2/instrumentation"
 
 type config struct {
 	serviceName     string
@@ -18,9 +16,9 @@ type config struct {
 
 func defaultConfig() *config {
 	return &config{
-		serviceName:     namingschema.ServiceNameOverrideV0("", ""),
-		publishSpanName: namingschema.OpName(namingschema.GCPPubSubOutbound),
-		receiveSpanName: namingschema.OpName(namingschema.GCPPubSubInbound),
+		serviceName:     instr.ServiceName(instrumentation.ComponentConsumer, nil),
+		publishSpanName: instr.OperationName(instrumentation.ComponentProducer, nil),
+		receiveSpanName: instr.OperationName(instrumentation.ComponentConsumer, nil),
 		measured:        false,
 	}
 }

@@ -30,6 +30,8 @@ const (
 	ComponentDefault Component = iota
 	ComponentServer
 	ComponentClient
+	ComponentProducer
+	ComponentConsumer
 )
 
 type componentNames struct {
@@ -112,6 +114,24 @@ var packages = map[Package]PackageInfo{
 			},
 		},
 	},
+	PackageCloudGoogleComPubsub: {
+		TracedPackage: "",
+		EnvVarPrefix:  "GCP_PUBSUB",
+		naming: map[Component]componentNames{
+			ComponentConsumer: {
+				useDDServiceV0:     false,
+				buildServiceNameV0: staticName(""),
+				buildOpNameV0:      staticName("pubsub.receive"),
+				buildOpNameV1:      staticName("gcp.pubsub.process"),
+			},
+			ComponentProducer: {
+				useDDServiceV0:     false,
+				buildServiceNameV0: staticName(""),
+				buildOpNameV0:      staticName("pubsub.publish"),
+				buildOpNameV1:      staticName("gcp.pubsub.send"),
+			},
+		},
+	},
 	PackageNetHTTP: {
 		external:      false,
 		TracedPackage: "net/http",
@@ -172,3 +192,101 @@ func isAWSMessagingSendOp(awsService, awsOperation string) bool {
 	}
 	return false
 }
+
+//
+//func opV1(t IntegrationType) string {
+//	switch t {
+//	// Client/Server
+//	case HTTPClient:
+//		return "http.client.request"
+//	case HTTPServer:
+//		return "http.server.request"
+//	case GRPCClient:
+//		return "grpc.client.request"
+//	case GRPCServer:
+//		return "grpc.server.request"
+//	case GraphqlServer:
+//		return "graphql.server.request"
+//	case TwirpClient:
+//		return "twirp.client.request"
+//	case TwirpServer:
+//		return "twirp.server.request"
+//
+//	// Messaging
+//	case KafkaOutbound:
+//		return "kafka.send"
+//	case KafkaInbound:
+//		return "kafka.process"
+//	case GCPPubSubInbound:
+//		return "gcp.pubsub.process"
+//	case GCPPubSubOutbound:
+//		return "gcp.pubsub.send"
+//
+//	// Cache
+//	case MemcachedOutbound:
+//		return "memcached.command"
+//	case RedisOutbound:
+//		return "redis.command"
+//
+//	// Database
+//	case ElasticSearchOutbound:
+//		return "elasticsearch.query"
+//	case MongoDBOutbound:
+//		return "mongodb.query"
+//	case CassandraOutbound:
+//		return "cassandra.query"
+//	case LevelDBOutbound:
+//		return "leveldb.query"
+//	case BuntDBOutbound:
+//		return "buntdb.query"
+//	case ConsulOutbound:
+//		return "consul.query"
+//	case VaultOutbound:
+//		return "vault.query"
+//	}
+//	return ""
+//}
+//
+//func opV0(t IntegrationType) string {
+//	switch t {
+//	case HTTPClient, HTTPServer:
+//		return "http.request"
+//	case GRPCClient:
+//		return "grpc.client"
+//	case GRPCServer:
+//		return "grpc.server"
+//	case GraphqlServer:
+//		return "graphql.request"
+//	case TwirpClient:
+//		return "twirp.request"
+//	case TwirpServer:
+//		return "twirp.request"
+//	case KafkaOutbound:
+//		return "kafka.produce"
+//	case KafkaInbound:
+//		return "kafka.consume"
+//	case GCPPubSubInbound:
+//		return "pubsub.receive"
+//	case GCPPubSubOutbound:
+//		return "pubsub.publish"
+//	case MemcachedOutbound:
+//		return "memcached.query"
+//	case RedisOutbound:
+//		return "redis.command"
+//	case ElasticSearchOutbound:
+//		return "elasticsearch.query"
+//	case MongoDBOutbound:
+//		return "mongodb.query"
+//	case CassandraOutbound:
+//		return "cassandra.query"
+//	case LevelDBOutbound:
+//		return "leveldb.query"
+//	case BuntDBOutbound:
+//		return "buntdb.query"
+//	case ConsulOutbound:
+//		return "consul.command"
+//	case VaultOutbound:
+//		return "http.request"
+//	}
+//	return ""
+//}
