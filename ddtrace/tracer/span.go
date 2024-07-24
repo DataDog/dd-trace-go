@@ -383,6 +383,7 @@ func takeStacktrace(n, skip uint) string {
 
 // setMeta sets a string tag. This method is not safe for concurrent use.
 func (s *span) setMeta(key, v string) {
+	log.Debug("=== span setMeta: key = %s, val = %s", key, v)
 	if s.Meta == nil {
 		s.Meta = make(map[string]string, 1)
 	}
@@ -402,6 +403,7 @@ func (s *span) setMeta(key, v string) {
 }
 
 func (s *span) setMetaStruct(key string, v any) {
+	log.Debug("=== span setMetaStruct: key = %s, val = %s", key, v)
 	if s.MetaStruct == nil {
 		s.MetaStruct = make(metaStructMap, 1)
 	}
