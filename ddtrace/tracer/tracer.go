@@ -370,6 +370,7 @@ func (t *tracer) worker(tick <-chan time.Time) {
 			if len(trace.spans) != 0 {
 				t.traceWriter.add(trace.spans)
 			}
+			log.Debug("=== writing trace: %s ===", trace.spans)
 		case <-tick:
 			t.statsd.Incr("datadog.tracer.flush_triggered", []string{"reason:scheduled"}, 1)
 			t.traceWriter.flush()
