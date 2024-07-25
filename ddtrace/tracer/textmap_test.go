@@ -2476,6 +2476,11 @@ func TestStringMutator(t *testing.T) {
 			assert.Equal(t, expected, actual)
 		})
 	}
+	t.Run("raw string", func(t *testing.T) {
+		expected := "a_b_c____d_~"
+		actual := sm.Mutate(originDisallowedFn, "a,b;c~~~~d;=")
+		assert.Equal(t, expected, actual)
+	})
 }
 
 func FuzzStringMutator(f *testing.F) {
