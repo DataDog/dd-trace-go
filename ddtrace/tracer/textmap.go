@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"net/http"
 	"os"
-	"regexp"
 	"strconv"
 	"strings"
 
@@ -511,6 +510,7 @@ func overrideDatadogParentID(ctx, w3cCtx, ddCtx *spanContext) {
 	if w3cCtx.reparentID != "" && w3cCtx.reparentID != "0000000000000000" {
 		ctx.reparentID = w3cCtx.reparentID
 	} else if ddCtx != nil {
+		// NIT: could be done without using fmt.Sprintf? Is it worth it?
 		ctx.reparentID = fmt.Sprintf("%016x", ddCtx.SpanID())
 	}
 }
@@ -794,31 +794,120 @@ func (*propagatorW3c) injectTextMap(spanCtx ddtrace.SpanContext, writer TextMapW
 	return nil
 }
 
+// stringMutator maps characters in a string to new characters. It is a state machine intended
+// to replace regex patterns for simple character replacement, including collapsing runs of a
+// specific range.
+//
+// It's designed after the `hash#Hash` interface, and to work with `strings.Map`.
+type stringMutator struct {
+	// n is the current state of the mutator. It is used to track runs of characters that should
+	// be collapsed.
+	n bool
+	// fn is the function that implements the character replacement logic.
+	// It returns the rune to use as replacement and a bool to tell if next consecutive
+	// characters must be dropped if they fall in the currently matched character set.
+	// It's possible to return `-1` to immediately drop the current rune.
+	//
+	// This logic allows for:
+	// - Replace only the current rune: return <new value>, false
+	// - Drop only the current rune: return -1, false
+	// - Replace the current rune and drop the next consecutive runes if they match the same case: return <new value>, true
+	// - Drop all the consecutive runes matching the same case as the current one: return -1, true
+	//
+	// A known limitation is that we can only support a single case of consecutive runes.
+	fn func(rune) (rune, bool)
+}
+
+// Mutate the mapped string using `strings.Map` and the provided function implementing the character
+// replacement logic.
+func (sm *stringMutator) Mutate(fn func(rune) (rune, bool), s string) string {
+	sm.fn = fn
+	rs := strings.Map(sm.mapping, s)
+	sm.reset()
+
+	return rs
+}
+
+func (sm *stringMutator) mapping(r rune) rune {
+	v, dropConsecutiveMatches := sm.fn(r)
+	if v < 0 {
+		// We reset the state machine in any match that is not related to a consecutive run
+		sm.reset()
+		return -1
+	}
+	if dropConsecutiveMatches {
+		if !sm.n {
+			sm.n = true
+			return v
+		}
+		return -1
+	}
+	// We reset the state machine in any match that is not related to a consecutive run
+	sm.reset()
+	return v
+}
+
+// reset resets the state of the mutator.
+func (sm *stringMutator) reset() {
+	sm.n = false
+}
+
 var (
-	// keyRgx is used to sanitize the keys of the datadog propagating tags.
+	// keyDisallowedFn is used to sanitize the keys of the datadog propagating tags.
 	// Disallowed characters are comma (reserved as a list-member separator),
 	// equals (reserved for list-member key-value separator),
 	// space and characters outside the ASCII range 0x20 to 0x7E.
 	// Disallowed characters must be replaced with the underscore.
-	keyRgx = regexp.MustCompile(",|=|[^\\x20-\\x7E]+")
+	// Equivalent to regexp.MustCompile(",|=|[^\\x20-\\x7E]+")
+	keyDisallowedFn = func(r rune) (rune, bool) {
+		switch {
+		case r == ',' || r == '=':
+			return '_', false
+		case r < 0x20 || r > 0x7E:
+			return '_', true
+		}
+		return r, false
+	}
 
-	// valueRgx is used to sanitize the values of the datadog propagating tags.
+	// valueDisallowedFn is used to sanitize the values of the datadog propagating tags.
 	// Disallowed characters are comma (reserved as a list-member separator),
 	// semi-colon (reserved for separator between entries in the dd list-member),
 	// tilde (reserved, will represent 0x3D (equals) in the encoded tag value,
 	// and characters outside the ASCII range 0x20 to 0x7E.
 	// Equals character must be encoded with a tilde.
 	// Other disallowed characters must be replaced with the underscore.
-	valueRgx = regexp.MustCompile(",|;|~|[^\\x20-\\x7E]+")
+	// Equivalent to regexp.MustCompile(",|;|~|[^\\x20-\\x7E]+")
+	valueDisallowedFn = func(r rune) (rune, bool) {
+		switch {
+		case r == '=':
+			return '~', false
+		case r == ',' || r == '~' || r == ';':
+			return '_', false
+		case r < 0x20 || r > 0x7E:
+			return '_', true
+		}
+		return r, false
+	}
 
-	// originRgx is used to sanitize the value of the datadog origin tag.
+	// originDisallowedFn is used to sanitize the value of the datadog origin tag.
 	// Disallowed characters are comma (reserved as a list-member separator),
 	// semi-colon (reserved for separator between entries in the dd list-member),
 	// equals (reserved for list-member key-value separator),
 	// and characters outside the ASCII range 0x21 to 0x7E.
 	// Equals character must be encoded with a tilde.
 	// Other disallowed characters must be replaced with the underscore.
-	originRgx = regexp.MustCompile(",|~|;|[^\\x21-\\x7E]+")
+	// Equivalent to regexp.MustCompile(",|~|;|[^\\x21-\\x7E]+")
+	originDisallowedFn = func(r rune) (rune, bool) {
+		switch {
+		case r == '=':
+			return '~', false
+		case r == ',' || r == '~' || r == ';':
+			return '_', false
+		case r < 0x21 || r > 0x7E:
+			return '_', true
+		}
+		return r, false
+	}
 )
 
 const (
@@ -854,15 +943,20 @@ func isValidID(id string) bool {
 // the last parent ID of a Datadog span (`p:<parent_id>`),
 // and propagated tags prefixed with `t.`(e.g. _dd.p.usr.id:usr_id tag will become `t.usr.id:usr_id`).
 func composeTracestate(ctx *spanContext, priority int, oldState string) string {
-	var b strings.Builder
+	var (
+		b  strings.Builder
+		sm = &stringMutator{}
+	)
+
 	b.Grow(128)
-	b.WriteString(fmt.Sprintf("dd=s:%d", priority))
+	b.WriteString("dd=s:")
+	b.WriteString(strconv.Itoa(priority))
 	listLength := 1
 
 	if ctx.origin != "" {
-		oWithSub := originRgx.ReplaceAllString(ctx.origin, "_")
-		b.WriteString(fmt.Sprintf(";o:%s",
-			strings.ReplaceAll(oWithSub, "=", "~")))
+		oWithSub := sm.Mutate(originDisallowedFn, ctx.origin)
+		b.WriteString(";o:")
+		b.WriteString(oWithSub)
 	}
 
 	// if the context is remote and there is a reparentID, set p as reparentId
@@ -871,9 +965,11 @@ func composeTracestate(ctx *spanContext, priority int, oldState string) string {
 	// this ID can be used by downstream tracers to set a _dd.parent_id tag
 	// to allow the backend to reparent orphaned spans if necessary
 	if !ctx.isRemote {
-		b.WriteString(fmt.Sprintf(";p:%016x", ctx.SpanID()))
+		b.WriteString(";p:")
+		b.WriteString(spanIDHexEncoded(ctx.SpanID(), 16))
 	} else if ctx.reparentID != "" && ctx.reparentID != "0000000000000000" {
-		b.WriteString(fmt.Sprintf(";p:%s", ctx.reparentID))
+		b.WriteString(";p:")
+		b.WriteString(ctx.reparentID)
 	}
 
 	ctx.trace.iteratePropagatingTags(func(k, v string) bool {
@@ -882,14 +978,15 @@ func composeTracestate(ctx *spanContext, priority int, oldState string) string {
 		}
 		// Datadog propagating tags must be appended to the tracestateHeader
 		// with the `t.` prefix. Tag value must have all `=` signs replaced with a tilde (`~`).
-		tag := fmt.Sprintf("t.%s:%s",
-			keyRgx.ReplaceAllString(k[len("_dd.p."):], "_"),
-			strings.ReplaceAll(valueRgx.ReplaceAllString(v, "_"), "=", "~"))
-		if b.Len()+len(tag)+1 > 256 { // the +1 here is to account for the `;` needed between the tags
+		key := sm.Mutate(keyDisallowedFn, k[len("_dd.p."):])
+		value := sm.Mutate(valueDisallowedFn, v)
+		if b.Len()+len(key)+len(value)+4 > 256 { // the +4 here is to account for the `t.` prefix, the `;` needed between the tags, and the `:` between the key and value
 			return false
 		}
-		b.WriteString(";")
-		b.WriteString(tag)
+		b.WriteString(";t.")
+		b.WriteString(key)
+		b.WriteString(":")
+		b.WriteString(value)
 		return true
 	})
 	// the old state is split by vendors, must be concatenated with a `,`
@@ -906,7 +1003,8 @@ func composeTracestate(ctx *spanContext, priority int, oldState string) string {
 		if listLength > 32 {
 			break
 		}
-		b.WriteString("," + strings.Trim(s, " \t"))
+		b.WriteString(",")
+		b.WriteString(strings.Trim(s, " \t"))
 	}
 	return b.String()
 }

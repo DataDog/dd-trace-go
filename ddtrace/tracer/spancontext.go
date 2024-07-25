@@ -606,3 +606,33 @@ func setPeerServiceFromSource(s *span) string {
 	}
 	return ""
 }
+
+const hexEncodingDigits = "0123456789abcdef"
+
+// spanIDHexEncoded returns the hex encoded string of the given span ID `u`
+// with the given padding.
+//
+// Code is borrowed from `fmt.fmtInteger` in the standard library.
+func spanIDHexEncoded(u uint64, padding int) string {
+	// The allocated intbuf with a capacity of 68 bytes
+	// is large enough for integer formatting.
+	var intbuf [68]byte
+	buf := intbuf[0:]
+	if padding > 68 {
+		buf = make([]byte, padding)
+	}
+	// Because printing is easier right-to-left: format u into buf, ending at buf[i].
+	i := len(buf)
+	for u >= 16 {
+		i--
+		buf[i] = hexEncodingDigits[u&0xF]
+		u >>= 4
+	}
+	i--
+	buf[i] = hexEncodingDigits[u]
+	for i > 0 && padding > len(buf)-i {
+		i--
+		buf[i] = '0'
+	}
+	return string(buf[i:])
+}
