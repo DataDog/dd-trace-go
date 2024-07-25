@@ -74,6 +74,7 @@ type span struct {
 	Meta       map[string]string  `msg:"meta,omitempty"`        // arbitrary map of metadata
 	MetaStruct metaStructMap      `msg:"meta_struct,omitempty"` // arbitrary map of metadata with structured values
 	Metrics    map[string]float64 `msg:"metrics,omitempty"`     // arbitrary map of numeric metrics
+	tags       *spanTags          `msg:"-"`                     // metadata and numeric metrics tags' optimized storage
 	SpanID     uint64             `msg:"span_id"`               // identifier of this span
 	TraceID    uint64             `msg:"trace_id"`              // lower 64-bits of the root span identifier
 	ParentID   uint64             `msg:"parent_id"`             // identifier of the span's direct parent
@@ -121,6 +122,9 @@ func (s *span) SetTag(key string, value interface{}) {
 	// race, since spans are marked `finished` before we flush them.
 	if s.finished {
 		return
+	}
+	if s.tags == nil {
+		s.tags = &spanTags{}
 	}
 	switch key {
 	case ext.Error:
@@ -386,10 +390,9 @@ func takeStacktrace(n, skip uint) string {
 
 // setMeta sets a string tag. This method is not safe for concurrent use.
 func (s *span) setMeta(key, v string) {
-	if s.Meta == nil {
-		s.Meta = make(map[string]string, 1)
+	if s.tags == nil {
+		s.tags = &spanTags{}
 	}
-	delete(s.Metrics, key)
 	switch key {
 	case ext.SpanName:
 		s.Name = v
@@ -400,7 +403,7 @@ func (s *span) setMeta(key, v string) {
 	case ext.SpanType:
 		s.Type = v
 	default:
-		s.Meta[key] = v
+		s.tags.append(key, v)
 	}
 }
 
@@ -440,10 +443,9 @@ func (s *span) setTagBool(key string, v bool) {
 // setMetric sets a numeric tag, in our case called a metric. This method
 // is not safe for concurrent use.
 func (s *span) setMetric(key string, v float64) {
-	if s.Metrics == nil {
-		s.Metrics = make(map[string]float64, 1)
+	if s.tags == nil {
+		s.tags = &spanTags{}
 	}
-	delete(s.Meta, key)
 	switch key {
 	case ext.ManualKeep:
 		if v == float64(samplernames.AppSec) {
@@ -454,7 +456,7 @@ func (s *span) setMetric(key string, v float64) {
 		// We have it here for backward compatibility.
 		s.setSamplingPriorityLocked(int(v), samplernames.Manual)
 	default:
-		s.Metrics[key] = v
+		s.tags.append(key, v)
 	}
 }
 

@@ -1032,7 +1032,9 @@ func TestSetUserPropagatedUserID(t *testing.T) {
 func BenchmarkSetTagMetric(b *testing.B) {
 	span := newBasicSpan("bench.span")
 	keys := strings.Split("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ", "")
-
+	for i := 0; i < b.N; i++ {
+		tagsPool.Put(&tag{})
+	}
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		k := keys[i%len(keys)]
@@ -1043,10 +1045,12 @@ func BenchmarkSetTagMetric(b *testing.B) {
 func BenchmarkSetTagString(b *testing.B) {
 	span := newBasicSpan("bench.span")
 	keys := strings.Split("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ", "")
-
+	for i := 0; i < b.N; i++ {
+		tagsPool.Put(&tag{})
+	}
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		k := string(keys[i%len(keys)])
+		k := keys[i%len(keys)]
 		span.SetTag(k, "some text")
 	}
 }
@@ -1055,7 +1059,9 @@ func BenchmarkSetTagStringPtr(b *testing.B) {
 	span := newBasicSpan("bench.span")
 	keys := strings.Split("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ", "")
 	v := makePointer("some text")
-
+	for i := 0; i < b.N; i++ {
+		tagsPool.Put(&tag{})
+	}
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		k := keys[i%len(keys)]
@@ -1067,6 +1073,9 @@ func BenchmarkSetTagStringer(b *testing.B) {
 	span := newBasicSpan("bench.span")
 	keys := strings.Split("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ", "")
 	value := &stringer{}
+	for i := 0; i < b.N; i++ {
+		tagsPool.Put(&tag{})
+	}
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		k := string(keys[i%len(keys)])
@@ -1077,7 +1086,9 @@ func BenchmarkSetTagStringer(b *testing.B) {
 func BenchmarkSetTagField(b *testing.B) {
 	span := newBasicSpan("bench.span")
 	keys := []string{ext.ServiceName, ext.ResourceName, ext.SpanType}
-
+	for i := 0; i < b.N; i++ {
+		tagsPool.Put(&tag{})
+	}
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		k := keys[i%len(keys)]
@@ -1125,4 +1136,17 @@ func testConcurrentSpanSetTag(t *testing.T) {
 		}()
 	}
 	wg.Wait()
+}
+
+func BenchmarkSpanFinish(b *testing.B) {
+	tracer := newTracer(withTransport(newDefaultTransport()))
+	tracer.config.partialFlushEnabled = false
+	defer tracer.Stop()
+	span := tracer.newRootSpan("pylons.request", "pylons", "/")
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		span.finished = false
+		span.Finish()
+	}
 }
