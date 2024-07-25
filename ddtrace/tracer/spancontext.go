@@ -609,7 +609,7 @@ func setPeerServiceFromSource(s *span) string {
 
 const hexEncodingDigits = "0123456789abcdef"
 
-// spanIDHexEncoded returns the hex encoded string of the span ID
+// spanIDHexEncoded returns the hex encoded string of the given span ID `u`
 // with the given padding.
 //
 // Code is borrowed from `fmt.fmtInteger` in the standard library.
