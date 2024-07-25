@@ -1069,7 +1069,7 @@ func BenchmarkSetTagStringer(b *testing.B) {
 	value := &stringer{}
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		k := string(keys[i%len(keys)])
+		k := keys[i%len(keys)]
 		span.SetTag(k, value)
 	}
 }
