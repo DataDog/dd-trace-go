@@ -456,7 +456,7 @@ func (s *span) setMetric(key string, v float64) {
 		// We have it here for backward compatibility.
 		s.setSamplingPriorityLocked(int(v), samplernames.Manual)
 	default:
-		s.tags.appendMetric(key, v)
+		s.tags.AppendMetric(key, v)
 	}
 }
 

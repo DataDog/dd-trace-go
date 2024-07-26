@@ -13,8 +13,8 @@ import (
 func TestSpanTagsSet(t *testing.T) {
 	var st spanTags
 	st.AppendMeta("key1", "value1")
-	st.appendMetric("key2", 0.1)
-	st.appendMetric("key3", 1)
+	st.AppendMetric("key2", 0.1)
+	st.AppendMetric("key3", 1)
 	st.AppendMeta("key2", "value2")
 	head := st.Head()
 	if head == nil {
@@ -52,7 +52,7 @@ func TestSpanTagsReset(t *testing.T) {
 		tags[i] = tt
 		tt = (*tag[meta])(tt.sibling)
 	}
-	st.reset()
+	st.Reset()
 	head := st.Head()
 	if head != nil {
 		t.Fatal("head not nil")
@@ -76,7 +76,7 @@ func BenchmarkSpanTagsSet(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		st.AppendMeta("key", "value")
-		st.reset()
+		st.Reset()
 	}
 }
 
