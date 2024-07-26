@@ -14,6 +14,7 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+	"unsafe"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
@@ -1033,7 +1034,7 @@ func BenchmarkSetTagMetric(b *testing.B) {
 	span := newBasicSpan("bench.span")
 	keys := strings.Split("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ", "")
 	for i := 0; i < b.N; i++ {
-		tagsPool.Put(&tag{})
+		tagsPool.Put(unsafe.Pointer(&tag[meta]{}))
 	}
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -1046,7 +1047,7 @@ func BenchmarkSetTagString(b *testing.B) {
 	span := newBasicSpan("bench.span")
 	keys := strings.Split("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ", "")
 	for i := 0; i < b.N; i++ {
-		tagsPool.Put(&tag{})
+		tagsPool.Put(unsafe.Pointer(&tag[meta]{}))
 	}
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -1060,7 +1061,7 @@ func BenchmarkSetTagStringPtr(b *testing.B) {
 	keys := strings.Split("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ", "")
 	v := makePointer("some text")
 	for i := 0; i < b.N; i++ {
-		tagsPool.Put(&tag{})
+		tagsPool.Put(unsafe.Pointer(&tag[meta]{}))
 	}
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -1074,7 +1075,7 @@ func BenchmarkSetTagStringer(b *testing.B) {
 	keys := strings.Split("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ", "")
 	value := &stringer{}
 	for i := 0; i < b.N; i++ {
-		tagsPool.Put(&tag{})
+		tagsPool.Put(unsafe.Pointer(&tag[meta]{}))
 	}
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -1087,7 +1088,7 @@ func BenchmarkSetTagField(b *testing.B) {
 	span := newBasicSpan("bench.span")
 	keys := []string{ext.ServiceName, ext.ResourceName, ext.SpanType}
 	for i := 0; i < b.N; i++ {
-		tagsPool.Put(&tag{})
+		tagsPool.Put(unsafe.Pointer(&tag[meta]{}))
 	}
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {

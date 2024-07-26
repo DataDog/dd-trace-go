@@ -403,7 +403,7 @@ func (s *span) setMeta(key, v string) {
 	case ext.SpanType:
 		s.Type = v
 	default:
-		s.tags.append(key, v)
+		s.tags.AppendMeta(key, v)
 	}
 }
 
@@ -456,7 +456,7 @@ func (s *span) setMetric(key string, v float64) {
 		// We have it here for backward compatibility.
 		s.setSamplingPriorityLocked(int(v), samplernames.Manual)
 	default:
-		s.tags.append(key, v)
+		s.tags.appendMetric(key, v)
 	}
 }
 
