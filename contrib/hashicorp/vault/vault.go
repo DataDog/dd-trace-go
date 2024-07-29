@@ -100,7 +100,6 @@ func NewClient(c *api.Config, opts ...Option) (*api.Client, error) {
 	if c.HttpClient == nil {
 		c.HttpClient = NewHTTPClient(opts...)
 	} else {
-
 		c.HttpClient = WrapHTTPClient(c.HttpClient, opts...)
 	}
 	return api.NewClient(c)
