@@ -94,6 +94,8 @@ func WrapHTTPClient(c *http.Client, opts ...Option) *http.Client {
 	return c
 }
 
+// NewClient returns an api.Client for the Vault API. A set of options
+// can be passed in for further configuration.
 func NewClient(c *api.Config, opts ...Option) (*api.Client, error) {
 	if c.HttpClient == nil {
 		c.HttpClient = NewHTTPClient(opts...)
