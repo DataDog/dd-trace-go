@@ -97,6 +97,46 @@ func TestWrapHTTPClient(t *testing.T) {
 	testMountReadWrite(client, t)
 }
 
+func TestNewClient(t *testing.T) {
+	ts, cleanup := setupServer(t)
+	defer cleanup()
+
+	testCases := []struct {
+		name   string
+		client *http.Client
+	}{
+		{
+			name:   "nil HTTP client",
+			client: nil,
+		},
+		{
+			name:   "present HTTP client",
+			client: http.DefaultClient,
+		},
+		{
+			name:   "already instrumented HTTP client",
+			client: NewHTTPClient(),
+		},
+	}
+	for _, tc := range testCases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			config := &api.Config{
+				HttpClient: tc.client,
+				Address:    ts.URL,
+			}
+			client, err := NewClient(config)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			testMountReadWrite(client, t)
+		})
+	}
+}
+
 // mountKV mounts the K/V engine on secretMountPath and returns a function to unmount it.
 // See: https://www.vaultproject.io/docs/secrets/
 func mountKV(c *api.Client, t *testing.T) func() {
