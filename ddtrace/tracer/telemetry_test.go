@@ -44,7 +44,6 @@ func TestTelemetryEnabled(t *testing.T) {
 		assert.True(t, telemetryClient.Started)
 		telemetryClient.AssertNumberOfCalls(t, "ApplyOps", 1)
 		telemetry.Check(t, telemetryClient.Configuration, "trace_debug_enabled", true)
-		telemetry.Check(t, telemetryClient.Configuration, "trace_debug_enabled", true)
 		telemetry.Check(t, telemetryClient.Configuration, "service", "test-serv")
 		telemetry.Check(t, telemetryClient.Configuration, "env", "test-env")
 		telemetry.Check(t, telemetryClient.Configuration, "runtime_metrics_enabled", true)
