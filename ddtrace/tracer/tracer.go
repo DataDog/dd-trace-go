@@ -348,6 +348,8 @@ func Flush() {
 	if t, ok := internal.GetGlobalTracer().(*tracer); ok {
 		t.flushSync()
 		if t.dataStreams != nil {
+			log.Debug("=== Flush - tracer config: %+v\n ===", t.config)
+			log.Debug("=== Flush - tracer out: %+v\n ===", t.out)
 			t.dataStreams.Flush()
 		}
 	}
@@ -370,7 +372,7 @@ func (t *tracer) worker(tick <-chan time.Time) {
 			if len(trace.spans) != 0 {
 				t.traceWriter.add(trace.spans)
 			}
-			log.Debug("=== writing trace: %s ===", trace.spans)
+			log.Debug("===: %s ===", trace.spans)
 		case <-tick:
 			t.statsd.Incr("datadog.tracer.flush_triggered", []string{"reason:scheduled"}, 1)
 			t.traceWriter.flush()

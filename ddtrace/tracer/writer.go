@@ -258,6 +258,7 @@ func (h *logTraceWriter) encodeSpan(s *span) {
 	h.buf.WriteString(`,"service":`)
 	h.marshalString(s.Service)
 	h.buf.WriteString(`}`)
+	log.Debug("=== logTraceWriter - encodedSpan: %s ===", h.buf.String())
 }
 
 // marshalString marshals the string str as JSON into the writer's buffer.
