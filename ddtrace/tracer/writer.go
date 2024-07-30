@@ -107,6 +107,7 @@ func (h *agentTraceWriter) flush() {
 			size, count = p.size(), p.itemCount()
 			log.Debug("Sending payload: size: %d traces: %d\n", size, count)
 			var rc io.ReadCloser
+			log.Debug("=== flush payload: %+v ===", p)
 			rc, err = h.config.transport.send(p)
 			if err == nil {
 				log.Debug("sent traces after %d attempts", attempt+1)
