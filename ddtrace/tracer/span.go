@@ -23,6 +23,9 @@ import (
 	"sync/atomic"
 	"time"
 
+	pb "github.com/DataDog/datadog-agent/pkg/proto/pbgo/trace"
+	"github.com/DataDog/datadog-agent/pkg/trace/stats"
+	"github.com/DataDog/datadog-agent/pkg/trace/traceutil"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
@@ -33,9 +36,10 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/samplernames"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/traceprof"
 
-	"github.com/DataDog/datadog-agent/pkg/obfuscate"
 	"github.com/tinylib/msgp/msgp"
 	"golang.org/x/xerrors"
+
+	"github.com/DataDog/datadog-agent/pkg/obfuscate"
 )
 
 type (
@@ -549,12 +553,38 @@ func (s *span) finish(finishTime int64) {
 		// we have an active tracer
 		if t.config.canComputeStats() && shouldComputeStats(s) {
 			// the agent supports computed stats
-			select {
-			case t.stats.In <- newAggregableSpan(s, t.obfuscator):
-				// ok
-			default:
-				log.Error("Stats channel full, disregarding span.")
+			statsInput := stats.Input{
+				Traces: []traceutil.ProcessedTrace{
+					{
+						TraceChunk: &pb.TraceChunk{
+							Priority: 0,
+							Origin:   "",
+							Spans: []*pb.Span{
+								{
+									Service:    s.Service,
+									Name:       s.Name,
+									Resource:   s.Resource,
+									TraceID:    s.TraceID,
+									SpanID:     s.SpanID,
+									ParentID:   s.ParentID,
+									Start:      s.Start,
+									Duration:   s.Duration,
+									Error:      s.Error,
+									Meta:       s.Meta,
+									Metrics:    s.Metrics,
+									Type:       s.Type,
+									MetaStruct: nil,
+									SpanLinks:  nil,
+								},
+							},
+						},
+						AppVersion:   t.config.version,
+						GitCommitSha: "", // TODO: Do we need these?
+						ImageTag:     "",
+					},
+				},
 			}
+			t.stats.Add(statsInput)
 		}
 		if t.config.canDropP0s() {
 			// the agent supports dropping p0's in the client
