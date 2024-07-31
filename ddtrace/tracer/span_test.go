@@ -1155,9 +1155,12 @@ func BenchmarkSpanFinish(b *testing.B) {
 func BenchmarkConcurrentSpanSetTag(b *testing.B) {
 	span := newBasicSpan("root")
 	defer span.Finish()
-
+	for i := 0; i < b.N; i++ {
+		tagsPool.Put(unsafe.Pointer(&tag[meta]{}))
+	}
 	wg := sync.WaitGroup{}
 	wg.Add(b.N)
+	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		go func() {
 			span.SetTag("key", "value")
