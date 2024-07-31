@@ -8,8 +8,8 @@ package tracer
 import (
 	"context"
 
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/options"
 	"github.com/DataDog/dd-trace-go/v2/internal"
-	"github.com/DataDog/dd-trace-go/v2/internal/contrib/options"
 )
 
 // ContextWithSpan returns a copy of the given context which includes the span s.

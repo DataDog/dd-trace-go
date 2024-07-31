@@ -1,6 +1,6 @@
 module github.com/DataDog/dd-trace-go/contrib/globalsign/mgo/v2
 
-go 1.20
+go 1.21
 
 require (
 	github.com/DataDog/dd-trace-go/v2 v2.0.0-20240516153256-8d6fa2bea61d
@@ -13,7 +13,6 @@ require (
 	github.com/DataDog/datadog-agent/pkg/obfuscate v0.52.1 // indirect
 	github.com/DataDog/datadog-agent/pkg/remoteconfig/state v0.52.1 // indirect
 	github.com/DataDog/datadog-go/v5 v5.5.0 // indirect
-	github.com/DataDog/dd-trace-go/contrib/net/http/v2 v2.0.0-20240516153256-8d6fa2bea61d // indirect
 	github.com/DataDog/go-libddwaf/v2 v2.4.2 // indirect
 	github.com/DataDog/go-sqllexer v0.0.11 // indirect
 	github.com/DataDog/go-tuf v1.1.0-0.5.2 // indirect
@@ -43,5 +42,4 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
-replace "github.com/DataDog/dd-trace-go/v2" => "../../.."
-replace "github.com/DataDog/dd-trace-go/contrib/net/http/v2" => "../../net/http"
+replace github.com/DataDog/dd-trace-go/v2 => ../../..

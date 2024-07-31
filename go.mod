@@ -1,6 +1,6 @@
 module github.com/DataDog/dd-trace-go/v2
 
-go 1.20
+go 1.21
 
 require (
 	github.com/DataDog/appsec-internal-go v1.5.0

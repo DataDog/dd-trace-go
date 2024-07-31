@@ -1,6 +1,6 @@
 module github.com/DataDog/dd-trace-go/contrib/go-pg/pg.v10/v2
 
-go 1.20
+go 1.21
 
 require (
 	github.com/go-pg/pg/v10 v10.11.1
@@ -8,7 +8,6 @@ require (
 )
 
 require (
-	github.com/DataDog/dd-trace-go/contrib/net/http/v2 v2.0.0-20240516153256-8d6fa2bea61d // indirect
 	github.com/DataDog/go-sqllexer v0.0.11 // indirect
 	github.com/fsnotify/fsnotify v1.5.4 // indirect
 	github.com/google/go-cmp v0.6.0 // indirect
@@ -57,5 +56,4 @@ require (
 	mellium.im/sasl v0.3.1 // indirect
 )
 
-replace "github.com/DataDog/dd-trace-go/v2" => "../../.."
-replace "github.com/DataDog/dd-trace-go/contrib/net/http/v2" => "../../net/http"
+replace github.com/DataDog/dd-trace-go/v2 => ../../..

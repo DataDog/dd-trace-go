@@ -16,14 +16,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
-	"github.com/DataDog/dd-trace-go/v2/internal/contrib/namingschematest"
-	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
-
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils"
 )
 
 func TestWrapRoundTripperAllowNilTransport(t *testing.T) {
@@ -325,18 +324,6 @@ func TestRoundTripperAnalyticsSettings(t *testing.T) {
 		assertRate(t, mt, nil)
 	})
 
-	t.Run("global", func(t *testing.T) {
-		t.Skip("global flag disabled")
-		mt := mocktracer.Start()
-		defer mt.Stop()
-
-		rate := globalconfig.AnalyticsRate()
-		defer globalconfig.SetAnalyticsRate(rate)
-		globalconfig.SetAnalyticsRate(0.4)
-
-		assertRate(t, mt, 0.4)
-	})
-
 	t.Run("enabled", func(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
@@ -352,12 +339,10 @@ func TestRoundTripperAnalyticsSettings(t *testing.T) {
 	})
 
 	t.Run("override", func(t *testing.T) {
+		testutils.SetGlobalAnalyticsRate(t, 0.4)
+
 		mt := mocktracer.Start()
 		defer mt.Stop()
-
-		rate := globalconfig.AnalyticsRate()
-		defer globalconfig.SetAnalyticsRate(rate)
-		globalconfig.SetAnalyticsRate(0.4)
 
 		assertRate(t, mt, 0.23, WithAnalyticsRate(0.23))
 	})
@@ -579,42 +564,4 @@ func TestRoundTripperPropagation(t *testing.T) {
 	resp, err := client.Get(s.URL + "/hello/world")
 	assert.Nil(t, err)
 	defer resp.Body.Close()
-}
-
-func TestClientNamingSchema(t *testing.T) {
-	genSpans := namingschematest.GenSpansFn(func(t *testing.T, serviceOverride string) []*mocktracer.Span {
-		var opts []RoundTripperOption
-		if serviceOverride != "" {
-			opts = append(opts, WithService(serviceOverride))
-		}
-		mt := mocktracer.Start()
-		defer mt.Stop()
-
-		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("")) }))
-		defer srv.Close()
-
-		c := WrapClient(&http.Client{}, opts...)
-		req, err := http.NewRequest(http.MethodGet, srv.URL+"/200", nil)
-		require.NoError(t, err)
-		resp, err := c.Do(req)
-		require.NoError(t, err)
-		defer resp.Body.Close()
-
-		return mt.FinishedSpans()
-	})
-	assertOpV0 := func(t *testing.T, spans []*mocktracer.Span) {
-		require.Len(t, spans, 1)
-		assert.Equal(t, "http.request", spans[0].OperationName())
-	}
-	assertOpV1 := func(t *testing.T, spans []*mocktracer.Span) {
-		require.Len(t, spans, 1)
-		assert.Equal(t, "http.client.request", spans[0].OperationName())
-	}
-	wantServiceNameV0 := namingschematest.ServiceNameAssertions{
-		WithDefaults:             []string{""},
-		WithDDService:            []string{""},
-		WithDDServiceAndOverride: []string{namingschematest.TestServiceOverride},
-	}
-	t.Run("ServiceName", namingschematest.NewServiceNameTest(genSpans, wantServiceNameV0))
-	t.Run("SpanName", namingschematest.NewSpanNameTest(genSpans, assertOpV0, assertOpV1))
 }

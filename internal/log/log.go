@@ -55,6 +55,10 @@ var prefixMsg = fmt.Sprintf("Datadog Tracer %s", version.Tag)
 type Logger interface {
 	// Log prints the given message.
 	Log(msg string)
+	//Debug(msg string, args ...any)
+	//Info(msg string, args ...any)
+	//Warn(msg string, args ...any)
+	//Error(msg string, args ...any)
 }
 
 var (

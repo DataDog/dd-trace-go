@@ -1,15 +1,14 @@
 // Unless explicitly stated otherwise all files in this repository are licensed
 // under the Apache License Version 2.0.
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
-// Copyright 2023 Datadog, Inc.
+// Copyright 2016 Datadog, Inc.
 
-package tags
+package ext
 
+// Tags specific to AWS.
 const (
-	// OldAWSService is a duplicate tag that will be phased out in favor of AWSService.
-	OldAWSService = "aws.service"
-	// OldAWSRegion is a duplicate tag that will be phased out in favor of AWSRegion.
-	OldAWSRegion = "aws.region"
+	AWSServiceLegacy = "aws.service"
+	AWSRegionLegacy  = "aws.region"
 
 	AWSAgent      = "aws.agent"
 	AWSService    = "aws_service"
