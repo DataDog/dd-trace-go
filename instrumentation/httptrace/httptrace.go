@@ -16,14 +16,19 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
-	"github.com/DataDog/dd-trace-go/v2/internal"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/trace/httptrace"
-	"github.com/DataDog/dd-trace-go/v2/internal/namingschema"
 )
 
 var (
 	cfg = newConfig()
 )
+
+var instr *instrumentation.Instrumentation
+
+func init() {
+	instr = instrumentation.Load(instrumentation.PackageNetHTTP)
+}
 
 // StartRequestSpan starts an HTTP request span with the standard list of HTTP request span tags (http.method, http.url,
 // http.useragent). Any further span start option can be added with opts.
@@ -57,7 +62,7 @@ func StartRequestSpan(r *http.Request, opts ...tracer.StartSpanOption) (*tracer.
 			}
 		})
 	nopts = append(nopts, opts...)
-	return tracer.StartSpanFromContext(r.Context(), namingschema.OpName(namingschema.HTTPServer), nopts...)
+	return tracer.StartSpanFromContext(r.Context(), instr.OperationName(instrumentation.ComponentServer, nil), nopts...)
 }
 
 // FinishRequestSpan finishes the given HTTP request span and sets the expected response-related tags such as the status
@@ -112,13 +117,13 @@ func urlFromRequest(r *http.Request) string {
 
 // HeaderTagsFromRequest matches req headers to user-defined list of header tags
 // and creates span tags based on the header tag target and the req header value
-func HeaderTagsFromRequest(req *http.Request, headerCfg *internal.LockMap) tracer.StartSpanOption {
+func HeaderTagsFromRequest(req *http.Request, headerTags instrumentation.HeaderTags) tracer.StartSpanOption {
 	var tags []struct {
 		key string
 		val string
 	}
 
-	headerCfg.Iter(func(header, tag string) {
+	headerTags.Iter(func(header, tag string) {
 		if vs, ok := req.Header[header]; ok {
 			tags = append(tags, struct {
 				key string

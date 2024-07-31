@@ -11,13 +11,8 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
-	"github.com/DataDog/dd-trace-go/v2/internal"
-	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
-	"github.com/DataDog/dd-trace-go/v2/internal/namingschema"
-	"github.com/DataDog/dd-trace-go/v2/internal/normalizer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 )
-
-const defaultServiceName = "http.router"
 
 type commonConfig struct {
 	analyticsRate float64
@@ -30,7 +25,7 @@ type commonConfig struct {
 type config struct {
 	commonConfig
 	finishOpts []tracer.FinishOption
-	headerTags *internal.LockMap
+	headerTags instrumentation.HeaderTags
 }
 
 // Option describes options for http.ServeMux.
@@ -57,13 +52,12 @@ func (o HandlerOptionFn) apply(cfg *config) {
 }
 
 func defaults(cfg *config) {
-	if internal.BoolEnv("DD_TRACE_HTTP_ANALYTICS_ENABLED", false) {
-		cfg.analyticsRate = 1.0
-	} else {
-		cfg.analyticsRate = globalconfig.AnalyticsRate()
+	cfg.analyticsRate = instr.AnalyticsRate()
+	if math.IsNaN(cfg.analyticsRate) {
+		cfg.analyticsRate = instr.GlobalAnalyticsRate()
 	}
-	cfg.serviceName = namingschema.ServiceName(defaultServiceName)
-	cfg.headerTags = globalconfig.HeaderTagMap()
+	cfg.serviceName = instr.ServiceName(instrumentation.ComponentServer, nil)
+	cfg.headerTags = instr.HTTPHeadersAsTags()
 	cfg.spanOpts = []tracer.StartSpanOption{tracer.Measured()}
 	if !math.IsNaN(cfg.analyticsRate) {
 		cfg.spanOpts = append(cfg.spanOpts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
@@ -92,9 +86,8 @@ func WithService(name string) OptionFn {
 // Using this feature can risk exposing sensitive data such as authorization tokens to Datadog.
 // Special headers can not be sub-selected. E.g., an entire Cookie header would be transmitted, without the ability to choose specific Cookies.
 func WithHeaderTags(headers []string) HandlerOptionFn {
-	headerTagsMap := normalizer.HeaderTagSlice(headers)
 	return func(cfg *config) {
-		cfg.headerTags = internal.NewLockMap(headerTagsMap)
+		cfg.headerTags = instrumentation.NewHeaderTags(headers)
 	}
 }
 
@@ -180,13 +173,13 @@ func newRoundTripperConfig() *roundTripperConfig {
 	defaultResourceNamer := func(_ *http.Request) string {
 		return "http.request"
 	}
-	spanName := namingschema.OpName(namingschema.HTTPClient)
+	spanName := instr.OperationName(instrumentation.ComponentClient, nil)
 	defaultSpanNamer := func(_ *http.Request) string {
 		return spanName
 	}
 	sharedCfg := commonConfig{
-		serviceName:   namingschema.ServiceNameOverrideV0("", ""),
-		analyticsRate: globalconfig.AnalyticsRate(),
+		serviceName:   instr.ServiceName(instrumentation.ComponentClient, nil),
+		analyticsRate: instr.GlobalAnalyticsRate(),
 		resourceNamer: defaultResourceNamer,
 		ignoreRequest: func(_ *http.Request) bool { return false },
 	}

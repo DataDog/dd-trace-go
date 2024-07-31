@@ -3,7 +3,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
-package lists
+package main
 
 import (
 	"testing"
@@ -11,9 +11,9 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestCombinations(t *testing.T) {
+func Test_combinations(t *testing.T) {
 	{
-		combos := Combinations([]string{"cat", "dog", "bird", "mouse"}, 3)
+		combos := combinations([]string{"cat", "dog", "bird", "mouse"}, 3)
 		assert.Equal(t, [][]string{
 			{"cat", "dog", "bird"},
 			{"cat", "dog", "mouse"},
@@ -22,7 +22,7 @@ func TestCombinations(t *testing.T) {
 		}, combos)
 	}
 	{
-		combos := Combinations([]string{"cat", "dog", "bird", "mouse"}, 2)
+		combos := combinations([]string{"cat", "dog", "bird", "mouse"}, 2)
 		assert.Equal(t, [][]string{
 			{"cat", "dog"},
 			{"cat", "bird"},
@@ -33,7 +33,7 @@ func TestCombinations(t *testing.T) {
 		}, combos)
 	}
 	{
-		combos := Combinations([]string{"cat", "dog", "bird", "mouse"}, 1)
+		combos := combinations([]string{"cat", "dog", "bird", "mouse"}, 1)
 		assert.Equal(t, [][]string{
 			{"cat"},
 			{"dog"},
@@ -41,9 +41,4 @@ func TestCombinations(t *testing.T) {
 			{"mouse"},
 		}, combos)
 	}
-}
-
-func TestRepeatString(t *testing.T) {
-	sl := RepeatString("abc", 3)
-	assert.Equal(t, []string{"abc", "abc", "abc"}, sl)
 }

@@ -15,15 +15,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/bradfitz/gomemcache/memcache"
+	"github.com/stretchr/testify/assert"
+
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
-	"github.com/DataDog/dd-trace-go/v2/internal/contrib/namingschematest"
-	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
-
-	"github.com/bradfitz/gomemcache/memcache"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils"
 )
 
 func TestMemcache(t *testing.T) {
@@ -145,10 +143,7 @@ func TestAnalyticsSettings(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		rate := globalconfig.AnalyticsRate()
-		defer globalconfig.SetAnalyticsRate(rate)
-		globalconfig.SetAnalyticsRate(0.4)
-
+		testutils.SetGlobalAnalyticsRate(t, 0.4)
 		assertRate(t, mt, 0.4)
 	})
 
@@ -170,51 +165,9 @@ func TestAnalyticsSettings(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		rate := globalconfig.AnalyticsRate()
-		defer globalconfig.SetAnalyticsRate(rate)
-		globalconfig.SetAnalyticsRate(0.4)
-
+		testutils.SetGlobalAnalyticsRate(t, 0.4)
 		assertRate(t, mt, 0.23, WithAnalyticsRate(0.23))
 	})
-}
-
-func TestNamingSchema(t *testing.T) {
-	li := makeFakeServer(t)
-	defer li.Close()
-	addr := li.Addr().String()
-
-	genSpans := func(t *testing.T, serviceOverride string) []*mocktracer.Span {
-		var opts []ClientOption
-		if serviceOverride != "" {
-			opts = append(opts, WithService(serviceOverride))
-		}
-		mt := mocktracer.Start()
-		defer mt.Stop()
-
-		client := getClient(addr, opts...)
-		defer client.DeleteAll()
-		err := client.Add(&memcache.Item{Key: "key1", Value: []byte("value1")})
-		require.NoError(t, err)
-
-		spans := mt.FinishedSpans()
-		require.Len(t, spans, 1)
-		return spans
-	}
-	assertV0 := func(t *testing.T, spans []*mocktracer.Span) {
-		require.Len(t, spans, 1)
-		assert.Equal(t, "memcached.query", spans[0].OperationName())
-	}
-	assertV1 := func(t *testing.T, spans []*mocktracer.Span) {
-		require.Len(t, spans, 1)
-		assert.Equal(t, "memcached.command", spans[0].OperationName())
-	}
-	wantServiceNameV0 := namingschematest.ServiceNameAssertions{
-		WithDefaults:             []string{"memcached"},
-		WithDDService:            []string{"memcached"},
-		WithDDServiceAndOverride: []string{namingschematest.TestServiceOverride},
-	}
-	t.Run("service name", namingschematest.NewServiceNameTest(genSpans, wantServiceNameV0))
-	t.Run("operation name", namingschematest.NewSpanNameTest(genSpans, assertV0, assertV1))
 }
 
 func makeFakeServer(t *testing.T) net.Listener {

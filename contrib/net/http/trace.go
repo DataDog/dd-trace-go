@@ -5,25 +5,25 @@
 
 package http // import "github.com/DataDog/dd-trace-go/contrib/net/http/v2"
 
-//go:generate sh -c "go run make_responsewriter.go | gofmt > trace_gen.go"
+//go:generate sh -c "go run ./internal/make_responsewriter | gofmt > trace_gen.go"
 
 import (
 	"net/http"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/options"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
-	"github.com/DataDog/dd-trace-go/v2/internal/appsec"
-	"github.com/DataDog/dd-trace-go/v2/internal/appsec/emitter/httpsec"
-	"github.com/DataDog/dd-trace-go/v2/internal/contrib/httptrace"
-	"github.com/DataDog/dd-trace-go/v2/internal/contrib/options"
-	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/httpsec"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/httptrace"
 )
 
 const componentName = "net/http"
 
+var instr *instrumentation.Instrumentation
+
 func init() {
-	telemetry.LoadIntegration(componentName)
-	tracer.MarkIntegrationImported(componentName)
+	instr = instrumentation.Load(instrumentation.PackageNetHTTP)
 }
 
 // ServeConfig specifies the tracing configuration when using TraceAndServe.
@@ -71,7 +71,7 @@ func TraceAndServe(h http.Handler, w http.ResponseWriter, r *http.Request, cfg *
 	defer func() {
 		httptrace.FinishRequestSpan(span, ddrw.status, cfg.FinishOpts...)
 	}()
-	if appsec.Enabled() {
+	if instr.AppSecEnabled() {
 		h = httpsec.WrapHandler(h, span, cfg.RouteParams, nil)
 	}
 	h.ServeHTTP(rw, r.WithContext(ctx))

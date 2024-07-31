@@ -15,19 +15,19 @@ import (
 	"context"
 	"math"
 
+	"github.com/bradfitz/gomemcache/memcache"
+
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
-	"github.com/DataDog/dd-trace-go/v2/internal/log"
-	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
-
-	"github.com/bradfitz/gomemcache/memcache"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 )
 
 const componentName = "bradfitz/gomemcache/memcache"
 
+var instr *instrumentation.Instrumentation
+
 func init() {
-	telemetry.LoadIntegration(componentName)
-	tracer.MarkIntegrationImported("github.com/bradfitz/gomemcache")
+	instr = instrumentation.Load(instrumentation.PackageBradfitzGoMemcache)
 }
 
 // WrapClient wraps a memcache.Client so that all requests are traced using the
@@ -38,7 +38,7 @@ func WrapClient(client *memcache.Client, opts ...ClientOption) *Client {
 	for _, opt := range opts {
 		opt.apply(cfg)
 	}
-	log.Debug("contrib/bradfitz/gomemcache/memcache: Wrapping Client: %#v", cfg)
+	instr.Logger().Debug("contrib/bradfitz/gomemcache/memcache: Wrapping Client: %#v", cfg)
 	return &Client{
 		Client:  client,
 		cfg:     cfg,

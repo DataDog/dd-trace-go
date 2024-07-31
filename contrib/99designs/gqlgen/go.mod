@@ -5,8 +5,8 @@ go 1.21
 require (
 	github.com/99designs/gqlgen v0.17.36
 	github.com/DataDog/dd-trace-go/v2 v2.0.0-20240516153256-8d6fa2bea61d
-	github.com/stretchr/testify v1.8.4
-	github.com/vektah/gqlparser/v2 v2.5.8
+	github.com/stretchr/testify v1.9.0
+	github.com/vektah/gqlparser/v2 v2.5.16
 )
 
 require (

@@ -8,12 +8,7 @@ package memcache
 import (
 	"math"
 
-	"github.com/DataDog/dd-trace-go/v2/internal"
-	"github.com/DataDog/dd-trace-go/v2/internal/namingschema"
-)
-
-const (
-	defaultServiceName = "memcached"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 )
 
 type clientConfig struct {
@@ -35,15 +30,9 @@ func (fn ClientOptionFn) apply(cfg *clientConfig) {
 }
 
 func defaults(cfg *clientConfig) {
-	cfg.serviceName = namingschema.ServiceNameOverrideV0(defaultServiceName, defaultServiceName)
-	cfg.operationName = namingschema.OpName(namingschema.MemcachedOutbound)
-
-	// cfg.analyticsRate = globalconfig.AnalyticsRate()
-	if internal.BoolEnv("DD_TRACE_MEMCACHE_ANALYTICS_ENABLED", false) {
-		cfg.analyticsRate = 1.0
-	} else {
-		cfg.analyticsRate = math.NaN()
-	}
+	cfg.serviceName = instr.ServiceName(instrumentation.ComponentDefault, nil)
+	cfg.operationName = instr.OperationName(instrumentation.ComponentDefault, nil)
+	cfg.analyticsRate = instr.AnalyticsRate()
 }
 
 // WithService sets the given service name for the dialled connection.

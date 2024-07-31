@@ -7,9 +7,9 @@ package gqlgen
 
 import (
 	"math"
-)
 
-const defaultServiceName = "graphql"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
+)
 
 type config struct {
 	serviceName   string
@@ -30,8 +30,8 @@ func (fn OptionFn) apply(cfg *config) {
 }
 
 func defaults(cfg *config) {
-	cfg.serviceName = integration.DefaultServiceName()
-	cfg.analyticsRate = integration.DefaultAnalyticsRate()
+	cfg.serviceName = instr.ServiceName(instrumentation.ComponentDefault, nil)
+	cfg.analyticsRate = instr.AnalyticsRate()
 	cfg.tags = make(map[string]interface{})
 }
 
