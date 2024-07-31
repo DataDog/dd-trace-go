@@ -1151,3 +1151,18 @@ func BenchmarkSpanFinish(b *testing.B) {
 		span.Finish()
 	}
 }
+
+func BenchmarkConcurrentSpanSetTag(b *testing.B) {
+	span := newBasicSpan("root")
+	defer span.Finish()
+
+	wg := sync.WaitGroup{}
+	wg.Add(b.N)
+	for i := 0; i < b.N; i++ {
+		go func() {
+			span.SetTag("key", "value")
+			wg.Done()
+		}()
+	}
+	wg.Wait()
+}
