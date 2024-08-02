@@ -187,7 +187,7 @@ func TestObserver_Batch(t *testing.T) {
 		{
 			name: "error",
 			opts: nil,
-			updateBatch: func(cluster *gocql.ClusterConfig, sess *gocql.Session, _ *gocql.Batch) *gocql.Batch {
+			updateBatch: func(_ *gocql.ClusterConfig, sess *gocql.Session, _ *gocql.Batch) *gocql.Batch {
 				stmt := "SELECT name, age FRM trace.person WHERE name = 'This does not exist'"
 				b := sess.NewBatch(gocql.UnloggedBatch)
 				b.Query(stmt)
@@ -205,7 +205,7 @@ func TestObserver_Batch(t *testing.T) {
 					return false
 				}),
 			},
-			updateBatch: func(cluster *gocql.ClusterConfig, sess *gocql.Session, _ *gocql.Batch) *gocql.Batch {
+			updateBatch: func(_ *gocql.ClusterConfig, sess *gocql.Session, _ *gocql.Batch) *gocql.Batch {
 				stmt := "SELECT name, age FRM trace.person WHERE name = 'This does not exist'"
 				b := sess.NewBatch(gocql.UnloggedBatch)
 				b.Query(stmt)
