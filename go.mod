@@ -289,3 +289,15 @@ require (
 	sigs.k8s.io/structured-merge-diff/v4 v4.2.3 // indirect
 	sigs.k8s.io/yaml v1.2.0 // indirect
 )
+
+// Retract experimental versions
+retract (
+	v1.999.0-rc.8
+	v1.999.0-rc.7
+	v1.999.0-rc.6
+	v1.999.0-rc.5
+	v1.999.0-rc.4
+	v1.999.0-rc.3
+	v1.999.0-rc.2
+	v1.999.0-rc.1
+)
