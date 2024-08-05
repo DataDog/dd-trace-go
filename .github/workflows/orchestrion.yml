@@ -7,6 +7,8 @@ on:
     branches:
       - release-v*
 
+permissions: read-all
+
 concurrency:
   # Automatically cancel previous runs if a new one is triggered to conserve resources.
   group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
