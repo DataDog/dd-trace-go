@@ -1287,6 +1287,7 @@ func TestStatsTags(t *testing.T) {
 	assert.Contains(tags, "service:serviceName")
 	assert.Contains(tags, "env:envName")
 	assert.Contains(tags, "host:hostName")
+	assert.Contains(tags, "tracer_version:"+version.Tag)
 
 	st := globalconfig.StatsTags()
 	// all of the tracer tags except `service` and `version` should be on `st`
@@ -1295,7 +1296,7 @@ func TestStatsTags(t *testing.T) {
 	assert.Contains(st, "host:hostName")
 	assert.Contains(st, "lang:go")
 	assert.Contains(st, "lang_version:"+runtime.Version())
-	assert.NotContains(st, "version:"+version.Tag)
+	assert.NotContains(st, "tracer_version:"+version.Tag)
 	assert.NotContains(st, "service:serviceName")
 }
 
