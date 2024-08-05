@@ -30,8 +30,7 @@ func init() {
 
 // Middleware returns middleware that will trace incoming requests. If service is empty then the
 // default service name will be used.
-func Middleware(opts ...Option) gin.HandlerFunc {
-	service := ""
+func Middleware(service string, opts ...Option) gin.HandlerFunc {
 	cfg := newConfig(service)
 	for _, opt := range opts {
 		opt(cfg)
