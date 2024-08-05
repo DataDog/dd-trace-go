@@ -1,8 +1,6 @@
 name: Orchestrion
 on:
   workflow_dispatch: # manually
-  schedule: # nightly
-    - cron: "0 0 * * *"
   pull_request:
   merge_group:
   push:
@@ -18,4 +16,4 @@ jobs:
     name: 'Run Tests'
     uses: DataDog/orchestrion/.github/workflows/workflow_call.yml@eliott.bouhana/smoke-tests
     with:
-      dd-trace-go-ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      dd-trace-go-ref: ${{ github.sha }}
