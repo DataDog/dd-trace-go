@@ -2268,11 +2268,12 @@ func FuzzComposeTracestate(f *testing.F) {
 		recvCtx := new(spanContext)
 		recvCtx.trace = newTrace()
 
+		sm := &stringMutator{}
 		tags := map[string]string{key1: val1, key2: val2, key3: val3}
 		totalLen := 0
 		for key, val := range tags {
-			k := "_dd.p." + keyRgx.ReplaceAllString(key, "_")
-			v := valueRgx.ReplaceAllString(val, "_")
+			k := "_dd.p." + sm.Mutate(keyDisallowedFn, key)
+			v := sm.Mutate(valueDisallowedFn, val)
 			if strings.ContainsAny(k, ":;") {
 				t.Skipf("Skipping invalid tags")
 			}
@@ -2427,5 +2428,72 @@ func TestMalformedTID(t *testing.T) {
 		root := tracer.StartSpan("web.request", ChildOf(sctx)).(*span)
 		root.Finish()
 		assert.Equal(t, "640cfd8d00000000", root.Meta[keyTraceID128])
+	})
+}
+
+func BenchmarkComposeTracestate(b *testing.B) {
+	ctx := new(spanContext)
+	ctx.trace = newTrace()
+	ctx.origin = "synthetics"
+	ctx.trace.setPropagatingTag("_dd.p.keyOne", "json")
+	ctx.trace.setPropagatingTag("_dd.p.KeyTwo", "123123")
+	ctx.trace.setPropagatingTag("_dd.p.table", "chair")
+	ctx.isRemote = false
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		composeTracestate(ctx, 1, "s:-2;o:synthetics___web")
+	}
+}
+
+func TestStringMutator(t *testing.T) {
+	sm := &stringMutator{}
+	rx := regexp.MustCompile(",|~|;|[^\\x21-\\x7E]+")
+	tc := []struct {
+		name  string
+		input string
+	}{
+		{
+			name:  "empty",
+			input: "",
+		},
+		{
+			name:  "no special characters",
+			input: "abcdef",
+		},
+		{
+			name:  "special characters",
+			input: "a,b;c~~~~d;",
+		},
+		{
+			name:  "special characters and non-ascii",
+			input: "a,b👍👍👍;c~d👍;",
+		},
+	}
+	for _, tt := range tc {
+		t.Run(tt.name, func(t *testing.T) {
+			expected := rx.ReplaceAllString(tt.input, "_")
+			actual := sm.Mutate(originDisallowedFn, tt.input)
+			assert.Equal(t, expected, actual)
+		})
+	}
+	t.Run("raw string", func(t *testing.T) {
+		expected := "a_b_c____d_~"
+		actual := sm.Mutate(originDisallowedFn, "a,b;c~~~~d;=")
+		assert.Equal(t, expected, actual)
+	})
+}
+
+func FuzzStringMutator(f *testing.F) {
+	rx := regexp.MustCompile(",|~|;|[^\\x21-\\x7E]+")
+	f.Add("a,b;c~~~~d;")
+	f.Add("a,b👍👍👍;c~d👍;")
+	f.Add("=")
+	f.Fuzz(func(t *testing.T, input string) {
+		sm := &stringMutator{}
+		expected := strings.ReplaceAll(rx.ReplaceAllString(input, "_"), "=", "~")
+		actual := sm.Mutate(originDisallowedFn, input)
+		if expected != actual {
+			t.Fatalf("expected: %s, actual: %s", expected, actual)
+		}
 	})
 }

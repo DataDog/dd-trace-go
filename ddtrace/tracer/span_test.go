@@ -369,6 +369,13 @@ func TestSpanSetTag(t *testing.T) {
 	span.SetTag("struct", sharedinternal.MetaStructValue{Value: testValue})
 	require.Equal(t, testValue, span.MetaStruct["struct"])
 
+	s := "string"
+	span.SetTag("str_ptr", &s)
+	assert.Equal(s, span.Meta["str_ptr"])
+
+	span.SetTag("nil_str_ptr", (*string)(nil))
+	assert.Equal("", span.Meta["nil_str_ptr"])
+
 	assert.Panics(func() {
 		span.SetTag("panicStringer", &panicStringer{})
 	})
@@ -1024,18 +1031,18 @@ func TestSetUserPropagatedUserID(t *testing.T) {
 
 func BenchmarkSetTagMetric(b *testing.B) {
 	span := newBasicSpan("bench.span")
-	keys := "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+	keys := strings.Split("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ", "")
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		k := string(keys[i%len(keys)])
+		k := keys[i%len(keys)]
 		span.SetTag(k, float64(12.34))
 	}
 }
 
 func BenchmarkSetTagString(b *testing.B) {
 	span := newBasicSpan("bench.span")
-	keys := "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+	keys := strings.Split("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ", "")
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -1044,13 +1051,25 @@ func BenchmarkSetTagString(b *testing.B) {
 	}
 }
 
+func BenchmarkSetTagStringPtr(b *testing.B) {
+	span := newBasicSpan("bench.span")
+	keys := strings.Split("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ", "")
+	v := makePointer("some text")
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		k := keys[i%len(keys)]
+		span.SetTag(k, v)
+	}
+}
+
 func BenchmarkSetTagStringer(b *testing.B) {
 	span := newBasicSpan("bench.span")
-	keys := "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+	keys := strings.Split("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ", "")
 	value := &stringer{}
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		k := string(keys[i%len(keys)])
+		k := keys[i%len(keys)]
 		span.SetTag(k, value)
 	}
 }

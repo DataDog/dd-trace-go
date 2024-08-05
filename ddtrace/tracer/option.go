@@ -750,7 +750,7 @@ func statsTags(c *config) []string {
 		}
 	}
 	globalconfig.SetStatsTags(tags)
-	tags = append(tags, version.Tag)
+	tags = append(tags, "tracer_version:"+version.Tag)
 	if c.serviceName != "" {
 		tags = append(tags, "service:"+c.serviceName)
 	}
