@@ -170,7 +170,8 @@ func dereference(value any) any {
 
 func dereferenceGeneric[T any](value *T) T {
 	if value == nil {
-		return *new(T)
+		var T v
+		return v
 	}
 	return *value
 }
