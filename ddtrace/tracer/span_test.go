@@ -14,7 +14,6 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
-	"unsafe"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
@@ -1033,9 +1032,7 @@ func TestSetUserPropagatedUserID(t *testing.T) {
 func BenchmarkSetTagMetric(b *testing.B) {
 	span := newBasicSpan("bench.span")
 	keys := strings.Split("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ", "")
-	for i := 0; i < b.N; i++ {
-		tagsPool.Put(unsafe.Pointer(&tag[meta]{}))
-	}
+
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		k := keys[i%len(keys)]
@@ -1046,9 +1043,7 @@ func BenchmarkSetTagMetric(b *testing.B) {
 func BenchmarkSetTagString(b *testing.B) {
 	span := newBasicSpan("bench.span")
 	keys := strings.Split("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ", "")
-	for i := 0; i < b.N; i++ {
-		tagsPool.Put(unsafe.Pointer(&tag[meta]{}))
-	}
+
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		k := keys[i%len(keys)]
@@ -1060,9 +1055,7 @@ func BenchmarkSetTagStringPtr(b *testing.B) {
 	span := newBasicSpan("bench.span")
 	keys := strings.Split("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ", "")
 	v := makePointer("some text")
-	for i := 0; i < b.N; i++ {
-		tagsPool.Put(unsafe.Pointer(&tag[meta]{}))
-	}
+
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		k := keys[i%len(keys)]
@@ -1074,9 +1067,7 @@ func BenchmarkSetTagStringer(b *testing.B) {
 	span := newBasicSpan("bench.span")
 	keys := strings.Split("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ", "")
 	value := &stringer{}
-	for i := 0; i < b.N; i++ {
-		tagsPool.Put(unsafe.Pointer(&tag[meta]{}))
-	}
+
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		k := string(keys[i%len(keys)])
@@ -1087,9 +1078,7 @@ func BenchmarkSetTagStringer(b *testing.B) {
 func BenchmarkSetTagField(b *testing.B) {
 	span := newBasicSpan("bench.span")
 	keys := []string{ext.ServiceName, ext.ResourceName, ext.SpanType}
-	for i := 0; i < b.N; i++ {
-		tagsPool.Put(unsafe.Pointer(&tag[meta]{}))
-	}
+
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		k := keys[i%len(keys)]
@@ -1155,9 +1144,7 @@ func BenchmarkSpanFinish(b *testing.B) {
 func BenchmarkConcurrentSpanSetTag(b *testing.B) {
 	span := newBasicSpan("root")
 	defer span.Finish()
-	for i := 0; i < b.N; i++ {
-		tagsPool.Put(unsafe.Pointer(&tag[meta]{}))
-	}
+
 	wg := sync.WaitGroup{}
 	wg.Add(b.N)
 	b.ResetTimer()
