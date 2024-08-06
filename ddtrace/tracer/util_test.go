@@ -151,7 +151,7 @@ func TestDereference(t *testing.T) {
 		{(*float64)(nil), float64(0)},
 		{(*bool)(nil), false},
 		{(*samplernames.SamplerName)(nil), samplernames.Unknown},
-		{newSpan("test", "service", "resource", 1, 2, 0), "itself"},
+		{newSpan("test", "service", "resource", 1, 2, 0), "itself"}, // This test uses a value which type is not supported by dereference.
 	} {
 		t.Run(fmt.Sprintf("%d", i), func(t *testing.T) {
 			actual := dereference(tt.value)
