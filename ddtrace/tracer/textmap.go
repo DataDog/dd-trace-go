@@ -507,7 +507,7 @@ func getDatadogPropagator(cp *chainedPropagator) *propagator {
 // if the reparenting ID is not set on the context, the span ID from datadog headers is used.
 func overrideDatadogParentID(ctx, w3cCtx, ddCtx *spanContext) {
 	ctx.spanID = w3cCtx.spanID
-	if w3cCtx.reparentID != "" && w3cCtx.reparentID != "0000000000000000" {
+	if w3cCtx.reparentID != "" {
 		ctx.reparentID = w3cCtx.reparentID
 	} else if ddCtx != nil {
 		// NIT: could be done without using fmt.Sprintf? Is it worth it?
@@ -967,7 +967,7 @@ func composeTracestate(ctx *spanContext, priority int, oldState string) string {
 	if !ctx.isRemote {
 		b.WriteString(";p:")
 		b.WriteString(spanIDHexEncoded(ctx.SpanID(), 16))
-	} else if ctx.reparentID != "" && ctx.reparentID != "0000000000000000" {
+	} else if ctx.reparentID != "" {
 		b.WriteString(";p:")
 		b.WriteString(ctx.reparentID)
 	}
@@ -1201,10 +1201,6 @@ func parseTracestate(ctx *spanContext, header string) {
 				val = strings.ReplaceAll(val, "~", "=")
 				setPropagatingTag(ctx, "_dd.p."+keySuffix, val)
 			}
-		}
-		// if dd list-member is present and last parent is not set, set it to zeros
-		if ctx.reparentID == "" {
-			ctx.reparentID = "0000000000000000"
 		}
 	}
 }
