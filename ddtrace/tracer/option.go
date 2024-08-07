@@ -98,6 +98,7 @@ var contribIntegrations = map[string]struct {
 	"github.com/valyala/fasthttp":                   {"FastHTTP", false},
 	"github.com/zenazn/goji":                        {"Goji", false},
 	"log/slog":                                      {"log/slog", false},
+	"github.com/uptrace/bun":                        {"Bun", false},
 }
 
 var (
