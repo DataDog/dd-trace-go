@@ -787,3 +787,7 @@ const (
 	keyUserScope     = "usr.scope"
 	keyUserSessionID = "usr.session_id"
 )
+
+func defaultMetaMap() map[string]string {
+	return make(map[string]string, 5)
+}

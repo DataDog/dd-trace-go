@@ -34,7 +34,7 @@ func newSpan(name, service, resource string, spanID, traceID, parentID uint64) *
 		Name:     name,
 		Service:  service,
 		Resource: resource,
-		Meta:     map[string]string{},
+		Meta:     defaultMetaMap(),
 		Metrics:  map[string]float64{},
 		SpanID:   spanID,
 		TraceID:  traceID,
@@ -1147,12 +1147,19 @@ func BenchmarkConcurrentSpanSetTag(b *testing.B) {
 
 	wg := sync.WaitGroup{}
 	wg.Add(b.N)
-	b.ResetTimer()
+
+	// Preallocate goroutines to avoid benchmarking goroutine creation
+	pole := make(chan struct{})
 	for i := 0; i < b.N; i++ {
 		go func() {
+			// Wait for all goroutines to start
+			<-pole
 			span.SetTag("key", "value")
 			wg.Done()
 		}()
 	}
+
+	b.ResetTimer()
+	close(pole)
 	wg.Wait()
 }
