@@ -6,12 +6,13 @@
 package tracer
 
 import (
+	"fmt"
 	"math/rand"
 	"strconv"
 	"testing"
 )
 
-func BenchmarkSpanLifecycle(b *testing.B) {
+func BenchmarkSpanSetMeta(b *testing.B) {
 	r := rand.New(rand.NewSource(0))
 	distribution := newDistributionRand(
 		b,
@@ -21,54 +22,49 @@ func BenchmarkSpanLifecycle(b *testing.B) {
 		[]float64{0.01, 0.09, 0.4, 0.25, 0.15, 0.05, 0.04, 0.01},
 		[]float64{8.75, 14.59, 22.8, 31.2, 39.1, 43.5, 54.3, 70.0},
 	)
-	b.Run("baseline/set tag", func(b *testing.B) {
+	b.Run("baseline", func(b *testing.B) {
 		span := newBasicSpan("benchmark")
 		if span.Meta == nil {
 			b.Fatal("expected span.Meta to be non-nil")
 		}
 		b.ResetTimer()
+		b.ReportMetric(1.0, "tags/op")
 		for i := 0; i < b.N; i++ {
 			span.setMeta("key", "value")
 		}
 	})
-	b.Run("baseline/acquire, set tag, and release", func(b *testing.B) {
-		// preallocate the spans
-		spans := make([]*span, b.N)
-		for i := 0; i < b.N; i++ {
-			spans[i] = newBasicSpan("benchmark")
-		}
-		b.ResetTimer()
-		b.ReportMetric(1.0, "tags/op")
-		for i := 0; i < b.N; i++ {
-			spans[i].setMeta("key", "value")
-		}
-	})
-	b.Run("with tags", func(b *testing.B) {
-		// precompute the tags
-		tags := make([]string, 70)
-		for i := 0; i < len(tags); i++ {
-			tags[i] = strconv.Itoa(i)
-		}
-		// preallocate the spans and number of tags
-		spans := make([]struct {
-			span *span
-			n    int
-		}, b.N)
-		totalSpanTags := 0
-		for i := 0; i < b.N; i++ {
-			spans[i].span = newBasicSpan("benchmark")
-			spans[i].n = int(distribution.generate(r))
-			totalSpanTags += spans[i].n
-		}
-		b.ResetTimer()
-		b.ReportMetric(float64(totalSpanTags/b.N), "tags/op")
-		for i := 0; i < b.N; i++ {
-			s := spans[i].span
-			for j := 0; j < spans[i].n; j++ {
-				s.setMeta(tags[j], "value")
+	for v := range distribution.values {
+		metaSize := int(distribution.values[v])
+		name := fmt.Sprintf("random number of tags (meta size=%d)", metaSize)
+		b.Run(name, func(b *testing.B) {
+			// precompute the tags
+			tags := make([]string, 70)
+			for i := 0; i < len(tags); i++ {
+				tags[i] = strconv.Itoa(i)
 			}
-		}
-	})
+			// preallocate the spans and number of tags
+			spans := make([]struct {
+				span *span
+				n    int
+			}, b.N)
+			totalSpanTags := 0
+			for i := 0; i < b.N; i++ {
+				spans[i].span = &span{
+					Meta: make(map[string]string, metaSize),
+				}
+				spans[i].n = int(distribution.generate(r))
+				totalSpanTags += spans[i].n
+			}
+			b.ResetTimer()
+			b.ReportMetric(float64(totalSpanTags/b.N), "tags/op")
+			for i := 0; i < b.N; i++ {
+				s, nTags := spans[i].span, spans[i].n
+				for j := 0; j < nTags; j++ {
+					s.setMeta(tags[j], "value")
+				}
+			}
+		})
+	}
 }
 
 // distributionRand is a helper for generating random numbers following
