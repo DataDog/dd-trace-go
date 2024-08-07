@@ -9,8 +9,6 @@ import (
 	"math/rand"
 	"strconv"
 	"testing"
-
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 )
 
 func BenchmarkSpanLifecycle(b *testing.B) {
@@ -23,44 +21,55 @@ func BenchmarkSpanLifecycle(b *testing.B) {
 		[]float64{0.01, 0.09, 0.4, 0.25, 0.15, 0.05, 0.04, 0.01},
 		[]float64{8.75, 14.59, 22.8, 31.2, 39.1, 43.5, 54.3, 70.0},
 	)
-	b.Run("baseline", func(b *testing.B) {
+	b.Run("baseline/set tag", func(b *testing.B) {
+		span := &span{}
+		span.setMeta("key", "value")
+		if span.Meta == nil {
+			b.Fatal("expected span.Meta to be non-nil")
+		}
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
-			span := StartSpan("benchmark")
-			span.Finish()
+			span.setMeta("key", "value")
 		}
 	})
-	b.Run("with unknown tags", func(b *testing.B) {
+	b.Run("baseline/acquire, set tag, and release", func(b *testing.B) {
+		// preallocate the spans
+		spans := make([]*span, b.N)
+		for i := 0; i < b.N; i++ {
+			spans[i] = &span{}
+		}
+		b.ResetTimer()
+		b.ReportMetric(1.0, "tags/op")
+		for i := 0; i < b.N; i++ {
+			spans[i].setMeta("key", "value")
+			releaseSpanMap(spans[i])
+		}
+	})
+	b.Run("with tags", func(b *testing.B) {
 		// precompute the tags
 		tags := make([]string, 70)
 		for i := 0; i < len(tags); i++ {
 			tags[i] = strconv.Itoa(i)
 		}
-		b.ResetTimer()
+		// preallocate the spans and number of tags
+		spans := make([]struct {
+			span *span
+			n    int
+		}, b.N)
+		totalSpanTags := 0
 		for i := 0; i < b.N; i++ {
-			span := StartSpan("benchmark")
-			nTags := int(distribution.generate(r))
-			for j := 0; j < nTags; j++ {
-				span.SetTag(tags[j], "tag")
-			}
-			span.Finish()
+			spans[i].span = &span{}
+			spans[i].n = int(distribution.generate(r))
+			totalSpanTags += spans[i].n
 		}
-	})
-	b.Run("with known tags", func(b *testing.B) {
-		// precompute the tags
-		tags := make([]string, 70)
-		for i := 0; i < len(tags); i++ {
-			tags[i] = strconv.Itoa(i)
-		}
-		tags[0] = ext.Environment
 		b.ResetTimer()
+		b.ReportMetric(float64(totalSpanTags/b.N), "tags/op")
 		for i := 0; i < b.N; i++ {
-			span := StartSpan("benchmark")
-			nTags := int(distribution.generate(r))
-			for j := 0; j < nTags; j++ {
-				span.SetTag(tags[j], "tag")
+			s := spans[i].span
+			for j := 0; j < spans[i].n; j++ {
+				s.setMeta(tags[j], "value")
 			}
-			span.Finish()
+			releaseSpanMap(s)
 		}
 	})
 }
