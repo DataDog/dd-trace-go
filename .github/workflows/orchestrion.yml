@@ -17,6 +17,6 @@ concurrency:
 jobs:
   test:
     name: 'Run Tests'
-    uses: DataDog/orchestrion/.github/workflows/workflow_call.yml@eliott.bouhana/smoke-tests
+    uses: DataDog/orchestrion/.github/workflows/workflow_call.yml@eliott.bouhana/APPSEC-53773
     with:
       dd-trace-go-ref: ${{ github.sha }}
