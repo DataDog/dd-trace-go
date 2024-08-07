@@ -22,8 +22,7 @@ func BenchmarkSpanLifecycle(b *testing.B) {
 		[]float64{8.75, 14.59, 22.8, 31.2, 39.1, 43.5, 54.3, 70.0},
 	)
 	b.Run("baseline/set tag", func(b *testing.B) {
-		span := &span{}
-		span.setMeta("key", "value")
+		span := newBasicSpan("benchmark")
 		if span.Meta == nil {
 			b.Fatal("expected span.Meta to be non-nil")
 		}
@@ -36,13 +35,12 @@ func BenchmarkSpanLifecycle(b *testing.B) {
 		// preallocate the spans
 		spans := make([]*span, b.N)
 		for i := 0; i < b.N; i++ {
-			spans[i] = &span{}
+			spans[i] = newBasicSpan("benchmark")
 		}
 		b.ResetTimer()
 		b.ReportMetric(1.0, "tags/op")
 		for i := 0; i < b.N; i++ {
 			spans[i].setMeta("key", "value")
-			releaseSpanMap(spans[i])
 		}
 	})
 	b.Run("with tags", func(b *testing.B) {
@@ -58,7 +56,7 @@ func BenchmarkSpanLifecycle(b *testing.B) {
 		}, b.N)
 		totalSpanTags := 0
 		for i := 0; i < b.N; i++ {
-			spans[i].span = &span{}
+			spans[i].span = newBasicSpan("benchmark")
 			spans[i].n = int(distribution.generate(r))
 			totalSpanTags += spans[i].n
 		}
@@ -69,7 +67,6 @@ func BenchmarkSpanLifecycle(b *testing.B) {
 			for j := 0; j < spans[i].n; j++ {
 				s.setMeta(tags[j], "value")
 			}
-			releaseSpanMap(s)
 		}
 	})
 }
