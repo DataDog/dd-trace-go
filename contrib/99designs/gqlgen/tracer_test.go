@@ -261,3 +261,91 @@ func newTestClient(t *testing.T, h *testserver.TestServer, tracer graphql.Handle
 	h.Use(tracer)
 	return client.New(h)
 }
+
+func TestInterceptOperation(t *testing.T) {
+	assertions := assert.New(t)
+	graphqlTestSrv := testserver.New()
+	c := newTestClient(t, graphqlTestSrv, NewTracer())
+
+	t.Run("intercept operation with graphQL Query", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		err := c.Post(`{ name }`, &testServerResponse{})
+		assertions.Nil(err)
+
+		allSpans := mt.FinishedSpans()
+		var root mocktracer.Span
+		var resNames []string
+		var opNames []string
+		for _, span := range allSpans {
+			if span.ParentID() == 0 {
+				root = span
+			}
+			resNames = append(resNames, span.Tag(ext.ResourceName).(string))
+			opNames = append(opNames, span.OperationName())
+			assertions.Equal("99designs/gqlgen", span.Tag(ext.Component))
+		}
+		assertions.ElementsMatch(resNames, []string{readOp, parsingOp, validationOp, "Query.name", `{ name }`})
+		assertions.ElementsMatch(opNames, []string{readOp, parsingOp, validationOp, fieldOp, "graphql.query"})
+		assertions.NotNil(root)
+		assertions.Nil(root.Tag(ext.Error))
+	})
+
+	t.Run("intercept operation with graphQL Mutation", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		err := c.Post(`mutation Name { name }`, &testServerResponse{})
+		// due to testserver.New() implementation, mutation is not supported
+		assertions.NotNil(err)
+
+		allSpans := mt.FinishedSpans()
+		var root mocktracer.Span
+		var resNames []string
+		var opNames []string
+		for _, span := range allSpans {
+			if span.ParentID() == 0 {
+				root = span
+			}
+			resNames = append(resNames, span.Tag(ext.ResourceName).(string))
+			opNames = append(opNames, span.OperationName())
+			assertions.Equal("99designs/gqlgen", span.Tag(ext.Component))
+		}
+		assertions.ElementsMatch(resNames, []string{readOp, parsingOp, validationOp, `mutation Name { name }`})
+		assertions.ElementsMatch(opNames, []string{readOp, parsingOp, validationOp, "graphql.mutation"})
+		assertions.NotNil(root)
+		assertions.NotNil(root.Tag(ext.Error))
+	})
+
+	t.Run("intercept operation with graphQL Subscription", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		go func() {
+			graphqlTestSrv.SendCompleteSubscriptionMessage()
+		}()
+
+		// using raw post because post try to access nil response's Data field
+		resp, err := c.RawPost(`subscription Name { name }`)
+		assertions.Nil(err)
+		assertions.Nil(resp)
+
+		allSpans := mt.FinishedSpans()
+		var root mocktracer.Span
+		var resNames []string
+		var opNames []string
+		for _, span := range allSpans {
+			if span.ParentID() == 0 {
+				root = span
+			}
+			resNames = append(resNames, span.Tag(ext.ResourceName).(string))
+			opNames = append(opNames, span.OperationName())
+			assertions.Equal("99designs/gqlgen", span.Tag(ext.Component))
+		}
+		assertions.ElementsMatch(resNames, []string{`subscription Name { name }`, `subscription Name { name }`, "subscription Name { name }"})
+		assertions.ElementsMatch(opNames, []string{readOp, parsingOp, validationOp})
+		assertions.NotNil(root)
+		assertions.Nil(root.Tag(ext.Error))
+	})
+}

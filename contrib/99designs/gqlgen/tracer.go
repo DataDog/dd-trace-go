@@ -115,24 +115,34 @@ func (t *gqlTracer) InterceptOperation(ctx context.Context, next graphql.Operati
 		Variables:     opCtx.Variables,
 	})
 	responseHandler := next(ctx)
-	return func(ctx context.Context) *graphql.Response {
-		response := responseHandler(ctx)
-		if span != nil {
-			var err error
-			if len(response.Errors) > 0 {
-				err = response.Errors
+	return func(ctx context.Context) (response *graphql.Response) {
+		defer func() {
+			if span != nil {
+				var err error
+				if response != nil && len(response.Errors) > 0 {
+					err = response.Errors
+				}
+				defer span.Finish(tracer.WithError(err))
 			}
-			defer span.Finish(tracer.WithError(err))
-		}
-		query.Finish(types.ExecutionOperationRes{
-			Data:  response.Data, // NB - This is raw data, but rather not parse it (possibly expensive).
-			Error: response.Errors,
-		})
-		req.Finish(types.RequestOperationRes{
-			Data:  response.Data, // NB - This is raw data, but rather not parse it (possibly expensive).
-			Error: response.Errors,
-		})
-		return response
+
+			var (
+				executionOperationRes types.ExecutionOperationRes
+				requestOperationRes   types.RequestOperationRes
+			)
+			if response != nil {
+				executionOperationRes.Data = response.Data
+				executionOperationRes.Error = response.Errors
+
+				requestOperationRes.Data = response.Data
+				requestOperationRes.Error = response.Errors
+			}
+
+			query.Finish(executionOperationRes)
+			req.Finish(requestOperationRes)
+		}()
+
+		response = responseHandler(ctx)
+		return
 	}
 }
 
