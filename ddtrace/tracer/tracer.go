@@ -32,6 +32,8 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/traceprof"
 
 	"github.com/DataDog/datadog-agent/pkg/obfuscate"
+	agentconfig "github.com/DataDog/datadog-agent/pkg/trace/config"
+	"github.com/DataDog/datadog-agent/pkg/trace/stats"
 )
 
 var _ ddtrace.Tracer = (*tracer)(nil)
@@ -49,7 +51,7 @@ type tracer struct {
 
 	// stats specifies the concentrator used to compute statistics, when client-side
 	// stats are enabled.
-	stats *concentrator
+	stats *stats.Concentrator
 
 	// traceWriter is responsible for sending finished traces to their
 	// destination, such as the Trace Agent or Datadog Forwarder.
@@ -267,6 +269,13 @@ func newUnstartedTracer(opts ...StartOption) *tracer {
 	if c.dataStreamsMonitoringEnabled {
 		dataStreamsProcessor = datastreams.NewProcessor(statsd, c.env, c.serviceName, c.version, c.agentURL, c.httpClient)
 	}
+	concentratorConfig := &agentconfig.AgentConfig{
+		BucketInterval: 10 * time.Second,
+		DefaultEnv:     c.env,
+		Hostname:       c.hostname,
+		AgentVersion:   c.version, // Yes this is the tracer version going into a field named AgentVersion
+		// TODO: peer tags and compute stats by span kind
+	}
 	t := &tracer{
 		config:           c,
 		traceWriter:      writer,
@@ -276,7 +285,8 @@ func newUnstartedTracer(opts ...StartOption) *tracer {
 		rulesSampling:    rulesSampler,
 		prioritySampling: sampler,
 		pid:              os.Getpid(),
-		stats:            newConcentrator(c, defaultStatsBucketSize),
+		// todo: provide a writer, provide a statsd client
+		stats: stats.NewConcentrator(concentratorConfig, nil, time.Now(), nil),
 		obfuscator: obfuscate.NewObfuscator(obfuscate.Config{
 			SQL: obfuscate.SQLConfig{
 				TableNames:       c.agent.HasFlag("table_names"),
@@ -378,7 +388,7 @@ func (t *tracer) worker(tick <-chan time.Time) {
 			t.statsd.Incr("datadog.tracer.flush_triggered", []string{"reason:invoked"}, 1)
 			t.traceWriter.flush()
 			t.statsd.Flush()
-			t.stats.flushAndSend(time.Now(), withCurrentBucket)
+			t.stats.Flush(true)
 			// TODO(x): In reality, the traceWriter.flush() call is not synchronous
 			// when using the agent traceWriter. However, this functionality is used
 			// in Lambda so for that purpose this mechanism should suffice.
