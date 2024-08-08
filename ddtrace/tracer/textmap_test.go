@@ -1756,7 +1756,7 @@ func TestEnvVars(t *testing.T) {
 					},
 					out:        []uint64{8687463697196027922, 1311768467284833366},
 					priority:   1,
-					lastParent: "0000000000000000",
+					lastParent: "",
 				},
 			}
 			for i, tc := range tests {
@@ -1839,7 +1839,13 @@ func TestEnvVars(t *testing.T) {
 					if tc.priority != 0 {
 						sctx.setSamplingPriority(int(tc.priority), samplernames.Unknown)
 					}
-					assert.Equal(s.(*span).Meta["_dd.parent_id"], tc.lastParent)
+
+					if tc.lastParent == "" {
+						assert.Empty(s.(*span).Meta["_dd.parent_id"])
+					} else {
+						assert.Equal(s.(*span).Meta["_dd.parent_id"], tc.lastParent)
+					}
+
 					assert.Equal(true, sctx.updated)
 
 					headers := TextMapCarrier(map[string]string{})
