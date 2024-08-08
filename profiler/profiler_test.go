@@ -30,6 +30,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/httpmem"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/orchestrion"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/traceprof"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
 
@@ -747,4 +748,31 @@ func TestUDSDefault(t *testing.T) {
 	defer Stop()
 
 	<-profiles
+}
+
+func TestOrchestrionProfileInfo(t *testing.T) {
+	testCases := []struct {
+		env  string
+		want string
+	}{
+		{want: "manual"},
+		{env: "1", want: "manual"},
+		{env: "true", want: "manual"},
+		{env: "auto", want: "auto"},
+	}
+	for _, tc := range testCases {
+		t.Run(fmt.Sprintf("env=\"%s\"", tc.env), func(t *testing.T) {
+			t.Setenv("DD_PROFILING_ENABLED", tc.env)
+			p := doOneShortProfileUpload(t)
+			info := p.event.Info.Profiler
+			t.Logf("%+v", info)
+			if got := info.Activation; got != tc.want {
+				t.Errorf("wanted profiler activation \"%s\", got %s", tc.want, got)
+			}
+			want := orchestrion.Enabled()
+			if got := info.Injected; got != want {
+				t.Errorf("wanted profiler injected = %v, got %v", want, got)
+			}
+		})
+	}
 }

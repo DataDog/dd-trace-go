@@ -16,10 +16,12 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/textproto"
+	"os"
 	"strings"
 	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/orchestrion"
 )
 
 // maxRetries specifies the maximum number of retries to have when an error occurs.
@@ -144,6 +146,21 @@ type uploadEvent struct {
 	Version          string            `json:"version"`
 	EndpointCounts   map[string]uint64 `json:"endpoint_counts,omitempty"`
 	CustomAttributes []string          `json:"custom_attributes,omitempty"`
+	Info             profilerInfo      `json:"info"`
+}
+
+// profilerInfo holds profiler-specific information which should be attached to
+// the event for backend consumption
+type profilerInfo struct {
+	Profiler struct {
+		// Injected should be true if profiling was added using
+		// Orchestrion. The term "injection" comes from other
+		// languages/runtimes where profiling can be injected into the
+		// process at run time.
+		Injected bool `json:"library_injected"`
+		// Activation ... (TODO: explain)
+		Activation string `json:"activation"`
+	} `json:"profiler"`
 }
 
 // encode encodes the profile as a multipart mime request.
@@ -165,6 +182,16 @@ func encode(bat batch, tags []string) (contentType string, body io.Reader, err e
 		Tags:             strings.Join(tags, ","),
 		EndpointCounts:   bat.endpointCounts,
 		CustomAttributes: bat.customAttributes,
+	}
+
+	if orchestrion.Enabled() {
+		event.Info.Profiler.Injected = orchestrion.Enabled()
+	}
+	// TODO: comment
+	if os.Getenv("DD_PROFILING_ENABLED") == "auto" {
+		event.Info.Profiler.Activation = "auto"
+	} else {
+		event.Info.Profiler.Activation = "manual"
 	}
 
 	for _, p := range bat.profiles {
