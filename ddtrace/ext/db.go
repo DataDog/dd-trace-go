@@ -87,4 +87,7 @@ const (
 
 	// CassandraContactPoints holds the list of cassandra initial seed nodes used to discover the cluster.
 	CassandraContactPoints = "db.cassandra.contact.points"
+
+	// CassandraHostID represents the host ID for this operation.
+	CassandraHostID = "db.cassandra.host.id"
 )
