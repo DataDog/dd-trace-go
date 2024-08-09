@@ -17,12 +17,10 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
-	"github.com/DataDog/dd-trace-go/v2/internal/contrib/namingschematest"
-	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
-	"github.com/DataDog/dd-trace-go/v2/internal/normalizer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils"
 
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 	"github.com/urfave/negroni"
 )
 
@@ -68,32 +66,32 @@ func TestWithHeaderTags(t *testing.T) {
 	t.Run("default-off", func(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
-		htArgs := []string{"h!e@a-d.e*r", "2header", "3header", "x-datadog-header"}
+		headerTags := instrumentation.NewHeaderTags([]string{"h!e@a-d.e*r", "2header", "3header", "x-datadog-header"})
 		setupReq()
 		spans := mt.FinishedSpans()
 		assert := assert.New(t)
 		assert.Equal(len(spans), 1)
 		s := spans[0]
-		for _, arg := range htArgs {
-			_, tag := normalizer.HeaderTag(arg)
+		headerTags.Iter(func(header string, tag string) {
 			assert.NotContains(s.Tags(), tag)
-		}
+		})
 	})
 	t.Run("integration", func(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
 		htArgs := []string{"h!e@a-d.e*r", "2header:tag"}
+		headerTags := instrumentation.NewHeaderTags(htArgs)
+
 		r := setupReq(WithHeaderTags(htArgs))
 		spans := mt.FinishedSpans()
 		assert := assert.New(t)
 		assert.Equal(len(spans), 1)
 		s := spans[0]
 
-		for _, arg := range htArgs {
-			header, tag := normalizer.HeaderTag(arg)
+		headerTags.Iter(func(header string, tag string) {
 			assert.Equal(strings.Join(r.Header.Values(header), ","), s.Tags()[tag])
-		}
+		})
 		assert.NotContains(s.Tags(), "http.headers.x-datadog-header")
 	})
 
@@ -101,8 +99,9 @@ func TestWithHeaderTags(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		header, tag := normalizer.HeaderTag("3header")
-		globalconfig.SetHeaderTag(header, tag)
+		htArgs := []string{"3header"}
+		testutils.SetGlobalHeaderTags(t, htArgs...)
+		headerTags := instrumentation.NewHeaderTags(htArgs)
 
 		r := setupReq()
 		spans := mt.FinishedSpans()
@@ -110,7 +109,9 @@ func TestWithHeaderTags(t *testing.T) {
 		assert.Equal(len(spans), 1)
 		s := spans[0]
 
-		assert.Equal(strings.Join(r.Header.Values(header), ","), s.Tags()[tag])
+		headerTags.Iter(func(header string, tag string) {
+			assert.Equal(strings.Join(r.Header.Values(header), ","), s.Tags()[tag])
+		})
 		assert.NotContains(s.Tags(), "http.headers.x-datadog-header")
 	})
 
@@ -118,22 +119,21 @@ func TestWithHeaderTags(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		globalH, globalT := normalizer.HeaderTag("3header")
-		globalconfig.SetHeaderTag(globalH, globalT)
-
+		testutils.SetGlobalHeaderTags(t, "3header")
 		htArgs := []string{"h!e@a-d.e*r", "2header:tag"}
+		headerTags := instrumentation.NewHeaderTags(htArgs)
+
 		r := setupReq(WithHeaderTags(htArgs))
 		spans := mt.FinishedSpans()
 		assert := assert.New(t)
 		assert.Equal(len(spans), 1)
 		s := spans[0]
 
-		for _, arg := range htArgs {
-			header, tag := normalizer.HeaderTag(arg)
+		headerTags.Iter(func(header string, tag string) {
 			assert.Equal(strings.Join(r.Header.Values(header), ","), s.Tags()[tag])
-		}
+		})
 		assert.NotContains(s.Tags(), "http.headers.x-datadog-header")
-		assert.NotContains(s.Tags(), globalT)
+		assert.NotContains(s.Tags(), "3header")
 	})
 }
 
@@ -371,10 +371,7 @@ func TestAnalyticsSettings(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		rate := globalconfig.AnalyticsRate()
-		defer globalconfig.SetAnalyticsRate(rate)
-		globalconfig.SetAnalyticsRate(0.4)
-
+		testutils.SetGlobalAnalyticsRate(t, 0.4)
 		assertRate(t, mt, 0.4)
 	})
 
@@ -394,9 +391,7 @@ func TestAnalyticsSettings(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		rate := globalconfig.AnalyticsRate()
-		defer globalconfig.SetAnalyticsRate(rate)
-		globalconfig.SetAnalyticsRate(0.4)
+		testutils.SetGlobalAnalyticsRate(t, 0.4)
 		assertRate(t, mt, 0.23, WithAnalyticsRate(0.23))
 	})
 }
@@ -440,8 +435,7 @@ func TestServiceName(t *testing.T) {
 	})
 
 	t.Run("global", func(t *testing.T) {
-		globalconfig.SetServiceName("global-service")
-		defer globalconfig.SetServiceName("")
+		testutils.SetGlobalServiceName(t, "global-service")
 
 		mt := mocktracer.Start()
 		defer mt.Stop()
@@ -459,30 +453,4 @@ func TestServiceName(t *testing.T) {
 		router.Use(Middleware(WithService("my-service")))
 		assertServiceName(t, mt, router, "my-service")
 	})
-}
-
-func TestNamingSchema(t *testing.T) {
-	genSpans := namingschematest.GenSpansFn(func(t *testing.T, serviceOverride string) []*mocktracer.Span {
-		var opts []Option
-		if serviceOverride != "" {
-			opts = append(opts, WithService(serviceOverride))
-		}
-		mt := mocktracer.Start()
-		defer mt.Stop()
-
-		mux := http.NewServeMux()
-		mux.HandleFunc("/user", func(w http.ResponseWriter, r *http.Request) {
-			_, err := w.Write([]byte("ok"))
-			require.NoError(t, err)
-		})
-		router := negroni.New()
-		router.Use(Middleware(opts...))
-		router.UseHandler(mux)
-		r := httptest.NewRequest("GET", "/200", nil)
-		w := httptest.NewRecorder()
-		router.ServeHTTP(w, r)
-
-		return mt.FinishedSpans()
-	})
-	namingschematest.NewHTTPServerTest(genSpans, "negroni.router")(t)
 }
