@@ -184,7 +184,7 @@ func StartAndRegisterOperation[O Operation, E ArgOf[O]](ctx context.Context, op 
 // should call this function to ensure the operation is properly linked in the context tree.
 func RegisterOperation(ctx context.Context, op Operation) context.Context {
 	op.unwrap().inContext = true
-	return context.WithValue(ctx, contextKey{}, op)
+	return orchestrion.CtxWithValue(ctx, contextKey{}, op)
 }
 
 // FinishOperation finishes the operation along with its results and emits a

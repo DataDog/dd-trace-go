@@ -56,6 +56,7 @@ var supportedAddresses = listener.AddressSet{
 	HTTPClientIPAddr:                   {},
 	UserIDAddr:                         {},
 	ServerIoNetURLAddr:                 {},
+	ossec.ServerIOFSFileAddr:           {},
 	sqlsec.ServerDBStatementAddr:       {},
 	sqlsec.ServerDBTypeAddr:            {},
 }
