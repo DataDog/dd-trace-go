@@ -117,11 +117,11 @@ func (l *wafEventListener) onEvent(op *types.HandlerOperation, handlerArgs types
 		return
 	}
 
-	if l.isSecAddressListened(httpsec.ServerIoNetURLAddr) {
+	if httpsec.SSRFAddressesPresent(l.addresses) {
 		httpsec.RegisterRoundTripperListener(op, &op.SecurityEventsHolder, wafCtx, l.limiter)
 	}
 
-	if l.isSecAddressListened(ossec.ServerIOFSFileAddr) {
+	if ossec.OSAddressesPresent(l.addresses) {
 		ossec.RegisterOpenListener(op, &op.SecurityEventsHolder, wafCtx, l.limiter)
 	}
 

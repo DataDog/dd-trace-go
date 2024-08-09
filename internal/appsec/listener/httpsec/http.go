@@ -113,13 +113,13 @@ func (l *wafEventListener) onEvent(op *types.Operation, args types.HandlerOperat
 		return
 	}
 
-	if _, ok := l.addresses[ServerIoNetURLAddr]; ok {
+	if SSRFAddressesPresent(l.addresses) {
 		dyngo.On(op, shared.MakeWAFRunListener(&op.SecurityEventsHolder, wafCtx, l.limiter, func(args types.RoundTripOperationArgs) waf.RunAddressData {
 			return waf.RunAddressData{Ephemeral: map[string]any{ServerIoNetURLAddr: args.URL}}
 		}))
 	}
 
-	if _, ok := l.addresses[ossec.ServerIOFSFileAddr]; ok {
+	if ossec.OSAddressesPresent(l.addresses) {
 		ossec.RegisterOpenListener(op, &op.SecurityEventsHolder, wafCtx, l.limiter)
 	}
 

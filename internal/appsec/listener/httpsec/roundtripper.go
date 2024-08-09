@@ -8,6 +8,7 @@ package httpsec
 import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/httpsec/types"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener/sharedsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/trace"
 
@@ -20,4 +21,9 @@ func RegisterRoundTripperListener(op dyngo.Operation, events *trace.SecurityEven
 	dyngo.On(op, sharedsec.MakeWAFRunListener(events, wafCtx, limiter, func(args types.RoundTripOperationArgs) waf.RunAddressData {
 		return waf.RunAddressData{Ephemeral: map[string]any{ServerIoNetURLAddr: args.URL}}
 	}))
+}
+
+func SSRFAddressesPresent(addresses listener.AddressSet) bool {
+	_, urlAddr := addresses[ServerIoNetURLAddr]
+	return urlAddr
 }
