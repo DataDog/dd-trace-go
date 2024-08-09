@@ -8,7 +8,7 @@ package tracer
 import (
 	"context"
 
-	"github.com/DataDog/dd-trace-go/v2/ddtrace/options"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/options"
 	"github.com/DataDog/dd-trace-go/v2/internal"
 )
 
