@@ -42,6 +42,9 @@ var supportedAddresses = listener.AddressSet{
 	httpsec.HTTPClientIPAddr:      {},
 	httpsec.UserIDAddr:            {},
 	httpsec.ServerIoNetURLAddr:    {},
+	ossec.ServerIOFSFileAddr:      {},
+	sqlsec.ServerDBStatementAddr:  {},
+	sqlsec.ServerDBTypeAddr:       {},
 }
 
 // Install registers the gRPC WAF Event Listener on the given root operation.
