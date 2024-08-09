@@ -32,7 +32,7 @@ import (
 // This is required because we really want to be able to log errors from dyngo
 // but the log package depend on too much packages that we want to instrument.
 // So we need to do this to avoid dependency cycles.
-var LogError func(string, ...any)
+var LogError = func(string, ...any) {}
 
 // Operation interface type allowing to register event listeners to the
 // operation. The event listeners will be automatically removed from the
@@ -321,7 +321,7 @@ func (b *dataBroadcaster) clear() {
 
 func emitData[T any](b *dataBroadcaster, v T) {
 	defer func() {
-		if r := recover(); r != nil && LogError != nil {
+		if r := recover(); r != nil {
 			LogError("appsec: recovered from an unexpected panic from an event listener: %+v", r)
 		}
 	}()
@@ -352,7 +352,7 @@ func (r *eventRegister) clear() {
 
 func emitEvent[O Operation, T any](r *eventRegister, op O, v T) {
 	defer func() {
-		if r := recover(); r != nil && LogError != nil {
+		if r := recover(); r != nil {
 			LogError("appsec: recovered from an unexpected panic from an event listener: %+v", r)
 		}
 	}()
