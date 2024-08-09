@@ -13,19 +13,19 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
-	"github.com/DataDog/dd-trace-go/v2/internal/contrib/httptrace"
-	"github.com/DataDog/dd-trace-go/v2/internal/contrib/options"
-	"github.com/DataDog/dd-trace-go/v2/internal/log"
-	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/httptrace"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/options"
 
 	"github.com/urfave/negroni"
 )
 
-const componentName = "urfave/negroni"
+const component = instrumentation.PackageUrfaveNegroni
+
+var instr *instrumentation.Instrumentation
 
 func init() {
-	telemetry.LoadIntegration(componentName)
-	tracer.MarkIntegrationImported("github.com/urfave/negroni")
+	instr = instrumentation.Load(instrumentation.PackageUrfaveNegroni)
 }
 
 // DatadogMiddleware returns middleware that will trace incoming requests.
@@ -69,9 +69,9 @@ func Middleware(opts ...Option) *DatadogMiddleware {
 	for _, fn := range opts {
 		fn.apply(cfg)
 	}
-	cfg.spanOpts = append(cfg.spanOpts, tracer.Tag(ext.Component, componentName))
+	cfg.spanOpts = append(cfg.spanOpts, tracer.Tag(ext.Component, component))
 	cfg.spanOpts = append(cfg.spanOpts, tracer.Tag(ext.SpanKind, ext.SpanKindServer))
-	log.Debug("contrib/urgave/negroni: Configuring Middleware: %#v", cfg)
+	instr.Logger().Debug("contrib/urgave/negroni: Configuring Middleware: %#v", cfg)
 
 	m := DatadogMiddleware{
 		cfg: cfg,
