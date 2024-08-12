@@ -7,7 +7,6 @@ package gocql
 
 import (
 	"context"
-	"strconv"
 	"strings"
 
 	"github.com/gocql/gocql"
@@ -16,8 +15,8 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
 
-// NewTracedSession returns a new session augmented with tracing.
-func NewTracedSession(cluster *gocql.ClusterConfig, opts ...WrapOption) (*gocql.Session, error) {
+// CreateTracedSession returns a new session augmented with tracing.
+func CreateTracedSession(cluster *gocql.ClusterConfig, opts ...WrapOption) (*gocql.Session, error) {
 	obs := NewObserver(cluster, opts...)
 	cfg := obs.cfg
 
@@ -33,19 +32,9 @@ func NewTracedSession(cluster *gocql.ClusterConfig, opts ...WrapOption) (*gocql.
 	return cluster.CreateSession()
 }
 
-// TraceQuery can be used to enable tracing an individual *gocql.Query.
-func TraceQuery(q *gocql.Query, cluster *gocql.ClusterConfig, opts ...WrapOption) *gocql.Query {
-	obs := NewObserver(cluster, opts...)
-	return q.Observer(obs)
-}
-
-// TraceBatch can be used to enable tracing for an individual *gocql.Batch.
-func TraceBatch(b *gocql.Batch, cluster *gocql.ClusterConfig, opts ...WrapOption) *gocql.Batch {
-	obs := NewObserver(cluster, opts...)
-	return b.Observer(obs)
-}
-
 // NewObserver creates a new Observer to trace gocql.
+// This method is useful in case you want to attach the observer to individual traces / batches instead of instrumenting
+// the whole client.
 func NewObserver(cluster *gocql.ClusterConfig, opts ...WrapOption) *Observer {
 	cfg := defaultConfig()
 	for _, fn := range opts {
@@ -86,7 +75,7 @@ func (o *Observer) ObserveQuery(ctx context.Context, query gocql.ObservedQuery) 
 		resource = query.Statement
 	}
 	span.SetTag(ext.ResourceName, resource)
-	span.SetTag(ext.CassandraRowCount, strconv.Itoa(query.Rows))
+	span.SetTag(ext.CassandraRowCount, query.Rows)
 	finishSpan(span, query.Err, p)
 }
 

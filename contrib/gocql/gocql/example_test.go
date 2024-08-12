@@ -38,12 +38,12 @@ func ExampleNewCluster() {
 	query.Exec()
 }
 
-func ExampleNewTracedSession() {
+func ExampleCreateTracedSession() {
 	cluster := gocql.NewCluster("127.0.0.1:9042")
 	cluster.Keyspace = "my-keyspace"
 
 	// Create a new traced session using any number of options
-	session, err := gocqltrace.NewTracedSession(cluster, gocqltrace.WithServiceName("ServiceName"))
+	session, err := gocqltrace.CreateTracedSession(cluster, gocqltrace.WithServiceName("ServiceName"))
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -57,13 +57,15 @@ func ExampleNewTracedSession() {
 	)
 	query.WithContext(ctx)
 
+	// If you don't want a concrete query to be traced, you can do query.Observer(nil)
+
 	// Finally, execute the query
 	if err := query.Exec(); err != nil {
 		log.Fatal(err)
 	}
 }
 
-func ExampleTraceQuery() {
+func ExampleNewObserver() {
 	cluster := gocql.NewCluster("127.0.0.1:9042")
 	cluster.Keyspace = "my-keyspace"
 
@@ -72,7 +74,12 @@ func ExampleTraceQuery() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	query := session.Query("CREATE KEYSPACE if not exists trace WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor': 1}")
+	// Create a new observer using same set of options as gocqltrace.CreateTracedSession.
+	obs := gocqltrace.NewObserver(cluster, gocqltrace.WithServiceName("ServiceName"))
+
+	// Attach the observer to queries / batches individually.
+	tracedQuery := session.Query("SELECT something FROM somewhere").Observer(obs)
+	untracedQuery := session.Query("SELECT something FROM somewhere")
 
 	// Use context to pass information down the call chain
 	_, ctx := tracer.StartSpanFromContext(context.Background(), "parent.request",
@@ -80,46 +87,13 @@ func ExampleTraceQuery() {
 		tracer.ServiceName("web"),
 		tracer.ResourceName("/home"),
 	)
-	query.WithContext(ctx)
-
-	// Enable tracing this query only.
-	query = gocqltrace.TraceQuery(query, cluster, gocqltrace.WithServiceName("ServiceName"))
+	tracedQuery.WithContext(ctx)
 
 	// Finally, execute the query
-	if err := query.Exec(); err != nil {
+	if err := tracedQuery.Exec(); err != nil {
 		log.Fatal(err)
 	}
-}
-
-func ExampleTraceBatch() {
-	cluster := gocql.NewCluster("127.0.0.1:9042")
-	cluster.Keyspace = "my-keyspace"
-
-	// Create a new regular gocql session
-	session, err := cluster.CreateSession()
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	// Create a new regular gocql batch and add some queries to it
-	stmt := "INSERT INTO trace.person (name, age, description) VALUES (?, ?, ?)"
-	batch := session.NewBatch(gocql.UnloggedBatch)
-	batch.Query(stmt, "Kate", 80, "Cassandra's sister running in kubernetes")
-	batch.Query(stmt, "Lucas", 60, "Another person")
-
-	// Use context to pass information down the call chain
-	_, ctx := tracer.StartSpanFromContext(context.Background(), "parent.request",
-		tracer.SpanType(ext.SpanTypeCassandra),
-		tracer.ServiceName("web"),
-		tracer.ResourceName("/home"),
-	)
-	batch.WithContext(ctx)
-
-	// Enable tracing this batch only
-	batch = gocqltrace.TraceBatch(batch, cluster, gocqltrace.WithServiceName("ServiceName"))
-
-	// Finally, execute the batch
-	if err := session.ExecuteBatch(batch); err != nil {
+	if err := untracedQuery.Exec(); err != nil {
 		log.Fatal(err)
 	}
 }

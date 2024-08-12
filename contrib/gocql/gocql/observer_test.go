@@ -25,13 +25,14 @@ func TestObserver_Query(t *testing.T) {
 		updateQuery      func(cluster *gocql.ClusterConfig, sess *gocql.Session, q *gocql.Query) *gocql.Query
 		wantServiceName  string
 		wantResourceName string
-		wantRowCount     string
+		wantRowCount     int
 		wantErr          bool
 		wantErrTag       bool
 	}{
 		{
-			name: "default",
-			opts: nil,
+			name:         "default",
+			opts:         nil,
+			wantRowCount: 1,
 		},
 		{
 			name: "service_and_resource_name",
@@ -39,6 +40,7 @@ func TestObserver_Query(t *testing.T) {
 				WithServiceName("test-service"),
 				WithResourceName("test-resource"),
 			},
+			wantRowCount:     1,
 			wantServiceName:  "test-service",
 			wantResourceName: "test-resource",
 		},
@@ -51,7 +53,7 @@ func TestObserver_Query(t *testing.T) {
 			},
 			wantServiceName:  "",
 			wantResourceName: "SELECT name, age FRM trace.person WHERE name = 'This does not exist'",
-			wantRowCount:     "0",
+			wantRowCount:     0,
 			wantErr:          true,
 			wantErrTag:       true,
 		},
@@ -68,7 +70,7 @@ func TestObserver_Query(t *testing.T) {
 			},
 			wantServiceName:  "",
 			wantResourceName: "SELECT name, age FRM trace.person WHERE name = 'This does not exist'",
-			wantRowCount:     "0",
+			wantRowCount:     0,
 			wantErr:          true,
 			wantErrTag:       false,
 		},
@@ -78,10 +80,12 @@ func TestObserver_Query(t *testing.T) {
 				WithTraceQuery(false),
 			},
 			updateQuery: func(cluster *gocql.ClusterConfig, _ *gocql.Session, q *gocql.Query) *gocql.Query {
-				return TraceQuery(q, cluster, WithResourceName("test resource"), WithServiceName("test service"))
+				obs := NewObserver(cluster, WithResourceName("test resource"), WithServiceName("test service"))
+				return q.Observer(obs)
 			},
 			wantServiceName:  "test service",
 			wantResourceName: "test resource",
+			wantRowCount:     1,
 			wantErr:          false,
 			wantErrTag:       false,
 		},
@@ -102,7 +106,7 @@ func TestObserver_Query(t *testing.T) {
 				WithTraceConnect(false),
 			}
 			opts = append(opts, tc.opts...)
-			sess, err := NewTracedSession(cluster, opts...)
+			sess, err := CreateTracedSession(cluster, opts...)
 			require.NoError(t, err)
 
 			p, ctx := tracer.StartSpanFromContext(context.Background(), "parentSpan")
@@ -135,9 +139,6 @@ func TestObserver_Query(t *testing.T) {
 				wantResource = stmt
 			}
 			wantRowCount := tc.wantRowCount
-			if wantRowCount == "" {
-				wantRowCount = "1"
-			}
 
 			parentSpan := spans[1]
 			querySpan := spans[0]
@@ -222,7 +223,8 @@ func TestObserver_Batch(t *testing.T) {
 				WithTraceBatch(false),
 			},
 			updateBatch: func(cluster *gocql.ClusterConfig, _ *gocql.Session, b *gocql.Batch) *gocql.Batch {
-				return TraceBatch(b, cluster, WithResourceName("test resource"), WithServiceName("test service"))
+				obs := NewObserver(cluster, WithResourceName("test resource"), WithServiceName("test service"))
+				return b.Observer(obs)
 			},
 			wantServiceName:  "test service",
 			wantResourceName: "test resource",
@@ -246,7 +248,7 @@ func TestObserver_Batch(t *testing.T) {
 				WithTraceConnect(false),
 			}
 			opts = append(opts, tc.opts...)
-			sess, err := NewTracedSession(cluster, opts...)
+			sess, err := CreateTracedSession(cluster, opts...)
 			require.NoError(t, err)
 
 			p, ctx := tracer.StartSpanFromContext(context.Background(), "parentSpan")
@@ -343,7 +345,7 @@ func TestObserver_Connect(t *testing.T) {
 				WithTraceConnect(true),
 			}
 			opts = append(opts, tc.opts...)
-			sess, err := NewTracedSession(cluster, opts...)
+			sess, err := CreateTracedSession(cluster, opts...)
 			require.NoError(t, err)
 
 			err = sess.Query("SELECT * FROM trace.person WHERE name = 'Cassandra'").Exec()

@@ -32,7 +32,7 @@ func init() {
 
 // ClusterConfig embeds gocql.ClusterConfig and keeps information relevant to tracing.
 //
-// Deprecated: use the Observer based methods NewTracedSession, TraceQuery or TraceBatch instead, which returns
+// Deprecated: use the Observer based method CreateTracedSession instead, which allows to use
 // native gocql types instead of wrapped types.
 type ClusterConfig struct {
 	*gocql.ClusterConfig
@@ -42,7 +42,7 @@ type ClusterConfig struct {
 
 // NewCluster calls gocql.NewCluster and returns a wrapped instrumented version of it.
 //
-// Deprecated: use the Observer based methods NewTracedSession, TraceQuery or TraceBatch instead, which returns
+// Deprecated: use the Observer based method CreateTracedSession instead, which allows to use
 // native gocql types instead of wrapped types.
 func NewCluster(hosts []string, opts ...WrapOption) *ClusterConfig {
 	return &ClusterConfig{
@@ -54,7 +54,7 @@ func NewCluster(hosts []string, opts ...WrapOption) *ClusterConfig {
 
 // Session embeds gocql.Session and keeps information relevant to tracing.
 //
-// Deprecated: use the Observer based methods NewTracedSession, TraceQuery or TraceBatch instead, which returns
+// Deprecated: use the Observer based method CreateTracedSession instead, which allows to use
 // native gocql types instead of wrapped types.
 type Session struct {
 	*gocql.Session
@@ -77,7 +77,7 @@ func (c *ClusterConfig) CreateSession() (*Session, error) {
 
 // Query inherits from gocql.Query, it keeps the tracer and the context.
 //
-// Deprecated: use the Observer based methods NewTracedSession, TraceQuery or TraceBatch instead, which returns
+// Deprecated: use the Observer based method CreateTracedSession instead, which allows to use
 // native gocql types instead of wrapped types.
 type Query struct {
 	*gocql.Query
@@ -93,7 +93,7 @@ func (s *Session) Query(stmt string, values ...interface{}) *Query {
 
 // Batch inherits from gocql.Batch, it keeps the tracer and the context.
 //
-// Deprecated: use the Observer based methods NewTracedSession, TraceQuery or TraceBatch instead, which returns
+// Deprecated: use the Observer based method CreateTracedSession instead, which allows to use
 // native gocql types instead of wrapped types.
 type Batch struct {
 	*gocql.Batch
@@ -103,7 +103,7 @@ type Batch struct {
 
 // NewBatch calls the underlying gocql.Session's NewBatch method and returns a new Batch augmented with tracing.
 //
-// Deprecated: use the Observer based methods NewTracedSession, TraceQuery or TraceBatch instead, which returns
+// Deprecated: use the Observer based method CreateTracedSession instead, which allows to use
 // native gocql types instead of wrapped types.
 func (s *Session) NewBatch(typ gocql.BatchType) *Batch {
 	b := s.Session.NewBatch(typ)
@@ -133,7 +133,7 @@ type params struct {
 // of `WithContext` and `PageState` but not that of `Consistency`, `Trace`,
 // `Observer`, etc.
 //
-// Deprecated: use the Observer based methods NewTracedSession, TraceQuery or TraceBatch instead, which returns
+// Deprecated: use the Observer based method CreateTracedSession instead, which allows to use
 // native gocql types instead of wrapped types.
 func WrapQuery(q *gocql.Query, opts ...WrapOption) *Query {
 	return wrapQuery(q, nil, opts...)
@@ -219,7 +219,7 @@ func (tq *Query) ScanCAS(dest ...interface{}) (applied bool, err error) {
 
 // Iter inherits from gocql.Iter and contains a span.
 //
-// Deprecated: use the Observer based methods NewTracedSession, TraceQuery or TraceBatch instead, which returns
+// Deprecated: use the Observer based method CreateTracedSession instead, which allows to use
 // native gocql types instead of wrapped types.
 type Iter struct {
 	*gocql.Iter
@@ -266,7 +266,7 @@ func (tIter *Iter) Close() error {
 
 // Scanner inherits from a gocql.Scanner derived from an Iter.
 //
-// Deprecated: use the Observer based methods NewTracedSession, TraceQuery or TraceBatch instead, which returns
+// Deprecated: use the Observer based method CreateTracedSession instead, which allows to use
 // native gocql types instead of wrapped types.
 type Scanner struct {
 	gocql.Scanner
@@ -303,7 +303,7 @@ func (s *Scanner) Err() error {
 // of `WithContext` and `WithTimestamp` but not that of `SerialConsistency`, `Trace`,
 // `Observer`, etc.
 //
-// Deprecated: use the Observer based methods NewTracedSession, TraceQuery or TraceBatch instead, which returns
+// Deprecated: use the Observer based method CreateTracedSession instead, which allows to use
 // native gocql types instead of wrapped types.
 func WrapBatch(b *gocql.Batch, opts ...WrapOption) *Batch {
 	return wrapBatch(b, nil, opts...)
