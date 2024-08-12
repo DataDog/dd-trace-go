@@ -111,6 +111,9 @@ func (s *span) BaggageItem(key string) string {
 
 // SetTag adds a set of key/value metadata to the span.
 func (s *span) SetTag(key string, value interface{}) {
+	// To avoid dumping the memory address in case value is a pointer, we dereference it.
+	// Any pointer value that is a pointer to a pointer will be dumped as a string.
+	value = dereference(value)
 	s.Lock()
 	defer s.Unlock()
 	// We don't lock spans when flushing, so we could have a data race when
