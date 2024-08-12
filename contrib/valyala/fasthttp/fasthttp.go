@@ -14,16 +14,16 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
-	"github.com/DataDog/dd-trace-go/v2/internal/contrib/fasthttptrace"
-	"github.com/DataDog/dd-trace-go/v2/internal/log"
-	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/fasthttptrace"
 )
 
-const componentName = "valyala/fasthttp.v1"
+const component = instrumentation.PackageValyalaFastHTTP
+
+var instr *instrumentation.Instrumentation
 
 func init() {
-	telemetry.LoadIntegration(componentName)
-	tracer.MarkIntegrationImported(componentName)
+	instr = instrumentation.Load(instrumentation.PackageValyalaFastHTTP)
 }
 
 // WrapHandler wraps a fasthttp.RequestHandler with tracing middleware
@@ -32,7 +32,7 @@ func WrapHandler(h fasthttp.RequestHandler, opts ...Option) fasthttp.RequestHand
 	for _, fn := range opts {
 		fn.apply(cfg)
 	}
-	log.Debug("contrib/valyala/fasthttp.v1: Configuring Middleware: cfg: %#v", cfg)
+	instr.Logger().Debug("contrib/valyala/fasthttp.v1: Configuring Middleware: cfg: %#v", cfg)
 	spanOpts := []tracer.StartSpanOption{
 		tracer.ServiceName(cfg.serviceName),
 	}
@@ -62,7 +62,7 @@ func WrapHandler(h fasthttp.RequestHandler, opts ...Option) fasthttp.RequestHand
 
 func defaultSpanOptions(fctx *fasthttp.RequestCtx) []tracer.StartSpanOption {
 	opts := []tracer.StartSpanOption{
-		tracer.Tag(ext.Component, componentName),
+		tracer.Tag(ext.Component, component),
 		tracer.Tag(ext.SpanKind, ext.SpanKindServer),
 		tracer.SpanType(ext.SpanTypeWeb),
 		tracer.Tag(ext.HTTPMethod, string(fctx.Method())),

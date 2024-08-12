@@ -22,6 +22,9 @@ const (
 
 	PackageNetHTTP   Package = "net/http"
 	PackageIBMSarama Package = "IBM/sarama"
+
+	PackageValyalaFastHTTP Package = "valyala/fasthttp"
+	PackageUrfaveNegroni   Package = "urfave/negroni"
 )
 
 type Component int
@@ -147,6 +150,30 @@ var packages = map[Package]PackageInfo{
 				buildServiceNameV0: staticName(""),
 				buildOpNameV0:      staticName("http.request"),
 				buildOpNameV1:      staticName("http.client.request"),
+			},
+		},
+	},
+	PackageValyalaFastHTTP: {
+		TracedPackage: "github.com/valyala/fasthttp",
+		EnvVarPrefix:  "FASTHTTP",
+		naming: map[Component]componentNames{
+			ComponentServer: {
+				useDDServiceV0:     false,
+				buildServiceNameV0: staticName("fasthttp"),
+				buildOpNameV0:      staticName("http.request"),
+				buildOpNameV1:      staticName("http.server.request"),
+			},
+		},
+	},
+	PackageUrfaveNegroni: {
+		TracedPackage: "github.com/urfave/negroni",
+		EnvVarPrefix:  "NEGRONI",
+		naming: map[Component]componentNames{
+			ComponentServer: {
+				useDDServiceV0:     true,
+				buildServiceNameV0: staticName("negroni.router"),
+				buildOpNameV0:      staticName("http.request"),
+				buildOpNameV1:      staticName("http.server.request"),
 			},
 		},
 	},
