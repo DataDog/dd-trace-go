@@ -24,6 +24,7 @@ import (
 	"testing"
 	"time"
 
+	pb "github.com/DataDog/datadog-agent/pkg/proto/pbgo/trace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
@@ -2167,7 +2168,7 @@ func startTestTracer(t testing.TB, opts ...StartOption) (trc *tracer, transport 
 type dummyTransport struct {
 	sync.RWMutex
 	traces spanLists
-	stats  []*statsPayload
+	stats  []*pb.ClientStatsPayload
 }
 
 func newDummyTransport() *dummyTransport {
@@ -2180,14 +2181,14 @@ func (t *dummyTransport) Len() int {
 	return len(t.traces)
 }
 
-func (t *dummyTransport) sendStats(p *statsPayload) error {
+func (t *dummyTransport) sendStats(p *pb.ClientStatsPayload) error {
 	t.Lock()
 	t.stats = append(t.stats, p)
 	t.Unlock()
 	return nil
 }
 
-func (t *dummyTransport) Stats() []*statsPayload {
+func (t *dummyTransport) Stats() []*pb.ClientStatsPayload {
 	t.RLock()
 	defer t.RUnlock()
 	return t.stats
@@ -2324,7 +2325,7 @@ func TestFlush(t *testing.T) {
 	tr.statsd = ts
 
 	transport := newDummyTransport()
-	c := newConcentrator(&config{transport: transport}, defaultStatsBucketSize)
+	c := newConcentrator(&config{transport: transport, env: "someEnv"}, defaultStatsBucketSize)
 	tr.stats = c
 	c.Start()
 	defer c.Stop()
@@ -2344,15 +2345,16 @@ loop:
 			time.Sleep(time.Millisecond)
 		}
 	}
-	as := &aggregableSpan{
-		key: aggregation{
-			Name: "http.request",
-		},
+	s := &span{
+		Name: "http.request",
 		// Start must be older than latest bucket to get flushed
 		Start:    time.Now().UnixNano() - 3*defaultStatsBucketSize,
 		Duration: 1,
+		Metrics:  map[string]float64{keyMeasured: 1},
 	}
-	c.add(as)
+	statSpan, ok := c.newAggregableSpan(s, tr.obfuscator)
+	assert.True(t, ok)
+	c.add(statSpan)
 
 	assert.Len(t, tw.Flushed(), 0)
 	assert.Zero(t, ts.Flushed())
