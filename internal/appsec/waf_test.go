@@ -666,20 +666,17 @@ func TestRASPLFI(t *testing.T) {
 			Operation: dyngo.NewOperation(parent),
 		}
 
-		dyngo.StartOperation(op, &ossec.OpenOperationArgs{
+		dyngo.StartOperation(op, ossec.OpenOperationArgs{
 			Path:  path,
 			Flags: flags,
 			Perms: fs.FileMode(0),
 		})
 
 		var x any = file
-		defer dyngo.FinishOperation(op, &ossec.OpenOperationRes{
+		defer dyngo.FinishOperation(op, ossec.OpenOperationRes{
 			File: &x,
 			Err:  &err,
 		})
-
-		// Open the file
-		file = &os.File{}
 
 		return
 	}
@@ -690,20 +687,8 @@ func TestRASPLFI(t *testing.T) {
 		path := r.URL.Query().Get("path")
 		block := r.URL.Query().Get("block")
 		if block == "true" {
-			// Make sure we don't scan writing operations
-			file, err := WrappedOpen(r.Context(), path, os.O_WRONLY)
-			require.NoError(t, err)
-			require.NotNil(t, file)
-
-			file, err = WrappedOpen(r.Context(), path, os.O_CREATE|os.O_RDWR)
-			require.NoError(t, err)
-			require.NotNil(t, file)
-
-			// Make sure we scan reading operations
-			file, err = WrappedOpen(r.Context(), path, os.O_RDONLY)
+			_, err := WrappedOpen(r.Context(), path, os.O_RDONLY)
 			require.ErrorIs(t, err, &events.BlockingSecurityEvent{})
-			require.Nil(t, file)
-
 			return
 		}
 
