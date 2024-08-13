@@ -1,6 +1,7 @@
 package instrumentation
 
 import (
+	"context"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/internal/namingschema"
 	"github.com/DataDog/dd-trace-go/v2/internal"
@@ -97,6 +98,32 @@ func (i *Instrumentation) AppSecEnabled() bool {
 
 func (i *Instrumentation) DataStreamsEnabled() bool {
 	return internal.BoolEnv("DD_DATA_STREAMS_ENABLED", false)
+}
+
+// WithExecutionTraced marks ctx as being associated with an execution trace
+// task. It is assumed that ctx already contains a trace task. The caller is
+// responsible for ending the task.
+//
+// This is intended for a specific case where the database/sql contrib package
+// only creates spans *after* an operation, in case the operation was
+// unavailable, and thus execution trace tasks tied to the span only capture the
+// very end. This function enables creating a task *before* creating a span, and
+// communicating to the APM tracer that it does not need to create a task. In
+// general, APM instrumentation should prefer creating tasks around the
+// operation rather than after the fact, if possible.
+func (i *Instrumentation) WithExecutionTraced(ctx context.Context) context.Context {
+	return internal.WithExecutionTraced(ctx)
+}
+
+type StatsdClient = internal.StatsdClient
+
+func (i *Instrumentation) StatsdClient(extraTags []string) (StatsdClient, error) {
+	addr := globalconfig.DogstatsdAddr()
+	tags := globalconfig.StatsTags()
+	for _, tag := range extraTags {
+		tags = append(tags, tag)
+	}
+	return internal.NewStatsdClient(addr, tags)
 }
 
 type HeaderTags interface {

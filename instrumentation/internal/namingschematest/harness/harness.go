@@ -46,6 +46,7 @@ func RunTest(t *testing.T, tc TestCase) {
 		t.Skip("🚧 Skipping integration test (INTEGRATION environment variable is not set)")
 	}
 	t.Setenv("__DD_TRACE_NAMING_SCHEMA_TEST", "1")
+	t.Setenv("__DD_TRACE_SQL_TEST", "1")
 
 	t.Run(strings.ReplaceAll(string(tc.Name), "/", "_"), func(t *testing.T) {
 		t.Run("ServiceName", func(t *testing.T) {

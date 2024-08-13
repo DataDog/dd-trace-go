@@ -17,7 +17,7 @@ const (
 	PackageCloudGoogleComPubsub Package = "cloud.google.com/go/pubsub.v1"
 	PackageConfluentKafkaGo     Package = "confluentinc/confluent-kafka-go/kafka"
 	PackageConfluentKafkaGoV2   Package = "confluentinc/confluent-kafka-go/kafka.v2"
-
+	PackageDatabaseSQL          Package = "database/sql"
 	// TODO: ...
 
 	PackageNetHTTP   Package = "net/http"
@@ -168,6 +168,24 @@ var packages = map[Package]PackageInfo{
 				buildServiceNameV0: staticName("kafka"),
 				buildOpNameV0:      staticName("kafka.produce"),
 				buildOpNameV1:      staticName("kafka.send"),
+			},
+		},
+	},
+	PackageDatabaseSQL: {
+		TracedPackage: "database/sql",
+		EnvVarPrefix:  "SQL",
+		naming: map[Component]componentNames{
+			ComponentDefault: {
+				useDDServiceV0: false,
+				buildServiceNameV0: func(opCtx OperationContext) string {
+					return fmt.Sprintf("%s.db", opCtx["driverName"])
+				},
+				buildOpNameV0: func(opCtx OperationContext) string {
+					return fmt.Sprintf("%s.query", opCtx["driverName"])
+				},
+				buildOpNameV1: func(opCtx OperationContext) string {
+					return fmt.Sprintf("%s.query", opCtx[ext.DBSystem])
+				},
 			},
 		},
 	},

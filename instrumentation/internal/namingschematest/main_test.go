@@ -18,8 +18,12 @@ func TestNamingSchema(t *testing.T) {
 		awsSDKV1Messaging,
 		awsSDKV2,
 		awsSDKV2Messaging,
-		confluentKafkaV1,
-		// confluentKafkaV2, // this one lives in a separate package due to build errors
+		// confluentKafkaV1, // this one lives in a separate package due to build errors
+		confluentKafkaV2,
+		databaseSQL_SQLServer,
+		databaseSQL_Postgres,
+		databaseSQL_PostgresWithRegisterOverride,
+		databaseSQL_MySQL,
 		netHTTPServer,
 		netHTTPClient,
 		gomemcache,

@@ -15,23 +15,18 @@ import (
 	"regexp"
 	"testing"
 
-	"github.com/DataDog/dd-trace-go/contrib/database/sql/v2/internal"
-	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
-	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
-	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
-
 	mssql "github.com/denisenkom/go-mssqldb"
 	"github.com/go-sql-driver/mysql"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/DataDog/dd-trace-go/contrib/database/sql/v2/internal"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils"
 )
 
 func TestDBMPropagation(t *testing.T) {
-	// Ensure the global service name is set to the previous value after we finish the test, since the
-	// tracer.WithService option overrides it.
-	prevServiceName := globalconfig.ServiceName()
-	defer globalconfig.SetServiceName(prevServiceName)
-
 	testCases := []struct {
 		name     string
 		opts     []Option
@@ -155,13 +150,15 @@ func TestDBMPropagation(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			tracer.Start(
-				tracer.WithService("test-service"),
+			err := tracer.Start(
 				tracer.WithEnv("test-env"),
 				tracer.WithServiceVersion("1.0.0"),
 				tracer.WithHTTPClient(&http.Client{Transport: &mockRoundTripper{}}),
+				tracer.WithLogger(testutils.DiscardLogger()),
 			)
+			require.NoError(t, err)
 			defer tracer.Stop()
+			testutils.SetGlobalServiceName(t, "test-service")
 
 			d := &internal.MockDriver{}
 			Register("test", d, tc.opts...)

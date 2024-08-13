@@ -7,15 +7,14 @@ package kafka
 
 import (
 	"context"
-	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 	"math"
 	"net"
 	"strings"
 
 	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
-)
 
-const defaultServiceName = "kafka"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
+)
 
 type config struct {
 	ctx                 context.Context

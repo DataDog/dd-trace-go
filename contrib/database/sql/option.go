@@ -7,17 +7,14 @@ package sql
 
 import (
 	"database/sql/driver"
-	"fmt"
 	"math"
 	"os"
 	"reflect"
 	"strings"
 
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
-	"github.com/DataDog/dd-trace-go/v2/internal"
-	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
-	"github.com/DataDog/dd-trace-go/v2/internal/log"
-	"github.com/DataDog/dd-trace-go/v2/internal/namingschema"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 )
 
 type config struct {
@@ -31,7 +28,7 @@ type config struct {
 	tags               map[string]interface{}
 	dbmPropagationMode tracer.DBMPropagationMode
 	dbStats            bool
-	statsdClient       internal.StatsdClient
+	statsdClient       instrumentation.StatsdClient
 }
 
 // checkStatsdRequired adds a statsdclient onto the config if dbstats is enabled
@@ -40,12 +37,11 @@ func (c *config) checkStatsdRequired() {
 	if c.dbStats && c.statsdClient == nil {
 		// contrib/database/sql's statsdclient should always inherit its address from the tracer's statsdclient via the globalconfig
 		// destination is not user-configurable
-		sc, err := internal.NewStatsdClient(globalconfig.DogstatsdAddr(), statsTags(c))
+		sc, err := instr.StatsdClient(c.statsdExtraTags())
 		if err == nil {
 			c.statsdClient = sc
-			log.Debug("Metrics from the database/sql contrib will be sent to %v", globalconfig.DogstatsdAddr())
 		} else {
-			log.Warn("Error creating statsd client for database/sql contrib; DB Stats disabled: %v", err)
+			instr.Logger().Warn("Error creating statsd client for database/sql contrib; DB Stats disabled: %v", err)
 			c.dbStats = false
 		}
 	}
@@ -57,7 +53,7 @@ func (c *config) checkDBMPropagation(driverName string, driver driver.Driver, ds
 			dsn = c.dsn
 		}
 		if dbSystem, ok := dbmFullModeUnsupported(driverName, driver, dsn); ok {
-			log.Warn("Using DBM_PROPAGATION_MODE in 'full' mode is not supported for %s, downgrading to 'service' mode. "+
+			instr.Logger().Warn("Using DBM_PROPAGATION_MODE in 'full' mode is not supported for %s, downgrading to 'service' mode. "+
 				"See https://docs.datadoghq.com/database_monitoring/connect_dbm_and_apm/ for more info.",
 				dbSystem,
 			)
@@ -143,17 +139,13 @@ type registerConfig = config
 
 func defaults(cfg *config, driverName string, rc *registerConfig) {
 	// cfg.analyticsRate = globalconfig.AnalyticsRate()
-	if internal.BoolEnv("DD_TRACE_SQL_ANALYTICS_ENABLED", false) {
-		cfg.analyticsRate = 1.0
-	} else {
-		cfg.analyticsRate = math.NaN()
-	}
+	cfg.analyticsRate = instr.AnalyticsRate()
 	mode := os.Getenv("DD_DBM_PROPAGATION_MODE")
 	if mode == "" {
 		mode = os.Getenv("DD_TRACE_SQL_COMMENT_INJECTION_MODE")
 	}
 	cfg.dbmPropagationMode = tracer.DBMPropagationMode(mode)
-	cfg.serviceName = getServiceName(driverName, rc)
+	cfg.serviceName = defaultServiceName(driverName, rc)
 	cfg.spanName = getSpanName(driverName)
 	if rc != nil {
 		// use registered config as the default value for some options
@@ -170,14 +162,14 @@ func defaults(cfg *config, driverName string, rc *registerConfig) {
 	}
 }
 
-func getServiceName(driverName string, rc *registerConfig) string {
-	defaultServiceName := fmt.Sprintf("%s.db", driverName)
+func defaultServiceName(driverName string, rc *registerConfig) string {
 	if rc != nil {
-		// if service name was set during Register, we use that value as default instead of
-		// the one calculated above.
-		defaultServiceName = rc.serviceName
+		// if service name was set during Register, we use that value as default.
+		return rc.serviceName
 	}
-	return namingschema.ServiceNameOverrideV0(defaultServiceName, defaultServiceName)
+	return instr.ServiceName(instrumentation.ComponentDefault, instrumentation.OperationContext{
+		"driverName": driverName,
+	})
 }
 
 func getSpanName(driverName string) string {
@@ -185,7 +177,10 @@ func getSpanName(driverName string) string {
 	if normalizedDBSystem, ok := normalizeDBSystem(driverName); ok {
 		dbSystem = normalizedDBSystem
 	}
-	return namingschema.DBOpName(dbSystem, fmt.Sprintf("%s.query", driverName))
+	return instr.OperationName(instrumentation.ComponentDefault, instrumentation.OperationContext{
+		"driverName": driverName,
+		ext.DBSystem: dbSystem,
+	})
 }
 
 // WithService sets the given service name when registering a driver,

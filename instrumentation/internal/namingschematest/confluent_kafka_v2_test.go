@@ -3,7 +3,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2024 Datadog, Inc.
 
-package confluent_kafka_go_v2
+package namingschematest
 
 import (
 	"testing"
@@ -19,8 +19,8 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 )
 
-var testCase = harness.KafkaTestCase(
-	instrumentation.PackageConfluentKafkaGo,
+var confluentKafkaV2 = harness.KafkaTestCase(
+	instrumentation.PackageConfluentKafkaGoV2,
 	func(t *testing.T, serviceOverride string) []*mocktracer.Span {
 		mt := mocktracer.Start()
 		defer mt.Stop()
@@ -81,9 +81,3 @@ var testCase = harness.KafkaTestCase(
 		return mt.FinishedSpans()
 	},
 )
-
-// This test lives in a separate package because having both confluent-kafka-go v1 and v2 in the same package
-// causes "duplicate symbol" failures due to the cgo dependency on librdkafka.
-func TestNamingSchema(t *testing.T) {
-	harness.RunTest(t, testCase)
-}
