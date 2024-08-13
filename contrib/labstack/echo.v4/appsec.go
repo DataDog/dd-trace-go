@@ -9,8 +9,8 @@ import (
 	"net/http"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
-	"github.com/DataDog/dd-trace-go/v2/internal/appsec/emitter/httpsec"
-	"github.com/DataDog/dd-trace-go/v2/internal/appsec/emitter/httpsec/types"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/httpsec"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/httpsec/types"
 
 	"github.com/labstack/echo/v4"
 )

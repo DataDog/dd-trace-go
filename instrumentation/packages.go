@@ -118,7 +118,7 @@ var packages = map[Package]PackageInfo{
 		},
 	},
 	PackageCloudGoogleComPubsub: {
-		TracedPackage: "",
+		TracedPackage: "cloud.google.com/go/pubsub",
 		EnvVarPrefix:  "GCP_PUBSUB",
 		naming: map[Component]componentNames{
 			ComponentConsumer: {
@@ -135,8 +135,43 @@ var packages = map[Package]PackageInfo{
 			},
 		},
 	},
+	PackageConfluentKafkaGo: {
+		TracedPackage: "github.com/confluentinc/confluent-kafka-go",
+		EnvVarPrefix:  "KAFKA",
+		naming: map[Component]componentNames{
+			ComponentConsumer: {
+				useDDServiceV0:     true,
+				buildServiceNameV0: staticName("kafka"),
+				buildOpNameV0:      staticName("kafka.consume"),
+				buildOpNameV1:      staticName("kafka.process"),
+			},
+			ComponentProducer: {
+				useDDServiceV0:     false,
+				buildServiceNameV0: staticName("kafka"),
+				buildOpNameV0:      staticName("kafka.produce"),
+				buildOpNameV1:      staticName("kafka.send"),
+			},
+		},
+	},
+	PackageConfluentKafkaGoV2: {
+		TracedPackage: "github.com/confluentinc/confluent-kafka-go/v2",
+		EnvVarPrefix:  "KAFKA",
+		naming: map[Component]componentNames{
+			ComponentConsumer: {
+				useDDServiceV0:     true,
+				buildServiceNameV0: staticName("kafka"),
+				buildOpNameV0:      staticName("kafka.consume"),
+				buildOpNameV1:      staticName("kafka.process"),
+			},
+			ComponentProducer: {
+				useDDServiceV0:     false,
+				buildServiceNameV0: staticName("kafka"),
+				buildOpNameV0:      staticName("kafka.produce"),
+				buildOpNameV1:      staticName("kafka.send"),
+			},
+		},
+	},
 	PackageNetHTTP: {
-		external:      false,
 		TracedPackage: "net/http",
 		EnvVarPrefix:  "HTTP",
 		naming: map[Component]componentNames{

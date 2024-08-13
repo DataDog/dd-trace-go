@@ -1,12 +1,17 @@
+// Unless explicitly stated otherwise all files in this repository are licensed
+// under the Apache License Version 2.0.
+// This product includes software developed at Datadog (https://www.datadoghq.com/).
+// Copyright 2024 Datadog, Inc.
+
 package namingschematest
 
 import (
+	"context"
+	"testing"
+	"time"
+
 	"cloud.google.com/go/pubsub"
 	"cloud.google.com/go/pubsub/pstest"
-	"context"
-	pubsubtrace "github.com/DataDog/dd-trace-go/contrib/cloud.google.com/go/pubsub.v1/v2"
-	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
-	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/api/option"
@@ -14,13 +19,16 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/status"
-	"testing"
-	"time"
+
+	pubsubtrace "github.com/DataDog/dd-trace-go/contrib/cloud.google.com/go/pubsub.v1/v2"
+	"github.com/DataDog/dd-trace-go/instrumentation/internal/namingschematest/harness"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 )
 
-var gcpPubsub = testCase{
-	name: instrumentation.PackageCloudGoogleComPubsub,
-	genSpans: func(t *testing.T, serviceOverride string) []*mocktracer.Span {
+var gcpPubsub = harness.TestCase{
+	Name: instrumentation.PackageCloudGoogleComPubsub,
+	GenSpans: func(t *testing.T, serviceOverride string) []*mocktracer.Span {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
@@ -52,17 +60,17 @@ var gcpPubsub = testCase{
 		cancel()
 		return mt.FinishedSpans()
 	},
-	wantServiceNameV0: serviceNameAssertions{
-		defaults:        []string{"", ""},
-		ddService:       []string{"", ""},
-		serviceOverride: []string{testServiceOverride, testServiceOverride},
+	WantServiceNameV0: harness.ServiceNameAssertions{
+		Defaults:        []string{"", ""},
+		DDService:       []string{"", ""},
+		ServiceOverride: []string{harness.TestServiceOverride, harness.TestServiceOverride},
 	},
-	assertOpV0: func(t *testing.T, spans []*mocktracer.Span) {
+	AssertOpV0: func(t *testing.T, spans []*mocktracer.Span) {
 		require.Len(t, spans, 2)
 		assert.Equal(t, "pubsub.publish", spans[0].OperationName())
 		assert.Equal(t, "pubsub.receive", spans[1].OperationName())
 	},
-	assertOpV1: func(t *testing.T, spans []*mocktracer.Span) {
+	AssertOpV1: func(t *testing.T, spans []*mocktracer.Span) {
 		require.Len(t, spans, 2)
 		assert.Equal(t, "gcp.pubsub.send", spans[0].OperationName())
 		assert.Equal(t, "gcp.pubsub.process", spans[1].OperationName())

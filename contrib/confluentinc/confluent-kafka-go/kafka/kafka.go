@@ -15,22 +15,19 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/datastreams/options"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
-	"github.com/DataDog/dd-trace-go/v2/internal/log"
-	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
-
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 	"github.com/confluentinc/confluent-kafka-go/kafka"
 )
 
 const (
-	// make sure these 3 are updated to V2 for the V2 version.
-	componentName   = "confluentinc/confluent-kafka-go/kafka"
-	packageName     = "contrib/confluentinc/confluent-kafka-go/kafka"
-	integrationName = "github.com/confluentinc/confluent-kafka-go"
+	componentName = instrumentation.PackageConfluentKafkaGo
+	pkgPath       = "contrib/confluentinc/confluent-kafka-go/kafka"
 )
 
+var instr *instrumentation.Instrumentation
+
 func init() {
-	telemetry.LoadIntegration(componentName)
-	tracer.MarkIntegrationImported(integrationName)
+	instr = instrumentation.Load(instrumentation.PackageConfluentKafkaGo)
 }
 
 // NewConsumer calls kafka.NewConsumer and wraps the resulting Consumer.
@@ -67,7 +64,7 @@ func WrapConsumer(c *kafka.Consumer, opts ...Option) *Consumer {
 		Consumer: c,
 		cfg:      newConfig(opts...),
 	}
-	log.Debug("%s: Wrapping Consumer: %#v", packageName, wrapped.cfg)
+	instr.Logger().Debug("%s: Wrapping Consumer: %#v", pkgPath, wrapped.cfg)
 	wrapped.events = wrapped.traceEventsChannel(c.Events())
 	return wrapped
 }
@@ -265,7 +262,7 @@ func WrapProducer(p *kafka.Producer, opts ...Option) *Producer {
 		events:         p.Events(),
 		libraryVersion: version,
 	}
-	log.Debug("%s: Wrapping Producer: %#v", packageName, wrapped.cfg)
+	instr.Logger().Debug("%s: Wrapping Producer: %#v", pkgPath, wrapped.cfg)
 	wrapped.produceChannel = wrapped.traceProduceChannel(p.ProduceChannel())
 	if wrapped.cfg.dataStreamsEnabled {
 		wrapped.events = wrapped.traceEventsChannel(p.Events())

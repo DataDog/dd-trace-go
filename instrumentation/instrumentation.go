@@ -95,6 +95,10 @@ func (i *Instrumentation) AppSecEnabled() bool {
 	return appsec.Enabled()
 }
 
+func (i *Instrumentation) DataStreamsEnabled() bool {
+	return internal.BoolEnv("DD_DATA_STREAMS_ENABLED", false)
+}
+
 type HeaderTags interface {
 	Iter(f func(header string, tag string))
 }

@@ -1,11 +1,11 @@
 package testutils
 
 import (
-	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
-	"github.com/DataDog/dd-trace-go/v2/internal/normalizer"
 	"testing"
 
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
+	"github.com/DataDog/dd-trace-go/v2/internal/normalizer"
 )
 
 func SetGlobalServiceName(t *testing.T, val string) {

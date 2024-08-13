@@ -14,16 +14,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/DataDog/dd-trace-go/v2/datastreams"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
-	"github.com/DataDog/dd-trace-go/v2/internal/contrib/namingschematest"
-	internaldsm "github.com/DataDog/dd-trace-go/v2/internal/datastreams"
-
-	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 var (
@@ -92,7 +90,7 @@ func produceThenConsume(t *testing.T, consumerAction consumerActionFn, producerO
 
 	if c.cfg.dataStreamsEnabled {
 		backlogs := mt.SentDSMBacklogs()
-		toMap := func(b []internaldsm.Backlog) map[string]struct{} {
+		toMap := func(b []mocktracer.DSMBacklog) map[string]struct{} {
 			m := make(map[string]struct{})
 			for _, b := range backlogs {
 				m[strings.Join(b.Tags, "")] = struct{}{}
@@ -311,19 +309,4 @@ func TestCustomTags(t *testing.T) {
 
 	assert.Equal(t, "bar", s.Tag("foo"))
 	assert.Equal(t, "key1", s.Tag("key"))
-}
-
-func TestNamingSchema(t *testing.T) {
-	genSpans := func(t *testing.T, serviceOverride string) []*mocktracer.Span {
-		var opts []Option
-		if serviceOverride != "" {
-			opts = append(opts, WithService(serviceOverride))
-		}
-		consumerAction := consumerActionFn(func(c *Consumer) (*kafka.Message, error) {
-			return c.ReadMessage(3000 * time.Millisecond)
-		})
-		spans, _ := produceThenConsume(t, consumerAction, opts, opts)
-		return spans
-	}
-	namingschematest.NewKafkaTest(genSpans)(t)
 }

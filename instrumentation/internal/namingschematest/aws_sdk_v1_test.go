@@ -1,3 +1,8 @@
+// Unless explicitly stated otherwise all files in this repository are licensed
+// under the Apache License Version 2.0.
+// This product includes software developed at Datadog (https://www.datadoghq.com/).
+// Copyright 2024 Datadog, Inc.
+
 package namingschematest
 
 import (
@@ -14,6 +19,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	awstrace "github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go/v2/aws"
+	"github.com/DataDog/dd-trace-go/instrumentation/internal/namingschematest/harness"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 )
@@ -30,9 +36,9 @@ func awsSDKV1Session(opts ...awstrace.Option) *session.Session {
 }
 
 var (
-	awsSDKV1 = testCase{
-		name: instrumentation.PackageAWSSDKGo,
-		genSpans: func(t *testing.T, serviceOverride string) []*mocktracer.Span {
+	awsSDKV1 = harness.TestCase{
+		Name: instrumentation.PackageAWSSDKGo,
+		GenSpans: func(t *testing.T, serviceOverride string) []*mocktracer.Span {
 			var opts []awstrace.Option
 			if serviceOverride != "" {
 				opts = append(opts, awstrace.WithService(serviceOverride))
@@ -57,19 +63,19 @@ var (
 
 			return mt.FinishedSpans()
 		},
-		wantServiceNameV0: serviceNameAssertions{
-			defaults:        []string{"aws.ec2", "aws.s3", "aws.sqs", "aws.sns"},
-			ddService:       []string{"aws.ec2", "aws.s3", "aws.sqs", "aws.sns"},
-			serviceOverride: []string{testServiceOverride, testServiceOverride, testServiceOverride, testServiceOverride},
+		WantServiceNameV0: harness.ServiceNameAssertions{
+			Defaults:        []string{"aws.ec2", "aws.s3", "aws.sqs", "aws.sns"},
+			DDService:       []string{"aws.ec2", "aws.s3", "aws.sqs", "aws.sns"},
+			ServiceOverride: []string{harness.TestServiceOverride, harness.TestServiceOverride, harness.TestServiceOverride, harness.TestServiceOverride},
 		},
-		assertOpV0: func(t *testing.T, spans []*mocktracer.Span) {
+		AssertOpV0: func(t *testing.T, spans []*mocktracer.Span) {
 			require.Len(t, spans, 4)
 			assert.Equal(t, "ec2.command", spans[0].OperationName())
 			assert.Equal(t, "s3.command", spans[1].OperationName())
 			assert.Equal(t, "sqs.command", spans[2].OperationName())
 			assert.Equal(t, "sns.command", spans[3].OperationName())
 		},
-		assertOpV1: func(t *testing.T, spans []*mocktracer.Span) {
+		AssertOpV1: func(t *testing.T, spans []*mocktracer.Span) {
 			require.Len(t, spans, 4)
 			assert.Equal(t, "aws.ec2.request", spans[0].OperationName())
 			assert.Equal(t, "aws.s3.request", spans[1].OperationName())
@@ -78,9 +84,9 @@ var (
 		},
 	}
 
-	awsSDKV1Messaging = testCase{
-		name: instrumentation.PackageAWSSDKGo + "_messaging",
-		genSpans: func(t *testing.T, serviceOverride string) []*mocktracer.Span {
+	awsSDKV1Messaging = harness.TestCase{
+		Name: instrumentation.PackageAWSSDKGo + "_messaging",
+		GenSpans: func(t *testing.T, serviceOverride string) []*mocktracer.Span {
 			var opts []awstrace.Option
 			if serviceOverride != "" {
 				opts = append(opts, awstrace.WithService(serviceOverride))
@@ -116,7 +122,7 @@ var (
 
 			return mt.FinishedSpans()
 		},
-		assertOpV0: func(t *testing.T, spans []*mocktracer.Span) {
+		AssertOpV0: func(t *testing.T, spans []*mocktracer.Span) {
 			require.Len(t, spans, 5)
 			assert.Equal(t, "sqs.command", spans[0].OperationName())
 			assert.Equal(t, "sqs.command", spans[1].OperationName())
@@ -124,7 +130,7 @@ var (
 			assert.Equal(t, "sns.command", spans[3].OperationName())
 			assert.Equal(t, "sns.command", spans[4].OperationName())
 		},
-		assertOpV1: func(t *testing.T, spans []*mocktracer.Span) {
+		AssertOpV1: func(t *testing.T, spans []*mocktracer.Span) {
 			require.Len(t, spans, 5)
 			assert.Equal(t, "aws.sqs.request", spans[0].OperationName())
 			assert.Equal(t, "aws.sqs.send", spans[1].OperationName())
@@ -132,10 +138,10 @@ var (
 			assert.Equal(t, "aws.sns.request", spans[3].OperationName())
 			assert.Equal(t, "aws.sns.send", spans[4].OperationName())
 		},
-		wantServiceNameV0: serviceNameAssertions{
-			defaults:        []string{"aws.sqs", "aws.sqs", "aws.sqs", "aws.sns", "aws.sns"},
-			ddService:       []string{"aws.sqs", "aws.sqs", "aws.sqs", "aws.sns", "aws.sns"},
-			serviceOverride: repeatString(testServiceOverride, 5),
+		WantServiceNameV0: harness.ServiceNameAssertions{
+			Defaults:        []string{"aws.sqs", "aws.sqs", "aws.sqs", "aws.sns", "aws.sns"},
+			DDService:       []string{"aws.sqs", "aws.sqs", "aws.sqs", "aws.sns", "aws.sns"},
+			ServiceOverride: harness.RepeatString(harness.TestServiceOverride, 5),
 		},
 	}
 )

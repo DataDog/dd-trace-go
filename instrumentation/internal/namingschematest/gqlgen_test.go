@@ -1,3 +1,8 @@
+// Unless explicitly stated otherwise all files in this repository are licensed
+// under the Apache License Version 2.0.
+// This product includes software developed at Datadog (https://www.datadoghq.com/).
+// Copyright 2024 Datadog, Inc.
+
 package namingschematest
 
 import (
@@ -7,17 +12,18 @@ import (
 	"github.com/99designs/gqlgen/graphql"
 	"github.com/99designs/gqlgen/graphql/handler/testserver"
 	"github.com/99designs/gqlgen/graphql/handler/transport"
-	gqlgentrace "github.com/DataDog/dd-trace-go/contrib/99designs/gqlgen/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	gqlgentrace "github.com/DataDog/dd-trace-go/contrib/99designs/gqlgen/v2"
+	"github.com/DataDog/dd-trace-go/instrumentation/internal/namingschematest/harness"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 )
 
-var gqlgen = testCase{
-	name: instrumentation.Package99DesignsGQLGen,
-	genSpans: func(t *testing.T, serviceOverride string) []*mocktracer.Span {
+var gqlgen = harness.TestCase{
+	Name: instrumentation.Package99DesignsGQLGen,
+	GenSpans: func(t *testing.T, serviceOverride string) []*mocktracer.Span {
 		type testServerResponse struct {
 			Name string
 		}
@@ -44,12 +50,12 @@ var gqlgen = testCase{
 
 		return mt.FinishedSpans()
 	},
-	wantServiceNameV0: serviceNameAssertions{
-		defaults:        repeatString("graphql", 9),
-		ddService:       repeatString("graphql", 9),
-		serviceOverride: repeatString(testServiceOverride, 9),
+	WantServiceNameV0: harness.ServiceNameAssertions{
+		Defaults:        harness.RepeatString("graphql", 9),
+		DDService:       harness.RepeatString("graphql", 9),
+		ServiceOverride: harness.RepeatString(harness.TestServiceOverride, 9),
 	},
-	assertOpV0: func(t *testing.T, spans []*mocktracer.Span) {
+	AssertOpV0: func(t *testing.T, spans []*mocktracer.Span) {
 		require.Len(t, spans, 9)
 		assert.Equal(t, "graphql.read", spans[0].OperationName())
 		assert.Equal(t, "graphql.parse", spans[1].OperationName())
@@ -61,7 +67,7 @@ var gqlgen = testCase{
 		assert.Equal(t, "graphql.validate", spans[7].OperationName())
 		assert.Equal(t, "graphql.mutation", spans[8].OperationName())
 	},
-	assertOpV1: func(t *testing.T, spans []*mocktracer.Span) {
+	AssertOpV1: func(t *testing.T, spans []*mocktracer.Span) {
 		require.Len(t, spans, 9)
 		assert.Equal(t, "graphql.read", spans[0].OperationName())
 		assert.Equal(t, "graphql.parse", spans[1].OperationName())

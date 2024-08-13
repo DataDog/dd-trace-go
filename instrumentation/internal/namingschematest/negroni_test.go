@@ -10,17 +10,19 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	negronitrace "github.com/DataDog/dd-trace-go/contrib/urfave/negroni/v2"
-	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
-	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/urfave/negroni"
+
+	negronitrace "github.com/DataDog/dd-trace-go/contrib/urfave/negroni/v2"
+	"github.com/DataDog/dd-trace-go/instrumentation/internal/namingschematest/harness"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 )
 
-var urfaveNegroni = testCase{
-	name: instrumentation.PackageUrfaveNegroni,
-	genSpans: func(t *testing.T, serviceOverride string) []*mocktracer.Span {
+var urfaveNegroni = harness.TestCase{
+	Name: instrumentation.PackageUrfaveNegroni,
+	GenSpans: func(t *testing.T, serviceOverride string) []*mocktracer.Span {
 		var opts []negronitrace.Option
 		if serviceOverride != "" {
 			opts = append(opts, negronitrace.WithService(serviceOverride))
@@ -42,16 +44,16 @@ var urfaveNegroni = testCase{
 
 		return mt.FinishedSpans()
 	},
-	wantServiceNameV0: serviceNameAssertions{
-		defaults:        []string{"negroni.router"},
-		ddService:       []string{testDDService},
-		serviceOverride: []string{testServiceOverride},
+	WantServiceNameV0: harness.ServiceNameAssertions{
+		Defaults:        []string{"negroni.router"},
+		DDService:       []string{harness.TestDDService},
+		ServiceOverride: []string{harness.TestServiceOverride},
 	},
-	assertOpV0: func(t *testing.T, spans []*mocktracer.Span) {
+	AssertOpV0: func(t *testing.T, spans []*mocktracer.Span) {
 		require.Len(t, spans, 1)
 		assert.Equal(t, "http.request", spans[0].OperationName())
 	},
-	assertOpV1: func(t *testing.T, spans []*mocktracer.Span) {
+	AssertOpV1: func(t *testing.T, spans []*mocktracer.Span) {
 		require.Len(t, spans, 1)
 		assert.Equal(t, "http.server.request", spans[0].OperationName())
 	},
