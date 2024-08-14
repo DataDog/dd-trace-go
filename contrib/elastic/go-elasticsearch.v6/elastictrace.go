@@ -20,14 +20,15 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
-	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 )
 
 const componentName = "elastic/go-elasticsearch.v6"
 
+var instr *instrumentation.Instrumentation
+
 func init() {
-	telemetry.LoadIntegration(componentName)
-	tracer.MarkIntegrationImported("github.com/elastic/go-elasticsearch/v6")
+	instr = instrumentation.Load(instrumentation.PackageGoElasticSearchV6)
 }
 
 // NewRoundTripper returns a new http.Client which traces requests under the given service name.

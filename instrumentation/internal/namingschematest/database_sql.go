@@ -18,13 +18,15 @@ import (
 func dbSQLGenSpans(driverName string, registerOverride bool) harness.GenSpansFn {
 	return func(t *testing.T, serviceOverride string) []*mocktracer.Span {
 		var registerOpts []sqltrace.Option
+		// serviceOverride has higher priority than the registerOverride parameter.
+		if serviceOverride != "" {
+			registerOpts = append(registerOpts, sqltrace.WithService(serviceOverride))
+		} else if registerOverride {
+			registerOpts = append(registerOpts, sqltrace.WithService("register-override"))
+		}
 		var openOpts []sqltrace.Option
 		if serviceOverride != "" {
-			if registerOverride {
-				registerOpts = append(registerOpts, sqltrace.WithService(serviceOverride))
-			} else {
-				openOpts = append(openOpts, sqltrace.WithService(serviceOverride))
-			}
+			openOpts = append(openOpts, sqltrace.WithService(serviceOverride))
 		}
 		mt := mocktracer.Start()
 		defer mt.Stop()
@@ -104,8 +106,11 @@ var databaseSQL_PostgresWithRegisterOverride = harness.TestCase{
 	Name:     instrumentation.PackageDatabaseSQL + "_PostgresWithRegisterOverride",
 	GenSpans: dbSQLGenSpans("postgres", true),
 	WantServiceNameV0: harness.ServiceNameAssertions{
-		Defaults:        []string{"postgres.db", "postgres.db"},
-		DDService:       []string{"postgres.db", "postgres.db"},
+		// when the WithServiceName option is set during Register and not providing a service name when opening
+		// the DB connection, that value is used as default instead of postgres.db.
+		Defaults: []string{"register-override", "register-override"},
+		// in v0, DD_SERVICE is ignored for this integration.
+		DDService:       []string{"register-override", "register-override"},
 		ServiceOverride: []string{harness.TestServiceOverride, harness.TestServiceOverride},
 	},
 	AssertOpV0: func(t *testing.T, spans []*mocktracer.Span) {

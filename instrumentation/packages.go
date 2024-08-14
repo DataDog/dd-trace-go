@@ -24,7 +24,7 @@ const (
 	PackageConfluentKafkaGoV2   Package = "confluentinc/confluent-kafka-go/kafka.v2"
 	PackageDatabaseSQL          Package = "database/sql"
 	PackageDimfeldHTTPTreeMuxV5 Package = "dimfeld/httptreemux.v5"
-
+	PackageGoElasticSearchV6    Package = "elastic/go-elasticsearch.v6"
 	// TODO: ...
 
 	PackageNetHTTP   Package = "net/http"
@@ -185,6 +185,9 @@ var packages = map[Package]PackageInfo{
 			ComponentDefault: {
 				useDDServiceV0: false,
 				buildServiceNameV0: func(opCtx OperationContext) string {
+					if svc := opCtx["registerService"]; svc != "" {
+						return svc
+					}
 					return fmt.Sprintf("%s.db", opCtx["driverName"])
 				},
 				buildOpNameV0: func(opCtx OperationContext) string {
@@ -205,6 +208,18 @@ var packages = map[Package]PackageInfo{
 				buildServiceNameV0: staticName("http.router"),
 				buildOpNameV0:      staticName("http.request"),
 				buildOpNameV1:      staticName("http.server.request"),
+			},
+		},
+	},
+	PackageGoElasticSearchV6: {
+		TracedPackage: "github.com/elastic/go-elasticsearch/v6",
+		EnvVarPrefix:  "ELASTIC",
+		naming: map[Component]componentNames{
+			ComponentDefault: {
+				useDDServiceV0:     false,
+				buildServiceNameV0: staticName("elastic.client"),
+				buildOpNameV0:      staticName("elasticsearch.query"),
+				buildOpNameV1:      staticName("elasticsearch.query"),
 			},
 		},
 	},

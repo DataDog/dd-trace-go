@@ -163,12 +163,14 @@ func defaults(cfg *config, driverName string, rc *registerConfig) {
 }
 
 func defaultServiceName(driverName string, rc *registerConfig) string {
+	registerService := ""
 	if rc != nil {
 		// if service name was set during Register, we use that value as default.
-		return rc.serviceName
+		registerService = rc.serviceName
 	}
 	return instr.ServiceName(instrumentation.ComponentDefault, instrumentation.OperationContext{
-		"driverName": driverName,
+		"driverName":      driverName,
+		"registerService": registerService,
 	})
 }
 

@@ -6,14 +6,10 @@
 package elastic
 
 import (
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 	"math"
 	"net/http"
-
-	"github.com/DataDog/dd-trace-go/v2/internal"
-	"github.com/DataDog/dd-trace-go/v2/internal/namingschema"
 )
-
-const defaultServiceName = "elastic.client"
 
 type clientConfig struct {
 	serviceName   string
@@ -36,15 +32,11 @@ func (fn ClientOptionFn) apply(cfg *clientConfig) {
 }
 
 func defaults(cfg *clientConfig) {
-	cfg.serviceName = namingschema.ServiceNameOverrideV0(defaultServiceName, defaultServiceName)
-	cfg.operationName = namingschema.OpName(namingschema.ElasticSearchOutbound)
+	cfg.serviceName = instr.ServiceName(instrumentation.ComponentDefault, nil)
+	cfg.operationName = instr.OperationName(instrumentation.ComponentDefault, nil)
 	cfg.transport = http.DefaultTransport
 	cfg.resourceNamer = quantize
-	if internal.BoolEnv("DD_TRACE_ELASTIC_ANALYTICS_ENABLED", false) {
-		cfg.analyticsRate = 1.0
-	} else {
-		cfg.analyticsRate = math.NaN()
-	}
+	cfg.analyticsRate = instr.AnalyticsRate()
 }
 
 // WithTransport sets the given transport as an http.Transport for the client.
