@@ -1,3 +1,8 @@
+// Unless explicitly stated otherwise all files in this repository are licensed
+// under the Apache License Version 2.0.
+// This product includes software developed at Datadog (https://www.datadoghq.com/).
+// Copyright 2024 Datadog, Inc.
+
 package instrumentation
 
 import (
@@ -18,6 +23,8 @@ const (
 	PackageConfluentKafkaGo     Package = "confluentinc/confluent-kafka-go/kafka"
 	PackageConfluentKafkaGoV2   Package = "confluentinc/confluent-kafka-go/kafka.v2"
 	PackageDatabaseSQL          Package = "database/sql"
+	PackageDimfeldHTTPTreeMuxV5 Package = "dimfeld/httptreemux.v5"
+
 	// TODO: ...
 
 	PackageNetHTTP   Package = "net/http"
@@ -186,6 +193,18 @@ var packages = map[Package]PackageInfo{
 				buildOpNameV1: func(opCtx OperationContext) string {
 					return fmt.Sprintf("%s.query", opCtx[ext.DBSystem])
 				},
+			},
+		},
+	},
+	PackageDimfeldHTTPTreeMuxV5: {
+		TracedPackage: "github.com/dimfeld/httptreemux/v5",
+		EnvVarPrefix:  "HTTPTREEMUX",
+		naming: map[Component]componentNames{
+			ComponentServer: {
+				useDDServiceV0:     true,
+				buildServiceNameV0: staticName("http.router"),
+				buildOpNameV0:      staticName("http.request"),
+				buildOpNameV1:      staticName("http.server.request"),
 			},
 		},
 	},

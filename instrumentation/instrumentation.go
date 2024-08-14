@@ -1,7 +1,14 @@
+// Unless explicitly stated otherwise all files in this repository are licensed
+// under the Apache License Version 2.0.
+// This product includes software developed at Datadog (https://www.datadoghq.com/).
+// Copyright 2024 Datadog, Inc.
+
 package instrumentation
 
 import (
 	"context"
+	"math"
+
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/internal/namingschema"
 	"github.com/DataDog/dd-trace-go/v2/internal"
@@ -9,7 +16,6 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/normalizer"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
-	"math"
 )
 
 // OperationContext holds metadata about an instrumentation operation.

@@ -24,6 +24,7 @@ func TestNamingSchema(t *testing.T) {
 		databaseSQL_Postgres,
 		databaseSQL_PostgresWithRegisterOverride,
 		databaseSQL_MySQL,
+		httpTreeMuxTestCase,
 		netHTTPServer,
 		netHTTPClient,
 		gomemcache,
