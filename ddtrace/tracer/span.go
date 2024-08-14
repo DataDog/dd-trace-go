@@ -553,7 +553,7 @@ func (s *span) finish(finishTime int64) {
 		// todo: no need to check for shouldCompute
 		if t.config.canComputeStats() && shouldComputeStats(s) {
 			statSpan, shouldCalc := t.stats.newAggregableSpan(s, t.obfuscator)
-			log.Info("LETS COMPUTE SOME STATS: should calc %v stat span %v", shouldCalc, statSpan)
+			log.Info("LETS COMPUTE SOME STATS: should calc %v stat span %v", shouldCalc, s)
 			if shouldCalc {
 				// the agent supports computed stats
 				select {
