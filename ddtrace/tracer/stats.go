@@ -58,6 +58,13 @@ func newConcentrator(c *config, bucketSize int64) *concentrator {
 	if c.env != "" {
 		env = c.env
 	}
+	if env == "" {
+		// We do this to avoid a panic in the stats calculation logic when env is empty
+		// This should never actually happen as the agent MUST have an env configured to start-up
+		// That panic will be removed in a future release at which point we can remove this
+		env = "unknown-env"
+		log.Error("No DD Env found, normally the agent MUST have one")
+	}
 	aggKey := stats.PayloadAggregationKey{
 		Hostname:     c.hostname,
 		Env:          env,
