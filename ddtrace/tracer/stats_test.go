@@ -11,9 +11,6 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
-
-	"github.com/DataDog/datadog-agent/pkg/trace/stats"
 )
 
 func TestAlignTs(t *testing.T) {
@@ -25,22 +22,21 @@ func TestAlignTs(t *testing.T) {
 
 func TestConcentrator(t *testing.T) {
 	bucketSize := int64(500_000)
-
-	sc := stats.NewSpanConcentrator(&stats.SpanConcentratorConfig{BucketInterval: bucketSize}, time.Now())
-	ss1, ok := sc.NewStatSpan("", "", "http.request", "", 0,
-		time.Now().UnixNano()+3*bucketSize,
-		1,
-		0, nil, map[string]float64{keyMeasured: 1}, nil)
-	require.True(t, ok)
-	ss2, ok := sc.NewStatSpan("", "", "sql.query", "", 0,
-		time.Now().UnixNano()+4*bucketSize,
-		1,
-		0, nil, map[string]float64{keyMeasured: 1}, nil)
-	require.True(t, ok)
-
+	s1 := span{
+		Name:     "http.request",
+		Start:    time.Now().UnixNano() + 3*bucketSize,
+		Duration: 1,
+		Metrics:  map[string]float64{keyMeasured: 1},
+	}
+	s2 := span{
+		Name:     "sql.query",
+		Start:    time.Now().UnixNano() + 4*bucketSize,
+		Duration: 1,
+		Metrics:  map[string]float64{keyMeasured: 1},
+	}
 	t.Run("start-stop", func(t *testing.T) {
 		assert := assert.New(t)
-		c := newConcentrator(&config{}, defaultStatsBucketSize)
+		c := newConcentrator(&config{}, bucketSize)
 		assert.EqualValues(atomic.LoadUint32(&c.stopped), 1)
 		c.Start()
 		assert.EqualValues(atomic.LoadUint32(&c.stopped), 0)
@@ -99,6 +95,8 @@ func TestConcentrator(t *testing.T) {
 			transport := newDummyTransport()
 			c := newConcentrator(&config{transport: transport, env: "someEnv"}, 500_000)
 			assert.Len(t, transport.Stats(), 0)
+			ss1, ok := c.newAggregableSpan(&s1, nil)
+			assert.True(t, ok)
 			c.Start()
 			c.In <- ss1
 			time.Sleep(2 * time.Millisecond * timeMultiplicator)
@@ -114,6 +112,10 @@ func TestConcentrator(t *testing.T) {
 			transport := newDummyTransport()
 			c := newConcentrator(&config{transport: transport, env: "someEnv"}, (10 * time.Second).Nanoseconds())
 			assert.Len(t, transport.Stats(), 0)
+			ss1, ok := c.newAggregableSpan(&s1, nil)
+			assert.True(t, ok)
+			ss2, ok := c.newAggregableSpan(&s2, nil)
+			assert.True(t, ok)
 			c.Start()
 			c.In <- ss1
 			c.In <- ss2
@@ -130,21 +132,18 @@ func TestConcentrator(t *testing.T) {
 			assert.NotNil(t, names["http.request"])
 			assert.NotNil(t, names["potato"])
 		})
+
+		// stats should be sent if the concentrator is stopped
+		t.Run("stop", func(t *testing.T) {
+			transport := newDummyTransport()
+			c := newConcentrator(&config{transport: transport}, 500000)
+			assert.Len(t, transport.Stats(), 0)
+			ss1, ok := c.newAggregableSpan(&s1, nil)
+			assert.True(t, ok)
+			c.Start()
+			c.In <- ss1
+			c.Stop()
+			assert.NotEmpty(t, transport.Stats())
+		})
 	})
-	//
-	//	// stats should be sent if the concentrator is stopped
-	//	t.Run("stop", func(t *testing.T) {
-	//		transport := newDummyTransport()
-	//		c := newConcentrator(&config{transport: transport}, 500000)
-	//		assert.Len(t, transport.Stats(), 0)
-	//		c.Start()
-	//		c.In <- &aggregableSpan{
-	//			key:      key1,
-	//			Start:    time.Now().UnixNano(),
-	//			Duration: 1,
-	//		}
-	//		c.Stop()
-	//		assert.NotEmpty(t, transport.Stats())
-	//	})
-	//})
 }

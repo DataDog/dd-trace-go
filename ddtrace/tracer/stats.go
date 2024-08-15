@@ -31,7 +31,7 @@ type concentrator struct {
 	// In specifies the channel to be used for feeding data to the concentrator.
 	// In order for In to have a consumer, the concentrator must be started using
 	// a call to Start.
-	In chan *stats.StatSpan
+	In chan *tracerStatSpan
 
 	// stopped reports whether the concentrator is stopped (when non-zero)
 	stopped uint32
@@ -45,6 +45,11 @@ type concentrator struct {
 	stop         chan struct{}         // closing this channel triggers shutdown
 	cfg          *config               // tracer startup configuration
 	statsdClient internal.StatsdClient // statsd client for sending metrics.
+}
+
+type tracerStatSpan struct {
+	statSpan *stats.StatSpan
+	origin   string
 }
 
 // newConcentrator creates a new concentrator using the given tracer
@@ -75,7 +80,7 @@ func newConcentrator(c *config, bucketSize int64) *concentrator {
 	}
 	spanConcentrator := stats.NewSpanConcentrator(sCfg, time.Now())
 	return &concentrator{
-		In:               make(chan *stats.StatSpan, 10000),
+		In:               make(chan *tracerStatSpan, 10000),
 		bucketSize:       bucketSize,
 		stopped:          1,
 		cfg:              c,
@@ -145,14 +150,22 @@ func (c *concentrator) runIngester() {
 	}
 }
 
-func (c *concentrator) newAggregableSpan(s *span, obfuscator *obfuscate.Obfuscator) (*stats.StatSpan, bool) {
-	return c.spanConcentrator.NewStatSpan(s.Service, obfuscatedResource(obfuscator, s.Type, s.Resource),
+func (c *concentrator) newAggregableSpan(s *span, obfuscator *obfuscate.Obfuscator) (*tracerStatSpan, bool) {
+	statSpan, ok := c.spanConcentrator.NewStatSpan(s.Service, obfuscatedResource(obfuscator, s.Type, s.Resource),
 		s.Name, s.Type, s.ParentID, s.Start, s.Duration, s.Error, s.Meta, s.Metrics, c.cfg.agent.peerTags)
+	if !ok {
+		return nil, false
+	}
+	origin := s.Meta[keyOrigin]
+	return &tracerStatSpan{
+		statSpan: statSpan,
+		origin:   origin,
+	}, true
 }
 
 // add adds s into the concentrator's internal stats buckets.
-func (c *concentrator) add(s *stats.StatSpan) {
-	c.spanConcentrator.AddSpan(s, c.aggregationKey, "", nil, "") //todo: origin?
+func (c *concentrator) add(s *tracerStatSpan) {
+	c.spanConcentrator.AddSpan(s.statSpan, c.aggregationKey, "", nil, s.origin)
 }
 
 // Stop stops the concentrator and blocks until the operation completes.
