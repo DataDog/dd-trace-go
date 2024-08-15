@@ -6,6 +6,7 @@
 package http
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -346,9 +347,10 @@ func TestWrapHandlerWithResourceNameNoRace(_ *testing.T) {
 	for i := 0; i < 10; i++ {
 		wg.Add(1)
 		go func() {
-			w := httptest.NewRecorder()
 			defer wg.Done()
-			mux.ServeHTTP(w, r)
+			req := r.Clone(context.Background())
+			w := httptest.NewRecorder()
+			mux.ServeHTTP(w, req)
 		}()
 	}
 	wg.Wait()
