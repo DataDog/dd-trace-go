@@ -1,6 +1,8 @@
 module gopkg.in/DataDog/dd-trace-go.v1/internal/exectracetest
 
-go 1.21.0
+go 1.22.0
+
+toolchain go1.22.5
 
 require (
 	github.com/google/pprof v0.0.0-20230817174616-7a8ec2ada47b
@@ -14,7 +16,7 @@ require (
 	github.com/DataDog/datadog-agent/pkg/obfuscate v0.57.0-rc.1 // indirect
 	github.com/DataDog/datadog-agent/pkg/proto v0.57.0-rc.1 // indirect
 	github.com/DataDog/datadog-agent/pkg/remoteconfig/state v0.57.0-rc.1 // indirect
-	github.com/DataDog/datadog-agent/pkg/trace v0.57.0-rc.1 // indirect
+	github.com/DataDog/datadog-agent/pkg/trace v0.58.0-devel.0.20240814201000-ba7e423fc4fc // indirect
 	github.com/DataDog/datadog-agent/pkg/util/log v0.57.0-rc.1 // indirect
 	github.com/DataDog/datadog-agent/pkg/util/scrubber v0.57.0-rc.1 // indirect
 	github.com/DataDog/datadog-go/v5 v5.5.0 // indirect

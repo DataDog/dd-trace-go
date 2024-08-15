@@ -1,6 +1,8 @@
 module github.com/DataDog/dd-trace-go/internal/apps
 
-go 1.21.0
+go 1.22.0
+
+toolchain go1.22.5
 
 require (
 	golang.org/x/sync v0.8.0
@@ -10,7 +12,7 @@ require (
 require (
 	github.com/DataDog/appsec-internal-go v1.7.0 // indirect
 	github.com/DataDog/datadog-agent/pkg/proto v0.57.0-rc.1 // indirect
-	github.com/DataDog/datadog-agent/pkg/trace v0.57.0-rc.1 // indirect
+	github.com/DataDog/datadog-agent/pkg/trace v0.58.0-devel.0.20240814201000-ba7e423fc4fc // indirect
 	github.com/DataDog/datadog-agent/pkg/util/log v0.57.0-rc.1 // indirect
 	github.com/DataDog/datadog-agent/pkg/util/scrubber v0.57.0-rc.1 // indirect
 	github.com/DataDog/go-libddwaf/v3 v3.3.0 // indirect

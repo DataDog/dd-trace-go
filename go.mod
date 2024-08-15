@@ -1,6 +1,8 @@
 module gopkg.in/DataDog/dd-trace-go.v1
 
-go 1.21.0
+go 1.22.0
+
+toolchain go1.22.5
 
 require (
 	cloud.google.com/go/pubsub v1.36.1
@@ -9,7 +11,7 @@ require (
 	github.com/DataDog/datadog-agent/pkg/obfuscate v0.57.0-rc.1
 	github.com/DataDog/datadog-agent/pkg/proto v0.57.0-rc.1
 	github.com/DataDog/datadog-agent/pkg/remoteconfig/state v0.57.0-rc.1
-	github.com/DataDog/datadog-agent/pkg/trace v0.57.0-rc.1
+	github.com/DataDog/datadog-agent/pkg/trace v0.58.0-devel.0.20240814201000-ba7e423fc4fc
 	github.com/DataDog/datadog-go/v5 v5.5.0
 	github.com/DataDog/go-libddwaf/v3 v3.3.0
 	github.com/DataDog/gostackparse v0.7.0
