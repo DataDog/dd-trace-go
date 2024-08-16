@@ -89,7 +89,7 @@ jobs:
         ports:
           - 9042:9042
       mysql:
-        image: circleci/mysql:5.7
+        image: cimg/mysql:8.0
         env:
           MYSQL_ROOT_PASSWORD: admin
           MYSQL_PASSWORD: test
@@ -98,7 +98,7 @@ jobs:
         ports:
           - 3306:3306
       postgres:
-        image: circleci/postgres:9.5
+        image: cimg/postgres:16.4
         env:
           POSTGRES_PASSWORD: postgres
           POSTGRES_USER: postgres
