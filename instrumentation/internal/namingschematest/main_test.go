@@ -26,6 +26,7 @@ func TestNamingSchema(t *testing.T) {
 		databaseSQL_MySQL,
 		httpTreeMuxTestCase,
 		elasticV6,
+		goRestfulV3,
 		netHTTPServer,
 		netHTTPClient,
 		gomemcache,

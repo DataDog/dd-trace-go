@@ -32,7 +32,7 @@ func (fn ClientOptionFn) apply(cfg *clientConfig) {
 func defaults(cfg *clientConfig) {
 	cfg.serviceName = instr.ServiceName(instrumentation.ComponentDefault, nil)
 	cfg.operationName = instr.OperationName(instrumentation.ComponentDefault, nil)
-	cfg.analyticsRate = instr.AnalyticsRate()
+	cfg.analyticsRate = instr.AnalyticsRate(false)
 }
 
 // WithService sets the given service name for the dialled connection.

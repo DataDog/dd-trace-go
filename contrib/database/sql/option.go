@@ -139,7 +139,7 @@ type registerConfig = config
 
 func defaults(cfg *config, driverName string, rc *registerConfig) {
 	// cfg.analyticsRate = globalconfig.AnalyticsRate()
-	cfg.analyticsRate = instr.AnalyticsRate()
+	cfg.analyticsRate = instr.AnalyticsRate(false)
 	mode := os.Getenv("DD_DBM_PROPAGATION_MODE")
 	if mode == "" {
 		mode = os.Getenv("DD_TRACE_SQL_COMMENT_INJECTION_MODE")

@@ -25,6 +25,7 @@ const (
 	PackageDatabaseSQL          Package = "database/sql"
 	PackageDimfeldHTTPTreeMuxV5 Package = "dimfeld/httptreemux.v5"
 	PackageGoElasticSearchV6    Package = "elastic/go-elasticsearch.v6"
+	PackageEmickleiGoRestfulV3  Package = "emicklei/go-restful.v3"
 	// TODO: ...
 
 	PackageNetHTTP   Package = "net/http"
@@ -220,6 +221,18 @@ var packages = map[Package]PackageInfo{
 				buildServiceNameV0: staticName("elastic.client"),
 				buildOpNameV0:      staticName("elasticsearch.query"),
 				buildOpNameV1:      staticName("elasticsearch.query"),
+			},
+		},
+	},
+	PackageEmickleiGoRestfulV3: {
+		TracedPackage: "github.com/emicklei/go-restful/v3",
+		EnvVarPrefix:  "RESTFUL",
+		naming: map[Component]componentNames{
+			ComponentServer: {
+				useDDServiceV0:     false,
+				buildServiceNameV0: staticName("go-restful"),
+				buildOpNameV0:      staticName("http.request"),
+				buildOpNameV1:      staticName("http.server.request"),
 			},
 		},
 	},

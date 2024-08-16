@@ -87,9 +87,12 @@ func (i *Instrumentation) Logger() Logger {
 	return i.logger
 }
 
-func (i *Instrumentation) AnalyticsRate() float64 {
+func (i *Instrumentation) AnalyticsRate(defaultGlobal bool) float64 {
 	if internal.BoolEnv("DD_TRACE_"+i.info.EnvVarPrefix+"_ANALYTICS_ENABLED", false) {
 		return 1.0
+	}
+	if defaultGlobal {
+		return i.GlobalAnalyticsRate()
 	}
 	return math.NaN()
 }

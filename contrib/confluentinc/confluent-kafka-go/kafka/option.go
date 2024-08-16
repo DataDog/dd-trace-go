@@ -45,7 +45,7 @@ func newConfig(opts ...Option) *config {
 	cfg := &config{
 		ctx: context.Background(),
 		// analyticsRate: globalconfig.AnalyticsRate(),
-		analyticsRate: instr.AnalyticsRate(),
+		analyticsRate: instr.AnalyticsRate(false),
 	}
 	cfg.dataStreamsEnabled = instr.DataStreamsEnabled()
 

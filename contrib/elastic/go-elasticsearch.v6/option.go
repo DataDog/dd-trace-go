@@ -36,7 +36,7 @@ func defaults(cfg *clientConfig) {
 	cfg.operationName = instr.OperationName(instrumentation.ComponentDefault, nil)
 	cfg.transport = http.DefaultTransport
 	cfg.resourceNamer = quantize
-	cfg.analyticsRate = instr.AnalyticsRate()
+	cfg.analyticsRate = instr.AnalyticsRate(false)
 }
 
 // WithTransport sets the given transport as an http.Transport for the client.

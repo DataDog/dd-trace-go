@@ -31,7 +31,7 @@ func (fn OptionFn) apply(cfg *config) {
 
 func defaults(cfg *config) {
 	cfg.serviceName = instr.ServiceName(instrumentation.ComponentDefault, nil)
-	cfg.analyticsRate = instr.AnalyticsRate()
+	cfg.analyticsRate = instr.AnalyticsRate(false)
 	cfg.tags = make(map[string]interface{})
 }
 
