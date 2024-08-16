@@ -16,6 +16,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/httpsec/types"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/sharedsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener/ossec"
 	shared "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener/sharedsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener/sqlsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
@@ -55,6 +56,7 @@ var supportedAddresses = listener.AddressSet{
 	HTTPClientIPAddr:                   {},
 	UserIDAddr:                         {},
 	ServerIoNetURLAddr:                 {},
+	ossec.ServerIOFSFileAddr:           {},
 	sqlsec.ServerDBStatementAddr:       {},
 	sqlsec.ServerDBTypeAddr:            {},
 }
@@ -111,10 +113,14 @@ func (l *wafEventListener) onEvent(op *types.Operation, args types.HandlerOperat
 		return
 	}
 
-	if _, ok := l.addresses[ServerIoNetURLAddr]; ok {
+	if SSRFAddressesPresent(l.addresses) {
 		dyngo.On(op, shared.MakeWAFRunListener(&op.SecurityEventsHolder, wafCtx, l.limiter, func(args types.RoundTripOperationArgs) waf.RunAddressData {
 			return waf.RunAddressData{Ephemeral: map[string]any{ServerIoNetURLAddr: args.URL}}
 		}))
+	}
+
+	if ossec.OSAddressesPresent(l.addresses) {
+		ossec.RegisterOpenListener(op, &op.SecurityEventsHolder, wafCtx, l.limiter)
 	}
 
 	if sqlsec.SQLAddressesPresent(l.addresses) {
