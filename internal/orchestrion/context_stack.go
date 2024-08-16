@@ -17,14 +17,14 @@ func getDDContextStack() *contextStack {
 		return gls.(*contextStack)
 	}
 
-	newStack := new(contextStack)
+	newStack := &contextStack{}
 	setDDGLS(newStack)
 	return newStack
 }
 
 // Peek returns the top context from the stack without removing it.
 func (s *contextStack) Peek(key any) any {
-	if s == nil {
+	if s == nil || *s == nil {
 		return nil
 	}
 
@@ -38,7 +38,7 @@ func (s *contextStack) Peek(key any) any {
 
 // Push adds a context to the stack.
 func (s *contextStack) Push(key, val any) {
-	if s == nil {
+	if s == nil || *s == nil {
 		return
 	}
 
@@ -47,7 +47,7 @@ func (s *contextStack) Push(key, val any) {
 
 // Pop removes the top context from the stack and returns it.
 func (s *contextStack) Pop(key any) any {
-	if s == nil {
+	if s == nil || *s == nil {
 		return nil
 	}
 

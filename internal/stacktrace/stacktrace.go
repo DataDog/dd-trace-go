@@ -32,7 +32,7 @@ var (
 		"github.com/DataDog/go-libddwaf",
 		"github.com/DataDog/datadog-agent",
 		"github.com/DataDog/appsec-internal-go",
-		"github.com/DataDog/orchestrion",
+		"github.com/datadog/orchestrion",
 	}
 )
 
@@ -219,7 +219,7 @@ func (it *framesIterator) Next() (StackFrame, bool) {
 			return StackFrame{}, false
 		}
 
-		if it.skipSymbol(frame.Function) {
+		if it.skipFrame(frame) {
 			continue
 		}
 
@@ -237,9 +237,13 @@ func (it *framesIterator) Next() (StackFrame, bool) {
 	}
 }
 
-func (it *framesIterator) skipSymbol(symbol string) bool {
+func (it *framesIterator) skipFrame(frame runtime.Frame) bool {
+	if frame.File == "<generated>" { // skip orchestrion generated code
+		return true
+	}
+
 	for _, prefix := range it.skipPrefixes {
-		if strings.HasPrefix(symbol, prefix) {
+		if strings.HasPrefix(frame.Function, prefix) {
 			return true
 		}
 	}
