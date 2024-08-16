@@ -12,6 +12,7 @@ import (
 	"math"
 	"strconv"
 	"strings"
+	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
@@ -30,6 +31,9 @@ func init() {
 }
 
 // ClusterConfig embeds gocql.ClusterConfig and keeps information relevant to tracing.
+//
+// Deprecated: use the Observer based method CreateTracedSession instead, which allows to use
+// native gocql types instead of wrapped types.
 type ClusterConfig struct {
 	*gocql.ClusterConfig
 	hosts []string
@@ -37,6 +41,9 @@ type ClusterConfig struct {
 }
 
 // NewCluster calls gocql.NewCluster and returns a wrapped instrumented version of it.
+//
+// Deprecated: use the Observer based method CreateTracedSession instead, which allows to use
+// native gocql types instead of wrapped types.
 func NewCluster(hosts []string, opts ...WrapOption) *ClusterConfig {
 	return &ClusterConfig{
 		ClusterConfig: gocql.NewCluster(hosts...),
@@ -46,6 +53,9 @@ func NewCluster(hosts []string, opts ...WrapOption) *ClusterConfig {
 }
 
 // Session embeds gocql.Session and keeps information relevant to tracing.
+//
+// Deprecated: use the Observer based method CreateTracedSession instead, which allows to use
+// native gocql types instead of wrapped types.
 type Session struct {
 	*gocql.Session
 	hosts []string
@@ -66,10 +76,13 @@ func (c *ClusterConfig) CreateSession() (*Session, error) {
 }
 
 // Query inherits from gocql.Query, it keeps the tracer and the context.
+//
+// Deprecated: use the Observer based method CreateTracedSession instead, which allows to use
+// native gocql types instead of wrapped types.
 type Query struct {
 	*gocql.Query
-	*params
-	ctx context.Context
+	params params
+	ctx    context.Context
 }
 
 // Query calls the underlying gocql.Session's Query method and returns a new Query augmented with tracing.
@@ -79,13 +92,19 @@ func (s *Session) Query(stmt string, values ...interface{}) *Query {
 }
 
 // Batch inherits from gocql.Batch, it keeps the tracer and the context.
+//
+// Deprecated: use the Observer based method CreateTracedSession instead, which allows to use
+// native gocql types instead of wrapped types.
 type Batch struct {
 	*gocql.Batch
-	*params
-	ctx context.Context
+	params params
+	ctx    context.Context
 }
 
 // NewBatch calls the underlying gocql.Session's NewBatch method and returns a new Batch augmented with tracing.
+//
+// Deprecated: use the Observer based method CreateTracedSession instead, which allows to use
+// native gocql types instead of wrapped types.
 func (s *Session) NewBatch(typ gocql.BatchType) *Batch {
 	b := s.Session.NewBatch(typ)
 	return wrapBatch(b, s.hosts, s.opts...)
@@ -93,10 +112,15 @@ func (s *Session) NewBatch(typ gocql.BatchType) *Batch {
 
 // params contains fields and metadata useful for command tracing
 type params struct {
-	config               *queryConfig
+	config               *config
 	keyspace             string
 	paginated            bool
+	skipPaginated        bool
 	clusterContactPoints string
+	consistency          string
+	hostInfo             *gocql.HostInfo
+	startTime            time.Time
+	finishTime           time.Time
 }
 
 // WrapQuery wraps a gocql.Query into a traced Query under the given service name.
@@ -109,7 +133,8 @@ type params struct {
 // of `WithContext` and `PageState` but not that of `Consistency`, `Trace`,
 // `Observer`, etc.
 //
-// Deprecated: initialize your ClusterConfig with NewCluster instead.
+// Deprecated: use the Observer based method CreateTracedSession instead, which allows to use
+// native gocql types instead of wrapped types.
 func WrapQuery(q *gocql.Query, opts ...WrapOption) *Query {
 	return wrapQuery(q, nil, opts...)
 }
@@ -124,7 +149,7 @@ func wrapQuery(q *gocql.Query, hosts []string, opts ...WrapOption) *Query {
 			cfg.resourceName = parts[1]
 		}
 	}
-	p := &params{config: cfg}
+	p := params{config: cfg}
 	if len(hosts) > 0 {
 		p.clusterContactPoints = strings.Join(hosts, ",")
 	}
@@ -155,43 +180,6 @@ func (tq *Query) PageState(state []byte) *Query {
 	return tq
 }
 
-// NewChildSpan creates a new span from the params and the context.
-func (tq *Query) newChildSpan(ctx context.Context) ddtrace.Span {
-	p := tq.params
-	opts := []ddtrace.StartSpanOption{
-		tracer.SpanType(ext.SpanTypeCassandra),
-		tracer.ServiceName(p.config.serviceName),
-		tracer.ResourceName(p.config.resourceName),
-		tracer.Tag(ext.CassandraPaginated, fmt.Sprintf("%t", p.paginated)),
-		tracer.Tag(ext.CassandraKeyspace, p.keyspace),
-		tracer.Tag(ext.Component, componentName),
-		tracer.Tag(ext.SpanKind, ext.SpanKindClient),
-		tracer.Tag(ext.DBSystem, ext.DBSystemCassandra),
-	}
-	if !math.IsNaN(p.config.analyticsRate) {
-		opts = append(opts, tracer.Tag(ext.EventSampleRate, p.config.analyticsRate))
-	}
-	if tq.clusterContactPoints != "" {
-		opts = append(opts, tracer.Tag(ext.CassandraContactPoints, tq.clusterContactPoints))
-	}
-	for k, v := range tq.config.customTags {
-		opts = append(opts, tracer.Tag(k, v))
-	}
-	span, _ := tracer.StartSpanFromContext(ctx, p.config.querySpanName, opts...)
-	return span
-}
-
-func (tq *Query) finishSpan(span ddtrace.Span, err error) {
-	if err != nil && tq.params.config.shouldIgnoreError(err) {
-		err = nil
-	}
-	if tq.params.config.noDebugStack {
-		span.Finish(tracer.WithError(err), tracer.NoDebugStack())
-	} else {
-		span.Finish(tracer.WithError(err))
-	}
-}
-
 // Exec is rewritten so that it passes by our custom Iter
 func (tq *Query) Exec() error {
 	return tq.Iter().Close()
@@ -199,37 +187,40 @@ func (tq *Query) Exec() error {
 
 // MapScan wraps in a span query.MapScan call.
 func (tq *Query) MapScan(m map[string]interface{}) error {
-	span := tq.newChildSpan(tq.ctx)
+	span := startQuerySpan(tq.ctx, tq.params)
 	err := tq.Query.MapScan(m)
-	tq.finishSpan(span, err)
+	finishSpan(span, err, tq.params)
 	return err
 }
 
 // MapScanCAS wraps in a span query.MapScanCAS call.
 func (tq *Query) MapScanCAS(m map[string]interface{}) (applied bool, err error) {
-	span := tq.newChildSpan(tq.ctx)
+	span := startQuerySpan(tq.ctx, tq.params)
 	applied, err = tq.Query.MapScanCAS(m)
-	tq.finishSpan(span, err)
+	finishSpan(span, err, tq.params)
 	return applied, err
 }
 
 // Scan wraps in a span query.Scan call.
 func (tq *Query) Scan(dest ...interface{}) error {
-	span := tq.newChildSpan(tq.ctx)
+	span := startQuerySpan(tq.ctx, tq.params)
 	err := tq.Query.Scan(dest...)
-	tq.finishSpan(span, err)
+	finishSpan(span, err, tq.params)
 	return err
 }
 
 // ScanCAS wraps in a span query.ScanCAS call.
 func (tq *Query) ScanCAS(dest ...interface{}) (applied bool, err error) {
-	span := tq.newChildSpan(tq.ctx)
+	span := startQuerySpan(tq.ctx, tq.params)
 	applied, err = tq.Query.ScanCAS(dest...)
-	tq.finishSpan(span, err)
+	finishSpan(span, err, tq.params)
 	return applied, err
 }
 
 // Iter inherits from gocql.Iter and contains a span.
+//
+// Deprecated: use the Observer based method CreateTracedSession instead, which allows to use
+// native gocql types instead of wrapped types.
 type Iter struct {
 	*gocql.Iter
 	span ddtrace.Span
@@ -237,7 +228,7 @@ type Iter struct {
 
 // Iter starts a new span at query.Iter call.
 func (tq *Query) Iter() *Iter {
-	span := tq.newChildSpan(tq.ctx)
+	span := startQuerySpan(tq.ctx, tq.params)
 	iter := tq.Query.Iter()
 	span.SetTag(ext.CassandraRowCount, strconv.Itoa(iter.NumRows()))
 	span.SetTag(ext.CassandraConsistencyLevel, tq.GetConsistency().String())
@@ -253,7 +244,7 @@ func (tq *Query) Iter() *Iter {
 
 		cluster := tIter.Iter.Host().ClusterName()
 		dc := tIter.Iter.Host().DataCenter()
-		if tq.config.clusterTagLegacyMode {
+		if tq.params.config.clusterTagLegacyMode {
 			tIter.span.SetTag(ext.CassandraCluster, dc)
 		} else {
 			tIter.span.SetTag(ext.CassandraCluster, cluster)
@@ -273,7 +264,10 @@ func (tIter *Iter) Close() error {
 	return err
 }
 
-// Scanner inherits from a gocql.Scanner derived from an Iter
+// Scanner inherits from a gocql.Scanner derived from an Iter.
+//
+// Deprecated: use the Observer based method CreateTracedSession instead, which allows to use
+// native gocql types instead of wrapped types.
 type Scanner struct {
 	gocql.Scanner
 	span ddtrace.Span
@@ -309,7 +303,8 @@ func (s *Scanner) Err() error {
 // of `WithContext` and `WithTimestamp` but not that of `SerialConsistency`, `Trace`,
 // `Observer`, etc.
 //
-// Deprecated: initialize your ClusterConfig with NewCluster instead.
+// Deprecated: use the Observer based method CreateTracedSession instead, which allows to use
+// native gocql types instead of wrapped types.
 func WrapBatch(b *gocql.Batch, opts ...WrapOption) *Batch {
 	return wrapBatch(b, nil, opts...)
 }
@@ -319,7 +314,7 @@ func wrapBatch(b *gocql.Batch, hosts []string, opts ...WrapOption) *Batch {
 	for _, fn := range opts {
 		fn(cfg)
 	}
-	p := &params{config: cfg}
+	p := params{config: cfg}
 	if len(hosts) > 0 {
 		p.clusterContactPoints = strings.Join(hosts, ",")
 	}
@@ -354,45 +349,102 @@ func (tb *Batch) WithTimestamp(timestamp int64) *Batch {
 
 // ExecuteBatch calls session.ExecuteBatch on the Batch, tracing the execution.
 func (tb *Batch) ExecuteBatch(session *gocql.Session) error {
-	span := tb.newChildSpan(tb.ctx)
+	p := params{
+		config:               tb.params.config,
+		keyspace:             tb.Batch.Keyspace(),
+		paginated:            tb.params.paginated,
+		clusterContactPoints: tb.params.clusterContactPoints,
+		consistency:          tb.Batch.GetConsistency().String(),
+	}
+	span := startBatchSpan(tb.ctx, p)
 	err := session.ExecuteBatch(tb.Batch)
-	tb.finishSpan(span, err)
+	finishSpan(span, err, tb.params)
 	return err
 }
 
+func startQuerySpan(ctx context.Context, p params) ddtrace.Span {
+	opts := commonStartSpanOptions(p)
+	if p.keyspace != "" {
+		opts = append(opts, tracer.Tag(ext.CassandraKeyspace, p.keyspace))
+	}
+	if !p.skipPaginated {
+		opts = append(opts, tracer.Tag(ext.CassandraPaginated, fmt.Sprintf("%t", p.paginated)))
+	}
+	for k, v := range p.config.customTags {
+		opts = append(opts, tracer.Tag(k, v))
+	}
+	span, _ := tracer.StartSpanFromContext(ctx, p.config.querySpanName, opts...)
+	return span
+}
+
 // newChildSpan creates a new span from the params and the context.
-func (tb *Batch) newChildSpan(ctx context.Context) ddtrace.Span {
-	p := tb.params
+func startBatchSpan(ctx context.Context, p params) ddtrace.Span {
+	cfg := p.config
+	opts := commonStartSpanOptions(p)
+	if p.keyspace != "" {
+		opts = append(opts, tracer.Tag(ext.CassandraKeyspace, p.keyspace))
+	}
+	if p.consistency != "" {
+		opts = append(opts, tracer.Tag(ext.CassandraConsistencyLevel, p.consistency))
+	}
+	for k, v := range cfg.customTags {
+		opts = append(opts, tracer.Tag(k, v))
+	}
+	span, _ := tracer.StartSpanFromContext(ctx, cfg.batchSpanName, opts...)
+	return span
+}
+
+func commonStartSpanOptions(p params) []tracer.StartSpanOption {
+	cfg := p.config
 	opts := []ddtrace.StartSpanOption{
 		tracer.SpanType(ext.SpanTypeCassandra),
-		tracer.ServiceName(p.config.serviceName),
-		tracer.ResourceName(p.config.resourceName),
-		tracer.Tag(ext.CassandraConsistencyLevel, tb.Cons.String()),
-		tracer.Tag(ext.CassandraKeyspace, tb.Keyspace()),
+		tracer.ServiceName(cfg.serviceName),
 		tracer.Tag(ext.Component, componentName),
 		tracer.Tag(ext.SpanKind, ext.SpanKindClient),
 		tracer.Tag(ext.DBSystem, ext.DBSystemCassandra),
 	}
-	if !math.IsNaN(p.config.analyticsRate) {
-		opts = append(opts, tracer.Tag(ext.EventSampleRate, p.config.analyticsRate))
+	if p.config.resourceName != "" {
+		opts = append(opts, tracer.ResourceName(p.config.resourceName))
 	}
-	if tb.clusterContactPoints != "" {
-		opts = append(opts, tracer.Tag(ext.CassandraContactPoints, tb.clusterContactPoints))
+	if !p.startTime.IsZero() {
+		opts = append(opts, tracer.StartTime(p.startTime))
 	}
-	for k, v := range tb.config.customTags {
-		opts = append(opts, tracer.Tag(k, v))
+	if !math.IsNaN(cfg.analyticsRate) {
+		opts = append(opts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
 	}
-	span, _ := tracer.StartSpanFromContext(ctx, p.config.batchSpanName, opts...)
-	return span
+	if p.clusterContactPoints != "" {
+		opts = append(opts, tracer.Tag(ext.CassandraContactPoints, p.clusterContactPoints))
+	}
+	if p.hostInfo != nil {
+		opts = append(opts,
+			tracer.Tag(ext.TargetHost, p.hostInfo.ConnectAddress().String()),
+			tracer.Tag(ext.TargetPort, strconv.Itoa(p.hostInfo.Port())),
+		)
+		if p.hostInfo.HostID() != "" {
+			opts = append(opts, tracer.Tag(ext.CassandraHostID, p.hostInfo.HostID()))
+		}
+		if p.hostInfo.ClusterName() != "" {
+			opts = append(opts, tracer.Tag(ext.CassandraCluster, p.hostInfo.ClusterName()))
+		}
+		if p.hostInfo.DataCenter() != "" {
+			opts = append(opts, tracer.Tag(ext.CassandraDatacenter, p.hostInfo.DataCenter()))
+		}
+	}
+	return opts
 }
 
-func (tb *Batch) finishSpan(span ddtrace.Span, err error) {
-	if err != nil && tb.params.config.shouldIgnoreError(err) {
+func finishSpan(span ddtrace.Span, err error, p params) {
+	if err != nil && p.config.shouldIgnoreError(err) {
 		err = nil
 	}
-	if tb.params.config.noDebugStack {
-		span.Finish(tracer.WithError(err), tracer.NoDebugStack())
-	} else {
-		span.Finish(tracer.WithError(err))
+	opts := []ddtrace.FinishOption{
+		tracer.WithError(err),
 	}
+	if !p.finishTime.IsZero() {
+		opts = append(opts, tracer.FinishTime(p.finishTime))
+	}
+	if p.config.noDebugStack {
+		opts = append(opts, tracer.NoDebugStack())
+	}
+	span.Finish(opts...)
 }

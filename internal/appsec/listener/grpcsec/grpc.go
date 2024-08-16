@@ -17,6 +17,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/sharedsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener/httpsec"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener/ossec"
 	shared "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener/sharedsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener/sqlsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
@@ -41,6 +42,9 @@ var supportedAddresses = listener.AddressSet{
 	httpsec.HTTPClientIPAddr:      {},
 	httpsec.UserIDAddr:            {},
 	httpsec.ServerIoNetURLAddr:    {},
+	ossec.ServerIOFSFileAddr:      {},
+	sqlsec.ServerDBStatementAddr:  {},
+	sqlsec.ServerDBTypeAddr:       {},
 }
 
 // Install registers the gRPC WAF Event Listener on the given root operation.
@@ -113,8 +117,12 @@ func (l *wafEventListener) onEvent(op *types.HandlerOperation, handlerArgs types
 		return
 	}
 
-	if l.isSecAddressListened(httpsec.ServerIoNetURLAddr) {
+	if httpsec.SSRFAddressesPresent(l.addresses) {
 		httpsec.RegisterRoundTripperListener(op, &op.SecurityEventsHolder, wafCtx, l.limiter)
+	}
+
+	if ossec.OSAddressesPresent(l.addresses) {
+		ossec.RegisterOpenListener(op, &op.SecurityEventsHolder, wafCtx, l.limiter)
 	}
 
 	if sqlsec.SQLAddressesPresent(l.addresses) {
