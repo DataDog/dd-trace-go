@@ -672,9 +672,8 @@ func TestRASPLFI(t *testing.T) {
 			Perms: fs.FileMode(0),
 		})
 
-		var x any = file
-		defer dyngo.FinishOperation(op, ossec.OpenOperationRes{
-			File: &x,
+		defer dyngo.FinishOperation(op, ossec.OpenOperationRes[*os.File]{
+			File: &file,
 			Err:  &err,
 		})
 

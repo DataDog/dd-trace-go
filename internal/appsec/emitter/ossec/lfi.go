@@ -29,13 +29,13 @@ type (
 	}
 
 	// OpenOperationRes is the result of an open operation
-	OpenOperationRes struct {
+	OpenOperationRes[File any] struct {
 		// File is the file descriptor returned by the open(2) syscall
-		File *any
+		File *File
 		// Err is the error returned by the function
 		Err *error
 	}
 )
 
-func (OpenOperationArgs) IsArgOf(*OpenOperation)   {}
-func (OpenOperationRes) IsResultOf(*OpenOperation) {}
+func (OpenOperationArgs) IsArgOf(*OpenOperation)         {}
+func (OpenOperationRes[File]) IsResultOf(*OpenOperation) {}

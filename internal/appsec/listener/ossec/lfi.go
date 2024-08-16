@@ -6,6 +6,8 @@
 package ossec
 
 import (
+	"os"
+
 	"github.com/DataDog/appsec-internal-go/limiter"
 	waf "github.com/DataDog/go-libddwaf/v3"
 
@@ -28,7 +30,7 @@ func RegisterOpenListener(op dyngo.Operation, eventsHolder *trace.SecurityEvents
 
 	dyngo.On(op, func(op *ossec.OpenOperation, args ossec.OpenOperationArgs) {
 		dyngo.OnData(op, func(e *events.BlockingSecurityEvent) {
-			dyngo.OnFinish(op, func(op *ossec.OpenOperation, res ossec.OpenOperationRes) {
+			dyngo.OnFinish(op, func(_ *ossec.OpenOperation, res ossec.OpenOperationRes[*os.File]) {
 				if res.Err != nil {
 					*res.Err = e
 				}
