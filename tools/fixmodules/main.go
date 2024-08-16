@@ -126,6 +126,10 @@ func main() {
 
 		replacesSet := make(map[string]Replace)
 		for _, im := range imports {
+			if im == mod.Module.Path {
+				// exclude self
+				continue
+			}
 			// it's a local module
 			_, ok := allModules[im]
 			if ok {
