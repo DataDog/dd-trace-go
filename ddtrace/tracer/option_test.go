@@ -258,7 +258,7 @@ func TestAgentIntegration(t *testing.T) {
 		defer clearIntegrationsForTests()
 
 		cfg.loadContribIntegrations(nil)
-		assert.Equal(t, 57, len(cfg.integrations))
+		assert.Equal(t, 56, len(cfg.integrations))
 		for integrationName, v := range cfg.integrations {
 			assert.False(t, v.Instrumented, "integrationName=%s", integrationName)
 		}
@@ -303,39 +303,6 @@ func TestAgentIntegration(t *testing.T) {
 		cfg.loadContribIntegrations(deps)
 		assert.True(t, cfg.integrations["gRPC"].Available)
 		assert.Equal(t, cfg.integrations["gRPC"].Version, "v1.520")
-		assert.False(t, cfg.integrations["gRPC v12"].Available)
-	})
-
-	t.Run("grpc v12", func(t *testing.T) {
-		cfg := newConfig()
-		defer clearIntegrationsForTests()
-
-		d := debug.Module{
-			Path:    "google.golang.org/grpc",
-			Version: "v1.10",
-		}
-
-		deps := []*debug.Module{&d}
-		cfg.loadContribIntegrations(deps)
-		assert.True(t, cfg.integrations["gRPC v12"].Available)
-		assert.Equal(t, cfg.integrations["gRPC v12"].Version, "v1.10")
-		assert.False(t, cfg.integrations["gRPC"].Available)
-	})
-
-	t.Run("grpc bad", func(t *testing.T) {
-		cfg := newConfig()
-		defer clearIntegrationsForTests()
-
-		d := debug.Module{
-			Path:    "google.golang.org/grpc",
-			Version: "v10.10",
-		}
-
-		deps := []*debug.Module{&d}
-		cfg.loadContribIntegrations(deps)
-		assert.False(t, cfg.integrations["gRPC v12"].Available)
-		assert.Equal(t, cfg.integrations["gRPC v12"].Version, "")
-		assert.False(t, cfg.integrations["gRPC"].Available)
 	})
 
 	// ensure we clean up global state

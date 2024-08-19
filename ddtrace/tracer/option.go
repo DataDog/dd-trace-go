@@ -15,7 +15,6 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"regexp"
 	"runtime"
 	"runtime/debug"
 	"strconv"
@@ -23,6 +22,7 @@ import (
 	"time"
 
 	"golang.org/x/mod/semver"
+
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
@@ -69,7 +69,6 @@ var contribIntegrations = map[string]struct {
 	"github.com/gomodule/redigo":                    {"Redigo", false},
 	"google.golang.org/api":                         {"Google API", false},
 	"google.golang.org/grpc":                        {"gRPC", false},
-	"google.golang.org/grpc/v12":                    {"gRPC v12", false},
 	"gopkg.in/jinzhu/gorm.v1":                       {"Gorm (gopkg)", false},
 	"github.com/gorilla/mux":                        {"Gorilla Mux", false},
 	"gorm.io/gorm.v1":                               {"Gorm v1", false},
@@ -697,23 +696,6 @@ func (c *config) loadContribIntegrations(deps []*debug.Module) {
 	}
 	for _, d := range deps {
 		p := d.Path
-		// special use case, since gRPC does not update version number
-		if p == "google.golang.org/grpc" {
-			re := regexp.MustCompile(`v(\d.\d)\d*`)
-			match := re.FindStringSubmatch(d.Version)
-			if match == nil {
-				log.Warn("Unable to parse version of GRPC %v", d.Version)
-				continue
-			}
-			ver, err := strconv.ParseFloat(match[1], 32)
-			if err != nil {
-				log.Warn("Unable to parse version of GRPC %v as a float", d.Version)
-				continue
-			}
-			if ver <= 1.2 {
-				p = p + "/v12"
-			}
-		}
 		s, ok := contribIntegrations[p]
 		if !ok {
 			continue
