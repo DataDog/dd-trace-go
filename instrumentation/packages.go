@@ -26,6 +26,8 @@ const (
 	PackageDimfeldHTTPTreeMuxV5 Package = "dimfeld/httptreemux.v5"
 	PackageGoElasticSearchV6    Package = "elastic/go-elasticsearch.v6"
 	PackageEmickleiGoRestfulV3  Package = "emicklei/go-restful.v3"
+	PackageGinGonicGin          Package = "gin-gonic/gin"
+
 	// TODO: ...
 
 	PackageNetHTTP   Package = "net/http"
@@ -231,6 +233,18 @@ var packages = map[Package]PackageInfo{
 			ComponentServer: {
 				useDDServiceV0:     false,
 				buildServiceNameV0: staticName("go-restful"),
+				buildOpNameV0:      staticName("http.request"),
+				buildOpNameV1:      staticName("http.server.request"),
+			},
+		},
+	},
+	PackageGinGonicGin: {
+		TracedPackage: "github.com/gin-gonic/gin",
+		EnvVarPrefix:  "GIN",
+		naming: map[Component]componentNames{
+			ComponentServer: {
+				useDDServiceV0:     true,
+				buildServiceNameV0: staticName("gin.router"),
 				buildOpNameV0:      staticName("http.request"),
 				buildOpNameV1:      staticName("http.server.request"),
 			},

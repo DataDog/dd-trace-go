@@ -27,6 +27,7 @@ func TestNamingSchema(t *testing.T) {
 		httpTreeMuxTestCase,
 		elasticV6,
 		goRestfulV3,
+		ginGonicGin,
 		netHTTPServer,
 		netHTTPClient,
 		gomemcache,

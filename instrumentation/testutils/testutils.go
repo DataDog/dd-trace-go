@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/normalizer"
 	"github.com/DataDog/dd-trace-go/v2/internal/statsdtest"
@@ -56,6 +57,11 @@ func SetGlobalHeaderTags(t *testing.T, headers ...string) {
 		setValue(prev)
 	})
 	setValue(headers)
+}
+
+func StartAppSec(t *testing.T) {
+	appsec.Start()
+	t.Cleanup(appsec.Stop)
 }
 
 type discardLogger struct{}
