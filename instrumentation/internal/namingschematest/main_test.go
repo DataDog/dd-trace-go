@@ -29,6 +29,7 @@ func TestNamingSchema(t *testing.T) {
 		goRestfulV3,
 		ginGonicGin,
 		globalsignMgo,
+		goMongodbOrgMongoDriver,
 		netHTTPServer,
 		netHTTPClient,
 		gomemcache,

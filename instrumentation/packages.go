@@ -15,19 +15,20 @@ import (
 type Package string
 
 const (
-	Package99DesignsGQLGen      Package = "99designs/gqlgen"
-	PackageAWSSDKGo             Package = "aws/aws-sdk-go"
-	PackageAWSSDKGoV2           Package = "aws/aws-sdk-go-v2"
-	PackageBradfitzGoMemcache   Package = "bradfitz/gomemcache"
-	PackageCloudGoogleComPubsub Package = "cloud.google.com/go/pubsub.v1"
-	PackageConfluentKafkaGo     Package = "confluentinc/confluent-kafka-go/kafka"
-	PackageConfluentKafkaGoV2   Package = "confluentinc/confluent-kafka-go/kafka.v2"
-	PackageDatabaseSQL          Package = "database/sql"
-	PackageDimfeldHTTPTreeMuxV5 Package = "dimfeld/httptreemux.v5"
-	PackageGoElasticSearchV6    Package = "elastic/go-elasticsearch.v6"
-	PackageEmickleiGoRestfulV3  Package = "emicklei/go-restful.v3"
-	PackageGinGonicGin          Package = "gin-gonic/gin"
-	PackageGlobalsignMgo        Package = "globalsign/mgo"
+	Package99DesignsGQLGen         Package = "99designs/gqlgen"
+	PackageAWSSDKGo                Package = "aws/aws-sdk-go"
+	PackageAWSSDKGoV2              Package = "aws/aws-sdk-go-v2"
+	PackageBradfitzGoMemcache      Package = "bradfitz/gomemcache"
+	PackageCloudGoogleComPubsub    Package = "cloud.google.com/go/pubsub.v1"
+	PackageConfluentKafkaGo        Package = "confluentinc/confluent-kafka-go/kafka"
+	PackageConfluentKafkaGoV2      Package = "confluentinc/confluent-kafka-go/kafka.v2"
+	PackageDatabaseSQL             Package = "database/sql"
+	PackageDimfeldHTTPTreeMuxV5    Package = "dimfeld/httptreemux.v5"
+	PackageGoElasticSearchV6       Package = "elastic/go-elasticsearch.v6"
+	PackageEmickleiGoRestfulV3     Package = "emicklei/go-restful.v3"
+	PackageGinGonicGin             Package = "gin-gonic/gin"
+	PackageGlobalsignMgo           Package = "globalsign/mgo"
+	PackageGoMongoDBOrgMongoDriver Package = "go.mongodb.org/mongo-driver"
 	// TODO: ...
 
 	PackageNetHTTP   Package = "net/http"
@@ -262,6 +263,18 @@ var packages = map[Package]PackageInfo{
 			},
 		},
 	},
+	PackageGoMongoDBOrgMongoDriver: {
+		TracedPackage: "go.mongodb.org/mongo-driver",
+		EnvVarPrefix:  "MONGO",
+		naming: map[Component]componentNames{
+			ComponentDefault: {
+				useDDServiceV0:     false,
+				buildServiceNameV0: staticName("mongo"),
+				buildOpNameV0:      staticName("mongodb.query"),
+				buildOpNameV1:      staticName("mongodb.query"),
+			},
+		},
+	},
 	PackageNetHTTP: {
 		TracedPackage: "net/http",
 		EnvVarPrefix:  "HTTP",
@@ -273,6 +286,7 @@ var packages = map[Package]PackageInfo{
 				buildOpNameV1:      staticName("http.server.request"),
 			},
 			ComponentClient: {
+				useDDServiceV0:     false,
 				buildServiceNameV0: staticName(""),
 				buildOpNameV0:      staticName("http.request"),
 				buildOpNameV1:      staticName("http.client.request"),

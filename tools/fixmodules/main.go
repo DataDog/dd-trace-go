@@ -130,10 +130,18 @@ func main() {
 				// exclude self
 				continue
 			}
+			// the module name and the import path might be different (when the imported package is a sub-package)
+			importModule := im
+			if strings.HasPrefix(im, "github.com/DataDog/dd-trace-go") {
+				if left, _, ok := strings.Cut(im, "/v2"); ok {
+					fmt.Println(left)
+					importModule = left + "/v2"
+				}
+			}
 			// it's a local module
-			_, ok := allModules[im]
+			_, ok := allModules[importModule]
 			if ok {
-				rep := getLocalReplace(allModules, modPath, im)
+				rep := getLocalReplace(allModules, modPath, importModule)
 				replacesSet[rep.Old.Path] = rep
 			}
 		}

@@ -8,11 +8,8 @@ package mongo
 import (
 	"math"
 
-	"github.com/DataDog/dd-trace-go/v2/internal"
-	"github.com/DataDog/dd-trace-go/v2/internal/namingschema"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 )
-
-const defaultServiceName = "mongo"
 
 type config struct {
 	serviceName   string
@@ -33,14 +30,9 @@ func (fn OptionFn) apply(cfg *config) {
 }
 
 func defaults(cfg *config) {
-	cfg.serviceName = namingschema.ServiceNameOverrideV0(defaultServiceName, defaultServiceName)
-	cfg.spanName = namingschema.OpName(namingschema.MongoDBOutbound)
-	// cfg.analyticsRate = globalconfig.AnalyticsRate()
-	if internal.BoolEnv("DD_TRACE_MONGO_ANALYTICS_ENABLED", false) {
-		cfg.analyticsRate = 1.0
-	} else {
-		cfg.analyticsRate = math.NaN()
-	}
+	cfg.serviceName = instr.ServiceName(instrumentation.ComponentDefault, nil)
+	cfg.spanName = instr.OperationName(instrumentation.ComponentDefault, nil)
+	cfg.analyticsRate = instr.AnalyticsRate(false)
 }
 
 // WithService sets the given service name for the dialled connection.
