@@ -15,20 +15,22 @@ import (
 type Package string
 
 const (
-	Package99DesignsGQLGen         Package = "99designs/gqlgen"
-	PackageAWSSDKGo                Package = "aws/aws-sdk-go"
-	PackageAWSSDKGoV2              Package = "aws/aws-sdk-go-v2"
-	PackageBradfitzGoMemcache      Package = "bradfitz/gomemcache"
-	PackageCloudGoogleComPubsub    Package = "cloud.google.com/go/pubsub.v1"
-	PackageConfluentKafkaGo        Package = "confluentinc/confluent-kafka-go/kafka"
-	PackageConfluentKafkaGoV2      Package = "confluentinc/confluent-kafka-go/kafka.v2"
-	PackageDatabaseSQL             Package = "database/sql"
-	PackageDimfeldHTTPTreeMuxV5    Package = "dimfeld/httptreemux.v5"
-	PackageGoElasticSearchV6       Package = "elastic/go-elasticsearch.v6"
-	PackageEmickleiGoRestfulV3     Package = "emicklei/go-restful.v3"
-	PackageGinGonicGin             Package = "gin-gonic/gin"
-	PackageGlobalsignMgo           Package = "globalsign/mgo"
-	PackageGoMongoDBOrgMongoDriver Package = "go.mongodb.org/mongo-driver"
+	Package99DesignsGQLGen      Package = "99designs/gqlgen"
+	PackageAWSSDKGo             Package = "aws/aws-sdk-go"
+	PackageAWSSDKGoV2           Package = "aws/aws-sdk-go-v2"
+	PackageBradfitzGoMemcache   Package = "bradfitz/gomemcache"
+	PackageGCPPubsub            Package = "cloud.google.com/go/pubsub.v1"
+	PackageConfluentKafkaGo     Package = "confluentinc/confluent-kafka-go/kafka"
+	PackageConfluentKafkaGoV2   Package = "confluentinc/confluent-kafka-go/kafka.v2"
+	PackageDatabaseSQL          Package = "database/sql"
+	PackageDimfeldHTTPTreeMuxV5 Package = "dimfeld/httptreemux.v5"
+	PackageGoElasticSearchV6    Package = "elastic/go-elasticsearch.v6"
+	PackageEmickleiGoRestfulV3  Package = "emicklei/go-restful.v3"
+	PackageGin                  Package = "gin-gonic/gin"
+	PackageGlobalsignMgo        Package = "globalsign/mgo"
+	PackageMongoDriver          Package = "go.mongodb.org/mongo-driver"
+	PackageChi                  Package = "go-chi/chi"
+	PackageChiV5                Package = "go-chi/chi.v5"
 	// TODO: ...
 
 	PackageNetHTTP   Package = "net/http"
@@ -128,7 +130,7 @@ var packages = map[Package]PackageInfo{
 			},
 		},
 	},
-	PackageCloudGoogleComPubsub: {
+	PackageGCPPubsub: {
 		TracedPackage: "cloud.google.com/go/pubsub",
 		EnvVarPrefix:  "GCP_PUBSUB",
 		naming: map[Component]componentNames{
@@ -239,7 +241,7 @@ var packages = map[Package]PackageInfo{
 			},
 		},
 	},
-	PackageGinGonicGin: {
+	PackageGin: {
 		TracedPackage: "github.com/gin-gonic/gin",
 		EnvVarPrefix:  "GIN",
 		naming: map[Component]componentNames{
@@ -263,7 +265,7 @@ var packages = map[Package]PackageInfo{
 			},
 		},
 	},
-	PackageGoMongoDBOrgMongoDriver: {
+	PackageMongoDriver: {
 		TracedPackage: "go.mongodb.org/mongo-driver",
 		EnvVarPrefix:  "MONGO",
 		naming: map[Component]componentNames{
@@ -272,6 +274,30 @@ var packages = map[Package]PackageInfo{
 				buildServiceNameV0: staticName("mongo"),
 				buildOpNameV0:      staticName("mongodb.query"),
 				buildOpNameV1:      staticName("mongodb.query"),
+			},
+		},
+	},
+	PackageChi: {
+		TracedPackage: "github.com/go-chi/chi",
+		EnvVarPrefix:  "CHI",
+		naming: map[Component]componentNames{
+			ComponentServer: {
+				useDDServiceV0:     true,
+				buildServiceNameV0: staticName("chi.router"),
+				buildOpNameV0:      staticName("http.request"),
+				buildOpNameV1:      staticName("http.server.request"),
+			},
+		},
+	},
+	PackageChiV5: {
+		TracedPackage: "github.com/go-chi/chi/v5",
+		EnvVarPrefix:  "CHI",
+		naming: map[Component]componentNames{
+			ComponentServer: {
+				useDDServiceV0:     true,
+				buildServiceNameV0: staticName("chi.router"),
+				buildOpNameV0:      staticName("http.request"),
+				buildOpNameV1:      staticName("http.server.request"),
 			},
 		},
 	},

@@ -24,7 +24,7 @@ const componentName = "gin-gonic/gin"
 var instr *instrumentation.Instrumentation
 
 func init() {
-	instr = instrumentation.Load(instrumentation.PackageGinGonicGin)
+	instr = instrumentation.Load(instrumentation.PackageGin)
 }
 
 // Middleware returns middleware that will trace incoming requests. If service is empty then the

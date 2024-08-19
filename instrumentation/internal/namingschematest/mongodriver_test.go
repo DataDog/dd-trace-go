@@ -17,8 +17,8 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 )
 
-var goMongodbOrgMongoDriver = harness.TestCase{
-	Name: instrumentation.PackageGoMongoDBOrgMongoDriver,
+var mongoDriverTest = harness.TestCase{
+	Name: instrumentation.PackageMongoDriver,
 	GenSpans: func(t *testing.T, serviceOverride string) []*mocktracer.Span {
 		var opts []mongotrace.Option
 		if serviceOverride != "" {
