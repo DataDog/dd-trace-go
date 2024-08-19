@@ -28,6 +28,7 @@ func TestNamingSchema(t *testing.T) {
 		elasticV6,
 		goRestfulV3,
 		ginGonicGin,
+		globalsignMgo,
 		netHTTPServer,
 		netHTTPClient,
 		gomemcache,
