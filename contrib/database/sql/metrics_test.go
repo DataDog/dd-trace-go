@@ -8,59 +8,28 @@ package sql
 import (
 	"testing"
 
-	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/stretchr/testify/assert"
 )
 
-func (cfg *config) applyTags() {
+func applyTags(cfg *config) {
 	cfg.serviceName = "my-svc"
 	cfg.tags = make(map[string]interface{})
 	cfg.tags["tag"] = "value"
 }
 
-func setGlobalCfgTags() {
-	globalconfig.SetStatsTags([]string{"globaltag:globalvalue"})
-}
-
-func resetGlobalConfig() {
-	globalconfig.SetStatsTags([]string{})
-}
-
 // Test that statsTags(*config) returns tags from the provided *config + whatever is on the globalconfig
 func TestStatsTags(t *testing.T) {
 	t.Run("default none", func(t *testing.T) {
-		resetGlobalConfig()
 		cfg := new(config)
-		tags := statsTags(cfg)
+		tags := cfg.statsdExtraTags()
 		assert.Len(t, tags, 0)
 	})
-	t.Run("cfg only", func(t *testing.T) {
-		resetGlobalConfig()
+	t.Run("add tags from config", func(t *testing.T) {
 		cfg := new(config)
-		cfg.applyTags()
-		tags := statsTags(cfg)
+		applyTags(cfg)
+		tags := cfg.statsdExtraTags()
 		assert.Len(t, tags, 2)
 		assert.Contains(t, tags, "service:my-svc")
 		assert.Contains(t, tags, "tag:value")
 	})
-	t.Run("inherit globalconfig", func(t *testing.T) {
-		resetGlobalConfig()
-		cfg := new(config)
-		setGlobalCfgTags()
-		tags := statsTags(cfg)
-		assert.Len(t, tags, 1)
-		assert.Contains(t, tags, "globaltag:globalvalue")
-	})
-	t.Run("both", func(t *testing.T) {
-		resetGlobalConfig()
-		cfg := new(config)
-		cfg.applyTags()
-		setGlobalCfgTags()
-		tags := statsTags(cfg)
-		assert.Len(t, tags, 3)
-		assert.Contains(t, tags, "globaltag:globalvalue")
-		assert.Contains(t, tags, "service:my-svc")
-		assert.Contains(t, tags, "tag:value")
-	})
-	resetGlobalConfig()
 }

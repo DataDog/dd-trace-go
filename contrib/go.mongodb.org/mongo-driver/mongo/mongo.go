@@ -18,8 +18,7 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
-	"github.com/DataDog/dd-trace-go/v2/internal/log"
-	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/event"
@@ -27,9 +26,10 @@ import (
 
 const componentName = "go.mongodb.org/mongo-driver/mongo"
 
+var instr *instrumentation.Instrumentation
+
 func init() {
-	telemetry.LoadIntegration(componentName)
-	tracer.MarkIntegrationImported("go.mongodb.org/mongo-driver")
+	instr = instrumentation.Load(instrumentation.PackageGoMongoDBOrgMongoDriver)
 }
 
 type spanKey struct {
@@ -105,7 +105,7 @@ func NewMonitor(opts ...Option) *event.CommandMonitor {
 	for _, opt := range opts {
 		opt.apply(cfg)
 	}
-	log.Debug("contrib/go.mongodb.org/mongo-driver/mongo: Creating Monitor: %#v", cfg)
+	instr.Logger().Debug("contrib/go.mongodb.org/mongo-driver/mongo: Creating Monitor: %#v", cfg)
 	m := &monitor{
 		spans: make(map[spanKey]*tracer.Span),
 		cfg:   cfg,

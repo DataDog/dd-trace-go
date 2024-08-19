@@ -14,7 +14,6 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/options"
-	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
 var _ driver.Conn = (*TracedConn)(nil)
@@ -255,7 +254,7 @@ func (tc *TracedConn) injectComments(ctx context.Context, query string, mode tra
 	carrier := tracer.SQLCommentCarrier{Query: query, Mode: mode, DBServiceName: tc.cfg.serviceName, PeerDBHostname: tc.meta[ext.TargetHost], PeerDBName: tc.meta[ext.DBName]}
 	if err := carrier.Inject(spanCtx); err != nil {
 		// this should never happen
-		log.Warn("contrib/database/sql: failed to inject query comments: %v", err)
+		instr.Logger().Warn("contrib/database/sql: failed to inject query comments: %v", err)
 	}
 	return carrier.Query, carrier.SpanID
 }

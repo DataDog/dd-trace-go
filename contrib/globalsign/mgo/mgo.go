@@ -11,19 +11,19 @@ import (
 	"net"
 	"strings"
 
+	"github.com/globalsign/mgo"
+
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
-	"github.com/DataDog/dd-trace-go/v2/internal/log"
-	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
-
-	"github.com/globalsign/mgo"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 )
 
 const componentName = "globalsign/mgo"
 
+var instr *instrumentation.Instrumentation
+
 func init() {
-	telemetry.LoadIntegration(componentName)
-	tracer.MarkIntegrationImported("github.com/globalsign/mgo")
+	instr = instrumentation.Load(instrumentation.PackageGlobalsignMgo)
 }
 
 // Dial opens a connection to a MongoDB server and configures it
@@ -61,7 +61,7 @@ func Dial(url string, opts ...DialOption) (*Session, error) {
 	for _, fn := range opts {
 		fn.apply(s.cfg)
 	}
-	log.Debug("contrib/globalsign/mgo: Dialing: %s, %#v", url, s.cfg)
+	instr.Logger().Debug("contrib/globalsign/mgo: Dialing: %s, %#v", url, s.cfg)
 	return s, err
 }
 

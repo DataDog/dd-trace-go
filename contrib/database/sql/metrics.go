@@ -9,9 +9,7 @@ import (
 	"database/sql"
 	"time"
 
-	"github.com/DataDog/dd-trace-go/v2/internal"
-	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
-	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 )
 
 const tracerPrefix = "datadog.tracer."
@@ -33,10 +31,10 @@ var interval = 10 * time.Second
 
 // pollDBStats calls (*DB).Stats on the db at a predetermined interval. It pushes the DBStats off to the statsd client.
 // the caller should always ensure that db & statsd are non-nil
-func pollDBStats(statsd internal.StatsdClient, db *sql.DB) {
-	log.Debug("DB stats will be gathered and sent every %v.", interval)
+func pollDBStats(statsd instrumentation.StatsdClient, db *sql.DB) {
+	instr.Logger().Debug("DB stats will be gathered and sent every %v.", interval)
 	for range time.NewTicker(interval).C {
-		log.Debug("Reporting DB.Stats metrics...")
+		instr.Logger().Debug("Reporting DB.Stats metrics...")
 		stat := db.Stats()
 		statsd.Gauge(MaxOpenConnections, float64(stat.MaxOpenConnections), []string{}, 1)
 		statsd.Gauge(OpenConnections, float64(stat.OpenConnections), []string{}, 1)
@@ -50,8 +48,8 @@ func pollDBStats(statsd internal.StatsdClient, db *sql.DB) {
 	}
 }
 
-func statsTags(c *config) []string {
-	tags := globalconfig.StatsTags()
+func (c *config) statsdExtraTags() []string {
+	var tags []string
 	if c.serviceName != "" {
 		tags = append(tags, "service:"+c.serviceName)
 	}

@@ -9,11 +9,8 @@ import (
 	"context"
 	"math"
 
-	"github.com/DataDog/dd-trace-go/v2/internal"
-	"github.com/DataDog/dd-trace-go/v2/internal/namingschema"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 )
-
-const defaultServiceName = "mongodb"
 
 type mongoConfig struct {
 	ctx           context.Context
@@ -23,16 +20,11 @@ type mongoConfig struct {
 }
 
 func newConfig() *mongoConfig {
-	rate := math.NaN()
-	if internal.BoolEnv("DD_TRACE_GIN_ANALYTICS_ENABLED", false) {
-		rate = 1.0
-	}
 	return &mongoConfig{
-		serviceName: namingschema.ServiceNameOverrideV0(defaultServiceName, defaultServiceName),
-		spanName:    namingschema.OpName(namingschema.MongoDBOutbound),
-		ctx:         context.Background(),
-		// analyticsRate: globalconfig.AnalyticsRate(),
-		analyticsRate: rate,
+		serviceName:   instr.ServiceName(instrumentation.ComponentDefault, nil),
+		spanName:      instr.OperationName(instrumentation.ComponentDefault, nil),
+		ctx:           context.Background(),
+		analyticsRate: instr.AnalyticsRate(false),
 	}
 }
 

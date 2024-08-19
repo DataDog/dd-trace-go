@@ -16,7 +16,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
-	"github.com/DataDog/dd-trace-go/v2/internal/contrib/sqltest"
+	sqltest "github.com/DataDog/dd-trace-go/v2/instrumentation/testutils/sql"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 
 	"github.com/go-sql-driver/mysql"

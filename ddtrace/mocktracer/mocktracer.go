@@ -26,6 +26,9 @@ import (
 var _ tracer.Tracer = (*mocktracer)(nil)
 var _ Tracer = (*mocktracer)(nil)
 
+// DSMBacklog is an alias to datastreams.Backlog
+type DSMBacklog = datastreams.Backlog
+
 // Tracer exposes an interface for querying the currently running mock tracer.
 type Tracer interface {
 	tracer.Tracer
@@ -37,7 +40,7 @@ type Tracer interface {
 	// FinishedSpans returns the set of finished spans.
 	FinishedSpans() []*Span
 
-	SentDSMBacklogs() []datastreams.Backlog
+	SentDSMBacklogs() []DSMBacklog
 
 	// Reset resets the spans and services recorded in the tracer. This is
 	// especially useful when running tests in a loop, where a clean start
@@ -71,7 +74,7 @@ type mocktracer struct {
 	dsmProcessor  *datastreams.Processor
 }
 
-func (t *mocktracer) SentDSMBacklogs() []datastreams.Backlog {
+func (t *mocktracer) SentDSMBacklogs() []DSMBacklog {
 	t.dsmProcessor.Flush()
 	return t.dsmTransport.backlogs
 }

@@ -1,11 +1,13 @@
 package testutils
 
 import (
-	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
-	"github.com/DataDog/dd-trace-go/v2/internal/normalizer"
 	"testing"
 
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
+	"github.com/DataDog/dd-trace-go/v2/internal/normalizer"
+	"github.com/DataDog/dd-trace-go/v2/internal/statsdtest"
 )
 
 func SetGlobalServiceName(t *testing.T, val string) {
@@ -24,6 +26,15 @@ func SetGlobalAnalyticsRate(t *testing.T, val float64) {
 		globalconfig.SetAnalyticsRate(prev)
 	})
 	globalconfig.SetAnalyticsRate(val)
+}
+
+func SetGlobalDogstatsdAddr(t *testing.T, val string) {
+	t.Helper()
+	prev := globalconfig.DogstatsdAddr()
+	t.Cleanup(func() {
+		globalconfig.SetDogstatsdAddr(prev)
+	})
+	globalconfig.SetDogstatsdAddr(val)
 }
 
 func SetGlobalHeaderTags(t *testing.T, headers ...string) {
@@ -48,10 +59,21 @@ func SetGlobalHeaderTags(t *testing.T, headers ...string) {
 	setValue(headers)
 }
 
+func StartAppSec(t *testing.T) {
+	appsec.Start()
+	t.Cleanup(appsec.Stop)
+}
+
 type discardLogger struct{}
 
 func (d discardLogger) Log(_ string) {}
 
 func DiscardLogger() tracer.Logger {
 	return discardLogger{}
+}
+
+type MockStatsdClient = statsdtest.TestStatsdClient
+
+func NewMockStatsdClient() MockStatsdClient {
+	return MockStatsdClient{}
 }

@@ -10,7 +10,6 @@ require (
 	github.com/lib/pq v1.10.2
 	github.com/mattn/go-sqlite3 v1.14.16
 	github.com/stretchr/testify v1.8.4
-	honnef.co/go/gotraceui v0.2.0
 )
 
 require (

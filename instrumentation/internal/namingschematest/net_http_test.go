@@ -1,3 +1,8 @@
+// Unless explicitly stated otherwise all files in this repository are licensed
+// under the Apache License Version 2.0.
+// This product includes software developed at Datadog (https://www.datadoghq.com/).
+// Copyright 2024 Datadog, Inc.
+
 package namingschematest
 
 import (
@@ -9,14 +14,15 @@ import (
 	"github.com/stretchr/testify/require"
 
 	httptrace "github.com/DataDog/dd-trace-go/contrib/net/http/v2"
+	"github.com/DataDog/dd-trace-go/instrumentation/internal/namingschematest/harness"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 )
 
 var (
-	netHTTPServer = testCase{
-		name: instrumentation.PackageNetHTTP + "_server",
-		genSpans: func(t *testing.T, serviceOverride string) []*mocktracer.Span {
+	netHTTPServer = harness.TestCase{
+		Name: instrumentation.PackageNetHTTP + "_server",
+		GenSpans: func(t *testing.T, serviceOverride string) []*mocktracer.Span {
 			var opts []httptrace.Option
 			if serviceOverride != "" {
 				opts = append(opts, httptrace.WithService(serviceOverride))
@@ -32,24 +38,24 @@ var (
 
 			return mt.FinishedSpans()
 		},
-		wantServiceNameV0: serviceNameAssertions{
-			defaults:        []string{"http.router"},
-			ddService:       []string{testDDService},
-			serviceOverride: []string{testServiceOverride},
+		WantServiceNameV0: harness.ServiceNameAssertions{
+			Defaults:        []string{"http.router"},
+			DDService:       []string{harness.TestDDService},
+			ServiceOverride: []string{harness.TestServiceOverride},
 		},
-		assertOpV0: func(t *testing.T, spans []*mocktracer.Span) {
+		AssertOpV0: func(t *testing.T, spans []*mocktracer.Span) {
 			require.Len(t, spans, 1)
 			assert.Equal(t, "http.request", spans[0].OperationName())
 		},
-		assertOpV1: func(t *testing.T, spans []*mocktracer.Span) {
+		AssertOpV1: func(t *testing.T, spans []*mocktracer.Span) {
 			require.Len(t, spans, 1)
 			assert.Equal(t, "http.server.request", spans[0].OperationName())
 		},
 	}
 
-	netHTTPClient = testCase{
-		name: instrumentation.PackageNetHTTP + "_client",
-		genSpans: func(t *testing.T, serviceOverride string) []*mocktracer.Span {
+	netHTTPClient = harness.TestCase{
+		Name: instrumentation.PackageNetHTTP + "_client",
+		GenSpans: func(t *testing.T, serviceOverride string) []*mocktracer.Span {
 			var opts []httptrace.RoundTripperOption
 			if serviceOverride != "" {
 				opts = append(opts, httptrace.WithService(serviceOverride))
@@ -69,16 +75,16 @@ var (
 
 			return mt.FinishedSpans()
 		},
-		wantServiceNameV0: serviceNameAssertions{
-			defaults:        []string{""},
-			ddService:       []string{""},
-			serviceOverride: []string{testServiceOverride},
+		WantServiceNameV0: harness.ServiceNameAssertions{
+			Defaults:        []string{""},
+			DDService:       []string{""},
+			ServiceOverride: []string{harness.TestServiceOverride},
 		},
-		assertOpV0: func(t *testing.T, spans []*mocktracer.Span) {
+		AssertOpV0: func(t *testing.T, spans []*mocktracer.Span) {
 			require.Len(t, spans, 1)
 			assert.Equal(t, "http.request", spans[0].OperationName())
 		},
-		assertOpV1: func(t *testing.T, spans []*mocktracer.Span) {
+		AssertOpV1: func(t *testing.T, spans []*mocktracer.Span) {
 			require.Len(t, spans, 1)
 			assert.Equal(t, "http.client.request", spans[0].OperationName())
 		},

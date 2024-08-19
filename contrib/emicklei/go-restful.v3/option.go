@@ -8,30 +8,20 @@ package restful
 import (
 	"math"
 
-	"github.com/DataDog/dd-trace-go/v2/internal"
-	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
-	"github.com/DataDog/dd-trace-go/v2/internal/namingschema"
-	"github.com/DataDog/dd-trace-go/v2/internal/normalizer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 )
-
-const defaultServiceName = "go-restful"
 
 type config struct {
 	serviceName   string
 	analyticsRate float64
-	headerTags    *internal.LockMap
+	headerTags    instrumentation.HeaderTags
 }
 
 func newConfig() *config {
-	rate := globalconfig.AnalyticsRate()
-	if internal.BoolEnv("DD_TRACE_RESTFUL_ANALYTICS_ENABLED", false) {
-		rate = 1.0
-	}
-	serviceName := namingschema.ServiceNameOverrideV0(defaultServiceName, defaultServiceName)
 	return &config{
-		serviceName:   serviceName,
-		analyticsRate: rate,
-		headerTags:    globalconfig.HeaderTagMap(),
+		serviceName:   instr.ServiceName(instrumentation.ComponentServer, nil),
+		analyticsRate: instr.AnalyticsRate(true),
+		headerTags:    instr.HTTPHeadersAsTags(),
 	}
 }
 
@@ -82,8 +72,7 @@ func WithAnalyticsRate(rate float64) OptionFn {
 // Using this feature can risk exposing sensitive data such as authorization tokens to Datadog.
 // Special headers can not be sub-selected. E.g., an entire Cookie header would be transmitted, without the ability to choose specific Cookies.
 func WithHeaderTags(headers []string) OptionFn {
-	headerTagsMap := normalizer.HeaderTagSlice(headers)
 	return func(cfg *config) {
-		cfg.headerTags = internal.NewLockMap(headerTagsMap)
+		cfg.headerTags = instrumentation.NewHeaderTags(headers)
 	}
 }

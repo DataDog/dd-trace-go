@@ -12,10 +12,8 @@ import (
 	"github.com/dimfeld/httptreemux/v5"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
-	"github.com/DataDog/dd-trace-go/v2/internal/namingschema"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 )
-
-const defaultServiceName = "http.router"
 
 type routerConfig struct {
 	serviceName   string
@@ -36,7 +34,7 @@ func (fn RouterOptionFn) apply(cfg *routerConfig) {
 }
 
 func defaults(cfg *routerConfig) {
-	cfg.serviceName = namingschema.ServiceName(defaultServiceName)
+	cfg.serviceName = instr.ServiceName(instrumentation.ComponentServer, nil)
 	cfg.resourceNamer = defaultResourceNamer
 }
 

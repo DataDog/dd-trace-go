@@ -52,10 +52,7 @@ func (o HandlerOptionFn) apply(cfg *config) {
 }
 
 func defaults(cfg *config) {
-	cfg.analyticsRate = instr.AnalyticsRate()
-	if math.IsNaN(cfg.analyticsRate) {
-		cfg.analyticsRate = instr.GlobalAnalyticsRate()
-	}
+	cfg.analyticsRate = instr.AnalyticsRate(true)
 	cfg.serviceName = instr.ServiceName(instrumentation.ComponentServer, nil)
 	cfg.headerTags = instr.HTTPHeadersAsTags()
 	cfg.spanOpts = []tracer.StartSpanOption{tracer.Measured()}
