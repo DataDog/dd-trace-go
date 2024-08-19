@@ -111,6 +111,6 @@ if [[ "$contrib" != "" ]]; then
 		sleep $sleeptime
 	fi
 
-	PACKAGE_NAMES=$(go list ./contrib/... | grep -v -e grpc.v12 -e google.golang.org/api)
+	PACKAGE_NAMES=$(go list ./contrib/... | grep -v -e google.golang.org/api)
 	nice -n20 gotestsum --junitfile ./gotestsum-report.xml -- -race -v  -coverprofile=contrib_coverage.txt -covermode=atomic $PACKAGE_NAMES
 fi
