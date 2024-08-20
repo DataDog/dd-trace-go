@@ -1,18 +1,24 @@
+// Unless explicitly stated otherwise all files in this repository are licensed
+// under the Apache License Version 2.0.
+// This product includes software developed at Datadog (https://www.datadoghq.com/).
+// Copyright 2024 Datadog, Inc.
+
 package namingschematest
 
 import (
 	"database/sql/driver"
-	sqltrace "github.com/DataDog/dd-trace-go/contrib/database/sql/v2"
-	"github.com/DataDog/dd-trace-go/instrumentation/internal/namingschematest/harness"
-	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
-	"github.com/DataDog/dd-trace-go/v2/instrumentation"
+	"testing"
+
+	mssql "github.com/denisenkom/go-mssqldb"
 	"github.com/go-sql-driver/mysql"
 	"github.com/lib/pq"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"testing"
 
-	mssql "github.com/denisenkom/go-mssqldb"
+	sqltrace "github.com/DataDog/dd-trace-go/contrib/database/sql/v2"
+	"github.com/DataDog/dd-trace-go/instrumentation/internal/namingschematest/harness"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 )
 
 func dbSQLGenSpans(driverName string, registerOverride bool) harness.GenSpansFn {

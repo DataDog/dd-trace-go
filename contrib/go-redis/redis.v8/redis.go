@@ -17,16 +17,17 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
-	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 
 	"github.com/go-redis/redis/v8"
 )
 
 const componentName = "go-redis/redis.v8"
 
+var instr *instrumentation.Instrumentation
+
 func init() {
-	telemetry.LoadIntegration(componentName)
-	tracer.MarkIntegrationImported("github.com/go-redis/redis/v8")
+	instr = instrumentation.Load(instrumentation.PackageGoRedisV8)
 }
 
 type datadogHook struct {

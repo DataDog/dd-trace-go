@@ -32,6 +32,10 @@ const (
 	PackageChi                  Package = "go-chi/chi"
 	PackageChiV5                Package = "go-chi/chi.v5"
 	PackageGoPGV10              Package = "go-pg/pg.v10"
+	PackageGoRedis              Package = "go-redis/redis"
+	PackageGoRedisV7            Package = "go-redis/redis.v7"
+	PackageGoRedisV8            Package = "go-redis/redis.v8"
+
 	// TODO: ...
 
 	PackageNetHTTP   Package = "net/http"
@@ -311,6 +315,42 @@ var packages = map[Package]PackageInfo{
 				buildServiceNameV0: staticName("gopg.db"),
 				buildOpNameV0:      staticName("go-pg"),
 				buildOpNameV1:      staticName("postgresql.query"),
+			},
+		},
+	},
+	PackageGoRedis: {
+		TracedPackage: "github.com/go-redis/redis",
+		EnvVarPrefix:  "REDIS",
+		naming: map[Component]componentNames{
+			ComponentDefault: {
+				useDDServiceV0:     false,
+				buildServiceNameV0: staticName("redis.client"),
+				buildOpNameV0:      staticName("redis.command"),
+				buildOpNameV1:      staticName("redis.command"),
+			},
+		},
+	},
+	PackageGoRedisV7: {
+		TracedPackage: "github.com/go-redis/redis/v7",
+		EnvVarPrefix:  "REDIS",
+		naming: map[Component]componentNames{
+			ComponentDefault: {
+				useDDServiceV0:     false,
+				buildServiceNameV0: staticName("redis.client"),
+				buildOpNameV0:      staticName("redis.command"),
+				buildOpNameV1:      staticName("redis.command"),
+			},
+		},
+	},
+	PackageGoRedisV8: {
+		TracedPackage: "github.com/go-redis/redis/v8",
+		EnvVarPrefix:  "REDIS",
+		naming: map[Component]componentNames{
+			ComponentDefault: {
+				useDDServiceV0:     false,
+				buildServiceNameV0: staticName("redis.client"),
+				buildOpNameV0:      staticName("redis.command"),
+				buildOpNameV1:      staticName("redis.command"),
 			},
 		},
 	},

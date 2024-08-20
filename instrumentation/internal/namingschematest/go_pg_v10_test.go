@@ -1,14 +1,21 @@
+// Unless explicitly stated otherwise all files in this repository are licensed
+// under the Apache License Version 2.0.
+// This product includes software developed at Datadog (https://www.datadoghq.com/).
+// Copyright 2024 Datadog, Inc.
+
 package namingschematest
 
 import (
+	"testing"
+
+	"github.com/go-pg/pg/v10"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	pgtrace "github.com/DataDog/dd-trace-go/contrib/go-pg/pg.v10/v2"
 	"github.com/DataDog/dd-trace-go/instrumentation/internal/namingschematest/harness"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
-	"github.com/go-pg/pg/v10"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
-	"testing"
 )
 
 var goPGv10Test = harness.TestCase{
