@@ -36,6 +36,7 @@ const (
 	PackageGoRedisV7            Package = "go-redis/redis.v7"
 	PackageGoRedisV8            Package = "go-redis/redis.v8"
 	PackageGoCQL                Package = "gocql/gocql"
+	PackageGoFiberV2            Package = "gofiber/fiber.v2"
 
 	// TODO: ...
 
@@ -369,6 +370,18 @@ var packages = map[Package]PackageInfo{
 					return "cassandra.query"
 				},
 				buildOpNameV1: staticName("cassandra.query"),
+			},
+		},
+	},
+	PackageGoFiberV2: {
+		TracedPackage: "github.com/gofiber/fiber/v2",
+		EnvVarPrefix:  "FIBER",
+		naming: map[Component]componentNames{
+			ComponentServer: {
+				useDDServiceV0:     true,
+				buildServiceNameV0: staticName("fiber"),
+				buildOpNameV0:      staticName("http.request"),
+				buildOpNameV1:      staticName("http.server.request"),
 			},
 		},
 	},
