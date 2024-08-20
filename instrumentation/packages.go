@@ -35,6 +35,7 @@ const (
 	PackageGoRedis              Package = "go-redis/redis"
 	PackageGoRedisV7            Package = "go-redis/redis.v7"
 	PackageGoRedisV8            Package = "go-redis/redis.v8"
+	PackageGoCQL                Package = "gocql/gocql"
 
 	// TODO: ...
 
@@ -351,6 +352,23 @@ var packages = map[Package]PackageInfo{
 				buildServiceNameV0: staticName("redis.client"),
 				buildOpNameV0:      staticName("redis.command"),
 				buildOpNameV1:      staticName("redis.command"),
+			},
+		},
+	},
+	PackageGoCQL: {
+		TracedPackage: "github.com/gocql/gocql",
+		EnvVarPrefix:  "GOCQL",
+		naming: map[Component]componentNames{
+			ComponentDefault: {
+				useDDServiceV0:     false,
+				buildServiceNameV0: staticName("gocql.query"),
+				buildOpNameV0: func(opCtx OperationContext) string {
+					if opCtx["operationType"] == "batch" {
+						return "cassandra.batch"
+					}
+					return "cassandra.query"
+				},
+				buildOpNameV1: staticName("cassandra.query"),
 			},
 		},
 	},

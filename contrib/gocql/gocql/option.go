@@ -8,11 +8,8 @@ package gocql
 import (
 	"math"
 
-	"github.com/DataDog/dd-trace-go/v2/internal"
-	"github.com/DataDog/dd-trace-go/v2/internal/namingschema"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 )
-
-const defaultServiceName = "gocql.query"
 
 type queryConfig struct {
 	serviceName, resourceName    string
@@ -37,15 +34,12 @@ func (fn WrapOptionFn) apply(cfg *queryConfig) {
 
 func defaultConfig() *queryConfig {
 	cfg := &queryConfig{}
-	cfg.serviceName = namingschema.ServiceNameOverrideV0(defaultServiceName, defaultServiceName)
-	cfg.querySpanName = namingschema.OpName(namingschema.CassandraOutbound)
-	cfg.batchSpanName = namingschema.OpNameOverrideV0(namingschema.CassandraOutbound, "cassandra.batch")
-	// cfg.analyticsRate = globalconfig.AnalyticsRate()
-	if internal.BoolEnv("DD_TRACE_GOCQL_ANALYTICS_ENABLED", false) {
-		cfg.analyticsRate = 1.0
-	} else {
-		cfg.analyticsRate = math.NaN()
-	}
+	cfg.serviceName = instr.ServiceName(instrumentation.ComponentDefault, nil)
+	cfg.querySpanName = instr.OperationName(instrumentation.ComponentDefault, nil)
+	cfg.batchSpanName = instr.OperationName(instrumentation.ComponentDefault, instrumentation.OperationContext{
+		"operationType": "batch",
+	})
+	cfg.analyticsRate = instr.AnalyticsRate(false)
 	cfg.errCheck = func(error) bool { return true }
 	return cfg
 }

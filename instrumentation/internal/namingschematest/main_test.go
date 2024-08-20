@@ -36,6 +36,7 @@ func TestNamingSchema(t *testing.T) {
 		goRedisV1Test,
 		goRedisV7Test,
 		goRedisV8Test,
+		gocqlTest,
 		netHTTPServer,
 		netHTTPClient,
 		gomemcache,
