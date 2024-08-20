@@ -38,6 +38,7 @@ const (
 	PackageGoCQL                Package = "gocql/gocql"
 	PackageGoFiberV2            Package = "gofiber/fiber.v2"
 	PackageRedigo               Package = "gomodule/redigo"
+	PackageGoogleAPI            Package = "google.golang.org/api"
 
 	// TODO: ...
 
@@ -398,8 +399,14 @@ var packages = map[Package]PackageInfo{
 			},
 		},
 	},
+	PackageGoogleAPI: {
+		TracedPackage: "google.golang.org/api",
+		EnvVarPrefix:  "GOOGLE_API",
+		naming:        nil, // this package does not use naming schema
+	},
 
 	// TODO
+
 	PackageNetHTTP: {
 		TracedPackage: "net/http",
 		EnvVarPrefix:  "HTTP",
