@@ -31,6 +31,7 @@ const (
 	PackageMongoDriver          Package = "go.mongodb.org/mongo-driver"
 	PackageChi                  Package = "go-chi/chi"
 	PackageChiV5                Package = "go-chi/chi.v5"
+	PackageGoPGV10              Package = "go-pg/pg.v10"
 	// TODO: ...
 
 	PackageNetHTTP   Package = "net/http"
@@ -298,6 +299,18 @@ var packages = map[Package]PackageInfo{
 				buildServiceNameV0: staticName("chi.router"),
 				buildOpNameV0:      staticName("http.request"),
 				buildOpNameV1:      staticName("http.server.request"),
+			},
+		},
+	},
+	PackageGoPGV10: {
+		TracedPackage: "github.com/go-pg/pg/v10",
+		EnvVarPrefix:  "GOPG",
+		naming: map[Component]componentNames{
+			ComponentDefault: {
+				useDDServiceV0:     true,
+				buildServiceNameV0: staticName("gopg.db"),
+				buildOpNameV0:      staticName("go-pg"),
+				buildOpNameV1:      staticName("postgresql.query"),
 			},
 		},
 	},

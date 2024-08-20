@@ -32,6 +32,7 @@ func TestNamingSchema(t *testing.T) {
 		mongoDriverTest,
 		chiV1Test,
 		chiV5Test,
+		goPGv10Test,
 		netHTTPServer,
 		netHTTPClient,
 		gomemcache,

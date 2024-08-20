@@ -8,12 +8,12 @@ package pg
 import (
 	"math"
 
-	"github.com/DataDog/dd-trace-go/v2/internal"
-	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 )
 
 type config struct {
 	serviceName   string
+	operationName string
 	analyticsRate float64
 }
 
@@ -30,17 +30,9 @@ func (fn OptionFn) apply(cfg *config) {
 }
 
 func defaults(cfg *config) {
-	service := "gopg.db"
-	if svc := globalconfig.ServiceName(); svc != "" {
-		service = svc
-	}
-	cfg.serviceName = service
-	// cfg.analyticsRate = globalconfig.AnalyticsRate()
-	if internal.BoolEnv("DD_TRACE_GOPG_ANALYTICS_ENABLED", false) {
-		cfg.analyticsRate = 1.0
-	} else {
-		cfg.analyticsRate = math.NaN()
-	}
+	cfg.serviceName = instr.ServiceName(instrumentation.ComponentDefault, nil)
+	cfg.operationName = instr.OperationName(instrumentation.ComponentDefault, nil)
+	cfg.analyticsRate = instr.AnalyticsRate(false)
 }
 
 // WithService sets the given service name for the client.
