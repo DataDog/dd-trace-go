@@ -8,8 +8,7 @@ package redigo // import "github.com/DataDog/dd-trace-go/contrib/gomodule/redigo
 import (
 	"math"
 
-	"github.com/DataDog/dd-trace-go/v2/internal"
-	"github.com/DataDog/dd-trace-go/v2/internal/namingschema"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 )
 
 type dialConfig struct {
@@ -18,8 +17,6 @@ type dialConfig struct {
 	analyticsRate  float64
 	connectionType int
 }
-
-const defaultServiceName = "redis.conn"
 
 const (
 	connectionTypeWithTimeout = iota
@@ -40,14 +37,9 @@ func (fn DialOptionFn) apply(cfg *dialConfig) {
 }
 
 func defaults(cfg *dialConfig) {
-	cfg.serviceName = namingschema.ServiceNameOverrideV0(defaultServiceName, defaultServiceName)
-	cfg.spanName = namingschema.OpName(namingschema.RedisOutbound)
-	// cfg.analyticsRate = globalconfig.AnalyticsRate()
-	if internal.BoolEnv("DD_TRACE_REDIGO_ANALYTICS_ENABLED", false) {
-		cfg.analyticsRate = 1.0
-	} else {
-		cfg.analyticsRate = math.NaN()
-	}
+	cfg.serviceName = instr.ServiceName(instrumentation.ComponentDefault, nil)
+	cfg.spanName = instr.OperationName(instrumentation.ComponentDefault, nil)
+	cfg.analyticsRate = instr.AnalyticsRate(false)
 
 	// Default to withTimeout to maintain backwards compatibility.
 	cfg.connectionType = connectionTypeWithTimeout

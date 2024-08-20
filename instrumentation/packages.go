@@ -37,6 +37,7 @@ const (
 	PackageGoRedisV8            Package = "go-redis/redis.v8"
 	PackageGoCQL                Package = "gocql/gocql"
 	PackageGoFiberV2            Package = "gofiber/fiber.v2"
+	PackageRedigo               Package = "gomodule/redigo"
 
 	// TODO: ...
 
@@ -385,6 +386,20 @@ var packages = map[Package]PackageInfo{
 			},
 		},
 	},
+	PackageRedigo: {
+		TracedPackage: "github.com/gomodule/redigo",
+		EnvVarPrefix:  "REDIGO",
+		naming: map[Component]componentNames{
+			ComponentDefault: {
+				useDDServiceV0:     false,
+				buildServiceNameV0: staticName("redis.conn"),
+				buildOpNameV0:      staticName("redis.command"),
+				buildOpNameV1:      staticName("redis.command"),
+			},
+		},
+	},
+
+	// TODO
 	PackageNetHTTP: {
 		TracedPackage: "net/http",
 		EnvVarPrefix:  "HTTP",
