@@ -38,6 +38,7 @@ const (
 	PackageUrfaveNegroni   Package = "urfave/negroni"
 	PackageTwitchTVTwirp   Package = "twitchtv/twirp"
 	PackageTidwallBuntDB   Package = "tidwall/buntdb"
+	PackageSyndtrGoLevelDB Package = "syndtr/goleveldb/leveldb"
 )
 
 type Component int
@@ -352,6 +353,18 @@ var packages = map[Package]PackageInfo{
 				buildServiceNameV0: staticName("buntdb"),
 				buildOpNameV0:      staticName("buntdb.query"),
 				buildOpNameV1:      staticName("buntdb.query"),
+			},
+		},
+	},
+	PackageSyndtrGoLevelDB: {
+		TracedPackage: "syndtr/goleveldb/leveldb",
+		EnvVarPrefix:  "LEVELDB",
+		naming: map[Component]componentNames{
+			ComponentDefault: {
+				useDDServiceV0:     false,
+				buildServiceNameV0: staticName("leveldb"),
+				buildOpNameV0:      staticName("leveldb.query"),
+				buildOpNameV1:      staticName("leveldb.query"),
 			},
 		},
 	},
