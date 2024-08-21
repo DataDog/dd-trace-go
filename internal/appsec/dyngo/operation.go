@@ -22,12 +22,17 @@ package dyngo
 
 import (
 	"context"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/orchestrion"
 	"sync"
+	"sync/atomic"
 
-	"go.uber.org/atomic"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/orchestrion"
 )
+
+// LogError is the function used to log errors in the dyngo package.
+// This is required because we really want to be able to log errors from dyngo
+// but the log package depend on too much packages that we want to instrument.
+// So we need to do this to avoid dependency cycles.
+var LogError = func(string, ...any) {}
 
 // Operation interface type allowing to register event listeners to the
 // operation. The event listeners will be automatically removed from the
@@ -179,7 +184,7 @@ func StartAndRegisterOperation[O Operation, E ArgOf[O]](ctx context.Context, op 
 // should call this function to ensure the operation is properly linked in the context tree.
 func RegisterOperation(ctx context.Context, op Operation) context.Context {
 	op.unwrap().inContext = true
-	return context.WithValue(ctx, contextKey{}, op)
+	return orchestrion.CtxWithValue(ctx, contextKey{}, op)
 }
 
 // FinishOperation finishes the operation along with its results and emits a
@@ -317,7 +322,7 @@ func (b *dataBroadcaster) clear() {
 func emitData[T any](b *dataBroadcaster, v T) {
 	defer func() {
 		if r := recover(); r != nil {
-			log.Error("appsec: recovered from an unexpected panic from an event listener: %+v", r)
+			LogError("appsec: recovered from an unexpected panic from an event listener: %+v", r)
 		}
 	}()
 	b.mu.RLock()
@@ -348,7 +353,7 @@ func (r *eventRegister) clear() {
 func emitEvent[O Operation, T any](r *eventRegister, op O, v T) {
 	defer func() {
 		if r := recover(); r != nil {
-			log.Error("appsec: recovered from an unexpected panic from an event listener: %+v", r)
+			LogError("appsec: recovered from an unexpected panic from an event listener: %+v", r)
 		}
 	}()
 	r.mu.RLock()
