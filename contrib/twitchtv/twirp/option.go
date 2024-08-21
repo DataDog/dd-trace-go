@@ -8,14 +8,7 @@ package twirp
 import (
 	"math"
 
-	"github.com/DataDog/dd-trace-go/v2/internal"
-	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
-	"github.com/DataDog/dd-trace-go/v2/internal/namingschema"
-)
-
-const (
-	defaultClientServiceName = "twirp-client"
-	defaultServerServiceName = "twirp-server"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 )
 
 type config struct {
@@ -37,21 +30,17 @@ func (fn OptionFn) apply(cfg *config) {
 }
 
 func defaults(cfg *config) {
-	if internal.BoolEnv("DD_TRACE_TWIRP_ANALYTICS_ENABLED", false) {
-		cfg.analyticsRate = 1.0
-	} else {
-		cfg.analyticsRate = globalconfig.AnalyticsRate()
-	}
+	cfg.analyticsRate = instr.AnalyticsRate(true)
 }
 
 func clientDefaults(cfg *config) {
-	cfg.serviceName = namingschema.ServiceName(defaultClientServiceName)
-	cfg.spanName = namingschema.OpName(namingschema.TwirpClient)
+	cfg.serviceName = instr.ServiceName(instrumentation.ComponentClient, nil)
+	cfg.spanName = instr.OperationName(instrumentation.ComponentClient, nil)
 	defaults(cfg)
 }
 
 func serverDefaults(cfg *config) {
-	cfg.serviceName = namingschema.ServiceName(defaultServerServiceName)
+	cfg.serviceName = instr.ServiceName(instrumentation.ComponentServer, nil)
 	// spanName is calculated dynamically since V0 span names are based on the twirp service name.
 	defaults(cfg)
 }

@@ -36,6 +36,7 @@ const (
 
 	PackageValyalaFastHTTP Package = "valyala/fasthttp"
 	PackageUrfaveNegroni   Package = "urfave/negroni"
+	PackageTwitchTVTwirp   Package = "twitchtv/twirp"
 )
 
 type Component int
@@ -314,6 +315,30 @@ var packages = map[Package]PackageInfo{
 				buildServiceNameV0: staticName("negroni.router"),
 				buildOpNameV0:      staticName("http.request"),
 				buildOpNameV1:      staticName("http.server.request"),
+			},
+		},
+	},
+	PackageTwitchTVTwirp: {
+		TracedPackage: "github.com/twitchtv/twirp",
+		EnvVarPrefix:  "TWIRP",
+		naming: map[Component]componentNames{
+			ComponentServer: {
+				useDDServiceV0:     true,
+				buildServiceNameV0: staticName("twirp-server"),
+				buildOpNameV0: func(opCtx OperationContext) string {
+					rpcService, ok := opCtx[ext.RPCService]
+					if rpcService == "" || !ok {
+						return "twirp.service"
+					}
+					return fmt.Sprintf("twirp.%s", rpcService)
+				},
+				buildOpNameV1: staticName("twirp.server.request"),
+			},
+			ComponentClient: {
+				useDDServiceV0:     true,
+				buildServiceNameV0: staticName("twirp-client"),
+				buildOpNameV0:      staticName("twirp.request"),
+				buildOpNameV1:      staticName("twirp.client.request"),
 			},
 		},
 	},
