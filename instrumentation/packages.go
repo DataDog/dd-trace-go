@@ -37,6 +37,7 @@ const (
 	PackageValyalaFastHTTP Package = "valyala/fasthttp"
 	PackageUrfaveNegroni   Package = "urfave/negroni"
 	PackageTwitchTVTwirp   Package = "twitchtv/twirp"
+	PackageTidwallBuntDB   Package = "tidwall/buntdb"
 )
 
 type Component int
@@ -339,6 +340,18 @@ var packages = map[Package]PackageInfo{
 				buildServiceNameV0: staticName("twirp-client"),
 				buildOpNameV0:      staticName("twirp.request"),
 				buildOpNameV1:      staticName("twirp.client.request"),
+			},
+		},
+	},
+	PackageTidwallBuntDB: {
+		TracedPackage: "tidwall/buntdb",
+		EnvVarPrefix:  "BUNTDB",
+		naming: map[Component]componentNames{
+			ComponentDefault: {
+				useDDServiceV0:     false,
+				buildServiceNameV0: staticName("buntdb"),
+				buildOpNameV0:      staticName("buntdb.query"),
+				buildOpNameV1:      staticName("buntdb.query"),
 			},
 		},
 	},
