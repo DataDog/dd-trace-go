@@ -735,6 +735,9 @@ func (t *tracer) sample(span *span) {
 	if t.rulesSampling.SampleTraceGlobalRate(span) {
 		return
 	}
+	if t.rulesSampling.SampleTrace(span) {
+		return
+	}
 	t.prioritySampling.apply(span)
 }
 

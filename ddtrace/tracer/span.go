@@ -497,9 +497,11 @@ func (s *span) Finish(opts ...ddtrace.FinishOption) {
 		s.SetTag("go_execution_traced", "partial")
 	}
 
-	if tr, ok := internal.GetGlobalTracer().(*tracer); ok && tr.rulesSampling.traces.enabled() {
-		if !s.context.trace.isLocked() && s.context.trace.propagatingTag(keyDecisionMaker) != "-4" {
-			tr.rulesSampling.SampleTrace(s)
+	if s.root() == s {
+		if tr, ok := internal.GetGlobalTracer().(*tracer); ok && tr.rulesSampling.traces.enabled() {
+			if !s.context.trace.isLocked() && s.context.trace.propagatingTag(keyDecisionMaker) != "-4" {
+				tr.rulesSampling.SampleTrace(s)
+			}
 		}
 	}
 
