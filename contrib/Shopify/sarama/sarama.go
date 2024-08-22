@@ -15,17 +15,15 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
-	"github.com/DataDog/dd-trace-go/v2/internal/log"
-	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 
 	"github.com/Shopify/sarama"
 )
 
-const componentName = "Shopify/sarama"
+var instr *instrumentation.Instrumentation
 
 func init() {
-	telemetry.LoadIntegration(componentName)
-	tracer.MarkIntegrationImported("github.com/Shopify/sarama")
+	instr = instrumentation.Load(instrumentation.PackageShopifySarama)
 }
 
 type partitionConsumer struct {
@@ -47,7 +45,7 @@ func WrapPartitionConsumer(pc sarama.PartitionConsumer, opts ...Option) sarama.P
 	for _, opt := range opts {
 		opt.apply(cfg)
 	}
-	log.Debug("contrib/Shopify/sarama: Wrapping Partition Consumer: %#v", cfg)
+	instr.Logger().Debug("contrib/Shopify/sarama: Wrapping Partition Consumer: %#v", cfg)
 	wrapped := &partitionConsumer{
 		PartitionConsumer: pc,
 		messages:          make(chan *sarama.ConsumerMessage),
@@ -63,7 +61,7 @@ func WrapPartitionConsumer(pc sarama.PartitionConsumer, opts ...Option) sarama.P
 				tracer.SpanType(ext.SpanTypeMessageConsumer),
 				tracer.Tag(ext.MessagingKafkaPartition, msg.Partition),
 				tracer.Tag("offset", msg.Offset),
-				tracer.Tag(ext.Component, componentName),
+				tracer.Tag(ext.Component, instrumentation.PackageShopifySarama),
 				tracer.Tag(ext.SpanKind, ext.SpanKindConsumer),
 				tracer.Tag(ext.MessagingSystem, ext.MessagingSystemKafka),
 				tracer.Measured(),
@@ -170,7 +168,7 @@ func WrapSyncProducer(saramaConfig *sarama.Config, producer sarama.SyncProducer,
 	for _, opt := range opts {
 		opt.apply(cfg)
 	}
-	log.Debug("contrib/Shopify/sarama: Wrapping Sync Producer: %#v", cfg)
+	instr.Logger().Debug("contrib/Shopify/sarama: Wrapping Sync Producer: %#v", cfg)
 	if saramaConfig == nil {
 		saramaConfig = sarama.NewConfig()
 	}
@@ -214,12 +212,12 @@ func WrapAsyncProducer(saramaConfig *sarama.Config, p sarama.AsyncProducer, opts
 	for _, opt := range opts {
 		opt.apply(cfg)
 	}
-	log.Debug("contrib/Shopify/sarama: Wrapping Async Producer: %#v", cfg)
+	instr.Logger().Debug("contrib/Shopify/sarama: Wrapping Async Producer: %#v", cfg)
 	if saramaConfig == nil {
 		saramaConfig = sarama.NewConfig()
 		saramaConfig.Version = sarama.V0_11_0_0
 	} else if !saramaConfig.Version.IsAtLeast(sarama.V0_11_0_0) {
-		log.Error("Tracing Sarama async producer requires at least sarama.V0_11_0_0 version")
+		instr.Logger().Error("Tracing Sarama async producer requires at least sarama.V0_11_0_0 version")
 	}
 	wrapped := &asyncProducer{
 		AsyncProducer: p,
@@ -289,7 +287,7 @@ func startProducerSpan(cfg *config, version sarama.KafkaVersion, msg *sarama.Pro
 		tracer.ServiceName(cfg.producerServiceName),
 		tracer.ResourceName("Produce Topic " + msg.Topic),
 		tracer.SpanType(ext.SpanTypeMessageProducer),
-		tracer.Tag(ext.Component, componentName),
+		tracer.Tag(ext.Component, instrumentation.PackageShopifySarama),
 		tracer.Tag(ext.SpanKind, ext.SpanKindProducer),
 		tracer.Tag(ext.MessagingSystem, ext.MessagingSystemKafka),
 	}

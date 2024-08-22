@@ -38,6 +38,7 @@ func TestNamingSchema(t *testing.T) {
 		twitchTVTwirp,
 		tidwallBuntDB,
 		syndtrGoLevelDB,
+		shopifySarama,
 	}
 	for _, tc := range testCases {
 		harness.RunTest(t, tc)

@@ -40,6 +40,7 @@ const (
 	PackageTidwallBuntDB   Package = "tidwall/buntdb"
 	PackageSyndtrGoLevelDB Package = "syndtr/goleveldb/leveldb"
 	PackageSirupsenLogrus  Package = "sirupsen/logrus"
+	PackageShopifySarama   Package = "Shopify/sarama"
 )
 
 type Component int
@@ -372,6 +373,24 @@ var packages = map[Package]PackageInfo{
 	PackageSirupsenLogrus: {
 		TracedPackage: "github.com/sirupsen/logrus",
 		EnvVarPrefix:  "LOGRUS",
+	},
+	PackageShopifySarama: {
+		TracedPackage: "github.com/Shopify/sarama",
+		EnvVarPrefix:  "SARAMA",
+		naming: map[Component]componentNames{
+			ComponentConsumer: {
+				useDDServiceV0:     true,
+				buildServiceNameV0: staticName("kafka"),
+				buildOpNameV0:      staticName("kafka.consume"),
+				buildOpNameV1:      staticName("kafka.process"),
+			},
+			ComponentProducer: {
+				useDDServiceV0:     false,
+				buildServiceNameV0: staticName("kafka"),
+				buildOpNameV0:      staticName("kafka.produce"),
+				buildOpNameV1:      staticName("kafka.send"),
+			},
+		},
 	},
 }
 
