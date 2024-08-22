@@ -175,10 +175,11 @@ func TestNewAggregableSpan(t *testing.T) {
 			Type:     "sql",
 		}, o)
 		assert.Equal(t, aggregation{
-			Name:     "name",
-			Type:     "sql",
-			Resource: "SELECT * FROM table WHERE password = ?",
-			Service:  "service",
+			Name:        "name",
+			Type:        "sql",
+			Resource:    "SELECT * FROM table WHERE password = ?",
+			Service:     "service",
+			IsTraceRoot: 1,
 		}, aggspan.key)
 	})
 
@@ -190,10 +191,11 @@ func TestNewAggregableSpan(t *testing.T) {
 			Type:     "sql",
 		}, nil)
 		assert.Equal(t, aggregation{
-			Name:     "name",
-			Type:     "sql",
-			Resource: "SELECT * FROM table WHERE password='secret'",
-			Service:  "service",
+			Name:        "name",
+			Type:        "sql",
+			Resource:    "SELECT * FROM table WHERE password='secret'",
+			Service:     "service",
+			IsTraceRoot: 1,
 		}, aggspan.key)
 	})
 }
