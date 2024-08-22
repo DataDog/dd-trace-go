@@ -40,6 +40,7 @@ func TestNamingSchema(t *testing.T) {
 		syndtrGoLevelDB,
 		shopifySarama,
 		segmentioKafkaGo,
+		redisGoRedisV9,
 	}
 	for _, tc := range testCases {
 		harness.RunTest(t, tc)
