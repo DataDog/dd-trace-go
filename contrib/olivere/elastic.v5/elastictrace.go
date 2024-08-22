@@ -20,15 +20,13 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
-	"github.com/DataDog/dd-trace-go/v2/internal/log"
-	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 )
 
-const componentName = "olivere/elastic"
+var instr *instrumentation.Instrumentation
 
 func init() {
-	telemetry.LoadIntegration(componentName)
-	tracer.MarkIntegrationImported("gopkg.in/olivere/elastic.v5")
+	instr = instrumentation.Load(instrumentation.PackageOlivereElasticV5)
 }
 
 // NewHTTPClient returns a new http.Client which traces requests under the given service name.
@@ -38,7 +36,7 @@ func NewHTTPClient(opts ...ClientOption) *http.Client {
 	for _, fn := range opts {
 		fn.apply(cfg)
 	}
-	log.Debug("contrib/olivere/elastic: Configuring HTTP Client: %#v", cfg)
+	instr.Logger().Debug("contrib/olivere/elastic: Configuring HTTP Client: %#v", cfg)
 	return &http.Client{Transport: &httpTransport{config: cfg}}
 }
 
@@ -62,7 +60,7 @@ func (t *httpTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 		tracer.Tag("elasticsearch.method", method),
 		tracer.Tag("elasticsearch.url", url),
 		tracer.Tag("elasticsearch.params", req.URL.Query().Encode()),
-		tracer.Tag(ext.Component, componentName),
+		tracer.Tag(ext.Component, instrumentation.PackageOlivereElasticV5),
 		tracer.Tag(ext.SpanKind, ext.SpanKindClient),
 		tracer.Tag(ext.DBSystem, ext.DBSystemElasticsearch),
 		tracer.Tag(ext.NetworkDestinationName, req.URL.Hostname()),

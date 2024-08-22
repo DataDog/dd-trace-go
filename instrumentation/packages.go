@@ -43,6 +43,7 @@ const (
 	PackageShopifySarama    Package = "Shopify/sarama"
 	PackageSegmentioKafkaGo Package = "segmentio/kafka-go"
 	PackageRedisGoRedisV9   Package = "redis/go-redis.v9"
+	PackageOlivereElasticV5 Package = "olivere/elastic"
 )
 
 type Component int
@@ -421,6 +422,18 @@ var packages = map[Package]PackageInfo{
 				buildServiceNameV0: staticName("redis.client"),
 				buildOpNameV0:      staticName("redis.command"),
 				buildOpNameV1:      staticName("redis.command"),
+			},
+		},
+	},
+	PackageOlivereElasticV5: {
+		TracedPackage: "gopkg.in/olivere/elastic.v5",
+		EnvVarPrefix:  "ELASTIC",
+		naming: map[Component]componentNames{
+			ComponentDefault: {
+				useDDServiceV0:     false,
+				buildServiceNameV0: staticName("elastic.client"),
+				buildOpNameV0:      staticName("elasticsearch.query"),
+				buildOpNameV1:      staticName("elasticsearch.query"),
 			},
 		},
 	},
