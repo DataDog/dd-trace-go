@@ -35,6 +35,10 @@ func TestNamingSchema(t *testing.T) {
 		gomemcache,
 		gcpPubsub,
 		urfaveNegroni,
+		twitchTVTwirp,
+		tidwallBuntDB,
+		syndtrGoLevelDB,
+		shopifySarama,
 	}
 	for _, tc := range testCases {
 		harness.RunTest(t, tc)

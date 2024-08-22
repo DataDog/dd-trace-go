@@ -36,6 +36,11 @@ const (
 
 	PackageValyalaFastHTTP Package = "valyala/fasthttp"
 	PackageUrfaveNegroni   Package = "urfave/negroni"
+	PackageTwitchTVTwirp   Package = "twitchtv/twirp"
+	PackageTidwallBuntDB   Package = "tidwall/buntdb"
+	PackageSyndtrGoLevelDB Package = "syndtr/goleveldb/leveldb"
+	PackageSirupsenLogrus  Package = "sirupsen/logrus"
+	PackageShopifySarama   Package = "Shopify/sarama"
 )
 
 type Component int
@@ -314,6 +319,76 @@ var packages = map[Package]PackageInfo{
 				buildServiceNameV0: staticName("negroni.router"),
 				buildOpNameV0:      staticName("http.request"),
 				buildOpNameV1:      staticName("http.server.request"),
+			},
+		},
+	},
+	PackageTwitchTVTwirp: {
+		TracedPackage: "github.com/twitchtv/twirp",
+		EnvVarPrefix:  "TWIRP",
+		naming: map[Component]componentNames{
+			ComponentServer: {
+				useDDServiceV0:     true,
+				buildServiceNameV0: staticName("twirp-server"),
+				buildOpNameV0: func(opCtx OperationContext) string {
+					rpcService, ok := opCtx[ext.RPCService]
+					if rpcService == "" || !ok {
+						return "twirp.service"
+					}
+					return fmt.Sprintf("twirp.%s", rpcService)
+				},
+				buildOpNameV1: staticName("twirp.server.request"),
+			},
+			ComponentClient: {
+				useDDServiceV0:     true,
+				buildServiceNameV0: staticName("twirp-client"),
+				buildOpNameV0:      staticName("twirp.request"),
+				buildOpNameV1:      staticName("twirp.client.request"),
+			},
+		},
+	},
+	PackageTidwallBuntDB: {
+		TracedPackage: "tidwall/buntdb",
+		EnvVarPrefix:  "BUNTDB",
+		naming: map[Component]componentNames{
+			ComponentDefault: {
+				useDDServiceV0:     false,
+				buildServiceNameV0: staticName("buntdb"),
+				buildOpNameV0:      staticName("buntdb.query"),
+				buildOpNameV1:      staticName("buntdb.query"),
+			},
+		},
+	},
+	PackageSyndtrGoLevelDB: {
+		TracedPackage: "syndtr/goleveldb/leveldb",
+		EnvVarPrefix:  "LEVELDB",
+		naming: map[Component]componentNames{
+			ComponentDefault: {
+				useDDServiceV0:     false,
+				buildServiceNameV0: staticName("leveldb"),
+				buildOpNameV0:      staticName("leveldb.query"),
+				buildOpNameV1:      staticName("leveldb.query"),
+			},
+		},
+	},
+	PackageSirupsenLogrus: {
+		TracedPackage: "github.com/sirupsen/logrus",
+		EnvVarPrefix:  "LOGRUS",
+	},
+	PackageShopifySarama: {
+		TracedPackage: "github.com/Shopify/sarama",
+		EnvVarPrefix:  "SARAMA",
+		naming: map[Component]componentNames{
+			ComponentConsumer: {
+				useDDServiceV0:     true,
+				buildServiceNameV0: staticName("kafka"),
+				buildOpNameV0:      staticName("kafka.consume"),
+				buildOpNameV1:      staticName("kafka.process"),
+			},
+			ComponentProducer: {
+				useDDServiceV0:     false,
+				buildServiceNameV0: staticName("kafka"),
+				buildOpNameV0:      staticName("kafka.produce"),
+				buildOpNameV1:      staticName("kafka.send"),
 			},
 		},
 	},

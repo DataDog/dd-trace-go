@@ -12,8 +12,7 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
-	"github.com/DataDog/dd-trace-go/v2/internal/log"
-	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 
 	"github.com/syndtr/goleveldb/leveldb"
 	"github.com/syndtr/goleveldb/leveldb/iterator"
@@ -24,9 +23,10 @@ import (
 
 const componentName = "syndtr/goleveldb/leveldb"
 
+var instr *instrumentation.Instrumentation
+
 func init() {
-	telemetry.LoadIntegration(componentName)
-	tracer.MarkIntegrationImported("github.com/syndtr/goleveldb")
+	instr = instrumentation.Load(instrumentation.PackageSyndtrGoLevelDB)
 }
 
 // A DB wraps a leveldb.DB and traces all queries.
@@ -56,7 +56,7 @@ func OpenFile(path string, o *opt.Options, opts ...Option) (*DB, error) {
 // WrapDB wraps a leveldb.DB so that queries are traced.
 func WrapDB(db *leveldb.DB, opts ...Option) *DB {
 	cfg := newConfig(opts...)
-	log.Debug("contrib/syndtr/goleveldb/leveldb: Wrapping DB: %#v", cfg)
+	instr.Logger().Debug("contrib/syndtr/goleveldb/leveldb: Wrapping DB: %#v", cfg)
 	return &DB{
 		DB:  db,
 		cfg: cfg,

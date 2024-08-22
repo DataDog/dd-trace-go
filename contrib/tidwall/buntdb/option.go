@@ -9,11 +9,8 @@ import (
 	"context"
 	"math"
 
-	"github.com/DataDog/dd-trace-go/v2/internal"
-	"github.com/DataDog/dd-trace-go/v2/internal/namingschema"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 )
-
-const defaultServiceName = "buntdb"
 
 type config struct {
 	ctx           context.Context
@@ -23,15 +20,10 @@ type config struct {
 }
 
 func defaults(cfg *config) {
-	cfg.serviceName = namingschema.ServiceNameOverrideV0(defaultServiceName, defaultServiceName)
-	cfg.spanName = namingschema.OpName(namingschema.BuntDBOutbound)
+	cfg.serviceName = instr.ServiceName(instrumentation.ComponentDefault, nil)
+	cfg.spanName = instr.OperationName(instrumentation.ComponentDefault, nil)
+	cfg.analyticsRate = instr.AnalyticsRate(false)
 	cfg.ctx = context.Background()
-	// cfg.analyticsRate = globalconfig.AnalyticsRate()
-	if internal.BoolEnv("DD_TRACE_BUNTDB_ANALYTICS_ENABLED", false) {
-		cfg.analyticsRate = 1.0
-	} else {
-		cfg.analyticsRate = math.NaN()
-	}
 }
 
 // Option describes options for the BuntDB integration.
