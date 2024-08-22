@@ -39,6 +39,7 @@ const (
 	PackageTwitchTVTwirp   Package = "twitchtv/twirp"
 	PackageTidwallBuntDB   Package = "tidwall/buntdb"
 	PackageSyndtrGoLevelDB Package = "syndtr/goleveldb/leveldb"
+	PackageSirupsenLogrus  Package = "sirupsen/logrus"
 )
 
 type Component int
@@ -367,6 +368,10 @@ var packages = map[Package]PackageInfo{
 				buildOpNameV1:      staticName("leveldb.query"),
 			},
 		},
+	},
+	PackageSirupsenLogrus: {
+		TracedPackage: "github.com/sirupsen/logrus",
+		EnvVarPrefix:  "LOGRUS",
 	},
 }
 
