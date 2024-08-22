@@ -39,6 +39,7 @@ func TestNamingSchema(t *testing.T) {
 		tidwallBuntDB,
 		syndtrGoLevelDB,
 		shopifySarama,
+		segmentioKafkaGo,
 	}
 	for _, tc := range testCases {
 		harness.RunTest(t, tc)

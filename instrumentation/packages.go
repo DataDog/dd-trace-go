@@ -34,13 +34,14 @@ const (
 	PackageNetHTTP   Package = "net/http"
 	PackageIBMSarama Package = "IBM/sarama"
 
-	PackageValyalaFastHTTP Package = "valyala/fasthttp"
-	PackageUrfaveNegroni   Package = "urfave/negroni"
-	PackageTwitchTVTwirp   Package = "twitchtv/twirp"
-	PackageTidwallBuntDB   Package = "tidwall/buntdb"
-	PackageSyndtrGoLevelDB Package = "syndtr/goleveldb/leveldb"
-	PackageSirupsenLogrus  Package = "sirupsen/logrus"
-	PackageShopifySarama   Package = "Shopify/sarama"
+	PackageValyalaFastHTTP  Package = "valyala/fasthttp"
+	PackageUrfaveNegroni    Package = "urfave/negroni"
+	PackageTwitchTVTwirp    Package = "twitchtv/twirp"
+	PackageTidwallBuntDB    Package = "tidwall/buntdb"
+	PackageSyndtrGoLevelDB  Package = "syndtr/goleveldb/leveldb"
+	PackageSirupsenLogrus   Package = "sirupsen/logrus"
+	PackageShopifySarama    Package = "Shopify/sarama"
+	PackageSegmentioKafkaGo Package = "segmentio/kafka-go"
 )
 
 type Component int
@@ -377,6 +378,24 @@ var packages = map[Package]PackageInfo{
 	PackageShopifySarama: {
 		TracedPackage: "github.com/Shopify/sarama",
 		EnvVarPrefix:  "SARAMA",
+		naming: map[Component]componentNames{
+			ComponentConsumer: {
+				useDDServiceV0:     true,
+				buildServiceNameV0: staticName("kafka"),
+				buildOpNameV0:      staticName("kafka.consume"),
+				buildOpNameV1:      staticName("kafka.process"),
+			},
+			ComponentProducer: {
+				useDDServiceV0:     false,
+				buildServiceNameV0: staticName("kafka"),
+				buildOpNameV0:      staticName("kafka.produce"),
+				buildOpNameV1:      staticName("kafka.send"),
+			},
+		},
+	},
+	PackageSegmentioKafkaGo: {
+		TracedPackage: "github.com/segmentio/kafka-go",
+		EnvVarPrefix:  "KAFKA",
 		naming: map[Component]componentNames{
 			ComponentConsumer: {
 				useDDServiceV0:     true,
