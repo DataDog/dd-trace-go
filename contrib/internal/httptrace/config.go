@@ -47,7 +47,7 @@ func newConfig() config {
 	} else if r, err := regexp.Compile(s); err == nil {
 		c.queryStringRegexp = r
 	} else {
-		log.Debug("Could not compile regexp from %s. Using default regexp instead.", envQueryStringRegexp)
+		log.Error("Could not compile regexp from %s. Using default regexp instead.", envQueryStringRegexp)
 	}
 	return c
 }
