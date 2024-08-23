@@ -126,17 +126,16 @@ func main() {
 
 		replacesSet := make(map[string]Replace)
 		for _, im := range imports {
-			if im == mod.Module.Path {
-				// exclude self
-				continue
-			}
 			// the module name and the import path might be different (when the imported package is a sub-package)
 			importModule := im
 			if strings.HasPrefix(im, "github.com/DataDog/dd-trace-go") {
 				if left, _, ok := strings.Cut(im, "/v2"); ok {
-					fmt.Println(left)
 					importModule = left + "/v2"
 				}
+			}
+			if importModule == mod.Module.Path {
+				// exclude self
+				continue
 			}
 			// it's a local module
 			_, ok := allModules[importModule]

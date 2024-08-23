@@ -210,12 +210,14 @@ func Start(opts ...StartOption) error {
 	// client is appropriately configured.
 	appsec.Start(appsecConfig.WithRCConfig(cfg))
 	_ = t.hostname() // Prime the hostname cache
+	globalinternal.SetTracerInitialized(true)
 	return nil
 }
 
 // Stop stops the started tracer. Subsequent calls are valid but become no-op.
 func Stop() {
 	SetGlobalTracer(&NoopTracer{})
+	globalinternal.SetTracerInitialized(false)
 	log.Flush()
 }
 

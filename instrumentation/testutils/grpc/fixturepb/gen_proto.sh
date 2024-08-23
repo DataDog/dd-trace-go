@@ -1,5 +1,8 @@
 #!/bin/sh
 
+OUT_DIR=$1
+cd $OUT_DIR
+
 YEAR=$(date +'%Y')
 COPYRIGHT_HEADER="// Unless explicitly stated otherwise all files in this repository are licensed
 // under the Apache License Version 2.0.
@@ -10,7 +13,7 @@ COPYRIGHT_HEADER="// Unless explicitly stated otherwise all files in this reposi
 go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.31.0
 go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.3.0
 
-protoc fixtures_test.proto \
+protoc fixture.proto \
   --go_out=. \
   --go_opt=paths=source_relative \
   --go-grpc_out=. \
