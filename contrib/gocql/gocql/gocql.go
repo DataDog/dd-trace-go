@@ -15,17 +15,17 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
-	"github.com/DataDog/dd-trace-go/v2/internal/log"
-	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 
 	"github.com/gocql/gocql"
 )
 
 const componentName = "gocql/gocql"
 
+var instr *instrumentation.Instrumentation
+
 func init() {
-	telemetry.LoadIntegration(componentName)
-	tracer.MarkIntegrationImported("github.com/gocql/gocql")
+	instr = instrumentation.Load(instrumentation.PackageGoCQL)
 }
 
 // ClusterConfig embeds gocql.ClusterConfig and keeps information relevant to tracing.
@@ -129,7 +129,7 @@ func wrapQuery(q *gocql.Query, hosts []string, opts ...WrapOption) *Query {
 	if len(hosts) > 0 {
 		p.clusterContactPoints = strings.Join(hosts, ",")
 	}
-	log.Debug("contrib/gocql/gocql: Wrapping Query: %#v", cfg)
+	instr.Logger().Debug("contrib/gocql/gocql: Wrapping Query: %#v", cfg)
 	tq := &Query{Query: q, params: p, ctx: q.Context()}
 	return tq
 }
@@ -310,7 +310,7 @@ func wrapBatch(b *gocql.Batch, hosts []string, opts ...WrapOption) *Batch {
 	if len(hosts) > 0 {
 		p.clusterContactPoints = strings.Join(hosts, ",")
 	}
-	log.Debug("contrib/gocql/gocql: Wrapping Batch: %#v", cfg)
+	instr.Logger().Debug("contrib/gocql/gocql: Wrapping Batch: %#v", cfg)
 	tb := &Batch{Batch: b, params: p, ctx: b.Context()}
 	return tb
 }

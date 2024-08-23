@@ -27,7 +27,7 @@ import (
 )
 
 var gcpPubsub = harness.TestCase{
-	Name: instrumentation.PackageCloudGoogleComPubsub,
+	Name: instrumentation.PackageGCPPubsub,
 	GenSpans: func(t *testing.T, serviceOverride string) []*mocktracer.Span {
 		mt := mocktracer.Start()
 		defer mt.Stop()

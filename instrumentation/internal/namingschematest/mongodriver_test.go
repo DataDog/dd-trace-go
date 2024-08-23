@@ -1,3 +1,8 @@
+// Unless explicitly stated otherwise all files in this repository are licensed
+// under the Apache License Version 2.0.
+// This product includes software developed at Datadog (https://www.datadoghq.com/).
+// Copyright 2024 Datadog, Inc.
+
 package namingschematest
 
 import (
@@ -17,8 +22,8 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 )
 
-var goMongodbOrgMongoDriver = harness.TestCase{
-	Name: instrumentation.PackageGoMongoDBOrgMongoDriver,
+var mongoDriverTest = harness.TestCase{
+	Name: instrumentation.PackageMongoDriver,
 	GenSpans: func(t *testing.T, serviceOverride string) []*mocktracer.Span {
 		var opts []mongotrace.Option
 		if serviceOverride != "" {

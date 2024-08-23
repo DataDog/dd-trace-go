@@ -29,7 +29,7 @@ const componentName = "go.mongodb.org/mongo-driver/mongo"
 var instr *instrumentation.Instrumentation
 
 func init() {
-	instr = instrumentation.Load(instrumentation.PackageGoMongoDBOrgMongoDriver)
+	instr = instrumentation.Load(instrumentation.PackageMongoDriver)
 }
 
 type spanKey struct {

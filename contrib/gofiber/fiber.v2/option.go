@@ -9,14 +9,10 @@ import (
 	"math"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
-	"github.com/DataDog/dd-trace-go/v2/internal"
-	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
-	"github.com/DataDog/dd-trace-go/v2/internal/namingschema"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 
 	"github.com/gofiber/fiber/v2"
 )
-
-const defaultServiceName = "fiber"
 
 type config struct {
 	serviceName   string
@@ -41,17 +37,12 @@ func (fn OptionFn) apply(cfg *config) {
 }
 
 func defaults(cfg *config) {
-	cfg.serviceName = namingschema.ServiceName(defaultServiceName)
-	cfg.spanName = namingschema.OpName(namingschema.HTTPServer)
+	cfg.serviceName = instr.ServiceName(instrumentation.ComponentServer, nil)
+	cfg.analyticsRate = instr.AnalyticsRate(true)
+	cfg.spanName = instr.OperationName(instrumentation.ComponentServer, nil)
 	cfg.isStatusError = isServerError
 	cfg.resourceNamer = defaultResourceNamer
 	cfg.ignoreRequest = defaultIgnoreRequest
-
-	if internal.BoolEnv("DD_TRACE_FIBER_ENABLED", false) {
-		cfg.analyticsRate = 1.0
-	} else {
-		cfg.analyticsRate = globalconfig.AnalyticsRate()
-	}
 }
 
 // WithService sets the given service name for the router.

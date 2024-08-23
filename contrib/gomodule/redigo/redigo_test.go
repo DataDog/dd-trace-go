@@ -15,12 +15,10 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
-	"github.com/DataDog/dd-trace-go/v2/internal/contrib/namingschematest"
-	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils"
 
 	"github.com/gomodule/redigo/redis"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 func TestMain(m *testing.M) {
@@ -235,9 +233,7 @@ func TestAnalyticsSettings(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		rate := globalconfig.AnalyticsRate()
-		defer globalconfig.SetAnalyticsRate(rate)
-		globalconfig.SetAnalyticsRate(0.4)
+		testutils.SetGlobalAnalyticsRate(t, 0.4)
 
 		assertRate(t, mt, 0.4)
 	})
@@ -260,9 +256,7 @@ func TestAnalyticsSettings(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		rate := globalconfig.AnalyticsRate()
-		defer globalconfig.SetAnalyticsRate(rate)
-		globalconfig.SetAnalyticsRate(0.4)
+		testutils.SetGlobalAnalyticsRate(t, 0.4)
 
 		assertRate(t, mt, 0.23, WithAnalyticsRate(0.23))
 	})
@@ -271,9 +265,7 @@ func TestAnalyticsSettings(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		rate := globalconfig.AnalyticsRate()
-		defer globalconfig.SetAnalyticsRate(rate)
-		globalconfig.SetAnalyticsRate(0.4)
+		testutils.SetGlobalAnalyticsRate(t, 0.4)
 
 		assertRate(t, mt, nil, WithAnalyticsRate(1.23))
 	})
@@ -412,23 +404,4 @@ func TestDoContext(t *testing.T) {
 		spans := mt.FinishedSpans()
 		assert.True(len(spans) > 0)
 	})
-}
-
-func TestNamingSchema(t *testing.T) {
-	genSpans := namingschematest.GenSpansFn(func(t *testing.T, serviceOverride string) []*mocktracer.Span {
-		var opts []interface{}
-		if serviceOverride != "" {
-			opts = append(opts, WithService(serviceOverride))
-		}
-		mt := mocktracer.Start()
-		defer mt.Stop()
-
-		c, err := Dial("tcp", "127.0.0.1:6379", opts...)
-		require.NoError(t, err)
-		_, err = c.Do("SET", "test_key", "test_value")
-		require.NoError(t, err)
-
-		return mt.FinishedSpans()
-	})
-	namingschematest.NewRedisTest(genSpans, "redis.conn")(t)
 }

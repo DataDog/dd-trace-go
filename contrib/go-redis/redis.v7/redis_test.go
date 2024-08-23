@@ -16,8 +16,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
-	"github.com/DataDog/dd-trace-go/v2/internal/contrib/namingschematest"
-	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils"
 
 	"github.com/go-redis/redis/v7"
 	"github.com/stretchr/testify/assert"
@@ -104,7 +103,10 @@ func TestWrapClient(t *testing.T) {
 		Addrs: []string{
 			"127.0.0.1:6379",
 			"127.0.0.2:6379",
-		}}
+		},
+		DialTimeout: 500 * time.Millisecond,
+		MaxRetries:  1,
+	}
 	failoverClient := redis.NewUniversalClient(failoverClientOpts)
 
 	clusterClientOpts := &redis.UniversalOptions{
@@ -112,7 +114,9 @@ func TestWrapClient(t *testing.T) {
 			"127.0.0.1:6379",
 			"127.0.0.2:6379",
 		},
-		DialTimeout: 1}
+		DialTimeout: 500 * time.Millisecond,
+		MaxRetries:  1,
+	}
 	clusterClient := redis.NewUniversalClient(clusterClientOpts)
 
 	testCases := []struct {
@@ -444,9 +448,7 @@ func TestAnalyticsSettings(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		rate := globalconfig.AnalyticsRate()
-		defer globalconfig.SetAnalyticsRate(rate)
-		globalconfig.SetAnalyticsRate(0.4)
+		testutils.SetGlobalAnalyticsRate(t, 0.4)
 
 		assertRate(t, mt, 0.4)
 	})
@@ -469,9 +471,7 @@ func TestAnalyticsSettings(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		rate := globalconfig.AnalyticsRate()
-		defer globalconfig.SetAnalyticsRate(rate)
-		globalconfig.SetAnalyticsRate(0.4)
+		testutils.SetGlobalAnalyticsRate(t, 0.4)
 
 		assertRate(t, mt, 0.23, WithAnalyticsRate(0.23))
 	})
@@ -522,22 +522,4 @@ func TestWithContext(t *testing.T) {
 	assert.NotNil(getSpan)
 	assert.Equal(span1.SpanID(), setSpan.ParentID())
 	assert.Equal(span2.SpanID(), getSpan.ParentID())
-}
-
-func TestNamingSchema(t *testing.T) {
-	genSpans := namingschematest.GenSpansFn(func(t *testing.T, serviceOverride string) []*mocktracer.Span {
-		var opts []ClientOption
-		if serviceOverride != "" {
-			opts = append(opts, WithService(serviceOverride))
-		}
-		mt := mocktracer.Start()
-		defer mt.Stop()
-
-		client := NewClient(&redis.Options{Addr: "127.0.0.1:6379"}, opts...)
-		st := client.Set("test_key", "test_value", 0)
-		require.NoError(t, st.Err())
-
-		return mt.FinishedSpans()
-	})
-	namingschematest.NewRedisTest(genSpans, "redis.client")(t)
 }

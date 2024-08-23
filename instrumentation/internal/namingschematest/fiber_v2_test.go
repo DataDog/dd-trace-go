@@ -9,38 +9,40 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/gin-gonic/gin"
+	"github.com/gofiber/fiber/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	gintrace "github.com/DataDog/dd-trace-go/contrib/gin-gonic/gin/v2"
+	fibertrace "github.com/DataDog/dd-trace-go/contrib/gofiber/fiber.v2/v2"
 	"github.com/DataDog/dd-trace-go/instrumentation/internal/namingschematest/harness"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 )
 
-var ginTest = harness.TestCase{
-	Name: instrumentation.PackageGin,
+var fiberV2Test = harness.TestCase{
+	Name: instrumentation.PackageGoFiberV2,
 	GenSpans: func(t *testing.T, serviceOverride string) []*mocktracer.Span {
-		// silence startup logs
-		gin.SetMode(gin.ReleaseMode)
-
+		var opts []fibertrace.Option
+		if serviceOverride != "" {
+			opts = append(opts, fibertrace.WithService(serviceOverride))
+		}
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		mux := gin.New()
-		mux.Use(gintrace.Middleware(serviceOverride))
-		mux.GET("/200", func(c *gin.Context) {
-			c.Status(200)
+		mux := fiber.New()
+		mux.Use(fibertrace.Middleware(opts...))
+		mux.Get("/200", func(c *fiber.Ctx) error {
+			return c.SendString("ok")
 		})
-		r := httptest.NewRequest("GET", "/200", nil)
-		w := httptest.NewRecorder()
-		mux.ServeHTTP(w, r)
+		req := httptest.NewRequest("GET", "/200", nil)
+		resp, err := mux.Test(req)
+		require.NoError(t, err)
+		defer resp.Body.Close()
 
 		return mt.FinishedSpans()
 	},
 	WantServiceNameV0: harness.ServiceNameAssertions{
-		Defaults:        []string{"gin.router"},
+		Defaults:        []string{"fiber"},
 		DDService:       []string{harness.TestDDService},
 		ServiceOverride: []string{harness.TestServiceOverride},
 	},

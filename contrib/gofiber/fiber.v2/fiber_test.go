@@ -14,12 +14,10 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
-	"github.com/DataDog/dd-trace-go/v2/internal/contrib/namingschematest"
-	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 func TestChildSpan(t *testing.T) {
@@ -276,9 +274,7 @@ func TestAnalyticsSettings(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		rate := globalconfig.AnalyticsRate()
-		defer globalconfig.SetAnalyticsRate(rate)
-		globalconfig.SetAnalyticsRate(0.4)
+		testutils.SetGlobalAnalyticsRate(t, 0.4)
 
 		assertRate(t, mt, 0.4)
 	})
@@ -301,36 +297,10 @@ func TestAnalyticsSettings(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		rate := globalconfig.AnalyticsRate()
-		defer globalconfig.SetAnalyticsRate(rate)
-		globalconfig.SetAnalyticsRate(0.4)
+		testutils.SetGlobalAnalyticsRate(t, 0.4)
 
 		assertRate(t, mt, 0.23, WithAnalyticsRate(0.23))
 	})
-}
-
-func TestNamingSchema(t *testing.T) {
-	genSpans := namingschematest.GenSpansFn(func(t *testing.T, serviceOverride string) []*mocktracer.Span {
-		var opts []Option
-		if serviceOverride != "" {
-			opts = append(opts, WithService(serviceOverride))
-		}
-		mt := mocktracer.Start()
-		defer mt.Stop()
-
-		mux := fiber.New()
-		mux.Use(Middleware(opts...))
-		mux.Get("/200", func(c *fiber.Ctx) error {
-			return c.SendString("ok")
-		})
-		req := httptest.NewRequest("GET", "/200", nil)
-		resp, err := mux.Test(req)
-		require.NoError(t, err)
-		defer resp.Body.Close()
-
-		return mt.FinishedSpans()
-	})
-	namingschematest.NewHTTPServerTest(genSpans, "fiber")(t)
 }
 
 func TestIgnoreRequest(t *testing.T) {

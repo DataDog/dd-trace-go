@@ -15,20 +15,31 @@ import (
 type Package string
 
 const (
-	Package99DesignsGQLGen         Package = "99designs/gqlgen"
-	PackageAWSSDKGo                Package = "aws/aws-sdk-go"
-	PackageAWSSDKGoV2              Package = "aws/aws-sdk-go-v2"
-	PackageBradfitzGoMemcache      Package = "bradfitz/gomemcache"
-	PackageCloudGoogleComPubsub    Package = "cloud.google.com/go/pubsub.v1"
-	PackageConfluentKafkaGo        Package = "confluentinc/confluent-kafka-go/kafka"
-	PackageConfluentKafkaGoV2      Package = "confluentinc/confluent-kafka-go/kafka.v2"
-	PackageDatabaseSQL             Package = "database/sql"
-	PackageDimfeldHTTPTreeMuxV5    Package = "dimfeld/httptreemux.v5"
-	PackageGoElasticSearchV6       Package = "elastic/go-elasticsearch.v6"
-	PackageEmickleiGoRestfulV3     Package = "emicklei/go-restful.v3"
-	PackageGinGonicGin             Package = "gin-gonic/gin"
-	PackageGlobalsignMgo           Package = "globalsign/mgo"
-	PackageGoMongoDBOrgMongoDriver Package = "go.mongodb.org/mongo-driver"
+	Package99DesignsGQLGen      Package = "99designs/gqlgen"
+	PackageAWSSDKGo             Package = "aws/aws-sdk-go"
+	PackageAWSSDKGoV2           Package = "aws/aws-sdk-go-v2"
+	PackageBradfitzGoMemcache   Package = "bradfitz/gomemcache"
+	PackageGCPPubsub            Package = "cloud.google.com/go/pubsub.v1"
+	PackageConfluentKafkaGo     Package = "confluentinc/confluent-kafka-go/kafka"
+	PackageConfluentKafkaGoV2   Package = "confluentinc/confluent-kafka-go/kafka.v2"
+	PackageDatabaseSQL          Package = "database/sql"
+	PackageDimfeldHTTPTreeMuxV5 Package = "dimfeld/httptreemux.v5"
+	PackageGoElasticSearchV6    Package = "elastic/go-elasticsearch.v6"
+	PackageEmickleiGoRestfulV3  Package = "emicklei/go-restful.v3"
+	PackageGin                  Package = "gin-gonic/gin"
+	PackageGlobalsignMgo        Package = "globalsign/mgo"
+	PackageMongoDriver          Package = "go.mongodb.org/mongo-driver"
+	PackageChi                  Package = "go-chi/chi"
+	PackageChiV5                Package = "go-chi/chi.v5"
+	PackageGoPGV10              Package = "go-pg/pg.v10"
+	PackageGoRedis              Package = "go-redis/redis"
+	PackageGoRedisV7            Package = "go-redis/redis.v7"
+	PackageGoRedisV8            Package = "go-redis/redis.v8"
+	PackageGoCQL                Package = "gocql/gocql"
+	PackageGoFiberV2            Package = "gofiber/fiber.v2"
+	PackageRedigo               Package = "gomodule/redigo"
+	PackageGoogleAPI            Package = "google.golang.org/api"
+
 	// TODO: ...
 
 	PackageNetHTTP   Package = "net/http"
@@ -133,7 +144,7 @@ var packages = map[Package]PackageInfo{
 			},
 		},
 	},
-	PackageCloudGoogleComPubsub: {
+	PackageGCPPubsub: {
 		TracedPackage: "cloud.google.com/go/pubsub",
 		EnvVarPrefix:  "GCP_PUBSUB",
 		naming: map[Component]componentNames{
@@ -244,7 +255,7 @@ var packages = map[Package]PackageInfo{
 			},
 		},
 	},
-	PackageGinGonicGin: {
+	PackageGin: {
 		TracedPackage: "github.com/gin-gonic/gin",
 		EnvVarPrefix:  "GIN",
 		naming: map[Component]componentNames{
@@ -268,7 +279,7 @@ var packages = map[Package]PackageInfo{
 			},
 		},
 	},
-	PackageGoMongoDBOrgMongoDriver: {
+	PackageMongoDriver: {
 		TracedPackage: "go.mongodb.org/mongo-driver",
 		EnvVarPrefix:  "MONGO",
 		naming: map[Component]componentNames{
@@ -280,6 +291,127 @@ var packages = map[Package]PackageInfo{
 			},
 		},
 	},
+	PackageChi: {
+		TracedPackage: "github.com/go-chi/chi",
+		EnvVarPrefix:  "CHI",
+		naming: map[Component]componentNames{
+			ComponentServer: {
+				useDDServiceV0:     true,
+				buildServiceNameV0: staticName("chi.router"),
+				buildOpNameV0:      staticName("http.request"),
+				buildOpNameV1:      staticName("http.server.request"),
+			},
+		},
+	},
+	PackageChiV5: {
+		TracedPackage: "github.com/go-chi/chi/v5",
+		EnvVarPrefix:  "CHI",
+		naming: map[Component]componentNames{
+			ComponentServer: {
+				useDDServiceV0:     true,
+				buildServiceNameV0: staticName("chi.router"),
+				buildOpNameV0:      staticName("http.request"),
+				buildOpNameV1:      staticName("http.server.request"),
+			},
+		},
+	},
+	PackageGoPGV10: {
+		TracedPackage: "github.com/go-pg/pg/v10",
+		EnvVarPrefix:  "GOPG",
+		naming: map[Component]componentNames{
+			ComponentDefault: {
+				useDDServiceV0:     true,
+				buildServiceNameV0: staticName("gopg.db"),
+				buildOpNameV0:      staticName("go-pg"),
+				buildOpNameV1:      staticName("postgresql.query"),
+			},
+		},
+	},
+	PackageGoRedis: {
+		TracedPackage: "github.com/go-redis/redis",
+		EnvVarPrefix:  "REDIS",
+		naming: map[Component]componentNames{
+			ComponentDefault: {
+				useDDServiceV0:     false,
+				buildServiceNameV0: staticName("redis.client"),
+				buildOpNameV0:      staticName("redis.command"),
+				buildOpNameV1:      staticName("redis.command"),
+			},
+		},
+	},
+	PackageGoRedisV7: {
+		TracedPackage: "github.com/go-redis/redis/v7",
+		EnvVarPrefix:  "REDIS",
+		naming: map[Component]componentNames{
+			ComponentDefault: {
+				useDDServiceV0:     false,
+				buildServiceNameV0: staticName("redis.client"),
+				buildOpNameV0:      staticName("redis.command"),
+				buildOpNameV1:      staticName("redis.command"),
+			},
+		},
+	},
+	PackageGoRedisV8: {
+		TracedPackage: "github.com/go-redis/redis/v8",
+		EnvVarPrefix:  "REDIS",
+		naming: map[Component]componentNames{
+			ComponentDefault: {
+				useDDServiceV0:     false,
+				buildServiceNameV0: staticName("redis.client"),
+				buildOpNameV0:      staticName("redis.command"),
+				buildOpNameV1:      staticName("redis.command"),
+			},
+		},
+	},
+	PackageGoCQL: {
+		TracedPackage: "github.com/gocql/gocql",
+		EnvVarPrefix:  "GOCQL",
+		naming: map[Component]componentNames{
+			ComponentDefault: {
+				useDDServiceV0:     false,
+				buildServiceNameV0: staticName("gocql.query"),
+				buildOpNameV0: func(opCtx OperationContext) string {
+					if opCtx["operationType"] == "batch" {
+						return "cassandra.batch"
+					}
+					return "cassandra.query"
+				},
+				buildOpNameV1: staticName("cassandra.query"),
+			},
+		},
+	},
+	PackageGoFiberV2: {
+		TracedPackage: "github.com/gofiber/fiber/v2",
+		EnvVarPrefix:  "FIBER",
+		naming: map[Component]componentNames{
+			ComponentServer: {
+				useDDServiceV0:     true,
+				buildServiceNameV0: staticName("fiber"),
+				buildOpNameV0:      staticName("http.request"),
+				buildOpNameV1:      staticName("http.server.request"),
+			},
+		},
+	},
+	PackageRedigo: {
+		TracedPackage: "github.com/gomodule/redigo",
+		EnvVarPrefix:  "REDIGO",
+		naming: map[Component]componentNames{
+			ComponentDefault: {
+				useDDServiceV0:     false,
+				buildServiceNameV0: staticName("redis.conn"),
+				buildOpNameV0:      staticName("redis.command"),
+				buildOpNameV1:      staticName("redis.command"),
+			},
+		},
+	},
+	PackageGoogleAPI: {
+		TracedPackage: "google.golang.org/api",
+		EnvVarPrefix:  "GOOGLE_API",
+		naming:        nil, // this package does not use naming schema
+	},
+
+	// TODO
+
 	PackageNetHTTP: {
 		TracedPackage: "net/http",
 		EnvVarPrefix:  "HTTP",

@@ -6,50 +6,53 @@
 package namingschematest
 
 import (
-	"net/http/httptest"
 	"testing"
 
-	"github.com/gin-gonic/gin"
+	"github.com/go-pg/pg/v10"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	gintrace "github.com/DataDog/dd-trace-go/contrib/gin-gonic/gin/v2"
+	pgtrace "github.com/DataDog/dd-trace-go/contrib/go-pg/pg.v10/v2"
 	"github.com/DataDog/dd-trace-go/instrumentation/internal/namingschematest/harness"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 )
 
-var ginTest = harness.TestCase{
-	Name: instrumentation.PackageGin,
+var goPGv10Test = harness.TestCase{
+	Name: instrumentation.PackageGoPGV10,
 	GenSpans: func(t *testing.T, serviceOverride string) []*mocktracer.Span {
-		// silence startup logs
-		gin.SetMode(gin.ReleaseMode)
-
+		var opts []pgtrace.Option
+		if serviceOverride != "" {
+			opts = append(opts, pgtrace.WithService(serviceOverride))
+		}
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		mux := gin.New()
-		mux.Use(gintrace.Middleware(serviceOverride))
-		mux.GET("/200", func(c *gin.Context) {
-			c.Status(200)
+		conn := pg.Connect(&pg.Options{
+			User:     "postgres",
+			Password: "postgres",
+			Database: "postgres",
 		})
-		r := httptest.NewRequest("GET", "/200", nil)
-		w := httptest.NewRecorder()
-		mux.ServeHTTP(w, r)
+		pgtrace.Wrap(conn, opts...)
+		defer conn.Close()
+
+		var n int
+		_, err := conn.QueryOne(pg.Scan(&n), "SELECT 1")
+		require.NoError(t, err)
 
 		return mt.FinishedSpans()
 	},
 	WantServiceNameV0: harness.ServiceNameAssertions{
-		Defaults:        []string{"gin.router"},
+		Defaults:        []string{"gopg.db"},
 		DDService:       []string{harness.TestDDService},
 		ServiceOverride: []string{harness.TestServiceOverride},
 	},
 	AssertOpV0: func(t *testing.T, spans []*mocktracer.Span) {
 		require.Len(t, spans, 1)
-		assert.Equal(t, "http.request", spans[0].OperationName())
+		assert.Equal(t, "go-pg", spans[0].OperationName())
 	},
 	AssertOpV1: func(t *testing.T, spans []*mocktracer.Span) {
 		require.Len(t, spans, 1)
-		assert.Equal(t, "http.server.request", spans[0].OperationName())
+		assert.Equal(t, "postgresql.query", spans[0].OperationName())
 	},
 }

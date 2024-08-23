@@ -14,17 +14,17 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
-	"github.com/DataDog/dd-trace-go/v2/internal/log"
-	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 
 	"github.com/gofiber/fiber/v2"
 )
 
 const componentName = "gofiber/fiber.v2"
 
+var instr *instrumentation.Instrumentation
+
 func init() {
-	telemetry.LoadIntegration(componentName)
-	tracer.MarkIntegrationImported("github.com/gofiber/fiber/v2")
+	instr = instrumentation.Load(instrumentation.PackageGoFiberV2)
 }
 
 // Middleware returns middleware that will trace incoming requests.
@@ -34,7 +34,7 @@ func Middleware(opts ...Option) func(c *fiber.Ctx) error {
 	for _, fn := range opts {
 		fn.apply(cfg)
 	}
-	log.Debug("gofiber/fiber.v2: Middleware: %#v", cfg)
+	instr.Logger().Debug("gofiber/fiber.v2: Middleware: %#v", cfg)
 	return func(c *fiber.Ctx) error {
 		if cfg.ignoreRequest(c) {
 			return c.Next()

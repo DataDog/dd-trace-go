@@ -8,8 +8,6 @@ package api
 import (
 	"context"
 	"math"
-
-	"github.com/DataDog/dd-trace-go/v2/internal"
 )
 
 type config struct {
@@ -21,14 +19,9 @@ type config struct {
 }
 
 func newConfig(options ...Option) *config {
-	rate := math.NaN()
-	if internal.BoolEnv("DD_TRACE_GOOGLE_API_ANALYTICS_ENABLED", false) {
-		rate = 1.0
-	}
 	cfg := &config{
-		ctx: context.Background(),
-		// analyticsRate: globalconfig.AnalyticsRate(),
-		analyticsRate:            rate,
+		ctx:                      context.Background(),
+		analyticsRate:            instr.AnalyticsRate(false),
 		endpointMetadataDisabled: false,
 	}
 	for _, opt := range options {

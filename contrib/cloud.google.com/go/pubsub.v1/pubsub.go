@@ -17,12 +17,12 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 )
 
-const componentName = instrumentation.PackageCloudGoogleComPubsub
+const componentName = instrumentation.PackageGCPPubsub
 
 var instr *instrumentation.Instrumentation
 
 func init() {
-	instr = instrumentation.Load(instrumentation.PackageCloudGoogleComPubsub)
+	instr = instrumentation.Load(instrumentation.PackageGCPPubsub)
 }
 
 // Publish publishes a message on the specified topic and returns a PublishResult.
