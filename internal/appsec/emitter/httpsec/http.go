@@ -12,18 +12,17 @@ package httpsec
 
 import (
 	"context"
-	"gopkg.in/DataDog/dd-trace-go.v1/appsec/events"
 
 	// Blank import needed to use embed for the default blocked response payloads
 	_ "embed"
 	"net/http"
 	"strings"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/appsec/events"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/httpsec/types"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/sharedsec"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/trace"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/trace/httptrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
@@ -36,7 +35,7 @@ import (
 // This function should not be called when AppSec is disabled in order to
 // get preciser error logs.
 func MonitorParsedBody(ctx context.Context, body any) error {
-	parent, _ := ctx.Value(listener.ContextKey{}).(*types.Operation)
+	parent, _ := dyngo.FromContext(ctx)
 	if parent == nil {
 		log.Error("appsec: parsed http body monitoring ignored: could not find the http handler instrumentation metadata in the request context: the request handler is not being monitored by a middleware function or the provided context is not the expected request context")
 		return nil
@@ -195,10 +194,9 @@ func StartOperation(ctx context.Context, args types.HandlerOperationArgs, setup 
 		Operation:  dyngo.NewOperation(nil),
 		TagsHolder: trace.NewTagsHolder(),
 	}
-	newCtx := context.WithValue(ctx, listener.ContextKey{}, op)
 	for _, cb := range setup {
 		cb(op)
 	}
-	dyngo.StartOperation(op, args)
-	return newCtx, op
+
+	return dyngo.StartAndRegisterOperation(ctx, op, args), op
 }
