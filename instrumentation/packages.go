@@ -44,6 +44,7 @@ const (
 	PackageSegmentioKafkaGo Package = "segmentio/kafka-go"
 	PackageRedisGoRedisV9   Package = "redis/go-redis.v9"
 	PackageOlivereElasticV5 Package = "olivere/elastic"
+	PackageMiekgDNS         Package = "miekg/dns"
 )
 
 type Component int
@@ -436,6 +437,9 @@ var packages = map[Package]PackageInfo{
 				buildOpNameV1:      staticName("elasticsearch.query"),
 			},
 		},
+	},
+	PackageMiekgDNS: {
+		TracedPackage: "github.com/miekg/dns",
 	},
 }
 
