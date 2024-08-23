@@ -42,6 +42,7 @@ func TestNamingSchema(t *testing.T) {
 		segmentioKafkaGo,
 		redisGoRedisV9,
 		olivereElasticV5,
+		labstackEchoV4,
 	}
 	for _, tc := range testCases {
 		harness.RunTest(t, tc)

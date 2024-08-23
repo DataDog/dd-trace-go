@@ -45,6 +45,7 @@ const (
 	PackageRedisGoRedisV9   Package = "redis/go-redis.v9"
 	PackageOlivereElasticV5 Package = "olivere/elastic"
 	PackageMiekgDNS         Package = "miekg/dns"
+	PackageLabstackEchoV4   Package = "labstack/echo"
 )
 
 type Component int
@@ -440,6 +441,18 @@ var packages = map[Package]PackageInfo{
 	},
 	PackageMiekgDNS: {
 		TracedPackage: "github.com/miekg/dns",
+	},
+	PackageLabstackEchoV4: {
+		TracedPackage: "github.com/labstack/echo/v4",
+		EnvVarPrefix:  "ECHO",
+		naming: map[Component]componentNames{
+			ComponentServer: {
+				useDDServiceV0:     false,
+				buildServiceNameV0: staticName("echo"),
+				buildOpNameV0:      staticName("http.request"),
+				buildOpNameV1:      staticName("http.server.request"),
+			},
+		},
 	},
 }
 

@@ -9,15 +9,10 @@ import (
 	"errors"
 	"math"
 
-	"github.com/DataDog/dd-trace-go/v2/internal"
-	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
-	"github.com/DataDog/dd-trace-go/v2/internal/namingschema"
-	"github.com/DataDog/dd-trace-go/v2/internal/normalizer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 
 	"github.com/labstack/echo/v4"
 )
-
-const defaultServiceName = "echo"
 
 type config struct {
 	serviceName       string
@@ -26,7 +21,7 @@ type config struct {
 	ignoreRequestFunc IgnoreRequestFunc
 	isStatusError     func(statusCode int) bool
 	translateError    func(err error) (*echo.HTTPError, bool)
-	headerTags        *internal.LockMap
+	headerTags        instrumentation.HeaderTags
 	errCheck          func(error) bool
 	tags              map[string]interface{}
 }
@@ -47,10 +42,10 @@ func (fn OptionFn) apply(cfg *config) {
 type IgnoreRequestFunc func(c echo.Context) bool
 
 func defaults(cfg *config) {
-	cfg.serviceName = namingschema.ServiceName(defaultServiceName)
+	cfg.serviceName = instr.ServiceName(instrumentation.ComponentServer, nil)
 	cfg.analyticsRate = math.NaN()
 	cfg.isStatusError = isServerError
-	cfg.headerTags = globalconfig.HeaderTagMap()
+	cfg.headerTags = instr.HTTPHeadersAsTags()
 	cfg.tags = make(map[string]interface{})
 	cfg.translateError = func(err error) (*echo.HTTPError, bool) {
 		var echoErr *echo.HTTPError
@@ -133,9 +128,9 @@ func isServerError(statusCode int) bool {
 // Using this feature can risk exposing sensitive data such as authorization tokens to Datadog.
 // Special headers can not be sub-selected. E.g., an entire Cookie header would be transmitted, without the ability to choose specific Cookies.
 func WithHeaderTags(headers []string) OptionFn {
-	headerTagsMap := normalizer.HeaderTagSlice(headers)
+	headerTagsMap := instrumentation.NewHeaderTags(headers)
 	return func(cfg *config) {
-		cfg.headerTags = internal.NewLockMap(headerTagsMap)
+		cfg.headerTags = headerTagsMap
 	}
 }
 
