@@ -13,8 +13,8 @@ import (
 	appsecLog "github.com/DataDog/appsec-internal-go/log"
 	waf "github.com/DataDog/go-libddwaf/v2"
 
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/dyngo"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/config"
-	"github.com/DataDog/dd-trace-go/v2/internal/appsec/dyngo"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 

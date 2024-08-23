@@ -12,9 +12,9 @@ import (
 	"github.com/DataDog/appsec-internal-go/limiter"
 	waf "github.com/DataDog/go-libddwaf/v2"
 
-	"github.com/DataDog/dd-trace-go/v2/internal/appsec/dyngo"
-	"github.com/DataDog/dd-trace-go/v2/internal/appsec/emitter/sharedsec"
-	"github.com/DataDog/dd-trace-go/v2/internal/appsec/trace"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/dyngo"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/sharedsec"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/trace"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 

@@ -8,7 +8,7 @@ package namingschematest
 import (
 	"testing"
 
-	"github.com/DataDog/dd-trace-go/instrumentation/internal/namingschematest/harness"
+	"github.com/DataDog/dd-trace-go/instrumentation/internal/namingschematest/v2/harness"
 )
 
 func TestNamingSchema(t *testing.T) {
@@ -37,6 +37,8 @@ func TestNamingSchema(t *testing.T) {
 		goRedisV7Test,
 		goRedisV8Test,
 		gocqlTest,
+		grpcServerTest,
+		grpcClientTest,
 		fiberV2Test,
 		redigoTest,
 		netHTTPServer,

@@ -3,8 +3,6 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
-//go:generate sh gen_proto.sh
-
 // Package grpc provides functions to trace the google.golang.org/grpc package v1.2.
 package grpc // import "github.com/DataDog/dd-trace-go/contrib/google.golang.org/grpc/v2"
 
@@ -18,7 +16,7 @@ import (
 	"github.com/DataDog/dd-trace-go/contrib/google.golang.org/grpc/v2/internal/grpcutil"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
-	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 
 	"github.com/golang/protobuf/proto"
 	"google.golang.org/grpc/codes"
@@ -28,9 +26,10 @@ import (
 
 const componentName = "google.golang.org/grpc"
 
+var instr *instrumentation.Instrumentation
+
 func init() {
-	telemetry.LoadIntegration(componentName)
-	tracer.MarkIntegrationImported(componentName)
+	instr = instrumentation.Load(instrumentation.PackageGRPC)
 }
 
 // cache a constant option: saves one allocation per call
@@ -55,11 +54,11 @@ func (cfg *config) startSpanOptions(opts ...tracer.StartSpanOption) []tracer.Sta
 }
 
 func startSpanFromContext(
-	ctx context.Context, method, operation string, serviceFn func() string, opts ...tracer.StartSpanOption,
+	ctx context.Context, method, operation string, serviceName string, opts ...tracer.StartSpanOption,
 ) (*tracer.Span, context.Context) {
 	methodElements := strings.SplitN(strings.TrimPrefix(method, "/"), "/", 2)
 	opts = append(opts,
-		tracer.ServiceName(serviceFn()),
+		tracer.ServiceName(serviceName),
 		tracer.ResourceName(method),
 		tracer.Tag(tagMethodName, method),
 		spanTypeRPC,
