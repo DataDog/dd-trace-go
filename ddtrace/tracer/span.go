@@ -500,9 +500,11 @@ func (s *span) Finish(opts ...ddtrace.FinishOption) {
 		s.SetTag("go_execution_traced", "partial")
 	}
 
-	if tr, ok := internal.GetGlobalTracer().(*tracer); ok && tr.rulesSampling.traces.enabled() {
-		if !s.context.trace.isLocked() && s.context.trace.propagatingTag(keyDecisionMaker) != "-4" {
-			tr.rulesSampling.SampleTrace(s)
+	if s.root() == s {
+		if tr, ok := internal.GetGlobalTracer().(*tracer); ok && tr.rulesSampling.traces.enabled() {
+			if !s.context.trace.isLocked() && s.context.trace.propagatingTag(keyDecisionMaker) != "-4" {
+				tr.rulesSampling.SampleTrace(s)
+			}
 		}
 	}
 
@@ -600,13 +602,21 @@ func newAggregableSpan(s *span, obfuscator *obfuscate.Obfuscator) *aggregableSpa
 			statusCode = uint32(c)
 		}
 	}
+	var isTraceRoot trilean
+	if s.ParentID == 0 {
+		isTraceRoot = trilean_true
+	} else {
+		isTraceRoot = trilean_false
+	}
+
 	key := aggregation{
-		Name:       s.Name,
-		Resource:   obfuscatedResource(obfuscator, s.Type, s.Resource),
-		Service:    s.Service,
-		Type:       s.Type,
-		Synthetics: strings.HasPrefix(s.Meta[keyOrigin], "synthetics"),
-		StatusCode: statusCode,
+		Name:        s.Name,
+		Resource:    obfuscatedResource(obfuscator, s.Type, s.Resource),
+		Service:     s.Service,
+		Type:        s.Type,
+		Synthetics:  strings.HasPrefix(s.Meta[keyOrigin], "synthetics"),
+		StatusCode:  statusCode,
+		IsTraceRoot: isTraceRoot,
 	}
 	return &aggregableSpan{
 		key:      key,
