@@ -44,6 +44,7 @@ func TestNamingSchema(t *testing.T) {
 		olivereElasticV5,
 		labstackEchoV4,
 		julienschmidtHTTPRouter,
+		ibmSarama,
 	}
 	for _, tc := range testCases {
 		harness.RunTest(t, tc)

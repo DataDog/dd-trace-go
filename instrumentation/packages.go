@@ -485,6 +485,24 @@ var packages = map[Package]PackageInfo{
 			},
 		},
 	},
+	PackageIBMSarama: {
+		TracedPackage: "github.com/IBM/sarama",
+		EnvVarPrefix:  "SARAMA",
+		naming: map[Component]componentNames{
+			ComponentConsumer: {
+				useDDServiceV0:     true,
+				buildServiceNameV0: staticName("kafka"),
+				buildOpNameV0:      staticName("kafka.consume"),
+				buildOpNameV1:      staticName("kafka.process"),
+			},
+			ComponentProducer: {
+				useDDServiceV0:     false,
+				buildServiceNameV0: staticName("kafka"),
+				buildOpNameV0:      staticName("kafka.produce"),
+				buildOpNameV1:      staticName("kafka.send"),
+			},
+		},
+	},
 }
 
 func staticName(name string) func(OperationContext) string {
