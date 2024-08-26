@@ -46,6 +46,7 @@ const (
 	PackageOlivereElasticV5 Package = "olivere/elastic"
 	PackageMiekgDNS         Package = "miekg/dns"
 	PackageLabstackEchoV4   Package = "labstack/echo"
+	PackageK8SClientGo      Package = "k8s.io/client-go/kubernetes"
 )
 
 type Component int
@@ -453,6 +454,9 @@ var packages = map[Package]PackageInfo{
 				buildOpNameV1:      staticName("http.server.request"),
 			},
 		},
+	},
+	PackageK8SClientGo: {
+		TracedPackage: "k8s.io/client-go/kubernetes",
 	},
 }
 
