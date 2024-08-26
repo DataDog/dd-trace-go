@@ -43,6 +43,7 @@ func TestNamingSchema(t *testing.T) {
 		redisGoRedisV9,
 		olivereElasticV5,
 		labstackEchoV4,
+		julienschmidtHTTPRouter,
 	}
 	for _, tc := range testCases {
 		harness.RunTest(t, tc)

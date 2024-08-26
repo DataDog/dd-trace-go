@@ -34,19 +34,20 @@ const (
 	PackageNetHTTP   Package = "net/http"
 	PackageIBMSarama Package = "IBM/sarama"
 
-	PackageValyalaFastHTTP  Package = "valyala/fasthttp"
-	PackageUrfaveNegroni    Package = "urfave/negroni"
-	PackageTwitchTVTwirp    Package = "twitchtv/twirp"
-	PackageTidwallBuntDB    Package = "tidwall/buntdb"
-	PackageSyndtrGoLevelDB  Package = "syndtr/goleveldb/leveldb"
-	PackageSirupsenLogrus   Package = "sirupsen/logrus"
-	PackageShopifySarama    Package = "Shopify/sarama"
-	PackageSegmentioKafkaGo Package = "segmentio/kafka-go"
-	PackageRedisGoRedisV9   Package = "redis/go-redis.v9"
-	PackageOlivereElasticV5 Package = "olivere/elastic"
-	PackageMiekgDNS         Package = "miekg/dns"
-	PackageLabstackEchoV4   Package = "labstack/echo"
-	PackageK8SClientGo      Package = "k8s.io/client-go/kubernetes"
+	PackageValyalaFastHTTP         Package = "valyala/fasthttp"
+	PackageUrfaveNegroni           Package = "urfave/negroni"
+	PackageTwitchTVTwirp           Package = "twitchtv/twirp"
+	PackageTidwallBuntDB           Package = "tidwall/buntdb"
+	PackageSyndtrGoLevelDB         Package = "syndtr/goleveldb/leveldb"
+	PackageSirupsenLogrus          Package = "sirupsen/logrus"
+	PackageShopifySarama           Package = "Shopify/sarama"
+	PackageSegmentioKafkaGo        Package = "segmentio/kafka-go"
+	PackageRedisGoRedisV9          Package = "redis/go-redis.v9"
+	PackageOlivereElasticV5        Package = "olivere/elastic"
+	PackageMiekgDNS                Package = "miekg/dns"
+	PackageLabstackEchoV4          Package = "labstack/echo"
+	PackageK8SClientGo             Package = "k8s.io/client-go/kubernetes"
+	PackageJulienschmidtHTTPRouter Package = "julienschmidt/httprouter"
 )
 
 type Component int
@@ -457,6 +458,18 @@ var packages = map[Package]PackageInfo{
 	},
 	PackageK8SClientGo: {
 		TracedPackage: "k8s.io/client-go/kubernetes",
+	},
+	PackageJulienschmidtHTTPRouter: {
+		TracedPackage: "github.com/julienschmidt/httprouter",
+		EnvVarPrefix:  "HTTPROUTER",
+		naming: map[Component]componentNames{
+			ComponentServer: {
+				useDDServiceV0:     false,
+				buildServiceNameV0: staticName("http.router"),
+				buildOpNameV0:      staticName("http.request"),
+				buildOpNameV1:      staticName("http.server.request"),
+			},
+		},
 	},
 }
 
