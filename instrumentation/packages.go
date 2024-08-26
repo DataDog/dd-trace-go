@@ -48,6 +48,7 @@ const (
 	PackageLabstackEchoV4          Package = "labstack/echo"
 	PackageK8SClientGo             Package = "k8s.io/client-go/kubernetes"
 	PackageJulienschmidtHTTPRouter Package = "julienschmidt/httprouter"
+	PackageJmoironSQLx             Package = "jmoiron/sqlx"
 )
 
 type Component int
@@ -470,6 +471,9 @@ var packages = map[Package]PackageInfo{
 				buildOpNameV1:      staticName("http.server.request"),
 			},
 		},
+	},
+	PackageJmoironSQLx: {
+		TracedPackage: "github.com/jmoiron/sqlx",
 	},
 }
 
