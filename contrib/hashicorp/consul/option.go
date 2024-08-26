@@ -9,8 +9,7 @@ import (
 	"math"
 	"net"
 
-	"github.com/DataDog/dd-trace-go/v2/internal"
-	"github.com/DataDog/dd-trace-go/v2/internal/namingschema"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 
 	consul "github.com/hashicorp/consul/api"
 )
@@ -39,14 +38,9 @@ func (fn ClientOptionFn) apply(cfg *clientConfig) {
 }
 
 func defaults(cfg *clientConfig) {
-	cfg.serviceName = namingschema.ServiceNameOverrideV0(defaultServiceName, defaultServiceName)
-	cfg.spanName = namingschema.OpName(namingschema.ConsulOutbound)
-
-	if internal.BoolEnv("DD_TRACE_CONSUL_ANALYTICS_ENABLED", false) {
-		cfg.analyticsRate = 1.0
-	} else {
-		cfg.analyticsRate = math.NaN()
-	}
+	cfg.serviceName = instr.ServiceName(instrumentation.ComponentDefault, nil)
+	cfg.spanName = instr.OperationName(instrumentation.ComponentDefault, nil)
+	cfg.analyticsRate = instr.AnalyticsRate(false)
 }
 
 // WithService sets the given service name for the client.

@@ -50,6 +50,7 @@ const (
 	PackageJulienschmidtHTTPRouter Package = "julienschmidt/httprouter"
 	PackageJmoironSQLx             Package = "jmoiron/sqlx"
 	PackageJackcPGXV5              Package = "jackc/pgx.v5"
+	PackageHashicorpConsulAPI      Package = "hashicorp/consul"
 )
 
 type Component int
@@ -500,6 +501,18 @@ var packages = map[Package]PackageInfo{
 				buildServiceNameV0: staticName("kafka"),
 				buildOpNameV0:      staticName("kafka.produce"),
 				buildOpNameV1:      staticName("kafka.send"),
+			},
+		},
+	},
+	PackageHashicorpConsulAPI: {
+		TracedPackage: "github.com/hashicorp/consul/api",
+		EnvVarPrefix:  "CONSUL",
+		naming: map[Component]componentNames{
+			ComponentDefault: {
+				useDDServiceV0:     false,
+				buildServiceNameV0: staticName("consul"),
+				buildOpNameV0:      staticName("consul.command"),
+				buildOpNameV1:      staticName("consul.query"),
 			},
 		},
 	},
