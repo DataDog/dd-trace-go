@@ -10,6 +10,7 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 
 	"github.com/jackc/pgx/v5"
 )
@@ -180,7 +181,7 @@ func (t *pgxTracer) spanOptions(connConfig *pgx.ConnConfig, op operationType, sq
 		tracer.ServiceName(t.cfg.serviceName),
 		tracer.SpanType(ext.SpanTypeSQL),
 		tracer.Tag(ext.DBSystem, ext.DBSystemPostgreSQL),
-		tracer.Tag(ext.Component, componentName),
+		tracer.Tag(ext.Component, instrumentation.PackageJackcPGXV5),
 		tracer.Tag(ext.SpanKind, ext.SpanKindClient),
 		tracer.Tag(tagOperation, string(op)),
 	}

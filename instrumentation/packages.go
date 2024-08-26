@@ -49,6 +49,7 @@ const (
 	PackageK8SClientGo             Package = "k8s.io/client-go/kubernetes"
 	PackageJulienschmidtHTTPRouter Package = "julienschmidt/httprouter"
 	PackageJmoironSQLx             Package = "jmoiron/sqlx"
+	PackageJackcPGXV5              Package = "jackc/pgx.v5"
 )
 
 type Component int
@@ -474,6 +475,15 @@ var packages = map[Package]PackageInfo{
 	},
 	PackageJmoironSQLx: {
 		TracedPackage: "github.com/jmoiron/sqlx",
+	},
+	PackageJackcPGXV5: {
+		TracedPackage: "github.com/jackc/pgx/v5",
+		naming: map[Component]componentNames{
+			ComponentDefault: {
+				useDDServiceV0:     false,
+				buildServiceNameV0: staticName("postgres.db"),
+			},
+		},
 	},
 }
 

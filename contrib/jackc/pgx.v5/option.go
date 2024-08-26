@@ -5,7 +5,9 @@
 
 package pgx
 
-import "github.com/DataDog/dd-trace-go/v2/internal/namingschema"
+import (
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
+)
 
 type config struct {
 	serviceName   string
@@ -18,7 +20,7 @@ type config struct {
 
 func defaultConfig() *config {
 	return &config{
-		serviceName:   namingschema.ServiceName(defaultServiceName),
+		serviceName:   instr.ServiceName(instrumentation.ComponentDefault, nil),
 		traceQuery:    true,
 		traceBatch:    true,
 		traceCopyFrom: true,
