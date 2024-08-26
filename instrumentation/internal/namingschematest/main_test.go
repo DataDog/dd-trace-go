@@ -50,6 +50,7 @@ func TestNamingSchema(t *testing.T) {
 		julienschmidtHTTPRouter,
 		ibmSarama,
 		hashicorpConsul,
+		hashicorpVault,
 	}
 	for _, tc := range testCases {
 		harness.RunTest(t, tc)
