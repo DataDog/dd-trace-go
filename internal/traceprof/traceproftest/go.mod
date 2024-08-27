@@ -52,6 +52,6 @@ replace github.com/DataDog/dd-trace-go/contrib/google.golang.org/grpc/v2 => ../.
 
 replace github.com/DataDog/dd-trace-go/contrib/julienschmidt/httprouter/v2 => ../../../contrib/julienschmidt/httprouter
 
-replace github.com/DataDog/dd-trace-go/v2 => ../../..
-
 replace github.com/DataDog/dd-trace-go/contrib/net/http/v2 => ../../../contrib/net/http
+
+replace github.com/DataDog/dd-trace-go/v2 => ../../..

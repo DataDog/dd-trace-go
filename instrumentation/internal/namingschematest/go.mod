@@ -29,7 +29,19 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/gofiber/fiber.v2/v2 v2.0.0-00010101000000-000000000000
 	github.com/DataDog/dd-trace-go/contrib/gomodule/redigo/v2 v2.0.0-00010101000000-000000000000
 	github.com/DataDog/dd-trace-go/contrib/google.golang.org/grpc/v2 v2.0.0-00010101000000-000000000000
+	github.com/DataDog/dd-trace-go/contrib/gorilla/mux/v2 v2.0.0-00010101000000-000000000000
+	github.com/DataDog/dd-trace-go/contrib/graph-gophers/graphql-go/v2 v2.0.0-00010101000000-000000000000
+	github.com/DataDog/dd-trace-go/contrib/hashicorp/consul/v2 v2.0.0-00010101000000-000000000000
+	github.com/DataDog/dd-trace-go/contrib/hashicorp/vault/v2 v2.0.0-00010101000000-000000000000
+	github.com/DataDog/dd-trace-go/contrib/julienschmidt/httprouter/v2 v2.0.0-00010101000000-000000000000
+	github.com/DataDog/dd-trace-go/contrib/labstack/echo.v4/v2 v2.0.0-00010101000000-000000000000
 	github.com/DataDog/dd-trace-go/contrib/net/http/v2 v2.0.0-20240516153256-8d6fa2bea61d
+	github.com/DataDog/dd-trace-go/contrib/olivere/elastic.v5/v2 v2.0.0-00010101000000-000000000000
+	github.com/DataDog/dd-trace-go/contrib/redis/go-redis.v9/v2 v2.0.0-00010101000000-000000000000
+	github.com/DataDog/dd-trace-go/contrib/segmentio/kafka-go/v2 v2.0.0-00010101000000-000000000000
+	github.com/DataDog/dd-trace-go/contrib/syndtr/goleveldb/v2 v2.0.0-00010101000000-000000000000
+	github.com/DataDog/dd-trace-go/contrib/tidwall/buntdb/v2 v2.0.0-00010101000000-000000000000
+	github.com/DataDog/dd-trace-go/contrib/twitchtv/twirp/v2 v2.0.0-00010101000000-000000000000
 	github.com/DataDog/dd-trace-go/contrib/urfave/negroni/v2 v2.0.0-00010101000000-000000000000
 	github.com/DataDog/dd-trace-go/instrumentation/testutils/grpc/v2 v2.0.0-00010101000000-000000000000
 	github.com/DataDog/dd-trace-go/v2 v2.0.0-beta.2
@@ -59,26 +71,68 @@ require (
 	github.com/go-sql-driver/mysql v1.8.1
 	github.com/gocql/gocql v1.6.0
 	github.com/gofiber/fiber/v2 v2.52.5
+	github.com/graph-gophers/graphql-go v1.5.0
+	github.com/hashicorp/consul/api v1.29.4
+	github.com/hashicorp/vault/api v1.12.1
+	github.com/julienschmidt/httprouter v1.3.0
+	github.com/labstack/echo/v4 v4.12.0
 	github.com/lib/pq v1.10.9
+	github.com/redis/go-redis/v9 v9.6.1
+	github.com/segmentio/kafka-go v0.4.47
 	github.com/stretchr/testify v1.9.0
+	github.com/syndtr/goleveldb v1.0.1-0.20220721030215-126854af5e6d
+	github.com/twitchtv/twirp v8.1.3+incompatible
 	github.com/urfave/negroni v1.0.0
 	go.mongodb.org/mongo-driver v1.16.1
 	google.golang.org/api v0.191.0
 	google.golang.org/grpc v1.65.0
+	gopkg.in/olivere/elastic.v5 v5.0.86
 )
 
 require (
+	github.com/armon/go-metrics v0.4.1 // indirect
+	github.com/cenkalti/backoff/v3 v3.2.2 // indirect
 	github.com/eapache/go-resiliency v1.4.0 // indirect
 	github.com/eapache/go-xerial-snappy v0.0.0-20230731223053-c322873962e3 // indirect
 	github.com/eapache/queue v1.1.0 // indirect
+	github.com/fatih/color v1.16.0 // indirect
+	github.com/go-jose/go-jose/v3 v3.0.3 // indirect
+	github.com/gorilla/mux v1.8.1 // indirect
+	github.com/hashicorp/go-cleanhttp v0.5.2 // indirect
+	github.com/hashicorp/go-hclog v1.5.0 // indirect
+	github.com/hashicorp/go-immutable-radix v1.3.1 // indirect
+	github.com/hashicorp/go-retryablehttp v0.7.5 // indirect
+	github.com/hashicorp/go-rootcerts v1.0.2 // indirect
+	github.com/hashicorp/go-secure-stdlib/parseutil v0.1.8 // indirect
+	github.com/hashicorp/go-secure-stdlib/strutil v0.1.2 // indirect
+	github.com/hashicorp/go-sockaddr v1.0.5 // indirect
 	github.com/hashicorp/go-uuid v1.0.3 // indirect
+	github.com/hashicorp/golang-lru v1.0.2 // indirect
+	github.com/hashicorp/hcl v1.0.1-vault-5 // indirect
+	github.com/hashicorp/serf v0.10.1 // indirect
+	github.com/hashicorp/vault/sdk v0.9.2 // indirect
 	github.com/jcmturner/aescts/v2 v2.0.0 // indirect
 	github.com/jcmturner/dnsutils/v2 v2.0.0 // indirect
 	github.com/jcmturner/gofork v1.7.6 // indirect
 	github.com/jcmturner/gokrb5/v8 v8.4.4 // indirect
 	github.com/jcmturner/rpc/v2 v2.0.3 // indirect
+	github.com/josharian/intern v1.0.0 // indirect
+	github.com/labstack/gommon v0.4.2 // indirect
+	github.com/mailru/easyjson v0.7.7 // indirect
+	github.com/mitchellh/go-homedir v1.1.0 // indirect
 	github.com/pierrec/lz4/v4 v4.1.18 // indirect
 	github.com/rcrowley/go-metrics v0.0.0-20201227073835-cf1acfcdf475 // indirect
+	github.com/ryanuber/go-glob v1.0.0 // indirect
+	github.com/tidwall/btree v1.6.0 // indirect
+	github.com/tidwall/buntdb v1.3.0 // indirect
+	github.com/tidwall/gjson v1.16.0 // indirect
+	github.com/tidwall/grect v0.1.4 // indirect
+	github.com/tidwall/match v1.1.1 // indirect
+	github.com/tidwall/pretty v1.2.1 // indirect
+	github.com/tidwall/rtred v0.1.2 // indirect
+	github.com/tidwall/tinyqueue v0.1.1 // indirect
+	github.com/valyala/fasttemplate v1.2.2 // indirect
+	golang.org/x/exp v0.0.0-20240112132812-db7319d0e0e3 // indirect
 )
 
 require (
