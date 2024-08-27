@@ -54,6 +54,7 @@ const (
 	PackageHashicorpVaultAPI       Package = "hashicorp/vault"
 	PackageGraphQLGoGraphQL        Package = "graphql-go/graphql"
 	PackageGraphGophersGraphQLGo   Package = "graph-gophers/graphql-go"
+	PackageGormIOGormV1            Package = "gorm.io/gorm.v1"
 )
 
 type Component int
@@ -552,6 +553,9 @@ var packages = map[Package]PackageInfo{
 				buildOpNameV1:      staticName("graphql.server.request"),
 			},
 		},
+	},
+	PackageGormIOGormV1: {
+		TracedPackage: "gorm.io/gorm.v1",
 	},
 }
 
