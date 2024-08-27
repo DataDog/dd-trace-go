@@ -53,6 +53,7 @@ const (
 	PackageHashicorpConsulAPI      Package = "hashicorp/consul"
 	PackageHashicorpVaultAPI       Package = "hashicorp/vault"
 	PackageGraphQLGoGraphQL        Package = "graphql-go/graphql"
+	PackageGraphGophersGraphQLGo   Package = "graph-gophers/graphql-go"
 )
 
 type Component int
@@ -537,6 +538,18 @@ var packages = map[Package]PackageInfo{
 			ComponentDefault: {
 				useDDServiceV0:     false,
 				buildServiceNameV0: staticName("graphql"),
+			},
+		},
+	},
+	PackageGraphGophersGraphQLGo: {
+		TracedPackage: "github.com/graph-gophers/graphql-go",
+		EnvVarPrefix:  "GRAPHQL",
+		naming: map[Component]componentNames{
+			ComponentDefault: {
+				useDDServiceV0:     true,
+				buildServiceNameV0: staticName("graphql"),
+				buildOpNameV0:      staticName("graphql.request"),
+				buildOpNameV1:      staticName("graphql.server.request"),
 			},
 		},
 	},

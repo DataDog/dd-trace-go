@@ -18,21 +18,19 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	ddtracer "github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
-	"github.com/DataDog/dd-trace-go/v2/internal/appsec/emitter/graphqlsec"
-	"github.com/DataDog/dd-trace-go/v2/internal/appsec/emitter/graphqlsec/types"
-	"github.com/DataDog/dd-trace-go/v2/internal/log"
-	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/graphqlsec"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/graphqlsec/types"
 
 	"github.com/graph-gophers/graphql-go/errors"
 	"github.com/graph-gophers/graphql-go/introspection"
 	"github.com/graph-gophers/graphql-go/trace/tracer"
 )
 
-const componentName = "graph-gophers/graphql-go"
+var instr *instrumentation.Instrumentation
 
 func init() {
-	telemetry.LoadIntegration(componentName)
-	ddtracer.MarkIntegrationImported("github.com/graph-gophers/graphql-go")
+	instr = instrumentation.Load(instrumentation.PackageGraphGophersGraphQLGo)
 }
 
 const (
@@ -57,7 +55,7 @@ func (t *Tracer) TraceQuery(ctx context.Context, queryString, operationName stri
 		ddtracer.ServiceName(t.cfg.serviceName),
 		ddtracer.Tag(tagGraphqlQuery, queryString),
 		ddtracer.Tag(tagGraphqlOperationName, operationName),
-		ddtracer.Tag(ext.Component, componentName),
+		ddtracer.Tag(ext.Component, instrumentation.PackageGraphGophersGraphQLGo),
 		ddtracer.Measured(),
 	}
 	if t.cfg.traceVariables {
@@ -106,7 +104,7 @@ func (t *Tracer) TraceField(ctx context.Context, _, typeName, fieldName string, 
 		ddtracer.ServiceName(t.cfg.serviceName),
 		ddtracer.Tag(tagGraphqlField, fieldName),
 		ddtracer.Tag(tagGraphqlType, typeName),
-		ddtracer.Tag(ext.Component, componentName),
+		ddtracer.Tag(ext.Component, instrumentation.PackageGraphGophersGraphQLGo),
 		ddtracer.Measured(),
 	}
 	if t.cfg.traceVariables {
@@ -145,7 +143,7 @@ func NewTracer(opts ...Option) tracer.Tracer {
 	for _, opt := range opts {
 		opt.apply(cfg)
 	}
-	log.Debug("contrib/graph-gophers/graphql-go: Configuring Graphql Tracer: %#v", cfg)
+	instr.Logger().Debug("contrib/graph-gophers/graphql-go: Configuring Graphql Tracer: %#v", cfg)
 	return &Tracer{
 		cfg: cfg,
 	}
