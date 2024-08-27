@@ -12,10 +12,10 @@ package grpcsec
 import (
 	"context"
 
-	"github.com/DataDog/dd-trace-go/v2/internal/appsec/dyngo"
-	"github.com/DataDog/dd-trace-go/v2/internal/appsec/emitter/grpcsec/types"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/dyngo"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/grpcsec/types"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/trace"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/listener"
-	"github.com/DataDog/dd-trace-go/v2/internal/appsec/trace"
 )
 
 // StartHandlerOperation starts an gRPC server handler operation, along with the

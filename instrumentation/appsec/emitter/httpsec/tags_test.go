@@ -9,8 +9,8 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/trace"
 	testlib "github.com/DataDog/dd-trace-go/v2/internal/appsec/_testlib"
-	"github.com/DataDog/dd-trace-go/v2/internal/appsec/trace"
 
 	"github.com/stretchr/testify/require"
 )

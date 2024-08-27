@@ -1,4 +1,4 @@
-go 1.22.5 // Go version must match the highest supported version, not the minimum supported version.
+go 1.22.6 // Go version must match the highest supported version, not the minimum supported version.
 
 use (
 	.
@@ -53,6 +53,7 @@ use (
 	./contrib/urfave/negroni
 	./contrib/valyala/fasthttp
 	./instrumentation/internal/namingschematest
+	./instrumentation/testutils/grpc
 	./internal/apps
 	./internal/contrib/validationtest
 	./internal/traceprof/traceproftest

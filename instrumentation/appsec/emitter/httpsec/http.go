@@ -18,12 +18,12 @@ import (
 	"strings"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/dyngo"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/httpsec/types"
-	"github.com/DataDog/dd-trace-go/v2/internal/appsec/dyngo"
-	"github.com/DataDog/dd-trace-go/v2/internal/appsec/emitter/sharedsec"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/sharedsec"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/trace"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/trace/httptrace"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/listener"
-	"github.com/DataDog/dd-trace-go/v2/internal/appsec/trace"
-	"github.com/DataDog/dd-trace-go/v2/internal/appsec/trace/httptrace"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 
 	"github.com/DataDog/appsec-internal-go/netip"

@@ -4,12 +4,13 @@ go 1.21
 
 require (
 	github.com/DataDog/appsec-internal-go v1.5.0
+	github.com/DataDog/dd-trace-go/instrumentation/testutils/grpc/v2 v2.0.0-00010101000000-000000000000
 	github.com/DataDog/dd-trace-go/v2 v2.0.0-20240516153256-8d6fa2bea61d
 	github.com/golang/protobuf v1.5.4
 	github.com/stretchr/testify v1.8.4
 	github.com/tinylib/msgp v1.1.9
-	google.golang.org/grpc v1.64.0
-	google.golang.org/protobuf v1.34.1
+	google.golang.org/grpc v1.65.0
+	google.golang.org/protobuf v1.34.2
 )
 
 require (
@@ -39,8 +40,10 @@ require (
 	golang.org/x/text v0.15.0 // indirect
 	golang.org/x/time v0.5.0 // indirect
 	golang.org/x/xerrors v0.0.0-20231012003039-104605ab7028 // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20240318140521-94a12d6c2237 // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20240528184218-531527333157 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
+
+replace github.com/DataDog/dd-trace-go/instrumentation/testutils/grpc/v2 => ../../../instrumentation/testutils/grpc
 
 replace github.com/DataDog/dd-trace-go/v2 => ../../..

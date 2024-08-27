@@ -8,17 +8,16 @@ package grpc
 import (
 	"context"
 
-	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
-	"github.com/DataDog/dd-trace-go/v2/internal/appsec/dyngo"
-	"github.com/DataDog/dd-trace-go/v2/internal/appsec/emitter/grpcsec"
-	"github.com/DataDog/dd-trace-go/v2/internal/appsec/emitter/grpcsec/types"
-	"github.com/DataDog/dd-trace-go/v2/internal/appsec/emitter/sharedsec"
-	"github.com/DataDog/dd-trace-go/v2/internal/appsec/trace"
-	"github.com/DataDog/dd-trace-go/v2/internal/appsec/trace/grpctrace"
-	"github.com/DataDog/dd-trace-go/v2/internal/appsec/trace/httptrace"
-	"github.com/DataDog/dd-trace-go/v2/internal/log"
-
 	"github.com/DataDog/appsec-internal-go/netip"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/dyngo"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/grpcsec"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/grpcsec/types"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/sharedsec"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/trace"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/trace/grpctrace"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/trace/httptrace"
+
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
@@ -147,7 +146,7 @@ func setClientIP(ctx context.Context, span *tracer.Span, md metadata.MD) netip.A
 		remoteAddr = p.Addr.String()
 	}
 	ipTags, clientIP := httptrace.ClientIPTags(md, false, remoteAddr)
-	log.Debug("appsec: http client ip detection returned `%s` given the http headers `%v`", clientIP, md)
+	instr.Logger().Debug("appsec: http client ip detection returned `%s` given the http headers `%v`", clientIP, md)
 	if len(ipTags) > 0 {
 		trace.SetTags(span, ipTags)
 	}

@@ -109,6 +109,11 @@ func (i *Instrumentation) DataStreamsEnabled() bool {
 	return internal.BoolEnv("DD_DATA_STREAMS_ENABLED", false)
 }
 
+// TracerInitialized returns whether the global tracer has been initialized or not.
+func (i *Instrumentation) TracerInitialized() bool {
+	return internal.TracerInitialized()
+}
+
 // WithExecutionTraced marks ctx as being associated with an execution trace
 // task. It is assumed that ctx already contains a trace task. The caller is
 // responsible for ending the task.

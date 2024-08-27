@@ -6,18 +6,12 @@
 package grpc
 
 import (
+	"math"
+
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
-	"github.com/DataDog/dd-trace-go/v2/internal"
-	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
-	"github.com/DataDog/dd-trace-go/v2/internal/log"
-	"github.com/DataDog/dd-trace-go/v2/internal/namingschema"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 
 	"google.golang.org/grpc/codes"
-)
-
-const (
-	defaultClientServiceName = "grpc.client"
-	defaultServerServiceName = "grpc.server"
 )
 
 // Option describes options for the gRPC integration.
@@ -37,8 +31,33 @@ func (fn OptionFn) applyStream(cfg *config) {
 	fn(cfg)
 }
 
+type cachedServiceName struct {
+	value    string
+	getValue func() string
+}
+
+func newCachedServiceName(getValue func() string) *cachedServiceName {
+	c := &cachedServiceName{getValue: getValue}
+	// warmup cache
+	_ = c.String()
+	return c
+}
+
+func (cs *cachedServiceName) String() string {
+	if cs.value != "" {
+		return cs.value
+	}
+	svc := cs.getValue()
+	// cache only if the tracer has been started. This ensures we get the final value for service name, since this
+	// is where the tracer configuration is resolved (including env variables and tracer options).
+	if instr.TracerInitialized() {
+		cs.value = svc
+	}
+	return svc
+}
+
 type config struct {
-	serviceName         func() string
+	serviceName         *cachedServiceName
 	spanName            string
 	nonErrorCodes       map[codes.Code]bool
 	traceStreamCalls    bool
@@ -57,9 +76,8 @@ func defaults(cfg *config) {
 	cfg.traceStreamCalls = true
 	cfg.traceStreamMessages = true
 	cfg.nonErrorCodes = map[codes.Code]bool{codes.Canceled: true}
-	// cfg.spanOpts = append(cfg.spanOpts, tracer.AnalyticsRate(globalconfig.AnalyticsRate()))
-	if internal.BoolEnv("DD_TRACE_GRPC_ANALYTICS_ENABLED", false) {
-		cfg.spanOpts = append(cfg.spanOpts, tracer.AnalyticsRate(1.0))
+	if rate := instr.AnalyticsRate(false); !math.IsNaN(rate) {
+		cfg.spanOpts = append(cfg.spanOpts, tracer.AnalyticsRate(rate))
 	}
 	cfg.ignoredMetadata = map[string]struct{}{
 		"x-datadog-trace-id":          {},
@@ -69,31 +87,27 @@ func defaults(cfg *config) {
 }
 
 func clientDefaults(cfg *config) {
-	sn := namingschema.ServiceNameOverrideV0(defaultClientServiceName, defaultClientServiceName)
-	cfg.serviceName = func() string { return sn }
-	cfg.spanName = namingschema.OpName(namingschema.GRPCClient)
+	cfg.serviceName = newCachedServiceName(func() string {
+		return instr.ServiceName(instrumentation.ComponentClient, nil)
+	})
+	cfg.spanName = instr.OperationName(instrumentation.ComponentClient, nil)
 	defaults(cfg)
 }
 
 func serverDefaults(cfg *config) {
-	// We check for a configured service name, so we don't break users who are incorrectly creating their server
-	// before the call `tracer.Start()`
-	if globalconfig.ServiceName() != "" {
-		sn := namingschema.ServiceName(defaultServerServiceName)
-		cfg.serviceName = func() string { return sn }
-	} else {
-		log.Warn("No global service name was detected. GRPC Server may have been created before calling tracer.Start(). Will dynamically fetch service name for every span. " +
-			"Note this may have a slight performance cost, it is always recommended to start the tracer before initializing any traced packages.\n")
-		cfg.serviceName = func() string { return namingschema.ServiceName(defaultServerServiceName) }
-	}
-	cfg.spanName = namingschema.OpName(namingschema.GRPCServer)
+	cfg.serviceName = newCachedServiceName(func() string {
+		return instr.ServiceName(instrumentation.ComponentServer, nil)
+	})
+	cfg.spanName = instr.OperationName(instrumentation.ComponentServer, nil)
 	defaults(cfg)
 }
 
 // WithService sets the given service name for the intercepted client.
 func WithService(name string) OptionFn {
 	return func(cfg *config) {
-		cfg.serviceName = func() string { return name }
+		cfg.serviceName = newCachedServiceName(func() string {
+			return name
+		})
 	}
 }
 

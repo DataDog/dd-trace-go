@@ -39,7 +39,7 @@ const (
 	PackageGoFiberV2            Package = "gofiber/fiber.v2"
 	PackageRedigo               Package = "gomodule/redigo"
 	PackageGoogleAPI            Package = "google.golang.org/api"
-
+	PackageGRPC                 Package = "google.golang.org/grpc"
 	// TODO: ...
 
 	PackageNetHTTP   Package = "net/http"
@@ -424,7 +424,24 @@ var packages = map[Package]PackageInfo{
 		EnvVarPrefix:  "GOOGLE_API",
 		naming:        nil, // this package does not use naming schema
 	},
-
+	PackageGRPC: {
+		TracedPackage: "google.golang.org/grpc",
+		EnvVarPrefix:  "GRPC",
+		naming: map[Component]componentNames{
+			ComponentServer: {
+				useDDServiceV0:     true,
+				buildServiceNameV0: staticName("grpc.server"),
+				buildOpNameV0:      staticName("grpc.server"),
+				buildOpNameV1:      staticName("grpc.server.request"),
+			},
+			ComponentClient: {
+				useDDServiceV0:     false,
+				buildServiceNameV0: staticName("grpc.client"),
+				buildOpNameV0:      staticName("grpc.client"),
+				buildOpNameV1:      staticName("grpc.client.request"),
+			},
+		},
+	},
 	// TODO
 
 	PackageNetHTTP: {
