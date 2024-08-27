@@ -16,8 +16,8 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
-	"github.com/DataDog/dd-trace-go/v2/internal/contrib/namingschematest"
-	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils"
 
 	"github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/assert"
@@ -234,7 +234,7 @@ func TestAdditionalTagsFromClient(t *testing.T) {
 		simpleClient := redis.NewUniversalClient(simpleClientOpts)
 		config := &tracer.StartSpanConfig{}
 		expectedTags := map[string]interface{}{
-			"component": "redis/go-redis.v9",
+			"component": instrumentation.PackageRedisGoRedisV9,
 			"db.system": "redis",
 			"out.db":    "0",
 			"out.host":  "127.0.0.1",
@@ -261,7 +261,7 @@ func TestAdditionalTagsFromClient(t *testing.T) {
 		config := &tracer.StartSpanConfig{}
 		expectedTags := map[string]interface{}{
 			"out.db":    "0",
-			"component": "redis/go-redis.v9",
+			"component": instrumentation.PackageRedisGoRedisV9,
 			"db.system": "redis",
 			"span.kind": "client",
 			"span.type": "redis",
@@ -285,7 +285,7 @@ func TestAdditionalTagsFromClient(t *testing.T) {
 		config := &tracer.StartSpanConfig{}
 		expectedTags := map[string]interface{}{
 			"addrs":     "127.0.0.1:6379, 127.0.0.2:6379",
-			"component": "redis/go-redis.v9",
+			"component": instrumentation.PackageRedisGoRedisV9,
 			"db.system": "redis",
 			"span.kind": "client",
 			"span.type": "redis",
@@ -577,9 +577,7 @@ func TestAnalyticsSettings(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		rate := globalconfig.AnalyticsRate()
-		defer globalconfig.SetAnalyticsRate(rate)
-		globalconfig.SetAnalyticsRate(0.4)
+		testutils.SetGlobalAnalyticsRate(t, 0.4)
 
 		assertRate(t, mt, 0.4)
 	})
@@ -602,9 +600,7 @@ func TestAnalyticsSettings(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		rate := globalconfig.AnalyticsRate()
-		defer globalconfig.SetAnalyticsRate(rate)
-		globalconfig.SetAnalyticsRate(0.4)
+		testutils.SetGlobalAnalyticsRate(t, 0.4)
 
 		assertRate(t, mt, 0.23, WithAnalyticsRate(0.23))
 	})
@@ -686,32 +682,4 @@ func TestDial(t *testing.T) {
 	assert.Equal("redis/go-redis.v9", span.Tag(ext.Component))
 	assert.Equal(ext.SpanKindClient, span.Tag(ext.SpanKind))
 	assert.Equal("redis", span.Tag(ext.DBSystem))
-}
-
-func TestNamingSchema(t *testing.T) {
-	genSpans := namingschematest.GenSpansFn(func(t *testing.T, serviceOverride string) []*mocktracer.Span {
-		var opts []ClientOption
-		if serviceOverride != "" {
-			opts = append(opts, WithService(serviceOverride))
-		}
-		mt := mocktracer.Start()
-		defer mt.Stop()
-
-		client := NewClient(&redis.Options{Addr: "127.0.0.1:6379"}, opts...)
-		st := client.Set(context.Background(), "test_key", "test_value", 0)
-		require.NoError(t, st.Err())
-
-		spans := mt.FinishedSpans()
-		var span *mocktracer.Span
-		for _, s := range spans {
-			// pick up the redis.command span except dial
-			if s.OperationName() == "redis.command" {
-				span = s
-			}
-		}
-		assert.NotNil(t, span)
-		return []*mocktracer.Span{span}
-	})
-
-	namingschematest.NewRedisTest(genSpans, "redis.client")(t)
 }

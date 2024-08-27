@@ -64,6 +64,11 @@ func StartAppSec(t *testing.T) {
 	t.Cleanup(appsec.Stop)
 }
 
+func StartAppSecBench(b *testing.B) {
+	appsec.Start()
+	b.Cleanup(appsec.Stop)
+}
+
 type discardLogger struct{}
 
 func (d discardLogger) Log(_ string) {}

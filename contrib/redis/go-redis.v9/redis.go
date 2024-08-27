@@ -16,16 +16,15 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
-	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 
 	"github.com/redis/go-redis/v9"
 )
 
-const componentName = "redis/go-redis.v9"
+var instr *instrumentation.Instrumentation
 
 func init() {
-	telemetry.LoadIntegration(componentName)
-	tracer.MarkIntegrationImported("github.com/redis/go-redis/v9")
+	instr = instrumentation.Load(instrumentation.PackageRedisGoRedisV9)
 }
 
 type datadogHook struct {
@@ -102,7 +101,7 @@ func additionalTagOptions(client redis.UniversalClient) []tracer.StartSpanOption
 	}
 	additionalTags = append(additionalTags,
 		tracer.SpanType(ext.SpanTypeRedis),
-		tracer.Tag(ext.Component, componentName),
+		tracer.Tag(ext.Component, instrumentation.PackageRedisGoRedisV9),
 		tracer.Tag(ext.SpanKind, ext.SpanKindClient),
 		tracer.Tag(ext.DBSystem, ext.DBSystemRedis),
 	)

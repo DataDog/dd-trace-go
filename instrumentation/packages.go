@@ -45,13 +45,28 @@ const (
 	PackageNetHTTP   Package = "net/http"
 	PackageIBMSarama Package = "IBM/sarama"
 
-	PackageValyalaFastHTTP Package = "valyala/fasthttp"
-	PackageUrfaveNegroni   Package = "urfave/negroni"
-	PackageTwitchTVTwirp   Package = "twitchtv/twirp"
-	PackageTidwallBuntDB   Package = "tidwall/buntdb"
-	PackageSyndtrGoLevelDB Package = "syndtr/goleveldb/leveldb"
-	PackageSirupsenLogrus  Package = "sirupsen/logrus"
-	PackageShopifySarama   Package = "Shopify/sarama"
+	PackageValyalaFastHTTP         Package = "valyala/fasthttp"
+	PackageUrfaveNegroni           Package = "urfave/negroni"
+	PackageTwitchTVTwirp           Package = "twitchtv/twirp"
+	PackageTidwallBuntDB           Package = "tidwall/buntdb"
+	PackageSyndtrGoLevelDB         Package = "syndtr/goleveldb/leveldb"
+	PackageSirupsenLogrus          Package = "sirupsen/logrus"
+	PackageShopifySarama           Package = "Shopify/sarama"
+	PackageSegmentioKafkaGo        Package = "segmentio/kafka-go"
+	PackageRedisGoRedisV9          Package = "redis/go-redis.v9"
+	PackageOlivereElasticV5        Package = "olivere/elastic"
+	PackageMiekgDNS                Package = "miekg/dns"
+	PackageLabstackEchoV4          Package = "labstack/echo"
+	PackageK8SClientGo             Package = "k8s.io/client-go/kubernetes"
+	PackageJulienschmidtHTTPRouter Package = "julienschmidt/httprouter"
+	PackageJmoironSQLx             Package = "jmoiron/sqlx"
+	PackageJackcPGXV5              Package = "jackc/pgx.v5"
+	PackageHashicorpConsulAPI      Package = "hashicorp/consul"
+	PackageHashicorpVaultAPI       Package = "hashicorp/vault"
+	PackageGraphQLGoGraphQL        Package = "graphql-go/graphql"
+	PackageGraphGophersGraphQLGo   Package = "graph-gophers/graphql-go"
+	PackageGormIOGormV1            Package = "gorm.io/gorm.v1"
+	PackageGorillaMux              Package = "gorilla/mux"
 )
 
 type Component int
@@ -521,6 +536,169 @@ var packages = map[Package]PackageInfo{
 				buildServiceNameV0: staticName("kafka"),
 				buildOpNameV0:      staticName("kafka.produce"),
 				buildOpNameV1:      staticName("kafka.send"),
+			},
+		},
+	},
+	PackageSegmentioKafkaGo: {
+		TracedPackage: "github.com/segmentio/kafka-go",
+		EnvVarPrefix:  "KAFKA",
+		naming: map[Component]componentNames{
+			ComponentConsumer: {
+				useDDServiceV0:     true,
+				buildServiceNameV0: staticName("kafka"),
+				buildOpNameV0:      staticName("kafka.consume"),
+				buildOpNameV1:      staticName("kafka.process"),
+			},
+			ComponentProducer: {
+				useDDServiceV0:     false,
+				buildServiceNameV0: staticName("kafka"),
+				buildOpNameV0:      staticName("kafka.produce"),
+				buildOpNameV1:      staticName("kafka.send"),
+			},
+		},
+	},
+	PackageRedisGoRedisV9: {
+		TracedPackage: "github.com/redis/go-redis/v9",
+		EnvVarPrefix:  "REDIS",
+		naming: map[Component]componentNames{
+			ComponentDefault: {
+				useDDServiceV0:     true,
+				buildServiceNameV0: staticName("redis.client"),
+				buildOpNameV0:      staticName("redis.command"),
+				buildOpNameV1:      staticName("redis.command"),
+			},
+		},
+	},
+	PackageOlivereElasticV5: {
+		TracedPackage: "gopkg.in/olivere/elastic.v5",
+		EnvVarPrefix:  "ELASTIC",
+		naming: map[Component]componentNames{
+			ComponentDefault: {
+				useDDServiceV0:     false,
+				buildServiceNameV0: staticName("elastic.client"),
+				buildOpNameV0:      staticName("elasticsearch.query"),
+				buildOpNameV1:      staticName("elasticsearch.query"),
+			},
+		},
+	},
+	PackageMiekgDNS: {
+		TracedPackage: "github.com/miekg/dns",
+	},
+	PackageLabstackEchoV4: {
+		TracedPackage: "github.com/labstack/echo/v4",
+		EnvVarPrefix:  "ECHO",
+		naming: map[Component]componentNames{
+			ComponentServer: {
+				useDDServiceV0:     false,
+				buildServiceNameV0: staticName("echo"),
+				buildOpNameV0:      staticName("http.request"),
+				buildOpNameV1:      staticName("http.server.request"),
+			},
+		},
+	},
+	PackageK8SClientGo: {
+		TracedPackage: "k8s.io/client-go/kubernetes",
+	},
+	PackageJulienschmidtHTTPRouter: {
+		TracedPackage: "github.com/julienschmidt/httprouter",
+		EnvVarPrefix:  "HTTPROUTER",
+		naming: map[Component]componentNames{
+			ComponentServer: {
+				useDDServiceV0:     false,
+				buildServiceNameV0: staticName("http.router"),
+				buildOpNameV0:      staticName("http.request"),
+				buildOpNameV1:      staticName("http.server.request"),
+			},
+		},
+	},
+	PackageJmoironSQLx: {
+		TracedPackage: "github.com/jmoiron/sqlx",
+	},
+	PackageJackcPGXV5: {
+		TracedPackage: "github.com/jackc/pgx/v5",
+		naming: map[Component]componentNames{
+			ComponentDefault: {
+				useDDServiceV0:     false,
+				buildServiceNameV0: staticName("postgres.db"),
+			},
+		},
+	},
+	PackageIBMSarama: {
+		TracedPackage: "github.com/IBM/sarama",
+		EnvVarPrefix:  "SARAMA",
+		naming: map[Component]componentNames{
+			ComponentConsumer: {
+				useDDServiceV0:     true,
+				buildServiceNameV0: staticName("kafka"),
+				buildOpNameV0:      staticName("kafka.consume"),
+				buildOpNameV1:      staticName("kafka.process"),
+			},
+			ComponentProducer: {
+				useDDServiceV0:     false,
+				buildServiceNameV0: staticName("kafka"),
+				buildOpNameV0:      staticName("kafka.produce"),
+				buildOpNameV1:      staticName("kafka.send"),
+			},
+		},
+	},
+	PackageHashicorpConsulAPI: {
+		TracedPackage: "github.com/hashicorp/consul/api",
+		EnvVarPrefix:  "CONSUL",
+		naming: map[Component]componentNames{
+			ComponentDefault: {
+				useDDServiceV0:     false,
+				buildServiceNameV0: staticName("consul"),
+				buildOpNameV0:      staticName("consul.command"),
+				buildOpNameV1:      staticName("consul.query"),
+			},
+		},
+	},
+	PackageHashicorpVaultAPI: {
+		TracedPackage: "github.com/hashicorp/vault/api",
+		EnvVarPrefix:  "VAULT",
+		naming: map[Component]componentNames{
+			ComponentDefault: {
+				useDDServiceV0:     false,
+				buildServiceNameV0: staticName("vault"),
+				buildOpNameV0:      staticName("vault.command"),
+				buildOpNameV1:      staticName("vault.query"),
+			},
+		},
+	},
+	PackageGraphQLGoGraphQL: {
+		TracedPackage: "github.com/graphql-go/graphql",
+		EnvVarPrefix:  "GRAPHQL",
+		naming: map[Component]componentNames{
+			ComponentDefault: {
+				useDDServiceV0:     false,
+				buildServiceNameV0: staticName("graphql"),
+			},
+		},
+	},
+	PackageGraphGophersGraphQLGo: {
+		TracedPackage: "github.com/graph-gophers/graphql-go",
+		EnvVarPrefix:  "GRAPHQL",
+		naming: map[Component]componentNames{
+			ComponentDefault: {
+				useDDServiceV0:     true,
+				buildServiceNameV0: staticName("graphql"),
+				buildOpNameV0:      staticName("graphql.request"),
+				buildOpNameV1:      staticName("graphql.server.request"),
+			},
+		},
+	},
+	PackageGormIOGormV1: {
+		TracedPackage: "gorm.io/gorm.v1",
+	},
+	PackageGorillaMux: {
+		TracedPackage: "github.com/gorilla/mux",
+		EnvVarPrefix:  "MUX",
+		naming: map[Component]componentNames{
+			ComponentServer: {
+				useDDServiceV0:     true,
+				buildServiceNameV0: staticName("mux.router"),
+				buildOpNameV0:      staticName("http.request"),
+				buildOpNameV1:      staticName("http.server.request"),
 			},
 		},
 	},

@@ -11,10 +11,7 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
-	"github.com/DataDog/dd-trace-go/v2/internal"
-	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
-	"github.com/DataDog/dd-trace-go/v2/internal/namingschema"
-	"github.com/DataDog/dd-trace-go/v2/internal/normalizer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 )
 
 const defaultServiceName = "mux.router"
@@ -27,7 +24,7 @@ type routerConfig struct {
 	resourceNamer func(*Router, *http.Request) string
 	ignoreRequest func(*http.Request) bool
 	queryParams   bool
-	headerTags    *internal.LockMap
+	headerTags    instrumentation.HeaderTags
 }
 
 // RouterOption describes options for the Gorilla mux integration.
@@ -55,13 +52,9 @@ func newConfig(opts []RouterOption) *routerConfig {
 }
 
 func defaults(cfg *routerConfig) {
-	if internal.BoolEnv("DD_TRACE_MUX_ANALYTICS_ENABLED", false) {
-		cfg.analyticsRate = 1.0
-	} else {
-		cfg.analyticsRate = globalconfig.AnalyticsRate()
-	}
-	cfg.headerTags = globalconfig.HeaderTagMap()
-	cfg.serviceName = namingschema.ServiceName(defaultServiceName)
+	cfg.analyticsRate = instr.AnalyticsRate(true)
+	cfg.headerTags = instr.HTTPHeadersAsTags()
+	cfg.serviceName = instr.ServiceName(instrumentation.ComponentServer, nil)
 	cfg.resourceNamer = defaultResourceNamer
 	cfg.ignoreRequest = func(_ *http.Request) bool { return false }
 }
@@ -134,9 +127,8 @@ func WithResourceNamer(namer func(router *Router, req *http.Request) string) Rou
 // Using this feature can risk exposing sensitive data such as authorization tokens to Datadog.
 // Special headers can not be sub-selected. E.g., an entire Cookie header would be transmitted, without the ability to choose specific Cookies.
 func WithHeaderTags(headers []string) RouterOptionFn {
-	headerTagsMap := normalizer.HeaderTagSlice(headers)
 	return func(cfg *routerConfig) {
-		cfg.headerTags = internal.NewLockMap(headerTagsMap)
+		cfg.headerTags = instrumentation.NewHeaderTags(headers)
 	}
 }
 

@@ -31,7 +31,9 @@ var (
 			defer mt.Stop()
 
 			mux := httptrace.NewServeMux(opts...)
-			mux.HandleFunc("/200", handler200)
+			mux.HandleFunc("/200", func(w http.ResponseWriter, r *http.Request) {
+				w.Write([]byte("OK\n"))
+			})
 			r := httptest.NewRequest("GET", "http://localhost/200", nil)
 			w := httptest.NewRecorder()
 			mux.ServeHTTP(w, r)
@@ -63,7 +65,9 @@ var (
 			mt := mocktracer.Start()
 			defer mt.Stop()
 
-			srv := httptest.NewServer(http.HandlerFunc(handler200))
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Write([]byte("OK\n"))
+			}))
 			defer srv.Close()
 
 			c := httptrace.WrapClient(&http.Client{}, opts...)
@@ -90,7 +94,3 @@ var (
 		},
 	}
 )
-
-func handler200(w http.ResponseWriter, _ *http.Request) {
-	w.Write([]byte("OK\n"))
-}

@@ -6,12 +6,16 @@
 package namingschematest
 
 import (
+	"os"
 	"testing"
 
 	"github.com/DataDog/dd-trace-go/instrumentation/internal/namingschematest/harness"
 )
 
 func TestNamingSchema(t *testing.T) {
+	if _, ok := os.LookupEnv("INTEGRATION"); !ok {
+		t.Skip("🚧 Skipping integration test (INTEGRATION environment variable is not set)")
+	}
 	testCases := []harness.TestCase{
 		gqlgen,
 		awsSDKV1,
@@ -48,6 +52,16 @@ func TestNamingSchema(t *testing.T) {
 		tidwallBuntDB,
 		syndtrGoLevelDB,
 		shopifySarama,
+		segmentioKafkaGo,
+		redisGoRedisV9,
+		olivereElasticV5,
+		labstackEchoV4,
+		julienschmidtHTTPRouter,
+		ibmSarama,
+		hashicorpConsul,
+		hashicorpVault,
+		graphGophersGraphQLGo,
+		gorillaMux,
 	}
 	for _, tc := range testCases {
 		harness.RunTest(t, tc)

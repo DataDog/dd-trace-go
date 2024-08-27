@@ -8,11 +8,8 @@ package sarama
 import (
 	"math"
 
-	"github.com/DataDog/dd-trace-go/v2/internal"
-	"github.com/DataDog/dd-trace-go/v2/internal/namingschema"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 )
-
-const defaultServiceName = "kafka"
 
 type config struct {
 	consumerServiceName string
@@ -23,18 +20,14 @@ type config struct {
 }
 
 func defaults(cfg *config) {
-	cfg.consumerServiceName = namingschema.ServiceName(defaultServiceName)
-	cfg.producerServiceName = namingschema.ServiceNameOverrideV0(defaultServiceName, defaultServiceName)
+	cfg.consumerServiceName = instr.ServiceName(instrumentation.ComponentConsumer, nil)
+	cfg.producerServiceName = instr.ServiceName(instrumentation.ComponentProducer, nil)
 
-	cfg.consumerSpanName = namingschema.OpName(namingschema.KafkaInbound)
-	cfg.producerSpanName = namingschema.OpName(namingschema.KafkaOutbound)
+	cfg.consumerSpanName = instr.OperationName(instrumentation.ComponentConsumer, nil)
+	cfg.producerSpanName = instr.OperationName(instrumentation.ComponentProducer, nil)
 
 	// cfg.analyticsRate = globalconfig.AnalyticsRate()
-	if internal.BoolEnv("DD_TRACE_SARAMA_ANALYTICS_ENABLED", false) {
-		cfg.analyticsRate = 1.0
-	} else {
-		cfg.analyticsRate = math.NaN()
-	}
+	cfg.analyticsRate = instr.AnalyticsRate(false)
 }
 
 // Option describes options for the Sarama integration.

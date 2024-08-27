@@ -11,17 +11,15 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
-	"github.com/DataDog/dd-trace-go/v2/internal/log"
-	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 
 	consul "github.com/hashicorp/consul/api"
 )
 
-const componentName = "hashicorp/consul"
+var instr *instrumentation.Instrumentation
 
 func init() {
-	telemetry.LoadIntegration(componentName)
-	tracer.MarkIntegrationImported("github.com/hashicorp/consul/api")
+	instr = instrumentation.Load(instrumentation.PackageHashicorpConsulAPI)
 }
 
 // Client wraps the regular *consul.Client and augments it with tracing. Use NewClient to initialize it.
@@ -49,7 +47,7 @@ func WrapClient(c *consul.Client, opts ...ClientOption) *Client {
 	for _, fn := range opts {
 		fn.apply(cfg)
 	}
-	log.Debug("contrib/hashicorp/consul: Wrapping Client: %#v", cfg)
+	instr.Logger().Debug("contrib/hashicorp/consul: Wrapping Client: %#v", cfg)
 	return &Client{c, cfg, context.Background()}
 }
 
@@ -77,7 +75,7 @@ func (k *KV) startSpan(resourceName string, key string) *tracer.Span {
 		tracer.ServiceName(k.config.serviceName),
 		tracer.SpanType(ext.SpanTypeConsul),
 		tracer.Tag("consul.key", key),
-		tracer.Tag(ext.Component, componentName),
+		tracer.Tag(ext.Component, instrumentation.PackageHashicorpConsulAPI),
 		tracer.Tag(ext.SpanKind, ext.SpanKindClient),
 		tracer.Tag(ext.DBSystem, ext.DBSystemConsulKV),
 	}

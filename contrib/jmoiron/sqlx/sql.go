@@ -13,17 +13,15 @@ package sqlx // import "github.com/DataDog/dd-trace-go/contrib/jmoiron/sqlx/v2"
 
 import (
 	sqltraced "github.com/DataDog/dd-trace-go/contrib/database/sql/v2"
-	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
-	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 
 	"github.com/jmoiron/sqlx"
 )
 
-const componentName = "jmoiron/sqlx"
+var instr *instrumentation.Instrumentation
 
 func init() {
-	telemetry.LoadIntegration(componentName)
-	tracer.MarkIntegrationImported("github.com/jmoiron/sqlx")
+	instr = instrumentation.Load(instrumentation.PackageJmoironSQLx)
 }
 
 // Open opens a new (traced) connection to the database using the given driver and source.
