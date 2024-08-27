@@ -23,3 +23,4 @@ gotestsum-report*.xml
 /internal/apps/unit-of-work/unit-of-work
 tools/v2check/_stage/v2playground/*
 static-analysis.datadog.yml
+.vscode/settings.json

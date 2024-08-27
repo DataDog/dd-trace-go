@@ -33,6 +33,8 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/urfave/negroni/v2 v2.0.0-00010101000000-000000000000
 	github.com/DataDog/dd-trace-go/instrumentation/testutils/grpc/v2 v2.0.0-00010101000000-000000000000
 	github.com/DataDog/dd-trace-go/v2 v2.0.0-beta.2
+	github.com/IBM/sarama v1.40.0
+	github.com/Shopify/sarama v1.38.1
 	github.com/aws/aws-sdk-go v1.54.20
 	github.com/aws/aws-sdk-go-v2 v1.30.3
 	github.com/aws/aws-sdk-go-v2/config v1.27.27
@@ -66,6 +68,20 @@ require (
 )
 
 require (
+	github.com/eapache/go-resiliency v1.4.0 // indirect
+	github.com/eapache/go-xerial-snappy v0.0.0-20230731223053-c322873962e3 // indirect
+	github.com/eapache/queue v1.1.0 // indirect
+	github.com/hashicorp/go-uuid v1.0.3 // indirect
+	github.com/jcmturner/aescts/v2 v2.0.0 // indirect
+	github.com/jcmturner/dnsutils/v2 v2.0.0 // indirect
+	github.com/jcmturner/gofork v1.7.6 // indirect
+	github.com/jcmturner/gokrb5/v8 v8.4.4 // indirect
+	github.com/jcmturner/rpc/v2 v2.0.3 // indirect
+	github.com/pierrec/lz4/v4 v4.1.18 // indirect
+	github.com/rcrowley/go-metrics v0.0.0-20201227073835-cf1acfcdf475 // indirect
+)
+
+require (
 	cloud.google.com/go v0.115.0 // indirect
 	cloud.google.com/go/auth v0.7.3 // indirect
 	cloud.google.com/go/auth/oauth2adapt v0.2.3 // indirect
@@ -76,6 +92,8 @@ require (
 	github.com/DataDog/datadog-agent/pkg/obfuscate v0.52.1 // indirect
 	github.com/DataDog/datadog-agent/pkg/remoteconfig/state v0.52.1 // indirect
 	github.com/DataDog/datadog-go/v5 v5.5.0 // indirect
+	github.com/DataDog/dd-trace-go/contrib/IBM/sarama/v2 v2.0.0-00010101000000-000000000000
+	github.com/DataDog/dd-trace-go/contrib/Shopify/sarama/v2 v2.0.0-00010101000000-000000000000
 	github.com/DataDog/go-libddwaf/v2 v2.4.2 // indirect
 	github.com/DataDog/go-sqllexer v0.0.12 // indirect
 	github.com/DataDog/go-tuf v1.1.0-0.5.2 // indirect
@@ -206,6 +224,10 @@ require (
 
 replace github.com/DataDog/dd-trace-go/contrib/99designs/gqlgen/v2 => ../../../contrib/99designs/gqlgen
 
+replace github.com/DataDog/dd-trace-go/contrib/IBM/sarama/v2 => ../../../contrib/IBM/sarama
+
+replace github.com/DataDog/dd-trace-go/contrib/Shopify/sarama/v2 => ../../../contrib/Shopify/sarama
+
 replace github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go-v2/v2 => ../../../contrib/aws/aws-sdk-go-v2
 
 replace github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go/v2 => ../../../contrib/aws/aws-sdk-go
@@ -252,7 +274,31 @@ replace github.com/DataDog/dd-trace-go/contrib/gomodule/redigo/v2 => ../../../co
 
 replace github.com/DataDog/dd-trace-go/contrib/google.golang.org/grpc/v2 => ../../../contrib/google.golang.org/grpc
 
+replace github.com/DataDog/dd-trace-go/contrib/gorilla/mux/v2 => ../../../contrib/gorilla/mux
+
+replace github.com/DataDog/dd-trace-go/contrib/graph-gophers/graphql-go/v2 => ../../../contrib/graph-gophers/graphql-go
+
+replace github.com/DataDog/dd-trace-go/contrib/hashicorp/consul/v2 => ../../../contrib/hashicorp/consul
+
+replace github.com/DataDog/dd-trace-go/contrib/hashicorp/vault/v2 => ../../../contrib/hashicorp/vault
+
+replace github.com/DataDog/dd-trace-go/contrib/julienschmidt/httprouter/v2 => ../../../contrib/julienschmidt/httprouter
+
+replace github.com/DataDog/dd-trace-go/contrib/labstack/echo.v4/v2 => ../../../contrib/labstack/echo.v4
+
 replace github.com/DataDog/dd-trace-go/contrib/net/http/v2 => ../../../contrib/net/http
+
+replace github.com/DataDog/dd-trace-go/contrib/olivere/elastic.v5/v2 => ../../../contrib/olivere/elastic.v5
+
+replace github.com/DataDog/dd-trace-go/contrib/redis/go-redis.v9/v2 => ../../../contrib/redis/go-redis.v9
+
+replace github.com/DataDog/dd-trace-go/contrib/segmentio/kafka-go/v2 => ../../../contrib/segmentio/kafka-go
+
+replace github.com/DataDog/dd-trace-go/contrib/syndtr/goleveldb/v2 => ../../../contrib/syndtr/goleveldb
+
+replace github.com/DataDog/dd-trace-go/contrib/tidwall/buntdb/v2 => ../../../contrib/tidwall/buntdb
+
+replace github.com/DataDog/dd-trace-go/contrib/twitchtv/twirp/v2 => ../../../contrib/twitchtv/twirp
 
 replace github.com/DataDog/dd-trace-go/contrib/urfave/negroni/v2 => ../../../contrib/urfave/negroni
 
