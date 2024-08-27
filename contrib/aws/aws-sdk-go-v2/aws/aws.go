@@ -45,15 +45,26 @@ type spanTimestampKey struct{}
 // AppendMiddleware takes the aws.Config and adds the Datadog tracing middleware into the APIOptions middleware stack.
 // See https://aws.github.io/aws-sdk-go-v2/docs/middleware for more information.
 func AppendMiddleware(awsCfg *aws.Config, opts ...Option) {
-	cfg := &config{}
+	tm := NewTraceMiddleware(opts...)
+	awsCfg.APIOptions = append(awsCfg.APIOptions, tm...)
+}
 
+// NewTraceMiddleware returns a new slice containing the tracing middleware.
+// See https://aws.github.io/aws-sdk-go-v2/docs/middleware for more information.
+func NewTraceMiddleware(opts ...Option) []func(*middleware.Stack) error {
+	cfg := &config{}
 	defaults(cfg)
 	for _, opt := range opts {
 		opt(cfg)
 	}
 
 	tm := traceMiddleware{cfg: cfg}
-	awsCfg.APIOptions = append(awsCfg.APIOptions, tm.initTraceMiddleware, tm.startTraceMiddleware, tm.deserializeTraceMiddleware)
+
+	return []func(*middleware.Stack) error{
+		tm.initTraceMiddleware,
+		tm.startTraceMiddleware,
+		tm.deserializeTraceMiddleware,
+	}
 }
 
 type traceMiddleware struct {
