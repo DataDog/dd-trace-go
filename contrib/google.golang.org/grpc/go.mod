@@ -4,7 +4,7 @@ go 1.21
 
 require (
 	github.com/DataDog/appsec-internal-go v1.5.0
-	github.com/DataDog/dd-trace-go/instrumentation/testutils/grpc/v2 v2.0.0-00010101000000-000000000000
+	github.com/DataDog/dd-trace-go/instrumentation/testutils/grpc/v2 v2.0.0-20240827110213-c6fc4fe2047a
 	github.com/DataDog/dd-trace-go/v2 v2.0.0-20240516153256-8d6fa2bea61d
 	github.com/golang/protobuf v1.5.4
 	github.com/stretchr/testify v1.8.4
