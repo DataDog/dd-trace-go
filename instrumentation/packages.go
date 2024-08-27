@@ -55,6 +55,7 @@ const (
 	PackageGraphQLGoGraphQL        Package = "graphql-go/graphql"
 	PackageGraphGophersGraphQLGo   Package = "graph-gophers/graphql-go"
 	PackageGormIOGormV1            Package = "gorm.io/gorm.v1"
+	PackageGorillaMux              Package = "gorilla/mux"
 )
 
 type Component int
@@ -556,6 +557,18 @@ var packages = map[Package]PackageInfo{
 	},
 	PackageGormIOGormV1: {
 		TracedPackage: "gorm.io/gorm.v1",
+	},
+	PackageGorillaMux: {
+		TracedPackage: "github.com/gorilla/mux",
+		EnvVarPrefix:  "MUX",
+		naming: map[Component]componentNames{
+			ComponentServer: {
+				useDDServiceV0:     true,
+				buildServiceNameV0: staticName("mux.router"),
+				buildOpNameV0:      staticName("http.request"),
+				buildOpNameV1:      staticName("http.server.request"),
+			},
+		},
 	},
 }
 

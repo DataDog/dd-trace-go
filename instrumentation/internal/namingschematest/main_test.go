@@ -52,6 +52,7 @@ func TestNamingSchema(t *testing.T) {
 		hashicorpConsul,
 		hashicorpVault,
 		graphGophersGraphQLGo,
+		gorillaMux,
 	}
 	for _, tc := range testCases {
 		harness.RunTest(t, tc)
