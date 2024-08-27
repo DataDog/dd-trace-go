@@ -52,6 +52,7 @@ const (
 	PackageJackcPGXV5              Package = "jackc/pgx.v5"
 	PackageHashicorpConsulAPI      Package = "hashicorp/consul"
 	PackageHashicorpVaultAPI       Package = "hashicorp/vault"
+	PackageGraphQLGoGraphQL        Package = "graphql-go/graphql"
 )
 
 type Component int
@@ -526,6 +527,16 @@ var packages = map[Package]PackageInfo{
 				buildServiceNameV0: staticName("vault"),
 				buildOpNameV0:      staticName("vault.command"),
 				buildOpNameV1:      staticName("vault.query"),
+			},
+		},
+	},
+	PackageGraphQLGoGraphQL: {
+		TracedPackage: "github.com/graphql-go/graphql",
+		EnvVarPrefix:  "GRAPHQL",
+		naming: map[Component]componentNames{
+			ComponentDefault: {
+				useDDServiceV0:     false,
+				buildServiceNameV0: staticName("graphql"),
 			},
 		},
 	},

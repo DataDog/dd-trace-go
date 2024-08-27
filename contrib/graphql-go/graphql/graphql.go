@@ -13,9 +13,9 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
-	"github.com/DataDog/dd-trace-go/v2/internal/appsec/emitter/graphqlsec"
-	"github.com/DataDog/dd-trace-go/v2/internal/appsec/emitter/graphqlsec/types"
-	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/graphqlsec"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/graphqlsec/types"
 
 	"github.com/graphql-go/graphql"
 	"github.com/graphql-go/graphql/gqlerrors"
@@ -23,16 +23,14 @@ import (
 	"github.com/hashicorp/go-multierror"
 )
 
-const componentName = "graphql-go/graphql"
-
 var (
+	instr       *instrumentation.Instrumentation
 	spanTagKind = tracer.Tag(ext.SpanKind, ext.SpanKindServer)
 	spanTagType = tracer.Tag(ext.SpanType, ext.SpanTypeGraphQL)
 )
 
 func init() {
-	telemetry.LoadIntegration(componentName)
-	tracer.MarkIntegrationImported("github.com/graphql-go/graphql")
+	instr = instrumentation.Load(instrumentation.PackageGraphQLGoGraphQL)
 }
 
 const (
@@ -94,7 +92,7 @@ func (i datadogExtension) Init(ctx context.Context, params *graphql.Params) cont
 		tracer.ServiceName(i.config.serviceName),
 		spanTagKind,
 		spanTagType,
-		tracer.Tag(ext.Component, componentName),
+		tracer.Tag(ext.Component, instrumentation.PackageGraphQLGoGraphQL),
 		tracer.Measured(),
 	)
 	ctx, request := graphqlsec.StartRequestOperation(ctx, nil, span, types.RequestOperationArgs{
@@ -124,7 +122,7 @@ func (i datadogExtension) ParseDidStart(ctx context.Context) (context.Context, g
 		spanTagKind,
 		spanTagType,
 		tracer.Tag(tagGraphqlSource, data.query),
-		tracer.Tag(ext.Component, componentName),
+		tracer.Tag(ext.Component, instrumentation.PackageGraphQLGoGraphQL),
 		tracer.Measured(),
 	}
 	if data.operationName != "" {
@@ -151,7 +149,7 @@ func (i datadogExtension) ValidationDidStart(ctx context.Context) (context.Conte
 		spanTagKind,
 		spanTagType,
 		tracer.Tag(tagGraphqlSource, data.query),
-		tracer.Tag(ext.Component, componentName),
+		tracer.Tag(ext.Component, instrumentation.PackageGraphQLGoGraphQL),
 		tracer.Measured(),
 	}
 	if data.operationName != "" {
@@ -182,7 +180,7 @@ func (i datadogExtension) ExecutionDidStart(ctx context.Context) (context.Contex
 		spanTagKind,
 		spanTagType,
 		tracer.Tag(tagGraphqlSource, data.query),
-		tracer.Tag(ext.Component, componentName),
+		tracer.Tag(ext.Component, instrumentation.PackageGraphQLGoGraphQL),
 		tracer.Measured(),
 	}
 	if data.operationName != "" {
@@ -228,7 +226,7 @@ func (i datadogExtension) ResolveFieldDidStart(ctx context.Context, info *graphq
 		spanTagType,
 		tracer.Tag(tagGraphqlField, info.FieldName),
 		tracer.Tag(tagGraphqlOperationType, info.Operation.GetOperation()),
-		tracer.Tag(ext.Component, componentName),
+		tracer.Tag(ext.Component, instrumentation.PackageGraphQLGoGraphQL),
 		tracer.Tag(ext.ResourceName, fmt.Sprintf("%s.%s", info.ParentType.Name(), info.FieldName)),
 		tracer.Measured(),
 	}

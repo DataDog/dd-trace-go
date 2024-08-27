@@ -15,7 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
-	"github.com/DataDog/dd-trace-go/v2/internal/appsec"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils"
 )
 
 func BenchmarkGraphQL(b *testing.B) {
@@ -250,12 +250,11 @@ func enableAppSecBench(b *testing.B) func() {
 	require.NoError(b, err)
 	b.Setenv("DD_APPSEC_ENABLED", "1")
 	b.Setenv("DD_APPSEC_RULES", rulesFile)
-	appsec.Start()
+	testutils.StartAppSecBench(b)
 	restore := func() {
-		appsec.Stop()
 		_ = os.RemoveAll(tmpDir)
 	}
-	if !appsec.Enabled() {
+	if !instr.AppSecEnabled() {
 		restore()
 		b.Skip("could not enable appsec: this platform is likely not supported")
 	}
