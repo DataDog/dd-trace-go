@@ -6,7 +6,7 @@ import (
 	"time"
 
 	segmentiotracer "github.com/DataDog/dd-trace-go/contrib/segmentio/kafka-go/v2"
-	"github.com/DataDog/dd-trace-go/instrumentation/internal/namingschematest/harness"
+	"github.com/DataDog/dd-trace-go/instrumentation/internal/namingschematest/v2/harness"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 	"github.com/segmentio/kafka-go"

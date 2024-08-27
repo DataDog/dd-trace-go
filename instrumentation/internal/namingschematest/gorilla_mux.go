@@ -9,13 +9,13 @@ import (
 	"github.com/stretchr/testify/require"
 
 	muxtrace "github.com/DataDog/dd-trace-go/contrib/gorilla/mux/v2"
-	"github.com/DataDog/dd-trace-go/instrumentation/internal/namingschematest/harness"
+	"github.com/DataDog/dd-trace-go/instrumentation/internal/namingschematest/v2/harness"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 )
 
 var gorillaMux = harness.TestCase{
-	Name: instrumentation.PackageGinGonicGin,
+	Name: instrumentation.PackageGin,
 	GenSpans: func(t *testing.T, serviceOverride string) []*mocktracer.Span {
 		var opts []muxtrace.RouterOption
 		if serviceOverride != "" {
