@@ -11,8 +11,7 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
-	"github.com/DataDog/dd-trace-go/v2/internal/contrib/httptrace"
-	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/httptrace"
 )
 
 // ServeMux is an HTTP request multiplexer that traces all the incoming requests.
@@ -31,7 +30,7 @@ func NewServeMux(opts ...Option) *ServeMux {
 	}
 	cfg.spanOpts = append(cfg.spanOpts, tracer.Tag(ext.SpanKind, ext.SpanKindServer))
 	cfg.spanOpts = append(cfg.spanOpts, tracer.Tag(ext.Component, componentName))
-	log.Debug("contrib/net/http: Configuring ServeMux: %#v", cfg)
+	instr.Logger().Debug("contrib/net/http: Configuring ServeMux: %#v", cfg)
 	return &ServeMux{
 		ServeMux: http.NewServeMux(),
 		cfg:      cfg,
@@ -74,7 +73,7 @@ func WrapHandler(h http.Handler, service, resource string, opts ...Option) http.
 	}
 	cfg.spanOpts = append(cfg.spanOpts, tracer.Tag(ext.SpanKind, ext.SpanKindServer))
 	cfg.spanOpts = append(cfg.spanOpts, tracer.Tag(ext.Component, componentName))
-	log.Debug("contrib/net/http: Wrapping Handler: Service: %s, Resource: %s, %#v", service, resource, cfg)
+	instr.Logger().Debug("contrib/net/http: Wrapping Handler: Service: %s, Resource: %s, %#v", service, resource, cfg)
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		if cfg.ignoreRequest(req) {
 			h.ServeHTTP(w, req)

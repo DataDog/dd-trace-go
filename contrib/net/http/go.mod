@@ -1,9 +1,9 @@
 module github.com/DataDog/dd-trace-go/contrib/net/http/v2
 
-go 1.20
+go 1.21
 
 require (
-	github.com/DataDog/dd-trace-go/v2 v2.0.0-20240516153256-8d6fa2bea61d
+	github.com/DataDog/dd-trace-go/v2 v2.0.0-20240828085650-1d90163852f1
 	github.com/stretchr/testify v1.8.4
 )
 
@@ -20,7 +20,7 @@ require (
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/ebitengine/purego v0.6.0-alpha.5 // indirect
-	github.com/google/uuid v1.5.0 // indirect
+	github.com/google/uuid v1.6.0 // indirect
 	github.com/hashicorp/errwrap v1.1.0 // indirect
 	github.com/hashicorp/go-multierror v1.1.1 // indirect
 	github.com/outcaste-io/ristretto v0.2.3 // indirect
@@ -35,8 +35,8 @@ require (
 	golang.org/x/time v0.5.0 // indirect
 	golang.org/x/tools v0.16.1 // indirect
 	golang.org/x/xerrors v0.0.0-20231012003039-104605ab7028 // indirect
-	google.golang.org/protobuf v1.30.0 // indirect
+	google.golang.org/protobuf v1.33.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
-replace "github.com/DataDog/dd-trace-go/v2" => "../../.."
+replace github.com/DataDog/dd-trace-go/v2 => ../../..

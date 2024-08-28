@@ -19,21 +19,23 @@ import (
 	"context"
 	"database/sql"
 	"database/sql/driver"
+	"os"
 	"reflect"
 	"sync"
 	"time"
 
 	sqlinternal "github.com/DataDog/dd-trace-go/contrib/database/sql/v2/internal"
-	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
-	"github.com/DataDog/dd-trace-go/v2/internal/log"
-	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 )
 
-const componentName = "database/sql"
+const componentName = instrumentation.PackageDatabaseSQL
+
+var instr *instrumentation.Instrumentation
+
+var testMode *bool
 
 func init() {
-	telemetry.LoadIntegration(componentName)
-	tracer.MarkIntegrationImported(componentName)
+	instr = instrumentation.Load(instrumentation.PackageDatabaseSQL)
 }
 
 // registeredDrivers holds a registry of all drivers registered via the sqltrace package.
@@ -116,15 +118,24 @@ func Register(driverName string, driver driver.Driver, opts ...Option) {
 	if driver == nil {
 		panic("sqltrace: Register driver is nil")
 	}
+	if testMode == nil {
+		_, ok := os.LookupEnv("__DD_TRACE_SQL_TEST")
+		testMode = &ok
+	}
+	testModeEnabled := *testMode
 	if registeredDrivers.isRegistered(driverName) {
 		// already registered, don't change things
-		return
+		if !testModeEnabled {
+			return
+		}
+		// if we are in test mode, just unregister the driver and replace it
+		unregister(driverName)
 	}
 
 	cfg := new(config)
 	defaults(cfg, driverName, nil)
 	processOptions(cfg, driverName, driver, "", opts...)
-	log.Debug("contrib/database/sql: Registering driver: %s %#v", driverName, cfg)
+	instr.Logger().Debug("contrib/database/sql: Registering driver: %s %#v", driverName, cfg)
 	registeredDrivers.add(driverName, driver, cfg)
 }
 

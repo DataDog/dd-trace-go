@@ -9,7 +9,6 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"math"
 	"os"
 	"testing"
 	"time"
@@ -17,8 +16,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
-	"github.com/DataDog/dd-trace-go/v2/internal/contrib/namingschematest"
-	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils"
 
 	"github.com/gocql/gocql"
 	"github.com/stretchr/testify/assert"
@@ -212,7 +210,7 @@ func TestErrNotFound(t *testing.T) {
 }
 
 func TestAnalyticsSettings(t *testing.T) {
-	assertRate := func(t *testing.T, mt mocktracer.Tracer, rate float64, opts ...WrapOption) {
+	assertRate := func(t *testing.T, mt mocktracer.Tracer, rate any, opts ...WrapOption) {
 		cluster := newCassandraCluster()
 		session, err := cluster.CreateSession()
 		assert.Nil(t, err)
@@ -235,9 +233,7 @@ func TestAnalyticsSettings(t *testing.T) {
 		spans := mt.FinishedSpans()
 		assert.Len(t, spans, 3)
 		for _, s := range spans {
-			if !math.IsNaN(rate) {
-				assert.Equal(t, rate, s.Tag(ext.EventSampleRate))
-			}
+			assert.Equal(t, rate, s.Tag(ext.EventSampleRate))
 		}
 	}
 
@@ -245,7 +241,7 @@ func TestAnalyticsSettings(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		assertRate(t, mt, globalconfig.AnalyticsRate())
+		assertRate(t, mt, nil)
 	})
 
 	t.Run("global", func(t *testing.T) {
@@ -253,9 +249,7 @@ func TestAnalyticsSettings(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		rate := globalconfig.AnalyticsRate()
-		defer globalconfig.SetAnalyticsRate(rate)
-		globalconfig.SetAnalyticsRate(0.4)
+		testutils.SetGlobalAnalyticsRate(t, 0.4)
 
 		assertRate(t, mt, 0.4)
 	})
@@ -271,16 +265,14 @@ func TestAnalyticsSettings(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		assertRate(t, mt, math.NaN(), WithAnalytics(false))
+		assertRate(t, mt, nil, WithAnalytics(false))
 	})
 
 	t.Run("override", func(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		rate := globalconfig.AnalyticsRate()
-		defer globalconfig.SetAnalyticsRate(rate)
-		globalconfig.SetAnalyticsRate(0.4)
+		testutils.SetGlobalAnalyticsRate(t, 0.4)
 
 		assertRate(t, mt, 0.23, WithAnalyticsRate(0.23))
 	})
@@ -504,52 +496,4 @@ func TestWithCustomTag(t *testing.T) {
 		assert.Equal(t, "cassandra.batch", s0.OperationName())
 		assert.Equal(t, "value", s0.Tag("custom_tag"))
 	})
-}
-
-func TestNamingSchema(t *testing.T) {
-	genSpans := namingschematest.GenSpansFn(func(t *testing.T, serviceOverride string) []*mocktracer.Span {
-		var opts []WrapOption
-		if serviceOverride != "" {
-			opts = append(opts, WithService(serviceOverride))
-		}
-		mt := mocktracer.Start()
-		defer mt.Stop()
-
-		cluster := newTracedCassandraCluster(opts...)
-		session, err := cluster.CreateSession()
-		require.NoError(t, err)
-
-		stmt := "INSERT INTO trace.person (name, age, description) VALUES (?, ?, ?)"
-
-		// generate query span
-		err = session.Query(stmt, "name", 30, "description").Exec()
-		require.NoError(t, err)
-
-		// generate batch span
-		tb := session.NewBatch(gocql.UnloggedBatch)
-
-		tb.Query(stmt, "Kate", 80, "Cassandra's sister running in kubernetes")
-		tb.Query(stmt, "Lucas", 60, "Another person")
-		err = tb.ExecuteBatch(session.Session)
-		require.NoError(t, err)
-
-		return mt.FinishedSpans()
-	})
-	assertOpV0 := func(t *testing.T, spans []*mocktracer.Span) {
-		require.Len(t, spans, 2)
-		assert.Equal(t, "cassandra.query", spans[0].OperationName())
-		assert.Equal(t, "cassandra.batch", spans[1].OperationName())
-	}
-	assertOpV1 := func(t *testing.T, spans []*mocktracer.Span) {
-		require.Len(t, spans, 2)
-		assert.Equal(t, "cassandra.query", spans[0].OperationName())
-		assert.Equal(t, "cassandra.query", spans[1].OperationName())
-	}
-	wantServiceNameV0 := namingschematest.ServiceNameAssertions{
-		WithDefaults:             []string{"gocql.query", "gocql.query"},
-		WithDDService:            []string{"gocql.query", "gocql.query"},
-		WithDDServiceAndOverride: []string{namingschematest.TestServiceOverride, namingschematest.TestServiceOverride},
-	}
-	t.Run("ServiceName", namingschematest.NewServiceNameTest(genSpans, wantServiceNameV0))
-	t.Run("SpanName", namingschematest.NewSpanNameTest(genSpans, assertOpV0, assertOpV1))
 }

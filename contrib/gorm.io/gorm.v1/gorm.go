@@ -13,17 +13,15 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
-	"github.com/DataDog/dd-trace-go/v2/internal/log"
-	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 
 	"gorm.io/gorm"
 )
 
-const componentName = "gorm.io/gorm.v1"
+var instr *instrumentation.Instrumentation
 
 func init() {
-	telemetry.LoadIntegration(componentName)
-	tracer.MarkIntegrationImported(componentName)
+	instr = instrumentation.Load(instrumentation.PackageGormIOGormV1)
 }
 
 type key string
@@ -54,7 +52,7 @@ func withCallbacks(db *gorm.DB, opts ...Option) (*gorm.DB, error) {
 	for _, fn := range opts {
 		fn.apply(cfg)
 	}
-	log.Debug("Registering Callbacks: %#v", cfg)
+	instr.Logger().Debug("Registering Callbacks: %#v", cfg)
 
 	afterFunc := func(operationName string) func(*gorm.DB) {
 		return func(db *gorm.DB) {
@@ -136,7 +134,7 @@ func after(db *gorm.DB, operationName string, cfg *config) {
 		tracer.ServiceName(cfg.serviceName),
 		tracer.SpanType(ext.SpanTypeSQL),
 		tracer.ResourceName(db.Statement.SQL.String()),
-		tracer.Tag(ext.Component, componentName),
+		tracer.Tag(ext.Component, instrumentation.PackageGormIOGormV1),
 	}
 	if !math.IsNaN(cfg.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))

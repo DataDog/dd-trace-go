@@ -10,13 +10,12 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/dimfeld/httptreemux/v5"
+	"github.com/stretchr/testify/assert"
+
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
-	"github.com/DataDog/dd-trace-go/v2/internal/contrib/namingschematest"
-
-	"github.com/dimfeld/httptreemux/v5"
-	"github.com/stretchr/testify/assert"
 )
 
 func TestHttpTracer200(t *testing.T) {
@@ -216,26 +215,6 @@ func TestResourceNamer(t *testing.T) {
 	assert.Equal("http://example.com"+url, s.Tag(ext.HTTPURL))
 	assert.Equal("testvalue", s.Tag("testkey"))
 	assert.Zero(s.Tag(ext.Error))
-}
-
-func TestNamingSchema(t *testing.T) {
-	genSpans := namingschematest.GenSpansFn(func(t *testing.T, serviceOverride string) []*mocktracer.Span {
-		var opts []RouterOption
-		if serviceOverride != "" {
-			opts = append(opts, WithService(serviceOverride))
-		}
-		mt := mocktracer.Start()
-		defer mt.Stop()
-
-		mux := New(opts...)
-		mux.GET("/200", handler200)
-		r := httptest.NewRequest("GET", "/200", nil)
-		w := httptest.NewRecorder()
-		mux.ServeHTTP(w, r)
-
-		return mt.FinishedSpans()
-	})
-	namingschematest.NewHTTPServerTest(genSpans, "http.router")(t)
 }
 
 func TestTrailingSlashRoutesWithBehaviorRedirect301(t *testing.T) {

@@ -10,19 +10,19 @@ import (
 	"context"
 	"sync"
 
+	"cloud.google.com/go/pubsub"
+
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
-	"github.com/DataDog/dd-trace-go/v2/internal/log"
-	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
-
-	"cloud.google.com/go/pubsub"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 )
 
-const componentName = "cloud.google.com/go/pubsub.v1"
+const componentName = instrumentation.PackageGCPPubsub
+
+var instr *instrumentation.Instrumentation
 
 func init() {
-	telemetry.LoadIntegration(componentName)
-	tracer.MarkIntegrationImported(componentName)
+	instr = instrumentation.Load(instrumentation.PackageGCPPubsub)
 }
 
 // Publish publishes a message on the specified topic and returns a PublishResult.
@@ -60,7 +60,7 @@ func Publish(ctx context.Context, t *pubsub.Topic, msg *pubsub.Message, opts ...
 		msg.Attributes = make(map[string]string)
 	}
 	if err := tracer.Inject(span.Context(), tracer.TextMapCarrier(msg.Attributes)); err != nil {
-		log.Debug("contrib/cloud.google.com/go/pubsub.v1/: failed injecting tracing attributes: %v", err)
+		instr.Logger().Debug("contrib/cloud.google.com/go/pubsub.v1/: failed injecting tracing attributes: %v", err)
 	}
 	span.SetTag("num_attributes", len(msg.Attributes))
 	return &PublishResult{
@@ -95,7 +95,7 @@ func WrapReceiveHandler(s *pubsub.Subscription, f func(context.Context, *pubsub.
 	for _, opt := range opts {
 		opt.apply(cfg)
 	}
-	log.Debug("contrib/cloud.google.com/go/pubsub.v1: Wrapping Receive Handler: %#v", cfg)
+	instr.Logger().Debug("contrib/cloud.google.com/go/pubsub.v1: Wrapping Receive Handler: %#v", cfg)
 	return func(ctx context.Context, msg *pubsub.Message) {
 		parentSpanCtx, _ := tracer.Extract(tracer.TextMapCarrier(msg.Attributes))
 		opts := []tracer.StartSpanOption{

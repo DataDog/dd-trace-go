@@ -7,8 +7,6 @@ package aws
 
 import (
 	"math"
-
-	"github.com/DataDog/dd-trace-go/v2/internal"
 )
 
 type config struct {
@@ -30,11 +28,7 @@ func (fn OptionFn) apply(cfg *config) {
 }
 
 func defaults(cfg *config) {
-	if internal.BoolEnv("DD_TRACE_AWS_ANALYTICS_ENABLED", false) {
-		cfg.analyticsRate = 1.0
-	} else {
-		cfg.analyticsRate = math.NaN()
-	}
+	cfg.analyticsRate = instr.AnalyticsRate(false)
 }
 
 // WithService sets the given service name for the dialled connection.

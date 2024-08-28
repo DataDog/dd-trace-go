@@ -8,16 +8,15 @@ package logrus
 
 import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
-	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 
 	"github.com/sirupsen/logrus"
 )
 
-const componentName = "sirupsen/logrus"
+var instr *instrumentation.Instrumentation
 
 func init() {
-	telemetry.LoadIntegration(componentName)
-	tracer.MarkIntegrationImported("github.com/sirupsen/logrus")
+	instr = instrumentation.Load(instrumentation.PackageSirupsenLogrus)
 }
 
 // DDContextLogHook ensures that any span in the log context is correlated to log output.

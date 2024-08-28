@@ -18,17 +18,17 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
-	"github.com/DataDog/dd-trace-go/v2/internal/log"
-	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 
 	"github.com/go-redis/redis"
 )
 
 const componentName = "go-redis/redis"
 
+var instr *instrumentation.Instrumentation
+
 func init() {
-	telemetry.LoadIntegration(componentName)
-	tracer.MarkIntegrationImported("github.com/go-redis/redis")
+	instr = instrumentation.Load(instrumentation.PackageGoRedis)
 }
 
 // Client is used to trace requests to a redis server.
@@ -72,7 +72,7 @@ func WrapClient(c *redis.Client, opts ...ClientOption) *Client {
 	for _, fn := range opts {
 		fn.apply(cfg)
 	}
-	log.Debug("contrib/go-redis/redis: Wrapping Client: %#v", cfg)
+	instr.Logger().Debug("contrib/go-redis/redis: Wrapping Client: %#v", cfg)
 	opt := c.Options()
 	host, port, err := net.SplitHostPort(opt.Addr)
 	if err != nil {

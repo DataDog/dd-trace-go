@@ -9,7 +9,7 @@ import (
 	"context"
 	"fmt"
 
-	kubernetestrace "github.com/DataDog/dd-trace-go/contrib/k8s.io/client-go/kubernetes/v2"
+	kubernetestrace "github.com/DataDog/dd-trace-go/contrib/k8s.io/client-go/v2/kubernetes"
 
 	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"

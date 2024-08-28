@@ -16,11 +16,9 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
-	"github.com/DataDog/dd-trace-go/v2/internal/contrib/namingschematest"
-	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils"
 
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 	"gopkg.in/olivere/elastic.v5"
 )
 
@@ -394,9 +392,7 @@ func TestAnalyticsSettings(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		rate := globalconfig.AnalyticsRate()
-		defer globalconfig.SetAnalyticsRate(rate)
-		globalconfig.SetAnalyticsRate(0.4)
+		testutils.SetGlobalAnalyticsRate(t, 0.4)
 
 		assertRate(t, mt, 0.4)
 	})
@@ -419,55 +415,8 @@ func TestAnalyticsSettings(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		rate := globalconfig.AnalyticsRate()
-		defer globalconfig.SetAnalyticsRate(rate)
-		globalconfig.SetAnalyticsRate(0.4)
+		testutils.SetGlobalAnalyticsRate(t, 0.4)
 
 		assertRate(t, mt, 0.23, WithAnalyticsRate(0.23))
 	})
-}
-
-func TestNamingSchema(t *testing.T) {
-	genSpans := func(t *testing.T, serviceOverride string) []*mocktracer.Span {
-		var opts []ClientOption
-		if serviceOverride != "" {
-			opts = append(opts, WithService(serviceOverride))
-		}
-		mt := mocktracer.Start()
-		defer mt.Stop()
-		tc := NewHTTPClient(opts...)
-		client, err := elastic.NewClient(
-			elastic.SetURL(elasticURL),
-			elastic.SetHttpClient(tc),
-			elastic.SetSniff(false),
-			elastic.SetHealthcheck(false),
-		)
-		require.NoError(t, err)
-
-		_, err = client.Index().
-			Index("twitter").Id("1").
-			Type("tweet").
-			BodyString(`{"user": "test", "message": "hello"}`).
-			Do(context.Background())
-		require.NoError(t, err)
-
-		spans := mt.FinishedSpans()
-		require.Len(t, spans, 1)
-		return spans
-	}
-	assertOpV0 := func(t *testing.T, spans []*mocktracer.Span) {
-		require.Len(t, spans, 1)
-		assert.Equal(t, "elasticsearch.query", spans[0].OperationName())
-	}
-	assertOpV1 := func(t *testing.T, spans []*mocktracer.Span) {
-		require.Len(t, spans, 1)
-		assert.Equal(t, "elasticsearch.query", spans[0].OperationName())
-	}
-	wantServiceNameV0 := namingschematest.ServiceNameAssertions{
-		WithDefaults:             []string{"elastic.client"},
-		WithDDService:            []string{"elastic.client"},
-		WithDDServiceAndOverride: []string{namingschematest.TestServiceOverride},
-	}
-	t.Run("ServiceName", namingschematest.NewServiceNameTest(genSpans, wantServiceNameV0))
-	t.Run("SpanName", namingschematest.NewSpanNameTest(genSpans, assertOpV0, assertOpV1))
 }

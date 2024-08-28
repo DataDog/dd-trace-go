@@ -15,8 +15,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
-	"github.com/DataDog/dd-trace-go/v2/internal/contrib/namingschematest"
-	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -288,10 +287,7 @@ func TestAnalyticsSettings(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		rate := globalconfig.AnalyticsRate()
-		defer globalconfig.SetAnalyticsRate(rate)
-		globalconfig.SetAnalyticsRate(0.4)
-
+		testutils.SetGlobalAnalyticsRate(t, 0.4)
 		assertRate(t, mt, 0.4)
 	})
 
@@ -313,10 +309,7 @@ func TestAnalyticsSettings(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		rate := globalconfig.AnalyticsRate()
-		defer globalconfig.SetAnalyticsRate(rate)
-		globalconfig.SetAnalyticsRate(0.4)
-
+		testutils.SetGlobalAnalyticsRate(t, 0.4)
 		assertRate(t, mt, 0.23, WithAnalyticsRate(0.23))
 	})
 }
@@ -344,10 +337,7 @@ func TestServiceNameSettings(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		svc := globalconfig.ServiceName()
-		defer globalconfig.SetServiceName(svc)
-		globalconfig.SetServiceName("service.global")
-
+		testutils.SetGlobalServiceName(t, "service.global")
 		assertServiceName(t, mt, "service.global")
 	})
 
@@ -355,10 +345,7 @@ func TestServiceNameSettings(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		svc := globalconfig.ServiceName()
-		defer globalconfig.SetServiceName(svc)
-		globalconfig.SetServiceName("service.global")
-
+		testutils.SetGlobalServiceName(t, "service.global")
 		assertServiceName(t, mt, "service.local", WithService("service.local"))
 	})
 }
@@ -393,45 +380,6 @@ func TestHaberdash(t *testing.T) {
 	assert.Equal(ext.SpanTypeWeb, spans[0].Tag(ext.SpanType))
 	assert.Equal(ext.SpanTypeWeb, spans[1].Tag(ext.SpanType))
 	assert.Equal(ext.SpanTypeHTTP, spans[2].Tag(ext.SpanType))
-}
-
-func TestNamingSchema(t *testing.T) {
-	genSpans := namingschematest.GenSpansFn(func(t *testing.T, serviceOverride string) []*mocktracer.Span {
-		var opts []Option
-		if serviceOverride != "" {
-			opts = append(opts, WithService(serviceOverride))
-		}
-		mt := mocktracer.Start()
-		defer mt.Stop()
-
-		client, cleanup := startIntegrationTestServer(t, opts...)
-		defer cleanup()
-		_, err := client.MakeHat(context.Background(), &example.Size{Inches: 6})
-		require.NoError(t, err)
-
-		return mt.FinishedSpans()
-	})
-	assertOpV0 := func(t *testing.T, spans []*mocktracer.Span) {
-		require.Len(t, spans, 3)
-		assert.Equal(t, "twirp.Haberdasher", spans[0].OperationName())
-		assert.Equal(t, "twirp.handler", spans[1].OperationName())
-		assert.Equal(t, "twirp.request", spans[2].OperationName())
-	}
-	assertOpV1 := func(t *testing.T, spans []*mocktracer.Span) {
-		require.Len(t, spans, 3)
-		assert.Equal(t, "twirp.server.request", spans[0].OperationName())
-		assert.Equal(t, "twirp.handler", spans[1].OperationName())
-		assert.Equal(t, "twirp.client.request", spans[2].OperationName())
-	}
-	ddService := namingschematest.TestDDService
-	serviceOverride := namingschematest.TestServiceOverride
-	wantServiceNameV0 := namingschematest.ServiceNameAssertions{
-		WithDefaults:             []string{"twirp-server", "twirp-server", "twirp-client"},
-		WithDDService:            []string{ddService, ddService, ddService},
-		WithDDServiceAndOverride: []string{serviceOverride, serviceOverride, serviceOverride},
-	}
-	t.Run("ServiceName", namingschematest.NewServiceNameTest(genSpans, wantServiceNameV0))
-	t.Run("SpanName", namingschematest.NewSpanNameTest(genSpans, assertOpV0, assertOpV1))
 }
 
 type haberdasher int32

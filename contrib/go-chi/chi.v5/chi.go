@@ -13,11 +13,9 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
-	"github.com/DataDog/dd-trace-go/v2/internal/appsec"
-	"github.com/DataDog/dd-trace-go/v2/internal/contrib/httptrace"
-	"github.com/DataDog/dd-trace-go/v2/internal/contrib/options"
-	"github.com/DataDog/dd-trace-go/v2/internal/log"
-	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/httptrace"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/options"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -25,9 +23,10 @@ import (
 
 const componentName = "go-chi/chi.v5"
 
+var instr *instrumentation.Instrumentation
+
 func init() {
-	telemetry.LoadIntegration(componentName)
-	tracer.MarkIntegrationImported("github.com/go-chi/chi/v5")
+	instr = instrumentation.Load(instrumentation.PackageChiV5)
 }
 
 // Middleware returns middleware that will trace incoming requests.
@@ -37,7 +36,7 @@ func Middleware(opts ...Option) func(next http.Handler) http.Handler {
 	for _, fn := range opts {
 		fn.apply(cfg)
 	}
-	log.Debug("contrib/go-chi/chi.v5: Configuring Middleware: %#v", cfg)
+	instr.Logger().Debug("contrib/go-chi/chi.v5: Configuring Middleware: %#v", cfg)
 	spanOpts := append(cfg.spanOpts, tracer.ServiceName(cfg.serviceName),
 		tracer.Tag(ext.Component, componentName),
 		tracer.Tag(ext.SpanKind, ext.SpanKindServer))
@@ -67,7 +66,7 @@ func Middleware(opts ...Option) func(next http.Handler) http.Handler {
 			r = r.WithContext(ctx)
 
 			next := next // avoid modifying the value of next in the outer closure scope
-			if appsec.Enabled() && !cfg.appsecDisabled {
+			if instr.AppSecEnabled() && !cfg.appsecDisabled {
 				next = withAppsec(next, r, span, &cfg.appsecConfig)
 				// Note that the following response writer passed to the handler
 				// implements the `interface { Status() int }` expected by httpsec.

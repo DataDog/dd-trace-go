@@ -10,13 +10,13 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
-	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
-	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
-
 	elasticsearch6 "github.com/elastic/go-elasticsearch/v6"
 	esapi6 "github.com/elastic/go-elasticsearch/v6/esapi"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils"
 )
 
 func checkGETTraceV6(assert *assert.Assertions, mt mocktracer.Tracer) {
@@ -222,10 +222,7 @@ func TestAnalyticsSettingsV6(t *testing.T) {
 		t.Skip("global flag disabled")
 		mt := mocktracer.Start()
 		defer mt.Stop()
-
-		rate := globalconfig.AnalyticsRate()
-		defer globalconfig.SetAnalyticsRate(rate)
-		globalconfig.SetAnalyticsRate(0.4)
+		testutils.SetGlobalAnalyticsRate(t, 0.4)
 
 		assertRate(t, mt, 0.4)
 	})
@@ -247,10 +244,7 @@ func TestAnalyticsSettingsV6(t *testing.T) {
 	t.Run("override", func(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
-
-		rate := globalconfig.AnalyticsRate()
-		defer globalconfig.SetAnalyticsRate(rate)
-		globalconfig.SetAnalyticsRate(0.4)
+		testutils.SetGlobalAnalyticsRate(t, 0.4)
 
 		assertRate(t, mt, 0.23, WithAnalyticsRate(0.23))
 	})

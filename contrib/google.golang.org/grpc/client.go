@@ -9,10 +9,9 @@ import (
 	"context"
 	"net"
 
-	"github.com/DataDog/dd-trace-go/contrib/google.golang.org/grpc/internal/grpcutil/v2"
+	"github.com/DataDog/dd-trace-go/contrib/google.golang.org/grpc/v2/internal/grpcutil"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
-	"github.com/DataDog/dd-trace-go/v2/internal/log"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/grpclog"
@@ -37,7 +36,7 @@ func (cs *clientStream) RecvMsg(m interface{}) (err error) {
 			cs.Context(),
 			cs.method,
 			"grpc.message",
-			cs.cfg.serviceName,
+			cs.cfg.serviceName.String(),
 			cs.cfg.startSpanOptions()...,
 		)
 		span.SetTag(ext.Component, componentName)
@@ -56,7 +55,7 @@ func (cs *clientStream) SendMsg(m interface{}) (err error) {
 			cs.Context(),
 			cs.method,
 			"grpc.message",
-			cs.cfg.serviceName,
+			cs.cfg.serviceName.String(),
 			cs.cfg.startSpanOptions()...,
 		)
 		span.SetTag(ext.Component, componentName)
@@ -77,7 +76,7 @@ func StreamClientInterceptor(opts ...Option) grpc.StreamClientInterceptor {
 	for _, fn := range opts {
 		fn.apply(cfg)
 	}
-	log.Debug("contrib/google.golang.org/grpc: Configuring StreamClientInterceptor: %#v", cfg)
+	instr.Logger().Debug("contrib/google.golang.org/grpc: Configuring StreamClientInterceptor: %#v", cfg)
 	return func(ctx context.Context, desc *grpc.StreamDesc, cc *grpc.ClientConn, method string, streamer grpc.Streamer, opts ...grpc.CallOption) (grpc.ClientStream, error) {
 		var methodKind string
 		if desc != nil {
@@ -148,7 +147,7 @@ func UnaryClientInterceptor(opts ...Option) grpc.UnaryClientInterceptor {
 	for _, fn := range opts {
 		fn.apply(cfg)
 	}
-	log.Debug("contrib/google.golang.org/grpc: Configuring UnaryClientInterceptor: %#v", cfg)
+	instr.Logger().Debug("contrib/google.golang.org/grpc: Configuring UnaryClientInterceptor: %#v", cfg)
 	return func(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
 		if _, ok := cfg.untracedMethods[method]; ok {
 			return invoker(ctx, method, req, reply, cc, opts...)
@@ -173,7 +172,7 @@ func doClientRequest(
 		ctx,
 		method,
 		cfg.spanName,
-		cfg.serviceName,
+		cfg.serviceName.String(),
 		cfg.startSpanOptions(
 			tracer.Tag(ext.Component, componentName),
 			tracer.Tag(ext.SpanKind, ext.SpanKindClient))...,

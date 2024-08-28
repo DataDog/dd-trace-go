@@ -13,11 +13,9 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
-	"github.com/DataDog/dd-trace-go/v2/internal/contrib/namingschematest"
 
 	consul "github.com/hashicorp/consul/api"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 func TestMain(m *testing.M) {
@@ -106,41 +104,4 @@ func TestKV(t *testing.T) {
 			assert.Equal(ext.DBSystemConsulKV, span.Tag(ext.DBSystem))
 		})
 	}
-}
-func TestNamingSchema(t *testing.T) {
-	genSpans := func(t *testing.T, serviceOverride string) []*mocktracer.Span {
-		var opts []ClientOption
-		if serviceOverride != "" {
-			opts = append(opts, WithService(serviceOverride))
-		}
-
-		mt := mocktracer.Start()
-		defer mt.Stop()
-		client, err := NewClient(consul.DefaultConfig(), opts...)
-		require.NoError(t, err)
-		kv := client.KV()
-
-		pair := &consul.KVPair{Key: "test.key", Value: []byte("test_value")}
-		_, err = kv.Put(pair, nil)
-		require.NoError(t, err)
-
-		spans := mt.FinishedSpans()
-		require.Len(t, spans, 1)
-		return spans
-	}
-	assertOpV0 := func(t *testing.T, spans []*mocktracer.Span) {
-		require.Len(t, spans, 1)
-		assert.Equal(t, "consul.command", spans[0].OperationName())
-	}
-	assertOpV1 := func(t *testing.T, spans []*mocktracer.Span) {
-		require.Len(t, spans, 1)
-		assert.Equal(t, "consul.query", spans[0].OperationName())
-	}
-	wantServiceNameV0 := namingschematest.ServiceNameAssertions{
-		WithDefaults:             []string{"consul"},
-		WithDDService:            []string{"consul"},
-		WithDDServiceAndOverride: []string{namingschematest.TestServiceOverride},
-	}
-	t.Run("service name", namingschematest.NewServiceNameTest(genSpans, wantServiceNameV0))
-	t.Run("operation name", namingschematest.NewSpanNameTest(genSpans, assertOpV0, assertOpV1))
 }

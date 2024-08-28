@@ -106,7 +106,7 @@ jobs:
       matrix:
         # TODO: cross-compilation from/to different hardware architectures once
         #       github provides native ARM runners.
-        go: [ "1.20", "1.21", "1.22" ]
+        go: [ "1.22", "1.23" ]
         build-env: [ alpine, bookworm, bullseye ]
         build-with-cgo: [ 0, 1 ]
         deployment-env: [ alpine, debian11, debian12, al2, al2023, busybox, scratch ]

@@ -10,7 +10,7 @@ import (
 
 	"github.com/go-pg/pg/v10"
 
-	pg2 "github.com/DataDog/dd-trace-go/contrib/go-pg/pg.v10/v2"
+	pgtrace "github.com/DataDog/dd-trace-go/contrib/go-pg/pg.v10/v2"
 )
 
 func Example() {
@@ -20,7 +20,7 @@ func Example() {
 	})
 
 	// Wrap the connection with the APM hook.
-	pg2.Wrap(conn)
+	pgtrace.Wrap(conn)
 	var user struct {
 		Name string
 	}

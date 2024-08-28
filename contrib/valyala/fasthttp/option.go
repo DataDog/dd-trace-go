@@ -9,10 +9,8 @@ import (
 	"github.com/valyala/fasthttp"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
-	"github.com/DataDog/dd-trace-go/v2/internal/namingschema"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 )
-
-const defaultServiceName = "fasthttp"
 
 type config struct {
 	serviceName   string
@@ -37,8 +35,8 @@ func (fn OptionFn) apply(cfg *config) {
 
 func newConfig() *config {
 	return &config{
-		serviceName:   namingschema.ServiceName(defaultServiceName),
-		spanName:      namingschema.OpName(namingschema.HTTPServer),
+		serviceName:   instr.ServiceName(instrumentation.ComponentServer, nil),
+		spanName:      instr.OperationName(instrumentation.ComponentServer, nil),
 		isStatusError: defaultIsServerError,
 		resourceNamer: defaultResourceNamer,
 		ignoreRequest: defaultIgnoreRequest,

@@ -8,11 +8,8 @@ package kafka
 import (
 	"math"
 
-	"github.com/DataDog/dd-trace-go/v2/internal"
-	"github.com/DataDog/dd-trace-go/v2/internal/namingschema"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 )
-
-const defaultServiceName = "kafka"
 
 type config struct {
 	consumerServiceName string
@@ -37,19 +34,15 @@ func (fn OptionFn) apply(cfg *config) {
 
 func newConfig(opts ...Option) *config {
 	cfg := &config{
-		// analyticsRate: globalconfig.AnalyticsRate(),
-		analyticsRate: math.NaN(),
-	}
-	if internal.BoolEnv("DD_TRACE_KAFKA_ANALYTICS_ENABLED", false) {
-		cfg.analyticsRate = 1.0
+		analyticsRate: instr.AnalyticsRate(false),
 	}
 
-	cfg.dataStreamsEnabled = internal.BoolEnv("DD_DATA_STREAMS_ENABLED", false)
+	cfg.dataStreamsEnabled = instr.DataStreamsEnabled()
 
-	cfg.consumerServiceName = namingschema.ServiceName(defaultServiceName)
-	cfg.producerServiceName = namingschema.ServiceNameOverrideV0(defaultServiceName, defaultServiceName)
-	cfg.consumerSpanName = namingschema.OpName(namingschema.KafkaInbound)
-	cfg.producerSpanName = namingschema.OpName(namingschema.KafkaOutbound)
+	cfg.consumerServiceName = instr.ServiceName(instrumentation.ComponentConsumer, nil)
+	cfg.producerServiceName = instr.ServiceName(instrumentation.ComponentProducer, nil)
+	cfg.consumerSpanName = instr.OperationName(instrumentation.ComponentConsumer, nil)
+	cfg.producerSpanName = instr.OperationName(instrumentation.ComponentProducer, nil)
 
 	for _, opt := range opts {
 		opt.apply(cfg)

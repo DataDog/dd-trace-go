@@ -127,8 +127,8 @@ func modTidy(goVersion string) error {
 func main() {
 	p := pinning{}
 	p.loadHeadCommit()
-	p.pin("internal/apps/go.mod", "1.21.10")
-	p.pin("internal/**/**/go.mod", "1.20.14")
-	p.pin("v2/contrib/**/**/go.mod", "1.20.14")
-	p.pin("v2/contrib/**/**/**/go.mod", "1.20.14")
+	p.pin("internal/apps/go.mod", "1.21.13")
+	p.pin("internal/**/**/go.mod", "1.21.13")
+	p.pin("contrib/**/**/go.mod", "1.21.13")
+	p.pin("contrib/**/**/**/go.mod", "1.21.13")
 }

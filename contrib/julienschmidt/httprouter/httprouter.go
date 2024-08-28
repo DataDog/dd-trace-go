@@ -14,19 +14,17 @@ import (
 	httptrace "github.com/DataDog/dd-trace-go/contrib/net/http/v2"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
-	httptraceinternal "github.com/DataDog/dd-trace-go/v2/internal/contrib/httptrace"
-	"github.com/DataDog/dd-trace-go/v2/internal/contrib/options"
-	"github.com/DataDog/dd-trace-go/v2/internal/log"
-	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
+	httptraceinstr "github.com/DataDog/dd-trace-go/v2/instrumentation/httptrace"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/options"
 
 	"github.com/julienschmidt/httprouter"
 )
 
-const componentName = "julienschmidt/httprouter"
+var instr *instrumentation.Instrumentation
 
 func init() {
-	telemetry.LoadIntegration(componentName)
-	tracer.MarkIntegrationImported("github.com/julienschmidt/httprouter")
+	instr = instrumentation.Load(instrumentation.PackageJulienschmidtHTTPRouter)
 }
 
 // Router is a traced version of httprouter.Router.
@@ -47,9 +45,9 @@ func New(opts ...RouterOption) *Router {
 	}
 
 	cfg.spanOpts = append(cfg.spanOpts, tracer.Tag(ext.SpanKind, ext.SpanKindServer))
-	cfg.spanOpts = append(cfg.spanOpts, tracer.Tag(ext.Component, componentName))
+	cfg.spanOpts = append(cfg.spanOpts, tracer.Tag(ext.Component, instrumentation.PackageJulienschmidtHTTPRouter))
 
-	log.Debug("contrib/julienschmidt/httprouter: Configuring Router: %#v", cfg)
+	instr.Logger().Debug("contrib/julienschmidt/httprouter: Configuring Router: %#v", cfg)
 	return &Router{httprouter.New(), cfg}
 }
 
@@ -63,7 +61,7 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	}
 	resource := req.Method + " " + route
 	spanOpts := options.Expand(r.config.spanOpts, 0, 1) // spanOpts must be a copy of r.config.spanOpts, locally scoped, to avoid races.
-	spanOpts = append(spanOpts, httptraceinternal.HeaderTagsFromRequest(req, r.config.headerTags))
+	spanOpts = append(spanOpts, httptraceinstr.HeaderTagsFromRequest(req, r.config.headerTags))
 
 	httptrace.TraceAndServe(r.Router, w, req, &httptrace.ServeConfig{
 		Service:  r.config.serviceName,

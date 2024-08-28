@@ -10,14 +10,9 @@ import (
 	"net/http"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
-	"github.com/DataDog/dd-trace-go/v2/internal"
-	"github.com/DataDog/dd-trace-go/v2/internal/appsec/emitter/httpsec"
-	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
-	"github.com/DataDog/dd-trace-go/v2/internal/namingschema"
-	"github.com/DataDog/dd-trace-go/v2/internal/normalizer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/httpsec"
 )
-
-const defaultServiceName = "chi.router"
 
 type config struct {
 	serviceName        string
@@ -26,7 +21,7 @@ type config struct {
 	isStatusError      func(statusCode int) bool
 	ignoreRequest      func(r *http.Request) bool
 	modifyResourceName func(resourceName string) string
-	headerTags         *internal.LockMap
+	headerTags         instrumentation.HeaderTags
 	resourceNamer      func(r *http.Request) string
 	appsecDisabled     bool
 	appsecConfig       httpsec.Config
@@ -45,13 +40,9 @@ func (fn OptionFn) apply(cfg *config) {
 }
 
 func defaults(cfg *config) {
-	cfg.serviceName = namingschema.ServiceName(defaultServiceName)
-	if internal.BoolEnv("DD_TRACE_CHI_ANALYTICS_ENABLED", false) {
-		cfg.analyticsRate = 1.0
-	} else {
-		cfg.analyticsRate = globalconfig.AnalyticsRate()
-	}
-	cfg.headerTags = globalconfig.HeaderTagMap()
+	cfg.serviceName = instr.ServiceName(instrumentation.ComponentServer, nil)
+	cfg.analyticsRate = instr.AnalyticsRate(true)
+	cfg.headerTags = instr.HTTPHeadersAsTags()
 	cfg.isStatusError = isServerError
 	cfg.ignoreRequest = func(_ *http.Request) bool { return false }
 	cfg.modifyResourceName = func(s string) string { return s }
@@ -130,9 +121,8 @@ func WithModifyResourceName(fn func(resourceName string) string) OptionFn {
 // Using this feature can risk exposing sensitive data such as authorization tokens to Datadog.
 // Special headers can not be sub-selected. E.g., an entire Cookie header would be transmitted, without the ability to choose specific Cookies.
 func WithHeaderTags(headers []string) OptionFn {
-	headerTagsMap := normalizer.HeaderTagSlice(headers)
 	return func(cfg *config) {
-		cfg.headerTags = internal.NewLockMap(headerTagsMap)
+		cfg.headerTags = instrumentation.NewHeaderTags(headers)
 	}
 }
 

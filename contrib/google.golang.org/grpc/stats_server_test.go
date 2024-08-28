@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/DataDog/dd-trace-go/instrumentation/testutils/grpc/v2/fixturepb"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
@@ -33,7 +34,7 @@ func TestServerStatsHandler(t *testing.T) {
 
 	mt := mocktracer.Start()
 	defer mt.Stop()
-	_, err = server.client.Ping(context.Background(), &FixtureRequest{Name: "name"})
+	_, err = server.client.Ping(context.Background(), &fixturepb.FixtureRequest{Name: "name"})
 	assert.NoError(err)
 
 	waitForSpans(mt, 1)

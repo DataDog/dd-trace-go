@@ -9,38 +9,30 @@ import (
 	"math"
 	"net/http"
 
-	"github.com/DataDog/dd-trace-go/v2/internal"
-	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
-	"github.com/DataDog/dd-trace-go/v2/internal/namingschema"
-	"github.com/DataDog/dd-trace-go/v2/internal/normalizer"
-
 	"github.com/gin-gonic/gin"
-)
 
-const defaultServiceName = "gin.router"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
+)
 
 type config struct {
 	analyticsRate float64
 	resourceNamer func(c *gin.Context) string
 	serviceName   string
 	ignoreRequest func(c *gin.Context) bool
-	headerTags    *internal.LockMap
+	headerTags    instrumentation.HeaderTags
 }
 
 func newConfig(serviceName string) *config {
 	if serviceName == "" {
-		serviceName = namingschema.ServiceName(defaultServiceName)
+		serviceName = instr.ServiceName(instrumentation.ComponentServer, nil)
 	}
-	rate := globalconfig.AnalyticsRate()
-	if internal.BoolEnv("DD_TRACE_GIN_ANALYTICS_ENABLED", false) {
-		rate = 1.0
-	}
+	rate := instr.AnalyticsRate(true)
 	return &config{
 		analyticsRate: rate,
 		resourceNamer: defaultResourceNamer,
 		serviceName:   serviceName,
 		ignoreRequest: func(_ *gin.Context) bool { return false },
-		headerTags:    globalconfig.HeaderTagMap(),
+		headerTags:    instr.HTTPHeadersAsTags(),
 	}
 }
 
@@ -92,9 +84,8 @@ func WithResourceNamer(namer func(c *gin.Context) string) OptionFn {
 // Using this feature can risk exposing sensitive data such as authorization tokens to Datadog.
 // Special headers can not be sub-selected. E.g., an entire Cookie header would be transmitted, without the ability to choose specific Cookies.
 func WithHeaderTags(headers []string) OptionFn {
-	headerTagsMap := normalizer.HeaderTagSlice(headers)
 	return func(cfg *config) {
-		cfg.headerTags = internal.NewLockMap(headerTagsMap)
+		cfg.headerTags = instrumentation.NewHeaderTags(headers)
 	}
 }
 

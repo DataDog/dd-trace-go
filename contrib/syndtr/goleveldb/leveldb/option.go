@@ -9,11 +9,8 @@ import (
 	"context"
 	"math"
 
-	"github.com/DataDog/dd-trace-go/v2/internal"
-	"github.com/DataDog/dd-trace-go/v2/internal/namingschema"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 )
-
-const defaultServiceName = "leveldb"
 
 type config struct {
 	ctx           context.Context
@@ -24,14 +21,10 @@ type config struct {
 
 func newConfig(opts ...Option) *config {
 	cfg := &config{
-		serviceName: namingschema.ServiceNameOverrideV0(defaultServiceName, defaultServiceName),
-		spanName:    namingschema.OpName(namingschema.LevelDBOutbound),
-		ctx:         context.Background(),
-		// cfg.analyticsRate: globalconfig.AnalyticsRate(),
-		analyticsRate: math.NaN(),
-	}
-	if internal.BoolEnv("DD_TRACE_LEVELDB_ANALYTICS_ENABLED", false) {
-		cfg.analyticsRate = 1.0
+		serviceName:   instr.ServiceName(instrumentation.ComponentDefault, nil),
+		spanName:      instr.OperationName(instrumentation.ComponentDefault, nil),
+		ctx:           context.Background(),
+		analyticsRate: instr.AnalyticsRate(false),
 	}
 	for _, opt := range opts {
 		opt.apply(cfg)

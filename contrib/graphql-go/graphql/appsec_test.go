@@ -17,7 +17,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
-	"github.com/DataDog/dd-trace-go/v2/internal/appsec"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils"
 )
 
 func TestAppSec(t *testing.T) {
@@ -263,14 +263,13 @@ func enableAppSec(t *testing.T) func() {
 	require.NoError(t, err)
 	restoreDdAppsecEnabled := setEnv("DD_APPSEC_ENABLED", "1")
 	restoreDdAppsecRules := setEnv("DD_APPSEC_RULES", rulesFile)
-	appsec.Start()
+	testutils.StartAppSec(t)
 	restore := func() {
-		appsec.Stop()
 		restoreDdAppsecEnabled()
 		restoreDdAppsecRules()
 		_ = os.RemoveAll(tmpDir)
 	}
-	if !appsec.Enabled() {
+	if !instr.AppSecEnabled() {
 		restore()
 		t.Skip("could not enable appsec: this platform is likely not supported")
 	}

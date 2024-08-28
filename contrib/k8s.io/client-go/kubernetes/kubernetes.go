@@ -4,7 +4,7 @@
 // Copyright 2016 Datadog, Inc.
 
 // Package kubernetes provides functions to trace k8s.io/client-go (https://github.com/kubernetes/client-go).
-package kubernetes // import "github.com/DataDog/dd-trace-go/contrib/k8s.io/client-go/kubernetes/v2"
+package kubernetes // import "github.com/DataDog/dd-trace-go/contrib/k8s.io/client-go/v2/kubernetes"
 
 import (
 	"net/http"
@@ -13,15 +13,13 @@ import (
 	httptrace "github.com/DataDog/dd-trace-go/contrib/net/http/v2"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
-	"github.com/DataDog/dd-trace-go/v2/internal/log"
-	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 )
 
-const componentName = "k8s.io/client-go/kubernetes"
+var instr *instrumentation.Instrumentation
 
 func init() {
-	telemetry.LoadIntegration(componentName)
-	tracer.MarkIntegrationImported(componentName)
+	instr = instrumentation.Load(instrumentation.PackageK8SClientGo)
 }
 
 const (
@@ -50,7 +48,7 @@ func wrapRoundTripperWithOptions(rt http.RoundTripper, opts ...httptrace.RoundTr
 	copy(localOpts, opts) // make a copy of the opts, to avoid data races and side effects.
 	localOpts = append(localOpts, httptrace.WithBefore(func(req *http.Request, span *tracer.Span) {
 		span.SetTag(ext.ResourceName, RequestToResource(req.Method, req.URL.Path))
-		span.SetTag(ext.Component, componentName)
+		span.SetTag(ext.Component, instrumentation.PackageK8SClientGo)
 		span.SetTag(ext.SpanKind, ext.SpanKindClient)
 		traceID := span.Context().TraceID()
 		if traceID == tracer.TraceIDZero {
@@ -60,7 +58,7 @@ func wrapRoundTripperWithOptions(rt http.RoundTripper, opts ...httptrace.RoundTr
 		req.Header.Set("Audit-Id", traceID)
 		span.SetTag("kubernetes.audit_id", traceID)
 	}))
-	log.Debug("contrib/k8s.io/client-go/kubernetes: Wrapping RoundTripper.")
+	instr.Logger().Debug("contrib/k8s.io/client-go/kubernetes: Wrapping RoundTripper.")
 	return httptrace.WrapRoundTripper(rt, localOpts...)
 }
 

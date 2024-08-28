@@ -9,6 +9,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/DataDog/dd-trace-go/instrumentation/testutils/grpc/v2/fixturepb"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
@@ -34,7 +35,7 @@ func TestClientStatsHandler(t *testing.T) {
 	defer mt.Stop()
 
 	rootSpan, ctx := tracer.StartSpanFromContext(context.Background(), "a", tracer.ServiceName("b"), tracer.ResourceName("c"))
-	_, err = server.client.Ping(ctx, &FixtureRequest{Name: "name"})
+	_, err = server.client.Ping(ctx, &fixturepb.FixtureRequest{Name: "name"})
 	assert.NoError(err)
 	rootSpan.Finish()
 

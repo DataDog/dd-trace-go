@@ -12,17 +12,17 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
-	"github.com/DataDog/dd-trace-go/v2/internal/log"
-	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 
 	"github.com/tidwall/buntdb"
 )
 
 const componentName = "tidwall/buntdb"
 
+var instr *instrumentation.Instrumentation
+
 func init() {
-	telemetry.LoadIntegration(componentName)
-	tracer.MarkIntegrationImported("github.com/tidwall/buntdb")
+	instr = instrumentation.Load(instrumentation.PackageTidwallBuntDB)
 }
 
 // A DB wraps a buntdb.DB, automatically tracing any transactions.
@@ -93,7 +93,7 @@ func WrapTx(tx *buntdb.Tx, opts ...Option) *Tx {
 	for _, opt := range opts {
 		opt.apply(cfg)
 	}
-	log.Debug("contrib/tidwall/buntdb: Wrapping Transaction: %#v", cfg)
+	instr.Logger().Debug("contrib/tidwall/buntdb: Wrapping Transaction: %#v", cfg)
 	return &Tx{
 		Tx:  tx,
 		cfg: cfg,

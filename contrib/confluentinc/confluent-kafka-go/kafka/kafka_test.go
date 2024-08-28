@@ -18,9 +18,6 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
-	"github.com/DataDog/dd-trace-go/v2/internal/contrib/namingschematest"
-	internaldsm "github.com/DataDog/dd-trace-go/v2/internal/datastreams"
-
 	"github.com/confluentinc/confluent-kafka-go/kafka"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -92,7 +89,7 @@ func produceThenConsume(t *testing.T, consumerAction consumerActionFn, producerO
 
 	if c.cfg.dataStreamsEnabled {
 		backlogs := mt.SentDSMBacklogs()
-		toMap := func(b []internaldsm.Backlog) map[string]struct{} {
+		toMap := func(b []mocktracer.DSMBacklog) map[string]struct{} {
 			m := make(map[string]struct{})
 			for _, b := range backlogs {
 				m[strings.Join(b.Tags, "")] = struct{}{}
@@ -166,7 +163,7 @@ func TestConsumerChannel(t *testing.T) {
 		assert.Equal(t, float64(1), s.Tag(ext.MessagingKafkaPartition))
 		assert.Equal(t, 0.3, s.Tag(ext.EventSampleRate))
 		assert.Equal(t, strconv.Itoa(i+1), s.Tag("offset"))
-		assert.Equal(t, componentName, s.Tag(ext.Component))
+		assert.Equal(t, "confluentinc/confluent-kafka-go/kafka", s.Tag(ext.Component))
 		assert.Equal(t, ext.SpanKindConsumer, s.Tag(ext.SpanKind))
 		assert.Equal(t, "kafka", s.Tag(ext.MessagingSystem))
 	}
@@ -237,7 +234,7 @@ func TestConsumerFunctional(t *testing.T) {
 			assert.Equal(t, 0.1, s0.Tag(ext.EventSampleRate))
 			assert.Equal(t, "queue", s0.Tag(ext.SpanType))
 			assert.Equal(t, float64(0), s0.Tag(ext.MessagingKafkaPartition))
-			assert.Equal(t, componentName, s0.Tag(ext.Component))
+			assert.Equal(t, "confluentinc/confluent-kafka-go/kafka", s0.Tag(ext.Component))
 			assert.Equal(t, ext.SpanKindProducer, s0.Tag(ext.SpanKind))
 			assert.Equal(t, "kafka", s0.Tag(ext.MessagingSystem))
 			assert.Equal(t, "127.0.0.1", s0.Tag(ext.KafkaBootstrapServers))
@@ -249,7 +246,7 @@ func TestConsumerFunctional(t *testing.T) {
 			assert.Equal(t, nil, s1.Tag(ext.EventSampleRate))
 			assert.Equal(t, "queue", s1.Tag(ext.SpanType))
 			assert.Equal(t, float64(0), s1.Tag(ext.MessagingKafkaPartition))
-			assert.Equal(t, componentName, s1.Tag(ext.Component))
+			assert.Equal(t, "confluentinc/confluent-kafka-go/kafka", s1.Tag(ext.Component))
 			assert.Equal(t, ext.SpanKindConsumer, s1.Tag(ext.SpanKind))
 			assert.Equal(t, "kafka", s1.Tag(ext.MessagingSystem))
 			assert.Equal(t, "127.0.0.1", s1.Tag(ext.KafkaBootstrapServers))
@@ -311,19 +308,4 @@ func TestCustomTags(t *testing.T) {
 
 	assert.Equal(t, "bar", s.Tag("foo"))
 	assert.Equal(t, "key1", s.Tag("key"))
-}
-
-func TestNamingSchema(t *testing.T) {
-	genSpans := func(t *testing.T, serviceOverride string) []*mocktracer.Span {
-		var opts []Option
-		if serviceOverride != "" {
-			opts = append(opts, WithService(serviceOverride))
-		}
-		consumerAction := consumerActionFn(func(c *Consumer) (*kafka.Message, error) {
-			return c.ReadMessage(3000 * time.Millisecond)
-		})
-		spans, _ := produceThenConsume(t, consumerAction, opts, opts)
-		return spans
-	}
-	namingschematest.NewKafkaTest(genSpans)(t)
 }
