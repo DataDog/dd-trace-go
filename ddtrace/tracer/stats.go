@@ -282,9 +282,9 @@ func (sb *rawBucket) Export() statsBucket {
 type trilean int32
 
 const (
-	trilean_not_set trilean = iota
-	trilean_true
-	trilean_false
+	trileanNotSet trilean = iota
+	trileanTrue
+	trileanFalse
 )
 
 type rawGroupedStats struct {

@@ -604,9 +604,9 @@ func newAggregableSpan(s *span, obfuscator *obfuscate.Obfuscator) *aggregableSpa
 	}
 	var isTraceRoot trilean
 	if s.ParentID == 0 {
-		isTraceRoot = trilean_true
+		isTraceRoot = trileanTrue
 	} else {
-		isTraceRoot = trilean_false
+		isTraceRoot = trileanFalse
 	}
 
 	key := aggregation{
