@@ -179,8 +179,9 @@ func TestLogAgentReachable(t *testing.T) {
 func TestLogFormat(t *testing.T) {
 	assert := assert.New(t)
 	tp := new(log.RecordLogger)
-	tracer := newTracer(WithLogger(tp), WithRuntimeMetrics(), WithDebugMode(true))
-	defer tracer.Stop()
+
+	tracer, _, _, stop := startTestTracer(t, WithLogger(tp), WithRuntimeMetrics(), WithDebugMode(true))
+	defer stop()
 	tp.Reset()
 	tp.Ignore("appsec: ", telemetry.LogPrefix)
 	tracer.StartSpan("test", ServiceName("test-service"), ResourceName("/"), WithSpanID(12345))
