@@ -237,7 +237,9 @@ func newUnstartedTracer(opts ...StartOption) *tracer {
 		log.Warn("Runtime and health metrics disabled: %v", err)
 	}
 	var writer traceWriter
-	if c.logToStdout {
+	if c.ciVisibilityEnabled {
+		writer = newCiVisibilityTraceWriter(c)
+	} else if c.logToStdout {
 		writer = newLogTraceWriter(c, statsd)
 	} else {
 		writer = newAgentTraceWriter(c, sampler, statsd)
@@ -741,6 +743,9 @@ func (t *tracer) sample(span *span) {
 		span.setMetric(sampleRateMetricKey, rs.Rate())
 	}
 	if t.rulesSampling.SampleTraceGlobalRate(span) {
+		return
+	}
+	if t.rulesSampling.SampleTrace(span) {
 		return
 	}
 	t.prioritySampling.apply(span)

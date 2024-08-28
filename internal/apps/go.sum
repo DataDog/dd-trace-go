@@ -1,13 +1,13 @@
-github.com/DataDog/appsec-internal-go v1.6.0 h1:QHvPOv/O0s2fSI/BraZJNpRDAtdlrRm5APJFZNBxjAw=
-github.com/DataDog/appsec-internal-go v1.6.0/go.mod h1:pEp8gjfNLtEOmz+iZqC8bXhu0h4k7NUsW/qiQb34k1U=
+github.com/DataDog/appsec-internal-go v1.7.0 h1:iKRNLih83dJeVya3IoUfK+6HLD/hQsIbyBlfvLmAeb0=
+github.com/DataDog/appsec-internal-go v1.7.0/go.mod h1:wW0cRfWBo4C044jHGwYiyh5moQV2x0AhnwqMuiX7O/g=
 github.com/DataDog/datadog-agent/pkg/obfuscate v0.48.0 h1:bUMSNsw1iofWiju9yc1f+kBd33E3hMJtq9GuU602Iy8=
 github.com/DataDog/datadog-agent/pkg/obfuscate v0.48.0/go.mod h1:HzySONXnAgSmIQfL6gOv9hWprKJkx8CicuXuUbmgWfo=
 github.com/DataDog/datadog-agent/pkg/remoteconfig/state v0.48.1 h1:5nE6N3JSs2IG3xzMthNFhXfOaXlrsdgqmJ73lndFf8c=
 github.com/DataDog/datadog-agent/pkg/remoteconfig/state v0.48.1/go.mod h1:Vc+snp0Bey4MrrJyiV2tVxxJb6BmLomPvN1RgAvjGaQ=
 github.com/DataDog/datadog-go/v5 v5.3.0 h1:2q2qjFOb3RwAZNU+ez27ZVDwErJv5/VpbBPprz7Z+s8=
 github.com/DataDog/datadog-go/v5 v5.3.0/go.mod h1:XRDJk1pTc00gm+ZDiBKsjh7oOOtJfYfglVCmFb8C2+Q=
-github.com/DataDog/go-libddwaf/v3 v3.2.1 h1:lZPc6UxCOwioHc++nsldKR50FpIrRh1uGnGLuryqnE8=
-github.com/DataDog/go-libddwaf/v3 v3.2.1/go.mod h1:AP+7Atb8ftSsrha35wht7+K3R+xuzfVSQhabSO4w6CY=
+github.com/DataDog/go-libddwaf/v3 v3.3.0 h1:jS72fuQpFgJZEdEJDmHJCPAgNTEMZoz1EUvimPUOiJ4=
+github.com/DataDog/go-libddwaf/v3 v3.3.0/go.mod h1:Bz/0JkpGf689mzbUjKJeheJINqsyyhM8p9PDuHdK2Ec=
 github.com/DataDog/go-tuf v1.0.2-0.5.2 h1:EeZr937eKAWPxJ26IykAdWA4A0jQXJgkhUjqEI/w7+I=
 github.com/DataDog/go-tuf v1.0.2-0.5.2/go.mod h1:zBcq6f654iVqmkk8n2Cx81E1JnNTMOAx1UEO/wZR+P0=
 github.com/DataDog/gostackparse v0.7.0 h1:i7dLkXHvYzHV308hnkvVGDL3BR4FWl7IsXNPz/IGQh4=

@@ -27,6 +27,7 @@ import (
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
@@ -136,6 +137,8 @@ func TestAutoDetectStatsd(t *testing.T) {
 		require.NoError(t, err)
 		defer statsd.Close()
 		require.Equal(t, cfg.dogstatsdAddr, "unix://"+addr)
+		// Ensure globalconfig also gets the auto-detected UDS address
+		require.Equal(t, "unix://"+addr, globalconfig.DogstatsdAddr())
 		statsd.Count("name", 1, []string{"tag"}, 1)
 
 		buf := make([]byte, 17)
@@ -300,39 +303,6 @@ func TestAgentIntegration(t *testing.T) {
 		cfg.loadContribIntegrations(deps)
 		assert.True(t, cfg.integrations["gRPC"].Available)
 		assert.Equal(t, cfg.integrations["gRPC"].Version, "v1.520")
-		assert.False(t, cfg.integrations["gRPC v12"].Available)
-	})
-
-	t.Run("grpc v12", func(t *testing.T) {
-		cfg := newConfig()
-		defer clearIntegrationsForTests()
-
-		d := debug.Module{
-			Path:    "google.golang.org/grpc",
-			Version: "v1.10",
-		}
-
-		deps := []*debug.Module{&d}
-		cfg.loadContribIntegrations(deps)
-		assert.True(t, cfg.integrations["gRPC v12"].Available)
-		assert.Equal(t, cfg.integrations["gRPC v12"].Version, "v1.10")
-		assert.False(t, cfg.integrations["gRPC"].Available)
-	})
-
-	t.Run("grpc bad", func(t *testing.T) {
-		cfg := newConfig()
-		defer clearIntegrationsForTests()
-
-		d := debug.Module{
-			Path:    "google.golang.org/grpc",
-			Version: "v10.10",
-		}
-
-		deps := []*debug.Module{&d}
-		cfg.loadContribIntegrations(deps)
-		assert.False(t, cfg.integrations["gRPC v12"].Available)
-		assert.Equal(t, cfg.integrations["gRPC v12"].Version, "")
-		assert.False(t, cfg.integrations["gRPC"].Available)
 	})
 
 	// ensure we clean up global state
@@ -534,6 +504,20 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			c := tracer.config
 			assert.Equal(t, c.dogstatsdAddr, "10.1.0.12:4002")
 			assert.Equal(t, globalconfig.DogstatsdAddr(), "10.1.0.12:4002")
+		})
+		t.Run("uds", func(t *testing.T) {
+			assert := assert.New(t)
+			dir, err := os.MkdirTemp("", "socket")
+			if err != nil {
+				t.Fatal("Failed to create socket")
+			}
+			addr := filepath.Join(dir, "dsd.socket")
+			defer os.RemoveAll(addr)
+			tracer := newTracer(WithDogstatsdAddress("unix://" + addr))
+			defer tracer.Stop()
+			c := tracer.config
+			assert.Equal("unix://"+addr, c.dogstatsdAddr)
+			assert.Equal("unix://"+addr, globalconfig.DogstatsdAddr())
 		})
 	})
 
@@ -811,9 +795,9 @@ func TestTracerOptionsDefaults(t *testing.T) {
 
 func TestDefaultHTTPClient(t *testing.T) {
 	defTracerClient := func(timeout int) *http.Client {
-		if _, err := os.Stat(defaultSocketAPM); err == nil {
+		if _, err := os.Stat(internal.DefaultTraceAgentUDSPath); err == nil {
 			// we have the UDS socket file, use it
-			return udsClient(defaultSocketAPM, 0)
+			return udsClient(internal.DefaultTraceAgentUDSPath, 0)
 		}
 		return defaultHTTPClient(time.Second * time.Duration(timeout))
 	}
@@ -837,8 +821,8 @@ func TestDefaultHTTPClient(t *testing.T) {
 			t.Fatal(err)
 		}
 		defer os.RemoveAll(f.Name())
-		defer func(old string) { defaultSocketAPM = old }(defaultSocketAPM)
-		defaultSocketAPM = f.Name()
+		defer func(old string) { internal.DefaultTraceAgentUDSPath = old }(internal.DefaultTraceAgentUDSPath)
+		internal.DefaultTraceAgentUDSPath = f.Name()
 		x := *defTracerClient(2)
 		y := *defaultHTTPClient(2)
 		compareHTTPClients(t, x, y)
@@ -1270,6 +1254,7 @@ func TestStatsTags(t *testing.T) {
 	assert.Contains(tags, "service:serviceName")
 	assert.Contains(tags, "env:envName")
 	assert.Contains(tags, "host:hostName")
+	assert.Contains(tags, "tracer_version:"+version.Tag)
 
 	st := globalconfig.StatsTags()
 	// all of the tracer tags except `service` and `version` should be on `st`
@@ -1278,7 +1263,7 @@ func TestStatsTags(t *testing.T) {
 	assert.Contains(st, "host:hostName")
 	assert.Contains(st, "lang:go")
 	assert.Contains(st, "lang_version:"+runtime.Version())
-	assert.NotContains(st, "version:"+version.Tag)
+	assert.NotContains(st, "tracer_version:"+version.Tag)
 	assert.NotContains(st, "service:serviceName")
 }
 
@@ -1421,19 +1406,14 @@ func TestWithHeaderTags(t *testing.T) {
 }
 
 func TestHostnameDisabled(t *testing.T) {
-	t.Run("DisabledWithUDS", func(t *testing.T) {
-		t.Setenv("DD_TRACE_AGENT_URL", "unix://somefakesocket")
-		c := newConfig()
-		assert.False(t, c.enableHostnameDetection)
-	})
 	t.Run("Default", func(t *testing.T) {
 		c := newConfig()
-		assert.True(t, c.enableHostnameDetection)
-	})
-	t.Run("DisableViaEnv", func(t *testing.T) {
-		t.Setenv("DD_CLIENT_HOSTNAME_ENABLED", "false")
-		c := newConfig()
 		assert.False(t, c.enableHostnameDetection)
+	})
+	t.Run("EnableViaEnv", func(t *testing.T) {
+		t.Setenv("DD_TRACE_CLIENT_HOSTNAME_COMPAT", "v1.66")
+		c := newConfig()
+		assert.True(t, c.enableHostnameDetection)
 	})
 }
 

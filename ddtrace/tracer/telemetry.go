@@ -49,7 +49,7 @@ func startTelemetry(c *config) {
 		{Name: "runtime_metrics_enabled", Value: c.runtimeMetrics},
 		{Name: "runtime_metrics_v2_enabled", Value: c.runtimeMetricsV2},
 		{Name: "dogstatsd_addr", Value: c.dogstatsdAddr},
-		{Name: "trace_debug_enabled", Value: !c.noDebugStack},
+		{Name: "debug_stack_enabled", Value: !c.noDebugStack},
 		{Name: "profiling_hotspots_enabled", Value: c.profilerHotspots},
 		{Name: "profiling_endpoints_enabled", Value: c.profilerEndpoints},
 		{Name: "trace_span_attribute_schema", Value: c.spanAttributeSchemaVersion},

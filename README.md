@@ -53,9 +53,7 @@ Before considering contributions to the project, please take a moment to read ou
 
 ### Testing
 
-Tests can be run locally using the Go toolset. The grpc.v12 integration will fail (and this is normal), because it covers for deprecated methods. In the CI environment
-we vendor this version of the library inside the integration. Under normal circumstances this is not something that we want to do, because users using this integration
-might be running versions different from the vendored one, creating hard to debug conflicts.
+Tests can be run locally using the Go toolset.
 
 To run integration tests locally, you should set the `INTEGRATION` environment variable. The dependencies of the integration tests are best run via Docker. To get an
 idea about the versions and the set-up take a look at our [docker-compose config](./docker-compose.yaml).

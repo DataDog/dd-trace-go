@@ -112,6 +112,30 @@ func TestTracerOpenSpans(t *testing.T) {
 	assert.Empty(t, mt.OpenSpans())
 }
 
+func TestTracerSetUser(t *testing.T) {
+	mt := newMockTracer()
+	span := mt.StartSpan("http.request")
+	tracer.SetUser(span, "test-user",
+		tracer.WithUserEmail("email"),
+		tracer.WithUserName("name"),
+		tracer.WithUserRole("role"),
+		tracer.WithUserScope("scope"),
+		tracer.WithUserSessionID("session"),
+		tracer.WithUserMetadata("key", "value"),
+	)
+
+	span.Finish()
+
+	finishedSpan := mt.FinishedSpans()[0]
+	assert.Equal(t, "test-user", finishedSpan.Tag("usr.id"))
+	assert.Equal(t, "email", finishedSpan.Tag("usr.email"))
+	assert.Equal(t, "name", finishedSpan.Tag("usr.name"))
+	assert.Equal(t, "role", finishedSpan.Tag("usr.role"))
+	assert.Equal(t, "scope", finishedSpan.Tag("usr.scope"))
+	assert.Equal(t, "session", finishedSpan.Tag("usr.session_id"))
+	assert.Equal(t, "value", finishedSpan.Tag("usr.key"))
+}
+
 func TestTracerReset(t *testing.T) {
 	assert := assert.New(t)
 	mt := newMockTracer()
