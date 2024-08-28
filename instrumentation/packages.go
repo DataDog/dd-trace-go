@@ -52,7 +52,7 @@ const (
 	PackageSyndtrGoLevelDB         Package = "syndtr/goleveldb/leveldb"
 	PackageSirupsenLogrus          Package = "sirupsen/logrus"
 	PackageShopifySarama           Package = "Shopify/sarama"
-	PackageSegmentioKafkaGo        Package = "segmentio/kafka-go.v0"
+	PackageSegmentioKafkaGo        Package = "segmentio/kafka.go.v0"
 	PackageRedisGoRedisV9          Package = "redis/go-redis.v9"
 	PackageOlivereElasticV5        Package = "olivere/elastic"
 	PackageMiekgDNS                Package = "miekg/dns"
