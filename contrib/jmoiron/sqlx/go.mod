@@ -4,7 +4,7 @@ go 1.21
 
 require (
 	github.com/DataDog/dd-trace-go/contrib/database/sql/v2 v2.0.0-20240516153256-8d6fa2bea61d
-	github.com/DataDog/dd-trace-go/v2 v2.0.0-20240516153256-8d6fa2bea61d
+	github.com/DataDog/dd-trace-go/v2 v2.0.0-20240828085650-1d90163852f1
 	github.com/denisenkom/go-mssqldb v0.11.0
 	github.com/go-sql-driver/mysql v1.6.0
 	github.com/jmoiron/sqlx v1.3.5

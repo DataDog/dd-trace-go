@@ -5,7 +5,7 @@ go 1.21
 require (
 	github.com/DataDog/dd-trace-go/contrib/google.golang.org/grpc/v2 v2.0.0-20240516153256-8d6fa2bea61d
 	github.com/DataDog/dd-trace-go/contrib/julienschmidt/httprouter/v2 v2.0.0-20240516153256-8d6fa2bea61d
-	github.com/DataDog/dd-trace-go/v2 v2.0.0-20240516153256-8d6fa2bea61d
+	github.com/DataDog/dd-trace-go/v2 v2.0.0-20240828085650-1d90163852f1
 	github.com/google/pprof v0.0.0-20230817174616-7a8ec2ada47b
 	github.com/julienschmidt/httprouter v1.3.0
 	github.com/stretchr/testify v1.8.4
