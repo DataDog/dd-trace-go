@@ -183,17 +183,18 @@ func (a *appsec) onRCRulesUpdate(updates map[string]remoteconfig.ProductUpdate) 
 	r.Compile()
 	log.Debug("appsec: Remote config: final compiled rules: %s", r.String())
 
+	// Replace the RulesManager with the new one holding the new state
+	a.cfg.RulesManager = &r
+
 	// If an error occurs while updating the WAF handle, don't swap the RulesManager and propagate the error
 	// to all config statuses since we can't know which config is the faulty one
-	if err = a.swapWAF(r.Latest); err != nil {
+	if err = a.SwapRootOperation(); err != nil {
 		log.Error("appsec: Remote config: could not apply the new security rules: %v", err)
 		for k := range statuses {
 			statuses[k] = genApplyStatus(true, err)
 		}
 		return statuses
 	}
-	// Replace the RulesManager with the new one holding the new state
-	a.cfg.RulesManager = &r
 
 	return statuses
 }

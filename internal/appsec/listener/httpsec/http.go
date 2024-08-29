@@ -193,7 +193,7 @@ func (l *wafEventListener) onEvent(op *types.Operation, args types.HandlerOperat
 			values["waf.context.processor"] = map[string]any{"extract-schema": true}
 		}
 
-		if _, ok := l.addresses[ServerResponseStatusAddr]; ok {
+		if _, ok := l.addresses[ServerResponseStatusAddr]; ok && res.Status > 0 {
 			// serverResponseStatusAddr is a string address, so we must format the status code...
 			values[ServerResponseStatusAddr] = fmt.Sprintf("%d", res.Status)
 		}

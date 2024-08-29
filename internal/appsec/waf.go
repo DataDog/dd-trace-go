@@ -6,61 +6,59 @@
 package appsec
 
 import (
+	"fmt"
+	"sync"
+	"time"
+
 	"github.com/DataDog/appsec-internal-go/limiter"
 	waf "github.com/DataDog/go-libddwaf/v3"
+
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/config"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener/wafsec"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
-func (a *appsec) swapWAF(rules config.RulesFragment) (err error) {
-	// Instantiate a new WAF handle and verify its state
-	newHandle, err := waf.NewHandle(rules, a.cfg.Obfuscator.KeyRegex, a.cfg.Obfuscator.ValueRegex)
-	if err != nil {
-		return err
-	}
-
-	// Close the WAF handle in case of an error in what's following
-	defer func() {
-		if err != nil {
-			newHandle.Close()
-		}
-	}()
-
-	newRoot := dyngo.NewRootOperation()
-	for _, fn := range wafEventListeners {
-		fn(newHandle, a.cfg, a.limiter, newRoot)
-	}
-
-	// Hot-swap dyngo's root operation
-	dyngo.SwapRootOperation(newRoot)
-
-	// Close old handle.
-	// Note that concurrent requests are still using it, and it will be released
-	// only when no more requests use it.
-	// TODO: implement in dyngo ref-counting of the root operation so we can
-	//   rely on a Finish event listener on the root operation instead?
-	//   Avoiding saving the current WAF handle would guarantee no one is
-	//   accessing a.wafHandle while we swap
-	oldHandle := a.wafHandle
-	a.wafHandle = newHandle
-	if oldHandle != nil {
-		oldHandle.Close()
-	}
-
-	return nil
+type WAF struct {
+	timeout         time.Duration
+	limiter         *limiter.TokenTicker
+	handle          *waf.Handle
+	reportRulesTags sync.Once
 }
 
-type wafEventListener func(*waf.Handle, *config.Config, limiter.Limiter, dyngo.Operation)
+func NewWAF(cfg *config.Config, rootOp dyngo.Operation) (Product, error) {
+	if ok, err := waf.Load(); err != nil {
+		// 1. If there is an error and the loading is not ok: log as an unexpected error case and quit appsec
+		// Note that we assume here that the test for the unsupported target has been done before calling
+		// this method, so it is now considered an error for this method
+		if !ok {
+			return nil, fmt.Errorf("error while loading libddwaf: %w", err)
+		}
+		// 2. If there is an error and the loading is ok: log as an informative error where appsec can be used
+		log.Error("appsec: non-critical error while loading libddwaf: %v", err)
+	}
 
-// wafEventListeners is the global list of event listeners registered by contribs at init time. This
-// is thread-safe assuming all writes (via AddWAFEventListener) are performed within `init`
-// functions; so this is written to only during initialization, and is read from concurrently only
-// during runtime when no writes are happening anymore.
-var wafEventListeners []wafEventListener
+	newHandle, err := waf.NewHandle(cfg.RulesManager.Latest, cfg.Obfuscator.KeyRegex, cfg.Obfuscator.ValueRegex)
+	if err != nil {
+		return nil, err
+	}
 
-// AddWAFEventListener adds a new WAF event listener to be registered whenever a new root operation
-// is created. The normal way to use this is to call it from a `func init() {}` so that it is
-// guaranteed to have happened before any listened to event may be emitted.
-func AddWAFEventListener(fn wafEventListener) {
-	wafEventListeners = append(wafEventListeners, fn)
+	tokenTicker := limiter.NewTokenTicker(cfg.TraceRateLimit, cfg.TraceRateLimit)
+	tokenTicker.Start()
+
+	// TODO: register wafsec context listener (makw sure to close the WAF handle if errors happens)
+
+	dyngo.On(rootOp, wafsec.OnStart)
+	dyngo.OnFinish(rootOp, wafsec.OnFinish)
+
+	return &WAF{
+		handle:  newHandle,
+		timeout: cfg.WAFTimeout,
+		limiter: tokenTicker,
+	}, nil
+}
+
+func (waf *WAF) Stop() {
+	waf.limiter.Stop()
+	waf.handle.Close()
 }
