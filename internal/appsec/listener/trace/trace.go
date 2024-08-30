@@ -6,6 +6,7 @@
 package trace
 
 import (
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/config"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/trace"
@@ -17,6 +18,12 @@ import (
 var staticAppsecTags = map[string]any{
 	"_dd.appsec.enabled": 1,
 	"_dd.runtime_family": "go",
+}
+
+func SetAppsecStaticTags(span ddtrace.Span) {
+	for key, value := range staticAppsecTags {
+		span.SetTag(key, value)
+	}
 }
 
 type AppsecSpanTransport struct{}
