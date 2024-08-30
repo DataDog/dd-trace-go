@@ -6,6 +6,7 @@
 package internal
 
 import (
+	"net"
 	"os"
 	"strconv"
 	"strings"
@@ -57,6 +58,22 @@ func DurationEnv(key string, def time.Duration) time.Duration {
 		return def
 	}
 	return v
+}
+
+// IpEnv returns the valid IP string value of an environment variable, or
+// def otherwise.
+func IpEnv(key string, def string) string {
+	vv, ok := os.LookupEnv(key)
+	if !ok {
+		return def
+	}
+
+	if net.ParseIP(vv) == nil {
+		log.Warn("Non-IP value for env var %s, defaulting to %s", key, def)
+		return def
+	}
+
+	return vv
 }
 
 // ForEachStringTag runs fn on every key val pair encountered in str.
