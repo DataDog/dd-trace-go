@@ -29,15 +29,15 @@ type (
 	// RulesFragment can represent a full ruleset or a fragment of it.
 	RulesFragment struct {
 		Version     string          `json:"version,omitempty"`
-		Metadata    interface{}     `json:"metadata,omitempty"`
-		Rules       []interface{}   `json:"rules,omitempty"`
-		Overrides   []interface{}   `json:"rules_override,omitempty"`
-		Exclusions  []interface{}   `json:"exclusions,omitempty"`
+		Metadata    any             `json:"metadata,omitempty"`
+		Rules       []any           `json:"rules,omitempty"`
+		Overrides   []any           `json:"rules_override,omitempty"`
+		Exclusions  []any           `json:"exclusions,omitempty"`
 		RulesData   []RuleDataEntry `json:"rules_data,omitempty"`
-		Actions     []ActionEntry   `json:"actions,omitempty"`
-		CustomRules []interface{}   `json:"custom_rules,omitempty"`
-		Processors  []interface{}   `json:"processors,omitempty"`
-		Scanners    []interface{}   `json:"scanners,omitempty"`
+		Actions     []any           `json:"actions,omitempty"`
+		CustomRules []any           `json:"custom_rules,omitempty"`
+		Processors  []any           `json:"processors,omitempty"`
+		Scanners    []any           `json:"scanners,omitempty"`
 	}
 
 	// RuleDataEntry represents an entry in the "rules_data" top level field of a rules file
@@ -45,18 +45,6 @@ type (
 	// RulesData is a slice of RulesDataEntry
 	RulesData struct {
 		RulesData []RuleDataEntry `json:"rules_data"`
-	}
-
-	// ActionEntry represents an entry in the "actions" top level field of a rules file
-	ActionEntry struct {
-		ID         string `json:"id"`
-		Type       string `json:"type"`
-		Parameters struct {
-			StatusCode     int    `json:"status_code"`
-			GRPCStatusCode *int   `json:"grpc_status_code,omitempty"`
-			Type           string `json:"type,omitempty"`
-			Location       string `json:"location,omitempty"`
-		} `json:"parameters,omitempty"`
 	}
 )
 

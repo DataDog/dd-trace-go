@@ -84,6 +84,6 @@ func DiscardLogger() tracer.Logger {
 
 type MockStatsdClient = statsdtest.TestStatsdClient
 
-func NewMockStatsdClient() MockStatsdClient {
-	return MockStatsdClient{}
+func NewMockStatsdClient() *MockStatsdClient {
+	return &MockStatsdClient{}
 }

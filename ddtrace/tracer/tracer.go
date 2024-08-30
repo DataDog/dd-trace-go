@@ -9,6 +9,7 @@ import (
 	gocontext "context"
 	"encoding/binary"
 	"fmt"
+	"math"
 	"os"
 	"runtime/pprof"
 	rt "runtime/trace"
@@ -273,7 +274,9 @@ func newUnstartedTracer(opts ...StartOption) (*tracer, error) {
 		return nil, fmt.Errorf("could not initialize statsd client: %v", err)
 	}
 	var writer traceWriter
-	if c.logToStdout {
+	if c.ciVisibilityEnabled {
+		writer = newCiVisibilityTraceWriter(c)
+	} else if c.logToStdout {
 		writer = newLogTraceWriter(c, statsd)
 	} else {
 		writer = newAgentTraceWriter(c, sampler, statsd)
@@ -289,17 +292,20 @@ func newUnstartedTracer(opts ...StartOption) (*tracer, error) {
 	if spans != nil {
 		c.spanRules = spans
 	}
-	globalRate := globalSampleRate()
-	rulesSampler := newRulesSampler(c.traceRules, c.spanRules, globalRate)
-	c.traceSampleRate = newDynamicConfig("trace_sample_rate", globalRate, rulesSampler.traces.setGlobalSampleRate, equal[float64])
+	rulesSampler := newRulesSampler(c.traceRules, c.spanRules, c.globalSampleRate)
+	c.traceSampleRate = newDynamicConfig("trace_sample_rate", c.globalSampleRate, rulesSampler.traces.setGlobalSampleRate, equal[float64])
+	// If globalSampleRate returns NaN, it means the environment variable was not set or valid.
+	// We could always set the origin to "env_var" inconditionally, but then it wouldn't be possible
+	// to distinguish between the case where the environment variable was not set and the case where
+	// it default to NaN.
+	if !math.IsNaN(c.globalSampleRate) {
+		c.traceSampleRate.cfgOrigin = telemetry.OriginEnvVar
+	}
 	c.traceSampleRules = newDynamicConfig("trace_sample_rules", c.traceRules,
 		rulesSampler.traces.setTraceSampleRules, EqualsFalseNegative)
 	var dataStreamsProcessor *datastreams.Processor
 	if c.dataStreamsMonitoringEnabled {
-		dataStreamsProcessor = datastreams.NewProcessor(statsd, c.env, c.serviceName, c.version, c.agentURL, c.httpClient, func() bool {
-			f := loadAgentFeatures(c.logToStdout, c.agentURL, c.httpClient)
-			return f.DataStreams
-		})
+		dataStreamsProcessor = datastreams.NewProcessor(statsd, c.env, c.serviceName, c.version, c.agentURL, c.httpClient)
 	}
 	t := &tracer{
 		config:           c,
@@ -473,11 +479,11 @@ func (t *tracer) sampleChunk(c *Chunk) {
 			tracerstats.Signal(tracerstats.PartialTraces, 1)
 		}
 	}
-	if len(kept) == 0 {
-		tracerstats.Signal(tracerstats.DroppedP0Traces, 1)
-	}
 	tracerstats.Signal(tracerstats.DroppedP0Spans, uint32(len(c.spans)-len(kept)))
 	if !c.willSend {
+		if len(kept) == 0 {
+			tracerstats.Signal(tracerstats.DroppedP0Traces, 1)
+		}
 		c.spans = kept
 	}
 }
@@ -564,13 +570,6 @@ func SpanStart(operationName string, options ...StartSpanOption) *Span {
 				// mark origin
 				span.setMeta(keyOrigin, context.origin)
 			}
-		}
-
-		// a remote context that was lacking the p: tracestate key
-		// the zero value indicates to the backend this could be the reparented
-		// as the root span of a trace
-		if context.isRemote && context.reparentID == "" {
-			span.setMeta(keyReparentID, "0000000000000000")
 		}
 
 		if context.reparentID != "" {
@@ -666,13 +665,6 @@ func (t *tracer) StartSpan(operationName string, options ...StartSpanOption) *Sp
 	return span
 }
 
-// generateSpanID returns a random uint64 that has been XORd with the startTime.
-// This is done to get around the 32-bit random seed limitation that may create collisions if there is a large number
-// of go services all generating spans.
-func generateSpanID(startTime int64) uint64 {
-	return random.Uint64() ^ uint64(startTime)
-}
-
 // applyPPROFLabels applies pprof labels for the profiler's code hotspots and
 // endpoint filtering feature to span. When span finishes, any pprof labels
 // found in ctx are restored. Additionally, this func informs the profiler how
@@ -708,7 +700,7 @@ func (t *tracer) applyPPROFLabels(ctx gocontext.Context, span *Span) {
 
 // spanResourcePIISafe returns true if s.resource can be considered to not
 // include PII with reasonable confidence. E.g. SQL queries may contain PII,
-// but http, rpc or custom (s.Type == "") span resource names generally do not.
+// but http, rpc or custom (s.spanType == "") span resource names generally do not.
 func spanResourcePIISafe(s *Span) bool {
 	return s.spanType == ext.SpanTypeWeb || s.spanType == ext.AppTypeRPC || s.spanType == ""
 }
@@ -850,6 +842,9 @@ func (t *tracer) sample(span *Span) {
 		span.setMetric(sampleRateMetricKey, sampler.Rate())
 	}
 	if t.rulesSampling.SampleTraceGlobalRate(span) {
+		return
+	}
+	if t.rulesSampling.SampleTrace(span) {
 		return
 	}
 	t.prioritySampling.apply(span)

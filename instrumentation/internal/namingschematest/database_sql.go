@@ -112,7 +112,7 @@ var databaseSQL_PostgresWithRegisterOverride = harness.TestCase{
 	Name:     instrumentation.PackageDatabaseSQL + "_PostgresWithRegisterOverride",
 	GenSpans: dbSQLGenSpans("postgres", true),
 	WantServiceNameV0: harness.ServiceNameAssertions{
-		// when the WithServiceName option is set during Register and not providing a service name when opening
+		// when the WithService option is set during Register and not providing a service name when opening
 		// the DB connection, that value is used as default instead of postgres.db.
 		Defaults: []string{"register-override", "register-override"},
 		// in v0, DD_SERVICE is ignored for this integration.

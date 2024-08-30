@@ -11,7 +11,7 @@ import (
 	"go.uber.org/atomic"
 
 	"github.com/DataDog/appsec-internal-go/limiter"
-	waf "github.com/DataDog/go-libddwaf/v2"
+	waf "github.com/DataDog/go-libddwaf/v3"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/dyngo"
@@ -20,7 +20,9 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/listener"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/listener/httpsec"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec/listener/ossec"
 	shared "github.com/DataDog/dd-trace-go/v2/internal/appsec/listener/sharedsec"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec/listener/sqlsec"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
 )
@@ -30,8 +32,6 @@ const (
 	GRPCServerMethodAddr          = "grpc.server.method"
 	GRPCServerRequestMessageAddr  = "grpc.server.request.message"
 	GRPCServerRequestMetadataAddr = "grpc.server.request.metadata"
-	HTTPClientIPAddr              = httpsec.HTTPClientIPAddr
-	UserIDAddr                    = httpsec.UserIDAddr
 )
 
 // List of gRPC rule addresses currently supported by the WAF
@@ -39,13 +39,17 @@ var supportedAddresses = listener.AddressSet{
 	GRPCServerMethodAddr:          {},
 	GRPCServerRequestMessageAddr:  {},
 	GRPCServerRequestMetadataAddr: {},
-	HTTPClientIPAddr:              {},
-	UserIDAddr:                    {},
+	httpsec.HTTPClientIPAddr:      {},
+	httpsec.UserIDAddr:            {},
+	httpsec.ServerIoNetURLAddr:    {},
+	ossec.ServerIOFSFileAddr:      {},
+	sqlsec.ServerDBStatementAddr:  {},
+	sqlsec.ServerDBTypeAddr:       {},
 }
 
 // Install registers the gRPC WAF Event Listener on the given root operation.
-func Install(wafHandle *waf.Handle, actions sharedsec.Actions, cfg *config.Config, lim limiter.Limiter, root dyngo.Operation) {
-	if listener := newWafEventListener(wafHandle, actions, cfg, lim); listener != nil {
+func Install(wafHandle *waf.Handle, cfg *config.Config, lim limiter.Limiter, root dyngo.Operation) {
+	if listener := newWafEventListener(wafHandle, cfg, lim); listener != nil {
 		log.Debug("appsec: registering the gRPC WAF Event Listener")
 		dyngo.On(root, listener.onEvent)
 	}
@@ -54,14 +58,13 @@ func Install(wafHandle *waf.Handle, actions sharedsec.Actions, cfg *config.Confi
 type wafEventListener struct {
 	wafHandle *waf.Handle
 	config    *config.Config
-	actions   sharedsec.Actions
-	addresses map[string]struct{}
+	addresses listener.AddressSet
 	limiter   limiter.Limiter
 	wafDiags  waf.Diagnostics
 	once      sync.Once
 }
 
-func newWafEventListener(wafHandle *waf.Handle, actions sharedsec.Actions, cfg *config.Config, limiter limiter.Limiter) *wafEventListener {
+func newWafEventListener(wafHandle *waf.Handle, cfg *config.Config, limiter limiter.Limiter) *wafEventListener {
 	if wafHandle == nil {
 		log.Debug("appsec: no WAF Handle available, the gRPC WAF Event Listener will not be registered")
 		return nil
@@ -76,7 +79,6 @@ func newWafEventListener(wafHandle *waf.Handle, actions sharedsec.Actions, cfg *
 	return &wafEventListener{
 		wafHandle: wafHandle,
 		config:    cfg,
-		actions:   actions,
 		addresses: addresses,
 		limiter:   limiter,
 		wafDiags:  wafHandle.Diagnostics(),
@@ -88,42 +90,53 @@ func newWafEventListener(wafHandle *waf.Handle, actions sharedsec.Actions, cfg *
 func (l *wafEventListener) onEvent(op *types.HandlerOperation, handlerArgs types.HandlerOperationArgs) {
 	// Limit the maximum number of security events, as a streaming RPC could
 	// receive unlimited number of messages where we could find security events
-	const maxWAFEventsPerRequest = 10
 	var (
 		nbEvents atomic.Uint32
 		logOnce  sync.Once // per request
-
-		events []any
-		mu     sync.Mutex // events mutex
 	)
+	addEvents := func(events []any) {
+		const maxWAFEventsPerRequest = 10
+		if nbEvents.Load() >= maxWAFEventsPerRequest {
+			logOnce.Do(func() {
+				log.Debug("appsec: ignoring new WAF event due to the maximum number of security events per grpc call reached")
+			})
+			return
+		}
+		nbEvents.Add(uint32(len(events)))
+		shared.AddSecurityEvents(&op.SecurityEventsHolder, l.limiter, events)
+	}
 
-	wafCtx := waf.NewContextWithBudget(l.wafHandle, l.config.WAFTimeout)
-	if wafCtx == nil {
-		// The WAF event listener got concurrently released
+	wafCtx, err := l.wafHandle.NewContextWithBudget(l.config.WAFTimeout)
+	if err != nil {
+		log.Debug("appsec: could not create budgeted WAF context: %v", err)
+	}
+	// Early return in the following cases:
+	// - wafCtx is nil, meaning it was concurrently released
+	// - err is not nil, meaning context creation failed
+	if wafCtx == nil || err != nil {
 		return
 	}
 
+	if httpsec.SSRFAddressesPresent(l.addresses) {
+		httpsec.RegisterRoundTripperListener(op, &op.SecurityEventsHolder, wafCtx, l.limiter)
+	}
+
+	if ossec.OSAddressesPresent(l.addresses) {
+		ossec.RegisterOpenListener(op, &op.SecurityEventsHolder, wafCtx, l.limiter)
+	}
+
+	if sqlsec.SQLAddressesPresent(l.addresses) {
+		sqlsec.RegisterSQLListener(op, &op.SecurityEventsHolder, wafCtx, l.limiter)
+	}
+
 	// Listen to the UserID address if the WAF rules are using it
-	if l.isSecAddressListened(UserIDAddr) {
+	if l.isSecAddressListened(httpsec.UserIDAddr) {
 		// UserIDOperation happens when appsec.SetUser() is called. We run the WAF and apply actions to
 		// see if the associated user should be blocked. Since we don't control the execution flow in this case
 		// (SetUser is SDK), we delegate the responsibility of interrupting the handler to the user.
-		dyngo.On(op, func(userIDOp *sharedsec.UserIDOperation, args sharedsec.UserIDOperationArgs) {
-			values := map[string]any{
-				UserIDAddr: args.UserID,
-			}
-			wafResult := shared.RunWAF(wafCtx, waf.RunAddressData{Persistent: values}, l.config.WAFTimeout)
-			if wafResult.HasActions() || wafResult.HasEvents() {
-				for _, id := range wafResult.Actions {
-					if a, ok := l.actions[id]; ok && a.Blocking() {
-						code, err := a.GRPC()(map[string][]string{})
-						dyngo.EmitData(userIDOp, types.NewMonitoringError(err.Error(), code))
-					}
-				}
-				shared.AddSecurityEvents(op, l.limiter, wafResult.Events)
-				log.Debug("appsec: WAF detected an authenticated user attack: %s", args.UserID)
-			}
-		})
+		dyngo.On(op, shared.MakeWAFRunListener(&op.SecurityEventsHolder, wafCtx, l.limiter, func(args sharedsec.UserIDOperationArgs) waf.RunAddressData {
+			return waf.RunAddressData{Persistent: map[string]any{httpsec.UserIDAddr: args.UserID}}
+		}))
 	}
 
 	values := make(map[string]any, 2) // 2 because the method and client ip addresses are commonly present in the rules
@@ -131,15 +144,17 @@ func (l *wafEventListener) onEvent(op *types.HandlerOperation, handlerArgs types
 		// Note that this address is passed asap for the passlist, which are created per grpc method
 		values[GRPCServerMethodAddr] = handlerArgs.Method
 	}
-	if l.isSecAddressListened(HTTPClientIPAddr) && handlerArgs.ClientIP.IsValid() {
-		values[HTTPClientIPAddr] = handlerArgs.ClientIP.String()
+	if l.isSecAddressListened(httpsec.HTTPClientIPAddr) && handlerArgs.ClientIP.IsValid() {
+		values[httpsec.HTTPClientIPAddr] = handlerArgs.ClientIP.String()
 	}
 
-	wafResult := shared.RunWAF(wafCtx, waf.RunAddressData{Persistent: values}, l.config.WAFTimeout)
-	if wafResult.HasActions() || wafResult.HasEvents() {
-		interrupt := shared.ProcessActions(op, l.actions, wafResult.Actions)
-		shared.AddSecurityEvents(op, l.limiter, wafResult.Events)
+	wafResult := shared.RunWAF(wafCtx, waf.RunAddressData{Persistent: values})
+	if wafResult.HasEvents() {
+		addEvents(wafResult.Events)
 		log.Debug("appsec: WAF detected an attack before executing the request")
+	}
+	if wafResult.HasActions() {
+		interrupt := shared.ProcessActions(op, wafResult.Actions)
 		if interrupt {
 			wafCtx.Close()
 			return
@@ -148,13 +163,6 @@ func (l *wafEventListener) onEvent(op *types.HandlerOperation, handlerArgs types
 
 	// When the gRPC handler receives a message
 	dyngo.OnFinish(op, func(_ types.ReceiveOperation, res types.ReceiveOperationRes) {
-		if nbEvents.Load() == maxWAFEventsPerRequest {
-			logOnce.Do(func() {
-				log.Debug("appsec: ignoring the rpc message due to the maximum number of security events per grpc call reached")
-			})
-			return
-		}
-
 		// Run the WAF on the rule addresses available and listened to by the sec rules
 		var values waf.RunAddressData
 		// Add the gRPC message to the values if the WAF rules are using it.
@@ -172,29 +180,26 @@ func (l *wafEventListener) onEvent(op *types.HandlerOperation, handlerArgs types
 
 		// Run the WAF, ignoring the returned actions - if any - since blocking after the request handler's
 		// response is not supported at the moment.
-		wafResult := shared.RunWAF(wafCtx, values, l.config.WAFTimeout)
-
+		wafResult := shared.RunWAF(wafCtx, values)
 		if wafResult.HasEvents() {
 			log.Debug("appsec: attack detected by the grpc waf")
-			nbEvents.Inc()
-			mu.Lock()
-			defer mu.Unlock()
-			events = append(events, wafResult.Events...)
+			addEvents(wafResult.Events)
+		}
+		if wafResult.HasActions() {
+			shared.ProcessActions(op, wafResult.Actions)
 		}
 	})
 
 	// When the gRPC handler finishes
 	dyngo.OnFinish(op, func(op *types.HandlerOperation, _ types.HandlerOperationRes) {
 		defer wafCtx.Close()
-		shared.AddWAFMonitoringTags(op, l.wafDiags.Version, wafCtx.Stats().Metrics())
 
+		shared.AddWAFMonitoringTags(op, l.wafDiags.Version, wafCtx.Stats().Metrics())
 		// Log the following metrics once per instantiation of a WAF handle
 		l.once.Do(func() {
 			shared.AddRulesMonitoringTags(op, &l.wafDiags)
 			op.SetTag(ext.ManualKeep, samplernames.AppSec)
 		})
-
-		shared.AddSecurityEvents(op, l.limiter, events)
 	})
 }
 

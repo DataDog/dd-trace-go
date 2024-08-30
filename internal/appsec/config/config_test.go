@@ -8,6 +8,7 @@ package config
 import (
 	"testing"
 
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/telemetrytest"
 )
 
@@ -49,12 +50,12 @@ func TestSCAEnabled(t *testing.T) {
 			}
 
 			telemetryClient := new(telemetrytest.MockClient)
-			telemetryClient.On("RegisterAppConfig", EnvSCAEnabled, tc.expectedValue, "env_var").Return()
+			telemetryClient.On("RegisterAppConfig", EnvSCAEnabled, tc.expectedValue, telemetry.OriginEnvVar).Return()
 
 			registerSCAAppConfigTelemetry(telemetryClient)
 
 			if tc.telemetryExpected {
-				telemetryClient.AssertCalled(t, "RegisterAppConfig", EnvSCAEnabled, tc.expectedValue, "env_var")
+				telemetryClient.AssertCalled(t, "RegisterAppConfig", EnvSCAEnabled, tc.expectedValue, telemetry.OriginEnvVar)
 				telemetryClient.AssertNumberOfCalls(t, "RegisterAppConfig", 1)
 			} else {
 				telemetryClient.AssertNumberOfCalls(t, "RegisterAppConfig", 0)

@@ -32,11 +32,11 @@ func init() {
 }
 
 // Middleware returns echo middleware which will trace incoming requests.
-func Middleware(opts ...OptionFn) echo.MiddlewareFunc {
+func Middleware(opts ...Option) echo.MiddlewareFunc {
 	cfg := new(config)
 	defaults(cfg)
 	for _, fn := range opts {
-		fn(cfg)
+		fn.apply(cfg)
 	}
 	instr.Logger().Debug("contrib/labstack/echo: Configuring Middleware: %#v", cfg)
 	spanOpts := []tracer.StartSpanOption{

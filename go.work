@@ -1,4 +1,6 @@
-go 1.22 // Go version must match the highest supported version, not the minimum supported version, with format X.Y.
+go 1.22.5 // Go version must match the highest supported version, not the minimum supported version, with format X.Y.
+
+toolchain go1.22.6
 
 use (
 	.
@@ -41,6 +43,7 @@ use (
 	./contrib/julienschmidt/httprouter
 	./contrib/k8s.io/client-go
 	./contrib/labstack/echo.v4
+	./contrib/log/slog
 	./contrib/miekg/dns
 	./contrib/net/http
 	./contrib/olivere/elastic.v5
@@ -50,6 +53,7 @@ use (
 	./contrib/syndtr/goleveldb
 	./contrib/tidwall/buntdb
 	./contrib/twitchtv/twirp
+	./contrib/uptrace/bun
 	./contrib/urfave/negroni
 	./contrib/valyala/fasthttp
 	./instrumentation/internal/namingschematest

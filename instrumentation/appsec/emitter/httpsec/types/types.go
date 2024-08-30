@@ -27,6 +27,10 @@ type (
 	SDKBodyOperation struct {
 		dyngo.Operation
 	}
+
+	RoundTripOperation struct {
+		dyngo.Operation
+	}
 )
 
 // Finish the HTTP handler operation, along with the given results and emits a
@@ -66,16 +70,20 @@ type (
 	// SDKBodyOperationArgs is the SDK body operation arguments.
 	SDKBodyOperationArgs struct {
 		// Body corresponds to the address `server.request.body`.
-		Body interface{}
+		Body any
 	}
 
 	// SDKBodyOperationRes is the SDK body operation results.
 	SDKBodyOperationRes struct{}
 
-	// MonitoringError is used to vehicle an HTTP error, usually resurfaced through Appsec SDKs.
-	MonitoringError struct {
-		msg string
+	// RoundTripOperationArgs is the round trip operation arguments.
+	RoundTripOperationArgs struct {
+		// URL corresponds to the address `server.io.net.url`.
+		URL string
 	}
+
+	// RoundTripOperationRes is the round trip operation results.
+	RoundTripOperationRes struct{}
 )
 
 // Finish finishes the SDKBody operation and emits a finish event
@@ -83,21 +91,11 @@ func (op *SDKBodyOperation) Finish() {
 	dyngo.FinishOperation(op, SDKBodyOperationRes{})
 }
 
-// Error implements the Error interface
-func (e *MonitoringError) Error() string {
-	return e.msg
-}
-
-// NewMonitoringError creates and returns a new HTTP monitoring error, wrapped under
-// sharedesec.MonitoringError
-func NewMonitoringError(msg string) error {
-	return &MonitoringError{
-		msg: msg,
-	}
-}
-
 func (SDKBodyOperationArgs) IsArgOf(*SDKBodyOperation)   {}
 func (SDKBodyOperationRes) IsResultOf(*SDKBodyOperation) {}
 
 func (HandlerOperationArgs) IsArgOf(*Operation)   {}
 func (HandlerOperationRes) IsResultOf(*Operation) {}
+
+func (RoundTripOperationArgs) IsArgOf(*RoundTripOperation)   {}
+func (RoundTripOperationRes) IsResultOf(*RoundTripOperation) {}

@@ -30,79 +30,101 @@ variables:
     GO_PROF_APP_BUILD_VARIANT: "candidate"
     DD_TRACE_GO_VERSION: "latest"
 
+    LOAD_TESTS: io-bound,cpu-bound,cgo-cpu-bound,cpu-bound-x-client-ip-enabled
+    PARALLELIZE: "true"
 
   # Workaround: Currently we're not running the benchmarks on every PR, but GitHub still shows them as pending.
   # By marking the benchmarks as allow_failure, this should go away. (This workaround should be removed once the
   # benchmarks get changed to run on every PR)
   allow_failure: true
+
+  retry:
+    max: 2
+    when:
+      - unknown_failure
+      - data_integrity_failure
+      - runner_system_failure
+      - scheduler_failure
+      - api_failure
+
+
+#
+# Please read next before updating Go version in this file!
+#
+# In order to update Go version, you need to include it in benchmarks Docker image first:
+# 1. Update version in Dockerfile https://github.com/DataDog/benchmarking-platform/blob/go/go-prof-app/container/Dockerfile#L5
+# 2. Rebuild image in Gitlab CI (build-images CI job in https://gitlab.ddbuild.io/DataDog/apm-reliability/benchmarking-platform/-/pipelines?page=1&scope=all&ref=go%2Fgo-prof-app)
+#
+
+.go121-benchmarks:
+  extends: .benchmarks
+  variables:
+    GO_VERSION: "1.21.12"
+
+.go122-benchmarks:
+  extends: .benchmarks
+  variables:
+    GO_VERSION: "1.22.5"
+
+#
+# Specific macrobenchmark configurations are below
+
 go122-baseline:
-  extends: .benchmarks
+  extends: .go122-benchmarks
   variables:
     ENABLE_DDPROF: "false"
     ENABLE_TRACING: "false"
     ENABLE_PROFILING: "false"
     ENABLE_APPSEC: "false"
     DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
-    GO_VERSION: "1.22.1"
-    LOAD_TESTS: normal_operation_io-bound,high_load_io-bound|normal_operation_cpu-bound,high_load_cpu-bound|normal_operation_cgo-cpu-bound,high_load_cgo-cpu-bound|normal_operation_cpu-bound-x-client-ip-enabled,high_load_cpu-bound-x-client-ip-enabled
-    PARALLELIZE: "true"
+
 go122-only-trace:
-  extends: .benchmarks
+  extends: .go122-benchmarks
   variables:
     ENABLE_DDPROF: "false"
     ENABLE_TRACING: "true"
     ENABLE_PROFILING: "false"
     ENABLE_APPSEC: "false"
     DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
-    GO_VERSION: "1.22.1"
-    LOAD_TESTS: normal_operation_io-bound,high_load_io-bound|normal_operation_cpu-bound,high_load_cpu-bound|normal_operation_cgo-cpu-bound,high_load_cgo-cpu-bound|normal_operation_cpu-bound-x-client-ip-enabled,high_load_cpu-bound-x-client-ip-enabled
-    PARALLELIZE: "true"
+
 go122-only-profile:
-  extends: .benchmarks
+  extends: .go122-benchmarks
   variables:
     ENABLE_DDPROF: "false"
     ENABLE_TRACING: "false"
     ENABLE_PROFILING: "true"
     ENABLE_APPSEC: "false"
     DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
-    GO_VERSION: "1.22.1"
-    LOAD_TESTS: normal_operation_io-bound,high_load_io-bound|normal_operation_cpu-bound,high_load_cpu-bound|normal_operation_cgo-cpu-bound,high_load_cgo-cpu-bound|normal_operation_cpu-bound-x-client-ip-enabled,high_load_cpu-bound-x-client-ip-enabled
-    PARALLELIZE: "true"
+
 go122-profile-trace:
-  extends: .benchmarks
+  extends: .go122-benchmarks
   variables:
     ENABLE_DDPROF: "false"
     ENABLE_TRACING: "true"
     ENABLE_PROFILING: "true"
     ENABLE_APPSEC: "false"
     DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
-    GO_VERSION: "1.22.1"
-    LOAD_TESTS: normal_operation_io-bound,high_load_io-bound|normal_operation_cpu-bound,high_load_cpu-bound|normal_operation_cgo-cpu-bound,high_load_cgo-cpu-bound|normal_operation_cpu-bound-x-client-ip-enabled,high_load_cpu-bound-x-client-ip-enabled
-    PARALLELIZE: "true"
+
 go122-trace-asm:
-  extends: .benchmarks
+  extends: .go122-benchmarks
   variables:
     ENABLE_DDPROF: "false"
     ENABLE_TRACING: "true"
     ENABLE_PROFILING: "false"
     ENABLE_APPSEC: "true"
     DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
-    GO_VERSION: "1.22.1"
-    LOAD_TESTS: normal_operation_io-bound,high_load_io-bound|normal_operation_cpu-bound,high_load_cpu-bound|normal_operation_cgo-cpu-bound,high_load_cgo-cpu-bound|normal_operation_cpu-bound-x-client-ip-enabled,high_load_cpu-bound-x-client-ip-enabled
-    PARALLELIZE: "true"
+
 go122-profile-trace-asm:
-  extends: .benchmarks
+  extends: .go122-benchmarks
   variables:
     ENABLE_DDPROF: "false"
     ENABLE_TRACING: "true"
     ENABLE_PROFILING: "true"
     ENABLE_APPSEC: "true"
     DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
-    GO_VERSION: "1.22.1"
-    LOAD_TESTS: normal_operation_io-bound,high_load_io-bound|normal_operation_cpu-bound,high_load_cpu-bound|normal_operation_cgo-cpu-bound,high_load_cgo-cpu-bound|normal_operation_cpu-bound-x-client-ip-enabled,high_load_cpu-bound-x-client-ip-enabled
-    PARALLELIZE: "true"
-go120-baseline:
-  extends: .benchmarks
+
+go121-baseline:
+  extends: .go121-benchmarks
   variables:
     ENABLE_DDPROF: "false"
     ENABLE_TRACING: "false"
@@ -112,8 +134,9 @@ go120-baseline:
     GO_VERSION: "1.21.13"
     LOAD_TESTS: normal_operation_io-bound,high_load_io-bound|normal_operation_cpu-bound,high_load_cpu-bound|normal_operation_cgo-cpu-bound,high_load_cgo-cpu-bound|normal_operation_cpu-bound-x-client-ip-enabled,high_load_cpu-bound-x-client-ip-enabled
     PARALLELIZE: "true"
-go120-only-trace:
-  extends: .benchmarks
+
+go121-only-trace:
+  extends: .go121-benchmarks
   variables:
     ENABLE_DDPROF: "false"
     ENABLE_TRACING: "true"
@@ -123,8 +146,9 @@ go120-only-trace:
     GO_VERSION: "1.21.13"
     LOAD_TESTS: normal_operation_io-bound,high_load_io-bound|normal_operation_cpu-bound,high_load_cpu-bound|normal_operation_cgo-cpu-bound,high_load_cgo-cpu-bound|normal_operation_cpu-bound-x-client-ip-enabled,high_load_cpu-bound-x-client-ip-enabled
     PARALLELIZE: "true"
-go120-only-profile:
-  extends: .benchmarks
+
+go121-only-profile:
+  extends: .go121-benchmarks
   variables:
     ENABLE_DDPROF: "false"
     ENABLE_TRACING: "false"
@@ -134,8 +158,9 @@ go120-only-profile:
     GO_VERSION: "1.21.13"
     LOAD_TESTS: normal_operation_io-bound,high_load_io-bound|normal_operation_cpu-bound,high_load_cpu-bound|normal_operation_cgo-cpu-bound,high_load_cgo-cpu-bound|normal_operation_cpu-bound-x-client-ip-enabled,high_load_cpu-bound-x-client-ip-enabled
     PARALLELIZE: "true"
-go120-profile-trace:
-  extends: .benchmarks
+
+go121-profile-trace:
+  extends: .go121-benchmarks
   variables:
     ENABLE_DDPROF: "false"
     ENABLE_TRACING: "true"
@@ -145,8 +170,9 @@ go120-profile-trace:
     GO_VERSION: "1.21.13"
     LOAD_TESTS: normal_operation_io-bound,high_load_io-bound|normal_operation_cpu-bound,high_load_cpu-bound|normal_operation_cgo-cpu-bound,high_load_cgo-cpu-bound|normal_operation_cpu-bound-x-client-ip-enabled,high_load_cpu-bound-x-client-ip-enabled
     PARALLELIZE: "true"
-go120-trace-asm:
-  extends: .benchmarks
+
+go121-trace-asm:
+  extends: .go121-benchmarks
   variables:
     ENABLE_DDPROF: "false"
     ENABLE_TRACING: "true"
@@ -156,8 +182,9 @@ go120-trace-asm:
     GO_VERSION: "1.21.13"
     LOAD_TESTS: normal_operation_io-bound,high_load_io-bound|normal_operation_cpu-bound,high_load_cpu-bound|normal_operation_cgo-cpu-bound,high_load_cgo-cpu-bound|normal_operation_cpu-bound-x-client-ip-enabled,high_load_cpu-bound-x-client-ip-enabled
     PARALLELIZE: "true"
-go120-profile-trace-asm:
-  extends: .benchmarks
+
+go121-profile-trace-asm:
+  extends: .go121-benchmarks
   variables:
     ENABLE_DDPROF: "false"
     ENABLE_TRACING: "true"

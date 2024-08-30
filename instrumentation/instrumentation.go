@@ -105,6 +105,10 @@ func (i *Instrumentation) AppSecEnabled() bool {
 	return appsec.Enabled()
 }
 
+func (i *Instrumentation) AppSecRASPEnabled() bool {
+	return appsec.RASPEnabled()
+}
+
 func (i *Instrumentation) DataStreamsEnabled() bool {
 	return internal.BoolEnv("DD_DATA_STREAMS_ENABLED", false)
 }

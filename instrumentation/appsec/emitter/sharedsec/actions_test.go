@@ -14,12 +14,12 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestNewBlockRequestAction(t *testing.T) {
+func TestNewHTTPBlockRequestAction(t *testing.T) {
 	mux := http.NewServeMux()
 	srv := httptest.NewServer(mux)
-	mux.HandleFunc("/json", NewBlockRequestAction(403, 10, "json").HTTP().ServeHTTP)
-	mux.HandleFunc("/html", NewBlockRequestAction(403, 10, "html").HTTP().ServeHTTP)
-	mux.HandleFunc("/auto", NewBlockRequestAction(403, 10, "auto").HTTP().ServeHTTP)
+	mux.HandleFunc("/json", newHTTPBlockRequestAction(403, "json").ServeHTTP)
+	mux.HandleFunc("/html", newHTTPBlockRequestAction(403, "html").ServeHTTP)
+	mux.HandleFunc("/auto", newHTTPBlockRequestAction(403, "auto").ServeHTTP)
 	defer srv.Close()
 
 	t.Run("json", func(t *testing.T) {
@@ -157,10 +157,10 @@ func TestNewBlockRequestAction(t *testing.T) {
 func TestNewRedirectRequestAction(t *testing.T) {
 	mux := http.NewServeMux()
 	srv := httptest.NewServer(mux)
-	mux.HandleFunc("/redirect-default-status", NewRedirectRequestAction(100, "/redirected").HTTP().ServeHTTP)
-	mux.HandleFunc("/redirect-no-location", NewRedirectRequestAction(303, "").HTTP().ServeHTTP)
-	mux.HandleFunc("/redirect1", NewRedirectRequestAction(http.StatusFound, "/redirect2").HTTP().ServeHTTP)
-	mux.HandleFunc("/redirect2", NewRedirectRequestAction(http.StatusFound, "/redirected").HTTP().ServeHTTP)
+	mux.HandleFunc("/redirect-default-status", newRedirectRequestAction(100, "/redirected").ServeHTTP)
+	mux.HandleFunc("/redirect-no-location", newRedirectRequestAction(303, "").ServeHTTP)
+	mux.HandleFunc("/redirect1", newRedirectRequestAction(http.StatusFound, "/redirect2").ServeHTTP)
+	mux.HandleFunc("/redirect2", newRedirectRequestAction(http.StatusFound, "/redirected").ServeHTTP)
 	mux.HandleFunc("/redirected", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK) // Shouldn't matter since we write 302 before arriving here
 		w.Write([]byte("Redirected"))
@@ -234,4 +234,82 @@ func TestNewRedirectRequestAction(t *testing.T) {
 		body, err := io.ReadAll(res.Body)
 		require.Equal(t, "Redirected", string(body))
 	})
+}
+
+func TestNewBlockParams(t *testing.T) {
+	for name, tc := range map[string]struct {
+		params   map[string]any
+		expected blockActionParams
+	}{
+		"block-1": {
+			params: map[string]any{
+				"status_code": "403",
+				"type":        "auto",
+			},
+			expected: blockActionParams{
+				Type:       "auto",
+				StatusCode: 403,
+			},
+		},
+		"block-2": {
+			params: map[string]any{
+				"status_code": "405",
+				"type":        "html",
+			},
+			expected: blockActionParams{
+				Type:       "html",
+				StatusCode: 405,
+			},
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			actionParams, err := blockParamsFromMap(tc.params)
+			require.NoError(t, err)
+			require.Equal(t, tc.expected.Type, actionParams.Type)
+			require.Equal(t, tc.expected.StatusCode, actionParams.StatusCode)
+		})
+	}
+}
+
+func TestNewRedirectParams(t *testing.T) {
+	for name, tc := range map[string]struct {
+		params   map[string]any
+		expected redirectActionParams
+	}{
+		"redirect-1": {
+			params: map[string]any{
+				"status_code": "308",
+				"location":    "/redirected",
+			},
+			expected: redirectActionParams{
+				Location:   "/redirected",
+				StatusCode: 308,
+			},
+		},
+		"redirect-2": {
+			params: map[string]any{
+				"status_code": "303",
+				"location":    "/tmp",
+			},
+			expected: redirectActionParams{
+				Location:   "/tmp",
+				StatusCode: 303,
+			},
+		},
+		"no-location": {
+			params: map[string]any{
+				"status_code": "303",
+			},
+			expected: redirectActionParams{
+				Location:   "",
+				StatusCode: 303,
+			},
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			actionParams, err := redirectParamsFromMap(tc.params)
+			require.NoError(t, err)
+			require.Equal(t, tc.expected, actionParams)
+		})
+	}
 }

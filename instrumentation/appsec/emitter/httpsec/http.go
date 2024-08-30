@@ -12,19 +12,21 @@ package httpsec
 
 import (
 	"context"
+
 	// Blank import needed to use embed for the default blocked response payloads
 	_ "embed"
 	"net/http"
 	"strings"
 
+	"github.com/DataDog/dd-trace-go/v2/appsec/events"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/dyngo"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/httpsec/types"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/sharedsec"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/trace"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/trace/httptrace"
-	"github.com/DataDog/dd-trace-go/v2/internal/appsec/listener"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/stacktrace"
 
 	"github.com/DataDog/appsec-internal-go/netip"
 )
@@ -33,7 +35,7 @@ import (
 // This function should not be called when AppSec is disabled in order to
 // get preciser error logs.
 func MonitorParsedBody(ctx context.Context, body any) error {
-	parent := fromContext(ctx)
+	parent, _ := dyngo.FromContext(ctx)
 	if parent == nil {
 		log.Error("appsec: parsed http body monitoring ignored: could not find the http handler instrumentation metadata in the request context: the request handler is not being monitored by a middleware function or the provided context is not the expected request context")
 		return nil
@@ -47,7 +49,7 @@ func MonitorParsedBody(ctx context.Context, body any) error {
 func ExecuteSDKBodyOperation(parent dyngo.Operation, args types.SDKBodyOperationArgs) error {
 	var err error
 	op := &types.SDKBodyOperation{Operation: dyngo.NewOperation(parent)}
-	dyngo.OnData(op, func(e error) {
+	dyngo.OnData(op, func(e *events.BlockingSecurityEvent) {
 		err = e
 	})
 	dyngo.StartOperation(op, args)
@@ -77,11 +79,15 @@ func WrapHandler(handler http.Handler, span *tracer.Span, pathParams map[string]
 
 		var bypassHandler http.Handler
 		var blocking bool
+		var stackTrace *stacktrace.Event
 		args := MakeHandlerOperationArgs(r, clientIP, pathParams)
 		ctx, op := StartOperation(r.Context(), args, func(op *types.Operation) {
-			dyngo.OnData(op, func(a *sharedsec.Action) {
-				bypassHandler = a.HTTP()
-				blocking = a.Blocking()
+			dyngo.OnData(op, func(a *sharedsec.HTTPAction) {
+				blocking = true
+				bypassHandler = a.Handler
+			})
+			dyngo.OnData(op, func(a *sharedsec.StackTraceAction) {
+				stackTrace = &a.Event
 			})
 		})
 		r = r.WithContext(ctx)
@@ -96,6 +102,11 @@ func WrapHandler(handler http.Handler, span *tracer.Span, pathParams map[string]
 				for _, f := range opts.OnBlock {
 					f()
 				}
+			}
+
+			// Add stacktraces to the span, if any
+			if stackTrace != nil {
+				stacktrace.AddToSpan(span, span.Root(), stackTrace)
 			}
 
 			if bypassHandler != nil {
@@ -183,17 +194,9 @@ func StartOperation(ctx context.Context, args types.HandlerOperationArgs, setup 
 		Operation:  dyngo.NewOperation(nil),
 		TagsHolder: trace.NewTagsHolder(),
 	}
-	newCtx := context.WithValue(ctx, listener.ContextKey{}, op)
 	for _, cb := range setup {
 		cb(op)
 	}
-	dyngo.StartOperation(op, args)
-	return newCtx, op
-}
 
-// fromContext returns the Operation object stored in the context, if any
-func fromContext(ctx context.Context) *types.Operation {
-	// Avoid a runtime panic in case of type-assertion error by collecting the 2 return values
-	op, _ := ctx.Value(listener.ContextKey{}).(*types.Operation)
-	return op
+	return dyngo.StartAndRegisterOperation(ctx, op, args), op
 }

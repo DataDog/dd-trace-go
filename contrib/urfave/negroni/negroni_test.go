@@ -58,7 +58,6 @@ func TestWithHeaderTags(t *testing.T) {
 		r.Header.Add("h!e@a-d.e*r", "val2")
 		r.Header.Set("2header", "2val")
 		r.Header.Set("3header", "3val")
-		r.Header.Set("x-datadog-header", "value")
 		w := httptest.NewRecorder()
 		router.ServeHTTP(w, r)
 		return r

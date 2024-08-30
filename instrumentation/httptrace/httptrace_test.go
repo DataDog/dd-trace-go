@@ -32,14 +32,16 @@ func TestHeaderTagsFromRequest(t *testing.T) {
 	r.Header.Set("header1", "val1")
 	r.Header.Set("header2", " val2 ")
 	r.Header.Set("header3", "v a l 3")
+	r.Header.Set("x-datadog-header", "val4")
 
 	expectedHeaderTags := map[string]string{
 		"tag1": "val1",
 		"tag2": "val2",
 		"tag3": "v a l 3",
+		"tag4": "val4",
 	}
 
-	hs := []string{"header1:tag1", "header2:tag2", "header3:tag3"}
+	hs := []string{"header1:tag1", "header2:tag2", "header3:tag3", "x-datadog-header:tag4"}
 	ht := internal.NewLockMap(normalizer.HeaderTagSlice(hs))
 	s, _ := StartRequestSpan(r, HeaderTagsFromRequest(r, ht))
 	s.Finish()

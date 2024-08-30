@@ -402,6 +402,16 @@ func (a *appsec) enableRCBlocking() {
 	}
 }
 
+func (a *appsec) enableRASP() {
+	if !a.cfg.RASP {
+		return
+	}
+	if err := remoteconfig.RegisterCapability(remoteconfig.ASMRASPSSRF); err != nil {
+		log.Debug("appsec: Remote config: couldn't register RASP SSRF: %v", err)
+	}
+	// TODO: register other RASP capabilities when supported
+}
+
 func (a *appsec) disableRCBlocking() {
 	if a.cfg.RC == nil {
 		return

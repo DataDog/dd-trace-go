@@ -16,7 +16,6 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"regexp"
 	"runtime"
 	"runtime/debug"
 	"strconv"
@@ -24,12 +23,16 @@ import (
 	"sync"
 	"time"
 
+	"golang.org/x/mod/semver"
+
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/internal"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/namingschema"
 	"github.com/DataDog/dd-trace-go/v2/internal/normalizer"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/traceprof"
 	"github.com/DataDog/dd-trace-go/v2/internal/version"
 	"github.com/tinylib/msgp/msgp"
@@ -68,7 +71,6 @@ var contribIntegrations = map[string]struct {
 	"github.com/gomodule/redigo":                    {"Redigo", false},
 	"google.golang.org/api":                         {"Google API", false},
 	"google.golang.org/grpc":                        {"gRPC", false},
-	"google.golang.org/grpc/v12":                    {"gRPC v12", false},
 	"gopkg.in/jinzhu/gorm.v1":                       {"Gorm (gopkg)", false},
 	"github.com/gorilla/mux":                        {"Gorilla Mux", false},
 	"gorm.io/gorm.v1":                               {"Gorm v1", false},
@@ -95,13 +97,11 @@ var contribIntegrations = map[string]struct {
 	"github.com/urfave/negroni":                     {"Negroni", false},
 	"github.com/valyala/fasthttp":                   {"FastHTTP", false},
 	"github.com/zenazn/goji":                        {"Goji", false},
+	"log/slog":                                      {"log/slog", false},
+	"github.com/uptrace/bun":                        {"Bun", false},
 }
 
 var (
-	// defaultSocketAPM specifies the socket path to use for connecting to the trace-agent.
-	// Replaced in tests
-	defaultSocketAPM = "/var/run/datadog/apm.socket"
-
 	// defaultSocketDSD specifies the socket path to use for connecting to the statsd server.
 	// Replaced in tests
 	defaultSocketDSD = "/var/run/datadog/dsd.socket"
@@ -271,6 +271,12 @@ type config struct {
 	// dynamicInstrumentationEnabled controls if the target application can be modified by Dynamic Instrumentation or not.
 	// Value from DD_DYNAMIC_INSTRUMENTATION_ENABLED, default false.
 	dynamicInstrumentationEnabled bool
+
+	// globalSampleRate holds sample rate read from environment variables.
+	globalSampleRate float64
+
+	// ciVisibilityEnabled controls if the tracer is loaded with CI Visibility mode. default false
+	ciVisibilityEnabled bool
 }
 
 // orchestrionConfig contains Orchestrion configuration.
@@ -302,8 +308,24 @@ const partialFlushMinSpansDefault = 1000
 func newConfig(opts ...StartOption) (*config, error) {
 	c := new(config)
 	c.sampler = NewAllSampler()
+	sampleRate := math.NaN()
+	if r := getDDorOtelConfig("sampleRate"); r != "" {
+		var err error
+		sampleRate, err = strconv.ParseFloat(r, 64)
+		if err != nil {
+			log.Warn("ignoring DD_TRACE_SAMPLE_RATE, error: %v", err)
+			sampleRate = math.NaN()
+		} else if sampleRate < 0.0 || sampleRate > 1.0 {
+			log.Warn("ignoring DD_TRACE_SAMPLE_RATE: out of range %f", sampleRate)
+			sampleRate = math.NaN()
+		}
+	}
+	c.globalSampleRate = sampleRate
 	c.httpClientTimeout = time.Second * 10 // 10 seconds
 
+	if v := os.Getenv("OTEL_LOGS_EXPORTER"); v != "" {
+		log.Warn("OTEL_LOGS_EXPORTER is not supported")
+	}
 	if internal.BoolEnv("DD_TRACE_ANALYTICS_ENABLED", false) {
 		globalconfig.SetAnalyticsRate(1.0)
 	}
@@ -326,7 +348,7 @@ func newConfig(opts ...StartOption) (*config, error) {
 			return r == ',' || r == ' '
 		})...)(c)
 	}
-	if v := os.Getenv("DD_SERVICE"); v != "" {
+	if v := getDDorOtelConfig("service"); v != "" {
 		c.serviceName = v
 		globalconfig.SetServiceName(v)
 	}
@@ -334,18 +356,22 @@ func newConfig(opts ...StartOption) (*config, error) {
 		c.version = ver
 	}
 	if v := os.Getenv("DD_SERVICE_MAPPING"); v != "" {
-		internal.ForEachStringTag(v, func(key, val string) { WithServiceMapping(key, val)(c) })
+		internal.ForEachStringTag(v, internal.DDTagsDelimiter, func(key, val string) { WithServiceMapping(key, val)(c) })
 	}
 	c.headerAsTags = newDynamicConfig("trace_header_tags", nil, setHeaderTags, equalSlice[string])
 	if v := os.Getenv("DD_TRACE_HEADER_TAGS"); v != "" {
-		WithHeaderTags(strings.Split(v, ","))(c)
+		c.headerAsTags.update(strings.Split(v, ","), telemetry.OriginEnvVar)
+		// Required to ensure that the startup header tags are set on reset.
+		c.headerAsTags.startup = c.headerAsTags.current
 	}
-	if v := os.Getenv("DD_TAGS"); v != "" {
+	if v := getDDorOtelConfig("resourceAttributes"); v != "" {
 		tags := internal.ParseTagString(v)
 		internal.CleanGitMetadataTags(tags)
 		for key, val := range tags {
 			WithGlobalTag(key, val)(c)
 		}
+		// TODO: should we track the origin of these tags individually?
+		c.globalTags.cfgOrigin = telemetry.OriginEnvVar
 	}
 	if _, ok := os.LookupEnv("AWS_LAMBDA_FUNCTION_NAME"); ok {
 		// AWS_LAMBDA_FUNCTION_NAME being set indicates that we're running in an AWS Lambda environment.
@@ -353,12 +379,21 @@ func newConfig(opts ...StartOption) (*config, error) {
 		c.logToStdout = true
 	}
 	c.logStartup = internal.BoolEnv("DD_TRACE_STARTUP_LOGS", true)
-	c.runtimeMetrics = internal.BoolEnv("DD_RUNTIME_METRICS_ENABLED", false)
-	c.debug = internal.BoolEnv("DD_TRACE_DEBUG", false)
-	c.enabled = newDynamicConfig("tracing_enabled", internal.BoolEnv("DD_TRACE_ENABLED", true), func(b bool) bool { return true }, equal[bool])
+	c.runtimeMetrics = internal.BoolVal(getDDorOtelConfig("metrics"), false)
+	c.debug = internal.BoolVal(getDDorOtelConfig("debugMode"), false)
+	c.enabled = newDynamicConfig("tracing_enabled", internal.BoolVal(getDDorOtelConfig("enabled"), true), func(b bool) bool { return true }, equal[bool])
+	if _, ok := os.LookupEnv("DD_TRACE_ENABLED"); ok {
+		c.enabled.cfgOrigin = telemetry.OriginEnvVar
+	}
 	c.profilerEndpoints = internal.BoolEnv(traceprof.EndpointEnvVar, true)
 	c.profilerHotspots = internal.BoolEnv(traceprof.CodeHotspotsEnvVar, true)
-	c.enableHostnameDetection = internal.BoolEnv("DD_CLIENT_HOSTNAME_ENABLED", true)
+	if compatMode := os.Getenv("DD_TRACE_CLIENT_HOSTNAME_COMPAT"); compatMode != "" {
+		if semver.IsValid(compatMode) {
+			c.enableHostnameDetection = semver.Compare(semver.MajorMinor(compatMode), "v1.66") <= 0
+		} else {
+			log.Warn("ignoring DD_TRACE_CLIENT_HOSTNAME_COMPAT, invalid version %q", compatMode)
+		}
+	}
 	c.debugAbandonedSpans = internal.BoolEnv("DD_TRACE_DEBUG_ABANDONED_SPANS", false)
 	if c.debugAbandonedSpans {
 		c.spanTimeout = internal.DurationEnv("DD_TRACE_ABANDONED_SPAN_TIMEOUT", 10*time.Minute)
@@ -400,7 +435,7 @@ func newConfig(opts ...StartOption) (*config, error) {
 	}
 	c.peerServiceMappings = make(map[string]string)
 	if v := os.Getenv("DD_TRACE_PEER_SERVICE_MAPPING"); v != "" {
-		internal.ForEachStringTag(v, func(key, val string) { c.peerServiceMappings[key] = val })
+		internal.ForEachStringTag(v, internal.DDTagsDelimiter, func(key, val string) { c.peerServiceMappings[key] = val })
 	}
 
 	for _, fn := range opts {
@@ -410,15 +445,11 @@ func newConfig(opts ...StartOption) (*config, error) {
 		fn(c)
 	}
 	if c.agentURL == nil {
-		c.agentURL = resolveAgentAddr()
-		if url := internal.AgentURLFromEnv(); url != nil {
-			c.agentURL = url
-		}
+		c.agentURL = internal.AgentURLFromEnv()
 	}
 	if c.agentURL.Scheme == "unix" {
 		// If we're connecting over UDS we can just rely on the agent to provide the hostname
 		log.Debug("connecting to agent over unix, do not set hostname on any traces")
-		c.enableHostnameDetection = false
 		c.httpClient = udsClient(c.agentURL.Path, c.httpClientTimeout)
 		c.agentURL = &url.URL{
 			Scheme: "http",
@@ -514,7 +545,16 @@ func newConfig(opts ...StartOption) (*config, error) {
 	}
 	// Re-initialize the globalTags config with the value constructed from the environment and start options
 	// This allows persisting the initial value of globalTags for future resets and updates.
-	c.initGlobalTags(c.globalTags.get())
+	globalTagsOrigin := c.globalTags.cfgOrigin
+	c.initGlobalTags(c.globalTags.get(), globalTagsOrigin)
+
+	// Check if CI Visibility mode is enabled
+	if internal.BoolEnv(constants.CIVisibilityEnabledEnvironmentVariable, false) {
+		c.ciVisibilityEnabled = true              // Enable CI Visibility mode
+		c.httpClientTimeout = time.Second * 45    // Increase timeout up to 45 seconds (same as other tracers in CIVis mode)
+		c.logStartup = false                      // If we are in CI Visibility mode we don't want to log the startup to stdout to avoid polluting the output
+		c.transport = newCiVisibilityTransport(c) // Replace the default transport with the CI Visibility transport
+	}
 
 	return c, nil
 }
@@ -584,10 +624,6 @@ type agentFeatures struct {
 	// the /v0.6/stats endpoint.
 	Stats bool
 
-	// DataStreams reports whether the agent can receive data streams stats on
-	// the /v0.1/pipeline_stats endpoint.
-	DataStreams bool
-
 	// StatsdPort specifies the Dogstatsd port as provided by the agent.
 	// If it's the default, it will be 0, which means 8125.
 	StatsdPort int
@@ -636,8 +672,6 @@ func loadAgentFeatures(agentDisabled bool, agentURL *url.URL, httpClient *http.C
 		switch endpoint {
 		case "/v0.6/stats":
 			features.Stats = true
-		case "/v0.1/pipeline_stats":
-			features.DataStreams = true
 		}
 	}
 	features.featureFlags = make(map[string]struct{}, len(info.FeatureFlags))
@@ -667,23 +701,6 @@ func (c *config) loadContribIntegrations(deps []*debug.Module) {
 	}
 	for _, d := range deps {
 		p := d.Path
-		// special use case, since gRPC does not update version number
-		if p == "google.golang.org/grpc" {
-			re := regexp.MustCompile(`v(\d.\d)\d*`)
-			match := re.FindStringSubmatch(d.Version)
-			if match == nil {
-				log.Warn("Unable to parse version of GRPC %v", d.Version)
-				continue
-			}
-			ver, err := strconv.ParseFloat(match[1], 32)
-			if err != nil {
-				log.Warn("Unable to parse version of GRPC %v as a float", d.Version)
-				continue
-			}
-			if ver <= 1.2 {
-				p = p + "/v12"
-			}
-		}
 		s, ok := contribIntegrations[p]
 		if !ok {
 			continue
@@ -721,7 +738,7 @@ func statsTags(c *config) []string {
 		}
 	}
 	globalconfig.SetStatsTags(tags)
-	tags = append(tags, version.Tag)
+	tags = append(tags, "tracer_version:"+version.Tag)
 	if c.serviceName != "" {
 		tags = append(tags, "service:"+c.serviceName)
 	}
@@ -897,7 +914,7 @@ func WithPeerServiceMapping(from, to string) StartOption {
 func WithGlobalTag(k string, v interface{}) StartOption {
 	return func(c *config) {
 		if c.globalTags.get() == nil {
-			c.initGlobalTags(map[string]interface{}{})
+			c.initGlobalTags(map[string]interface{}{}, telemetry.OriginDefault)
 		}
 		c.globalTags.Lock()
 		defer c.globalTags.Unlock()
@@ -906,13 +923,14 @@ func WithGlobalTag(k string, v interface{}) StartOption {
 }
 
 // initGlobalTags initializes the globalTags config with the provided init value
-func (c *config) initGlobalTags(init map[string]interface{}) {
+func (c *config) initGlobalTags(init map[string]interface{}, origin telemetry.Origin) {
 	apply := func(map[string]interface{}) bool {
 		// always set the runtime ID on updates
 		c.globalTags.current[ext.RuntimeID] = globalconfig.RuntimeID()
 		return true
 	}
-	c.globalTags = newDynamicConfig[map[string]interface{}]("trace_tags", init, apply, equalMap[string])
+	c.globalTags = newDynamicConfig("trace_tags", init, apply, equalMap[string])
+	c.globalTags.cfgOrigin = origin
 }
 
 // WithSampler sets the given sampler to be used with the tracer. By default
@@ -1347,9 +1365,6 @@ func (t *dummyTransport) Traces() spanLists {
 func setHeaderTags(headerAsTags []string) bool {
 	globalconfig.ClearHeaderTags()
 	for _, h := range headerAsTags {
-		if strings.HasPrefix(h, "x-datadog-") {
-			continue
-		}
 		header, tag := normalizer.HeaderTag(h)
 		globalconfig.SetHeaderTag(header, tag)
 	}

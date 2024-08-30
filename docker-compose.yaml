@@ -1,8 +1,11 @@
 services:
   cassandra:
-    image: cassandra:3.7
+    image: cassandra:3.11
     environment:
       JVM_OPTS: "-Xms750m -Xmx750m"
+      CASSANDRA_CLUSTER_NAME: "dd-trace-go-test-cluster"
+      CASSANDRA_DC: "dd-trace-go-test-datacenter"
+      CASSANDRA_ENDPOINT_SNITCH: "GossipingPropertyFileSnitch"
     ports:
       - "9042:9042"
   mysql:

@@ -17,6 +17,8 @@ type config struct {
 	consumerSpanName    string
 	producerSpanName    string
 	analyticsRate       float64
+	dataStreamsEnabled  bool
+	groupID             string
 }
 
 func defaults(cfg *config) {
@@ -25,6 +27,8 @@ func defaults(cfg *config) {
 
 	cfg.consumerSpanName = instr.OperationName(instrumentation.ComponentConsumer, nil)
 	cfg.producerSpanName = instr.OperationName(instrumentation.ComponentProducer, nil)
+
+	cfg.dataStreamsEnabled = instr.DataStreamsEnabled()
 
 	// cfg.analyticsRate = globalconfig.AnalyticsRate()
 	cfg.analyticsRate = instr.AnalyticsRate(false)
@@ -47,6 +51,20 @@ func WithService(name string) OptionFn {
 	return func(cfg *config) {
 		cfg.consumerServiceName = name
 		cfg.producerServiceName = name
+	}
+}
+
+// WithDataStreams enables the Data Streams monitoring product features: https://www.datadoghq.com/product/data-streams-monitoring/
+func WithDataStreams() OptionFn {
+	return func(cfg *config) {
+		cfg.dataStreamsEnabled = true
+	}
+}
+
+// WithGroupID tags the produced data streams metrics with the given groupID (aka consumer group)
+func WithGroupID(groupID string) OptionFn {
+	return func(cfg *config) {
+		cfg.groupID = groupID
 	}
 }
 

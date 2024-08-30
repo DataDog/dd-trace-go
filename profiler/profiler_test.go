@@ -17,6 +17,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path"
 	"runtime"
 	"runtime/trace"
 	"strconv"
@@ -25,9 +26,12 @@ import (
 	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/internal"
+	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/httpmem"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/traceprof"
+	"github.com/DataDog/dd-trace-go/v2/internal/version"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -251,41 +255,6 @@ func TestSetProfileFraction(t *testing.T) {
 	})
 }
 
-func TestProfilerPassthrough(t *testing.T) {
-	if testing.Short() {
-		return
-	}
-	beforeExecutionTraceEnabledDefault := executionTraceEnabledDefault
-	executionTraceEnabledDefault = false
-	defer func() { executionTraceEnabledDefault = beforeExecutionTraceEnabledDefault }()
-
-	out := make(chan batch)
-	p, err := newProfiler()
-	require.NoError(t, err)
-	p.cfg.period = 200 * time.Millisecond
-	p.cfg.cpuDuration = 1 * time.Millisecond
-	p.uploadFunc = func(bat batch) error {
-		out <- bat
-		return nil
-	}
-	p.run()
-	defer p.stop()
-	var bat batch
-	select {
-	case bat = <-out:
-	// TODO (knusbaum) this timeout is long because we were seeing timeouts at 500ms.
-	// it would be nice to have a time-independent way to test this
-	case <-time.After(1000 * time.Millisecond):
-		t.Fatal("time expired")
-	}
-
-	assert := assert.New(t)
-	// should contain cpu.pprof, delta-heap.pprof
-	assert.Equal(2, len(bat.profiles))
-	assert.NotEmpty(bat.profiles[0].data)
-	assert.NotEmpty(bat.profiles[1].data)
-}
-
 func unstartedProfiler(opts ...Option) (*profiler, error) {
 	p, err := newProfiler(opts...)
 	if err != nil {
@@ -431,6 +400,11 @@ func TestAllUploaded(t *testing.T) {
 		assert.ElementsMatch(t, customLabelKeys[:customProfileLabelLimit], profile.event.CustomAttributes)
 
 		assert.Contains(t, profile.tags, fmt.Sprintf("profile_seq:%d", seq))
+
+		assert.Equal(t, profile.event.Version, "4")
+		assert.Equal(t, profile.event.Family, "go")
+		assert.NotNil(t, profile.event.Start)
+		assert.NotNil(t, profile.event.End)
 	}
 
 	validateProfile(<-profiles, 0)
@@ -452,6 +426,14 @@ func TestCorrectTags(t *testing.T) {
 		"foo:bar",
 		"service:xyz",
 		"host:example",
+		"runtime:go",
+		fmt.Sprintf("process_id:%d", os.Getpid()),
+		fmt.Sprintf("profiler_version:%s", version.Tag),
+		fmt.Sprintf("runtime_version:%s", strings.TrimPrefix(runtime.Version(), "go")),
+		fmt.Sprintf("runtime_compiler:%s", runtime.Compiler),
+		fmt.Sprintf("runtime_arch:%s", runtime.GOARCH),
+		fmt.Sprintf("runtime_os:%s", runtime.GOOS),
+		fmt.Sprintf("runtime-id:%s", globalconfig.RuntimeID()),
 	}
 	for i := 0; i < 20; i++ {
 		// We check the tags we get several times to try to have a
@@ -746,4 +728,38 @@ func TestVersionResolution(t *testing.T) {
 		assert.Contains(t, data.tags, "Version:4.5.6")
 		assert.NotContains(t, data.tags, "version:7.8.9")
 	})
+}
+
+func TestUDSDefault(t *testing.T) {
+	dir := t.TempDir()
+	socket := path.Join(dir, "agent.socket")
+
+	orig := internal.DefaultTraceAgentUDSPath
+	defer func() {
+		internal.DefaultTraceAgentUDSPath = orig
+	}()
+	internal.DefaultTraceAgentUDSPath = socket
+
+	profiles := make(chan profileMeta, 1)
+	backend := &mockBackend{t: t, profiles: profiles}
+	mux := http.NewServeMux()
+	// Specifically set up a handler for /profiling/v1/input to test that we
+	// don't use the filesystem path to the Unix domain socket in the HTTP
+	// request path.
+	mux.Handle("/profiling/v1/input", backend)
+	server := httptest.NewUnstartedServer(mux)
+	l, err := net.Listen("unix", socket)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer l.Close()
+	server.Listener = l
+	server.Start()
+	defer server.Close()
+
+	err = Start(WithProfileTypes(), WithPeriod(10*time.Millisecond))
+	require.NoError(t, err)
+	defer Stop()
+
+	<-profiles
 }

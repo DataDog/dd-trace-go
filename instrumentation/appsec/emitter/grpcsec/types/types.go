@@ -72,32 +72,7 @@ type (
 		// Corresponds to the address `grpc.server.request.message`.
 		Message interface{}
 	}
-
-	// MonitoringError is used to vehicle a gRPC error that also embeds a request status code
-	MonitoringError struct {
-		msg    string
-		status uint32
-	}
 )
-
-// NewMonitoringError creates and returns a new gRPC monitoring error, wrapped under
-// sharedesec.MonitoringError
-func NewMonitoringError(msg string, code uint32) error {
-	return &MonitoringError{
-		msg:    msg,
-		status: code,
-	}
-}
-
-// GRPCStatus returns the gRPC status code embedded in the error
-func (e *MonitoringError) GRPCStatus() uint32 {
-	return e.status
-}
-
-// Error implements the error interface
-func (e *MonitoringError) Error() string {
-	return e.msg
-}
 
 // Finish the gRPC handler operation, along with the given results, and emit a
 // finish event up in the operation stack.

@@ -22,11 +22,11 @@ type contribPkg struct {
 	Dir        string
 }
 
-var TelemetryImport = "github.com/DataDog/dd-trace-go/v2/internal/telemetry"
+var InstrumentationImport = "github.com/DataDog/dd-trace-go/v2/instrumentation"
 
-func (p *contribPkg) hasTelemetryImport() bool {
+func (p *contribPkg) hasInstrumentationImport() bool {
 	for _, imp := range p.Imports {
-		if imp == TelemetryImport {
+		if imp == InstrumentationImport {
 			return true
 		}
 	}
@@ -89,7 +89,7 @@ func testTelemetryEnabled(t *testing.T, contribPath string) error {
 		if strings.Contains(pkg.ImportPath, "/test") || strings.Contains(pkg.ImportPath, "/internal") {
 			continue
 		}
-		if !pkg.hasTelemetryImport() {
+		if !pkg.hasInstrumentationImport() {
 			return fmt.Errorf(`package %q is expected use instrumentation telemetry. For more info see https://github.com/DataDog/dd-trace-go/blob/main/contrib/README.md#instrumentation-telemetry`, pkg.ImportPath)
 		}
 	}

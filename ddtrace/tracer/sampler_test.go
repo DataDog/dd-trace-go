@@ -195,7 +195,7 @@ func TestRateSamplerSetting(t *testing.T) {
 }
 
 func TestRuleEnvVars(t *testing.T) {
-	t.Run("sample-rate", func(t *testing.T) {
+	t.Run("dd-sample-rate", func(t *testing.T) {
 		assert := assert.New(t)
 		for _, tt := range []struct {
 			in  string
@@ -209,12 +209,38 @@ func TestRuleEnvVars(t *testing.T) {
 			{in: "1point0", out: math.NaN()}, // default if invalid value
 		} {
 			t.Setenv("DD_TRACE_SAMPLE_RATE", tt.in)
-			res := globalSampleRate()
+			c, err := newConfig()
+			assert.NoError(err)
+			res := c.globalSampleRate
 			if math.IsNaN(tt.out) {
 				assert.True(math.IsNaN(res))
 			} else {
 				assert.Equal(tt.out, res)
 			}
+		}
+	})
+
+	t.Run("otel-sample-rate", func(t *testing.T) {
+		for _, tt := range []struct {
+			config string
+			rate   float64
+		}{
+			{config: "parentbased_always_on", rate: 1.0},
+			{config: "parentbased_always_off", rate: 0.0},
+			{config: "parentbased_traceidratio", rate: 0.5},
+			{config: "always_on", rate: 1.0},
+			{config: "always_off", rate: 0.0},
+			{config: "traceidratio", rate: 0.75},
+		} {
+			t.Run(tt.config, func(t *testing.T) {
+				assert := assert.New(t)
+				t.Setenv("OTEL_TRACES_SAMPLER", tt.config)
+				t.Setenv("OTEL_TRACES_SAMPLER_ARG", fmt.Sprintf("%f", tt.rate))
+				c, err := newConfig()
+				assert.NoError(err)
+				res := c.globalSampleRate
+				assert.Equal(tt.rate, res)
+			})
 		}
 	})
 
@@ -450,12 +476,12 @@ func TestRuleEnvVars(t *testing.T) {
 
 func TestRulesSampler(t *testing.T) {
 	makeSpan := func(op string, svc string) *Span {
-		s := newSpan(op, svc, "res-10", random.Uint64(), random.Uint64(), 0)
+		s := newSpan(op, svc, "res-10", randUint64(), randUint64(), 0)
 		s.setMeta("hostname", "hn-30")
 		return s
 	}
 	makeFinishedSpan := func(op, svc, resource string, tags map[string]interface{}) *Span {
-		s := newSpan(op, svc, resource, random.Uint64(), random.Uint64(), 0)
+		s := newSpan(op, svc, resource, randUint64(), randUint64(), 0)
 		for k, v := range tags {
 			s.SetTag(k, v)
 		}
@@ -464,7 +490,10 @@ func TestRulesSampler(t *testing.T) {
 	}
 	t.Run("no-rules", func(t *testing.T) {
 		assert := assert.New(t)
-		rs := newRulesSampler(nil, nil, globalSampleRate())
+		c, err := newConfig()
+		assert.NoError(err)
+		res := c.globalSampleRate
+		rs := newRulesSampler(nil, nil, res)
 
 		span := makeSpan("http.request", "test-service")
 		result := rs.SampleTrace(span)
@@ -529,7 +558,10 @@ func TestRulesSampler(t *testing.T) {
 				assert.Nil(t, err)
 
 				assert := assert.New(t)
-				rs := newRulesSampler(rules, nil, globalSampleRate())
+				c, err := newConfig()
+				assert.NoError(err)
+				res := c.globalSampleRate
+				rs := newRulesSampler(rules, nil, res)
 
 				span := makeFinishedSpan(tt.spanName, tt.spanSrv, tt.spanRsc, tt.spanTags)
 
@@ -540,20 +572,23 @@ func TestRulesSampler(t *testing.T) {
 	})
 
 	t.Run("matching", func(t *testing.T) {
-		traceRules := [][]Rule{
-			{{ServiceGlob: "test-service", Rate: 1.}},
-			{{NameGlob: "http.request", Rate: 1.}},
-			{{ServiceGlob: "test-service", NameGlob: "http.request", Rate: 1.}},
-			{{ServiceGlob: "test-*", NameGlob: "http.*", Rate: 1.}},
-			{{ServiceGlob: "other-service-1", Rate: 0.0}, {ServiceGlob: "other-service-2", Rate: 0.0}, {ServiceGlob: "test-service", Rate: 1.0}},
-			{{Tags: map[string]string{"hostname": "hn-??"}, Rate: 1.0}},
-			{{Tags: map[string]string{"hostname": "hn-3*"}, ResourceGlob: "res-1*", Rate: 1.0}},
-			{{Tags: map[string]string{"hostname": "hn-?0"}, Rate: 1.0}},
+		traceRules := [][]SamplingRule{
+			SpanSamplingRules(Rule{ServiceGlob: "test-service", Rate: 1.}),
+			SpanSamplingRules(Rule{NameGlob: "http.request", Rate: 1.}),
+			SpanSamplingRules(Rule{ServiceGlob: "test-service", NameGlob: "http.request", Rate: 1.}),
+			SpanSamplingRules(Rule{ServiceGlob: "test-*", NameGlob: "http.*", Rate: 1.}),
+			SpanSamplingRules(Rule{ServiceGlob: "other-service-1", Rate: 0.0}, Rule{ServiceGlob: "other-service-2", Rate: 0.0}, Rule{ServiceGlob: "test-service", Rate: 1.0}),
+			SpanSamplingRules(Rule{Tags: map[string]string{"hostname": "hn-??"}, Rate: 1.0}),
+			SpanSamplingRules(Rule{Tags: map[string]string{"hostname": "hn-3*"}, ResourceGlob: "res-1*", Rate: 1.0}),
+			SpanSamplingRules(Rule{Tags: map[string]string{"hostname": "hn-?0"}, Rate: 1.0}),
 		}
 		for _, v := range traceRules {
 			t.Run("", func(t *testing.T) {
 				assert := assert.New(t)
-				rs := newRulesSampler(TraceSamplingRules(v...), nil, globalSampleRate())
+				c, err := newConfig()
+				assert.NoError(err)
+				res := c.globalSampleRate
+				rs := newRulesSampler(v, nil, res)
 
 				span := makeSpan("http.request", "test-service")
 				result := rs.SampleTrace(span)
@@ -565,21 +600,24 @@ func TestRulesSampler(t *testing.T) {
 	})
 
 	t.Run("not-matching", func(t *testing.T) {
-		traceRules := [][]Rule{
-			{{ServiceGlob: "toast-service", Rate: 1.}},
-			{{NameGlob: "grpc.request", Rate: 1.}},
-			{{NameGlob: "grpc.request", ServiceGlob: "toast-service", Rate: 1.}},
-			{{NameGlob: "http\\..*", ServiceGlob: "toast-", Rate: 1.}},
-			{{NameGlob: "grpc\\..*", ServiceGlob: "test-", Rate: 1.}},
-			{{ServiceGlob: "other-service-1", Rate: 0}, {ServiceGlob: "other-service-2", Rate: 0}, {ServiceGlob: "toast-service", Rate: 1.}},
-			{{Tags: map[string]string{"hostname": "hn--1"}, Rate: 1.0}},
-			{{Tags: map[string]string{"host": "hn-1"}, Rate: 1.0}},
-			{{ResourceGlob: "res", Rate: 1.0}},
+		traceRules := [][]SamplingRule{
+			SpanSamplingRules(Rule{ServiceGlob: "toast-service", Rate: 1.}),
+			SpanSamplingRules(Rule{NameGlob: "grpc.request", Rate: 1.}),
+			SpanSamplingRules(Rule{NameGlob: "grpc.request", ServiceGlob: "toast-service", Rate: 1.}),
+			SpanSamplingRules(Rule{NameGlob: "http\\..*", ServiceGlob: "toast-", Rate: 1.}),
+			SpanSamplingRules(Rule{NameGlob: "grpc\\..*", ServiceGlob: "test-", Rate: 1.}),
+			SpanSamplingRules(Rule{ServiceGlob: "other-service-1", Rate: 0}, Rule{ServiceGlob: "other-service-2", Rate: 0}, Rule{ServiceGlob: "toast-service", Rate: 1.}),
+			SpanSamplingRules(Rule{Tags: map[string]string{"hostname": "hn--1"}, Rate: 1.0}),
+			SpanSamplingRules(Rule{Tags: map[string]string{"host": "hn-1"}, Rate: 1.0}),
+			SpanSamplingRules(Rule{ResourceGlob: "res", Rate: 1.0}),
 		}
 		for _, v := range traceRules {
 			t.Run("", func(t *testing.T) {
 				assert := assert.New(t)
-				rs := newRulesSampler(TraceSamplingRules(v...), nil, globalSampleRate())
+				c, err := newConfig()
+				assert.NoError(err)
+				res := c.globalSampleRate
+				rs := newRulesSampler(v, nil, res)
 
 				span := makeSpan("http.request", "test-service")
 				result := rs.SampleTrace(span)
@@ -625,7 +663,10 @@ func TestRulesSampler(t *testing.T) {
 				_, rules, err := samplingRulesFromEnv()
 				assert.Nil(t, err)
 				assert := assert.New(t)
-				rs := newRulesSampler(nil, rules, globalSampleRate())
+				c, err := newConfig()
+				assert.NoError(err)
+				res := c.globalSampleRate
+				rs := newRulesSampler(nil, rules, res)
 
 				span := makeFinishedSpan(tt.spanName, tt.spanSrv, "res-10", map[string]interface{}{"hostname": "hn-30"})
 
@@ -749,7 +790,8 @@ func TestRulesSampler(t *testing.T) {
 				assert := assert.New(t)
 				c, err := newConfig(WithSamplingRules(tt.rules))
 				assert.NoError(err)
-				rs := newRulesSampler(nil, c.spanRules, globalSampleRate())
+				res := c.globalSampleRate
+				rs := newRulesSampler(nil, c.spanRules, res)
 
 				span := makeFinishedSpan(tt.spanName, tt.spanSrv, "res-10", map[string]interface{}{"hostname": "hn-30",
 					"tag":        20.1,
@@ -817,7 +859,10 @@ func TestRulesSampler(t *testing.T) {
 				_, rules, _ := samplingRulesFromEnv()
 
 				assert := assert.New(t)
-				rs := newRulesSampler(nil, rules, globalSampleRate())
+				c, err := newConfig()
+				assert.NoError(err)
+				res := c.globalSampleRate
+				rs := newRulesSampler(nil, rules, res)
 
 				span := makeFinishedSpan(tt.spanName, tt.spanSrv, tt.resName, map[string]interface{}{"hostname": "hn-30"})
 				result := rs.SampleSpan(span)
@@ -926,7 +971,8 @@ func TestRulesSampler(t *testing.T) {
 				assert := assert.New(t)
 				c, err := newConfig(WithSamplingRules(tt.rules))
 				assert.NoError(err)
-				rs := newRulesSampler(nil, c.spanRules, globalSampleRate())
+				res := c.globalSampleRate
+				rs := newRulesSampler(nil, c.spanRules, res)
 
 				span := makeFinishedSpan(tt.spanName, tt.spanSrv, "res-10", map[string]interface{}{"hostname": "hn-30",
 					"tag": 20.1,
@@ -955,7 +1001,10 @@ func TestRulesSampler(t *testing.T) {
 				t.Run("", func(t *testing.T) {
 					assert := assert.New(t)
 					t.Setenv("DD_TRACE_SAMPLE_RATE", fmt.Sprint(rate))
-					rs := newRulesSampler(nil, rules, globalSampleRate())
+					c, err := newConfig()
+					assert.NoError(err)
+					res := c.globalSampleRate
+					rs := newRulesSampler(nil, rules, res)
 
 					span := makeSpan("http.request", "test-service")
 					result := rs.SampleTrace(span)
@@ -1241,7 +1290,10 @@ func TestRulesSamplerInternals(t *testing.T) {
 	t.Run("full-rate", func(t *testing.T) {
 		assert := assert.New(t)
 		now := time.Now()
-		rs := newRulesSampler(nil, nil, globalSampleRate())
+		c, err := newConfig()
+		assert.NoError(err)
+		res := c.globalSampleRate
+		rs := newRulesSampler(nil, nil, res)
 		// set samplingLimiter to specific state
 		rs.traces.limiter.prevTime = now.Add(-1 * time.Second)
 		rs.traces.limiter.allowed = 1
@@ -1256,7 +1308,10 @@ func TestRulesSamplerInternals(t *testing.T) {
 	t.Run("limited-rate", func(t *testing.T) {
 		assert := assert.New(t)
 		now := time.Now()
-		rs := newRulesSampler(nil, nil, globalSampleRate())
+		c, err := newConfig()
+		assert.NoError(err)
+		res := c.globalSampleRate
+		rs := newRulesSampler(nil, nil, res)
 		// force sampling limiter to 1.0 spans/sec
 		rs.traces.limiter.limiter = rate.NewLimiter(rate.Limit(1.0), 1)
 		rs.traces.limiter.prevTime = now.Add(-1 * time.Second)
@@ -1501,15 +1556,15 @@ func TestSamplingRuleMarshall(t *testing.T) {
 		ruleType SamplingRuleType
 		out      string
 	}{
-		{Rule{ServiceGlob: "srv.*"}, SamplingRuleTrace, `{"service":"srv.*","sample_rate":0,"type":"1"}`},
-		{Rule{NameGlob: "ops.*", ServiceGlob: "srv.*"}, SamplingRuleTrace, `{"service":"srv.*","name":"ops.*","sample_rate":0,"type":"1"}`},
-		{Rule{NameGlob: "ops.*", ServiceGlob: "srv.*", Rate: 0.55}, SamplingRuleTrace, `{"service":"srv.*","name":"ops.*","sample_rate":0.55,"type":"1"}`},
-		{Rule{Tags: nil, ResourceGlob: "http_get", Rate: 0.55}, SamplingRuleTrace, `{"resource":"http_get","sample_rate":0.55,"type":"1"}`},
-		{Rule{Tags: map[string]string{"host": "hn-*"}, ResourceGlob: "http_get", Rate: 0.35}, SamplingRuleTrace, `{"resource":"http_get","sample_rate":0.35,"tags":{"host":"hn-*"},"type":"1"}`},
-		{Rule{NameGlob: "ops.*", ServiceGlob: "srv.*", Rate: 0.55}, SamplingRuleSpan, `{"service":"srv.*","name":"ops.*","sample_rate":0.55,"type":"2"}`},
-		{Rule{NameGlob: "ops.*", ServiceGlob: "srv.*", Rate: 0.55, MaxPerSecond: 1000}, SamplingRuleSpan, `{"service":"srv.*","name":"ops.*","sample_rate":0.55,"type":"2","max_per_second":1000}`},
-		{Rule{Tags: nil, ResourceGlob: "//bar", Rate: 1}, SamplingRuleTrace, `{"resource":"//bar","sample_rate":1,"type":"1"}`},
-		{Rule{Tags: map[string]string{"tag_key": "tag_value.*"}, ResourceGlob: "//bar", Rate: 1}, SamplingRuleTrace, `{"resource":"//bar","sample_rate":1,"tags":{"tag_key":"tag_value.*"},"type":"1"}`},
+		{Rule{ServiceGlob: "srv.*"}, SamplingRuleTrace, `{"service":"srv.*","sample_rate":0}`},
+		{Rule{NameGlob: "ops.*", ServiceGlob: "srv.*"}, SamplingRuleTrace, `{"service":"srv.*","name":"ops.*","sample_rate":0}`},
+		{Rule{NameGlob: "ops.*", ServiceGlob: "srv.*", Rate: 0.55}, SamplingRuleTrace, `{"service":"srv.*","name":"ops.*","sample_rate":0.55}`},
+		{Rule{Tags: nil, ResourceGlob: "http_get", Rate: 0.55}, SamplingRuleTrace, `{"resource":"http_get","sample_rate":0.55}`},
+		{Rule{Tags: map[string]string{"host": "hn-*"}, ResourceGlob: "http_get", Rate: 0.35}, SamplingRuleTrace, `{"resource":"http_get","sample_rate":0.35,"tags":{"host":"hn-*"}}`},
+		{Rule{NameGlob: "ops.*", ServiceGlob: "srv.*", Rate: 0.55}, SamplingRuleSpan, `{"service":"srv.*","name":"ops.*","sample_rate":0.55}`},
+		{Rule{NameGlob: "ops.*", ServiceGlob: "srv.*", Rate: 0.55, MaxPerSecond: 1000}, SamplingRuleSpan, `{"service":"srv.*","name":"ops.*","sample_rate":0.55,"max_per_second":1000}`},
+		{Rule{Tags: nil, ResourceGlob: "//bar", Rate: 1}, SamplingRuleTrace, `{"resource":"//bar","sample_rate":1}`},
+		{Rule{Tags: map[string]string{"tag_key": "tag_value.*"}, ResourceGlob: "//bar", Rate: 1}, SamplingRuleTrace, `{"resource":"//bar","sample_rate":1,"tags":{"tag_key":"tag_value.*"}}`},
 	} {
 		var sr SamplingRule
 		switch tt.ruleType {
@@ -1532,22 +1587,22 @@ func TestSamplingRuleMarshallGlob(t *testing.T) {
 		marshal string
 	}{
 		// pattern with *
-		{"test*", "test", regexp.MustCompile("(?i)^test.*$"), `{"service":"test*","sample_rate":1,"type":"1"}`},
-		{"*test", "a-test", regexp.MustCompile("(?i)^.*test$"), `{"service":"*test","sample_rate":1,"type":"1"}`},
-		{"a*case", "acase", regexp.MustCompile("(?i)^a.*case$"), `{"service":"a*case","sample_rate":1,"type":"1"}`},
+		{"test*", "test", regexp.MustCompile("(?i)^test.*$"), `{"service":"test*","sample_rate":1}`},
+		{"*test", "a-test", regexp.MustCompile("(?i)^.*test$"), `{"service":"*test","sample_rate":1}`},
+		{"a*case", "acase", regexp.MustCompile("(?i)^a.*case$"), `{"service":"a*case","sample_rate":1}`},
 		// pattern regexp.MustCompile(), ``, with ?
-		{"a?case", "a-case", regexp.MustCompile("(?i)^a.case$"), `{"service":"a?case","sample_rate":1,"type":"1"}`},
-		{"a?test?case", "a-test-case", regexp.MustCompile("(?i)^a.test.case$"), `{"service":"a?test?case","sample_rate":1,"type":"1"}`},
+		{"a?case", "a-case", regexp.MustCompile("(?i)^a.case$"), `{"service":"a?case","sample_rate":1}`},
+		{"a?test?case", "a-test-case", regexp.MustCompile("(?i)^a.test.case$"), `{"service":"a?test?case","sample_rate":1}`},
 		//// pattern with ? regexp.MustCompile(), ``, and *
-		{"?test*", "atest", regexp.MustCompile("(?i)^.test.*$"), `{"service":"?test*","sample_rate":1,"type":"1"}`},
-		{"test*case", "testcase", regexp.MustCompile("(?i)^test.*case$"), `{"service":"test*case","sample_rate":1,"type":"1"}`},
-		{"a?test*", "a-test-case", regexp.MustCompile("(?i)^a.test.*$"), `{"service":"a?test*","sample_rate":1,"type":"1"}`},
-		{"a*test?", "a-test-", regexp.MustCompile("(?i)^a.*test.$"), `{"service":"a*test?","sample_rate":1,"type":"1"}`},
-		{"a*test?case", "a--test-case", regexp.MustCompile("(?i)^a.*test.case$"), `{"service":"a*test?case","sample_rate":1,"type":"1"}`},
-		{"a?test*case", "a-testing--case", regexp.MustCompile("(?i)^a.test.*case$"), `{"service":"a?test*case","sample_rate":1,"type":"1"}`},
+		{"?test*", "atest", regexp.MustCompile("(?i)^.test.*$"), `{"service":"?test*","sample_rate":1}`},
+		{"test*case", "testcase", regexp.MustCompile("(?i)^test.*case$"), `{"service":"test*case","sample_rate":1}`},
+		{"a?test*", "a-test-case", regexp.MustCompile("(?i)^a.test.*$"), `{"service":"a?test*","sample_rate":1}`},
+		{"a*test?", "a-test-", regexp.MustCompile("(?i)^a.*test.$"), `{"service":"a*test?","sample_rate":1}`},
+		{"a*test?case", "a--test-case", regexp.MustCompile("(?i)^a.*test.case$"), `{"service":"a*test?case","sample_rate":1}`},
+		{"a?test*case", "a-testing--case", regexp.MustCompile("(?i)^a.test.*case$"), `{"service":"a?test*case","sample_rate":1}`},
 		//// valid non-glob regex regexp.MustCompile(), ``, pattern
-		{"*/*", `a/123`, regexp.MustCompile("(?i)^.*/.*$"), `{"service":"*/*","sample_rate":1,"type":"1"}`},
-		{`*\/*`, `a\/123`, regexp.MustCompile("(?i)^.*/.*$"), `{"service":"*/*","sample_rate":1,"type":"1"}`},
+		{"*/*", `a/123`, regexp.MustCompile("(?i)^.*/.*$"), `{"service":"*/*","sample_rate":1}`},
+		{`*\/*`, `a\/123`, regexp.MustCompile("(?i)^.*/.*$"), `{"service":"*/*","sample_rate":1}`},
 	} {
 		t.Run(fmt.Sprintf("%d", i), func(t *testing.T) {
 			// the goal of this test is
@@ -1639,4 +1694,88 @@ func TestSetGlobalSampleRate(t *testing.T) {
 	b = rs.setGlobalSampleRate(2)
 	assert.Equal(t, 0.0, rs.globalRate)
 	assert.False(t, b)
+}
+
+func TestSampleTagsRootOnly(t *testing.T) {
+	assert := assert.New(t)
+
+	t.Run("no-ctx-propagation", func(t *testing.T) {
+		Start(WithSamplingRules(TraceSamplingRules(
+			Rule{Tags: map[string]string{"tag": "20"}, Rate: 1},
+			Rule{ResourceGlob: "root"},
+		)))
+		tr := GetGlobalTracer()
+		defer tr.Stop()
+
+		root := tr.StartSpan("mysql.root", ResourceName("root"))
+		child := tr.StartSpan("mysql.child", ChildOf(root.Context()))
+		child.SetTag("tag", 20)
+
+		// root span should be sampled with the second rule
+		// sampling decision is 0, thus "_dd.limit_psr" is not present
+		assert.Contains(root.metrics, keyRulesSamplerAppliedRate)
+		assert.Equal(0., root.metrics[keyRulesSamplerAppliedRate])
+		assert.NotContains(root.metrics, keyRulesSamplerLimiterRate)
+
+		// neither"_dd.limit_psr", nor "_dd.rule_psr" should be present
+		// on the child span
+		assert.NotContains(child.metrics, keyRulesSamplerAppliedRate)
+		assert.NotContains(child.metrics, keyRulesSamplerLimiterRate)
+
+		// setting this tag would change the result of sampling,
+		// which will occur after the span is finished
+		root.SetTag("tag", 20)
+		child.Finish()
+
+		// first sampling rule is applied, the sampling decision is 1
+		// and the "_dd.limit_psr" is present
+		root.Finish()
+		assert.Equal(1., root.metrics[keyRulesSamplerAppliedRate])
+		assert.Contains(root.metrics, keyRulesSamplerLimiterRate)
+
+		// neither"_dd.limit_psr", nor "_dd.rule_psr" should be present
+		// on the child span
+		assert.NotContains(child.metrics, keyRulesSamplerAppliedRate)
+		assert.NotContains(child.metrics, keyRulesSamplerLimiterRate)
+	})
+
+	t.Run("with-ctx-propagation", func(t *testing.T) {
+		Start(WithSamplingRules(TraceSamplingRules(
+			Rule{Tags: map[string]string{"tag": "20"}, Rate: 1},
+			Rule{Tags: nil, ResourceGlob: "root"},
+		)))
+		tr := GetGlobalTracer()
+		defer tr.Stop()
+
+		root := tr.StartSpan("mysql.root", ResourceName("root"))
+		child := tr.StartSpan("mysql.child", ChildOf(root.Context()))
+		child.SetTag("tag", 20)
+
+		// root span should be sampled with the second rule
+		// sampling decision is 0, thus "_dd.limit_psr" is not present
+		assert.Equal(0., root.metrics[keyRulesSamplerAppliedRate])
+		assert.Contains(root.metrics, keyRulesSamplerAppliedRate)
+		assert.NotContains(root.metrics, keyRulesSamplerLimiterRate)
+
+		// neither"_dd.limit_psr", nor "_dd.rule_psr" should be present
+		// on the child span
+		assert.NotContains(child.metrics, keyRulesSamplerAppliedRate)
+		assert.NotContains(child.metrics, keyRulesSamplerLimiterRate)
+
+		// context propagation locks the span, so no re-sampling should occur
+		tr.Inject(root.Context(), TextMapCarrier(map[string]string{}))
+		root.SetTag("tag", 20)
+
+		child.Finish()
+
+		// re-sampling should not occur
+		root.Finish()
+		assert.NotContains(child.metrics, keyRulesSamplerAppliedRate)
+		assert.NotContains(root.metrics, keyRulesSamplerLimiterRate)
+
+		// neither"_dd.limit_psr", nor "_dd.rule_psr" should be present
+		// on the child span
+		assert.NotContains(child.metrics, keyRulesSamplerAppliedRate)
+		assert.NotContains(child.metrics, keyRulesSamplerLimiterRate)
+	})
 }

@@ -28,7 +28,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/internal/tracerstats"
-	maininternal "github.com/DataDog/dd-trace-go/v2/internal"
+	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/statsdtest"
@@ -70,7 +70,7 @@ var (
 )
 
 func TestMain(m *testing.M) {
-	if maininternal.BoolEnv("DD_APPSEC_ENABLED", false) {
+	if internal.BoolEnv("DD_APPSEC_ENABLED", false) {
 		// things are slower with AppSec; double wait times
 		timeMultiplicator = time.Duration(2)
 	}
@@ -175,8 +175,20 @@ func TestTracerStart(t *testing.T) {
 		}
 	})
 
-	t.Run("tracing_not_enabled", func(t *testing.T) {
+	t.Run("dd_tracing_not_enabled", func(t *testing.T) {
 		t.Setenv("DD_TRACE_ENABLED", "false")
+		Start()
+		defer Stop()
+		if _, ok := GetGlobalTracer().(*tracer); ok {
+			t.Fail()
+		}
+		if _, ok := GetGlobalTracer().(*NoopTracer); !ok {
+			t.Fail()
+		}
+	})
+
+	t.Run("otel_tracing_not_enabled", func(t *testing.T) {
+		t.Setenv("OTEL_TRACES_EXPORTER", "none")
 		Start()
 		defer Stop()
 		if _, ok := GetGlobalTracer().(*tracer); ok {
@@ -330,6 +342,11 @@ func TestSamplingDecision(t *testing.T) {
 	t.Run("sampled", func(t *testing.T) {
 		tracer, _, _, stop, err := startTestTracer(t)
 		assert.Nil(t, err)
+		defer func() {
+			// Must check these after tracer is stopped to avoid flakiness
+			assert.Equal(t, uint32(0), tracerstats.Count(tracerstats.DroppedP0Traces))
+			assert.Equal(t, uint32(2), tracerstats.Count(tracerstats.DroppedP0Spans))
+		}()
 		defer stop()
 		tracer.prioritySampling.defaultRate = 0
 		tracer.config.serviceName = "test_service"
@@ -347,6 +364,11 @@ func TestSamplingDecision(t *testing.T) {
 		// client-side stats are also enabled.
 		tracer, _, _, stop, err := startTestTracer(t)
 		assert.Nil(t, err)
+		defer func() {
+			// Must check these after tracer is stopped to avoid flakiness
+			assert.Equal(t, uint32(0), tracerstats.Count(tracerstats.DroppedP0Traces))
+			assert.Equal(t, uint32(2), tracerstats.Count(tracerstats.DroppedP0Spans))
+		}()
 		defer stop()
 		tracer.config.agent.DropP0s = true
 		tracer.prioritySampling.defaultRate = 0
@@ -363,6 +385,11 @@ func TestSamplingDecision(t *testing.T) {
 	t.Run("dropped_stats", func(t *testing.T) {
 		tracer, _, _, stop, err := startTestTracer(t)
 		assert.Nil(t, err)
+		defer func() {
+			// Must check these after tracer is stopped to avoid flakiness
+			assert.Equal(t, uint32(1), tracerstats.Count(tracerstats.DroppedP0Traces))
+			assert.Equal(t, uint32(2), tracerstats.Count(tracerstats.DroppedP0Spans))
+		}()
 		defer stop()
 		tracer.config.featureFlags = make(map[string]struct{})
 		tracer.config.featureFlags["discovery"] = struct{}{}
@@ -382,6 +409,11 @@ func TestSamplingDecision(t *testing.T) {
 	t.Run("events_sampled", func(t *testing.T) {
 		tracer, _, _, stop, err := startTestTracer(t)
 		assert.Nil(t, err)
+		defer func() {
+			// Must check these after tracer is stopped to avoid flakiness
+			assert.Equal(t, uint32(0), tracerstats.Count(tracerstats.DroppedP0Traces))
+			assert.Equal(t, uint32(2), tracerstats.Count(tracerstats.DroppedP0Spans))
+		}()
 		defer stop()
 		tracer.config.agent.DropP0s = true
 		tracer.prioritySampling.defaultRate = 0
@@ -515,6 +547,11 @@ func TestSamplingDecision(t *testing.T) {
 		// The trace should be kept. No single spans extracted.
 		tracer, _, _, stop, err := startTestTracer(t)
 		assert.Nil(t, err)
+		defer func() {
+			// Must check these after tracer is stopped to avoid flakiness
+			assert.Equal(t, uint32(0), tracerstats.Count(tracerstats.DroppedP0Traces))
+			assert.Equal(t, uint32(0), tracerstats.Count(tracerstats.DroppedP0Spans))
+		}()
 		defer stop()
 		tracer.config.agent.DropP0s = true
 		tracer.config.featureFlags = make(map[string]struct{})
@@ -575,6 +612,7 @@ func TestSamplingDecision(t *testing.T) {
 		}
 		assert.Equal(t, 50, singleSpans)
 		assert.InDelta(t, 0.8, float64(keptSpans)/float64(len(spans)), 0.19)
+		assert.Equal(t, uint32(0), tracerstats.Count(tracerstats.DroppedP0Traces))
 	})
 
 	t.Run("single_spans_without_max_per_second:rate_1.0", func(t *testing.T) {
@@ -610,6 +648,7 @@ func TestSamplingDecision(t *testing.T) {
 		}
 		assert.Equal(t, 1000, keptSpans+singleSpans)
 		assert.InDelta(t, 0.8, float64(keptSpans)/float64(1000), 0.15)
+		assert.Equal(t, uint32(0), tracerstats.Count(tracerstats.DroppedP0Traces))
 	})
 
 	t.Run("single_spans_without_max_per_second:rate_0.5", func(t *testing.T) {
@@ -647,6 +686,7 @@ func TestSamplingDecision(t *testing.T) {
 		}
 		assert.InDelta(t, 0.5, float64(singleSpans)/(float64(900-keptChildren)), 0.15)
 		assert.InDelta(t, 0.8, float64(keptTotal)/1000, 0.15)
+		assert.Equal(t, uint32(0), tracerstats.Count(tracerstats.DroppedP0Traces))
 	})
 }
 
@@ -660,7 +700,7 @@ func TestTracerRuntimeMetrics(t *testing.T) {
 		assert.Contains(t, tp.Logs()[0], "DEBUG: Runtime metrics enabled")
 	})
 
-	t.Run("env", func(t *testing.T) {
+	t.Run("dd-env", func(t *testing.T) {
 		t.Setenv("DD_RUNTIME_METRICS_ENABLED", "true")
 		tp := new(log.RecordLogger)
 		tp.Ignore("appsec: ", telemetry.LogPrefix)
@@ -670,14 +710,25 @@ func TestTracerRuntimeMetrics(t *testing.T) {
 		assert.Contains(t, tp.Logs()[0], "DEBUG: Runtime metrics enabled")
 	})
 
-	t.Run("overrideEnv", func(t *testing.T) {
-		t.Setenv("DD_RUNTIME_METRICS_ENABLED", "false")
-		tp := new(log.RecordLogger)
-		tp.Ignore("appsec: ", telemetry.LogPrefix)
-		tracer, err := newTracer(WithRuntimeMetrics(), WithLogger(tp), WithDebugMode(true))
-		defer tracer.Stop()
+	t.Run("otel-env", func(t *testing.T) {
+		t.Setenv("OTEL_METRICS_EXPORTER", "none")
+		c, err := newConfig()
 		assert.NoError(t, err)
-		assert.Contains(t, tp.Logs()[0], "DEBUG: Runtime metrics enabled")
+		assert.False(t, c.runtimeMetrics)
+	})
+
+	t.Run("override-chain", func(t *testing.T) {
+		// dd env overrides otel env
+		t.Setenv("OTEL_METRICS_EXPORTER", "none")
+		t.Setenv("DD_RUNTIME_METRICS_ENABLED", "true")
+		c, err := newConfig()
+		assert.NoError(t, err)
+		assert.True(t, c.runtimeMetrics)
+		// tracer option overrides dd env
+		t.Setenv("DD_RUNTIME_METRICS_ENABLED", "false")
+		c, err = newConfig(WithRuntimeMetrics())
+		assert.NoError(t, err)
+		assert.True(t, c.runtimeMetrics)
 	})
 }
 
@@ -1872,114 +1923,112 @@ func TestEnvironment(t *testing.T) {
 }
 
 func TestGitMetadata(t *testing.T) {
-	maininternal.ResetGitMetadataTags()
-
 	t.Run("git-metadata-from-dd-tags", func(t *testing.T) {
-		t.Setenv(maininternal.EnvDDTags, "git.commit.sha:123456789ABCD git.repository_url:github.com/user/repo go_path:somepath")
+		t.Setenv(internal.EnvDDTags, "git.commit.sha:123456789ABCD git.repository_url:github.com/user/repo go_path:somepath")
+		internal.RefreshGitMetadataTags()
 
 		tracer, _, _, stop, err := startTestTracer(t)
 		assert.Nil(t, err)
 		defer stop()
-		defer maininternal.ResetGitMetadataTags()
 
 		assert := assert.New(t)
 		sp := tracer.StartSpan("http.request")
 		sp.context.finish()
 
-		assert.Equal("123456789ABCD", sp.meta[maininternal.TraceTagCommitSha])
-		assert.Equal("github.com/user/repo", sp.meta[maininternal.TraceTagRepositoryURL])
-		assert.Equal("somepath", sp.meta[maininternal.TraceTagGoPath])
+		assert.Equal("123456789ABCD", sp.meta[internal.TraceTagCommitSha])
+		assert.Equal("github.com/user/repo", sp.meta[internal.TraceTagRepositoryURL])
+		assert.Equal("somepath", sp.meta[internal.TraceTagGoPath])
 	})
 
 	t.Run("git-metadata-from-dd-tags-with-credentials", func(t *testing.T) {
-		t.Setenv(maininternal.EnvDDTags, "git.commit.sha:123456789ABCD git.repository_url:https://user:passwd@github.com/user/repo go_path:somepath")
+		t.Setenv(internal.EnvDDTags, "git.commit.sha:123456789ABCD git.repository_url:https://user:passwd@github.com/user/repo go_path:somepath")
+		internal.RefreshGitMetadataTags()
 
 		tracer, _, _, stop, err := startTestTracer(t)
 		require.Nil(t, err)
 		defer stop()
-		defer maininternal.ResetGitMetadataTags()
 
 		assert := assert.New(t)
 		sp := tracer.StartSpan("http.request")
 		sp.context.finish()
 
-		assert.Equal("123456789ABCD", sp.meta[maininternal.TraceTagCommitSha])
-		assert.Equal("https://github.com/user/repo", sp.meta[maininternal.TraceTagRepositoryURL])
-		assert.Equal("somepath", sp.meta[maininternal.TraceTagGoPath])
+		assert.Equal("123456789ABCD", sp.meta[internal.TraceTagCommitSha])
+		assert.Equal("https://github.com/user/repo", sp.meta[internal.TraceTagRepositoryURL])
+		assert.Equal("somepath", sp.meta[internal.TraceTagGoPath])
 	})
 
 	t.Run("git-metadata-from-env", func(t *testing.T) {
-		t.Setenv(maininternal.EnvDDTags, "git.commit.sha:123456789ABCD git.repository_url:github.com/user/repo")
+		t.Setenv(internal.EnvDDTags, "git.commit.sha:123456789ABCD git.repository_url:github.com/user/repo")
 
 		// git metadata env has priority over DD_TAGS
-		t.Setenv(maininternal.EnvGitRepositoryURL, "github.com/user/repo_new")
-		t.Setenv(maininternal.EnvGitCommitSha, "123456789ABCDE")
+		t.Setenv(internal.EnvGitRepositoryURL, "github.com/user/repo_new")
+		t.Setenv(internal.EnvGitCommitSha, "123456789ABCDE")
+		internal.RefreshGitMetadataTags()
 
 		tracer, _, _, stop, err := startTestTracer(t)
 		assert.Nil(t, err)
 		defer stop()
-		defer maininternal.ResetGitMetadataTags()
 
 		assert := assert.New(t)
 		sp := tracer.StartSpan("http.request")
 		sp.context.finish()
 
-		assert.Equal("123456789ABCDE", sp.meta[maininternal.TraceTagCommitSha])
-		assert.Equal("github.com/user/repo_new", sp.meta[maininternal.TraceTagRepositoryURL])
+		assert.Equal("123456789ABCDE", sp.meta[internal.TraceTagCommitSha])
+		assert.Equal("github.com/user/repo_new", sp.meta[internal.TraceTagRepositoryURL])
 	})
 
 	t.Run("git-metadata-from-env-with-credentials", func(t *testing.T) {
-		t.Setenv(maininternal.EnvGitRepositoryURL, "https://u:t@github.com/user/repo_new")
-		t.Setenv(maininternal.EnvGitCommitSha, "123456789ABCDE")
+		t.Setenv(internal.EnvGitRepositoryURL, "https://u:t@github.com/user/repo_new")
+		t.Setenv(internal.EnvGitCommitSha, "123456789ABCDE")
+		internal.RefreshGitMetadataTags()
 
 		tracer, _, _, stop, err := startTestTracer(t)
 		require.Nil(t, err)
 		defer stop()
-		defer maininternal.ResetGitMetadataTags()
 
 		assert := assert.New(t)
 		sp := tracer.StartSpan("http.request")
 		sp.context.finish()
 
-		assert.Equal("123456789ABCDE", sp.meta[maininternal.TraceTagCommitSha])
-		assert.Equal("https://github.com/user/repo_new", sp.meta[maininternal.TraceTagRepositoryURL])
+		assert.Equal("123456789ABCDE", sp.meta[internal.TraceTagCommitSha])
+		assert.Equal("https://github.com/user/repo_new", sp.meta[internal.TraceTagRepositoryURL])
 	})
 
 	t.Run("git-metadata-from-env-and-tags", func(t *testing.T) {
-		t.Setenv(maininternal.EnvDDTags, "git.commit.sha:123456789ABCD")
-		t.Setenv(maininternal.EnvGitRepositoryURL, "github.com/user/repo")
+		t.Setenv(internal.EnvDDTags, "git.commit.sha:123456789ABCD")
+		t.Setenv(internal.EnvGitRepositoryURL, "github.com/user/repo")
+		internal.RefreshGitMetadataTags()
 
 		tracer, _, _, stop, err := startTestTracer(t)
 		assert.Nil(t, err)
 		defer stop()
-		defer maininternal.ResetGitMetadataTags()
 
 		assert := assert.New(t)
 		sp := tracer.StartSpan("http.request")
 		sp.context.finish()
 
-		assert.Equal("123456789ABCD", sp.meta[maininternal.TraceTagCommitSha])
-		assert.Equal("github.com/user/repo", sp.meta[maininternal.TraceTagRepositoryURL])
+		assert.Equal("123456789ABCD", sp.meta[internal.TraceTagCommitSha])
+		assert.Equal("github.com/user/repo", sp.meta[internal.TraceTagRepositoryURL])
 	})
 
 	t.Run("git-metadata-disabled", func(t *testing.T) {
-		t.Setenv(maininternal.EnvGitMetadataEnabledFlag, "false")
+		t.Setenv(internal.EnvGitMetadataEnabledFlag, "false")
 
-		t.Setenv(maininternal.EnvDDTags, "git.commit.sha:123456789ABCD git.repository_url:github.com/user/repo")
-		t.Setenv(maininternal.EnvGitRepositoryURL, "github.com/user/repo_new")
-		t.Setenv(maininternal.EnvGitCommitSha, "123456789ABCDE")
+		t.Setenv(internal.EnvDDTags, "git.commit.sha:123456789ABCD git.repository_url:github.com/user/repo")
+		t.Setenv(internal.EnvGitRepositoryURL, "github.com/user/repo_new")
+		t.Setenv(internal.EnvGitCommitSha, "123456789ABCDE")
+		internal.RefreshGitMetadataTags()
 
 		tracer, _, _, stop, err := startTestTracer(t)
 		assert.Nil(t, err)
 		defer stop()
-		defer maininternal.ResetGitMetadataTags()
 
 		assert := assert.New(t)
 		sp := tracer.StartSpan("http.request")
 		sp.context.finish()
 
-		assert.Equal("", sp.meta[maininternal.TraceTagCommitSha])
-		assert.Equal("", sp.meta[maininternal.TraceTagRepositoryURL])
+		assert.Equal("", sp.meta[internal.TraceTagCommitSha])
+		assert.Equal("", sp.meta[internal.TraceTagRepositoryURL])
 	})
 }
 
@@ -2105,6 +2154,45 @@ func BenchmarkStartSpan(b *testing.B) {
 			b.Fatal("no span")
 		}
 		StartSpan("op", ChildOf(s.Context()))
+	}
+}
+
+func BenchmarkStartSpanConcurrent(b *testing.B) {
+	tracer, _, _, stop, err := startTestTracer(b, WithLogger(log.DiscardLogger{}), WithSampler(NewRateSampler(0)))
+	assert.NoError(b, err)
+	defer stop()
+
+	var wg sync.WaitGroup
+	var wgready sync.WaitGroup
+	start := make(chan struct{})
+	for i := 0; i < 10; i++ {
+		wg.Add(1)
+		wgready.Add(1)
+		go func() {
+			defer wg.Done()
+			root := tracer.StartSpan("pylons.request", ServiceName("pylons"), ResourceName("/"))
+			ctx := ContextWithSpan(context.TODO(), root)
+			wgready.Done()
+			<-start
+			for n := 0; n < b.N; n++ {
+				s, ok := SpanFromContext(ctx)
+				if !ok {
+					b.Fatal("no span")
+				}
+				StartSpan("op", ChildOf(s.Context()))
+			}
+		}()
+	}
+	wgready.Wait()
+	b.ResetTimer()
+	close(start)
+	wg.Wait()
+}
+
+func BenchmarkGenSpanID(b *testing.B) {
+	b.ResetTimer()
+	for n := 0; n < b.N; n++ {
+		generateSpanID(0)
 	}
 }
 

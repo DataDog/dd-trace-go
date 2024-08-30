@@ -8,6 +8,7 @@ package tracer
 import (
 	"context"
 	"fmt"
+	"math"
 	"sync"
 	"testing"
 	"time"
@@ -137,7 +138,7 @@ func TestSpanTracePushOne(t *testing.T) {
 	assert.Nil(err)
 	defer stop()
 
-	traceID := random.Uint64()
+	traceID := randUint64()
 	root := newSpan("name1", "a-service", "a-resource", traceID, traceID, 0)
 	trace := root.context.trace
 
@@ -240,7 +241,7 @@ func TestSpanTracePushNoFinish(t *testing.T) {
 	assert.NotNil(buffer)
 	assert.Len(buffer.spans, 0)
 
-	traceID := random.Uint64()
+	traceID := randUint64()
 	root := newSpan("name1", "a-service", "a-resource", traceID, traceID, 0)
 	root.context.trace = buffer
 
@@ -266,7 +267,7 @@ func TestSpanTracePushSeveral(t *testing.T) {
 	assert.NotNil(buffer)
 	assert.Len(buffer.spans, 0)
 
-	traceID := random.Uint64()
+	traceID := randUint64()
 	root := trc.StartSpan("name1", WithSpanID(traceID))
 	span2 := trc.StartSpan("name2", ChildOf(root.Context()))
 	span3 := trc.StartSpan("name3", ChildOf(root.Context()))
@@ -879,4 +880,56 @@ func TestTraceIDEmpty(t *testing.T) {
 	tid := traceID([16]byte{})
 	tid[15] = 5
 	assert.False(t, tid.Empty())
+}
+
+func TestSpanIDHexEncoded(t *testing.T) {
+	sid := spanIDHexEncoded(5, 16)
+	assert.Equal(t, fmt.Sprintf("%016x", 5), sid)
+
+	sid = spanIDHexEncoded(5, 32)
+	assert.Equal(t, fmt.Sprintf("%032x", 5), sid)
+
+	sid = spanIDHexEncoded(math.MaxInt64, 68)
+	assert.Equal(t, fmt.Sprintf("%068x", math.MaxInt64), sid)
+
+	sid = spanIDHexEncoded(math.MaxInt64, 128)
+	assert.Equal(t, fmt.Sprintf("%0128x", math.MaxInt64), sid)
+
+	sid = spanIDHexEncoded(math.MaxUint64, -16)
+	assert.Equal(t, "ffffffffffffffff", sid)
+	assert.Equal(t, spanIDHexEncoded(math.MaxUint64, 0), sid)
+	assert.Equal(t, spanIDHexEncoded(math.MaxUint64, 16), sid)
+}
+
+func BenchmarkSpanIDHexEncoded(b *testing.B) {
+	for n := 0; n < b.N; n++ {
+		_ = spanIDHexEncoded(32, 16)
+	}
+}
+
+func BenchmarkSpanIDSprintf(b *testing.B) {
+	for n := 0; n < b.N; n++ {
+		_ = fmt.Sprintf("%016x", 32)
+	}
+}
+
+func FuzzSpanIDHexEncoded(f *testing.F) {
+	f.Add(-99, uint64(0))
+	f.Add(16, uint64(1))
+	f.Add(32, uint64(16))
+	f.Add(0, uint64(math.MaxUint64))
+	f.Fuzz(func(t *testing.T, p int, v uint64) {
+		// We don't support negative padding nor right-padding.
+		if p < 0 {
+			return
+		}
+		expected := fmt.Sprintf(
+			fmt.Sprintf("%%0%dx", p),
+			v,
+		)
+		actual := spanIDHexEncoded(v, p)
+		if actual != expected {
+			t.Fatalf("expected %s, got %s", expected, actual)
+		}
+	})
 }

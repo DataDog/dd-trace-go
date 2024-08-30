@@ -42,7 +42,7 @@ jobs:
       #   uses: reviewdog/action-golangci-lint@v2
       #   with:
       #     go_version: ${{ inputs.go-version }}
-      #     golangci_lint_version: v1.52.2
+      #     golangci_lint_version: v1.59.1
       #     fail_on_error: true
       #     reporter: github-pr-review
 
@@ -83,9 +83,12 @@ jobs:
           DD_POOL_TRACE_CHECK_FAILURES: true
           DD_DISABLE_ERROR_RESPONSES: true
       cassandra:
-        image: cassandra:3.7
+        image: cassandra:3.11
         env:
           JVM_OPTS: "-Xms750m -Xmx750m"
+          CASSANDRA_CLUSTER_NAME: "dd-trace-go-test-cluster"
+          CASSANDRA_DC: "dd-trace-go-test-datacenter"
+          CASSANDRA_ENDPOINT_SNITCH: "GossipingPropertyFileSnitch"
         ports:
           - 9042:9042
       mysql:
@@ -286,6 +289,8 @@ jobs:
             mkdir -p $TEST_RESULTS
             PACKAGE_NAMES=$(go list ./... | grep -v /contrib/)
             gotestsum --junitfile ${TEST_RESULTS}/gotestsum-report.xml -- $PACKAGE_NAMES -v -race -coverprofile=coverage.txt -covermode=atomic
+            cd ./internal/exectracetest
+            gotestsum --junitfile ${TEST_RESULTS}/gotestsum-report-exectrace.xml -- -v -race -coverprofile=coverage.txt -covermode=atomic
 
       - name: Upload the results to Datadog CI App
         if: always()
@@ -293,7 +298,7 @@ jobs:
         uses: ./.github/actions/dd-ci-upload
         with:
           dd-api-key: ${{ secrets.DD_CI_API_KEY }}
-          files: ${{ env.TEST_RESULTS }}/gotestsum-report.xml
+          files: ${{ env.TEST_RESULTS }}/gotestsum-report.xml ${{ env.TEST_RESULTS }}/gotestsum-report-exectrace.xml
           tags: go:${{ inputs.go-version }}},arch:${{ runner.arch }},os:${{ runner.os }},distribution:${{ runner.distribution }}
       - name: Upload Coverage
         if: always()

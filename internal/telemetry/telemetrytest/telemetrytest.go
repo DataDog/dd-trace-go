@@ -27,7 +27,7 @@ type MockClient struct {
 	Metrics         map[telemetry.Namespace]map[string]float64
 }
 
-func (c *MockClient) RegisterAppConfig(name string, val interface{}, origin string) {
+func (c *MockClient) RegisterAppConfig(name string, val interface{}, origin telemetry.Origin) {
 	_ = c.Called(name, val, origin)
 }
 

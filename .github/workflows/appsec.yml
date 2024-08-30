@@ -93,11 +93,11 @@ jobs:
 
   macos:
     name: ${{ matrix.runs-on }} go${{ matrix.go-version }}
-    runs-on: macos-11 # oldest macos runner available - the full macOS matrix is in go-libddwaf
+    runs-on: ${{ matrix.runs-on }}
     needs: go-mod-caching
     strategy:
       matrix:
-        runs-on: [ macos-11, macos-14 ] # oldest and newest macos runners available - macos-14 mainly is here to cover the fact it is an ARM machine
+        runs-on: [ macos-12, macos-14 ] # oldest and newest macos runners available - macos-14 mainly is here to cover the fact it is an ARM machine
         go-version: [ "1.23", "1.22" ]
       fail-fast: true # saving some CI time - macos runners too long to get
     steps:
@@ -129,9 +129,6 @@ jobs:
         run: |
           set -euxo pipefail
           cgocheck="GOEXPERIMENT=cgocheck2"
-          if [[ "$(go version)" =~ go1.20 ]]; then
-            cgocheck="GODEBUG=cgocheck=2"
-          fi
           for cgo in "0" "1"; do
             for appsec_enabled_env in "" "DD_APPSEC_ENABLED=true" "DD_APPSEC_ENABLED=false"; do
                 for cgocheck_env in "" "$cgocheck"; do
@@ -212,13 +209,8 @@ jobs:
     strategy:
       matrix:
         go-version: [ "1.23", "1.22" ]
-        distribution: [ bookworm, bullseye, buster, alpine ]
+        distribution: [ bookworm, bullseye, alpine ]
         platform: [ linux/amd64, linux/arm64 ]
-        exclude:
-          - go-version: "1.21"
-            distribution: buster
-          - go-version: "1.22"
-            distribution: buster
 
       fail-fast: false
     steps:
@@ -326,6 +318,7 @@ jobs:
   # TODO(darccio): revert to use main on release
   test-app-smoke-tests:
     name: Smoke Tests
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.owner == 'DataDog'
     uses: DataDog/appsec-go-test-app/.github/workflows/smoke-tests.yml@dario.castane/AIT-3705/dd-trace-go.v2
     with:
       dd-trace-go-version: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || '' }}

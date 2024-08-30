@@ -19,6 +19,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/DataDog/dd-trace-go/v2/appsec/events"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
@@ -195,7 +196,7 @@ func TestRoundTripperNetworkError(t *testing.T) {
 }
 
 func TestRoundTripperNetworkErrorWithErrorCheck(t *testing.T) {
-	failedRequest := func(t *testing.T, mt mocktracer.Tracer, forwardErr bool, opts ...Option) *mocktracer.Span {
+	failedRequest := func(t *testing.T, mt mocktracer.Tracer, forwardErr bool, _ ...Option) *mocktracer.Span {
 		done := make(chan struct{})
 		s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			_, err := tracer.Extract(tracer.HTTPHeadersCarrier(r.Header))
@@ -564,4 +565,78 @@ func TestRoundTripperPropagation(t *testing.T) {
 	resp, err := client.Get(s.URL + "/hello/world")
 	assert.Nil(t, err)
 	defer resp.Body.Close()
+}
+
+type emptyRoundTripper struct{}
+
+func (rt *emptyRoundTripper) RoundTrip(_ *http.Request) (*http.Response, error) {
+	recorder := httptest.NewRecorder()
+	recorder.WriteHeader(200)
+	return recorder.Result(), nil
+}
+
+func TestAppsec(t *testing.T) {
+	t.Setenv("DD_APPSEC_RULES", "../../../internal/appsec/testdata/rasp.json")
+
+	client := WrapRoundTripper(&emptyRoundTripper{})
+
+	for _, enabled := range []bool{true, false} {
+
+		t.Run(strconv.FormatBool(enabled), func(t *testing.T) {
+			t.Setenv("DD_APPSEC_RASP_ENABLED", strconv.FormatBool(enabled))
+
+			mt := mocktracer.Start()
+			defer mt.Stop()
+
+			testutils.StartAppSec(t)
+			if !instr.AppSecEnabled() {
+				t.Skip("appsec not enabled")
+			}
+
+			w := httptest.NewRecorder()
+			r, err := http.NewRequest("GET", "?value=169.254.169.254", nil)
+			require.NoError(t, err)
+
+			TraceAndServe(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				req, err := http.NewRequest("GET", "http://169.254.169.254", nil)
+				require.NoError(t, err)
+
+				resp, err := client.RoundTrip(req.WithContext(r.Context()))
+
+				if enabled {
+					require.True(t, events.IsSecurityError(err))
+				} else {
+					require.NoError(t, err)
+				}
+
+				if resp != nil {
+					defer resp.Body.Close()
+				}
+			}), w, r, &ServeConfig{
+				Service:  "service",
+				Resource: "resource",
+			})
+
+			spans := mt.FinishedSpans()
+			require.Len(t, spans, 2) // service entry serviceSpan & http request serviceSpan
+			serviceSpan := spans[1]
+
+			if !enabled {
+				require.NotContains(t, serviceSpan.Tags(), "_dd.appsec.json")
+				require.NotContains(t, serviceSpan.Tags(), "_dd.stack")
+				return
+			}
+
+			require.Contains(t, serviceSpan.Tags(), "_dd.appsec.json")
+			appsecJSON := serviceSpan.Tag("_dd.appsec.json")
+			require.Contains(t, appsecJSON, "server.io.net.url")
+
+			require.Contains(t, serviceSpan.Tags(), "_dd.stack")
+			require.NotContains(t, serviceSpan.Tags(), "error.message")
+
+			// This is a nested event so it should contain the child span id in the service entry span
+			// TODO(eliott.bouhana): uncomment this once we have the child span id in the service entry span
+			// require.Contains(t, appsecJSON, `"span_id":`+strconv.FormatUint(requestSpan.SpanID(), 10))
+		})
+	}
 }

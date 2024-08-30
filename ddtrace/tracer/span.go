@@ -27,6 +27,7 @@ import (
 	sharedinternal "github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion"
 	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
 	"github.com/DataDog/dd-trace-go/v2/internal/traceprof"
 
@@ -154,6 +155,9 @@ func (s *Span) SetTag(key string, value interface{}) {
 	if s == nil {
 		return
 	}
+	// To avoid dumping the memory address in case value is a pointer, we dereference it.
+	// Any pointer value that is a pointer to a pointer will be dumped as a string.
+	value = dereference(value)
 	s.Lock()
 	defer s.Unlock()
 	// We don't lock spans when flushing, so we could have a data race when
@@ -556,9 +560,7 @@ func (s *Span) Finish(opts ...FinishOption) {
 			s.Unlock()
 		}
 	}
-	if s.taskEnd != nil {
-		s.taskEnd()
-	}
+
 	if s.goExecTraced && rt.IsEnabled() {
 		// Only tag spans as traced if they both started & ended with
 		// execution tracing enabled. This is technically not sufficient
@@ -576,19 +578,16 @@ func (s *Span) Finish(opts ...FinishOption) {
 		s.SetTag("go_execution_traced", "partial")
 	}
 
-	if tr, ok := GetGlobalTracer().(*tracer); ok && tr.rulesSampling.traces.enabled() {
-		if !s.context.trace.isLocked() && s.context.trace.propagatingTag(keyDecisionMaker) != "-4" {
-			tr.rulesSampling.SampleTrace(s)
+	if s.Root() == s {
+		if tr, ok := GetGlobalTracer().(*tracer); ok && tr.rulesSampling.traces.enabled() {
+			if !s.context.trace.isLocked() && s.context.trace.propagatingTag(keyDecisionMaker) != "-4" {
+				tr.rulesSampling.SampleTrace(s)
+			}
 		}
 	}
 
 	s.finish(t)
-
-	if s.pprofCtxRestore != nil {
-		// Restore the labels of the parent span so any CPU samples after this
-		// point are attributed correctly.
-		pprof.SetGoroutineLabels(s.pprofCtxRestore)
-	}
+	orchestrion.GLSPopValue(sharedinternal.ActiveSpanKey)
 }
 
 // SetOperationName sets or changes the operation name.
@@ -624,6 +623,9 @@ func (s *Span) finish(finishTime int64) {
 	if s.duration < 0 {
 		s.duration = 0
 	}
+	if s.taskEnd != nil {
+		s.taskEnd()
+	}
 
 	keep := true
 	if t := GetGlobalTracer(); t != nil {
@@ -644,6 +646,12 @@ func (s *Span) finish(finishTime int64) {
 			s, s.name, s.resource, s.meta, s.metrics)
 	}
 	s.context.finish()
+
+	if s.pprofCtxRestore != nil {
+		// Restore the labels of the parent span so any CPU samples after this
+		// point are attributed correctly.
+		pprof.SetGoroutineLabels(s.pprofCtxRestore)
+	}
 }
 
 // newAggregableSpan creates a new summary for the span s, within an application
@@ -655,13 +663,21 @@ func newAggregableSpan(s *Span, obfuscator *obfuscate.Obfuscator) *aggregableSpa
 			statusCode = uint32(c)
 		}
 	}
+	var isTraceRoot trilean
+	if s.parentID == 0 {
+		isTraceRoot = trileanTrue
+	} else {
+		isTraceRoot = trileanFalse
+	}
+
 	key := aggregation{
-		Name:       s.name,
-		Resource:   obfuscatedResource(obfuscator, s.spanType, s.resource),
-		Service:    s.service,
-		Type:       s.spanType,
-		Synthetics: strings.HasPrefix(s.meta[keyOrigin], "synthetics"),
-		StatusCode: statusCode,
+		Name:        s.name,
+		Resource:    obfuscatedResource(obfuscator, s.spanType, s.resource),
+		Service:     s.service,
+		Type:        s.spanType,
+		Synthetics:  strings.HasPrefix(s.meta[keyOrigin], "synthetics"),
+		StatusCode:  statusCode,
+		IsTraceRoot: isTraceRoot,
 	}
 	return &aggregableSpan{
 		key:      key,
@@ -792,7 +808,7 @@ func (s *Span) Format(f fmt.State, c rune) {
 		fmt.Fprintf(f, `dd.span_id="%d" `, s.spanID)
 		fmt.Fprintf(f, `dd.parent_id="%d"`, s.parentID)
 	default:
-		fmt.Fprintf(f, "%%!%c(ddtrace.Span=%v)", c, s)
+		fmt.Fprintf(f, "%%!%c(tracer.Span=%v)", c, s)
 	}
 }
 

@@ -18,10 +18,11 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 
-	"github.com/golang/protobuf/proto"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/runtime/protoimpl"
 )
 
 const componentName = "google.golang.org/grpc"
@@ -86,7 +87,8 @@ func finishWithError(span *tracer.Span, err error, cfg *config) {
 	if e, ok := status.FromError(err); ok && cfg.withErrorDetailTags {
 		for i, d := range e.Details() {
 			if d, ok := d.(proto.Message); ok {
-				span.SetTag(tagStatusDetailsPrefix+fmt.Sprintf("_%d", i), d.String())
+				s := protoimpl.X.MessageStringOf(d)
+				span.SetTag(tagStatusDetailsPrefix+fmt.Sprintf("_%d", i), s)
 			}
 		}
 	}

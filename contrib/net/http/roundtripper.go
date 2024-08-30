@@ -12,6 +12,9 @@ import (
 	"os"
 	"strconv"
 
+	"github.com/DataDog/dd-trace-go/v2/appsec/events"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/httpsec"
+
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 )
@@ -56,7 +59,7 @@ func (rt *roundTripper) RoundTrip(req *http.Request) (res *http.Response, err er
 		if rt.cfg.after != nil {
 			rt.cfg.after(res, span)
 		}
-		if rt.cfg.errCheck == nil || rt.cfg.errCheck(err) {
+		if !events.IsSecurityError(err) && (rt.cfg.errCheck == nil || rt.cfg.errCheck(err)) {
 			span.Finish(tracer.WithError(err))
 		} else {
 			span.Finish()
@@ -74,7 +77,15 @@ func (rt *roundTripper) RoundTrip(req *http.Request) (res *http.Response, err er
 			fmt.Fprintf(os.Stderr, "contrib/net/http.Roundtrip: failed to inject http headers: %v\n", err)
 		}
 	}
+
+	if instr.AppSecRASPEnabled() {
+		if err := httpsec.ProtectRoundTrip(ctx, r2.URL.String()); err != nil {
+			return nil, err
+		}
+	}
+
 	res, err = rt.base.RoundTrip(r2)
+
 	if err != nil {
 		span.SetTag("http.errors", err.Error())
 		if rt.cfg.errCheck == nil || rt.cfg.errCheck(err) {

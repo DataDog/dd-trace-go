@@ -27,6 +27,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+const otelHeaderPropagationStyle = "OTEL_PROPAGATORS"
+
 func traceIDFrom64Bits(i uint64) traceID {
 	t := traceID{}
 	t.SetLower(i)
@@ -109,6 +111,7 @@ func TestTextMapExtractTracestatePropagation(t *testing.T) {
 		name, propagationStyle, traceparent string
 		onlyExtractFirst                    bool // value of DD_TRACE_PROPAGATION_EXTRACT_FIRST
 		wantTracestatePropagation           bool
+		conflictingParentID                 bool
 	}{
 		{
 			/*
@@ -129,6 +132,7 @@ func TestTextMapExtractTracestatePropagation(t *testing.T) {
 			propagationStyle:          "datadog,b3,tracecontext",
 			traceparent:               "00-00000000000000000000000000000004-2222222222222222-01",
 			wantTracestatePropagation: true,
+			conflictingParentID:       true,
 		},
 		{
 			/*
@@ -139,6 +143,7 @@ func TestTextMapExtractTracestatePropagation(t *testing.T) {
 			propagationStyle:          "datadog,tracecontext",
 			traceparent:               "00-00000000000000000000000000000004-2222222222222222-01",
 			wantTracestatePropagation: true,
+			conflictingParentID:       true,
 		},
 		{
 			/*
@@ -196,16 +201,22 @@ func TestTextMapExtractTracestatePropagation(t *testing.T) {
 				originHeader:          "synthetics",
 				b3TraceIDHeader:       "0021dc1807524785",
 				traceparentHeader:     tc.traceparent,
-				tracestateHeader:      "dd=s:2;o:rum;p:0000000000000005;t.tid:1230000000000000~~,othervendor=t61rcWkgMzE",
+				tracestateHeader:      "dd=s:2;o:rum;p:0000000000000001;t.tid:1230000000000000~~,othervendor=t61rcWkgMzE",
 			})
 
 			sctx, err := tracer.Extract(headers)
 			assert.Nil(err)
 			assert.Equal("00000000000000000000000000000004", sctx.traceID.HexEncoded())
-			assert.Equal(uint64(1), sctx.spanID)    // should use x-datadog-parent-id, not the id in the tracestate
+			if tc.conflictingParentID == true {
+				// tracecontext span id should be used
+				assert.Equal(uint64(0x2222222222222222), sctx.spanID)
+			} else {
+				// should use x-datadog-parent-id, not the id in the tracestate
+				assert.Equal(uint64(1), sctx.spanID)
+			}
 			assert.Equal("synthetics", sctx.origin) // should use x-datadog-origin, not the origin in the tracestate
 			if tc.wantTracestatePropagation {
-				assert.Equal("0000000000000005", sctx.reparentID)
+				assert.Equal("0000000000000001", sctx.reparentID)
 				assert.Equal("dd=s:0;o:synthetics;p:0000000000000001,othervendor=t61rcWkgMzE", sctx.trace.propagatingTag(tracestateHeader))
 			} else if sctx.trace != nil {
 				assert.False(sctx.trace.hasPropagatingTag(tracestateHeader))
@@ -594,6 +605,7 @@ func TestEnvVars(t *testing.T) {
 			{headerPropagationStyleInject: "b3"},
 			{headerPropagationStyleInjectDeprecated: "b3,none" /* none should have no affect */},
 			{headerPropagationStyle: "b3"},
+			{otelHeaderPropagationStyle: "b3multi"},
 			{headerPropagationStyleInject: "b3multi", headerPropagationStyleInjectDeprecated: "none" /* none should have no affect */},
 			{headerPropagationStyleInject: "b3multi", headerPropagationStyle: "none" /* none should have no affect */},
 		}
@@ -665,6 +677,7 @@ func TestEnvVars(t *testing.T) {
 			{headerPropagationStyleExtract: "b3"},
 			{headerPropagationStyleExtractDeprecated: "b3"},
 			{headerPropagationStyle: "b3,none" /* none should have no affect */},
+			{otelHeaderPropagationStyle: "b3multi"},
 			{headerPropagationStyleExtract: "b3multi", headerPropagationStyleExtractDeprecated: "none" /* none should have no affect */},
 			{headerPropagationStyleExtract: "b3multi", headerPropagationStyle: "none" /* none should have no affect */},
 		}
@@ -730,6 +743,7 @@ func TestEnvVars(t *testing.T) {
 			{headerPropagationStyleExtract: "b3"},
 			{headerPropagationStyleExtractDeprecated: "b3"},
 			{headerPropagationStyle: "b3,none" /* none should have no affect */},
+			{otelHeaderPropagationStyle: "b3multi"},
 			{headerPropagationStyleExtract: "b3multi", headerPropagationStyleExtractDeprecated: "none" /* none should have no affect */},
 			{headerPropagationStyleExtract: "b3multi", headerPropagationStyle: "none" /* none should have no affect */},
 		}
@@ -765,6 +779,7 @@ func TestEnvVars(t *testing.T) {
 			{headerPropagationStyleExtract: "B3 single header"},
 			{headerPropagationStyleExtractDeprecated: "B3 single header"},
 			{headerPropagationStyle: "B3 single header,none" /* none should have no affect */},
+			{otelHeaderPropagationStyle: "b3"},
 		}
 		for _, testEnv := range testEnvs {
 			for k, v := range testEnv {
@@ -863,6 +878,7 @@ func TestEnvVars(t *testing.T) {
 			{headerPropagationStyleInject: "datadog"},
 			{headerPropagationStyleInjectDeprecated: "datadog,none" /* none should have no affect */},
 			{headerPropagationStyle: "datadog"},
+			{otelHeaderPropagationStyle: "datadog"},
 			{headerPropagationStyleInject: "datadog", headerPropagationStyleInjectDeprecated: "none" /* none should have no affect */},
 			{headerPropagationStyleInject: "datadog", headerPropagationStyle: "none" /* none should have no affect */},
 		}
@@ -924,6 +940,7 @@ func TestEnvVars(t *testing.T) {
 			{headerPropagationStyleExtractDeprecated: "Datadog,b3multi"},
 			{headerPropagationStyle: "Datadog,b3"},
 			{headerPropagationStyle: "none,Datadog,b3" /* none should have no affect */},
+			{otelHeaderPropagationStyle: "Datadog,b3multi"},
 		}
 		for _, testEnv := range testEnvs {
 			for k, v := range testEnv {
@@ -998,6 +1015,7 @@ func TestEnvVars(t *testing.T) {
 			{headerPropagationStyleInjectDeprecated: "datadog", headerPropagationStyleExtractDeprecated: "datadog"},
 			{headerPropagationStyleInject: "datadog", headerPropagationStyle: "datadog"},
 			{headerPropagationStyle: "datadog"},
+			{otelHeaderPropagationStyle: "datadog"},
 		}
 		for _, testEnv := range testEnvs {
 			for k, v := range testEnv {
@@ -1063,6 +1081,7 @@ func TestEnvVars(t *testing.T) {
 			{headerPropagationStyleExtract: "traceContext"},
 			{headerPropagationStyleExtractDeprecated: "traceContext,none" /* none should have no affect */},
 			{headerPropagationStyle: "traceContext"},
+			{otelHeaderPropagationStyle: "traceContext"},
 			{headerPropagationStyleExtract: "traceContext", headerPropagationStyleExtractDeprecated: "none" /* none should have no affect */},
 			{headerPropagationStyleExtract: "traceContext", headerPropagationStyle: "none" /* none should have no affect */},
 		}
@@ -1312,6 +1331,7 @@ func TestEnvVars(t *testing.T) {
 			{headerPropagationStyleExtract: "traceContext"},
 			{headerPropagationStyleExtractDeprecated: "traceContext,none" /* none should have no affect */},
 			{headerPropagationStyle: "traceContext"},
+			{otelHeaderPropagationStyle: "traceContext"},
 		}
 		for _, testEnv := range testEnvs {
 			for k, v := range testEnv {
@@ -1329,7 +1349,7 @@ func TestEnvVars(t *testing.T) {
 				{
 					inHeaders: TextMapCarrier{
 						traceparentHeader: "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-00",
-						tracestateHeader:  "foo=1,dd=s:-1",
+						tracestateHeader:  "foo=1,dd=s:-1;p:00f067aa0ba902b7",
 					},
 					outHeaders: TextMapCarrier{
 						traceparentHeader:     "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-00",
@@ -1386,6 +1406,7 @@ func TestEnvVars(t *testing.T) {
 			{headerPropagationStyleInjectDeprecated: "tracecontext", headerPropagationStyleExtractDeprecated: "tracecontext"},
 			{headerPropagationStyleInject: "datadog,tracecontext", headerPropagationStyle: "datadog,tracecontext"},
 			{headerPropagationStyle: "datadog,tracecontext"},
+			{otelHeaderPropagationStyle: "datadog,traceContext"},
 		}
 		for _, testEnv := range testEnvs {
 			for k, v := range testEnv {
@@ -1714,7 +1735,7 @@ func TestEnvVars(t *testing.T) {
 					},
 					out:        []uint64{8687463697196027922, 1311768467284833366},
 					priority:   1,
-					lastParent: "0000000000000000",
+					lastParent: "",
 				},
 			}
 			for i, tc := range tests {
@@ -1796,7 +1817,13 @@ func TestEnvVars(t *testing.T) {
 					if tc.priority != 0 {
 						sctx.setSamplingPriority(int(tc.priority), samplernames.Unknown)
 					}
-					assert.Equal(s.meta["_dd.parent_id"], tc.lastParent)
+
+					if tc.lastParent == "" {
+						assert.Empty(s.meta["_dd.parent_id"])
+					} else {
+						assert.Equal(s.meta["_dd.parent_id"], tc.lastParent)
+					}
+
 					assert.Equal(true, sctx.updated)
 
 					headers := TextMapCarrier(map[string]string{})
@@ -1883,6 +1910,27 @@ func checkSameElements(assert *assert.Assertions, want, got string) {
 	gotInner, wantInner := strings.TrimPrefix(got, "dd="), strings.TrimPrefix(want, "dd=")
 	gotInnerList, wantInnerList := strings.Split(gotInner, ";"), strings.Split(wantInner, ";")
 	assert.ElementsMatch(gotInnerList, wantInnerList)
+}
+
+func TestTraceContextPrecedence(t *testing.T) {
+	t.Setenv(headerPropagationStyleExtract, "datadog,b3,tracecontext")
+	tracer, err := newTracer()
+	assert.NoError(t, err)
+	defer tracer.Stop()
+	sctx, err := tracer.Extract(TextMapCarrier{
+		traceparentHeader:     "00-00000000000000000000000000000001-0000000000000001-01",
+		DefaultTraceIDHeader:  "1",
+		DefaultParentIDHeader: "22",
+		DefaultPriorityHeader: "2",
+		b3SingleHeader:        "1-333",
+	})
+	assert.NoError(t, err)
+
+	assert := assert.New(t)
+	assert.Equal(traceIDFrom64Bits(1), sctx.traceID)
+	assert.Equal(uint64(0x1), sctx.spanID)
+	p, _ := sctx.SamplingPriority()
+	assert.Equal(2, p)
 }
 
 func TestW3CExtractsBaggage(t *testing.T) {
@@ -1993,6 +2041,27 @@ func TestNonePropagator(t *testing.T) {
 			assert.Equal(err, ErrSpanContextNotFound)
 		})
 		t.Run("", func(t *testing.T) {
+			t.Setenv(otelHeaderPropagationStyle, "NoNe")
+			tracer, err := newTracer()
+			assert.NoError(t, err)
+			defer tracer.Stop()
+			root := tracer.StartSpan("web.request")
+			root.SetTag(ext.SamplingPriority, -1)
+			root.SetBaggageItem("item", "x")
+			ctx := root.Context()
+			ctx.traceID = traceIDFrom64Bits(1)
+			ctx.spanID = 1
+			headers := TextMapCarrier(map[string]string{})
+			err = tracer.Inject(ctx, headers)
+
+			assert := assert.New(t)
+			assert.Nil(err)
+			assert.Len(headers, 0)
+
+			_, err = tracer.Extract(headers)
+			assert.Equal(err, ErrSpanContextNotFound)
+		})
+		t.Run("", func(t *testing.T) {
 			//"DD_TRACE_PROPAGATION_STYLE_EXTRACT": "NoNe",
 			//	"DD_TRACE_PROPAGATION_STYLE_INJECT": "none",
 			t.Setenv(headerPropagationStyleExtract, "NoNe")
@@ -2021,6 +2090,46 @@ func TestNonePropagator(t *testing.T) {
 
 func assertTraceTags(t *testing.T, expected, actual string) {
 	assert.ElementsMatch(t, strings.Split(expected, ","), strings.Split(actual, ","))
+}
+
+func TestOtelPropagator(t *testing.T) {
+	tests := []struct {
+		env    string
+		result string
+	}{
+		{
+			env:    "tracecontext, b3",
+			result: "tracecontext,b3 single header",
+		},
+		{
+			env:    "b3multi , jaegar , datadog ",
+			result: "b3multi,datadog",
+		},
+		{
+			env:    "none",
+			result: "",
+		},
+		{
+			env:    "nonesense",
+			result: "datadog,tracecontext",
+		},
+		{
+			env:    "jaegar",
+			result: "datadog,tracecontext",
+		},
+	}
+	for _, test := range tests {
+		t.Setenv(otelHeaderPropagationStyle, test.env)
+		t.Run(fmt.Sprintf("inject with %v=%v", otelHeaderPropagationStyle, test.env), func(t *testing.T) {
+			assert := assert.New(t)
+			c, err := newConfig()
+			assert.NoError(err)
+			cp, ok := c.propagator.(*chainedPropagator)
+			assert.True(ok)
+			assert.Equal(test.result, cp.injectorNames)
+			assert.Equal(test.result, cp.extractorsNames)
+		})
+	}
 }
 
 func BenchmarkInjectDatadog(b *testing.B) {
@@ -2147,11 +2256,12 @@ func FuzzComposeTracestate(f *testing.F) {
 		recvCtx := new(SpanContext)
 		recvCtx.trace = newTrace()
 
+		sm := &stringMutator{}
 		tags := map[string]string{key1: val1, key2: val2, key3: val3}
 		totalLen := 0
 		for key, val := range tags {
-			k := "_dd.p." + keyRgx.ReplaceAllString(key, "_")
-			v := valueRgx.ReplaceAllString(val, "_")
+			k := "_dd.p." + sm.Mutate(keyDisallowedFn, key)
+			v := sm.Mutate(valueDisallowedFn, val)
 			if strings.ContainsAny(k, ":;") {
 				t.Skipf("Skipping invalid tags")
 			}
@@ -2309,5 +2419,72 @@ func TestMalformedTID(t *testing.T) {
 		root := tracer.StartSpan("web.request", ChildOf(sctx))
 		root.Finish()
 		assert.Equal("640cfd8d00000000", root.meta[keyTraceID128])
+	})
+}
+
+func BenchmarkComposeTracestate(b *testing.B) {
+	ctx := new(SpanContext)
+	ctx.trace = newTrace()
+	ctx.origin = "synthetics"
+	ctx.trace.setPropagatingTag("_dd.p.keyOne", "json")
+	ctx.trace.setPropagatingTag("_dd.p.KeyTwo", "123123")
+	ctx.trace.setPropagatingTag("_dd.p.table", "chair")
+	ctx.isRemote = false
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		composeTracestate(ctx, 1, "s:-2;o:synthetics___web")
+	}
+}
+
+func TestStringMutator(t *testing.T) {
+	sm := &stringMutator{}
+	rx := regexp.MustCompile(",|~|;|[^\\x21-\\x7E]+")
+	tc := []struct {
+		name  string
+		input string
+	}{
+		{
+			name:  "empty",
+			input: "",
+		},
+		{
+			name:  "no special characters",
+			input: "abcdef",
+		},
+		{
+			name:  "special characters",
+			input: "a,b;c~~~~d;",
+		},
+		{
+			name:  "special characters and non-ascii",
+			input: "a,b👍👍👍;c~d👍;",
+		},
+	}
+	for _, tt := range tc {
+		t.Run(tt.name, func(t *testing.T) {
+			expected := rx.ReplaceAllString(tt.input, "_")
+			actual := sm.Mutate(originDisallowedFn, tt.input)
+			assert.Equal(t, expected, actual)
+		})
+	}
+	t.Run("raw string", func(t *testing.T) {
+		expected := "a_b_c____d_~"
+		actual := sm.Mutate(originDisallowedFn, "a,b;c~~~~d;=")
+		assert.Equal(t, expected, actual)
+	})
+}
+
+func FuzzStringMutator(f *testing.F) {
+	rx := regexp.MustCompile(",|~|;|[^\\x21-\\x7E]+")
+	f.Add("a,b;c~~~~d;")
+	f.Add("a,b👍👍👍;c~d👍;")
+	f.Add("=")
+	f.Fuzz(func(t *testing.T, input string) {
+		sm := &stringMutator{}
+		expected := strings.ReplaceAll(rx.ReplaceAllString(input, "_"), "=", "~")
+		actual := sm.Mutate(originDisallowedFn, input)
+		if expected != actual {
+			t.Fatalf("expected: %s, actual: %s", expected, actual)
+		}
 	})
 }

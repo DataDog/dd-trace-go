@@ -67,6 +67,8 @@ const (
 	PackageGraphGophersGraphQLGo   Package = "graph-gophers/graphql-go"
 	PackageGormIOGormV1            Package = "gorm.io/gorm.v1"
 	PackageGorillaMux              Package = "gorilla/mux"
+	PackageUptraceBun              Package = "uptrace/bun"
+	PackageLogSlog                 Package = "slog/log"
 )
 
 type Component int
@@ -718,6 +720,18 @@ var packages = map[Package]PackageInfo{
 				buildOpNameV1:      staticName("http.server.request"),
 			},
 		},
+	},
+	PackageUptraceBun: {
+		TracedPackage: "github.com/uptrace/bun",
+		naming: map[Component]componentNames{
+			ComponentDefault: {
+				useDDServiceV0:     false,
+				buildServiceNameV0: staticName("bun.db"),
+			},
+		},
+	},
+	PackageLogSlog: {
+		TracedPackage: "log/slog",
 	},
 }
 

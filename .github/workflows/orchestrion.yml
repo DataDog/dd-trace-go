@@ -1,0 +1,23 @@
+name: Orchestrion
+on:
+  workflow_dispatch: # manually
+  pull_request:
+  merge_group:
+  push:
+    branches:
+      - release-v*
+
+permissions: read-all
+
+concurrency:
+  # Automatically cancel previous runs if a new one is triggered to conserve resources.
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: 'Run Tests'
+    uses: DataDog/orchestrion/.github/workflows/workflow_call.yml@eliott.bouhana/APPSEC-53773 # we don't want to pin our own action
+    with:
+      dd-trace-go-ref: ${{ github.sha }}
+      runs-on: ubuntu-latest-16-cores

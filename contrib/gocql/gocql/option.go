@@ -7,22 +7,27 @@ package gocql
 
 import (
 	"math"
+	"os"
+
+	"golang.org/x/mod/semver"
 
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 )
 
 type queryConfig struct {
-	serviceName, resourceName    string
-	querySpanName, batchSpanName string
-	noDebugStack                 bool
-	analyticsRate                float64
-	errCheck                     func(err error) bool
-	customTags                   map[string]interface{}
+	serviceName, resourceName            string
+	querySpanName, batchSpanName         string
+	noDebugStack                         bool
+	analyticsRate                        float64
+	errCheck                             func(err error) bool
+	customTags                           map[string]interface{}
+	clusterTagLegacyMode                 bool
+	traceQuery, traceBatch, traceConnect bool
 }
 
 // WrapOption describes options for the Cassandra integration.
 type WrapOption interface {
-	apply(config *queryConfig)
+	apply(queryConfig *queryConfig)
 }
 
 // WrapOptionFn represents options applicable to NewCluster, Query.WithWrapOptions and Batch.WithWrapOptions.
@@ -33,13 +38,24 @@ func (fn WrapOptionFn) apply(cfg *queryConfig) {
 }
 
 func defaultConfig() *queryConfig {
-	cfg := &queryConfig{}
+	cfg := &queryConfig{
+		traceQuery:   true,
+		traceBatch:   true,
+		traceConnect: true,
+	}
 	cfg.serviceName = instr.ServiceName(instrumentation.ComponentDefault, nil)
 	cfg.querySpanName = instr.OperationName(instrumentation.ComponentDefault, nil)
 	cfg.batchSpanName = instr.OperationName(instrumentation.ComponentDefault, instrumentation.OperationContext{
 		"operationType": "batch",
 	})
 	cfg.analyticsRate = instr.AnalyticsRate(false)
+	if compatMode := os.Getenv("DD_TRACE_GOCQL_COMPAT"); compatMode != "" {
+		if semver.IsValid(compatMode) {
+			cfg.clusterTagLegacyMode = semver.Compare(semver.MajorMinor(compatMode), "v1.65") <= 0
+		} else {
+			instr.Logger().Warn("ignoring DD_TRACE_GOCQL_COMPAT: invalid version %q", compatMode)
+		}
+	}
 	cfg.errCheck = func(error) bool { return true }
 	return cfg
 }
@@ -124,5 +140,29 @@ func WithCustomTag(key string, value interface{}) WrapOptionFn {
 			cfg.customTags = make(map[string]interface{})
 		}
 		cfg.customTags[key] = value
+	}
+}
+
+// WithTraceQuery will enable tracing for queries (default is true).
+// This option only takes effect in CreateTracedSession and NewObserver.
+func WithTraceQuery(enabled bool) WrapOptionFn {
+	return func(cfg *queryConfig) {
+		cfg.traceQuery = enabled
+	}
+}
+
+// WithTraceBatch will enable tracing for batches (default is true).
+// This option only takes effect in CreateTracedSession and NewObserver.
+func WithTraceBatch(enabled bool) WrapOptionFn {
+	return func(cfg *queryConfig) {
+		cfg.traceBatch = enabled
+	}
+}
+
+// WithTraceConnect will enable tracing for connections (default is true).
+// This option only takes effect in CreateTracedSession and NewObserver.
+func WithTraceConnect(enabled bool) WrapOptionFn {
+	return func(cfg *queryConfig) {
+		cfg.traceConnect = enabled
 	}
 }

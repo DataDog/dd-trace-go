@@ -7,6 +7,7 @@
 package logrus
 
 import (
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 
@@ -33,7 +34,7 @@ func (d *DDContextLogHook) Fire(e *logrus.Entry) error {
 	if !found {
 		return nil
 	}
-	e.Data["dd.trace_id"] = span.Context().TraceID()
-	e.Data["dd.span_id"] = span.Context().SpanID()
+	e.Data[ext.LogKeyTraceID] = span.Context().TraceID()
+	e.Data[ext.LogKeySpanID] = span.Context().SpanID()
 	return nil
 }

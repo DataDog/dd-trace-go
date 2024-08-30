@@ -44,48 +44,9 @@ If you installed more packages than you intended, you can use `go mod tidy` to r
  - [Application Security Monitoring](https://docs.datadoghq.com/security_platform/application_security/setup_and_configure/?code-lang=go)
  - If you are migrating from an older version of the tracer (e.g., 1.60.x) you may also find the [migration document](MIGRATING.md) we've put together helpful.
 
-### Support Policy
+### Go Support Policy
 
-Datadog APM for Go is built upon dependencies defined in specific versions of the host operating system, Go releases, and the Datadog Agent/API. For Go the two latest releases are [GA](#support-ga) supported and the version before that is in [Maintenance](#support-maintenance). We do make efforts to support older releases, but generally these releases are considered [Legacy](#support-legacy). This library only officially supports [first class ports](https://github.com/golang/go/wiki/PortingPolicy#first-class-ports) of Go.
-
-| **Level**                                              | **Support provided**                                                                                                                                                         |
-|--------------------------------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| <span id="support-ga">General Availability (GA)</span> | Full implementation of all features. Full support for new features, bug & security fixes.                                                                                    |
-| <span id="support-maintenance">Maintenance</span>      | Full implementation of existing features. May receive new features. Support for bug & security fixes only.                                                                   |
-| <span id="support-legacy">Legacy</span>                | Legacy implementation. May have limited function, but no maintenance provided. Not guaranteed to compile the latest version of dd-trace-go. [Contact our customer support team for special requests.](https://www.datadoghq.com/support/) |
-
-### Supported Versions
-<!-- NOTE: When updating the below section ensure you update the minimum supported version listed in the public docs here: https://docs.datadoghq.com/tracing/setup_overview/setup/go/?tab=containers#compatibility-requirements -->
-| **Go Version** | **Support level**                   |
-|----------------|-------------------------------------|
-| 1.22           | [GA](#support-ga)                   |
-| 1.21           | [GA](#support-ga)                   |
-| 1.20           | [Maintenance](#support-maintenance) |
-| 1.19           | [Legacy](#support-legacy)           |
-
-* Datadog's Trace Agent >= 5.21.1
-
-
-#### Package Versioning
-
-A **Minor** version change will be released whenever a new version of Go is released. At that time the newest version of Go is added to [GA](#support-ga), the second oldest supported version moved to [Maintenance](#support-maintenance) and the oldest previously supported version dropped to [Legacy](#support-legacy).
-**For example**:
-For a dd-trace-go version 1.37.*
-
-| Go Version | Support                             |
-|------------|-------------------------------------|
-| 1.18       | [GA](#support-ga)                   |
-| 1.17       | [GA](#support-ga)                   |
-| 1.16       | [Maintenance](#support-maintenance) |
-
-Then after Go 1.19 is released there will be a new dd-trace-go version 1.38.0 with support:
-
-| Go Version | Support                             |
-|------------|-------------------------------------|
-| 1.19       | [GA](#support-ga)                   |
-| 1.18       | [GA](#support-ga)                   |
-| 1.17       | [Maintenance](#support-maintenance) |
-| 1.16       | [Legacy](#support-legacy)           |
+Datadog APM for Go is built upon dependencies defined in specific versions of the host operating system, Go releases, and the Datadog Agent/API. dd-trace-go supports the two latest releases of Go, matching the [official Go policy](https://go.dev/doc/devel/release#policy). This library only officially supports [first class ports](https://go.dev/wiki/PortingPolicy) of Go.
 
 ### Contributing
 
@@ -93,8 +54,9 @@ Before considering contributions to the project, please take a moment to read ou
 
 ### Testing
 
-Tests can be run locally using the Go toolset. To run integration tests locally, you should set the `INTEGRATION` environment variable. The dependencies of the integration tests are best run via Docker. To find
-out the versions and the set-up take a look at our [docker-compose config](./docker-compose.yaml).
+Tests can be run locally using the Go toolset.
+
+To run integration tests locally, you should set the `INTEGRATION` environment variable. The dependencies of the integration tests are best run via Docker. To get an idea about the versions and the set-up take a look at our [docker-compose config](./docker-compose.yaml).
 
 The best way to run the entire test suite is using the [test.sh](./test.sh) script. You'll need Docker and docker-compose installed. If this is your first time running the tests, you should run `./test.sh -t` to install any missing test tools/dependencies. Run `./test.sh --all` to run all of the integration tests through the docker-compose environment. Run `./test.sh --help` for more options.
 

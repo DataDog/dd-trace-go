@@ -33,11 +33,11 @@ type target struct {
 }
 
 type libConfig struct {
-	Enabled       *bool             `json:"tracing_enabled,omitempty"`
-	SamplingRate  *float64          `json:"tracing_sampling_rate,omitempty"`
-	SamplingRules *[]rcSamplingRule `json:"tracing_sampling_rules,omitempty"`
-	HeaderTags    *headerTags       `json:"tracing_header_tags,omitempty"`
-	Tags          *tags             `json:"tracing_tags,omitempty"`
+	Enabled            *bool             `json:"tracing_enabled,omitempty"`
+	SamplingRate       *float64          `json:"tracing_sampling_rate,omitempty"`
+	TraceSamplingRules *[]rcSamplingRule `json:"tracing_sampling_rules,omitempty"`
+	HeaderTags         *headerTags       `json:"tracing_header_tags,omitempty"`
+	Tags               *tags             `json:"tracing_tags,omitempty"`
 }
 
 type rcTag struct {
@@ -93,7 +93,6 @@ func convertRemoteSamplingRules(rules *[]rcSamplingRule) *[]SamplingRule {
 				Provenance: rule.Provenance,
 				globRule:   &jsonRule{Name: rule.Name, Service: rule.Service, Resource: rule.Resource},
 			}
-
 			convertedRules = append(convertedRules, x)
 		}
 	}
@@ -220,7 +219,7 @@ func (t *tracer) onRemoteConfigUpdate(u remoteconfig.ProductUpdate) map[string]s
 		if updated {
 			telemConfigs = append(telemConfigs, t.config.traceSampleRate.toTelemetry())
 		}
-		updated = t.config.traceSampleRules.handleRC(convertRemoteSamplingRules(c.LibConfig.SamplingRules))
+		updated = t.config.traceSampleRules.handleRC(convertRemoteSamplingRules(c.LibConfig.TraceSamplingRules))
 		if updated {
 			telemConfigs = append(telemConfigs, t.config.traceSampleRules.toTelemetry())
 		}

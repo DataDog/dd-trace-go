@@ -30,7 +30,7 @@ import (
 // Client buffers and sends telemetry messages to Datadog (possibly through an
 // agent).
 type Client interface {
-	RegisterAppConfig(name string, val interface{}, origin string)
+	RegisterAppConfig(name string, val interface{}, origin Origin)
 	ProductChange(namespace Namespace, enabled bool, configuration []Configuration)
 	ConfigChange(configuration []Configuration)
 	Record(namespace Namespace, metric MetricKind, name string, value float64, tags []string, common bool)
@@ -158,7 +158,7 @@ func log(msg string, args ...interface{}) {
 
 // RegisterAppConfig allows to register a globally-defined application configuration.
 // This configuration will be sent when the telemetry client is started and over related configuration updates.
-func (c *client) RegisterAppConfig(name string, value interface{}, origin string) {
+func (c *client) RegisterAppConfig(name string, value interface{}, origin Origin) {
 	c.globalAppConfig = append(c.globalAppConfig, Configuration{
 		Name:   name,
 		Value:  value,
@@ -211,6 +211,18 @@ func (c *client) start(configuration []Configuration, namespace Namespace, flush
 	cfg = append(cfg, c.globalAppConfig...)
 	cfg = append(cfg, configuration...)
 
+	// State whether the app has its Go dependencies available or not
+	deps, ok := debug.ReadBuildInfo()
+	if !ok {
+		deps = nil // because not guaranteed to be nil by the public doc when !ok
+	}
+	cfg = append(cfg, BoolConfig("dependencies_available", ok))
+	collectDependenciesEnabled := collectDependencies()
+	cfg = append(cfg, BoolConfig("DD_TELEMETRY_DEPENDENCY_COLLECTION_ENABLED", collectDependenciesEnabled)) // TODO: report all the possible telemetry config option automatically
+	if !collectDependenciesEnabled {
+		deps = nil // to simplify the condition below to `deps != nil`
+	}
+
 	payload := &AppStarted{
 		Configuration: cfg,
 		Products:      productInfo,
@@ -219,18 +231,19 @@ func (c *client) start(configuration []Configuration, namespace Namespace, flush
 	appStarted.Body.Payload = payload
 	c.scheduleSubmit(appStarted)
 
-	if collectDependencies() {
+	if deps != nil {
 		var depPayload Dependencies
-		if deps, ok := debug.ReadBuildInfo(); ok {
-			for _, dep := range deps.Deps {
-				depPayload.Dependencies = append(depPayload.Dependencies,
-					Dependency{
-						Name:    dep.Path,
-						Version: strings.TrimPrefix(dep.Version, "v"),
-					},
-				)
-			}
+		for _, dep := range deps.Deps {
+			depPayload.Dependencies = append(depPayload.Dependencies,
+				Dependency{
+					Name:    dep.Path,
+					Version: strings.TrimPrefix(dep.Version, "v"),
+				},
+			)
 		}
+		// Send the telemetry request if and only if the dependencies are actually present in the binary.
+		// For instance, bazel doesn't include them out of the box (cf. https://github.com/bazelbuild/rules_go/issues/3090),
+		// which would result in an empty list of dependencies.
 		dep := c.newRequest(RequestTypeDependenciesLoaded)
 		dep.Body.Payload = depPayload
 		c.scheduleSubmit(dep)

@@ -37,7 +37,7 @@ func registerSCAAppConfigTelemetry(client telemetry.Client) {
 		return
 	}
 	if defined {
-		client.RegisterAppConfig(EnvSCAEnabled, val, "env_var")
+		client.RegisterAppConfig(EnvSCAEnabled, val, telemetry.OriginEnvVar)
 	}
 }
 
@@ -66,7 +66,8 @@ type Config struct {
 	// APISec configuration
 	APISec internal.APISecConfig
 	// RC is the remote configuration client used to receive product configuration updates. Nil if RC is disabled (default)
-	RC *remoteconfig.ClientConfig
+	RC   *remoteconfig.ClientConfig
+	RASP bool
 }
 
 // WithRCConfig sets the AppSec remote config client configuration to the specified cfg
@@ -115,5 +116,6 @@ func NewConfig() (*Config, error) {
 		TraceRateLimit: int64(internal.RateLimitFromEnv()),
 		Obfuscator:     internal.NewObfuscatorConfig(),
 		APISec:         internal.NewAPISecConfig(),
+		RASP:           internal.RASPEnabled(),
 	}, nil
 }

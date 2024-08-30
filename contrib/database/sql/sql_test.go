@@ -280,7 +280,7 @@ func TestOpenOptions(t *testing.T) {
 		m := testutils.NewMockStatsdClient()
 		Register(driverName, &pq.Driver{})
 		defer unregister(driverName)
-		_, err := Open(driverName, dsn, withStatsdClient(&m), WithDBStats())
+		_, err := Open(driverName, dsn, withStatsdClient(m), WithDBStats())
 		require.NoError(t, err)
 
 		// The polling interval has been reduced to 500ms for the sake of this test, so at least one round of `pollDBStats` should be complete in 1s

@@ -198,7 +198,6 @@ func TestWithHeaderTags(t *testing.T) {
 		r.Header.Add("h!e@a-d.e*r", "val2")
 		r.Header.Set("2header", "2val")
 		r.Header.Set("3header", "3val")
-		r.Header.Set("x-datadog-header", "value")
 		w := httptest.NewRecorder()
 		mux.ServeHTTP(w, r)
 		return r
@@ -207,7 +206,7 @@ func TestWithHeaderTags(t *testing.T) {
 	t.Run("default-off", func(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
-		htArgs := []string{"h!e@a-d.e*r", "2header", "3header", "x-datadog-header"}
+		htArgs := []string{"h!e@a-d.e*r", "2header", "3header"}
 		setupReq()
 		spans := mt.FinishedSpans()
 		assert := assert.New(t)
