@@ -11,21 +11,22 @@ import (
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/config"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener/trace"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener/waf"
 )
 
-type NewProduct func(*config.Config, dyngo.Operation) (Product, error)
+type StopProduct func()
 
-type Product interface {
-	Stop()
-}
+type NewProduct func(*config.Config, dyngo.Operation) (func(), error)
 
 var products = map[string]NewProduct{
-	"WAF": NewWAF,
+	"WAF":          waf.NewWAF,
+	"APMTransport": trace.NewSpanTransport,
 }
 
 func (a *appsec) SwapRootOperation() error {
 	newRoot := dyngo.NewRootOperation()
-	newProducts := make([]Product, 0, len(products))
+	newProducts := make([]StopProduct, 0, len(products))
 	var productErrors []error
 	for name, newProduct := range products {
 		product, err := newProduct(a.cfg, newRoot)
@@ -45,8 +46,8 @@ func (a *appsec) SwapRootOperation() error {
 
 	dyngo.SwapRootOperation(newRoot)
 
-	for _, product := range oldProducts {
-		product.Stop()
+	for _, stopper := range oldProducts {
+		stopper()
 	}
 
 	return errors.Join(productErrors...)

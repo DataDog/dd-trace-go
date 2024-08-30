@@ -40,10 +40,3 @@ func (s *SecurityEventsHolder) Events() []any {
 	}
 	return clone
 }
-
-// ClearEvents clears the list of stored events
-func (s *SecurityEventsHolder) ClearEvents() {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.events = s.events[0:0]
-}

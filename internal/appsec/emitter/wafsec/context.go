@@ -6,48 +6,44 @@
 package wafsec
 
 import (
+	"sync"
 	"sync/atomic"
-	"time"
 
-	"github.com/DataDog/appsec-internal-go/limiter"
 	waf "github.com/DataDog/go-libddwaf/v3"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/trace"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/trace"
 )
 
 type (
 	WAFContextOperation struct {
 		dyngo.Operation
-		trace.SecurityEventsHolder
+		trace.ServiceEntrySpanOperation
 
-		Ctx     atomic.Pointer[waf.Context]
-		Handle  *waf.Handle
-		Limiter limiter.Limiter
-		Timeout time.Duration
+		Context atomic.Pointer[waf.Context]
+		events  []any
+		mu      sync.Mutex
 	}
 
-	HTTPArgs struct {
+	WAFContextArgs struct {
 	}
 
-	HTTPRes struct{}
-
-	GRPCArgs struct {
-	}
-
-	GRPCRes struct{}
-
-	GraphQLArgs struct {
-	}
-
-	GraphQLRes struct{}
+	WAFContextRes struct{}
 )
 
-func (HTTPArgs) IsArgOf(*WAFContextOperation)   {}
-func (HTTPRes) IsResultOf(*WAFContextOperation) {}
+func (WAFContextArgs) IsArgOf(*WAFContextOperation)   {}
+func (WAFContextRes) IsResultOf(*WAFContextOperation) {}
 
-func (GRPCArgs) IsArgOf(*WAFContextOperation)   {}
-func (GRPCRes) IsResultOf(*WAFContextOperation) {}
+func (op *WAFContextOperation) AddEvents(events []any) {
+	op.mu.Lock()
+	defer op.mu.Unlock()
+	op.events = append(op.events, events...)
+}
 
-func (GraphQLArgs) IsArgOf(*WAFContextOperation)   {}
-func (GraphQLRes) IsResultOf(*WAFContextOperation) {}
+func (op *WAFContextOperation) Events() []any {
+	op.mu.Lock()
+	defer op.mu.Unlock()
+	eventsCopy := make([]any, len(op.events))
+	copy(eventsCopy[:], op.events)
+	return eventsCopy
+}

@@ -134,7 +134,7 @@ func setActiveAppSec(a *appsec) {
 
 type appsec struct {
 	cfg        *config.Config
-	products   []Product
+	products   []StopProduct
 	productsMu sync.Mutex
 	started    bool
 }
@@ -195,8 +195,8 @@ func (a *appsec) stop() {
 	// Disable the currently applied instrumentation
 	dyngo.SwapRootOperation(nil)
 
-	for _, product := range a.products {
-		product.Stop()
+	for _, stopper := range a.products {
+		stopper()
 	}
 
 	a.products = nil

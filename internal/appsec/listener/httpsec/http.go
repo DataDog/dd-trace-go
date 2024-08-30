@@ -10,7 +10,9 @@ import (
 	"math/rand"
 	"sync"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
+	"github.com/DataDog/appsec-internal-go/limiter"
+	waf "github.com/DataDog/go-libddwaf/v3"
+
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/config"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/httpsec/types"
@@ -20,10 +22,6 @@ import (
 	shared "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener/sharedsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener/sqlsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/samplernames"
-
-	"github.com/DataDog/appsec-internal-go/limiter"
-	waf "github.com/DataDog/go-libddwaf/v3"
 )
 
 // HTTP rule addresses currently supported by the WAF
@@ -212,7 +210,6 @@ func (l *wafEventListener) onEvent(op *types.Operation, args types.HandlerOperat
 		// Add the following metrics once per instantiation of a WAF handle
 		l.once.Do(func() {
 			shared.AddRulesMonitoringTags(op, &l.wafDiags)
-			op.SetTag(ext.ManualKeep, samplernames.AppSec)
 		})
 
 		// Log the attacks if any
