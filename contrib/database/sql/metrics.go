@@ -51,7 +51,7 @@ func pollDBStats(statsd internal.StatsdClient, db *sql.DB) {
 }
 
 func statsTags(c *config) []string {
-	tags := globalconfig.StatsTags()
+	tags := append([]string{}, globalconfig.StatsTags()...)
 	if c.serviceName != "" {
 		tags = append(tags, "service:"+c.serviceName)
 	}

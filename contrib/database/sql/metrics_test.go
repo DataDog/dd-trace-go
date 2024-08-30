@@ -18,12 +18,24 @@ func (cfg *config) applyTags() {
 	cfg.tags["tag"] = "value"
 }
 
+func (cfg *config) applyTags2() {
+	cfg.serviceName = "my-svc2"
+	cfg.tags = make(map[string]interface{})
+	cfg.tags["tag"] = "value2"
+}
+
 func setGlobalCfgTags() {
-	globalconfig.SetStatsTags([]string{"globaltag:globalvalue"})
+	tags := make([]string, 0, 3)
+	tags = append(tags, "globaltag:globalvalue")
+	globalconfig.SetStatsTags(tags)
 }
 
 func resetGlobalConfig() {
 	globalconfig.SetStatsTags([]string{})
+}
+
+func getGlobalCfgTags() []string {
+	return globalconfig.StatsTags()
 }
 
 // Test that statsTags(*config) returns tags from the provided *config + whatever is on the globalconfig
@@ -61,6 +73,27 @@ func TestStatsTags(t *testing.T) {
 		assert.Contains(t, tags, "globaltag:globalvalue")
 		assert.Contains(t, tags, "service:my-svc")
 		assert.Contains(t, tags, "tag:value")
+	})
+	t.Run("must not polute globalconfig", func(t *testing.T) {
+		resetGlobalConfig()
+		setGlobalCfgTags()
+
+		cfg1 := new(config)
+		cfg1.applyTags()
+		tags1 := statsTags(cfg1)
+
+		cfg2 := new(config)
+		cfg2.applyTags2()
+		tags2 := statsTags(cfg2)
+
+		assert.Len(t, tags1, 3)
+		assert.Contains(t, tags1, "globaltag:globalvalue")
+		assert.Contains(t, tags1, "service:my-svc")
+		assert.Contains(t, tags1, "tag:value")
+		assert.Len(t, tags2, 3)
+		assert.Contains(t, tags2, "globaltag:globalvalue")
+		assert.Contains(t, tags2, "service:my-svc2")
+		assert.Contains(t, tags2, "tag:value2")
 	})
 	resetGlobalConfig()
 }
