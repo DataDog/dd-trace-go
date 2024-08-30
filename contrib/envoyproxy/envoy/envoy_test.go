@@ -1,11 +1,9 @@
 // Unless explicitly stated otherwise all files in this repository are licensed
 // under the Apache License Version 2.0.
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
-// Copyright 2016 Datadog, Inc.
+// Copyright 2024 Datadog, Inc.
 
-// TODO: Blocking and Redirect action to test
-
-package envoy
+package go_control_plane
 
 import (
 	"context"
@@ -27,120 +25,6 @@ import (
 	"google.golang.org/grpc"
 )
 
-func end2EndStreamRequest(t *testing.T, stream envoyextproc.ExternalProcessor_ProcessClient, path string, method string, requestHeaders map[string]string, responseHeaders map[string]string, blockOnResponse bool) {
-	// First part: request
-	// 1- Send the headers
-	err := stream.Send(&envoyextproc.ProcessingRequest{
-		Request: &envoyextproc.ProcessingRequest_RequestHeaders{
-			RequestHeaders: &envoyextproc.HttpHeaders{
-				Headers: makeRequestHeaders(requestHeaders, method, path),
-			},
-		},
-	})
-	require.NoError(t, err)
-
-	res, err := stream.Recv()
-	require.NoError(t, err)
-	require.Equal(t, envoyextproc.CommonResponse_CONTINUE, res.GetRequestHeaders().GetResponse().GetStatus())
-
-	// 2- Send the body
-	err = stream.Send(&envoyextproc.ProcessingRequest{
-		Request: &envoyextproc.ProcessingRequest_RequestBody{
-			RequestBody: &envoyextproc.HttpBody{
-				Body: []byte("body"),
-			},
-		},
-	})
-	require.NoError(t, err)
-
-	res, err = stream.Recv()
-	require.NoError(t, err)
-	require.Equal(t, envoyextproc.CommonResponse_CONTINUE, res.GetRequestBody().GetResponse().GetStatus())
-
-	// 3- Send the trailers
-	err = stream.Send(&envoyextproc.ProcessingRequest{
-		Request: &envoyextproc.ProcessingRequest_RequestTrailers{
-			RequestTrailers: &envoyextproc.HttpTrailers{
-				Trailers: &v3.HeaderMap{
-					Headers: []*v3.HeaderValue{
-						{Key: "key", Value: "value"},
-					},
-				},
-			},
-		},
-	})
-	require.NoError(t, err)
-
-	res, err = stream.Recv()
-	require.NoError(t, err)
-	require.NotNil(t, res.GetRequestTrailers())
-
-	// Second part: response
-	// 1- Send the response headers
-	err = stream.Send(&envoyextproc.ProcessingRequest{
-		Request: &envoyextproc.ProcessingRequest_ResponseHeaders{
-			ResponseHeaders: &envoyextproc.HttpHeaders{
-				Headers: makeResponseHeaders(responseHeaders, "200"),
-			},
-		},
-	})
-	require.NoError(t, err)
-
-	if blockOnResponse {
-		// Should have received an immediate response for blocking
-		// Let the test handle the response
-		return
-	}
-
-	res, err = stream.Recv()
-	require.NoError(t, err)
-	require.Equal(t, envoyextproc.CommonResponse_CONTINUE, res.GetResponseHeaders().GetResponse().GetStatus())
-
-	// 2- Send the response body
-	err = stream.Send(&envoyextproc.ProcessingRequest{
-		Request: &envoyextproc.ProcessingRequest_ResponseBody{
-			ResponseBody: &envoyextproc.HttpBody{
-				Body:        []byte("body"),
-				EndOfStream: true,
-			},
-		},
-	})
-	require.NoError(t, err)
-
-	// The stream should now be closed
-	_, err = stream.Recv()
-	require.Equal(t, io.EOF, err)
-}
-
-func checkForAppsecEvent(t *testing.T, finished []mocktracer.Span, expectedRuleIDs map[string]int) {
-	// The request should have the attack attempts
-	event := finished[len(finished)-1].Tag("_dd.appsec.json")
-	require.NotNil(t, event, "the _dd.appsec.json tag was not found")
-
-	jsonText := event.(string)
-	type trigger struct {
-		Rule struct {
-			ID string `json:"id"`
-		} `json:"rule"`
-	}
-	var parsed struct {
-		Triggers []trigger `json:"triggers"`
-	}
-	err := json.Unmarshal([]byte(jsonText), &parsed)
-	require.NoError(t, err)
-
-	histogram := map[string]uint8{}
-	for _, tr := range parsed.Triggers {
-		histogram[tr.Rule.ID]++
-	}
-
-	for ruleID, count := range expectedRuleIDs {
-		require.Equal(t, count, int(histogram[ruleID]), "rule %s has been triggered %d times but expected %d")
-	}
-
-	require.Len(t, parsed.Triggers, len(expectedRuleIDs), "unexpected number of rules triggered")
-}
-
 func TestAppSec(t *testing.T) {
 	appsec.Start()
 	defer appsec.Stop()
@@ -149,7 +33,7 @@ func TestAppSec(t *testing.T) {
 	}
 
 	setup := func() (envoyextproc.ExternalProcessorClient, mocktracer.Tracer, func()) {
-		rig, err := newEnvoyAppsecRig(false)
+		rig, err := newEnvoyAppsecRig(t, false)
 		require.NoError(t, err)
 
 		mt := mocktracer.Start()
@@ -190,7 +74,7 @@ func TestAppSec(t *testing.T) {
 		err = stream.Send(&envoyextproc.ProcessingRequest{
 			Request: &envoyextproc.ProcessingRequest_RequestHeaders{
 				RequestHeaders: &envoyextproc.HttpHeaders{
-					Headers: makeRequestHeaders(map[string]string{"User-Agent": "dd-test-scanner-log-block"}, "GET", "/"),
+					Headers: makeRequestHeaders(t, map[string]string{"User-Agent": "dd-test-scanner-log-block"}, "GET", "/"),
 				},
 			},
 		})
@@ -227,7 +111,7 @@ func TestBlockingWithUserRulesFile(t *testing.T) {
 	}
 
 	setup := func() (envoyextproc.ExternalProcessorClient, mocktracer.Tracer, func()) {
-		rig, err := newEnvoyAppsecRig(false)
+		rig, err := newEnvoyAppsecRig(t, false)
 		require.NoError(t, err)
 
 		mt := mocktracer.Start()
@@ -283,7 +167,7 @@ func TestBlockingWithUserRulesFile(t *testing.T) {
 		err = stream.Send(&envoyextproc.ProcessingRequest{
 			Request: &envoyextproc.ProcessingRequest_RequestHeaders{
 				RequestHeaders: &envoyextproc.HttpHeaders{
-					Headers: makeRequestHeaders(map[string]string{"User-Agent": "Mistake Not..."}, "GET", "/hello?match=match-request-query"),
+					Headers: makeRequestHeaders(t, map[string]string{"User-Agent": "Mistake Not..."}, "GET", "/hello?match=match-request-query"),
 				},
 			},
 		})
@@ -321,7 +205,7 @@ func TestBlockingWithUserRulesFile(t *testing.T) {
 		err = stream.Send(&envoyextproc.ProcessingRequest{
 			Request: &envoyextproc.ProcessingRequest_RequestHeaders{
 				RequestHeaders: &envoyextproc.HttpHeaders{
-					Headers: makeRequestHeaders(map[string]string{"Cookie": "foo=jdfoSDGFkivRG_234"}, "OPTIONS", "/"),
+					Headers: makeRequestHeaders(t, map[string]string{"Cookie": "foo=jdfoSDGFkivRG_234"}, "OPTIONS", "/"),
 				},
 			},
 		})
@@ -351,7 +235,7 @@ func TestBlockingWithUserRulesFile(t *testing.T) {
 
 func TestGeneratedSpan(t *testing.T) {
 	setup := func() (envoyextproc.ExternalProcessorClient, mocktracer.Tracer, func()) {
-		rig, err := newEnvoyAppsecRig(false)
+		rig, err := newEnvoyAppsecRig(t, false)
 		require.NoError(t, err)
 
 		mt := mocktracer.Start()
@@ -400,7 +284,7 @@ func TestXForwardedForHeaderClientIp(t *testing.T) {
 	}
 
 	setup := func() (envoyextproc.ExternalProcessorClient, mocktracer.Tracer, func()) {
-		rig, err := newEnvoyAppsecRig(false)
+		rig, err := newEnvoyAppsecRig(t, false)
 		require.NoError(t, err)
 
 		mt := mocktracer.Start()
@@ -450,7 +334,7 @@ func TestXForwardedForHeaderClientIp(t *testing.T) {
 		err = stream.Send(&envoyextproc.ProcessingRequest{
 			Request: &envoyextproc.ProcessingRequest_RequestHeaders{
 				RequestHeaders: &envoyextproc.HttpHeaders{
-					Headers: makeRequestHeaders(map[string]string{"User-Agent": "Mistake not...", "X-Forwarded-For": "1.2.3.4"}, "GET", "/"),
+					Headers: makeRequestHeaders(t, map[string]string{"User-Agent": "Mistake not...", "X-Forwarded-For": "1.2.3.4"}, "GET", "/"),
 				},
 			},
 		})
@@ -481,7 +365,9 @@ func TestXForwardedForHeaderClientIp(t *testing.T) {
 	})
 }
 
-func newEnvoyAppsecRig(traceClient bool, interceptorOpts ...ddgrpc.Option) (*envoyAppsecRig, error) {
+func newEnvoyAppsecRig(t *testing.T, traceClient bool, interceptorOpts ...ddgrpc.Option) (*envoyAppsecRig, error) {
+	t.Helper()
+
 	interceptorOpts = append([]ddgrpc.InterceptorOption{ddgrpc.WithServiceName("grpc")}, interceptorOpts...)
 
 	server := grpc.NewServer(
@@ -540,8 +426,128 @@ type envoyFixtureServer struct {
 
 // Helper functions
 
+func end2EndStreamRequest(t *testing.T, stream envoyextproc.ExternalProcessor_ProcessClient, path string, method string, requestHeaders map[string]string, responseHeaders map[string]string, blockOnResponse bool) {
+	t.Helper()
+
+	// First part: request
+	// 1- Send the headers
+	err := stream.Send(&envoyextproc.ProcessingRequest{
+		Request: &envoyextproc.ProcessingRequest_RequestHeaders{
+			RequestHeaders: &envoyextproc.HttpHeaders{
+				Headers: makeRequestHeaders(t, requestHeaders, method, path),
+			},
+		},
+	})
+	require.NoError(t, err)
+
+	res, err := stream.Recv()
+	require.NoError(t, err)
+	require.Equal(t, envoyextproc.CommonResponse_CONTINUE, res.GetRequestHeaders().GetResponse().GetStatus())
+
+	// 2- Send the body
+	err = stream.Send(&envoyextproc.ProcessingRequest{
+		Request: &envoyextproc.ProcessingRequest_RequestBody{
+			RequestBody: &envoyextproc.HttpBody{
+				Body: []byte("body"),
+			},
+		},
+	})
+	require.NoError(t, err)
+
+	res, err = stream.Recv()
+	require.NoError(t, err)
+	require.Equal(t, envoyextproc.CommonResponse_CONTINUE, res.GetRequestBody().GetResponse().GetStatus())
+
+	// 3- Send the trailers
+	err = stream.Send(&envoyextproc.ProcessingRequest{
+		Request: &envoyextproc.ProcessingRequest_RequestTrailers{
+			RequestTrailers: &envoyextproc.HttpTrailers{
+				Trailers: &v3.HeaderMap{
+					Headers: []*v3.HeaderValue{
+						{Key: "key", Value: "value"},
+					},
+				},
+			},
+		},
+	})
+	require.NoError(t, err)
+
+	res, err = stream.Recv()
+	require.NoError(t, err)
+	require.NotNil(t, res.GetRequestTrailers())
+
+	// Second part: response
+	// 1- Send the response headers
+	err = stream.Send(&envoyextproc.ProcessingRequest{
+		Request: &envoyextproc.ProcessingRequest_ResponseHeaders{
+			ResponseHeaders: &envoyextproc.HttpHeaders{
+				Headers: makeResponseHeaders(t, responseHeaders, "200"),
+			},
+		},
+	})
+	require.NoError(t, err)
+
+	if blockOnResponse {
+		// Should have received an immediate response for blocking
+		// Let the test handle the response
+		return
+	}
+
+	res, err = stream.Recv()
+	require.NoError(t, err)
+	require.Equal(t, envoyextproc.CommonResponse_CONTINUE, res.GetResponseHeaders().GetResponse().GetStatus())
+
+	// 2- Send the response body
+	err = stream.Send(&envoyextproc.ProcessingRequest{
+		Request: &envoyextproc.ProcessingRequest_ResponseBody{
+			ResponseBody: &envoyextproc.HttpBody{
+				Body:        []byte("body"),
+				EndOfStream: true,
+			},
+		},
+	})
+	require.NoError(t, err)
+
+	// The stream should now be closed
+	_, err = stream.Recv()
+	require.Equal(t, io.EOF, err)
+}
+
+func checkForAppsecEvent(t *testing.T, finished []mocktracer.Span, expectedRuleIDs map[string]int) {
+	t.Helper()
+
+	// The request should have the attack attempts
+	event := finished[len(finished)-1].Tag("_dd.appsec.json")
+	require.NotNil(t, event, "the _dd.appsec.json tag was not found")
+
+	jsonText := event.(string)
+	type trigger struct {
+		Rule struct {
+			ID string `json:"id"`
+		} `json:"rule"`
+	}
+	var parsed struct {
+		Triggers []trigger `json:"triggers"`
+	}
+	err := json.Unmarshal([]byte(jsonText), &parsed)
+	require.NoError(t, err)
+
+	histogram := map[string]uint8{}
+	for _, tr := range parsed.Triggers {
+		histogram[tr.Rule.ID]++
+	}
+
+	for ruleID, count := range expectedRuleIDs {
+		require.Equal(t, count, int(histogram[ruleID]), "rule %s has been triggered %d times but expected %d")
+	}
+
+	require.Len(t, parsed.Triggers, len(expectedRuleIDs), "unexpected number of rules triggered")
+}
+
 // Construct request headers
-func makeRequestHeaders(headers map[string]string, method string, path string) *v3.HeaderMap {
+func makeRequestHeaders(t *testing.T, headers map[string]string, method string, path string) *v3.HeaderMap {
+	t.Helper()
+
 	h := &v3.HeaderMap{}
 	for k, v := range headers {
 		h.Headers = append(h.Headers, &v3.HeaderValue{Key: k, RawValue: []byte(v)})
@@ -557,7 +563,9 @@ func makeRequestHeaders(headers map[string]string, method string, path string) *
 	return h
 }
 
-func makeResponseHeaders(headers map[string]string, status string) *v3.HeaderMap {
+func makeResponseHeaders(t *testing.T, headers map[string]string, status string) *v3.HeaderMap {
+	t.Helper()
+
 	h := &v3.HeaderMap{}
 	for k, v := range headers {
 		h.Headers = append(h.Headers, &v3.HeaderValue{Key: k, RawValue: []byte(v)})
