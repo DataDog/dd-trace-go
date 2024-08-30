@@ -12,9 +12,11 @@ package httpsec
 
 import (
 	"context"
+
 	// Blank import needed to use embed for the default blocked response payloads
 	_ "embed"
 	"net/http"
+	"net/url"
 	"sync"
 	"sync/atomic"
 
@@ -152,9 +154,23 @@ func WrapHandler(handler http.Handler, span ddtrace.Span, pathParams map[string]
 					f()
 				}
 
-				if blockPtr.Handler != nil {
-					blockPtr.Handler.ServeHTTP(w, r)
-				}
+			// Add stacktraces to the span, if any
+			if stackTrace != nil {
+				stacktrace.AddToSpan(span, stackTrace)
+			}
+
+			if bypassHandler != nil {
+				bypassHandler.ServeHTTP(w, r)
+			}
+
+			// Add the request headers span tags out of args.Headers instead of r.Header as it was normalized and some
+			// extra headers have been added such as the Host header which is removed from the original Go request headers
+			// map
+			SetRequestHeadersTags(span, args.Headers)
+			SetResponseHeadersTags(span, opts.ResponseHeaderCopier(w))
+			trace.SetTags(span, op.Tags())
+			if len(events) > 0 {
+				httptrace.SetSecurityEventsTags(span, events)
 			}
 		}()
 
@@ -165,4 +181,53 @@ func WrapHandler(handler http.Handler, span ddtrace.Span, pathParams map[string]
 
 		handler.ServeHTTP(w, r)
 	})
+}
+
+// MakeHandlerOperationArgs creates the HandlerOperationArgs value.
+func MakeHandlerOperationArgs(headers map[string][]string, method string, host string, clientIp netip.Addr, url *url.URL) types.HandlerOperationArgs {
+	args := types.HandlerOperationArgs{
+		Method:     method,
+		RequestURI: url.RequestURI(),
+		Host:       host,
+		Headers:    headersRemoveCookies(headers),
+		Cookies:    makeCookiesFromHeaders(headers),
+		Query:      url.Query(),
+		PathParams: map[string]string{},
+		ClientIP:   clientIp,
+	}
+
+	args.Headers["host"] = []string{host}
+	return args
+}
+
+// Remove cookies from the request headers and return the map of headers
+// Used from `server.request.headers.no_cookies` and server.response.headers.no_cookies` addresses for the WAF
+func headersRemoveCookies(headers http.Header) map[string][]string {
+	headersNoCookies := make(http.Header, len(headers))
+	for k, v := range headers {
+		k := strings.ToLower(k)
+		if k == "cookie" {
+			continue
+		}
+		headersNoCookies[k] = v
+	}
+	return headersNoCookies
+}
+
+func makeCookiesFromHeaders(headers map[string][]string) map[string][]string {
+	cookieHeader, ok := headers["cookie"]
+	if !ok {
+		return nil
+	}
+	cookies := make(map[string][]string, len(cookieHeader))
+	for _, c := range cookieHeader {
+		parts := strings.Split(c, ";")
+		for _, part := range parts {
+			cookie := strings.Split(part, "=")
+			if len(cookie) == 2 {
+				cookies[cookie[0]] = append(cookies[cookie[0]], cookie[1])
+			}
+		}
+	}
+	return cookies
 }
