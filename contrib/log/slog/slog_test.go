@@ -74,3 +74,9 @@ func TestWrapHandler(t *testing.T) {
 		return WrapHandler(slog.NewJSONHandler(b, nil))
 	})
 }
+
+func TestWithAttrs(t *testing.T) {
+	testLogger(t, func(b *bytes.Buffer) slog.Handler {
+		return NewJSONHandler(b, nil).WithAttrs([]slog.Attr{slog.String("key", "value")})
+	})
+}
