@@ -111,6 +111,7 @@ type config struct {
 	logStartup           bool
 	traceConfig          executionTraceConfig
 	endpointCountEnabled bool
+	enable               bool
 }
 
 // logStartup records the configuration to the configured logger in JSON format
@@ -146,6 +147,7 @@ func logStartup(c *config) {
 		"execution_trace_size_limit": c.traceConfig.Limit,
 		"endpoint_count_enabled":     c.endpointCountEnabled,
 		"custom_profiler_label_keys": c.customProfilerLabels,
+		"enable":                     c.enable,
 	}
 	b, err := json.Marshal(info)
 	if err != nil {
@@ -208,6 +210,7 @@ func defaultConfig() (*config, error) {
 	} else {
 		c.agentURL = url.String() + "/profiling/v1/input"
 	}
+	c.enable = internal.BoolEnv("DD_PROFILING_ENABLED", true)
 	if v := os.Getenv("DD_PROFILING_UPLOAD_TIMEOUT"); v != "" {
 		d, err := time.ParseDuration(v)
 		if err != nil {

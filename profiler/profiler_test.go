@@ -82,6 +82,20 @@ func TestStart(t *testing.T) {
 		mu.Unlock()
 	})
 
+	t.Run("dd_profiling_not_enabled", func(t *testing.T) {
+		t.Setenv("DD_PROFILING_ENABLED", "false")
+		if err := Start(); err != nil {
+			t.Fatal(err)
+		}
+		defer Stop()
+
+		mu.Lock()
+		// if DD_PROFILING_ENABLED is false, the profiler should not be started even if Start() is called
+		// So we should not have an activeProfiler
+		assert.Nil(t, activeProfiler)
+		mu.Unlock()
+	})
+
 	t.Run("options", func(t *testing.T) {
 		if err := Start(); err != nil {
 			t.Fatal(err)
