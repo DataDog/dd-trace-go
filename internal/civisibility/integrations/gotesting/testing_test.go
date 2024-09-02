@@ -23,6 +23,8 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// Note: these tests are not meant to be run in isolation.
+
 var currentM *testing.M
 var mTracer mocktracer.Tracer
 
@@ -37,7 +39,7 @@ func TestMain(m *testing.M) {
 	// os.Exit((*M)(m).Run())
 	_ = RunM(m)
 
-	spans := mTracer.OpenSpans()
+	spans := mTracer.FinishedSpans()
 	// 1 session span
 	// 1 module span
 	// 1 suite span (optional 1 from reflections_test.go)
@@ -45,8 +47,8 @@ func TestMain(m *testing.M) {
 	// 7 sub stest spans
 	// 2 normal spans (from integration tests)
 	// 1 benchmark span (optional - require the -bench option)
-	if len(spans) < 4 {
-		panic("expected at least 4 finished spans, got " + strconv.Itoa(len(spans)))
+	if len(spans) < 17 {
+		panic("expected at least 17 finished spans, got " + strconv.Itoa(len(spans)))
 	}
 
 	sessionSpans := getSpansWithType(spans, constants.SpanTypeTestSession)
@@ -65,8 +67,13 @@ func TestMain(m *testing.M) {
 	}
 
 	testSpans := getSpansWithType(spans, constants.SpanTypeTest)
-	if len(testSpans) < 1 {
-		panic("expected at least 1 test span, got " + strconv.Itoa(len(testSpans)))
+	if len(testSpans) < 12 {
+		panic("expected at least 12 test span, got " + strconv.Itoa(len(testSpans)))
+	}
+
+	httpSpans := getSpansWithType(spans, ext.SpanTypeHTTP)
+	if len(httpSpans) != 2 {
+		panic("expected exactly 2 normal spans, got " + strconv.Itoa(len(httpSpans)))
 	}
 
 	os.Exit(0)
@@ -160,6 +167,11 @@ func (rt *roundTripper) RoundTrip(req *http.Request) (res *http.Response, err er
 // Code from contrib/net/http/roundtripper.go
 // It's not possible to import `contrib/net/http` package because it causes a circular dependency.
 func wrapRoundTripper(rt http.RoundTripper, namer func(*http.Request) string) http.RoundTripper {
+	if namer == nil {
+		namer = func(req *http.Request) string {
+			return ""
+		}
+	}
 	return &roundTripper{
 		base:  rt,
 		namer: namer,
@@ -240,11 +252,6 @@ func TestWithExternalCalls(gt *testing.T) {
 		}
 		_ = res.Body.Close()
 	})
-
-	httpSpans := getSpansWithType(mTracer.FinishedSpans(), ext.SpanTypeHTTP)
-	if len(httpSpans) < 1 {
-		panic("expected at least 1 HTTP spans, got " + strconv.Itoa(len(httpSpans)))
-	}
 }
 
 // TestSkip demonstrates skipping a test with a message.
