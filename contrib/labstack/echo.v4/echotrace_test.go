@@ -592,10 +592,10 @@ func TestWithErrorCheck(t *testing.T) {
 
 			span := spans[0]
 			if tt.wantErr == nil {
-				assert.NotContains(t, span.Tags(), ext.Error)
+				assert.NotContains(t, span.Tags(), ext.ErrorMsg)
 				return
 			}
-			assert.Equal(t, tt.wantErr, span.Tag(ext.Error))
+			assert.Equal(t, tt.wantErr.Error(), span.Tag(ext.ErrorMsg))
 		})
 	}
 }
