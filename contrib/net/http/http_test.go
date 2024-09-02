@@ -346,7 +346,6 @@ func TestServeMuxGo122Patterns(t *testing.T) {
 func TestWrapHandlerWithResourceNameNoRace(_ *testing.T) {
 	mt := mocktracer.Start()
 	defer mt.Stop()
-	r := httptest.NewRequest("GET", "/", nil)
 	resourceNamer := func(_ *http.Request) string {
 		return "custom-resource-name"
 	}
@@ -358,6 +357,7 @@ func TestWrapHandlerWithResourceNameNoRace(_ *testing.T) {
 	for i := 0; i < 10; i++ {
 		wg.Add(1)
 		go func() {
+			r := httptest.NewRequest("GET", "/", nil)
 			w := httptest.NewRecorder()
 			defer wg.Done()
 			mux.ServeHTTP(w, r)
@@ -369,7 +369,6 @@ func TestWrapHandlerWithResourceNameNoRace(_ *testing.T) {
 func TestServeMuxNoRace(_ *testing.T) {
 	mt := mocktracer.Start()
 	defer mt.Stop()
-	r := httptest.NewRequest("GET", "/", nil)
 	mux := NewServeMux()
 	mux.Handle("/", http.NotFoundHandler())
 
@@ -377,6 +376,7 @@ func TestServeMuxNoRace(_ *testing.T) {
 	for i := 0; i < 10; i++ {
 		wg.Add(1)
 		go func() {
+			r := httptest.NewRequest("GET", "/", nil)
 			w := httptest.NewRecorder()
 			defer wg.Done()
 			mux.ServeHTTP(w, r)
