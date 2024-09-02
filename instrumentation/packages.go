@@ -725,7 +725,7 @@ var packages = map[Package]PackageInfo{
 		TracedPackage: "github.com/uptrace/bun",
 		naming: map[Component]componentNames{
 			ComponentDefault: {
-				useDDServiceV0:     false,
+				useDDServiceV0:     true,
 				buildServiceNameV0: staticName("bun.db"),
 			},
 		},
