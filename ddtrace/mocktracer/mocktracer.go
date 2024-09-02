@@ -13,6 +13,7 @@
 package mocktracer
 
 import (
+	"fmt"
 	"net/http"
 	"net/url"
 	"sync"
@@ -63,6 +64,7 @@ func Start() Tracer {
 		tracer.StopTestTracer()
 	}
 	tracer.SetGlobalTracer(t)
+	fmt.Printf("mTracer (Start): %p\n", t)
 	return t
 }
 
@@ -99,7 +101,6 @@ func (t *mocktracer) FinishSpan(s *tracer.Span) {
 
 // Stop deactivates the mock tracer and sets the active tracer to a no-op.
 func (t *mocktracer) Stop() {
-	t.Reset()
 	tracer.StopTestTracer()
 }
 
@@ -195,4 +196,9 @@ func (t *mocktracer) TracerConf() tracer.TracerConf {
 
 func (t *mocktracer) Submit(*tracer.Span)       {}
 func (t *mocktracer) SubmitChunk(*tracer.Chunk) {}
-func (t *mocktracer) Flush()                    {}
+func (t *mocktracer) Flush() {
+	t.dsmProcessor.Flush()
+	for _, s := range t.OpenSpans() {
+		t.addFinishedSpan(s.sp)
+	}
+}
