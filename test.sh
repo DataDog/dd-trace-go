@@ -86,15 +86,15 @@ if [[ "$INTEGRATION" != "" ]]; then
 	## Make sure we shut down the docker containers on exit.
 	function finish {
 		echo Cleaning up...
-		docker-compose down
+		docker compose down
 	}
 	trap finish EXIT
 	if [[ "$contrib" != "" ]]; then
 		## Start these now so they'll be ready by the time we run integration tests.
-		docker-compose up -d
+		docker compose up -d
 	else
 		## If we're not testing contrib, we only need the trace agent.
-		docker-compose up -d datadog-agent
+		docker compose up -d datadog-agent
 	fi
 fi
 
