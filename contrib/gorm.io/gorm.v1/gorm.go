@@ -49,7 +49,7 @@ func (g tracePlugin) Initialize(db *gorm.DB) error {
 }
 
 // Open opens a new (traced) database connection. The used driver must be formerly registered
-// using (github.com/DataDog/dd-trace-go/v2/contrib/database/sql).Register.
+// using (github.com/DataDog/dd-trace-go/contrib/database/sql/v2).Register.
 func Open(dialector gorm.Dialector, cfg *gorm.Config, opts ...Option) (*gorm.DB, error) {
 	var db *gorm.DB
 	var err error

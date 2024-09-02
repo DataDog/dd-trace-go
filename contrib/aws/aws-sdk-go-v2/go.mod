@@ -3,7 +3,7 @@ module github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go-v2/v2
 go 1.21
 
 require (
-	github.com/DataDog/dd-trace-go/v2 v2.0.0-20240828085650-1d90163852f1
+	github.com/DataDog/dd-trace-go/v2 v2.0.0-20240902131707-47c2b19fbd05
 	github.com/aws/aws-sdk-go-v2 v1.30.3
 	github.com/aws/aws-sdk-go-v2/config v1.27.27
 	github.com/aws/aws-sdk-go-v2/feature/s3/manager v1.17.8
@@ -57,6 +57,7 @@ require (
 	github.com/tinylib/msgp v1.2.0 // indirect
 	go.uber.org/atomic v1.11.0 // indirect
 	golang.org/x/crypto v0.25.0 // indirect
+	golang.org/x/mod v0.18.0 // indirect
 	golang.org/x/net v0.27.0 // indirect
 	golang.org/x/sys v0.22.0 // indirect
 	golang.org/x/time v0.5.0 // indirect

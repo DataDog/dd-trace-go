@@ -4,7 +4,7 @@ go 1.21
 
 require (
 	github.com/DataDog/dd-trace-go/contrib/database/sql/v2 v2.0.0-20240516153256-8d6fa2bea61d
-	github.com/DataDog/dd-trace-go/v2 v2.0.0-20240828085650-1d90163852f1
+	github.com/DataDog/dd-trace-go/v2 v2.0.0-20240902131707-47c2b19fbd05
 	github.com/denisenkom/go-mssqldb v0.11.0
 	github.com/go-sql-driver/mysql v1.6.0
 	github.com/jmoiron/sqlx v1.3.5
@@ -12,7 +12,7 @@ require (
 )
 
 require (
-	github.com/DataDog/appsec-internal-go v1.5.0 // indirect
+	github.com/DataDog/appsec-internal-go v1.7.0 // indirect
 	github.com/DataDog/datadog-agent/pkg/obfuscate v0.52.1 // indirect
 	github.com/DataDog/datadog-agent/pkg/remoteconfig/state v0.52.1 // indirect
 	github.com/DataDog/datadog-go/v5 v5.5.0 // indirect
@@ -32,10 +32,11 @@ require (
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
 	github.com/secure-systems-lab/go-securesystemslib v0.8.0 // indirect
-	github.com/stretchr/testify v1.8.4 // indirect
+	github.com/stretchr/testify v1.9.0 // indirect
 	github.com/tinylib/msgp v1.1.9 // indirect
 	go.uber.org/atomic v1.11.0 // indirect
 	golang.org/x/crypto v0.23.0 // indirect
+	golang.org/x/mod v0.14.0 // indirect
 	golang.org/x/sys v0.20.0 // indirect
 	golang.org/x/time v0.5.0 // indirect
 	golang.org/x/xerrors v0.0.0-20231012003039-104605ab7028 // indirect

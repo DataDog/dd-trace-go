@@ -44,7 +44,7 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/twitchtv/twirp/v2 v2.0.0-20240827110213-c6fc4fe2047a
 	github.com/DataDog/dd-trace-go/contrib/urfave/negroni/v2 v2.0.0-20240827110213-c6fc4fe2047a
 	github.com/DataDog/dd-trace-go/instrumentation/testutils/grpc/v2 v2.0.0-20240827110213-c6fc4fe2047a
-	github.com/DataDog/dd-trace-go/v2 v2.0.0-20240828085650-1d90163852f1
+	github.com/DataDog/dd-trace-go/v2 v2.0.0-20240902131707-47c2b19fbd05
 	github.com/IBM/sarama v1.40.0
 	github.com/Shopify/sarama v1.38.1
 	github.com/aws/aws-sdk-go v1.54.20
@@ -90,11 +90,13 @@ require (
 )
 
 require (
+	github.com/DataDog/go-libddwaf/v3 v3.3.0 // indirect
 	github.com/armon/go-metrics v0.4.1 // indirect
 	github.com/cenkalti/backoff/v3 v3.2.2 // indirect
 	github.com/eapache/go-resiliency v1.4.0 // indirect
 	github.com/eapache/go-xerial-snappy v0.0.0-20230731223053-c322873962e3 // indirect
 	github.com/eapache/queue v1.1.0 // indirect
+	github.com/eapache/queue/v2 v2.0.0-20230407133247-75960ed334e4 // indirect
 	github.com/fatih/color v1.16.0 // indirect
 	github.com/go-jose/go-jose/v3 v3.0.3 // indirect
 	github.com/gorilla/mux v1.8.1 // indirect
@@ -133,6 +135,7 @@ require (
 	github.com/tidwall/tinyqueue v0.1.1 // indirect
 	github.com/valyala/fasttemplate v1.2.2 // indirect
 	golang.org/x/exp v0.0.0-20240112132812-db7319d0e0e3 // indirect
+	golang.org/x/mod v0.18.0 // indirect
 )
 
 require (
@@ -148,7 +151,6 @@ require (
 	github.com/DataDog/datadog-go/v5 v5.5.0 // indirect
 	github.com/DataDog/dd-trace-go/contrib/IBM/sarama/v2 v2.0.0-20240827110213-c6fc4fe2047a
 	github.com/DataDog/dd-trace-go/contrib/Shopify/sarama/v2 v2.0.0-20240827110213-c6fc4fe2047a
-	github.com/DataDog/go-libddwaf/v2 v2.4.2 // indirect
 	github.com/DataDog/go-sqllexer v0.0.12 // indirect
 	github.com/DataDog/go-tuf v1.1.0-0.5.2 // indirect
 	github.com/DataDog/sketches-go v1.4.6 // indirect
@@ -199,7 +201,6 @@ require (
 	github.com/golang-sql/civil v0.0.0-20220223132316-b832511892a9 // indirect
 	github.com/golang-sql/sqlexp v0.1.0 // indirect
 	github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da // indirect
-	github.com/golang/protobuf v1.5.4 // indirect
 	github.com/golang/snappy v0.0.4 // indirect
 	github.com/gomodule/redigo v1.8.9 // indirect
 	github.com/google/go-cmp v0.6.0 // indirect

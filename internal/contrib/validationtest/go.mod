@@ -5,18 +5,18 @@ go 1.21
 require (
 	github.com/DataDog/dd-trace-go/contrib/bradfitz/gomemcache/v2 v2.0.0-20240516153256-8d6fa2bea61d
 	github.com/DataDog/dd-trace-go/contrib/miekg/dns/v2 v2.0.0-20240516153256-8d6fa2bea61d
-	github.com/DataDog/dd-trace-go/v2 v2.0.0-20240828085650-1d90163852f1
+	github.com/DataDog/dd-trace-go/v2 v2.0.0-20240902131707-47c2b19fbd05
 	github.com/bradfitz/gomemcache v0.0.0-20230611145640-acc696258285
 	github.com/miekg/dns v1.1.59
-	github.com/stretchr/testify v1.8.4
+	github.com/stretchr/testify v1.9.0
 )
 
 require (
-	github.com/DataDog/appsec-internal-go v1.5.0 // indirect
+	github.com/DataDog/appsec-internal-go v1.7.0 // indirect
 	github.com/DataDog/datadog-agent/pkg/obfuscate v0.52.1 // indirect
 	github.com/DataDog/datadog-agent/pkg/remoteconfig/state v0.52.1 // indirect
 	github.com/DataDog/datadog-go/v5 v5.5.0 // indirect
-	github.com/DataDog/go-libddwaf/v2 v2.4.2 // indirect
+	github.com/DataDog/go-libddwaf/v3 v3.3.0 // indirect
 	github.com/DataDog/go-sqllexer v0.0.11 // indirect
 	github.com/DataDog/go-tuf v1.1.0-0.5.2 // indirect
 	github.com/DataDog/sketches-go v1.4.5 // indirect
@@ -26,8 +26,6 @@ require (
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/ebitengine/purego v0.7.1 // indirect
 	github.com/google/uuid v1.6.0 // indirect
-	github.com/hashicorp/errwrap v1.1.0 // indirect
-	github.com/hashicorp/go-multierror v1.1.1 // indirect
 	github.com/outcaste-io/ristretto v0.2.3 // indirect
 	github.com/philhofer/fwd v1.1.2 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
