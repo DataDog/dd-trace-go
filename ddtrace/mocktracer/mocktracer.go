@@ -13,7 +13,6 @@
 package mocktracer
 
 import (
-	"fmt"
 	"net/http"
 	"net/url"
 	"sync"
@@ -64,7 +63,6 @@ func Start() Tracer {
 		tracer.StopTestTracer()
 	}
 	tracer.SetGlobalTracer(t)
-	fmt.Printf("mTracer (Start): %p\n", t)
 	return t
 }
 
