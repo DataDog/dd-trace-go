@@ -95,7 +95,7 @@ func TestConcentrator(t *testing.T) {
 			transport := newDummyTransport()
 			c := newConcentrator(&config{transport: transport, env: "someEnv"}, 500_000)
 			assert.Len(t, transport.Stats(), 0)
-			ss1, ok := c.newAggregableSpan(&s1, nil)
+			ss1, ok := c.newTracerStatSpan(&s1, nil)
 			assert.True(t, ok)
 			c.Start()
 			c.In <- ss1
@@ -112,9 +112,9 @@ func TestConcentrator(t *testing.T) {
 			transport := newDummyTransport()
 			c := newConcentrator(&config{transport: transport, env: "someEnv"}, (10 * time.Second).Nanoseconds())
 			assert.Len(t, transport.Stats(), 0)
-			ss1, ok := c.newAggregableSpan(&s1, nil)
+			ss1, ok := c.newTracerStatSpan(&s1, nil)
 			assert.True(t, ok)
-			ss2, ok := c.newAggregableSpan(&s2, nil)
+			ss2, ok := c.newTracerStatSpan(&s2, nil)
 			assert.True(t, ok)
 			c.Start()
 			c.In <- ss1
@@ -138,7 +138,7 @@ func TestConcentrator(t *testing.T) {
 			transport := newDummyTransport()
 			c := newConcentrator(&config{transport: transport}, 500000)
 			assert.Len(t, transport.Stats(), 0)
-			ss1, ok := c.newAggregableSpan(&s1, nil)
+			ss1, ok := c.newTracerStatSpan(&s1, nil)
 			assert.True(t, ok)
 			c.Start()
 			c.In <- ss1

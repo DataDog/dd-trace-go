@@ -150,7 +150,7 @@ func (c *concentrator) runIngester() {
 	}
 }
 
-func (c *concentrator) newAggregableSpan(s *span, obfuscator *obfuscate.Obfuscator) (*tracerStatSpan, bool) {
+func (c *concentrator) newTracerStatSpan(s *span, obfuscator *obfuscate.Obfuscator) (*tracerStatSpan, bool) {
 	statSpan, ok := c.spanConcentrator.NewStatSpan(s.Service, obfuscatedResource(obfuscator, s.Type, s.Resource),
 		s.Name, s.Type, s.ParentID, s.Start, s.Duration, s.Error, s.Meta, s.Metrics, c.cfg.agent.peerTags)
 	if !ok {

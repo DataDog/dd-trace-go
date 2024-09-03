@@ -2352,7 +2352,7 @@ loop:
 		Duration: 1,
 		Metrics:  map[string]float64{keyMeasured: 1},
 	}
-	statSpan, ok := c.newAggregableSpan(s, tr.obfuscator)
+	statSpan, ok := c.newTracerStatSpan(s, tr.obfuscator)
 	assert.True(t, ok)
 	c.add(statSpan)
 
