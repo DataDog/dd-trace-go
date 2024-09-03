@@ -525,12 +525,8 @@ func handler500(w http.ResponseWriter, _ *http.Request) {
 	http.Error(w, "500!", http.StatusInternalServerError)
 }
 
-type discardLogger struct{}
-
-func (discardLogger) Log(_ string) {}
-
 func BenchmarkHttpServeTrace(b *testing.B) {
-	err := tracer.Start(tracer.WithLogger(discardLogger{}), tracer.WithHeaderTags([]string{"3header"}))
+	err := tracer.Start(tracer.WithLogger(testutils.DiscardLogger()), tracer.WithHeaderTags([]string{"3header"}))
 	assert.NoError(b, err)
 	defer tracer.Stop()
 

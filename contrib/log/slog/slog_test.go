@@ -18,7 +18,7 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
-	internallog "github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils"
 )
 
 func assertLogEntry(t *testing.T, rawEntry, wantMsg, wantLevel string) {
@@ -37,7 +37,7 @@ func assertLogEntry(t *testing.T, rawEntry, wantMsg, wantLevel string) {
 }
 
 func testLogger(t *testing.T, createHandler func(b *bytes.Buffer) slog.Handler) {
-	tracer.Start(tracer.WithLogger(internallog.DiscardLogger{}))
+	tracer.Start(tracer.WithLogger(testutils.DiscardLogger()))
 	defer tracer.Stop()
 
 	// create the application logger
