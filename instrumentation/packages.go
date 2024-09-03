@@ -608,7 +608,7 @@ var packages = map[Package]PackageInfo{
 		EnvVarPrefix:  "ECHO",
 		naming: map[Component]componentNames{
 			ComponentServer: {
-				useDDServiceV0:     false,
+				useDDServiceV0:     true,
 				buildServiceNameV0: staticName("echo"),
 				buildOpNameV0:      staticName("http.request"),
 				buildOpNameV1:      staticName("http.server.request"),
