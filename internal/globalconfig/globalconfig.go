@@ -91,7 +91,7 @@ func StatsTags() []string {
 func SetStatsTags(tags []string) {
 	cfg.mu.Lock()
 	defer cfg.mu.Unlock()
-	// Copy the slice before setting it, so that any changes to tags cannot pollute the underlying array of statsTags
+	// Copy the slice before setting it, so that any changes to the slice provided to SetStatsTags does not pollute the underlying array of statsTags
 	statsTags := make([]string, len(tags))
 	copy(statsTags, tags)
 	cfg.statsTags = statsTags

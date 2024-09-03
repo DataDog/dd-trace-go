@@ -19,7 +19,7 @@ func TestHeaderTag(t *testing.T) {
 	assert.Equal(t, "tag2", cfg.headersAsTags.Get("header2"))
 }
 
-// Asserts that APIs to access cfg.statsTags protect against pollution from external changes
+// Assert that APIs to access cfg.statsTags protect against pollution from external changes
 func TestStatsTags(t *testing.T) {
 	array := [6]string{"aaa", "bbb", "ccc"}
 	slice1 := array[:]
