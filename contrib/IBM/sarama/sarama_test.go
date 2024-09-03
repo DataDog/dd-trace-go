@@ -66,7 +66,7 @@ func TestConsumer(t *testing.T) {
 		s := spans[0]
 		spanctx, err := tracer.Extract(NewConsumerMessageCarrier(msg1))
 		assert.NoError(t, err)
-		assert.Equal(t, spanctx.TraceID(), s.Context().TraceID(),
+		assert.Equal(t, spanctx.TraceIDLower(), s.TraceID(),
 			"span context should be injected into the consumer message headers")
 
 		assert.Equal(t, float64(0), s.Tag(ext.MessagingKafkaPartition))
@@ -90,7 +90,7 @@ func TestConsumer(t *testing.T) {
 		s := spans[1]
 		spanctx, err := tracer.Extract(NewConsumerMessageCarrier(msg2))
 		assert.NoError(t, err)
-		assert.Equal(t, spanctx.TraceID(), s.Context().TraceID(),
+		assert.Equal(t, spanctx.TraceIDLower(), s.TraceID(),
 			"span context should be injected into the consumer message headers")
 
 		assert.Equal(t, float64(0), s.Tag(ext.MessagingKafkaPartition))
@@ -270,8 +270,12 @@ func TestAsyncProducer(t *testing.T) {
 			assert.Equal(t, "queue", s.Tag(ext.SpanType))
 			assert.Equal(t, "Produce Topic my_topic", s.Tag(ext.ResourceName))
 			assert.Equal(t, "kafka.produce", s.OperationName())
-			assert.Equal(t, float64(0), s.Tag(ext.MessagingKafkaPartition))
-			assert.Equal(t, float64(0), s.Tag("offset"))
+
+			// these tags are set in the finishProducerSpan function, but in this case it's never used, and instead we
+			// automatically finish spans after being started because we don't have a way to know when they are finished.
+			assert.Nil(t, s.Tag(ext.MessagingKafkaPartition))
+			assert.Nil(t, s.Tag("offset"))
+
 			assert.Equal(t, "IBM/sarama", s.Tag(ext.Component))
 			assert.Equal(t, ext.SpanKindProducer, s.Tag(ext.SpanKind))
 			assert.Equal(t, "kafka", s.Tag(ext.MessagingSystem))
@@ -314,12 +318,8 @@ func TestAsyncProducer(t *testing.T) {
 			assert.Equal(t, "queue", s.Tag(ext.SpanType))
 			assert.Equal(t, "Produce Topic my_topic", s.Tag(ext.ResourceName))
 			assert.Equal(t, "kafka.produce", s.OperationName())
-
-			// these tags are set in the finishProducerSpan function, but in this case it's never used, and instead we
-			// automatically finish spans after being started because we don't have a way to know when they are finished.
-			assert.Nil(t, s.Tag(ext.MessagingKafkaPartition))
-			assert.Nil(t, s.Tag("offset"))
-
+			assert.Equal(t, float64(0), s.Tag(ext.MessagingKafkaPartition))
+			assert.Equal(t, float64(0), s.Tag("offset"))
 			assert.Equal(t, "IBM/sarama", s.Tag(ext.Component))
 			assert.Equal(t, ext.SpanKindProducer, s.Tag(ext.SpanKind))
 			assert.Equal(t, "kafka", s.Tag(ext.MessagingSystem))
