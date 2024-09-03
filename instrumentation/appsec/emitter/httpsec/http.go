@@ -93,7 +93,7 @@ func WrapHandler(handler http.Handler, span *tracer.Span, pathParams map[string]
 		r = r.WithContext(ctx)
 
 		defer func() {
-			events := op.Finish(MakeHandlerOperationRes(w))
+			events := op.Finish(MakeHandlerOperationRes(w, opts.ResponseHeaderCopier))
 
 			// Execute the onBlock functions to make sure blocking works properly
 			// in case we are instrumenting the Gin framework
@@ -149,12 +149,12 @@ func MakeHandlerOperationArgs(r *http.Request, clientIP netip.Addr, pathParams m
 }
 
 // MakeHandlerOperationRes creates the HandlerOperationRes value.
-func MakeHandlerOperationRes(w http.ResponseWriter) types.HandlerOperationRes {
+func MakeHandlerOperationRes(w http.ResponseWriter, responseHeadersCopier func(http.ResponseWriter) http.Header) types.HandlerOperationRes {
 	var status int
 	if mw, ok := w.(interface{ Status() int }); ok {
 		status = mw.Status()
 	}
-	return types.HandlerOperationRes{Status: status, Headers: headersRemoveCookies(w.Header())}
+	return types.HandlerOperationRes{Status: status, Headers: headersRemoveCookies(responseHeadersCopier(w))}
 }
 
 // Remove cookies from the request headers and return the map of headers
