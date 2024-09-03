@@ -6,6 +6,9 @@
 package trace
 
 import (
+	"context"
+	"sync"
+
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
 )
@@ -13,9 +16,11 @@ import (
 type (
 	// SpanOperation is a dyngo.Operation that holds a ddtrace.Span.
 	// It used as a middleware for appsec code and the tracer code
-	// hopefully some day this operation will create spans instead of simply holding them
+	// hopefully some day this operation will create spans instead of simply using them
 	SpanOperation struct {
 		dyngo.Operation
+		Tags  map[string]any
+		Mutex sync.Mutex
 	}
 
 	// SpanArgs is the arguments for a SpanOperation
@@ -26,34 +31,8 @@ type (
 		ddtrace.Span
 	}
 
-	// ServiceEntrySpanOperation is a dyngo.Operation that holds a the first span of a service. Usually a http or grpc span.
-	ServiceEntrySpanOperation struct {
-		SpanOperation
-	}
-
-	// ServiceEntrySpanArgs is the arguments for a ServiceEntrySpanOperation
-	ServiceEntrySpanArgs struct{}
-
-	// ServiceEntrySpanRes is the result for a ServiceEntrySpanOperation
-	ServiceEntrySpanRes struct {
-		ddtrace.Span
-	}
-
-	// SpanTag is a key value pair that is used to tag a span
+	// SpanTag is a key value pair event that is used to tag the current span
 	SpanTag struct {
-		Key   string
-		Value any
-	}
-
-	// ServiceEntrySpanTag is a key value pair that is used to tag a service entry span
-	ServiceEntrySpanTag struct {
-		Key   string
-		Value any
-	}
-
-	// SerializableServiceEntrySpanTag is a key value pair that is used to tag a service entry span
-	// It will be serialized as JSON when added to the span
-	SerializableServiceEntrySpanTag struct {
 		Key   string
 		Value any
 	}
@@ -62,13 +41,22 @@ type (
 func (SpanArgs) IsArgOf(*SpanOperation)   {}
 func (SpanRes) IsResultOf(*SpanOperation) {}
 
-func (ServiceEntrySpanArgs) IsArgOf(*ServiceEntrySpanOperation)   {}
-func (ServiceEntrySpanRes) IsResultOf(*ServiceEntrySpanOperation) {}
-
-func (op *ServiceEntrySpanOperation) SetTag(key string, value any) {
-	dyngo.EmitData(op, ServiceEntrySpanTag{Key: key, Value: value})
+// SetTag adds the key/value pair to the tags to add to the span
+func (op *SpanOperation) SetTag(key string, value any) {
+	op.Mutex.Lock()
+	defer op.Mutex.Unlock()
+	op.Tags[key] = value
 }
 
-func (op *SpanOperation) SetTag(key string, value any) {
-	dyngo.EmitData(op, SpanTag{Key: key, Value: value})
+// OnSpanTagEvent is a listener for SpanTag events.
+func (op *SpanOperation) OnSpanTagEvent(tag SpanTag) {
+	op.SetTag(tag.Key, tag.Value)
+}
+
+func (op *SpanOperation) Start(ctx context.Context) context.Context {
+	return dyngo.StartAndRegisterOperation(ctx, op, SpanArgs{})
+}
+
+func (op *SpanOperation) Finish(span ddtrace.Span) {
+	dyngo.FinishOperation(op, SpanRes{Span: span})
 }

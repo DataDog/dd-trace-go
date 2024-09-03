@@ -6,11 +6,13 @@
 package types
 
 import (
+	"context"
 	"net/netip"
 	"sync"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/trace"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/waf"
 )
 
 // Operation type representing an HTTP operation. It must be created with
@@ -18,8 +20,7 @@ import (
 type (
 	Operation struct {
 		dyngo.Operation
-		trace.TagsHolder
-		trace.SecurityEventsHolder
+		waf.ContextOperation
 		mu sync.RWMutex
 	}
 
@@ -33,10 +34,14 @@ type (
 	}
 )
 
-// Finish the HTTP handler operation, along with the given results and emits a
-// finish event up in the operation stack.
-func (op *Operation) Finish(res HandlerOperationRes) []any {
+func (op *Operation) Start(ctx context.Context, args HandlerOperationArgs) context.Context {
+	return dyngo.StartAndRegisterOperation(op.ContextOperation.Start(ctx), op, args)
+}
+
+// Finish the HTTP handler operation and its children operations and write everything to the service entry span.
+func (op *Operation) Finish(res HandlerOperationRes, span ddtrace.Span) []any {
 	dyngo.FinishOperation(op, res)
+	op.ServiceEntrySpanOperation.Finish(span)
 	return op.Events()
 }
 

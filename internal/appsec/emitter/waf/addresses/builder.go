@@ -3,7 +3,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2024 Datadog, Inc.
 
-package wafsec
+package addresses
 
 import (
 	"net/netip"
@@ -15,7 +15,7 @@ type RunAddressDataBuilder struct {
 	waf.RunAddressData
 }
 
-func NewRunAddressDataBuilder() *RunAddressDataBuilder {
+func NewAddressesBuilder() *RunAddressDataBuilder {
 	return &RunAddressDataBuilder{
 		RunAddressData: waf.RunAddressData{
 			Persistent: map[string]any{},
@@ -72,7 +72,7 @@ func (b *RunAddressDataBuilder) WithPathParams(params map[string]string) *RunAdd
 	return b
 }
 
-func (b *RunAddressDataBuilder) WithBody(body any) *RunAddressDataBuilder {
+func (b *RunAddressDataBuilder) WithRequestBody(body any) *RunAddressDataBuilder {
 	if body == nil {
 		return b
 	}
@@ -112,7 +112,15 @@ func (b *RunAddressDataBuilder) WithUserID(id string) *RunAddressDataBuilder {
 	return b
 }
 
-func (b *RunAddressDataBuilder) WithIoNetURL(url string) *RunAddressDataBuilder {
+func (b *RunAddressDataBuilder) WithFilePath(file string) *RunAddressDataBuilder {
+	if file == "" {
+		return b
+	}
+	b.Ephemeral[ServerIOFSFileAddr] = file
+	return b
+}
+
+func (b *RunAddressDataBuilder) WithURL(url string) *RunAddressDataBuilder {
 	if url == "" {
 		return b
 	}

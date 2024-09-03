@@ -7,11 +7,12 @@ package waf
 
 import (
 	"encoding/json"
+	"fmt"
 
 	waf "github.com/DataDog/go-libddwaf/v3"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/trace"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/trace"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/samplernames"
 )
@@ -22,6 +23,9 @@ const (
 	eventRulesLoadedTag  = "_dd.appsec.event_rules.loaded"
 	eventRulesFailedTag  = "_dd.appsec.event_rules.error_count"
 	wafVersionTag        = "_dd.appsec.waf.version"
+
+	// BlockedRequestTag used to convey whether a request is blocked
+	BlockedRequestTag = "appsec.blocked"
 )
 
 // AddRulesMonitoringTags adds the tags related to security rules monitoring
@@ -45,13 +49,52 @@ func AddRulesMonitoringTags(th trace.TagSetter, wafDiags waf.Diagnostics) {
 	th.SetTag(ext.ManualKeep, samplernames.AppSec)
 }
 
-// AddWAFMonitoringTags adds the tags related to the monitoring of the WAF
+// AddWAFMonitoringTags adds the tags related to the monitoring of the Feature
 func AddWAFMonitoringTags(th trace.TagSetter, rulesVersion string, stats map[string]any) {
-	// Rules version is set for every request to help the backend associate WAF duration metrics with rule version
+	// Rules version is set for every request to help the backend associate Feature duration metrics with rule version
 	th.SetTag(eventRulesVersionTag, rulesVersion)
 
-	// Report the stats sent by the WAF
+	// Report the stats sent by the Feature
 	for k, v := range stats {
 		th.SetTag(k, v)
 	}
+}
+
+// SetEventSpanTags sets the security event span tags into the service entry span.
+func SetEventSpanTags(span trace.TagSetter, events []any) error {
+	if len(events) == 0 {
+		return nil
+	}
+
+	// Set the appsec event span tag
+	val, err := makeEventTagValue(events)
+	if err != nil {
+		return err
+	}
+	span.SetTag("_dd.appsec.json", string(val))
+	// Keep this span due to the security event
+	//
+	// This is a workaround to tell the tracer that the trace was kept by AppSec.
+	// Passing any other value than `appsec.SamplerAppSec` has no effect.
+	// Customers should use `span.SetTag(ext.ManualKeep, true)` pattern
+	// to keep the trace, manually.
+	span.SetTag(ext.ManualKeep, samplernames.AppSec)
+	span.SetTag("_dd.origin", "appsec")
+	// Set the appsec.event tag needed by the appsec backend
+	span.SetTag("appsec.event", true)
+	return nil
+}
+
+// Create the value of the security event tag.
+func makeEventTagValue(events []any) (json.RawMessage, error) {
+	type eventTagValue struct {
+		Triggers []any `json:"triggers"`
+	}
+
+	tag, err := json.Marshal(eventTagValue{events})
+	if err != nil {
+		return nil, fmt.Errorf("unexpected error while serializing the appsec event span tag: %v", err)
+	}
+
+	return tag, nil
 }

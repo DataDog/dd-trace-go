@@ -19,7 +19,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/httpsec"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/sharedsec"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/usersec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
@@ -60,7 +60,7 @@ func SetUser(ctx context.Context, id string, opts ...tracer.UserMonitoringOption
 		appsecDisabledLog.Do(func() { log.Warn("appsec: not enabled. User blocking checks won't be performed.") })
 		return nil
 	}
-	return sharedsec.MonitorUser(ctx, id)
+	return usersec.MonitorUser(ctx, id)
 }
 
 // TrackUserLoginSuccessEvent sets a successful user login event, with the given

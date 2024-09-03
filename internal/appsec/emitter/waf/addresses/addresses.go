@@ -3,11 +3,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2024 Datadog, Inc.
 
-package wafsec
-
-import (
-	waf "github.com/DataDog/go-libddwaf/v3"
-)
+package addresses
 
 const (
 	ServerRequestMethodAddr            = "server.request.method"
@@ -24,6 +20,7 @@ const (
 	UserIDAddr       = "usr.id"
 
 	ServerIoNetURLAddr    = "server.io.net.url"
+	ServerIOFSFileAddr    = "server.io.fs.file"
 	ServerDBStatementAddr = "server.db.statement"
 	ServerDBTypeAddr      = "server.db.system"
 
@@ -33,20 +30,3 @@ const (
 
 	GraphQLServerResolverAddr = "graphql.server.resolver"
 )
-
-// AddressSet is a set of WAF addresses.
-type AddressSet map[string]struct{}
-
-// FilterAddressSet filters the supplied `supported` address set to only include
-// entries referenced by the supplied waf.Handle.
-func FilterAddressSet(supported AddressSet, handle *waf.Handle) AddressSet {
-	result := make(AddressSet, len(supported))
-
-	for _, addr := range handle.Addresses() {
-		if _, found := supported[addr]; found {
-			result[addr] = struct{}{}
-		}
-	}
-
-	return result
-}

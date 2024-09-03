@@ -8,39 +8,38 @@ package ossec
 import (
 	"os"
 
-	"github.com/DataDog/appsec-internal-go/limiter"
-	waf "github.com/DataDog/go-libddwaf/v3"
-
 	"gopkg.in/DataDog/dd-trace-go.v1/appsec/events"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/config"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/ossec"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener/sharedsec"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/trace"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/waf/addresses"
 )
 
-const (
-	ServerIOFSFileAddr = "server.io.fs.file"
-)
+type Feature struct{}
 
-func RegisterOpenListener(op dyngo.Operation, eventsHolder *trace.SecurityEventsHolder, wafCtx *waf.Context, limiter limiter.Limiter) {
-	runWAF := sharedsec.MakeWAFRunListener(eventsHolder, wafCtx, limiter, func(args ossec.OpenOperationArgs) waf.RunAddressData {
-		return waf.RunAddressData{Ephemeral: map[string]any{ServerIOFSFileAddr: args.Path}}
-	})
+func NewOSSecFeature(cfg *config.Config, rootOp dyngo.Operation) (func(), error) {
+	if !cfg.RASP || !cfg.SupportedAddresses.AnyOf(addresses.ServerIOFSFileAddr) {
+		return func() {}, nil
+	}
 
-	dyngo.On(op, func(op *ossec.OpenOperation, args ossec.OpenOperationArgs) {
-		dyngo.OnData(op, func(e *events.BlockingSecurityEvent) {
-			dyngo.OnFinish(op, func(_ *ossec.OpenOperation, res ossec.OpenOperationRes[*os.File]) {
-				if res.Err != nil {
-					*res.Err = e
-				}
-			})
+	feature := &Feature{}
+	dyngo.On(rootOp, feature.OnStart)
+
+	dyngo.OnData(rootOp, func(err *events.BlockingSecurityEvent) {
+		dyngo.OnFinish(rootOp, func(op *ossec.OpenOperation, res ossec.OpenOperationRes[*os.File]) {
+			if res.Err != nil {
+				*res.Err = err
+			}
 		})
-		runWAF(op, args)
 	})
+
+	return func() {}, nil
 }
 
-func OSAddressesPresent(addresses listener.AddressSet) bool {
-	_, fileAddr := addresses[ServerIOFSFileAddr]
-	return fileAddr
+func (*Feature) OnStart(op *ossec.OpenOperation, args ossec.OpenOperationArgs) {
+	dyngo.EmitData(op,
+		addresses.NewAddressesBuilder().
+			WithFilePath(args.Path).
+			Build(),
+	)
 }

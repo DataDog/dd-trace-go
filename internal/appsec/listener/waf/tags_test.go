@@ -1,15 +1,16 @@
 // Unless explicitly stated otherwise all files in this repository are licensed
 // under the Apache License Version 2.0.
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
-// Copyright 2016 Datadog, Inc.
+// Copyright 2024 Datadog, Inc.
 
-package sharedsec
+package waf
 
 import (
 	"testing"
 
 	waf "github.com/DataDog/go-libddwaf/v3"
 	"github.com/stretchr/testify/require"
+
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/trace"
 )
 
@@ -31,7 +32,7 @@ func TestTagsTypes(t *testing.T) {
 		},
 	}
 
-	AddRulesMonitoringTags(&th, &wafDiags)
+	AddRulesMonitoringTags(&th, wafDiags)
 
 	stats := map[string]any{
 		wafDurationTag:                     10,

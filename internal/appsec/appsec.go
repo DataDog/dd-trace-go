@@ -134,8 +134,8 @@ func setActiveAppSec(a *appsec) {
 
 type appsec struct {
 	cfg        *config.Config
-	products   []StopProduct
-	productsMu sync.Mutex
+	features   []StopFeature
+	featuresMu sync.Mutex
 	started    bool
 }
 
@@ -189,17 +189,17 @@ func (a *appsec) stop() {
 	// Disable RC blocking first so that the following is guaranteed not to be concurrent anymore.
 	a.disableRCBlocking()
 
-	a.productsMu.Lock()
-	defer a.productsMu.Unlock()
+	a.featuresMu.Lock()
+	defer a.featuresMu.Unlock()
 
 	// Disable the currently applied instrumentation
 	dyngo.SwapRootOperation(nil)
 
-	for _, stopper := range a.products {
+	for _, stopper := range a.features {
 		stopper()
 	}
 
-	a.products = nil
+	a.features = nil
 }
 
 func init() {
