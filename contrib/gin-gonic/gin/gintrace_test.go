@@ -205,7 +205,7 @@ func TestError(t *testing.T) {
 		assert.Equal("foobar", span.Tag(ext.ServiceName))
 		assert.Equal("500", span.Tag(ext.HTTPCode))
 		assert.Equal(fmt.Sprintf("Error #01: %s\n", responseErr), span.Tag("gin.errors"))
-		// server errors set the ext.Error tag
+		// server errors set the ext.ErrorMsg tag
 		assert.Equal("500: Internal Server Error", span.Tag(ext.ErrorMsg))
 		assert.Equal(ext.SpanKindServer, span.Tag(ext.SpanKind))
 		assert.Equal("gin-gonic/gin", span.Tag(ext.Component))
@@ -236,8 +236,8 @@ func TestError(t *testing.T) {
 		assert.Equal("foobar", span.Tag(ext.ServiceName))
 		assert.Equal("418", span.Tag(ext.HTTPCode))
 		assert.Equal(fmt.Sprintf("Error #01: %s\n", responseErr), span.Tag("gin.errors"))
-		// client errors do not set the ext.Error tag
-		assert.Zero(span.Tag(ext.Error))
+		// client errors do not set the ext.ErrorMsg tag
+		assert.Zero(span.Tag(ext.ErrorMsg))
 		assert.Equal(ext.SpanKindServer, span.Tag(ext.SpanKind))
 		assert.Equal("gin-gonic/gin", span.Tag(ext.Component))
 	})

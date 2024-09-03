@@ -71,7 +71,7 @@ func Test(t *testing.T) {
 		{
 			s := spans[helloNonTrivialSpanIndex]
 			assert.Equal(t, "helloNonTrivial", s.Tag(tagGraphqlField))
-			assert.Zero(t, s.Tag(ext.Error))
+			assert.Zero(t, s.Tag(ext.ErrorMsg))
 			assert.Equal(t, "test-graphql-service", s.Tag(ext.ServiceName))
 			assert.Equal(t, "Query", s.Tag(tagGraphqlType))
 			assert.Equal(t, "graphql.field", s.OperationName())
@@ -81,7 +81,7 @@ func Test(t *testing.T) {
 		{
 			s := spans[helloSpanIndex]
 			assert.Equal(t, "hello", s.Tag(tagGraphqlField))
-			assert.Zero(t, s.Tag(ext.Error))
+			assert.Zero(t, s.Tag(ext.ErrorMsg))
 			assert.Equal(t, "test-graphql-service", s.Tag(ext.ServiceName))
 			assert.Equal(t, "Query", s.Tag(tagGraphqlType))
 			assert.Equal(t, "graphql.field", s.OperationName())
@@ -92,7 +92,7 @@ func Test(t *testing.T) {
 			s := spans[2]
 			assert.Equal(t, "query TestQuery() { hello, helloNonTrivial }", s.Tag(tagGraphqlQuery))
 			assert.Equal(t, "TestQuery", s.Tag(tagGraphqlOperationName))
-			assert.Zero(t, s.Tag(ext.Error))
+			assert.Zero(t, s.Tag(ext.ErrorMsg))
 			assert.Equal(t, "test-graphql-service", s.Tag(ext.ServiceName))
 			assert.Equal(t, "graphql.request", s.OperationName())
 			assert.Equal(t, "graphql.request", s.Tag(ext.ResourceName))
@@ -111,7 +111,7 @@ func Test(t *testing.T) {
 		{
 			s := spans[0]
 			assert.Equal(t, "helloNonTrivial", s.Tag(tagGraphqlField))
-			assert.Zero(t, s.Tag(ext.Error))
+			assert.Zero(t, s.Tag(ext.ErrorMsg))
 			assert.Equal(t, "test-graphql-service", s.Tag(ext.ServiceName))
 			assert.Equal(t, "Query", s.Tag(tagGraphqlType))
 			assert.Equal(t, "graphql.field", s.OperationName())
@@ -122,7 +122,7 @@ func Test(t *testing.T) {
 			s := spans[1]
 			assert.Equal(t, "query TestQuery() { hello, helloNonTrivial }", s.Tag(tagGraphqlQuery))
 			assert.Equal(t, "TestQuery", s.Tag(tagGraphqlOperationName))
-			assert.Zero(t, s.Tag(ext.Error))
+			assert.Zero(t, s.Tag(ext.ErrorMsg))
 			assert.Equal(t, "test-graphql-service", s.Tag(ext.ServiceName))
 			assert.Equal(t, "graphql.request", s.OperationName())
 			assert.Equal(t, "graphql.request", s.Tag(ext.ResourceName))

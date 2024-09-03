@@ -574,7 +574,7 @@ func TestIssue2165(t *testing.T) {
 	for _, val := range spans {
 		if val.OperationName() != "mgo-unittest" {
 			assert.Equal("mongodb", val.Tag(ext.DBSystem))
-			if err, ok := val.Tags()[ext.Error]; ok {
+			if err, ok := val.Tags()[ext.ErrorMsg]; ok {
 				assert.NotNil(err)
 			}
 		}

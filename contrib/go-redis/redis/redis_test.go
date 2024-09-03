@@ -17,7 +17,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils"
-	
+
 	"github.com/go-redis/redis"
 	"github.com/stretchr/testify/assert"
 )
@@ -320,7 +320,7 @@ func TestError(t *testing.T) {
 
 		assert.Equal(redis.Nil, err)
 		assert.Equal("redis.command", span.OperationName())
-		assert.Zero(span.Tag(ext.Error))
+		assert.Zero(span.Tag(ext.ErrorMsg))
 		assert.Equal("127.0.0.1", span.Tag(ext.TargetHost))
 		assert.Equal("6379", span.Tag(ext.TargetPort))
 		assert.Equal("get non_existent_key: ", span.Tag("redis.raw_command"))

@@ -42,7 +42,7 @@ func TestHttpTracer200(t *testing.T) {
 	assert.Equal("GET", s.Tag(ext.HTTPMethod))
 	assert.Equal("http://example.com"+url, s.Tag(ext.HTTPURL))
 	assert.Equal("testvalue", s.Tag("testkey"))
-	assert.Zero(s.Tag(ext.Error))
+	assert.Zero(s.Tag(ext.ErrorMsg))
 	assert.Equal("/200", s.Tag(ext.HTTPRoute))
 }
 
@@ -70,7 +70,7 @@ func TestHttpTracer404(t *testing.T) {
 	assert.Equal("GET", s.Tag(ext.HTTPMethod))
 	assert.Equal("http://example.com"+url, s.Tag(ext.HTTPURL))
 	assert.Equal("testvalue", s.Tag("testkey"))
-	assert.Zero(s.Tag(ext.Error))
+	assert.Zero(s.Tag(ext.ErrorMsg))
 	assert.NotContains(s.Tags(), ext.HTTPRoute)
 }
 
@@ -171,7 +171,7 @@ func TestDefaultResourceNamer(t *testing.T) {
 			assert.Equal("200", s.Tag(ext.HTTPCode))
 			assert.Equal(tc.method, s.Tag(ext.HTTPMethod))
 			assert.Equal("http://example.com"+tc.url, s.Tag(ext.HTTPURL))
-			assert.Zero(s.Tag(ext.Error))
+			assert.Zero(s.Tag(ext.ErrorMsg))
 			assert.Equal(tc.path, s.Tag(ext.HTTPRoute))
 		})
 	}
@@ -214,7 +214,7 @@ func TestResourceNamer(t *testing.T) {
 	assert.Equal("GET", s.Tag(ext.HTTPMethod))
 	assert.Equal("http://example.com"+url, s.Tag(ext.HTTPURL))
 	assert.Equal("testvalue", s.Tag("testkey"))
-	assert.Zero(s.Tag(ext.Error))
+	assert.Zero(s.Tag(ext.ErrorMsg))
 }
 
 func TestTrailingSlashRoutesWithBehaviorRedirect301(t *testing.T) {
@@ -250,7 +250,7 @@ func TestTrailingSlashRoutesWithBehaviorRedirect301(t *testing.T) {
 		assert.Equal("GET", s.Tag(ext.HTTPMethod))
 		assert.Equal("http://example.com/api/paramvalue", s.Tag(ext.HTTPURL))
 		assert.Equal("testvalue", s.Tag("testkey"))
-		assert.Zero(s.Tag(ext.Error))
+		assert.Zero(s.Tag(ext.ErrorMsg))
 		assert.NotContains(s.Tags(), ext.HTTPRoute)
 	})
 
@@ -285,7 +285,7 @@ func TestTrailingSlashRoutesWithBehaviorRedirect301(t *testing.T) {
 		assert.Equal("GET", s.Tag(ext.HTTPMethod))
 		assert.Equal("http://example.com/api/paramvalue/", s.Tag(ext.HTTPURL))
 		assert.Equal("testvalue", s.Tag("testkey"))
-		assert.Zero(s.Tag(ext.Error))
+		assert.Zero(s.Tag(ext.ErrorMsg))
 		assert.Contains(s.Tags(), ext.HTTPRoute)
 	})
 
@@ -320,7 +320,7 @@ func TestTrailingSlashRoutesWithBehaviorRedirect301(t *testing.T) {
 		assert.Equal("GET", s.Tag(ext.HTTPMethod))
 		assert.Equal("http://example.com/api/paramvalue", s.Tag(ext.HTTPURL))
 		assert.Equal("testvalue", s.Tag("testkey"))
-		assert.Nil(s.Tag(ext.Error))
+		assert.Zero(s.Tag(ext.ErrorMsg))
 		assert.Contains(s.Tags(), ext.HTTPRoute)
 	})
 }
@@ -358,7 +358,7 @@ func TestTrailingSlashRoutesWithBehaviorRedirect307(t *testing.T) {
 		assert.Equal("GET", s.Tag(ext.HTTPMethod))
 		assert.Equal("http://example.com/api/paramvalue", s.Tag(ext.HTTPURL))
 		assert.Equal("testvalue", s.Tag("testkey"))
-		assert.Nil(s.Tag(ext.Error))
+		assert.Zero(s.Tag(ext.ErrorMsg))
 		assert.NotContains(s.Tags(), ext.HTTPRoute)
 	})
 
@@ -393,7 +393,7 @@ func TestTrailingSlashRoutesWithBehaviorRedirect307(t *testing.T) {
 		assert.Equal("GET", s.Tag(ext.HTTPMethod))
 		assert.Equal("http://example.com/api/paramvalue/", s.Tag(ext.HTTPURL))
 		assert.Equal("testvalue", s.Tag("testkey"))
-		assert.Nil(s.Tag(ext.Error))
+		assert.Zero(s.Tag(ext.ErrorMsg))
 		assert.Contains(s.Tags(), ext.HTTPRoute)
 	})
 
@@ -428,7 +428,7 @@ func TestTrailingSlashRoutesWithBehaviorRedirect307(t *testing.T) {
 		assert.Equal("GET", s.Tag(ext.HTTPMethod))
 		assert.Equal("http://example.com/api/paramvalue", s.Tag(ext.HTTPURL))
 		assert.Equal("testvalue", s.Tag("testkey"))
-		assert.Nil(s.Tag(ext.Error))
+		assert.Zero(s.Tag(ext.ErrorMsg))
 		assert.Contains(s.Tags(), ext.HTTPRoute)
 	})
 }
@@ -466,7 +466,7 @@ func TestTrailingSlashRoutesWithBehaviorRedirect308(t *testing.T) {
 		assert.Equal("GET", s.Tag(ext.HTTPMethod))
 		assert.Equal("http://example.com/api/paramvalue", s.Tag(ext.HTTPURL))
 		assert.Equal("testvalue", s.Tag("testkey"))
-		assert.Nil(s.Tag(ext.Error))
+		assert.Zero(s.Tag(ext.ErrorMsg))
 		assert.NotContains(s.Tags(), ext.HTTPRoute)
 	})
 
@@ -501,7 +501,7 @@ func TestTrailingSlashRoutesWithBehaviorRedirect308(t *testing.T) {
 		assert.Equal("GET", s.Tag(ext.HTTPMethod))
 		assert.Equal("http://example.com/api/paramvalue/", s.Tag(ext.HTTPURL))
 		assert.Equal("testvalue", s.Tag("testkey"))
-		assert.Nil(s.Tag(ext.Error))
+		assert.Zero(s.Tag(ext.ErrorMsg))
 		assert.Contains(s.Tags(), ext.HTTPRoute)
 	})
 
@@ -536,7 +536,7 @@ func TestTrailingSlashRoutesWithBehaviorRedirect308(t *testing.T) {
 		assert.Equal("GET", s.Tag(ext.HTTPMethod))
 		assert.Equal("http://example.com/api/paramvalue", s.Tag(ext.HTTPURL))
 		assert.Equal("testvalue", s.Tag("testkey"))
-		assert.Nil(s.Tag(ext.Error))
+		assert.Zero(s.Tag(ext.ErrorMsg))
 		assert.Contains(s.Tags(), ext.HTTPRoute)
 	})
 }
@@ -574,7 +574,7 @@ func TestTrailingSlashRoutesWithBehaviorUseHandler(t *testing.T) {
 		assert.Equal("GET", s.Tag(ext.HTTPMethod))
 		assert.Equal("http://example.com/api/paramvalue", s.Tag(ext.HTTPURL))
 		assert.Equal("testvalue", s.Tag("testkey"))
-		assert.Nil(s.Tag(ext.Error))
+		assert.Zero(s.Tag(ext.ErrorMsg))
 		assert.NotContains(s.Tags(), ext.HTTPRoute)
 	})
 
@@ -609,7 +609,7 @@ func TestTrailingSlashRoutesWithBehaviorUseHandler(t *testing.T) {
 		assert.Equal("GET", s.Tag(ext.HTTPMethod))
 		assert.Equal("http://example.com/api/paramvalue/", s.Tag(ext.HTTPURL))
 		assert.Equal("testvalue", s.Tag("testkey"))
-		assert.Nil(s.Tag(ext.Error))
+		assert.Zero(s.Tag(ext.ErrorMsg))
 		assert.Contains(s.Tags(), ext.HTTPRoute)
 	})
 
@@ -644,7 +644,7 @@ func TestTrailingSlashRoutesWithBehaviorUseHandler(t *testing.T) {
 		assert.Equal("GET", s.Tag(ext.HTTPMethod))
 		assert.Equal("http://example.com/api/paramvalue", s.Tag(ext.HTTPURL))
 		assert.Equal("testvalue", s.Tag("testkey"))
-		assert.Nil(s.Tag(ext.Error))
+		assert.Zero(s.Tag(ext.ErrorMsg))
 		assert.Contains(s.Tags(), ext.HTTPRoute)
 	})
 }

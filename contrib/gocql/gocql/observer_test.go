@@ -154,9 +154,9 @@ func TestObserver_Query(t *testing.T) {
 			assert.Equal(t, wantRowCount, querySpan.Tag(ext.CassandraRowCount))
 
 			if tc.wantErrTag {
-				assert.NotNil(t, querySpan.Tag(ext.Error))
+				assert.NotNil(t, querySpan.Tag(ext.ErrorMsg))
 			} else {
-				assert.Nil(t, querySpan.Tag(ext.Error))
+				assert.Nil(t, querySpan.Tag(ext.ErrorMsg))
 			}
 		})
 	}
@@ -298,9 +298,9 @@ func TestObserver_Batch(t *testing.T) {
 			assert.Nil(t, batchSpan.Tag(ext.CassandraRowCount))
 
 			if tc.wantErrTag {
-				assert.NotNil(t, batchSpan.Tag(ext.Error))
+				assert.NotNil(t, batchSpan.Tag(ext.ErrorMsg))
 			} else {
-				assert.Nil(t, batchSpan.Tag(ext.Error))
+				assert.Nil(t, batchSpan.Tag(ext.ErrorMsg))
 			}
 		})
 	}
@@ -397,7 +397,7 @@ func TestObserver_Connect(t *testing.T) {
 			}
 			for _, span := range okSpans {
 				assert.Equal(t, "9042", span.Tag(ext.TargetPort))
-				assert.Nil(t, span.Tag(ext.Error))
+				assert.Nil(t, span.Tag(ext.ErrorMsg))
 
 				if span.Tag(ext.CassandraHostID) != nil {
 					okSpansHostInfo = append(okSpansHostInfo, span)
@@ -413,7 +413,7 @@ func TestObserver_Connect(t *testing.T) {
 			}
 			for _, span := range errSpans {
 				assert.Equal(t, "9043", span.Tag(ext.TargetPort))
-				assert.NotNil(t, span.Tag(ext.Error))
+				assert.NotNil(t, span.Tag(ext.ErrorMsg))
 
 				// since this node does not exist, this information should not be present.
 				assert.Nil(t, span.Tag(ext.CassandraCluster))

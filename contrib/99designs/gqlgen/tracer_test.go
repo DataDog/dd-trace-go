@@ -101,7 +101,7 @@ func TestOptions(t *testing.T) {
 			}
 			assert.NotNil(root)
 			tt.test(assert, root, spans)
-			assert.Nil(root.Tag(ext.Error))
+			assert.Nil(root.Tag(ext.ErrorMsg))
 		})
 	}
 
@@ -197,7 +197,7 @@ func TestChildSpans(t *testing.T) {
 	assert.ElementsMatch(resNames, []string{readOp, parsingOp, validationOp, "Query.name", `{ name }`})
 	assert.ElementsMatch(opNames, []string{readOp, parsingOp, validationOp, fieldOp, "graphql.query"})
 	assert.NotNil(root)
-	assert.Zero(root.Tag(ext.Error))
+	assert.Zero(root.Tag(ext.ErrorMsg))
 }
 
 func newTestClient(t *testing.T, h *testserver.TestServer, tracer graphql.HandlerExtension) *client.Client {

@@ -49,7 +49,7 @@ func TestContextMux200(t *testing.T) {
 	assert.Equal("GET", s.Tag(ext.HTTPMethod))
 	assert.Equal("http://example.com"+url, s.Tag(ext.HTTPURL))
 	assert.Equal("testvalue", s.Tag("testkey"))
-	assert.Zero(s.Tag(ext.Error))
+	assert.Zero(s.Tag(ext.ErrorMsg))
 }
 
 func TestContextMux404(t *testing.T) {
@@ -79,7 +79,7 @@ func TestContextMux404(t *testing.T) {
 	assert.Equal("GET", s.Tag(ext.HTTPMethod))
 	assert.Equal("http://example.com"+url, s.Tag(ext.HTTPURL))
 	assert.Equal("testvalue", s.Tag("testkey"))
-	assert.Zero(s.Tag(ext.Error))
+	assert.Zero(s.Tag(ext.ErrorMsg))
 }
 
 func TestContextMux500(t *testing.T) {
@@ -201,7 +201,7 @@ func TestContextMuxDefaultResourceNamer(t *testing.T) {
 			assert.Equal("200", s.Tag(ext.HTTPCode))
 			assert.Equal(tc.method, s.Tag(ext.HTTPMethod))
 			assert.Equal("http://example.com"+tc.url, s.Tag(ext.HTTPURL))
-			assert.Zero(s.Tag(ext.Error))
+			assert.Zero(s.Tag(ext.ErrorMsg))
 		})
 	}
 }
@@ -243,7 +243,7 @@ func TestContextMuxResourceNamer(t *testing.T) {
 	assert.Equal("GET", s.Tag(ext.HTTPMethod))
 	assert.Equal("http://example.com"+url, s.Tag(ext.HTTPURL))
 	assert.Equal("testvalue", s.Tag("testkey"))
-	assert.Zero(s.Tag(ext.Error))
+	assert.Zero(s.Tag(ext.ErrorMsg))
 }
 
 func handlerWithContext200(t *testing.T, route string, params map[string]string) http.HandlerFunc {
