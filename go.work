@@ -60,6 +60,7 @@ use (
 	./instrumentation/testutils/grpc
 	./internal/apps
 	./internal/contrib/validationtest
+	./internal/exectracetest
 	./internal/traceprof/traceproftest
 	./tools/fixmodules
 	./tools/v2check

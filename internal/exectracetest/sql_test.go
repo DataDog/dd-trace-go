@@ -18,7 +18,7 @@ import (
 
 	sqltrace "github.com/DataDog/dd-trace-go/contrib/database/sql/v2"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
-	"github.com/DataDog/dd-trace-go/v2/internal/httpmem"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/httpmem"
 )
 
 func must[T any](val T, err error) T {

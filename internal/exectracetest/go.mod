@@ -1,11 +1,11 @@
-module github.com/DataDog/dd-trace-go/v2/internal/exectracetest
+module github.com/DataDog/dd-trace-go/internal/exectracetest/v2
 
 go 1.21
 
 toolchain go1.21.0
 
 require (
-	github.com/DataDog/dd-trace-go/contrib/database/sql/v2 v2.0.0-20240828085650-1d90163852f1
+	github.com/DataDog/dd-trace-go/contrib/database/sql/v2 v2.0.0-20240902131707-47c2b19fbd05
 	github.com/DataDog/dd-trace-go/v2 v2.0.0-20240902131707-47c2b19fbd05
 	github.com/google/pprof v0.0.0-20230817174616-7a8ec2ada47b
 	github.com/mattn/go-sqlite3 v1.14.18

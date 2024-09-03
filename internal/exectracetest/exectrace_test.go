@@ -143,7 +143,7 @@ func TestSpanDoubleFinish(t *testing.T) {
 // TODO: move database/sql tests here? likely requires copying over contrib/sql/internal.MockDriver
 
 func TestExecutionTraceSpans(t *testing.T) {
-	var root, child tracer.Span
+	var root, child *tracer.Span
 	_, execTrace := collectTestData(t, func() {
 		tracer.Start(tracer.WithLogger(discardLogger{}))
 		defer tracer.Stop()
