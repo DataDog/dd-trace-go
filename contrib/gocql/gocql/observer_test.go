@@ -25,7 +25,7 @@ func TestObserver_Query(t *testing.T) {
 		updateQuery      func(cluster *gocql.ClusterConfig, sess *gocql.Session, q *gocql.Query) *gocql.Query
 		wantServiceName  string
 		wantResourceName string
-		wantRowCount     int
+		wantRowCount     float64
 		wantErr          bool
 		wantErrTag       bool
 	}{
