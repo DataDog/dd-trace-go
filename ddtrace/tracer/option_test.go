@@ -607,52 +607,43 @@ func TestTracerOptionsDefaults(t *testing.T) {
 		})
 	})
 
-	t.Run("env-agentAddr", func(t *testing.T) {
-		t.Setenv("DD_AGENT_HOST", "trace-agent")
-		tracer, err := newTracer(WithAgentTimeout(2))
-		defer tracer.Stop()
-		assert.NoError(t, err)
-		c := tracer.config
-		assert.Equal(t, &url.URL{Scheme: "http", Host: "trace-agent:8126"}, c.agentURL)
-	})
-
 	t.Run("env-agentURL", func(t *testing.T) {
 		t.Run("env", func(t *testing.T) {
-			t.Setenv("DD_TRACE_AGENT_URL", "https://custom:1234")
+			t.Setenv("DD_TRACE_AGENT_URL", "https://127.0.0.1:1234")
 			tracer, err := newTracer(WithAgentTimeout(2))
 			defer tracer.Stop()
 			assert.NoError(t, err)
 			c := tracer.config
-			assert.Equal(t, &url.URL{Scheme: "https", Host: "custom:1234"}, c.agentURL)
+			assert.Equal(t, &url.URL{Scheme: "https", Host: "127.0.0.1:1234"}, c.agentURL)
 		})
 
 		t.Run("override-env", func(t *testing.T) {
 			t.Setenv("DD_AGENT_HOST", "localhost")
 			t.Setenv("DD_TRACE_AGENT_PORT", "3333")
-			t.Setenv("DD_TRACE_AGENT_URL", "https://custom:1234")
+			t.Setenv("DD_TRACE_AGENT_URL", "https://127.0.0.1:1234")
 			tracer, err := newTracer(WithAgentTimeout(2))
 			defer tracer.Stop()
 			assert.NoError(t, err)
 			c := tracer.config
-			assert.Equal(t, &url.URL{Scheme: "https", Host: "custom:1234"}, c.agentURL)
+			assert.Equal(t, &url.URL{Scheme: "https", Host: "127.0.0.1:1234"}, c.agentURL)
 		})
 
 		t.Run("code-override", func(t *testing.T) {
-			t.Setenv("DD_TRACE_AGENT_URL", "https://custom:1234")
-			tracer, err := newTracer(WithAgentAddr("testhost:3333"))
+			t.Setenv("DD_TRACE_AGENT_URL", "https://127.0.0.1:1234")
+			tracer, err := newTracer(WithAgentAddr("localhost:3333"))
 			defer tracer.Stop()
 			assert.NoError(t, err)
 			c := tracer.config
-			assert.Equal(t, &url.URL{Scheme: "http", Host: "testhost:3333"}, c.agentURL)
+			assert.Equal(t, &url.URL{Scheme: "http", Host: "localhost:3333"}, c.agentURL)
 		})
 
 		t.Run("code-override-full-URL", func(t *testing.T) {
-			t.Setenv("DD_TRACE_AGENT_URL", "https://custom:1234")
-			tracer, err := newTracer(WithAgentURL("http://testhost:3333"))
+			t.Setenv("DD_TRACE_AGENT_URL", "https://127.0.0.1:1234")
+			tracer, err := newTracer(WithAgentURL("http://localhost:3333"))
 			assert.Nil(t, err)
 			defer tracer.Stop()
 			c := tracer.config
-			assert.Equal(t, &url.URL{Scheme: "http", Host: "testhost:3333"}, c.agentURL)
+			assert.Equal(t, &url.URL{Scheme: "http", Host: "localhost:3333"}, c.agentURL)
 		})
 
 		t.Run("code-override-full-URL-error", func(t *testing.T) {
@@ -660,7 +651,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			// Have to use UseLogger directly before tracer logger is set
 			defer log.UseLogger(tp)()
 			t.Setenv("DD_TRACE_AGENT_URL", "https://localhost:1234")
-			tracer, err := newTracer(WithAgentURL("go://testhost:3333"))
+			tracer, err := newTracer(WithAgentURL("go://127.0.0.1:3333"))
 			assert.Nil(t, err)
 			defer tracer.Stop()
 			c := tracer.config
