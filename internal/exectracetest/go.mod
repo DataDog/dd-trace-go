@@ -2,8 +2,6 @@ module gopkg.in/DataDog/dd-trace-go.v1/internal/exectracetest
 
 go 1.22.0
 
-toolchain go1.22.5
-
 require (
 	github.com/google/pprof v0.0.0-20230817174616-7a8ec2ada47b
 	github.com/mattn/go-sqlite3 v1.14.18

@@ -13,6 +13,12 @@ on:
 
 env:
   DD_APPSEC_WAF_TIMEOUT: 1m # Increase time WAF time budget to reduce CI flakiness
+  # Users may build our library with GOTOOLCHAIN=local. If they do, and our
+  # go.mod file specifies a newer Go version than their local toolchain, their
+  # build will break. Run our tests with GOTOOLCHAIN=local to ensure that
+  # our library builds with all of the Go versions we claim to support,
+  # without having to download a newer one.
+  GOTOOLCHAIN: local
 
 jobs:
   copyright:
