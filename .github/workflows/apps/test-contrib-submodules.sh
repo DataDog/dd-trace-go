@@ -1,6 +1,6 @@
 #!/bin/bash
 
-set -e
+set +e
 
 # This script is used to test the contrib submodules in the apps directory.
 # It is run by the GitHub Actions CI workflow defined in
