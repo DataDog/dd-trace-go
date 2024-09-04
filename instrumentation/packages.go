@@ -56,7 +56,7 @@ const (
 	PackageRedisGoRedisV9          Package = "redis/go-redis.v9"
 	PackageOlivereElasticV5        Package = "olivere/elastic"
 	PackageMiekgDNS                Package = "miekg/dns"
-	PackageLabstackEchoV4          Package = "labstack/echo"
+	PackageLabstackEchoV4          Package = "labstack/echo.v4"
 	PackageK8SClientGo             Package = "k8s.io/client-go/kubernetes"
 	PackageJulienschmidtHTTPRouter Package = "julienschmidt/httprouter"
 	PackageJmoironSQLx             Package = "jmoiron/sqlx"
