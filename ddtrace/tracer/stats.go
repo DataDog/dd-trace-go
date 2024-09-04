@@ -163,7 +163,7 @@ func (c *concentrator) newTracerStatSpan(s *span, obfuscator *obfuscate.Obfuscat
 	}, true
 }
 
-// add adds s into the concentrator's internal stats buckets.
+// add s into the concentrator's internal stats buckets.
 func (c *concentrator) add(s *tracerStatSpan) {
 	c.spanConcentrator.AddSpan(s.statSpan, c.aggregationKey, "", nil, s.origin)
 }

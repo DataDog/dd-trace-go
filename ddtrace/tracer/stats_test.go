@@ -52,44 +52,6 @@ func TestConcentrator(t *testing.T) {
 		c.Stop()
 		assert.EqualValues(atomic.LoadUint32(&c.stopped), 1)
 	})
-
-	//t.Run("valid", func(t *testing.T) {
-	//	c := newConcentrator(&config{env: "someEnv"}, defaultStatsBucketSize)
-	//	//btime := alignTs(ss1.Start+ss1.Duration, defaultStatsBucketSize)
-	//	c.add(ss1)
-	//
-	//	//assert.Len(t, c.buckets, 1)
-	//	//b, ok := c.buckets[btime]
-	//	//assert.True(t, ok)
-	//	//assert.Equal(t, b.start, uint64(btime))
-	//	//assert.Equal(t, b.duration, uint64(defaultStatsBucketSize))
-	//})
-
-	//t.Run("grouping", func(t *testing.T) {
-	//	c := newConcentrator(&config{}, defaultStatsBucketSize)
-	//	c.add(ss1)
-	//	c.add(ss1)
-	//	assert.Len(t, c.buckets, 1)
-	//	_, ok := c.buckets[alignTs(ss1.Start+ss1.Duration, defaultStatsBucketSize)]
-	//	assert.True(t, ok)
-	//	c.add(ss2)
-	//	assert.Len(t, c.buckets, 2)
-	//	_, ok = c.buckets[alignTs(ss2.Start+ss2.Duration, defaultStatsBucketSize)]
-	//	assert.True(t, ok)
-	//})
-	//
-	//t.Run("ingester", func(t *testing.T) {
-	//	transport := newDummyTransport()
-	//	c := newConcentrator(&config{transport: transport}, defaultStatsBucketSize)
-	//	c.Start()
-	//	assert.Len(t, c.buckets, 0)
-	//	c.In <- ss1
-	//	if !waitForBuckets(c, 1) {
-	//		t.Fatal("sending to channel did not work")
-	//	}
-	//	c.Stop()
-	//})
-	//
 	t.Run("flusher", func(t *testing.T) {
 		t.Run("old", func(t *testing.T) {
 			transport := newDummyTransport()
