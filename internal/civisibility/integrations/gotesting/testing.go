@@ -7,10 +7,8 @@ package gotesting
 
 import (
 	"fmt"
-	"os"
 	"reflect"
 	"runtime"
-	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -68,31 +66,16 @@ type (
 
 // Run initializes CI Visibility, instruments tests and benchmarks, and runs them.
 func (ddm *M) Run() int {
-	integrations.EnsureCiVisibilityInitialization()
-	defer integrations.ExitCiVisibility()
-
-	// Create a new test session for CI visibility.
-	session = integrations.CreateTestSession()
-
 	m := (*testing.M)(ddm)
 
-	// Instrument the internal tests for CI visibility.
-	ddm.instrumentInternalTests(getInternalTestArray(m))
-
-	// Instrument the internal benchmarks for CI visibility.
-	for _, v := range os.Args {
-		// check if benchmarking is enabled to instrument
-		if strings.Contains(v, "-bench") || strings.Contains(v, "test.bench") {
-			ddm.instrumentInternalBenchmarks(getInternalBenchmarkArray(m))
-			break
-		}
-	}
+	// Instrument testing.M
+	exitFn := instrumentTestingM(m)
 
 	// Run the tests and benchmarks.
 	var exitCode = m.Run()
 
-	// Close the session and return the exit code.
-	session.Close(exitCode)
+	// Finalize instrumentation
+	exitFn(exitCode)
 	return exitCode
 }
 
