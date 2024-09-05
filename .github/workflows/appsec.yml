@@ -26,6 +26,7 @@ env:
     ./appsec/...
     ./internal/appsec/...
   SUBMODULES: >-
+    ./contrib/database/sql
     ./contrib/gin-gonic/gin
     ./contrib/google.golang.org/grpc
     ./contrib/net/http
