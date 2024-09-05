@@ -90,6 +90,12 @@ func (z *Span) DecodeMsg(dc *msgp.Reader) (err error) {
 				}
 				z.meta[za0001] = za0002
 			}
+		case "meta_struct":
+			err = z.metaStruct.DecodeMsg(dc)
+			if err != nil {
+				err = msgp.WrapError(err, "metaStruct")
+				return
+			}
 		case "metrics":
 			var zb0003 uint32
 			zb0003, err = dc.ReadMapHeader()
@@ -177,15 +183,15 @@ func (z *Span) DecodeMsg(dc *msgp.Reader) (err error) {
 // EncodeMsg implements msgp.Encodable
 func (z *Span) EncodeMsg(en *msgp.Writer) (err error) {
 	// omitempty: check for empty values
-	zb0001Len := uint32(13)
-	var zb0001Mask uint16 /* 13 bits */
+	zb0001Len := uint32(14)
+	var zb0001Mask uint16 /* 14 bits */
 	if z.meta == nil {
 		zb0001Len--
 		zb0001Mask |= 0x40
 	}
 	if z.metrics == nil {
 		zb0001Len--
-		zb0001Mask |= 0x80
+		zb0001Mask |= 0x100
 	}
 	// variable map header, size zb0001Len
 	err = en.Append(0x80 | uint8(zb0001Len))
@@ -279,7 +285,17 @@ func (z *Span) EncodeMsg(en *msgp.Writer) (err error) {
 			}
 		}
 	}
-	if (zb0001Mask & 0x80) == 0 { // if not empty
+	// write "meta_struct"
+	err = en.Append(0xab, 0x6d, 0x65, 0x74, 0x61, 0x5f, 0x73, 0x74, 0x72, 0x75, 0x63, 0x74)
+	if err != nil {
+		return
+	}
+	err = z.metaStruct.EncodeMsg(en)
+	if err != nil {
+		err = msgp.WrapError(err, "metaStruct")
+		return
+	}
+	if (zb0001Mask & 0x100) == 0 { // if not empty
 		// write "metrics"
 		err = en.Append(0xa7, 0x6d, 0x65, 0x74, 0x72, 0x69, 0x63, 0x73)
 		if err != nil {
@@ -372,7 +388,7 @@ func (z *Span) Msgsize() (s int) {
 			s += msgp.StringPrefixSize + len(za0001) + msgp.StringPrefixSize + len(za0002)
 		}
 	}
-	s += 8 + msgp.MapHeaderSize
+	s += 12 + z.metaStruct.Msgsize() + 8 + msgp.MapHeaderSize
 	if z.metrics != nil {
 		for za0003, za0004 := range z.metrics {
 			_ = za0004

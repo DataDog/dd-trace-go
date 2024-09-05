@@ -88,7 +88,6 @@ func (z *StackFrame) EncodeMsg(en *msgp.Writer) (err error) {
 	// omitempty: check for empty values
 	zb0001Len := uint32(8)
 	var zb0001Mask uint8 /* 8 bits */
-	_ = zb0001Mask
 	if z.Text == "" {
 		zb0001Len--
 		zb0001Mask |= 0x2
@@ -228,7 +227,6 @@ func (z *StackFrame) MarshalMsg(b []byte) (o []byte, err error) {
 	// omitempty: check for empty values
 	zb0001Len := uint32(8)
 	var zb0001Mask uint8 /* 8 bits */
-	_ = zb0001Mask
 	if z.Text == "" {
 		zb0001Len--
 		zb0001Mask |= 0x2

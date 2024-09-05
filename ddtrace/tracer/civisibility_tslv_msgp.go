@@ -497,25 +497,25 @@ func (z *tslvSpan) DecodeMsg(dc *msgp.Reader) (err error) {
 		case "test_session_id":
 			z.SessionID, err = dc.ReadUint64()
 			if err != nil {
-				err = msgp.WrapError(err, "SessionId")
+				err = msgp.WrapError(err, "SessionID")
 				return
 			}
 		case "test_module_id":
 			z.ModuleID, err = dc.ReadUint64()
 			if err != nil {
-				err = msgp.WrapError(err, "ModuleId")
+				err = msgp.WrapError(err, "ModuleID")
 				return
 			}
 		case "test_suite_id":
 			z.SuiteID, err = dc.ReadUint64()
 			if err != nil {
-				err = msgp.WrapError(err, "SuiteId")
+				err = msgp.WrapError(err, "SuiteID")
 				return
 			}
 		case "itr_correlation_id":
 			z.CorrelationID, err = dc.ReadString()
 			if err != nil {
-				err = msgp.WrapError(err, "CorrelationId")
+				err = msgp.WrapError(err, "CorrelationID")
 				return
 			}
 		case "name":
@@ -654,7 +654,6 @@ func (z *tslvSpan) EncodeMsg(en *msgp.Writer) (err error) {
 	// omitempty: check for empty values
 	zb0001Len := uint32(16)
 	var zb0001Mask uint16 /* 16 bits */
-	_ = zb0001Mask
 	if z.SessionID == 0 {
 		zb0001Len--
 		zb0001Mask |= 0x1
