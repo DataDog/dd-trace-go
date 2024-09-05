@@ -77,6 +77,13 @@ jobs:
     # Run go mod tidy to ensure that all go.mod and go.sum files are up-to-date.
     name: 'go mod tidy smoke test'
     runs-on: ubuntu-latest
+    env:
+      # Users may build our library with GOTOOLCHAIN=local. If they do, and our
+      # go.mod file specifies a newer Go version than their local toolchain, their
+      # build will break. Run our tests with GOTOOLCHAIN=local to ensure that
+      # our library builds with all of the Go versions we claim to support,
+      # without having to download a newer one.
+      GOTOOLCHAIN: local
     steps:
       - uses: actions/checkout@v4
         with:
