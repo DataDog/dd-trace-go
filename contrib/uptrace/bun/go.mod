@@ -1,6 +1,8 @@
 module github.com/DataDog/dd-trace-go/contrib/uptrace/bun/v2
 
-go 1.22.5
+go 1.22
+
+toolchain go1.22.5
 
 require (
 	github.com/DataDog/dd-trace-go/v2 v2.0.0-20240902131707-47c2b19fbd05

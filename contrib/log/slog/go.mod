@@ -1,6 +1,6 @@
 module github.com/DataDog/dd-trace-go/contrib/log/slog/v2
 
-go 1.22.5
+go 1.21
 
 require (
 	github.com/DataDog/dd-trace-go/v2 v2.0.0-20240902131707-47c2b19fbd05

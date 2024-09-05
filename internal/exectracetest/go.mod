@@ -2,8 +2,6 @@ module github.com/DataDog/dd-trace-go/internal/exectracetest/v2
 
 go 1.21
 
-toolchain go1.21.0
-
 require (
 	github.com/DataDog/dd-trace-go/contrib/database/sql/v2 v2.0.0-20240902131707-47c2b19fbd05
 	github.com/DataDog/dd-trace-go/v2 v2.0.0-20240902131707-47c2b19fbd05
@@ -39,7 +37,6 @@ require (
 	google.golang.org/protobuf v1.34.1 // indirect
 )
 
-// use local version of dd-trace-go
-replace github.com/DataDog/dd-trace-go/v2 => ../..
-
 replace github.com/DataDog/dd-trace-go/contrib/database/sql/v2 => ../../contrib/database/sql
+
+replace github.com/DataDog/dd-trace-go/v2 => ../..
