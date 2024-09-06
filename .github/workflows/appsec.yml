@@ -130,6 +130,7 @@ jobs:
         run: |
           set -euxo pipefail
           cgocheck="GOEXPERIMENT=cgocheck2"
+          report_error=0
           for cgo in "0" "1"; do
             for appsec_enabled_env in "" "DD_APPSEC_ENABLED=true" "DD_APPSEC_ENABLED=false"; do
                 for cgocheck_env in "" "$cgocheck"; do
@@ -141,12 +142,14 @@ jobs:
                     cd $submodule
                     if ! env CGO_ENABLED=$cgo $appsec_enabled_env $cgocheck_env go test -v .; then
                       echo "Failed: env CGO_ENABLED=$cgo $appsec_enabled_env $cgocheck_env go test -v . (submodule: $submodule)"
+                      report_error=1
                     fi
                     cd -
                   done
                 done
             done
           done
+          exit $report_error
 
   # Tests cases were appsec end up being disabled at compilation time
   disabled:
