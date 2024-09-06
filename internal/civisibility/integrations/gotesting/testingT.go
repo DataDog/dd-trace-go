@@ -21,6 +21,12 @@ var (
 
 	// ciVisibilityTestsMutex is a read-write mutex for synchronizing access to ciVisibilityTests.
 	ciVisibilityTestsMutex sync.RWMutex
+
+	// civisibilityTestsFuncs holds a map of *func(*testing.T) for tracking instrumented functions
+	civisibilityTestsFuncs = map[*func(*testing.T)]struct{}{}
+
+	// civisibilityTestsFuncsMutex is a read-write mutex for synchronizing access to civisibilityTestsFuncs.
+	civisibilityTestsFuncsMutex sync.RWMutex
 )
 
 // T is a type alias for testing.T to provide additional methods for CI visibility.
@@ -155,4 +161,23 @@ func setCiVisibilityTest(t *testing.T, ciTest integrations.DdTest) {
 	ciVisibilityTestsMutex.Lock()
 	defer ciVisibilityTestsMutex.Unlock()
 	ciVisibilityTests[t] = ciTest
+}
+
+// hasCiVisibilityTestFunc gets if a func(*testing.T) is being instrumented.
+func hasCiVisibilityTestFunc(fn *func(*testing.T)) bool {
+	civisibilityTestsFuncsMutex.RLock()
+	defer civisibilityTestsFuncsMutex.RUnlock()
+
+	if _, ok := civisibilityTestsFuncs[fn]; ok {
+		return true
+	}
+
+	return false
+}
+
+// setCiVisibilityTestFunc tracks a func(*testing.T) as instrumented benchmark.
+func setCiVisibilityTestFunc(fn *func(*testing.T)) {
+	civisibilityTestsFuncsMutex.RLock()
+	defer civisibilityTestsFuncsMutex.RUnlock()
+	civisibilityTestsFuncs[fn] = struct{}{}
 }

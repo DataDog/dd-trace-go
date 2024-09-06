@@ -226,10 +226,3 @@ func setCiVisibilityBenchmarkFunc(fn *func(*testing.B)) {
 	defer civisibilityBenchmarksFuncsMutex.RUnlock()
 	civisibilityBenchmarksFuncs[fn] = struct{}{}
 }
-
-// deleteCiVisibilityBenchmarkFunc untracks a func(*testing.B) as instrumented benchmark.
-func deleteCiVisibilityBenchmarkFunc(fn *func(*testing.B)) {
-	civisibilityBenchmarksFuncsMutex.RLock()
-	defer civisibilityBenchmarksFuncsMutex.RUnlock()
-	delete(civisibilityBenchmarksFuncs, fn)
-}

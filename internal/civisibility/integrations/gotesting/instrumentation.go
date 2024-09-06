@@ -56,18 +56,33 @@ func instrumentTestingM(m *testing.M) func(exitCode int) {
 
 // instrumentTestingTFunc helper function to instrument a testing function func(*testing.T)
 func instrumentTestingTFunc(f func(*testing.T)) func(*testing.T) {
-	// Reflect the function to obtain its pointer.
-	fReflect := reflect.Indirect(reflect.ValueOf(f))
-	moduleName, suiteName := utils.GetModuleAndSuiteName(fReflect.Pointer())
-	originalFunc := runtime.FuncForPC(fReflect.Pointer())
+	// Avoid instrumenting twice
+	if hasCiVisibilityTestFunc(&f) {
+		return f
+	}
 
-	// Increment the test count in the module.
-	atomic.AddInt32(modulesCounters[moduleName], 1)
+	instrumentedFunc := func(t *testing.T) {
+		// Reflect the function to obtain its pointer.
+		fReflect := reflect.Indirect(reflect.ValueOf(f))
+		moduleName, suiteName := utils.GetModuleAndSuiteName(fReflect.Pointer())
+		originalFunc := runtime.FuncForPC(fReflect.Pointer())
 
-	// Increment the test count in the suite.
-	atomic.AddInt32(suitesCounters[suiteName], 1)
+		// Initialize module counters if not already present.
+		if _, ok := modulesCounters[moduleName]; !ok {
+			var v int32
+			modulesCounters[moduleName] = &v
+		}
+		// Increment the test count in the module.
+		atomic.AddInt32(modulesCounters[moduleName], 1)
 
-	return func(t *testing.T) {
+		// Initialize suite counters if not already present.
+		if _, ok := suitesCounters[suiteName]; !ok {
+			var v int32
+			suitesCounters[suiteName] = &v
+		}
+		// Increment the test count in the suite.
+		atomic.AddInt32(suitesCounters[suiteName], 1)
+
 		// Create or retrieve the module, suite, and test for CI visibility.
 		module := session.GetOrCreateModuleWithFramework(moduleName, testFramework, runtime.Version())
 		suite := module.GetOrCreateSuite(suiteName)
@@ -101,6 +116,9 @@ func instrumentTestingTFunc(f func(*testing.T)) func(*testing.T) {
 		// Execute the original test function.
 		f(t)
 	}
+
+	setCiVisibilityTestFunc(&instrumentedFunc)
+	return instrumentedFunc
 }
 
 // instrumentTestingTSetErrorInfo helper function to set an error in the `testing.T` CI Visibility span
@@ -134,18 +152,7 @@ func instrumentTestingBFunc(pb *testing.B, name string, f func(*testing.B)) (str
 		return name, f
 	}
 
-	// Reflect the function to obtain its pointer.
-	fReflect := reflect.Indirect(reflect.ValueOf(f))
-	moduleName, suiteName := utils.GetModuleAndSuiteName(fReflect.Pointer())
-	originalFunc := runtime.FuncForPC(fReflect.Pointer())
-
-	// Increment the test count in the module.
-	atomic.AddInt32(modulesCounters[moduleName], 1)
-
-	// Increment the test count in the suite.
-	atomic.AddInt32(suitesCounters[suiteName], 1)
-
-	return subBenchmarkAutoName, func(b *testing.B) {
+	instrumentedFunc := func(b *testing.B) {
 		// The sub-benchmark implementation relies on creating a dummy sub benchmark (called [DD:TestVisibility]) with
 		// a Run over the original sub benchmark function to get the child results without interfering measurements
 		// By doing this the name of the sub-benchmark are changed
@@ -154,6 +161,27 @@ func instrumentTestingBFunc(pb *testing.B, name string, f func(*testing.B)) (str
 		// to:
 		//		benchmark/[DD:TestVisibility]/child
 		// We use regex and decrement the depth level of the benchmark to restore the original name
+
+		// Reflect the function to obtain its pointer.
+		fReflect := reflect.Indirect(reflect.ValueOf(f))
+		moduleName, suiteName := utils.GetModuleAndSuiteName(fReflect.Pointer())
+		originalFunc := runtime.FuncForPC(fReflect.Pointer())
+
+		// Initialize module counters if not already present.
+		if _, ok := modulesCounters[moduleName]; !ok {
+			var v int32
+			modulesCounters[moduleName] = &v
+		}
+		// Increment the test count in the module.
+		atomic.AddInt32(modulesCounters[moduleName], 1)
+
+		// Initialize suite counters if not already present.
+		if _, ok := suitesCounters[suiteName]; !ok {
+			var v int32
+			suitesCounters[suiteName] = &v
+		}
+		// Increment the test count in the suite.
+		atomic.AddInt32(suitesCounters[suiteName], 1)
 
 		// Decrement level.
 		bpf := getBenchmarkPrivateFields(b)
@@ -201,7 +229,6 @@ func instrumentTestingBFunc(pb *testing.B, name string, f func(*testing.B)) (str
 		}
 
 		setCiVisibilityBenchmarkFunc(&instrumentedFunc)
-		defer deleteCiVisibilityBenchmarkFunc(&instrumentedFunc)
 		b.Run(name, instrumentedFunc)
 
 		endTime := time.Now()
@@ -258,6 +285,8 @@ func instrumentTestingBFunc(pb *testing.B, name string, f func(*testing.B)) (str
 
 		checkModuleAndSuite(module, suite)
 	}
+	setCiVisibilityBenchmarkFunc(&instrumentedFunc)
+	return subBenchmarkAutoName, instrumentedFunc
 }
 
 // instrumentTestingBSetErrorInfo helper function to set an error in the `testing.B` CI Visibility span
