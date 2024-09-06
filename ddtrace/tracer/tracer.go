@@ -8,6 +8,7 @@ package tracer
 import (
 	gocontext "context"
 	"encoding/binary"
+	"fmt"
 	"math"
 	"os"
 	"runtime/pprof"
@@ -80,6 +81,9 @@ type tracer struct {
 	// These integers track metrics about spans and traces as they are started,
 	// finished, and dropped
 	spansStarted, spansFinished, tracesDropped uint32
+
+	// Keeps track of the total number of traces dropped for accurate logging.
+	totalTracesDropped uint32
 
 	// Records the number of dropped P0 traces and spans.
 	droppedP0Traces, droppedP0Spans uint32
@@ -401,6 +405,10 @@ func (t *tracer) worker(tick <-chan time.Time) {
 			}
 			return
 		}
+
+		if t.totalTracesDropped > 0 {
+			log.Error("%d traces dropped through payload queue", t.totalTracesDropped)
+		}
 	}
 }
 
@@ -410,6 +418,8 @@ func (t *tracer) worker(tick <-chan time.Time) {
 type chunk struct {
 	spans    []*span
 	willSend bool // willSend indicates whether the trace will be sent to the agent.
+	traceID  uint64
+	dropped  bool // indicates if the parent trace has already been dropped
 }
 
 // sampleChunk applies single-span sampling to the provided trace.
@@ -451,7 +461,12 @@ func (t *tracer) pushChunk(trace *chunk) {
 	select {
 	case t.out <- trace:
 	default:
-		log.Error("payload queue full, dropping %d traces", len(trace.spans))
+		log.Debug("payload queue full, trace %d dropped %d spans", trace.traceID, len(trace.spans))
+		if !trace.dropped {
+			log.Info(fmt.Sprintf("dropped %d", trace.traceID))
+			atomic.AddUint32(&t.totalTracesDropped, 1)
+			trace.dropped = true
+		}
 	}
 }
 

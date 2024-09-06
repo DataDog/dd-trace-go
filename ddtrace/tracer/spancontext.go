@@ -266,6 +266,7 @@ type trace struct {
 	priority         *float64          // sampling priority
 	locked           bool              // specifies if the sampling priority can be altered
 	samplingDecision samplingDecision  // samplingDecision indicates whether to send the trace to the agent.
+	dropped          bool              // specifies if part or all of the trace has been dropped
 
 	// root specifies the root of the trace, if known; it is nil when a span
 	// context is extracted from a carrier, at which point there are no spans in
@@ -483,6 +484,8 @@ func (t *trace) finishedOne(s *span) {
 		t.finishChunk(tr, &chunk{
 			spans:    t.spans,
 			willSend: decisionKeep == samplingDecision(atomic.LoadUint32((*uint32)(&t.samplingDecision))),
+			traceID:  t.root.TraceID,
+			dropped:  t.dropped,
 		})
 		t.spans = nil
 		return
@@ -514,6 +517,8 @@ func (t *trace) finishedOne(s *span) {
 	t.finishChunk(tr, &chunk{
 		spans:    finishedSpans,
 		willSend: decisionKeep == samplingDecision(atomic.LoadUint32((*uint32)(&t.samplingDecision))),
+		traceID:  t.root.TraceID,
+		dropped:  t.dropped,
 	})
 	t.spans = leftoverSpans
 }
@@ -521,6 +526,7 @@ func (t *trace) finishedOne(s *span) {
 func (t *trace) finishChunk(tr *tracer, ch *chunk) {
 	atomic.AddUint32(&tr.spansFinished, uint32(len(ch.spans)))
 	tr.pushChunk(ch)
+	t.dropped = ch.dropped
 	t.finished = 0 // important, because a buffer can be used for several flushes
 }
 

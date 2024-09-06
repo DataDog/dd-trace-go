@@ -61,6 +61,7 @@ func TestReportHealthMetrics(t *testing.T) {
 	assert.Equal(int64(1), counts["datadog.tracer.spans_started"])
 	assert.Equal(int64(1), counts["datadog.tracer.spans_finished"])
 	assert.Equal(int64(0), counts["datadog.tracer.traces_dropped"])
+	assert.Equal(int64(0), counts["datadog.tracer.total_traces_dropped"])
 }
 
 func TestTracerMetrics(t *testing.T) {
