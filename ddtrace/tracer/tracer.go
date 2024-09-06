@@ -406,7 +406,9 @@ func (t *tracer) worker(tick <-chan time.Time) {
 			return
 		}
 
-		if t.totalTracesDropped > 0 {
+		var totalDropped uint32
+		atomic.StoreUint32(&totalDropped, t.totalTracesDropped)
+		if totalDropped > 0 {
 			log.Error("%d traces dropped through payload queue", t.totalTracesDropped)
 		}
 	}
