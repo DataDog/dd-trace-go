@@ -7,10 +7,6 @@ on:
         description: 'The branch to run the workflow on'
         required: true
         type: string
-      branch_ref:
-        description: 'The branch to checkout the dd-trace-go repository'
-        required: false
-        type: string
   push:
     branches:
       - main
@@ -42,7 +38,7 @@ jobs:
       - name: Checkout dd-trace-go
         uses: actions/checkout@v3
         with:
-          ref: ${{ inputs.branch_ref || github.ref }}
+          ref: ${{ inputs.ref || github.ref }}
           path: 'binaries/dd-trace-go'
 
       - uses: actions/setup-go@v3
