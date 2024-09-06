@@ -28,7 +28,10 @@ jobs:
         uses: actions/checkout@v3
         with:
           ref: ${{ inputs.ref || github.ref }}
-
+      - name: Setup Go
+        uses: ./.github/actions/setup-go
+        with:
+          go-version: ${{ inputs.go-version }}
       - name: Copyright
         run: |
           go run checkcopyright.go
@@ -251,7 +254,7 @@ jobs:
 
       - name: Testing outlier google.golang.org/api
         run: |
-              go get google.golang.org/api@v0.121.0 # version used to generate code
+              go get google.golang.org/api@v0.192.0 # version used to generate code
               go mod tidy # Go1.16 doesn't update the sum file correctly after the go get, this tidy fixes it
               go test -v ./contrib/google.golang.org/api/...
 
