@@ -112,6 +112,18 @@ func TestConsumer(t *testing.T) {
 	}
 }
 
+func newMetadataResponse(cfg *sarama.Config) *sarama.MetadataResponse {
+	metadataResponse := new(sarama.MetadataResponse)
+	// Sarama v1.41.0 changed the version of the SASL handshake to v1
+	// We use this to support our smoke tests.
+	if cfg.Net.SASL.Version == sarama.SASLHandshakeV0 {
+		metadataResponse.Version = 1
+	} else {
+		metadataResponse.Version = 4
+	}
+	return metadataResponse
+}
+
 func TestSyncProducer(t *testing.T) {
 	mt := mocktracer.Start()
 	defer mt.Stop()
@@ -122,8 +134,11 @@ func TestSyncProducer(t *testing.T) {
 	leader := sarama.NewMockBroker(t, 2)
 	defer leader.Close()
 
-	metadataResponse := new(sarama.MetadataResponse)
-	metadataResponse.Version = 1
+	cfg := sarama.NewConfig()
+	cfg.Version = sarama.V0_11_0_0 // first version that supports headers
+	cfg.Producer.Return.Successes = true
+
+	metadataResponse := newMetadataResponse(cfg)
 	metadataResponse.AddBroker(leader.Addr(), leader.BrokerID())
 	metadataResponse.AddTopicPartition("my_topic", 0, leader.BrokerID(), nil, nil, nil, sarama.ErrNoError)
 	seedBroker.Returns(metadataResponse)
@@ -132,10 +147,6 @@ func TestSyncProducer(t *testing.T) {
 	prodSuccess.Version = 2
 	prodSuccess.AddTopicPartition("my_topic", 0, sarama.ErrNoError)
 	leader.Returns(prodSuccess)
-
-	cfg := sarama.NewConfig()
-	cfg.Version = sarama.V0_11_0_0 // first version that supports headers
-	cfg.Producer.Return.Successes = true
 
 	producer, err := sarama.NewSyncProducer([]string{seedBroker.Addr()}, cfg)
 	require.NoError(t, err)
@@ -181,8 +192,12 @@ func TestSyncProducerSendMessages(t *testing.T) {
 	leader := sarama.NewMockBroker(t, 2)
 	defer leader.Close()
 
-	metadataResponse := new(sarama.MetadataResponse)
-	metadataResponse.Version = 1
+	cfg := sarama.NewConfig()
+	cfg.Version = sarama.V0_11_0_0 // first version that supports headers
+	cfg.Producer.Return.Successes = true
+	cfg.Producer.Flush.Messages = 2
+
+	metadataResponse := newMetadataResponse(cfg)
 	metadataResponse.AddBroker(leader.Addr(), leader.BrokerID())
 	metadataResponse.AddTopicPartition("my_topic", 0, leader.BrokerID(), nil, nil, nil, sarama.ErrNoError)
 	seedBroker.Returns(metadataResponse)
@@ -191,11 +206,6 @@ func TestSyncProducerSendMessages(t *testing.T) {
 	prodSuccess.Version = 2
 	prodSuccess.AddTopicPartition("my_topic", 0, sarama.ErrNoError)
 	leader.Returns(prodSuccess)
-
-	cfg := sarama.NewConfig()
-	cfg.Version = sarama.V0_11_0_0 // first version that supports headers
-	cfg.Producer.Return.Successes = true
-	cfg.Producer.Flush.Messages = 2
 
 	producer, err := sarama.NewSyncProducer([]string{seedBroker.Addr()}, cfg)
 	require.NoError(t, err)
@@ -246,10 +256,11 @@ func TestAsyncProducer(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		broker := newMockBroker(t)
-
 		cfg := sarama.NewConfig()
 		cfg.Version = sarama.V0_11_0_0
+
+		broker := newMockBroker(t, cfg)
+
 		producer, err := sarama.NewAsyncProducer([]string{broker.Addr()}, cfg)
 		require.NoError(t, err)
 		producer = WrapAsyncProducer(nil, producer, WithDataStreams())
@@ -293,11 +304,11 @@ func TestAsyncProducer(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		broker := newMockBroker(t)
-
 		cfg := sarama.NewConfig()
 		cfg.Version = sarama.V0_11_0_0
 		cfg.Producer.Return.Successes = true
+
+		broker := newMockBroker(t, cfg)
 
 		producer, err := sarama.NewAsyncProducer([]string{broker.Addr()}, cfg)
 		require.NoError(t, err)
@@ -334,11 +345,10 @@ func TestAsyncProducer(t *testing.T) {
 	})
 }
 
-func newMockBroker(t *testing.T) *sarama.MockBroker {
+func newMockBroker(t *testing.T, cfg *sarama.Config) *sarama.MockBroker {
 	broker := sarama.NewMockBroker(t, 1)
 
-	metadataResponse := new(sarama.MetadataResponse)
-	metadataResponse.Version = 1
+	metadataResponse := newMetadataResponse(cfg)
 	metadataResponse.AddBroker(broker.Addr(), broker.BrokerID())
 	metadataResponse.AddTopicPartition("my_topic", 0, broker.BrokerID(), nil, nil, nil, sarama.ErrNoError)
 	broker.Returns(metadataResponse)
