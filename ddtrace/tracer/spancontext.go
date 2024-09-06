@@ -484,7 +484,7 @@ func (t *trace) finishedOne(s *span) {
 		t.finishChunk(tr, &chunk{
 			spans:    t.spans,
 			willSend: decisionKeep == samplingDecision(atomic.LoadUint32((*uint32)(&t.samplingDecision))),
-			traceID:  t.root.TraceID,
+			traceID:  s.TraceID,
 			dropped:  t.dropped,
 		})
 		t.spans = nil
@@ -517,7 +517,7 @@ func (t *trace) finishedOne(s *span) {
 	t.finishChunk(tr, &chunk{
 		spans:    finishedSpans,
 		willSend: decisionKeep == samplingDecision(atomic.LoadUint32((*uint32)(&t.samplingDecision))),
-		traceID:  t.root.TraceID,
+		traceID:  s.TraceID,
 		dropped:  t.dropped,
 	})
 	t.spans = leftoverSpans
