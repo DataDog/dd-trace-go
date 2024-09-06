@@ -38,7 +38,7 @@ jobs:
       - name: Checkout dd-trace-go
         uses: actions/checkout@v3
         with:
-          ref: ${{ inputs.branch_ref || github.ref }}
+          ref: ${{ inputs.ref || github.ref }}
           path: 'binaries/dd-trace-go'
 
       - uses: actions/setup-go@v3
