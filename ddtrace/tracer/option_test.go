@@ -592,6 +592,9 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			assert.Equal(t, globalconfig.DogstatsdAddr(), "10.1.0.12:4002")
 		})
 		t.Run("uds", func(t *testing.T) {
+			if strings.HasPrefix(runtime.GOOS, "windows") {
+				t.Skip("Unix only")
+			}
 			assert := assert.New(t)
 			dir, err := os.MkdirTemp("", "socket")
 			if err != nil {
@@ -600,6 +603,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			addr := filepath.Join(dir, "dsd.socket")
 			defer os.RemoveAll(addr)
 			tracer, err := newTracer(WithDogstatsdAddress("unix://" + addr))
+			assert.NoError(err)
 			defer tracer.Stop()
 			c := tracer.config
 			assert.Equal("unix://"+addr, c.dogstatsdAddr)
