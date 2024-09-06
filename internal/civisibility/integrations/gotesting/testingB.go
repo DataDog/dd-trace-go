@@ -9,6 +9,7 @@ import (
 	"context"
 	"fmt"
 	"regexp"
+	"runtime"
 	"sync"
 	"testing"
 	"time"
@@ -30,7 +31,7 @@ var (
 	subBenchmarkAutoNameRegex = regexp.MustCompile(`(?si)\/\[DD:TestVisibility\].*`)
 
 	// civisibilityBenchmarksFuncs holds a map of *func(*testing.B) for tracking instrumented functions
-	civisibilityBenchmarksFuncs = map[*func(*testing.B)]struct{}{}
+	civisibilityBenchmarksFuncs = map[*runtime.Func]struct{}{}
 
 	// civisibilityBenchmarksFuncsMutex is a read-write mutex for synchronizing access to civisibilityBenchmarksFuncs.
 	civisibilityBenchmarksFuncsMutex sync.RWMutex
@@ -209,7 +210,7 @@ func setCiVisibilityBenchmark(b *testing.B, ciTest integrations.DdTest) {
 }
 
 // hasCiVisibilityBenchmarkFunc gets if a func(*testing.B) is being instrumented.
-func hasCiVisibilityBenchmarkFunc(fn *func(*testing.B)) bool {
+func hasCiVisibilityBenchmarkFunc(fn *runtime.Func) bool {
 	civisibilityBenchmarksFuncsMutex.RLock()
 	defer civisibilityBenchmarksFuncsMutex.RUnlock()
 
@@ -221,7 +222,7 @@ func hasCiVisibilityBenchmarkFunc(fn *func(*testing.B)) bool {
 }
 
 // setCiVisibilityBenchmarkFunc tracks a func(*testing.B) as instrumented benchmark.
-func setCiVisibilityBenchmarkFunc(fn *func(*testing.B)) {
+func setCiVisibilityBenchmarkFunc(fn *runtime.Func) {
 	civisibilityBenchmarksFuncsMutex.RLock()
 	defer civisibilityBenchmarksFuncsMutex.RUnlock()
 	civisibilityBenchmarksFuncs[fn] = struct{}{}

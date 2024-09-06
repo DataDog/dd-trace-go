@@ -8,6 +8,7 @@ package gotesting
 import (
 	"context"
 	"fmt"
+	"runtime"
 	"sync"
 	"testing"
 	"time"
@@ -23,7 +24,7 @@ var (
 	ciVisibilityTestsMutex sync.RWMutex
 
 	// civisibilityTestsFuncs holds a map of *func(*testing.T) for tracking instrumented functions
-	civisibilityTestsFuncs = map[*func(*testing.T)]struct{}{}
+	civisibilityTestsFuncs = map[*runtime.Func]struct{}{}
 
 	// civisibilityTestsFuncsMutex is a read-write mutex for synchronizing access to civisibilityTestsFuncs.
 	civisibilityTestsFuncsMutex sync.RWMutex
@@ -164,7 +165,7 @@ func setCiVisibilityTest(t *testing.T, ciTest integrations.DdTest) {
 }
 
 // hasCiVisibilityTestFunc gets if a func(*testing.T) is being instrumented.
-func hasCiVisibilityTestFunc(fn *func(*testing.T)) bool {
+func hasCiVisibilityTestFunc(fn *runtime.Func) bool {
 	civisibilityTestsFuncsMutex.RLock()
 	defer civisibilityTestsFuncsMutex.RUnlock()
 
@@ -176,7 +177,7 @@ func hasCiVisibilityTestFunc(fn *func(*testing.T)) bool {
 }
 
 // setCiVisibilityTestFunc tracks a func(*testing.T) as instrumented benchmark.
-func setCiVisibilityTestFunc(fn *func(*testing.T)) {
+func setCiVisibilityTestFunc(fn *runtime.Func) {
 	civisibilityTestsFuncsMutex.RLock()
 	defer civisibilityTestsFuncsMutex.RUnlock()
 	civisibilityTestsFuncs[fn] = struct{}{}

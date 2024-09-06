@@ -56,17 +56,17 @@ func instrumentTestingM(m *testing.M) func(exitCode int) {
 
 // instrumentTestingTFunc helper function to instrument a testing function func(*testing.T)
 func instrumentTestingTFunc(f func(*testing.T)) func(*testing.T) {
+	// Reflect the function to obtain its pointer.
+	fReflect := reflect.Indirect(reflect.ValueOf(f))
+	moduleName, suiteName := utils.GetModuleAndSuiteName(fReflect.Pointer())
+	originalFunc := runtime.FuncForPC(fReflect.Pointer())
+
 	// Avoid instrumenting twice
-	if hasCiVisibilityTestFunc(&f) {
+	if hasCiVisibilityTestFunc(originalFunc) {
 		return f
 	}
 
 	instrumentedFunc := func(t *testing.T) {
-		// Reflect the function to obtain its pointer.
-		fReflect := reflect.Indirect(reflect.ValueOf(f))
-		moduleName, suiteName := utils.GetModuleAndSuiteName(fReflect.Pointer())
-		originalFunc := runtime.FuncForPC(fReflect.Pointer())
-
 		// Initialize module counters if not already present.
 		if _, ok := modulesCounters[moduleName]; !ok {
 			var v int32
@@ -117,7 +117,8 @@ func instrumentTestingTFunc(f func(*testing.T)) func(*testing.T) {
 		f(t)
 	}
 
-	setCiVisibilityTestFunc(&instrumentedFunc)
+	setCiVisibilityTestFunc(originalFunc)
+	setCiVisibilityTestFunc(runtime.FuncForPC(reflect.Indirect(reflect.ValueOf(instrumentedFunc)).Pointer()))
 	return instrumentedFunc
 }
 
@@ -147,8 +148,13 @@ func instrumentTestingTSkipNow(t *testing.T) {
 
 // instrumentTestingBFunc helper function to instrument a benchmark function func(*testing.B)
 func instrumentTestingBFunc(pb *testing.B, name string, f func(*testing.B)) (string, func(*testing.B)) {
+	// Reflect the function to obtain its pointer.
+	fReflect := reflect.Indirect(reflect.ValueOf(f))
+	moduleName, suiteName := utils.GetModuleAndSuiteName(fReflect.Pointer())
+	originalFunc := runtime.FuncForPC(fReflect.Pointer())
+
 	// Avoid instrumenting twice
-	if hasCiVisibilityBenchmarkFunc(&f) {
+	if hasCiVisibilityBenchmarkFunc(originalFunc) {
 		return name, f
 	}
 
@@ -161,11 +167,6 @@ func instrumentTestingBFunc(pb *testing.B, name string, f func(*testing.B)) (str
 		// to:
 		//		benchmark/[DD:TestVisibility]/child
 		// We use regex and decrement the depth level of the benchmark to restore the original name
-
-		// Reflect the function to obtain its pointer.
-		fReflect := reflect.Indirect(reflect.ValueOf(f))
-		moduleName, suiteName := utils.GetModuleAndSuiteName(fReflect.Pointer())
-		originalFunc := runtime.FuncForPC(fReflect.Pointer())
 
 		// Initialize module counters if not already present.
 		if _, ok := modulesCounters[moduleName]; !ok {
@@ -228,7 +229,7 @@ func instrumentTestingBFunc(pb *testing.B, name string, f func(*testing.B)) (str
 			f(b)
 		}
 
-		setCiVisibilityBenchmarkFunc(&instrumentedFunc)
+		setCiVisibilityBenchmarkFunc(runtime.FuncForPC(reflect.Indirect(reflect.ValueOf(instrumentedFunc)).Pointer()))
 		b.Run(name, instrumentedFunc)
 
 		endTime := time.Now()
@@ -285,7 +286,8 @@ func instrumentTestingBFunc(pb *testing.B, name string, f func(*testing.B)) (str
 
 		checkModuleAndSuite(module, suite)
 	}
-	setCiVisibilityBenchmarkFunc(&instrumentedFunc)
+	setCiVisibilityBenchmarkFunc(originalFunc)
+	setCiVisibilityBenchmarkFunc(runtime.FuncForPC(reflect.Indirect(reflect.ValueOf(instrumentedFunc)).Pointer()))
 	return subBenchmarkAutoName, instrumentedFunc
 }
 

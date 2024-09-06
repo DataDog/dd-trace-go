@@ -165,7 +165,8 @@ func (ddm *M) executeInternalTest(testInfo *testingTInfo) func(*testing.T) {
 		// Execute the original test function.
 		testInfo.originalFunc(t)
 	}
-	setCiVisibilityTestFunc(&instrumentedFunc)
+	setCiVisibilityTestFunc(originalFunc)
+	setCiVisibilityTestFunc(runtime.FuncForPC(reflect.Indirect(reflect.ValueOf(instrumentedFunc)).Pointer()))
 	return instrumentedFunc
 }
 
@@ -218,13 +219,13 @@ func (ddm *M) instrumentInternalBenchmarks(internalBenchmarks *[]testing.Interna
 
 // executeInternalBenchmark wraps the original benchmark function to include CI visibility instrumentation.
 func (ddm *M) executeInternalBenchmark(benchmarkInfo *testingBInfo) func(*testing.B) {
+	originalFunc := runtime.FuncForPC(reflect.Indirect(reflect.ValueOf(benchmarkInfo.originalFunc)).Pointer())
 	instrumentedInternalFunc := func(b *testing.B) {
 
 		// decrement level
 		getBenchmarkPrivateFields(b).AddLevel(-1)
 
 		startTime := time.Now()
-		originalFunc := runtime.FuncForPC(reflect.Indirect(reflect.ValueOf(benchmarkInfo.originalFunc)).Pointer())
 		module := session.GetOrCreateModuleWithFrameworkAndStartTime(benchmarkInfo.moduleName, testFramework, runtime.Version(), startTime)
 		suite := module.GetOrCreateSuiteWithStartTime(benchmarkInfo.suiteName, startTime)
 		test := suite.CreateTestWithStartTime(benchmarkInfo.testName, startTime)
@@ -263,7 +264,7 @@ func (ddm *M) executeInternalBenchmark(benchmarkInfo *testingBInfo) func(*testin
 			benchmarkInfo.originalFunc(b)
 		}
 
-		setCiVisibilityBenchmarkFunc(&instrumentedFunc)
+		setCiVisibilityBenchmarkFunc(runtime.FuncForPC(reflect.Indirect(reflect.ValueOf(instrumentedFunc)).Pointer()))
 		b.Run(b.Name(), instrumentedFunc)
 
 		endTime := time.Now()
@@ -320,7 +321,8 @@ func (ddm *M) executeInternalBenchmark(benchmarkInfo *testingBInfo) func(*testin
 
 		checkModuleAndSuite(module, suite)
 	}
-	setCiVisibilityBenchmarkFunc(&instrumentedInternalFunc)
+	setCiVisibilityBenchmarkFunc(originalFunc)
+	setCiVisibilityBenchmarkFunc(runtime.FuncForPC(reflect.Indirect(reflect.ValueOf(instrumentedInternalFunc)).Pointer()))
 	return instrumentedInternalFunc
 }
 
