@@ -5,7 +5,7 @@ go 1.21
 require (
 	github.com/DataDog/appsec-internal-go v1.7.0
 	github.com/DataDog/dd-trace-go/instrumentation/testutils/grpc/v2 v2.0.0-20240827110213-c6fc4fe2047a
-	github.com/DataDog/dd-trace-go/v2 v2.0.0-20240902131707-47c2b19fbd05
+	github.com/DataDog/dd-trace-go/v2 v2.0.0-20240909090048-d1f31b7b7397
 	github.com/stretchr/testify v1.9.0
 	github.com/tinylib/msgp v1.1.9
 	google.golang.org/grpc v1.65.0

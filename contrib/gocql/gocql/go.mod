@@ -3,7 +3,7 @@ module github.com/DataDog/dd-trace-go/contrib/gocql/gocql/v2
 go 1.21
 
 require (
-	github.com/DataDog/dd-trace-go/v2 v2.0.0-20240902131707-47c2b19fbd05
+	github.com/DataDog/dd-trace-go/v2 v2.0.0-20240909090048-d1f31b7b7397
 	github.com/gocql/gocql v0.0.0-20220224095938-0eacd3183625
 	github.com/stretchr/testify v1.9.0
 	golang.org/x/mod v0.14.0
