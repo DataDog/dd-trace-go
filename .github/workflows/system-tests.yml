@@ -134,7 +134,7 @@ jobs:
         run: tar -czvf artifact.tar.gz $(ls | grep logs)
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v4
         if: ${{ always() }}
         with:
           name: logs_${{ matrix.weblog-variant }}_${{ matrix.scenario }}
