@@ -165,8 +165,15 @@ func (ddm *M) executeInternalTest(testInfo *testingTInfo) func(*testing.T) {
 		// Execute the original test function.
 		testInfo.originalFunc(t)
 	}
-	setCiVisibilityTestFunc(originalFunc)
-	setCiVisibilityTestFunc(runtime.FuncForPC(reflect.Indirect(reflect.ValueOf(instrumentedFunc)).Pointer()))
+
+	metadata := &instrumentationMetadata{
+		IsInternal:       true,
+		OriginalTest:     &testInfo.originalFunc,
+		InstrumentedTest: &instrumentedFunc,
+	}
+
+	setInstrumentationMetadata(originalFunc, metadata)
+	setInstrumentationMetadata(runtime.FuncForPC(reflect.Indirect(reflect.ValueOf(instrumentedFunc)).Pointer()), metadata)
 	return instrumentedFunc
 }
 
@@ -256,7 +263,7 @@ func (ddm *M) executeInternalBenchmark(benchmarkInfo *testingBInfo) func(*testin
 			// Replace the benchmark function with the original one (this must be executed only once - the first iteration[b.run1]).
 			*iPfOfB.benchFunc = benchmarkInfo.originalFunc
 			// Set the CI visibility benchmark.
-			setCiVisibilityBenchmark(b, test)
+			setCiVisibilityTest(b, test)
 
 			// Restart the timer and execute the original benchmark function.
 			b.ResetTimer()

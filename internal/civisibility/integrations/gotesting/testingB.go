@@ -18,12 +18,6 @@ import (
 )
 
 var (
-	// ciVisibilityBenchmarks holds a map of *testing.B to civisibility.DdTest for tracking benchmarks.
-	ciVisibilityBenchmarks = map[*testing.B]integrations.DdTest{}
-
-	// ciVisibilityBenchmarksMutex is a read-write mutex for synchronizing access to ciVisibilityBenchmarks.
-	ciVisibilityBenchmarksMutex sync.RWMutex
-
 	// subBenchmarkAutoName is a placeholder name for CI Visibility sub-benchmarks.
 	subBenchmarkAutoName = "[DD:TestVisibility]"
 
@@ -60,7 +54,7 @@ func (ddb *B) Run(name string, f func(*testing.B)) bool {
 // integration tests.
 func (ddb *B) Context() context.Context {
 	b := (*testing.B)(ddb)
-	ciTest := getCiVisibilityBenchmark(b)
+	ciTest := getCiVisibilityTest(b)
 	if ciTest != nil {
 		return ciTest.Context()
 	}
@@ -114,7 +108,7 @@ func (ddb *B) Skipf(format string, args ...any) {
 // during the test. Calling SkipNow does not stop those other goroutines.
 func (ddb *B) SkipNow() {
 	b := (*testing.B)(ddb)
-	instrumentTestingBSkipNow(b)
+	instrumentSkipNow(b)
 	b.SkipNow()
 }
 
@@ -180,33 +174,14 @@ func (ddb *B) SetParallelism(p int) { (*testing.B)(ddb).SetParallelism(p) }
 
 func (ddb *B) getBWithError(errType string, errMessage string) *testing.B {
 	b := (*testing.B)(ddb)
-	instrumentTestingBSetErrorInfo(b, errType, errMessage, 1)
+	instrumentSetErrorInfo(b, errType, errMessage, 1)
 	return b
 }
 
 func (ddb *B) getBWithSkip(skipReason string) *testing.B {
 	b := (*testing.B)(ddb)
-	instrumentTestingBCloseAndSkip(b, skipReason)
+	instrumentCloseAndSkip(b, skipReason)
 	return b
-}
-
-// getCiVisibilityBenchmark retrieves the CI visibility benchmark associated with a given *testing.B.
-func getCiVisibilityBenchmark(b *testing.B) integrations.DdTest {
-	ciVisibilityBenchmarksMutex.RLock()
-	defer ciVisibilityBenchmarksMutex.RUnlock()
-
-	if v, ok := ciVisibilityBenchmarks[b]; ok {
-		return v
-	}
-
-	return nil
-}
-
-// setCiVisibilityBenchmark associates a CI visibility benchmark with a given *testing.B.
-func setCiVisibilityBenchmark(b *testing.B, ciTest integrations.DdTest) {
-	ciVisibilityBenchmarksMutex.Lock()
-	defer ciVisibilityBenchmarksMutex.Unlock()
-	ciVisibilityBenchmarks[b] = ciTest
 }
 
 // hasCiVisibilityBenchmarkFunc gets if a func(*testing.B) is being instrumented.
