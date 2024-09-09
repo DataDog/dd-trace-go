@@ -21,7 +21,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils"
 	"github.com/stretchr/testify/require"
 
-	_ "github.com/glebarez/go-sqlite"
+	_ "modernc.org/sqlite"
 )
 
 func prepareSQLDB(nbEntries int) (*sql.DB, error) {
