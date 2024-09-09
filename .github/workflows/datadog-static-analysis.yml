@@ -4,7 +4,6 @@ name: Datadog Static Analysis
 
 permissions:
   contents: read
-  pull-requests: write
 
 jobs:
   static-analysis:
