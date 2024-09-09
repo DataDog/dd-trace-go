@@ -3,8 +3,8 @@ module github.com/DataDog/dd-trace-go/contrib/jmoiron/sqlx/v2
 go 1.21
 
 require (
-	github.com/DataDog/dd-trace-go/contrib/database/sql/v2 v2.0.0-20240909090048-d1f31b7b7397
-	github.com/DataDog/dd-trace-go/v2 v2.0.0-20240909090048-d1f31b7b7397
+	github.com/DataDog/dd-trace-go/contrib/database/sql/v2 v2.0.0-20240909105439-c452671ebc14
+	github.com/DataDog/dd-trace-go/v2 v2.0.0-20240909105439-c452671ebc14
 	github.com/denisenkom/go-mssqldb v0.11.0
 	github.com/go-sql-driver/mysql v1.6.0
 	github.com/jmoiron/sqlx v1.3.5

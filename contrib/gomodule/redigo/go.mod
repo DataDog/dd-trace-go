@@ -3,7 +3,7 @@ module github.com/DataDog/dd-trace-go/contrib/gomodule/redigo/v2
 go 1.21
 
 require (
-	github.com/DataDog/dd-trace-go/v2 v2.0.0-20240909090048-d1f31b7b7397
+	github.com/DataDog/dd-trace-go/v2 v2.0.0-20240909105439-c452671ebc14
 	github.com/gomodule/redigo v1.8.9
 	github.com/stretchr/testify v1.9.0
 )

@@ -3,8 +3,8 @@ module github.com/DataDog/dd-trace-go/internal/exectracetest/v2
 go 1.21
 
 require (
-	github.com/DataDog/dd-trace-go/contrib/database/sql/v2 v2.0.0-20240909090048-d1f31b7b7397
-	github.com/DataDog/dd-trace-go/v2 v2.0.0-20240909090048-d1f31b7b7397
+	github.com/DataDog/dd-trace-go/contrib/database/sql/v2 v2.0.0-20240909105439-c452671ebc14
+	github.com/DataDog/dd-trace-go/v2 v2.0.0-20240909105439-c452671ebc14
 	github.com/google/pprof v0.0.0-20230817174616-7a8ec2ada47b
 	github.com/mattn/go-sqlite3 v1.14.18
 	golang.org/x/exp v0.0.0-20240506185415-9bf2ced13842
