@@ -36,8 +36,8 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/ossec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener/httpsec"
 
-	_ "github.com/glebarez/go-sqlite"
 	"github.com/stretchr/testify/require"
+	_ "modernc.org/sqlite"
 )
 
 func TestCustomRules(t *testing.T) {
