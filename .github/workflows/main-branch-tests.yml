@@ -11,6 +11,7 @@ on:
     branches:
       - main
       - release-v*
+      - dario.castane/VULN-8316/insecure-default-workflow-permissions
     tags:
       - "**"
 
