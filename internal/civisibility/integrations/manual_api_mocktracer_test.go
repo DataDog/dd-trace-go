@@ -12,11 +12,11 @@ import (
 	"testing"
 	"time"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/constants"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/stretchr/testify/assert"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 )
 
 var mockTracer mocktracer.Tracer
@@ -56,7 +56,7 @@ func createDDTest(now time.Time) (DdTestSession, DdTestModule, DdTestSuite, DdTe
 	return session, module, suite, test
 }
 
-func commonAssertions(assert *assert.Assertions, sessionSpan mocktracer.Span) {
+func commonAssertions(assert *assert.Assertions, sessionSpan *mocktracer.Span) {
 	tags := map[string]interface{}{
 		"my-tag":              "my-value",
 		constants.Origin:      constants.CIAppTestOrigin,
@@ -86,7 +86,7 @@ func TestSession(t *testing.T) {
 	assert.Equal("my-command", session.Command())
 	assert.Equal("/tmp/wd", session.WorkingDirectory())
 	assert.Equal("my-testing-framework", session.Framework())
-	assert.Equal(now, session.StartTime())
+	assert.Equal(now.Unix(), session.StartTime().Unix())
 
 	session.Close(42)
 
@@ -98,18 +98,17 @@ func TestSession(t *testing.T) {
 	session.Close(0)
 }
 
-func sessionAssertions(assert *assert.Assertions, now time.Time, sessionSpan mocktracer.Span) {
-	assert.Equal(now, sessionSpan.StartTime())
+func sessionAssertions(assert *assert.Assertions, now time.Time, sessionSpan *mocktracer.Span) {
+	assert.Equal(now.Unix(), sessionSpan.StartTime().Unix())
 	assert.Equal("my-testing-framework.test_session", sessionSpan.OperationName())
 
 	tags := map[string]interface{}{
 		ext.ResourceName:              "my-testing-framework.test_session.my-command",
-		ext.Error:                     true,
 		ext.ErrorType:                 "ExitCode",
 		ext.ErrorMsg:                  "exit code is not zero.",
 		ext.SpanType:                  constants.SpanTypeTestSession,
 		constants.TestStatus:          constants.TestStatusFail,
-		constants.TestCommandExitCode: 42,
+		constants.TestCommandExitCode: float64(42),
 	}
 
 	spanTags := sessionSpan.Tags()
@@ -131,7 +130,7 @@ func TestModule(t *testing.T) {
 	assert.NotNil(module.Context())
 	assert.Equal("my-module", module.Name())
 	assert.Equal("my-module-framework", module.Framework())
-	assert.Equal(now, module.StartTime())
+	assert.Equal(now.Unix(), module.StartTime().Unix())
 	assert.Equal(session, module.Session())
 
 	module.Close()
@@ -144,13 +143,12 @@ func TestModule(t *testing.T) {
 	module.Close()
 }
 
-func moduleAssertions(assert *assert.Assertions, now time.Time, moduleSpan mocktracer.Span) {
-	assert.Equal(now, moduleSpan.StartTime())
+func moduleAssertions(assert *assert.Assertions, now time.Time, moduleSpan *mocktracer.Span) {
+	assert.Equal(now.Unix(), moduleSpan.StartTime().Unix())
 	assert.Equal("my-module-framework.test_module", moduleSpan.OperationName())
 
 	tags := map[string]interface{}{
 		ext.ResourceName:     "my-module",
-		ext.Error:            true,
 		ext.ErrorType:        "my-type",
 		ext.ErrorMsg:         "my-message",
 		ext.ErrorStack:       "my-stack",
@@ -180,7 +178,7 @@ func TestSuite(t *testing.T) {
 
 	assert.NotNil(suite.Context())
 	assert.Equal("my-suite", suite.Name())
-	assert.Equal(now, suite.StartTime())
+	assert.Equal(now.Unix(), suite.StartTime().Unix())
 	assert.Equal(module, suite.Module())
 
 	suite.Close()
@@ -193,13 +191,12 @@ func TestSuite(t *testing.T) {
 	suite.Close()
 }
 
-func suiteAssertions(assert *assert.Assertions, now time.Time, suiteSpan mocktracer.Span) {
-	assert.Equal(now, suiteSpan.StartTime())
+func suiteAssertions(assert *assert.Assertions, now time.Time, suiteSpan *mocktracer.Span) {
+	assert.Equal(now.Unix(), suiteSpan.StartTime().Unix())
 	assert.Equal("my-module-framework.test_suite", suiteSpan.OperationName())
 
 	tags := map[string]interface{}{
 		ext.ResourceName:     "my-suite",
-		ext.Error:            true,
 		ext.ErrorType:        "my-type",
 		ext.ErrorMsg:         "my-message",
 		ext.ErrorStack:       "my-stack",
@@ -235,7 +232,7 @@ func Test(t *testing.T) {
 
 	assert.NotNil(test.Context())
 	assert.Equal("my-test", test.Name())
-	assert.Equal(now, test.StartTime())
+	assert.Equal(now.Unix(), test.StartTime().Unix())
 	assert.Equal(suite, test.Suite())
 
 	test.Close(ResultStatusPass)
@@ -248,13 +245,12 @@ func Test(t *testing.T) {
 	test.Close(ResultStatusSkip)
 }
 
-func testAssertions(assert *assert.Assertions, now time.Time, testSpan mocktracer.Span) {
-	assert.Equal(now, testSpan.StartTime())
+func testAssertions(assert *assert.Assertions, now time.Time, testSpan *mocktracer.Span) {
+	assert.Equal(now.Unix(), testSpan.StartTime().Unix())
 	assert.Equal("my-module-framework.test", testSpan.OperationName())
 
 	tags := map[string]interface{}{
 		ext.ResourceName:     "my-suite.my-test",
-		ext.Error:            true,
 		ext.ErrorType:        "my-type",
 		ext.ErrorMsg:         "my-message",
 		ext.ErrorStack:       "my-stack",

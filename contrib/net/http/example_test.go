@@ -8,7 +8,7 @@ package http_test
 import (
 	"net/http"
 
-	httptrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http"
+	httptrace "github.com/DataDog/dd-trace-go/contrib/net/http/v2"
 )
 
 func Example() {
@@ -20,7 +20,7 @@ func Example() {
 }
 
 func Example_withServiceName() {
-	mux := httptrace.NewServeMux(httptrace.WithServiceName("my-service"))
+	mux := httptrace.NewServeMux(httptrace.WithService("my-service"))
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("Hello World!\n"))
 	})

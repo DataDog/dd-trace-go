@@ -8,11 +8,8 @@ package grpc
 import (
 	"context"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
@@ -40,14 +37,13 @@ func (ss *serverStream) Context() context.Context {
 }
 
 func (ss *serverStream) RecvMsg(m interface{}) (err error) {
-	_, im := ss.cfg.ignoredMethods[ss.method]
 	_, um := ss.cfg.untracedMethods[ss.method]
-	if ss.cfg.traceStreamMessages && !im && !um {
+	if ss.cfg.traceStreamMessages && !um {
 		span, _ := startSpanFromContext(
 			ss.ctx,
 			ss.method,
 			"grpc.message",
-			ss.cfg.serviceName,
+			ss.cfg.serviceName.String(),
 			ss.cfg.startSpanOptions(tracer.Measured())...,
 		)
 		span.SetTag(ext.Component, componentName)
@@ -62,14 +58,13 @@ func (ss *serverStream) RecvMsg(m interface{}) (err error) {
 }
 
 func (ss *serverStream) SendMsg(m interface{}) (err error) {
-	_, im := ss.cfg.ignoredMethods[ss.method]
 	_, um := ss.cfg.untracedMethods[ss.method]
-	if ss.cfg.traceStreamMessages && !im && !um {
+	if ss.cfg.traceStreamMessages && !um {
 		span, _ := startSpanFromContext(
 			ss.ctx,
 			ss.method,
 			"grpc.message",
-			ss.cfg.serviceName,
+			ss.cfg.serviceName.String(),
 			ss.cfg.startSpanOptions(tracer.Measured())...,
 		)
 		span.SetTag(ext.Component, componentName)
@@ -84,21 +79,20 @@ func StreamServerInterceptor(opts ...Option) grpc.StreamServerInterceptor {
 	cfg := new(config)
 	serverDefaults(cfg)
 	for _, fn := range opts {
-		fn(cfg)
+		fn.apply(cfg)
 	}
-	log.Debug("contrib/google.golang.org/grpc: Configuring StreamServerInterceptor: %#v", cfg)
+	instr.Logger().Debug("contrib/google.golang.org/grpc: Configuring StreamServerInterceptor: %#v", cfg)
 	return func(srv interface{}, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) (err error) {
 		ctx := ss.Context()
 		// if we've enabled call tracing, create a span
-		_, im := cfg.ignoredMethods[info.FullMethod]
 		_, um := cfg.untracedMethods[info.FullMethod]
-		if cfg.traceStreamCalls && !im && !um {
-			var span ddtrace.Span
+		if cfg.traceStreamCalls && !um {
+			var span *tracer.Span
 			span, ctx = startSpanFromContext(
 				ctx,
 				info.FullMethod,
 				cfg.spanName,
-				cfg.serviceName,
+				cfg.serviceName.String(),
 				cfg.startSpanOptions(tracer.Measured(),
 					tracer.Tag(ext.Component, componentName),
 					tracer.Tag(ext.SpanKind, ext.SpanKindServer))...,
@@ -112,7 +106,7 @@ func StreamServerInterceptor(opts ...Option) grpc.StreamServerInterceptor {
 				span.SetTag(tagMethodKind, methodKindClientStream)
 			}
 			defer func() { finishWithError(span, err, cfg) }()
-			if appsec.Enabled() {
+			if instr.AppSecEnabled() {
 				handler = appsecStreamHandlerMiddleware(info.FullMethod, span, handler)
 			}
 		}
@@ -133,20 +127,19 @@ func UnaryServerInterceptor(opts ...Option) grpc.UnaryServerInterceptor {
 	cfg := new(config)
 	serverDefaults(cfg)
 	for _, fn := range opts {
-		fn(cfg)
+		fn.apply(cfg)
 	}
-	log.Debug("contrib/google.golang.org/grpc: Configuring UnaryServerInterceptor: %#v", cfg)
+	instr.Logger().Debug("contrib/google.golang.org/grpc: Configuring UnaryServerInterceptor: %#v", cfg)
 	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
-		_, im := cfg.ignoredMethods[info.FullMethod]
 		_, um := cfg.untracedMethods[info.FullMethod]
-		if im || um {
+		if um {
 			return handler(ctx, req)
 		}
 		span, ctx := startSpanFromContext(
 			ctx,
 			info.FullMethod,
 			cfg.spanName,
-			cfg.serviceName,
+			cfg.serviceName.String(),
 			cfg.startSpanOptions(tracer.Measured(),
 				tracer.Tag(ext.Component, componentName),
 				tracer.Tag(ext.SpanKind, ext.SpanKindServer))...,
@@ -154,7 +147,7 @@ func UnaryServerInterceptor(opts ...Option) grpc.UnaryServerInterceptor {
 		span.SetTag(tagMethodKind, methodKindUnary)
 		withMetadataTags(ctx, cfg, span)
 		withRequestTags(cfg, req, span)
-		if appsec.Enabled() {
+		if instr.AppSecEnabled() {
 			handler = appsecUnaryHandlerMiddleware(info.FullMethod, span, handler)
 		}
 		resp, err := handler(ctx, req)
@@ -163,7 +156,7 @@ func UnaryServerInterceptor(opts ...Option) grpc.UnaryServerInterceptor {
 	}
 }
 
-func withMetadataTags(ctx context.Context, cfg *config, span ddtrace.Span) {
+func withMetadataTags(ctx context.Context, cfg *config, span *tracer.Span) {
 	if cfg.withMetadataTags {
 		md, _ := metadata.FromIncomingContext(ctx) // nil is ok
 		for k, v := range md {
@@ -174,7 +167,7 @@ func withMetadataTags(ctx context.Context, cfg *config, span ddtrace.Span) {
 	}
 }
 
-func withRequestTags(cfg *config, req interface{}, span ddtrace.Span) {
+func withRequestTags(cfg *config, req interface{}, span *tracer.Span) {
 	if cfg.withRequestTags {
 		if p, ok := req.(proto.Message); ok {
 			if b, err := protojson.Marshal(p); err == nil {

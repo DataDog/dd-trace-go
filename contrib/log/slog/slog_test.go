@@ -16,9 +16,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	internallog "gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils"
 )
 
 func assertLogEntry(t *testing.T, rawEntry, wantMsg, wantLevel string) {
@@ -37,7 +37,7 @@ func assertLogEntry(t *testing.T, rawEntry, wantMsg, wantLevel string) {
 }
 
 func testLogger(t *testing.T, createHandler func(b *bytes.Buffer) slog.Handler) {
-	tracer.Start(tracer.WithLogger(internallog.DiscardLogger{}))
+	tracer.Start(tracer.WithLogger(testutils.DiscardLogger()))
 	defer tracer.Stop()
 
 	// create the application logger

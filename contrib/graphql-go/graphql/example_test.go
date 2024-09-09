@@ -11,7 +11,8 @@ import (
 
 	"github.com/graphql-go/graphql"
 	"github.com/graphql-go/handler"
-	ddgraphql "gopkg.in/DataDog/dd-trace-go.v1/contrib/graphql-go/graphql"
+
+	ddgraphql "github.com/DataDog/dd-trace-go/contrib/graphql-go/graphql/v2"
 )
 
 func Example() {

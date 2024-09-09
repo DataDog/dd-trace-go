@@ -21,7 +21,7 @@ func newCiVisibilityEventsList(n int) []*ciVisibilityEvent {
 	list := make([]*ciVisibilityEvent, n)
 	for i := 0; i < n; i++ {
 		s := newBasicSpan("span.list." + strconv.Itoa(i%5+1))
-		s.Start = fixedTime
+		s.start = fixedTime
 		list[i] = getCiVisibilityEvent(s)
 	}
 
@@ -93,7 +93,7 @@ func benchmarkCiVisibilityPayloadThroughput(count int) func(*testing.B) {
 	return func(b *testing.B) {
 		p := newCiVisibilityPayload()
 		s := newBasicSpan("X")
-		s.Meta["key"] = strings.Repeat("X", 10*1024)
+		s.meta["key"] = strings.Repeat("X", 10*1024)
 		e := getCiVisibilityEvent(s)
 		events := make(ciVisibilityEvents, count)
 		for i := 0; i < count; i++ {

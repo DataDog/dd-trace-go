@@ -19,7 +19,7 @@ import (
 	"strings"
 	"time"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
 // maxRetries specifies the maximum number of retries to have when an error occurs.

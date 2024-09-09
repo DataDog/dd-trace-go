@@ -9,9 +9,9 @@ import (
 	"context"
 	"time"
 
-	redistrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/redis/go-redis.v9"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	redistrace "github.com/DataDog/dd-trace-go/contrib/redis/go-redis.v9/v2"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 
 	"github.com/redis/go-redis/v9"
 )
@@ -45,7 +45,7 @@ func Example_pipeliner() {
 	ctx := context.Background()
 	// create a client
 	opts := &redis.Options{Addr: "127.0.0.1", Password: "", DB: 0}
-	c := redistrace.NewClient(opts, redistrace.WithServiceName("my-redis-service"))
+	c := redistrace.NewClient(opts, redistrace.WithService("my-redis-service"))
 
 	// open the pipeline
 	pipe := c.Pipeline()

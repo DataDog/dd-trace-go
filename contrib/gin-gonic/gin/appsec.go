@@ -8,15 +8,15 @@ package gin
 import (
 	"net/http"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/httpsec"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/httpsec"
 
 	"github.com/gin-gonic/gin"
 )
 
 // useAppSec executes the AppSec logic related to the operation start and
 // returns the  function to be executed upon finishing the operation
-func useAppSec(c *gin.Context, span tracer.Span) {
+func useAppSec(c *gin.Context, span *tracer.Span) {
 	var params map[string]string
 	if l := len(c.Params); l > 0 {
 		params = make(map[string]string, l)

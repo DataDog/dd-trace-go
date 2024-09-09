@@ -4,23 +4,22 @@
 // Copyright 2016 Datadog, Inc.
 
 // Package slog provides functions to correlate logs and traces using log/slog package (https://pkg.go.dev/log/slog).
-package slog // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/log/slog"
+package slog // import "github.com/DataDog/dd-trace-go/contrib/log/slog/v2"
 
 import (
 	"context"
 	"io"
 	"log/slog"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 )
 
-const componentName = "log/slog"
+var instr *instrumentation.Instrumentation
 
 func init() {
-	telemetry.LoadIntegration(componentName)
-	tracer.MarkIntegrationImported("log/slog")
+	instr = instrumentation.Load(instrumentation.PackageLogSlog)
 }
 
 // NewJSONHandler is a convenience function that returns a *slog.JSONHandler logger enhanced with
@@ -43,7 +42,7 @@ func (h *handler) Handle(ctx context.Context, rec slog.Record) error {
 	span, ok := tracer.SpanFromContext(ctx)
 	if ok {
 		rec.Add(
-			slog.Uint64(ext.LogKeyTraceID, span.Context().TraceID()),
+			slog.String(ext.LogKeyTraceID, span.Context().TraceID()),
 			slog.Uint64(ext.LogKeySpanID, span.Context().SpanID()),
 		)
 	}

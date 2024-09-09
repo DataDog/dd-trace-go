@@ -8,8 +8,8 @@ package chi_test
 import (
 	"net/http"
 
-	chitrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/go-chi/chi.v5"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	chitrace "github.com/DataDog/dd-trace-go/contrib/go-chi/chi.v5/v2"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 
 	"github.com/go-chi/chi/v5"
 )
@@ -45,7 +45,7 @@ func Example_withServiceName() {
 	router := chi.NewRouter()
 
 	// Use the tracer middleware with your desired service name.
-	router.Use(chitrace.Middleware(chitrace.WithServiceName("chi-server")))
+	router.Use(chitrace.Middleware(chitrace.WithService("chi-server")))
 
 	// Set up some endpoints.
 	router.Get("/", handler)

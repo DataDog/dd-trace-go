@@ -17,10 +17,9 @@ import (
 	"testing"
 	"time"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/httpmem"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/httpmem"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/tinylib/msgp/msgp"
@@ -171,7 +170,8 @@ func TestSpanLink(t *testing.T) {
 	assert.Len(payload, 1)    // only one trace
 	assert.Len(payload[0], 1) // only one span
 
-	var spanLinks []ddtrace.SpanLink
+	// Convert the span_links field from type []map[string]interface{} to a struct
+	var spanLinks []tracer.SpanLink
 	spanLinkBytes, _ := json.Marshal(payload[0][0]["span_links"])
 	json.Unmarshal(spanLinkBytes, &spanLinks)
 	assert.Len(spanLinks, 1) // only one span link

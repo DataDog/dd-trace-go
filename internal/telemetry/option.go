@@ -12,7 +12,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
+	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 )
 
 // An Option is used to configure the telemetry client's settings

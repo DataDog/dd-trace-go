@@ -9,9 +9,9 @@ import (
 	"bytes"
 	"sync/atomic"
 
+	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
+	"github.com/DataDog/dd-trace-go/v2/internal/version"
 	"github.com/tinylib/msgp/msgp"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
 )
 
 // ciVisibilityPayload represents a payload specifically designed for CI Visibility events.

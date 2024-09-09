@@ -8,8 +8,8 @@
 package stacktrace
 
 import (
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/trace"
+	"github.com/DataDog/dd-trace-go/v2/internal"
 
 	"github.com/tinylib/msgp/msgp"
 )
@@ -83,7 +83,7 @@ func WithID(id string) Options {
 }
 
 // AddToSpan adds the event to the given span's root span as a tag if stacktrace collection is enabled
-func AddToSpan(span ddtrace.Span, events ...*Event) {
+func AddToSpan(span, root trace.TagSetter, events ...*Event) {
 	if !Enabled() {
 		return
 	}
@@ -99,13 +99,8 @@ func AddToSpan(span ddtrace.Span, events ...*Event) {
 
 		groupByCategory[string(event.Category)] = append(groupByCategory[string(event.Category)].([]*Event), event)
 	}
-
-	type rooter interface {
-		Root() ddtrace.Span
+	if root != nil {
+		span = root
 	}
-	if lrs, ok := span.(rooter); ok {
-		span = lrs.Root()
-	}
-
 	span.SetTag("_dd.stack", internal.MetaStructValue{Value: groupByCategory})
 }

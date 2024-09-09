@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
 // Constants defining the payload size limits for agentless mode.
@@ -58,7 +58,7 @@ func newCiVisibilityTraceWriter(c *config) *ciVisibilityTraceWriter {
 // Parameters:
 //
 //	trace - A slice of spans representing the trace to be added.
-func (w *ciVisibilityTraceWriter) add(trace []*span) {
+func (w *ciVisibilityTraceWriter) add(trace []*Span) {
 	for _, s := range trace {
 		cvEvent := getCiVisibilityEvent(s)
 		if err := w.payload.push(cvEvent); err != nil {

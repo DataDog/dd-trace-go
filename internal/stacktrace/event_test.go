@@ -8,9 +8,8 @@ package stacktrace
 import (
 	"testing"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
-	ddtracer "gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
+	ddtracer "github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 
 	"github.com/stretchr/testify/require"
 	"github.com/tinylib/msgp/msgp"
@@ -32,14 +31,14 @@ func TestEventToSpan(t *testing.T) {
 
 	span := ddtracer.StartSpan("op")
 	event := NewEvent(ExceptionEvent, WithMessage("message"))
-	AddToSpan(span, event)
+	AddToSpan(span, span.Root(), event)
 	span.Finish()
 
 	spans := mt.FinishedSpans()
 	require.Len(t, spans, 1)
 	require.Equal(t, "op", spans[0].OperationName())
 
-	eventsMap := spans[0].Tag("_dd.stack").(internal.MetaStructValue).Value.(map[string]any)
+	eventsMap := spans[0].Tag("_dd.stack").(map[string]any)
 	require.Len(t, eventsMap, 1)
 
 	eventsCat := eventsMap[string(ExceptionEvent)].([]*Event)
@@ -54,13 +53,13 @@ func TestMsgPackSerialization(t *testing.T) {
 
 	span := ddtracer.StartSpan("op")
 	event := NewEvent(ExceptionEvent, WithMessage("message"), WithType("type"), WithID("id"))
-	AddToSpan(span, event)
+	AddToSpan(span, span.Root(), event)
 	span.Finish()
 
 	spans := mt.FinishedSpans()
 	require.Len(t, spans, 1)
 
-	eventsMap := spans[0].Tag("_dd.stack").(internal.MetaStructValue).Value
+	eventsMap := spans[0].Tag("_dd.stack").(map[string]any)
 
 	_, err := msgp.AppendIntf(nil, eventsMap)
 	require.NoError(t, err)

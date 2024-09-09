@@ -8,17 +8,16 @@ package grpc
 import (
 	"context"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/grpcsec"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/grpcsec/types"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/sharedsec"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/trace"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/trace/grpctrace"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/trace/httptrace"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-
 	"github.com/DataDog/appsec-internal-go/netip"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/dyngo"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/grpcsec"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/grpcsec/types"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/sharedsec"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/trace"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/trace/grpctrace"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/trace/httptrace"
+
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
@@ -27,7 +26,7 @@ import (
 )
 
 // UnaryHandler wrapper to use when AppSec is enabled to monitor its execution.
-func appsecUnaryHandlerMiddleware(method string, span ddtrace.Span, handler grpc.UnaryHandler) grpc.UnaryHandler {
+func appsecUnaryHandlerMiddleware(method string, span *tracer.Span, handler grpc.UnaryHandler) grpc.UnaryHandler {
 	trace.SetAppSecEnabledTags(span)
 	return func(ctx context.Context, req any) (res any, rpcErr error) {
 		var blockedErr error
@@ -75,7 +74,7 @@ func appsecUnaryHandlerMiddleware(method string, span ddtrace.Span, handler grpc
 }
 
 // StreamHandler wrapper to use when AppSec is enabled to monitor its execution.
-func appsecStreamHandlerMiddleware(method string, span ddtrace.Span, handler grpc.StreamHandler) grpc.StreamHandler {
+func appsecStreamHandlerMiddleware(method string, span *tracer.Span, handler grpc.StreamHandler) grpc.StreamHandler {
 	trace.SetAppSecEnabledTags(span)
 	return func(srv any, stream grpc.ServerStream) (rpcErr error) {
 		// Create a ServerStream wrapper with appsec RPC handler operation and the Go context (to implement the ServerStream interface)
@@ -159,13 +158,13 @@ func (ss *appsecServerStream) Context() context.Context {
 	return ss.ctx
 }
 
-func setClientIP(ctx context.Context, span ddtrace.Span, md metadata.MD) netip.Addr {
+func setClientIP(ctx context.Context, span *tracer.Span, md metadata.MD) netip.Addr {
 	var remoteAddr string
 	if p, ok := peer.FromContext(ctx); ok {
 		remoteAddr = p.Addr.String()
 	}
 	ipTags, clientIP := httptrace.ClientIPTags(md, false, remoteAddr)
-	log.Debug("appsec: http client ip detection returned `%s` given the http headers `%v`", clientIP, md)
+	instr.Logger().Debug("appsec: http client ip detection returned `%s` given the http headers `%v`", clientIP, md)
 	if len(ipTags) > 0 {
 		trace.SetTags(span, ipTags)
 	}

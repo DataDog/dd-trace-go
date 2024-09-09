@@ -4,29 +4,27 @@
 // Copyright 2016 Datadog, Inc.
 
 // Package httprouter provides functions to trace the julienschmidt/httprouter package (https://github.com/julienschmidt/httprouter).
-package httprouter // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/julienschmidt/httprouter"
+package httprouter // import "github.com/DataDog/dd-trace-go/contrib/julienschmidt/httprouter/v2"
 
 import (
 	"math"
 	"net/http"
 	"strings"
 
-	httptraceinternal "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/httptrace"
-	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/options"
-	httptrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
+	httptrace "github.com/DataDog/dd-trace-go/contrib/net/http/v2"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
+	httptraceinstr "github.com/DataDog/dd-trace-go/v2/instrumentation/httptrace"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/options"
 
 	"github.com/julienschmidt/httprouter"
 )
 
-const componentName = "julienschmidt/httprouter"
+var instr *instrumentation.Instrumentation
 
 func init() {
-	telemetry.LoadIntegration(componentName)
-	tracer.MarkIntegrationImported("github.com/julienschmidt/httprouter")
+	instr = instrumentation.Load(instrumentation.PackageJulienschmidtHTTPRouter)
 }
 
 // Router is a traced version of httprouter.Router.
@@ -40,16 +38,16 @@ func New(opts ...RouterOption) *Router {
 	cfg := new(routerConfig)
 	defaults(cfg)
 	for _, fn := range opts {
-		fn(cfg)
+		fn.apply(cfg)
 	}
 	if !math.IsNaN(cfg.analyticsRate) {
 		cfg.spanOpts = append(cfg.spanOpts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
 	}
 
 	cfg.spanOpts = append(cfg.spanOpts, tracer.Tag(ext.SpanKind, ext.SpanKindServer))
-	cfg.spanOpts = append(cfg.spanOpts, tracer.Tag(ext.Component, componentName))
+	cfg.spanOpts = append(cfg.spanOpts, tracer.Tag(ext.Component, instrumentation.PackageJulienschmidtHTTPRouter))
 
-	log.Debug("contrib/julienschmidt/httprouter: Configuring Router: %#v", cfg)
+	instr.Logger().Debug("contrib/julienschmidt/httprouter: Configuring Router: %#v", cfg)
 	return &Router{httprouter.New(), cfg}
 }
 
@@ -62,8 +60,8 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		route = strings.Replace(route, param.Value, ":"+param.Key, 1)
 	}
 	resource := req.Method + " " + route
-	spanOpts := options.Copy(r.config.spanOpts...) // spanOpts must be a copy of r.config.spanOpts, locally scoped, to avoid races.
-	spanOpts = append(spanOpts, httptraceinternal.HeaderTagsFromRequest(req, r.config.headerTags))
+	spanOpts := options.Expand(r.config.spanOpts, 0, 1) // spanOpts must be a copy of r.config.spanOpts, locally scoped, to avoid races.
+	spanOpts = append(spanOpts, httptraceinstr.HeaderTagsFromRequest(req, r.config.headerTags))
 
 	httptrace.TraceAndServe(r.Router, w, req, &httptrace.ServeConfig{
 		Service:  r.config.serviceName,

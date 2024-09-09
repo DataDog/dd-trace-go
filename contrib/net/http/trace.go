@@ -3,28 +3,27 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
-package http // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http"
+package http // import "github.com/DataDog/dd-trace-go/contrib/net/http/v2"
 
-//go:generate sh -c "go run make_responsewriter.go | gofmt > trace_gen.go"
+//go:generate sh -c "go run ./internal/make_responsewriter | gofmt > trace_gen.go"
 
 import (
 	"net/http"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/httptrace"
-	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/options"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/httpsec"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/httpsec"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/httptrace"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/options"
 )
 
 const componentName = "net/http"
 
+var instr *instrumentation.Instrumentation
+
 func init() {
-	telemetry.LoadIntegration(componentName)
-	tracer.MarkIntegrationImported(componentName)
+	instr = instrumentation.Load(instrumentation.PackageNetHTTP)
 }
 
 // ServeConfig specifies the tracing configuration when using TraceAndServe.
@@ -43,9 +42,9 @@ type ServeConfig struct {
 	// by AppSec. It is only taken into account when AppSec is enabled.
 	RouteParams map[string]string
 	// FinishOpts specifies any options to be used when finishing the request span.
-	FinishOpts []ddtrace.FinishOption
+	FinishOpts []tracer.FinishOption
 	// SpanOpts specifies any options to be applied to the request starting span.
-	SpanOpts []ddtrace.StartSpanOption
+	SpanOpts []tracer.StartSpanOption
 }
 
 // TraceAndServe serves the handler h using the given ResponseWriter and Request, applying tracing
@@ -54,7 +53,10 @@ func TraceAndServe(h http.Handler, w http.ResponseWriter, r *http.Request, cfg *
 	if cfg == nil {
 		cfg = new(ServeConfig)
 	}
-	opts := options.Copy(cfg.SpanOpts...) // make a copy of cfg.SpanOpts to avoid races
+	opts := options.Expand(cfg.SpanOpts, 2, 3) // make a copy of cfg.SpanOpts to avoid races.
+	// Pre-append span.kind and component tags to the options so that they can be overridden.
+	opts[0] = tracer.Tag(ext.SpanKind, ext.SpanKindServer)
+	opts[1] = tracer.Tag(ext.Component, componentName)
 	if cfg.Service != "" {
 		opts = append(opts, tracer.ServiceName(cfg.Service))
 	}
@@ -69,8 +71,7 @@ func TraceAndServe(h http.Handler, w http.ResponseWriter, r *http.Request, cfg *
 	defer func() {
 		httptrace.FinishRequestSpan(span, ddrw.status, cfg.FinishOpts...)
 	}()
-
-	if appsec.Enabled() {
+	if instr.AppSecEnabled() {
 		h = httpsec.WrapHandler(h, span, cfg.RouteParams, nil)
 	}
 	h.ServeHTTP(rw, r.WithContext(ctx))

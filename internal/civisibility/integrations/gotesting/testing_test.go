@@ -13,15 +13,17 @@ import (
 	"strconv"
 	"testing"
 
-	ddhttp "gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
-	ddtracer "gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/constants"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/integrations"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	ddtracer "github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations"
 
 	"github.com/stretchr/testify/assert"
 )
+
+// Note: these tests are not meant to be run in isolation.
 
 var currentM *testing.M
 var mTracer mocktracer.Tracer
@@ -37,7 +39,7 @@ func TestMain(m *testing.M) {
 	// os.Exit((*M)(m).Run())
 	_ = RunM(m)
 
-	finishedSpans := mTracer.FinishedSpans()
+	spans := mTracer.FinishedSpans()
 	// 1 session span
 	// 1 module span
 	// 1 suite span (optional 1 from reflections_test.go)
@@ -45,31 +47,31 @@ func TestMain(m *testing.M) {
 	// 7 sub stest spans
 	// 2 normal spans (from integration tests)
 	// 1 benchmark span (optional - require the -bench option)
-	if len(finishedSpans) < 17 {
-		panic("expected at least 17 finished spans, got " + strconv.Itoa(len(finishedSpans)))
+	if len(spans) < 17 {
+		panic("expected at least 17 finished spans, got " + strconv.Itoa(len(spans)))
 	}
 
-	sessionSpans := getSpansWithType(finishedSpans, constants.SpanTypeTestSession)
+	sessionSpans := getSpansWithType(spans, constants.SpanTypeTestSession)
 	if len(sessionSpans) != 1 {
 		panic("expected exactly 1 session span, got " + strconv.Itoa(len(sessionSpans)))
 	}
 
-	moduleSpans := getSpansWithType(finishedSpans, constants.SpanTypeTestModule)
+	moduleSpans := getSpansWithType(spans, constants.SpanTypeTestModule)
 	if len(moduleSpans) != 1 {
 		panic("expected exactly 1 module span, got " + strconv.Itoa(len(moduleSpans)))
 	}
 
-	suiteSpans := getSpansWithType(finishedSpans, constants.SpanTypeTestSuite)
+	suiteSpans := getSpansWithType(spans, constants.SpanTypeTestSuite)
 	if len(suiteSpans) < 1 {
 		panic("expected at least 1 suite span, got " + strconv.Itoa(len(suiteSpans)))
 	}
 
-	testSpans := getSpansWithType(finishedSpans, constants.SpanTypeTest)
+	testSpans := getSpansWithType(spans, constants.SpanTypeTest)
 	if len(testSpans) < 12 {
-		panic("expected at least 12 suite span, got " + strconv.Itoa(len(testSpans)))
+		panic("expected at least 12 test span, got " + strconv.Itoa(len(testSpans)))
 	}
 
-	httpSpans := getSpansWithType(finishedSpans, ext.SpanTypeHTTP)
+	httpSpans := getSpansWithType(spans, ext.SpanTypeHTTP)
 	if len(httpSpans) != 2 {
 		panic("expected exactly 2 normal spans, got " + strconv.Itoa(len(httpSpans)))
 	}
@@ -122,6 +124,60 @@ func Test_Foo(gt *testing.T) {
 	}
 }
 
+// Code inspired by contrib/net/http/roundtripper.go
+// It's not possible to import `contrib/net/http` package because it causes a circular dependency.
+// This is a simplified version of the code.
+type roundTripper struct {
+	base  http.RoundTripper
+	namer func(*http.Request) string
+}
+
+func (rt *roundTripper) RoundTrip(req *http.Request) (res *http.Response, err error) {
+	resourceName := rt.namer(req)
+	// Make a copy of the URL so we don't modify the outgoing request
+	url := *req.URL
+	url.User = nil // Do not include userinfo in the HTTPURL tag.
+	opts := []tracer.StartSpanOption{
+		tracer.SpanType(ext.SpanTypeHTTP),
+		tracer.ResourceName(resourceName),
+		tracer.Tag(ext.HTTPMethod, req.Method),
+		tracer.Tag(ext.HTTPURL, url.String()),
+		tracer.Tag(ext.SpanKind, ext.SpanKindClient),
+		tracer.Tag(ext.NetworkDestinationName, url.Hostname()),
+	}
+	span, ctx := tracer.StartSpanFromContext(req.Context(), "", opts...)
+	defer func() {
+		span.Finish()
+	}()
+	r2 := req.Clone(ctx)
+	res, err = rt.base.RoundTrip(r2)
+	if err != nil {
+		span.SetTag("http.errors", err.Error())
+	} else {
+		span.SetTag(ext.HTTPCode, strconv.Itoa(res.StatusCode))
+		// treat 5XX as errors
+		if res.StatusCode/100 == 5 {
+			span.SetTag("http.errors", res.Status)
+			span.SetTag(ext.Error, fmt.Errorf("%d: %s", res.StatusCode, http.StatusText(res.StatusCode)))
+		}
+	}
+	return res, err
+}
+
+// Code from contrib/net/http/roundtripper.go
+// It's not possible to import `contrib/net/http` package because it causes a circular dependency.
+func wrapRoundTripper(rt http.RoundTripper, namer func(*http.Request) string) http.RoundTripper {
+	if namer == nil {
+		namer = func(req *http.Request) string {
+			return ""
+		}
+	}
+	return &roundTripper{
+		base:  rt,
+		namer: namer,
+	}
+}
+
 // TestWithExternalCalls demonstrates testing with external HTTP calls.
 func TestWithExternalCalls(gt *testing.T) {
 	assertTest(gt)
@@ -140,7 +196,7 @@ func TestWithExternalCalls(gt *testing.T) {
 		ctx := (*T)(t).Context()
 
 		// Wrap the default HTTP transport for tracing
-		rt := ddhttp.WrapRoundTripper(http.DefaultTransport)
+		rt := wrapRoundTripper(http.DefaultTransport, nil)
 		client := &http.Client{
 			Transport: rt,
 		}
@@ -177,7 +233,7 @@ func TestWithExternalCalls(gt *testing.T) {
 			return value
 		}
 
-		rt := ddhttp.WrapRoundTripper(http.DefaultTransport, ddhttp.RTWithResourceNamer(customNamer))
+		rt := wrapRoundTripper(http.DefaultTransport, customNamer)
 		client := &http.Client{
 			Transport: rt,
 		}
@@ -259,7 +315,7 @@ func assertTest(t *testing.T) {
 		// Assert Module
 		if span.Tag(ext.SpanType) == constants.SpanTypeTestModule {
 			assert.Subset(spanTags, map[string]interface{}{
-				constants.TestModule:    "gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/integrations/gotesting",
+				constants.TestModule:    "github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting",
 				constants.TestFramework: "golang.org/pkg/testing",
 			})
 			assert.Contains(spanTags, constants.TestSessionIDTag)
@@ -272,7 +328,7 @@ func assertTest(t *testing.T) {
 		// Assert Suite
 		if span.Tag(ext.SpanType) == constants.SpanTypeTestSuite {
 			assert.Subset(spanTags, map[string]interface{}{
-				constants.TestModule:    "gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/integrations/gotesting",
+				constants.TestModule:    "github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting",
 				constants.TestFramework: "golang.org/pkg/testing",
 			})
 			assert.Contains(spanTags, constants.TestSessionIDTag)
@@ -287,7 +343,7 @@ func assertTest(t *testing.T) {
 		// Assert Test
 		if span.Tag(ext.SpanType) == constants.SpanTypeTest {
 			assert.Subset(spanTags, map[string]interface{}{
-				constants.TestModule:    "gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/integrations/gotesting",
+				constants.TestModule:    "github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting",
 				constants.TestFramework: "golang.org/pkg/testing",
 				constants.TestSuite:     "testing_test.go",
 				constants.TestName:      t.Name(),
@@ -311,7 +367,7 @@ func assertTest(t *testing.T) {
 	assert.True(hasTest)
 }
 
-func assertCommon(assert *assert.Assertions, span mocktracer.Span) {
+func assertCommon(assert *assert.Assertions, span *mocktracer.Span) {
 	spanTags := span.Tags()
 
 	assert.Subset(spanTags, map[string]interface{}{
@@ -341,8 +397,8 @@ func assertCommon(assert *assert.Assertions, span mocktracer.Span) {
 	assert.Contains(spanTags, constants.CIWorkspacePath)
 }
 
-func getSpansWithType(spans []mocktracer.Span, spanType string) []mocktracer.Span {
-	var result []mocktracer.Span
+func getSpansWithType(spans []*mocktracer.Span, spanType string) []*mocktracer.Span {
+	var result []*mocktracer.Span
 	for _, span := range spans {
 		if span.Tag(ext.SpanType) == spanType {
 			result = append(result, span)

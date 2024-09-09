@@ -9,20 +9,19 @@ import (
 	"context"
 	"errors"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/namingschematest"
-	"gopkg.in/DataDog/dd-trace-go.v1/datastreams"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	internaldsm "gopkg.in/DataDog/dd-trace-go.v1/internal/datastreams"
-
 	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/DataDog/dd-trace-go/v2/datastreams"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 )
 
 var (
@@ -32,7 +31,7 @@ var (
 
 type consumerActionFn func(c *Consumer) (*kafka.Message, error)
 
-func produceThenConsume(t *testing.T, consumerAction consumerActionFn, producerOpts []Option, consumerOpts []Option) ([]mocktracer.Span, *kafka.Message) {
+func produceThenConsume(t *testing.T, consumerAction consumerActionFn, producerOpts []Option, consumerOpts []Option) ([]*mocktracer.Span, *kafka.Message) {
 	if _, ok := os.LookupEnv("INTEGRATION"); !ok {
 		t.Skip("to enable integration test, set the INTEGRATION environment variable")
 	}
@@ -91,7 +90,7 @@ func produceThenConsume(t *testing.T, consumerAction consumerActionFn, producerO
 
 	if c.cfg.dataStreamsEnabled {
 		backlogs := mt.SentDSMBacklogs()
-		toMap := func(b []internaldsm.Backlog) map[string]struct{} {
+		toMap := func(b []mocktracer.DSMBacklog) map[string]struct{} {
 			m := make(map[string]struct{})
 			for _, b := range backlogs {
 				m[strings.Join(b.Tags, "")] = struct{}{}
@@ -162,10 +161,10 @@ func TestConsumerChannel(t *testing.T) {
 		assert.Equal(t, "kafka", s.Tag(ext.ServiceName))
 		assert.Equal(t, "Consume Topic gotest", s.Tag(ext.ResourceName))
 		assert.Equal(t, "queue", s.Tag(ext.SpanType))
-		assert.Equal(t, int32(1), s.Tag(ext.MessagingKafkaPartition))
+		assert.Equal(t, float64(1), s.Tag(ext.MessagingKafkaPartition))
 		assert.Equal(t, 0.3, s.Tag(ext.EventSampleRate))
-		assert.Equal(t, kafka.Offset(i+1), s.Tag("offset"))
-		assert.Equal(t, componentName, s.Tag(ext.Component))
+		assert.Equal(t, strconv.Itoa(i+1), s.Tag("offset"))
+		assert.Equal(t, "confluentinc/confluent-kafka-go/kafka.v2", s.Tag(ext.Component))
 		assert.Equal(t, ext.SpanKindConsumer, s.Tag(ext.SpanKind))
 		assert.Equal(t, "kafka", s.Tag(ext.MessagingSystem))
 	}
@@ -235,8 +234,8 @@ func TestConsumerFunctional(t *testing.T) {
 			assert.Equal(t, "Produce Topic gotest", s0.Tag(ext.ResourceName))
 			assert.Equal(t, 0.1, s0.Tag(ext.EventSampleRate))
 			assert.Equal(t, "queue", s0.Tag(ext.SpanType))
-			assert.Equal(t, int32(0), s0.Tag(ext.MessagingKafkaPartition))
-			assert.Equal(t, componentName, s0.Tag(ext.Component))
+			assert.Equal(t, float64(0), s0.Tag(ext.MessagingKafkaPartition))
+			assert.Equal(t, "confluentinc/confluent-kafka-go/kafka.v2", s0.Tag(ext.Component))
 			assert.Equal(t, ext.SpanKindProducer, s0.Tag(ext.SpanKind))
 			assert.Equal(t, "kafka", s0.Tag(ext.MessagingSystem))
 			assert.Equal(t, "127.0.0.1", s0.Tag(ext.KafkaBootstrapServers))
@@ -247,8 +246,8 @@ func TestConsumerFunctional(t *testing.T) {
 			assert.Equal(t, "Consume Topic gotest", s1.Tag(ext.ResourceName))
 			assert.Equal(t, nil, s1.Tag(ext.EventSampleRate))
 			assert.Equal(t, "queue", s1.Tag(ext.SpanType))
-			assert.Equal(t, int32(0), s1.Tag(ext.MessagingKafkaPartition))
-			assert.Equal(t, componentName, s1.Tag(ext.Component))
+			assert.Equal(t, float64(0), s1.Tag(ext.MessagingKafkaPartition))
+			assert.Equal(t, "confluentinc/confluent-kafka-go/kafka.v2", s1.Tag(ext.Component))
 			assert.Equal(t, ext.SpanKindConsumer, s1.Tag(ext.SpanKind))
 			assert.Equal(t, "kafka", s1.Tag(ext.MessagingSystem))
 			assert.Equal(t, "127.0.0.1", s1.Tag(ext.KafkaBootstrapServers))
@@ -266,74 +265,6 @@ func TestConsumerFunctional(t *testing.T) {
 	}
 }
 
-// This tests the deprecated behavior of using cfg.context as the context passed via kafka messages
-// instead of the one passed in the message.
-func TestDeprecatedContext(t *testing.T) {
-	if _, ok := os.LookupEnv("INTEGRATION"); !ok {
-		t.Skip("to enable integration test, set the INTEGRATION environment variable")
-	}
-
-	tracer.Start()
-	defer tracer.Stop()
-
-	// Create the span to be passed
-	parentSpan, ctx := tracer.StartSpanFromContext(context.Background(), "test_parent_context")
-
-	c, err := NewConsumer(&kafka.ConfigMap{
-		"go.events.channel.enable": true, // required for the events channel to be turned on
-		"group.id":                 testGroupID,
-		"socket.timeout.ms":        10,
-		"session.timeout.ms":       10,
-		"enable.auto.offset.store": false,
-	}, WithContext(ctx)) // Adds the parent context containing a span
-
-	err = c.Subscribe(testTopic, nil)
-	assert.NoError(t, err)
-
-	// This span context will be ignored
-	messageSpan, _ := tracer.StartSpanFromContext(context.Background(), "test_context_from_message")
-	messageSpanContext := messageSpan.Context()
-
-	/// Produce a message with a span
-	go func() {
-		msg := &kafka.Message{
-			TopicPartition: kafka.TopicPartition{
-				Topic:     &testTopic,
-				Partition: 1,
-				Offset:    1,
-			},
-			Key:   []byte("key1"),
-			Value: []byte("value1"),
-		}
-
-		// Inject the span context in the message to be produced
-		carrier := NewMessageCarrier(msg)
-		tracer.Inject(messageSpan.Context(), carrier)
-
-		c.Consumer.Events() <- msg
-
-	}()
-
-	msg := (<-c.Events()).(*kafka.Message)
-
-	// Extract the context from the message
-	carrier := NewMessageCarrier(msg)
-	spanContext, err := tracer.Extract(carrier)
-	assert.NoError(t, err)
-
-	parentContext := parentSpan.Context()
-
-	/// The context passed is the one from the parent context
-	assert.EqualValues(t, parentContext.TraceID(), spanContext.TraceID())
-	/// The context passed is not the one passed in the message
-	assert.NotEqualValues(t, messageSpanContext.TraceID(), spanContext.TraceID())
-
-	c.Close()
-	// wait for the events channel to be closed
-	<-c.Events()
-
-}
-
 func TestCustomTags(t *testing.T) {
 	mt := mocktracer.Start()
 	defer mt.Stop()
@@ -347,7 +278,7 @@ func TestCustomTags(t *testing.T) {
 	}, WithCustomTag("foo", func(msg *kafka.Message) interface{} {
 		return "bar"
 	}), WithCustomTag("key", func(msg *kafka.Message) interface{} {
-		return msg.Key
+		return string(msg.Key)
 	}))
 	assert.NoError(t, err)
 
@@ -377,20 +308,5 @@ func TestCustomTags(t *testing.T) {
 	s := spans[0]
 
 	assert.Equal(t, "bar", s.Tag("foo"))
-	assert.Equal(t, []byte("key1"), s.Tag("key"))
-}
-
-func TestNamingSchema(t *testing.T) {
-	genSpans := func(t *testing.T, serviceOverride string) []mocktracer.Span {
-		var opts []Option
-		if serviceOverride != "" {
-			opts = append(opts, WithServiceName(serviceOverride))
-		}
-		consumerAction := consumerActionFn(func(c *Consumer) (*kafka.Message, error) {
-			return c.ReadMessage(3000 * time.Millisecond)
-		})
-		spans, _ := produceThenConsume(t, consumerAction, opts, opts)
-		return spans
-	}
-	namingschematest.NewKafkaTest(genSpans)(t)
+	assert.Equal(t, "key1", s.Tag("key"))
 }

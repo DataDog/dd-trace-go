@@ -10,8 +10,8 @@ import (
 	"fmt"
 	"log"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 
 	consul "github.com/hashicorp/consul/api"
 )
@@ -19,7 +19,7 @@ import (
 // Here's an example illustrating a simple use case for interacting with consul with tracing enabled.
 func Example() {
 	// Get a new Consul client
-	client, err := NewClient(consul.DefaultConfig(), WithServiceName("consul.example"))
+	client, err := NewClient(consul.DefaultConfig(), WithService("consul.example"))
 	if err != nil {
 		log.Fatal(err)
 	}

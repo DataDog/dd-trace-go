@@ -21,21 +21,19 @@ import (
 	"net"
 	"net/http"
 
-	httptrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
+	httptrace "github.com/DataDog/dd-trace-go/contrib/net/http/v2"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 
 	"github.com/hashicorp/vault/api"
 	"github.com/hashicorp/vault/sdk/helper/consts"
 )
 
-const componentName = "hashicorp/vault"
+var instr *instrumentation.Instrumentation
 
 func init() {
-	telemetry.LoadIntegration(componentName)
-	tracer.MarkIntegrationImported("github.com/hashicorp/vault/api")
+	instr = instrumentation.Load(instrumentation.PackageHashicorpVaultAPI)
 }
 
 // NewHTTPClient returns an http.Client for use in the Vault API config
@@ -56,14 +54,14 @@ func WrapHTTPClient(c *http.Client, opts ...Option) *http.Client {
 	var conf config
 	defaults(&conf)
 	for _, o := range opts {
-		o(&conf)
+		o.apply(&conf)
 	}
 	c.Transport = httptrace.WrapRoundTripper(c.Transport,
-		httptrace.RTWithAnalyticsRate(conf.analyticsRate),
-		httptrace.RTWithSpanNamer(func(_ *http.Request) string {
+		httptrace.WithAnalyticsRate(conf.analyticsRate),
+		httptrace.WithSpanNamer(func(_ *http.Request) string {
 			return conf.spanName
 		}),
-		httptrace.WithBefore(func(r *http.Request, s ddtrace.Span) {
+		httptrace.WithBefore(func(r *http.Request, s *tracer.Span) {
 			s.SetTag(ext.ServiceName, conf.serviceName)
 			s.SetTag(ext.HTTPURL, r.URL.Path)
 			s.SetTag(ext.HTTPMethod, r.Method)
@@ -79,7 +77,7 @@ func WrapHTTPClient(c *http.Client, opts ...Option) *http.Client {
 				s.SetTag("vault.namespace", ns)
 			}
 		}),
-		httptrace.WithAfter(func(res *http.Response, s ddtrace.Span) {
+		httptrace.WithAfter(func(res *http.Response, s *tracer.Span) {
 			if res == nil {
 				// An error occurred during the request.
 				return

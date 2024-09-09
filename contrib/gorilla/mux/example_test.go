@@ -8,7 +8,7 @@ package mux_test
 import (
 	"net/http"
 
-	muxtrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/gorilla/mux"
+	muxtrace "github.com/DataDog/dd-trace-go/contrib/gorilla/mux/v2"
 )
 
 func handler(w http.ResponseWriter, _ *http.Request) {
@@ -22,7 +22,7 @@ func Example() {
 }
 
 func Example_withServiceName() {
-	mux := muxtrace.NewRouter(muxtrace.WithServiceName("mux.route"))
+	mux := muxtrace.NewRouter(muxtrace.WithService("mux.route"))
 	mux.HandleFunc("/", handler)
 	http.ListenAndServe(":8080", mux)
 }

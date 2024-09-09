@@ -8,22 +8,20 @@
 // you will be using, then continue using the package as you normally would.
 //
 // For more information on registering and why this needs to happen, please check the
-// github.com/DataDog/dd-trace-go/contrib/database/sql package.
-package sqlx // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/jmoiron/sqlx"
+// github.com/DataDog/dd-trace-go/v2 package.
+package sqlx // import "github.com/DataDog/dd-trace-go/contrib/jmoiron/sqlx/v2"
 
 import (
-	sqltraced "gopkg.in/DataDog/dd-trace-go.v1/contrib/database/sql"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
+	sqltraced "github.com/DataDog/dd-trace-go/contrib/database/sql/v2"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 
 	"github.com/jmoiron/sqlx"
 )
 
-const componentName = "jmoiron/sqlx"
+var instr *instrumentation.Instrumentation
 
 func init() {
-	telemetry.LoadIntegration(componentName)
-	tracer.MarkIntegrationImported("github.com/jmoiron/sqlx")
+	instr = instrumentation.Load(instrumentation.PackageJmoironSQLx)
 }
 
 // Open opens a new (traced) connection to the database using the given driver and source.

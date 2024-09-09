@@ -16,18 +16,14 @@ import (
 	"testing"
 	"time"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/appsec/events"
-	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/namingschematest"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener/httpsec"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
-
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/DataDog/dd-trace-go/v2/appsec/events"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils"
 )
 
 func TestWrapRoundTripperAllowNilTransport(t *testing.T) {
@@ -59,10 +55,10 @@ func TestRoundTripper(t *testing.T) {
 	defer s.Close()
 
 	rt := WrapRoundTripper(http.DefaultTransport,
-		WithBefore(func(req *http.Request, span ddtrace.Span) {
+		WithBefore(func(req *http.Request, span *tracer.Span) {
 			span.SetTag("CalledBefore", true)
 		}),
-		WithAfter(func(res *http.Response, span ddtrace.Span) {
+		WithAfter(func(res *http.Response, span *tracer.Span) {
 			span.SetTag("CalledAfter", true)
 		}))
 
@@ -88,8 +84,8 @@ func TestRoundTripper(t *testing.T) {
 	assert.Equal(t, "200", s1.Tag(ext.HTTPCode))
 	assert.Equal(t, "GET", s1.Tag(ext.HTTPMethod))
 	assert.Equal(t, s.URL+"/hello/world", s1.Tag(ext.HTTPURL))
-	assert.Equal(t, true, s1.Tag("CalledBefore"))
-	assert.Equal(t, true, s1.Tag("CalledAfter"))
+	assert.Equal(t, "true", s1.Tag("CalledBefore"))
+	assert.Equal(t, "true", s1.Tag("CalledAfter"))
 	assert.Equal(t, ext.SpanKindClient, s1.Tag(ext.SpanKind))
 	assert.Equal(t, "net/http", s1.Tag(ext.Component))
 	assert.Equal(t, "127.0.0.1", s1.Tag(ext.NetworkDestinationName))
@@ -97,7 +93,7 @@ func TestRoundTripper(t *testing.T) {
 	wantPort, err := strconv.Atoi(strings.TrimPrefix(s.URL, "http://127.0.0.1:"))
 	require.NoError(t, err)
 	require.NotEmpty(t, wantPort)
-	assert.Equal(t, wantPort, s1.Tag(ext.NetworkDestinationPort))
+	assert.Equal(t, float64(wantPort), s1.Tag(ext.NetworkDestinationPort))
 }
 
 func TestRoundTripperServerError(t *testing.T) {
@@ -118,10 +114,10 @@ func TestRoundTripperServerError(t *testing.T) {
 	defer s.Close()
 
 	rt := WrapRoundTripper(http.DefaultTransport,
-		WithBefore(func(req *http.Request, span ddtrace.Span) {
+		WithBefore(func(req *http.Request, span *tracer.Span) {
 			span.SetTag("CalledBefore", true)
 		}),
-		WithAfter(func(res *http.Response, span ddtrace.Span) {
+		WithAfter(func(res *http.Response, span *tracer.Span) {
 			span.SetTag("CalledAfter", true)
 		}))
 
@@ -147,9 +143,9 @@ func TestRoundTripperServerError(t *testing.T) {
 	assert.Equal(t, "500", s1.Tag(ext.HTTPCode))
 	assert.Equal(t, "GET", s1.Tag(ext.HTTPMethod))
 	assert.Equal(t, s.URL+"/hello/world", s1.Tag(ext.HTTPURL))
-	assert.Equal(t, fmt.Errorf("500: Internal Server Error"), s1.Tag(ext.Error))
-	assert.Equal(t, true, s1.Tag("CalledBefore"))
-	assert.Equal(t, true, s1.Tag("CalledAfter"))
+	assert.Equal(t, "500: Internal Server Error", s1.Tag(ext.ErrorMsg))
+	assert.Equal(t, "true", s1.Tag("CalledBefore"))
+	assert.Equal(t, "true", s1.Tag("CalledAfter"))
 	assert.Equal(t, ext.SpanKindClient, s1.Tag(ext.SpanKind))
 	assert.Equal(t, "net/http", s1.Tag(ext.Component))
 }
@@ -168,10 +164,10 @@ func TestRoundTripperNetworkError(t *testing.T) {
 	defer close(done)
 
 	rt := WrapRoundTripper(http.DefaultTransport,
-		WithBefore(func(req *http.Request, span ddtrace.Span) {
+		WithBefore(func(req *http.Request, span *tracer.Span) {
 			span.SetTag("CalledBefore", true)
 		}),
-		WithAfter(func(res *http.Response, span ddtrace.Span) {
+		WithAfter(func(res *http.Response, span *tracer.Span) {
 			span.SetTag("CalledAfter", true)
 		}))
 
@@ -192,15 +188,15 @@ func TestRoundTripperNetworkError(t *testing.T) {
 	assert.Equal(t, nil, s0.Tag(ext.HTTPCode))
 	assert.Equal(t, "GET", s0.Tag(ext.HTTPMethod))
 	assert.Equal(t, s.URL+"/hello/world", s0.Tag(ext.HTTPURL))
-	assert.NotNil(t, s0.Tag(ext.Error))
-	assert.Equal(t, true, s0.Tag("CalledBefore"))
-	assert.Equal(t, true, s0.Tag("CalledAfter"))
+	assert.NotNil(t, s0.Tag(ext.ErrorMsg))
+	assert.Equal(t, "true", s0.Tag("CalledBefore"))
+	assert.Equal(t, "true", s0.Tag("CalledAfter"))
 	assert.Equal(t, ext.SpanKindClient, s0.Tag(ext.SpanKind))
 	assert.Equal(t, "net/http", s0.Tag(ext.Component))
 }
 
 func TestRoundTripperNetworkErrorWithErrorCheck(t *testing.T) {
-	failedRequest := func(t *testing.T, mt mocktracer.Tracer, forwardErr bool, opts ...RoundTripperOption) mocktracer.Span {
+	failedRequest := func(t *testing.T, mt mocktracer.Tracer, forwardErr bool, _ ...Option) *mocktracer.Span {
 		done := make(chan struct{})
 		s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			_, err := tracer.Extract(tracer.HTTPHeadersCarrier(r.Header))
@@ -211,7 +207,7 @@ func TestRoundTripperNetworkErrorWithErrorCheck(t *testing.T) {
 		defer close(done)
 
 		rt := WrapRoundTripper(http.DefaultTransport,
-			RTWithErrorCheck(func(err error) bool {
+			WithErrorCheck(func(err error) bool {
 				return forwardErr
 			}))
 
@@ -235,7 +231,7 @@ func TestRoundTripperNetworkErrorWithErrorCheck(t *testing.T) {
 		defer mt.Stop()
 
 		span := failedRequest(t, mt, false)
-		assert.Nil(t, span.Tag(ext.Error))
+		assert.Nil(t, span.Tag(ext.ErrorMsg))
 	})
 
 	t.Run("error forwarded", func(t *testing.T) {
@@ -243,7 +239,7 @@ func TestRoundTripperNetworkErrorWithErrorCheck(t *testing.T) {
 		defer mt.Stop()
 
 		span := failedRequest(t, mt, true)
-		assert.NotNil(t, span.Tag(ext.Error))
+		assert.NotNil(t, span.Tag(ext.ErrorMsg))
 	})
 }
 
@@ -264,10 +260,10 @@ func TestRoundTripperCredentials(t *testing.T) {
 	defer s.Close()
 
 	rt := WrapRoundTripper(http.DefaultTransport,
-		WithBefore(func(req *http.Request, span ddtrace.Span) {
+		WithBefore(func(req *http.Request, span *tracer.Span) {
 			span.SetTag("CalledBefore", true)
 		}),
-		WithAfter(func(res *http.Response, span ddtrace.Span) {
+		WithAfter(func(res *http.Response, span *tracer.Span) {
 			span.SetTag("CalledAfter", true)
 		}))
 
@@ -329,41 +325,27 @@ func TestRoundTripperAnalyticsSettings(t *testing.T) {
 		assertRate(t, mt, nil)
 	})
 
-	t.Run("global", func(t *testing.T) {
-		t.Skip("global flag disabled")
-		mt := mocktracer.Start()
-		defer mt.Stop()
-
-		rate := globalconfig.AnalyticsRate()
-		defer globalconfig.SetAnalyticsRate(rate)
-		globalconfig.SetAnalyticsRate(0.4)
-
-		assertRate(t, mt, 0.4)
-	})
-
 	t.Run("enabled", func(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		assertRate(t, mt, 1.0, RTWithAnalytics(true))
+		assertRate(t, mt, 1.0, WithAnalytics(true))
 	})
 
 	t.Run("disabled", func(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		assertRate(t, mt, nil, RTWithAnalytics(false))
+		assertRate(t, mt, nil, WithAnalytics(false))
 	})
 
 	t.Run("override", func(t *testing.T) {
+		testutils.SetGlobalAnalyticsRate(t, 0.4)
+
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		rate := globalconfig.AnalyticsRate()
-		defer globalconfig.SetAnalyticsRate(rate)
-		globalconfig.SetAnalyticsRate(0.4)
-
-		assertRate(t, mt, 0.23, RTWithAnalyticsRate(0.23))
+		assertRate(t, mt, 0.23, WithAnalyticsRate(0.23))
 	})
 }
 
@@ -402,7 +384,7 @@ func TestRoundTripperIgnoreRequest(t *testing.T) {
 	}))
 	defer s.Close()
 
-	rt := WrapRoundTripper(http.DefaultTransport, RTWithIgnoreRequest(
+	rt := WrapRoundTripper(http.DefaultTransport, WithIgnoreRequest(
 		func(req *http.Request) bool {
 			return req.URL.Path == "/ignore"
 		},
@@ -444,7 +426,7 @@ func TestRoundTripperURLWithoutPort(t *testing.T) {
 	assert.Equal(t, nil, s0.Tag(ext.HTTPCode))
 	assert.Equal(t, "GET", s0.Tag(ext.HTTPMethod))
 	assert.Equal(t, "http://localhost/hello/world", s0.Tag(ext.HTTPURL))
-	assert.NotNil(t, s0.Tag(ext.Error))
+	assert.NotNil(t, s0.Tag(ext.ErrorMsg))
 	assert.Equal(t, ext.SpanKindClient, s0.Tag(ext.SpanKind))
 	assert.Equal(t, "net/http", s0.Tag(ext.Component))
 	assert.Equal(t, "localhost", s0.Tag(ext.NetworkDestinationName))
@@ -461,7 +443,7 @@ func TestServiceName(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 		serviceName := "testServer"
-		rt := WrapRoundTripper(http.DefaultTransport, RTWithServiceName(serviceName))
+		rt := WrapRoundTripper(http.DefaultTransport, WithService(serviceName))
 		client := &http.Client{
 			Transport: rt,
 		}
@@ -478,8 +460,8 @@ func TestServiceName(t *testing.T) {
 		defer mt.Stop()
 		serviceName := "testServer"
 		rt := WrapRoundTripper(http.DefaultTransport,
-			RTWithServiceName("wrongServiceName"),
-			WithBefore(func(_ *http.Request, span ddtrace.Span) {
+			WithService("wrongServiceName"),
+			WithBefore(func(_ *http.Request, span *tracer.Span) {
 				span.SetTag(ext.ServiceName, serviceName)
 			}),
 		)
@@ -522,7 +504,7 @@ func TestResourceNamer(t *testing.T) {
 		customNamer := func(req *http.Request) string {
 			return fmt.Sprintf("%s %s", req.Method, req.URL.Path)
 		}
-		rt := WrapRoundTripper(http.DefaultTransport, RTWithResourceNamer(customNamer))
+		rt := WrapRoundTripper(http.DefaultTransport, WithResourceNamer(customNamer))
 		client := &http.Client{
 			Transport: rt,
 		}
@@ -543,7 +525,7 @@ func TestSpanOptions(t *testing.T) {
 	tagValue := "bar"
 	mt := mocktracer.Start()
 	defer mt.Stop()
-	rt := WrapRoundTripper(http.DefaultTransport, RTWithSpanOptions(tracer.Tag(tagKey, tagValue)))
+	rt := WrapRoundTripper(http.DefaultTransport, WithSpanOptions(tracer.Tag(tagKey, tagValue)))
 	client := &http.Client{Transport: rt}
 
 	resp, err := client.Get(s.URL)
@@ -575,7 +557,7 @@ func TestRoundTripperPropagation(t *testing.T) {
 	defer s.Close()
 
 	rt := WrapRoundTripper(http.DefaultTransport,
-		RTWithPropagation(false))
+		WithPropagation(false))
 	client := &http.Client{
 		Transport: rt,
 	}
@@ -583,44 +565,6 @@ func TestRoundTripperPropagation(t *testing.T) {
 	resp, err := client.Get(s.URL + "/hello/world")
 	assert.Nil(t, err)
 	defer resp.Body.Close()
-}
-
-func TestClientNamingSchema(t *testing.T) {
-	genSpans := namingschematest.GenSpansFn(func(t *testing.T, serviceOverride string) []mocktracer.Span {
-		var opts []RoundTripperOption
-		if serviceOverride != "" {
-			opts = append(opts, RTWithServiceName(serviceOverride))
-		}
-		mt := mocktracer.Start()
-		defer mt.Stop()
-
-		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("")) }))
-		defer srv.Close()
-
-		c := WrapClient(&http.Client{}, opts...)
-		req, err := http.NewRequest(http.MethodGet, srv.URL+"/200", nil)
-		require.NoError(t, err)
-		resp, err := c.Do(req)
-		require.NoError(t, err)
-		defer resp.Body.Close()
-
-		return mt.FinishedSpans()
-	})
-	assertOpV0 := func(t *testing.T, spans []mocktracer.Span) {
-		require.Len(t, spans, 1)
-		assert.Equal(t, "http.request", spans[0].OperationName())
-	}
-	assertOpV1 := func(t *testing.T, spans []mocktracer.Span) {
-		require.Len(t, spans, 1)
-		assert.Equal(t, "http.client.request", spans[0].OperationName())
-	}
-	wantServiceNameV0 := namingschematest.ServiceNameAssertions{
-		WithDefaults:             []string{""},
-		WithDDService:            []string{""},
-		WithDDServiceAndOverride: []string{namingschematest.TestServiceOverride},
-	}
-	t.Run("ServiceName", namingschematest.NewServiceNameTest(genSpans, wantServiceNameV0))
-	t.Run("SpanName", namingschematest.NewSpanNameTest(genSpans, assertOpV0, assertOpV1))
 }
 
 type emptyRoundTripper struct{}
@@ -644,12 +588,10 @@ func TestAppsec(t *testing.T) {
 			mt := mocktracer.Start()
 			defer mt.Stop()
 
-			appsec.Start()
-			if !appsec.Enabled() {
+			testutils.StartAppSec(t)
+			if !instr.AppSecEnabled() {
 				t.Skip("appsec not enabled")
 			}
-
-			defer appsec.Stop()
 
 			w := httptest.NewRecorder()
 			r, err := http.NewRequest("GET", "?value=169.254.169.254", nil)
@@ -687,7 +629,7 @@ func TestAppsec(t *testing.T) {
 
 			require.Contains(t, serviceSpan.Tags(), "_dd.appsec.json")
 			appsecJSON := serviceSpan.Tag("_dd.appsec.json")
-			require.Contains(t, appsecJSON, httpsec.ServerIoNetURLAddr)
+			require.Contains(t, appsecJSON, "server.io.net.url")
 
 			require.Contains(t, serviceSpan.Tags(), "_dd.stack")
 			require.NotContains(t, serviceSpan.Tags(), "error.message")

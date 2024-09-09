@@ -9,20 +9,17 @@ package gorm
 import (
 	"math"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 
 	"gorm.io/gorm"
 )
 
-const componentName = "gorm.io/gorm.v1"
+var instr *instrumentation.Instrumentation
 
 func init() {
-	telemetry.LoadIntegration(componentName)
-	tracer.MarkIntegrationImported(componentName)
+	instr = instrumentation.Load(instrumentation.PackageGormIOGormV1)
 }
 
 type key string
@@ -52,7 +49,7 @@ func (g tracePlugin) Initialize(db *gorm.DB) error {
 }
 
 // Open opens a new (traced) database connection. The used driver must be formerly registered
-// using (gopkg.in/DataDog/dd-trace-go.v1/contrib/database/sql).Register.
+// using (github.com/DataDog/dd-trace-go/contrib/database/sql/v2).Register.
 func Open(dialector gorm.Dialector, cfg *gorm.Config, opts ...Option) (*gorm.DB, error) {
 	var db *gorm.DB
 	var err error
@@ -71,9 +68,9 @@ func withCallbacks(db *gorm.DB, opts ...Option) (*gorm.DB, error) {
 	cfg := new(config)
 	defaults(cfg)
 	for _, fn := range opts {
-		fn(cfg)
+		fn.apply(cfg)
 	}
-	log.Debug("Registering Callbacks: %#v", cfg)
+	instr.Logger().Debug("Registering Callbacks: %#v", cfg)
 
 	afterFunc := func() func(*gorm.DB) {
 		return func(db *gorm.DB) {
@@ -146,10 +143,10 @@ func before(db *gorm.DB, operationName string, cfg *config) {
 	if db.Config == nil || db.Config.DryRun {
 		return
 	}
-	opts := []ddtrace.StartSpanOption{
+	opts := []tracer.StartSpanOption{
 		tracer.ServiceName(cfg.serviceName),
 		tracer.SpanType(ext.SpanTypeSQL),
-		tracer.Tag(ext.Component, componentName),
+		tracer.Tag(ext.Component, instrumentation.PackageGormIOGormV1),
 	}
 	if !math.IsNaN(cfg.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))

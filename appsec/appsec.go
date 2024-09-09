@@ -15,12 +15,12 @@ import (
 	"context"
 	"sync"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/httpsec"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/sharedsec"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/httpsec"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/sharedsec"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
 var appsecDisabledLog sync.Once
@@ -136,20 +136,12 @@ func TrackCustomEvent(ctx context.Context, name string, md map[string]string) {
 	}
 }
 
-// Return the root span from the span stored in the given Go context if it
-// implements the Root method. It returns nil otherwise.
-func getRootSpan(ctx context.Context) tracer.Span {
+// Return the root span from the span stored in the given Go context.
+func getRootSpan(ctx context.Context) *tracer.Span {
 	span, _ := tracer.SpanFromContext(ctx)
 	if span == nil {
 		log.Error("appsec: could not find a span in the given Go context")
 		return nil
 	}
-	type rooter interface {
-		Root() tracer.Span
-	}
-	if lrs, ok := span.(rooter); ok {
-		return lrs.Root()
-	}
-	log.Error("appsec: could not access the root span")
-	return nil
+	return span.Root()
 }

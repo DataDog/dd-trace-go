@@ -10,8 +10,8 @@ import (
 	"log"
 	"time"
 
-	redigotrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/gomodule/redigo"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	redigotrace "github.com/DataDog/dd-trace-go/contrib/gomodule/redigo/v2"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 
 	"github.com/gomodule/redigo/redis"
 )
@@ -40,7 +40,7 @@ func Example() {
 
 func Example_tracedConn() {
 	c, err := redigotrace.Dial("tcp", "127.0.0.1:6379",
-		redigotrace.WithServiceName("my-redis-backend"),
+		redigotrace.WithService("my-redis-backend"),
 		redis.DialKeepAlive(time.Minute),
 	)
 	if err != nil {
@@ -75,7 +75,7 @@ func Example_pool() {
 	pool := &redis.Pool{
 		Dial: func() (redis.Conn, error) {
 			return redigotrace.Dial("tcp", "127.0.0.1:6379",
-				redigotrace.WithServiceName("my-redis-backend"),
+				redigotrace.WithService("my-redis-backend"),
 			)
 		},
 	}

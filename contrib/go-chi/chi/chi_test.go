@@ -14,14 +14,12 @@ import (
 	"strings"
 	"testing"
 
-	pappsec "gopkg.in/DataDog/dd-trace-go.v1/appsec"
-	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/namingschematest"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/normalizer"
+	"github.com/DataDog/dd-trace-go/v2/appsec"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils"
 
 	"github.com/go-chi/chi"
 	"github.com/stretchr/testify/assert"
@@ -34,7 +32,7 @@ func TestChildSpan(t *testing.T) {
 	defer mt.Stop()
 
 	router := chi.NewRouter()
-	router.Use(Middleware(WithServiceName("foobar")))
+	router.Use(Middleware(WithService("foobar")))
 	router.Get("/user/{id}", func(w http.ResponseWriter, r *http.Request) {
 		_, ok := tracer.SpanFromContext(r.Context())
 		assert.True(ok)
@@ -81,11 +79,11 @@ func TestTrace200(t *testing.T) {
 		defer mt.Stop()
 
 		router := chi.NewRouter()
-		router.Use(Middleware(WithServiceName("foobar")))
+		router.Use(Middleware(WithService("foobar")))
 		router.Get("/user/{id}", func(w http.ResponseWriter, r *http.Request) {
 			span, ok := tracer.SpanFromContext(r.Context())
 			assert.True(ok)
-			assert.Equal(span.(mocktracer.Span).Tag(ext.ServiceName), "foobar")
+			assert.Equal(mocktracer.MockSpan(span).Tag(ext.ServiceName), "foobar")
 			id := chi.URLParam(r, "id")
 			_, err := w.Write([]byte(id))
 			assert.NoError(err)
@@ -99,18 +97,18 @@ func TestTrace200(t *testing.T) {
 		defer mt.Stop()
 
 		router := chi.NewRouter()
-		router.Use(Middleware(WithServiceName("foobar")))
+		router.Use(Middleware(WithService("foobar")))
 		router.Get("/user/{id}", func(w http.ResponseWriter, r *http.Request) {
 			span, ok := tracer.SpanFromContext(r.Context())
 			assert.True(ok)
-			assert.Equal(span.(mocktracer.Span).Tag(ext.ServiceName), "foobar")
+			assert.Equal(mocktracer.MockSpan(span).Tag(ext.ServiceName), "foobar")
 		})
 		assertDoRequest(assert, mt, router)
 	})
 }
 
 func TestError(t *testing.T) {
-	assertSpan := func(assert *assert.Assertions, spans []mocktracer.Span, code int) {
+	assertSpan := func(assert *assert.Assertions, spans []*mocktracer.Span, code int) {
 		assert.Len(spans, 1)
 		if len(spans) < 1 {
 			t.Fatalf("no spans")
@@ -122,7 +120,7 @@ func TestError(t *testing.T) {
 		assert.Equal(strconv.Itoa(code), span.Tag(ext.HTTPCode))
 
 		wantErr := fmt.Sprintf("%d: %s", code, http.StatusText(code))
-		assert.Equal(wantErr, span.Tag(ext.Error).(error).Error())
+		assert.Equal(wantErr, span.Tag(ext.ErrorMsg))
 	}
 
 	t.Run("default", func(t *testing.T) {
@@ -132,7 +130,7 @@ func TestError(t *testing.T) {
 
 		// setup
 		router := chi.NewRouter()
-		router.Use(Middleware(WithServiceName("foobar")))
+		router.Use(Middleware(WithService("foobar")))
 		code := 500
 
 		// a handler with an error and make the requests
@@ -159,7 +157,7 @@ func TestError(t *testing.T) {
 		// setup
 		router := chi.NewRouter()
 		router.Use(Middleware(
-			WithServiceName("foobar"),
+			WithService("foobar"),
 			WithStatusCheck(func(statusCode int) bool {
 				return statusCode >= 400
 			}),
@@ -209,10 +207,10 @@ func TestWithHeaderTags(t *testing.T) {
 		assert := assert.New(t)
 		assert.Equal(len(spans), 1)
 		s := spans[0]
-		for _, arg := range htArgs {
-			_, tag := normalizer.HeaderTag(arg)
+
+		instrumentation.NewHeaderTags(htArgs).Iter(func(_ string, tag string) {
 			assert.NotContains(s.Tags(), tag)
-		}
+		})
 	})
 
 	t.Run("integration", func(t *testing.T) {
@@ -220,53 +218,51 @@ func TestWithHeaderTags(t *testing.T) {
 		defer mt.Stop()
 
 		htArgs := []string{"h!e@a-d.e*r", "2header:tag"}
-		r := setupReq(WithHeaderTags(htArgs))
+		_ = setupReq(WithHeaderTags(htArgs))
 		spans := mt.FinishedSpans()
 		assert := assert.New(t)
 		assert.Equal(len(spans), 1)
 		s := spans[0]
 
-		for _, arg := range htArgs {
-			header, tag := normalizer.HeaderTag(arg)
-			assert.Equal(strings.Join(r.Header.Values(header), ","), s.Tags()[tag])
-		}
+		assert.Equal("val,val2", s.Tags()["http.request.headers.h_e_a-d_e_r"])
+		assert.Equal("2val", s.Tags()["tag"])
+		assert.NotContains(s.Tags(), "http.headers.x-datadog-header")
 	})
 
 	t.Run("global", func(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		header, tag := normalizer.HeaderTag("3header")
-		globalconfig.SetHeaderTag(header, tag)
+		testutils.SetGlobalHeaderTags(t, "3header")
 
-		r := setupReq()
+		_ = setupReq()
 		spans := mt.FinishedSpans()
 		assert := assert.New(t)
 		assert.Equal(len(spans), 1)
 		s := spans[0]
 
-		assert.Equal(strings.Join(r.Header.Values(header), ","), s.Tags()[tag])
+		assert.Equal("3val", s.Tags()["http.request.headers.3header"])
+		assert.NotContains(s.Tags(), "http.request.headers.other")
+		assert.NotContains(s.Tags(), "http.headers.x-datadog-header")
 	})
 
 	t.Run("override", func(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		globalH, globalT := normalizer.HeaderTag("3header")
-		globalconfig.SetHeaderTag(globalH, globalT)
+		testutils.SetGlobalHeaderTags(t, "3header")
 
 		htArgs := []string{"h!e@a-d.e*r", "2header:tag"}
-		r := setupReq(WithHeaderTags(htArgs))
+		_ = setupReq(WithHeaderTags(htArgs))
 		spans := mt.FinishedSpans()
 		assert := assert.New(t)
 		assert.Equal(len(spans), 1)
 		s := spans[0]
 
-		for _, arg := range htArgs {
-			header, tag := normalizer.HeaderTag(arg)
-			assert.Equal(strings.Join(r.Header.Values(header), ","), s.Tags()[tag])
-		}
-		assert.NotContains(s.Tags(), globalT)
+		assert.Equal("val,val2", s.Tags()["http.request.headers.h_e_a-d_e_r"])
+		assert.Equal("2val", s.Tags()["tag"])
+		assert.NotContains(s.Tags(), "http.headers.x-datadog-header")
+		assert.NotContains(s.Tags(), "http.request.headers.3header")
 	})
 }
 
@@ -299,11 +295,11 @@ func TestPropagation(t *testing.T) {
 	tracer.Inject(pspan.Context(), tracer.HTTPHeadersCarrier(r.Header))
 
 	router := chi.NewRouter()
-	router.Use(Middleware(WithServiceName("foobar")))
+	router.Use(Middleware(WithService("foobar")))
 	router.Get("/user/{id}", func(w http.ResponseWriter, r *http.Request) {
 		span, ok := tracer.SpanFromContext(r.Context())
 		assert.True(ok)
-		assert.Equal(span.(mocktracer.Span).ParentID(), pspan.(mocktracer.Span).SpanID())
+		assert.Equal(mocktracer.MockSpan(span).ParentID(), mocktracer.MockSpan(pspan).SpanID())
 	})
 
 	router.ServeHTTP(w, r)
@@ -339,9 +335,7 @@ func TestAnalyticsSettings(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		rate := globalconfig.AnalyticsRate()
-		defer globalconfig.SetAnalyticsRate(rate)
-		globalconfig.SetAnalyticsRate(0.4)
+		testutils.SetGlobalAnalyticsRate(t, 0.4)
 
 		assertRate(t, mt, 0.4)
 	})
@@ -364,9 +358,7 @@ func TestAnalyticsSettings(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		rate := globalconfig.AnalyticsRate()
-		defer globalconfig.SetAnalyticsRate(rate)
-		globalconfig.SetAnalyticsRate(0.4)
+		testutils.SetGlobalAnalyticsRate(t, 0.4)
 
 		assertRate(t, mt, 0.23, WithAnalyticsRate(0.23))
 	})
@@ -394,19 +386,17 @@ func TestIgnoreRequest(t *testing.T) {
 		"/skipfoo": true,
 	} {
 		mt := mocktracer.Start()
-		defer mt.Reset()
-
 		r := httptest.NewRequest("GET", "http://localhost"+path, nil)
 		router.ServeHTTP(httptest.NewRecorder(), r)
 		assert.Equal(t, shouldSkip, len(mt.FinishedSpans()) == 0)
+		mt.Stop()
 	}
 }
 
 func TestAppSec(t *testing.T) {
-	appsec.Start()
-	defer appsec.Stop()
+	testutils.StartAppSec(t)
 
-	if !appsec.Enabled() {
+	if !instr.AppSecEnabled() {
 		t.Skip("appsec disabled")
 	}
 
@@ -421,7 +411,7 @@ func TestAppSec(t *testing.T) {
 		require.NoError(t, err)
 	})
 	router.HandleFunc("/body", func(w http.ResponseWriter, r *http.Request) {
-		pappsec.MonitorParsedHTTPBody(r.Context(), "$globals")
+		appsec.MonitorParsedHTTPBody(r.Context(), "$globals")
 		_, err := w.Write([]byte("Hello Body!\n"))
 		require.NoError(t, err)
 	})
@@ -511,36 +501,13 @@ func TestAppSec(t *testing.T) {
 	})
 }
 
-func TestNamingSchema(t *testing.T) {
-	genSpans := namingschematest.GenSpansFn(func(t *testing.T, serviceOverride string) []mocktracer.Span {
-		var opts []Option
-		if serviceOverride != "" {
-			opts = append(opts, WithServiceName(serviceOverride))
-		}
-		mt := mocktracer.Start()
-		defer mt.Stop()
-
-		mux := chi.NewRouter().With(Middleware(opts...))
-		mux.HandleFunc("/200", func(w http.ResponseWriter, r *http.Request) {
-			_, err := w.Write([]byte("ok"))
-			require.NoError(t, err)
-		})
-		r := httptest.NewRequest("GET", "/200", nil)
-		w := httptest.NewRecorder()
-		mux.ServeHTTP(w, r)
-
-		return mt.FinishedSpans()
-	})
-	namingschematest.NewHTTPServerTest(genSpans, "chi.router")(t)
-}
-
 func TestCustomResourceName(t *testing.T) {
 	assert := assert.New(t)
 	mt := mocktracer.Start()
 	defer mt.Stop()
 
 	router := chi.NewRouter()
-	router.Use(Middleware(WithServiceName("service-name"), WithResourceNamer(func(r *http.Request) string {
+	router.Use(Middleware(WithService("service-name"), WithResourceNamer(func(r *http.Request) string {
 		return "custom-resource-name"
 	})))
 	router.Get("/user/{id}", func(w http.ResponseWriter, r *http.Request) {
@@ -564,7 +531,7 @@ func TestUnknownResourceName(t *testing.T) {
 	defer mt.Stop()
 
 	router := chi.NewRouter()
-	router.Use(Middleware(WithServiceName("service-name")))
+	router.Use(Middleware(WithService("service-name")))
 	router.Get("/user/{id}", func(w http.ResponseWriter, r *http.Request) {
 		_, ok := tracer.SpanFromContext(r.Context())
 		assert.True(ok)

@@ -4,34 +4,30 @@
 // Copyright 2016 Datadog, Inc.
 
 // Package kafka provides functions to trace the confluentinc/confluent-kafka-go package (https://github.com/confluentinc/confluent-kafka-go).
-package kafka // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/confluentinc/confluent-kafka-go/kafka"
+package kafka // import "github.com/DataDog/dd-trace-go/contrib/confluentinc/confluent-kafka-go/kafka/v2"
 
 import (
 	"context"
 	"math"
 	"time"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/datastreams"
-	"gopkg.in/DataDog/dd-trace-go.v1/datastreams/options"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
-
+	"github.com/DataDog/dd-trace-go/v2/datastreams"
+	"github.com/DataDog/dd-trace-go/v2/datastreams/options"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 	"github.com/confluentinc/confluent-kafka-go/kafka"
 )
 
 const (
-	// make sure these 3 are updated to V2 for the V2 version.
-	componentName   = "confluentinc/confluent-kafka-go/kafka"
-	packageName     = "contrib/confluentinc/confluent-kafka-go/kafka"
-	integrationName = "github.com/confluentinc/confluent-kafka-go"
+	componentName = instrumentation.PackageConfluentKafkaGo
+	pkgPath       = "contrib/confluentinc/confluent-kafka-go/kafka"
 )
 
+var instr *instrumentation.Instrumentation
+
 func init() {
-	telemetry.LoadIntegration(componentName)
-	tracer.MarkIntegrationImported(integrationName)
+	instr = instrumentation.Load(instrumentation.PackageConfluentKafkaGo)
 }
 
 // NewConsumer calls kafka.NewConsumer and wraps the resulting Consumer.
@@ -59,7 +55,7 @@ type Consumer struct {
 	*kafka.Consumer
 	cfg    *config
 	events chan kafka.Event
-	prev   ddtrace.Span
+	prev   *tracer.Span
 }
 
 // WrapConsumer wraps a kafka.Consumer so that any consumed events are traced.
@@ -68,7 +64,7 @@ func WrapConsumer(c *kafka.Consumer, opts ...Option) *Consumer {
 		Consumer: c,
 		cfg:      newConfig(opts...),
 	}
-	log.Debug("%s: Wrapping Consumer: %#v", packageName, wrapped.cfg)
+	instr.Logger().Debug("%s: Wrapping Consumer: %#v", pkgPath, wrapped.cfg)
 	wrapped.events = wrapped.traceEventsChannel(c.Events())
 	return wrapped
 }
@@ -83,7 +79,7 @@ func (c *Consumer) traceEventsChannel(in chan kafka.Event) chan kafka.Event {
 	go func() {
 		defer close(out)
 		for evt := range in {
-			var next ddtrace.Span
+			var next *tracer.Span
 
 			// only trace messages
 			if msg, ok := evt.(*kafka.Message); ok {
@@ -110,7 +106,7 @@ func (c *Consumer) traceEventsChannel(in chan kafka.Event) chan kafka.Event {
 	return out
 }
 
-func (c *Consumer) startSpan(msg *kafka.Message) ddtrace.Span {
+func (c *Consumer) startSpan(msg *kafka.Message) *tracer.Span {
 	opts := []tracer.StartSpanOption{
 		tracer.ServiceName(c.cfg.consumerServiceName),
 		tracer.ResourceName("Consume Topic " + *msg.TopicPartition.Topic),
@@ -266,7 +262,7 @@ func WrapProducer(p *kafka.Producer, opts ...Option) *Producer {
 		events:         p.Events(),
 		libraryVersion: version,
 	}
-	log.Debug("%s: Wrapping Producer: %#v", packageName, wrapped.cfg)
+	instr.Logger().Debug("%s: Wrapping Producer: %#v", pkgPath, wrapped.cfg)
 	wrapped.produceChannel = wrapped.traceProduceChannel(p.ProduceChannel())
 	if wrapped.cfg.dataStreamsEnabled {
 		wrapped.events = wrapped.traceEventsChannel(p.Events())
@@ -296,7 +292,7 @@ func (p *Producer) traceProduceChannel(out chan *kafka.Message) chan *kafka.Mess
 	return in
 }
 
-func (p *Producer) startSpan(msg *kafka.Message) ddtrace.Span {
+func (p *Producer) startSpan(msg *kafka.Message) *tracer.Span {
 	opts := []tracer.StartSpanOption{
 		tracer.ServiceName(p.cfg.producerServiceName),
 		tracer.ResourceName("Produce Topic " + *msg.TopicPartition.Topic),

@@ -9,9 +9,9 @@ import (
 	"context"
 	"database/sql"
 
+	buntrace "github.com/DataDog/dd-trace-go/contrib/uptrace/bun/v2"
 	"github.com/uptrace/bun"
 	"github.com/uptrace/bun/dialect/sqlitedialect"
-	buntrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/uptrace/bun"
 	_ "modernc.org/sqlite"
 )
 
