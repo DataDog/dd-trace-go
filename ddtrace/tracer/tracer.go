@@ -409,9 +409,7 @@ func (t *tracer) worker(tick <-chan time.Time) {
 		}
 
 		t.totalTracesDropped.mu.Lock()
-		var totalDropped uint32
-		atomic.StoreUint32(&totalDropped, t.totalTracesDropped.count)
-		if totalDropped > 0 {
+		if t.totalTracesDropped.count > 0 {
 			log.Error("%d traces dropped through payload queue", t.totalTracesDropped.count)
 		}
 		t.totalTracesDropped.mu.Unlock()
@@ -471,7 +469,7 @@ func (t *tracer) pushChunk(trace *chunk) {
 		if !trace.dropped {
 			t.totalTracesDropped.mu.Lock()
 			defer t.totalTracesDropped.mu.Unlock()
-			atomic.AddUint32(&t.totalTracesDropped.count, 1)
+			t.totalTracesDropped.count += 1
 			trace.dropped = true
 		}
 	}
