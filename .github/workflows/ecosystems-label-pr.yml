@@ -7,12 +7,12 @@ on:
 #      - opened
 #      - reopened
 #      - edited
-permissions:
-  contents: write
-  issues: write
 jobs:
   label_issues:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
     steps:
       # https://github.com/marketplace/actions/actions-ecosystem-add-labels
       - name: add label
