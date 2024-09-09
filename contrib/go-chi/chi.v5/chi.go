@@ -23,8 +23,6 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 )
 
-// Let's trigger ecosystems labelling
-
 const componentName = "go-chi/chi.v5"
 
 func init() {
