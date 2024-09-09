@@ -6,8 +6,6 @@
 // Package chi provides tracing functions for tracing the go-chi/chi package (https://github.com/go-chi/chi).
 package chi // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/go-chi/chi"
 
-// Let's trigger our ecosystems labeller
-
 import (
 	"fmt"
 	"math"
