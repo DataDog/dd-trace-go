@@ -8,7 +8,6 @@ package tracer
 import (
 	gocontext "context"
 	"encoding/binary"
-	"fmt"
 	"math"
 	"os"
 	"runtime/pprof"
@@ -83,7 +82,10 @@ type tracer struct {
 	spansStarted, spansFinished, tracesDropped uint32
 
 	// Keeps track of the total number of traces dropped for accurate logging.
-	totalTracesDropped uint32
+	totalTracesDropped struct {
+		mu    sync.Mutex
+		count uint32
+	}
 
 	// Records the number of dropped P0 traces and spans.
 	droppedP0Traces, droppedP0Spans uint32
@@ -406,11 +408,13 @@ func (t *tracer) worker(tick <-chan time.Time) {
 			return
 		}
 
+		t.totalTracesDropped.mu.Lock()
 		var totalDropped uint32
-		atomic.StoreUint32(&totalDropped, t.totalTracesDropped)
+		atomic.StoreUint32(&totalDropped, t.totalTracesDropped.count)
 		if totalDropped > 0 {
-			log.Error("%d traces dropped through payload queue", t.totalTracesDropped)
+			log.Error("%d traces dropped through payload queue", t.totalTracesDropped.count)
 		}
+		t.totalTracesDropped.mu.Unlock()
 	}
 }
 
@@ -465,8 +469,9 @@ func (t *tracer) pushChunk(trace *chunk) {
 	default:
 		log.Debug("payload queue full, trace %d dropped %d spans", trace.traceID, len(trace.spans))
 		if !trace.dropped {
-			log.Info(fmt.Sprintf("dropped %d", trace.traceID))
-			atomic.AddUint32(&t.totalTracesDropped, 1)
+			t.totalTracesDropped.mu.Lock()
+			defer t.totalTracesDropped.mu.Unlock()
+			atomic.AddUint32(&t.totalTracesDropped.count, 1)
 			trace.dropped = true
 		}
 	}

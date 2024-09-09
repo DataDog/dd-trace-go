@@ -1636,7 +1636,6 @@ func TestPushTrace(t *testing.T) {
 	t.Run("overload", func(t *testing.T) {
 		tracer := newUnstartedTracer()
 		defer tracer.statsd.Close()
-		tp := new(log.RecordLogger)
 
 		root := newSpan("name", "service", "resource", 0, 0, 0)
 		trace := root.context.trace
@@ -1652,8 +1651,7 @@ func TestPushTrace(t *testing.T) {
 			trace.dropped = c.dropped
 			trace.mu.Unlock()
 		}
-		fmt.Println(tp.Logs())
-		assert.Equal(uint32(1), tracer.totalTracesDropped)
+		assert.Equal(uint32(1), tracer.totalTracesDropped.count)
 	})
 }
 
