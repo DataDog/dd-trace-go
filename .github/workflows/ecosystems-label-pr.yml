@@ -3,10 +3,10 @@ on:
   pull_request:
     paths:
       - "contrib/**"
-    types:
-      - opened
-      - reopened
-      - edited
+#    types:
+#      - opened
+#      - reopened
+#      - edited
 permissions:
   contents: read
   issues: write
