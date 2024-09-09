@@ -91,7 +91,6 @@ func (t *tracer) reportHealthMetrics(interval time.Duration) {
 	for {
 		select {
 		case <-ticker.C:
-			// atomic.AddUint32(&t.totalTracesDropped, t.tracesDropped)
 			t.statsd.Count("datadog.tracer.spans_started", int64(atomic.SwapUint32(&t.spansStarted, 0)), nil, 1)
 			t.statsd.Count("datadog.tracer.spans_finished", int64(atomic.SwapUint32(&t.spansFinished, 0)), nil, 1)
 			t.statsd.Count("datadog.tracer.traces_dropped", int64(atomic.SwapUint32(&t.tracesDropped, 0)), []string{"reason:trace_too_large"}, 1)
