@@ -252,6 +252,7 @@ func TestWAF(t *testing.T) {
 
 		// Form value detected by a XSS attack that should be obfuscated by the
 		// obfuscator value regex.
+		const _ = `BEARER lwqjedqwdoqwidmoqwndun32i`
 		const sensitivePayloadValue = `BEARER lwqjedqwdoqwidmoqwndun32i`
 		form.Add("payload", `
 {
