@@ -25,11 +25,19 @@ import (
 // The following functions are being used by the gotesting package for manual instrumentation and the orchestrion
 // automatic instrumentation
 
-type instrumentationMetadata struct {
-	IsInternal       bool
-	OriginalTest     *func(*testing.T)
-	InstrumentedTest *func(*testing.T)
-}
+type (
+	instrumentationMetadata struct {
+		IsInternal       bool
+		OriginalTest     *func(*testing.T)
+		InstrumentedTest *func(*testing.T)
+	}
+
+	ddTestItem struct {
+		test    integrations.DdTest
+		error   bool
+		skipped bool
+	}
+)
 
 var (
 	// instrumentationMap holds a map of *runtime.Func for tracking instrumented functions
@@ -39,7 +47,7 @@ var (
 	instrumentationMapMutex sync.RWMutex
 
 	// ciVisibilityTests holds a map of *testing.T or *testing.B to civisibility.DdTest for tracking tests.
-	ciVisibilityTests = map[unsafe.Pointer]integrations.DdTest{}
+	ciVisibilityTests = map[unsafe.Pointer]*ddTestItem{}
 
 	// ciVisibilityTestsMutex is a read-write mutex for synchronizing access to ciVisibilityTests.
 	ciVisibilityTestsMutex sync.RWMutex
@@ -65,7 +73,7 @@ func setInstrumentationMetadata(fn *runtime.Func, metadata *instrumentationMetad
 }
 
 // getCiVisibilityTest retrieves the CI visibility test associated with a given *testing.T or *testing.B
-func getCiVisibilityTest(tb testing.TB) integrations.DdTest {
+func getCiVisibilityTest(tb testing.TB) *ddTestItem {
 	ciVisibilityTestsMutex.RLock()
 	defer ciVisibilityTestsMutex.RUnlock()
 
@@ -80,7 +88,7 @@ func getCiVisibilityTest(tb testing.TB) integrations.DdTest {
 func setCiVisibilityTest(tb testing.TB, ciTest integrations.DdTest) {
 	ciVisibilityTestsMutex.Lock()
 	defer ciVisibilityTestsMutex.Unlock()
-	ciVisibilityTests[reflect.ValueOf(tb).UnsafePointer()] = ciTest
+	ciVisibilityTests[reflect.ValueOf(tb).UnsafePointer()] = &ddTestItem{test: ciTest}
 }
 
 // instrumentTestingM helper function to instrument internalTests and internalBenchmarks in a `*testing.M` instance.
@@ -196,25 +204,28 @@ func instrumentTestingTFunc(f func(*testing.T)) func(*testing.T) {
 
 // instrumentSetErrorInfo helper function to set an error in the `testing.T or testing.B` CI Visibility span
 func instrumentSetErrorInfo(tb testing.TB, errType string, errMessage string, skip int) {
-	ciTest := getCiVisibilityTest(tb)
-	if ciTest != nil {
-		ciTest.SetErrorInfo(errType, errMessage, utils.GetStacktrace(2+skip))
+	ciTestItem := getCiVisibilityTest(tb)
+	if ciTestItem != nil && !ciTestItem.error && ciTestItem.test != nil {
+		ciTestItem.error = true
+		ciTestItem.test.SetErrorInfo(errType, errMessage, utils.GetStacktrace(2+skip))
 	}
 }
 
 // instrumentCloseAndSkip helper function to close and skip with a reason a `testing.T or testing.B` CI Visibility span
 func instrumentCloseAndSkip(tb testing.TB, skipReason string) {
-	ciTest := getCiVisibilityTest(tb)
-	if ciTest != nil {
-		ciTest.CloseWithFinishTimeAndSkipReason(integrations.ResultStatusSkip, time.Now(), skipReason)
+	ciTestItem := getCiVisibilityTest(tb)
+	if ciTestItem != nil && !ciTestItem.skipped && ciTestItem.test != nil {
+		ciTestItem.skipped = true
+		ciTestItem.test.CloseWithFinishTimeAndSkipReason(integrations.ResultStatusSkip, time.Now(), skipReason)
 	}
 }
 
 // instrumentSkipNow helper function to close and skip a `testing.T or testing.B` CI Visibility span
 func instrumentSkipNow(tb testing.TB) {
-	ciTest := getCiVisibilityTest(tb)
-	if ciTest != nil {
-		ciTest.Close(integrations.ResultStatusSkip)
+	ciTestItem := getCiVisibilityTest(tb)
+	if ciTestItem != nil && !ciTestItem.skipped && ciTestItem.test != nil {
+		ciTestItem.skipped = true
+		ciTestItem.test.Close(integrations.ResultStatusSkip)
 	}
 }
 

@@ -40,9 +40,9 @@ func (ddt *T) Run(name string, f func(*testing.T)) bool {
 // integration tests.
 func (ddt *T) Context() context.Context {
 	t := (*testing.T)(ddt)
-	ciTest := getCiVisibilityTest(t)
-	if ciTest != nil {
-		return ciTest.Context()
+	ciTestItem := getCiVisibilityTest(t)
+	if ciTestItem != nil && ciTestItem.test != nil {
+		return ciTestItem.test.Context()
 	}
 
 	return context.Background()
