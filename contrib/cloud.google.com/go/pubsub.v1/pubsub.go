@@ -24,7 +24,7 @@ func Publish(ctx context.Context, t *pubsub.Topic, msg *pubsub.Message, opts ...
 	traceMsg := newTraceMessage(msg)
 	ctx, closeSpan := tracing.TracePublish(ctx, t, traceMsg, opts...)
 	msg.Attributes = traceMsg.Attributes
-	
+
 	return &PublishResult{
 		PublishResult: t.Publish(ctx, msg),
 		closeSpan:     closeSpan,
