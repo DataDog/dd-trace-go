@@ -15,6 +15,7 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+	"unsafe"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/integrations"
@@ -38,7 +39,7 @@ var (
 	instrumentationMapMutex sync.RWMutex
 
 	// ciVisibilityTests holds a map of *testing.T or *testing.B to civisibility.DdTest for tracking tests.
-	ciVisibilityTests = map[testing.TB]integrations.DdTest{}
+	ciVisibilityTests = map[unsafe.Pointer]integrations.DdTest{}
 
 	// ciVisibilityTestsMutex is a read-write mutex for synchronizing access to ciVisibilityTests.
 	ciVisibilityTestsMutex sync.RWMutex
@@ -68,7 +69,7 @@ func getCiVisibilityTest(tb testing.TB) integrations.DdTest {
 	ciVisibilityTestsMutex.RLock()
 	defer ciVisibilityTestsMutex.RUnlock()
 
-	if v, ok := ciVisibilityTests[tb]; ok {
+	if v, ok := ciVisibilityTests[reflect.ValueOf(tb).UnsafePointer()]; ok {
 		return v
 	}
 
@@ -79,7 +80,7 @@ func getCiVisibilityTest(tb testing.TB) integrations.DdTest {
 func setCiVisibilityTest(tb testing.TB, ciTest integrations.DdTest) {
 	ciVisibilityTestsMutex.Lock()
 	defer ciVisibilityTestsMutex.Unlock()
-	ciVisibilityTests[tb] = ciTest
+	ciVisibilityTests[reflect.ValueOf(tb).UnsafePointer()] = ciTest
 }
 
 // instrumentTestingM helper function to instrument internalTests and internalBenchmarks in a `*testing.M` instance.
