@@ -8,17 +8,12 @@ package gotesting
 import (
 	"context"
 	"fmt"
-	"reflect"
 	"regexp"
-	"runtime"
 	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/integrations"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/utils"
 )
 
 var (
@@ -33,6 +28,12 @@ var (
 
 	// subBenchmarkAutoNameRegex is a regex pattern to match the sub-benchmark auto name.
 	subBenchmarkAutoNameRegex = regexp.MustCompile(`(?si)\/\[DD:TestVisibility\].*`)
+
+	// civisibilityBenchmarksFuncs holds a map of *func(*testing.B) for tracking instrumented functions
+	civisibilityBenchmarksFuncs = map[*func(*testing.B)]struct{}{}
+
+	// civisibilityBenchmarksFuncsMutex is a read-write mutex for synchronizing access to civisibilityBenchmarksFuncs.
+	civisibilityBenchmarksFuncsMutex sync.RWMutex
 )
 
 // B is a type alias for testing.B to provide additional methods for CI visibility.
@@ -48,127 +49,9 @@ func GetBenchmark(t *testing.B) *B { return (*B)(t) }
 // A subbenchmark is like any other benchmark. A benchmark that calls Run at
 // least once will not be measured itself and will be called once with N=1.
 func (ddb *B) Run(name string, f func(*testing.B)) bool {
-	// Reflect the function to obtain its pointer.
-	fReflect := reflect.Indirect(reflect.ValueOf(f))
-	moduleName, suiteName := utils.GetModuleAndSuiteName(fReflect.Pointer())
-	originalFunc := runtime.FuncForPC(fReflect.Pointer())
-
-	// Increment the test count in the module.
-	atomic.AddInt32(modulesCounters[moduleName], 1)
-
-	// Increment the test count in the suite.
-	atomic.AddInt32(suitesCounters[suiteName], 1)
-
 	pb := (*testing.B)(ddb)
-	return pb.Run(subBenchmarkAutoName, func(b *testing.B) {
-		// The sub-benchmark implementation relies on creating a dummy sub benchmark (called [DD:TestVisibility]) with
-		// a Run over the original sub benchmark function to get the child results without interfering measurements
-		// By doing this the name of the sub-benchmark are changed
-		// from:
-		// 		benchmark/child
-		// to:
-		//		benchmark/[DD:TestVisibility]/child
-		// We use regex and decrement the depth level of the benchmark to restore the original name
-
-		// Decrement level.
-		bpf := getBenchmarkPrivateFields(b)
-		bpf.AddLevel(-1)
-
-		startTime := time.Now()
-		module := session.GetOrCreateModuleWithFrameworkAndStartTime(moduleName, testFramework, runtime.Version(), startTime)
-		suite := module.GetOrCreateSuiteWithStartTime(suiteName, startTime)
-		test := suite.CreateTestWithStartTime(fmt.Sprintf("%s/%s", pb.Name(), name), startTime)
-		test.SetTestFunc(originalFunc)
-
-		// Restore the original name without the sub-benchmark auto name.
-		*bpf.name = subBenchmarkAutoNameRegex.ReplaceAllString(*bpf.name, "")
-
-		// Run original benchmark.
-		var iPfOfB *benchmarkPrivateFields
-		var recoverFunc *func(r any)
-		b.Run(name, func(b *testing.B) {
-			// Stop the timer to do the initialization and replacements.
-			b.StopTimer()
-
-			defer func() {
-				if r := recover(); r != nil {
-					if recoverFunc != nil {
-						fn := *recoverFunc
-						fn(r)
-					}
-					panic(r)
-				}
-			}()
-
-			// First time we get the private fields of the inner testing.B.
-			iPfOfB = getBenchmarkPrivateFields(b)
-			// Replace this function with the original one (executed only once - the first iteration[b.run1]).
-			*iPfOfB.benchFunc = f
-			// Set b to the CI visibility test.
-			setCiVisibilityBenchmark(b, test)
-
-			// Enable the timer again.
-			b.ResetTimer()
-			b.StartTimer()
-
-			// Execute original func
-			f(b)
-		})
-
-		endTime := time.Now()
-		results := iPfOfB.result
-
-		// Set benchmark data for CI visibility.
-		test.SetBenchmarkData("duration", map[string]any{
-			"run":  results.N,
-			"mean": results.NsPerOp(),
-		})
-		test.SetBenchmarkData("memory_total_operations", map[string]any{
-			"run":            results.N,
-			"mean":           results.AllocsPerOp(),
-			"statistics.max": results.MemAllocs,
-		})
-		test.SetBenchmarkData("mean_heap_allocations", map[string]any{
-			"run":  results.N,
-			"mean": results.AllocedBytesPerOp(),
-		})
-		test.SetBenchmarkData("total_heap_allocations", map[string]any{
-			"run":  results.N,
-			"mean": iPfOfB.result.MemBytes,
-		})
-		if len(results.Extra) > 0 {
-			mapConverted := map[string]any{}
-			for k, v := range results.Extra {
-				mapConverted[k] = v
-			}
-			test.SetBenchmarkData("extra", mapConverted)
-		}
-
-		// Define a function to handle panic during benchmark finalization.
-		panicFunc := func(r any) {
-			test.SetErrorInfo("panic", fmt.Sprint(r), utils.GetStacktrace(1))
-			suite.SetTag(ext.Error, true)
-			module.SetTag(ext.Error, true)
-			test.Close(integrations.ResultStatusFail)
-			checkModuleAndSuite(module, suite)
-			integrations.ExitCiVisibility()
-		}
-		recoverFunc = &panicFunc
-
-		// Normal finalization: determine the benchmark result based on its state.
-		if iPfOfB.B.Failed() {
-			test.SetTag(ext.Error, true)
-			suite.SetTag(ext.Error, true)
-			module.SetTag(ext.Error, true)
-			test.CloseWithFinishTime(integrations.ResultStatusFail, endTime)
-		} else if iPfOfB.B.Skipped() {
-			test.CloseWithFinishTime(integrations.ResultStatusSkip, endTime)
-		} else {
-			test.CloseWithFinishTime(integrations.ResultStatusPass, endTime)
-		}
-
-		checkModuleAndSuite(module, suite)
-	})
+	name, f = instrumentTestingBFunc(pb, name, f)
+	return pb.Run(name, f)
 }
 
 // Context returns the CI Visibility context of the Test span.
@@ -230,11 +113,7 @@ func (ddb *B) Skipf(format string, args ...any) {
 // during the test. Calling SkipNow does not stop those other goroutines.
 func (ddb *B) SkipNow() {
 	b := (*testing.B)(ddb)
-	ciTest := getCiVisibilityBenchmark(b)
-	if ciTest != nil {
-		ciTest.Close(integrations.ResultStatusSkip)
-	}
-
+	instrumentTestingBSkipNow(b)
 	b.SkipNow()
 }
 
@@ -300,19 +179,13 @@ func (ddb *B) SetParallelism(p int) { (*testing.B)(ddb).SetParallelism(p) }
 
 func (ddb *B) getBWithError(errType string, errMessage string) *testing.B {
 	b := (*testing.B)(ddb)
-	ciTest := getCiVisibilityBenchmark(b)
-	if ciTest != nil {
-		ciTest.SetErrorInfo(errType, errMessage, utils.GetStacktrace(2))
-	}
+	instrumentTestingBSetErrorInfo(b, errType, errMessage, 1)
 	return b
 }
 
 func (ddb *B) getBWithSkip(skipReason string) *testing.B {
 	b := (*testing.B)(ddb)
-	ciTest := getCiVisibilityBenchmark(b)
-	if ciTest != nil {
-		ciTest.CloseWithFinishTimeAndSkipReason(integrations.ResultStatusSkip, time.Now(), skipReason)
-	}
+	instrumentTestingBCloseAndSkip(b, skipReason)
 	return b
 }
 
@@ -333,4 +206,30 @@ func setCiVisibilityBenchmark(b *testing.B, ciTest integrations.DdTest) {
 	ciVisibilityBenchmarksMutex.Lock()
 	defer ciVisibilityBenchmarksMutex.Unlock()
 	ciVisibilityBenchmarks[b] = ciTest
+}
+
+// hasCiVisibilityBenchmarkFunc gets if a func(*testing.B) is being instrumented.
+func hasCiVisibilityBenchmarkFunc(fn *func(*testing.B)) bool {
+	civisibilityBenchmarksFuncsMutex.RLock()
+	defer civisibilityBenchmarksFuncsMutex.RUnlock()
+
+	if _, ok := civisibilityBenchmarksFuncs[fn]; ok {
+		return true
+	}
+
+	return false
+}
+
+// setCiVisibilityBenchmarkFunc tracks a func(*testing.B) as instrumented benchmark.
+func setCiVisibilityBenchmarkFunc(fn *func(*testing.B)) {
+	civisibilityBenchmarksFuncsMutex.RLock()
+	defer civisibilityBenchmarksFuncsMutex.RUnlock()
+	civisibilityBenchmarksFuncs[fn] = struct{}{}
+}
+
+// deleteCiVisibilityBenchmarkFunc untracks a func(*testing.B) as instrumented benchmark.
+func deleteCiVisibilityBenchmarkFunc(fn *func(*testing.B)) {
+	civisibilityBenchmarksFuncsMutex.RLock()
+	defer civisibilityBenchmarksFuncsMutex.RUnlock()
+	delete(civisibilityBenchmarksFuncs, fn)
 }
