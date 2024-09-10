@@ -210,7 +210,13 @@ func defaultConfig() (*config, error) {
 	} else {
 		c.agentURL = url.String() + "/profiling/v1/input"
 	}
-	c.enable = internal.BoolEnv("DD_PROFILING_ENABLED", true)
+	// If DD_PROFILING_ENABLED is set to "auto", the profiler's activation will be determined by
+	// the Datadog admission controller, so we set it to true.
+	if os.Getenv("DD_PROFILING_ENABLED") == "auto" {
+		c.enable = true
+	} else {
+		c.enable = internal.BoolEnv("DD_PROFILING_ENABLED", true)
+	}
 	if v := os.Getenv("DD_PROFILING_UPLOAD_TIMEOUT"); v != "" {
 		d, err := time.ParseDuration(v)
 		if err != nil {
