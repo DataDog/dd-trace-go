@@ -1632,27 +1632,6 @@ func TestPushTrace(t *testing.T) {
 	assert.Len(tracer.out, payloadQueueSize)
 	log.Flush()
 	assert.True(len(tp.Logs()) >= 1)
-
-	t.Run("overload", func(t *testing.T) {
-		tracer := newUnstartedTracer()
-		defer tracer.statsd.Close()
-
-		root := newSpan("name", "service", "resource", 0, 0, 0)
-		trace := root.context.trace
-
-		many := payloadQueueSize + 2
-		for i := 0; i < many; i++ {
-			trace.mu.Lock()
-			c := chunk{spans: make([]*span, i),
-				traceID: trace.root.TraceID,
-				dropped: trace.dropped,
-			}
-			tracer.pushChunk(&c)
-			trace.dropped = c.dropped
-			trace.mu.Unlock()
-		}
-		assert.Equal(uint32(1), tracer.totalTracesDropped.count)
-	})
 }
 
 func TestTracerFlush(t *testing.T) {

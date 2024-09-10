@@ -467,10 +467,10 @@ func (t *tracer) pushChunk(trace *chunk) {
 	default:
 		log.Debug("payload queue full, trace %d dropped %d spans", trace.traceID, len(trace.spans))
 		if !trace.dropped {
+			trace.dropped = true
 			t.totalTracesDropped.mu.Lock()
 			defer t.totalTracesDropped.mu.Unlock()
 			t.totalTracesDropped.count += 1
-			trace.dropped = true
 		}
 	}
 }
