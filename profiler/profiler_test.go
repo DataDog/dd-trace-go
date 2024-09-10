@@ -461,6 +461,19 @@ func TestImmediateProfile(t *testing.T) {
 	}
 }
 
+func TestEnabledFalse(t *testing.T) {
+	t.Setenv("DD_PROFILING_ENABLED", "false")
+	ch := startTestProfiler(t, 1, WithPeriod(10*time.Millisecond), WithProfileTypes())
+	select {
+	case <-ch:
+		t.Fatal("received profile when profiler should have been disabled")
+	case <-time.After(time.Second):
+		// This test might succeed incorrectly on an overloaded
+		// CI server, but is very likely to fail locally given a
+		// buggy implementation
+	}
+}
+
 func TestExecutionTraceCPUProfileRate(t *testing.T) {
 	// cpuProfileRate is picked randomly so we can check for it in the trace
 	// data to reduce the chance that it occurs in the trace data for some other
