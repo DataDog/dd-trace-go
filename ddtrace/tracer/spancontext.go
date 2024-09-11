@@ -484,8 +484,6 @@ func (t *trace) finishedOne(s *span) {
 		t.finishChunk(tr, &chunk{
 			spans:    t.spans,
 			willSend: decisionKeep == samplingDecision(atomic.LoadUint32((*uint32)(&t.samplingDecision))),
-			traceID:  s.TraceID,
-			dropped:  t.dropped,
 		})
 		t.spans = nil
 		return
@@ -517,8 +515,6 @@ func (t *trace) finishedOne(s *span) {
 	t.finishChunk(tr, &chunk{
 		spans:    finishedSpans,
 		willSend: decisionKeep == samplingDecision(atomic.LoadUint32((*uint32)(&t.samplingDecision))),
-		traceID:  s.TraceID,
-		dropped:  t.dropped,
 	})
 	t.spans = leftoverSpans
 }
@@ -526,7 +522,6 @@ func (t *trace) finishedOne(s *span) {
 func (t *trace) finishChunk(tr *tracer, ch *chunk) {
 	atomic.AddUint32(&tr.spansFinished, uint32(len(ch.spans)))
 	tr.pushChunk(ch)
-	t.dropped = ch.dropped
 	t.finished = 0 // important, because a buffer can be used for several flushes
 }
 

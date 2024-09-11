@@ -1591,11 +1591,11 @@ func TestPushPayload(t *testing.T) {
 	s.Meta["key"] = strings.Repeat("X", payloadSizeLimit/2+10)
 
 	// half payload size reached
-	tracer.pushChunk(&chunk{[]*span{s}, true, s.TraceID, false})
+	tracer.pushChunk(&chunk{[]*span{s}, true})
 	tracer.awaitPayload(t, 1)
 
 	// payload size exceeded
-	tracer.pushChunk(&chunk{[]*span{s}, true, s.TraceID, false})
+	tracer.pushChunk(&chunk{[]*span{s}, true})
 	flush(2)
 }
 

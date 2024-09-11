@@ -150,8 +150,6 @@ func TestSpanTracePushOne(t *testing.T) {
 
 // Tests to confirm that when the payload queue is full, chunks are dropped
 // and the associated trace is counted as dropped.
-// If the same trace has chunks dropped multiple times, it should not be
-// counted more than once.
 func TestTraceFinishChunk(t *testing.T) {
 	assert := assert.New(t)
 	tracer := newUnstartedTracer()
@@ -160,17 +158,12 @@ func TestTraceFinishChunk(t *testing.T) {
 	root := newSpan("name", "service", "resource", 0, 0, 0)
 	trace := root.context.trace
 
-	for i := 0; i < payloadQueueSize+2; i++ {
+	for i := 0; i < payloadQueueSize+1; i++ {
 		trace.mu.Lock()
-		c := chunk{spans: make([]*span, 1),
-			traceID: trace.root.TraceID,
-			dropped: trace.dropped,
-		}
+		c := chunk{spans: make([]*span, 1)}
 		trace.finishChunk(tracer, &c)
 		trace.mu.Unlock()
 	}
-	tracer.totalTracesDropped.mu.Lock()
-	defer tracer.totalTracesDropped.mu.Unlock()
 	assert.Equal(uint32(1), tracer.totalTracesDropped.count)
 }
 

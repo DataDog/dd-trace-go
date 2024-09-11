@@ -87,6 +87,9 @@ type tracer struct {
 		count uint32
 	}
 
+	// Causes the tracer to log the total number of dropped traces.
+	logTracesDropped *time.Ticker
+
 	// Records the number of dropped P0 traces and spans.
 	droppedP0Traces, droppedP0Spans uint32
 
@@ -282,6 +285,7 @@ func newUnstartedTracer(opts ...StartOption) *tracer {
 		rulesSampling:    rulesSampler,
 		prioritySampling: sampler,
 		pid:              os.Getpid(),
+		logTracesDropped: time.NewTicker(5 * time.Second),
 		stats:            newConcentrator(c, defaultStatsBucketSize),
 		obfuscator: obfuscate.NewObfuscator(obfuscate.Config{
 			SQL: obfuscate.SQLConfig{
@@ -407,12 +411,6 @@ func (t *tracer) worker(tick <-chan time.Time) {
 			}
 			return
 		}
-
-		t.totalTracesDropped.mu.Lock()
-		if t.totalTracesDropped.count > 0 {
-			log.Error("%d traces dropped through payload queue", t.totalTracesDropped.count)
-		}
-		t.totalTracesDropped.mu.Unlock()
 	}
 }
 
@@ -422,8 +420,6 @@ func (t *tracer) worker(tick <-chan time.Time) {
 type chunk struct {
 	spans    []*span
 	willSend bool // willSend indicates whether the trace will be sent to the agent.
-	traceID  uint64
-	dropped  bool // indicates if the parent trace has already been dropped
 }
 
 // sampleChunk applies single-span sampling to the provided trace.
@@ -464,14 +460,13 @@ func (t *tracer) pushChunk(trace *chunk) {
 	}
 	select {
 	case t.out <- trace:
-	default:
-		log.Debug("payload queue full, trace %d dropped %d spans", trace.traceID, len(trace.spans))
-		if !trace.dropped {
-			trace.dropped = true
-			t.totalTracesDropped.mu.Lock()
-			defer t.totalTracesDropped.mu.Unlock()
-			t.totalTracesDropped.count += 1
+	case <-t.logTracesDropped.C:
+		if t.totalTracesDropped.count > 0 {
+			log.Error("%d traces dropped through payload queue", t.totalTracesDropped.count)
 		}
+	default:
+		log.Debug("payload queue full, trace dropped %d spans", len(trace.spans))
+		t.totalTracesDropped.count += 1
 	}
 }
 
@@ -679,6 +674,7 @@ func (t *tracer) Stop() {
 	t.stats.Stop()
 	t.wg.Wait()
 	t.traceWriter.stop()
+	t.logTracesDropped.Stop()
 	t.statsd.Close()
 	if t.dataStreams != nil {
 		t.dataStreams.Stop()
