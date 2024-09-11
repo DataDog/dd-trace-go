@@ -27,9 +27,7 @@ import (
 
 type (
 	instrumentationMetadata struct {
-		IsInternal       bool
-		OriginalTest     *func(*testing.T)
-		InstrumentedTest *func(*testing.T)
+		IsInternal bool
 	}
 
 	ddTestItem struct {
@@ -57,11 +55,9 @@ var (
 func getInstrumentationMetadata(fn *runtime.Func) *instrumentationMetadata {
 	instrumentationMapMutex.RLock()
 	defer instrumentationMapMutex.RUnlock()
-
 	if v, ok := instrumentationMap[fn]; ok {
 		return v
 	}
-
 	return nil
 }
 
@@ -76,11 +72,9 @@ func setInstrumentationMetadata(fn *runtime.Func, metadata *instrumentationMetad
 func getCiVisibilityTest(tb testing.TB) *ddTestItem {
 	ciVisibilityTestsMutex.RLock()
 	defer ciVisibilityTestsMutex.RUnlock()
-
 	if v, ok := ciVisibilityTests[reflect.ValueOf(tb).UnsafePointer()]; ok {
 		return v
 	}
-
 	return nil
 }
 
@@ -131,16 +125,12 @@ func instrumentTestingTFunc(f func(*testing.T)) func(*testing.T) {
 
 	// Avoid instrumenting twice
 	metadata := getInstrumentationMetadata(originalFunc)
-	if metadata != nil {
+	if metadata != nil && metadata.IsInternal {
 		// If is an internal test, we don't instrument because f is already the instrumented func by executeInternalTest
-		if metadata.IsInternal {
-			return f
-		}
-
-		return *metadata.InstrumentedTest
+		return f
 	}
 
-	instrumentedFunc := func(t *testing.T) {
+	instrumentedFn := func(t *testing.T) {
 		// Initialize module counters if not already present.
 		if _, ok := modulesCounters[moduleName]; !ok {
 			var v int32
@@ -190,16 +180,8 @@ func instrumentTestingTFunc(f func(*testing.T)) func(*testing.T) {
 		// Execute the original test function.
 		f(t)
 	}
-
-	metadata = &instrumentationMetadata{
-		IsInternal:       false,
-		OriginalTest:     &f,
-		InstrumentedTest: &instrumentedFunc,
-	}
-
-	setInstrumentationMetadata(originalFunc, metadata)
-	setInstrumentationMetadata(runtime.FuncForPC(reflect.Indirect(reflect.ValueOf(instrumentedFunc)).Pointer()), metadata)
-	return instrumentedFunc
+	setInstrumentationMetadata(runtime.FuncForPC(reflect.Indirect(reflect.ValueOf(instrumentedFn)).Pointer()), &instrumentationMetadata{IsInternal: true})
+	return instrumentedFn
 }
 
 // instrumentSetErrorInfo helper function to set an error in the `testing.T or testing.B` CI Visibility span

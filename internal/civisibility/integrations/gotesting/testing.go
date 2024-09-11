@@ -166,14 +166,7 @@ func (ddm *M) executeInternalTest(testInfo *testingTInfo) func(*testing.T) {
 		testInfo.originalFunc(t)
 	}
 
-	metadata := &instrumentationMetadata{
-		IsInternal:       true,
-		OriginalTest:     &testInfo.originalFunc,
-		InstrumentedTest: &instrumentedFunc,
-	}
-
-	setInstrumentationMetadata(originalFunc, metadata)
-	setInstrumentationMetadata(runtime.FuncForPC(reflect.Indirect(reflect.ValueOf(instrumentedFunc)).Pointer()), metadata)
+	setInstrumentationMetadata(runtime.FuncForPC(reflect.Indirect(reflect.ValueOf(instrumentedFunc)).Pointer()), &instrumentationMetadata{IsInternal: true})
 	return instrumentedFunc
 }
 
