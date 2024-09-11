@@ -83,9 +83,7 @@ func TracePublish(ctx context.Context, topic Topic, psMsg any, opts ...Option) (
 		log.Debug("contrib/cloud.google.com/go/pubsub.v1/trace: failed injecting tracing attributes: %v", err)
 	}
 	span.SetTag("num_attributes", len(msg.Attributes))
-
-	// update the attributes in the original message so context propagation works properly
-	setAttributes(psMsg, msg.Attributes)
+	setAttributes(msg, msg.Attributes)
 
 	var once sync.Once
 	closeSpan := func(serverID string, err error) {
@@ -164,9 +162,6 @@ func newPubsubMessage(msg any) *pubsubMsg {
 }
 
 func setAttributes(msg any, attrs map[string]string) {
-	if reflect.ValueOf(msg).Kind() != reflect.Ptr {
-		return
-	}
 	val := reflect.ValueOf(msg).Elem()
 	if val.Kind() != reflect.Struct {
 		return
