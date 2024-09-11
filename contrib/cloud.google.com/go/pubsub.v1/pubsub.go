@@ -21,7 +21,10 @@ import (
 // It is required to call (*PublishResult).Get(ctx) on the value returned by Publish to complete
 // the span.
 func Publish(ctx context.Context, t *pubsub.Topic, msg *pubsub.Message, opts ...Option) *PublishResult {
-	ctx, closeSpan := tracing.TracePublish(ctx, t, msg, opts...)
+	traceMsg := newTraceMessage(msg)
+	ctx, closeSpan := tracing.TracePublish(ctx, t, traceMsg, opts...)
+	msg.Attributes = traceMsg.Attributes
+
 	return &PublishResult{
 		PublishResult: t.Publish(ctx, msg),
 		closeSpan:     closeSpan,
@@ -48,8 +51,22 @@ func (r *PublishResult) Get(ctx context.Context) (string, error) {
 func WrapReceiveHandler(s *pubsub.Subscription, f func(context.Context, *pubsub.Message), opts ...Option) func(context.Context, *pubsub.Message) {
 	traceFn := tracing.TraceReceiveFunc(s, opts...)
 	return func(ctx context.Context, msg *pubsub.Message) {
-		ctx, closeSpan := traceFn(ctx, msg)
+		ctx, closeSpan := traceFn(ctx, newTraceMessage(msg))
 		defer closeSpan()
 		f(ctx, msg)
+	}
+}
+
+func newTraceMessage(msg *pubsub.Message) *tracing.Message {
+	if msg == nil {
+		return nil
+	}
+	return &tracing.Message{
+		ID:              msg.ID,
+		Data:            msg.Data,
+		OrderingKey:     msg.OrderingKey,
+		Attributes:      msg.Attributes,
+		DeliveryAttempt: msg.DeliveryAttempt,
+		PublishTime:     msg.PublishTime,
 	}
 }
