@@ -34,8 +34,8 @@ type (
 
 	ddTestItem struct {
 		test    integrations.DdTest
-		error   bool
-		skipped bool
+		error   atomic.Int32
+		skipped atomic.Int32
 	}
 )
 
@@ -205,8 +205,7 @@ func instrumentTestingTFunc(f func(*testing.T)) func(*testing.T) {
 // instrumentSetErrorInfo helper function to set an error in the `testing.T or testing.B` CI Visibility span
 func instrumentSetErrorInfo(tb testing.TB, errType string, errMessage string, skip int) {
 	ciTestItem := getCiVisibilityTest(tb)
-	if ciTestItem != nil && !ciTestItem.error && ciTestItem.test != nil {
-		ciTestItem.error = true
+	if ciTestItem != nil && ciTestItem.error.CompareAndSwap(0, 1) && ciTestItem.test != nil {
 		ciTestItem.test.SetErrorInfo(errType, errMessage, utils.GetStacktrace(2+skip))
 	}
 }
@@ -214,8 +213,7 @@ func instrumentSetErrorInfo(tb testing.TB, errType string, errMessage string, sk
 // instrumentCloseAndSkip helper function to close and skip with a reason a `testing.T or testing.B` CI Visibility span
 func instrumentCloseAndSkip(tb testing.TB, skipReason string) {
 	ciTestItem := getCiVisibilityTest(tb)
-	if ciTestItem != nil && !ciTestItem.skipped && ciTestItem.test != nil {
-		ciTestItem.skipped = true
+	if ciTestItem != nil && ciTestItem.skipped.CompareAndSwap(0, 1) && ciTestItem.test != nil {
 		ciTestItem.test.CloseWithFinishTimeAndSkipReason(integrations.ResultStatusSkip, time.Now(), skipReason)
 	}
 }
@@ -223,8 +221,7 @@ func instrumentCloseAndSkip(tb testing.TB, skipReason string) {
 // instrumentSkipNow helper function to close and skip a `testing.T or testing.B` CI Visibility span
 func instrumentSkipNow(tb testing.TB) {
 	ciTestItem := getCiVisibilityTest(tb)
-	if ciTestItem != nil && !ciTestItem.skipped && ciTestItem.test != nil {
-		ciTestItem.skipped = true
+	if ciTestItem != nil && ciTestItem.skipped.CompareAndSwap(0, 1) && ciTestItem.test != nil {
 		ciTestItem.test.Close(integrations.ResultStatusSkip)
 	}
 }
