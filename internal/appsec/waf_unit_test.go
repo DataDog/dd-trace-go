@@ -7,11 +7,12 @@ package appsec
 
 import (
 	"encoding/json"
+	"testing"
+
 	internal "github.com/DataDog/appsec-internal-go/appsec"
 	waf "github.com/DataDog/go-libddwaf/v3"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener/httpsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/trace"
-	"testing"
 
 	"github.com/stretchr/testify/require"
 )

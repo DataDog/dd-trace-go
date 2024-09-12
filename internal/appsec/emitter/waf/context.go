@@ -10,7 +10,9 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"github.com/DataDog/appsec-internal-go/limiter"
 	waf "github.com/DataDog/go-libddwaf/v3"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
@@ -22,6 +24,7 @@ type (
 		dyngo.Operation
 		trace.ServiceEntrySpanOperation
 
+		limiter     limiter.Limiter
 		context     atomic.Pointer[waf.Context]
 		events      []any
 		derivatives map[string]any
@@ -32,7 +35,15 @@ type (
 	}
 
 	ContextRes struct{}
+
+	RunEvent struct {
+		waf.RunAddressData
+		dyngo.Operation
+	}
 )
+
+func (ContextArgs) IsArgOf(*ContextOperation)   {}
+func (ContextRes) IsResultOf(*ContextOperation) {}
 
 func (op *ContextOperation) Start(ctx context.Context) context.Context {
 	return dyngo.StartAndRegisterOperation(op.ServiceEntrySpanOperation.Start(ctx), op, ContextArgs{})
@@ -43,24 +54,34 @@ func (op *ContextOperation) Finish(span ddtrace.Span) {
 	op.ServiceEntrySpanOperation.Finish(span)
 }
 
-func (ContextArgs) IsArgOf(*ContextOperation)   {}
-func (ContextRes) IsResultOf(*ContextOperation) {}
-
-func (op *ContextOperation) Context() *waf.Context {
-	return op.context.Load()
-}
-
 func (op *ContextOperation) SwapContext(ctx *waf.Context) *waf.Context {
 	return op.context.Swap(ctx)
 }
 
+func (op *ContextOperation) SetLimiter(limiter limiter.Limiter) {
+	op.limiter = limiter
+}
+
 func (op *ContextOperation) AddEvents(events []any) {
+	if len(events) == 0 {
+		return
+	}
+
+	if !op.limiter.Allow() {
+		log.Warn("appsec: too many Feature events, stopping further reporting")
+		return
+	}
+
 	op.mu.Lock()
 	defer op.mu.Unlock()
 	op.events = append(op.events, events...)
 }
 
 func (op *ContextOperation) AbsorbDerivatives(derivatives map[string]any) {
+	if len(derivatives) == 0 {
+		return
+	}
+
 	op.mu.Lock()
 	defer op.mu.Unlock()
 	for k, v := range derivatives {
@@ -74,4 +95,8 @@ func (op *ContextOperation) Derivatives() map[string]any {
 
 func (op *ContextOperation) Events() []any {
 	return op.events
+}
+
+func (op *ContextOperation) OnEvent(event RunEvent) {
+	op.Run(event.Operation, event.RunAddressData)
 }

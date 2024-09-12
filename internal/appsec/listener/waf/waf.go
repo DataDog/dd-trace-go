@@ -6,15 +6,12 @@
 package waf
 
 import (
-	"errors"
 	"fmt"
 	"sync"
 	"time"
 
 	"github.com/DataDog/appsec-internal-go/limiter"
 	wafv3 "github.com/DataDog/go-libddwaf/v3"
-	wafErrors "github.com/DataDog/go-libddwaf/v3/errors"
-
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/config"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/waf"
@@ -73,39 +70,9 @@ func (waf *Feature) onStart(op *waf.ContextOperation, _ waf.ContextArgs) {
 	}
 
 	op.SwapContext(ctx)
+	op.SetLimiter(waf.limiter)
 
-	dyngo.OnData(op, func(data wafv3.RunAddressData) {
-		waf.run(op, data)
-	})
-}
-
-func (waf *Feature) run(op *waf.ContextOperation, data wafv3.RunAddressData) {
-	ctx := op.Context()
-	if ctx == nil { // Context was closed concurrently
-		return
-	}
-
-	result, err := ctx.Run(data)
-	if errors.Is(err, wafErrors.ErrTimeout) {
-		log.Debug("appsec: Feature timeout value reached: %v", err)
-	} else if err != nil {
-		log.Error("appsec: unexpected Feature error: %v", err)
-	}
-
-	if !result.HasEvents() {
-		return
-	}
-
-	log.Debug("appsec: Feature detected a suspicious Feature event")
-	SendActionEvents(op, result.Actions)
-
-	if waf.limiter.Allow() {
-		log.Warn("appsec: too many Feature events, stopping further reporting")
-		return
-	}
-
-	op.AddEvents(result.Events)
-	op.AbsorbDerivatives(result.Derivatives)
+	dyngo.OnData(op, op.OnEvent)
 }
 
 func (waf *Feature) onFinish(op *waf.ContextOperation, _ waf.ContextRes) {

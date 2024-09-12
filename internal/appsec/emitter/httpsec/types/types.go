@@ -24,11 +24,6 @@ type (
 		mu sync.RWMutex
 	}
 
-	// SDKBodyOperation type representing an SDK body
-	SDKBodyOperation struct {
-		dyngo.Operation
-	}
-
 	RoundTripOperation struct {
 		dyngo.Operation
 	}
@@ -72,15 +67,6 @@ type (
 		Status int
 	}
 
-	// SDKBodyOperationArgs is the SDK body operation arguments.
-	SDKBodyOperationArgs struct {
-		// Body corresponds to the address `server.request.body`.
-		Body any
-	}
-
-	// SDKBodyOperationRes is the SDK body operation results.
-	SDKBodyOperationRes struct{}
-
 	// RoundTripOperationArgs is the round trip operation arguments.
 	RoundTripOperationArgs struct {
 		// URL corresponds to the address `server.io.net.url`.
@@ -90,14 +76,6 @@ type (
 	// RoundTripOperationRes is the round trip operation results.
 	RoundTripOperationRes struct{}
 )
-
-// Finish finishes the SDKBody operation and emits a finish event
-func (op *SDKBodyOperation) Finish() {
-	dyngo.FinishOperation(op, SDKBodyOperationRes{})
-}
-
-func (SDKBodyOperationArgs) IsArgOf(*SDKBodyOperation)   {}
-func (SDKBodyOperationRes) IsResultOf(*SDKBodyOperation) {}
 
 func (HandlerOperationArgs) IsArgOf(*Operation)   {}
 func (HandlerOperationRes) IsResultOf(*Operation) {}

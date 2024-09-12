@@ -17,11 +17,12 @@ import (
 	"net/http"
 	"strings"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/appsec/events"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/httpsec/types"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/sharedsec"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/waf"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/waf/addresses"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/trace"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/trace/httptrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
@@ -30,30 +31,21 @@ import (
 	"github.com/DataDog/appsec-internal-go/netip"
 )
 
+const monitorBodyErroLog = `
+"appsec: parsed http body monitoring ignored: could not find the http handler instrumentation metadata in the request context:
+	the request handler is not being monitored by a middleware function or the provided context is not the expected request context
+`
+
 // MonitorParsedBody starts and finishes the SDK body operation.
 // This function should not be called when AppSec is disabled in order to
 // get preciser error logs.
 func MonitorParsedBody(ctx context.Context, body any) error {
-	parent, _ := dyngo.FromContext(ctx)
-	if parent == nil {
-		log.Error("appsec: parsed http body monitoring ignored: could not find the http handler instrumentation metadata in the request context: the request handler is not being monitored by a middleware function or the provided context is not the expected request context")
-		return nil
-	}
-
-	return ExecuteSDKBodyOperation(parent, types.SDKBodyOperationArgs{Body: body})
-}
-
-// ExecuteSDKBodyOperation starts and finishes the SDK Body operation by emitting a dyngo start and finish events
-// An error is returned if the body associated to that operation must be blocked
-func ExecuteSDKBodyOperation(parent dyngo.Operation, args types.SDKBodyOperationArgs) error {
-	var err error
-	op := &types.SDKBodyOperation{Operation: dyngo.NewOperation(parent)}
-	dyngo.OnData(op, func(e *events.BlockingSecurityEvent) {
-		err = e
-	})
-	dyngo.StartOperation(op, args)
-	dyngo.FinishOperation(op, types.SDKBodyOperationRes{})
-	return err
+	return waf.RunSimple(ctx,
+		addresses.NewAddressesBuilder().
+			WithRequestBody(body).
+			Build(),
+		monitorBodyErroLog,
+	)
 }
 
 // WrapHandler wraps the given HTTP handler with the abstract HTTP operation defined by HandlerOperationArgs and
@@ -191,7 +183,9 @@ func makeCookies(r *http.Request) map[string][]string {
 func StartOperation(ctx context.Context, args types.HandlerOperationArgs, setup ...func(*types.Operation)) (context.Context, *types.Operation) {
 	op := &types.Operation{
 		Operation:  dyngo.NewOperation(nil),
-		TagsHolder: trace.NewTagsHolder(),
+		ContextOperation: waf.ContextOperation{
+			Operation: N
+		}
 	}
 	for _, cb := range setup {
 		cb(op)

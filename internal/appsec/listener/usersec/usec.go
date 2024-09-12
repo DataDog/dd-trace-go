@@ -15,7 +15,7 @@ import (
 type Feature struct{}
 
 func NewUserSecFeature(cfg *config.Config, rootOp dyngo.Operation) (func(), error) {
-	if !cfg.SupportedAddresses.AnyOf(addresses.UserIDAddr) {
+	if !cfg.RASP || !cfg.SupportedAddresses.AnyOf(addresses.UserIDAddr) {
 		return func() {}, nil
 	}
 
