@@ -76,12 +76,14 @@ func (h *handler) Handle(ctx context.Context, rec slog.Record) error {
 	return reqHandler.Handle(ctx, rec)
 }
 
-// WithAttrs re-wraps the handler returned by the wrapped handler WithAttrs method.
+// WithAttrs saves the provided attributes associated to the current Group.
+// If Group was not called for the logger, we just call WithAttrs for the wrapped handler.
 func (h *handler) WithAttrs(attrs []slog.Attr) slog.Handler {
 	if len(h.groups) == 0 {
 		return &handler{
-			wrapped: h.wrapped.WithAttrs(attrs),
-			groups:  h.groups,
+			wrapped:    h.wrapped.WithAttrs(attrs),
+			groupAttrs: h.groupAttrs,
+			groups:     h.groups,
 		}
 	}
 	curGroup := h.groups[len(h.groups)-1]
@@ -96,7 +98,7 @@ func (h *handler) WithAttrs(attrs []slog.Attr) slog.Handler {
 	}
 }
 
-// WithGroup re-wraps the handler returned by the wrapped handler WithGroup method.
+// WithGroup saves the provided group to be used later in the Handle method.
 func (h *handler) WithGroup(name string) slog.Handler {
 	return &handler{
 		wrapped:    h.wrapped,
