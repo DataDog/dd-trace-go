@@ -12,6 +12,7 @@ import (
 	grpctrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/google.golang.org/grpc"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 )
 
 func Example_client() {
@@ -19,11 +20,12 @@ func Example_client() {
 	si := grpctrace.StreamClientInterceptor(grpctrace.WithServiceName("my-grpc-client"))
 	ui := grpctrace.UnaryClientInterceptor(grpctrace.WithServiceName("my-grpc-client"))
 
-	// Dial in using the created interceptor.
-	// Note: To use multiple UnaryInterceptors with grpc.Dial, you must use
-	// grpc.WithChainUnaryInterceptor instead (as of google.golang.org/grpc v1.51.0).
-	conn, err := grpc.Dial("localhost:50051", grpc.WithInsecure(),
-		grpc.WithStreamInterceptor(si), grpc.WithUnaryInterceptor(ui))
+	conn, err := grpc.NewClient(
+		"localhost:50051",
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithStreamInterceptor(si),
+		grpc.WithUnaryInterceptor(ui),
+	)
 	if err != nil {
 		log.Fatal(err)
 	}
