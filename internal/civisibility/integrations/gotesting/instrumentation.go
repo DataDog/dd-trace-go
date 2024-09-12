@@ -11,9 +11,11 @@ import (
 	"reflect"
 	"runtime"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
+	"unsafe"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/integrations"
@@ -22,6 +24,66 @@ import (
 
 // The following functions are being used by the gotesting package for manual instrumentation and the orchestrion
 // automatic instrumentation
+
+type (
+	instrumentationMetadata struct {
+		IsInternal bool
+	}
+
+	ddTestItem struct {
+		test    integrations.DdTest
+		error   atomic.Int32
+		skipped atomic.Int32
+	}
+)
+
+var (
+	// instrumentationMap holds a map of *runtime.Func for tracking instrumented functions
+	instrumentationMap = map[*runtime.Func]*instrumentationMetadata{}
+
+	// instrumentationMapMutex is a read-write mutex for synchronizing access to instrumentationMap.
+	instrumentationMapMutex sync.RWMutex
+
+	// ciVisibilityTests holds a map of *testing.T or *testing.B to civisibility.DdTest for tracking tests.
+	ciVisibilityTests = map[unsafe.Pointer]*ddTestItem{}
+
+	// ciVisibilityTestsMutex is a read-write mutex for synchronizing access to ciVisibilityTests.
+	ciVisibilityTestsMutex sync.RWMutex
+)
+
+// getInstrumentationMetadata gets the stored instrumentation metadata for a given *runtime.Func.
+func getInstrumentationMetadata(fn *runtime.Func) *instrumentationMetadata {
+	instrumentationMapMutex.RLock()
+	defer instrumentationMapMutex.RUnlock()
+	if v, ok := instrumentationMap[fn]; ok {
+		return v
+	}
+	return nil
+}
+
+// setInstrumentationMetadata stores an instrumentation metadata for a given *runtime.Func.
+func setInstrumentationMetadata(fn *runtime.Func, metadata *instrumentationMetadata) {
+	instrumentationMapMutex.RLock()
+	defer instrumentationMapMutex.RUnlock()
+	instrumentationMap[fn] = metadata
+}
+
+// getCiVisibilityTest retrieves the CI visibility test associated with a given *testing.T, *testing.B, *testing.common
+func getCiVisibilityTest(tb testing.TB) *ddTestItem {
+	ciVisibilityTestsMutex.RLock()
+	defer ciVisibilityTestsMutex.RUnlock()
+	if v, ok := ciVisibilityTests[reflect.ValueOf(tb).UnsafePointer()]; ok {
+		return v
+	}
+	return nil
+}
+
+// setCiVisibilityTest associates a CI visibility test with a given *testing.T, *testing.B, *testing.common
+func setCiVisibilityTest(tb testing.TB, ciTest integrations.DdTest) {
+	ciVisibilityTestsMutex.Lock()
+	defer ciVisibilityTestsMutex.Unlock()
+	ciVisibilityTests[reflect.ValueOf(tb).UnsafePointer()] = &ddTestItem{test: ciTest}
+}
 
 // instrumentTestingM helper function to instrument internalTests and internalBenchmarks in a `*testing.M` instance.
 func instrumentTestingM(m *testing.M) func(exitCode int) {
@@ -61,13 +123,30 @@ func instrumentTestingTFunc(f func(*testing.T)) func(*testing.T) {
 	moduleName, suiteName := utils.GetModuleAndSuiteName(fReflect.Pointer())
 	originalFunc := runtime.FuncForPC(fReflect.Pointer())
 
-	// Increment the test count in the module.
-	atomic.AddInt32(modulesCounters[moduleName], 1)
+	// Avoid instrumenting twice
+	metadata := getInstrumentationMetadata(originalFunc)
+	if metadata != nil && metadata.IsInternal {
+		// If is an internal test, we don't instrument because f is already the instrumented func by executeInternalTest
+		return f
+	}
 
-	// Increment the test count in the suite.
-	atomic.AddInt32(suitesCounters[suiteName], 1)
+	instrumentedFn := func(t *testing.T) {
+		// Initialize module counters if not already present.
+		if _, ok := modulesCounters[moduleName]; !ok {
+			var v int32
+			modulesCounters[moduleName] = &v
+		}
+		// Increment the test count in the module.
+		atomic.AddInt32(modulesCounters[moduleName], 1)
 
-	return func(t *testing.T) {
+		// Initialize suite counters if not already present.
+		if _, ok := suitesCounters[suiteName]; !ok {
+			var v int32
+			suitesCounters[suiteName] = &v
+		}
+		// Increment the test count in the suite.
+		atomic.AddInt32(suitesCounters[suiteName], 1)
+
 		// Create or retrieve the module, suite, and test for CI visibility.
 		module := session.GetOrCreateModuleWithFramework(moduleName, testFramework, runtime.Version())
 		suite := module.GetOrCreateSuite(suiteName)
@@ -101,51 +180,47 @@ func instrumentTestingTFunc(f func(*testing.T)) func(*testing.T) {
 		// Execute the original test function.
 		f(t)
 	}
+	setInstrumentationMetadata(runtime.FuncForPC(reflect.Indirect(reflect.ValueOf(instrumentedFn)).Pointer()), &instrumentationMetadata{IsInternal: true})
+	return instrumentedFn
 }
 
-// instrumentTestingTSetErrorInfo helper function to set an error in the `testing.T` CI Visibility span
-func instrumentTestingTSetErrorInfo(t *testing.T, errType string, errMessage string, skip int) {
-	ciTest := getCiVisibilityTest(t)
-	if ciTest != nil {
-		ciTest.SetErrorInfo(errType, errMessage, utils.GetStacktrace(2+skip))
+// instrumentSetErrorInfo helper function to set an error in the `*testing.T, *testing.B, *testing.common` CI Visibility span
+func instrumentSetErrorInfo(tb testing.TB, errType string, errMessage string, skip int) {
+	ciTestItem := getCiVisibilityTest(tb)
+	if ciTestItem != nil && ciTestItem.error.CompareAndSwap(0, 1) && ciTestItem.test != nil {
+		ciTestItem.test.SetErrorInfo(errType, errMessage, utils.GetStacktrace(2+skip))
 	}
 }
 
-// instrumentTestingTCloseAndSkip helper function to close and skip with a reason a `testing.T` CI Visibility span
-func instrumentTestingTCloseAndSkip(t *testing.T, skipReason string) {
-	ciTest := getCiVisibilityTest(t)
-	if ciTest != nil {
-		ciTest.CloseWithFinishTimeAndSkipReason(integrations.ResultStatusSkip, time.Now(), skipReason)
+// instrumentCloseAndSkip helper function to close and skip with a reason a `*testing.T, *testing.B, *testing.common` CI Visibility span
+func instrumentCloseAndSkip(tb testing.TB, skipReason string) {
+	ciTestItem := getCiVisibilityTest(tb)
+	if ciTestItem != nil && ciTestItem.skipped.CompareAndSwap(0, 1) && ciTestItem.test != nil {
+		ciTestItem.test.CloseWithFinishTimeAndSkipReason(integrations.ResultStatusSkip, time.Now(), skipReason)
 	}
 }
 
-// instrumentTestingTSkipNow helper function to close and skip a `testing.T` CI Visibility span
-func instrumentTestingTSkipNow(t *testing.T) {
-	ciTest := getCiVisibilityTest(t)
-	if ciTest != nil {
-		ciTest.Close(integrations.ResultStatusSkip)
+// instrumentSkipNow helper function to close and skip a `*testing.T, *testing.B, *testing.common` CI Visibility span
+func instrumentSkipNow(tb testing.TB) {
+	ciTestItem := getCiVisibilityTest(tb)
+	if ciTestItem != nil && ciTestItem.skipped.CompareAndSwap(0, 1) && ciTestItem.test != nil {
+		ciTestItem.test.Close(integrations.ResultStatusSkip)
 	}
 }
 
 // instrumentTestingBFunc helper function to instrument a benchmark function func(*testing.B)
 func instrumentTestingBFunc(pb *testing.B, name string, f func(*testing.B)) (string, func(*testing.B)) {
-	// Avoid instrumenting twice
-	if hasCiVisibilityBenchmarkFunc(&f) {
-		return name, f
-	}
-
 	// Reflect the function to obtain its pointer.
 	fReflect := reflect.Indirect(reflect.ValueOf(f))
 	moduleName, suiteName := utils.GetModuleAndSuiteName(fReflect.Pointer())
 	originalFunc := runtime.FuncForPC(fReflect.Pointer())
 
-	// Increment the test count in the module.
-	atomic.AddInt32(modulesCounters[moduleName], 1)
+	// Avoid instrumenting twice
+	if hasCiVisibilityBenchmarkFunc(originalFunc) {
+		return name, f
+	}
 
-	// Increment the test count in the suite.
-	atomic.AddInt32(suitesCounters[suiteName], 1)
-
-	return subBenchmarkAutoName, func(b *testing.B) {
+	instrumentedFunc := func(b *testing.B) {
 		// The sub-benchmark implementation relies on creating a dummy sub benchmark (called [DD:TestVisibility]) with
 		// a Run over the original sub benchmark function to get the child results without interfering measurements
 		// By doing this the name of the sub-benchmark are changed
@@ -154,6 +229,22 @@ func instrumentTestingBFunc(pb *testing.B, name string, f func(*testing.B)) (str
 		// to:
 		//		benchmark/[DD:TestVisibility]/child
 		// We use regex and decrement the depth level of the benchmark to restore the original name
+
+		// Initialize module counters if not already present.
+		if _, ok := modulesCounters[moduleName]; !ok {
+			var v int32
+			modulesCounters[moduleName] = &v
+		}
+		// Increment the test count in the module.
+		atomic.AddInt32(modulesCounters[moduleName], 1)
+
+		// Initialize suite counters if not already present.
+		if _, ok := suitesCounters[suiteName]; !ok {
+			var v int32
+			suitesCounters[suiteName] = &v
+		}
+		// Increment the test count in the suite.
+		atomic.AddInt32(suitesCounters[suiteName], 1)
 
 		// Decrement level.
 		bpf := getBenchmarkPrivateFields(b)
@@ -190,7 +281,7 @@ func instrumentTestingBFunc(pb *testing.B, name string, f func(*testing.B)) (str
 			// Replace this function with the original one (executed only once - the first iteration[b.run1]).
 			*iPfOfB.benchFunc = f
 			// Set b to the CI visibility test.
-			setCiVisibilityBenchmark(b, test)
+			setCiVisibilityTest(b, test)
 
 			// Enable the timer again.
 			b.ResetTimer()
@@ -200,8 +291,7 @@ func instrumentTestingBFunc(pb *testing.B, name string, f func(*testing.B)) (str
 			f(b)
 		}
 
-		setCiVisibilityBenchmarkFunc(&instrumentedFunc)
-		defer deleteCiVisibilityBenchmarkFunc(&instrumentedFunc)
+		setCiVisibilityBenchmarkFunc(runtime.FuncForPC(reflect.Indirect(reflect.ValueOf(instrumentedFunc)).Pointer()))
 		b.Run(name, instrumentedFunc)
 
 		endTime := time.Now()
@@ -258,28 +348,7 @@ func instrumentTestingBFunc(pb *testing.B, name string, f func(*testing.B)) (str
 
 		checkModuleAndSuite(module, suite)
 	}
-}
-
-// instrumentTestingBSetErrorInfo helper function to set an error in the `testing.B` CI Visibility span
-func instrumentTestingBSetErrorInfo(b *testing.B, errType string, errMessage string, skip int) {
-	ciTest := getCiVisibilityBenchmark(b)
-	if ciTest != nil {
-		ciTest.SetErrorInfo(errType, errMessage, utils.GetStacktrace(2+skip))
-	}
-}
-
-// instrumentTestingBCloseAndSkip helper function to close and skip with a reason a `testing.B` CI Visibility span
-func instrumentTestingBCloseAndSkip(b *testing.B, skipReason string) {
-	ciTest := getCiVisibilityBenchmark(b)
-	if ciTest != nil {
-		ciTest.CloseWithFinishTimeAndSkipReason(integrations.ResultStatusSkip, time.Now(), skipReason)
-	}
-}
-
-// instrumentTestingBSkipNow helper function to close and skip a `testing.B` CI Visibility span
-func instrumentTestingBSkipNow(b *testing.B) {
-	ciTest := getCiVisibilityBenchmark(b)
-	if ciTest != nil {
-		ciTest.Close(integrations.ResultStatusSkip)
-	}
+	setCiVisibilityBenchmarkFunc(originalFunc)
+	setCiVisibilityBenchmarkFunc(runtime.FuncForPC(reflect.Indirect(reflect.ValueOf(instrumentedFunc)).Pointer()))
+	return subBenchmarkAutoName, instrumentedFunc
 }

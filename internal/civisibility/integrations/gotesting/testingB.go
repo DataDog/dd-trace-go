@@ -9,6 +9,7 @@ import (
 	"context"
 	"fmt"
 	"regexp"
+	"runtime"
 	"sync"
 	"testing"
 	"time"
@@ -17,20 +18,14 @@ import (
 )
 
 var (
-	// ciVisibilityBenchmarks holds a map of *testing.B to civisibility.DdTest for tracking benchmarks.
-	ciVisibilityBenchmarks = map[*testing.B]integrations.DdTest{}
-
-	// ciVisibilityBenchmarksMutex is a read-write mutex for synchronizing access to ciVisibilityBenchmarks.
-	ciVisibilityBenchmarksMutex sync.RWMutex
-
 	// subBenchmarkAutoName is a placeholder name for CI Visibility sub-benchmarks.
 	subBenchmarkAutoName = "[DD:TestVisibility]"
 
 	// subBenchmarkAutoNameRegex is a regex pattern to match the sub-benchmark auto name.
 	subBenchmarkAutoNameRegex = regexp.MustCompile(`(?si)\/\[DD:TestVisibility\].*`)
 
-	// civisibilityBenchmarksFuncs holds a map of *func(*testing.B) for tracking instrumented functions
-	civisibilityBenchmarksFuncs = map[*func(*testing.B)]struct{}{}
+	// civisibilityBenchmarksFuncs holds a map of *runtime.Func for tracking instrumented functions
+	civisibilityBenchmarksFuncs = map[*runtime.Func]struct{}{}
 
 	// civisibilityBenchmarksFuncsMutex is a read-write mutex for synchronizing access to civisibilityBenchmarksFuncs.
 	civisibilityBenchmarksFuncsMutex sync.RWMutex
@@ -59,9 +54,9 @@ func (ddb *B) Run(name string, f func(*testing.B)) bool {
 // integration tests.
 func (ddb *B) Context() context.Context {
 	b := (*testing.B)(ddb)
-	ciTest := getCiVisibilityBenchmark(b)
-	if ciTest != nil {
-		return ciTest.Context()
+	ciTestItem := getCiVisibilityTest(b)
+	if ciTestItem != nil && ciTestItem.test != nil {
+		return ciTestItem.test.Context()
 	}
 
 	return context.Background()
@@ -113,7 +108,7 @@ func (ddb *B) Skipf(format string, args ...any) {
 // during the test. Calling SkipNow does not stop those other goroutines.
 func (ddb *B) SkipNow() {
 	b := (*testing.B)(ddb)
-	instrumentTestingBSkipNow(b)
+	instrumentSkipNow(b)
 	b.SkipNow()
 }
 
@@ -179,37 +174,18 @@ func (ddb *B) SetParallelism(p int) { (*testing.B)(ddb).SetParallelism(p) }
 
 func (ddb *B) getBWithError(errType string, errMessage string) *testing.B {
 	b := (*testing.B)(ddb)
-	instrumentTestingBSetErrorInfo(b, errType, errMessage, 1)
+	instrumentSetErrorInfo(b, errType, errMessage, 1)
 	return b
 }
 
 func (ddb *B) getBWithSkip(skipReason string) *testing.B {
 	b := (*testing.B)(ddb)
-	instrumentTestingBCloseAndSkip(b, skipReason)
+	instrumentCloseAndSkip(b, skipReason)
 	return b
 }
 
-// getCiVisibilityBenchmark retrieves the CI visibility benchmark associated with a given *testing.B.
-func getCiVisibilityBenchmark(b *testing.B) integrations.DdTest {
-	ciVisibilityBenchmarksMutex.RLock()
-	defer ciVisibilityBenchmarksMutex.RUnlock()
-
-	if v, ok := ciVisibilityBenchmarks[b]; ok {
-		return v
-	}
-
-	return nil
-}
-
-// setCiVisibilityBenchmark associates a CI visibility benchmark with a given *testing.B.
-func setCiVisibilityBenchmark(b *testing.B, ciTest integrations.DdTest) {
-	ciVisibilityBenchmarksMutex.Lock()
-	defer ciVisibilityBenchmarksMutex.Unlock()
-	ciVisibilityBenchmarks[b] = ciTest
-}
-
-// hasCiVisibilityBenchmarkFunc gets if a func(*testing.B) is being instrumented.
-func hasCiVisibilityBenchmarkFunc(fn *func(*testing.B)) bool {
+// hasCiVisibilityBenchmarkFunc gets if a *runtime.Func is being instrumented.
+func hasCiVisibilityBenchmarkFunc(fn *runtime.Func) bool {
 	civisibilityBenchmarksFuncsMutex.RLock()
 	defer civisibilityBenchmarksFuncsMutex.RUnlock()
 
@@ -220,16 +196,9 @@ func hasCiVisibilityBenchmarkFunc(fn *func(*testing.B)) bool {
 	return false
 }
 
-// setCiVisibilityBenchmarkFunc tracks a func(*testing.B) as instrumented benchmark.
-func setCiVisibilityBenchmarkFunc(fn *func(*testing.B)) {
+// setCiVisibilityBenchmarkFunc tracks a *runtime.Func as instrumented benchmark.
+func setCiVisibilityBenchmarkFunc(fn *runtime.Func) {
 	civisibilityBenchmarksFuncsMutex.RLock()
 	defer civisibilityBenchmarksFuncsMutex.RUnlock()
 	civisibilityBenchmarksFuncs[fn] = struct{}{}
-}
-
-// deleteCiVisibilityBenchmarkFunc untracks a func(*testing.B) as instrumented benchmark.
-func deleteCiVisibilityBenchmarkFunc(fn *func(*testing.B)) {
-	civisibilityBenchmarksFuncsMutex.RLock()
-	defer civisibilityBenchmarksFuncsMutex.RUnlock()
-	delete(civisibilityBenchmarksFuncs, fn)
 }
