@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"slices"
 	"strconv"
 	"testing"
 
@@ -35,7 +36,10 @@ func TestMain(m *testing.M) {
 	// or use a helper method gotesting.RunM(m)
 
 	// os.Exit((*M)(m).Run())
-	_ = RunM(m)
+	exit := RunM(m)
+	if exit != 0 {
+		os.Exit(exit)
+	}
 
 	finishedSpans := mTracer.FinishedSpans()
 	// 1 session span
@@ -107,18 +111,27 @@ func Test_Foo(gt *testing.T) {
 	assertTest(gt)
 	t := (*T)(gt)
 	var tests = []struct {
+		index byte
 		name  string
 		input string
 		want  string
 	}{
-		{"yellow should return color", "yellow", "color"},
-		{"banana should return fruit", "banana", "fruit"},
-		{"duck should return animal", "duck", "animal"},
+		{1, "yellow should return color", "yellow", "color"},
+		{2, "banana should return fruit", "banana", "fruit"},
+		{3, "duck should return animal", "duck", "animal"},
 	}
+	buf := []byte{}
 	for _, test := range tests {
+		test := test
 		t.Run(test.name, func(t *testing.T) {
 			t.Log(test.name)
+			buf = append(buf, test.index)
 		})
+	}
+
+	expected := []byte{1, 2, 3}
+	if !slices.Equal(buf, expected) {
+		t.Error("error in subtests closure")
 	}
 }
 

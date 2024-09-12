@@ -8,19 +8,10 @@ package gotesting
 import (
 	"context"
 	"fmt"
-	"sync"
 	"testing"
 	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/integrations"
-)
-
-var (
-	// ciVisibilityTests holds a map of *testing.T to civisibility.DdTest for tracking tests.
-	ciVisibilityTests = map[*testing.T]integrations.DdTest{}
-
-	// ciVisibilityTestsMutex is a read-write mutex for synchronizing access to ciVisibilityTests.
-	ciVisibilityTestsMutex sync.RWMutex
 )
 
 // T is a type alias for testing.T to provide additional methods for CI visibility.
@@ -49,9 +40,9 @@ func (ddt *T) Run(name string, f func(*testing.T)) bool {
 // integration tests.
 func (ddt *T) Context() context.Context {
 	t := (*testing.T)(ddt)
-	ciTest := getCiVisibilityTest(t)
-	if ciTest != nil {
-		return ciTest.Context()
+	ciTestItem := getCiVisibilityTest(t)
+	if ciTestItem != nil && ciTestItem.test != nil {
+		return ciTestItem.test.Context()
 	}
 
 	return context.Background()
@@ -103,7 +94,7 @@ func (ddt *T) Skipf(format string, args ...any) {
 // during the test. Calling SkipNow does not stop those other goroutines.
 func (ddt *T) SkipNow() {
 	t := (*testing.T)(ddt)
-	instrumentTestingTSkipNow(t)
+	instrumentSkipNow(t)
 	t.SkipNow()
 }
 
@@ -128,31 +119,12 @@ func (ddt *T) Setenv(key, value string) { (*testing.T)(ddt).Setenv(key, value) }
 
 func (ddt *T) getTWithError(errType string, errMessage string) *testing.T {
 	t := (*testing.T)(ddt)
-	instrumentTestingTSetErrorInfo(t, errType, errMessage, 1)
+	instrumentSetErrorInfo(t, errType, errMessage, 1)
 	return t
 }
 
 func (ddt *T) getTWithSkip(skipReason string) *testing.T {
 	t := (*testing.T)(ddt)
-	instrumentTestingTCloseAndSkip(t, skipReason)
+	instrumentCloseAndSkip(t, skipReason)
 	return t
-}
-
-// getCiVisibilityTest retrieves the CI visibility test associated with a given *testing.T.
-func getCiVisibilityTest(t *testing.T) integrations.DdTest {
-	ciVisibilityTestsMutex.RLock()
-	defer ciVisibilityTestsMutex.RUnlock()
-
-	if v, ok := ciVisibilityTests[t]; ok {
-		return v
-	}
-
-	return nil
-}
-
-// setCiVisibilityTest associates a CI visibility test with a given *testing.T.
-func setCiVisibilityTest(t *testing.T, ciTest integrations.DdTest) {
-	ciVisibilityTestsMutex.Lock()
-	defer ciVisibilityTestsMutex.Unlock()
-	ciVisibilityTests[t] = ciTest
 }
