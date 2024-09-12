@@ -24,7 +24,7 @@ var (
 	// subBenchmarkAutoNameRegex is a regex pattern to match the sub-benchmark auto name.
 	subBenchmarkAutoNameRegex = regexp.MustCompile(`(?si)\/\[DD:TestVisibility\].*`)
 
-	// civisibilityBenchmarksFuncs holds a map of *func(*testing.B) for tracking instrumented functions
+	// civisibilityBenchmarksFuncs holds a map of *runtime.Func for tracking instrumented functions
 	civisibilityBenchmarksFuncs = map[*runtime.Func]struct{}{}
 
 	// civisibilityBenchmarksFuncsMutex is a read-write mutex for synchronizing access to civisibilityBenchmarksFuncs.
@@ -184,7 +184,7 @@ func (ddb *B) getBWithSkip(skipReason string) *testing.B {
 	return b
 }
 
-// hasCiVisibilityBenchmarkFunc gets if a func(*testing.B) is being instrumented.
+// hasCiVisibilityBenchmarkFunc gets if a *runtime.Func is being instrumented.
 func hasCiVisibilityBenchmarkFunc(fn *runtime.Func) bool {
 	civisibilityBenchmarksFuncsMutex.RLock()
 	defer civisibilityBenchmarksFuncsMutex.RUnlock()
@@ -196,7 +196,7 @@ func hasCiVisibilityBenchmarkFunc(fn *runtime.Func) bool {
 	return false
 }
 
-// setCiVisibilityBenchmarkFunc tracks a func(*testing.B) as instrumented benchmark.
+// setCiVisibilityBenchmarkFunc tracks a *runtime.Func as instrumented benchmark.
 func setCiVisibilityBenchmarkFunc(fn *runtime.Func) {
 	civisibilityBenchmarksFuncsMutex.RLock()
 	defer civisibilityBenchmarksFuncsMutex.RUnlock()

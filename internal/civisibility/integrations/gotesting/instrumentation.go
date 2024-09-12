@@ -68,7 +68,7 @@ func setInstrumentationMetadata(fn *runtime.Func, metadata *instrumentationMetad
 	instrumentationMap[fn] = metadata
 }
 
-// getCiVisibilityTest retrieves the CI visibility test associated with a given *testing.T or *testing.B
+// getCiVisibilityTest retrieves the CI visibility test associated with a given *testing.T, *testing.B, *testing.common
 func getCiVisibilityTest(tb testing.TB) *ddTestItem {
 	ciVisibilityTestsMutex.RLock()
 	defer ciVisibilityTestsMutex.RUnlock()
@@ -78,7 +78,7 @@ func getCiVisibilityTest(tb testing.TB) *ddTestItem {
 	return nil
 }
 
-// setCiVisibilityTest associates a CI visibility test with a given *testing.T or *testing.B
+// setCiVisibilityTest associates a CI visibility test with a given *testing.T, *testing.B, *testing.common
 func setCiVisibilityTest(tb testing.TB, ciTest integrations.DdTest) {
 	ciVisibilityTestsMutex.Lock()
 	defer ciVisibilityTestsMutex.Unlock()
@@ -184,7 +184,7 @@ func instrumentTestingTFunc(f func(*testing.T)) func(*testing.T) {
 	return instrumentedFn
 }
 
-// instrumentSetErrorInfo helper function to set an error in the `testing.T or testing.B` CI Visibility span
+// instrumentSetErrorInfo helper function to set an error in the `*testing.T, *testing.B, *testing.common` CI Visibility span
 func instrumentSetErrorInfo(tb testing.TB, errType string, errMessage string, skip int) {
 	ciTestItem := getCiVisibilityTest(tb)
 	if ciTestItem != nil && ciTestItem.error.CompareAndSwap(0, 1) && ciTestItem.test != nil {
@@ -192,7 +192,7 @@ func instrumentSetErrorInfo(tb testing.TB, errType string, errMessage string, sk
 	}
 }
 
-// instrumentCloseAndSkip helper function to close and skip with a reason a `testing.T or testing.B` CI Visibility span
+// instrumentCloseAndSkip helper function to close and skip with a reason a `*testing.T, *testing.B, *testing.common` CI Visibility span
 func instrumentCloseAndSkip(tb testing.TB, skipReason string) {
 	ciTestItem := getCiVisibilityTest(tb)
 	if ciTestItem != nil && ciTestItem.skipped.CompareAndSwap(0, 1) && ciTestItem.test != nil {
@@ -200,7 +200,7 @@ func instrumentCloseAndSkip(tb testing.TB, skipReason string) {
 	}
 }
 
-// instrumentSkipNow helper function to close and skip a `testing.T or testing.B` CI Visibility span
+// instrumentSkipNow helper function to close and skip a `*testing.T, *testing.B, *testing.common` CI Visibility span
 func instrumentSkipNow(tb testing.TB) {
 	ciTestItem := getCiVisibilityTest(tb)
 	if ciTestItem != nil && ciTestItem.skipped.CompareAndSwap(0, 1) && ciTestItem.test != nil {
