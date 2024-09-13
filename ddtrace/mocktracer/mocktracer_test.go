@@ -53,8 +53,9 @@ func TestTracerStartSpan(t *testing.T) {
 		assert.Equal("my-service", s.Tag(ext.ServiceName))
 		assert.Equal(parent.SpanID(), s.ParentID())
 		assert.Equal(parent.TraceID(), s.TraceID())
-		//assert.True(parent.Context().hasSamplingPriority())
-		//assert.Equal(-1, parent.Context().samplingPriority())
+		sp, ok := parent.Context().SamplingPriority()
+		assert.True(ok)
+		assert.Equal(-1, sp)
 	})
 
 	t.Run("inherit", func(t *testing.T) {
@@ -68,8 +69,9 @@ func TestTracerStartSpan(t *testing.T) {
 		assert.Equal("root-service", s.Tag(ext.ServiceName))
 		assert.Equal(parent.SpanID(), s.ParentID())
 		assert.Equal(parent.TraceID(), s.TraceID())
-		//assert.True(s.context.hasSamplingPriority())
-		//assert.Equal(-1, s.context.samplingPriority())
+		sp, ok := parent.Context().SamplingPriority()
+		assert.True(ok)
+		assert.Equal(-1, sp)
 	})
 }
 
