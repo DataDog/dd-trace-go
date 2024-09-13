@@ -96,9 +96,7 @@ func (w *responseWriter) Status() int {
 // We explicitly call WriteHeader with the 200 status code
 // in order to get it reported into the span.
 func (w *responseWriter) Write(b []byte) (int, error) {
-	if w.status == 0 {
-		w.WriteHeader(http.StatusOK)
-	}
+	w.status = 200
 	return w.ResponseWriter.Write(b)
 }
 
