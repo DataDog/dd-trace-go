@@ -92,9 +92,8 @@ func (w *responseWriter) Status() int {
 	return w.status
 }
 
-// Write writes the data to the connection as part of an HTTP reply.
-// We explicitly call WriteHeader with the 200 status code
-// in order to get it reported into the span.
+// Write sets the status code and writes the data to
+// the connection as part of an HTTP reply.
 func (w *responseWriter) Write(b []byte) (int, error) {
 	w.status = 200
 	return w.ResponseWriter.Write(b)
