@@ -116,6 +116,7 @@ func setCiVisibilityTest(tb testing.TB, ciTest integrations.DdTest) {
 // instrumentTestingM helper function to instrument internalTests and internalBenchmarks in a `*testing.M` instance.
 func instrumentTestingM(m *testing.M) func(exitCode int) {
 	// Check if CI Visibility was disabled using the kill switch before trying to initialize it
+	ciVisibilityEnabledValue = nil
 	if !isCiVisibilityEnabled() {
 		return func(exitCode int) {}
 	}
