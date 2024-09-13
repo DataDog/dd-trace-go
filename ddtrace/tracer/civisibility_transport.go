@@ -105,6 +105,8 @@ func newCiVisibilityTransport(config *config) *ciVisibilityTransport {
 		testCycleURL = fmt.Sprintf("%s/%s/%s", config.agentURL.String(), EvpProxyPath, TestCyclePath)
 	}
 
+	log.Debug("ciVisibilityTransport: creating transport instance [agentless: %v, testcycleurl: %v]", agentlessEnabled, testCycleURL)
+
 	return &ciVisibilityTransport{
 		config:           config,
 		testCycleURLPath: testCycleURL,
@@ -157,6 +159,7 @@ func (t *ciVisibilityTransport) send(p *payload) (body io.ReadCloser, err error)
 		req.Header.Set("Content-Encoding", "gzip")
 	}
 
+	log.Debug("ciVisibilityTransport: sending transport request: %v bytes", buffer.Len())
 	response, err := t.config.httpClient.Do(req)
 	if err != nil {
 		return nil, err
