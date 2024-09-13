@@ -60,7 +60,7 @@ var (
 func isCiVisibilityEnabled() bool {
 	// let's check if the value has already been loaded from the env-vars
 	if ciVisibilityEnabledValue == nil {
-		// Get the DD_CIVISIBILITY_ENABLED env var, if not present we default to true. This is because if we are here means
+		// Get the DD_CIVISIBILITY_ENABLED env var, if not present we default to true. This is because if we are here, it means
 		// that the process was instrumented for ci visibility or by using orchestrion.
 		// So effectively this env-var will act as a kill switch for cases where the code is instrumented, but
 		// we don't want the civisibility instrumentation to be enabled.
