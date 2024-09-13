@@ -164,7 +164,7 @@ func TestTraceFinishChunk(t *testing.T) {
 		trace.finishChunk(tracer, &c)
 		trace.mu.Unlock()
 	}
-	assert.Equal(uint32(1), tracer.totalTracesDropped.count)
+	assert.Equal(uint32(1), tracer.totalTracesDropped)
 }
 
 func TestPartialFlush(t *testing.T) {

@@ -82,10 +82,9 @@ type tracer struct {
 	spansStarted, spansFinished, tracesDropped uint32
 
 	// Keeps track of the total number of traces dropped for accurate logging.
-	totalTracesDropped struct {
-		mu    sync.RWMutex
-		count uint32
-	}
+	totalTracesDropped uint32
+
+	logDroppedTraces *time.Ticker
 
 	// Records the number of dropped P0 traces and spans.
 	droppedP0Traces, droppedP0Spans uint32
@@ -282,6 +281,7 @@ func newUnstartedTracer(opts ...StartOption) *tracer {
 		rulesSampling:    rulesSampler,
 		prioritySampling: sampler,
 		pid:              os.Getpid(),
+		logDroppedTraces: time.NewTicker(10 * time.Second),
 		stats:            newConcentrator(c, defaultStatsBucketSize),
 		obfuscator: obfuscate.NewObfuscator(obfuscate.Config{
 			SQL: obfuscate.SQLConfig{
@@ -407,11 +407,6 @@ func (t *tracer) worker(tick <-chan time.Time) {
 			}
 			return
 		}
-		t.totalTracesDropped.mu.Lock()
-		if t.totalTracesDropped.count > 0 {
-			log.Error("%d traces dropped through payload queue", t.totalTracesDropped.count)
-		}
-		t.totalTracesDropped.mu.Unlock()
 	}
 }
 
@@ -463,9 +458,14 @@ func (t *tracer) pushChunk(trace *chunk) {
 	case t.out <- trace:
 	default:
 		log.Debug("payload queue full, trace dropped %d spans", len(trace.spans))
-		t.totalTracesDropped.mu.Lock()
-		defer t.totalTracesDropped.mu.Unlock()
-		t.totalTracesDropped.count += 1
+		t.totalTracesDropped += 1
+	}
+	select {
+	case <-t.logDroppedTraces.C:
+		if t.totalTracesDropped > 0 {
+			log.Error("%d traces dropped through payload queue", t.totalTracesDropped)
+		}
+	default:
 	}
 }
 
