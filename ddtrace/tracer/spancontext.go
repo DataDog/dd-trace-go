@@ -266,7 +266,6 @@ type trace struct {
 	priority         *float64          // sampling priority
 	locked           bool              // specifies if the sampling priority can be altered
 	samplingDecision samplingDecision  // samplingDecision indicates whether to send the trace to the agent.
-	dropped          bool              // specifies if part or all of the trace has been dropped
 
 	// root specifies the root of the trace, if known; it is nil when a span
 	// context is extracted from a carrier, at which point there are no spans in
