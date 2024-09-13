@@ -7,12 +7,16 @@ package waf
 
 import (
 	"context"
+	"maps"
+	"slices"
 	"sync"
 	"sync/atomic"
 
 	"github.com/DataDog/appsec-internal-go/limiter"
 	waf "github.com/DataDog/go-libddwaf/v3"
+
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/stacktrace"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
@@ -22,11 +26,12 @@ import (
 type (
 	ContextOperation struct {
 		dyngo.Operation
-		trace.ServiceEntrySpanOperation
+		*trace.ServiceEntrySpanOperation
 
 		limiter     limiter.Limiter
 		context     atomic.Pointer[waf.Context]
 		events      []any
+		stacks      []*stacktrace.Event
 		derivatives map[string]any
 		mu          sync.Mutex
 	}
@@ -45,8 +50,13 @@ type (
 func (ContextArgs) IsArgOf(*ContextOperation)   {}
 func (ContextRes) IsResultOf(*ContextOperation) {}
 
-func (op *ContextOperation) Start(ctx context.Context) context.Context {
-	return dyngo.StartAndRegisterOperation(op.ServiceEntrySpanOperation.Start(ctx), op, ContextArgs{})
+func StartContextOperation(ctx context.Context) (*ContextOperation, context.Context) {
+	entrySpanOp, ctx := trace.StartServiceEntrySpanOperation(ctx)
+	op := &ContextOperation{
+		Operation:                 dyngo.NewOperation(entrySpanOp),
+		ServiceEntrySpanOperation: entrySpanOp,
+	}
+	return op, dyngo.StartAndRegisterOperation(ctx, op, ContextArgs{})
 }
 
 func (op *ContextOperation) Finish(span ddtrace.Span) {
@@ -62,7 +72,7 @@ func (op *ContextOperation) SetLimiter(limiter limiter.Limiter) {
 	op.limiter = limiter
 }
 
-func (op *ContextOperation) AddEvents(events []any) {
+func (op *ContextOperation) AddEvents(events ...any) {
 	if len(events) == 0 {
 		return
 	}
@@ -77,6 +87,16 @@ func (op *ContextOperation) AddEvents(events []any) {
 	op.events = append(op.events, events...)
 }
 
+func (op *ContextOperation) AddStackTraces(stacks ...*stacktrace.Event) {
+	if len(stacks) == 0 {
+		return
+	}
+
+	op.mu.Lock()
+	defer op.mu.Unlock()
+	op.stacks = append(op.stacks, stacks...)
+}
+
 func (op *ContextOperation) AbsorbDerivatives(derivatives map[string]any) {
 	if len(derivatives) == 0 {
 		return
@@ -84,17 +104,31 @@ func (op *ContextOperation) AbsorbDerivatives(derivatives map[string]any) {
 
 	op.mu.Lock()
 	defer op.mu.Unlock()
+	if op.derivatives == nil {
+		op.derivatives = make(map[string]any)
+	}
+
 	for k, v := range derivatives {
 		op.derivatives[k] = v
 	}
 }
 
 func (op *ContextOperation) Derivatives() map[string]any {
-	return op.derivatives
+	op.mu.Lock()
+	defer op.mu.Unlock()
+	return maps.Clone(op.derivatives)
 }
 
 func (op *ContextOperation) Events() []any {
-	return op.events
+	op.mu.Lock()
+	defer op.mu.Unlock()
+	return slices.Clone(op.events)
+}
+
+func (op *ContextOperation) StackTraces() []*stacktrace.Event {
+	op.mu.Lock()
+	defer op.mu.Unlock()
+	return slices.Clone(op.stacks)
 }
 
 func (op *ContextOperation) OnEvent(event RunEvent) {

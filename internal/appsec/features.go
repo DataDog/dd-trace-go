@@ -29,7 +29,8 @@ var features = map[string]NewFeature{
 	"User Security":            usersec.NewUserSecFeature,
 	"SQL Injection":            sqlsec.NewSQLSecFeature,
 	"Local File Inclusion":     ossec.NewOSSecFeature,
-	"HTTP Protection":          httpsec.NewHTTPSecFeature,
+	"SSRF Protection":          httpsec.NewSSRFProtectionFeature,
+	"HTTP Security":            httpsec.NewHTTPSecFeature,
 }
 
 func (a *appsec) SwapRootOperation() error {

@@ -7,27 +7,25 @@ package trace
 
 import (
 	"context"
+	"encoding/json"
+	"sync"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
 type (
 	// ServiceEntrySpanOperation is a dyngo.Operation that holds a the first span of a service. Usually a http or grpc span.
 	ServiceEntrySpanOperation struct {
 		dyngo.Operation
-		SpanOperation
-
-		JsonTags map[string]any
+		tags     map[string]any
+		jsonTags map[string]any
+		mu       sync.Mutex
 	}
 
 	// ServiceEntrySpanArgs is the arguments for a ServiceEntrySpanOperation
 	ServiceEntrySpanArgs struct{}
-
-	// ServiceEntrySpanRes is the result for a ServiceEntrySpanOperation
-	ServiceEntrySpanRes struct {
-		SpanRes
-	}
 
 	// ServiceEntrySpanTag is a key value pair event that is used to tag a service entry span
 	ServiceEntrySpanTag struct {
@@ -49,29 +47,36 @@ type (
 	}
 )
 
-func (ServiceEntrySpanArgs) IsArgOf(*ServiceEntrySpanOperation)   {}
-func (ServiceEntrySpanRes) IsResultOf(*ServiceEntrySpanOperation) {}
+func (ServiceEntrySpanArgs) IsArgOf(*ServiceEntrySpanOperation) {}
 
 // SetTag adds the key/value pair to the tags to add to the service entry span
 func (op *ServiceEntrySpanOperation) SetTag(key string, value any) {
-	op.Mutex.Lock()
-	defer op.Mutex.Unlock()
-	op.Tags[key] = value
+	op.mu.Lock()
+	defer op.mu.Unlock()
+	op.tags[key] = value
 }
 
 // SetJsonTag adds the key/value pair to the tags to add to the service entry span. Value will be serialized as JSON.
 func (op *ServiceEntrySpanOperation) SetJsonTag(key string, value any) {
-	op.Mutex.Lock()
-	defer op.Mutex.Unlock()
-	op.JsonTags[key] = value
+	op.mu.Lock()
+	defer op.mu.Unlock()
+	op.jsonTags[key] = value
 }
 
 // SetTags fills the span tags using the key/value pairs found in `tags`
 func (op *ServiceEntrySpanOperation) SetTags(tags map[string]any) {
-	op.Mutex.Lock()
-	defer op.Mutex.Unlock()
+	op.mu.Lock()
+	defer op.mu.Unlock()
 	for k, v := range tags {
-		op.Tags[k] = v
+		op.tags[k] = v
+	}
+}
+
+func (op *ServiceEntrySpanOperation) SetStringTags(tags map[string]string) {
+	op.mu.Lock()
+	defer op.mu.Unlock()
+	for k, v := range tags {
+		op.tags[k] = v
 	}
 }
 
@@ -96,10 +101,34 @@ func (op *ServiceEntrySpanOperation) OnServiceEntrySpanTagsBulkEvent(bulk Servic
 	}
 }
 
-func (op *ServiceEntrySpanOperation) Start(ctx context.Context) context.Context {
-	return dyngo.StartAndRegisterOperation(ctx, op, ServiceEntrySpanArgs{})
+// OnSpanTagEvent is a listener for SpanTag events.
+func (op *ServiceEntrySpanOperation) OnSpanTagEvent(tag SpanTag) {
+	op.SetTag(tag.Key, tag.Value)
+}
+
+func StartServiceEntrySpanOperation(ctx context.Context) (*ServiceEntrySpanOperation, context.Context) {
+	parent, _ := dyngo.FromContext(ctx)
+	op := &ServiceEntrySpanOperation{
+		Operation: dyngo.NewOperation(parent),
+		tags:      make(map[string]any),
+		jsonTags:  make(map[string]any),
+	}
+	return op, dyngo.StartAndRegisterOperation(ctx, op, ServiceEntrySpanArgs{})
 }
 
 func (op *ServiceEntrySpanOperation) Finish(span ddtrace.Span) {
-	dyngo.FinishOperation(op, ServiceEntrySpanRes{SpanRes{span}})
+	op.mu.Lock()
+	defer op.mu.Unlock()
+
+	for k, v := range op.tags {
+		span.SetTag(k, v)
+	}
+
+	for k, v := range op.jsonTags {
+		strValue, err := json.Marshal(v)
+		if err != nil {
+			log.Debug("appsec: failed to marshal tag %s: %v", k, err)
+		}
+		span.SetTag(k, strValue)
+	}
 }

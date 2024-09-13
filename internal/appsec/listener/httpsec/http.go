@@ -9,9 +9,10 @@ import (
 	"math/rand"
 
 	"github.com/DataDog/appsec-internal-go/appsec"
+
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/config"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/httpsec/types"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/httpsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/waf/addresses"
 )
 
@@ -45,24 +46,31 @@ func NewHTTPSecFeature(config *config.Config, rootOp dyngo.Operation) (func(), e
 	return func() {}, nil
 }
 
-func (feature *Feature) OnRequest(op *types.Operation, args types.HandlerOperationArgs) {
+func (feature *Feature) OnRequest(op *httpsec.Operation, args httpsec.HandlerOperationArgs) {
+	tags, ip := ClientIPTags(args.Header, true, args.RemoteAddr)
+	op.SetStringTags(tags)
+
 	op.Run(op,
 		addresses.NewAddressesBuilder().
 			WithMethod(args.Method).
 			WithRawURI(args.RequestURI).
-			WithHeadersNoCookies(args.Headers).
-			WithCookies(args.Cookies).
-			WithQuery(args.Query).
+			WithHeadersNoCookies(headersRemoveCookies(args.Header)).
+			WithCookies(makeCookies(args.Cookies())).
+			WithQuery(args.URL.Query()).
 			WithPathParams(args.PathParams).
-			WithClientIP(args.ClientIP).
+			WithClientIP(ip).
 			Build(),
 	)
 }
 
-func (feature *Feature) OnResponse(op *types.Operation, args types.HandlerOperationRes) {
+func (feature *Feature) OnResponse(op *httpsec.Operation, args httpsec.HandlerOperationRes) {
 	builder := addresses.NewAddressesBuilder().
-		WithResponseStatus(args.Status).
-		WithHeadersNoCookies(args.Headers)
+		WithResponseHeadersNoCookies(args.ResponseHeaderCopier(args.ResponseWriter))
+
+	// Check if the underlying type of the response writer has a status method (e.g. like net/http.responseWriter)
+	if mw, ok := args.ResponseWriter.(interface{ Status() int }); ok {
+		builder = builder.WithResponseStatus(mw.Status())
+	}
 
 	if feature.canExtractSchemas() {
 		builder = builder.ExtractSchema()

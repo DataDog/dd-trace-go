@@ -6,12 +6,9 @@
 package trace
 
 import (
-	"encoding/json"
-
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/config"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/trace"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
 // AppSec-specific span tags that are expected to
@@ -28,15 +25,10 @@ func NewAppsecSpanTransport(_ *config.Config, rootOp dyngo.Operation) (func(), e
 	ast := &AppsecSpanTransport{}
 
 	dyngo.On(rootOp, ast.OnServiceEntryStart)
-	dyngo.OnFinish(rootOp, ast.OnServiceEntryFinish)
-
 	dyngo.On(rootOp, ast.OnSpanStart)
-	dyngo.OnFinish(rootOp, ast.OnSpanFinish)
 
-	return ast.Stop, nil
+	return func() {}, nil
 }
-
-func (*AppsecSpanTransport) Stop() {}
 
 // OnServiceEntryStart is the start listener of the trace.ServiceEntrySpanOperation start event.
 // It listens for tags and serializable tags and sets them on the span when finishing the operation.
@@ -48,34 +40,8 @@ func (*AppsecSpanTransport) OnServiceEntryStart(op *trace.ServiceEntrySpanOperat
 	dyngo.OnData(op, op.OnServiceEntrySpanTagsBulkEvent)
 }
 
-func (*AppsecSpanTransport) OnServiceEntryFinish(op *trace.ServiceEntrySpanOperation, res trace.ServiceEntrySpanRes) {
-	op.Mutex.Lock()
-	defer op.Mutex.Unlock()
-
-	for k, v := range op.Tags {
-		res.Span.SetTag(k, v)
-	}
-
-	for k, v := range op.JsonTags {
-		strValue, err := json.Marshal(v)
-		if err != nil {
-			log.Debug("appsec: failed to marshal tag %s: %v", k, err)
-		}
-		res.Span.SetTag(k, strValue)
-	}
-}
-
 // OnSpanStart is the start listener of the trace.SpanOperation start event.
 // It listens for tags and sets them on the current span when finishing the operation.
 func (*AppsecSpanTransport) OnSpanStart(op *trace.SpanOperation, _ trace.SpanArgs) {
 	dyngo.OnData(op, op.OnSpanTagEvent)
-}
-
-func (*AppsecSpanTransport) OnSpanFinish(op *trace.SpanOperation, res trace.SpanRes) {
-	op.Mutex.Lock()
-	defer op.Mutex.Unlock()
-
-	for k, v := range op.Tags {
-		res.Span.SetTag(k, v)
-	}
 }

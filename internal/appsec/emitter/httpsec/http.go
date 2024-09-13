@@ -15,7 +15,6 @@ import (
 	// Blank import needed to use embed for the default blocked response payloads
 	_ "embed"
 	"net/http"
-	"strings"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
@@ -31,7 +30,7 @@ import (
 	"github.com/DataDog/appsec-internal-go/netip"
 )
 
-const monitorBodyErroLog = `
+const monitorBodyErrorLog = `
 "appsec: parsed http body monitoring ignored: could not find the http handler instrumentation metadata in the request context:
 	the request handler is not being monitored by a middleware function or the provided context is not the expected request context
 `
@@ -44,7 +43,7 @@ func MonitorParsedBody(ctx context.Context, body any) error {
 		addresses.NewAddressesBuilder().
 			WithRequestBody(body).
 			Build(),
-		monitorBodyErroLog,
+		monitorBodyErrorLog,
 	)
 }
 
@@ -64,6 +63,7 @@ func WrapHandler(handler http.Handler, span ddtrace.Span, pathParams map[string]
 
 	trace.SetAppSecEnabledTags(span)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		r.Clone()
 		ipTags, clientIP := httptrace.ClientIPTags(r.Header, true, r.RemoteAddr)
 		log.Debug("appsec: http client ip detection returned `%s` given the http headers `%v`", clientIP, r.Header)
 		trace.SetTags(span, ipTags)
@@ -146,50 +146,4 @@ func MakeHandlerOperationRes(w http.ResponseWriter, responseHeadersCopier func(h
 		status = mw.Status()
 	}
 	return types.HandlerOperationRes{Status: status, Headers: headersRemoveCookies(responseHeadersCopier(w))}
-}
-
-// Remove cookies from the request headers and return the map of headers
-// Used from `server.request.headers.no_cookies` and server.response.headers.no_cookies` addresses for the WAF
-func headersRemoveCookies(headers http.Header) map[string][]string {
-	headersNoCookies := make(http.Header, len(headers))
-	for k, v := range headers {
-		k := strings.ToLower(k)
-		if k == "cookie" {
-			continue
-		}
-		headersNoCookies[k] = v
-	}
-	return headersNoCookies
-}
-
-// Return the map of parsed cookies if any and following the specification of
-// the rule address `server.request.cookies`.
-func makeCookies(r *http.Request) map[string][]string {
-	parsed := r.Cookies()
-	if len(parsed) == 0 {
-		return nil
-	}
-	cookies := make(map[string][]string, len(parsed))
-	for _, c := range parsed {
-		cookies[c.Name] = append(cookies[c.Name], c.Value)
-	}
-	return cookies
-}
-
-// StartOperation starts an HTTP handler operation, along with the given
-// context and arguments and emits a start event up in the operation stack.
-// The operation is linked to the global root operation since an HTTP operation
-// is always expected to be first in the operation stack.
-func StartOperation(ctx context.Context, args types.HandlerOperationArgs, setup ...func(*types.Operation)) (context.Context, *types.Operation) {
-	op := &types.Operation{
-		Operation:  dyngo.NewOperation(nil),
-		ContextOperation: waf.ContextOperation{
-			Operation: N
-		}
-	}
-	for _, cb := range setup {
-		cb(op)
-	}
-
-	return dyngo.StartAndRegisterOperation(ctx, op, args), op
 }

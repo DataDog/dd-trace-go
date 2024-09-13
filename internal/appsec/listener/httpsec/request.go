@@ -1,19 +1,17 @@
 // Unless explicitly stated otherwise all files in this repository are licensed
 // under the Apache License Version 2.0.
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
-// Copyright 2016 Datadog, Inc.
+// Copyright 2024 Datadog, Inc.
 
-package httptrace
+package httpsec
 
 import (
+	"net/http"
 	"net/netip"
 	"os"
 	"strings"
 
 	"github.com/DataDog/appsec-internal-go/httpsec"
-
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/trace"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
 const (
@@ -101,19 +99,39 @@ func NormalizeHTTPHeaders(headers map[string][]string) (normalized map[string]st
 	return normalized
 }
 
+// Remove cookies from the request headers and return the map of headers
+// Used from `server.request.headers.no_cookies` and server.response.headers.no_cookies` addresses for the WAF
+func headersRemoveCookies(headers http.Header) map[string][]string {
+	headersNoCookies := make(http.Header, len(headers))
+	for k, v := range headers {
+		k := strings.ToLower(k)
+		if k == "cookie" {
+			continue
+		}
+		headersNoCookies[k] = v
+	}
+	return headersNoCookies
+}
+
+// Return the map of parsed cookies if any and following the specification of
+// the rule address `server.request.cookies`.
+func makeCookies(parsed []*http.Cookie) map[string][]string {
+	if len(parsed) == 0 {
+		return nil
+	}
+	cookies := make(map[string][]string, len(parsed))
+	for _, c := range parsed {
+		cookies[c.Name] = append(cookies[c.Name], c.Value)
+	}
+	return cookies
+}
+
 func normalizeHTTPHeaderName(name string) string {
 	return strings.ToLower(name)
 }
 
 func normalizeHTTPHeaderValue(values []string) string {
 	return strings.Join(values, ",")
-}
-
-// SetSecurityEventsTags sets the AppSec-specific span tags when a security event occurred into the service entry span.
-func SetSecurityEventsTags(span trace.TagSetter, events []any) {
-	if err := trace.SetEventSpanTags(span, events); err != nil {
-		log.Error("appsec: unexpected error while creating the appsec events tags: %v", err)
-	}
 }
 
 func init() {

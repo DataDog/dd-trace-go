@@ -19,17 +19,12 @@ type (
 	// hopefully some day this operation will create spans instead of simply using them
 	SpanOperation struct {
 		dyngo.Operation
-		Tags  map[string]any
-		Mutex sync.Mutex
+		tags map[string]any
+		mu   sync.Mutex
 	}
 
 	// SpanArgs is the arguments for a SpanOperation
 	SpanArgs struct{}
-
-	// SpanRes is the result for a SpanOperation
-	SpanRes struct {
-		ddtrace.Span
-	}
 
 	// SpanTag is a key value pair event that is used to tag the current span
 	SpanTag struct {
@@ -38,14 +33,13 @@ type (
 	}
 )
 
-func (SpanArgs) IsArgOf(*SpanOperation)   {}
-func (SpanRes) IsResultOf(*SpanOperation) {}
+func (SpanArgs) IsArgOf(*SpanOperation) {}
 
 // SetTag adds the key/value pair to the tags to add to the span
 func (op *SpanOperation) SetTag(key string, value any) {
-	op.Mutex.Lock()
-	defer op.Mutex.Unlock()
-	op.Tags[key] = value
+	op.mu.Lock()
+	defer op.mu.Unlock()
+	op.tags[key] = value
 }
 
 // OnSpanTagEvent is a listener for SpanTag events.
@@ -53,10 +47,18 @@ func (op *SpanOperation) OnSpanTagEvent(tag SpanTag) {
 	op.SetTag(tag.Key, tag.Value)
 }
 
-func (op *SpanOperation) Start(ctx context.Context) context.Context {
-	return dyngo.StartAndRegisterOperation(ctx, op, SpanArgs{})
+func StartSpanOperation(ctx context.Context) (*SpanOperation, context.Context) {
+	op := &SpanOperation{
+		tags: make(map[string]any),
+	}
+	return op, dyngo.StartAndRegisterOperation(ctx, op, SpanArgs{})
 }
 
 func (op *SpanOperation) Finish(span ddtrace.Span) {
-	dyngo.FinishOperation(op, SpanRes{Span: span})
+	op.mu.Lock()
+	defer op.mu.Unlock()
+
+	for k, v := range op.tags {
+		span.SetTag(k, v)
+	}
 }

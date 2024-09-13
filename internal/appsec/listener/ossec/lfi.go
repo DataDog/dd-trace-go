@@ -12,6 +12,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/config"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/ossec"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/waf"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/waf/addresses"
 )
 
@@ -24,22 +25,22 @@ func NewOSSecFeature(cfg *config.Config, rootOp dyngo.Operation) (func(), error)
 
 	feature := &Feature{}
 	dyngo.On(rootOp, feature.OnStart)
+	return func() {}, nil
+}
 
-	dyngo.OnData(rootOp, func(err *events.BlockingSecurityEvent) {
-		dyngo.OnFinish(rootOp, func(op *ossec.OpenOperation, res ossec.OpenOperationRes[*os.File]) {
+func (*Feature) OnStart(op *ossec.OpenOperation, args ossec.OpenOperationArgs) {
+	dyngo.OnData(op, func(err *events.BlockingSecurityEvent) {
+		dyngo.OnFinish(op, func(op *ossec.OpenOperation, res ossec.OpenOperationRes[*os.File]) {
 			if res.Err != nil {
 				*res.Err = err
 			}
 		})
 	})
 
-	return func() {}, nil
-}
-
-func (*Feature) OnStart(op *ossec.OpenOperation, args ossec.OpenOperationArgs) {
-	dyngo.EmitData(op,
-		addresses.NewAddressesBuilder().
+	dyngo.EmitData(op, waf.RunEvent{
+		Operation: op,
+		RunAddressData: addresses.NewAddressesBuilder().
 			WithFilePath(args.Path).
 			Build(),
-	)
+	})
 }

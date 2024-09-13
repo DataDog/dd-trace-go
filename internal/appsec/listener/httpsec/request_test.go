@@ -1,9 +1,9 @@
 // Unless explicitly stated otherwise all files in this repository are licensed
 // under the Apache License Version 2.0.
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
-// Copyright 2016 Datadog, Inc.
+// Copyright 2024 Datadog, Inc.
 
-package httptrace_test
+package httpsec_test
 
 import (
 	"net"
@@ -13,7 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/metadata"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/trace/httptrace"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener/httpsec"
 )
 
 func TestClientIP(t *testing.T) {
@@ -56,7 +56,7 @@ func TestClientIP(t *testing.T) {
 	} {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
-			_, clientIP := httptrace.ClientIPTags(tc.md, false, tc.addr.String())
+			_, clientIP := httpsec.ClientIPTags(tc.md, false, tc.addr.String())
 			expectedClientIP, _ := netip.ParseAddr(tc.expectedClientIP)
 			require.Equal(t, expectedClientIP.String(), clientIP.String())
 		})
@@ -97,7 +97,7 @@ func TestNormalizeHTTPHeaders(t *testing.T) {
 			},
 		},
 	} {
-		headers := httptrace.NormalizeHTTPHeaders(tc.headers)
+		headers := httpsec.NormalizeHTTPHeaders(tc.headers)
 		require.Equal(t, tc.expected, headers)
 	}
 }

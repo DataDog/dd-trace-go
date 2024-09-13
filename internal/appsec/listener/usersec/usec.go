@@ -9,6 +9,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/config"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/usersec"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/waf"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/waf/addresses"
 )
 
@@ -25,9 +26,10 @@ func NewUserSecFeature(cfg *config.Config, rootOp dyngo.Operation) (func(), erro
 }
 
 func (*Feature) OnStart(op *usersec.UserIDOperation, args usersec.UserIDOperationArgs) {
-	dyngo.EmitData(op,
-		addresses.NewAddressesBuilder().
+	dyngo.EmitData(op, waf.RunEvent{
+		Operation: op,
+		RunAddressData: addresses.NewAddressesBuilder().
 			WithUserID(args.UserID).
 			Build(),
-	)
+	})
 }

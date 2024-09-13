@@ -1,13 +1,13 @@
 // Unless explicitly stated otherwise all files in this repository are licensed
 // under the Apache License Version 2.0.
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
-// Copyright 2016 Datadog, Inc.
+// Copyright 2024 Datadog, Inc.
 
-package types
+package httpsec
 
 import (
 	"context"
-	"net/netip"
+	"net/http"
 	"sync"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
@@ -20,7 +20,7 @@ import (
 type (
 	Operation struct {
 		dyngo.Operation
-		waf.ContextOperation
+		*waf.ContextOperation
 		mu sync.RWMutex
 	}
 
@@ -29,8 +29,13 @@ type (
 	}
 )
 
-func (op *Operation) Start(ctx context.Context, args HandlerOperationArgs) context.Context {
-	return dyngo.StartAndRegisterOperation(op.ContextOperation.Start(ctx), op, args)
+func StartOperation(ctx context.Context, args HandlerOperationArgs) (*Operation, context.Context) {
+	wafOp, ctx := waf.StartContextOperation(ctx)
+	op := &Operation{
+		Operation:        dyngo.NewOperation(wafOp),
+		ContextOperation: wafOp,
+	}
+	return op, dyngo.StartAndRegisterOperation(ctx, op, args)
 }
 
 // Finish the HTTP handler operation and its children operations and write everything to the service entry span.
@@ -44,27 +49,14 @@ func (op *Operation) Finish(res HandlerOperationRes, span ddtrace.Span) []any {
 type (
 	// HandlerOperationArgs is the HTTP handler operation arguments.
 	HandlerOperationArgs struct {
-		// ClientIP corresponds to the address `http.client_ip`
-		ClientIP netip.Addr
-		// Headers corresponds to the address `server.request.headers.no_cookies`
-		Headers map[string][]string
-		// Cookies corresponds to the address `server.request.cookies`
-		Cookies map[string][]string
-		// Query corresponds to the address `server.request.query`
-		Query map[string][]string
-		// PathParams corresponds to the address `server.request.path_params`
+		*http.Request
 		PathParams map[string]string
-		// Method is the http method verb of the request, address is `server.request.method`
-		Method string
-		// RequestURI corresponds to the address `server.request.uri.raw`
-		RequestURI string
 	}
 
 	// HandlerOperationRes is the HTTP handler operation results.
 	HandlerOperationRes struct {
-		Headers map[string][]string
-		// Status corresponds to the address `server.response.status`.
-		Status int
+		http.ResponseWriter
+		ResponseHeaderCopier func(http.ResponseWriter) http.Header
 	}
 
 	// RoundTripOperationArgs is the round trip operation arguments.

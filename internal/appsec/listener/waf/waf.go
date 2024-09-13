@@ -12,10 +12,14 @@ import (
 
 	"github.com/DataDog/appsec-internal-go/limiter"
 	wafv3 "github.com/DataDog/go-libddwaf/v3"
+
+	"gopkg.in/DataDog/dd-trace-go.v1/appsec/events"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/config"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/waf"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/waf/actions"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/stacktrace"
 )
 
 type Feature struct {
@@ -72,7 +76,22 @@ func (waf *Feature) onStart(op *waf.ContextOperation, _ waf.ContextArgs) {
 	op.SwapContext(ctx)
 	op.SetLimiter(waf.limiter)
 
+	// Run the WAF with the given address data
 	dyngo.OnData(op, op.OnEvent)
+
+	waf.SetupActionHandlers(op)
+}
+
+func (waf *Feature) SetupActionHandlers(op *waf.ContextOperation) {
+	// Set the blocking tag on the operation when a blocking event is received
+	dyngo.OnData(op, func(err *events.BlockingSecurityEvent) {
+		op.SetTag(BlockedRequestTag, true)
+	})
+
+	// Register the stacktrace if one is requested by a WAF action
+	dyngo.OnData(op, func(err *actions.StackTraceAction) {
+		op.AddStackTraces(err.Event)
+	})
 }
 
 func (waf *Feature) onFinish(op *waf.ContextOperation, _ waf.ContextRes) {
@@ -89,6 +108,7 @@ func (waf *Feature) onFinish(op *waf.ContextOperation, _ waf.ContextRes) {
 	}
 
 	op.SetTags(op.Derivatives())
+	stacktrace.AddToSpan(op.ServiceEntrySpanOperation, op.Stacks()
 }
 
 func (waf *Feature) Stop() {

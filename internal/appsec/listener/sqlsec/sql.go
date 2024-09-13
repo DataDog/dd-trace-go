@@ -9,6 +9,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/config"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/sqlsec"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/waf"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/waf/addresses"
 )
 
@@ -25,10 +26,11 @@ func NewSQLSecFeature(cfg *config.Config, rootOp dyngo.Operation) (func(), error
 }
 
 func (*Feature) OnStart(op *sqlsec.SQLOperation, args sqlsec.SQLOperationArgs) {
-	dyngo.EmitData(op,
-		addresses.NewAddressesBuilder().
+	dyngo.EmitData(op, waf.RunEvent{
+		Operation: op,
+		RunAddressData: addresses.NewAddressesBuilder().
 			WithDBStatement(args.Query).
 			WithDBType(args.Driver).
 			Build(),
-	)
+	})
 }

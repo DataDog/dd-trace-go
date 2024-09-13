@@ -11,6 +11,7 @@ import (
 
 	waf "github.com/DataDog/go-libddwaf/v3"
 	wafErrors "github.com/DataDog/go-libddwaf/v3/errors"
+
 	"gopkg.in/DataDog/dd-trace-go.v1/appsec/events"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/waf/actions"
@@ -37,7 +38,7 @@ func (op *ContextOperation) Run(eventReceiver dyngo.Operation, addrs waf.RunAddr
 	log.Debug("appsec: Feature detected a suspicious Feature event")
 	actions.SendActionEvents(eventReceiver, result.Actions)
 
-	op.AddEvents(result.Events)
+	op.AddEvents(result.Events...)
 	op.AbsorbDerivatives(result.Derivatives)
 }
 
