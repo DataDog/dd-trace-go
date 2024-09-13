@@ -8,7 +8,7 @@ package httpsec
 import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/config"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/httpsec/types"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/httpsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/waf/addresses"
 )
 
@@ -24,6 +24,6 @@ func NewSSRFProtectionFeature(config *config.Config, rootOp dyngo.Operation) (fu
 	return func() {}, nil
 }
 
-func (*SSRFProtectionFeature) OnStart(op *types.RoundTripOperation, args types.RoundTripOperationArgs) {
+func (*SSRFProtectionFeature) OnStart(op *httpsec.RoundTripOperation, args httpsec.RoundTripOperationArgs) {
 	dyngo.EmitData(op, addresses.NewAddressesBuilder().WithURL(args.URL).Build())
 }

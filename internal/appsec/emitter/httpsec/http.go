@@ -17,17 +17,8 @@ import (
 	"net/http"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/httpsec/types"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/sharedsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/waf"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/waf/addresses"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/trace"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/trace/httptrace"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/stacktrace"
-
-	"github.com/DataDog/appsec-internal-go/netip"
 )
 
 const monitorBodyErrorLog = `
@@ -61,89 +52,31 @@ func WrapHandler(handler http.Handler, span ddtrace.Span, pathParams map[string]
 		opts.ResponseHeaderCopier = defaultWrapHandlerConfig.ResponseHeaderCopier
 	}
 
-	trace.SetAppSecEnabledTags(span)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		r.Clone()
-		ipTags, clientIP := httptrace.ClientIPTags(r.Header, true, r.RemoteAddr)
-		log.Debug("appsec: http client ip detection returned `%s` given the http headers `%v`", clientIP, r.Header)
-		trace.SetTags(span, ipTags)
-
-		var bypassHandler http.Handler
-		var blocking bool
-		var stackTrace *stacktrace.Event
-		args := MakeHandlerOperationArgs(r, clientIP, pathParams)
-		ctx, op := StartOperation(r.Context(), args, func(op *types.Operation) {
-			dyngo.OnData(op, func(a *sharedsec.HTTPAction) {
-				blocking = true
-				bypassHandler = a.Handler
-			})
-			dyngo.OnData(op, func(a *sharedsec.StackTraceAction) {
-				stackTrace = &a.Event
-			})
-		})
+		op, action, ctx := StartOperation(r.Context(), HandlerOperationArgs{r, pathParams})
 		r = r.WithContext(ctx)
 
 		defer func() {
-			events := op.Finish(MakeHandlerOperationRes(w, opts.ResponseHeaderCopier))
+			op.Finish(HandlerOperationRes{w, opts.ResponseHeaderCopier}, span)
 
 			// Execute the onBlock functions to make sure blocking works properly
 			// in case we are instrumenting the Gin framework
-			if blocking {
-				op.SetTag(trace.BlockedRequestTag, true)
+			if action != nil {
 				for _, f := range opts.OnBlock {
 					f()
 				}
-			}
 
-			// Add stacktraces to the span, if any
-			if stackTrace != nil {
-				stacktrace.AddToSpan(span, stackTrace)
-			}
-
-			if bypassHandler != nil {
-				bypassHandler.ServeHTTP(w, r)
-			}
-
-			// Add the request headers span tags out of args.Headers instead of r.Header as it was normalized and some
-			// extra headers have been added such as the Host header which is removed from the original Go request headers
-			// map
-			setRequestHeadersTags(span, args.Headers)
-			setResponseHeadersTags(span, opts.ResponseHeaderCopier(w))
-			trace.SetTags(span, op.Tags())
-			if len(events) > 0 {
-				httptrace.SetSecurityEventsTags(span, events)
+				if action.Handler != nil {
+					action.Handler.ServeHTTP(w, r)
+				}
 			}
 		}()
 
-		if bypassHandler != nil {
-			handler = bypassHandler
-			bypassHandler = nil
+		if action != nil && action.Handler != nil {
+			handler = action.Handler
+			action.Handler = nil
 		}
+
 		handler.ServeHTTP(w, r)
 	})
-}
-
-// MakeHandlerOperationArgs creates the HandlerOperationArgs value.
-func MakeHandlerOperationArgs(r *http.Request, clientIP netip.Addr, pathParams map[string]string) types.HandlerOperationArgs {
-	cookies := makeCookies(r) // TODO(Julio-Guerra): avoid actively parsing the cookies thanks to dynamic instrumentation
-	headers := headersRemoveCookies(r.Header)
-	headers["host"] = []string{r.Host}
-	return types.HandlerOperationArgs{
-		Method:     r.Method,
-		RequestURI: r.RequestURI,
-		Headers:    headers,
-		Cookies:    cookies,
-		Query:      r.URL.Query(), // TODO(Julio-Guerra): avoid actively parsing the query values thanks to dynamic instrumentation
-		PathParams: pathParams,
-		ClientIP:   clientIP,
-	}
-}
-
-// MakeHandlerOperationRes creates the HandlerOperationRes value.
-func MakeHandlerOperationRes(w http.ResponseWriter, responseHeadersCopier func(http.ResponseWriter) http.Header) types.HandlerOperationRes {
-	var status int
-	if mw, ok := w.(interface{ Status() int }); ok {
-		status = mw.Status()
-	}
-	return types.HandlerOperationRes{Status: status, Headers: headersRemoveCookies(responseHeadersCopier(w))}
 }

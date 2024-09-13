@@ -11,14 +11,13 @@ import (
 
 	"gopkg.in/DataDog/dd-trace-go.v1/appsec/events"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/httpsec/types"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
 var badInputContextOnce sync.Once
 
 func ProtectRoundTrip(ctx context.Context, url string) error {
-	opArgs := types.RoundTripOperationArgs{
+	opArgs := RoundTripOperationArgs{
 		URL: url,
 	}
 
@@ -32,7 +31,7 @@ func ProtectRoundTrip(ctx context.Context, url string) error {
 		return nil
 	}
 
-	op := &types.RoundTripOperation{
+	op := &RoundTripOperation{
 		Operation: dyngo.NewOperation(parent),
 	}
 
@@ -43,7 +42,7 @@ func ProtectRoundTrip(ctx context.Context, url string) error {
 	})
 
 	dyngo.StartOperation(op, opArgs)
-	dyngo.FinishOperation(op, types.RoundTripOperationRes{})
+	dyngo.FinishOperation(op, RoundTripOperationRes{})
 
 	if err != nil {
 		log.Debug("appsec: outgoing http request blocked by the WAF on URL: %s", url)

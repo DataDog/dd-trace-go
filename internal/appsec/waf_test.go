@@ -34,7 +34,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/config"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/ossec"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener/httpsec"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/waf/addresses"
 
 	"github.com/stretchr/testify/require"
 	_ "modernc.org/sqlite"
@@ -768,10 +768,10 @@ func BenchmarkSampleWAFContext(b *testing.B) {
 		_, err = ctx.Run(
 			waf.RunAddressData{
 				Persistent: map[string]any{
-					httpsec.HTTPClientIPAddr:        "1.1.1.1",
-					httpsec.ServerRequestMethodAddr: "GET",
-					httpsec.ServerRequestRawURIAddr: "/",
-					httpsec.ServerRequestHeadersNoCookiesAddr: map[string][]string{
+					addresses.HTTPClientIPAddr:        "1.1.1.1",
+					addresses.ServerRequestMethodAddr: "GET",
+					addresses.ServerRequestRawURIAddr: "/",
+					addresses.ServerRequestHeadersNoCookiesAddr: map[string][]string{
 						"host":            {"example.com"},
 						"content-length":  {"0"},
 						"Accept":          {"application/json"},
@@ -779,13 +779,13 @@ func BenchmarkSampleWAFContext(b *testing.B) {
 						"Accept-Encoding": {"gzip"},
 						"Connection":      {"close"},
 					},
-					httpsec.ServerRequestCookiesAddr: map[string][]string{
+					addresses.ServerRequestCookiesAddr: map[string][]string{
 						"cookie": {"session=1234"},
 					},
-					httpsec.ServerRequestQueryAddr: map[string][]string{
+					addresses.ServerRequestQueryAddr: map[string][]string{
 						"query": {"value"},
 					},
-					httpsec.ServerRequestPathParamsAddr: map[string]string{
+					addresses.ServerRequestPathParamsAddr: map[string]string{
 						"param": "value",
 					},
 				},
@@ -799,12 +799,12 @@ func BenchmarkSampleWAFContext(b *testing.B) {
 		_, err = ctx.Run(
 			waf.RunAddressData{
 				Persistent: map[string]any{
-					httpsec.ServerResponseHeadersNoCookiesAddr: map[string][]string{
+					addresses.ServerResponseHeadersNoCookiesAddr: map[string][]string{
 						"content-type":   {"application/json"},
 						"content-length": {"0"},
 						"Connection":     {"close"},
 					},
-					httpsec.ServerResponseStatusAddr: 200,
+					addresses.ServerResponseStatusAddr: 200,
 				},
 			})
 

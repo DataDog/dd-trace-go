@@ -108,7 +108,7 @@ func (waf *Feature) onFinish(op *waf.ContextOperation, _ waf.ContextRes) {
 	}
 
 	op.SetTags(op.Derivatives())
-	stacktrace.AddToSpan(op.ServiceEntrySpanOperation, op.Stacks()
+	op.SetTag(stacktrace.SpanKey, stacktrace.GetSpanValue(op.StackTraces()...))
 }
 
 func (waf *Feature) Stop() {

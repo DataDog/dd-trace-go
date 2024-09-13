@@ -13,6 +13,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/waf"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/waf/actions"
 )
 
 // Operation type representing an HTTP operation. It must be created with
@@ -29,20 +30,25 @@ type (
 	}
 )
 
-func StartOperation(ctx context.Context, args HandlerOperationArgs) (*Operation, context.Context) {
+func StartOperation(ctx context.Context, args HandlerOperationArgs) (*Operation, *actions.BlockHTTP, context.Context) {
+	var action actions.BlockHTTP
 	wafOp, ctx := waf.StartContextOperation(ctx)
 	op := &Operation{
 		Operation:        dyngo.NewOperation(wafOp),
 		ContextOperation: wafOp,
 	}
-	return op, dyngo.StartAndRegisterOperation(ctx, op, args)
+
+	dyngo.OnData(op, func(a *actions.BlockHTTP) {
+		action = *a
+	})
+
+	return op, &action, dyngo.StartAndRegisterOperation(ctx, op, args)
 }
 
 // Finish the HTTP handler operation and its children operations and write everything to the service entry span.
-func (op *Operation) Finish(res HandlerOperationRes, span ddtrace.Span) []any {
+func (op *Operation) Finish(res HandlerOperationRes, span ddtrace.Span) {
 	dyngo.FinishOperation(op, res)
 	op.ServiceEntrySpanOperation.Finish(span)
-	return op.Events()
 }
 
 // Abstract HTTP handler operation definition.

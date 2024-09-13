@@ -84,7 +84,7 @@ func TestTags(t *testing.T) {
 				SetRequestMetadataTags(&span, metadataCase.md)
 
 				if eventCase.events != nil {
-					testlib.RequireContainsMapSubset(t, span.Tags, map[string]interface{}{
+					require.Subset(t, span.Tags, map[string]interface{}{
 						"_dd.appsec.json": eventCase.expectedTag,
 						"manual.keep":     true,
 						"appsec.event":    true,
@@ -93,7 +93,7 @@ func TestTags(t *testing.T) {
 				}
 
 				if l := len(metadataCase.expectedTags); l > 0 {
-					testlib.RequireContainsMapSubset(t, span.Tags, metadataCase.expectedTags)
+					require.Subset(t, span.Tags, metadataCase.expectedTags)
 				}
 
 				require.False(t, span.Finished)

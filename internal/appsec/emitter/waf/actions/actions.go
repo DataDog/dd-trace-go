@@ -21,7 +21,7 @@ type (
 
 // actionHandlers is a map of action types to their respective handler functions
 // It is populated by the init functions of the actions packages
-var actionHandlers map[string]func(map[string]any) []Action
+var actionHandlers = map[string]func(map[string]any) []Action{}
 
 // SendActionEvents sends the relevant actions to the operation's data listener.
 // It returns true if at least one of those actions require interrupting the request handler

@@ -12,6 +12,8 @@ import (
 	"strings"
 
 	"github.com/DataDog/appsec-internal-go/httpsec"
+
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/trace"
 )
 
 const (
@@ -157,5 +159,22 @@ func readMonitoredClientIPHeadersConfig() {
 	} else {
 		// No specific IP header was configured, use the default list
 		monitoredClientIPHeadersCfg = defaultIPHeaders
+	}
+}
+
+// setRequestHeadersTags sets the AppSec-specific request headers span tags.
+func setRequestHeadersTags(span trace.TagSetter, headers map[string][]string) {
+	setHeadersTags(span, "http.request.headers.", headers)
+}
+
+// setResponseHeadersTags sets the AppSec-specific response headers span tags.
+func setResponseHeadersTags(span trace.TagSetter, headers map[string][]string) {
+	setHeadersTags(span, "http.response.headers.", headers)
+}
+
+// setHeadersTags sets the AppSec-specific headers span tags.
+func setHeadersTags(span trace.TagSetter, tagPrefix string, headers map[string][]string) {
+	for h, v := range NormalizeHTTPHeaders(headers) {
+		span.SetTag(tagPrefix+h, v)
 	}
 }

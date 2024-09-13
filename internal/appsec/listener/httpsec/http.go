@@ -14,6 +14,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/httpsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/waf/addresses"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
 type Feature struct {
@@ -48,13 +49,19 @@ func NewHTTPSecFeature(config *config.Config, rootOp dyngo.Operation) (func(), e
 
 func (feature *Feature) OnRequest(op *httpsec.Operation, args httpsec.HandlerOperationArgs) {
 	tags, ip := ClientIPTags(args.Header, true, args.RemoteAddr)
+	log.Debug("appsec: http client ip detection returned `%s` given the http headers `%v`", ip, args.Header)
+
 	op.SetStringTags(tags)
+	setRequestHeadersTags(op, args.Header)
+
+	headers := headersRemoveCookies(args.Header)
+	headers["host"] = []string{args.Host}
 
 	op.Run(op,
 		addresses.NewAddressesBuilder().
 			WithMethod(args.Method).
 			WithRawURI(args.RequestURI).
-			WithHeadersNoCookies(headersRemoveCookies(args.Header)).
+			WithHeadersNoCookies(headers).
 			WithCookies(makeCookies(args.Cookies())).
 			WithQuery(args.URL.Query()).
 			WithPathParams(args.PathParams).
@@ -64,8 +71,11 @@ func (feature *Feature) OnRequest(op *httpsec.Operation, args httpsec.HandlerOpe
 }
 
 func (feature *Feature) OnResponse(op *httpsec.Operation, args httpsec.HandlerOperationRes) {
+	respHeaders := args.ResponseHeaderCopier(args.ResponseWriter)
 	builder := addresses.NewAddressesBuilder().
-		WithResponseHeadersNoCookies(args.ResponseHeaderCopier(args.ResponseWriter))
+		WithResponseHeadersNoCookies(respHeaders)
+
+	setResponseHeadersTags(op, respHeaders)
 
 	// Check if the underlying type of the response writer has a status method (e.g. like net/http.responseWriter)
 	if mw, ok := args.ResponseWriter.(interface{ Status() int }); ok {
