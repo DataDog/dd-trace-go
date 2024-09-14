@@ -66,6 +66,24 @@ func TestScenario(t *testing.T) {
 			})
 		}
 	})
+
+	t.Run("gc-overhead", func(t *testing.T) {
+		scenarios := []struct {
+			version   string
+			endpoints []string
+		}{
+			{"v1", []string{"/vehicles/update_location", "/vehicles/list"}},
+		}
+		for _, s := range scenarios {
+			t.Run(s.version, func(t *testing.T) {
+				lc := newLaunchConfig(t)
+				lc.Version = s.version
+				process := lc.Launch(t)
+				defer process.Stop(t)
+				wc.HitEndpoints(t, process, s.endpoints...)
+			})
+		}
+	})
 }
 
 func newWorkloadConfig(t *testing.T) (wc workloadConfig) {
