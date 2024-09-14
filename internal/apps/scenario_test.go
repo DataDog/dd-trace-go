@@ -152,6 +152,13 @@ func appName(t *testing.T) string {
 }
 
 func serviceName(t *testing.T) string {
+	// Allow overriding the service name via env var
+	ddService := os.Getenv("DD_SERVICE")
+	if ddService != "" {
+		return ddService
+	}
+
+	// Otherwise derive the service name from the test name
 	return "dd-trace-go/" + strings.Join(strings.Split(t.Name(), "/")[1:], "/")
 }
 
