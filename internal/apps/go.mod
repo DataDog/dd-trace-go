@@ -1,6 +1,6 @@
 module github.com/DataDog/dd-trace-go/internal/apps
 
-go 1.22.0
+go 1.23
 
 require (
 	golang.org/x/sync v0.7.0
