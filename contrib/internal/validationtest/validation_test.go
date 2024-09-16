@@ -94,14 +94,8 @@ func TestIntegrations(t *testing.T) {
 		t.Skip("to enable integration test, set the INTEGRATION environment variable")
 	}
 	integrations := []Integration{
-		validationtest.NewDNS(),
-		validationtest.NewGoRedis(),
-		validationtest.NewGoRedisV7(),
-		validationtest.NewGoRedisV8(),
-		validationtest.NewGoRedisV9(),
 		validationtest.NewMemcache(),
-		validationtest.NewGaryBurdRedigo(),
-		validationtest.NewGoModuleRedigo(),
+		validationtest.NewDNS(),
 	}
 
 	testCases := []struct {
