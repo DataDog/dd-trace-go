@@ -22,7 +22,7 @@ on:
           ref:
               description: 'System Tests ref/tag/branch'
               required: true
-              default: conti/fix-php-errors
+              default: main
               type: string
   schedule:
     - cron:  '00 04 * * 2-6'
