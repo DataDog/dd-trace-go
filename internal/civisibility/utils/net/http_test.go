@@ -16,7 +16,6 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
-	"github.com/vmihailenco/msgpack/v5"
 )
 
 const DefaultMultipartMemorySize = 10 << 20 // 10MB
@@ -46,18 +45,12 @@ func mockJSONMsgPackHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Process JSON or MessagePack based on Content-Type
+	// Process JSON based on Content-Type
 	if r.Header.Get(HeaderContentType) == ContentTypeJSON {
 		var data map[string]interface{}
 		json.Unmarshal(body, &data)
 		w.Header().Set(HeaderContentType, ContentTypeJSON)
 		json.NewEncoder(w).Encode(map[string]interface{}{"received": data})
-	} else if r.Header.Get(HeaderContentType) == ContentTypeMsgPack {
-		var data map[string]interface{}
-		msgpack.Unmarshal(body, &data)
-		w.Header().Set(HeaderContentType, ContentTypeMsgPack)
-		encoded, _ := msgpack.Marshal(map[string]interface{}{"received": data})
-		w.Write(encoded)
 	}
 }
 
@@ -122,30 +115,6 @@ func TestSendJSONRequest(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, http.StatusOK, response.StatusCode)
 	assert.Equal(t, "json", response.Format)
-
-	var result map[string]interface{}
-	err = response.Unmarshal(&result)
-	assert.NoError(t, err)
-	assert.Equal(t, "value", result["received"].(map[string]interface{})["key"])
-}
-
-func TestSendMsgPackRequest(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(mockJSONMsgPackHandler))
-	defer server.Close()
-
-	handler := NewRequestHandler()
-	config := RequestConfig{
-		Method:     "POST",
-		URL:        server.URL,
-		Body:       map[string]interface{}{"key": "value"},
-		Format:     "msgpack",
-		Compressed: false,
-	}
-
-	response, err := handler.SendRequest(config)
-	assert.NoError(t, err)
-	assert.Equal(t, http.StatusOK, response.StatusCode)
-	assert.Equal(t, "msgpack", response.Format)
 
 	var result map[string]interface{}
 	err = response.Unmarshal(&result)

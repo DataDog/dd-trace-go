@@ -18,14 +18,11 @@ import (
 	"net/textproto"
 	"strconv"
 	"time"
-
-	"github.com/vmihailenco/msgpack/v5"
 )
 
 // Constants for common strings
 const (
 	ContentTypeJSON           = "application/json"
-	ContentTypeMsgPack        = "application/x-msgpack"
 	ContentTypeOctetStream    = "application/octet-stream"
 	ContentEncodingGzip       = "gzip"
 	HeaderContentType         = "Content-Type"
@@ -34,7 +31,6 @@ const (
 	HeaderRateLimitReset      = "x-ratelimit-reset"
 	HTTPStatusTooManyRequests = 429
 	FormatJSON                = "json"
-	FormatMsgPack             = "msgpack"
 )
 
 // FormFile represents a file to be uploaded in a multipart form request.
@@ -75,8 +71,6 @@ func (r *Response) Unmarshal(target interface{}) error {
 	switch r.Format {
 	case FormatJSON:
 		return json.Unmarshal(r.Body, target)
-	case FormatMsgPack:
-		return msgpack.Unmarshal(r.Body, target)
 	default:
 		return fmt.Errorf("unsupported format '%s' for unmarshalling", r.Format)
 	}
@@ -155,8 +149,6 @@ func (rh *RequestHandler) SendRequest(config RequestConfig) (*Response, error) {
 			}
 			if config.Format == FormatJSON {
 				req.Header.Set(HeaderContentType, ContentTypeJSON)
-			} else if config.Format == FormatMsgPack {
-				req.Header.Set(HeaderContentType, ContentTypeMsgPack)
 			}
 			if config.Compressed {
 				req.Header.Set(HeaderContentEncoding, ContentEncodingGzip)
@@ -246,8 +238,6 @@ func (rh *RequestHandler) SendRequest(config RequestConfig) (*Response, error) {
 		if err == nil {
 			if mediaType == ContentTypeJSON {
 				responseFormat = FormatJSON
-			} else if mediaType == ContentTypeMsgPack {
-				responseFormat = FormatMsgPack
 			}
 		}
 
@@ -273,8 +263,6 @@ func serializeData(data interface{}, format string) ([]byte, error) {
 		// Otherwise, serialize it according to the specified format
 		if format == FormatJSON {
 			return json.Marshal(data)
-		} else if format == FormatMsgPack {
-			return msgpack.Marshal(data)
 		}
 	}
 	return nil, fmt.Errorf("unsupported format '%s' for data type '%T'", format, data)
@@ -324,8 +312,6 @@ func exponentialBackoff(retryCount int, initialDelay time.Duration) {
 func prepareContent(content interface{}, contentType string) ([]byte, error) {
 	if contentType == ContentTypeJSON {
 		return serializeData(content, FormatJSON)
-	} else if contentType == ContentTypeMsgPack {
-		return serializeData(content, FormatMsgPack)
 	} else if contentType == ContentTypeOctetStream {
 		// For binary data, ensure it's already in byte format
 		if data, ok := content.([]byte); ok {
