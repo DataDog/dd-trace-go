@@ -128,7 +128,7 @@ func (ddm *M) instrumentInternalTests(internalTests *[]testing.InternalTest) {
 // executeInternalTest wraps the original test function to include CI visibility instrumentation.
 func (ddm *M) executeInternalTest(testInfo *testingTInfo) func(*testing.T) {
 	originalFunc := runtime.FuncForPC(reflect.Indirect(reflect.ValueOf(testInfo.originalFunc)).Pointer())
-	return func(t *testing.T) {
+	instrumentedFunc := func(t *testing.T) {
 		// Create or retrieve the module, suite, and test for CI visibility.
 		module := session.GetOrCreateModuleWithFramework(testInfo.moduleName, testFramework, runtime.Version())
 		suite := module.GetOrCreateSuite(testInfo.suiteName)
@@ -165,6 +165,9 @@ func (ddm *M) executeInternalTest(testInfo *testingTInfo) func(*testing.T) {
 		// Execute the original test function.
 		testInfo.originalFunc(t)
 	}
+
+	setInstrumentationMetadata(runtime.FuncForPC(reflect.Indirect(reflect.ValueOf(instrumentedFunc)).Pointer()), &instrumentationMetadata{IsInternal: true})
+	return instrumentedFunc
 }
 
 // instrumentInternalBenchmarks instruments the internal benchmarks for CI visibility.
@@ -216,13 +219,13 @@ func (ddm *M) instrumentInternalBenchmarks(internalBenchmarks *[]testing.Interna
 
 // executeInternalBenchmark wraps the original benchmark function to include CI visibility instrumentation.
 func (ddm *M) executeInternalBenchmark(benchmarkInfo *testingBInfo) func(*testing.B) {
-	return func(b *testing.B) {
+	originalFunc := runtime.FuncForPC(reflect.Indirect(reflect.ValueOf(benchmarkInfo.originalFunc)).Pointer())
+	instrumentedInternalFunc := func(b *testing.B) {
 
 		// decrement level
 		getBenchmarkPrivateFields(b).AddLevel(-1)
 
 		startTime := time.Now()
-		originalFunc := runtime.FuncForPC(reflect.Indirect(reflect.ValueOf(benchmarkInfo.originalFunc)).Pointer())
 		module := session.GetOrCreateModuleWithFrameworkAndStartTime(benchmarkInfo.moduleName, testFramework, runtime.Version(), startTime)
 		suite := module.GetOrCreateSuiteWithStartTime(benchmarkInfo.suiteName, startTime)
 		test := suite.CreateTestWithStartTime(benchmarkInfo.testName, startTime)
@@ -231,7 +234,7 @@ func (ddm *M) executeInternalBenchmark(benchmarkInfo *testingBInfo) func(*testin
 		// Run the original benchmark function.
 		var iPfOfB *benchmarkPrivateFields
 		var recoverFunc *func(r any)
-		b.Run(b.Name(), func(b *testing.B) {
+		instrumentedFunc := func(b *testing.B) {
 			// Stop the timer to perform initialization and replacements.
 			b.StopTimer()
 
@@ -253,13 +256,16 @@ func (ddm *M) executeInternalBenchmark(benchmarkInfo *testingBInfo) func(*testin
 			// Replace the benchmark function with the original one (this must be executed only once - the first iteration[b.run1]).
 			*iPfOfB.benchFunc = benchmarkInfo.originalFunc
 			// Set the CI visibility benchmark.
-			setCiVisibilityBenchmark(b, test)
+			setCiVisibilityTest(b, test)
 
 			// Restart the timer and execute the original benchmark function.
 			b.ResetTimer()
 			b.StartTimer()
 			benchmarkInfo.originalFunc(b)
-		})
+		}
+
+		setCiVisibilityBenchmarkFunc(runtime.FuncForPC(reflect.Indirect(reflect.ValueOf(instrumentedFunc)).Pointer()))
+		b.Run(b.Name(), instrumentedFunc)
 
 		endTime := time.Now()
 		results := iPfOfB.result
@@ -315,6 +321,9 @@ func (ddm *M) executeInternalBenchmark(benchmarkInfo *testingBInfo) func(*testin
 
 		checkModuleAndSuite(module, suite)
 	}
+	setCiVisibilityBenchmarkFunc(originalFunc)
+	setCiVisibilityBenchmarkFunc(runtime.FuncForPC(reflect.Indirect(reflect.ValueOf(instrumentedInternalFunc)).Pointer()))
+	return instrumentedInternalFunc
 }
 
 // RunM runs the tests and benchmarks using CI visibility.
