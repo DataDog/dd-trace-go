@@ -53,7 +53,7 @@ func WrapHandler(handler http.Handler, span ddtrace.Span, pathParams map[string]
 	}
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		op, action, ctx := StartOperation(r.Context(), HandlerOperationArgs{r, pathParams})
+		op, blockAtomic, ctx := StartOperation(r.Context(), HandlerOperationArgs{r, pathParams})
 		r = r.WithContext(ctx)
 
 		defer func() {
@@ -61,20 +61,20 @@ func WrapHandler(handler http.Handler, span ddtrace.Span, pathParams map[string]
 
 			// Execute the onBlock functions to make sure blocking works properly
 			// in case we are instrumenting the Gin framework
-			if action != nil {
+			if blockPtr := blockAtomic.Load(); blockPtr != nil {
 				for _, f := range opts.OnBlock {
 					f()
 				}
 
-				if action.Handler != nil {
-					action.Handler.ServeHTTP(w, r)
+				if blockPtr.Handler != nil {
+					blockPtr.Handler.ServeHTTP(w, r)
 				}
 			}
 		}()
 
-		if action != nil && action.Handler != nil {
-			handler = action.Handler
-			action.Handler = nil
+		if blockPtr := blockAtomic.Load(); blockPtr != nil && blockPtr.Handler != nil {
+			handler = blockPtr.Handler
+			blockPtr.Handler = nil
 		}
 
 		handler.ServeHTTP(w, r)

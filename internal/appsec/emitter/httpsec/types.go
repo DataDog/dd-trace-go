@@ -9,6 +9,7 @@ import (
 	"context"
 	"net/http"
 	"sync"
+	"sync/atomic"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
@@ -30,16 +31,17 @@ type (
 	}
 )
 
-func StartOperation(ctx context.Context, args HandlerOperationArgs) (*Operation, *actions.BlockHTTP, context.Context) {
-	var action actions.BlockHTTP
+func StartOperation(ctx context.Context, args HandlerOperationArgs) (*Operation, *atomic.Pointer[actions.BlockHTTP], context.Context) {
 	wafOp, ctx := waf.StartContextOperation(ctx)
 	op := &Operation{
 		Operation:        dyngo.NewOperation(wafOp),
 		ContextOperation: wafOp,
 	}
 
+	// We need to use an atomic pointer to store the action because the action may be created asynchronously in the future
+	var action atomic.Pointer[actions.BlockHTTP]
 	dyngo.OnData(op, func(a *actions.BlockHTTP) {
-		action = *a
+		action.Store(a)
 	})
 
 	return op, &action, dyngo.StartAndRegisterOperation(ctx, op, args)

@@ -129,6 +129,6 @@ func (op *ServiceEntrySpanOperation) Finish(span ddtrace.Span) {
 		if err != nil {
 			log.Debug("appsec: failed to marshal tag %s: %v", k, err)
 		}
-		span.SetTag(k, strValue)
+		span.SetTag(k, string(strValue))
 	}
 }

@@ -28,8 +28,10 @@ type (
 		dyngo.Operation
 		*trace.ServiceEntrySpanOperation
 
-		limiter     limiter.Limiter
+		// context is an atomic pointer to the current WAF context.
+		// Makes sure the calls to context.Run are safe.
 		context     atomic.Pointer[waf.Context]
+		limiter     limiter.Limiter
 		events      []any
 		stacks      []*stacktrace.Event
 		derivatives map[string]any
