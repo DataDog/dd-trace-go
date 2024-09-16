@@ -1,3 +1,8 @@
+// Unless explicitly stated otherwise all files in this repository are licensed
+// under the Apache License Version 2.0.
+// This product includes software developed at Datadog (https://www.datadoghq.com/).
+// Copyright 2024 Datadog, Inc.
+
 package net
 
 import (
@@ -92,7 +97,7 @@ func mockMultipartHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 // Mock server for rate limiting with predictable reset timing
-func mockRateLimitHandler(w http.ResponseWriter, r *http.Request) {
+func mockRateLimitHandler(w http.ResponseWriter, _ *http.Request) {
 	// Set the rate limit reset time to 2 seconds
 	w.Header().Set(HeaderRateLimitReset, "2")
 	http.Error(w, "Too Many Requests", HTTPStatusTooManyRequests)
