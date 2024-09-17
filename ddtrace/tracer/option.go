@@ -98,6 +98,7 @@ var contribIntegrations = map[string]struct {
 	"github.com/zenazn/goji":                        {"Goji", false},
 	"log/slog":                                      {"log/slog", false},
 	"github.com/uptrace/bun":                        {"Bun", false},
+	"go.uber.org/zap":                               {"go.uber.org/zap", false},
 }
 
 var (
