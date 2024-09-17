@@ -39,10 +39,10 @@ func TestEventToSpan(t *testing.T) {
 	require.Len(t, spans, 1)
 	require.Equal(t, "op", spans[0].OperationName())
 
-	eventsMap := spans[0].Tag("_dd.stack").(internal.MetaStructValue).Value.(map[string]any)
+	eventsMap := spans[0].Tag("_dd.stack").(internal.MetaStructValue).Value.(map[string][]*Event)
 	require.Len(t, eventsMap, 1)
 
-	eventsCat := eventsMap[string(ExceptionEvent)].([]*Event)
+	eventsCat := eventsMap[string(ExceptionEvent)]
 	require.Len(t, eventsCat, 1)
 
 	require.Equal(t, *event, *eventsCat[0])
