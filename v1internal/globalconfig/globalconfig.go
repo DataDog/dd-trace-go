@@ -77,3 +77,11 @@ func HeaderTagsLen() int {
 func ClearHeaderTags() {
 	globalconfig.ClearHeaderTags()
 }
+
+func DogstatsdAddr() string {
+	return globalconfig.DogstatsdAddr()
+}
+
+func SetDogstatsdAddr(addr string) {
+	globalconfig.SetDogstatsdAddr(addr)
+}
