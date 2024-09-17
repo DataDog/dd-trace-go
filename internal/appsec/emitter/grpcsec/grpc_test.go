@@ -10,11 +10,9 @@ import (
 	"fmt"
 	"testing"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
-	grpcsec "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/grpcsec"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/grpcsec/types"
-
 	"github.com/stretchr/testify/require"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/grpcsec"
 )
 
 type (
@@ -42,32 +40,32 @@ func TestUsage(t *testing.T) {
 
 			const expectedMessageFormat = "message number %d"
 
-			dyngo.On(localRootOp, func(handlerOp *types.HandlerOperation, args types.HandlerOperationArgs) {
+			dyngo.On(localRootOp, func(handlerOp *grpcsec.HandlerOperation, args grpcsec.HandlerOperationArgs) {
 				handlerStarted++
 
-				dyngo.On(handlerOp, func(op types.ReceiveOperation, _ types.ReceiveOperationArgs) {
+				dyngo.On(handlerOp, func(op grpcsec.ReceiveOperation, _ grpcsec.ReceiveOperationArgs) {
 					recvStarted++
 
-					dyngo.OnFinish(op, func(_ types.ReceiveOperation, res types.ReceiveOperationRes) {
+					dyngo.OnFinish(op, func(_ grpcsec.ReceiveOperation, res grpcsec.ReceiveOperationRes) {
 						expectedMessage := fmt.Sprintf(expectedMessageFormat, recvStarted)
 						require.Equal(t, expectedMessage, res.Message)
 						recvFinished++
 
-						handlerOp.AddSecurityEvents([]any{expectedMessage})
+						handlerOp.AddEvents([]any{expectedMessage})
 					})
 				})
 
-				dyngo.OnFinish(handlerOp, func(*types.HandlerOperation, types.HandlerOperationRes) { handlerFinished++ })
+				dyngo.OnFinish(handlerOp, func(*grpcsec.HandlerOperation, grpcsec.HandlerOperationRes) { handlerFinished++ })
 			})
 
-			_, rpcOp := grpcsec.StartHandlerOperation(context.Background(), types.HandlerOperationArgs{}, localRootOp)
+			_, rpcOp := grpcsec.StartHandlerOperation(context.Background(), grpcsec.HandlerOperationArgs{}, localRootOp)
 
 			for i := 1; i <= expectedRecvOperation; i++ {
-				recvOp := grpcsec.StartReceiveOperation(types.ReceiveOperationArgs{}, rpcOp)
-				recvOp.Finish(types.ReceiveOperationRes{Message: fmt.Sprintf(expectedMessageFormat, i)})
+				recvOp := grpcsec.StartReceiveOperation(grpcsec.ReceiveOperationArgs{}, rpcOp)
+				recvOp.Finish(grpcsec.ReceiveOperationRes{Message: fmt.Sprintf(expectedMessageFormat, i)})
 			}
 
-			secEvents := rpcOp.Finish(types.HandlerOperationRes{})
+			secEvents := rpcOp.Finish(grpcsec.HandlerOperationRes{})
 
 			require.Len(t, secEvents, expectedRecvOperation)
 			for i, e := range secEvents {

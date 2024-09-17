@@ -11,7 +11,6 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/grpcsec"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/grpcsec/types"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/sharedsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/trace"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/trace/grpctrace"
@@ -33,19 +32,19 @@ func appsecUnaryHandlerMiddleware(method string, span ddtrace.Span, handler grpc
 		var blockedErr error
 		md, _ := metadata.FromIncomingContext(ctx)
 		clientIP := setClientIP(ctx, span, md)
-		args := types.HandlerOperationArgs{
+		args := grpcsec.HandlerOperationArgs{
 			Method:   method,
 			Metadata: md,
 			ClientIP: clientIP,
 		}
-		ctx, op := grpcsec.StartHandlerOperation(ctx, args, nil, func(op *types.HandlerOperation) {
+		ctx, op := grpcsec.StartHandlerOperation(ctx, args, nil, func(op *grpcsec.HandlerOperation) {
 			dyngo.OnData(op, func(a *sharedsec.GRPCAction) {
 				code, err := a.GRPCWrapper()
 				blockedErr = status.Error(codes.Code(code), err.Error())
 			})
 		})
 		defer func() {
-			events := op.Finish(types.HandlerOperationRes{})
+			events := op.Finish(grpcsec.HandlerOperationRes{})
 			if len(events) > 0 {
 				grpctrace.SetSecurityEventsTags(span, events)
 			}
@@ -63,7 +62,7 @@ func appsecUnaryHandlerMiddleware(method string, span ddtrace.Span, handler grpc
 		}
 
 		// As of our gRPC abstract operation definition, we must fake a receive operation for unary RPCs (the same model fits both unary and streaming RPCs)
-		grpcsec.StartReceiveOperation(types.ReceiveOperationArgs{}, op).Finish(types.ReceiveOperationRes{Message: req})
+		grpcsec.StartReceiveOperation(grpcsec.ReceiveOperationArgs{}, op).Finish(grpcsec.ReceiveOperationRes{Message: req})
 		// Check if a blocking condition was detected so far with the receive operation events
 		if blockedErr != nil {
 			return nil, blockedErr
@@ -90,12 +89,12 @@ func appsecStreamHandlerMiddleware(method string, span ddtrace.Span, handler grp
 		grpctrace.SetRequestMetadataTags(span, md)
 
 		// Create the handler operation and listen to blocking gRPC actions to detect a blocking condition
-		args := types.HandlerOperationArgs{
+		args := grpcsec.HandlerOperationArgs{
 			Method:   method,
 			Metadata: md,
 			ClientIP: clientIP,
 		}
-		ctx, op := grpcsec.StartHandlerOperation(ctx, args, nil, func(op *types.HandlerOperation) {
+		ctx, op := grpcsec.StartHandlerOperation(ctx, args, nil, func(op *grpcsec.HandlerOperation) {
 			dyngo.OnData(op, func(a *sharedsec.GRPCAction) {
 				code, e := a.GRPCWrapper()
 				appsecStream.blockedErr = status.Error(codes.Code(code), e.Error())
@@ -107,7 +106,7 @@ func appsecStreamHandlerMiddleware(method string, span ddtrace.Span, handler grp
 		appsecStream.ctx = ctx
 
 		defer func() {
-			events := op.Finish(types.HandlerOperationRes{})
+			events := op.Finish(grpcsec.HandlerOperationRes{})
 
 			if len(events) > 0 {
 				grpctrace.SetSecurityEventsTags(span, events)
@@ -134,7 +133,7 @@ func appsecStreamHandlerMiddleware(method string, span ddtrace.Span, handler grp
 
 type appsecServerStream struct {
 	grpc.ServerStream
-	handlerOperation *types.HandlerOperation
+	handlerOperation *grpcsec.HandlerOperation
 	ctx              context.Context
 
 	// blockedErr is used to store the error to return when a blocking sec event is detected.
@@ -144,9 +143,9 @@ type appsecServerStream struct {
 // RecvMsg implements grpc.ServerStream interface method to monitor its
 // execution with AppSec.
 func (ss *appsecServerStream) RecvMsg(m interface{}) (err error) {
-	op := grpcsec.StartReceiveOperation(types.ReceiveOperationArgs{}, ss.handlerOperation)
+	op := grpcsec.StartReceiveOperation(grpcsec.ReceiveOperationArgs{}, ss.handlerOperation)
 	defer func() {
-		op.Finish(types.ReceiveOperationRes{Message: m})
+		op.Finish(grpcsec.ReceiveOperationRes{Message: m})
 		if ss.blockedErr != nil {
 			// Change the function call return error with appsec's
 			err = ss.blockedErr

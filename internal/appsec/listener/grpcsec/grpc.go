@@ -9,11 +9,11 @@ import (
 	"sync"
 
 	"go.uber.org/atomic"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/grpcsec"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/config"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/grpcsec/types"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/sharedsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener/httpsec"
@@ -87,7 +87,7 @@ func newWafEventListener(wafHandle *waf.Handle, cfg *config.Config, limiter limi
 
 // NewWAFEventListener returns the WAF event listener to register in order to enable it, listening to gRPC handler
 // events.
-func (l *wafEventListener) onEvent(op *types.HandlerOperation, handlerArgs types.HandlerOperationArgs) {
+func (l *wafEventListener) onEvent(op *grpcsec.HandlerOperation, handlerArgs grpcsec.HandlerOperationArgs) {
 	// Limit the maximum number of security events, as a streaming RPC could
 	// receive unlimited number of messages where we could find security events
 	var (
@@ -162,7 +162,7 @@ func (l *wafEventListener) onEvent(op *types.HandlerOperation, handlerArgs types
 	}
 
 	// When the gRPC handler receives a message
-	dyngo.OnFinish(op, func(_ types.ReceiveOperation, res types.ReceiveOperationRes) {
+	dyngo.OnFinish(op, func(_ grpcsec.ReceiveOperation, res grpcsec.ReceiveOperationRes) {
 		// Run the WAF on the rule addresses available and listened to by the sec rules
 		var values waf.RunAddressData
 		// Add the gRPC message to the values if the WAF rules are using it.
@@ -191,7 +191,7 @@ func (l *wafEventListener) onEvent(op *types.HandlerOperation, handlerArgs types
 	})
 
 	// When the gRPC handler finishes
-	dyngo.OnFinish(op, func(op *types.HandlerOperation, _ types.HandlerOperationRes) {
+	dyngo.OnFinish(op, func(op *grpcsec.HandlerOperation, _ grpcsec.HandlerOperationRes) {
 		defer wafCtx.Close()
 
 		shared.AddWAFMonitoringTags(op, l.wafDiags.Version, wafCtx.Stats().Metrics())
