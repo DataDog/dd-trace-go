@@ -5,11 +5,13 @@
 
 package net
 
-import "github.com/pkg/errors"
+import (
+	"fmt"
+)
 
 const (
 	settingsRequestType string = "ci_app_test_service_libraries_settings"
-	settingsUrlPath     string = "api/v2/libraries/tests/services/setting"
+	settingsURLPath     string = "api/v2/libraries/tests/services/setting"
 )
 
 type (
@@ -75,15 +77,15 @@ func (c *client) GetSettings() (*SettingsResponseData, error) {
 		},
 	}
 
-	response, err := c.handler.SendRequest(*c.getPostRequestConfig(settingsUrlPath, body))
+	response, err := c.handler.SendRequest(*c.getPostRequestConfig(settingsURLPath, body))
 	if err != nil {
-		return nil, errors.Wrap(err, "sending get settings request")
+		return nil, fmt.Errorf("sending get settings request: %s", err.Error())
 	}
 
 	var responseObject settingsResponse
 	err = response.Unmarshal(&responseObject)
 	if err != nil {
-		return nil, errors.Wrap(err, "unmarshalling settings response")
+		return nil, fmt.Errorf("unmarshalling settings response: %s", err.Error())
 	}
 
 	return &responseObject.Data.Attributes, nil

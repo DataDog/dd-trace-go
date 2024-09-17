@@ -41,7 +41,7 @@ func TestEfdApiRequest(t *testing.T) {
 			json.Unmarshal(body, &request)
 			assert.Equal(t, c.id, request.Data.ID)
 			assert.Equal(t, efdRequestType, request.Data.Type)
-			assert.Equal(t, efdUrlPath, r.URL.Path[1:])
+			assert.Equal(t, efdURLPath, r.URL.Path[1:])
 			assert.Equal(t, c.environment, request.Data.Attributes.Env)
 			assert.Equal(t, c.repositoryUrl, request.Data.Attributes.RepositoryURL)
 			assert.Equal(t, c.serviceName, request.Data.Attributes.Service)

@@ -5,11 +5,13 @@
 
 package net
 
-import "github.com/pkg/errors"
+import (
+	"fmt"
+)
 
 const (
 	searchCommitsType    string = "commit"
-	searchCommitsUrlPath string = "api/v2/git/repository/search_commits"
+	searchCommitsURLPath string = "api/v2/git/repository/search_commits"
 )
 
 type (
@@ -41,15 +43,15 @@ func (c *client) GetCommits(localCommits []string) ([]string, error) {
 		})
 	}
 
-	response, err := c.handler.SendRequest(*c.getPostRequestConfig(searchCommitsUrlPath, body))
+	response, err := c.handler.SendRequest(*c.getPostRequestConfig(searchCommitsURLPath, body))
 	if err != nil {
-		return nil, errors.Wrap(err, "sending search commits request")
+		return nil, fmt.Errorf("sending search commits request: %s", err.Error())
 	}
 
 	var responseObject searchCommits
 	err = response.Unmarshal(&responseObject)
 	if err != nil {
-		return nil, errors.Wrap(err, "unmarshalling search commits response")
+		return nil, fmt.Errorf("unmarshalling search commits response: %s", err.Error())
 	}
 
 	var commits []string

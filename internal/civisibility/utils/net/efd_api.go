@@ -5,11 +5,13 @@
 
 package net
 
-import "github.com/pkg/errors"
+import (
+	"fmt"
+)
 
 const (
 	efdRequestType string = "ci_app_libraries_tests_request"
-	efdUrlPath     string = "api/v2/ci/libraries/tests"
+	efdURLPath     string = "api/v2/ci/libraries/tests"
 )
 
 type (
@@ -60,15 +62,15 @@ func (c *client) GetEarlyFlakeDetectionData() (*EfdResponseData, error) {
 		},
 	}
 
-	response, err := c.handler.SendRequest(*c.getPostRequestConfig(efdUrlPath, body))
+	response, err := c.handler.SendRequest(*c.getPostRequestConfig(efdURLPath, body))
 	if err != nil {
-		return nil, errors.Wrap(err, "sending early flake detection request")
+		return nil, fmt.Errorf("sending early flake detection request: %s", err.Error())
 	}
 
 	var responseObject efdResponse
 	err = response.Unmarshal(&responseObject)
 	if err != nil {
-		return nil, errors.Wrap(err, "unmarshalling early flake detection data response")
+		return nil, fmt.Errorf("unmarshalling early flake detection data response: %s", err.Error())
 	}
 
 	return &responseObject.Data.Attributes, nil

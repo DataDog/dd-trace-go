@@ -7,13 +7,12 @@ package net
 
 import (
 	"fmt"
-	"github.com/pkg/errors"
 	"net/http"
 	"os"
 )
 
 const (
-	sendPackFilesUrlPath string = "api/v2/git/repository/packfile"
+	sendPackFilesURLPath string = "api/v2/git/repository/packfile"
 )
 
 type (
@@ -52,13 +51,13 @@ func (c *client) SendPackFiles(packFiles []string) (bytes int64, err error) {
 	for _, file := range packFiles {
 		fileContent, fileErr := os.ReadFile(file)
 		if fileErr != nil {
-			err = errors.Wrap(fileErr, "failed to read pack file")
+			err = fmt.Errorf("failed to read pack file: %s", fileErr.Error())
 			return
 		}
 
 		request := RequestConfig{
 			Method:  "POST",
-			URL:     c.getUrlPath(sendPackFilesUrlPath),
+			URL:     c.getUrlPath(sendPackFilesURLPath),
 			Headers: c.headers,
 			Files: []FormFile{
 				pushedShaFormFile,
@@ -74,12 +73,12 @@ func (c *client) SendPackFiles(packFiles []string) (bytes int64, err error) {
 
 		response, responseErr := c.handler.SendRequest(request)
 		if responseErr != nil {
-			err = errors.Wrap(responseErr, "failed to send packfile request")
+			err = fmt.Errorf("failed to send packfile request: %s", responseErr.Error())
 			return
 		}
 
 		if response.StatusCode != http.StatusOK && response.StatusCode != http.StatusNoContent {
-			err = errors.New(fmt.Sprintf("unexpected response code %d: %s", response.StatusCode, string(response.Body)))
+			err = fmt.Errorf("unexpected response code %d: %s", response.StatusCode, string(response.Body))
 		}
 
 		bytes += int64(len(fileContent))

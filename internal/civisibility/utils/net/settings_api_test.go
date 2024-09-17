@@ -44,7 +44,7 @@ func TestSettingsApiRequest(t *testing.T) {
 			json.Unmarshal(body, &request)
 			assert.Equal(t, c.id, request.Data.ID)
 			assert.Equal(t, settingsRequestType, request.Data.Type)
-			assert.Equal(t, settingsUrlPath, r.URL.Path[1:])
+			assert.Equal(t, settingsURLPath, r.URL.Path[1:])
 			assert.Equal(t, c.commitSha, request.Data.Attributes.Sha)
 			assert.Equal(t, c.branchName, request.Data.Attributes.Branch)
 			assert.Equal(t, c.environment, request.Data.Attributes.Env)
