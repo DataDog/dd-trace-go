@@ -9,6 +9,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/config"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/graphqlsec"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/waf"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/waf/addresses"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener"
 )
@@ -22,10 +23,12 @@ func (*Feature) String() string {
 func (*Feature) Stop() {}
 
 func (f *Feature) OnResolveField(op *graphqlsec.ResolveOperation, args graphqlsec.ResolveOperationArgs) {
-	dyngo.EmitData(op, addresses.NewAddressesBuilder().
-		WithGraphQLResolver(args.FieldName, args.Arguments).
-		Build(),
-	)
+	dyngo.EmitData(op, waf.RunEvent{
+		Operation: op,
+		RunAddressData: addresses.NewAddressesBuilder().
+			WithGraphQLResolver(args.FieldName, args.Arguments).
+			Build(),
+	})
 }
 
 func NewGraphQLSecFeature(config *config.Config, rootOp dyngo.Operation) (listener.Feature, error) {
