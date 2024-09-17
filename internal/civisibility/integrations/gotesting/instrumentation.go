@@ -41,7 +41,7 @@ type (
 
 var (
 	// ciVisibilityEnabledValue holds a value to check if ci visibility is enabled or not (1 = enabled / 0 = disabled)
-	ciVisibilityEnabledValue *atomic.Int32
+	ciVisibilityEnabledValue int32 = -1
 
 	// instrumentationMap holds a map of *runtime.Func for tracking instrumented functions
 	instrumentationMap = map[*runtime.Func]*instrumentationMetadata{}
@@ -59,24 +59,22 @@ var (
 // isCiVisibilityEnabled gets if CI Visibility has been enabled or disabled by the "DD_CIVISIBILITY_ENABLED" environment variable
 func isCiVisibilityEnabled() bool {
 	// let's check if the value has already been loaded from the env-vars
-	if ciVisibilityEnabledValue == nil {
+	enabledValue := atomic.LoadInt32(&ciVisibilityEnabledValue)
+	if enabledValue == -1 {
 		// Get the DD_CIVISIBILITY_ENABLED env var, if not present we default to true. This is because if we are here, it means
 		// that the process was instrumented for ci visibility or by using orchestrion.
 		// So effectively this env-var will act as a kill switch for cases where the code is instrumented, but
 		// we don't want the civisibility instrumentation to be enabled.
-		var v atomic.Int32
 		if internal.BoolEnv(constants.CIVisibilityEnabledEnvironmentVariable, true) {
-			v.Store(1)
-			ciVisibilityEnabledValue = &v
+			atomic.StoreInt32(&ciVisibilityEnabledValue, 1)
 			return true
 		} else {
-			v.Store(0)
-			ciVisibilityEnabledValue = &v
+			atomic.StoreInt32(&ciVisibilityEnabledValue, 0)
 			return false
 		}
 	}
 
-	return ciVisibilityEnabledValue.Load() != 0
+	return enabledValue == 1
 }
 
 // getInstrumentationMetadata gets the stored instrumentation metadata for a given *runtime.Func.
@@ -116,7 +114,7 @@ func setCiVisibilityTest(tb testing.TB, ciTest integrations.DdTest) {
 // instrumentTestingM helper function to instrument internalTests and internalBenchmarks in a `*testing.M` instance.
 func instrumentTestingM(m *testing.M) func(exitCode int) {
 	// Check if CI Visibility was disabled using the kill switch before trying to initialize it
-	ciVisibilityEnabledValue = nil
+	atomic.StoreInt32(&ciVisibilityEnabledValue, -1)
 	if !isCiVisibilityEnabled() {
 		return func(exitCode int) {}
 	}
@@ -142,6 +140,12 @@ func instrumentTestingM(m *testing.M) func(exitCode int) {
 	}
 
 	return func(exitCode int) {
+		// Check for code coverage if enabled.
+		if testing.CoverMode() != "" {
+			coveragePercentage := testing.Coverage() * 100
+			session.SetTag(constants.CodeCoveragePercentageOfTotalLines, coveragePercentage)
+		}
+
 		// Close the session and return the exit code.
 		session.Close(exitCode)
 
