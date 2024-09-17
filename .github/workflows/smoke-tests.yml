@@ -106,7 +106,6 @@ jobs:
       matrix:
         # TODO: cross-compilation from/to different hardware architectures once
         #       github provides native ARM runners.
-        # NOTE: Also edit go_min below when changing the go versions here.
         go: [ "1.22", "1.23" ]
         build-env: [ alpine, bookworm, bullseye ]
         build-with-cgo: [ 0, 1 ]
@@ -185,7 +184,6 @@ jobs:
           tags: smoke-test
           build-args: |
             go=${{ matrix.go }}
-            go_min=1.22
             build_env=${{ matrix.build-env }}
             build_tags=${{ matrix.build-tags }}
             build_with_vendoring=${{ matrix.build-with-vendoring }}

@@ -52,15 +52,6 @@ RUN if [ "${go_libddwaf_ref}" != "" ]; then \
   go get -u github.com/DataDog/go-libddwaf/v3@${go_libddwaf_ref}; \
   fi
 
-
-# internal/apps/go.mod is usually on the latest go version, but this would fail
-# when we are testing against an older go version.
-#
-# TODO(fg) this is a workaround. We should probably move setup-smoke-test out
-# of internal/apps and into a separate directory.
-ARG go_min
-RUN go mod edit -go="${go_min}"
-
 RUN go mod tidy
 
 ARG build_with_vendoring
