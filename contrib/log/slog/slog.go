@@ -26,6 +26,11 @@ func init() {
 
 var _ slog.Handler = (*handler)(nil)
 
+type group struct {
+	name  string
+	attrs []slog.Attr
+}
+
 // NewJSONHandler is a convenience function that returns a *slog.JSONHandler logger enhanced with
 // tracing information.
 func NewJSONHandler(w io.Writer, opts *slog.HandlerOptions) slog.Handler {
@@ -38,9 +43,8 @@ func WrapHandler(h slog.Handler) slog.Handler {
 }
 
 type handler struct {
-	wrapped    slog.Handler
-	groups     []string
-	groupAttrs map[string][]slog.Attr
+	wrapped slog.Handler
+	groups  []group
 }
 
 // Enabled calls the wrapped handler Enabled method.
@@ -67,10 +71,10 @@ func (h *handler) Handle(ctx context.Context, rec slog.Record) error {
 		}
 		reqHandler = reqHandler.WithAttrs(attrs)
 	}
-	for _, group := range h.groups {
-		reqHandler = reqHandler.WithGroup(group)
-		if attrs, ok := h.groupAttrs[group]; ok {
-			reqHandler = reqHandler.WithAttrs(attrs)
+	for _, g := range h.groups {
+		reqHandler = reqHandler.WithGroup(g.name)
+		if len(g.attrs) > 0 {
+			reqHandler = reqHandler.WithAttrs(g.attrs)
 		}
 	}
 	return reqHandler.Handle(ctx, rec)
@@ -81,36 +85,25 @@ func (h *handler) Handle(ctx context.Context, rec slog.Record) error {
 func (h *handler) WithAttrs(attrs []slog.Attr) slog.Handler {
 	if len(h.groups) == 0 {
 		return &handler{
-			wrapped:    h.wrapped.WithAttrs(attrs),
-			groupAttrs: h.groupAttrs,
-			groups:     h.groups,
+			wrapped: h.wrapped.WithAttrs(attrs),
+			groups:  h.groups,
 		}
 	}
-	curGroup := h.groups[len(h.groups)-1]
-
-	groupAttrs := groupAttrsCopy(h.groupAttrs)
-	groupAttrs[curGroup] = append(groupAttrs[curGroup], attrs...)
+	groups := append([]group{}, h.groups...)
+	curGroup := groups[len(groups)-1]
+	curGroup.attrs = append(curGroup.attrs, attrs...)
+	groups[len(groups)-1] = curGroup
 
 	return &handler{
-		wrapped:    h.wrapped,
-		groupAttrs: groupAttrs,
-		groups:     h.groups,
+		wrapped: h.wrapped,
+		groups:  groups,
 	}
 }
 
 // WithGroup saves the provided group to be used later in the Handle method.
 func (h *handler) WithGroup(name string) slog.Handler {
 	return &handler{
-		wrapped:    h.wrapped,
-		groupAttrs: h.groupAttrs,
-		groups:     append(h.groups, name),
+		wrapped: h.wrapped,
+		groups:  append(h.groups, group{name: name}),
 	}
-}
-
-func groupAttrsCopy(m map[string][]slog.Attr) map[string][]slog.Attr {
-	cp := make(map[string][]slog.Attr)
-	for k, v := range m {
-		cp[k] = append([]slog.Attr{}, v...)
-	}
-	return cp
 }

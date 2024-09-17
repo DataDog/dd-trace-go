@@ -131,19 +131,25 @@ func TestHandlerWithGroup(t *testing.T) {
 					With("key0", "val0").
 					WithGroup("group1").
 					With("key1", "val1").
+					WithGroup("group1"). // repeat same key again
+					With("key1", "val1").
 					WithGroup("group2").
 					With("key2", "val2").
 					With("key3", "val3")
 			},
 			func(t *testing.T, entry map[string]interface{}) {
-				assert.Equal(t, "val0", entry["key0"], "root level entry not found")
-				assert.Equal(t, map[string]interface{}{
+				groupKeys := map[string]interface{}{
 					"key1": "val1",
-					"group2": map[string]interface{}{
-						"key2": "val2",
-						"key3": "val3",
+					"group1": map[string]interface{}{
+						"key1": "val1",
+						"group2": map[string]interface{}{
+							"key2": "val2",
+							"key3": "val3",
+						},
 					},
-				}, entry["group1"], "nested group entries not found")
+				}
+				assert.Equal(t, "val0", entry["key0"], "root level key not found")
+				assert.Equal(t, groupKeys, entry["group1"], "nested group entries not found")
 			},
 		)
 	})
