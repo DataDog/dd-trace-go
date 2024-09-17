@@ -11,6 +11,8 @@ import (
 	waf "github.com/DataDog/go-libddwaf/v3"
 )
 
+const contextProcessKey = "waf.context.processor"
+
 type RunAddressDataBuilder struct {
 	waf.RunAddressData
 }
@@ -177,7 +179,11 @@ func (b *RunAddressDataBuilder) WithGraphQLResolver(resolver string) *RunAddress
 }
 
 func (b *RunAddressDataBuilder) ExtractSchema() *RunAddressDataBuilder {
-	b.Persistent["waf.context.processor"] = map[string]bool{"extract-schema": true}
+	if _, ok := b.Persistent[contextProcessKey]; !ok {
+		b.Persistent[contextProcessKey] = map[string]bool{}
+	}
+
+	b.Persistent[contextProcessKey].(map[string]bool)["extract-schema"] = true
 	return b
 }
 

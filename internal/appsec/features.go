@@ -7,44 +7,50 @@ package appsec
 
 import (
 	"errors"
-	"fmt"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/config"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener/httpsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener/ossec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener/sqlsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener/trace"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener/usersec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener/waf"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
-type StopFeature func()
-
-type NewFeature func(*config.Config, dyngo.Operation) (func(), error)
-
-var features = map[string]NewFeature{
-	"APM Span Transport":       trace.NewAppsecSpanTransport,
-	"Web Application Firewall": waf.NewWAFFeature,
-	"User Security":            usersec.NewUserSecFeature,
-	"SQL Injection":            sqlsec.NewSQLSecFeature,
-	"Local File Inclusion":     ossec.NewOSSecFeature,
-	"SSRF Protection":          httpsec.NewSSRFProtectionFeature,
-	"HTTP Security":            httpsec.NewHTTPSecFeature,
+var features = []listener.NewFeature{
+	trace.NewAppsecSpanTransport,
+	waf.NewWAFFeature,
+	httpsec.NewHTTPSecFeature,
+	usersec.NewUserSecFeature,
+	sqlsec.NewSQLSecFeature,
+	ossec.NewOSSecFeature,
+	httpsec.NewSSRFProtectionFeature,
 }
 
 func (a *appsec) SwapRootOperation() error {
 	newRoot := dyngo.NewRootOperation()
-	newFeatures := make([]StopFeature, 0, len(features))
+	newFeatures := make([]listener.Feature, 0, len(features))
 	var featureErrors []error
-	for name, newFeature := range features {
+	for _, newFeature := range features {
 		feature, err := newFeature(a.cfg, newRoot)
 		if err != nil {
-			featureErrors = append(featureErrors, fmt.Errorf("error creating %q listeners: %w", name, err))
+			featureErrors = append(featureErrors, err)
+			continue
+		}
+
+		// If error is nil and feature is nil, it means the feature did not activate itself
+		if feature == nil {
 			continue
 		}
 
 		newFeatures = append(newFeatures, feature)
+	}
+
+	err := errors.Join(featureErrors...)
+	if err != nil {
+		return err
 	}
 
 	a.featuresMu.Lock()
@@ -53,11 +59,16 @@ func (a *appsec) SwapRootOperation() error {
 	oldFeatures := a.features
 	a.features = newFeatures
 
+	log.Debug("appsec: stopping the following features: %v", oldFeatures)
+	log.Debug("appsec: starting the following features: %v", newFeatures)
+
 	dyngo.SwapRootOperation(newRoot)
 
-	for _, stopper := range oldFeatures {
-		stopper()
+	log.Debug("appsec: swapped root operation")
+
+	for _, oldFeature := range oldFeatures {
+		oldFeature.Stop()
 	}
 
-	return errors.Join(featureErrors...)
+	return nil
 }

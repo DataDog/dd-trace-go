@@ -6,8 +6,6 @@
 package actions
 
 import (
-	_ "embed" // Blank import
-
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )

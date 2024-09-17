@@ -10,18 +10,25 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/httpsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/waf/addresses"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener"
 )
 
 type SSRFProtectionFeature struct{}
 
-func NewSSRFProtectionFeature(config *config.Config, rootOp dyngo.Operation) (func(), error) {
+func (*SSRFProtectionFeature) String() string {
+	return "SSRF Protection"
+}
+
+func (*SSRFProtectionFeature) Stop() {}
+
+func NewSSRFProtectionFeature(config *config.Config, rootOp dyngo.Operation) (listener.Feature, error) {
 	if !config.RASP || !config.SupportedAddresses.AnyOf(addresses.ServerIoNetURLAddr) {
-		return func() {}, nil
+		return nil, nil
 	}
 
 	feature := &SSRFProtectionFeature{}
 	dyngo.On(rootOp, feature.OnStart)
-	return func() {}, nil
+	return feature, nil
 }
 
 func (*SSRFProtectionFeature) OnStart(op *httpsec.RoundTripOperation, args httpsec.RoundTripOperationArgs) {

@@ -9,6 +9,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/config"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/trace"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener"
 )
 
 // AppSec-specific span tags that are expected to
@@ -20,14 +21,19 @@ var staticAppsecTags = map[string]any{
 
 type AppsecSpanTransport struct{}
 
-func NewAppsecSpanTransport(_ *config.Config, rootOp dyngo.Operation) (func(), error) {
+func (ast *AppsecSpanTransport) String() string {
+	return "Appsec Span Transport"
+}
 
+func (ast *AppsecSpanTransport) Stop() {}
+
+func NewAppsecSpanTransport(_ *config.Config, rootOp dyngo.Operation) (listener.Feature, error) {
 	ast := &AppsecSpanTransport{}
 
 	dyngo.On(rootOp, ast.OnServiceEntryStart)
 	dyngo.On(rootOp, ast.OnSpanStart)
 
-	return func() {}, nil
+	return ast, nil
 }
 
 // OnServiceEntryStart is the start listener of the trace.ServiceEntrySpanOperation start event.

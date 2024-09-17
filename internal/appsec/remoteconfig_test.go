@@ -808,7 +808,7 @@ func TestWafRCUpdate(t *testing.T) {
 		require.NoError(t, err)
 		defer newWafCtx.Close()
 		// Make sure the rule returns a blocking action when matching
-		result, err = wafCtx.Run(waf.RunAddressData{Persistent: values})
+		result, err = newWafCtx.Run(waf.RunAddressData{Persistent: values})
 		require.NoError(t, err)
 		require.Contains(t, jsonString(t, result.Events), "crs-913-120")
 		require.Contains(t, result.Actions, "block_request")

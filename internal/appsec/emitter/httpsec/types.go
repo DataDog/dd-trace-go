@@ -17,10 +17,10 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/waf/actions"
 )
 
-// Operation type representing an HTTP operation. It must be created with
+// HandlerOperation type representing an HTTP operation. It must be created with
 // StartOperation() and finished with its Finish().
 type (
-	Operation struct {
+	HandlerOperation struct {
 		dyngo.Operation
 		*waf.ContextOperation
 		mu sync.RWMutex
@@ -31,9 +31,9 @@ type (
 	}
 )
 
-func StartOperation(ctx context.Context, args HandlerOperationArgs) (*Operation, *atomic.Pointer[actions.BlockHTTP], context.Context) {
+func StartOperation(ctx context.Context, args HandlerOperationArgs) (*HandlerOperation, *atomic.Pointer[actions.BlockHTTP], context.Context) {
 	wafOp, ctx := waf.StartContextOperation(ctx)
-	op := &Operation{
+	op := &HandlerOperation{
 		Operation:        dyngo.NewOperation(wafOp),
 		ContextOperation: wafOp,
 	}
@@ -48,9 +48,9 @@ func StartOperation(ctx context.Context, args HandlerOperationArgs) (*Operation,
 }
 
 // Finish the HTTP handler operation and its children operations and write everything to the service entry span.
-func (op *Operation) Finish(res HandlerOperationRes, span ddtrace.Span) {
+func (op *HandlerOperation) Finish(res HandlerOperationRes, span ddtrace.Span) {
 	dyngo.FinishOperation(op, res)
-	op.ServiceEntrySpanOperation.Finish(span)
+	op.ContextOperation.Finish(span)
 }
 
 // Abstract HTTP handler operation definition.
@@ -77,8 +77,8 @@ type (
 	RoundTripOperationRes struct{}
 )
 
-func (HandlerOperationArgs) IsArgOf(*Operation)   {}
-func (HandlerOperationRes) IsResultOf(*Operation) {}
+func (HandlerOperationArgs) IsArgOf(*HandlerOperation)   {}
+func (HandlerOperationRes) IsResultOf(*HandlerOperation) {}
 
 func (RoundTripOperationArgs) IsArgOf(*RoundTripOperation)   {}
 func (RoundTripOperationRes) IsResultOf(*RoundTripOperation) {}

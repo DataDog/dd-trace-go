@@ -14,18 +14,25 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/ossec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/waf"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/waf/addresses"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener"
 )
 
 type Feature struct{}
 
-func NewOSSecFeature(cfg *config.Config, rootOp dyngo.Operation) (func(), error) {
+func (*Feature) String() string {
+	return "LFI Protection"
+}
+
+func (*Feature) Stop() {}
+
+func NewOSSecFeature(cfg *config.Config, rootOp dyngo.Operation) (listener.Feature, error) {
 	if !cfg.RASP || !cfg.SupportedAddresses.AnyOf(addresses.ServerIOFSFileAddr) {
-		return func() {}, nil
+		return nil, nil
 	}
 
 	feature := &Feature{}
 	dyngo.On(rootOp, feature.OnStart)
-	return func() {}, nil
+	return feature, nil
 }
 
 func (*Feature) OnStart(op *ossec.OpenOperation, args ossec.OpenOperationArgs) {

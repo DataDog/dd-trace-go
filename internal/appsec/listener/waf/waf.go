@@ -12,6 +12,7 @@ import (
 
 	"github.com/DataDog/appsec-internal-go/limiter"
 	wafv3 "github.com/DataDog/go-libddwaf/v3"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/appsec/events"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/config"
@@ -29,7 +30,7 @@ type Feature struct {
 	reportRulesTags sync.Once
 }
 
-func NewWAFFeature(cfg *config.Config, rootOp dyngo.Operation) (func(), error) {
+func NewWAFFeature(cfg *config.Config, rootOp dyngo.Operation) (listener.Feature, error) {
 	if ok, err := wafv3.Load(); err != nil {
 		// 1. If there is an error and the loading is not ok: log as an unexpected error case and quit appsec
 		// Note that we assume here that the test for the unsupported target has been done before calling
@@ -60,7 +61,7 @@ func NewWAFFeature(cfg *config.Config, rootOp dyngo.Operation) (func(), error) {
 	dyngo.On(rootOp, feature.onStart)
 	dyngo.OnFinish(rootOp, feature.onFinish)
 
-	return feature.Stop, nil
+	return feature, nil
 }
 
 func (waf *Feature) onStart(op *waf.ContextOperation, _ waf.ContextArgs) {
@@ -109,6 +110,10 @@ func (waf *Feature) onFinish(op *waf.ContextOperation, _ waf.ContextRes) {
 
 	op.SetTags(op.Derivatives())
 	op.SetTag(stacktrace.SpanKey, stacktrace.GetSpanValue(op.StackTraces()...))
+}
+
+func (waf *Feature) String() string {
+	return "Web Application Firewall"
 }
 
 func (waf *Feature) Stop() {

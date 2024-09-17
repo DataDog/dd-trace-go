@@ -9,6 +9,7 @@ import (
 	"math/rand"
 
 	"github.com/DataDog/appsec-internal-go/appsec"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/config"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
@@ -21,21 +22,23 @@ type Feature struct {
 	APISec appsec.APISecConfig
 }
 
-var httpsecAddresses = []string{
-	addresses.ServerRequestMethodAddr,
-	addresses.ServerRequestRawURIAddr,
-	addresses.ServerRequestHeadersNoCookiesAddr,
-	addresses.ServerRequestCookiesAddr,
-	addresses.ServerRequestQueryAddr,
-	addresses.ServerRequestPathParamsAddr,
-	addresses.ServerRequestBodyAddr,
-	addresses.ServerResponseStatusAddr,
-	addresses.ServerResponseHeadersNoCookiesAddr,
+func (feature *Feature) String() string {
+	return "HTTP Security"
 }
 
-func NewHTTPSecFeature(config *config.Config, rootOp dyngo.Operation) (func(), error) {
-	if !config.SupportedAddresses.AnyOf(httpsecAddresses...) {
-		return func() {}, nil
+func (feature *Feature) Stop() {}
+
+func NewHTTPSecFeature(config *config.Config, rootOp dyngo.Operation) (listener.Feature, error) {
+	if !config.SupportedAddresses.AnyOf(addresses.ServerRequestMethodAddr,
+		addresses.ServerRequestRawURIAddr,
+		addresses.ServerRequestHeadersNoCookiesAddr,
+		addresses.ServerRequestCookiesAddr,
+		addresses.ServerRequestQueryAddr,
+		addresses.ServerRequestPathParamsAddr,
+		addresses.ServerRequestBodyAddr,
+		addresses.ServerResponseStatusAddr,
+		addresses.ServerResponseHeadersNoCookiesAddr) {
+		return nil, nil
 	}
 
 	feature := &Feature{
@@ -44,10 +47,10 @@ func NewHTTPSecFeature(config *config.Config, rootOp dyngo.Operation) (func(), e
 
 	dyngo.On(rootOp, feature.OnRequest)
 	dyngo.OnFinish(rootOp, feature.OnResponse)
-	return func() {}, nil
+	return feature, nil
 }
 
-func (feature *Feature) OnRequest(op *httpsec.Operation, args httpsec.HandlerOperationArgs) {
+func (feature *Feature) OnRequest(op *httpsec.HandlerOperation, args httpsec.HandlerOperationArgs) {
 	tags, ip := ClientIPTags(args.Header, true, args.RemoteAddr)
 	log.Debug("appsec: http client ip detection returned `%s` given the http headers `%v`", ip, args.Header)
 
@@ -70,7 +73,7 @@ func (feature *Feature) OnRequest(op *httpsec.Operation, args httpsec.HandlerOpe
 	)
 }
 
-func (feature *Feature) OnResponse(op *httpsec.Operation, args httpsec.HandlerOperationRes) {
+func (feature *Feature) OnResponse(op *httpsec.HandlerOperation, args httpsec.HandlerOperationRes) {
 	respHeaders := args.ResponseHeaderCopier(args.ResponseWriter)
 	builder := addresses.NewAddressesBuilder().
 		WithResponseHeadersNoCookies(respHeaders)

@@ -11,10 +11,10 @@ import (
 
 	waf "github.com/DataDog/go-libddwaf/v3"
 	wafErrors "github.com/DataDog/go-libddwaf/v3/errors"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/waf/actions"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/appsec/events"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/waf/actions"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
@@ -26,20 +26,19 @@ func (op *ContextOperation) Run(eventReceiver dyngo.Operation, addrs waf.RunAddr
 
 	result, err := ctx.Run(addrs)
 	if errors.Is(err, wafErrors.ErrTimeout) {
-		log.Debug("appsec: Feature timeout value reached: %v", err)
+		log.Debug("appsec: WAF timeout value reached: %v", err)
 	} else if err != nil {
-		log.Error("appsec: unexpected Feature error: %v", err)
+		log.Error("appsec: unexpected WAF error: %v", err)
 	}
-
-	if !result.HasEvents() {
-		return
-	}
-
-	log.Debug("appsec: Feature detected a suspicious Feature event")
-	actions.SendActionEvents(eventReceiver, result.Actions)
 
 	op.AddEvents(result.Events...)
 	op.AbsorbDerivatives(result.Derivatives)
+
+	actions.SendActionEvents(eventReceiver, result.Actions)
+
+	if result.HasEvents() {
+		log.Debug("appsec: WAF detected a suspicious event")
+	}
 }
 
 // RunSimple runs the WAF with the given address data and returns an error that should be forwarded to the caller

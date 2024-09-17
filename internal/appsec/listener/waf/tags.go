@@ -10,10 +10,10 @@ import (
 	"fmt"
 
 	waf "github.com/DataDog/go-libddwaf/v3"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/trace"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/samplernames"
 )
 
@@ -35,14 +35,15 @@ func AddRulesMonitoringTags(th trace.TagSetter, wafDiags waf.Diagnostics) {
 		return
 	}
 
-	if len(rInfo.Errors) == 0 {
-		rInfo.Errors = nil
+	var rulesetErrors []byte
+	if len(rInfo.Errors) > 0 {
+		var err error
+		rulesetErrors, err = json.Marshal(wafDiags.Rules.Errors)
+		if err != nil {
+			log.Error("appsec: could not marshal the waf ruleset info errors to json")
+		}
 	}
-	rulesetErrors, err := json.Marshal(wafDiags.Rules.Errors)
-	if err != nil {
-		log.Error("appsec: could not marshal the waf ruleset info errors to json")
-	}
-	th.SetTag(eventRulesErrorsTag, string(rulesetErrors)) // avoid the tracer's call to fmt.Sprintf on the value
+	th.SetTag(eventRulesErrorsTag, string(rulesetErrors))
 	th.SetTag(eventRulesLoadedTag, len(rInfo.Loaded))
 	th.SetTag(eventRulesFailedTag, len(rInfo.Failed))
 	th.SetTag(wafVersionTag, waf.Version())

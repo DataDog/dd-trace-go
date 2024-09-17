@@ -11,6 +11,7 @@ import (
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/config"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 
 	appsecLog "github.com/DataDog/appsec-internal-go/log"
@@ -134,7 +135,7 @@ func setActiveAppSec(a *appsec) {
 
 type appsec struct {
 	cfg        *config.Config
-	features   []StopFeature
+	features   []listener.Feature
 	featuresMu sync.Mutex
 	started    bool
 }
@@ -195,8 +196,8 @@ func (a *appsec) stop() {
 	// Disable the currently applied instrumentation
 	dyngo.SwapRootOperation(nil)
 
-	for _, stopper := range a.features {
-		stopper()
+	for _, oldFeatures := range a.features {
+		oldFeatures.Stop()
 	}
 
 	a.features = nil

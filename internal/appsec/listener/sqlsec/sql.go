@@ -11,18 +11,25 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/sqlsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/waf"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/waf/addresses"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener"
 )
 
 type Feature struct{}
 
-func NewSQLSecFeature(cfg *config.Config, rootOp dyngo.Operation) (func(), error) {
+func (*Feature) String() string {
+	return "SQLi Protection"
+}
+
+func (*Feature) Stop() {}
+
+func NewSQLSecFeature(cfg *config.Config, rootOp dyngo.Operation) (listener.Feature, error) {
 	if !cfg.RASP || !cfg.SupportedAddresses.AnyOf(addresses.ServerDBTypeAddr, addresses.ServerDBStatementAddr) {
-		return func() {}, nil
+		return nil, nil
 	}
 
 	feature := &Feature{}
 	dyngo.On(rootOp, feature.OnStart)
-	return func() {}, nil
+	return feature, nil
 }
 
 func (*Feature) OnStart(op *sqlsec.SQLOperation, args sqlsec.SQLOperationArgs) {
