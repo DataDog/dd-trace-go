@@ -22,11 +22,11 @@ type Feature struct {
 	APISec appsec.APISecConfig
 }
 
-func (feature *Feature) String() string {
+func (*Feature) String() string {
 	return "HTTP Security"
 }
 
-func (feature *Feature) Stop() {}
+func (*Feature) Stop() {}
 
 func NewHTTPSecFeature(config *config.Config, rootOp dyngo.Operation) (listener.Feature, error) {
 	if !config.SupportedAddresses.AnyOf(addresses.ServerRequestMethodAddr,

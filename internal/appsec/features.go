@@ -10,6 +10,7 @@ import (
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener/graphqlsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener/httpsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener/ossec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener/sqlsec"
@@ -23,6 +24,7 @@ var features = []listener.NewFeature{
 	trace.NewAppsecSpanTransport,
 	waf.NewWAFFeature,
 	httpsec.NewHTTPSecFeature,
+	graphqlsec.NewGraphQLSecFeature,
 	usersec.NewUserSecFeature,
 	sqlsec.NewSQLSecFeature,
 	ossec.NewOSSecFeature,

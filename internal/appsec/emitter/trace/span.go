@@ -9,7 +9,6 @@ import (
 	"context"
 	"sync"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
 )
 
@@ -54,7 +53,11 @@ func StartSpanOperation(ctx context.Context) (*SpanOperation, context.Context) {
 	return op, dyngo.StartAndRegisterOperation(ctx, op, SpanArgs{})
 }
 
-func (op *SpanOperation) Finish(span ddtrace.Span) {
+func (op *SpanOperation) Finish(span TagSetter) {
+	if _, ok := span.(*NoopTagSetter); ok { // If the span is a NoopTagSetter or is nil, we don't need to set any tags
+		return
+	}
+
 	op.mu.Lock()
 	defer op.mu.Unlock()
 

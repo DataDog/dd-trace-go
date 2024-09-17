@@ -16,6 +16,24 @@ import (
 
 var badInputContextOnce sync.Once
 
+type (
+	RoundTripOperation struct {
+		dyngo.Operation
+	}
+
+	// RoundTripOperationArgs is the round trip operation arguments.
+	RoundTripOperationArgs struct {
+		// URL corresponds to the address `server.io.net.url`.
+		URL string
+	}
+
+	// RoundTripOperationRes is the round trip operation results.
+	RoundTripOperationRes struct{}
+)
+
+func (RoundTripOperationArgs) IsArgOf(*RoundTripOperation)   {}
+func (RoundTripOperationRes) IsResultOf(*RoundTripOperation) {}
+
 func ProtectRoundTrip(ctx context.Context, url string) error {
 	opArgs := RoundTripOperationArgs{
 		URL: url,

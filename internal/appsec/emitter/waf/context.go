@@ -18,7 +18,6 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/stacktrace"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/trace"
 )
@@ -61,7 +60,7 @@ func StartContextOperation(ctx context.Context) (*ContextOperation, context.Cont
 	return op, dyngo.StartAndRegisterOperation(ctx, op, ContextArgs{})
 }
 
-func (op *ContextOperation) Finish(span ddtrace.Span) {
+func (op *ContextOperation) Finish(span trace.TagSetter) {
 	dyngo.FinishOperation(op, ContextRes{})
 	op.ServiceEntrySpanOperation.Finish(span)
 }

@@ -10,7 +10,6 @@ import (
 	"encoding/json"
 	"sync"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
@@ -116,7 +115,11 @@ func StartServiceEntrySpanOperation(ctx context.Context) (*ServiceEntrySpanOpera
 	return op, dyngo.StartAndRegisterOperation(ctx, op, ServiceEntrySpanArgs{})
 }
 
-func (op *ServiceEntrySpanOperation) Finish(span ddtrace.Span) {
+func (op *ServiceEntrySpanOperation) Finish(span TagSetter) {
+	if _, ok := span.(*NoopTagSetter); ok { // If the span is a NoopTagSetter or is nil, we don't need to set any tags
+		return
+	}
+
 	op.mu.Lock()
 	defer op.mu.Unlock()
 

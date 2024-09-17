@@ -170,11 +170,12 @@ func (b *RunAddressDataBuilder) WithGRPCRequestMetadata(metadata map[string][]st
 	return b
 }
 
-func (b *RunAddressDataBuilder) WithGraphQLResolver(resolver string) *RunAddressDataBuilder {
-	if resolver == "" {
-		return b
+func (b *RunAddressDataBuilder) WithGraphQLResolver(fieldName string, args map[string]any) *RunAddressDataBuilder {
+	if _, ok := b.Ephemeral[GraphQLServerResolverAddr]; !ok {
+		b.Ephemeral[GraphQLServerResolverAddr] = map[string]any{}
 	}
-	b.Ephemeral[GraphQLServerResolverAddr] = resolver
+
+	b.Ephemeral[GraphQLServerResolverAddr].(map[string]any)[fieldName] = args
 	return b
 }
 

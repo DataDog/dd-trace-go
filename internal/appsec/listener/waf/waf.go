@@ -112,7 +112,7 @@ func (waf *Feature) onFinish(op *waf.ContextOperation, _ waf.ContextRes) {
 	op.SetTag(stacktrace.SpanKey, stacktrace.GetSpanValue(op.StackTraces()...))
 }
 
-func (waf *Feature) String() string {
+func (*Feature) String() string {
 	return "Web Application Firewall"
 }
 

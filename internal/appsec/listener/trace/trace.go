@@ -21,11 +21,11 @@ var staticAppsecTags = map[string]any{
 
 type AppsecSpanTransport struct{}
 
-func (ast *AppsecSpanTransport) String() string {
+func (*AppsecSpanTransport) String() string {
 	return "Appsec Span Transport"
 }
 
-func (ast *AppsecSpanTransport) Stop() {}
+func (*AppsecSpanTransport) Stop() {}
 
 func NewAppsecSpanTransport(_ *config.Config, rootOp dyngo.Operation) (listener.Feature, error) {
 	ast := &AppsecSpanTransport{}
