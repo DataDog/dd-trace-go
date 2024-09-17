@@ -22,15 +22,16 @@ import (
 
 // Constants for common strings
 const (
-	ContentTypeJSON           = "application/json"
-	ContentTypeOctetStream    = "application/octet-stream"
-	ContentEncodingGzip       = "gzip"
-	HeaderContentType         = "Content-Type"
-	HeaderContentEncoding     = "Content-Encoding"
-	HeaderAcceptEncoding      = "Accept-Encoding"
-	HeaderRateLimitReset      = "x-ratelimit-reset"
-	HTTPStatusTooManyRequests = 429
-	FormatJSON                = "json"
+	ContentTypeJSON            = "application/json"
+	ContentTypeJSONAlternative = "application/vnd.api+json"
+	ContentTypeOctetStream     = "application/octet-stream"
+	ContentEncodingGzip        = "gzip"
+	HeaderContentType          = "Content-Type"
+	HeaderContentEncoding      = "Content-Encoding"
+	HeaderAcceptEncoding       = "Accept-Encoding"
+	HeaderRateLimitReset       = "x-ratelimit-reset"
+	HTTPStatusTooManyRequests  = 429
+	FormatJSON                 = "json"
 )
 
 // FormFile represents a file to be uploaded in a multipart form request.
@@ -85,8 +86,15 @@ type RequestHandler struct {
 func NewRequestHandler() *RequestHandler {
 	return &RequestHandler{
 		Client: &http.Client{
-			Timeout: 10 * time.Second, // Customize timeout as needed
+			Timeout: 45 * time.Second, // Customize timeout as needed
 		},
+	}
+}
+
+// NewRequestHandlerWithClient creates a new RequestHandler with a custom http.Client
+func NewRequestHandlerWithClient(client *http.Client) *RequestHandler {
+	return &RequestHandler{
+		Client: client,
 	}
 }
 
@@ -152,7 +160,6 @@ func (rh *RequestHandler) SendRequest(config RequestConfig) (*Response, error) {
 			}
 			if config.Compressed {
 				req.Header.Set(HeaderContentEncoding, ContentEncodingGzip)
-				req.Header.Set(HeaderAcceptEncoding, ContentEncodingGzip)
 			}
 		} else {
 			// Handle requests without a body (e.g., GET requests)
@@ -160,12 +167,10 @@ func (rh *RequestHandler) SendRequest(config RequestConfig) (*Response, error) {
 			if err != nil {
 				return nil, err
 			}
-
-			// Set gzip headers for requests without a body if compression is enabled
-			if config.Compressed {
-				req.Header.Set(HeaderAcceptEncoding, ContentEncodingGzip)
-			}
 		}
+
+		// Set that is possible to handle gzip responses
+		req.Header.Set(HeaderAcceptEncoding, ContentEncodingGzip)
 
 		// Add custom headers if provided
 		for key, value := range config.Headers {
@@ -236,7 +241,7 @@ func (rh *RequestHandler) SendRequest(config RequestConfig) (*Response, error) {
 		responseFormat := "unknown"
 		mediaType, _, err := mime.ParseMediaType(resp.Header.Get(HeaderContentType))
 		if err == nil {
-			if mediaType == ContentTypeJSON {
+			if mediaType == ContentTypeJSON || mediaType == ContentTypeJSONAlternative {
 				responseFormat = FormatJSON
 			}
 		}
@@ -330,7 +335,11 @@ func createMultipartFormData(files []FormFile, compressed bool) ([]byte, string,
 
 	for _, file := range files {
 		partHeaders := textproto.MIMEHeader{}
-		partHeaders.Set("Content-Disposition", fmt.Sprintf(`form-data; name="%s"; filename="%s"`, file.FieldName, file.FileName))
+		if file.FileName == "" {
+			partHeaders.Set("Content-Disposition", fmt.Sprintf(`form-data; name="%s"`, file.FieldName))
+		} else {
+			partHeaders.Set("Content-Disposition", fmt.Sprintf(`form-data; name="%s"; filename="%s"`, file.FieldName, file.FileName))
+		}
 		partHeaders.Set("Content-Type", file.ContentType)
 
 		part, err := writer.CreatePart(partHeaders)
