@@ -9,7 +9,7 @@ package httptreemux // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/dimfeld/h
 import (
 	"net/http"
 
-	v2 "github.com/DataDog/dd-trace-go/v2/contrib/dimfeld/httptreemux.v5"
+	v2 "github.com/DataDog/dd-trace-go/contrib/dimfeld/httptreemux.v5/v2"
 	"github.com/dimfeld/httptreemux/v5"
 )
 

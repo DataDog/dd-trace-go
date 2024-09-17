@@ -6,7 +6,7 @@
 package echo
 
 import (
-	v2 "github.com/DataDog/dd-trace-go/v2/contrib/labstack/echo.v4"
+	v2 "github.com/DataDog/dd-trace-go/contrib/labstack/echo.v4/v2"
 
 	"github.com/labstack/echo/v4"
 )

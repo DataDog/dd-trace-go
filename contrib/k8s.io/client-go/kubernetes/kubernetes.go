@@ -9,7 +9,7 @@ package kubernetes // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/k8s.io/cli
 import (
 	"net/http"
 
-	v2 "github.com/DataDog/dd-trace-go/v2/contrib/k8s.io/client-go/kubernetes"
+	v2 "github.com/DataDog/dd-trace-go/contrib/k8s.io/client-go/v2/kubernetes"
 	httptrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http"
 )
 

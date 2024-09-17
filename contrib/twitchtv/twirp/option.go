@@ -6,7 +6,7 @@
 package twirp
 
 import (
-	v2 "github.com/DataDog/dd-trace-go/v2/contrib/twitchtv/twirp"
+	v2 "github.com/DataDog/dd-trace-go/contrib/twitchtv/twirp/v2"
 )
 
 // Option represents an option that can be passed to Dial.

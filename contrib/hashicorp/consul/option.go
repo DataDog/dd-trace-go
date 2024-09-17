@@ -6,7 +6,7 @@
 package consul
 
 import (
-	v2 "github.com/DataDog/dd-trace-go/v2/contrib/hashicorp/consul"
+	v2 "github.com/DataDog/dd-trace-go/contrib/hashicorp/consul/v2"
 
 	consul "github.com/hashicorp/consul/api"
 )

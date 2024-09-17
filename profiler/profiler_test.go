@@ -13,18 +13,26 @@ import (
 	"io"
 	"math"
 	"math/rand"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path"
+	"runtime"
 	"runtime/trace"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/httpmem"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/orchestrion"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/traceprof"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -203,6 +211,63 @@ func doOneShortProfileUpload(t *testing.T, opts ...Option) profileMeta {
 	return <-startTestProfiler(t, 1, opts...)
 }
 
+func TestAllUploaded(t *testing.T) {
+	// This is a kind of end-to-end test that runs the real profiles (i.e.
+	// not mocking/replacing any internal functions) and verifies that the
+	// profiles are at least uploaded.
+	//
+	// TODO: Further check that the uploaded profiles are all valid
+
+	var customLabelKeys []string
+	for i := 0; i < 50; i++ {
+		customLabelKeys = append(customLabelKeys, strconv.Itoa(i))
+	}
+
+	t.Setenv("DD_PROFILING_WAIT_PROFILE", "1")
+	t.Setenv("DD_PROFILING_EXECUTION_TRACE_PERIOD", "10ms") // match profile period
+	// The channel is buffered with 2 entries so we can check that the
+	// second batch of profiles is correct in case the profiler gets in a
+	// bad state after the first round of profiling.
+	profiles := startTestProfiler(t, 2,
+		WithProfileTypes(
+			BlockProfile,
+			CPUProfile,
+			GoroutineProfile,
+			HeapProfile,
+			MutexProfile,
+		),
+		WithPeriod(10*time.Millisecond),
+		CPUDuration(1*time.Millisecond),
+		WithCustomProfilerLabelKeys(customLabelKeys...),
+	)
+
+	validateProfile := func(profile profileMeta, seq uint64) {
+		expected := []string{
+			"cpu.pprof",
+			"delta-block.pprof",
+			"delta-heap.pprof",
+			"delta-mutex.pprof",
+			"goroutines.pprof",
+			"goroutineswait.pprof",
+		}
+		if executionTraceEnabledDefault {
+			expected = append(expected, "go.trace")
+		}
+		assert.ElementsMatch(t, expected, profile.event.Attachments)
+		assert.ElementsMatch(t, customLabelKeys[:customProfileLabelLimit], profile.event.CustomAttributes)
+
+		assert.Contains(t, profile.tags, fmt.Sprintf("profile_seq:%d", seq))
+
+		assert.Equal(t, profile.event.Version, "4")
+		assert.Equal(t, profile.event.Family, "go")
+		assert.NotNil(t, profile.event.Start)
+		assert.NotNil(t, profile.event.End)
+	}
+
+	validateProfile(<-profiles, 0)
+	validateProfile(<-profiles, 1)
+}
+
 func TestCorrectTags(t *testing.T) {
 	profiles := startTestProfiler(t, 1,
 		WithProfileTypes(HeapProfile),
@@ -218,6 +283,14 @@ func TestCorrectTags(t *testing.T) {
 		"foo:bar",
 		"service:xyz",
 		"host:example",
+		"runtime:go",
+		fmt.Sprintf("process_id:%d", os.Getpid()),
+		fmt.Sprintf("profiler_version:%s", version.Tag),
+		fmt.Sprintf("runtime_version:%s", strings.TrimPrefix(runtime.Version(), "go")),
+		fmt.Sprintf("runtime_compiler:%s", runtime.Compiler),
+		fmt.Sprintf("runtime_arch:%s", runtime.GOARCH),
+		fmt.Sprintf("runtime_os:%s", runtime.GOOS),
+		fmt.Sprintf("runtime-id:%s", globalconfig.RuntimeID()),
 	}
 	for i := 0; i < 20; i++ {
 		// We check the tags we get several times to try to have a
@@ -512,4 +585,68 @@ func TestVersionResolution(t *testing.T) {
 		assert.Contains(t, data.tags, "Version:4.5.6")
 		assert.NotContains(t, data.tags, "version:7.8.9")
 	})
+}
+
+func TestUDSDefault(t *testing.T) {
+	dir := t.TempDir()
+	socket := path.Join(dir, "agent.socket")
+
+	orig := internal.DefaultTraceAgentUDSPath
+	defer func() {
+		internal.DefaultTraceAgentUDSPath = orig
+	}()
+	internal.DefaultTraceAgentUDSPath = socket
+
+	profiles := make(chan profileMeta, 1)
+	backend := &mockBackend{t: t, profiles: profiles}
+	mux := http.NewServeMux()
+	// Specifically set up a handler for /profiling/v1/input to test that we
+	// don't use the filesystem path to the Unix domain socket in the HTTP
+	// request path.
+	mux.Handle("/profiling/v1/input", backend)
+	server := httptest.NewUnstartedServer(mux)
+	l, err := net.Listen("unix", socket)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer l.Close()
+	server.Listener = l
+	server.Start()
+	defer server.Close()
+
+	err = Start(WithProfileTypes(), WithPeriod(10*time.Millisecond))
+	require.NoError(t, err)
+	defer Stop()
+
+	<-profiles
+}
+
+func TestOrchestrionProfileInfo(t *testing.T) {
+	testCases := []struct {
+		env  string
+		want string
+	}{
+		{want: "manual"},
+		{env: "1", want: "manual"},
+		{env: "true", want: "manual"},
+		{env: "auto", want: "auto"},
+	}
+	for _, tc := range testCases {
+		t.Run(fmt.Sprintf("env=\"%s\"", tc.env), func(t *testing.T) {
+			t.Setenv("DD_PROFILING_ENABLED", tc.env)
+			p := doOneShortProfileUpload(t)
+			info := p.event.Info.Profiler
+			t.Logf("%+v", info)
+			if got := info.Activation; got != tc.want {
+				t.Errorf("wanted profiler activation \"%s\", got %s", tc.want, got)
+			}
+			want := "none"
+			if orchestrion.Enabled() {
+				want = "orchestrion"
+			}
+			if got := info.SSI.Mechanism; got != want {
+				t.Errorf("wanted profiler injected = %v, got %v", want, got)
+			}
+		})
+	}
 }

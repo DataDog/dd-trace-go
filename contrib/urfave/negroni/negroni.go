@@ -7,7 +7,7 @@
 package negroni
 
 import (
-	v2 "github.com/DataDog/dd-trace-go/v2/contrib/urfave/negroni"
+	v2 "github.com/DataDog/dd-trace-go/contrib/urfave/negroni/v2"
 )
 
 // DatadogMiddleware returns middleware that will trace incoming requests.

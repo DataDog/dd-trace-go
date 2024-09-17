@@ -7,7 +7,7 @@
 package mgo // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/globalsign/mgo"
 
 import (
-	v2 "github.com/DataDog/dd-trace-go/v2/contrib/globalsign/mgo"
+	v2 "github.com/DataDog/dd-trace-go/contrib/globalsign/mgo/v2"
 )
 
 // Dial opens a connection to a MongoDB server and configures it

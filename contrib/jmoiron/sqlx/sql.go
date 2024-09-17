@@ -12,7 +12,7 @@
 package sqlx // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/jmoiron/sqlx"
 
 import (
-	v2 "github.com/DataDog/dd-trace-go/v2/contrib/jmoiron/sqlx"
+	v2 "github.com/DataDog/dd-trace-go/contrib/jmoiron/sqlx/v2"
 	sqltraced "gopkg.in/DataDog/dd-trace-go.v1/contrib/database/sql"
 
 	"github.com/jmoiron/sqlx"

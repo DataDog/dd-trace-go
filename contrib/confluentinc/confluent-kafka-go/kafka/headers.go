@@ -6,7 +6,7 @@
 package kafka
 
 import (
-	v2 "github.com/DataDog/dd-trace-go/v2/contrib/confluentinc/confluent-kafka-go/kafka"
+	v2 "github.com/DataDog/dd-trace-go/contrib/confluentinc/confluent-kafka-go/kafka/v2"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 
 	"github.com/confluentinc/confluent-kafka-go/kafka"

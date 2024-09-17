@@ -6,7 +6,7 @@
 package gorm
 
 import (
-	v2 "github.com/DataDog/dd-trace-go/v2/contrib/gorm.io/gorm.v1"
+	v2 "github.com/DataDog/dd-trace-go/contrib/gorm.io/gorm.v1/v2"
 
 	"gorm.io/gorm"
 )

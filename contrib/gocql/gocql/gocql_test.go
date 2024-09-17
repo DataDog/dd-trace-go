@@ -26,7 +26,6 @@ import (
 )
 
 const (
-	debug         = false
 	cassandraHost = "127.0.0.1:9042"
 )
 
@@ -43,12 +42,6 @@ func newTracedCassandraCluster(opts ...WrapOption) *ClusterConfig {
 }
 
 func updateTestClusterConfig(cfg *gocql.ClusterConfig) {
-	// the InitialHostLookup must be disabled in newer versions of
-	// gocql otherwise "no connections were made when creating the session"
-	// error is returned for Cassandra misconfiguration (that we don't need
-	// since we're testing another behavior and not the client).
-	// Check: https://github.com/gocql/gocql/issues/946
-	cfg.DisableInitialHostLookup = true
 	// the default timeouts (600ms) are sometimes too short in CI and cause
 	// PRs being tested to flake due to this integration.
 	cfg.ConnectTimeout = 2 * time.Second
@@ -105,7 +98,8 @@ func TestErrorWrapper(t *testing.T) {
 	if iter.Host() != nil {
 		assert.Equal(span.Tag(ext.TargetPort), "9042")
 		assert.Equal(span.Tag(ext.TargetHost), iter.Host().HostID())
-		assert.Equal(span.Tag(ext.CassandraCluster), "datacenter1")
+		assert.Equal(span.Tag(ext.CassandraCluster), "dd-trace-go-test-cluster")
+		assert.Equal(span.Tag(ext.CassandraDatacenter), "dd-trace-go-test-datacenter")
 	}
 }
 
@@ -152,7 +146,71 @@ func TestChildWrapperSpan(t *testing.T) {
 	if iter.Host() != nil {
 		assert.Equal(childSpan.Tag(ext.TargetPort), "9042")
 		assert.Equal(childSpan.Tag(ext.TargetHost), iter.Host().HostID())
-		assert.Equal(childSpan.Tag(ext.CassandraCluster), "datacenter1")
+		assert.Equal(childSpan.Tag(ext.CassandraCluster), "dd-trace-go-test-cluster")
+		assert.Equal(childSpan.Tag(ext.CassandraDatacenter), "dd-trace-go-test-datacenter")
+	}
+}
+
+func TestCompatMode(t *testing.T) {
+	genSpans := func(t *testing.T) []mocktracer.Span {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		cluster := newCassandraCluster()
+		session, err := cluster.CreateSession()
+		require.NoError(t, err)
+
+		q := session.Query("SELECT * FROM trace.person").WithContext(context.Background())
+		tq := WrapQuery(q, WithServiceName("TestServiceName"))
+		iter := tq.Iter()
+		err = iter.Close()
+		require.NoError(t, err)
+
+		spans := mt.FinishedSpans()
+		require.Len(t, spans, 1)
+		return spans
+	}
+	testCases := []struct {
+		name        string
+		gocqlCompat string
+		wantCluster string
+	}{
+		{
+			name:        "== v1.65",
+			gocqlCompat: "v1.65",
+			wantCluster: "dd-trace-go-test-datacenter",
+		},
+		{
+			name:        "< v1.65",
+			gocqlCompat: "v1.64",
+			wantCluster: "dd-trace-go-test-datacenter",
+		},
+		{
+			name:        "> v1.65",
+			gocqlCompat: "v1.66",
+			wantCluster: "dd-trace-go-test-cluster",
+		},
+		{
+			name:        "empty",
+			gocqlCompat: "",
+			wantCluster: "dd-trace-go-test-cluster",
+		},
+		{
+			name:        "bad version",
+			gocqlCompat: "bad-version",
+			wantCluster: "dd-trace-go-test-cluster",
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("DD_TRACE_GOCQL_COMPAT", tc.gocqlCompat)
+			spans := genSpans(t)
+			s := spans[0]
+			assert.Equal(t, s.Tag(ext.TargetPort), "9042")
+			assert.NotEmpty(t, s.Tag(ext.TargetHost))
+			assert.Equal(t, tc.wantCluster, s.Tag(ext.CassandraCluster))
+			assert.Equal(t, "dd-trace-go-test-datacenter", s.Tag(ext.CassandraDatacenter))
+		})
 	}
 }
 

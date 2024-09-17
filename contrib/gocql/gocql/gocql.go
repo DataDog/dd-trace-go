@@ -7,7 +7,7 @@
 package gocql // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/gocql/gocql"
 
 import (
-	v2 "github.com/DataDog/dd-trace-go/v2/contrib/gocql/gocql"
+	v2 "github.com/DataDog/dd-trace-go/contrib/gocql/gocql/v2"
 
 	"github.com/gocql/gocql"
 )
@@ -16,6 +16,9 @@ import (
 type ClusterConfig = v2.ClusterConfig
 
 // NewCluster calls gocql.NewCluster and returns a wrapped instrumented version of it.
+//
+// Deprecated: use the Observer based method CreateTracedSession instead, which allows to use
+// native gocql types instead of wrapped types.
 func NewCluster(hosts []string, opts ...WrapOption) *ClusterConfig {
 	return v2.NewCluster(hosts, opts...)
 }
@@ -39,7 +42,8 @@ type Batch = v2.Batch
 // of `WithContext` and `PageState` but not that of `Consistency`, `Trace`,
 // `Observer`, etc.
 //
-// Deprecated: initialize your ClusterConfig with NewCluster instead.
+// Deprecated: use the Observer based method CreateTracedSession instead, which allows to use
+// native gocql types instead of wrapped types.
 func WrapQuery(q *gocql.Query, opts ...WrapOption) *Query {
 	return v2.WrapQuery(q, opts...)
 }
@@ -60,7 +64,8 @@ type Scanner = v2.Scanner
 // of `WithContext` and `WithTimestamp` but not that of `SerialConsistency`, `Trace`,
 // `Observer`, etc.
 //
-// Deprecated: initialize your ClusterConfig with NewCluster instead.
+// Deprecated: use the Observer based method CreateTracedSession instead, which allows to use
+// native gocql types instead of wrapped types.
 func WrapBatch(b *gocql.Batch, opts ...WrapOption) *Batch {
 	return v2.WrapBatch(b, opts...)
 }

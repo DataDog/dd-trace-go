@@ -8,7 +8,7 @@ package kafka
 import (
 	"context"
 
-	v2 "github.com/DataDog/dd-trace-go/v2/contrib/confluentinc/confluent-kafka-go/kafka"
+	v2 "github.com/DataDog/dd-trace-go/contrib/confluentinc/confluent-kafka-go/kafka/v2"
 
 	"github.com/confluentinc/confluent-kafka-go/kafka"
 )

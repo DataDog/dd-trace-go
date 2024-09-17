@@ -9,7 +9,7 @@ package redigo
 import (
 	"context"
 
-	v2 "github.com/DataDog/dd-trace-go/v2/contrib/gomodule/redigo"
+	v2 "github.com/DataDog/dd-trace-go/contrib/gomodule/redigo/v2"
 
 	redis "github.com/gomodule/redigo/redis"
 )

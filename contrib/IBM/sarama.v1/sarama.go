@@ -7,7 +7,7 @@
 package sarama // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/IBM/sarama"
 
 import (
-	v2 "github.com/DataDog/dd-trace-go/v2/contrib/IBM/sarama"
+	v2 "github.com/DataDog/dd-trace-go/contrib/IBM/sarama/v2"
 
 	"github.com/IBM/sarama"
 )

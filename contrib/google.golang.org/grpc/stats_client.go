@@ -6,7 +6,7 @@
 package grpc
 
 import (
-	v2 "github.com/DataDog/dd-trace-go/v2/contrib/google.golang.org/grpc"
+	v2 "github.com/DataDog/dd-trace-go/contrib/google.golang.org/grpc/v2"
 	"google.golang.org/grpc/stats"
 )
 

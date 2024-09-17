@@ -6,7 +6,7 @@
 package mgo
 
 import (
-	v2 "github.com/DataDog/dd-trace-go/v2/contrib/globalsign/mgo"
+	v2 "github.com/DataDog/dd-trace-go/contrib/globalsign/mgo/v2"
 )
 
 // Collection provides a mgo.Collection along with

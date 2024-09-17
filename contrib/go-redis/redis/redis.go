@@ -8,7 +8,7 @@
 package redis
 
 import (
-	v2 "github.com/DataDog/dd-trace-go/v2/contrib/go-redis/redis"
+	v2 "github.com/DataDog/dd-trace-go/contrib/go-redis/redis/v2"
 
 	"github.com/go-redis/redis"
 )

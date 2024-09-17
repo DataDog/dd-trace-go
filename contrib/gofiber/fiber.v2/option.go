@@ -6,7 +6,7 @@
 package fiber
 
 import (
-	v2 "github.com/DataDog/dd-trace-go/v2/contrib/gofiber/fiber.v2"
+	v2 "github.com/DataDog/dd-trace-go/contrib/gofiber/fiber.v2/v2"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 

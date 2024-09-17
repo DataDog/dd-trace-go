@@ -9,7 +9,7 @@ package httprouter // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/julienschm
 import (
 	"net/http"
 
-	v2 "github.com/DataDog/dd-trace-go/v2/contrib/julienschmidt/httprouter"
+	v2 "github.com/DataDog/dd-trace-go/contrib/julienschmidt/httprouter/v2"
 )
 
 // Router is a traced version of httprouter.Router.

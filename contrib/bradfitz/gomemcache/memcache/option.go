@@ -6,7 +6,7 @@
 package memcache
 
 import (
-	v2 "github.com/DataDog/dd-trace-go/v2/contrib/bradfitz/gomemcache/memcache"
+	v2 "github.com/DataDog/dd-trace-go/contrib/bradfitz/gomemcache/v2/memcache"
 )
 
 // ClientOption represents an option that can be passed to Dial.

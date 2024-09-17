@@ -9,7 +9,7 @@ import (
 	"context"
 	"database/sql/driver"
 
-	v2 "github.com/DataDog/dd-trace-go/v2/contrib/database/sql"
+	v2 "github.com/DataDog/dd-trace-go/contrib/database/sql/v2"
 )
 
 var _ driver.Conn = (*TracedConn)(nil)

@@ -6,7 +6,7 @@
 package gocql
 
 import (
-	v2 "github.com/DataDog/dd-trace-go/v2/contrib/gocql/gocql"
+	v2 "github.com/DataDog/dd-trace-go/contrib/gocql/gocql/v2"
 )
 
 // WrapOption represents an option that can be passed to WrapQuery.
@@ -55,4 +55,28 @@ func WithErrorCheck(fn func(err error) bool) WrapOption {
 // WithCustomTag will attach the value to the span tagged by the key.
 func WithCustomTag(key string, value interface{}) WrapOption {
 	return v2.WithCustomTag(key, value)
+}
+
+// WithTraceQuery will enable tracing for queries (default is true).
+// This option only takes effect in CreateTracedSession and NewObserver.
+func WithTraceQuery(enabled bool) WrapOption {
+	return func(cfg *config) {
+		cfg.traceQuery = enabled
+	}
+}
+
+// WithTraceBatch will enable tracing for batches (default is true).
+// This option only takes effect in CreateTracedSession and NewObserver.
+func WithTraceBatch(enabled bool) WrapOption {
+	return func(cfg *config) {
+		cfg.traceBatch = enabled
+	}
+}
+
+// WithTraceConnect will enable tracing for connections (default is true).
+// This option only takes effect in CreateTracedSession and NewObserver.
+func WithTraceConnect(enabled bool) WrapOption {
+	return func(cfg *config) {
+		cfg.traceConnect = enabled
+	}
 }

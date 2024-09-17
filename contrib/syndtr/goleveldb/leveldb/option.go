@@ -8,7 +8,7 @@ package leveldb
 import (
 	"context"
 
-	v2 "github.com/DataDog/dd-trace-go/v2/contrib/syndtr/goleveldb/leveldb"
+	v2 "github.com/DataDog/dd-trace-go/contrib/syndtr/goleveldb/v2/leveldb"
 )
 
 // Option represents an option that can be used customize the db tracing config.

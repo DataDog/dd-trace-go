@@ -8,7 +8,7 @@ package chi
 import (
 	"net/http"
 
-	v2 "github.com/DataDog/dd-trace-go/v2/contrib/go-chi/chi"
+	v2 "github.com/DataDog/dd-trace-go/contrib/go-chi/chi/v2"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )

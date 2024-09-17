@@ -7,8 +7,7 @@
 package logrus
 
 import (
-	v2 "github.com/DataDog/dd-trace-go/v2/contrib/sirupsen/logrus"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	v2 "github.com/DataDog/dd-trace-go/contrib/sirupsen/logrus/v2"
 
 	"github.com/sirupsen/logrus"
 )
@@ -20,13 +19,5 @@ type DDContextLogHook struct {
 
 // Fire implements logrus.Hook interface, attaches trace and span details found in entry context
 func (d *DDContextLogHook) Fire(e *logrus.Entry) error {
-	span, found := tracer.SpanFromContext(e.Context)
-	if !found {
-		return nil
-	}
-	d.DDContextLogHook.Fire(e)
-	// To keep v1 behavior, we set the trace_id as 64-bit integer.
-	// This is not the default behavior in v2.
-	e.Data["dd.trace_id"] = span.Context().TraceID()
-	return nil
+	return d.DDContextLogHook.Fire(e)
 }

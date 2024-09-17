@@ -30,7 +30,6 @@ func TestWithHeaderTags(t *testing.T) {
 		r.Header.Add("h!e@a-d.e*r", "val2")
 		r.Header.Set("2header", "2val")
 		r.Header.Set("3header", "3val")
-		r.Header.Set("x-datadog-header", "value")
 		w := httptest.NewRecorder()
 		router(opts...).ServeHTTP(w, r)
 		return r
@@ -38,7 +37,7 @@ func TestWithHeaderTags(t *testing.T) {
 	t.Run("default-off", func(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
-		htArgs := []string{"h!e@a-d.e*r", "2header", "3header", "x-datadog-header"}
+		htArgs := []string{"h!e@a-d.e*r", "2header", "3header"}
 		setupReq()
 		spans := mt.FinishedSpans()
 		assert := assert.New(t)
@@ -64,7 +63,6 @@ func TestWithHeaderTags(t *testing.T) {
 			header, tag := normalizer.HeaderTag(arg)
 			assert.Equal(strings.Join(r.Header.Values(header), ","), s.Tags()[tag])
 		}
-		assert.NotContains(s.Tags(), "http.headers.x-datadog-header")
 	})
 
 	t.Run("global", func(t *testing.T) {
@@ -81,7 +79,6 @@ func TestWithHeaderTags(t *testing.T) {
 		s := spans[0]
 
 		assert.Equal(strings.Join(r.Header.Values(header), ","), s.Tags()[tag])
-		assert.NotContains(s.Tags(), "http.headers.x-datadog-header")
 	})
 
 	t.Run("override", func(t *testing.T) {
@@ -102,7 +99,6 @@ func TestWithHeaderTags(t *testing.T) {
 			header, tag := normalizer.HeaderTag(arg)
 			assert.Equal(strings.Join(r.Header.Values(header), ","), s.Tags()[tag])
 		}
-		assert.NotContains(s.Tags(), "http.headers.x-datadog-header")
 		assert.NotContains(s.Tags(), globalT)
 	})
 
@@ -121,7 +117,6 @@ func TestWithHeaderTags(t *testing.T) {
 		r.Header.Add("h!e@a-d.e*r", "val2")
 		r.Header.Set("2header", "2val")
 		r.Header.Set("3header", "3val")
-		r.Header.Set("x-datadog-header", "value")
 		w := httptest.NewRecorder()
 		handler.ServeHTTP(w, r)
 
@@ -290,10 +285,42 @@ func TestServeMuxUsesResourceNamer(t *testing.T) {
 	assert.Equal("net/http", s.Tag(ext.Component))
 }
 
+func TestServeMuxGo122Patterns(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	// A mux with go1.21 patterns ("/bar") and go1.22 patterns ("GET /foo")
+	mux := NewServeMux()
+	mux.HandleFunc("/bar", func(w http.ResponseWriter, r *http.Request) {})
+	mux.HandleFunc("GET /foo", func(w http.ResponseWriter, r *http.Request) {})
+
+	// Try to hit both routes
+	barW := httptest.NewRecorder()
+	mux.ServeHTTP(barW, httptest.NewRequest("GET", "/bar", nil))
+	fooW := httptest.NewRecorder()
+	mux.ServeHTTP(fooW, httptest.NewRequest("GET", "/foo", nil))
+
+	// Assert the number of spans
+	assert := assert.New(t)
+	spans := mt.FinishedSpans()
+	assert.Equal(2, len(spans))
+
+	// Check the /bar span
+	barSpan := spans[0]
+	assert.Equal(http.StatusOK, barW.Code)
+	assert.Equal("/bar", barSpan.Tag(ext.HTTPRoute))
+	assert.Equal("GET /bar", barSpan.Tag(ext.ResourceName))
+
+	// Check the /foo span
+	fooSpan := spans[1]
+	assert.Equal(http.StatusOK, fooW.Code)
+	assert.Equal("/foo", fooSpan.Tag(ext.HTTPRoute))
+	assert.Equal("GET /foo", fooSpan.Tag(ext.ResourceName))
+}
+
 func TestWrapHandlerWithResourceNameNoRace(_ *testing.T) {
 	mt := mocktracer.Start()
 	defer mt.Stop()
-	r := httptest.NewRequest("GET", "/", nil)
 	resourceNamer := func(_ *http.Request) string {
 		return "custom-resource-name"
 	}
@@ -305,8 +332,9 @@ func TestWrapHandlerWithResourceNameNoRace(_ *testing.T) {
 	for i := 0; i < 10; i++ {
 		wg.Add(1)
 		go func() {
-			w := httptest.NewRecorder()
 			defer wg.Done()
+			w := httptest.NewRecorder()
+			r := httptest.NewRequest("GET", "/", nil)
 			mux.ServeHTTP(w, r)
 		}()
 	}
@@ -507,7 +535,6 @@ func BenchmarkHttpServeTrace(b *testing.B) {
 	r.Header.Add("h!e@a-d.e*r", "val2")
 	r.Header.Set("2header", "2val")
 	r.Header.Set("3header", "some much bigger header value that you could possibly use")
-	r.Header.Set("x-datadog-header", "value")
 	r.Header.Set("Accept", "application/json")
 	r.Header.Set("User-Agent", "2val")
 	r.Header.Set("Accept-Charset", "utf-8")

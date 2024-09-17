@@ -6,7 +6,7 @@
 package pubsub
 
 import (
-	v2 "github.com/DataDog/dd-trace-go/v2/contrib/cloud.google.com/go/pubsub.v1"
+	v2 "github.com/DataDog/dd-trace-go/contrib/cloud.google.com/go/pubsub.v1/v2"
 )
 
 // A Option is used to customize spans started by WrapReceiveHandler or Publish.

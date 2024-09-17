@@ -6,7 +6,7 @@
 package vault
 
 import (
-	v2 "github.com/DataDog/dd-trace-go/v2/contrib/hashicorp/vault"
+	v2 "github.com/DataDog/dd-trace-go/contrib/hashicorp/vault/v2"
 )
 
 const defaultServiceName = "vault"

@@ -3,10 +3,11 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
-package grpc
+package ext
 
-// Tags used for gRPC
 const (
-	tagMethod = "grpc.method"
-	tagCode   = "grpc.code"
+	// LogKeyTraceID is used by log integrations to correlate logs with a given trace.
+	LogKeyTraceID = "dd.trace_id"
+	// LogKeySpanID is used by log integrations to correlate logs with a given span.
+	LogKeySpanID = "dd.span_id"
 )

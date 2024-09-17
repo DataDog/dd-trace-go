@@ -6,7 +6,7 @@
 package kafka
 
 import (
-	v2 "github.com/DataDog/dd-trace-go/v2/contrib/segmentio/kafka-go"
+	v2 "github.com/DataDog/dd-trace-go/contrib/segmentio/kafka-go/v2"
 )
 
 // An Option customizes the config.

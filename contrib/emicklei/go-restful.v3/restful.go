@@ -7,7 +7,7 @@
 package restful
 
 import (
-	v2 "github.com/DataDog/dd-trace-go/v2/contrib/emicklei/go-restful.v3"
+	v2 "github.com/DataDog/dd-trace-go/contrib/emicklei/go-restful.v3/v2"
 
 	"github.com/emicklei/go-restful/v3"
 )

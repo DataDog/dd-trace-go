@@ -6,7 +6,7 @@
 package sarama
 
 import (
-	v2 "github.com/DataDog/dd-trace-go/v2/contrib/IBM/sarama"
+	v2 "github.com/DataDog/dd-trace-go/contrib/IBM/sarama/v2"
 )
 
 // An Option is used to customize the config for the sarama tracer.
@@ -15,6 +15,20 @@ type Option = v2.Option
 // WithServiceName sets the given service name for the intercepted client.
 func WithServiceName(name string) Option {
 	return v2.WithService(name)
+}
+
+// WithDataStreams enables the Data Streams monitoring product features: https://www.datadoghq.com/product/data-streams-monitoring/
+func WithDataStreams() Option {
+	return func(cfg *config) {
+		cfg.dataStreamsEnabled = true
+	}
+}
+
+// WithGroupID tags the produced data streams metrics with the given groupID (aka consumer group)
+func WithGroupID(groupID string) Option {
+	return func(cfg *config) {
+		cfg.groupID = groupID
+	}
 }
 
 // WithAnalytics enables Trace Analytics for all started spans.

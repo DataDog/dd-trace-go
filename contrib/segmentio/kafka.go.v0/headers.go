@@ -6,7 +6,7 @@
 package kafka
 
 import (
-	v2 "github.com/DataDog/dd-trace-go/v2/contrib/segmentio/kafka-go"
+	v2 "github.com/DataDog/dd-trace-go/contrib/segmentio/kafka-go/v2"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 

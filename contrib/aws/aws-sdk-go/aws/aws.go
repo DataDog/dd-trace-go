@@ -7,7 +7,7 @@
 package aws // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/aws/aws-sdk-go/aws"
 
 import (
-	v2 "github.com/DataDog/dd-trace-go/v2/contrib/aws/aws-sdk-go/aws"
+	v2 "github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go/v2/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
 )
 

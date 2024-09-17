@@ -6,7 +6,7 @@
 package pg
 
 import (
-	v2 "github.com/DataDog/dd-trace-go/v2/contrib/go-pg/pg.v10"
+	v2 "github.com/DataDog/dd-trace-go/contrib/go-pg/pg.v10/v2"
 )
 
 // Option represents an option that can be used to create or wrap a client.

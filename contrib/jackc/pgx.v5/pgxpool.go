@@ -8,7 +8,7 @@ package pgx
 import (
 	"context"
 
-	v2 "github.com/DataDog/dd-trace-go/v2/contrib/jackc/pgx.v5"
+	v2 "github.com/DataDog/dd-trace-go/contrib/jackc/pgx.v5/v2"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )

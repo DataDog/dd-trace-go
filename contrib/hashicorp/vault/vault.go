@@ -19,7 +19,7 @@ package vault
 import (
 	"net/http"
 
-	v2 "github.com/DataDog/dd-trace-go/v2/contrib/hashicorp/vault"
+	v2 "github.com/DataDog/dd-trace-go/contrib/hashicorp/vault/v2"
 )
 
 // NewHTTPClient returns an http.Client for use in the Vault API config

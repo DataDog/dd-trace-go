@@ -6,7 +6,7 @@
 package redis // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/go-redis/redis"
 
 import (
-	v2 "github.com/DataDog/dd-trace-go/v2/contrib/go-redis/redis"
+	v2 "github.com/DataDog/dd-trace-go/contrib/go-redis/redis/v2"
 )
 
 // ClientOption represents an option that can be used to create or wrap a client.

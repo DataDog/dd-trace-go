@@ -12,7 +12,7 @@
 package memcache // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/bradfitz/gomemcache/memcache"
 
 import (
-	v2 "github.com/DataDog/dd-trace-go/v2/contrib/bradfitz/gomemcache/memcache"
+	v2 "github.com/DataDog/dd-trace-go/contrib/bradfitz/gomemcache/v2/memcache"
 
 	"github.com/bradfitz/gomemcache/memcache"
 )

@@ -14,10 +14,8 @@ package graphql // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/graph-gophers
 import (
 	"context"
 
-	v2 "github.com/DataDog/dd-trace-go/v2/contrib/graph-gophers/graphql-go"
-
+	v2 "github.com/DataDog/dd-trace-go/contrib/graph-gophers/graphql-go/v2"
 	"github.com/graph-gophers/graphql-go/introspection"
-	"github.com/graph-gophers/graphql-go/trace/tracer"
 )
 
 const (
@@ -31,7 +29,7 @@ const (
 // A Tracer implements the graphql-go/trace.Tracer interface by sending traces
 // to the Datadog tracer.
 type Tracer struct {
-	tracer.Tracer
+	v2.Tracer
 }
 
 var _ tracer.Tracer = (*Tracer)(nil)
@@ -48,6 +46,7 @@ func (t *Tracer) TraceField(ctx context.Context, _, typeName, fieldName string, 
 
 // NewTracer creates a new Tracer.
 func NewTracer(opts ...Option) tracer.Tracer {
-	t := v2.NewTracer(opts...)
-	return &Tracer{t}
+	return &Tracer{
+		Tracer: v2.NewTracer(opts...),
+	}
 }

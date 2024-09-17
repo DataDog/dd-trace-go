@@ -7,7 +7,7 @@
 package gin // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/gin-gonic/gin"
 
 import (
-	v2 "github.com/DataDog/dd-trace-go/v2/contrib/gin-gonic/gin"
+	v2 "github.com/DataDog/dd-trace-go/contrib/gin-gonic/gin/v2"
 
 	"github.com/gin-gonic/gin"
 )

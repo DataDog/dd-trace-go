@@ -20,7 +20,6 @@ func HeaderTag(headerAsTag string) (header string, tag string) {
 }
 
 // HeaderTagSlice accepts a slice of strings that contain headers and optional mapped tag key.
-// Headers beginning with "x-datadog-" are ignored.
 // See HeaderTag for details on formatting.
 func HeaderTagSlice(headers []string) map[string]string {
 	return normalizer.HeaderTagSlice(headers)

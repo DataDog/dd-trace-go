@@ -6,7 +6,7 @@
 package httprouter
 
 import (
-	v2 "github.com/DataDog/dd-trace-go/v2/contrib/julienschmidt/httprouter"
+	v2 "github.com/DataDog/dd-trace-go/contrib/julienschmidt/httprouter/v2"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )

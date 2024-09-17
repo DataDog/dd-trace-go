@@ -9,7 +9,7 @@ import (
 	"context"
 	"net"
 
-	v2 "github.com/DataDog/dd-trace-go/v2/contrib/miekg/dns"
+	v2 "github.com/DataDog/dd-trace-go/contrib/miekg/dns/v2"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 
 	"github.com/miekg/dns"

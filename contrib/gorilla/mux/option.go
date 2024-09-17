@@ -8,7 +8,7 @@ package mux
 import (
 	"net/http"
 
-	v2 "github.com/DataDog/dd-trace-go/v2/contrib/gorilla/mux"
+	v2 "github.com/DataDog/dd-trace-go/contrib/gorilla/mux/v2"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )

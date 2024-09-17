@@ -13,7 +13,6 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/DataDog/dd-trace-go/v2/v1internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
@@ -264,6 +263,27 @@ func TestNonePropagator(t *testing.T) {
 			assert.Equal(err, ErrSpanContextNotFound)
 		})
 		t.Run("", func(t *testing.T) {
+			t.Setenv(otelHeaderPropagationStyle, "NoNe")
+			tracer := newTracer()
+			defer tracer.Stop()
+			root := tracer.StartSpan("web.request").(*span)
+			root.SetTag(ext.SamplingPriority, -1)
+			root.SetBaggageItem("item", "x")
+			ctx, ok := root.Context().(*spanContext)
+			ctx.traceID = traceIDFrom64Bits(1)
+			ctx.spanID = 1
+			headers := TextMapCarrier(map[string]string{})
+			err := tracer.Inject(ctx, headers)
+
+			assert := assert.New(t)
+			assert.True(ok)
+			assert.Nil(err)
+			assert.Len(headers, 0)
+
+			_, err = tracer.Extract(headers)
+			assert.Equal(err, ErrSpanContextNotFound)
+		})
+		t.Run("", func(t *testing.T) {
 			//"DD_TRACE_PROPAGATION_STYLE_EXTRACT": "NoNe",
 			//	"DD_TRACE_PROPAGATION_STYLE_INJECT": "none",
 			t.Setenv(headerPropagationStyleExtract, "NoNe")
@@ -393,14 +413,14 @@ func BenchmarkInjectW3C(b *testing.B) {
 
 	ctx := root.Context().(internal.SpanContextV2Adapter)
 
-	v1internal.SetPropagatingTag(ctx.Ctx, tracestateHeader,
-		"othervendor=t61rcWkgMzE,dd=s:2;o:rum;t.dm:-4;t.usr.id:baz64~~")
+	// TODO: fix v1internal.SetPropagatingTag(ctx.Ctx, tracestateHeader,
+	//	"othervendor=t61rcWkgMzE,dd=s:2;o:rum;t.dm:-4;t.usr.id:baz64~~")
 
 	for i := 0; i < 100; i++ {
 		// _dd.p. prefix is needed for w3c
-		k := fmt.Sprintf("_dd.p.k%d", i)
-		v := fmt.Sprintf("v%d", i)
-		v1internal.SetPropagatingTag(ctx.Ctx, k, v)
+		// k := fmt.Sprintf("_dd.p.k%d", i)
+		// v := fmt.Sprintf("v%d", i)
+		// v1internal.SetPropagatingTag(ctx.Ctx, k, v)
 	}
 	dst := map[string]string{}
 

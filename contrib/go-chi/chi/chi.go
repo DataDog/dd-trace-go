@@ -9,7 +9,7 @@ package chi // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/go-chi/chi"
 import (
 	"net/http"
 
-	v2 "github.com/DataDog/dd-trace-go/v2/contrib/go-chi/chi"
+	v2 "github.com/DataDog/dd-trace-go/contrib/go-chi/chi/v2"
 )
 
 // Middleware returns middleware that will trace incoming requests.

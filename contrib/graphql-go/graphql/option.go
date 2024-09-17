@@ -6,7 +6,7 @@
 package graphql
 
 import (
-	v2 "github.com/DataDog/dd-trace-go/v2/contrib/graphql-go/graphql"
+	v2 "github.com/DataDog/dd-trace-go/contrib/graphql-go/graphql/v2"
 )
 
 type Option = v2.Option

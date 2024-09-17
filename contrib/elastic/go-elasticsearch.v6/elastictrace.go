@@ -9,7 +9,7 @@ package elastic // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/elastic/go-el
 import (
 	"net/http"
 
-	v2 "github.com/DataDog/dd-trace-go/v2/contrib/elastic/go-elasticsearch.v6"
+	v2 "github.com/DataDog/dd-trace-go/contrib/elastic/go-elasticsearch.v6/v2"
 )
 
 // NewRoundTripper returns a new http.Client which traces requests under the given service name.

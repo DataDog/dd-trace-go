@@ -6,6 +6,7 @@ package telemetrytest
 
 import (
 	"encoding/json"
+	"os"
 	"os/exec"
 	"strings"
 	"testing"
@@ -51,10 +52,30 @@ func (p *contribPkg) isV2Frontend() bool {
 	return false
 }
 
-func (p *contribPkg) hasTelemetryImport() bool {
+func readPackage(t *testing.T, path string) contribPkg {
+	cmd := exec.Command("go", "list", "-json", path)
+	cmd.Stderr = os.Stderr
+	output, err := cmd.Output()
+	require.NoError(t, err)
+	p := contribPkg{}
+	err = json.Unmarshal(output, &p)
+	require.NoError(t, err)
+	return p
+}
+
+func (p *contribPkg) hasTelemetryImport(t *testing.T) bool {
 	for _, imp := range p.Imports {
 		if imp == TelemetryImport {
 			return true
+		}
+	}
+	// if we didn't find it imported directly, it might be imported in one of sub-package imports
+	for _, imp := range p.Imports {
+		if strings.HasPrefix(imp, p.ImportPath) {
+			p := readPackage(t, imp)
+			if p.hasTelemetryImport(t) {
+				return true
+			}
 		}
 	}
 	return false
@@ -63,17 +84,14 @@ func (p *contribPkg) hasTelemetryImport() bool {
 // TestTelemetryEnabled verifies that the expected contrib packages leverage instrumentation telemetry
 func TestTelemetryEnabled(t *testing.T) {
 	body, err := exec.Command("go", "list", "-json", "../../...").Output()
-	if err != nil {
-		t.Fatalf(err.Error())
-	}
+	require.NoError(t, err)
+
 	var packages []contribPkg
 	stream := json.NewDecoder(strings.NewReader(string(body)))
 	for stream.More() {
 		var out contribPkg
 		err := stream.Decode(&out)
-		if err != nil {
-			t.Fatalf(err.Error())
-		}
+		require.NoError(t, err)
 		packages = append(packages, out)
 	}
 	for _, pkg := range packages {
@@ -83,7 +101,7 @@ func TestTelemetryEnabled(t *testing.T) {
 		if pkg.isV2Frontend() {
 			continue
 		}
-		if !pkg.hasTelemetryImport() {
+		if !pkg.hasTelemetryImport(t) {
 			t.Fatalf(`package %q is expected use instrumentation telemetry. For more info see https://github.com/DataDog/dd-trace-go/blob/main/contrib/README.md#instrumentation-telemetry`, pkg.ImportPath)
 		}
 	}

@@ -10,7 +10,7 @@ package twirp // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/twitchtv/twirp"
 import (
 	"net/http"
 
-	v2 "github.com/DataDog/dd-trace-go/v2/contrib/twitchtv/twirp"
+	v2 "github.com/DataDog/dd-trace-go/contrib/twitchtv/twirp/v2"
 
 	"github.com/twitchtv/twirp"
 )

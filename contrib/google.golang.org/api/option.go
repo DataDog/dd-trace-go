@@ -8,7 +8,7 @@ package api
 import (
 	"context"
 
-	v2 "github.com/DataDog/dd-trace-go/v2/contrib/google.golang.org/api"
+	v2 "github.com/DataDog/dd-trace-go/contrib/google.golang.org/api/v2"
 )
 
 // An Option customizes the config.

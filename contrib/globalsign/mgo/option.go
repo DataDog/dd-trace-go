@@ -8,7 +8,7 @@ package mgo
 import (
 	"context"
 
-	v2 "github.com/DataDog/dd-trace-go/v2/contrib/globalsign/mgo"
+	v2 "github.com/DataDog/dd-trace-go/contrib/globalsign/mgo/v2"
 )
 
 // DialOption represents an option that can be passed to Dial

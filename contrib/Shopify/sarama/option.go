@@ -6,7 +6,7 @@
 package sarama
 
 import (
-	v2 "github.com/DataDog/dd-trace-go/v2/contrib/Shopify/sarama"
+	v2 "github.com/DataDog/dd-trace-go/contrib/Shopify/sarama/v2"
 )
 
 // An Option is used to customize the config for the sarama tracer.

@@ -8,7 +8,7 @@ package http
 import (
 	"net/http"
 
-	v2 "github.com/DataDog/dd-trace-go/v2/contrib/net/http"
+	v2 "github.com/DataDog/dd-trace-go/contrib/net/http/v2"
 )
 
 // WrapRoundTripper returns a new RoundTripper which traces all requests sent

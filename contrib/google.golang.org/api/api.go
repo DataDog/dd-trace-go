@@ -19,7 +19,7 @@ import (
 	_ "embed"
 	"net/http"
 
-	v2 "github.com/DataDog/dd-trace-go/v2/contrib/google.golang.org/api"
+	v2 "github.com/DataDog/dd-trace-go/contrib/google.golang.org/api/v2"
 )
 
 // NewClient creates a new oauth http client suitable for use with the google

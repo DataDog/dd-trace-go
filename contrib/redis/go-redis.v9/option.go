@@ -6,7 +6,7 @@
 package redis
 
 import (
-	v2 "github.com/DataDog/dd-trace-go/v2/contrib/redis/go-redis.v9"
+	v2 "github.com/DataDog/dd-trace-go/contrib/redis/go-redis.v9/v2"
 )
 
 // ClientOption represents an option that can be used to create or wrap a client.

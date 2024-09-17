@@ -6,7 +6,7 @@
 package pgx
 
 import (
-	v2 "github.com/DataDog/dd-trace-go/v2/contrib/jackc/pgx.v5"
+	v2 "github.com/DataDog/dd-trace-go/contrib/jackc/pgx.v5/v2"
 )
 
 type Option = v2.Option
@@ -31,6 +31,13 @@ func WithTraceCopyFrom(enabled bool) Option {
 	return v2.WithTraceCopyFrom(enabled)
 }
 
+// WithTraceAcquire enables tracing pgxpool connection acquire calls.
+func WithTraceAcquire(enabled bool) Option {
+	return func(c *config) {
+		c.traceAcquire = enabled
+	}
+}
+
 // WithTracePrepare enables tracing prepared statements.
 //
 //	conn, err := pgx.Connect(ctx, "postgres://user:pass@example.com:5432/dbname", pgx.WithTraceConnect())
@@ -50,4 +57,11 @@ func WithTracePrepare(enabled bool) Option {
 //	pgx.Connect(ctx, "postgres://user:pass@example.com:5432/dbname", pgx.WithTraceConnect())
 func WithTraceConnect(enabled bool) Option {
 	return v2.WithTraceConnect(enabled)
+}
+
+// WithPoolStats enables polling of pgxpool.Stat metrics
+// ref: https://pkg.go.dev/github.com/jackc/pgx/v5/pgxpool#Stat
+// These metrics are submitted to Datadog and are not billed as custom metrics
+func WithPoolStats() Option {
+	return v2.WithPoolStats()
 }

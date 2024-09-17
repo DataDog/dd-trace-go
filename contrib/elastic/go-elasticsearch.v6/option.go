@@ -8,7 +8,7 @@ package elastic
 import (
 	"net/http"
 
-	v2 "github.com/DataDog/dd-trace-go/v2/contrib/elastic/go-elasticsearch.v6"
+	v2 "github.com/DataDog/dd-trace-go/contrib/elastic/go-elasticsearch.v6/v2"
 )
 
 // ClientOption represents an option that can be used when creating a client.

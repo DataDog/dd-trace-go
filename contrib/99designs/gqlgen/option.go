@@ -6,7 +6,7 @@
 package gqlgen
 
 import (
-	v2 "github.com/DataDog/dd-trace-go/v2/contrib/99designs/gqlgen"
+	v2 "github.com/DataDog/dd-trace-go/contrib/99designs/gqlgen/v2"
 )
 
 const defaultServiceName = "graphql"
@@ -27,6 +27,21 @@ func WithAnalyticsRate(rate float64) Option {
 // WithServiceName sets the given service name for the gqlgen server.
 func WithServiceName(name string) Option {
 	return v2.WithService(name)
+}
+
+// WithoutTraceIntrospectionQuery skips creating spans for fields when the operation name is IntrospectionQuery.
+func WithoutTraceIntrospectionQuery() Option {
+	return func(cfg *config) {
+		cfg.withoutTraceIntrospectionQuery = true
+	}
+}
+
+// WithoutTraceTrivialResolvedFields skips creating spans for fields that have a trivial resolver.
+// For example, a field resolved from an object w/o requiring a custom method is considered trivial.
+func WithoutTraceTrivialResolvedFields() Option {
+	return func(cfg *config) {
+		cfg.withoutTraceTrivialResolvedFields = true
+	}
 }
 
 // WithCustomTag will attach the value to the span tagged by the key.

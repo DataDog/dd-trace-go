@@ -10,7 +10,7 @@
 package mongo
 
 import (
-	v2 "github.com/DataDog/dd-trace-go/v2/contrib/go.mongodb.org/mongo-driver/mongo"
+	v2 "github.com/DataDog/dd-trace-go/contrib/go.mongodb.org/mongo-driver/v2/mongo"
 
 	"go.mongodb.org/mongo-driver/event"
 )

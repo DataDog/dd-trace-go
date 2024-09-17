@@ -19,7 +19,7 @@ import (
 	"database/sql"
 	"database/sql/driver"
 
-	v2 "github.com/DataDog/dd-trace-go/v2/contrib/database/sql"
+	v2 "github.com/DataDog/dd-trace-go/contrib/database/sql/v2"
 )
 
 // Register tells the sql integration package about the driver that we will be tracing. If used, it

@@ -8,7 +8,7 @@ package elastic
 import (
 	"net/http"
 
-	v2 "github.com/DataDog/dd-trace-go/v2/contrib/olivere/elastic.v5"
+	v2 "github.com/DataDog/dd-trace-go/contrib/olivere/elastic.v5/v2"
 )
 
 const defaultServiceName = "elastic.client"

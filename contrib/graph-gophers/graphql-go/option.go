@@ -6,7 +6,7 @@
 package graphql
 
 import (
-	v2 "github.com/DataDog/dd-trace-go/v2/contrib/graph-gophers/graphql-go"
+	v2 "github.com/DataDog/dd-trace-go/contrib/graph-gophers/graphql-go/v2"
 )
 
 // Option represents an option that can be used customize the Tracer.

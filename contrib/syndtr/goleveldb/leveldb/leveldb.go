@@ -7,7 +7,7 @@
 package leveldb // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/syndtr/goleveldb/leveldb"
 
 import (
-	v2 "github.com/DataDog/dd-trace-go/v2/contrib/syndtr/goleveldb/leveldb"
+	v2 "github.com/DataDog/dd-trace-go/contrib/syndtr/goleveldb/v2/leveldb"
 
 	"github.com/syndtr/goleveldb/leveldb"
 	"github.com/syndtr/goleveldb/leveldb/iterator"

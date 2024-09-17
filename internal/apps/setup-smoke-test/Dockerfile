@@ -17,7 +17,7 @@
 #      select one by default, but also allows to provide a --build-arg option
 #      too instead of relying on the --target option. This way, the CI matrix
 #      can systematically use --build-arg for all of the parameters.
-ARG go="1.21" # golang docker image parameter in `golang:{go}-{buildenv}`
+ARG go="1.22" # golang docker image parameter in `golang:{go}-{buildenv}`
 ARG build_env="bookworm" # golang docker image parameter in `golang:{go}-{buildenv}`
 ARG build_with_cgo="0" # 0 or 1
 ARG build_with_vendoring="" # y or empty
@@ -49,7 +49,7 @@ RUN if [ "${go_libddwaf_ref}" != "" ]; then \
   alpine) apk update && apk add git;; \
   *) apt update && apt install -y git ;; \
   esac; \
-  go get -u github.com/DataDog/go-libddwaf/v2@${go_libddwaf_ref}; \
+  go get -u github.com/DataDog/go-libddwaf/v3@${go_libddwaf_ref}; \
   fi
 
 RUN go mod tidy
