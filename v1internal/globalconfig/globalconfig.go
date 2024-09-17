@@ -85,3 +85,11 @@ func DogstatsdAddr() string {
 func SetDogstatsdAddr(addr string) {
 	globalconfig.SetDogstatsdAddr(addr)
 }
+
+func StatsTags() []string {
+	return globalconfig.StatsTags()
+}
+
+func SetStatsTags(tags []string) {
+	globalconfig.SetStatsTags(tags)
+}
