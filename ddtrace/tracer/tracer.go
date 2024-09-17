@@ -458,12 +458,12 @@ func (t *tracer) pushChunk(trace *chunk) {
 	case t.out <- trace:
 	default:
 		log.Debug("payload queue full, trace dropped %d spans", len(trace.spans))
-		t.totalTracesDropped += 1
+		atomic.AddUint32(&t.totalTracesDropped, 1)
 	}
 	select {
 	case <-t.logDroppedTraces.C:
-		if t.totalTracesDropped > 0 {
-			log.Error("%d traces dropped through payload queue", t.totalTracesDropped)
+		if i := atomic.SwapUint32(&t.totalTracesDropped, 0); i > 0 {
+			log.Error("%d traces dropped through payload queue", i)
 		}
 	default:
 	}
