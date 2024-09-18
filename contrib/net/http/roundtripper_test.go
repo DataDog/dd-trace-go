@@ -100,18 +100,46 @@ func TestRoundTripper(t *testing.T) {
 	assert.Equal(t, wantPort, s1.Tag(ext.NetworkDestinationPort))
 }
 
+// Assert all error tags exist when status code is 4xx
+func TestRoundTripperClientError(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte("Error"))
+	}))
+	defer s.Close()
+
+	rt := WrapRoundTripper(http.DefaultTransport,
+		WithBefore(func(req *http.Request, span ddtrace.Span) {
+			span.SetTag("CalledBefore", true)
+		}),
+		WithAfter(func(res *http.Response, span ddtrace.Span) {
+			span.SetTag("CalledAfter", true)
+		}))
+
+	client := &http.Client{
+		Transport: rt,
+	}
+
+	resp, err := client.Get(s.URL + "/hello/world")
+	assert.Nil(t, err)
+	defer resp.Body.Close()
+
+	spans := mt.FinishedSpans()
+	assert.Len(t, spans, 1)
+	s1 := spans[0]
+	assert.Equal(t, "400: Bad Request", s1.Tag(ext.Error).(error).Error())
+	assert.Equal(t, "400", s1.Tag(ext.HTTPCode))
+}
+
+// Assert no error tags are set when status code is 5xx
 func TestRoundTripperServerError(t *testing.T) {
 	mt := mocktracer.Start()
 	defer mt.Stop()
 
 	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		spanctx, err := tracer.Extract(tracer.HTTPHeadersCarrier(r.Header))
-		assert.NoError(t, err)
-
-		span := tracer.StartSpan("test",
-			tracer.ChildOf(spanctx))
-		defer span.Finish()
-
 		w.WriteHeader(http.StatusInternalServerError)
 		w.Write([]byte("Error"))
 	}))
@@ -134,24 +162,11 @@ func TestRoundTripperServerError(t *testing.T) {
 	defer resp.Body.Close()
 
 	spans := mt.FinishedSpans()
-	assert.Len(t, spans, 2)
-	assert.Equal(t, spans[0].TraceID(), spans[1].TraceID())
+	assert.Len(t, spans, 1)
 
-	s0 := spans[0]
-	assert.Equal(t, "test", s0.OperationName())
-	assert.Equal(t, "test", s0.Tag(ext.ResourceName))
-
-	s1 := spans[1]
-	assert.Equal(t, "http.request", s1.OperationName())
-	assert.Equal(t, "http.request", s1.Tag(ext.ResourceName))
+	s1 := spans[0]
 	assert.Equal(t, "500", s1.Tag(ext.HTTPCode))
-	assert.Equal(t, "GET", s1.Tag(ext.HTTPMethod))
-	assert.Equal(t, s.URL+"/hello/world", s1.Tag(ext.HTTPURL))
-	assert.Equal(t, fmt.Errorf("500: Internal Server Error"), s1.Tag(ext.Error))
-	assert.Equal(t, true, s1.Tag("CalledBefore"))
-	assert.Equal(t, true, s1.Tag("CalledAfter"))
-	assert.Equal(t, ext.SpanKindClient, s1.Tag(ext.SpanKind))
-	assert.Equal(t, "net/http", s1.Tag(ext.Component))
+	assert.Empty(t, s1.Tag(ext.Error))
 }
 
 func TestRoundTripperNetworkError(t *testing.T) {
