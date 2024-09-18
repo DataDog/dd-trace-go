@@ -20,6 +20,9 @@ import (
 
 // To start tracing requests, add the trace middleware to your echo router.
 func Example() {
+	tracer.Start()
+	defer tracer.Stop()
+
 	r := echo.New()
 
 	// Use the tracer middleware with your desired service name.
@@ -36,6 +39,9 @@ func Example() {
 
 // An example illustrating tracing a child operation within the main context.
 func Example_spanFromContext() {
+	tracer.Start()
+	defer tracer.Stop()
+
 	// Create a new instance of echo
 	r := echo.New()
 
@@ -68,6 +74,9 @@ func customBodyParser(body io.ReadCloser) (*parsedBodyType, error) {
 
 // Monitor HTTP request parsed body
 func ExampleMonitorParsedHTTPBody() {
+	tracer.Start()
+	defer tracer.Stop()
+
 	mux := httptrace.NewServeMux()
 	mux.HandleFunc("/body", func(w http.ResponseWriter, r *http.Request) {
 		// Use the SDK to monitor the request's parsed body
@@ -84,6 +93,9 @@ func ExampleMonitorParsedHTTPBody() {
 
 // Monitor HTTP request parsed body with a framework customized context type
 func ExampleMonitorParsedHTTPBody_customContext() {
+	tracer.Start()
+	defer tracer.Stop()
+
 	r := echo.New()
 	r.Use(echotrace.Middleware())
 	r.POST("/body", func(c echo.Context) (e error) {
@@ -106,6 +118,9 @@ func userIDFromRequest(r *http.Request) string {
 
 // Monitor and block requests depending on user ID
 func ExampleSetUser() {
+	tracer.Start()
+	defer tracer.Stop()
+
 	mux := httptrace.NewServeMux()
 	mux.HandleFunc("/user", func(w http.ResponseWriter, r *http.Request) {
 		// We use SetUser() here to associate the user ID to the request's span. The return value

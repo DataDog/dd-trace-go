@@ -26,6 +26,9 @@ func Hello(w http.ResponseWriter, _ *http.Request, ps httprouter.Params) {
 }
 
 func Example() {
+	tracer.Start()
+	defer tracer.Stop()
+
 	router := httptrace.New()
 	router.GET("/", Index)
 	router.GET("/hello/:name", Hello)
@@ -34,6 +37,9 @@ func Example() {
 }
 
 func Example_withServiceName() {
+	tracer.Start()
+	defer tracer.Stop()
+
 	router := httptrace.New(httptrace.WithService("http.router"))
 	router.GET("/", Index)
 	router.GET("/hello/:name", Hello)
@@ -42,6 +48,9 @@ func Example_withServiceName() {
 }
 
 func Example_withSpanOpts() {
+	tracer.Start()
+	defer tracer.Stop()
+
 	router := httptrace.New(
 		httptrace.WithService("http.router"),
 		httptrace.WithSpanOptions(

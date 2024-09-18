@@ -11,9 +11,13 @@ import (
 	"github.com/go-pg/pg/v10"
 
 	pgtrace "github.com/DataDog/dd-trace-go/contrib/go-pg/pg.v10/v2"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 )
 
 func Example() {
+	tracer.Start()
+	defer tracer.Stop()
+
 	conn := pg.Connect(&pg.Options{
 		User:     "go-pg-test",
 		Database: "datadog",

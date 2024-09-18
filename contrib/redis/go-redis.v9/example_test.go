@@ -19,6 +19,9 @@ import (
 // To start tracing Redis, simply create a new client using the library and continue
 // using as you normally would.
 func Example() {
+	tracer.Start()
+	defer tracer.Stop()
+
 	ctx := context.Background()
 	// create a new Client
 	opts := &redis.Options{Addr: "127.0.0.1", Password: "", DB: 0}
@@ -42,6 +45,9 @@ func Example() {
 // You can also trace Redis Pipelines. Simply use as usual and the traces will be
 // automatically picked up by the underlying implementation.
 func Example_pipeliner() {
+	tracer.Start()
+	defer tracer.Stop()
+
 	ctx := context.Background()
 	// create a client
 	opts := &redis.Options{Addr: "127.0.0.1", Password: "", DB: 0}

@@ -33,6 +33,9 @@ func Example() {
 
 // An example of the aws span inheriting a parent span from context.
 func Example_context() {
+	tracer.Start()
+	defer tracer.Stop()
+
 	cfg, err := awscfg.LoadDefaultConfig(context.TODO(), awscfg.WithRegion("us-west-2"))
 	if err != nil {
 		log.Fatalf("error: %v", err)
