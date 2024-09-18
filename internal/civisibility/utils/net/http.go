@@ -114,7 +114,7 @@ func (rh *RequestHandler) SendRequest(config RequestConfig) (*Response, error) {
 	}
 
 	for attempt := 0; attempt <= config.MaxRetries; attempt++ {
-		rs, err, stopRetries := rh.internalSendRequest(&config, attempt)
+		stopRetries, rs, err := rh.internalSendRequest(&config, attempt)
 		if stopRetries {
 			return rs, err
 		}
@@ -123,7 +123,7 @@ func (rh *RequestHandler) SendRequest(config RequestConfig) (*Response, error) {
 	return nil, errors.New("max retries exceeded")
 }
 
-func (rh *RequestHandler) internalSendRequest(config *RequestConfig, attempt int) (response *Response, requestError error, stopRetries bool) {
+func (rh *RequestHandler) internalSendRequest(config *RequestConfig, attempt int) (stopRetries bool, response *Response, requestError error) {
 	var req *http.Request
 
 	// Check if it's a multipart form data request
@@ -131,11 +131,11 @@ func (rh *RequestHandler) internalSendRequest(config *RequestConfig, attempt int
 		// Create multipart form data body
 		body, contentType, err := createMultipartFormData(config.Files, config.Compressed)
 		if err != nil {
-			return nil, err, true
+			return true, nil, err
 		}
 		req, err = http.NewRequest(config.Method, config.URL, bytes.NewBuffer(body))
 		if err != nil {
-			return nil, err, true
+			return true, nil, err
 		}
 		req.Header.Set(HeaderContentType, contentType)
 		if config.Compressed {
@@ -145,20 +145,20 @@ func (rh *RequestHandler) internalSendRequest(config *RequestConfig, attempt int
 		// Handle JSON body
 		serializedBody, err := serializeData(config.Body, config.Format)
 		if err != nil {
-			return nil, err, true
+			return true, nil, err
 		}
 
 		// Compress body if needed
 		if config.Compressed {
 			serializedBody, err = compressData(serializedBody)
 			if err != nil {
-				return nil, err, true
+				return true, nil, err
 			}
 		}
 
 		req, err = http.NewRequest(config.Method, config.URL, bytes.NewBuffer(serializedBody))
 		if err != nil {
-			return nil, err, true
+			return true, nil, err
 		}
 		if config.Format == FormatJSON {
 			req.Header.Set(HeaderContentType, ContentTypeJSON)
@@ -171,7 +171,7 @@ func (rh *RequestHandler) internalSendRequest(config *RequestConfig, attempt int
 		var err error
 		req, err = http.NewRequest(config.Method, config.URL, nil)
 		if err != nil {
-			return nil, err, true
+			return true, nil, err
 		}
 	}
 
@@ -187,7 +187,7 @@ func (rh *RequestHandler) internalSendRequest(config *RequestConfig, attempt int
 	if err != nil {
 		// Retry if there's an error
 		exponentialBackoff(attempt, config.Backoff)
-		return nil, nil, false
+		return false, nil, nil
 	}
 	// Close response body
 	defer resp.Body.Close()
@@ -211,32 +211,32 @@ func (rh *RequestHandler) internalSendRequest(config *RequestConfig, attempt int
 				if waitDuration > 0 {
 					time.Sleep(waitDuration)
 				}
-				return nil, nil, false
+				return false, nil, nil
 			}
 		}
 
 		// Fallback to exponential backoff if header is missing or invalid
 		exponentialBackoff(attempt, config.Backoff)
-		return nil, nil, false
+		return false, nil, nil
 	}
 
 	// Check status code for retries
 	if statusCode >= 406 {
 		// Retry if the status code is >= 406
 		exponentialBackoff(attempt, config.Backoff)
-		return nil, nil, false
+		return false, nil, nil
 	}
 
 	responseBody, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, err, true
+		return true, nil, err
 	}
 
 	// Decompress response if it is gzip compressed
 	if resp.Header.Get(HeaderContentEncoding) == ContentEncodingGzip {
 		responseBody, err = decompressData(responseBody)
 		if err != nil {
-			return nil, err, true
+			return true, nil, err
 		}
 	}
 
@@ -253,7 +253,7 @@ func (rh *RequestHandler) internalSendRequest(config *RequestConfig, attempt int
 	canUnmarshal := statusCode >= 200 && statusCode < 300
 
 	// Return the successful response with status code and unmarshal capability
-	return &Response{Body: responseBody, Format: responseFormat, StatusCode: statusCode, CanUnmarshal: canUnmarshal}, nil, true
+	return true, &Response{Body: responseBody, Format: responseFormat, StatusCode: statusCode, CanUnmarshal: canUnmarshal}, nil
 }
 
 // Helper functions for data serialization, compression, and handling multipart form data
