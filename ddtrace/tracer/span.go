@@ -237,6 +237,12 @@ func (s *Span) SetTag(key string, value interface{}) {
 			s.setMetaStruct(key, v.Value)
 			return
 		}
+
+		// Support for v1 shim meta struct values (only _dd.stack uses this)
+		if key == "_dd.stack" {
+			s.setMetaStruct(key, value)
+			return
+		}
 	}
 
 	// not numeric, not a string, not a fmt.Stringer, not a bool, and not an error
