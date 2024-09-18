@@ -106,7 +106,7 @@ func TestClientErrorCutoffV6(t *testing.T) {
 	assert.NoError(err)
 
 	span := mt.FinishedSpans()[0]
-	assert.Equal(`{"error":{`, span.Tag(ext.Error).(error).Error())
+	assert.True(strings.HasPrefix(span.Tag(ext.ErrorMsg).(string), `{"error":{`))
 }
 
 func TestClientV6Failure(t *testing.T) {
@@ -132,7 +132,7 @@ func TestClientV6Failure(t *testing.T) {
 
 	spans := mt.FinishedSpans()
 	assert.NotEmpty(spans[0].Tag(ext.Error))
-	assert.Equal("*net.OpError", fmt.Sprintf("%T", spans[0].Tag(ext.Error).(error)))
+	assert.Equal("*net.OpError", spans[0].Tag(ext.ErrorType))
 }
 
 func TestResourceNamerSettingsV6(t *testing.T) {

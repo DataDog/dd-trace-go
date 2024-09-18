@@ -123,7 +123,7 @@ func TestError(t *testing.T) {
 	assert.Equal("http.request", span.OperationName())
 	assert.Equal("my-router", span.Tag(ext.ServiceName))
 	assert.Equal("500", span.Tag(ext.HTTPCode))
-	assert.Equal(wantErr, span.Tag(ext.Error).(error).Error())
+	assert.Equal(wantErr, span.Tag(ext.ErrorMsg))
 	assert.Equal("zenazn/goji.v1/web", span.Tag(ext.Component))
 	assert.Equal(ext.SpanKindServer, span.Tag(ext.SpanKind))
 }
@@ -142,7 +142,7 @@ func TestPropagation(t *testing.T) {
 	m.Get("/user/:id", func(w http.ResponseWriter, r *http.Request) {
 		span, ok := tracer.SpanFromContext(r.Context())
 		assert.True(ok)
-		assert.Equal(span.(mocktracer.Span).ParentID(), pspan.(mocktracer.Span).SpanID())
+		assert.Equal(span.(mocktracer.MockspanV2Adapter).ParentID(), pspan.Context().SpanID())
 	})
 
 	m.ServeHTTP(w, r)

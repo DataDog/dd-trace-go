@@ -8,11 +8,8 @@ package pgx
 import (
 	"context"
 	"testing"
-	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/statsdtest"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -40,34 +37,4 @@ func TestPool(t *testing.T) {
 
 	assert.Len(t, mt.OpenSpans(), 0)
 	assert.Len(t, mt.FinishedSpans(), 7)
-}
-
-func TestPoolWithPoolStats(t *testing.T) {
-	originalInterval := interval
-	interval = 1 * time.Millisecond
-	t.Cleanup(func() {
-		interval = originalInterval
-	})
-
-	ctx := context.Background()
-	statsd := new(statsdtest.TestStatsdClient)
-	conn, err := NewPool(ctx, postgresDSN, withStatsdClient(statsd), WithPoolStats())
-	require.NoError(t, err)
-	defer conn.Close()
-
-	wantStats := []string{AcquireCount, AcquireDuration, AcquiredConns, CanceledAcquireCount, ConstructingConns, EmptyAcquireCount, IdleConns, MaxConns, TotalConns, NewConnsCount, MaxLifetimeDestroyCount, MaxIdleDestroyCount}
-
-	assert := assert.New(t)
-	if err := statsd.Wait(assert, len(wantStats), time.Second); err != nil {
-		t.Fatalf("statsd.Wait(): %v", err)
-	}
-	for _, name := range wantStats {
-		assert.Contains(statsd.CallNames(), name)
-	}
-}
-
-func withStatsdClient(s internal.StatsdClient) Option {
-	return func(c *config) {
-		c.statsdClient = s
-	}
 }

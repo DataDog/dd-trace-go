@@ -6,73 +6,33 @@
 package elastic
 
 import (
-	"math"
 	"net/http"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
+	v2 "github.com/DataDog/dd-trace-go/contrib/elastic/go-elasticsearch.v6/v2"
 )
 
-const defaultServiceName = "elastic.client"
-
-type clientConfig struct {
-	serviceName   string
-	operationName string
-	transport     http.RoundTripper
-	analyticsRate float64
-	resourceNamer func(url, method string) string
-}
-
 // ClientOption represents an option that can be used when creating a client.
-type ClientOption func(*clientConfig)
-
-func defaults(cfg *clientConfig) {
-	cfg.serviceName = namingschema.ServiceNameOverrideV0(defaultServiceName, defaultServiceName)
-	cfg.operationName = namingschema.OpName(namingschema.ElasticSearchOutbound)
-	cfg.transport = http.DefaultTransport
-	cfg.resourceNamer = quantize
-	if internal.BoolEnv("DD_TRACE_ELASTIC_ANALYTICS_ENABLED", false) {
-		cfg.analyticsRate = 1.0
-	} else {
-		cfg.analyticsRate = math.NaN()
-	}
-}
+type ClientOption = v2.ClientOption
 
 // WithTransport sets the given transport as an http.Transport for the client.
 func WithTransport(t http.RoundTripper) ClientOption {
-	return func(cfg *clientConfig) {
-		cfg.transport = t
-	}
+	return v2.WithTransport(t)
 }
 
 // WithServiceName sets the given service name for the client.
 func WithServiceName(name string) ClientOption {
-	return func(cfg *clientConfig) {
-		cfg.serviceName = name
-	}
+	return v2.WithService(name)
 }
 
 // WithAnalytics enables Trace Analytics for all started spans.
 func WithAnalytics(on bool) ClientOption {
-	return func(cfg *clientConfig) {
-		if on {
-			cfg.analyticsRate = 1.0
-		} else {
-			cfg.analyticsRate = math.NaN()
-		}
-	}
+	return v2.WithAnalytics(on)
 }
 
 // WithAnalyticsRate sets the sampling rate for Trace Analytics events
 // correlated to started spans.
 func WithAnalyticsRate(rate float64) ClientOption {
-	return func(cfg *clientConfig) {
-		if rate >= 0.0 && rate <= 1.0 {
-			cfg.analyticsRate = rate
-		} else {
-			cfg.analyticsRate = math.NaN()
-		}
-	}
+	return v2.WithAnalyticsRate(rate)
 }
 
 // WithResourceNamer specifies a quantizing function which will be used to obtain a resource name for a given
@@ -80,7 +40,5 @@ func WithAnalyticsRate(rate float64) ClientOption {
 // IDs and indexes and by replacing it, sensitive data could possibly be exposed, unless the new quantizer
 // specifically takes care of that.
 func WithResourceNamer(namer func(url, method string) string) ClientOption {
-	return func(cfg *clientConfig) {
-		cfg.resourceNamer = namer
-	}
+	return v2.WithResourceNamer(namer)
 }

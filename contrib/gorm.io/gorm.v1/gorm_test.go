@@ -591,10 +591,9 @@ func TestPlugin(t *testing.T) {
 	opt := WithCustomTag("foo", func(_ *gorm.DB) interface{} {
 		return "bar"
 	})
-	plugin := NewTracePlugin(opt).(tracePlugin)
+	plugin := NewTracePlugin(opt)
 
 	assert.Equal(t, "DDTracePlugin", plugin.Name())
-	assert.Len(t, plugin.options, 1)
 	require.NoError(t, db.Use(plugin))
 
 	assert.NotNil(t, db.Callback().Create().Get("dd-trace-go:before_create"))

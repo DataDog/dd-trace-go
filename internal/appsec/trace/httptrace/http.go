@@ -11,9 +11,6 @@ import (
 	"strings"
 
 	"github.com/DataDog/appsec-internal-go/httpsec"
-
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/trace"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
 const (
@@ -82,40 +79,6 @@ func ClientIPTags(headers map[string][]string, hasCanonicalHeaders bool, remoteA
 	return tags, clientIP
 }
 
-// NormalizeHTTPHeaders returns the HTTP headers following Datadog's
-// normalization format.
-func NormalizeHTTPHeaders(headers map[string][]string) (normalized map[string]string) {
-	if len(headers) == 0 {
-		return nil
-	}
-	normalized = make(map[string]string, len(collectedHeadersLookupMap))
-	for k, v := range headers {
-		k = normalizeHTTPHeaderName(k)
-		if _, found := collectedHeadersLookupMap[k]; found {
-			normalized[k] = normalizeHTTPHeaderValue(v)
-		}
-	}
-	if len(normalized) == 0 {
-		return nil
-	}
-	return normalized
-}
-
-func normalizeHTTPHeaderName(name string) string {
-	return strings.ToLower(name)
-}
-
-func normalizeHTTPHeaderValue(values []string) string {
-	return strings.Join(values, ",")
-}
-
-// SetSecurityEventsTags sets the AppSec-specific span tags when a security event occurred into the service entry span.
-func SetSecurityEventsTags(span trace.TagSetter, events []any) {
-	if err := trace.SetEventSpanTags(span, events); err != nil {
-		log.Error("appsec: unexpected error while creating the appsec events tags: %v", err)
-	}
-}
-
 func init() {
 	makeCollectedHTTPHeadersLookupMap()
 	readMonitoredClientIPHeadersConfig()
@@ -126,6 +89,10 @@ func makeCollectedHTTPHeadersLookupMap() {
 	for _, h := range defaultCollectedHeaders {
 		collectedHeadersLookupMap[h] = struct{}{}
 	}
+}
+
+func normalizeHTTPHeaderName(name string) string {
+	return strings.ToLower(name)
 }
 
 func readMonitoredClientIPHeadersConfig() {

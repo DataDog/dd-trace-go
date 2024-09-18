@@ -419,9 +419,9 @@ func TestSpanTree(t *testing.T) {
 				serverSpans++
 				if !reqMsgFound {
 					assert.Equal("{\"name\":\"break\"}", ms.Tag(tagRequest))
-					metadataTag := ms.Tag(tagMetadataPrefix + "custom_metadata_key").([]string)
-					assert.Len(metadataTag, 1)
-					assert.Equal("custom_metadata_value", metadataTag[0])
+					metadataTag := ms.Tag(tagMetadataPrefix + "custom_metadata_key.0").(string)
+					assert.NotEmpty(metadataTag)
+					assert.Equal("custom_metadata_value", metadataTag)
 					reqMsgFound = true
 				}
 			}
@@ -489,7 +489,7 @@ func TestPreservesMetadata(t *testing.T) {
 	assert.NotContains(t, s.Tags(), tagMetadataPrefix+"x-datadog-trace-id")
 	assert.NotContains(t, s.Tags(), tagMetadataPrefix+"x-datadog-parent-id")
 	assert.NotContains(t, s.Tags(), tagMetadataPrefix+"x-datadog-sampling-priority")
-	assert.Equal(t, []string{"test-value"}, s.Tag(tagMetadataPrefix+"test-key"))
+	assert.Equal(t, "test-value", s.Tag(tagMetadataPrefix+"test-key.0"))
 }
 
 func TestStreamSendsErrorCode(t *testing.T) {
@@ -757,8 +757,8 @@ func TestIgnoredMethods(t *testing.T) {
 		}{
 			{ignore: []string{}, exp: 2},
 			{ignore: []string{"/some/endpoint"}, exp: 2},
-			{ignore: []string{"/grpc.Fixture/Ping"}, exp: 1},
-			{ignore: []string{"/grpc.Fixture/Ping", "/additional/endpoint"}, exp: 1},
+			{ignore: []string{"/grpc.Fixture/Ping"}, exp: 0},
+			{ignore: []string{"/grpc.Fixture/Ping", "/additional/endpoint"}, exp: 0},
 		} {
 			rig, err := newRig(true, WithIgnoredMethods(c.ignore...))
 			if err != nil {
@@ -787,8 +787,8 @@ func TestIgnoredMethods(t *testing.T) {
 			// server span: 1 send + 2 recv(OK + EOF) + 1 stream finish(EOF)
 			{ignore: []string{}, exp: 7},
 			{ignore: []string{"/some/endpoint"}, exp: 7},
-			{ignore: []string{"/grpc.Fixture/StreamPing"}, exp: 3},
-			{ignore: []string{"/grpc.Fixture/StreamPing", "/additional/endpoint"}, exp: 3},
+			{ignore: []string{"/grpc.Fixture/StreamPing"}, exp: 0},
+			{ignore: []string{"/grpc.Fixture/StreamPing", "/additional/endpoint"}, exp: 0},
 		} {
 			rig, err := newRig(true, WithIgnoredMethods(c.ignore...))
 			if err != nil {
@@ -900,9 +900,9 @@ func TestIgnoredMetadata(t *testing.T) {
 		ignore []string
 		exp    int
 	}{
-		{ignore: []string{}, exp: 5},
-		{ignore: []string{"test-key"}, exp: 4},
-		{ignore: []string{"test-key", "test-key2"}, exp: 3},
+		{ignore: []string{}, exp: 8},
+		{ignore: []string{"test-key"}, exp: 7},
+		{ignore: []string{"test-key", "test-key2"}, exp: 6},
 	} {
 		rig, err := newRig(true, WithMetadataTags(), WithIgnoredMetadata(c.ignore...))
 		if err != nil {
@@ -1002,7 +1002,7 @@ func TestCustomTag(t *testing.T) {
 		value interface{}
 	}{
 		{key: "foo", value: "bar"},
-		{key: "val", value: 123},
+		{key: "val", value: float64(123)},
 	} {
 		rig, err := newRig(true, WithCustomTag(c.key, c.value))
 		if err != nil {

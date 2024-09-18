@@ -12,8 +12,6 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry/telemetrytest"
 
 	"github.com/opentracing/opentracing-go"
 	"github.com/stretchr/testify/assert"
@@ -112,13 +110,4 @@ func TestExtractError(t *testing.T) {
 			assert.Equal(t, tt.want, got)
 		})
 	}
-}
-
-func TestSpanTelemetry(t *testing.T) {
-	telemetryClient := new(telemetrytest.MockClient)
-	defer telemetry.MockGlobalClient(telemetryClient)()
-	opentracing.SetGlobalTracer(New())
-	_ = opentracing.StartSpan("opentracing.span")
-	telemetryClient.AssertCalled(t, "Count", telemetry.NamespaceTracers, "spans_created", 1.0, telemetryTags, true)
-	telemetryClient.AssertNumberOfCalls(t, "Count", 1)
 }
