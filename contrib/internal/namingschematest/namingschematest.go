@@ -54,7 +54,7 @@ func NewServiceNameTest(genSpans GenSpansFn, wantV0 ServiceNameAssertions) func(
 		return ss
 	}
 	// TODO: fix return namingschematest.NewServiceNameTest(wrap, namingschematest.ServiceNameAssertions(wantV0))
-	return func(t *testing.T) {}
+	return func(*testing.T) {}
 }
 
 // AssertSpansFn allows to make assertions on the generated spans.
@@ -85,5 +85,5 @@ func NewSpanNameTest(genSpans GenSpansFn, assertV0 AssertSpansFn, assertV1 Asser
 		assertV1(t, ss)
 	}
 	// TODO: fix return namingschematest.NewSpanNameTest(gsWrap, aV0Wrap, aV1Wrap)
-	return func(t *testing.T) {}
+	return func(*testing.T) {}
 }

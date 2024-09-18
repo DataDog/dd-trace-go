@@ -403,6 +403,7 @@ func BenchmarkInjectW3C(b *testing.B) {
 		// k := fmt.Sprintf("_dd.p.k%d", i)
 		// v := fmt.Sprintf("v%d", i)
 		// v1internal.SetPropagatingTag(ctx.Ctx, k, v)
+		b.Log()
 	}
 	dst := map[string]string{}
 
