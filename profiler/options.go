@@ -7,6 +7,7 @@ package profiler
 
 import (
 	"net/http"
+	"runtime"
 	"time"
 
 	v2 "github.com/DataDog/dd-trace-go/v2/profiler"
@@ -202,3 +203,9 @@ func WithHostname(hostname string) Option {
 func WithCustomProfilerLabelKeys(keys ...string) Option {
 	return v2.WithCustomProfilerLabelKeys(keys...)
 }
+
+// executionTraceEnabledDefault depends on the Go version and CPU architecture,
+// see go_lt_1_21.go and this [article][] for more details.
+//
+// [article]: https://blog.felixge.de/waiting-for-go1-21-execution-tracing-with-less-than-one-percent-overhead/
+var executionTraceEnabledDefault = runtime.GOARCH == "arm64" || runtime.GOARCH == "amd64"

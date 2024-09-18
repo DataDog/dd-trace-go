@@ -55,7 +55,8 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/twitchtv/twirp/v2 v2.0.0-20240913143645-b075389b5aaf
 	github.com/DataDog/dd-trace-go/contrib/urfave/negroni/v2 v2.0.0-20240913143645-b075389b5aaf
 	github.com/DataDog/dd-trace-go/contrib/valyala/fasthttp/v2 v2.0.0-20240913143645-b075389b5aaf
-	github.com/DataDog/dd-trace-go/v2 v2.0.0-20240913143645-b075389b5aaf
+	github.com/DataDog/dd-trace-go/instrumentation/testutils/grpc/v2 v2.0.0-20240917105006-8a0def8db5f4
+	github.com/DataDog/dd-trace-go/v2 v2.0.0-20240917105006-8a0def8db5f4
 	github.com/DataDog/gostackparse v0.7.0
 	github.com/IBM/sarama v1.40.0
 	github.com/Shopify/sarama v1.38.1
@@ -70,7 +71,6 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/sfn v1.29.3
 	github.com/aws/aws-sdk-go-v2/service/sns v1.31.3
 	github.com/aws/aws-sdk-go-v2/service/sqs v1.34.3
-	github.com/aws/smithy-go v1.20.3
 	github.com/bradfitz/gomemcache v0.0.0-20230611145640-acc696258285
 	github.com/confluentinc/confluent-kafka-go v1.9.2
 	github.com/confluentinc/confluent-kafka-go/v2 v2.2.0
@@ -154,7 +154,6 @@ require (
 	github.com/DataDog/datadog-agent/pkg/obfuscate v0.52.1 // indirect
 	github.com/DataDog/datadog-agent/pkg/remoteconfig/state v0.52.1 // indirect
 	github.com/DataDog/datadog-go/v5 v5.5.0 // indirect
-	github.com/DataDog/dd-trace-go/instrumentation/testutils/grpc/v2 v2.0.0-20240913143645-b075389b5aaf // indirect
 	github.com/DataDog/go-libddwaf/v3 v3.3.0 // indirect
 	github.com/DataDog/go-sqllexer v0.0.11 // indirect
 	github.com/DataDog/go-tuf v1.1.0-0.5.2 // indirect
@@ -178,6 +177,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/sso v1.22.4 // indirect
 	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.26.4 // indirect
 	github.com/aws/aws-sdk-go-v2/service/sts v1.30.3 // indirect
+	github.com/aws/smithy-go v1.20.3 // indirect
 	github.com/bytedance/sonic v1.10.0 // indirect
 	github.com/cenkalti/backoff/v3 v3.2.2 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect

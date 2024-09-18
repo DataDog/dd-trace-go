@@ -734,10 +734,10 @@ github.com/DataDog/dd-trace-go/contrib/urfave/negroni/v2 v2.0.0-20240913143645-b
 github.com/DataDog/dd-trace-go/contrib/urfave/negroni/v2 v2.0.0-20240913143645-b075389b5aaf/go.mod h1:mMfKsaWg+jmDPsYbcCEpeTaypOpis1p81TOgwrAhaXc=
 github.com/DataDog/dd-trace-go/contrib/valyala/fasthttp/v2 v2.0.0-20240913143645-b075389b5aaf h1:JurBbH7G6cOFlKmbTCS5X8I5pKhjNcWWnTB8RDH28Kw=
 github.com/DataDog/dd-trace-go/contrib/valyala/fasthttp/v2 v2.0.0-20240913143645-b075389b5aaf/go.mod h1:OYXT+yWpts+fppBgznToRzaePN4hM2GP8wwBdqt11IY=
-github.com/DataDog/dd-trace-go/instrumentation/testutils/grpc/v2 v2.0.0-20240913143645-b075389b5aaf h1:mGGmqtEBUlM8aCI3XOoiT4nv1fbNH4bwaNPrGKWcvrU=
-github.com/DataDog/dd-trace-go/instrumentation/testutils/grpc/v2 v2.0.0-20240913143645-b075389b5aaf/go.mod h1:FdRMHXxdzBksL5krjXFMPL7Z6DmmjmZBHlJPnq+Rmjc=
-github.com/DataDog/dd-trace-go/v2 v2.0.0-20240913143645-b075389b5aaf h1:VnwQeeqD1ih50mBviazGvU3iegCVXf81ZqoW8LN0SPU=
-github.com/DataDog/dd-trace-go/v2 v2.0.0-20240913143645-b075389b5aaf/go.mod h1:3GugTYtqmGLLlcCyQTR4s5dOTXZeyZuA3XkWTnMvaeA=
+github.com/DataDog/dd-trace-go/instrumentation/testutils/grpc/v2 v2.0.0-20240917105006-8a0def8db5f4 h1:1fu6hWud7PGMCxHAE7zcgcLgNOE7xi4RNeZez0+3JCk=
+github.com/DataDog/dd-trace-go/instrumentation/testutils/grpc/v2 v2.0.0-20240917105006-8a0def8db5f4/go.mod h1:FdRMHXxdzBksL5krjXFMPL7Z6DmmjmZBHlJPnq+Rmjc=
+github.com/DataDog/dd-trace-go/v2 v2.0.0-20240917105006-8a0def8db5f4 h1:/EJpYWZlKYwMwPWgq5CtHMvTSUaQ4SWsEICuSHRIK7U=
+github.com/DataDog/dd-trace-go/v2 v2.0.0-20240917105006-8a0def8db5f4/go.mod h1:3GugTYtqmGLLlcCyQTR4s5dOTXZeyZuA3XkWTnMvaeA=
 github.com/DataDog/go-libddwaf/v3 v3.3.0 h1:jS72fuQpFgJZEdEJDmHJCPAgNTEMZoz1EUvimPUOiJ4=
 github.com/DataDog/go-libddwaf/v3 v3.3.0/go.mod h1:Bz/0JkpGf689mzbUjKJeheJINqsyyhM8p9PDuHdK2Ec=
 github.com/DataDog/go-sqllexer v0.0.11 h1:OfPBjmayreblOXreszbrOTICNZ3qWrA6Bg4sypvxpbw=

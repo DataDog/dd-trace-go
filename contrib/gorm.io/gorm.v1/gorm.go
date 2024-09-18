@@ -17,3 +17,8 @@ import (
 func Open(dialector gorm.Dialector, cfg *gorm.Config, opts ...Option) (*gorm.DB, error) {
 	return v2.Open(dialector, cfg, opts...)
 }
+
+// NewTracePlugin returns a new gorm.Plugin that enhances the underlying *gorm.DB with tracing.
+func NewTracePlugin(opts ...Option) gorm.Plugin {
+	return v2.NewTracePlugin(opts...)
+}

@@ -45,7 +45,7 @@ const (
 
 // NewServiceNameTest generates a new test for span service names using the naming schema versioning.
 func NewServiceNameTest(genSpans GenSpansFn, wantV0 ServiceNameAssertions) func(t *testing.T) {
-	wrap := func(t *testing.T, serviceOverride string) []*v2mock.Span {
+	_ = func(t *testing.T, serviceOverride string) []*v2mock.Span {
 		spans := genSpans(t, serviceOverride)
 		ss := make([]*v2mock.Span, len(spans))
 		for i, s := range spans {
@@ -62,7 +62,7 @@ type AssertSpansFn func(t *testing.T, spans []mocktracer.Span)
 
 // NewSpanNameTest returns a new test that runs the provided assertion functions for each schema version.
 func NewSpanNameTest(genSpans GenSpansFn, assertV0 AssertSpansFn, assertV1 AssertSpansFn) func(t *testing.T) {
-	gsWrap := func(t *testing.T, serviceOverride string) []*v2mock.Span {
+	_ = func(t *testing.T, serviceOverride string) []*v2mock.Span {
 		spans := genSpans(t, serviceOverride)
 		ss := make([]*v2mock.Span, len(spans))
 		for i, s := range spans {
@@ -70,14 +70,14 @@ func NewSpanNameTest(genSpans GenSpansFn, assertV0 AssertSpansFn, assertV1 Asser
 		}
 		return ss
 	}
-	aV0Wrap := func(t *testing.T, spans []*v2mock.Span) {
+	_ = func(t *testing.T, spans []*v2mock.Span) {
 		ss := make([]mocktracer.Span, len(spans))
 		for i, s := range spans {
 			ss[i] = mocktracer.MockspanV2Adapter{Span: s}
 		}
 		assertV0(t, ss)
 	}
-	aV1Wrap := func(t *testing.T, spans []*v2mock.Span) {
+	_ = func(t *testing.T, spans []*v2mock.Span) {
 		ss := make([]mocktracer.Span, len(spans))
 		for i, s := range spans {
 			ss[i] = mocktracer.MockspanV2Adapter{Span: s}

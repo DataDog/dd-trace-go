@@ -188,7 +188,7 @@ func TestSQLCommentCarrier(t *testing.T) {
 			if tc.name == "no-trace" {
 				t.Log()
 			}
-			carrier := SQLCommentCarrier{Query: tc.query, Mode: tc.mode, DBServiceName: "whiskey-db", PeerDBHostname: tc.peerDBHostname, PeerDBName: tc.peerDBName}
+			carrier := SQLCommentCarrier{Query: tc.query, Mode: tc.mode, DBServiceName: "whiskey-db", PeerDBHostname: tc.peerDBHostname, PeerDBName: tc.peerDBName, PeerService: tc.peerServiceName}
 			err := carrier.Inject(spanCtx)
 			require.NoError(t, err)
 			expected := strings.ReplaceAll(tc.expectedQuery, "<span_id>", fmt.Sprintf("%016s", strconv.FormatUint(carrier.SpanID, 16)))

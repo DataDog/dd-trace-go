@@ -55,6 +55,7 @@ type SQLCommentCarrier struct {
 	SpanID         uint64
 	PeerDBHostname string
 	PeerDBName     string
+	PeerService    string
 	v2carrier      *v2.SQLCommentCarrier
 }
 
@@ -81,6 +82,9 @@ func (c *SQLCommentCarrier) Inject(spanCtx ddtrace.SpanContext) error {
 	}
 	if c.v2carrier.PeerDBName != c.PeerDBName {
 		c.v2carrier.PeerDBName = c.PeerDBName
+	}
+	if c.v2carrier.PeerService != c.PeerService {
+		c.v2carrier.PeerService = c.PeerService
 	}
 	var ctx *v2.SpanContext
 	if spanCtx != nil {

@@ -11,6 +11,10 @@ import (
 	v2 "github.com/DataDog/dd-trace-go/v2/profiler"
 )
 
+// customProfileLabelLimit is the maximum number of pprof labels which can
+// be used as custom attributes in the profiler UI
+const customProfileLabelLimit = 10
+
 // Start starts the profiler. If the profiler is already running, it will be
 // stopped and restarted with the given options.
 //

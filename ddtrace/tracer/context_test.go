@@ -166,5 +166,5 @@ func TestStartSpanFromNilContext(t *testing.T) {
 	sactx, ok := ctxSpan.(traceinternal.SpanV2Adapter)
 	assert.True(ok)
 	got := sactx.Span
-	assert.Equal(internalSpan, got)
+	assert.Equal(sa.Span, got)
 }

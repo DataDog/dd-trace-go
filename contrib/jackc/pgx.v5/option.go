@@ -33,9 +33,7 @@ func WithTraceCopyFrom(enabled bool) Option {
 
 // WithTraceAcquire enables tracing pgxpool connection acquire calls.
 func WithTraceAcquire(enabled bool) Option {
-	return func(c *config) {
-		c.traceAcquire = enabled
-	}
+	return v2.WithTraceAcquire(enabled)
 }
 
 // WithTracePrepare enables tracing prepared statements.

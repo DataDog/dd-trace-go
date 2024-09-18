@@ -61,8 +61,3 @@ func TraceAndServe(h http.Handler, w http.ResponseWriter, r *http.Request, cfg *
 	c.SpanOpts[0] = tracer.ApplyV1Options(cfg.SpanOpts...)
 	v2.TraceAndServe(h, w, r, c)
 }
-
-// Unwrap returns the underlying wrapped http.ResponseWriter.
-func (w *responseWriter) Unwrap() http.ResponseWriter {
-	return w.ResponseWriter
-}

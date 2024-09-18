@@ -19,16 +19,12 @@ func WithServiceName(name string) Option {
 
 // WithDataStreams enables the Data Streams monitoring product features: https://www.datadoghq.com/product/data-streams-monitoring/
 func WithDataStreams() Option {
-	return func(cfg *config) {
-		cfg.dataStreamsEnabled = true
-	}
+	return v2.WithDataStreams()
 }
 
 // WithGroupID tags the produced data streams metrics with the given groupID (aka consumer group)
 func WithGroupID(groupID string) Option {
-	return func(cfg *config) {
-		cfg.groupID = groupID
-	}
+	return v2.WithGroupID(groupID)
 }
 
 // WithAnalytics enables Trace Analytics for all started spans.

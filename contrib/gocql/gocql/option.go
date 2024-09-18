@@ -60,23 +60,17 @@ func WithCustomTag(key string, value interface{}) WrapOption {
 // WithTraceQuery will enable tracing for queries (default is true).
 // This option only takes effect in CreateTracedSession and NewObserver.
 func WithTraceQuery(enabled bool) WrapOption {
-	return func(cfg *config) {
-		cfg.traceQuery = enabled
-	}
+	return v2.WithTraceQuery(enabled)
 }
 
 // WithTraceBatch will enable tracing for batches (default is true).
 // This option only takes effect in CreateTracedSession and NewObserver.
 func WithTraceBatch(enabled bool) WrapOption {
-	return func(cfg *config) {
-		cfg.traceBatch = enabled
-	}
+	return v2.WithTraceBatch(enabled)
 }
 
 // WithTraceConnect will enable tracing for connections (default is true).
 // This option only takes effect in CreateTracedSession and NewObserver.
 func WithTraceConnect(enabled bool) WrapOption {
-	return func(cfg *config) {
-		cfg.traceConnect = enabled
-	}
+	return v2.WithTraceConnect(enabled)
 }

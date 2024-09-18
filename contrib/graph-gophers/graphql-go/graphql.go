@@ -16,6 +16,7 @@ import (
 
 	v2 "github.com/DataDog/dd-trace-go/contrib/graph-gophers/graphql-go/v2"
 	"github.com/graph-gophers/graphql-go/introspection"
+	"github.com/graph-gophers/graphql-go/trace/tracer"
 )
 
 const (
@@ -29,7 +30,7 @@ const (
 // A Tracer implements the graphql-go/trace.Tracer interface by sending traces
 // to the Datadog tracer.
 type Tracer struct {
-	v2.Tracer
+	tracer.Tracer
 }
 
 var _ tracer.Tracer = (*Tracer)(nil)
