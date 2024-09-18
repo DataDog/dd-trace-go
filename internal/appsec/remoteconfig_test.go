@@ -10,7 +10,7 @@ import (
 	"errors"
 	"os"
 	"reflect"
-	"sort"
+	"slices"
 	"strings"
 	"testing"
 
@@ -119,63 +119,63 @@ func TestMergeRulesData(t *testing.T) {
 	for _, tc := range []struct {
 		name     string
 		update   remoteconfig.ProductUpdate
-		expected []config.RuleDataEntry
+		expected config.RulesFragment
 		statuses map[string]rc.ApplyStatus
 	}{
 		{
 			name:     "empty-rule-data",
 			update:   map[string][]byte{},
-			statuses: map[string]rc.ApplyStatus{"some/path": {State: rc.ApplyStateAcknowledged}},
+			statuses: map[string]rc.ApplyStatus{},
 		},
 		{
 			name: "bad-json",
 			update: map[string][]byte{
 				"some/path": []byte(`[}]`),
 			},
-			statuses: map[string]rc.ApplyStatus{"some/path": {State: rc.ApplyStateError}},
+			statuses: map[string]rc.ApplyStatus{"some/path": {State: rc.ApplyStateError, Error: "invalid character '}' looking for beginning of value"}},
 		},
 		{
-			name: "single-value",
+			name: "single-rules-value",
 			update: map[string][]byte{
 				"some/path": []byte(`{"rules_data":[{"id":"test","type":"data_with_expiration","data":[{"expiration":3494138481,"value":"user1"}]}]}`),
 			},
-			expected: []config.RuleDataEntry{{ID: "test", Type: "data_with_expiration", Data: []rc.ASMDataRuleDataEntry{
+			expected: config.RulesFragment{RulesData: []config.DataEntry{{ID: "test", Type: "data_with_expiration", Data: []rc.ASMDataRuleDataEntry{
 				{Expiration: 3494138481, Value: "user1"},
-			}}},
+			}}}},
 			statuses: map[string]rc.ApplyStatus{"some/path": {State: rc.ApplyStateAcknowledged}},
 		},
 		{
-			name: "multiple-values",
+			name: "multiple-rules-values",
 			update: map[string][]byte{
 				"some/path": []byte(`{"rules_data":[{"id":"test","type":"data_with_expiration","data":[{"expiration":3494138481,"value":"user1"},{"expiration":3494138441,"value":"user2"}]}]}`),
 			},
-			expected: []config.RuleDataEntry{{ID: "test", Type: "data_with_expiration", Data: []rc.ASMDataRuleDataEntry{
+			expected: config.RulesFragment{RulesData: []config.DataEntry{{ID: "test", Type: "data_with_expiration", Data: []rc.ASMDataRuleDataEntry{
 				{Expiration: 3494138481, Value: "user1"},
 				{Expiration: 3494138441, Value: "user2"},
-			}}},
+			}}}},
 			statuses: map[string]rc.ApplyStatus{"some/path": {State: rc.ApplyStateAcknowledged}},
 		},
 		{
-			name: "multiple-entries",
+			name: "multiple-rules-entries",
 			update: map[string][]byte{
 				"some/path": []byte(`{"rules_data":[{"id":"test1","type":"data_with_expiration","data":[{"expiration":3494138444,"value":"user3"}]},{"id":"test2","type":"data_with_expiration","data":[{"expiration":3495138481,"value":"user4"}]}]}`),
 			},
-			expected: []config.RuleDataEntry{
+			expected: config.RulesFragment{RulesData: []config.DataEntry{
 				{ID: "test1", Type: "data_with_expiration", Data: []rc.ASMDataRuleDataEntry{
 					{Expiration: 3494138444, Value: "user3"},
 				}}, {ID: "test2", Type: "data_with_expiration", Data: []rc.ASMDataRuleDataEntry{
 					{Expiration: 3495138481, Value: "user4"},
 				}},
-			},
+			}},
 			statuses: map[string]rc.ApplyStatus{"some/path": {State: rc.ApplyStateAcknowledged}},
 		},
 		{
-			name: "merging-entries",
+			name: "merging-rules-entries",
 			update: map[string][]byte{
 				"some/path/1": []byte(`{"rules_data":[{"id":"test1","type":"data_with_expiration","data":[{"expiration":3494138444,"value":"user3"}]},{"id":"test2","type":"data_with_expiration","data":[{"expiration":3495138481,"value":"user4"}]}]}`),
 				"some/path/2": []byte(`{"rules_data":[{"id":"test1","type":"data_with_expiration","data":[{"expiration":3494138445,"value":"user3"}]},{"id":"test2","type":"data_with_expiration","data":[{"expiration":0,"value":"user5"}]}]}`),
 			},
-			expected: []config.RuleDataEntry{
+			expected: config.RulesFragment{RulesData: []config.DataEntry{
 				{ID: "test1", Type: "data_with_expiration", Data: []rc.ASMDataRuleDataEntry{
 					{Expiration: 3494138445, Value: "user3"},
 				}},
@@ -183,7 +183,62 @@ func TestMergeRulesData(t *testing.T) {
 					{Expiration: 3495138481, Value: "user4"},
 					{Expiration: 0, Value: "user5"},
 				}},
+			}},
+			statuses: map[string]rc.ApplyStatus{
+				"some/path/1": {State: rc.ApplyStateAcknowledged},
+				"some/path/2": {State: rc.ApplyStateAcknowledged},
 			},
+		},
+		{
+			name: "single-exclusions-value",
+			update: map[string][]byte{
+				"some/path": []byte(`{"exclusions_data":[{"id":"test","type":"data_with_expiration","data":[{"expiration":3494138481,"value":"user1"}]}]}`),
+			},
+			expected: config.RulesFragment{ExclusionData: []config.DataEntry{{ID: "test", Type: "data_with_expiration", Data: []rc.ASMDataRuleDataEntry{
+				{Expiration: 3494138481, Value: "user1"},
+			}}}},
+			statuses: map[string]rc.ApplyStatus{"some/path": {State: rc.ApplyStateAcknowledged}},
+		},
+		{
+			name: "multiple-exclusions-values",
+			update: map[string][]byte{
+				"some/path": []byte(`{"exclusions_data":[{"id":"test","type":"data_with_expiration","data":[{"expiration":3494138481,"value":"user1"},{"expiration":3494138441,"value":"user2"}]}]}`),
+			},
+			expected: config.RulesFragment{ExclusionData: []config.DataEntry{{ID: "test", Type: "data_with_expiration", Data: []rc.ASMDataRuleDataEntry{
+				{Expiration: 3494138481, Value: "user1"},
+				{Expiration: 3494138441, Value: "user2"},
+			}}}},
+			statuses: map[string]rc.ApplyStatus{"some/path": {State: rc.ApplyStateAcknowledged}},
+		},
+		{
+			name: "multiple-exclusions-entries",
+			update: map[string][]byte{
+				"some/path": []byte(`{"exclusions_data":[{"id":"test1","type":"data_with_expiration","data":[{"expiration":3494138444,"value":"user3"}]},{"id":"test2","type":"data_with_expiration","data":[{"expiration":3495138481,"value":"user4"}]}]}`),
+			},
+			expected: config.RulesFragment{ExclusionData: []config.DataEntry{
+				{ID: "test1", Type: "data_with_expiration", Data: []rc.ASMDataRuleDataEntry{
+					{Expiration: 3494138444, Value: "user3"},
+				}}, {ID: "test2", Type: "data_with_expiration", Data: []rc.ASMDataRuleDataEntry{
+					{Expiration: 3495138481, Value: "user4"},
+				}},
+			}},
+			statuses: map[string]rc.ApplyStatus{"some/path": {State: rc.ApplyStateAcknowledged}},
+		},
+		{
+			name: "merging-exclusions-entries",
+			update: map[string][]byte{
+				"some/path/1": []byte(`{"exclusions_data":[{"id":"test1","type":"data_with_expiration","data":[{"expiration":3494138444,"value":"user3"}]},{"id":"test2","type":"data_with_expiration","data":[{"expiration":3495138481,"value":"user4"}]}]}`),
+				"some/path/2": []byte(`{"exclusions_data":[{"id":"test1","type":"data_with_expiration","data":[{"expiration":3494138445,"value":"user3"}]},{"id":"test2","type":"data_with_expiration","data":[{"expiration":0,"value":"user5"}]}]}`),
+			},
+			expected: config.RulesFragment{ExclusionData: []config.DataEntry{
+				{ID: "test1", Type: "data_with_expiration", Data: []rc.ASMDataRuleDataEntry{
+					{Expiration: 3494138445, Value: "user3"},
+				}},
+				{ID: "test2", Type: "data_with_expiration", Data: []rc.ASMDataRuleDataEntry{
+					{Expiration: 3495138481, Value: "user4"},
+					{Expiration: 0, Value: "user5"},
+				}},
+			}},
 			statuses: map[string]rc.ApplyStatus{
 				"some/path/1": {State: rc.ApplyStateAcknowledged},
 				"some/path/2": {State: rc.ApplyStateAcknowledged},
@@ -191,30 +246,27 @@ func TestMergeRulesData(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			merged, statuses := mergeRulesData(tc.update)
-			// Sort the compared elements since ordering is not guaranteed and the slice hold types that embed
-			// more slices
-			require.Len(t, merged, len(tc.expected))
-			sort.Slice(merged, func(i, j int) bool {
-				return strings.Compare(merged[i].ID, merged[j].ID) < 0
-			})
-			sort.Slice(tc.expected, func(i, j int) bool {
-				return strings.Compare(merged[i].ID, merged[j].ID) < 0
-			})
+			fragment, statuses := mergeRulesData(tc.update)
 
-			for i := range tc.expected {
-				require.Equal(t, tc.expected[i].ID, merged[i].ID)
-				require.Equal(t, tc.expected[i].Type, merged[i].Type)
-				require.ElementsMatch(t, tc.expected[i].Data, merged[i].Data)
-			}
-			for k := range statuses {
-				require.Equal(t, tc.statuses[k].State, statuses[k].State)
-				if statuses[k].State == rc.ApplyStateError {
-					require.NotEmpty(t, statuses[k].Error)
-				} else {
-					require.Empty(t, statuses[k].Error)
+			// Sort the data entries to make the comparison easier
+			sort := func(actual []config.DataEntry) {
+				slices.SortStableFunc(actual, func(a, b config.DataEntry) int {
+					return strings.Compare(a.ID, b.ID)
+				})
+				for _, data := range actual {
+					slices.SortStableFunc(data.Data, func(a, b rc.ASMDataRuleDataEntry) int {
+						return strings.Compare(a.Value, b.Value)
+					})
 				}
 			}
+
+			sort(fragment.RulesData)
+			sort(fragment.ExclusionData)
+			sort(tc.expected.RulesData)
+			sort(tc.expected.ExclusionData)
+
+			require.Equal(t, tc.expected, fragment)
+			require.Equal(t, tc.statuses, statuses)
 		})
 	}
 }
@@ -437,7 +489,7 @@ func craftRCUpdates(fragments map[string]config.RulesFragment) map[string]remote
 				update[rc.ProductASM] = make(remoteconfig.ProductUpdate)
 			}
 			update[rc.ProductASM][path] = data
-		} else if len(frag.RulesData) > 0 {
+		} else if len(frag.RulesData) > 0 || len(frag.ExclusionData) > 0 {
 			if _, ok := update[rc.ProductASMData]; !ok {
 				update[rc.ProductASMData] = make(remoteconfig.ProductUpdate)
 			}

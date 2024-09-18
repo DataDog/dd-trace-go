@@ -11,6 +11,8 @@ import (
 	"fmt"
 	"os"
 
+	"golang.org/x/exp/maps"
+
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/config"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/orchestrion"
@@ -67,9 +69,9 @@ updateLoop:
 		switch p {
 		case rc.ProductASMData:
 			// Merge all rules data entries together and store them as a RulesManager edit entry
-			rulesData, status := mergeRulesData(u)
+			fragment, status := mergeRulesData(u)
 			statuses = mergeMaps(statuses, status)
-			r.AddEdit("asmdata", config.RulesFragment{RulesData: rulesData})
+			r.AddEdit("asmdata", fragment)
 		case rc.ProductASMDD:
 			var (
 				removalFound = false
@@ -241,11 +243,32 @@ func (a *appsec) handleASMFeatures(u remoteconfig.ProductUpdate) map[string]rc.A
 	return statuses
 }
 
-func mergeRulesData(u remoteconfig.ProductUpdate) ([]config.RuleDataEntry, map[string]rc.ApplyStatus) {
+func mergeRulesData(u remoteconfig.ProductUpdate) (config.RulesFragment, map[string]rc.ApplyStatus) {
 	// Following the RFC, merging should only happen when two rules data with the same ID and same Type are received
-	// allRulesData[ID][Type] will return the rules data of said id and type, if it exists
-	allRulesData := make(map[string]map[string]config.RuleDataEntry)
+	type mapKey struct {
+		id  string
+		typ string
+	}
+	mergedRulesData := make(map[mapKey]config.DataEntry)
+	mergedExclusionData := make(map[mapKey]config.DataEntry)
 	statuses := statusesFromUpdate(u, true, nil)
+
+	mergeUpdateEntry := func(mergeMap map[mapKey]config.DataEntry, data []config.DataEntry) {
+		for _, ruleData := range data {
+			key := mapKey{id: ruleData.ID, typ: ruleData.Type}
+			if data, ok := mergeMap[key]; ok {
+				// Merge rules data entries with the same ID and Type
+				mergeMap[key] = config.DataEntry{
+					ID:   data.ID,
+					Type: data.Type,
+					Data: mergeRulesDataEntries(data.Data, ruleData.Data),
+				}
+				continue
+			}
+
+			mergeMap[key] = ruleData
+		}
+	}
 
 	for path, raw := range u {
 		log.Debug("appsec: Remote config: processing %s", path)
@@ -258,36 +281,32 @@ func mergeRulesData(u remoteconfig.ProductUpdate) ([]config.RuleDataEntry, map[s
 			continue
 		}
 
-		var rulesData config.RulesData
-		if err := json.Unmarshal(raw, &rulesData); err != nil {
+		var parsedUpdate map[string][]config.DataEntry
+		if err := json.Unmarshal(raw, &parsedUpdate); err != nil {
 			log.Debug("appsec: Remote config: error while unmarshalling payload for %s: %v. Configuration won't be applied.", path, err)
 			statuses[path] = genApplyStatus(false, err)
 			continue
 		}
 
-		// Check each entry against allRulesData to see if merging is necessary
-		for _, ruleData := range rulesData.RulesData {
-			if allRulesData[ruleData.ID] == nil {
-				allRulesData[ruleData.ID] = make(map[string]config.RuleDataEntry)
-			}
-			if data, ok := allRulesData[ruleData.ID][ruleData.Type]; ok {
-				// Merge rules data entries with the same ID and Type
-				data.Data = mergeRulesDataEntries(data.Data, ruleData.Data)
-				allRulesData[ruleData.ID][ruleData.Type] = data
-			} else {
-				allRulesData[ruleData.ID][ruleData.Type] = ruleData
-			}
+		if exclusionData, ok := parsedUpdate["exclusions_data"]; ok {
+			mergeUpdateEntry(mergedExclusionData, exclusionData)
+		}
+
+		if rulesData, ok := parsedUpdate["rules_data"]; ok {
+			mergeUpdateEntry(mergedRulesData, rulesData)
 		}
 	}
 
-	// Aggregate all the rules data before passing it over to the WAF
-	var rulesData []config.RuleDataEntry
-	for _, m := range allRulesData {
-		for _, data := range m {
-			rulesData = append(rulesData, data)
-		}
+	var fragment config.RulesFragment
+	if len(mergedRulesData) > 0 {
+		fragment.RulesData = maps.Values(mergedRulesData)
 	}
-	return rulesData, statuses
+
+	if len(mergedExclusionData) > 0 {
+		fragment.ExclusionData = maps.Values(mergedExclusionData)
+	}
+
+	return fragment, statuses
 }
 
 // mergeRulesDataEntries merges two slices of rules data entries together, removing duplicates and
@@ -373,6 +392,7 @@ var blockingCapabilities = [...]remoteconfig.Capability{
 	remoteconfig.ASMCustomRules,
 	remoteconfig.ASMCustomBlockingResponse,
 	remoteconfig.ASMTrustedIPs,
+	remoteconfig.ASMExclusionData,
 }
 
 func (a *appsec) enableRCBlocking() {
