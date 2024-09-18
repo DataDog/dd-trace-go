@@ -192,7 +192,7 @@ func TestMergeRulesData(t *testing.T) {
 		{
 			name: "single-exclusions-value",
 			update: map[string][]byte{
-				"some/path": []byte(`{"exclusions_data":[{"id":"test","type":"data_with_expiration","data":[{"expiration":3494138481,"value":"user1"}]}]}`),
+				"some/path": []byte(`{"exclusion_data":[{"id":"test","type":"data_with_expiration","data":[{"expiration":3494138481,"value":"user1"}]}]}`),
 			},
 			expected: config.RulesFragment{ExclusionData: []config.DataEntry{{ID: "test", Type: "data_with_expiration", Data: []rc.ASMDataRuleDataEntry{
 				{Expiration: 3494138481, Value: "user1"},
@@ -202,7 +202,7 @@ func TestMergeRulesData(t *testing.T) {
 		{
 			name: "multiple-exclusions-values",
 			update: map[string][]byte{
-				"some/path": []byte(`{"exclusions_data":[{"id":"test","type":"data_with_expiration","data":[{"expiration":3494138481,"value":"user1"},{"expiration":3494138441,"value":"user2"}]}]}`),
+				"some/path": []byte(`{"exclusion_data":[{"id":"test","type":"data_with_expiration","data":[{"expiration":3494138481,"value":"user1"},{"expiration":3494138441,"value":"user2"}]}]}`),
 			},
 			expected: config.RulesFragment{ExclusionData: []config.DataEntry{{ID: "test", Type: "data_with_expiration", Data: []rc.ASMDataRuleDataEntry{
 				{Expiration: 3494138481, Value: "user1"},
@@ -213,7 +213,7 @@ func TestMergeRulesData(t *testing.T) {
 		{
 			name: "multiple-exclusions-entries",
 			update: map[string][]byte{
-				"some/path": []byte(`{"exclusions_data":[{"id":"test1","type":"data_with_expiration","data":[{"expiration":3494138444,"value":"user3"}]},{"id":"test2","type":"data_with_expiration","data":[{"expiration":3495138481,"value":"user4"}]}]}`),
+				"some/path": []byte(`{"exclusion_data":[{"id":"test1","type":"data_with_expiration","data":[{"expiration":3494138444,"value":"user3"}]},{"id":"test2","type":"data_with_expiration","data":[{"expiration":3495138481,"value":"user4"}]}]}`),
 			},
 			expected: config.RulesFragment{ExclusionData: []config.DataEntry{
 				{ID: "test1", Type: "data_with_expiration", Data: []rc.ASMDataRuleDataEntry{
@@ -227,8 +227,8 @@ func TestMergeRulesData(t *testing.T) {
 		{
 			name: "merging-exclusions-entries",
 			update: map[string][]byte{
-				"some/path/1": []byte(`{"exclusions_data":[{"id":"test1","type":"data_with_expiration","data":[{"expiration":3494138444,"value":"user3"}]},{"id":"test2","type":"data_with_expiration","data":[{"expiration":3495138481,"value":"user4"}]}]}`),
-				"some/path/2": []byte(`{"exclusions_data":[{"id":"test1","type":"data_with_expiration","data":[{"expiration":3494138445,"value":"user3"}]},{"id":"test2","type":"data_with_expiration","data":[{"expiration":0,"value":"user5"}]}]}`),
+				"some/path/1": []byte(`{"exclusion_data":[{"id":"test1","type":"data_with_expiration","data":[{"expiration":3494138444,"value":"user3"}]},{"id":"test2","type":"data_with_expiration","data":[{"expiration":3495138481,"value":"user4"}]}]}`),
+				"some/path/2": []byte(`{"exclusion_data":[{"id":"test1","type":"data_with_expiration","data":[{"expiration":3494138445,"value":"user3"}]},{"id":"test2","type":"data_with_expiration","data":[{"expiration":0,"value":"user5"}]}]}`),
 			},
 			expected: config.RulesFragment{ExclusionData: []config.DataEntry{
 				{ID: "test1", Type: "data_with_expiration", Data: []rc.ASMDataRuleDataEntry{
@@ -509,7 +509,7 @@ type testRulesOverrideEntry struct {
 
 func TestOnRCUpdate(t *testing.T) {
 
-	BaseRuleset, err := config.NewRulesManeger(nil)
+	BaseRuleset, err := config.NewRulesManager(nil)
 	require.NoError(t, err)
 	BaseRuleset.Compile()
 
@@ -723,7 +723,7 @@ func TestOnRCUpdate(t *testing.T) {
 }
 
 func TestOnRCUpdateStatuses(t *testing.T) {
-	invalidRuleset, err := config.NewRulesManeger([]byte(`{"version": "2.2", "metadata": {"rules_version": "1.4.2"}, "rules": [{"id": "id","name":"name","tags":{},"conditions":[],"transformers":[],"on_match":[]}]}`))
+	invalidRuleset, err := config.NewRulesManager([]byte(`{"version": "2.2", "metadata": {"rules_version": "1.4.2"}, "rules": [{"id": "id","name":"name","tags":{},"conditions":[],"transformers":[],"on_match":[]}]}`))
 	require.NoError(t, err)
 	invalidRules := invalidRuleset.Base
 	overrides := config.RulesFragment{

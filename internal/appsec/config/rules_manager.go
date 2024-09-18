@@ -68,10 +68,10 @@ func (f *RulesFragment) clone() (clone RulesFragment) {
 	return
 }
 
-// NewRulesManeger initializes and returns a new RulesManager using the provided rules.
+// NewRulesManager initializes and returns a new RulesManager using the provided rules.
 // If no rules are provided (nil), the default rules are used instead.
 // If the provided rules are invalid, an error is returned
-func NewRulesManeger(rules []byte) (*RulesManager, error) {
+func NewRulesManager(rules []byte) (*RulesManager, error) {
 	var f RulesFragment
 	if rules == nil {
 		f = DefaultRulesFragment()

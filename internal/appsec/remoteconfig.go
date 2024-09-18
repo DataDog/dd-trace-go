@@ -288,7 +288,7 @@ func mergeRulesData(u remoteconfig.ProductUpdate) (config.RulesFragment, map[str
 			continue
 		}
 
-		if exclusionData, ok := parsedUpdate["exclusions_data"]; ok {
+		if exclusionData, ok := parsedUpdate["exclusion_data"]; ok {
 			mergeUpdateEntry(mergedExclusionData, exclusionData)
 		}
 

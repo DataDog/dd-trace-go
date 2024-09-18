@@ -199,6 +199,10 @@ func (a *appsec) stop() {
 		a.wafHandle.Close()
 		a.wafHandle = nil
 	}
+
+	// Reset rules edits received from the remote configuration
+	a.cfg.RulesManager, _ = config.NewRulesManager(nil)
+
 	// TODO: block until no more requests are using dyngo operations
 
 	a.limiter.Stop()
