@@ -64,7 +64,7 @@ func WrapSession(s *session.Session, opts ...Option) *session.Session {
 		Name: SendHandlerName,
 		Fn:   h.Send,
 	})
-	s.Handlers.Complete.PushBackNamed(request.NamedHandler{
+	s.Handlers.CompleteAttempt.PushBackNamed(request.NamedHandler{
 		Name: CompleteHandlerName,
 		Fn:   h.Complete,
 	})
@@ -72,9 +72,6 @@ func WrapSession(s *session.Session, opts ...Option) *session.Session {
 }
 
 func (h *handlers) Send(req *request.Request) {
-	if req.RetryCount != 0 {
-		return
-	}
 	// Make a copy of the URL so we don't modify the outgoing request
 	url := *req.HTTPRequest.URL
 	url.User = nil // Do not include userinfo in the HTTPURL tag.

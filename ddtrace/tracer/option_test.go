@@ -27,7 +27,6 @@ import (
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
@@ -303,6 +302,39 @@ func TestAgentIntegration(t *testing.T) {
 		cfg.loadContribIntegrations(deps)
 		assert.True(t, cfg.integrations["gRPC"].Available)
 		assert.Equal(t, cfg.integrations["gRPC"].Version, "v1.520")
+		assert.False(t, cfg.integrations["gRPC v12"].Available)
+	})
+
+	t.Run("grpc v12", func(t *testing.T) {
+		cfg := newConfig()
+		defer clearIntegrationsForTests()
+
+		d := debug.Module{
+			Path:    "google.golang.org/grpc",
+			Version: "v1.10",
+		}
+
+		deps := []*debug.Module{&d}
+		cfg.loadContribIntegrations(deps)
+		assert.True(t, cfg.integrations["gRPC v12"].Available)
+		assert.Equal(t, cfg.integrations["gRPC v12"].Version, "v1.10")
+		assert.False(t, cfg.integrations["gRPC"].Available)
+	})
+
+	t.Run("grpc bad", func(t *testing.T) {
+		cfg := newConfig()
+		defer clearIntegrationsForTests()
+
+		d := debug.Module{
+			Path:    "google.golang.org/grpc",
+			Version: "v10.10",
+		}
+
+		deps := []*debug.Module{&d}
+		cfg.loadContribIntegrations(deps)
+		assert.False(t, cfg.integrations["gRPC v12"].Available)
+		assert.Equal(t, cfg.integrations["gRPC v12"].Version, "")
+		assert.False(t, cfg.integrations["gRPC"].Available)
 	})
 
 	// ensure we clean up global state
@@ -795,9 +827,9 @@ func TestTracerOptionsDefaults(t *testing.T) {
 
 func TestDefaultHTTPClient(t *testing.T) {
 	defTracerClient := func(timeout int) *http.Client {
-		if _, err := os.Stat(internal.DefaultTraceAgentUDSPath); err == nil {
+		if _, err := os.Stat(defaultSocketAPM); err == nil {
 			// we have the UDS socket file, use it
-			return udsClient(internal.DefaultTraceAgentUDSPath, 0)
+			return udsClient(defaultSocketAPM, 0)
 		}
 		return defaultHTTPClient(time.Second * time.Duration(timeout))
 	}
@@ -821,8 +853,8 @@ func TestDefaultHTTPClient(t *testing.T) {
 			t.Fatal(err)
 		}
 		defer os.RemoveAll(f.Name())
-		defer func(old string) { internal.DefaultTraceAgentUDSPath = old }(internal.DefaultTraceAgentUDSPath)
-		internal.DefaultTraceAgentUDSPath = f.Name()
+		defer func(old string) { defaultSocketAPM = old }(defaultSocketAPM)
+		defaultSocketAPM = f.Name()
 		x := *defTracerClient(2)
 		y := *defaultHTTPClient(2)
 		compareHTTPClients(t, x, y)
@@ -1254,7 +1286,6 @@ func TestStatsTags(t *testing.T) {
 	assert.Contains(tags, "service:serviceName")
 	assert.Contains(tags, "env:envName")
 	assert.Contains(tags, "host:hostName")
-	assert.Contains(tags, "tracer_version:"+version.Tag)
 
 	st := globalconfig.StatsTags()
 	// all of the tracer tags except `service` and `version` should be on `st`
@@ -1263,7 +1294,7 @@ func TestStatsTags(t *testing.T) {
 	assert.Contains(st, "host:hostName")
 	assert.Contains(st, "lang:go")
 	assert.Contains(st, "lang_version:"+runtime.Version())
-	assert.NotContains(st, "tracer_version:"+version.Tag)
+	assert.NotContains(st, "version:"+version.Tag)
 	assert.NotContains(st, "service:serviceName")
 }
 
@@ -1406,14 +1437,19 @@ func TestWithHeaderTags(t *testing.T) {
 }
 
 func TestHostnameDisabled(t *testing.T) {
-	t.Run("Default", func(t *testing.T) {
+	t.Run("DisabledWithUDS", func(t *testing.T) {
+		t.Setenv("DD_TRACE_AGENT_URL", "unix://somefakesocket")
 		c := newConfig()
 		assert.False(t, c.enableHostnameDetection)
 	})
-	t.Run("EnableViaEnv", func(t *testing.T) {
-		t.Setenv("DD_TRACE_CLIENT_HOSTNAME_COMPAT", "v1.66")
+	t.Run("Default", func(t *testing.T) {
 		c := newConfig()
 		assert.True(t, c.enableHostnameDetection)
+	})
+	t.Run("DisableViaEnv", func(t *testing.T) {
+		t.Setenv("DD_CLIENT_HOSTNAME_ENABLED", "false")
+		c := newConfig()
+		assert.False(t, c.enableHostnameDetection)
 	})
 }
 

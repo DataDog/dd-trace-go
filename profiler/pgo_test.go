@@ -3,6 +3,10 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2024 Datadog, Inc.
 
+// Only run this test on Go 1.21 and later. This is when pgo became enabled by
+// default in the go compiler.
+//go:build go1.21
+
 package profiler
 
 import (

@@ -37,7 +37,7 @@ func TestHeaderTagSlice(t *testing.T) {
 	t.Run("datadog headers", func(t *testing.T) {
 		hSlice := []string{"x-datadog-id:tag"}
 		hMap := HeaderTagSlice(hSlice)
-		assert.Len(t, hMap, 1)
+		assert.Len(t, hMap, 0)
 	})
 	t.Run("leading colon", func(t *testing.T) {
 		hSlice := []string{":header"}

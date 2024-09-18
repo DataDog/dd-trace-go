@@ -70,26 +70,14 @@ const (
 	APMTracingHTTPHeaderTags
 	// APMTracingCustomTags enables APM client to set custom tags on all spans
 	APMTracingCustomTags
-	// ASMProcessorOverrides adds support for processor overrides through the ASM RC Product
-	ASMProcessorOverrides
-	// ASMCustomDataScanners adds support for custom data scanners through the ASM RC Product
-	ASMCustomDataScanners
-	// ASMExclusionData adds support configurable exclusion filter data from the ASM_DATA Product
-	ASMExclusionData
-	// APMTracingEnabled enables APM tracing
-	APMTracingEnabled
-	// APMTracingDataStreamsEnabled enables Data Streams Monitoring
-	APMTracingDataStreamsEnabled
-	// ASMRASPSQLI enables ASM support for runtime protection against SQL Injection attacks
-	ASMRASPSQLI
-	// ASMRASPLFI enables ASM support for runtime protection against Local File Inclusion attacks
-	ASMRASPLFI
 	// ASMRASPSSRF enables ASM support for runtime protection against SSRF attacks
-	ASMRASPSSRF
+	ASMRASPSSRF = 23
 )
 
 // Additional capability bit index values that are non-consecutive from above.
 const (
+	// APMTracingEnabled enables APM tracing
+	APMTracingEnabled Capability = 19
 	// APMTracingSampleRules represents the sampling rate using matching rules from APM client libraries
 	APMTracingSampleRules = 29
 )

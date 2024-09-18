@@ -40,7 +40,8 @@ const (
 )
 
 var (
-	initOnce        sync.Once
+	lock = sync.Mutex{}
+
 	gitMetadataTags map[string]string
 )
 
@@ -75,10 +76,10 @@ func getTagsFromDDTags() map[string]string {
 	}
 }
 
-// getTagsFromBinary extracts git metadata from binary metadata.
-func getTagsFromBinary(readBuildInfo func() (*debug.BuildInfo, bool)) map[string]string {
+// getTagsFromBinary extracts git metadata from binary metadata
+func getTagsFromBinary() map[string]string {
 	res := make(map[string]string)
-	info, ok := readBuildInfo()
+	info, ok := debug.ReadBuildInfo()
 	if !ok {
 		log.Debug("ReadBuildInfo failed, skip source code metadata extracting")
 		return res
@@ -101,25 +102,32 @@ func getTagsFromBinary(readBuildInfo func() (*debug.BuildInfo, bool)) map[string
 	return res
 }
 
-// GetGitMetadataTags returns git metadata tags. Returned map is read-only
+// GetGitMetadataTags returns git metadata tags
 func GetGitMetadataTags() map[string]string {
-	initOnce.Do(initGitMetadataTags)
-	return gitMetadataTags
-}
+	lock.Lock()
+	defer lock.Unlock()
 
-func initGitMetadataTags() {
+	if gitMetadataTags != nil {
+		return gitMetadataTags
+	}
+
 	gitMetadataTags = make(map[string]string)
 
 	if BoolEnv(EnvGitMetadataEnabledFlag, true) {
 		updateAllTags(gitMetadataTags, getTagsFromEnv())
 		updateAllTags(gitMetadataTags, getTagsFromDDTags())
-		updateAllTags(gitMetadataTags, getTagsFromBinary(debug.ReadBuildInfo))
+		updateAllTags(gitMetadataTags, getTagsFromBinary())
 	}
+
+	return gitMetadataTags
 }
 
-// RefreshGitMetadataTags reset cached metadata tags. NOT thread-safe, use for testing only
-func RefreshGitMetadataTags() {
-	initGitMetadataTags()
+// ResetGitMetadataTags reset cashed metadata tags
+func ResetGitMetadataTags() {
+	lock.Lock()
+	defer lock.Unlock()
+
+	gitMetadataTags = nil
 }
 
 // CleanGitMetadataTags cleans up tags from git metadata

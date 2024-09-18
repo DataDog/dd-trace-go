@@ -12,17 +12,18 @@ package httpsec
 
 import (
 	"context"
+	"gopkg.in/DataDog/dd-trace-go.v1/appsec/events"
 
 	// Blank import needed to use embed for the default blocked response payloads
 	_ "embed"
 	"net/http"
 	"strings"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/appsec/events"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/httpsec/types"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/sharedsec"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/trace"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/trace/httptrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
@@ -35,7 +36,7 @@ import (
 // This function should not be called when AppSec is disabled in order to
 // get preciser error logs.
 func MonitorParsedBody(ctx context.Context, body any) error {
-	parent, _ := dyngo.FromContext(ctx)
+	parent, _ := ctx.Value(listener.ContextKey{}).(*types.Operation)
 	if parent == nil {
 		log.Error("appsec: parsed http body monitoring ignored: could not find the http handler instrumentation metadata in the request context: the request handler is not being monitored by a middleware function or the provided context is not the expected request context")
 		return nil
@@ -93,7 +94,7 @@ func WrapHandler(handler http.Handler, span ddtrace.Span, pathParams map[string]
 		r = r.WithContext(ctx)
 
 		defer func() {
-			events := op.Finish(MakeHandlerOperationRes(w, opts.ResponseHeaderCopier))
+			events := op.Finish(MakeHandlerOperationRes(w))
 
 			// Execute the onBlock functions to make sure blocking works properly
 			// in case we are instrumenting the Gin framework
@@ -149,12 +150,12 @@ func MakeHandlerOperationArgs(r *http.Request, clientIP netip.Addr, pathParams m
 }
 
 // MakeHandlerOperationRes creates the HandlerOperationRes value.
-func MakeHandlerOperationRes(w http.ResponseWriter, responseHeadersCopier func(http.ResponseWriter) http.Header) types.HandlerOperationRes {
+func MakeHandlerOperationRes(w http.ResponseWriter) types.HandlerOperationRes {
 	var status int
 	if mw, ok := w.(interface{ Status() int }); ok {
 		status = mw.Status()
 	}
-	return types.HandlerOperationRes{Status: status, Headers: headersRemoveCookies(responseHeadersCopier(w))}
+	return types.HandlerOperationRes{Status: status, Headers: headersRemoveCookies(w.Header())}
 }
 
 // Remove cookies from the request headers and return the map of headers
@@ -194,9 +195,10 @@ func StartOperation(ctx context.Context, args types.HandlerOperationArgs, setup 
 		Operation:  dyngo.NewOperation(nil),
 		TagsHolder: trace.NewTagsHolder(),
 	}
+	newCtx := context.WithValue(ctx, listener.ContextKey{}, op)
 	for _, cb := range setup {
 		cb(op)
 	}
-
-	return dyngo.StartAndRegisterOperation(ctx, op, args), op
+	dyngo.StartOperation(op, args)
+	return newCtx, op
 }

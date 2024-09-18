@@ -21,16 +21,18 @@ import (
 // emits a start event up in the operation stack. The operation is usually linked to tge global root
 // operation. The operation is tracked on the returned context, and can be extracted later on using
 // FromContext.
-func StartRequestOperation(ctx context.Context, span trace.TagSetter, args types.RequestOperationArgs) (context.Context, *types.RequestOperation) {
+func StartRequestOperation(ctx context.Context, parent dyngo.Operation, span trace.TagSetter, args types.RequestOperationArgs) (context.Context, *types.RequestOperation) {
 	if span == nil {
 		// The span may be nil (e.g: in case of GraphQL subscriptions with certian contribs)
 		span = trace.NoopTagSetter{}
 	}
 
 	op := &types.RequestOperation{
-		Operation: dyngo.NewOperation(nil),
+		Operation: dyngo.NewOperation(parent),
 		TagSetter: span,
 	}
+	newCtx := contextWithValue(ctx, op)
+	dyngo.StartOperation(op, args)
 
-	return dyngo.StartAndRegisterOperation(ctx, op, args), op
+	return newCtx, op
 }

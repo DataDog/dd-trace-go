@@ -235,13 +235,16 @@ func newUnstartedTracer(opts ...StartOption) *tracer {
 		log.Warn("Runtime and health metrics disabled: %v", err)
 	}
 	var writer traceWriter
-	if c.ciVisibilityEnabled {
-		writer = newCiVisibilityTraceWriter(c)
-	} else if c.logToStdout {
+	if c.logToStdout {
 		writer = newLogTraceWriter(c, statsd)
 	} else {
 		writer = newAgentTraceWriter(c, sampler, statsd)
 	}
+
+	if c.traceWriter != nil {
+		writer = c.traceWriter
+	}
+
 	traces, spans, err := samplingRulesFromEnv()
 	if err != nil {
 		log.Warn("DIAGNOSTICS Error(s) parsing sampling rules: found errors:%s", err)
@@ -267,6 +270,7 @@ func newUnstartedTracer(opts ...StartOption) *tracer {
 	if c.dataStreamsMonitoringEnabled {
 		dataStreamsProcessor = datastreams.NewProcessor(statsd, c.env, c.serviceName, c.version, c.agentURL, c.httpClient)
 	}
+
 	t := &tracer{
 		config:           c,
 		traceWriter:      writer,
@@ -733,9 +737,6 @@ func (t *tracer) sample(span *span) {
 		span.setMetric(sampleRateMetricKey, rs.Rate())
 	}
 	if t.rulesSampling.SampleTraceGlobalRate(span) {
-		return
-	}
-	if t.rulesSampling.SampleTrace(span) {
 		return
 	}
 	t.prioritySampling.apply(span)

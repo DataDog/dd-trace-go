@@ -20,14 +20,6 @@ func NewPool(ctx context.Context, connString string, opts ...Option) (*pgxpool.P
 }
 
 func NewPoolWithConfig(ctx context.Context, config *pgxpool.Config, opts ...Option) (*pgxpool.Pool, error) {
-	tracer := newPgxTracer(opts...)
-	config.ConnConfig.Tracer = tracer
-	pool, err := pgxpool.NewWithConfig(ctx, config)
-	if err != nil {
-		return nil, err
-	}
-	if tracer.cfg.poolStats && tracer.cfg.statsdClient != nil {
-		go pollPoolStats(tracer.cfg.statsdClient, pool)
-	}
-	return pool, nil
+	config.ConnConfig.Tracer = newPgxTracer(opts...)
+	return pgxpool.NewWithConfig(ctx, config)
 }

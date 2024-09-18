@@ -13,7 +13,6 @@ import (
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/config"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/orchestrion"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/remoteconfig"
 
 	internal "github.com/DataDog/appsec-internal-go/appsec"
@@ -410,14 +409,7 @@ func (a *appsec) enableRASP() {
 	if err := remoteconfig.RegisterCapability(remoteconfig.ASMRASPSSRF); err != nil {
 		log.Debug("appsec: Remote config: couldn't register RASP SSRF: %v", err)
 	}
-	if err := remoteconfig.RegisterCapability(remoteconfig.ASMRASPSQLI); err != nil {
-		log.Debug("appsec: Remote config: couldn't register RASP SQLI: %v", err)
-	}
-	if orchestrion.Enabled() {
-		if err := remoteconfig.RegisterCapability(remoteconfig.ASMRASPLFI); err != nil {
-			log.Debug("appsec: Remote config: couldn't register RASP LFI: %v", err)
-		}
-	}
+	// TODO: register other RASP capabilities when supported
 }
 
 func (a *appsec) disableRCBlocking() {

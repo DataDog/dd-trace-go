@@ -1862,12 +1862,14 @@ func TestEnvironment(t *testing.T) {
 }
 
 func TestGitMetadata(t *testing.T) {
+	maininternal.ResetGitMetadataTags()
+
 	t.Run("git-metadata-from-dd-tags", func(t *testing.T) {
 		t.Setenv(maininternal.EnvDDTags, "git.commit.sha:123456789ABCD git.repository_url:github.com/user/repo go_path:somepath")
-		maininternal.RefreshGitMetadataTags()
 
 		tracer, _, _, stop := startTestTracer(t)
 		defer stop()
+		defer maininternal.ResetGitMetadataTags()
 
 		assert := assert.New(t)
 		sp := tracer.StartSpan("http.request").(*span)
@@ -1880,10 +1882,10 @@ func TestGitMetadata(t *testing.T) {
 
 	t.Run("git-metadata-from-dd-tags-with-credentials", func(t *testing.T) {
 		t.Setenv(maininternal.EnvDDTags, "git.commit.sha:123456789ABCD git.repository_url:https://user:passwd@github.com/user/repo go_path:somepath")
-		maininternal.RefreshGitMetadataTags()
 
 		tracer, _, _, stop := startTestTracer(t)
 		defer stop()
+		defer maininternal.ResetGitMetadataTags()
 
 		assert := assert.New(t)
 		sp := tracer.StartSpan("http.request").(*span)
@@ -1900,10 +1902,10 @@ func TestGitMetadata(t *testing.T) {
 		// git metadata env has priority over DD_TAGS
 		t.Setenv(maininternal.EnvGitRepositoryURL, "github.com/user/repo_new")
 		t.Setenv(maininternal.EnvGitCommitSha, "123456789ABCDE")
-		maininternal.RefreshGitMetadataTags()
 
 		tracer, _, _, stop := startTestTracer(t)
 		defer stop()
+		defer maininternal.ResetGitMetadataTags()
 
 		assert := assert.New(t)
 		sp := tracer.StartSpan("http.request").(*span)
@@ -1916,10 +1918,10 @@ func TestGitMetadata(t *testing.T) {
 	t.Run("git-metadata-from-env-with-credentials", func(t *testing.T) {
 		t.Setenv(maininternal.EnvGitRepositoryURL, "https://u:t@github.com/user/repo_new")
 		t.Setenv(maininternal.EnvGitCommitSha, "123456789ABCDE")
-		maininternal.RefreshGitMetadataTags()
 
 		tracer, _, _, stop := startTestTracer(t)
 		defer stop()
+		defer maininternal.ResetGitMetadataTags()
 
 		assert := assert.New(t)
 		sp := tracer.StartSpan("http.request").(*span)
@@ -1932,10 +1934,10 @@ func TestGitMetadata(t *testing.T) {
 	t.Run("git-metadata-from-env-and-tags", func(t *testing.T) {
 		t.Setenv(maininternal.EnvDDTags, "git.commit.sha:123456789ABCD")
 		t.Setenv(maininternal.EnvGitRepositoryURL, "github.com/user/repo")
-		maininternal.RefreshGitMetadataTags()
 
 		tracer, _, _, stop := startTestTracer(t)
 		defer stop()
+		defer maininternal.ResetGitMetadataTags()
 
 		assert := assert.New(t)
 		sp := tracer.StartSpan("http.request").(*span)
@@ -1951,10 +1953,10 @@ func TestGitMetadata(t *testing.T) {
 		t.Setenv(maininternal.EnvDDTags, "git.commit.sha:123456789ABCD git.repository_url:github.com/user/repo")
 		t.Setenv(maininternal.EnvGitRepositoryURL, "github.com/user/repo_new")
 		t.Setenv(maininternal.EnvGitCommitSha, "123456789ABCDE")
-		maininternal.RefreshGitMetadataTags()
 
 		tracer, _, _, stop := startTestTracer(t)
 		defer stop()
+		defer maininternal.ResetGitMetadataTags()
 
 		assert := assert.New(t)
 		sp := tracer.StartSpan("http.request").(*span)

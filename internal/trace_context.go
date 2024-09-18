@@ -7,8 +7,6 @@ package internal
 
 import (
 	"context"
-
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/orchestrion"
 )
 
 type executionTracedKey struct{}
@@ -25,7 +23,7 @@ type executionTracedKey struct{}
 // general, APM instrumentation should prefer creating tasks around the
 // operation rather than after the fact, if possible.
 func WithExecutionTraced(ctx context.Context) context.Context {
-	return orchestrion.CtxWithValue(ctx, executionTracedKey{}, true)
+	return context.WithValue(ctx, executionTracedKey{}, true)
 }
 
 // WithExecutionNotTraced marks that the context is *not* covered by an
@@ -33,17 +31,17 @@ func WithExecutionTraced(ctx context.Context) context.Context {
 // information from ctx) from being considered covered by a task, when an
 // integration may create its own child span with its own execution trace task.
 func WithExecutionNotTraced(ctx context.Context) context.Context {
-	if orchestrion.WrapContext(ctx).Value(executionTracedKey{}) == nil {
+	if ctx.Value(executionTracedKey{}) == nil {
 		// Fast path: if it wasn't marked before, we don't need to wrap
 		// the context
 		return ctx
 	}
-	return orchestrion.CtxWithValue(ctx, executionTracedKey{}, false)
+	return context.WithValue(ctx, executionTracedKey{}, false)
 }
 
 // IsExecutionTraced returns whether ctx is associated with an execution trace
 // task, as indicated via WithExecutionTraced
 func IsExecutionTraced(ctx context.Context) bool {
-	v := orchestrion.WrapContext(ctx).Value(executionTracedKey{})
+	v := ctx.Value(executionTracedKey{})
 	return v != nil && v.(bool)
 }

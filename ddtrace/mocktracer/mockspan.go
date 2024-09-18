@@ -246,9 +246,7 @@ func (s *mockspan) SetUser(id string, opts ...tracer.UserMonitoringOption) {
 		return
 	}
 
-	cfg := tracer.UserMonitoringConfig{
-		Metadata: make(map[string]string),
-	}
+	var cfg tracer.UserMonitoringConfig
 	for _, fn := range opts {
 		fn(&cfg)
 	}
@@ -259,10 +257,6 @@ func (s *mockspan) SetUser(id string, opts ...tracer.UserMonitoringOption) {
 	root.SetTag("usr.role", cfg.Role)
 	root.SetTag("usr.scope", cfg.Scope)
 	root.SetTag("usr.session_id", cfg.SessionID)
-
-	for k, v := range cfg.Metadata {
-		root.SetTag(fmt.Sprintf("usr.%s", k), v)
-	}
 }
 
 // Root walks the span up to the root parent span and returns it.

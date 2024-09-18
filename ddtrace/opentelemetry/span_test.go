@@ -203,10 +203,6 @@ func TestSpanEnd(t *testing.T) {
 		sp.SetAttributes(attribute.String(k, v))
 	}
 	assert.True(sp.IsRecording())
-	now := time.Now()
-	nowUnixNano := now.UnixNano()
-	sp.AddEvent("evt1", oteltrace.WithTimestamp(now))
-	sp.AddEvent("evt2", oteltrace.WithTimestamp(now), oteltrace.WithAttributes(attribute.String("key1", "value"), attribute.Int("key2", 1234)))
 
 	sp.End()
 	assert.False(sp.IsRecording())
@@ -237,11 +233,6 @@ func TestSpanEnd(t *testing.T) {
 	for k, v := range ignoredAttributes {
 		assert.NotContains(meta, fmt.Sprintf("%s:%s", k, v))
 	}
-	jsonMeta := fmt.Sprintf(
-		"events:[{\"name\":\"evt1\",\"time_unix_nano\":%v},{\"name\":\"evt2\",\"time_unix_nano\":%v,\"attributes\":{\"key1\":\"value\",\"key2\":1234}}]",
-		nowUnixNano, nowUnixNano,
-	)
-	assert.Contains(meta, jsonMeta)
 }
 
 // This test verifies that setting the status of a span
@@ -310,84 +301,6 @@ func TestSpanSetStatus(t *testing.T) {
 			testStatus()
 		})
 	}
-}
-
-func TestSpanAddEvent(t *testing.T) {
-	assert := assert.New(t)
-	_, _, cleanup := mockTracerProvider(t)
-	tr := otel.Tracer("")
-	defer cleanup()
-
-	t.Run("event with attributes", func(t *testing.T) {
-		_, sp := tr.Start(context.Background(), "span_event")
-		// When no timestamp option is provided, otel will generate a timestamp for the event
-		// We can't know the exact time that the event is added, but we can create start and end "bounds" and assert
-		// that the event's eventual timestamp is between those bounds
-		timeStartBound := time.Now().UnixNano()
-		sp.AddEvent("My event!", oteltrace.WithAttributes(
-			attribute.Int("pid", 4328),
-			attribute.String("signal", "SIGHUP"),
-			// two attributes with same key, last-set attribute takes precedence
-			attribute.Bool("condition", true),
-			attribute.Bool("condition", false),
-		))
-		timeEndBound := time.Now().UnixNano()
-		sp.End()
-		dd := sp.(*span)
-
-		// Assert event exists under span events
-		assert.Len(dd.events, 1)
-		e := dd.events[0]
-		assert.Equal(e.Name, "My event!")
-		// assert event timestamp is [around] the expected time
-		assert.True((e.TimeUnixNano) >= timeStartBound && e.TimeUnixNano <= timeEndBound)
-		// Assert both attributes exist on the event
-		assert.Len(e.Attributes, 3)
-		// Assert attribute key-value fields
-		// note that attribute.Int("pid", 4328) created an attribute with value int64(4328), hence why the `want` is in int64 format
-		wantAttrs := map[string]interface{}{
-			"pid":       int64(4328),
-			"signal":    "SIGHUP",
-			"condition": false,
-		}
-		for k, v := range wantAttrs {
-			assert.True(attributesContains(e.Attributes, k, v))
-		}
-	})
-	t.Run("event with timestamp", func(t *testing.T) {
-		_, sp := tr.Start(context.Background(), "span_event")
-		// generate micro and nano second timestamps
-		now := time.Now()
-		timeMicro := now.UnixMicro()
-		// pass microsecond timestamp into timestamp option
-		sp.AddEvent("My event!", oteltrace.WithTimestamp(time.UnixMicro(timeMicro)))
-		sp.End()
-
-		dd := sp.(*span)
-		assert.Len(dd.events, 1)
-		e := dd.events[0]
-		// assert resulting timestamp is in nanoseconds
-		assert.Equal(timeMicro*1000, e.TimeUnixNano)
-	})
-	t.Run("mulitple events", func(t *testing.T) {
-		_, sp := tr.Start(context.Background(), "sp")
-		now := time.Now()
-		sp.AddEvent("evt1", oteltrace.WithTimestamp(now))
-		sp.AddEvent("evt2", oteltrace.WithTimestamp(now))
-		sp.End()
-		dd := sp.(*span)
-		assert.Len(dd.events, 2)
-	})
-}
-
-// attributesContains returns true if attrs contains an attribute.KeyValue with the provided key and val
-func attributesContains(attrs map[string]interface{}, key string, val interface{}) bool {
-	for k, v := range attrs {
-		if k == key && v == val {
-			return true
-		}
-	}
-	return false
 }
 
 func TestSpanContextWithStartOptions(t *testing.T) {

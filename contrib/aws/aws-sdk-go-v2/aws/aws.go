@@ -229,23 +229,21 @@ func tableName(requestInput middleware.InitializeInput) string {
 func streamName(requestInput middleware.InitializeInput) string {
 	switch params := requestInput.Parameters.(type) {
 	case *kinesis.PutRecordInput:
-		return coalesceNameOrArnResource(params.StreamName, params.StreamARN)
+		return *params.StreamName
 	case *kinesis.PutRecordsInput:
-		return coalesceNameOrArnResource(params.StreamName, params.StreamARN)
+		return *params.StreamName
 	case *kinesis.AddTagsToStreamInput:
-		return coalesceNameOrArnResource(params.StreamName, params.StreamARN)
+		return *params.StreamName
 	case *kinesis.RemoveTagsFromStreamInput:
-		return coalesceNameOrArnResource(params.StreamName, params.StreamARN)
+		return *params.StreamName
 	case *kinesis.CreateStreamInput:
-		if params.StreamName != nil {
-			return *params.StreamName
-		}
+		return *params.StreamName
 	case *kinesis.DeleteStreamInput:
-		return coalesceNameOrArnResource(params.StreamName, params.StreamARN)
+		return *params.StreamName
 	case *kinesis.DescribeStreamInput:
-		return coalesceNameOrArnResource(params.StreamName, params.StreamARN)
+		return *params.StreamName
 	case *kinesis.DescribeStreamSummaryInput:
-		return coalesceNameOrArnResource(params.StreamName, params.StreamARN)
+		return *params.StreamName
 	case *kinesis.GetRecordsInput:
 		if params.StreamARN != nil {
 			streamArnValue := *params.StreamARN
@@ -354,17 +352,4 @@ func serviceName(cfg *config, awsService string) string {
 	}
 	defaultName := fmt.Sprintf("aws.%s", awsService)
 	return namingschema.ServiceNameOverrideV0(defaultName, defaultName)
-}
-
-func coalesceNameOrArnResource(name *string, arnVal *string) string {
-	if name != nil {
-		return *name
-	}
-
-	if arnVal != nil {
-		parts := strings.Split(*arnVal, "/")
-		return parts[len(parts)-1]
-	}
-
-	return ""
 }

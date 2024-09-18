@@ -8,7 +8,6 @@ package config
 import (
 	"encoding/json"
 	"fmt"
-	"slices"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 
@@ -61,14 +60,21 @@ func DefaultRulesFragment() RulesFragment {
 func (f *RulesFragment) clone() (clone RulesFragment) {
 	clone.Version = f.Version
 	clone.Metadata = f.Metadata
-	clone.Overrides = slices.Clone(f.Overrides)
-	clone.Exclusions = slices.Clone(f.Exclusions)
-	clone.RulesData = slices.Clone(f.RulesData)
-	clone.CustomRules = slices.Clone(f.CustomRules)
-	clone.Processors = slices.Clone(f.Processors)
-	clone.Scanners = slices.Clone(f.Scanners)
+	clone.Overrides = cloneSlice(f.Overrides)
+	clone.Exclusions = cloneSlice(f.Exclusions)
+	clone.RulesData = cloneSlice(f.RulesData)
+	clone.CustomRules = cloneSlice(f.CustomRules)
+	clone.Processors = cloneSlice(f.Processors)
+	clone.Scanners = cloneSlice(f.Scanners)
 	// TODO (Francois Mazeau): copy more fields once we handle them
 	return
+}
+
+func cloneSlice[T any](slice []T) []T {
+	// TODO: use slices.Clone once go1.21 is the min supported go runtime.
+	clone := make([]T, len(slice), cap(slice))
+	copy(clone, slice)
+	return clone
 }
 
 // NewRulesManeger initializes and returns a new RulesManager using the provided rules.

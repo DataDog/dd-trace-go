@@ -11,6 +11,8 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
+	"os"
 	"runtime"
 	"strconv"
 	"strings"
@@ -19,6 +21,7 @@ import (
 
 	traceinternal "gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
 
 	"github.com/tinylib/msgp/msgp"
@@ -139,50 +142,101 @@ func (t *httpTransport) sendStats(p *statsPayload) error {
 }
 
 func (t *httpTransport) send(p *payload) (body io.ReadCloser, err error) {
-	req, err := http.NewRequest("POST", t.traceURL, p)
-	if err != nil {
-		return nil, fmt.Errorf("cannot create http request: %v", err)
+	var buf bytes.Buffer
+	if _, err := io.Copy(&buf, p); err != nil {
+		return nil, fmt.Errorf("couldn't copy buffer: %w", err)
 	}
-	for header, value := range t.headers {
-		req.Header.Set(header, value)
-	}
-	req.Header.Set(traceCountHeader, strconv.Itoa(p.itemCount()))
-	req.Header.Set("Content-Length", strconv.Itoa(p.size()))
-	req.Header.Set(headerComputedTopLevel, "yes")
-	if t, ok := traceinternal.GetGlobalTracer().(*tracer); ok {
-		if t.config.canComputeStats() {
-			req.Header.Set("Datadog-Client-Computed-Stats", "yes")
+	itemCount := p.itemCount()
+	size := p.size()
+
+	try := func() (body io.ReadCloser, err error) {
+		req, err := http.NewRequest("POST", t.traceURL, p)
+		if err != nil {
+			return nil, fmt.Errorf("cannot create http request: %v", err)
 		}
-		droppedTraces := int(atomic.SwapUint32(&t.droppedP0Traces, 0))
-		partialTraces := int(atomic.SwapUint32(&t.partialTraces, 0))
-		droppedSpans := int(atomic.SwapUint32(&t.droppedP0Spans, 0))
-		if stats := t.statsd; stats != nil {
-			stats.Count("datadog.tracer.dropped_p0_traces", int64(droppedTraces),
-				[]string{fmt.Sprintf("partial:%s", strconv.FormatBool(partialTraces > 0))}, 1)
-			stats.Count("datadog.tracer.dropped_p0_spans", int64(droppedSpans), nil, 1)
+		for header, value := range t.headers {
+			req.Header.Set(header, value)
 		}
-		req.Header.Set("Datadog-Client-Dropped-P0-Traces", strconv.Itoa(droppedTraces))
-		req.Header.Set("Datadog-Client-Dropped-P0-Spans", strconv.Itoa(droppedSpans))
-	}
-	response, err := t.client.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	if code := response.StatusCode; code >= 400 {
-		// error, check the body for context information and
-		// return a nice error.
-		msg := make([]byte, 1000)
-		n, _ := response.Body.Read(msg)
-		response.Body.Close()
-		txt := http.StatusText(code)
-		if n > 0 {
-			return nil, fmt.Errorf("%s (Status: %s)", msg[:n], txt)
+		req.Header.Set(traceCountHeader, strconv.Itoa(itemCount))
+		req.Header.Set("Content-Length", strconv.Itoa(size))
+		req.Header.Set(headerComputedTopLevel, "yes")
+		if t, ok := traceinternal.GetGlobalTracer().(*tracer); ok {
+			if t.config.canComputeStats() {
+				req.Header.Set("Datadog-Client-Computed-Stats", "yes")
+			}
+			droppedTraces := int(atomic.SwapUint32(&t.droppedP0Traces, 0))
+			partialTraces := int(atomic.SwapUint32(&t.partialTraces, 0))
+			droppedSpans := int(atomic.SwapUint32(&t.droppedP0Spans, 0))
+			if stats := t.statsd; stats != nil {
+				stats.Count("datadog.tracer.dropped_p0_traces", int64(droppedTraces),
+					[]string{fmt.Sprintf("partial:%s", strconv.FormatBool(partialTraces > 0))}, 1)
+				stats.Count("datadog.tracer.dropped_p0_spans", int64(droppedSpans), nil, 1)
+			}
+			req.Header.Set("Datadog-Client-Dropped-P0-Traces", strconv.Itoa(droppedTraces))
+			req.Header.Set("Datadog-Client-Dropped-P0-Spans", strconv.Itoa(droppedSpans))
 		}
-		return nil, fmt.Errorf("%s", txt)
+		response, err := t.client.Do(req)
+		if err != nil {
+			return nil, err
+		}
+		if code := response.StatusCode; code >= 400 {
+			// error, check the body for context information and
+			// return a nice error.
+			msg := make([]byte, 1000)
+			n, _ := response.Body.Read(msg)
+			response.Body.Close()
+			txt := http.StatusText(code)
+			if n > 0 {
+				return nil, fmt.Errorf("%s (Status: %s)", msg[:n], txt)
+			}
+			return nil, fmt.Errorf("%s", txt)
+		}
+		return response.Body, nil
 	}
-	return response.Body, nil
+
+	for i := 0; i < 3; i++ {
+		if i != 0 {
+			time.Sleep(time.Second * 2 * time.Duration(i))
+		}
+		body, err = try()
+		if err == nil {
+			return body, nil
+		}
+		log.Warn("couldn't send traces on %d try: %v", i, err)
+	}
+
+	return nil, err
 }
 
 func (t *httpTransport) endpoint() string {
 	return t.traceURL
+}
+
+// resolveAgentAddr resolves the given agent address and fills in any missing host
+// and port using the defaults. Some environment variable settings will
+// take precedence over configuration.
+func resolveAgentAddr() *url.URL {
+	var host, port string
+	if v := os.Getenv("DD_AGENT_HOST"); v != "" {
+		host = v
+	}
+	if v := os.Getenv("DD_TRACE_AGENT_PORT"); v != "" {
+		port = v
+	}
+	if _, err := os.Stat(defaultSocketAPM); host == "" && port == "" && err == nil {
+		return &url.URL{
+			Scheme: "unix",
+			Path:   defaultSocketAPM,
+		}
+	}
+	if host == "" {
+		host = defaultHostname
+	}
+	if port == "" {
+		port = defaultPort
+	}
+	return &url.URL{
+		Scheme: "http",
+		Host:   fmt.Sprintf("%s:%s", host, port),
+	}
 }

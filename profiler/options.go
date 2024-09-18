@@ -202,11 +202,20 @@ func defaultConfig() (*config, error) {
 		c.addProfileType(t)
 	}
 
-	url := internal.AgentURLFromEnv()
-	if url.Scheme == "unix" {
-		WithUDS(url.Path)(&c)
-	} else {
-		c.agentURL = url.String() + "/profiling/v1/input"
+	agentHost, agentPort := defaultAgentHost, defaultAgentPort
+	if v := os.Getenv("DD_AGENT_HOST"); v != "" {
+		agentHost = v
+	}
+	if v := os.Getenv("DD_TRACE_AGENT_PORT"); v != "" {
+		agentPort = v
+	}
+	WithAgentAddr(net.JoinHostPort(agentHost, agentPort))(&c)
+	if url := internal.AgentURLFromEnv(); url != nil {
+		if url.Scheme == "unix" {
+			WithUDS(url.Path)(&c)
+		} else {
+			c.agentURL = url.String() + "/profiling/v1/input"
+		}
 	}
 	if v := os.Getenv("DD_PROFILING_UPLOAD_TIMEOUT"); v != "" {
 		d, err := time.ParseDuration(v)
@@ -466,23 +475,13 @@ func WithHTTPClient(client *http.Client) Option {
 
 // WithUDS configures the HTTP client to dial the Datadog Agent via the specified Unix Domain Socket path.
 func WithUDS(socketPath string) Option {
-	return func(c *config) {
-		// The HTTP client needs a valid URL. The host portion of the
-		// url in particular can't just be the socket path, or else that
-		// will be interpreted as part of the request path and the
-		// request will fail.  Clean up the path here so we get
-		// something resembling the desired path in any profiler logs.
-		// TODO: copied from ddtrace/tracer, but is this correct?
-		cleanPath := fmt.Sprintf("UDS_%s", strings.NewReplacer(":", "_", "/", "_", `\`, "_").Replace(socketPath))
-		c.agentURL = "http://" + cleanPath + "/profiling/v1/input"
-		WithHTTPClient(&http.Client{
-			Transport: &http.Transport{
-				DialContext: func(_ context.Context, _, _ string) (net.Conn, error) {
-					return net.Dial("unix", socketPath)
-				},
+	return WithHTTPClient(&http.Client{
+		Transport: &http.Transport{
+			DialContext: func(_ context.Context, _, _ string) (net.Conn, error) {
+				return net.Dial("unix", socketPath)
 			},
-		})(c)
-	}
+		},
+	})
 }
 
 // withOutputDir writes a copy of all uploaded profiles to the given

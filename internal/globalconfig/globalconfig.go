@@ -80,10 +80,7 @@ func SetDogstatsdAddr(addr string) {
 func StatsTags() []string {
 	cfg.mu.RLock()
 	defer cfg.mu.RUnlock()
-	// Copy the slice before returning it, so that callers cannot pollute the underlying array
-	tags := make([]string, len(cfg.statsTags))
-	copy(tags, cfg.statsTags)
-	return tags
+	return cfg.statsTags
 }
 
 // SetStatsTags configures the list of tags that should be applied to contribs' statsd.Client as global tags
@@ -91,10 +88,7 @@ func StatsTags() []string {
 func SetStatsTags(tags []string) {
 	cfg.mu.Lock()
 	defer cfg.mu.Unlock()
-	// Copy the slice before setting it, so that any changes to the slice provided to SetStatsTags does not pollute the underlying array of statsTags
-	statsTags := make([]string, len(tags))
-	copy(statsTags, tags)
-	cfg.statsTags = statsTags
+	cfg.statsTags = tags
 }
 
 // RuntimeID returns this process's unique runtime id.

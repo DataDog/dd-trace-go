@@ -3,6 +3,8 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2024 Datadog, Inc.
 
+//go:build go1.21
+
 // exectracetest tests execution tracer-related functionality.
 // The official execution trace parser lives in golang.org/x/exp,
 // which we generally should avoid upgrading as it is prone
@@ -26,7 +28,6 @@ import (
 
 	"github.com/google/pprof/profile"
 	exptrace "golang.org/x/exp/trace"
-
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
 

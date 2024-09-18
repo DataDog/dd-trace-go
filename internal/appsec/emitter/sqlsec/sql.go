@@ -12,6 +12,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/appsec/events"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/sqlsec/types"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
@@ -23,7 +24,7 @@ func ProtectSQLOperation(ctx context.Context, query, driver string) error {
 		Driver: driver,
 	}
 
-	parent, _ := dyngo.FromContext(ctx)
+	parent, _ := ctx.Value(listener.ContextKey{}).(dyngo.Operation)
 	if parent == nil { // No parent operation => we can't monitor the request
 		badInputContextOnce.Do(func() {
 			log.Debug("appsec: outgoing SQL operation monitoring ignored: could not find the handler " +

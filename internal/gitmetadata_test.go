@@ -6,7 +6,6 @@
 package internal
 
 import (
-	"runtime/debug"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -53,64 +52,5 @@ func TestRemoveCredentials(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			assert.Equal(t, tc.expected, removeCredentials(tc.in))
 		})
-	}
-}
-
-func TestGetTagsFromBinary(t *testing.T) {
-	testCases := []struct {
-		name     string
-		in       string
-		expected map[string]string
-	}{
-		{
-			name:     "empty build info",
-			expected: map[string]string{},
-		},
-		{
-			name: "build info with module path",
-			expected: map[string]string{
-				TagGoPath: "github.com/DataDog/dd-trace-go",
-			},
-		},
-		{
-			name: "build info with module path and git repository",
-			expected: map[string]string{
-				TagGoPath:    "github.com/DataDog/dd-trace-go",
-				TagCommitSha: "123456",
-			},
-		},
-	}
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			readBuildInfo := func() (*debug.BuildInfo, bool) {
-				info := &debug.BuildInfo{
-					Settings: []debug.BuildSetting{
-						{
-							Key:   "vcs",
-							Value: "git",
-						},
-					},
-				}
-				if tc.expected[TagGoPath] != "" {
-					info.Path = tc.expected[TagGoPath]
-				}
-				if tc.expected[TagCommitSha] != "" {
-					info.Settings = append(info.Settings, debug.BuildSetting{
-						Key:   "vcs.revision",
-						Value: tc.expected[TagCommitSha],
-					})
-				}
-				return info, true
-			}
-			tags := getTagsFromBinary(readBuildInfo)
-			assert.Subset(t, tags, tc.expected)
-		})
-	}
-}
-
-func BenchmarkGetGitMetadataTags(b *testing.B) {
-	b.Setenv(EnvGitMetadataEnabledFlag, "true")
-	for i := 0; i < b.N; i++ {
-		GetGitMetadataTags()
 	}
 }

@@ -23,13 +23,12 @@ func TestTelemetryEnabled(t *testing.T) {
 		defer telemetry.MockGlobalClient(telemetryClient)()
 
 		Start(
-			WithDebugMode(true),
+			WithDebugStack(false),
 			WithService("test-serv"),
 			WithEnv("test-env"),
 			WithRuntimeMetrics(),
 			WithPeerServiceMapping("key", "val"),
 			WithPeerServiceDefaults(true),
-			WithDebugStack(false),
 			WithHeaderTags([]string{"key:val", "key2:val2"}),
 			WithSamplingRules(
 				[]SamplingRule{TagsResourceRule(
@@ -43,7 +42,7 @@ func TestTelemetryEnabled(t *testing.T) {
 
 		assert.True(t, telemetryClient.Started)
 		telemetryClient.AssertNumberOfCalls(t, "ApplyOps", 1)
-		telemetry.Check(t, telemetryClient.Configuration, "trace_debug_enabled", true)
+		telemetry.Check(t, telemetryClient.Configuration, "trace_debug_enabled", false)
 		telemetry.Check(t, telemetryClient.Configuration, "service", "test-serv")
 		telemetry.Check(t, telemetryClient.Configuration, "env", "test-env")
 		telemetry.Check(t, telemetryClient.Configuration, "runtime_metrics_enabled", true)
@@ -52,7 +51,6 @@ func TestTelemetryEnabled(t *testing.T) {
 		telemetry.Check(t, telemetryClient.Configuration, "trace_span_attribute_schema", 0)
 		telemetry.Check(t, telemetryClient.Configuration, "trace_peer_service_defaults_enabled", true)
 		telemetry.Check(t, telemetryClient.Configuration, "trace_peer_service_mapping", "key:val")
-		telemetry.Check(t, telemetryClient.Configuration, "debug_stack_enabled", false)
 		telemetry.Check(t, telemetryClient.Configuration, "orchestrion_enabled", false)
 		telemetry.Check(t, telemetryClient.Configuration, "trace_sample_rate", nil) // default value is NaN which is sanitized to nil
 		telemetry.Check(t, telemetryClient.Configuration, "trace_header_tags", "key:val,key2:val2")

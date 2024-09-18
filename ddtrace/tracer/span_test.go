@@ -175,11 +175,10 @@ func TestNewAggregableSpan(t *testing.T) {
 			Type:     "sql",
 		}, o)
 		assert.Equal(t, aggregation{
-			Name:        "name",
-			Type:        "sql",
-			Resource:    "SELECT * FROM table WHERE password = ?",
-			Service:     "service",
-			IsTraceRoot: 1,
+			Name:     "name",
+			Type:     "sql",
+			Resource: "SELECT * FROM table WHERE password = ?",
+			Service:  "service",
 		}, aggspan.key)
 	})
 
@@ -191,11 +190,10 @@ func TestNewAggregableSpan(t *testing.T) {
 			Type:     "sql",
 		}, nil)
 		assert.Equal(t, aggregation{
-			Name:        "name",
-			Type:        "sql",
-			Resource:    "SELECT * FROM table WHERE password='secret'",
-			Service:     "service",
-			IsTraceRoot: 1,
+			Name:     "name",
+			Type:     "sql",
+			Resource: "SELECT * FROM table WHERE password='secret'",
+			Service:  "service",
 		}, aggspan.key)
 	})
 }
@@ -370,13 +368,6 @@ func TestSpanSetTag(t *testing.T) {
 	testValue := &testMsgpStruct{A: "test"}
 	span.SetTag("struct", sharedinternal.MetaStructValue{Value: testValue})
 	require.Equal(t, testValue, span.MetaStruct["struct"])
-
-	s := "string"
-	span.SetTag("str_ptr", &s)
-	assert.Equal(s, span.Meta["str_ptr"])
-
-	span.SetTag("nil_str_ptr", (*string)(nil))
-	assert.Equal("", span.Meta["nil_str_ptr"])
 
 	assert.Panics(func() {
 		span.SetTag("panicStringer", &panicStringer{})
@@ -599,6 +590,7 @@ func TestSpanProfilingTags(t *testing.T) {
 }
 
 func TestSpanError(t *testing.T) {
+	t.Setenv("DD_CLIENT_HOSTNAME_ENABLED", "false") // the host name is inconsistently returning a value, causing the test to flake.
 	assert := assert.New(t)
 	tracer := newTracer(withTransport(newDefaultTransport()))
 	internal.SetGlobalTracer(tracer)
@@ -1033,18 +1025,18 @@ func TestSetUserPropagatedUserID(t *testing.T) {
 
 func BenchmarkSetTagMetric(b *testing.B) {
 	span := newBasicSpan("bench.span")
-	keys := strings.Split("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ", "")
+	keys := "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		k := keys[i%len(keys)]
+		k := string(keys[i%len(keys)])
 		span.SetTag(k, float64(12.34))
 	}
 }
 
 func BenchmarkSetTagString(b *testing.B) {
 	span := newBasicSpan("bench.span")
-	keys := strings.Split("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ", "")
+	keys := "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -1053,25 +1045,13 @@ func BenchmarkSetTagString(b *testing.B) {
 	}
 }
 
-func BenchmarkSetTagStringPtr(b *testing.B) {
-	span := newBasicSpan("bench.span")
-	keys := strings.Split("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ", "")
-	v := makePointer("some text")
-
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		k := keys[i%len(keys)]
-		span.SetTag(k, v)
-	}
-}
-
 func BenchmarkSetTagStringer(b *testing.B) {
 	span := newBasicSpan("bench.span")
-	keys := strings.Split("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ", "")
+	keys := "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
 	value := &stringer{}
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		k := keys[i%len(keys)]
+		k := string(keys[i%len(keys)])
 		span.SetTag(k, value)
 	}
 }

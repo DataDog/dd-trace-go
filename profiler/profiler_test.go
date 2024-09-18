@@ -17,7 +17,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"path"
 	"runtime"
 	"runtime/trace"
 	"strconv"
@@ -26,7 +25,6 @@ import (
 	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/httpmem"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
@@ -713,38 +711,4 @@ func TestVersionResolution(t *testing.T) {
 		assert.Contains(t, data.tags, "Version:4.5.6")
 		assert.NotContains(t, data.tags, "version:7.8.9")
 	})
-}
-
-func TestUDSDefault(t *testing.T) {
-	dir := t.TempDir()
-	socket := path.Join(dir, "agent.socket")
-
-	orig := internal.DefaultTraceAgentUDSPath
-	defer func() {
-		internal.DefaultTraceAgentUDSPath = orig
-	}()
-	internal.DefaultTraceAgentUDSPath = socket
-
-	profiles := make(chan profileMeta, 1)
-	backend := &mockBackend{t: t, profiles: profiles}
-	mux := http.NewServeMux()
-	// Specifically set up a handler for /profiling/v1/input to test that we
-	// don't use the filesystem path to the Unix domain socket in the HTTP
-	// request path.
-	mux.Handle("/profiling/v1/input", backend)
-	server := httptest.NewUnstartedServer(mux)
-	l, err := net.Listen("unix", socket)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer l.Close()
-	server.Listener = l
-	server.Start()
-	defer server.Close()
-
-	err = Start(WithProfileTypes(), WithPeriod(10*time.Millisecond))
-	require.NoError(t, err)
-	defer Stop()
-
-	<-profiles
 }
