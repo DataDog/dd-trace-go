@@ -30,7 +30,6 @@ func defaults(cfg *config) {
 
 	cfg.dataStreamsEnabled = instr.DataStreamsEnabled()
 
-	// cfg.analyticsRate = globalconfig.AnalyticsRate()
 	cfg.analyticsRate = instr.AnalyticsRate(false)
 }
 
