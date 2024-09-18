@@ -25,7 +25,7 @@ const (
 
 func RegisterOpenListener(op dyngo.Operation, eventsHolder *trace.SecurityEventsHolder, wafCtx *waf.Context, limiter limiter.Limiter) {
 	runWAF := sharedsec.MakeWAFRunListener(eventsHolder, wafCtx, limiter, func(args ossec.OpenOperationArgs) waf.RunAddressData {
-		return waf.RunAddressData{Ephemeral: map[string]any{ServerIOFSFileAddr: args.Path}}
+		return waf.RunAddressData{Ephemeral: map[string]any{ServerIOFSFileAddr: args.Path}, Scope: waf.RASPScope}
 	})
 
 	dyngo.On(op, func(op *ossec.OpenOperation, args ossec.OpenOperationArgs) {

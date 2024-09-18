@@ -26,6 +26,7 @@ const (
 	eventRulesLoadedTag  = "_dd.appsec.event_rules.loaded"
 	eventRulesFailedTag  = "_dd.appsec.event_rules.error_count"
 	wafVersionTag        = "_dd.appsec.waf.version"
+	wafSpanTagPrefix     = "_dd.appsec."
 )
 
 func RunWAF(wafCtx *waf.Context, values waf.RunAddressData) waf.Result {
@@ -91,7 +92,7 @@ func AddWAFMonitoringTags(th trace.TagSetter, rulesVersion string, stats map[str
 
 	// Report the stats sent by the WAF
 	for k, v := range stats {
-		th.SetTag(k, v)
+		th.SetTag(wafSpanTagPrefix+k, v)
 	}
 }
 
