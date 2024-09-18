@@ -164,7 +164,6 @@ func (v *Vehicle) Copy() *Vehicle {
 }
 
 // sineLoad returns a value between 0 and 1 that varies sinusoidally over time.
-// The
 func sineLoad() float64 {
 	period := 5 * time.Minute
 	// Get the current time in seconds since Unix epoch
