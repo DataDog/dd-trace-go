@@ -41,7 +41,7 @@ func TestSearchCommitsApiRequest(t *testing.T) {
 		if r.Header.Get(HeaderContentType) == ContentTypeJSON {
 			var request searchCommits
 			json.Unmarshal(body, &request)
-			assert.Equal(t, c.repositoryUrl, request.Meta.RepositoryURL)
+			assert.Equal(t, c.repositoryURL, request.Meta.RepositoryURL)
 			assert.Equal(t, "commit1", request.Data[0].ID)
 			assert.Equal(t, searchCommitsType, request.Data[0].Type)
 			assert.Equal(t, "commit2", request.Data[1].ID)

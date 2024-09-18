@@ -48,7 +48,7 @@ func TestSettingsApiRequest(t *testing.T) {
 			assert.Equal(t, c.commitSha, request.Data.Attributes.Sha)
 			assert.Equal(t, c.branchName, request.Data.Attributes.Branch)
 			assert.Equal(t, c.environment, request.Data.Attributes.Env)
-			assert.Equal(t, c.repositoryUrl, request.Data.Attributes.RepositoryURL)
+			assert.Equal(t, c.repositoryURL, request.Data.Attributes.RepositoryURL)
 			assert.Equal(t, c.serviceName, request.Data.Attributes.Service)
 			assert.Equal(t, c.testConfigurations, request.Data.Attributes.Configurations)
 

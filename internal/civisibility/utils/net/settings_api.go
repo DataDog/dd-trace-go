@@ -69,7 +69,7 @@ func (c *client) GetSettings() (*SettingsResponseData, error) {
 			Attributes: SettingsRequestData{
 				Service:        c.serviceName,
 				Env:            c.environment,
-				RepositoryURL:  c.repositoryUrl,
+				RepositoryURL:  c.repositoryURL,
 				Branch:         c.branchName,
 				Sha:            c.commitSha,
 				Configurations: c.testConfigurations,

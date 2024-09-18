@@ -32,7 +32,7 @@ func (c *client) GetCommits(localCommits []string) ([]string, error) {
 	body := searchCommits{
 		Data: []searchCommitsData{},
 		Meta: searchCommitsMeta{
-			RepositoryURL: c.repositoryUrl,
+			RepositoryURL: c.repositoryURL,
 		},
 	}
 

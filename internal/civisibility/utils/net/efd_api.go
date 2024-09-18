@@ -56,7 +56,7 @@ func (c *client) GetEarlyFlakeDetectionData() (*EfdResponseData, error) {
 			Attributes: EfdRequestData{
 				Service:        c.serviceName,
 				Env:            c.environment,
-				RepositoryURL:  c.repositoryUrl,
+				RepositoryURL:  c.repositoryURL,
 				Configurations: c.testConfigurations,
 			},
 		},

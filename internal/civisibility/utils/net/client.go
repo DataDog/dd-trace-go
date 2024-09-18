@@ -40,11 +40,11 @@ type (
 	client struct {
 		id                 string
 		agentless          bool
-		baseUrl            string
+		baseURL            string
 		environment        string
 		serviceName        string
 		workingDirectory   string
-		repositoryUrl      string
+		repositoryURL      string
 		commitSha          string
 		branchName         string
 		testConfigurations testConfigurations
@@ -105,7 +105,7 @@ func NewClient() Client {
 
 	// create default http headers and get base url
 	defaultHeaders := map[string]string{}
-	var baseUrl string
+	var baseURL string
 	var requestHandler *RequestHandler
 
 	agentlessEnabled := internal.BoolEnv(constants.CIVisibilityAgentlessEnabledEnvironmentVariable, false)
@@ -129,10 +129,10 @@ func NewClient() Client {
 				site = v
 			}
 
-			baseUrl = fmt.Sprintf("https://api.%s", site)
+			baseURL = fmt.Sprintf("https://api.%s", site)
 		} else {
 			// Use the custom agentless URL.
-			baseUrl = agentlessURL
+			baseURL = agentlessURL
 		}
 
 		requestHandler = NewRequestHandler()
@@ -152,7 +152,7 @@ func NewClient() Client {
 			requestHandler = NewRequestHandlerWithClient(&http.Client{
 				Transport: &http.Transport{
 					Proxy: http.ProxyFromEnvironment,
-					DialContext: func(ctx context.Context, network, address string) (net.Conn, error) {
+					DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
 						return dialer.DialContext(ctx, "unix", (&net.UnixAddr{
 							Name: agentURL.Path,
 							Net:  "unix",
@@ -173,7 +173,7 @@ func NewClient() Client {
 			requestHandler = NewRequestHandler()
 		}
 
-		baseUrl = agentURL.String()
+		baseURL = agentURL.String()
 	}
 
 	// create random id (the backend associate all transactions with the client request)
@@ -184,11 +184,11 @@ func NewClient() Client {
 	return &client{
 		id:               id,
 		agentless:        agentlessEnabled,
-		baseUrl:          baseUrl,
+		baseURL:          baseURL,
 		environment:      environment,
 		serviceName:      serviceName,
 		workingDirectory: ciTags[constants.CIWorkspacePath],
-		repositoryUrl:    ciTags[constants.GitRepositoryURL],
+		repositoryURL:    ciTags[constants.GitRepositoryURL],
 		commitSha:        ciTags[constants.GitCommitSHA],
 		branchName:       ciTags[constants.GitBranch],
 		testConfigurations: testConfigurations{
@@ -204,18 +204,18 @@ func NewClient() Client {
 	}
 }
 
-func (c *client) getUrlPath(urlPath string) string {
+func (c *client) getURLPath(urlPath string) string {
 	if c.agentless {
-		return fmt.Sprintf("%s/%s", c.baseUrl, urlPath)
-	} else {
-		return fmt.Sprintf("%s/%s/%s", c.baseUrl, "evp_proxy/v2", urlPath)
+		return fmt.Sprintf("%s/%s", c.baseURL, urlPath)
 	}
+
+	return fmt.Sprintf("%s/%s/%s", c.baseURL, "evp_proxy/v2", urlPath)
 }
 
 func (c *client) getPostRequestConfig(url string, body interface{}) *RequestConfig {
 	return &RequestConfig{
 		Method:     "POST",
-		URL:        c.getUrlPath(url),
+		URL:        c.getURLPath(url),
 		Headers:    c.headers,
 		Body:       body,
 		Format:     FormatJSON,

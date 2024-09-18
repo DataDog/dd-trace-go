@@ -84,8 +84,8 @@ func TestNewClient_AgentlessEnabled(t *testing.T) {
 	}
 
 	expectedBaseURL := "https://api.site.com"
-	if c.baseUrl != expectedBaseURL {
-		t.Errorf("Expected baseUrl '%s', got '%s'", expectedBaseURL, c.baseUrl)
+	if c.baseURL != expectedBaseURL {
+		t.Errorf("Expected baseUrl '%s', got '%s'", expectedBaseURL, c.baseURL)
 	}
 
 	if c.headers["dd-api-key"] != "test_api_key" {
@@ -125,18 +125,18 @@ func TestNewClient_CustomAgentlessURL(t *testing.T) {
 		t.Fatal("Expected client to be of type *client")
 	}
 
-	if c.baseUrl != "https://custom.agentless.url" {
-		t.Errorf("Expected baseUrl 'https://custom.agentless.url', got '%s'", c.baseUrl)
+	if c.baseURL != "https://custom.agentless.url" {
+		t.Errorf("Expected baseUrl 'https://custom.agentless.url', got '%s'", c.baseURL)
 	}
 }
 
 func TestClient_getUrlPath_Agentless(t *testing.T) {
 	c := &client{
 		agentless: true,
-		baseUrl:   "https://api.customhost.com",
+		baseURL:   "https://api.customhost.com",
 	}
 
-	urlPath := c.getUrlPath("some/path")
+	urlPath := c.getURLPath("some/path")
 	expected := "https://api.customhost.com/some/path"
 	if urlPath != expected {
 		t.Errorf("Expected urlPath '%s', got '%s'", expected, urlPath)
@@ -146,10 +146,10 @@ func TestClient_getUrlPath_Agentless(t *testing.T) {
 func TestClient_getUrlPath_Agent(t *testing.T) {
 	c := &client{
 		agentless: false,
-		baseUrl:   "http://agent.url",
+		baseURL:   "http://agent.url",
 	}
 
-	urlPath := c.getUrlPath("some/path")
+	urlPath := c.getURLPath("some/path")
 	expected := "http://agent.url/evp_proxy/v2/some/path"
 	if urlPath != expected {
 		t.Errorf("Expected urlPath '%s', got '%s'", expected, urlPath)
@@ -159,7 +159,7 @@ func TestClient_getUrlPath_Agent(t *testing.T) {
 func TestClient_getPostRequestConfig(t *testing.T) {
 	c := &client{
 		agentless: false,
-		baseUrl:   "http://agent.url",
+		baseURL:   "http://agent.url",
 		headers: map[string]string{
 			"trace_id":  "12345",
 			"parent_id": "12345",

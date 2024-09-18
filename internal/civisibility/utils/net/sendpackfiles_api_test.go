@@ -30,8 +30,8 @@ func TestSendPackFilesApiRequest(t *testing.T) {
 		containsPushedSha := false
 		containsPackFile := false
 		for {
-			part, err_part := reader.NextPart()
-			if err_part == io.EOF {
+			part, errPart := reader.NextPart()
+			if errPart == io.EOF {
 				break
 			}
 			partName := part.FormName()
@@ -41,7 +41,7 @@ func TestSendPackFilesApiRequest(t *testing.T) {
 				assert.Equal(t, ContentTypeJSON, part.Header.Get(HeaderContentType))
 				var request pushedShaBody
 				json.Unmarshal(buf.Bytes(), &request)
-				assert.Equal(t, c.repositoryUrl, request.Meta.RepositoryURL)
+				assert.Equal(t, c.repositoryURL, request.Meta.RepositoryURL)
 				assert.Equal(t, c.commitSha, request.Data.ID)
 				assert.Equal(t, searchCommitsType, request.Data.Type)
 				containsPushedSha = true

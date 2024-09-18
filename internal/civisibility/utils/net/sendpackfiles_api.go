@@ -42,7 +42,7 @@ func (c *client) SendPackFiles(packFiles []string) (bytes int64, err error) {
 				Type: searchCommitsType,
 			},
 			Meta: pushedShaMeta{
-				RepositoryURL: c.repositoryUrl,
+				RepositoryURL: c.repositoryURL,
 			},
 		},
 		ContentType: ContentTypeJSON,
@@ -57,7 +57,7 @@ func (c *client) SendPackFiles(packFiles []string) (bytes int64, err error) {
 
 		request := RequestConfig{
 			Method:  "POST",
-			URL:     c.getUrlPath(sendPackFilesURLPath),
+			URL:     c.getURLPath(sendPackFilesURLPath),
 			Headers: c.headers,
 			Files: []FormFile{
 				pushedShaFormFile,
