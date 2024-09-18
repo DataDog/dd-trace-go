@@ -16,32 +16,32 @@ const (
 
 type (
 	efdRequest struct {
-		Data efdRequestHeader `json:"data,omitempty"`
+		Data efdRequestHeader `json:"data"`
 	}
 
 	efdRequestHeader struct {
-		ID         string         `json:"id,omitempty"`
-		Type       string         `json:"type,omitempty"`
-		Attributes EfdRequestData `json:"attributes,omitempty"`
+		ID         string         `json:"id"`
+		Type       string         `json:"type"`
+		Attributes EfdRequestData `json:"attributes"`
 	}
 
 	EfdRequestData struct {
-		Service        string             `json:"service,omitempty"`
-		Env            string             `json:"env,omitempty"`
-		RepositoryURL  string             `json:"repository_url,omitempty"`
-		Configurations testConfigurations `json:"configurations,omitempty"`
+		Service        string             `json:"service"`
+		Env            string             `json:"env"`
+		RepositoryURL  string             `json:"repository_url"`
+		Configurations testConfigurations `json:"configurations"`
 	}
 
 	efdResponse struct {
 		Data struct {
-			ID         string          `json:"id,omitempty"`
-			Type       string          `json:"type,omitempty"`
-			Attributes EfdResponseData `json:"attributes,omitempty"`
-		} `json:"data,omitempty"`
+			ID         string          `json:"id"`
+			Type       string          `json:"type"`
+			Attributes EfdResponseData `json:"attributes"`
+		} `json:"data"`
 	}
 
 	EfdResponseData struct {
-		Tests EfdResponseDataModules `json:"tests,omitempty"`
+		Tests EfdResponseDataModules `json:"tests"`
 	}
 
 	EfdResponseDataModules map[string]EfdResponseDataSuites

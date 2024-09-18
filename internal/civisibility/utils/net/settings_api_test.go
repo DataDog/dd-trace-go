@@ -28,8 +28,8 @@ func TestSettingsApiRequest(t *testing.T) {
 	expectedResponse.Data.Attributes.EarlyFlakeDetection.FaultySessionThreshold = 30
 	expectedResponse.Data.Attributes.EarlyFlakeDetection.Enabled = true
 	expectedResponse.Data.Attributes.EarlyFlakeDetection.SlowTestRetries.FiveS = 25
-	expectedResponse.Data.Attributes.EarlyFlakeDetection.SlowTestRetries.One0S = 20
-	expectedResponse.Data.Attributes.EarlyFlakeDetection.SlowTestRetries.Three0S = 10
+	expectedResponse.Data.Attributes.EarlyFlakeDetection.SlowTestRetries.TenS = 20
+	expectedResponse.Data.Attributes.EarlyFlakeDetection.SlowTestRetries.ThirtyS = 10
 	expectedResponse.Data.Attributes.EarlyFlakeDetection.SlowTestRetries.FiveM = 5
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -93,7 +93,7 @@ func TestSettingsApiRequestFailToUnmarshal(t *testing.T) {
 
 func TestSettingsApiRequestFailToGet(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		http.Error(w, "failed to read body", http.StatusInternalServerError)
+		http.Error(w, "internal processing error", http.StatusInternalServerError)
 	}))
 	defer server.Close()
 

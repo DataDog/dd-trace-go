@@ -101,10 +101,10 @@ func NewRequestHandlerWithClient(client *http.Client) *RequestHandler {
 // SendRequest sends an HTTP request based on the provided configuration.
 func (rh *RequestHandler) SendRequest(config RequestConfig) (*Response, error) {
 	if config.MaxRetries <= 0 {
-		config.MaxRetries = 3 // Default retries
+		config.MaxRetries = DefaultMaxRetries // Default retries
 	}
 	if config.Backoff <= 0 {
-		config.Backoff = 1 * time.Second // Default backoff
+		config.Backoff = DefaultBackoff // Default backoff
 	}
 	if config.Method == "" {
 		return nil, errors.New("HTTP method is required")

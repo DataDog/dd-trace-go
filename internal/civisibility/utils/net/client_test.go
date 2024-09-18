@@ -133,11 +133,11 @@ func TestNewClient_CustomAgentlessURL(t *testing.T) {
 func TestClient_getUrlPath_Agentless(t *testing.T) {
 	c := &client{
 		agentless: true,
-		baseUrl:   "https://api.datadoghq.com",
+		baseUrl:   "https://api.customhost.com",
 	}
 
 	urlPath := c.getUrlPath("some/path")
-	expected := "https://api.datadoghq.com/some/path"
+	expected := "https://api.customhost.com/some/path"
 	if urlPath != expected {
 		t.Errorf("Expected urlPath '%s', got '%s'", expected, urlPath)
 	}

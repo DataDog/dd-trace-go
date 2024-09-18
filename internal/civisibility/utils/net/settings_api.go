@@ -16,13 +16,13 @@ const (
 
 type (
 	settingsRequest struct {
-		Data settingsRequestHeader `json:"data,omitempty"`
+		Data settingsRequestHeader `json:"data"`
 	}
 
 	settingsRequestHeader struct {
-		ID         string              `json:"id,omitempty"`
-		Type       string              `json:"type,omitempty"`
-		Attributes SettingsRequestData `json:"attributes,omitempty"`
+		ID         string              `json:"id"`
+		Type       string              `json:"type"`
+		Attributes SettingsRequestData `json:"attributes"`
 	}
 
 	SettingsRequestData struct {
@@ -36,28 +36,28 @@ type (
 
 	settingsResponse struct {
 		Data struct {
-			ID         string               `json:"id,omitempty"`
-			Type       string               `json:"type,omitempty"`
-			Attributes SettingsResponseData `json:"attributes,omitempty"`
+			ID         string               `json:"id"`
+			Type       string               `json:"type"`
+			Attributes SettingsResponseData `json:"attributes"`
 		} `json:"data,omitempty"`
 	}
 
 	SettingsResponseData struct {
-		CodeCoverage        bool `json:"code_coverage,omitempty"`
+		CodeCoverage        bool `json:"code_coverage"`
 		EarlyFlakeDetection struct {
-			Enabled         bool `json:"enabled,omitempty"`
+			Enabled         bool `json:"enabled"`
 			SlowTestRetries struct {
-				One0S   int `json:"10s,omitempty"`
-				Three0S int `json:"30s,omitempty"`
-				FiveM   int `json:"5m,omitempty"`
-				FiveS   int `json:"5s,omitempty"`
-			} `json:"slow_test_retries,omitempty"`
-			FaultySessionThreshold int `json:"faulty_session_threshold,omitempty"`
-		} `json:"early_flake_detection,omitempty"`
-		FlakyTestRetriesEnabled bool `json:"flaky_test_retries_enabled,omitempty"`
-		ItrEnabled              bool `json:"itr_enabled,omitempty"`
-		RequireGit              bool `json:"require_git,omitempty"`
-		TestsSkipping           bool `json:"tests_skipping,omitempty"`
+				TenS    int `json:"10s"`
+				ThirtyS int `json:"30s"`
+				FiveM   int `json:"5m"`
+				FiveS   int `json:"5s"`
+			} `json:"slow_test_retries"`
+			FaultySessionThreshold int `json:"faulty_session_threshold"`
+		} `json:"early_flake_detection"`
+		FlakyTestRetriesEnabled bool `json:"flaky_test_retries_enabled"`
+		ItrEnabled              bool `json:"itr_enabled"`
+		RequireGit              bool `json:"require_git"`
+		TestsSkipping           bool `json:"tests_skipping"`
 	}
 )
 

@@ -87,7 +87,7 @@ func TestSearchCommitsApiRequestFailToUnmarshal(t *testing.T) {
 
 func TestSearchCommitsApiRequestFailToGet(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		http.Error(w, "failed to read body", http.StatusInternalServerError)
+		http.Error(w, "internal processing error", http.StatusInternalServerError)
 	}))
 	defer server.Close()
 

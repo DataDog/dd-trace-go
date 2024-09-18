@@ -16,15 +16,15 @@ const (
 
 type (
 	searchCommits struct {
-		Data []searchCommitsData `json:"data,omitempty"`
-		Meta searchCommitsMeta   `json:"meta,omitempty"`
+		Data []searchCommitsData `json:"data"`
+		Meta searchCommitsMeta   `json:"meta"`
 	}
 	searchCommitsData struct {
-		ID   string `json:"id,omitempty"`
-		Type string `json:"type,omitempty"`
+		ID   string `json:"id"`
+		Type string `json:"type"`
 	}
 	searchCommitsMeta struct {
-		RepositoryURL string `json:"repository_url,omitempty"`
+		RepositoryURL string `json:"repository_url"`
 	}
 )
 

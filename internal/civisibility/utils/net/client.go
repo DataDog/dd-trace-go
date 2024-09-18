@@ -63,6 +63,8 @@ type (
 	}
 )
 
+var _ Client = &client{}
+
 func NewClient() Client {
 	ciTags := utils.GetCITags()
 
@@ -118,10 +120,7 @@ func NewClient() Client {
 		defaultHeaders["dd-api-key"] = APIKeyValue
 
 		// Check for a custom agentless URL.
-		agentlessURL := ""
-		if v := os.Getenv(constants.CIVisibilityAgentlessURLEnvironmentVariable); v != "" {
-			agentlessURL = v
-		}
+		agentlessURL := os.Getenv(constants.CIVisibilityAgentlessURLEnvironmentVariable)
 
 		if agentlessURL == "" {
 			// Use the standard agentless URL format.

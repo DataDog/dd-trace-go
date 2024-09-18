@@ -17,15 +17,15 @@ const (
 
 type (
 	pushedShaBody struct {
-		Data pushedShaData `json:"data,omitempty"`
-		Meta pushedShaMeta `json:"meta,omitempty"`
+		Data pushedShaData `json:"data"`
+		Meta pushedShaMeta `json:"meta"`
 	}
 	pushedShaData struct {
-		ID   string `json:"id,omitempty"`
-		Type string `json:"type,omitempty"`
+		ID   string `json:"id"`
+		Type string `json:"type"`
 	}
 	pushedShaMeta struct {
-		RepositoryURL string `json:"repository_url,omitempty"`
+		RepositoryURL string `json:"repository_url"`
 	}
 )
 

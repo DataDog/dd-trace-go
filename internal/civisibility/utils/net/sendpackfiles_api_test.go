@@ -93,7 +93,7 @@ func TestSendPackFilesApiRequestFailToUnmarshal(t *testing.T) {
 
 func TestSendPackFilesApiRequestFailToGet(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		http.Error(w, "failed to read body", http.StatusInternalServerError)
+		http.Error(w, "internal processing error", http.StatusInternalServerError)
 	}))
 	defer server.Close()
 
@@ -114,7 +114,7 @@ func TestSendPackFilesApiRequestFailToGet(t *testing.T) {
 
 func TestSendPackFilesApiRequestFileError(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		http.Error(w, "failed to read body", http.StatusInternalServerError)
+		http.Error(w, "internal processing error", http.StatusInternalServerError)
 	}))
 	defer server.Close()
 
@@ -135,7 +135,7 @@ func TestSendPackFilesApiRequestFileError(t *testing.T) {
 
 func TestSendPackFilesApiRequestNoFile(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		http.Error(w, "failed to read body", http.StatusInternalServerError)
+		http.Error(w, "internal processing error", http.StatusInternalServerError)
 	}))
 	defer server.Close()
 
