@@ -113,147 +113,147 @@ func (rh *RequestHandler) SendRequest(config RequestConfig) (*Response, error) {
 		return nil, errors.New("URL is required")
 	}
 
-	var responseBody []byte
-	var statusCode int
-
 	for attempt := 0; attempt <= config.MaxRetries; attempt++ {
-		// Now, MaxRetries represents the total number of attempts
-		var req *http.Request
-		var err error
-
-		// Check if it's a multipart form data request
-		if len(config.Files) > 0 {
-			// Create multipart form data body
-			body, contentType, err := createMultipartFormData(config.Files, config.Compressed)
-			if err != nil {
-				return nil, err
-			}
-			req, err = http.NewRequest(config.Method, config.URL, bytes.NewBuffer(body))
-			if err != nil {
-				return nil, err
-			}
-			req.Header.Set(HeaderContentType, contentType)
-			if config.Compressed {
-				req.Header.Set(HeaderContentEncoding, ContentEncodingGzip)
-			}
-		} else if config.Body != nil {
-			// Handle JSON or MessagePack body
-			serializedBody, err := serializeData(config.Body, config.Format)
-			if err != nil {
-				return nil, err
-			}
-
-			// Compress body if needed
-			if config.Compressed {
-				serializedBody, err = compressData(serializedBody)
-				if err != nil {
-					return nil, err
-				}
-			}
-
-			req, err = http.NewRequest(config.Method, config.URL, bytes.NewBuffer(serializedBody))
-			if err != nil {
-				return nil, err
-			}
-			if config.Format == FormatJSON {
-				req.Header.Set(HeaderContentType, ContentTypeJSON)
-			}
-			if config.Compressed {
-				req.Header.Set(HeaderContentEncoding, ContentEncodingGzip)
-			}
-		} else {
-			// Handle requests without a body (e.g., GET requests)
-			req, err = http.NewRequest(config.Method, config.URL, nil)
-			if err != nil {
-				return nil, err
-			}
+		rs, err, stopRetries := rh.internalSendRequest(&config, attempt)
+		if stopRetries {
+			return rs, err
 		}
-
-		// Set that is possible to handle gzip responses
-		req.Header.Set(HeaderAcceptEncoding, ContentEncodingGzip)
-
-		// Add custom headers if provided
-		for key, value := range config.Headers {
-			req.Header.Set(key, value)
-		}
-
-		resp, err := rh.Client.Do(req)
-		if err != nil {
-			// Retry if there's an error
-			exponentialBackoff(attempt, config.Backoff)
-			continue
-		}
-		// Close response body
-		defer resp.Body.Close()
-
-		// Capture the status code
-		statusCode = resp.StatusCode
-
-		// Check for rate-limiting (HTTP 429)
-		if resp.StatusCode == HTTPStatusTooManyRequests {
-			rateLimitReset := resp.Header.Get(HeaderRateLimitReset)
-			if rateLimitReset != "" {
-				if resetTime, err := strconv.ParseInt(rateLimitReset, 10, 64); err == nil {
-					var waitDuration time.Duration
-					if resetTime > time.Now().Unix() {
-						// Assume it's a Unix timestamp
-						waitDuration = time.Until(time.Unix(resetTime, 0))
-					} else {
-						// Assume it's a duration in seconds
-						waitDuration = time.Duration(resetTime) * time.Second
-					}
-					resp.Body.Close()
-					if waitDuration > 0 {
-						time.Sleep(waitDuration)
-					}
-					continue
-				}
-			}
-
-			// Fallback to exponential backoff if header is missing or invalid
-			resp.Body.Close()
-			exponentialBackoff(attempt, config.Backoff)
-			continue
-		}
-
-		// Check status code for retries
-		if statusCode >= 406 {
-			// Retry if the status code is >= 406
-			resp.Body.Close()
-			exponentialBackoff(attempt, config.Backoff)
-			continue
-		}
-
-		responseBody, err = io.ReadAll(resp.Body)
-		if err != nil {
-			return nil, err
-		}
-
-		// Decompress response if it is gzip compressed
-		if resp.Header.Get(HeaderContentEncoding) == ContentEncodingGzip {
-			responseBody, err = decompressData(responseBody)
-			if err != nil {
-				return nil, err
-			}
-		}
-
-		// Determine response format from headers
-		responseFormat := "unknown"
-		mediaType, _, err := mime.ParseMediaType(resp.Header.Get(HeaderContentType))
-		if err == nil {
-			if mediaType == ContentTypeJSON || mediaType == ContentTypeJSONAlternative {
-				responseFormat = FormatJSON
-			}
-		}
-
-		// Determine if we can unmarshal based on status code (2xx)
-		canUnmarshal := statusCode >= 200 && statusCode < 300
-
-		// Return the successful response with status code and unmarshal capability
-		return &Response{Body: responseBody, Format: responseFormat, StatusCode: statusCode, CanUnmarshal: canUnmarshal}, nil
 	}
 
 	return nil, errors.New("max retries exceeded")
+}
+
+func (rh *RequestHandler) internalSendRequest(config *RequestConfig, attempt int) (response *Response, requestError error, stopRetries bool) {
+	var req *http.Request
+
+	// Check if it's a multipart form data request
+	if len(config.Files) > 0 {
+		// Create multipart form data body
+		body, contentType, err := createMultipartFormData(config.Files, config.Compressed)
+		if err != nil {
+			return nil, err, true
+		}
+		req, err = http.NewRequest(config.Method, config.URL, bytes.NewBuffer(body))
+		if err != nil {
+			return nil, err, true
+		}
+		req.Header.Set(HeaderContentType, contentType)
+		if config.Compressed {
+			req.Header.Set(HeaderContentEncoding, ContentEncodingGzip)
+		}
+	} else if config.Body != nil {
+		// Handle JSON body
+		serializedBody, err := serializeData(config.Body, config.Format)
+		if err != nil {
+			return nil, err, true
+		}
+
+		// Compress body if needed
+		if config.Compressed {
+			serializedBody, err = compressData(serializedBody)
+			if err != nil {
+				return nil, err, true
+			}
+		}
+
+		req, err = http.NewRequest(config.Method, config.URL, bytes.NewBuffer(serializedBody))
+		if err != nil {
+			return nil, err, true
+		}
+		if config.Format == FormatJSON {
+			req.Header.Set(HeaderContentType, ContentTypeJSON)
+		}
+		if config.Compressed {
+			req.Header.Set(HeaderContentEncoding, ContentEncodingGzip)
+		}
+	} else {
+		// Handle requests without a body (e.g., GET requests)
+		var err error
+		req, err = http.NewRequest(config.Method, config.URL, nil)
+		if err != nil {
+			return nil, err, true
+		}
+	}
+
+	// Set that is possible to handle gzip responses
+	req.Header.Set(HeaderAcceptEncoding, ContentEncodingGzip)
+
+	// Add custom headers if provided
+	for key, value := range config.Headers {
+		req.Header.Set(key, value)
+	}
+
+	resp, err := rh.Client.Do(req)
+	if err != nil {
+		// Retry if there's an error
+		exponentialBackoff(attempt, config.Backoff)
+		return nil, nil, false
+	}
+	// Close response body
+	defer resp.Body.Close()
+
+	// Capture the status code
+	statusCode := resp.StatusCode
+
+	// Check for rate-limiting (HTTP 429)
+	if resp.StatusCode == HTTPStatusTooManyRequests {
+		rateLimitReset := resp.Header.Get(HeaderRateLimitReset)
+		if rateLimitReset != "" {
+			if resetTime, err := strconv.ParseInt(rateLimitReset, 10, 64); err == nil {
+				var waitDuration time.Duration
+				if resetTime > time.Now().Unix() {
+					// Assume it's a Unix timestamp
+					waitDuration = time.Until(time.Unix(resetTime, 0))
+				} else {
+					// Assume it's a duration in seconds
+					waitDuration = time.Duration(resetTime) * time.Second
+				}
+				if waitDuration > 0 {
+					time.Sleep(waitDuration)
+				}
+				return nil, nil, false
+			}
+		}
+
+		// Fallback to exponential backoff if header is missing or invalid
+		exponentialBackoff(attempt, config.Backoff)
+		return nil, nil, false
+	}
+
+	// Check status code for retries
+	if statusCode >= 406 {
+		// Retry if the status code is >= 406
+		exponentialBackoff(attempt, config.Backoff)
+		return nil, nil, false
+	}
+
+	responseBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err, true
+	}
+
+	// Decompress response if it is gzip compressed
+	if resp.Header.Get(HeaderContentEncoding) == ContentEncodingGzip {
+		responseBody, err = decompressData(responseBody)
+		if err != nil {
+			return nil, err, true
+		}
+	}
+
+	// Determine response format from headers
+	responseFormat := "unknown"
+	mediaType, _, err := mime.ParseMediaType(resp.Header.Get(HeaderContentType))
+	if err == nil {
+		if mediaType == ContentTypeJSON || mediaType == ContentTypeJSONAlternative {
+			responseFormat = FormatJSON
+		}
+	}
+
+	// Determine if we can unmarshal based on status code (2xx)
+	canUnmarshal := statusCode >= 200 && statusCode < 300
+
+	// Return the successful response with status code and unmarshal capability
+	return &Response{Body: responseBody, Format: responseFormat, StatusCode: statusCode, CanUnmarshal: canUnmarshal}, nil, true
 }
 
 // Helper functions for data serialization, compression, and handling multipart form data
