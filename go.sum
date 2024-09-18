@@ -740,6 +740,8 @@ github.com/DataDog/dd-trace-go/v2 v2.0.0-20240917105006-8a0def8db5f4 h1:/EJpYWZl
 github.com/DataDog/dd-trace-go/v2 v2.0.0-20240917105006-8a0def8db5f4/go.mod h1:3GugTYtqmGLLlcCyQTR4s5dOTXZeyZuA3XkWTnMvaeA=
 github.com/DataDog/dd-trace-go/v2 v2.0.0-20240918094128-28e85819d8e9 h1:JVx8QKlVpOqtZpuyjRQSg+xyCi2fiWVKvErdqgFDVis=
 github.com/DataDog/dd-trace-go/v2 v2.0.0-20240918094128-28e85819d8e9/go.mod h1:3GugTYtqmGLLlcCyQTR4s5dOTXZeyZuA3XkWTnMvaeA=
+github.com/DataDog/dd-trace-go/v2 v2.0.0-20240918102525-7d4b68cbd85f h1:Z8o41BI5e+6iCwjIy6geZ17CGlNl16A7XmRzT5T1r7c=
+github.com/DataDog/dd-trace-go/v2 v2.0.0-20240918102525-7d4b68cbd85f/go.mod h1:3GugTYtqmGLLlcCyQTR4s5dOTXZeyZuA3XkWTnMvaeA=
 github.com/DataDog/go-libddwaf/v3 v3.3.0 h1:jS72fuQpFgJZEdEJDmHJCPAgNTEMZoz1EUvimPUOiJ4=
 github.com/DataDog/go-libddwaf/v3 v3.3.0/go.mod h1:Bz/0JkpGf689mzbUjKJeheJINqsyyhM8p9PDuHdK2Ec=
 github.com/DataDog/go-sqllexer v0.0.11 h1:OfPBjmayreblOXreszbrOTICNZ3qWrA6Bg4sypvxpbw=
