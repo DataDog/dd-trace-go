@@ -43,8 +43,7 @@ func (fn OptionFn) apply(cfg *config) {
 
 func newConfig(opts ...Option) *config {
 	cfg := &config{
-		ctx: context.Background(),
-		// analyticsRate: globalconfig.AnalyticsRate(),
+		ctx:           context.Background(),
 		analyticsRate: instr.AnalyticsRate(false),
 	}
 	cfg.dataStreamsEnabled = instr.DataStreamsEnabled()

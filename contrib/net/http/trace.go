@@ -18,8 +18,6 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/options"
 )
 
-const componentName = "net/http"
-
 var instr *instrumentation.Instrumentation
 
 func init() {
@@ -56,7 +54,7 @@ func TraceAndServe(h http.Handler, w http.ResponseWriter, r *http.Request, cfg *
 	opts := options.Expand(cfg.SpanOpts, 2, 3) // make a copy of cfg.SpanOpts to avoid races.
 	// Pre-append span.kind and component tags to the options so that they can be overridden.
 	opts[0] = tracer.Tag(ext.SpanKind, ext.SpanKindServer)
-	opts[1] = tracer.Tag(ext.Component, componentName)
+	opts[1] = tracer.Tag(ext.Component, instrumentation.PackageNetHTTP)
 	if cfg.Service != "" {
 		opts = append(opts, tracer.ServiceName(cfg.Service))
 	}
