@@ -23,7 +23,7 @@ const (
 
 func RegisterSQLListener(op dyngo.Operation, events *trace.SecurityEventsHolder, wafCtx *waf.Context, limiter limiter.Limiter) {
 	dyngo.On(op, sharedsec.MakeWAFRunListener(events, wafCtx, limiter, func(args types.SQLOperationArgs) waf.RunAddressData {
-		return waf.RunAddressData{Ephemeral: map[string]any{ServerDBStatementAddr: args.Query, ServerDBTypeAddr: args.Driver}}
+		return waf.RunAddressData{Ephemeral: map[string]any{ServerDBStatementAddr: args.Query, ServerDBTypeAddr: args.Driver}, Scope: waf.RASPScope}
 	}))
 }
 
