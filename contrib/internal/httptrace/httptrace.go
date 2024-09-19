@@ -9,7 +9,6 @@ package httptrace
 
 import (
 	"context"
-	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -71,9 +70,6 @@ func FinishRequestSpan(s tracer.Span, status int, opts ...tracer.FinishOption) {
 		statusStr = strconv.Itoa(status)
 	}
 	s.SetTag(ext.HTTPCode, statusStr)
-	if status >= 500 && status < 600 {
-		s.SetTag(ext.Error, fmt.Errorf("%s: %s", statusStr, http.StatusText(status)))
-	}
 	s.Finish(opts...)
 }
 

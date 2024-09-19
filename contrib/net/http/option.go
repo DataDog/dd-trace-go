@@ -27,6 +27,7 @@ type config struct {
 	finishOpts    []ddtrace.FinishOption
 	ignoreRequest func(*http.Request) bool
 	resourceNamer func(*http.Request) string
+	isStatusError func(int) bool
 	headerTags    *internal.LockMap
 }
 
@@ -50,6 +51,7 @@ func defaults(cfg *config) {
 	}
 	cfg.ignoreRequest = func(_ *http.Request) bool { return false }
 	cfg.resourceNamer = func(_ *http.Request) string { return "" }
+	cfg.isStatusError = func(status int) bool { return status >= 500 && status < 600 }
 }
 
 // WithIgnoreRequest holds the function to use for determining if the
@@ -115,6 +117,14 @@ func WithSpanOptions(opts ...ddtrace.StartSpanOption) Option {
 func WithResourceNamer(namer func(req *http.Request) string) Option {
 	return func(cfg *config) {
 		cfg.resourceNamer = namer
+	}
+}
+
+// WithStatusCheck sets a span to be an error if the passed function
+// returns true for a given status code.
+func WithStatusCheck(checker func(statusCode int) bool) Option {
+	return func(cfg *config) {
+		cfg.isStatusError = checker
 	}
 }
 

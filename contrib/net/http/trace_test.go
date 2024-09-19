@@ -260,6 +260,29 @@ func TestTraceAndServe(t *testing.T) {
 		assert.Equal("200", spans[0].Tag(ext.HTTPCode))
 	})
 
+	t.Run("isStatusError", func(t *testing.T) {
+		mt := mocktracer.Start()
+		assert := assert.New(t)
+		defer mt.Stop()
+
+		handler := func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusBadRequest)
+		}
+		r, err := http.NewRequest("GET", "/", nil)
+		assert.NoError(err)
+		w := httptest.NewRecorder()
+		TraceAndServe(http.HandlerFunc(handler), w, r, &ServeConfig{
+			Service:       "service",
+			Resource:      "resource",
+			IsStatusError: func(i int) bool { return i >= 400 },
+		})
+
+		spans := mt.FinishedSpans()
+		assert.Len(spans, 1)
+		assert.Equal("400", spans[0].Tag(ext.HTTPCode))
+		assert.Equal("400: Bad Request", spans[0].Tag(ext.Error).(error).Error())
+	})
+
 	t.Run("empty", func(t *testing.T) {
 		mt := mocktracer.Start()
 		assert := assert.New(t)
@@ -319,6 +342,7 @@ func TestTraceAndServe(t *testing.T) {
 		assert.Equal("/path?<redacted>", span.Tag(ext.HTTPURL))
 		assert.Equal("200", span.Tag(ext.HTTPCode))
 	})
+
 }
 
 func TestTraceAndServeHost(t *testing.T) {

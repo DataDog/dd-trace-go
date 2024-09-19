@@ -8,6 +8,7 @@ package http // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http"
 //go:generate sh -c "go run make_responsewriter.go | gofmt > trace_gen.go"
 
 import (
+	"fmt"
 	"net/http"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/httptrace"
@@ -42,6 +43,9 @@ type ServeConfig struct {
 	// in as /user/123 we'll have {"id": "123"}). This field is optional and is used for monitoring
 	// by AppSec. It is only taken into account when AppSec is enabled.
 	RouteParams map[string]string
+	// IsStatusError returns whether or not the passed status code should be marked as
+	// an error
+	IsStatusError func(int) bool
 	// FinishOpts specifies any options to be used when finishing the request span.
 	FinishOpts []ddtrace.FinishOption
 	// SpanOpts specifies any options to be applied to the request starting span.
@@ -67,6 +71,9 @@ func TraceAndServe(h http.Handler, w http.ResponseWriter, r *http.Request, cfg *
 	span, ctx := httptrace.StartRequestSpan(r, opts...)
 	rw, ddrw := wrapResponseWriter(w)
 	defer func() {
+		if cfg.IsStatusError != nil && cfg.IsStatusError(ddrw.status) {
+			span.SetTag(ext.Error, fmt.Errorf("%d: %s", ddrw.status, http.StatusText(ddrw.status)))
+		}
 		httptrace.FinishRequestSpan(span, ddrw.status, cfg.FinishOpts...)
 	}()
 
