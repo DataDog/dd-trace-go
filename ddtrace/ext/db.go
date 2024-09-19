@@ -59,7 +59,7 @@ const (
 
 // Cassandra tags.
 const (
-	// CassandraConsistencyLevel is the tag name to set for consitency level.
+	// CassandraConsistencyLevel is the tag name to set for consistency level.
 	CassandraConsistencyLevel = "cassandra.consistency_level"
 
 	// CassandraCluster specifies the tag name that is used to set the cluster.

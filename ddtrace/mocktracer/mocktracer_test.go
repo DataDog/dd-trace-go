@@ -76,7 +76,7 @@ func TestTracerStartSpan(t *testing.T) {
 }
 
 func TestTracerFinishedSpans(t *testing.T) {
-	mt := Start() // newMockTracer()
+	mt := Start()
 	t.Cleanup(func() {
 		mt.Stop()
 	})
@@ -102,7 +102,7 @@ func TestTracerFinishedSpans(t *testing.T) {
 }
 
 func TestTracerOpenSpans(t *testing.T) {
-	mt := Start() // newMockTracer()
+	mt := Start()
 	t.Cleanup(func() {
 		mt.Stop()
 	})
@@ -125,6 +125,10 @@ func TestTracerOpenSpans(t *testing.T) {
 
 func TestTracerSetUser(t *testing.T) {
 	mt := Start()
+	t.Cleanup(func() {
+		mt.Stop()
+	})
+
 	span := mt.StartSpan("http.request")
 	tracer.SetUser(span, "test-user",
 		tracer.WithUserEmail("email"),
@@ -149,7 +153,7 @@ func TestTracerSetUser(t *testing.T) {
 
 func TestTracerReset(t *testing.T) {
 	assert := assert.New(t)
-	mt := Start().(*mocktracer) // newMockTracer()
+	mt := Start().(*mocktracer)
 	t.Cleanup(func() {
 		mt.Stop()
 	})
