@@ -38,7 +38,7 @@ func TestSpanFromContext(t *testing.T) {
 		span, ok := SpanFromContext(context.Background())
 		assert.False(ok)
 		assert.Nil(span)
-		span, ok = SpanFromContext(nil)
+		span, ok = SpanFromContext(context.TODO())
 		assert.False(ok)
 		assert.Nil(span)
 	})
