@@ -69,7 +69,7 @@ updateLoop:
 		switch p {
 		case rc.ProductASMData:
 			// Merge all rules data entries together and store them as a RulesManager edit entry
-			fragment, status := mergeRulesData(u)
+			fragment, status := mergeASMDataUpdates(u)
 			statuses = mergeMaps(statuses, status)
 			r.AddEdit("asmdata", fragment)
 		case rc.ProductASMDD:
@@ -243,7 +243,7 @@ func (a *appsec) handleASMFeatures(u remoteconfig.ProductUpdate) map[string]rc.A
 	return statuses
 }
 
-func mergeRulesData(u remoteconfig.ProductUpdate) (config.RulesFragment, map[string]rc.ApplyStatus) {
+func mergeASMDataUpdates(u remoteconfig.ProductUpdate) (config.RulesFragment, map[string]rc.ApplyStatus) {
 	// Following the RFC, merging should only happen when two rules data with the same ID and same Type are received
 	type mapKey struct {
 		id  string
@@ -281,20 +281,18 @@ func mergeRulesData(u remoteconfig.ProductUpdate) (config.RulesFragment, map[str
 			continue
 		}
 
-		var parsedUpdate map[string][]config.DataEntry
-		if err := json.Unmarshal(raw, &parsedUpdate); err != nil {
+		var asmdataUpdate struct {
+			RulesData     []config.DataEntry `json:"rules_data,omitempty"`
+			ExclusionData []config.DataEntry `json:"exclusion_data,omitempty"`
+		}
+		if err := json.Unmarshal(raw, &asmdataUpdate); err != nil {
 			log.Debug("appsec: Remote config: error while unmarshalling payload for %s: %v. Configuration won't be applied.", path, err)
 			statuses[path] = genApplyStatus(false, err)
 			continue
 		}
 
-		if exclusionData, ok := parsedUpdate["exclusion_data"]; ok {
-			mergeUpdateEntry(mergedExclusionData, exclusionData)
-		}
-
-		if rulesData, ok := parsedUpdate["rules_data"]; ok {
-			mergeUpdateEntry(mergedRulesData, rulesData)
-		}
+		mergeUpdateEntry(mergedExclusionData, asmdataUpdate.ExclusionData)
+		mergeUpdateEntry(mergedRulesData, asmdataUpdate.RulesData)
 	}
 
 	var fragment config.RulesFragment

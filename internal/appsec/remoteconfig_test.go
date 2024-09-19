@@ -246,7 +246,7 @@ func TestMergeRulesData(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			fragment, statuses := mergeRulesData(tc.update)
+			fragment, statuses := mergeASMDataUpdates(tc.update)
 
 			// Sort the data entries to make the comparison easier
 			sort := func(actual []config.DataEntry) {
