@@ -17,3 +17,13 @@ type NoopTagSetter struct{}
 func (NoopTagSetter) SetTag(string, any) {
 	// Do nothing
 }
+
+type TestTagSetter map[string]any
+
+func (t TestTagSetter) SetTag(key string, value any) {
+	t[key] = value
+}
+
+func (t TestTagSetter) Tags() map[string]any {
+	return t
+}

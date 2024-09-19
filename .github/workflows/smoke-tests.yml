@@ -178,7 +178,7 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: .
-          file: ./internal/apps/setup-smoke-test/Dockerfile
+          file: ./internal/setup-smoke-test/Dockerfile
           push: false
           load: true
           tags: smoke-test

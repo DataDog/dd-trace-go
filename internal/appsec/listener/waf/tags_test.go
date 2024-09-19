@@ -11,7 +11,7 @@ import (
 	waf "github.com/DataDog/go-libddwaf/v3"
 	"github.com/stretchr/testify/require"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/trace"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/trace"
 )
 
 const (
@@ -22,7 +22,7 @@ const (
 
 // Test that internal functions used to set span tags use the correct types
 func TestTagsTypes(t *testing.T) {
-	th := trace.NewTagsHolder()
+	th := make(trace.TestTagSetter)
 	wafDiags := waf.Diagnostics{
 		Version: "1.3.0",
 		Rules: &waf.DiagnosticEntry{
@@ -35,11 +35,13 @@ func TestTagsTypes(t *testing.T) {
 	AddRulesMonitoringTags(&th, wafDiags)
 
 	stats := map[string]any{
-		wafDurationTag:                     10,
-		wafDurationExtTag:                  20,
-		wafTimeoutTag:                      0,
-		"_dd.appsec.waf.truncations.depth": []int{1, 2, 3},
-		"_dd.appsec.waf.run":               12000,
+		"waf.duration":          10,
+		"rasp.duration":         10,
+		"waf.duration_ext":      20,
+		"rasp.duration_ext":     20,
+		"waf.timeouts":          0,
+		"waf.truncations.depth": []int{1, 2, 3},
+		"waf.run":               12000,
 	}
 
 	AddWAFMonitoringTags(&th, "1.2.3", stats)

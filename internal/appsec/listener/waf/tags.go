@@ -10,6 +10,7 @@ import (
 	"fmt"
 
 	waf "github.com/DataDog/go-libddwaf/v3"
+
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
@@ -23,6 +24,7 @@ const (
 	eventRulesLoadedTag  = "_dd.appsec.event_rules.loaded"
 	eventRulesFailedTag  = "_dd.appsec.event_rules.error_count"
 	wafVersionTag        = "_dd.appsec.waf.version"
+	wafSpanTagPrefix     = "_dd.appsec."
 
 	// BlockedRequestTag used to convey whether a request is blocked
 	BlockedRequestTag = "appsec.blocked"
@@ -57,7 +59,7 @@ func AddWAFMonitoringTags(th trace.TagSetter, rulesVersion string, stats map[str
 
 	// Report the stats sent by the Feature
 	for k, v := range stats {
-		th.SetTag(k, v)
+		th.SetTag(wafSpanTagPrefix+k, v)
 	}
 }
 

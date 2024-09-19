@@ -119,6 +119,7 @@ func (b *RunAddressDataBuilder) WithFilePath(file string) *RunAddressDataBuilder
 		return b
 	}
 	b.Ephemeral[ServerIOFSFileAddr] = file
+	b.Scope = waf.RASPScope
 	return b
 }
 
@@ -127,6 +128,7 @@ func (b *RunAddressDataBuilder) WithURL(url string) *RunAddressDataBuilder {
 		return b
 	}
 	b.Ephemeral[ServerIoNetURLAddr] = url
+	b.Scope = waf.RASPScope
 	return b
 }
 
@@ -135,6 +137,7 @@ func (b *RunAddressDataBuilder) WithDBStatement(statement string) *RunAddressDat
 		return b
 	}
 	b.Ephemeral[ServerDBStatementAddr] = statement
+	b.Scope = waf.RASPScope
 	return b
 }
 
@@ -143,6 +146,7 @@ func (b *RunAddressDataBuilder) WithDBType(driver string) *RunAddressDataBuilder
 		return b
 	}
 	b.Ephemeral[ServerDBTypeAddr] = driver
+	b.Scope = waf.RASPScope
 	return b
 }
 
