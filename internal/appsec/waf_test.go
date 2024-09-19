@@ -51,7 +51,7 @@ func TestCustomRules(t *testing.T) {
 
 	// Start and trace an HTTP server
 	mux := httptrace.NewServeMux()
-	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
 		w.Write([]byte("Hello World!\n"))
 	})
 
@@ -108,10 +108,10 @@ func TestUserRules(t *testing.T) {
 
 	// Start and trace an HTTP server
 	mux := httptrace.NewServeMux()
-	mux.HandleFunc("/hello", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/hello", func(w http.ResponseWriter, _ *http.Request) {
 		w.Write([]byte("Hello World!\n"))
 	})
-	mux.HandleFunc("/response-header", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/response-header", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("match-response-header", "match-response-header")
 		w.WriteHeader(204)
 	})
@@ -174,7 +174,7 @@ func TestWAF(t *testing.T) {
 
 	// Start and trace an HTTP server
 	mux := httptrace.NewServeMux()
-	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
 		w.Write([]byte("Hello World!\n"))
 	})
 	mux.HandleFunc("/body", func(w http.ResponseWriter, r *http.Request) {
@@ -330,7 +330,7 @@ func TestBlocking(t *testing.T) {
 
 	// Start and trace an HTTP server
 	mux := httptrace.NewServeMux()
-	mux.HandleFunc("/ip", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/ip", func(w http.ResponseWriter, _ *http.Request) {
 		w.Write([]byte("Hello World!\n"))
 	})
 	mux.HandleFunc("/user", func(w http.ResponseWriter, r *http.Request) {
@@ -768,7 +768,7 @@ func BenchmarkSampleWAFContext(b *testing.B) {
 		_, err = ctx.Run(
 			waf.RunAddressData{
 				Persistent: map[string]any{
-					addresses.HTTPClientIPAddr:        "1.1.1.1",
+					addresses.ClientIPAddr:            "1.1.1.1",
 					addresses.ServerRequestMethodAddr: "GET",
 					addresses.ServerRequestRawURIAddr: "/",
 					addresses.ServerRequestHeadersNoCookiesAddr: map[string][]string{

@@ -16,17 +16,21 @@ const (
 	ServerResponseStatusAddr           = "server.response.status"
 	ServerResponseHeadersNoCookiesAddr = "server.response.headers.no_cookies"
 
-	HTTPClientIPAddr = "http.client_ip"
-	UserIDAddr       = "usr.id"
+	ClientIPAddr = "http.client_ip"
+	UserIDAddr   = "usr.id"
 
 	ServerIoNetURLAddr    = "server.io.net.url"
 	ServerIOFSFileAddr    = "server.io.fs.file"
 	ServerDBStatementAddr = "server.db.statement"
 	ServerDBTypeAddr      = "server.db.system"
 
-	GRPCServerMethodAddr          = "grpc.server.method"
-	GRPCServerRequestMessageAddr  = "grpc.server.request.message"
-	GRPCServerRequestMetadataAddr = "grpc.server.request.metadata"
+	GRPCServerMethodAddr                   = "grpc.server.method"
+	GRPCServerRequestMetadataAddr          = "grpc.server.request.metadata"
+	GRPCServerRequestMessageAddr           = "grpc.server.request.message"
+	GRPCServerResponseMessageAddr          = "grpc.server.response.message"
+	GRPCServerResponseMetadataHeadersAddr  = "grpc.server.response.metadata.headers"
+	GRPCServerResponseMetadataTrailersAddr = "grpc.server.response.metadata.trailers"
+	GRPCServerResponseStatusCodeAddr       = "grpc.server.response.status"
 
 	GraphQLServerResolverAddr = "graphql.server.resolver"
 )

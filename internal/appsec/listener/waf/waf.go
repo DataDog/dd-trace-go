@@ -12,6 +12,7 @@ import (
 
 	"github.com/DataDog/appsec-internal-go/limiter"
 	wafv3 "github.com/DataDog/go-libddwaf/v3"
+
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/appsec/events"
@@ -27,6 +28,7 @@ type Feature struct {
 	timeout         time.Duration
 	limiter         *limiter.TokenTicker
 	handle          *wafv3.Handle
+	supportedAddrs  config.AddressSet
 	reportRulesTags sync.Once
 }
 
@@ -53,9 +55,10 @@ func NewWAFFeature(cfg *config.Config, rootOp dyngo.Operation) (listener.Feature
 	tokenTicker.Start()
 
 	feature := &Feature{
-		handle:  newHandle,
-		timeout: cfg.WAFTimeout,
-		limiter: tokenTicker,
+		handle:         newHandle,
+		timeout:        cfg.WAFTimeout,
+		limiter:        tokenTicker,
+		supportedAddrs: cfg.SupportedAddresses,
 	}
 
 	dyngo.On(rootOp, feature.onStart)
@@ -76,6 +79,7 @@ func (waf *Feature) onStart(op *waf.ContextOperation, _ waf.ContextArgs) {
 
 	op.SwapContext(ctx)
 	op.SetLimiter(waf.limiter)
+	op.SetSupportedAddresses(waf.supportedAddrs)
 
 	// Run the WAF with the given address data
 	dyngo.OnData(op, op.OnEvent)
@@ -85,7 +89,7 @@ func (waf *Feature) onStart(op *waf.ContextOperation, _ waf.ContextArgs) {
 
 func (waf *Feature) SetupActionHandlers(op *waf.ContextOperation) {
 	// Set the blocking tag on the operation when a blocking event is received
-	dyngo.OnData(op, func(err *events.BlockingSecurityEvent) {
+	dyngo.OnData(op, func(_ *events.BlockingSecurityEvent) {
 		op.SetTag(BlockedRequestTag, true)
 	})
 
@@ -108,7 +112,7 @@ func (waf *Feature) onFinish(op *waf.ContextOperation, _ waf.ContextRes) {
 		log.Debug("appsec: failed to set event span tags: %v", err)
 	}
 
-	op.SetTags(op.Derivatives())
+	op.SetJSONTags(op.Derivatives())
 	if stacks := op.StackTraces(); len(stacks) > 0 {
 		op.SetTag(stacktrace.SpanKey, stacktrace.GetSpanValue(stacks...))
 	}

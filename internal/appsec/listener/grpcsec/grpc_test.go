@@ -1,18 +1,37 @@
 // Unless explicitly stated otherwise all files in this repository are licensed
 // under the Apache License Version 2.0.
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
-// Copyright 2016 Datadog, Inc.
+// Copyright 2024 Datadog, Inc.
 
-package grpctrace
+package grpcsec
 
 import (
 	"fmt"
 	"testing"
 
-	testlib "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/_testlib"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener/waf"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/samplernames"
 
 	"github.com/stretchr/testify/require"
 )
+
+type MockSpan struct {
+	Tags map[string]any
+}
+
+func (m *MockSpan) SetTag(key string, value interface{}) {
+	if m.Tags == nil {
+		m.Tags = make(map[string]any)
+	}
+	if key == ext.ManualKeep {
+		if value == samplernames.AppSec {
+			m.Tags[ext.ManualKeep] = true
+		}
+	} else {
+		m.Tags[key] = value
+	}
+}
 
 func TestTags(t *testing.T) {
 	for _, eventCase := range []struct {
@@ -74,8 +93,8 @@ func TestTags(t *testing.T) {
 		} {
 			metadataCase := metadataCase
 			t.Run(fmt.Sprintf("%s-%s", eventCase.name, metadataCase.name), func(t *testing.T) {
-				var span testlib.MockSpan
-				err := setSecurityEventsTags(&span, eventCase.events)
+				var span MockSpan
+				err := waf.SetEventSpanTags(&span, eventCase.events)
 				if eventCase.expectedError {
 					require.Error(t, err)
 					return
@@ -95,8 +114,6 @@ func TestTags(t *testing.T) {
 				if l := len(metadataCase.expectedTags); l > 0 {
 					require.Subset(t, span.Tags, metadataCase.expectedTags)
 				}
-
-				require.False(t, span.Finished)
 			})
 		}
 	}

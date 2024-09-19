@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/mitchellh/mapstructure"
+
 	"gopkg.in/DataDog/dd-trace-go.v1/appsec/events"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
@@ -152,7 +153,7 @@ func newBlockHandler(status int, template string) http.Handler {
 }
 
 func newBlockRequestHandler(status int, ct string, payload []byte) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", ct)
 		w.WriteHeader(status)
 		w.Write(payload)

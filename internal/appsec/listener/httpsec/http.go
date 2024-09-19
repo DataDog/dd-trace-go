@@ -9,6 +9,7 @@ import (
 	"math/rand"
 
 	"github.com/DataDog/appsec-internal-go/appsec"
+
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/config"
@@ -51,39 +52,34 @@ func NewHTTPSecFeature(config *config.Config, rootOp dyngo.Operation) (listener.
 }
 
 func (feature *Feature) OnRequest(op *httpsec.HandlerOperation, args httpsec.HandlerOperationArgs) {
-	tags, ip := ClientIPTags(args.Header, true, args.RemoteAddr)
-	log.Debug("appsec: http client ip detection returned `%s` given the http headers `%v`", ip, args.Header)
+	tags, ip := ClientIPTags(args.Headers, true, args.RemoteAddr)
+	log.Debug("appsec: http client ip detection returned `%s` given the http headers `%v`", ip, args.Headers)
 
 	op.SetStringTags(tags)
-	setRequestHeadersTags(op, args.Header)
+	setRequestHeadersTags(op, args.Headers)
 
-	headers := headersRemoveCookies(args.Header)
+	headers := headersRemoveCookies(args.Headers)
 	headers["host"] = []string{args.Host}
 
 	op.Run(op,
 		addresses.NewAddressesBuilder().
 			WithMethod(args.Method).
-			WithRawURI(args.RequestURI).
+			WithRawURI(args.URL).
 			WithHeadersNoCookies(headers).
-			WithCookies(makeCookies(args.Cookies())).
-			WithQuery(args.URL.Query()).
+			WithCookies(args.Cookies).
+			WithQuery(args.QueryParams).
 			WithPathParams(args.PathParams).
 			WithClientIP(ip).
 			Build(),
 	)
 }
 
-func (feature *Feature) OnResponse(op *httpsec.HandlerOperation, args httpsec.HandlerOperationRes) {
-	respHeaders := args.ResponseHeaderCopier(args.ResponseWriter)
+func (feature *Feature) OnResponse(op *httpsec.HandlerOperation, resp httpsec.HandlerOperationRes) {
+	setResponseHeadersTags(op, resp.Headers)
+
 	builder := addresses.NewAddressesBuilder().
-		WithResponseHeadersNoCookies(respHeaders)
-
-	setResponseHeadersTags(op, respHeaders)
-
-	// Check if the underlying type of the response writer has a status method (e.g. like net/http.responseWriter)
-	if mw, ok := args.ResponseWriter.(interface{ Status() int }); ok {
-		builder = builder.WithResponseStatus(mw.Status())
-	}
+		WithResponseHeadersNoCookies(resp.Headers).
+		WithResponseStatus(resp.StatusCode)
 
 	if feature.canExtractSchemas() {
 		builder = builder.ExtractSchema()

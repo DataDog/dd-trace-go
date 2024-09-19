@@ -161,11 +161,11 @@ func TestNewRedirectRequestAction(t *testing.T) {
 	mux.HandleFunc("/redirect-no-location", newRedirectRequestAction(303, "").ServeHTTP)
 	mux.HandleFunc("/redirect1", newRedirectRequestAction(http.StatusFound, "/redirect2").ServeHTTP)
 	mux.HandleFunc("/redirect2", newRedirectRequestAction(http.StatusFound, "/redirected").ServeHTTP)
-	mux.HandleFunc("/redirected", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/redirected", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK) // Shouldn't matter since we write 302 before arriving here
 		w.Write([]byte("Redirected"))
 	})
-	srv.Client().CheckRedirect = func(req *http.Request, via []*http.Request) error {
+	srv.Client().CheckRedirect = func(_ *http.Request, via []*http.Request) error {
 		require.GreaterOrEqual(t, len(via), 1)
 		require.Equal(t, "/redirect1", via[0].URL.Path)
 		if len(via) == 2 {
@@ -206,7 +206,7 @@ func TestNewRedirectRequestAction(t *testing.T) {
 	// - empty location: revert to default blocking action instead
 	// - status code outside of [300, 399]: default to 303
 	t.Run("no-location", func(t *testing.T) {
-		srv.Client().CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		srv.Client().CheckRedirect = func(_ *http.Request, _ []*http.Request) error {
 			return nil
 		}
 		req, err := http.NewRequest("POST", srv.URL+"/redirect-no-location", nil)

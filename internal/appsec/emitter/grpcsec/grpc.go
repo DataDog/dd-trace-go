@@ -24,11 +24,13 @@ package grpcsec
 
 import (
 	"context"
-	"net/netip"
+	"sync/atomic"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/trace"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/waf"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/waf/actions"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/waf/addresses"
 )
 
 type (
@@ -52,13 +54,17 @@ type (
 		// Corresponds to the address `grpc.server.request.metadata`.
 		Metadata map[string][]string
 
-		// ClientIP is the IP address of the client that initiated the gRPC request.
-		// Corresponds to the address `http.client_ip`.
-		ClientIP netip.Addr
+		// RemoteAddr is the IP address of the client that initiated the gRPC request.
+		// May be used as the address `http.client_ip`.
+		RemoteAddr string
 	}
 
 	// HandlerOperationRes is the grpc handler results. Empty as of today.
-	HandlerOperationRes struct{}
+	HandlerOperationRes struct {
+		// Raw gRPC status code.
+		// Corresponds to the address `grpc.server.response.status`.
+		StatusCode int
+	}
 )
 
 func (HandlerOperationArgs) IsArgOf(*HandlerOperation)   {}
@@ -68,16 +74,38 @@ func (HandlerOperationRes) IsResultOf(*HandlerOperation) {}
 // given arguments and parent operation, and emits a start event up in the
 // operation stack. When parent is nil, the operation is linked to the global
 // root operation.
-func StartHandlerOperation(ctx context.Context, args HandlerOperationArgs) (context.Context, *HandlerOperation) {
+func StartHandlerOperation(ctx context.Context, args HandlerOperationArgs) (context.Context, *HandlerOperation, *atomic.Pointer[actions.BlockGRPC]) {
 	wafOp, ctx := waf.StartContextOperation(ctx)
 	op := &HandlerOperation{
 		Operation:        dyngo.NewOperation(wafOp),
 		ContextOperation: wafOp,
 	}
 
-	v
+	var block atomic.Pointer[actions.BlockGRPC]
+	dyngo.OnData(op, func(err *actions.BlockGRPC) {
+		block.Store(err)
+	})
 
-	return dyngo.StartAndRegisterOperation(ctx, op, args), op
+	return dyngo.StartAndRegisterOperation(ctx, op, args), op, &block
+}
+
+// MonitorRequestMessage monitors the gRPC request message body as the WAF address `grpc.server.request.message`.
+func MonitorRequestMessage(ctx context.Context, msg any) error {
+	return waf.RunSimple(ctx,
+		addresses.NewAddressesBuilder().
+			WithGRPCRequestMessage(msg).
+			Build(),
+		"appsec: failed to monitor gRPC request message body")
+}
+
+// MonitorResponseMessage monitors the gRPC response message body as the WAF address `grpc.server.response.message`.
+func MonitorResponseMessage(ctx context.Context, msg any) error {
+	return waf.RunSimple(ctx,
+		addresses.NewAddressesBuilder().
+			WithGRPCResponseMessage(msg).
+			Build(),
+		"appsec: failed to monitor gRPC response message body")
+
 }
 
 // Finish the gRPC handler operation, along with the given results, and emit a

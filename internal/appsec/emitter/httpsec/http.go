@@ -36,14 +36,20 @@ type (
 
 	// HandlerOperationArgs is the HTTP handler operation arguments.
 	HandlerOperationArgs struct {
-		*http.Request
-		PathParams map[string]string
+		Method      string
+		URL         string
+		Host        string
+		RemoteAddr  string
+		Headers     map[string][]string
+		Cookies     map[string][]string
+		QueryParams map[string][]string
+		PathParams  map[string]string
 	}
 
 	// HandlerOperationRes is the HTTP handler operation results.
 	HandlerOperationRes struct {
-		http.ResponseWriter
-		ResponseHeaderCopier func(http.ResponseWriter) http.Header
+		Headers    map[string][]string
+		StatusCode int
 	}
 )
 
@@ -89,6 +95,19 @@ func MonitorParsedBody(ctx context.Context, body any) error {
 	)
 }
 
+// Return the map of parsed cookies if any and following the specification of
+// the rule address `server.request.cookies`.
+func makeCookies(parsed []*http.Cookie) map[string][]string {
+	if len(parsed) == 0 {
+		return nil
+	}
+	cookies := make(map[string][]string, len(parsed))
+	for _, c := range parsed {
+		cookies[c.Name] = append(cookies[c.Name], c.Value)
+	}
+	return cookies
+}
+
 // WrapHandler wraps the given HTTP handler with the abstract HTTP operation defined by HandlerOperationArgs and
 // HandlerOperationRes.
 // The onBlock params are used to cleanup the context when needed.
@@ -104,11 +123,27 @@ func WrapHandler(handler http.Handler, span ddtrace.Span, pathParams map[string]
 	}
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		op, blockAtomic, ctx := StartOperation(r.Context(), HandlerOperationArgs{r, pathParams})
+		op, blockAtomic, ctx := StartOperation(r.Context(), HandlerOperationArgs{
+			Method:      r.Method,
+			URL:         r.RequestURI,
+			Host:        r.Host,
+			RemoteAddr:  r.RemoteAddr,
+			Headers:     r.Header,
+			Cookies:     makeCookies(r.Cookies()),
+			QueryParams: r.URL.Query(),
+			PathParams:  pathParams,
+		})
 		r = r.WithContext(ctx)
 
 		defer func() {
-			op.Finish(HandlerOperationRes{w, opts.ResponseHeaderCopier}, span)
+			var statusCode int
+			if res, ok := w.(interface{ Status() int }); ok {
+				statusCode = res.Status()
+			}
+			op.Finish(HandlerOperationRes{
+				Headers:    opts.ResponseHeaderCopier(w),
+				StatusCode: statusCode,
+			}, span)
 
 			// Execute the onBlock functions to make sure blocking works properly
 			// in case we are instrumenting the Gin framework

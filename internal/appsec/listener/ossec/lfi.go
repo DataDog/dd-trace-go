@@ -37,7 +37,7 @@ func NewOSSecFeature(cfg *config.Config, rootOp dyngo.Operation) (listener.Featu
 
 func (*Feature) OnStart(op *ossec.OpenOperation, args ossec.OpenOperationArgs) {
 	dyngo.OnData(op, func(err *events.BlockingSecurityEvent) {
-		dyngo.OnFinish(op, func(op *ossec.OpenOperation, res ossec.OpenOperationRes[*os.File]) {
+		dyngo.OnFinish(op, func(_ *ossec.OpenOperation, res ossec.OpenOperationRes[*os.File]) {
 			if res.Err != nil {
 				*res.Err = err
 			}

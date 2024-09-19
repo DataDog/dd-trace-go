@@ -32,17 +32,17 @@ type (
 		Value any
 	}
 
-	// JsonServiceEntrySpanTag is a key value pair event that is used to tag a service entry span
+	// JSONServiceEntrySpanTag is a key value pair event that is used to tag a service entry span
 	// It will be serialized as JSON when added to the span
-	JsonServiceEntrySpanTag struct {
+	JSONServiceEntrySpanTag struct {
 		Key   string
 		Value any
 	}
 
 	// ServiceEntrySpanTagsBulk is a bulk event that is used to send tags to a service entry span
 	ServiceEntrySpanTagsBulk struct {
-		Tags     []JsonServiceEntrySpanTag
-		JsonTags []JsonServiceEntrySpanTag
+		Tags     []JSONServiceEntrySpanTag
+		JSONTags []JSONServiceEntrySpanTag
 	}
 )
 
@@ -55,11 +55,20 @@ func (op *ServiceEntrySpanOperation) SetTag(key string, value any) {
 	op.tags[key] = value
 }
 
-// SetJsonTag adds the key/value pair to the tags to add to the service entry span. Value will be serialized as JSON.
-func (op *ServiceEntrySpanOperation) SetJsonTag(key string, value any) {
+// SetJSONTag adds the key/value pair to the tags to add to the service entry span. Value will be serialized as JSON.
+func (op *ServiceEntrySpanOperation) SetJSONTag(key string, value any) {
 	op.mu.Lock()
 	defer op.mu.Unlock()
 	op.jsonTags[key] = value
+}
+
+// SetJSONTags adds the key/value pairs to the tags to add to the service entry span. Values will be serialized as JSON.
+func (op *ServiceEntrySpanOperation) SetJSONTags(tags map[string]any) {
+	op.mu.Lock()
+	defer op.mu.Unlock()
+	for k, v := range tags {
+		op.jsonTags[k] = v
+	}
 }
 
 // SetTags fills the span tags using the key/value pairs found in `tags`
@@ -71,6 +80,7 @@ func (op *ServiceEntrySpanOperation) SetTags(tags map[string]any) {
 	}
 }
 
+// SetStringTags fills the span tags using the key/value pairs found in `tags`
 func (op *ServiceEntrySpanOperation) SetStringTags(tags map[string]string) {
 	op.mu.Lock()
 	defer op.mu.Unlock()
@@ -84,9 +94,9 @@ func (op *ServiceEntrySpanOperation) OnServiceEntrySpanTagEvent(tag ServiceEntry
 	op.SetTag(tag.Key, tag.Value)
 }
 
-// OnJsonServiceEntrySpanTagEvent is a callback that is called when a dyngo.OnData is triggered with a JsonServiceEntrySpanTag event
-func (op *ServiceEntrySpanOperation) OnJsonServiceEntrySpanTagEvent(tag JsonServiceEntrySpanTag) {
-	op.SetJsonTag(tag.Key, tag.Value)
+// OnJSONServiceEntrySpanTagEvent is a callback that is called when a dyngo.OnData is triggered with a JSONServiceEntrySpanTag event
+func (op *ServiceEntrySpanOperation) OnJSONServiceEntrySpanTagEvent(tag JSONServiceEntrySpanTag) {
+	op.SetJSONTag(tag.Key, tag.Value)
 }
 
 // OnServiceEntrySpanTagsBulkEvent is a callback that is called when a dyngo.OnData is triggered with a ServiceEntrySpanTagsBulk event
@@ -95,8 +105,8 @@ func (op *ServiceEntrySpanOperation) OnServiceEntrySpanTagsBulkEvent(bulk Servic
 		op.SetTag(v.Key, v.Value)
 	}
 
-	for _, v := range bulk.JsonTags {
-		op.SetJsonTag(v.Key, v.Value)
+	for _, v := range bulk.JSONTags {
+		op.SetJSONTag(v.Key, v.Value)
 	}
 }
 

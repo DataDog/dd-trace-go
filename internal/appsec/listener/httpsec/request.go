@@ -23,7 +23,7 @@ const (
 
 var (
 	// defaultIPHeaders is the default list of IP-related headers leveraged to
-	// retrieve the public client IP address in ClientIP.
+	// retrieve the public client IP address in RemoteAddr.
 	defaultIPHeaders = []string{
 		"x-forwarded-for",
 		"x-real-ip",
@@ -67,7 +67,7 @@ var (
 	collectedHeadersLookupMap map[string]struct{}
 
 	// monitoredClientIPHeadersCfg is the list of IP-related headers leveraged to
-	// retrieve the public client IP address in ClientIP. This is defined at init
+	// retrieve the public client IP address in RemoteAddr. This is defined at init
 	// time in function of the value of the envClientIPHeader environment variable.
 	monitoredClientIPHeadersCfg []string
 )
@@ -75,7 +75,7 @@ var (
 // ClientIPTags returns the resulting Datadog span tags `http.client_ip`
 // containing the client IP and `network.client.ip` containing the remote IP.
 // The tags are present only if a valid ip address has been returned by
-// ClientIP().
+// RemoteAddr().
 func ClientIPTags(headers map[string][]string, hasCanonicalHeaders bool, remoteAddr string) (tags map[string]string, clientIP netip.Addr) {
 	remoteIP, clientIP := httpsec.ClientIP(headers, hasCanonicalHeaders, remoteAddr, monitoredClientIPHeadersCfg)
 	tags = httpsec.ClientIPTags(remoteIP, clientIP)
@@ -115,19 +115,6 @@ func headersRemoveCookies(headers http.Header) map[string][]string {
 	return headersNoCookies
 }
 
-// Return the map of parsed cookies if any and following the specification of
-// the rule address `server.request.cookies`.
-func makeCookies(parsed []*http.Cookie) map[string][]string {
-	if len(parsed) == 0 {
-		return nil
-	}
-	cookies := make(map[string][]string, len(parsed))
-	for _, c := range parsed {
-		cookies[c.Name] = append(cookies[c.Name], c.Value)
-	}
-	return cookies
-}
-
 func normalizeHTTPHeaderName(name string) string {
 	return strings.ToLower(name)
 }
@@ -150,7 +137,7 @@ func makeCollectedHTTPHeadersLookupMap() {
 
 func readMonitoredClientIPHeadersConfig() {
 	if header := os.Getenv(envClientIPHeader); header != "" {
-		// Make this header the only one to consider in ClientIP
+		// Make this header the only one to consider in RemoteAddr
 		monitoredClientIPHeadersCfg = []string{header}
 
 		// Add this header to the list of collected headers

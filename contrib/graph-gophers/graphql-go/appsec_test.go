@@ -128,14 +128,14 @@ func (q *appSecQuery) TopLevel(_ context.Context, args struct{ ID string }) (*ap
 func (q *appSecQuery) TopLevelMapped(
 	ctx context.Context,
 	args struct {
-	Map struct {
-		IDs   []string
-		Bool  bool
-		Float float64
-	}
-	Key   string
-	Index int32
-},
+		Map struct {
+			IDs   []string
+			Bool  bool
+			Float float64
+		}
+		Key   string
+		Index int32
+	},
 ) (*appSecTopLevel, error) {
 	id := args.Map.IDs[args.Index]
 	return q.TopLevel(ctx, struct{ ID string }{id})

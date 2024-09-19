@@ -102,7 +102,7 @@ func (b *RunAddressDataBuilder) WithClientIP(ip netip.Addr) *RunAddressDataBuild
 	if !ip.IsValid() {
 		return b
 	}
-	b.Persistent[HTTPClientIPAddr] = ip.String()
+	b.Persistent[ClientIPAddr] = ip.String()
 	return b
 }
 
@@ -171,6 +171,38 @@ func (b *RunAddressDataBuilder) WithGRPCRequestMetadata(metadata map[string][]st
 		return b
 	}
 	b.Persistent[GRPCServerRequestMetadataAddr] = metadata
+	return b
+}
+
+func (b *RunAddressDataBuilder) WithGRPCResponseMessage(message any) *RunAddressDataBuilder {
+	if message == nil {
+		return b
+	}
+	b.Ephemeral[GRPCServerResponseMessageAddr] = message
+	return b
+}
+
+func (b *RunAddressDataBuilder) WithGRPCResponseMetadataHeaders(headers map[string][]string) *RunAddressDataBuilder {
+	if len(headers) == 0 {
+		return b
+	}
+	b.Persistent[GRPCServerResponseMetadataHeadersAddr] = headers
+	return b
+}
+
+func (b *RunAddressDataBuilder) WithGRPCResponseMetadataTrailers(trailers map[string][]string) *RunAddressDataBuilder {
+	if len(trailers) == 0 {
+		return b
+	}
+	b.Persistent[GRPCServerResponseMetadataTrailersAddr] = trailers
+	return b
+}
+
+func (b *RunAddressDataBuilder) WithGRPCResponseStatusCode(status int) *RunAddressDataBuilder {
+	if status == 0 {
+		return b
+	}
+	b.Persistent[GRPCServerResponseStatusCodeAddr] = status
 	return b
 }
 

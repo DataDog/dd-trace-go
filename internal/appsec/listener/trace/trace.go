@@ -42,7 +42,7 @@ func (*AppsecSpanTransport) OnServiceEntryStart(op *trace.ServiceEntrySpanOperat
 	op.SetTags(staticAppsecTags)
 	dyngo.OnData(op, op.OnSpanTagEvent)
 	dyngo.OnData(op, op.OnServiceEntrySpanTagEvent)
-	dyngo.OnData(op, op.OnJsonServiceEntrySpanTagEvent)
+	dyngo.OnData(op, op.OnJSONServiceEntrySpanTagEvent)
 	dyngo.OnData(op, op.OnServiceEntrySpanTagsBulkEvent)
 }
 
