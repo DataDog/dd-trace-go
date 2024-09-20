@@ -9,6 +9,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/config"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/httpsec"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/waf"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/waf/addresses"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener"
 )
@@ -32,5 +33,8 @@ func NewSSRFProtectionFeature(config *config.Config, rootOp dyngo.Operation) (li
 }
 
 func (*SSRFProtectionFeature) OnStart(op *httpsec.RoundTripOperation, args httpsec.RoundTripOperationArgs) {
-	dyngo.EmitData(op, addresses.NewAddressesBuilder().WithURL(args.URL).Build())
+	dyngo.EmitData(op, waf.RunEvent{
+		Operation:      op,
+		RunAddressData: addresses.NewAddressesBuilder().WithURL(args.URL).Build(),
+	})
 }
