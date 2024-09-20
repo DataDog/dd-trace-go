@@ -830,7 +830,7 @@ func TestEnvVars(t *testing.T) {
 
 					assert.Equal(tc.out[0], ctx.traceID.Lower())
 					assert.Equal(tc.out[1], ctx.spanID)
-					// assert.Equal(test.traceID128, id128FromSpan(assert, ctx)) // add when 128-bit trace id support is enabled
+					assert.Equal(tc.traceID128, id128FromSpan(assert, ctx))
 					if len(tc.out) > 2 {
 						require.NotNil(t, ctx.trace)
 						assert.Equal(float64(tc.out[2]), *ctx.trace.priority)
@@ -998,7 +998,7 @@ func TestEnvVars(t *testing.T) {
 					ctx, err := tracer.Extract(tc.in)
 					assert.Nil(err)
 
-					// assert.Equal(test.traceID128Full, id128FromSpan(assert, ctx))  // add when 128-bit trace id support is enabled
+					assert.Equal(tc.traceID128Full, id128FromSpan(assert, ctx))
 					assert.Equal(tc.out[0], ctx.traceID.Lower())
 					assert.Equal(tc.out[1], ctx.spanID)
 					p, ok := ctx.SamplingPriority()
@@ -2062,8 +2062,6 @@ func TestNonePropagator(t *testing.T) {
 			assert.Equal(err, ErrSpanContextNotFound)
 		})
 		t.Run("", func(t *testing.T) {
-			//"DD_TRACE_PROPAGATION_STYLE_EXTRACT": "NoNe",
-			//	"DD_TRACE_PROPAGATION_STYLE_INJECT": "none",
 			t.Setenv(headerPropagationStyleExtract, "NoNe")
 			t.Setenv(headerPropagationStyleInject, "NoNe")
 			tracer, err := newTracer()
