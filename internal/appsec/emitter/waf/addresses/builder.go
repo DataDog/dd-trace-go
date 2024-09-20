@@ -7,6 +7,7 @@ package addresses
 
 import (
 	"net/netip"
+	"strconv"
 
 	waf "github.com/DataDog/go-libddwaf/v3"
 )
@@ -86,7 +87,7 @@ func (b *RunAddressDataBuilder) WithResponseStatus(status int) *RunAddressDataBu
 	if status == 0 {
 		return b
 	}
-	b.Persistent[ServerResponseStatusAddr] = status
+	b.Persistent[ServerResponseStatusAddr] = strconv.Itoa(status)
 	return b
 }
 
@@ -202,7 +203,7 @@ func (b *RunAddressDataBuilder) WithGRPCResponseStatusCode(status int) *RunAddre
 	if status == 0 {
 		return b
 	}
-	b.Persistent[GRPCServerResponseStatusCodeAddr] = status
+	b.Persistent[GRPCServerResponseStatusCodeAddr] = strconv.Itoa(status)
 	return b
 }
 
