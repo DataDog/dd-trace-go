@@ -64,7 +64,7 @@ func (feature *Feature) OnRequest(op *httpsec.HandlerOperation, args httpsec.Han
 	op.Run(op,
 		addresses.NewAddressesBuilder().
 			WithMethod(args.Method).
-			WithRawURI(args.URL).
+			WithRawURI(args.RequestURI).
 			WithHeadersNoCookies(headers).
 			WithCookies(args.Cookies).
 			WithQuery(args.QueryParams).
@@ -75,10 +75,11 @@ func (feature *Feature) OnRequest(op *httpsec.HandlerOperation, args httpsec.Han
 }
 
 func (feature *Feature) OnResponse(op *httpsec.HandlerOperation, resp httpsec.HandlerOperationRes) {
-	setResponseHeadersTags(op, resp.Headers)
+	headers := headersRemoveCookies(resp.Headers)
+	setResponseHeadersTags(op, headers)
 
 	builder := addresses.NewAddressesBuilder().
-		WithResponseHeadersNoCookies(resp.Headers).
+		WithResponseHeadersNoCookies(headers).
 		WithResponseStatus(resp.StatusCode)
 
 	if feature.canExtractSchemas() {

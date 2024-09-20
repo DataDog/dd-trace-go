@@ -37,7 +37,7 @@ type (
 	// HandlerOperationArgs is the HTTP handler operation arguments.
 	HandlerOperationArgs struct {
 		Method      string
-		URL         string
+		RequestURI  string
 		Host        string
 		RemoteAddr  string
 		Headers     map[string][]string
@@ -125,7 +125,7 @@ func WrapHandler(handler http.Handler, span ddtrace.Span, pathParams map[string]
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		op, blockAtomic, ctx := StartOperation(r.Context(), HandlerOperationArgs{
 			Method:      r.Method,
-			URL:         r.RequestURI,
+			RequestURI:  r.RequestURI,
 			Host:        r.Host,
 			RemoteAddr:  r.RemoteAddr,
 			Headers:     r.Header,
