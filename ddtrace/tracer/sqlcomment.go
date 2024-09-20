@@ -66,7 +66,7 @@ type SQLCommentCarrier struct {
 
 // Inject injects a span context in the carrier's Query field as a comment.
 func (c *SQLCommentCarrier) Inject(ctx *SpanContext) error {
-	c.SpanID = generateSpanID(now())
+	c.SpanID = generateSpanID()
 	tags := make(map[string]string)
 	switch c.Mode {
 	case DBMPropagationModeUndefined:
