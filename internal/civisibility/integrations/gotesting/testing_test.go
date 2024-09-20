@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"runtime"
 	"slices"
 	"strconv"
 	"testing"
@@ -328,8 +329,9 @@ func assertCommon(assert *assert.Assertions, span mocktracer.Span) {
 	spanTags := span.Tags()
 
 	assert.Subset(spanTags, map[string]interface{}{
-		constants.Origin:   constants.CIAppTestOrigin,
-		constants.TestType: constants.TestTypeTest,
+		constants.Origin:          constants.CIAppTestOrigin,
+		constants.TestType:        constants.TestTypeTest,
+		constants.LogicalCPUCores: float64(runtime.NumCPU()),
 	})
 
 	assert.Contains(spanTags, ext.ResourceName)

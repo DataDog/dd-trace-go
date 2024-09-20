@@ -66,6 +66,7 @@ func internalCiVisibilityInitialization(tracerInitializer func([]tracer.StartOpt
 
 		// Preload all CI, Git, and CodeOwners tags.
 		ciTags := utils.GetCITags()
+		_ = utils.GetCIMetrics()
 
 		// Check if DD_SERVICE has been set; otherwise default to the repo name (from the spec).
 		var opts []tracer.StartOption
