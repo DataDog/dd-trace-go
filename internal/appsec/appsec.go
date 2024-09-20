@@ -201,6 +201,7 @@ func (a *appsec) stop() {
 	}
 
 	// Reset rules edits received from the remote configuration
+	// We skip the error because we can't do anything about and it was already logged in config.NewRulesManager
 	a.cfg.RulesManager, _ = config.NewRulesManager(nil)
 
 	// TODO: block until no more requests are using dyngo operations

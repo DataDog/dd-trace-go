@@ -9,9 +9,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
-
-	"golang.org/x/exp/maps"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/config"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
@@ -44,20 +43,13 @@ func statusesFromUpdate(u remoteconfig.ProductUpdate, ack bool, err error) map[s
 	return statuses
 }
 
-func mergeMaps[K comparable, V any](m1 map[K]V, m2 map[K]V) map[K]V {
-	for key, value := range m2 {
-		m1[key] = value
-	}
-	return m1
-}
-
 // combineRCRulesUpdates updates the state of the given RulesManager with the combination of all the provided rules updates
 func combineRCRulesUpdates(r *config.RulesManager, updates map[string]remoteconfig.ProductUpdate) (statuses map[string]rc.ApplyStatus, err error) {
 	// Spare some re-allocations (but there may still be some because 1 update may contain N configs)
 	statuses = make(map[string]rc.ApplyStatus, len(updates))
 	// Set the default statuses for all updates to unacknowledged
 	for _, u := range updates {
-		statuses = mergeMaps(statuses, statusesFromUpdate(u, false, nil))
+		maps.Copy(statuses, statusesFromUpdate(u, false, nil))
 	}
 
 updateLoop:
@@ -70,7 +62,7 @@ updateLoop:
 		case rc.ProductASMData:
 			// Merge all rules data entries together and store them as a RulesManager edit entry
 			fragment, status := mergeASMDataUpdates(u)
-			statuses = mergeMaps(statuses, status)
+			maps.Copy(statuses, status)
 			r.AddEdit("asmdata", fragment)
 		case rc.ProductASMDD:
 			var (
@@ -86,7 +78,7 @@ updateLoop:
 				}
 				// Already seen a removal or an update, return an error
 				if err != nil {
-					statuses = mergeMaps(statuses, statusesFromUpdate(u, true, err))
+					maps.Copy(statuses, statusesFromUpdate(u, true, err))
 					break updateLoop
 				}
 
@@ -106,7 +98,7 @@ updateLoop:
 				if removalFound {
 					log.Debug("appsec: Remote config: ASM_DD config removed. Switching back to default rules")
 					r.ChangeBase(config.DefaultRulesFragment(), "")
-					statuses = mergeMaps(statuses, statusesFromUpdate(u, true, nil))
+					maps.Copy(statuses, statusesFromUpdate(u, true, nil))
 				}
 				continue
 			}
@@ -148,7 +140,7 @@ updateLoop:
 	// Set all statuses to ack if no error occured
 	if err == nil {
 		for _, u := range updates {
-			statuses = mergeMaps(statuses, statusesFromUpdate(u, true, nil))
+			maps.Copy(statuses, statusesFromUpdate(u, true, nil))
 		}
 	}
 
@@ -270,6 +262,14 @@ func mergeASMDataUpdates(u remoteconfig.ProductUpdate) (config.RulesFragment, ma
 		}
 	}
 
+	mapValues := func(m map[mapKey]config.DataEntry) []config.DataEntry {
+		values := make([]config.DataEntry, 0, len(m))
+		for _, v := range m {
+			values = append(values, v)
+		}
+		return values
+	}
+
 	for path, raw := range u {
 		log.Debug("appsec: Remote config: processing %s", path)
 
@@ -297,11 +297,11 @@ func mergeASMDataUpdates(u remoteconfig.ProductUpdate) (config.RulesFragment, ma
 
 	var fragment config.RulesFragment
 	if len(mergedRulesData) > 0 {
-		fragment.RulesData = maps.Values(mergedRulesData)
+		fragment.RulesData = mapValues(mergedRulesData)
 	}
 
 	if len(mergedExclusionData) > 0 {
-		fragment.ExclusionData = maps.Values(mergedExclusionData)
+		fragment.ExclusionData = mapValues(mergedExclusionData)
 	}
 
 	return fragment, statuses
