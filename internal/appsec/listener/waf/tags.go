@@ -38,12 +38,10 @@ func AddRulesMonitoringTags(th trace.TagSetter, wafDiags waf.Diagnostics) {
 	}
 
 	var rulesetErrors []byte
-	if len(rInfo.Errors) > 0 {
-		var err error
-		rulesetErrors, err = json.Marshal(wafDiags.Rules.Errors)
-		if err != nil {
-			log.Error("appsec: could not marshal the waf ruleset info errors to json")
-		}
+	var err error
+	rulesetErrors, err = json.Marshal(wafDiags.Rules.Errors)
+	if err != nil {
+		log.Error("appsec: could not marshal the waf ruleset info errors to json")
 	}
 	th.SetTag(eventRulesErrorsTag, string(rulesetErrors))
 	th.SetTag(eventRulesLoadedTag, len(rInfo.Loaded))

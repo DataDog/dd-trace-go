@@ -56,10 +56,10 @@ func (feature *Feature) OnRequest(op *httpsec.HandlerOperation, args httpsec.Han
 	log.Debug("appsec: http client ip detection returned `%s` given the http headers `%v`", ip, args.Headers)
 
 	op.SetStringTags(tags)
-	setRequestHeadersTags(op, args.Headers)
-
 	headers := headersRemoveCookies(args.Headers)
 	headers["host"] = []string{args.Host}
+
+	setRequestHeadersTags(op, headers)
 
 	op.Run(op,
 		addresses.NewAddressesBuilder().
