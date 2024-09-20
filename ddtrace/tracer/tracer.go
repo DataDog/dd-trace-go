@@ -281,7 +281,7 @@ func newUnstartedTracer(opts ...StartOption) *tracer {
 		rulesSampling:    rulesSampler,
 		prioritySampling: sampler,
 		pid:              os.Getpid(),
-		logDroppedTraces: time.NewTicker(10 * time.Second),
+		logDroppedTraces: time.NewTicker(1 * time.Second),
 		stats:            newConcentrator(c, defaultStatsBucketSize),
 		obfuscator: obfuscate.NewObfuscator(obfuscate.Config{
 			SQL: obfuscate.SQLConfig{
@@ -462,8 +462,8 @@ func (t *tracer) pushChunk(trace *chunk) {
 	}
 	select {
 	case <-t.logDroppedTraces.C:
-		if i := atomic.SwapUint32(&t.totalTracesDropped, 0); i > 0 {
-			log.Error("%d traces dropped through payload queue", i)
+		if t := atomic.SwapUint32(&t.totalTracesDropped, 0); t > 0 {
+			log.Error("%d traces dropped through payload queue", t)
 		}
 	default:
 	}
