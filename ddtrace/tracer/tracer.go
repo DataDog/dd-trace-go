@@ -538,7 +538,7 @@ func SpanStart(operationName string, options ...StartSpanOption) *Span {
 	}
 	id := opts.SpanID
 	if id == 0 {
-		id = generateSpanID()
+		id = generateSpanID(startTime)
 	}
 	// span defaults
 	span := &Span{

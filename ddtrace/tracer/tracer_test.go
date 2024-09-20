@@ -2192,7 +2192,7 @@ func BenchmarkStartSpanConcurrent(b *testing.B) {
 func BenchmarkGenSpanID(b *testing.B) {
 	b.ResetTimer()
 	for n := 0; n < b.N; n++ {
-		generateSpanID()
+		generateSpanID(0)
 	}
 }
 

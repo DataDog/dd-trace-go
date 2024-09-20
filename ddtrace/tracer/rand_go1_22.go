@@ -16,6 +16,6 @@ func randUint64() uint64 {
 	return rand.Uint64()
 }
 
-func generateSpanID() uint64 {
+func generateSpanID(startTime int64) uint64 {
 	return rand.Uint64() & math.MaxInt64
 }
