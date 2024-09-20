@@ -18,6 +18,10 @@ var (
 	// ciTags holds the CI/CD environment variable information.
 	ciTags      map[string]string
 	ciTagsMutex sync.Mutex
+
+	// ciMetrics holds the CI/CD environment numeric variable information
+	ciMetrics      map[string]float64
+	ciMetricsMutex sync.Mutex
 )
 
 // GetCITags retrieves and caches the CI/CD tags from environment variables.
@@ -36,6 +40,24 @@ func GetCITags() map[string]string {
 	}
 
 	return ciTags
+}
+
+// GetCIMetrics retrieves and caches the CI/CD metrics from environment variables.
+// It initializes the ciMetrics map if it is not already initialized.
+// This function is thread-safe due to the use of a mutex.
+//
+// Returns:
+//
+//	A map[string]float64 containing the CI/CD metrics.
+func GetCIMetrics() map[string]float64 {
+	ciMetricsMutex.Lock()
+	defer ciMetricsMutex.Unlock()
+
+	if ciMetrics == nil {
+		ciMetrics = createCIMetricsMap()
+	}
+
+	return ciMetrics
 }
 
 // GetRelativePathFromCITagsSourceRoot calculates the relative path from the CI workspace root to the specified path.
@@ -116,4 +138,16 @@ func createCITagsMap() map[string]string {
 	}
 
 	return localTags
+}
+
+// createCIMetricsMap creates a map of CI/CD tags by extracting information from environment variables and runtime information.
+//
+// Returns:
+//
+//	A map[string]float64 containing the metrics extracted
+func createCIMetricsMap() map[string]float64 {
+	localMetrics := make(map[string]float64)
+	localMetrics[constants.LogicalCPUCores] = float64(runtime.NumCPU())
+
+	return localMetrics
 }
