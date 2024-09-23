@@ -125,10 +125,6 @@ func TestTracerOpenSpans(t *testing.T) {
 
 func TestTracerSetUser(t *testing.T) {
 	mt := Start()
-	t.Cleanup(func() {
-		mt.Stop()
-	})
-
 	span := mt.StartSpan("http.request")
 	tracer.SetUser(span, "test-user",
 		tracer.WithUserEmail("email"),
