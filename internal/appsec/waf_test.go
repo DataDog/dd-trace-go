@@ -743,6 +743,124 @@ func TestRASPLFI(t *testing.T) {
 	}
 }
 
+func TestSuspiciousAttackerBlocking(t *testing.T) {
+	t.Setenv("DD_APPSEC_RULES", "testdata/sab.json")
+	appsec.Start()
+	defer appsec.Stop()
+	if !appsec.Enabled() {
+		t.Skip("AppSec needs to be enabled for this test")
+	}
+
+	const bodyBlockingRule = "crs-933-130-block"
+
+	// Start and trace an HTTP server
+	mux := httptrace.NewServeMux()
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		if err := pAppsec.SetUser(r.Context(), r.Header.Get("test-usr")); err != nil {
+			return
+		}
+		buf := new(strings.Builder)
+		io.Copy(buf, r.Body)
+		if err := pAppsec.MonitorParsedHTTPBody(r.Context(), buf.String()); err != nil {
+			return
+		}
+		w.Write([]byte("Hello World!\n"))
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	for _, tc := range []struct {
+		name      string
+		headers   map[string]string
+		status    int
+		ruleMatch string
+		attack    string
+	}{
+		{
+			name:   "ip/not-suspicious/no-attack",
+			status: 200,
+		},
+		{
+			name:    "ip/suspicious/no-attack",
+			headers: map[string]string{"x-forwarded-for": "1.2.3.4"},
+			status:  200,
+		},
+		{
+			name:      "ip/not-suspicious/attack",
+			status:    200,
+			attack:    "$globals",
+			ruleMatch: bodyBlockingRule,
+		},
+		{
+			name:      "ip/suspicious/attack",
+			headers:   map[string]string{"x-forwarded-for": "1.2.3.4"},
+			status:    402,
+			attack:    "$globals",
+			ruleMatch: bodyBlockingRule,
+		},
+		{
+			name:   "user/not-suspicious/no-attack",
+			status: 200,
+		},
+		{
+			name:    "user/suspicious/no-attack",
+			headers: map[string]string{"test-usr": "blocked-user-1"},
+			status:  200,
+		},
+		{
+			name:      "user/not-suspicious/attack",
+			status:    200,
+			attack:    "$globals",
+			ruleMatch: bodyBlockingRule,
+		},
+		{
+			name:      "user/suspicious/attack",
+			headers:   map[string]string{"test-usr": "blocked-user-1"},
+			status:    401,
+			attack:    "$globals",
+			ruleMatch: bodyBlockingRule,
+		},
+		{
+			name:    "ip+user/suspicious/no-attack",
+			headers: map[string]string{"x-forwarded-for": "1.2.3.4", "test-usr": "blocked-user-1"},
+			status:  200,
+		},
+		{
+			name:      "ip+user/suspicious/attack",
+			headers:   map[string]string{"x-forwarded-for": "1.2.3.4", "test-usr": "blocked-user-1"},
+			status:    402,
+			attack:    "$globals",
+			ruleMatch: bodyBlockingRule,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			mt := mocktracer.Start()
+			defer mt.Stop()
+			req, err := http.NewRequest("POST", srv.URL, strings.NewReader(tc.attack))
+			require.NoError(t, err)
+			for k, v := range tc.headers {
+				req.Header.Set(k, v)
+			}
+			res, err := srv.Client().Do(req)
+			require.NoError(t, err)
+			defer res.Body.Close()
+			if tc.ruleMatch != "" {
+				spans := mt.FinishedSpans()
+				require.Len(t, spans, 1)
+				require.Contains(t, spans[0].Tag("_dd.appsec.json"), tc.ruleMatch)
+			}
+			require.Equal(t, tc.status, res.StatusCode)
+			b, err := io.ReadAll(res.Body)
+			require.NoError(t, err)
+			if tc.status == 200 {
+				require.Equal(t, "Hello World!\n", string(b))
+			} else {
+				require.NotEqual(t, "Hello World!\n", string(b))
+			}
+		})
+	}
+}
+
 // BenchmarkSampleWAFContext benchmarks the creation of a WAF context and running the WAF on a request/response pair
 // This is a basic sample of what could happen in a real-world scenario.
 func BenchmarkSampleWAFContext(b *testing.B) {
