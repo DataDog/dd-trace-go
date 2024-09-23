@@ -32,13 +32,13 @@ func redirectParamsFromMap(params map[string]any) (redirectActionParams, error) 
 
 func newRedirectRequestAction(status int, loc string) *BlockHTTP {
 	// Default to 303 if status is out of redirection codes bounds
-	if status < 300 || status >= 400 {
-		status = 303
+	if status < http.StatusMultipleChoices || status >= http.StatusBadRequest {
+		status = http.StatusSeeOther
 	}
 
 	// If location is not set we fall back on a default block action
 	if loc == "" {
-		return &BlockHTTP{Handler: newBlockHandler(403, string(blockedTemplateJSON))}
+		return &BlockHTTP{Handler: newBlockHandler(http.StatusForbidden, string(blockedTemplateJSON))}
 	}
 	return &BlockHTTP{Handler: http.RedirectHandler(loc, status)}
 }

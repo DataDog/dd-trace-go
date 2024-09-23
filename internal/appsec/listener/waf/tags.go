@@ -19,12 +19,12 @@ import (
 )
 
 const (
-	eventRulesVersionTag = "_dd.appsec.event_rules.version"
-	eventRulesErrorsTag  = "_dd.appsec.event_rules.errors"
-	eventRulesLoadedTag  = "_dd.appsec.event_rules.loaded"
-	eventRulesFailedTag  = "_dd.appsec.event_rules.error_count"
-	wafVersionTag        = "_dd.appsec.waf.version"
 	wafSpanTagPrefix     = "_dd.appsec."
+	eventRulesVersionTag = wafSpanTagPrefix + "event_rules.version"
+	eventRulesErrorsTag  = wafSpanTagPrefix + "event_rules.errors"
+	eventRulesLoadedTag  = wafSpanTagPrefix + "event_rules.loaded"
+	eventRulesFailedTag  = wafSpanTagPrefix + "event_rules.error_count"
+	wafVersionTag        = wafSpanTagPrefix + "waf.version"
 
 	// BlockedRequestTag used to convey whether a request is blocked
 	BlockedRequestTag = "appsec.blocked"

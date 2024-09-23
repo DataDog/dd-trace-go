@@ -47,8 +47,7 @@ type (
 		logOnce sync.Once
 	}
 
-	ContextArgs struct {
-	}
+	ContextArgs struct {}
 
 	ContextRes struct{}
 
