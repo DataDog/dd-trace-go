@@ -105,7 +105,7 @@ func NewConfig() (*Config, error) {
 		return nil, err
 	}
 
-	r, err := NewRulesManeger(rules)
+	r, err := NewRulesManager(rules)
 	if err != nil {
 		return nil, err
 	}

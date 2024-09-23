@@ -114,9 +114,7 @@ func (l *wafEventListener) onEvent(op *types.Operation, args types.HandlerOperat
 	}
 
 	if SSRFAddressesPresent(l.addresses) {
-		dyngo.On(op, shared.MakeWAFRunListener(&op.SecurityEventsHolder, wafCtx, l.limiter, func(args types.RoundTripOperationArgs) waf.RunAddressData {
-			return waf.RunAddressData{Ephemeral: map[string]any{ServerIoNetURLAddr: args.URL}}
-		}))
+		RegisterRoundTripperListener(op, &op.SecurityEventsHolder, wafCtx, l.limiter)
 	}
 
 	if ossec.OSAddressesPresent(l.addresses) {
