@@ -17,9 +17,19 @@ type (
 	}
 )
 
+type actionHandler func(map[string]any) []Action
+
 // actionHandlers is a map of action types to their respective handler functions
 // It is populated by the init functions of the actions packages
-var actionHandlers = map[string]func(map[string]any) []Action{}
+var actionHandlers = map[string]actionHandler{}
+
+func registerActionHandler(aType string, handler actionHandler) {
+	if _, ok := actionHandlers[aType]; ok {
+		log.Warn("appsec: action type `%s` already registered", aType)
+		return
+	}
+	actionHandlers[aType] = handler
+}
 
 // SendActionEvents sends the relevant actions to the operation's data listener.
 // It returns true if at least one of those actions require interrupting the request handler
@@ -29,7 +39,7 @@ func SendActionEvents(op dyngo.Operation, actions map[string]any) {
 		log.Debug("appsec: processing %s action with params %v", aType, params)
 		params, ok := params.(map[string]any)
 		if !ok {
-			log.Debug("appsec: could not cast action params to map[string]any")
+			log.Debug("appsec: could not cast action params to map[string]any from %T", params)
 			continue
 		}
 

@@ -21,8 +21,8 @@ type RunAddressDataBuilder struct {
 func NewAddressesBuilder() *RunAddressDataBuilder {
 	return &RunAddressDataBuilder{
 		RunAddressData: waf.RunAddressData{
-			Persistent: map[string]any{},
-			Ephemeral:  map[string]any{},
+			Persistent: make(map[string]any, 1),
+			Ephemeral:  make(map[string]any, 1),
 		},
 	}
 }

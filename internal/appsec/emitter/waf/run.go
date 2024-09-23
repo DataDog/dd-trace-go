@@ -29,15 +29,16 @@ func (op *ContextOperation) Run(eventReceiver dyngo.Operation, addrs waf.RunAddr
 		return
 	}
 
-	maps.DeleteFunc(addrs.Persistent, func(key string, _ any) bool {
-		_, ok := op.supportedAddresses[key]
-		return !ok
-	})
-
-	maps.DeleteFunc(addrs.Ephemeral, func(key string, _ any) bool {
-		_, ok := op.supportedAddresses[key]
-		return !ok
-	})
+	// Remove unsupported addresses in case the listener was registered but some addresses are still unsupported
+	// Technically the WAF does this step for us but doing this check before calling the WAF makes us skip encoding huge
+	// values that may be discarded by the WAF afterward.
+	// e.g. gRPC response body address that is not in the default ruleset but will still be sent to the WAF and may be huge
+	for _, addrType := range []map[string]any{addrs.Persistent, addrs.Ephemeral} {
+		maps.DeleteFunc(addrType, func(key string, _ any) bool {
+			_, ok := op.supportedAddresses[key]
+			return !ok
+		})
+	}
 
 	result, err := ctx.Run(addrs)
 	if errors.Is(err, wafErrors.ErrTimeout) {

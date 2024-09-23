@@ -12,7 +12,7 @@ import (
 )
 
 func init() {
-	actionHandlers["generate_stack"] = NewStackTraceAction
+	registerActionHandler("generate_stack", NewStackTraceAction)
 }
 
 // StackTraceAction are actions that generate a stacktrace

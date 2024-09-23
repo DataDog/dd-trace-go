@@ -196,8 +196,8 @@ func (a *appsec) stop() {
 	// Disable the currently applied instrumentation
 	dyngo.SwapRootOperation(nil)
 
-	for _, oldFeatures := range a.features {
-		oldFeatures.Stop()
+	for _, feature := range a.features {
+		feature.Stop()
 	}
 
 	a.features = nil

@@ -54,6 +54,9 @@ func (a *appsec) SwapRootOperation() error {
 
 	err := errors.Join(featureErrors...)
 	if err != nil {
+		for _, feature := range newFeatures {
+			feature.Stop()
+		}
 		return err
 	}
 

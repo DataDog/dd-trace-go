@@ -44,7 +44,7 @@ func init() {
 		}
 	}
 
-	actionHandlers["block_request"] = NewBlockAction
+	registerActionHandler("block_request", NewBlockAction)
 }
 
 type (

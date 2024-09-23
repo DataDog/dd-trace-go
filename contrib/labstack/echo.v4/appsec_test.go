@@ -128,7 +128,7 @@ func TestAppSec(t *testing.T) {
 			finished := mt.FinishedSpans()
 			require.Len(t, finished, 1)
 			event, ok := finished[0].Tag("_dd.appsec.json").(string)
-			require.True(t, ok)
+			require.True(t, ok, "expected string, found %T", finished[0].Tag("_dd.appsec.json"))
 			require.True(t, strings.Contains(event, "crs-913-120"))
 			// Wildcards are not named in echo
 			require.False(t, strings.Contains(event, "myPathParam3"))
@@ -152,7 +152,7 @@ func TestAppSec(t *testing.T) {
 		finished := mt.FinishedSpans()
 		require.Len(t, finished, 1)
 		event, ok := finished[0].Tag("_dd.appsec.json").(string)
-		require.True(t, ok)
+		require.True(t, ok, "expected string, found %T", finished[0].Tag("_dd.appsec.json"))
 		require.True(t, strings.Contains(event, "server.response.status"))
 		require.True(t, strings.Contains(event, "nfd-000-001"))
 	})

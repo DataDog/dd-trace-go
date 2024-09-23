@@ -9,6 +9,7 @@ import (
 	"net/http"
 
 	"github.com/mitchellh/mapstructure"
+
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
@@ -20,7 +21,7 @@ type redirectActionParams struct {
 }
 
 func init() {
-	actionHandlers["redirect_request"] = NewRedirectAction
+	registerActionHandler("redirect_request", NewRedirectAction)
 }
 
 func redirectParamsFromMap(params map[string]any) (redirectActionParams, error) {
