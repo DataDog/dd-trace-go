@@ -603,11 +603,8 @@ func TestEnvVars(t *testing.T) {
 	t.Run("b3/b3multi inject", func(t *testing.T) {
 		testEnvs = []map[string]string{
 			{headerPropagationStyleInject: "b3"},
-			{headerPropagationStyleInjectDeprecated: "b3,none" /* none should have no affect */},
 			{headerPropagationStyle: "b3"},
 			{otelHeaderPropagationStyle: "b3multi"},
-			{headerPropagationStyleInject: "b3multi", headerPropagationStyleInjectDeprecated: "none" /* none should have no affect */},
-			{headerPropagationStyleInject: "b3multi", headerPropagationStyle: "none" /* none should have no affect */},
 		}
 		for _, testEnv := range testEnvs {
 			for k, v := range testEnv {
@@ -675,10 +672,8 @@ func TestEnvVars(t *testing.T) {
 	t.Run("b3/b3multi extract", func(t *testing.T) {
 		testEnvs = []map[string]string{
 			{headerPropagationStyleExtract: "b3"},
-			{headerPropagationStyleExtractDeprecated: "b3"},
 			{headerPropagationStyle: "b3,none" /* none should have no affect */},
 			{otelHeaderPropagationStyle: "b3multi"},
-			{headerPropagationStyleExtract: "b3multi", headerPropagationStyleExtractDeprecated: "none" /* none should have no affect */},
 			{headerPropagationStyleExtract: "b3multi", headerPropagationStyle: "none" /* none should have no affect */},
 		}
 		for _, testEnv := range testEnvs {
@@ -741,10 +736,8 @@ func TestEnvVars(t *testing.T) {
 	t.Run("b3/b3multi extract invalid", func(t *testing.T) {
 		testEnvs = []map[string]string{
 			{headerPropagationStyleExtract: "b3"},
-			{headerPropagationStyleExtractDeprecated: "b3"},
 			{headerPropagationStyle: "b3,none" /* none should have no affect */},
 			{otelHeaderPropagationStyle: "b3multi"},
-			{headerPropagationStyleExtract: "b3multi", headerPropagationStyleExtractDeprecated: "none" /* none should have no affect */},
 			{headerPropagationStyleExtract: "b3multi", headerPropagationStyle: "none" /* none should have no affect */},
 		}
 		for _, testEnv := range testEnvs {
@@ -777,7 +770,6 @@ func TestEnvVars(t *testing.T) {
 	t.Run("b3 single header extract", func(t *testing.T) {
 		testEnvs = []map[string]string{
 			{headerPropagationStyleExtract: "B3 single header"},
-			{headerPropagationStyleExtractDeprecated: "B3 single header"},
 			{headerPropagationStyle: "B3 single header,none" /* none should have no affect */},
 			{otelHeaderPropagationStyle: "b3"},
 		}
@@ -876,10 +868,8 @@ func TestEnvVars(t *testing.T) {
 	t.Run("datadog inject", func(t *testing.T) {
 		testEnvs = []map[string]string{
 			{headerPropagationStyleInject: "datadog"},
-			{headerPropagationStyleInjectDeprecated: "datadog,none" /* none should have no affect */},
 			{headerPropagationStyle: "datadog"},
 			{otelHeaderPropagationStyle: "datadog"},
-			{headerPropagationStyleInject: "datadog", headerPropagationStyleInjectDeprecated: "none" /* none should have no affect */},
 			{headerPropagationStyleInject: "datadog", headerPropagationStyle: "none" /* none should have no affect */},
 		}
 
@@ -937,7 +927,6 @@ func TestEnvVars(t *testing.T) {
 	t.Run("datadog/b3 extract", func(t *testing.T) {
 		testEnvs = []map[string]string{
 			{headerPropagationStyleExtract: "Datadog,b3"},
-			{headerPropagationStyleExtractDeprecated: "Datadog,b3multi"},
 			{headerPropagationStyle: "Datadog,b3"},
 			{headerPropagationStyle: "none,Datadog,b3" /* none should have no affect */},
 			{otelHeaderPropagationStyle: "Datadog,b3multi"},
@@ -1012,7 +1001,6 @@ func TestEnvVars(t *testing.T) {
 	t.Run("datadog inject/extract", func(t *testing.T) {
 		testEnvs = []map[string]string{
 			{headerPropagationStyleInject: "datadog", headerPropagationStyleExtract: "datadog"},
-			{headerPropagationStyleInjectDeprecated: "datadog", headerPropagationStyleExtractDeprecated: "datadog"},
 			{headerPropagationStyleInject: "datadog", headerPropagationStyle: "datadog"},
 			{headerPropagationStyle: "datadog"},
 			{otelHeaderPropagationStyle: "datadog"},
@@ -1079,10 +1067,8 @@ func TestEnvVars(t *testing.T) {
 	t.Run("w3c extract", func(t *testing.T) {
 		testEnvs = []map[string]string{
 			{headerPropagationStyleExtract: "traceContext"},
-			{headerPropagationStyleExtractDeprecated: "traceContext,none" /* none should have no affect */},
 			{headerPropagationStyle: "traceContext"},
 			{otelHeaderPropagationStyle: "traceContext"},
-			{headerPropagationStyleExtract: "traceContext", headerPropagationStyleExtractDeprecated: "none" /* none should have no affect */},
 			{headerPropagationStyleExtract: "traceContext", headerPropagationStyle: "none" /* none should have no affect */},
 		}
 		for _, testEnv := range testEnvs {
@@ -1329,7 +1315,6 @@ func TestEnvVars(t *testing.T) {
 	t.Run("w3c extract / w3c,datadog inject", func(t *testing.T) {
 		testEnvs = []map[string]string{
 			{headerPropagationStyleExtract: "traceContext"},
-			{headerPropagationStyleExtractDeprecated: "traceContext,none" /* none should have no affect */},
 			{headerPropagationStyle: "traceContext"},
 			{otelHeaderPropagationStyle: "traceContext"},
 		}
@@ -1403,7 +1388,6 @@ func TestEnvVars(t *testing.T) {
 		testEnvs = []map[string]string{
 			{headerPropagationStyleInject: "tracecontext", headerPropagationStyleExtract: "tracecontext"},
 			{headerPropagationStyleInject: "datadog,tracecontext", headerPropagationStyleExtract: "datadog,tracecontext"},
-			{headerPropagationStyleInjectDeprecated: "tracecontext", headerPropagationStyleExtractDeprecated: "tracecontext"},
 			{headerPropagationStyleInject: "datadog,tracecontext", headerPropagationStyle: "datadog,tracecontext"},
 			{headerPropagationStyle: "datadog,tracecontext"},
 			{otelHeaderPropagationStyle: "datadog,traceContext"},
@@ -1696,7 +1680,6 @@ func TestEnvVars(t *testing.T) {
 		testEnvs = []map[string]string{
 			{headerPropagationStyleInject: "tracecontext", headerPropagationStyleExtract: "tracecontext"},
 			{headerPropagationStyleInject: "datadog,tracecontext", headerPropagationStyleExtract: "datadog,tracecontext"},
-			{headerPropagationStyleInjectDeprecated: "tracecontext", headerPropagationStyleExtractDeprecated: "tracecontext"},
 		}
 		for _, testEnv := range testEnvs {
 			for k, v := range testEnv {
@@ -1771,7 +1754,6 @@ func TestEnvVars(t *testing.T) {
 		testEnvs = []map[string]string{
 			{headerPropagationStyleInject: "tracecontext", headerPropagationStyleExtract: "tracecontext"},
 			{headerPropagationStyleInject: "datadog,tracecontext", headerPropagationStyleExtract: "datadog,tracecontext"},
-			{headerPropagationStyleInjectDeprecated: "tracecontext", headerPropagationStyleExtractDeprecated: "tracecontext"},
 		}
 		for _, testEnv := range testEnvs {
 			for k, v := range testEnv {
