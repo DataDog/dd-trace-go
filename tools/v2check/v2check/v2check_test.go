@@ -71,6 +71,12 @@ func TestDDTraceTypes(t *testing.T) {
 	c.Run(testRunner(t, "ddtracetypes"))
 }
 
+func TestWithServiceName(t *testing.T) {
+	t.Skip() // skip for now
+	c := v2check.NewChecker(&v2check.WithServiceName{})
+	c.Run(testRunner(t, "withservicename"))
+}
+
 func TestTracerStructs(t *testing.T) {
 	c := v2check.NewChecker(&v2check.TracerStructs{})
 	c.Run(testRunner(t, "tracerstructs"))

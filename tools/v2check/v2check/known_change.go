@@ -222,3 +222,38 @@ func (TracerStructs) Probes() []Probe {
 func (TracerStructs) String() string {
 	return "the declared type is now a struct, you need to use a pointer"
 }
+
+type WithServiceName struct {
+	defaultKnownChange
+}
+
+func (c WithServiceName) Fixes() []analysis.SuggestedFix {
+	fn := c.ctx.Value("fn").(string)
+	if fn == "" {
+		return nil
+	}
+
+	return []analysis.SuggestedFix{
+		{
+			Message: "the function WithServiceName() is no longer supported. Use WithService() instead",
+			TextEdits: []analysis.TextEdit{
+				{
+					Pos:     c.Pos(),
+					End:     c.End(),
+					NewText: []byte("WithService"),
+				},
+			},
+		},
+	}
+}
+
+func (c WithServiceName) Probes() []Probe {
+	return []Probe{
+		IsFuncCall,
+		WithFunctionName("WithServiceName"),
+	}
+}
+
+func (c WithServiceName) String() string {
+	return "the function WithServiceName() is no longer supported. Use WithService() instead."
+}
