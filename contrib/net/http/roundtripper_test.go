@@ -11,6 +11,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
+	"regexp"
 	"strconv"
 	"strings"
 	"testing"
@@ -568,6 +570,70 @@ func TestSpanOptions(t *testing.T) {
 	spans := mt.FinishedSpans()
 	assert.Len(t, spans, 1)
 	assert.Equal(t, tagValue, spans[0].Tag(tagKey))
+}
+
+func TestClientQueryString(t *testing.T) {
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("Hello World"))
+	}))
+	defer s.Close()
+	t.Run("default", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		rt := WrapRoundTripper(http.DefaultTransport)
+		client := &http.Client{
+			Transport: rt,
+		}
+		resp, err := client.Get(s.URL + "/hello/world?querystring=xyz")
+		assert.Nil(t, err)
+		defer resp.Body.Close()
+		spans := mt.FinishedSpans()
+		assert.Len(t, spans, 1)
+
+		assert.Regexp(t, regexp.MustCompile(`^http://.*?/hello/world\?querystring=xyz$`), spans[0].Tag(ext.HTTPURL))
+	})
+	t.Run("false", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		os.Setenv("DD_TRACE_HTTP_CLIENT_TAG_QUERY_STRING", "false")
+		defer os.Unsetenv("DD_TRACE_HTTP_CLIENT_TAG_QUERY_STRING")
+
+		rt := WrapRoundTripper(http.DefaultTransport)
+		client := &http.Client{
+			Transport: rt,
+		}
+		resp, err := client.Get(s.URL + "/hello/world?querystring=xyz")
+		assert.Nil(t, err)
+		defer resp.Body.Close()
+		spans := mt.FinishedSpans()
+		assert.Len(t, spans, 1)
+
+		assert.Regexp(t, regexp.MustCompile(`^http://.*?/hello/world$`), spans[0].Tag(ext.HTTPURL))
+	})
+	// DD_TRACE_HTTP_URL_QUERY_STRING_DISABLED applies only to server spans, not client
+	t.Run("Not impacted by DD_TRACE_HTTP_URL_QUERY_STRING_DISABLED", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		os.Setenv("DD_TRACE_HTTP_CLIENT_TAG_QUERY_STRING", "true")
+		os.Setenv("DD_TRACE_HTTP_URL_QUERY_STRING_DISABLED", "true")
+		defer os.Unsetenv("DD_TRACE_HTTP_CLIENT_TAG_QUERY_STRING")
+		defer os.Unsetenv("DD_TRACE_HTTP_URL_QUERY_STRING_DISABLED")
+
+		rt := WrapRoundTripper(http.DefaultTransport)
+		client := &http.Client{
+			Transport: rt,
+		}
+		resp, err := client.Get(s.URL + "/hello/world?querystring=xyz")
+		assert.Nil(t, err)
+		defer resp.Body.Close()
+		spans := mt.FinishedSpans()
+		assert.Len(t, spans, 1)
+
+		assert.Contains(t, spans[0].Tag(ext.HTTPURL), "/hello/world?querystring=xyz")
+	})
 }
 
 func TestRoundTripperPropagation(t *testing.T) {

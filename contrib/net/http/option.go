@@ -18,7 +18,11 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/normalizer"
 )
 
-const defaultServiceName = "http.router"
+const (
+	defaultServiceName = "http.router"
+	// envClientQueryStringEnabled is the name of the env var used to specify whether query string collection is enabled for http client spans.
+	envClientQueryStringEnabled = "DD_TRACE_HTTP_CLIENT_TAG_QUERY_STRING"
+)
 
 type config struct {
 	serviceName   string
@@ -146,6 +150,7 @@ type roundTripperConfig struct {
 	spanOpts      []ddtrace.StartSpanOption
 	propagation   bool
 	errCheck      func(err error) bool
+	queryString   bool // reports whether the query string is included in the URL tag for http client spans
 }
 
 func newRoundTripperConfig() *roundTripperConfig {
@@ -163,6 +168,7 @@ func newRoundTripperConfig() *roundTripperConfig {
 		propagation:   true,
 		spanNamer:     defaultSpanNamer,
 		ignoreRequest: func(_ *http.Request) bool { return false },
+		queryString:   internal.BoolEnv(envClientQueryStringEnabled, true),
 	}
 }
 
