@@ -158,7 +158,13 @@ func NewPropagator(cfg *PropagatorConfig, propagators ...Propagator) Propagator 
 		return cp
 	}
 	injectorsPs := os.Getenv(headerPropagationStyleInject)
+	if injectorsPs == "" {
+		injectorsPs = os.Getenv(headerPropagationStyle)
+	}
 	extractorsPs := os.Getenv(headerPropagationStyleExtract)
+	if extractorsPs == "" {
+		extractorsPs = os.Getenv(headerPropagationStyle)
+	}
 	cp.injectors, cp.injectorNames = getPropagators(cfg, injectorsPs)
 	cp.extractors, cp.extractorsNames = getPropagators(cfg, extractorsPs)
 	return cp
