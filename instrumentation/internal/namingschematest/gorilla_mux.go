@@ -20,7 +20,7 @@ import (
 )
 
 var gorillaMux = harness.TestCase{
-	Name: instrumentation.PackageGin,
+	Name: instrumentation.PackageGorillaMux,
 	GenSpans: func(t *testing.T, serviceOverride string) []*mocktracer.Span {
 		var opts []muxtrace.RouterOption
 		if serviceOverride != "" {

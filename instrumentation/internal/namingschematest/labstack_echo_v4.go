@@ -20,7 +20,7 @@ import (
 )
 
 var labstackEchoV4 = harness.TestCase{
-	Name: instrumentation.PackageNetHTTP + "_server",
+	Name: instrumentation.PackageLabstackEchoV4,
 	GenSpans: func(t *testing.T, serviceOverride string) []*mocktracer.Span {
 		var opts []echotrace.Option
 		if serviceOverride != "" {

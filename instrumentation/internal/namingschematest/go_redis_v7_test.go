@@ -19,7 +19,7 @@ import (
 )
 
 var goRedisV7Test = harness.TestCase{
-	Name: instrumentation.PackageGoRedis,
+	Name: instrumentation.PackageGoRedisV7,
 	GenSpans: func(t *testing.T, serviceOverride string) []*mocktracer.Span {
 		var opts []redistrace.ClientOption
 		if serviceOverride != "" {
