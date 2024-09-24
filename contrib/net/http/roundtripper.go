@@ -88,7 +88,6 @@ func (rt *roundTripper) RoundTrip(req *http.Request) (res *http.Response, err er
 	}
 
 	res, err = rt.base.RoundTrip(r2)
-
 	if err != nil {
 		span.SetTag("http.errors", err.Error())
 		if rt.cfg.errCheck == nil || rt.cfg.errCheck(err) {
@@ -96,8 +95,7 @@ func (rt *roundTripper) RoundTrip(req *http.Request) (res *http.Response, err er
 		}
 	} else {
 		span.SetTag(ext.HTTPCode, strconv.Itoa(res.StatusCode))
-		// Client spans consider 4xx as errors
-		if res.StatusCode/100 == 4 {
+		if rt.cfg.isStatusError(res.StatusCode) {
 			span.SetTag("http.errors", res.Status)
 			span.SetTag(ext.Error, fmt.Errorf("%d: %s", res.StatusCode, http.StatusText(res.StatusCode)))
 		}

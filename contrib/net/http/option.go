@@ -8,12 +8,16 @@ package http
 import (
 	"math"
 	"net/http"
+	"os"
+	"strconv"
+	"strings"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/normalizer"
 )
@@ -22,6 +26,7 @@ const (
 	defaultServiceName = "http.router"
 	// envClientQueryStringEnabled is the name of the env var used to specify whether query string collection is enabled for http client spans.
 	envClientQueryStringEnabled = "DD_TRACE_HTTP_CLIENT_TAG_QUERY_STRING"
+	envClientErrorStatuses      = "DD_TRACE_HTTP_CLIENT_ERROR_STATUSES"
 )
 
 type config struct {
@@ -151,6 +156,7 @@ type roundTripperConfig struct {
 	propagation   bool
 	errCheck      func(err error) bool
 	queryString   bool // reports whether the query string is included in the URL tag for http client spans
+	isStatusError func(statusCode int) bool
 }
 
 func newRoundTripperConfig() *roundTripperConfig {
@@ -161,6 +167,7 @@ func newRoundTripperConfig() *roundTripperConfig {
 	defaultSpanNamer := func(_ *http.Request) string {
 		return spanName
 	}
+
 	return &roundTripperConfig{
 		serviceName:   namingschema.ServiceNameOverrideV0("", ""),
 		analyticsRate: globalconfig.AnalyticsRate(),
@@ -169,6 +176,55 @@ func newRoundTripperConfig() *roundTripperConfig {
 		spanNamer:     defaultSpanNamer,
 		ignoreRequest: func(_ *http.Request) bool { return false },
 		queryString:   internal.BoolEnv(envClientQueryStringEnabled, true),
+		isStatusError: getClientErrorStatuses(),
+	}
+}
+
+func getClientErrorStatuses() func(statusCode int) bool {
+	if s := os.Getenv(envClientErrorStatuses); s != "" {
+		var codes []int
+		var ranges [][]int
+		vals := strings.Split(s, ",")
+		for _, val := range vals {
+			if strings.Contains(val, "-") {
+				bounds := strings.Split(val, "-")
+				before, err := strconv.Atoi(bounds[0])
+				if err == nil {
+					after, err := strconv.Atoi(bounds[1])
+					if err == nil {
+						ranges = append(ranges, []int{before, after})
+					} else {
+						log.Debug("Trouble parsing %v due to %v entry, using default error status determination logic", envClientErrorStatuses, val)
+						return isRTError
+					}
+				} else {
+					log.Debug("Trouble parsing %vdue to %v entry, using default error status determination logic", envClientErrorStatuses, val)
+					return isRTError
+				}
+			} else {
+				intVal, err := strconv.Atoi(val)
+				if err != nil {
+					log.Debug("Trouble parsing %v due to %v entry, using default error status determination logic", envClientErrorStatuses, val)
+					return isRTError
+				}
+				codes = append(codes, intVal)
+			}
+		}
+		return func(statusCode int) bool {
+			for _, c := range codes {
+				if c == statusCode {
+					return true
+				}
+			}
+			for _, bounds := range ranges {
+				if statusCode >= bounds[0] && statusCode <= bounds[1] {
+					return true
+				}
+			}
+			return false
+		}
+	} else {
+		return isRTError
 	}
 }
 
@@ -269,4 +325,8 @@ func RTWithErrorCheck(fn func(err error) bool) RoundTripperOption {
 	return func(cfg *roundTripperConfig) {
 		cfg.errCheck = fn
 	}
+}
+
+func isRTError(statusCode int) bool {
+	return statusCode >= 400 && statusCode < 500
 }

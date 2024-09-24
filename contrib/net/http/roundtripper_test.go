@@ -102,73 +102,137 @@ func TestRoundTripper(t *testing.T) {
 	assert.Equal(t, wantPort, s1.Tag(ext.NetworkDestinationPort))
 }
 
-// Assert all error tags exist when status code is 4xx
-func TestRoundTripperClientError(t *testing.T) {
-	mt := mocktracer.Start()
-	defer mt.Stop()
-
-	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusBadRequest)
-		w.Write([]byte("Error"))
-	}))
-	defer s.Close()
-
-	rt := WrapRoundTripper(http.DefaultTransport,
-		WithBefore(func(req *http.Request, span ddtrace.Span) {
-			span.SetTag("CalledBefore", true)
-		}),
-		WithAfter(func(res *http.Response, span ddtrace.Span) {
-			span.SetTag("CalledAfter", true)
-		}))
-
-	client := &http.Client{
-		Transport: rt,
-	}
-
-	resp, err := client.Get(s.URL + "/hello/world")
-	assert.Nil(t, err)
-	defer resp.Body.Close()
-
-	spans := mt.FinishedSpans()
-	assert.Len(t, spans, 1)
-	s1 := spans[0]
-	assert.Equal(t, "400: Bad Request", s1.Tag(ext.Error).(error).Error())
-	assert.Equal(t, "400", s1.Tag(ext.HTTPCode))
+func TestGetClientErrorStatuses(t *testing.T) {
+	codesOnly := "400,401,402"
+	rangesOnly := "400-405,408-410"
+	mixed := "400,403-405,407-410,412"
+	invalid1 := "abcdefg,200-abcd"
+	invalid2 := ":@3$5^,"
+	defer os.Unsetenv("DD_TRACE_HTTP_CLIENT_ERROR_STATUSES")
+	t.Run("codesOnly", func(t *testing.T) {
+		os.Setenv("DD_TRACE_HTTP_CLIENT_ERROR_STATUSES", codesOnly)
+		fn := getClientErrorStatuses()
+		for i := 400; i <= 402; i++ {
+			assert.True(t, fn(i))
+		}
+		assert.False(t, fn(500))
+		assert.False(t, fn(0))
+	})
+	t.Run("rangesOnly", func(t *testing.T) {
+		os.Setenv("DD_TRACE_HTTP_CLIENT_ERROR_STATUSES", rangesOnly)
+		fn := getClientErrorStatuses()
+		for i := 400; i <= 405; i++ {
+			assert.True(t, fn(i))
+		}
+		for i := 408; i <= 410; i++ {
+			assert.True(t, fn(i))
+		}
+		assert.False(t, fn(406))
+		assert.False(t, fn(411))
+		assert.False(t, fn(500))
+	})
+	t.Run("mixed", func(t *testing.T) {
+		os.Setenv("DD_TRACE_HTTP_CLIENT_ERROR_STATUSES", mixed)
+		fn := getClientErrorStatuses()
+		assert.True(t, fn(400))
+		assert.False(t, fn(401))
+		for i := 403; i <= 405; i++ {
+			assert.True(t, fn(i))
+		}
+		assert.False(t, fn(406))
+		for i := 407; i <= 410; i++ {
+			assert.True(t, fn(i))
+		}
+		assert.False(t, fn(411))
+		assert.False(t, fn(500))
+	})
+	// invalid entries below should result in default status determination logic
+	t.Run("invalid1", func(t *testing.T) {
+		os.Setenv("DD_TRACE_HTTP_CLIENT_ERROR_STATUSES", invalid1)
+		fn := getClientErrorStatuses()
+		for i := 400; i < 500; i++ {
+			assert.True(t, fn(i))
+		}
+		assert.False(t, fn(399))
+		assert.False(t, fn(500))
+		assert.False(t, fn(0))
+	})
+	t.Run("invalid2", func(t *testing.T) {
+		os.Setenv("DD_TRACE_HTTP_CLIENT_ERROR_STATUSES", invalid2)
+		fn := getClientErrorStatuses()
+		for i := 400; i < 500; i++ {
+			assert.True(t, fn(i))
+		}
+		assert.False(t, fn(399))
+		assert.False(t, fn(500))
+		assert.False(t, fn(0))
+	})
 }
 
-// Assert no error tags are set when status code is 5xx
-func TestRoundTripperServerError(t *testing.T) {
-	mt := mocktracer.Start()
-	defer mt.Stop()
-
-	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusInternalServerError)
-		w.Write([]byte("Error"))
-	}))
-	defer s.Close()
-
-	rt := WrapRoundTripper(http.DefaultTransport,
-		WithBefore(func(req *http.Request, span ddtrace.Span) {
-			span.SetTag("CalledBefore", true)
-		}),
-		WithAfter(func(res *http.Response, span ddtrace.Span) {
-			span.SetTag("CalledAfter", true)
-		}))
-
+func makeRequests(rt http.RoundTripper, url string, t *testing.T) {
 	client := &http.Client{
 		Transport: rt,
 	}
-
-	resp, err := client.Get(s.URL + "/hello/world")
+	resp, err := client.Get(url + "/400")
 	assert.Nil(t, err)
 	defer resp.Body.Close()
 
-	spans := mt.FinishedSpans()
-	assert.Len(t, spans, 1)
+	resp, err = client.Get(url + "/500")
+	assert.Nil(t, err)
+	defer resp.Body.Close()
 
-	s1 := spans[0]
-	assert.Equal(t, "500", s1.Tag(ext.HTTPCode))
-	assert.Empty(t, s1.Tag(ext.Error))
+	resp, err = client.Get(url + "/200")
+	assert.Nil(t, err)
+	defer resp.Body.Close()
+}
+
+func TestRoundTripperErrors(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/200", handler200)
+	mux.HandleFunc("/400", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+		fmt.Fprintln(w, "This is a 400 Bad Request response.")
+	})
+	mux.HandleFunc("/500", handler500)
+	s := httptest.NewServer(mux)
+	defer s.Close()
+
+	t.Run("default", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+		rt := WrapRoundTripper(http.DefaultTransport)
+		makeRequests(rt, s.URL, t)
+		spans := mt.FinishedSpans()
+		assert.Len(t, spans, 3)
+		s := spans[0] // 400 is error
+		assert.Equal(t, "400: Bad Request", s.Tag(ext.Error).(error).Error())
+		assert.Equal(t, "400", s.Tag(ext.HTTPCode))
+		s = spans[1] // 500 is not error
+		assert.Empty(t, s.Tag(ext.Error))
+		assert.Equal(t, "500", s.Tag(ext.HTTPCode))
+		s = spans[2] // 200 is not error
+		assert.Empty(t, s.Tag(ext.Error))
+		assert.Equal(t, "200", s.Tag(ext.HTTPCode))
+	})
+	t.Run("custom", func(t *testing.T) {
+		os.Setenv("DD_TRACE_HTTP_CLIENT_ERROR_STATUSES", "500-510")
+		defer os.Unsetenv("DD_TRACE_HTTP_CLIENT_ERROR_STATUSES")
+		mt := mocktracer.Start()
+		defer mt.Stop()
+		rt := WrapRoundTripper(http.DefaultTransport)
+		makeRequests(rt, s.URL, t)
+		spans := mt.FinishedSpans()
+		assert.Len(t, spans, 3)
+		s := spans[0] // 400 is not error
+		assert.Empty(t, s.Tag(ext.Error))
+		assert.Equal(t, "400", s.Tag(ext.HTTPCode))
+		s = spans[1] // 500 is error
+		assert.Equal(t, "500: Internal Server Error", s.Tag(ext.Error).(error).Error())
+		assert.Equal(t, "500", s.Tag(ext.HTTPCode))
+		s = spans[2] // 200 is not error
+		assert.Empty(t, s.Tag(ext.Error))
+		assert.Equal(t, "200", s.Tag(ext.HTTPCode))
+	})
 }
 
 func TestRoundTripperNetworkError(t *testing.T) {
