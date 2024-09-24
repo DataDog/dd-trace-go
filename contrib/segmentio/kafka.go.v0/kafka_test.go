@@ -7,19 +7,24 @@ package kafka
 
 import (
 	"context"
+	"errors"
+	"log"
+	"net"
 	"os"
+	"strconv"
 	"testing"
 	"time"
 
+	"github.com/segmentio/kafka-go"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/namingschematest"
+	"gopkg.in/DataDog/dd-trace-go.v1/contrib/segmentio/kafka.go.v0/internal/tracing"
 	"gopkg.in/DataDog/dd-trace-go.v1/datastreams"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-
-	kafka "github.com/segmentio/kafka-go"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 const (
@@ -28,22 +33,63 @@ const (
 	testReaderMaxWait = 10 * time.Millisecond
 )
 
-func skipIntegrationTest(t *testing.T) {
-	if _, ok := os.LookupEnv("INTEGRATION"); !ok {
-		t.Skip("🚧 Skipping integration test (INTEGRATION environment variable is not set)")
+func TestMain(m *testing.M) {
+	_, ok := os.LookupEnv("INTEGRATION")
+	if !ok {
+		log.Println("🚧 Skipping integration test (INTEGRATION environment variable is not set)")
+		os.Exit(0)
 	}
+	cleanup := createTopic()
+	exitCode := m.Run()
+	cleanup()
+	os.Exit(exitCode)
 }
 
-/*
-to setup the integration test locally run:
-	docker-compose -f local_testing.yaml up
-*/
+func createTopic() func() {
+	conn, err := kafka.Dial("tcp", "localhost:9092")
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer conn.Close()
+
+	controller, err := conn.Controller()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	controllerConn, err := kafka.Dial("tcp", net.JoinHostPort(controller.Host, strconv.Itoa(controller.Port)))
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	err = controllerConn.DeleteTopics(testTopic)
+	if err != nil && !errors.Is(err, kafka.UnknownTopicOrPartition) {
+		log.Fatalf("failed to delete topic: %v", err)
+	}
+	topicConfigs := []kafka.TopicConfig{
+		{
+			Topic:             testTopic,
+			NumPartitions:     1,
+			ReplicationFactor: 1,
+		},
+	}
+	err = controllerConn.CreateTopics(topicConfigs...)
+	if err != nil {
+		log.Fatal(err)
+	}
+	return func() {
+		if err := controllerConn.DeleteTopics(testTopic); err != nil {
+			log.Printf("failed to delete topic: %v", err)
+		}
+		if err := controllerConn.Close(); err != nil {
+			log.Printf("failed to close controller connection: %v", err)
+		}
+	}
+}
 
 type readerOpFn func(t *testing.T, r *Reader)
 
 func genIntegrationTestSpans(t *testing.T, mt mocktracer.Tracer, writerOp func(t *testing.T, w *Writer), readerOp readerOpFn, writerOpts []Option, readerOpts []Option) ([]mocktracer.Span, []kafka.Message) {
-	skipIntegrationTest(t)
-
 	writtenMessages := []kafka.Message{}
 
 	// add some dummy values to broker/addr to test bootstrap servers.
@@ -129,7 +175,7 @@ func TestReadMessageFunctional(t *testing.T) {
 	assert.Equal(t, "kafka", s0.Tag(ext.MessagingSystem))
 	assert.Equal(t, "localhost:9092,localhost:9093,localhost:9094", s0.Tag(ext.KafkaBootstrapServers))
 
-	p, ok := datastreams.PathwayFromContext(datastreams.ExtractFromBase64Carrier(context.Background(), messageCarrier{&writtenMessages[0]}))
+	p, ok := datastreams.PathwayFromContext(datastreams.ExtractFromBase64Carrier(context.Background(), tracing.MessageCarrier{Message: tracingMessage(&writtenMessages[0])}))
 	assert.True(t, ok)
 	expectedCtx, _ := tracer.SetDataStreamsCheckpoint(context.Background(), "direction:out", "topic:"+testTopic, "type:kafka")
 	expected, _ := datastreams.PathwayFromContext(expectedCtx)
@@ -149,10 +195,10 @@ func TestReadMessageFunctional(t *testing.T) {
 	assert.Equal(t, "kafka", s1.Tag(ext.MessagingSystem))
 	assert.Equal(t, "localhost:9092,localhost:9093,localhost:9094", s1.Tag(ext.KafkaBootstrapServers))
 
-	p, ok = datastreams.PathwayFromContext(datastreams.ExtractFromBase64Carrier(context.Background(), messageCarrier{&readMessages[0]}))
+	p, ok = datastreams.PathwayFromContext(datastreams.ExtractFromBase64Carrier(context.Background(), tracing.MessageCarrier{Message: tracingMessage(&readMessages[0])}))
 	assert.True(t, ok)
 	expectedCtx, _ = tracer.SetDataStreamsCheckpoint(
-		datastreams.ExtractFromBase64Carrier(context.Background(), messageCarrier{&writtenMessages[0]}),
+		datastreams.ExtractFromBase64Carrier(context.Background(), tracing.MessageCarrier{Message: tracingMessage(&writtenMessages[0])}),
 		"direction:in", "topic:"+testTopic, "type:kafka", "group:"+testGroupID,
 	)
 	expected, _ = datastreams.PathwayFromContext(expectedCtx)
@@ -209,7 +255,7 @@ func TestFetchMessageFunctional(t *testing.T) {
 	assert.Equal(t, "kafka", s0.Tag(ext.MessagingSystem))
 	assert.Equal(t, "localhost:9092,localhost:9093,localhost:9094", s0.Tag(ext.KafkaBootstrapServers))
 
-	p, ok := datastreams.PathwayFromContext(datastreams.ExtractFromBase64Carrier(context.Background(), messageCarrier{&writtenMessages[0]}))
+	p, ok := datastreams.PathwayFromContext(datastreams.ExtractFromBase64Carrier(context.Background(), tracing.MessageCarrier{Message: tracingMessage(&writtenMessages[0])}))
 	assert.True(t, ok)
 	expectedCtx, _ := tracer.SetDataStreamsCheckpoint(context.Background(), "direction:out", "topic:"+testTopic, "type:kafka")
 	expected, _ := datastreams.PathwayFromContext(expectedCtx)
@@ -229,10 +275,10 @@ func TestFetchMessageFunctional(t *testing.T) {
 	assert.Equal(t, "kafka", s1.Tag(ext.MessagingSystem))
 	assert.Equal(t, "localhost:9092,localhost:9093,localhost:9094", s1.Tag(ext.KafkaBootstrapServers))
 
-	p, ok = datastreams.PathwayFromContext(datastreams.ExtractFromBase64Carrier(context.Background(), messageCarrier{&readMessages[0]}))
+	p, ok = datastreams.PathwayFromContext(datastreams.ExtractFromBase64Carrier(context.Background(), tracing.MessageCarrier{Message: tracingMessage(&readMessages[0])}))
 	assert.True(t, ok)
 	expectedCtx, _ = tracer.SetDataStreamsCheckpoint(
-		datastreams.ExtractFromBase64Carrier(context.Background(), messageCarrier{&writtenMessages[0]}),
+		datastreams.ExtractFromBase64Carrier(context.Background(), tracing.MessageCarrier{Message: tracingMessage(&writtenMessages[0])}),
 		"direction:in", "topic:"+testTopic, "type:kafka", "group:"+testGroupID,
 	)
 	expected, _ = datastreams.PathwayFromContext(expectedCtx)
@@ -283,13 +329,12 @@ func TestNamingSchema(t *testing.T) {
 }
 
 func BenchmarkReaderStartSpan(b *testing.B) {
-	r := NewReader(kafka.ReaderConfig{
-		Brokers: []string{"localhost:9092", "localhost:9093", "localhost:9094"},
-		GroupID: testGroupID,
-		Topic:   testTopic,
-		MaxWait: testReaderMaxWait,
-	})
-
+	ctx := context.Background()
+	cfg := tracing.NewConfig()
+	kafkaCfg := &tracing.KafkaConfig{
+		BootstrapServers: "localhost:9092,localhost:9093,localhost:9094",
+		ConsumerGroupID:  testGroupID,
+	}
 	msg := kafka.Message{
 		Key:   []byte("key1"),
 		Value: []byte("value1"),
@@ -297,18 +342,22 @@ func BenchmarkReaderStartSpan(b *testing.B) {
 
 	b.ResetTimer()
 	for n := 0; n < b.N; n++ {
-		r.startSpan(nil, &msg)
+		tracing.StartConsumeSpan(ctx, cfg, kafkaCfg, tracingMessage(&msg))
 	}
 }
 
 func BenchmarkWriterStartSpan(b *testing.B) {
+	ctx := context.Background()
+	cfg := tracing.NewConfig()
+	kafkaCfg := &tracing.KafkaConfig{
+		BootstrapServers: "localhost:9092,localhost:9093,localhost:9094",
+		ConsumerGroupID:  testGroupID,
+	}
 	kw := &kafka.Writer{
 		Addr:         kafka.TCP("localhost:9092", "localhost:9093", "localhost:9094"),
 		Topic:        testTopic,
 		RequiredAcks: kafka.RequireOne,
 	}
-	w := WrapWriter(kw)
-
 	msg := kafka.Message{
 		Key:   []byte("key1"),
 		Value: []byte("value1"),
@@ -316,6 +365,6 @@ func BenchmarkWriterStartSpan(b *testing.B) {
 
 	b.ResetTimer()
 	for n := 0; n < b.N; n++ {
-		w.startSpan(nil, &msg)
+		tracing.StartProduceSpan(ctx, cfg, kafkaCfg, tracingWriter(kw), tracingMessage(&msg))
 	}
 }

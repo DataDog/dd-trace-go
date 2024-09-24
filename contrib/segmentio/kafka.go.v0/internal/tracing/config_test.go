@@ -3,7 +3,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
-package kafka
+package tracing
 
 import (
 	"math"
@@ -16,7 +16,7 @@ import (
 
 func TestAnalyticsSettings(t *testing.T) {
 	t.Run("defaults", func(t *testing.T) {
-		cfg := newConfig()
+		cfg := NewConfig()
 		assert.True(t, math.IsNaN(cfg.analyticsRate))
 	})
 
@@ -26,12 +26,12 @@ func TestAnalyticsSettings(t *testing.T) {
 		defer globalconfig.SetAnalyticsRate(rate)
 		globalconfig.SetAnalyticsRate(0.4)
 
-		cfg := newConfig()
+		cfg := NewConfig()
 		assert.Equal(t, 0.4, cfg.analyticsRate)
 	})
 
 	t.Run("enabled", func(t *testing.T) {
-		cfg := newConfig(WithAnalytics(true))
+		cfg := NewConfig(WithAnalytics(true))
 		assert.Equal(t, 1.0, cfg.analyticsRate)
 	})
 
@@ -40,19 +40,19 @@ func TestAnalyticsSettings(t *testing.T) {
 		defer globalconfig.SetAnalyticsRate(rate)
 		globalconfig.SetAnalyticsRate(0.4)
 
-		cfg := newConfig(WithAnalyticsRate(0.2))
+		cfg := NewConfig(WithAnalyticsRate(0.2))
 		assert.Equal(t, 0.2, cfg.analyticsRate)
 	})
 
 	t.Run("withEnv", func(t *testing.T) {
 		t.Setenv("DD_DATA_STREAMS_ENABLED", "true")
-		cfg := newConfig()
+		cfg := NewConfig()
 		assert.True(t, cfg.dataStreamsEnabled)
 	})
 
 	t.Run("optionOverridesEnv", func(t *testing.T) {
 		t.Setenv("DD_DATA_STREAMS_ENABLED", "false")
-		cfg := newConfig()
+		cfg := NewConfig()
 		WithDataStreams()(cfg)
 		assert.True(t, cfg.dataStreamsEnabled)
 	})
