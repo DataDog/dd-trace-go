@@ -18,6 +18,8 @@ import (
 	"unsafe"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/constants"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/integrations"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/utils"
 )
@@ -38,6 +40,9 @@ type (
 )
 
 var (
+	// ciVisibilityEnabledValue holds a value to check if ci visibility is enabled or not (1 = enabled / 0 = disabled)
+	ciVisibilityEnabledValue int32 = -1
+
 	// instrumentationMap holds a map of *runtime.Func for tracking instrumented functions
 	instrumentationMap = map[*runtime.Func]*instrumentationMetadata{}
 
@@ -50,6 +55,27 @@ var (
 	// ciVisibilityTestsMutex is a read-write mutex for synchronizing access to ciVisibilityTests.
 	ciVisibilityTestsMutex sync.RWMutex
 )
+
+// isCiVisibilityEnabled gets if CI Visibility has been enabled or disabled by the "DD_CIVISIBILITY_ENABLED" environment variable
+func isCiVisibilityEnabled() bool {
+	// let's check if the value has already been loaded from the env-vars
+	enabledValue := atomic.LoadInt32(&ciVisibilityEnabledValue)
+	if enabledValue == -1 {
+		// Get the DD_CIVISIBILITY_ENABLED env var, if not present we default to true. This is because if we are here, it means
+		// that the process was instrumented for ci visibility or by using orchestrion.
+		// So effectively this env-var will act as a kill switch for cases where the code is instrumented, but
+		// we don't want the civisibility instrumentation to be enabled.
+		if internal.BoolEnv(constants.CIVisibilityEnabledEnvironmentVariable, true) {
+			atomic.StoreInt32(&ciVisibilityEnabledValue, 1)
+			return true
+		} else {
+			atomic.StoreInt32(&ciVisibilityEnabledValue, 0)
+			return false
+		}
+	}
+
+	return enabledValue == 1
+}
 
 // getInstrumentationMetadata gets the stored instrumentation metadata for a given *runtime.Func.
 func getInstrumentationMetadata(fn *runtime.Func) *instrumentationMetadata {
@@ -87,6 +113,12 @@ func setCiVisibilityTest(tb testing.TB, ciTest integrations.DdTest) {
 
 // instrumentTestingM helper function to instrument internalTests and internalBenchmarks in a `*testing.M` instance.
 func instrumentTestingM(m *testing.M) func(exitCode int) {
+	// Check if CI Visibility was disabled using the kill switch before trying to initialize it
+	atomic.StoreInt32(&ciVisibilityEnabledValue, -1)
+	if !isCiVisibilityEnabled() {
+		return func(exitCode int) {}
+	}
+
 	// Initialize CI Visibility
 	integrations.EnsureCiVisibilityInitialization()
 
@@ -108,6 +140,12 @@ func instrumentTestingM(m *testing.M) func(exitCode int) {
 	}
 
 	return func(exitCode int) {
+		// Check for code coverage if enabled.
+		if testing.CoverMode() != "" {
+			coveragePercentage := testing.Coverage() * 100
+			session.SetTag(constants.CodeCoveragePercentageOfTotalLines, coveragePercentage)
+		}
+
 		// Close the session and return the exit code.
 		session.Close(exitCode)
 
@@ -118,6 +156,11 @@ func instrumentTestingM(m *testing.M) func(exitCode int) {
 
 // instrumentTestingTFunc helper function to instrument a testing function func(*testing.T)
 func instrumentTestingTFunc(f func(*testing.T)) func(*testing.T) {
+	// Check if CI Visibility was disabled using the kill switch before instrumenting
+	if !isCiVisibilityEnabled() {
+		return f
+	}
+
 	// Reflect the function to obtain its pointer.
 	fReflect := reflect.Indirect(reflect.ValueOf(f))
 	moduleName, suiteName := utils.GetModuleAndSuiteName(fReflect.Pointer())
@@ -186,6 +229,12 @@ func instrumentTestingTFunc(f func(*testing.T)) func(*testing.T) {
 
 // instrumentSetErrorInfo helper function to set an error in the `*testing.T, *testing.B, *testing.common` CI Visibility span
 func instrumentSetErrorInfo(tb testing.TB, errType string, errMessage string, skip int) {
+	// Check if CI Visibility was disabled using the kill switch before
+	if !isCiVisibilityEnabled() {
+		return
+	}
+
+	// Get the CI Visibility span and check if we can set the error type, message and stack
 	ciTestItem := getCiVisibilityTest(tb)
 	if ciTestItem != nil && ciTestItem.error.CompareAndSwap(0, 1) && ciTestItem.test != nil {
 		ciTestItem.test.SetErrorInfo(errType, errMessage, utils.GetStacktrace(2+skip))
@@ -194,6 +243,12 @@ func instrumentSetErrorInfo(tb testing.TB, errType string, errMessage string, sk
 
 // instrumentCloseAndSkip helper function to close and skip with a reason a `*testing.T, *testing.B, *testing.common` CI Visibility span
 func instrumentCloseAndSkip(tb testing.TB, skipReason string) {
+	// Check if CI Visibility was disabled using the kill switch before
+	if !isCiVisibilityEnabled() {
+		return
+	}
+
+	// Get the CI Visibility span and check if we can mark it as skipped and close it
 	ciTestItem := getCiVisibilityTest(tb)
 	if ciTestItem != nil && ciTestItem.skipped.CompareAndSwap(0, 1) && ciTestItem.test != nil {
 		ciTestItem.test.CloseWithFinishTimeAndSkipReason(integrations.ResultStatusSkip, time.Now(), skipReason)
@@ -202,6 +257,12 @@ func instrumentCloseAndSkip(tb testing.TB, skipReason string) {
 
 // instrumentSkipNow helper function to close and skip a `*testing.T, *testing.B, *testing.common` CI Visibility span
 func instrumentSkipNow(tb testing.TB) {
+	// Check if CI Visibility was disabled using the kill switch before
+	if !isCiVisibilityEnabled() {
+		return
+	}
+
+	// Get the CI Visibility span and check if we can mark it as skipped and close it
 	ciTestItem := getCiVisibilityTest(tb)
 	if ciTestItem != nil && ciTestItem.skipped.CompareAndSwap(0, 1) && ciTestItem.test != nil {
 		ciTestItem.test.Close(integrations.ResultStatusSkip)
@@ -210,6 +271,11 @@ func instrumentSkipNow(tb testing.TB) {
 
 // instrumentTestingBFunc helper function to instrument a benchmark function func(*testing.B)
 func instrumentTestingBFunc(pb *testing.B, name string, f func(*testing.B)) (string, func(*testing.B)) {
+	// Check if CI Visibility was disabled using the kill switch before instrumenting
+	if !isCiVisibilityEnabled() {
+		return name, f
+	}
+
 	// Reflect the function to obtain its pointer.
 	fReflect := reflect.Indirect(reflect.ValueOf(f))
 	moduleName, suiteName := utils.GetModuleAndSuiteName(fReflect.Pointer())
