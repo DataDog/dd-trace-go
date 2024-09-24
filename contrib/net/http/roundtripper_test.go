@@ -23,7 +23,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener/httpsec"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/waf/addresses"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 
 	"github.com/stretchr/testify/assert"
@@ -687,7 +687,7 @@ func TestAppsec(t *testing.T) {
 
 			require.Contains(t, serviceSpan.Tags(), "_dd.appsec.json")
 			appsecJSON := serviceSpan.Tag("_dd.appsec.json")
-			require.Contains(t, appsecJSON, httpsec.ServerIoNetURLAddr)
+			require.Contains(t, appsecJSON, addresses.ServerIoNetURLAddr)
 
 			require.Contains(t, serviceSpan.Tags(), "_dd.stack")
 			require.NotContains(t, serviceSpan.Tags(), "error.message")
