@@ -33,6 +33,8 @@ type (
 		context atomic.Pointer[waf.Context]
 		// limiter comes from the WAF feature and is used to limit the number of events as a whole.
 		limiter limiter.Limiter
+		// limited tracks whether the operation is rate-limited, to determine whether to log a warning
+		limited bool
 		// events is where we store WAF events received from the WAF over the course of the request.
 		events []any
 		// stacks is where we store stack traces received from the WAF over the course of the request.
@@ -88,13 +90,17 @@ func (op *ContextOperation) AddEvents(events ...any) {
 		return
 	}
 
-	if !op.limiter.Allow() {
-		log.Warn("appsec: too many WAF events, stopping further reporting")
-		return
-	}
-
 	op.mu.Lock()
 	defer op.mu.Unlock()
+
+	if !op.limiter.Allow() {
+		if !op.limited {
+			log.Warn("appsec: too many WAF events, stopping further reporting")
+		}
+		op.limited = true
+		return
+	}
+	op.limited = false
 
 	const maxWAFEventsPerRequest = 10
 	if len(op.events) >= maxWAFEventsPerRequest {
