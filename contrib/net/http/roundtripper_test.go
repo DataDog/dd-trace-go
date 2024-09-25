@@ -102,73 +102,6 @@ func TestRoundTripper(t *testing.T) {
 	assert.Equal(t, wantPort, s1.Tag(ext.NetworkDestinationPort))
 }
 
-func TestGetClientErrorStatuses(t *testing.T) {
-	codesOnly := "400,401,402"
-	rangesOnly := "400-405,408-410"
-	mixed := "400,403-405,407-410,412"
-	invalid1 := "abcdefg,200-abcd"
-	invalid2 := ":@3$5^,"
-	defer os.Unsetenv("DD_TRACE_HTTP_CLIENT_ERROR_STATUSES")
-	t.Run("codesOnly", func(t *testing.T) {
-		os.Setenv("DD_TRACE_HTTP_CLIENT_ERROR_STATUSES", codesOnly)
-		fn := getClientErrorStatuses()
-		for i := 400; i <= 402; i++ {
-			assert.True(t, fn(i))
-		}
-		assert.False(t, fn(500))
-		assert.False(t, fn(0))
-	})
-	t.Run("rangesOnly", func(t *testing.T) {
-		os.Setenv("DD_TRACE_HTTP_CLIENT_ERROR_STATUSES", rangesOnly)
-		fn := getClientErrorStatuses()
-		for i := 400; i <= 405; i++ {
-			assert.True(t, fn(i))
-		}
-		for i := 408; i <= 410; i++ {
-			assert.True(t, fn(i))
-		}
-		assert.False(t, fn(406))
-		assert.False(t, fn(411))
-		assert.False(t, fn(500))
-	})
-	t.Run("mixed", func(t *testing.T) {
-		os.Setenv("DD_TRACE_HTTP_CLIENT_ERROR_STATUSES", mixed)
-		fn := getClientErrorStatuses()
-		assert.True(t, fn(400))
-		assert.False(t, fn(401))
-		for i := 403; i <= 405; i++ {
-			assert.True(t, fn(i))
-		}
-		assert.False(t, fn(406))
-		for i := 407; i <= 410; i++ {
-			assert.True(t, fn(i))
-		}
-		assert.False(t, fn(411))
-		assert.False(t, fn(500))
-	})
-	// invalid entries below should result in default status determination logic
-	t.Run("invalid1", func(t *testing.T) {
-		os.Setenv("DD_TRACE_HTTP_CLIENT_ERROR_STATUSES", invalid1)
-		fn := getClientErrorStatuses()
-		for i := 400; i < 500; i++ {
-			assert.True(t, fn(i))
-		}
-		assert.False(t, fn(399))
-		assert.False(t, fn(500))
-		assert.False(t, fn(0))
-	})
-	t.Run("invalid2", func(t *testing.T) {
-		os.Setenv("DD_TRACE_HTTP_CLIENT_ERROR_STATUSES", invalid2)
-		fn := getClientErrorStatuses()
-		for i := 400; i < 500; i++ {
-			assert.True(t, fn(i))
-		}
-		assert.False(t, fn(399))
-		assert.False(t, fn(500))
-		assert.False(t, fn(0))
-	})
-}
-
 func makeRequests(rt http.RoundTripper, url string, t *testing.T) {
 	client := &http.Client{
 		Transport: rt,
@@ -189,10 +122,7 @@ func makeRequests(rt http.RoundTripper, url string, t *testing.T) {
 func TestRoundTripperErrors(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/200", handler200)
-	mux.HandleFunc("/400", func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusBadRequest)
-		fmt.Fprintln(w, "This is a 400 Bad Request response.")
-	})
+	mux.HandleFunc("/400", handler400)
 	mux.HandleFunc("/500", handler500)
 	s := httptest.NewServer(mux)
 	defer s.Close()

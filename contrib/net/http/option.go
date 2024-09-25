@@ -9,15 +9,13 @@ import (
 	"math"
 	"net/http"
 	"os"
-	"strconv"
-	"strings"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/httptrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/normalizer"
 )
@@ -26,7 +24,8 @@ const (
 	defaultServiceName = "http.router"
 	// envClientQueryStringEnabled is the name of the env var used to specify whether query string collection is enabled for http client spans.
 	envClientQueryStringEnabled = "DD_TRACE_HTTP_CLIENT_TAG_QUERY_STRING"
-	envClientErrorStatuses      = "DD_TRACE_HTTP_CLIENT_ERROR_STATUSES"
+	// envClientErrorStatuses is the name of the env var that specifies error status codes on http client spans
+	envClientErrorStatuses = "DD_TRACE_HTTP_CLIENT_ERROR_STATUSES"
 )
 
 type config struct {
@@ -168,7 +167,7 @@ func newRoundTripperConfig() *roundTripperConfig {
 		return spanName
 	}
 
-	return &roundTripperConfig{
+	c := &roundTripperConfig{
 		serviceName:   namingschema.ServiceNameOverrideV0("", ""),
 		analyticsRate: globalconfig.AnalyticsRate(),
 		resourceNamer: defaultResourceNamer,
@@ -176,56 +175,13 @@ func newRoundTripperConfig() *roundTripperConfig {
 		spanNamer:     defaultSpanNamer,
 		ignoreRequest: func(_ *http.Request) bool { return false },
 		queryString:   internal.BoolEnv(envClientQueryStringEnabled, true),
-		isStatusError: getClientErrorStatuses(),
+		isStatusError: defaultErrorCodes,
 	}
-}
-
-func getClientErrorStatuses() func(statusCode int) bool {
-	if s := os.Getenv(envClientErrorStatuses); s != "" {
-		var codes []int
-		var ranges [][]int
-		vals := strings.Split(s, ",")
-		for _, val := range vals {
-			if strings.Contains(val, "-") {
-				bounds := strings.Split(val, "-")
-				before, err := strconv.Atoi(bounds[0])
-				if err == nil {
-					after, err := strconv.Atoi(bounds[1])
-					if err == nil {
-						ranges = append(ranges, []int{before, after})
-					} else {
-						log.Debug("Trouble parsing %v due to %v entry, using default error status determination logic", envClientErrorStatuses, val)
-						return isRTError
-					}
-				} else {
-					log.Debug("Trouble parsing %vdue to %v entry, using default error status determination logic", envClientErrorStatuses, val)
-					return isRTError
-				}
-			} else {
-				intVal, err := strconv.Atoi(val)
-				if err != nil {
-					log.Debug("Trouble parsing %v due to %v entry, using default error status determination logic", envClientErrorStatuses, val)
-					return isRTError
-				}
-				codes = append(codes, intVal)
-			}
-		}
-		return func(statusCode int) bool {
-			for _, c := range codes {
-				if c == statusCode {
-					return true
-				}
-			}
-			for _, bounds := range ranges {
-				if statusCode >= bounds[0] && statusCode <= bounds[1] {
-					return true
-				}
-			}
-			return false
-		}
-	} else {
-		return isRTError
+	v := os.Getenv(envClientErrorStatuses)
+	if fn := httptrace.GetErrorCodesFromInput(v); fn != nil {
+		c.isStatusError = fn
 	}
+	return c
 }
 
 // A RoundTripperOption represents an option that can be passed to
@@ -327,6 +283,6 @@ func RTWithErrorCheck(fn func(err error) bool) RoundTripperOption {
 	}
 }
 
-func isRTError(statusCode int) bool {
+func defaultErrorCodes(statusCode int) bool {
 	return statusCode >= 400 && statusCode < 500
 }

@@ -524,6 +524,10 @@ func handler500(w http.ResponseWriter, r *http.Request) {
 	http.Error(w, "500!", http.StatusInternalServerError)
 }
 
+func handler400(w http.ResponseWriter, r *http.Request) {
+	http.Error(w, "400!", http.StatusBadRequest)
+}
+
 func BenchmarkHttpServeTrace(b *testing.B) {
 	tracer.Start(tracer.WithLogger(log.DiscardLogger{}))
 	defer tracer.Stop()
