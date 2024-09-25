@@ -172,12 +172,6 @@ jobs:
         image: memcached:1.5.9
         ports:
           - 11211:11211
-      zookeeper:
-        image: bitnami/zookeeper:latest
-        env:
-          ALLOW_ANONYMOUS_LOGIN: "yes"
-        ports:
-          - 2181:2181
       kafka:
         image: confluentinc/confluent-local:7.5.0
         env:
