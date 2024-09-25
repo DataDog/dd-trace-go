@@ -7,13 +7,14 @@ package appsec
 
 import (
 	"encoding/json"
-	internal "github.com/DataDog/appsec-internal-go/appsec"
-	waf "github.com/DataDog/go-libddwaf/v3"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener/httpsec"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/trace"
 	"testing"
 
+	internal "github.com/DataDog/appsec-internal-go/appsec"
+	waf "github.com/DataDog/go-libddwaf/v3"
+
 	"github.com/stretchr/testify/require"
+
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/waf/addresses"
 )
 
 func TestAPISecuritySchemaCollection(t *testing.T) {
@@ -112,7 +113,7 @@ func TestAPISecuritySchemaCollection(t *testing.T) {
 		{
 			name: "headers",
 			addresses: map[string]any{
-				httpsec.ServerRequestHeadersNoCookiesAddr: map[string][]string{
+				addresses.ServerRequestHeadersNoCookiesAddr: map[string][]string{
 					"my-header": {"is-beautiful"},
 				},
 			},
@@ -123,7 +124,7 @@ func TestAPISecuritySchemaCollection(t *testing.T) {
 		{
 			name: "path-params",
 			addresses: map[string]any{
-				httpsec.ServerRequestPathParamsAddr: map[string]string{
+				addresses.ServerRequestPathParamsAddr: map[string]string{
 					"my-path-param": "is-beautiful",
 				},
 			},
@@ -134,7 +135,7 @@ func TestAPISecuritySchemaCollection(t *testing.T) {
 		{
 			name: "query",
 			addresses: map[string]any{
-				httpsec.ServerRequestQueryAddr: map[string][]string{"my-query": {"is-beautiful"}, "my-query-2": {"so-pretty"}},
+				addresses.ServerRequestQueryAddr: map[string][]string{"my-query": {"is-beautiful"}, "my-query-2": {"so-pretty"}},
 			},
 			tags: map[string]string{
 				"_dd.appsec.s.req.query": `[{"my-query":[[[8]],{"len":1}],"my-query-2":[[[8]],{"len":1}]}]`,
@@ -143,13 +144,13 @@ func TestAPISecuritySchemaCollection(t *testing.T) {
 		{
 			name: "combined",
 			addresses: map[string]any{
-				httpsec.ServerRequestHeadersNoCookiesAddr: map[string][]string{
+				addresses.ServerRequestHeadersNoCookiesAddr: map[string][]string{
 					"my-header": {"is-beautiful"},
 				},
-				httpsec.ServerRequestPathParamsAddr: map[string]string{
+				addresses.ServerRequestPathParamsAddr: map[string]string{
 					"my-path-param": "is-beautiful",
 				},
-				httpsec.ServerRequestQueryAddr: map[string][]string{"my-query": {"is-beautiful"}, "my-query-2": {"so-pretty"}},
+				addresses.ServerRequestQueryAddr: map[string][]string{"my-query": {"is-beautiful"}, "my-query-2": {"so-pretty"}},
 			},
 			tags: map[string]string{
 				"_dd.appsec.s.req.headers": `[{"my-header":[[[8]],{"len":1}]}]`,
@@ -175,13 +176,10 @@ func TestAPISecuritySchemaCollection(t *testing.T) {
 			wafRes, err := wafCtx.Run(runData)
 			require.NoError(t, err)
 			require.True(t, wafRes.HasDerivatives())
-			tagsHolder := trace.NewTagsHolder()
 			for k, v := range wafRes.Derivatives {
-				tagsHolder.AddSerializableTag(k, v)
-			}
-
-			for tag, val := range tagsHolder.Tags() {
-				require.Equal(t, tc.tags[tag], val)
+				res, err := json.Marshal(v)
+				require.NoError(t, err)
+				require.Equal(t, tc.tags[k], string(res))
 			}
 		})
 	}
