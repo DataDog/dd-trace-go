@@ -74,8 +74,9 @@ func (r *Reader) ReadMessage(ctx context.Context) (kafka.Message, error) {
 	if err != nil {
 		return kafka.Message{}, err
 	}
-	r.prev = tracing.StartConsumeSpan(ctx, r.cfg, r.kafkaCfg, tracingMessage(&msg))
-	tracing.SetConsumeDSMCheckpoint(r.cfg, r.kafkaCfg, tracingMessage(&msg))
+	tMsg := tracingMessage(&msg)
+	r.prev = tracing.StartConsumeSpan(ctx, r.cfg, r.kafkaCfg, tMsg)
+	tracing.SetConsumeDSMCheckpoint(r.cfg, r.kafkaCfg, tMsg)
 	return msg, nil
 }
 
@@ -89,8 +90,9 @@ func (r *Reader) FetchMessage(ctx context.Context) (kafka.Message, error) {
 	if err != nil {
 		return msg, err
 	}
-	r.prev = tracing.StartConsumeSpan(ctx, r.cfg, r.kafkaCfg, tracingMessage(&msg))
-	tracing.SetConsumeDSMCheckpoint(r.cfg, r.kafkaCfg, tracingMessage(&msg))
+	tMsg := tracingMessage(&msg)
+	r.prev = tracing.StartConsumeSpan(ctx, r.cfg, r.kafkaCfg, tMsg)
+	tracing.SetConsumeDSMCheckpoint(r.cfg, r.kafkaCfg, tMsg)
 	return msg, nil
 }
 

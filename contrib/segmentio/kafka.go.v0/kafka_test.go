@@ -8,6 +8,7 @@ package kafka
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log"
 	"net"
 	"os"
@@ -33,6 +34,11 @@ const (
 	testReaderMaxWait = 10 * time.Millisecond
 )
 
+var (
+	// add some dummy values to broker/addr to test bootstrap servers.
+	kafkaBrokers = []string{"localhost:9092", "localhost:9093", "localhost:9094"}
+)
+
 func TestMain(m *testing.M) {
 	_, ok := os.LookupEnv("INTEGRATION")
 	if !ok {
@@ -43,6 +49,25 @@ func TestMain(m *testing.M) {
 	exitCode := m.Run()
 	cleanup()
 	os.Exit(exitCode)
+}
+
+func testWriter() *kafka.Writer {
+	return &kafka.Writer{
+		Addr:         kafka.TCP(kafkaBrokers...),
+		Topic:        testTopic,
+		RequiredAcks: kafka.RequireOne,
+		Balancer:     &kafka.LeastBytes{},
+	}
+}
+
+func testReader() *kafka.Reader {
+	return kafka.NewReader(kafka.ReaderConfig{
+		Brokers:  kafkaBrokers,
+		GroupID:  testGroupID,
+		Topic:    testTopic,
+		MaxWait:  testReaderMaxWait,
+		MaxBytes: 10e6, // 10MB
+	})
 }
 
 func createTopic() func() {
@@ -56,14 +81,11 @@ func createTopic() func() {
 	if err != nil {
 		log.Fatal(err)
 	}
-
 	controllerConn, err := kafka.Dial("tcp", net.JoinHostPort(controller.Host, strconv.Itoa(controller.Port)))
 	if err != nil {
 		log.Fatal(err)
 	}
-
-	err = controllerConn.DeleteTopics(testTopic)
-	if err != nil && !errors.Is(err, kafka.UnknownTopicOrPartition) {
+	if err := controllerConn.DeleteTopics(testTopic); err != nil && !errors.Is(err, kafka.UnknownTopicOrPartition) {
 		log.Fatalf("failed to delete topic: %v", err)
 	}
 	topicConfigs := []kafka.TopicConfig{
@@ -73,8 +95,10 @@ func createTopic() func() {
 			ReplicationFactor: 1,
 		},
 	}
-	err = controllerConn.CreateTopics(topicConfigs...)
-	if err != nil {
+	if err := controllerConn.CreateTopics(topicConfigs...); err != nil {
+		log.Fatal(err)
+	}
+	if err := ensureTopicReady(); err != nil {
 		log.Fatal(err)
 	}
 	return func() {
@@ -87,31 +111,62 @@ func createTopic() func() {
 	}
 }
 
+func ensureTopicReady() error {
+	const (
+		maxRetries = 10
+		retryDelay = 100 * time.Millisecond
+	)
+	writer := testWriter()
+	defer writer.Close()
+	reader := testReader()
+	defer reader.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	var (
+		retryCount int
+		err        error
+	)
+	for retryCount < maxRetries {
+		err = writer.WriteMessages(ctx, kafka.Message{Key: []byte("some-key"), Value: []byte("some-value")})
+		if err == nil {
+			break
+		}
+		// This error happens sometimes with brand-new topics, as there is a delay between when the topic is created
+		// on the broker, and when the topic can actually be written to.
+		if errors.Is(err, kafka.UnknownTopicOrPartition) {
+			retryCount++
+			log.Printf("topic not ready yet, retrying produce in %s (retryCount: %d)\n", retryDelay, retryCount)
+			time.Sleep(retryDelay)
+		}
+	}
+	if err != nil {
+		return fmt.Errorf("timeout waiting for topic to be ready: %w", err)
+	}
+	// read the message to ensure we don't pollute tests
+	_, err = reader.ReadMessage(ctx)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
 type readerOpFn func(t *testing.T, r *Reader)
 
 func genIntegrationTestSpans(t *testing.T, mt mocktracer.Tracer, writerOp func(t *testing.T, w *Writer), readerOp readerOpFn, writerOpts []Option, readerOpts []Option) ([]mocktracer.Span, []kafka.Message) {
 	writtenMessages := []kafka.Message{}
 
-	// add some dummy values to broker/addr to test bootstrap servers.
-	kw := &kafka.Writer{
-		Addr:         kafka.TCP("localhost:9092", "localhost:9093", "localhost:9094"),
-		Topic:        testTopic,
-		RequiredAcks: kafka.RequireOne,
-		Completion: func(messages []kafka.Message, err error) {
-			writtenMessages = append(writtenMessages, messages...)
-		},
+	kw := testWriter()
+	kw.Completion = func(messages []kafka.Message, err error) {
+		writtenMessages = append(writtenMessages, messages...)
 	}
 	w := WrapWriter(kw, writerOpts...)
 	writerOp(t, w)
 	err := w.Close()
 	require.NoError(t, err)
 
-	r := NewReader(kafka.ReaderConfig{
-		Brokers: []string{"localhost:9092", "localhost:9093", "localhost:9094"},
-		GroupID: testGroupID,
-		Topic:   testTopic,
-		MaxWait: testReaderMaxWait,
-	}, readerOpts...)
+	r := WrapReader(testReader(), readerOpts...)
 	readerOp(t, r)
 	err = r.Close()
 	require.NoError(t, err)
@@ -159,8 +214,8 @@ func TestReadMessageFunctional(t *testing.T) {
 		[]Option{WithDataStreams()},
 	)
 
-	assert.Len(t, writtenMessages, len(messagesToWrite))
-	assert.Len(t, readMessages, len(messagesToWrite))
+	require.Len(t, writtenMessages, len(messagesToWrite))
+	require.Len(t, readMessages, len(messagesToWrite))
 
 	// producer span
 	s0 := spans[0]
@@ -194,6 +249,10 @@ func TestReadMessageFunctional(t *testing.T) {
 	assert.Equal(t, ext.SpanKindConsumer, s1.Tag(ext.SpanKind))
 	assert.Equal(t, "kafka", s1.Tag(ext.MessagingSystem))
 	assert.Equal(t, "localhost:9092,localhost:9093,localhost:9094", s1.Tag(ext.KafkaBootstrapServers))
+
+	// context propagation
+	assert.Equal(t, s0.SpanID(), s1.ParentID(), "consume span should be child of the produce span")
+	assert.Equal(t, s0.TraceID(), s1.TraceID(), "spans should have the same trace id")
 
 	p, ok = datastreams.PathwayFromContext(datastreams.ExtractFromBase64Carrier(context.Background(), tracing.MessageCarrier{Message: tracingMessage(&readMessages[0])}))
 	assert.True(t, ok)
@@ -275,6 +334,9 @@ func TestFetchMessageFunctional(t *testing.T) {
 	assert.Equal(t, "kafka", s1.Tag(ext.MessagingSystem))
 	assert.Equal(t, "localhost:9092,localhost:9093,localhost:9094", s1.Tag(ext.KafkaBootstrapServers))
 
+	// context propagation
+	assert.Equal(t, s0.SpanID(), s1.ParentID(), "consume span should be child of the produce span")
+
 	p, ok = datastreams.PathwayFromContext(datastreams.ExtractFromBase64Carrier(context.Background(), tracing.MessageCarrier{Message: tracingMessage(&readMessages[0])}))
 	assert.True(t, ok)
 	expectedCtx, _ = tracer.SetDataStreamsCheckpoint(
@@ -284,6 +346,62 @@ func TestFetchMessageFunctional(t *testing.T) {
 	expected, _ = datastreams.PathwayFromContext(expectedCtx)
 	assert.NotEqual(t, expected.GetHash(), 0)
 	assert.Equal(t, expected.GetHash(), p.GetHash())
+}
+
+func TestProduceMultipleMessages(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	messages := []kafka.Message{
+		{
+			Key:   []byte("key1"),
+			Value: []byte("value1"),
+		},
+		{
+			Key:   []byte("key2"),
+			Value: []byte("value2"),
+		},
+		{
+			Key:   []byte("key3"),
+			Value: []byte("value3"),
+		},
+	}
+
+	writer := WrapWriter(testWriter())
+	reader := WrapReader(testReader())
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	err := writer.WriteMessages(ctx, messages...)
+	require.NoError(t, err)
+	require.NoError(t, writer.Close())
+
+	curMsg := 0
+	for curMsg < len(messages) {
+		readMsg, err := reader.ReadMessage(ctx)
+		require.NoError(t, err)
+		require.Equal(t, string(messages[curMsg].Key), string(readMsg.Key))
+		require.Equal(t, string(messages[curMsg].Value), string(readMsg.Value))
+		curMsg++
+	}
+	require.NoError(t, reader.Close())
+
+	spans := mt.FinishedSpans()
+	require.Len(t, spans, 6)
+
+	produceSpans := spans[0:3]
+	consumeSpans := spans[3:6]
+	for i := 0; i < 3; i++ {
+		ps := produceSpans[i]
+		cs := consumeSpans[i]
+
+		assert.Equal(t, "kafka.produce", ps.OperationName(), "wrong produce span name")
+		assert.Equal(t, "kafka.consume", cs.OperationName(), "wrong consume span name")
+		assert.Equal(t, cs.ParentID(), ps.SpanID(), "consume span should be child of a produce span")
+		assert.Equal(t, uint64(0), ps.ParentID(), "produce span should not be child of any span")
+		assert.Equal(t, cs.TraceID(), ps.TraceID(), "spans should be part of the same trace")
+	}
 }
 
 func TestNamingSchema(t *testing.T) {

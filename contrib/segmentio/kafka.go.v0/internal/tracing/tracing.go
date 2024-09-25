@@ -3,16 +3,24 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2024 Datadog, Inc.
 
+// Package tracing contains tracing logic for the segmentio/kafka-go.v0 instrumentation.
+//
+// WARNING: this package SHOULD NOT import segmentio/kafka-go.
+//
+// The motivation of this package is to support orchestrion, which cannot use the main package because it imports
+// the segmentio/kafka-go package, and since orchestrion modifies the library code itself,
+// this would cause an import cycle.
 package tracing
 
 import (
 	"context"
+	"math"
+
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
-	"math"
 )
 
 const componentName = "segmentio/kafka.go.v0"
@@ -60,7 +68,6 @@ func StartConsumeSpan(ctx context.Context, cfg *Config, kafkaCfg *KafkaConfig, m
 		tracer.Tag(ext.KafkaBootstrapServers, kafkaCfg.BootstrapServers),
 		tracer.Measured(),
 	}
-
 	if !math.IsNaN(cfg.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
 	}
