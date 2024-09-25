@@ -257,7 +257,7 @@ func (s *Span) AddLink(spanContext *SpanContext, attributes map[string]string) {
 
 	samplingDecision, hasSamplingDecision := spanContext.SamplingPriority()
 	var flags uint32
-	if hasSamplingDecision && samplingDecision >= ext.PriorityAutoKeep {
+	if hasSamplingDecision && samplingDecision >= int(decisionKeep) {
 		flags = uint32(1<<31 | 1)
 	} else if hasSamplingDecision {
 		flags = uint32(1<<31 | 0)
@@ -503,11 +503,11 @@ func (s *Span) setTagBool(key string, v bool) {
 		}
 	case ext.ManualDrop:
 		if v {
-			s.setSamplingPriorityLocked(ext.PriorityUserReject, samplernames.Manual)
+			s.setSamplingPriorityLocked(int(decisionDrop), samplernames.Manual)
 		}
 	case ext.ManualKeep:
 		if v {
-			s.setSamplingPriorityLocked(ext.PriorityUserKeep, samplernames.Manual)
+			s.setSamplingPriorityLocked(int(decisionKeep), samplernames.Manual)
 		}
 	default:
 		if v {
@@ -528,12 +528,8 @@ func (s *Span) setMetric(key string, v float64) {
 	switch key {
 	case ext.ManualKeep:
 		if v == float64(samplernames.AppSec) {
-			s.setSamplingPriorityLocked(ext.PriorityUserKeep, samplernames.AppSec)
+			s.setSamplingPriorityLocked(int(decisionKeep), samplernames.AppSec)
 		}
-	case ext.SamplingPriority:
-		// ext.SamplingPriority is deprecated in favor of ext.ManualKeep and ext.ManualDrop.
-		// We have it here for backward compatibility.
-		s.setSamplingPriorityLocked(int(v), samplernames.Manual)
 	default:
 		s.metrics[key] = v
 	}
@@ -722,7 +718,7 @@ func obfuscatedResource(o *obfuscate.Obfuscator, typ, resource string) string {
 // shouldKeep reports whether the trace should be kept.
 // a single span being kept implies the whole trace being kept.
 func shouldKeep(s *Span) bool {
-	if p, ok := s.context.SamplingPriority(); ok && p > 0 {
+	if p, ok := s.context.SamplingPriority(); ok && p == int(decisionKeep) {
 		// positive sampling priorities stay
 		return true
 	}

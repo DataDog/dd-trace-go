@@ -164,9 +164,9 @@ func (ps *prioritySampler) getRate(spn *Span) float64 {
 func (ps *prioritySampler) apply(spn *Span) {
 	rate := ps.getRate(spn)
 	if sampledByRate(spn.traceID, rate) {
-		spn.setSamplingPriority(ext.PriorityAutoKeep, samplernames.AgentRate)
+		spn.setSamplingPriority(int(decisionKeep), samplernames.AgentRate)
 	} else {
-		spn.setSamplingPriority(ext.PriorityAutoReject, samplernames.AgentRate)
+		spn.setSamplingPriority(int(decisionDrop), samplernames.AgentRate)
 	}
 	spn.SetTag(keySamplingPriorityRate, rate)
 }

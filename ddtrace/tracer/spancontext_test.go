@@ -80,7 +80,7 @@ func testAsyncSpanRace(t *testing.T) {
 	for i := 0; i < 100; i++ {
 		// The test has 100 iterations because it is not easy to reproduce the race.
 		t.Run("", func(t *testing.T) {
-			root, ctx := StartSpanFromContext(context.Background(), "root", Tag(ext.SamplingPriority, ext.PriorityUserKeep))
+			root, ctx := StartSpanFromContext(context.Background(), "root", Tag(ext.ManualKeep, true))
 			var wg sync.WaitGroup
 			done := make(chan struct{})
 			wg.Add(1)
@@ -116,7 +116,7 @@ func testAsyncSpanRace(t *testing.T) {
 				for i := 0; i < 50; i++ {
 					// to trigger the bug, the child should be created after the root was finished,
 					// as its being flushed
-					child, _ := StartSpanFromContext(ctx, "child", Tag(ext.SamplingPriority, ext.PriorityUserKeep))
+					child, _ := StartSpanFromContext(ctx, "child", Tag(ext.ManualKeep, true))
 					child.Finish()
 				}
 			}()
@@ -181,9 +181,9 @@ func TestPartialFlush(t *testing.T) {
 		require.Len(t, ts, 1)
 		require.Len(t, ts[0], 2)
 		assert.Equal(t, "someValue", ts[0][0].meta["someTraceTag"])
-		assert.Equal(t, 1.0, ts[0][0].metrics[keySamplingPriority])
-		assert.Empty(t, ts[0][1].meta["someTraceTag"])              // the tag should only be on the first span in the chunk
-		assert.Equal(t, 1.0, ts[0][1].metrics[keySamplingPriority]) // the tag should only be on the first span in the chunk
+		assert.Equal(t, float64(decisionKeep), ts[0][0].metrics[keySamplingPriority])
+		assert.Empty(t, ts[0][1].meta["someTraceTag"])                                // the tag should only be on the first span in the chunk
+		assert.Equal(t, float64(decisionKeep), ts[0][1].metrics[keySamplingPriority]) // the tag should only be on the first span in the chunk
 		comparePayloadSpans(t, children[0], ts[0][0])
 		comparePayloadSpans(t, children[1], ts[0][1])
 
@@ -198,9 +198,9 @@ func TestPartialFlush(t *testing.T) {
 		require.Len(t, tsRoot, 1)
 		require.Len(t, tsRoot[0], 2)
 		assert.Equal(t, "someValue", ts[0][0].meta["someTraceTag"])
-		assert.Equal(t, 1.0, ts[0][0].metrics[keySamplingPriority])
-		assert.Empty(t, ts[0][1].meta["someTraceTag"])              // the tag should only be on the first span in the chunk
-		assert.Equal(t, 1.0, ts[0][1].metrics[keySamplingPriority]) // the tag should only be on the first span in the chunk
+		assert.Equal(t, float64(decisionKeep), ts[0][0].metrics[keySamplingPriority])
+		assert.Empty(t, ts[0][1].meta["someTraceTag"])                                // the tag should only be on the first span in the chunk
+		assert.Equal(t, float64(decisionKeep), ts[0][1].metrics[keySamplingPriority]) // the tag should only be on the first span in the chunk
 		comparePayloadSpans(t, root, tsRoot[0][0])
 		comparePayloadSpans(t, children[2], tsRoot[0][1])
 		telemetryClient.AssertNumberOfCalls(t, "Count", 1)
@@ -306,12 +306,12 @@ func TestSpanFinishPriority(t *testing.T) {
 
 	root := tracer.StartSpan(
 		"root",
-		Tag(ext.SamplingPriority, 1),
+		Tag(ext.ManualKeep, true),
 	)
 	child := tracer.StartSpan(
 		"child",
 		ChildOf(root.Context()),
-		Tag(ext.SamplingPriority, 2),
+		Tag(ext.ManualKeep, true),
 	)
 	child.Finish()
 	root.Finish()

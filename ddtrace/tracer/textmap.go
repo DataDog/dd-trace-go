@@ -12,7 +12,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
@@ -592,7 +591,7 @@ func (*propagatorB3) injectTextMap(spanCtx *SpanContext, writer TextMapWriter) e
 	}
 	writer.Set(b3SpanIDHeader, fmt.Sprintf("%016x", ctx.spanID))
 	if p, ok := ctx.SamplingPriority(); ok {
-		if p >= ext.PriorityAutoKeep {
+		if p >= int(decisionKeep) {
 			writer.Set(b3SampledHeader, "1")
 		} else {
 			writer.Set(b3SampledHeader, "0")
@@ -677,7 +676,7 @@ func (*propagatorB3SingleHeader) injectTextMap(spanCtx *SpanContext, writer Text
 	}
 	sb.WriteString(fmt.Sprintf("%s-%016x", traceID, ctx.spanID))
 	if p, ok := ctx.SamplingPriority(); ok {
-		if p >= ext.PriorityAutoKeep {
+		if p >= int(decisionKeep) {
 			sb.WriteString("-1")
 		} else {
 			sb.WriteString("-0")
@@ -779,7 +778,7 @@ func (*propagatorW3c) injectTextMap(spanCtx *SpanContext, writer TextMapWriter) 
 	}
 	flags := ""
 	p, ok := ctx.SamplingPriority()
-	if ok && p >= ext.PriorityAutoKeep {
+	if ok && p >= int(decisionKeep) {
 		flags = "01"
 	} else {
 		flags = "00"

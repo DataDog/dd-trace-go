@@ -154,17 +154,17 @@ func TestPrioritySampler(t *testing.T) {
 		testSpan1.traceID = math.MaxUint64 - (math.MaxUint64 / 4)
 
 		ps.apply(testSpan1)
-		assert.EqualValues(ext.PriorityAutoKeep, testSpan1.metrics[keySamplingPriority])
+		assert.EqualValues(int(decisionKeep), testSpan1.metrics[keySamplingPriority])
 		assert.EqualValues(0.5, testSpan1.metrics[keySamplingPriorityRate])
 
 		testSpan1.traceID = math.MaxUint64 - (math.MaxUint64 / 3)
 		ps.apply(testSpan1)
-		assert.EqualValues(ext.PriorityAutoReject, testSpan1.metrics[keySamplingPriority])
+		assert.EqualValues(int(decisionDrop), testSpan1.metrics[keySamplingPriority])
 		assert.EqualValues(0.5, testSpan1.metrics[keySamplingPriorityRate])
 
 		testSpan1.service = "other-service"
 		testSpan1.traceID = 1
-		assert.EqualValues(ext.PriorityAutoReject, testSpan1.metrics[keySamplingPriority])
+		assert.EqualValues(int(decisionDrop), testSpan1.metrics[keySamplingPriority])
 		assert.EqualValues(0.5, testSpan1.metrics[keySamplingPriorityRate])
 	})
 }
@@ -1012,7 +1012,7 @@ func TestRulesSampler(t *testing.T) {
 					result = rs.SampleTraceGlobalRate(span)
 					assert.True(result)
 					assert.Equal(rate, span.metrics[keyRulesSamplerAppliedRate])
-					if rate > 0.0 && (span.metrics[keySamplingPriority] != ext.PriorityUserReject) {
+					if rate > 0.0 && (span.metrics[keySamplingPriority] != float64(decisionDrop)) {
 						assert.Equal(1.0, span.metrics[keyRulesSamplerLimiterRate])
 					}
 				})
@@ -1033,25 +1033,25 @@ func TestRulesSampler(t *testing.T) {
 			{
 				rules:            `[{"tags": {"tag1": "non-matching"}, "sample_rate": 0}, {"resource": "/bar", "sample_rate": 1}]`,
 				generalRate:      "0",
-				samplingPriority: 2,
+				samplingPriority: float64(decisionKeep),
 				appliedRate:      1,
 			},
 			{
 				rules:            `[{"tags": {"tag1": "non-matching"}, "sample_rate": 0}, {"tags": {"tag1": "val1"}, "sample_rate": 1}]`,
 				generalRate:      "0",
-				samplingPriority: 2,
+				samplingPriority: float64(decisionKeep),
 				appliedRate:      1,
 			},
 			{
 				rules:            `[ {"tags": {"tag1": "val1"}, "sample_rate": 0}]`,
 				generalRate:      "1",
-				samplingPriority: -1,
+				samplingPriority: float64(decisionDrop),
 				appliedRate:      0,
 			},
 			{
 				rules:            `  [{"service": "webserver", "name": "web.request", "sample_rate": 0}]`,
 				generalRate:      "1",
-				samplingPriority: -1,
+				samplingPriority: float64(decisionDrop),
 				appliedRate:      0,
 			},
 		}
@@ -1089,7 +1089,7 @@ func TestRulesSampler(t *testing.T) {
 		originSpan.SetTag("tag1", "val1")
 		// based on the  Tag("tag0", "val0") start span option, span sampling would be 'drop',
 		// and setting the second pair of tags doesn't invoke sampling func
-		assert.EqualValues(t, -1, originSpan.metrics[keySamplingPriority])
+		assert.EqualValues(t, float64(decisionDrop), originSpan.metrics[keySamplingPriority])
 		assert.EqualValues(t, 0, originSpan.metrics[keyRulesSamplerAppliedRate])
 		headers := TextMapCarrier(map[string]string{})
 
@@ -1320,12 +1320,12 @@ func TestRulesSamplerInternals(t *testing.T) {
 		// first span kept, second dropped
 		span := makeSpanAt("http.request", "test-service", now)
 		rs.traces.applyRate(span, 1.0, now, samplernames.RuleRate)
-		assert.EqualValues(ext.PriorityUserKeep, span.metrics[keySamplingPriority])
+		assert.EqualValues(int(decisionKeep), span.metrics[keySamplingPriority])
 		assert.Equal(1.0, span.metrics[keyRulesSamplerAppliedRate])
 		assert.Equal(1.0, span.metrics[keyRulesSamplerLimiterRate])
 		span = makeSpanAt("http.request", "test-service", now)
 		rs.traces.applyRate(span, 1.0, now, samplernames.RuleRate)
-		assert.EqualValues(ext.PriorityUserReject, span.metrics[keySamplingPriority])
+		assert.EqualValues(int(decisionDrop), span.metrics[keySamplingPriority])
 		assert.Equal(1.0, span.metrics[keyRulesSamplerAppliedRate])
 		assert.Equal(0.75, span.metrics[keyRulesSamplerLimiterRate])
 	})

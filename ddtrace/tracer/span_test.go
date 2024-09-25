@@ -204,7 +204,7 @@ func TestShouldDrop(t *testing.T) {
 		rate   float64
 		want   bool
 	}{
-		{1, 0, 0, true},
+		{1, 0, 0, false},
 		{2, 1, 0, true},
 		{0, 1, 0, true},
 		{0, 0, 1, true},
@@ -214,10 +214,11 @@ func TestShouldDrop(t *testing.T) {
 	} {
 		t.Run("", func(t *testing.T) {
 			s := newSpan("", "", "", 1, 1, 0)
-			s.SetTag(ext.SamplingPriority, tt.prio)
+			s.SetTag(ext.ManualKeep, tt.prio == int(decisionKeep))
+			s.SetTag(ext.ManualDrop, tt.prio == int(decisionDrop))
 			s.SetTag(ext.EventSampleRate, tt.rate)
 			atomic.StoreInt32(&s.context.errors, tt.errors)
-			assert.Equal(t, shouldKeep(s), tt.want)
+			assert.Equal(t, tt.want, shouldKeep(s))
 		})
 	}
 
@@ -814,40 +815,6 @@ func TestSpanModifyWhileFlushing(t *testing.T) {
 			tracer.traceWriter.flush()
 			time.Sleep(10 * time.Millisecond)
 		}
-	}
-}
-
-func TestSpanSamplingPriority(t *testing.T) {
-	assert := assert.New(t)
-	tracer, err := newTracer(withTransport(newDefaultTransport()))
-	defer tracer.Stop()
-	assert.NoError(err)
-
-	span := tracer.newRootSpan("my.name", "my.service", "my.resource")
-	_, ok := span.metrics[keySamplingPriority]
-	assert.True(ok)
-	_, ok = span.metrics[keySamplingPriorityRate]
-	assert.True(ok)
-
-	for _, priority := range []int{
-		ext.PriorityUserReject,
-		ext.PriorityAutoReject,
-		ext.PriorityAutoKeep,
-		ext.PriorityUserKeep,
-		999, // not used, but we should allow it
-	} {
-		span.SetTag(ext.SamplingPriority, priority)
-		v, ok := span.metrics[keySamplingPriority]
-		assert.True(ok)
-		assert.EqualValues(priority, v)
-		assert.EqualValues(*span.context.trace.priority, v)
-
-		childSpan := tracer.newChildSpan("my.child", span)
-		v0, ok0 := span.metrics[keySamplingPriority]
-		v1, ok1 := childSpan.metrics[keySamplingPriority]
-		assert.Equal(ok0, ok1)
-		assert.Equal(v0, v1)
-		assert.EqualValues(*childSpan.context.trace.priority, v0)
 	}
 }
 

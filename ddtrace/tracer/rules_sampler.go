@@ -16,7 +16,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
 
@@ -487,15 +486,15 @@ func (rs *traceRulesSampler) applyRate(span *Span, rate float64, now time.Time, 
 	span.setMetric(keyRulesSamplerAppliedRate, rate)
 	delete(span.metrics, keySamplingPriorityRate)
 	if !sampledByRate(span.traceID, rate) {
-		span.setSamplingPriorityLocked(ext.PriorityUserReject, sampler)
+		span.setSamplingPriorityLocked(int(decisionDrop), sampler)
 		return
 	}
 
 	sampled, rate := rs.limiter.allowOne(now)
 	if sampled {
-		span.setSamplingPriorityLocked(ext.PriorityUserKeep, sampler)
+		span.setSamplingPriorityLocked(int(decisionKeep), sampler)
 	} else {
-		span.setSamplingPriorityLocked(ext.PriorityUserReject, sampler)
+		span.setSamplingPriorityLocked(int(decisionDrop), sampler)
 	}
 	span.setMetric(keyRulesSamplerLimiterRate, rate)
 }
