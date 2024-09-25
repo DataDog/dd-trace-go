@@ -206,7 +206,7 @@ func setSpanTargetFromPeer(span *tracer.Span, p peer.Peer) {
 			if ip != "" {
 				span.SetTag(ext.TargetHost, ip)
 			}
-			span.SetTag(ext.TargetPort, port)
+			span.SetTag(ext.NetworkDestinationPort, port)
 		}
 	}
 }

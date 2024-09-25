@@ -367,7 +367,7 @@ func TestObserver_Connect(t *testing.T) {
 			var errSpans []*mocktracer.Span
 
 			for _, span := range spans {
-				port := span.Tag(ext.TargetPort)
+				port := span.Tag(ext.NetworkDestinationPort)
 				require.NotEmpty(t, port)
 				switch port {
 				case "9042":
@@ -396,7 +396,7 @@ func TestObserver_Connect(t *testing.T) {
 				assert.Equal(t, "127.0.0.1", span.Tag(ext.TargetHost))
 			}
 			for _, span := range okSpans {
-				assert.Equal(t, "9042", span.Tag(ext.TargetPort))
+				assert.Equal(t, "9042", span.Tag(ext.NetworkDestinationPort))
 				assert.Nil(t, span.Tag(ext.ErrorMsg))
 
 				if span.Tag(ext.CassandraHostID) != nil {
@@ -412,7 +412,7 @@ func TestObserver_Connect(t *testing.T) {
 				assert.NotEmpty(t, span.Tag(ext.CassandraHostID))
 			}
 			for _, span := range errSpans {
-				assert.Equal(t, "9043", span.Tag(ext.TargetPort))
+				assert.Equal(t, "9043", span.Tag(ext.NetworkDestinationPort))
 				assert.NotNil(t, span.Tag(ext.ErrorMsg))
 
 				// since this node does not exist, this information should not be present.
@@ -432,7 +432,7 @@ func assertCommonTags(t *testing.T, span *mocktracer.Span) {
 	assert.Equal(t, ext.SpanKindClient, span.Tag(ext.SpanKind))
 	assert.Equal(t, "cassandra", span.Tag(ext.DBSystem))
 	assert.Equal(t, "127.0.0.1:9042,127.0.0.1:9043", span.Tag(ext.CassandraContactPoints))
-	assert.Equal(t, "9042", span.Tag(ext.TargetPort))
+	assert.Equal(t, "9042", span.Tag(ext.NetworkDestinationPort))
 	assert.Equal(t, "127.0.0.1", span.Tag(ext.TargetHost))
 	assert.Equal(t, "dd-trace-go-test-cluster", span.Tag(ext.CassandraCluster))
 	assert.Equal(t, "dd-trace-go-test-datacenter", span.Tag(ext.CassandraDatacenter))

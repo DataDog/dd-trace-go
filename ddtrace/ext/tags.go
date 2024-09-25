@@ -20,7 +20,7 @@ const (
 
 	// TargetPort sets the target host port.
 	// Deprecated: Use NetworkDestinationPort instead.
-	TargetPort = "out.port"
+	TargetPort = "network.destination.port"
 
 	// NetworkDestinationPort is the remote port number of the outbound connection.
 	NetworkDestinationPort = "network.destination.port"

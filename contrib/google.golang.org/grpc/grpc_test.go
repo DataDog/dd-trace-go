@@ -102,7 +102,7 @@ func TestUnary(t *testing.T) {
 			// this tag always contains the resolved address
 			assert.Equal("127.0.0.1", clientSpan.Tag(ext.TargetHost))
 			assert.Equal("localhost", clientSpan.Tag(ext.PeerHostname))
-			assert.Equal(rig.port, clientSpan.Tag(ext.TargetPort))
+			assert.Equal(rig.port, clientSpan.Tag(ext.NetworkDestinationPort))
 			assert.Equal(tt.wantCode.String(), clientSpan.Tag(tagCode))
 			assert.Equal(rootSpan.TraceID(), clientSpan.TraceID())
 			assert.Equal(methodKindUnary, clientSpan.Tag(tagMethodKind))
@@ -173,7 +173,7 @@ func TestStreaming(t *testing.T) {
 				assert.Equal(t, "127.0.0.1", span.Tag(ext.TargetHost),
 					"expected target host tag to be set in span: %v", span)
 				assert.Equal(t, "localhost", span.Tag(ext.PeerHostname))
-				assert.Equal(t, rig.port, span.Tag(ext.TargetPort),
+				assert.Equal(t, rig.port, span.Tag(ext.NetworkDestinationPort),
 					"expected target host port to be set in span: %v", span)
 				fallthrough
 			case "grpc.server":

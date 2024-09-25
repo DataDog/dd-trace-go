@@ -69,7 +69,7 @@ func reduceKeys(meta map[string]string) map[string]string {
 		"application_name":                 ext.DBApplication,
 		"dbname":                           ext.DBName,
 		"host":                             ext.TargetHost,
-		"port":                             ext.TargetPort,
+		"port":                             ext.NetworkDestinationPort,
 		ext.MicrosoftSQLServerInstanceName: ext.MicrosoftSQLServerInstanceName,
 	}
 	m := make(map[string]string)

@@ -237,7 +237,7 @@ func (tq *Query) Iter() *Iter {
 	tIter := &Iter{iter, span}
 	if tIter.Host() != nil {
 		tIter.span.SetTag(ext.TargetHost, tIter.Iter.Host().HostID())
-		tIter.span.SetTag(ext.TargetPort, strconv.Itoa(tIter.Iter.Host().Port()))
+		tIter.span.SetTag(ext.NetworkDestinationPort, strconv.Itoa(tIter.Iter.Host().Port()))
 
 		cluster := tIter.Iter.Host().ClusterName()
 		dc := tIter.Iter.Host().DataCenter()
@@ -415,7 +415,7 @@ func commonStartSpanOptions(p params) []tracer.StartSpanOption {
 	if p.hostInfo != nil {
 		opts = append(opts,
 			tracer.Tag(ext.TargetHost, p.hostInfo.ConnectAddress().String()),
-			tracer.Tag(ext.TargetPort, strconv.Itoa(p.hostInfo.Port())),
+			tracer.Tag(ext.NetworkDestinationPort, strconv.Itoa(p.hostInfo.Port())),
 		)
 		if p.hostInfo.HostID() != "" {
 			opts = append(opts, tracer.Tag(ext.CassandraHostID, p.hostInfo.HostID()))

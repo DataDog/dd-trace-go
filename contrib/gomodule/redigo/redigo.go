@@ -165,7 +165,7 @@ func newChildSpan(ctx context.Context, p *params) *tracer.Span {
 	}
 	span, _ := tracer.StartSpanFromContext(ctx, p.config.spanName, opts...)
 	span.SetTag("out.network", p.network)
-	span.SetTag(ext.TargetPort, p.port)
+	span.SetTag(ext.NetworkDestinationPort, p.port)
 	span.SetTag(ext.TargetHost, p.host)
 	return span
 }

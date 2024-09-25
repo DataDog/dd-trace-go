@@ -94,7 +94,7 @@ func TestErrorWrapper(t *testing.T) {
 	assert.NotContains(span.Tags(), ext.CassandraContactPoints)
 
 	if iter.Host() != nil {
-		assert.Equal(span.Tag(ext.TargetPort), "9042")
+		assert.Equal(span.Tag(ext.NetworkDestinationPort), "9042")
 		assert.Equal(span.Tag(ext.TargetHost), iter.Host().HostID())
 		assert.Equal(span.Tag(ext.CassandraCluster), "dd-trace-go-test-cluster")
 		assert.Equal(span.Tag(ext.CassandraDatacenter), "dd-trace-go-test-datacenter")
@@ -142,7 +142,7 @@ func TestChildWrapperSpan(t *testing.T) {
 	assert.NotContains(childSpan.Tags(), ext.CassandraContactPoints)
 
 	if iter.Host() != nil {
-		assert.Equal(childSpan.Tag(ext.TargetPort), "9042")
+		assert.Equal(childSpan.Tag(ext.NetworkDestinationPort), "9042")
 		assert.Equal(childSpan.Tag(ext.TargetHost), iter.Host().HostID())
 		assert.Equal(childSpan.Tag(ext.CassandraCluster), "dd-trace-go-test-cluster")
 		assert.Equal(childSpan.Tag(ext.CassandraDatacenter), "dd-trace-go-test-datacenter")
@@ -204,7 +204,7 @@ func TestCompatMode(t *testing.T) {
 			t.Setenv("DD_TRACE_GOCQL_COMPAT", tc.gocqlCompat)
 			spans := genSpans(t)
 			s := spans[0]
-			assert.Equal(t, s.Tag(ext.TargetPort), "9042")
+			assert.Equal(t, s.Tag(ext.NetworkDestinationPort), "9042")
 			assert.NotEmpty(t, s.Tag(ext.TargetHost))
 			assert.Equal(t, tc.wantCluster, s.Tag(ext.CassandraCluster))
 			assert.Equal(t, "dd-trace-go-test-datacenter", s.Tag(ext.CassandraDatacenter))

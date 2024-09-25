@@ -58,7 +58,7 @@ func TestClientEvalSha(t *testing.T) {
 	assert.Equal(ext.SpanTypeRedis, span.Tag(ext.SpanType))
 	assert.Equal("my-redis", span.Tag(ext.ServiceName))
 	assert.Equal("127.0.0.1", span.Tag(ext.TargetHost))
-	assert.Equal("6379", span.Tag(ext.TargetPort))
+	assert.Equal("6379", span.Tag(ext.NetworkDestinationPort))
 	assert.Equal("evalsha", span.Tag(ext.ResourceName))
 	assert.Equal("go-redis/redis.v7", span.Tag(ext.Component))
 	assert.Equal(ext.SpanKindClient, span.Tag(ext.SpanKind))
@@ -84,7 +84,7 @@ func TestClient(t *testing.T) {
 	assert.Equal(ext.SpanTypeRedis, span.Tag(ext.SpanType))
 	assert.Equal("my-redis", span.Tag(ext.ServiceName))
 	assert.Equal("127.0.0.1", span.Tag(ext.TargetHost))
-	assert.Equal("6379", span.Tag(ext.TargetPort))
+	assert.Equal("6379", span.Tag(ext.NetworkDestinationPort))
 	assert.Equal("set test_key test_value: ", span.Tag("redis.raw_command"))
 	assert.Equal("3", span.Tag("redis.args_length"))
 	assert.Equal("go-redis/redis.v7", span.Tag(ext.Component))
@@ -167,10 +167,10 @@ func TestAdditionalTagsFromClient(t *testing.T) {
 		simpleClient := redis.NewUniversalClient(simpleClientOpts)
 		config := &tracer.StartSpanConfig{}
 		expectedTags := map[string]interface{}{
-			"out.db":                  "0",
-			"out.host":                "127.0.0.1",
-			"out.port":                "6379",
-			"db.redis.database_index": 0,
+			"out.db":                   "0",
+			"out.host":                 "127.0.0.1",
+			"network.destination.port": "6379",
+			"db.redis.database_index":  0,
 		}
 
 		additionalTagOptions := additionalTagOptions(simpleClient)
@@ -244,7 +244,7 @@ func TestPipeline(t *testing.T) {
 	assert.Equal("my-redis", span.Tag(ext.ServiceName))
 	assert.Equal("expire pipeline_counter 3600: false\n", span.Tag(ext.ResourceName))
 	assert.Equal("127.0.0.1", span.Tag(ext.TargetHost))
-	assert.Equal("6379", span.Tag(ext.TargetPort))
+	assert.Equal("6379", span.Tag(ext.NetworkDestinationPort))
 	assert.Equal("1", span.Tag("redis.pipeline_length"))
 	assert.Equal("go-redis/redis.v7", span.Tag(ext.Component))
 	assert.Equal(ext.SpanKindClient, span.Tag(ext.SpanKind))
@@ -305,7 +305,7 @@ func TestChildSpan(t *testing.T) {
 	assert.NotNil(child)
 	assert.Equal(child.ParentID(), parent.SpanID())
 	assert.Equal(child.Tag(ext.TargetHost), "127.0.0.1")
-	assert.Equal(child.Tag(ext.TargetPort), "6379")
+	assert.Equal(child.Tag(ext.NetworkDestinationPort), "6379")
 }
 
 func TestMultipleCommands(t *testing.T) {
@@ -352,7 +352,7 @@ func TestError(t *testing.T) {
 		assert.NotNil(err)
 		assert.Equal(err.Error(), span.Tag(ext.ErrorMsg))
 		assert.Equal("127.0.0.1", span.Tag(ext.TargetHost))
-		assert.Equal("6378", span.Tag(ext.TargetPort))
+		assert.Equal("6378", span.Tag(ext.NetworkDestinationPort))
 		assert.Equal("get key: ", span.Tag("redis.raw_command"))
 		assert.Equal("go-redis/redis.v7", span.Tag(ext.Component))
 		assert.Equal(ext.SpanKindClient, span.Tag(ext.SpanKind))
@@ -378,7 +378,7 @@ func TestError(t *testing.T) {
 		assert.Equal("redis.command", span.OperationName())
 		assert.Zero(span.Tag(ext.ErrorMsg))
 		assert.Equal("127.0.0.1", span.Tag(ext.TargetHost))
-		assert.Equal("6379", span.Tag(ext.TargetPort))
+		assert.Equal("6379", span.Tag(ext.NetworkDestinationPort))
 		assert.Equal("get non_existent_key: ", span.Tag("redis.raw_command"))
 		assert.Equal("go-redis/redis.v7", span.Tag(ext.Component))
 		assert.Equal(ext.SpanKindClient, span.Tag(ext.SpanKind))
@@ -412,7 +412,7 @@ func TestError(t *testing.T) {
 		assert.Zero(span.Tag(ext.ErrorMsg))
 		assert.Equal("redis.command", span.OperationName())
 		assert.Equal("127.0.0.1", span.Tag(ext.TargetHost))
-		assert.Equal("6379", span.Tag(ext.TargetPort))
+		assert.Equal("6379", span.Tag(ext.NetworkDestinationPort))
 		assert.Equal("get test_key: ", span.Tag("redis.raw_command"))
 		assert.Equal("go-redis/redis.v7", span.Tag(ext.Component))
 		assert.Equal(ext.SpanKindClient, span.Tag(ext.SpanKind))

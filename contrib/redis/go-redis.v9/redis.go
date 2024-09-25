@@ -86,7 +86,7 @@ func additionalTagOptions(client redis.UniversalClient) []tracer.StartSpanOption
 			}
 			additionalTags = []tracer.StartSpanOption{
 				tracer.Tag(ext.TargetHost, host),
-				tracer.Tag(ext.TargetPort, port),
+				tracer.Tag(ext.NetworkDestinationPort, port),
 				tracer.Tag("out.db", strconv.Itoa(opt.DB)),
 			}
 		}
