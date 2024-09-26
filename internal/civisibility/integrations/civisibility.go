@@ -6,6 +6,7 @@
 package integrations
 
 import (
+	"fmt"
 	"os"
 	"os/signal"
 	"regexp"
@@ -61,16 +62,14 @@ func internalCiVisibilityInitialization(tracerInitializer func([]tracer.StartOpt
 		// Avoid sampling rate warning (in CI Visibility mode we send all data)
 		_ = os.Setenv("DD_TRACE_SAMPLE_RATE", "1")
 
-		// Preload the CodeOwner file
-		_ = utils.GetCodeOwners()
-
 		// Preload all CI, Git, and CodeOwners tags.
 		ciTags := utils.GetCITags()
 		_ = utils.GetCIMetrics()
 
 		// Check if DD_SERVICE has been set; otherwise default to the repo name (from the spec).
 		var opts []tracer.StartOption
-		if v := os.Getenv("DD_SERVICE"); v == "" {
+		serviceName := os.Getenv("DD_SERVICE")
+		if serviceName == "" {
 			if repoURL, ok := ciTags[constants.GitRepositoryURL]; ok {
 				// regex to sanitize the repository url to be used as a service name
 				repoRegex := regexp.MustCompile(`(?m)/([a-zA-Z0-9\-_.]*)$`)
@@ -78,9 +77,15 @@ func internalCiVisibilityInitialization(tracerInitializer func([]tracer.StartOpt
 				if len(matches) > 1 {
 					repoURL = strings.TrimSuffix(matches[1], ".git")
 				}
-				opts = append(opts, tracer.WithService(repoURL))
+				serviceName = repoURL
+				opts = append(opts, tracer.WithService(serviceName))
 			}
 		}
+
+		wChn := initializeBackendRequests(serviceName)
+
+		// Preload the CodeOwner file
+		_ = utils.GetCodeOwners()
 
 		// Initialize the tracer
 		tracerInitializer(opts)
@@ -93,6 +98,10 @@ func internalCiVisibilityInitialization(tracerInitializer func([]tracer.StartOpt
 			ExitCiVisibility()
 			os.Exit(1)
 		}()
+
+		<-wChn
+		fmt.Println(*ciVisibilitySettings)
+		fmt.Println(*ciVisibilityEfdData)
 	})
 }
 
