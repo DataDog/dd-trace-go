@@ -214,5 +214,10 @@ func fillCommonTags(opts []tracer.StartSpanOption) []tracer.StartSpanOption {
 		opts = append(opts, tracer.Tag(k, v))
 	}
 
+	// Apply CI metrics
+	for k, v := range utils.GetCIMetrics() {
+		opts = append(opts, tracer.Tag(k, v))
+	}
+
 	return opts
 }

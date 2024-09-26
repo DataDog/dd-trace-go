@@ -81,6 +81,11 @@ type tracer struct {
 	// finished, and dropped
 	spansStarted, spansFinished, tracesDropped uint32
 
+	// Keeps track of the total number of traces dropped for accurate logging.
+	totalTracesDropped uint32
+
+	logDroppedTraces *time.Ticker
+
 	// Records the number of dropped P0 traces and spans.
 	droppedP0Traces, droppedP0Spans uint32
 
@@ -276,6 +281,7 @@ func newUnstartedTracer(opts ...StartOption) *tracer {
 		rulesSampling:    rulesSampler,
 		prioritySampling: sampler,
 		pid:              os.Getpid(),
+		logDroppedTraces: time.NewTicker(1 * time.Second),
 		stats:            newConcentrator(c, defaultStatsBucketSize),
 		obfuscator: obfuscate.NewObfuscator(obfuscate.Config{
 			SQL: obfuscate.SQLConfig{
@@ -451,7 +457,15 @@ func (t *tracer) pushChunk(trace *chunk) {
 	select {
 	case t.out <- trace:
 	default:
-		log.Error("payload queue full, dropping %d traces", len(trace.spans))
+		log.Debug("payload queue full, trace dropped %d spans", len(trace.spans))
+		atomic.AddUint32(&t.totalTracesDropped, 1)
+	}
+	select {
+	case <-t.logDroppedTraces.C:
+		if t := atomic.SwapUint32(&t.totalTracesDropped, 0); t > 0 {
+			log.Error("%d traces dropped through payload queue", t)
+		}
+	default:
 	}
 }
 
