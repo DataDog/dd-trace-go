@@ -401,7 +401,7 @@ func (t *trace) setSamplingPriorityLocked(p int, sampler samplernames.SamplerNam
 	}
 	*t.priority = float64(p)
 	curDM, existed := t.propagatingTags[keyDecisionMaker]
-	if p > 0 && sampler != samplernames.Unknown {
+	if p > int(decisionDrop) && sampler != samplernames.Unknown {
 		// We have a positive priority and the sampling mechanism isn't set.
 		// Send nothing when sampler is `Unknown` for RFC compliance.
 		// If a global sampling rate is set, it was always applied first. And this call can be
@@ -416,7 +416,7 @@ func (t *trace) setSamplingPriorityLocked(p int, sampler samplernames.SamplerNam
 			return true
 		}
 	}
-	if p <= 0 && existed {
+	if p <= int(decisionDrop) && existed {
 		delete(t.propagatingTags, keyDecisionMaker)
 	}
 

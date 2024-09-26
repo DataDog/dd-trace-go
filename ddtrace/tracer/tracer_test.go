@@ -907,7 +907,7 @@ func TestPropagationDefaults(t *testing.T) {
 	assert.Equal(headers.Get(DefaultTraceIDHeader), tid)
 	assert.Equal(headers.Get(DefaultParentIDHeader), pid)
 	assert.Equal(headers.Get(DefaultBaggageHeaderPrefix+"x"), "y")
-	assert.Equal(headers.Get(DefaultPriorityHeader), "-1")
+	assert.Equal(headers.Get(DefaultPriorityHeader), "1")
 
 	// retrieve the spanContext
 	propagated, err := tracer.Extract(carrier)

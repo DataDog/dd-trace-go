@@ -295,7 +295,7 @@ func TestTextMapPropagatorInjectHeader(t *testing.T) {
 	assert.Equal(headers.Get("tid"), tid)
 	assert.Equal(headers.Get("pid"), pid)
 	assert.Equal(headers.Get("bg-item"), "x")
-	assert.Equal(headers.Get(DefaultPriorityHeader), "0")
+	assert.Equal(headers.Get(DefaultPriorityHeader), "1")
 }
 
 func TestTextMapPropagatorOrigin(t *testing.T) {
@@ -329,7 +329,7 @@ func TestTextMapPropagatorTraceTagsWithPriority(t *testing.T) {
 	t.Setenv(headerPropagationStyleExtract, "datadog")
 	t.Setenv(headerPropagationStyleInject, "datadog")
 	src := TextMapCarrier(map[string]string{
-		DefaultPriorityHeader: "1",
+		DefaultPriorityHeader: fmt.Sprintf("%d", decisionKeep),
 		DefaultTraceIDHeader:  "1",
 		DefaultParentIDHeader: "1",
 		traceTagsHeader:       "hello=world=,_dd.p.dm=934086a6-4",
@@ -1354,7 +1354,7 @@ func TestEnvVars(t *testing.T) {
 					outHeaders: TextMapCarrier{
 						traceparentHeader:     "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-00",
 						tracestateHeader:      "dd=s:-1;o:synthetics;p:00f067aa0ba902b7;t.tid:4bf92f3577b34da6,foo=1",
-						DefaultPriorityHeader: "-1",
+						DefaultPriorityHeader: fmt.Sprintf("%d", decisionDrop),
 						DefaultTraceIDHeader:  "4bf92f3577b34da6a3ce929d0e0e4736",
 						DefaultParentIDHeader: "00f067aa0ba902b7",
 					},
@@ -1648,7 +1648,7 @@ func TestEnvVars(t *testing.T) {
 				inHeaders: TextMapCarrier{
 					DefaultTraceIDHeader:  "123456789",
 					DefaultParentIDHeader: "987654321",
-					DefaultPriorityHeader: "-2",
+					DefaultPriorityHeader: fmt.Sprintf("%d", decisionDrop),
 					originHeader:          "test.origin",
 				},
 			},
@@ -1660,7 +1660,7 @@ func TestEnvVars(t *testing.T) {
 				inHeaders: TextMapCarrier{
 					DefaultTraceIDHeader:  "123456789",
 					DefaultParentIDHeader: "987654321",
-					DefaultPriorityHeader: "-2",
+					DefaultPriorityHeader: fmt.Sprintf("%d", decisionDrop),
 					originHeader:          "synthetics;,~web",
 				},
 			},
@@ -1863,7 +1863,7 @@ func TestEnvVars(t *testing.T) {
 					in: TextMapCarrier{
 						DefaultTraceIDHeader:  "1",
 						DefaultParentIDHeader: "1",
-						DefaultPriorityHeader: "1",
+						DefaultPriorityHeader: fmt.Sprintf("%d", decisionKeep),
 						traceparentHeader:     "00-00000000000000000000000000000002-0000000000000002-00",
 						b3SingleHeader:        "3-3",
 						b3TraceIDHeader:       "0000000000000004",
@@ -1922,7 +1922,7 @@ func TestTraceContextPrecedence(t *testing.T) {
 		traceparentHeader:     "00-00000000000000000000000000000001-0000000000000001-01",
 		DefaultTraceIDHeader:  "1",
 		DefaultParentIDHeader: "22",
-		DefaultPriorityHeader: "2",
+		DefaultPriorityHeader: fmt.Sprintf("%d", decisionKeep),
 		b3SingleHeader:        "1-333",
 	})
 	assert.NoError(t, err)
@@ -2183,7 +2183,7 @@ func BenchmarkExtractDatadog(b *testing.B) {
 	carrier := TextMapCarrier(map[string]string{
 		DefaultTraceIDHeader:  "1123123132131312313123123",
 		DefaultParentIDHeader: "1212321131231312312312312",
-		DefaultPriorityHeader: "-1",
+		DefaultPriorityHeader: fmt.Sprintf("%d", decisionDrop),
 		traceTagsHeader: `adad=ada2,adad=ada2,ad1d=ada2,adad=ada2,adad=ada2,
 								adad=ada2,adad=aad2,adad=ada2,adad=ada2,adad=ada2,adad=ada2`,
 	})

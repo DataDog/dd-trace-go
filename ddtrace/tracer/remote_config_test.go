@@ -73,7 +73,7 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 		s = tracer.StartSpan("not.web.request")
 		s.Finish()
 		require.Equal(t, 0.5, s.metrics[keyRulesSamplerAppliedRate])
-		if p, ok := s.context.trace.samplingPriority(); ok && p > 0 {
+		if p, ok := s.context.trace.samplingPriority(); ok && p > int(decisionDrop) {
 			require.Equal(t, samplerToDM(samplernames.RuleRate), s.context.trace.propagatingTags[keyDecisionMaker])
 		}
 
@@ -162,7 +162,7 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 		s := tracer.StartSpan("web.request")
 		s.Finish()
 		require.Equal(t, 0.1, s.metrics[keyRulesSamplerAppliedRate])
-		if p, ok := s.context.trace.samplingPriority(); ok && p > 0 {
+		if p, ok := s.context.trace.samplingPriority(); ok && p > int(decisionDrop) {
 			require.Equal(t, samplerToDM(samplernames.RuleRate), s.context.trace.propagatingTags[keyDecisionMaker])
 		}
 
@@ -189,7 +189,7 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 		s.resource = "not_abc"
 		s.Finish()
 		require.Equal(t, 0.5, s.metrics[keyRulesSamplerAppliedRate])
-		if p, ok := s.context.trace.samplingPriority(); ok && p > 0 {
+		if p, ok := s.context.trace.samplingPriority(); ok && p > int(decisionDrop) {
 			require.Equal(t, samplerToDM(samplernames.RuleRate), s.context.trace.propagatingTags[keyDecisionMaker])
 		}
 
@@ -222,7 +222,7 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 		s := tracer.StartSpan("web.request")
 		s.Finish()
 		require.Equal(t, 0.1, s.metrics[keyRulesSamplerAppliedRate])
-		if p, ok := s.context.trace.samplingPriority(); ok && p > 0 {
+		if p, ok := s.context.trace.samplingPriority(); ok && p > int(decisionDrop) {
 			require.Equal(t, samplerToDM(samplernames.RuleRate), s.context.trace.propagatingTags[keyDecisionMaker])
 		}
 
@@ -256,7 +256,7 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 		s.resource = "not_abc"
 		s.Finish()
 		require.Equal(t, 0.3, s.metrics[keyRulesSamplerAppliedRate])
-		if p, ok := s.context.trace.samplingPriority(); ok && p > 0 {
+		if p, ok := s.context.trace.samplingPriority(); ok && p > int(decisionDrop) {
 			require.Equal(
 				t,
 				samplerToDM(samplernames.RemoteDynamicRule),
@@ -272,7 +272,7 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 		s.resource = "not_abc"
 		s.Finish()
 		require.Equal(t, 0.1, s.metrics[keyRulesSamplerAppliedRate])
-		if p, ok := s.context.trace.samplingPriority(); ok && p > 0 {
+		if p, ok := s.context.trace.samplingPriority(); ok && p > int(decisionDrop) {
 			require.Equal(t, samplerToDM(samplernames.RuleRate), s.context.trace.propagatingTags[keyDecisionMaker])
 		}
 		telemetryClient.AssertNumberOfCalls(t, "ConfigChange", 2)
