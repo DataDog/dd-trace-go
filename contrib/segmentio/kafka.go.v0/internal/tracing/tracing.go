@@ -84,7 +84,7 @@ func StartConsumeSpan(ctx context.Context, cfg *Config, kafkaCfg *KafkaConfig, m
 	return span
 }
 
-func StartProduceSpan(ctx context.Context, cfg *Config, kafkaCfg *KafkaConfig, writer *KafkaWriter, msg *KafkaMessage) ddtrace.Span {
+func StartProduceSpan(ctx context.Context, cfg *Config, kafkaCfg *KafkaConfig, writer *KafkaWriter, msg *KafkaMessage, spanOpts ...tracer.StartSpanOption) ddtrace.Span {
 	opts := []tracer.StartSpanOption{
 		tracer.ServiceName(cfg.producerServiceName),
 		tracer.SpanType(ext.SpanTypeMessageProducer),
@@ -101,6 +101,7 @@ func StartProduceSpan(ctx context.Context, cfg *Config, kafkaCfg *KafkaConfig, w
 	if !math.IsNaN(cfg.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
 	}
+	opts = append(opts, spanOpts...)
 	carrier := MessageCarrier{msg}
 	span, _ := tracer.StartSpanFromContext(ctx, cfg.producerSpanName, opts...)
 	if err := tracer.Inject(span.Context(), carrier); err != nil {
