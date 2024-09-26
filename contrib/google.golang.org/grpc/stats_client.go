@@ -54,7 +54,7 @@ func (h *clientStatsHandler) HandleRPC(ctx context.Context, rs stats.RPCStats) {
 		host, port, err := net.SplitHostPort(rs.RemoteAddr.String())
 		if err == nil {
 			if host != "" {
-				span.SetTag(ext.NetworkDestination, host)
+				span.SetTag(ext.TargetHost, host)
 			}
 			span.SetTag(ext.TargetPort, port)
 		}
