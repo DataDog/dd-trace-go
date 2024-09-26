@@ -68,7 +68,8 @@ func reduceKeys(meta map[string]string) map[string]string {
 		"user":                             ext.DBUser,
 		"application_name":                 ext.DBApplication,
 		"dbname":                           ext.DBName,
-		"host":                             ext.TargetHost,
+		"host":                             ext.NetworkDestinationName,
+		"ip":                               ext.NetworkDestinationIP,
 		"port":                             ext.TargetPort,
 		ext.MicrosoftSQLServerInstanceName: ext.MicrosoftSQLServerInstanceName,
 	}

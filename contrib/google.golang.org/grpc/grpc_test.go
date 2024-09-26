@@ -100,7 +100,7 @@ func TestUnary(t *testing.T) {
 			assert.NotNil(rootSpan)
 
 			// this tag always contains the resolved address
-			assert.Equal("127.0.0.1", clientSpan.Tag(ext.TargetHost))
+			assert.Equal("127.0.0.1", clientSpan.Tag(ext.NetworkDestinationIP))
 			assert.Equal("localhost", clientSpan.Tag(ext.PeerHostname))
 			assert.Equal(rig.port, clientSpan.Tag(ext.TargetPort))
 			assert.Equal(tt.wantCode.String(), clientSpan.Tag(tagCode))
@@ -170,7 +170,7 @@ func TestStreaming(t *testing.T) {
 			}
 			switch span.OperationName() {
 			case "grpc.client":
-				assert.Equal(t, "127.0.0.1", span.Tag(ext.TargetHost),
+				assert.Equal(t, "127.0.0.1", span.Tag(ext.NetworkDestinationIP),
 					"expected target host tag to be set in span: %v", span)
 				assert.Equal(t, "localhost", span.Tag(ext.PeerHostname))
 				assert.Equal(t, rig.port, span.Tag(ext.TargetPort),

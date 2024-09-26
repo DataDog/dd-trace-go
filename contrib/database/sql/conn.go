@@ -294,7 +294,7 @@ func (tc *TracedConn) injectComments(ctx context.Context, query string, mode tra
 		spanCtx = span.Context()
 	}
 
-	carrier := tracer.SQLCommentCarrier{Query: query, Mode: mode, DBServiceName: tc.cfg.serviceName, PeerDBHostname: tc.meta[ext.TargetHost], PeerDBName: tc.meta[ext.DBName], PeerService: tc.providedPeerService(ctx)}
+	carrier := tracer.SQLCommentCarrier{Query: query, Mode: mode, DBServiceName: tc.cfg.serviceName, PeerDBHostname: tc.meta[ext.NetworkDestinationName], PeerDBName: tc.meta[ext.DBName], PeerService: tc.providedPeerService(ctx)}
 	if err := carrier.Inject(spanCtx); err != nil {
 		// this should never happen
 		instr.Logger().Warn("contrib/database/sql: failed to inject query comments: %v", err)

@@ -53,7 +53,7 @@ func TestClientStatsHandler(t *testing.T) {
 	assert.Equal(serviceName, tags["service.name"])
 	assert.Equal("/grpc.Fixture/Ping", tags["resource.name"])
 	assert.Equal("/grpc.Fixture/Ping", tags[tagMethodName])
-	assert.Equal("127.0.0.1", tags[ext.TargetHost])
+	assert.Equal("127.0.0.1", tags[ext.NetworkDestinationIP])
 	assert.Equal(server.port, tags[ext.TargetPort])
 	assert.Equal("bar", tags["foo"])
 	assert.Equal("grpc", tags[ext.RPCSystem])

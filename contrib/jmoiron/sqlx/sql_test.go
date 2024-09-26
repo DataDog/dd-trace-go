@@ -49,12 +49,12 @@ func TestMySQL(t *testing.T) {
 		TableName:  tableName,
 		ExpectName: "mysql.query",
 		ExpectTags: map[string]interface{}{
-			ext.ServiceName: "mysql-test",
-			ext.SpanType:    ext.SpanTypeSQL,
-			ext.TargetHost:  "127.0.0.1",
-			ext.TargetPort:  "3306",
-			ext.DBUser:      "test",
-			ext.DBName:      "test",
+			ext.ServiceName:          "mysql-test",
+			ext.SpanType:             ext.SpanTypeSQL,
+			ext.NetworkDestinationIP: "127.0.0.1",
+			ext.TargetPort:           "3306",
+			ext.DBUser:               "test",
+			ext.DBName:               "test",
 		},
 	}
 	sqltest.RunAll(t, testConfig)
@@ -74,12 +74,12 @@ func TestPostgres(t *testing.T) {
 		TableName:  tableName,
 		ExpectName: "postgres.query",
 		ExpectTags: map[string]interface{}{
-			ext.ServiceName: "postgres.db",
-			ext.SpanType:    ext.SpanTypeSQL,
-			ext.TargetHost:  "127.0.0.1",
-			ext.TargetPort:  "5432",
-			ext.DBUser:      "postgres",
-			ext.DBName:      "postgres",
+			ext.ServiceName:          "postgres.db",
+			ext.SpanType:             ext.SpanTypeSQL,
+			ext.NetworkDestinationIP: "127.0.0.1",
+			ext.TargetPort:           "5432",
+			ext.DBUser:               "postgres",
+			ext.DBName:               "postgres",
 		},
 	}
 	sqltest.RunAll(t, testConfig)
@@ -99,12 +99,12 @@ func TestSQLServer(t *testing.T) {
 		TableName:  tableName,
 		ExpectName: "sqlserver.query",
 		ExpectTags: map[string]interface{}{
-			ext.ServiceName: "sqlserver.db",
-			ext.SpanType:    ext.SpanTypeSQL,
-			ext.TargetHost:  "127.0.0.1",
-			ext.TargetPort:  "1433",
-			ext.DBUser:      "sa",
-			ext.DBName:      "master",
+			ext.ServiceName:          "sqlserver.db",
+			ext.SpanType:             ext.SpanTypeSQL,
+			ext.NetworkDestinationIP: "127.0.0.1",
+			ext.TargetPort:           "1433",
+			ext.DBUser:               "sa",
+			ext.DBName:               "master",
 		},
 	}
 	sqltest.RunAll(t, testConfig)
@@ -124,12 +124,12 @@ func TestOpenWithOptions(t *testing.T) {
 		TableName:  tableName,
 		ExpectName: "mysql.query",
 		ExpectTags: map[string]interface{}{
-			ext.ServiceName: "other-service",
-			ext.SpanType:    ext.SpanTypeSQL,
-			ext.TargetHost:  "127.0.0.1",
-			ext.TargetPort:  "3306",
-			ext.DBUser:      "test",
-			ext.DBName:      "test",
+			ext.ServiceName:          "other-service",
+			ext.SpanType:             ext.SpanTypeSQL,
+			ext.NetworkDestinationIP: "127.0.0.1",
+			ext.TargetPort:           "3306",
+			ext.DBUser:               "test",
+			ext.DBName:               "test",
 		},
 	}
 	sqltest.RunAll(t, testConfig)

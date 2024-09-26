@@ -414,7 +414,7 @@ func commonStartSpanOptions(p params) []tracer.StartSpanOption {
 	}
 	if p.hostInfo != nil {
 		opts = append(opts,
-			tracer.Tag(ext.TargetHost, p.hostInfo.ConnectAddress().String()),
+			tracer.Tag(ext.NetworkDestinationIP, p.hostInfo.ConnectAddress().String()),
 			tracer.Tag(ext.TargetPort, strconv.Itoa(p.hostInfo.Port())),
 		)
 		if p.hostInfo.HostID() != "" {

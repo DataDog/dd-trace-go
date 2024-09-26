@@ -393,7 +393,7 @@ func TestObserver_Connect(t *testing.T) {
 				assert.Equal(t, ext.SpanKindClient, span.Tag(ext.SpanKind))
 				assert.Equal(t, "cassandra", span.Tag(ext.DBSystem))
 				assert.Equal(t, "127.0.0.1:9042,127.0.0.1:9043", span.Tag(ext.CassandraContactPoints))
-				assert.Equal(t, "127.0.0.1", span.Tag(ext.TargetHost))
+				assert.Equal(t, "127.0.0.1", span.Tag(ext.NetworkDestinationIP))
 			}
 			for _, span := range okSpans {
 				assert.Equal(t, "9042", span.Tag(ext.TargetPort))
@@ -433,7 +433,7 @@ func assertCommonTags(t *testing.T, span *mocktracer.Span) {
 	assert.Equal(t, "cassandra", span.Tag(ext.DBSystem))
 	assert.Equal(t, "127.0.0.1:9042,127.0.0.1:9043", span.Tag(ext.CassandraContactPoints))
 	assert.Equal(t, "9042", span.Tag(ext.TargetPort))
-	assert.Equal(t, "127.0.0.1", span.Tag(ext.TargetHost))
+	assert.Equal(t, "127.0.0.1", span.Tag(ext.NetworkDestinationIP))
 	assert.Equal(t, "dd-trace-go-test-cluster", span.Tag(ext.CassandraCluster))
 	assert.Equal(t, "dd-trace-go-test-datacenter", span.Tag(ext.CassandraDatacenter))
 	assert.NotEmpty(t, span.Tag(ext.CassandraHostID))

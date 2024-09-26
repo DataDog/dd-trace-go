@@ -653,7 +653,7 @@ func setPeerServiceFromSource(s *Span) string {
 		sources = append(sources, []string{
 			ext.NetworkDestinationName,
 			ext.PeerHostname,
-			ext.TargetHost,
+			ext.NetworkDestinationName,
 		}...)
 	}
 	for _, source := range sources {
