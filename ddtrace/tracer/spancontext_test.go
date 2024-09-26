@@ -709,7 +709,7 @@ func TestSpanContextParent(t *testing.T) {
 			hasBaggage: 1,
 			trace: &trace{
 				spans:    []*Span{newBasicSpan("abc")},
-				priority: func() *float64 { v := new(float64); *v = 2; return v }(),
+				priority: func() *float64 { v := new(float64); *v = 1; return v }(),
 			},
 		},
 		"sampling_decision": {
@@ -837,35 +837,35 @@ func TestSetSamplingPriorityLocked(t *testing.T) {
 		tr := trace{
 			propagatingTags: map[string]string{},
 		}
-		tr.setSamplingPriorityLocked(0, samplernames.RemoteRate)
+		tr.setSamplingPriorityLocked(int(decisionDrop), samplernames.RemoteRate)
 		assert.Empty(t, tr.propagatingTags[keyDecisionMaker])
 	})
 	t.Run("UnknownSamplerIsIgnored", func(t *testing.T) {
 		tr := trace{
 			propagatingTags: map[string]string{},
 		}
-		tr.setSamplingPriorityLocked(0, samplernames.Unknown)
+		tr.setSamplingPriorityLocked(int(decisionDrop), samplernames.Unknown)
 		assert.Empty(t, tr.propagatingTags[keyDecisionMaker])
 	})
 	t.Run("NoPriorAndP1IsAccepted", func(t *testing.T) {
 		tr := trace{
 			propagatingTags: map[string]string{},
 		}
-		tr.setSamplingPriorityLocked(1, samplernames.RemoteRate)
+		tr.setSamplingPriorityLocked(int(decisionKeep), samplernames.RemoteRate)
 		assert.Equal(t, "-2", tr.propagatingTags[keyDecisionMaker])
 	})
 	t.Run("PriorAndP1AndSameDMIsIgnored", func(t *testing.T) {
 		tr := trace{
 			propagatingTags: map[string]string{keyDecisionMaker: "-1"},
 		}
-		tr.setSamplingPriorityLocked(1, samplernames.AgentRate)
+		tr.setSamplingPriorityLocked(int(decisionKeep), samplernames.AgentRate)
 		assert.Equal(t, "-1", tr.propagatingTags[keyDecisionMaker])
 	})
 	t.Run("PriorAndP1DifferentDMAccepted", func(t *testing.T) {
 		tr := trace{
 			propagatingTags: map[string]string{keyDecisionMaker: "-1"},
 		}
-		tr.setSamplingPriorityLocked(1, samplernames.RemoteRate)
+		tr.setSamplingPriorityLocked(int(decisionKeep), samplernames.RemoteRate)
 		assert.Equal(t, "-2", tr.propagatingTags[keyDecisionMaker])
 	})
 }

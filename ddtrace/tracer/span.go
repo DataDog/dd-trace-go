@@ -718,7 +718,7 @@ func obfuscatedResource(o *obfuscate.Obfuscator, typ, resource string) string {
 // shouldKeep reports whether the trace should be kept.
 // a single span being kept implies the whole trace being kept.
 func shouldKeep(s *Span) bool {
-	if p, ok := s.context.SamplingPriority(); ok && p == int(decisionKeep) {
+	if p, ok := s.context.SamplingPriority(); ok && p >= int(decisionKeep) {
 		// positive sampling priorities stay
 		return true
 	}

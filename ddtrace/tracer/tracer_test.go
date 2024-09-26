@@ -918,7 +918,7 @@ func TestPropagationDefaults(t *testing.T) {
 	assert.Equal(ctx.traceID, pctx.traceID)
 	assert.Equal(ctx.spanID, pctx.spanID)
 	assert.Equal(ctx.baggage, pctx.baggage)
-	assert.Equal(*ctx.trace.priority, -1.)
+	assert.Equal(*ctx.trace.priority, int(decisionDrop))
 
 	// ensure a child can be created
 	child := tracer.StartSpan("db.query", ChildOf(propagated))
@@ -927,7 +927,7 @@ func TestPropagationDefaults(t *testing.T) {
 	assert.NotEqual(uint64(0), child.spanID)
 	assert.Equal(root.spanID, child.parentID)
 	assert.Equal(root.traceID, child.parentID)
-	assert.Equal(*child.context.trace.priority, -1.)
+	assert.Equal(*child.context.trace.priority, int(decisionDrop))
 }
 
 func TestTracerSamplingPriorityPropagation(t *testing.T) {
@@ -937,11 +937,11 @@ func TestTracerSamplingPriorityPropagation(t *testing.T) {
 	assert.Nil(err)
 	root := tracer.StartSpan("web.request", Tag(ext.ManualKeep, true))
 	child := tracer.StartSpan("db.query", ChildOf(root.Context()))
-	assert.EqualValues(2, root.metrics[keySamplingPriority])
+	assert.EqualValues(int(decisionKeep), root.metrics[keySamplingPriority])
 	assert.Equal("-4", root.context.trace.propagatingTags[keyDecisionMaker])
-	assert.EqualValues(2, child.metrics[keySamplingPriority])
-	assert.EqualValues(2., *root.context.trace.priority)
-	assert.EqualValues(2., *child.context.trace.priority)
+	assert.EqualValues(int(decisionKeep), child.metrics[keySamplingPriority])
+	assert.EqualValues(int(decisionKeep), *root.context.trace.priority)
+	assert.EqualValues(int(decisionKeep), *child.context.trace.priority)
 }
 
 func TestTracerSamplingPriorityEmptySpanCtx(t *testing.T) {

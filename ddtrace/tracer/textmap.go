@@ -716,9 +716,9 @@ func (*propagatorB3SingleHeader) extractTextMap(reader TextMapReader) (*SpanCont
 					case "":
 						break
 					case "1", "d": // Treat 'debug' traces as priority 1
-						ctx.setSamplingPriority(1, samplernames.Unknown)
+						ctx.setSamplingPriority(int(decisionKeep), samplernames.Unknown)
 					case "0":
-						ctx.setSamplingPriority(0, samplernames.Unknown)
+						ctx.setSamplingPriority(int(decisionDrop), samplernames.Unknown)
 					default:
 						return ErrSpanContextCorrupted
 					}
@@ -1200,11 +1200,11 @@ func parseTracestate(ctx *SpanContext, header string) {
 				}
 				if parentP == 1 && stateP <= 0 {
 					// Auto keep (1) and set the decision maker to default
-					ctx.setSamplingPriority(1, samplernames.Default)
+					ctx.setSamplingPriority(int(decisionKeep), samplernames.Default)
 				}
 				if parentP == 0 && stateP > 0 {
 					// Auto drop (0) and drop the decision maker
-					ctx.setSamplingPriority(0, samplernames.Unknown)
+					ctx.setSamplingPriority(int(decisionDrop), samplernames.Unknown)
 					dropDM = true
 				}
 			} else if key == "p" {

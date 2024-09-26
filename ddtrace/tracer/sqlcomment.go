@@ -74,15 +74,15 @@ func (c *SQLCommentCarrier) Inject(ctx *SpanContext) error {
 	case DBMPropagationModeDisabled:
 		return nil
 	case DBMPropagationModeFull:
-		var sampled int64
+		sampled := decisionDrop
 		traceID := c.SpanID
 		if ctx != nil {
-			if sp, ok := ctx.SamplingPriority(); ok && sp > 0 {
-				sampled = 1
+			if sp, ok := ctx.SamplingPriority(); ok && sp >= int(decisionKeep) {
+				sampled = decisionKeep
 			}
 			traceID = ctx.traceID.Lower()
 		}
-		tags[sqlCommentTraceParent] = encodeTraceParent(traceID, c.SpanID, sampled)
+		tags[sqlCommentTraceParent] = encodeTraceParent(traceID, c.SpanID, int64(sampled))
 		fallthrough
 	case DBMPropagationModeService:
 		if ctx != nil {

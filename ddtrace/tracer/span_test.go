@@ -138,7 +138,7 @@ func TestAddSpanLink(t *testing.T) {
 
 	// Test adding a link with a sampling decision
 	linkedSpanSampled := newSpan("linked_sampled", "service", "res", 3, 4, 0)
-	linkedSpanSampled.Context().setSamplingPriority(2, samplernames.Manual)
+	linkedSpanSampled.Context().setSamplingPriority(int(decisionKeep), samplernames.Manual)
 	rootSpan.AddLink(linkedSpanSampled.Context(), map[string]string{})
 	assert.Equal(len(rootSpan.spanLinks), 2)
 	spanLinkSampled := rootSpan.spanLinks[1]
@@ -214,8 +214,8 @@ func TestShouldDrop(t *testing.T) {
 	} {
 		t.Run("", func(t *testing.T) {
 			s := newSpan("", "", "", 1, 1, 0)
-			s.SetTag(ext.ManualKeep, tt.prio == int(decisionKeep))
-			s.SetTag(ext.ManualDrop, tt.prio == int(decisionDrop))
+			s.SetTag(ext.ManualKeep, tt.prio >= int(decisionKeep))
+			s.SetTag(ext.ManualDrop, tt.prio <= int(decisionDrop))
 			s.SetTag(ext.EventSampleRate, tt.rate)
 			atomic.StoreInt32(&s.context.errors, tt.errors)
 			assert.Equal(t, tt.want, shouldKeep(s))
