@@ -261,6 +261,21 @@ func (c *SpanContext) SamplingPriority() (p int, ok bool) {
 	return c.trace.samplingPriority()
 }
 
+// sets the sampling decision
+func (c *SpanContext) setSamplingDecision(decision int) {
+	if c.trace == nil {
+		c.trace = newTrace()
+	}
+	c.trace.setSamplingDecision(decision)
+}
+
+func (c *SpanContext) SamplingDecision() (d int, ok bool) {
+	if c == nil || c.trace == nil {
+		return 0, false
+	}
+	return c.trace.getSamplingDecision()
+}
+
 func (c *SpanContext) setBaggageItem(key, val string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -356,12 +371,32 @@ func (t *trace) samplingPriority() (p int, ok bool) {
 	return t.samplingPriorityLocked()
 }
 
+func (t *trace) samplingDecisionLocked() (p int, ok bool) {
+	if t.priority == nil {
+		return 0, false
+	}
+	return int(t.samplingDecision), true
+}
+
+func (t *trace) getSamplingDecision() (p int, ok bool) {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+	return t.samplingDecisionLocked()
+}
+
 // setSamplingPriority sets the sampling priority and the decision maker
 // and returns true if it was modified.
 func (t *trace) setSamplingPriority(p int, sampler samplernames.SamplerName) bool {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	return t.setSamplingPriorityLocked(p, sampler)
+}
+
+// setSamplingDecision sets the sampling decision
+func (t *trace) setSamplingDecision(decision int) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.setSamplingDecisionLocked(decision)
 }
 
 func (t *trace) keep() {
@@ -421,6 +456,11 @@ func (t *trace) setSamplingPriorityLocked(p int, sampler samplernames.SamplerNam
 	}
 
 	return updatedPriority
+}
+
+func (t *trace) setSamplingDecisionLocked(decision int) {
+	t.setPropagatingTagLocked(keyDecisionMaker, fmt.Sprintf("%d", decision))
+	t.samplingDecision = samplingDecision(decision)
 }
 
 func (t *trace) isLocked() bool {

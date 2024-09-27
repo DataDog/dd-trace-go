@@ -255,7 +255,7 @@ func (s *Span) AddLink(spanContext *SpanContext, attributes map[string]string) {
 	traceIDHex := spanContext.TraceID()
 	traceIDHigh, _ := strconv.ParseUint(traceIDHex[:8], 16, 64)
 
-	samplingDecision, hasSamplingDecision := spanContext.SamplingPriority()
+	samplingDecision, hasSamplingDecision := spanContext.SamplingDecision()
 	var flags uint32
 	if hasSamplingDecision && samplingDecision >= ext.PriorityAutoKeep {
 		flags = uint32(1<<31 | 1)
@@ -283,6 +283,17 @@ func (s *Span) setSamplingPriority(priority int, sampler samplernames.SamplerNam
 	s.Lock()
 	defer s.Unlock()
 	s.setSamplingPriorityLocked(priority, sampler)
+}
+
+// setSamplingDecision locks the span and updates the sampling decision.
+// It should also update the trace's sampling decision.
+func (s *Span) setSamplingDecision(decision int) {
+	if s == nil {
+		return
+	}
+	s.Lock()
+	defer s.Unlock()
+	s.setSamplingDecisionLocked(decision)
 }
 
 // root returns the root span of the span's trace. The return value shouldn't be
@@ -376,6 +387,16 @@ func (s *Span) setSamplingPriorityLocked(priority int, sampler samplernames.Samp
 	}
 	s.setMetric(keySamplingPriority, float64(priority))
 	s.context.setSamplingPriority(priority, sampler)
+}
+
+// setSamplingDecisionLocked updates the sampling decision.
+// It also updates the trace's sampling decision.
+func (s *Span) setSamplingDecisionLocked(decision int) {
+	if s.finished {
+		return
+	}
+	s.setMetric(keyDecisionMaker, float64(decision))
+	// s.context.setSamplingPriority(decision)
 }
 
 // setTagError sets the error tag. It accounts for various valid scenarios.
