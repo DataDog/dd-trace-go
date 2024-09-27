@@ -274,7 +274,7 @@ func (s *Span) AddLink(spanContext *SpanContext, attributes map[string]string) {
 	})
 }
 
-// setSamplingPriority locks then span, then updates the sampling priority.
+// setSamplingPriority locks the span, then updates the sampling priority.
 // It also updates the trace's sampling priority.
 func (s *Span) setSamplingPriority(priority int, sampler samplernames.SamplerName) {
 	if s == nil {
