@@ -166,8 +166,12 @@ func (ddm *M) executeInternalTest(testInfo *testingTInfo) func(*testing.T) {
 		testInfo.originalFunc(t)
 	}
 
+	// Get the additional feature wrapper
+	additionalFeaturesFuncWrapper := applyAdditionalFeaturesToTestFunc(instrumentedFunc)
+
 	setInstrumentationMetadata(runtime.FuncForPC(reflect.Indirect(reflect.ValueOf(instrumentedFunc)).Pointer()), &instrumentationMetadata{IsInternal: true})
-	return instrumentedFunc
+	setInstrumentationMetadata(runtime.FuncForPC(reflect.Indirect(reflect.ValueOf(additionalFeaturesFuncWrapper)).Pointer()), &instrumentationMetadata{IsInternal: true})
+	return additionalFeaturesFuncWrapper
 }
 
 // instrumentInternalBenchmarks instruments the internal benchmarks for CI visibility.

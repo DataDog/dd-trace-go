@@ -6,7 +6,6 @@
 package integrations
 
 import (
-	"fmt"
 	"os"
 	"os/signal"
 	"regexp"
@@ -82,10 +81,8 @@ func internalCiVisibilityInitialization(tracerInitializer func([]tracer.StartOpt
 			}
 		}
 
-		wChn := initializeBackendRequests(serviceName)
-
-		// Preload the CodeOwner file
-		_ = utils.GetCodeOwners()
+		// Initializing additional features asynchronously
+		go func() { ensureAdditionalFeaturesInitialization(serviceName) }()
 
 		// Initialize the tracer
 		tracerInitializer(opts)
@@ -98,10 +95,6 @@ func internalCiVisibilityInitialization(tracerInitializer func([]tracer.StartOpt
 			ExitCiVisibility()
 			os.Exit(1)
 		}()
-
-		<-wChn
-		fmt.Println(*ciVisibilitySettings)
-		fmt.Println(*ciVisibilityEfdData)
 	})
 }
 

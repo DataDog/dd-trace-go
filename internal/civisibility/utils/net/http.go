@@ -71,6 +71,7 @@ func (r *Response) Unmarshal(target interface{}) error {
 
 	switch r.Format {
 	case FormatJSON:
+		fmt.Println("RS", string(r.Body))
 		return json.Unmarshal(r.Body, target)
 	default:
 		return fmt.Errorf("unsupported format '%s' for unmarshalling", r.Format)
@@ -147,6 +148,8 @@ func (rh *RequestHandler) internalSendRequest(config *RequestConfig, attempt int
 		if err != nil {
 			return true, nil, err
 		}
+
+		fmt.Println("RQ", string(serializedBody))
 
 		// Compress body if needed
 		if config.Compressed {

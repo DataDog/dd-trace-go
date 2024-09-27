@@ -224,8 +224,13 @@ func instrumentTestingTFunc(f func(*testing.T)) func(*testing.T) {
 		// Execute the original test function.
 		f(t)
 	}
+
+	// Get the additional feature wrapper
+	additionalFeaturesFuncWrapper := applyAdditionalFeaturesToTestFunc(instrumentedFn)
+
 	setInstrumentationMetadata(runtime.FuncForPC(reflect.Indirect(reflect.ValueOf(instrumentedFn)).Pointer()), &instrumentationMetadata{IsInternal: true})
-	return instrumentedFn
+	setInstrumentationMetadata(runtime.FuncForPC(reflect.Indirect(reflect.ValueOf(additionalFeaturesFuncWrapper)).Pointer()), &instrumentationMetadata{IsInternal: true})
+	return additionalFeaturesFuncWrapper
 }
 
 // instrumentSetErrorInfo helper function to set an error in the `*testing.T, *testing.B, *testing.common` CI Visibility span
@@ -418,4 +423,13 @@ func instrumentTestingBFunc(pb *testing.B, name string, f func(*testing.B)) (str
 	setCiVisibilityBenchmarkFunc(originalFunc)
 	setCiVisibilityBenchmarkFunc(runtime.FuncForPC(reflect.Indirect(reflect.ValueOf(instrumentedFunc)).Pointer()))
 	return subBenchmarkAutoName, instrumentedFunc
+}
+
+func applyAdditionalFeaturesToTestFunc(f func(*testing.T)) func(*testing.T) {
+	// Apply additional features
+	settings := integrations.GetSettings()
+	fmt.Println("FlakyTestRetriesEnabled", settings.FlakyTestRetriesEnabled)
+	fmt.Println("EarlyFlakeDetectionEnabled", settings.EarlyFlakeDetection.Enabled)
+
+	return f
 }
