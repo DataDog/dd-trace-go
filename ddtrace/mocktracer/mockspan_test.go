@@ -201,8 +201,10 @@ func TestSpanString(t *testing.T) {
 }
 
 func TestSpanWithID(t *testing.T) {
+	tr := newMockTracer()
+	defer tr.Stop()
 	spanID := uint64(123456789)
-	span := newMockTracer().StartSpan("", tracer.WithSpanID(spanID))
+	span := tr.StartSpan("", tracer.WithSpanID(spanID))
 
 	assert := assert.New(t)
 	assert.Equal(spanID, span.Context().SpanID())
@@ -243,6 +245,8 @@ func TestSetUser(t *testing.T) {
 
 	t.Run("nested", func(t *testing.T) {
 		tr := newMockTracer()
+		defer tr.Stop()
+
 		s0 := tr.StartSpan("root operation")
 		s1 := tr.StartSpan("nested operation", tracer.ChildOf(s0.Context()))
 		s2 := tr.StartSpan("nested nested operation", tracer.ChildOf(s1.Context()))
