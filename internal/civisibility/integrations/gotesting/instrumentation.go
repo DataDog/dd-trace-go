@@ -459,14 +459,18 @@ func applyAdditionalFeaturesToTestFunc(f func(*testing.T), metadata *additionalF
 				var panicExecution *testExecutionMetadata
 
 				// let's get the parent field pointer of the current testing.T
-				parentFieldPointer, _ := getFieldPointerFrom(t, "parent")
-				parentFieldPointerIndirection := (*unsafe.Pointer)(parentFieldPointer)
+				//parentFieldPointer, _ := getFieldPointerFrom(t, "parent")
+				//parentFieldPointerIndirection := (*unsafe.Pointer)(parentFieldPointer)
 
 				// copy the value of the parent pointer
-				parentValuePointer := *parentFieldPointerIndirection
+				//parentValuePointer := *parentFieldPointerIndirection
 
 				// clean the parent pointer to nil. That way any call to Fail() in the retries will not affect the parent test
-				*parentFieldPointerIndirection = nil
+				//*parentFieldPointerIndirection = nil
+
+				indirectValue := reflect.Indirect(reflect.ValueOf(t))
+				member := indirectValue.FieldByName("parent")
+				tParentCommonPrivates := getTestPrivateFieldsFromReflection(member.Elem())
 
 				for {
 					// Execution index
@@ -513,13 +517,25 @@ func applyAdditionalFeaturesToTestFunc(f func(*testing.T), metadata *additionalF
 						*t = localT
 						break
 					}
+
+					tParentCommonPrivates.SetFailed(false)
 				}
 
 				// restore the parent pointer
-				*parentFieldPointerIndirection = parentValuePointer
+				//*parentFieldPointerIndirection = parentValuePointer
 
-				// TODO: now we have to check if the current `t` has failed to propagate the error to the parent
-				// ...
+				//tCommonPrivates := getTestPrivateFields(t)
+				//indirectValue := reflect.Indirect(reflect.ValueOf(t))
+				//member := indirectValue.FieldByName("parent")
+				//if member.IsValid() {
+				//	tParentCommonPrivates := getTestPrivateFieldsFromReflection(member.Elem())
+				//	if *tCommonPrivates.ran {
+				//		tParentCommonPrivates.SetRan(true)
+				//	}
+				//	if *tCommonPrivates.failed {
+				//		tParentCommonPrivates.SetFailed(true)
+				//	}
+				//}
 
 				fmt.Println("\tFailed:", t.Failed())
 				fmt.Println("\tSkipped:", t.Skipped())

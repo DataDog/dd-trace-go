@@ -25,6 +25,75 @@ func getFieldPointerFrom(value any, fieldName string) (unsafe.Pointer, error) {
 	return unsafe.Pointer(nil), errors.New("member is invalid")
 }
 
+// getFieldPointerFromValue gets an unsafe.Pointer (gc-safe type of pointer) to a struct field
+// useful to get or set values to private field
+func getFieldPointerFromValue(value reflect.Value, fieldName string) (unsafe.Pointer, error) {
+	member := value.FieldByName(fieldName)
+	if member.IsValid() {
+		return unsafe.Pointer(member.UnsafeAddr()), nil
+	}
+
+	return unsafe.Pointer(nil), errors.New("member is invalid")
+}
+
+// COMMON
+
+// commonPrivateFields is collection of required private fields from testing.common
+type commonPrivateFields struct {
+	mu       *sync.RWMutex
+	level    *int
+	name     *string // Name of test or benchmark.
+	ran      *bool   // Test or benchmark (or one of its subtests) was executed.
+	failed   *bool   // Test or benchmark has failed.
+	skipped  *bool   // Test or benchmark has been skipped.
+	done     *bool   // Test is finished and all subtests have completed.
+	finished *bool   // Test function has completed.
+}
+
+// AddLevel increase or decrease the testing.common.level field value, used by
+// testing.B to create the name of the benchmark test
+func (c *commonPrivateFields) AddLevel(delta int) int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	*c.level = *c.level + delta
+	return *c.level
+}
+
+// SetRan set the boolean value in testing.common.ran field value
+func (c *commonPrivateFields) SetRan(value bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	*c.ran = value
+}
+
+// SetFailed set the boolean value in testing.common.failed field value
+func (c *commonPrivateFields) SetFailed(value bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	*c.failed = value
+}
+
+// SetSkipped set the boolean value in testing.common.skipped field value
+func (c *commonPrivateFields) SetSkipped(value bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	*c.skipped = value
+}
+
+// SetDone set the boolean value in testing.common.done field value
+func (c *commonPrivateFields) SetDone(value bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	*c.done = value
+}
+
+// SetFinished set the boolean value in testing.common.finished field value
+func (c *commonPrivateFields) SetFinished(value bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	*c.finished = value
+}
+
 // TESTING
 
 // getInternalTestArray gets the pointer to the testing.InternalTest array inside a
@@ -34,6 +103,70 @@ func getInternalTestArray(m *testing.M) *[]testing.InternalTest {
 		return (*[]testing.InternalTest)(ptr)
 	}
 	return nil
+}
+
+func getTestPrivateFields(t *testing.T) *commonPrivateFields {
+	testFields := &commonPrivateFields{}
+
+	// common
+	if ptr, err := getFieldPointerFrom(t, "mu"); err == nil {
+		testFields.mu = (*sync.RWMutex)(ptr)
+	}
+	if ptr, err := getFieldPointerFrom(t, "level"); err == nil {
+		testFields.level = (*int)(ptr)
+	}
+	if ptr, err := getFieldPointerFrom(t, "name"); err == nil {
+		testFields.name = (*string)(ptr)
+	}
+	if ptr, err := getFieldPointerFrom(t, "ran"); err == nil {
+		testFields.ran = (*bool)(ptr)
+	}
+	if ptr, err := getFieldPointerFrom(t, "failed"); err == nil {
+		testFields.failed = (*bool)(ptr)
+	}
+	if ptr, err := getFieldPointerFrom(t, "skipped"); err == nil {
+		testFields.skipped = (*bool)(ptr)
+	}
+	if ptr, err := getFieldPointerFrom(t, "done"); err == nil {
+		testFields.done = (*bool)(ptr)
+	}
+	if ptr, err := getFieldPointerFrom(t, "finished"); err == nil {
+		testFields.finished = (*bool)(ptr)
+	}
+
+	return testFields
+}
+
+func getTestPrivateFieldsFromReflection(value reflect.Value) *commonPrivateFields {
+	testFields := &commonPrivateFields{}
+
+	// common
+	if ptr, err := getFieldPointerFromValue(value, "mu"); err == nil {
+		testFields.mu = (*sync.RWMutex)(ptr)
+	}
+	if ptr, err := getFieldPointerFromValue(value, "level"); err == nil {
+		testFields.level = (*int)(ptr)
+	}
+	if ptr, err := getFieldPointerFromValue(value, "name"); err == nil {
+		testFields.name = (*string)(ptr)
+	}
+	if ptr, err := getFieldPointerFromValue(value, "ran"); err == nil {
+		testFields.ran = (*bool)(ptr)
+	}
+	if ptr, err := getFieldPointerFromValue(value, "failed"); err == nil {
+		testFields.failed = (*bool)(ptr)
+	}
+	if ptr, err := getFieldPointerFromValue(value, "skipped"); err == nil {
+		testFields.skipped = (*bool)(ptr)
+	}
+	if ptr, err := getFieldPointerFromValue(value, "done"); err == nil {
+		testFields.done = (*bool)(ptr)
+	}
+	if ptr, err := getFieldPointerFromValue(value, "finished"); err == nil {
+		testFields.finished = (*bool)(ptr)
+	}
+
+	return testFields
 }
 
 // BENCHMARKS
@@ -46,22 +179,6 @@ func getInternalBenchmarkArray(m *testing.M) *[]testing.InternalBenchmark {
 		return (*[]testing.InternalBenchmark)(ptr)
 	}
 	return nil
-}
-
-// commonPrivateFields is collection of required private fields from testing.common
-type commonPrivateFields struct {
-	mu    *sync.RWMutex
-	level *int
-	name  *string // Name of test or benchmark.
-}
-
-// AddLevel increase or decrease the testing.common.level field value, used by
-// testing.B to create the name of the benchmark test
-func (c *commonPrivateFields) AddLevel(delta int) int {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	*c.level = *c.level + delta
-	return *c.level
 }
 
 // benchmarkPrivateFields is a collection of required private fields from testing.B
@@ -89,6 +206,21 @@ func getBenchmarkPrivateFields(b *testing.B) *benchmarkPrivateFields {
 	}
 	if ptr, err := getFieldPointerFrom(b, "name"); err == nil {
 		benchFields.name = (*string)(ptr)
+	}
+	if ptr, err := getFieldPointerFrom(b, "ran"); err == nil {
+		benchFields.ran = (*bool)(ptr)
+	}
+	if ptr, err := getFieldPointerFrom(b, "failed"); err == nil {
+		benchFields.failed = (*bool)(ptr)
+	}
+	if ptr, err := getFieldPointerFrom(b, "skipped"); err == nil {
+		benchFields.skipped = (*bool)(ptr)
+	}
+	if ptr, err := getFieldPointerFrom(b, "done"); err == nil {
+		benchFields.done = (*bool)(ptr)
+	}
+	if ptr, err := getFieldPointerFrom(b, "finished"); err == nil {
+		benchFields.finished = (*bool)(ptr)
 	}
 
 	// benchmark
