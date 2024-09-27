@@ -34,7 +34,7 @@ var (
 		"x-cluster-client-ip",
 		"fastly-client-ip",
 		"cf-connecting-ip",
-		"cf-connecting-ip6",
+		"cf-connecting-ipv6",
 	}
 
 	// defaultCollectedHeaders is the default list of HTTP headers collected as
