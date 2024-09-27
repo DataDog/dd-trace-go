@@ -372,6 +372,7 @@ func TestTextMapPropagatorTraceTagsWithoutPriority(t *testing.T) {
 	childSpanID := child.Context().spanID
 	assert.Equal(t, map[string]string{
 		"hello":    "world",
+		"_dd.kept": "true",
 		"_dd.p.dm": "-1",
 	}, ctx.trace.propagatingTags)
 	dst := map[string]string{}
@@ -381,7 +382,7 @@ func TestTextMapPropagatorTraceTagsWithoutPriority(t *testing.T) {
 	assert.Equal(t, strconv.Itoa(int(childSpanID)), dst["x-datadog-parent-id"])
 	assert.Equal(t, "1", dst["x-datadog-trace-id"])
 	assert.Equal(t, "1", dst["x-datadog-sampling-priority"])
-	assertTraceTags(t, "hello=world,_dd.p.dm=-1", dst["x-datadog-tags"])
+	assertTraceTags(t, "hello=world,_dd.p.dm=-1,_dd.kept=true", dst["x-datadog-tags"])
 }
 
 func TestExtractOriginSynthetics(t *testing.T) {
@@ -412,6 +413,7 @@ func Test257CharacterDDTracestateLengh(t *testing.T) {
 	assert := assert.New(t)
 	root := tracer.StartSpan("web.request")
 	root.SetTag(ext.SamplingPriority, ext.PriorityUserKeep)
+	root.SetTag(ext.ManualKeep, true)
 	ctx := root.Context()
 	ctx.origin = "rum"
 	ctx.traceID = traceIDFrom64Bits(1)
@@ -575,6 +577,7 @@ func TestTextMapPropagator(t *testing.T) {
 		assert.NoError(t, err)
 		root := tracer.StartSpan("web.request")
 		root.SetTag(ext.SamplingPriority, -1)
+		root.SetTag(ext.ManualDrop, true)
 		root.SetBaggageItem("item", "x")
 		ctx := root.Context()
 		headers := TextMapCarrier(map[string]string{})
@@ -1054,6 +1057,7 @@ func TestEnvVars(t *testing.T) {
 					assert.NoError(t, err)
 					root := tracer.StartSpan("web.request")
 					root.SetTag(ext.SamplingPriority, -1)
+					root.SetTag(ext.ManualDrop, true)
 					root.SetBaggageItem("item", "x")
 					ctx := root.Context()
 					ctx.traceID = traceIDFrom64Bits(tc.in[0])
@@ -1574,6 +1578,8 @@ func TestEnvVars(t *testing.T) {
 					assert.Nil(err)
 					root := tracer.StartSpan("web.request")
 					root.SetTag(ext.SamplingPriority, tc.priority)
+					root.SetTag(ext.ManualKeep, tc.priority > 0)
+					root.SetTag(ext.ManualDrop, tc.priority <= 0)
 					ctx := root.Context()
 					ctx.origin = tc.origin
 					ctx.traceID = tc.tid
@@ -1604,6 +1610,7 @@ func TestEnvVars(t *testing.T) {
 					assert.Nil(err)
 					root := tracer.StartSpan("web.request")
 					root.SetTag(ext.SamplingPriority, ext.PriorityUserKeep)
+					root.SetTag(ext.ManualKeep, true)
 					ctx := root.Context()
 					ctx.origin = "old_tracestate"
 					ctx.traceID = traceIDFrom64Bits(1229782938247303442)
@@ -1963,6 +1970,7 @@ func TestNonePropagator(t *testing.T) {
 		assert.NoError(t, err)
 		root := tracer.StartSpan("web.request")
 		root.SetTag(ext.SamplingPriority, -1)
+		root.SetTag(ext.ManualDrop, true)
 		root.SetBaggageItem("item", "x")
 		ctx := root.Context()
 		ctx.traceID = traceIDFrom64Bits(1)
@@ -1986,6 +1994,7 @@ func TestNonePropagator(t *testing.T) {
 		tracer.config.propagator = NewPropagator(&PropagatorConfig{})
 		root := tracer.StartSpan("web.request")
 		root.SetTag(ext.SamplingPriority, -1)
+		root.SetTag(ext.ManualDrop, true)
 		root.SetBaggageItem("item", "x")
 		ctx := root.Context()
 		ctx.traceID = traceIDFrom64Bits(1)
@@ -2009,6 +2018,7 @@ func TestNonePropagator(t *testing.T) {
 		assert.NoError(err)
 		root := tracer.StartSpan("web.request")
 		root.SetTag(ext.SamplingPriority, -1)
+		root.SetTag(ext.ManualDrop, true)
 		root.SetBaggageItem("item", "x")
 		headers := TextMapCarrier(map[string]string{})
 
@@ -2026,6 +2036,7 @@ func TestNonePropagator(t *testing.T) {
 			assert.NoError(t, err)
 			root := tracer.StartSpan("web.request")
 			root.SetTag(ext.SamplingPriority, -1)
+			root.SetTag(ext.ManualDrop, true)
 			root.SetBaggageItem("item", "x")
 			ctx := root.Context()
 			ctx.traceID = traceIDFrom64Bits(1)
@@ -2047,6 +2058,7 @@ func TestNonePropagator(t *testing.T) {
 			defer tracer.Stop()
 			root := tracer.StartSpan("web.request")
 			root.SetTag(ext.SamplingPriority, -1)
+			root.SetTag(ext.ManualDrop, true)
 			root.SetBaggageItem("item", "x")
 			ctx := root.Context()
 			ctx.traceID = traceIDFrom64Bits(1)
@@ -2071,6 +2083,7 @@ func TestNonePropagator(t *testing.T) {
 			assert.NoError(t, err)
 			root := tracer.StartSpan("web.request")
 			root.SetTag(ext.SamplingPriority, -1)
+			root.SetTag(ext.ManualDrop, true)
 			root.SetBaggageItem("item", "x")
 			ctx := root.Context()
 			ctx.traceID = traceIDFrom64Bits(1)

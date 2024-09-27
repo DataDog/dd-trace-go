@@ -255,7 +255,7 @@ func (s *Span) AddLink(spanContext *SpanContext, attributes map[string]string) {
 	traceIDHex := spanContext.TraceID()
 	traceIDHigh, _ := strconv.ParseUint(traceIDHex[:8], 16, 64)
 
-	samplingDecision, hasSamplingDecision := spanContext.SamplingDecision()
+	samplingDecision, hasSamplingDecision := spanContext.SamplingPriority()
 	var flags uint32
 	if hasSamplingDecision && samplingDecision >= ext.PriorityAutoKeep {
 		flags = uint32(1<<31 | 1)
@@ -287,13 +287,15 @@ func (s *Span) setSamplingPriority(priority int, sampler samplernames.SamplerNam
 
 // setSamplingDecision locks the span and updates the sampling decision.
 // It should also update the trace's sampling decision.
-func (s *Span) setSamplingDecision(decision int) {
+func (s *Span) setSamplingDecision(decision samplingDecision) {
 	if s == nil {
 		return
 	}
-	s.Lock()
-	defer s.Unlock()
-	s.setSamplingDecisionLocked(decision)
+	if decision == decisionKeep {
+		s.SetTag(ext.ManualKeep, true)
+	} else {
+		s.SetTag(ext.ManualDrop, true)
+	}
 }
 
 // root returns the root span of the span's trace. The return value shouldn't be
@@ -389,14 +391,13 @@ func (s *Span) setSamplingPriorityLocked(priority int, sampler samplernames.Samp
 	s.context.setSamplingPriority(priority, sampler)
 }
 
-// setSamplingDecisionLocked updates the sampling decision.
-// It also updates the trace's sampling decision.
-func (s *Span) setSamplingDecisionLocked(decision int) {
+// setKeptDecisionLocked updates the kept decision.
+// It also updates the trace's kept decision.
+func (s *Span) setKeptDecisionLocked(decision bool) {
 	if s.finished {
 		return
 	}
-	s.setMetric(keyDecisionMaker, float64(decision))
-	// s.context.setSamplingPriority(decision)
+	s.context.setKeptDecision(decision)
 }
 
 // setTagError sets the error tag. It accounts for various valid scenarios.
@@ -525,10 +526,14 @@ func (s *Span) setTagBool(key string, v bool) {
 	case ext.ManualDrop:
 		if v {
 			s.setSamplingPriorityLocked(ext.PriorityUserReject, samplernames.Manual)
+			s.setKeptDecisionLocked(false)
+			s.setMeta(keyKeptDecision, "false")
 		}
 	case ext.ManualKeep:
 		if v {
 			s.setSamplingPriorityLocked(ext.PriorityUserKeep, samplernames.Manual)
+			s.setKeptDecisionLocked(true)
+			s.setMeta(keyKeptDecision, "true")
 		}
 	default:
 		if v {
@@ -843,6 +848,7 @@ const (
 	keySamplingPriority     = "_sampling_priority_v1"
 	keySamplingPriorityRate = "_dd.agent_psr"
 	keyDecisionMaker        = "_dd.p.dm"
+	keyKeptDecision         = "_dd.kept"
 	keyServiceHash          = "_dd.dm.service_hash"
 	keyOrigin               = "_dd.origin"
 	keyReparentID           = "_dd.parent_id"

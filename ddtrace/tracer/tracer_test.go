@@ -893,6 +893,7 @@ func TestPropagationDefaults(t *testing.T) {
 	root := tracer.StartSpan("web.request")
 	root.SetBaggageItem("x", "y")
 	root.SetTag(ext.SamplingPriority, -1)
+	root.SetTag(ext.ManualDrop, true)
 	ctx := root.Context()
 	headers := http.Header{}
 

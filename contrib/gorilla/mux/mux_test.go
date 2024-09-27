@@ -224,7 +224,7 @@ func TestSpanOptions(t *testing.T) {
 	assert := assert.New(t)
 	mt := mocktracer.Start()
 	defer mt.Stop()
-	mux := NewRouter(WithSpanOptions(tracer.Tag(ext.SamplingPriority, 2)))
+	mux := NewRouter(WithSpanOptions(tracer.Tag(ext.SamplingPriority, 2), tracer.Tag(ext.ManualKeep, true)))
 	mux.Handle("/200", okHandler()).Host("localhost")
 	r := httptest.NewRequest("GET", "http://localhost/200", nil)
 	w := httptest.NewRecorder()

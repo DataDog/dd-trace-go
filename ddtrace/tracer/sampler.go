@@ -165,8 +165,10 @@ func (ps *prioritySampler) apply(spn *Span) {
 	rate := ps.getRate(spn)
 	if sampledByRate(spn.traceID, rate) {
 		spn.setSamplingPriority(ext.PriorityAutoKeep, samplernames.AgentRate)
+		spn.setKeptDecisionLocked(true)
 	} else {
 		spn.setSamplingPriority(ext.PriorityAutoReject, samplernames.AgentRate)
+		spn.setKeptDecisionLocked(false)
 	}
 	spn.SetTag(keySamplingPriorityRate, rate)
 }

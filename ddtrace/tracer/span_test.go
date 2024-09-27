@@ -215,6 +215,8 @@ func TestShouldDrop(t *testing.T) {
 		t.Run("", func(t *testing.T) {
 			s := newSpan("", "", "", 1, 1, 0)
 			s.SetTag(ext.SamplingPriority, tt.prio)
+			s.SetTag(ext.ManualKeep, tt.prio > 0)
+			s.SetTag(ext.ManualDrop, tt.prio <= 0)
 			s.SetTag(ext.EventSampleRate, tt.rate)
 			atomic.StoreInt32(&s.context.errors, tt.errors)
 			assert.Equal(t, shouldKeep(s), tt.want)
@@ -727,9 +729,10 @@ func TestSpanError(t *testing.T) {
 	span.SetTag(ext.Error, err)
 	assert.Equal(int32(0), span.error)
 
-	// '+3' is `_dd.p.dm` + `_dd.base_service`, `_dd.p.tid`
+	// '+6' is `_dd.p.dm` + `_dd.kept` + `_dd.base_service`, `_dd.p.tid`
+	// + `manual.drop` + `manual.keep`
 	t.Logf("%q\n", span.meta)
-	assert.Equal(nMeta+3, len(span.meta))
+	assert.Equal(nMeta+6, len(span.meta))
 	assert.Equal("", span.meta[ext.ErrorMsg])
 	assert.Equal("", span.meta[ext.ErrorType])
 	assert.Equal("", span.meta[ext.ErrorStack])

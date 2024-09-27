@@ -261,19 +261,19 @@ func (c *SpanContext) SamplingPriority() (p int, ok bool) {
 	return c.trace.samplingPriority()
 }
 
-// sets the sampling decision
-func (c *SpanContext) setSamplingDecision(decision int) {
+// sets if the trace should be kept or dropped
+func (c *SpanContext) setKeptDecision(decision bool) {
 	if c.trace == nil {
 		c.trace = newTrace()
 	}
-	c.trace.setSamplingDecision(decision)
+	c.trace.setKeptDecision(decision)
 }
 
-func (c *SpanContext) SamplingDecision() (d int, ok bool) {
+func (c *SpanContext) KeptDecision() (d bool, ok bool) {
 	if c == nil || c.trace == nil {
-		return 0, false
+		return false, false
 	}
-	return c.trace.getSamplingDecision()
+	return c.trace.getKeptDecision()
 }
 
 func (c *SpanContext) setBaggageItem(key, val string) {
@@ -331,6 +331,7 @@ type trace struct {
 	priority         *float64          // sampling priority
 	locked           bool              // specifies if the sampling priority can be altered
 	samplingDecision samplingDecision  // samplingDecision indicates whether to send the trace to the agent.
+	kept             bool              // kept indicates if the trace should be kept (true) or dropped (false)
 
 	// root specifies the root of the trace, if known; it is nil when a span
 	// context is extracted from a carrier, at which point there are no spans in
@@ -371,17 +372,14 @@ func (t *trace) samplingPriority() (p int, ok bool) {
 	return t.samplingPriorityLocked()
 }
 
-func (t *trace) samplingDecisionLocked() (p int, ok bool) {
-	if t.priority == nil {
-		return 0, false
-	}
-	return int(t.samplingDecision), true
+func (t *trace) keptDecisionLocked() (p bool, ok bool) {
+	return t.kept, true
 }
 
-func (t *trace) getSamplingDecision() (p int, ok bool) {
+func (t *trace) getKeptDecision() (p bool, ok bool) {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
-	return t.samplingDecisionLocked()
+	return t.keptDecisionLocked()
 }
 
 // setSamplingPriority sets the sampling priority and the decision maker
@@ -392,11 +390,13 @@ func (t *trace) setSamplingPriority(p int, sampler samplernames.SamplerName) boo
 	return t.setSamplingPriorityLocked(p, sampler)
 }
 
-// setSamplingDecision sets the sampling decision
-func (t *trace) setSamplingDecision(decision int) {
+// setKeptDecision sets if the trace should be kept or dropped
+func (t *trace) setKeptDecision(decision bool) {
+	t.setTag(ext.ManualDrop, fmt.Sprintf("%t", !decision))
+	t.setTag(ext.ManualKeep, fmt.Sprintf("%t", decision))
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	t.setSamplingDecisionLocked(decision)
+	t.setKeptDecisionLocked(decision)
 }
 
 func (t *trace) keep() {
@@ -458,9 +458,9 @@ func (t *trace) setSamplingPriorityLocked(p int, sampler samplernames.SamplerNam
 	return updatedPriority
 }
 
-func (t *trace) setSamplingDecisionLocked(decision int) {
-	t.setPropagatingTagLocked(keyDecisionMaker, fmt.Sprintf("%d", decision))
-	t.samplingDecision = samplingDecision(decision)
+func (t *trace) setKeptDecisionLocked(decision bool) {
+	// t.setPropagatingTagLocked(keyKeptDecision, fmt.Sprintf("%t", decision))
+	t.kept = decision
 }
 
 func (t *trace) isLocked() bool {

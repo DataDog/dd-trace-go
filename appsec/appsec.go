@@ -87,6 +87,7 @@ func TrackUserLoginSuccessEvent(ctx context.Context, uid string, md map[string]s
 		span.SetTag(tagPrefix+k, v)
 	}
 	span.SetTag(ext.SamplingPriority, ext.PriorityUserKeep)
+	span.SetTag(ext.ManualKeep, true)
 	return SetUser(ctx, uid, opts...)
 }
 
@@ -114,6 +115,7 @@ func TrackUserLoginFailureEvent(ctx context.Context, uid string, exists bool, md
 		span.SetTag(tagPrefix+k, v)
 	}
 	span.SetTag(ext.SamplingPriority, ext.PriorityUserKeep)
+	span.SetTag(ext.ManualKeep, true)
 }
 
 // TrackCustomEvent sets a custom event as service entry span tags. This span is
@@ -131,6 +133,7 @@ func TrackCustomEvent(ctx context.Context, name string, md map[string]string) {
 	tagPrefix := "appsec.events." + name + "."
 	span.SetTag(tagPrefix+"track", true)
 	span.SetTag(ext.SamplingPriority, ext.PriorityUserKeep)
+	span.SetTag(ext.ManualKeep, true)
 	for k, v := range md {
 		span.SetTag(tagPrefix+k, v)
 	}

@@ -46,6 +46,7 @@ func Example_withSpanOpts() {
 		httptrace.WithService("http.router"),
 		httptrace.WithSpanOptions(
 			tracer.Tag(ext.SamplingPriority, ext.PriorityUserKeep),
+			tracer.Tag(ext.ManualKeep, true),
 		),
 	)
 
