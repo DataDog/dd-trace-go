@@ -37,6 +37,15 @@ type (
 		error   atomic.Int32
 		skipped atomic.Int32
 	}
+
+	testExecutionMetadata struct {
+		panicData       any
+		panicStacktrace string
+		t               *testing.T
+	}
+	additionalFeaturesMetadata struct {
+		executions []*testExecutionMetadata
+	}
 )
 
 var (
@@ -203,7 +212,9 @@ func instrumentTestingTFunc(f func(*testing.T)) func(*testing.T) {
 				test.SetErrorInfo("panic", fmt.Sprint(r), utils.GetStacktrace(1))
 				test.Close(integrations.ResultStatusFail)
 				checkModuleAndSuite(module, suite)
-				integrations.ExitCiVisibility()
+				if checkIfCIVisibilityExitIsRequiredByPanic() {
+					integrations.ExitCiVisibility()
+				}
 				panic(r)
 			} else {
 				// Normal finalization: determine the test result based on its state.
@@ -225,12 +236,8 @@ func instrumentTestingTFunc(f func(*testing.T)) func(*testing.T) {
 		f(t)
 	}
 
-	// Get the additional feature wrapper
-	additionalFeaturesFuncWrapper := applyAdditionalFeaturesToTestFunc(instrumentedFn)
-
 	setInstrumentationMetadata(runtime.FuncForPC(reflect.Indirect(reflect.ValueOf(instrumentedFn)).Pointer()), &instrumentationMetadata{IsInternal: true})
-	setInstrumentationMetadata(runtime.FuncForPC(reflect.Indirect(reflect.ValueOf(additionalFeaturesFuncWrapper)).Pointer()), &instrumentationMetadata{IsInternal: true})
-	return additionalFeaturesFuncWrapper
+	return instrumentedFn
 }
 
 // instrumentSetErrorInfo helper function to set an error in the `*testing.T, *testing.B, *testing.common` CI Visibility span
@@ -425,11 +432,105 @@ func instrumentTestingBFunc(pb *testing.B, name string, f func(*testing.B)) (str
 	return subBenchmarkAutoName, instrumentedFunc
 }
 
-func applyAdditionalFeaturesToTestFunc(f func(*testing.T)) func(*testing.T) {
+func checkIfCIVisibilityExitIsRequiredByPanic() bool {
 	// Apply additional features
 	settings := integrations.GetSettings()
-	fmt.Println("FlakyTestRetriesEnabled", settings.FlakyTestRetriesEnabled)
-	fmt.Println("EarlyFlakeDetectionEnabled", settings.EarlyFlakeDetection.Enabled)
 
-	return f
+	// If we don't plan to do retries then we allow to panic
+	return !settings.FlakyTestRetriesEnabled && !settings.EarlyFlakeDetection.Enabled
+}
+
+func applyAdditionalFeaturesToTestFunc(f func(*testing.T), metadata *additionalFeaturesMetadata) func(*testing.T) {
+	// Apply additional features
+	settings := integrations.GetSettings()
+
+	// Wrapper function
+	wrapperFunc := f
+
+	// Flaky test retries
+	if settings.FlakyTestRetriesEnabled {
+		flakyRetrySettings := integrations.GetFlakyRetriesSettings()
+
+		// if the retry count per test is > 1 and if we still have remaining total retry count
+		if flakyRetrySettings.RetryCount > 1 && flakyRetrySettings.RemainingTotalRetryCount > 0 {
+			wrapperFunc = func(t *testing.T) {
+				retryCount := (int32)(flakyRetrySettings.RetryCount)
+				executionIndex := -1
+				var panicExecution *testExecutionMetadata
+
+				// let's get the parent field pointer of the current testing.T
+				parentFieldPointer, _ := getFieldPointerFrom(t, "parent")
+				parentFieldPointerIndirection := (*unsafe.Pointer)(parentFieldPointer)
+
+				// copy the value of the parent pointer
+				parentValuePointer := *parentFieldPointerIndirection
+
+				// clean the parent pointer to nil. That way any call to Fail() in the retries will not affect the parent test
+				*parentFieldPointerIndirection = nil
+
+				for {
+					// Execution index
+					executionIndex++
+
+					// local copy of T
+					localT := *t
+					ptrToLocalT := &localT
+
+					// run original func
+					chn := make(chan struct{}, 1)
+					go func() {
+						defer func() {
+							chn <- struct{}{}
+						}()
+						f(ptrToLocalT)
+					}()
+					<-chn
+
+					// decrement retry count
+					remainingRetries := atomic.AddInt32(&retryCount, -1)
+
+					// extract the currentExecution
+					currentExecution := metadata.executions[executionIndex]
+
+					// if a panic occurs we fail the test
+					if currentExecution.panicData != nil {
+						localT.Fail()
+
+						// stores the first panic data
+						if panicExecution == nil {
+							panicExecution = currentExecution
+						}
+					}
+
+					// if not failed and if there's no panic data then we don't do any retry
+					if !localT.Failed() {
+						*t = localT
+						break
+					}
+
+					// if there's no more retries we also exit the loop
+					if remainingRetries < 0 {
+						*t = localT
+						break
+					}
+				}
+
+				// restore the parent pointer
+				*parentFieldPointerIndirection = parentValuePointer
+
+				// TODO: now we have to check if the current `t` has failed to propagate the error to the parent
+				// ...
+
+				fmt.Println("\tFailed:", t.Failed())
+				fmt.Println("\tSkipped:", t.Skipped())
+				fmt.Println("\tRetries:", (int32)(flakyRetrySettings.RetryCount)-(retryCount+1))
+
+				if t.Failed() && panicExecution != nil {
+					panic(fmt.Sprintf("test failed and panicked after %d retries.\n%v\n%v", executionIndex, panicExecution.panicData, panicExecution.panicStacktrace))
+				}
+			}
+		}
+	}
+
+	return wrapperFunc
 }

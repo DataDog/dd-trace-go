@@ -128,7 +128,12 @@ func (ddm *M) instrumentInternalTests(internalTests *[]testing.InternalTest) {
 // executeInternalTest wraps the original test function to include CI visibility instrumentation.
 func (ddm *M) executeInternalTest(testInfo *testingTInfo) func(*testing.T) {
 	originalFunc := runtime.FuncForPC(reflect.Indirect(reflect.ValueOf(testInfo.originalFunc)).Pointer())
+	additionalFeaturesMeta := &additionalFeaturesMetadata{}
 	instrumentedFunc := func(t *testing.T) {
+		// Create and store the test execution metadata
+		tExecMeta := &testExecutionMetadata{t: t}
+		additionalFeaturesMeta.executions = append(additionalFeaturesMeta.executions, tExecMeta)
+
 		// Create or retrieve the module, suite, and test for CI visibility.
 		module := session.GetOrCreateModuleWithFramework(testInfo.moduleName, testFramework, runtime.Version())
 		suite := module.GetOrCreateSuite(testInfo.suiteName)
@@ -138,13 +143,17 @@ func (ddm *M) executeInternalTest(testInfo *testingTInfo) func(*testing.T) {
 		defer func() {
 			if r := recover(); r != nil {
 				// Handle panic and set error information.
-				test.SetErrorInfo("panic", fmt.Sprint(r), utils.GetStacktrace(1))
+				tExecMeta.panicData = r
+				tExecMeta.panicStacktrace = utils.GetStacktrace(1)
+				test.SetErrorInfo("panic", fmt.Sprint(r), tExecMeta.panicStacktrace)
 				suite.SetTag(ext.Error, true)
 				module.SetTag(ext.Error, true)
 				test.Close(integrations.ResultStatusFail)
 				checkModuleAndSuite(module, suite)
-				integrations.ExitCiVisibility()
-				panic(r)
+				if checkIfCIVisibilityExitIsRequiredByPanic() {
+					integrations.ExitCiVisibility()
+					panic(r)
+				}
 			} else {
 				// Normal finalization: determine the test result based on its state.
 				if t.Failed() {
@@ -167,7 +176,7 @@ func (ddm *M) executeInternalTest(testInfo *testingTInfo) func(*testing.T) {
 	}
 
 	// Get the additional feature wrapper
-	additionalFeaturesFuncWrapper := applyAdditionalFeaturesToTestFunc(instrumentedFunc)
+	additionalFeaturesFuncWrapper := applyAdditionalFeaturesToTestFunc(instrumentedFunc, additionalFeaturesMeta)
 
 	setInstrumentationMetadata(runtime.FuncForPC(reflect.Indirect(reflect.ValueOf(instrumentedFunc)).Pointer()), &instrumentationMetadata{IsInternal: true})
 	setInstrumentationMetadata(runtime.FuncForPC(reflect.Indirect(reflect.ValueOf(additionalFeaturesFuncWrapper)).Pointer()), &instrumentationMetadata{IsInternal: true})

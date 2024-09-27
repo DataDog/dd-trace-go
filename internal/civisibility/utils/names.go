@@ -10,7 +10,12 @@ import (
 	"fmt"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
+)
+
+var (
+	ignoredFunctionsFromStackTrace = []string{"runtime.gopanic", "runtime.panicmem", "runtime.sigpanic"}
 )
 
 // GetModuleAndSuiteName extracts the module name and suite name from a given program counter (pc).
@@ -72,6 +77,9 @@ func GetStacktrace(skip int) string {
 	buffer := new(bytes.Buffer)
 	for {
 		if frame, ok := frames.Next(); ok {
+			if slices.Contains(ignoredFunctionsFromStackTrace, frame.Function) {
+				continue
+			}
 			_, _ = fmt.Fprintf(buffer, "%s\n\t%s:%d\n", frame.Function, frame.File, frame.Line)
 		} else {
 			break

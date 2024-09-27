@@ -6,7 +6,6 @@
 package integrations
 
 import (
-	"fmt"
 	"sync"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
@@ -82,10 +81,6 @@ func ensureAdditionalFeaturesInitialization(serviceName string) {
 				ciVisibilitySettings.FlakyTestRetriesEnabled = false
 			}
 		}
-
-		fmt.Println(ciVisibilitySettings)
-		fmt.Println(ciVisibilityEarlyFlakyDetectionSettings)
-		fmt.Println(ciVisibilityFlakyRetriesSettings)
 	})
 }
 

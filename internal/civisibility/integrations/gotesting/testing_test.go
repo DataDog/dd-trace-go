@@ -33,6 +33,9 @@ func TestMain(m *testing.M) {
 	currentM = m
 	integrations.EnsureCiVisibilityInitialization()
 	mTracer = integrations.InitializeCIVisibilityMock()
+	if mTracer == nil {
+		mTracer = mocktracer.Start()
+	}
 
 	// (*M)(m).Run() cast m to gotesting.M and just run
 	// or use a helper method gotesting.RunM(m)
@@ -40,6 +43,7 @@ func TestMain(m *testing.M) {
 	// os.Exit((*M)(m).Run())
 	exit := RunM(m)
 	if exit != 0 {
+		fmt.Println("Exit Code:", exit)
 		os.Exit(exit)
 	}
 
@@ -222,6 +226,19 @@ func TestSkip(gt *testing.T) {
 	// because we use the instrumented Skip
 	// the message will be reported as the skip reason.
 	t.Skip("Nothing to do here, skipping!")
+}
+
+var runNumber = 0
+
+func TestPanic(gt *testing.T) {
+	runNumber++
+	if runNumber < 4 {
+		panic("Test Panic")
+	}
+}
+
+func TestAlwaysFail(gt *testing.T) {
+	gt.Fatal("Always fail")
 }
 
 // BenchmarkFirst demonstrates benchmark instrumentation with sub-benchmarks.
