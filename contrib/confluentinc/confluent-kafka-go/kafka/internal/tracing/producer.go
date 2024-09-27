@@ -75,7 +75,7 @@ func (pt *ProducerTracer) traceEventsChannel(in chan kafka.Event) {
 	pt.Events = out
 }
 
-func (pt *ProducerTracer) AroundProduce(msg *kafka.Message, deliveryChan chan kafka.Event) func(error) {
+func (pt *ProducerTracer) WrapProduce(produceFn func(*kafka.Message, chan kafka.Event) error, msg *kafka.Message, deliveryChan chan kafka.Event) error {
 	span := pt.startSpan(msg)
 
 	// if the user has selected a delivery channel, we will wrap it and
@@ -98,12 +98,12 @@ func (pt *ProducerTracer) AroundProduce(msg *kafka.Message, deliveryChan chan ka
 
 	setProduceCheckpoint(pt.DataStreamsEnabled, pt.LibraryVersion, msg)
 
-	return func(err error) {
-		// with no delivery channel or enqueue error, finish immediately
-		if err != nil || deliveryChan == nil {
-			span.Finish(tracer.WithError(err))
-		}
+	err := produceFn(msg, deliveryChan)
+	// with no delivery channel or enqueue error, finish immediately
+	if err != nil || deliveryChan == nil {
+		span.Finish(tracer.WithError(err))
 	}
+	return err
 }
 
 func (pt *ProducerTracer) startSpan(msg *kafka.Message) ddtrace.Span {

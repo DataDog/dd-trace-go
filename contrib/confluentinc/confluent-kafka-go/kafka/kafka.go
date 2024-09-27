@@ -62,7 +62,7 @@ func WrapConsumer(c *kafka.Consumer, opts ...Option) *Consumer {
 	wrapped := &Consumer{
 		Consumer: c,
 		cfg:      cfg,
-		tracer: tracing.NewConsumerTracer(cfg.ctx, c, cfg.groupID, tracing.StartSpanConfig{
+		tracer: tracing.NewConsumerTracer(cfg.ctx, c, cfg.dataStreamsEnabled, cfg.groupID, tracing.StartSpanConfig{
 			Service:          cfg.consumerServiceName,
 			Operation:        cfg.consumerSpanName,
 			BootstrapServers: cfg.bootstrapServers,
@@ -162,11 +162,7 @@ func (p *Producer) Close() {
 
 // Produce calls the underlying Producer.Produce and traces the request.
 func (p *Producer) Produce(msg *kafka.Message, deliveryChan chan kafka.Event) error {
-	finish := p.tracer.AroundProduce(msg, deliveryChan)
-	err := p.Producer.Produce(msg, deliveryChan)
-	finish(err)
-
-	return err
+	return p.tracer.WrapProduce(p.Producer.Produce, msg, deliveryChan)
 }
 
 // ProduceChannel returns a channel which can receive kafka Messages and will

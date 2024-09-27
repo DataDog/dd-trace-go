@@ -30,11 +30,13 @@ type ConsumerTracer struct {
 
 type watermarkOffsetsFn func(topic string, partition int32) (int64, int64, error)
 
-func NewConsumerTracer(ctx context.Context, c *kafka.Consumer, groupID string, startSpanConfig StartSpanConfig) *ConsumerTracer {
+func NewConsumerTracer(ctx context.Context, c *kafka.Consumer, dataStreamsEnabled bool, groupID string, startSpanConfig StartSpanConfig) *ConsumerTracer {
 	tracer := &ConsumerTracer{
-		Ctx:             ctx,
-		GroupID:         groupID,
-		StartSpanConfig: startSpanConfig,
+		Ctx:                ctx,
+		DataStreamsEnabled: dataStreamsEnabled,
+		GroupID:            groupID,
+		StartSpanConfig:    startSpanConfig,
+		WatermarkOffsets:   c.GetWatermarkOffsets,
 	}
 	tracer.traceEventsChannel(c.Events())
 	return tracer
