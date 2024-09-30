@@ -115,6 +115,16 @@ func (b *RunAddressDataBuilder) WithUserID(id string) *RunAddressDataBuilder {
 	return b
 }
 
+func (b *RunAddressDataBuilder) WithUserLoginSuccess() *RunAddressDataBuilder {
+	b.Persistent[UserLoginSuccessAddr] = nil
+	return b
+}
+
+func (b *RunAddressDataBuilder) WithUserLoginFailure() *RunAddressDataBuilder {
+	b.Persistent[UserLoginFailureAddr] = nil
+	return b
+}
+
 func (b *RunAddressDataBuilder) WithFilePath(file string) *RunAddressDataBuilder {
 	if file == "" {
 		return b

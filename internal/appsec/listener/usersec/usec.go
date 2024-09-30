@@ -23,20 +23,30 @@ func (*Feature) String() string {
 func (*Feature) Stop() {}
 
 func NewUserSecFeature(cfg *config.Config, rootOp dyngo.Operation) (listener.Feature, error) {
-	if !cfg.RASP || !cfg.SupportedAddresses.AnyOf(addresses.UserIDAddr) {
+	if !cfg.SupportedAddresses.AnyOf(
+		addresses.UserIDAddr,
+		addresses.UserLoginSuccessAddr,
+		addresses.UserLoginFailureAddr) {
 		return nil, nil
 	}
 
 	feature := &Feature{}
-	dyngo.On(rootOp, feature.OnStart)
+	dyngo.OnFinish(rootOp, feature.OnFinish)
 	return feature, nil
 }
 
-func (*Feature) OnStart(op *usersec.UserIDOperation, args usersec.UserIDOperationArgs) {
+func (*Feature) OnFinish(op *usersec.UserLoginOperation, args usersec.UserLoginOperationRes) {
+	builder := addresses.NewAddressesBuilder().
+		WithUserID(args.UserID)
+
+	if args.Success {
+		builder = builder.WithUserLoginSuccess()
+	} else {
+		builder = builder.WithUserLoginFailure()
+	}
+
 	dyngo.EmitData(op, waf.RunEvent{
-		Operation: op,
-		RunAddressData: addresses.NewAddressesBuilder().
-			WithUserID(args.UserID).
-			Build(),
+		Operation:      op,
+		RunAddressData: builder.Build(),
 	})
 }

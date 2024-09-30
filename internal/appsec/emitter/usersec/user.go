@@ -10,45 +10,41 @@ import (
 
 	"gopkg.in/DataDog/dd-trace-go.v1/appsec/events"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
+
+const errorLog = `
+appsec: user login monitoring ignored: could not find the http handler instrumentation metadata in the request context:
+	the request handler is not being monitored by a middleware function or the provided context is not the expected request context
+`
 
 type (
-	// UserIDOperation type representing a call to appsec.SetUser(). It gets both created and destroyed in a single
+	// UserLoginOperation type representing a call to appsec.SetUser(). It gets both created and destroyed in a single
 	// call to ExecuteUserIDOperation
-	UserIDOperation struct {
+	UserLoginOperation struct {
 		dyngo.Operation
 	}
-	// UserIDOperationArgs is the user ID operation arguments.
-	UserIDOperationArgs struct {
-		UserID string
+	// UserLoginOperationArgs is the user ID operation arguments.
+	UserLoginOperationArgs struct{}
+
+	// UserLoginOperationRes is the user ID operation results.
+	UserLoginOperationRes struct {
+		UserID  string
+		Success bool
 	}
-	// UserIDOperationRes is the user ID operation results.
-	UserIDOperationRes struct{}
 )
 
-// ExecuteUserIDOperation starts and finishes the UserID operation by emitting a dyngo start and finish events
-// An error is returned if the user associated to that operation must be blocked
-func ExecuteUserIDOperation(parent dyngo.Operation, args UserIDOperationArgs) error {
+func StartUserLoginOperation(ctx context.Context, args UserLoginOperationArgs) (*UserLoginOperation, *error) {
+	parent, _ := dyngo.FromContext(ctx)
+	op := &UserLoginOperation{Operation: dyngo.NewOperation(parent)}
 	var err error
-	op := &UserIDOperation{Operation: dyngo.NewOperation(parent)}
 	dyngo.OnData(op, func(e *events.BlockingSecurityEvent) { err = e })
 	dyngo.StartOperation(op, args)
-	dyngo.FinishOperation(op, UserIDOperationRes{})
-	return err
+	return op, &err
 }
 
-// MonitorUser starts and finishes a UserID operation.
-// A call to the WAF is made to check the user ID and an error is returned if the
-// user should be blocked. The return value is nil otherwise.
-func MonitorUser(ctx context.Context, userID string) error {
-	if parent, ok := dyngo.FromContext(ctx); ok {
-		return ExecuteUserIDOperation(parent, UserIDOperationArgs{UserID: userID})
-	}
-	log.Error("appsec: user ID monitoring ignored: could not find the http handler instrumentation metadata in the request context: the request handler is not being monitored by a middleware function or the provided context is not the expected request context")
-	return nil
-
+func (op *UserLoginOperation) Finish(args UserLoginOperationRes) {
+	dyngo.FinishOperation(op, args)
 }
 
-func (UserIDOperationArgs) IsArgOf(*UserIDOperation)   {}
-func (UserIDOperationRes) IsResultOf(*UserIDOperation) {}
+func (UserLoginOperationArgs) IsArgOf(*UserLoginOperation)   {}
+func (UserLoginOperationRes) IsResultOf(*UserLoginOperation) {}
