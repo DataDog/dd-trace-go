@@ -605,6 +605,7 @@ func TestEnvVars(t *testing.T) {
 			{headerPropagationStyleInject: "b3"},
 			{headerPropagationStyle: "b3"},
 			{otelHeaderPropagationStyle: "b3multi"},
+			{headerPropagationStyleInject: "b3multi", headerPropagationStyle: "none" /* none should have no affect */},
 		}
 		for _, testEnv := range testEnvs {
 			for k, v := range testEnv {
