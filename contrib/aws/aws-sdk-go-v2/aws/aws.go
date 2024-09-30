@@ -8,12 +8,10 @@ package aws
 import (
 	"context"
 	"fmt"
-	"math"
 	"strings"
 	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/contrib/aws/internal/tags"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
@@ -48,15 +46,15 @@ type spanTimestampKey struct{}
 // AppendMiddleware takes the aws.Config and adds the Datadog tracing middleware into the APIOptions middleware stack.
 // See https://aws.github.io/aws-sdk-go-v2/docs/middleware for more information.
 func AppendMiddleware(awsCfg *aws.Config, opts ...Option) {
-	cfg := &config{}
-
-	defaults(cfg)
-	for _, opt := range opts {
-		opt(cfg)
-	}
-
-	tm := traceMiddleware{cfg: cfg}
-	awsCfg.APIOptions = append(awsCfg.APIOptions, tm.initTraceMiddleware, tm.startTraceMiddleware, tm.deserializeTraceMiddleware)
+	//cfg := &config{}
+	//
+	//defaults(cfg)
+	//for _, opt := range opts {
+	//	opt(cfg)
+	//}
+	//
+	//tm := traceMiddleware{cfg: cfg}
+	//awsCfg.APIOptions = append(awsCfg.APIOptions, tm.initTraceMiddleware, tm.startTraceMiddleware, tm.deserializeTraceMiddleware)
 }
 
 type traceMiddleware struct {
@@ -76,47 +74,50 @@ func (mw *traceMiddleware) initTraceMiddleware(stack *middleware.Stack) error {
 }
 
 func (mw *traceMiddleware) startTraceMiddleware(stack *middleware.Stack) error {
-	return stack.Initialize.Add(middleware.InitializeMiddlewareFunc("StartTraceMiddleware", func(
-		ctx context.Context, in middleware.InitializeInput, next middleware.InitializeHandler,
-	) (
-		out middleware.InitializeOutput, metadata middleware.Metadata, err error,
-	) {
-		operation := awsmiddleware.GetOperationName(ctx)
-		serviceID := awsmiddleware.GetServiceID(ctx)
-
-		opts := []ddtrace.StartSpanOption{
-			tracer.SpanType(ext.SpanTypeHTTP),
-			tracer.ServiceName(serviceName(mw.cfg, serviceID)),
-			tracer.ResourceName(fmt.Sprintf("%s.%s", serviceID, operation)),
-			tracer.Tag(tags.OldAWSRegion, awsmiddleware.GetRegion(ctx)),
-			tracer.Tag(tags.AWSRegion, awsmiddleware.GetRegion(ctx)),
-			tracer.Tag(tags.AWSOperation, operation),
-			tracer.Tag(tags.OldAWSService, serviceID),
-			tracer.Tag(tags.AWSService, serviceID),
-			tracer.StartTime(ctx.Value(spanTimestampKey{}).(time.Time)),
-			tracer.Tag(ext.Component, componentName),
-			tracer.Tag(ext.SpanKind, ext.SpanKindClient),
-		}
-		k, v, err := resourceNameFromParams(in, serviceID)
-		if err != nil {
-			log.Debug("Error: %v", err)
-		} else {
-			opts = append(opts, tracer.Tag(k, v))
-		}
-		if !math.IsNaN(mw.cfg.analyticsRate) {
-			opts = append(opts, tracer.Tag(ext.EventSampleRate, mw.cfg.analyticsRate))
-		}
-		span, spanctx := tracer.StartSpanFromContext(ctx, spanName(serviceID, operation), opts...)
-
-		// Handle initialize and continue through the middleware chain.
-		out, metadata, err = next.HandleInitialize(spanctx, in)
-		if err != nil && (mw.cfg.errCheck == nil || mw.cfg.errCheck(err)) {
-			span.SetTag(ext.Error, err)
-		}
-		span.Finish()
-
-		return out, metadata, err
-	}), middleware.After)
+	log.Debug("[nhulston tracer] AWS v2 startTraceMiddleware")
+	fmt.Println("[nhulston tracer] AWS v2 startTraceMiddleware")
+	return nil
+	//return stack.Initialize.Add(middleware.InitializeMiddlewareFunc("StartTraceMiddleware", func(
+	//	ctx context.Context, in middleware.InitializeInput, next middleware.InitializeHandler,
+	//) (
+	//	out middleware.InitializeOutput, metadata middleware.Metadata, err error,
+	//) {
+	//	operation := awsmiddleware.GetOperationName(ctx)
+	//	serviceID := awsmiddleware.GetServiceID(ctx)
+	//
+	//	opts := []ddtrace.StartSpanOption{
+	//		tracer.SpanType(ext.SpanTypeHTTP),
+	//		tracer.ServiceName(serviceName(mw.cfg, serviceID)),
+	//		tracer.ResourceName(fmt.Sprintf("%s.%s", serviceID, operation)),
+	//		tracer.Tag(tags.OldAWSRegion, awsmiddleware.GetRegion(ctx)),
+	//		tracer.Tag(tags.AWSRegion, awsmiddleware.GetRegion(ctx)),
+	//		tracer.Tag(tags.AWSOperation, operation),
+	//		tracer.Tag(tags.OldAWSService, serviceID),
+	//		tracer.Tag(tags.AWSService, serviceID),
+	//		tracer.StartTime(ctx.Value(spanTimestampKey{}).(time.Time)),
+	//		tracer.Tag(ext.Component, componentName),
+	//		tracer.Tag(ext.SpanKind, ext.SpanKindClient),
+	//	}
+	//	k, v, err := resourceNameFromParams(in, serviceID)
+	//	if err != nil {
+	//		log.Debug("Error: %v", err)
+	//	} else {
+	//		opts = append(opts, tracer.Tag(k, v))
+	//	}
+	//	if !math.IsNaN(mw.cfg.analyticsRate) {
+	//		opts = append(opts, tracer.Tag(ext.EventSampleRate, mw.cfg.analyticsRate))
+	//	}
+	//	span, spanctx := tracer.StartSpanFromContext(ctx, spanName(serviceID, operation), opts...)
+	//
+	//	// Handle initialize and continue through the middleware chain.
+	//	out, metadata, err = next.HandleInitialize(spanctx, in)
+	//	if err != nil && (mw.cfg.errCheck == nil || mw.cfg.errCheck(err)) {
+	//		span.SetTag(ext.Error, err)
+	//	}
+	//	span.Finish()
+	//
+	//	return out, metadata, err
+	//}), middleware.After)
 }
 
 func resourceNameFromParams(requestInput middleware.InitializeInput, awsService string) (string, string, error) {
