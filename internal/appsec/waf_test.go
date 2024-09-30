@@ -945,14 +945,16 @@ func TestAttackerFingerprinting(t *testing.T) {
 	// Start and trace an HTTP server
 	mux := httptrace.NewServeMux()
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		if err := pAppsec.TrackUserLoginSuccessEvent(r.Context(), r.Header.Get("test-usr"), map[string]string{}, tracer.WithUserSessionID("sessionID")); err != nil {
-			return
-		}
+		pAppsec.TrackUserLoginSuccessEvent(
+			r.Context(),
+			r.Header.Get("test-usr"),
+			map[string]string{},
+			tracer.WithUserSessionID("sessionID"))
+
 		buf := new(strings.Builder)
 		io.Copy(buf, r.Body)
-		if err := pAppsec.MonitorParsedHTTPBody(r.Context(), buf.String()); err != nil {
-			return
-		}
+		pAppsec.MonitorParsedHTTPBody(r.Context(), buf.String())
+
 		w.Write([]byte("Hello World!\n"))
 	})
 	srv := httptest.NewServer(mux)
@@ -973,6 +975,7 @@ func TestAttackerFingerprinting(t *testing.T) {
 	require.Contains(t, spans[0].Tags(), "_dd.appsec.fp.http.header")
 	require.Contains(t, spans[0].Tags(), "_dd.appsec.fp.http.endpoint")
 	require.Contains(t, spans[0].Tags(), "_dd.appsec.fp.http.network")
+	require.Contains(t, spans[0].Tags(), "_dd.appsec.fp.http.session")
 }
 
 func init() {
