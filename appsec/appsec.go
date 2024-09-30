@@ -154,7 +154,9 @@ func getRootSpan(ctx context.Context) tracer.Span {
 }
 
 func getSessionID(opts ...tracer.UserMonitoringOption) string {
-	cfg := new(tracer.UserMonitoringConfig)
+	cfg := &tracer.UserMonitoringConfig{
+		Metadata: make(map[string]string),
+	}
 	for _, opt := range opts {
 		opt(cfg)
 	}
