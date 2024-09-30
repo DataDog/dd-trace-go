@@ -287,11 +287,13 @@ func (s *Span) setSamplingPriority(priority int, sampler samplernames.SamplerNam
 
 // setSamplingDecision locks the span and updates the sampling decision.
 // It should also update the trace's sampling decision.
-func (s *Span) setSamplingDecision(decision samplingDecision) {
+func (s *Span) setKeptDecision(decision bool) {
 	if s == nil {
 		return
 	}
-	if decision == decisionKeep {
+	s.Lock()
+	defer s.Unlock()
+	if decision {
 		s.SetTag(ext.ManualKeep, true)
 	} else {
 		s.SetTag(ext.ManualDrop, true)

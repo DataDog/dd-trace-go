@@ -394,6 +394,7 @@ func (t *trace) setSamplingPriority(p int, sampler samplernames.SamplerName) boo
 func (t *trace) setKeptDecision(decision bool) {
 	t.setTag(ext.ManualDrop, fmt.Sprintf("%t", !decision))
 	t.setTag(ext.ManualKeep, fmt.Sprintf("%t", decision))
+	t.setTag(keyKeptDecision, fmt.Sprintf("%t", decision))
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	t.setKeptDecisionLocked(decision)
@@ -459,7 +460,7 @@ func (t *trace) setSamplingPriorityLocked(p int, sampler samplernames.SamplerNam
 }
 
 func (t *trace) setKeptDecisionLocked(decision bool) {
-	// t.setPropagatingTagLocked(keyKeptDecision, fmt.Sprintf("%t", decision))
+	t.setPropagatingTagLocked(keyKeptDecision, fmt.Sprintf("%t", decision))
 	t.kept = decision
 }
 

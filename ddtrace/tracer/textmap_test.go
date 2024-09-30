@@ -1578,8 +1578,6 @@ func TestEnvVars(t *testing.T) {
 					assert.Nil(err)
 					root := tracer.StartSpan("web.request")
 					root.SetTag(ext.SamplingPriority, tc.priority)
-					root.SetTag(ext.ManualKeep, tc.priority > 0)
-					root.SetTag(ext.ManualDrop, tc.priority <= 0)
 					ctx := root.Context()
 					ctx.origin = tc.origin
 					ctx.traceID = tc.tid
