@@ -115,6 +115,14 @@ func (b *RunAddressDataBuilder) WithUserID(id string) *RunAddressDataBuilder {
 	return b
 }
 
+func (b *RunAddressDataBuilder) WithUserSessionID(id string) *RunAddressDataBuilder {
+	if id == "" {
+		return b
+	}
+	b.Persistent[UserSessionIDAddr] = id
+	return b
+}
+
 func (b *RunAddressDataBuilder) WithUserLoginSuccess() *RunAddressDataBuilder {
 	b.Persistent[UserLoginSuccessAddr] = nil
 	return b

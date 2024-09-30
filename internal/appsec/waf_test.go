@@ -30,6 +30,7 @@ import (
 	sqltrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/database/sql"
 	httptrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/config"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
@@ -932,6 +933,46 @@ func BenchmarkSampleWAFContext(b *testing.B) {
 
 		ctx.Close()
 	}
+}
+
+func TestAttackerFingerprinting(t *testing.T) {
+	appsec.Start()
+	defer appsec.Stop()
+	if !appsec.Enabled() {
+		t.Skip("AppSec needs to be enabled for this test")
+	}
+
+	// Start and trace an HTTP server
+	mux := httptrace.NewServeMux()
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		if err := pAppsec.TrackUserLoginSuccessEvent(r.Context(), r.Header.Get("test-usr"), map[string]string{}, tracer.WithUserSessionID("sessionID")); err != nil {
+			return
+		}
+		buf := new(strings.Builder)
+		io.Copy(buf, r.Body)
+		if err := pAppsec.MonitorParsedHTTPBody(r.Context(), buf.String()); err != nil {
+			return
+		}
+		w.Write([]byte("Hello World!\n"))
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	mt := mocktracer.Start()
+	defer mt.Stop()
+	req, err := http.NewRequest("POST", srv.URL, strings.NewReader("$globals"))
+	req.Header.Set("test-usr", "toto")
+	require.NoError(t, err)
+	resp, err := srv.Client().Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	spans := mt.FinishedSpans()
+
+	require.Len(t, spans, 1)
+	require.Contains(t, spans[0].Tags(), "_dd.appsec.json")
+	require.Contains(t, spans[0].Tags(), "_dd.appsec.fp.http.header")
+	require.Contains(t, spans[0].Tags(), "_dd.appsec.fp.http.endpoint")
+	require.Contains(t, spans[0].Tags(), "_dd.appsec.fp.http.network")
 }
 
 func init() {

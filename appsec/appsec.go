@@ -60,8 +60,14 @@ func SetUser(ctx context.Context, id string, opts ...tracer.UserMonitoringOption
 		appsecDisabledLog.Do(func() { log.Warn("appsec: not enabled. User blocking checks won't be performed.") })
 		return nil
 	}
+
 	op, errPtr := usersec.StartUserLoginOperation(ctx, usersec.UserLoginOperationArgs{})
-	op.Finish(usersec.UserLoginOperationRes{UserID: id, Success: true})
+	op.Finish(usersec.UserLoginOperationRes{
+		UserID:    id,
+		SessionID: getSessionID(opts...),
+		Success:   true,
+	})
+
 	return *errPtr
 }
 
@@ -145,4 +151,12 @@ func getRootSpan(ctx context.Context) tracer.Span {
 	}
 	log.Error("appsec: could not access the root span")
 	return nil
+}
+
+func getSessionID(opts ...tracer.UserMonitoringOption) string {
+	cfg := new(tracer.UserMonitoringConfig)
+	for _, opt := range opts {
+		opt(cfg)
+	}
+	return cfg.SessionID
 }
