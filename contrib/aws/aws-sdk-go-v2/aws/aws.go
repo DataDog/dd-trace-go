@@ -36,6 +36,8 @@ import (
 const componentName = "aws/aws-sdk-go-v2/aws"
 
 func init() {
+	log.Debug("[nhulston tracer] AWS v2 init()")
+	fmt.Println("[nhulstn tracer] AWS v2 init() println")
 	telemetry.LoadIntegration(componentName)
 	tracer.MarkIntegrationImported("github.com/aws/aws-sdk-go-v2")
 }
