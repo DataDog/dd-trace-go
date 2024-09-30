@@ -458,27 +458,15 @@ func applyAdditionalFeaturesToTestFunc(f func(*testing.T), metadata *additionalF
 				executionIndex := -1
 				var panicExecution *testExecutionMetadata
 
-				// let's get the parent field pointer of the current testing.T
-				//parentFieldPointer, _ := getFieldPointerFrom(t, "parent")
-				//parentFieldPointerIndirection := (*unsafe.Pointer)(parentFieldPointer)
-
-				// copy the value of the parent pointer
-				//parentValuePointer := *parentFieldPointerIndirection
-
-				// clean the parent pointer to nil. That way any call to Fail() in the retries will not affect the parent test
-				//*parentFieldPointerIndirection = nil
-
-				indirectValue := reflect.Indirect(reflect.ValueOf(t))
-				member := indirectValue.FieldByName("parent")
-				tParentCommonPrivates := getTestPrivateFieldsFromReflection(member.Elem())
+				tParentCommonPrivates := getTestParentPrivateFields(t)
 
 				for {
 					// Execution index
 					executionIndex++
 
 					// local copy of T
-					localT := *t
-					ptrToLocalT := &localT
+					ptrToLocalT := &testing.T{}
+					copyTestWithoutParent(t, ptrToLocalT)
 
 					// run original func
 					chn := make(chan struct{}, 1)
@@ -490,6 +478,12 @@ func applyAdditionalFeaturesToTestFunc(f func(*testing.T), metadata *additionalF
 					}()
 					<-chn
 
+					// Call cleanup test
+					callTestCleanupPanicValue := callTestCleanup(ptrToLocalT)
+					if callTestCleanupPanicValue != nil {
+						fmt.Println(callTestCleanupPanicValue)
+					}
+
 					// decrement retry count
 					remainingRetries := atomic.AddInt32(&retryCount, -1)
 
@@ -498,7 +492,7 @@ func applyAdditionalFeaturesToTestFunc(f func(*testing.T), metadata *additionalF
 
 					// if a panic occurs we fail the test
 					if currentExecution.panicData != nil {
-						localT.Fail()
+						ptrToLocalT.Fail()
 
 						// stores the first panic data
 						if panicExecution == nil {
@@ -507,35 +501,15 @@ func applyAdditionalFeaturesToTestFunc(f func(*testing.T), metadata *additionalF
 					}
 
 					// if not failed and if there's no panic data then we don't do any retry
-					if !localT.Failed() {
-						*t = localT
-						break
-					}
-
 					// if there's no more retries we also exit the loop
-					if remainingRetries < 0 {
-						*t = localT
+					if !ptrToLocalT.Failed() || remainingRetries < 0 {
+						tCommonPrivates := getTestPrivateFields(t)
+						tCommonPrivates.SetFailed(ptrToLocalT.Failed())
+						tCommonPrivates.SetSkipped(ptrToLocalT.Skipped())
+						tParentCommonPrivates.SetFailed(ptrToLocalT.Failed())
 						break
 					}
-
-					tParentCommonPrivates.SetFailed(false)
 				}
-
-				// restore the parent pointer
-				//*parentFieldPointerIndirection = parentValuePointer
-
-				//tCommonPrivates := getTestPrivateFields(t)
-				//indirectValue := reflect.Indirect(reflect.ValueOf(t))
-				//member := indirectValue.FieldByName("parent")
-				//if member.IsValid() {
-				//	tParentCommonPrivates := getTestPrivateFieldsFromReflection(member.Elem())
-				//	if *tCommonPrivates.ran {
-				//		tParentCommonPrivates.SetRan(true)
-				//	}
-				//	if *tCommonPrivates.failed {
-				//		tParentCommonPrivates.SetFailed(true)
-				//	}
-				//}
 
 				fmt.Println("\tFailed:", t.Failed())
 				fmt.Println("\tSkipped:", t.Skipped())

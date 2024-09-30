@@ -231,6 +231,9 @@ func TestSkip(gt *testing.T) {
 var runNumber = 0
 
 func TestPanic(gt *testing.T) {
+	gt.Cleanup(func() {
+		fmt.Println("CleanUp")
+	})
 	runNumber++
 	if runNumber < 4 {
 		panic("Test Panic")
