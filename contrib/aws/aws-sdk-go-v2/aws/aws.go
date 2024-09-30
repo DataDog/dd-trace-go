@@ -29,6 +29,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/sfn"
 	"github.com/aws/aws-sdk-go-v2/service/sns"
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
+	"github.com/aws/aws-sdk-go-v2/service/sqs/types"
 	"github.com/aws/smithy-go/middleware"
 	smithyhttp "github.com/aws/smithy-go/transport/http"
 )
@@ -37,7 +38,7 @@ const componentName = "aws/aws-sdk-go-v2/aws"
 
 func init() {
 	log.Debug("[nhulston tracer] AWS v2 init()")
-	fmt.Println("[nhulstn tracer] AWS v2 init() println")
+	fmt.Println("[nhulston tracer] AWS v2 init() println")
 	telemetry.LoadIntegration(componentName)
 	tracer.MarkIntegrationImported("github.com/aws/aws-sdk-go-v2")
 }
@@ -144,10 +145,24 @@ func resourceNameFromParams(requestInput middleware.InitializeInput, awsService 
 }
 
 func queueName(requestInput middleware.InitializeInput) string {
+	fmt.Println("[nhulston tracer] calling queueName()")
 	var queueURL string
 	switch params := requestInput.Parameters.(type) {
 	case *sqs.SendMessageInput:
 		queueURL = *params.QueueUrl
+		// Inject "foo": "bar" into the message attributes
+		fmt.Println("[nhulston tracer] trying to inject foobar")
+
+		if params.MessageAttributes == nil {
+			fmt.Println("[nhulston tracer] message attributes was nil")
+			params.MessageAttributes = make(map[string]types.MessageAttributeValue)
+		}
+		fmt.Println("[nhulston tracer] setting foobar")
+		params.MessageAttributes["foo"] = types.MessageAttributeValue{
+			DataType:    aws.String("String"),
+			StringValue: aws.String("bar"),
+		}
+		fmt.Println("[nhulston tracer] done setting foobar")
 	case *sqs.DeleteMessageInput:
 		queueURL = *params.QueueUrl
 	case *sqs.DeleteMessageBatchInput:
