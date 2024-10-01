@@ -175,7 +175,7 @@ func newRoundTripperConfig() *roundTripperConfig {
 		spanNamer:     defaultSpanNamer,
 		ignoreRequest: func(_ *http.Request) bool { return false },
 		queryString:   internal.BoolEnv(envClientQueryStringEnabled, true),
-		isStatusError: defaultErrorCodes,
+		isStatusError: isClientError,
 	}
 	v := os.Getenv(envClientErrorStatuses)
 	if fn := httptrace.GetErrorCodesFromInput(v); fn != nil {
@@ -283,6 +283,6 @@ func RTWithErrorCheck(fn func(err error) bool) RoundTripperOption {
 	}
 }
 
-func defaultErrorCodes(statusCode int) bool {
+func isClientError(statusCode int) bool {
 	return statusCode >= 400 && statusCode < 500
 }

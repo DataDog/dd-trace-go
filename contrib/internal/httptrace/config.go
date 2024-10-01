@@ -43,7 +43,7 @@ func newConfig() config {
 		queryString:       !internal.BoolEnv(envQueryStringDisabled, false),
 		queryStringRegexp: defaultQueryStringRegexp,
 		traceClientIP:     internal.BoolEnv(envTraceClientIPEnabled, false),
-		isStatusError:     defaultErrorCodes,
+		isStatusError:     isServerError,
 	}
 	v := os.Getenv(envServerErrorStatuses)
 	if fn := GetErrorCodesFromInput(v); fn != nil {
@@ -62,7 +62,7 @@ func newConfig() config {
 	return c
 }
 
-func defaultErrorCodes(statusCode int) bool {
+func isServerError(statusCode int) bool {
 	return statusCode >= 500 && statusCode < 600
 }
 
