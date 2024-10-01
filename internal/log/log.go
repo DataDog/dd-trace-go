@@ -60,7 +60,6 @@ func (m *ManagedFile) Close() error {
 		return err
 	}
 	m.closed = true
-	fmt.Println("It's closed now", m.closed)
 	return nil
 }
 

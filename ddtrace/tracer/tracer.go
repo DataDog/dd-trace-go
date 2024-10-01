@@ -8,7 +8,6 @@ package tracer
 import (
 	gocontext "context"
 	"encoding/binary"
-	"fmt"
 	"math"
 	"os"
 	"runtime/pprof"
@@ -677,7 +676,6 @@ func spanResourcePIISafe(s *span) bool {
 
 // Stop stops the tracer.
 func (t *tracer) Stop() {
-	fmt.Println("Hallo?")
 	t.stopOnce.Do(func() {
 		close(t.stop)
 		t.statsd.Incr("datadog.tracer.stopped", nil, 1)
