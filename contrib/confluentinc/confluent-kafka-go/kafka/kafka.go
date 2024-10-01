@@ -9,6 +9,7 @@ package kafka // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/confluentinc/co
 import (
 	"time"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/contrib/confluentinc/confluent-kafka-go/kafka/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/contrib/confluentinc/confluent-kafka-go/kafka/internal/tracing"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
@@ -52,22 +53,22 @@ func NewProducer(conf *kafka.ConfigMap, opts ...Option) (*Producer, error) {
 // A Consumer wraps a kafka.Consumer.
 type Consumer struct {
 	*kafka.Consumer
-	cfg    *config
+	cfg    *internal.Config
 	tracer *tracing.ConsumerTracer
 }
 
 // WrapConsumer wraps a kafka.Consumer so that any consumed events are traced.
 func WrapConsumer(c *kafka.Consumer, opts ...Option) *Consumer {
-	cfg := newConfig(opts...)
+	cfg := internal.NewConfig(opts...)
 	wrapped := &Consumer{
 		Consumer: c,
 		cfg:      cfg,
-		tracer: tracing.NewConsumerTracer(cfg.ctx, c, cfg.dataStreamsEnabled, cfg.groupID, tracing.StartSpanConfig{
-			Service:          cfg.consumerServiceName,
-			Operation:        cfg.consumerSpanName,
-			BootstrapServers: cfg.bootstrapServers,
-			AnalyticsRate:    cfg.analyticsRate,
-			TagFns:           cfg.tagFns,
+		tracer: tracing.NewConsumerTracer(cfg.Ctx, c, cfg.DataStreamsEnabled, cfg.GroupID, tracing.StartSpanConfig{
+			Service:          cfg.ConsumerServiceName,
+			Operation:        cfg.ConsumerSpanName,
+			BootstrapServers: cfg.BootstrapServers,
+			AnalyticsRate:    cfg.AnalyticsRate,
+			TagFns:           cfg.TagFns,
 		}),
 	}
 	log.Debug("%s: Wrapping Consumer: %#v", packageName, wrapped.cfg)
@@ -126,21 +127,21 @@ func (c *Consumer) CommitOffsets(offsets []kafka.TopicPartition) ([]kafka.TopicP
 // A Producer wraps a kafka.Producer.
 type Producer struct {
 	*kafka.Producer
-	cfg    *config
+	cfg    *internal.Config
 	tracer *tracing.ProducerTracer
 }
 
 // WrapProducer wraps a kafka.Producer so requests are traced.
 func WrapProducer(p *kafka.Producer, opts ...Option) *Producer {
-	cfg := newConfig(opts...)
+	cfg := internal.NewConfig(opts...)
 	wrapped := &Producer{
 		Producer: p,
 		cfg:      cfg,
-		tracer: tracing.NewProducerTracer(cfg.ctx, p, cfg.dataStreamsEnabled, tracing.StartSpanConfig{
-			Service:          cfg.producerServiceName,
-			Operation:        cfg.producerSpanName,
-			BootstrapServers: cfg.bootstrapServers,
-			AnalyticsRate:    cfg.analyticsRate,
+		tracer: tracing.NewProducerTracer(cfg.Ctx, p, cfg.DataStreamsEnabled, tracing.StartSpanConfig{
+			Service:          cfg.ProducerServiceName,
+			Operation:        cfg.ProducerSpanName,
+			BootstrapServers: cfg.BootstrapServers,
+			AnalyticsRate:    cfg.AnalyticsRate,
 		}),
 	}
 	log.Debug("%s: Wrapping Producer: %#v", packageName, wrapped.cfg)
@@ -162,7 +163,11 @@ func (p *Producer) Close() {
 
 // Produce calls the underlying Producer.Produce and traces the request.
 func (p *Producer) Produce(msg *kafka.Message, deliveryChan chan kafka.Event) error {
-	return p.tracer.WrapProduce(p.Producer.Produce, msg, deliveryChan)
+	var err error
+	stop := p.tracer.AroundProduce(msg, deliveryChan)
+	defer stop(err)
+
+	err = p.Producer.Produce(msg, deliveryChan)
 }
 
 // ProduceChannel returns a channel which can receive kafka Messages and will

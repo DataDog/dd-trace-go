@@ -9,6 +9,7 @@ import (
 	"math"
 	"testing"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/contrib/confluentinc/confluent-kafka-go/kafka/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 
 	"github.com/stretchr/testify/assert"
@@ -16,29 +17,29 @@ import (
 
 func TestDataStreamsActivation(t *testing.T) {
 	t.Run("default", func(t *testing.T) {
-		cfg := newConfig()
-		assert.False(t, cfg.dataStreamsEnabled)
+		cfg := internal.NewConfig()
+		assert.False(t, cfg.DataStreamsEnabled)
 	})
 	t.Run("withOption", func(t *testing.T) {
-		cfg := newConfig(WithDataStreams())
-		assert.True(t, cfg.dataStreamsEnabled)
+		cfg := internal.NewConfig(WithDataStreams())
+		assert.True(t, cfg.DataStreamsEnabled)
 	})
 	t.Run("withEnv", func(t *testing.T) {
 		t.Setenv("DD_DATA_STREAMS_ENABLED", "true")
-		cfg := newConfig()
-		assert.True(t, cfg.dataStreamsEnabled)
+		cfg := internal.NewConfig()
+		assert.True(t, cfg.DataStreamsEnabled)
 	})
 	t.Run("optionOverridesEnv", func(t *testing.T) {
 		t.Setenv("DD_DATA_STREAMS_ENABLED", "false")
-		cfg := newConfig(WithDataStreams())
-		assert.True(t, cfg.dataStreamsEnabled)
+		cfg := internal.NewConfig(WithDataStreams())
+		assert.True(t, cfg.DataStreamsEnabled)
 	})
 }
 
 func TestAnalyticsSettings(t *testing.T) {
 	t.Run("defaults", func(t *testing.T) {
-		cfg := newConfig()
-		assert.True(t, math.IsNaN(cfg.analyticsRate))
+		cfg := internal.NewConfig()
+		assert.True(t, math.IsNaN(cfg.AnalyticsRate))
 	})
 
 	t.Run("global", func(t *testing.T) {
@@ -47,13 +48,13 @@ func TestAnalyticsSettings(t *testing.T) {
 		defer globalconfig.SetAnalyticsRate(rate)
 		globalconfig.SetAnalyticsRate(0.4)
 
-		cfg := newConfig()
-		assert.Equal(t, 0.4, cfg.analyticsRate)
+		cfg := internal.NewConfig()
+		assert.Equal(t, 0.4, cfg.AnalyticsRate)
 	})
 
 	t.Run("enabled", func(t *testing.T) {
-		cfg := newConfig(WithAnalytics(true))
-		assert.Equal(t, 1.0, cfg.analyticsRate)
+		cfg := internal.NewConfig(WithAnalytics(true))
+		assert.Equal(t, 1.0, cfg.AnalyticsRate)
 	})
 
 	t.Run("override", func(t *testing.T) {
@@ -61,7 +62,7 @@ func TestAnalyticsSettings(t *testing.T) {
 		defer globalconfig.SetAnalyticsRate(rate)
 		globalconfig.SetAnalyticsRate(0.4)
 
-		cfg := newConfig(WithAnalyticsRate(0.2))
-		assert.Equal(t, 0.2, cfg.analyticsRate)
+		cfg := internal.NewConfig(WithAnalyticsRate(0.2))
+		assert.Equal(t, 0.2, cfg.AnalyticsRate)
 	})
 }

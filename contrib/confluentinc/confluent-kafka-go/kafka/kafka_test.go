@@ -89,7 +89,7 @@ func produceThenConsume(t *testing.T, consumerAction consumerActionFn, producerO
 	// they should be linked via headers
 	assert.Equal(t, spans[0].TraceID(), spans[1].TraceID())
 
-	if c.cfg.dataStreamsEnabled {
+	if c.cfg.DataStreamsEnabled {
 		backlogs := mt.SentDSMBacklogs()
 		toMap := func(b []internaldsm.Backlog) map[string]struct{} {
 			m := make(map[string]struct{})
