@@ -468,6 +468,10 @@ func applyAdditionalFeaturesToTestFunc(f func(*testing.T), metadata *additionalF
 					ptrToLocalT := &testing.T{}
 					copyTestWithoutParent(t, ptrToLocalT)
 
+					// create a dummy parent
+					localTPrivateFields := getTestPrivateFields(ptrToLocalT)
+					*localTPrivateFields.parent = unsafe.Pointer(&testing.T{})
+
 					// run original func
 					chn := make(chan struct{}, 1)
 					go func() {
@@ -481,7 +485,7 @@ func applyAdditionalFeaturesToTestFunc(f func(*testing.T), metadata *additionalF
 					// Call cleanup test
 					callTestCleanupPanicValue := testingTRunCleanup(ptrToLocalT, 1)
 					if callTestCleanupPanicValue != nil {
-						fmt.Println(callTestCleanupPanicValue)
+						fmt.Printf("cleanup error: %v\n", callTestCleanupPanicValue)
 					}
 
 					// decrement retry count
@@ -511,9 +515,17 @@ func applyAdditionalFeaturesToTestFunc(f func(*testing.T), metadata *additionalF
 					}
 				}
 
-				fmt.Println("\tFailed:", t.Failed())
-				fmt.Println("\tSkipped:", t.Skipped())
-				fmt.Println("\tRetries:", (int64)(flakyRetrySettings.RetryCount)-(retryCount+1))
+				status := "passed"
+				if t.Failed() {
+					status = "failed"
+				} else if t.Skipped() {
+					status = "skipped"
+				}
+
+				retries := (int64)(flakyRetrySettings.RetryCount) - (retryCount + 1)
+				if retries > 0 {
+					fmt.Printf("    [ %v after %v retries ]\n", status, retries)
+				}
 
 				if t.Failed() && panicExecution != nil {
 					panic(fmt.Sprintf("test failed and panicked after %d retries.\n%v\n%v", executionIndex, panicExecution.panicData, panicExecution.panicStacktrace))

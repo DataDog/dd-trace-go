@@ -53,9 +53,10 @@ func copyFieldUsingPointers[V any](source any, target any, fieldName string) {
 type commonPrivateFields struct {
 	mu      *sync.RWMutex
 	level   *int
-	name    *string // Name of test or benchmark.
-	failed  *bool   // Test or benchmark has failed.
-	skipped *bool   // Test or benchmark has been skipped.
+	name    *string         // Name of test or benchmark.
+	failed  *bool           // Test or benchmark has failed.
+	skipped *bool           // Test or benchmark has been skipped.
+	parent  *unsafe.Pointer // Parent common
 }
 
 // AddLevel increase or decrease the testing.common.level field value, used by
@@ -110,6 +111,9 @@ func getTestPrivateFields(t *testing.T) *commonPrivateFields {
 	}
 	if ptr, err := getFieldPointerFrom(t, "skipped"); err == nil {
 		testFields.skipped = (*bool)(ptr)
+	}
+	if ptr, err := getFieldPointerFrom(t, "parent"); err == nil {
+		testFields.parent = (*unsafe.Pointer)(ptr)
 	}
 
 	return testFields
@@ -226,6 +230,9 @@ func getBenchmarkPrivateFields(b *testing.B) *benchmarkPrivateFields {
 	}
 	if ptr, err := getFieldPointerFrom(b, "skipped"); err == nil {
 		benchFields.skipped = (*bool)(ptr)
+	}
+	if ptr, err := getFieldPointerFrom(b, "parent"); err == nil {
+		benchFields.parent = (*unsafe.Pointer)(ptr)
 	}
 
 	// benchmark

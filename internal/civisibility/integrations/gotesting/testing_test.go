@@ -241,6 +241,7 @@ func TestPanic(gt *testing.T) {
 }
 
 func TestAlwaysFail(gt *testing.T) {
+	gt.Parallel()
 	gt.Fatal("Always fail")
 }
 
