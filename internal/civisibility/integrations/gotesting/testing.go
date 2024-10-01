@@ -130,9 +130,10 @@ func (ddm *M) instrumentInternalTests(internalTests *[]testing.InternalTest) {
 func (ddm *M) executeInternalTest(testInfo *testingTInfo) func(*testing.T) {
 	originalFunc := runtime.FuncForPC(reflect.Indirect(reflect.ValueOf(testInfo.originalFunc)).Pointer())
 	instrumentedFunc := func(t *testing.T) {
-		// Get the test execution metadata
+		// Get the metadata regarding the execution (in case is already created from the additional features)
 		execMeta := getTestMetadata(t)
 		if execMeta == nil {
+			// in case there's no additional features then we create the metadata for this execution and defer the disposal
 			execMeta = createTestMetadata(t)
 			defer deleteTestMetadata(t)
 		}
@@ -274,12 +275,16 @@ func (ddm *M) executeInternalBenchmark(benchmarkInfo *testingBInfo) func(*testin
 			iPfOfB = getBenchmarkPrivateFields(b)
 			// Replace the benchmark function with the original one (this must be executed only once - the first iteration[b.run1]).
 			*iPfOfB.benchFunc = benchmarkInfo.originalFunc
-			// Set the CI visibility benchmark.
+
+			// Get the metadata regarding the execution (in case is already created from the additional features)
 			execMeta := getTestMetadata(b)
 			if execMeta == nil {
+				// in case there's no additional features then we create the metadata for this execution and defer the disposal
 				execMeta = createTestMetadata(b)
 				defer deleteTestMetadata(b)
 			}
+
+			// Sets the CI Visibility test
 			execMeta.test = test
 
 			// Restart the timer and execute the original benchmark function.

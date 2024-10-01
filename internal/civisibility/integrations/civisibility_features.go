@@ -10,12 +10,12 @@ import (
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/constants"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/utils"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/utils/net"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
 type (
+	// FlakyRetriesSetting struct to hold all the settings related to flaky tests retries
 	FlakyRetriesSetting struct {
 		RetryCount               int
 		TotalRetryCount          int
@@ -40,11 +40,9 @@ var (
 	ciVisibilityFlakyRetriesSettings FlakyRetriesSetting
 )
 
+// ensureAdditionalFeaturesInitialization initialize all the additional features
 func ensureAdditionalFeaturesInitialization(serviceName string) {
 	additionalFeaturesInitializationOnce.Do(func() {
-		// Preload the CodeOwner file
-		_ = utils.GetCodeOwners()
-
 		// Create the CI Visibility client
 		ciVisibilityClient = net.NewClientWithServiceName(serviceName)
 
@@ -84,18 +82,21 @@ func ensureAdditionalFeaturesInitialization(serviceName string) {
 	})
 }
 
+// GetSettings gets the settings from the backend settings endpoint
 func GetSettings() *net.SettingsResponseData {
 	// call to ensure the additional features initialization is completed (service name can be null here)
 	ensureAdditionalFeaturesInitialization("")
 	return &ciVisibilitySettings
 }
 
+// GetEarlyFlakeDetectionSettings gets the early flake detection known tests data
 func GetEarlyFlakeDetectionSettings() *net.EfdResponseData {
 	// call to ensure the additional features initialization is completed (service name can be null here)
 	ensureAdditionalFeaturesInitialization("")
 	return &ciVisibilityEarlyFlakyDetectionSettings
 }
 
+// GetFlakyRetriesSettings gets the flaky retries settings
 func GetFlakyRetriesSettings() *FlakyRetriesSetting {
 	// call to ensure the additional features initialization is completed (service name can be null here)
 	ensureAdditionalFeaturesInitialization("")

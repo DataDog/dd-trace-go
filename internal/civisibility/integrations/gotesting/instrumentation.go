@@ -28,10 +28,12 @@ import (
 // automatic instrumentation
 
 type (
+	// instrumentationMetadata contains the internal instrumentation metadata
 	instrumentationMetadata struct {
 		IsInternal bool
 	}
 
+	// testExecutionMetadata contains metadata regarding an unique *testing.T or *testing.B execution
 	testExecutionMetadata struct {
 		test            integrations.DdTest
 		error           atomic.Int32
@@ -209,12 +211,18 @@ func instrumentTestingTFunc(f func(*testing.T)) func(*testing.T) {
 		suite := module.GetOrCreateSuite(suiteName)
 		test := suite.CreateTest(t.Name())
 		test.SetTestFunc(originalFunc)
+
+		// Get the metadata regarding the execution (in case is already created from the additional features)
 		execMeta := getTestMetadata(t)
 		if execMeta == nil {
+			// in case there's no additional features then we create the metadata for this execution and defer the disposal
 			execMeta = createTestMetadata(t)
 			defer deleteTestMetadata(t)
 		}
+
+		// Set the CI visibility test.
 		execMeta.test = test
+
 		defer func() {
 			if r := recover(); r != nil {
 				// Handle panic and set error information.
@@ -368,12 +376,16 @@ func instrumentTestingBFunc(pb *testing.B, name string, f func(*testing.B)) (str
 			iPfOfB = getBenchmarkPrivateFields(b)
 			// Replace this function with the original one (executed only once - the first iteration[b.run1]).
 			*iPfOfB.benchFunc = f
-			// Set b to the CI visibility test.
+
+			// Get the metadata regarding the execution (in case is already created from the additional features)
 			execMeta := getTestMetadata(b)
 			if execMeta == nil {
+				// in case there's no additional features then we create the metadata for this execution and defer the disposal
 				execMeta = createTestMetadata(b)
 				defer deleteTestMetadata(b)
 			}
+
+			// Set the CI visibility test.
 			execMeta.test = test
 
 			// Enable the timer again.
@@ -446,6 +458,7 @@ func instrumentTestingBFunc(pb *testing.B, name string, f func(*testing.B)) (str
 	return subBenchmarkAutoName, instrumentedFunc
 }
 
+// checkIfCIVisibilityExitIsRequiredByPanic checks the additional features settings to decide if we allow individual tests to panic or not
 func checkIfCIVisibilityExitIsRequiredByPanic() bool {
 	// Apply additional features
 	settings := integrations.GetSettings()
@@ -454,6 +467,7 @@ func checkIfCIVisibilityExitIsRequiredByPanic() bool {
 	return !settings.FlakyTestRetriesEnabled && !settings.EarlyFlakeDetection.Enabled
 }
 
+// applyAdditionalFeaturesToTestFunc applies all the additional features as wrapper of a func(*testing.T)
 func applyAdditionalFeaturesToTestFunc(f func(*testing.T)) func(*testing.T) {
 	// Apply additional features
 	settings := integrations.GetSettings()
@@ -472,27 +486,33 @@ func applyAdditionalFeaturesToTestFunc(f func(*testing.T)) func(*testing.T) {
 				executionIndex := -1
 				var panicExecution *testExecutionMetadata
 
+				// Get the private fields from the *testing.T instance
 				tParentCommonPrivates := getTestParentPrivateFields(t)
 
 				for {
-					// Execution index
+					// increment execution index
 					executionIndex++
 
-					// local copy of T
+					// we need to create a new local copy of `t` as a way to isolate the results of this execution.
+					// this is because we don't want these executions to affect the overall result of the test process
+					// nor the parent test status.
 					ptrToLocalT := &testing.T{}
 					copyTestWithoutParent(t, ptrToLocalT)
 
-					// create a dummy parent
+					// we create a dummy parent so we can run the test using this local copy
+					// without affecting the test parent
 					localTPrivateFields := getTestPrivateFields(ptrToLocalT)
 					*localTPrivateFields.parent = unsafe.Pointer(&testing.T{})
 
-					// create execution metadata
+					// create an execution metadata instance
 					execMeta := createTestMetadata(ptrToLocalT)
+
+					// if we are in a retry execution we set the `isARetry` flag so we can tag the test event.
 					if executionIndex > 0 {
 						execMeta.isARetry = true
 					}
 
-					// run original func
+					// run original func similar to it gets run internally in tRunner
 					chn := make(chan struct{}, 1)
 					go func() {
 						defer func() {
@@ -502,7 +522,7 @@ func applyAdditionalFeaturesToTestFunc(f func(*testing.T)) func(*testing.T) {
 					}()
 					<-chn
 
-					// Call cleanup test
+					// we call the cleanup funcs after this execution before trying another execution
 					callTestCleanupPanicValue := testingTRunCleanup(ptrToLocalT, 1)
 					if callTestCleanupPanicValue != nil {
 						fmt.Printf("cleanup error: %v\n", callTestCleanupPanicValue)
@@ -513,12 +533,13 @@ func applyAdditionalFeaturesToTestFunc(f func(*testing.T)) func(*testing.T) {
 
 					// decrement retry count
 					remainingRetries := atomic.AddInt64(&retryCount, -1)
+					flakyRetrySettings.RemainingTotalRetryCount--
 
 					// if a panic occurs we fail the test
 					if execMeta.panicData != nil {
 						ptrToLocalT.Fail()
 
-						// stores the first panic data
+						// stores the first panic data so we can do a panic later after all retries
 						if panicExecution == nil {
 							panicExecution = execMeta
 						}
@@ -527,6 +548,8 @@ func applyAdditionalFeaturesToTestFunc(f func(*testing.T)) func(*testing.T) {
 					// if not failed and if there's no panic data then we don't do any retry
 					// if there's no more retries we also exit the loop
 					if !ptrToLocalT.Failed() || remainingRetries < 0 {
+						// because we are not going to do any other retry we set the original `t` with the results
+						// and in case of failure we mark the parent test as failed as well.
 						tCommonPrivates := getTestPrivateFields(t)
 						tCommonPrivates.SetFailed(ptrToLocalT.Failed())
 						tCommonPrivates.SetSkipped(ptrToLocalT.Skipped())
@@ -535,18 +558,20 @@ func applyAdditionalFeaturesToTestFunc(f func(*testing.T)) func(*testing.T) {
 					}
 				}
 
-				status := "passed"
-				if t.Failed() {
-					status = "failed"
-				} else if t.Skipped() {
-					status = "skipped"
-				}
-
+				// in case we execute some retries then let's print a summary of the result with the retries count
 				retries := (int64)(flakyRetrySettings.RetryCount) - (retryCount + 1)
 				if retries > 0 {
+					status := "passed"
+					if t.Failed() {
+						status = "failed"
+					} else if t.Skipped() {
+						status = "skipped"
+					}
+
 					fmt.Printf("    [ %v after %v retries ]\n", status, retries)
 				}
 
+				// if the test failed, and we have a panic information let's re-panic that
 				if t.Failed() && panicExecution != nil {
 					panic(fmt.Sprintf("test failed and panicked after %d retries.\n%v\n%v", executionIndex, panicExecution.panicData, panicExecution.panicStacktrace))
 				}
