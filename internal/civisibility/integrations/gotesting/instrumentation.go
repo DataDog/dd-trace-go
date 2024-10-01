@@ -454,7 +454,7 @@ func applyAdditionalFeaturesToTestFunc(f func(*testing.T), metadata *additionalF
 		// if the retry count per test is > 1 and if we still have remaining total retry count
 		if flakyRetrySettings.RetryCount > 1 && flakyRetrySettings.RemainingTotalRetryCount > 0 {
 			wrapperFunc = func(t *testing.T) {
-				retryCount := (int32)(flakyRetrySettings.RetryCount)
+				retryCount := (int64)(flakyRetrySettings.RetryCount)
 				executionIndex := -1
 				var panicExecution *testExecutionMetadata
 
@@ -485,7 +485,7 @@ func applyAdditionalFeaturesToTestFunc(f func(*testing.T), metadata *additionalF
 					}
 
 					// decrement retry count
-					remainingRetries := atomic.AddInt32(&retryCount, -1)
+					remainingRetries := atomic.AddInt64(&retryCount, -1)
 
 					// extract the currentExecution
 					currentExecution := metadata.executions[executionIndex]
@@ -513,7 +513,7 @@ func applyAdditionalFeaturesToTestFunc(f func(*testing.T), metadata *additionalF
 
 				fmt.Println("\tFailed:", t.Failed())
 				fmt.Println("\tSkipped:", t.Skipped())
-				fmt.Println("\tRetries:", (int32)(flakyRetrySettings.RetryCount)-(retryCount+1))
+				fmt.Println("\tRetries:", (int64)(flakyRetrySettings.RetryCount)-(retryCount+1))
 
 				if t.Failed() && panicExecution != nil {
 					panic(fmt.Sprintf("test failed and panicked after %d retries.\n%v\n%v", executionIndex, panicExecution.panicData, panicExecution.panicStacktrace))
