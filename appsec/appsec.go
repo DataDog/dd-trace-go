@@ -84,7 +84,7 @@ func SetUser(ctx context.Context, id string, opts ...tracer.UserMonitoringOption
 // Take-Over (ATO) monitoring, ultimately blocking the IP address and/or user id
 // associated to them.
 func TrackUserLoginSuccessEvent(ctx context.Context, uid string, md map[string]string, opts ...tracer.UserMonitoringOption) error {
-	TrackCustomEvent(ctx, "users.login", md)
+	TrackCustomEvent(ctx, "users.login.success", md)
 	return SetUser(ctx, uid, opts...)
 }
 
