@@ -1,4 +1,4 @@
-package sqs
+package aws
 
 import (
 	"context"
@@ -33,7 +33,7 @@ func (c messageCarrier) ForeachKey(handler func(key, val string) error) error {
 	return nil
 }
 
-func InjectTraceContext(ctx context.Context, messageAttributes map[string]types.MessageAttributeValue) error {
+func injectTraceContext(ctx context.Context, messageAttributes map[string]types.MessageAttributeValue) error {
 	span, _ := tracer.SpanFromContext(ctx)
 	if span == nil {
 		return nil

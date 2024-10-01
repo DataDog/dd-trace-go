@@ -9,7 +9,6 @@ import (
 	"context"
 	"fmt"
 	"github.com/aws/aws-sdk-go-v2/service/sqs/types"
-	sqsCommon "gopkg.in/DataDog/dd-trace-go.v1/contrib/aws/aws-sdk-go-v2/aws/sqs"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"math"
 	"strings"
@@ -109,6 +108,8 @@ func (mw *traceMiddleware) startTraceMiddleware(stack *middleware.Stack) error {
 			opts = append(opts, tracer.Tag(ext.EventSampleRate, mw.cfg.analyticsRate))
 		}
 
+		span, spanctx := tracer.StartSpanFromContext(ctx, spanName(serviceID, operation), opts...)
+
 		// Inject trace context
 		switch serviceID {
 		case "SQS":
@@ -119,8 +120,6 @@ func (mw *traceMiddleware) startTraceMiddleware(stack *middleware.Stack) error {
 			// case "EventBridge":
 			//     opts = ...
 		}
-
-		span, spanctx := tracer.StartSpanFromContext(ctx, spanName(serviceID, operation), opts...)
 
 		// Handle initialize and continue through the middleware chain.
 		out, metadata, err = next.HandleInitialize(spanctx, in)
@@ -145,13 +144,10 @@ func (mw *traceMiddleware) handleSQSOperation(ctx context.Context, in middleware
 			if params.MessageAttributes == nil {
 				params.MessageAttributes = make(map[string]types.MessageAttributeValue)
 			}
-			err := sqsCommon.InjectTraceContext(ctx, params.MessageAttributes)
+			err := injectTraceContext(ctx, params.MessageAttributes)
 			if err != nil {
 				fmt.Printf("[nhulston tracer] Error: %s", err.Error())
 			}
-			// Add any SQS-specific span tags
-			//opts = append(opts, tracer.Tag("sqs.queue_url", *params.QueueUrl))
-			//fmt.Println("[nhulston tracer] trace context:")
 		}
 	case "SendMessageBatch":
 		fmt.Println("[nhulston tracer] Operation SendMessageBatch")
