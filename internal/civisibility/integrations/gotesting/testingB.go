@@ -54,7 +54,7 @@ func (ddb *B) Run(name string, f func(*testing.B)) bool {
 // integration tests.
 func (ddb *B) Context() context.Context {
 	b := (*testing.B)(ddb)
-	ciTestItem := getCiVisibilityTest(b)
+	ciTestItem := getTestMetadata(b)
 	if ciTestItem != nil && ciTestItem.test != nil {
 		return ciTestItem.test.Context()
 	}

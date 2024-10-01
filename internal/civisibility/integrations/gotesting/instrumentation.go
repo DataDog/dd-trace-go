@@ -32,19 +32,13 @@ type (
 		IsInternal bool
 	}
 
-	ddTestItem struct {
-		test    integrations.DdTest
-		error   atomic.Int32
-		skipped atomic.Int32
-	}
-
 	testExecutionMetadata struct {
+		test            integrations.DdTest
+		error           atomic.Int32
+		skipped         atomic.Int32
 		panicData       any
 		panicStacktrace string
-		t               *testing.T
-	}
-	additionalFeaturesMetadata struct {
-		executions []*testExecutionMetadata
+		isARetry        bool
 	}
 )
 
@@ -58,11 +52,11 @@ var (
 	// instrumentationMapMutex is a read-write mutex for synchronizing access to instrumentationMap.
 	instrumentationMapMutex sync.RWMutex
 
-	// ciVisibilityTests holds a map of *testing.T or *testing.B to civisibility.DdTest for tracking tests.
-	ciVisibilityTests = map[unsafe.Pointer]*ddTestItem{}
+	// ciVisibilityTests holds a map of *testing.T or *testing.B to execution metadata for tracking tests.
+	ciVisibilityTestMetadata = map[unsafe.Pointer]*testExecutionMetadata{}
 
-	// ciVisibilityTestsMutex is a read-write mutex for synchronizing access to ciVisibilityTests.
-	ciVisibilityTestsMutex sync.RWMutex
+	// ciVisibilityTestMetadataMutex is a read-write mutex for synchronizing access to ciVisibilityTestMetadata.
+	ciVisibilityTestMetadataMutex sync.RWMutex
 )
 
 // isCiVisibilityEnabled gets if CI Visibility has been enabled or disabled by the "DD_CIVISIBILITY_ENABLED" environment variable
@@ -104,21 +98,31 @@ func setInstrumentationMetadata(fn *runtime.Func, metadata *instrumentationMetad
 	instrumentationMap[fn] = metadata
 }
 
-// getCiVisibilityTest retrieves the CI visibility test associated with a given *testing.T, *testing.B, *testing.common
-func getCiVisibilityTest(tb testing.TB) *ddTestItem {
-	ciVisibilityTestsMutex.RLock()
-	defer ciVisibilityTestsMutex.RUnlock()
-	if v, ok := ciVisibilityTests[reflect.ValueOf(tb).UnsafePointer()]; ok {
+// createTestMetadata creates the CI visibility test metadata associated with a given *testing.T, *testing.B, *testing.common
+func createTestMetadata(tb testing.TB) *testExecutionMetadata {
+	ciVisibilityTestMetadataMutex.RLock()
+	defer ciVisibilityTestMetadataMutex.RUnlock()
+	execMetadata := &testExecutionMetadata{}
+	ciVisibilityTestMetadata[reflect.ValueOf(tb).UnsafePointer()] = execMetadata
+	return execMetadata
+}
+
+// getTestMetadata retrieves the CI visibility test metadata associated with a given *testing.T, *testing.B, *testing.common
+func getTestMetadata(tb testing.TB) *testExecutionMetadata {
+	ciVisibilityTestMetadataMutex.RLock()
+	defer ciVisibilityTestMetadataMutex.RUnlock()
+	ptr := reflect.ValueOf(tb).UnsafePointer()
+	if v, ok := ciVisibilityTestMetadata[ptr]; ok {
 		return v
 	}
 	return nil
 }
 
-// setCiVisibilityTest associates a CI visibility test with a given *testing.T, *testing.B, *testing.common
-func setCiVisibilityTest(tb testing.TB, ciTest integrations.DdTest) {
-	ciVisibilityTestsMutex.Lock()
-	defer ciVisibilityTestsMutex.Unlock()
-	ciVisibilityTests[reflect.ValueOf(tb).UnsafePointer()] = &ddTestItem{test: ciTest}
+// deleteTestMetadata delete the CI visibility test metadata associated with a given *testing.T, *testing.B, *testing.common
+func deleteTestMetadata(tb testing.TB) {
+	ciVisibilityTestMetadataMutex.RLock()
+	defer ciVisibilityTestMetadataMutex.RUnlock()
+	delete(ciVisibilityTestMetadata, reflect.ValueOf(tb).UnsafePointer())
 }
 
 // instrumentTestingM helper function to instrument internalTests and internalBenchmarks in a `*testing.M` instance.
@@ -205,7 +209,12 @@ func instrumentTestingTFunc(f func(*testing.T)) func(*testing.T) {
 		suite := module.GetOrCreateSuite(suiteName)
 		test := suite.CreateTest(t.Name())
 		test.SetTestFunc(originalFunc)
-		setCiVisibilityTest(t, test)
+		execMeta := getTestMetadata(t)
+		if execMeta == nil {
+			execMeta = createTestMetadata(t)
+			defer deleteTestMetadata(t)
+		}
+		execMeta.test = test
 		defer func() {
 			if r := recover(); r != nil {
 				// Handle panic and set error information.
@@ -248,8 +257,8 @@ func instrumentSetErrorInfo(tb testing.TB, errType string, errMessage string, sk
 	}
 
 	// Get the CI Visibility span and check if we can set the error type, message and stack
-	ciTestItem := getCiVisibilityTest(tb)
-	if ciTestItem != nil && ciTestItem.error.CompareAndSwap(0, 1) && ciTestItem.test != nil {
+	ciTestItem := getTestMetadata(tb)
+	if ciTestItem != nil && ciTestItem.test != nil && ciTestItem.error.CompareAndSwap(0, 1) {
 		ciTestItem.test.SetErrorInfo(errType, errMessage, utils.GetStacktrace(2+skip))
 	}
 }
@@ -262,8 +271,8 @@ func instrumentCloseAndSkip(tb testing.TB, skipReason string) {
 	}
 
 	// Get the CI Visibility span and check if we can mark it as skipped and close it
-	ciTestItem := getCiVisibilityTest(tb)
-	if ciTestItem != nil && ciTestItem.skipped.CompareAndSwap(0, 1) && ciTestItem.test != nil {
+	ciTestItem := getTestMetadata(tb)
+	if ciTestItem != nil && ciTestItem.test != nil && ciTestItem.skipped.CompareAndSwap(0, 1) {
 		ciTestItem.test.CloseWithFinishTimeAndSkipReason(integrations.ResultStatusSkip, time.Now(), skipReason)
 	}
 }
@@ -276,8 +285,8 @@ func instrumentSkipNow(tb testing.TB) {
 	}
 
 	// Get the CI Visibility span and check if we can mark it as skipped and close it
-	ciTestItem := getCiVisibilityTest(tb)
-	if ciTestItem != nil && ciTestItem.skipped.CompareAndSwap(0, 1) && ciTestItem.test != nil {
+	ciTestItem := getTestMetadata(tb)
+	if ciTestItem != nil && ciTestItem.test != nil && ciTestItem.skipped.CompareAndSwap(0, 1) {
 		ciTestItem.test.Close(integrations.ResultStatusSkip)
 	}
 }
@@ -360,7 +369,12 @@ func instrumentTestingBFunc(pb *testing.B, name string, f func(*testing.B)) (str
 			// Replace this function with the original one (executed only once - the first iteration[b.run1]).
 			*iPfOfB.benchFunc = f
 			// Set b to the CI visibility test.
-			setCiVisibilityTest(b, test)
+			execMeta := getTestMetadata(b)
+			if execMeta == nil {
+				execMeta = createTestMetadata(b)
+				defer deleteTestMetadata(b)
+			}
+			execMeta.test = test
 
 			// Enable the timer again.
 			b.ResetTimer()
@@ -440,7 +454,7 @@ func checkIfCIVisibilityExitIsRequiredByPanic() bool {
 	return !settings.FlakyTestRetriesEnabled && !settings.EarlyFlakeDetection.Enabled
 }
 
-func applyAdditionalFeaturesToTestFunc(f func(*testing.T), metadata *additionalFeaturesMetadata) func(*testing.T) {
+func applyAdditionalFeaturesToTestFunc(f func(*testing.T)) func(*testing.T) {
 	// Apply additional features
 	settings := integrations.GetSettings()
 
@@ -472,6 +486,12 @@ func applyAdditionalFeaturesToTestFunc(f func(*testing.T), metadata *additionalF
 					localTPrivateFields := getTestPrivateFields(ptrToLocalT)
 					*localTPrivateFields.parent = unsafe.Pointer(&testing.T{})
 
+					// create execution metadata
+					execMeta := createTestMetadata(ptrToLocalT)
+					if executionIndex > 0 {
+						execMeta.isARetry = true
+					}
+
 					// run original func
 					chn := make(chan struct{}, 1)
 					go func() {
@@ -488,19 +508,19 @@ func applyAdditionalFeaturesToTestFunc(f func(*testing.T), metadata *additionalF
 						fmt.Printf("cleanup error: %v\n", callTestCleanupPanicValue)
 					}
 
+					// remove execution metadata
+					deleteTestMetadata(ptrToLocalT)
+
 					// decrement retry count
 					remainingRetries := atomic.AddInt64(&retryCount, -1)
 
-					// extract the currentExecution
-					currentExecution := metadata.executions[executionIndex]
-
 					// if a panic occurs we fail the test
-					if currentExecution.panicData != nil {
+					if execMeta.panicData != nil {
 						ptrToLocalT.Fail()
 
 						// stores the first panic data
 						if panicExecution == nil {
-							panicExecution = currentExecution
+							panicExecution = execMeta
 						}
 					}
 

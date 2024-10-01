@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/constants"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/integrations"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/utils"
 )
@@ -128,24 +129,29 @@ func (ddm *M) instrumentInternalTests(internalTests *[]testing.InternalTest) {
 // executeInternalTest wraps the original test function to include CI visibility instrumentation.
 func (ddm *M) executeInternalTest(testInfo *testingTInfo) func(*testing.T) {
 	originalFunc := runtime.FuncForPC(reflect.Indirect(reflect.ValueOf(testInfo.originalFunc)).Pointer())
-	additionalFeaturesMeta := &additionalFeaturesMetadata{}
 	instrumentedFunc := func(t *testing.T) {
-		// Create and store the test execution metadata
-		tExecMeta := &testExecutionMetadata{t: t}
-		additionalFeaturesMeta.executions = append(additionalFeaturesMeta.executions, tExecMeta)
+		// Get the test execution metadata
+		execMeta := getTestMetadata(t)
+		if execMeta == nil {
+			execMeta = createTestMetadata(t)
+			defer deleteTestMetadata(t)
+		}
 
 		// Create or retrieve the module, suite, and test for CI visibility.
 		module := session.GetOrCreateModuleWithFramework(testInfo.moduleName, testFramework, runtime.Version())
 		suite := module.GetOrCreateSuite(testInfo.suiteName)
 		test := suite.CreateTest(testInfo.testName)
 		test.SetTestFunc(originalFunc)
-		setCiVisibilityTest(t, test)
+		execMeta.test = test
+		if execMeta.isARetry {
+			test.SetTag(constants.TestIsRetry, "true")
+		}
 		defer func() {
 			if r := recover(); r != nil {
 				// Handle panic and set error information.
-				tExecMeta.panicData = r
-				tExecMeta.panicStacktrace = utils.GetStacktrace(1)
-				test.SetErrorInfo("panic", fmt.Sprint(r), tExecMeta.panicStacktrace)
+				execMeta.panicData = r
+				execMeta.panicStacktrace = utils.GetStacktrace(1)
+				test.SetErrorInfo("panic", fmt.Sprint(r), execMeta.panicStacktrace)
 				suite.SetTag(ext.Error, true)
 				module.SetTag(ext.Error, true)
 				test.Close(integrations.ResultStatusFail)
@@ -176,7 +182,7 @@ func (ddm *M) executeInternalTest(testInfo *testingTInfo) func(*testing.T) {
 	}
 
 	// Get the additional feature wrapper
-	additionalFeaturesFuncWrapper := applyAdditionalFeaturesToTestFunc(instrumentedFunc, additionalFeaturesMeta)
+	additionalFeaturesFuncWrapper := applyAdditionalFeaturesToTestFunc(instrumentedFunc)
 
 	setInstrumentationMetadata(runtime.FuncForPC(reflect.Indirect(reflect.ValueOf(instrumentedFunc)).Pointer()), &instrumentationMetadata{IsInternal: true})
 	setInstrumentationMetadata(runtime.FuncForPC(reflect.Indirect(reflect.ValueOf(additionalFeaturesFuncWrapper)).Pointer()), &instrumentationMetadata{IsInternal: true})
@@ -269,7 +275,12 @@ func (ddm *M) executeInternalBenchmark(benchmarkInfo *testingBInfo) func(*testin
 			// Replace the benchmark function with the original one (this must be executed only once - the first iteration[b.run1]).
 			*iPfOfB.benchFunc = benchmarkInfo.originalFunc
 			// Set the CI visibility benchmark.
-			setCiVisibilityTest(b, test)
+			execMeta := getTestMetadata(b)
+			if execMeta == nil {
+				execMeta = createTestMetadata(b)
+				defer deleteTestMetadata(b)
+			}
+			execMeta.test = test
 
 			// Restart the timer and execute the original benchmark function.
 			b.ResetTimer()
