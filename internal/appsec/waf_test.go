@@ -936,6 +936,7 @@ func BenchmarkSampleWAFContext(b *testing.B) {
 }
 
 func TestAttackerFingerprinting(t *testing.T) {
+	t.Setenv("DD_APPSEC_RULES", "testdata/fp.json")
 	appsec.Start()
 	defer appsec.Stop()
 	if !appsec.Enabled() {
@@ -947,13 +948,11 @@ func TestAttackerFingerprinting(t *testing.T) {
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		pAppsec.TrackUserLoginSuccessEvent(
 			r.Context(),
-			r.Header.Get("test-usr"),
+			"toto",
 			map[string]string{},
 			tracer.WithUserSessionID("sessionID"))
 
-		buf := new(strings.Builder)
-		io.Copy(buf, r.Body)
-		pAppsec.MonitorParsedHTTPBody(r.Context(), buf.String())
+		pAppsec.MonitorParsedHTTPBody(r.Context(), map[string]string{"key": "value"})
 
 		w.Write([]byte("Hello World!\n"))
 	})
@@ -962,20 +961,19 @@ func TestAttackerFingerprinting(t *testing.T) {
 
 	mt := mocktracer.Start()
 	defer mt.Stop()
-	req, err := http.NewRequest("POST", srv.URL, strings.NewReader("$globals"))
-	req.Header.Set("test-usr", "toto")
+	req, err := http.NewRequest("POST", srv.URL+"/test?x=1", nil)
 	require.NoError(t, err)
+	req.AddCookie(&http.Cookie{Name: "cookie", Value: "value"})
 	resp, err := srv.Client().Do(req)
 	require.NoError(t, err)
 	defer resp.Body.Close()
 	spans := mt.FinishedSpans()
 
 	require.Len(t, spans, 1)
-	require.Contains(t, spans[0].Tags(), "_dd.appsec.json")
 	require.Contains(t, spans[0].Tags(), "_dd.appsec.fp.http.header")
 	require.Contains(t, spans[0].Tags(), "_dd.appsec.fp.http.endpoint")
 	require.Contains(t, spans[0].Tags(), "_dd.appsec.fp.http.network")
-	require.Contains(t, spans[0].Tags(), "_dd.appsec.fp.http.session")
+	require.Contains(t, spans[0].Tags(), "_dd.appsec.fp.session")
 }
 
 func init() {

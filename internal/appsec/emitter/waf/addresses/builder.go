@@ -28,24 +28,18 @@ func NewAddressesBuilder() *RunAddressDataBuilder {
 }
 
 func (b *RunAddressDataBuilder) WithMethod(method string) *RunAddressDataBuilder {
-	if method == "" {
-		return b
-	}
 	b.Persistent[ServerRequestMethodAddr] = method
 	return b
 }
 
 func (b *RunAddressDataBuilder) WithRawURI(uri string) *RunAddressDataBuilder {
-	if uri == "" {
-		return b
-	}
 	b.Persistent[ServerRequestRawURIAddr] = uri
 	return b
 }
 
 func (b *RunAddressDataBuilder) WithHeadersNoCookies(headers map[string][]string) *RunAddressDataBuilder {
 	if len(headers) == 0 {
-		return b
+		headers = nil
 	}
 	b.Persistent[ServerRequestHeadersNoCookiesAddr] = headers
 	return b
@@ -53,7 +47,7 @@ func (b *RunAddressDataBuilder) WithHeadersNoCookies(headers map[string][]string
 
 func (b *RunAddressDataBuilder) WithCookies(cookies map[string][]string) *RunAddressDataBuilder {
 	if len(cookies) == 0 {
-		return b
+		cookies = nil
 	}
 	b.Persistent[ServerRequestCookiesAddr] = cookies
 	return b
@@ -61,7 +55,7 @@ func (b *RunAddressDataBuilder) WithCookies(cookies map[string][]string) *RunAdd
 
 func (b *RunAddressDataBuilder) WithQuery(query map[string][]string) *RunAddressDataBuilder {
 	if len(query) == 0 {
-		return b
+		query = nil
 	}
 	b.Persistent[ServerRequestQueryAddr] = query
 	return b
@@ -121,6 +115,7 @@ func (b *RunAddressDataBuilder) WithUserSessionID(id string) *RunAddressDataBuil
 	}
 	b.Persistent[UserSessionIDAddr] = id
 	return b
+
 }
 
 func (b *RunAddressDataBuilder) WithUserLoginSuccess() *RunAddressDataBuilder {
