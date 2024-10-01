@@ -229,6 +229,9 @@ func instrumentTestingTFunc(f func(*testing.T)) func(*testing.T) {
 				test.SetErrorInfo("panic", fmt.Sprint(r), utils.GetStacktrace(1))
 				test.Close(integrations.ResultStatusFail)
 				checkModuleAndSuite(module, suite)
+				// this is not an internal test. Retries are not applied to subtest (because the parent internal test is going to be retried)
+				// so for this case we avoid closing CI Visibility, but we don't stop the panic from happening.
+				// it will be handled by `t.Run`
 				if checkIfCIVisibilityExitIsRequiredByPanic() {
 					integrations.ExitCiVisibility()
 				}
@@ -482,7 +485,7 @@ func applyAdditionalFeaturesToTestFunc(f func(*testing.T)) func(*testing.T) {
 		// if the retry count per test is > 1 and if we still have remaining total retry count
 		if flakyRetrySettings.RetryCount > 1 && flakyRetrySettings.RemainingTotalRetryCount > 0 {
 			wrapperFunc = func(t *testing.T) {
-				retryCount := (int64)(flakyRetrySettings.RetryCount)
+				retryCount := flakyRetrySettings.RetryCount
 				executionIndex := -1
 				var panicExecution *testExecutionMetadata
 
@@ -531,9 +534,9 @@ func applyAdditionalFeaturesToTestFunc(f func(*testing.T)) func(*testing.T) {
 					// remove execution metadata
 					deleteTestMetadata(ptrToLocalT)
 
-					// decrement retry count
+					// decrement retry counts
 					remainingRetries := atomic.AddInt64(&retryCount, -1)
-					flakyRetrySettings.RemainingTotalRetryCount--
+					remainingTotalRetries := atomic.AddInt64(&flakyRetrySettings.RemainingTotalRetryCount, -1)
 
 					// if a panic occurs we fail the test
 					if execMeta.panicData != nil {
@@ -547,7 +550,7 @@ func applyAdditionalFeaturesToTestFunc(f func(*testing.T)) func(*testing.T) {
 
 					// if not failed and if there's no panic data then we don't do any retry
 					// if there's no more retries we also exit the loop
-					if !ptrToLocalT.Failed() || remainingRetries < 0 {
+					if !ptrToLocalT.Failed() || remainingRetries < 0 || remainingTotalRetries < 0 {
 						// because we are not going to do any other retry we set the original `t` with the results
 						// and in case of failure we mark the parent test as failed as well.
 						tCommonPrivates := getTestPrivateFields(t)
@@ -559,7 +562,7 @@ func applyAdditionalFeaturesToTestFunc(f func(*testing.T)) func(*testing.T) {
 				}
 
 				// in case we execute some retries then let's print a summary of the result with the retries count
-				retries := (int64)(flakyRetrySettings.RetryCount) - (retryCount + 1)
+				retries := flakyRetrySettings.RetryCount - (retryCount + 1)
 				if retries > 0 {
 					status := "passed"
 					if t.Failed() {
@@ -571,6 +574,11 @@ func applyAdditionalFeaturesToTestFunc(f func(*testing.T)) func(*testing.T) {
 					fmt.Printf("    [ %v after %v retries ]\n", status, retries)
 				}
 
+				// let's check if total retry count was exceeded
+				if flakyRetrySettings.RemainingTotalRetryCount < 1 {
+					fmt.Println("    the maximum number of total retries was exceeded.")
+				}
+
 				// if the test failed, and we have a panic information let's re-panic that
 				if t.Failed() && panicExecution != nil {
 					panic(fmt.Sprintf("test failed and panicked after %d retries.\n%v\n%v", executionIndex, panicExecution.panicData, panicExecution.panicStacktrace))
@@ -579,6 +587,8 @@ func applyAdditionalFeaturesToTestFunc(f func(*testing.T)) func(*testing.T) {
 		}
 	}
 
+	// Register the instrumented func as an internal instrumented func (to avoid double instrumentation)
+	setInstrumentationMetadata(runtime.FuncForPC(reflect.Indirect(reflect.ValueOf(wrapperFunc)).Pointer()), &instrumentationMetadata{IsInternal: true})
 	return wrapperFunc
 }
 

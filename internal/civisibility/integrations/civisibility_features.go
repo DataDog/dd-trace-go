@@ -17,9 +17,9 @@ import (
 type (
 	// FlakyRetriesSetting struct to hold all the settings related to flaky tests retries
 	FlakyRetriesSetting struct {
-		RetryCount               int
-		TotalRetryCount          int
-		RemainingTotalRetryCount int
+		RetryCount               int64
+		TotalRetryCount          int64
+		RemainingTotalRetryCount int64
 	}
 )
 
@@ -68,9 +68,9 @@ func ensureAdditionalFeaturesInitialization(serviceName string) {
 		if ciVisibilitySettings.FlakyTestRetriesEnabled {
 			flakyRetryEnabledByEnv := internal.BoolEnv(constants.CIVisibilityFlakyRetryEnabledEnvironmentVariable, true)
 			if flakyRetryEnabledByEnv {
-				totalRetriesCount := internal.IntEnv(constants.CIVisibilityTotalFlakyRetryCountEnvironmentVariable, 1_000)
+				totalRetriesCount := (int64)(internal.IntEnv(constants.CIVisibilityTotalFlakyRetryCountEnvironmentVariable, 1_000))
 				ciVisibilityFlakyRetriesSettings = FlakyRetriesSetting{
-					RetryCount:               internal.IntEnv(constants.CIVisibilityFlakyRetryCountEnvironmentVariable, 5),
+					RetryCount:               (int64)(internal.IntEnv(constants.CIVisibilityFlakyRetryCountEnvironmentVariable, 5)),
 					TotalRetryCount:          totalRetriesCount,
 					RemainingTotalRetryCount: totalRetriesCount,
 				}

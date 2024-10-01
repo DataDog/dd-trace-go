@@ -143,10 +143,15 @@ func (ddm *M) executeInternalTest(testInfo *testingTInfo) func(*testing.T) {
 		suite := module.GetOrCreateSuite(testInfo.suiteName)
 		test := suite.CreateTest(testInfo.testName)
 		test.SetTestFunc(originalFunc)
+
+		// Set the CI Visibility test to the execution metadata
 		execMeta.test = test
+
+		// If the execution is a retry we tag the test event
 		if execMeta.isARetry {
 			test.SetTag(constants.TestIsRetry, "true")
 		}
+
 		defer func() {
 			if r := recover(); r != nil {
 				// Handle panic and set error information.
@@ -182,12 +187,11 @@ func (ddm *M) executeInternalTest(testInfo *testingTInfo) func(*testing.T) {
 		testInfo.originalFunc(t)
 	}
 
-	// Get the additional feature wrapper
-	additionalFeaturesFuncWrapper := applyAdditionalFeaturesToTestFunc(instrumentedFunc)
-
+	// Register the instrumented func as an internal instrumented func (to avoid double instrumentation)
 	setInstrumentationMetadata(runtime.FuncForPC(reflect.Indirect(reflect.ValueOf(instrumentedFunc)).Pointer()), &instrumentationMetadata{IsInternal: true})
-	setInstrumentationMetadata(runtime.FuncForPC(reflect.Indirect(reflect.ValueOf(additionalFeaturesFuncWrapper)).Pointer()), &instrumentationMetadata{IsInternal: true})
-	return additionalFeaturesFuncWrapper
+
+	// Get the additional feature wrapper
+	return applyAdditionalFeaturesToTestFunc(instrumentedFunc)
 }
 
 // instrumentInternalBenchmarks instruments the internal benchmarks for CI visibility.
