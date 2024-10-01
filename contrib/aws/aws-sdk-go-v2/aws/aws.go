@@ -8,6 +8,8 @@ package aws
 import (
 	"context"
 	"fmt"
+	"github.com/aws/aws-sdk-go-v2/service/sqs/types"
+	sqsCommon "gopkg.in/DataDog/dd-trace-go.v1/contrib/aws/aws-sdk-go-v2/aws/sqs"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"math"
 	"strings"
@@ -138,18 +140,19 @@ func (mw *traceMiddleware) handleSQSOperation(ctx context.Context, in middleware
 	switch operation {
 	case "SendMessage":
 		fmt.Println("[nhulston tracer] Operation SendMessage")
-		//if params, ok := in.Parameters.(*sqs.SendMessageInput); ok {
-		//	// Inject trace context
-		//	if params.MessageAttributes == nil {
-		//		params.MessageAttributes = make(map[string]types.MessageAttributeValue)
-		//	}
-		//	err := sqs2.InjectTraceContext(ctx, params.MessageAttributes)
-		//	if err != nil {
-		//		// Handle error (e.g., log it)
-		//	}
-		//	// Add any SQS-specific span tags
-		//	opts = append(opts, tracer.Tag("sqs.queue_url", *params.QueueUrl))
-		//}
+		if params, ok := in.Parameters.(*sqs.SendMessageInput); ok {
+			// Inject trace context
+			if params.MessageAttributes == nil {
+				params.MessageAttributes = make(map[string]types.MessageAttributeValue)
+			}
+			err := sqsCommon.InjectTraceContext(ctx, params.MessageAttributes)
+			if err != nil {
+				fmt.Printf("[nhulston tracer] Error: %s", err.Error())
+			}
+			// Add any SQS-specific span tags
+			//opts = append(opts, tracer.Tag("sqs.queue_url", *params.QueueUrl))
+			//fmt.Println("[nhulston tracer] trace context:")
+		}
 	case "SendMessageBatch":
 		fmt.Println("[nhulston tracer] Operation SendMessageBatch")
 	}
