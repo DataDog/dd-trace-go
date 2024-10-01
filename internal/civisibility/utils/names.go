@@ -15,6 +15,7 @@ import (
 )
 
 var (
+	// ignoredFunctionsFromStackTrace array with functions we want to ignore on the final stacktrace (because doesn't add anything useful)
 	ignoredFunctionsFromStackTrace = []string{"runtime.gopanic", "runtime.panicmem", "runtime.sigpanic"}
 )
 
@@ -77,9 +78,11 @@ func GetStacktrace(skip int) string {
 	buffer := new(bytes.Buffer)
 	for {
 		if frame, ok := frames.Next(); ok {
+			// let's check if we need to ignore this frame
 			if slices.Contains(ignoredFunctionsFromStackTrace, frame.Function) {
 				continue
 			}
+			// writing frame to the buffer
 			_, _ = fmt.Fprintf(buffer, "%s\n\t%s:%d\n", frame.Function, frame.File, frame.Line)
 		} else {
 			break

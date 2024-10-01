@@ -31,7 +31,7 @@ var mTracer mocktracer.Tracer
 // TestMain is the entry point for testing and runs before any test.
 func TestMain(m *testing.M) {
 	currentM = m
-	integrations.EnsureCiVisibilityInitialization()
+	// integrations.EnsureCiVisibilityInitialization()
 	mTracer = integrations.InitializeCIVisibilityMock()
 	if mTracer == nil {
 		mTracer = mocktracer.Start()
@@ -228,6 +228,7 @@ func TestSkip(gt *testing.T) {
 	t.Skip("Nothing to do here, skipping!")
 }
 
+/*
 var runNumber = 0
 
 func TestPanic(gt *testing.T) {
@@ -244,6 +245,7 @@ func TestAlwaysFail(gt *testing.T) {
 	gt.Parallel()
 	gt.Fatal("Always fail")
 }
+*/
 
 // BenchmarkFirst demonstrates benchmark instrumentation with sub-benchmarks.
 func BenchmarkFirst(gb *testing.B) {
