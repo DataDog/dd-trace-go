@@ -35,8 +35,6 @@ import (
 const componentName = "aws/aws-sdk-go/aws"
 
 func init() {
-	log.Debug("[nhulston tracer] AWS v1 init()")
-	fmt.Println("[nhulstn tracer] AWS v1 init() println")
 	telemetry.LoadIntegration(componentName)
 	tracer.MarkIntegrationImported("github.com/aws/aws-sdk-go")
 }
@@ -54,8 +52,6 @@ type handlers struct {
 
 // WrapSession wraps a session.Session, causing requests and responses to be traced.
 func WrapSession(s *session.Session, opts ...Option) *session.Session {
-	fmt.Println("[nhulston tracer] WrapSession()")
-	log.Debug("[nhulston tracer] WrapSession()")
 	cfg := new(config)
 	defaults(cfg)
 	for _, opt := range opts {
@@ -76,8 +72,6 @@ func WrapSession(s *session.Session, opts ...Option) *session.Session {
 }
 
 func (h *handlers) Send(req *request.Request) {
-	fmt.Println("[nhulston tracer] Send()")
-	log.Debug("[nhulston tracer] Send()")
 	if req.RetryCount != 0 {
 		return
 	}
