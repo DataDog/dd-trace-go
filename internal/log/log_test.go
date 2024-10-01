@@ -52,13 +52,13 @@ func TestLogDirectory(t *testing.T) {
 	})
 	t.Run("valid", func(t *testing.T) {
 		// ensure File is created successfully
-		p, err := os.MkdirTemp("", "example")
+		dir, err := os.MkdirTemp("", "example")
 		if err != nil {
 			t.Fatalf("Failure creating directory %v", err)
 		}
-		f, err := OpenFileAtPath(p)
+		f, err := OpenFileAtPath(dir)
 		assert.Nil(t, err)
-		fp := p + "/" + LoggerFile
+		fp := dir + "/" + LoggerFile
 		assert.NotNil(t, f.file)
 		assert.Equal(t, fp, f.file.Name())
 		assert.False(t, f.closed)

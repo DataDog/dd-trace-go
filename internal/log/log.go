@@ -39,16 +39,18 @@ type Logger interface {
 	Log(msg string)
 }
 
+// File name for writing tracer logs, if DD_TRACE_LOG_DIRECTORY has been configured
 const LoggerFile = "ddtrace.log"
 
+// ManagedFile functions like a *os.File but is safe for concurrent use
 type ManagedFile struct {
 	mu     sync.RWMutex
 	file   *os.File
 	closed bool
 }
 
+// Close closes the ManagedFile's *os.File in a concurrent-safe manner, ensuring the file is closed only once
 func (m *ManagedFile) Close() error {
-	fmt.Println("In m.Close()")
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.file == nil || m.closed {
@@ -56,11 +58,19 @@ func (m *ManagedFile) Close() error {
 	}
 	err := m.file.Close()
 	if err != nil {
-		fmt.Println("theres a error")
 		return err
 	}
 	m.closed = true
 	return nil
+}
+
+func (m *ManagedFile) Name() string {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	if m.file == nil {
+		return ""
+	}
+	return m.file.Name()
 }
 
 var (
@@ -82,8 +92,9 @@ func UseLogger(l Logger) (undo func()) {
 	}
 }
 
-// OpenFileAtPath sets the logger to write to a ddtrace.log file at the specified dirPath
-// The caller of OpenFileAtPath must also call call Close() on the ManagedFile
+// OpenFileAtPath creates a new file at the specified dirPath and configures the logger to write to this file. The dirPath must already exist on the underlying os.
+// It returns the file that was created, or nil and an error if the file creation was unsuccessful.
+// The caller of OpenFileAtPath is responsible for calling Close() on the ManagedFile
 func OpenFileAtPath(dirPath string) (*ManagedFile, error) {
 	path, err := os.Stat(dirPath)
 	if err != nil || !path.IsDir() {

@@ -112,6 +112,9 @@ type tracer struct {
 	// when abandoned spans debugging is enabled.
 	abandonedSpansDebugger *abandonedSpansDebugger
 
+	// logFile contains a pointer to the file for writing tracer logs along with helper functionality for closing the file
+	// logFile is closed when tracer stops
+	// by default, tracer logs to stderr and this setting is unused
 	logFile *log.ManagedFile
 }
 

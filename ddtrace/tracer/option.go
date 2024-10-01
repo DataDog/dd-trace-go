@@ -277,7 +277,7 @@ type config struct {
 	// ciVisibilityEnabled controls if the tracer is loaded with CI Visibility mode. default false
 	ciVisibilityEnabled bool
 
-	// logDirectory is directory specified by user-setting DD_TRACE_LOG_DIRECTORY
+	// logDirectory is directory for tracer logs specified by user-setting DD_TRACE_LOG_DIRECTORY. default empty/unused
 	logDirectory string
 }
 
