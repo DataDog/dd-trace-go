@@ -17,7 +17,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/trace/httptrace"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener/httpsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
 )
 
@@ -33,7 +33,7 @@ func StartRequestSpan(r *http.Request, opts ...ddtrace.StartSpanOption) (tracer.
 
 	var ipTags map[string]string
 	if cfg.traceClientIP {
-		ipTags, _ = httptrace.ClientIPTags(r.Header, true, r.RemoteAddr)
+		ipTags, _ = httpsec.ClientIPTags(r.Header, true, r.RemoteAddr)
 	}
 	nopts := make([]ddtrace.StartSpanOption, 0, len(opts)+1+len(ipTags))
 	nopts = append(nopts,
