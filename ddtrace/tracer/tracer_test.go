@@ -255,6 +255,26 @@ func TestTracerStart(t *testing.T) {
 	})
 }
 
+func TestTracerLogFile(t *testing.T) {
+	t.Run("valid", func(t *testing.T) {
+		f, err := os.MkdirTemp("", "example")
+		if err != nil {
+			t.Fatalf("Failure to make temp dir: %v", err)
+		}
+		t.Setenv("DD_TRACE_LOG_DIRECTORY", f)
+		tracer := newTracer()
+		assert.Equal(t, f, tracer.config.logDirectory)
+		assert.NotNil(t, tracer.logFile)
+	})
+	t.Run("invalid", func(t *testing.T) {
+		t.Setenv("DD_TRACE_LOG_DIRECTORY", "some/nonexistent/path")
+		tracer := newTracer()
+		defer Stop()
+		assert.Empty(t, tracer.config.logDirectory)
+		assert.Nil(t, tracer.logFile)
+	})
+}
+
 func TestTracerStartSpan(t *testing.T) {
 	t.Run("generic", func(t *testing.T) {
 		tracer := newTracer()

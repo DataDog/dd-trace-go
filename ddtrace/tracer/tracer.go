@@ -8,6 +8,7 @@ package tracer
 import (
 	gocontext "context"
 	"encoding/binary"
+	"fmt"
 	"math"
 	"os"
 	"runtime/pprof"
@@ -111,6 +112,8 @@ type tracer struct {
 	// abandonedSpansDebugger specifies where and how potentially abandoned spans are stored
 	// when abandoned spans debugging is enabled.
 	abandonedSpansDebugger *abandonedSpansDebugger
+
+	logFile *log.ManagedFile
 }
 
 const (
@@ -272,6 +275,14 @@ func newUnstartedTracer(opts ...StartOption) *tracer {
 	if c.dataStreamsMonitoringEnabled {
 		dataStreamsProcessor = datastreams.NewProcessor(statsd, c.env, c.serviceName, c.version, c.agentURL, c.httpClient)
 	}
+	var logFile *log.ManagedFile
+	if v := c.logDirectory; v != "" {
+		logFile, err = log.OpenFileAtPath(v)
+		if err != nil {
+			log.Warn("%v", err)
+			c.logDirectory = ""
+		}
+	}
 	t := &tracer{
 		config:           c,
 		traceWriter:      writer,
@@ -294,6 +305,7 @@ func newUnstartedTracer(opts ...StartOption) *tracer {
 		}),
 		statsd:      statsd,
 		dataStreams: dataStreamsProcessor,
+		logFile:     logFile,
 	}
 	return t
 }
@@ -665,6 +677,7 @@ func spanResourcePIISafe(s *span) bool {
 
 // Stop stops the tracer.
 func (t *tracer) Stop() {
+	fmt.Println("Hallo?")
 	t.stopOnce.Do(func() {
 		close(t.stop)
 		t.statsd.Incr("datadog.tracer.stopped", nil, 1)
@@ -679,6 +692,10 @@ func (t *tracer) Stop() {
 	}
 	appsec.Stop()
 	remoteconfig.Stop()
+	// Close log file last to account for any logs from the above calls
+	if t.logFile != nil {
+		t.logFile.Close()
+	}
 }
 
 // Inject uses the configured or default TextMap Propagator.

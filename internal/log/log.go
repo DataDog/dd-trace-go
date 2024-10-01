@@ -39,6 +39,31 @@ type Logger interface {
 	Log(msg string)
 }
 
+const LoggerFile = "ddtrace.log"
+
+type ManagedFile struct {
+	mu     sync.RWMutex
+	file   *os.File
+	closed bool
+}
+
+func (m *ManagedFile) Close() error {
+	fmt.Println("In m.Close()")
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.file == nil || m.closed {
+		return nil
+	}
+	err := m.file.Close()
+	if err != nil {
+		fmt.Println("theres a error")
+		return err
+	}
+	m.closed = true
+	fmt.Println("It's closed now", m.closed)
+	return nil
+}
+
 var (
 	mu     sync.RWMutex // guards below fields
 	level               = LevelWarn
@@ -56,6 +81,24 @@ func UseLogger(l Logger) (undo func()) {
 	return func() {
 		logger = old
 	}
+}
+
+// OpenFileAtPath sets the logger to write to a ddtrace.log file at the specified dirPath
+// The caller of OpenFileAtPath must also call call Close() on the ManagedFile
+func OpenFileAtPath(dirPath string) (*ManagedFile, error) {
+	path, err := os.Stat(dirPath)
+	if err != nil || !path.IsDir() {
+		return nil, fmt.Errorf("file path %v invalid or does not exist on the underlying os; using default logger to stderr", dirPath)
+	}
+	filepath := dirPath + "/" + LoggerFile
+	f, err := os.OpenFile(filepath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
+	if err != nil {
+		return nil, fmt.Errorf("using default logger to stderr due to error creating or opening log file: %v", err)
+	}
+	UseLogger(&defaultLogger{l: log.New(f, "", log.LstdFlags)})
+	return &ManagedFile{
+		file: f,
+	}, nil
 }
 
 // SetLevel sets the given lvl for logging.

@@ -276,6 +276,9 @@ type config struct {
 
 	// ciVisibilityEnabled controls if the tracer is loaded with CI Visibility mode. default false
 	ciVisibilityEnabled bool
+
+	// logDirectory is directory specified by user-setting DD_TRACE_LOG_DIRECTORY
+	logDirectory string
 }
 
 // orchestrionConfig contains Orchestrion configuration.
@@ -379,6 +382,7 @@ func newConfig(opts ...StartOption) *config {
 	c.logStartup = internal.BoolEnv("DD_TRACE_STARTUP_LOGS", true)
 	c.runtimeMetrics = internal.BoolVal(getDDorOtelConfig("metrics"), false)
 	c.debug = internal.BoolVal(getDDorOtelConfig("debugMode"), false)
+	c.logDirectory = os.Getenv("DD_TRACE_LOG_DIRECTORY")
 	c.enabled = newDynamicConfig("tracing_enabled", internal.BoolVal(getDDorOtelConfig("enabled"), true), func(b bool) bool { return true }, equal[bool])
 	if _, ok := os.LookupEnv("DD_TRACE_ENABLED"); ok {
 		c.enabled.cfgOrigin = telemetry.OriginEnvVar
@@ -505,7 +509,6 @@ func newConfig(opts ...StartOption) *config {
 	if c.debug {
 		log.SetLevel(log.LevelDebug)
 	}
-
 	// if using stdout or traces are disabled, agent is disabled
 	agentDisabled := c.logToStdout || !c.enabled.current
 	c.agent = loadAgentFeatures(agentDisabled, c.agentURL, c.httpClient)
