@@ -12,12 +12,10 @@ import (
 	"io"
 	"net"
 	"testing"
-	"time"
 
 	pappsec "gopkg.in/DataDog/dd-trace-go.v1/appsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
-	appsecConfig "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/config"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -28,7 +26,8 @@ import (
 )
 
 func TestAppSec(t *testing.T) {
-	appsec.Start(appsecConfig.WithWAFTimeout(time.Hour /* functionally unlimited */))
+	t.Setenv("DD_APPSEC_WAF_TIMEOUT", "1h") // Functionally unlimited
+	appsec.Start()
 	defer appsec.Stop()
 	if !appsec.Enabled() {
 		t.Skip("appsec disabled")

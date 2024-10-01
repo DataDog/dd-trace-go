@@ -77,15 +77,6 @@ func WithRCConfig(cfg remoteconfig.ClientConfig) StartOption {
 	}
 }
 
-// WithWAFTimeout sets the AppSec WAF timeout to the specified cfg. This is primarily used for testing purposes. The
-// recommended way to specify the WAF timeout for production workloads is by specifying the DD_APPSEC_WAF_TIMEOUT
-// environment variable.
-func WithWAFTimeout(timeout time.Duration) StartOption {
-	return func(c *Config) {
-		c.WAFTimeout = timeout
-	}
-}
-
 // IsEnabled returns true when appsec is enabled by the environment variable DD_APPSEC_ENABLED (as of strconv's boolean
 // parsing rules). When false, it also returns whether the env var was actually set or not.
 // In case of a parsing error, it returns a detailed error.
