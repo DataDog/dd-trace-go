@@ -8,6 +8,8 @@ package aws
 import (
 	"context"
 	"fmt"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
+	"math"
 	"strings"
 	"time"
 
@@ -46,15 +48,17 @@ type spanTimestampKey struct{}
 // AppendMiddleware takes the aws.Config and adds the Datadog tracing middleware into the APIOptions middleware stack.
 // See https://aws.github.io/aws-sdk-go-v2/docs/middleware for more information.
 func AppendMiddleware(awsCfg *aws.Config, opts ...Option) {
-	//cfg := &config{}
-	//
-	//defaults(cfg)
-	//for _, opt := range opts {
-	//	opt(cfg)
-	//}
-	//
-	//tm := traceMiddleware{cfg: cfg}
-	//awsCfg.APIOptions = append(awsCfg.APIOptions, tm.initTraceMiddleware, tm.startTraceMiddleware, tm.deserializeTraceMiddleware)
+	log.Debug("[nhulston tracer] AppendMiddleware()")
+	fmt.Println("[nhulston tracer] AppendMiddleware()")
+	cfg := &config{}
+
+	defaults(cfg)
+	for _, opt := range opts {
+		opt(cfg)
+	}
+
+	tm := traceMiddleware{cfg: cfg}
+	awsCfg.APIOptions = append(awsCfg.APIOptions, tm.initTraceMiddleware, tm.startTraceMiddleware, tm.deserializeTraceMiddleware)
 }
 
 type traceMiddleware struct {
@@ -62,6 +66,8 @@ type traceMiddleware struct {
 }
 
 func (mw *traceMiddleware) initTraceMiddleware(stack *middleware.Stack) error {
+	log.Debug("[nhulston tracer] AWS v2 initTraceMiddleware()")
+	fmt.Println("[nhulston tracer] AWS v2 initTraceMiddleware() println")
 	return stack.Initialize.Add(middleware.InitializeMiddlewareFunc("InitTraceMiddleware", func(
 		ctx context.Context, in middleware.InitializeInput, next middleware.InitializeHandler,
 	) (
@@ -74,53 +80,54 @@ func (mw *traceMiddleware) initTraceMiddleware(stack *middleware.Stack) error {
 }
 
 func (mw *traceMiddleware) startTraceMiddleware(stack *middleware.Stack) error {
-	log.Debug("[nhulston tracer] AWS v2 startTraceMiddleware")
-	fmt.Println("[nhulston tracer] AWS v2 startTraceMiddleware")
-	return nil
-	//return stack.Initialize.Add(middleware.InitializeMiddlewareFunc("StartTraceMiddleware", func(
-	//	ctx context.Context, in middleware.InitializeInput, next middleware.InitializeHandler,
-	//) (
-	//	out middleware.InitializeOutput, metadata middleware.Metadata, err error,
-	//) {
-	//	operation := awsmiddleware.GetOperationName(ctx)
-	//	serviceID := awsmiddleware.GetServiceID(ctx)
-	//
-	//	opts := []ddtrace.StartSpanOption{
-	//		tracer.SpanType(ext.SpanTypeHTTP),
-	//		tracer.ServiceName(serviceName(mw.cfg, serviceID)),
-	//		tracer.ResourceName(fmt.Sprintf("%s.%s", serviceID, operation)),
-	//		tracer.Tag(tags.OldAWSRegion, awsmiddleware.GetRegion(ctx)),
-	//		tracer.Tag(tags.AWSRegion, awsmiddleware.GetRegion(ctx)),
-	//		tracer.Tag(tags.AWSOperation, operation),
-	//		tracer.Tag(tags.OldAWSService, serviceID),
-	//		tracer.Tag(tags.AWSService, serviceID),
-	//		tracer.StartTime(ctx.Value(spanTimestampKey{}).(time.Time)),
-	//		tracer.Tag(ext.Component, componentName),
-	//		tracer.Tag(ext.SpanKind, ext.SpanKindClient),
-	//	}
-	//	k, v, err := resourceNameFromParams(in, serviceID)
-	//	if err != nil {
-	//		log.Debug("Error: %v", err)
-	//	} else {
-	//		opts = append(opts, tracer.Tag(k, v))
-	//	}
-	//	if !math.IsNaN(mw.cfg.analyticsRate) {
-	//		opts = append(opts, tracer.Tag(ext.EventSampleRate, mw.cfg.analyticsRate))
-	//	}
-	//	span, spanctx := tracer.StartSpanFromContext(ctx, spanName(serviceID, operation), opts...)
-	//
-	//	// Handle initialize and continue through the middleware chain.
-	//	out, metadata, err = next.HandleInitialize(spanctx, in)
-	//	if err != nil && (mw.cfg.errCheck == nil || mw.cfg.errCheck(err)) {
-	//		span.SetTag(ext.Error, err)
-	//	}
-	//	span.Finish()
-	//
-	//	return out, metadata, err
-	//}), middleware.After)
+	log.Debug("[nhulston tracer] AWS v2 startTraceMiddleware()")
+	fmt.Println("[nhulston tracer] AWS v2 startTraceMiddleware()")
+	return stack.Initialize.Add(middleware.InitializeMiddlewareFunc("StartTraceMiddleware", func(
+		ctx context.Context, in middleware.InitializeInput, next middleware.InitializeHandler,
+	) (
+		out middleware.InitializeOutput, metadata middleware.Metadata, err error,
+	) {
+		operation := awsmiddleware.GetOperationName(ctx)
+		serviceID := awsmiddleware.GetServiceID(ctx)
+
+		opts := []ddtrace.StartSpanOption{
+			tracer.SpanType(ext.SpanTypeHTTP),
+			tracer.ServiceName(serviceName(mw.cfg, serviceID)),
+			tracer.ResourceName(fmt.Sprintf("%s.%s", serviceID, operation)),
+			tracer.Tag(tags.OldAWSRegion, awsmiddleware.GetRegion(ctx)),
+			tracer.Tag(tags.AWSRegion, awsmiddleware.GetRegion(ctx)),
+			tracer.Tag(tags.AWSOperation, operation),
+			tracer.Tag(tags.OldAWSService, serviceID),
+			tracer.Tag(tags.AWSService, serviceID),
+			tracer.StartTime(ctx.Value(spanTimestampKey{}).(time.Time)),
+			tracer.Tag(ext.Component, componentName),
+			tracer.Tag(ext.SpanKind, ext.SpanKindClient),
+		}
+		k, v, err := resourceNameFromParams(in, serviceID)
+		if err != nil {
+			log.Debug("Error: %v", err)
+		} else {
+			opts = append(opts, tracer.Tag(k, v))
+		}
+		if !math.IsNaN(mw.cfg.analyticsRate) {
+			opts = append(opts, tracer.Tag(ext.EventSampleRate, mw.cfg.analyticsRate))
+		}
+		span, spanctx := tracer.StartSpanFromContext(ctx, spanName(serviceID, operation), opts...)
+
+		// Handle initialize and continue through the middleware chain.
+		out, metadata, err = next.HandleInitialize(spanctx, in)
+		if err != nil && (mw.cfg.errCheck == nil || mw.cfg.errCheck(err)) {
+			span.SetTag(ext.Error, err)
+		}
+		span.Finish()
+
+		return out, metadata, err
+	}), middleware.After)
 }
 
 func resourceNameFromParams(requestInput middleware.InitializeInput, awsService string) (string, string, error) {
+	log.Debug("[nhulston tracer] AWS v2 resourceNameFromParams()")
+	fmt.Println("[nhulston tracer] AWS v2 resourceNameFromParams()")
 	var k, v string
 
 	switch awsService {
@@ -146,24 +153,30 @@ func resourceNameFromParams(requestInput middleware.InitializeInput, awsService 
 }
 
 func queueName(requestInput middleware.InitializeInput) string {
-	fmt.Println("[nhulston tracer] calling queueName()")
+	fmt.Println("[nhulston tracer] queueName()")
+	log.Debug("[nhulston tracer] queueName()")
 	var queueURL string
 	switch params := requestInput.Parameters.(type) {
 	case *sqs.SendMessageInput:
 		queueURL = *params.QueueUrl
 		// Inject "foo": "bar" into the message attributes
 		fmt.Println("[nhulston tracer] trying to inject foobar")
+		log.Debug("[nhulston tracer] trying to inject foobar()")
 
 		if params.MessageAttributes == nil {
 			fmt.Println("[nhulston tracer] message attributes was nil")
+			log.Debug("[nhulston tracer] message attributes was nil")
 			params.MessageAttributes = make(map[string]types.MessageAttributeValue)
 		}
 		fmt.Println("[nhulston tracer] setting foobar")
+		log.Debug("[nhulston tracer] setting foobar")
 		params.MessageAttributes["foo"] = types.MessageAttributeValue{
 			DataType:    aws.String("String"),
 			StringValue: aws.String("bar"),
 		}
+		params.MessageBody = aws.String("foobar")
 		fmt.Println("[nhulston tracer] done setting foobar")
+		log.Debug("[nhulston tracer] done setting foobar")
 	case *sqs.DeleteMessageInput:
 		queueURL = *params.QueueUrl
 	case *sqs.DeleteMessageBatchInput:
@@ -178,6 +191,8 @@ func queueName(requestInput middleware.InitializeInput) string {
 }
 
 func bucketName(requestInput middleware.InitializeInput) string {
+	fmt.Println("[nhulston tracer] bucketName()")
+	log.Debug("[nhulston tracer] bucketName()")
 	switch params := requestInput.Parameters.(type) {
 	case *s3.ListObjectsInput:
 		return *params.Bucket
@@ -196,6 +211,8 @@ func bucketName(requestInput middleware.InitializeInput) string {
 }
 
 func destinationTagValue(requestInput middleware.InitializeInput) (tag string, value string) {
+	fmt.Println("[nhulston tracer] destinationTagValue()")
+	log.Debug("[nhulston tracer] destinationTagValue()")
 	tag = tags.SNSTopicName
 	var s string
 	switch params := requestInput.Parameters.(type) {
@@ -229,6 +246,8 @@ func destinationTagValue(requestInput middleware.InitializeInput) (tag string, v
 }
 
 func tableName(requestInput middleware.InitializeInput) string {
+	fmt.Println("[nhulston tracer] tableName()")
+	log.Debug("[nhulston tracer] tableName()")
 	switch params := requestInput.Parameters.(type) {
 	case *dynamodb.GetItemInput:
 		return *params.TableName
@@ -245,6 +264,8 @@ func tableName(requestInput middleware.InitializeInput) string {
 }
 
 func streamName(requestInput middleware.InitializeInput) string {
+	fmt.Println("[nhulston tracer] streamName()")
+	log.Debug("[nhulston tracer] streamName()")
 	switch params := requestInput.Parameters.(type) {
 	case *kinesis.PutRecordInput:
 		return coalesceNameOrArnResource(params.StreamName, params.StreamARN)
@@ -275,6 +296,8 @@ func streamName(requestInput middleware.InitializeInput) string {
 }
 
 func ruleName(requestInput middleware.InitializeInput) string {
+	fmt.Println("[nhulston tracer] ruleName()")
+	log.Debug("[nhulston tracer] ruleName()")
 	switch params := requestInput.Parameters.(type) {
 	case *eventbridge.PutRuleInput:
 		return *params.Name
@@ -295,6 +318,8 @@ func ruleName(requestInput middleware.InitializeInput) string {
 }
 
 func stateMachineName(requestInput middleware.InitializeInput) string {
+	fmt.Println("[nhulston tracer] stateMachineName()")
+	log.Debug("[nhulston tracer] stateMachineName()")
 	var stateMachineArn string
 
 	switch params := requestInput.Parameters.(type) {
@@ -328,6 +353,8 @@ func stateMachineName(requestInput middleware.InitializeInput) string {
 }
 
 func (mw *traceMiddleware) deserializeTraceMiddleware(stack *middleware.Stack) error {
+	fmt.Println("[nhulston tracer] deserializeTraceMiddleware()")
+	log.Debug("[nhulston tracer] deserializeTraceMiddleware()")
 	return stack.Deserialize.Add(middleware.DeserializeMiddlewareFunc("DeserializeTraceMiddleware", func(
 		ctx context.Context, in middleware.DeserializeInput, next middleware.DeserializeHandler,
 	) (
@@ -363,10 +390,14 @@ func (mw *traceMiddleware) deserializeTraceMiddleware(stack *middleware.Stack) e
 }
 
 func spanName(awsService, awsOperation string) string {
+	fmt.Println("[nhulston tracer] spanName()")
+	log.Debug("[nhulston tracer] spanName()")
 	return namingschema.AWSOpName(awsService, awsOperation, awsService+".request")
 }
 
 func serviceName(cfg *config, awsService string) string {
+	fmt.Println("[nhulston tracer] serviceName()")
+	log.Debug("[nhulston tracer] serviceName()")
 	if cfg.serviceName != "" {
 		return cfg.serviceName
 	}
@@ -375,6 +406,8 @@ func serviceName(cfg *config, awsService string) string {
 }
 
 func coalesceNameOrArnResource(name *string, arnVal *string) string {
+	fmt.Println("[nhulston tracer] coalesceNameOrArnResource()")
+	log.Debug("[nhulston tracer] coalesceNameOrArnResource()")
 	if name != nil {
 		return *name
 	}
