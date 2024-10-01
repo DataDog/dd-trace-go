@@ -392,6 +392,10 @@ var blockingCapabilities = [...]remoteconfig.Capability{
 	remoteconfig.ASMCustomBlockingResponse,
 	remoteconfig.ASMTrustedIPs,
 	remoteconfig.ASMExclusionData,
+	remoteconfig.ASMEndpointFingerprinting,
+	remoteconfig.ASMSessionFingerprinting,
+	remoteconfig.ASMNetworkFingerprinting,
+	remoteconfig.ASMHeaderFingerprinting,
 }
 
 func (a *appsec) enableRCBlocking() {
