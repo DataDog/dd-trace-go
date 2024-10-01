@@ -479,7 +479,7 @@ func applyAdditionalFeaturesToTestFunc(f func(*testing.T), metadata *additionalF
 					<-chn
 
 					// Call cleanup test
-					callTestCleanupPanicValue := callTestCleanup(ptrToLocalT)
+					callTestCleanupPanicValue := testingTRunCleanup(ptrToLocalT, 1)
 					if callTestCleanupPanicValue != nil {
 						fmt.Println(callTestCleanupPanicValue)
 					}
@@ -524,3 +524,6 @@ func applyAdditionalFeaturesToTestFunc(f func(*testing.T), metadata *additionalF
 
 	return wrapperFunc
 }
+
+//go:linkname testingTRunCleanup testing.(*common).runCleanup
+func testingTRunCleanup(c *testing.T, ph int) (panicVal any)

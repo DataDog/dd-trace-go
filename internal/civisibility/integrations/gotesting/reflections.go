@@ -183,13 +183,6 @@ func getTestPrivateFieldsFromReflection(value reflect.Value) *commonPrivateField
 	return testFields
 }
 
-//go:linkname runCleanup testing.(*common).runCleanup
-func runCleanup(c *testing.T, ph int) (panicVal any)
-
-func callTestCleanup(t *testing.T) any {
-	return runCleanup(t, 1)
-}
-
 // BENCHMARKS
 
 // get the pointer to the internal benchmark array
