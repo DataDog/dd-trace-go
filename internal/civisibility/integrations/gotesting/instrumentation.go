@@ -35,12 +35,13 @@ type (
 
 	// testExecutionMetadata contains metadata regarding an unique *testing.T or *testing.B execution
 	testExecutionMetadata struct {
-		test            integrations.DdTest
-		error           atomic.Int32
-		skipped         atomic.Int32
-		panicData       any
-		panicStacktrace string
-		isARetry        bool
+		test                        integrations.DdTest // internal CI Visibility test event
+		error                       atomic.Int32        // flag to check if the test event has error data already
+		skipped                     atomic.Int32        // flag to check if the test event has skipped data already
+		panicData                   any                 // panic data recovered from an internal test execution when using an additional feature wrapper
+		panicStacktrace             string              // stacktrace from the panic recovered from an internal test
+		isARetry                    bool                // flag to tag if a current test execution is a retry
+		hasAdditionalFeatureWrapper bool                // flag to check if the current execution is part of an additional feature wrapper
 	}
 )
 
@@ -492,6 +493,10 @@ func applyAdditionalFeaturesToTestFunc(f func(*testing.T)) func(*testing.T) {
 				// Get the private fields from the *testing.T instance
 				tParentCommonPrivates := getTestParentPrivateFields(t)
 
+				// Module and suite for this test
+				var module integrations.DdTestModule
+				var suite integrations.DdTestSuite
+
 				for {
 					// increment execution index
 					executionIndex++
@@ -509,6 +514,7 @@ func applyAdditionalFeaturesToTestFunc(f func(*testing.T)) func(*testing.T) {
 
 					// create an execution metadata instance
 					execMeta := createTestMetadata(ptrToLocalT)
+					execMeta.hasAdditionalFeatureWrapper = true
 
 					// if we are in a retry execution we set the `isARetry` flag so we can tag the test event.
 					if executionIndex > 0 {
@@ -529,6 +535,15 @@ func applyAdditionalFeaturesToTestFunc(f func(*testing.T)) func(*testing.T) {
 					callTestCleanupPanicValue := testingTRunCleanup(ptrToLocalT, 1)
 					if callTestCleanupPanicValue != nil {
 						fmt.Printf("cleanup error: %v\n", callTestCleanupPanicValue)
+					}
+
+					// extract module and suite if present
+					currentSuite := execMeta.test.Suite()
+					if suite == nil && currentSuite != nil {
+						suite = currentSuite
+					}
+					if module == nil && currentSuite != nil && currentSuite.Module() != nil {
+						module = currentSuite.Module()
 					}
 
 					// remove execution metadata
@@ -574,6 +589,9 @@ func applyAdditionalFeaturesToTestFunc(f func(*testing.T)) func(*testing.T) {
 					fmt.Printf("    [ %v after %v retries ]\n", status, retries)
 				}
 
+				// after all test executions we check if we need to close the suite and the module
+				checkModuleAndSuite(module, suite)
+
 				// let's check if total retry count was exceeded
 				if flakyRetrySettings.RemainingTotalRetryCount < 1 {
 					fmt.Println("    the maximum number of total retries was exceeded.")
@@ -581,6 +599,8 @@ func applyAdditionalFeaturesToTestFunc(f func(*testing.T)) func(*testing.T) {
 
 				// if the test failed, and we have a panic information let's re-panic that
 				if t.Failed() && panicExecution != nil {
+					// we are about to panic, let's ensure we flush all ci visibility data and close the session event
+					integrations.ExitCiVisibility()
 					panic(fmt.Sprintf("test failed and panicked after %d retries.\n%v\n%v", executionIndex, panicExecution.panicData, panicExecution.panicStacktrace))
 				}
 			}

@@ -149,6 +149,7 @@ func (ddm *M) executeInternalTest(testInfo *testingTInfo) func(*testing.T) {
 
 		// If the execution is a retry we tag the test event
 		if execMeta.isARetry {
+			// Set the retry tag
 			test.SetTag(constants.TestIsRetry, "true")
 		}
 
@@ -161,8 +162,10 @@ func (ddm *M) executeInternalTest(testInfo *testingTInfo) func(*testing.T) {
 				suite.SetTag(ext.Error, true)
 				module.SetTag(ext.Error, true)
 				test.Close(integrations.ResultStatusFail)
-				checkModuleAndSuite(module, suite)
-				if checkIfCIVisibilityExitIsRequiredByPanic() {
+				if !execMeta.hasAdditionalFeatureWrapper {
+					// we are going to let the additional feature wrapper to handle
+					// the panic, and module and suite closing (we don't want to close the suite earlier in case of a retry)
+					checkModuleAndSuite(module, suite)
 					integrations.ExitCiVisibility()
 					panic(r)
 				}
@@ -179,7 +182,11 @@ func (ddm *M) executeInternalTest(testInfo *testingTInfo) func(*testing.T) {
 					test.Close(integrations.ResultStatusPass)
 				}
 
-				checkModuleAndSuite(module, suite)
+				if !execMeta.hasAdditionalFeatureWrapper {
+					// we are going to let the additional feature wrapper to handle
+					// the module and suite closing (we don't want to close the suite earlier in case of a retry)
+					checkModuleAndSuite(module, suite)
+				}
 			}
 		}()
 

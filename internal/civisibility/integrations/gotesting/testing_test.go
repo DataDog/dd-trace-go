@@ -6,6 +6,7 @@
 package gotesting
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -21,6 +22,7 @@ import (
 	ddtracer "gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/constants"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/integrations"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/utils/net"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -30,56 +32,92 @@ var mTracer mocktracer.Tracer
 
 // TestMain is the entry point for testing and runs before any test.
 func TestMain(m *testing.M) {
+
+	// mock the settings api to enable automatic test retries
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Settings request
+		if r.URL.Path == "/api/v2/libraries/tests/services/setting" {
+			w.Header().Set("Content-Type", "application/json")
+			response := struct {
+				Data struct {
+					ID         string                   `json:"id"`
+					Type       string                   `json:"type"`
+					Attributes net.SettingsResponseData `json:"attributes"`
+				} `json:"data,omitempty"`
+			}{}
+
+			// let's enable flaky test retries
+			response.Data.Attributes = net.SettingsResponseData{
+				FlakyTestRetriesEnabled: true,
+			}
+
+			json.NewEncoder(w).Encode(&response)
+		}
+	}))
+	defer server.Close()
+
+	// set the custom agentless url and the flaky retry count env-var
+	os.Setenv(constants.CIVisibilityAgentlessURLEnvironmentVariable, server.URL)
+	os.Setenv(constants.CIVisibilityFlakyRetryCountEnvironmentVariable, "10")
+
+	// initialize the mock tracer for doing assertions on the finished spans
 	currentM = m
-	// integrations.EnsureCiVisibilityInitialization()
 	mTracer = integrations.InitializeCIVisibilityMock()
-	if mTracer == nil {
-		mTracer = mocktracer.Start()
-	}
 
-	// (*M)(m).Run() cast m to gotesting.M and just run
-	// or use a helper method gotesting.RunM(m)
+	// execute the tests, because we are expecting some tests to fail and check the assertion later
+	// we don't store the exit code from the test runner
+	RunM(m)
 
-	// os.Exit((*M)(m).Run())
-	exit := RunM(m)
-	if exit != 0 {
-		fmt.Println("Exit Code:", exit)
-		os.Exit(exit)
-	}
-
+	// get all finished spans
 	finishedSpans := mTracer.FinishedSpans()
+
 	// 1 session span
 	// 1 module span
-	// 1 suite span (optional 1 from reflections_test.go)
-	// 6 tests spans
-	// 7 sub stest spans
-	// 2 normal spans (from integration tests)
-	// 1 benchmark span (optional - require the -bench option)
-	if len(finishedSpans) < 17 {
-		panic("expected at least 17 finished spans, got " + strconv.Itoa(len(finishedSpans)))
+	// 2 suite span (testing_test.go and reflections_test.go)
+	// 5 tests spans from testing_test.go
+	// 7 sub stest spans from testing_test.go
+	// 1 TestRetryWithPanic + 3 retry tests from testing_test.go
+	// 1 TestRetryWithFail + 3 retry tests from testing_test.go
+	// 1 TestRetryAlwaysFail + 10 retry tests from testing_test.go
+	// 2 normal spans from testing_test.go
+	// 5 tests from reflections_test.go
+	// 2 benchmark spans (optional - require the -bench option)
+	fmt.Printf("Number of spans received: %d\n", len(finishedSpans))
+	if len(finishedSpans) < 36 {
+		panic("expected at least 36 finished spans, got " + strconv.Itoa(len(finishedSpans)))
 	}
 
 	sessionSpans := getSpansWithType(finishedSpans, constants.SpanTypeTestSession)
+	fmt.Printf("Number of sessions received: %d\n", len(sessionSpans))
+	showResourcesNameFromSpans(sessionSpans)
 	if len(sessionSpans) != 1 {
 		panic("expected exactly 1 session span, got " + strconv.Itoa(len(sessionSpans)))
 	}
 
 	moduleSpans := getSpansWithType(finishedSpans, constants.SpanTypeTestModule)
+	fmt.Printf("Number of modules received: %d\n", len(moduleSpans))
+	showResourcesNameFromSpans(moduleSpans)
 	if len(moduleSpans) != 1 {
 		panic("expected exactly 1 module span, got " + strconv.Itoa(len(moduleSpans)))
 	}
 
 	suiteSpans := getSpansWithType(finishedSpans, constants.SpanTypeTestSuite)
-	if len(suiteSpans) < 1 {
-		panic("expected at least 1 suite span, got " + strconv.Itoa(len(suiteSpans)))
+	fmt.Printf("Number of suites received: %d\n", len(suiteSpans))
+	showResourcesNameFromSpans(suiteSpans)
+	if len(suiteSpans) != 2 {
+		panic("expected exactly 2 suite spans, got " + strconv.Itoa(len(suiteSpans)))
 	}
 
 	testSpans := getSpansWithType(finishedSpans, constants.SpanTypeTest)
-	if len(testSpans) < 12 {
-		panic("expected at least 12 suite span, got " + strconv.Itoa(len(testSpans)))
+	fmt.Printf("Number of tests received: %d\n", len(testSpans))
+	showResourcesNameFromSpans(testSpans)
+	if len(testSpans) != 36 {
+		panic("expected exactly 36 test spans, got " + strconv.Itoa(len(testSpans)))
 	}
 
 	httpSpans := getSpansWithType(finishedSpans, ext.SpanTypeHTTP)
+	fmt.Printf("Number of http spans received: %d\n", len(httpSpans))
+	showResourcesNameFromSpans(httpSpans)
 	if len(httpSpans) != 2 {
 		panic("expected exactly 2 normal spans, got " + strconv.Itoa(len(httpSpans)))
 	}
@@ -228,24 +266,44 @@ func TestSkip(gt *testing.T) {
 	t.Skip("Nothing to do here, skipping!")
 }
 
-/*
-var runNumber = 0
+// Tests for test retries feature
 
-func TestPanic(gt *testing.T) {
-	gt.Cleanup(func() {
-		fmt.Println("CleanUp")
+var testRetryWithPanicRunNumber = 0
+
+func TestRetryWithPanic(t *testing.T) {
+	t.Cleanup(func() {
+		if testRetryWithPanicRunNumber == 1 {
+			fmt.Println("CleanUp from the initial execution")
+		} else {
+			fmt.Println("CleanUp from the retry")
+		}
 	})
-	runNumber++
-	if runNumber < 4 {
+	testRetryWithPanicRunNumber++
+	if testRetryWithPanicRunNumber < 4 {
 		panic("Test Panic")
 	}
 }
 
-func TestAlwaysFail(gt *testing.T) {
-	gt.Parallel()
-	gt.Fatal("Always fail")
+var testRetryWithFailRunNumber = 0
+
+func TestRetryWithFail(t *testing.T) {
+	t.Cleanup(func() {
+		if testRetryWithFailRunNumber == 1 {
+			fmt.Println("CleanUp from the initial execution")
+		} else {
+			fmt.Println("CleanUp from the retry")
+		}
+	})
+	testRetryWithFailRunNumber++
+	if testRetryWithFailRunNumber < 4 {
+		t.Fatal("Failed due the wrong execution number")
+	}
 }
-*/
+
+func TestRetryAlwaysFail(t *testing.T) {
+	t.Parallel()
+	t.Fatal("Always fail")
+}
 
 // BenchmarkFirst demonstrates benchmark instrumentation with sub-benchmarks.
 func BenchmarkFirst(gb *testing.B) {
@@ -389,4 +447,10 @@ func getSpansWithType(spans []mocktracer.Span, spanType string) []mocktracer.Spa
 	}
 
 	return result
+}
+
+func showResourcesNameFromSpans(spans []mocktracer.Span) {
+	for i, span := range spans {
+		fmt.Printf("  [%d] = %v\n", i, span.Tag(ext.ResourceName))
+	}
 }
