@@ -35,6 +35,8 @@ func TestMain(m *testing.M) {
 
 	// mock the settings api to enable automatic test retries
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Printf("MockApi received request: %s\n", r.URL.Path)
+
 		// Settings request
 		if r.URL.Path == "/api/v2/libraries/tests/services/setting" {
 			w.Header().Set("Content-Type", "application/json")
@@ -51,12 +53,14 @@ func TestMain(m *testing.M) {
 				FlakyTestRetriesEnabled: true,
 			}
 
+			fmt.Printf("MockApi sending response: %v\n", response)
 			json.NewEncoder(w).Encode(&response)
 		}
 	}))
 	defer server.Close()
 
 	// set the custom agentless url and the flaky retry count env-var
+	fmt.Printf("Using mockapi at: %s\n", server.URL)
 	os.Setenv(constants.CIVisibilityAgentlessURLEnvironmentVariable, server.URL)
 	os.Setenv(constants.CIVisibilityFlakyRetryCountEnvironmentVariable, "10")
 
