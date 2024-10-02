@@ -4,34 +4,28 @@ import (
 	"context"
 	"encoding/json"
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/service/sqs"
 	"github.com/aws/aws-sdk-go-v2/service/sqs/types"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
 
 const (
-	IntegrationName = "aws.sqs"
-	datadogTraceKey = "_datadog"
+	datadogKey = "_datadog"
 )
-
-type SendMessageAPIClient interface {
-	SendMessage(ctx context.Context, params *sqs.SendMessageInput, optFns ...func(*sqs.Options)) (*sqs.SendMessageOutput, error)
-}
 
 type messageCarrier map[string]string
 
-func (c messageCarrier) Set(key, val string) {
-	c[key] = val
+func (carrier messageCarrier) Set(key, val string) {
+	carrier[key] = val
 }
 
-func (c messageCarrier) ForeachKey(handler func(key, val string) error) error {
-	for k, v := range c {
-		if err := handler(k, v); err != nil {
-			return err
-		}
-	}
-	return nil
-}
+//func (carrier messageCarrier) ForeachKey(handler func(key, val string) error) error {
+//	for k, v := range carrier {
+//		if err := handler(k, v); err != nil {
+//			return err
+//		}
+//	}
+//	return nil
+//}
 
 func injectTraceContext(ctx context.Context, messageAttributes map[string]types.MessageAttributeValue) error {
 	span, _ := tracer.SpanFromContext(ctx)
@@ -50,7 +44,7 @@ func injectTraceContext(ctx context.Context, messageAttributes map[string]types.
 		return err
 	}
 
-	messageAttributes[datadogTraceKey] = types.MessageAttributeValue{
+	messageAttributes[datadogKey] = types.MessageAttributeValue{
 		DataType:    aws.String("String"),
 		StringValue: aws.String(string(jsonBytes)),
 	}
