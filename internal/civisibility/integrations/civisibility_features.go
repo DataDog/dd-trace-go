@@ -45,6 +45,10 @@ func ensureAdditionalFeaturesInitialization(serviceName string) {
 	additionalFeaturesInitializationOnce.Do(func() {
 		// Create the CI Visibility client
 		ciVisibilityClient = net.NewClientWithServiceName(serviceName)
+		if ciVisibilityClient == nil {
+			log.Error("CI Visibility: error getting the ci visibility http client")
+			return
+		}
 
 		// Get the CI Visibility settings payload for this test session
 		ciSettings, err := ciVisibilityClient.GetSettings()
