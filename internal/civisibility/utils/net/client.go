@@ -183,7 +183,7 @@ func NewClientWithServiceName(serviceName string) Client {
 	defaultHeaders["trace_id"] = id
 	defaultHeaders["parent_id"] = id
 
-	c := client{
+	return &client{
 		id:               id,
 		agentless:        agentlessEnabled,
 		baseURL:          baseURL,
@@ -204,11 +204,6 @@ func NewClientWithServiceName(serviceName string) Client {
 		headers: defaultHeaders,
 		handler: requestHandler,
 	}
-
-	debugC := c
-	debugC.headers = nil
-	fmt.Printf("Client initialized with: %v\n", debugC)
-	return &c
 }
 
 func NewClient() Client {

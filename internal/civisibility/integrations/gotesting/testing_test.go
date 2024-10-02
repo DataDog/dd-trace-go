@@ -61,6 +61,7 @@ func TestMain(m *testing.M) {
 
 	// set the custom agentless url and the flaky retry count env-var
 	fmt.Printf("Using mockapi at: %s\n", server.URL)
+	os.Setenv(constants.CIVisibilityAgentlessEnabledEnvironmentVariable, "true")
 	os.Setenv(constants.CIVisibilityAgentlessURLEnvironmentVariable, server.URL)
 	os.Setenv(constants.CIVisibilityFlakyRetryCountEnvironmentVariable, "10")
 
