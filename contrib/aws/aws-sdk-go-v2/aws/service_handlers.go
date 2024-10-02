@@ -3,13 +3,16 @@ package aws
 import (
 	"context"
 	"fmt"
+	"github.com/aws/aws-sdk-go-v2/service/eventbridge"
 	"github.com/aws/aws-sdk-go-v2/service/sns"
 	snstypes "github.com/aws/aws-sdk-go-v2/service/sns/types"
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
 	sqstypes "github.com/aws/aws-sdk-go-v2/service/sqs/types"
 	"github.com/aws/smithy-go/middleware"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
 
+// TODO tags?
 func (mw *traceMiddleware) handleSQSOperation(ctx context.Context, in middleware.InitializeInput, operation string) {
 	fmt.Println("[nhulston tracer] handleSQSOperation()")
 
@@ -62,6 +65,36 @@ func (mw *traceMiddleware) handleSNSOperation(ctx context.Context, in middleware
 			err := injectTraceContextBatch(ctx, params.PublishBatchRequestEntries)
 			if err != nil {
 				fmt.Printf("[nhulston tracer] Error: %s", err.Error())
+			}
+		}
+	}
+}
+
+func (mw *traceMiddleware) handleEventBridgeOperation(ctx context.Context, in middleware.InitializeInput, operation string) {
+	fmt.Println("[nhulston tracer] handleEventBridgeOperation()")
+
+	switch operation {
+	case "PutEvents":
+		fmt.Println("[nhulston tracer] Operation PutEvents")
+		if params, ok := in.Parameters.(*eventbridge.PutEventsInput); ok {
+			var eventBusName string
+			for i := range params.Entries {
+				if params.Entries[i].EventBusName != nil {
+					eventBusName = *params.Entries[i].EventBusName
+					break
+				}
+			}
+
+			span, _ := tracer.SpanFromContext(ctx)
+			if span != nil && eventBusName != "" {
+				span.SetTag("eventbridge.event_bus_name", eventBusName)
+			}
+
+			for i := range params.Entries {
+				err := injectTraceContextEventBridge(ctx, &params.Entries[i])
+				if err != nil {
+					fmt.Printf("[nhulston tracer] Error: %s", err.Error())
+				}
 			}
 		}
 	}

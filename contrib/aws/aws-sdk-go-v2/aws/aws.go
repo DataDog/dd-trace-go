@@ -118,6 +118,9 @@ func (mw *traceMiddleware) startTraceMiddleware(stack *middleware.Stack) error {
 		case "SNS":
 			fmt.Println("[nhulston tracer] Case SNS")
 			mw.handleSNSOperation(spanctx, in, operation)
+		case "EventBridge":
+			fmt.Println("[nhulston tracer] Case EventBridge")
+			mw.handleEventBridgeOperation(spanctx, in, operation)
 		}
 
 		// Handle initialize and continue through the middleware chain.

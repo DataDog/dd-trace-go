@@ -5,13 +5,17 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/eventbridge/types"
 	snstypes "github.com/aws/aws-sdk-go-v2/service/sns/types"
 	sqstypes "github.com/aws/aws-sdk-go-v2/service/sqs/types"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"time"
 )
 
 const (
-	datadogKey = "_datadog"
+	datadogKey      = "_datadog"
+	startTimeKey    = "x-datadog-start-time"
+	resourceNameKey = "x-datadog-resource-name"
 )
 
 type messageCarrier map[string]string
@@ -81,5 +85,49 @@ func injectTraceContextBatch(ctx context.Context, entries []snstypes.PublishBatc
 			return err
 		}
 	}
+	return nil
+}
+
+func injectTraceContextEventBridge(ctx context.Context, entry *types.PutEventsRequestEntry) error {
+	span, _ := tracer.SpanFromContext(ctx)
+	if span == nil {
+		return nil
+	}
+
+	carrier := make(messageCarrier)
+	err := tracer.Inject(span.Context(), carrier)
+	if err != nil {
+		return err
+	}
+
+	// Add start time and resource name
+	carrier[startTimeKey] = fmt.Sprintf("%d", time.Now().UnixNano()/int64(time.Millisecond))
+	if entry.EventBusName != nil {
+		carrier[resourceNameKey] = *entry.EventBusName
+	}
+
+	jsonBytes, err := json.Marshal(carrier)
+	if err != nil {
+		return err
+	}
+
+	var detail map[string]interface{}
+	if entry.Detail != nil {
+		err = json.Unmarshal([]byte(*entry.Detail), &detail)
+		if err != nil {
+			return err
+		}
+	} else {
+		detail = make(map[string]interface{})
+	}
+
+	detail[datadogKey] = json.RawMessage(jsonBytes)
+
+	updatedDetail, err := json.Marshal(detail)
+	if err != nil {
+		return err
+	}
+
+	entry.Detail = aws.String(string(updatedDetail))
 	return nil
 }
