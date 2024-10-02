@@ -8,7 +8,6 @@ package aws
 import (
 	"context"
 	"fmt"
-	"github.com/aws/aws-sdk-go-v2/service/sqs/types"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"math"
 	"strings"
@@ -115,10 +114,9 @@ func (mw *traceMiddleware) startTraceMiddleware(stack *middleware.Stack) error {
 		case "SQS":
 			fmt.Println("[nhulston tracer] Case SQS")
 			opts = append(opts, mw.handleSQSOperation(ctx, in, operation)...)
-			// case "SNS":
-			//     opts = ...
-			// case "EventBridge":
-			//     opts = ...
+		case "SNS":
+			fmt.Println("[nhulston tracer] Case SNS")
+			opts = append(opts, mw.handleSNSOperation(ctx, in, operation)...)
 		}
 
 		// Handle initialize and continue through the middleware chain.
@@ -130,30 +128,6 @@ func (mw *traceMiddleware) startTraceMiddleware(stack *middleware.Stack) error {
 
 		return out, metadata, err
 	}), middleware.After)
-}
-
-func (mw *traceMiddleware) handleSQSOperation(ctx context.Context, in middleware.InitializeInput, operation string) []ddtrace.StartSpanOption {
-	fmt.Println("[nhulston tracer] handleSQSOperation()")
-	opts := []ddtrace.StartSpanOption{}
-
-	switch operation {
-	case "SendMessage":
-		fmt.Println("[nhulston tracer] Operation SendMessage")
-		if params, ok := in.Parameters.(*sqs.SendMessageInput); ok {
-			// Inject trace context
-			if params.MessageAttributes == nil {
-				params.MessageAttributes = make(map[string]types.MessageAttributeValue)
-			}
-			err := injectTraceContext(ctx, params.MessageAttributes)
-			if err != nil {
-				fmt.Printf("[nhulston tracer] Error: %s", err.Error())
-			}
-		}
-	case "SendMessageBatch":
-		fmt.Println("[nhulston tracer] Operation SendMessageBatch")
-	}
-
-	return opts
 }
 
 func resourceNameFromParams(requestInput middleware.InitializeInput, awsService string) (string, string, error) {
