@@ -168,6 +168,7 @@ func (p *Producer) Produce(msg *kafka.Message, deliveryChan chan kafka.Event) er
 	defer stop(err)
 
 	err = p.Producer.Produce(msg, deliveryChan)
+	return err
 }
 
 // ProduceChannel returns a channel which can receive kafka Messages and will
