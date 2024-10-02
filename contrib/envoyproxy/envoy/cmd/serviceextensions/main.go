@@ -2,6 +2,7 @@ package main
 
 import (
 	"crypto/tls"
+	"fmt"
 	"gopkg.in/DataDog/dd-trace-go.v1/contrib/envoyproxy/envoy"
 	"net"
 	"net/http"
@@ -12,8 +13,6 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/reflection"
-	grpctrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/google.golang.org/grpc"
-
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
 
@@ -22,57 +21,90 @@ type AppsecCalloutExtensionService struct {
 	extproc.ExternalProcessorServer
 }
 
+type serviceExtensionConfig struct {
+	extensionPort   string
+	extensionHost   string
+	healthcheckPort string
+}
+
+func loadConfig() serviceExtensionConfig {
+	extensionPort := os.Getenv("DD_SERVICE_EXTENSION_PORT")
+	if extensionPort == "" {
+		extensionPort = "443"
+	}
+
+	extensionHost := os.Getenv("DD_SERVICE_EXTENSION_HOST")
+	if extensionHost == "" {
+		extensionHost = "0.0.0.0"
+	}
+
+	healthcheckPort := os.Getenv("DD_SERVICE_EXTENSION_HEALTHCHECK_PORT")
+	if healthcheckPort == "" {
+		healthcheckPort = "80"
+	}
+
+	return serviceExtensionConfig{
+		extensionPort:   extensionPort,
+		extensionHost:   extensionHost,
+		healthcheckPort: healthcheckPort,
+	}
+}
+
 func main() {
-	var customService AppsecCalloutExtensionService
+	var extensionService AppsecCalloutExtensionService
 
-	tracer.Start(tracer.WithServiceName("appsec-callout-service-extension"))
+	// Ensure Appsec is enabled
+	err := os.Setenv("DD_APPSEC_ENABLED", "1")
+	if err != nil {
+		fmt.Printf("Failed to set environment variable: %v\n", err)
+		return
+	}
 
-	go StartGPRCSsl(&customService)
-	println("gRPC server started on port 443")
+	config := loadConfig()
 
-	go startHealthCheck()
-	println("Health check server started on port 80")
+	tracer.Start()
+
+	go StartGPRCSsl(&extensionService, config)
+	fmt.Printf("Service extension: callout gRPC server started on %s:%s\n", config.extensionHost, config.extensionPort)
+
+	go startHealthCheck(config)
+	fmt.Printf("Service extension: health check server started on %s:%s\n", config.extensionHost, config.healthcheckPort)
 
 	select {}
 }
 
-func startHealthCheck() {
+func startHealthCheck(config serviceExtensionConfig) {
 	muxServer := mux.NewRouter()
 	muxServer.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
 
 	server := &http.Server{
-		Addr:    "0.0.0.0:80",
+		Addr:    config.extensionHost + ":" + config.healthcheckPort,
 		Handler: muxServer,
 	}
 
 	println(server.ListenAndServe())
 }
 
-func StartGPRCSsl(service extproc.ExternalProcessorServer) {
-	certFolder := os.Getenv("CERT_FOLDER")
-	if os.Getenv("CERT_FOLDER") == "" {
-		certFolder = "." // Default value
-	}
-
-	cert, err := tls.LoadX509KeyPair(certFolder+"/localhost.crt", certFolder+"/localhost.key")
+func StartGPRCSsl(service extproc.ExternalProcessorServer, config serviceExtensionConfig) {
+	cert, err := tls.LoadX509KeyPair("localhost.crt", "localhost.key")
 	if err != nil {
-		println("Failed to load server certificate: %v", err)
+		fmt.Printf("Failed to load key pair: %v\n", err)
 	}
 
-	lis, err := net.Listen("tcp", "0.0.0.0:443")
+	lis, err := net.Listen("tcp", config.extensionHost+":"+config.extensionPort)
 	if err != nil {
-		println("Failed to listen: %v", err)
+		fmt.Printf("Failed to listen: %v\n", err)
 	}
 
-	si := envoy.StreamServerInterceptor(grpctrace.WithServiceName("appsec-callout-service-extension-meta"))
+	si := envoy.StreamServerInterceptor()
 	creds := credentials.NewServerTLSFromCert(&cert)
 	grpcServer := grpc.NewServer(grpc.StreamInterceptor(si), grpc.Creds(creds))
 
 	extproc.RegisterExternalProcessorServer(grpcServer, service)
-	reflection.Register(grpcServer) // TODO: remove
+	reflection.Register(grpcServer)
 	if err := grpcServer.Serve(lis); err != nil {
-		println("Failed to serve gRPC: %v", err)
+		fmt.Printf("Failed to serve gRPC: %v\n", err)
 	}
 }
