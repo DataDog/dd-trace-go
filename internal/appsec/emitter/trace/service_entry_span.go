@@ -60,12 +60,7 @@ func (op *ServiceEntrySpanOperation) SetTag(key string, value any) {
 func (op *ServiceEntrySpanOperation) SetSerializableTag(key string, value any) {
 	op.mu.Lock()
 	defer op.mu.Unlock()
-	switch value.(type) {
-	case string, int8, int16, int32, int64, uint8, uint16, uint32, uint64, float32, float64, bool:
-		op.tags[key] = value
-	default:
-		op.jsonTags[key] = value
-	}
+	op.SetSerializableTag(key, value)
 }
 
 // SetSerializableTags adds the key/value pairs to the tags to add to the service entry span.
@@ -74,12 +69,16 @@ func (op *ServiceEntrySpanOperation) SetSerializableTags(tags map[string]any) {
 	op.mu.Lock()
 	defer op.mu.Unlock()
 	for key, value := range tags {
-		switch value.(type) {
-		case string, int8, int16, int32, int64, uint8, uint16, uint32, uint64, float32, float64, bool:
-			op.tags[key] = value
-		default:
-			op.jsonTags[key] = value
-		}
+		op.SetSerializableTag(key, value)
+	}
+}
+
+func (op *ServiceEntrySpanOperation) setSerializableTag(key string, value any) {
+	switch value.(type) {
+	case string, int8, int16, int32, int64, uint8, uint16, uint32, uint64, float32, float64, bool:
+		op.tags[key] = value
+	default:
+		op.jsonTags[key] = value
 	}
 }
 
