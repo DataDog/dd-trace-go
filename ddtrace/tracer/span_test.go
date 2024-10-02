@@ -214,7 +214,7 @@ func TestShouldDrop(t *testing.T) {
 	} {
 		t.Run("", func(t *testing.T) {
 			s := newSpan("", "", "", 1, 1, 0)
-			s.SetTag(ext.SamplingPriority, tt.prio)
+			s.setSamplingPriority(tt.prio, samplernames.Default)
 			s.SetTag(ext.EventSampleRate, tt.rate)
 			atomic.StoreInt32(&s.context.errors, tt.errors)
 			assert.Equal(t, shouldKeep(s), tt.want)
@@ -836,7 +836,7 @@ func TestSpanSamplingPriority(t *testing.T) {
 		ext.PriorityUserKeep,
 		999, // not used, but we should allow it
 	} {
-		span.SetTag(ext.SamplingPriority, priority)
+		span.setSamplingPriority(priority, samplernames.Default)
 		v, ok := span.metrics[keySamplingPriority]
 		assert.True(ok)
 		assert.EqualValues(priority, v)

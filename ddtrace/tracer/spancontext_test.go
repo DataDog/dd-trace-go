@@ -80,7 +80,7 @@ func testAsyncSpanRace(t *testing.T) {
 	for i := 0; i < 100; i++ {
 		// The test has 100 iterations because it is not easy to reproduce the race.
 		t.Run("", func(t *testing.T) {
-			root, ctx := StartSpanFromContext(context.Background(), "root", Tag(ext.SamplingPriority, ext.PriorityUserKeep))
+			root, ctx := StartSpanFromContext(context.Background(), "root", Tag(ext.ManualKeep, true))
 			var wg sync.WaitGroup
 			done := make(chan struct{})
 			wg.Add(1)
@@ -116,7 +116,7 @@ func testAsyncSpanRace(t *testing.T) {
 				for i := 0; i < 50; i++ {
 					// to trigger the bug, the child should be created after the root was finished,
 					// as its being flushed
-					child, _ := StartSpanFromContext(ctx, "child", Tag(ext.SamplingPriority, ext.PriorityUserKeep))
+					child, _ := StartSpanFromContext(ctx, "child", Tag(ext.ManualKeep, true))
 					child.Finish()
 				}
 			}()
@@ -306,12 +306,12 @@ func TestSpanFinishPriority(t *testing.T) {
 
 	root := tracer.StartSpan(
 		"root",
-		Tag(ext.SamplingPriority, 1),
 	)
+	root.setSamplingPriority(ext.PriorityAutoKeep, samplernames.Manual)
 	child := tracer.StartSpan(
 		"child",
 		ChildOf(root.Context()),
-		Tag(ext.SamplingPriority, 2),
+		Tag(ext.ManualKeep, true),
 	)
 	child.Finish()
 	root.Finish()

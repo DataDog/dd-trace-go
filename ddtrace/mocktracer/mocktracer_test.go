@@ -30,7 +30,7 @@ func TestTracerStop(t *testing.T) {
 }
 
 func TestTracerStartSpan(t *testing.T) {
-	parentTags := map[string]interface{}{ext.ServiceName: "root-service", ext.SamplingPriority: -1}
+	parentTags := map[string]interface{}{ext.ServiceName: "root-service", ext.ManualDrop: true}
 	// Need to round the monotonic clock so parsed UnixNano values are equal.
 	// See time.Time documentation for details:
 	// https://pkg.go.dev/time#Time
