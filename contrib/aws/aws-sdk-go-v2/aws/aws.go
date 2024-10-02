@@ -114,7 +114,6 @@ func (mw *traceMiddleware) startTraceMiddleware(stack *middleware.Stack) error {
 		if err != nil && (mw.cfg.errCheck == nil || mw.cfg.errCheck(err)) {
 			span.SetTag(ext.Error, err)
 		}
-		span.Finish()
 
 		// Inject trace context
 		switch serviceID {
@@ -125,6 +124,8 @@ func (mw *traceMiddleware) startTraceMiddleware(stack *middleware.Stack) error {
 			fmt.Println("[nhulston tracer] Case SNS")
 			opts = append(opts, mw.handleSNSOperation(ctx, in, operation)...)
 		}
+
+		span.Finish()
 
 		return out, metadata, err
 	}), middleware.After)
