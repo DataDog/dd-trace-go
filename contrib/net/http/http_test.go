@@ -516,7 +516,7 @@ func router(muxOpts ...Option) http.Handler {
 	return mux
 }
 
-func handler200(w http.ResponseWriter, r *http.Request) {
+func handler200(w http.ResponseWriter, _ *http.Request) {
 	w.Write([]byte("OK\n"))
 }
 
