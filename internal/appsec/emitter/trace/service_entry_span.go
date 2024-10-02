@@ -55,19 +55,31 @@ func (op *ServiceEntrySpanOperation) SetTag(key string, value any) {
 	op.tags[key] = value
 }
 
-// SetJSONTag adds the key/value pair to the tags to add to the service entry span. Value will be serialized as JSON.
-func (op *ServiceEntrySpanOperation) SetJSONTag(key string, value any) {
+// SetSerializableTag adds the key/value pair to the tags to add to the service entry span.
+// The value MAY be serialized as JSON if necessary but simple types will not be serialized.
+func (op *ServiceEntrySpanOperation) SetSerializableTag(key string, value any) {
 	op.mu.Lock()
 	defer op.mu.Unlock()
-	op.jsonTags[key] = value
+	switch value.(type) {
+	case string, int8, int16, int32, int64, uint8, uint16, uint32, uint64, float32, float64, bool:
+		op.tags[key] = value
+	default:
+		op.jsonTags[key] = value
+	}
 }
 
-// SetJSONTags adds the key/value pairs to the tags to add to the service entry span. Values will be serialized as JSON.
-func (op *ServiceEntrySpanOperation) SetJSONTags(tags map[string]any) {
+// SetSerializableTags adds the key/value pairs to the tags to add to the service entry span.
+// Values MAY be serialized as JSON if necessary but simple types will not be serialized.
+func (op *ServiceEntrySpanOperation) SetSerializableTags(tags map[string]any) {
 	op.mu.Lock()
 	defer op.mu.Unlock()
-	for k, v := range tags {
-		op.jsonTags[k] = v
+	for key, value := range tags {
+		switch value.(type) {
+		case string, int8, int16, int32, int64, uint8, uint16, uint32, uint64, float32, float64, bool:
+			op.tags[key] = value
+		default:
+			op.jsonTags[key] = value
+		}
 	}
 }
 
@@ -96,7 +108,7 @@ func (op *ServiceEntrySpanOperation) OnServiceEntrySpanTagEvent(tag ServiceEntry
 
 // OnJSONServiceEntrySpanTagEvent is a callback that is called when a dyngo.OnData is triggered with a JSONServiceEntrySpanTag event
 func (op *ServiceEntrySpanOperation) OnJSONServiceEntrySpanTagEvent(tag JSONServiceEntrySpanTag) {
-	op.SetJSONTag(tag.Key, tag.Value)
+	op.SetSerializableTag(tag.Key, tag.Value)
 }
 
 // OnServiceEntrySpanTagsBulkEvent is a callback that is called when a dyngo.OnData is triggered with a ServiceEntrySpanTagsBulk event
@@ -106,7 +118,7 @@ func (op *ServiceEntrySpanOperation) OnServiceEntrySpanTagsBulkEvent(bulk Servic
 	}
 
 	for _, v := range bulk.JSONTags {
-		op.SetJSONTag(v.Key, v.Value)
+		op.SetSerializableTag(v.Key, v.Value)
 	}
 }
 
