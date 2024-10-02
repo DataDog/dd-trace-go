@@ -109,6 +109,13 @@ func (mw *traceMiddleware) startTraceMiddleware(stack *middleware.Stack) error {
 
 		span, spanctx := tracer.StartSpanFromContext(ctx, spanName(serviceID, operation), opts...)
 
+		// Handle initialize and continue through the middleware chain.
+		out, metadata, err = next.HandleInitialize(spanctx, in)
+		if err != nil && (mw.cfg.errCheck == nil || mw.cfg.errCheck(err)) {
+			span.SetTag(ext.Error, err)
+		}
+		span.Finish()
+
 		// Inject trace context
 		switch serviceID {
 		case "SQS":
@@ -118,13 +125,6 @@ func (mw *traceMiddleware) startTraceMiddleware(stack *middleware.Stack) error {
 			fmt.Println("[nhulston tracer] Case SNS")
 			opts = append(opts, mw.handleSNSOperation(ctx, in, operation)...)
 		}
-
-		// Handle initialize and continue through the middleware chain.
-		out, metadata, err = next.HandleInitialize(spanctx, in)
-		if err != nil && (mw.cfg.errCheck == nil || mw.cfg.errCheck(err)) {
-			span.SetTag(ext.Error, err)
-		}
-		span.Finish()
 
 		return out, metadata, err
 	}), middleware.After)
