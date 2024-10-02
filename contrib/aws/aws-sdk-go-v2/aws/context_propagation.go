@@ -14,17 +14,8 @@ const (
 
 type messageCarrier map[string]string
 
-func (carrier messageCarrier) Set(key, val string) {
-	carrier[key] = val
-}
-
-//func (carrier messageCarrier) ForeachKey(handler func(key, val string) error) error {
-//	for k, v := range carrier {
-//		if err := handler(k, v); err != nil {
-//			return err
-//		}
-//	}
-//	return nil
+//func (carrier messageCarrier) Set(key, val string) {
+//	carrier[key] = val
 //}
 
 func injectTraceContext(ctx context.Context, messageAttributes map[string]types.MessageAttributeValue) error {
