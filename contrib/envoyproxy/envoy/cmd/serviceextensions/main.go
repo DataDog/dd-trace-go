@@ -4,6 +4,7 @@ import (
 	"crypto/tls"
 	"fmt"
 	"gopkg.in/DataDog/dd-trace-go.v1/contrib/envoyproxy/envoy"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
 	"net"
 	"net/http"
 	"os"
@@ -76,6 +77,13 @@ func main() {
 func startHealthCheck(config serviceExtensionConfig) {
 	muxServer := mux.NewRouter()
 	muxServer.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, err := w.Write([]byte(`{"status": "ok", "library": {"language": "golang", "version": "` + version.Tag + `"}}`))
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+
 		w.WriteHeader(http.StatusOK)
 	})
 
