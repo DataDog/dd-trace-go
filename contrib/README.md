@@ -26,7 +26,7 @@ Important: the package itself should retain its un-versioned name. For example, 
 
 Second, there are a few tags that should be found in all integration spans:
 
-* The `span.kind` tag should be set in root spans with either a `client`, `server`, `producer`, or `consumer` value according to the [definitions](../ddtrace/ext/span_kind.go) found in the repository.
+* The `span.kind` tag should be set in root spans with either a `client`, `server`, `producer`, or `consumer` value according to the [definitions](../../ddtrace/ext/span_kind.go) found in the repository.
 If the value is determined to be `internal`, then omit the tag as that is the assumed default value. Otherwise, explicitly set it with a value from above.
 * The `component` tag should be set in all spans with the value equivalent to full naming convention of the integration package explained in the previous step.
 
@@ -42,17 +42,9 @@ Every integration is expected to import instrumentation telemetry to gather inte
 
 ```golang
 func init() {
-    instrumentation.Load(instrumentation.PkgContribName)
+    telemetry.LoadIntegration("package/import/path")
 }
 ```
-
-Then, ensure that:
-
-* [Packages](../ddtrace/instrumentation/packages.go) is updated with the following information:
-  * A new constant with a matching package name (eg. `PackageNetHTTP` for `net/http`).
-  * Relevant pacakge information in the `packages` map.
-* The `go.mod` file in your new submodule is in sync with the rest of the contrib folder.
-* `contribIntegrations` in [option.go](../ddtrace/tracer/option.go) contains your new package.
 
 ### Version pinning
 
