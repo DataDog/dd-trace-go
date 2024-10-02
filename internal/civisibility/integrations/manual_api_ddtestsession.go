@@ -9,8 +9,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"path/filepath"
-	"regexp"
 	"strings"
 	"time"
 
@@ -37,29 +35,11 @@ type tslvTestSession struct {
 
 // CreateTestSession initializes a new test session. It automatically determines the command and working directory.
 func CreateTestSession() DdTestSession {
-	var cmd string
-	var ok bool
-	tags := utils.GetCITags()
-	if cmd, ok = tags[constants.TestCommand]; !ok || cmd == "" {
-		if len(os.Args) == 1 {
-			cmd = filepath.Base(os.Args[0])
-		} else {
-			cmd = fmt.Sprintf("%s %s ", filepath.Base(os.Args[0]), strings.Join(os.Args[1:], " "))
-		}
-
-		// Filter out some parameters to make the command more stable.
-		cmd = regexp.MustCompile(`(?si)-test.gocoverdir=(.*)\s`).ReplaceAllString(cmd, "")
-		cmd = regexp.MustCompile(`(?si)-test.v=(.*)\s`).ReplaceAllString(cmd, "")
-		cmd = regexp.MustCompile(`(?si)-test.testlogfile=(.*)\s`).ReplaceAllString(cmd, "")
-		cmd = strings.TrimSpace(cmd)
-		tags[constants.TestCommand] = cmd
-	}
-
 	wd, err := os.Getwd()
 	if err == nil {
 		wd = utils.GetRelativePathFromCITagsSourceRoot(wd)
 	}
-	return CreateTestSessionWith(cmd, wd, "", time.Now())
+	return CreateTestSessionWith(utils.GetCITags()[constants.TestCommand], wd, "", time.Now())
 }
 
 // CreateTestSessionWith initializes a new test session with specified command, working directory, framework, and start time.
