@@ -55,6 +55,7 @@ func startTelemetry(c *config) {
 		{Name: "trace_peer_service_defaults_enabled", Value: c.peerServiceDefaultsEnabled},
 		{Name: "orchestrion_enabled", Value: c.orchestrionCfg.Enabled},
 		{Name: "trace_enabled", Value: c.enabled.current, Origin: c.enabled.cfgOrigin},
+		{Name: "trace_log_directory", Value: c.logDirectory},
 		c.traceSampleRate.toTelemetry(),
 		c.headerAsTags.toTelemetry(),
 		c.globalTags.toTelemetry(),
