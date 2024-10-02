@@ -41,8 +41,8 @@ type (
 
 	// ServiceEntrySpanTagsBulk is a bulk event that is used to send tags to a service entry span
 	ServiceEntrySpanTagsBulk struct {
-		Tags     []JSONServiceEntrySpanTag
-		JSONTags []JSONServiceEntrySpanTag
+		Tags             []JSONServiceEntrySpanTag
+		SerializableTags []JSONServiceEntrySpanTag
 	}
 )
 
@@ -60,7 +60,7 @@ func (op *ServiceEntrySpanOperation) SetTag(key string, value any) {
 func (op *ServiceEntrySpanOperation) SetSerializableTag(key string, value any) {
 	op.mu.Lock()
 	defer op.mu.Unlock()
-	op.SetSerializableTag(key, value)
+	op.setSerializableTag(key, value)
 }
 
 // SetSerializableTags adds the key/value pairs to the tags to add to the service entry span.
@@ -69,7 +69,7 @@ func (op *ServiceEntrySpanOperation) SetSerializableTags(tags map[string]any) {
 	op.mu.Lock()
 	defer op.mu.Unlock()
 	for key, value := range tags {
-		op.SetSerializableTag(key, value)
+		op.setSerializableTag(key, value)
 	}
 }
 
@@ -116,7 +116,7 @@ func (op *ServiceEntrySpanOperation) OnServiceEntrySpanTagsBulkEvent(bulk Servic
 		op.SetTag(v.Key, v.Value)
 	}
 
-	for _, v := range bulk.JSONTags {
+	for _, v := range bulk.SerializableTags {
 		op.SetSerializableTag(v.Key, v.Value)
 	}
 }
