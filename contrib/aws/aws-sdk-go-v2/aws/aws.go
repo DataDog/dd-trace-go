@@ -114,7 +114,7 @@ func (mw *traceMiddleware) startTraceMiddleware(stack *middleware.Stack) error {
 			tracer.SpanType("messaging"),
 			tracer.ResourceName(operation),
 		}
-		childSpan, childCtx := tracer.StartSpanFromContext(ctx, operation, childOpts...)
+		childSpan, childCtx := tracer.StartSpanFromContext(spanctx, operation, childOpts...)
 		defer childSpan.Finish()
 
 		// Inject trace context
