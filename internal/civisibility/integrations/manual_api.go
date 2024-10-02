@@ -211,6 +211,10 @@ func fillCommonTags(opts []tracer.StartSpanOption) []tracer.StartSpanOption {
 
 	// Apply CI tags
 	for k, v := range utils.GetCITags() {
+		// Ignore the test session name (sent at the payload metadata level, see `civisibility_payload.go`)
+		if k == constants.TestSessionName {
+			continue
+		}
 		opts = append(opts, tracer.Tag(k, v))
 	}
 
