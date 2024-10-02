@@ -108,24 +108,31 @@ func (mw *traceMiddleware) startTraceMiddleware(stack *middleware.Stack) error {
 		}
 
 		span, spanctx := tracer.StartSpanFromContext(ctx, spanName(serviceID, operation), opts...)
+		defer span.Finish()
 
-		// Handle initialize and continue through the middleware chain.
-		out, metadata, err = next.HandleInitialize(spanctx, in)
-		if err != nil && (mw.cfg.errCheck == nil || mw.cfg.errCheck(err)) {
-			span.SetTag(ext.Error, err)
+		childOpts := []ddtrace.StartSpanOption{
+			tracer.SpanType("messaging"),
+			tracer.ResourceName(operation),
 		}
+		childSpan, childCtx := tracer.StartSpanFromContext(ctx, operation, childOpts...)
+		defer childSpan.Finish()
 
 		// Inject trace context
 		switch serviceID {
 		case "SQS":
 			fmt.Println("[nhulston tracer] Case SQS")
-			opts = append(opts, mw.handleSQSOperation(ctx, in, operation)...)
+			mw.handleSQSOperation(childCtx, in, operation)
 		case "SNS":
 			fmt.Println("[nhulston tracer] Case SNS")
-			opts = append(opts, mw.handleSNSOperation(ctx, in, operation)...)
+			mw.handleSNSOperation(childCtx, in, operation)
 		}
 
-		span.Finish()
+		// Handle initialize and continue through the middleware chain.
+		out, metadata, err = next.HandleInitialize(childCtx, in)
+		if err != nil && (mw.cfg.errCheck == nil || mw.cfg.errCheck(err)) {
+			childSpan.SetTag(ext.Error, err)
+			span.SetTag(ext.Error, err)
+		}
 
 		return out, metadata, err
 	}), middleware.After)
