@@ -8,12 +8,10 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
 	sqstypes "github.com/aws/aws-sdk-go-v2/service/sqs/types"
 	"github.com/aws/smithy-go/middleware"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 )
 
-func (mw *traceMiddleware) handleSQSOperation(ctx context.Context, in middleware.InitializeInput, operation string) []ddtrace.StartSpanOption {
+func (mw *traceMiddleware) handleSQSOperation(ctx context.Context, in middleware.InitializeInput, operation string) {
 	fmt.Println("[nhulston tracer] handleSQSOperation()")
-	var opts []ddtrace.StartSpanOption
 
 	switch operation {
 	case "SendMessage":
@@ -41,13 +39,10 @@ func (mw *traceMiddleware) handleSQSOperation(ctx context.Context, in middleware
 			}
 		}
 	}
-
-	return opts
 }
 
-func (mw *traceMiddleware) handleSNSOperation(ctx context.Context, in middleware.InitializeInput, operation string) []ddtrace.StartSpanOption {
+func (mw *traceMiddleware) handleSNSOperation(ctx context.Context, in middleware.InitializeInput, operation string) {
 	fmt.Println("[nhulston tracer] handleSNSOperation()")
-	var opts []ddtrace.StartSpanOption
 
 	switch operation {
 	case "Publish":
@@ -70,6 +65,4 @@ func (mw *traceMiddleware) handleSNSOperation(ctx context.Context, in middleware
 			}
 		}
 	}
-
-	return opts
 }
