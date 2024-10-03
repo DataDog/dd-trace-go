@@ -61,6 +61,10 @@ const (
 	// TestCommandWorkingDirectory indicates the test command working directory relative to the source root.
 	// This constant is used to tag traces with the working directory path relative to the source root.
 	TestCommandWorkingDirectory = "test.working_directory"
+
+	// TestSessionName indicates the test session name
+	// This constant is used to tag traces with the test session name
+	TestSessionName = "test_session.name"
 )
 
 // Define valid test status types.
