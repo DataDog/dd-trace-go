@@ -138,7 +138,7 @@ func TestAddSpanLink(t *testing.T) {
 
 	// Test adding a link with a sampling decision
 	linkedSpanSampled := newSpan("linked_sampled", "service", "res", 3, 4, 0)
-	linkedSpanSampled.Context().setSamplingPriority(2, samplernames.Manual)
+	linkedSpanSampled.Context().setSamplingPriority(ext.PriorityUserKeep, samplernames.Manual)
 	rootSpan.AddLink(linkedSpanSampled.Context(), map[string]string{})
 	assert.Equal(len(rootSpan.spanLinks), 2)
 	spanLinkSampled := rootSpan.spanLinks[1]

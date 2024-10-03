@@ -837,35 +837,35 @@ func TestSetSamplingPriorityLocked(t *testing.T) {
 		tr := trace{
 			propagatingTags: map[string]string{},
 		}
-		tr.setSamplingPriorityLocked(0, samplernames.RemoteRate)
+		tr.setSamplingPriorityLocked(ext.PriorityAutoReject, samplernames.RemoteRate)
 		assert.Empty(t, tr.propagatingTags[keyDecisionMaker])
 	})
 	t.Run("UnknownSamplerIsIgnored", func(t *testing.T) {
 		tr := trace{
 			propagatingTags: map[string]string{},
 		}
-		tr.setSamplingPriorityLocked(0, samplernames.Unknown)
+		tr.setSamplingPriorityLocked(ext.PriorityAutoReject, samplernames.Unknown)
 		assert.Empty(t, tr.propagatingTags[keyDecisionMaker])
 	})
 	t.Run("NoPriorAndP1IsAccepted", func(t *testing.T) {
 		tr := trace{
 			propagatingTags: map[string]string{},
 		}
-		tr.setSamplingPriorityLocked(1, samplernames.RemoteRate)
+		tr.setSamplingPriorityLocked(ext.PriorityAutoKeep, samplernames.RemoteRate)
 		assert.Equal(t, "-2", tr.propagatingTags[keyDecisionMaker])
 	})
 	t.Run("PriorAndP1AndSameDMIsIgnored", func(t *testing.T) {
 		tr := trace{
 			propagatingTags: map[string]string{keyDecisionMaker: "-1"},
 		}
-		tr.setSamplingPriorityLocked(1, samplernames.AgentRate)
+		tr.setSamplingPriorityLocked(ext.PriorityAutoKeep, samplernames.AgentRate)
 		assert.Equal(t, "-1", tr.propagatingTags[keyDecisionMaker])
 	})
 	t.Run("PriorAndP1DifferentDMAccepted", func(t *testing.T) {
 		tr := trace{
 			propagatingTags: map[string]string{keyDecisionMaker: "-1"},
 		}
-		tr.setSamplingPriorityLocked(1, samplernames.RemoteRate)
+		tr.setSamplingPriorityLocked(ext.PriorityAutoKeep, samplernames.RemoteRate)
 		assert.Equal(t, "-2", tr.propagatingTags[keyDecisionMaker])
 	})
 }
