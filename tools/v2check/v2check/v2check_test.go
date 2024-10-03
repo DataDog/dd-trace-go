@@ -72,7 +72,6 @@ func TestDDTraceTypes(t *testing.T) {
 }
 
 func TestWithServiceName(t *testing.T) {
-	t.Skip() // skip for now
 	c := v2check.NewChecker(&v2check.WithServiceName{})
 	c.Run(testRunner(t, "withservicename"))
 }

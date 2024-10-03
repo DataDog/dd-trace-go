@@ -228,8 +228,8 @@ type WithServiceName struct {
 }
 
 func (c WithServiceName) Fixes() []analysis.SuggestedFix {
-	fn := c.ctx.Value("fn").(string)
-	if fn == "" {
+	args, ok := c.ctx.Value("args").([]string)
+	if !ok || args == nil {
 		return nil
 	}
 
@@ -240,7 +240,7 @@ func (c WithServiceName) Fixes() []analysis.SuggestedFix {
 				{
 					Pos:     c.Pos(),
 					End:     c.End(),
-					NewText: []byte("WithService"),
+					NewText: []byte(fmt.Sprintf("WithService(%s)", strings.Join(args, ", "))),
 				},
 			},
 		},
@@ -255,5 +255,5 @@ func (c WithServiceName) Probes() []Probe {
 }
 
 func (c WithServiceName) String() string {
-	return "the function WithServiceName() is no longer supported. Use WithService() instead."
+	return "the function WithServiceName is no longer supported. Use WithService instead."
 }
