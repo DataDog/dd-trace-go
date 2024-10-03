@@ -86,12 +86,32 @@ const (
 	ASMRASPLFI
 	// ASMRASPSSRF enables ASM support for runtime protection against SSRF attacks
 	ASMRASPSSRF
-)
-
-// Additional capability bit index values that are non-consecutive from above.
-const (
+	// ASMRASPSHI enables ASM support for runtime protection against XSS attacks
+	ASMRASPSHI
+	// ASMRASPXXE enables ASM support for runtime protection against XXE attacks
+	ASMRASPXXE
+	// ASMRASPRCE enables ASM support for runtime protection against Remote Code Execution
+	ASMRASPRCE
+	// ASMRASPNOSQLI enables ASM support for runtime protection against NoSQL Injection attacks
+	ASMRASPNOSQLI
+	// ASMRASPXSS enables ASM support for runtime protection against Cross Site Scripting attacks
+	ASMRASPXSS
 	// APMTracingSampleRules represents the sampling rate using matching rules from APM client libraries
-	APMTracingSampleRules = 29
+	APMTracingSampleRules
+	// CSMActivation represents the capability to activate CSM through remote configuration
+	CSMActivation
+	// ASMAutoUserInstrumMode represents the capability to enable the automatic user instrumentation mode
+	ASMAutoUserInstrumMode
+	// ASMEndpointFingerprinting represents the capability to enable endpoint fingerprinting
+	ASMEndpointFingerprinting
+	// ASMSessionFingerprinting represents the capability to enable session fingerprinting
+	ASMSessionFingerprinting
+	// ASMNetworkFingerprinting represents the capability to enable network fingerprinting
+	ASMNetworkFingerprinting
+	// ASMHeaderFingerprinting represents the capability to enable header fingerprinting
+	ASMHeaderFingerprinting
+	// ASMTruncationRules is the support for truncation payload rules
+	ASMTruncationRules
 )
 
 // ErrClientNotStarted is returned when the remote config client is not started.
