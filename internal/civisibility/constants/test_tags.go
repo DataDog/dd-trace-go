@@ -65,6 +65,10 @@ const (
 	// TestSessionName indicates the test session name
 	// This constant is used to tag traces with the test session name
 	TestSessionName = "test_session.name"
+
+	// TestIsRetry indicates a retry execution
+	// This constant is used to tag test events that are part of a retry execution
+	TestIsRetry = "test.is_retry"
 )
 
 // Define valid test status types.
