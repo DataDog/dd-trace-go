@@ -14,6 +14,11 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
+const (
+	DefaultFlakyRetryCount      = 5
+	DefaultFlakyTotalRetryCount = 1_000
+)
+
 type (
 	// FlakyRetriesSetting struct to hold all the settings related to flaky tests retries
 	FlakyRetriesSetting struct {
@@ -27,7 +32,7 @@ var (
 	// additionalFeaturesInitializationOnce ensures we do the additional features initialization just once
 	additionalFeaturesInitializationOnce sync.Once
 
-	// ciVisibilityRapidClient contains the http rapid client to do CI Visibility querys and upload to the rapid backend
+	// ciVisibilityRapidClient contains the http rapid client to do CI Visibility queries and upload to the rapid backend
 	ciVisibilityClient net.Client
 
 	// ciVisibilitySettings contains the CI Visibility settings for this session
@@ -72,9 +77,9 @@ func ensureAdditionalFeaturesInitialization(serviceName string) {
 		if ciVisibilitySettings.FlakyTestRetriesEnabled {
 			flakyRetryEnabledByEnv := internal.BoolEnv(constants.CIVisibilityFlakyRetryEnabledEnvironmentVariable, true)
 			if flakyRetryEnabledByEnv {
-				totalRetriesCount := (int64)(internal.IntEnv(constants.CIVisibilityTotalFlakyRetryCountEnvironmentVariable, 1_000))
+				totalRetriesCount := (int64)(internal.IntEnv(constants.CIVisibilityTotalFlakyRetryCountEnvironmentVariable, DefaultFlakyTotalRetryCount))
 				ciVisibilityFlakyRetriesSettings = FlakyRetriesSetting{
-					RetryCount:               (int64)(internal.IntEnv(constants.CIVisibilityFlakyRetryCountEnvironmentVariable, 5)),
+					RetryCount:               (int64)(internal.IntEnv(constants.CIVisibilityFlakyRetryCountEnvironmentVariable, DefaultFlakyRetryCount)),
 					TotalRetryCount:          totalRetriesCount,
 					RemainingTotalRetryCount: totalRetriesCount,
 				}

@@ -35,15 +35,16 @@ func getFieldPointerFromValue(value reflect.Value, fieldName string) (unsafe.Poi
 
 // copyFieldUsingPointers copies a private field value from one struct to another of the same type
 func copyFieldUsingPointers[V any](source any, target any, fieldName string) error {
-	if sourcePtr, err := getFieldPointerFrom(source, fieldName); err == nil {
-		if targetPtr, err := getFieldPointerFrom(target, fieldName); err == nil {
-			*(*V)(targetPtr) = *(*V)(sourcePtr)
-		} else {
-			return err
-		}
-	} else {
+	sourcePtr, err := getFieldPointerFrom(source, fieldName)
+	if err != nil {
 		return err
 	}
+	targetPtr, err := getFieldPointerFrom(target, fieldName)
+	if err != nil {
+		return err
+	}
+
+	*(*V)(targetPtr) = *(*V)(sourcePtr)
 	return nil
 }
 
