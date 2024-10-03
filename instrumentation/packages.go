@@ -69,6 +69,11 @@ const (
 	PackageGorillaMux              Package = "gorilla/mux"
 	PackageUptraceBun              Package = "uptrace/bun"
 	PackageLogSlog                 Package = "slog/log"
+
+	// V1 contribs (deprecated in v2)
+	PackageEmickleiGoRestful Package = "emicklei/go-restful"
+	PackageGaryburdRedigo    Package = "garyburd/redigo"
+	PackageLabstackEcho      Package = "labstack/echo"
 )
 
 type Component int
@@ -732,6 +737,42 @@ var packages = map[Package]PackageInfo{
 	},
 	PackageLogSlog: {
 		TracedPackage: "log/slog",
+	},
+	PackageEmickleiGoRestful: {
+		TracedPackage: "github.com/emicklei/go-restful",
+		EnvVarPrefix:  "RESTFUL",
+		naming: map[Component]componentNames{
+			ComponentServer: {
+				useDDServiceV0:     false,
+				buildServiceNameV0: staticName("go-restful"),
+				buildOpNameV0:      staticName("http.request"),
+				buildOpNameV1:      staticName("http.server.request"),
+			},
+		},
+	},
+	PackageGaryburdRedigo: {
+		TracedPackage: "github.com/garyburd/redigo",
+		EnvVarPrefix:  "REDIGO",
+		naming: map[Component]componentNames{
+			ComponentDefault: {
+				useDDServiceV0:     false,
+				buildServiceNameV0: staticName("redis.conn"),
+				buildOpNameV0:      staticName("redis.command"),
+				buildOpNameV1:      staticName("redis.command"),
+			},
+		},
+	},
+	PackageLabstackEcho: {
+		TracedPackage: "github.com/labstack/echo",
+		EnvVarPrefix:  "ECHO",
+		naming: map[Component]componentNames{
+			ComponentServer: {
+				useDDServiceV0:     true,
+				buildServiceNameV0: staticName("echo"),
+				buildOpNameV0:      staticName("http.request"),
+				buildOpNameV1:      staticName("http.server.request"),
+			},
+		},
 	},
 }
 
