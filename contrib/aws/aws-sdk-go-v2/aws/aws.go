@@ -109,16 +109,21 @@ func (mw *traceMiddleware) startTraceMiddleware(stack *middleware.Stack) error {
 		}
 
 		span, spanctx := tracer.StartSpanFromContext(ctx, spanName(serviceID, operation), opts...)
-		defer span.Finish()
 
 		// Inject trace context
+		var injectErr error
 		switch serviceID {
 		case "SQS":
-			err = sqsTracer.HandleOperation(ctx, in, operation)
+			injectErr = sqsTracer.HandleOperation(spanctx, in, operation)
 		case "SNS":
-			err = snsTracer.HandleOperation(ctx, in, operation)
+			injectErr = snsTracer.HandleOperation(spanctx, in, operation)
 		case "EventBridge":
-			err = eventBridgeTracer.HandleOperation(ctx, in, operation)
+			injectErr = eventBridgeTracer.HandleOperation(spanctx, in, operation)
+		}
+
+		if injectErr != nil {
+			span.SetTag(ext.Error, injectErr)
+			log.Debug("Error injecting trace context: %v", injectErr)
 		}
 
 		// Handle initialize and continue through the middleware chain.
@@ -126,6 +131,8 @@ func (mw *traceMiddleware) startTraceMiddleware(stack *middleware.Stack) error {
 		if err != nil && (mw.cfg.errCheck == nil || mw.cfg.errCheck(err)) {
 			span.SetTag(ext.Error, err)
 		}
+
+		span.Finish()
 
 		return out, metadata, err
 	}), middleware.After)
