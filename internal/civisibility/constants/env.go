@@ -24,4 +24,7 @@ const (
 	// This environment variable should be set to your Datadog API key, allowing the agentless mode to authenticate and
 	// send data directly to the Datadog platform.
 	APIKeyEnvironmentVariable = "DD_API_KEY"
+
+	// CIVisibilityTestSessionNameEnvironmentVariable indicate the test session name to be used on CI Visibility payloads
+	CIVisibilityTestSessionNameEnvironmentVariable = "DD_TEST_SESSION_NAME"
 )
