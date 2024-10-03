@@ -145,7 +145,7 @@ func urlFromRequest(r *http.Request, queryString bool) string {
 	// This is why we don't rely on url.URL.String(), url.URL.Host, url.URL.Scheme, etc...
 	var url string
 	path := r.URL.EscapedPath()
-	scheme := "http"
+	scheme := r.URL.Scheme
 	if r.TLS != nil {
 		scheme = "https"
 	}
