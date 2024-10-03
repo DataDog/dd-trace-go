@@ -31,12 +31,15 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
 	"github.com/aws/smithy-go/middleware"
 	smithyhttp "github.com/aws/smithy-go/transport/http"
+
+	eventBridgeTracer "gopkg.in/DataDog/dd-trace-go.v1/contrib/aws/aws-sdk-go-v2/aws/eventbridge"
+	snsTracer "gopkg.in/DataDog/dd-trace-go.v1/contrib/aws/aws-sdk-go-v2/aws/sns"
+	sqsTracer "gopkg.in/DataDog/dd-trace-go.v1/contrib/aws/aws-sdk-go-v2/aws/sqs"
 )
 
 const componentName = "aws/aws-sdk-go-v2/aws"
 
 func init() {
-	fmt.Println("[nhulston tracer] AWS v2 init()")
 	telemetry.LoadIntegration(componentName)
 	tracer.MarkIntegrationImported("github.com/aws/aws-sdk-go-v2")
 }
@@ -46,7 +49,6 @@ type spanTimestampKey struct{}
 // AppendMiddleware takes the aws.Config and adds the Datadog tracing middleware into the APIOptions middleware stack.
 // See https://aws.github.io/aws-sdk-go-v2/docs/middleware for more information.
 func AppendMiddleware(awsCfg *aws.Config, opts ...Option) {
-	fmt.Println("[nhulston tracer] AppendMiddleware()")
 	cfg := &config{}
 
 	defaults(cfg)
@@ -63,7 +65,6 @@ type traceMiddleware struct {
 }
 
 func (mw *traceMiddleware) initTraceMiddleware(stack *middleware.Stack) error {
-	fmt.Println("[nhulston tracer] initTraceMiddleware()")
 	return stack.Initialize.Add(middleware.InitializeMiddlewareFunc("InitTraceMiddleware", func(
 		ctx context.Context, in middleware.InitializeInput, next middleware.InitializeHandler,
 	) (
@@ -113,14 +114,11 @@ func (mw *traceMiddleware) startTraceMiddleware(stack *middleware.Stack) error {
 		// Inject trace context
 		switch serviceID {
 		case "SQS":
-			fmt.Println("[nhulston tracer] Case SQS")
-			mw.handleSQSOperation(spanctx, in, operation)
+			err = sqsTracer.HandleOperation(ctx, in, operation)
 		case "SNS":
-			fmt.Println("[nhulston tracer] Case SNS")
-			mw.handleSNSOperation(spanctx, in, operation)
+			err = snsTracer.HandleOperation(ctx, in, operation)
 		case "EventBridge":
-			fmt.Println("[nhulston tracer] Case EventBridge")
-			mw.handleEventBridgeOperation(spanctx, in, operation)
+			err = eventBridgeTracer.HandleOperation(ctx, in, operation)
 		}
 
 		// Handle initialize and continue through the middleware chain.
