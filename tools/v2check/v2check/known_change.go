@@ -235,7 +235,7 @@ func (c WithServiceName) Fixes() []analysis.SuggestedFix {
 
 	return []analysis.SuggestedFix{
 		{
-			Message: "the function WithServiceName() is no longer supported. Use WithService() instead",
+			Message: "use WithService()",
 			TextEdits: []analysis.TextEdit{
 				{
 					Pos:     c.Pos(),
