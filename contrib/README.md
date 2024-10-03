@@ -48,7 +48,7 @@ func init() {
 
 Then, ensure that:
 
-* [Packages](../ddtrace/instrumentation/packages.go) is updated with the following information:
+* [Packages](../instrumentation/packages.go) is updated with the following information:
   * A new constant with a matching package name (eg. `PackageNetHTTP` for `net/http`).
   * Relevant pacakge information in the `packages` map.
 * The `go.mod` file in your new submodule is in sync with the rest of the contrib folder.
