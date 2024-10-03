@@ -74,6 +74,9 @@ const (
 	PackageEmickleiGoRestful Package = "emicklei/go-restful"
 	PackageGaryburdRedigo    Package = "garyburd/redigo"
 	PackageLabstackEcho      Package = "labstack/echo"
+	PackageGopkgJinzhuGormV1 Package = "gopkg.in/jinzhu/gorm.v1"
+	PackageJinzhuGorm        Package = "jinzhu/gorm"
+	PackageGojiV1Web         Package = "zenazn/goji.v1/web"
 )
 
 type Component int
@@ -769,6 +772,24 @@ var packages = map[Package]PackageInfo{
 			ComponentServer: {
 				useDDServiceV0:     true,
 				buildServiceNameV0: staticName("echo"),
+				buildOpNameV0:      staticName("http.request"),
+				buildOpNameV1:      staticName("http.server.request"),
+			},
+		},
+	},
+	PackageGopkgJinzhuGormV1: {
+		TracedPackage: "gopkg.in/jinzhu/gorm.v1",
+	},
+	PackageJinzhuGorm: {
+		TracedPackage: "github.com/jinzhu/gorm",
+	},
+	PackageGojiV1Web: {
+		TracedPackage: "github.com/zenazn/goji/web",
+		EnvVarPrefix:  "GOJI",
+		naming: map[Component]componentNames{
+			ComponentServer: {
+				useDDServiceV0:     true,
+				buildServiceNameV0: staticName("http.router"),
 				buildOpNameV0:      staticName("http.request"),
 				buildOpNameV1:      staticName("http.server.request"),
 			},
