@@ -6,7 +6,6 @@
 package integrations
 
 import (
-	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"os"
 	"os/signal"
 	"regexp"
@@ -16,6 +15,7 @@ import (
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/constants"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/utils"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
