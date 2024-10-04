@@ -93,7 +93,7 @@ func TestMain(m *testing.M) {
 	// 2 benchmark spans (optional - require the -bench option)
 	fmt.Printf("Number of spans received: %d\n", len(finishedSpans))
 	if len(finishedSpans) < 37 {
-		panic("expected at least 36 finished spans, got " + strconv.Itoa(len(finishedSpans)))
+		panic("expected at least 37 finished spans, got " + strconv.Itoa(len(finishedSpans)))
 	}
 
 	sessionSpans := getSpansWithType(finishedSpans, constants.SpanTypeTestSession)
@@ -121,7 +121,7 @@ func TestMain(m *testing.M) {
 	fmt.Printf("Number of tests received: %d\n", len(testSpans))
 	showResourcesNameFromSpans(testSpans)
 	if len(testSpans) != 37 {
-		panic("expected exactly 36 test spans, got " + strconv.Itoa(len(testSpans)))
+		panic("expected exactly 37 test spans, got " + strconv.Itoa(len(testSpans)))
 	}
 
 	httpSpans := getSpansWithType(finishedSpans, ext.SpanTypeHTTP)
