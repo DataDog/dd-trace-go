@@ -38,7 +38,11 @@ func handleSendMessage(ctx context.Context, in middleware.InitializeInput) {
 		return
 	}
 
-	injectTraceContext(ctx, &params.MessageAttributes)
+	if params.MessageAttributes == nil {
+		params.MessageAttributes = make(map[string]types.MessageAttributeValue)
+	}
+
+	injectTraceContext(ctx, params.MessageAttributes)
 }
 
 func handleSendMessageBatch(ctx context.Context, in middleware.InitializeInput) {
@@ -48,26 +52,25 @@ func handleSendMessageBatch(ctx context.Context, in middleware.InitializeInput) 
 		return
 	}
 
-	for i := range params.Entries {
-		injectTraceContext(ctx, &params.Entries[i].MessageAttributes)
+	for _, entry := range params.Entries {
+		if entry.MessageAttributes == nil {
+			entry.MessageAttributes = make(map[string]types.MessageAttributeValue)
+		}
+		injectTraceContext(ctx, entry.MessageAttributes)
 	}
 }
 
-func injectTraceContext(ctx context.Context, ptrMessageAttributes *map[string]types.MessageAttributeValue) {
+func injectTraceContext(ctx context.Context, messageAttributes map[string]types.MessageAttributeValue) {
 	span, _ := tracer.SpanFromContext(ctx)
 	if span == nil {
 		fmt.Println("Unable to find span from context")
 		return
 	}
 
-	if *ptrMessageAttributes == nil {
-		*ptrMessageAttributes = make(map[string]types.MessageAttributeValue)
-	}
-
 	// SQS only allows a maximum of 10 message attributes.
 	// https://docs.aws.amazon.com/AWSSimpleQueueService/latest/SQSDeveloperGuide/sqs-message-metadata.html#sqs-message-attributes
 	// Only inject if there's room.
-	if len(*ptrMessageAttributes) >= maxMessageAttributes {
+	if len(messageAttributes) >= maxMessageAttributes {
 		fmt.Println("Cannot inject trace context: message already has maximum allowed attributes")
 		return
 	}
@@ -85,7 +88,7 @@ func injectTraceContext(ctx context.Context, ptrMessageAttributes *map[string]ty
 		return
 	}
 
-	(*ptrMessageAttributes)[datadogKey] = types.MessageAttributeValue{
+	messageAttributes[datadogKey] = types.MessageAttributeValue{
 		DataType:    aws.String("String"),
 		StringValue: aws.String(string(jsonBytes)),
 	}
