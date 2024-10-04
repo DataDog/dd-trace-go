@@ -7,7 +7,6 @@
 package normalizer
 
 import (
-	"fmt"
 	"net/textproto"
 	"regexp"
 	"strings"
@@ -26,7 +25,6 @@ var headerTagRegexp = regexp.MustCompile("[^a-zA-Z0-9 -]")
 // The returned header is in canonical MIMEHeader format.
 func HeaderTag(headerAsTag string) (header string, tag string) {
 	header = strings.ToLower(strings.TrimSpace(headerAsTag))
-	fmt.Printf("In HeaderTag: header is '%v'\n", header)
 	// if a colon is found in `headerAsTag`
 	if last := strings.LastIndex(header, ":"); last >= 0 {
 		header, tag = header[:last], header[last+1:]
