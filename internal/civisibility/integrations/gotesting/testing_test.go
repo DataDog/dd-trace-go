@@ -23,6 +23,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/constants"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/integrations"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/utils/net"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -32,6 +33,8 @@ var mTracer mocktracer.Tracer
 
 // TestMain is the entry point for testing and runs before any test.
 func TestMain(m *testing.M) {
+
+	log.SetLevel(log.LevelDebug)
 
 	// mock the settings api to enable automatic test retries
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

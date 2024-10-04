@@ -48,17 +48,19 @@ var (
 // ensureAdditionalFeaturesInitialization initialize all the additional features
 func ensureAdditionalFeaturesInitialization(serviceName string) {
 	additionalFeaturesInitializationOnce.Do(func() {
+		log.Debug("civisibility: initializing additional features")
+
 		// Create the CI Visibility client
 		ciVisibilityClient = net.NewClientWithServiceName(serviceName)
 		if ciVisibilityClient == nil {
-			log.Error("CI Visibility: error getting the ci visibility http client")
+			log.Error("civisibility: error getting the ci visibility http client")
 			return
 		}
 
 		// Get the CI Visibility settings payload for this test session
 		ciSettings, err := ciVisibilityClient.GetSettings()
 		if err != nil {
-			log.Error("CI Visibility: error getting CI visibility settings: %v", err)
+			log.Error("civisibility: error getting CI visibility settings: %v", err)
 		} else if ciSettings != nil {
 			ciVisibilitySettings = *ciSettings
 		}
@@ -67,9 +69,10 @@ func ensureAdditionalFeaturesInitialization(serviceName string) {
 		if ciVisibilitySettings.EarlyFlakeDetection.Enabled {
 			ciEfdData, err := ciVisibilityClient.GetEarlyFlakeDetectionData()
 			if err != nil {
-				log.Error("CI Visibility: error getting CI visibility early flake detection data: %v", err)
+				log.Error("civisibility: error getting CI visibility early flake detection data: %v", err)
 			} else if ciEfdData != nil {
 				ciVisibilityEarlyFlakyDetectionSettings = *ciEfdData
+				log.Debug("civisibility: early flake detection data loaded.")
 			}
 		}
 
@@ -78,13 +81,15 @@ func ensureAdditionalFeaturesInitialization(serviceName string) {
 			flakyRetryEnabledByEnv := internal.BoolEnv(constants.CIVisibilityFlakyRetryEnabledEnvironmentVariable, true)
 			if flakyRetryEnabledByEnv {
 				totalRetriesCount := (int64)(internal.IntEnv(constants.CIVisibilityTotalFlakyRetryCountEnvironmentVariable, DefaultFlakyTotalRetryCount))
+				retryCount := (int64)(internal.IntEnv(constants.CIVisibilityFlakyRetryCountEnvironmentVariable, DefaultFlakyRetryCount))
 				ciVisibilityFlakyRetriesSettings = FlakyRetriesSetting{
-					RetryCount:               (int64)(internal.IntEnv(constants.CIVisibilityFlakyRetryCountEnvironmentVariable, DefaultFlakyRetryCount)),
+					RetryCount:               retryCount,
 					TotalRetryCount:          totalRetriesCount,
 					RemainingTotalRetryCount: totalRetriesCount,
 				}
+				log.Debug("civisibility: automatic test retries enabled [retryCount: %v, totalRetryCount: %v]", retryCount, totalRetriesCount)
 			} else {
-				log.Warn("CI Visibility: flaky test retries was disabled by the environment variable")
+				log.Warn("civisibility: flaky test retries was disabled by the environment variable")
 				ciVisibilitySettings.FlakyTestRetriesEnabled = false
 			}
 		}

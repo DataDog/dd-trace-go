@@ -17,6 +17,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/constants"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/utils"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
 // ciVisibilityCloseAction defines an action to be executed when CI visibility is closing.
@@ -55,6 +56,8 @@ func InitializeCIVisibilityMock() mocktracer.Tracer {
 
 func internalCiVisibilityInitialization(tracerInitializer func([]tracer.StartOption)) {
 	ciVisibilityInitializationOnce.Do(func() {
+		log.Debug("civisibility: initializing")
+
 		// Since calling this method indicates we are in CI Visibility mode, set the environment variable.
 		_ = os.Setenv(constants.CIVisibilityEnabledEnvironmentVariable, "1")
 
@@ -88,6 +91,7 @@ func internalCiVisibilityInitialization(tracerInitializer func([]tracer.StartOpt
 		go func() { ensureAdditionalFeaturesInitialization(serviceName) }()
 
 		// Initialize the tracer
+		log.Debug("civisibility: initializing tracer")
 		tracerInitializer(opts)
 
 		// Handle SIGINT and SIGTERM signals to ensure we close all open spans and flush the tracer before exiting
@@ -110,13 +114,16 @@ func PushCiVisibilityCloseAction(action ciVisibilityCloseAction) {
 
 // ExitCiVisibility executes all registered close actions and stops the tracer.
 func ExitCiVisibility() {
+	log.Debug("civisibility: exiting")
 	closeActionsMutex.Lock()
 	defer closeActionsMutex.Unlock()
 	defer func() {
 		closeActions = []ciVisibilityCloseAction{}
 
+		log.Debug("civisibility: flushing and stopping tracer")
 		tracer.Flush()
 		tracer.Stop()
+		log.Debug("civisibility: done.")
 	}()
 	for _, v := range closeActions {
 		v()
