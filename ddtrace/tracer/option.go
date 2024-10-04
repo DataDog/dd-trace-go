@@ -358,11 +358,9 @@ func newConfig(opts ...StartOption) *config {
 	}
 	c.headerAsTags = newDynamicConfig("trace_header_tags", nil, setHeaderTags, equalSlice[string])
 	if v := os.Getenv("DD_TRACE_HEADER_TAGS"); v != "" {
-		htSlice := strings.Split(v, ",")
-		c.headerAsTags.update(htSlice, telemetry.OriginEnvVar)
+		c.headerAsTags.update(strings.Split(v, ","), telemetry.OriginEnvVar)
 		// Required to ensure that the startup header tags are set on reset.
 		c.headerAsTags.startup = c.headerAsTags.current
-		// setHeaderTags(htSlice)
 	}
 	if v := getDDorOtelConfig("resourceAttributes"); v != "" {
 		tags := internal.ParseTagString(v)
