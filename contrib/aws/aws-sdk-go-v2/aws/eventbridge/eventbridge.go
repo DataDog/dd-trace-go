@@ -30,7 +30,7 @@ func EnrichOperation(ctx context.Context, in middleware.InitializeInput, operati
 	case "PutEvents":
 		return handlePutEvents(ctx, in)
 	default:
-		return fmt.Errorf("unsupported operation: " + operation)
+		return nil
 	}
 }
 
@@ -48,6 +48,7 @@ func handlePutEvents(ctx context.Context, in middleware.InitializeInput) error {
 			break
 		}
 	}
+	println("[nhulston tracer] Found event bus: ", eventBusName)
 
 	// Set tags
 	span, _ := tracer.SpanFromContext(ctx)
@@ -60,7 +61,8 @@ func handlePutEvents(ctx context.Context, in middleware.InitializeInput) error {
 		err := injectTraceContext(ctx, &params.Entries[i])
 		if err != nil {
 			// Leave entry unmodified and log, but continue with other entries.
-			log.Debug("Unable to parse detail JSON: %s", err)
+			log.Debug("Unable to inject trace context into entry %d: %s", i, err)
+			fmt.Printf("Unable to inject trace context into entry %d: %s\n", i, err)
 		}
 	}
 

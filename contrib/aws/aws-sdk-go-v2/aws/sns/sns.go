@@ -28,7 +28,7 @@ func EnrichOperation(ctx context.Context, in middleware.InitializeInput, operati
 	case "PublishBatch":
 		return handlePublishBatch(ctx, in)
 	default:
-		return fmt.Errorf("unsupported operation: %s", operation)
+		return nil
 	}
 }
 

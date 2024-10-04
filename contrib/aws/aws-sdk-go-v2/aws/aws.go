@@ -121,10 +121,12 @@ func (mw *traceMiddleware) startTraceMiddleware(stack *middleware.Stack) error {
 			injectErr = eventBridgeTracer.EnrichOperation(spanctx, in, operation)
 		}
 
-		println("test")
 		if injectErr != nil {
+			println("[nhulston tracer] Inject error found")
 			log.Debug("Unable to inject trace context: %v", injectErr)
 			println("Unable to inject trace context: %v", injectErr)
+		} else {
+			println("[nhulston tracer] No inject error found")
 		}
 
 		// Handle initialize and continue through the middleware chain.
