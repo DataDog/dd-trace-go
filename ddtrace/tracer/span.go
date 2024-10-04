@@ -530,10 +530,6 @@ func (s *Span) setMetric(key string, v float64) {
 		if v == float64(samplernames.AppSec) {
 			s.setSamplingPriorityLocked(ext.PriorityUserKeep, samplernames.AppSec)
 		}
-	case ext.ManualDrop:
-		if v == float64(samplernames.AppSec) {
-			s.setSamplingPriorityLocked(ext.PriorityUserReject, samplernames.AppSec)
-		}
 	default:
 		s.metrics[key] = v
 	}
