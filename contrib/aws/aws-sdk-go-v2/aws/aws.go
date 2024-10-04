@@ -123,6 +123,7 @@ func (mw *traceMiddleware) startTraceMiddleware(stack *middleware.Stack) error {
 
 		if injectErr != nil {
 			log.Debug("Unable to inject trace context: %v", injectErr)
+			println("Unable to inject trace context: %v", injectErr)
 		}
 
 		// Handle initialize and continue through the middleware chain.
