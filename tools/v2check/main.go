@@ -15,7 +15,7 @@ func main() {
 		&v2check.V1ImportURL{},
 		&v2check.DDTraceTypes{},
 		&v2check.TracerStructs{},
-		// TODO: &v2check.TraceIDString{},
+		&v2check.TraceIDString{},
 		&v2check.WithServiceName{},
 	)
 	c.Run(singlechecker.Main)

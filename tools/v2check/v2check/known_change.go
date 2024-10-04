@@ -263,11 +263,30 @@ type TraceIDString struct {
 }
 
 func (c TraceIDString) Fixes() []analysis.SuggestedFix {
-	return []analysis.SuggestedFix{}
+	fn, ok := c.ctx.Value("fn").(func())
+	if !ok || fn == nil {
+		return nil
+	}
+
+	return []analysis.SuggestedFix{
+		{
+			Message: "use TraceIDLower()",
+			TextEdits: []analysis.TextEdit{
+				{
+					Pos:     c.Pos(),
+					End:     c.End(),
+					NewText: []byte("TraceIDLower()"),
+				},
+			},
+		},
+	}
 }
 
 func (c TraceIDString) Probes() []Probe {
-	return []Probe{}
+	return []Probe{
+		IsFuncCall,
+		WithFunctionName("TraceID"),
+	}
 }
 
 func (c TraceIDString) String() string {

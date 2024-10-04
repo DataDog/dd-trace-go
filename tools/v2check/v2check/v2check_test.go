@@ -76,6 +76,11 @@ func TestWithServiceName(t *testing.T) {
 	c.Run(testRunner(t, "withservicename"))
 }
 
+func TestTraceIDString(t *testing.T) {
+	c := v2check.NewChecker(&v2check.TraceIDString{})
+	c.Run(testRunner(t, "traceidstring"))
+}
+
 func TestTracerStructs(t *testing.T) {
 	c := v2check.NewChecker(&v2check.TracerStructs{})
 	c.Run(testRunner(t, "tracerstructs"))
