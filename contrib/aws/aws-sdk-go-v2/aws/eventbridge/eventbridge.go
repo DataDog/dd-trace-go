@@ -9,7 +9,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/eventbridge/types"
 	"github.com/aws/smithy-go/middleware"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"time"
 )
 
@@ -25,23 +24,22 @@ func (carrier messageCarrier) Set(key, val string) {
 	carrier[key] = val
 }
 
-func EnrichOperation(ctx context.Context, in middleware.InitializeInput, operation string) error {
+func EnrichOperation(ctx context.Context, in middleware.InitializeInput, operation string) {
 	switch operation {
 	case "PutEvents":
-		return handlePutEvents(ctx, in)
-	default:
-		return nil
+		handlePutEvents(ctx, in)
 	}
 }
 
-func handlePutEvents(ctx context.Context, in middleware.InitializeInput) error {
-	return fmt.Errorf("test error")
+func handlePutEvents(ctx context.Context, in middleware.InitializeInput) {
 	params, ok := in.Parameters.(*eventbridge.PutEventsInput)
 	if !ok {
-		return fmt.Errorf("unable to process PutEvents params")
+		fmt.Println("Unable to read PutEvents params")
+		return
 	}
 
-	// All entries will have the same EventBusName.
+	// Entries could be sent through different EventBuses, so we
+	// find the first valid bus name to set the tag.
 	var eventBusName string
 	for i := range params.Entries {
 		if params.Entries[i].EventBusName != nil {
@@ -49,7 +47,6 @@ func handlePutEvents(ctx context.Context, in middleware.InitializeInput) error {
 			break
 		}
 	}
-	println("[nhulston tracer] Found event bus: ", eventBusName)
 
 	// Set tags
 	span, _ := tracer.SpanFromContext(ctx)
@@ -59,27 +56,23 @@ func handlePutEvents(ctx context.Context, in middleware.InitializeInput) error {
 	}
 
 	for i := range params.Entries {
-		err := injectTraceContext(ctx, &params.Entries[i])
-		if err != nil {
-			// Leave entry unmodified and log, but continue with other entries.
-			log.Debug("Unable to inject trace context into entry %d: %s", i, err)
-			fmt.Printf("Unable to inject trace context into entry %d: %s\n", i, err)
-		}
+		injectTraceContext(ctx, &params.Entries[i])
 	}
-
-	return nil
 }
 
-func injectTraceContext(ctx context.Context, entry *types.PutEventsRequestEntry) error {
+// Injects trace context into the `detail` field of a PutEventsRequestEntry
+func injectTraceContext(ctx context.Context, entry *types.PutEventsRequestEntry) {
 	span, _ := tracer.SpanFromContext(ctx)
 	if span == nil {
-		return fmt.Errorf("unable to find span")
+		fmt.Println("Unable to find span from context")
+		return
 	}
 
 	carrier := make(messageCarrier)
 	err := tracer.Inject(span.Context(), carrier)
 	if err != nil {
-		return err
+		fmt.Printf("Unable to inject trace context: %s\n", err.Error())
+		return
 	}
 
 	// Add start time and resource name
@@ -91,15 +84,16 @@ func injectTraceContext(ctx context.Context, entry *types.PutEventsRequestEntry)
 
 	jsonBytes, err := json.Marshal(carrier)
 	if err != nil {
-		return err
+		fmt.Printf("Unable to marshal trace context: %s\n", err.Error())
+		return
 	}
 
 	var detail map[string]interface{}
 	if entry.Detail != nil {
 		err = json.Unmarshal([]byte(*entry.Detail), &detail)
 		if err != nil {
-			// `detail` is not in a valid JSON format. Leave entry unmodified.
-			return err
+			fmt.Printf("Unable to unmarshal event detail: %s\n", err.Error())
+			return
 		}
 	} else {
 		detail = make(map[string]interface{})
@@ -109,9 +103,9 @@ func injectTraceContext(ctx context.Context, entry *types.PutEventsRequestEntry)
 
 	updatedDetail, err := json.Marshal(detail)
 	if err != nil {
-		return err
+		fmt.Printf("Unable to marshal modified event detail: %s\n", err.Error())
+		return
 	}
 
 	entry.Detail = aws.String(string(updatedDetail))
-	return nil
 }

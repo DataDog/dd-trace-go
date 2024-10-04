@@ -111,22 +111,13 @@ func (mw *traceMiddleware) startTraceMiddleware(stack *middleware.Stack) error {
 		span, spanctx := tracer.StartSpanFromContext(ctx, spanName(serviceID, operation), opts...)
 
 		// Inject trace context
-		var injectErr error
 		switch serviceID {
 		case "SQS":
-			injectErr = sqsTracer.EnrichOperation(spanctx, in, operation)
+			sqsTracer.EnrichOperation(spanctx, in, operation)
 		case "SNS":
-			injectErr = snsTracer.EnrichOperation(spanctx, in, operation)
+			snsTracer.EnrichOperation(spanctx, in, operation)
 		case "EventBridge":
-			injectErr = eventBridgeTracer.EnrichOperation(spanctx, in, operation)
-		}
-
-		if injectErr != nil {
-			println("[nhulston tracer] Inject error found")
-			log.Debug("Unable to inject trace context: %s", injectErr.Error())
-			println("Unable to inject trace context: ", injectErr.Error())
-		} else {
-			println("[nhulston tracer] No inject error found")
+			eventBridgeTracer.EnrichOperation(spanctx, in, operation)
 		}
 
 		// Handle initialize and continue through the middleware chain.
