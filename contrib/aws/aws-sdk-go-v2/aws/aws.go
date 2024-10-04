@@ -111,6 +111,9 @@ func (mw *traceMiddleware) startTraceMiddleware(stack *middleware.Stack) error {
 		span, spanctx := tracer.StartSpanFromContext(ctx, spanName(serviceID, operation), opts...)
 
 		// Inject trace context
+		// TODO tags
+		// TODO system tests
+		// TODO test batch for sqs/sns
 		switch serviceID {
 		case "SQS":
 			sqsTracer.EnrichOperation(spanctx, in, operation)

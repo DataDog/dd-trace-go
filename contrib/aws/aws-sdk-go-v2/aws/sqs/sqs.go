@@ -20,6 +20,7 @@ func (carrier messageCarrier) Set(key, val string) {
 }
 
 func EnrichOperation(ctx context.Context, in middleware.InitializeInput, operation string) {
+	println("[nhulston tracer] EnrichOperation()")
 	switch operation {
 	case "SendMessage":
 		handleSendMessage(ctx, in)
@@ -29,16 +30,24 @@ func EnrichOperation(ctx context.Context, in middleware.InitializeInput, operati
 }
 
 func handleSendMessage(ctx context.Context, in middleware.InitializeInput) {
+	println("[nhulston tracer] handleSendMessage()")
 	params, ok := in.Parameters.(*sqs.SendMessageInput)
 	if !ok {
 		fmt.Println("Unable to read SendMessage params")
 		return
 	}
 
+	if params.MessageAttributes == nil {
+		println("[nhulston tracer] attributes nil")
+	} else {
+		println("[nhulston tracer] attributes not nil")
+	}
 	injectTraceContext(ctx, params.MessageAttributes)
+	println("[nhulston tracer] done with injectTraceContext()")
 }
 
 func handleSendMessageBatch(ctx context.Context, in middleware.InitializeInput) {
+	println("[nhulston tracer] handleSendMessageBatch()")
 	params, ok := in.Parameters.(*sqs.SendMessageBatchInput)
 	if !ok {
 		fmt.Println("Unable to read SendMessageBatch params")
@@ -51,6 +60,7 @@ func handleSendMessageBatch(ctx context.Context, in middleware.InitializeInput) 
 }
 
 func injectTraceContext(ctx context.Context, messageAttributes map[string]types.MessageAttributeValue) {
+	println("[nhulston tracer] injectTraceContext()")
 	span, _ := tracer.SpanFromContext(ctx)
 	if span == nil {
 		fmt.Println("Unable to find span from context")
