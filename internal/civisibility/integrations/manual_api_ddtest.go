@@ -156,11 +156,11 @@ func (t *tslvTest) SetTestFunc(fn *runtime.Func) {
 
 		// variable to store the ending line of the function
 		var endLine int
-		// traverse the AST to find the function declaration for targetFunction
+		// traverse the AST to find the function declaration for the target function
 		ast.Inspect(fileNode, func(n ast.Node) bool {
 			// check if the current node is a function declaration
 			if funcDecl, ok := n.(*ast.FuncDecl); ok {
-				// if the function name matches "targetFunction"
+				// if the function name matches the target function name
 				if funcDecl.Name.Name == name {
 					// get the line number of the end of the function body
 					endLine = fset.Position(funcDecl.Body.End()).Line
@@ -175,7 +175,7 @@ func (t *tslvTest) SetTestFunc(fn *runtime.Func) {
 				// if the start line matches the known start line, record the end line
 				if funcStartLine == startLine {
 					endLine = fset.Position(funcLit.Body.End()).Line
-					return false // Stop further inspection since we have found the function
+					return false // stop further inspection since we have found the function
 				}
 			}
 			// continue inspecting other nodes
