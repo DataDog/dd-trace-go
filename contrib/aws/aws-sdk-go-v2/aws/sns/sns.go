@@ -11,7 +11,10 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
 
-const datadogKey = "_datadog"
+const (
+	datadogKey           = "_datadog"
+	maxMessageAttributes = 10
+)
 
 type messageCarrier map[string]string
 
@@ -35,7 +38,7 @@ func handlePublish(ctx context.Context, in middleware.InitializeInput) {
 		return
 	}
 
-	injectTraceContext(ctx, params.MessageAttributes)
+	injectTraceContext(ctx, &params.MessageAttributes)
 }
 
 func handlePublishBatch(ctx context.Context, in middleware.InitializeInput) {
@@ -46,25 +49,25 @@ func handlePublishBatch(ctx context.Context, in middleware.InitializeInput) {
 	}
 
 	for i := range params.PublishBatchRequestEntries {
-		injectTraceContext(ctx, params.PublishBatchRequestEntries[i].MessageAttributes)
+		injectTraceContext(ctx, &params.PublishBatchRequestEntries[i].MessageAttributes)
 	}
 }
 
-func injectTraceContext(ctx context.Context, messageAttributes map[string]types.MessageAttributeValue) {
+func injectTraceContext(ctx context.Context, ptrMessageAttributes *map[string]types.MessageAttributeValue) {
 	span, _ := tracer.SpanFromContext(ctx)
 	if span == nil {
 		fmt.Println("Unable to find span from context")
 		return
 	}
 
-	if messageAttributes == nil {
-		messageAttributes = make(map[string]types.MessageAttributeValue)
+	if *ptrMessageAttributes == nil {
+		*ptrMessageAttributes = make(map[string]types.MessageAttributeValue)
 	}
 
 	// SNS only allow a maximum of 10 message attributes.
 	// https://docs.aws.amazon.com/sns/latest/dg/sns-message-attributes.html
 	// Only inject if there's room.
-	if len(messageAttributes) >= 10 {
+	if len(*ptrMessageAttributes) >= maxMessageAttributes {
 		fmt.Println("Cannot inject trace context: message already has maximum allowed attributes")
 		return
 	}
@@ -82,7 +85,7 @@ func injectTraceContext(ctx context.Context, messageAttributes map[string]types.
 		return
 	}
 
-	messageAttributes[datadogKey] = types.MessageAttributeValue{
+	(*ptrMessageAttributes)[datadogKey] = types.MessageAttributeValue{
 		DataType:    aws.String("String"),
 		StringValue: aws.String(string(jsonBytes)),
 	}

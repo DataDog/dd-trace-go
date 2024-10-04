@@ -11,7 +11,10 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
 
-const datadogKey = "_datadog"
+const (
+	datadogKey           = "_datadog"
+	maxMessageAttributes = 10
+)
 
 type messageCarrier map[string]string
 
@@ -20,7 +23,6 @@ func (carrier messageCarrier) Set(key, val string) {
 }
 
 func EnrichOperation(ctx context.Context, in middleware.InitializeInput, operation string) {
-	println("[nhulston tracer] EnrichOperation()")
 	switch operation {
 	case "SendMessage":
 		handleSendMessage(ctx, in)
@@ -30,24 +32,16 @@ func EnrichOperation(ctx context.Context, in middleware.InitializeInput, operati
 }
 
 func handleSendMessage(ctx context.Context, in middleware.InitializeInput) {
-	println("[nhulston tracer] handleSendMessage()")
 	params, ok := in.Parameters.(*sqs.SendMessageInput)
 	if !ok {
 		fmt.Println("Unable to read SendMessage params")
 		return
 	}
 
-	if params.MessageAttributes == nil {
-		println("[nhulston tracer] attributes nil")
-	} else {
-		println("[nhulston tracer] attributes not nil")
-	}
-	injectTraceContext(ctx, params.MessageAttributes)
-	println("[nhulston tracer] done with injectTraceContext()")
+	injectTraceContext(ctx, &params.MessageAttributes)
 }
 
 func handleSendMessageBatch(ctx context.Context, in middleware.InitializeInput) {
-	println("[nhulston tracer] handleSendMessageBatch()")
 	params, ok := in.Parameters.(*sqs.SendMessageBatchInput)
 	if !ok {
 		fmt.Println("Unable to read SendMessageBatch params")
@@ -55,26 +49,25 @@ func handleSendMessageBatch(ctx context.Context, in middleware.InitializeInput) 
 	}
 
 	for i := range params.Entries {
-		injectTraceContext(ctx, params.Entries[i].MessageAttributes)
+		injectTraceContext(ctx, &params.Entries[i].MessageAttributes)
 	}
 }
 
-func injectTraceContext(ctx context.Context, messageAttributes map[string]types.MessageAttributeValue) {
-	println("[nhulston tracer] injectTraceContext()")
+func injectTraceContext(ctx context.Context, ptrMessageAttributes *map[string]types.MessageAttributeValue) {
 	span, _ := tracer.SpanFromContext(ctx)
 	if span == nil {
 		fmt.Println("Unable to find span from context")
 		return
 	}
 
-	if messageAttributes == nil {
-		messageAttributes = make(map[string]types.MessageAttributeValue)
+	if *ptrMessageAttributes == nil {
+		*ptrMessageAttributes = make(map[string]types.MessageAttributeValue)
 	}
 
 	// SQS only allows a maximum of 10 message attributes.
 	// https://docs.aws.amazon.com/AWSSimpleQueueService/latest/SQSDeveloperGuide/sqs-message-metadata.html#sqs-message-attributes
 	// Only inject if there's room.
-	if len(messageAttributes) >= 10 {
+	if len(*ptrMessageAttributes) >= maxMessageAttributes {
 		fmt.Println("Cannot inject trace context: message already has maximum allowed attributes")
 		return
 	}
@@ -92,7 +85,7 @@ func injectTraceContext(ctx context.Context, messageAttributes map[string]types.
 		return
 	}
 
-	messageAttributes[datadogKey] = types.MessageAttributeValue{
+	(*ptrMessageAttributes)[datadogKey] = types.MessageAttributeValue{
 		DataType:    aws.String("String"),
 		StringValue: aws.String(string(jsonBytes)),
 	}
