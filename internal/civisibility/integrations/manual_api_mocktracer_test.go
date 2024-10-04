@@ -273,5 +273,6 @@ func testAssertions(assert *assert.Assertions, now time.Time, testSpan mocktrace
 	assert.Contains(spanTags, constants.TestSuiteIDTag)
 	assert.Contains(spanTags, constants.TestSourceFile)
 	assert.Contains(spanTags, constants.TestSourceStartLine)
+	assert.Contains(spanTags, constants.TestSourceEndLine)
 	commonAssertions(assert, testSpan)
 }
