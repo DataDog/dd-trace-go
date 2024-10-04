@@ -6,13 +6,15 @@
 package main
 
 import (
-	"gopkg.in/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"fmt"
+
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
 
 func main() {
 	tracer.Start(tracer.WithService("service"))
-	defer tracer.Stop()
-
-	tracer.Start(tracer.WithService("service")) // want `the function WithServiceName is no longer supported. Use WithService instead.`
 	tracer.Stop()
+
+	sp := tracer.StartSpan("opname")
+	fmt.Printf("traceID: %d\n", sp.Context().TraceID()) // want `trace IDs are now represented as strings, please use TraceIDLower`
 }
