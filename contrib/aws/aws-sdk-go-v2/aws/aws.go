@@ -121,6 +121,7 @@ func (mw *traceMiddleware) startTraceMiddleware(stack *middleware.Stack) error {
 			injectErr = eventBridgeTracer.EnrichOperation(spanctx, in, operation)
 		}
 
+		println("test")
 		if injectErr != nil {
 			log.Debug("Unable to inject trace context: %v", injectErr)
 			println("Unable to inject trace context: %v", injectErr)
