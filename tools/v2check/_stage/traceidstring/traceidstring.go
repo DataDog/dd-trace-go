@@ -13,7 +13,7 @@ import (
 
 func main() {
 	tracer.Start(tracer.WithService("service"))
-	tracer.Stop()
+	defer tracer.Stop()
 
 	sp := tracer.StartSpan("opname")
 	fmt.Printf("traceID: %d\n", sp.Context().TraceID()) // want `trace IDs are now represented as strings, please use TraceIDLower`

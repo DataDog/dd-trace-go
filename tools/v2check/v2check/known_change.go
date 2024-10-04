@@ -257,3 +257,19 @@ func (c WithServiceName) Probes() []Probe {
 func (c WithServiceName) String() string {
 	return "the function WithServiceName is no longer supported. Use WithService instead."
 }
+
+type TraceIDString struct {
+	defaultKnownChange
+}
+
+func (c TraceIDString) Fixes() []analysis.SuggestedFix {
+	return []analysis.SuggestedFix{}
+}
+
+func (c TraceIDString) Probes() []Probe {
+	return []Probe{}
+}
+
+func (c TraceIDString) String() string {
+	return "trace IDs are now represented as strings, please use TraceIDLower"
+}
