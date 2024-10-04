@@ -6,6 +6,7 @@
 package integrations
 
 import (
+	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"os"
 	"os/signal"
 	"regexp"
@@ -56,6 +57,12 @@ func InitializeCIVisibilityMock() mocktracer.Tracer {
 
 func internalCiVisibilityInitialization(tracerInitializer func([]tracer.StartOption)) {
 	ciVisibilityInitializationOnce.Do(func() {
+		// check the debug flag to enable debug logs. The tracer initialization happens
+		// after the CI Visibility initialization so we need to handle this flag ourselves
+		if internal.BoolEnv("DD_TRACE_DEBUG", false) {
+			log.SetLevel(log.LevelDebug)
+		}
+
 		log.Debug("civisibility: initializing")
 
 		// Since calling this method indicates we are in CI Visibility mode, set the environment variable.
