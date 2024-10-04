@@ -72,7 +72,10 @@ func TestMain(m *testing.M) {
 
 	// execute the tests, because we are expecting some tests to fail and check the assertion later
 	// we don't store the exit code from the test runner
-	RunM(m)
+	exitCode := RunM(m)
+	if exitCode != 1 {
+		panic("expected the exit code to be 1. We have a failing test on purpose.")
+	}
 
 	// get all finished spans
 	finishedSpans := mTracer.FinishedSpans()
@@ -80,7 +83,7 @@ func TestMain(m *testing.M) {
 	// 1 session span
 	// 1 module span
 	// 2 suite span (testing_test.go and reflections_test.go)
-	// 5 tests spans from testing_test.go
+	// 6 tests spans from testing_test.go
 	// 7 sub stest spans from testing_test.go
 	// 1 TestRetryWithPanic + 3 retry tests from testing_test.go
 	// 1 TestRetryWithFail + 3 retry tests from testing_test.go
@@ -89,8 +92,8 @@ func TestMain(m *testing.M) {
 	// 5 tests from reflections_test.go
 	// 2 benchmark spans (optional - require the -bench option)
 	fmt.Printf("Number of spans received: %d\n", len(finishedSpans))
-	if len(finishedSpans) < 36 {
-		panic("expected at least 36 finished spans, got " + strconv.Itoa(len(finishedSpans)))
+	if len(finishedSpans) < 37 {
+		panic("expected at least 37 finished spans, got " + strconv.Itoa(len(finishedSpans)))
 	}
 
 	sessionSpans := getSpansWithType(finishedSpans, constants.SpanTypeTestSession)
@@ -117,8 +120,8 @@ func TestMain(m *testing.M) {
 	testSpans := getSpansWithType(finishedSpans, constants.SpanTypeTest)
 	fmt.Printf("Number of tests received: %d\n", len(testSpans))
 	showResourcesNameFromSpans(testSpans)
-	if len(testSpans) != 36 {
-		panic("expected exactly 36 test spans, got " + strconv.Itoa(len(testSpans)))
+	if len(testSpans) != 37 {
+		panic("expected exactly 37 test spans, got " + strconv.Itoa(len(testSpans)))
 	}
 
 	httpSpans := getSpansWithType(finishedSpans, ext.SpanTypeHTTP)
@@ -310,6 +313,8 @@ func TestRetryAlwaysFail(t *testing.T) {
 	t.Parallel()
 	t.Fatal("Always fail")
 }
+
+func TestNormalPassingAfterRetryAlwaysFail(t *testing.T) {}
 
 // BenchmarkFirst demonstrates benchmark instrumentation with sub-benchmarks.
 func BenchmarkFirst(gb *testing.B) {

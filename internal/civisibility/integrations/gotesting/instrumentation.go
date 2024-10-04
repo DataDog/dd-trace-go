@@ -571,7 +571,11 @@ func applyAdditionalFeaturesToTestFunc(f func(*testing.T)) func(*testing.T) {
 						tCommonPrivates := getTestPrivateFields(t)
 						tCommonPrivates.SetFailed(ptrToLocalT.Failed())
 						tCommonPrivates.SetSkipped(ptrToLocalT.Skipped())
-						tParentCommonPrivates.SetFailed(ptrToLocalT.Failed())
+
+						// Only change the parent status to failing if the current test failed
+						if ptrToLocalT.Failed() {
+							tParentCommonPrivates.SetFailed(ptrToLocalT.Failed())
+						}
 						break
 					}
 				}
