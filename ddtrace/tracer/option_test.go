@@ -1392,6 +1392,16 @@ func TestWithHeaderTags(t *testing.T) {
 		assert.Equal(ext.HTTPRequestHeaders+".2_h_e_a_d_e_r", globalconfig.HeaderTag("2.h.e.a.d.e.r"))
 	})
 
+	t.Run("envvar-invalid", func(t *testing.T) {
+		defer globalconfig.ClearHeaderTags()
+		t.Setenv("DD_TRACE_HEADER_TAGS", "header1:")
+
+		assert := assert.New(t)
+		newConfig()
+
+		assert.Equal(0, globalconfig.HeaderTagsLen())
+	})
+
 	t.Run("env-override", func(t *testing.T) {
 		defer globalconfig.ClearHeaderTags()
 		assert := assert.New(t)
