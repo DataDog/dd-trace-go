@@ -21,14 +21,14 @@ func (carrier messageCarrier) Set(key, val string) {
 	carrier[key] = val
 }
 
-func HandleOperation(ctx context.Context, in middleware.InitializeInput, operation string) error {
+func EnrichOperation(ctx context.Context, in middleware.InitializeInput, operation string) error {
 	switch operation {
 	case "Publish":
 		return handlePublish(ctx, in)
 	case "PublishBatch":
 		return handlePublishBatch(ctx, in)
 	default:
-		return nil
+		return fmt.Errorf("unsupported operation: %s", operation)
 	}
 }
 
@@ -39,14 +39,14 @@ func handlePublish(ctx context.Context, in middleware.InitializeInput) error {
 		}
 		return injectTraceContext(ctx, params.MessageAttributes)
 	}
-	return nil
+	return fmt.Errorf("unable to inject trace context into Publish request")
 }
 
 func handlePublishBatch(ctx context.Context, in middleware.InitializeInput) error {
 	if params, ok := in.Parameters.(*sns.PublishBatchInput); ok {
 		return injectTraceContextBatch(ctx, params.PublishBatchRequestEntries)
 	}
-	return nil
+	return fmt.Errorf("unable to inject trace context into PublishBatch request")
 }
 
 func injectTraceContext(ctx context.Context, messageAttributes map[string]types.MessageAttributeValue) error {

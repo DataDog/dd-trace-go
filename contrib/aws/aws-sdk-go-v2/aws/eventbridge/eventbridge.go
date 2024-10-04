@@ -9,6 +9,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/eventbridge/types"
 	"github.com/aws/smithy-go/middleware"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"time"
 )
 
@@ -24,44 +25,52 @@ func (carrier messageCarrier) Set(key, val string) {
 	carrier[key] = val
 }
 
-func HandleOperation(ctx context.Context, in middleware.InitializeInput, operation string) error {
+func EnrichOperation(ctx context.Context, in middleware.InitializeInput, operation string) error {
 	switch operation {
 	case "PutEvents":
 		return handlePutEvents(ctx, in)
 	default:
-		return nil
+		return fmt.Errorf("unsupported operation: " + operation)
 	}
 }
 
 func handlePutEvents(ctx context.Context, in middleware.InitializeInput) error {
-	if params, ok := in.Parameters.(*eventbridge.PutEventsInput); ok {
-		var eventBusName string
-		for i := range params.Entries {
-			if params.Entries[i].EventBusName != nil {
-				eventBusName = *params.Entries[i].EventBusName
-				break
-			}
-		}
+	params, ok := in.Parameters.(*eventbridge.PutEventsInput)
+	if !ok {
+		return fmt.Errorf("unable to process PutEvents params")
+	}
 
-		span, _ := tracer.SpanFromContext(ctx)
-		if span != nil && eventBusName != "" {
-			span.SetTag("eventbridge.event_bus_name", eventBusName)
-		}
-
-		for i := range params.Entries {
-			err := injectTraceContext(ctx, &params.Entries[i])
-			if err != nil {
-				return fmt.Errorf("unable to inject trace context for entry %d: %w", i, err)
-			}
+	// All entries will have the same EventBusName.
+	var eventBusName string
+	for i := range params.Entries {
+		if params.Entries[i].EventBusName != nil {
+			eventBusName = *params.Entries[i].EventBusName
+			break
 		}
 	}
+
+	// Set tags
+	span, _ := tracer.SpanFromContext(ctx)
+	if span != nil && eventBusName != "" {
+		// TODO tags
+		span.SetTag("eventbridge.event_bus_name", eventBusName)
+	}
+
+	for i := range params.Entries {
+		err := injectTraceContext(ctx, &params.Entries[i])
+		if err != nil {
+			// Leave entry unmodified and log, but continue with other entries.
+			log.Debug("Unable to parse detail JSON: %s", err)
+		}
+	}
+
 	return nil
 }
 
 func injectTraceContext(ctx context.Context, entry *types.PutEventsRequestEntry) error {
 	span, _ := tracer.SpanFromContext(ctx)
 	if span == nil {
-		return nil
+		return fmt.Errorf("unable to find span")
 	}
 
 	carrier := make(messageCarrier)
@@ -71,7 +80,8 @@ func injectTraceContext(ctx context.Context, entry *types.PutEventsRequestEntry)
 	}
 
 	// Add start time and resource name
-	carrier[startTimeKey] = fmt.Sprintf("%d", time.Now().UnixNano()/int64(time.Millisecond))
+	startTimeMillis := time.Now().UnixMilli()
+	carrier[startTimeKey] = fmt.Sprintf("%d", startTimeMillis)
 	if entry.EventBusName != nil {
 		carrier[resourceNameKey] = *entry.EventBusName
 	}
@@ -85,6 +95,7 @@ func injectTraceContext(ctx context.Context, entry *types.PutEventsRequestEntry)
 	if entry.Detail != nil {
 		err = json.Unmarshal([]byte(*entry.Detail), &detail)
 		if err != nil {
+			// `detail` is not in a valid JSON format. Leave entry unmodified.
 			return err
 		}
 	} else {
