@@ -35,6 +35,7 @@ func EnrichOperation(ctx context.Context, in middleware.InitializeInput, operati
 }
 
 func handlePutEvents(ctx context.Context, in middleware.InitializeInput) error {
+	return fmt.Errorf("test error")
 	params, ok := in.Parameters.(*eventbridge.PutEventsInput)
 	if !ok {
 		return fmt.Errorf("unable to process PutEvents params")
