@@ -123,8 +123,8 @@ func (mw *traceMiddleware) startTraceMiddleware(stack *middleware.Stack) error {
 
 		if injectErr != nil {
 			println("[nhulston tracer] Inject error found")
-			log.Debug("Unable to inject trace context: %v", injectErr)
-			println("Unable to inject trace context: %v", injectErr)
+			log.Debug("Unable to inject trace context: %s", injectErr)
+			println("Unable to inject trace context: %s", injectErr)
 		} else {
 			println("[nhulston tracer] No inject error found")
 		}
