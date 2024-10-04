@@ -34,9 +34,7 @@ func handlePublish(ctx context.Context, in middleware.InitializeInput) {
 		fmt.Println("Unable to read PublishInput params")
 		return
 	}
-	if params.MessageAttributes == nil {
-		params.MessageAttributes = make(map[string]types.MessageAttributeValue)
-	}
+
 	injectTraceContext(ctx, params.MessageAttributes)
 }
 
@@ -57,6 +55,10 @@ func injectTraceContext(ctx context.Context, messageAttributes map[string]types.
 	if span == nil {
 		fmt.Println("Unable to find span from context")
 		return
+	}
+
+	if messageAttributes == nil {
+		messageAttributes = make(map[string]types.MessageAttributeValue)
 	}
 
 	// SNS only allow a maximum of 10 message attributes.

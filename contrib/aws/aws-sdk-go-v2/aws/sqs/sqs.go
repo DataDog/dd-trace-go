@@ -34,9 +34,7 @@ func handleSendMessage(ctx context.Context, in middleware.InitializeInput) {
 		fmt.Println("Unable to read SendMessage params")
 		return
 	}
-	if params.MessageAttributes == nil {
-		params.MessageAttributes = make(map[string]types.MessageAttributeValue)
-	}
+
 	injectTraceContext(ctx, params.MessageAttributes)
 }
 
@@ -57,6 +55,10 @@ func injectTraceContext(ctx context.Context, messageAttributes map[string]types.
 	if span == nil {
 		fmt.Println("Unable to find span from context")
 		return
+	}
+
+	if messageAttributes == nil {
+		messageAttributes = make(map[string]types.MessageAttributeValue)
 	}
 
 	// SQS only allows a maximum of 10 message attributes.
