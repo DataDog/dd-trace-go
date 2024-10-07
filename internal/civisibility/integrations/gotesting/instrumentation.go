@@ -10,6 +10,7 @@ import (
 	"os"
 	"reflect"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -41,6 +42,7 @@ type (
 		panicData                   any                 // panic data recovered from an internal test execution when using an additional feature wrapper
 		panicStacktrace             string              // stacktrace from the panic recovered from an internal test
 		isARetry                    bool                // flag to tag if a current test execution is a retry
+		isANewTest                  bool                // flag to tag if a current test execution is part of a new test (EFD not known test)
 		hasAdditionalFeatureWrapper bool                // flag to check if the current execution is part of an additional feature wrapper
 	}
 )
@@ -472,12 +474,12 @@ func checkIfCIVisibilityExitIsRequiredByPanic() bool {
 }
 
 // applyAdditionalFeaturesToTestFunc applies all the additional features as wrapper of a func(*testing.T)
-func applyAdditionalFeaturesToTestFunc(f func(*testing.T)) func(*testing.T) {
+func applyAdditionalFeaturesToTestFunc(f func(*testing.T), testInfo *commonInfo) func(*testing.T) {
 	// Apply additional features
 	settings := integrations.GetSettings()
 
 	// Wrapper function
-	wrapperFunc := f
+	wrapperFunc := &f
 
 	// Flaky test retries
 	if settings.FlakyTestRetriesEnabled {
@@ -485,7 +487,8 @@ func applyAdditionalFeaturesToTestFunc(f func(*testing.T)) func(*testing.T) {
 
 		// if the retry count per test is > 1 and if we still have remaining total retry count
 		if flakyRetrySettings.RetryCount > 1 && flakyRetrySettings.RemainingTotalRetryCount > 0 {
-			wrapperFunc = func(t *testing.T) {
+			targetFunc := f
+			flakyRetryFunc := func(t *testing.T) {
 				retryCount := flakyRetrySettings.RetryCount
 				executionIndex := -1
 				var panicExecution *testExecutionMetadata
@@ -496,6 +499,9 @@ func applyAdditionalFeaturesToTestFunc(f func(*testing.T)) func(*testing.T) {
 				// Module and suite for this test
 				var module integrations.DdTestModule
 				var suite integrations.DdTestSuite
+
+				// Check if we have execution metadata to propagate
+				originalExecMeta := getTestMetadata(t)
 
 				for {
 					// increment execution index
@@ -516,6 +522,16 @@ func applyAdditionalFeaturesToTestFunc(f func(*testing.T)) func(*testing.T) {
 					execMeta := createTestMetadata(ptrToLocalT)
 					execMeta.hasAdditionalFeatureWrapper = true
 
+					// propagate set tags from a parent wrapper
+					if originalExecMeta != nil {
+						if originalExecMeta.isANewTest {
+							execMeta.isANewTest = true
+						}
+						if originalExecMeta.isARetry {
+							execMeta.isARetry = true
+						}
+					}
+
 					// if we are in a retry execution we set the `isARetry` flag so we can tag the test event.
 					if executionIndex > 0 {
 						execMeta.isARetry = true
@@ -527,7 +543,7 @@ func applyAdditionalFeaturesToTestFunc(f func(*testing.T)) func(*testing.T) {
 						defer func() {
 							chn <- struct{}{}
 						}()
-						f(ptrToLocalT)
+						targetFunc(ptrToLocalT)
 					}()
 					<-chn
 
@@ -535,6 +551,11 @@ func applyAdditionalFeaturesToTestFunc(f func(*testing.T)) func(*testing.T) {
 					callTestCleanupPanicValue := testingTRunCleanup(ptrToLocalT, 1)
 					if callTestCleanupPanicValue != nil {
 						fmt.Printf("cleanup error: %v\n", callTestCleanupPanicValue)
+					}
+
+					// copy the current test to the wrapper
+					if originalExecMeta != nil {
+						originalExecMeta.test = execMeta.test
 					}
 
 					// extract module and suite if present
@@ -590,11 +611,13 @@ func applyAdditionalFeaturesToTestFunc(f func(*testing.T)) func(*testing.T) {
 						status = "skipped"
 					}
 
-					fmt.Printf("    [ %v after %v retries ]\n", status, retries)
+					fmt.Printf("    [ %v after %v retries by Datadog's auto test retries ]\n", status, retries)
 				}
 
-				// after all test executions we check if we need to close the suite and the module
-				checkModuleAndSuite(module, suite)
+				if originalExecMeta == nil {
+					// after all test executions we check if we need to close the suite and the module
+					checkModuleAndSuite(module, suite)
+				}
 
 				// let's check if total retry count was exceeded
 				if flakyRetrySettings.RemainingTotalRetryCount < 1 {
@@ -608,12 +631,182 @@ func applyAdditionalFeaturesToTestFunc(f func(*testing.T)) func(*testing.T) {
 					panic(fmt.Sprintf("test failed and panicked after %d retries.\n%v\n%v", executionIndex, panicExecution.panicData, panicExecution.panicStacktrace))
 				}
 			}
+			wrapperFunc = &flakyRetryFunc
+		}
+	}
+
+	// Early flake detection
+	if settings.EarlyFlakeDetection.Enabled {
+		// Define is a known test flag
+		isAKnownTest := false
+
+		// Check if the test is a known test or a new one
+		if knownSuites, ok := integrations.GetEarlyFlakeDetectionSettings().Tests[testInfo.moduleName]; ok {
+			if knownTests, ok := knownSuites[testInfo.suiteName]; ok {
+				if slices.Contains(knownTests, testInfo.testName) {
+					isAKnownTest = true
+				}
+			}
+		}
+
+		// If is a new test then we apply the EFD wrapper
+		if !isAKnownTest {
+			targetFunc := *wrapperFunc
+			efdRetryFunc := func(t *testing.T) {
+				var remainingRetriesCount int64 = 0
+				executionIndex := -1
+				testPassCount := 0
+				testSkipCount := 0
+				testFailCount := 0
+				var panicExecution *testExecutionMetadata
+
+				// Get the private fields from the *testing.T instance
+				tParentCommonPrivates := getTestParentPrivateFields(t)
+
+				// Module and suite for this test
+				var module integrations.DdTestModule
+				var suite integrations.DdTestSuite
+
+				for {
+					// increment execution index
+					executionIndex++
+
+					// we need to create a new local copy of `t` as a way to isolate the results of this execution.
+					// this is because we don't want these executions to affect the overall result of the test process
+					// nor the parent test status.
+					ptrToLocalT := &testing.T{}
+					copyTestWithoutParent(t, ptrToLocalT)
+
+					// we create a dummy parent so we can run the test using this local copy
+					// without affecting the test parent
+					localTPrivateFields := getTestPrivateFields(ptrToLocalT)
+					*localTPrivateFields.parent = unsafe.Pointer(&testing.T{})
+
+					// create an execution metadata instance
+					execMeta := createTestMetadata(ptrToLocalT)
+					execMeta.hasAdditionalFeatureWrapper = true
+
+					// set the flag new test to true
+					execMeta.isANewTest = true
+
+					// if we are in a retry execution we set the `isARetry` flag so we can tag the test event.
+					if executionIndex > 0 {
+						execMeta.isARetry = true
+					}
+
+					// run original func similar to it gets run internally in tRunner
+					startTime := time.Now()
+					chn := make(chan struct{}, 1)
+					go func() {
+						defer func() {
+							chn <- struct{}{}
+						}()
+						targetFunc(ptrToLocalT)
+					}()
+					<-chn
+					duration := time.Since(startTime)
+
+					// we call the cleanup funcs after this execution before trying another execution
+					callTestCleanupPanicValue := testingTRunCleanup(ptrToLocalT, 1)
+					if callTestCleanupPanicValue != nil {
+						fmt.Printf("cleanup error: %v\n", callTestCleanupPanicValue)
+					}
+
+					// extract module and suite if present
+					currentSuite := execMeta.test.Suite()
+					if suite == nil && currentSuite != nil {
+						suite = currentSuite
+					}
+					if module == nil && currentSuite != nil && currentSuite.Module() != nil {
+						module = currentSuite.Module()
+					}
+
+					// If this is the first execution...
+					if executionIndex == 0 {
+						slowTestRetriesSettings := settings.EarlyFlakeDetection.SlowTestRetries
+						// adapt the number of retries depending on the duration of the test
+						durationInSecs := duration.Seconds()
+						if durationInSecs < 5 {
+							atomic.StoreInt64(&remainingRetriesCount, (int64)(slowTestRetriesSettings.FiveS))
+						} else if durationInSecs < 10 {
+							atomic.StoreInt64(&remainingRetriesCount, (int64)(slowTestRetriesSettings.TenS))
+						} else if durationInSecs < 30 {
+							atomic.StoreInt64(&remainingRetriesCount, (int64)(slowTestRetriesSettings.ThirtyS))
+						} else if duration.Minutes() < 5 {
+							atomic.StoreInt64(&remainingRetriesCount, (int64)(slowTestRetriesSettings.FiveM))
+						} else {
+							atomic.StoreInt64(&remainingRetriesCount, 0)
+						}
+					}
+
+					// remove execution metadata
+					deleteTestMetadata(ptrToLocalT)
+
+					// decrement retry counts
+					remainingRetries := atomic.AddInt64(&remainingRetriesCount, -1)
+
+					// if a panic occurs we fail the test
+					if execMeta.panicData != nil {
+						ptrToLocalT.Fail()
+
+						// stores the first panic data so we can do a panic later after all retries
+						if panicExecution == nil {
+							panicExecution = execMeta
+						}
+					}
+
+					// update the counters depending on the test result
+					if ptrToLocalT.Failed() {
+						testFailCount++
+					} else if ptrToLocalT.Skipped() {
+						testSkipCount++
+					} else {
+						testPassCount++
+					}
+
+					// if there's no more retries we exit the loop
+					if remainingRetries < 0 {
+						break
+					}
+				}
+
+				// we set the original `t` with the results
+				tCommonPrivates := getTestPrivateFields(t)
+				status := "passed"
+				if testPassCount == 0 {
+					if testSkipCount > 0 {
+						status = "skipped"
+						tCommonPrivates.SetSkipped(true)
+					}
+					if testFailCount > 0 {
+						status = "failed"
+						tCommonPrivates.SetFailed(true)
+						tParentCommonPrivates.SetFailed(true)
+					}
+				}
+
+				// in case we execute some retries then let's print a summary of the result with the retries count
+				if executionIndex > 0 {
+					fmt.Printf("  [ %v after %v retries by Datadog's early flake detection ]\n", status, executionIndex)
+				}
+
+				// after all test executions we check if we need to close the suite and the module
+				checkModuleAndSuite(module, suite)
+
+				// if the test failed, and we have a panic information let's re-panic that
+				if t.Failed() && panicExecution != nil {
+					// we are about to panic, let's ensure we flush all ci visibility data and close the session event
+					integrations.ExitCiVisibility()
+					panic(fmt.Sprintf("test failed and panicked after %d retries.\n%v\n%v", executionIndex, panicExecution.panicData, panicExecution.panicStacktrace))
+				}
+			}
+			wrapperFunc = &efdRetryFunc
 		}
 	}
 
 	// Register the instrumented func as an internal instrumented func (to avoid double instrumentation)
-	setInstrumentationMetadata(runtime.FuncForPC(reflect.Indirect(reflect.ValueOf(wrapperFunc)).Pointer()), &instrumentationMetadata{IsInternal: true})
-	return wrapperFunc
+	setInstrumentationMetadata(runtime.FuncForPC(reflect.Indirect(reflect.ValueOf(*wrapperFunc)).Pointer()), &instrumentationMetadata{IsInternal: true})
+	return *wrapperFunc
 }
 
 //go:linkname testingTRunCleanup testing.(*common).runCleanup

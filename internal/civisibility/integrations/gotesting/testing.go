@@ -147,6 +147,12 @@ func (ddm *M) executeInternalTest(testInfo *testingTInfo) func(*testing.T) {
 		// Set the CI Visibility test to the execution metadata
 		execMeta.test = test
 
+		// If the execution is for a new test we tag the test event
+		if execMeta.isANewTest {
+			// Set the is new test tag
+			test.SetTag(constants.TestIsNew, "true")
+		}
+
 		// If the execution is a retry we tag the test event
 		if execMeta.isARetry {
 			// Set the retry tag
@@ -198,7 +204,7 @@ func (ddm *M) executeInternalTest(testInfo *testingTInfo) func(*testing.T) {
 	setInstrumentationMetadata(runtime.FuncForPC(reflect.Indirect(reflect.ValueOf(instrumentedFunc)).Pointer()), &instrumentationMetadata{IsInternal: true})
 
 	// Get the additional feature wrapper
-	return applyAdditionalFeaturesToTestFunc(instrumentedFunc)
+	return applyAdditionalFeaturesToTestFunc(instrumentedFunc, &testInfo.commonInfo)
 }
 
 // instrumentInternalBenchmarks instruments the internal benchmarks for CI visibility.

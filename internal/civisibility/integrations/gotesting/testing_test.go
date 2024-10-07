@@ -55,6 +55,47 @@ func TestMain(m *testing.M) {
 			response.Data.Attributes = net.SettingsResponseData{
 				FlakyTestRetriesEnabled: true,
 			}
+			response.Data.Attributes.EarlyFlakeDetection.Enabled = false
+			response.Data.Attributes.EarlyFlakeDetection.SlowTestRetries.FiveS = 10
+
+			fmt.Printf("MockApi sending response: %v\n", response)
+			json.NewEncoder(w).Encode(&response)
+		}
+
+		if r.URL.Path == "/api/v2/ci/libraries/tests" {
+			w.Header().Set("Content-Type", "application/json")
+			response := struct {
+				Data struct {
+					ID         string              `json:"id"`
+					Type       string              `json:"type"`
+					Attributes net.EfdResponseData `json:"attributes"`
+				} `json:"data,omitempty"`
+			}{}
+
+			response.Data.Attributes = net.EfdResponseData{
+				Tests: net.EfdResponseDataModules{
+					"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/integrations/gotesting": net.EfdResponseDataSuites{
+						"reflections_test.go": []string{
+							"TestGetFieldPointerFrom",
+							"TestGetInternalTestArray",
+							"TestGetInternalBenchmarkArray",
+							"TestCommonPrivateFields_AddLevel",
+							"TestGetBenchmarkPrivateFields",
+						},
+						"testing_test.go": []string{
+							"TestMyTest01",
+							"TestMyTest02",
+							"Test_Foo",
+							"TestWithExternalCalls",
+							"TestSkip",
+							"TestRetryWithPanic",
+							"TestRetryWithFail",
+							"TestRetryAlwaysFail",
+							"TestNormalPassingAfterRetryAlwaysFail",
+						},
+					},
+				},
+			}
 
 			fmt.Printf("MockApi sending response: %v\n", response)
 			json.NewEncoder(w).Encode(&response)
@@ -91,12 +132,13 @@ func TestMain(m *testing.M) {
 	// 1 TestRetryWithPanic + 3 retry tests from testing_test.go
 	// 1 TestRetryWithFail + 3 retry tests from testing_test.go
 	// 1 TestRetryAlwaysFail + 10 retry tests from testing_test.go
+	// 1 TestEarlyFlakeDetection
 	// 2 normal spans from testing_test.go
 	// 5 tests from reflections_test.go
 	// 2 benchmark spans (optional - require the -bench option)
 	fmt.Printf("Number of spans received: %d\n", len(finishedSpans))
-	if len(finishedSpans) < 37 {
-		panic("expected at least 37 finished spans, got " + strconv.Itoa(len(finishedSpans)))
+	if len(finishedSpans) < 38 {
+		panic("expected at least 38 finished spans, got " + strconv.Itoa(len(finishedSpans)))
 	}
 
 	sessionSpans := getSpansWithType(finishedSpans, constants.SpanTypeTestSession)
@@ -123,8 +165,8 @@ func TestMain(m *testing.M) {
 	testSpans := getSpansWithType(finishedSpans, constants.SpanTypeTest)
 	fmt.Printf("Number of tests received: %d\n", len(testSpans))
 	showResourcesNameFromSpans(testSpans)
-	if len(testSpans) != 37 {
-		panic("expected exactly 37 test spans, got " + strconv.Itoa(len(testSpans)))
+	if len(testSpans) != 38 {
+		panic("expected exactly 38 test spans, got " + strconv.Itoa(len(testSpans)))
 	}
 
 	httpSpans := getSpansWithType(finishedSpans, ext.SpanTypeHTTP)
@@ -318,6 +360,18 @@ func TestRetryAlwaysFail(t *testing.T) {
 }
 
 func TestNormalPassingAfterRetryAlwaysFail(t *testing.T) {}
+
+var run int
+
+func TestEarlyFlakeDetection(t *testing.T) {
+	run++
+	fmt.Printf(" Run: %d", run)
+	if run%2 == 0 {
+		fmt.Println(" Failed")
+		t.FailNow()
+	}
+	fmt.Println(" Passed")
+}
 
 // BenchmarkFirst demonstrates benchmark instrumentation with sub-benchmarks.
 func BenchmarkFirst(gb *testing.B) {
