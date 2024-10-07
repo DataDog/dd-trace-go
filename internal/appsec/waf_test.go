@@ -967,13 +967,20 @@ func TestAttackerFingerprinting(t *testing.T) {
 	resp, err := srv.Client().Do(req)
 	require.NoError(t, err)
 	defer resp.Body.Close()
-	spans := mt.FinishedSpans()
 
-	require.Len(t, spans, 1)
-	require.Contains(t, spans[0].Tags(), "_dd.appsec.fp.http.header")
-	require.Contains(t, spans[0].Tags(), "_dd.appsec.fp.http.endpoint")
-	require.Contains(t, spans[0].Tags(), "_dd.appsec.fp.http.network")
-	require.Contains(t, spans[0].Tags(), "_dd.appsec.fp.session")
+	require.Len(t, mt.FinishedSpans(), 1)
+
+	tags := mt.FinishedSpans()[0].Tags()
+
+	require.Contains(t, tags, "_dd.appsec.fp.http.header")
+	require.Contains(t, tags, "_dd.appsec.fp.http.endpoint")
+	require.Contains(t, tags, "_dd.appsec.fp.http.network")
+	require.Contains(t, tags, "_dd.appsec.fp.session")
+
+	require.Regexp(t, `^hdr-`, tags["_dd.appsec.fp.http.header"])
+	require.Regexp(t, `^http-`, tags["_dd.appsec.fp.http.endpoint"])
+	require.Regexp(t, `^ssn-`, tags["_dd.appsec.fp.session"])
+	require.Regexp(t, `^net-`, tags["_dd.appsec.fp.http.network"])
 }
 
 func init() {

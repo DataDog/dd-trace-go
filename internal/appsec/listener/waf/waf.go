@@ -112,7 +112,7 @@ func (waf *Feature) onFinish(op *waf.ContextOperation, _ waf.ContextRes) {
 		log.Debug("appsec: failed to set event span tags: %v", err)
 	}
 
-	op.SetJSONTags(op.Derivatives())
+	op.SetSerializableTags(op.Derivatives())
 	if stacks := op.StackTraces(); len(stacks) > 0 {
 		op.SetTag(stacktrace.SpanKey, stacktrace.GetSpanValue(stacks...))
 	}

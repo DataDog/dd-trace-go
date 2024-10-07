@@ -46,6 +46,10 @@ const (
 	// This constant is used to tag traces with the line number in the source file where the test starts.
 	TestSourceStartLine = "test.source.start"
 
+	// TestSourceEndLine indicates the line of the source file where the test ends.
+	// This constant is used to tag traces with the line number in the source file where the test ends.
+	TestSourceEndLine = "test.source.end"
+
 	// TestCodeOwners indicates the test code owners.
 	// This constant is used to tag traces with the code owners responsible for the test.
 	TestCodeOwners = "test.codeowners"
@@ -61,6 +65,14 @@ const (
 	// TestCommandWorkingDirectory indicates the test command working directory relative to the source root.
 	// This constant is used to tag traces with the working directory path relative to the source root.
 	TestCommandWorkingDirectory = "test.working_directory"
+
+	// TestSessionName indicates the test session name
+	// This constant is used to tag traces with the test session name
+	TestSessionName = "test_session.name"
+
+	// TestIsRetry indicates a retry execution
+	// This constant is used to tag test events that are part of a retry execution
+	TestIsRetry = "test.is_retry"
 )
 
 // Define valid test status types.
