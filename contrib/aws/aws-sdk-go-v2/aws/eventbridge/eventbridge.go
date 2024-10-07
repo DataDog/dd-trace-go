@@ -8,7 +8,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/eventbridge"
 	"github.com/aws/aws-sdk-go-v2/service/eventbridge/types"
 	"github.com/aws/smithy-go/middleware"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"time"
 )
@@ -37,23 +36,6 @@ func handlePutEvents(ctx context.Context, in middleware.InitializeInput) {
 	if !ok {
 		fmt.Println("Unable to read PutEvents params")
 		return
-	}
-
-	// Entries could be sent through different EventBuses, so we
-	// find the first valid bus name to set the tag.
-	var eventBusName string
-	for i := range params.Entries {
-		if params.Entries[i].EventBusName != nil {
-			eventBusName = *params.Entries[i].EventBusName
-			break
-		}
-	}
-
-	// Set tags
-	span, _ := tracer.SpanFromContext(ctx)
-	if span != nil && eventBusName != "" {
-		// TODO rename the `rulename` tag to `eventbusname` across all runtimes
-		span.SetTag(ext.RuleName, eventBusName)
 	}
 
 	for i := range params.Entries {

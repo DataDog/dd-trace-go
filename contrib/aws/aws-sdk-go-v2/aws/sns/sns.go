@@ -8,9 +8,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/sns"
 	"github.com/aws/aws-sdk-go-v2/service/sns/types"
 	"github.com/aws/smithy-go/middleware"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"strings"
 )
 
 const (
@@ -40,8 +38,6 @@ func handlePublish(ctx context.Context, in middleware.InitializeInput) {
 		return
 	}
 
-	setTopicTag(ctx, params.TopicArn)
-
 	if params.MessageAttributes == nil {
 		params.MessageAttributes = make(map[string]types.MessageAttributeValue)
 	}
@@ -56,31 +52,11 @@ func handlePublishBatch(ctx context.Context, in middleware.InitializeInput) {
 		return
 	}
 
-	setTopicTag(ctx, params.TopicArn)
-
 	for _, entry := range params.PublishBatchRequestEntries {
 		if entry.MessageAttributes == nil {
 			entry.MessageAttributes = make(map[string]types.MessageAttributeValue)
 		}
 		injectTraceContext(ctx, entry.MessageAttributes)
-	}
-}
-
-func setTopicTag(ctx context.Context, topicArnPtr *string) {
-	if topicArnPtr == nil {
-		return
-	}
-
-	topicArn := *topicArnPtr
-	span, _ := tracer.SpanFromContext(ctx)
-
-	if span != nil && topicArn != "" {
-		lastSeparationIndex := strings.LastIndex(topicArn, ":") + 1
-		topicName := topicArn[lastSeparationIndex:]
-
-		if topicName != "" {
-			span.SetTag(ext.TopicName, topicName)
-		}
 	}
 }
 
