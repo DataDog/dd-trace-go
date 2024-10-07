@@ -7,7 +7,6 @@ package grpc
 
 import (
 	"context"
-	"fmt"
 	"testing"
 
 	"github.com/DataDog/dd-trace-go/instrumentation/testutils/grpc/v2/fixturepb"
@@ -47,7 +46,6 @@ func TestServerStatsHandler(t *testing.T) {
 	assert.True(span.FinishTime().Sub(span.StartTime()) >= 0)
 	assert.Equal("grpc.server", span.OperationName())
 	tags := span.Tags()
-	fmt.Printf("TAGS: %v\n", tags)
 	assert.Equal(ext.AppTypeRPC, tags["span.type"])
 	assert.Equal(codes.OK.String(), tags["grpc.code"])
 	assert.Equal(serviceName, tags["service.name"])

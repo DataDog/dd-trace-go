@@ -17,8 +17,6 @@ import (
 	"github.com/tidwall/buntdb"
 )
 
-const componentName = "tidwall/buntdb"
-
 var instr *instrumentation.Instrumentation
 
 func init() {
@@ -105,7 +103,7 @@ func (tx *Tx) startSpan(name string) *tracer.Span {
 		tracer.SpanType(ext.AppTypeDB),
 		tracer.ServiceName(tx.cfg.serviceName),
 		tracer.ResourceName(name),
-		tracer.Tag(ext.Component, componentName),
+		tracer.Tag(ext.Component, instrumentation.PackageTidwallBuntDB),
 		tracer.Tag(ext.SpanKind, ext.SpanKindClient),
 		tracer.Tag(ext.DBSystem, ext.DBSystemBuntDB),
 	}

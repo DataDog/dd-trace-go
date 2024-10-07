@@ -10,6 +10,7 @@ import (
 	"net/http"
 
 	graphqltrace "github.com/DataDog/dd-trace-go/contrib/graph-gophers/graphql-go/v2"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 
 	graphql "github.com/graph-gophers/graphql-go"
 	"github.com/graph-gophers/graphql-go/relay"
@@ -20,6 +21,9 @@ type resolver struct{}
 func (*resolver) Hello() string { return "Hello, world!" }
 
 func Example() {
+	tracer.Start()
+	defer tracer.Stop()
+
 	s := `
 		schema {
 			query: Query

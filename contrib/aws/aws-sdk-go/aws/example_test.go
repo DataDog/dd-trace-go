@@ -35,6 +35,9 @@ func Example() {
 
 // An example of the aws span inheriting a parent span from context.
 func Example_context() {
+	tracer.Start()
+	defer tracer.Stop()
+
 	cfg := aws.NewConfig().WithRegion("us-west-2")
 	sess := session.Must(session.NewSession(cfg))
 	sess = awstrace.WrapSession(sess)

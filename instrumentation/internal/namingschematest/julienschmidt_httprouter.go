@@ -21,7 +21,7 @@ import (
 )
 
 var julienschmidtHTTPRouter = harness.TestCase{
-	Name: instrumentation.PackageNetHTTP + "_server",
+	Name: instrumentation.PackageJulienschmidtHTTPRouter,
 	GenSpans: func(t *testing.T, serviceOverride string) []*mocktracer.Span {
 		var opts []httproutertrace.RouterOption
 		if serviceOverride != "" {

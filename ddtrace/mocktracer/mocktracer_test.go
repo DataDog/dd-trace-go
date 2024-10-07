@@ -6,6 +6,7 @@
 package mocktracer
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
@@ -76,7 +77,7 @@ func TestTracerStartSpan(t *testing.T) {
 }
 
 func TestTracerFinishedSpans(t *testing.T) {
-	mt := Start() // newMockTracer()
+	mt := Start()
 	t.Cleanup(func() {
 		mt.Stop()
 	})
@@ -102,7 +103,7 @@ func TestTracerFinishedSpans(t *testing.T) {
 }
 
 func TestTracerOpenSpans(t *testing.T) {
-	mt := Start() // newMockTracer()
+	mt := Start()
 	t.Cleanup(func() {
 		mt.Stop()
 	})
@@ -149,7 +150,7 @@ func TestTracerSetUser(t *testing.T) {
 
 func TestTracerReset(t *testing.T) {
 	assert := assert.New(t)
-	mt := Start().(*mocktracer) // newMockTracer()
+	mt := Start().(*mocktracer)
 	t.Cleanup(func() {
 		mt.Stop()
 	})
@@ -168,140 +169,151 @@ func TestTracerReset(t *testing.T) {
 	assert.Empty(mt.openSpans)
 }
 
-// func TestTracerInject(t *testing.T) {
-// 	t.Run("errors", func(t *testing.T) {
-// 		mt := newMockTracer()
-// 		assert := assert.New(t)
+func TestTracerInject(t *testing.T) {
+	t.Run("errors", func(t *testing.T) {
+		mt := newMockTracer()
+		assert := assert.New(t)
 
-// 		err := mt.Inject(&spanContext{}, 2)
-// 		assert.Equal(tracer.ErrInvalidCarrier, err) // 2 is not a carrier
+		err := mt.Inject(&tracer.SpanContext{}, 2)
+		assert.Equal(tracer.ErrInvalidCarrier, err) // 2 is not a carrier
 
-// 		err = mt.Inject(&spanContext{}, tracer.TextMapCarrier(map[string]string{}))
-// 		assert.Equal(tracer.ErrInvalidSpanContext, err) // no traceID and spanID
+		err = mt.Inject(&tracer.SpanContext{}, tracer.TextMapCarrier(map[string]string{}))
+		assert.Equal(tracer.ErrInvalidSpanContext, err) // no traceID and spanID
 
-// 		err = mt.Inject(&spanContext{traceID: 2}, tracer.TextMapCarrier(map[string]string{}))
-// 		assert.Equal(tracer.ErrInvalidSpanContext, err) // no spanID
+		sp := mt.StartSpan("op")
 
-// 		err = mt.Inject(&spanContext{traceID: 2, spanID: 1}, tracer.TextMapCarrier(map[string]string{}))
-// 		assert.Nil(err) // ok
-// 	})
+		err = mt.Inject(sp.Context(), tracer.TextMapCarrier(map[string]string{}))
+		assert.Nil(err) // ok
+	})
 
-// 	t.Run("ok", func(t *testing.T) {
-// 		sctx := &spanContext{
-// 			traceID:     1,
-// 			spanID:      2,
-// 			priority:    -1,
-// 			hasPriority: true,
-// 			baggage:     map[string]string{"A": "B", "C": "D"},
-// 		}
-// 		carrier := make(map[string]string)
-// 		err := (&mocktracer{}).Inject(sctx, tracer.TextMapCarrier(carrier))
+	t.Run("ok", func(t *testing.T) {
+		mt := newMockTracer()
+		assert := assert.New(t)
 
-// 		assert := assert.New(t)
-// 		assert.Nil(err)
-// 		assert.Equal("1", carrier[traceHeader])
-// 		assert.Equal("2", carrier[spanHeader])
-// 		assert.Equal("-1", carrier[priorityHeader])
-// 		assert.Equal("B", carrier[baggagePrefix+"A"])
-// 		assert.Equal("D", carrier[baggagePrefix+"C"])
-// 	})
-// }
+		sp := mt.StartSpan("op", tracer.WithSpanID(2))
+		sp.SetTag(ext.ManualDrop, true)
+		sp.SetBaggageItem("A", "B")
+		sp.SetBaggageItem("C", "D")
+		carrier := make(map[string]string)
+		err := (&mocktracer{}).Inject(sp.Context(), tracer.TextMapCarrier(carrier))
 
-// func TestTracerExtract(t *testing.T) {
-// 	// carry creates a tracer.TextMapCarrier containing the given sequence
-// 	// of key/value pairs.
-// 	carry := func(kv ...string) tracer.TextMapCarrier {
-// 		var k string
-// 		m := make(map[string]string)
-// 		if n := len(kv); n%2 == 0 && n >= 2 {
-// 			for i, v := range kv {
-// 				if (i+1)%2 == 0 {
-// 					m[k] = v
-// 				} else {
-// 					k = v
-// 				}
-// 			}
-// 		}
-// 		return tracer.TextMapCarrier(m)
-// 	}
+		assert.Nil(err)
+		assert.Equal(fmt.Sprintf("%d", sp.Context().TraceIDLower()), carrier[traceHeader])
+		assert.Equal("2", carrier[spanHeader])
+		assert.Equal("-1", carrier[priorityHeader])
+		assert.Equal("B", carrier[baggagePrefix+"A"])
+		assert.Equal("D", carrier[baggagePrefix+"C"])
+	})
+}
 
-// 	// tests carry helper function.
-// 	t.Run("carry", func(t *testing.T) {
-// 		for _, tt := range []struct {
-// 			in  []string
-// 			out tracer.TextMapCarrier
-// 		}{
-// 			{in: []string{}, out: map[string]string{}},
-// 			{in: []string{"A"}, out: map[string]string{}},
-// 			{in: []string{"A", "B", "C"}, out: map[string]string{}},
-// 			{in: []string{"A", "B"}, out: map[string]string{"A": "B"}},
-// 			{in: []string{"A", "B", "C", "D"}, out: map[string]string{"A": "B", "C": "D"}},
-// 		} {
-// 			assert.Equal(t, tt.out, carry(tt.in...))
-// 		}
-// 	})
+func TestTracerExtract(t *testing.T) {
+	// carry creates a tracer.TextMapCarrier containing the given sequence
+	// of key/value pairs.
+	carry := func(kv ...string) tracer.TextMapCarrier {
+		var k string
+		m := make(map[string]string)
+		if n := len(kv); n%2 == 0 && n >= 2 {
+			for i, v := range kv {
+				if (i+1)%2 == 0 {
+					m[k] = v
+				} else {
+					k = v
+				}
+			}
+		}
+		return tracer.TextMapCarrier(m)
+	}
 
-// 	var mt mocktracer
+	// tests carry helper function.
+	t.Run("carry", func(t *testing.T) {
+		for _, tt := range []struct {
+			in  []string
+			out tracer.TextMapCarrier
+		}{
+			{in: []string{}, out: map[string]string{}},
+			{in: []string{"A"}, out: map[string]string{}},
+			{in: []string{"A", "B", "C"}, out: map[string]string{}},
+			{in: []string{"A", "B"}, out: map[string]string{"A": "B"}},
+			{in: []string{"A", "B", "C", "D"}, out: map[string]string{"A": "B", "C": "D"}},
+		} {
+			assert.Equal(t, tt.out, carry(tt.in...))
+		}
+	})
 
-// 	// tests error return values.
-// 	t.Run("errors", func(t *testing.T) {
-// 		assert := assert.New(t)
+	var mt mocktracer
 
-// 		_, err := mt.Extract(2)
-// 		assert.Equal(tracer.ErrInvalidCarrier, err)
+	// tests error return values.
+	t.Run("errors", func(t *testing.T) {
+		assert := assert.New(t)
 
-// 		_, err = mt.Extract(carry(traceHeader, "a"))
-// 		assert.Equal(tracer.ErrSpanContextCorrupted, err)
+		_, err := mt.Extract(2)
+		assert.Equal(tracer.ErrInvalidCarrier, err)
 
-// 		_, err = mt.Extract(carry(spanHeader, "a", traceHeader, "2", baggagePrefix+"x", "y"))
-// 		assert.Equal(tracer.ErrSpanContextCorrupted, err)
+		_, err = mt.Extract(carry(traceHeader, "a"))
+		assert.Equal(tracer.ErrSpanContextCorrupted, err)
 
-// 		_, err = mt.Extract(carry(spanHeader, "1"))
-// 		assert.Equal(tracer.ErrSpanContextNotFound, err)
+		_, err = mt.Extract(carry(spanHeader, "a", traceHeader, "2", baggagePrefix+"x", "y"))
+		assert.Equal(tracer.ErrSpanContextCorrupted, err)
 
-// 		_, err = mt.Extract(carry())
-// 		assert.Equal(tracer.ErrSpanContextNotFound, err)
-// 	})
+		_, err = mt.Extract(carry(spanHeader, "1"))
+		assert.Equal(tracer.ErrSpanContextNotFound, err)
 
-// 	t.Run("ok", func(t *testing.T) {
-// 		assert := assert.New(t)
+		_, err = mt.Extract(carry())
+		assert.Equal(tracer.ErrSpanContextNotFound, err)
+	})
 
-// 		ctx, err := mt.Extract(carry(traceHeader, "1", spanHeader, "2"))
-// 		assert.Nil(err)
-// 		sc, ok := ctx.(*spanContext)
-// 		assert.True(ok)
-// 		assert.Equal(uint64(1), sc.traceID)
-// 		assert.Equal(uint64(2), sc.spanID)
+	t.Run("ok", func(t *testing.T) {
+		assert := assert.New(t)
 
-// 		ctx, err = mt.Extract(carry(traceHeader, "1", spanHeader, "2", baggagePrefix+"A", "B", baggagePrefix+"C", "D"))
-// 		assert.Nil(err)
-// 		sc, ok = ctx.(*spanContext)
-// 		assert.True(ok)
-// 		assert.Equal("B", sc.baggageItem("a"))
-// 		assert.Equal("D", sc.baggageItem("c"))
+		ctx, err := mt.Extract(carry(traceHeader, "1", spanHeader, "2"))
+		assert.Nil(err)
+		assert.Equal(uint64(1), ctx.TraceIDLower())
+		assert.Equal(uint64(2), ctx.SpanID())
 
-// 		ctx, err = mt.Extract(carry(traceHeader, "1", spanHeader, "2", priorityHeader, "-1"))
-// 		assert.Nil(err)
-// 		sc, ok = ctx.(*spanContext)
-// 		assert.True(ok)
-// 		assert.True(sc.hasSamplingPriority())
-// 		assert.Equal(-1, sc.samplingPriority())
-// 	})
+		ctx, err = mt.Extract(carry(traceHeader, "1", spanHeader, "2", baggagePrefix+"A", "B", baggagePrefix+"C", "D"))
+		assert.Nil(err)
+		ctx.ForeachBaggageItem(func(k string, v string) bool {
+			if k == "a" {
+				assert.Equal("B", v)
+			}
+			if k == "c" {
+				assert.Equal("D", v)
+			}
+			return true
+		})
 
-// 	t.Run("consistency", func(t *testing.T) {
-// 		assert := assert.New(t)
-// 		want := &spanContext{traceID: 1, spanID: 2, baggage: map[string]string{"a": "B", "C": "D"}}
-// 		mc := tracer.TextMapCarrier(make(map[string]string))
-// 		err := mt.Inject(want, mc)
-// 		assert.Nil(err)
-// 		sc, err := mt.Extract(mc)
-// 		assert.Nil(err)
-// 		got, ok := sc.(*spanContext)
-// 		assert.True(ok)
+		ctx, err = mt.Extract(carry(traceHeader, "1", spanHeader, "2", priorityHeader, "-1"))
+		assert.Nil(err)
+		sp, ok := ctx.SamplingPriority()
+		assert.True(ok)
+		assert.Equal(-1, sp)
+	})
 
-// 		assert.Equal(uint64(1), got.traceID)
-// 		assert.Equal(uint64(2), got.spanID)
-// 		assert.Equal("D", got.baggageItem("c"))
-// 		assert.Equal("B", got.baggageItem("a"))
-// 	})
-// }
+	t.Run("consistency", func(t *testing.T) {
+		assert := assert.New(t)
+
+		mt := newMockTracer()
+		sp := mt.StartSpan("op", tracer.WithSpanID(2))
+		sp.SetTag(ext.ManualDrop, true)
+		sp.SetBaggageItem("a", "B")
+		sp.SetBaggageItem("C", "D")
+
+		mc := tracer.TextMapCarrier(make(map[string]string))
+		err := mt.Inject(sp.Context(), mc)
+		assert.Nil(err)
+		sc, err := mt.Extract(mc)
+		assert.Nil(err)
+
+		assert.Equal(sp.Context().TraceID(), sc.TraceID())
+		assert.Equal(uint64(2), sc.SpanID())
+		sc.ForeachBaggageItem(func(k string, v string) bool {
+			if k == "a" {
+				assert.Equal("B", v)
+			}
+			if k == "C" {
+				assert.Equal("D", v)
+			}
+			return true
+		})
+	})
+}

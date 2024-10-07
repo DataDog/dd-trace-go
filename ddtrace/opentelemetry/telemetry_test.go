@@ -48,24 +48,6 @@ func TestTelemetry(t *testing.T) {
 			expectedInject:  "datadog,tracecontext",
 			expectedExtract: "",
 		},
-		{
-			env: map[string]string{
-				// deprecated environment variable
-				"DD_PROPAGATION_STYLE_INJECT":        "tracecontext",
-				"DD_TRACE_PROPAGATION_STYLE_EXTRACT": "",
-			},
-			expectedInject:  "tracecontext",
-			expectedExtract: "datadog,tracecontext",
-		},
-		{
-			env: map[string]string{
-				// deprecated environment variable
-				"DD_PROPAGATION_STYLE_INJECT":        "datadog,tracecontext",
-				"DD_TRACE_PROPAGATION_STYLE_EXTRACT": "b3",
-			},
-			expectedInject:  "datadog,tracecontext",
-			expectedExtract: "b3",
-		},
 	}
 
 	for i, test := range tests {

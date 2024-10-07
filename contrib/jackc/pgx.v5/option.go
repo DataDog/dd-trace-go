@@ -86,15 +86,6 @@ func WithTraceAcquire(enabled bool) Option {
 }
 
 // WithTracePrepare enables tracing prepared statements.
-//
-//	conn, err := pgx.Connect(ctx, "postgres://user:pass@example.com:5432/dbname", pgx.WithTraceConnect())
-//	if err != nil {
-//		// handle err
-//	}
-//	defer conn.Close(ctx)
-//
-//	_, err := conn.Prepare(ctx, "stmt", "select $1::integer")
-//	row, err := conn.QueryRow(ctx, "stmt", 1)
 func WithTracePrepare(enabled bool) Option {
 	return func(c *config) {
 		c.tracePrepare = enabled
@@ -102,8 +93,6 @@ func WithTracePrepare(enabled bool) Option {
 }
 
 // WithTraceConnect enables tracing calls to Connect and ConnectConfig.
-//
-//	pgx.Connect(ctx, "postgres://user:pass@example.com:5432/dbname", pgx.WithTraceConnect())
 func WithTraceConnect(enabled bool) Option {
 	return func(c *config) {
 		c.traceConnect = enabled

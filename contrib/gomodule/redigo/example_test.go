@@ -19,6 +19,9 @@ import (
 // To start tracing Redis commands, use the TracedDial function to create a connection,
 // passing in a service name of choice.
 func Example() {
+	tracer.Start()
+	defer tracer.Stop()
+
 	c, err := redigotrace.Dial("tcp", "127.0.0.1:6379")
 	if err != nil {
 		log.Fatal(err)
@@ -39,6 +42,9 @@ func Example() {
 }
 
 func Example_tracedConn() {
+	tracer.Start()
+	defer tracer.Stop()
+
 	c, err := redigotrace.Dial("tcp", "127.0.0.1:6379",
 		redigotrace.WithService("my-redis-backend"),
 		redis.DialKeepAlive(time.Minute),
@@ -63,6 +69,9 @@ func Example_tracedConn() {
 
 // Alternatively, provide a redis URL to the TracedDialURL function
 func Example_dialURL() {
+	tracer.Start()
+	defer tracer.Stop()
+
 	c, err := redigotrace.DialURL("redis://127.0.0.1:6379")
 	if err != nil {
 		log.Fatal(err)
@@ -72,6 +81,9 @@ func Example_dialURL() {
 
 // When using a redigo Pool, set your Dial function to return a traced connection
 func Example_pool() {
+	tracer.Start()
+	defer tracer.Stop()
+
 	pool := &redis.Pool{
 		Dial: func() (redis.Conn, error) {
 			return redigotrace.Dial("tcp", "127.0.0.1:6379",

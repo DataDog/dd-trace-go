@@ -18,6 +18,9 @@ import (
 
 // To start tracing requests, add the trace filter to your go-restful router.
 func Example() {
+	tracer.Start()
+	defer tracer.Stop()
+
 	// create new go-restful service
 	ws := new(restful.WebService)
 
@@ -41,6 +44,9 @@ func Example() {
 }
 
 func Example_spanFromContext() {
+	tracer.Start()
+	defer tracer.Stop()
+
 	ws := new(restful.WebService)
 	ws.Filter(restfultrace.FilterFunc(
 		restfultrace.WithService("my-service"),

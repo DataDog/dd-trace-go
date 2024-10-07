@@ -38,7 +38,7 @@ func TestSpanFromContext(t *testing.T) {
 		span, ok := SpanFromContext(context.Background())
 		assert.False(ok)
 		assert.Nil(span)
-		span, ok = SpanFromContext(nil)
+		span, ok = SpanFromContext(context.TODO())
 		assert.False(ok)
 		assert.Nil(span)
 	})
@@ -62,17 +62,11 @@ func TestStartSpanFromContext(t *testing.T) {
 	)
 	assert := assert.New(t)
 
-	//got, ok := child.(*Span)
-	//assert.True(ok)
 	got := child
 	assert.NotNil(child)
 	gotctx, ok := SpanFromContext(ctx)
 	assert.True(ok)
 	assert.Equal(gotctx, got)
-	//_, ok = gotctx.(*traceinternal.NoopSpan)
-	//assert.NotNil(gotctx)
-	//assert.False(ok)
-
 	assert.Equal(uint64(456), got.traceID)
 	assert.Equal(uint64(123), got.parentID)
 	assert.Equal("http.request", got.name)

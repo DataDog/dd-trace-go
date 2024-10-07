@@ -22,7 +22,7 @@ import (
 
 const (
 	componentName = instrumentation.PackageConfluentKafkaGoV2
-	pkgPath       = "contrib/confluentinc/confluent-kafka-go/kafka"
+	pkgPath       = "contrib/confluentinc/confluent-kafka-go/kafka.v2"
 )
 
 var instr *instrumentation.Instrumentation

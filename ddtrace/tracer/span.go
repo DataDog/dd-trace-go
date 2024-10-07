@@ -274,7 +274,7 @@ func (s *Span) AddLink(spanContext *SpanContext, attributes map[string]string) {
 	})
 }
 
-// setSamplingPriority locks then span, then updates the sampling priority.
+// setSamplingPriority locks the span, then updates the sampling priority.
 // It also updates the trace's sampling priority.
 func (s *Span) setSamplingPriority(priority int, sampler samplernames.SamplerName) {
 	if s == nil {
@@ -825,7 +825,7 @@ const (
 	keyServiceHash          = "_dd.dm.service_hash"
 	keyOrigin               = "_dd.origin"
 	keyReparentID           = "_dd.parent_id"
-	// keyHostname can be used to override the agent's hostname detection when using `WithHostname`. Not to be confused with keyTracerHostname
+	// keyHostname can be used to override the agent's hostname detection when using `WithHostname`.
 	// which is set via auto-detection.
 	keyHostname                = "_dd.hostname"
 	keyRulesSamplerAppliedRate = "_dd.rule_psr"
@@ -845,8 +845,6 @@ const (
 	keySingleSpanSamplingMPS = "_dd.span_sampling.max_per_second"
 	// keyPropagatedUserID holds the propagated user identifier, if user id propagation is enabled.
 	keyPropagatedUserID = "_dd.p.usr.id"
-	//keyTracerHostname holds the tracer detected hostname, only present when not connected over UDS to agent.
-	keyTracerHostname = "_dd.tracer_hostname"
 	// keyTraceID128 is the lowercase, hex encoded upper 64 bits of a 128-bit trace id, if present.
 	keyTraceID128 = "_dd.p.tid"
 	// keySpanAttributeSchemaVersion holds the selected DD_TRACE_SPAN_ATTRIBUTE_SCHEMA version.

@@ -465,7 +465,7 @@ func (t *trace) push(sp *Span) {
 
 // setTraceTags sets all "trace level" tags on the provided span
 // t must already be locked.
-func (t *trace) setTraceTags(s *Span) { //tr *tracer) {
+func (t *trace) setTraceTags(s *Span) {
 	for k, v := range t.tags {
 		s.setMeta(k, v)
 	}
@@ -478,11 +478,6 @@ func (t *trace) setTraceTags(s *Span) { //tr *tracer) {
 	if s.context != nil && s.context.traceID.HasUpper() {
 		s.setMeta(keyTraceID128, s.context.traceID.UpperHex())
 	}
-	// TODO(kjn v2): Move this into the tracer or delete it.
-	// Do we still want to do this hostname junk?
-	// if hn := tr.hostname(); hn != "" {
-	// 	s.setMeta(keyTracerHostname, hn)
-	// }
 }
 
 // finishedOne acknowledges that another span in the trace has finished, and checks

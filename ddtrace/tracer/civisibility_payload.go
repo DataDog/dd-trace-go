@@ -10,6 +10,7 @@ import (
 	"sync/atomic"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/version"
 	"github.com/tinylib/msgp/msgp"
 )
@@ -46,6 +47,7 @@ func (p *ciVisibilityPayload) push(event *ciVisibilityEvent) error {
 //
 //	A pointer to a newly initialized civisibilitypayload instance.
 func newCiVisibilityPayload() *ciVisibilityPayload {
+	log.Debug("ciVisibilityPayload: creating payload instance")
 	return &ciVisibilityPayload{newPayload()}
 }
 
@@ -61,7 +63,7 @@ func newCiVisibilityPayload() *ciVisibilityPayload {
 //	A pointer to a bytes.Buffer containing the encoded CI Visibility payload.
 //	An error if reading from the buffer or encoding the payload fails.
 func (p *ciVisibilityPayload) getBuffer(config *config) (*bytes.Buffer, error) {
-
+	log.Debug("ciVisibilityPayload: .getBuffer (count: %v)", p.itemCount())
 	/*
 			The Payload format in the CI Visibility protocol is like this:
 			{

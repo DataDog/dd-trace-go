@@ -37,6 +37,9 @@ func Example() {
 }
 
 func Example_context() {
+	tracer.Start()
+	defer tracer.Stop()
+
 	// Register the driver that we will be using (in this case mysql) under a custom service name.
 	sqltrace.Register("mysql", &mysql.MySQLDriver{}, sqltrace.WithService("my-db"))
 

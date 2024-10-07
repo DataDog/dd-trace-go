@@ -55,7 +55,6 @@ func dbSQLGenSpans(driverName string, registerOverride bool) harness.GenSpansFn 
 			t.Fatal("unknown driver: ", driverName)
 		}
 		sqltrace.Register(driverName, dv, registerOpts...)
-		// defer unregister(driverName)
 		db, err := sqltrace.Open(driverName, dsn, openOpts...)
 		require.NoError(t, err)
 
