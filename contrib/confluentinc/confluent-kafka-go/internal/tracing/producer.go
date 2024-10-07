@@ -35,7 +35,7 @@ func (tr *KafkaTracer) StartProduceSpan(msg Message) ddtrace.Span {
 		tracer.ServiceName(tr.producerServiceName),
 		tracer.ResourceName("Produce Topic " + msg.GetTopicPartition().GetTopic()),
 		tracer.SpanType(ext.SpanTypeMessageProducer),
-		tracer.Tag(ext.Component, componentName(tr.ckgoVersion)),
+		tracer.Tag(ext.Component, ComponentName(tr.ckgoVersion)),
 		tracer.Tag(ext.SpanKind, ext.SpanKindProducer),
 		tracer.Tag(ext.MessagingSystem, ext.MessagingSystemKafka),
 		tracer.Tag(ext.MessagingKafkaPartition, msg.GetTopicPartition().GetPartition()),

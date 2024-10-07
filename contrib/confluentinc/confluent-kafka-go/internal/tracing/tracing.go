@@ -5,13 +5,6 @@
 
 package tracing
 
-import (
-	"fmt"
-
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
-)
-
 type CKGoVersion int32
 
 const (
@@ -19,7 +12,7 @@ const (
 	CKGoVersion2 CKGoVersion = 2
 )
 
-func componentName(v CKGoVersion) string {
+func ComponentName(v CKGoVersion) string {
 	switch v {
 	case CKGoVersion1:
 		return "confluentinc/confluent-kafka-go/kafka"
@@ -30,7 +23,7 @@ func componentName(v CKGoVersion) string {
 	}
 }
 
-func integrationName(v CKGoVersion) string {
+func IntegrationName(v CKGoVersion) string {
 	switch v {
 	case CKGoVersion1:
 		return "github.com/confluentinc/confluent-kafka-go"
@@ -39,14 +32,4 @@ func integrationName(v CKGoVersion) string {
 	default:
 		return ""
 	}
-}
-
-func InitInstrumentation(v CKGoVersion) {
-	cn := componentName(v)
-	in := integrationName(v)
-	if cn == "" || in == "" {
-		panic(fmt.Sprintf("invalid confluent-kafka-go version: %d", v))
-	}
-	telemetry.LoadIntegration(cn)
-	tracer.MarkIntegrationImported(in)
 }

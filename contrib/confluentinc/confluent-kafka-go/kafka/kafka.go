@@ -14,14 +14,17 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/contrib/confluentinc/confluent-kafka-go/internal/tracing"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 )
 
 const (
-	logPrefix = "contrib/confluentinc/confluent-kafka-go/kafka"
+	ckgoVersion = tracing.CKGoVersion1
+	logPrefix   = "contrib/confluentinc/confluent-kafka-go/kafka"
 )
 
 func init() {
-	tracing.InitInstrumentation(tracing.CKGoVersion1)
+	telemetry.LoadIntegration(tracing.ComponentName(ckgoVersion))
+	tracer.MarkIntegrationImported(tracing.IntegrationName(ckgoVersion))
 }
 
 func newKafkaTracer(opts ...Option) *tracing.KafkaTracer {

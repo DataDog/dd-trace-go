@@ -4,7 +4,7 @@
 // Copyright 2016 Datadog, Inc.
 
 // Package kafka provides functions to trace the confluentinc/confluent-kafka-go package (https://github.com/confluentinc/confluent-kafka-go).
-package kafka // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/confluentinc/confluent-kafka-go/kafka"
+package kafka // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/confluentinc/confluent-kafka-go/kafka.v2"
 
 import (
 	"time"
@@ -14,14 +14,17 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/contrib/confluentinc/confluent-kafka-go/internal/tracing"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 )
 
 const (
-	logPrefix = "contrib/confluentinc/confluent-kafka-go/kafka.v2"
+	ckgoVersion = tracing.CKGoVersion2
+	logPrefix   = "contrib/confluentinc/confluent-kafka-go/kafka.v2"
 )
 
 func init() {
-	tracing.InitInstrumentation(tracing.CKGoVersion2)
+	telemetry.LoadIntegration(tracing.ComponentName(ckgoVersion))
+	tracer.MarkIntegrationImported(tracing.IntegrationName(ckgoVersion))
 }
 
 func newKafkaTracer(opts ...Option) *tracing.KafkaTracer {

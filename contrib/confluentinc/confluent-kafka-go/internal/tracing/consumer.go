@@ -76,7 +76,7 @@ func (tr *KafkaTracer) StartConsumeSpan(msg Message) ddtrace.Span {
 		tracer.SpanType(ext.SpanTypeMessageConsumer),
 		tracer.Tag(ext.MessagingKafkaPartition, msg.GetTopicPartition().GetPartition()),
 		tracer.Tag("offset", msg.GetTopicPartition().GetOffset()),
-		tracer.Tag(ext.Component, componentName(tr.ckgoVersion)),
+		tracer.Tag(ext.Component, ComponentName(tr.ckgoVersion)),
 		tracer.Tag(ext.SpanKind, ext.SpanKindConsumer),
 		tracer.Tag(ext.MessagingSystem, ext.MessagingSystemKafka),
 		tracer.Measured(),
