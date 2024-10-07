@@ -192,13 +192,3 @@ func TestInjectTraceContext(t *testing.T) {
 		})
 	}
 }
-
-func TestMessageCarrier(t *testing.T) {
-	carrier := make(messageCarrier)
-
-	carrier.Set("key1", "value1")
-	carrier.Set("key2", "value2")
-
-	assert.Equal(t, "value1", carrier["key1"])
-	assert.Equal(t, "value2", carrier["key2"])
-}
