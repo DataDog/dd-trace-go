@@ -8,7 +8,9 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
 	"github.com/aws/aws-sdk-go-v2/service/sqs/types"
 	"github.com/aws/smithy-go/middleware"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"strings"
 )
 
 const (
@@ -38,6 +40,8 @@ func handleSendMessage(ctx context.Context, in middleware.InitializeInput) {
 		return
 	}
 
+	setQueueTags(ctx, params.QueueUrl)
+
 	if params.MessageAttributes == nil {
 		params.MessageAttributes = make(map[string]types.MessageAttributeValue)
 	}
@@ -52,11 +56,32 @@ func handleSendMessageBatch(ctx context.Context, in middleware.InitializeInput) 
 		return
 	}
 
+	setQueueTags(ctx, params.QueueUrl)
+
 	for _, entry := range params.Entries {
 		if entry.MessageAttributes == nil {
 			entry.MessageAttributes = make(map[string]types.MessageAttributeValue)
 		}
 		injectTraceContext(ctx, entry.MessageAttributes)
+	}
+}
+
+func setQueueTags(ctx context.Context, queueUrlPtr *string) {
+	if queueUrlPtr == nil {
+		return
+	}
+
+	queueUrl := *queueUrlPtr
+	span, _ := tracer.SpanFromContext(ctx)
+
+	if span != nil && queueUrl != "" {
+		lastSeparationIndex := strings.LastIndex(queueUrl, "/") + 1
+		queueName := queueUrl[lastSeparationIndex:]
+
+		if queueName != "" {
+			span.SetTag(ext.QueueName, queueName)
+			span.SetTag(ext.QueueUrl, queueUrl)
+		}
 	}
 }
 

@@ -8,6 +8,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/eventbridge"
 	"github.com/aws/aws-sdk-go-v2/service/eventbridge/types"
 	"github.com/aws/smithy-go/middleware"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"time"
 )
@@ -51,8 +52,8 @@ func handlePutEvents(ctx context.Context, in middleware.InitializeInput) {
 	// Set tags
 	span, _ := tracer.SpanFromContext(ctx)
 	if span != nil && eventBusName != "" {
-		// TODO tags
-		span.SetTag("eventbridge.event_bus_name", eventBusName)
+		// TODO rename the `rulename` tag to `eventbusname` across all runtimes
+		span.SetTag(ext.RuleName, eventBusName)
 	}
 
 	for i := range params.Entries {
@@ -60,7 +61,6 @@ func handlePutEvents(ctx context.Context, in middleware.InitializeInput) {
 	}
 }
 
-// Injects trace context into the `detail` field of a PutEventsRequestEntry
 func injectTraceContext(ctx context.Context, entry *types.PutEventsRequestEntry) {
 	span, _ := tracer.SpanFromContext(ctx)
 	if span == nil {

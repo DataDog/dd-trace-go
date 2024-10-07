@@ -117,4 +117,16 @@ const (
 
 	// SpanKind defines the kind of span based on Otel requirements (client, server, producer, consumer).
 	SpanKind = "span.kind"
+
+	// QueueName specifies the SQS queue name.
+	QueueName = "queuename"
+
+	// QueueUrl specifies the SQS queue url.
+	QueueUrl = "aws.queue.url"
+
+	// TopicName specifies the SNS topic name.
+	TopicName = "topicname"
+
+	// RuleName specifies the EventBridge rule name.
+	RuleName = "rulename"
 )
