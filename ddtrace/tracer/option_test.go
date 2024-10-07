@@ -318,9 +318,7 @@ type contribPkg struct {
 
 func TestIntegrationEnabled(t *testing.T) {
 	body, err := exec.Command("go", "list", "-json", "../../contrib/...").Output()
-	if err != nil {
-		t.Fatalf(err.Error())
-	}
+	require.NoError(t, err, "go list command failed")
 	var packages []contribPkg
 	stream := json.NewDecoder(strings.NewReader(string(body)))
 	for stream.More() {
@@ -337,9 +335,7 @@ func TestIntegrationEnabled(t *testing.T) {
 		}
 		p := strings.Replace(pkg.Dir, pkg.Root, "../..", 1)
 		body, err := exec.Command("grep", "-rl", "MarkIntegrationImported", p).Output()
-		if err != nil {
-			t.Fatalf(err.Error())
-		}
+		require.NoError(t, err, "grep command failed")
 		assert.NotEqual(t, len(body), 0, "expected %s to call MarkIntegrationImported", pkg.Name)
 	}
 }

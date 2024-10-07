@@ -190,32 +190,15 @@ func (p *Producer) Close() {
 func (p *Producer) Produce(msg *kafka.Message, deliveryChan chan kafka.Event) error {
 	tMsg := wrapMessage(msg)
 	span := p.tracer.StartProduceSpan(tMsg)
-
-	// if the user has selected a delivery channel, we will wrap it and
-	// wait for the delivery event to finish the span
-	if deliveryChan != nil {
-		oldDeliveryChan := deliveryChan
-		deliveryChan = make(chan kafka.Event)
-		go func() {
-			var err error
-			evt := <-deliveryChan
-			if msg, ok := evt.(*kafka.Message); ok {
-				// delivery errors are returned via TopicPartition.Error
-				err = msg.TopicPartition.Error
-				p.tracer.TrackProduceOffsets(tMsg)
-			}
-			span.Finish(tracer.WithError(err))
-			oldDeliveryChan <- evt
-		}()
-	}
-
+	deliveryChan = tracing.WrapDeliveryChannel(p.tracer, deliveryChan, span, wrapEvent)
 	p.tracer.SetProduceCheckpoint(tMsg)
+
 	err := p.Producer.Produce(msg, deliveryChan)
+
 	// with no delivery channel or enqueue error, finish immediately
 	if err != nil || deliveryChan == nil {
 		span.Finish(tracer.WithError(err))
 	}
-
 	return err
 }
 
