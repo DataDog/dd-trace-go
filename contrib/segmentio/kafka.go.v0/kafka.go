@@ -142,7 +142,7 @@ func (w *Writer) WriteMessages(ctx context.Context, msgs ...kafka.Message) error
 
 func tracingMessage(msg *kafka.Message) *tracing.KafkaMessage {
 	setHeaders := func(newHeaders []tracing.KafkaHeader) {
-		hs := make([]kafka.Header, len(newHeaders))
+		hs := make([]kafka.Header, 0, len(newHeaders))
 		for _, h := range newHeaders {
 			hs = append(hs, kafka.Header{
 				Key:   h.Key,
@@ -163,7 +163,7 @@ func tracingMessage(msg *kafka.Message) *tracing.KafkaMessage {
 }
 
 func tracingKafkaHeaders(headers []kafka.Header) []tracing.KafkaHeader {
-	hs := make([]tracing.KafkaHeader, len(headers))
+	hs := make([]tracing.KafkaHeader, 0, len(headers))
 	for _, h := range headers {
 		hs = append(hs, tracing.KafkaHeader{
 			Key:   h.Key,
