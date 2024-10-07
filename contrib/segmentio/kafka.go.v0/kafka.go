@@ -7,21 +7,14 @@ package kafka // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/segmentio/kafka
 
 import (
 	"context"
-
 	"strings"
 
 	"github.com/segmentio/kafka-go"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/contrib/segmentio/kafka.go.v0/internal/tracing"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
-
-// ExtractSpanContext retrieves the SpanContext from a kafka.Message
-func ExtractSpanContext(msg kafka.Message) (ddtrace.SpanContext, error) {
-	return tracer.Extract(tracing.MessageCarrier{Message: tracingMessage(&msg)})
-}
 
 // A Reader wraps a kafka.Reader.
 type Reader struct {
