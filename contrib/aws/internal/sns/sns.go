@@ -2,8 +2,13 @@ package sns
 
 import (
 	"context"
+	"encoding/json"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/sns"
 	"github.com/aws/aws-sdk-go-v2/service/sns/types"
 	"github.com/aws/smithy-go/middleware"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
 const (
@@ -27,13 +32,65 @@ func EnrichOperation(ctx context.Context, in middleware.InitializeInput, operati
 }
 
 func handlePublish(ctx context.Context, in middleware.InitializeInput) {
-	// TODO
+	params, ok := in.Parameters.(*sns.PublishInput)
+	if !ok {
+		log.Debug("Unable to read PublishInput params")
+		return
+	}
+
+	if params.MessageAttributes == nil {
+		params.MessageAttributes = make(map[string]types.MessageAttributeValue)
+	}
+
+	injectTraceContext(ctx, params.MessageAttributes)
 }
 
 func handlePublishBatch(ctx context.Context, in middleware.InitializeInput) {
-	// TODO
+	params, ok := in.Parameters.(*sns.PublishBatchInput)
+	if !ok {
+		log.Debug("Unable to read PublishBatch params")
+		return
+	}
+
+	for i := range params.PublishBatchRequestEntries {
+		entryPtr := &params.PublishBatchRequestEntries[i]
+		if entryPtr.MessageAttributes == nil {
+			entryPtr.MessageAttributes = make(map[string]types.MessageAttributeValue)
+		}
+		injectTraceContext(ctx, entryPtr.MessageAttributes)
+	}
 }
 
 func injectTraceContext(ctx context.Context, messageAttributes map[string]types.MessageAttributeValue) {
-	// TODO
+	span, ok := tracer.SpanFromContext(ctx)
+	if !ok || span == nil {
+		log.Debug("Unable to find span from context")
+		return
+	}
+
+	// SNS only allows a maximum of 10 message attributes.
+	// https://docs.aws.amazon.com/sns/latest/dg/sns-message-attributes.html
+	// Only inject if there's room.
+	if len(messageAttributes) >= maxMessageAttributes {
+		log.Info("Cannot inject trace context: message already has maximum allowed attributes")
+		return
+	}
+
+	carrier := make(messageCarrier)
+	err := tracer.Inject(span.Context(), carrier)
+	if err != nil {
+		log.Debug("Unable to inject trace context: %s", err.Error())
+		return
+	}
+
+	jsonBytes, err := json.Marshal(carrier)
+	if err != nil {
+		log.Debug("Unable to marshal trace context: %s", err.Error())
+		return
+	}
+
+	messageAttributes[datadogKey] = types.MessageAttributeValue{
+		DataType:    aws.String("String"),
+		StringValue: aws.String(string(jsonBytes)),
+	}
 }
