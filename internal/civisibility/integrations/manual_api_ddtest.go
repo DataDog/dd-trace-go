@@ -183,7 +183,7 @@ func (t *tslvTest) SetTestFunc(fn *runtime.Func) {
 		})
 
 		// if we found an endLine we check is greater than the calculated startLine
-		if endLine > startLine {
+		if endLine >= startLine {
 			t.SetTag(constants.TestSourceEndLine, endLine)
 		}
 	}
