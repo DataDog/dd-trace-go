@@ -3,12 +3,12 @@ package sqs
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
 	"github.com/aws/aws-sdk-go-v2/service/sqs/types"
 	"github.com/aws/smithy-go/middleware"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
 const (
@@ -34,7 +34,7 @@ func EnrichOperation(ctx context.Context, in middleware.InitializeInput, operati
 func handleSendMessage(ctx context.Context, in middleware.InitializeInput) {
 	params, ok := in.Parameters.(*sqs.SendMessageInput)
 	if !ok {
-		fmt.Println("Unable to read SendMessage params")
+		log.Debug("Unable to read SendMessage params")
 		return
 	}
 
@@ -48,22 +48,22 @@ func handleSendMessage(ctx context.Context, in middleware.InitializeInput) {
 func handleSendMessageBatch(ctx context.Context, in middleware.InitializeInput) {
 	params, ok := in.Parameters.(*sqs.SendMessageBatchInput)
 	if !ok {
-		fmt.Println("Unable to read SendMessageBatch params")
+		log.Debug("Unable to read SendMessageBatch params")
 		return
 	}
 
-	for _, entry := range params.Entries {
-		if entry.MessageAttributes == nil {
-			entry.MessageAttributes = make(map[string]types.MessageAttributeValue)
+	for i := range params.Entries {
+		if params.Entries[i].MessageAttributes == nil {
+			params.Entries[i].MessageAttributes = make(map[string]types.MessageAttributeValue)
 		}
-		injectTraceContext(ctx, entry.MessageAttributes)
+		injectTraceContext(ctx, params.Entries[i].MessageAttributes)
 	}
 }
 
 func injectTraceContext(ctx context.Context, messageAttributes map[string]types.MessageAttributeValue) {
-	span, _ := tracer.SpanFromContext(ctx)
-	if span == nil {
-		fmt.Println("Unable to find span from context")
+	span, ok := tracer.SpanFromContext(ctx)
+	if !ok || span == nil {
+		log.Debug("Unable to find span from context")
 		return
 	}
 
@@ -71,20 +71,20 @@ func injectTraceContext(ctx context.Context, messageAttributes map[string]types.
 	// https://docs.aws.amazon.com/AWSSimpleQueueService/latest/SQSDeveloperGuide/sqs-message-metadata.html#sqs-message-attributes
 	// Only inject if there's room.
 	if len(messageAttributes) >= maxMessageAttributes {
-		fmt.Println("Cannot inject trace context: message already has maximum allowed attributes")
+		log.Debug("Cannot inject trace context: message already has maximum allowed attributes")
 		return
 	}
 
 	carrier := make(messageCarrier)
 	err := tracer.Inject(span.Context(), carrier)
 	if err != nil {
-		fmt.Printf("Unable to inject trace context: %s\n", err.Error())
+		log.Debug("Unable to inject trace context: %s\n", err.Error())
 		return
 	}
 
 	jsonBytes, err := json.Marshal(carrier)
 	if err != nil {
-		fmt.Printf("Unable to marshal trace context: %s\n", err.Error())
+		log.Debug("Unable to marshal trace context: %s\n", err.Error())
 		return
 	}
 

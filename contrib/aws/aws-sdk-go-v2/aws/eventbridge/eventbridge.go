@@ -9,6 +9,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/eventbridge/types"
 	"github.com/aws/smithy-go/middleware"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"time"
 )
 
@@ -34,7 +35,7 @@ func EnrichOperation(ctx context.Context, in middleware.InitializeInput, operati
 func handlePutEvents(ctx context.Context, in middleware.InitializeInput) {
 	params, ok := in.Parameters.(*eventbridge.PutEventsInput)
 	if !ok {
-		fmt.Println("Unable to read PutEvents params")
+		log.Debug("Unable to read PutEvents params")
 		return
 	}
 
@@ -44,16 +45,16 @@ func handlePutEvents(ctx context.Context, in middleware.InitializeInput) {
 }
 
 func injectTraceContext(ctx context.Context, entry *types.PutEventsRequestEntry) {
-	span, _ := tracer.SpanFromContext(ctx)
-	if span == nil {
-		fmt.Println("Unable to find span from context")
+	span, ok := tracer.SpanFromContext(ctx)
+	if !ok || span == nil {
+		log.Debug("Unable to find span from context")
 		return
 	}
 
 	carrier := make(messageCarrier)
 	err := tracer.Inject(span.Context(), carrier)
 	if err != nil {
-		fmt.Printf("Unable to inject trace context: %s\n", err.Error())
+		log.Debug("Unable to inject trace context: %s\n", err.Error())
 		return
 	}
 
@@ -66,7 +67,7 @@ func injectTraceContext(ctx context.Context, entry *types.PutEventsRequestEntry)
 
 	jsonBytes, err := json.Marshal(carrier)
 	if err != nil {
-		fmt.Printf("Unable to marshal trace context: %s\n", err.Error())
+		log.Debug("Unable to marshal trace context: %s\n", err.Error())
 		return
 	}
 
@@ -74,7 +75,7 @@ func injectTraceContext(ctx context.Context, entry *types.PutEventsRequestEntry)
 	if entry.Detail != nil {
 		err = json.Unmarshal([]byte(*entry.Detail), &detail)
 		if err != nil {
-			fmt.Printf("Unable to unmarshal event detail: %s\n", err.Error())
+			log.Debug("Unable to unmarshal event detail: %s\n", err.Error())
 			return
 		}
 	} else {
@@ -85,7 +86,7 @@ func injectTraceContext(ctx context.Context, entry *types.PutEventsRequestEntry)
 
 	updatedDetail, err := json.Marshal(detail)
 	if err != nil {
-		fmt.Printf("Unable to marshal modified event detail: %s\n", err.Error())
+		log.Debug("Unable to marshal modified event detail: %s\n", err.Error())
 		return
 	}
 

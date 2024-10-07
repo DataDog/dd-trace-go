@@ -3,12 +3,12 @@ package sns
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/sns"
 	"github.com/aws/aws-sdk-go-v2/service/sns/types"
 	"github.com/aws/smithy-go/middleware"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
 const (
@@ -34,7 +34,7 @@ func EnrichOperation(ctx context.Context, in middleware.InitializeInput, operati
 func handlePublish(ctx context.Context, in middleware.InitializeInput) {
 	params, ok := in.Parameters.(*sns.PublishInput)
 	if !ok {
-		fmt.Println("Unable to read PublishInput params")
+		log.Debug("Unable to read PublishInput params")
 		return
 	}
 
@@ -48,22 +48,22 @@ func handlePublish(ctx context.Context, in middleware.InitializeInput) {
 func handlePublishBatch(ctx context.Context, in middleware.InitializeInput) {
 	params, ok := in.Parameters.(*sns.PublishBatchInput)
 	if !ok {
-		fmt.Println("Unable to read PublishBatch params")
+		log.Debug("Unable to read PublishBatch params")
 		return
 	}
 
-	for _, entry := range params.PublishBatchRequestEntries {
-		if entry.MessageAttributes == nil {
-			entry.MessageAttributes = make(map[string]types.MessageAttributeValue)
+	for i := range params.PublishBatchRequestEntries {
+		if params.PublishBatchRequestEntries[i].MessageAttributes == nil {
+			params.PublishBatchRequestEntries[i].MessageAttributes = make(map[string]types.MessageAttributeValue)
 		}
-		injectTraceContext(ctx, entry.MessageAttributes)
+		injectTraceContext(ctx, params.PublishBatchRequestEntries[i].MessageAttributes)
 	}
 }
 
 func injectTraceContext(ctx context.Context, messageAttributes map[string]types.MessageAttributeValue) {
-	span, _ := tracer.SpanFromContext(ctx)
-	if span == nil {
-		fmt.Println("Unable to find span from context")
+	span, ok := tracer.SpanFromContext(ctx)
+	if !ok || span == nil {
+		log.Debug("Unable to find span from context")
 		return
 	}
 
@@ -71,20 +71,20 @@ func injectTraceContext(ctx context.Context, messageAttributes map[string]types.
 	// https://docs.aws.amazon.com/sns/latest/dg/sns-message-attributes.html
 	// Only inject if there's room.
 	if len(messageAttributes) >= maxMessageAttributes {
-		fmt.Println("Cannot inject trace context: message already has maximum allowed attributes")
+		log.Debug("Cannot inject trace context: message already has maximum allowed attributes")
 		return
 	}
 
 	carrier := make(messageCarrier)
 	err := tracer.Inject(span.Context(), carrier)
 	if err != nil {
-		fmt.Printf("Unable to inject trace context: %s\n", err.Error())
+		log.Debug("Unable to inject trace context: %s\n", err.Error())
 		return
 	}
 
 	jsonBytes, err := json.Marshal(carrier)
 	if err != nil {
-		fmt.Printf("Unable to marshal trace context: %s\n", err.Error())
+		log.Debug("Unable to marshal trace context: %s\n", err.Error())
 		return
 	}
 
