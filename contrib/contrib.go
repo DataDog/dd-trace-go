@@ -10,6 +10,5 @@
 // the original return value, allowing  them to be used as they normally would with tracing
 // activated out of the box.
 
-// All of these libraries are supported by our [APM product](https://www.datadoghq.com/apm/).
-
+// All of these libraries are supported by our https://www.datadoghq.com/apm/.
 package contrib
