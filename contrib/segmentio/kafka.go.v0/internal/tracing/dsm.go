@@ -13,15 +13,15 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
 
-func SetConsumeDSMCheckpoint(cfg *Config, kafkaCfg *KafkaConfig, msg *KafkaMessage) {
-	if !cfg.dataStreamsEnabled || msg == nil {
+func (tr *Tracer) SetConsumeDSMCheckpoint(msg Message) {
+	if !tr.dataStreamsEnabled || msg == nil {
 		return
 	}
-	edges := []string{"direction:in", "topic:" + msg.Topic, "type:kafka"}
-	if kafkaCfg.ConsumerGroupID != "" {
-		edges = append(edges, "group:"+kafkaCfg.ConsumerGroupID)
+	edges := []string{"direction:in", "topic:" + msg.GetTopic(), "type:kafka"}
+	if tr.kafkaCfg.ConsumerGroupID != "" {
+		edges = append(edges, "group:"+tr.kafkaCfg.ConsumerGroupID)
 	}
-	carrier := MessageCarrier{msg}
+	carrier := NewMessageCarrier(msg)
 	ctx, ok := tracer.SetDataStreamsCheckpointWithParams(
 		datastreams.ExtractFromBase64Carrier(context.Background(), carrier),
 		options.CheckpointParams{PayloadSize: getConsumerMsgSize(msg)},
@@ -31,23 +31,23 @@ func SetConsumeDSMCheckpoint(cfg *Config, kafkaCfg *KafkaConfig, msg *KafkaMessa
 		return
 	}
 	datastreams.InjectToBase64Carrier(ctx, carrier)
-	if kafkaCfg.ConsumerGroupID != "" {
+	if tr.kafkaCfg.ConsumerGroupID != "" {
 		// only track Kafka lag if a consumer group is set.
 		// since there is no ack mechanism, we consider that messages read are committed right away.
-		tracer.TrackKafkaCommitOffset(kafkaCfg.ConsumerGroupID, msg.Topic, int32(msg.Partition), msg.Offset)
+		tracer.TrackKafkaCommitOffset(tr.kafkaCfg.ConsumerGroupID, msg.GetTopic(), int32(msg.GetPartition()), msg.GetOffset())
 	}
 }
 
-func SetProduceDSMCheckpoint(cfg *Config, msg *KafkaMessage, writer *KafkaWriter) {
-	if !cfg.dataStreamsEnabled || msg == nil {
+func (tr *Tracer) SetProduceDSMCheckpoint(msg Message, writer Writer) {
+	if !tr.dataStreamsEnabled || msg == nil {
 		return
 	}
 
 	var topic string
-	if writer.Topic != "" {
-		topic = writer.Topic
+	if writer.GetTopic() != "" {
+		topic = writer.GetTopic()
 	} else {
-		topic = msg.Topic
+		topic = msg.GetTopic()
 	}
 
 	edges := []string{"direction:out", "topic:" + topic, "type:kafka"}
@@ -65,22 +65,22 @@ func SetProduceDSMCheckpoint(cfg *Config, msg *KafkaMessage, writer *KafkaWriter
 	datastreams.InjectToBase64Carrier(ctx, carrier)
 }
 
-func getProducerMsgSize(msg *KafkaMessage) (size int64) {
-	for _, header := range msg.Headers {
-		size += int64(len(header.Key) + len(header.Value))
+func getProducerMsgSize(msg Message) (size int64) {
+	for _, header := range msg.GetHeaders() {
+		size += int64(len(header.GetKey()) + len(header.GetValue()))
 	}
-	if msg.Value != nil {
-		size += int64(len(msg.Value))
+	if msg.GetValue() != nil {
+		size += int64(len(msg.GetValue()))
 	}
-	if msg.Key != nil {
-		size += int64(len(msg.Key))
+	if msg.GetKey() != nil {
+		size += int64(len(msg.GetKey()))
 	}
 	return size
 }
 
-func getConsumerMsgSize(msg *KafkaMessage) (size int64) {
-	for _, header := range msg.Headers {
-		size += int64(len(header.Key) + len(header.Value))
+func getConsumerMsgSize(msg Message) (size int64) {
+	for _, header := range msg.GetHeaders() {
+		size += int64(len(header.GetKey()) + len(header.GetValue()))
 	}
-	return size + int64(len(msg.Value)+len(msg.Key))
+	return size + int64(len(msg.GetValue())+len(msg.GetKey()))
 }

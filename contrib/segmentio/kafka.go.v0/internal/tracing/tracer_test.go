@@ -16,7 +16,7 @@ import (
 
 func TestAnalyticsSettings(t *testing.T) {
 	t.Run("defaults", func(t *testing.T) {
-		cfg := NewConfig()
+		cfg := NewTracer(KafkaConfig{})
 		assert.True(t, math.IsNaN(cfg.analyticsRate))
 	})
 
@@ -26,12 +26,12 @@ func TestAnalyticsSettings(t *testing.T) {
 		defer globalconfig.SetAnalyticsRate(rate)
 		globalconfig.SetAnalyticsRate(0.4)
 
-		cfg := NewConfig()
+		cfg := NewTracer(KafkaConfig{})
 		assert.Equal(t, 0.4, cfg.analyticsRate)
 	})
 
 	t.Run("enabled", func(t *testing.T) {
-		cfg := NewConfig(WithAnalytics(true))
+		cfg := NewTracer(KafkaConfig{}, WithAnalytics(true))
 		assert.Equal(t, 1.0, cfg.analyticsRate)
 	})
 
@@ -40,19 +40,19 @@ func TestAnalyticsSettings(t *testing.T) {
 		defer globalconfig.SetAnalyticsRate(rate)
 		globalconfig.SetAnalyticsRate(0.4)
 
-		cfg := NewConfig(WithAnalyticsRate(0.2))
+		cfg := NewTracer(KafkaConfig{}, WithAnalyticsRate(0.2))
 		assert.Equal(t, 0.2, cfg.analyticsRate)
 	})
 
 	t.Run("withEnv", func(t *testing.T) {
 		t.Setenv("DD_DATA_STREAMS_ENABLED", "true")
-		cfg := NewConfig()
+		cfg := NewTracer(KafkaConfig{})
 		assert.True(t, cfg.dataStreamsEnabled)
 	})
 
 	t.Run("optionOverridesEnv", func(t *testing.T) {
 		t.Setenv("DD_DATA_STREAMS_ENABLED", "false")
-		cfg := NewConfig()
+		cfg := NewTracer(KafkaConfig{})
 		WithDataStreams()(cfg)
 		assert.True(t, cfg.dataStreamsEnabled)
 	})

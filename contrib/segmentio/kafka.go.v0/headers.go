@@ -15,5 +15,5 @@ import (
 
 // ExtractSpanContext retrieves the SpanContext from a kafka.Message
 func ExtractSpanContext(msg kafka.Message) (ddtrace.SpanContext, error) {
-	return tracer.Extract(tracing.MessageCarrier{Message: tracingMessage(&msg)})
+	return tracer.Extract(tracing.NewMessageCarrier(wrapMessage(&msg)))
 }

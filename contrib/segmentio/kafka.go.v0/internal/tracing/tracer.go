@@ -14,55 +14,57 @@ import (
 
 const defaultServiceName = "kafka"
 
-type Config struct {
+type Tracer struct {
 	consumerServiceName string
 	producerServiceName string
 	consumerSpanName    string
 	producerSpanName    string
 	analyticsRate       float64
 	dataStreamsEnabled  bool
+	kafkaCfg            KafkaConfig
 }
 
-// An Option customizes the Config.
-type Option func(cfg *Config)
+// An Option customizes the Tracer.
+type Option func(tr *Tracer)
 
-func NewConfig(opts ...Option) *Config {
-	cfg := &Config{
+func NewTracer(kafkaCfg KafkaConfig, opts ...Option) *Tracer {
+	tr := &Tracer{
 		// analyticsRate: globalConfig.AnalyticsRate(),
 		analyticsRate: math.NaN(),
+		kafkaCfg:      kafkaCfg,
 	}
 	if internal.BoolEnv("DD_TRACE_KAFKA_ANALYTICS_ENABLED", false) {
-		cfg.analyticsRate = 1.0
+		tr.analyticsRate = 1.0
 	}
 
-	cfg.dataStreamsEnabled = internal.BoolEnv("DD_DATA_STREAMS_ENABLED", false)
+	tr.dataStreamsEnabled = internal.BoolEnv("DD_DATA_STREAMS_ENABLED", false)
 
-	cfg.consumerServiceName = namingschema.ServiceName(defaultServiceName)
-	cfg.producerServiceName = namingschema.ServiceNameOverrideV0(defaultServiceName, defaultServiceName)
-	cfg.consumerSpanName = namingschema.OpName(namingschema.KafkaInbound)
-	cfg.producerSpanName = namingschema.OpName(namingschema.KafkaOutbound)
+	tr.consumerServiceName = namingschema.ServiceName(defaultServiceName)
+	tr.producerServiceName = namingschema.ServiceNameOverrideV0(defaultServiceName, defaultServiceName)
+	tr.consumerSpanName = namingschema.OpName(namingschema.KafkaInbound)
+	tr.producerSpanName = namingschema.OpName(namingschema.KafkaOutbound)
 
 	for _, opt := range opts {
-		opt(cfg)
+		opt(tr)
 	}
-	return cfg
+	return tr
 }
 
-// WithServiceName sets the Config service name to serviceName.
+// WithServiceName sets the Tracer service name to serviceName.
 func WithServiceName(serviceName string) Option {
-	return func(cfg *Config) {
-		cfg.consumerServiceName = serviceName
-		cfg.producerServiceName = serviceName
+	return func(tr *Tracer) {
+		tr.consumerServiceName = serviceName
+		tr.producerServiceName = serviceName
 	}
 }
 
 // WithAnalytics enables Trace Analytics for all started spans.
 func WithAnalytics(on bool) Option {
-	return func(cfg *Config) {
+	return func(tr *Tracer) {
 		if on {
-			cfg.analyticsRate = 1.0
+			tr.analyticsRate = 1.0
 		} else {
-			cfg.analyticsRate = math.NaN()
+			tr.analyticsRate = math.NaN()
 		}
 	}
 }
@@ -70,18 +72,18 @@ func WithAnalytics(on bool) Option {
 // WithAnalyticsRate sets the sampling rate for Trace Analytics events
 // correlated to started spans.
 func WithAnalyticsRate(rate float64) Option {
-	return func(cfg *Config) {
+	return func(tr *Tracer) {
 		if rate >= 0.0 && rate <= 1.0 {
-			cfg.analyticsRate = rate
+			tr.analyticsRate = rate
 		} else {
-			cfg.analyticsRate = math.NaN()
+			tr.analyticsRate = math.NaN()
 		}
 	}
 }
 
 // WithDataStreams enables the Data Streams monitoring product features: https://www.datadoghq.com/product/data-streams-monitoring/
 func WithDataStreams() Option {
-	return func(cfg *Config) {
-		cfg.dataStreamsEnabled = true
+	return func(tr *Tracer) {
+		tr.dataStreamsEnabled = true
 	}
 }

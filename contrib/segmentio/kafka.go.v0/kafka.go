@@ -19,7 +19,7 @@ import (
 // A Reader wraps a kafka.Reader.
 type Reader struct {
 	*kafka.Reader
-	cfg      *tracing.Config
+	tracer   *tracing.Tracer
 	kafkaCfg *tracing.KafkaConfig
 	prev     ddtrace.Span
 }
@@ -32,17 +32,17 @@ func NewReader(conf kafka.ReaderConfig, opts ...Option) *Reader {
 // WrapReader wraps a kafka.Reader so that any consumed events are traced.
 func WrapReader(c *kafka.Reader, opts ...Option) *Reader {
 	wrapped := &Reader{
-		Reader:   c,
-		cfg:      tracing.NewConfig(opts...),
-		kafkaCfg: &tracing.KafkaConfig{},
+		Reader: c,
 	}
+	kafkaCfg := tracing.KafkaConfig{}
 	if c.Config().Brokers != nil {
-		wrapped.kafkaCfg.BootstrapServers = strings.Join(c.Config().Brokers, ",")
+		kafkaCfg.BootstrapServers = strings.Join(c.Config().Brokers, ",")
 	}
 	if c.Config().GroupID != "" {
-		wrapped.kafkaCfg.ConsumerGroupID = c.Config().GroupID
+		kafkaCfg.ConsumerGroupID = c.Config().GroupID
 	}
-	log.Debug("contrib/segmentio/kafka-go.v0/kafka: Wrapping Reader: %#v", wrapped.cfg)
+	wrapped.tracer = tracing.NewTracer(kafkaCfg, opts...)
+	log.Debug("contrib/segmentio/kafka-go.v0/kafka: Wrapping Reader: %#v", wrapped.tracer)
 	return wrapped
 }
 
@@ -67,9 +67,9 @@ func (r *Reader) ReadMessage(ctx context.Context) (kafka.Message, error) {
 	if err != nil {
 		return kafka.Message{}, err
 	}
-	tMsg := tracingMessage(&msg)
-	r.prev = tracing.StartConsumeSpan(ctx, r.cfg, r.kafkaCfg, tMsg)
-	tracing.SetConsumeDSMCheckpoint(r.cfg, r.kafkaCfg, tMsg)
+	tMsg := wrapMessage(&msg)
+	r.prev = r.tracer.StartConsumeSpan(ctx, tMsg)
+	r.tracer.SetConsumeDSMCheckpoint(tMsg)
 	return msg, nil
 }
 
@@ -83,17 +83,16 @@ func (r *Reader) FetchMessage(ctx context.Context) (kafka.Message, error) {
 	if err != nil {
 		return msg, err
 	}
-	tMsg := tracingMessage(&msg)
-	r.prev = tracing.StartConsumeSpan(ctx, r.cfg, r.kafkaCfg, tMsg)
-	tracing.SetConsumeDSMCheckpoint(r.cfg, r.kafkaCfg, tMsg)
+	tMsg := wrapMessage(&msg)
+	r.prev = r.tracer.StartConsumeSpan(ctx, tMsg)
+	r.tracer.SetConsumeDSMCheckpoint(tMsg)
 	return msg, nil
 }
 
 // Writer wraps a kafka.Writer with tracing config data
 type Writer struct {
 	*kafka.Writer
-	cfg      *tracing.Config
-	kafkaCfg *tracing.KafkaConfig
+	tracer *tracing.Tracer
 }
 
 // NewWriter calls kafka.NewWriter and wraps the resulting Producer.
@@ -104,14 +103,14 @@ func NewWriter(conf kafka.WriterConfig, opts ...Option) *Writer {
 // WrapWriter wraps a kafka.Writer so requests are traced.
 func WrapWriter(w *kafka.Writer, opts ...Option) *Writer {
 	writer := &Writer{
-		Writer:   w,
-		cfg:      tracing.NewConfig(opts...),
-		kafkaCfg: &tracing.KafkaConfig{},
+		Writer: w,
 	}
+	kafkaCfg := tracing.KafkaConfig{}
 	if w.Addr.String() != "" {
-		writer.kafkaCfg.BootstrapServers = w.Addr.String()
+		kafkaCfg.BootstrapServers = w.Addr.String()
 	}
-	log.Debug("contrib/segmentio/kafka.go.v0: Wrapping Writer: %#v", writer.cfg)
+	writer.tracer = tracing.NewTracer(kafkaCfg, opts...)
+	log.Debug("contrib/segmentio/kafka.go.v0: Wrapping Writer: %#v", writer.tracer)
 	return writer
 }
 
@@ -121,53 +120,14 @@ func (w *Writer) WriteMessages(ctx context.Context, msgs ...kafka.Message) error
 	// treated individually, so we create a span for each one
 	spans := make([]ddtrace.Span, len(msgs))
 	for i := range msgs {
-		tMsg := tracingMessage(&msgs[i])
-		tWriter := tracingWriter(w.Writer)
-		spans[i] = tracing.StartProduceSpan(ctx, w.cfg, w.kafkaCfg, tWriter, tMsg)
-		tracing.SetProduceDSMCheckpoint(w.cfg, tMsg, tWriter)
+		tMsg := wrapMessage(&msgs[i])
+		tWriter := wrapTracingWriter(w.Writer)
+		spans[i] = w.tracer.StartProduceSpan(ctx, tWriter, tMsg)
+		w.tracer.SetProduceDSMCheckpoint(tMsg, tWriter)
 	}
 	err := w.Writer.WriteMessages(ctx, msgs...)
 	for i, span := range spans {
-		tracing.FinishProduceSpan(span, msgs[i].Partition, msgs[i].Offset, err)
+		w.tracer.FinishProduceSpan(span, msgs[i].Partition, msgs[i].Offset, err)
 	}
 	return err
-}
-
-func tracingMessage(msg *kafka.Message) *tracing.KafkaMessage {
-	setHeaders := func(newHeaders []tracing.KafkaHeader) {
-		hs := make([]kafka.Header, 0, len(newHeaders))
-		for _, h := range newHeaders {
-			hs = append(hs, kafka.Header{
-				Key:   h.Key,
-				Value: h.Value,
-			})
-		}
-		msg.Headers = hs
-	}
-	return &tracing.KafkaMessage{
-		Topic:      msg.Topic,
-		Partition:  msg.Partition,
-		Offset:     msg.Offset,
-		Headers:    tracingKafkaHeaders(msg.Headers),
-		SetHeaders: setHeaders,
-		Value:      msg.Value,
-		Key:        msg.Key,
-	}
-}
-
-func tracingKafkaHeaders(headers []kafka.Header) []tracing.KafkaHeader {
-	hs := make([]tracing.KafkaHeader, 0, len(headers))
-	for _, h := range headers {
-		hs = append(hs, tracing.KafkaHeader{
-			Key:   h.Key,
-			Value: h.Value,
-		})
-	}
-	return hs
-}
-
-func tracingWriter(w *kafka.Writer) *tracing.KafkaWriter {
-	return &tracing.KafkaWriter{
-		Topic: w.Topic,
-	}
 }

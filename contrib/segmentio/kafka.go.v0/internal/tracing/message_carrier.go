@@ -11,7 +11,7 @@ import (
 
 // A MessageCarrier implements TextMapReader/TextMapWriter for extracting/injecting traces on a kafka.Message
 type MessageCarrier struct {
-	Message *KafkaMessage
+	msg Message
 }
 
 var _ interface {
@@ -21,8 +21,8 @@ var _ interface {
 
 // ForeachKey conforms to the TextMapReader interface.
 func (c MessageCarrier) ForeachKey(handler func(key, val string) error) error {
-	for _, h := range c.Message.Headers {
-		err := handler(h.Key, string(h.Value))
+	for _, h := range c.msg.GetHeaders() {
+		err := handler(h.GetKey(), string(h.GetValue()))
 		if err != nil {
 			return err
 		}
@@ -32,16 +32,21 @@ func (c MessageCarrier) ForeachKey(handler func(key, val string) error) error {
 
 // Set implements TextMapWriter
 func (c MessageCarrier) Set(key, val string) {
+	headers := c.msg.GetHeaders()
 	// ensure uniqueness of keys
-	for i := 0; i < len(c.Message.Headers); i++ {
-		if c.Message.Headers[i].Key == key {
-			c.Message.Headers = append(c.Message.Headers[:i], c.Message.Headers[i+1:]...)
+	for i := 0; i < len(headers); i++ {
+		if headers[i].GetKey() == key {
+			headers = append(headers[:i], headers[i+1:]...)
 			i--
 		}
 	}
-	c.Message.Headers = append(c.Message.Headers, KafkaHeader{
+	headers = append(headers, KafkaHeader{
 		Key:   key,
 		Value: []byte(val),
 	})
-	c.Message.SetHeaders(c.Message.Headers)
+	c.msg.SetHeaders(headers)
+}
+
+func NewMessageCarrier(msg Message) MessageCarrier {
+	return MessageCarrier{msg: msg}
 }

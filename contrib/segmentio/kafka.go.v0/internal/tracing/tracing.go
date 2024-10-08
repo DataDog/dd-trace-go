@@ -30,53 +30,28 @@ func init() {
 	tracer.MarkIntegrationImported("github.com/segmentio/kafka-go")
 }
 
-// KafkaConfig holds information from the kafka config for span tags.
-type KafkaConfig struct {
-	BootstrapServers string
-	ConsumerGroupID  string
-}
-
-type KafkaHeader struct {
-	Key   string
-	Value []byte
-}
-
-type KafkaWriter struct {
-	Topic string
-}
-
-type KafkaMessage struct {
-	Topic      string
-	Partition  int
-	Offset     int64
-	Headers    []KafkaHeader
-	SetHeaders func([]KafkaHeader)
-	Value      []byte
-	Key        []byte
-}
-
-func StartConsumeSpan(ctx context.Context, cfg *Config, kafkaCfg *KafkaConfig, msg *KafkaMessage) ddtrace.Span {
+func (tr *Tracer) StartConsumeSpan(ctx context.Context, msg Message) ddtrace.Span {
 	opts := []tracer.StartSpanOption{
-		tracer.ServiceName(cfg.consumerServiceName),
-		tracer.ResourceName("Consume Topic " + msg.Topic),
+		tracer.ServiceName(tr.consumerServiceName),
+		tracer.ResourceName("Consume Topic " + msg.GetTopic()),
 		tracer.SpanType(ext.SpanTypeMessageConsumer),
-		tracer.Tag(ext.MessagingKafkaPartition, msg.Partition),
-		tracer.Tag("offset", msg.Offset),
+		tracer.Tag(ext.MessagingKafkaPartition, msg.GetPartition()),
+		tracer.Tag("offset", msg.GetOffset()),
 		tracer.Tag(ext.Component, componentName),
 		tracer.Tag(ext.SpanKind, ext.SpanKindConsumer),
 		tracer.Tag(ext.MessagingSystem, ext.MessagingSystemKafka),
-		tracer.Tag(ext.KafkaBootstrapServers, kafkaCfg.BootstrapServers),
+		tracer.Tag(ext.KafkaBootstrapServers, tr.kafkaCfg.BootstrapServers),
 		tracer.Measured(),
 	}
-	if !math.IsNaN(cfg.analyticsRate) {
-		opts = append(opts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
+	if !math.IsNaN(tr.analyticsRate) {
+		opts = append(opts, tracer.Tag(ext.EventSampleRate, tr.analyticsRate))
 	}
 	// kafka supports headers, so try to extract a span context
-	carrier := MessageCarrier{msg}
+	carrier := NewMessageCarrier(msg)
 	if spanctx, err := tracer.Extract(carrier); err == nil {
 		opts = append(opts, tracer.ChildOf(spanctx))
 	}
-	span, _ := tracer.StartSpanFromContext(ctx, cfg.consumerSpanName, opts...)
+	span, _ := tracer.StartSpanFromContext(ctx, tr.consumerSpanName, opts...)
 	// reinject the span context so consumers can pick it up
 	if err := tracer.Inject(span.Context(), carrier); err != nil {
 		log.Debug("contrib/segmentio/kafka.go.v0: Failed to inject span context into carrier in reader, %v", err)
@@ -84,33 +59,33 @@ func StartConsumeSpan(ctx context.Context, cfg *Config, kafkaCfg *KafkaConfig, m
 	return span
 }
 
-func StartProduceSpan(ctx context.Context, cfg *Config, kafkaCfg *KafkaConfig, writer *KafkaWriter, msg *KafkaMessage, spanOpts ...tracer.StartSpanOption) ddtrace.Span {
+func (tr *Tracer) StartProduceSpan(ctx context.Context, writer Writer, msg Message, spanOpts ...tracer.StartSpanOption) ddtrace.Span {
 	opts := []tracer.StartSpanOption{
-		tracer.ServiceName(cfg.producerServiceName),
+		tracer.ServiceName(tr.producerServiceName),
 		tracer.SpanType(ext.SpanTypeMessageProducer),
 		tracer.Tag(ext.Component, componentName),
 		tracer.Tag(ext.SpanKind, ext.SpanKindProducer),
 		tracer.Tag(ext.MessagingSystem, ext.MessagingSystemKafka),
-		tracer.Tag(ext.KafkaBootstrapServers, kafkaCfg.BootstrapServers),
+		tracer.Tag(ext.KafkaBootstrapServers, tr.kafkaCfg.BootstrapServers),
 	}
-	if writer.Topic != "" {
-		opts = append(opts, tracer.ResourceName("Produce Topic "+writer.Topic))
+	if writer.GetTopic() != "" {
+		opts = append(opts, tracer.ResourceName("Produce Topic "+writer.GetTopic()))
 	} else {
-		opts = append(opts, tracer.ResourceName("Produce Topic "+msg.Topic))
+		opts = append(opts, tracer.ResourceName("Produce Topic "+msg.GetTopic()))
 	}
-	if !math.IsNaN(cfg.analyticsRate) {
-		opts = append(opts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
+	if !math.IsNaN(tr.analyticsRate) {
+		opts = append(opts, tracer.Tag(ext.EventSampleRate, tr.analyticsRate))
 	}
 	opts = append(opts, spanOpts...)
-	carrier := MessageCarrier{msg}
-	span, _ := tracer.StartSpanFromContext(ctx, cfg.producerSpanName, opts...)
+	carrier := NewMessageCarrier(msg)
+	span, _ := tracer.StartSpanFromContext(ctx, tr.producerSpanName, opts...)
 	if err := tracer.Inject(span.Context(), carrier); err != nil {
 		log.Debug("contrib/segmentio/kafka.go.v0: Failed to inject span context into carrier in writer, %v", err)
 	}
 	return span
 }
 
-func FinishProduceSpan(span ddtrace.Span, partition int, offset int64, err error) {
+func (*Tracer) FinishProduceSpan(span ddtrace.Span, partition int, offset int64, err error) {
 	span.SetTag(ext.MessagingKafkaPartition, partition)
 	span.SetTag("offset", offset)
 	span.Finish(tracer.WithError(err))
