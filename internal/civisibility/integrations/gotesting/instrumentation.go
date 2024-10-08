@@ -516,6 +516,9 @@ func applyAdditionalFeaturesToTestFunc(f func(*testing.T), testInfo *commonInfo)
 				originalExecMeta := getTestMetadata(t)
 
 				for {
+					// let's clear the matcher subnames map before any execution to avoid subname tests to be called "parent/subname#NN" due the retries
+					getTestContextMatcherPrivateFields(t).ClearSubNames()
+
 					// increment execution index
 					executionIndex++
 
@@ -683,6 +686,9 @@ func applyAdditionalFeaturesToTestFunc(f func(*testing.T), testInfo *commonInfo)
 				var suite integrations.DdTestSuite
 
 				for {
+					// let's clear the matcher subnames map before any execution to avoid subname tests to be called "parent/subname#NN" due the retries
+					getTestContextMatcherPrivateFields(t).ClearSubNames()
+
 					// increment execution index
 					executionIndex++
 
