@@ -30,6 +30,24 @@ func WrapProduceChannel[M any, TM Message](tr *KafkaTracer, out chan M, translat
 	return in
 }
 
+func WrapProduceEventsChannel[E any, TE Event](tr *KafkaTracer, in chan E, translateFn func(E) TE) chan E {
+	if in == nil {
+		return nil
+	}
+	out := make(chan E, 1)
+	go func() {
+		defer close(out)
+		for evt := range in {
+			tEvt := translateFn(evt)
+			if msg, ok := tEvt.KafkaMessage(); ok {
+				tr.TrackProduceOffsets(msg)
+			}
+			out <- evt
+		}
+	}()
+	return out
+}
+
 func (tr *KafkaTracer) StartProduceSpan(msg Message) ddtrace.Span {
 	opts := []tracer.StartSpanOption{
 		tracer.ServiceName(tr.producerServiceName),
