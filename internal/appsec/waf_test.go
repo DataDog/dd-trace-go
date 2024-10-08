@@ -30,6 +30,7 @@ import (
 	sqltrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/database/sql"
 	httptrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/config"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
@@ -932,6 +933,54 @@ func BenchmarkSampleWAFContext(b *testing.B) {
 
 		ctx.Close()
 	}
+}
+
+func TestAttackerFingerprinting(t *testing.T) {
+	t.Setenv("DD_APPSEC_RULES", "testdata/fp.json")
+	appsec.Start()
+	defer appsec.Stop()
+	if !appsec.Enabled() {
+		t.Skip("AppSec needs to be enabled for this test")
+	}
+
+	// Start and trace an HTTP server
+	mux := httptrace.NewServeMux()
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		pAppsec.TrackUserLoginSuccessEvent(
+			r.Context(),
+			"toto",
+			map[string]string{},
+			tracer.WithUserSessionID("sessionID"))
+
+		pAppsec.MonitorParsedHTTPBody(r.Context(), map[string]string{"key": "value"})
+
+		w.Write([]byte("Hello World!\n"))
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	mt := mocktracer.Start()
+	defer mt.Stop()
+	req, err := http.NewRequest("POST", srv.URL+"/test?x=1", nil)
+	require.NoError(t, err)
+	req.AddCookie(&http.Cookie{Name: "cookie", Value: "value"})
+	resp, err := srv.Client().Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	require.Len(t, mt.FinishedSpans(), 1)
+
+	tags := mt.FinishedSpans()[0].Tags()
+
+	require.Contains(t, tags, "_dd.appsec.fp.http.header")
+	require.Contains(t, tags, "_dd.appsec.fp.http.endpoint")
+	require.Contains(t, tags, "_dd.appsec.fp.http.network")
+	require.Contains(t, tags, "_dd.appsec.fp.session")
+
+	require.Regexp(t, `^hdr-`, tags["_dd.appsec.fp.http.header"])
+	require.Regexp(t, `^http-`, tags["_dd.appsec.fp.http.endpoint"])
+	require.Regexp(t, `^ssn-`, tags["_dd.appsec.fp.session"])
+	require.Regexp(t, `^net-`, tags["_dd.appsec.fp.http.network"])
 }
 
 func init() {

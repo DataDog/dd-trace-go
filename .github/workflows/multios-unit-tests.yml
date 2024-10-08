@@ -29,6 +29,9 @@ on:
 env:
   DD_APPSEC_WAF_TIMEOUT: 1m # Increase time WAF time budget to reduce CI flakiness
 
+permissions:
+  contents: read
+
 jobs:
   test-multi-os:
     runs-on: "${{ inputs.runs-on }}"
