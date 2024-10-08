@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/constants"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
 // providerType defines a function type that returns a map of string key-value pairs.
@@ -74,6 +75,14 @@ func getProviderTags() map[string]string {
 	for tag, value := range tags {
 		if value == "" {
 			delete(tags, tag)
+		}
+	}
+
+	if log.DebugEnabled() {
+		if providerName, ok := tags[constants.CIProviderName]; ok {
+			log.Debug("civisibility: detected ci provider: %v", providerName)
+		} else {
+			log.Debug("civisibility: no ci provider was detected.")
 		}
 	}
 

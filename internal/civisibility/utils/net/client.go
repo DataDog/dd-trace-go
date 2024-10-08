@@ -183,6 +183,8 @@ func NewClientWithServiceName(serviceName string) Client {
 	defaultHeaders["trace_id"] = id
 	defaultHeaders["parent_id"] = id
 
+	log.Debug("ciVisibilityHttpClient: new client created [id: %v, agentless: %v, url: %v, env: %v, serviceName: %v]",
+		id, agentlessEnabled, baseURL, environment, serviceName)
 	return &client{
 		id:               id,
 		agentless:        agentlessEnabled,
