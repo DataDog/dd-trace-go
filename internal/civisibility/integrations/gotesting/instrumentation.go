@@ -226,6 +226,18 @@ func instrumentTestingTFunc(f func(*testing.T)) func(*testing.T) {
 		// Set the CI visibility test.
 		execMeta.test = test
 
+		// If the execution is for a new test we tag the test event from early flake detection
+		if execMeta.isANewTest {
+			// Set the is new test tag
+			test.SetTag(constants.TestIsNew, "true")
+		}
+
+		// If the execution is a retry we tag the test event
+		if execMeta.isARetry {
+			// Set the retry tag
+			test.SetTag(constants.TestIsRetry, "true")
+		}
+
 		defer func() {
 			if r := recover(); r != nil {
 				// Handle panic and set error information.
@@ -636,12 +648,15 @@ func applyAdditionalFeaturesToTestFunc(f func(*testing.T), testInfo *commonInfo)
 	}
 
 	// Early flake detection
-	if settings.EarlyFlakeDetection.Enabled {
+	earlyFlakeDetectionData := integrations.GetEarlyFlakeDetectionSettings()
+	if settings.EarlyFlakeDetection.Enabled &&
+		earlyFlakeDetectionData != nil &&
+		len(earlyFlakeDetectionData.Tests) > 0 {
 		// Define is a known test flag
 		isAKnownTest := false
 
 		// Check if the test is a known test or a new one
-		if knownSuites, ok := integrations.GetEarlyFlakeDetectionSettings().Tests[testInfo.moduleName]; ok {
+		if knownSuites, ok := earlyFlakeDetectionData.Tests[testInfo.moduleName]; ok {
 			if knownTests, ok := knownSuites[testInfo.suiteName]; ok {
 				if slices.Contains(knownTests, testInfo.testName) {
 					isAKnownTest = true

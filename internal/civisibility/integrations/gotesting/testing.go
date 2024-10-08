@@ -147,7 +147,7 @@ func (ddm *M) executeInternalTest(testInfo *testingTInfo) func(*testing.T) {
 		// Set the CI Visibility test to the execution metadata
 		execMeta.test = test
 
-		// If the execution is for a new test we tag the test event
+		// If the execution is for a new test we tag the test event from early flake detection
 		if execMeta.isANewTest {
 			// Set the is new test tag
 			test.SetTag(constants.TestIsNew, "true")
@@ -159,7 +159,15 @@ func (ddm *M) executeInternalTest(testInfo *testingTInfo) func(*testing.T) {
 			test.SetTag(constants.TestIsRetry, "true")
 		}
 
+		startTime := time.Now()
 		defer func() {
+			duration := time.Since(startTime)
+			// check if is a new EFD test and the duration >= 5 min
+			if execMeta.isANewTest && duration.Minutes() >= 5 {
+				// Set the EFD retry abort reason
+				test.SetTag(constants.TestEarlyFlakeDetectionRetryAborted, "slow")
+			}
+
 			if r := recover(); r != nil {
 				// Handle panic and set error information.
 				execMeta.panicData = r
