@@ -304,7 +304,6 @@ func createExternalProcessedSpan(ctx context.Context, headers map[string][]strin
 		[]ddtrace.StartSpanOption{
 			func(cfg *ddtrace.StartSpanConfig) {
 				cfg.Tags[ext.ResourceName] = method + " " + path
-				cfg.Tags[ext.HTTPRoute] = path
 				cfg.Tags[ext.SpanKind] = ext.SpanKindServer
 
 				// Add client IP tags
