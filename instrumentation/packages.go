@@ -779,9 +779,11 @@ var packages = map[Package]PackageInfo{
 	},
 	PackageGopkgJinzhuGormV1: {
 		TracedPackage: "gopkg.in/jinzhu/gorm.v1",
+		EnvVarPrefix:  "GORM",
 	},
 	PackageJinzhuGorm: {
 		TracedPackage: "github.com/jinzhu/gorm",
+		EnvVarPrefix:  "GORM",
 	},
 	PackageGojiV1Web: {
 		TracedPackage: "github.com/zenazn/goji/web",
