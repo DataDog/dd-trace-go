@@ -9,7 +9,8 @@ package ext
 
 const (
 	// TargetHost sets the target host address.
-	// Deprecated: Use NetworkDestinationName instead for hostname and NetworkDestinationIP for IP addresses
+	// Legacy: Kept for backwards compatability. Use NetworkDestinationName for hostname
+	// and NetworkDestinationIP for IP addresses
 	TargetHost = "out.host"
 
 	// NetworkDestinationName is the remote hostname or similar where the outbound connection is being made to.
@@ -19,15 +20,11 @@ const (
 	NetworkDestinationIP = "network.destination.ip"
 
 	// TargetPort sets the target host port.
-	// Deprecated: Use NetworkDestinationPort instead.
+	// Legacy: Kept for backwards compatability. Use NetworkDestinationPort instead.
 	TargetPort = "out.port"
 
 	// NetworkDestinationPort is the remote port number of the outbound connection.
 	NetworkDestinationPort = "network.destination.port"
-
-	// SamplingPriority is the tag that marks the sampling priority of a span.
-	// Deprecated in favor of ManualKeep and ManualDrop.
-	SamplingPriority = "sampling.priority"
 
 	// SQLType sets the sql type tag.
 	SQLType = "sql"

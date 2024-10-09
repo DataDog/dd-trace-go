@@ -45,6 +45,7 @@ type ciVisibilityTraceWriter struct {
 //
 //	A pointer to an initialized ciVisibilityTraceWriter.
 func newCiVisibilityTraceWriter(c *config) *ciVisibilityTraceWriter {
+	log.Debug("ciVisibilityTraceWriter: creating trace writer instance")
 	return &ciVisibilityTraceWriter{
 		config:  c,
 		payload: newCiVisibilityPayload(),

@@ -38,9 +38,9 @@ func init() {
 
 const (
 	// SendHandlerName is the name of the Datadog NamedHandler for the Send phase of an awsv1 request
-	SendHandlerName = "github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go/aws/handlers.Send"
+	SendHandlerName = "github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go/v2/aws/handlers.Send"
 	// CompleteHandlerName is the name of the Datadog NamedHandler for the Complete phase of an awsv1 request
-	CompleteHandlerName = "github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go/aws/handlers.Complete"
+	CompleteHandlerName = "github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go/v2/aws/handlers.Complete"
 )
 
 type handlers struct {

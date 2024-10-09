@@ -15,6 +15,9 @@ import (
 )
 
 func Example() {
+	tracer.Start()
+	defer tracer.Stop()
+
 	span, ctx := tracer.StartSpanFromContext(context.Background(), "parent.request",
 		tracer.ServiceName("web"),
 		tracer.ResourceName("/home"),

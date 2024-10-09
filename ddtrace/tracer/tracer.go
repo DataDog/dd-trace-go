@@ -24,7 +24,6 @@ import (
 	appsecConfig "github.com/DataDog/dd-trace-go/v2/internal/appsec/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/datastreams"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
-	"github.com/DataDog/dd-trace-go/v2/internal/hostname"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/remoteconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
@@ -210,7 +209,6 @@ func Start(opts ...StartOption) error {
 	// important this happens _AFTER_ startTelemetry() has been called, so the
 	// client is appropriately configured.
 	appsec.Start(appsecConfig.WithRCConfig(cfg))
-	_ = t.hostname() // Prime the hostname cache
 	globalinternal.SetTracerInitialized(true)
 	return nil
 }
@@ -887,10 +885,3 @@ func startExecutionTracerTask(ctx gocontext.Context, span *Span) (gocontext.Cont
 }
 
 func noopTaskEnd() {}
-
-func (t *tracer) hostname() string {
-	if !t.config.enableHostnameDetection {
-		return ""
-	}
-	return hostname.Get()
-}

@@ -216,7 +216,7 @@ func finishSpan(span *tracer.Span, partition int, offset int64, err error) {
 	span.Finish(tracer.WithError(err))
 }
 
-// WriteMessages calls kafka_go.Writer.WriteMessages and traces the requests.
+// WriteMessages calls kafka-go.Writer.WriteMessages and traces the requests.
 func (w *Writer) WriteMessages(ctx context.Context, msgs ...kafka.Message) error {
 	// although there's only one call made to the SyncProducer, the messages are
 	// treated individually, so we create a span for each one

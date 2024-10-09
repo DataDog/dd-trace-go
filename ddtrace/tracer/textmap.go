@@ -68,9 +68,6 @@ const (
 	headerPropagationStyleInject  = "DD_TRACE_PROPAGATION_STYLE_INJECT"
 	headerPropagationStyleExtract = "DD_TRACE_PROPAGATION_STYLE_EXTRACT"
 	headerPropagationStyle        = "DD_TRACE_PROPAGATION_STYLE"
-
-	headerPropagationStyleInjectDeprecated  = "DD_PROPAGATION_STYLE_INJECT"  // deprecated
-	headerPropagationStyleExtractDeprecated = "DD_PROPAGATION_STYLE_EXTRACT" // deprecated
 )
 
 const (
@@ -135,9 +132,8 @@ type PropagatorConfig struct {
 // The inject and extract propagators are determined using environment variables
 // with the following order of precedence:
 //  1. DD_TRACE_PROPAGATION_STYLE_INJECT
-//  2. DD_PROPAGATION_STYLE_INJECT (deprecated)
-//  3. DD_TRACE_PROPAGATION_STYLE (applies to both inject and extract)
-//  4. If none of the above, use default values
+//  2. DD_TRACE_PROPAGATION_STYLE (applies to both inject and extract)
+//  3. If none of the above, use default values
 func NewPropagator(cfg *PropagatorConfig, propagators ...Propagator) Propagator {
 	if cfg == nil {
 		cfg = new(PropagatorConfig)
@@ -162,17 +158,7 @@ func NewPropagator(cfg *PropagatorConfig, propagators ...Propagator) Propagator 
 		return cp
 	}
 	injectorsPs := os.Getenv(headerPropagationStyleInject)
-	if injectorsPs == "" {
-		if injectorsPs = os.Getenv(headerPropagationStyleInjectDeprecated); injectorsPs != "" {
-			log.Warn("%v is deprecated. Please use %v or %v instead.\n", headerPropagationStyleInjectDeprecated, headerPropagationStyleInject, headerPropagationStyle)
-		}
-	}
 	extractorsPs := os.Getenv(headerPropagationStyleExtract)
-	if extractorsPs == "" {
-		if extractorsPs = os.Getenv(headerPropagationStyleExtractDeprecated); extractorsPs != "" {
-			log.Warn("%v is deprecated. Please use %v or %v instead.\n", headerPropagationStyleExtractDeprecated, headerPropagationStyleExtract, headerPropagationStyle)
-		}
-	}
 	cp.injectors, cp.injectorNames = getPropagators(cfg, injectorsPs)
 	cp.extractors, cp.extractorsNames = getPropagators(cfg, extractorsPs)
 	return cp
@@ -717,9 +703,9 @@ func (*propagatorB3SingleHeader) extractTextMap(reader TextMapReader) (*SpanCont
 					case "":
 						break
 					case "1", "d": // Treat 'debug' traces as priority 1
-						ctx.setSamplingPriority(1, samplernames.Unknown)
+						ctx.setSamplingPriority(ext.PriorityAutoKeep, samplernames.Unknown)
 					case "0":
-						ctx.setSamplingPriority(0, samplernames.Unknown)
+						ctx.setSamplingPriority(ext.PriorityAutoReject, samplernames.Unknown)
 					default:
 						return ErrSpanContextCorrupted
 					}
@@ -1201,11 +1187,11 @@ func parseTracestate(ctx *SpanContext, header string) {
 				}
 				if parentP == 1 && stateP <= 0 {
 					// Auto keep (1) and set the decision maker to default
-					ctx.setSamplingPriority(1, samplernames.Default)
+					ctx.setSamplingPriority(ext.PriorityAutoKeep, samplernames.Default)
 				}
 				if parentP == 0 && stateP > 0 {
 					// Auto drop (0) and drop the decision maker
-					ctx.setSamplingPriority(0, samplernames.Unknown)
+					ctx.setSamplingPriority(ext.PriorityAutoReject, samplernames.Unknown)
 					dropDM = true
 				}
 			} else if key == "p" {

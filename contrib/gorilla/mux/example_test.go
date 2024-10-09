@@ -9,6 +9,7 @@ import (
 	"net/http"
 
 	muxtrace "github.com/DataDog/dd-trace-go/contrib/gorilla/mux/v2"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 )
 
 func handler(w http.ResponseWriter, _ *http.Request) {
@@ -16,12 +17,18 @@ func handler(w http.ResponseWriter, _ *http.Request) {
 }
 
 func Example() {
+	tracer.Start()
+	defer tracer.Stop()
+
 	mux := muxtrace.NewRouter()
 	mux.HandleFunc("/", handler)
 	http.ListenAndServe(":8080", mux)
 }
 
 func Example_withServiceName() {
+	tracer.Start()
+	defer tracer.Stop()
+
 	mux := muxtrace.NewRouter(muxtrace.WithService("mux.route"))
 	mux.HandleFunc("/", handler)
 	http.ListenAndServe(":8080", mux)

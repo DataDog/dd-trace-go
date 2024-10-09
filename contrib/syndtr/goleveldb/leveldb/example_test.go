@@ -13,6 +13,9 @@ import (
 )
 
 func Example() {
+	tracer.Start()
+	defer tracer.Stop()
+
 	db, _ := leveldbtrace.OpenFile("/tmp/example.leveldb", nil)
 
 	// Create a root span, giving name, server and resource.

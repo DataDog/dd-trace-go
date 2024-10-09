@@ -18,7 +18,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/options"
 )
 
-const componentName = "net/http"
+const componentName = instrumentation.PackageNetHTTP
 
 var instr *instrumentation.Instrumentation
 

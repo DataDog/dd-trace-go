@@ -9,11 +9,15 @@ import (
 	"fmt"
 
 	apitrace "github.com/DataDog/dd-trace-go/contrib/google.golang.org/api/v2"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 
 	cloudresourcemanager "google.golang.org/api/cloudresourcemanager/v1"
 )
 
 func Example() {
+	tracer.Start()
+	defer tracer.Stop()
+
 	// create an oauth2 client suitable for use with the google APIs
 	client, _ := apitrace.NewClient(
 		// set scopes like this, which will vary depending on the service

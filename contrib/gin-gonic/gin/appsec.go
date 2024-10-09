@@ -14,8 +14,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// useAppSec executes the AppSec logic related to the operation start and
-// returns the  function to be executed upon finishing the operation
+// useAppSec executes the AppSec logic related to the operation start
 func useAppSec(c *gin.Context, span *tracer.Span) {
 	var params map[string]string
 	if l := len(c.Params); l > 0 {

@@ -18,6 +18,9 @@ import (
 
 // Here's an example illustrating a simple use case for interacting with consul with tracing enabled.
 func Example() {
+	tracer.Start()
+	defer tracer.Stop()
+
 	// Get a new Consul client
 	client, err := NewClient(consul.DefaultConfig(), WithService("consul.example"))
 	if err != nil {

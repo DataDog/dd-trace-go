@@ -14,6 +14,9 @@ import (
 )
 
 func Example() {
+	tracer.Start()
+	defer tracer.Stop()
+
 	db, err := buntdbtrace.Open(":memory:")
 	if err != nil {
 		log.Fatal(err)
