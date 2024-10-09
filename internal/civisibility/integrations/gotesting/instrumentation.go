@@ -39,6 +39,18 @@ type (
 		isANewTest                  bool                // flag to tag if a current test execution is part of a new test (EFD not known test)
 		hasAdditionalFeatureWrapper bool                // flag to check if the current execution is part of an additional feature wrapper
 	}
+
+	// runTestWithRetryOptions contains the options for calling runTestWithRetry function
+	runTestWithRetryOptions struct {
+		targetFunc        func(t *testing.T)                                                            // target function to retry
+		t                 *testing.T                                                                    // test to be executed
+		initialRetryCount int64                                                                         // initial retry count
+		adjustRetryCount  func(duration time.Duration) int64                                            // adjust retry count function depending on the duration of the first execution
+		shouldRetry       func(ptrToLocalT *testing.T, executionIndex int, remainingRetries int64) bool // function to decide whether we want to perform a retry
+		perExecution      func(ptrToLocalT *testing.T, executionIndex int, duration time.Duration)      // function to run after each test execution
+		onRetryEnd        func(t *testing.T, executionIndex int, lastPtrToLocalT *testing.T)            // function executed when all execution have finished
+		execMetaAdjust    func(execMeta *testExecutionMetadata, executionIndex int)                     // function to modify the execution metadata for each execution
+	}
 )
 
 var (
@@ -172,25 +184,18 @@ func applyFlakyTestRetriesAdditionalFeature(targetFunc func(*testing.T)) func(*t
 	// If the retry count per test is > 1 and if we still have remaining total retry count
 	if flakyRetrySettings.RetryCount > 1 && flakyRetrySettings.RemainingTotalRetryCount > 0 {
 		return func(t *testing.T) {
-			runTestWithRetry(
-				// target function
-				targetFunc,
-				// *testing.T instance
-				t,
-				// initial retry count (will be adjusted after first execution)
-				flakyRetrySettings.RetryCount,
-				// adjust retry count function depending on the duration of the first execution
-				nil, // No adjustRetryCount
-				// function to decide whether we want to perform a retry
-				func(ptrToLocalT *testing.T, executionIndex int, remainingRetries int64) bool {
+			runTestWithRetry(&runTestWithRetryOptions{
+				targetFunc:        targetFunc,
+				t:                 t,
+				initialRetryCount: flakyRetrySettings.RetryCount,
+				adjustRetryCount:  nil, // No adjustRetryCount
+				shouldRetry: func(ptrToLocalT *testing.T, executionIndex int, remainingRetries int64) bool {
 					remainingTotalRetries := atomic.AddInt64(&flakyRetrySettings.RemainingTotalRetryCount, -1)
 					// Decide whether to retry
 					return ptrToLocalT.Failed() && remainingRetries >= 0 && remainingTotalRetries >= 0
 				},
-				// function to run after each test execution
-				nil, // No perExecution needed
-				// function executed when all execution have finished
-				func(t *testing.T, executionIndex int, lastPtrToLocalT *testing.T) {
+				perExecution: nil, // No perExecution needed
+				onRetryEnd: func(t *testing.T, executionIndex int, lastPtrToLocalT *testing.T) {
 					// Update original `t` with results from last execution
 					tCommonPrivates := getTestPrivateFields(t)
 					tCommonPrivates.SetFailed(lastPtrToLocalT.Failed())
@@ -219,9 +224,8 @@ func applyFlakyTestRetriesAdditionalFeature(targetFunc func(*testing.T)) func(*t
 						fmt.Println("    the maximum number of total retries was exceeded.")
 					}
 				},
-				// function to modify the execution metadata for each execution
-				nil, // No execMetaAdjust needed
-			)
+				execMetaAdjust: nil, // No execMetaAdjust needed
+			})
 		}
 	}
 	return targetFunc
@@ -250,15 +254,11 @@ func applyEarlyFlakeDetectionAdditionalFeature(testInfo *commonInfo, targetFunc 
 			return func(t *testing.T) {
 				var testPassCount, testSkipCount, testFailCount int
 
-				runTestWithRetry(
-					// target function
-					targetFunc,
-					// *testing.T instance
-					t,
-					// initial retry count (will be adjusted after first execution)
-					0,
-					// adjust retry count function depending on the duration of the first execution
-					func(duration time.Duration) int64 {
+				runTestWithRetry(&runTestWithRetryOptions{
+					targetFunc:        targetFunc,
+					t:                 t,
+					initialRetryCount: 0,
+					adjustRetryCount: func(duration time.Duration) int64 {
 						slowTestRetriesSettings := settings.EarlyFlakeDetection.SlowTestRetries
 						durationSecs := duration.Seconds()
 						if durationSecs < 5 {
@@ -272,12 +272,10 @@ func applyEarlyFlakeDetectionAdditionalFeature(testInfo *commonInfo, targetFunc 
 						}
 						return 0
 					},
-					// function to decide whether we want to perform a retry
-					func(ptrToLocalT *testing.T, executionIndex int, remainingRetries int64) bool {
+					shouldRetry: func(ptrToLocalT *testing.T, executionIndex int, remainingRetries int64) bool {
 						return remainingRetries >= 0
 					},
-					// function to run after each test execution
-					func(ptrToLocalT *testing.T, executionIndex int, duration time.Duration) {
+					perExecution: func(ptrToLocalT *testing.T, executionIndex int, duration time.Duration) {
 						// Collect test results
 						if ptrToLocalT.Failed() {
 							testFailCount++
@@ -287,8 +285,7 @@ func applyEarlyFlakeDetectionAdditionalFeature(testInfo *commonInfo, targetFunc 
 							testPassCount++
 						}
 					},
-					// function executed when all execution have finished
-					func(t *testing.T, executionIndex int, lastPtrToLocalT *testing.T) {
+					onRetryEnd: func(t *testing.T, executionIndex int, lastPtrToLocalT *testing.T) {
 						// Update test status based on collected counts
 						tCommonPrivates := getTestPrivateFields(t)
 						tParentCommonPrivates := getTestParentPrivateFields(t)
@@ -310,12 +307,11 @@ func applyEarlyFlakeDetectionAdditionalFeature(testInfo *commonInfo, targetFunc 
 							fmt.Printf("  [ %v after %v retries by Datadog's early flake detection ]\n", status, executionIndex)
 						}
 					},
-					// function to modify the execution metadata for each execution
-					func(execMeta *testExecutionMetadata, executionIndex int) {
+					execMetaAdjust: func(execMeta *testExecutionMetadata, executionIndex int) {
 						// Set the flag new test to true
 						execMeta.isANewTest = true
 					},
-				)
+				})
 			}
 		}
 	}
@@ -323,16 +319,7 @@ func applyEarlyFlakeDetectionAdditionalFeature(testInfo *commonInfo, targetFunc 
 }
 
 // runTestWithRetry encapsulates the common retry logic for test functions.
-func runTestWithRetry(
-	targetFunc func(*testing.T),
-	t *testing.T,
-	initialRetryCount int64,
-	adjustRetryCount func(duration time.Duration) int64,
-	shouldRetry func(ptrToLocalT *testing.T, executionIndex int, remainingRetries int64) bool,
-	perExecution func(ptrToLocalT *testing.T, executionIndex int, duration time.Duration),
-	onRetryEnd func(t *testing.T, executionIndex int, lastPtrToLocalT *testing.T),
-	execMetaAdjust func(execMeta *testExecutionMetadata, executionIndex int),
-) {
+func runTestWithRetry(options *runTestWithRetryOptions) {
 	executionIndex := -1
 	var panicExecution *testExecutionMetadata
 	var lastPtrToLocalT *testing.T
@@ -342,20 +329,20 @@ func runTestWithRetry(
 	var suite integrations.DdTestSuite
 
 	// Check if we have execution metadata to propagate
-	originalExecMeta := getTestMetadata(t)
+	originalExecMeta := getTestMetadata(options.t)
 
-	retryCount := initialRetryCount
+	retryCount := options.initialRetryCount
 
 	for {
 		// Clear the matcher subnames map before each execution to avoid subname tests being called "parent/subname#NN" due to retries
-		getTestContextMatcherPrivateFields(t).ClearSubNames()
+		getTestContextMatcherPrivateFields(options.t).ClearSubNames()
 
 		// Increment execution index
 		executionIndex++
 
 		// Create a new local copy of `t` to isolate execution results
 		ptrToLocalT := &testing.T{}
-		copyTestWithoutParent(t, ptrToLocalT)
+		copyTestWithoutParent(options.t, ptrToLocalT)
 
 		// Create a dummy parent so we can run the test using this local copy
 		// without affecting the test parent
@@ -382,8 +369,8 @@ func runTestWithRetry(
 		}
 
 		// Adjust execution metadata
-		if execMetaAdjust != nil {
-			execMetaAdjust(execMeta, executionIndex)
+		if options.execMetaAdjust != nil {
+			options.execMetaAdjust(execMeta, executionIndex)
 		}
 
 		// Run original func similar to how it gets run internally in tRunner
@@ -393,7 +380,7 @@ func runTestWithRetry(
 			defer func() {
 				chn <- struct{}{}
 			}()
-			targetFunc(ptrToLocalT)
+			options.targetFunc(ptrToLocalT)
 		}()
 		<-chn
 		duration := time.Since(startTime)
@@ -429,30 +416,30 @@ func runTestWithRetry(
 		}
 
 		// Adjust retry count after first execution if necessary
-		if adjustRetryCount != nil && executionIndex == 0 {
-			retryCount = adjustRetryCount(duration)
+		if options.adjustRetryCount != nil && executionIndex == 0 {
+			retryCount = options.adjustRetryCount(duration)
 		}
 
 		// Decrement retry count
 		retryCount--
 
 		// Call perExecution function
-		if perExecution != nil {
-			perExecution(ptrToLocalT, executionIndex, duration)
+		if options.perExecution != nil {
+			options.perExecution(ptrToLocalT, executionIndex, duration)
 		}
 
 		// Update lastPtrToLocalT
 		lastPtrToLocalT = ptrToLocalT
 
 		// Decide whether to continue
-		if !shouldRetry(ptrToLocalT, executionIndex, retryCount) {
+		if !options.shouldRetry(ptrToLocalT, executionIndex, retryCount) {
 			break
 		}
 	}
 
 	// Call onRetryEnd
-	if onRetryEnd != nil {
-		onRetryEnd(t, executionIndex, lastPtrToLocalT)
+	if options.onRetryEnd != nil {
+		options.onRetryEnd(options.t, executionIndex, lastPtrToLocalT)
 	}
 
 	// After all test executions, check if we need to close the suite and the module
@@ -461,7 +448,7 @@ func runTestWithRetry(
 	}
 
 	// Re-panic if test failed and panic data exists
-	if t.Failed() && panicExecution != nil {
+	if options.t.Failed() && panicExecution != nil {
 		// Ensure we flush all CI visibility data and close the session event
 		integrations.ExitCiVisibility()
 		panic(fmt.Sprintf("test failed and panicked after %d retries.\n%v\n%v", executionIndex, panicExecution.panicData, panicExecution.panicStacktrace))
