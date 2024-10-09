@@ -1,0 +1,5 @@
+package tracing
+
+func BeforeRequest() {
+
+}
