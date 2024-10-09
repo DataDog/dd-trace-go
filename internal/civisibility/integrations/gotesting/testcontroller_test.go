@@ -80,8 +80,7 @@ func runFlakyTestRetriesTests(m *testing.M) {
 	currentM = m
 	mTracer = integrations.InitializeCIVisibilityMock()
 
-	// execute the tests, because we are expecting some tests to fail and check the assertion later
-	// we don't store the exit code from the test runner
+	// execute the tests, we are expecting some tests to fail and check the assertion later
 	exitCode := RunM(m)
 	if exitCode != 1 {
 		panic("expected the exit code to be 1. We have a failing test on purpose.")
@@ -164,8 +163,7 @@ func runEarlyFlakyTestDetectionTests(m *testing.M) {
 	currentM = m
 	mTracer = integrations.InitializeCIVisibilityMock()
 
-	// execute the tests, because we are expecting some tests to fail and check the assertion later
-	// we don't store the exit code from the test runner
+	// execute the tests, we are expecting some tests to fail and check the assertion later
 	exitCode := RunM(m)
 	if exitCode != 1 {
 		panic("expected the exit code to be 1. We have a failing test on purpose.")
@@ -263,8 +261,7 @@ func runFlakyTestRetriesWithEarlyFlakyTestDetectionTests(m *testing.M) {
 	currentM = m
 	mTracer = integrations.InitializeCIVisibilityMock()
 
-	// execute the tests, because we are expecting some tests to fail and check the assertion later
-	// we don't store the exit code from the test runner
+	// execute the tests, we are expecting some tests to fail and check the assertion later
 	exitCode := RunM(m)
 	if exitCode != 1 {
 		panic("expected the exit code to be 1. We have a failing test on purpose.")
@@ -425,9 +422,7 @@ func setUpHttpServer(flakyRetriesEnabled bool, earlyFlakyDetectionEnabled bool, 
 
 			fmt.Printf("MockApi sending response: %v\n", response)
 			json.NewEncoder(w).Encode(&response)
-		}
-
-		if earlyFlakyDetectionEnabled && r.URL.Path == "/api/v2/ci/libraries/tests" {
+		} else if earlyFlakyDetectionEnabled && r.URL.Path == "/api/v2/ci/libraries/tests" {
 			w.Header().Set("Content-Type", "application/json")
 			response := struct {
 				Data struct {
@@ -443,6 +438,8 @@ func setUpHttpServer(flakyRetriesEnabled bool, earlyFlakyDetectionEnabled bool, 
 
 			fmt.Printf("MockApi sending response: %v\n", response)
 			json.NewEncoder(w).Encode(&response)
+		} else {
+			http.NotFound(w, r)
 		}
 	}))
 
