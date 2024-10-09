@@ -6,11 +6,16 @@
 package utils
 
 import (
+	"fmt"
+	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
+	"strings"
 	"sync"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/constants"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/osinfo"
 )
 
@@ -90,12 +95,44 @@ func GetRelativePathFromCITagsSourceRoot(path string) string {
 //	A map[string]string containing the extracted CI/CD tags.
 func createCITagsMap() map[string]string {
 	localTags := getProviderTags()
+
+	// Populate runtime values
 	localTags[constants.OSPlatform] = runtime.GOOS
 	localTags[constants.OSVersion] = osinfo.OSVersion()
 	localTags[constants.OSArchitecture] = runtime.GOARCH
 	localTags[constants.RuntimeName] = runtime.Compiler
 	localTags[constants.RuntimeVersion] = runtime.Version()
+	log.Debug("civisibility: os platform: %v", runtime.GOOS)
+	log.Debug("civisibility: os architecture: %v", runtime.GOARCH)
+	log.Debug("civisibility: runtime version: %v", runtime.Version())
 
+	// Get command line test command
+	var cmd string
+	if len(os.Args) == 1 {
+		cmd = filepath.Base(os.Args[0])
+	} else {
+		cmd = fmt.Sprintf("%s %s ", filepath.Base(os.Args[0]), strings.Join(os.Args[1:], " "))
+	}
+
+	// Filter out some parameters to make the command more stable.
+	cmd = regexp.MustCompile(`(?si)-test.gocoverdir=(.*)\s`).ReplaceAllString(cmd, "")
+	cmd = regexp.MustCompile(`(?si)-test.v=(.*)\s`).ReplaceAllString(cmd, "")
+	cmd = regexp.MustCompile(`(?si)-test.testlogfile=(.*)\s`).ReplaceAllString(cmd, "")
+	cmd = strings.TrimSpace(cmd)
+	localTags[constants.TestCommand] = cmd
+	log.Debug("civisibility: test command: %v", cmd)
+
+	// Populate the test session name
+	if testSessionName, ok := os.LookupEnv(constants.CIVisibilityTestSessionNameEnvironmentVariable); ok {
+		localTags[constants.TestSessionName] = testSessionName
+	} else if jobName, ok := localTags[constants.CIJobName]; ok {
+		localTags[constants.TestSessionName] = fmt.Sprintf("%s-%s", jobName, cmd)
+	} else {
+		localTags[constants.TestSessionName] = cmd
+	}
+	log.Debug("civisibility: test session name: %v", localTags[constants.TestSessionName])
+
+	// Populate missing git data
 	gitData, _ := getLocalGitData()
 
 	// Populate Git metadata from the local Git repository if not already present in localTags
@@ -137,6 +174,8 @@ func createCITagsMap() map[string]string {
 		}
 	}
 
+	log.Debug("civisibility: workspace directory: %v", localTags[constants.CIWorkspacePath])
+	log.Debug("civisibility: common tags created with %v items", len(localTags))
 	return localTags
 }
 
@@ -149,5 +188,6 @@ func createCIMetricsMap() map[string]float64 {
 	localMetrics := make(map[string]float64)
 	localMetrics[constants.LogicalCPUCores] = float64(runtime.NumCPU())
 
+	log.Debug("civisibility: common metrics created with %v items", len(localMetrics))
 	return localMetrics
 }

@@ -18,6 +18,8 @@ import (
 	"net/textproto"
 	"strconv"
 	"time"
+
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
 // Constants for common strings
@@ -114,6 +116,8 @@ func (rh *RequestHandler) SendRequest(config RequestConfig) (*Response, error) {
 	}
 
 	for attempt := 0; attempt <= config.MaxRetries; attempt++ {
+		log.Debug("ciVisibilityHttpClient: new request [method: %v, url: %v, attempt: %v, maxRetries: %v]",
+			config.Method, config.URL, attempt, config.MaxRetries)
 		stopRetries, rs, err := rh.internalSendRequest(&config, attempt)
 		if stopRetries {
 			return rs, err
@@ -133,6 +137,14 @@ func (rh *RequestHandler) internalSendRequest(config *RequestConfig, attempt int
 		if err != nil {
 			return true, nil, err
 		}
+
+		if log.DebugEnabled() {
+			var files []string
+			for _, f := range config.Files {
+				files = append(files, f.FileName)
+			}
+			log.Debug("ciVisibilityHttpClient: sending files %v", files)
+		}
 		req, err = http.NewRequest(config.Method, config.URL, bytes.NewBuffer(body))
 		if err != nil {
 			return true, nil, err
@@ -146,6 +158,10 @@ func (rh *RequestHandler) internalSendRequest(config *RequestConfig, attempt int
 		serializedBody, err := serializeData(config.Body, config.Format)
 		if err != nil {
 			return true, nil, err
+		}
+
+		if log.DebugEnabled() {
+			log.Debug("ciVisibilityHttpClient: serialized body [compressed: %v] %v", config.Compressed, string(serializedBody))
 		}
 
 		// Compress body if needed
@@ -185,6 +201,7 @@ func (rh *RequestHandler) internalSendRequest(config *RequestConfig, attempt int
 
 	resp, err := rh.Client.Do(req)
 	if err != nil {
+		log.Debug("ciVisibilityHttpClient: error [%v].", err)
 		// Retry if there's an error
 		exponentialBackoff(attempt, config.Backoff)
 		return false, nil, nil
@@ -194,6 +211,7 @@ func (rh *RequestHandler) internalSendRequest(config *RequestConfig, attempt int
 
 	// Capture the status code
 	statusCode := resp.StatusCode
+	log.Debug("ciVisibilityHttpClient: response status code [%v]", resp.StatusCode)
 
 	// Check for rate-limiting (HTTP 429)
 	if resp.StatusCode == HTTPStatusTooManyRequests {
@@ -246,6 +264,9 @@ func (rh *RequestHandler) internalSendRequest(config *RequestConfig, attempt int
 	if err == nil {
 		if mediaType == ContentTypeJSON || mediaType == ContentTypeJSONAlternative {
 			responseFormat = FormatJSON
+			if log.DebugEnabled() {
+				log.Debug("ciVisibilityHttpClient: serialized response [%v]", string(responseBody))
+			}
 		}
 	}
 

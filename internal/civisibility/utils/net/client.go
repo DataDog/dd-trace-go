@@ -65,7 +65,7 @@ type (
 
 var _ Client = &client{}
 
-func NewClient() Client {
+func NewClientWithServiceName(serviceName string) Client {
 	ciTags := utils.GetCITags()
 
 	// get the environment
@@ -75,16 +75,18 @@ func NewClient() Client {
 	}
 
 	// get the service name
-	serviceName := os.Getenv("DD_SERVICE")
 	if serviceName == "" {
-		if repoURL, ok := ciTags[constants.GitRepositoryURL]; ok {
-			// regex to sanitize the repository url to be used as a service name
-			repoRegex := regexp.MustCompile(`(?m)/([a-zA-Z0-9\-_.]*)$`)
-			matches := repoRegex.FindStringSubmatch(repoURL)
-			if len(matches) > 1 {
-				repoURL = strings.TrimSuffix(matches[1], ".git")
+		serviceName = os.Getenv("DD_SERVICE")
+		if serviceName == "" {
+			if repoURL, ok := ciTags[constants.GitRepositoryURL]; ok {
+				// regex to sanitize the repository url to be used as a service name
+				repoRegex := regexp.MustCompile(`(?m)/([a-zA-Z0-9\-_.]*)$`)
+				matches := repoRegex.FindStringSubmatch(repoURL)
+				if len(matches) > 1 {
+					repoURL = strings.TrimSuffix(matches[1], ".git")
+				}
+				serviceName = repoURL
 			}
-			serviceName = repoURL
 		}
 	}
 
@@ -181,6 +183,8 @@ func NewClient() Client {
 	defaultHeaders["trace_id"] = id
 	defaultHeaders["parent_id"] = id
 
+	log.Debug("ciVisibilityHttpClient: new client created [id: %v, agentless: %v, url: %v, env: %v, serviceName: %v]",
+		id, agentlessEnabled, baseURL, environment, serviceName)
 	return &client{
 		id:               id,
 		agentless:        agentlessEnabled,
@@ -202,6 +206,10 @@ func NewClient() Client {
 		headers: defaultHeaders,
 		handler: requestHandler,
 	}
+}
+
+func NewClient() Client {
+	return NewClientWithServiceName("")
 }
 
 func (c *client) getURLPath(urlPath string) string {

@@ -17,7 +17,11 @@ const (
 	ServerResponseHeadersNoCookiesAddr = "server.response.headers.no_cookies"
 
 	ClientIPAddr = "http.client_ip"
-	UserIDAddr   = "usr.id"
+
+	UserIDAddr           = "usr.id"
+	UserSessionIDAddr    = "usr.session_id"
+	UserLoginSuccessAddr = "server.business_logic.users.login.success"
+	UserLoginFailureAddr = "server.business_logic.users.login.failure"
 
 	ServerIoNetURLAddr    = "server.io.net.url"
 	ServerIOFSFileAddr    = "server.io.fs.file"

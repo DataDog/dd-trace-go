@@ -40,6 +40,9 @@ concurrency:
   # Automatically cancel previous runs if a new one is triggered to conserve resources.
   group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
 
+permissions:
+  contents: read
+
 jobs:
   # Prepare the cache of Go modules to share it will the other jobs.
   # This maximizes cache hits and minimizes the time spent downloading Go modules.

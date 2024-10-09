@@ -123,14 +123,21 @@ func (t *gqlTracer) InterceptOperation(ctx context.Context, next graphql.Operati
 			}
 			defer span.Finish(tracer.WithError(err))
 		}
-		query.Finish(graphqlsec.ExecutionOperationRes{
-			Data:  response.Data, // NB - This is raw data, but rather not parse it (possibly expensive).
-			Error: response.Errors,
-		})
-		req.Finish(span, graphqlsec.RequestOperationRes{
-			Data:  response.Data, // NB - This is raw data, but rather not parse it (possibly expensive).
-			Error: response.Errors,
-		})
+
+		var (
+			executionOperationRes graphqlsec.ExecutionOperationRes
+			requestOperationRes   graphqlsec.RequestOperationRes
+		)
+		if response != nil {
+			executionOperationRes.Data = response.Data
+			executionOperationRes.Error = response.Errors
+
+			requestOperationRes.Data = response.Data
+			requestOperationRes.Error = response.Errors
+		}
+
+		query.Finish(executionOperationRes)
+		req.Finish(span, requestOperationRes)
 		return response
 	}
 }
