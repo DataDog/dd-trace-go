@@ -105,6 +105,8 @@ func runFlakyTestRetriesTests(m *testing.M) {
 	// 1 TestNormalPassingAfterRetryAlwaysFail
 	// 1 TestEarlyFlakeDetection
 	// 2 normal spans from testing_test.go
+
+	// check spans by resource name
 	checkSpansByResourceName(finishedSpans, "gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/integrations/gotesting", 1)
 	checkSpansByResourceName(finishedSpans, "reflections_test.go", 1)
 	checkSpansByResourceName(finishedSpans, "testing_test.go", 1)
@@ -126,6 +128,10 @@ func runFlakyTestRetriesTests(m *testing.M) {
 	checkSpansByResourceName(finishedSpans, "testing_test.go.TestNormalPassingAfterRetryAlwaysFail", 1)
 	checkSpansByResourceName(finishedSpans, "testing_test.go.TestEarlyFlakeDetection", 1)
 
+	// check spans by tag
+	checkSpansByTagName(finishedSpans, constants.TestIsRetry, 16)
+
+	// check spans by type
 	checkSpansByType(finishedSpans,
 		44,
 		1,
@@ -183,6 +189,8 @@ func runEarlyFlakyTestDetectionTests(m *testing.M) {
 	// 11 TestNormalPassingAfterRetryAlwaysFail
 	// 11 TestEarlyFlakeDetection
 	// 22 normal spans from testing_test.go
+
+	// check spans by resource name
 	checkSpansByResourceName(finishedSpans, "gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/integrations/gotesting", 1)
 	checkSpansByResourceName(finishedSpans, "reflections_test.go", 1)
 	checkSpansByResourceName(finishedSpans, "testing_test.go", 1)
@@ -204,6 +212,11 @@ func runEarlyFlakyTestDetectionTests(m *testing.M) {
 	checkSpansByResourceName(finishedSpans, "testing_test.go.TestNormalPassingAfterRetryAlwaysFail", 11)
 	checkSpansByResourceName(finishedSpans, "testing_test.go.TestEarlyFlakeDetection", 11)
 
+	// check spans by tag
+	checkSpansByTagName(finishedSpans, constants.TestIsNew, 187)
+	checkSpansByTagName(finishedSpans, constants.TestIsRetry, 170)
+
+	// check spans by type
 	checkSpansByType(finishedSpans,
 		218,
 		1,
@@ -275,6 +288,8 @@ func runFlakyTestRetriesWithEarlyFlakyTestDetectionTests(m *testing.M) {
 	// 1 TestNormalPassingAfterRetryAlwaysFail
 	// 11 TestEarlyFlakeDetection + 10 retries
 	// 2 normal spans from testing_test.go
+
+	// check spans by resource name
 	checkSpansByResourceName(finishedSpans, "gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/integrations/gotesting", 1)
 	checkSpansByResourceName(finishedSpans, "reflections_test.go", 1)
 	checkSpansByResourceName(finishedSpans, "testing_test.go", 1)
@@ -296,6 +311,11 @@ func runFlakyTestRetriesWithEarlyFlakyTestDetectionTests(m *testing.M) {
 	checkSpansByResourceName(finishedSpans, "testing_test.go.TestNormalPassingAfterRetryAlwaysFail", 1)
 	checkSpansByResourceName(finishedSpans, "testing_test.go.TestEarlyFlakeDetection", 21)
 
+	// check spans by tag
+	checkSpansByTagName(finishedSpans, constants.TestIsNew, 21)
+	checkSpansByTagName(finishedSpans, constants.TestIsRetry, 36)
+
+	// check spans by type
 	checkSpansByType(finishedSpans,
 		64,
 		1,
@@ -357,11 +377,24 @@ func checkSpansByType(finishedSpans []mocktracer.Span,
 	}
 }
 
-func checkSpansByResourceName(finishedSpans []mocktracer.Span, resourceName string, count int) {
-	numOfSpans := len(getSpansWithResourceName(finishedSpans, resourceName))
+func checkSpansByResourceName(finishedSpans []mocktracer.Span, resourceName string, count int) []mocktracer.Span {
+	spans := getSpansWithResourceName(finishedSpans, resourceName)
+	numOfSpans := len(spans)
 	if numOfSpans != count {
 		panic(fmt.Sprintf("expected exactly %d spans with resource name: %s, got %d", count, resourceName, numOfSpans))
 	}
+
+	return spans
+}
+
+func checkSpansByTagName(finishedSpans []mocktracer.Span, tagName string, count int) []mocktracer.Span {
+	spans := getSpansWithTagName(finishedSpans, tagName)
+	numOfSpans := len(spans)
+	if numOfSpans != count {
+		panic(fmt.Sprintf("expected exactly %d spans with tag name: %s, got %d", count, tagName, numOfSpans))
+	}
+
+	return spans
 }
 
 func setUpHttpServer(flakyRetriesEnabled bool, earlyFlakyDetectionEnabled bool, earlyFlakyDetectionData *net.EfdResponseData) *httptest.Server {
@@ -437,6 +470,17 @@ func getSpansWithResourceName(spans []mocktracer.Span, resourceName string) []mo
 	var result []mocktracer.Span
 	for _, span := range spans {
 		if span.Tag(ext.ResourceName) == resourceName {
+			result = append(result, span)
+		}
+	}
+
+	return result
+}
+
+func getSpansWithTagName(spans []mocktracer.Span, tag string) []mocktracer.Span {
+	var result []mocktracer.Span
+	for _, span := range spans {
+		if span.Tag(tag) != nil {
 			result = append(result, span)
 		}
 	}

@@ -114,9 +114,13 @@ func createTestMetadata(tb testing.TB) *testExecutionMetadata {
 
 // getTestMetadata retrieves the CI visibility test metadata associated with a given *testing.T, *testing.B, *testing.common
 func getTestMetadata(tb testing.TB) *testExecutionMetadata {
+	return getTestMetadataFromPointer(reflect.ValueOf(tb).UnsafePointer())
+}
+
+// getTestMetadataFromPointer retrieves the CI visibility test metadata associated with a given *testing.T, *testing.B, *testing.common using a pointer
+func getTestMetadataFromPointer(ptr unsafe.Pointer) *testExecutionMetadata {
 	ciVisibilityTestMetadataMutex.RLock()
 	defer ciVisibilityTestMetadataMutex.RUnlock()
-	ptr := reflect.ValueOf(tb).UnsafePointer()
 	if v, ok := ciVisibilityTestMetadata[ptr]; ok {
 		return v
 	}
@@ -221,6 +225,20 @@ func instrumentTestingTFunc(f func(*testing.T)) func(*testing.T) {
 			// in case there's no additional features then we create the metadata for this execution and defer the disposal
 			execMeta = createTestMetadata(t)
 			defer deleteTestMetadata(t)
+		}
+
+		// Because this is a subtest let's propagate some execution metadata from the parent test
+		testPrivateFields := getTestPrivateFields(t)
+		if testPrivateFields.parent != nil {
+			parentExecMeta := getTestMetadataFromPointer(*testPrivateFields.parent)
+			if parentExecMeta != nil {
+				if parentExecMeta.isANewTest {
+					execMeta.isANewTest = true
+				}
+				if parentExecMeta.isARetry {
+					execMeta.isARetry = true
+				}
+			}
 		}
 
 		// Set the CI visibility test.
