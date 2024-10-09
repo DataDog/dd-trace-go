@@ -15,8 +15,8 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils"
 	_ "github.com/go-sql-driver/mysql"
 	_ "github.com/lib/pq"
 	_ "github.com/microsoft/go-mssqldb"
@@ -47,10 +47,6 @@ func setupDB(t *testing.T, driverName, dataSourceName string, opts ...Option) *b
 	Wrap(db, opts...)
 
 	return db
-}
-
-func TestImplementsHook(_ *testing.T) {
-	var _ bun.QueryHook = (*queryHook)(nil)
 }
 
 func TestSelect(t *testing.T) {
@@ -151,9 +147,7 @@ func TestServiceName(t *testing.T) {
 	})
 
 	t.Run("global", func(t *testing.T) {
-		prevName := globalconfig.ServiceName()
-		defer globalconfig.SetServiceName(prevName)
-		globalconfig.SetServiceName("global-service")
+		testutils.SetGlobalServiceName(t, "global-service")
 
 		assert := assert.New(t)
 		mt := mocktracer.Start()

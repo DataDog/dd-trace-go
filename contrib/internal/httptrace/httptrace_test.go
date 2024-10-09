@@ -16,11 +16,10 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/normalizer"
 
 	"github.com/DataDog/appsec-internal-go/netip"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -43,7 +42,7 @@ func TestHeaderTagsFromRequest(t *testing.T) {
 	}
 
 	hs := []string{"header1:tag1", "header2:tag2", "header3:tag3", "x-datadog-header:tag4"}
-	ht := internal.NewLockMap(normalizer.HeaderTagSlice(hs))
+	ht := instrumentation.NewHeaderTags(hs)
 	s, _ := StartRequestSpan(r, HeaderTagsFromRequest(r, ht))
 	s.Finish()
 	spans := mt.FinishedSpans()

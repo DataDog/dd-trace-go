@@ -9,8 +9,8 @@ import (
 	"testing"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
 
+	"github.com/DataDog/dd-trace-go/v2/v1internal/namingschema"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

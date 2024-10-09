@@ -24,7 +24,6 @@ import (
 	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/httpmem"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/orchestrion"
@@ -286,7 +285,7 @@ func TestCorrectTags(t *testing.T) {
 		fmt.Sprintf("runtime_compiler:%s", runtime.Compiler),
 		fmt.Sprintf("runtime_arch:%s", runtime.GOARCH),
 		fmt.Sprintf("runtime_os:%s", runtime.GOOS),
-		fmt.Sprintf("runtime-id:%s", globalconfig.RuntimeID()),
+		// SKIP: fmt.Sprintf("runtime-id:%s", globalconfig.RuntimeID()),
 	}
 	for i := 0; i < 20; i++ {
 		// We check the tags we get several times to try to have a

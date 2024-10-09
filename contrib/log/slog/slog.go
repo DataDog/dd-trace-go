@@ -7,45 +7,21 @@
 package slog // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/log/slog"
 
 import (
-	"context"
 	"io"
 	"log/slog"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
+	v2 "github.com/DataDog/dd-trace-go/contrib/log/slog/v2"
 )
 
 const componentName = "log/slog"
 
-func init() {
-	telemetry.LoadIntegration(componentName)
-	tracer.MarkIntegrationImported("log/slog")
-}
-
 // NewJSONHandler is a convenience function that returns a *slog.JSONHandler logger enhanced with
 // tracing information.
 func NewJSONHandler(w io.Writer, opts *slog.HandlerOptions) slog.Handler {
-	return WrapHandler(slog.NewJSONHandler(w, opts))
+	return v2.NewJSONHandler(w, opts)
 }
 
 // WrapHandler enhances the given logger handler attaching tracing information to logs.
 func WrapHandler(h slog.Handler) slog.Handler {
-	return &handler{h}
-}
-
-type handler struct {
-	slog.Handler
-}
-
-// Handle handles the given Record, attaching tracing information if found.
-func (h *handler) Handle(ctx context.Context, rec slog.Record) error {
-	span, ok := tracer.SpanFromContext(ctx)
-	if ok {
-		rec.Add(
-			slog.Uint64(ext.LogKeyTraceID, span.Context().TraceID()),
-			slog.Uint64(ext.LogKeySpanID, span.Context().SpanID()),
-		)
-	}
-	return h.Handler.Handle(ctx, rec)
+	return v2.WrapHandler(h)
 }

@@ -8,10 +8,7 @@ package echo
 import (
 	"math"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/normalizer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 )
 
 const defaultServiceName = "echo"
@@ -21,20 +18,16 @@ type config struct {
 	analyticsRate float64
 	noDebugStack  bool
 	isStatusError func(statusCode int) bool
-	headerTags    *internal.LockMap
+	headerTags    instrumentation.HeaderTags
 }
 
 // Option represents an option that can be passed to Middleware.
 type Option func(*config)
 
 func defaults(cfg *config) {
-	cfg.serviceName = namingschema.ServiceName(defaultServiceName)
-	if internal.BoolEnv("DD_TRACE_ECHO_ANALYTICS_ENABLED", false) {
-		cfg.analyticsRate = 1.0
-	} else {
-		cfg.analyticsRate = math.NaN()
-	}
-	cfg.headerTags = globalconfig.HeaderTagMap()
+	cfg.analyticsRate = instr.AnalyticsRate(false)
+	cfg.serviceName = instr.ServiceName(instrumentation.ComponentServer, nil)
+	cfg.headerTags = instr.HTTPHeadersAsTags()
 	cfg.isStatusError = isServerError
 }
 
@@ -94,8 +87,8 @@ func isServerError(statusCode int) bool {
 // Using this feature can risk exposing sensitive data such as authorization tokens to Datadog.
 // Special headers can not be sub-selected. E.g., an entire Cookie header would be transmitted, without the ability to choose specific Cookies.
 func WithHeaderTags(headers []string) Option {
-	headerTagsMap := normalizer.HeaderTagSlice(headers)
+	headerTagsMap := instrumentation.NewHeaderTags(headers)
 	return func(cfg *config) {
-		cfg.headerTags = internal.NewLockMap(headerTagsMap)
+		cfg.headerTags = headerTagsMap
 	}
 }

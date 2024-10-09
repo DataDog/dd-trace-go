@@ -8,8 +8,6 @@ package gorm
 import (
 	"math"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal"
-
 	"gopkg.in/jinzhu/gorm.v1"
 )
 
@@ -26,12 +24,7 @@ type Option func(*config)
 
 func defaults(cfg *config) {
 	cfg.serviceName = "gorm.db"
-	// cfg.analyticsRate = globalconfig.AnalyticsRate()
-	if internal.BoolEnv("DD_TRACE_GORM_ANALYTICS_ENABLED", false) {
-		cfg.analyticsRate = 1.0
-	} else {
-		cfg.analyticsRate = math.NaN()
-	}
+	cfg.analyticsRate = instr.AnalyticsRate(false)
 	cfg.errCheck = func(error) bool { return true }
 }
 

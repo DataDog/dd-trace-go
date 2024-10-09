@@ -16,16 +16,17 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 	"github.com/zenazn/goji/web"
 )
 
 const componentName = "zenazn/goji.v1/web"
 
+var instr *instrumentation.Instrumentation
+
 func init() {
-	telemetry.LoadIntegration(componentName)
-	tracer.MarkIntegrationImported("github.com/zenazn/goji")
+	instr = instrumentation.Load(instrumentation.PackageGojiV1Web)
 }
 
 // Middleware returns a goji middleware function that will trace incoming requests.
