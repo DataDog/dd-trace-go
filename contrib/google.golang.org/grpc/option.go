@@ -27,10 +27,6 @@ func (fn OptionFn) apply(cfg *config) {
 	fn(cfg)
 }
 
-func (fn OptionFn) applyStream(cfg *config) {
-	fn(cfg)
-}
-
 type cachedServiceName struct {
 	value    string
 	getValue func() string
