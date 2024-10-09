@@ -80,7 +80,7 @@ func testAsyncSpanRace(t *testing.T) {
 	for i := 0; i < 100; i++ {
 		// The test has 100 iterations because it is not easy to reproduce the race.
 		t.Run("", func(t *testing.T) {
-			root, ctx := StartSpanFromContext(context.Background(), "root", Tag(ext.SamplingPriority, ext.PriorityUserKeep))
+			root, ctx := StartSpanFromContext(context.Background(), "root", Tag(ext.ManualKeep, true))
 			var wg sync.WaitGroup
 			done := make(chan struct{})
 			wg.Add(1)
@@ -116,7 +116,7 @@ func testAsyncSpanRace(t *testing.T) {
 				for i := 0; i < 50; i++ {
 					// to trigger the bug, the child should be created after the root was finished,
 					// as its being flushed
-					child, _ := StartSpanFromContext(ctx, "child", Tag(ext.SamplingPriority, ext.PriorityUserKeep))
+					child, _ := StartSpanFromContext(ctx, "child", Tag(ext.ManualKeep, true))
 					child.Finish()
 				}
 			}()
@@ -306,12 +306,12 @@ func TestSpanFinishPriority(t *testing.T) {
 
 	root := tracer.StartSpan(
 		"root",
-		Tag(ext.SamplingPriority, 1),
 	)
+	root.setSamplingPriority(ext.PriorityAutoKeep, samplernames.Manual)
 	child := tracer.StartSpan(
 		"child",
 		ChildOf(root.Context()),
-		Tag(ext.SamplingPriority, 2),
+		Tag(ext.ManualKeep, true),
 	)
 	child.Finish()
 	root.Finish()
@@ -837,35 +837,35 @@ func TestSetSamplingPriorityLocked(t *testing.T) {
 		tr := trace{
 			propagatingTags: map[string]string{},
 		}
-		tr.setSamplingPriorityLocked(0, samplernames.RemoteRate)
+		tr.setSamplingPriorityLocked(ext.PriorityAutoReject, samplernames.RemoteRate)
 		assert.Empty(t, tr.propagatingTags[keyDecisionMaker])
 	})
 	t.Run("UnknownSamplerIsIgnored", func(t *testing.T) {
 		tr := trace{
 			propagatingTags: map[string]string{},
 		}
-		tr.setSamplingPriorityLocked(0, samplernames.Unknown)
+		tr.setSamplingPriorityLocked(ext.PriorityAutoReject, samplernames.Unknown)
 		assert.Empty(t, tr.propagatingTags[keyDecisionMaker])
 	})
 	t.Run("NoPriorAndP1IsAccepted", func(t *testing.T) {
 		tr := trace{
 			propagatingTags: map[string]string{},
 		}
-		tr.setSamplingPriorityLocked(1, samplernames.RemoteRate)
+		tr.setSamplingPriorityLocked(ext.PriorityAutoKeep, samplernames.RemoteRate)
 		assert.Equal(t, "-2", tr.propagatingTags[keyDecisionMaker])
 	})
 	t.Run("PriorAndP1AndSameDMIsIgnored", func(t *testing.T) {
 		tr := trace{
 			propagatingTags: map[string]string{keyDecisionMaker: "-1"},
 		}
-		tr.setSamplingPriorityLocked(1, samplernames.AgentRate)
+		tr.setSamplingPriorityLocked(ext.PriorityAutoKeep, samplernames.AgentRate)
 		assert.Equal(t, "-1", tr.propagatingTags[keyDecisionMaker])
 	})
 	t.Run("PriorAndP1DifferentDMAccepted", func(t *testing.T) {
 		tr := trace{
 			propagatingTags: map[string]string{keyDecisionMaker: "-1"},
 		}
-		tr.setSamplingPriorityLocked(1, samplernames.RemoteRate)
+		tr.setSamplingPriorityLocked(ext.PriorityAutoKeep, samplernames.RemoteRate)
 		assert.Equal(t, "-2", tr.propagatingTags[keyDecisionMaker])
 	})
 }

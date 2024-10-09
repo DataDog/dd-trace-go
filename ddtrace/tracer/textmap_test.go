@@ -281,7 +281,7 @@ func TestTextMapPropagatorInjectHeader(t *testing.T) {
 
 	root := tracer.StartSpan("web.request")
 	root.SetBaggageItem("item", "x")
-	root.SetTag(ext.SamplingPriority, 0)
+	root.setSamplingPriority(ext.PriorityAutoReject, samplernames.Default)
 	ctx := root.Context()
 	headers := http.Header{}
 
@@ -411,7 +411,7 @@ func Test257CharacterDDTracestateLengh(t *testing.T) {
 	defer tracer.Stop()
 	assert := assert.New(t)
 	root := tracer.StartSpan("web.request")
-	root.SetTag(ext.SamplingPriority, ext.PriorityUserKeep)
+	root.SetTag(ext.ManualKeep, true)
 	ctx := root.Context()
 	ctx.origin = "rum"
 	ctx.traceID = traceIDFrom64Bits(1)
@@ -574,7 +574,7 @@ func TestTextMapPropagator(t *testing.T) {
 		defer tracer.Stop()
 		assert.NoError(t, err)
 		root := tracer.StartSpan("web.request")
-		root.SetTag(ext.SamplingPriority, -1)
+		root.SetTag(ext.ManualDrop, true)
 		root.SetBaggageItem("item", "x")
 		ctx := root.Context()
 		headers := TextMapCarrier(map[string]string{})
@@ -1042,7 +1042,7 @@ func TestEnvVars(t *testing.T) {
 					defer tracer.Stop()
 					assert.NoError(t, err)
 					root := tracer.StartSpan("web.request")
-					root.SetTag(ext.SamplingPriority, -1)
+					root.SetTag(ext.ManualDrop, true)
 					root.SetBaggageItem("item", "x")
 					ctx := root.Context()
 					ctx.traceID = traceIDFrom64Bits(tc.in[0])
@@ -1558,7 +1558,7 @@ func TestEnvVars(t *testing.T) {
 					assert := assert.New(t)
 					assert.Nil(err)
 					root := tracer.StartSpan("web.request")
-					root.SetTag(ext.SamplingPriority, tc.priority)
+					root.setSamplingPriority(tc.priority, samplernames.Default)
 					ctx := root.Context()
 					ctx.origin = tc.origin
 					ctx.traceID = tc.tid
@@ -1588,7 +1588,7 @@ func TestEnvVars(t *testing.T) {
 					assert := assert.New(t)
 					assert.Nil(err)
 					root := tracer.StartSpan("web.request")
-					root.SetTag(ext.SamplingPriority, ext.PriorityUserKeep)
+					root.SetTag(ext.ManualKeep, true)
 					ctx := root.Context()
 					ctx.origin = "old_tracestate"
 					ctx.traceID = traceIDFrom64Bits(1229782938247303442)
@@ -1945,7 +1945,7 @@ func TestNonePropagator(t *testing.T) {
 		defer tracer.Stop()
 		assert.NoError(t, err)
 		root := tracer.StartSpan("web.request")
-		root.SetTag(ext.SamplingPriority, -1)
+		root.SetTag(ext.ManualDrop, true)
 		root.SetBaggageItem("item", "x")
 		ctx := root.Context()
 		ctx.traceID = traceIDFrom64Bits(1)
@@ -1968,7 +1968,7 @@ func TestNonePropagator(t *testing.T) {
 		// reinitializing to capture log output, since propagators are parsed before logger is set
 		tracer.config.propagator = NewPropagator(&PropagatorConfig{})
 		root := tracer.StartSpan("web.request")
-		root.SetTag(ext.SamplingPriority, -1)
+		root.SetTag(ext.ManualDrop, true)
 		root.SetBaggageItem("item", "x")
 		ctx := root.Context()
 		ctx.traceID = traceIDFrom64Bits(1)
@@ -1991,7 +1991,7 @@ func TestNonePropagator(t *testing.T) {
 		defer tracer.Stop()
 		assert.NoError(err)
 		root := tracer.StartSpan("web.request")
-		root.SetTag(ext.SamplingPriority, -1)
+		root.SetTag(ext.ManualDrop, true)
 		root.SetBaggageItem("item", "x")
 		headers := TextMapCarrier(map[string]string{})
 
@@ -2008,7 +2008,7 @@ func TestNonePropagator(t *testing.T) {
 			defer tracer.Stop()
 			assert.NoError(t, err)
 			root := tracer.StartSpan("web.request")
-			root.SetTag(ext.SamplingPriority, -1)
+			root.SetTag(ext.ManualDrop, true)
 			root.SetBaggageItem("item", "x")
 			ctx := root.Context()
 			ctx.traceID = traceIDFrom64Bits(1)
@@ -2029,7 +2029,7 @@ func TestNonePropagator(t *testing.T) {
 			assert.NoError(t, err)
 			defer tracer.Stop()
 			root := tracer.StartSpan("web.request")
-			root.SetTag(ext.SamplingPriority, -1)
+			root.SetTag(ext.ManualDrop, true)
 			root.SetBaggageItem("item", "x")
 			ctx := root.Context()
 			ctx.traceID = traceIDFrom64Bits(1)
@@ -2051,7 +2051,7 @@ func TestNonePropagator(t *testing.T) {
 			defer tracer.Stop()
 			assert.NoError(t, err)
 			root := tracer.StartSpan("web.request")
-			root.SetTag(ext.SamplingPriority, -1)
+			root.SetTag(ext.ManualDrop, true)
 			root.SetBaggageItem("item", "x")
 			ctx := root.Context()
 			ctx.traceID = traceIDFrom64Bits(1)

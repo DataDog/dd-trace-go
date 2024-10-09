@@ -267,7 +267,7 @@ func TestTracerStartSpan(t *testing.T) {
 		tracer, err := newTracer()
 		defer tracer.Stop()
 		assert.NoError(t, err)
-		span := tracer.StartSpan("web.request", Tag(ext.SamplingPriority, ext.PriorityUserKeep))
+		span := tracer.StartSpan("web.request", Tag(ext.ManualKeep, true))
 		assert.Equal(t, float64(ext.PriorityUserKeep), span.metrics[keySamplingPriority])
 		assert.Equal(t, "-4", span.context.trace.propagatingTags[keyDecisionMaker])
 	})
@@ -892,7 +892,7 @@ func TestPropagationDefaults(t *testing.T) {
 	assert.Nil(err)
 	root := tracer.StartSpan("web.request")
 	root.SetBaggageItem("x", "y")
-	root.SetTag(ext.SamplingPriority, -1)
+	root.SetTag(ext.ManualDrop, true)
 	ctx := root.Context()
 	headers := http.Header{}
 
@@ -935,7 +935,7 @@ func TestTracerSamplingPriorityPropagation(t *testing.T) {
 	tracer, err := newTracer()
 	defer tracer.Stop()
 	assert.Nil(err)
-	root := tracer.StartSpan("web.request", Tag(ext.SamplingPriority, 2))
+	root := tracer.StartSpan("web.request", Tag(ext.ManualKeep, true))
 	child := tracer.StartSpan("db.query", ChildOf(root.Context()))
 	assert.EqualValues(2, root.metrics[keySamplingPriority])
 	assert.Equal("-4", root.context.trace.propagatingTags[keyDecisionMaker])
