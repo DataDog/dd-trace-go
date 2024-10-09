@@ -1,4 +1,4 @@
-package tracing
+package httptrace
 
 import "net/http"
 
