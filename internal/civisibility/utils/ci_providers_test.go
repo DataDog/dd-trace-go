@@ -118,6 +118,16 @@ func TestTags(t *testing.T) {
 }
 
 func TestGitHubEventFile(t *testing.T) {
+	originalEventPath := os.Getenv("GITHUB_EVENT_PATH")
+	originalBaseRef := os.Getenv("GITHUB_BASE_REF")
+	defer func() {
+		os.Setenv("GITHUB_EVENT_PATH", originalEventPath)
+		os.Setenv("GITHUB_BASE_REF", originalBaseRef)
+	}()
+
+	os.Unsetenv("GITHUB_EVENT_PATH")
+	os.Unsetenv("GITHUB_BASE_REF")
+
 	checkValue := func(tags map[string]string, key, expectedValue string) {
 		if tags[key] != expectedValue {
 			t.Fatalf("Key: %s, the actual value (%s) is different to the expected value (%s)", key, tags[key], expectedValue)
