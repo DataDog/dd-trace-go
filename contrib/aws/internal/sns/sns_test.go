@@ -49,9 +49,9 @@ func TestEnrichOperation(t *testing.T) {
 				require.NotNil(t, params.MessageAttributes)
 				assert.Contains(t, params.MessageAttributes, datadogKey)
 				assert.NotNil(t, params.MessageAttributes[datadogKey].DataType)
-				assert.Equal(t, "String", *params.MessageAttributes[datadogKey].DataType)
-				assert.NotNil(t, params.MessageAttributes[datadogKey].StringValue)
-				assert.NotEmpty(t, *params.MessageAttributes[datadogKey].StringValue)
+				assert.Equal(t, "Binary", *params.MessageAttributes[datadogKey].DataType)
+				assert.NotNil(t, params.MessageAttributes[datadogKey].BinaryValue)
+				assert.NotEmpty(t, params.MessageAttributes[datadogKey].BinaryValue)
 			},
 		},
 		{
@@ -87,9 +87,9 @@ func TestEnrichOperation(t *testing.T) {
 					require.NotNil(t, entry.MessageAttributes)
 					assert.Contains(t, entry.MessageAttributes, datadogKey)
 					assert.NotNil(t, entry.MessageAttributes[datadogKey].DataType)
-					assert.Equal(t, "String", *entry.MessageAttributes[datadogKey].DataType)
-					assert.NotNil(t, entry.MessageAttributes[datadogKey].StringValue)
-					assert.NotEmpty(t, *entry.MessageAttributes[datadogKey].StringValue)
+					assert.Equal(t, "Binary", *entry.MessageAttributes[datadogKey].DataType)
+					assert.NotNil(t, entry.MessageAttributes[datadogKey].BinaryValue)
+					assert.NotEmpty(t, entry.MessageAttributes[datadogKey].BinaryValue)
 				}
 			},
 		},
@@ -158,12 +158,12 @@ func TestInjectTraceContext(t *testing.T) {
 			if tt.expectInjection {
 				assert.Contains(t, messageAttributes, datadogKey)
 				assert.NotNil(t, messageAttributes[datadogKey].DataType)
-				assert.Equal(t, "String", *messageAttributes[datadogKey].DataType)
-				assert.NotNil(t, messageAttributes[datadogKey].StringValue)
-				assert.NotEmpty(t, *messageAttributes[datadogKey].StringValue)
+				assert.Equal(t, "Binary", *messageAttributes[datadogKey].DataType)
+				assert.NotNil(t, messageAttributes[datadogKey].BinaryValue)
+				assert.NotEmpty(t, messageAttributes[datadogKey].BinaryValue)
 
 				carrier := tracer.TextMapCarrier{}
-				err := json.Unmarshal([]byte(*messageAttributes[datadogKey].StringValue), &carrier)
+				err := json.Unmarshal(messageAttributes[datadogKey].BinaryValue, &carrier)
 				assert.NoError(t, err)
 
 				extractedSpanContext, err := tracer.Extract(carrier)

@@ -508,12 +508,12 @@ func TestAppendMiddlewareSnsPublish(t *testing.T) {
 			assert.NotNil(t, tt.publishInput.MessageAttributes)
 			assert.Contains(t, tt.publishInput.MessageAttributes, "_datadog")
 			ddAttr := tt.publishInput.MessageAttributes["_datadog"]
-			assert.Equal(t, "String", *ddAttr.DataType)
-			assert.NotEmpty(t, *ddAttr.StringValue)
+			assert.Equal(t, "Binary", *ddAttr.DataType)
+			assert.NotEmpty(t, ddAttr.BinaryValue)
 
 			// Decode and verify the injected trace context
 			var traceContext map[string]string
-			err := json.Unmarshal([]byte(*ddAttr.StringValue), &traceContext)
+			err := json.Unmarshal(ddAttr.BinaryValue, &traceContext)
 			assert.NoError(t, err)
 			assert.Contains(t, traceContext, "x-datadog-trace-id")
 			assert.Contains(t, traceContext, "x-datadog-parent-id")

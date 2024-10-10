@@ -87,8 +87,10 @@ func injectTraceContext(ctx context.Context, messageAttributes map[string]types.
 		return
 	}
 
+	// Use Binary since SNS subscription filter policies fail silently with JSON
+	// strings. https://github.com/DataDog/datadog-lambda-js/pull/269
 	messageAttributes[datadogKey] = types.MessageAttributeValue{
-		DataType:    aws.String("String"),
-		StringValue: aws.String(string(jsonBytes)),
+		DataType:    aws.String("Binary"),
+		BinaryValue: jsonBytes,
 	}
 }
