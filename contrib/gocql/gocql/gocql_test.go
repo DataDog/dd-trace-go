@@ -14,7 +14,6 @@ import (
 	"testing"
 	"time"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/namingschematest"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
@@ -558,52 +557,4 @@ func TestWithCustomTag(t *testing.T) {
 		assert.Equal(t, "cassandra.batch", s0.OperationName())
 		assert.Equal(t, "value", s0.Tag("custom_tag"))
 	})
-}
-
-func TestNamingSchema(t *testing.T) {
-	genSpans := namingschematest.GenSpansFn(func(t *testing.T, serviceOverride string) []mocktracer.Span {
-		var opts []WrapOption
-		if serviceOverride != "" {
-			opts = append(opts, WithServiceName(serviceOverride))
-		}
-		mt := mocktracer.Start()
-		defer mt.Stop()
-
-		cluster := newTracedCassandraCluster(opts...)
-		session, err := cluster.CreateSession()
-		require.NoError(t, err)
-
-		stmt := "INSERT INTO trace.person (name, age, description) VALUES (?, ?, ?)"
-
-		// generate query span
-		err = session.Query(stmt, "name", 30, "description").Exec()
-		require.NoError(t, err)
-
-		// generate batch span
-		tb := session.NewBatch(gocql.UnloggedBatch)
-
-		tb.Query(stmt, "Kate", 80, "Cassandra's sister running in kubernetes")
-		tb.Query(stmt, "Lucas", 60, "Another person")
-		err = tb.ExecuteBatch(session.Session)
-		require.NoError(t, err)
-
-		return mt.FinishedSpans()
-	})
-	assertOpV0 := func(t *testing.T, spans []mocktracer.Span) {
-		require.Len(t, spans, 2)
-		assert.Equal(t, "cassandra.query", spans[0].OperationName())
-		assert.Equal(t, "cassandra.batch", spans[1].OperationName())
-	}
-	assertOpV1 := func(t *testing.T, spans []mocktracer.Span) {
-		require.Len(t, spans, 2)
-		assert.Equal(t, "cassandra.query", spans[0].OperationName())
-		assert.Equal(t, "cassandra.query", spans[1].OperationName())
-	}
-	wantServiceNameV0 := namingschematest.ServiceNameAssertions{
-		WithDefaults:             []string{"gocql.query", "gocql.query"},
-		WithDDService:            []string{"gocql.query", "gocql.query"},
-		WithDDServiceAndOverride: []string{namingschematest.TestServiceOverride, namingschematest.TestServiceOverride},
-	}
-	t.Run("ServiceName", namingschematest.NewServiceNameTest(genSpans, wantServiceNameV0))
-	t.Run("SpanName", namingschematest.NewSpanNameTest(genSpans, assertOpV0, assertOpV1))
 }

@@ -13,7 +13,6 @@ import (
 	"strings"
 	"testing"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/namingschematest"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
@@ -391,29 +390,6 @@ func TestIgnoreRequest(t *testing.T) {
 		router.ServeHTTP(httptest.NewRecorder(), r)
 		assert.Equal(t, shouldSkip, len(mt.FinishedSpans()) == 0)
 	}
-}
-
-func TestNamingSchema(t *testing.T) {
-	genSpans := namingschematest.GenSpansFn(func(t *testing.T, serviceOverride string) []mocktracer.Span {
-		var opts []Option
-		if serviceOverride != "" {
-			opts = append(opts, WithServiceName(serviceOverride))
-		}
-		mt := mocktracer.Start()
-		defer mt.Stop()
-
-		mux := chi.NewRouter().With(Middleware(opts...))
-		mux.HandleFunc("/200", func(w http.ResponseWriter, r *http.Request) {
-			_, err := w.Write([]byte("ok"))
-			require.NoError(t, err)
-		})
-		r := httptest.NewRequest("GET", "/200", nil)
-		w := httptest.NewRecorder()
-		mux.ServeHTTP(w, r)
-
-		return mt.FinishedSpans()
-	})
-	namingschematest.NewHTTPServerTest(genSpans, "chi.router")(t)
 }
 
 func TestCustomResourceName(t *testing.T) {

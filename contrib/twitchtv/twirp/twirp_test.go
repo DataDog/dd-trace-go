@@ -12,7 +12,6 @@ import (
 	"net/http"
 	"testing"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/namingschematest"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
@@ -385,45 +384,6 @@ func TestHaberdash(t *testing.T) {
 	assert.Equal(ext.SpanTypeWeb, spans[0].Tag(ext.SpanType))
 	assert.Equal(ext.SpanTypeWeb, spans[1].Tag(ext.SpanType))
 	assert.Equal(ext.SpanTypeHTTP, spans[2].Tag(ext.SpanType))
-}
-
-func TestNamingSchema(t *testing.T) {
-	genSpans := namingschematest.GenSpansFn(func(t *testing.T, serviceOverride string) []mocktracer.Span {
-		var opts []Option
-		if serviceOverride != "" {
-			opts = append(opts, WithServiceName(serviceOverride))
-		}
-		mt := mocktracer.Start()
-		defer mt.Stop()
-
-		client, cleanup := startIntegrationTestServer(t, opts...)
-		defer cleanup()
-		_, err := client.MakeHat(context.Background(), &example.Size{Inches: 6})
-		require.NoError(t, err)
-
-		return mt.FinishedSpans()
-	})
-	assertOpV0 := func(t *testing.T, spans []mocktracer.Span) {
-		require.Len(t, spans, 3)
-		assert.Equal(t, "twirp.Haberdasher", spans[0].OperationName())
-		assert.Equal(t, "twirp.handler", spans[1].OperationName())
-		assert.Equal(t, "twirp.request", spans[2].OperationName())
-	}
-	assertOpV1 := func(t *testing.T, spans []mocktracer.Span) {
-		require.Len(t, spans, 3)
-		assert.Equal(t, "twirp.server.request", spans[0].OperationName())
-		assert.Equal(t, "twirp.handler", spans[1].OperationName())
-		assert.Equal(t, "twirp.client.request", spans[2].OperationName())
-	}
-	ddService := namingschematest.TestDDService
-	serviceOverride := namingschematest.TestServiceOverride
-	wantServiceNameV0 := namingschematest.ServiceNameAssertions{
-		WithDefaults:             []string{"twirp-server", "twirp-server", "twirp-client"},
-		WithDDService:            []string{ddService, ddService, ddService},
-		WithDDServiceAndOverride: []string{serviceOverride, serviceOverride, serviceOverride},
-	}
-	t.Run("ServiceName", namingschematest.NewServiceNameTest(genSpans, wantServiceNameV0))
-	t.Run("SpanName", namingschematest.NewSpanNameTest(genSpans, assertOpV0, assertOpV1))
 }
 
 type haberdasher int32

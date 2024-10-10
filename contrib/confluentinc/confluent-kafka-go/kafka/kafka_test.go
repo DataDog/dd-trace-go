@@ -14,7 +14,6 @@ import (
 	"testing"
 	"time"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/namingschematest"
 	"gopkg.in/DataDog/dd-trace-go.v1/datastreams"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
@@ -385,19 +384,4 @@ func TestCustomTags(t *testing.T) {
 	for i, c := range "key1" {
 		assert.Equal(t, float64(c), s.Tag(fmt.Sprintf("key.%d", i)))
 	}
-}
-
-func TestNamingSchema(t *testing.T) {
-	genSpans := func(t *testing.T, serviceOverride string) []mocktracer.Span {
-		var opts []Option
-		if serviceOverride != "" {
-			opts = append(opts, WithServiceName(serviceOverride))
-		}
-		consumerAction := consumerActionFn(func(c *Consumer) (*kafka.Message, error) {
-			return c.ReadMessage(3000 * time.Millisecond)
-		})
-		spans, _ := produceThenConsume(t, consumerAction, opts, opts, false)
-		return spans
-	}
-	namingschematest.NewKafkaTest(genSpans)(t)
 }

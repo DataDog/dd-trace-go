@@ -18,8 +18,6 @@ import (
 	"testing"
 	"time"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/lists"
-	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/namingschematest"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
@@ -1026,52 +1024,6 @@ func TestCustomTag(t *testing.T) {
 	}
 }
 
-func TestServerNamingSchema(t *testing.T) {
-	genSpans := getGenSpansFn(false, true)
-	assertOpV0 := func(t *testing.T, spans []mocktracer.Span) {
-		require.Len(t, spans, 4)
-		for i := 0; i < 4; i++ {
-			assert.Equal(t, "grpc.server", spans[i].OperationName())
-		}
-	}
-	assertOpV1 := func(t *testing.T, spans []mocktracer.Span) {
-		require.Len(t, spans, 4)
-		for i := 0; i < 4; i++ {
-			assert.Equal(t, "grpc.server.request", spans[i].OperationName())
-		}
-	}
-	wantServiceNameV0 := namingschematest.ServiceNameAssertions{
-		WithDefaults:             lists.RepeatString("grpc.server", 4),
-		WithDDService:            lists.RepeatString(namingschematest.TestDDService, 4),
-		WithDDServiceAndOverride: lists.RepeatString(namingschematest.TestServiceOverride, 4),
-	}
-	t.Run("ServiceName", namingschematest.NewServiceNameTest(genSpans, wantServiceNameV0))
-	t.Run("SpanName", namingschematest.NewSpanNameTest(genSpans, assertOpV0, assertOpV1))
-}
-
-func TestClientNamingSchema(t *testing.T) {
-	genSpans := getGenSpansFn(true, false)
-	assertOpV0 := func(t *testing.T, spans []mocktracer.Span) {
-		require.Len(t, spans, 4)
-		for i := 0; i < 4; i++ {
-			assert.Equal(t, "grpc.client", spans[i].OperationName())
-		}
-	}
-	assertOpV1 := func(t *testing.T, spans []mocktracer.Span) {
-		require.Len(t, spans, 4)
-		for i := 0; i < 4; i++ {
-			assert.Equal(t, "grpc.client.request", spans[i].OperationName())
-		}
-	}
-	wantServiceNameV0 := namingschematest.ServiceNameAssertions{
-		WithDefaults:             lists.RepeatString("grpc.client", 4),
-		WithDDService:            lists.RepeatString("grpc.client", 4),
-		WithDDServiceAndOverride: lists.RepeatString(namingschematest.TestServiceOverride, 4),
-	}
-	t.Run("ServiceName", namingschematest.NewServiceNameTest(genSpans, wantServiceNameV0))
-	t.Run("SpanName", namingschematest.NewSpanNameTest(genSpans, assertOpV0, assertOpV1))
-}
-
 func TestWithErrorDetailTags(t *testing.T) {
 	mt := mocktracer.Start()
 	defer mt.Stop()
@@ -1109,55 +1061,6 @@ func TestWithErrorDetailTags(t *testing.T) {
 		assert.Equal(t, c.details2, serverSpan.Tag("grpc.status_details._2"))
 		rig.Close()
 		mt.Reset()
-	}
-}
-
-func getGenSpansFn(traceClient, traceServer bool) namingschematest.GenSpansFn {
-	return func(t *testing.T, serviceOverride string) []mocktracer.Span {
-		var opts []Option
-		if serviceOverride != "" {
-			opts = append(opts, WithServiceName(serviceOverride))
-		}
-		// exclude the grpc.message spans as they are not affected by naming schema
-		opts = append(opts, WithStreamMessages(false))
-		mt := mocktracer.Start()
-		defer mt.Stop()
-
-		var serverInterceptors []grpc.ServerOption
-		if traceServer {
-			serverInterceptors = append(serverInterceptors,
-				grpc.UnaryInterceptor(UnaryServerInterceptor(opts...)),
-				grpc.StreamInterceptor(StreamServerInterceptor(opts...)),
-				grpc.StatsHandler(NewServerStatsHandler(opts...)),
-			)
-		}
-		clientInterceptors := []grpc.DialOption{grpc.WithInsecure()}
-		if traceClient {
-			clientInterceptors = append(clientInterceptors,
-				grpc.WithUnaryInterceptor(UnaryClientInterceptor(opts...)),
-				grpc.WithStreamInterceptor(StreamClientInterceptor(opts...)),
-				grpc.WithStatsHandler(NewClientStatsHandler(opts...)),
-			)
-		}
-		rig, err := newRigWithInterceptors(serverInterceptors, clientInterceptors)
-		require.NoError(t, err)
-		defer rig.Close()
-		_, err = rig.client.Ping(context.Background(), &FixtureRequest{Name: "pass"})
-		require.NoError(t, err)
-
-		stream, err := rig.client.StreamPing(context.Background())
-		require.NoError(t, err)
-		err = stream.Send(&FixtureRequest{Name: "break"})
-		require.NoError(t, err)
-		_, err = stream.Recv()
-		require.NoError(t, err)
-		err = stream.CloseSend()
-		require.NoError(t, err)
-		// to flush the spans
-		_, _ = stream.Recv()
-
-		waitForSpans(mt, 4)
-		return mt.FinishedSpans()
 	}
 }
 

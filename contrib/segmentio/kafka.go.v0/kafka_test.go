@@ -11,7 +11,6 @@ import (
 	"testing"
 	"time"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/namingschematest"
 	"gopkg.in/DataDog/dd-trace-go.v1/datastreams"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
@@ -274,46 +273,4 @@ func TestFetchMessageFunctional(t *testing.T) {
 	expected, _ = datastreams.PathwayFromContext(expectedCtx)
 	assert.NotEqual(t, expected.GetHash(), 0)
 	assert.Equal(t, expected.GetHash(), p.GetHash())
-}
-
-func TestNamingSchema(t *testing.T) {
-	genSpans := func(t *testing.T, serviceOverride string) []mocktracer.Span {
-		var opts []Option
-		if serviceOverride != "" {
-			opts = append(opts, WithServiceName(serviceOverride))
-		}
-
-		mt := mocktracer.Start()
-		defer mt.Stop()
-
-		messagesToWrite := []kafka.Message{
-			{
-				Key:   []byte("key1"),
-				Value: []byte("value1"),
-			},
-		}
-
-		spans, _ := genIntegrationTestSpans(
-			t,
-			mt,
-			func(t *testing.T, w *Writer) {
-				err := w.WriteMessages(context.Background(), messagesToWrite...)
-				require.NoError(t, err, "Expected to write message to topic")
-			},
-			func(t *testing.T, r *Reader) {
-				ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-				defer cancel()
-				readMsg, err := r.FetchMessage(ctx)
-				require.NoError(t, err, "Expected to consume message")
-				assert.Equal(t, messagesToWrite[0].Value, readMsg.Value, "Values should be equal")
-
-				err = r.CommitMessages(context.Background(), readMsg)
-				assert.NoError(t, err, "Expected CommitMessages to not return an error")
-			},
-			opts,
-			opts,
-		)
-		return spans
-	}
-	namingschematest.NewKafkaTest(genSpans)(t)
 }
