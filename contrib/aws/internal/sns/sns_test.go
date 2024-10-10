@@ -26,7 +26,7 @@ func TestEnrichOperation(t *testing.T) {
 		name      string
 		operation string
 		input     middleware.InitializeInput
-		setup     func(context.Context) context.Context
+		setup     func(context.Context) tracer.Span
 		check     func(*testing.T, middleware.InitializeInput)
 	}{
 		{
@@ -38,9 +38,9 @@ func TestEnrichOperation(t *testing.T) {
 					TopicArn: aws.String("arn:aws:sns:us-east-1:123456789012:test-topic"),
 				},
 			},
-			setup: func(ctx context.Context) context.Context {
-				_, ctx = tracer.StartSpanFromContext(ctx, "test-span")
-				return ctx
+			setup: func(ctx context.Context) tracer.Span {
+				span, _ := tracer.StartSpanFromContext(ctx, "test-span")
+				return span
 			},
 			check: func(t *testing.T, in middleware.InitializeInput) {
 				params, ok := in.Parameters.(*sns.PublishInput)
@@ -72,9 +72,9 @@ func TestEnrichOperation(t *testing.T) {
 					},
 				},
 			},
-			setup: func(ctx context.Context) context.Context {
-				_, ctx = tracer.StartSpanFromContext(ctx, "test-span")
-				return ctx
+			setup: func(ctx context.Context) tracer.Span {
+				span, _ := tracer.StartSpanFromContext(ctx, "test-span")
+				return span
 			},
 			check: func(t *testing.T, in middleware.InitializeInput) {
 				params, ok := in.Parameters.(*sns.PublishBatchInput)
@@ -101,11 +101,9 @@ func TestEnrichOperation(t *testing.T) {
 			defer mt.Stop()
 
 			ctx := context.Background()
-			if tt.setup != nil {
-				ctx = tt.setup(ctx)
-			}
+			span := tt.setup(ctx)
 
-			EnrichOperation(ctx, tt.input, tt.operation)
+			EnrichOperation(span, tt.input, tt.operation)
 
 			if tt.check != nil {
 				tt.check(t, tt.input)
@@ -142,8 +140,7 @@ func TestInjectTraceContext(t *testing.T) {
 			mt := mocktracer.Start()
 			defer mt.Stop()
 
-			ctx := context.Background()
-			span, ctx := tracer.StartSpanFromContext(ctx, "test-span")
+			span := tracer.StartSpan("test-span")
 
 			messageAttributes := make(map[string]types.MessageAttributeValue)
 			for i := 0; i < tt.existingAttributes; i++ {
@@ -153,7 +150,9 @@ func TestInjectTraceContext(t *testing.T) {
 				}
 			}
 
-			injectTraceContext(ctx, messageAttributes)
+			traceContext, err := getTraceContextBytes(span)
+			assert.NoError(t, err)
+			injectTraceContext(traceContext, messageAttributes)
 
 			if tt.expectInjection {
 				assert.Contains(t, messageAttributes, datadogKey)

@@ -6,7 +6,6 @@
 package sns
 
 import (
-	"context"
 	"encoding/json"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/sns"
@@ -21,19 +20,25 @@ const (
 	maxMessageAttributes = 10
 )
 
-func EnrichOperation(ctx context.Context, in middleware.InitializeInput, operation string) {
+func EnrichOperation(span tracer.Span, in middleware.InitializeInput, operation string) {
 	switch operation {
 	case "Publish":
-		handlePublish(ctx, in)
+		handlePublish(span, in)
 	case "PublishBatch":
-		handlePublishBatch(ctx, in)
+		handlePublishBatch(span, in)
 	}
 }
 
-func handlePublish(ctx context.Context, in middleware.InitializeInput) {
+func handlePublish(span tracer.Span, in middleware.InitializeInput) {
 	params, ok := in.Parameters.(*sns.PublishInput)
 	if !ok {
 		log.Debug("Unable to read PublishInput params")
+		return
+	}
+
+	traceContext, err := getTraceContextBytes(span)
+	if err != nil {
+		log.Debug("Unable to get trace context: %s", err.Error())
 		return
 	}
 
@@ -41,13 +46,19 @@ func handlePublish(ctx context.Context, in middleware.InitializeInput) {
 		params.MessageAttributes = make(map[string]types.MessageAttributeValue)
 	}
 
-	injectTraceContext(ctx, params.MessageAttributes)
+	injectTraceContext(traceContext, params.MessageAttributes)
 }
 
-func handlePublishBatch(ctx context.Context, in middleware.InitializeInput) {
+func handlePublishBatch(span tracer.Span, in middleware.InitializeInput) {
 	params, ok := in.Parameters.(*sns.PublishBatchInput)
 	if !ok {
 		log.Debug("Unable to read PublishBatch params")
+		return
+	}
+
+	traceContext, err := getTraceContextBytes(span)
+	if err != nil {
+		log.Debug("Unable to get trace context: %s", err.Error())
 		return
 	}
 
@@ -55,35 +66,31 @@ func handlePublishBatch(ctx context.Context, in middleware.InitializeInput) {
 		if params.PublishBatchRequestEntries[i].MessageAttributes == nil {
 			params.PublishBatchRequestEntries[i].MessageAttributes = make(map[string]types.MessageAttributeValue)
 		}
-		injectTraceContext(ctx, params.PublishBatchRequestEntries[i].MessageAttributes)
+		injectTraceContext(traceContext, params.PublishBatchRequestEntries[i].MessageAttributes)
 	}
 }
 
-func injectTraceContext(ctx context.Context, messageAttributes map[string]types.MessageAttributeValue) {
-	span, ok := tracer.SpanFromContext(ctx)
-	if !ok || span == nil {
-		log.Debug("Unable to find span from context")
-		return
+func getTraceContextBytes(span tracer.Span) ([]byte, error) {
+	carrier := tracer.TextMapCarrier{}
+	err := tracer.Inject(span.Context(), carrier)
+	if err != nil {
+		return nil, err
 	}
 
+	jsonBytes, err := json.Marshal(carrier)
+	if err != nil {
+		return nil, err
+	}
+
+	return jsonBytes, nil
+}
+
+func injectTraceContext(jsonBytes []byte, messageAttributes map[string]types.MessageAttributeValue) {
 	// SNS only allows a maximum of 10 message attributes.
 	// https://docs.aws.amazon.com/sns/latest/dg/sns-message-attributes.html
 	// Only inject if there's room.
 	if len(messageAttributes) >= maxMessageAttributes {
 		log.Info("Cannot inject trace context: message already has maximum allowed attributes")
-		return
-	}
-
-	carrier := tracer.TextMapCarrier{}
-	err := tracer.Inject(span.Context(), carrier)
-	if err != nil {
-		log.Debug("Unable to inject trace context: %s", err.Error())
-		return
-	}
-
-	jsonBytes, err := json.Marshal(carrier)
-	if err != nil {
-		log.Debug("Unable to marshal trace context: %s", err.Error())
 		return
 	}
 

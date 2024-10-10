@@ -6,7 +6,6 @@
 package sqs
 
 import (
-	"context"
 	"encoding/json"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
@@ -21,19 +20,25 @@ const (
 	maxMessageAttributes = 10
 )
 
-func EnrichOperation(ctx context.Context, in middleware.InitializeInput, operation string) {
+func EnrichOperation(span tracer.Span, in middleware.InitializeInput, operation string) {
 	switch operation {
 	case "SendMessage":
-		handleSendMessage(ctx, in)
+		handleSendMessage(span, in)
 	case "SendMessageBatch":
-		handleSendMessageBatch(ctx, in)
+		handleSendMessageBatch(span, in)
 	}
 }
 
-func handleSendMessage(ctx context.Context, in middleware.InitializeInput) {
+func handleSendMessage(span tracer.Span, in middleware.InitializeInput) {
 	params, ok := in.Parameters.(*sqs.SendMessageInput)
 	if !ok {
 		log.Debug("Unable to read SendMessage params")
+		return
+	}
+
+	traceContext, err := getTraceContextBytes(span)
+	if err != nil {
+		log.Debug("Unable to get trace context: %s", err.Error())
 		return
 	}
 
@@ -41,13 +46,19 @@ func handleSendMessage(ctx context.Context, in middleware.InitializeInput) {
 		params.MessageAttributes = make(map[string]types.MessageAttributeValue)
 	}
 
-	injectTraceContext(ctx, params.MessageAttributes)
+	injectTraceContext(traceContext, params.MessageAttributes)
 }
 
-func handleSendMessageBatch(ctx context.Context, in middleware.InitializeInput) {
+func handleSendMessageBatch(span tracer.Span, in middleware.InitializeInput) {
 	params, ok := in.Parameters.(*sqs.SendMessageBatchInput)
 	if !ok {
 		log.Debug("Unable to read SendMessageBatch params")
+		return
+	}
+
+	traceContext, err := getTraceContextBytes(span)
+	if err != nil {
+		log.Debug("Unable to get trace context: %s", err.Error())
 		return
 	}
 
@@ -55,35 +66,31 @@ func handleSendMessageBatch(ctx context.Context, in middleware.InitializeInput) 
 		if params.Entries[i].MessageAttributes == nil {
 			params.Entries[i].MessageAttributes = make(map[string]types.MessageAttributeValue)
 		}
-		injectTraceContext(ctx, params.Entries[i].MessageAttributes)
+		injectTraceContext(traceContext, params.Entries[i].MessageAttributes)
 	}
 }
 
-func injectTraceContext(ctx context.Context, messageAttributes map[string]types.MessageAttributeValue) {
-	span, ok := tracer.SpanFromContext(ctx)
-	if !ok || span == nil {
-		log.Debug("Unable to find span from context")
-		return
+func getTraceContextBytes(span tracer.Span) ([]byte, error) {
+	carrier := tracer.TextMapCarrier{}
+	err := tracer.Inject(span.Context(), carrier)
+	if err != nil {
+		return nil, err
 	}
 
+	jsonBytes, err := json.Marshal(carrier)
+	if err != nil {
+		return nil, err
+	}
+
+	return jsonBytes, nil
+}
+
+func injectTraceContext(jsonBytes []byte, messageAttributes map[string]types.MessageAttributeValue) {
 	// SQS only allows a maximum of 10 message attributes.
 	// https://docs.aws.amazon.com/AWSSimpleQueueService/latest/SQSDeveloperGuide/sqs-message-metadata.html#sqs-message-attributes
 	// Only inject if there's room.
 	if len(messageAttributes) >= maxMessageAttributes {
 		log.Info("Cannot inject trace context: message already has maximum allowed attributes")
-		return
-	}
-
-	carrier := tracer.TextMapCarrier{}
-	err := tracer.Inject(span.Context(), carrier)
-	if err != nil {
-		log.Debug("Unable to inject trace context: %s", err.Error())
-		return
-	}
-
-	jsonBytes, err := json.Marshal(carrier)
-	if err != nil {
-		log.Debug("Unable to marshal trace context: %s", err.Error())
 		return
 	}
 

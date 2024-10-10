@@ -6,7 +6,6 @@
 package eventbridge
 
 import (
-	"context"
 	"encoding/json"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/eventbridge"
@@ -25,14 +24,14 @@ const (
 	maxSizeBytes    = 256 * 1024 // 256 KB
 )
 
-func EnrichOperation(ctx context.Context, in middleware.InitializeInput, operation string) {
+func EnrichOperation(span tracer.Span, in middleware.InitializeInput, operation string) {
 	switch operation {
 	case "PutEvents":
-		handlePutEvents(ctx, in)
+		handlePutEvents(span, in)
 	}
 }
 
-func handlePutEvents(ctx context.Context, in middleware.InitializeInput) {
+func handlePutEvents(span tracer.Span, in middleware.InitializeInput) {
 	params, ok := in.Parameters.(*eventbridge.PutEventsInput)
 	if !ok {
 		log.Debug("Unable to read PutEvents params")
@@ -40,18 +39,12 @@ func handlePutEvents(ctx context.Context, in middleware.InitializeInput) {
 	}
 
 	for i := range params.Entries {
-		injectTraceContext(ctx, &params.Entries[i])
+		injectTraceContext(span, &params.Entries[i])
 	}
 }
 
-func injectTraceContext(ctx context.Context, entryPtr *types.PutEventsRequestEntry) {
+func injectTraceContext(span tracer.Span, entryPtr *types.PutEventsRequestEntry) {
 	if entryPtr == nil {
-		return
-	}
-
-	span, ok := tracer.SpanFromContext(ctx)
-	if !ok || span == nil {
-		log.Debug("Unable to find span from context")
 		return
 	}
 

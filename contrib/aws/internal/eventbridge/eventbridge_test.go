@@ -26,25 +26,24 @@ func TestEnrichOperation(t *testing.T) {
 	mt := mocktracer.Start()
 	defer mt.Stop()
 
-	ctx := context.Background()
-	_, ctx = tracer.StartSpanFromContext(ctx, "test-span")
+	span := tracer.StartSpan("test-span")
 
 	input := middleware.InitializeInput{
 		Parameters: &eventbridge.PutEventsInput{
 			Entries: []types.PutEventsRequestEntry{
 				{
-					Detail:       aws.String(`{"key": "value"}`),
+					Detail:       aws.String(`{"@123": "value", "_foo": "bar"}`),
 					EventBusName: aws.String("test-bus"),
 				},
 				{
-					Detail:       aws.String(`{"another": "data"}`),
+					Detail:       aws.String(`{"@123": "data", "_foo": "bar"}`),
 					EventBusName: aws.String("test-bus-2"),
 				},
 			},
 		},
 	}
 
-	EnrichOperation(ctx, input, "PutEvents")
+	EnrichOperation(span, input, "PutEvents")
 
 	params, ok := input.Parameters.(*eventbridge.PutEventsInput)
 	require.True(t, ok)
@@ -55,6 +54,8 @@ func TestEnrichOperation(t *testing.T) {
 		err := json.Unmarshal([]byte(*entry.Detail), &detail)
 		require.NoError(t, err)
 
+		assert.Contains(t, detail, "@123") // make sure user data still exists
+		assert.Contains(t, detail, "_foo")
 		assert.Contains(t, detail, datadogKey)
 		ddData, ok := detail[datadogKey].(map[string]interface{})
 		require.True(t, ok)
@@ -109,7 +110,7 @@ func TestInjectTraceContext(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			injectTraceContext(ctx, &tt.entry)
+			injectTraceContext(span, &tt.entry)
 			tt.expected(t, &tt.entry)
 
 			var detail map[string]interface{}
@@ -147,8 +148,7 @@ func TestInjectTraceContextSizeLimit(t *testing.T) {
 	mt := mocktracer.Start()
 	defer mt.Stop()
 
-	ctx := context.Background()
-	_, ctx = tracer.StartSpanFromContext(ctx, "test-span")
+	span := tracer.StartSpan("test-span")
 
 	tests := []struct {
 		name     string
@@ -187,7 +187,7 @@ func TestInjectTraceContextSizeLimit(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			injectTraceContext(ctx, &tt.entry)
+			injectTraceContext(span, &tt.entry)
 			tt.expected(t, &tt.entry)
 		})
 	}

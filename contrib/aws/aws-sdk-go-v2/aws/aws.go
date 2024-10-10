@@ -112,11 +112,11 @@ func (mw *traceMiddleware) startTraceMiddleware(stack *middleware.Stack) error {
 		// Inject trace context
 		switch serviceID {
 		case "SQS":
-			sqsTracer.EnrichOperation(spanctx, in, operation)
+			sqsTracer.EnrichOperation(span, in, operation)
 		case "SNS":
-			snsTracer.EnrichOperation(spanctx, in, operation)
+			snsTracer.EnrichOperation(span, in, operation)
 		case "EventBridge":
-			eventBridgeTracer.EnrichOperation(spanctx, in, operation)
+			eventBridgeTracer.EnrichOperation(span, in, operation)
 		}
 
 		// Handle initialize and continue through the middleware chain.
