@@ -58,7 +58,7 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/urfave/negroni/v2 v2.0.0-20240913143645-b075389b5aaf
 	github.com/DataDog/dd-trace-go/contrib/valyala/fasthttp/v2 v2.0.0-20240913143645-b075389b5aaf
 	github.com/DataDog/dd-trace-go/instrumentation/testutils/grpc/v2 v2.0.0-20240917105006-8a0def8db5f4
-	github.com/DataDog/dd-trace-go/v2 v2.0.0-20241003125619-b42729d30abb
+	github.com/DataDog/dd-trace-go/v2 v2.0.0-20241010201220-3f96da41349c
 	github.com/DataDog/gostackparse v0.7.0
 	github.com/IBM/sarama v1.40.0
 	github.com/Shopify/sarama v1.38.1

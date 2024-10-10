@@ -16,6 +16,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	v2 "github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
+	v1ext "gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 
@@ -188,7 +189,7 @@ func TestSpanSetTag(t *testing.T) {
 		{key: ext.Error, value: false, want: int32(0), altKey: ext.MapSpanError},
 		{key: ext.Error, value: nil, want: int32(0), altKey: ext.MapSpanError},
 		{key: ext.Error, value: "something else", want: int32(1), altKey: ext.MapSpanError},
-		{key: ext.SamplingPriority, value: 2, want: float64(2), altKey: keySamplingPriority},
+		{key: v1ext.SamplingPriority, value: 2, want: float64(2), altKey: keySamplingPriority},
 		{key: ext.AnalyticsEvent, value: true, want: 1.0},
 		{key: ext.AnalyticsEvent, value: false, want: 0.0},
 		{key: ext.ManualDrop, value: true, want: -1.0},

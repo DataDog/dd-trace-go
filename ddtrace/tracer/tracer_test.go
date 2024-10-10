@@ -131,7 +131,7 @@ func TestTracerStartSpan(t *testing.T) {
 	t.Run("priority", func(t *testing.T) {
 		tracer := newTracer()
 		defer tracer.Stop()
-		span := tracer.StartSpan("web.request", Tag(ext.SamplingPriority, ext.PriorityUserKeep)).(internal.SpanV2Adapter).Span
+		span := tracer.StartSpan("web.request", Tag(ext.ManualKeep, true)).(internal.SpanV2Adapter).Span
 		sm := span.AsMap()
 		assert.Equal(t, float64(ext.PriorityUserKeep), sm[keySamplingPriority])
 	})
@@ -371,7 +371,7 @@ func TestPropagationDefaults(t *testing.T) {
 	defer tracer.Stop()
 	root := tracer.StartSpan("web.request")
 	root.SetBaggageItem("x", "y")
-	root.SetTag(ext.SamplingPriority, -1)
+	root.SetTag(ext.ManualDrop, true)
 	ctx := root.Context().(internal.SpanContextV2Adapter)
 	headers := http.Header{}
 
