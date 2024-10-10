@@ -22,23 +22,6 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
 
-type testCarrier struct {
-	m map[string]string
-}
-
-func (c *testCarrier) Set(key, val string) {
-	c.m[key] = val
-}
-
-func (c *testCarrier) ForeachKey(handler func(key, val string) error) error {
-	for k, v := range c.m {
-		if err := handler(k, v); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
 func TestEnrichOperation(t *testing.T) {
 	mt := mocktracer.Start()
 	defer mt.Stop()
@@ -145,11 +128,10 @@ func TestInjectTraceContext(t *testing.T) {
 			assert.NoError(t, err)
 			assert.Greater(t, startTime, int64(0))
 
-			var carrier testCarrier
-			carrier.m = make(map[string]string)
+			carrier := tracer.TextMapCarrier{}
 			for k, v := range ddData {
 				if s, ok := v.(string); ok {
-					carrier.m[k] = s
+					carrier[k] = s
 				}
 			}
 

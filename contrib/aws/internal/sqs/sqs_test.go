@@ -21,23 +21,6 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
 
-type testCarrier struct {
-	m map[string]string
-}
-
-func (c *testCarrier) Set(key, val string) {
-	c.m[key] = val
-}
-
-func (c *testCarrier) ForeachKey(handler func(key, val string) error) error {
-	for k, v := range c.m {
-		if err := handler(k, v); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
 func TestEnrichOperation(t *testing.T) {
 	tests := []struct {
 		name      string
@@ -183,11 +166,11 @@ func TestInjectTraceContext(t *testing.T) {
 				assert.NotNil(t, messageAttributes[datadogKey].StringValue)
 				assert.NotEmpty(t, *messageAttributes[datadogKey].StringValue)
 
-				var carrier testCarrier
-				err := json.Unmarshal([]byte(*messageAttributes[datadogKey].StringValue), &carrier.m)
+				carrier := tracer.TextMapCarrier{}
+				err := json.Unmarshal([]byte(*messageAttributes[datadogKey].StringValue), &carrier)
 				assert.NoError(t, err)
 
-				extractedSpanContext, err := tracer.Extract(&carrier)
+				extractedSpanContext, err := tracer.Extract(carrier)
 				assert.NoError(t, err)
 				assert.Equal(t, span.Context().TraceID(), extractedSpanContext.TraceID())
 				assert.Equal(t, span.Context().SpanID(), extractedSpanContext.SpanID())

@@ -21,12 +21,6 @@ const (
 	maxMessageAttributes = 10
 )
 
-type messageCarrier map[string]string
-
-func (carrier messageCarrier) Set(key, val string) {
-	carrier[key] = val
-}
-
 func EnrichOperation(ctx context.Context, in middleware.InitializeInput, operation string) {
 	switch operation {
 	case "SendMessage":
@@ -58,11 +52,10 @@ func handleSendMessageBatch(ctx context.Context, in middleware.InitializeInput) 
 	}
 
 	for i := range params.Entries {
-		entryPtr := &params.Entries[i]
-		if entryPtr.MessageAttributes == nil {
-			entryPtr.MessageAttributes = make(map[string]types.MessageAttributeValue)
+		if params.Entries[i].MessageAttributes == nil {
+			params.Entries[i].MessageAttributes = make(map[string]types.MessageAttributeValue)
 		}
-		injectTraceContext(ctx, entryPtr.MessageAttributes)
+		injectTraceContext(ctx, params.Entries[i].MessageAttributes)
 	}
 }
 
@@ -81,7 +74,7 @@ func injectTraceContext(ctx context.Context, messageAttributes map[string]types.
 		return
 	}
 
-	carrier := make(messageCarrier)
+	carrier := tracer.TextMapCarrier{}
 	err := tracer.Inject(span.Context(), carrier)
 	if err != nil {
 		log.Debug("Unable to inject trace context: %s", err.Error())

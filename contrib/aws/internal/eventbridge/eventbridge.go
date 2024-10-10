@@ -25,12 +25,6 @@ const (
 	maxSizeBytes    = 256 * 1024 // 256 KB
 )
 
-type messageCarrier map[string]string
-
-func (carrier messageCarrier) Set(key, val string) {
-	carrier[key] = val
-}
-
 func EnrichOperation(ctx context.Context, in middleware.InitializeInput, operation string) {
 	switch operation {
 	case "PutEvents":
@@ -61,7 +55,7 @@ func injectTraceContext(ctx context.Context, entryPtr *types.PutEventsRequestEnt
 		return
 	}
 
-	carrier := make(messageCarrier)
+	carrier := tracer.TextMapCarrier{}
 	err := tracer.Inject(span.Context(), carrier)
 	if err != nil {
 		log.Debug("Unable to inject trace context: %s", err)
