@@ -408,6 +408,38 @@ func extractGithubActions() map[string]string {
 		tags[constants.CIEnvVars] = string(jsonString)
 	}
 
+	// Extract PR information from the github event json file
+	eventFilePath := os.Getenv("GITHUB_EVENT_PATH")
+	if stats, ok := os.Stat(eventFilePath); ok == nil && !stats.IsDir() {
+		if eventFile, err := os.Open(eventFilePath); err == nil {
+			defer eventFile.Close()
+
+			var eventJson struct {
+				PullRequest struct {
+					Base struct {
+						Sha string `json:"sha"`
+						Ref string `json:"ref"`
+					} `json:"base"`
+					Head struct {
+						Sha string `json:"sha"`
+					} `json:"head"`
+				} `json:"pull_request"`
+			}
+
+			eventDecoder := json.NewDecoder(eventFile)
+			if eventDecoder.Decode(&eventJson) == nil {
+				tags[constants.GitHeadCommit] = eventJson.PullRequest.Head.Sha
+				tags[constants.GitPrBaseCommit] = eventJson.PullRequest.Base.Sha
+				tags[constants.GitPrBaseBranch] = eventJson.PullRequest.Base.Ref
+			}
+		}
+	}
+
+	// Fallback if GitPrBaseBranch is not set
+	if tmpVal, ok := tags[constants.GitPrBaseBranch]; !ok || tmpVal == "" {
+		tags[constants.GitPrBaseBranch] = os.Getenv("GITHUB_BASE_REF")
+	}
+
 	return tags
 }
 
