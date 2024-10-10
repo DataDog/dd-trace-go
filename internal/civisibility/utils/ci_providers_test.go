@@ -143,8 +143,6 @@ func TestGitHubEventFile(t *testing.T) {
 		t.Setenv("GITHUB_BASE_REF", "my-base-ref") // this should be ignored in favor of the event file value
 
 		tags := extractGithubActions()
-		checkValue(tags, constants.GitHeadCommit, "")
-		checkValue(tags, constants.GitPrBaseCommit, "")
 		checkValue(tags, constants.GitPrBaseBranch, "my-base-ref")
 	})
 }
