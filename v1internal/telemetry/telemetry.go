@@ -10,20 +10,10 @@ package telemetry
 
 import "github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 
-// Integrations returns which integrations are tracked by telemetry.
-// This function is not intended for use by external consumers, no API stability is guaranteed.
-func Integrations() []Integration {
-	return telemetry.Integrations()
-}
-
-// LoadIntegration notifies telemetry that an integration is being used.
-// This function is not intended for use by external consumers, no API stability is guaranteed.
-func LoadIntegration(name string) {
-	if Disabled() {
-		return
-	}
-	telemetry.LoadIntegration(name)
-}
+// Namespace describes an APM product to distinguish telemetry coming from
+// different products used by the same application
+// This type is not intended for use by external consumers, no API stability is guaranteed.
+type Namespace = telemetry.Namespace
 
 func Count(namespace Namespace, name string, value float64, tags []string, common bool) {
 	telemetry.GlobalClient.Count(namespace, name, value, tags, common)
