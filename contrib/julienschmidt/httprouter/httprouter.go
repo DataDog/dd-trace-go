@@ -30,8 +30,11 @@ func New(opts ...RouterOption) *Router {
 
 // ServeHTTP implements http.Handler.
 func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
-	tw, treq, afterHandle := tracing.BeforeHandle(r.config, r.Router, wrapRouter, w, req)
+	tw, treq, afterHandle, handled := tracing.BeforeHandle(r.config, r.Router, wrapRouter, w, req)
 	defer afterHandle()
+	if handled {
+		return
+	}
 	r.Router.ServeHTTP(tw, treq)
 }
 

@@ -26,8 +26,11 @@ type ServeConfig = httptrace.ServeConfig
 // TraceAndServe serves the handler h using the given ResponseWriter and Request, applying tracing
 // according to the specified config.
 func TraceAndServe(h http.Handler, w http.ResponseWriter, r *http.Request, cfg *ServeConfig) {
-	tw, tr, afterHandle := httptrace.BeforeHandle(cfg, w, r)
+	tw, tr, afterHandle, handled := httptrace.BeforeHandle(cfg, w, r)
 	defer afterHandle()
 
+	if handled {
+		return
+	}
 	h.ServeHTTP(tw, tr)
 }

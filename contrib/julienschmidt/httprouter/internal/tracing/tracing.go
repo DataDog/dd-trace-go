@@ -1,12 +1,13 @@
 package tracing
 
 import (
-	httptrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/httptrace"
+	"net/http"
+	"strings"
+
+	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/httptrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/options"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
-	"net/http"
-	"strings"
 )
 
 const componentName = "julienschmidt/httprouter"
@@ -25,7 +26,7 @@ type Param interface {
 	GetValue() string
 }
 
-func BeforeHandle[T any, WT Router](cfg *Config, router T, wrapRouter func(T) WT, w http.ResponseWriter, req *http.Request) (http.ResponseWriter, *http.Request, func()) {
+func BeforeHandle[T any, WT Router](cfg *Config, router T, wrapRouter func(T) WT, w http.ResponseWriter, req *http.Request) (http.ResponseWriter, *http.Request, func(), bool) {
 	wRouter := wrapRouter(router)
 	// get the resource associated to this request
 	route := req.URL.Path

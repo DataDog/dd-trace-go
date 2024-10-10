@@ -26,8 +26,6 @@ func Hello(w http.ResponseWriter, _ *http.Request, ps httprouter.Params) {
 }
 
 func Example() {
-	httprouter.New()
-
 	router := httptrace.New()
 	router.GET("/", Index)
 	router.GET("/hello/:name", Hello)

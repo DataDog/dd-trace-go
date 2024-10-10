@@ -1,6 +1,8 @@
 package httptrace
 
 import (
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/httpsec"
 	"net/http"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/options"
@@ -30,7 +32,7 @@ type ServeConfig struct {
 	SpanOpts []ddtrace.StartSpanOption
 }
 
-func BeforeHandle(cfg *ServeConfig, w http.ResponseWriter, r *http.Request) (http.ResponseWriter, *http.Request, func()) {
+func BeforeHandle(cfg *ServeConfig, w http.ResponseWriter, r *http.Request) (http.ResponseWriter, *http.Request, func(), bool) {
 	if cfg == nil {
 		cfg = new(ServeConfig)
 	}
@@ -46,13 +48,22 @@ func BeforeHandle(cfg *ServeConfig, w http.ResponseWriter, r *http.Request) (htt
 	}
 	span, ctx := StartRequestSpan(r, opts...)
 	rw, ddrw := wrapResponseWriter(w)
-	afterHandle := func() {
+	rt := r.WithContext(ctx)
+
+	closeSpan := func() {
 		FinishRequestSpan(span, ddrw.status, cfg.FinishOpts...)
 	}
-
-	// TODO: find a way to run this
-	//if appsec.Enabled() {
-	//	h = httpsec.WrapHandler(h, span, cfg.RouteParams, nil)
-	//}
-	return rw, r.WithContext(ctx), afterHandle
+	afterHandle := closeSpan
+	handled := false
+	if appsec.Enabled() {
+		secW, secReq, secAfterHandle, secHandled := httpsec.BeforeHandle(rw, rt, span, cfg.RouteParams, nil)
+		afterHandle = func() {
+			secAfterHandle()
+			closeSpan()
+		}
+		rw = secW
+		rt = secReq
+		handled = secHandled
+	}
+	return rw, rt, afterHandle, handled
 }
