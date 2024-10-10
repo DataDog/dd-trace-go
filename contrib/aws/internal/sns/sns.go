@@ -36,7 +36,7 @@ func handlePublish(span tracer.Span, in middleware.InitializeInput) {
 		return
 	}
 
-	traceContext, err := getTraceContextBytes(span)
+	traceContext, err := getTraceContext(span)
 	if err != nil {
 		log.Debug("Unable to get trace context: %s", err.Error())
 		return
@@ -56,7 +56,7 @@ func handlePublishBatch(span tracer.Span, in middleware.InitializeInput) {
 		return
 	}
 
-	traceContext, err := getTraceContextBytes(span)
+	traceContext, err := getTraceContext(span)
 	if err != nil {
 		log.Debug("Unable to get trace context: %s", err.Error())
 		return
@@ -70,22 +70,29 @@ func handlePublishBatch(span tracer.Span, in middleware.InitializeInput) {
 	}
 }
 
-func getTraceContextBytes(span tracer.Span) ([]byte, error) {
+func getTraceContext(span tracer.Span) (types.MessageAttributeValue, error) {
 	carrier := tracer.TextMapCarrier{}
 	err := tracer.Inject(span.Context(), carrier)
 	if err != nil {
-		return nil, err
+		return types.MessageAttributeValue{}, err
 	}
 
 	jsonBytes, err := json.Marshal(carrier)
 	if err != nil {
-		return nil, err
+		return types.MessageAttributeValue{}, err
 	}
 
-	return jsonBytes, nil
+	// Use Binary since SNS subscription filter policies fail silently with JSON
+	// strings. https://github.com/DataDog/datadog-lambda-js/pull/269
+	attribute := types.MessageAttributeValue{
+		DataType:    aws.String("Binary"),
+		BinaryValue: jsonBytes,
+	}
+
+	return attribute, nil
 }
 
-func injectTraceContext(jsonBytes []byte, messageAttributes map[string]types.MessageAttributeValue) {
+func injectTraceContext(traceContext types.MessageAttributeValue, messageAttributes map[string]types.MessageAttributeValue) {
 	// SNS only allows a maximum of 10 message attributes.
 	// https://docs.aws.amazon.com/sns/latest/dg/sns-message-attributes.html
 	// Only inject if there's room.
@@ -94,10 +101,5 @@ func injectTraceContext(jsonBytes []byte, messageAttributes map[string]types.Mes
 		return
 	}
 
-	// Use Binary since SNS subscription filter policies fail silently with JSON
-	// strings. https://github.com/DataDog/datadog-lambda-js/pull/269
-	messageAttributes[datadogKey] = types.MessageAttributeValue{
-		DataType:    aws.String("Binary"),
-		BinaryValue: jsonBytes,
-	}
+	messageAttributes[datadogKey] = traceContext
 }

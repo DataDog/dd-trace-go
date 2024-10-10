@@ -150,7 +150,7 @@ func TestInjectTraceContext(t *testing.T) {
 				}
 			}
 
-			traceContext, err := getTraceContextBytes(span)
+			traceContext, err := getTraceContext(span)
 			assert.NoError(t, err)
 			injectTraceContext(traceContext, messageAttributes)
 

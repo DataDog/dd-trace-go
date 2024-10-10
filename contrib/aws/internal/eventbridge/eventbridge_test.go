@@ -158,11 +158,11 @@ func TestInjectTraceContextSizeLimit(t *testing.T) {
 		{
 			name: "Do not inject when payload is too large",
 			entry: types.PutEventsRequestEntry{
-				Detail:       aws.String(`{"large": "` + strings.Repeat("a", maxSizeBytes-15) + `"}`),
+				Detail:       aws.String(`{"large": "` + strings.Repeat("a", maxSizeBytes-50) + `"}`),
 				EventBusName: aws.String("test-bus"),
 			},
 			expected: func(t *testing.T, entry *types.PutEventsRequestEntry) {
-				assert.GreaterOrEqual(t, len(*entry.Detail), maxSizeBytes-15)
+				assert.GreaterOrEqual(t, len(*entry.Detail), maxSizeBytes-50)
 				assert.NotContains(t, *entry.Detail, datadogKey)
 				assert.True(t, strings.HasPrefix(*entry.Detail, `{"large": "`))
 				assert.True(t, strings.HasSuffix(*entry.Detail, `"}`))

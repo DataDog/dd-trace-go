@@ -79,19 +79,22 @@ func injectTraceContext(span tracer.Span, entryPtr *types.PutEventsRequestEntry)
 		return
 	}
 
-	detail[datadogKey] = json.RawMessage(jsonBytes)
+	// Check sizes
+	detailSize := 0
+	if entryPtr.Detail != nil {
+		detailSize = len(*entryPtr.Detail)
+	}
+	traceSize := len(jsonBytes)
+	if detailSize+traceSize > maxSizeBytes {
+		log.Info("Payload size too large to pass context")
+		return
+	}
 
+	detail[datadogKey] = json.RawMessage(jsonBytes)
 	updatedDetail, err := json.Marshal(detail)
 	if err != nil {
 		log.Debug("Unable to marshal modified event detail: %s", err)
 		return
 	}
-
-	// Check new detail size
-	if len(updatedDetail) > maxSizeBytes {
-		log.Info("Payload size too large to pass context")
-		return
-	}
-
 	entryPtr.Detail = aws.String(string(updatedDetail))
 }
