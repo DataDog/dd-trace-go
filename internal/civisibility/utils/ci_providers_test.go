@@ -13,6 +13,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/constants"
 )
 
 func setEnvs(t *testing.T, env map[string]string) {
@@ -113,4 +115,44 @@ func TestTags(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestGitHubEventFile(t *testing.T) {
+	originalEventPath := os.Getenv("GITHUB_EVENT_PATH")
+	originalBaseRef := os.Getenv("GITHUB_BASE_REF")
+	defer func() {
+		os.Setenv("GITHUB_EVENT_PATH", originalEventPath)
+		os.Setenv("GITHUB_BASE_REF", originalBaseRef)
+	}()
+
+	os.Unsetenv("GITHUB_EVENT_PATH")
+	os.Unsetenv("GITHUB_BASE_REF")
+
+	checkValue := func(tags map[string]string, key, expectedValue string) {
+		if tags[key] != expectedValue {
+			t.Fatalf("Key: %s, the actual value (%s) is different to the expected value (%s)", key, tags[key], expectedValue)
+		}
+	}
+
+	t.Run("with event file", func(t *testing.T) {
+		eventFile := "testdata/fixtures/github-event.json"
+		t.Setenv("GITHUB_EVENT_PATH", eventFile)
+		t.Setenv("GITHUB_BASE_REF", "my-base-ref") // this should be ignored in favor of the event file value
+
+		tags := extractGithubActions()
+		expectedHeadCommit := "df289512a51123083a8e6931dd6f57bb3883d4c4"
+		expectedBaseCommit := "52e0974c74d41160a03d59ddc73bb9f5adab054b"
+		expectedBaseRef := "main"
+
+		checkValue(tags, constants.GitHeadCommit, expectedHeadCommit)
+		checkValue(tags, constants.GitPrBaseCommit, expectedBaseCommit)
+		checkValue(tags, constants.GitPrBaseBranch, expectedBaseRef)
+	})
+
+	t.Run("no event file", func(t *testing.T) {
+		t.Setenv("GITHUB_BASE_REF", "my-base-ref") // this should be ignored in favor of the event file value
+
+		tags := extractGithubActions()
+		checkValue(tags, constants.GitPrBaseBranch, "my-base-ref")
+	})
 }
