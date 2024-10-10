@@ -6,7 +6,9 @@
 package testutils
 
 import (
+	"sync"
 	"testing"
+	"unsafe"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec"
@@ -86,4 +88,27 @@ type MockStatsdClient = statsdtest.TestStatsdClient
 
 func NewMockStatsdClient() *MockStatsdClient {
 	return &MockStatsdClient{}
+}
+
+// SetPropagatingTag sets a tag on the given span context. It assumes it comes from a span,
+// so it has a trace attached to it.
+func SetPropagatingTag(t testing.TB, ctx *tracer.SpanContext, k, v string) {
+	t.Helper()
+
+	// Forgive us for the following hack, oh great and powerful GODpher.
+	// Assuming the context contains a trace, we extract it by cookie-cutting it.
+	// It's easier than using offsets when the desired data isn't far away from
+	// the struct's beginning.
+	type cookieCutter struct {
+		_     bool // spanContext.updated
+		trace *struct {
+			_               sync.RWMutex      // trace.mu
+			_               []any             // trace.spans
+			_               map[string]string // trace.tags
+			propagatingTags map[string]string // trace level tags that will be propagated across service boundaries
+		}
+	}
+	ptr := uintptr(unsafe.Pointer(ctx))
+	cc := (*cookieCutter)(*(*unsafe.Pointer)(unsafe.Pointer(&ptr)))
+	cc.trace.propagatingTags[k] = v
 }
