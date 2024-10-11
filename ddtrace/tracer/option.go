@@ -522,7 +522,7 @@ func newConfig(opts ...StartOption) *config {
 			// no config defined address; use defaults
 			addr = defaultDogstatsdAddr()
 		}
-		if agentport := c.agent.StatsdPort; agentport > 0 {
+		if agentport := c.agent.StatsdPort; agentport > 0 && !c.agent.ignore {
 			// the agent reported a non-standard port
 			host, _, err := net.SplitHostPort(addr)
 			if err == nil {
@@ -625,6 +625,10 @@ type agentFeatures struct {
 
 	// featureFlags specifies all the feature flags reported by the trace-agent.
 	featureFlags map[string]struct{}
+
+	// ignore indicates that we should ignore the agent in favor of user set values.
+	// It should only be used during testing.
+	ignore bool
 }
 
 // HasFlag reports whether the agent has set the feat feature flag.
@@ -653,8 +657,10 @@ func loadAgentFeatures(agentDisabled bool, agentURL *url.URL, httpClient *http.C
 	type infoResponse struct {
 		Endpoints     []string `json:"endpoints"`
 		ClientDropP0s bool     `json:"client_drop_p0s"`
-		StatsdPort    int      `json:"statsd_port"`
 		FeatureFlags  []string `json:"feature_flags"`
+		Config        struct {
+			StatsdPort int `json:"statsd_port"`
+		} `json:"config"`
 	}
 	var info infoResponse
 	if err := json.NewDecoder(resp.Body).Decode(&info); err != nil {
@@ -662,7 +668,7 @@ func loadAgentFeatures(agentDisabled bool, agentURL *url.URL, httpClient *http.C
 		return
 	}
 	features.DropP0s = info.ClientDropP0s
-	features.StatsdPort = info.StatsdPort
+	features.StatsdPort = info.Config.StatsdPort
 	for _, endpoint := range info.Endpoints {
 		switch endpoint {
 		case "/v0.6/stats":
@@ -759,6 +765,12 @@ func WithFeatureFlags(feats ...string) StartOption {
 			c.featureFlags[strings.TrimSpace(f)] = struct{}{}
 		}
 		log.Info("FEATURES enabled: %v", feats)
+	}
+}
+
+func withIgnoreAgent(ignore bool) StartOption {
+	return func(c *config) {
+		c.agent.ignore = ignore
 	}
 }
 
