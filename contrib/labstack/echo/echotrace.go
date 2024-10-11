@@ -22,16 +22,17 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 	"github.com/labstack/echo"
 )
 
 const componentName = "labstack/echo"
 
+var instr *instrumentation.Instrumentation
+
 func init() {
-	telemetry.LoadIntegration(componentName)
-	tracer.MarkIntegrationImported("github.com/labstack/echo")
+	instr = instrumentation.Load(instrumentation.PackageLabstackEcho)
 }
 
 // Middleware returns echo middleware which will trace incoming requests.

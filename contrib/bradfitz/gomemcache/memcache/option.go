@@ -6,63 +6,24 @@
 package memcache
 
 import (
-	"math"
-
-	"gopkg.in/DataDog/dd-trace-go.v1/internal"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
+	v2 "github.com/DataDog/dd-trace-go/contrib/bradfitz/gomemcache/v2/memcache"
 )
-
-const (
-	defaultServiceName = "memcached"
-)
-
-type clientConfig struct {
-	serviceName   string
-	operationName string
-	analyticsRate float64
-}
 
 // ClientOption represents an option that can be passed to Dial.
-type ClientOption func(*clientConfig)
-
-func defaults(cfg *clientConfig) {
-	cfg.serviceName = namingschema.ServiceNameOverrideV0(defaultServiceName, defaultServiceName)
-	cfg.operationName = namingschema.OpName(namingschema.MemcachedOutbound)
-
-	// cfg.analyticsRate = globalconfig.AnalyticsRate()
-	if internal.BoolEnv("DD_TRACE_MEMCACHE_ANALYTICS_ENABLED", false) {
-		cfg.analyticsRate = 1.0
-	} else {
-		cfg.analyticsRate = math.NaN()
-	}
-}
+type ClientOption = v2.ClientOption
 
 // WithServiceName sets the given service name for the dialled connection.
 func WithServiceName(name string) ClientOption {
-	return func(cfg *clientConfig) {
-		cfg.serviceName = name
-	}
+	return v2.WithService(name)
 }
 
 // WithAnalytics enables Trace Analytics for all started spans.
 func WithAnalytics(on bool) ClientOption {
-	return func(cfg *clientConfig) {
-		if on {
-			cfg.analyticsRate = 1.0
-		} else {
-			cfg.analyticsRate = math.NaN()
-		}
-	}
+	return v2.WithAnalytics(on)
 }
 
 // WithAnalyticsRate sets the sampling rate for Trace Analytics events
 // correlated to started spans.
 func WithAnalyticsRate(rate float64) ClientOption {
-	return func(cfg *clientConfig) {
-		if rate >= 0.0 && rate <= 1.0 {
-			cfg.analyticsRate = rate
-		} else {
-			cfg.analyticsRate = math.NaN()
-		}
-	}
+	return v2.WithAnalyticsRate(rate)
 }

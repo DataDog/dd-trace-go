@@ -12,21 +12,22 @@ package restful
 import (
 	"math"
 
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/httptrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 
 	"github.com/emicklei/go-restful"
 )
 
 const componentName = "emicklei/go-restful"
 
+var instr *instrumentation.Instrumentation
+
 func init() {
-	telemetry.LoadIntegration(componentName)
-	tracer.MarkIntegrationImported("github.com/emicklei/go-restful")
+	instr = instrumentation.Load(instrumentation.PackageEmickleiGoRestful)
 }
 
 // FilterFunc returns a restful.FilterFunction which will automatically trace incoming request.

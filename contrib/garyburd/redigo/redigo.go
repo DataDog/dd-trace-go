@@ -19,16 +19,17 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 	redis "github.com/garyburd/redigo/redis"
 )
 
 const componentName = "garyburd/redigo"
 
+var instr *instrumentation.Instrumentation
+
 func init() {
-	telemetry.LoadIntegration(componentName)
-	tracer.MarkIntegrationImported("github.com/garyburd/redigo")
+	instr = instrumentation.Load(instrumentation.PackageGaryburdRedigo)
 }
 
 // Conn is an implementation of the redis.Conn interface that supports tracing

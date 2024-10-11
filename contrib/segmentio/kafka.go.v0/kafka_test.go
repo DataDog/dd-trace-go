@@ -11,7 +11,6 @@ import (
 	"testing"
 	"time"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/namingschematest"
 	"gopkg.in/DataDog/dd-trace-go.v1/datastreams"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
@@ -32,6 +31,42 @@ func skipIntegrationTest(t *testing.T) {
 	if _, ok := os.LookupEnv("INTEGRATION"); !ok {
 		t.Skip("🚧 Skipping integration test (INTEGRATION environment variable is not set)")
 	}
+}
+
+// A messageCarrier implements TextMapReader/TextMapWriter for extracting/injecting traces on a kafka.Message
+type messageCarrier struct {
+	msg *kafka.Message
+}
+
+var _ interface {
+	tracer.TextMapReader
+	tracer.TextMapWriter
+} = (*messageCarrier)(nil)
+
+// ForeachKey conforms to the TextMapReader interface.
+func (c messageCarrier) ForeachKey(handler func(key, val string) error) error {
+	for _, h := range c.msg.Headers {
+		err := handler(h.Key, string(h.Value))
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// Set implements TextMapWriter
+func (c messageCarrier) Set(key, val string) {
+	// ensure uniqueness of keys
+	for i := 0; i < len(c.msg.Headers); i++ {
+		if string(c.msg.Headers[i].Key) == key {
+			c.msg.Headers = append(c.msg.Headers[:i], c.msg.Headers[i+1:]...)
+			i--
+		}
+	}
+	c.msg.Headers = append(c.msg.Headers, kafka.Header{
+		Key:   key,
+		Value: []byte(val),
+	})
 }
 
 /*
@@ -238,84 +273,4 @@ func TestFetchMessageFunctional(t *testing.T) {
 	expected, _ = datastreams.PathwayFromContext(expectedCtx)
 	assert.NotEqual(t, expected.GetHash(), 0)
 	assert.Equal(t, expected.GetHash(), p.GetHash())
-}
-
-func TestNamingSchema(t *testing.T) {
-	genSpans := func(t *testing.T, serviceOverride string) []mocktracer.Span {
-		var opts []Option
-		if serviceOverride != "" {
-			opts = append(opts, WithServiceName(serviceOverride))
-		}
-
-		mt := mocktracer.Start()
-		defer mt.Stop()
-
-		messagesToWrite := []kafka.Message{
-			{
-				Key:   []byte("key1"),
-				Value: []byte("value1"),
-			},
-		}
-
-		spans, _ := genIntegrationTestSpans(
-			t,
-			mt,
-			func(t *testing.T, w *Writer) {
-				err := w.WriteMessages(context.Background(), messagesToWrite...)
-				require.NoError(t, err, "Expected to write message to topic")
-			},
-			func(t *testing.T, r *Reader) {
-				ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-				defer cancel()
-				readMsg, err := r.FetchMessage(ctx)
-				require.NoError(t, err, "Expected to consume message")
-				assert.Equal(t, messagesToWrite[0].Value, readMsg.Value, "Values should be equal")
-
-				err = r.CommitMessages(context.Background(), readMsg)
-				assert.NoError(t, err, "Expected CommitMessages to not return an error")
-			},
-			opts,
-			opts,
-		)
-		return spans
-	}
-	namingschematest.NewKafkaTest(genSpans)(t)
-}
-
-func BenchmarkReaderStartSpan(b *testing.B) {
-	r := NewReader(kafka.ReaderConfig{
-		Brokers: []string{"localhost:9092", "localhost:9093", "localhost:9094"},
-		GroupID: testGroupID,
-		Topic:   testTopic,
-		MaxWait: testReaderMaxWait,
-	})
-
-	msg := kafka.Message{
-		Key:   []byte("key1"),
-		Value: []byte("value1"),
-	}
-
-	b.ResetTimer()
-	for n := 0; n < b.N; n++ {
-		r.startSpan(nil, &msg)
-	}
-}
-
-func BenchmarkWriterStartSpan(b *testing.B) {
-	kw := &kafka.Writer{
-		Addr:         kafka.TCP("localhost:9092", "localhost:9093", "localhost:9094"),
-		Topic:        testTopic,
-		RequiredAcks: kafka.RequireOne,
-	}
-	w := WrapWriter(kw)
-
-	msg := kafka.Message{
-		Key:   []byte("key1"),
-		Value: []byte("value1"),
-	}
-
-	b.ResetTimer()
-	for n := 0; n < b.N; n++ {
-		w.startSpan(nil, &msg)
-	}
 }

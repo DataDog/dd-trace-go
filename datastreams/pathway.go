@@ -8,7 +8,7 @@ package datastreams
 import (
 	"context"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/datastreams"
+	"github.com/DataDog/dd-trace-go/v2/datastreams"
 )
 
 type Pathway interface {
