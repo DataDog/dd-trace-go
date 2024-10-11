@@ -11,12 +11,13 @@ import (
 	grpctrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/google.golang.org/grpc"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/trace"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/waf/actions"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener/waf"
 	"io"
-	"log"
 	"net/url"
 	"strconv"
 	"strings"
+	"sync/atomic"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -29,19 +30,18 @@ import (
 
 	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/httptrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/httpsec"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/httpsec/types"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/sharedsec"
-	httptrace2 "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/trace/httptrace"
+	httpsec2 "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener/httpsec"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
 type CurrentRequest struct {
-	op   *types.Operation
-	span tracer.Span
+	op          *httpsec.HandlerOperation
+	blockAction *atomic.Pointer[actions.BlockHTTP]
+	span        tracer.Span
 
 	parsedUrl   *url.URL
-	requestArgs types.HandlerOperationArgs
+	requestArgs httpsec.HandlerOperationArgs
 
 	blocked                 bool
 	blockedHeaders          map[string][]string
@@ -52,6 +52,7 @@ type CurrentRequest struct {
 
 func StreamServerInterceptor(opts ...grpctrace.Option) grpc.StreamServerInterceptor {
 	interceptor := grpctrace.StreamServerInterceptor(opts...)
+	log.SetLevel(log.LevelDebug) // TODO: Remove
 
 	return func(srv any, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
 		if info.FullMethod != "/envoy.service.ext_proc.v3.ExternalProcessor/Process" {
@@ -156,7 +157,7 @@ func envoyExternalProcessingEventHandler(ctx context.Context, req *extproc.Proce
 }
 
 func ProcessRequestHeaders(ctx context.Context, req *extproc.ProcessingRequest_RequestHeaders, currentRequest *CurrentRequest) (*extproc.ProcessingResponse, error) {
-	log.Printf("Received request headers: %v\n", req.RequestHeaders)
+	log.Debug("Received request headers: %v\n", req.RequestHeaders)
 
 	headers, envoyHeaders := separateEnvoyHeaders(req.RequestHeaders.GetHeaders().GetHeaders())
 
@@ -174,7 +175,7 @@ func ProcessRequestHeaders(ctx context.Context, req *extproc.ProcessingRequest_R
 	currentRequest.parsedUrl = parsedUrl
 
 	// client ip set in the x-forwarded-for header (cf: https://www.envoyproxy.io/docs/envoy/latest/configuration/http/http_conn_man/headers#x-forwarded-for)
-	ipTags, clientIp := httptrace2.ClientIPTags(headers, false, "")
+	ipTags, clientIp := httpsec2.ClientIPTags(headers, false, "")
 
 	currentRequest.requestArgs = httpsec.MakeHandlerOperationArgs(headers, method, host, clientIp, parsedUrl)
 	headers = currentRequest.requestArgs.Headers // Replace headers with the ones from the args because it has been modified
@@ -183,21 +184,31 @@ func ProcessRequestHeaders(ctx context.Context, req *extproc.ProcessingRequest_R
 	currentRequest.span = createExternalProcessedSpan(ctx, headers, method, host, path, ipTags, parsedUrl)
 
 	// Run WAF on request data
-	_, currentRequest.op = httpsec.StartOperation(ctx, currentRequest.requestArgs, func(op *types.Operation) {
-		dyngo.OnData(op, func(a *sharedsec.HTTPAction) {
-			// HTTP Blocking Action Handler
-			currentRequest.blocked = a.Blocking()
-			currentRequest.blockedStatusCode = a.StatusCode
-			if a.RedirectLocation != "" {
-				currentRequest.blockedRedirectLocation = a.RedirectLocation
-			} else {
-				currentRequest.blockedHeaders, currentRequest.blockedTemplate = a.BlockingTemplate(headers)
-			}
-		})
-	})
+	currentRequest.op, currentRequest.blockAction, _ = httpsec.StartOperation(ctx, currentRequest.requestArgs)
+
+	if blockPtr := currentRequest.blockAction.Load(); blockPtr != nil {
+		// HTTP Blocking Action Handler
+		currentRequest.blocked = true
+		currentRequest.blockedStatusCode = blockPtr.StatusCode
+		if blockPtr.RedirectLocation != "" {
+			currentRequest.blockedRedirectLocation = blockPtr.RedirectLocation
+		} else {
+			currentRequest.blockedHeaders, currentRequest.blockedTemplate = blockPtr.BlockingTemplate(headers)
+		}
+	}
 
 	// Link Appsec events
-	httptrace2.SetSecurityEventsTags(currentRequest.span, currentRequest.op.Events())
+	// TODO: re-add events if not auto added
+	// httptrace2.SetSecurityEventsTags(currentRequest.span, currentRequest.op.Events())
+	err = waf.SetEventSpanTags(currentRequest.span, currentRequest.op.Events())
+	if err != nil {
+		return nil, err
+	}
+
+	// TODO: waf.AddWAFMonitoringTags(op, waf.handle.Diagnostics().Version, ctx.Stats().Metrics())
+	if err := waf.SetEventSpanTags(currentRequest.op, currentRequest.op.Events()); err != nil {
+		log.Debug("appsec: failed to set event span tags: %v", err)
+	}
 
 	// We need to block the request, return an immediate response
 	if currentRequest.blocked {
@@ -241,7 +252,7 @@ func verifyRequestHttp2ResponseHeaders(headers map[string][]string) (string, err
 
 // TODO: Add check on "end_of_stream" to know if it's the last part of the request (without body) and close the stream without error (add a new return bool)
 func ProcessResponseHeaders(res *extproc.ProcessingRequest_ResponseHeaders, currentRequest *CurrentRequest) (*extproc.ProcessingResponse, bool, error) {
-	log.Printf("Received response headers: %v\n", res.ResponseHeaders)
+	log.Debug("Received response headers: %v\n", res.ResponseHeaders)
 
 	headers, envoyHeaders := separateEnvoyHeaders(res.ResponseHeaders.GetHeaders().GetHeaders())
 
@@ -255,13 +266,23 @@ func ProcessResponseHeaders(res *extproc.ProcessingRequest_ResponseHeaders, curr
 		return nil, false, status.Errorf(codes.InvalidArgument, "Error parsing response header status code: %v", err)
 	}
 
-	args := types.HandlerOperationRes{
-		Headers: headers,
-		Status:  statusCode,
+	args := httpsec.HandlerOperationRes{
+		Headers:    headers,
+		StatusCode: statusCode,
 	}
 
-	secEvents := currentRequest.op.Finish(args)
-	httptrace2.SetSecurityEventsTags(currentRequest.span, secEvents)
+	currentRequest.op.Finish(args, currentRequest.span) // TODO: WHAT IS HAPPENING TO THE SPAN HERE?
+	// TODO: // httptrace2.SetSecurityEventsTags(currentRequest.span, secEvents)
+	if blockPtr := currentRequest.blockAction.Load(); blockPtr != nil {
+		// HTTP Blocking Action Handler
+		currentRequest.blocked = true
+		currentRequest.blockedStatusCode = blockPtr.StatusCode
+		if blockPtr.RedirectLocation != "" {
+			currentRequest.blockedRedirectLocation = blockPtr.RedirectLocation
+		} else {
+			currentRequest.blockedHeaders, currentRequest.blockedTemplate = blockPtr.BlockingTemplate(headers)
+		}
+	}
 
 	// We need to block the request, return an immediate response
 	if currentRequest.blocked {
@@ -269,7 +290,7 @@ func ProcessResponseHeaders(res *extproc.ProcessingRequest_ResponseHeaders, curr
 	}
 
 	// Close the span
-	httpsec.SetResponseHeadersTags(currentRequest.span, headers)
+	httpsec2.SetResponseHeadersTags(currentRequest.span, headers)
 	closeSpan(currentRequest, statusCode)
 
 	if res.ResponseHeaders.GetEndOfStream() {
@@ -314,8 +335,11 @@ func createExternalProcessedSpan(ctx context.Context, headers map[string][]strin
 		}...,
 	)
 
-	httpsec.SetRequestHeadersTags(span, headers)
-	trace.SetAppSecEnabledTags(span)
+	httpsec2.SetRequestHeadersTags(span, headers)
+	// trace.SetAppSecEnabledTags(span)
+	// TODO: Change
+	span.SetTag("_dd.appsec.enabled", 1)
+	// TODO: add the other tag go language family
 
 	return span
 }
@@ -337,12 +361,11 @@ func separateEnvoyHeaders(receivedHeaders []*corev3.HeaderValue) (map[string][]s
 }
 
 func doBlockRequest(currentRequest *CurrentRequest) *extproc.ProcessingResponse {
-	trace.SetTags(currentRequest.span, map[string]interface{}{trace.BlockedRequestTag: true})
-
+	currentRequest.span.SetTag(waf.BlockedRequestTag, true)
 	var headerToSet map[string][]string
 	var body []byte
 	if currentRequest.blockedRedirectLocation != "" {
-		headerToSet, body = sharedsec.HandleRedirectLocationString(
+		headerToSet, body = actions.HandleRedirectLocationString(
 			currentRequest.parsedUrl.Path,
 			currentRequest.blockedRedirectLocation,
 			currentRequest.blockedStatusCode,
@@ -364,7 +387,7 @@ func doBlockRequest(currentRequest *CurrentRequest) *extproc.ProcessingResponse 
 		})
 	}
 
-	httpsec.SetResponseHeadersTags(currentRequest.span, headerToSet)
+	httpsec2.SetResponseHeadersTags(currentRequest.span, headerToSet)
 	closeSpan(currentRequest, currentRequest.blockedStatusCode)
 
 	return &extproc.ProcessingResponse{

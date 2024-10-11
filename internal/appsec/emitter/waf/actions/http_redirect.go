@@ -13,6 +13,8 @@ import (
 	"github.com/mitchellh/mapstructure"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+
+	urlpkg "net/url"
 )
 
 // redirectActionParams are the dynamic parameters to be provided to a "redirect_request"

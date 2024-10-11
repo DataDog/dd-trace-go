@@ -12,10 +12,12 @@ package httpsec
 
 import (
 	"context"
+	"strings"
 
 	// Blank import needed to use embed for the default blocked response payloads
 	_ "embed"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"sync"
 	"sync/atomic"
@@ -154,23 +156,9 @@ func WrapHandler(handler http.Handler, span ddtrace.Span, pathParams map[string]
 					f()
 				}
 
-			// Add stacktraces to the span, if any
-			if stackTrace != nil {
-				stacktrace.AddToSpan(span, stackTrace)
-			}
-
-			if bypassHandler != nil {
-				bypassHandler.ServeHTTP(w, r)
-			}
-
-			// Add the request headers span tags out of args.Headers instead of r.Header as it was normalized and some
-			// extra headers have been added such as the Host header which is removed from the original Go request headers
-			// map
-			SetRequestHeadersTags(span, args.Headers)
-			SetResponseHeadersTags(span, opts.ResponseHeaderCopier(w))
-			trace.SetTags(span, op.Tags())
-			if len(events) > 0 {
-				httptrace.SetSecurityEventsTags(span, events)
+				if blockPtr.Handler != nil {
+					blockPtr.Handler.ServeHTTP(w, r)
+				}
 			}
 		}()
 
@@ -184,16 +172,16 @@ func WrapHandler(handler http.Handler, span ddtrace.Span, pathParams map[string]
 }
 
 // MakeHandlerOperationArgs creates the HandlerOperationArgs value.
-func MakeHandlerOperationArgs(headers map[string][]string, method string, host string, clientIp netip.Addr, url *url.URL) types.HandlerOperationArgs {
-	args := types.HandlerOperationArgs{
+func MakeHandlerOperationArgs(headers map[string][]string, method string, host string, clientIp netip.Addr, url *url.URL) HandlerOperationArgs {
+	args := HandlerOperationArgs{
 		Method:     method,
 		RequestURI: url.RequestURI(),
 		Host:       host,
-		Headers:    headersRemoveCookies(headers),
-		Cookies:    makeCookiesFromHeaders(headers),
-		Query:      url.Query(),
-		PathParams: map[string]string{},
-		ClientIP:   clientIp,
+		// RemoteAddr: nil,
+		Headers:     headersRemoveCookies(headers),
+		Cookies:     makeCookiesFromHeaders(headers),
+		QueryParams: url.Query(),
+		PathParams:  map[string]string{},
 	}
 
 	args.Headers["host"] = []string{host}
