@@ -62,7 +62,7 @@ func TestUnary(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			rig, err := newRig(true, WithServiceName("grpc"), WithRequestTags())
 			require.NoError(t, err, "error setting up rig")
-			defer rig.Close()
+			defer func() { assert.NoError(rig.Close()) }()
 			client := rig.client
 
 			mt := mocktracer.Start()
@@ -224,7 +224,7 @@ func TestStreaming(t *testing.T) {
 
 		rig, err := newRig(true, WithServiceName("grpc"))
 		require.NoError(t, err, "error setting up rig")
-		defer rig.Close()
+		defer func() { assert.NoError(t, rig.Close()) }()
 
 		span, ctx := tracer.StartSpanFromContext(context.Background(), "a",
 			tracer.ServiceName("b"),
@@ -249,7 +249,7 @@ func TestStreaming(t *testing.T) {
 
 		rig, err := newRig(true, WithServiceName("grpc"), WithStreamMessages(false))
 		require.NoError(t, err, "error setting up rig")
-		defer rig.Close()
+		defer func() { assert.NoError(t, rig.Close()) }()
 
 		span, ctx := tracer.StartSpanFromContext(context.Background(), "a",
 			tracer.ServiceName("b"),
@@ -274,7 +274,7 @@ func TestStreaming(t *testing.T) {
 
 		rig, err := newRig(true, WithServiceName("grpc"), WithStreamCalls(false))
 		require.NoError(t, err, "error setting up rig")
-		defer rig.Close()
+		defer func() { assert.NoError(t, rig.Close()) }()
 
 		span, ctx := tracer.StartSpanFromContext(context.Background(), "a",
 			tracer.ServiceName("b"),
@@ -316,7 +316,7 @@ func TestSpanTree(t *testing.T) {
 
 		rig, err := newRig(true, WithServiceName("grpc"))
 		require.NoError(t, err, "error setting up rig")
-		defer rig.Close()
+		defer func() { assert.NoError(rig.Close()) }()
 
 		{
 			// Unary Ping rpc leading to trace:
@@ -351,7 +351,7 @@ func TestSpanTree(t *testing.T) {
 
 		rig, err := newRig(true, WithServiceName("grpc"), WithRequestTags(), WithMetadataTags())
 		require.NoError(t, err, "error setting up rig")
-		defer rig.Close()
+		defer func() { assert.NoError(rig.Close()) }()
 		client := rig.client
 
 		{
@@ -436,7 +436,7 @@ func TestPass(t *testing.T) {
 
 	rig, err := newRig(false, WithServiceName("grpc"))
 	require.NoError(t, err, "error setting up rig")
-	defer rig.Close()
+	defer func() { assert.NoError(rig.Close()) }()
 	client := rig.client
 
 	ctx := context.Background()
@@ -470,7 +470,7 @@ func TestPreservesMetadata(t *testing.T) {
 	if err != nil {
 		t.Fatalf("error setting up rig: %s", err)
 	}
-	defer rig.Close()
+	defer func() { assert.NoError(t, rig.Close()) }()
 
 	ctx := context.Background()
 	ctx = metadata.AppendToOutgoingContext(ctx, "test-key", "test-value")
@@ -498,7 +498,7 @@ func TestStreamSendsErrorCode(t *testing.T) {
 
 	rig, err := newRig(true)
 	require.NoError(t, err, "error setting up rig")
-	defer rig.Close()
+	defer func() { assert.NoError(t, rig.Close()) }()
 
 	ctx := context.Background()
 
@@ -527,7 +527,7 @@ func TestStreamSendsErrorCode(t *testing.T) {
 			containsErrorCode = true
 		}
 	}
-	assert.True(t, containsErrorCode, "at least one span should contain error code")
+	assert.True(t, containsErrorCode, "at least one span should contain error code, the spans were:\n%v", spans)
 
 	// ensure that last span contains error code also
 	gotLastSpanCode := spans[len(spans)-1].Tag(tagCode)
@@ -601,9 +601,9 @@ type rig struct {
 	client        FixtureClient
 }
 
-func (r *rig) Close() {
-	r.server.Stop()
-	r.conn.Close()
+func (r *rig) Close() error {
+	defer r.server.GracefulStop()
+	return r.conn.Close()
 }
 
 func newRigWithInterceptors(
@@ -667,7 +667,7 @@ func TestAnalyticsSettings(t *testing.T) {
 		if err != nil {
 			t.Fatalf("error setting up rig: %s", err)
 		}
-		defer rig.Close()
+		defer func() { assert.NoError(t, rig.Close()) }()
 
 		client := rig.client
 		resp, err := client.Ping(context.Background(), &FixtureRequest{Name: "pass"})
@@ -1211,7 +1211,7 @@ func TestIssue2050(t *testing.T) {
 	}
 	rig, err := newRigWithInterceptors(serverInterceptors, clientInterceptors)
 	require.NoError(t, err)
-	defer rig.Close()
+	defer func() { assert.NoError(t, rig.Close()) }()
 
 	// call tracer.Start after integration is initialized, to reproduce the issue
 	tracer.Start(tracer.WithHTTPClient(httpClient))

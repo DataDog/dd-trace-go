@@ -498,8 +498,12 @@ func handler200(w http.ResponseWriter, _ *http.Request) {
 	w.Write([]byte("OK\n"))
 }
 
-func handler500(w http.ResponseWriter, _ *http.Request) {
+func handler500(w http.ResponseWriter, r *http.Request) {
 	http.Error(w, "500!", http.StatusInternalServerError)
+}
+
+func handler400(w http.ResponseWriter, r *http.Request) {
+	http.Error(w, "400!", http.StatusBadRequest)
 }
 
 func BenchmarkHttpServeTrace(b *testing.B) {

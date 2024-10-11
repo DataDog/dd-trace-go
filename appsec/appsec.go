@@ -26,7 +26,7 @@ import (
 // Note that passing the raw bytes of the HTTP request body is not expected and would
 // result in inaccurate attack detection.
 // This function always returns nil when appsec is disabled.
-func MonitorParsedHTTPBody(ctx context.Context, body interface{}) error {
+func MonitorParsedHTTPBody(ctx context.Context, body any) error {
 	return v2.MonitorParsedHTTPBody(ctx, body)
 }
 
@@ -80,4 +80,14 @@ func TrackUserLoginFailureEvent(ctx context.Context, uid string, exists bool, md
 // the IP address and/or user id associated to them.
 func TrackCustomEvent(ctx context.Context, name string, md map[string]string) {
 	v2.TrackCustomEvent(ctx, name, md)
+}
+
+func getSessionID(opts ...tracer.UserMonitoringOption) string {
+	cfg := &tracer.UserMonitoringConfig{
+		Metadata: make(map[string]string),
+	}
+	for _, opt := range opts {
+		opt(cfg)
+	}
+	return cfg.SessionID
 }

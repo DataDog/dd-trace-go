@@ -10,6 +10,7 @@ import (
 
 	v2 "github.com/DataDog/dd-trace-go/contrib/net/http/v2"
 	v2tracer "github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
@@ -149,4 +150,8 @@ func RTWithIgnoreRequest(f func(*http.Request) bool) RoundTripperOption {
 // finishes with an error
 func RTWithErrorCheck(fn func(err error) bool) RoundTripperOption {
 	return v2.WithErrorCheck(fn)
+}
+
+func isClientError(statusCode int) bool {
+	return statusCode >= 400 && statusCode < 500
 }

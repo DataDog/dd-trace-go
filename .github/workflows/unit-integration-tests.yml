@@ -20,6 +20,9 @@ env:
   # without having to download a newer one.
   GOTOOLCHAIN: local
 
+permissions:
+  contents: read
+
 jobs:
   copyright:
     runs-on: ubuntu-latest
