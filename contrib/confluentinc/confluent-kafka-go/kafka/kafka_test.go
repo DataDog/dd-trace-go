@@ -8,7 +8,6 @@ package kafka
 import (
 	"context"
 	"errors"
-	"go.uber.org/goleak"
 	"os"
 	"strings"
 	"testing"
@@ -24,6 +23,7 @@ import (
 	"github.com/confluentinc/confluent-kafka-go/kafka"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/goleak"
 )
 
 var (
