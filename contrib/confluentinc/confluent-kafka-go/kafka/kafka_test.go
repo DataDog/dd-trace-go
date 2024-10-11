@@ -8,6 +8,7 @@ package kafka
 import (
 	"context"
 	"errors"
+	"go.uber.org/goleak"
 	"os"
 	"strings"
 	"testing"
@@ -393,4 +394,41 @@ func TestNamingSchema(t *testing.T) {
 		return spans
 	}
 	namingschematest.NewKafkaTest(genSpans)(t)
+}
+
+// Test we don't leak goroutines and properly close the span when Produce returns an error.
+func TestProduceError(t *testing.T) {
+	defer goleak.VerifyNone(t)
+
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	// first write a message to the topic
+	p, err := NewProducer(&kafka.ConfigMap{
+		"bootstrap.servers":   "127.0.0.1:9092",
+		"go.delivery.reports": true,
+	})
+	require.NoError(t, err)
+	defer p.Close()
+
+	topic := ""
+	msg := &kafka.Message{
+		TopicPartition: kafka.TopicPartition{
+			Topic: &topic,
+		},
+	}
+	deliveryChan := make(chan kafka.Event, 1)
+	err = p.Produce(msg, deliveryChan)
+	require.Error(t, err)
+	require.EqualError(t, err, "Local: Invalid argument or configuration")
+
+	select {
+	case <-deliveryChan:
+		assert.Fail(t, "there should be no events in the deliveryChan")
+	case <-time.After(1 * time.Second):
+		// assume there is no event
+	}
+
+	spans := mt.FinishedSpans()
+	assert.Len(t, spans, 1)
 }
