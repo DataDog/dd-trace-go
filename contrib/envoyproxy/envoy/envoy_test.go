@@ -9,11 +9,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	extproc "github.com/envoyproxy/go-control-plane/envoy/service/ext_proc/v3"
-	typev3 "github.com/envoyproxy/go-control-plane/envoy/type/v3"
 	"io"
 	"net"
 	"testing"
+
+	extproc "github.com/envoyproxy/go-control-plane/envoy/service/ext_proc/v3"
+	typev3 "github.com/envoyproxy/go-control-plane/envoy/type/v3"
 
 	ddgrpc "gopkg.in/DataDog/dd-trace-go.v1/contrib/google.golang.org/grpc"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
@@ -313,6 +314,54 @@ func TestGeneratedSpan(t *testing.T) {
 		require.Equal(t, "datadoghq.com", span.Tag("http.request.headers.host"))
 		require.Equal(t, "server", span.Tag("span.kind"))
 		require.Equal(t, "web", span.Tag("span.type"))
+
+		// Appsec
+		require.Equal(t, 1, span.Tag("_dd.appsec.enabled"))
+	})
+}
+
+func TestXForwardedForHeaderClientIp(t *testing.T) {
+	appsec.Start()
+	defer appsec.Stop()
+	if !appsec.Enabled() {
+		t.Skip("appsec disabled")
+	}
+
+	setup := func() (extproc.ExternalProcessorClient, mocktracer.Tracer, func()) {
+		rig, err := newEnvoyAppsecRig(false)
+		require.NoError(t, err)
+
+		mt := mocktracer.Start()
+
+		return rig.client, mt, func() {
+			rig.Close()
+			mt.Stop()
+		}
+	}
+
+	t.Run("client-ip", func(t *testing.T) {
+		client, mt, cleanup := setup()
+		defer cleanup()
+
+		ctx := context.Background()
+		stream, err := client.Process(ctx)
+		require.NoError(t, err)
+
+		end2EndStreamRequest(t, stream, "/", "OPTION",
+			map[string]string{"User-Agent": "Mistake not...", "X-Forwarded-For": "18.18.18.18"},
+			map[string]string{"User-Agent": "match-response-header"},
+			true)
+
+		err = stream.CloseSend()
+		require.NoError(t, err)
+		stream.Recv() // to flush the spans
+
+		finished := mt.FinishedSpans()
+		require.Len(t, finished, 1)
+
+		// Check for tags
+		span := finished[0]
+		require.Equal(t, "18.18.18.18", span.Tag("http.client_ip"))
 
 		// Appsec
 		require.Equal(t, 1, span.Tag("_dd.appsec.enabled"))
