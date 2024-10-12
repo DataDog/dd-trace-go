@@ -49,3 +49,9 @@ func (h *handler) Handle(ctx context.Context, rec slog.Record) error {
 	}
 	return h.Handler.Handle(ctx, rec)
 }
+
+// WithAttrs returns a new Handler whose attributes consist of
+// both the receiver's attributes and the arguments.
+func (h *handler) WithAttrs(attrs []slog.Attr) slog.Handler {
+	return WrapHandler(h.Handler.WithAttrs(attrs))
+}
