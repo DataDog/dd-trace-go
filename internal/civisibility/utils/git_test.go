@@ -6,6 +6,7 @@
 package utils
 
 import (
+	logger "gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -67,6 +68,7 @@ func TestGetLastLocalGitCommitShas(t *testing.T) {
 }
 
 func TestUnshallowGitRepository(t *testing.T) {
+	logger.SetLevel(logger.LevelDebug)
 	_, err := UnshallowGitRepository()
 	assert.NoError(t, err)
 }
