@@ -193,8 +193,7 @@ func MakeHandlerOperationArgs(headers map[string][]string, method string, host s
 func headersRemoveCookies(headers http.Header) map[string][]string {
 	headersNoCookies := make(http.Header, len(headers))
 	for k, v := range headers {
-		k := strings.ToLower(k)
-		if k == "cookie" {
+		if k == "Cookie" {
 			continue
 		}
 		headersNoCookies[k] = v

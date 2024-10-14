@@ -14,6 +14,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/waf/actions"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener/waf"
 	"io"
+	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
@@ -175,7 +176,7 @@ func ProcessRequestHeaders(ctx context.Context, req *extproc.ProcessingRequest_R
 	currentRequest.parsedUrl = parsedUrl
 
 	// client ip set in the x-forwarded-for header (cf: https://www.envoyproxy.io/docs/envoy/latest/configuration/http/http_conn_man/headers#x-forwarded-for)
-	ipTags, clientIp := httpsec2.ClientIPTags(headers, false, "")
+	ipTags, clientIp := httpsec2.ClientIPTags(headers, true, "")
 
 	currentRequest.requestArgs = httpsec.MakeHandlerOperationArgs(headers, method, host, clientIp, parsedUrl)
 	headers = currentRequest.requestArgs.Headers // Replace headers with the ones from the args because it has been modified
@@ -310,7 +311,7 @@ func ProcessResponseHeaders(res *extproc.ProcessingRequest_ResponseHeaders, curr
 
 func createExternalProcessedSpan(ctx context.Context, headers map[string][]string, method string, host string, path string, ipTags map[string]string, parsedUrl *url.URL) tracer.Span {
 	userAgent := ""
-	if ua, ok := headers["user-agent"]; ok {
+	if ua, ok := headers["User-Agent"]; ok {
 		userAgent = ua[0]
 	}
 
@@ -345,16 +346,17 @@ func createExternalProcessedSpan(ctx context.Context, headers map[string][]strin
 }
 
 // Separate normal headers of the initial request made by the client and the pseudo headers of HTTP/2
-// Also format the headers to be used by the tracer as a map[string][]string
+// - Format the headers to be used by the tracer as a map[string][]string
+// - Set header keys to be canonical
 func separateEnvoyHeaders(receivedHeaders []*corev3.HeaderValue) (map[string][]string, map[string][]string) {
 	headers := make(map[string][]string)
 	pseudoHeadersHttp2 := make(map[string][]string)
 	for _, v := range receivedHeaders {
-		key := strings.ToLower(v.GetKey())
+		key := v.GetKey()
 		if key[0] == ':' {
 			pseudoHeadersHttp2[key] = []string{string(v.GetRawValue())}
 		} else {
-			headers[key] = []string{string(v.GetRawValue())}
+			headers[http.CanonicalHeaderKey(key)] = []string{string(v.GetRawValue())}
 		}
 	}
 	return headers, pseudoHeadersHttp2

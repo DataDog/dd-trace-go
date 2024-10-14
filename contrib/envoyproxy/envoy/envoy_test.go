@@ -271,12 +271,6 @@ func TestBlockingOnResponse(t *testing.T) {
 }
 
 func TestGeneratedSpan(t *testing.T) {
-	appsec.Start()
-	defer appsec.Stop()
-	if !appsec.Enabled() {
-		t.Skip("appsec disabled")
-	}
-
 	setup := func() (extproc.ExternalProcessorClient, mocktracer.Tracer, func()) {
 		rig, err := newEnvoyAppsecRig(false)
 		require.NoError(t, err)
@@ -297,7 +291,7 @@ func TestGeneratedSpan(t *testing.T) {
 		stream, err := client.Process(ctx)
 		require.NoError(t, err)
 
-		end2EndStreamRequest(t, stream, "/resource-span", "GET", map[string]string{"test-key": "test-value"}, map[string]string{"response-test-key": "response-test-value"}, false)
+		end2EndStreamRequest(t, stream, "/resource-span", "GET", map[string]string{"user-agent": "Mistake Not...", "test-key": "test-value"}, map[string]string{"response-test-key": "response-test-value"}, false)
 
 		err = stream.CloseSend()
 		require.NoError(t, err)
@@ -315,14 +309,12 @@ func TestGeneratedSpan(t *testing.T) {
 		require.Equal(t, "GET /resource-span", span.Tag("resource.name"))
 		require.Equal(t, "datadoghq.com", span.Tag("http.request.headers.host"))
 		require.Equal(t, "server", span.Tag("span.kind"))
-		require.Equal(t, "web", span.Tag("span.type"))
-
-		// Appsec
-		require.Equal(t, 1, span.Tag("_dd.appsec.enabled"))
+		require.Equal(t, "Mistake Not...", span.Tag("http.useragent"))
 	})
 }
 
 func TestXForwardedForHeaderClientIp(t *testing.T) {
+	t.Setenv("DD_APPSEC_RULES", "../../../internal/appsec/testdata/blocking.json")
 	appsec.Start()
 	defer appsec.Stop()
 	if !appsec.Enabled() {
@@ -367,6 +359,47 @@ func TestXForwardedForHeaderClientIp(t *testing.T) {
 
 		// Appsec
 		require.Equal(t, 1, span.Tag("_dd.appsec.enabled"))
+	})
+
+	t.Run("blocking-client-ip", func(t *testing.T) {
+		client, mt, cleanup := setup()
+		defer cleanup()
+
+		ctx := context.Background()
+		stream, err := client.Process(ctx)
+		require.NoError(t, err)
+
+		err = stream.Send(&extproc.ProcessingRequest{
+			Request: &extproc.ProcessingRequest_RequestHeaders{
+				RequestHeaders: &extproc.HttpHeaders{
+					Headers: makeRequestHeaders(map[string]string{"User-Agent": "Mistake not...", "X-Forwarded-For": "1.2.3.4"}, "GET", "/"),
+				},
+			},
+		})
+		require.NoError(t, err)
+
+		// Handle the immediate response
+		res, err := stream.Recv()
+		require.Equal(t, uint32(0), res.GetImmediateResponse().GetGrpcStatus().Status)
+		require.Equal(t, typev3.StatusCode(403), res.GetImmediateResponse().GetStatus().Code)
+		require.Equal(t, "Content-Type", res.GetImmediateResponse().GetHeaders().SetHeaders[0].GetHeader().Key)
+		require.Equal(t, "application/json", string(res.GetImmediateResponse().GetHeaders().SetHeaders[0].GetHeader().RawValue))
+		require.NoError(t, err)
+
+		err = stream.CloseSend()
+		require.NoError(t, err)
+		stream.Recv() // to flush the spans
+
+		finished := mt.FinishedSpans()
+		require.Len(t, finished, 1)
+		checkForAppsecEvent(t, finished, map[string]int{"blk-001-001": 1})
+
+		// Check for tags
+		span := finished[0]
+		require.Equal(t, "1.2.3.4", span.Tag("http.client_ip"))
+		require.Equal(t, 1, span.Tag("_dd.appsec.enabled"))
+		require.Equal(t, true, span.Tag("appsec.event"))
+		require.Equal(t, true, span.Tag("appsec.blocked"))
 	})
 }
 
