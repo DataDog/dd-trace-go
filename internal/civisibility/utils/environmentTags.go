@@ -133,7 +133,7 @@ func createCITagsMap() map[string]string {
 	log.Debug("civisibility: test session name: %v", localTags[constants.TestSessionName])
 
 	// Populate missing git data
-	gitData, _ := getLocalGitData()
+	gitData, _ := GetLocalGitData()
 
 	// Populate Git metadata from the local Git repository if not already present in localTags
 	if _, ok := localTags[constants.CIWorkspacePath]; !ok {

@@ -46,7 +46,7 @@ func TestFilterSensitiveInfo(t *testing.T) {
 }
 
 func TestGetLocalGitData(t *testing.T) {
-	data, err := getLocalGitData()
+	data, err := GetLocalGitData()
 
 	assert.NoError(t, err)
 	assert.NotEmpty(t, data.SourceRoot)
@@ -59,4 +59,9 @@ func TestGetLocalGitData(t *testing.T) {
 	assert.NotEmpty(t, data.CommitterEmail)
 	assert.NotEmpty(t, data.CommitterDate)
 	assert.NotEmpty(t, data.CommitMessage)
+}
+
+func TestGetLastLocalGitCommitShas(t *testing.T) {
+	shas := GetLastLocalGitCommitShas()
+	assert.NotEmpty(t, shas)
 }
