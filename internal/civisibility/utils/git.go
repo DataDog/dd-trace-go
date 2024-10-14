@@ -68,10 +68,11 @@ func execGit(args ...string) ([]byte, error) {
 // execGitString executes a Git command with the given arguments and returns the output as a string.
 func execGitString(args ...string) (string, error) {
 	out, err := execGit(args...)
+	strOut := strings.TrimSpace(strings.Trim(string(out), "\n"))
 	if err != nil {
-		return "", err
+		return strOut, err
 	}
-	return strings.TrimSpace(strings.Trim(string(out), "\n")), err
+	return strOut, err
 }
 
 // GetLocalGitData retrieves information about the local Git repository from the current HEAD.
