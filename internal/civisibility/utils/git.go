@@ -62,7 +62,7 @@ func execGit(args ...string) ([]byte, error) {
 	if !isGitFound() {
 		return nil, errors.New("git executable not found")
 	}
-	return exec.Command("git", args...).Output()
+	return exec.Command("git", args...).CombinedOutput()
 }
 
 // execGitString executes a Git command with the given arguments and returns the output as a string.
