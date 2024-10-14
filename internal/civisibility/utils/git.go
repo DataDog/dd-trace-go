@@ -215,7 +215,7 @@ func UnshallowGitRepository() (bool, error) {
 	// let's fetch the missing commits and trees from the last month
 	// git fetch --shallow-since="1 month ago" --update-shallow --filter="blob:none" --recurse-submodules=no $(git config --default origin --get clone.defaultRemoteName) $(git rev-parse HEAD)
 	log.Debug("civisibility.unshallow: fetching the missing commits and trees from the last month")
-	fetchOutput, err := execGitString("fetch", "--shallow-since=\"1 month ago\"", "--update-shallow", "--filter=\"blob:none\"", "--recurse-submodules=no", originName, headSha)
+	fetchOutput, err := execGitString("fetch", "--shallow-since=\"1 month ago\"", "--update-shallow", "--filter=blob:none", "--recurse-submodules=no", originName, headSha)
 
 	// let's check if the last command was unsuccessful
 	if err != nil || fetchOutput == "" {
@@ -233,7 +233,7 @@ func UnshallowGitRepository() (bool, error) {
 		if err == nil {
 			// let's try the alternative: git fetch --shallow-since="1 month ago" --update-shallow --filter="blob:none" --recurse-submodules=no $(git config --default origin --get clone.defaultRemoteName) $(git rev-parse --abbrev-ref --symbolic-full-name @{upstream})
 			log.Debug("civisibility.unshallow: fetching the missing commits and trees from the last month using the remote branch name")
-			fetchOutput, err = execGitString("fetch", "--shallow-since=\"1 month ago\"", "--update-shallow", "--filter=\"blob:none\"", "--recurse-submodules=no", originName, remoteBranchName)
+			fetchOutput, err = execGitString("fetch", "--shallow-since=\"1 month ago\"", "--update-shallow", "--filter=blob:none", "--recurse-submodules=no", originName, remoteBranchName)
 		}
 	}
 
@@ -248,7 +248,7 @@ func UnshallowGitRepository() (bool, error) {
 
 		// let's try the last fallback: git fetch --shallow-since="1 month ago" --update-shallow --filter="blob:none" --recurse-submodules=no $(git config --default origin --get clone.defaultRemoteName)
 		log.Debug("civisibility.unshallow: fetching the missing commits and trees from the last month using the origin name")
-		fetchOutput, err = execGitString("fetch", "--shallow-since=\"1 month ago\"", "--update-shallow", "--filter=\"blob:none\"", "--recurse-submodules=no", originName)
+		fetchOutput, err = execGitString("fetch", "--shallow-since=\"1 month ago\"", "--update-shallow", "--filter=blob:none", "--recurse-submodules=no", originName)
 	}
 
 	if err != nil {
