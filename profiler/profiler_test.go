@@ -236,6 +236,8 @@ func TestStopLatency(t *testing.T) {
 
 func TestFlushAndStop(t *testing.T) {
 	start := time.Now()
+	os.Setenv("DD_PROFILING_FLUSH_ON_EXIT", "1")
+	defer os.Unsetenv("DD_PROFILING_FLUSH_ON_EXIT")
 	received := startTestProfiler(t, 1,
 		WithProfileTypes(CPUProfile, HeapProfile),
 		WithPeriod(time.Hour),
@@ -243,7 +245,7 @@ func TestFlushAndStop(t *testing.T) {
 
 	time.Sleep(1 * time.Second)
 	end := time.Now()
-	FlushAndStop()
+	Stop()
 
 	select {
 	case prof := <-received:
@@ -278,6 +280,8 @@ func TestFlushAndStopTimeout(t *testing.T) {
 	}))
 	defer server.Close()
 
+	os.Setenv("DD_PROFILING_FLUSH_ON_EXIT", "1")
+	defer os.Unsetenv("DD_PROFILING_FLUSH_ON_EXIT")
 	Start(
 		WithAgentAddr(server.Listener.Addr().String()),
 		WithPeriod(time.Hour),
@@ -286,7 +290,7 @@ func TestFlushAndStopTimeout(t *testing.T) {
 
 	time.Sleep(500 * time.Millisecond)
 	start := time.Now()
-	FlushAndStop()
+	Stop()
 
 	elapsed := time.Since(start)
 	if elapsed > (maxRetries*uploadTimeout)+1*time.Second {
@@ -304,7 +308,7 @@ func TestSetProfileFraction(t *testing.T) {
 		p, err := unstartedProfiler(WithProfileTypes(MutexProfile))
 		require.NoError(t, err)
 		p.run()
-		p.stop(false)
+		p.stop()
 		assert.Equal(t, DefaultMutexFraction, runtime.SetMutexProfileFraction(-1))
 	})
 
@@ -314,7 +318,7 @@ func TestSetProfileFraction(t *testing.T) {
 		p, err := unstartedProfiler()
 		require.NoError(t, err)
 		p.run()
-		p.stop(false)
+		p.stop()
 		assert.Zero(t, runtime.SetMutexProfileFraction(-1))
 	})
 }

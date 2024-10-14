@@ -55,7 +55,7 @@ func Start(opts ...Option) error {
 	defer mu.Unlock()
 
 	if activeProfiler != nil {
-		activeProfiler.stop(false)
+		activeProfiler.stop()
 	}
 	p, err := newProfiler(opts...)
 	if err != nil {
@@ -75,19 +75,9 @@ func Start(opts ...Option) error {
 func Stop() {
 	mu.Lock()
 	if activeProfiler != nil {
-		activeProfiler.stop(false)
+		activeProfiler.stop()
 		activeProfiler = nil
 		traceprof.SetProfilerEnabled(false)
-	}
-	mu.Unlock()
-}
-
-// FlushAndStop aborts the ongoing profiles, upload them and returns after
-// everything has been stopped.
-func FlushAndStop() {
-	mu.Lock()
-	if activeProfiler != nil {
-		activeProfiler.stop(true)
 	}
 	mu.Unlock()
 }
@@ -251,6 +241,9 @@ func newProfiler(opts ...Option) (*profiler, error) {
 		if d := profileTypes[pt].DeltaValues; len(d) > 0 {
 			p.deltas[pt] = newFastDeltaProfiler(d...)
 		}
+	}
+	if cfg.flushOnExit {
+		p.flush = true
 	}
 	p.uploadFunc = p.upload
 	return &p, nil
@@ -525,9 +518,8 @@ func (p *profiler) interruptibleSleep(d time.Duration) bool {
 }
 
 // stop stops the profiler.
-func (p *profiler) stop(flush bool) {
+func (p *profiler) stop() {
 	p.stopOnce.Do(func() {
-		p.flush = flush
 		close(p.exit)
 	})
 	p.wg.Wait()
