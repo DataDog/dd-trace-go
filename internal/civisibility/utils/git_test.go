@@ -65,3 +65,20 @@ func TestGetLastLocalGitCommitShas(t *testing.T) {
 	shas := GetLastLocalGitCommitShas()
 	assert.NotEmpty(t, shas)
 }
+
+func TestIsAShallowCloneRepository(t *testing.T) {
+	isShallow, err := isAShallowCloneRepository()
+	assert.NoError(t, err)
+	assert.False(t, isShallow)
+}
+
+func TestHasTheGitLogHaveMoreThanTwoCommits(t *testing.T) {
+	hasMoreThanTwoCommits, err := hasTheGitLogHaveMoreThanTwoCommits()
+	assert.NoError(t, err)
+	assert.True(t, hasMoreThanTwoCommits)
+}
+
+func TestUnshallowGitRepository(t *testing.T) {
+	_, err := UnshallowGitRepository()
+	assert.NoError(t, err)
+}
