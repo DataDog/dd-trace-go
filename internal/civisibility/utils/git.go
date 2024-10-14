@@ -7,6 +7,7 @@ package utils
 
 import (
 	"errors"
+	"fmt"
 	"os/exec"
 	"regexp"
 	"strconv"
@@ -156,7 +157,7 @@ func UnshallowGitRepository() (bool, error) {
 	isAShallowClone, err := isAShallowCloneRepository()
 	if err != nil {
 		log.Debug("civisibility.unshallow: error checking if the repository is a shallow clone: %v", err)
-		return false, err
+		return false, errors.New(fmt.Sprintf("civisibility.unshallow: error checking if the repository is a shallow clone: %v", err))
 	}
 
 	// if the git repo is not a shallow clone, we can return early
@@ -170,7 +171,7 @@ func UnshallowGitRepository() (bool, error) {
 	hasMoreThanTwoCommits, err := hasTheGitLogHaveMoreThanTwoCommits()
 	if err != nil {
 		log.Debug("civisibility.unshallow: error checking if the git log has more than two commits: %v", err)
-		return false, err
+		return false, errors.New(fmt.Sprintf("civisibility.unshallow: error checking if the git log has more than two commits: %v", err))
 	}
 
 	// if there are more than 2 commits, we can return early
@@ -186,7 +187,7 @@ func UnshallowGitRepository() (bool, error) {
 	originName, err := execGitString("config", "--default", "origin", "--get", "clone.defaultRemoteName")
 	if err != nil {
 		log.Debug("civisibility.unshallow: error getting the origin name: %v", err)
-		return false, err
+		return false, errors.New(fmt.Sprintf("civisibility.unshallow: error getting the origin name: %v\n%s", err, originName))
 	}
 	if originName == "" {
 		// if the origin name is empty, we fallback to "origin"
@@ -198,14 +199,14 @@ func UnshallowGitRepository() (bool, error) {
 	headSha, err := execGitString("rev-parse", "HEAD")
 	if err != nil {
 		log.Debug("civisibility.unshallow: error getting the HEAD sha: %v", err)
-		return false, err
+		return false, errors.New(fmt.Sprintf("civisibility.unshallow: error getting the HEAD sha: %v\n%s", err, headSha))
 	}
 	if headSha == "" {
 		// if the HEAD is empty, we fallback to the current branch (git branch --show-current)
 		headSha, err = execGitString("branch", "--show-current")
 		if err != nil {
 			log.Debug("civisibility.unshallow: error getting the current branch: %v", err)
-			return false, err
+			return false, errors.New(fmt.Sprintf("civisibility.unshallow: error getting the current branch: %v\n%s", err, headSha))
 		}
 	}
 	log.Debug("civisibility.unshallow: HEAD sha: %v", headSha)
@@ -251,7 +252,7 @@ func UnshallowGitRepository() (bool, error) {
 
 	if err != nil {
 		log.Debug("civisibility.unshallow: error: %v", err)
-		return false, err
+		return false, errors.New(fmt.Sprintf("civisibility.unshallow: error: %v\n%s", err, fetchOutput))
 	}
 
 	log.Debug("civisibility.unshallow: was completed successfully")
