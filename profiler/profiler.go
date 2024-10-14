@@ -55,7 +55,7 @@ func Start(opts ...Option) error {
 	defer mu.Unlock()
 
 	if activeProfiler != nil {
-		activeProfiler.stop()
+		activeProfiler.stop(false)
 	}
 	p, err := newProfiler(opts...)
 	if err != nil {
@@ -75,9 +75,19 @@ func Start(opts ...Option) error {
 func Stop() {
 	mu.Lock()
 	if activeProfiler != nil {
-		activeProfiler.stop()
+		activeProfiler.stop(false)
 		activeProfiler = nil
 		traceprof.SetProfilerEnabled(false)
+	}
+	mu.Unlock()
+}
+
+// FlushAndStop aborts the ongoing profiles, upload them and returns after
+// everything has been stopped.
+func FlushAndStop() {
+	mu.Lock()
+	if activeProfiler != nil {
+		activeProfiler.stop(true)
 	}
 	mu.Unlock()
 }
@@ -89,6 +99,7 @@ type profiler struct {
 	out             chan batch        // upload queue
 	uploadFunc      func(batch) error // defaults to (*profiler).upload; replaced in tests
 	exit            chan struct{}     // exit signals the profiler to stop; it is closed after stopping
+	flush           bool              // signals the profiler to flush the current profile on exit - protected by exit chan
 	stopOnce        sync.Once         // stopOnce ensures the profiler is stopped exactly once.
 	wg              sync.WaitGroup    // wg waits for all goroutines to exit when stopping.
 	met             *metrics          // metric collector state
@@ -295,7 +306,8 @@ func (p *profiler) collect(ticker <-chan time.Time) {
 		endpointCounter.GetAndReset()
 	}()
 
-	for {
+	exit := false
+	for !exit {
 		bat := batch{
 			seq:   p.seq,
 			host:  p.cfg.hostname,
@@ -384,7 +396,11 @@ func (p *profiler) collect(ticker <-chan time.Time) {
 			// is less than the configured profiling period, the ticker will block
 			// until the end of the profiling period.
 		case <-p.exit:
-			return
+			if !p.flush {
+				return
+			}
+			// If we're flushing, we enqueue the batch before exiting the loop.
+			exit = true
 		}
 
 		// Include endpoint hits from tracer in profile `event.json`.
@@ -457,8 +473,13 @@ func (p *profiler) send() {
 	for {
 		select {
 		case <-p.exit:
-			return
-		case bat := <-p.out:
+			if !p.flush {
+				return
+			}
+		case bat, ok := <-p.out:
+			if !ok {
+				return
+			}
 			if err := p.outputDir(bat); err != nil {
 				log.Error("Failed to output profile to dir: %v", err)
 			}
@@ -504,8 +525,9 @@ func (p *profiler) interruptibleSleep(d time.Duration) bool {
 }
 
 // stop stops the profiler.
-func (p *profiler) stop() {
+func (p *profiler) stop(flush bool) {
 	p.stopOnce.Do(func() {
+		p.flush = flush
 		close(p.exit)
 	})
 	p.wg.Wait()
