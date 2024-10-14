@@ -31,7 +31,14 @@ type Param interface {
 	GetValue() string
 }
 
-func BeforeHandle[T any, WT Router](cfg *Config, router T, wrapRouter func(T) WT, w http.ResponseWriter, req *http.Request) (http.ResponseWriter, *http.Request, func(), bool) {
+// BeforeHandle is an adapter of httptrace.BeforeHandle for julienschmidt/httprouter types.
+func BeforeHandle[T any, WT Router](
+	cfg *Config,
+	router T,
+	wrapRouter func(T) WT,
+	w http.ResponseWriter,
+	req *http.Request,
+) (http.ResponseWriter, *http.Request, func(), bool) {
 	wRouter := wrapRouter(router)
 	// get the resource associated to this request
 	route := req.URL.Path

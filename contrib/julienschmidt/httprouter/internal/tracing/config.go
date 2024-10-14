@@ -20,10 +20,10 @@ import (
 const defaultServiceName = "http.router"
 
 type Config struct {
-	serviceName   string
-	spanOpts      []ddtrace.StartSpanOption
-	analyticsRate float64
 	headerTags    *internal.LockMap
+	spanOpts      []ddtrace.StartSpanOption
+	serviceName   string
+	analyticsRate float64
 }
 
 func NewConfig(opts ...Option) *Config {

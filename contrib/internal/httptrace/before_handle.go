@@ -37,6 +37,10 @@ type ServeConfig struct {
 	SpanOpts []ddtrace.StartSpanOption
 }
 
+// BeforeHandle contains functionality that should be executed before a http.Handler runs.
+// It returns the "traced" http.ResponseWriter and http.Request, an additional afterHandle function
+// that should be executed after the Handler runs, and a handled bool that instructs if the request has been handled
+// or not - in case it was handled, the original handler should not run.
 func BeforeHandle(cfg *ServeConfig, w http.ResponseWriter, r *http.Request) (http.ResponseWriter, *http.Request, func(), bool) {
 	if cfg == nil {
 		cfg = new(ServeConfig)

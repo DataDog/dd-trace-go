@@ -108,8 +108,17 @@ func makeCookies(parsed []*http.Cookie) map[string][]string {
 	return cookies
 }
 
-func BeforeHandle(w http.ResponseWriter, r *http.Request, span ddtrace.Span, pathParams map[string]string, opts *Config) (
-	http.ResponseWriter, *http.Request, func(), bool) {
+// BeforeHandle contains the appsec functionality that should be executed before a http.Handler runs.
+// It returns the modified http.ResponseWriter and http.Request, an additional afterHandle function
+// that should be executed after the Handler runs, and a handled bool that instructs if the request has been handled
+// or not - in case it was handled, the original handler should not run.
+func BeforeHandle(
+	w http.ResponseWriter,
+	r *http.Request,
+	span ddtrace.Span,
+	pathParams map[string]string,
+	opts *Config,
+) (http.ResponseWriter, *http.Request, func(), bool) {
 	if opts == nil {
 		opts = defaultWrapHandlerConfig
 	} else if opts.ResponseHeaderCopier == nil {
