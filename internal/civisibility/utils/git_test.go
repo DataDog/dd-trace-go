@@ -6,6 +6,7 @@
 package utils
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -80,5 +81,6 @@ func TestHasTheGitLogHaveMoreThanTwoCommits(t *testing.T) {
 
 func TestUnshallowGitRepository(t *testing.T) {
 	_, err := UnshallowGitRepository()
+	fmt.Println(err)
 	assert.NoError(t, err)
 }
