@@ -6,14 +6,11 @@
 package gotesting
 
 import (
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"runtime"
 	"slices"
-	"strconv"
 	"testing"
 
 	ddhttp "gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http"
@@ -21,121 +18,9 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 	ddtracer "gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/constants"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/integrations"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/utils/net"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 
 	"github.com/stretchr/testify/assert"
 )
-
-var currentM *testing.M
-var mTracer mocktracer.Tracer
-
-// TestMain is the entry point for testing and runs before any test.
-func TestMain(m *testing.M) {
-
-	log.SetLevel(log.LevelDebug)
-
-	// mock the settings api to enable automatic test retries
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		fmt.Printf("MockApi received request: %s\n", r.URL.Path)
-
-		// Settings request
-		if r.URL.Path == "/api/v2/libraries/tests/services/setting" {
-			w.Header().Set("Content-Type", "application/json")
-			response := struct {
-				Data struct {
-					ID         string                   `json:"id"`
-					Type       string                   `json:"type"`
-					Attributes net.SettingsResponseData `json:"attributes"`
-				} `json:"data,omitempty"`
-			}{}
-
-			// let's enable flaky test retries
-			response.Data.Attributes = net.SettingsResponseData{
-				FlakyTestRetriesEnabled: true,
-			}
-
-			fmt.Printf("MockApi sending response: %v\n", response)
-			json.NewEncoder(w).Encode(&response)
-		}
-	}))
-	defer server.Close()
-
-	// set the custom agentless url and the flaky retry count env-var
-	fmt.Printf("Using mockapi at: %s\n", server.URL)
-	os.Setenv(constants.CIVisibilityAgentlessEnabledEnvironmentVariable, "1")
-	os.Setenv(constants.CIVisibilityAgentlessURLEnvironmentVariable, server.URL)
-	os.Setenv(constants.APIKeyEnvironmentVariable, "12345")
-	os.Setenv(constants.CIVisibilityFlakyRetryCountEnvironmentVariable, "10")
-
-	// initialize the mock tracer for doing assertions on the finished spans
-	currentM = m
-	mTracer = integrations.InitializeCIVisibilityMock()
-
-	// execute the tests, because we are expecting some tests to fail and check the assertion later
-	// we don't store the exit code from the test runner
-	exitCode := RunM(m)
-	if exitCode != 1 {
-		panic("expected the exit code to be 1. We have a failing test on purpose.")
-	}
-
-	// get all finished spans
-	finishedSpans := mTracer.FinishedSpans()
-
-	// 1 session span
-	// 1 module span
-	// 2 suite span (testing_test.go and reflections_test.go)
-	// 6 tests spans from testing_test.go
-	// 7 sub stest spans from testing_test.go
-	// 1 TestRetryWithPanic + 3 retry tests from testing_test.go
-	// 1 TestRetryWithFail + 3 retry tests from testing_test.go
-	// 1 TestRetryAlwaysFail + 10 retry tests from testing_test.go
-	// 2 normal spans from testing_test.go
-	// 5 tests from reflections_test.go
-	// 2 benchmark spans (optional - require the -bench option)
-	fmt.Printf("Number of spans received: %d\n", len(finishedSpans))
-	if len(finishedSpans) < 37 {
-		panic("expected at least 37 finished spans, got " + strconv.Itoa(len(finishedSpans)))
-	}
-
-	sessionSpans := getSpansWithType(finishedSpans, constants.SpanTypeTestSession)
-	fmt.Printf("Number of sessions received: %d\n", len(sessionSpans))
-	showResourcesNameFromSpans(sessionSpans)
-	if len(sessionSpans) != 1 {
-		panic("expected exactly 1 session span, got " + strconv.Itoa(len(sessionSpans)))
-	}
-
-	moduleSpans := getSpansWithType(finishedSpans, constants.SpanTypeTestModule)
-	fmt.Printf("Number of modules received: %d\n", len(moduleSpans))
-	showResourcesNameFromSpans(moduleSpans)
-	if len(moduleSpans) != 1 {
-		panic("expected exactly 1 module span, got " + strconv.Itoa(len(moduleSpans)))
-	}
-
-	suiteSpans := getSpansWithType(finishedSpans, constants.SpanTypeTestSuite)
-	fmt.Printf("Number of suites received: %d\n", len(suiteSpans))
-	showResourcesNameFromSpans(suiteSpans)
-	if len(suiteSpans) != 2 {
-		panic("expected exactly 2 suite spans, got " + strconv.Itoa(len(suiteSpans)))
-	}
-
-	testSpans := getSpansWithType(finishedSpans, constants.SpanTypeTest)
-	fmt.Printf("Number of tests received: %d\n", len(testSpans))
-	showResourcesNameFromSpans(testSpans)
-	if len(testSpans) != 37 {
-		panic("expected exactly 37 test spans, got " + strconv.Itoa(len(testSpans)))
-	}
-
-	httpSpans := getSpansWithType(finishedSpans, ext.SpanTypeHTTP)
-	fmt.Printf("Number of http spans received: %d\n", len(httpSpans))
-	showResourcesNameFromSpans(httpSpans)
-	if len(httpSpans) != 2 {
-		panic("expected exactly 2 normal spans, got " + strconv.Itoa(len(httpSpans)))
-	}
-
-	os.Exit(0)
-}
 
 // TestMyTest01 demonstrates instrumentation of InternalTests
 func TestMyTest01(t *testing.T) {
@@ -314,10 +199,22 @@ func TestRetryWithFail(t *testing.T) {
 
 func TestRetryAlwaysFail(t *testing.T) {
 	t.Parallel()
-	t.Fatal("Always fail")
+	t.Fatal("Always fail to test the auto retries feature")
 }
 
 func TestNormalPassingAfterRetryAlwaysFail(t *testing.T) {}
+
+var run int
+
+func TestEarlyFlakeDetection(t *testing.T) {
+	run++
+	fmt.Printf(" Run: %d", run)
+	if run%2 == 0 {
+		fmt.Println(" Failed")
+		t.FailNow()
+	}
+	fmt.Println(" Passed")
+}
 
 // BenchmarkFirst demonstrates benchmark instrumentation with sub-benchmarks.
 func BenchmarkFirst(gb *testing.B) {
@@ -450,21 +347,4 @@ func assertCommon(assert *assert.Assertions, span mocktracer.Span) {
 		assert.Contains(spanTags, constants.GitCommitCommitterName)
 	}
 	assert.Contains(spanTags, constants.CIWorkspacePath)
-}
-
-func getSpansWithType(spans []mocktracer.Span, spanType string) []mocktracer.Span {
-	var result []mocktracer.Span
-	for _, span := range spans {
-		if span.Tag(ext.SpanType) == spanType {
-			result = append(result, span)
-		}
-	}
-
-	return result
-}
-
-func showResourcesNameFromSpans(spans []mocktracer.Span) {
-	for i, span := range spans {
-		fmt.Printf("  [%d] = %v\n", i, span.Tag(ext.ResourceName))
-	}
 }
