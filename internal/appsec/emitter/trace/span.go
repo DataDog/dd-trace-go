@@ -9,7 +9,7 @@ import (
 	"context"
 	"sync"
 
-	"github.com/DataDog/dd-trace-go/v2/internal/appsec/dyngo"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/dyngo"
 )
 
 type (

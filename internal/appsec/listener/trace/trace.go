@@ -6,8 +6,8 @@
 package trace
 
 import (
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/dyngo"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/config"
-	"github.com/DataDog/dd-trace-go/v2/internal/appsec/dyngo"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/emitter/trace"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/listener"
 )
