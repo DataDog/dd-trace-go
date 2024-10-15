@@ -246,15 +246,18 @@ func (p *prop) Extract(carrier interface{}) (sctx ddtrace.SpanContext, e error) 
 func setup(t *testing.T, customProp Propagator) string {
 	tp := new(log.RecordLogger)
 	var tracer *tracer
+	var stop func()
 	if customProp != nil {
-		tracer = newTracer(WithLogger(tp), WithPropagator(customProp))
+		tracer, _, _, stop = startTestTracer(t, WithLogger(tp), WithPropagator(customProp))
+		// tracer = newTracer(WithLogger(tp), WithPropagator(customProp))
 	} else {
-		tracer = newTracer(WithLogger(tp))
+		tracer, _, _, stop = startTestTracer(t, WithLogger(tp))
+		// tracer = newTracer(WithLogger(tp))
 	}
-	defer tracer.Stop()
+	defer stop()
 	tp.Reset()
 	tp.Ignore("appsec: ", telemetry.LogPrefix)
 	logStartup(tracer)
-	require.Len(t, tp.Logs(), 1)
-	return tp.Logs()[0]
+	require.Len(t, tp.Logs(), 2)
+	return tp.Logs()[1]
 }
