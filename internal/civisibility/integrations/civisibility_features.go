@@ -6,10 +6,15 @@
 package integrations
 
 import (
+	"errors"
+	"fmt"
+	"os"
+	"slices"
 	"sync"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/constants"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/utils"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/utils/net"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
@@ -25,6 +30,12 @@ type (
 		RetryCount               int64
 		TotalRetryCount          int64
 		RemainingTotalRetryCount int64
+	}
+
+	searchCommitsResponse struct {
+		LocalCommits  []string
+		RemoteCommits []string
+		IsOk          bool
 	}
 )
 
@@ -57,12 +68,42 @@ func ensureAdditionalFeaturesInitialization(serviceName string) {
 			return
 		}
 
+		// upload the repository changes
+		var uploadChannel = make(chan struct{})
+		go func() {
+			bytes, err := uploadRepositoryChanges()
+			if err != nil {
+				log.Error("civisibility: error uploading repository changes: %v", err)
+			} else {
+				log.Debug("civisibility: uploaded %v bytes in pack files", bytes)
+			}
+			uploadChannel <- struct{}{}
+		}()
+
 		// Get the CI Visibility settings payload for this test session
 		ciSettings, err := ciVisibilityClient.GetSettings()
 		if err != nil {
 			log.Error("civisibility: error getting CI visibility settings: %v", err)
 		} else if ciSettings != nil {
 			ciVisibilitySettings = *ciSettings
+		}
+
+		// check if we need to wait for the upload to finish and repeat the settings request or we can just continue
+		if ciVisibilitySettings.RequireGit {
+			log.Debug("civisibility: waiting for the git upload to finish and repeating the settings request")
+			<-uploadChannel
+			ciSettings, err = ciVisibilityClient.GetSettings()
+			if err != nil {
+				log.Error("civisibility: error getting CI visibility settings: %v", err)
+			} else if ciSettings != nil {
+				ciVisibilitySettings = *ciSettings
+			}
+		} else {
+			log.Debug("civisibility: no need to wait for the git upload to finish")
+			// Enqueue a close action to wait for the upload to finish before finishing the process
+			PushCiVisibilityCloseAction(func() {
+				<-uploadChannel
+			})
 		}
 
 		// if early flake detection is enabled then we run the early flake detection request
@@ -115,4 +156,124 @@ func GetFlakyRetriesSettings() *FlakyRetriesSetting {
 	// call to ensure the additional features initialization is completed (service name can be null here)
 	ensureAdditionalFeaturesInitialization("")
 	return &ciVisibilityFlakyRetriesSettings
+}
+
+func uploadRepositoryChanges() (bytes int64, err error) {
+	// call to ensure the additional features initialization is completed (service name can be null here)
+	ensureAdditionalFeaturesInitialization("")
+
+	// get the search commits response
+	initialCommitData, err := getSearchCommits()
+	if err != nil {
+		return 0, errors.New(fmt.Sprintf("civisibility: error getting the search commits response: %s", err.Error()))
+	}
+
+	// let's check if we could retrieve commit data
+	if !initialCommitData.IsOk {
+		return 0, nil
+	}
+
+	// if there are no commits then we don't need to do anything
+	if !initialCommitData.hasCommits() {
+		log.Debug("civisibility: no commits found")
+		return 0, nil
+	}
+
+	// If:
+	//   - we have local commits
+	//   - there are not missing commits (backend has the total number of local commits already)
+	// then we are good to go with it, we don't need to check if we need to unshallow or anything and just go with that.
+	if initialCommitData.hasCommits() && len(initialCommitData.missingCommits()) == 0 {
+		log.Debug("civisibility: initial commit data has everything already, we don't need to upload anything")
+		return 0, nil
+	}
+
+	// there's some missing commits on the backend, first we need to check if we need to unshallow before sending anything...
+	hasBeenUnshallowed, err := utils.UnshallowGitRepository()
+	if err != nil || !hasBeenUnshallowed {
+		if err != nil {
+			log.Warn(err.Error())
+		}
+		// if unshallowing the repository failed or if there's nothing to unshallow then we try to upload the packfiles from
+		// the initial commit data
+
+		// send the pack file with the missing commits
+		return sendObjectsPackFile(initialCommitData.LocalCommits[0], initialCommitData.missingCommits(), initialCommitData.RemoteCommits)
+	}
+
+	// after unshallowing the repository we need to get the search commits to calculate the missing commits again
+	commitsData, err := getSearchCommits()
+	if err != nil {
+		return 0, errors.New(fmt.Sprintf("civisibility: error getting the search commits response: %s", err.Error()))
+	}
+
+	// let's check if we could retrieve commit data
+	if !initialCommitData.IsOk {
+		return 0, nil
+	}
+
+	// send the pack file with the missing commits
+	return sendObjectsPackFile(commitsData.LocalCommits[0], commitsData.missingCommits(), commitsData.RemoteCommits)
+}
+
+// getSearchCommits gets the search commits response with the local and remote commits
+func getSearchCommits() (*searchCommitsResponse, error) {
+	localCommits := utils.GetLastLocalGitCommitShas()
+	if len(localCommits) == 0 {
+		log.Debug("civisibility: no local commits found")
+		return newSearchCommitsResponse(nil, nil, false), nil
+	}
+
+	log.Debug("civisibility: local commits found: %d", len(localCommits))
+	remoteCommits, err := ciVisibilityClient.GetCommits(localCommits)
+	return newSearchCommitsResponse(localCommits, remoteCommits, true), err
+}
+
+// newSearchCommitsResponse creates a new search commits response
+func newSearchCommitsResponse(localCommits []string, remoteCommits []string, isOk bool) *searchCommitsResponse {
+	return &searchCommitsResponse{
+		LocalCommits:  localCommits,
+		RemoteCommits: remoteCommits,
+		IsOk:          isOk,
+	}
+}
+
+// hasCommits returns true if the search commits response has commits
+func (r *searchCommitsResponse) hasCommits() bool {
+	return len(r.LocalCommits) > 0
+}
+
+// missingCommits returns the missing commits between the local and remote commits
+func (r *searchCommitsResponse) missingCommits() []string {
+	var missingCommits []string
+	for _, localCommit := range r.LocalCommits {
+		if !slices.Contains(r.RemoteCommits, localCommit) {
+			missingCommits = append(missingCommits, localCommit)
+		}
+	}
+
+	return missingCommits
+}
+
+func sendObjectsPackFile(commitSha string, commitsToInclude []string, commitsToExclude []string) (bytes int64, err error) {
+	// get the pack files to send
+	packFiles := utils.CreatePackFiles(commitsToInclude, commitsToExclude)
+	if len(packFiles) == 0 {
+		log.Debug("civisibility: no pack files to send")
+		return 0, nil
+	}
+
+	// send the pack files
+	log.Debug("civisibility: sending pack file with missing commits. files: %v", packFiles)
+
+	// try to remove the pack files after sending them
+	defer func(files []string) {
+		// best effort to remove the pack files after sending
+		for _, file := range files {
+			_ = os.Remove(file)
+		}
+	}(packFiles)
+
+	// send the pack files
+	return ciVisibilityClient.SendPackFiles(commitSha, packFiles)
 }

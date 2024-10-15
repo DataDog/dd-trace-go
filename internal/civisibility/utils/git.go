@@ -8,7 +8,9 @@ package utils
 import (
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -17,6 +19,9 @@ import (
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
+
+// MaxPackFileSizeInMb is the maximum size of a pack file in megabytes.
+const MaxPackFileSizeInMb = 3
 
 // localGitData holds various pieces of information about the local Git repository,
 // including the source root, repository URL, branch, commit SHA, author and committer details, and commit message.
@@ -73,6 +78,35 @@ func execGitString(args ...string) (string, error) {
 		return strOut, err
 	}
 	return strOut, err
+}
+
+// execGitStringWithInput executes a Git command with the given input and arguments and returns the output as a string.
+func execGitStringWithInput(input string, args ...string) (string, error) {
+	cmd := exec.Command("git", args...)
+	cmd.Stdin = strings.NewReader(input)
+	out, err := cmd.CombinedOutput()
+	strOut := strings.TrimSpace(strings.Trim(string(out), "\n"))
+	if err != nil {
+		return strOut, err
+	}
+	return strOut, err
+}
+
+// GetGitVersion retrieves the version of the Git executable installed on the system.
+func GetGitVersion() (major int, minor int, patch int, error error) {
+	out, err := execGitString("--version")
+	if err != nil {
+		return 0, 0, 0, err
+	}
+	out = strings.TrimSpace(strings.ReplaceAll(out, "git version ", ""))
+	versionParts := strings.Split(out, ".")
+	if len(versionParts) < 3 {
+		return 0, 0, 0, errors.New("invalid git version")
+	}
+	major, _ = strconv.Atoi(versionParts[0])
+	minor, _ = strconv.Atoi(versionParts[1])
+	patch, _ = strconv.Atoi(versionParts[2])
+	return major, minor, patch, nil
 }
 
 // GetLocalGitData retrieves information about the local Git repository from the current HEAD.
@@ -144,7 +178,7 @@ func GetLastLocalGitCommitShas() []string {
 	// git log --format=%H -n 1000 --since=\"1 month ago\"
 	log.Debug("civisibility.git: getting the commit SHAs of the last 1000 commits in the local Git repository")
 	out, err := execGitString("log", "--format=%H", "-n", "1000", "--since=\"1 month ago\"")
-	if err != nil {
+	if err != nil || out == "" {
 		return []string{}
 	}
 	return strings.Split(out, "\n")
@@ -157,30 +191,37 @@ func UnshallowGitRepository() (bool, error) {
 	log.Debug("civisibility.unshallow: checking if the repository is a shallow clone")
 	isAShallowClone, err := isAShallowCloneRepository()
 	if err != nil {
-		err = errors.New(fmt.Sprintf("civisibility.unshallow: error checking if the repository is a shallow clone: %s", err.Error()))
-		log.Warn(err.Error())
-		return false, err
+		return false, errors.New(fmt.Sprintf("civisibility.unshallow: error checking if the repository is a shallow clone: %s", err.Error()))
 	}
 
 	// if the git repo is not a shallow clone, we can return early
 	if !isAShallowClone {
 		log.Debug("civisibility.unshallow: the repository is not a shallow clone")
-		return true, nil
+		return false, nil
 	}
 
 	// the git repo is a shallow clone, we need to double check if there are more than just 1 commit in the logs.
 	log.Debug("civisibility.unshallow: the repository is a shallow clone, checking if there are more than 2 commits in the logs")
 	hasMoreThanTwoCommits, err := hasTheGitLogHaveMoreThanTwoCommits()
 	if err != nil {
-		err = errors.New(fmt.Sprintf("civisibility.unshallow: error checking if the git log has more than two commits: %s", err.Error()))
-		log.Warn(err.Error())
-		return false, err
+		return false, errors.New(fmt.Sprintf("civisibility.unshallow: error checking if the git log has more than two commits: %s", err.Error()))
 	}
 
 	// if there are more than 2 commits, we can return early
 	if hasMoreThanTwoCommits {
 		log.Debug("civisibility.unshallow: the git log has more than two commits")
-		return true, nil
+		return false, nil
+	}
+
+	// let's check the git version >= 2.27.0 (git --version) to see if we can unshallow the repository
+	log.Debug("civisibility.unshallow: checking the git version")
+	major, minor, _, err := GetGitVersion()
+	if err != nil {
+		return false, errors.New(fmt.Sprintf("civisibility.unshallow: error getting the git version: %s", err.Error()))
+	}
+	if major < 2 || (major == 2 && minor < 27) {
+		log.Debug("civisibility.unshallow: the git version is less than 2.27.0")
+		return false, nil
 	}
 
 	// after asking for 2 logs lines, if the git log command returns just one commit sha, we reconfigure the repo
@@ -189,9 +230,7 @@ func UnshallowGitRepository() (bool, error) {
 	// let's get the origin name (git config --default origin --get clone.defaultRemoteName)
 	originName, err := execGitString("config", "--default", "origin", "--get", "clone.defaultRemoteName")
 	if err != nil {
-		err = errors.New(fmt.Sprintf("civisibility.unshallow: error getting the origin name: %s\n%s", err.Error(), originName))
-		log.Warn(err.Error())
-		return false, err
+		return false, errors.New(fmt.Sprintf("civisibility.unshallow: error getting the origin name: %s\n%s", err.Error(), originName))
 	}
 	if originName == "" {
 		// if the origin name is empty, we fallback to "origin"
@@ -202,17 +241,13 @@ func UnshallowGitRepository() (bool, error) {
 	// let's get the sha of the HEAD (git rev-parse HEAD)
 	headSha, err := execGitString("rev-parse", "HEAD")
 	if err != nil {
-		err = errors.New(fmt.Sprintf("civisibility.unshallow: error getting the HEAD sha: %s\n%s", err.Error(), headSha))
-		log.Warn(err.Error())
-		return false, err
+		return false, errors.New(fmt.Sprintf("civisibility.unshallow: error getting the HEAD sha: %s\n%s", err.Error(), headSha))
 	}
 	if headSha == "" {
 		// if the HEAD is empty, we fallback to the current branch (git branch --show-current)
 		headSha, err = execGitString("branch", "--show-current")
 		if err != nil {
-			err = errors.New(fmt.Sprintf("civisibility.unshallow: error getting the current branch: %s\n%s", err.Error(), headSha))
-			log.Warn(err.Error())
-			return false, err
+			return false, errors.New(fmt.Sprintf("civisibility.unshallow: error getting the current branch: %s\n%s", err.Error(), headSha))
 		}
 	}
 	log.Debug("civisibility.unshallow: HEAD sha: %v", headSha)
@@ -257,9 +292,7 @@ func UnshallowGitRepository() (bool, error) {
 	}
 
 	if err != nil {
-		err = errors.New(fmt.Sprintf("civisibility.unshallow: error: %s\n%s", err.Error(), fetchOutput))
-		log.Warn(err.Error())
-		return false, err
+		return false, errors.New(fmt.Sprintf("civisibility.unshallow: error: %s\n%s", err.Error(), fetchOutput))
 	}
 
 	log.Debug("civisibility.unshallow: was completed successfully")
@@ -295,10 +328,71 @@ func isAShallowCloneRepository() (bool, error) {
 func hasTheGitLogHaveMoreThanTwoCommits() (bool, error) {
 	// git log --format=oneline -n 2
 	out, err := execGitString("log", "--format=oneline", "-n", "2")
-	if err != nil {
+	if err != nil || out == "" {
 		return false, err
 	}
 
 	commitsCount := strings.Count(out, "\n") + 1
 	return commitsCount > 1, nil
+}
+
+// getObjectsSha get the objects shas from the git repository based on the commits to include and exclude
+func getObjectsSha(commitsToInclude []string, commitsToExclude []string) []string {
+	// git rev-list --objects --no-object-names --filter=blob:none --since="1 month ago" HEAD " + string.Join(" ", commitsToExclude.Select(c => "^" + c)) + " " + string.Join(" ", commitsToInclude);
+	commitsToExcludeArgs := make([]string, len(commitsToExclude))
+	for i, c := range commitsToExclude {
+		commitsToExcludeArgs[i] = "^" + c
+	}
+	args := append([]string{"rev-list", "--objects", "--no-object-names", "--filter=blob:none", "--since=\"1 month ago\"", "HEAD"}, append(commitsToExcludeArgs, commitsToInclude...)...)
+	out, err := execGitString(args...)
+	if err != nil {
+		return []string{}
+	}
+	return strings.Split(out, "\n")
+}
+
+func CreatePackFiles(commitsToInclude []string, commitsToExclude []string) []string {
+	// get the objects shas to send
+	objectsShas := getObjectsSha(commitsToInclude, commitsToExclude)
+	if len(objectsShas) == 0 {
+		log.Debug("civisibility: no objects found to send")
+		return nil
+	}
+
+	// create the objects shas string
+	var objectsShasString string
+	for _, objectSha := range objectsShas {
+		objectsShasString += objectSha + "\n"
+	}
+
+	// get a temporary path to store the pack files
+	temporaryPath, err := os.MkdirTemp("", "pack-objects")
+	if err != nil {
+		log.Warn("civisibility: error creating temporary directory: %s", err)
+		return nil
+	}
+
+	// git pack-objects --compression=9 --max-pack-size={MaxPackFileSizeInMb}m "{temporaryPath}"
+	out, err := execGitStringWithInput(objectsShasString,
+		"pack-objects", "--compression=9", "--max-pack-size="+strconv.Itoa(MaxPackFileSizeInMb)+"m", temporaryPath+"/")
+	if err != nil {
+		log.Warn("civisibility: error creating pack files: %s", err)
+		return nil
+	}
+
+	// construct the full path to the pack files
+	var packFiles []string
+	for i, packFile := range strings.Split(out, "\n") {
+		file := filepath.Join(temporaryPath, fmt.Sprintf("-%s.pack", packFile))
+
+		// check if the pack file exists
+		if _, err := os.Stat(file); os.IsNotExist(err) {
+			log.Warn("civisibility: pack file not found: %s", packFiles[i])
+			continue
+		}
+
+		packFiles = append(packFiles, file)
+	}
+
+	return packFiles
 }

@@ -438,6 +438,11 @@ func setUpHttpServer(flakyRetriesEnabled bool, earlyFlakyDetectionEnabled bool, 
 
 			fmt.Printf("MockApi sending response: %v\n", response)
 			json.NewEncoder(w).Encode(&response)
+		} else if r.URL.Path == "/api/v2/git/repository/search_commits" {
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte("{}"))
+		} else if r.URL.Path == "/api/v2/git/repository/packfile" {
+			w.WriteHeader(http.StatusAccepted)
 		} else {
 			http.NotFound(w, r)
 		}
