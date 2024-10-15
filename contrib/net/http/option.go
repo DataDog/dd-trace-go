@@ -8,6 +8,7 @@ package http
 import (
 	"math"
 	"net/http"
+	"os"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
@@ -179,6 +180,12 @@ func newRoundTripperConfig() *roundTripperConfig {
 		analyticsRate: instr.GlobalAnalyticsRate(),
 		resourceNamer: defaultResourceNamer,
 		ignoreRequest: func(_ *http.Request) bool { return false },
+		queryString:   internal.BoolEnv(envClientQueryStringEnabled, true),
+		isStatusError: isClientError,
+	}
+	v := os.Getenv(envClientErrorStatuses)
+	if fn := httptrace.GetErrorCodesFromInput(v); fn != nil {
+		sharedCfg.isStatusError = fn
 	}
 	return &roundTripperConfig{
 		commonConfig: sharedCfg,
@@ -226,4 +233,8 @@ func WithErrorCheck(fn func(err error) bool) RoundTripperOptionFn {
 	return func(cfg *roundTripperConfig) {
 		cfg.errCheck = fn
 	}
+}
+
+func isClientError(statusCode int) bool {
+	return statusCode >= 400 && statusCode < 500
 }

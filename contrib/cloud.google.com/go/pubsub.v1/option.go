@@ -7,12 +7,8 @@ package pubsub
 
 import "github.com/DataDog/dd-trace-go/v2/instrumentation"
 
-type config struct {
-	serviceName     string
-	publishSpanName string
-	receiveSpanName string
-	measured        bool
-}
+// Option is used to customize spans started by WrapReceiveHandler or Publish.
+type Option = tracing.Option
 
 func defaultConfig() *config {
 	return &config{

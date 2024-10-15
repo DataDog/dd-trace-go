@@ -19,6 +19,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 
 	"golang.org/x/time/rate"
 )
@@ -516,6 +517,7 @@ const defaultRateLimit = 100.0
 // The limit is DD_TRACE_RATE_LIMIT if set, `defaultRateLimit` otherwise.
 func newRateLimiter() *rateLimiter {
 	limit := defaultRateLimit
+	origin := telemetry.OriginDefault
 	v := os.Getenv("DD_TRACE_RATE_LIMIT")
 	if v != "" {
 		l, err := strconv.ParseFloat(v, 64)
@@ -525,9 +527,11 @@ func newRateLimiter() *rateLimiter {
 			log.Warn("DD_TRACE_RATE_LIMIT negative, using default value %f", limit)
 		} else {
 			// override the default limit
+			origin = telemetry.OriginEnvVar
 			limit = l
 		}
 	}
+	reportTelemetryOnAppStarted(telemetry.Configuration{Name: "trace_rate_limit", Value: limit, Origin: origin})
 	return &rateLimiter{
 		limiter:  rate.NewLimiter(rate.Limit(limit), int(math.Ceil(limit))),
 		prevTime: time.Now(),

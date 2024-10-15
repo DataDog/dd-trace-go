@@ -245,8 +245,41 @@ func Test(t *testing.T) {
 	test.Close(ResultStatusSkip)
 }
 
-func testAssertions(assert *assert.Assertions, now time.Time, testSpan *mocktracer.Span) {
-	assert.Equal(now.Unix(), testSpan.StartTime().Unix())
+func TestWithInnerFunc(t *testing.T) {
+	mockTracer.Reset()
+	assert := assert.New(t)
+
+	now := time.Now()
+	session, module, suite, test := createDDTest(now)
+	defer func() {
+		session.Close(0)
+		module.Close()
+		suite.Close()
+	}()
+	test.SetError(errors.New("we keep the last error"))
+	test.SetErrorInfo("my-type", "my-message", "my-stack")
+	func() {
+		pc, _, _, _ := runtime.Caller(0)
+		test.SetTestFunc(runtime.FuncForPC(pc))
+	}()
+
+	assert.NotNil(test.Context())
+	assert.Equal("my-test", test.Name())
+	assert.Equal(now, test.StartTime())
+	assert.Equal(suite, test.Suite())
+
+	test.Close(ResultStatusPass)
+
+	finishedSpans := mockTracer.FinishedSpans()
+	assert.Equal(1, len(finishedSpans))
+	testAssertions(assert, now, finishedSpans[0])
+
+	//no-op call
+	test.Close(ResultStatusSkip)
+}
+
+func testAssertions(assert *assert.Assertions, now time.Time, testSpan mocktracer.Span) {
+	assert.Equal(now, testSpan.StartTime())
 	assert.Equal("my-module-framework.test", testSpan.OperationName())
 
 	tags := map[string]interface{}{
@@ -268,6 +301,12 @@ func testAssertions(assert *assert.Assertions, now time.Time, testSpan *mocktrac
 	assert.Contains(spanTags, constants.TestModuleIDTag)
 	assert.Contains(spanTags, constants.TestSuiteIDTag)
 	assert.Contains(spanTags, constants.TestSourceFile)
+
+	// make sure we have both start and end line
 	assert.Contains(spanTags, constants.TestSourceStartLine)
+	assert.Contains(spanTags, constants.TestSourceEndLine)
+	// make sure the startLine < endLine
+	assert.Less(spanTags[constants.TestSourceStartLine].(int), spanTags[constants.TestSourceEndLine].(int))
+
 	commonAssertions(assert, testSpan)
 }

@@ -9,6 +9,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"strings"
 	"testing"
@@ -18,6 +19,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -27,24 +29,27 @@ import (
 
 func TestAppSec(t *testing.T) {
 	testutils.StartAppSec(t)
+	t.Setenv("DD_APPSEC_WAF_TIMEOUT", "1h") // Functionally unlimited
+	appsec.Start()
+	defer appsec.Stop()
 	if !instr.AppSecEnabled() {
 		t.Skip("appsec disabled")
 	}
 
 	setup := func() (fixturepb.FixtureClient, mocktracer.Tracer, func()) {
-		rig, err := newAppsecRig(false)
+		rig, err := newAppsecRig(t, false)
 		require.NoError(t, err)
 
 		mt := mocktracer.Start()
 
 		return rig.client, mt, func() {
-			rig.Close()
+			assert.NoError(t, rig.Close())
 			mt.Stop()
 		}
 	}
 
 	t.Run("unary", func(t *testing.T) {
-		client, mt, cleanup := setup()
+		client, mt, cleanup := setup(t)
 		defer cleanup()
 
 		// Send a XSS attack in the payload along with the canary value in the RPC metadata
@@ -65,7 +70,7 @@ func TestAppSec(t *testing.T) {
 	})
 
 	t.Run("stream", func(t *testing.T) {
-		client, mt, cleanup := setup()
+		client, mt, cleanup := setup(t)
 		defer cleanup()
 
 		// Send a XSS attack in the payload along with the canary value in the RPC metadata
@@ -122,9 +127,9 @@ func TestAppSec(t *testing.T) {
 			histogram[tr.Rule.ID]++
 		}
 
-		require.EqualValues(t, 1, histogram["crs-941-180"]) // XSS attack attempt
-		require.EqualValues(t, 5, histogram["crs-942-270"]) // SQL-injection attack attempt
-		require.EqualValues(t, 1, histogram["ua0-600-55x"]) // canary rule attack attempt
+		assert.EqualValues(t, 1, histogram["crs-941-180"]) // XSS attack attempt
+		assert.EqualValues(t, 5, histogram["crs-942-270"]) // SQL-injection attack attempt
+		assert.EqualValues(t, 1, histogram["ua0-600-55x"]) // canary rule attack attempt
 
 		require.Len(t, histogram, 3)
 	})
@@ -231,13 +236,13 @@ func TestUserBlocking(t *testing.T) {
 	}
 
 	setup := func() (fixturepb.FixtureClient, mocktracer.Tracer, func()) {
-		rig, err := newAppsecRig(false)
+		rig, err := newAppsecRig(t, false)
 		require.NoError(t, err)
 
 		mt := mocktracer.Start()
 
 		return rig.client, mt, func() {
-			rig.Close()
+			assert.NoError(t, rig.Close())
 			mt.Stop()
 		}
 	}
@@ -275,7 +280,7 @@ func TestUserBlocking(t *testing.T) {
 		} {
 			t.Run(tc.name, func(t *testing.T) {
 				// Helper assertion function to run for the unary and stream tests
-				assert := func(t *testing.T, do func(client fixturepb.FixtureClient)) {
+				withClient := func(t *testing.T, do func(client fixturepb.FixtureClient)) {
 					client, mt, cleanup := setup()
 					defer cleanup()
 
@@ -296,7 +301,7 @@ func TestUserBlocking(t *testing.T) {
 				}
 
 				t.Run("unary", func(t *testing.T) {
-					assert(t, func(client fixturepb.FixtureClient) {
+					withClient(t, func(client fixturepb.FixtureClient) {
 						ctx := metadata.NewOutgoingContext(context.Background(), tc.md)
 						reply, err := client.Ping(ctx, &fixturepb.FixtureRequest{Name: tc.message})
 						require.Nil(t, reply)
@@ -305,19 +310,18 @@ func TestUserBlocking(t *testing.T) {
 				})
 
 				t.Run("stream", func(t *testing.T) {
-					assert(t, func(client fixturepb.FixtureClient) {
+					withClient(t, func(client fixturepb.FixtureClient) {
 						ctx := metadata.NewOutgoingContext(context.Background(), tc.md)
 
 						// Open the stream
 						stream, err := client.StreamPing(ctx)
 						require.NoError(t, err)
-						defer func() {
-							require.NoError(t, stream.CloseSend())
-						}()
+						defer func() { assert.NoError(t, stream.CloseSend()) }()
 
 						// Send a message
-						err = stream.Send(&fixturepb.FixtureRequest{Name: tc.message})
-						require.NoError(t, err)
+						if err := stream.Send(&fixturepb.FixtureRequest{Name: tc.message}); err != io.EOF {
+							require.NoError(t, err)
+						}
 
 						// Receive a message
 						reply, err := stream.Recv()
@@ -340,20 +344,20 @@ func TestPasslist(t *testing.T) {
 		t.Skip("appsec disabled")
 	}
 
-	setup := func() (fixturepb.FixtureClient, mocktracer.Tracer, func()) {
-		rig, err := newAppsecRig(false)
+	setup := func(t *testing.T) (fixturepb.FixtureClient, mocktracer.Tracer, func()) {
+		rig, err := newAppsecRig(t, false)
 		require.NoError(t, err)
 
 		mt := mocktracer.Start()
 
 		return rig.client, mt, func() {
-			rig.Close()
+			assert.NoError(t, rig.Close())
 			mt.Stop()
 		}
 	}
 
 	t.Run("unary", func(t *testing.T) {
-		client, mt, cleanup := setup()
+		client, mt, cleanup := setup(t)
 		defer cleanup()
 
 		// Send the payload triggering the sec event thanks to the "zouzou" value in the RPC metadata
@@ -375,7 +379,7 @@ func TestPasslist(t *testing.T) {
 	})
 
 	t.Run("stream", func(t *testing.T) {
-		client, mt, cleanup := setup()
+		client, mt, cleanup := setup(t)
 		defer cleanup()
 
 		// Open the steam triggering the sec event thanks to the "zouzou" value in the RPC metadata
@@ -385,8 +389,9 @@ func TestPasslist(t *testing.T) {
 
 		// Send some messages
 		for i := 0; i < 5; i++ {
-			err = stream.Send(&fixturepb.FixtureRequest{Name: "hello"})
-			require.NoError(t, err)
+			if err := stream.Send(&fixturepb.FixtureRequest{Name: "hello"}); err != io.EOF {
+				require.NoError(t, err)
+			}
 
 			// Check that the handler was properly called
 			res, err := stream.Recv()
@@ -410,8 +415,8 @@ func TestPasslist(t *testing.T) {
 	})
 }
 
-func newAppsecRig(traceClient bool, interceptorOpts ...Option) (*appsecRig, error) {
-	interceptorOpts = append([]Option{WithService("grpc")}, interceptorOpts...)
+func newAppsecRig(t *testing.T, traceClient bool, interceptorOpts ...Option) (*appsecRig, error) {
+	interceptorOpts = append([]Option{WithServiceName("grpc")}, interceptorOpts...)
 
 	server := grpc.NewServer(
 		grpc.UnaryInterceptor(UnaryServerInterceptor(interceptorOpts...)),
@@ -427,7 +432,7 @@ func newAppsecRig(traceClient bool, interceptorOpts ...Option) (*appsecRig, erro
 	}
 	_, port, _ := net.SplitHostPort(li.Addr().String())
 	// start our test fixtureServer.
-	go server.Serve(li)
+	go func() { assert.NoError(t, server.Serve(li)) }()
 
 	opts := []grpc.DialOption{grpc.WithInsecure()}
 	if traceClient {
@@ -461,9 +466,9 @@ type appsecRig struct {
 	client        fixturepb.FixtureClient
 }
 
-func (r *appsecRig) Close() {
-	r.server.Stop()
-	r.conn.Close()
+func (r *appsecRig) Close() error {
+	defer r.server.GracefulStop()
+	return r.conn.Close()
 }
 
 type appsecFixtureServer struct {

@@ -5,6 +5,9 @@ on:
       - reopened
       - opened
       - edited
+permissions:
+  contents: read
+  issues: write
 jobs:
   label_issues:
     if: contains(github.event.issue.title, 'contrib')

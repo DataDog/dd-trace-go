@@ -128,23 +128,60 @@ func (ddm *M) instrumentInternalTests(internalTests *[]testing.InternalTest) {
 // executeInternalTest wraps the original test function to include CI visibility instrumentation.
 func (ddm *M) executeInternalTest(testInfo *testingTInfo) func(*testing.T) {
 	originalFunc := runtime.FuncForPC(reflect.Indirect(reflect.ValueOf(testInfo.originalFunc)).Pointer())
-	return func(t *testing.T) {
+	instrumentedFunc := func(t *testing.T) {
+		// Get the metadata regarding the execution (in case is already created from the additional features)
+		execMeta := getTestMetadata(t)
+		if execMeta == nil {
+			// in case there's no additional features then we create the metadata for this execution and defer the disposal
+			execMeta = createTestMetadata(t)
+			defer deleteTestMetadata(t)
+		}
+
 		// Create or retrieve the module, suite, and test for CI visibility.
 		module := session.GetOrCreateModuleWithFramework(testInfo.moduleName, testFramework, runtime.Version())
 		suite := module.GetOrCreateSuite(testInfo.suiteName)
 		test := suite.CreateTest(testInfo.testName)
 		test.SetTestFunc(originalFunc)
-		setCiVisibilityTest(t, test)
+
+		// Set the CI Visibility test to the execution metadata
+		execMeta.test = test
+
+		// If the execution is for a new test we tag the test event from early flake detection
+		if execMeta.isANewTest {
+			// Set the is new test tag
+			test.SetTag(constants.TestIsNew, "true")
+		}
+
+		// If the execution is a retry we tag the test event
+		if execMeta.isARetry {
+			// Set the retry tag
+			test.SetTag(constants.TestIsRetry, "true")
+		}
+
+		startTime := time.Now()
 		defer func() {
+			duration := time.Since(startTime)
+			// check if is a new EFD test and the duration >= 5 min
+			if execMeta.isANewTest && duration.Minutes() >= 5 {
+				// Set the EFD retry abort reason
+				test.SetTag(constants.TestEarlyFlakeDetectionRetryAborted, "slow")
+			}
+
 			if r := recover(); r != nil {
 				// Handle panic and set error information.
-				test.SetErrorInfo("panic", fmt.Sprint(r), utils.GetStacktrace(1))
+				execMeta.panicData = r
+				execMeta.panicStacktrace = utils.GetStacktrace(1)
+				test.SetErrorInfo("panic", fmt.Sprint(r), execMeta.panicStacktrace)
 				suite.SetTag(ext.Error, true)
 				module.SetTag(ext.Error, true)
 				test.Close(integrations.ResultStatusFail)
-				checkModuleAndSuite(module, suite)
-				integrations.ExitCiVisibility()
-				panic(r)
+				if !execMeta.hasAdditionalFeatureWrapper {
+					// we are going to let the additional feature wrapper to handle
+					// the panic, and module and suite closing (we don't want to close the suite earlier in case of a retry)
+					checkModuleAndSuite(module, suite)
+					integrations.ExitCiVisibility()
+					panic(r)
+				}
 			} else {
 				// Normal finalization: determine the test result based on its state.
 				if t.Failed() {
@@ -158,13 +195,23 @@ func (ddm *M) executeInternalTest(testInfo *testingTInfo) func(*testing.T) {
 					test.Close(integrations.ResultStatusPass)
 				}
 
-				checkModuleAndSuite(module, suite)
+				if !execMeta.hasAdditionalFeatureWrapper {
+					// we are going to let the additional feature wrapper to handle
+					// the module and suite closing (we don't want to close the suite earlier in case of a retry)
+					checkModuleAndSuite(module, suite)
+				}
 			}
 		}()
 
 		// Execute the original test function.
 		testInfo.originalFunc(t)
 	}
+
+	// Register the instrumented func as an internal instrumented func (to avoid double instrumentation)
+	setInstrumentationMetadata(runtime.FuncForPC(reflect.Indirect(reflect.ValueOf(instrumentedFunc)).Pointer()), &instrumentationMetadata{IsInternal: true})
+
+	// Get the additional feature wrapper
+	return applyAdditionalFeaturesToTestFunc(instrumentedFunc, &testInfo.commonInfo)
 }
 
 // instrumentInternalBenchmarks instruments the internal benchmarks for CI visibility.
@@ -216,13 +263,13 @@ func (ddm *M) instrumentInternalBenchmarks(internalBenchmarks *[]testing.Interna
 
 // executeInternalBenchmark wraps the original benchmark function to include CI visibility instrumentation.
 func (ddm *M) executeInternalBenchmark(benchmarkInfo *testingBInfo) func(*testing.B) {
-	return func(b *testing.B) {
+	originalFunc := runtime.FuncForPC(reflect.Indirect(reflect.ValueOf(benchmarkInfo.originalFunc)).Pointer())
+	instrumentedInternalFunc := func(b *testing.B) {
 
 		// decrement level
 		getBenchmarkPrivateFields(b).AddLevel(-1)
 
 		startTime := time.Now()
-		originalFunc := runtime.FuncForPC(reflect.Indirect(reflect.ValueOf(benchmarkInfo.originalFunc)).Pointer())
 		module := session.GetOrCreateModuleWithFrameworkAndStartTime(benchmarkInfo.moduleName, testFramework, runtime.Version(), startTime)
 		suite := module.GetOrCreateSuiteWithStartTime(benchmarkInfo.suiteName, startTime)
 		test := suite.CreateTestWithStartTime(benchmarkInfo.testName, startTime)
@@ -231,7 +278,7 @@ func (ddm *M) executeInternalBenchmark(benchmarkInfo *testingBInfo) func(*testin
 		// Run the original benchmark function.
 		var iPfOfB *benchmarkPrivateFields
 		var recoverFunc *func(r any)
-		b.Run(b.Name(), func(b *testing.B) {
+		instrumentedFunc := func(b *testing.B) {
 			// Stop the timer to perform initialization and replacements.
 			b.StopTimer()
 
@@ -252,14 +299,26 @@ func (ddm *M) executeInternalBenchmark(benchmarkInfo *testingBInfo) func(*testin
 			iPfOfB = getBenchmarkPrivateFields(b)
 			// Replace the benchmark function with the original one (this must be executed only once - the first iteration[b.run1]).
 			*iPfOfB.benchFunc = benchmarkInfo.originalFunc
-			// Set the CI visibility benchmark.
-			setCiVisibilityBenchmark(b, test)
+
+			// Get the metadata regarding the execution (in case is already created from the additional features)
+			execMeta := getTestMetadata(b)
+			if execMeta == nil {
+				// in case there's no additional features then we create the metadata for this execution and defer the disposal
+				execMeta = createTestMetadata(b)
+				defer deleteTestMetadata(b)
+			}
+
+			// Sets the CI Visibility test
+			execMeta.test = test
 
 			// Restart the timer and execute the original benchmark function.
 			b.ResetTimer()
 			b.StartTimer()
 			benchmarkInfo.originalFunc(b)
-		})
+		}
+
+		setCiVisibilityBenchmarkFunc(runtime.FuncForPC(reflect.Indirect(reflect.ValueOf(instrumentedFunc)).Pointer()))
+		b.Run(b.Name(), instrumentedFunc)
 
 		endTime := time.Now()
 		results := iPfOfB.result
@@ -315,6 +374,9 @@ func (ddm *M) executeInternalBenchmark(benchmarkInfo *testingBInfo) func(*testin
 
 		checkModuleAndSuite(module, suite)
 	}
+	setCiVisibilityBenchmarkFunc(originalFunc)
+	setCiVisibilityBenchmarkFunc(runtime.FuncForPC(reflect.Indirect(reflect.ValueOf(instrumentedInternalFunc)).Pointer()))
+	return instrumentedInternalFunc
 }
 
 // RunM runs the tests and benchmarks using CI visibility.

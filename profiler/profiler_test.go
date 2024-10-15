@@ -392,6 +392,7 @@ func TestAllUploaded(t *testing.T) {
 			"delta-mutex.pprof",
 			"goroutines.pprof",
 			"goroutineswait.pprof",
+			"metrics.json",
 		}
 		if executionTraceEnabledDefault {
 			expected = append(expected, "go.trace")
@@ -762,4 +763,59 @@ func TestUDSDefault(t *testing.T) {
 	defer Stop()
 
 	<-profiles
+}
+
+func TestOrchestrionProfileInfo(t *testing.T) {
+	testCases := []struct {
+		env  string
+		want string
+	}{
+		{want: "manual"},
+		{env: "1", want: "manual"},
+		{env: "true", want: "manual"},
+		{env: "auto", want: "auto"},
+	}
+	for _, tc := range testCases {
+		t.Run(fmt.Sprintf("env=\"%s\"", tc.env), func(t *testing.T) {
+			t.Setenv("DD_PROFILING_ENABLED", tc.env)
+			p := doOneShortProfileUpload(t)
+			info := p.event.Info.Profiler
+			t.Logf("%+v", info)
+			if got := info.Activation; got != tc.want {
+				t.Errorf("wanted profiler activation \"%s\", got %s", tc.want, got)
+			}
+			want := "none"
+			if orchestrion.Enabled() {
+				want = "orchestrion"
+			}
+			if got := info.SSI.Mechanism; got != want {
+				t.Errorf("wanted profiler injected = %v, got %v", want, got)
+			}
+		})
+	}
+}
+
+func TestShortMetricsProfile(t *testing.T) {
+	profiles := startTestProfiler(t, 1, WithPeriod(10*time.Millisecond), WithProfileTypes(MetricsProfile))
+	for range 3 {
+		p := <-profiles
+		if _, ok := p.attachments["metrics.json"]; !ok {
+			t.Errorf("didn't get metrics profile, got %v", p.event.Attachments)
+		}
+	}
+}
+
+func TestMetricsProfileStopEarlyNoLog(t *testing.T) {
+	rl := new(log.RecordLogger)
+	defer log.UseLogger(rl)()
+	startTestProfiler(t, 1, WithPeriod(2*time.Second), WithProfileTypes(MetricsProfile))
+	// Stop the profiler immediately
+	Stop()
+	log.Flush()
+	for _, msg := range rl.Logs() {
+		// We should not see any error about stopping the metrics profile short
+		if strings.Contains(msg, "ERROR:") {
+			t.Errorf("unexpected error log: %s", msg)
+		}
+	}
 }

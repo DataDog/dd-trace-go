@@ -10,6 +10,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"runtime"
+	"slices"
 	"strconv"
 	"testing"
 
@@ -109,18 +111,27 @@ func Test_Foo(gt *testing.T) {
 	assertTest(gt)
 	t := (*T)(gt)
 	var tests = []struct {
+		index byte
 		name  string
 		input string
 		want  string
 	}{
-		{"yellow should return color", "yellow", "color"},
-		{"banana should return fruit", "banana", "fruit"},
-		{"duck should return animal", "duck", "animal"},
+		{1, "yellow should return color", "yellow", "color"},
+		{2, "banana should return fruit", "banana", "fruit"},
+		{3, "duck should return animal", "duck", "animal"},
 	}
+	buf := []byte{}
 	for _, test := range tests {
+		test := test
 		t.Run(test.name, func(t *testing.T) {
 			t.Log(test.name)
+			buf = append(buf, test.index)
 		})
+	}
+
+	expected := []byte{1, 2, 3}
+	if !slices.Equal(buf, expected) {
+		t.Error("error in subtests closure")
 	}
 }
 
@@ -265,6 +276,59 @@ func TestSkip(gt *testing.T) {
 	t.Skip("Nothing to do here, skipping!")
 }
 
+// Tests for test retries feature
+
+var testRetryWithPanicRunNumber = 0
+
+func TestRetryWithPanic(t *testing.T) {
+	t.Cleanup(func() {
+		if testRetryWithPanicRunNumber == 1 {
+			fmt.Println("CleanUp from the initial execution")
+		} else {
+			fmt.Println("CleanUp from the retry")
+		}
+	})
+	testRetryWithPanicRunNumber++
+	if testRetryWithPanicRunNumber < 4 {
+		panic("Test Panic")
+	}
+}
+
+var testRetryWithFailRunNumber = 0
+
+func TestRetryWithFail(t *testing.T) {
+	t.Cleanup(func() {
+		if testRetryWithFailRunNumber == 1 {
+			fmt.Println("CleanUp from the initial execution")
+		} else {
+			fmt.Println("CleanUp from the retry")
+		}
+	})
+	testRetryWithFailRunNumber++
+	if testRetryWithFailRunNumber < 4 {
+		t.Fatal("Failed due the wrong execution number")
+	}
+}
+
+func TestRetryAlwaysFail(t *testing.T) {
+	t.Parallel()
+	t.Fatal("Always fail to test the auto retries feature")
+}
+
+func TestNormalPassingAfterRetryAlwaysFail(t *testing.T) {}
+
+var run int
+
+func TestEarlyFlakeDetection(t *testing.T) {
+	run++
+	fmt.Printf(" Run: %d", run)
+	if run%2 == 0 {
+		fmt.Println(" Failed")
+		t.FailNow()
+	}
+	fmt.Println(" Passed")
+}
+
 // BenchmarkFirst demonstrates benchmark instrumentation with sub-benchmarks.
 func BenchmarkFirst(gb *testing.B) {
 
@@ -371,8 +435,9 @@ func assertCommon(assert *assert.Assertions, span *mocktracer.Span) {
 	spanTags := span.Tags()
 
 	assert.Subset(spanTags, map[string]interface{}{
-		constants.Origin:   constants.CIAppTestOrigin,
-		constants.TestType: constants.TestTypeTest,
+		constants.Origin:          constants.CIAppTestOrigin,
+		constants.TestType:        constants.TestTypeTest,
+		constants.LogicalCPUCores: float64(runtime.NumCPU()),
 	})
 
 	assert.Contains(spanTags, ext.ResourceName)
