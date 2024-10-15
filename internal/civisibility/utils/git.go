@@ -74,9 +74,6 @@ func execGit(args ...string) ([]byte, error) {
 func execGitString(args ...string) (string, error) {
 	out, err := execGit(args...)
 	strOut := strings.TrimSpace(strings.Trim(string(out), "\n"))
-	if err != nil {
-		return strOut, err
-	}
 	return strOut, err
 }
 
@@ -86,9 +83,6 @@ func execGitStringWithInput(input string, args ...string) (string, error) {
 	cmd.Stdin = strings.NewReader(input)
 	out, err := cmd.CombinedOutput()
 	strOut := strings.TrimSpace(strings.Trim(string(out), "\n"))
-	if err != nil {
-		return strOut, err
-	}
 	return strOut, err
 }
 
