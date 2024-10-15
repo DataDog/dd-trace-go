@@ -23,6 +23,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/namingschematest"
 	"gopkg.in/DataDog/dd-trace-go.v1/contrib/segmentio/kafka.go.v0/internal/tracing"
 	"gopkg.in/DataDog/dd-trace-go.v1/datastreams"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
@@ -446,6 +447,9 @@ func TestNamingSchema(t *testing.T) {
 	namingschematest.NewKafkaTest(genSpans)(t)
 }
 
+// benchSpan is a package-level variable used to prevent compiler optimisations in the benchmarks below.
+var benchSpan ddtrace.Span
+
 func BenchmarkReaderStartSpan(b *testing.B) {
 	ctx := context.Background()
 	kafkaCfg := tracing.KafkaConfig{
@@ -457,11 +461,13 @@ func BenchmarkReaderStartSpan(b *testing.B) {
 		Key:   []byte("key1"),
 		Value: []byte("value1"),
 	}
+	var result ddtrace.Span
 
 	b.ResetTimer()
 	for n := 0; n < b.N; n++ {
-		tr.StartConsumeSpan(ctx, wrapMessage(&msg))
+		result = tr.StartConsumeSpan(ctx, wrapMessage(&msg))
 	}
+	benchSpan = result
 }
 
 func BenchmarkWriterStartSpan(b *testing.B) {
@@ -480,9 +486,11 @@ func BenchmarkWriterStartSpan(b *testing.B) {
 		Key:   []byte("key1"),
 		Value: []byte("value1"),
 	}
+	var result ddtrace.Span
 
 	b.ResetTimer()
 	for n := 0; n < b.N; n++ {
-		tr.StartProduceSpan(ctx, wrapTracingWriter(kw), wrapMessage(&msg))
+		result = tr.StartProduceSpan(ctx, wrapTracingWriter(kw), wrapMessage(&msg))
 	}
+	benchSpan = result
 }
