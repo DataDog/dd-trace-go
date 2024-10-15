@@ -15,8 +15,8 @@ import (
 	"sync"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/osinfo"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
 var (

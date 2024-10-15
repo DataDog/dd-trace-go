@@ -8,8 +8,8 @@ package usersec
 import (
 	"context"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/appsec/events"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
+	"github.com/DataDog/dd-trace-go/v2/appsec/events"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec/dyngo"
 )
 
 const errorLog = `

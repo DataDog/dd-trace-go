@@ -6,8 +6,8 @@
 package main
 
 import (
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"    // want `import URL needs to be updated`
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer" // want `import URL needs to be updated`
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"    // want `import URL needs to be updated`
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer" // want `import URL needs to be updated`
 )
 
 func main() {

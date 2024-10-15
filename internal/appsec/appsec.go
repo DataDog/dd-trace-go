@@ -10,8 +10,8 @@ import (
 	"sync"
 
 	appsecLog "github.com/DataDog/appsec-internal-go/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec/listener"
 	waf "github.com/DataDog/go-libddwaf/v3"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener"
 
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/dyngo"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/config"

@@ -14,13 +14,13 @@ import (
 	"os/exec"
 	"testing"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/constants"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/integrations"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/utils/net"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
+	"github.com/DataDog/dd-trace-go/v2/internal"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/net"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
 var currentM *testing.M
@@ -106,7 +106,7 @@ func runFlakyTestRetriesTests(m *testing.M) {
 	// 2 normal spans from testing_test.go
 
 	// check spans by resource name
-	checkSpansByResourceName(finishedSpans, "gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/integrations/gotesting", 1)
+	checkSpansByResourceName(finishedSpans, "github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting", 1)
 	checkSpansByResourceName(finishedSpans, "reflections_test.go", 1)
 	checkSpansByResourceName(finishedSpans, "testing_test.go", 1)
 	checkSpansByResourceName(finishedSpans, "testing_test.go.TestMyTest01", 1)
@@ -146,7 +146,7 @@ func runEarlyFlakyTestDetectionTests(m *testing.M) {
 	// mock the settings api to enable automatic test retries
 	server := setUpHttpServer(false, true, &net.EfdResponseData{
 		Tests: net.EfdResponseDataModules{
-			"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/integrations/gotesting": net.EfdResponseDataSuites{
+			"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting": net.EfdResponseDataSuites{
 				"reflections_test.go": []string{
 					"TestGetFieldPointerFrom",
 					"TestGetInternalTestArray",
@@ -189,7 +189,7 @@ func runEarlyFlakyTestDetectionTests(m *testing.M) {
 	// 22 normal spans from testing_test.go
 
 	// check spans by resource name
-	checkSpansByResourceName(finishedSpans, "gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/integrations/gotesting", 1)
+	checkSpansByResourceName(finishedSpans, "github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting", 1)
 	checkSpansByResourceName(finishedSpans, "reflections_test.go", 1)
 	checkSpansByResourceName(finishedSpans, "testing_test.go", 1)
 	checkSpansByResourceName(finishedSpans, "testing_test.go.TestMyTest01", 11)
@@ -230,7 +230,7 @@ func runFlakyTestRetriesWithEarlyFlakyTestDetectionTests(m *testing.M) {
 	// mock the settings api to enable automatic test retries
 	server := setUpHttpServer(true, true, &net.EfdResponseData{
 		Tests: net.EfdResponseDataModules{
-			"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/integrations/gotesting": net.EfdResponseDataSuites{
+			"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting": net.EfdResponseDataSuites{
 				"reflections_test.go": []string{
 					"TestGetFieldPointerFrom",
 					"TestGetInternalTestArray",
@@ -287,7 +287,7 @@ func runFlakyTestRetriesWithEarlyFlakyTestDetectionTests(m *testing.M) {
 	// 2 normal spans from testing_test.go
 
 	// check spans by resource name
-	checkSpansByResourceName(finishedSpans, "gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/integrations/gotesting", 1)
+	checkSpansByResourceName(finishedSpans, "github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting", 1)
 	checkSpansByResourceName(finishedSpans, "reflections_test.go", 1)
 	checkSpansByResourceName(finishedSpans, "testing_test.go", 1)
 	checkSpansByResourceName(finishedSpans, "testing_test.go.TestMyTest01", 1)
