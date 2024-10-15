@@ -46,7 +46,7 @@ func TestFilterSensitiveInfo(t *testing.T) {
 }
 
 func TestGetLocalGitData(t *testing.T) {
-	data, err := GetLocalGitData()
+	data, err := getLocalGitData()
 
 	assert.NoError(t, err)
 	assert.NotEmpty(t, data.SourceRoot)

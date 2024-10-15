@@ -109,14 +109,14 @@ func GetGitVersion() (major int, minor int, patch int, error error) {
 	return major, minor, patch, nil
 }
 
-// GetLocalGitData retrieves information about the local Git repository from the current HEAD.
+// getLocalGitData retrieves information about the local Git repository from the current HEAD.
 // It gathers details such as the repository URL, current branch, latest commit SHA, author and committer details, and commit message.
 //
 // Returns:
 //
 //	A localGitData struct populated with the retrieved Git data.
 //	An error if any Git command fails or the retrieved data is incomplete.
-func GetLocalGitData() (localGitData, error) {
+func getLocalGitData() (localGitData, error) {
 	gitData := localGitData{}
 
 	if !isGitFound() {
@@ -191,7 +191,7 @@ func UnshallowGitRepository() (bool, error) {
 	log.Debug("civisibility.unshallow: checking if the repository is a shallow clone")
 	isAShallowClone, err := isAShallowCloneRepository()
 	if err != nil {
-		return false, errors.New(fmt.Sprintf("civisibility.unshallow: error checking if the repository is a shallow clone: %s", err.Error()))
+		return false, fmt.Errorf("civisibility.unshallow: error checking if the repository is a shallow clone: %s", err.Error())
 	}
 
 	// if the git repo is not a shallow clone, we can return early
@@ -204,7 +204,7 @@ func UnshallowGitRepository() (bool, error) {
 	log.Debug("civisibility.unshallow: the repository is a shallow clone, checking if there are more than 2 commits in the logs")
 	hasMoreThanTwoCommits, err := hasTheGitLogHaveMoreThanTwoCommits()
 	if err != nil {
-		return false, errors.New(fmt.Sprintf("civisibility.unshallow: error checking if the git log has more than two commits: %s", err.Error()))
+		return false, fmt.Errorf("civisibility.unshallow: error checking if the git log has more than two commits: %s", err.Error())
 	}
 
 	// if there are more than 2 commits, we can return early
@@ -217,7 +217,7 @@ func UnshallowGitRepository() (bool, error) {
 	log.Debug("civisibility.unshallow: checking the git version")
 	major, minor, _, err := GetGitVersion()
 	if err != nil {
-		return false, errors.New(fmt.Sprintf("civisibility.unshallow: error getting the git version: %s", err.Error()))
+		return false, fmt.Errorf("civisibility.unshallow: error getting the git version: %s", err.Error())
 	}
 	if major < 2 || (major == 2 && minor < 27) {
 		log.Debug("civisibility.unshallow: the git version is less than 2.27.0")
