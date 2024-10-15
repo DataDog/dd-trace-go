@@ -195,15 +195,15 @@ func UnshallowGitRepository() (bool, error) {
 	}
 
 	// the git repo is a shallow clone, we need to double check if there are more than just 1 commit in the logs.
-	log.Debug("civisibility.unshallow: the repository is a shallow clone, checking if there are more than 2 commits in the logs")
-	hasMoreThanTwoCommits, err := hasTheGitLogHaveMoreThanTwoCommits()
+	log.Debug("civisibility.unshallow: the repository is a shallow clone, checking if there are more than one commit in the logs")
+	hasMoreThanOneCommits, err := hasTheGitLogHaveMoreThanOneCommits()
 	if err != nil {
-		return false, fmt.Errorf("civisibility.unshallow: error checking if the git log has more than two commits: %s", err.Error())
+		return false, fmt.Errorf("civisibility.unshallow: error checking if the git log has more than one commit: %s", err.Error())
 	}
 
-	// if there are more than 2 commits, we can return early
-	if hasMoreThanTwoCommits {
-		log.Debug("civisibility.unshallow: the git log has more than two commits")
+	// if there are more than 1 commits, we can return early
+	if hasMoreThanOneCommits {
+		log.Debug("civisibility.unshallow: the git log has more than one commits")
 		return false, nil
 	}
 
@@ -318,8 +318,8 @@ func isAShallowCloneRepository() (bool, error) {
 	return strings.TrimSpace(out) == "true", nil
 }
 
-// hasTheGitLogHaveMoreThanTwoCommits checks if the local Git repository has more than two commits.
-func hasTheGitLogHaveMoreThanTwoCommits() (bool, error) {
+// hasTheGitLogHaveMoreThanOneCommits checks if the local Git repository has more than one commit.
+func hasTheGitLogHaveMoreThanOneCommits() (bool, error) {
 	// git log --format=oneline -n 2
 	out, err := execGitString("log", "--format=oneline", "-n", "2")
 	if err != nil || out == "" {
