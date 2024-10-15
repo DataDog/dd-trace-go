@@ -67,6 +67,12 @@ func TestGetLastLocalGitCommitShas(t *testing.T) {
 	assert.NotEmpty(t, shas)
 }
 
+func TestIsAShallowCloneRepositoryL(t *testing.T) {
+	isShallow, err := isAShallowCloneRepository()
+	assert.NoError(t, err)
+	assert.False(t, isShallow)
+}
+
 func TestUnshallowGitRepository(t *testing.T) {
 	logger.SetLevel(logger.LevelDebug)
 	_, err := UnshallowGitRepository()
