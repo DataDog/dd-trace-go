@@ -230,7 +230,7 @@ func UnshallowGitRepository() (bool, error) {
 	// let's get the origin name (git config --default origin --get clone.defaultRemoteName)
 	originName, err := execGitString("config", "--default", "origin", "--get", "clone.defaultRemoteName")
 	if err != nil {
-		return false, errors.New(fmt.Sprintf("civisibility.unshallow: error getting the origin name: %s\n%s", err.Error(), originName))
+		return false, fmt.Errorf("civisibility.unshallow: error getting the origin name: %s\n%s", err.Error(), originName)
 	}
 	if originName == "" {
 		// if the origin name is empty, we fallback to "origin"
@@ -241,13 +241,13 @@ func UnshallowGitRepository() (bool, error) {
 	// let's get the sha of the HEAD (git rev-parse HEAD)
 	headSha, err := execGitString("rev-parse", "HEAD")
 	if err != nil {
-		return false, errors.New(fmt.Sprintf("civisibility.unshallow: error getting the HEAD sha: %s\n%s", err.Error(), headSha))
+		return false, fmt.Errorf("civisibility.unshallow: error getting the HEAD sha: %s\n%s", err.Error(), headSha)
 	}
 	if headSha == "" {
 		// if the HEAD is empty, we fallback to the current branch (git branch --show-current)
 		headSha, err = execGitString("branch", "--show-current")
 		if err != nil {
-			return false, errors.New(fmt.Sprintf("civisibility.unshallow: error getting the current branch: %s\n%s", err.Error(), headSha))
+			return false, fmt.Errorf("civisibility.unshallow: error getting the current branch: %s\n%s", err.Error(), headSha)
 		}
 	}
 	log.Debug("civisibility.unshallow: HEAD sha: %v", headSha)
@@ -292,7 +292,7 @@ func UnshallowGitRepository() (bool, error) {
 	}
 
 	if err != nil {
-		return false, errors.New(fmt.Sprintf("civisibility.unshallow: error: %s\n%s", err.Error(), fetchOutput))
+		return false, fmt.Errorf("civisibility.unshallow: error: %s\n%s", err.Error(), fetchOutput)
 	}
 
 	log.Debug("civisibility.unshallow: was completed successfully")
