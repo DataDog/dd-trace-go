@@ -159,9 +159,6 @@ func GetFlakyRetriesSettings() *FlakyRetriesSetting {
 }
 
 func uploadRepositoryChanges() (bytes int64, err error) {
-	// call to ensure the additional features initialization is completed (service name can be null here)
-	ensureAdditionalFeaturesInitialization("")
-
 	// get the search commits response
 	initialCommitData, err := getSearchCommits()
 	if err != nil {
