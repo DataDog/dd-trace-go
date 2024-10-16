@@ -86,8 +86,8 @@ func execGitStringWithInput(input string, args ...string) (string, error) {
 	return strOut, err
 }
 
-// GetGitVersion retrieves the version of the Git executable installed on the system.
-func GetGitVersion() (major int, minor int, patch int, error error) {
+// getGitVersion retrieves the version of the Git executable installed on the system.
+func getGitVersion() (major int, minor int, patch int, error error) {
 	out, err := execGitString("--version")
 	if err != nil {
 		return 0, 0, 0, err
@@ -209,12 +209,13 @@ func UnshallowGitRepository() (bool, error) {
 
 	// let's check the git version >= 2.27.0 (git --version) to see if we can unshallow the repository
 	log.Debug("civisibility.unshallow: checking the git version")
-	major, minor, _, err := GetGitVersion()
+	major, minor, patch, err := getGitVersion()
 	if err != nil {
 		return false, fmt.Errorf("civisibility.unshallow: error getting the git version: %s", err.Error())
 	}
+	log.Debug("civisibility.unshallow: git version: %v.%v.%v", major, minor, patch)
 	if major < 2 || (major == 2 && minor < 27) {
-		log.Debug("civisibility.unshallow: the git version is less than 2.27.0")
+		log.Debug("civisibility.unshallow: the git version is less than 2.27.0 we cannot unshallow the repository")
 		return false, nil
 	}
 
