@@ -100,7 +100,8 @@ func end2EndStreamRequest(t *testing.T, stream extproc.ExternalProcessor_Process
 	err = stream.Send(&extproc.ProcessingRequest{
 		Request: &extproc.ProcessingRequest_ResponseBody{
 			ResponseBody: &extproc.HttpBody{
-				Body: []byte("body"),
+				Body:        []byte("body"),
+				EndOfStream: true,
 			},
 		},
 	})

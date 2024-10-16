@@ -2,8 +2,8 @@ package main
 
 import (
 	"crypto/tls"
-	"fmt"
 	"gopkg.in/DataDog/dd-trace-go.v1/contrib/envoyproxy/envoy"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
 	"net"
 	"net/http"
@@ -57,7 +57,7 @@ func main() {
 	// Ensure Appsec is enabled
 	err := os.Setenv("DD_APPSEC_ENABLED", "1")
 	if err != nil {
-		fmt.Printf("Failed to set environment variable: %v\n", err)
+		log.Error("Failed to set environment variable: %v\n", err)
 		return
 	}
 
@@ -66,10 +66,10 @@ func main() {
 	tracer.Start()
 
 	go StartGPRCSsl(&extensionService, config)
-	fmt.Printf("Service extension: callout gRPC server started on %s:%s\n", config.extensionHost, config.extensionPort)
+	log.Info("Service extension: callout gRPC server started on %s:%s\n", config.extensionHost, config.extensionPort)
 
 	go startHealthCheck(config)
-	fmt.Printf("Service extension: health check server started on %s:%s\n", config.extensionHost, config.healthcheckPort)
+	log.Info("Service extension: health check server started on %s:%s\n", config.extensionHost, config.healthcheckPort)
 
 	select {}
 }
@@ -98,12 +98,12 @@ func startHealthCheck(config serviceExtensionConfig) {
 func StartGPRCSsl(service extproc.ExternalProcessorServer, config serviceExtensionConfig) {
 	cert, err := tls.LoadX509KeyPair("localhost.crt", "localhost.key")
 	if err != nil {
-		fmt.Printf("Failed to load key pair: %v\n", err)
+		log.Error("Failed to load key pair: %v\n", err)
 	}
 
 	lis, err := net.Listen("tcp", config.extensionHost+":"+config.extensionPort)
 	if err != nil {
-		fmt.Printf("Failed to listen: %v\n", err)
+		log.Error("Failed to listen: %v\n", err)
 	}
 
 	si := envoy.StreamServerInterceptor()
@@ -113,6 +113,6 @@ func StartGPRCSsl(service extproc.ExternalProcessorServer, config serviceExtensi
 	extproc.RegisterExternalProcessorServer(grpcServer, service)
 	reflection.Register(grpcServer)
 	if err := grpcServer.Serve(lis); err != nil {
-		fmt.Printf("Failed to serve gRPC: %v\n", err)
+		log.Error("Failed to serve gRPC: %v\n", err)
 	}
 }

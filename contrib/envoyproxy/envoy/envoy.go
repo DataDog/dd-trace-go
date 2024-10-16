@@ -7,7 +7,10 @@ package envoy
 
 import (
 	"context"
-	"fmt"
+	"errors"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	grpctrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/google.golang.org/grpc"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
@@ -19,10 +22,6 @@ import (
 	"strconv"
 	"strings"
 	"sync/atomic"
-
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 
 	corev3 "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
 	v3 "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
@@ -44,11 +43,8 @@ type CurrentRequest struct {
 	parsedUrl   *url.URL
 	requestArgs httpsec.HandlerOperationArgs
 
-	blocked                 bool
-	blockedHeaders          map[string][]string
-	blockedTemplate         []byte
-	blockedStatusCode       int
-	blockedRedirectLocation string
+	statusCode int
+	blocked    bool
 }
 
 func StreamServerInterceptor(opts ...grpctrace.Option) grpc.StreamServerInterceptor {
@@ -65,14 +61,18 @@ func StreamServerInterceptor(opts ...grpctrace.Option) grpc.StreamServerIntercep
 			blocked: false,
 		}
 
+		// Close the span when the request is done processing
 		defer func() {
-			// Close the span if it's still open in case of an error
-			closeSpan(currentRequest, 500)
+			closeSpan(currentRequest)
 		}()
 
 		for {
 			select {
 			case <-ctx.Done():
+				if errors.Is(ctx.Err(), context.Canceled) {
+					return nil
+				}
+
 				return ctx.Err()
 
 			default:
@@ -81,48 +81,49 @@ func StreamServerInterceptor(opts ...grpctrace.Option) grpc.StreamServerIntercep
 			var req extproc.ProcessingRequest
 			err := ss.RecvMsg(&req)
 			if err != nil {
-				if err == io.EOF {
+				// Note: Envoy is inconsistent with the "end_of_stream" value of its headers responses,
+				// so we can't fully rely on it to determine when it will close (cancel) the stream.
+				if err == io.EOF || err.(interface{ GRPCStatus() *status.Status }).GRPCStatus().Code() == codes.Canceled {
 					return nil
 				}
 
-				fmt.Printf("Error receiving request/response: %v\n", err)
+				log.Warn("Error receiving request/response: %v\n", err)
 				return status.Errorf(codes.Unknown, "Error receiving request/response: %v", err)
 			}
 
-			resp, end, err := envoyExternalProcessingEventHandler(ctx, &req, currentRequest)
+			resp, err := envoyExternalProcessingEventHandler(ctx, &req, currentRequest)
 			if err != nil {
-				fmt.Printf("Error processing request/response: %v\n", err)
+				log.Error("Error processing request/response: %v\n", err)
 				return status.Errorf(codes.Unknown, "Error processing request/response: %v", err)
 			}
 
-			// The end of the stream has been reached (no more data to process)
-			if end {
-				// Close the stream
-				fmt.Println("End of stream reached")
+			// End of stream reached, no more data to process
+			if resp == nil {
+				log.Debug("End of stream reached")
 				return nil
 			}
 
+			// Send Message could fail if envoy close the stream before the message could be sent (probably because of an Envoy timeout)
 			if err := ss.SendMsg(resp); err != nil {
-				fmt.Printf("Error sending response: %v\n", err)
-				return status.Errorf(codes.Unknown, "Error sending response: %v", err)
+				log.Warn("Error sending response (probably because of an Envoy timeout): %v", err)
+				return status.Errorf(codes.Unknown, "Error sending response (probably because of an Envoy timeout): %v", err)
 			}
 
 			if currentRequest.blocked {
-				fmt.Println("Request blocked, stream ended")
+				log.Debug("Request blocked, stream ended")
 				return nil
 			}
 		}
 	}
 }
 
-func envoyExternalProcessingEventHandler(ctx context.Context, req *extproc.ProcessingRequest, currentRequest *CurrentRequest) (*extproc.ProcessingResponse, bool, error) {
+func envoyExternalProcessingEventHandler(ctx context.Context, req *extproc.ProcessingRequest, currentRequest *CurrentRequest) (*extproc.ProcessingResponse, error) {
 	switch v := req.Request.(type) {
 	case *extproc.ProcessingRequest_RequestHeaders:
-		cr, err := ProcessRequestHeaders(ctx, req.Request.(*extproc.ProcessingRequest_RequestHeaders), currentRequest)
-		return cr, false, err
+		return ProcessRequestHeaders(ctx, req.Request.(*extproc.ProcessingRequest_RequestHeaders), currentRequest)
 
 	case *extproc.ProcessingRequest_RequestBody:
-		// TODO: Handle request body in the WAF
+		// TODO: Handle request raw body in the WAF
 		return &extproc.ProcessingResponse{
 			Response: &extproc.ProcessingResponse_RequestBody{
 				RequestBody: &extproc.BodyResponse{
@@ -131,29 +132,34 @@ func envoyExternalProcessingEventHandler(ctx context.Context, req *extproc.Proce
 					},
 				},
 			},
-		}, false, nil
+		}, nil
 
 	case *extproc.ProcessingRequest_RequestTrailers:
 		return &extproc.ProcessingResponse{
 			Response: &extproc.ProcessingResponse_RequestTrailers{},
-		}, false, nil
+		}, nil
 
 	case *extproc.ProcessingRequest_ResponseHeaders:
 		return ProcessResponseHeaders(req.Request.(*extproc.ProcessingRequest_ResponseHeaders), currentRequest)
 
 	case *extproc.ProcessingRequest_ResponseBody:
-		// TODO: Handle response body in the WAF
+		r := req.Request.(*extproc.ProcessingRequest_ResponseBody)
+		if r.ResponseBody.GetEndOfStream() {
+			return nil, nil
+		}
+
+		// TODO: Handle response raw body in the WAF
 		return &extproc.ProcessingResponse{
 			Response: &extproc.ProcessingResponse_ResponseBody{},
-		}, true, nil
+		}, nil
 
 	case *extproc.ProcessingRequest_ResponseTrailers:
 		return &extproc.ProcessingResponse{
 			Response: &extproc.ProcessingResponse_RequestTrailers{},
-		}, true, nil
+		}, nil
 
 	default:
-		return nil, false, status.Errorf(codes.Unknown, "Unknown request type: %T", v)
+		return nil, status.Errorf(codes.Unknown, "Unknown request type: %T", v)
 	}
 }
 
@@ -176,7 +182,7 @@ func ProcessRequestHeaders(ctx context.Context, req *extproc.ProcessingRequest_R
 	currentRequest.parsedUrl = parsedUrl
 
 	// client ip set in the x-forwarded-for header (cf: https://www.envoyproxy.io/docs/envoy/latest/configuration/http/http_conn_man/headers#x-forwarded-for)
-	ipTags, clientIp := httpsec2.ClientIPTags(headers, true, "")
+	ipTags, clientIp := httpsec2.ClientIPTags(headers, true, "") // TODO: Better parsing for remote ip tags
 
 	currentRequest.requestArgs = httpsec.MakeHandlerOperationArgs(headers, method, host, clientIp, parsedUrl)
 	headers = currentRequest.requestArgs.Headers // Replace headers with the ones from the args because it has been modified
@@ -187,33 +193,16 @@ func ProcessRequestHeaders(ctx context.Context, req *extproc.ProcessingRequest_R
 	// Run WAF on request data
 	currentRequest.op, currentRequest.blockAction, _ = httpsec.StartOperation(ctx, currentRequest.requestArgs)
 
-	if blockPtr := currentRequest.blockAction.Load(); blockPtr != nil {
-		// HTTP Blocking Action Handler
-		currentRequest.blocked = true
-		currentRequest.blockedStatusCode = blockPtr.StatusCode
-		if blockPtr.RedirectLocation != "" {
-			currentRequest.blockedRedirectLocation = blockPtr.RedirectLocation
-		} else {
-			currentRequest.blockedHeaders, currentRequest.blockedTemplate = blockPtr.BlockingTemplate(headers)
-		}
-	}
-
 	// Link Appsec events
 	// TODO: re-add events if not auto added
-	// httptrace2.SetSecurityEventsTags(currentRequest.span, currentRequest.op.Events())
-	err = waf.SetEventSpanTags(currentRequest.span, currentRequest.op.Events())
-	if err != nil {
-		return nil, err
-	}
-
 	// TODO: waf.AddWAFMonitoringTags(op, waf.handle.Diagnostics().Version, ctx.Stats().Metrics())
-	if err := waf.SetEventSpanTags(currentRequest.op, currentRequest.op.Events()); err != nil {
+	if err := waf.SetEventSpanTags(currentRequest.span, currentRequest.op.Events()); err != nil {
 		log.Debug("appsec: failed to set event span tags: %v", err)
 	}
 
-	// We need to block the request, return an immediate response
-	if currentRequest.blocked {
-		return doBlockRequest(currentRequest), nil
+	// Block handling: If triggered, we need to block the request, return an immediate response
+	if blockPtr := currentRequest.blockAction.Load(); blockPtr != nil {
+		return doBlockRequest(currentRequest, blockPtr), nil
 	}
 
 	return &extproc.ProcessingResponse{
@@ -251,51 +240,46 @@ func verifyRequestHttp2ResponseHeaders(headers map[string][]string) (string, err
 	return headers[":status"][0], nil
 }
 
-// TODO: Add check on "end_of_stream" to know if it's the last part of the request (without body) and close the stream without error (add a new return bool)
-func ProcessResponseHeaders(res *extproc.ProcessingRequest_ResponseHeaders, currentRequest *CurrentRequest) (*extproc.ProcessingResponse, bool, error) {
+func ProcessResponseHeaders(res *extproc.ProcessingRequest_ResponseHeaders, currentRequest *CurrentRequest) (*extproc.ProcessingResponse, error) {
 	log.Debug("Received response headers: %v\n", res.ResponseHeaders)
 
 	headers, envoyHeaders := separateEnvoyHeaders(res.ResponseHeaders.GetHeaders().GetHeaders())
 
 	statusCodeStr, err := verifyRequestHttp2ResponseHeaders(envoyHeaders)
 	if err != nil {
-		return nil, false, err
+		return nil, err
 	}
 
-	statusCode, err := strconv.Atoi(statusCodeStr)
+	currentRequest.statusCode, err = strconv.Atoi(statusCodeStr)
 	if err != nil {
-		return nil, false, status.Errorf(codes.InvalidArgument, "Error parsing response header status code: %v", err)
+		return nil, status.Errorf(codes.InvalidArgument, "Error parsing response header status code: %v", err)
 	}
 
 	args := httpsec.HandlerOperationRes{
 		Headers:    headers,
-		StatusCode: statusCode,
+		StatusCode: currentRequest.statusCode,
 	}
 
-	currentRequest.op.Finish(args, currentRequest.span) // TODO: WHAT IS HAPPENING TO THE SPAN HERE?
-	// TODO: // httptrace2.SetSecurityEventsTags(currentRequest.span, secEvents)
+	currentRequest.op.Finish(args, currentRequest.span)
+
+	// Link Appsec events
+	// TODO: re-add events if not auto added
+	// TODO: waf.AddWAFMonitoringTags(op, waf.handle.Diagnostics().Version, ctx.Stats().Metrics())
+	if err := waf.SetEventSpanTags(currentRequest.span, currentRequest.op.Events()); err != nil {
+		log.Debug("appsec: failed to set event span tags: %v", err)
+	}
+
+	// Block handling: If triggered, we need to block the request, return an immediate response
 	if blockPtr := currentRequest.blockAction.Load(); blockPtr != nil {
-		// HTTP Blocking Action Handler
-		currentRequest.blocked = true
-		currentRequest.blockedStatusCode = blockPtr.StatusCode
-		if blockPtr.RedirectLocation != "" {
-			currentRequest.blockedRedirectLocation = blockPtr.RedirectLocation
-		} else {
-			currentRequest.blockedHeaders, currentRequest.blockedTemplate = blockPtr.BlockingTemplate(headers)
-		}
+		return doBlockRequest(currentRequest, blockPtr), nil
 	}
 
-	// We need to block the request, return an immediate response
-	if currentRequest.blocked {
-		return doBlockRequest(currentRequest), false, nil
-	}
-
-	// Close the span
 	httpsec2.SetResponseHeadersTags(currentRequest.span, headers)
-	closeSpan(currentRequest, statusCode)
 
+	// Note: (cf. comment in the stream error handling)
+	// The end of stream bool value is not reliable
 	if res.ResponseHeaders.GetEndOfStream() {
-		return &extproc.ProcessingResponse{}, true, nil
+		return nil, nil
 	}
 
 	return &extproc.ProcessingResponse{
@@ -306,7 +290,7 @@ func ProcessResponseHeaders(res *extproc.ProcessingRequest_ResponseHeaders, curr
 				},
 			},
 		},
-	}, false, nil
+	}, nil
 }
 
 func createExternalProcessedSpan(ctx context.Context, headers map[string][]string, method string, host string, path string, ipTags map[string]string, parsedUrl *url.URL) tracer.Span {
@@ -362,21 +346,22 @@ func separateEnvoyHeaders(receivedHeaders []*corev3.HeaderValue) (map[string][]s
 	return headers, pseudoHeadersHttp2
 }
 
-func doBlockRequest(currentRequest *CurrentRequest) *extproc.ProcessingResponse {
+func doBlockRequest(currentRequest *CurrentRequest, blockAction *actions.BlockHTTP) *extproc.ProcessingResponse {
+	currentRequest.blocked = true
 	currentRequest.span.SetTag(waf.BlockedRequestTag, true)
+
 	var headerToSet map[string][]string
 	var body []byte
-	if currentRequest.blockedRedirectLocation != "" {
+	if blockAction.RedirectLocation != "" {
 		headerToSet, body = actions.HandleRedirectLocationString(
 			currentRequest.parsedUrl.Path,
-			currentRequest.blockedRedirectLocation,
-			currentRequest.blockedStatusCode,
+			blockAction.RedirectLocation,
+			blockAction.StatusCode,
 			currentRequest.requestArgs.Method,
 			currentRequest.requestArgs.Headers,
 		)
 	} else {
-		headerToSet = currentRequest.blockedHeaders
-		body = currentRequest.blockedTemplate
+		headerToSet, body = blockAction.BlockingTemplate(currentRequest.requestArgs.Headers) // TODO: Check if the header here always needs to be the request or can also be the response
 	}
 
 	var headersMutation []*v3.HeaderValueOption
@@ -390,13 +375,13 @@ func doBlockRequest(currentRequest *CurrentRequest) *extproc.ProcessingResponse 
 	}
 
 	httpsec2.SetResponseHeadersTags(currentRequest.span, headerToSet)
-	closeSpan(currentRequest, currentRequest.blockedStatusCode)
+	currentRequest.statusCode = blockAction.StatusCode
 
 	return &extproc.ProcessingResponse{
 		Response: &extproc.ProcessingResponse_ImmediateResponse{
 			ImmediateResponse: &extproc.ImmediateResponse{
 				Status: &v32.HttpStatus{
-					Code: v32.StatusCode(currentRequest.blockedStatusCode),
+					Code: v32.StatusCode(currentRequest.statusCode),
 				},
 				Headers: &extproc.HeaderMutation{
 					SetHeaders: headersMutation,
@@ -410,10 +395,16 @@ func doBlockRequest(currentRequest *CurrentRequest) *extproc.ProcessingResponse 
 	}
 }
 
-func closeSpan(currentRequest *CurrentRequest, statusCode int) {
-	if currentRequest.span != nil {
-		httptrace.FinishRequestSpan(currentRequest.span, statusCode)
-		fmt.Printf("Span closed with status code: %v\n", statusCode)
+func closeSpan(currentRequest *CurrentRequest) {
+	span := currentRequest.span
+	if span != nil {
+		// Note: The status code could be 0 if an internal error occurred
+		statusCodeStr := strconv.Itoa(currentRequest.statusCode)
+		span.SetTag(ext.HTTPCode, statusCodeStr)
+
+		span.Finish()
+
+		log.Debug("Span closed with status code: %v\n", currentRequest.statusCode)
 		currentRequest.span = nil
 	}
 }
