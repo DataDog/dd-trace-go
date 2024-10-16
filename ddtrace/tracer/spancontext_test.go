@@ -160,7 +160,8 @@ func TestSpanTracePushOne(t *testing.T) {
 // and the associated trace is counted as dropped.
 func TestTraceFinishChunk(t *testing.T) {
 	assert := assert.New(t)
-	tracer := newUnstartedTracer()
+	tracer, err := newUnstartedTracer()
+	assert.Nil(err)
 	defer tracer.statsd.Close()
 
 	root := newSpan("name", "service", "resource", 0, 0, 0)
