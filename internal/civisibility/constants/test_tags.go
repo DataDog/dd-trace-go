@@ -70,9 +70,16 @@ const (
 	// This constant is used to tag traces with the test session name
 	TestSessionName = "test_session.name"
 
+	// TestIsNew indicates a new test
+	// This constant is used to tag test events that are detected as new by early flake detection
+	TestIsNew = "test.is_new"
+
 	// TestIsRetry indicates a retry execution
 	// This constant is used to tag test events that are part of a retry execution
 	TestIsRetry = "test.is_retry"
+
+	// TestEarlyFlakeDetectionRetryAborted indicates a retry abort reason by the early flake detection feature
+	TestEarlyFlakeDetectionRetryAborted = "test.early_flake.abort_reason"
 )
 
 // Define valid test status types.

@@ -3,6 +3,13 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2024 Datadog, Inc.
 
+// Package tracing contains tracing logic for the cloud.google.com/go/pubsub.v1 instrumentation.
+//
+// WARNING: this package SHOULD NOT import cloud.google.com/go/pubsub.
+//
+// The motivation of this package is to support orchestrion, which cannot use the main package because it imports
+// the cloud.google.com/go/pubsub package, and since orchestrion modifies the library code itself,
+// this would cause an import cycle.
 package tracing
 
 import (

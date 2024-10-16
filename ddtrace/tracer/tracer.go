@@ -111,6 +111,11 @@ type tracer struct {
 	// abandonedSpansDebugger specifies where and how potentially abandoned spans are stored
 	// when abandoned spans debugging is enabled.
 	abandonedSpansDebugger *abandonedSpansDebugger
+
+	// logFile contains a pointer to the file for writing tracer logs along with helper functionality for closing the file
+	// logFile is closed when tracer stops
+	// by default, tracer logs to stderr and this setting is unused
+	logFile *log.ManagedFile
 }
 
 const (
@@ -272,6 +277,14 @@ func newUnstartedTracer(opts ...StartOption) *tracer {
 	if c.dataStreamsMonitoringEnabled {
 		dataStreamsProcessor = datastreams.NewProcessor(statsd, c.env, c.serviceName, c.version, c.agentURL, c.httpClient)
 	}
+	var logFile *log.ManagedFile
+	if v := c.logDirectory; v != "" {
+		logFile, err = log.OpenFileAtPath(v)
+		if err != nil {
+			log.Warn("%v", err)
+			c.logDirectory = ""
+		}
+	}
 	t := &tracer{
 		config:           c,
 		traceWriter:      writer,
@@ -294,6 +307,7 @@ func newUnstartedTracer(opts ...StartOption) *tracer {
 		}),
 		statsd:      statsd,
 		dataStreams: dataStreamsProcessor,
+		logFile:     logFile,
 	}
 	return t
 }
@@ -679,6 +693,10 @@ func (t *tracer) Stop() {
 	}
 	appsec.Stop()
 	remoteconfig.Stop()
+	// Close log file last to account for any logs from the above calls
+	if t.logFile != nil {
+		t.logFile.Close()
+	}
 }
 
 // Inject uses the configured or default TextMap Propagator.
