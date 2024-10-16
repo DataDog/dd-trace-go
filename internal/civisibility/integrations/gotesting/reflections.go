@@ -157,6 +157,45 @@ func getTestParentPrivateFields(t *testing.T) *commonPrivateFields {
 	return nil
 }
 
+// contextMatcher is collection of required private fields from testing.context.match
+type contextMatcher struct {
+	mu       *sync.RWMutex
+	subNames *map[string]int32
+}
+
+// ClearSubNames clears the subname map used for creating unique names for subtests
+func (c *contextMatcher) ClearSubNames() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	*c.subNames = map[string]int32{}
+}
+
+// getTestContextMatcherPrivateFields is a method to retrieve all required privates field from
+// testing.T.context.match, returning a contextMatcher instance
+func getTestContextMatcherPrivateFields(t *testing.T) *contextMatcher {
+	indirectValue := reflect.Indirect(reflect.ValueOf(t))
+	contextMember := indirectValue.FieldByName("context")
+	if !contextMember.IsValid() {
+		return nil
+	}
+	contextMember = contextMember.Elem()
+	matchMember := contextMember.FieldByName("match")
+	if !matchMember.IsValid() {
+		return nil
+	}
+	matchMember = matchMember.Elem()
+
+	fields := &contextMatcher{}
+	if ptr, err := getFieldPointerFromValue(matchMember, "mu"); err == nil {
+		fields.mu = (*sync.RWMutex)(ptr)
+	}
+	if ptr, err := getFieldPointerFromValue(matchMember, "subNames"); err == nil {
+		fields.subNames = (*map[string]int32)(ptr)
+	}
+
+	return fields
+}
+
 // copyTestWithoutParent tries to copy all private fields except the t.parent from a *testing.T to another
 func copyTestWithoutParent(source *testing.T, target *testing.T) {
 	// Copy important field values
