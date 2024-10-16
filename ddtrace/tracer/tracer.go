@@ -119,6 +119,11 @@ type tracer struct {
 	// wg waits for all goroutines to exit when stopping.
 	wg sync.WaitGroup
 
+	// Keeps track of the total number of traces dropped for accurate logging.
+	totalTracesDropped uint32
+
+	logDroppedTraces *time.Ticker
+
 	// prioritySampling holds an instance of the priority sampler.
 	prioritySampling *prioritySampler
 
