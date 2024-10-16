@@ -8,8 +8,8 @@
 package stacktrace
 
 import (
-	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/trace"
 	"github.com/DataDog/dd-trace-go/v2/internal"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 
 	"github.com/tinylib/msgp/msgp"
 )

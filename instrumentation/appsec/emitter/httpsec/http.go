@@ -18,17 +18,11 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/DataDog/dd-trace-go/v2/appsec/events"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/dyngo"
-	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/httpsec/types"
-	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/sharedsec"
-	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/trace"
-	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/trace/httptrace"
-	"github.com/DataDog/dd-trace-go/v2/internal/log"
-	"github.com/DataDog/dd-trace-go/v2/internal/stacktrace"
-
-	"github.com/DataDog/appsec-internal-go/netip"
+	actions "github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/sharedsec"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec/emitter/waf"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec/emitter/waf/addresses"
 )
 
 // HandlerOperation type representing an HTTP operation. It must be created with
@@ -79,7 +73,7 @@ func StartOperation(ctx context.Context, args HandlerOperationArgs) (*HandlerOpe
 }
 
 // Finish the HTTP handler operation and its children operations and write everything to the service entry span.
-func (op *HandlerOperation) Finish(res HandlerOperationRes, span ddtrace.Span) {
+func (op *HandlerOperation) Finish(res HandlerOperationRes, span *tracer.Span) {
 	dyngo.FinishOperation(op, res)
 	op.ContextOperation.Finish(span)
 }

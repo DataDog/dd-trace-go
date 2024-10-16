@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/DataDog/dd-trace-go/contrib/gorilla/mux/v2"
+	mux "github.com/DataDog/dd-trace-go/contrib/gorilla/mux/v2"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 
 	"github.com/stretchr/testify/assert"
