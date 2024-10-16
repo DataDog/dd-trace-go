@@ -10,18 +10,17 @@ import (
 	"sync"
 	"time"
 
-	"github.com/DataDog/dd-trace-go/v2/ddtrace"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
-	"github.com/DataDog/dd-trace-go/v2/internal/log"
-	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 )
 
-const componentName = "cloud.google.com/go/pubsub.v1"
+const componentName = instrumentation.PackageGCPPubsub
+
+var instr *instrumentation.Instrumentation
 
 func init() {
-	telemetry.LoadIntegration(componentName)
-	tracer.MarkIntegrationImported(componentName)
+	instr = instrumentation.Load(instrumentation.PackageGCPPubsub)
 }
 
 type Message struct {
@@ -44,9 +43,9 @@ type Subscription interface {
 func TracePublish(ctx context.Context, topic Topic, msg *Message, opts ...Option) (context.Context, func(serverID string, err error)) {
 	cfg := defaultConfig()
 	for _, opt := range opts {
-		opt(cfg)
+		opt.apply(cfg)
 	}
-	spanOpts := []ddtrace.StartSpanOption{
+	spanOpts := []tracer.StartSpanOption{
 		tracer.ResourceName(topic.String()),
 		tracer.SpanType(ext.SpanTypeMessageProducer),
 		tracer.Tag("message_size", len(msg.Data)),
@@ -70,7 +69,7 @@ func TracePublish(ctx context.Context, topic Topic, msg *Message, opts ...Option
 		msg.Attributes = make(map[string]string)
 	}
 	if err := tracer.Inject(span.Context(), tracer.TextMapCarrier(msg.Attributes)); err != nil {
-		log.Debug("contrib/cloud.google.com/go/pubsub.v1/trace: failed injecting tracing attributes: %v", err)
+		instr.Logger().Debug("contrib/cloud.google.com/go/pubsub.v1/trace: failed injecting tracing attributes: %v", err)
 	}
 	span.SetTag("num_attributes", len(msg.Attributes))
 
@@ -87,12 +86,12 @@ func TracePublish(ctx context.Context, topic Topic, msg *Message, opts ...Option
 func TraceReceiveFunc(s Subscription, opts ...Option) func(ctx context.Context, msg *Message) (context.Context, func()) {
 	cfg := defaultConfig()
 	for _, opt := range opts {
-		opt(cfg)
+		opt.apply(cfg)
 	}
-	log.Debug("contrib/cloud.google.com/go/pubsub.v1/trace: Wrapping Receive Handler: %#v", cfg)
+	instr.Logger().Debug("contrib/cloud.google.com/go/pubsub.v1/trace: Wrapping Receive Handler: %#v", cfg)
 	return func(ctx context.Context, msg *Message) (context.Context, func()) {
 		parentSpanCtx, _ := tracer.Extract(tracer.TextMapCarrier(msg.Attributes))
-		opts := []ddtrace.StartSpanOption{
+		opts := []tracer.StartSpanOption{
 			tracer.ResourceName(s.String()),
 			tracer.SpanType(ext.SpanTypeMessageConsumer),
 			tracer.Tag("message_size", len(msg.Data)),

@@ -6,7 +6,7 @@
 package tracing
 
 import (
-	"github.com/DataDog/dd-trace-go/v2/internal/namingschema"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 )
 
 type config struct {
@@ -18,25 +18,34 @@ type config struct {
 
 func defaultConfig() *config {
 	return &config{
-		serviceName:     namingschema.ServiceNameOverrideV0("", ""),
-		publishSpanName: namingschema.OpName(namingschema.GCPPubSubOutbound),
-		receiveSpanName: namingschema.OpName(namingschema.GCPPubSubInbound),
+		serviceName:     instr.ServiceName(instrumentation.ComponentConsumer, nil),
+		publishSpanName: instr.OperationName(instrumentation.ComponentProducer, nil),
+		receiveSpanName: instr.OperationName(instrumentation.ComponentConsumer, nil),
 		measured:        false,
 	}
 }
 
-// Option is used to customize spans started by WrapReceiveHandler or Publish.
-type Option func(cfg *config)
+// Option describes options for the Pub/Sub integration.
+type Option interface {
+	apply(*config)
+}
+
+// OptionFn represents options applicable to WrapReceiveHandler or Publish.
+type OptionFn func(*config)
+
+func (fn OptionFn) apply(cfg *config) {
+	fn(cfg)
+}
 
 // WithServiceName sets the service name tag for traces started by WrapReceiveHandler or Publish.
-func WithServiceName(serviceName string) Option {
+func WithServiceName(serviceName string) OptionFn {
 	return func(cfg *config) {
 		cfg.serviceName = serviceName
 	}
 }
 
 // WithMeasured sets the measured tag for traces started by WrapReceiveHandler or Publish.
-func WithMeasured() Option {
+func WithMeasured() OptionFn {
 	return func(cfg *config) {
 		cfg.measured = true
 	}

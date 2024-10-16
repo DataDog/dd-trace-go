@@ -8,22 +8,10 @@ package pubsub
 
 import (
 	"context"
-	"sync"
 
 	"cloud.google.com/go/pubsub"
-
-	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
-	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
-	"github.com/DataDog/dd-trace-go/v2/instrumentation"
+	"github.com/DataDog/dd-trace-go/contrib/cloud.google.com/go/pubsub.v1/v2/internal/tracing"
 )
-
-const componentName = instrumentation.PackageGCPPubsub
-
-var instr *instrumentation.Instrumentation
-
-func init() {
-	instr = instrumentation.Load(instrumentation.PackageGCPPubsub)
-}
 
 // Publish publishes a message on the specified topic and returns a PublishResult.
 // This function is functionally equivalent to t.Publish(ctx, msg), but it also starts a publish
