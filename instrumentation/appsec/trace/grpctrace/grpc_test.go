@@ -3,14 +3,15 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2024 Datadog, Inc.
 
-package grpcsec
+package grpctrace
 
 import (
 	"fmt"
 	"testing"
 
-	testlib "github.com/DataDog/dd-trace-go/v2/internal/appsec/_testlib"
-
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec/listener/waf"
+	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
 	"github.com/stretchr/testify/require"
 )
 

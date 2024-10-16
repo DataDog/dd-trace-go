@@ -7,13 +7,12 @@ package httpsec
 
 import (
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/dyngo"
-	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/httpsec/types"
-	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/trace"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/httpsec"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec/config"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec/emitter/waf/addresses"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/listener"
-	"github.com/DataDog/dd-trace-go/v2/internal/appsec/listener/sharedsec"
 
-	"github.com/DataDog/appsec-internal-go/limiter"
-	"github.com/DataDog/go-libddwaf/v3"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec/emitter/waf"
 )
 
 type SSRFProtectionFeature struct{}

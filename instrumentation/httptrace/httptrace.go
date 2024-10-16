@@ -38,7 +38,7 @@ func StartRequestSpan(r *http.Request, opts ...tracer.StartSpanOption) (*tracer.
 
 	var ipTags map[string]string
 	if cfg.traceClientIP {
-		ipTags, _ = httpsec.ClientIPTags(r.Header, true, r.RemoteAddr)
+		ipTags, _ = httptrace.ClientIPTags(r.Header, true, r.RemoteAddr)
 	}
 	nopts := make([]tracer.StartSpanOption, 0, len(opts)+1)
 	nopts = append(nopts,

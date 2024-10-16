@@ -24,12 +24,13 @@ import (
 	pAppsec "github.com/DataDog/dd-trace-go/v2/appsec"
 	"github.com/DataDog/dd-trace-go/v2/appsec/events"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/dyngo"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/ossec"
 	httptrace "github.com/DataDog/dd-trace-go/v2/instrumentation/httptracemock"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/config"
-	"github.com/DataDog/dd-trace-go/v2/internal/appsec/listener/httpsec"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec/emitter/waf/addresses"
 
 	"github.com/stretchr/testify/require"
 )
