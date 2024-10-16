@@ -525,23 +525,16 @@ func newConfig(opts ...StartOption) *config {
 			// no config defined address; use defaults
 			addr = defaultDogstatsdAddr()
 		}
-		if agentport := c.agent.StatsdPort; agentport > 0 {
+		if agentport := c.agent.StatsdPort; agentport > 0 && !c.agent.ignore {
 			// the agent reported a non-standard port
-			host, port, err := net.SplitHostPort(addr)
+			host, _, err := net.SplitHostPort(addr)
 			if err == nil {
 				// we have a valid host:port address; replace the port because
 				// the agent knows better
 				if host == "" {
 					host = defaultHostname
 				}
-				if !c.agent.ignore {
-					port = strconv.Itoa(agentport)
-				}
-				addr = net.JoinHostPort(host, port)
-				p, err := strconv.Atoi(port)
-				if err != nil {
-					c.agent.StatsdPort = p
-				}
+				addr = net.JoinHostPort(host, strconv.Itoa(agentport))
 			}
 			// not a valid TCP address, leave it as it is (could be a socket connection)
 		}
