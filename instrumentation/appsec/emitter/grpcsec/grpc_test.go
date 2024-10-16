@@ -60,7 +60,7 @@ func TestUsage(t *testing.T) {
 				dyngo.OnFinish(handlerOp, func(*types.HandlerOperation, types.HandlerOperationRes) { handlerFinished++ })
 			})
 
-			_, rpcOp := grpcsec.StartHandlerOperation(context.Background(), types.HandlerOperationArgs{}, localRootOp)
+			_, rpcOp, _ := grpcsec.StartHandlerOperation(context.Background(), types.HandlerOperationArgs{}, localRootOp)
 
 			for i := 1; i <= expectedRecvOperation; i++ {
 				recvOp := grpcsec.StartReceiveOperation(types.ReceiveOperationArgs{}, rpcOp)
