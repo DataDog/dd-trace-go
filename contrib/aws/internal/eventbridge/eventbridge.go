@@ -7,13 +7,13 @@ package eventbridge
 
 import (
 	"encoding/json"
+	"fmt"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/eventbridge"
 	"github.com/aws/aws-sdk-go-v2/service/eventbridge/types"
 	"github.com/aws/smithy-go/middleware"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-	"strconv"
 	"time"
 )
 
@@ -38,16 +38,7 @@ func handlePutEvents(span tracer.Span, in middleware.InitializeInput) {
 		return
 	}
 
-	for i := range params.Entries {
-		injectTraceContext(span, &params.Entries[i])
-	}
-}
-
-func injectTraceContext(span tracer.Span, entryPtr *types.PutEventsRequestEntry) {
-	if entryPtr == nil {
-		return
-	}
-
+	// Create trace context
 	carrier := tracer.TextMapCarrier{}
 	err := tracer.Inject(span.Context(), carrier)
 	if err != nil {
@@ -55,46 +46,63 @@ func injectTraceContext(span tracer.Span, entryPtr *types.PutEventsRequestEntry)
 		return
 	}
 
-	// Add start time and resource name
-	startTimeMillis := time.Now().UnixMilli()
-	carrier[startTimeKey] = strconv.FormatInt(startTimeMillis, 10)
-	if entryPtr.EventBusName != nil {
-		carrier[resourceNameKey] = *entryPtr.EventBusName
-	}
-
-	var detail map[string]interface{}
-	if entryPtr.Detail != nil {
-		err = json.Unmarshal([]byte(*entryPtr.Detail), &detail)
-		if err != nil {
-			log.Debug("Unable to unmarshal event detail: %s", err)
-			return
-		}
-	} else {
-		detail = make(map[string]interface{})
-	}
-
-	jsonBytes, err := json.Marshal(carrier)
+	carrierJSON, err := json.Marshal(carrier)
 	if err != nil {
 		log.Debug("Unable to marshal trace context: %s", err)
 		return
 	}
 
-	// Check sizes
-	detailSize := 0
-	if entryPtr.Detail != nil {
-		detailSize = len(*entryPtr.Detail)
+	// Prepare the reused trace context string
+	startTimeMillis := time.Now().UnixMilli()
+	reusedTraceContext := fmt.Sprintf(`%s,"%s":"%d"`, carrierJSON[:len(carrierJSON)-1], startTimeKey, startTimeMillis)
+
+	for i := range params.Entries {
+		injectTraceContext(reusedTraceContext, &params.Entries[i])
 	}
-	traceSize := len(jsonBytes)
-	if detailSize+traceSize > maxSizeBytes {
-		log.Info("Payload size too large to pass context")
+}
+
+func injectTraceContext(baseTraceContext string, entryPtr *types.PutEventsRequestEntry) {
+	if entryPtr == nil {
 		return
 	}
 
-	detail[datadogKey] = json.RawMessage(jsonBytes)
-	updatedDetail, err := json.Marshal(detail)
-	if err != nil {
-		log.Debug("Unable to marshal modified event detail: %s", err)
+	// Build the complete trace context
+	var traceContext string
+	if entryPtr.EventBusName != nil {
+		traceContext = fmt.Sprintf(`%s,"%s":"%s"}`, baseTraceContext, resourceNameKey, *entryPtr.EventBusName)
+	} else {
+		traceContext = baseTraceContext + "}"
+	}
+
+	// Get current detail string
+	var detail string
+	if entryPtr.Detail == nil || *entryPtr.Detail == "" {
+		detail = "{}"
+	} else {
+		detail = *entryPtr.Detail
+	}
+
+	// Basic JSON structure validation
+	if len(detail) < 2 || detail[len(detail)-1] != '}' {
+		log.Debug("Unable to parse detail JSON. Not injecting trace context into EventBridge payload.")
 		return
 	}
-	entryPtr.Detail = aws.String(string(updatedDetail))
+
+	// Create new detail string
+	var newDetail string
+	if len(detail) > 2 {
+		// Case where detail is not empty
+		newDetail = fmt.Sprintf(`%s,"%s":%s}`, detail[:len(detail)-1], datadogKey, traceContext)
+	} else {
+		// Cae where detail is empty
+		newDetail = fmt.Sprintf(`{"%s":%s}`, datadogKey, traceContext)
+	}
+
+	// Check sizes
+	if len(newDetail) > maxSizeBytes {
+		log.Debug("Payload size too large to pass context")
+		return
+	}
+
+	entryPtr.Detail = aws.String(newDetail)
 }

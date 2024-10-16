@@ -8,10 +8,7 @@ package eventbridge
 import (
 	"context"
 	"encoding/json"
-	"strconv"
-	"strings"
-	"testing"
-
+	"fmt"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/eventbridge"
 	"github.com/aws/aws-sdk-go-v2/service/eventbridge/types"
@@ -20,6 +17,8 @@ import (
 	"github.com/stretchr/testify/require"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"strings"
+	"testing"
 )
 
 func TestEnrichOperation(t *testing.T) {
@@ -71,7 +70,8 @@ func TestInjectTraceContext(t *testing.T) {
 	defer mt.Stop()
 
 	ctx := context.Background()
-	span, ctx := tracer.StartSpanFromContext(ctx, "test-span")
+	span, _ := tracer.StartSpanFromContext(ctx, "test-span")
+	baseTraceContext := fmt.Sprintf(`{"x-datadog-trace-id":"%d","x-datadog-parent-id":"%d","x-datadog-start-time":"123456789"`, span.Context().TraceID(), span.Context().SpanID())
 
 	tests := []struct {
 		name     string
@@ -110,7 +110,7 @@ func TestInjectTraceContext(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			injectTraceContext(span, &tt.entry)
+			injectTraceContext(baseTraceContext, &tt.entry)
 			tt.expected(t, &tt.entry)
 
 			var detail map[string]interface{}
@@ -123,11 +123,9 @@ func TestInjectTraceContext(t *testing.T) {
 			assert.Equal(t, *tt.entry.EventBusName, ddData[resourceNameKey])
 
 			// Check that start time exists and is not empty
-			startTimeStr, ok := ddData[startTimeKey].(string)
+			startTime, ok := ddData[startTimeKey]
 			assert.True(t, ok)
-			startTime, err := strconv.ParseInt(startTimeStr, 10, 64)
-			assert.NoError(t, err)
-			assert.Greater(t, startTime, int64(0))
+			assert.Equal(t, startTime, "123456789")
 
 			carrier := tracer.TextMapCarrier{}
 			for k, v := range ddData {
@@ -148,7 +146,7 @@ func TestInjectTraceContextSizeLimit(t *testing.T) {
 	mt := mocktracer.Start()
 	defer mt.Stop()
 
-	span := tracer.StartSpan("test-span")
+	baseTraceContext := `{"x-datadog-trace-id":"12345","x-datadog-parent-id":"67890","x-datadog-start-time":"123456789"`
 
 	tests := []struct {
 		name     string
@@ -187,7 +185,7 @@ func TestInjectTraceContextSizeLimit(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			injectTraceContext(span, &tt.entry)
+			injectTraceContext(baseTraceContext, &tt.entry)
 			tt.expected(t, &tt.entry)
 		})
 	}
