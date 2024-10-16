@@ -14,6 +14,7 @@ import (
 	"github.com/aws/smithy-go/middleware"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"strconv"
 	"time"
 )
 
@@ -46,15 +47,18 @@ func handlePutEvents(span tracer.Span, in middleware.InitializeInput) {
 		return
 	}
 
+	// Add start time
+	startTimeMillis := time.Now().UnixMilli()
+	carrier[startTimeKey] = strconv.FormatInt(startTimeMillis, 10)
+
 	carrierJSON, err := json.Marshal(carrier)
 	if err != nil {
 		log.Debug("Unable to marshal trace context: %s", err)
 		return
 	}
 
-	// Prepare the reused trace context string
-	startTimeMillis := time.Now().UnixMilli()
-	reusedTraceContext := fmt.Sprintf(`%s,"%s":"%d"`, carrierJSON[:len(carrierJSON)-1], startTimeKey, startTimeMillis)
+	// Remove last '}'
+	reusedTraceContext := string(carrierJSON[:len(carrierJSON)-1])
 
 	for i := range params.Entries {
 		injectTraceContext(reusedTraceContext, &params.Entries[i])
