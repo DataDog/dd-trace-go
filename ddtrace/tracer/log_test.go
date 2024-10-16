@@ -24,7 +24,7 @@ func TestStartupLog(t *testing.T) {
 	t.Run("basic", func(t *testing.T) {
 		assert := assert.New(t)
 		tp := new(log.RecordLogger)
-		tracer, _, _, stop := startTestTracer(t, WithLogger(tp))
+		tracer, _, _, stop := startTestTracer(t, WithLogger(tp), withIgnoreAgent(true))
 		defer stop()
 
 		tp.Reset()
@@ -100,7 +100,7 @@ func TestStartupLog(t *testing.T) {
 		assert := assert.New(t)
 		tp := new(log.RecordLogger)
 		t.Setenv("DD_TRACE_SAMPLING_RULES", `[{"service": "some.service","sample_rate": 0.234}, {"service": "other.service","sample_rate": 2}]`)
-		tracer, _, _, stop := startTestTracer(t, WithLogger(tp))
+		tracer, _, _, stop := startTestTracer(t, WithLogger(tp), withIgnoreAgent(true))
 		defer stop()
 
 		tp.Reset()
