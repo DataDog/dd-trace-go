@@ -141,7 +141,7 @@ func (rh *RequestHandler) internalSendRequest(config *RequestConfig, attempt int
 		if log.DebugEnabled() {
 			var files []string
 			for _, f := range config.Files {
-				files = append(files, f.FileName)
+				files = append(files, f.FieldName)
 			}
 			log.Debug("ciVisibilityHttpClient: sending files %v", files)
 		}
