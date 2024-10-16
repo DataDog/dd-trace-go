@@ -66,7 +66,7 @@ func TestLogDirectory(t *testing.T) {
 		assert.False(t, f.closed)
 
 		// ensure this setting plays nicely with other log features
-		oldLvl := level
+		oldLvl := levelThreshold
 		SetLevel(LevelDebug)
 		defer func() {
 			SetLevel(oldLvl)
