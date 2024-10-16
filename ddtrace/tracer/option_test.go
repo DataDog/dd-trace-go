@@ -67,7 +67,7 @@ func testStatsd(t *testing.T, cfg *config, addr string) {
 func TestStatsdUDPConnect(t *testing.T) {
 	t.Setenv("DD_DOGSTATSD_PORT", "8111")
 	testStatsd(t, newConfig(withIgnoreAgent(true)), net.JoinHostPort(defaultHostname, "8111"))
-	cfg := newConfig()
+	cfg := newConfig(withIgnoreAgent(true))
 	addr := net.JoinHostPort(defaultHostname, "8111")
 
 	client, err := newStatsdClient(cfg)
@@ -476,8 +476,8 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			tracer := newTracer(WithAgentTimeout(2), withIgnoreAgent(true))
 			defer tracer.Stop()
 			c := tracer.config
-			assert.Equal(t, c.dogstatsdAddr, "localhost:123")
-			assert.Equal(t, globalconfig.DogstatsdAddr(), "localhost:123")
+			assert.Equal(t, "localhost:123", c.dogstatsdAddr)
+			assert.Equal(t, "localhost:123", globalconfig.DogstatsdAddr())
 		})
 
 		t.Run("env-both", func(t *testing.T) {
