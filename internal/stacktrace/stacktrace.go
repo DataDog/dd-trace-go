@@ -33,6 +33,7 @@ var (
 		"github.com/DataDog/datadog-agent",
 		"github.com/DataDog/appsec-internal-go",
 		"github.com/datadog/orchestrion",
+		"github.com/DataDog/orchestrion",
 	}
 )
 

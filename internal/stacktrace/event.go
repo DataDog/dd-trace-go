@@ -8,8 +8,8 @@
 package stacktrace
 
 import (
-	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/trace"
 	"github.com/DataDog/dd-trace-go/v2/internal"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 
 	"github.com/tinylib/msgp/msgp"
 )
@@ -26,6 +26,8 @@ const (
 	// ExploitEvent is the event type for exploit events
 	ExploitEvent EventCategory = "exploit"
 )
+
+const SpanKey = "_dd.stack"
 
 // Event is the toplevel structure to contain a stacktrace and the additional information needed to correlate it with other data
 type Event struct {
@@ -82,25 +84,32 @@ func WithID(id string) Options {
 	}
 }
 
-// AddToSpan adds the event to the given span's root span as a tag if stacktrace collection is enabled
-func AddToSpan(span, root trace.TagSetter, events ...*Event) {
+// GetSpanValue returns the value to be set as a tag on a span for the given stacktrace events
+func GetSpanValue(events ...*Event) any {
 	if !Enabled() {
-		return
+		return nil
 	}
 
-	// TODO(eliott.bouhana): switch to a map[EventCategory][]*Event type when the tinylib/msgp@1.1.10 is out
-	groupByCategory := make(map[string]any, 3)
-
+	groupByCategory := make(map[string][]*Event, 3)
 	for _, event := range events {
 		if _, ok := groupByCategory[string(event.Category)]; !ok {
 			groupByCategory[string(event.Category)] = []*Event{event}
 			continue
 		}
+		groupByCategory[string(event.Category)] = append(groupByCategory[string(event.Category)], event)
+	}
 
-		groupByCategory[string(event.Category)] = append(groupByCategory[string(event.Category)].([]*Event), event)
+	return internal.MetaStructValue{Value: groupByCategory}
+}
+
+// AddToSpan adds the event to the given span's root span as a tag if stacktrace collection is enabled
+func AddToSpan(span ddtrace.Span, events ...*Event) {
+	value := GetSpanValue(events...)
+	type rooter interface {
+		Root() ddtrace.Span
 	}
-	if root != nil {
-		span = root
+	if lrs, ok := span.(rooter); ok {
+		span = lrs.Root()
 	}
-	span.SetTag("_dd.stack", internal.MetaStructValue{Value: groupByCategory})
+	span.SetTag(SpanKey, value)
 }

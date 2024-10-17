@@ -1001,3 +1001,64 @@ func TestStreamName(t *testing.T) {
 		})
 	}
 }
+
+func TestStreamName(t *testing.T) {
+	dummyName := `my-stream`
+	dummyArn := `arn:aws:kinesis:us-east-1:111111111111:stream/` + dummyName
+
+	tests := []struct {
+		name     string
+		input    any
+		expected string
+	}{
+		{
+			name:     "PutRecords with ARN",
+			input:    &kinesis.PutRecordsInput{StreamARN: &dummyArn},
+			expected: dummyName,
+		},
+		{
+			name:     "PutRecords with Name",
+			input:    &kinesis.PutRecordsInput{StreamName: &dummyName},
+			expected: dummyName,
+		},
+		{
+			name:     "PutRecords with both",
+			input:    &kinesis.PutRecordsInput{StreamName: &dummyName, StreamARN: &dummyArn},
+			expected: dummyName,
+		},
+		{
+			name:     "PutRecord with Name",
+			input:    &kinesis.PutRecordInput{StreamName: &dummyName},
+			expected: dummyName,
+		},
+		{
+			name:     "CreateStream",
+			input:    &kinesis.CreateStreamInput{StreamName: &dummyName},
+			expected: dummyName,
+		},
+		{
+			name:     "CreateStream with nothing",
+			input:    &kinesis.CreateStreamInput{},
+			expected: "",
+		},
+		{
+			name:     "GetRecords",
+			input:    &kinesis.GetRecordsInput{StreamARN: &dummyArn},
+			expected: dummyName,
+		},
+		{
+			name:     "GetRecords with nothing",
+			input:    &kinesis.GetRecordsInput{},
+			expected: "",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := middleware.InitializeInput{
+				Parameters: tt.input,
+			}
+			val := streamName(req)
+			assert.Equal(t, tt.expected, val)
+		})
+	}
+}

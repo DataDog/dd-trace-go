@@ -49,4 +49,13 @@ const (
 	// GitTag indicates the current git tag.
 	// This constant is used to tag traces with the tag name associated with the current commit.
 	GitTag = "git.tag"
+
+	// GitHeadCommit indicates the GIT head commit hash.
+	GitHeadCommit = "git.commit.head_sha"
+
+	// GitPrBaseCommit indicates the GIT PR base commit hash.
+	GitPrBaseCommit = "git.pull_request.base_branch_sha"
+
+	// GitPrBaseBranch indicates the GIT PR base branch name.
+	GitPrBaseBranch = "git.pull_request.base_branch"
 )

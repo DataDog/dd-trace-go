@@ -15,8 +15,10 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
 // ciVisibilityCloseAction defines an action to be executed when CI visibility is closing.
@@ -55,6 +57,14 @@ func InitializeCIVisibilityMock() mocktracer.Tracer {
 
 func internalCiVisibilityInitialization(tracerInitializer func([]tracer.StartOption)) {
 	ciVisibilityInitializationOnce.Do(func() {
+		// check the debug flag to enable debug logs. The tracer initialization happens
+		// after the CI Visibility initialization so we need to handle this flag ourselves
+		if internal.BoolEnv("DD_TRACE_DEBUG", false) {
+			log.SetLevel(log.LevelDebug)
+		}
+
+		log.Debug("civisibility: initializing")
+
 		// Since calling this method indicates we are in CI Visibility mode, set the environment variable.
 		_ = os.Setenv(constants.CIVisibilityEnabledEnvironmentVariable, "1")
 
@@ -66,22 +76,29 @@ func internalCiVisibilityInitialization(tracerInitializer func([]tracer.StartOpt
 
 		// Preload all CI, Git, and CodeOwners tags.
 		ciTags := utils.GetCITags()
+		_ = utils.GetCIMetrics()
 
 		// Check if DD_SERVICE has been set; otherwise default to the repo name (from the spec).
 		var opts []tracer.StartOption
-		if v := os.Getenv("DD_SERVICE"); v == "" {
+		serviceName := os.Getenv("DD_SERVICE")
+		if serviceName == "" {
 			if repoURL, ok := ciTags[constants.GitRepositoryURL]; ok {
 				// regex to sanitize the repository url to be used as a service name
-				repoRegex := regexp.MustCompile(`(?m)/([a-zA-Z0-9\\\-_.]*)$`)
+				repoRegex := regexp.MustCompile(`(?m)/([a-zA-Z0-9\-_.]*)$`)
 				matches := repoRegex.FindStringSubmatch(repoURL)
 				if len(matches) > 1 {
 					repoURL = strings.TrimSuffix(matches[1], ".git")
 				}
-				opts = append(opts, tracer.WithService(repoURL))
+				serviceName = repoURL
+				opts = append(opts, tracer.WithService(serviceName))
 			}
 		}
 
+		// Initializing additional features asynchronously
+		go func() { ensureAdditionalFeaturesInitialization(serviceName) }()
+
 		// Initialize the tracer
+		log.Debug("civisibility: initializing tracer")
 		tracerInitializer(opts)
 
 		// Handle SIGINT and SIGTERM signals to ensure we close all open spans and flush the tracer before exiting
@@ -104,13 +121,16 @@ func PushCiVisibilityCloseAction(action ciVisibilityCloseAction) {
 
 // ExitCiVisibility executes all registered close actions and stops the tracer.
 func ExitCiVisibility() {
+	log.Debug("civisibility: exiting")
 	closeActionsMutex.Lock()
 	defer closeActionsMutex.Unlock()
 	defer func() {
 		closeActions = []ciVisibilityCloseAction{}
 
+		log.Debug("civisibility: flushing and stopping tracer")
 		tracer.Flush()
 		tracer.Stop()
+		log.Debug("civisibility: done.")
 	}()
 	for _, v := range closeActions {
 		v()
