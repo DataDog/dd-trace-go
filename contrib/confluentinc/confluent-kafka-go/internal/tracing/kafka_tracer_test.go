@@ -3,7 +3,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
-package kafka
+package tracing
 
 import (
 	"math"
@@ -16,29 +16,29 @@ import (
 
 func TestDataStreamsActivation(t *testing.T) {
 	t.Run("default", func(t *testing.T) {
-		cfg := newConfig()
-		assert.False(t, cfg.dataStreamsEnabled)
+		tr := NewKafkaTracer(0, 0)
+		assert.False(t, tr.DSMEnabled())
 	})
 	t.Run("withOption", func(t *testing.T) {
-		cfg := newConfig(WithDataStreams())
-		assert.True(t, cfg.dataStreamsEnabled)
+		tr := NewKafkaTracer(0, 0, WithDataStreams())
+		assert.True(t, tr.DSMEnabled())
 	})
 	t.Run("withEnv", func(t *testing.T) {
 		t.Setenv("DD_DATA_STREAMS_ENABLED", "true")
-		cfg := newConfig()
-		assert.True(t, cfg.dataStreamsEnabled)
+		tr := NewKafkaTracer(0, 0)
+		assert.True(t, tr.DSMEnabled())
 	})
 	t.Run("optionOverridesEnv", func(t *testing.T) {
 		t.Setenv("DD_DATA_STREAMS_ENABLED", "false")
-		cfg := newConfig(WithDataStreams())
-		assert.True(t, cfg.dataStreamsEnabled)
+		tr := NewKafkaTracer(0, 0, WithDataStreams())
+		assert.True(t, tr.DSMEnabled())
 	})
 }
 
 func TestAnalyticsSettings(t *testing.T) {
 	t.Run("defaults", func(t *testing.T) {
-		cfg := newConfig()
-		assert.True(t, math.IsNaN(cfg.analyticsRate))
+		tr := NewKafkaTracer(0, 0)
+		assert.True(t, math.IsNaN(tr.analyticsRate))
 	})
 
 	t.Run("global", func(t *testing.T) {
@@ -47,13 +47,13 @@ func TestAnalyticsSettings(t *testing.T) {
 		defer globalconfig.SetAnalyticsRate(rate)
 		globalconfig.SetAnalyticsRate(0.4)
 
-		cfg := newConfig()
-		assert.Equal(t, 0.4, cfg.analyticsRate)
+		tr := NewKafkaTracer(0, 0)
+		assert.Equal(t, 0.4, tr.analyticsRate)
 	})
 
 	t.Run("enabled", func(t *testing.T) {
-		cfg := newConfig(WithAnalytics(true))
-		assert.Equal(t, 1.0, cfg.analyticsRate)
+		tr := NewKafkaTracer(0, 0, WithAnalytics(true))
+		assert.Equal(t, 1.0, tr.analyticsRate)
 	})
 
 	t.Run("override", func(t *testing.T) {
@@ -61,7 +61,7 @@ func TestAnalyticsSettings(t *testing.T) {
 		defer globalconfig.SetAnalyticsRate(rate)
 		globalconfig.SetAnalyticsRate(0.4)
 
-		cfg := newConfig(WithAnalyticsRate(0.2))
-		assert.Equal(t, 0.2, cfg.analyticsRate)
+		tr := NewKafkaTracer(0, 0, WithAnalyticsRate(0.2))
+		assert.Equal(t, 0.2, tr.analyticsRate)
 	})
 }
