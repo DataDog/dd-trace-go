@@ -37,7 +37,9 @@ func (p *profiler) upload(bat batch) error {
 	for i := 0; i < maxRetries; i++ {
 		select {
 		case <-p.exit:
-			return nil
+			if !p.flush {
+				return nil
+			}
 		default:
 		}
 
@@ -98,6 +100,9 @@ func (p *profiler) doRequest(bat batch) error {
 	go func() {
 		select {
 		case <-p.exit:
+			if p.flush {
+				return
+			}
 		case <-funcExit:
 		}
 		cancel()
