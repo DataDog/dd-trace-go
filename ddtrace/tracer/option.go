@@ -1290,6 +1290,10 @@ func setHeaderTags(headerAsTags []string) bool {
 	globalconfig.ClearHeaderTags()
 	for _, h := range headerAsTags {
 		header, tag := normalizer.HeaderTag(h)
+		if len(header) == 0 || len(tag) == 0 {
+			log.Debug("Header-tag input is in unsupported format; dropping input value %v", h)
+			continue
+		}
 		globalconfig.SetHeaderTag(header, tag)
 	}
 	return true
