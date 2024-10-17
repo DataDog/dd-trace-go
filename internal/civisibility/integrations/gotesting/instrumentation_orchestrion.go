@@ -14,6 +14,7 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+	_ "unsafe"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/constants"
@@ -29,6 +30,8 @@ import (
 // ******************************************************************************************************************
 
 // instrumentTestingM helper function to instrument internalTests and internalBenchmarks in a `*testing.M` instance.
+//
+//go:linkname instrumentTestingM
 func instrumentTestingM(m *testing.M) func(exitCode int) {
 	// Check if CI Visibility was disabled using the kill switch before trying to initialize it
 	atomic.StoreInt32(&ciVisibilityEnabledValue, -1)
@@ -72,6 +75,8 @@ func instrumentTestingM(m *testing.M) func(exitCode int) {
 }
 
 // instrumentTestingTFunc helper function to instrument a testing function func(*testing.T)
+//
+//go:linkname instrumentTestingTFunc
 func instrumentTestingTFunc(f func(*testing.T)) func(*testing.T) {
 	// Check if CI Visibility was disabled using the kill switch before instrumenting
 	if !isCiVisibilityEnabled() {
@@ -188,6 +193,8 @@ func instrumentTestingTFunc(f func(*testing.T)) func(*testing.T) {
 }
 
 // instrumentSetErrorInfo helper function to set an error in the `*testing.T, *testing.B, *testing.common` CI Visibility span
+//
+//go:linkname instrumentSetErrorInfo
 func instrumentSetErrorInfo(tb testing.TB, errType string, errMessage string, skip int) {
 	// Check if CI Visibility was disabled using the kill switch before
 	if !isCiVisibilityEnabled() {
@@ -202,6 +209,8 @@ func instrumentSetErrorInfo(tb testing.TB, errType string, errMessage string, sk
 }
 
 // instrumentCloseAndSkip helper function to close and skip with a reason a `*testing.T, *testing.B, *testing.common` CI Visibility span
+//
+//go:linkname instrumentCloseAndSkip
 func instrumentCloseAndSkip(tb testing.TB, skipReason string) {
 	// Check if CI Visibility was disabled using the kill switch before
 	if !isCiVisibilityEnabled() {
@@ -216,6 +225,8 @@ func instrumentCloseAndSkip(tb testing.TB, skipReason string) {
 }
 
 // instrumentSkipNow helper function to close and skip a `*testing.T, *testing.B, *testing.common` CI Visibility span
+//
+//go:linkname instrumentSkipNow
 func instrumentSkipNow(tb testing.TB) {
 	// Check if CI Visibility was disabled using the kill switch before
 	if !isCiVisibilityEnabled() {
@@ -230,6 +241,8 @@ func instrumentSkipNow(tb testing.TB) {
 }
 
 // instrumentTestingBFunc helper function to instrument a benchmark function func(*testing.B)
+//
+//go:linkname instrumentTestingBFunc
 func instrumentTestingBFunc(pb *testing.B, name string, f func(*testing.B)) (string, func(*testing.B)) {
 	// Check if CI Visibility was disabled using the kill switch before instrumenting
 	if !isCiVisibilityEnabled() {
