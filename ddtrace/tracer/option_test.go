@@ -169,7 +169,7 @@ func TestAutoDetectStatsd(t *testing.T) {
 				w.Write([]byte(`{"endpoints": [], "config": {"statsd_port":8999}}`))
 			}))
 			defer srv.Close()
-			cfg := newConfig(WithAgentAddr(strings.TrimPrefix(srv.URL, "http://")), withIgnoreAgent(true))
+			cfg := newConfig(WithAgentAddr(strings.TrimPrefix(srv.URL, "http://")))
 			testStatsd(t, cfg, net.JoinHostPort(defaultHostname, "8999"))
 		})
 	})
