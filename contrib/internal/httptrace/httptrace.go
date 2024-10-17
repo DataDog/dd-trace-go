@@ -9,7 +9,6 @@ package httptrace
 
 import (
 	"context"
-	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
