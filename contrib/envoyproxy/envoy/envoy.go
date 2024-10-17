@@ -15,7 +15,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/waf/actions"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener/waf"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener/trace"
 	"io"
 	"net/http"
 	"net/url"
@@ -193,16 +193,11 @@ func ProcessRequestHeaders(ctx context.Context, req *extproc.ProcessingRequest_R
 	// Run WAF on request data
 	currentRequest.op, currentRequest.blockAction, _ = httpsec.StartOperation(ctx, currentRequest.requestArgs)
 
-	// Link Appsec events
-	// TODO: re-add events if not auto added
-	// TODO: waf.AddWAFMonitoringTags(op, waf.handle.Diagnostics().Version, ctx.Stats().Metrics())
-	if err := waf.SetEventSpanTags(currentRequest.span, currentRequest.op.Events()); err != nil {
-		log.Debug("appsec: failed to set event span tags: %v", err)
-	}
-
 	// Block handling: If triggered, we need to block the request, return an immediate response
 	if blockPtr := currentRequest.blockAction.Load(); blockPtr != nil {
-		return doBlockRequest(currentRequest, blockPtr), nil
+		response := doBlockRequest(currentRequest, blockPtr, headers)
+		currentRequest.op.Finish(httpsec.HandlerOperationRes{}, currentRequest.span)
+		return response, nil
 	}
 
 	return &extproc.ProcessingResponse{
@@ -262,16 +257,9 @@ func ProcessResponseHeaders(res *extproc.ProcessingRequest_ResponseHeaders, curr
 
 	currentRequest.op.Finish(args, currentRequest.span)
 
-	// Link Appsec events
-	// TODO: re-add events if not auto added
-	// TODO: waf.AddWAFMonitoringTags(op, waf.handle.Diagnostics().Version, ctx.Stats().Metrics())
-	if err := waf.SetEventSpanTags(currentRequest.span, currentRequest.op.Events()); err != nil {
-		log.Debug("appsec: failed to set event span tags: %v", err)
-	}
-
 	// Block handling: If triggered, we need to block the request, return an immediate response
 	if blockPtr := currentRequest.blockAction.Load(); blockPtr != nil {
-		return doBlockRequest(currentRequest, blockPtr), nil
+		return doBlockRequest(currentRequest, blockPtr, headers), nil
 	}
 
 	httpsec2.SetResponseHeadersTags(currentRequest.span, headers)
@@ -321,10 +309,7 @@ func createExternalProcessedSpan(ctx context.Context, headers map[string][]strin
 	)
 
 	httpsec2.SetRequestHeadersTags(span, headers)
-	// trace.SetAppSecEnabledTags(span)
-	// TODO: Change
-	span.SetTag("_dd.appsec.enabled", 1)
-	// TODO: add the other tag go language family
+	trace.SetAppsecStaticTags(span)
 
 	return span
 }
@@ -346,9 +331,8 @@ func separateEnvoyHeaders(receivedHeaders []*corev3.HeaderValue) (map[string][]s
 	return headers, pseudoHeadersHttp2
 }
 
-func doBlockRequest(currentRequest *CurrentRequest, blockAction *actions.BlockHTTP) *extproc.ProcessingResponse {
+func doBlockRequest(currentRequest *CurrentRequest, blockAction *actions.BlockHTTP, headers map[string][]string) *extproc.ProcessingResponse {
 	currentRequest.blocked = true
-	currentRequest.span.SetTag(waf.BlockedRequestTag, true)
 
 	var headerToSet map[string][]string
 	var body []byte
@@ -361,7 +345,7 @@ func doBlockRequest(currentRequest *CurrentRequest, blockAction *actions.BlockHT
 			currentRequest.requestArgs.Headers,
 		)
 	} else {
-		headerToSet, body = blockAction.BlockingTemplate(currentRequest.requestArgs.Headers) // TODO: Check if the header here always needs to be the request or can also be the response
+		headerToSet, body = blockAction.BlockingTemplate(headers)
 	}
 
 	var headersMutation []*v3.HeaderValueOption

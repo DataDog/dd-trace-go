@@ -165,7 +165,7 @@ func newManualBlockHandler(template string) func(headers map[string][]string) (m
 	default:
 		return func(headers map[string][]string) (map[string][]string, []byte) {
 			acceptHeader := ""
-			if hdr, ok := headers["accept"]; ok && len(hdr) > 0 {
+			if hdr, ok := headers["Accept"]; ok && len(hdr) > 0 {
 				acceptHeader = hdr[0]
 			}
 			h := findCorrectTemplate(jsonHandler, htmlHandler, acceptHeader)
