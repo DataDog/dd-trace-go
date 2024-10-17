@@ -334,31 +334,43 @@ func (p *Producer) Close() {
 func (p *Producer) Produce(msg *kafka.Message, deliveryChan chan kafka.Event) error {
 	span := p.startSpan(msg)
 
+	var errChan chan error
+
 	// if the user has selected a delivery channel, we will wrap it and
-	// wait for the delivery event to finish the span
+	// wait for the delivery event to finish the span.
+	// in case the Produce call returns an error, we won't receive anything
+	// in the deliveryChan, so we use errChan to make sure this goroutine exits.
 	if deliveryChan != nil {
+		errChan = make(chan error, 1)
 		oldDeliveryChan := deliveryChan
 		deliveryChan = make(chan kafka.Event)
 		go func() {
 			var err error
-			evt := <-deliveryChan
-			if msg, ok := evt.(*kafka.Message); ok {
-				// delivery errors are returned via TopicPartition.Error
-				err = msg.TopicPartition.Error
-				trackProduceOffsets(p.cfg.dataStreamsEnabled, msg, err)
+			select {
+			case evt := <-deliveryChan:
+				if msg, ok := evt.(*kafka.Message); ok {
+					// delivery errors are returned via TopicPartition.Error
+					err = msg.TopicPartition.Error
+					trackProduceOffsets(p.cfg.dataStreamsEnabled, msg, err)
+				}
+				oldDeliveryChan <- evt
+
+			case e := <-errChan:
+				err = e
 			}
 			span.Finish(tracer.WithError(err))
-			oldDeliveryChan <- evt
 		}()
 	}
 
 	setProduceCheckpoint(p.cfg.dataStreamsEnabled, p.libraryVersion, msg)
 	err := p.Producer.Produce(msg, deliveryChan)
-	// with no delivery channel or enqueue error, finish immediately
-	if err != nil || deliveryChan == nil {
-		span.Finish(tracer.WithError(err))
+	if err != nil {
+		if deliveryChan != nil {
+			errChan <- err
+		} else {
+			span.Finish(tracer.WithError(err))
+		}
 	}
-
 	return err
 }
 
