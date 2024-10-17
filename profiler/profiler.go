@@ -58,6 +58,9 @@ func Start(opts ...Option) error {
 	if err != nil {
 		return err
 	}
+	if !p.cfg.enable {
+		return nil
+	}
 	activeProfiler = p
 	activeProfiler.run()
 	traceprof.SetProfilerEnabled(true)
