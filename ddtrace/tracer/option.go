@@ -773,6 +773,9 @@ func WithFeatureFlags(feats ...string) StartOption {
 	}
 }
 
+// withIgnoreAgent allows tests to ignore the agent running in CI so that we can
+// properly test user set StatsdPort.
+// This should only be used during testing.
 func withIgnoreAgent(ignore bool) StartOption {
 	return func(c *config) {
 		c.agent.ignore = ignore
