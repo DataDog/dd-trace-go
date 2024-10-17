@@ -34,7 +34,7 @@ type (
 		GetSettings() (*SettingsResponseData, error)
 		GetEarlyFlakeDetectionData() (*EfdResponseData, error)
 		GetCommits(localCommits []string) ([]string, error)
-		SendPackFiles(packFiles []string) (bytes int64, err error)
+		SendPackFiles(commitSha string, packFiles []string) (bytes int64, err error)
 	}
 
 	client struct {

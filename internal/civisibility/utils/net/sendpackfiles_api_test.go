@@ -65,7 +65,7 @@ func TestSendPackFilesApiRequest(t *testing.T) {
 
 	cInterface := NewClient()
 	c = cInterface.(*client)
-	_, err := cInterface.SendPackFiles([]string{
+	_, err := cInterface.SendPackFiles(c.commitSha, []string{
 		"sendpackfiles_api_test.go",
 	})
 	assert.Nil(t, err)
@@ -84,7 +84,8 @@ func TestSendPackFilesApiRequestFailToUnmarshal(t *testing.T) {
 	setCiVisibilityEnv(path, server.URL)
 
 	cInterface := NewClient()
-	_, err := cInterface.SendPackFiles([]string{
+	c := cInterface.(*client)
+	_, err := cInterface.SendPackFiles(c.commitSha, []string{
 		"sendpackfiles_api_test.go",
 	})
 	assert.NotNil(t, err)
@@ -104,7 +105,8 @@ func TestSendPackFilesApiRequestFailToGet(t *testing.T) {
 	setCiVisibilityEnv(path, server.URL)
 
 	cInterface := NewClient()
-	bytes, err := cInterface.SendPackFiles([]string{
+	c := cInterface.(*client)
+	bytes, err := cInterface.SendPackFiles(c.commitSha, []string{
 		"sendpackfiles_api_test.go",
 	})
 	assert.Zero(t, bytes)
@@ -125,7 +127,8 @@ func TestSendPackFilesApiRequestFileError(t *testing.T) {
 	setCiVisibilityEnv(path, server.URL)
 
 	cInterface := NewClient()
-	bytes, err := cInterface.SendPackFiles([]string{
+	c := cInterface.(*client)
+	bytes, err := cInterface.SendPackFiles(c.commitSha, []string{
 		"unknown.file",
 	})
 	assert.Zero(t, bytes)
@@ -146,7 +149,7 @@ func TestSendPackFilesApiRequestNoFile(t *testing.T) {
 	setCiVisibilityEnv(path, server.URL)
 
 	cInterface := NewClient()
-	bytes, err := cInterface.SendPackFiles(nil)
+	bytes, err := cInterface.SendPackFiles("", nil)
 	assert.Zero(t, bytes)
 	assert.Nil(t, err)
 }
