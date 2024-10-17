@@ -92,7 +92,18 @@ func logStartup(t *tracer) {
 		featureFlags = append(featureFlags, f)
 	}
 
-	cp, _ := t.config.propagator.(*chainedPropagator)
+	var injectorNames, extractorNames string
+	switch v := t.config.propagator.(type) {
+	case *chainedPropagator:
+		injectorNames = v.injectorNames
+		extractorNames = v.extractorsNames
+	case nil:
+		injectorNames = ""
+		extractorNames = ""
+	default:
+		injectorNames = "custom"
+		extractorNames = "custom"
+	}
 
 	info := startupInfo{
 		Date:                        time.Now().Format(time.RFC3339),
@@ -127,8 +138,8 @@ func logStartup(t *tracer) {
 		PartialFlushMinSpans:        t.config.partialFlushMinSpans,
 		Orchestrion:                 t.config.orchestrionCfg,
 		FeatureFlags:                featureFlags,
-		PropagationStyleInject:      cp.injectorNames,
-		PropagationStyleExtract:     cp.extractorsNames,
+		PropagationStyleInject:      injectorNames,
+		PropagationStyleExtract:     extractorNames,
 	}
 	if _, _, err := samplingRulesFromEnv(); err != nil {
 		info.SamplingRulesError = fmt.Sprintf("%s", err)
