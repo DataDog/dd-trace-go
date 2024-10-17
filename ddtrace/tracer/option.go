@@ -511,7 +511,9 @@ func newConfig(opts ...StartOption) *config {
 	}
 	// if using stdout or traces are disabled, agent is disabled
 	agentDisabled := c.logToStdout || !c.enabled.current
+	ignoreStatsdPort := c.agent.ignore // preserve the value of c.agent.ignore when testing
 	c.agent = loadAgentFeatures(agentDisabled, c.agentURL, c.httpClient)
+	c.agent.ignore = ignoreStatsdPort
 	info, ok := debug.ReadBuildInfo()
 	if !ok {
 		c.loadContribIntegrations([]*debug.Module{})
