@@ -369,16 +369,3 @@ func coalesceNameOrArnResource(name *string, arnVal *string) string {
 
 	return ""
 }
-
-func coalesceNameOrArnResource(name *string, arnVal *string) string {
-	if name != nil {
-		return *name
-	}
-
-	if arnVal != nil {
-		parts := strings.Split(*arnVal, "/")
-		return parts[len(parts)-1]
-	}
-
-	return ""
-}

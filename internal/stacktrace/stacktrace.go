@@ -61,7 +61,7 @@ func init() {
 		if depth, err := parseutil.SafeParseInt(env); err == nil {
 			defaultMaxDepth = depth
 		} else {
-			if depth <= 0 && err == nil {
+			if depth <= 0 {
 				err = errors.New("value is not a strictly positive integer")
 			}
 			log.Error("Failed to parse %s env var as a positive integer: %v (using default value: %v)", envStackTraceDepth, err, defaultMaxDepth)

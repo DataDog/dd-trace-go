@@ -36,7 +36,7 @@ func TestAppSec(t *testing.T) {
 		t.Skip("appsec disabled")
 	}
 
-	setup := func() (fixturepb.FixtureClient, mocktracer.Tracer, func()) {
+	setup := func(t *testing.T) (fixturepb.FixtureClient, mocktracer.Tracer, func()) {
 		rig, err := newAppsecRig(t, false)
 		require.NoError(t, err)
 
@@ -416,7 +416,7 @@ func TestPasslist(t *testing.T) {
 }
 
 func newAppsecRig(t *testing.T, traceClient bool, interceptorOpts ...Option) (*appsecRig, error) {
-	interceptorOpts = append([]Option{WithServiceName("grpc")}, interceptorOpts...)
+	interceptorOpts = append([]Option{WithService("grpc")}, interceptorOpts...)
 
 	server := grpc.NewServer(
 		grpc.UnaryInterceptor(UnaryServerInterceptor(interceptorOpts...)),
