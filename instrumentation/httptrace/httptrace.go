@@ -17,7 +17,8 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
-	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/trace/httptrace"
+	"github.com/DataDog/dd-trace-go/v2/internal"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec/listener/httpsec"
 )
 
 var (
@@ -38,7 +39,7 @@ func StartRequestSpan(r *http.Request, opts ...tracer.StartSpanOption) (*tracer.
 
 	var ipTags map[string]string
 	if cfg.traceClientIP {
-		ipTags, _ = httptrace.ClientIPTags(r.Header, true, r.RemoteAddr)
+		ipTags, _ = httpsec.ClientIPTags(r.Header, true, r.RemoteAddr)
 	}
 	nopts := make([]tracer.StartSpanOption, 0, len(opts)+1)
 	nopts = append(nopts,
@@ -69,15 +70,21 @@ func StartRequestSpan(r *http.Request, opts ...tracer.StartSpanOption) (*tracer.
 // code. Any further span finish option can be added with opts.
 func FinishRequestSpan(s *tracer.Span, status int, opts ...tracer.FinishOption) {
 	var statusStr string
+	// if status is 0, treat it like 200 unless 0 was called out in DD_TRACE_HTTP_SERVER_ERROR_STATUSES
 	if status == 0 {
-		statusStr = "200"
+		if cfg.isStatusError(status) {
+			statusStr = "0"
+			s.SetTag(ext.Error, fmt.Errorf("%s: %s", statusStr, http.StatusText(status)))
+		} else {
+			statusStr = "200"
+		}
 	} else {
 		statusStr = strconv.Itoa(status)
+		if cfg.isStatusError(status) {
+			s.SetTag(ext.Error, fmt.Errorf("%s: %s", statusStr, http.StatusText(status)))
+		}
 	}
 	s.SetTag(ext.HTTPCode, statusStr)
-	if status >= 500 && status < 600 {
-		opts = append(opts, tracer.WithError(fmt.Errorf("%s: %s", statusStr, http.StatusText(status))))
-	}
 	s.Finish(opts...)
 }
 
@@ -136,4 +143,11 @@ func HeaderTagsFromRequest(req *http.Request, headerTags instrumentation.HeaderT
 			cfg.Tags[t.key] = t.val
 		}
 	}
+}
+
+// This is a workaround needed because of v2 changes that prevents contribs from accessing
+// the internal directory. This function should not be used if the internal directory
+// can be accessed.
+func GetBoolEnv(key string, def bool) bool {
+	return internal.BoolEnv(key, def)
 }

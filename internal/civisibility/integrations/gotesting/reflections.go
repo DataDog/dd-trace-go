@@ -7,17 +7,25 @@ package gotesting
 
 import (
 	"errors"
+	"io"
 	"reflect"
 	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 	"unsafe"
 )
 
 // getFieldPointerFrom gets an unsafe.Pointer (gc-safe type of pointer) to a struct field
 // useful to get or set values to private field
 func getFieldPointerFrom(value any, fieldName string) (unsafe.Pointer, error) {
-	indirectValue := reflect.Indirect(reflect.ValueOf(value))
-	member := indirectValue.FieldByName(fieldName)
+	return getFieldPointerFromValue(reflect.Indirect(reflect.ValueOf(value)), fieldName)
+}
+
+// getFieldPointerFromValue gets an unsafe.Pointer (gc-safe type of pointer) to a struct field
+// useful to get or set values to private field
+func getFieldPointerFromValue(value reflect.Value, fieldName string) (unsafe.Pointer, error) {
+	member := value.FieldByName(fieldName)
 	if member.IsValid() {
 		return unsafe.Pointer(member.UnsafeAddr()), nil
 	}
@@ -25,7 +33,61 @@ func getFieldPointerFrom(value any, fieldName string) (unsafe.Pointer, error) {
 	return unsafe.Pointer(nil), errors.New("member is invalid")
 }
 
+// copyFieldUsingPointers copies a private field value from one struct to another of the same type
+func copyFieldUsingPointers[V any](source any, target any, fieldName string) error {
+	sourcePtr, err := getFieldPointerFrom(source, fieldName)
+	if err != nil {
+		return err
+	}
+	targetPtr, err := getFieldPointerFrom(target, fieldName)
+	if err != nil {
+		return err
+	}
+
+	*(*V)(targetPtr) = *(*V)(sourcePtr)
+	return nil
+}
+
+// ****************
+// COMMON
+// ****************
+
+// commonPrivateFields is collection of required private fields from testing.common
+type commonPrivateFields struct {
+	mu      *sync.RWMutex
+	level   *int
+	name    *string         // Name of test or benchmark.
+	failed  *bool           // Test or benchmark has failed.
+	skipped *bool           // Test or benchmark has been skipped.
+	parent  *unsafe.Pointer // Parent common
+}
+
+// AddLevel increase or decrease the testing.common.level field value, used by
+// testing.B to create the name of the benchmark test
+func (c *commonPrivateFields) AddLevel(delta int) int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	*c.level = *c.level + delta
+	return *c.level
+}
+
+// SetFailed set the boolean value in testing.common.failed field value
+func (c *commonPrivateFields) SetFailed(value bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	*c.failed = value
+}
+
+// SetSkipped set the boolean value in testing.common.skipped field value
+func (c *commonPrivateFields) SetSkipped(value bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	*c.skipped = value
+}
+
+// ****************
 // TESTING
+// ****************
 
 // getInternalTestArray gets the pointer to the testing.InternalTest array inside a
 // testing.M instance containing all the "root" tests
@@ -36,7 +98,147 @@ func getInternalTestArray(m *testing.M) *[]testing.InternalTest {
 	return nil
 }
 
+// getTestPrivateFields is a method to retrieve all required privates field from
+// testing.T, returning a commonPrivateFields instance
+func getTestPrivateFields(t *testing.T) *commonPrivateFields {
+	testFields := &commonPrivateFields{}
+
+	// testing.common
+	if ptr, err := getFieldPointerFrom(t, "mu"); err == nil {
+		testFields.mu = (*sync.RWMutex)(ptr)
+	}
+	if ptr, err := getFieldPointerFrom(t, "level"); err == nil {
+		testFields.level = (*int)(ptr)
+	}
+	if ptr, err := getFieldPointerFrom(t, "name"); err == nil {
+		testFields.name = (*string)(ptr)
+	}
+	if ptr, err := getFieldPointerFrom(t, "failed"); err == nil {
+		testFields.failed = (*bool)(ptr)
+	}
+	if ptr, err := getFieldPointerFrom(t, "skipped"); err == nil {
+		testFields.skipped = (*bool)(ptr)
+	}
+	if ptr, err := getFieldPointerFrom(t, "parent"); err == nil {
+		testFields.parent = (*unsafe.Pointer)(ptr)
+	}
+
+	return testFields
+}
+
+// getTestParentPrivateFields is a method to retrieve all required parent privates field from
+// testing.T.parent, returning a commonPrivateFields instance
+func getTestParentPrivateFields(t *testing.T) *commonPrivateFields {
+	indirectValue := reflect.Indirect(reflect.ValueOf(t))
+	member := indirectValue.FieldByName("parent")
+	if member.IsValid() {
+		value := member.Elem()
+		testFields := &commonPrivateFields{}
+
+		// testing.common
+		if ptr, err := getFieldPointerFromValue(value, "mu"); err == nil {
+			testFields.mu = (*sync.RWMutex)(ptr)
+		}
+		if ptr, err := getFieldPointerFromValue(value, "level"); err == nil {
+			testFields.level = (*int)(ptr)
+		}
+		if ptr, err := getFieldPointerFromValue(value, "name"); err == nil {
+			testFields.name = (*string)(ptr)
+		}
+		if ptr, err := getFieldPointerFromValue(value, "failed"); err == nil {
+			testFields.failed = (*bool)(ptr)
+		}
+		if ptr, err := getFieldPointerFromValue(value, "skipped"); err == nil {
+			testFields.skipped = (*bool)(ptr)
+		}
+
+		return testFields
+	}
+	return nil
+}
+
+// contextMatcher is collection of required private fields from testing.context.match
+type contextMatcher struct {
+	mu       *sync.RWMutex
+	subNames *map[string]int32
+}
+
+// ClearSubNames clears the subname map used for creating unique names for subtests
+func (c *contextMatcher) ClearSubNames() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	*c.subNames = map[string]int32{}
+}
+
+// getTestContextMatcherPrivateFields is a method to retrieve all required privates field from
+// testing.T.context.match, returning a contextMatcher instance
+func getTestContextMatcherPrivateFields(t *testing.T) *contextMatcher {
+	indirectValue := reflect.Indirect(reflect.ValueOf(t))
+	contextMember := indirectValue.FieldByName("context")
+	if !contextMember.IsValid() {
+		return nil
+	}
+	contextMember = contextMember.Elem()
+	matchMember := contextMember.FieldByName("match")
+	if !matchMember.IsValid() {
+		return nil
+	}
+	matchMember = matchMember.Elem()
+
+	fields := &contextMatcher{}
+	if ptr, err := getFieldPointerFromValue(matchMember, "mu"); err == nil {
+		fields.mu = (*sync.RWMutex)(ptr)
+	}
+	if ptr, err := getFieldPointerFromValue(matchMember, "subNames"); err == nil {
+		fields.subNames = (*map[string]int32)(ptr)
+	}
+
+	return fields
+}
+
+// copyTestWithoutParent tries to copy all private fields except the t.parent from a *testing.T to another
+func copyTestWithoutParent(source *testing.T, target *testing.T) {
+	// Copy important field values
+	_ = copyFieldUsingPointers[[]byte](source, target, "output")                   // Output generated by test or benchmark.
+	_ = copyFieldUsingPointers[io.Writer](source, target, "w")                     // For flushToParent.
+	_ = copyFieldUsingPointers[bool](source, target, "ran")                        // Test or benchmark (or one of its subtests) was executed.
+	_ = copyFieldUsingPointers[bool](source, target, "failed")                     // Test or benchmark has failed.
+	_ = copyFieldUsingPointers[bool](source, target, "skipped")                    // Test or benchmark has been skipped.
+	_ = copyFieldUsingPointers[bool](source, target, "done")                       // Test is finished and all subtests have completed.
+	_ = copyFieldUsingPointers[map[uintptr]struct{}](source, target, "helperPCs")  // functions to be skipped when writing file/line info
+	_ = copyFieldUsingPointers[map[string]struct{}](source, target, "helperNames") // helperPCs converted to function names
+	_ = copyFieldUsingPointers[[]func()](source, target, "cleanups")               // optional functions to be called at the end of the test
+	_ = copyFieldUsingPointers[string](source, target, "cleanupName")              // Name of the cleanup function.
+	_ = copyFieldUsingPointers[[]uintptr](source, target, "cleanupPc")             // The stack trace at the point where Cleanup was called.
+	_ = copyFieldUsingPointers[bool](source, target, "finished")                   // Test function has completed.
+	_ = copyFieldUsingPointers[bool](source, target, "inFuzzFn")                   // Whether the fuzz target, if this is one, is running.
+
+	_ = copyFieldUsingPointers[unsafe.Pointer](source, target, "chatty")      // A copy of chattyPrinter, if the chatty flag is set.
+	_ = copyFieldUsingPointers[bool](source, target, "bench")                 // Whether the current test is a benchmark.
+	_ = copyFieldUsingPointers[atomic.Bool](source, target, "hasSub")         // whether there are sub-benchmarks.
+	_ = copyFieldUsingPointers[atomic.Bool](source, target, "cleanupStarted") // Registered cleanup callbacks have started to execute
+	_ = copyFieldUsingPointers[string](source, target, "runner")              // Function name of tRunner running the test.
+	_ = copyFieldUsingPointers[bool](source, target, "isParallel")            // Whether the test is parallel.
+
+	_ = copyFieldUsingPointers[int](source, target, "level")            // Nesting depth of test or benchmark.
+	_ = copyFieldUsingPointers[[]uintptr](source, target, "creator")    // If level > 0, the stack trace at the point where the parent called t.Run.
+	_ = copyFieldUsingPointers[string](source, target, "name")          // Name of test or benchmark.
+	_ = copyFieldUsingPointers[unsafe.Pointer](source, target, "start") // Time test or benchmark started
+	_ = copyFieldUsingPointers[time.Duration](source, target, "duration")
+	_ = copyFieldUsingPointers[[]*testing.T](source, target, "sub")            // Queue of subtests to be run in parallel.
+	_ = copyFieldUsingPointers[atomic.Int64](source, target, "lastRaceErrors") // Max value of race.Errors seen during the test or its subtests.
+	_ = copyFieldUsingPointers[atomic.Bool](source, target, "raceErrorLogged")
+	_ = copyFieldUsingPointers[string](source, target, "tempDir")
+	_ = copyFieldUsingPointers[error](source, target, "tempDirErr")
+	_ = copyFieldUsingPointers[int32](source, target, "tempDirSeq")
+
+	_ = copyFieldUsingPointers[bool](source, target, "isEnvSet")
+	_ = copyFieldUsingPointers[unsafe.Pointer](source, target, "context") // For running tests and subtests.
+}
+
+// ****************
 // BENCHMARKS
+// ****************
 
 // get the pointer to the internal benchmark array
 // getInternalBenchmarkArray gets the pointer to the testing.InternalBenchmark array inside
@@ -46,22 +248,6 @@ func getInternalBenchmarkArray(m *testing.M) *[]testing.InternalBenchmark {
 		return (*[]testing.InternalBenchmark)(ptr)
 	}
 	return nil
-}
-
-// commonPrivateFields is collection of required private fields from testing.common
-type commonPrivateFields struct {
-	mu    *sync.RWMutex
-	level *int
-	name  *string // Name of test or benchmark.
-}
-
-// AddLevel increase or decrease the testing.common.level field value, used by
-// testing.B to create the name of the benchmark test
-func (c *commonPrivateFields) AddLevel(delta int) int {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	*c.level = *c.level + delta
-	return *c.level
 }
 
 // benchmarkPrivateFields is a collection of required private fields from testing.B
@@ -80,7 +266,7 @@ func getBenchmarkPrivateFields(b *testing.B) *benchmarkPrivateFields {
 		B: b,
 	}
 
-	// common
+	// testing.common
 	if ptr, err := getFieldPointerFrom(b, "mu"); err == nil {
 		benchFields.mu = (*sync.RWMutex)(ptr)
 	}
@@ -90,8 +276,17 @@ func getBenchmarkPrivateFields(b *testing.B) *benchmarkPrivateFields {
 	if ptr, err := getFieldPointerFrom(b, "name"); err == nil {
 		benchFields.name = (*string)(ptr)
 	}
+	if ptr, err := getFieldPointerFrom(b, "failed"); err == nil {
+		benchFields.failed = (*bool)(ptr)
+	}
+	if ptr, err := getFieldPointerFrom(b, "skipped"); err == nil {
+		benchFields.skipped = (*bool)(ptr)
+	}
+	if ptr, err := getFieldPointerFrom(b, "parent"); err == nil {
+		benchFields.parent = (*unsafe.Pointer)(ptr)
+	}
 
-	// benchmark
+	// testing.B
 	if ptr, err := getFieldPointerFrom(b, "benchFunc"); err == nil {
 		benchFields.benchFunc = (*func(b *testing.B))(ptr)
 	}

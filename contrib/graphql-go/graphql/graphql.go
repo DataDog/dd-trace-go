@@ -15,7 +15,6 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/graphqlsec"
-	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/graphqlsec/types"
 
 	"github.com/graphql-go/graphql"
 	"github.com/graphql-go/graphql/gqlerrors"
@@ -61,7 +60,7 @@ type datadogExtension struct{ config }
 type contextKey struct{}
 type contextData struct {
 	serverSpan    *tracer.Span
-	requestOp     *types.RequestOperation
+	requestOp     *graphqlsec.RequestOperation
 	variables     map[string]any
 	query         string
 	operationName string
@@ -70,7 +69,7 @@ type contextData struct {
 // finish closes the top-level request operation, as well as the server span.
 func (c *contextData) finish(data any, err error) {
 	defer c.serverSpan.Finish(tracer.WithError(err))
-	c.requestOp.Finish(types.RequestOperationRes{Data: data, Error: err})
+	c.requestOp.Finish(c.serverSpan, graphqlsec.RequestOperationRes{Data: data, Error: err})
 }
 
 var extensionName = reflect.TypeOf((*datadogExtension)(nil)).Elem().Name()
@@ -95,7 +94,7 @@ func (i datadogExtension) Init(ctx context.Context, params *graphql.Params) cont
 		tracer.Tag(ext.Component, instrumentation.PackageGraphQLGoGraphQL),
 		tracer.Measured(),
 	)
-	ctx, request := graphqlsec.StartRequestOperation(ctx, span, types.RequestOperationArgs{
+	ctx, request := graphqlsec.StartRequestOperation(ctx, graphqlsec.RequestOperationArgs{
 		RawQuery:      params.RequestString,
 		Variables:     params.VariableValues,
 		OperationName: params.OperationName,
@@ -190,7 +189,7 @@ func (i datadogExtension) ExecutionDidStart(ctx context.Context) (context.Contex
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, i.config.analyticsRate))
 	}
 	span, ctx := tracer.StartSpanFromContext(ctx, spanExecute, opts...)
-	ctx, op := graphqlsec.StartExecutionOperation(ctx, span, types.ExecutionOperationArgs{
+	ctx, op := graphqlsec.StartExecutionOperation(ctx, graphqlsec.ExecutionOperationArgs{
 		Query:         data.query,
 		OperationName: data.operationName,
 		Variables:     data.variables,
@@ -201,7 +200,7 @@ func (i datadogExtension) ExecutionDidStart(ctx context.Context) (context.Contex
 			defer data.finish(result.Data, err)
 			span.Finish(tracer.WithError(err))
 		}()
-		op.Finish(types.ExecutionOperationRes{Data: result.Data, Error: err})
+		op.Finish(graphqlsec.ExecutionOperationRes{Data: result.Data, Error: err})
 	}
 }
 
@@ -237,14 +236,14 @@ func (i datadogExtension) ResolveFieldDidStart(ctx context.Context, info *graphq
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, i.config.analyticsRate))
 	}
 	span, ctx := tracer.StartSpanFromContext(ctx, spanResolve, opts...)
-	ctx, op := graphqlsec.StartResolveOperation(ctx, span, types.ResolveOperationArgs{
+	ctx, op := graphqlsec.StartResolveOperation(ctx, graphqlsec.ResolveOperationArgs{
 		TypeName:  info.ParentType.Name(),
 		FieldName: info.FieldName,
 		Arguments: collectArguments(info),
 	})
 	return ctx, func(result any, err error) {
 		defer span.Finish(tracer.WithError(err))
-		op.Finish(types.ResolveOperationRes{Error: err, Data: result})
+		op.Finish(graphqlsec.ResolveOperationRes{Error: err, Data: result})
 	}
 }
 

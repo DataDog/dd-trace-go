@@ -9,6 +9,8 @@ import (
 	"bytes"
 	"sync/atomic"
 
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/version"
@@ -64,6 +66,27 @@ func newCiVisibilityPayload() *ciVisibilityPayload {
 //	An error if reading from the buffer or encoding the payload fails.
 func (p *ciVisibilityPayload) getBuffer(config *config) (*bytes.Buffer, error) {
 	log.Debug("ciVisibilityPayload: .getBuffer (count: %v)", p.itemCount())
+
+	// Create a buffer to read the current payload
+	payloadBuf := new(bytes.Buffer)
+	if _, err := payloadBuf.ReadFrom(p.payload); err != nil {
+		return nil, err
+	}
+
+	// Create the visibility payload
+	visibilityPayload := p.writeEnvelope(config.env, payloadBuf.Bytes())
+
+	// Create a new buffer to encode the visibility payload in MessagePack format
+	encodedBuf := new(bytes.Buffer)
+	if err := msgp.Encode(encodedBuf, visibilityPayload); err != nil {
+		return nil, err
+	}
+
+	return encodedBuf, nil
+}
+
+func (p *ciVisibilityPayload) writeEnvelope(env string, events []byte) *ciTestCyclePayload {
+
 	/*
 			The Payload format in the CI Visibility protocol is like this:
 			{
@@ -84,36 +107,35 @@ func (p *ciVisibilityPayload) getBuffer(config *config) (*bytes.Buffer, error) {
 		The event format can be found in the `civisibility_tslv.go` file in the ciVisibilityEvent documentation
 	*/
 
-	// Create a buffer to read the current payload
-	payloadBuf := new(bytes.Buffer)
-	if _, err := payloadBuf.ReadFrom(p.payload); err != nil {
-		return nil, err
-	}
-
 	// Create the metadata map
 	allMetadata := map[string]string{
 		"language":        "go",
 		"runtime-id":      globalconfig.RuntimeID(),
 		"library_version": version.Tag,
 	}
-	if config.env != "" {
-		allMetadata["env"] = config.env
+	if env != "" {
+		allMetadata["env"] = env
 	}
 
 	// Create the visibility payload
-	visibilityPayload := ciTestCyclePayload{
+	visibilityPayload := &ciTestCyclePayload{
 		Version: 1,
 		Metadata: map[string]map[string]string{
 			"*": allMetadata,
 		},
-		Events: payloadBuf.Bytes(),
+		Events: events,
 	}
 
-	// Create a new buffer to encode the visibility payload in MessagePack format
-	encodedBuf := new(bytes.Buffer)
-	if err := msgp.Encode(encodedBuf, &visibilityPayload); err != nil {
-		return nil, err
+	// Check for the test session name and append the tag at the metadata level
+	if testSessionName, ok := utils.GetCITags()[constants.TestSessionName]; ok {
+		testSessionMap := map[string]string{
+			constants.TestSessionName: testSessionName,
+		}
+		visibilityPayload.Metadata["test_session_end"] = testSessionMap
+		visibilityPayload.Metadata["test_module_end"] = testSessionMap
+		visibilityPayload.Metadata["test_suite_end"] = testSessionMap
+		visibilityPayload.Metadata["test"] = testSessionMap
 	}
 
-	return encodedBuf, nil
+	return visibilityPayload
 }

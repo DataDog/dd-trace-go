@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/config"
 
@@ -36,6 +37,6 @@ func TestStartStop(t *testing.T) {
 	// Use t.Setenv() to automatically restore the initial env var value, if set
 	t.Setenv(config.EnvEnabled, "")
 	os.Unsetenv(config.EnvEnabled)
-	appsec.Start()
+	testutils.StartAppSec(t)
 	appsec.Stop()
 }

@@ -13,9 +13,9 @@ import (
 	"go/types"
 	"strings"
 
+	"github.com/DataDog/dd-trace-go/v2/ddtrace"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"golang.org/x/tools/go/analysis"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 )
 
 // KnownChange models code expressions that must be changed to migrate to v2.
@@ -115,7 +115,7 @@ func (c V1ImportURL) Fixes() []analysis.SuggestedFix {
 	if path == "" {
 		return nil
 	}
-	path = strings.Replace(path, "gopkg.in/DataDog/dd-trace-go.v1", "github.com/DataDog/dd-trace-go/v2", 1)
+	path = strings.Replace(path, "github.com/DataDog/dd-trace-go/v2", "github.com/DataDog/dd-trace-go/v2", 1)
 	return []analysis.SuggestedFix{
 		{
 			Message: "update import URL to v2",
@@ -133,7 +133,7 @@ func (c V1ImportURL) Fixes() []analysis.SuggestedFix {
 func (V1ImportURL) Probes() []Probe {
 	return []Probe{
 		IsImport,
-		HasPackagePrefix("gopkg.in/DataDog/dd-trace-go.v1/"),
+		HasPackagePrefix("github.com/DataDog/dd-trace-go/v2/"),
 	}
 }
 
@@ -173,7 +173,7 @@ func (DDTraceTypes) Probes() []Probe {
 			Is[*ast.ValueSpec],
 			Is[*ast.Field],
 		),
-		ImportedFrom("gopkg.in/DataDog/dd-trace-go.v1"),
+		ImportedFrom("github.com/DataDog/dd-trace-go/v2"),
 		Not(DeclaresType[ddtrace.SpanContext]()),
 	}
 }

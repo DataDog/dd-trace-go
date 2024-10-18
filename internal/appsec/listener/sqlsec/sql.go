@@ -7,30 +7,37 @@ package sqlsec
 
 import (
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/dyngo"
-	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/sqlsec/types"
-	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/trace"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/sqlsec"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/waf/addresses"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec/config"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec/emitter/waf"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/listener"
-	"github.com/DataDog/dd-trace-go/v2/internal/appsec/listener/sharedsec"
-
-	"github.com/DataDog/appsec-internal-go/limiter"
-	waf "github.com/DataDog/go-libddwaf/v3"
 )
 
-const (
-	ServerDBStatementAddr = "server.db.statement"
-	ServerDBTypeAddr      = "server.db.system"
-)
+type Feature struct{}
 
-func RegisterSQLListener(op dyngo.Operation, events *trace.SecurityEventsHolder, wafCtx *waf.Context, limiter limiter.Limiter) {
-	dyngo.On(op, sharedsec.MakeWAFRunListener(events, wafCtx, limiter, func(args types.SQLOperationArgs) waf.RunAddressData {
-		return waf.RunAddressData{Ephemeral: map[string]any{ServerDBStatementAddr: args.Query, ServerDBTypeAddr: args.Driver}}
-	}))
+func (*Feature) String() string {
+	return "SQLi Protection"
 }
 
-func SQLAddressesPresent(addresses listener.AddressSet) bool {
-	_, queryAddr := addresses[ServerDBStatementAddr]
-	_, driverAddr := addresses[ServerDBTypeAddr]
+func (*Feature) Stop() {}
 
-	return queryAddr || driverAddr
+func NewSQLSecFeature(cfg *config.Config, rootOp dyngo.Operation) (listener.Feature, error) {
+	if !cfg.RASP || !cfg.SupportedAddresses.AnyOf(addresses.ServerDBTypeAddr, addresses.ServerDBStatementAddr) {
+		return nil, nil
+	}
 
+	feature := &Feature{}
+	dyngo.On(rootOp, feature.OnStart)
+	return feature, nil
+}
+
+func (*Feature) OnStart(op *sqlsec.SQLOperation, args sqlsec.SQLOperationArgs) {
+	dyngo.EmitData(op, waf.RunEvent{
+		Operation: op,
+		RunAddressData: addresses.NewAddressesBuilder().
+			WithDBStatement(args.Query).
+			WithDBType(args.Driver).
+			Build(),
+	})
 }

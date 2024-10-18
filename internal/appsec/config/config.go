@@ -68,6 +68,30 @@ type Config struct {
 	// RC is the remote configuration client used to receive product configuration updates. Nil if RC is disabled (default)
 	RC   *remoteconfig.ClientConfig
 	RASP bool
+	// SupportedAddresses are the addresses that the AppSec listener will bind to.
+	SupportedAddresses AddressSet
+}
+
+// AddressSet is a set of WAF addresses.
+type AddressSet map[string]struct{}
+
+func NewAddressSet(addrs []string) AddressSet {
+	set := make(AddressSet, len(addrs))
+	for _, addr := range addrs {
+		set[addr] = struct{}{}
+	}
+	return set
+}
+
+// AnyOf returns true if any of the addresses in the set are in the given list.
+func (set AddressSet) AnyOf(anyOf ...string) bool {
+	for _, addr := range anyOf {
+		if _, ok := set[addr]; ok {
+			return true
+		}
+	}
+
+	return false
 }
 
 // WithRCConfig sets the AppSec remote config client configuration to the specified cfg
@@ -105,7 +129,7 @@ func NewConfig() (*Config, error) {
 		return nil, err
 	}
 
-	r, err := NewRulesManeger(rules)
+	r, err := NewRulesManager(rules)
 	if err != nil {
 		return nil, err
 	}

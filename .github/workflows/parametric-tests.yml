@@ -21,6 +21,9 @@ on:
   schedule:
     - cron:  '00 04 * * 2-6'
 
+permissions:
+  contents: read
+
 jobs:
   parametric-tests:
     if: github.event_name != 'pull_request' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == 'DataDog/dd-trace-go')

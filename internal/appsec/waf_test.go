@@ -24,20 +24,21 @@ import (
 	pAppsec "github.com/DataDog/dd-trace-go/v2/appsec"
 	"github.com/DataDog/dd-trace-go/v2/appsec/events"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/dyngo"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/ossec"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/waf/addresses"
 	httptrace "github.com/DataDog/dd-trace-go/v2/instrumentation/httptracemock"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/config"
-	"github.com/DataDog/dd-trace-go/v2/internal/appsec/listener/httpsec"
 
 	"github.com/stretchr/testify/require"
 )
 
 func TestCustomRules(t *testing.T) {
 	t.Setenv("DD_APPSEC_RULES", "testdata/custom_rules.json")
-	appsec.Start()
-	defer appsec.Stop()
+	testutils.StartAppSec(t)
 
 	if !appsec.Enabled() {
 		t.Skip("appsec disabled")
@@ -45,7 +46,7 @@ func TestCustomRules(t *testing.T) {
 
 	// Start and trace an HTTP server
 	mux := httptrace.NewServeMux()
-	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
 		w.Write([]byte("Hello World!\n"))
 	})
 
@@ -93,8 +94,7 @@ func TestCustomRules(t *testing.T) {
 
 func TestUserRules(t *testing.T) {
 	t.Setenv("DD_APPSEC_RULES", "testdata/user_rules.json")
-	appsec.Start()
-	defer appsec.Stop()
+	testutils.StartAppSec(t)
 
 	if !appsec.Enabled() {
 		t.Skip("appsec disabled")
@@ -102,10 +102,10 @@ func TestUserRules(t *testing.T) {
 
 	// Start and trace an HTTP server
 	mux := httptrace.NewServeMux()
-	mux.HandleFunc("/hello", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/hello", func(w http.ResponseWriter, _ *http.Request) {
 		w.Write([]byte("Hello World!\n"))
 	})
-	mux.HandleFunc("/response-header", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/response-header", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("match-response-header", "match-response-header")
 		w.WriteHeader(204)
 	})
@@ -159,8 +159,7 @@ func TestUserRules(t *testing.T) {
 // the WAF is properly detecting an LFI attempt and that the corresponding security event is being sent to the agent.
 // Additionally, verifies that rule matching through SDK body instrumentation works as expected
 func TestWAF(t *testing.T) {
-	appsec.Start()
-	defer appsec.Stop()
+	testutils.StartAppSec(t)
 
 	if !appsec.Enabled() {
 		t.Skip("appsec disabled")
@@ -168,7 +167,7 @@ func TestWAF(t *testing.T) {
 
 	// Start and trace an HTTP server
 	mux := httptrace.NewServeMux()
-	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
 		w.Write([]byte("Hello World!\n"))
 	})
 	mux.HandleFunc("/body", func(w http.ResponseWriter, r *http.Request) {
@@ -310,8 +309,8 @@ func TestWAF(t *testing.T) {
 // Test that request blocking works by using custom rules/rules data
 func TestBlocking(t *testing.T) {
 	t.Setenv("DD_APPSEC_RULES", "testdata/blocking.json")
-	appsec.Start()
-	defer appsec.Stop()
+	testutils.StartAppSec(t)
+
 	if !appsec.Enabled() {
 		t.Skip("AppSec needs to be enabled for this test")
 	}
@@ -324,7 +323,7 @@ func TestBlocking(t *testing.T) {
 
 	// Start and trace an HTTP server
 	mux := httptrace.NewServeMux()
-	mux.HandleFunc("/ip", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/ip", func(w http.ResponseWriter, _ *http.Request) {
 		w.Write([]byte("Hello World!\n"))
 	})
 	mux.HandleFunc("/user", func(w http.ResponseWriter, r *http.Request) {
@@ -460,9 +459,9 @@ func TestAPISecurity(t *testing.T) {
 	t.Run("enabled", func(t *testing.T) {
 		t.Setenv(internal.EnvAPISecEnabled, "true")
 		t.Setenv(internal.EnvAPISecSampleRate, "1.0")
-		appsec.Start()
+		testutils.StartAppSec(t)
 		require.True(t, appsec.Enabled())
-		defer appsec.Stop()
+
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
@@ -481,9 +480,9 @@ func TestAPISecurity(t *testing.T) {
 
 	t.Run("disabled", func(t *testing.T) {
 		t.Setenv(internal.EnvAPISecEnabled, "false")
-		appsec.Start()
+		testutils.StartAppSec(t)
 		require.True(t, appsec.Enabled())
-		defer appsec.Stop()
+
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
@@ -507,8 +506,7 @@ func TestRASPSQLi(t *testing.T) {
 
 func TestRASPLFI(t *testing.T) {
 	t.Setenv("DD_APPSEC_RULES", "testdata/rasp.json")
-	appsec.Start()
-	defer appsec.Stop()
+	testutils.StartAppSec(t)
 
 	if !appsec.RASPEnabled() {
 		t.Skip("RASP needs to be enabled for this test")
@@ -598,6 +596,124 @@ func TestRASPLFI(t *testing.T) {
 	}
 }
 
+func TestSuspiciousAttackerBlocking(t *testing.T) {
+	t.Setenv("DD_APPSEC_RULES", "testdata/sab.json")
+	testutils.StartAppSec(t)
+
+	if !appsec.Enabled() {
+		t.Skip("AppSec needs to be enabled for this test")
+	}
+
+	const bodyBlockingRule = "crs-933-130-block"
+
+	// Start and trace an HTTP server
+	mux := httptrace.NewServeMux()
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		if err := pAppsec.SetUser(r.Context(), r.Header.Get("test-usr")); err != nil {
+			return
+		}
+		buf := new(strings.Builder)
+		io.Copy(buf, r.Body)
+		if err := pAppsec.MonitorParsedHTTPBody(r.Context(), buf.String()); err != nil {
+			return
+		}
+		w.Write([]byte("Hello World!\n"))
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	for _, tc := range []struct {
+		name      string
+		headers   map[string]string
+		status    int
+		ruleMatch string
+		attack    string
+	}{
+		{
+			name:   "ip/not-suspicious/no-attack",
+			status: 200,
+		},
+		{
+			name:    "ip/suspicious/no-attack",
+			headers: map[string]string{"x-forwarded-for": "1.2.3.4"},
+			status:  200,
+		},
+		{
+			name:      "ip/not-suspicious/attack",
+			status:    200,
+			attack:    "$globals",
+			ruleMatch: bodyBlockingRule,
+		},
+		{
+			name:      "ip/suspicious/attack",
+			headers:   map[string]string{"x-forwarded-for": "1.2.3.4"},
+			status:    402,
+			attack:    "$globals",
+			ruleMatch: bodyBlockingRule,
+		},
+		{
+			name:   "user/not-suspicious/no-attack",
+			status: 200,
+		},
+		{
+			name:    "user/suspicious/no-attack",
+			headers: map[string]string{"test-usr": "blocked-user-1"},
+			status:  200,
+		},
+		{
+			name:      "user/not-suspicious/attack",
+			status:    200,
+			attack:    "$globals",
+			ruleMatch: bodyBlockingRule,
+		},
+		{
+			name:      "user/suspicious/attack",
+			headers:   map[string]string{"test-usr": "blocked-user-1"},
+			status:    401,
+			attack:    "$globals",
+			ruleMatch: bodyBlockingRule,
+		},
+		{
+			name:    "ip+user/suspicious/no-attack",
+			headers: map[string]string{"x-forwarded-for": "1.2.3.4", "test-usr": "blocked-user-1"},
+			status:  200,
+		},
+		{
+			name:      "ip+user/suspicious/attack",
+			headers:   map[string]string{"x-forwarded-for": "1.2.3.4", "test-usr": "blocked-user-1"},
+			status:    402,
+			attack:    "$globals",
+			ruleMatch: bodyBlockingRule,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			mt := mocktracer.Start()
+			defer mt.Stop()
+			req, err := http.NewRequest("POST", srv.URL, strings.NewReader(tc.attack))
+			require.NoError(t, err)
+			for k, v := range tc.headers {
+				req.Header.Set(k, v)
+			}
+			res, err := srv.Client().Do(req)
+			require.NoError(t, err)
+			defer res.Body.Close()
+			if tc.ruleMatch != "" {
+				spans := mt.FinishedSpans()
+				require.Len(t, spans, 1)
+				require.Contains(t, spans[0].Tag("_dd.appsec.json"), tc.ruleMatch)
+			}
+			require.Equal(t, tc.status, res.StatusCode)
+			b, err := io.ReadAll(res.Body)
+			require.NoError(t, err)
+			if tc.status == 200 {
+				require.Equal(t, "Hello World!\n", string(b))
+			} else {
+				require.NotEqual(t, "Hello World!\n", string(b))
+			}
+		})
+	}
+}
+
 // BenchmarkSampleWAFContext benchmarks the creation of a WAF context and running the WAF on a request/response pair
 // This is a basic sample of what could happen in a real-world scenario.
 func BenchmarkSampleWAFContext(b *testing.B) {
@@ -623,10 +739,10 @@ func BenchmarkSampleWAFContext(b *testing.B) {
 		_, err = ctx.Run(
 			waf.RunAddressData{
 				Persistent: map[string]any{
-					httpsec.HTTPClientIPAddr:        "1.1.1.1",
-					httpsec.ServerRequestMethodAddr: "GET",
-					httpsec.ServerRequestRawURIAddr: "/",
-					httpsec.ServerRequestHeadersNoCookiesAddr: map[string][]string{
+					addresses.ClientIPAddr:            "1.1.1.1",
+					addresses.ServerRequestMethodAddr: "GET",
+					addresses.ServerRequestRawURIAddr: "/",
+					addresses.ServerRequestHeadersNoCookiesAddr: map[string][]string{
 						"host":            {"example.com"},
 						"content-length":  {"0"},
 						"Accept":          {"application/json"},
@@ -634,13 +750,13 @@ func BenchmarkSampleWAFContext(b *testing.B) {
 						"Accept-Encoding": {"gzip"},
 						"Connection":      {"close"},
 					},
-					httpsec.ServerRequestCookiesAddr: map[string][]string{
+					addresses.ServerRequestCookiesAddr: map[string][]string{
 						"cookie": {"session=1234"},
 					},
-					httpsec.ServerRequestQueryAddr: map[string][]string{
+					addresses.ServerRequestQueryAddr: map[string][]string{
 						"query": {"value"},
 					},
-					httpsec.ServerRequestPathParamsAddr: map[string]string{
+					addresses.ServerRequestPathParamsAddr: map[string]string{
 						"param": "value",
 					},
 				},
@@ -654,12 +770,12 @@ func BenchmarkSampleWAFContext(b *testing.B) {
 		_, err = ctx.Run(
 			waf.RunAddressData{
 				Persistent: map[string]any{
-					httpsec.ServerResponseHeadersNoCookiesAddr: map[string][]string{
+					addresses.ServerResponseHeadersNoCookiesAddr: map[string][]string{
 						"content-type":   {"application/json"},
 						"content-length": {"0"},
 						"Connection":     {"close"},
 					},
-					httpsec.ServerResponseStatusAddr: 200,
+					addresses.ServerResponseStatusAddr: 200,
 				},
 			})
 
@@ -669,6 +785,54 @@ func BenchmarkSampleWAFContext(b *testing.B) {
 
 		ctx.Close()
 	}
+}
+
+func TestAttackerFingerprinting(t *testing.T) {
+	t.Setenv("DD_APPSEC_RULES", "testdata/fp.json")
+	testutils.StartAppSec(t)
+
+	if !appsec.Enabled() {
+		t.Skip("AppSec needs to be enabled for this test")
+	}
+
+	// Start and trace an HTTP server
+	mux := httptrace.NewServeMux()
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		pAppsec.TrackUserLoginSuccessEvent(
+			r.Context(),
+			"toto",
+			map[string]string{},
+			tracer.WithUserSessionID("sessionID"))
+
+		pAppsec.MonitorParsedHTTPBody(r.Context(), map[string]string{"key": "value"})
+
+		w.Write([]byte("Hello World!\n"))
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	mt := mocktracer.Start()
+	defer mt.Stop()
+	req, err := http.NewRequest("POST", srv.URL+"/test?x=1", nil)
+	require.NoError(t, err)
+	req.AddCookie(&http.Cookie{Name: "cookie", Value: "value"})
+	resp, err := srv.Client().Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	require.Len(t, mt.FinishedSpans(), 1)
+
+	tags := mt.FinishedSpans()[0].Tags()
+
+	require.Contains(t, tags, "_dd.appsec.fp.http.header")
+	require.Contains(t, tags, "_dd.appsec.fp.http.endpoint")
+	require.Contains(t, tags, "_dd.appsec.fp.http.network")
+	require.Contains(t, tags, "_dd.appsec.fp.session")
+
+	require.Regexp(t, `^hdr-`, tags["_dd.appsec.fp.http.header"])
+	require.Regexp(t, `^http-`, tags["_dd.appsec.fp.http.endpoint"])
+	require.Regexp(t, `^ssn-`, tags["_dd.appsec.fp.session"])
+	require.Regexp(t, `^net-`, tags["_dd.appsec.fp.http.network"])
 }
 
 func init() {

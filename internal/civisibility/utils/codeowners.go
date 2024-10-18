@@ -76,6 +76,9 @@ func GetCodeOwners() *CodeOwners {
 			if _, err := os.Stat(path); err == nil {
 				codeowners, err = NewCodeOwners(path)
 				if err == nil {
+					if logger.DebugEnabled() {
+						logger.Debug("civisibility: codeowner file '%v' was loaded successfully.", path)
+					}
 					return codeowners
 				}
 				logger.Debug("Error parsing codeowners: %s", err)
