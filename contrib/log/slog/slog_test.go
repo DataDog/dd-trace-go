@@ -185,6 +185,20 @@ func TestRecordClone(t *testing.T) {
 	assert.True(t, foundSentinel)
 }
 
+func BenchmarkHandler(b *testing.B) {
+	span, ctx := tracer.StartSpanFromContext(context.Background(), "test")
+	defer span.Finish()
+
+	// create a logger with a bunch of nested groups and fields
+	logger := slog.New(NewJSONHandler(io.Discard, nil))
+	logger = logger.With("attr1", "val1").WithGroup("group1").With("attr2", "val2").WithGroup("group3").With("attr3", "val3")
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		logger.InfoContext(ctx, "some message")
+	}
+}
+
 // handlerGate calls a gate function before calling the underlying handler. This
 // allows simulating a concurrent modification of the record that happens after
 // Handle is called (and the record has been copied), but before the back array
