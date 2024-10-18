@@ -76,6 +76,11 @@ func createTestSuite(module *tslvTestModule, name string, startTime time.Time) D
 	return suite
 }
 
+// SuiteID returns the ID of the test suite.
+func (t *tslvTestSuite) SuiteID() uint64 {
+	return t.suiteID
+}
+
 // Name returns the name of the test suite.
 func (t *tslvTestSuite) Name() string { return t.name }
 

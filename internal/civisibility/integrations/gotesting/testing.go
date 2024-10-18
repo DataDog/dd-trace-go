@@ -17,6 +17,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/constants"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/integrations"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/utils"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
 const (
@@ -164,6 +165,14 @@ func (ddm *M) executeInternalTest(testInfo *testingTInfo) func(*testing.T) {
 		startTime := time.Now()
 		defer func() {
 			duration := time.Since(startTime)
+			if mode != "" {
+				fileName := fmt.Sprintf("%d-%d-%d-post.out", module.ModuleID(), suite.SuiteID(), test.TestID())
+				_, err := tearDown(fileName, "")
+				if err != nil {
+					log.Debug("Error tearing down coverage file:", err)
+				}
+			}
+
 			// check if is a new EFD test and the duration >= 5 min
 			if execMeta.isANewTest && duration.Minutes() >= 5 {
 				// Set the EFD retry abort reason
@@ -205,6 +214,14 @@ func (ddm *M) executeInternalTest(testInfo *testingTInfo) func(*testing.T) {
 				}
 			}
 		}()
+
+		if mode != "" {
+			fileName := fmt.Sprintf("%d-%d-%d-pre.out", module.ModuleID(), suite.SuiteID(), test.TestID())
+			_, err := tearDown(fileName, "")
+			if err != nil {
+				log.Debug("Error tearing down coverage file:", err)
+			}
+		}
 
 		// Execute the original test function.
 		testInfo.originalFunc(t)
