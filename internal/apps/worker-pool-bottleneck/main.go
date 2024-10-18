@@ -28,8 +28,8 @@ import (
 	"net/http"
 	"time"
 
+	httptrace "github.com/DataDog/dd-trace-go/contrib/net/http/v2"
 	"github.com/DataDog/dd-trace-go/internal/apps"
-	httptrace "github.com/DataDog/dd-trace-go/v2/contrib/net/http"
 )
 
 func main() {

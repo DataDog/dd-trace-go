@@ -24,8 +24,8 @@ import (
 	"sync"
 	"time"
 
-	httptrace "github.com/DataDog/dd-trace-go/v2/contrib/net/http"
-	"github.com/DataDog/dd-trace-go/v2/internal/apps"
+	httptrace "github.com/DataDog/dd-trace-go/contrib/net/http/v2"
+	"github.com/DataDog/dd-trace-go/internal/apps"
 )
 
 func main() {
