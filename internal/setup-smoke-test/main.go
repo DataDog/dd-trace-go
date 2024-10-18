@@ -19,6 +19,8 @@ import (
 
 func main() {
 	os.Setenv("DD_APPSEC_ENABLED", "true")
+	os.Setenv("DD_APPSEC_WAF_LOG_LEVEL", "DEBUG")
+	os.Setenv("DD_APPSEC_WAF_TIMEOUT", "1h")
 	tracer.Start(tracer.WithDebugMode(true))
 	defer tracer.Stop()
 	profiler.Start()
