@@ -154,3 +154,47 @@ func TestHandlerWithGroup(t *testing.T) {
 		)
 	})
 }
+
+// TestRecordClone is a regression test for https://github.com/DataDog/dd-trace-go/issues/2918.
+func TestRecordClone(t *testing.T) {
+	// start a new span
+	span, ctx := tracer.StartSpanFromContext(context.Background(), "test")
+	defer span.Finish()
+
+	r := slog.Record{}
+	gate := func() {
+		// Calling Handle below should not overwrite this value
+		r.Add("sentinel-key", "sentinel-value")
+	}
+	h := handlerGate{gate, WrapHandler(slog.NewJSONHandler(io.Discard, nil))}
+	// Up to slog.nAttrsInline (5) attributes are stored in the front array of
+	// the record. Make sure to add more records than that to trigger the bug.
+	for i := 0; i < 5*10; i++ {
+		r.Add("i", i)
+	}
+	h.Handle(ctx, r)
+
+	var foundSentinel bool
+	r.Attrs(func(a slog.Attr) bool {
+		if a.Key == "sentinel-key" {
+			foundSentinel = true
+			return false
+		}
+		return true
+	})
+	assert.True(t, foundSentinel)
+}
+
+// handlerGate calls a gate function before calling the underlying handler. This
+// allows simulating a concurrent modification of the record that happens after
+// Handle is called (and the record has been copied), but before the back array
+// of the Record is written to.
+type handlerGate struct {
+	gate func()
+	slog.Handler
+}
+
+func (h handlerGate) Handle(ctx context.Context, r slog.Record) {
+	h.gate()
+	h.Handler.Handle(ctx, r)
+}

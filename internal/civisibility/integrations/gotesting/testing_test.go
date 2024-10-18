@@ -9,9 +9,8 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"os"
+	"runtime"
 	"slices"
-	"strconv"
 	"testing"
 
 	ddhttp "gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http"
@@ -19,67 +18,9 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 	ddtracer "gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/constants"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/integrations"
 
 	"github.com/stretchr/testify/assert"
 )
-
-var currentM *testing.M
-var mTracer mocktracer.Tracer
-
-// TestMain is the entry point for testing and runs before any test.
-func TestMain(m *testing.M) {
-	currentM = m
-	mTracer = integrations.InitializeCIVisibilityMock()
-
-	// (*M)(m).Run() cast m to gotesting.M and just run
-	// or use a helper method gotesting.RunM(m)
-
-	// os.Exit((*M)(m).Run())
-	exit := RunM(m)
-	if exit != 0 {
-		os.Exit(exit)
-	}
-
-	finishedSpans := mTracer.FinishedSpans()
-	// 1 session span
-	// 1 module span
-	// 1 suite span (optional 1 from reflections_test.go)
-	// 6 tests spans
-	// 7 sub stest spans
-	// 2 normal spans (from integration tests)
-	// 1 benchmark span (optional - require the -bench option)
-	if len(finishedSpans) < 17 {
-		panic("expected at least 17 finished spans, got " + strconv.Itoa(len(finishedSpans)))
-	}
-
-	sessionSpans := getSpansWithType(finishedSpans, constants.SpanTypeTestSession)
-	if len(sessionSpans) != 1 {
-		panic("expected exactly 1 session span, got " + strconv.Itoa(len(sessionSpans)))
-	}
-
-	moduleSpans := getSpansWithType(finishedSpans, constants.SpanTypeTestModule)
-	if len(moduleSpans) != 1 {
-		panic("expected exactly 1 module span, got " + strconv.Itoa(len(moduleSpans)))
-	}
-
-	suiteSpans := getSpansWithType(finishedSpans, constants.SpanTypeTestSuite)
-	if len(suiteSpans) < 1 {
-		panic("expected at least 1 suite span, got " + strconv.Itoa(len(suiteSpans)))
-	}
-
-	testSpans := getSpansWithType(finishedSpans, constants.SpanTypeTest)
-	if len(testSpans) < 12 {
-		panic("expected at least 12 suite span, got " + strconv.Itoa(len(testSpans)))
-	}
-
-	httpSpans := getSpansWithType(finishedSpans, ext.SpanTypeHTTP)
-	if len(httpSpans) != 2 {
-		panic("expected exactly 2 normal spans, got " + strconv.Itoa(len(httpSpans)))
-	}
-
-	os.Exit(0)
-}
 
 // TestMyTest01 demonstrates instrumentation of InternalTests
 func TestMyTest01(t *testing.T) {
@@ -222,6 +163,59 @@ func TestSkip(gt *testing.T) {
 	t.Skip("Nothing to do here, skipping!")
 }
 
+// Tests for test retries feature
+
+var testRetryWithPanicRunNumber = 0
+
+func TestRetryWithPanic(t *testing.T) {
+	t.Cleanup(func() {
+		if testRetryWithPanicRunNumber == 1 {
+			fmt.Println("CleanUp from the initial execution")
+		} else {
+			fmt.Println("CleanUp from the retry")
+		}
+	})
+	testRetryWithPanicRunNumber++
+	if testRetryWithPanicRunNumber < 4 {
+		panic("Test Panic")
+	}
+}
+
+var testRetryWithFailRunNumber = 0
+
+func TestRetryWithFail(t *testing.T) {
+	t.Cleanup(func() {
+		if testRetryWithFailRunNumber == 1 {
+			fmt.Println("CleanUp from the initial execution")
+		} else {
+			fmt.Println("CleanUp from the retry")
+		}
+	})
+	testRetryWithFailRunNumber++
+	if testRetryWithFailRunNumber < 4 {
+		t.Fatal("Failed due the wrong execution number")
+	}
+}
+
+func TestRetryAlwaysFail(t *testing.T) {
+	t.Parallel()
+	t.Fatal("Always fail to test the auto retries feature")
+}
+
+func TestNormalPassingAfterRetryAlwaysFail(t *testing.T) {}
+
+var run int
+
+func TestEarlyFlakeDetection(t *testing.T) {
+	run++
+	fmt.Printf(" Run: %d", run)
+	if run%2 == 0 {
+		fmt.Println(" Failed")
+		t.FailNow()
+	}
+	fmt.Println(" Passed")
+}
+
 // BenchmarkFirst demonstrates benchmark instrumentation with sub-benchmarks.
 func BenchmarkFirst(gb *testing.B) {
 
@@ -328,8 +322,9 @@ func assertCommon(assert *assert.Assertions, span mocktracer.Span) {
 	spanTags := span.Tags()
 
 	assert.Subset(spanTags, map[string]interface{}{
-		constants.Origin:   constants.CIAppTestOrigin,
-		constants.TestType: constants.TestTypeTest,
+		constants.Origin:          constants.CIAppTestOrigin,
+		constants.TestType:        constants.TestTypeTest,
+		constants.LogicalCPUCores: float64(runtime.NumCPU()),
 	})
 
 	assert.Contains(spanTags, ext.ResourceName)
@@ -352,15 +347,4 @@ func assertCommon(assert *assert.Assertions, span mocktracer.Span) {
 		assert.Contains(spanTags, constants.GitCommitCommitterName)
 	}
 	assert.Contains(spanTags, constants.CIWorkspacePath)
-}
-
-func getSpansWithType(spans []mocktracer.Span, spanType string) []mocktracer.Span {
-	var result []mocktracer.Span
-	for _, span := range spans {
-		if span.Tag(ext.SpanType) == spanType {
-			result = append(result, span)
-		}
-	}
-
-	return result
 }

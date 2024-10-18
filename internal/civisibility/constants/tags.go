@@ -10,6 +10,10 @@ const (
 	// This tag helps in identifying the source of the trace data.
 	Origin = "_dd.origin"
 
+	// LogicalCPUCores is a tag used to indicate the number of logical cpu cores
+	// This tag is used by the backend to perform calculations
+	LogicalCPUCores = "_dd.host.vcpu_count"
+
 	// CIAppTestOrigin defines the CIApp test origin value.
 	// This constant is used to tag traces that originate from CIApp test executions.
 	CIAppTestOrigin = "ciapp-test"
