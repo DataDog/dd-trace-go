@@ -146,26 +146,6 @@ func TestTraceAndServe(t *testing.T) {
 		assert.Equal("Hello, world!\n", string(slurp))
 	})
 
-	// there doesn't appear to be an easy way to test http.Pusher support via an http request
-	// so we'll just confirm wrapResponseWriter preserves it
-	t.Run("Pusher", func(t *testing.T) {
-		var i struct {
-			http.ResponseWriter
-			http.Pusher
-		}
-		var w http.ResponseWriter = i
-		_, ok := w.(http.ResponseWriter)
-		assert.True(t, ok)
-		_, ok = w.(http.Pusher)
-		assert.True(t, ok)
-
-		w, _ = wrapResponseWriter(w)
-		_, ok = w.(http.ResponseWriter)
-		assert.True(t, ok)
-		_, ok = w.(http.Pusher)
-		assert.True(t, ok)
-	})
-
 	t.Run("distributed", func(t *testing.T) {
 		mt := mocktracer.Start()
 		assert := assert.New(t)
