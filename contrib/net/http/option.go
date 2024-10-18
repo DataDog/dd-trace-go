@@ -226,6 +226,14 @@ func WithAfter(f RoundTripperAfterFunc) RoundTripperOptionFn {
 	}
 }
 
+// RTWithResourceNamer specifies a function which will be used to
+// obtain the resource name for a given request.
+func RTWithResourceNamer(namer func(req *http.Request) string) RoundTripperOptionFn {
+	return func(cfg *roundTripperConfig) {
+		cfg.resourceNamer = namer
+	}
+}
+
 // WithSpanNamer specifies a function which will be used to
 // obtain the span operation name for a given request.
 func WithSpanNamer(namer func(req *http.Request) string) RoundTripperOptionFn {
