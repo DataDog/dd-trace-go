@@ -31,13 +31,6 @@ var (
 	testTopic   = "gotest"
 )
 
-func TestMain(m *testing.M) {
-	goleak.VerifyTestMain(
-		m,
-		goleak.IgnoreAnyFunction("gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer.initalizeDynamicInstrumentationRemoteConfigState.func1"),
-	)
-}
-
 func TestConsumerChannel(t *testing.T) {
 	// we can test consuming via the Events channel by artifically sending
 	// messages. Testing .Poll is done via an integration test.
@@ -327,9 +320,16 @@ func TestNamingSchema(t *testing.T) {
 	namingschematest.NewKafkaTest(genSpans)(t)
 }
 
-// Test we don't leak goroutines and properly close the span when Produce returns an error
-// (the goroutine leak check happens in TestMain).
+// Test we don't leak goroutines and properly close the span when Produce returns an error.
 func TestProduceError(t *testing.T) {
+	defer func() {
+		err := goleak.Find()
+		if err != nil {
+			// if a goroutine is leaking, ensure it is not coming from this package
+			assert.NotContains(t, err.Error(), "contrib/confluentinc/confluent-kafka-go")
+		}
+	}()
+
 	mt := mocktracer.Start()
 	defer mt.Stop()
 
