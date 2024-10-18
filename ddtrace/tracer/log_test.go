@@ -249,10 +249,8 @@ func setup(t *testing.T, customProp Propagator) string {
 	var stop func()
 	if customProp != nil {
 		tracer, _, _, stop = startTestTracer(t, WithLogger(tp), WithPropagator(customProp))
-		// tracer = newTracer(WithLogger(tp), WithPropagator(customProp))
 	} else {
 		tracer, _, _, stop = startTestTracer(t, WithLogger(tp))
-		// tracer = newTracer(WithLogger(tp))
 	}
 	defer stop()
 	tp.Reset()
