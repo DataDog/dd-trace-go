@@ -278,7 +278,7 @@ func TestWithInnerFunc(t *testing.T) {
 	test.Close(ResultStatusSkip)
 }
 
-func testAssertions(assert *assert.Assertions, now time.Time, testSpan mocktracer.Span) {
+func testAssertions(assert *assert.Assertions, now time.Time, testSpan *mocktracer.Span) {
 	assert.Equal(now, testSpan.StartTime())
 	assert.Equal("my-module-framework.test", testSpan.OperationName())
 

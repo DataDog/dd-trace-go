@@ -225,7 +225,7 @@ func TestInterceptOperation(t *testing.T) {
 		var opNames []string
 		for _, span := range allSpans {
 			if span.ParentID() == 0 {
-				root = span
+				root = *span
 			}
 			resNames = append(resNames, span.Tag(ext.ResourceName).(string))
 			opNames = append(opNames, span.OperationName())
@@ -251,7 +251,7 @@ func TestInterceptOperation(t *testing.T) {
 		var opNames []string
 		for _, span := range allSpans {
 			if span.ParentID() == 0 {
-				root = span
+				root = *span
 			}
 			resNames = append(resNames, span.Tag(ext.ResourceName).(string))
 			opNames = append(opNames, span.OperationName())
@@ -282,7 +282,7 @@ func TestInterceptOperation(t *testing.T) {
 		var opNames []string
 		for _, span := range allSpans {
 			if span.ParentID() == 0 {
-				root = span
+				root = *span
 			}
 			resNames = append(resNames, span.Tag(ext.ResourceName).(string))
 			opNames = append(opNames, span.OperationName())

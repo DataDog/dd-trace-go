@@ -347,8 +347,8 @@ func TestWrapHandlerWithResourceNameNoRace(_ *testing.T) {
 			r := httptest.NewRequest("GET", "/", nil)
 			w := httptest.NewRecorder()
 			defer wg.Done()
-			w := httptest.NewRecorder()
-			r := httptest.NewRequest("GET", "/", nil)
+			w = httptest.NewRecorder()
+			r = httptest.NewRequest("GET", "/", nil)
 			mux.ServeHTTP(w, r)
 		}()
 	}
