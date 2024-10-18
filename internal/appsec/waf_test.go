@@ -30,11 +30,12 @@ import (
 	sqltrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/database/sql"
 	httptrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/config"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/ossec"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener/httpsec"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/waf/addresses"
 
 	"github.com/stretchr/testify/require"
 	_ "modernc.org/sqlite"
@@ -51,7 +52,7 @@ func TestCustomRules(t *testing.T) {
 
 	// Start and trace an HTTP server
 	mux := httptrace.NewServeMux()
-	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
 		w.Write([]byte("Hello World!\n"))
 	})
 
@@ -108,10 +109,10 @@ func TestUserRules(t *testing.T) {
 
 	// Start and trace an HTTP server
 	mux := httptrace.NewServeMux()
-	mux.HandleFunc("/hello", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/hello", func(w http.ResponseWriter, _ *http.Request) {
 		w.Write([]byte("Hello World!\n"))
 	})
-	mux.HandleFunc("/response-header", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/response-header", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("match-response-header", "match-response-header")
 		w.WriteHeader(204)
 	})
@@ -174,7 +175,7 @@ func TestWAF(t *testing.T) {
 
 	// Start and trace an HTTP server
 	mux := httptrace.NewServeMux()
-	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
 		w.Write([]byte("Hello World!\n"))
 	})
 	mux.HandleFunc("/body", func(w http.ResponseWriter, r *http.Request) {
@@ -330,7 +331,7 @@ func TestBlocking(t *testing.T) {
 
 	// Start and trace an HTTP server
 	mux := httptrace.NewServeMux()
-	mux.HandleFunc("/ip", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/ip", func(w http.ResponseWriter, _ *http.Request) {
 		w.Write([]byte("Hello World!\n"))
 	})
 	mux.HandleFunc("/user", func(w http.ResponseWriter, r *http.Request) {
@@ -886,10 +887,10 @@ func BenchmarkSampleWAFContext(b *testing.B) {
 		_, err = ctx.Run(
 			waf.RunAddressData{
 				Persistent: map[string]any{
-					httpsec.HTTPClientIPAddr:        "1.1.1.1",
-					httpsec.ServerRequestMethodAddr: "GET",
-					httpsec.ServerRequestRawURIAddr: "/",
-					httpsec.ServerRequestHeadersNoCookiesAddr: map[string][]string{
+					addresses.ClientIPAddr:            "1.1.1.1",
+					addresses.ServerRequestMethodAddr: "GET",
+					addresses.ServerRequestRawURIAddr: "/",
+					addresses.ServerRequestHeadersNoCookiesAddr: map[string][]string{
 						"host":            {"example.com"},
 						"content-length":  {"0"},
 						"Accept":          {"application/json"},
@@ -897,13 +898,13 @@ func BenchmarkSampleWAFContext(b *testing.B) {
 						"Accept-Encoding": {"gzip"},
 						"Connection":      {"close"},
 					},
-					httpsec.ServerRequestCookiesAddr: map[string][]string{
+					addresses.ServerRequestCookiesAddr: map[string][]string{
 						"cookie": {"session=1234"},
 					},
-					httpsec.ServerRequestQueryAddr: map[string][]string{
+					addresses.ServerRequestQueryAddr: map[string][]string{
 						"query": {"value"},
 					},
-					httpsec.ServerRequestPathParamsAddr: map[string]string{
+					addresses.ServerRequestPathParamsAddr: map[string]string{
 						"param": "value",
 					},
 				},
@@ -917,12 +918,12 @@ func BenchmarkSampleWAFContext(b *testing.B) {
 		_, err = ctx.Run(
 			waf.RunAddressData{
 				Persistent: map[string]any{
-					httpsec.ServerResponseHeadersNoCookiesAddr: map[string][]string{
+					addresses.ServerResponseHeadersNoCookiesAddr: map[string][]string{
 						"content-type":   {"application/json"},
 						"content-length": {"0"},
 						"Connection":     {"close"},
 					},
-					httpsec.ServerResponseStatusAddr: 200,
+					addresses.ServerResponseStatusAddr: 200,
 				},
 			})
 
@@ -932,6 +933,54 @@ func BenchmarkSampleWAFContext(b *testing.B) {
 
 		ctx.Close()
 	}
+}
+
+func TestAttackerFingerprinting(t *testing.T) {
+	t.Setenv("DD_APPSEC_RULES", "testdata/fp.json")
+	appsec.Start()
+	defer appsec.Stop()
+	if !appsec.Enabled() {
+		t.Skip("AppSec needs to be enabled for this test")
+	}
+
+	// Start and trace an HTTP server
+	mux := httptrace.NewServeMux()
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		pAppsec.TrackUserLoginSuccessEvent(
+			r.Context(),
+			"toto",
+			map[string]string{},
+			tracer.WithUserSessionID("sessionID"))
+
+		pAppsec.MonitorParsedHTTPBody(r.Context(), map[string]string{"key": "value"})
+
+		w.Write([]byte("Hello World!\n"))
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	mt := mocktracer.Start()
+	defer mt.Stop()
+	req, err := http.NewRequest("POST", srv.URL+"/test?x=1", nil)
+	require.NoError(t, err)
+	req.AddCookie(&http.Cookie{Name: "cookie", Value: "value"})
+	resp, err := srv.Client().Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	require.Len(t, mt.FinishedSpans(), 1)
+
+	tags := mt.FinishedSpans()[0].Tags()
+
+	require.Contains(t, tags, "_dd.appsec.fp.http.header")
+	require.Contains(t, tags, "_dd.appsec.fp.http.endpoint")
+	require.Contains(t, tags, "_dd.appsec.fp.http.network")
+	require.Contains(t, tags, "_dd.appsec.fp.session")
+
+	require.Regexp(t, `^hdr-`, tags["_dd.appsec.fp.http.header"])
+	require.Regexp(t, `^http-`, tags["_dd.appsec.fp.http.endpoint"])
+	require.Regexp(t, `^ssn-`, tags["_dd.appsec.fp.session"])
+	require.Regexp(t, `^net-`, tags["_dd.appsec.fp.http.network"])
 }
 
 func init() {

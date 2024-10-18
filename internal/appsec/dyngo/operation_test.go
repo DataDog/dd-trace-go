@@ -119,7 +119,7 @@ func TestUsage(t *testing.T) {
 		// HTTP body read listener appending the read results to a buffer
 		rawBodyListener := func(called *int, buf *[]byte) dyngo.EventListener[operation, HTTPHandlerArgs] {
 			return func(op operation, _ HTTPHandlerArgs) {
-				dyngo.OnFinish(op, func(op operation, res BodyReadRes) {
+				dyngo.OnFinish(op, func(_ operation, res BodyReadRes) {
 					*called++
 					*buf = append(*buf, res.Buf...)
 				})
@@ -128,7 +128,7 @@ func TestUsage(t *testing.T) {
 
 		// Dummy waf looking for the string `attack` in HTTPHandlerArgs
 		wafListener := func(called *int, blocked *bool) dyngo.EventListener[operation, HTTPHandlerArgs] {
-			return func(op operation, args HTTPHandlerArgs) {
+			return func(_ operation, args HTTPHandlerArgs) {
 				*called++
 
 				if strings.Contains(args.URL.RawQuery, "attack") {
@@ -148,14 +148,14 @@ func TestUsage(t *testing.T) {
 
 		jsonBodyValueListener := func(called *int, value *interface{}) dyngo.EventListener[operation, HTTPHandlerArgs] {
 			return func(op operation, _ HTTPHandlerArgs) {
-				dyngo.On(op, func(op operation, v JSONParserArgs) {
+				dyngo.On(op, func(op operation, _ JSONParserArgs) {
 					didBodyRead := false
 
 					dyngo.On(op, func(_ operation, _ BodyReadArgs) {
 						didBodyRead = true
 					})
 
-					dyngo.OnFinish(op, func(op operation, res JSONParserRes) {
+					dyngo.OnFinish(op, func(_ operation, res JSONParserRes) {
 						*called++
 						if !didBodyRead || res.Err != nil {
 							return
@@ -429,22 +429,22 @@ func TestSwapRootOperation(t *testing.T) {
 	dyngo.OnFinish(root, func(operation, MyOperationRes) { onFinishCalled++ })
 
 	dyngo.SwapRootOperation(root)
-	runOperation(nil, MyOperationArgs{}, MyOperationRes{}, func(op dyngo.Operation) {})
+	runOperation(nil, MyOperationArgs{}, MyOperationRes{}, func(_ dyngo.Operation) {})
 	require.Equal(t, 1, onStartCalled)
 	require.Equal(t, 1, onFinishCalled)
 
 	dyngo.SwapRootOperation(dyngo.NewRootOperation())
-	runOperation(nil, MyOperationArgs{}, MyOperationRes{}, func(op dyngo.Operation) {})
+	runOperation(nil, MyOperationArgs{}, MyOperationRes{}, func(_ dyngo.Operation) {})
 	require.Equal(t, 1, onStartCalled)
 	require.Equal(t, 1, onFinishCalled)
 
 	dyngo.SwapRootOperation(nil)
-	runOperation(nil, MyOperationArgs{}, MyOperationRes{}, func(op dyngo.Operation) {})
+	runOperation(nil, MyOperationArgs{}, MyOperationRes{}, func(_ dyngo.Operation) {})
 	require.Equal(t, 1, onStartCalled)
 	require.Equal(t, 1, onFinishCalled)
 
 	dyngo.SwapRootOperation(root)
-	runOperation(nil, MyOperationArgs{}, MyOperationRes{}, func(op dyngo.Operation) {})
+	runOperation(nil, MyOperationArgs{}, MyOperationRes{}, func(_ dyngo.Operation) {})
 	require.Equal(t, 2, onStartCalled)
 	require.Equal(t, 2, onFinishCalled)
 }

@@ -27,6 +27,9 @@ on:
 env:
   TEST_RESULTS: /tmp/test-results # path to where test results will be saved
 
+permissions:
+  contents: read
+
 jobs:
   go-get-u:
     #  Run go get -u to upgrade dd-trace-go dependencies to their

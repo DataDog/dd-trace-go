@@ -127,8 +127,8 @@ func TestAppSec(t *testing.T) {
 			// The span should contain the security event
 			finished := mt.FinishedSpans()
 			require.Len(t, finished, 1)
-			event := finished[0].Tag("_dd.appsec.json").(string)
-			require.NotNil(t, event)
+			event, ok := finished[0].Tag("_dd.appsec.json").(string)
+			require.True(t, ok, "expected string, found %T", finished[0].Tag("_dd.appsec.json"))
 			require.True(t, strings.Contains(event, "crs-913-120"))
 			// Wildcards are not named in echo
 			require.False(t, strings.Contains(event, "myPathParam3"))
@@ -140,7 +140,7 @@ func TestAppSec(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		req, err := http.NewRequest("POST", srv.URL+"/etc/", nil)
+		req, err := http.NewRequest("POST", srv.URL+"/etc/passwd", nil)
 		if err != nil {
 			panic(err)
 		}
@@ -151,8 +151,8 @@ func TestAppSec(t *testing.T) {
 
 		finished := mt.FinishedSpans()
 		require.Len(t, finished, 1)
-		event := finished[0].Tag("_dd.appsec.json").(string)
-		require.NotNil(t, event)
+		event, ok := finished[0].Tag("_dd.appsec.json").(string)
+		require.True(t, ok, "expected string, found %T", finished[0].Tag("_dd.appsec.json"))
 		require.True(t, strings.Contains(event, "server.response.status"))
 		require.True(t, strings.Contains(event, "nfd-000-001"))
 	})

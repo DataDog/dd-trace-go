@@ -148,6 +148,25 @@ func TestSpanTracePushOne(t *testing.T) {
 	assert.Equal(0, len(trace.spans), "no more spans in the trace")
 }
 
+// Tests to confirm that when the payload queue is full, chunks are dropped
+// and the associated trace is counted as dropped.
+func TestTraceFinishChunk(t *testing.T) {
+	assert := assert.New(t)
+	tracer := newUnstartedTracer()
+	defer tracer.statsd.Close()
+
+	root := newSpan("name", "service", "resource", 0, 0, 0)
+	trace := root.context.trace
+
+	for i := 0; i < payloadQueueSize+1; i++ {
+		trace.mu.Lock()
+		c := chunk{spans: make([]*span, 1)}
+		trace.finishChunk(tracer, &c)
+		trace.mu.Unlock()
+	}
+	assert.Equal(uint32(1), tracer.totalTracesDropped)
+}
+
 func TestPartialFlush(t *testing.T) {
 	t.Setenv("DD_TRACE_PARTIAL_FLUSH_ENABLED", "true")
 	t.Setenv("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", "2")

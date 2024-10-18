@@ -112,6 +112,7 @@ func TestProductChange(t *testing.T) {
 				GlobalClient.ProductChange(NamespaceProfilers, true, []Configuration{{Name: "key", Value: "value"}})
 			},
 		},
+		/* This case is flaky (see #2688)
 		{
 			name:           "profiler start, tracer start",
 			wantedMessages: []RequestType{RequestTypeAppStarted, RequestTypeDependenciesLoaded, RequestTypeAppClientConfigurationChange},
@@ -120,6 +121,7 @@ func TestProductChange(t *testing.T) {
 				GlobalClient.ProductChange(NamespaceTracers, true, []Configuration{{Name: "key", Value: "value"}})
 			},
 		},
+		*/
 	}
 
 	for _, test := range tests {

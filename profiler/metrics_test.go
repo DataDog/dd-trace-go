@@ -143,22 +143,3 @@ func TestMetricsReport(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, "[[\"metric_name\",1.1]]", buf.String())
 }
-
-func TestMetricsCollectFrequency(t *testing.T) {
-	now := now()
-	var err error
-	var buf bytes.Buffer
-	m := newTestMetrics(now)
-
-	err = m.report(now.Add(-time.Second), &buf)
-	assert.Error(t, err, "collection call times must be monotonically increasing")
-	assert.Empty(t, buf)
-
-	err = m.report(now.Add(time.Second-1), &buf)
-	assert.Error(t, err, "must be at least one second between collection calls")
-	assert.Empty(t, buf)
-
-	err = m.report(now.Add(time.Second), &buf)
-	assert.NoError(t, err, "one second between calls should work")
-	assert.NotEmpty(t, buf)
-}

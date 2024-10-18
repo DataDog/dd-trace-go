@@ -11,31 +11,55 @@ package graphqlsec
 
 import (
 	"context"
+
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/graphqlsec/types"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/trace"
 )
+
+type (
+	ExecutionOperation struct {
+		dyngo.Operation
+	}
+
+	// ExecutionOperationArgs describes arguments passed to a GraphQL query operation.
+	ExecutionOperationArgs struct {
+		// Variables is the user-provided variables object for the query.
+		Variables map[string]any
+		// Query is the query that is being executed.
+		Query string
+		// OperationName is the user-provided operation name for the query.
+		OperationName string
+	}
+
+	ExecutionOperationRes struct {
+		// Data is the data returned from processing the GraphQL operation.
+		Data any
+		// Error is the error returned by processing the GraphQL Operation, if any.
+		Error error
+	}
+)
+
+// Finish the GraphQL query operation, along with the given results, and emit a finish event up in
+// the operation stack.
+func (q *ExecutionOperation) Finish(res ExecutionOperationRes) {
+	dyngo.FinishOperation(q, res)
+}
+
+func (ExecutionOperationArgs) IsArgOf(*ExecutionOperation)   {}
+func (ExecutionOperationRes) IsResultOf(*ExecutionOperation) {}
 
 // StartExecutionOperation starts a new GraphQL query operation, along with the given arguments, and
 // emits a start event up in the operation stack. The operation is tracked on the returned context,
 // and can be extracted later on using FromContext.
-func StartExecutionOperation(ctx context.Context, span trace.TagSetter, args types.ExecutionOperationArgs) (context.Context, *types.ExecutionOperation) {
-	if span == nil {
-		// The span may be nil (e.g: in case of GraphQL subscriptions with certian contribs). Child
-		// operations might have spans however... and these should be used then.
-		span = trace.NoopTagSetter{}
-	}
-
+func StartExecutionOperation(ctx context.Context, args ExecutionOperationArgs) (context.Context, *ExecutionOperation) {
 	parent, ok := dyngo.FromContext(ctx)
 	if !ok {
 		log.Debug("appsec: StartExecutionOperation: no parent operation found in context")
 	}
 
-	op := &types.ExecutionOperation{
+	op := &ExecutionOperation{
 		Operation: dyngo.NewOperation(parent),
-		TagSetter: span,
 	}
 
 	return dyngo.StartAndRegisterOperation(ctx, op, args), op

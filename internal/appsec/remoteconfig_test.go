@@ -15,8 +15,7 @@ import (
 	"testing"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/config"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener/httpsec"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener/sharedsec"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/waf/addresses"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/remoteconfig"
 
 	internal "github.com/DataDog/appsec-internal-go/appsec"
@@ -839,10 +838,12 @@ func TestWafRCUpdate(t *testing.T) {
 		require.NoError(t, err)
 		defer wafCtx.Close()
 		values := map[string]interface{}{
-			httpsec.ServerRequestPathParamsAddr: "/rfiinc.txt",
+			addresses.ServerRequestPathParamsAddr: "/rfiinc.txt",
 		}
+
 		// Make sure the rule matches as expected
-		result := sharedsec.RunWAF(wafCtx, waf.RunAddressData{Persistent: values})
+		result, err := wafCtx.Run(waf.RunAddressData{Persistent: values})
+		require.NoError(t, err)
 		require.Contains(t, jsonString(t, result.Events), "crs-913-120")
 		require.Empty(t, result.Actions)
 		// Simulate an RC update that disables the rule
@@ -859,7 +860,8 @@ func TestWafRCUpdate(t *testing.T) {
 		require.NoError(t, err)
 		defer newWafCtx.Close()
 		// Make sure the rule returns a blocking action when matching
-		result = sharedsec.RunWAF(newWafCtx, waf.RunAddressData{Persistent: values})
+		result, err = newWafCtx.Run(waf.RunAddressData{Persistent: values})
+		require.NoError(t, err)
 		require.Contains(t, jsonString(t, result.Events), "crs-913-120")
 		require.Contains(t, result.Actions, "block_request")
 	})

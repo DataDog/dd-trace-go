@@ -10,7 +10,7 @@
 
 This repository contains Go packages for the client-side components of the Datadog product suite for Application Performance Monitoring, Continuous Profiling and Application Security Monitoring of Go applications.
 
-- [Datadog Application Performance Monitoring (APM)](https://docs.datadoghq.com/tracing/): Trace requests as they flow across web servers, databases and microservices so that developers have great visiblity into bottlenecks and troublesome requests.
+- [Datadog Application Performance Monitoring (APM)](https://docs.datadoghq.com/tracing/): Trace requests as they flow across web servers, databases and microservices so that developers have great visibility into bottlenecks and troublesome requests.
 The package [`gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer`](https://pkg.go.dev/gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer) allows you to trace any piece of your Go code, and commonly used Go libraries can be automatically traced thanks to our out-of-the-box integrations which can be found in the package [`gopkg.in/DataDog/dd-trace-go.v1/ddtrace/contrib`](https://pkg.go.dev/gopkg.in/DataDog/dd-trace-go.v1/contrib).
 
 - [Datadog Go Continuous Profiler](https://docs.datadoghq.com/profiler/): Continuously profile your Go apps to find CPU, memory, and synchronization bottlenecks, broken down by function name, and line number, to significantly reduce end-user latency and infrastructure costs.
