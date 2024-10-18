@@ -30,8 +30,8 @@ import (
 func TestAppSec(t *testing.T) {
 	testutils.StartAppSec(t)
 	t.Setenv("DD_APPSEC_WAF_TIMEOUT", "1h") // Functionally unlimited
-	appsec.Start()
-	defer appsec.Stop()
+	testutils.StartAppSec(t)
+
 	if !instr.AppSecEnabled() {
 		t.Skip("appsec disabled")
 	}

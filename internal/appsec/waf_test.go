@@ -28,6 +28,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/dyngo"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/ossec"
 	httptrace "github.com/DataDog/dd-trace-go/v2/instrumentation/httptracemock"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/emitter/waf/addresses"
@@ -37,8 +38,7 @@ import (
 
 func TestCustomRules(t *testing.T) {
 	t.Setenv("DD_APPSEC_RULES", "testdata/custom_rules.json")
-	appsec.Start()
-	defer appsec.Stop()
+	testutils.StartAppSec(t)
 
 	if !appsec.Enabled() {
 		t.Skip("appsec disabled")
@@ -94,8 +94,7 @@ func TestCustomRules(t *testing.T) {
 
 func TestUserRules(t *testing.T) {
 	t.Setenv("DD_APPSEC_RULES", "testdata/user_rules.json")
-	appsec.Start()
-	defer appsec.Stop()
+	testutils.StartAppSec(t)
 
 	if !appsec.Enabled() {
 		t.Skip("appsec disabled")
@@ -160,8 +159,7 @@ func TestUserRules(t *testing.T) {
 // the WAF is properly detecting an LFI attempt and that the corresponding security event is being sent to the agent.
 // Additionally, verifies that rule matching through SDK body instrumentation works as expected
 func TestWAF(t *testing.T) {
-	appsec.Start()
-	defer appsec.Stop()
+	testutils.StartAppSec(t)
 
 	if !appsec.Enabled() {
 		t.Skip("appsec disabled")
@@ -311,8 +309,8 @@ func TestWAF(t *testing.T) {
 // Test that request blocking works by using custom rules/rules data
 func TestBlocking(t *testing.T) {
 	t.Setenv("DD_APPSEC_RULES", "testdata/blocking.json")
-	appsec.Start()
-	defer appsec.Stop()
+	testutils.StartAppSec(t)
+
 	if !appsec.Enabled() {
 		t.Skip("AppSec needs to be enabled for this test")
 	}
@@ -461,9 +459,9 @@ func TestAPISecurity(t *testing.T) {
 	t.Run("enabled", func(t *testing.T) {
 		t.Setenv(internal.EnvAPISecEnabled, "true")
 		t.Setenv(internal.EnvAPISecSampleRate, "1.0")
-		appsec.Start()
+		testutils.StartAppSec(t)
 		require.True(t, appsec.Enabled())
-		defer appsec.Stop()
+
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
@@ -482,9 +480,9 @@ func TestAPISecurity(t *testing.T) {
 
 	t.Run("disabled", func(t *testing.T) {
 		t.Setenv(internal.EnvAPISecEnabled, "false")
-		appsec.Start()
+		testutils.StartAppSec(t)
 		require.True(t, appsec.Enabled())
-		defer appsec.Stop()
+
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
@@ -508,8 +506,7 @@ func TestRASPSQLi(t *testing.T) {
 
 func TestRASPLFI(t *testing.T) {
 	t.Setenv("DD_APPSEC_RULES", "testdata/rasp.json")
-	appsec.Start()
-	defer appsec.Stop()
+	testutils.StartAppSec(t)
 
 	if !appsec.RASPEnabled() {
 		t.Skip("RASP needs to be enabled for this test")
@@ -601,8 +598,8 @@ func TestRASPLFI(t *testing.T) {
 
 func TestSuspiciousAttackerBlocking(t *testing.T) {
 	t.Setenv("DD_APPSEC_RULES", "testdata/sab.json")
-	appsec.Start()
-	defer appsec.Stop()
+	testutils.StartAppSec(t)
+
 	if !appsec.Enabled() {
 		t.Skip("AppSec needs to be enabled for this test")
 	}
@@ -792,8 +789,8 @@ func BenchmarkSampleWAFContext(b *testing.B) {
 
 func TestAttackerFingerprinting(t *testing.T) {
 	t.Setenv("DD_APPSEC_RULES", "testdata/fp.json")
-	appsec.Start()
-	defer appsec.Stop()
+	testutils.StartAppSec(t)
+
 	if !appsec.Enabled() {
 		t.Skip("AppSec needs to be enabled for this test")
 	}

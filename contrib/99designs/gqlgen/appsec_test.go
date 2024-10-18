@@ -18,7 +18,7 @@ import (
 	"github.com/99designs/gqlgen/graphql/handler"
 	"github.com/99designs/gqlgen/graphql/handler/transport"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
-	"github.com/DataDog/dd-trace-go/v2/internal/appsec"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils"
 	"github.com/stretchr/testify/require"
 	"github.com/vektah/gqlparser/v2"
 	"github.com/vektah/gqlparser/v2/ast"
@@ -232,12 +232,11 @@ func enableAppSec(t *testing.T) func() {
 	require.NoError(t, err)
 	t.Setenv("DD_APPSEC_ENABLED", "1")
 	t.Setenv("DD_APPSEC_RULES", rulesFile)
-	appsec.Start()
+	testutils.StartAppSec(t)
 	cleanup := func() {
-		appsec.Stop()
 		_ = os.RemoveAll(tmpDir)
 	}
-	if !appsec.Enabled() {
+	if !instr.AppSecEnabled() {
 		cleanup()
 		t.Skip("could not enable appsec: this platform is likely not supported")
 	}
