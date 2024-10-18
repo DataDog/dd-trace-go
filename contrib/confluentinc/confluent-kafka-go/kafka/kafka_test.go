@@ -104,30 +104,6 @@ func TestConsumerChannel(t *testing.T) {
 	}
 }
 
-/*
-to run the integration test locally:
-
-    docker network create confluent
-
-    docker run --rm \
-        --name zookeeper \
-        --network confluent \
-        -p 2181:2181 \
-        -e ZOOKEEPER_CLIENT_PORT=2181 \
-        confluentinc/cp-zookeeper:5.0.0
-
-    docker run --rm \
-        --name kafka \
-        --network confluent \
-        -p 9092:9092 \
-        -e KAFKA_ZOOKEEPER_CONNECT=zookeeper:2181 \
-        -e KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://localhost:9092 \
-        -e KAFKA_LISTENERS=PLAINTEXT://0.0.0.0:9092 \
-        -e KAFKA_CREATE_TOPICS=gotest:1:1 \
-        -e KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR=1 \
-        confluentinc/cp-kafka:5.0.0
-*/
-
 func TestConsumerFunctional(t *testing.T) {
 	for _, tt := range []struct {
 		name   string

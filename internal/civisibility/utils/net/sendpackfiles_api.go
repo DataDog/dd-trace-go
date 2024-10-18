@@ -7,7 +7,6 @@ package net
 
 import (
 	"fmt"
-	"net/http"
 	"os"
 )
 
@@ -29,16 +28,20 @@ type (
 	}
 )
 
-func (c *client) SendPackFiles(packFiles []string) (bytes int64, err error) {
+func (c *client) SendPackFiles(commitSha string, packFiles []string) (bytes int64, err error) {
 	if len(packFiles) == 0 {
 		return 0, nil
+	}
+
+	if commitSha == "" {
+		commitSha = c.commitSha
 	}
 
 	pushedShaFormFile := FormFile{
 		FieldName: "pushedSha",
 		Content: pushedShaBody{
 			Data: pushedShaData{
-				ID:   c.commitSha,
+				ID:   commitSha,
 				Type: searchCommitsType,
 			},
 			Meta: pushedShaMeta{
@@ -77,7 +80,7 @@ func (c *client) SendPackFiles(packFiles []string) (bytes int64, err error) {
 			return
 		}
 
-		if response.StatusCode != http.StatusOK && response.StatusCode != http.StatusNoContent {
+		if response.StatusCode < 200 || response.StatusCode >= 300 {
 			err = fmt.Errorf("unexpected response code %d: %s", response.StatusCode, string(response.Body))
 		}
 

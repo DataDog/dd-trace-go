@@ -42,6 +42,7 @@ type handler struct {
 func (h *handler) Handle(ctx context.Context, rec slog.Record) error {
 	span, ok := tracer.SpanFromContext(ctx)
 	if ok {
+		rec = rec.Clone()
 		rec.Add(
 			slog.Uint64(ext.LogKeyTraceID, span.Context().TraceID()),
 			slog.Uint64(ext.LogKeySpanID, span.Context().SpanID()),
