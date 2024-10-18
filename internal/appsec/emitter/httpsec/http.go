@@ -12,9 +12,13 @@ package httpsec
 
 import (
 	"context"
+	"strings"
+
 	// Blank import needed to use embed for the default blocked response payloads
 	_ "embed"
 	"net/http"
+	"net/netip"
+	"net/url"
 	"sync"
 	"sync/atomic"
 
@@ -165,4 +169,52 @@ func WrapHandler(handler http.Handler, span ddtrace.Span, pathParams map[string]
 
 		handler.ServeHTTP(w, r)
 	})
+}
+
+// MakeHandlerOperationArgs creates the HandlerOperationArgs value.
+func MakeHandlerOperationArgs(headers map[string][]string, method string, host string, clientIp netip.Addr, url *url.URL) HandlerOperationArgs {
+	args := HandlerOperationArgs{
+		Method:     method,
+		RequestURI: url.RequestURI(),
+		Host:       host,
+		// RemoteAddr: nil,
+		Headers:     headersRemoveCookies(headers),
+		Cookies:     makeCookiesFromHeaders(headers),
+		QueryParams: url.Query(),
+		PathParams:  map[string]string{},
+	}
+
+	args.Headers["host"] = []string{host}
+	return args
+}
+
+// Remove cookies from the request headers and return the map of headers
+// Used from `server.request.headers.no_cookies` and server.response.headers.no_cookies` addresses for the WAF
+func headersRemoveCookies(headers http.Header) map[string][]string {
+	headersNoCookies := make(http.Header, len(headers))
+	for k, v := range headers {
+		if k == "Cookie" {
+			continue
+		}
+		headersNoCookies[k] = v
+	}
+	return headersNoCookies
+}
+
+func makeCookiesFromHeaders(headers map[string][]string) map[string][]string {
+	cookieHeader, ok := headers["cookie"]
+	if !ok {
+		return nil
+	}
+	cookies := make(map[string][]string, len(cookieHeader))
+	for _, c := range cookieHeader {
+		parts := strings.Split(c, ";")
+		for _, part := range parts {
+			cookie := strings.Split(part, "=")
+			if len(cookie) == 2 {
+				cookies[cookie[0]] = append(cookies[cookie[0]], cookie[1])
+			}
+		}
+	}
+	return cookies
 }

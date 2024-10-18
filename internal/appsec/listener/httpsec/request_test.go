@@ -215,8 +215,8 @@ func TestTags(t *testing.T) {
 						return
 					}
 					require.NoError(t, err)
-					setRequestHeadersTags(&span, reqHeadersCase.headers)
-					setResponseHeadersTags(&span, respHeadersCase.headers)
+					SetRequestHeadersTags(&span, reqHeadersCase.headers)
+					SetResponseHeadersTags(&span, respHeadersCase.headers)
 
 					if eventCase.events != nil {
 						require.Subset(t, span.Tags, map[string]interface{}{
