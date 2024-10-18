@@ -9,18 +9,14 @@ import (
 	"context"
 	"sync/atomic"
 
-	"github.com/DataDog/appsec-internal-go/netip"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
-	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/grpcsec"
-	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/trace"
-	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/trace/httptrace"
-
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/peer"
 	"google.golang.org/grpc/status"
 
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/grpcsec"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/waf/actions"
 )
 
@@ -41,7 +37,6 @@ func applyAction(blockAtomic *atomic.Pointer[actions.BlockGRPC], err *error) boo
 
 // UnaryHandler wrapper to use when AppSec is enabled to monitor its execution.
 func appsecUnaryHandlerMiddleware(method string, span *tracer.Span, handler grpc.UnaryHandler) grpc.UnaryHandler {
-	trace.SetAppSecEnabledTags(span)
 	return func(ctx context.Context, req any) (res any, rpcErr error) {
 		md, _ := metadata.FromIncomingContext(ctx)
 		var remoteAddr string
@@ -86,7 +81,6 @@ func appsecUnaryHandlerMiddleware(method string, span *tracer.Span, handler grpc
 
 // StreamHandler wrapper to use when AppSec is enabled to monitor its execution.
 func appsecStreamHandlerMiddleware(method string, span *tracer.Span, handler grpc.StreamHandler) grpc.StreamHandler {
-	trace.SetAppSecEnabledTags(span)
 	return func(srv any, stream grpc.ServerStream) (rpcErr error) {
 		ctx := stream.Context()
 		md, _ := metadata.FromIncomingContext(ctx)
@@ -158,17 +152,4 @@ func (ss *appsecServerStream) SendMsg(msg any) error {
 
 func (ss *appsecServerStream) Context() context.Context {
 	return ss.ctx
-}
-
-func setClientIP(ctx context.Context, span *tracer.Span, md metadata.MD) netip.Addr {
-	var remoteAddr string
-	if p, ok := peer.FromContext(ctx); ok {
-		remoteAddr = p.Addr.String()
-	}
-	ipTags, clientIP := httptrace.ClientIPTags(md, false, remoteAddr)
-	instr.Logger().Debug("appsec: http client ip detection returned `%s` given the http headers `%v`", clientIP, md)
-	if len(ipTags) > 0 {
-		trace.SetTags(span, ipTags)
-	}
-	return clientIP
 }
