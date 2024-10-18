@@ -13,7 +13,7 @@ import (
 )
 
 type (
-	// SpanOperation is a dyngo.Operation that holds a ddtrace.Span.
+	// SpanOperation is a dyngo.Operation that holds a tracer.Span.
 	// It used as a middleware for appsec code and the tracer code
 	// hopefully some day this operation will create spans instead of simply using them
 	SpanOperation struct {

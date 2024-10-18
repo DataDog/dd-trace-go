@@ -18,9 +18,9 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/dyngo"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/waf/actions"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec/emitter/trace"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/emitter/waf"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/emitter/waf/addresses"
 )
@@ -73,9 +73,9 @@ func StartOperation(ctx context.Context, args HandlerOperationArgs) (*HandlerOpe
 }
 
 // Finish the HTTP handler operation and its children operations and write everything to the service entry span.
-func (op *HandlerOperation) Finish(res HandlerOperationRes, span *tracer.Span) {
+func (op *HandlerOperation) Finish(res HandlerOperationRes, span *trace.TagSetter) {
 	dyngo.FinishOperation(op, res)
-	op.ContextOperation.Finish(span)
+	op.ContextOperation.Finish(*span)
 }
 
 const monitorBodyErrorLog = `
@@ -115,7 +115,7 @@ func makeCookies(parsed []*http.Cookie) map[string][]string {
 // context since it uses a queue of handlers and it's the only way to make
 // sure other queued handlers don't get executed.
 // TODO: this patch must be removed/improved when we rework our actions/operations system
-func WrapHandler(handler http.Handler, span *tracer.Span, pathParams map[string]string, opts *Config) http.Handler {
+func WrapHandler(handler http.Handler, span *trace.TagSetter, pathParams map[string]string, opts *Config) http.Handler {
 	if opts == nil {
 		opts = defaultWrapHandlerConfig
 	} else if opts.ResponseHeaderCopier == nil {

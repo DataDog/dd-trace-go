@@ -9,7 +9,7 @@ package stacktrace
 
 import (
 	"github.com/DataDog/dd-trace-go/v2/internal"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec/emitter/trace"
 
 	"github.com/tinylib/msgp/msgp"
 )
@@ -103,10 +103,10 @@ func GetSpanValue(events ...*Event) any {
 }
 
 // AddToSpan adds the event to the given span's root span as a tag if stacktrace collection is enabled
-func AddToSpan(span ddtrace.Span, events ...*Event) {
+func AddToSpan(span trace.TagSetter, events ...*Event) {
 	value := GetSpanValue(events...)
 	type rooter interface {
-		Root() ddtrace.Span
+		Root() trace.TagSetter
 	}
 	if lrs, ok := span.(rooter); ok {
 		span = lrs.Root()
