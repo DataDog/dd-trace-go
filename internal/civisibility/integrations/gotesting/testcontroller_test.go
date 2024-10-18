@@ -324,7 +324,7 @@ func runFlakyTestRetriesWithEarlyFlakyTestDetectionTests(m *testing.M) {
 	os.Exit(0)
 }
 
-func checkSpansByType(finishedSpans []mocktracer.Span,
+func checkSpansByType(finishedSpans []*mocktracer.Span,
 	totalFinishedSpansCount int, sessionSpansCount int, moduleSpansCount int,
 	suiteSpansCount int, testSpansCount int, normalSpansCount int) {
 	calculatedFinishedSpans := len(finishedSpans)
@@ -374,7 +374,7 @@ func checkSpansByType(finishedSpans []mocktracer.Span,
 	}
 }
 
-func checkSpansByResourceName(finishedSpans []mocktracer.Span, resourceName string, count int) []mocktracer.Span {
+func checkSpansByResourceName(finishedSpans []*mocktracer.Span, resourceName string, count int) []mocktracer.Span {
 	spans := getSpansWithResourceName(finishedSpans, resourceName)
 	numOfSpans := len(spans)
 	if numOfSpans != count {
@@ -384,7 +384,7 @@ func checkSpansByResourceName(finishedSpans []mocktracer.Span, resourceName stri
 	return spans
 }
 
-func checkSpansByTagName(finishedSpans []mocktracer.Span, tagName string, count int) []mocktracer.Span {
+func checkSpansByTagName(finishedSpans []*mocktracer.Span, tagName string, count int) []mocktracer.Span {
 	spans := getSpansWithTagName(finishedSpans, tagName)
 	numOfSpans := len(spans)
 	if numOfSpans != count {
@@ -438,6 +438,11 @@ func setUpHttpServer(flakyRetriesEnabled bool, earlyFlakyDetectionEnabled bool, 
 
 			fmt.Printf("MockApi sending response: %v\n", response)
 			json.NewEncoder(w).Encode(&response)
+		} else if r.URL.Path == "/api/v2/git/repository/search_commits" {
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte("{}"))
+		} else if r.URL.Path == "/api/v2/git/repository/packfile" {
+			w.WriteHeader(http.StatusAccepted)
 		} else {
 			http.NotFound(w, r)
 		}
@@ -452,33 +457,33 @@ func setUpHttpServer(flakyRetriesEnabled bool, earlyFlakyDetectionEnabled bool, 
 	return server
 }
 
-func getSpansWithType(spans []mocktracer.Span, spanType string) []mocktracer.Span {
+func getSpansWithType(spans []*mocktracer.Span, spanType string) []mocktracer.Span {
 	var result []mocktracer.Span
 	for _, span := range spans {
 		if span.Tag(ext.SpanType) == spanType {
-			result = append(result, span)
+			result = append(result, *span)
 		}
 	}
 
 	return result
 }
 
-func getSpansWithResourceName(spans []mocktracer.Span, resourceName string) []mocktracer.Span {
+func getSpansWithResourceName(spans []*mocktracer.Span, resourceName string) []mocktracer.Span {
 	var result []mocktracer.Span
 	for _, span := range spans {
 		if span.Tag(ext.ResourceName) == resourceName {
-			result = append(result, span)
+			result = append(result, *span)
 		}
 	}
 
 	return result
 }
 
-func getSpansWithTagName(spans []mocktracer.Span, tag string) []mocktracer.Span {
+func getSpansWithTagName(spans []*mocktracer.Span, tag string) []mocktracer.Span {
 	var result []mocktracer.Span
 	for _, span := range spans {
 		if span.Tag(tag) != nil {
-			result = append(result, span)
+			result = append(result, *span)
 		}
 	}
 

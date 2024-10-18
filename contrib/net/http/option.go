@@ -13,6 +13,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/httptrace"
 )
 
 type commonConfig struct {
@@ -23,16 +24,25 @@ type commonConfig struct {
 	spanOpts      []tracer.StartSpanOption
 }
 
+const (
+	defaultServiceName = "http.router"
+	// envClientQueryStringEnabled is the name of the env var used to specify whether query string collection is enabled for http client spans.
+	envClientQueryStringEnabled = "DD_TRACE_HTTP_CLIENT_TAG_QUERY_STRING"
+	// envClientErrorStatuses is the name of the env var that specifies error status codes on http client spans
+	envClientErrorStatuses = "DD_TRACE_HTTP_CLIENT_ERROR_STATUSES"
+)
+
 type config struct {
 	commonConfig
 	finishOpts []tracer.FinishOption
 	headerTags instrumentation.HeaderTags
 }
 
-// Option describes options for http.ServeMux.
-type Option interface {
-	apply(*config)
-}
+// MuxOption has been deprecated in favor of Option.
+type MuxOption = Option
+
+// Option represents an option that can be passed to NewServeMux or WrapHandler.
+type Option func(*config)
 
 // OptionFn represents options applicable to NewServeMux and WrapHandler.
 type OptionFn func(*commonConfig)
@@ -53,7 +63,11 @@ func (o HandlerOptionFn) apply(cfg *config) {
 }
 
 func defaults(cfg *config) {
-	cfg.analyticsRate = instr.AnalyticsRate(true)
+	if httptrace.GetBoolEnv("DD_TRACE_HTTP_ANALYTICS_ENABLED", false) {
+		cfg.analyticsRate = 1.0
+	} else {
+		cfg.analyticsRate = instr.AnalyticsRate(true)
+	}
 	cfg.serviceName = instr.ServiceName(instrumentation.ComponentServer, nil)
 	cfg.headerTags = instr.HTTPHeadersAsTags()
 	cfg.spanOpts = []tracer.StartSpanOption{tracer.Measured()}
@@ -148,11 +162,13 @@ type RoundTripperAfterFunc func(*http.Response, *tracer.Span)
 
 type roundTripperConfig struct {
 	commonConfig
-	before      RoundTripperBeforeFunc
-	after       RoundTripperAfterFunc
-	spanNamer   func(req *http.Request) string
-	propagation bool
-	errCheck    func(err error) bool
+	before        RoundTripperBeforeFunc
+	after         RoundTripperAfterFunc
+	spanNamer     func(req *http.Request) string
+	propagation   bool
+	errCheck      func(err error) bool
+	queryString   bool // reports whether the query string is included in the URL tag for http client spans
+	isStatusError func(statusCode int) bool
 }
 
 // RoundTripperOption describes options for http.RoundTripper.
@@ -180,18 +196,19 @@ func newRoundTripperConfig() *roundTripperConfig {
 		analyticsRate: instr.GlobalAnalyticsRate(),
 		resourceNamer: defaultResourceNamer,
 		ignoreRequest: func(_ *http.Request) bool { return false },
-		queryString:   internal.BoolEnv(envClientQueryStringEnabled, true),
+	}
+	rtConfig := roundTripperConfig{
+		commonConfig:  sharedCfg,
+		propagation:   true,
+		spanNamer:     defaultSpanNamer,
+		queryString:   httptrace.GetBoolEnv(envClientQueryStringEnabled, true),
 		isStatusError: isClientError,
 	}
 	v := os.Getenv(envClientErrorStatuses)
 	if fn := httptrace.GetErrorCodesFromInput(v); fn != nil {
-		sharedCfg.isStatusError = fn
+		rtConfig.isStatusError = fn
 	}
-	return &roundTripperConfig{
-		commonConfig: sharedCfg,
-		propagation:  true,
-		spanNamer:    defaultSpanNamer,
-	}
+	return &rtConfig
 }
 
 // WithBefore adds a RoundTripperBeforeFunc to the RoundTripper

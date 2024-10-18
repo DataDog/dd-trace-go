@@ -9,77 +9,18 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"runtime"
 	"slices"
-	"strconv"
 	"testing"
 
+	ddhttp "github.com/DataDog/dd-trace-go/contrib/net/http/v2"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
-	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	ddtracer "github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
-	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations"
 
 	"github.com/stretchr/testify/assert"
 )
-
-// Note: these tests are not meant to be run in isolation.
-
-var currentM *testing.M
-var mTracer mocktracer.Tracer
-
-// TestMain is the entry point for testing and runs before any test.
-func TestMain(m *testing.M) {
-	currentM = m
-	mTracer = integrations.InitializeCIVisibilityMock()
-
-	// (*M)(m).Run() cast m to gotesting.M and just run
-	// or use a helper method gotesting.RunM(m)
-
-	// os.Exit((*M)(m).Run())
-	_ = RunM(m)
-
-	spans := mTracer.FinishedSpans()
-	// 1 session span
-	// 1 module span
-	// 1 suite span (optional 1 from reflections_test.go)
-	// 6 tests spans
-	// 7 sub stest spans
-	// 2 normal spans (from integration tests)
-	// 1 benchmark span (optional - require the -bench option)
-	if len(spans) < 17 {
-		panic("expected at least 17 finished spans, got " + strconv.Itoa(len(spans)))
-	}
-
-	sessionSpans := getSpansWithType(spans, constants.SpanTypeTestSession)
-	if len(sessionSpans) != 1 {
-		panic("expected exactly 1 session span, got " + strconv.Itoa(len(sessionSpans)))
-	}
-
-	moduleSpans := getSpansWithType(spans, constants.SpanTypeTestModule)
-	if len(moduleSpans) != 1 {
-		panic("expected exactly 1 module span, got " + strconv.Itoa(len(moduleSpans)))
-	}
-
-	suiteSpans := getSpansWithType(spans, constants.SpanTypeTestSuite)
-	if len(suiteSpans) < 1 {
-		panic("expected at least 1 suite span, got " + strconv.Itoa(len(suiteSpans)))
-	}
-
-	testSpans := getSpansWithType(spans, constants.SpanTypeTest)
-	if len(testSpans) < 12 {
-		panic("expected at least 12 test span, got " + strconv.Itoa(len(testSpans)))
-	}
-
-	httpSpans := getSpansWithType(spans, ext.SpanTypeHTTP)
-	if len(httpSpans) != 2 {
-		panic("expected exactly 2 normal spans, got " + strconv.Itoa(len(httpSpans)))
-	}
-
-	os.Exit(0)
-}
 
 // TestMyTest01 demonstrates instrumentation of InternalTests
 func TestMyTest01(t *testing.T) {
@@ -135,60 +76,6 @@ func Test_Foo(gt *testing.T) {
 	}
 }
 
-// Code inspired by contrib/net/http/roundtripper.go
-// It's not possible to import `contrib/net/http` package because it causes a circular dependency.
-// This is a simplified version of the code.
-type roundTripper struct {
-	base  http.RoundTripper
-	namer func(*http.Request) string
-}
-
-func (rt *roundTripper) RoundTrip(req *http.Request) (res *http.Response, err error) {
-	resourceName := rt.namer(req)
-	// Make a copy of the URL so we don't modify the outgoing request
-	url := *req.URL
-	url.User = nil // Do not include userinfo in the HTTPURL tag.
-	opts := []tracer.StartSpanOption{
-		tracer.SpanType(ext.SpanTypeHTTP),
-		tracer.ResourceName(resourceName),
-		tracer.Tag(ext.HTTPMethod, req.Method),
-		tracer.Tag(ext.HTTPURL, url.String()),
-		tracer.Tag(ext.SpanKind, ext.SpanKindClient),
-		tracer.Tag(ext.NetworkDestinationName, url.Hostname()),
-	}
-	span, ctx := tracer.StartSpanFromContext(req.Context(), "", opts...)
-	defer func() {
-		span.Finish()
-	}()
-	r2 := req.Clone(ctx)
-	res, err = rt.base.RoundTrip(r2)
-	if err != nil {
-		span.SetTag("http.errors", err.Error())
-	} else {
-		span.SetTag(ext.HTTPCode, strconv.Itoa(res.StatusCode))
-		// treat 5XX as errors
-		if res.StatusCode/100 == 5 {
-			span.SetTag("http.errors", res.Status)
-			span.SetTag(ext.Error, fmt.Errorf("%d: %s", res.StatusCode, http.StatusText(res.StatusCode)))
-		}
-	}
-	return res, err
-}
-
-// Code from contrib/net/http/roundtripper.go
-// It's not possible to import `contrib/net/http` package because it causes a circular dependency.
-func wrapRoundTripper(rt http.RoundTripper, namer func(*http.Request) string) http.RoundTripper {
-	if namer == nil {
-		namer = func(req *http.Request) string {
-			return ""
-		}
-	}
-	return &roundTripper{
-		base:  rt,
-		namer: namer,
-	}
-}
-
 // TestWithExternalCalls demonstrates testing with external HTTP calls.
 func TestWithExternalCalls(gt *testing.T) {
 	assertTest(gt)
@@ -207,7 +94,7 @@ func TestWithExternalCalls(gt *testing.T) {
 		ctx := (*T)(t).Context()
 
 		// Wrap the default HTTP transport for tracing
-		rt := wrapRoundTripper(http.DefaultTransport, nil)
+		rt := ddhttp.WrapRoundTripper(http.DefaultTransport)
 		client := &http.Client{
 			Transport: rt,
 		}
@@ -244,7 +131,7 @@ func TestWithExternalCalls(gt *testing.T) {
 			return value
 		}
 
-		rt := wrapRoundTripper(http.DefaultTransport, customNamer)
+		rt := ddhttp.WrapRoundTripper(http.DefaultTransport, ddhttp.RTWithResourceNamer(customNamer))
 		client := &http.Client{
 			Transport: rt,
 		}
@@ -372,7 +259,7 @@ func assertTest(t *testing.T) {
 		// Assert Session
 		if span.Tag(ext.SpanType) == constants.SpanTypeTestSession {
 			assert.Contains(spanTags, constants.TestSessionIDTag)
-			assertCommon(assert, span)
+			assertCommon(assert, *span)
 			hasSession = true
 		}
 
@@ -385,7 +272,7 @@ func assertTest(t *testing.T) {
 			assert.Contains(spanTags, constants.TestSessionIDTag)
 			assert.Contains(spanTags, constants.TestModuleIDTag)
 			assert.Contains(spanTags, constants.TestFrameworkVersion)
-			assertCommon(assert, span)
+			assertCommon(assert, *span)
 			hasModule = true
 		}
 
@@ -400,7 +287,7 @@ func assertTest(t *testing.T) {
 			assert.Contains(spanTags, constants.TestSuiteIDTag)
 			assert.Contains(spanTags, constants.TestFrameworkVersion)
 			assert.Contains(spanTags, constants.TestSuite)
-			assertCommon(assert, span)
+			assertCommon(assert, *span)
 			hasSuite = true
 		}
 
@@ -420,7 +307,7 @@ func assertTest(t *testing.T) {
 			assert.Contains(spanTags, constants.TestCodeOwners)
 			assert.Contains(spanTags, constants.TestSourceFile)
 			assert.Contains(spanTags, constants.TestSourceStartLine)
-			assertCommon(assert, span)
+			assertCommon(assert, *span)
 			hasTest = true
 		}
 	}
@@ -431,7 +318,7 @@ func assertTest(t *testing.T) {
 	assert.True(hasTest)
 }
 
-func assertCommon(assert *assert.Assertions, span *mocktracer.Span) {
+func assertCommon(assert *assert.Assertions, span mocktracer.Span) {
 	spanTags := span.Tags()
 
 	assert.Subset(spanTags, map[string]interface{}{
@@ -460,15 +347,4 @@ func assertCommon(assert *assert.Assertions, span *mocktracer.Span) {
 		assert.Contains(spanTags, constants.GitCommitCommitterName)
 	}
 	assert.Contains(spanTags, constants.CIWorkspacePath)
-}
-
-func getSpansWithType(spans []*mocktracer.Span, spanType string) []*mocktracer.Span {
-	var result []*mocktracer.Span
-	for _, span := range spans {
-		if span.Tag(ext.SpanType) == spanType {
-			result = append(result, span)
-		}
-	}
-
-	return result
 }
