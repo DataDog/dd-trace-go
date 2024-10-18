@@ -17,7 +17,6 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/constants"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/integrations"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/utils"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
 const (
@@ -162,16 +161,19 @@ func (ddm *M) executeInternalTest(testInfo *testingTInfo) func(*testing.T) {
 			test.SetTag(constants.TestIsRetry, "true")
 		}
 
+		tCoverage := &testCoverage{
+			sessionID: session.SessionID(),
+			moduleID:  module.ModuleID(),
+			suiteID:   suite.SuiteID(),
+			testID:    test.TestID(),
+		}
+
 		startTime := time.Now()
 		defer func() {
 			duration := time.Since(startTime)
-			if mode != "" {
-				fileName := fmt.Sprintf("%d-%d-%d-post.out", module.ModuleID(), suite.SuiteID(), test.TestID())
-				_, err := tearDown(fileName, "")
-				if err != nil {
-					log.Debug("Error tearing down coverage file:", err)
-				}
-			}
+
+			// Collect coverage after test execution so we can calculate the diff comparing to the baseline.
+			tCoverage.CollectCoverageAfterTestExecution()
 
 			// check if is a new EFD test and the duration >= 5 min
 			if execMeta.isANewTest && duration.Minutes() >= 5 {
@@ -215,13 +217,8 @@ func (ddm *M) executeInternalTest(testInfo *testingTInfo) func(*testing.T) {
 			}
 		}()
 
-		if mode != "" {
-			fileName := fmt.Sprintf("%d-%d-%d-pre.out", module.ModuleID(), suite.SuiteID(), test.TestID())
-			_, err := tearDown(fileName, "")
-			if err != nil {
-				log.Debug("Error tearing down coverage file:", err)
-			}
-		}
+		// Collect coverage before test execution so we can register a baseline.
+		tCoverage.CollectCoverageBeforeTestExecution()
 
 		// Execute the original test function.
 		testInfo.originalFunc(t)
