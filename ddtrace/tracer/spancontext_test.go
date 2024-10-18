@@ -169,7 +169,7 @@ func TestTraceFinishChunk(t *testing.T) {
 
 	for i := 0; i < payloadQueueSize+1; i++ {
 		trace.mu.Lock()
-		c := chunk{spans: make([]*span, 1)}
+		c := Chunk{spans: make([]*Span, 1)}
 		trace.finishChunk(tracer, &c)
 		trace.mu.Unlock()
 	}
