@@ -276,7 +276,7 @@ func TestCustomTags(t *testing.T) {
 		"socket.timeout.ms":        10,
 		"session.timeout.ms":       10,
 		"enable.auto.offset.store": false,
-	}, WithCustomTag("foo", func(msg *kafka.Message) interface{} {
+	}, WithCustomTag("foo", func(_ *kafka.Message) interface{} {
 		return "bar"
 	}), WithCustomTag("key", func(msg *kafka.Message) interface{} {
 		return msg.Key
@@ -424,7 +424,7 @@ func produceThenConsume(t *testing.T, consumerAction consumerActionFn, producerO
 
 	if c.cfg.dataStreamsEnabled {
 		backlogs := mt.SentDSMBacklogs()
-		toMap := func(b []internaldsm.Backlog) map[string]struct{} {
+		toMap := func(_ []internaldsm.Backlog) map[string]struct{} {
 			m := make(map[string]struct{})
 			for _, b := range backlogs {
 				m[strings.Join(b.Tags, "")] = struct{}{}
