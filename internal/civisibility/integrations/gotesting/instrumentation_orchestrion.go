@@ -20,6 +20,12 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/constants"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/integrations"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/utils"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+)
+
+var (
+	mode     string
+	tearDown func(coverprofile string, gocoverdir string) (string, error)
 )
 
 // ******************************************************************************************************************
@@ -37,6 +43,13 @@ func instrumentTestingM(m *testing.M) func(exitCode int) {
 	atomic.StoreInt32(&ciVisibilityEnabledValue, -1)
 	if !isCiVisibilityEnabled() || !testing.Testing() {
 		return func(exitCode int) {}
+	}
+
+	// Initialize the runtime coverage if enabled.
+	if testDep, err := getTestDepsCoverage(m); err == nil {
+		mode, tearDown, _ = testDep.InitRuntimeCoverage()
+	} else {
+		log.Debug("Error initializing runtime coverage: %v", err)
 	}
 
 	// Initialize CI Visibility
