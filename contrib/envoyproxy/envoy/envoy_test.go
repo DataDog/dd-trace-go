@@ -266,6 +266,7 @@ func TestBlockingOnResponse(t *testing.T) {
 
 		// Check for tags
 		span := finished[0]
+		require.Equal(t, 1, span.Tag("_dd.appsec.enabled"))
 		require.Equal(t, true, span.Tag("appsec.event"))
 		require.Equal(t, true, span.Tag("appsec.blocked"))
 	})

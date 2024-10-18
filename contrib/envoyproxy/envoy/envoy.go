@@ -87,30 +87,30 @@ func StreamServerInterceptor(opts ...grpctrace.Option) grpc.StreamServerIntercep
 					return nil
 				}
 
-				log.Warn("Error receiving request/response: %v\n", err)
+				log.Warn("external_processing: error receiving request/response: %v\n", err)
 				return status.Errorf(codes.Unknown, "Error receiving request/response: %v", err)
 			}
 
 			resp, err := envoyExternalProcessingEventHandler(ctx, &req, currentRequest)
 			if err != nil {
-				log.Error("Error processing request/response: %v\n", err)
+				log.Error("external_processing: error processing request/response: %v\n", err)
 				return status.Errorf(codes.Unknown, "Error processing request/response: %v", err)
 			}
 
 			// End of stream reached, no more data to process
 			if resp == nil {
-				log.Debug("End of stream reached")
+				log.Debug("external_processing: end of stream reached")
 				return nil
 			}
 
 			// Send Message could fail if envoy close the stream before the message could be sent (probably because of an Envoy timeout)
 			if err := ss.SendMsg(resp); err != nil {
-				log.Warn("Error sending response (probably because of an Envoy timeout): %v", err)
+				log.Warn("external_processing: error sending response (probably because of an Envoy timeout): %v", err)
 				return status.Errorf(codes.Unknown, "Error sending response (probably because of an Envoy timeout): %v", err)
 			}
 
 			if currentRequest.blocked {
-				log.Debug("Request blocked, stream ended")
+				log.Debug("external_processing: request blocked, stream ended")
 				return nil
 			}
 		}
@@ -144,6 +144,9 @@ func envoyExternalProcessingEventHandler(ctx context.Context, req *extproc.Proce
 
 	case *extproc.ProcessingRequest_ResponseBody:
 		r := req.Request.(*extproc.ProcessingRequest_ResponseBody)
+
+		// Note: The end of stream bool value is not reliable
+		// Sometimes it's not set to true even if there is no more data to process
 		if r.ResponseBody.GetEndOfStream() {
 			return nil, nil
 		}
@@ -164,7 +167,7 @@ func envoyExternalProcessingEventHandler(ctx context.Context, req *extproc.Proce
 }
 
 func ProcessRequestHeaders(ctx context.Context, req *extproc.ProcessingRequest_RequestHeaders, currentRequest *CurrentRequest) (*extproc.ProcessingResponse, error) {
-	log.Debug("Received request headers: %v\n", req.RequestHeaders)
+	log.Debug("external_processing: received request headers: %v\n", req.RequestHeaders)
 
 	headers, envoyHeaders := separateEnvoyHeaders(req.RequestHeaders.GetHeaders().GetHeaders())
 
@@ -196,7 +199,6 @@ func ProcessRequestHeaders(ctx context.Context, req *extproc.ProcessingRequest_R
 	// Block handling: If triggered, we need to block the request, return an immediate response
 	if blockPtr := currentRequest.blockAction.Load(); blockPtr != nil {
 		response := doBlockRequest(currentRequest, blockPtr, headers)
-		currentRequest.op.Finish(httpsec.HandlerOperationRes{}, currentRequest.span)
 		return response, nil
 	}
 
@@ -236,7 +238,7 @@ func verifyRequestHttp2ResponseHeaders(headers map[string][]string) (string, err
 }
 
 func ProcessResponseHeaders(res *extproc.ProcessingRequest_ResponseHeaders, currentRequest *CurrentRequest) (*extproc.ProcessingResponse, error) {
-	log.Debug("Received response headers: %v\n", res.ResponseHeaders)
+	log.Debug("external_processing: received response headers: %v\n", res.ResponseHeaders)
 
 	headers, envoyHeaders := separateEnvoyHeaders(res.ResponseHeaders.GetHeaders().GetHeaders())
 
@@ -256,6 +258,7 @@ func ProcessResponseHeaders(res *extproc.ProcessingRequest_ResponseHeaders, curr
 	}
 
 	currentRequest.op.Finish(args, currentRequest.span)
+	currentRequest.op = nil
 
 	// Block handling: If triggered, we need to block the request, return an immediate response
 	if blockPtr := currentRequest.blockAction.Load(); blockPtr != nil {
@@ -382,13 +385,20 @@ func doBlockRequest(currentRequest *CurrentRequest, blockAction *actions.BlockHT
 func closeSpan(currentRequest *CurrentRequest) {
 	span := currentRequest.span
 	if span != nil {
+		// Finish the operation: it can be not finished when the request has been blocked or if an error occurred
+		// > The response hasn't been processed
+		if currentRequest.op != nil {
+			currentRequest.op.Finish(httpsec.HandlerOperationRes{}, span)
+			currentRequest.op = nil
+		}
+
 		// Note: The status code could be 0 if an internal error occurred
 		statusCodeStr := strconv.Itoa(currentRequest.statusCode)
 		span.SetTag(ext.HTTPCode, statusCodeStr)
 
 		span.Finish()
 
-		log.Debug("Span closed with status code: %v\n", currentRequest.statusCode)
+		log.Debug("external_processing: span closed with status code: %v\n", currentRequest.statusCode)
 		currentRequest.span = nil
 	}
 }

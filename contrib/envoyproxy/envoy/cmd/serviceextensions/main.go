@@ -57,7 +57,7 @@ func main() {
 	// Force set ASM as enabled and set it as running in standalone mode
 	err := os.Setenv("DD_APPSEC_ENABLED", "1")
 	if err != nil {
-		log.Error("Failed to set environment variable: %v\n", err)
+		log.Error("service_extension: failed to set environment variable: %v\n", err)
 		return
 	}
 
@@ -68,10 +68,10 @@ func main() {
 	tracer.Start()
 
 	go StartGPRCSsl(&extensionService, config)
-	log.Info("Service extension: callout gRPC server started on %s:%s\n", config.extensionHost, config.extensionPort)
+	log.Info("service_extension: callout gRPC server started on %s:%s\n", config.extensionHost, config.extensionPort)
 
 	go startHealthCheck(config)
-	log.Info("Service extension: health check server started on %s:%s\n", config.extensionHost, config.healthcheckPort)
+	log.Info("service_extension: health check server started on %s:%s\n", config.extensionHost, config.healthcheckPort)
 
 	select {}
 }
@@ -115,6 +115,6 @@ func StartGPRCSsl(service extproc.ExternalProcessorServer, config serviceExtensi
 	extproc.RegisterExternalProcessorServer(grpcServer, service)
 	reflection.Register(grpcServer)
 	if err := grpcServer.Serve(lis); err != nil {
-		log.Error("Failed to serve gRPC: %v\n", err)
+		log.Error("service_extension: failed to serve gRPC: %v\n", err)
 	}
 }
