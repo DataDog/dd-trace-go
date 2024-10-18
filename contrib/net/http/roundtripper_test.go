@@ -26,7 +26,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils"
-	"github.com/DataDog/dd-trace-go/v2/internal/appsec/waf/addresses"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec/emitter/waf/addresses"
 )
 
 func TestWrapRoundTripperAllowNilTransport(t *testing.T) {

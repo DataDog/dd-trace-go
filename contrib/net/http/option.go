@@ -38,11 +38,10 @@ type config struct {
 	headerTags instrumentation.HeaderTags
 }
 
-// MuxOption has been deprecated in favor of Option.
-type MuxOption = Option
-
-// Option represents an option that can be passed to NewServeMux or WrapHandler.
-type Option func(*config)
+// Option describes options for http.ServeMux.
+type Option interface {
+	apply(*config)
+}
 
 // OptionFn represents options applicable to NewServeMux and WrapHandler.
 type OptionFn func(*commonConfig)

@@ -14,7 +14,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
-	"github.com/DataDog/dd-trace-go/v2/internal/appsec/emitter/trace"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/trace"
 	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
 )
 
