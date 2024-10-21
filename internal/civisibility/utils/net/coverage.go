@@ -24,7 +24,7 @@ func NewClientForCodeCoverage() Client {
 }
 
 // SendCoveragePayload sends a code coverage payload to the backend.
-func (c *client) SendCoveragePayload(ciTestCovPayload *io.Reader) error {
+func (c *client) SendCoveragePayload(ciTestCovPayload io.Reader) error {
 	if ciTestCovPayload == nil {
 		return errors.New("coverage payload is nil")
 	}
