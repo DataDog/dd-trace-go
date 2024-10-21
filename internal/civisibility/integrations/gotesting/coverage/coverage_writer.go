@@ -57,6 +57,7 @@ func (w *coverageWriter) add(coverage *testCoverage) {
 }
 
 func (w *coverageWriter) stop() {
+	log.Debug("coverageWriter: stopping writer")
 	w.flush()
 	w.wg.Wait()
 }

@@ -135,7 +135,14 @@ func (t *testCoverage) CollectCoverageAfterTestExecution() {
 		log.Debug("Error getting coverage file: %v", err)
 	}
 
-	t.processCoverageData()
+	var pChannel = make(chan struct{})
+	integrations.PushCiVisibilityCloseAction(func() {
+		<-pChannel
+	})
+	go func() {
+		t.processCoverageData()
+		pChannel <- struct{}{}
+	}()
 }
 
 func (t *testCoverage) processCoverageData() {
