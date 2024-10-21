@@ -7,6 +7,7 @@ package gotesting
 
 import (
 	"fmt"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/integrations/gotesting/coverage"
 	"os"
 	"reflect"
 	"runtime"
@@ -46,7 +47,7 @@ func instrumentTestingM(m *testing.M) func(exitCode int) {
 	session = integrations.CreateTestSession()
 
 	// Initialize the runtime coverage if enabled.
-	initializeCoverage(m)
+	coverage.InitializeCoverage(m)
 
 	ddm := (*M)(m)
 

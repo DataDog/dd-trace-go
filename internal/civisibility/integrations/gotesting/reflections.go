@@ -18,6 +18,8 @@ import (
 
 // getFieldPointerFrom gets an unsafe.Pointer (gc-safe type of pointer) to a struct field
 // useful to get or set values to private field
+//
+//go:linkname getFieldPointerFrom
 func getFieldPointerFrom(value any, fieldName string) (unsafe.Pointer, error) {
 	return getFieldPointerFromValue(reflect.Indirect(reflect.ValueOf(value)), fieldName)
 }
@@ -335,20 +337,4 @@ func getBenchmarkPrivateFields(b *testing.B) *benchmarkPrivateFields {
 	}
 
 	return benchFields
-}
-
-// testDepsCoverage is an interface to support runtime coverage initialization from the original testDeps testing interface
-type testDepsCoverage interface {
-	InitRuntimeCoverage() (mode string, tearDown func(coverprofile string, gocoverdir string) (string, error), snapcov func() float64)
-}
-
-// getTestDepsCoverage gets the testDepsCoverage interface from a testing.M instance
-func getTestDepsCoverage(m *testing.M) (testDepsCoverage, error) {
-	ptr, err := getFieldPointerFrom(m, "deps")
-	if err != nil {
-		return nil, err
-	}
-
-	tDepValue := reflect.NewAt(reflect.TypeFor[testDepsCoverage](), ptr)
-	return tDepValue.Elem().Interface().(testDepsCoverage), nil
 }
