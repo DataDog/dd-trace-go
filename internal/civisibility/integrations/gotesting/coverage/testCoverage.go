@@ -138,13 +138,7 @@ func (t *testCoverage) processCoverageData() {
 		log.Debug("Error removing post-coverage file: %v", err)
 	}
 
-	fmt.Println(*t)
-}
-
-func (t *testCoverage) printFilesCovered() {
-	for _, fileName := range t.filesCovered {
-		fmt.Printf("File: %s\n", fileName)
-	}
+	fmt.Println(*newCiTestCoverageData(t))
 }
 
 // parseCoverProfile parses the coverage profile data and returns the coverage data for each file
