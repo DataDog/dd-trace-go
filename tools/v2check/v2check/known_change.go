@@ -222,3 +222,73 @@ func (TracerStructs) Probes() []Probe {
 func (TracerStructs) String() string {
 	return "the declared type is now a struct, you need to use a pointer"
 }
+
+type WithServiceName struct {
+	defaultKnownChange
+}
+
+func (c WithServiceName) Fixes() []analysis.SuggestedFix {
+	args, ok := c.ctx.Value("args").([]string)
+	if !ok || args == nil {
+		return nil
+	}
+
+	return []analysis.SuggestedFix{
+		{
+			Message: "use WithService()",
+			TextEdits: []analysis.TextEdit{
+				{
+					Pos:     c.Pos(),
+					End:     c.End(),
+					NewText: []byte(fmt.Sprintf("WithService(%s)", strings.Join(args, ", "))),
+				},
+			},
+		},
+	}
+}
+
+func (c WithServiceName) Probes() []Probe {
+	return []Probe{
+		IsFuncCall,
+		WithFunctionName("WithServiceName"),
+	}
+}
+
+func (c WithServiceName) String() string {
+	return "the function WithServiceName is no longer supported. Use WithService instead."
+}
+
+type TraceIDString struct {
+	defaultKnownChange
+}
+
+func (c TraceIDString) Fixes() []analysis.SuggestedFix {
+	fn, ok := c.ctx.Value("fn").(func())
+	if !ok || fn == nil {
+		return nil
+	}
+
+	return []analysis.SuggestedFix{
+		{
+			Message: "use TraceIDLower()",
+			TextEdits: []analysis.TextEdit{
+				{
+					Pos:     c.Pos(),
+					End:     c.End(),
+					NewText: []byte("TraceIDLower()"),
+				},
+			},
+		},
+	}
+}
+
+func (c TraceIDString) Probes() []Probe {
+	return []Probe{
+		IsFuncCall,
+		WithFunctionName("TraceID"),
+	}
+}
+
+func (c TraceIDString) String() string {
+	return "trace IDs are now represented as strings, please use TraceIDLower to keep using 64-bits IDs, although it's recommended to switch to 128-bits with TraceID"
+}
