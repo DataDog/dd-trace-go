@@ -403,7 +403,7 @@ func produceThenConsume(t *testing.T, consumerAction consumerActionFn, producerO
 
 	if c.tracer.DSMEnabled() {
 		backlogs := mt.SentDSMBacklogs()
-		toMap := func(b []internaldsm.Backlog) map[string]struct{} {
+		toMap := func(_ []internaldsm.Backlog) map[string]struct{} {
 			m := make(map[string]struct{})
 			for _, b := range backlogs {
 				m[strings.Join(b.Tags, "")] = struct{}{}
