@@ -19,6 +19,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/tinylib/msgp/msgp"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
@@ -27,6 +28,7 @@ const (
 	ContentTypeJSON            = "application/json"
 	ContentTypeJSONAlternative = "application/vnd.api+json"
 	ContentTypeOctetStream     = "application/octet-stream"
+	ContentTypeMessagePack     = "application/msgpack"
 	ContentEncodingGzip        = "gzip"
 	HeaderContentType          = "Content-Type"
 	HeaderContentEncoding      = "Content-Encoding"
@@ -34,6 +36,7 @@ const (
 	HeaderRateLimitReset       = "x-ratelimit-reset"
 	HTTPStatusTooManyRequests  = 429
 	FormatJSON                 = "json"
+	FormatMessagePack          = "msgpack"
 )
 
 // FormFile represents a file to be uploaded in a multipart form request.
@@ -74,6 +77,13 @@ func (r *Response) Unmarshal(target interface{}) error {
 	switch r.Format {
 	case FormatJSON:
 		return json.Unmarshal(r.Body, target)
+	case FormatMessagePack:
+		if target.(msgp.Unmarshaler) != nil {
+			_, err := target.(msgp.Unmarshaler).UnmarshalMsg(r.Body)
+			return err
+		} else {
+			return errors.New("target must implement msgp.Unmarshaler for MessagePack unmarshalling")
+		}
 	default:
 		return fmt.Errorf("unsupported format '%s' for unmarshalling", r.Format)
 	}
@@ -178,6 +188,9 @@ func (rh *RequestHandler) internalSendRequest(config *RequestConfig, attempt int
 		}
 		if config.Format == FormatJSON {
 			req.Header.Set(HeaderContentType, ContentTypeJSON)
+		}
+		if config.Format == FormatMessagePack {
+			req.Header.Set(HeaderContentType, ContentTypeMessagePack)
 		}
 		if config.Compressed {
 			req.Header.Set(HeaderContentEncoding, ContentEncodingGzip)
@@ -285,10 +298,20 @@ func serializeData(data interface{}, format string) ([]byte, error) {
 	case []byte:
 		// If it's already a byte array, use it directly
 		return v, nil
+	case io.Reader:
+		// If it's an io.Reader, read the content
+		return io.ReadAll(v)
 	default:
 		// Otherwise, serialize it according to the specified format
 		if format == FormatJSON {
 			return json.Marshal(data)
+		}
+		if format == FormatMessagePack {
+			if data.(msgp.Marshaler) != nil {
+				return data.(msgp.Marshaler).MarshalMsg([]byte{})
+			} else {
+				return nil, errors.New("data must implement msgp.Marshaler for MessagePack serialization")
+			}
 		}
 	}
 	return nil, fmt.Errorf("unsupported format '%s' for data type '%T'", format, data)
@@ -338,12 +361,17 @@ func exponentialBackoff(retryCount int, initialDelay time.Duration) {
 func prepareContent(content interface{}, contentType string) ([]byte, error) {
 	if contentType == ContentTypeJSON {
 		return serializeData(content, FormatJSON)
+	} else if contentType == ContentTypeMessagePack {
+		return serializeData(content, FormatMessagePack)
 	} else if contentType == ContentTypeOctetStream {
 		// For binary data, ensure it's already in byte format
 		if data, ok := content.([]byte); ok {
 			return data, nil
 		}
-		return nil, errors.New("content must be []byte for octet-stream content type")
+		if reader, ok := content.(io.Reader); ok {
+			return io.ReadAll(reader)
+		}
+		return nil, errors.New("content must be []byte or an io.Reader for octet-stream content type")
 	}
 	return nil, errors.New("unsupported content type for serialization")
 }

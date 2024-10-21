@@ -25,11 +25,14 @@ import (
 )
 
 const (
-	DefaultMaxRetries int           = 5
-	DefaultBackoff    time.Duration = 150 * time.Millisecond
+	// DefaultMaxRetries is the default number of retries for a request.
+	DefaultMaxRetries int = 5
+	// DefaultBackoff is the default backoff time for a request.
+	DefaultBackoff time.Duration = 150 * time.Millisecond
 )
 
 type (
+	// Client is an interface for sending requests to the Datadog backend.
 	Client interface {
 		GetSettings() (*SettingsResponseData, error)
 		GetEarlyFlakeDetectionData() (*EfdResponseData, error)
@@ -37,6 +40,7 @@ type (
 		SendPackFiles(commitSha string, packFiles []string) (bytes int64, err error)
 	}
 
+	// client is a client for sending requests to the Datadog backend.
 	client struct {
 		id                 string
 		agentless          bool
@@ -52,6 +56,7 @@ type (
 		handler            *RequestHandler
 	}
 
+	// testConfigurations represents the test configurations.
 	testConfigurations struct {
 		OsPlatform          string            `json:"os.platform,omitempty"`
 		OsVersion           string            `json:"os.version,omitempty"`
@@ -65,7 +70,8 @@ type (
 
 var _ Client = &client{}
 
-func NewClientWithServiceName(serviceName string) Client {
+// NewClientWithServiceNameAndSubdomain creates a new client with the given service name and subdomain.
+func NewClientWithServiceNameAndSubdomain(serviceName, subdomain string) Client {
 	ciTags := utils.GetCITags()
 
 	// get the environment
@@ -131,7 +137,7 @@ func NewClientWithServiceName(serviceName string) Client {
 				site = v
 			}
 
-			baseURL = fmt.Sprintf("https://api.%s", site)
+			baseURL = fmt.Sprintf("https://%s.%s", subdomain, site)
 		} else {
 			// Use the custom agentless URL.
 			baseURL = agentlessURL
@@ -140,7 +146,7 @@ func NewClientWithServiceName(serviceName string) Client {
 		requestHandler = NewRequestHandler()
 	} else {
 		// Use agent mode with the EVP proxy.
-		defaultHeaders["X-Datadog-EVP-Subdomain"] = "api"
+		defaultHeaders["X-Datadog-EVP-Subdomain"] = subdomain
 
 		agentURL := internal.AgentURLFromEnv()
 		if agentURL.Scheme == "unix" {
@@ -208,10 +214,17 @@ func NewClientWithServiceName(serviceName string) Client {
 	}
 }
 
+// NewClientWithServiceName creates a new client with the given service name.
+func NewClientWithServiceName(serviceName string) Client {
+	return NewClientWithServiceNameAndSubdomain(serviceName, "api")
+}
+
+// NewClient creates a new client with the default service name.
 func NewClient() Client {
 	return NewClientWithServiceName("")
 }
 
+// getURLPath returns the full URL path for the given URL path.
 func (c *client) getURLPath(urlPath string) string {
 	if c.agentless {
 		return fmt.Sprintf("%s/%s", c.baseURL, urlPath)
@@ -220,6 +233,7 @@ func (c *client) getURLPath(urlPath string) string {
 	return fmt.Sprintf("%s/%s/%s", c.baseURL, "evp_proxy/v2", urlPath)
 }
 
+// getPostRequestConfig	returns a new RequestConfig for a POST request.
 func (c *client) getPostRequestConfig(url string, body interface{}) *RequestConfig {
 	return &RequestConfig{
 		Method:     "POST",
