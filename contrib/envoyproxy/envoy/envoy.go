@@ -8,20 +8,22 @@ package envoy
 import (
 	"context"
 	"errors"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
-	grpctrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/google.golang.org/grpc"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/waf/actions"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener/trace"
 	"io"
 	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
 	"sync/atomic"
+
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
+	grpctrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/google.golang.org/grpc"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/waf/actions"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener/trace"
 
 	corev3 "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
 	v3 "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
@@ -40,6 +42,7 @@ type CurrentRequest struct {
 	blockAction *atomic.Pointer[actions.BlockHTTP]
 	span        tracer.Span
 
+	remoteAddr  string
 	parsedUrl   *url.URL
 	requestArgs httpsec.HandlerOperationArgs
 
@@ -47,18 +50,32 @@ type CurrentRequest struct {
 	blocked    bool
 }
 
+func getRemoteAddr(xfwd []string) string {
+	length := len(xfwd)
+	if length == 0 {
+		return ""
+	}
+
+	// Get the first right value of x-forwarded-for header
+	// The rightmost IP address is the one that will be used as the remote client IP
+	// https://datadoghq.atlassian.net/wiki/spaces/TS/pages/2766733526/Sensitive+IP+information#Where-does-the-value-of-the-http.client_ip-tag-come-from%3F
+	return xfwd[length-1]
+}
+
 func StreamServerInterceptor(opts ...grpctrace.Option) grpc.StreamServerInterceptor {
 	interceptor := grpctrace.StreamServerInterceptor(opts...)
 	log.SetLevel(log.LevelDebug) // TODO: Remove
 
 	return func(srv any, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
-		if info.FullMethod != "/envoy.service.ext_proc.v3.ExternalProcessor/Process" {
+		if info.FullMethod != extproc.ExternalProcessor_Process_FullMethodName {
 			return interceptor(srv, ss, info, handler)
 		}
 
 		ctx := ss.Context()
+		md, _ := metadata.FromIncomingContext(ctx)
 		currentRequest := &CurrentRequest{
-			blocked: false,
+			blocked:    false,
+			remoteAddr: getRemoteAddr(md.Get("x-forwarded-for")),
 		}
 
 		// Close the span when the request is done processing
@@ -185,13 +202,13 @@ func ProcessRequestHeaders(ctx context.Context, req *extproc.ProcessingRequest_R
 	currentRequest.parsedUrl = parsedUrl
 
 	// client ip set in the x-forwarded-for header (cf: https://www.envoyproxy.io/docs/envoy/latest/configuration/http/http_conn_man/headers#x-forwarded-for)
-	ipTags, clientIp := httpsec2.ClientIPTags(headers, true, "") // TODO: Better parsing for remote ip tags
+	ipTags, _ := httpsec2.ClientIPTags(headers, true, currentRequest.remoteAddr)
 
-	currentRequest.requestArgs = httpsec.MakeHandlerOperationArgs(headers, method, host, clientIp, parsedUrl)
+	currentRequest.requestArgs = httpsec.MakeHandlerOperationArgs(headers, method, host, currentRequest.remoteAddr, parsedUrl)
 	headers = currentRequest.requestArgs.Headers // Replace headers with the ones from the args because it has been modified
 
 	// Create span
-	currentRequest.span = createExternalProcessedSpan(ctx, headers, method, host, path, ipTags, parsedUrl)
+	currentRequest.span = createExternalProcessedSpan(ctx, headers, method, host, path, currentRequest.remoteAddr, ipTags, parsedUrl)
 
 	// Run WAF on request data
 	currentRequest.op, currentRequest.blockAction, _ = httpsec.StartOperation(ctx, currentRequest.requestArgs)
@@ -284,7 +301,7 @@ func ProcessResponseHeaders(res *extproc.ProcessingRequest_ResponseHeaders, curr
 	}, nil
 }
 
-func createExternalProcessedSpan(ctx context.Context, headers map[string][]string, method string, host string, path string, ipTags map[string]string, parsedUrl *url.URL) tracer.Span {
+func createExternalProcessedSpan(ctx context.Context, headers map[string][]string, method string, host string, path string, remoteAddr string, ipTags map[string]string, parsedUrl *url.URL) tracer.Span {
 	userAgent := ""
 	if ua, ok := headers["User-Agent"]; ok {
 		userAgent = ua[0]
@@ -297,7 +314,7 @@ func createExternalProcessedSpan(ctx context.Context, headers map[string][]strin
 		method,
 		httptrace.UrlFromUrl(parsedUrl),
 		userAgent,
-		"",
+		remoteAddr,
 		[]ddtrace.StartSpanOption{
 			func(cfg *ddtrace.StartSpanConfig) {
 				cfg.Tags[ext.ResourceName] = method + " " + path
