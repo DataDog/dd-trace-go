@@ -7,6 +7,7 @@ package gotesting
 
 import (
 	"fmt"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/integrations/gotesting/coverage"
 	"reflect"
 	"runtime"
 	"sync/atomic"
@@ -161,12 +162,11 @@ func (ddm *M) executeInternalTest(testInfo *testingTInfo) func(*testing.T) {
 			test.SetTag(constants.TestIsRetry, "true")
 		}
 
-		tCoverage := &testCoverage{
-			sessionID: session.SessionID(),
-			moduleID:  module.ModuleID(),
-			suiteID:   suite.SuiteID(),
-			testID:    test.TestID(),
-		}
+		tCoverage := coverage.NewTestCoverage(
+			session.SessionID(),
+			module.ModuleID(),
+			suite.SuiteID(),
+			test.TestID())
 
 		startTime := time.Now()
 		defer func() {

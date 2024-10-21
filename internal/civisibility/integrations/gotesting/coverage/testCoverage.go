@@ -3,7 +3,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2024 Datadog, Inc.
 
-package gotesting
+package coverage
 
 import (
 	"bufio"
@@ -25,9 +25,8 @@ type (
 		testID               uint64
 		preCoverageFilename  string
 		postCoverageFilename string
+		filesCovered         []string
 	}
-
-	fileCoverages []coverageData
 
 	coverageData struct {
 		fileName string
@@ -51,10 +50,10 @@ var (
 	tempFile *os.File
 )
 
-func initializeCoverage(m *testing.M) {
-	tempFile, _ = os.CreateTemp("", "coverage")
+func InitializeCoverage(m *testing.M) {
 	if testDep, err := getTestDepsCoverage(m); err == nil {
 		mode, tearDown, _ = testDep.InitRuntimeCoverage()
+		tempFile, _ = os.CreateTemp("", "coverage")
 	} else {
 		log.Debug("Error initializing runtime coverage: %v", err)
 	}
@@ -68,6 +67,15 @@ func setStdOutToTemp() (restore func()) {
 	stdout := os.Stdout
 	os.Stdout = tempFile
 	return func() { os.Stdout = stdout }
+}
+
+func NewTestCoverage(sessionID, moduleID, suiteID, testID uint64) *testCoverage {
+	return &testCoverage{
+		sessionID: sessionID,
+		moduleID:  moduleID,
+		suiteID:   suiteID,
+		testID:    testID,
+	}
 }
 
 func (t *testCoverage) CollectCoverageBeforeTestExecution() {
@@ -97,32 +105,58 @@ func (t *testCoverage) CollectCoverageAfterTestExecution() {
 		log.Debug("Error getting coverage file: %v", err)
 	}
 
-	go func() {
-		preCoverage, err := parseCoverageFile(t.preCoverageFilename)
-		if err != nil {
-			log.Debug("Error parsing pre-coverage file: %v", err)
-		}
-		postCoverage, err := parseCoverageFile(t.postCoverageFilename)
-		if err != nil {
-			log.Debug("Error parsing post-coverage file: %v", err)
-		}
-
-		fmt.Printf("Files in coverage: %v | %v\n %v", len(preCoverage), len(postCoverage), postCoverage)
-	}()
+	go t.processCoverageData()
 }
 
-func parseCoverageFile(filename string) (data fileCoverages, err error) {
+func (t *testCoverage) processCoverageData() {
+	if t.preCoverageFilename == "" ||
+		t.postCoverageFilename == "" ||
+		t.preCoverageFilename == t.postCoverageFilename {
+		log.Debug("No coverage data to process")
+		return
+	}
+	preCoverage, err := parseCoverProfile(t.preCoverageFilename)
+	if err != nil {
+		log.Debug("Error parsing pre-coverage file: %v", err)
+		return
+	}
+	postCoverage, err := parseCoverProfile(t.postCoverageFilename)
+	if err != nil {
+		log.Debug("Error parsing post-coverage file: %v", err)
+		return
+	}
+
+	t.filesCovered = getFilesCovered(preCoverage, postCoverage)
+
+	err = os.Remove(t.preCoverageFilename)
+	if err != nil {
+		log.Debug("Error removing pre-coverage file: %v", err)
+	}
+
+	err = os.Remove(t.postCoverageFilename)
+	if err != nil {
+		log.Debug("Error removing post-coverage file: %v", err)
+	}
+
+	fmt.Println(*t)
+}
+
+func (t *testCoverage) printFilesCovered() {
+	for _, fileName := range t.filesCovered {
+		fmt.Printf("File: %s\n", fileName)
+	}
+}
+
+// parseCoverProfile parses the coverage profile data and returns the coverage data for each file
+func parseCoverProfile(filename string) (map[string][]coverageBlock, error) {
 	file, err := os.Open(filename)
 	if err != nil {
 		return nil, err
 	}
 	defer file.Close()
 
-	var fileCoverage fileCoverages
+	coverageData := make(map[string][]coverageBlock)
 	scanner := bufio.NewScanner(file)
-
-	// Map to store file data blocks
-	fileData := make(map[string][]coverageBlock)
 
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -138,8 +172,8 @@ func parseCoverageFile(filename string) (data fileCoverages, err error) {
 			continue
 		}
 
-		fileName := parts[0]  // The file path
-		blockInfo := parts[1] // Block data, including line info and statement counts
+		fileName := parts[0]
+		blockInfo := parts[1]
 
 		// Split the block info by space
 		infoParts := strings.Fields(blockInfo)
@@ -156,12 +190,11 @@ func parseCoverageFile(filename string) (data fileCoverages, err error) {
 		startPos := strings.Split(startEnd[0], ".")
 		endPos := strings.Split(startEnd[1], ".")
 
-		// Ensure the positions are valid
 		if len(startPos) < 2 || len(endPos) < 2 {
 			continue
 		}
 
-		// Convert start and end positions to integers
+		// Convert to integers
 		startLine, err1 := strconv.Atoi(startPos[0])
 		startCol, err2 := strconv.Atoi(startPos[1])
 		endLine, err3 := strconv.Atoi(endPos[0])
@@ -169,12 +202,10 @@ func parseCoverageFile(filename string) (data fileCoverages, err error) {
 		numStmt, err5 := strconv.Atoi(infoParts[1])
 		count, err6 := strconv.Atoi(infoParts[2])
 
-		// Skip if any conversion failed
 		if err1 != nil || err2 != nil || err3 != nil || err4 != nil || err5 != nil || err6 != nil {
 			continue
 		}
 
-		// Create the coverage block
 		block := coverageBlock{
 			startLine: startLine,
 			startCol:  startCol,
@@ -184,17 +215,51 @@ func parseCoverageFile(filename string) (data fileCoverages, err error) {
 			count:     count,
 		}
 
-		// Append the block to the file's coverage data
-		fileData[fileName] = append(fileData[fileName], block)
+		coverageData[fileName] = append(coverageData[fileName], block)
 	}
 
-	// Convert the map into a slice of CoverageData
-	for file, blocks := range fileData {
-		fileCoverage = append(fileCoverage, coverageData{
-			fileName: file,
-			blocks:   blocks,
-		})
+	return coverageData, scanner.Err()
+}
+
+// getFilesCovered subtracts the before profile from the after profile and returns the files covered
+func getFilesCovered(before, after map[string][]coverageBlock) []string {
+	var result []string
+
+	for fileName, afterBlocks := range after {
+		if beforeBlocks, found := before[fileName]; found {
+			// Create a map for quick lookup by (startLine, startCol, endLine, endCol)
+			beforeMap := make(map[string]coverageBlock)
+			for _, block := range beforeBlocks {
+				key := fmt.Sprintf("%d.%d-%d.%d", block.startLine, block.startCol, block.endLine, block.endCol)
+				beforeMap[key] = block
+			}
+
+			// Subtract each block in after from the corresponding block in before
+			for _, afterBlock := range afterBlocks {
+				key := fmt.Sprintf("%d.%d-%d.%d", afterBlock.startLine, afterBlock.startCol, afterBlock.endLine, afterBlock.endCol)
+				if beforeBlock, found := beforeMap[key]; found {
+					// Subtract hit counts
+					diffCount := afterBlock.count - beforeBlock.count
+					if diffCount > 0 {
+						result = append(result, fileName)
+						break
+					}
+				} else if afterBlock.count > 0 {
+					// If there's no matching block in before, add the whole block from after
+					result = append(result, fileName)
+					break
+				}
+			}
+		} else {
+			// If there's no before profile for this file, add the entire after profile
+			for _, afterBlock := range afterBlocks {
+				if afterBlock.count > 0 {
+					result = append(result, fileName)
+					break
+				}
+			}
+		}
 	}
 
-	return fileCoverage, scanner.Err()
+	return result
 }
