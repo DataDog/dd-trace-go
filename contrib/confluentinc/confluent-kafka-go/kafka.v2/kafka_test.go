@@ -89,8 +89,8 @@ func TestConsumerChannel(t *testing.T) {
 		assert.Equal(t, "queue", s.Tag(ext.SpanType))
 		assert.Equal(t, int32(1), s.Tag(ext.MessagingKafkaPartition))
 		assert.Equal(t, 0.3, s.Tag(ext.EventSampleRate))
-		assert.Equal(t, kafka.Offset(i+1), s.Tag("offset"))
-		assert.Equal(t, componentName, s.Tag(ext.Component))
+		assert.EqualValues(t, kafka.Offset(i+1), s.Tag("offset"))
+		assert.Equal(t, "confluentinc/confluent-kafka-go/kafka.v2", s.Tag(ext.Component))
 		assert.Equal(t, ext.SpanKindConsumer, s.Tag(ext.SpanKind))
 		assert.Equal(t, "kafka", s.Tag(ext.MessagingSystem))
 	}
@@ -137,7 +137,7 @@ func TestConsumerFunctional(t *testing.T) {
 			assert.Equal(t, 0.1, s0.Tag(ext.EventSampleRate))
 			assert.Equal(t, "queue", s0.Tag(ext.SpanType))
 			assert.Equal(t, int32(0), s0.Tag(ext.MessagingKafkaPartition))
-			assert.Equal(t, componentName, s0.Tag(ext.Component))
+			assert.Equal(t, "confluentinc/confluent-kafka-go/kafka.v2", s0.Tag(ext.Component))
 			assert.Equal(t, ext.SpanKindProducer, s0.Tag(ext.SpanKind))
 			assert.Equal(t, "kafka", s0.Tag(ext.MessagingSystem))
 			assert.Equal(t, "127.0.0.1", s0.Tag(ext.KafkaBootstrapServers))
@@ -149,7 +149,7 @@ func TestConsumerFunctional(t *testing.T) {
 			assert.Equal(t, nil, s1.Tag(ext.EventSampleRate))
 			assert.Equal(t, "queue", s1.Tag(ext.SpanType))
 			assert.Equal(t, int32(0), s1.Tag(ext.MessagingKafkaPartition))
-			assert.Equal(t, componentName, s1.Tag(ext.Component))
+			assert.Equal(t, "confluentinc/confluent-kafka-go/kafka.v2", s1.Tag(ext.Component))
 			assert.Equal(t, ext.SpanKindConsumer, s1.Tag(ext.SpanKind))
 			assert.Equal(t, "kafka", s1.Tag(ext.MessagingSystem))
 			assert.Equal(t, "127.0.0.1", s1.Tag(ext.KafkaBootstrapServers))
@@ -302,7 +302,9 @@ func TestProduceError(t *testing.T) {
 		err := goleak.Find()
 		if err != nil {
 			// if a goroutine is leaking, ensure it is not coming from this package
-			assert.NotContains(t, err.Error(), "contrib/confluentinc/confluent-kafka-go")
+			if strings.Contains(err.Error(), "contrib/confluentinc/confluent-kafka-go") {
+				assert.NoError(t, err, "found leaked goroutine(s) from this package")
+			}
 		}
 	}()
 
@@ -399,7 +401,7 @@ func produceThenConsume(t *testing.T, consumerAction consumerActionFn, producerO
 	// they should be linked via headers
 	assert.Equal(t, spans[0].TraceID(), spans[1].TraceID())
 
-	if c.cfg.dataStreamsEnabled {
+	if c.tracer.DSMEnabled() {
 		backlogs := mt.SentDSMBacklogs()
 		toMap := func(_ []internaldsm.Backlog) map[string]struct{} {
 			m := make(map[string]struct{})
