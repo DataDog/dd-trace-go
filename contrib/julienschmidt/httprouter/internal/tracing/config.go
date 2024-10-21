@@ -10,7 +10,7 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
-	"github.com/DataDog/dd-trace-go/v2/instrumentation/internal/namingschema"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/normalizer"
@@ -32,7 +32,7 @@ func NewConfig(opts ...Option) *Config {
 	} else {
 		cfg.analyticsRate = instr.AnalyticsRate(true)
 	}
-	cfg.serviceName = namingschema.ServiceName(defaultServiceName)
+	cfg.serviceName = instr.ServiceName(instrumentation.ComponentDefault, nil)
 	cfg.headerTags = globalconfig.HeaderTagMap()
 	for _, fn := range opts {
 		fn(cfg)

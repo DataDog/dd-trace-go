@@ -115,7 +115,7 @@ func makeCookies(parsed []*http.Cookie) map[string][]string {
 func BeforeHandle(
 	w http.ResponseWriter,
 	r *http.Request,
-	span *trace.TagSetter,
+	span trace.TagSetter,
 	pathParams map[string]string,
 	opts *Config,
 ) (http.ResponseWriter, *http.Request, func(), bool) {
@@ -145,7 +145,7 @@ func BeforeHandle(
 		op.Finish(HandlerOperationRes{
 			Headers:    opts.ResponseHeaderCopier(w),
 			StatusCode: statusCode,
-		}, span)
+		}, &span)
 
 		// Execute the onBlock functions to make sure blocking works properly
 		// in case we are instrumenting the Gin framework
@@ -179,7 +179,7 @@ func BeforeHandle(
 // TODO: this patch must be removed/improved when we rework our actions/operations system
 func WrapHandler(handler http.Handler, span trace.TagSetter, pathParams map[string]string, opts *Config) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		tw, tr, afterHandle, handled := BeforeHandle(w, r, &span, pathParams, opts)
+		tw, tr, afterHandle, handled := BeforeHandle(w, r, span, pathParams, opts)
 		defer afterHandle()
 		if handled {
 			return

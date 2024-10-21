@@ -8,11 +8,10 @@ package httptrace
 import (
 	"net/http"
 
-	"github.com/DataDog/dd-trace-go/v2/contrib/internal/options"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/httpsec"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec"
-	"github.com/DataDog/dd-trace-go/v2/internal/appsec/emitter/httpsec"
 )
 
 // ServeConfig specifies the tracing configuration when using TraceAndServe.
@@ -44,7 +43,8 @@ func BeforeHandle(cfg *ServeConfig, w http.ResponseWriter, r *http.Request) (htt
 	if cfg == nil {
 		cfg = new(ServeConfig)
 	}
-	opts := options.Copy(cfg.SpanOpts...) // make a copy of cfg.SpanOpts to avoid races
+	opts := make([]tracer.StartSpanOption, len(cfg.SpanOpts))
+	copy(opts, cfg.SpanOpts)
 	if cfg.Service != "" {
 		opts = append(opts, tracer.ServiceName(cfg.Service))
 	}
