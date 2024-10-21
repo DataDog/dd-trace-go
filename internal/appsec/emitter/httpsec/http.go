@@ -17,7 +17,6 @@ import (
 	// Blank import needed to use embed for the default blocked response payloads
 	_ "embed"
 	"net/http"
-	"net/netip"
 	"net/url"
 	"sync"
 	"sync/atomic"
@@ -172,14 +171,16 @@ func WrapHandler(handler http.Handler, span ddtrace.Span, pathParams map[string]
 }
 
 // MakeHandlerOperationArgs creates the HandlerOperationArgs value.
-func MakeHandlerOperationArgs(headers map[string][]string, method string, host string, clientIp netip.Addr, url *url.URL) HandlerOperationArgs {
+func MakeHandlerOperationArgs(headers map[string][]string, method string, host string, remoteAddr string, url *url.URL) HandlerOperationArgs {
+	cookies := filterCookiesFromHeaders(headers)
+
 	args := HandlerOperationArgs{
-		Method:     method,
-		RequestURI: url.RequestURI(),
-		Host:       host,
-		// RemoteAddr: nil,
-		Headers:     headersRemoveCookies(headers),
-		Cookies:     makeCookiesFromHeaders(headers),
+		Method:      method,
+		RequestURI:  url.RequestURI(),
+		Host:        host,
+		RemoteAddr:  remoteAddr,
+		Headers:     headers,
+		Cookies:     cookies,
 		QueryParams: url.Query(),
 		PathParams:  map[string]string{},
 	}
@@ -188,24 +189,17 @@ func MakeHandlerOperationArgs(headers map[string][]string, method string, host s
 	return args
 }
 
-// Remove cookies from the request headers and return the map of headers
-// Used from `server.request.headers.no_cookies` and server.response.headers.no_cookies` addresses for the WAF
-func headersRemoveCookies(headers http.Header) map[string][]string {
-	headersNoCookies := make(http.Header, len(headers))
-	for k, v := range headers {
-		if k == "Cookie" {
-			continue
-		}
-		headersNoCookies[k] = v
-	}
-	return headersNoCookies
-}
-
-func makeCookiesFromHeaders(headers map[string][]string) map[string][]string {
-	cookieHeader, ok := headers["cookie"]
+// Separate the cookies from the headers, return the parsed cookies and remove in place the cookies from the headers.
+// Headers used for `server.request.headers.no_cookies` and `server.response.headers.no_cookies` addresses for the WAF
+// Cookies are used for the `server.request.cookies` address
+func filterCookiesFromHeaders(headers http.Header) map[string][]string {
+	cookieHeader, ok := headers["Cookie"]
 	if !ok {
-		return nil
+		return make(http.Header)
 	}
+
+	delete(headers, "Cookie")
+
 	cookies := make(map[string][]string, len(cookieHeader))
 	for _, c := range cookieHeader {
 		parts := strings.Split(c, ";")
@@ -216,5 +210,6 @@ func makeCookiesFromHeaders(headers map[string][]string) map[string][]string {
 			}
 		}
 	}
+
 	return cookies
 }

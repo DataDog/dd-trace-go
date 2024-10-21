@@ -218,7 +218,7 @@ func TestAppSec(t *testing.T) {
 	})
 }
 
-func TestBlockingOnResponse(t *testing.T) {
+func TestBlockingWithUserRulesFile(t *testing.T) {
 	t.Setenv("DD_APPSEC_RULES", "../../../internal/appsec/testdata/user_rules.json")
 	appsec.Start()
 	defer appsec.Stop()
@@ -267,6 +267,82 @@ func TestBlockingOnResponse(t *testing.T) {
 		// Check for tags
 		span := finished[0]
 		require.Equal(t, 1, span.Tag("_dd.appsec.enabled"))
+		require.Equal(t, true, span.Tag("appsec.event"))
+		require.Equal(t, true, span.Tag("appsec.blocked"))
+	})
+
+	t.Run("blocking-event-on-request-on-query", func(t *testing.T) {
+		client, mt, cleanup := setup()
+		defer cleanup()
+
+		ctx := context.Background()
+		stream, err := client.Process(ctx)
+		require.NoError(t, err)
+
+		err = stream.Send(&extproc.ProcessingRequest{
+			Request: &extproc.ProcessingRequest_RequestHeaders{
+				RequestHeaders: &extproc.HttpHeaders{
+					Headers: makeRequestHeaders(map[string]string{"User-Agent": "Mistake Not..."}, "GET", "/hello?match=match-request-query"),
+				},
+			},
+		})
+		require.NoError(t, err)
+
+		res, err := stream.Recv()
+		require.Equal(t, uint32(0), res.GetImmediateResponse().GetGrpcStatus().Status)
+		require.Equal(t, typev3.StatusCode(418), res.GetImmediateResponse().GetStatus().Code)
+		require.Equal(t, "Content-Type", res.GetImmediateResponse().GetHeaders().SetHeaders[0].GetHeader().Key)
+		require.Equal(t, "application/json", string(res.GetImmediateResponse().GetHeaders().SetHeaders[0].GetHeader().RawValue))
+		require.NoError(t, err)
+
+		err = stream.CloseSend()
+		require.NoError(t, err)
+		stream.Recv() // to flush the spans
+
+		finished := mt.FinishedSpans()
+		require.Len(t, finished, 1)
+		checkForAppsecEvent(t, finished, map[string]int{"query-002": 1})
+
+		// Check for tags
+		span := finished[0]
+		require.Equal(t, true, span.Tag("appsec.event"))
+		require.Equal(t, true, span.Tag("appsec.blocked"))
+	})
+
+	t.Run("blocking-event-on-request-on-cookies", func(t *testing.T) {
+		client, mt, cleanup := setup()
+		defer cleanup()
+
+		ctx := context.Background()
+		stream, err := client.Process(ctx)
+		require.NoError(t, err)
+
+		err = stream.Send(&extproc.ProcessingRequest{
+			Request: &extproc.ProcessingRequest_RequestHeaders{
+				RequestHeaders: &extproc.HttpHeaders{
+					Headers: makeRequestHeaders(map[string]string{"Cookie": "foo=jdfoSDGFkivRG_234"}, "OPTIONS", "/"),
+				},
+			},
+		})
+		require.NoError(t, err)
+
+		res, err := stream.Recv()
+		require.Equal(t, uint32(0), res.GetImmediateResponse().GetGrpcStatus().Status)
+		require.Equal(t, typev3.StatusCode(418), res.GetImmediateResponse().GetStatus().Code)
+		require.Equal(t, "Content-Type", res.GetImmediateResponse().GetHeaders().SetHeaders[0].GetHeader().Key)
+		require.Equal(t, "application/json", string(res.GetImmediateResponse().GetHeaders().SetHeaders[0].GetHeader().RawValue))
+		require.NoError(t, err)
+
+		err = stream.CloseSend()
+		require.NoError(t, err)
+		stream.Recv() // to flush the spans
+
+		finished := mt.FinishedSpans()
+		require.Len(t, finished, 1)
+		checkForAppsecEvent(t, finished, map[string]int{"tst-037-008": 1})
+
+		// Check for tags
+		span := finished[0]
 		require.Equal(t, true, span.Tag("appsec.event"))
 		require.Equal(t, true, span.Tag("appsec.blocked"))
 	})
