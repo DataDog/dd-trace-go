@@ -7,23 +7,35 @@ package httpsec
 
 import (
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/dyngo"
-	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/httpsec/types"
-	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/trace"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/httpsec"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/waf/addresses"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/listener"
-	"github.com/DataDog/dd-trace-go/v2/internal/appsec/listener/sharedsec"
 
-	"github.com/DataDog/appsec-internal-go/limiter"
-	"github.com/DataDog/go-libddwaf/v3"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec/emitter/waf"
 )
 
-// RegisterRoundTripperListener registers a listener on outgoing HTTP client requests to run the WAF.
-func RegisterRoundTripperListener(op dyngo.Operation, events *trace.SecurityEventsHolder, wafCtx *waf.Context, limiter limiter.Limiter) {
-	dyngo.On(op, sharedsec.MakeWAFRunListener(events, wafCtx, limiter, func(args types.RoundTripOperationArgs) waf.RunAddressData {
-		return waf.RunAddressData{Ephemeral: map[string]any{ServerIoNetURLAddr: args.URL}}
-	}))
+type SSRFProtectionFeature struct{}
+
+func (*SSRFProtectionFeature) String() string {
+	return "SSRF Protection"
 }
 
-func SSRFAddressesPresent(addresses listener.AddressSet) bool {
-	_, urlAddr := addresses[ServerIoNetURLAddr]
-	return urlAddr
+func (*SSRFProtectionFeature) Stop() {}
+
+func NewSSRFProtectionFeature(config *config.Config, rootOp dyngo.Operation) (listener.Feature, error) {
+	if !config.RASP || !config.SupportedAddresses.AnyOf(addresses.ServerIoNetURLAddr) {
+		return nil, nil
+	}
+
+	feature := &SSRFProtectionFeature{}
+	dyngo.On(rootOp, feature.OnStart)
+	return feature, nil
+}
+
+func (*SSRFProtectionFeature) OnStart(op *httpsec.RoundTripOperation, args httpsec.RoundTripOperationArgs) {
+	dyngo.EmitData(op, waf.RunEvent{
+		Operation:      op,
+		RunAddressData: addresses.NewAddressesBuilder().WithURL(args.URL).Build(),
+	})
 }

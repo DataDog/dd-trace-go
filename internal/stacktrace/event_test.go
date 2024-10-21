@@ -8,9 +8,7 @@ package stacktrace
 import (
 	"testing"
 
-	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
-	ddtracer "github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
-
+	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/stretchr/testify/require"
 	"github.com/tinylib/msgp/msgp"
 )
@@ -26,40 +24,29 @@ func TestNewEvent(t *testing.T) {
 }
 
 func TestEventToSpan(t *testing.T) {
-	mt := mocktracer.Start()
-	defer mt.Stop()
+	event1 := NewEvent(ExceptionEvent, WithMessage("message1"))
+	event2 := NewEvent(ExploitEvent, WithMessage("message2"))
+	spanValue := GetSpanValue(event1, event2)
 
-	span := ddtracer.StartSpan("op")
-	event := NewEvent(ExceptionEvent, WithMessage("message"))
-	AddToSpan(span, span.Root(), event)
-	span.Finish()
+	eventsMap := spanValue.(internal.MetaStructValue).Value.(map[string][]*Event)
+	require.Len(t, eventsMap, 2)
 
-	spans := mt.FinishedSpans()
-	require.Len(t, spans, 1)
-	require.Equal(t, "op", spans[0].OperationName())
-
-	eventsMap := spans[0].Tag("_dd.stack").(map[string]any)
-	require.Len(t, eventsMap, 1)
-
-	eventsCat := eventsMap[string(ExceptionEvent)].([]*Event)
+	eventsCat := eventsMap[string(ExceptionEvent)]
 	require.Len(t, eventsCat, 1)
 
-	require.Equal(t, *event, *eventsCat[0])
+	require.Equal(t, *event1, *eventsCat[0])
+
+	eventsCat = eventsMap[string(ExploitEvent)]
+	require.Len(t, eventsCat, 1)
+
+	require.Equal(t, *event2, *eventsCat[0])
 }
 
 func TestMsgPackSerialization(t *testing.T) {
-	mt := mocktracer.Start()
-	defer mt.Stop()
-
-	span := ddtracer.StartSpan("op")
 	event := NewEvent(ExceptionEvent, WithMessage("message"), WithType("type"), WithID("id"))
-	AddToSpan(span, span.Root(), event)
-	span.Finish()
+	spanValue := GetSpanValue(event)
 
-	spans := mt.FinishedSpans()
-	require.Len(t, spans, 1)
-
-	eventsMap := spans[0].Tag("_dd.stack").(map[string]any)
+	eventsMap := spanValue.(internal.MetaStructValue).Value
 
 	_, err := msgp.AppendIntf(nil, eventsMap)
 	require.NoError(t, err)

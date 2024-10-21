@@ -25,6 +25,18 @@ func TestGetCITagsCache(t *testing.T) {
 	assert.Equal(t, "newvalue", tags["key"])
 }
 
+func TestGetCIMetricsCache(t *testing.T) {
+	ciMetrics = map[string]float64{"key": float64(1)}
+
+	// First call to initialize ciMetrics
+	tags := GetCIMetrics()
+	assert.Equal(t, float64(1), tags["key"])
+
+	tags["key"] = float64(42)
+	tags = GetCIMetrics()
+	assert.Equal(t, float64(42), tags["key"])
+}
+
 func TestGetRelativePathFromCITagsSourceRoot(t *testing.T) {
 	ciTags = map[string]string{constants.CIWorkspacePath: "/ci/workspace"}
 	absPath := "/ci/workspace/subdir/file.txt"

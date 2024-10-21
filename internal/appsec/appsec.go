@@ -9,8 +9,8 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/DataDog/appsec-internal-go/limiter"
 	appsecLog "github.com/DataDog/appsec-internal-go/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec/listener"
 	waf "github.com/DataDog/go-libddwaf/v3"
 
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/dyngo"
@@ -134,10 +134,10 @@ func setActiveAppSec(a *appsec) {
 }
 
 type appsec struct {
-	cfg       *config.Config
-	limiter   *limiter.TokenTicker
-	wafHandle *waf.Handle
-	started   bool
+	cfg        *config.Config
+	features   []listener.Feature
+	featuresMu sync.Mutex
+	started    bool
 }
 
 func newAppSec(cfg *config.Config) *appsec {
@@ -160,11 +160,8 @@ func (a *appsec) start(telemetry *appsecTelemetry) error {
 		log.Error("appsec: non-critical error while loading libddwaf: %v", err)
 	}
 
-	a.limiter = limiter.NewTokenTicker(a.cfg.TraceRateLimit, a.cfg.TraceRateLimit)
-	a.limiter.Start()
-
-	// Register the WAF operation event listener
-	if err := a.swapWAF(a.cfg.RulesManager.Latest); err != nil {
+	// Register dyngo listeners
+	if err := a.SwapRootOperation(); err != nil {
 		return err
 	}
 
@@ -193,15 +190,23 @@ func (a *appsec) stop() {
 	// Disable RC blocking first so that the following is guaranteed not to be concurrent anymore.
 	a.disableRCBlocking()
 
+	a.featuresMu.Lock()
+	defer a.featuresMu.Unlock()
+
 	// Disable the currently applied instrumentation
 	dyngo.SwapRootOperation(nil)
-	if a.wafHandle != nil {
-		a.wafHandle.Close()
-		a.wafHandle = nil
-	}
+
+	// Reset rules edits received from the remote configuration
+	// We skip the error because we can't do anything about and it was already logged in config.NewRulesManager
+	a.cfg.RulesManager, _ = config.NewRulesManager(nil)
+
 	// TODO: block until no more requests are using dyngo operations
 
-	a.limiter.Stop()
+	for _, feature := range a.features {
+		feature.Stop()
+	}
+
+	a.features = nil
 }
 
 func init() {

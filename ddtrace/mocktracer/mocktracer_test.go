@@ -21,6 +21,8 @@ func TestStart(t *testing.T) {
 	if tt, ok := tracer.GetGlobalTracer().(Tracer); !ok || tt != trc {
 		t.Fail()
 	}
+	// If the tracer isn't stopped it leaks goroutines, and breaks other tests.
+	trc.Stop()
 }
 
 func TestTracerStop(t *testing.T) {
@@ -39,6 +41,7 @@ func TestTracerStartSpan(t *testing.T) {
 
 	t.Run("with-service", func(t *testing.T) {
 		mt := newMockTracer()
+		defer mt.Stop()
 		parent := MockSpan(newSpan("http.request", &tracer.StartSpanConfig{Tags: parentTags}))
 		s := MockSpan(mt.StartSpan(
 			"db.query",
@@ -61,6 +64,7 @@ func TestTracerStartSpan(t *testing.T) {
 
 	t.Run("inherit", func(t *testing.T) {
 		mt := newMockTracer()
+		defer mt.Stop()
 		parent := MockSpan(newSpan("http.request", &tracer.StartSpanConfig{Tags: parentTags}))
 		s := MockSpan(mt.StartSpan("db.query", tracer.ChildOf(parent.Context())))
 
@@ -126,6 +130,7 @@ func TestTracerOpenSpans(t *testing.T) {
 
 func TestTracerSetUser(t *testing.T) {
 	mt := Start()
+	defer mt.Stop() // TODO (hannahkm): confirm this is correct
 	span := mt.StartSpan("http.request")
 	tracer.SetUser(span, "test-user",
 		tracer.WithUserEmail("email"),
@@ -172,6 +177,8 @@ func TestTracerReset(t *testing.T) {
 func TestTracerInject(t *testing.T) {
 	t.Run("errors", func(t *testing.T) {
 		mt := newMockTracer()
+		defer mt.Stop()
+
 		assert := assert.New(t)
 
 		err := mt.Inject(&tracer.SpanContext{}, 2)

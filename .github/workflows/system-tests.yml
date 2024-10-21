@@ -27,6 +27,9 @@ on:
   schedule:
     - cron:  '00 04 * * 2-6'
 
+permissions:
+  contents: read
+
 jobs:
   system-tests:
     if: github.event_name != 'pull_request' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == 'DataDog/dd-trace-go')
@@ -43,6 +46,8 @@ jobs:
           - uds-echo
         scenario:
           - DEFAULT
+          - INTEGRATIONS
+          - CROSSED_TRACING_LIBRARIES
           - APPSEC_DISABLED
           - APPSEC_BLOCKING
           - APPSEC_BLOCKING_FULL_DENYLIST
@@ -103,6 +108,8 @@ jobs:
       DD_API_KEY: ${{ secrets.DD_API_KEY }}
       SYSTEM_TESTS_E2E_DD_API_KEY: ${{ secrets.SYSTEM_TESTS_E2E_DD_API_KEY }}
       SYSTEM_TESTS_E2E_DD_APP_KEY: ${{ secrets.SYSTEM_TESTS_E2E_DD_APP_KEY }}
+      SYSTEM_TESTS_AWS_ACCESS_KEY_ID: ${{ secrets.SYSTEM_TESTS_IDM_AWS_ACCESS_KEY_ID }}
+      SYSTEM_TESTS_AWS_SECRET_ACCESS_KEY: ${{ secrets.SYSTEM_TESTS_IDM_AWS_SECRET_ACCESS_KEY }}
     name: Test (${{ matrix.weblog-variant }}, ${{ matrix.scenario }})
     steps:
       - name: Checkout system tests

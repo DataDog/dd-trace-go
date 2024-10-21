@@ -13,10 +13,13 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/appsec"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
-	privateAppsec "github.com/DataDog/dd-trace-go/v2/internal/appsec"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
+	privatetestutils "github.com/DataDog/dd-trace-go/v2/instrumentation/testutils"
 
 	"github.com/stretchr/testify/require"
 )
+
+var instr *instrumentation.Instrumentation
 
 func TestTrackUserLoginSuccessEvent(t *testing.T) {
 	t.Run("nominal-with-metadata", func(t *testing.T) {
@@ -147,9 +150,8 @@ func TestSetUser(t *testing.T) {
 		require.NoError(t, err)
 	})
 
-	privateAppsec.Start()
-	defer privateAppsec.Stop()
-	if !privateAppsec.Enabled() {
+	privatetestutils.StartAppSec(t)
+	if !instr.AppSecEnabled() {
 		t.Skip("AppSec needs to be enabled for this test")
 	}
 

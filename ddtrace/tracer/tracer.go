@@ -15,6 +15,7 @@ import (
 	rt "runtime/trace"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
@@ -118,6 +119,11 @@ type tracer struct {
 	// wg waits for all goroutines to exit when stopping.
 	wg sync.WaitGroup
 
+	// Keeps track of the total number of traces dropped for accurate logging.
+	totalTracesDropped uint32
+
+	logDroppedTraces *time.Ticker
+
 	// prioritySampling holds an instance of the priority sampler.
 	prioritySampling *prioritySampler
 
@@ -143,6 +149,11 @@ type tracer struct {
 	// abandonedSpansDebugger specifies where and how potentially abandoned spans are stored
 	// when abandoned spans debugging is enabled.
 	abandonedSpansDebugger *abandonedSpansDebugger
+
+	// logFile contains a pointer to the file for writing tracer logs along with helper functionality for closing the file
+	// logFile is closed when tracer stops
+	// by default, tracer logs to stderr and this setting is unused
+	logFile *log.ManagedFile
 }
 
 const (
@@ -305,6 +316,14 @@ func newUnstartedTracer(opts ...StartOption) (*tracer, error) {
 	if c.dataStreamsMonitoringEnabled {
 		dataStreamsProcessor = datastreams.NewProcessor(statsd, c.env, c.serviceName, c.version, c.agentURL, c.httpClient)
 	}
+	var logFile *log.ManagedFile
+	if v := c.logDirectory; v != "" {
+		logFile, err = log.OpenFileAtPath(v)
+		if err != nil {
+			log.Warn("%v", err)
+			c.logDirectory = ""
+		}
+	}
 	t := &tracer{
 		config:           c,
 		traceWriter:      writer,
@@ -314,6 +333,7 @@ func newUnstartedTracer(opts ...StartOption) (*tracer, error) {
 		rulesSampling:    rulesSampler,
 		prioritySampling: sampler,
 		pid:              os.Getpid(),
+		logDroppedTraces: time.NewTicker(1 * time.Second),
 		stats:            newConcentrator(c, defaultStatsBucketSize),
 		obfuscator: obfuscate.NewObfuscator(obfuscate.Config{
 			SQL: obfuscate.SQLConfig{
@@ -326,6 +346,7 @@ func newUnstartedTracer(opts ...StartOption) (*tracer, error) {
 		}),
 		statsd:      statsd,
 		dataStreams: dataStreamsProcessor,
+		logFile:     logFile,
 	}
 	return t, nil
 }
@@ -496,7 +517,15 @@ func (t *tracer) pushChunk(trace *Chunk) {
 	select {
 	case t.out <- trace:
 	default:
-		log.Error("payload queue full, dropping %d traces", len(trace.spans))
+		log.Debug("payload queue full, trace dropped %d spans", len(trace.spans))
+		atomic.AddUint32(&t.totalTracesDropped, 1)
+	}
+	select {
+	case <-t.logDroppedTraces.C:
+		if t := atomic.SwapUint32(&t.totalTracesDropped, 0); t > 0 {
+			log.Error("%d traces dropped through payload queue", t)
+		}
+	default:
 	}
 }
 
@@ -720,6 +749,10 @@ func (t *tracer) Stop() {
 	}
 	appsec.Stop()
 	remoteconfig.Stop()
+	// Close log file last to account for any logs from the above calls
+	if t.logFile != nil {
+		t.logFile.Close()
+	}
 }
 
 // Inject uses the configured or default TextMap Propagator.

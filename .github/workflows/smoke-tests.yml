@@ -27,6 +27,9 @@ on:
 env:
   TEST_RESULTS: /tmp/test-results # path to where test results will be saved
 
+permissions:
+  contents: read
+
 jobs:
   go-get-u:
     #  Run go get -u to upgrade dd-trace-go dependencies to their
@@ -90,7 +93,7 @@ jobs:
           ref: ${{ inputs.ref || github.ref }}
       - uses: actions/setup-go@v3
         with:
-          go-version: "1.21"
+          go-version: "1.22"
           cache: true
       - name: go mod tidy
         run: |-
@@ -185,7 +188,7 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: .
-          file: ./internal/apps/setup-smoke-test/Dockerfile
+          file: ./internal/setup-smoke-test/Dockerfile
           push: false
           load: true
           tags: smoke-test

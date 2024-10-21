@@ -26,7 +26,6 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/graphqlsec"
-	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/graphqlsec/types"
 )
 
 const componentName = instrumentation.Package99DesignsGQLGen
@@ -76,12 +75,12 @@ func (t *gqlTracer) Validate(_ graphql.ExecutableSchema) error {
 func (t *gqlTracer) InterceptOperation(ctx context.Context, next graphql.OperationHandler) graphql.ResponseHandler {
 	opCtx := graphql.GetOperationContext(ctx)
 	span, ctx := t.createRootSpan(ctx, opCtx)
-	ctx, req := graphqlsec.StartRequestOperation(ctx, span, types.RequestOperationArgs{
+	ctx, req := graphqlsec.StartRequestOperation(ctx, graphqlsec.RequestOperationArgs{
 		RawQuery:      opCtx.RawQuery,
 		OperationName: opCtx.OperationName,
 		Variables:     opCtx.Variables,
 	})
-	ctx, query := graphqlsec.StartExecutionOperation(ctx, span, types.ExecutionOperationArgs{
+	ctx, query := graphqlsec.StartExecutionOperation(ctx, graphqlsec.ExecutionOperationArgs{
 		Query:         opCtx.RawQuery,
 		OperationName: opCtx.OperationName,
 		Variables:     opCtx.Variables,
@@ -96,14 +95,21 @@ func (t *gqlTracer) InterceptOperation(ctx context.Context, next graphql.Operati
 			}
 			defer span.Finish(tracer.WithError(err))
 		}
-		query.Finish(types.ExecutionOperationRes{
-			Data:  response.Data, // NB - This is raw data, but rather not parse it (possibly expensive).
-			Error: response.Errors,
-		})
-		req.Finish(types.RequestOperationRes{
-			Data:  response.Data, // NB - This is raw data, but rather not parse it (possibly expensive).
-			Error: response.Errors,
-		})
+
+		var (
+			executionOperationRes graphqlsec.ExecutionOperationRes
+			requestOperationRes   graphqlsec.RequestOperationRes
+		)
+		if response != nil {
+			executionOperationRes.Data = response.Data
+			executionOperationRes.Error = response.Errors
+
+			requestOperationRes.Data = response.Data
+			requestOperationRes.Error = response.Errors
+		}
+
+		query.Finish(executionOperationRes)
+		req.Finish(span, requestOperationRes)
 		return response
 	}
 }
@@ -139,13 +145,13 @@ func (t *gqlTracer) InterceptField(ctx context.Context, next graphql.Resolver) (
 
 	span, ctx := tracer.StartSpanFromContext(ctx, fieldOp, opts...)
 	defer func() { span.Finish(tracer.WithError(err)) }()
-	ctx, op := graphqlsec.StartResolveOperation(ctx, span, types.ResolveOperationArgs{
+	ctx, op := graphqlsec.StartResolveOperation(ctx, graphqlsec.ResolveOperationArgs{
 		Arguments: fieldCtx.Args,
 		TypeName:  fieldCtx.Object,
 		FieldName: fieldCtx.Field.Name,
 		Trivial:   isTrivial,
 	})
-	defer func() { op.Finish(types.ResolveOperationRes{Data: res, Error: err}) }()
+	defer func() { op.Finish(graphqlsec.ResolveOperationRes{Data: res, Error: err}) }()
 
 	res, err = next(ctx)
 	return

@@ -5,46 +5,18 @@
 
 package pubsub
 
-import "github.com/DataDog/dd-trace-go/v2/instrumentation"
+import (
+	"github.com/DataDog/dd-trace-go/contrib/cloud.google.com/go/pubsub.v1/v2/internal/tracing"
+)
 
-type config struct {
-	serviceName     string
-	publishSpanName string
-	receiveSpanName string
-	measured        bool
-}
+// Option is used to customize spans started by WrapReceiveHandler or Publish.
+type Option = tracing.Option
 
-func defaultConfig() *config {
-	return &config{
-		serviceName:     instr.ServiceName(instrumentation.ComponentConsumer, nil),
-		publishSpanName: instr.OperationName(instrumentation.ComponentProducer, nil),
-		receiveSpanName: instr.OperationName(instrumentation.ComponentConsumer, nil),
-		measured:        false,
-	}
-}
-
-// Option describes options for the Pub/Sub integration.
-type Option interface {
-	apply(*config)
-}
-
-// OptionFn represents options applicable to WrapReceiveHandler or Publish.
-type OptionFn func(*config)
-
-func (fn OptionFn) apply(cfg *config) {
-	fn(cfg)
-}
+// Deprecated: ReceiveOption has been deprecated in favor of Option.
+type ReceiveOption = Option
 
 // WithService sets the service name tag for traces started by WrapReceiveHandler or Publish.
-func WithService(serviceName string) OptionFn {
-	return func(cfg *config) {
-		cfg.serviceName = serviceName
-	}
-}
+var WithService = tracing.WithServiceName
 
 // WithMeasured sets the measured tag for traces started by WrapReceiveHandler or Publish.
-func WithMeasured() OptionFn {
-	return func(cfg *config) {
-		cfg.measured = true
-	}
-}
+var WithMeasured = tracing.WithMeasured
