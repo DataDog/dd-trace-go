@@ -9,7 +9,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/DataDog/dd-trace-go/v2/contrib/internal/options"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/httptrace"
 )
@@ -48,7 +48,8 @@ func BeforeHandle[T any, WT Router](
 	}
 
 	resource := req.Method + " " + route
-	spanOpts := options.Copy(cfg.spanOpts...) // spanOpts must be a copy of r.config.spanOpts, locally scoped, to avoid races.
+	spanOpts := make([]tracer.StartSpanOption, len(cfg.spanOpts))
+	copy(spanOpts, cfg.spanOpts) // spanOpts must be a copy of r.config.spanOpts, locally scoped, to avoid races.
 	spanOpts = append(spanOpts, httptrace.HeaderTagsFromRequest(req, cfg.headerTags))
 
 	serveCfg := &httptrace.ServeConfig{
