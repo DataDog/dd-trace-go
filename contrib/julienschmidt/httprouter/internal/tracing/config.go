@@ -48,8 +48,8 @@ func NewConfig(opts ...Option) *Config {
 
 type Option func(*Config)
 
-// WithServiceName sets the given service name for the returned router.
-func WithServiceName(name string) Option {
+// WithService sets the given service name for the returned router.
+func WithService(name string) Option {
 	return func(cfg *Config) {
 		cfg.serviceName = name
 	}

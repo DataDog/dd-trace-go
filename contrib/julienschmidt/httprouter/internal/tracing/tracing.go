@@ -9,9 +9,9 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/DataDog/dd-trace-go/v2/contrib/internal/httptrace"
 	"github.com/DataDog/dd-trace-go/v2/contrib/internal/options"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/httptrace"
 )
 
 var instr *instrumentation.Instrumentation
