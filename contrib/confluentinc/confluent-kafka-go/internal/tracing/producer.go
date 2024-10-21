@@ -75,24 +75,29 @@ func (tr *KafkaTracer) StartProduceSpan(msg Message) ddtrace.Span {
 	return span
 }
 
-func WrapDeliveryChannel[E any, TE Event](tr *KafkaTracer, deliveryChan chan E, span ddtrace.Span, translateFn func(E) TE) chan E {
+func WrapDeliveryChannel[E any, TE Event](tr *KafkaTracer, deliveryChan chan E, span ddtrace.Span, translateFn func(E) TE) (chan E, chan error) {
 	// if the user has selected a delivery channel, we will wrap it and
 	// wait for the delivery event to finish the span
 	if deliveryChan == nil {
-		return nil
+		return nil, nil
 	}
 	wrapped := make(chan E)
+	errChan := make(chan error, 1)
 	go func() {
 		var err error
-		evt := <-wrapped
-		tEvt := translateFn(evt)
-		if msg, ok := tEvt.KafkaMessage(); ok {
-			// delivery errors are returned via TopicPartition.Error
-			err = msg.GetTopicPartition().GetError()
-			tr.TrackProduceOffsets(msg)
+		select {
+		case evt := <-wrapped:
+			tEvt := translateFn(evt)
+			if msg, ok := tEvt.KafkaMessage(); ok {
+				// delivery errors are returned via TopicPartition.Error
+				err = msg.GetTopicPartition().GetError()
+				tr.TrackProduceOffsets(msg)
+			}
+			deliveryChan <- evt
+		case e := <-errChan:
+			err = e
 		}
 		span.Finish(tracer.WithError(err))
-		deliveryChan <- evt
 	}()
-	return wrapped
+	return wrapped, errChan
 }

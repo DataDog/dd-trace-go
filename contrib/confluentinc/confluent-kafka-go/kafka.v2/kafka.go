@@ -193,14 +193,20 @@ func (p *Producer) Close() {
 func (p *Producer) Produce(msg *kafka.Message, deliveryChan chan kafka.Event) error {
 	tMsg := wrapMessage(msg)
 	span := p.tracer.StartProduceSpan(tMsg)
-	deliveryChan = tracing.WrapDeliveryChannel(p.tracer, deliveryChan, span, wrapEvent)
+
+	var errChan chan error
+	deliveryChan, errChan = tracing.WrapDeliveryChannel(p.tracer, deliveryChan, span, wrapEvent)
+
 	p.tracer.SetProduceCheckpoint(tMsg)
 
 	err := p.Producer.Produce(msg, deliveryChan)
-
-	// with no delivery channel or enqueue error, finish immediately
-	if err != nil || deliveryChan == nil {
-		span.Finish(tracer.WithError(err))
+	if err != nil {
+		if errChan != nil {
+			errChan <- err
+		} else {
+			// with no delivery channel or enqueue error, finish immediately
+			span.Finish(tracer.WithError(err))
+		}
 	}
 	return err
 }
