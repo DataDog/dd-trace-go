@@ -115,7 +115,7 @@ func makeCookies(parsed []*http.Cookie) map[string][]string {
 // context since it uses a queue of handlers and it's the only way to make
 // sure other queued handlers don't get executed.
 // TODO: this patch must be removed/improved when we rework our actions/operations system
-func WrapHandler(handler http.Handler, span *trace.TagSetter, pathParams map[string]string, opts *Config) http.Handler {
+func WrapHandler(handler http.Handler, span trace.TagSetter, pathParams map[string]string, opts *Config) http.Handler {
 	if opts == nil {
 		opts = defaultWrapHandlerConfig
 	} else if opts.ResponseHeaderCopier == nil {
@@ -143,7 +143,7 @@ func WrapHandler(handler http.Handler, span *trace.TagSetter, pathParams map[str
 			op.Finish(HandlerOperationRes{
 				Headers:    opts.ResponseHeaderCopier(w),
 				StatusCode: statusCode,
-			}, span)
+			}, &span)
 
 			// Execute the onBlock functions to make sure blocking works properly
 			// in case we are instrumenting the Gin framework

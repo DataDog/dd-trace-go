@@ -14,7 +14,7 @@ import (
 	"github.com/go-chi/chi/v5"
 )
 
-func withAppsec(next http.Handler, r *http.Request, span *trace.TagSetter, cfg *httpsec.Config) http.Handler {
+func withAppsec(next http.Handler, r *http.Request, span trace.TagSetter, cfg *httpsec.Config) http.Handler {
 	rctx := chi.RouteContext(r.Context())
 	if rctx == nil {
 		return httpsec.WrapHandler(next, span, nil, cfg)

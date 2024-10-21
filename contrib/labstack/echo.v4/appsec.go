@@ -15,7 +15,7 @@ import (
 	"github.com/labstack/echo/v4"
 )
 
-func withAppSec(next echo.HandlerFunc, span *trace.TagSetter) echo.HandlerFunc {
+func withAppSec(next echo.HandlerFunc, span trace.TagSetter) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		params := make(map[string]string)
 		for _, n := range c.ParamNames() {
