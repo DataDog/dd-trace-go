@@ -8,6 +8,7 @@ package net
 import (
 	"context"
 	"fmt"
+	"io"
 	"math"
 	"math/rand/v2"
 	"net"
@@ -38,6 +39,7 @@ type (
 		GetEarlyFlakeDetectionData() (*EfdResponseData, error)
 		GetCommits(localCommits []string) ([]string, error)
 		SendPackFiles(commitSha string, packFiles []string) (bytes int64, err error)
+		SendCoveragePayload(ciTestCovPayload io.Reader) error
 	}
 
 	// client is a client for sending requests to the Datadog backend.
