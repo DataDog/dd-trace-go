@@ -7,14 +7,15 @@ package coverage
 
 import (
 	"bufio"
-	"bytes"
 	"fmt"
 	"os"
+	"os/exec"
 	"strconv"
 	"strings"
 	"testing"
 
-	"github.com/tinylib/msgp/msgp"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/integrations"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/utils"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
@@ -50,13 +51,37 @@ var (
 	mode     string
 	tearDown func(coverprofile string, gocoverdir string) (string, error)
 
-	tempFile *os.File
+	tempFile   *os.File
+	covWriter  *coverageWriter
+	modulePath string
+	moduleDir  string
 )
 
 func InitializeCoverage(m *testing.M) {
 	if testDep, err := getTestDepsCoverage(m); err == nil {
+		// initializing runtime coverage
 		mode, tearDown, _ = testDep.InitRuntimeCoverage()
+
+		// creating a temp file to store coverage messages that we don't want to print to stdout
 		tempFile, _ = os.CreateTemp("", "coverage")
+
+		// initializing coverage writer
+		covWriter = newCoverageWriter()
+		integrations.PushCiVisibilityCloseAction(func() {
+			covWriter.stop()
+		})
+
+		// executing go list -f '{{.Module.Path}};{{.Module.Dir}}' to get the module path and module dir
+		stdOut, err := exec.Command("go", "list", "-f", "{{.Module.Path}};{{.Module.Dir}}").CombinedOutput()
+		if err != nil {
+			log.Debug("Error getting module path and module dir: %v", err)
+		} else {
+			parts := strings.Split(string(stdOut), ";")
+			if len(parts) == 2 {
+				modulePath = strings.TrimSpace(parts[0])
+				moduleDir = strings.TrimSpace(parts[1])
+			}
+		}
 	} else {
 		log.Debug("Error initializing runtime coverage: %v", err)
 	}
@@ -73,6 +98,7 @@ func setStdOutToTemp() (restore func()) {
 }
 
 func NewTestCoverage(sessionID, moduleID, suiteID, testID uint64, testFile string) *testCoverage {
+	testFile = utils.GetRelativePathFromCITagsSourceRoot(testFile)
 	return &testCoverage{
 		sessionID: sessionID,
 		moduleID:  moduleID,
@@ -131,6 +157,7 @@ func (t *testCoverage) processCoverageData() {
 	}
 
 	t.filesCovered = getFilesCovered(t.testFile, preCoverage, postCoverage)
+	covWriter.add(t)
 
 	err = os.Remove(t.preCoverageFilename)
 	if err != nil {
@@ -141,12 +168,6 @@ func (t *testCoverage) processCoverageData() {
 	if err != nil {
 		log.Debug("Error removing post-coverage file: %v", err)
 	}
-
-	covData := newCiTestCoverageData(t)
-	var buf bytes.Buffer
-	msgp.Encode(&buf, covData)
-	msgp.CopyToJSON(os.Stdout, bytes.NewReader(buf.Bytes()))
-	fmt.Println()
 }
 
 // parseCoverProfile parses the coverage profile data and returns the coverage data for each file
@@ -243,12 +264,12 @@ func getFilesCovered(testFile string, before, after map[string][]coverageBlock) 
 					// Subtract hit counts
 					diffCount := afterBlock.count - beforeBlock.count
 					if diffCount > 0 {
-						result = append(result, fileName)
+						result = append(result, getRelativePathFromCITagsSourceRootForCoverage(fileName))
 						break
 					}
 				} else if afterBlock.count > 0 {
 					// If there's no matching block in before, add the whole block from after
-					result = append(result, fileName)
+					result = append(result, getRelativePathFromCITagsSourceRootForCoverage(fileName))
 					break
 				}
 			}
@@ -256,7 +277,7 @@ func getFilesCovered(testFile string, before, after map[string][]coverageBlock) 
 			// If there's no before profile for this file, add the entire after profile
 			for _, afterBlock := range afterBlocks {
 				if afterBlock.count > 0 {
-					result = append(result, fileName)
+					result = append(result, getRelativePathFromCITagsSourceRootForCoverage(fileName))
 					break
 				}
 			}
@@ -264,4 +285,8 @@ func getFilesCovered(testFile string, before, after map[string][]coverageBlock) 
 	}
 
 	return result
+}
+
+func getRelativePathFromCITagsSourceRootForCoverage(filePath string) string {
+	return utils.GetRelativePathFromCITagsSourceRoot(strings.ReplaceAll(filePath, modulePath, moduleDir))
 }

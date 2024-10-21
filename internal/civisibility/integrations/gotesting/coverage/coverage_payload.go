@@ -12,6 +12,7 @@ import (
 	"sync/atomic"
 
 	"github.com/tinylib/msgp/msgp"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
 // coveragePayload is a slim copy of the payload struct from the tracer package.
@@ -126,4 +127,35 @@ func (p *coveragePayload) Read(b []byte) (n int, err error) {
 		p.reader = bytes.NewReader(p.buf.Bytes())
 	}
 	return p.reader.Read(b)
+}
+
+// getBuffer retrieves the complete body of the CI Visibility coverage payload, including the header.
+// It reads the current payload buffer, adds the header, and encodes the entire payload in MessagePack format.
+//
+// Returns:
+//
+//	A pointer to a bytes.Buffer containing the encoded CI Visibility coverage payload.
+//	An error if reading from the buffer or encoding the payload fails.
+func (p *coveragePayload) getBuffer() (*bytes.Buffer, error) {
+	log.Debug("coveragePayload: .getBuffer (count: %v)", p.itemCount())
+
+	// Create a buffer to read the current payload
+	payloadBuf := new(bytes.Buffer)
+	if _, err := payloadBuf.ReadFrom(p); err != nil {
+		return nil, err
+	}
+
+	// Create the final coverage payload
+	finalPayload := &ciTestCovPayload{
+		Version:   2,
+		Coverages: payloadBuf.Bytes(),
+	}
+
+	// Create a new buffer to encode the coverage payload in MessagePack format
+	encodedBuf := new(bytes.Buffer)
+	if err := msgp.Encode(encodedBuf, finalPayload); err != nil {
+		return nil, err
+	}
+
+	return encodedBuf, nil
 }
