@@ -7,12 +7,14 @@ package coverage
 
 import (
 	"bufio"
+	"bytes"
 	"fmt"
 	"os"
 	"strconv"
 	"strings"
 	"testing"
 
+	"github.com/tinylib/msgp/msgp"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
@@ -23,6 +25,7 @@ type (
 		moduleID             uint64
 		suiteID              uint64
 		testID               uint64
+		testFile             string
 		preCoverageFilename  string
 		postCoverageFilename string
 		filesCovered         []string
@@ -69,12 +72,13 @@ func setStdOutToTemp() (restore func()) {
 	return func() { os.Stdout = stdout }
 }
 
-func NewTestCoverage(sessionID, moduleID, suiteID, testID uint64) *testCoverage {
+func NewTestCoverage(sessionID, moduleID, suiteID, testID uint64, testFile string) *testCoverage {
 	return &testCoverage{
 		sessionID: sessionID,
 		moduleID:  moduleID,
 		suiteID:   suiteID,
 		testID:    testID,
+		testFile:  testFile,
 	}
 }
 
@@ -105,7 +109,7 @@ func (t *testCoverage) CollectCoverageAfterTestExecution() {
 		log.Debug("Error getting coverage file: %v", err)
 	}
 
-	go t.processCoverageData()
+	t.processCoverageData()
 }
 
 func (t *testCoverage) processCoverageData() {
@@ -126,7 +130,7 @@ func (t *testCoverage) processCoverageData() {
 		return
 	}
 
-	t.filesCovered = getFilesCovered(preCoverage, postCoverage)
+	t.filesCovered = getFilesCovered(t.testFile, preCoverage, postCoverage)
 
 	err = os.Remove(t.preCoverageFilename)
 	if err != nil {
@@ -138,7 +142,11 @@ func (t *testCoverage) processCoverageData() {
 		log.Debug("Error removing post-coverage file: %v", err)
 	}
 
-	fmt.Println(*newCiTestCoverageData(t))
+	covData := newCiTestCoverageData(t)
+	var buf bytes.Buffer
+	msgp.Encode(&buf, covData)
+	msgp.CopyToJSON(os.Stdout, bytes.NewReader(buf.Bytes()))
+	fmt.Println()
 }
 
 // parseCoverProfile parses the coverage profile data and returns the coverage data for each file
@@ -216,8 +224,8 @@ func parseCoverProfile(filename string) (map[string][]coverageBlock, error) {
 }
 
 // getFilesCovered subtracts the before profile from the after profile and returns the files covered
-func getFilesCovered(before, after map[string][]coverageBlock) []string {
-	var result []string
+func getFilesCovered(testFile string, before, after map[string][]coverageBlock) []string {
+	result := []string{testFile}
 
 	for fileName, afterBlocks := range after {
 		if beforeBlocks, found := before[fileName]; found {

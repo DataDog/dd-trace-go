@@ -3,65 +3,127 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2024 Datadog, Inc.
 
-//go:generate msgp -unexported -marshal=false -o=test_coverage_msgp.go -tests=false
-
 package coverage
 
-import "github.com/tinylib/msgp/msgp"
+import (
+	"bytes"
+	"encoding/binary"
+	"io"
+	"sync/atomic"
 
-type (
-	// ciTestCoveragePayloads represents a list of test code coverage payloads.
-	ciTestCoveragePayloads []*ciTestCovPayload
-
-	// ciTestCoverages represents a list of test code coverage data.
-	ciTestCoverages []*ciTestCoverageData
-
-	// ciTestCovPayload represents a test code coverage payload specifically designed for CI Visibility events.
-	ciTestCovPayload struct {
-		Version   int32    `msg:"version"`   // Version of the payload
-		Coverages msgp.Raw `msg:"coverages"` // list of coverages
-	}
-
-	// ciTestCoverageData represents the coverage data for a single test.
-	ciTestCoverageData struct {
-		SessionID uint64                `msg:"test_session_id"` // identifier of this session
-		ModuleID  uint64                `msg:"test_module_id"`  // identifier of this module
-		SpanID    uint64                `msg:"span_id"`         // identifier of this span
-		Files     []*ciTestCoverageFile `msg:"files"`           // list of files covered
-	}
-
-	// ciTestCoverageFile represents the coverage data for a single file.
-	ciTestCoverageFile struct {
-		FileName string `msg:"filename"` // name of the file
-	}
+	"github.com/tinylib/msgp/msgp"
 )
 
-var (
-	_ msgp.Encodable = (*ciTestCoverageData)(nil)
-	_ msgp.Decodable = (*ciTestCoverageData)(nil)
+// coveragePayload is a slim copy of the payload struct from the tracer package.
+type coveragePayload struct {
+	// header specifies the first few bytes in the msgpack stream
+	// indicating the type of array (fixarray, array16 or array32)
+	// and the number of items contained in the stream.
+	header []byte
 
-	_ msgp.Encodable = (*ciTestCoverages)(nil)
-	_ msgp.Decodable = (*ciTestCoverages)(nil)
+	// off specifies the current read position on the header.
+	off int
 
-	_ msgp.Encodable = (*ciTestCovPayload)(nil)
-	_ msgp.Decodable = (*ciTestCoveragePayloads)(nil)
-)
+	// count specifies the number of items in the stream.
+	count uint32
 
-// newCiTestCovPayload creates a new instance of ciTestCovPayload.
-func newCiTestCoverageData(tCove *testCoverage) *ciTestCoverageData {
-	return &ciTestCoverageData{
-		SessionID: tCove.sessionID,
-		ModuleID:  tCove.moduleID,
-		SpanID:    tCove.testID,
-		Files:     newCiTestCoverageFiles(tCove.filesCovered),
+	// buf holds the sequence of msgpack-encoded items.
+	buf bytes.Buffer
+
+	// reader is used for reading the contents of buf.
+	reader *bytes.Reader
+}
+
+var _ io.Reader = (*coveragePayload)(nil)
+
+// newCoveragePayload returns a ready to use coverage payload.
+func newCoveragePayload() *coveragePayload {
+	p := &coveragePayload{
+		header: make([]byte, 8),
+		off:    8,
+	}
+	return p
+}
+
+// push pushes a new item into the stream.
+func (p *coveragePayload) push(testCoverageData *ciTestCoverageData) error {
+	p.buf.Grow(testCoverageData.Msgsize())
+	if err := msgp.Encode(&p.buf, testCoverageData); err != nil {
+		return err
+	}
+	atomic.AddUint32(&p.count, 1)
+	p.updateHeader()
+	return nil
+}
+
+// itemCount returns the number of items available in the srteam.
+func (p *coveragePayload) itemCount() int {
+	return int(atomic.LoadUint32(&p.count))
+}
+
+// size returns the payload size in bytes. After the first read the value becomes
+// inaccurate by up to 8 bytes.
+func (p *coveragePayload) size() int {
+	return p.buf.Len() + len(p.header) - p.off
+}
+
+// reset sets up the payload to be read a second time. It maintains the
+// underlying byte contents of the buffer. reset should not be used in order to
+// reuse the payload for another set of traces.
+func (p *coveragePayload) reset() {
+	p.updateHeader()
+	if p.reader != nil {
+		p.reader.Seek(0, 0)
 	}
 }
 
-// newCiTestCoverageFiles creates a new instance of ciTestCoverageFile array.
-func newCiTestCoverageFiles(files []string) []*ciTestCoverageFile {
-	ciFiles := make([]*ciTestCoverageFile, 0, len(files))
-	for _, file := range files {
-		ciFiles = append(ciFiles, &ciTestCoverageFile{FileName: file})
+// clear empties the payload buffers.
+func (p *coveragePayload) clear() {
+	p.buf = bytes.Buffer{}
+	p.reader = nil
+}
+
+// https://github.com/msgpack/msgpack/blob/master/spec.md#array-format-family
+const (
+	msgpackArrayFix byte = 144  // up to 15 items
+	msgpackArray16       = 0xdc // up to 2^16-1 items, followed by size in 2 bytes
+	msgpackArray32       = 0xdd // up to 2^32-1 items, followed by size in 4 bytes
+)
+
+// updateHeader updates the payload header based on the number of items currently
+// present in the stream.
+func (p *coveragePayload) updateHeader() {
+	n := uint64(atomic.LoadUint32(&p.count))
+	switch {
+	case n <= 15:
+		p.header[7] = msgpackArrayFix + byte(n)
+		p.off = 7
+	case n <= 1<<16-1:
+		binary.BigEndian.PutUint64(p.header, n) // writes 2 bytes
+		p.header[5] = msgpackArray16
+		p.off = 5
+	default: // n <= 1<<32-1
+		binary.BigEndian.PutUint64(p.header, n) // writes 4 bytes
+		p.header[3] = msgpackArray32
+		p.off = 3
 	}
-	return ciFiles
+}
+
+// Close implements io.Closer
+func (p *coveragePayload) Close() error {
+	return nil
+}
+
+// Read implements io.Reader. It reads from the msgpack-encoded stream.
+func (p *coveragePayload) Read(b []byte) (n int, err error) {
+	if p.off < len(p.header) {
+		// reading header
+		n = copy(b, p.header[p.off:])
+		p.off += n
+		return n, nil
+	}
+	if p.reader == nil {
+		p.reader = bytes.NewReader(p.buf.Bytes())
+	}
+	return p.reader.Read(b)
 }
