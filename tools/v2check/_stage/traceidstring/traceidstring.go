@@ -16,5 +16,5 @@ func main() {
 	defer tracer.Stop()
 
 	sp := tracer.StartSpan("opname")
-	fmt.Printf("traceID: %d\n", sp.Context().TraceID()) // want `trace IDs are now represented as strings, please use TraceIDLower`
+	fmt.Printf("traceID: %d\n", sp.Context().TraceID()) // want `trace IDs are now represented as strings, please use TraceIDLower to keep using 64-bits IDs, although it's recommended to switch to 128-bits with TraceID`
 }

@@ -290,5 +290,5 @@ func (c TraceIDString) Probes() []Probe {
 }
 
 func (c TraceIDString) String() string {
-	return "trace IDs are now represented as strings, please use TraceIDLower"
+	return "trace IDs are now represented as strings, please use TraceIDLower to keep using 64-bits IDs, although it's recommended to switch to 128-bits with TraceID"
 }
