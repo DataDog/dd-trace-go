@@ -27,6 +27,8 @@ jobs:
         runs-on: ubuntu-latest
         steps:
             - uses: actions/checkout@v4
-            - name: go mod tidy
-              run: go mod tidy
+            - name: get updated go.mod go.sum
+              run: |
+                go get -u ./...
+                go mod tidy
             - run: git diff
