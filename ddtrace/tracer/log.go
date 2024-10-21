@@ -138,18 +138,11 @@ func logStartup(t *tracer) {
 		PartialFlushMinSpans:        t.config.partialFlushMinSpans,
 		Orchestrion:                 t.config.orchestrionCfg,
 		FeatureFlags:                featureFlags,
-<<<<<<< HEAD
 	}
-	// v1 shim sets a wrapped propagator, thus yielding a nil value here when
-	// is casted to a chainedPropagator value.
-	if cp != nil {
-		info.PropagationStyleInject = cp.injectorNames
-		info.PropagationStyleExtract = cp.extractorsNames
-=======
-		PropagationStyleInject:      injectorNames,
-		PropagationStyleExtract:     extractorNames,
->>>>>>> origin
-	}
+
+	info.PropagationStyleInject = injectorNames
+	info.PropagationStyleExtract = extractorNames
+
 	if _, _, err := samplingRulesFromEnv(); err != nil {
 		info.SamplingRulesError = fmt.Sprintf("%s", err)
 	}

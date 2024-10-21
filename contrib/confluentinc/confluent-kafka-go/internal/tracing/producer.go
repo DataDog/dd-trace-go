@@ -8,9 +8,8 @@ package tracing
 import (
 	"math"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 )
 
 func WrapProduceChannel[M any, TM Message](tr *KafkaTracer, out chan M, translateFn func(M) TM) chan M {
@@ -48,7 +47,7 @@ func WrapProduceEventsChannel[E any, TE Event](tr *KafkaTracer, in chan E, trans
 	return out
 }
 
-func (tr *KafkaTracer) StartProduceSpan(msg Message) ddtrace.Span {
+func (tr *KafkaTracer) StartProduceSpan(msg Message) *tracer.Span {
 	opts := []tracer.StartSpanOption{
 		tracer.ServiceName(tr.producerServiceName),
 		tracer.ResourceName("Produce Topic " + msg.GetTopicPartition().GetTopic()),
@@ -75,7 +74,7 @@ func (tr *KafkaTracer) StartProduceSpan(msg Message) ddtrace.Span {
 	return span
 }
 
-func WrapDeliveryChannel[E any, TE Event](tr *KafkaTracer, deliveryChan chan E, span ddtrace.Span, translateFn func(E) TE) (chan E, chan error) {
+func WrapDeliveryChannel[E any, TE Event](tr *KafkaTracer, deliveryChan chan E, span *tracer.Span, translateFn func(E) TE) (chan E, chan error) {
 	// if the user has selected a delivery channel, we will wrap it and
 	// wait for the delivery event to finish the span
 	if deliveryChan == nil {

@@ -10,7 +10,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/fs"
 	"math"
 	"net"
 	"net/http"
@@ -342,76 +341,28 @@ type contribPkg struct {
 }
 
 func TestIntegrationEnabled(t *testing.T) {
-<<<<<<< HEAD
-	root, err := filepath.Abs("../../contrib")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err = os.Stat(root); err != nil {
-		t.Fatal(err)
-	}
-	err = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
-		if filepath.Base(path) != "go.mod" {
-			return nil
-		}
-		rErr := testIntegrationEnabled(t, filepath.Dir(path))
-		if rErr != nil {
-			return fmt.Errorf("path: %s, err: %w", path, rErr)
-		}
-		return nil
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-}
-
-func testIntegrationEnabled(t *testing.T, contribPath string) error {
-	t.Helper()
-	t.Log(contribPath)
-	pwd, err := os.Getwd()
-	if err != nil {
-		return err
-	}
-	defer func() {
-		_ = os.Chdir(pwd)
-	}()
-	if err = os.Chdir(contribPath); err != nil {
-		return err
-	}
-	body, err := exec.Command("go", "list", "-json", "./...").Output()
-	if err != nil {
-		return fmt.Errorf("unable to get package info: %w", err)
-	}
-=======
 	body, err := exec.Command("go", "list", "-json", "../../contrib/...").Output()
 	require.NoError(t, err, "go list command failed")
->>>>>>> origin
 	var packages []contribPkg
 	stream := json.NewDecoder(strings.NewReader(string(body)))
 	for stream.More() {
 		var out contribPkg
 		err := stream.Decode(&out)
-		if err != nil {
-			return err
-		}
+		assert.NoError(t, err)
 		packages = append(packages, out)
 	}
 	for _, pkg := range packages {
 		if strings.Contains(pkg.ImportPath, "/test") || strings.Contains(pkg.ImportPath, "/internal") {
 			continue
 		}
-<<<<<<< HEAD
 		if !hasInstrumentationImport(pkg) {
-			return fmt.Errorf(`package %q is expected use instrumentation telemetry. For more info see https://github.com/DataDog/dd-trace-go/blob/main/contrib/README.md#instrumentation-telemetry`, pkg.ImportPath)
+			fmt.Errorf(`package %q is expected use instrumentation telemetry. For more info see https://github.com/DataDog/dd-trace-go/blob/main/contrib/README.md#instrumentation-telemetry`, pkg.ImportPath)
 		}
-=======
 		p := strings.Replace(pkg.Dir, pkg.Root, "../..", 1)
 		body, err := exec.Command("grep", "-rl", "MarkIntegrationImported", p).Output()
 		require.NoError(t, err, "grep command failed")
 		assert.NotEqual(t, len(body), 0, "expected %s to call MarkIntegrationImported", pkg.Name)
->>>>>>> origin
 	}
-	return nil
 }
 
 func hasInstrumentationImport(p contribPkg) bool {

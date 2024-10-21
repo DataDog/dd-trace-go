@@ -5,9 +5,7 @@
 
 package tracing
 
-import (
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
-)
+import "github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 
 type Message interface {
 	GetValue() []byte
@@ -62,5 +60,5 @@ type ConfigMap interface {
 }
 
 type SpanStore struct {
-	Prev ddtrace.Span
+	Prev *tracer.Span
 }

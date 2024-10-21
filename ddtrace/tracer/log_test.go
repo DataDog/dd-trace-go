@@ -10,16 +10,9 @@ import (
 	"math"
 	"testing"
 
-<<<<<<< HEAD
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
-=======
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
->>>>>>> origin
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -243,10 +236,10 @@ func TestLogPropagators(t *testing.T) {
 
 type prop struct{}
 
-func (p *prop) Inject(context ddtrace.SpanContext, carrier interface{}) (e error) {
+func (p *prop) Inject(context *SpanContext, carrier interface{}) (e error) {
 	return
 }
-func (p *prop) Extract(carrier interface{}) (sctx ddtrace.SpanContext, e error) {
+func (p *prop) Extract(carrier interface{}) (sctx *SpanContext, e error) {
 	return
 }
 
@@ -254,10 +247,13 @@ func setup(t *testing.T, customProp Propagator) string {
 	tp := new(log.RecordLogger)
 	var tracer *tracer
 	var stop func()
+	var err error
 	if customProp != nil {
-		tracer, _, _, stop = startTestTracer(t, WithLogger(tp), WithPropagator(customProp))
+		tracer, _, _, stop, err = startTestTracer(t, WithLogger(tp), WithPropagator(customProp))
+		assert.NoError(t, err)
 	} else {
-		tracer, _, _, stop = startTestTracer(t, WithLogger(tp))
+		tracer, _, _, stop, err = startTestTracer(t, WithLogger(tp))
+		assert.NoError(t, err)
 	}
 	defer stop()
 	tp.Reset()

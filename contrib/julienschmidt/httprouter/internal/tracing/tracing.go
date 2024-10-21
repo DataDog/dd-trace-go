@@ -9,17 +9,17 @@ import (
 	"net/http"
 	"strings"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/httptrace"
-	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/options"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/contrib/internal/httptrace"
+	"github.com/DataDog/dd-trace-go/v2/contrib/internal/options"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 )
+
+var instr *instrumentation.Instrumentation
 
 const componentName = "julienschmidt/httprouter"
 
 func init() {
-	telemetry.LoadIntegration(componentName)
-	tracer.MarkIntegrationImported("github.com/julienschmidt/httprouter")
+	instr = instrumentation.Load(instrumentation.PackageJulienschmidtHTTPRouter)
 }
 
 type Router interface {
