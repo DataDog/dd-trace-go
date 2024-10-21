@@ -6,9 +6,11 @@
 package coverage
 
 import (
+	"bytes"
 	"sync"
 	"time"
 
+	"github.com/tinylib/msgp/msgp"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/utils/net"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
@@ -90,11 +92,11 @@ func (w *coverageWriter) flush() {
 			return
 		}
 
-		/*
+		if log.DebugEnabled() {
 			var wbuf bytes.Buffer
 			msgp.CopyToJSON(&wbuf, buf)
 			log.Debug("coverageWriter: payload: %s", string(wbuf.Bytes()))
-		*/
+		}
 
 		err = w.client.SendCoveragePayload(buf)
 		if err != nil {
