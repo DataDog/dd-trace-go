@@ -11,15 +11,11 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
-	"github.com/DataDog/dd-trace-go/v2/internal"
-	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
-	"github.com/DataDog/dd-trace-go/v2/internal/normalizer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/httptrace"
 )
 
-const defaultServiceName = "http.router"
-
 type Config struct {
-	headerTags    *internal.LockMap
+	headerTags    instrumentation.HeaderTags
 	spanOpts      []tracer.StartSpanOption
 	serviceName   string
 	analyticsRate float64
@@ -27,13 +23,13 @@ type Config struct {
 
 func NewConfig(opts ...Option) *Config {
 	cfg := new(Config)
-	if internal.BoolEnv("DD_TRACE_HTTPROUTER_ANALYTICS_ENABLED", false) {
+	if httptrace.GetBoolEnv("DD_TRACE_HTTPROUTER_ANALYTICS_ENABLED", false) {
 		cfg.analyticsRate = 1.0
 	} else {
 		cfg.analyticsRate = instr.AnalyticsRate(true)
 	}
 	cfg.serviceName = instr.ServiceName(instrumentation.ComponentDefault, nil)
-	cfg.headerTags = globalconfig.HeaderTagMap()
+	cfg.headerTags = instr.HTTPHeadersAsTags()
 	for _, fn := range opts {
 		fn(cfg)
 	}
@@ -90,8 +86,7 @@ func WithAnalyticsRate(rate float64) Option {
 // Using this feature can risk exposing sensitive data such as authorization tokens to Datadog.
 // Special headers can not be sub-selected. E.g., an entire Cookie header would be transmitted, without the ability to choose specific Cookies.
 func WithHeaderTags(headers []string) Option {
-	headerTagsMap := normalizer.HeaderTagSlice(headers)
 	return func(cfg *Config) {
-		cfg.headerTags = internal.NewLockMap(headerTagsMap)
+		cfg.headerTags = instrumentation.NewHeaderTags(headers)
 	}
 }
