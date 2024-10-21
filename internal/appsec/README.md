@@ -193,17 +193,20 @@ flowchart TD
 
 
 
-    IG{Instrumentation<br> Gateway} -->|HTTPEvent| HTTPListener
-    IG{Instrumentation<br> Gateway} -->|GRPCEvent| GRPCListener
+    IG{Instrumentation<br> Gateway} -->|Start httpsec.HandlerOperation| HTTPListener
+    IG{Instrumentation<br> Gateway} -->|Start grpcsec.HandlerOperation| GRPCListener
 ```
 
 All currently available features are the following ones:
 
-- HTTP WAF Protection: Support for all HTTP addresses
-- GRPC WAF Protection: Support for all GRPC addresses
-- GraphQL WAF Protection: Support for all GraphQL addresses
-- SQL RASP: Runtime Application Self-Protection for SQL injections
-- OS RASP: Runtime Application Self-Protection for LFI attacks
-- User Security: User blocking and login failures/success events
-- WAF Context: Setup of the request scoped context system of the WAF
-- Tracing: Bridge between the tracer and AppSec features
+| Feature Name           | Description                                            |
+|------------------------|--------------------------------------------------------|
+| HTTP WAF Protection    | Protects HTTP requests from attacks                    |
+| GRPC WAF Protection    | Protects GRPC requests from attacks                    |
+| GraphQL WAF Protection | Protects GraphQL requests from attacks                 |
+| SQL RASP               | Runtime Application Self-Protection for SQL injections |
+| OS RASP                | Runtime Application Self-Protection for LFI attacks    |
+| HTTP RASP              | Runtime Application Self-Protection for SSRF attacks   |
+| User Security          | User blocking and login failures/success events        |
+| WAF Context            | Setup of the request scoped context system of the WAF  |
+| Tracing                | Bridge between the tracer and AppSec features          |
