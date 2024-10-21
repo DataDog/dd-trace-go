@@ -11,8 +11,6 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 )
 
-const defaultServiceName = "http.router"
-
 type routerConfig struct {
 	serviceName   string
 	spanOpts      []tracer.StartSpanOption

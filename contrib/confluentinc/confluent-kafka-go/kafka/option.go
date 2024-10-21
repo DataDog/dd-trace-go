@@ -14,6 +14,8 @@ import (
 // An Option customizes the config.
 type Option = tracing.Option
 
+type OptionFn = tracing.OptionFn
+
 // WithContext sets the config context to ctx.
 // Deprecated: This is deprecated in favor of passing the context
 // via the message headers
@@ -31,7 +33,7 @@ var WithAnalyticsRate = tracing.WithAnalyticsRate
 
 // WithCustomTag will cause the given tagFn to be evaluated after executing
 // a query and attach the result to the span tagged by the key.
-func WithCustomTag(tag string, tagFn func(msg *kafka.Message) interface{}) Option {
+func WithCustomTag(tag string, tagFn func(msg *kafka.Message) interface{}) tracing.OptionFn {
 	wrapped := func(msg tracing.Message) interface{} {
 		if m, ok := msg.Unwrap().(*kafka.Message); ok {
 			return tagFn(m)
@@ -42,7 +44,7 @@ func WithCustomTag(tag string, tagFn func(msg *kafka.Message) interface{}) Optio
 }
 
 // WithConfig extracts the config information for the client to be tagged
-func WithConfig(cm *kafka.ConfigMap) Option {
+func WithConfig(cm *kafka.ConfigMap) tracing.OptionFn {
 	return tracing.WithConfig(wrapConfigMap(cm))
 }
 

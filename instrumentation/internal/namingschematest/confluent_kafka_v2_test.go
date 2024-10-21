@@ -30,9 +30,9 @@ var confluentKafkaV2 = harness.KafkaTestCase(
 			testTopic   = "gotest"
 		)
 
-		var opts []kafkatrace.Option
+		var opts []kafkatrace.OptionFn
 		if serviceOverride != "" {
-			opts = append(opts, kafkatrace.WithService(serviceOverride))
+			opts = append(opts, kafkatrace.WithService.apply(serviceOverride))
 		}
 		p, err := kafkatrace.NewProducer(&kafka.ConfigMap{
 			"bootstrap.servers":   "127.0.0.1:9092",

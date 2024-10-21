@@ -13,7 +13,7 @@ import (
 
 	"github.com/julienschmidt/httprouter"
 
-	"github.com/DataDog/dd-trace-go/v2/contrib/julienschmidt/httprouter/internal/tracing"
+	"github.com/DataDog/dd-trace-go/contrib/julienschmidt/httprouter/v2/internal/tracing"
 )
 
 var instr *instrumentation.Instrumentation
