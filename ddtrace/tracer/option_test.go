@@ -342,6 +342,7 @@ type contribPkg struct {
 }
 
 func TestIntegrationEnabled(t *testing.T) {
+<<<<<<< HEAD
 	root, err := filepath.Abs("../../contrib")
 	if err != nil {
 		t.Fatal(err)
@@ -381,6 +382,10 @@ func testIntegrationEnabled(t *testing.T, contribPath string) error {
 	if err != nil {
 		return fmt.Errorf("unable to get package info: %w", err)
 	}
+=======
+	body, err := exec.Command("go", "list", "-json", "../../contrib/...").Output()
+	require.NoError(t, err, "go list command failed")
+>>>>>>> origin
 	var packages []contribPkg
 	stream := json.NewDecoder(strings.NewReader(string(body)))
 	for stream.More() {
@@ -395,9 +400,16 @@ func testIntegrationEnabled(t *testing.T, contribPath string) error {
 		if strings.Contains(pkg.ImportPath, "/test") || strings.Contains(pkg.ImportPath, "/internal") {
 			continue
 		}
+<<<<<<< HEAD
 		if !hasInstrumentationImport(pkg) {
 			return fmt.Errorf(`package %q is expected use instrumentation telemetry. For more info see https://github.com/DataDog/dd-trace-go/blob/main/contrib/README.md#instrumentation-telemetry`, pkg.ImportPath)
 		}
+=======
+		p := strings.Replace(pkg.Dir, pkg.Root, "../..", 1)
+		body, err := exec.Command("grep", "-rl", "MarkIntegrationImported", p).Output()
+		require.NoError(t, err, "grep command failed")
+		assert.NotEqual(t, len(body), 0, "expected %s to call MarkIntegrationImported", pkg.Name)
+>>>>>>> origin
 	}
 	return nil
 }

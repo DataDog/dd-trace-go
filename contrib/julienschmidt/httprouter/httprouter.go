@@ -7,8 +7,8 @@
 package httprouter // import "github.com/DataDog/dd-trace-go/contrib/julienschmidt/httprouter/v2"
 
 import (
-	"math"
 	"net/http"
+<<<<<<< HEAD
 	"strings"
 
 	httptrace "github.com/DataDog/dd-trace-go/contrib/net/http/v2"
@@ -17,24 +17,33 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 	httptraceinstr "github.com/DataDog/dd-trace-go/v2/instrumentation/httptrace"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/options"
+=======
+>>>>>>> origin
 
 	"github.com/julienschmidt/httprouter"
+
+	"gopkg.in/DataDog/dd-trace-go.v1/contrib/julienschmidt/httprouter/internal/tracing"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
+<<<<<<< HEAD
 var instr *instrumentation.Instrumentation
 
 func init() {
 	instr = instrumentation.Load(instrumentation.PackageJulienschmidtHTTPRouter)
 }
 
+=======
+>>>>>>> origin
 // Router is a traced version of httprouter.Router.
 type Router struct {
 	*httprouter.Router
-	config *routerConfig
+	config *tracing.Config
 }
 
 // New returns a new router augmented with tracing.
 func New(opts ...RouterOption) *Router {
+<<<<<<< HEAD
 	cfg := new(routerConfig)
 	defaults(cfg)
 	for _, fn := range opts {
@@ -48,17 +57,21 @@ func New(opts ...RouterOption) *Router {
 	cfg.spanOpts = append(cfg.spanOpts, tracer.Tag(ext.Component, instrumentation.PackageJulienschmidtHTTPRouter))
 
 	instr.Logger().Debug("contrib/julienschmidt/httprouter: Configuring Router: %#v", cfg)
+=======
+	cfg := tracing.NewConfig(opts...)
+	log.Debug("contrib/julienschmidt/httprouter: Configuring Router: %#v", cfg)
+>>>>>>> origin
 	return &Router{httprouter.New(), cfg}
 }
 
 // ServeHTTP implements http.Handler.
 func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
-	// get the resource associated to this request
-	route := req.URL.Path
-	_, ps, _ := r.Router.Lookup(req.Method, route)
-	for _, param := range ps {
-		route = strings.Replace(route, param.Value, ":"+param.Key, 1)
+	tw, treq, afterHandle, handled := tracing.BeforeHandle(r.config, r.Router, wrapRouter, w, req)
+	defer afterHandle()
+	if handled {
+		return
 	}
+<<<<<<< HEAD
 	resource := req.Method + " " + route
 	spanOpts := options.Expand(r.config.spanOpts, 0, 1) // spanOpts must be a copy of r.config.spanOpts, locally scoped, to avoid races.
 	spanOpts = append(spanOpts, httptraceinstr.HeaderTagsFromRequest(req, r.config.headerTags))
@@ -69,4 +82,40 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		SpanOpts: spanOpts,
 		Route:    route,
 	})
+=======
+	r.Router.ServeHTTP(tw, treq)
+}
+
+type wRouter struct {
+	*httprouter.Router
+}
+
+func wrapRouter(r *httprouter.Router) tracing.Router {
+	return &wRouter{r}
+}
+
+func (w wRouter) Lookup(method string, path string) (any, []tracing.Param, bool) {
+	h, params, ok := w.Router.Lookup(method, path)
+	return h, wrapParams(params), ok
+}
+
+type wParam struct {
+	httprouter.Param
+}
+
+func wrapParams(params httprouter.Params) []tracing.Param {
+	wParams := make([]tracing.Param, len(params))
+	for i, p := range params {
+		wParams[i] = wParam{p}
+	}
+	return wParams
+}
+
+func (w wParam) GetKey() string {
+	return w.Key
+}
+
+func (w wParam) GetValue() string {
+	return w.Value
+>>>>>>> origin
 }

@@ -5,6 +5,7 @@
 
 package http // import "github.com/DataDog/dd-trace-go/contrib/net/http/v2"
 
+<<<<<<< HEAD
 //go:generate sh -c "go run ./internal/make_responsewriter | gofmt > trace_gen.go"
 
 import (
@@ -16,6 +17,14 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/httpsec"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/httptrace"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/options"
+=======
+import (
+	"net/http"
+
+	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/httptrace"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
+>>>>>>> origin
 )
 
 const componentName = instrumentation.PackageNetHTTP
@@ -27,6 +36,7 @@ func init() {
 }
 
 // ServeConfig specifies the tracing configuration when using TraceAndServe.
+<<<<<<< HEAD
 type ServeConfig struct {
 	// Service specifies the service name to use. If left blank, the global service name
 	// will be inherited.
@@ -46,10 +56,14 @@ type ServeConfig struct {
 	// SpanOpts specifies any options to be applied to the request starting span.
 	SpanOpts []tracer.StartSpanOption
 }
+=======
+type ServeConfig = httptrace.ServeConfig
+>>>>>>> origin
 
 // TraceAndServe serves the handler h using the given ResponseWriter and Request, applying tracing
 // according to the specified config.
 func TraceAndServe(h http.Handler, w http.ResponseWriter, r *http.Request, cfg *ServeConfig) {
+<<<<<<< HEAD
 	if cfg == nil {
 		cfg = new(ServeConfig)
 	}
@@ -107,13 +121,13 @@ func (w *responseWriter) Write(b []byte) (int, error) {
 // It also sets the status code to the span.
 func (w *responseWriter) WriteHeader(status int) {
 	if w.status != 0 {
+=======
+	tw, tr, afterHandle, handled := httptrace.BeforeHandle(cfg, w, r)
+	defer afterHandle()
+
+	if handled {
+>>>>>>> origin
 		return
 	}
-	w.ResponseWriter.WriteHeader(status)
-	w.status = status
-}
-
-// Unwrap returns the underlying wrapped http.ResponseWriter.
-func (w *responseWriter) Unwrap() http.ResponseWriter {
-	return w.ResponseWriter
+	h.ServeHTTP(tw, tr)
 }

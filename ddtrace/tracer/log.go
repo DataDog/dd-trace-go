@@ -92,7 +92,18 @@ func logStartup(t *tracer) {
 		featureFlags = append(featureFlags, f)
 	}
 
-	cp, _ := t.config.propagator.(*chainedPropagator)
+	var injectorNames, extractorNames string
+	switch v := t.config.propagator.(type) {
+	case *chainedPropagator:
+		injectorNames = v.injectorNames
+		extractorNames = v.extractorsNames
+	case nil:
+		injectorNames = ""
+		extractorNames = ""
+	default:
+		injectorNames = "custom"
+		extractorNames = "custom"
+	}
 
 	info := startupInfo{
 		Date:                        time.Now().Format(time.RFC3339),
@@ -127,12 +138,17 @@ func logStartup(t *tracer) {
 		PartialFlushMinSpans:        t.config.partialFlushMinSpans,
 		Orchestrion:                 t.config.orchestrionCfg,
 		FeatureFlags:                featureFlags,
+<<<<<<< HEAD
 	}
 	// v1 shim sets a wrapped propagator, thus yielding a nil value here when
 	// is casted to a chainedPropagator value.
 	if cp != nil {
 		info.PropagationStyleInject = cp.injectorNames
 		info.PropagationStyleExtract = cp.extractorsNames
+=======
+		PropagationStyleInject:      injectorNames,
+		PropagationStyleExtract:     extractorNames,
+>>>>>>> origin
 	}
 	if _, _, err := samplingRulesFromEnv(); err != nil {
 		info.SamplingRulesError = fmt.Sprintf("%s", err)

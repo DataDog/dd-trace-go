@@ -6,10 +6,16 @@
 package httprouter
 
 import (
+<<<<<<< HEAD
 	"math"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
+=======
+	"gopkg.in/DataDog/dd-trace-go.v1/contrib/julienschmidt/httprouter/internal/tracing"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal"
+>>>>>>> origin
 )
 
 const defaultServiceName = "http.router"
@@ -21,6 +27,7 @@ type routerConfig struct {
 	headerTags    instrumentation.HeaderTags
 }
 
+<<<<<<< HEAD
 // RouterOption describes options for the HTTPRouter integration.
 type RouterOption interface {
 	apply(*routerConfig)
@@ -75,13 +82,34 @@ func WithAnalyticsRate(rate float64) RouterOptionFn {
 		}
 	}
 }
+=======
+// RouterOption represents an option that can be passed to New.
+type RouterOption = tracing.Option
+
+// WithServiceName sets the given service name for the returned router.
+var WithServiceName = tracing.WithServiceName
+
+// WithSpanOptions applies the given set of options to the span started by the router.
+var WithSpanOptions = tracing.WithSpanOptions
+
+// WithAnalytics enables Trace Analytics for all started spans.
+var WithAnalytics = tracing.WithAnalytics
+
+// WithAnalyticsRate sets the sampling rate for Trace Analytics events
+// correlated to started spans.
+var WithAnalyticsRate = tracing.WithAnalyticsRate
+>>>>>>> origin
 
 // WithHeaderTags enables the integration to attach HTTP request headers as span tags.
 // Warning:
 // Using this feature can risk exposing sensitive data such as authorization tokens to Datadog.
 // Special headers can not be sub-selected. E.g., an entire Cookie header would be transmitted, without the ability to choose specific Cookies.
+<<<<<<< HEAD
 func WithHeaderTags(headers []string) RouterOptionFn {
 	return func(cfg *routerConfig) {
 		cfg.headerTags = instrumentation.NewHeaderTags(headers)
 	}
 }
+=======
+var WithHeaderTags = tracing.WithHeaderTags
+>>>>>>> origin
