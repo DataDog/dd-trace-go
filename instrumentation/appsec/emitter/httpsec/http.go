@@ -115,7 +115,7 @@ func makeCookies(parsed []*http.Cookie) map[string][]string {
 func BeforeHandle(
 	w http.ResponseWriter,
 	r *http.Request,
-	span ddtrace.Span,
+	span *trace.TagSetter,
 	pathParams map[string]string,
 	opts *Config,
 ) (http.ResponseWriter, *http.Request, func(), bool) {
@@ -177,61 +177,12 @@ func BeforeHandle(
 // context since it uses a queue of handlers and it's the only way to make
 // sure other queued handlers don't get executed.
 // TODO: this patch must be removed/improved when we rework our actions/operations system
-<<<<<<< HEAD:instrumentation/appsec/emitter/httpsec/http.go
 func WrapHandler(handler http.Handler, span trace.TagSetter, pathParams map[string]string, opts *Config) http.Handler {
-	if opts == nil {
-		opts = defaultWrapHandlerConfig
-	} else if opts.ResponseHeaderCopier == nil {
-		opts.ResponseHeaderCopier = defaultWrapHandlerConfig.ResponseHeaderCopier
-	}
-
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		op, blockAtomic, ctx := StartOperation(r.Context(), HandlerOperationArgs{
-			Method:      r.Method,
-			RequestURI:  r.RequestURI,
-			Host:        r.Host,
-			RemoteAddr:  r.RemoteAddr,
-			Headers:     r.Header,
-			Cookies:     makeCookies(r.Cookies()),
-			QueryParams: r.URL.Query(),
-			PathParams:  pathParams,
-		})
-		r = r.WithContext(ctx)
-
-		defer func() {
-			var statusCode int
-			if res, ok := w.(interface{ Status() int }); ok {
-				statusCode = res.Status()
-			}
-			op.Finish(HandlerOperationRes{
-				Headers:    opts.ResponseHeaderCopier(w),
-				StatusCode: statusCode,
-			}, &span)
-
-			// Execute the onBlock functions to make sure blocking works properly
-			// in case we are instrumenting the Gin framework
-			if blockPtr := blockAtomic.Load(); blockPtr != nil {
-				for _, f := range opts.OnBlock {
-					f()
-				}
-
-				if blockPtr.Handler != nil {
-					blockPtr.Handler.ServeHTTP(w, r)
-				}
-			}
-		}()
-
-		if blockPtr := blockAtomic.Load(); blockPtr != nil && blockPtr.Handler != nil {
-			handler = blockPtr.Handler
-			blockPtr.Handler = nil
-=======
-func WrapHandler(handler http.Handler, span ddtrace.Span, pathParams map[string]string, opts *Config) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		tw, tr, afterHandle, handled := BeforeHandle(w, r, span, pathParams, opts)
+		tw, tr, afterHandle, handled := BeforeHandle(w, r, &span, pathParams, opts)
 		defer afterHandle()
 		if handled {
 			return
->>>>>>> origin:internal/appsec/emitter/httpsec/http.go
 		}
 
 		handler.ServeHTTP(tw, tr)

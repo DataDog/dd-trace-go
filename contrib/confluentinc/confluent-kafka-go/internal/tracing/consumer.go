@@ -8,9 +8,8 @@ package tracing
 import (
 	"math"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 )
 
 func WrapConsumeEventsChannel[E any, TE Event](tr *KafkaTracer, in chan E, consumer Consumer, translateFn func(E) TE) chan E {
@@ -24,7 +23,7 @@ func WrapConsumeEventsChannel[E any, TE Event](tr *KafkaTracer, in chan E, consu
 		defer close(out)
 		for evt := range in {
 			tEvt := translateFn(evt)
-			var next ddtrace.Span
+			var next *tracer.Span
 
 			// only trace messages
 			if msg, ok := tEvt.KafkaMessage(); ok {
@@ -51,7 +50,7 @@ func WrapConsumeEventsChannel[E any, TE Event](tr *KafkaTracer, in chan E, consu
 	return out
 }
 
-func (tr *KafkaTracer) StartConsumeSpan(msg Message) ddtrace.Span {
+func (tr *KafkaTracer) StartConsumeSpan(msg Message) *tracer.Span {
 	opts := []tracer.StartSpanOption{
 		tracer.ServiceName(tr.consumerServiceName),
 		tracer.ResourceName("Consume Topic " + msg.GetTopicPartition().GetTopic()),

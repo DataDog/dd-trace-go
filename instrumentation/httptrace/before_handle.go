@@ -8,12 +8,11 @@ package httptrace
 import (
 	"net/http"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/options"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/httpsec"
+	"github.com/DataDog/dd-trace-go/v2/contrib/internal/options"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec/emitter/httpsec"
 )
 
 // ServeConfig specifies the tracing configuration when using TraceAndServe.
@@ -32,9 +31,9 @@ type ServeConfig struct {
 	// by AppSec. It is only taken into account when AppSec is enabled.
 	RouteParams map[string]string
 	// FinishOpts specifies any options to be used when finishing the request span.
-	FinishOpts []ddtrace.FinishOption
+	FinishOpts []tracer.FinishOption
 	// SpanOpts specifies any options to be applied to the request starting span.
-	SpanOpts []ddtrace.StartSpanOption
+	SpanOpts []tracer.StartSpanOption
 }
 
 // BeforeHandle contains functionality that should be executed before a http.Handler runs.
