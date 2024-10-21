@@ -162,11 +162,14 @@ func (ddm *M) executeInternalTest(testInfo *testingTInfo) func(*testing.T) {
 			test.SetTag(constants.TestIsRetry, "true")
 		}
 
+		// set the test coverage collector
+		testFile, _ := originalFunc.FileLine(originalFunc.Entry())
 		tCoverage := coverage.NewTestCoverage(
 			session.SessionID(),
 			module.ModuleID(),
 			suite.SuiteID(),
-			test.TestID())
+			test.TestID(),
+			testFile)
 
 		startTime := time.Now()
 		defer func() {
