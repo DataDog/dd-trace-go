@@ -1,6 +1,7 @@
 package sfn
 
 import (
+	"encoding/json"
 	"fmt"
 
 	"github.com/aws/aws-sdk-go-v2/service/sfn"
@@ -42,17 +43,21 @@ func injectTraceContext(span tracer.Span, input *string) {
 	if input == nil || len(*input) == 0 || (*input)[len(*input)-1] != '}' {
 		return
 	}
-	carrier := tracer.TextMapCarrier{}
-	tracer.Inject(span.Context(), carrier)
-	fmt.Printf("============== test carrier: %+v\n", carrier)
+	traceCtxCarrier := tracer.TextMapCarrier{}
+	if err := tracer.Inject(span.Context(), traceCtxCarrier); err != nil {
+		log.Debug("Unable to inject trace context: %s", err)
+		return
+	}
 
-	traceId := span.Context().TraceID()
-	parentId := span.Context().SpanID()
-	traceContext := fmt.Sprintf("{\"x-datadog-trace-id\":\"%d\",\"x-datadog-parent-id\":\"%d\"}", traceId, parentId)
-	fmt.Printf("============= custom traceContext: %+v\n", traceContext)
+	traceCtxJSON, err := json.Marshal(traceCtxCarrier)
+	if err != nil {
+		log.Debug("Unable to marshal trace context: %s", err)
+		return
+	}
 
 	modifiedInput := (*input)[:len(*input)-1] // remove closing bracket
 	input = &modifiedInput
-	modifiedInput += fmt.Sprintf(",\"_datadog\": %s }", traceContext)
+	modifiedInput += fmt.Sprintf(",\"_datadog\": %s }", string(traceCtxJSON))
 	input = &modifiedInput
+	fmt.Printf("==================== input: \n%s\n", *input)
 }
