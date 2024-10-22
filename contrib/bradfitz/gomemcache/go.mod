@@ -2,8 +2,6 @@ module github.com/DataDog/dd-trace-go/contrib/bradfitz/gomemcache/v2
 
 go 1.22.0
 
-toolchain go1.23.1
-
 require (
 	github.com/bradfitz/gomemcache v0.0.0-20230611145640-acc696258285
 	github.com/stretchr/testify v1.9.0

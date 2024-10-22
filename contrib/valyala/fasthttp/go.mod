@@ -2,8 +2,6 @@ module github.com/DataDog/dd-trace-go/contrib/valyala/fasthttp/v2
 
 go 1.22.0
 
-toolchain go1.23.1
-
 require (
 	github.com/DataDog/dd-trace-go/contrib/net/http/v2 v2.0.0-20240909105439-c452671ebc14
 	github.com/DataDog/dd-trace-go/v2 v2.0.0-20240909105439-c452671ebc14

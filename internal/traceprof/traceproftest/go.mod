@@ -1,6 +1,6 @@
 module github.com/DataDog/dd-trace-go/v2/internal/traceprof/traceproftest
 
-go 1.21
+go 1.22.0
 
 require (
 	github.com/DataDog/dd-trace-go/contrib/google.golang.org/grpc/v2 v2.0.0-beta.2.0.20240909105439-c452671ebc14

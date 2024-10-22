@@ -2,8 +2,6 @@ module github.com/DataDog/dd-trace-go/contrib/google.golang.org/grpc/v2
 
 go 1.22.0
 
-toolchain go1.23.1
-
 require (
 	github.com/DataDog/dd-trace-go/instrumentation/testutils/grpc/v2 v2.0.0-20240827110213-c6fc4fe2047a
 	github.com/DataDog/dd-trace-go/v2 v2.0.0-20240909105439-c452671ebc14

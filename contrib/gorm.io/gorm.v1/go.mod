@@ -1,6 +1,6 @@
 module github.com/DataDog/dd-trace-go/contrib/gorm.io/gorm.v1/v2
 
-go 1.21
+go 1.22.0
 
 require (
 	github.com/DataDog/dd-trace-go/contrib/database/sql/v2 v2.0.0-20240909105439-c452671ebc14

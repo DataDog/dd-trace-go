@@ -1,6 +1,6 @@
 module github.com/DataDog/dd-trace-go/instrumentation/internal/namingschematest/v2
 
-go 1.21
+go 1.22.0
 
 require (
 	cloud.google.com/go/pubsub v1.41.0

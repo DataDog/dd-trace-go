@@ -1,6 +1,6 @@
 module github.com/DataDog/dd-trace-go/contrib/go-pg/pg.v10/v2
 
-go 1.21
+go 1.22.0
 
 require (
 	github.com/go-pg/pg/v10 v10.11.1
