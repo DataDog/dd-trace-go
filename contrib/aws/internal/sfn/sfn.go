@@ -49,11 +49,13 @@ func handleStartSyncExecution(span tracer.Span, in middleware.InitializeInput) {
 	}
 
 	if params.Input == nil {
+		fmt.Printf("================= params.Input is nil: %+v\n", params)
 		return
 	}
 	executionInput := *params.Input
 
 	if len(executionInput) > 0 && executionInput[len(executionInput)-1] == '}' {
+		fmt.Println("================= injecting trace context")
 		traceId := span.Context().TraceID()
 		parentId := span.Context().SpanID()
 		// TODO Dylan: include span tags so 128 bit trace IDs are propagated
@@ -61,5 +63,7 @@ func handleStartSyncExecution(span tracer.Span, in middleware.InitializeInput) {
 
 		executionInput = executionInput[:len(executionInput)-1] // remove closing bracket
 		executionInput += fmt.Sprintf(",\"_datadog\":{ %s }", traceContext)
+
+		fmt.Printf("================= executionInput: \n%s\n", executionInput)
 	}
 }
