@@ -85,6 +85,7 @@ func (mw *traceMiddleware) startTraceMiddleware(stack *middleware.Stack) error {
 	) {
 		operation := awsmiddleware.GetOperationName(ctx)
 		serviceID := awsmiddleware.GetServiceID(ctx)
+		fmt.Println("============== serviceID = ", serviceID)
 
 		opts := []ddtrace.StartSpanOption{
 			tracer.SpanType(ext.SpanTypeHTTP),
