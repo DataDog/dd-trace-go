@@ -1,24 +1,22 @@
 module github.com/DataDog/dd-trace-go/internal/apps
 
-go 1.22.0
-
-toolchain go1.22.5
+go 1.23.0
 
 require (
-	golang.org/x/sync v0.8.0
+	golang.org/x/sync v0.7.0
 	gopkg.in/DataDog/dd-trace-go.v1 v1.64.0
 )
 
 require (
-	github.com/DataDog/appsec-internal-go v1.7.0 // indirect
-	github.com/DataDog/datadog-agent/pkg/proto v0.57.0-rc.1 // indirect
-	github.com/DataDog/datadog-agent/pkg/trace v0.58.0-devel.0.20240814201000-ba7e423fc4fc // indirect
-	github.com/DataDog/datadog-agent/pkg/util/log v0.57.0-rc.1 // indirect
-	github.com/DataDog/datadog-agent/pkg/util/scrubber v0.57.0-rc.1 // indirect
-	github.com/DataDog/go-libddwaf/v3 v3.3.0 // indirect
+	github.com/DataDog/datadog-agent/pkg/proto v0.58.0 // indirect
+	github.com/DataDog/datadog-agent/pkg/trace v0.58.0 // indirect
+	github.com/DataDog/datadog-agent/pkg/util/log v0.58.0 // indirect
+	github.com/DataDog/datadog-agent/pkg/util/scrubber v0.58.0 // indirect
+	github.com/DataDog/go-libddwaf/v3 v3.4.0 // indirect
 	github.com/DataDog/go-sqllexer v0.0.13 // indirect
 	github.com/DataDog/opentelemetry-mapping-go/pkg/otlp/attributes v0.14.0 // indirect
 	github.com/cihub/seelog v0.0.0-20170130134532-f561c5e57575 // indirect
+	github.com/DataDog/appsec-internal-go v1.8.0 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/eapache/queue/v2 v2.0.0-20230407133247-75960ed334e4 // indirect
 	github.com/ebitengine/purego v0.6.0-alpha.5 // indirect
@@ -64,8 +62,8 @@ require (
 )
 
 require (
-	github.com/DataDog/datadog-agent/pkg/obfuscate v0.57.0-rc.1 // indirect
-	github.com/DataDog/datadog-agent/pkg/remoteconfig/state v0.57.0-rc.1 // indirect
+	github.com/DataDog/datadog-agent/pkg/obfuscate v0.58.0 // indirect
+	github.com/DataDog/datadog-agent/pkg/remoteconfig/state v0.58.0 // indirect
 	github.com/DataDog/datadog-go/v5 v5.5.0 // indirect
 	github.com/DataDog/go-tuf v1.1.0-0.5.2 // indirect
 	github.com/DataDog/gostackparse v0.7.0 // indirect
@@ -81,7 +79,7 @@ require (
 	github.com/secure-systems-lab/go-securesystemslib v0.7.0 // indirect
 	github.com/spaolacci/murmur3 v1.1.0 // indirect
 	github.com/stretchr/testify v1.9.0
-	github.com/tinylib/msgp v1.1.8 // indirect
+	github.com/tinylib/msgp v1.2.1 // indirect
 	golang.org/x/sys v0.23.0 // indirect
 	golang.org/x/time v0.6.0 // indirect
 	golang.org/x/xerrors v0.0.0-20231012003039-104605ab7028 // indirect

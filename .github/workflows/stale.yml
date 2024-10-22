@@ -4,6 +4,10 @@ on:
   schedule:
     - cron: '30 1 * * *'
 
+permissions:
+  contents: read
+  issues: write
+
 jobs:
   stale:
     runs-on: ubuntu-latest

@@ -11,6 +11,7 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"math"
 	"os"
 	"reflect"
 	"runtime"
@@ -500,9 +501,11 @@ func (s *span) Finish(opts ...ddtrace.FinishOption) {
 		s.SetTag("go_execution_traced", "partial")
 	}
 
-	if tr, ok := internal.GetGlobalTracer().(*tracer); ok && tr.rulesSampling.traces.enabled() {
-		if !s.context.trace.isLocked() && s.context.trace.propagatingTag(keyDecisionMaker) != "-4" {
-			tr.rulesSampling.SampleTrace(s)
+	if s.root() == s {
+		if tr, ok := internal.GetGlobalTracer().(*tracer); ok && tr.rulesSampling.traces.enabled() {
+			if !s.context.trace.isLocked() && s.context.trace.propagatingTag(keyDecisionMaker) != "-4" {
+				tr.rulesSampling.SampleTrace(s)
+			}
 		}
 	}
 
@@ -593,6 +596,40 @@ func (s *span) finish(finishTime int64) {
 		// Restore the labels of the parent span so any CPU samples after this
 		// point are attributed correctly.
 		pprof.SetGoroutineLabels(s.pprofCtxRestore)
+	}
+}
+
+// newAggregableSpan creates a new summary for the span s, within an application
+// version version.
+func newAggregableSpan(s *span, obfuscator *obfuscate.Obfuscator) *aggregableSpan {
+	var statusCode uint32
+	if sc, ok := s.Meta["http.status_code"]; ok && sc != "" {
+		if c, err := strconv.Atoi(sc); err == nil && c > 0 && c <= math.MaxInt32 {
+			statusCode = uint32(c)
+		}
+	}
+	var isTraceRoot trilean
+	if s.ParentID == 0 {
+		isTraceRoot = trileanTrue
+	} else {
+		isTraceRoot = trileanFalse
+	}
+
+	key := aggregation{
+		Name:        s.Name,
+		Resource:    obfuscatedResource(obfuscator, s.Type, s.Resource),
+		Service:     s.Service,
+		Type:        s.Type,
+		Synthetics:  strings.HasPrefix(s.Meta[keyOrigin], "synthetics"),
+		StatusCode:  statusCode,
+		IsTraceRoot: isTraceRoot,
+	}
+	return &aggregableSpan{
+		key:      key,
+		Start:    s.Start,
+		Duration: s.Duration,
+		TopLevel: s.Metrics[keyTopLevel] == 1,
+		Error:    s.Error,
 	}
 }
 
