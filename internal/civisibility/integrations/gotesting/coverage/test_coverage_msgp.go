@@ -103,10 +103,10 @@ func (z *ciTestCoverageData) DecodeMsg(dc *msgp.Reader) (err error) {
 				err = msgp.WrapError(err, "SessionID")
 				return
 			}
-		case "test_module_id":
-			z.ModuleID, err = dc.ReadUint64()
+		case "test_suite_id":
+			z.SuiteID, err = dc.ReadUint64()
 			if err != nil {
-				err = msgp.WrapError(err, "ModuleID")
+				err = msgp.WrapError(err, "SuiteID")
 				return
 			}
 		case "span_id":
@@ -193,14 +193,14 @@ func (z *ciTestCoverageData) EncodeMsg(en *msgp.Writer) (err error) {
 		err = msgp.WrapError(err, "SessionID")
 		return
 	}
-	// write "test_module_id"
-	err = en.Append(0xae, 0x74, 0x65, 0x73, 0x74, 0x5f, 0x6d, 0x6f, 0x64, 0x75, 0x6c, 0x65, 0x5f, 0x69, 0x64)
+	// write "test_suite_id"
+	err = en.Append(0xad, 0x74, 0x65, 0x73, 0x74, 0x5f, 0x73, 0x75, 0x69, 0x74, 0x65, 0x5f, 0x69, 0x64)
 	if err != nil {
 		return
 	}
-	err = en.WriteUint64(z.ModuleID)
+	err = en.WriteUint64(z.SuiteID)
 	if err != nil {
-		err = msgp.WrapError(err, "ModuleID")
+		err = msgp.WrapError(err, "SuiteID")
 		return
 	}
 	// write "span_id"
@@ -248,7 +248,7 @@ func (z *ciTestCoverageData) EncodeMsg(en *msgp.Writer) (err error) {
 
 // Msgsize returns an upper bound estimate of the number of bytes occupied by the serialized message
 func (z *ciTestCoverageData) Msgsize() (s int) {
-	s = 1 + 16 + msgp.Uint64Size + 15 + msgp.Uint64Size + 8 + msgp.Uint64Size + 6 + msgp.ArrayHeaderSize
+	s = 1 + 16 + msgp.Uint64Size + 14 + msgp.Uint64Size + 8 + msgp.Uint64Size + 6 + msgp.ArrayHeaderSize
 	for za0001 := range z.Files {
 		if z.Files[za0001] == nil {
 			s += msgp.NilSize

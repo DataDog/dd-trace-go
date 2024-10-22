@@ -25,8 +25,8 @@ type (
 	// ciTestCoverageData represents the coverage data for a single test.
 	ciTestCoverageData struct {
 		SessionID uint64                `msg:"test_session_id"` // identifier of this session
-		ModuleID  uint64                `msg:"test_module_id"`  // identifier of this module
-		SpanID    uint64                `msg:"span_id"`         // identifier of this span
+		SuiteID   uint64                `msg:"test_suite_id"`   // identifier of the suite
+		SpanID    uint64                `msg:"span_id"`         // identifier of this test
 		Files     []*ciTestCoverageFile `msg:"files"`           // list of files covered
 	}
 
@@ -51,7 +51,7 @@ var (
 func newCiTestCoverageData(tCove *testCoverage) *ciTestCoverageData {
 	return &ciTestCoverageData{
 		SessionID: tCove.sessionID,
-		ModuleID:  tCove.moduleID,
+		SuiteID:   tCove.suiteID,
 		SpanID:    tCove.testID,
 		Files:     newCiTestCoverageFiles(tCove.filesCovered),
 	}
