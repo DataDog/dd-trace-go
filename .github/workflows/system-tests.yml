@@ -47,6 +47,7 @@ jobs:
         scenario:
           - DEFAULT
           - INTEGRATIONS
+          - INTEGRATIONS_AWS
           - CROSSED_TRACING_LIBRARIES
           - APPSEC_DISABLED
           - APPSEC_BLOCKING
