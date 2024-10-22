@@ -1,21 +1,20 @@
 package sfn
 
 import (
+	"encoding/json"
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/sfn"
 	"github.com/aws/smithy-go/middleware"
+	"github.com/stretchr/testify/assert"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
 
 func TestEnrichOperation_StartExecution(t *testing.T) {
 	mt := mocktracer.Start()
-	defer mt.Stop()
-
 	span := tracer.StartSpan("test")
-	defer span.Finish()
 
 	params := &sfn.StartExecutionInput{
 		Input: aws.String(`{"key": "value"}`),
@@ -25,16 +24,23 @@ func TestEnrichOperation_StartExecution(t *testing.T) {
 	}
 
 	EnrichOperation(span, in, "StartExecution")
+	span.Finish()
+	mt.Stop()
 
-	// Add assertions to verify the enriched input
+	var inputParsed map[string]interface{}
+	err := json.Unmarshal([]byte(*params.Input), &inputParsed)
+
+	assert.Len(t, mt.FinishedSpans(), 1)
+	assert.Nil(t, err)
+	assert.Equal(t, "value", inputParsed["key"])
+	assert.Contains(t, inputParsed, "_datadog")
+	assert.Contains(t, inputParsed["_datadog"], "x-datadog-trace-id")
+	assert.Contains(t, inputParsed["_datadog"], "x-datadog-parent-id")
 }
 
 func TestEnrichOperation_StartSyncExecution(t *testing.T) {
 	mt := mocktracer.Start()
-	defer mt.Stop()
-
 	span := tracer.StartSpan("test")
-	defer span.Finish()
 
 	params := &sfn.StartSyncExecutionInput{
 		Input: aws.String(`{"key": "value"}`),
@@ -44,6 +50,16 @@ func TestEnrichOperation_StartSyncExecution(t *testing.T) {
 	}
 
 	EnrichOperation(span, in, "StartSyncExecution")
+	span.Finish()
+	mt.Stop()
 
-	// TODO Dylan: Add assertions to verify the enriched input
+	var inputParsed map[string]interface{}
+	err := json.Unmarshal([]byte(*params.Input), &inputParsed)
+
+	assert.Len(t, mt.FinishedSpans(), 1)
+	assert.Nil(t, err)
+	assert.Equal(t, "value", inputParsed["key"])
+	assert.Contains(t, inputParsed, "_datadog")
+	assert.Contains(t, inputParsed["_datadog"], "x-datadog-trace-id")
+	assert.Contains(t, inputParsed["_datadog"], "x-datadog-parent-id")
 }
