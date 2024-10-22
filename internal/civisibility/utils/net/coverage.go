@@ -45,9 +45,9 @@ func (c *client) SendCoveragePayload(ciTestCovPayload io.Reader) error {
 		Files: []FormFile{
 			dummyEvent,
 			{
-				FieldName:   "coverage1",
+				FieldName:   "coveragex",
 				Content:     ciTestCovPayload,
-				FileName:    "filecoverage1.msgpack",
+				FileName:    "filecoveragex.msgpack",
 				ContentType: ContentTypeMessagePack,
 			},
 		},
