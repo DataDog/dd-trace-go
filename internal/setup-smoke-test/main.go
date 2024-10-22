@@ -12,7 +12,6 @@ import (
 	"net/http"
 	"os"
 
-	httptrace "github.com/DataDog/dd-trace-go/contrib/net/http/v2"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/profiler"
 )
@@ -24,7 +23,7 @@ func main() {
 	profiler.Start()
 	defer profiler.Stop()
 
-	mux := httptrace.NewServeMux()
+	mux := http.NewServeMux()
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if _, err := io.WriteString(w, "ok"); err != nil {
 			panic(err)
