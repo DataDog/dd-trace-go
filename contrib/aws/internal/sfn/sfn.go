@@ -25,18 +25,15 @@ func handleStartExecution(span tracer.Span, in middleware.InitializeInput) {
 		return
 	}
 
-	if params.Input == nil {
-		return
-	}
-	executionInput := *params.Input
-
-	if len(executionInput) > 0 && executionInput[len(executionInput)-1] == '}' {
+	if params.Input != nil && len(*params.Input) > 0 && (*params.Input)[len(*params.Input)-1] == '}' {
 		traceId := span.Context().TraceID()
 		parentId := span.Context().SpanID()
 		traceContext := fmt.Sprintf("{\"x-datadog-trace-id\":\"%d\",\"x-datadog-parent-id\":\"%d\"}", traceId, parentId)
 
-		executionInput = executionInput[:len(executionInput)-1] // remove closing bracket
-		executionInput += fmt.Sprintf(",\"_datadog\":{ %s }", traceContext)
+		modifiedInput := (*params.Input)[:len(*params.Input)-1] // remove closing bracket
+		params.Input = &modifiedInput
+		modifiedInput += fmt.Sprintf(",\"_datadog\":{ %s }", traceContext)
+		params.Input = &modifiedInput
 	}
 }
 
@@ -58,11 +55,12 @@ func handleStartSyncExecution(span tracer.Span, in middleware.InitializeInput) {
 		fmt.Println("================= injecting trace context")
 		traceId := span.Context().TraceID()
 		parentId := span.Context().SpanID()
-		// TODO Dylan: include span tags so 128 bit trace IDs are propagated
 		traceContext := fmt.Sprintf("{\"x-datadog-trace-id\":\"%d\",\"x-datadog-parent-id\":\"%d\"}", traceId, parentId)
 
-		executionInput = executionInput[:len(executionInput)-1] // remove closing bracket
-		executionInput += fmt.Sprintf(",\"_datadog\":{ %s }", traceContext)
+		modifiedInput := (*params.Input)[:len(*params.Input)-1] // remove closing bracket
+		params.Input = &modifiedInput
+		modifiedInput += fmt.Sprintf(",\"_datadog\":{ %s }", traceContext)
+		params.Input = &modifiedInput
 
 		fmt.Printf("================= executionInput: \n%s\n", executionInput)
 	}
