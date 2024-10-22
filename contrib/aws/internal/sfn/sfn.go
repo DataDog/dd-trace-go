@@ -26,7 +26,8 @@ func handleStartExecution(span tracer.Span, in middleware.InitializeInput) {
 		return
 	}
 
-	injectTraceContext(span, params.Input)
+	modifiedInput := injectTraceContext(span, params.Input)
+	params.Input = modifiedInput
 }
 
 func handleStartSyncExecution(span tracer.Span, in middleware.InitializeInput) {
@@ -36,28 +37,27 @@ func handleStartSyncExecution(span tracer.Span, in middleware.InitializeInput) {
 		return
 	}
 
-	injectTraceContext(span, params.Input)
+	modifiedInput := injectTraceContext(span, params.Input)
+	params.Input = modifiedInput
 }
 
-func injectTraceContext(span tracer.Span, input *string) {
+func injectTraceContext(span tracer.Span, input *string) *string {
 	if input == nil || len(*input) == 0 || (*input)[len(*input)-1] != '}' {
-		return
+		return input
 	}
 	traceCtxCarrier := tracer.TextMapCarrier{}
 	if err := tracer.Inject(span.Context(), traceCtxCarrier); err != nil {
 		log.Debug("Unable to inject trace context: %s", err)
-		return
+		return input
 	}
 
 	traceCtxJSON, err := json.Marshal(traceCtxCarrier)
 	if err != nil {
 		log.Debug("Unable to marshal trace context: %s", err)
-		return
+		return input
 	}
 
 	modifiedInput := (*input)[:len(*input)-1] // remove closing bracket
-	input = &modifiedInput
 	modifiedInput += fmt.Sprintf(",\"_datadog\": %s }", string(traceCtxJSON))
-	input = &modifiedInput
-	fmt.Printf("==================== input: \n%s\n", *input)
+	return &modifiedInput
 }
