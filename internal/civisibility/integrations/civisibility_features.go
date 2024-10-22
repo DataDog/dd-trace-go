@@ -53,6 +53,9 @@ var (
 
 	// ciVisibilityFlakyRetriesSettings contains the CI Visibility Flaky Retries settings for this session
 	ciVisibilityFlakyRetriesSettings FlakyRetriesSetting
+
+	// ciVisibilitySkippables contains the CI Visibility skippable tests for this session
+	ciVisibilitySkippables []net.SkippableResponseDataAttributes
 )
 
 // ensureAdditionalFeaturesInitialization initialize all the additional features
@@ -133,6 +136,19 @@ func ensureAdditionalFeaturesInitialization(serviceName string) {
 				ciVisibilitySettings.FlakyTestRetriesEnabled = false
 			}
 		}
+
+		// if ITR is enabled then we do the skippable tests request
+		if ciVisibilitySettings.ItrEnabled || true {
+			// get the skippable tests
+			correlationId, skippableTests, err := ciVisibilityClient.GetSkippableTests()
+			if err != nil {
+				log.Error("civisibility: error getting CI visibility skippable tests: %v", err)
+			} else if skippableTests != nil {
+				log.Debug("civisibility: skippable tests loaded: %d tests", len(*skippableTests))
+				utils.GetCITags()["itr_correlation_id"] = correlationId
+				ciVisibilitySkippables = *skippableTests
+			}
+		}
 	})
 }
 
@@ -155,6 +171,13 @@ func GetFlakyRetriesSettings() *FlakyRetriesSetting {
 	// call to ensure the additional features initialization is completed (service name can be null here)
 	ensureAdditionalFeaturesInitialization("")
 	return &ciVisibilityFlakyRetriesSettings
+}
+
+// GetSkippableTests gets the skippable tests from the backend
+func GetSkippableTests() *[]net.SkippableResponseDataAttributes {
+	// call to ensure the additional features initialization is completed (service name can be null here)
+	ensureAdditionalFeaturesInitialization("")
+	return &ciVisibilitySkippables
 }
 
 func uploadRepositoryChanges() (bytes int64, err error) {
