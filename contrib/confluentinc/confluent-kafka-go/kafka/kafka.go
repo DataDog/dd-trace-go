@@ -56,7 +56,6 @@ type Consumer struct {
 	*kafka.Consumer
 	tracer *tracing.KafkaTracer
 	events chan kafka.Event
-	prev   *tracer.Span
 }
 
 // WrapConsumer wraps a kafka.Consumer so that any consumed events are traced.

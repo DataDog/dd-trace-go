@@ -8,6 +8,7 @@ require (
 	github.com/DataDog/dd-trace-go/v2 v2.0.0-20240909105439-c452671ebc14
 	github.com/confluentinc/confluent-kafka-go v1.9.2
 	github.com/stretchr/testify v1.9.0
+	go.uber.org/goleak v1.3.0
 )
 
 require (

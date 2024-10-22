@@ -185,6 +185,7 @@ func TestDeprecatedContext(t *testing.T) {
 		"session.timeout.ms":       10,
 		"enable.auto.offset.store": false,
 	}, WithContext(ctx)) // Adds the parent context containing a span
+	assert.NoError(t, err)
 
 	err = c.Subscribe(testTopic, nil)
 	assert.NoError(t, err)
@@ -386,7 +387,7 @@ func produceThenConsume(t *testing.T, consumerAction consumerActionFn, producerO
 
 	if c.tracer.DSMEnabled() {
 		backlogs := mt.SentDSMBacklogs()
-		toMap := func(b []mocktracer.DSMBacklog) map[string]struct{} {
+		toMap := func(_ []mocktracer.DSMBacklog) map[string]struct{} {
 			m := make(map[string]struct{})
 			for _, b := range backlogs {
 				m[strings.Join(b.Tags, "")] = struct{}{}

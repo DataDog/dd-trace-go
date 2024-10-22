@@ -14,10 +14,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 	"github.com/DataDog/dd-trace-go/v2/internal"
-	"github.com/segmentio/kafka-go"
 )
-
-const defaultServiceName = "kafka"
 
 var instr *instrumentation.Instrumentation
 
@@ -122,7 +119,7 @@ func WithAnalyticsRate(rate float64) OptionFn {
 
 // WithCustomTag will cause the given tagFn to be evaluated after executing
 // a query and attach the result to the span tagged by the key.
-func WithCustomTag(tag string, tagFn func(msg *kafka.Message) interface{}) OptionFn {
+func WithCustomTag(tag string, tagFn func(msg Message) interface{}) OptionFn {
 	return func(cfg *KafkaTracer) {
 		if cfg.tagFns == nil {
 			cfg.tagFns = make(map[string]func(msg Message) interface{})
