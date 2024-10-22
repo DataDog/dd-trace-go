@@ -40,6 +40,7 @@ type (
 		GetCommits(localCommits []string) ([]string, error)
 		SendPackFiles(commitSha string, packFiles []string) (bytes int64, err error)
 		SendCoveragePayload(ciTestCovPayload io.Reader) error
+		GetSkippableTests() (correlationId string, skippables *[]SkippableResponseDataAttributes, err error)
 	}
 
 	// client is a client for sending requests to the Datadog backend.
