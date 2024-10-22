@@ -85,7 +85,6 @@ func (mw *traceMiddleware) startTraceMiddleware(stack *middleware.Stack) error {
 	) {
 		operation := awsmiddleware.GetOperationName(ctx)
 		serviceID := awsmiddleware.GetServiceID(ctx)
-		fmt.Println("============== serviceID = ", serviceID)
 
 		opts := []ddtrace.StartSpanOption{
 			tracer.SpanType(ext.SpanTypeHTTP),
@@ -120,7 +119,6 @@ func (mw *traceMiddleware) startTraceMiddleware(stack *middleware.Stack) error {
 		case "EventBridge":
 			eventBridgeTracer.EnrichOperation(span, in, operation)
 		case "SFN":
-			fmt.Println("test test test =========== step functions ===========")
 			sfnTracer.EnrichOperation(span, in, operation)
 		}
 
