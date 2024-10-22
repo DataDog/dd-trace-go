@@ -25,36 +25,34 @@ func handleStartExecution(span tracer.Span, in middleware.InitializeInput) {
 		return
 	}
 
-	if params.Input != nil && len(*params.Input) > 0 && (*params.Input)[len(*params.Input)-1] == '}' {
-		traceId := span.Context().TraceID()
-		parentId := span.Context().SpanID()
-		traceContext := fmt.Sprintf("{\"x-datadog-trace-id\":\"%d\",\"x-datadog-parent-id\":\"%d\"}", traceId, parentId)
-
-		modifiedInput := (*params.Input)[:len(*params.Input)-1] // remove closing bracket
-		params.Input = &modifiedInput
-		modifiedInput += fmt.Sprintf(",\"_datadog\": %s }", traceContext)
-		params.Input = &modifiedInput
-	}
+	injectTraceContext(span, params.Input)
 }
 
 func handleStartSyncExecution(span tracer.Span, in middleware.InitializeInput) {
-	fmt.Println("================= handling start sync execution")
 	params, ok := in.Parameters.(*sfn.StartSyncExecutionInput)
 	if !ok {
 		log.Debug("Unable to read StartSyncExecutionInput params")
 		return
 	}
 
-	if params.Input != nil && len(*params.Input) > 0 && (*params.Input)[len(*params.Input)-1] == '}' {
-		traceId := span.Context().TraceID()
-		parentId := span.Context().SpanID()
-		traceContext := fmt.Sprintf("{\"x-datadog-trace-id\":\"%d\",\"x-datadog-parent-id\":\"%d\"}", traceId, parentId)
+	injectTraceContext(span, params.Input)
+}
 
-		modifiedInput := (*params.Input)[:len(*params.Input)-1] // remove closing bracket
-		params.Input = &modifiedInput
-		modifiedInput += fmt.Sprintf(",\"_datadog\": %s }", traceContext)
-		params.Input = &modifiedInput
-
-		fmt.Println("============== modified input: ", *params.Input)
+func injectTraceContext(span tracer.Span, input *string) {
+	if input == nil || len(*input) == 0 || (*input)[len(*input)-1] != '}' {
+		return
 	}
+	carrier := tracer.TextMapCarrier{}
+	tracer.Inject(span.Context(), carrier)
+	fmt.Printf("============== test carrier: %+v\n", carrier)
+
+	traceId := span.Context().TraceID()
+	parentId := span.Context().SpanID()
+	traceContext := fmt.Sprintf("{\"x-datadog-trace-id\":\"%d\",\"x-datadog-parent-id\":\"%d\"}", traceId, parentId)
+	fmt.Printf("============= custom traceContext: %+v\n", traceContext)
+
+	modifiedInput := (*input)[:len(*input)-1] // remove closing bracket
+	input = &modifiedInput
+	modifiedInput += fmt.Sprintf(",\"_datadog\": %s }", traceContext)
+	input = &modifiedInput
 }
