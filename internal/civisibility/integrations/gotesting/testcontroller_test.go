@@ -96,14 +96,12 @@ func runFlakyTestRetriesTests(m *testing.M) {
 	// 1 TestMyTest01
 	// 1 TestMyTest02 + 2 subtests
 	// 1 Test_Foo + 3 subtests
-	// 1 TestWithExternalCalls + 2 subtests
 	// 1 TestSkip
 	// 1 TestRetryWithPanic + 3 retry tests from testing_test.go
 	// 1 TestRetryWithFail + 3 retry tests from testing_test.go
 	// 1 TestRetryAlwaysFail + 10 retry tests from testing_test.go
 	// 1 TestNormalPassingAfterRetryAlwaysFail
 	// 1 TestEarlyFlakeDetection
-	// 2 normal spans from testing_test.go
 
 	// check spans by resource name
 	checkSpansByResourceName(finishedSpans, "gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/integrations/gotesting", 1)
@@ -117,9 +115,6 @@ func runFlakyTestRetriesTests(m *testing.M) {
 	checkSpansByResourceName(finishedSpans, "testing_test.go.Test_Foo/yellow_should_return_color", 1)
 	checkSpansByResourceName(finishedSpans, "testing_test.go.Test_Foo/banana_should_return_fruit", 1)
 	checkSpansByResourceName(finishedSpans, "testing_test.go.Test_Foo/duck_should_return_animal", 1)
-	checkSpansByResourceName(finishedSpans, "testing_test.go.TestWithExternalCalls", 1)
-	checkSpansByResourceName(finishedSpans, "testing_test.go.TestWithExternalCalls/default", 1)
-	checkSpansByResourceName(finishedSpans, "testing_test.go.TestWithExternalCalls/custom-name", 1)
 	checkSpansByResourceName(finishedSpans, "testing_test.go.TestSkip", 1)
 	checkSpansByResourceName(finishedSpans, "testing_test.go.TestRetryWithPanic", 4)
 	checkSpansByResourceName(finishedSpans, "testing_test.go.TestRetryWithFail", 4)
@@ -132,12 +127,12 @@ func runFlakyTestRetriesTests(m *testing.M) {
 
 	// check spans by type
 	checkSpansByType(finishedSpans,
-		44,
+		39,
 		1,
 		1,
 		2,
-		38,
-		2)
+		35,
+		0)
 
 	os.Exit(0)
 }
@@ -179,7 +174,6 @@ func runEarlyFlakyTestDetectionTests(m *testing.M) {
 	// 11 TestMyTest01
 	// 11 TestMyTest02 + 22 subtests
 	// 11 Test_Foo + 33 subtests
-	// 11 TestWithExternalCalls + 22 subtests
 	// 11 TestSkip
 	// 11 TestRetryWithPanic
 	// 11 TestRetryWithFail
@@ -200,9 +194,6 @@ func runEarlyFlakyTestDetectionTests(m *testing.M) {
 	checkSpansByResourceName(finishedSpans, "testing_test.go.Test_Foo/yellow_should_return_color", 11)
 	checkSpansByResourceName(finishedSpans, "testing_test.go.Test_Foo/banana_should_return_fruit", 11)
 	checkSpansByResourceName(finishedSpans, "testing_test.go.Test_Foo/duck_should_return_animal", 11)
-	checkSpansByResourceName(finishedSpans, "testing_test.go.TestWithExternalCalls", 11)
-	checkSpansByResourceName(finishedSpans, "testing_test.go.TestWithExternalCalls/default", 11)
-	checkSpansByResourceName(finishedSpans, "testing_test.go.TestWithExternalCalls/custom-name", 11)
 	checkSpansByResourceName(finishedSpans, "testing_test.go.TestSkip", 11)
 	checkSpansByResourceName(finishedSpans, "testing_test.go.TestRetryWithPanic", 11)
 	checkSpansByResourceName(finishedSpans, "testing_test.go.TestRetryWithFail", 11)
@@ -211,17 +202,17 @@ func runEarlyFlakyTestDetectionTests(m *testing.M) {
 	checkSpansByResourceName(finishedSpans, "testing_test.go.TestEarlyFlakeDetection", 11)
 
 	// check spans by tag
-	checkSpansByTagName(finishedSpans, constants.TestIsNew, 187)
-	checkSpansByTagName(finishedSpans, constants.TestIsRetry, 170)
+	checkSpansByTagName(finishedSpans, constants.TestIsNew, 154)
+	checkSpansByTagName(finishedSpans, constants.TestIsRetry, 140)
 
 	// check spans by type
 	checkSpansByType(finishedSpans,
-		218,
+		163,
 		1,
 		1,
 		2,
-		192,
-		22)
+		159,
+		0)
 
 	os.Exit(0)
 }
@@ -298,9 +289,6 @@ func runFlakyTestRetriesWithEarlyFlakyTestDetectionTests(m *testing.M) {
 	checkSpansByResourceName(finishedSpans, "testing_test.go.Test_Foo/yellow_should_return_color", 1)
 	checkSpansByResourceName(finishedSpans, "testing_test.go.Test_Foo/banana_should_return_fruit", 1)
 	checkSpansByResourceName(finishedSpans, "testing_test.go.Test_Foo/duck_should_return_animal", 1)
-	checkSpansByResourceName(finishedSpans, "testing_test.go.TestWithExternalCalls", 1)
-	checkSpansByResourceName(finishedSpans, "testing_test.go.TestWithExternalCalls/default", 1)
-	checkSpansByResourceName(finishedSpans, "testing_test.go.TestWithExternalCalls/custom-name", 1)
 	checkSpansByResourceName(finishedSpans, "testing_test.go.TestSkip", 1)
 	checkSpansByResourceName(finishedSpans, "testing_test.go.TestRetryWithPanic", 4)
 	checkSpansByResourceName(finishedSpans, "testing_test.go.TestRetryWithFail", 4)
@@ -314,12 +302,12 @@ func runFlakyTestRetriesWithEarlyFlakyTestDetectionTests(m *testing.M) {
 
 	// check spans by type
 	checkSpansByType(finishedSpans,
-		64,
+		59,
 		1,
 		1,
 		2,
-		58,
-		2)
+		55,
+		0)
 
 	os.Exit(0)
 }
