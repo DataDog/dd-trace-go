@@ -145,7 +145,10 @@ func getRoute(router *httptreemux.TreeMux, w http.ResponseWriter, req *http.Requ
 		// replace parameter at end of the path, i.e. "../:param"
 		oldP = "/" + v
 		newP = "/:" + k
-		route = strings.Replace(route, oldP, newP, 1)
+		if strings.HasSuffix(route, oldP) {
+			endPos := strings.LastIndex(route, oldP)
+			route = route[:endPos] + newP
+		}
 	}
 	return route, true
 }
