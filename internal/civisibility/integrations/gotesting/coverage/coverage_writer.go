@@ -95,7 +95,7 @@ func (w *coverageWriter) flush() {
 
 		if log.DebugEnabled() {
 			var wbuf bytes.Buffer
-			msgp.CopyToJSON(&wbuf, buf)
+			msgp.CopyToJSON(&wbuf, bytes.NewBuffer(buf.Bytes()))
 			log.Debug("coverageWriter: payload: %s", string(wbuf.Bytes()))
 		}
 
