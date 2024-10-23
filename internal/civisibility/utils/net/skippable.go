@@ -56,7 +56,7 @@ type (
 	}
 )
 
-func (c *client) GetSkippableTests() (correlationId string, skippables *[]SkippableResponseDataAttributes, err error) {
+func (c *client) GetSkippableTests() (correlationId string, skippables map[string]map[string][]SkippableResponseDataAttributes, err error) {
 
 	body := skippableRequest{
 		Data: skippableRequestHeader{
@@ -83,10 +83,48 @@ func (c *client) GetSkippableTests() (correlationId string, skippables *[]Skippa
 		return "", nil, fmt.Errorf("unmarshalling skippable tests response: %s", err.Error())
 	}
 
-	var skippableTests []SkippableResponseDataAttributes
+	skippableTestsMap := map[string]map[string][]SkippableResponseDataAttributes{}
 	for _, data := range responseObject.Data {
-		skippableTests = append(skippableTests, data.Attributes)
+
+		// Filter out the tests that do not match the test configurations
+		if data.Attributes.Configurations.OsPlatform != "" && c.testConfigurations.OsPlatform != "" &&
+			data.Attributes.Configurations.OsPlatform != c.testConfigurations.OsPlatform {
+			continue
+		}
+		if data.Attributes.Configurations.OsArchitecture != "" && c.testConfigurations.OsArchitecture != "" &&
+			data.Attributes.Configurations.OsArchitecture != c.testConfigurations.OsArchitecture {
+			continue
+		}
+		if data.Attributes.Configurations.OsVersion != "" && c.testConfigurations.OsVersion != "" &&
+			data.Attributes.Configurations.OsVersion != c.testConfigurations.OsVersion {
+			continue
+		}
+		if data.Attributes.Configurations.RuntimeName != "" && c.testConfigurations.RuntimeName != "" &&
+			data.Attributes.Configurations.RuntimeName != c.testConfigurations.RuntimeName {
+			continue
+		}
+		if data.Attributes.Configurations.RuntimeArchitecture != "" && c.testConfigurations.RuntimeArchitecture != "" &&
+			data.Attributes.Configurations.RuntimeArchitecture != c.testConfigurations.RuntimeArchitecture {
+			continue
+		}
+		if data.Attributes.Configurations.RuntimeVersion != "" && c.testConfigurations.RuntimeVersion != "" &&
+			data.Attributes.Configurations.RuntimeVersion != c.testConfigurations.RuntimeVersion {
+			continue
+		}
+
+		var ok bool
+		var testsMap map[string][]SkippableResponseDataAttributes
+		if testsMap, ok = skippableTestsMap[data.Attributes.Suite]; !ok {
+			testsMap = map[string][]SkippableResponseDataAttributes{}
+			skippableTestsMap[data.Attributes.Suite] = testsMap
+		}
+
+		if test, ok := testsMap[data.Attributes.Name]; ok {
+			testsMap[data.Attributes.Name] = append(test, data.Attributes)
+		} else {
+			testsMap[data.Attributes.Name] = []SkippableResponseDataAttributes{data.Attributes}
+		}
 	}
 
-	return responseObject.Meta.CorrelationId, &skippableTests, nil
+	return responseObject.Meta.CorrelationId, skippableTestsMap, nil
 }
