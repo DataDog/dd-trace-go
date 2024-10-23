@@ -7,7 +7,6 @@ package gotesting
 
 import (
 	"fmt"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/integrations/gotesting/coverage"
 	"reflect"
 	"runtime"
 	"sync/atomic"
@@ -17,6 +16,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/constants"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/integrations"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/integrations/gotesting/coverage"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/utils"
 )
 
@@ -132,7 +132,23 @@ func (ddm *M) instrumentInternalTests(internalTests *[]testing.InternalTest) {
 // executeInternalTest wraps the original test function to include CI visibility instrumentation.
 func (ddm *M) executeInternalTest(testInfo *testingTInfo) func(*testing.T) {
 	originalFunc := runtime.FuncForPC(reflect.Indirect(reflect.ValueOf(testInfo.originalFunc)).Pointer())
+
+	// Check if the test is going to be skipped by ITR
+	skippableTests := integrations.GetSkippableTests()
+	testSkippedByITR := false
+	if skippableTests != nil {
+		if suitesMap, ok := skippableTests[testInfo.suiteName]; ok {
+			if _, ok := suitesMap[testInfo.testName]; ok {
+				testSkippedByITR = true
+			}
+		}
+	}
+
+	// Instrument the test function
 	instrumentedFunc := func(t *testing.T) {
+		// Set this func as a helper func of t
+		t.Helper()
+
 		// Get the metadata regarding the execution (in case is already created from the additional features)
 		execMeta := getTestMetadata(t)
 		if execMeta == nil {
@@ -160,6 +176,15 @@ func (ddm *M) executeInternalTest(testInfo *testingTInfo) func(*testing.T) {
 		if execMeta.isARetry {
 			// Set the retry tag
 			test.SetTag(constants.TestIsRetry, "true")
+		}
+
+		// Check if the test needs to be skipped by ITR
+		if testSkippedByITR {
+			test.SetTag(constants.TestSkippedByITR, "true")
+			test.CloseWithFinishTimeAndSkipReason(integrations.ResultStatusSkip, time.Now(), constants.SkippedByITRReason)
+			checkModuleAndSuite(module, suite)
+			t.Skip(constants.SkippedByITRReason)
+			return
 		}
 
 		// set the test coverage collector
@@ -229,6 +254,11 @@ func (ddm *M) executeInternalTest(testInfo *testingTInfo) func(*testing.T) {
 
 	// Register the instrumented func as an internal instrumented func (to avoid double instrumentation)
 	setInstrumentationMetadata(runtime.FuncForPC(reflect.Indirect(reflect.ValueOf(instrumentedFunc)).Pointer()), &instrumentationMetadata{IsInternal: true})
+
+	// If the test is going to be skipped by ITR then we don't apply the additional features
+	if testSkippedByITR {
+		return instrumentedFunc
+	}
 
 	// Get the additional feature wrapper
 	return applyAdditionalFeaturesToTestFunc(instrumentedFunc, &testInfo.commonInfo)

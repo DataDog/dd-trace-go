@@ -80,6 +80,12 @@ const (
 
 	// TestEarlyFlakeDetectionRetryAborted indicates a retry abort reason by the early flake detection feature
 	TestEarlyFlakeDetectionRetryAborted = "test.early_flake.abort_reason"
+
+	// TestSkippedByITR indicates a test skipped by the ITR feature
+	TestSkippedByITR = "test.skipped_by_itr"
+
+	// SkippedByITRReason indicates the reason why the test was skipped by the ITR feature
+	SkippedByITRReason = "Skipped by Datadog Intelligent Test Runner"
 )
 
 // Define valid test status types.
