@@ -35,7 +35,7 @@ import (
 func instrumentTestingM(m *testing.M) func(exitCode int) {
 	// Check if CI Visibility was disabled using the kill switch before trying to initialize it
 	atomic.StoreInt32(&ciVisibilityEnabledValue, -1)
-	if !isCiVisibilityEnabled() {
+	if !isCiVisibilityEnabled() || !testing.Testing() {
 		return func(exitCode int) {}
 	}
 
@@ -128,7 +128,7 @@ func instrumentTestingTFunc(f func(*testing.T)) func(*testing.T) {
 
 		// Because this is a subtest let's propagate some execution metadata from the parent test
 		testPrivateFields := getTestPrivateFields(t)
-		if testPrivateFields.parent != nil {
+		if testPrivateFields != nil && testPrivateFields.parent != nil {
 			parentExecMeta := getTestMetadataFromPointer(*testPrivateFields.parent)
 			if parentExecMeta != nil {
 				if parentExecMeta.isANewTest {
@@ -287,6 +287,9 @@ func instrumentTestingBFunc(pb *testing.B, name string, f func(*testing.B)) (str
 
 		// Decrement level.
 		bpf := getBenchmarkPrivateFields(b)
+		if bpf == nil {
+			panic("error getting private fields of the benchmark")
+		}
 		bpf.AddLevel(-1)
 
 		startTime := time.Now()
@@ -296,7 +299,9 @@ func instrumentTestingBFunc(pb *testing.B, name string, f func(*testing.B)) (str
 		test.SetTestFunc(originalFunc)
 
 		// Restore the original name without the sub-benchmark auto name.
-		*bpf.name = subBenchmarkAutoNameRegex.ReplaceAllString(*bpf.name, "")
+		if bpf.name != nil {
+			*bpf.name = subBenchmarkAutoNameRegex.ReplaceAllString(*bpf.name, "")
+		}
 
 		// Run original benchmark.
 		var iPfOfB *benchmarkPrivateFields
@@ -317,7 +322,14 @@ func instrumentTestingBFunc(pb *testing.B, name string, f func(*testing.B)) (str
 
 			// First time we get the private fields of the inner testing.B.
 			iPfOfB = getBenchmarkPrivateFields(b)
+			if iPfOfB == nil {
+				panic("error getting private fields of the benchmark")
+			}
+
 			// Replace this function with the original one (executed only once - the first iteration[b.run1]).
+			if iPfOfB.benchFunc == nil {
+				panic("error getting the benchmark function")
+			}
 			*iPfOfB.benchFunc = f
 
 			// Get the metadata regarding the execution (in case is already created from the additional features)
