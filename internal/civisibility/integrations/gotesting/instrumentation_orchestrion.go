@@ -46,8 +46,11 @@ func instrumentTestingM(m *testing.M) func(exitCode int) {
 	// Create a new test session for CI visibility.
 	session = integrations.CreateTestSession()
 
-	// Initialize the runtime coverage if enabled.
-	coverage.InitializeCoverage(m)
+	settings := integrations.GetSettings()
+	if settings != nil && settings.CodeCoverage {
+		// Initialize the runtime coverage if enabled.
+		coverage.InitializeCoverage(m)
+	}
 
 	ddm := (*M)(m)
 

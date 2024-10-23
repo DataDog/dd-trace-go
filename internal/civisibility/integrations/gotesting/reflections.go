@@ -78,6 +78,7 @@ type commonPrivateFields struct {
 	failed  *bool           // Test or benchmark has failed.
 	skipped *bool           // Test or benchmark has been skipped.
 	parent  *unsafe.Pointer // Parent common
+	barrier *chan bool      // Barrier for parallel tests
 }
 
 // AddLevel increase or decrease the testing.common.level field value, used by
@@ -158,6 +159,9 @@ func getTestPrivateFields(t *testing.T) *commonPrivateFields {
 	if ptr, err := getFieldPointerFrom(t, "parent"); err == nil && ptr != nil {
 		testFields.parent = (*unsafe.Pointer)(ptr)
 	}
+	if ptr, err := getFieldPointerFrom(t, "barrier"); err == nil {
+		testFields.barrier = (*chan bool)(ptr)
+	}
 
 	return testFields
 }
@@ -186,6 +190,9 @@ func getTestParentPrivateFields(t *testing.T) *commonPrivateFields {
 		}
 		if ptr, err := getFieldPointerFromValue(value, "skipped"); err == nil && ptr != nil {
 			testFields.skipped = (*bool)(ptr)
+		}
+		if ptr, err := getFieldPointerFromValue(value, "barrier"); err == nil {
+			testFields.barrier = (*chan bool)(ptr)
 		}
 
 		return testFields
