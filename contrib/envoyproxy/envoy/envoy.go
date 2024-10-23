@@ -64,7 +64,6 @@ func getRemoteAddr(xfwd []string) string {
 
 func StreamServerInterceptor(opts ...grpctrace.Option) grpc.StreamServerInterceptor {
 	interceptor := grpctrace.StreamServerInterceptor(opts...)
-	log.SetLevel(log.LevelDebug) // TODO: Remove
 
 	return func(srv any, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
 		if info.FullMethod != extproc.ExternalProcessor_Process_FullMethodName {
