@@ -42,6 +42,11 @@ func (c *Config) RunHTTP(handler func() http.Handler) {
 		os.Setenv("DD_PROFILING_EXECUTION_TRACE_PERIOD", "1s")
 	}
 
+	// Enabled runtime metrics v2 by default
+	if v := os.Getenv("DD_RUNTIME_METRICS_V2_ENABLED"); v == "" {
+		os.Setenv("DD_RUNTIME_METRICS_V2_ENABLED", "true")
+	}
+
 	// Setup context that gets canceled on receiving SIGINT
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
