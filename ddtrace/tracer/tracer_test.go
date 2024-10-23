@@ -2147,7 +2147,6 @@ func BenchmarkGenSpanID(b *testing.B) {
 
 // startTestTracer returns a Tracer with a DummyTransport
 func startTestTracer(t testing.TB, opts ...StartOption) (trc *tracer, transport *dummyTransport, flush func(n int), stop func()) {
-	oldLevel := log.GetLevel()
 	transport = newDummyTransport()
 	tick := make(chan time.Time)
 	o := append([]StartOption{
@@ -2182,7 +2181,6 @@ func startTestTracer(t testing.TB, opts ...StartOption) (trc *tracer, transport 
 		tracer.Stop()
 		// clear any service name that was set: we want the state to be the same as startup
 		globalconfig.SetServiceName("")
-		log.SetLevel(oldLevel) // avoids test failures because of global state
 	}
 }
 
