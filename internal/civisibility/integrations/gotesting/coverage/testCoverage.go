@@ -21,6 +21,14 @@ import (
 )
 
 type (
+	// TestCoverage is the interface for collecting test coverage.
+	TestCoverage interface {
+		// CollectCoverageBeforeTestExecution collects coverage before test execution.
+		CollectCoverageBeforeTestExecution()
+		// CollectCoverageAfterTestExecution collects coverage after test execution.
+		CollectCoverageAfterTestExecution()
+	}
+
 	// testCoverage holds information about test coverage.
 	testCoverage struct {
 		sessionID            uint64
@@ -50,6 +58,8 @@ type (
 	}
 )
 
+var _ TestCoverage = (*testCoverage)(nil)
+
 var (
 	// mode is the coverage mode.
 	mode string
@@ -72,48 +82,51 @@ var (
 
 // InitializeCoverage initializes the runtime coverage.
 func InitializeCoverage(m *testing.M) {
-	if testDep, err := getTestDepsCoverage(m); err == nil {
-		// initializing runtime coverage
-		mode, tearDown, _ = testDep.InitRuntimeCoverage()
+	log.Debug("civisibility.coverage: initializing runtime coverage")
+	testDep, err := getTestDepsCoverage(m)
+	if err != nil || testDep == nil {
+		log.Debug("civisibility.coverage: error initializing runtime coverage: %v", err)
+		return
+	}
 
-		// if we cannot collect we bailout early
-		if !CanCollect() {
-			return
-		}
+	// initializing runtime coverage
+	mode, tearDown, _ = testDep.InitRuntimeCoverage()
 
-		// creating a temp file to store coverage messages that we don't want to print to stdout
-		tempFile, _ = os.CreateTemp("", "coverage")
+	// if we cannot collect we bailout early
+	if !CanCollect() {
+		return
+	}
 
-		// initializing coverage writer
-		covWriter = newCoverageWriter()
-		integrations.PushCiVisibilityCloseAction(func() {
-			covWriter.stop()
-		})
+	// creating a temp file to store coverage messages that we don't want to print to stdout
+	tempFile, _ = os.CreateTemp("", "coverage")
 
-		// create a temporary directory to store coverage files
-		temporaryDir, err = os.MkdirTemp("", "coverage")
-		if err != nil {
-			log.Debug("Error creating temporary directory: %v", err)
-		} else {
-			log.Debug("Temporary coverage directory created: %s", temporaryDir)
-		}
-		integrations.PushCiVisibilityCloseAction(func() {
-			_ = os.RemoveAll(temporaryDir)
-		})
+	// initializing coverage writer
+	covWriter = newCoverageWriter()
+	integrations.PushCiVisibilityCloseAction(func() {
+		covWriter.stop()
+	})
 
-		// executing go list -f '{{.Module.Path}};{{.Module.Dir}}' to get the module path and module dir
-		stdOut, err := exec.Command("go", "list", "-f", "{{.Module.Path}};{{.Module.Dir}}").CombinedOutput()
-		if err != nil {
-			log.Debug("Error getting module path and module dir: %v", err)
-		} else {
-			parts := strings.Split(string(stdOut), ";")
-			if len(parts) == 2 {
-				modulePath = strings.TrimSpace(parts[0])
-				moduleDir = strings.TrimSpace(parts[1])
-			}
-		}
+	// create a temporary directory to store coverage files
+	temporaryDir, err = os.MkdirTemp("", "coverage")
+	if err != nil {
+		log.Debug("civisibility.coverage: error creating temporary directory: %v", err)
 	} else {
-		log.Debug("Error initializing runtime coverage: %v", err)
+		log.Debug("civisibility.coverage: temporary coverage directory created: %s", temporaryDir)
+	}
+	integrations.PushCiVisibilityCloseAction(func() {
+		_ = os.RemoveAll(temporaryDir)
+	})
+
+	// executing go list -f '{{.Module.Path}};{{.Module.Dir}}' to get the module path and module dir
+	stdOut, err := exec.Command("go", "list", "-f", "{{.Module.Path}};{{.Module.Dir}}").CombinedOutput()
+	if err != nil {
+		log.Debug("civisibility.coverage: error getting module path and module dir: %v", err)
+	} else {
+		parts := strings.Split(string(stdOut), ";")
+		if len(parts) == 2 {
+			modulePath = strings.TrimSpace(parts[0])
+			moduleDir = strings.TrimSpace(parts[1])
+		}
 	}
 }
 
@@ -133,30 +146,30 @@ func GetCoverage() float64 {
 	_, err := tearDown(coverageFile, "")
 	restore()
 	if err != nil {
-		log.Debug("Error getting coverage file: %v", err)
+		log.Debug("civisibility.coverage: error getting coverage file: %v", err)
 	}
 
 	defer func(cFile string) {
 		err = os.Remove(cFile)
 		if err != nil {
-			log.Debug("Error removing coverage file: %v", err)
+			log.Debug("civisibility.coverage: error removing coverage file: %v", err)
 		}
 	}(coverageFile)
 
 	totalStatements, coveredStatements, err := getCoverageStatementsInfo(coverageFile)
 	if err != nil {
-		log.Debug("Error parsing coverage file: %v", err)
+		log.Debug("civisibility.coverage: error parsing coverage file: %v", err)
 	}
 
 	if totalStatements == 0 {
 		return 0
 	}
 
-	return (float64(coveredStatements) / float64(totalStatements))
+	return float64(coveredStatements) / float64(totalStatements)
 }
 
 // NewTestCoverage creates a new test coverage.
-func NewTestCoverage(sessionID, moduleID, suiteID, testID uint64, testFile string) *testCoverage {
+func NewTestCoverage(sessionID, moduleID, suiteID, testID uint64, testFile string) TestCoverage {
 	testFile = utils.GetRelativePathFromCITagsSourceRoot(testFile)
 	return &testCoverage{
 		sessionID: sessionID,
@@ -178,7 +191,7 @@ func (t *testCoverage) CollectCoverageBeforeTestExecution() {
 	_, err := tearDown(t.preCoverageFilename, "")
 	restore()
 	if err != nil {
-		log.Debug("Error getting coverage file: %v", err)
+		log.Debug("civisibility.coverage: error getting coverage file: %v", err)
 	}
 }
 
@@ -193,7 +206,7 @@ func (t *testCoverage) CollectCoverageAfterTestExecution() {
 	_, err := tearDown(t.postCoverageFilename, "")
 	restore()
 	if err != nil {
-		log.Debug("Error getting coverage file: %v", err)
+		log.Debug("civisibility.coverage: error getting coverage file: %v", err)
 	}
 
 	var pChannel = make(chan struct{})
@@ -211,17 +224,17 @@ func (t *testCoverage) processCoverageData() {
 	if t.preCoverageFilename == "" ||
 		t.postCoverageFilename == "" ||
 		t.preCoverageFilename == t.postCoverageFilename {
-		log.Debug("No coverage data to process")
+		log.Debug("civisibility.coverage: no coverage data to process")
 		return
 	}
 	preCoverage, err := parseCoverProfile(t.preCoverageFilename)
 	if err != nil {
-		log.Debug("Error parsing pre-coverage file: %v", err)
+		log.Debug("civisibility.coverage: error parsing pre-coverage file: %v", err)
 		return
 	}
 	postCoverage, err := parseCoverProfile(t.postCoverageFilename)
 	if err != nil {
-		log.Debug("Error parsing post-coverage file: %v", err)
+		log.Debug("civisibility.coverage: error parsing post-coverage file: %v", err)
 		return
 	}
 
@@ -230,12 +243,12 @@ func (t *testCoverage) processCoverageData() {
 
 	err = os.Remove(t.preCoverageFilename)
 	if err != nil {
-		log.Debug("Error removing pre-coverage file: %v", err)
+		log.Debug("civisibility.coverage: error removing pre-coverage file: %v", err)
 	}
 
 	err = os.Remove(t.postCoverageFilename)
 	if err != nil {
-		log.Debug("Error removing post-coverage file: %v", err)
+		log.Debug("civisibility.coverage: error removing post-coverage file: %v", err)
 	}
 }
 

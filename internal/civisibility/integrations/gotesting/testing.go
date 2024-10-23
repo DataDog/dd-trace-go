@@ -133,6 +133,10 @@ func (ddm *M) instrumentInternalTests(internalTests *[]testing.InternalTest) {
 func (ddm *M) executeInternalTest(testInfo *testingTInfo) func(*testing.T) {
 	originalFunc := runtime.FuncForPC(reflect.Indirect(reflect.ValueOf(testInfo.originalFunc)).Pointer())
 
+	// Get the settings response for this session
+	settings := integrations.GetSettings()
+	coverageEnabled := settings.CodeCoverage
+
 	// Check if the test is going to be skipped by ITR
 	skippableTests := integrations.GetSkippableTests()
 	testSkippedByITR := false
@@ -187,21 +191,41 @@ func (ddm *M) executeInternalTest(testInfo *testingTInfo) func(*testing.T) {
 			return
 		}
 
-		// set the test coverage collector
-		testFile, _ := originalFunc.FileLine(originalFunc.Entry())
-		tCoverage := coverage.NewTestCoverage(
-			session.SessionID(),
-			module.ModuleID(),
-			suite.SuiteID(),
-			test.TestID(),
-			testFile)
+		// Check if the coverage is enabled
+		var tCoverage coverage.TestCoverage
+		var tParentOldBarrier chan bool
+		if coverageEnabled {
+			// set the test coverage collector
+			testFile, _ := originalFunc.FileLine(originalFunc.Entry())
+			tCoverage = coverage.NewTestCoverage(
+				session.SessionID(),
+				module.ModuleID(),
+				suite.SuiteID(),
+				test.TestID(),
+				testFile)
+
+			// now we need to disable parallelism for the test in order to collect the test coverage
+			tParent := getTestParentPrivateFields(t)
+			if tParent != nil && tParent.barrier != nil {
+				tParentOldBarrier = *tParent.barrier
+				*tParent.barrier = nil
+			}
+		}
 
 		startTime := time.Now()
 		defer func() {
 			duration := time.Since(startTime)
 
-			// Collect coverage after test execution so we can calculate the diff comparing to the baseline.
-			tCoverage.CollectCoverageAfterTestExecution()
+			if tCoverage != nil {
+				// Collect coverage after test execution so we can calculate the diff comparing to the baseline.
+				tCoverage.CollectCoverageAfterTestExecution()
+
+				// now we restore the original parent barrier
+				tParent := getTestParentPrivateFields(t)
+				if tParent != nil && tParent.barrier != nil {
+					*tParent.barrier = tParentOldBarrier
+				}
+			}
 
 			// check if is a new EFD test and the duration >= 5 min
 			if execMeta.isANewTest && duration.Minutes() >= 5 {
@@ -245,8 +269,10 @@ func (ddm *M) executeInternalTest(testInfo *testingTInfo) func(*testing.T) {
 			}
 		}()
 
-		// Collect coverage before test execution so we can register a baseline.
-		tCoverage.CollectCoverageBeforeTestExecution()
+		if tCoverage != nil {
+			// Collect coverage before test execution so we can register a baseline.
+			tCoverage.CollectCoverageBeforeTestExecution()
+		}
 
 		// Execute the original test function.
 		testInfo.originalFunc(t)

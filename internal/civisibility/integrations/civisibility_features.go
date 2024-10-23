@@ -39,6 +39,9 @@ type (
 )
 
 var (
+	// settingsInitializationOnce ensures we do the settings initialization just once
+	settingsInitializationOnce sync.Once
+
 	// additionalFeaturesInitializationOnce ensures we do the additional features initialization just once
 	additionalFeaturesInitializationOnce sync.Once
 
@@ -58,10 +61,9 @@ var (
 	ciVisibilitySkippables map[string]map[string][]net.SkippableResponseDataAttributes
 )
 
-// ensureAdditionalFeaturesInitialization initialize all the additional features
-func ensureAdditionalFeaturesInitialization(serviceName string) {
-	additionalFeaturesInitializationOnce.Do(func() {
-		log.Debug("civisibility: initializing additional features")
+func ensureSettingsInitialization(serviceName string) {
+	settingsInitializationOnce.Do(func() {
+		log.Debug("civisibility: initializing settings")
 
 		// Create the CI Visibility client
 		ciVisibilityClient = net.NewClientWithServiceName(serviceName)
@@ -106,6 +108,17 @@ func ensureAdditionalFeaturesInitialization(serviceName string) {
 			PushCiVisibilityCloseAction(func() {
 				<-uploadChannel
 			})
+		}
+	})
+}
+
+// ensureAdditionalFeaturesInitialization initialize all the additional features
+func ensureAdditionalFeaturesInitialization(serviceName string) {
+	additionalFeaturesInitializationOnce.Do(func() {
+		log.Debug("civisibility: initializing additional features")
+		ensureSettingsInitialization(serviceName)
+		if ciVisibilityClient == nil {
+			return
 		}
 
 		// if early flake detection is enabled then we run the early flake detection request
@@ -155,7 +168,7 @@ func ensureAdditionalFeaturesInitialization(serviceName string) {
 // GetSettings gets the settings from the backend settings endpoint
 func GetSettings() *net.SettingsResponseData {
 	// call to ensure the additional features initialization is completed (service name can be null here)
-	ensureAdditionalFeaturesInitialization("")
+	ensureSettingsInitialization("")
 	return &ciVisibilitySettings
 }
 
