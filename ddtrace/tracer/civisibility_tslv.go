@@ -273,6 +273,7 @@ func getCiVisibilityEvent(span *span) *ciVisibilityEvent {
 //	A pointer to the created ciVisibilityEvent.
 func createTestEventFromSpan(span *span) *ciVisibilityEvent {
 	tSpan := createTslvSpan(span)
+	tSpan.ParentID = 0
 	tSpan.SessionID = getAndRemoveMetaToUInt64(span, constants.TestSessionIDTag)
 	tSpan.ModuleID = getAndRemoveMetaToUInt64(span, constants.TestModuleIDTag)
 	tSpan.SuiteID = getAndRemoveMetaToUInt64(span, constants.TestSuiteIDTag)
@@ -298,6 +299,7 @@ func createTestEventFromSpan(span *span) *ciVisibilityEvent {
 //	A pointer to the created ciVisibilityEvent.
 func createTestSuiteEventFromSpan(span *span) *ciVisibilityEvent {
 	tSpan := createTslvSpan(span)
+	tSpan.ParentID = 0
 	tSpan.SessionID = getAndRemoveMetaToUInt64(span, constants.TestSessionIDTag)
 	tSpan.ModuleID = getAndRemoveMetaToUInt64(span, constants.TestModuleIDTag)
 	tSpan.SuiteID = getAndRemoveMetaToUInt64(span, constants.TestSuiteIDTag)
@@ -320,6 +322,7 @@ func createTestSuiteEventFromSpan(span *span) *ciVisibilityEvent {
 //	A pointer to the created ciVisibilityEvent.
 func createTestModuleEventFromSpan(span *span) *ciVisibilityEvent {
 	tSpan := createTslvSpan(span)
+	tSpan.ParentID = 0
 	tSpan.SessionID = getAndRemoveMetaToUInt64(span, constants.TestSessionIDTag)
 	tSpan.ModuleID = getAndRemoveMetaToUInt64(span, constants.TestModuleIDTag)
 	return &ciVisibilityEvent{
@@ -341,6 +344,7 @@ func createTestModuleEventFromSpan(span *span) *ciVisibilityEvent {
 //	A pointer to the created ciVisibilityEvent.
 func createTestSessionEventFromSpan(span *span) *ciVisibilityEvent {
 	tSpan := createTslvSpan(span)
+	tSpan.ParentID = 0
 	tSpan.SessionID = getAndRemoveMetaToUInt64(span, constants.TestSessionIDTag)
 	return &ciVisibilityEvent{
 		span:    span,

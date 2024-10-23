@@ -3,68 +3,17 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
-//go:build !go1.22
-
-// TODO(knusbaum): This file should be deleted once go1.21 falls out of support
 package tracer
 
 import (
-	cryptorand "crypto/rand"
 	"math"
-	"math/big"
-	"math/rand"
-	"sync"
-	"time"
-
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"math/rand/v2"
 )
 
-// random holds a thread-safe source of random numbers.
-var random *rand.Rand
-
-func init() {
-	var seed int64
-	n, err := cryptorand.Int(cryptorand.Reader, big.NewInt(math.MaxInt64))
-	if err == nil {
-		seed = n.Int64()
-	} else {
-		log.Warn("cannot generate random seed: %v; using current time", err)
-		seed = time.Now().UnixNano()
-	}
-	random = rand.New(&safeSource{
-		source: rand.NewSource(seed),
-	})
-}
-
-// safeSource holds a thread-safe implementation of rand.Source64.
-type safeSource struct {
-	source rand.Source
-	sync.Mutex
-}
-
-func (rs *safeSource) Int63() int64 {
-	rs.Lock()
-	n := rs.source.Int63()
-	rs.Unlock()
-
-	return n
-}
-
-func (rs *safeSource) Uint64() uint64 { return uint64(rs.Int63()) }
-
-func (rs *safeSource) Seed(seed int64) {
-	rs.Lock()
-	rs.source.Seed(seed)
-	rs.Unlock()
-}
-
-// generateSpanID returns a random uint64 that has been XORd with the startTime.
-// This is done to get around the 32-bit random seed limitation that may create collisions if there is a large number
-// of go services all generating spans.
-func generateSpanID(startTime int64) uint64 {
-	return random.Uint64() ^ uint64(startTime)
-}
-
 func randUint64() uint64 {
-	return random.Uint64()
+	return rand.Uint64()
+}
+
+func generateSpanID(startTime int64) uint64 {
+	return rand.Uint64() & math.MaxInt64
 }

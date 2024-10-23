@@ -279,6 +279,9 @@ type config struct {
 
 	// ciVisibilityEnabled controls if the tracer is loaded with CI Visibility mode. default false
 	ciVisibilityEnabled bool
+
+	// logDirectory is directory for tracer logs specified by user-setting DD_TRACE_LOG_DIRECTORY. default empty/unused
+	logDirectory string
 }
 
 // orchestrionConfig contains Orchestrion configuration.
@@ -383,6 +386,7 @@ func newConfig(opts ...StartOption) *config {
 	c.runtimeMetrics = internal.BoolVal(getDDorOtelConfig("metrics"), false)
 	c.runtimeMetricsV2 = internal.BoolVal("DD_RUNTIME_METRICS_V2_ENABLED", false)
 	c.debug = internal.BoolVal(getDDorOtelConfig("debugMode"), false)
+	c.logDirectory = os.Getenv("DD_TRACE_LOG_DIRECTORY")
 	c.enabled = newDynamicConfig("tracing_enabled", internal.BoolVal(getDDorOtelConfig("enabled"), true), func(b bool) bool { return true }, equal[bool])
 	if _, ok := os.LookupEnv("DD_TRACE_ENABLED"); ok {
 		c.enabled.cfgOrigin = telemetry.OriginEnvVar
@@ -509,7 +513,6 @@ func newConfig(opts ...StartOption) *config {
 	if c.debug {
 		log.SetLevel(log.LevelDebug)
 	}
-
 	// if using stdout or traces are disabled, agent is disabled
 	agentDisabled := c.logToStdout || !c.enabled.current
 	c.agent = loadAgentFeatures(agentDisabled, c.agentURL, c.httpClient)
@@ -1294,6 +1297,10 @@ func setHeaderTags(headerAsTags []string) bool {
 	globalconfig.ClearHeaderTags()
 	for _, h := range headerAsTags {
 		header, tag := normalizer.HeaderTag(h)
+		if len(header) == 0 || len(tag) == 0 {
+			log.Debug("Header-tag input is in unsupported format; dropping input value %v", h)
+			continue
+		}
 		globalconfig.SetHeaderTag(header, tag)
 	}
 	return true
