@@ -66,7 +66,14 @@ func instrumentTestingM(m *testing.M) func(exitCode int) {
 	return func(exitCode int) {
 		// Check for code coverage if enabled.
 		if testing.CoverMode() != "" {
-			coveragePercentage := testing.Coverage() * 100
+			// let's try first with our coverage package
+			cov := coverage.GetCoverage()
+			if cov == 0 {
+				// if not we try we the default testing package
+				cov = testing.Coverage()
+			}
+
+			coveragePercentage := cov * 100
 			session.SetTag(constants.CodeCoveragePercentageOfTotalLines, coveragePercentage)
 		}
 

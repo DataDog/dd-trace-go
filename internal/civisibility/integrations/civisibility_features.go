@@ -138,7 +138,7 @@ func ensureAdditionalFeaturesInitialization(serviceName string) {
 		}
 
 		// if ITR is enabled then we do the skippable tests request
-		if ciVisibilitySettings.ItrEnabled || true {
+		if ciVisibilitySettings.ItrEnabled {
 			// get the skippable tests
 			correlationId, skippableTests, err := ciVisibilityClient.GetSkippableTests()
 			if err != nil {
