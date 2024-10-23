@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -32,11 +33,13 @@ type (
 		filesCovered         []string
 	}
 
+	// coverageData holds information about coverage data with their block
 	coverageData struct {
 		fileName string
 		blocks   []coverageBlock
 	}
 
+	// coverageBlock holds information about coverage block.
 	coverageBlock struct {
 		startLine int
 		startCol  int
@@ -48,19 +51,35 @@ type (
 )
 
 var (
-	mode     string
+	// mode is the coverage mode.
+	mode string
+	// tearDown is the function to write the coverage counters to the file.
 	tearDown func(coverprofile string, gocoverdir string) (string, error)
 
-	tempFile   *os.File
-	covWriter  *coverageWriter
+	// tempFile is the temp file to store coverage messages that we don't want to print to stdout.
+	tempFile *os.File
+
+	// covWriter is the coverage writer for sending test coverage data to the backend.
+	covWriter *coverageWriter
+
+	// temporaryDir is the temporary directory to store coverage files.
+	temporaryDir string
+	// modulePath is the module path.
 	modulePath string
-	moduleDir  string
+	// moduleDir is the module directory.
+	moduleDir string
 )
 
+// InitializeCoverage initializes the runtime coverage.
 func InitializeCoverage(m *testing.M) {
 	if testDep, err := getTestDepsCoverage(m); err == nil {
 		// initializing runtime coverage
 		mode, tearDown, _ = testDep.InitRuntimeCoverage()
+
+		// if we cannot collect we bailout early
+		if !CanCollect() {
+			return
+		}
 
 		// creating a temp file to store coverage messages that we don't want to print to stdout
 		tempFile, _ = os.CreateTemp("", "coverage")
@@ -69,6 +88,17 @@ func InitializeCoverage(m *testing.M) {
 		covWriter = newCoverageWriter()
 		integrations.PushCiVisibilityCloseAction(func() {
 			covWriter.stop()
+		})
+
+		// create a temporary directory to store coverage files
+		temporaryDir, err = os.MkdirTemp("", "coverage")
+		if err != nil {
+			log.Debug("Error creating temporary directory: %v", err)
+		} else {
+			log.Debug("Temporary coverage directory created: %s", temporaryDir)
+		}
+		integrations.PushCiVisibilityCloseAction(func() {
+			_ = os.RemoveAll(temporaryDir)
 		})
 
 		// executing go list -f '{{.Module.Path}};{{.Module.Dir}}' to get the module path and module dir
@@ -87,16 +117,45 @@ func InitializeCoverage(m *testing.M) {
 	}
 }
 
-func canCollect() bool {
+// CanCollect returns whether coverage can be collected.
+func CanCollect() bool {
 	return mode == "count" || mode == "atomic"
 }
 
-func setStdOutToTemp() (restore func()) {
-	stdout := os.Stdout
-	os.Stdout = tempFile
-	return func() { os.Stdout = stdout }
+// GetCoverage returns the total coverage percentage for the test package
+func GetCoverage() float64 {
+	if !CanCollect() {
+		return 0
+	}
+
+	restore := setStdOutToTemp()
+	coverageFile := filepath.Join(temporaryDir, "global_coverage.out")
+	_, err := tearDown(coverageFile, "")
+	restore()
+	if err != nil {
+		log.Debug("Error getting coverage file: %v", err)
+	}
+
+	defer func(cFile string) {
+		err = os.Remove(cFile)
+		if err != nil {
+			log.Debug("Error removing coverage file: %v", err)
+		}
+	}(coverageFile)
+
+	totalStatements, coveredStatements, err := getCoverageStatementsInfo(coverageFile)
+	if err != nil {
+		log.Debug("Error parsing coverage file: %v", err)
+	}
+
+	if totalStatements == 0 {
+		return 0
+	}
+
+	return (float64(coveredStatements) / float64(totalStatements))
 }
 
+// NewTestCoverage creates a new test coverage.
 func NewTestCoverage(sessionID, moduleID, suiteID, testID uint64, testFile string) *testCoverage {
 	testFile = utils.GetRelativePathFromCITagsSourceRoot(testFile)
 	return &testCoverage{
@@ -108,13 +167,14 @@ func NewTestCoverage(sessionID, moduleID, suiteID, testID uint64, testFile strin
 	}
 }
 
+// CollectCoverageBeforeTestExecution collects coverage before test execution.
 func (t *testCoverage) CollectCoverageBeforeTestExecution() {
-	if !canCollect() {
+	if !CanCollect() {
 		return
 	}
 
 	restore := setStdOutToTemp()
-	t.preCoverageFilename = fmt.Sprintf("%d-%d-%d-pre.out", t.moduleID, t.suiteID, t.testID)
+	t.preCoverageFilename = filepath.Join(temporaryDir, fmt.Sprintf("%d-%d-%d-pre.out", t.moduleID, t.suiteID, t.testID))
 	_, err := tearDown(t.preCoverageFilename, "")
 	restore()
 	if err != nil {
@@ -122,13 +182,14 @@ func (t *testCoverage) CollectCoverageBeforeTestExecution() {
 	}
 }
 
+// CollectCoverageAfterTestExecution collects coverage after test execution.
 func (t *testCoverage) CollectCoverageAfterTestExecution() {
-	if !canCollect() {
+	if !CanCollect() {
 		return
 	}
 
 	restore := setStdOutToTemp()
-	t.postCoverageFilename = fmt.Sprintf("%d-%d-%d-post.out", t.moduleID, t.suiteID, t.testID)
+	t.postCoverageFilename = filepath.Join(temporaryDir, fmt.Sprintf("%d-%d-%d-post.out", t.moduleID, t.suiteID, t.testID))
 	_, err := tearDown(t.postCoverageFilename, "")
 	restore()
 	if err != nil {
@@ -145,6 +206,7 @@ func (t *testCoverage) CollectCoverageAfterTestExecution() {
 	}()
 }
 
+// processCoverageData processes the coverage data.
 func (t *testCoverage) processCoverageData() {
 	if t.preCoverageFilename == "" ||
 		t.postCoverageFilename == "" ||
@@ -175,6 +237,13 @@ func (t *testCoverage) processCoverageData() {
 	if err != nil {
 		log.Debug("Error removing post-coverage file: %v", err)
 	}
+}
+
+// setStdOutToTemp sets the stdout to a temp file.
+func setStdOutToTemp() (restore func()) {
+	stdout := os.Stdout
+	os.Stdout = tempFile
+	return func() { os.Stdout = stdout }
 }
 
 // parseCoverProfile parses the coverage profile data and returns the coverage data for each file
@@ -294,6 +363,61 @@ func getFilesCovered(testFile string, before, after map[string][]coverageBlock) 
 	return result
 }
 
+// getRelativePathFromCITagsSourceRootForCoverage returns the relative path from the CI tags source root for coverage
+// by converting a module path to a module directory.
 func getRelativePathFromCITagsSourceRootForCoverage(filePath string) string {
 	return utils.GetRelativePathFromCITagsSourceRoot(strings.ReplaceAll(filePath, modulePath, moduleDir))
+}
+
+// getCoverageStatementsInfo parses the coverage profile data and returns the total statements and covered statements
+func getCoverageStatementsInfo(filename string) (totalStatements, coveredStatements int, err error) {
+	file, err := os.Open(filename)
+	if err != nil {
+		return 0, 0, err
+	}
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+
+	for scanner.Scan() {
+		line := scanner.Text()
+
+		// Skip the header
+		if strings.HasPrefix(line, "mode:") {
+			continue
+		}
+
+		// Split the line into the file and block parts
+		parts := strings.SplitN(line, ":", 2)
+		if len(parts) < 2 {
+			continue
+		}
+
+		blockInfo := parts[1] // Block data, including line info and statement counts
+
+		// Split the block info by space
+		infoParts := strings.Fields(blockInfo)
+		if len(infoParts) < 3 {
+			continue
+		}
+
+		// Convert the number of statements and hit count
+		numStmt, err1 := strconv.Atoi(infoParts[1])
+		count, err2 := strconv.Atoi(infoParts[2])
+
+		// Skip if any conversion failed
+		if err1 != nil || err2 != nil {
+			continue
+		}
+
+		// Update total statements
+		totalStatements += numStmt
+
+		// Update covered statements if the hit count is greater than 0
+		if count > 0 {
+			coveredStatements += numStmt
+		}
+	}
+
+	return totalStatements, coveredStatements, scanner.Err()
 }
