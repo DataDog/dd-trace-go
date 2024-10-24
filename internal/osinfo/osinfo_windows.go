@@ -3,21 +3,18 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
+//go:build windows
+
 package osinfo
 
 import (
 	"fmt"
-	"runtime"
 	"strings"
 
 	"golang.org/x/sys/windows/registry"
 )
 
-func osName() string {
-	return runtime.GOOS
-}
-
-func osVersion() string {
+func init() {
 	k, err := registry.OpenKey(registry.LOCAL_MACHINE, `SOFTWARE\Microsoft\Windows NT\CurrentVersion`, registry.QUERY_VALUE)
 	if err != nil {
 		return "unknown"
@@ -50,5 +47,6 @@ func osVersion() string {
 	} else {
 		version.WriteString(" Unknown Build")
 	}
-	return version.String()
+
+	osVersion = version.String()
 }
