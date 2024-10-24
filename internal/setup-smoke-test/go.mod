@@ -1,4 +1,4 @@
-module github.com/DataDog/dd-trace-go/internal/setup-smoke-test
+module github.com/DataDog/dd-trace-go/v2/internal/setup-smoke-test
 
 go 1.22.0
 
