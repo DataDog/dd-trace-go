@@ -126,8 +126,6 @@ func (rh *RequestHandler) SendRequest(config RequestConfig) (*Response, error) {
 	}
 
 	for attempt := 0; attempt <= config.MaxRetries; attempt++ {
-		log.Debug("ciVisibilityHttpClient: new request [method: %v, url: %v, attempt: %v, maxRetries: %v]",
-			config.Method, config.URL, attempt, config.MaxRetries)
 		stopRetries, rs, err := rh.internalSendRequest(&config, attempt)
 		if stopRetries {
 			return rs, err
@@ -153,7 +151,8 @@ func (rh *RequestHandler) internalSendRequest(config *RequestConfig, attempt int
 			for _, f := range config.Files {
 				files = append(files, f.FieldName)
 			}
-			log.Debug("ciVisibilityHttpClient: sending files %v", files)
+			log.Debug("ciVisibilityHttpClient: new request with files [method: %v, url: %v, attempt: %v, maxRetries: %v] %v",
+				config.Method, config.URL, attempt, config.MaxRetries, files)
 		}
 		req, err = http.NewRequest(config.Method, config.URL, bytes.NewBuffer(body))
 		if err != nil {
@@ -171,7 +170,8 @@ func (rh *RequestHandler) internalSendRequest(config *RequestConfig, attempt int
 		}
 
 		if log.DebugEnabled() {
-			log.Debug("ciVisibilityHttpClient: serialized body [compressed: %v] %v", config.Compressed, string(serializedBody))
+			log.Debug("ciVisibilityHttpClient: new request with body [method: %v, url: %v, attempt: %v, maxRetries: %v, compressed: %v] %v bytes",
+				config.Method, config.URL, attempt, config.MaxRetries, config.Compressed, len(serializedBody))
 		}
 
 		// Compress body if needed
@@ -202,6 +202,9 @@ func (rh *RequestHandler) internalSendRequest(config *RequestConfig, attempt int
 		if err != nil {
 			return true, nil, err
 		}
+
+		log.Debug("ciVisibilityHttpClient: new request [method: %v, url: %v, attempt: %v, maxRetries: %v]",
+			config.Method, config.URL, attempt, config.MaxRetries)
 	}
 
 	// Set that is possible to handle gzip responses
@@ -214,7 +217,7 @@ func (rh *RequestHandler) internalSendRequest(config *RequestConfig, attempt int
 
 	resp, err := rh.Client.Do(req)
 	if err != nil {
-		log.Debug("ciVisibilityHttpClient: error [%v].", err)
+		log.Debug("ciVisibilityHttpClient: error = %v", err)
 		// Retry if there's an error
 		exponentialBackoff(attempt, config.Backoff)
 		return false, nil, nil
@@ -224,10 +227,11 @@ func (rh *RequestHandler) internalSendRequest(config *RequestConfig, attempt int
 
 	// Capture the status code
 	statusCode := resp.StatusCode
-	log.Debug("ciVisibilityHttpClient: response status code [%v]", resp.StatusCode)
 
 	// Check for rate-limiting (HTTP 429)
 	if resp.StatusCode == HTTPStatusTooManyRequests {
+		log.Debug("ciVisibilityHttpClient: response status code = %v", resp.StatusCode)
+
 		rateLimitReset := resp.Header.Get(HeaderRateLimitReset)
 		if rateLimitReset != "" {
 			if resetTime, err := strconv.ParseInt(rateLimitReset, 10, 64); err == nil {
@@ -254,6 +258,7 @@ func (rh *RequestHandler) internalSendRequest(config *RequestConfig, attempt int
 	// Check status code for retries
 	if statusCode >= 406 {
 		// Retry if the status code is >= 406
+		log.Debug("ciVisibilityHttpClient: response status code = %v", resp.StatusCode)
 		exponentialBackoff(attempt, config.Backoff)
 		return false, nil, nil
 	}
@@ -277,10 +282,12 @@ func (rh *RequestHandler) internalSendRequest(config *RequestConfig, attempt int
 	if err == nil {
 		if mediaType == ContentTypeJSON || mediaType == ContentTypeJSONAlternative {
 			responseFormat = FormatJSON
-			if log.DebugEnabled() {
-				log.Debug("ciVisibilityHttpClient: serialized response [%v]", string(responseBody))
-			}
 		}
+	}
+
+	if log.DebugEnabled() {
+		log.Debug("ciVisibilityHttpClient: response received [method: %v, url: %v, status_code: %v, format: %v] %v bytes",
+			config.Method, config.URL, resp.StatusCode, responseFormat, len(responseBody))
 	}
 
 	// Determine if we can unmarshal based on status code (2xx)
