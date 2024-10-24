@@ -44,7 +44,7 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/twitchtv/twirp/v2 v2.0.0-20241024132757-00c300faaace
 	github.com/DataDog/dd-trace-go/contrib/urfave/negroni/v2 v2.0.0-20241024132757-00c300faaace
 	github.com/DataDog/dd-trace-go/instrumentation/testutils/grpc/v2 v2.0.0-20240827110213-c6fc4fe2047a
-	github.com/DataDog/dd-trace-go/v2 v2.0.0-beta.3
+	github.com/DataDog/dd-trace-go/v2 v2.0.0-beta.3.0.20241024132757-00c300faaace
 	github.com/IBM/sarama v1.40.0
 	github.com/Shopify/sarama v1.38.1
 	github.com/aws/aws-sdk-go v1.54.20

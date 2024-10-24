@@ -2,7 +2,7 @@ module github.com/DataDog/dd-trace-go/v2/internal/setup-smoke-test
 
 go 1.22.0
 
-require github.com/DataDog/dd-trace-go/v2 v2.0.0-beta.3
+require github.com/DataDog/dd-trace-go/v2 v2.0.0-beta.3.0.20241024132757-00c300faaace
 
 require (
 	github.com/DataDog/appsec-internal-go v1.8.0 // indirect
