@@ -14,7 +14,6 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"github.com/yosida95/uritemplate/v3"
 	"io"
 	"log"
 	"net/http"
@@ -24,11 +23,13 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"github.com/yosida95/uritemplate/v3"
 )
 
 const (
 	// The github.com/googleapis/google-api-go-client version to use.
-	version = "v0.121.0"
+	version = "v0.192.0"
 )
 
 var (

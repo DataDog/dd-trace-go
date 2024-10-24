@@ -6,10 +6,12 @@
 package mocktracer
 
 import (
-	"go.uber.org/goleak"
 	"testing"
+
+	"go.uber.org/goleak"
 )
 
 func TestMain(m *testing.M) {
-	goleak.VerifyTestMain(m)
+	// TODO: seelog (indirect dependency) has a known goroutine leak where it leaks a single goroutine on init (https://github.com/cihub/seelog/issues/182)
+	goleak.VerifyTestMain(m, goleak.IgnoreAnyFunction("github.com/cihub/seelog.(*asyncLoopLogger).processQueue"))
 }
