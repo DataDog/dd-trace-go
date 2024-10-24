@@ -90,6 +90,33 @@ func (ddm *M) instrumentInternalTests(internalTests *[]testing.InternalTest) {
 		return
 	}
 
+	// Get the settings response for this session
+	settings := integrations.GetSettings()
+
+	// Check if the test is going to be skipped by ITR
+	if settings.ItrEnabled {
+		if settings.CodeCoverage {
+			session.SetTag(constants.CodeCoverageEnabled, "true")
+		} else {
+			session.SetTag(constants.CodeCoverageEnabled, "true")
+		}
+
+		if settings.TestsSkipping {
+			session.SetTag(constants.ITRTestsSkippingEnabled, "true")
+			session.SetTag(constants.ITRTestsSkippingType, "test")
+
+			// Check if the test is going to be skipped by ITR
+			skippableTests := integrations.GetSkippableTests()
+			if skippableTests != nil {
+				if len(skippableTests) > 0 {
+					session.SetTag(constants.ITRTestsSkipped, "false")
+				}
+			}
+		} else {
+			session.SetTag(constants.ITRTestsSkippingEnabled, "false")
+		}
+	}
+
 	// Extract info from internal tests
 	testInfos = make([]*testingTInfo, len(*internalTests))
 	for idx, test := range *internalTests {
@@ -141,31 +168,16 @@ func (ddm *M) executeInternalTest(testInfo *testingTInfo) func(*testing.T) {
 	coverageEnabled := settings.CodeCoverage
 	testSkippedByITR := false
 
-	if settings.ItrEnabled {
-		if settings.CodeCoverage {
-			session.SetTag(constants.CodeCoverageEnabled, "true")
-		} else {
-			session.SetTag(constants.CodeCoverageEnabled, "true")
-		}
-
-		if settings.TestsSkipping {
-			session.SetTag(constants.ITRTestsSkippingEnabled, "true")
-			session.SetTag(constants.ITRTestsSkippingType, "test")
-
-			// Check if the test is going to be skipped by ITR
-			skippableTests := integrations.GetSkippableTests()
-			if skippableTests != nil {
-				if len(skippableTests) > 0 {
-					session.SetTag(constants.ITRTestsSkipped, "false")
-				}
-				if suitesMap, ok := skippableTests[testInfo.suiteName]; ok {
-					if _, ok := suitesMap[testInfo.testName]; ok {
-						testSkippedByITR = true
-					}
+	// Check if the test is going to be skipped by ITR
+	if settings.ItrEnabled && settings.TestsSkipping {
+		// Check if the test is going to be skipped by ITR
+		skippableTests := integrations.GetSkippableTests()
+		if skippableTests != nil {
+			if suitesMap, ok := skippableTests[testInfo.suiteName]; ok {
+				if _, ok := suitesMap[testInfo.testName]; ok {
+					testSkippedByITR = true
 				}
 			}
-		} else {
-			session.SetTag(constants.ITRTestsSkippingEnabled, "false")
 		}
 	}
 

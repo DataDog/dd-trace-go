@@ -6,6 +6,7 @@
 package coverage
 
 import (
+	"errors"
 	"reflect"
 	"testing"
 	"unsafe"
@@ -24,6 +25,10 @@ func getTestDepsCoverage(m *testing.M) (testDepsCoverage, error) {
 	ptr, err := getFieldPointerFrom(m, "deps")
 	if err != nil {
 		return nil, err
+	}
+
+	if ptr == nil {
+		return nil, errors.New("testDepsCoverage not found")
 	}
 
 	tDepValue := reflect.NewAt(reflect.TypeFor[testDepsCoverage](), ptr)
