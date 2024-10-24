@@ -198,12 +198,18 @@ func applyFlakyTestRetriesAdditionalFeature(targetFunc func(*testing.T)) func(*t
 				onRetryEnd: func(t *testing.T, executionIndex int, lastPtrToLocalT *testing.T) {
 					// Update original `t` with results from last execution
 					tCommonPrivates := getTestPrivateFields(t)
+					if tCommonPrivates == nil {
+						panic("getting test private fields failed")
+					}
 					tCommonPrivates.SetFailed(lastPtrToLocalT.Failed())
 					tCommonPrivates.SetSkipped(lastPtrToLocalT.Skipped())
 
 					// Update parent status if failed
 					if lastPtrToLocalT.Failed() {
 						tParentCommonPrivates := getTestParentPrivateFields(t)
+						if tParentCommonPrivates == nil {
+							panic("getting test parent private fields failed")
+						}
 						tParentCommonPrivates.SetFailed(true)
 					}
 
@@ -288,7 +294,9 @@ func applyEarlyFlakeDetectionAdditionalFeature(testInfo *commonInfo, targetFunc 
 					onRetryEnd: func(t *testing.T, executionIndex int, lastPtrToLocalT *testing.T) {
 						// Update test status based on collected counts
 						tCommonPrivates := getTestPrivateFields(t)
-						tParentCommonPrivates := getTestParentPrivateFields(t)
+						if tCommonPrivates == nil {
+							panic("getting test private fields failed")
+						}
 						status := "passed"
 						if testPassCount == 0 {
 							if testSkipCount > 0 {
@@ -298,6 +306,10 @@ func applyEarlyFlakeDetectionAdditionalFeature(testInfo *commonInfo, targetFunc 
 							if testFailCount > 0 {
 								status = "failed"
 								tCommonPrivates.SetFailed(true)
+								tParentCommonPrivates := getTestParentPrivateFields(t)
+								if tParentCommonPrivates == nil {
+									panic("getting test parent private fields failed")
+								}
 								tParentCommonPrivates.SetFailed(true)
 							}
 						}
@@ -335,7 +347,10 @@ func runTestWithRetry(options *runTestWithRetryOptions) {
 
 	for {
 		// Clear the matcher subnames map before each execution to avoid subname tests being called "parent/subname#NN" due to retries
-		getTestContextMatcherPrivateFields(options.t).ClearSubNames()
+		matcher := getTestContextMatcherPrivateFields(options.t)
+		if matcher != nil {
+			matcher.ClearSubNames()
+		}
 
 		// Increment execution index
 		executionIndex++
@@ -347,6 +362,12 @@ func runTestWithRetry(options *runTestWithRetryOptions) {
 		// Create a dummy parent so we can run the test using this local copy
 		// without affecting the test parent
 		localTPrivateFields := getTestPrivateFields(ptrToLocalT)
+		if localTPrivateFields == nil {
+			panic("getting test private fields failed")
+		}
+		if localTPrivateFields.parent == nil {
+			panic("parent of the test is nil")
+		}
 		*localTPrivateFields.parent = unsafe.Pointer(&testing.T{})
 
 		// Create an execution metadata instance
