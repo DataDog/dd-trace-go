@@ -17,8 +17,22 @@ type testDepsCoverage interface {
 	InitRuntimeCoverage() (mode string, tearDown func(coverprofile string, gocoverdir string) (string, error), snapcov func() float64)
 }
 
-//go:linkname getFieldPointerFrom gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/integrations/gotesting.getFieldPointerFrom
-func getFieldPointerFrom(value any, fieldName string) (unsafe.Pointer, error)
+// getFieldPointerFrom gets an unsafe.Pointer (gc-safe type of pointer) to a struct field
+// useful to get or set values to private field
+func getFieldPointerFrom(value any, fieldName string) (unsafe.Pointer, error) {
+	return getFieldPointerFromValue(reflect.Indirect(reflect.ValueOf(value)), fieldName)
+}
+
+// getFieldPointerFromValue gets an unsafe.Pointer (gc-safe type of pointer) to a struct field
+// useful to get or set values to private field
+func getFieldPointerFromValue(value reflect.Value, fieldName string) (unsafe.Pointer, error) {
+	member := value.FieldByName(fieldName)
+	if member.IsValid() {
+		return unsafe.Pointer(member.UnsafeAddr()), nil
+	}
+
+	return unsafe.Pointer(nil), errors.New("member is invalid")
+}
 
 // getTestDepsCoverage gets the testDepsCoverage interface from a testing.M instance
 func getTestDepsCoverage(m *testing.M) (testDepsCoverage, error) {
