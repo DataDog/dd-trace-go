@@ -2,10 +2,8 @@ module github.com/DataDog/dd-trace-go/contrib/go-chi/chi/v2
 
 go 1.22.0
 
-toolchain go1.23.1
-
 require (
-	github.com/DataDog/dd-trace-go/v2 v2.0.0-20240909105439-c452671ebc14
+	github.com/DataDog/dd-trace-go/v2 v2.0.0-beta.3
 	github.com/go-chi/chi v1.5.4
 	github.com/stretchr/testify v1.9.0
 )

@@ -12,7 +12,7 @@ on:
       - main
       - release-v*
     tags:
-      - "**"
+      - "v2.0.0-beta.3"
   pull_request:
     branches:
       - "**"
@@ -116,7 +116,7 @@ jobs:
         uses: actions/checkout@v3
         with:
           repository: 'DataDog/system-tests'
-          ref: refs/heads/dario.castane/AIT-3705/dd-trace-go.v2
+          ref: refs/heads/hannah/test_dd-trace-go.v2
 
       - name: Checkout dd-trace-go
         uses: actions/checkout@v3
