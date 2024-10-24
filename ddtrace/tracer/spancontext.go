@@ -111,6 +111,8 @@ type spanContext struct {
 	baggage    map[string]string
 	hasBaggage uint32 // atomic int for quick checking presence of baggage. 0 indicates no baggage, otherwise baggage exists.
 	origin     string // e.g. "synthetics"
+
+	spanLinks []ddtrace.SpanLink // links to other conflicting traces
 }
 
 // newSpanContext creates a new SpanContext to serve as context for the given
@@ -165,6 +167,8 @@ func (c *spanContext) SpanID() uint64 { return c.spanID }
 
 // TraceID implements ddtrace.SpanContext.
 func (c *spanContext) TraceID() uint64 { return c.traceID.Lower() }
+
+func (c *spanContext) TraceIDUpper() uint64 { return c.traceID.Upper() }
 
 // TraceID128 implements ddtrace.SpanContextW3C.
 func (c *spanContext) TraceID128() string {

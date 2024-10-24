@@ -80,6 +80,33 @@ func TestStartSpanFromContext(t *testing.T) {
 	assert.Equal("/", got.Resource)
 }
 
+func TestStartSpanFromContextWithSpanLinks(t *testing.T) {
+	_, _, _, stop := startTestTracer(t)
+	defer stop()
+	spanLink := ddtrace.SpanLink{TraceID: 789, TraceIDHigh: 0, SpanID: 789, Attributes: map[string]string{"reason": "terminated_context", "context_headers": "datadog"}, Flags: 0}
+	spanLinkContext := &spanContext{spanID: 789, traceID: traceIDFrom64Bits(789), spanLinks: []ddtrace.SpanLink{spanLink}}
+	child, ctx := StartSpanFromContext(
+		context.Background(),
+		"http.request",
+		ChildOf(spanLinkContext),
+	)
+	assert := assert.New(t)
+
+	got, ok := child.(*span)
+	assert.True(ok)
+	gotctx, ok := SpanFromContext(ctx)
+	assert.True(ok)
+	assert.Equal(gotctx, got)
+	_, ok = gotctx.(*traceinternal.NoopSpan)
+	assert.False(ok)
+
+	assert.Equal(uint64(789), got.TraceID)
+	assert.Equal(uint64(789), got.ParentID)
+	assert.Equal("http.request", got.Name)
+	assert.Equal(1, len(got.SpanLinks))
+	assert.Equal(spanLink, got.SpanLinks[0])
+}
+
 func TestStartSpanFromContextRace(t *testing.T) {
 	_, _, _, stop := startTestTracer(t)
 	defer stop()
