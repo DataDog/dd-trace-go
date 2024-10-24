@@ -18,8 +18,6 @@ import (
 
 // getFieldPointerFrom gets an unsafe.Pointer (gc-safe type of pointer) to a struct field
 // useful to get or set values to private field
-//
-//go:linkname getFieldPointerFrom
 func getFieldPointerFrom(value any, fieldName string) (unsafe.Pointer, error) {
 	return getFieldPointerFromValue(reflect.Indirect(reflect.ValueOf(value)), fieldName)
 }
