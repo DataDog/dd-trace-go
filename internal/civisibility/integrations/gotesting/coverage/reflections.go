@@ -8,7 +8,6 @@ package coverage
 import (
 	"errors"
 	"reflect"
-	"testing"
 	"unsafe"
 )
 
@@ -35,7 +34,7 @@ func getFieldPointerFromValue(value reflect.Value, fieldName string) (unsafe.Poi
 }
 
 // getTestDepsCoverage gets the testDepsCoverage interface from a testing.M instance
-func getTestDepsCoverage(m *testing.M) (testDepsCoverage, error) {
+func getTestDepsCoverage(m any) (testDepsCoverage, error) {
 	// let's first do some signature checks to avoid panics before calling the method
 	reflectDeps := reflect.ValueOf(m).Elem().FieldByName("deps")
 	reflectInitRuntimeCoverage := reflectDeps.MethodByName("InitRuntimeCoverage")
@@ -50,13 +49,13 @@ func getTestDepsCoverage(m *testing.M) (testDepsCoverage, error) {
 	if reflectInitRuntimeCoverageType.NumOut() != 3 {
 		return nil, errors.New("InitRuntimeCoverage has an unexpected number of return values")
 	}
-	if reflectInitRuntimeCoverageType.Out(0).String() == "string" {
+	if reflectInitRuntimeCoverageType.Out(0).String() != "string" {
 		return nil, errors.New("InitRuntimeCoverage has an unexpected return type")
 	}
-	if reflectInitRuntimeCoverageType.Out(1).String() == "func(string, string) (string, error)" {
+	if reflectInitRuntimeCoverageType.Out(1).String() != "func(string, string) (string, error)" {
 		return nil, errors.New("InitRuntimeCoverage has an unexpected return type")
 	}
-	if reflectInitRuntimeCoverageType.Out(2).String() == "func() float64" {
+	if reflectInitRuntimeCoverageType.Out(2).String() != "func() float64" {
 		return nil, errors.New("InitRuntimeCoverage has an unexpected return type")
 	}
 
