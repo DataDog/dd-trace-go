@@ -1957,6 +1957,54 @@ func TestTraceContextPrecedence(t *testing.T) {
 	assert.Equal(2, p)
 }
 
+func TestInvalidTraceSpanLinkCreation(t *testing.T) {
+	var testEnvs []map[string]string
+	s, c := httpmem.ServerAndClient(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(404)
+	}))
+	defer s.Close()
+	testEnvs = []map[string]string{
+		{headerPropagationStyleExtract: "datadog,tracecontext"},
+		{headerPropagationStyleExtract: "tracecontext,datadog"},
+	}
+
+	for i, testEnv := range testEnvs {
+		for k, v := range testEnv {
+			t.Setenv(k, v)
+		}
+		var test = struct {
+			in  TextMapCarrier
+			out []ddtrace.SpanLink
+			tid []traceID
+		}{
+			in: TextMapCarrier{
+				DefaultTraceIDHeader:  "1",
+				DefaultParentIDHeader: "1",
+				DefaultPriorityHeader: "1",
+				traceparentHeader:     "00-00000000000000000000000000000002-0000000000000002-00",
+				tracestateHeader:      "dd=s:2;o:rum;t.usr.id:baz64~~",
+			},
+			out: []ddtrace.SpanLink{{TraceID: 2, TraceIDHigh: 0, SpanID: 2, Tracestate: "dd=s:2;o:rum;t.usr.id:baz64~~", Flags: 0, Attributes: map[string]string{"reason": "terminated_context", "context_headers": "tracecontext"}}, {TraceID: 1, TraceIDHigh: 0, SpanID: 1, Flags: 0, Attributes: map[string]string{"reason": "terminated_context", "context_headers": "datadog"}}},
+			tid: []traceID{traceIDFrom64Bits(1), traceIDFrom64Bits(2)},
+		}
+		t.Run(fmt.Sprintf("extract with env=%q", testEnv), func(t *testing.T) {
+			tracer := newTracer(WithHTTPClient(c), withStatsdClient(&statsd.NoOpClient{}))
+			defer tracer.Stop()
+			assert := assert.New(t)
+			ctx, err := tracer.Extract(test.in)
+			if err != nil {
+				t.Fatal(err)
+			}
+			sctx, ok := ctx.(*spanContext)
+			assert.True(ok)
+
+			assert.Equal(test.tid[i], sctx.traceID)
+			assert.Equal(test.out[i], sctx.spanLinks[0])
+			assert.True(ok)
+		})
+	}
+}
+
 func TestW3CExtractsBaggage(t *testing.T) {
 	tracer := newTracer()
 	defer tracer.Stop()
