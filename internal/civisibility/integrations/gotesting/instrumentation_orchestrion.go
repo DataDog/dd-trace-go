@@ -79,7 +79,7 @@ func instrumentTestingM(m *testing.M) func(exitCode int) {
 //go:linkname instrumentTestingTFunc
 func instrumentTestingTFunc(f func(*testing.T)) func(*testing.T) {
 	// Check if CI Visibility was disabled using the kill switch before instrumenting
-	if !isCiVisibilityEnabled() {
+	if !isCiVisibilityEnabled() || !testing.Testing() {
 		return f
 	}
 
