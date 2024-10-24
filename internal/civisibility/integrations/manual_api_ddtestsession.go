@@ -90,6 +90,11 @@ func CreateTestSessionWith(command string, workingDirectory string, framework st
 	return s
 }
 
+// SessionID returns the ID of the test session.
+func (t *tslvTestSession) SessionID() uint64 {
+	return t.sessionID
+}
+
 // Command returns the command used to run the test session.
 func (t *tslvTestSession) Command() string { return t.command }
 
