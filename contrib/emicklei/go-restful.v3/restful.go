@@ -48,7 +48,7 @@ func FilterFunc(configOpts ...Option) restful.FilterFunction {
 		spanOpts = append(spanOpts, httptrace.HeaderTagsFromRequest(req.Request, cfg.headerTags))
 		span, ctx := httptrace.StartRequestSpan(req.Request, spanOpts...)
 		defer func() {
-			httptrace.FinishRequestSpan(span, resp.StatusCode(), tracer.WithError(resp.Error()))
+			httptrace.FinishRequestSpan(span, resp.StatusCode(), nil, tracer.WithError(resp.Error()))
 		}()
 
 		// pass the span through the request context

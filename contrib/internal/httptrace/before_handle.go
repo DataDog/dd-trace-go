@@ -58,9 +58,8 @@ func BeforeHandle(cfg *ServeConfig, w http.ResponseWriter, r *http.Request) (htt
 	span, ctx := StartRequestSpan(r, opts...)
 	rw, ddrw := wrapResponseWriter(w)
 	rt := r.WithContext(ctx)
-
 	closeSpan := func() {
-		FinishRequestSpan(span, ddrw.status, cfg.FinishOpts...)
+		FinishRequestSpan(span, ddrw.status, nil, cfg.FinishOpts...)
 	}
 	afterHandle := closeSpan
 	handled := false
