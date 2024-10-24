@@ -269,46 +269,59 @@ func (p *chainedPropagator) Inject(spanCtx ddtrace.SpanContext, carrier interfac
 // stored in the local trace context even if a previous propagator has already succeeded
 // so long as the trace-ids match.
 func (p *chainedPropagator) Extract(carrier interface{}) (ddtrace.SpanContext, error) {
+	var lclCtx ddtrace.SpanContext
 	var ctx ddtrace.SpanContext
+	var err error
+	var links []ddtrace.SpanLink
 	for _, v := range p.extractors {
-		if ctx != nil {
-			// A local trace context has already been extracted.
-			pw3c, isW3C := v.(*propagatorW3c)
-			if !isW3C {
-				continue // Ignore other propagators.
+		ctx, err = v.Extract(carrier)
+		if lclCtx == nil {
+			lclCtx = ctx
+			if ctx != nil {
+				if p.onlyExtractFirst {
+					// Return early if the customer configured that only the first successful
+					// extraction should occur.
+					return ctx, nil
+				}
+			} else if err != ErrSpanContextNotFound {
+				return nil, err
 			}
-			w3cCtx, err := pw3c.Extract(carrier)
-			if err == nil && w3cCtx.(*spanContext).TraceID128() == ctx.(*spanContext).TraceID128() {
-				pw3c.propagateTracestate(ctx.(*spanContext), w3cCtx.(*spanContext))
-				if w3cCtx.SpanID() != ctx.SpanID() {
-					var ddCtx *spanContext
-					if ddp := getDatadogPropagator(p); ddp != nil {
-						if ddSpanCtx, err := ddp.Extract(carrier); err == nil {
-							ddCtx, _ = ddSpanCtx.(*spanContext)
+		} else {
+			// A local trace context has already been extracted.
+			if err == nil {
+				if ctx.(*spanContext).TraceID128() == lclCtx.(*spanContext).TraceID128() {
+					pw3c, isW3C := v.(*propagatorW3c)
+					if isW3C {
+						pw3c.propagateTracestate(lclCtx.(*spanContext), ctx.(*spanContext))
+						if lclCtx.SpanID() != ctx.SpanID() {
+							var ddCtx *spanContext
+							if ddp := getDatadogPropagator(p); ddp != nil {
+								if ddSpanCtx, err := ddp.Extract(carrier); err == nil {
+									ddCtx, _ = ddSpanCtx.(*spanContext)
+								}
+							}
+							overrideDatadogParentID(lclCtx.(*spanContext), ctx.(*spanContext), ddCtx)
 						}
 					}
-					overrideDatadogParentID(ctx.(*spanContext), w3cCtx.(*spanContext), ddCtx)
+				} else {
+					propagatorType := getPropagatorType(v)
+					link := ddtrace.SpanLink{TraceID: ctx.(*spanContext).TraceID(), TraceIDHigh: ctx.(*spanContext).TraceIDUpper(), SpanID: ctx.(*spanContext).SpanID(), Attributes: map[string]string{"reason": "terminated_context", "context_headers": propagatorType}, Flags: uint32(ctx.(*spanContext).trace.samplingDecision) /*fix*/}
+					if propagatorType == "tracecontext" {
+						link.Tracestate = ctx.(*spanContext).trace.propagatingTag(tracestateHeader)
+					}
+					links = append(links, link)
 				}
 			}
-			break
-		}
-		var err error
-		ctx, err = v.Extract(carrier)
-		if ctx != nil {
-			if p.onlyExtractFirst {
-				// Return early if the customer configured that only the first successful
-				// extraction should occur.
-				return ctx, nil
-			}
-		} else if err != ErrSpanContextNotFound {
-			return nil, err
 		}
 	}
-	if ctx == nil {
+	if len(links) > 0 {
+		lclCtx.(*spanContext).spanLinks = links
+	}
+	if lclCtx == nil {
 		return nil, ErrSpanContextNotFound
 	}
 	log.Debug("Extracted span context: %#v", ctx)
-	return ctx, nil
+	return lclCtx, nil
 }
 
 // propagateTracestate will add the tracestate propagating tag to the given
@@ -490,6 +503,21 @@ func validateTID(tid string) error {
 		return fmt.Errorf("malformed: %q", tid)
 	}
 	return nil
+}
+
+func getPropagatorType(p Propagator) string {
+	// switch p.(type) {
+
+	if _, isW3c := p.(*propagatorW3c); isW3c {
+		return "tracecontext"
+	} else if _, isDD := p.(*propagator); isDD {
+		return "datadog"
+	} else if _, isB3 := p.(*propagatorB3); isB3 {
+		return "b3"
+	} else if _, isB3SingleHeader := p.(*propagatorB3SingleHeader); isB3SingleHeader {
+		return "B3 single header"
+	}
+	return ""
 }
 
 // getDatadogPropagator returns the Datadog Propagator
