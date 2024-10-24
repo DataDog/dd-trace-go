@@ -86,6 +86,21 @@ const (
 
 	// SkippedByITRReason indicates the reason why the test was skipped by the ITR feature
 	SkippedByITRReason = "Skipped by Datadog Intelligent Test Runner"
+
+	// ITRTestsSkipped indicates that tests were skipped by the ITR feature
+	ITRTestsSkipped = "_dd.ci.itr.tests_skipped"
+
+	// ITRTestsSkippingEnabled indicates that the ITR test skipping feature is enabled
+	ITRTestsSkippingEnabled = "test.itr.tests_skipping.enabled"
+
+	// ITRTestsSkippingType indicates the type of ITR test skipping
+	ITRTestsSkippingType = "test.itr.tests_skipping.type"
+
+	// ITRTestsSkippingCount indicates the number of tests skipped by the ITR feature
+	ITRTestsSkippingCount = "test.itr.tests_skipping.count"
+
+	// CodeCoverageEnabled indicates that code coverage is enabled
+	CodeCoverageEnabled = "test.code_coverage.enabled"
 )
 
 // Define valid test status types.
