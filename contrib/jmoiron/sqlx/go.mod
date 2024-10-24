@@ -3,7 +3,7 @@ module github.com/DataDog/dd-trace-go/contrib/jmoiron/sqlx/v2
 go 1.22.0
 
 require (
-	github.com/DataDog/dd-trace-go/contrib/database/sql/v2 v2.0.0-20241021170900-f2acfa7aff40
+	github.com/DataDog/dd-trace-go/contrib/database/sql/v2 v2.0.0-20241024132757-00c300faaace
 	github.com/DataDog/dd-trace-go/v2 v2.0.0-beta.3
 	github.com/denisenkom/go-mssqldb v0.11.0
 	github.com/go-sql-driver/mysql v1.6.0
