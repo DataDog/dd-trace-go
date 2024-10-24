@@ -69,8 +69,12 @@ func instrumentTestingM(m *testing.M) func(exitCode int) {
 	return func(exitCode int) {
 		// Check for code coverage if enabled.
 		if testing.CoverMode() != "" {
+
+			var cov float64
 			// let's try first with our coverage package
-			cov := coverage.GetCoverage()
+			if coverage.CanCollect() {
+				cov = coverage.GetCoverage()
+			}
 			if cov == 0 {
 				// if not we try we the default testing package
 				cov = testing.Coverage()

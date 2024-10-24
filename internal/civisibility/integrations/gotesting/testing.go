@@ -95,7 +95,7 @@ func (ddm *M) instrumentInternalTests(internalTests *[]testing.InternalTest) {
 
 	// Check if the test is going to be skipped by ITR
 	if settings.ItrEnabled {
-		if settings.CodeCoverage {
+		if settings.CodeCoverage && coverage.CanCollect() {
 			session.SetTag(constants.CodeCoverageEnabled, "true")
 		} else {
 			session.SetTag(constants.CodeCoverageEnabled, "true")
@@ -229,7 +229,7 @@ func (ddm *M) executeInternalTest(testInfo *testingTInfo) func(*testing.T) {
 		// Check if the coverage is enabled
 		var tCoverage coverage.TestCoverage
 		var tParentOldBarrier chan bool
-		if coverageEnabled {
+		if coverageEnabled && coverage.CanCollect() {
 			// set the test coverage collector
 			testFile, _ := originalFunc.FileLine(originalFunc.Entry())
 			tCoverage = coverage.NewTestCoverage(
