@@ -38,9 +38,9 @@ func TestCoverageApiRequest(t *testing.T) {
 				assert.Equal(t, ContentTypeJSON, part.Header.Get(HeaderContentType))
 				assert.Equal(t, "{\"dummy\": true}", string(buf.Bytes()))
 				containsDummyEvent = true
-			} else if partName == "coverage1" {
+			} else if partName == "coveragex" {
 				assert.Equal(t, ContentTypeMessagePack, part.Header.Get(HeaderContentType))
-				assert.Equal(t, "filecoverage1.msgpack", part.FileName())
+				assert.Equal(t, "filecoveragex.msgpack", part.FileName())
 				containsCoverage = true
 			}
 		}

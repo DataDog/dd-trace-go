@@ -637,7 +637,7 @@ func TestSendRequestWithUnsupportedResponseFormat(t *testing.T) {
 func TestPrepareContentWithNonByteContentForOctetStream(t *testing.T) {
 	_, err := prepareContent(12345, ContentTypeOctetStream)
 	assert.Error(t, err)
-	assert.EqualError(t, err, "content must be []byte for octet-stream content type")
+	assert.EqualError(t, err, "content must be []byte or an io.Reader for octet-stream content type")
 }
 
 func TestCreateMultipartFormDataWithCompression(t *testing.T) {

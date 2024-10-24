@@ -40,6 +40,9 @@ var (
 
 	// suitesCounters keeps track of the number of tests per suite.
 	suitesCounters = map[string]*int32{}
+
+	// numOfTestsSkipped keeps track of the number of tests skipped by ITR.
+	numOfTestsSkipped atomic.Uint64
 )
 
 type (
@@ -136,15 +139,33 @@ func (ddm *M) executeInternalTest(testInfo *testingTInfo) func(*testing.T) {
 	// Get the settings response for this session
 	settings := integrations.GetSettings()
 	coverageEnabled := settings.CodeCoverage
-
-	// Check if the test is going to be skipped by ITR
-	skippableTests := integrations.GetSkippableTests()
 	testSkippedByITR := false
-	if skippableTests != nil {
-		if suitesMap, ok := skippableTests[testInfo.suiteName]; ok {
-			if _, ok := suitesMap[testInfo.testName]; ok {
-				testSkippedByITR = true
+
+	if settings.ItrEnabled {
+		if settings.CodeCoverage {
+			session.SetTag(constants.CodeCoverageEnabled, "true")
+		} else {
+			session.SetTag(constants.CodeCoverageEnabled, "true")
+		}
+
+		if settings.TestsSkipping {
+			session.SetTag(constants.ITRTestsSkippingEnabled, "true")
+			session.SetTag(constants.ITRTestsSkippingType, "test")
+
+			// Check if the test is going to be skipped by ITR
+			skippableTests := integrations.GetSkippableTests()
+			if skippableTests != nil {
+				if len(skippableTests) > 0 {
+					session.SetTag(constants.ITRTestsSkipped, "false")
+				}
+				if suitesMap, ok := skippableTests[testInfo.suiteName]; ok {
+					if _, ok := suitesMap[testInfo.testName]; ok {
+						testSkippedByITR = true
+					}
+				}
 			}
+		} else {
+			session.SetTag(constants.ITRTestsSkippingEnabled, "false")
 		}
 	}
 
@@ -186,6 +207,8 @@ func (ddm *M) executeInternalTest(testInfo *testingTInfo) func(*testing.T) {
 		if testSkippedByITR {
 			test.SetTag(constants.TestSkippedByITR, "true")
 			test.CloseWithFinishTimeAndSkipReason(integrations.ResultStatusSkip, time.Now(), constants.SkippedByITRReason)
+			session.SetTag(constants.ITRTestsSkipped, "true")
+			session.SetTag(constants.ITRTestsSkippingCount, fmt.Sprintf("%d", numOfTestsSkipped.Add(1)))
 			checkModuleAndSuite(module, suite)
 			t.Skip(constants.SkippedByITRReason)
 			return
