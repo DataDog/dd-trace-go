@@ -114,7 +114,7 @@ func logStartup(t *tracer) {
 		LangVersion:                 runtime.Version(),
 		Env:                         t.config.env,
 		Service:                     t.config.serviceName,
-		AgentURL:                    t.config.transport.endpoint(),
+		AgentURL:                    t.config.agentURL.String(),
 		Debug:                       t.config.debug,
 		AnalyticsEnabled:            !math.IsNaN(globalconfig.AnalyticsRate()),
 		SampleRate:                  fmt.Sprintf("%f", t.rulesSampling.traces.globalRate),
