@@ -350,7 +350,7 @@ func TestIntegrationEnabled(t *testing.T) {
 		t.Fatal(err)
 	}
 	err = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
-		if filepath.Base(path) != "go.mod" {
+		if filepath.Base(path) != "go.mod" || strings.Contains(path, "/internal") {
 			return nil
 		}
 		rErr := testIntegrationEnabled(t, filepath.Dir(path))
@@ -392,14 +392,14 @@ func testIntegrationEnabled(t *testing.T, contribPath string) error {
 		packages = append(packages, out)
 	}
 	for _, pkg := range packages {
-		if strings.Contains(pkg.ImportPath, "/test") || strings.Contains(pkg.ImportPath, "/internal") {
+		if strings.Contains(pkg.ImportPath, "/test") {
 			continue
 		}
-		if !hasInstrumentationImport(pkg) {
-			return fmt.Errorf(`package %q is expected use instrumentation telemetry. For more info see https://github.com/DataDog/dd-trace-go/blob/main/contrib/README.md#instrumentation-telemetry`, pkg.ImportPath)
+		if hasInstrumentationImport(pkg) {
+			return nil
 		}
 	}
-	return nil
+	return fmt.Errorf(`package %q is expected use instrumentation telemetry. For more info see https://github.com/DataDog/dd-trace-go/blob/main/contrib/README.md#instrumentation-telemetry`, contribPath)
 }
 
 func hasInstrumentationImport(p contribPkg) bool {

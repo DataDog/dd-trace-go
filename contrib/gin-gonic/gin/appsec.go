@@ -8,14 +8,14 @@ package gin
 import (
 	"net/http"
 
-	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/httpsec"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/trace"
 
 	"github.com/gin-gonic/gin"
 )
 
 // useAppSec executes the AppSec logic related to the operation start
-func useAppSec(c *gin.Context, span *tracer.Span) {
+func useAppSec(c *gin.Context, span trace.TagSetter) {
 	var params map[string]string
 	if l := len(c.Params); l > 0 {
 		params = make(map[string]string, l)

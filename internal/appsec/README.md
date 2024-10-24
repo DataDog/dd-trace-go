@@ -19,7 +19,7 @@ API entrypoint present in `dd-trace-go/contrib` that support appsec is a call to
 ```mermaid
 flowchart LR
 
-UserCode[User Code] --> Instrumentation --> IG{Instrumentation Gateway} -----> Listener
+UserCode[User Code] --> Instrumentation --> IG{Instrumentation<br> Gateway} --> Listener
 ```
 
 Dyngo is a context-scoped event listener system that provide a way to listen dynamically to events that are happening in
@@ -28,7 +28,9 @@ the customer code and to react to configuration changes and hot-swap event liste
 ```mermaid
 flowchart LR
 
-UserCode[User Code] --> appsec/emitter --> IG{dyngo} -----> appsec/listener
+UserCode[contrib] --> appsec/emitter --> IG{dyngo} --> appsec/listener --> WAF
+appsec/remoteconfig -->|config change| IG
+appsec/config -->|config change| IG
 ```
 
 ### Operation definition requirements
@@ -73,12 +75,12 @@ func StartExampleOperation(ctx context.Context, args ExampleOperationArgs) *Exam
 	}
 	op := &ExampleOperation{
 		Operation: dyngo.NewOperation(parent),
-    }
+	}
 	return dyngo.StartOperation(op, args)
 }
 
 func (op *ExampleOperation) Finish(result ExampleOperationResult) {
-    dyngo.FinishOperation(op, result)
+	dyngo.FinishOperation(op, result)
 }
 ```
 
@@ -143,5 +145,68 @@ flowchart TD
 
 > [!IMPORTANT]
 > Please note that this is how the operation SHOULD be stacked. If the user code does not have a Top Level Operation
-> then nothing will be monitored. In this case an error log should be produced to explain thouroughly the issue to
+> then nothing will be monitored. In this case an error log should be produced to explain thoroughly the issue to
 > the user.
+
+### Features
+
+Features represent an abstract feature added to the tracer by AppSec. They are the bridge between the configuration and
+its sources
+and the actual code that needs to be ran in case of enablement or disablement of a feature. Features are divided in two
+parts:
+
+- The builder that should be a pure function that takes the configuration and returns a feature object.
+- The listeners that are methods of the feature object that are called when an event from the Instrumentation Gateway is
+  triggered.
+
+From there, at each configuration change from any config source, the AppSec module will rebuild the feature objects,
+register the listeners to the Instrumentation Gateway, and hot-swap the root level operation with the new one,
+consequently making the whole AppSec code atomic.
+
+Here is an example of how a system with only two features, GRPC and HTTP WAF Protection, would look like:
+
+```mermaid
+flowchart TD
+
+    subgraph HTTP Feature
+        HTTPListener
+        HTTPBuilder
+    end
+
+    subgraph GRPC Feature
+        GRPCBuilder
+        GRPCListener
+    end
+
+    subgraph Configuration
+        RemoteConfig
+        EnvConfig
+        ...
+    end
+
+    Configuration -->|config change| AppSec
+
+    AppSec -->|rebuild| HTTPBuilder
+    AppSec -->|rebuild| GRPCBuilder
+    HTTPBuilder -->|register HTTP Listener| IG
+    GRPCBuilder -->|register GRPC Listener| IG
+
+
+
+    IG{Instrumentation<br> Gateway} -->|Start httpsec.HandlerOperation| HTTPListener
+    IG{Instrumentation<br> Gateway} -->|Start grpcsec.HandlerOperation| GRPCListener
+```
+
+All currently available features are the following ones:
+
+| Feature Name           | Description                                            |
+|------------------------|--------------------------------------------------------|
+| HTTP WAF Protection    | Protects HTTP requests from attacks                    |
+| GRPC WAF Protection    | Protects GRPC requests from attacks                    |
+| GraphQL WAF Protection | Protects GraphQL requests from attacks                 |
+| SQL RASP               | Runtime Application Self-Protection for SQL injections |
+| OS RASP                | Runtime Application Self-Protection for LFI attacks    |
+| HTTP RASP              | Runtime Application Self-Protection for SSRF attacks   |
+| User Security          | User blocking and login failures/success events        |
+| WAF Context            | Setup of the request scoped context system of the WAF  |
+| Tracing                | Bridge between the tracer and AppSec features          |

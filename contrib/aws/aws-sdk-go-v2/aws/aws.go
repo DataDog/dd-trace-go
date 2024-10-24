@@ -24,6 +24,9 @@ import (
 	"github.com/aws/smithy-go/middleware"
 	smithyhttp "github.com/aws/smithy-go/transport/http"
 
+	eventBridgeTracer "github.com/DataDog/dd-trace-go/v2/contrib/aws/eventbridge"
+	snsTracer "github.com/DataDog/dd-trace-go/v2/contrib/aws/sns"
+	sqsTracer "github.com/DataDog/dd-trace-go/v2/contrib/aws/sqs"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
@@ -101,6 +104,16 @@ func (mw *traceMiddleware) startTraceMiddleware(stack *middleware.Stack) error {
 			opts = append(opts, tracer.Tag(ext.EventSampleRate, mw.cfg.analyticsRate))
 		}
 		span, spanctx := tracer.StartSpanFromContext(ctx, spanName(serviceID, operation), opts...)
+
+		// Inject trace context
+		switch serviceID {
+		case "SQS":
+			sqsTracer.EnrichOperation(span, in, operation)
+		case "SNS":
+			snsTracer.EnrichOperation(span, in, operation)
+		case "EventBridge":
+			eventBridgeTracer.EnrichOperation(span, in, operation)
+		}
 
 		// Handle initialize and continue through the middleware chain.
 		out, metadata, err = next.HandleInitialize(spanctx, in)

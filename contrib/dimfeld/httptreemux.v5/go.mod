@@ -2,11 +2,9 @@ module github.com/DataDog/dd-trace-go/contrib/dimfeld/httptreemux.v5/v2
 
 go 1.22.0
 
-toolchain go1.23.1
-
 require (
-	github.com/DataDog/dd-trace-go/contrib/net/http/v2 v2.0.0-20241021170900-f2acfa7aff40
-	github.com/DataDog/dd-trace-go/v2 v2.0.0-beta.3
+	github.com/DataDog/dd-trace-go/contrib/net/http/v2 v2.0.0-20241024132757-00c300faaace
+	github.com/DataDog/dd-trace-go/v2 v2.0.0-beta.3.0.20241024132757-00c300faaace
 	github.com/dimfeld/httptreemux/v5 v5.5.0
 	github.com/stretchr/testify v1.9.0
 )

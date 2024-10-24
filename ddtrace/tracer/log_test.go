@@ -188,3 +188,77 @@ func TestLogFormat(t *testing.T) {
 	assert.Len(tp.Logs(), 1)
 	assert.Regexp(logPrefixRegexp+` DEBUG: Started Span: dd.trace_id="12345" dd.span_id="12345" dd.parent_id="0", Operation: test, Resource: /, Tags: map.*, map.*`, tp.Logs()[0])
 }
+
+func TestLogPropagators(t *testing.T) {
+	t.Run("default", func(t *testing.T) {
+		assert := assert.New(t)
+		substring := `"propagation_style_inject":"datadog,tracecontext","propagation_style_extract":"datadog,tracecontext"`
+		log := setup(t, nil)
+		assert.Regexp(substring, log)
+	})
+	t.Run("datadog,tracecontext", func(t *testing.T) {
+		assert := assert.New(t)
+		t.Setenv("DD_TRACE_PROPAGATION_STYLE", "datadog,tracecontext")
+		substring := `"propagation_style_inject":"datadog,tracecontext","propagation_style_extract":"datadog,tracecontext"`
+		log := setup(t, nil)
+		assert.Regexp(substring, log)
+	})
+	t.Run("b3multi", func(t *testing.T) {
+		assert := assert.New(t)
+		t.Setenv("DD_TRACE_PROPAGATION_STYLE", "b3multi")
+		substring := `"propagation_style_inject":"b3multi","propagation_style_extract":"b3multi"`
+		log := setup(t, nil)
+		assert.Regexp(substring, log)
+	})
+	t.Run("none", func(t *testing.T) {
+		assert := assert.New(t)
+		t.Setenv("DD_TRACE_PROPAGATION_STYLE", "none")
+		substring := `"propagation_style_inject":"","propagation_style_extract":""`
+		log := setup(t, nil)
+		assert.Regexp(substring, log)
+	})
+	t.Run("different-injector-extractor", func(t *testing.T) {
+		assert := assert.New(t)
+		t.Setenv("DD_TRACE_PROPAGATION_STYLE_INJECT", "b3multi")
+		t.Setenv("DD_TRACE_PROPAGATION_STYLE_EXTRACT", "tracecontext")
+		substring := `"propagation_style_inject":"b3multi","propagation_style_extract":"tracecontext"`
+		log := setup(t, nil)
+		assert.Regexp(substring, log)
+	})
+	t.Run("custom-propagator", func(t *testing.T) {
+		assert := assert.New(t)
+		substring := `"propagation_style_inject":"custom","propagation_style_extract":"custom"`
+		p := &prop{}
+		log := setup(t, p)
+		assert.Regexp(substring, log)
+	})
+}
+
+type prop struct{}
+
+func (p *prop) Inject(context *SpanContext, carrier interface{}) (e error) {
+	return
+}
+func (p *prop) Extract(carrier interface{}) (sctx *SpanContext, e error) {
+	return
+}
+
+func setup(t *testing.T, customProp Propagator) string {
+	tp := new(log.RecordLogger)
+	var tracer *tracer
+	var stop func()
+	var err error
+	if customProp != nil {
+		tracer, _, _, stop, err = startTestTracer(t, WithLogger(tp), WithPropagator(customProp))
+		assert.NoError(t, err)
+	} else {
+		tracer, _, _, stop, err = startTestTracer(t, WithLogger(tp))
+		assert.NoError(t, err)
+	}
+	defer stop()
+	tp.Reset()
+	tp.Ignore("appsec: ", telemetry.LogPrefix)
+	logStartup(tracer)
+	require.Len(t, tp.Logs(), 2)
+	return tp.Logs()[1]
+}
