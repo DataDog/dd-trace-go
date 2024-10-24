@@ -74,3 +74,5 @@ require (
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20230530153820-e85fd2cbaebc // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
+
+replace github.com/DataDog/dd-trace-go/v2/internal/setup-smoke-test => ./internal/setup-smoke-test
