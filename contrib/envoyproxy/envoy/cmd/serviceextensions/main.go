@@ -54,11 +54,12 @@ func loadConfig() serviceExtensionConfig {
 func main() {
 	var extensionService AppsecCalloutExtensionService
 
-	// Force set ASM as enabled and set it as running in standalone mode
-	err := os.Setenv("DD_APPSEC_ENABLED", "1")
-	if err != nil {
-		log.Error("service_extension: failed to set environment variable: %v\n", err)
-		return
+	// Force set ASM as enabled only if the environment variable is not set
+	// Note: If the environment variable is set to false, it should be disabled
+	if os.Getenv("DD_APPSEC_ENABLED") == "" {
+		if err := os.Setenv("DD_APPSEC_ENABLED", "1"); err != nil {
+			log.Error("service_extension: failed to set DD_APPSEC_ENABLED environment variable: %v\n", err)
+		}
 	}
 
 	// TODO: Enable ASM standalone mode when it is developed (should be done for Q4 2024)
