@@ -22,6 +22,31 @@ func getFieldPointerFrom(value any, fieldName string) (unsafe.Pointer, error)
 
 // getTestDepsCoverage gets the testDepsCoverage interface from a testing.M instance
 func getTestDepsCoverage(m *testing.M) (testDepsCoverage, error) {
+	// let's first do some signature checks to avoid panics before calling the method
+	reflectDeps := reflect.ValueOf(m).Elem().FieldByName("deps")
+	reflectInitRuntimeCoverage := reflectDeps.MethodByName("InitRuntimeCoverage")
+	if !reflectInitRuntimeCoverage.IsValid() {
+		return nil, errors.New("InitRuntimeCoverage not found")
+	}
+
+	reflectInitRuntimeCoverageType := reflectInitRuntimeCoverage.Type()
+	if reflectInitRuntimeCoverageType.NumIn() != 0 {
+		return nil, errors.New("InitRuntimeCoverage has arguments (this signature is not supported)")
+	}
+	if reflectInitRuntimeCoverageType.NumOut() != 3 {
+		return nil, errors.New("InitRuntimeCoverage has an unexpected number of return values")
+	}
+	if reflectInitRuntimeCoverageType.Out(0).String() == "string" {
+		return nil, errors.New("InitRuntimeCoverage has an unexpected return type")
+	}
+	if reflectInitRuntimeCoverageType.Out(1).String() == "func(string, string) (string, error)" {
+		return nil, errors.New("InitRuntimeCoverage has an unexpected return type")
+	}
+	if reflectInitRuntimeCoverageType.Out(2).String() == "func() float64" {
+		return nil, errors.New("InitRuntimeCoverage has an unexpected return type")
+	}
+
+	// now we can safely call the method
 	ptr, err := getFieldPointerFrom(m, "deps")
 	if err != nil {
 		return nil, err
