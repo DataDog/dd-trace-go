@@ -61,6 +61,7 @@ use (
 	./internal/apps
 	./internal/contrib/validationtest
 	./internal/exectracetest
+	./internal/setup-smoke-test
 	./internal/traceprof/traceproftest
 	./tools/fixmodules
 	./tools/v2check
