@@ -132,7 +132,7 @@ func TestRoundTripperErrors(t *testing.T) {
 		spans := mt.FinishedSpans()
 		assert.Len(t, spans, 3)
 		s := spans[0] // 400 is error
-		assert.Equal(t, "400: Bad Request", s.Tag(ext.Error).(error).Error())
+		assert.Equal(t, "400: Bad Request", s.Tag(ext.ErrorMsg))
 		assert.Equal(t, "400", s.Tag(ext.HTTPCode))
 		s = spans[1] // 500 is not error
 		assert.Empty(t, s.Tag(ext.Error))
