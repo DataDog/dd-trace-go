@@ -17,10 +17,8 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 )
 
-var instr *instrumentation.Instrumentation
-
 func init() {
-	instr = instrumentation.Load(instrumentation.PackageLogSlog)
+	_ = instrumentation.Load(instrumentation.PackageLogSlog)
 }
 
 var _ slog.Handler = (*handler)(nil)
@@ -61,11 +59,7 @@ func (h *handler) Handle(ctx context.Context, rec slog.Record) error {
 	// set them at the root level.
 	span, ok := tracer.SpanFromContext(ctx)
 	if ok {
-		rec.Add(
-			slog.String(ext.LogKeyTraceID, span.Context().TraceID()),
-			slog.Uint64(ext.LogKeySpanID, span.Context().SpanID()),
-		)
-		traceID := strconv.FormatUint(span.Context().TraceIDLower(), 10)
+		traceID := span.Context().TraceID()
 		spanID := strconv.FormatUint(span.Context().SpanID(), 10)
 
 		attrs := []slog.Attr{

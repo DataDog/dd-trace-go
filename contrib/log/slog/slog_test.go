@@ -37,7 +37,7 @@ func assertLogEntry(t *testing.T, rawEntry, wantMsg, wantLevel string, span *tra
 	assert.Equal(t, wantLevel, entry["level"])
 	assert.NotEmpty(t, entry["time"])
 
-	traceID := strconv.FormatUint(span.Context().TraceIDLower(), 10)
+	traceID := span.Context().TraceID()
 	spanID := strconv.FormatUint(span.Context().SpanID(), 10)
 	assert.Equal(t, traceID, entry[ext.LogKeyTraceID], "trace id not found")
 	assert.Equal(t, spanID, entry[ext.LogKeySpanID], "span id not found")
