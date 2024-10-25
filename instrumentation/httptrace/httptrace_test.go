@@ -106,13 +106,13 @@ func TestConfiguredErrorStatuses(t *testing.T) {
 			switch status {
 			case 0:
 				assert.Equal(t, "200", spans[i].Tag(ext.HTTPCode))
-				assert.Nil(t, spans[i].Tag(ext.Error))
+				assert.Nil(t, spans[i].Tag(ext.ErrorMsg))
 			case 200, 400:
 				assert.Equal(t, strconv.Itoa(status), spans[i].Tag(ext.HTTPCode))
-				assert.Equal(t, fmt.Errorf("%s: %s", strconv.Itoa(status), http.StatusText(status)), spans[i].Tag(ext.Error).(error))
+				assert.Equal(t, fmt.Sprintf("%s: %s", strconv.Itoa(status), http.StatusText(status)), spans[i].Tag(ext.ErrorMsg))
 			case 500:
 				assert.Equal(t, strconv.Itoa(status), spans[i].Tag(ext.HTTPCode))
-				assert.Nil(t, spans[i].Tag(ext.Error))
+				assert.Nil(t, spans[i].Tag(ext.ErrorMsg))
 			}
 		}
 	})
@@ -133,7 +133,7 @@ func TestConfiguredErrorStatuses(t *testing.T) {
 		spans := mt.FinishedSpans()
 		require.Len(t, spans, 1)
 		assert.Equal(t, "0", spans[0].Tag(ext.HTTPCode))
-		assert.Equal(t, fmt.Errorf("0: %s", http.StatusText(0)), spans[0].Tag(ext.Error).(error))
+		assert.Equal(t, fmt.Sprintf("0: %s", http.StatusText(0)), spans[0].Tag(ext.ErrorMsg))
 	})
 }
 
