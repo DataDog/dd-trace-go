@@ -156,6 +156,9 @@ type config struct {
 	// agentURL is the agent URL that receives traces from the tracer.
 	agentURL *url.URL
 
+	// originalAgentURL is the agent URL that receives traces from the tracer and does not get changed.
+	originalAgentURL *url.URL
+
 	// serviceMappings holds a set of service mappings to dynamically rename services
 	serviceMappings map[string]string
 
@@ -446,6 +449,7 @@ func newConfig(opts ...StartOption) *config {
 	if c.agentURL == nil {
 		c.agentURL = internal.AgentURLFromEnv()
 	}
+	c.originalAgentURL = c.agentURL // Preserve the original agent URL for logging
 	if c.agentURL.Scheme == "unix" {
 		// If we're connecting over UDS we can just rely on the agent to provide the hostname
 		log.Debug("connecting to agent over unix, do not set hostname on any traces")
