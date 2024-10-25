@@ -7,7 +7,6 @@ package tracing
 
 import (
 	"context"
-	"fmt"
 	"math"
 	"net"
 	"strings"
@@ -72,7 +71,6 @@ func NewKafkaTracer(ckgoVersion CKGoVersion, librdKafkaVersion int, opts ...Opti
 	tr.producerSpanName = instr.OperationName(instrumentation.ComponentProducer, nil)
 
 	for _, opt := range opts {
-		fmt.Printf("applying opt\n")
 		if opt == nil {
 			continue
 		}
