@@ -20,11 +20,11 @@ func TestSkippableApiRequest(t *testing.T) {
 	var c *client
 	expectedResponse := skippableResponse{
 		Meta: skippableResponseMeta{
-			CorrelationId: "correlation_id",
+			CorrelationID: "correlation_id",
 		},
 		Data: []skippableResponseData{
 			{
-				Id:   "id",
+				ID:   "id",
 				Type: "type",
 				Attributes: SkippableResponseDataAttributes{
 					Suite:      "suite",
@@ -66,9 +66,9 @@ func TestSkippableApiRequest(t *testing.T) {
 
 	cInterface := NewClient()
 	c = cInterface.(*client)
-	correlationId, skippables, err := cInterface.GetSkippableTests()
+	correlationID, skippables, err := cInterface.GetSkippableTests()
 	assert.Nil(t, err)
-	assert.Equal(t, "correlation_id", correlationId)
+	assert.Equal(t, "correlation_id", correlationID)
 	assert.Len(t, skippables, 1)
 	assert.Len(t, skippables["suite"], 1)
 	assert.Equal(t, expectedResponse.Data[0].Attributes, skippables["suite"]["name"][0])
@@ -87,8 +87,8 @@ func TestSkippableApiRequestFailToUnmarshal(t *testing.T) {
 	setCiVisibilityEnv(path, server.URL)
 
 	cInterface := NewClient()
-	correlationId, skippables, err := cInterface.GetSkippableTests()
-	assert.Empty(t, correlationId)
+	correlationID, skippables, err := cInterface.GetSkippableTests()
+	assert.Empty(t, correlationID)
 	assert.Nil(t, skippables)
 	assert.NotNil(t, err)
 	assert.Contains(t, err.Error(), "cannot unmarshal response")
@@ -107,8 +107,8 @@ func TestSkippableApiRequestFailToGet(t *testing.T) {
 	setCiVisibilityEnv(path, server.URL)
 
 	cInterface := NewClient()
-	correlationId, skippables, err := cInterface.GetSkippableTests()
-	assert.Empty(t, correlationId)
+	correlationID, skippables, err := cInterface.GetSkippableTests()
+	assert.Empty(t, correlationID)
 	assert.Nil(t, skippables)
 	assert.Contains(t, err.Error(), "sending skippable tests request")
 }

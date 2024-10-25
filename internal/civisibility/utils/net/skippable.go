@@ -39,11 +39,11 @@ type (
 	}
 
 	skippableResponseMeta struct {
-		CorrelationId string `json:"correlation_id"`
+		CorrelationID string `json:"correlation_id"`
 	}
 
 	skippableResponseData struct {
-		Id         string                          `json:"id"`
+		ID         string                          `json:"id"`
 		Type       string                          `json:"type"`
 		Attributes SkippableResponseDataAttributes `json:"attributes"`
 	}
@@ -56,7 +56,7 @@ type (
 	}
 )
 
-func (c *client) GetSkippableTests() (correlationId string, skippables map[string]map[string][]SkippableResponseDataAttributes, err error) {
+func (c *client) GetSkippableTests() (correlationID string, skippables map[string]map[string][]SkippableResponseDataAttributes, err error) {
 
 	body := skippableRequest{
 		Data: skippableRequestHeader{
@@ -126,5 +126,5 @@ func (c *client) GetSkippableTests() (correlationId string, skippables map[strin
 		}
 	}
 
-	return responseObject.Meta.CorrelationId, skippableTestsMap, nil
+	return responseObject.Meta.CorrelationID, skippableTestsMap, nil
 }

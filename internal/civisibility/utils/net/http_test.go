@@ -280,7 +280,7 @@ func TestCreateMultipartFormDataWithUnsupportedContentType(t *testing.T) {
 
 func TestRateLimitHandlingWithoutResetHeader(t *testing.T) {
 	// Mock server without 'x-ratelimit-reset' header
-	mockRateLimitHandlerWithoutHeader := func(w http.ResponseWriter, r *http.Request) {
+	mockRateLimitHandlerWithoutHeader := func(w http.ResponseWriter, _ *http.Request) {
 		http.Error(w, "Too Many Requests", HTTPStatusTooManyRequests)
 	}
 

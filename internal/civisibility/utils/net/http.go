@@ -316,9 +316,8 @@ func serializeData(data interface{}, format string) ([]byte, error) {
 		if format == FormatMessagePack {
 			if data.(msgp.Marshaler) != nil {
 				return data.(msgp.Marshaler).MarshalMsg([]byte{})
-			} else {
-				return nil, errors.New("data must implement msgp.Marshaler for MessagePack serialization")
 			}
+			return nil, errors.New("data must implement msgp.Marshaler for MessagePack serialization")
 		}
 	}
 	return nil, fmt.Errorf("unsupported format '%s' for data type '%T'", format, data)
