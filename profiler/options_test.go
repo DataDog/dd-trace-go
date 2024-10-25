@@ -268,14 +268,14 @@ func TestEnvVars(t *testing.T) {
 		t.Run("default", func(t *testing.T) {
 			cfg, err := defaultConfig()
 			require.NoError(t, err)
-			assert.Equal(t, true, cfg.enable)
+			assert.Equal(t, true, cfg.enabled)
 		})
 
 		t.Run("override", func(t *testing.T) {
 			t.Setenv("DD_PROFILING_ENABLED", "false")
 			cfg, err := defaultConfig()
 			require.NoError(t, err)
-			assert.Equal(t, false, cfg.enable)
+			assert.Equal(t, false, cfg.enabled)
 		})
 	})
 

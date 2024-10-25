@@ -58,7 +58,7 @@ func Start(opts ...Option) error {
 	if err != nil {
 		return err
 	}
-	if !p.cfg.enable {
+	if !p.cfg.enabled {
 		return nil
 	}
 	activeProfiler = p

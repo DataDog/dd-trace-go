@@ -111,7 +111,7 @@ type config struct {
 	logStartup           bool
 	traceConfig          executionTraceConfig
 	endpointCountEnabled bool
-	enable               bool
+	enabled              bool
 }
 
 // logStartup records the configuration to the configured logger in JSON format
@@ -147,7 +147,7 @@ func logStartup(c *config) {
 		"execution_trace_size_limit": c.traceConfig.Limit,
 		"endpoint_count_enabled":     c.endpointCountEnabled,
 		"custom_profiler_label_keys": c.customProfilerLabels,
-		"enable":                     c.enable,
+		"enabled":                    c.enabled,
 	}
 	b, err := json.Marshal(info)
 	if err != nil {
@@ -213,9 +213,9 @@ func defaultConfig() (*config, error) {
 	// If DD_PROFILING_ENABLED is set to "auto", the profiler's activation will be determined by
 	// the Datadog admission controller, so we set it to true.
 	if os.Getenv("DD_PROFILING_ENABLED") == "auto" {
-		c.enable = true
+		c.enabled = true
 	} else {
-		c.enable = internal.BoolEnv("DD_PROFILING_ENABLED", true)
+		c.enabled = internal.BoolEnv("DD_PROFILING_ENABLED", true)
 	}
 	if v := os.Getenv("DD_PROFILING_UPLOAD_TIMEOUT"); v != "" {
 		d, err := time.ParseDuration(v)
