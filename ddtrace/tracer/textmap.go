@@ -514,18 +514,18 @@ func validateTID(tid string) error {
 }
 
 func getPropagatorType(p Propagator) string {
-	// switch p.(type) {
-
-	if _, isW3c := p.(*propagatorW3c); isW3c {
+	switch p.(type) {
+	case *propagatorW3c:
 		return "tracecontext"
-	} else if _, isDD := p.(*propagator); isDD {
+	case *propagator:
 		return "datadog"
-	} else if _, isB3 := p.(*propagatorB3); isB3 {
+	case *propagatorB3:
+		return "b3multi"
+	case *propagatorB3SingleHeader:
 		return "b3"
-	} else if _, isB3SingleHeader := p.(*propagatorB3SingleHeader); isB3SingleHeader {
-		return "B3 single header"
+	default:
+		return ""
 	}
-	return ""
 }
 
 // getDatadogPropagator returns the Datadog Propagator
