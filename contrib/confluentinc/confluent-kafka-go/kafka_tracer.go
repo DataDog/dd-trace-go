@@ -7,6 +7,7 @@ package tracing
 
 import (
 	"context"
+	"fmt"
 	"math"
 	"net"
 	"strings"
@@ -15,8 +16,6 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 	"github.com/DataDog/dd-trace-go/v2/internal"
 )
-
-var instr *instrumentation.Instrumentation
 
 type KafkaTracer struct {
 	PrevSpan            *tracer.Span
@@ -34,6 +33,8 @@ type KafkaTracer struct {
 	librdKafkaVersion   int
 }
 
+var instr *instrumentation.Instrumentation
+
 func (tr *KafkaTracer) DSMEnabled() bool {
 	return tr.dsmEnabled
 }
@@ -50,9 +51,11 @@ func (fn OptionFn) apply(cfg *KafkaTracer) {
 }
 
 func NewKafkaTracer(ckgoVersion CKGoVersion, librdKafkaVersion int, opts ...Option) *KafkaTracer {
+	if instr == nil {
+		instr = Package(ckgoVersion)
+	}
 	tr := &KafkaTracer{
-		ctx: context.Background(),
-		// analyticsRate: globalconfig.AnalyticsRate(),
+		ctx:               context.Background(),
 		analyticsRate:     instr.AnalyticsRate(false),
 		ckgoVersion:       ckgoVersion,
 		librdKafkaVersion: librdKafkaVersion,
@@ -69,6 +72,7 @@ func NewKafkaTracer(ckgoVersion CKGoVersion, librdKafkaVersion int, opts ...Opti
 	tr.producerSpanName = instr.OperationName(instrumentation.ComponentProducer, nil)
 
 	for _, opt := range opts {
+		fmt.Printf("applying opt\n")
 		if opt == nil {
 			continue
 		}
@@ -124,6 +128,7 @@ func WithCustomTag(tag string, tagFn func(msg Message) interface{}) OptionFn {
 		if cfg.tagFns == nil {
 			cfg.tagFns = make(map[string]func(msg Message) interface{})
 		}
+		cfg.tagFns[tag] = tagFn
 	}
 }
 

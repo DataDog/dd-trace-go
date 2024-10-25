@@ -16,14 +16,14 @@ import (
 )
 
 const (
-	componentName = instrumentation.PackageConfluentKafkaGo
-	pkgPath       = "contrib/confluentinc/confluent-kafka-go/kafka"
+	ckgoVersion = tracing.CKGoVersion1
+	pkgPath     = "contrib/confluentinc/confluent-kafka-go/kafka"
 )
 
 var instr *instrumentation.Instrumentation
 
 func init() {
-	instr = instrumentation.Load(instrumentation.PackageConfluentKafkaGo)
+	instr = tracing.Package(ckgoVersion)
 }
 
 func newKafkaTracer(opts ...Option) *tracing.KafkaTracer {

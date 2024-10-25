@@ -5,6 +5,8 @@
 
 package tracing
 
+import "github.com/DataDog/dd-trace-go/v2/instrumentation"
+
 type CKGoVersion int32
 
 const (
@@ -31,5 +33,14 @@ func IntegrationName(v CKGoVersion) string {
 		return "github.com/confluentinc/confluent-kafka-go/v2"
 	default:
 		return ""
+	}
+}
+
+func Package(v CKGoVersion) *instrumentation.Instrumentation {
+	switch v {
+	case CKGoVersion2:
+		return instrumentation.Load(instrumentation.PackageConfluentKafkaGoV2)
+	default:
+		return instrumentation.Load(instrumentation.PackageConfluentKafkaGo)
 	}
 }
