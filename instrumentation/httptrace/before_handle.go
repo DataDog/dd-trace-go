@@ -54,6 +54,8 @@ func BeforeHandle(cfg *ServeConfig, w http.ResponseWriter, r *http.Request) (htt
 	if cfg.Route != "" {
 		opts = append(opts, tracer.Tag(ext.HTTPRoute, cfg.Route))
 	}
+	// Pre-append span.kind and component tags to the options so that they can be overridden.
+	opts = append([]tracer.StartSpanOption{tracer.Tag(ext.SpanKind, ext.SpanKindServer), tracer.Tag(ext.Component, "net/http")}, opts...)
 	span, ctx := StartRequestSpan(r, opts...)
 	rw, ddrw := wrapResponseWriter(w)
 	rt := r.WithContext(ctx)
