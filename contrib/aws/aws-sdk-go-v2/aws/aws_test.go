@@ -8,6 +8,7 @@ package aws
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -24,12 +25,13 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	"github.com/aws/aws-sdk-go-v2/service/eventbridge"
+	eventBridgeTypes "github.com/aws/aws-sdk-go-v2/service/eventbridge/types"
 	"github.com/aws/aws-sdk-go-v2/service/kinesis"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/sfn"
 	"github.com/aws/aws-sdk-go-v2/service/sns"
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
-	"github.com/aws/aws-sdk-go-v2/service/sqs/types"
+	sqsTypes "github.com/aws/aws-sdk-go-v2/service/sqs/types"
 	"github.com/aws/smithy-go/middleware"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -281,6 +283,66 @@ func TestAppendMiddlewareSqsReceiveMessage(t *testing.T) {
 	}
 }
 
+func TestAppendMiddlewareSqsSendMessage(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	expectedStatusCode := 200
+	server := mockAWS(expectedStatusCode)
+	defer server.Close()
+
+	resolver := aws.EndpointResolverFunc(func(service, region string) (aws.Endpoint, error) {
+		return aws.Endpoint{
+			PartitionID:   "aws",
+			URL:           server.URL,
+			SigningRegion: "eu-west-1",
+		}, nil
+	})
+
+	awsCfg := aws.Config{
+		Region:           "eu-west-1",
+		Credentials:      aws.AnonymousCredentials{},
+		EndpointResolver: resolver,
+	}
+
+	AppendMiddleware(&awsCfg)
+
+	sqsClient := sqs.NewFromConfig(awsCfg)
+	sendMessageInput := &sqs.SendMessageInput{
+		MessageBody: aws.String("test message"),
+		QueueUrl:    aws.String("https://sqs.us-west-2.amazonaws.com/123456789012/MyQueueName"),
+	}
+	_, err := sqsClient.SendMessage(context.Background(), sendMessageInput)
+	require.NoError(t, err)
+
+	spans := mt.FinishedSpans()
+	require.Len(t, spans, 1)
+
+	s := spans[0]
+	assert.Equal(t, "SQS.request", s.OperationName())
+	assert.Equal(t, "SendMessage", s.Tag("aws.operation"))
+	assert.Equal(t, "SQS", s.Tag("aws.service"))
+	assert.Equal(t, "MyQueueName", s.Tag("queuename"))
+	assert.Equal(t, "SQS.SendMessage", s.Tag(ext.ResourceName))
+	assert.Equal(t, "aws.SQS", s.Tag(ext.ServiceName))
+
+	// Check for trace context injection
+	assert.NotNil(t, sendMessageInput.MessageAttributes)
+	assert.Contains(t, sendMessageInput.MessageAttributes, "_datadog")
+	ddAttr := sendMessageInput.MessageAttributes["_datadog"]
+	assert.Equal(t, "String", *ddAttr.DataType)
+	assert.NotEmpty(t, *ddAttr.StringValue)
+
+	// Decode and verify the injected trace context
+	var traceContext map[string]string
+	err = json.Unmarshal([]byte(*ddAttr.StringValue), &traceContext)
+	assert.NoError(t, err)
+	assert.Contains(t, traceContext, "x-datadog-trace-id")
+	assert.Contains(t, traceContext, "x-datadog-parent-id")
+	assert.NotEmpty(t, traceContext["x-datadog-trace-id"])
+	assert.NotEmpty(t, traceContext["x-datadog-parent-id"])
+}
+
 func TestAppendMiddlewareS3ListObjects(t *testing.T) {
 	tests := []struct {
 		name               string
@@ -441,6 +503,22 @@ func TestAppendMiddlewareSnsPublish(t *testing.T) {
 			assert.Equal(t, server.URL+"/", s.Tag(ext.HTTPURL))
 			assert.Equal(t, "aws/aws-sdk-go-v2/aws", s.Tag(ext.Component))
 			assert.Equal(t, ext.SpanKindClient, s.Tag(ext.SpanKind))
+
+			// Check for trace context injection
+			assert.NotNil(t, tt.publishInput.MessageAttributes)
+			assert.Contains(t, tt.publishInput.MessageAttributes, "_datadog")
+			ddAttr := tt.publishInput.MessageAttributes["_datadog"]
+			assert.Equal(t, "Binary", *ddAttr.DataType)
+			assert.NotEmpty(t, ddAttr.BinaryValue)
+
+			// Decode and verify the injected trace context
+			var traceContext map[string]string
+			err := json.Unmarshal(ddAttr.BinaryValue, &traceContext)
+			assert.NoError(t, err)
+			assert.Contains(t, traceContext, "x-datadog-trace-id")
+			assert.Contains(t, traceContext, "x-datadog-parent-id")
+			assert.NotEmpty(t, traceContext["x-datadog-trace-id"])
+			assert.NotEmpty(t, traceContext["x-datadog-parent-id"])
 		})
 	}
 }
@@ -655,6 +733,62 @@ func TestAppendMiddlewareEventBridgePutRule(t *testing.T) {
 			assert.Equal(t, ext.SpanKindClient, s.Tag(ext.SpanKind))
 		})
 	}
+}
+
+func TestAppendMiddlewareEventBridgePutEvents(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	expectedStatusCode := 200
+	server := mockAWS(expectedStatusCode)
+	defer server.Close()
+
+	resolver := aws.EndpointResolverFunc(func(service, region string) (aws.Endpoint, error) {
+		return aws.Endpoint{
+			PartitionID:   "aws",
+			URL:           server.URL,
+			SigningRegion: "eu-west-1",
+		}, nil
+	})
+
+	awsCfg := aws.Config{
+		Region:           "eu-west-1",
+		Credentials:      aws.AnonymousCredentials{},
+		EndpointResolver: resolver,
+	}
+
+	AppendMiddleware(&awsCfg)
+
+	eventbridgeClient := eventbridge.NewFromConfig(awsCfg)
+	putEventsInput := &eventbridge.PutEventsInput{
+		Entries: []eventBridgeTypes.PutEventsRequestEntry{
+			{
+				EventBusName: aws.String("my-event-bus"),
+				Detail:       aws.String(`{"key": "value"}`),
+			},
+		},
+	}
+	eventbridgeClient.PutEvents(context.Background(), putEventsInput)
+
+	spans := mt.FinishedSpans()
+	require.Len(t, spans, 1)
+
+	s := spans[0]
+	assert.Equal(t, "PutEvents", s.Tag("aws.operation"))
+	assert.Equal(t, "EventBridge.PutEvents", s.Tag(ext.ResourceName))
+
+	// Check for trace context injection
+	assert.Len(t, putEventsInput.Entries, 1)
+	entry := putEventsInput.Entries[0]
+	var detail map[string]interface{}
+	err := json.Unmarshal([]byte(*entry.Detail), &detail)
+	assert.NoError(t, err)
+	assert.Contains(t, detail, "_datadog")
+	ddData, ok := detail["_datadog"].(map[string]interface{})
+	assert.True(t, ok)
+	assert.Contains(t, ddData, "x-datadog-start-time")
+	assert.Contains(t, ddData, "x-datadog-resource-name")
+	assert.Equal(t, "my-event-bus", ddData["x-datadog-resource-name"])
 }
 
 func TestAppendMiddlewareSfnDescribeStateMachine(t *testing.T) {
@@ -971,8 +1105,8 @@ func TestMessagingNamingSchema(t *testing.T) {
 		_, err = sqsClient.SendMessage(ctx, msg)
 		require.NoError(t, err)
 
-		entry := types.SendMessageBatchRequestEntry{Id: aws.String("1"), MessageBody: aws.String("body")}
-		batchMsg := &sqs.SendMessageBatchInput{QueueUrl: sqsResp.QueueUrl, Entries: []types.SendMessageBatchRequestEntry{entry}}
+		entry := sqsTypes.SendMessageBatchRequestEntry{Id: aws.String("1"), MessageBody: aws.String("body")}
+		batchMsg := &sqs.SendMessageBatchInput{QueueUrl: sqsResp.QueueUrl, Entries: []sqsTypes.SendMessageBatchRequestEntry{entry}}
 		_, err = sqsClient.SendMessageBatch(ctx, batchMsg)
 		require.NoError(t, err)
 

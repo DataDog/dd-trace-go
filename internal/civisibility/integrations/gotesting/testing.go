@@ -82,48 +82,50 @@ func (ddm *M) Run() int {
 
 // instrumentInternalTests instruments the internal tests for CI visibility.
 func (ddm *M) instrumentInternalTests(internalTests *[]testing.InternalTest) {
-	if internalTests != nil {
-		// Extract info from internal tests
-		testInfos = make([]*testingTInfo, len(*internalTests))
-		for idx, test := range *internalTests {
-			moduleName, suiteName := utils.GetModuleAndSuiteName(reflect.Indirect(reflect.ValueOf(test.F)).Pointer())
-			testInfo := &testingTInfo{
-				originalFunc: test.F,
-				commonInfo: commonInfo{
-					moduleName: moduleName,
-					suiteName:  suiteName,
-					testName:   test.Name,
-				},
-			}
-
-			// Initialize module and suite counters if not already present.
-			if _, ok := modulesCounters[moduleName]; !ok {
-				var v int32
-				modulesCounters[moduleName] = &v
-			}
-			// Increment the test count in the module.
-			atomic.AddInt32(modulesCounters[moduleName], 1)
-
-			if _, ok := suitesCounters[suiteName]; !ok {
-				var v int32
-				suitesCounters[suiteName] = &v
-			}
-			// Increment the test count in the suite.
-			atomic.AddInt32(suitesCounters[suiteName], 1)
-
-			testInfos[idx] = testInfo
-		}
-
-		// Create new instrumented internal tests
-		newTestArray := make([]testing.InternalTest, len(*internalTests))
-		for idx, testInfo := range testInfos {
-			newTestArray[idx] = testing.InternalTest{
-				Name: testInfo.testName,
-				F:    ddm.executeInternalTest(testInfo),
-			}
-		}
-		*internalTests = newTestArray
+	if internalTests == nil {
+		return
 	}
+
+	// Extract info from internal tests
+	testInfos = make([]*testingTInfo, len(*internalTests))
+	for idx, test := range *internalTests {
+		moduleName, suiteName := utils.GetModuleAndSuiteName(reflect.Indirect(reflect.ValueOf(test.F)).Pointer())
+		testInfo := &testingTInfo{
+			originalFunc: test.F,
+			commonInfo: commonInfo{
+				moduleName: moduleName,
+				suiteName:  suiteName,
+				testName:   test.Name,
+			},
+		}
+
+		// Initialize module and suite counters if not already present.
+		if _, ok := modulesCounters[moduleName]; !ok {
+			var v int32
+			modulesCounters[moduleName] = &v
+		}
+		// Increment the test count in the module.
+		atomic.AddInt32(modulesCounters[moduleName], 1)
+
+		if _, ok := suitesCounters[suiteName]; !ok {
+			var v int32
+			suitesCounters[suiteName] = &v
+		}
+		// Increment the test count in the suite.
+		atomic.AddInt32(suitesCounters[suiteName], 1)
+
+		testInfos[idx] = testInfo
+	}
+
+	// Create new instrumented internal tests
+	newTestArray := make([]testing.InternalTest, len(*internalTests))
+	for idx, testInfo := range testInfos {
+		newTestArray[idx] = testing.InternalTest{
+			Name: testInfo.testName,
+			F:    ddm.executeInternalTest(testInfo),
+		}
+	}
+	*internalTests = newTestArray
 }
 
 // executeInternalTest wraps the original test function to include CI visibility instrumentation.
@@ -217,49 +219,51 @@ func (ddm *M) executeInternalTest(testInfo *testingTInfo) func(*testing.T) {
 
 // instrumentInternalBenchmarks instruments the internal benchmarks for CI visibility.
 func (ddm *M) instrumentInternalBenchmarks(internalBenchmarks *[]testing.InternalBenchmark) {
-	if internalBenchmarks != nil {
-		// Extract info from internal benchmarks
-		benchmarkInfos = make([]*testingBInfo, len(*internalBenchmarks))
-		for idx, benchmark := range *internalBenchmarks {
-			moduleName, suiteName := utils.GetModuleAndSuiteName(reflect.Indirect(reflect.ValueOf(benchmark.F)).Pointer())
-			benchmarkInfo := &testingBInfo{
-				originalFunc: benchmark.F,
-				commonInfo: commonInfo{
-					moduleName: moduleName,
-					suiteName:  suiteName,
-					testName:   benchmark.Name,
-				},
-			}
-
-			// Initialize module and suite counters if not already present.
-			if _, ok := modulesCounters[moduleName]; !ok {
-				var v int32
-				modulesCounters[moduleName] = &v
-			}
-			// Increment the test count in the module.
-			atomic.AddInt32(modulesCounters[moduleName], 1)
-
-			if _, ok := suitesCounters[suiteName]; !ok {
-				var v int32
-				suitesCounters[suiteName] = &v
-			}
-			// Increment the test count in the suite.
-			atomic.AddInt32(suitesCounters[suiteName], 1)
-
-			benchmarkInfos[idx] = benchmarkInfo
-		}
-
-		// Create a new instrumented internal benchmarks
-		newBenchmarkArray := make([]testing.InternalBenchmark, len(*internalBenchmarks))
-		for idx, benchmarkInfo := range benchmarkInfos {
-			newBenchmarkArray[idx] = testing.InternalBenchmark{
-				Name: benchmarkInfo.testName,
-				F:    ddm.executeInternalBenchmark(benchmarkInfo),
-			}
-		}
-
-		*internalBenchmarks = newBenchmarkArray
+	if internalBenchmarks == nil {
+		return
 	}
+
+	// Extract info from internal benchmarks
+	benchmarkInfos = make([]*testingBInfo, len(*internalBenchmarks))
+	for idx, benchmark := range *internalBenchmarks {
+		moduleName, suiteName := utils.GetModuleAndSuiteName(reflect.Indirect(reflect.ValueOf(benchmark.F)).Pointer())
+		benchmarkInfo := &testingBInfo{
+			originalFunc: benchmark.F,
+			commonInfo: commonInfo{
+				moduleName: moduleName,
+				suiteName:  suiteName,
+				testName:   benchmark.Name,
+			},
+		}
+
+		// Initialize module and suite counters if not already present.
+		if _, ok := modulesCounters[moduleName]; !ok {
+			var v int32
+			modulesCounters[moduleName] = &v
+		}
+		// Increment the test count in the module.
+		atomic.AddInt32(modulesCounters[moduleName], 1)
+
+		if _, ok := suitesCounters[suiteName]; !ok {
+			var v int32
+			suitesCounters[suiteName] = &v
+		}
+		// Increment the test count in the suite.
+		atomic.AddInt32(suitesCounters[suiteName], 1)
+
+		benchmarkInfos[idx] = benchmarkInfo
+	}
+
+	// Create a new instrumented internal benchmarks
+	newBenchmarkArray := make([]testing.InternalBenchmark, len(*internalBenchmarks))
+	for idx, benchmarkInfo := range benchmarkInfos {
+		newBenchmarkArray[idx] = testing.InternalBenchmark{
+			Name: benchmarkInfo.testName,
+			F:    ddm.executeInternalBenchmark(benchmarkInfo),
+		}
+	}
+
+	*internalBenchmarks = newBenchmarkArray
 }
 
 // executeInternalBenchmark wraps the original benchmark function to include CI visibility instrumentation.
@@ -268,7 +272,10 @@ func (ddm *M) executeInternalBenchmark(benchmarkInfo *testingBInfo) func(*testin
 	instrumentedInternalFunc := func(b *testing.B) {
 
 		// decrement level
-		getBenchmarkPrivateFields(b).AddLevel(-1)
+		pBench := getBenchmarkPrivateFields(b)
+		if pBench != nil {
+			pBench.AddLevel(-1)
+		}
 
 		startTime := time.Now()
 		module := session.GetOrCreateModuleWithFrameworkAndStartTime(benchmarkInfo.moduleName, testFramework, runtime.Version(), startTime)
@@ -296,9 +303,17 @@ func (ddm *M) executeInternalBenchmark(benchmarkInfo *testingBInfo) func(*testin
 
 			// Enable allocation reporting.
 			b.ReportAllocs()
+
 			// Retrieve the private fields of the inner testing.B.
 			iPfOfB = getBenchmarkPrivateFields(b)
+			if iPfOfB == nil {
+				panic("failed to get private fields of the inner testing.B")
+			}
+
 			// Replace the benchmark function with the original one (this must be executed only once - the first iteration[b.run1]).
+			if iPfOfB.benchFunc == nil {
+				panic("failed to get the original benchmark function")
+			}
 			*iPfOfB.benchFunc = benchmarkInfo.originalFunc
 
 			// Get the metadata regarding the execution (in case is already created from the additional features)
