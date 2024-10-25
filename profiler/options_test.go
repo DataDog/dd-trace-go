@@ -249,6 +249,21 @@ func TestEnvVars(t *testing.T) {
 		assert.Equal(t, "http://localhost:6218/profiling/v1/input", cfg.agentURL)
 	})
 
+	t.Run("DD_PROFILING_ENABLED", func(t *testing.T) {
+		t.Run("default", func(t *testing.T) {
+			cfg, err := defaultConfig()
+			require.NoError(t, err)
+			assert.Equal(t, true, cfg.enabled)
+		})
+
+		t.Run("override", func(t *testing.T) {
+			t.Setenv("DD_PROFILING_ENABLED", "false")
+			cfg, err := defaultConfig()
+			require.NoError(t, err)
+			assert.Equal(t, false, cfg.enabled)
+		})
+	})
+
 	t.Run("DD_PROFILING_UPLOAD_TIMEOUT", func(t *testing.T) {
 		t.Setenv("DD_PROFILING_UPLOAD_TIMEOUT", "3s")
 		cfg, err := defaultConfig()
