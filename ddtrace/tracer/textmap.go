@@ -305,8 +305,15 @@ func (p *chainedPropagator) Extract(carrier interface{}) (ddtrace.SpanContext, e
 					}
 				} else {
 					propagatorType := getPropagatorType(v)
-					link := ddtrace.SpanLink{TraceID: ctx.(*spanContext).TraceID(), TraceIDHigh: ctx.(*spanContext).TraceIDUpper(), SpanID: ctx.(*spanContext).SpanID(), Attributes: map[string]string{"reason": "terminated_context", "context_headers": propagatorType}, Flags: uint32(ctx.(*spanContext).trace.samplingDecision) /*fix*/}
-					fmt.Println("Flags: ", uint32(ctx.(*spanContext).trace.samplingDecision))
+					var flags uint32
+					if tracer := ctx.(*spanContext).trace; tracer != nil {
+						if flags = uint32(*tracer.priority); flags > 0 {
+							flags = 1
+						} else {
+							flags = 0
+						}
+					}
+					link := ddtrace.SpanLink{TraceID: ctx.(*spanContext).TraceID(), TraceIDHigh: ctx.(*spanContext).TraceIDUpper(), SpanID: ctx.(*spanContext).SpanID(), Attributes: map[string]string{"reason": "terminated_context", "context_headers": propagatorType}, Flags: flags}
 					if propagatorType == "tracecontext" {
 						link.Tracestate = ctx.(*spanContext).trace.propagatingTag(tracestateHeader)
 					}

@@ -1980,11 +1980,11 @@ func TestInvalidTraceSpanLinkCreation(t *testing.T) {
 			in: TextMapCarrier{
 				DefaultTraceIDHeader:  "1",
 				DefaultParentIDHeader: "1",
-				DefaultPriorityHeader: "1",
-				traceparentHeader:     "00-00000000000000000000000000000002-0000000000000002-00",
-				tracestateHeader:      "dd=s:2;o:rum;t.usr.id:baz64~~",
+				DefaultPriorityHeader: "3",
+				traceparentHeader:     "00-00000000000000000000000000000002-0000000000000002-01",
+				tracestateHeader:      "dd=s:1;o:rum;t.usr.id:baz64~~",
 			},
-			out: []ddtrace.SpanLink{{TraceID: 2, TraceIDHigh: 0, SpanID: 2, Tracestate: "dd=s:2;o:rum;t.usr.id:baz64~~", Flags: 0, Attributes: map[string]string{"reason": "terminated_context", "context_headers": "tracecontext"}}, {TraceID: 1, TraceIDHigh: 0, SpanID: 1, Flags: 0, Attributes: map[string]string{"reason": "terminated_context", "context_headers": "datadog"}}},
+			out: []ddtrace.SpanLink{{TraceID: 2, TraceIDHigh: 0, SpanID: 2, Tracestate: "dd=s:1;o:rum;t.usr.id:baz64~~", Flags: 1, Attributes: map[string]string{"reason": "terminated_context", "context_headers": "tracecontext"}}, {TraceID: 1, TraceIDHigh: 0, SpanID: 1, Flags: 1, Attributes: map[string]string{"reason": "terminated_context", "context_headers": "datadog"}}},
 			tid: []traceID{traceIDFrom64Bits(1), traceIDFrom64Bits(2)},
 		}
 		t.Run(fmt.Sprintf("extract with env=%q", testEnv), func(t *testing.T) {
