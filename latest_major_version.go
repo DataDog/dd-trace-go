@@ -92,15 +92,18 @@ func main() {
 	}
 
 	for module, major := range latestMajor {
-		fmt.Printf("Latest version of %s: v%s\n", module, major)
 		latestVersion, err := getLatestMajorVersion(module)
 		if err != nil {
 			fmt.Printf("Error fetching latest version: %v", err)
 			return
 		}
-		// fmt.Printf("Latest Github major version of %s: %s\n", module, latestVersion)
-		if latestVersion != major {
-			fmt.Printf("New latest major version of %s: %s\n", module, latestVersion)
+
+		normalizedMajor := strings.TrimSpace(strings.TrimPrefix(major, "v"))
+		normalizedLatestMajor := strings.TrimSpace(strings.TrimPrefix(latestVersion, "v"))
+		fmt.Printf("Latest version of %s: v%s\n", module, normalizedMajor)
+		fmt.Printf("Latest Github major version of %s: %s\n", module, normalizedLatestMajor)
+		if normalizedMajor != normalizedLatestMajor {
+			fmt.Printf("New latest major version of %s: %s\n", module, normalizedLatestMajor)
 		}
 	}
 }
