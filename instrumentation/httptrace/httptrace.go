@@ -69,21 +69,23 @@ func StartRequestSpan(r *http.Request, opts ...tracer.StartSpanOption) (*tracer.
 // code. Any further span finish option can be added with opts.
 func FinishRequestSpan(s *tracer.Span, status int, opts ...tracer.FinishOption) {
 	var statusStr string
+	var err error
 	// if status is 0, treat it like 200 unless 0 was called out in DD_TRACE_HTTP_SERVER_ERROR_STATUSES
 	if status == 0 {
 		if cfg.isStatusError(status) {
 			statusStr = "0"
-			s.SetTag(ext.Error, fmt.Errorf("%s: %s", statusStr, http.StatusText(status)))
+			err = fmt.Errorf("%s: %s", statusStr, http.StatusText(status))
 		} else {
 			statusStr = "200"
 		}
 	} else {
 		statusStr = strconv.Itoa(status)
 		if cfg.isStatusError(status) {
-			s.SetTag(ext.Error, fmt.Errorf("%s: %s", statusStr, http.StatusText(status)))
+			err = fmt.Errorf("%s: %s", statusStr, http.StatusText(status))
 		}
 	}
 	s.SetTag(ext.HTTPCode, statusStr)
+	opts = append(opts, tracer.WithError(err))
 	s.Finish(opts...)
 }
 
