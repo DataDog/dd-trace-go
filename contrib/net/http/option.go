@@ -14,6 +14,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/httptrace"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/options"
 )
 
 type commonConfig struct {
@@ -62,7 +63,7 @@ func (o HandlerOptionFn) apply(cfg *config) {
 }
 
 func defaults(cfg *config) {
-	if httptrace.GetBoolEnv("DD_TRACE_HTTP_ANALYTICS_ENABLED", false) {
+	if options.GetBoolEnv("DD_TRACE_HTTP_ANALYTICS_ENABLED", false) {
 		cfg.analyticsRate = 1.0
 	} else {
 		cfg.analyticsRate = instr.AnalyticsRate(true)
@@ -200,7 +201,7 @@ func newRoundTripperConfig() *roundTripperConfig {
 		commonConfig:  sharedCfg,
 		propagation:   true,
 		spanNamer:     defaultSpanNamer,
-		queryString:   httptrace.GetBoolEnv(envClientQueryStringEnabled, true),
+		queryString:   options.GetBoolEnv(envClientQueryStringEnabled, true),
 		isStatusError: isClientError,
 	}
 	v := os.Getenv(envClientErrorStatuses)

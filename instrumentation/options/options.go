@@ -5,6 +5,8 @@
 
 package options
 
+import "github.com/DataDog/dd-trace-go/v2/internal"
+
 // Copy should be used any time existing options are copied into
 // a new locally scoped set of options. This is to avoid data races and
 // accidental side effects.
@@ -28,4 +30,11 @@ func Expand[T any](opts []T, initialPosition, trailCapacity int) []T {
 	dup := make([]T, capacity, capacity+trailCapacity)
 	copy(dup[initialPosition:], opts)
 	return dup
+}
+
+// This is a workaround needed because of v2 changes that prevents contribs from accessing
+// the internal directory. This function should not be used if the internal directory
+// can be
+func GetBoolEnv(key string, def bool) bool {
+	return internal.BoolEnv(key, def)
 }

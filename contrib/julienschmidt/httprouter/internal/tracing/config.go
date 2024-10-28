@@ -11,7 +11,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
-	"github.com/DataDog/dd-trace-go/v2/instrumentation/httptrace"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/options"
 )
 
 type Config struct {
@@ -23,7 +23,7 @@ type Config struct {
 
 func NewConfig(opts ...Option) *Config {
 	cfg := new(Config)
-	if httptrace.GetBoolEnv("DD_TRACE_HTTPROUTER_ANALYTICS_ENABLED", false) {
+	if options.GetBoolEnv("DD_TRACE_HTTPROUTER_ANALYTICS_ENABLED", false) {
 		cfg.analyticsRate = 1.0
 	} else {
 		cfg.analyticsRate = instr.AnalyticsRate(true)
