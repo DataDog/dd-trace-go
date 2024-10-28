@@ -47,8 +47,7 @@ func main() {
 		return
 	}
 
-	fmt.Println("Latest major versions:")
 	for module, major := range latestMajor {
-		fmt.Printf("Latest version of %s -> v%s\n", module, major)
+		fmt.Printf("Latest version of %s: v%s\n", module, major)
 	}
 }
