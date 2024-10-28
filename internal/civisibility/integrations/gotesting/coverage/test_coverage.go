@@ -90,7 +90,16 @@ func InitializeCoverage(m *testing.M) {
 	}
 
 	// initializing runtime coverage
-	mode, tearDown, _ = testDep.InitRuntimeCoverage()
+	tMode, tDown, _ := testDep.InitRuntimeCoverage()
+	mode = tMode
+	tearDown = func(coverprofile string, gocoverdir string) (string, error) {
+		// redirecting stdout to a temp file to avoid printing coverage messages to stdout
+		stdout := os.Stdout
+		os.Stdout = tempFile
+		defer func() { os.Stdout = stdout }()
+		// writing the coverage counters to the file
+		return tDown(coverprofile, gocoverdir)
+	}
 
 	// if we cannot collect we bailout early
 	if !CanCollect() {
@@ -141,10 +150,8 @@ func GetCoverage() float64 {
 		return 0
 	}
 
-	restore := setStdOutToTemp()
 	coverageFile := filepath.Join(temporaryDir, "global_coverage.out")
 	_, err := tearDown(coverageFile, "")
-	restore()
 	if err != nil {
 		log.Debug("civisibility.coverage: error getting coverage file: %v", err)
 	}
@@ -186,10 +193,8 @@ func (t *testCoverage) CollectCoverageBeforeTestExecution() {
 		return
 	}
 
-	restore := setStdOutToTemp()
 	t.preCoverageFilename = filepath.Join(temporaryDir, fmt.Sprintf("%d-%d-%d-pre.out", t.moduleID, t.suiteID, t.testID))
 	_, err := tearDown(t.preCoverageFilename, "")
-	restore()
 	if err != nil {
 		log.Debug("civisibility.coverage: error getting coverage file: %v", err)
 	}
@@ -201,10 +206,8 @@ func (t *testCoverage) CollectCoverageAfterTestExecution() {
 		return
 	}
 
-	restore := setStdOutToTemp()
 	t.postCoverageFilename = filepath.Join(temporaryDir, fmt.Sprintf("%d-%d-%d-post.out", t.moduleID, t.suiteID, t.testID))
 	_, err := tearDown(t.postCoverageFilename, "")
-	restore()
 	if err != nil {
 		log.Debug("civisibility.coverage: error getting coverage file: %v", err)
 	}
@@ -250,13 +253,6 @@ func (t *testCoverage) processCoverageData() {
 	if err != nil {
 		log.Debug("civisibility.coverage: error removing post-coverage file: %v", err)
 	}
-}
-
-// setStdOutToTemp sets the stdout to a temp file.
-func setStdOutToTemp() (restore func()) {
-	stdout := os.Stdout
-	os.Stdout = tempFile
-	return func() { os.Stdout = stdout }
 }
 
 // parseCoverProfile parses the coverage profile data and returns the coverage data for each file

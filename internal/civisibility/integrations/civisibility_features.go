@@ -167,7 +167,7 @@ func ensureAdditionalFeaturesInitialization(serviceName string) {
 
 // GetSettings gets the settings from the backend settings endpoint
 func GetSettings() *net.SettingsResponseData {
-	// call to ensure the additional features initialization is completed (service name can be null here)
+	// call to ensure the settings features initialization is completed (service name can be null here)
 	ensureSettingsInitialization("")
 	return &ciVisibilitySettings
 }
