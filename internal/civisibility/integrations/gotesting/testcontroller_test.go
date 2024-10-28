@@ -86,7 +86,7 @@ func runFlakyTestRetriesTests(m *testing.M) {
 	// execute the tests, we are expecting some tests to fail and check the assertion later
 	exitCode := RunM(m)
 	if exitCode != 1 {
-		panic("expected the exit code to be 1. We have a failing test on purpose.")
+		panic("expected the exit code to be 1. We have a failing test on purpose. Got exit code: " + fmt.Sprintf("%d", exitCode))
 	}
 
 	// get all finished spans
@@ -137,6 +137,7 @@ func runFlakyTestRetriesTests(m *testing.M) {
 		35,
 		0)
 
+	fmt.Println("All tests passed.")
 	os.Exit(0)
 }
 
@@ -164,7 +165,7 @@ func runEarlyFlakyTestDetectionTests(m *testing.M) {
 	// execute the tests, we are expecting some tests to fail and check the assertion later
 	exitCode := RunM(m)
 	if exitCode != 1 {
-		panic("expected the exit code to be 1. We have a failing test on purpose.")
+		panic("expected the exit code to be 1. We have a failing test on purpose. Got exit code: " + fmt.Sprintf("%d", exitCode))
 	}
 
 	// get all finished spans
@@ -217,6 +218,7 @@ func runEarlyFlakyTestDetectionTests(m *testing.M) {
 		159,
 		0)
 
+	fmt.Println("All tests passed.")
 	os.Exit(0)
 }
 
@@ -258,7 +260,7 @@ func runFlakyTestRetriesWithEarlyFlakyTestDetectionTests(m *testing.M) {
 	// execute the tests, we are expecting some tests to fail and check the assertion later
 	exitCode := RunM(m)
 	if exitCode != 1 {
-		panic("expected the exit code to be 1. We have a failing test on purpose.")
+		panic("expected the exit code to be 1. We have a failing test on purpose. Got exit code: " + fmt.Sprintf("%d", exitCode))
 	}
 
 	// get all finished spans
@@ -312,6 +314,7 @@ func runFlakyTestRetriesWithEarlyFlakyTestDetectionTests(m *testing.M) {
 		55,
 		0)
 
+	fmt.Println("All tests passed.")
 	os.Exit(0)
 }
 
@@ -411,6 +414,7 @@ func runIntelligentTestRunnerTests(m *testing.M) {
 		14,
 		0)
 
+	fmt.Println("All tests passed.")
 	os.Exit(0)
 }
 
