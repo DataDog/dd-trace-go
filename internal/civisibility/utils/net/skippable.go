@@ -11,7 +11,7 @@ import (
 
 const (
 	skippableRequestType string = "test_params"
-	skippableURLPath     string = "/api/v2/ci/tests/skippable"
+	skippableURLPath     string = "api/v2/ci/tests/skippable"
 )
 
 type (

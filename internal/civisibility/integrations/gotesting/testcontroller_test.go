@@ -31,7 +31,7 @@ func TestMain(m *testing.M) {
 	log.SetLevel(log.LevelDebug)
 
 	// We need to spawn separated test process for each scenario
-	scenarios := []string{"TestFlakyTestRetries", "TestEarlyFlakeDetection", "TestFlakyTestRetriesAndEarlyFlakeDetection"}
+	scenarios := []string{"TestFlakyTestRetries", "TestEarlyFlakeDetection", "TestFlakyTestRetriesAndEarlyFlakeDetection", "TestIntelligentTestRunner"}
 
 	if internal.BoolEnv(scenarios[0], false) {
 		fmt.Printf("Scenario %s started.\n", scenarios[0])
@@ -42,6 +42,9 @@ func TestMain(m *testing.M) {
 	} else if internal.BoolEnv(scenarios[2], false) {
 		fmt.Printf("Scenario %s started.\n", scenarios[2])
 		runFlakyTestRetriesWithEarlyFlakyTestDetectionTests(m)
+	} else if internal.BoolEnv(scenarios[3], false) {
+		fmt.Printf("Scenario %s started.\n", scenarios[3])
+		runIntelligentTestRunnerTests(m)
 	} else {
 		fmt.Println("Starting tests...")
 		for _, v := range scenarios {
@@ -70,7 +73,7 @@ func TestMain(m *testing.M) {
 
 func runFlakyTestRetriesTests(m *testing.M) {
 	// mock the settings api to enable automatic test retries
-	server := setUpHttpServer(true, false, nil)
+	server := setUpHttpServer(true, false, nil, false, nil)
 	defer server.Close()
 
 	// set a custom retry count
@@ -151,7 +154,7 @@ func runEarlyFlakyTestDetectionTests(m *testing.M) {
 				},
 			},
 		},
-	})
+	}, false, nil)
 	defer server.Close()
 
 	// initialize the mock tracer for doing assertions on the finished spans
@@ -242,7 +245,7 @@ func runFlakyTestRetriesWithEarlyFlakyTestDetectionTests(m *testing.M) {
 				},
 			},
 		},
-	})
+	}, false, nil)
 	defer server.Close()
 
 	// set a custom retry count
@@ -307,6 +310,105 @@ func runFlakyTestRetriesWithEarlyFlakyTestDetectionTests(m *testing.M) {
 		1,
 		2,
 		55,
+		0)
+
+	os.Exit(0)
+}
+
+func runIntelligentTestRunnerTests(m *testing.M) {
+	// mock the settings api to enable automatic test retries
+	server := setUpHttpServer(true, false, nil, true, []net.SkippableResponseDataAttributes{
+		{
+			Suite: "testing_test.go",
+			Name:  "TestMyTest01",
+		},
+		{
+			Suite: "testing_test.go",
+			Name:  "TestMyTest02",
+		},
+		{
+			Suite: "testing_test.go",
+			Name:  "Test_Foo",
+		},
+		{
+			Suite: "testing_test.go",
+			Name:  "TestRetryWithPanic",
+		},
+		{
+			Suite: "testing_test.go",
+			Name:  "TestRetryWithFail",
+		},
+		{
+			Suite: "testing_test.go",
+			Name:  "TestRetryAlwaysFail",
+		},
+	})
+	defer server.Close()
+
+	// initialize the mock tracer for doing assertions on the finished spans
+	currentM = m
+	mTracer = integrations.InitializeCIVisibilityMock()
+
+	// execute the tests, we are expecting some tests to fail and check the assertion later
+	exitCode := RunM(m)
+	if exitCode != 0 {
+		panic("expected the exit code to be 0. All tests should pass (failed ones should be skipped by ITR).")
+	}
+
+	// get all finished spans
+	finishedSpans := mTracer.FinishedSpans()
+
+	// 1 session span
+	// 1 module span
+	// 2 suite span (testing_test.go and reflections_test.go)
+	// 5 tests from reflections_test.go
+	// 1 TestMyTest01
+	// 1 TestMyTest02
+	// 1 Test_Foo
+	// 1 TestSkip
+	// 1 TestRetryWithPanic
+	// 1 TestRetryWithFail
+	// 1 TestRetryAlwaysFail
+	// 1 TestNormalPassingAfterRetryAlwaysFail
+	// 1 TestEarlyFlakeDetection
+
+	// check spans by resource name
+	checkSpansByResourceName(finishedSpans, "gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/integrations/gotesting", 1)
+	checkSpansByResourceName(finishedSpans, "reflections_test.go", 1)
+	checkSpansByResourceName(finishedSpans, "testing_test.go", 1)
+	itrTest01 := checkSpansByResourceName(finishedSpans, "testing_test.go.TestMyTest01", 1)
+	itrTest02 := checkSpansByResourceName(finishedSpans, "testing_test.go.TestMyTest02", 1)
+	checkSpansByResourceName(finishedSpans, "testing_test.go.TestMyTest02/sub01", 0)
+	checkSpansByResourceName(finishedSpans, "testing_test.go.TestMyTest02/sub01/sub03", 0)
+	itrTest03 := checkSpansByResourceName(finishedSpans, "testing_test.go.Test_Foo", 1)
+	checkSpansByResourceName(finishedSpans, "testing_test.go.Test_Foo/yellow_should_return_color", 0)
+	checkSpansByResourceName(finishedSpans, "testing_test.go.Test_Foo/banana_should_return_fruit", 0)
+	checkSpansByResourceName(finishedSpans, "testing_test.go.Test_Foo/duck_should_return_animal", 0)
+	checkSpansByResourceName(finishedSpans, "testing_test.go.TestSkip", 1)
+	itrTest04 := checkSpansByResourceName(finishedSpans, "testing_test.go.TestRetryWithPanic", 1)
+	itrTest05 := checkSpansByResourceName(finishedSpans, "testing_test.go.TestRetryWithFail", 1)
+	itrTest06 := checkSpansByResourceName(finishedSpans, "testing_test.go.TestRetryAlwaysFail", 1)
+	checkSpansByResourceName(finishedSpans, "testing_test.go.TestNormalPassingAfterRetryAlwaysFail", 1)
+	checkSpansByResourceName(finishedSpans, "testing_test.go.TestEarlyFlakeDetection", 1)
+
+	// check ITR spans
+	var itrTests []mocktracer.Span
+	itrTests = append(itrTests, itrTest01...)
+	itrTests = append(itrTests, itrTest02...)
+	itrTests = append(itrTests, itrTest03...)
+	itrTests = append(itrTests, itrTest04...)
+	itrTests = append(itrTests, itrTest05...)
+	itrTests = append(itrTests, itrTest06...)
+	checkSpansByTagValue(itrTests, constants.TestStatus, constants.TestStatusSkip, 6)
+	checkSpansByTagValue(itrTests, constants.TestSkipReason, constants.SkippedByITRReason, 6)
+
+	// check spans by type
+	checkSpansByType(finishedSpans,
+		18,
+		1,
+		1,
+		2,
+		14,
 		0)
 
 	os.Exit(0)
@@ -382,7 +484,36 @@ func checkSpansByTagName(finishedSpans []mocktracer.Span, tagName string, count 
 	return spans
 }
 
-func setUpHttpServer(flakyRetriesEnabled bool, earlyFlakyDetectionEnabled bool, earlyFlakyDetectionData *net.EfdResponseData) *httptest.Server {
+func checkSpansByTagValue(finishedSpans []mocktracer.Span, tagName, tagValue string, count int) []mocktracer.Span {
+	spans := getSpansWithTagNameAndValue(finishedSpans, tagName, tagValue)
+	numOfSpans := len(spans)
+	if numOfSpans != count {
+		panic(fmt.Sprintf("expected exactly %d spans with tag name: %s and value %s, got %d", count, tagName, tagValue, numOfSpans))
+	}
+
+	return spans
+}
+
+type (
+	skippableResponse struct {
+		Meta skippableResponseMeta   `json:"meta"`
+		Data []skippableResponseData `json:"data"`
+	}
+
+	skippableResponseMeta struct {
+		CorrelationID string `json:"correlation_id"`
+	}
+
+	skippableResponseData struct {
+		ID         string                              `json:"id"`
+		Type       string                              `json:"type"`
+		Attributes net.SkippableResponseDataAttributes `json:"attributes"`
+	}
+)
+
+func setUpHttpServer(flakyRetriesEnabled bool,
+	earlyFlakyDetectionEnabled bool, earlyFlakyDetectionData *net.EfdResponseData,
+	itrEnabled bool, itrData []net.SkippableResponseDataAttributes) *httptest.Server {
 	// mock the settings api to enable automatic test retries
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		fmt.Printf("MockApi received request: %s\n", r.URL.Path)
@@ -401,6 +532,8 @@ func setUpHttpServer(flakyRetriesEnabled bool, earlyFlakyDetectionEnabled bool, 
 			// let's enable flaky test retries
 			response.Data.Attributes = net.SettingsResponseData{
 				FlakyTestRetriesEnabled: flakyRetriesEnabled,
+				ItrEnabled:              itrEnabled,
+				TestsSkipping:           itrEnabled,
 			}
 			response.Data.Attributes.EarlyFlakeDetection.Enabled = earlyFlakyDetectionEnabled
 			response.Data.Attributes.EarlyFlakeDetection.SlowTestRetries.FiveS = 10
@@ -431,6 +564,23 @@ func setUpHttpServer(flakyRetriesEnabled bool, earlyFlakyDetectionEnabled bool, 
 			w.Write([]byte("{}"))
 		} else if r.URL.Path == "/api/v2/git/repository/packfile" {
 			w.WriteHeader(http.StatusAccepted)
+		} else if itrEnabled && r.URL.Path == "/api/v2/ci/tests/skippable" {
+			w.Header().Set("Content-Type", "application/json")
+			response := skippableResponse{
+				Meta: skippableResponseMeta{
+					CorrelationID: "correlation_id",
+				},
+				Data: []skippableResponseData{},
+			}
+			for i, data := range itrData {
+				response.Data = append(response.Data, skippableResponseData{
+					ID:         fmt.Sprintf("id_%d", i),
+					Type:       "type",
+					Attributes: data,
+				})
+			}
+			fmt.Printf("MockApi sending response: %v\n", response)
+			json.NewEncoder(w).Encode(&response)
 		} else {
 			http.NotFound(w, r)
 		}
@@ -471,6 +621,17 @@ func getSpansWithTagName(spans []mocktracer.Span, tag string) []mocktracer.Span 
 	var result []mocktracer.Span
 	for _, span := range spans {
 		if span.Tag(tag) != nil {
+			result = append(result, span)
+		}
+	}
+
+	return result
+}
+
+func getSpansWithTagNameAndValue(spans []mocktracer.Span, tag, value string) []mocktracer.Span {
+	var result []mocktracer.Span
+	for _, span := range spans {
+		if span.Tag(tag) == value {
 			result = append(result, span)
 		}
 	}
