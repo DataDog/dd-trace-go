@@ -13,7 +13,6 @@ import (
 	"fmt"
 	"net"
 	"net/http"
-	"os"
 	"runtime"
 	"runtime/debug"
 	"strings"
@@ -22,6 +21,7 @@ import (
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/hostname"
 	logger "gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/osinfo"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
@@ -68,7 +68,6 @@ var (
 		},
 		Timeout: 5 * time.Second,
 	}
-	hostname string
 
 	// protects agentlessURL, which may be changed for testing purposes
 	agentlessEndpointLock sync.RWMutex
@@ -83,10 +82,6 @@ var (
 )
 
 func init() {
-	h, err := os.Hostname()
-	if err == nil {
-		hostname = h
-	}
 	GlobalClient = new(client)
 }
 
@@ -451,30 +446,11 @@ func (c *client) flush() {
 	}()
 }
 
-var (
-	osName        string
-	osNameOnce    sync.Once
-	osVersion     string
-	osVersionOnce sync.Once
-)
-
-// XXX: is it actually safe to cache osName and osVersion? For example, can the
-// kernel be updated without stopping execution?
-
-func getOSName() string {
-	osNameOnce.Do(func() { osName = osinfo.OSName() })
-	return osName
-}
-
-func getOSVersion() string {
-	osVersionOnce.Do(func() { osVersion = osinfo.OSVersion() })
-	return osVersion
-}
-
 // newRequests populates a request with the common fields shared by all requests
 // sent through this Client
 func (c *client) newRequest(t RequestType) *Request {
 	c.seqID++
+	hostname := hostname.Get()
 	body := &Body{
 		APIVersion:  "v2",
 		RequestType: t,
@@ -491,11 +467,13 @@ func (c *client) newRequest(t RequestType) *Request {
 			LanguageVersion: runtime.Version(),
 		},
 		Host: Host{
-			Hostname:     hostname,
-			OS:           getOSName(),
-			OSVersion:    getOSVersion(),
-			Architecture: runtime.GOARCH,
-			// TODO (lievan): getting kernel name, release, version TBD
+			Hostname:      hostname,
+			OS:            osinfo.OSName(),
+			OSVersion:     osinfo.OSVersion(),
+			Architecture:  osinfo.Architecture(),
+			KernelName:    osinfo.KernelName(),
+			KernelRelease: osinfo.KernelRelease(),
+			KernelVersion: osinfo.KernelVersion(),
 		},
 	}
 
