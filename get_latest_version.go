@@ -22,7 +22,7 @@ func main() {
 		return
 	}
 
-	fmt.Printf("Latest major version of %s: %s", repo, latestVersion)
+	fmt.Printf("Latest major version of %s: %s\n", repo, latestVersion)
 }
 
 func getLatestMajorVersion(repo string) (string, error) {
@@ -37,7 +37,7 @@ func getLatestMajorVersion(repo string) (string, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("failed to fetch tags: %s", resp.Status)
+		return "", fmt.Errorf("failed to fetch tags: %s\n", resp.Status)
 	}
 
 	var tags []struct {
