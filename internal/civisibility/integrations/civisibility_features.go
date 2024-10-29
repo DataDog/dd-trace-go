@@ -158,7 +158,7 @@ func ensureAdditionalFeaturesInitialization(serviceName string) {
 				log.Error("civisibility: error getting CI visibility skippable tests: %v", err)
 			} else if skippableTests != nil {
 				log.Debug("civisibility: skippable tests loaded: %d suites", len(skippableTests))
-				utils.GetCITags()["itr_correlation_id"] = correlationId
+				utils.AddCITags(constants.ItrCorrelationIDTag, correlationId)
 				ciVisibilitySkippables = skippableTests
 			}
 		}

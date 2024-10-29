@@ -65,6 +65,18 @@ func GetCIMetrics() map[string]float64 {
 	return ciMetrics
 }
 
+// AddCITags adds a new tag to the CI/CD tags map.
+func AddCITags(tagName, tagValue string) {
+	ciTagsMutex.Lock()
+	defer ciTagsMutex.Unlock()
+
+	if ciTags == nil {
+		ciTags = createCITagsMap()
+	}
+
+	ciTags[tagName] = tagValue
+}
+
 // GetRelativePathFromCITagsSourceRoot calculates the relative path from the CI workspace root to the specified path.
 // If the CI workspace root is not available in the tags, it returns the original path.
 //
