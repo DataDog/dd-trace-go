@@ -207,7 +207,6 @@ func (p *Producer) Produce(msg *kafka.Message, deliveryChan chan kafka.Event) er
 			span.Finish(tracer.WithError(err))
 		}
 	}
-
 	return err
 }
 

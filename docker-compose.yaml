@@ -125,6 +125,7 @@ services:
     image: memcached:1.5.9
     ports:
       - "11211:11211"
+<<<<<<< HEAD
   zookeeper:
     image: confluentinc/cp-zookeeper:7.7.0
     environment:
@@ -145,6 +146,26 @@ services:
       KAFKA_GROUP_ID: "gotest"
     depends_on:
       - zookeeper
+=======
+  kafka:
+    image: confluentinc/confluent-local:7.5.0
+    environment:
+      KAFKA_LISTENERS: "PLAINTEXT://0.0.0.0:9093,BROKER://0.0.0.0:9092,CONTROLLER://0.0.0.0:9094"
+      KAFKA_ADVERTISED_LISTENERS: "PLAINTEXT://localhost:9093,BROKER://localhost:9092"
+      KAFKA_REST_BOOTSTRAP_SERVERS: "PLAINTEXT://0.0.0.0:9093,BROKER://0.0.0.0:9092"
+      KAFKA_CONTROLLER_QUORUM_VOTERS: "1@localhost:9094"
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: "BROKER:PLAINTEXT,PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT"
+      KAFKA_INTER_BROKER_LISTENER_NAME: "BROKER"
+      KAFKA_BROKER_ID: "1"
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: "1"
+      KAFKA_OFFSETS_TOPIC_NUM_PARTITIONS: "1"
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: "1"
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: "1"
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: "0"
+      KAFKA_NODE_ID: "1"
+      KAFKA_PROCESS_ROLES: "broker,controller"
+      KAFKA_CONTROLLER_LISTENER_NAMES: "CONTROLLER"
+>>>>>>> v1.69.1-rc.4
     ports:
       - "9092:9092"
   localstack:

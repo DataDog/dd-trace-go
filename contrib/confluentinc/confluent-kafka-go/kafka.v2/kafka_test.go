@@ -281,6 +281,8 @@ func TestCustomTags(t *testing.T) {
 	// assert.Equal(t, []byte("key1"), s.Tag("key"))
 }
 
+type consumerActionFn func(c *Consumer) (*kafka.Message, error)
+
 // Test we don't leak goroutines and properly close the span when Produce returns an error.
 func TestProduceError(t *testing.T) {
 	defer func() {
@@ -326,8 +328,6 @@ func TestProduceError(t *testing.T) {
 	spans := mt.FinishedSpans()
 	assert.Len(t, spans, 1)
 }
-
-type consumerActionFn func(c *Consumer) (*kafka.Message, error)
 
 func produceThenConsume(t *testing.T, consumerAction consumerActionFn, producerOpts []Option, consumerOpts []Option) ([]*mocktracer.Span, *kafka.Message) {
 	if _, ok := os.LookupEnv("INTEGRATION"); !ok {
