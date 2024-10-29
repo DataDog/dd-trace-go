@@ -27,7 +27,7 @@ const (
 
 type readerOpFn func(t *testing.T, r *segmentiotracer.Reader)
 
-func genIntegrationTestSpans(t *testing.T, mt mocktracer.Tracer, writerOp func(t *testing.T, w *segmentiotracer.Writer), readerOp readerOpFn, writerOpts []segmentiotracer.Option, readerOpts []segmentiotracer.Option) ([]*mocktracer.Span, []kafka.Message) {
+func genIntegrationTestSpans(t *testing.T, mt mocktracer.Tracer, writerOp func(t *testing.T, w *segmentiotracer.KafkaWriter), readerOp readerOpFn, writerOpts []segmentiotracer.Option, readerOpts []segmentiotracer.Option) ([]*mocktracer.Span, []kafka.Message) {
 	writtenMessages := []kafka.Message{}
 
 	// add some dummy values to broker/addr to test bootstrap servers.
@@ -81,7 +81,7 @@ func segmentioKafkaGoGenSpans() harness.GenSpansFn {
 		spans, _ := genIntegrationTestSpans(
 			t,
 			mt,
-			func(t *testing.T, w *segmentiotracer.Writer) {
+			func(t *testing.T, w *segmentiotracer.KafkaWriter) {
 				err := w.WriteMessages(context.Background(), messagesToWrite...)
 				require.NoError(t, err, "Expected to write message to topic")
 			},
