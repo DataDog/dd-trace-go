@@ -54,7 +54,7 @@ func WrapReader(c *kafka.Reader, opts ...Option) *Reader {
 		kafkaCfg.ConsumerGroupID = c.Config().GroupID
 	}
 	wrapped.tracer = NewTracer(kafkaCfg, opts...)
-	instr.Logger().Debug("contrib/segmentio/kafka-go.v0/kafka: Wrapping Reader: %#v", wrapped.cfg)
+	instr.Logger().Debug("contrib/segmentio/kafka-go/kafka: Wrapping Reader: %#v", wrapped.cfg)
 	return wrapped
 }
 

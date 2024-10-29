@@ -15,7 +15,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 )
 
-const componentName = "segmentio/kafka.go.v0"
+const componentName = "segmentio/kafka-go"
 
 func (tr *Tracer) StartConsumeSpan(ctx context.Context, msg Message) *tracer.Span {
 	opts := []tracer.StartSpanOption{
@@ -41,7 +41,7 @@ func (tr *Tracer) StartConsumeSpan(ctx context.Context, msg Message) *tracer.Spa
 	span, _ := tracer.StartSpanFromContext(ctx, tr.consumerSpanName, opts...)
 	// reinject the span context so consumers can pick it up
 	if err := tracer.Inject(span.Context(), carrier); err != nil {
-		instr.Logger().Debug("contrib/segmentio/kafka.go.v0: Failed to inject span context into carrier in reader, %v", err)
+		instr.Logger().Debug("contrib/segmentio/kafka-go: Failed to inject span context into carrier in reader, %v", err)
 	}
 	return span
 }
@@ -67,7 +67,7 @@ func (tr *Tracer) StartProduceSpan(ctx context.Context, writer Writer, msg Messa
 	carrier := NewMessageCarrier(msg)
 	span, _ := tracer.StartSpanFromContext(ctx, tr.producerSpanName, opts...)
 	if err := tracer.Inject(span.Context(), carrier); err != nil {
-		instr.Logger().Debug("contrib/segmentio/kafka.go.v0: Failed to inject span context into carrier in writer, %v", err)
+		instr.Logger().Debug("contrib/segmentio/kafka-go: Failed to inject span context into carrier in writer, %v", err)
 	}
 	return span
 }
