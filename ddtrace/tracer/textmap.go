@@ -269,14 +269,14 @@ func (p *chainedPropagator) Inject(spanCtx ddtrace.SpanContext, carrier interfac
 // stored in the local trace context even if a previous propagator has already succeeded
 // so long as the trace-ids match.
 func (p *chainedPropagator) Extract(carrier interface{}) (ddtrace.SpanContext, error) {
-	var lclCtx ddtrace.SpanContext
+	var localCtx ddtrace.SpanContext
 	var ctx ddtrace.SpanContext
 	var err error
 	var links []ddtrace.SpanLink
 	for _, v := range p.extractors {
 		ctx, err = v.Extract(carrier)
-		if lclCtx == nil {
-			lclCtx = ctx
+		if localCtx == nil {
+			localCtx = ctx
 			if ctx != nil {
 				if p.onlyExtractFirst {
 					// Return early if the customer configured that only the first successful
@@ -289,18 +289,18 @@ func (p *chainedPropagator) Extract(carrier interface{}) (ddtrace.SpanContext, e
 		} else {
 			// A local trace context has already been extracted.
 			if err == nil {
-				if ctx.(*spanContext).TraceID128() == lclCtx.(*spanContext).TraceID128() {
+				if ctx.(*spanContext).TraceID128() == localCtx.(*spanContext).TraceID128() {
 					pw3c, isW3C := v.(*propagatorW3c)
 					if isW3C {
-						pw3c.propagateTracestate(lclCtx.(*spanContext), ctx.(*spanContext))
-						if lclCtx.SpanID() != ctx.SpanID() {
+						pw3c.propagateTracestate(localCtx.(*spanContext), ctx.(*spanContext))
+						if localCtx.SpanID() != ctx.SpanID() {
 							var ddCtx *spanContext
 							if ddp := getDatadogPropagator(p); ddp != nil {
 								if ddSpanCtx, err := ddp.Extract(carrier); err == nil {
 									ddCtx, _ = ddSpanCtx.(*spanContext)
 								}
 							}
-							overrideDatadogParentID(lclCtx.(*spanContext), ctx.(*spanContext), ddCtx)
+							overrideDatadogParentID(localCtx.(*spanContext), ctx.(*spanContext), ddCtx)
 						}
 					}
 				} else {
@@ -323,13 +323,13 @@ func (p *chainedPropagator) Extract(carrier interface{}) (ddtrace.SpanContext, e
 		}
 	}
 	if len(links) > 0 {
-		lclCtx.(*spanContext).spanLinks = links
+		localCtx.(*spanContext).spanLinks = links
 	}
-	if lclCtx == nil {
+	if localCtx == nil {
 		return nil, ErrSpanContextNotFound
 	}
 	log.Debug("Extracted span context: %#v", ctx)
-	return lclCtx, nil
+	return localCtx, nil
 }
 
 // propagateTracestate will add the tracestate propagating tag to the given

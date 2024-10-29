@@ -1988,7 +1988,7 @@ func TestInvalidTraceSpanLinkCreation(t *testing.T) {
 			tid: []traceID{traceIDFrom64Bits(1), traceIDFrom64Bits(2)},
 		}
 		t.Run(fmt.Sprintf("extract with env=%q", testEnv), func(t *testing.T) {
-			tracer := newTracer(WithHTTPClient(c), withStatsdClient(&statsd.NoOpClient{}))
+			tracer := newTracer(WithHTTPClient(c))
 			defer tracer.Stop()
 			assert := assert.New(t)
 			ctx, err := tracer.Extract(test.in)
