@@ -20,7 +20,7 @@ type testStruct struct {
 type mockDeps struct{}
 
 func (m *mockDeps) InitRuntimeCoverage() (string, func(string, string) (string, error), func() float64) {
-	return "test-mode", func(s1, s2 string) (string, error) { return "tearDownResult", nil }, func() float64 { return 42.0 }
+	return "test-mode", func(_, _ string) (string, error) { return "tearDownResult", nil }, func() float64 { return 42.0 }
 }
 
 // Ensure mockDeps implements testDepsCoverage

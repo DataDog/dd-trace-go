@@ -58,7 +58,7 @@ func TestCoverageWriterConcurrentFlush(t *testing.T) {
 
 func TestCoverageWriterFlushError(t *testing.T) {
 	writer := newCoverageWriter()
-	writer.client = &MockClient{SendCoveragePayloadFunc: func(ciTestCovPayload io.Reader) error {
+	writer.client = &MockClient{SendCoveragePayloadFunc: func(_ io.Reader) error {
 		return fmt.Errorf("mock error")
 	},
 	}
@@ -98,6 +98,6 @@ func (m *MockClient) SendPackFiles(commitSha string, packFiles []string) (bytes 
 	return m.SendPackFilesFunc(commitSha, packFiles)
 }
 
-func (m *MockClient) GetSkippableTests() (correlationId string, skippables map[string]map[string][]net.SkippableResponseDataAttributes, err error) {
+func (m *MockClient) GetSkippableTests() (_ string, _ map[string]map[string][]net.SkippableResponseDataAttributes, err error) {
 	return m.GetSkippableTestsFunc()
 }

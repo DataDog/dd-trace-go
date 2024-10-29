@@ -40,7 +40,7 @@ func TestGetCoverage(t *testing.T) {
 	temporaryDir = t.TempDir()
 
 	// Mock tearDown function
-	tearDown = func(coverprofile string, gocoverdir string) (string, error) {
+	tearDown = func(coverprofile string, _ string) (string, error) {
 		// Create a dummy coverage file
 		f, err := os.Create(coverprofile)
 		if err != nil {
@@ -229,7 +229,7 @@ func TestCollectCoverageBeforeTestExecution(t *testing.T) {
 	temporaryDir = tempDir
 
 	// Mock tearDown function
-	tearDown = func(coverprofile string, gocoverdir string) (string, error) {
+	tearDown = func(coverprofile string, _ string) (string, error) {
 		// Create a dummy coverage file
 		f, err := os.Create(coverprofile)
 		if err != nil {
@@ -269,7 +269,7 @@ func TestCollectCoverageAfterTestExecution(t *testing.T) {
 	temporaryDir = tempDir
 
 	// Mock tearDown function
-	tearDown = func(coverprofile string, gocoverdir string) (string, error) {
+	tearDown = func(coverprofile string, _ string) (string, error) {
 		// Create a dummy coverage file
 		f, err := os.Create(coverprofile)
 		if err != nil {
@@ -280,7 +280,7 @@ func TestCollectCoverageAfterTestExecution(t *testing.T) {
 		return "", nil
 	}
 	covWriter = newCoverageWriter()
-	covWriter.client = &MockClient{SendCoveragePayloadFunc: func(ciTestCovPayload io.Reader) error {
+	covWriter.client = &MockClient{SendCoveragePayloadFunc: func(_ io.Reader) error {
 		return fmt.Errorf("mock error")
 	},
 	}

@@ -7,7 +7,6 @@ package coverage
 
 import (
 	"sync"
-	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/utils/net"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
@@ -71,7 +70,7 @@ func (w *coverageWriter) flush() {
 	w.payload = newCoveragePayload()
 
 	go func(p *coveragePayload) {
-		defer func(start time.Time) {
+		defer func() {
 			// Once the payload has been used, clear the buffer for garbage
 			// collection to avoid a memory leak when references to this object
 			// may still be kept by faulty transport implementations or the
@@ -80,7 +79,7 @@ func (w *coverageWriter) flush() {
 
 			<-w.climit
 			w.wg.Done()
-		}(time.Now())
+		}()
 
 		size, count := p.size(), p.itemCount()
 		log.Debug("coverageWriter: sending payload: size: %d events: %d\n", size, count)
