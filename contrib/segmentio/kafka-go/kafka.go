@@ -24,7 +24,6 @@ func init() {
 // A Reader wraps a kafka.Reader.
 type Reader struct {
 	*kafka.Reader
-	KafkaConfig
 	tracer *Tracer
 	prev   *tracer.Span
 }
@@ -39,12 +38,14 @@ func WrapReader(c *kafka.Reader, opts ...Option) *Reader {
 	wrapped := &Reader{
 		Reader: c,
 	}
+	cfg := KafkaConfig{}
 	if c.Config().Brokers != nil {
-		wrapped.BootstrapServers = strings.Join(c.Config().Brokers, ",")
+		cfg.BootstrapServers = strings.Join(c.Config().Brokers, ",")
 	}
 	if c.Config().GroupID != "" {
-		wrapped.ConsumerGroupID = c.Config().GroupID
+		cfg.ConsumerGroupID = c.Config().GroupID
 	}
+	wrapped.tracer = NewTracer(cfg, opts...)
 	instr.Logger().Debug("contrib/segmentio/kafka-go/kafka: Wrapping Reader: %#v", wrapped.tracer.cfg)
 	return wrapped
 }
@@ -95,7 +96,6 @@ func (r *Reader) FetchMessage(ctx context.Context) (kafka.Message, error) {
 // Writer wraps a kafka.Writer with tracing config data
 type KafkaWriter struct {
 	*kafka.Writer
-	KafkaConfig
 	tracer *Tracer
 }
 
@@ -109,9 +109,11 @@ func WrapWriter(w *kafka.Writer, opts ...Option) *KafkaWriter {
 	writer := &KafkaWriter{
 		Writer: w,
 	}
+	cfg := KafkaConfig{}
 	if w.Addr.String() != "" {
-		writer.BootstrapServers = w.Addr.String()
+		cfg.BootstrapServers = w.Addr.String()
 	}
+	writer.tracer = NewTracer(cfg, opts...)
 	instr.Logger().Debug("contrib/segmentio/kafka-go: Wrapping Writer: %#v", writer.tracer.kafkaCfg)
 	return writer
 }

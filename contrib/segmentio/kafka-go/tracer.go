@@ -11,7 +11,9 @@ type Tracer struct {
 }
 
 func NewTracer(kafkaCfg KafkaConfig, opts ...Option) *Tracer {
-	tr := &Tracer{}
+	tr := &Tracer{
+		kafkaCfg: kafkaCfg,
+	}
 	tr.cfg = newConfig(opts...)
 	return tr
 }
