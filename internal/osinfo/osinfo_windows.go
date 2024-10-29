@@ -17,7 +17,7 @@ import (
 func init() {
 	k, err := registry.OpenKey(registry.LOCAL_MACHINE, `SOFTWARE\Microsoft\Windows NT\CurrentVersion`, registry.QUERY_VALUE)
 	if err != nil {
-		return "unknown"
+		return
 	}
 	defer k.Close()
 
