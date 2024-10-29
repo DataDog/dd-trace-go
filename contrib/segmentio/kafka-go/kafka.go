@@ -7,10 +7,8 @@ package kafka // import "github.com/DataDog/dd-trace-go/contrib/segmentio/kafka-
 
 import (
 	"context"
-	"math"
 	"strings"
 
-	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 
@@ -21,6 +19,21 @@ var instr *instrumentation.Instrumentation
 
 func init() {
 	instr = instrumentation.Load(instrumentation.PackageSegmentioKafkaGo)
+}
+
+// A kafkaConfig struct holds information from the kafka config for span tags
+type kafkaConfig struct {
+	bootstrapServers string
+	groupID          string
+}
+
+// A Reader wraps a kafka.Reader.
+type Reader struct {
+	*kafka.Reader
+	tracer   *Tracer
+	kafkaCfg kafkaConfig
+	cfg      *config
+	prev     *tracer.Span
 }
 
 // NewReader calls kafka.NewReader and wraps the resulting Consumer.
@@ -40,54 +53,9 @@ func WrapReader(c *kafka.Reader, opts ...Option) *Reader {
 	if c.Config().GroupID != "" {
 		kafkaCfg.ConsumerGroupID = c.Config().GroupID
 	}
-
+	wrapped.tracer = NewTracer(kafkaCfg, opts...)
 	instr.Logger().Debug("contrib/segmentio/kafka-go.v0/kafka: Wrapping Reader: %#v", wrapped.cfg)
 	return wrapped
-}
-
-// A kafkaConfig struct holds information from the kafka config for span tags
-type kafkaConfig struct {
-	bootstrapServers string
-	groupID          string
-}
-
-// A Reader wraps a kafka.Reader.
-type Reader struct {
-	*kafka.Reader
-	tracer *Tracer
-	kafkaConfig
-	cfg  *config
-	prev *tracer.Span
-}
-
-func (r *Reader) startSpan(ctx context.Context, msg *kafka.Message) *tracer.Span {
-	opts := []tracer.StartSpanOption{
-		tracer.ServiceName(r.cfg.consumerServiceName),
-		tracer.ResourceName("Consume Topic " + msg.Topic),
-		tracer.SpanType(ext.SpanTypeMessageConsumer),
-		tracer.Tag(ext.MessagingKafkaPartition, msg.Partition),
-		tracer.Tag("offset", msg.Offset),
-		tracer.Tag(ext.Component, instrumentation.PackageSegmentioKafkaGo),
-		tracer.Tag(ext.SpanKind, ext.SpanKindConsumer),
-		tracer.Tag(ext.MessagingSystem, ext.MessagingSystemKafka),
-		tracer.Tag(ext.KafkaBootstrapServers, r.bootstrapServers),
-		tracer.Measured(),
-	}
-
-	if !math.IsNaN(r.cfg.analyticsRate) {
-		opts = append(opts, tracer.Tag(ext.EventSampleRate, r.cfg.analyticsRate))
-	}
-	// kafka supports headers, so try to extract a span context
-	carrier := messageCarrier{msg}
-	if spanctx, err := tracer.Extract(carrier); err == nil {
-		opts = append(opts, tracer.ChildOf(spanctx))
-	}
-	span, _ := tracer.StartSpanFromContext(ctx, r.cfg.consumerSpanName, opts...)
-	// reinject the span context so consumers can pick it up
-	if err := tracer.Inject(span.Context(), carrier); err != nil {
-		instr.Logger().Debug("contrib/segmentio/kafka-go: Failed to inject span context into carrier in reader, %v", err)
-	}
-	return span
 }
 
 // Close calls the underlying Reader.Close and if polling is enabled, finishes
@@ -153,39 +121,9 @@ func WrapWriter(w *kafka.Writer, opts ...Option) *KafkaWriter {
 	if w.Addr.String() != "" {
 		kafkaCfg.BootstrapServers = w.Addr.String()
 	}
+	writer.tracer = NewTracer(kafkaCfg, opts...)
 	instr.Logger().Debug("contrib/segmentio/kafka-go: Wrapping Writer: %#v", writer.tracer.kafkaCfg)
 	return writer
-}
-
-func (w *KafkaWriter) startSpan(ctx context.Context, msg *kafka.Message) *tracer.Span {
-	opts := []tracer.StartSpanOption{
-		tracer.ServiceName(w.tracer.producerServiceName),
-		tracer.SpanType(ext.SpanTypeMessageProducer),
-		tracer.Tag(ext.Component, instrumentation.PackageSegmentioKafkaGo),
-		tracer.Tag(ext.SpanKind, ext.SpanKindProducer),
-		tracer.Tag(ext.MessagingSystem, ext.MessagingSystemKafka),
-		tracer.Tag(ext.KafkaBootstrapServers, w.tracer.kafkaCfg.BootstrapServers),
-	}
-	if w.Writer.Topic != "" {
-		opts = append(opts, tracer.ResourceName("Produce Topic "+w.Writer.Topic))
-	} else {
-		opts = append(opts, tracer.ResourceName("Produce Topic "+msg.Topic))
-	}
-	if !math.IsNaN(w.tracer.analyticsRate) {
-		opts = append(opts, tracer.Tag(ext.EventSampleRate, w.tracer.analyticsRate))
-	}
-	carrier := messageCarrier{msg}
-	span, _ := tracer.StartSpanFromContext(ctx, w.tracer.producerSpanName, opts...)
-	if err := tracer.Inject(span.Context(), carrier); err != nil {
-		instr.Logger().Debug("contrib/segmentio/kafka-go: Failed to inject span context into carrier in writer, %v", err)
-	}
-	return span
-}
-
-func finishSpan(span *tracer.Span, partition int, offset int64, err error) {
-	span.SetTag(ext.MessagingKafkaPartition, partition)
-	span.SetTag("offset", offset)
-	span.Finish(tracer.WithError(err))
 }
 
 // WriteMessages calls kafka-go.Writer.WriteMessages and traces the requests.
