@@ -45,8 +45,7 @@ type IgnoreRequestFunc func(c echo.Context) bool
 func defaults(cfg *config) {
 	cfg.serviceName = namingschema.ServiceName(defaultServiceName)
 	cfg.analyticsRate = math.NaN()
-	v := os.Getenv(envServerErrorStatuses)
-	if fn := httptrace.GetErrorCodesFromInput(v); fn != nil {
+	if fn := httptrace.GetErrorCodesFromInput(os.Getenv(envServerErrorStatuses)); fn != nil {
 		cfg.isStatusError = fn
 	} else {
 		cfg.isStatusError = isServerError

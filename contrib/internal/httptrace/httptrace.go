@@ -62,7 +62,7 @@ func StartRequestSpan(r *http.Request, opts ...ddtrace.StartSpanOption) (tracer.
 }
 
 // FinishRequestSpan finishes the given HTTP request span and sets the expected response-related tags such as the status
-// code. Any further span finish option can be added with opts.
+// code. If not nil, errorFn will override the isStatusError method on httptrace for determining error codes. Any further span finish option can be added with opts.
 func FinishRequestSpan(s tracer.Span, status int, errorFn func(int) bool, opts ...tracer.FinishOption) {
 	var statusStr string
 	var fn func(int) bool
