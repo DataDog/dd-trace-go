@@ -24,7 +24,7 @@ func TestTracerAnalyticsSettings(t *testing.T) {
 		t.Skip("global flag disabled")
 		testutils.SetGlobalAnalyticsRate(t, 0.4)
 
-		cfg := newConfig()
+		cfg := NewTracer(KafkaConfig{})
 		assert.Equal(t, 0.4, cfg.analyticsRate)
 	})
 
@@ -48,8 +48,8 @@ func TestTracerAnalyticsSettings(t *testing.T) {
 
 	t.Run("optionOverridesEnv", func(t *testing.T) {
 		t.Setenv("DD_DATA_STREAMS_ENABLED", "false")
-		cfg := newConfig()
-		WithDataStreams()(cfg)
-		assert.True(t, cfg.dataStreamsEnabled)
+		tr := NewTracer(KafkaConfig{})
+		WithDataStreams().apply(tr.kafkaCfg.cfg)
+		assert.True(t, tr.dataStreamsEnabled)
 	})
 }

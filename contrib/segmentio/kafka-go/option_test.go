@@ -49,7 +49,7 @@ func TestAnalyticsSettings(t *testing.T) {
 	t.Run("optionOverridesEnv", func(t *testing.T) {
 		t.Setenv("DD_DATA_STREAMS_ENABLED", "false")
 		cfg := newConfig()
-		WithDataStreams()(cfg)
+		WithDataStreams().apply(cfg)
 		assert.True(t, cfg.dataStreamsEnabled)
 	})
 }
