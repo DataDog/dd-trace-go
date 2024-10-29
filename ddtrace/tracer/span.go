@@ -552,6 +552,9 @@ func (s *Span) Finish(opts ...FinishOption) {
 		if !cfg.FinishTime.IsZero() {
 			t = cfg.FinishTime.UnixNano()
 		}
+		if cfg.NoDebugStack {
+			delete(s.meta, ext.ErrorStack)
+		}
 		if cfg.Error != nil {
 			s.Lock()
 			s.setTagError(cfg.Error, errorConfig{
