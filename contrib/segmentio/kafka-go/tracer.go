@@ -5,24 +5,13 @@
 
 package kafka
 
-import (
-	"math"
-)
-
 type Tracer struct {
-	consumerServiceName string
-	producerServiceName string
-	consumerSpanName    string
-	producerSpanName    string
-	analyticsRate       float64
-	dataStreamsEnabled  bool
-	kafkaCfg            KafkaConfig
+	kafkaCfg KafkaConfig
+	cfg      *config
 }
 
 func NewTracer(kafkaCfg KafkaConfig, opts ...Option) *Tracer {
-	tr := &Tracer{
-		analyticsRate: math.NaN(),
-	}
-	tr.kafkaCfg.cfg = newConfig(opts...)
+	tr := &Tracer{}
+	tr.cfg = newConfig(opts...)
 	return tr
 }

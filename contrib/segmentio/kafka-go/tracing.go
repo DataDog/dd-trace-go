@@ -19,7 +19,7 @@ const componentName = "segmentio/kafka-go"
 
 func (tr *Tracer) StartConsumeSpan(ctx context.Context, msg Message) *tracer.Span {
 	opts := []tracer.StartSpanOption{
-		tracer.ServiceName(tr.consumerServiceName),
+		tracer.ServiceName(tr.cfg.consumerServiceName),
 		tracer.ResourceName("Consume Topic " + msg.GetTopic()),
 		tracer.SpanType(ext.SpanTypeMessageConsumer),
 		tracer.Tag(ext.MessagingKafkaPartition, msg.GetPartition()),
@@ -30,15 +30,15 @@ func (tr *Tracer) StartConsumeSpan(ctx context.Context, msg Message) *tracer.Spa
 		tracer.Tag(ext.KafkaBootstrapServers, tr.kafkaCfg.BootstrapServers),
 		tracer.Measured(),
 	}
-	if !math.IsNaN(tr.analyticsRate) {
-		opts = append(opts, tracer.Tag(ext.EventSampleRate, tr.analyticsRate))
+	if !math.IsNaN(tr.cfg.analyticsRate) {
+		opts = append(opts, tracer.Tag(ext.EventSampleRate, tr.cfg.analyticsRate))
 	}
 	// kafka supports headers, so try to extract a span context
 	carrier := NewMessageCarrier(msg)
 	if spanctx, err := tracer.Extract(carrier); err == nil {
 		opts = append(opts, tracer.ChildOf(spanctx))
 	}
-	span, _ := tracer.StartSpanFromContext(ctx, tr.consumerSpanName, opts...)
+	span, _ := tracer.StartSpanFromContext(ctx, tr.cfg.consumerSpanName, opts...)
 	// reinject the span context so consumers can pick it up
 	if err := tracer.Inject(span.Context(), carrier); err != nil {
 		instr.Logger().Debug("contrib/segmentio/kafka-go: Failed to inject span context into carrier in reader, %v", err)
@@ -48,7 +48,7 @@ func (tr *Tracer) StartConsumeSpan(ctx context.Context, msg Message) *tracer.Spa
 
 func (tr *Tracer) StartProduceSpan(ctx context.Context, writer Writer, msg Message, spanOpts ...tracer.StartSpanOption) *tracer.Span {
 	opts := []tracer.StartSpanOption{
-		tracer.ServiceName(tr.producerServiceName),
+		tracer.ServiceName(tr.cfg.producerServiceName),
 		tracer.SpanType(ext.SpanTypeMessageProducer),
 		tracer.Tag(ext.Component, componentName),
 		tracer.Tag(ext.SpanKind, ext.SpanKindProducer),
@@ -60,12 +60,12 @@ func (tr *Tracer) StartProduceSpan(ctx context.Context, writer Writer, msg Messa
 	} else {
 		opts = append(opts, tracer.ResourceName("Produce Topic "+msg.GetTopic()))
 	}
-	if !math.IsNaN(tr.analyticsRate) {
-		opts = append(opts, tracer.Tag(ext.EventSampleRate, tr.analyticsRate))
+	if !math.IsNaN(tr.cfg.analyticsRate) {
+		opts = append(opts, tracer.Tag(ext.EventSampleRate, tr.cfg.analyticsRate))
 	}
 	opts = append(opts, spanOpts...)
 	carrier := NewMessageCarrier(msg)
-	span, _ := tracer.StartSpanFromContext(ctx, tr.producerSpanName, opts...)
+	span, _ := tracer.StartSpanFromContext(ctx, tr.cfg.producerSpanName, opts...)
 	if err := tracer.Inject(span.Context(), carrier); err != nil {
 		instr.Logger().Debug("contrib/segmentio/kafka-go: Failed to inject span context into carrier in writer, %v", err)
 	}

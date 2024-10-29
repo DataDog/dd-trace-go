@@ -14,7 +14,7 @@ import (
 )
 
 func (tr *Tracer) SetConsumeDSMCheckpoint(msg Message) {
-	if !tr.dataStreamsEnabled || msg == nil {
+	if !tr.cfg.dataStreamsEnabled || msg == nil {
 		return
 	}
 	edges := []string{"direction:in", "topic:" + msg.GetTopic(), "type:kafka"}
@@ -39,7 +39,7 @@ func (tr *Tracer) SetConsumeDSMCheckpoint(msg Message) {
 }
 
 func (tr *Tracer) SetProduceDSMCheckpoint(msg Message, writer Writer) {
-	if !tr.dataStreamsEnabled || msg == nil {
+	if !tr.cfg.dataStreamsEnabled || msg == nil {
 		return
 	}
 
