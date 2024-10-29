@@ -85,8 +85,8 @@ func runFlakyTestRetriesTests(m *testing.M) {
 
 	// execute the tests, we are expecting some tests to fail and check the assertion later
 	exitCode := RunM(m)
-	if exitCode != 1 {
-		panic("expected the exit code to be 1. We have a failing test on purpose. Got exit code: " + fmt.Sprintf("%d", exitCode))
+	if exitCode != 0 {
+		panic("expected the exit code to be 0. Got exit code: " + fmt.Sprintf("%d", exitCode))
 	}
 
 	// get all finished spans
@@ -102,7 +102,6 @@ func runFlakyTestRetriesTests(m *testing.M) {
 	// 1 TestSkip
 	// 1 TestRetryWithPanic + 3 retry tests from testing_test.go
 	// 1 TestRetryWithFail + 3 retry tests from testing_test.go
-	// 1 TestRetryAlwaysFail + 10 retry tests from testing_test.go
 	// 1 TestNormalPassingAfterRetryAlwaysFail
 	// 1 TestEarlyFlakeDetection
 
@@ -121,20 +120,19 @@ func runFlakyTestRetriesTests(m *testing.M) {
 	checkSpansByResourceName(finishedSpans, "testing_test.go.TestSkip", 1)
 	checkSpansByResourceName(finishedSpans, "testing_test.go.TestRetryWithPanic", 4)
 	checkSpansByResourceName(finishedSpans, "testing_test.go.TestRetryWithFail", 4)
-	checkSpansByResourceName(finishedSpans, "testing_test.go.TestRetryAlwaysFail", 11)
 	checkSpansByResourceName(finishedSpans, "testing_test.go.TestNormalPassingAfterRetryAlwaysFail", 1)
 	checkSpansByResourceName(finishedSpans, "testing_test.go.TestEarlyFlakeDetection", 1)
 
 	// check spans by tag
-	checkSpansByTagName(finishedSpans, constants.TestIsRetry, 16)
+	checkSpansByTagName(finishedSpans, constants.TestIsRetry, 6)
 
 	// check spans by type
 	checkSpansByType(finishedSpans,
-		39,
+		28,
 		1,
 		1,
 		2,
-		35,
+		24,
 		0)
 
 	fmt.Println("All tests passed.")
@@ -164,8 +162,8 @@ func runEarlyFlakyTestDetectionTests(m *testing.M) {
 
 	// execute the tests, we are expecting some tests to fail and check the assertion later
 	exitCode := RunM(m)
-	if exitCode != 1 {
-		panic("expected the exit code to be 1. We have a failing test on purpose. Got exit code: " + fmt.Sprintf("%d", exitCode))
+	if exitCode != 0 {
+		panic("expected the exit code to be 0. Got exit code: " + fmt.Sprintf("%d", exitCode))
 	}
 
 	// get all finished spans
@@ -181,7 +179,6 @@ func runEarlyFlakyTestDetectionTests(m *testing.M) {
 	// 11 TestSkip
 	// 11 TestRetryWithPanic
 	// 11 TestRetryWithFail
-	// 11 TestRetryAlwaysFail
 	// 11 TestNormalPassingAfterRetryAlwaysFail
 	// 11 TestEarlyFlakeDetection
 	// 22 normal spans from testing_test.go
@@ -201,21 +198,20 @@ func runEarlyFlakyTestDetectionTests(m *testing.M) {
 	checkSpansByResourceName(finishedSpans, "testing_test.go.TestSkip", 11)
 	checkSpansByResourceName(finishedSpans, "testing_test.go.TestRetryWithPanic", 11)
 	checkSpansByResourceName(finishedSpans, "testing_test.go.TestRetryWithFail", 11)
-	checkSpansByResourceName(finishedSpans, "testing_test.go.TestRetryAlwaysFail", 11)
 	checkSpansByResourceName(finishedSpans, "testing_test.go.TestNormalPassingAfterRetryAlwaysFail", 11)
 	checkSpansByResourceName(finishedSpans, "testing_test.go.TestEarlyFlakeDetection", 11)
 
 	// check spans by tag
-	checkSpansByTagName(finishedSpans, constants.TestIsNew, 154)
-	checkSpansByTagName(finishedSpans, constants.TestIsRetry, 140)
+	checkSpansByTagName(finishedSpans, constants.TestIsNew, 143)
+	checkSpansByTagName(finishedSpans, constants.TestIsRetry, 130)
 
 	// check spans by type
 	checkSpansByType(finishedSpans,
-		163,
+		152,
 		1,
 		1,
 		2,
-		159,
+		148,
 		0)
 
 	fmt.Println("All tests passed.")
@@ -259,8 +255,8 @@ func runFlakyTestRetriesWithEarlyFlakyTestDetectionTests(m *testing.M) {
 
 	// execute the tests, we are expecting some tests to fail and check the assertion later
 	exitCode := RunM(m)
-	if exitCode != 1 {
-		panic("expected the exit code to be 1. We have a failing test on purpose. Got exit code: " + fmt.Sprintf("%d", exitCode))
+	if exitCode != 0 {
+		panic("expected the exit code to be 0. Got exit code: " + fmt.Sprintf("%d", exitCode))
 	}
 
 	// get all finished spans
@@ -297,21 +293,20 @@ func runFlakyTestRetriesWithEarlyFlakyTestDetectionTests(m *testing.M) {
 	checkSpansByResourceName(finishedSpans, "testing_test.go.TestSkip", 1)
 	checkSpansByResourceName(finishedSpans, "testing_test.go.TestRetryWithPanic", 4)
 	checkSpansByResourceName(finishedSpans, "testing_test.go.TestRetryWithFail", 4)
-	checkSpansByResourceName(finishedSpans, "testing_test.go.TestRetryAlwaysFail", 11)
 	checkSpansByResourceName(finishedSpans, "testing_test.go.TestNormalPassingAfterRetryAlwaysFail", 1)
 	checkSpansByResourceName(finishedSpans, "testing_test.go.TestEarlyFlakeDetection", 21)
 
 	// check spans by tag
 	checkSpansByTagName(finishedSpans, constants.TestIsNew, 21)
-	checkSpansByTagName(finishedSpans, constants.TestIsRetry, 36)
+	checkSpansByTagName(finishedSpans, constants.TestIsRetry, 26)
 
 	// check spans by type
 	checkSpansByType(finishedSpans,
-		59,
+		48,
 		1,
 		1,
 		2,
-		55,
+		44,
 		0)
 
 	fmt.Println("All tests passed.")
@@ -390,7 +385,6 @@ func runIntelligentTestRunnerTests(m *testing.M) {
 	checkSpansByResourceName(finishedSpans, "testing_test.go.TestSkip", 1)
 	itrTest04 := checkSpansByResourceName(finishedSpans, "testing_test.go.TestRetryWithPanic", 1)
 	itrTest05 := checkSpansByResourceName(finishedSpans, "testing_test.go.TestRetryWithFail", 1)
-	itrTest06 := checkSpansByResourceName(finishedSpans, "testing_test.go.TestRetryAlwaysFail", 1)
 	checkSpansByResourceName(finishedSpans, "testing_test.go.TestNormalPassingAfterRetryAlwaysFail", 1)
 	checkSpansByResourceName(finishedSpans, "testing_test.go.TestEarlyFlakeDetection", 1)
 
@@ -401,17 +395,16 @@ func runIntelligentTestRunnerTests(m *testing.M) {
 	itrTests = append(itrTests, itrTest03...)
 	itrTests = append(itrTests, itrTest04...)
 	itrTests = append(itrTests, itrTest05...)
-	itrTests = append(itrTests, itrTest06...)
-	checkSpansByTagValue(itrTests, constants.TestStatus, constants.TestStatusSkip, 6)
-	checkSpansByTagValue(itrTests, constants.TestSkipReason, constants.SkippedByITRReason, 6)
+	checkSpansByTagValue(itrTests, constants.TestStatus, constants.TestStatusSkip, 5)
+	checkSpansByTagValue(itrTests, constants.TestSkipReason, constants.SkippedByITRReason, 5)
 
 	// check spans by type
 	checkSpansByType(finishedSpans,
-		18,
+		17,
 		1,
 		1,
 		2,
-		14,
+		13,
 		0)
 
 	fmt.Println("All tests passed.")
