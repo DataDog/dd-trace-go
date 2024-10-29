@@ -9,8 +9,6 @@ import (
 	"math"
 )
 
-const defaultServiceName = "kafka"
-
 type Tracer struct {
 	consumerServiceName string
 	producerServiceName string
