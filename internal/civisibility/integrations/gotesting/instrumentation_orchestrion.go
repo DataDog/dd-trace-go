@@ -19,6 +19,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/constants"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/integrations"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/integrations/gotesting/coverage"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/utils"
 )
 
@@ -45,6 +46,12 @@ func instrumentTestingM(m *testing.M) func(exitCode int) {
 	// Create a new test session for CI visibility.
 	session = integrations.CreateTestSession()
 
+	settings := integrations.GetSettings()
+	if settings != nil && settings.CodeCoverage {
+		// Initialize the runtime coverage if enabled.
+		coverage.InitializeCoverage(m)
+	}
+
 	ddm := (*M)(m)
 
 	// Instrument the internal tests for CI visibility.
@@ -62,7 +69,18 @@ func instrumentTestingM(m *testing.M) func(exitCode int) {
 	return func(exitCode int) {
 		// Check for code coverage if enabled.
 		if testing.CoverMode() != "" {
-			coveragePercentage := testing.Coverage() * 100
+
+			var cov float64
+			// let's try first with our coverage package
+			if coverage.CanCollect() {
+				cov = coverage.GetCoverage()
+			}
+			if cov == 0 {
+				// if not we try we the default testing package
+				cov = testing.Coverage()
+			}
+
+			coveragePercentage := cov * 100
 			session.SetTag(constants.CodeCoveragePercentageOfTotalLines, coveragePercentage)
 		}
 
