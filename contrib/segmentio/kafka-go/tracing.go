@@ -27,8 +27,10 @@ func (tr *Tracer) StartConsumeSpan(ctx context.Context, msg Message) *tracer.Spa
 		tracer.Tag(ext.Component, componentName),
 		tracer.Tag(ext.SpanKind, ext.SpanKindConsumer),
 		tracer.Tag(ext.MessagingSystem, ext.MessagingSystemKafka),
-		tracer.Tag(ext.KafkaBootstrapServers, tr.kafkaCfg.BootstrapServers),
 		tracer.Measured(),
+	}
+	if tr.kafkaCfg.BootstrapServers != "" {
+		opts = append(opts, tracer.Tag(ext.KafkaBootstrapServers, tr.kafkaCfg.BootstrapServers))
 	}
 	if !math.IsNaN(tr.cfg.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, tr.cfg.analyticsRate))
@@ -53,7 +55,9 @@ func (tr *Tracer) StartProduceSpan(ctx context.Context, writer Writer, msg Messa
 		tracer.Tag(ext.Component, componentName),
 		tracer.Tag(ext.SpanKind, ext.SpanKindProducer),
 		tracer.Tag(ext.MessagingSystem, ext.MessagingSystemKafka),
-		tracer.Tag(ext.KafkaBootstrapServers, tr.kafkaCfg.BootstrapServers),
+	}
+	if tr.kafkaCfg.BootstrapServers != "" {
+		opts = append(opts, tracer.Tag(ext.KafkaBootstrapServers, tr.kafkaCfg.BootstrapServers))
 	}
 	if writer.GetTopic() != "" {
 		opts = append(opts, tracer.ResourceName("Produce Topic "+writer.GetTopic()))

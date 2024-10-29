@@ -21,19 +21,12 @@ func init() {
 	instr = instrumentation.Load(instrumentation.PackageSegmentioKafkaGo)
 }
 
-// A kafkaConfig struct holds information from the kafka config for span tags
-type kafkaConfig struct {
-	bootstrapServers string
-	groupID          string
-}
-
 // A Reader wraps a kafka.Reader.
 type Reader struct {
 	*kafka.Reader
-	tracer   *Tracer
-	kafkaCfg kafkaConfig
-	cfg      *config
-	prev     *tracer.Span
+	KafkaConfig
+	tracer *Tracer
+	prev   *tracer.Span
 }
 
 // NewReader calls kafka.NewReader and wraps the resulting Consumer.
@@ -46,15 +39,13 @@ func WrapReader(c *kafka.Reader, opts ...Option) *Reader {
 	wrapped := &Reader{
 		Reader: c,
 	}
-	kafkaCfg := KafkaConfig{}
 	if c.Config().Brokers != nil {
-		kafkaCfg.BootstrapServers = strings.Join(c.Config().Brokers, ",")
+		wrapped.BootstrapServers = strings.Join(c.Config().Brokers, ",")
 	}
 	if c.Config().GroupID != "" {
-		kafkaCfg.ConsumerGroupID = c.Config().GroupID
+		wrapped.ConsumerGroupID = c.Config().GroupID
 	}
-	wrapped.tracer = NewTracer(kafkaCfg, opts...)
-	instr.Logger().Debug("contrib/segmentio/kafka-go/kafka: Wrapping Reader: %#v", wrapped.cfg)
+	instr.Logger().Debug("contrib/segmentio/kafka-go/kafka: Wrapping Reader: %#v", wrapped.tracer.cfg)
 	return wrapped
 }
 
@@ -104,6 +95,7 @@ func (r *Reader) FetchMessage(ctx context.Context) (kafka.Message, error) {
 // Writer wraps a kafka.Writer with tracing config data
 type KafkaWriter struct {
 	*kafka.Writer
+	KafkaConfig
 	tracer *Tracer
 }
 
@@ -117,11 +109,9 @@ func WrapWriter(w *kafka.Writer, opts ...Option) *KafkaWriter {
 	writer := &KafkaWriter{
 		Writer: w,
 	}
-	kafkaCfg := KafkaConfig{}
 	if w.Addr.String() != "" {
-		kafkaCfg.BootstrapServers = w.Addr.String()
+		writer.BootstrapServers = w.Addr.String()
 	}
-	writer.tracer = NewTracer(kafkaCfg, opts...)
 	instr.Logger().Debug("contrib/segmentio/kafka-go: Wrapping Writer: %#v", writer.tracer.kafkaCfg)
 	return writer
 }
