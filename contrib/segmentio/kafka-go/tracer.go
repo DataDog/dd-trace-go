@@ -21,10 +21,8 @@ type Tracer struct {
 
 func NewTracer(kafkaCfg KafkaConfig, opts ...Option) *Tracer {
 	tr := &Tracer{
-		// analyticsRate: globalConfig.AnalyticsRate(),
 		analyticsRate: math.NaN(),
-		kafkaCfg:      kafkaCfg,
 	}
-	kafkaCfg.cfg = newConfig(opts...)
+	tr.kafkaCfg.cfg = newConfig(opts...)
 	return tr
 }
