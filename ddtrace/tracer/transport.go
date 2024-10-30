@@ -143,11 +143,11 @@ func (t *httpTransport) send(p *payload) (body io.ReadCloser, err error) {
 	if err != nil {
 		return nil, fmt.Errorf("cannot create http request: %v", err)
 	}
+	req.ContentLength = int64(p.size())
 	for header, value := range t.headers {
 		req.Header.Set(header, value)
 	}
 	req.Header.Set(traceCountHeader, strconv.Itoa(p.itemCount()))
-	req.Header.Set("Content-Length", strconv.Itoa(p.size()))
 	req.Header.Set(headerComputedTopLevel, "yes")
 	if t, ok := traceinternal.GetGlobalTracer().(*tracer); ok {
 		if t.config.canComputeStats() {
