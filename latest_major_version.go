@@ -8,15 +8,15 @@ import (
 	"regexp"
 	"encoding/json"
 	"net/http"
+	// "time"
 )
 
 func getLatestMajorVersion(repo string) (string, error) {
-	// Get latest major version available for repo
+	// Get latest major version available for repo from github.
 	const apiURL = "https://api.github.com/repos/%s/tags"
 	url := fmt.Sprintf(apiURL, repo)
 
-	// TODO: figure out ratelimiting??
-	resp, err := http.Get(url)
+	resp, err := http.Get(url) 	// TODO: figure out ratelimiting??
 	if err != nil {
 		return "", err
 	}
@@ -91,11 +91,11 @@ func main() {
 		return
 	}
 
+	// Check if a new major version in Github is available that we don't support. If so, output that a new latest is available.
 	for module, major := range latestMajor {
 		latestVersion, err := getLatestMajorVersion(module)
 		if err != nil {
 			fmt.Printf("Error fetching latest version: %v", err)
-			return
 		}
 
 		normalizedMajor := strings.TrimSpace(strings.TrimPrefix(major, "v"))
@@ -103,7 +103,7 @@ func main() {
 		fmt.Printf("Latest version of %s: v%s\n", module, normalizedMajor)
 		fmt.Printf("Latest Github major version of %s: %s\n", module, normalizedLatestMajor)
 		if normalizedMajor != normalizedLatestMajor {
-			fmt.Printf("New latest major version of %s: %s\n", module, normalizedLatestMajor)
+			fmt.Printf("New latest major version of %s available: %s\n", module, normalizedLatestMajor)
 		}
 	}
 }

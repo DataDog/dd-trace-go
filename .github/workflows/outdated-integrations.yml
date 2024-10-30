@@ -1,0 +1,23 @@
+name: Outdated Integrations
+on:
+  workflow_dispatch: # manually
+  push:
+    branches:
+      - quinna.halim/update-outdated-integrations-workflow # TODO: remove, for testing
+
+permissions: read-all
+
+concurrency:
+  # Automatically cancel previous runs if a new one is triggered to conserve resources.
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: 'Outdated Integrations'
+    runs-on: ubuntu-latest
+    env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: go run latest_major_version.go
