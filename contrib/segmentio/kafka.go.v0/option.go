@@ -6,67 +6,21 @@
 package kafka
 
 import (
-	"math"
-
-	"gopkg.in/DataDog/dd-trace-go.v1/internal"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
+	"gopkg.in/DataDog/dd-trace-go.v1/contrib/segmentio/kafka.go.v0/internal/tracing"
 )
 
-type config struct {
-	consumerServiceName string
-	producerServiceName string
-	analyticsRate       float64
-}
-
 // An Option customizes the config.
-type Option func(cfg *config)
-
-func newConfig(opts ...Option) *config {
-	cfg := &config{
-		consumerServiceName: "kafka",
-		producerServiceName: "kafka",
-		// analyticsRate: globalconfig.AnalyticsRate(),
-		analyticsRate: math.NaN(),
-	}
-	if internal.BoolEnv("DD_TRACE_KAFKA_ANALYTICS_ENABLED", false) {
-		cfg.analyticsRate = 1.0
-	}
-	if svc := globalconfig.ServiceName(); svc != "" {
-		cfg.consumerServiceName = svc
-	}
-	for _, opt := range opts {
-		opt(cfg)
-	}
-	return cfg
-}
+type Option = tracing.Option
 
 // WithServiceName sets the config service name to serviceName.
-func WithServiceName(serviceName string) Option {
-	return func(cfg *config) {
-		cfg.consumerServiceName = serviceName
-		cfg.producerServiceName = serviceName
-	}
-}
+var WithServiceName = tracing.WithServiceName
 
 // WithAnalytics enables Trace Analytics for all started spans.
-func WithAnalytics(on bool) Option {
-	return func(cfg *config) {
-		if on {
-			cfg.analyticsRate = 1.0
-		} else {
-			cfg.analyticsRate = math.NaN()
-		}
-	}
-}
+var WithAnalytics = tracing.WithAnalytics
 
 // WithAnalyticsRate sets the sampling rate for Trace Analytics events
 // correlated to started spans.
-func WithAnalyticsRate(rate float64) Option {
-	return func(cfg *config) {
-		if rate >= 0.0 && rate <= 1.0 {
-			cfg.analyticsRate = rate
-		} else {
-			cfg.analyticsRate = math.NaN()
-		}
-	}
-}
+var WithAnalyticsRate = tracing.WithAnalyticsRate
+
+// WithDataStreams enables the Data Streams monitoring product features: https://www.datadoghq.com/product/data-streams-monitoring/
+var WithDataStreams = tracing.WithDataStreams

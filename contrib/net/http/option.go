@@ -8,12 +8,24 @@ package http
 import (
 	"math"
 	"net/http"
+	"os"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/httptrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/normalizer"
+)
+
+const (
+	defaultServiceName = "http.router"
+	// envClientQueryStringEnabled is the name of the env var used to specify whether query string collection is enabled for http client spans.
+	envClientQueryStringEnabled = "DD_TRACE_HTTP_CLIENT_TAG_QUERY_STRING"
+	// envClientErrorStatuses is the name of the env var that specifies error status codes on http client spans
+	envClientErrorStatuses = "DD_TRACE_HTTP_CLIENT_ERROR_STATUSES"
 )
 
 type config struct {
@@ -23,6 +35,7 @@ type config struct {
 	finishOpts    []ddtrace.FinishOption
 	ignoreRequest func(*http.Request) bool
 	resourceNamer func(*http.Request) string
+	headerTags    *internal.LockMap
 }
 
 // MuxOption has been deprecated in favor of Option.
@@ -37,10 +50,8 @@ func defaults(cfg *config) {
 	} else {
 		cfg.analyticsRate = globalconfig.AnalyticsRate()
 	}
-	cfg.serviceName = "http.router"
-	if svc := globalconfig.ServiceName(); svc != "" {
-		cfg.serviceName = svc
-	}
+	cfg.serviceName = namingschema.ServiceName(defaultServiceName)
+	cfg.headerTags = globalconfig.HeaderTagMap()
 	cfg.spanOpts = []ddtrace.StartSpanOption{tracer.Measured()}
 	if !math.IsNaN(cfg.analyticsRate) {
 		cfg.spanOpts = append(cfg.spanOpts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
@@ -50,7 +61,7 @@ func defaults(cfg *config) {
 }
 
 // WithIgnoreRequest holds the function to use for determining if the
-// incoming HTTP request tracing should be skipped.
+// incoming HTTP request should not be traced.
 func WithIgnoreRequest(f func(*http.Request) bool) MuxOption {
 	return func(cfg *config) {
 		cfg.ignoreRequest = f
@@ -61,6 +72,17 @@ func WithIgnoreRequest(f func(*http.Request) bool) MuxOption {
 func WithServiceName(name string) MuxOption {
 	return func(cfg *config) {
 		cfg.serviceName = name
+	}
+}
+
+// WithHeaderTags enables the integration to attach HTTP request headers as span tags.
+// Warning:
+// Using this feature can risk exposing sensitive data such as authorization tokens to Datadog.
+// Special headers can not be sub-selected. E.g., an entire Cookie header would be transmitted, without the ability to choose specific Cookies.
+func WithHeaderTags(headers []string) Option {
+	headerTagsMap := normalizer.HeaderTagSlice(headers)
+	return func(cfg *config) {
+		cfg.headerTags = internal.NewLockMap(headerTagsMap)
 	}
 }
 
@@ -127,14 +149,39 @@ type roundTripperConfig struct {
 	analyticsRate float64
 	serviceName   string
 	resourceNamer func(req *http.Request) string
+	spanNamer     func(req *http.Request) string
+	ignoreRequest func(*http.Request) bool
 	spanOpts      []ddtrace.StartSpanOption
+	propagation   bool
+	errCheck      func(err error) bool
+	queryString   bool // reports whether the query string is included in the URL tag for http client spans
+	isStatusError func(statusCode int) bool
 }
 
 func newRoundTripperConfig() *roundTripperConfig {
-	return &roundTripperConfig{
+	defaultResourceNamer := func(_ *http.Request) string {
+		return "http.request"
+	}
+	spanName := namingschema.OpName(namingschema.HTTPClient)
+	defaultSpanNamer := func(_ *http.Request) string {
+		return spanName
+	}
+
+	c := &roundTripperConfig{
+		serviceName:   namingschema.ServiceNameOverrideV0("", ""),
 		analyticsRate: globalconfig.AnalyticsRate(),
 		resourceNamer: defaultResourceNamer,
+		propagation:   true,
+		spanNamer:     defaultSpanNamer,
+		ignoreRequest: func(_ *http.Request) bool { return false },
+		queryString:   internal.BoolEnv(envClientQueryStringEnabled, true),
+		isStatusError: isClientError,
 	}
+	v := os.Getenv(envClientErrorStatuses)
+	if fn := httptrace.GetErrorCodesFromInput(v); fn != nil {
+		c.isStatusError = fn
+	}
+	return c
 }
 
 // A RoundTripperOption represents an option that can be passed to
@@ -165,16 +212,20 @@ func RTWithResourceNamer(namer func(req *http.Request) string) RoundTripperOptio
 	}
 }
 
+// RTWithSpanNamer specifies a function which will be used to
+// obtain the span operation name for a given request.
+func RTWithSpanNamer(namer func(req *http.Request) string) RoundTripperOption {
+	return func(cfg *roundTripperConfig) {
+		cfg.spanNamer = namer
+	}
+}
+
 // RTWithSpanOptions defines a set of additional ddtrace.StartSpanOption to be added
 // to spans started by the integration.
 func RTWithSpanOptions(opts ...ddtrace.StartSpanOption) RoundTripperOption {
 	return func(cfg *roundTripperConfig) {
 		cfg.spanOpts = append(cfg.spanOpts, opts...)
 	}
-}
-
-func defaultResourceNamer(_ *http.Request) string {
-	return "http.request"
 }
 
 // RTWithServiceName sets the given service name for the RoundTripper.
@@ -205,4 +256,33 @@ func RTWithAnalyticsRate(rate float64) RoundTripperOption {
 			cfg.analyticsRate = math.NaN()
 		}
 	}
+}
+
+// RTWithPropagation enables/disables propagation for tracing headers.
+// Disabling propagation will disconnect this trace from any downstream traces.
+func RTWithPropagation(propagation bool) RoundTripperOption {
+	return func(cfg *roundTripperConfig) {
+		cfg.propagation = propagation
+	}
+}
+
+// RTWithIgnoreRequest holds the function to use for determining if the
+// outgoing HTTP request should not be traced.
+func RTWithIgnoreRequest(f func(*http.Request) bool) RoundTripperOption {
+	return func(cfg *roundTripperConfig) {
+		cfg.ignoreRequest = f
+	}
+}
+
+// RTWithErrorCheck specifies a function fn which determines whether the passed
+// error should be marked as an error. The fn is called whenever an http operation
+// finishes with an error
+func RTWithErrorCheck(fn func(err error) bool) RoundTripperOption {
+	return func(cfg *roundTripperConfig) {
+		cfg.errCheck = fn
+	}
+}
+
+func isClientError(statusCode int) bool {
+	return statusCode >= 400 && statusCode < 500
 }

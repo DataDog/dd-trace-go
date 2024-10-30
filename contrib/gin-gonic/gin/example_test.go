@@ -53,12 +53,13 @@ func Example_spanFromContext() {
 	defer tracer.Stop()
 
 	r := gin.Default()
+	// make sure that the middleware is initialized before registering any routes
 	r.Use(gintrace.Middleware("image-encoder"))
 	r.GET("/image/encode", func(c *gin.Context) {
 		ctx := c.Request.Context()
 		// create a child span to track operation timing.
 		encodeSpan, _ := tracer.StartSpanFromContext(ctx, "image.encode")
-		// encode a image
+		// encode an image
 		encodeSpan.Finish()
 
 		c.String(200, "ok!")

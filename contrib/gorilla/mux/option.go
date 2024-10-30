@@ -14,7 +14,11 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/normalizer"
 )
+
+const defaultServiceName = "mux.router"
 
 type routerConfig struct {
 	serviceName   string
@@ -23,8 +27,8 @@ type routerConfig struct {
 	analyticsRate float64
 	resourceNamer func(*Router, *http.Request) string
 	ignoreRequest func(*http.Request) bool
-	headerTags    bool
 	queryParams   bool
+	headerTags    *internal.LockMap
 }
 
 // RouterOption represents an option that can be passed to NewRouter.
@@ -48,10 +52,8 @@ func defaults(cfg *routerConfig) {
 	} else {
 		cfg.analyticsRate = globalconfig.AnalyticsRate()
 	}
-	cfg.serviceName = "mux.router"
-	if svc := globalconfig.ServiceName(); svc != "" {
-		cfg.serviceName = svc
-	}
+	cfg.headerTags = globalconfig.HeaderTagMap()
+	cfg.serviceName = namingschema.ServiceName(defaultServiceName)
 	cfg.resourceNamer = defaultResourceNamer
 	cfg.ignoreRequest = func(_ *http.Request) bool { return false }
 }
@@ -119,18 +121,19 @@ func WithResourceNamer(namer func(router *Router, req *http.Request) string) Rou
 	}
 }
 
-// WithHeaderTags specifies that the integration should attach HTTP request headers as
-// tags to spans.
-// Warning: using this feature can risk exposing sensitive data such as authorisation tokens
-// to Datadog.
-func WithHeaderTags() RouterOption {
+// WithHeaderTags enables the integration to attach HTTP request headers as span tags.
+// Warning:
+// Using this feature can risk exposing sensitive data such as authorization tokens to Datadog.
+// Special headers can not be sub-selected. E.g., an entire Cookie header would be transmitted, without the ability to choose specific Cookies.
+func WithHeaderTags(headers []string) RouterOption {
+	headerTagsMap := normalizer.HeaderTagSlice(headers)
 	return func(cfg *routerConfig) {
-		cfg.headerTags = true
+		cfg.headerTags = internal.NewLockMap(headerTagsMap)
 	}
 }
 
 // WithQueryParams specifies that the integration should attach request query parameters as APM tags.
-// Warning: using this feature can risk exposing sensitive data such as authorisation tokens
+// Warning: using this feature can risk exposing sensitive data such as authorization tokens
 // to Datadog.
 func WithQueryParams() RouterOption {
 	return func(cfg *routerConfig) {

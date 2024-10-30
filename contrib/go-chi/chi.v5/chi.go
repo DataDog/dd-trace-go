@@ -12,14 +12,23 @@ import (
 	"net/http"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/httptrace"
+	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/options"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 )
+
+const componentName = "go-chi/chi.v5"
+
+func init() {
+	telemetry.LoadIntegration(componentName)
+	tracer.MarkIntegrationImported("github.com/go-chi/chi/v5")
+}
 
 // Middleware returns middleware that will trace incoming requests.
 func Middleware(opts ...Option) func(next http.Handler) http.Handler {
@@ -29,17 +38,20 @@ func Middleware(opts ...Option) func(next http.Handler) http.Handler {
 		fn(cfg)
 	}
 	log.Debug("contrib/go-chi/chi.v5: Configuring Middleware: %#v", cfg)
-	spanOpts := append(cfg.spanOpts, tracer.ServiceName(cfg.serviceName))
+	spanOpts := append(cfg.spanOpts, tracer.ServiceName(cfg.serviceName),
+		tracer.Tag(ext.Component, componentName),
+		tracer.Tag(ext.SpanKind, ext.SpanKindServer))
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if cfg.ignoreRequest(r) {
 				next.ServeHTTP(w, r)
 				return
 			}
-			opts := spanOpts
+			opts := options.Copy(spanOpts...) // opts must be a copy of spanOpts, locally scoped, to avoid races.
 			if !math.IsNaN(cfg.analyticsRate) {
 				opts = append(opts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
 			}
+			opts = append(opts, httptrace.HeaderTagsFromRequest(r, cfg.headerTags))
 			span, ctx := httptrace.StartRequestSpan(r, opts...)
 			ww := middleware.NewWrapResponseWriter(w, r.ProtoMajor)
 			defer func() {
@@ -55,8 +67,8 @@ func Middleware(opts ...Option) func(next http.Handler) http.Handler {
 			r = r.WithContext(ctx)
 
 			next := next // avoid modifying the value of next in the outer closure scope
-			if appsec.Enabled() {
-				next = withAppsec(next, r, span)
+			if appsec.Enabled() && !cfg.appsecDisabled {
+				next = withAppsec(next, r, span, &cfg.appsecConfig)
 				// Note that the following response writer passed to the handler
 				// implements the `interface { Status() int }` expected by httpsec.
 			}
@@ -64,13 +76,18 @@ func Middleware(opts ...Option) func(next http.Handler) http.Handler {
 			// pass the span through the request context and serve the request to the next middleware
 			next.ServeHTTP(ww, r)
 
-			// set the resource name as we get it only once the handler is executed
-			resourceName := chi.RouteContext(r.Context()).RoutePattern()
-			span.SetTag(ext.HTTPRoute, resourceName)
-			if resourceName == "" {
-				resourceName = "unknown"
+			routePattern := cfg.modifyResourceName(chi.RouteContext(r.Context()).RoutePattern())
+			span.SetTag(ext.HTTPRoute, routePattern)
+			var resourceName string
+			if cfg.resourceNamer != nil {
+				resourceName = cfg.resourceNamer(r)
+			} else {
+				resourceName = routePattern
+				if resourceName == "" {
+					resourceName = "unknown"
+				}
+				resourceName = r.Method + " " + resourceName
 			}
-			resourceName = r.Method + " " + resourceName
 			span.SetTag(ext.ResourceName, resourceName)
 		})
 	}

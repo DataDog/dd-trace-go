@@ -8,6 +8,8 @@ package httptrace
 import (
 	"os"
 	"regexp"
+	"strconv"
+	"strings"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
@@ -20,29 +22,32 @@ const (
 	envQueryStringDisabled = "DD_TRACE_HTTP_URL_QUERY_STRING_DISABLED"
 	// envQueryStringRegexp is the name of the env var used to specify the regexp to use for query string obfuscation.
 	envQueryStringRegexp = "DD_TRACE_OBFUSCATION_QUERY_STRING_REGEXP"
-	// envClientIPHeader is the name of the env var used to specify the IP header to be used for client IP collection.
-	envClientIPHeader = "DD_TRACE_CLIENT_IP_HEADER"
-	// envClientIPHeader is the name of the env var used to disable client IP tag collection.
-	envClientIPHeaderDisabled = "DD_TRACE_CLIENT_IP_HEADER_DISABLED"
+	// envTraceClientIPEnabled is the name of the env var used to specify whether or not to collect client ip in span tags
+	envTraceClientIPEnabled = "DD_TRACE_CLIENT_IP_ENABLED"
+	// envServerErrorStatuses is the name of the env var used to specify error status codes on http server spans
+	envServerErrorStatuses = "DD_TRACE_HTTP_SERVER_ERROR_STATUSES"
 )
 
 // defaultQueryStringRegexp is the regexp used for query string obfuscation if `envQueryStringRegexp` is empty.
-// The regexp is taken from https://datadoghq.atlassian.net/wiki/spaces/APS/pages/2490990623/QueryString+-+Sensitive+Data+Obfuscation
 var defaultQueryStringRegexp = regexp.MustCompile("(?i)(?:p(?:ass)?w(?:or)?d|pass(?:_?phrase)?|secret|(?:api_?|private_?|public_?|access_?|secret_?)key(?:_?id)?|token|consumer_?(?:id|key|secret)|sign(?:ed|ature)?|auth(?:entication|orization)?)(?:(?:\\s|%20)*(?:=|%3D)[^&]+|(?:\"|%22)(?:\\s|%20)*(?::|%3A)(?:\\s|%20)*(?:\"|%22)(?:%2[^2]|%[^2]|[^\"%])+(?:\"|%22))|bearer(?:\\s|%20)+[a-z0-9\\._\\-]|token(?::|%3A)[a-z0-9]{13}|gh[opsu]_[0-9a-zA-Z]{36}|ey[I-L](?:[\\w=-]|%3D)+\\.ey[I-L](?:[\\w=-]|%3D)+(?:\\.(?:[\\w.+\\/=-]|%3D|%2F|%2B)+)?|[\\-]{5}BEGIN(?:[a-z\\s]|%20)+PRIVATE(?:\\s|%20)KEY[\\-]{5}[^\\-]+[\\-]{5}END(?:[a-z\\s]|%20)+PRIVATE(?:\\s|%20)KEY|ssh-rsa(?:\\s|%20)*(?:[a-z0-9\\/\\.+]|%2F|%5C|%2B){100,}")
 
 type config struct {
 	queryStringRegexp *regexp.Regexp // specifies the regexp to use for query string obfuscation.
-	clientIPHeader    string         // specifies the header to use for IP extraction if client IP tag collection is enabled.
-	clientIP          bool           // reports whether the IP should be extracted from the request headers and added to span tags.
 	queryString       bool           // reports whether the query string should be included in the URL span tag.
+	traceClientIP     bool
+	isStatusError     func(statusCode int) bool
 }
 
 func newConfig() config {
 	c := config{
-		clientIPHeader:    os.Getenv(envClientIPHeader),
-		clientIP:          !internal.BoolEnv(envClientIPHeaderDisabled, false),
 		queryString:       !internal.BoolEnv(envQueryStringDisabled, false),
 		queryStringRegexp: defaultQueryStringRegexp,
+		traceClientIP:     internal.BoolEnv(envTraceClientIPEnabled, false),
+		isStatusError:     isServerError,
+	}
+	v := os.Getenv(envServerErrorStatuses)
+	if fn := GetErrorCodesFromInput(v); fn != nil {
+		c.isStatusError = fn
 	}
 	if s, ok := os.LookupEnv(envQueryStringRegexp); !ok {
 		return c
@@ -52,7 +57,66 @@ func newConfig() config {
 	} else if r, err := regexp.Compile(s); err == nil {
 		c.queryStringRegexp = r
 	} else {
-		log.Debug("Could not compile regexp from %s. Using default regexp instead.", envQueryStringRegexp)
+		log.Error("Could not compile regexp from %s. Using default regexp instead.", envQueryStringRegexp)
 	}
 	return c
+}
+
+func isServerError(statusCode int) bool {
+	return statusCode >= 500 && statusCode < 600
+}
+
+// GetErrorCodesFromInput parses a comma-separated string s to determine which codes are to be considered errors
+// Its purpose is to support the DD_TRACE_HTTP_SERVER_ERROR_STATUSES env var
+// If error condition cannot be determined from s, `nil` is returned
+// e.g, input of "100,200,300-400" returns a function that returns true on 100, 200, and all values between 300-400, inclusive
+// any input that cannot be translated to integer values returns nil
+func GetErrorCodesFromInput(s string) func(statusCode int) bool {
+	if s == "" {
+		return nil
+	}
+	var codes []int
+	var ranges [][]int
+	vals := strings.Split(s, ",")
+	for _, val := range vals {
+		// "-" indicates a range of values
+		if strings.Contains(val, "-") {
+			bounds := strings.Split(val, "-")
+			if len(bounds) != 2 {
+				log.Debug("Trouble parsing %v due to entry %v, using default error status determination logic", s, val)
+				return nil
+			}
+			before, err := strconv.Atoi(bounds[0])
+			if err != nil {
+				log.Debug("Trouble parsing %v due to entry %v, using default error status determination logic", s, val)
+				return nil
+			}
+			after, err := strconv.Atoi(bounds[1])
+			if err != nil {
+				log.Debug("Trouble parsing %v due to entry %v, using default error status determination logic", s, val)
+				return nil
+			}
+			ranges = append(ranges, []int{before, after})
+		} else {
+			intVal, err := strconv.Atoi(val)
+			if err != nil {
+				log.Debug("Trouble parsing %v due to entry %v, using default error status determination logic", s, val)
+				return nil
+			}
+			codes = append(codes, intVal)
+		}
+	}
+	return func(statusCode int) bool {
+		for _, c := range codes {
+			if c == statusCode {
+				return true
+			}
+		}
+		for _, bounds := range ranges {
+			if statusCode >= bounds[0] && statusCode <= bounds[1] {
+				return true
+			}
+		}
+		return false
+	}
 }

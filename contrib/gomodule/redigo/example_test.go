@@ -10,10 +10,10 @@ import (
 	"log"
 	"time"
 
-	"github.com/gomodule/redigo/redis"
-
 	redigotrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/gomodule/redigo"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+
+	"github.com/gomodule/redigo/redis"
 )
 
 // To start tracing Redis commands, use the TracedDial function to create a connection,

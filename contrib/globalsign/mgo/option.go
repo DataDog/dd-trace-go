@@ -10,11 +10,15 @@ import (
 	"math"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
 )
+
+const defaultServiceName = "mongodb"
 
 type mongoConfig struct {
 	ctx           context.Context
 	serviceName   string
+	spanName      string
 	analyticsRate float64
 }
 
@@ -24,7 +28,8 @@ func newConfig() *mongoConfig {
 		rate = 1.0
 	}
 	return &mongoConfig{
-		serviceName: "mongodb",
+		serviceName: namingschema.ServiceNameOverrideV0(defaultServiceName, defaultServiceName),
+		spanName:    namingschema.OpName(namingschema.MongoDBOutbound),
 		ctx:         context.Background(),
 		// analyticsRate: globalconfig.AnalyticsRate(),
 		analyticsRate: rate,

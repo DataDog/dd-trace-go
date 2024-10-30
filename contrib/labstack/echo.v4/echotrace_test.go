@@ -7,17 +7,18 @@ package echo
 
 import (
 	"errors"
-	"io/ioutil"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
-	pappsec "gopkg.in/DataDog/dd-trace-go.v1/appsec"
+	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/namingschematest"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/normalizer"
 
 	"github.com/labstack/echo/v4"
 	"github.com/stretchr/testify/assert"
@@ -78,7 +79,7 @@ func TestTrace200(t *testing.T) {
 	assert.True(traced)
 
 	spans := mt.FinishedSpans()
-	assert.Len(spans, 1)
+	require.Len(t, spans, 1)
 
 	span := spans[0]
 	assert.Equal("http.request", span.OperationName())
@@ -89,6 +90,9 @@ func TestTrace200(t *testing.T) {
 	assert.Equal("200", span.Tag(ext.HTTPCode))
 	assert.Equal("GET", span.Tag(ext.HTTPMethod))
 	assert.Equal(root.Context().SpanID(), span.ParentID())
+	assert.Equal("labstack/echo.v4", span.Tag(ext.Component))
+	assert.Equal(ext.SpanKindServer, span.Tag(ext.SpanKind))
+	assert.Equal("/user/:id", span.Tag(ext.HTTPRoute))
 
 	assert.Equal("http://example.com/user/123", span.Tag(ext.HTTPURL))
 }
@@ -124,7 +128,7 @@ func TestTraceAnalytics(t *testing.T) {
 	assert.True(traced)
 
 	spans := mt.FinishedSpans()
-	assert.Len(spans, 1)
+	require.Len(t, spans, 1)
 
 	span := spans[0]
 	assert.Equal("http.request", span.OperationName())
@@ -136,6 +140,8 @@ func TestTraceAnalytics(t *testing.T) {
 	assert.Equal("GET", span.Tag(ext.HTTPMethod))
 	assert.Equal(1.0, span.Tag(ext.EventSampleRate))
 	assert.Equal(root.Context().SpanID(), span.ParentID())
+	assert.Equal("labstack/echo.v4", span.Tag(ext.Component))
+	assert.Equal(ext.SpanKindServer, span.Tag(ext.SpanKind))
 
 	assert.Equal("http://example.com/user/123", span.Tag(ext.HTTPURL))
 }
@@ -145,9 +151,13 @@ func TestError(t *testing.T) {
 	mt := mocktracer.Start()
 	defer mt.Stop()
 	var called, traced bool
+	handlerCalled := 0
 
 	// setup
 	router := echo.New()
+	router.HTTPErrorHandler = func(err error, c echo.Context) {
+		handlerCalled++
+	}
 	router.Use(Middleware(WithServiceName("foobar")))
 	wantErr := errors.New("oh no")
 
@@ -157,7 +167,6 @@ func TestError(t *testing.T) {
 		called = true
 
 		err := wantErr
-		c.Error(err)
 		return err
 	})
 	r := httptest.NewRequest("GET", "/err", nil)
@@ -167,15 +176,18 @@ func TestError(t *testing.T) {
 	// verify the errors and status are correct
 	assert.True(called)
 	assert.True(traced)
+	assert.Equal(1, handlerCalled)
 
 	spans := mt.FinishedSpans()
-	assert.Len(spans, 1)
+	require.Len(t, spans, 1)
 
 	span := spans[0]
 	assert.Equal("http.request", span.OperationName())
 	assert.Equal("foobar", span.Tag(ext.ServiceName))
 	assert.Equal("500", span.Tag(ext.HTTPCode))
 	assert.Equal(wantErr.Error(), span.Tag(ext.Error).(error).Error())
+	assert.Equal("labstack/echo.v4", span.Tag(ext.Component))
+	assert.Equal(ext.SpanKindServer, span.Tag(ext.SpanKind))
 }
 
 func TestErrorHandling(t *testing.T) {
@@ -207,13 +219,125 @@ func TestErrorHandling(t *testing.T) {
 	assert.True(traced)
 
 	spans := mt.FinishedSpans()
-	assert.Len(spans, 1)
+	require.Len(t, spans, 1)
 
 	span := spans[0]
 	assert.Equal("http.request", span.OperationName())
 	assert.Equal("foobar", span.Tag(ext.ServiceName))
 	assert.Equal("500", span.Tag(ext.HTTPCode))
 	assert.Equal(wantErr.Error(), span.Tag(ext.Error).(error).Error())
+	assert.Equal("labstack/echo.v4", span.Tag(ext.Component))
+	assert.Equal(ext.SpanKindServer, span.Tag(ext.SpanKind))
+}
+
+func TestStatusError(t *testing.T) {
+	for _, tt := range []struct {
+		isStatusError func(statusCode int) bool
+		err           error
+		code          string
+		handler       func(c echo.Context) error
+	}{
+		{
+			err:  errors.New("oh no"),
+			code: "500",
+			handler: func(c echo.Context) error {
+				return errors.New("oh no")
+			},
+		},
+		{
+			err:  echo.NewHTTPError(http.StatusInternalServerError, "my error message"),
+			code: "500",
+			handler: func(c echo.Context) error {
+				return echo.NewHTTPError(http.StatusInternalServerError, "my error message")
+			},
+		},
+		{
+			err:  nil,
+			code: "400",
+			handler: func(c echo.Context) error {
+				return echo.NewHTTPError(http.StatusBadRequest, "my error message")
+			},
+		},
+		{
+			isStatusError: func(statusCode int) bool { return statusCode >= 400 && statusCode < 500 },
+			err:           nil,
+			code:          "500",
+			handler: func(c echo.Context) error {
+				return errors.New("oh no")
+			},
+		},
+		{
+			isStatusError: func(statusCode int) bool { return statusCode >= 400 && statusCode < 500 },
+			err:           nil,
+			code:          "500",
+			handler: func(c echo.Context) error {
+				return echo.NewHTTPError(http.StatusInternalServerError, "my error message")
+			},
+		},
+		{
+			isStatusError: func(statusCode int) bool { return statusCode >= 400 },
+			err:           echo.NewHTTPError(http.StatusBadRequest, "my error message"),
+			code:          "400",
+			handler: func(c echo.Context) error {
+				return echo.NewHTTPError(http.StatusBadRequest, "my error message")
+			},
+		},
+		{
+			isStatusError: func(statusCode int) bool { return statusCode >= 200 },
+			err:           fmt.Errorf("201: Created"),
+			code:          "201",
+			handler: func(c echo.Context) error {
+				c.JSON(201, map[string]string{"status": "ok", "type": "test"})
+				return nil
+			},
+		},
+		{
+			isStatusError: func(statusCode int) bool { return statusCode >= 200 },
+			err:           fmt.Errorf("200: OK"),
+			code:          "200",
+			handler: func(c echo.Context) error {
+				// It's not clear if unset (0) status is possible naturally, but we can simulate that situation.
+				c.Response().Status = 0
+				return nil
+			},
+		},
+	} {
+		t.Run("", func(t *testing.T) {
+			assert := assert.New(t)
+			mt := mocktracer.Start()
+			defer mt.Stop()
+
+			router := echo.New()
+			opts := []Option{WithServiceName("foobar")}
+			if tt.isStatusError != nil {
+				opts = append(opts, WithStatusCheck(tt.isStatusError))
+			}
+			router.Use(Middleware(opts...))
+			router.GET("/err", tt.handler)
+			r := httptest.NewRequest("GET", "/err", nil)
+			w := httptest.NewRecorder()
+			router.ServeHTTP(w, r)
+
+			spans := mt.FinishedSpans()
+			require.Len(t, spans, 1)
+			span := spans[0]
+			assert.Equal("http.request", span.OperationName())
+			assert.Equal(ext.SpanTypeWeb, span.Tag(ext.SpanType))
+			assert.Equal("foobar", span.Tag(ext.ServiceName))
+			assert.Contains(span.Tag(ext.ResourceName), "/err")
+			assert.Equal(tt.code, span.Tag(ext.HTTPCode))
+			assert.Equal("GET", span.Tag(ext.HTTPMethod))
+			err := span.Tag(ext.Error)
+			if tt.err != nil {
+				if !assert.NotNil(err) {
+					return
+				}
+				assert.Equal(tt.err.Error(), err.(error).Error())
+			} else {
+				assert.Nil(err)
+			}
+		})
+	}
 }
 
 func TestGetSpanNotInstrumented(t *testing.T) {
@@ -265,11 +389,13 @@ func TestNoDebugStack(t *testing.T) {
 	assert.True(traced)
 
 	spans := mt.FinishedSpans()
-	assert.Len(spans, 1)
+	require.Len(t, spans, 1)
 
 	span := spans[0]
 	assert.Equal(wantErr.Error(), span.Tag(ext.Error).(error).Error())
 	assert.Equal("<debug stack disabled>", span.Tag(ext.ErrorStack))
+	assert.Equal("labstack/echo.v4", span.Tag(ext.Component))
+	assert.Equal(ext.SpanKindServer, span.Tag(ext.SpanKind))
 }
 
 func TestIgnoreRequestFunc(t *testing.T) {
@@ -303,148 +429,322 @@ func TestIgnoreRequestFunc(t *testing.T) {
 	assert.Len(spans, 0)
 }
 
-func TestAppSec(t *testing.T) {
-	appsec.Start()
-	defer appsec.Stop()
+type testCustomError struct {
+	TestCode int
+}
 
-	if !appsec.Enabled() {
-		t.Skip("appsec disabled")
+// Error satisfies the apierror interface
+func (e *testCustomError) Error() string {
+	return "test"
+}
+
+func TestWithErrorTranslator(t *testing.T) {
+	assert := assert.New(t)
+	mt := mocktracer.Start()
+	defer mt.Stop()
+	var called, traced bool
+
+	// setup
+	translateError := func(e error) (*echo.HTTPError, bool) {
+		return &echo.HTTPError{
+			Message: e.(*testCustomError).Error(),
+			Code:    e.(*testCustomError).TestCode,
+		}, true
 	}
+	router := echo.New()
+	router.Use(Middleware(WithErrorTranslator(translateError)))
 
-	// Start and trace an HTTP server
-	e := echo.New()
-	e.Use(Middleware())
+	// a handler with an error and make the requests
+	router.GET("/err", func(c echo.Context) error {
+		_, traced = tracer.SpanFromContext(c.Request().Context())
+		called = true
+		return &testCustomError{
+			TestCode: 401,
+		}
+	})
+	r := httptest.NewRequest("GET", "/err", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, r)
 
-	// Add some testing routes
-	e.POST("/path0.0/:myPathParam0/path0.1/:myPathParam1/path0.2/:myPathParam2/path0.3/*myPathParam3", func(c echo.Context) error {
-		return c.String(200, "Hello World!\n")
-	})
-	e.POST("/", func(c echo.Context) error {
-		return c.String(200, "Hello World!\n")
-	})
-	e.POST("/body", func(c echo.Context) error {
-		pappsec.MonitorParsedHTTPBody(c.Request().Context(), "$globals")
-		return c.String(200, "Hello Body!\n")
-	})
-	srv := httptest.NewServer(e)
-	defer srv.Close()
+	// verify the error is correct and the stacktrace is disabled
+	assert.True(called)
+	assert.True(traced)
 
-	// Test an LFI attack via path parameters
-	t.Run("request-uri", func(t *testing.T) {
+	spans := mt.FinishedSpans()
+	require.Len(t, spans, 1)
+	span := spans[0]
+	assert.Equal("http.request", span.OperationName())
+	assert.Equal(ext.SpanTypeWeb, span.Tag(ext.SpanType))
+	assert.Contains(span.Tag(ext.ResourceName), "/err")
+	assert.Equal("401", span.Tag(ext.HTTPCode))
+	assert.Equal("GET", span.Tag(ext.HTTPMethod))
+}
+
+func TestNamingSchema(t *testing.T) {
+	genSpans := namingschematest.GenSpansFn(func(t *testing.T, serviceOverride string) []mocktracer.Span {
+		var opts []Option
+		if serviceOverride != "" {
+			opts = append(opts, WithServiceName(serviceOverride))
+		}
 		mt := mocktracer.Start()
 		defer mt.Stop()
-		// Send an LFI attack (according to appsec rule id crs-930-110)
-		req, err := http.NewRequest("POST", srv.URL+"/../../../secret.txt", nil)
-		if err != nil {
-			panic(err)
+
+		mux := echo.New()
+		mux.Use(Middleware(opts...))
+		mux.GET("/200", func(c echo.Context) error {
+			return c.NoContent(200)
+		})
+		r := httptest.NewRequest("GET", "/200", nil)
+		w := httptest.NewRecorder()
+		mux.ServeHTTP(w, r)
+
+		return mt.FinishedSpans()
+	})
+	namingschematest.NewHTTPServerTest(genSpans, "echo")(t)
+}
+
+func TestWithHeaderTags(t *testing.T) {
+	setupReq := func(opts ...Option) *http.Request {
+		router := echo.New()
+		router.Use(Middleware(opts...))
+
+		router.GET("/test", func(c echo.Context) error {
+			return c.String(http.StatusOK, "test")
+		})
+		r := httptest.NewRequest("GET", "/test", nil)
+		r.Header.Set("h!e@a-d.e*r", "val")
+		r.Header.Add("h!e@a-d.e*r", "val2")
+		r.Header.Set("2header", "2val")
+		r.Header.Set("3header", "3val")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, r)
+		return r
+	}
+	t.Run("default-off", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+		htArgs := []string{"h!e@a-d.e*r", "2header", "3header"}
+		setupReq()
+		spans := mt.FinishedSpans()
+		assert := assert.New(t)
+		assert.Equal(len(spans), 1)
+		s := spans[0]
+		for _, arg := range htArgs {
+			_, tag := normalizer.HeaderTag(arg)
+			assert.NotContains(s.Tags(), tag)
 		}
-		res, err := srv.Client().Do(req)
-		require.NoError(t, err)
-		// Check that the server behaved as intended (no 301 but 404 directly)
-		require.Equal(t, http.StatusNotFound, res.StatusCode)
-		// The span should contain the security event
-		finished := mt.FinishedSpans()
-		require.Len(t, finished, 1)
-		event := finished[0].Tag("_dd.appsec.json").(string)
-		require.NotNil(t, event)
-		require.True(t, strings.Contains(event, "crs-930-110"))
-		require.True(t, strings.Contains(event, "server.request.uri.raw"))
+	})
+	t.Run("integration", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		htArgs := []string{"h!e@a-d.e*r", "2header:tag"}
+		r := setupReq(WithHeaderTags(htArgs))
+		spans := mt.FinishedSpans()
+		assert := assert.New(t)
+		assert.Equal(len(spans), 1)
+		s := spans[0]
+
+		for _, arg := range htArgs {
+			header, tag := normalizer.HeaderTag(arg)
+			assert.Equal(strings.Join(r.Header.Values(header), ","), s.Tags()[tag])
+		}
 	})
 
-	// Test a security scanner attack via path parameters
-	t.Run("path-params", func(t *testing.T) {
-		t.Run("regular", func(t *testing.T) {
+	t.Run("global", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		header, tag := normalizer.HeaderTag("3header")
+		globalconfig.SetHeaderTag(header, tag)
+
+		r := setupReq()
+		spans := mt.FinishedSpans()
+		assert := assert.New(t)
+		assert.Equal(len(spans), 1)
+		s := spans[0]
+
+		assert.Equal(strings.Join(r.Header.Values(header), ","), s.Tags()[tag])
+	})
+
+	t.Run("override", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		globalH, globalT := normalizer.HeaderTag("3header")
+		globalconfig.SetHeaderTag(globalH, globalT)
+
+		htArgs := []string{"h!e@a-d.e*r", "2header:tag"}
+		r := setupReq(WithHeaderTags(htArgs))
+		spans := mt.FinishedSpans()
+		assert := assert.New(t)
+		assert.Equal(len(spans), 1)
+		s := spans[0]
+
+		for _, arg := range htArgs {
+			header, tag := normalizer.HeaderTag(arg)
+			assert.Equal(strings.Join(r.Header.Values(header), ","), s.Tags()[tag])
+		}
+		assert.NotContains(s.Tags(), globalT)
+	})
+}
+
+func TestWithErrorCheck(t *testing.T) {
+	tests := []struct {
+		name    string
+		err     error
+		opts    []Option
+		wantErr error
+	}{
+		{
+			name: "ignore-4xx-404-error",
+			err: &echo.HTTPError{
+				Code:     http.StatusNotFound,
+				Message:  "not found",
+				Internal: errors.New("not found"),
+			},
+			opts: []Option{
+				WithErrorCheck(func(err error) bool {
+					var he *echo.HTTPError
+					if errors.As(err, &he) {
+						// do not tag 4xx errors
+						return !(he.Code < 500 && he.Code >= 400)
+					}
+					return true
+				}),
+			},
+			wantErr: nil, // 404 is returned, hence not tagged
+		},
+		{
+			name: "ignore-4xx-500-error",
+			err: &echo.HTTPError{
+				Code:     http.StatusInternalServerError,
+				Message:  "internal error",
+				Internal: errors.New("internal error"),
+			},
+			opts: []Option{
+				WithErrorCheck(func(err error) bool {
+					var he *echo.HTTPError
+					if errors.As(err, &he) {
+						// do not tag 4xx errors
+						return !(he.Code < 500 && he.Code >= 400)
+					}
+					return true
+				}),
+			},
+			wantErr: &echo.HTTPError{
+				Code:     http.StatusInternalServerError,
+				Message:  "internal error",
+				Internal: errors.New("internal error"),
+			}, // this is 500, tagged
+		},
+		{
+			name: "ignore-none",
+			err:  errors.New("any error"),
+			opts: []Option{
+				WithErrorCheck(func(err error) bool {
+					return true
+				}),
+			},
+			wantErr: errors.New("any error"),
+		},
+		{
+			name: "ignore-all",
+			err:  errors.New("any error"),
+			opts: []Option{
+				WithErrorCheck(func(err error) bool {
+					return false
+				}),
+			},
+			wantErr: nil,
+		},
+		{
+			// withErrorCheck also runs for the errors created from the WithStatusCheck option.
+			name: "ignore-errors-from-status-check",
+			err: &echo.HTTPError{
+				Code:     http.StatusNotFound,
+				Message:  "internal error",
+				Internal: errors.New("internal error"),
+			},
+			opts: []Option{
+				WithStatusCheck(func(statusCode int) bool {
+					return statusCode == http.StatusNotFound
+				}),
+				WithErrorCheck(func(err error) bool {
+					return false
+				}),
+			},
+			wantErr: nil,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
 			mt := mocktracer.Start()
 			defer mt.Stop()
-			// Send a security scanner attack (according to appsec rule id crs-913-120)
-			req, err := http.NewRequest("POST", srv.URL+"/path0.0/param0/path0.1/param1/path0.2/appscan_fingerprint/path0.3/param3", nil)
-			if err != nil {
-				panic(err)
+
+			router := echo.New()
+			router.Use(Middleware(tt.opts...))
+			var called, traced bool
+
+			// always return the specified error
+			router.GET("/err", func(c echo.Context) error {
+				_, traced = tracer.SpanFromContext(c.Request().Context())
+				called = true
+				return tt.err
+			})
+			r := httptest.NewRequest(http.MethodGet, "/err", nil)
+			w := httptest.NewRecorder()
+			router.ServeHTTP(w, r)
+
+			assert.True(t, called)
+			assert.True(t, traced)
+			spans := mt.FinishedSpans()
+			require.Len(t, spans, 1) // fail at once if there is no span
+
+			span := spans[0]
+			if tt.wantErr == nil {
+				assert.NotContains(t, span.Tags(), ext.Error)
+				return
 			}
-			res, err := srv.Client().Do(req)
-			require.NoError(t, err)
-			// Check that the handler was properly called
-			b, err := ioutil.ReadAll(res.Body)
-			require.NoError(t, err)
-			require.Equal(t, "Hello World!\n", string(b))
-			require.Equal(t, http.StatusOK, res.StatusCode)
-			// The span should contain the security event
-			finished := mt.FinishedSpans()
-			require.Len(t, finished, 1)
-			event := finished[0].Tag("_dd.appsec.json").(string)
-			require.NotNil(t, event)
-			require.True(t, strings.Contains(event, "crs-913-120"))
-			require.True(t, strings.Contains(event, "myPathParam2"))
-			require.True(t, strings.Contains(event, "server.request.path_params"))
+			assert.Equal(t, tt.wantErr, span.Tag(ext.Error))
 		})
+	}
+}
 
-		t.Run("wildcard", func(t *testing.T) {
-			mt := mocktracer.Start()
-			defer mt.Stop()
-			// Send a security scanner attack (according to appsec rule id crs-913-120)
-			req, err := http.NewRequest("POST", srv.URL+"/path0.0/param0/path0.1/param1/path0.2/param2/path0.3/appscan_fingerprint", nil)
-			if err != nil {
-				panic(err)
-			}
-			res, err := srv.Client().Do(req)
-			require.NoError(t, err)
-			// Check that the handler was properly called
-			b, err := ioutil.ReadAll(res.Body)
-			require.NoError(t, err)
-			require.Equal(t, "Hello World!\n", string(b))
-			require.Equal(t, http.StatusOK, res.StatusCode)
-			// The span should contain the security event
-			finished := mt.FinishedSpans()
-			require.Len(t, finished, 1)
-			event := finished[0].Tag("_dd.appsec.json").(string)
-			require.NotNil(t, event)
-			require.True(t, strings.Contains(event, "crs-913-120"))
-			// Wildcards are not named in echo
-			require.False(t, strings.Contains(event, "myPathParam3"))
-			require.True(t, strings.Contains(event, "server.request.path_params"))
-		})
+func TestWithCustomTags(t *testing.T) {
+	assert := assert.New(t)
+	mt := mocktracer.Start()
+	defer mt.Stop()
+	var called, traced bool
+
+	// setup
+	router := echo.New()
+	router.Use(Middleware(
+		WithServiceName("foobar"),
+		WithCustomTag("customTag1", "customValue1"),
+		WithCustomTag("customTag2", "customValue2"),
+		WithCustomTag(ext.SpanKind, "replace me"),
+	))
+
+	// a handler with an error and make the requests
+	router.GET("/test", func(c echo.Context) error {
+		_, traced = tracer.SpanFromContext(c.Request().Context())
+		called = true
+		return nil
 	})
+	r := httptest.NewRequest("GET", "/test", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, r)
 
-	t.Run("response-status", func(t *testing.T) {
-		mt := mocktracer.Start()
-		defer mt.Stop()
+	// verify the errors and status are correct
+	assert.True(called)
+	assert.True(traced)
 
-		req, err := http.NewRequest("POST", srv.URL+"/etc/", nil)
-		if err != nil {
-			panic(err)
-		}
-		res, err := srv.Client().Do(req)
-		require.NoError(t, err)
-		require.Equal(t, 404, res.StatusCode)
+	spans := mt.FinishedSpans()
+	require.Len(t, spans, 1)
 
-		finished := mt.FinishedSpans()
-		require.Len(t, finished, 1)
-		event := finished[0].Tag("_dd.appsec.json").(string)
-		require.NotNil(t, event)
-		require.True(t, strings.Contains(event, "server.response.status"))
-		require.True(t, strings.Contains(event, "nfd-000-001"))
-	})
-
-	// Test a PHP injection attack via request parsed body
-	t.Run("SDK-body", func(t *testing.T) {
-		mt := mocktracer.Start()
-		defer mt.Stop()
-
-		req, err := http.NewRequest("POST", srv.URL+"/body", nil)
-		if err != nil {
-			panic(err)
-		}
-		res, err := srv.Client().Do(req)
-		require.NoError(t, err)
-		// Check that the handler was properly called
-		b, err := ioutil.ReadAll(res.Body)
-		require.NoError(t, err)
-		require.Equal(t, "Hello Body!\n", string(b))
-
-		finished := mt.FinishedSpans()
-		require.Len(t, finished, 1)
-		event := finished[0].Tag("_dd.appsec.json")
-		require.NotNil(t, event)
-		require.True(t, strings.Contains(event.(string), "crs-933-130"))
-	})
+	span := spans[0]
+	assert.Equal("customValue1", span.Tag("customTag1"))
+	assert.Equal("customValue2", span.Tag("customTag2"))
+	assert.Equal("server", span.Tag(ext.SpanKind))
 }

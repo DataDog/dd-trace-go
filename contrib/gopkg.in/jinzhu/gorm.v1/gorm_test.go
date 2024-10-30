@@ -35,8 +35,10 @@ func TestMain(m *testing.M) {
 		fmt.Println("--- SKIP: to enable integration test, set the INTEGRATION environment variable")
 		os.Exit(0)
 	}
-	defer sqltest.Prepare(tableName)()
-	os.Exit(m.Run())
+	cleanup := sqltest.Prepare(tableName)
+	testResult := m.Run()
+	cleanup()
+	os.Exit(testResult)
 }
 
 func TestMySQL(t *testing.T) {
@@ -154,6 +156,7 @@ func TestCallbacks(t *testing.T) {
 		assert.Equal(
 			`INSERT INTO "products" ("created_at","updated_at","deleted_at","code","price") VALUES ($1,$2,$3,$4,$5) RETURNING "products"."id"`,
 			span.Tag(ext.ResourceName))
+		assert.Equal("gopkg.in/jinzhu/gorm.v1", span.Tag(ext.Component))
 	})
 
 	t.Run("query", func(t *testing.T) {
@@ -177,6 +180,7 @@ func TestCallbacks(t *testing.T) {
 		assert.Equal(
 			`SELECT * FROM "products"  WHERE "products"."deleted_at" IS NULL AND ((code = $1)) ORDER BY "products"."id" ASC LIMIT 1`,
 			span.Tag(ext.ResourceName))
+		assert.Equal("gopkg.in/jinzhu/gorm.v1", span.Tag(ext.Component))
 	})
 
 	t.Run("update", func(t *testing.T) {
@@ -201,6 +205,7 @@ func TestCallbacks(t *testing.T) {
 		assert.Equal(
 			`UPDATE "products" SET "price" = $1, "updated_at" = $2  WHERE "products"."deleted_at" IS NULL AND "products"."id" = $3`,
 			span.Tag(ext.ResourceName))
+		assert.Equal("gopkg.in/jinzhu/gorm.v1", span.Tag(ext.Component))
 	})
 
 	t.Run("delete", func(t *testing.T) {
@@ -225,6 +230,7 @@ func TestCallbacks(t *testing.T) {
 		assert.Equal(
 			`UPDATE "products" SET "deleted_at"=$1  WHERE "products"."deleted_at" IS NULL AND "products"."id" = $2`,
 			span.Tag(ext.ResourceName))
+		assert.Equal("gopkg.in/jinzhu/gorm.v1", span.Tag(ext.Component))
 	})
 }
 
@@ -370,6 +376,7 @@ func TestCustomTags(t *testing.T) {
 	assert.Equal(
 		`INSERT INTO "products" ("created_at","updated_at","deleted_at","code","price") VALUES ($1,$2,$3,$4,$5) RETURNING "products"."id"`,
 		span.Tag(ext.ResourceName))
+	assert.Equal("gopkg.in/jinzhu/gorm.v1", span.Tag(ext.Component))
 }
 
 func TestError(t *testing.T) {

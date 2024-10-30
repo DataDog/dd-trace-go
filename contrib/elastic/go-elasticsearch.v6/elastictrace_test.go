@@ -10,14 +10,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"os"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 )
 
 const debug = false
@@ -25,6 +21,7 @@ const debug = false
 const (
 	elasticV6URL = "http://127.0.0.1:9202"
 	elasticV7URL = "http://127.0.0.1:9203"
+	elasticV8URL = "http://127.0.0.1:9204"
 )
 
 func TestMain(m *testing.M) {
@@ -34,32 +31,6 @@ func TestMain(m *testing.M) {
 		os.Exit(0)
 	}
 	os.Exit(m.Run())
-}
-
-func checkPUTTrace(assert *assert.Assertions, mt mocktracer.Tracer) {
-	span := mt.FinishedSpans()[1]
-	assert.Equal("my-es-service", span.Tag(ext.ServiceName))
-	assert.Equal("PUT /twitter/tweet/?", span.Tag(ext.ResourceName))
-	assert.Equal("/twitter/tweet/1", span.Tag("elasticsearch.url"))
-	assert.Equal("PUT", span.Tag("elasticsearch.method"))
-	assert.Equal(`{"user": "test", "message": "hello"}`, span.Tag("elasticsearch.body"))
-}
-
-func checkGETTrace(assert *assert.Assertions, mt mocktracer.Tracer) {
-	span := mt.FinishedSpans()[0]
-	assert.Equal("my-es-service", span.Tag(ext.ServiceName))
-	assert.Equal("GET /twitter/tweet/?", span.Tag(ext.ResourceName))
-	assert.Equal("/twitter/tweet/1", span.Tag("elasticsearch.url"))
-	assert.Equal("GET", span.Tag("elasticsearch.method"))
-}
-
-func checkErrTrace(assert *assert.Assertions, mt mocktracer.Tracer) {
-	span := mt.FinishedSpans()[0]
-	assert.Equal("my-es-service", span.Tag(ext.ServiceName))
-	assert.Equal("GET /not-real-index/_doc/?", span.Tag(ext.ResourceName))
-	assert.Equal("/not-real-index/_doc/1", span.Tag("elasticsearch.url"))
-	assert.NotEmpty(span.Tag(ext.Error))
-	assert.Equal("*errors.errorString", fmt.Sprintf("%T", span.Tag(ext.Error).(error)))
 }
 
 func TestQuantize(t *testing.T) {
@@ -150,7 +121,7 @@ func TestPeek(t *testing.T) {
 	} {
 		var readcloser io.ReadCloser
 		if tt.txt != "" {
-			readcloser = ioutil.NopCloser(bytes.NewBufferString(tt.txt))
+			readcloser = io.NopCloser(bytes.NewBufferString(tt.txt))
 		}
 		snip, rc, err := peek(readcloser, "", tt.max, tt.n)
 		assert.Equal(tt.err, err)
@@ -159,7 +130,7 @@ func TestPeek(t *testing.T) {
 		if readcloser != nil {
 			// if a non-nil io.ReadCloser was sent, the returned io.ReadCloser
 			// must always return the entire original content.
-			all, err := ioutil.ReadAll(rc)
+			all, err := io.ReadAll(rc)
 			assert.Nil(err)
 			assert.Equal(tt.txt, string(all))
 		}

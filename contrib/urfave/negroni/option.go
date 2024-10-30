@@ -13,7 +13,11 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/normalizer"
 )
+
+const defaultServiceName = "negroni.router"
 
 type config struct {
 	serviceName   string
@@ -21,21 +25,20 @@ type config struct {
 	analyticsRate float64
 	isStatusError func(statusCode int) bool
 	resourceNamer func(r *http.Request) string
+	headerTags    *internal.LockMap
 }
 
 // Option represents an option that can be passed to NewRouter.
 type Option func(*config)
 
 func defaults(cfg *config) {
-	cfg.serviceName = "negroni.router"
-	if svc := globalconfig.ServiceName(); svc != "" {
-		cfg.serviceName = svc
-	}
+	cfg.serviceName = namingschema.ServiceName(defaultServiceName)
 	if internal.BoolEnv("DD_TRACE_NEGRONI_ANALYTICS_ENABLED", false) {
 		cfg.analyticsRate = 1.0
 	} else {
 		cfg.analyticsRate = globalconfig.AnalyticsRate()
 	}
+	cfg.headerTags = globalconfig.HeaderTagMap()
 	cfg.isStatusError = isServerError
 	cfg.resourceNamer = defaultResourceNamer
 }
@@ -98,6 +101,17 @@ func WithResourceNamer(namer func(r *http.Request) string) Option {
 	}
 }
 
-func defaultResourceNamer(r *http.Request) string {
+func defaultResourceNamer(_ *http.Request) string {
 	return ""
+}
+
+// WithHeaderTags enables the integration to attach HTTP request headers as span tags.
+// Warning:
+// Using this feature can risk exposing sensitive data such as authorization tokens to Datadog.
+// Special headers can not be sub-selected. E.g., an entire Cookie header would be transmitted, without the ability to choose specific Cookies.
+func WithHeaderTags(headers []string) Option {
+	headerTagsMap := normalizer.HeaderTagSlice(headers)
+	return func(cfg *config) {
+		cfg.headerTags = internal.NewLockMap(headerTagsMap)
+	}
 }

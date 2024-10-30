@@ -10,11 +10,13 @@ import (
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
 )
 
 type config struct {
 	analyticsRate float64
 	serviceName   string
+	spanName      string
 }
 
 const defaultServiceName = "vault"
@@ -23,7 +25,9 @@ const defaultServiceName = "vault"
 type Option func(*config)
 
 func defaults(cfg *config) {
-	cfg.serviceName = defaultServiceName
+	cfg.serviceName = namingschema.ServiceNameOverrideV0(defaultServiceName, defaultServiceName)
+	cfg.spanName = namingschema.OpName(namingschema.VaultOutbound)
+
 	if internal.BoolEnv("DD_TRACE_VAULT_ANALYTICS_ENABLED", false) {
 		cfg.analyticsRate = 1.0
 	} else {

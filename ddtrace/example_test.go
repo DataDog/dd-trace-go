@@ -6,15 +6,17 @@
 package ddtrace_test
 
 import (
-	"io/ioutil"
+	"fmt"
 	"log"
+	"os"
 
-	opentracing "github.com/opentracing/opentracing-go"
-
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/opentracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+
+	opentracing "github.com/opentracing/opentracing-go"
 )
 
 // The below example illustrates a simple use case using the "tracer" package,
@@ -33,8 +35,15 @@ func Example_datadog() {
 	child := tracer.StartSpan("read.file", tracer.ChildOf(span.Context()))
 	child.SetTag(ext.ResourceName, "test.json")
 
+	// If you are using 128 bit trace ids and want to generate the high
+	// order bits, cast the span's context to ddtrace.SpanContextW3C.
+	// See Issue #1677
+	if w3Cctx, ok := child.Context().(ddtrace.SpanContextW3C); ok {
+		fmt.Printf("128 bit trace id = %s\n", w3Cctx.TraceID128())
+	}
+
 	// Perform an operation.
-	_, err := ioutil.ReadFile("~/test.json")
+	_, err := os.ReadFile("~/test.json")
 
 	// We may finish the child span using the returned error. If it's
 	// nil, it will be disregarded.
@@ -71,8 +80,10 @@ func Example_mocking() {
 	spans := mt.FinishedSpans()
 	if len(spans) != 1 {
 		// fail
+		panic("expected 1 span")
 	}
 	if spans[0].OperationName() != "test.span" {
 		// fail
+		panic("unexpected operation name")
 	}
 }

@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 set -e
 
-tags=""
 contrib=""
 sleeptime=30
 unset INTEGRATION
@@ -11,10 +10,14 @@ if [[ $# -eq 0 ]]; then
 	echo "Use the -h flag for help"
 fi
 
+if [[ "$(uname -s)" = 'Darwin' && "$(uname -m)" = 'arm64' ]]; then
+  # Needed to run integration tests on Apple Silicon
+  export DOCKER_DEFAULT_PLATFORM=linux/amd64
+fi
+
 while [[ $# -gt 0 ]]; do
 	case $1 in
 		-a|--appsec)
-			tags="$TAGS appsec"
 			export DD_APPSEC_ENABLED=true
 			shift
 			;;
@@ -28,7 +31,6 @@ while [[ $# -gt 0 ]]; do
 			;;
 		--all)
 			contrib=true
-			tags="$TAGS appsec"
 			export DD_APPSEC_ENABLED=true
 			export INTEGRATION=true
 			shift
@@ -36,16 +38,27 @@ while [[ $# -gt 0 ]]; do
 		-s|--sleep)
 			sleeptime=$2
 			shift
-            shift
+			shift
+			;;
+		-l|--lint)
+			lint=true
+			shift
+			;;
+		-t|--tools)
+			tools=true
+			shift
 			;;
 		-h|--help)
 			echo "test.sh - Run the tests for dd-trace-go"
+			echo "	this script requires gotestsum, goimports, docker and docker-compose."
+			echo "	-l | --lint		- Run the linter"
 			echo "	-a | --appsec		- Test with appsec enabled"
 			echo "	-i | --integration	- Run integration tests. This requires docker and docker-compose. Resource usage is significant when combined with --contrib"
 			echo "	-c | --contrib		- Run contrib tests"
-			echo "	--all			- Synonym for -a -i -c"
+			echo "	--all			- Synonym for -l -a -i -c"
 			echo "	-s | --sleep		- The amount of seconds to wait for docker containers to be ready - default: 30 seconds"
-			echo "	-h | --help			- Print this help message"
+			echo "	-t | --tools		- Install gotestsum and goimports"
+			echo "	-h | --help		- Print this help message"
 			exit 0
 			;;
 		*)
@@ -54,6 +67,18 @@ while [[ $# -gt 0 ]]; do
 			;;
 	esac
 done
+
+if [[ ! -z "$tools" ]]; then
+    pushd /tmp
+    go install golang.org/x/tools/cmd/goimports@latest
+    go install gotest.tools/gotestsum@latest
+    popd
+fi
+
+if [[ ! -z "$lint" ]]; then
+    echo "Running Linter"
+    goimports -e -l -local gopkg.in/DataDog/dd-trace-go.v1 .
+fi
 
 if [[ "$INTEGRATION" != "" ]]; then
 	## Make sure we shut down the docker containers on exit.
@@ -74,7 +99,7 @@ fi
 ## CORE
 echo testing core
 PACKAGE_NAMES=$(go list ./... | grep -v /contrib/)
-nice -n20 gotestsum --junitfile ./gotestsum-report.xml -- -race -v -coverprofile=core_coverage.txt -covermode=atomic -tags="$tags" $PACKAGE_NAMES 
+nice -n20 gotestsum --junitfile ./gotestsum-report.xml -- -race -v -coverprofile=core_coverage.txt -covermode=atomic $PACKAGE_NAMES
 
 if [[ "$contrib" != "" ]]; then
 	## CONTRIB
@@ -86,6 +111,6 @@ if [[ "$contrib" != "" ]]; then
 		sleep $sleeptime
 	fi
 
-	PACKAGE_NAMES=$(go list ./contrib/... | grep -v -e grpc.v12 -e google.golang.org/api)
-	nice -n20 gotestsum --junitfile ./gotestsum-report.xml -- -race -v  -coverprofile=contrib_coverage.txt -covermode=atomic -tags="$tags" $PACKAGE_NAMES 
+	PACKAGE_NAMES=$(go list ./contrib/... | grep -v -e google.golang.org/api)
+	nice -n20 gotestsum --junitfile ./gotestsum-report.xml -- -race -v  -coverprofile=contrib_coverage.txt -covermode=atomic $PACKAGE_NAMES
 fi

@@ -3,37 +3,51 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
-package tracer
+package tracer_test
 
 import (
-	"io/ioutil"
-	"log"
+	"context"
+	"fmt"
+	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
 
 // A basic example demonstrating how to start the tracer, as well as how
 // to create a root span and a child span that is a descendant of it.
 func Example() {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
 	// Start the tracer and defer the Stop method.
-	Start(WithAgentAddr("host:port"))
-	defer Stop()
+	tracer.Start()
+	defer tracer.Stop()
 
 	// Start a root span.
-	span := StartSpan("get.data")
+	span, ctx := tracer.StartSpanFromContext(ctx, "parent")
 	defer span.Finish()
 
-	// Create a child of it, computing the time needed to read a file.
-	child := StartSpan("read.file", ChildOf(span.Context()))
-	child.SetTag(ext.ResourceName, "test.json")
+	// Run some code.
+	err := doSomething(ctx)
+	if err != nil {
+		panic(err)
+	}
+}
+
+func doSomething(ctx context.Context) (err error) {
+	// Create a child, using the context of the parent span.
+	span, ctx := tracer.StartSpanFromContext(ctx, "do.something", tracer.Tag(ext.ResourceName, "alarm"))
+	defer func() {
+		span.Finish(tracer.WithError(err))
+	}()
 
 	// Perform an operation.
-	_, err := ioutil.ReadFile("~/test.json")
-
-	// We may finish the child span using the returned error. If it's
-	// nil, it will be disregarded.
-	child.Finish(WithError(err))
-	if err != nil {
-		log.Fatal(err)
+	select {
+	case <-time.After(5 * time.Millisecond):
+		fmt.Println("ding!")
+	case <-ctx.Done():
+		fmt.Println("timed out :(")
 	}
+	return ctx.Err()
 }

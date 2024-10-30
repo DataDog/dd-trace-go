@@ -4,6 +4,10 @@
 // Copyright 2016 Datadog, Inc.
 
 // Package gorm provides helper functions for tracing the jinzhu/gorm package (https://github.com/jinzhu/gorm).
+//
+// Deprecated: The underlying gopkg.in/jinzhu/gorm packages has known security vulnerabilities and is no longer under
+// active development. As such consider this package DEPRECATED.
+// It is highly recommended that you update to the latest version available here as a contrib package "gorm.io/gorm.v1".
 package gorm
 
 import (
@@ -16,9 +20,17 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 
 	"gopkg.in/jinzhu/gorm.v1"
 )
+
+const componentName = "gopkg.in/jinzhu/gorm.v1"
+
+func init() {
+	telemetry.LoadIntegration(componentName)
+	tracer.MarkIntegrationImported(componentName)
+}
 
 const (
 	gormContextKey       = "dd-trace-go:context"
@@ -122,6 +134,7 @@ func after(scope *gorm.Scope, operationName string) {
 		tracer.ServiceName(cfg.serviceName),
 		tracer.SpanType(ext.SpanTypeSQL),
 		tracer.ResourceName(scope.SQL),
+		tracer.Tag(ext.Component, componentName),
 	}
 	if !math.IsNaN(cfg.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))

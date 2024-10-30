@@ -13,6 +13,8 @@
 package mocktracer
 
 import (
+	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"sync"
@@ -20,6 +22,9 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/datastreams"
+
+	"github.com/DataDog/datadog-go/v5/statsd"
 )
 
 var _ ddtrace.Tracer = (*mocktracer)(nil)
@@ -32,6 +37,7 @@ type Tracer interface {
 
 	// FinishedSpans returns the set of finished spans.
 	FinishedSpans() []Span
+	SentDSMBacklogs() []datastreams.Backlog
 
 	// Reset resets the spans and services recorded in the tracer. This is
 	// especially useful when running tests in a loop, where a clean start
@@ -58,18 +64,33 @@ type mocktracer struct {
 	sync.RWMutex  // guards below spans
 	finishedSpans []Span
 	openSpans     map[uint64]Span
+	dsmTransport  *mockDSMTransport
+	dsmProcessor  *datastreams.Processor
+}
+
+func (t *mocktracer) SentDSMBacklogs() []datastreams.Backlog {
+	t.dsmProcessor.Flush()
+	return t.dsmTransport.backlogs
 }
 
 func newMockTracer() *mocktracer {
 	var t mocktracer
 	t.openSpans = make(map[uint64]Span)
+	t.dsmTransport = &mockDSMTransport{}
+	client := &http.Client{
+		Transport: t.dsmTransport,
+	}
+	t.dsmProcessor = datastreams.NewProcessor(&statsd.NoOpClient{}, "env", "service", "v1", &url.URL{Scheme: "http", Host: "agent-address"}, client)
+	t.dsmProcessor.Start()
+	t.dsmProcessor.Flush()
 	return &t
 }
 
 // Stop deactivates the mock tracer and sets the active tracer to a no-op.
-func (*mocktracer) Stop() {
+func (t *mocktracer) Stop() {
 	internal.SetGlobalTracer(&internal.NoopTracer{})
 	internal.Testing = false
+	t.dsmProcessor.Stop()
 }
 
 func (t *mocktracer) StartSpan(operationName string, opts ...ddtrace.StartSpanOption) ddtrace.Span {
@@ -84,6 +105,10 @@ func (t *mocktracer) StartSpan(operationName string, opts ...ddtrace.StartSpanOp
 	t.Unlock()
 
 	return span
+}
+
+func (t *mocktracer) GetDataStreamsProcessor() *datastreams.Processor {
+	return t.dsmProcessor
 }
 
 func (t *mocktracer) OpenSpans() []Span {

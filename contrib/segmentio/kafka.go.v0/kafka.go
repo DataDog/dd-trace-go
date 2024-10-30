@@ -3,70 +3,47 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
-package kafka
+package kafka // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/segmentio/kafka.go.v0"
 
 import (
 	"context"
-	"math"
+	"strings"
 
 	"github.com/segmentio/kafka-go"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/contrib/segmentio/kafka.go.v0/internal/tracing"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
+
+// A Reader wraps a kafka.Reader.
+type Reader struct {
+	*kafka.Reader
+	tracer   *tracing.Tracer
+	kafkaCfg *tracing.KafkaConfig
+	prev     ddtrace.Span
+}
 
 // NewReader calls kafka.NewReader and wraps the resulting Consumer.
 func NewReader(conf kafka.ReaderConfig, opts ...Option) *Reader {
 	return WrapReader(kafka.NewReader(conf), opts...)
 }
 
-// NewWriter calls kafka.NewWriter and wraps the resulting Producer.
-func NewWriter(conf kafka.WriterConfig, opts ...Option) *Writer {
-	return WrapWriter(kafka.NewWriter(conf), opts...)
-}
-
 // WrapReader wraps a kafka.Reader so that any consumed events are traced.
 func WrapReader(c *kafka.Reader, opts ...Option) *Reader {
 	wrapped := &Reader{
 		Reader: c,
-		cfg:    newConfig(opts...),
 	}
-	log.Debug("contrib/segmentio/kafka-go.v0/kafka: Wrapping Reader: %#v", wrapped.cfg)
+	kafkaCfg := tracing.KafkaConfig{}
+	if c.Config().Brokers != nil {
+		kafkaCfg.BootstrapServers = strings.Join(c.Config().Brokers, ",")
+	}
+	if c.Config().GroupID != "" {
+		kafkaCfg.ConsumerGroupID = c.Config().GroupID
+	}
+	wrapped.tracer = tracing.NewTracer(kafkaCfg, opts...)
+	log.Debug("contrib/segmentio/kafka-go.v0/kafka: Wrapping Reader: %#v", wrapped.tracer)
 	return wrapped
-}
-
-// A Reader wraps a kafka.Reader.
-type Reader struct {
-	*kafka.Reader
-	cfg  *config
-	prev ddtrace.Span
-}
-
-func (r *Reader) startSpan(ctx context.Context, msg *kafka.Message) ddtrace.Span {
-	opts := []tracer.StartSpanOption{
-		tracer.ServiceName(r.cfg.consumerServiceName),
-		tracer.ResourceName("Consume Topic " + msg.Topic),
-		tracer.SpanType(ext.SpanTypeMessageConsumer),
-		tracer.Tag("partition", msg.Partition),
-		tracer.Tag("offset", msg.Offset),
-		tracer.Measured(),
-	}
-	if !math.IsNaN(r.cfg.analyticsRate) {
-		opts = append(opts, tracer.Tag(ext.EventSampleRate, r.cfg.analyticsRate))
-	}
-	// kafka supports headers, so try to extract a span context
-	carrier := messageCarrier{msg}
-	if spanctx, err := tracer.Extract(carrier); err == nil {
-		opts = append(opts, tracer.ChildOf(spanctx))
-	}
-	span, _ := tracer.StartSpanFromContext(ctx, "kafka.consume", opts...)
-	// reinject the span context so consumers can pick it up
-	if err := tracer.Inject(span.Context(), carrier); err != nil {
-		log.Debug("contrib/segmentio/kafka.go.v0: Failed to inject span context into carrier, %v", err)
-	}
-	return span
 }
 
 // Close calls the underlying Reader.Close and if polling is enabled, finishes
@@ -90,7 +67,9 @@ func (r *Reader) ReadMessage(ctx context.Context) (kafka.Message, error) {
 	if err != nil {
 		return kafka.Message{}, err
 	}
-	r.prev = r.startSpan(ctx, &msg)
+	tMsg := wrapMessage(&msg)
+	r.prev = r.tracer.StartConsumeSpan(ctx, tMsg)
+	r.tracer.SetConsumeDSMCheckpoint(tMsg)
 	return msg, nil
 }
 
@@ -104,46 +83,35 @@ func (r *Reader) FetchMessage(ctx context.Context) (kafka.Message, error) {
 	if err != nil {
 		return msg, err
 	}
-	r.prev = r.startSpan(ctx, &msg)
+	tMsg := wrapMessage(&msg)
+	r.prev = r.tracer.StartConsumeSpan(ctx, tMsg)
+	r.tracer.SetConsumeDSMCheckpoint(tMsg)
 	return msg, nil
+}
+
+// Writer wraps a kafka.Writer with tracing config data
+type Writer struct {
+	*kafka.Writer
+	tracer *tracing.Tracer
+}
+
+// NewWriter calls kafka.NewWriter and wraps the resulting Producer.
+func NewWriter(conf kafka.WriterConfig, opts ...Option) *Writer {
+	return WrapWriter(kafka.NewWriter(conf), opts...)
 }
 
 // WrapWriter wraps a kafka.Writer so requests are traced.
 func WrapWriter(w *kafka.Writer, opts ...Option) *Writer {
 	writer := &Writer{
 		Writer: w,
-		cfg:    newConfig(opts...),
 	}
-	log.Debug("contrib/segmentio/kafka.go.v0: Wrapping Writer: %#v", writer.cfg)
+	kafkaCfg := tracing.KafkaConfig{}
+	if w.Addr.String() != "" {
+		kafkaCfg.BootstrapServers = w.Addr.String()
+	}
+	writer.tracer = tracing.NewTracer(kafkaCfg, opts...)
+	log.Debug("contrib/segmentio/kafka.go.v0: Wrapping Writer: %#v", writer.tracer)
 	return writer
-}
-
-// Writer wraps a kafka.Writer with tracing config data
-type Writer struct {
-	*kafka.Writer
-	cfg *config
-}
-
-func (w *Writer) startSpan(ctx context.Context, msg *kafka.Message) ddtrace.Span {
-	opts := []tracer.StartSpanOption{
-		tracer.ServiceName(w.cfg.producerServiceName),
-		tracer.ResourceName("Produce Topic " + w.Writer.Topic),
-		tracer.SpanType(ext.SpanTypeMessageProducer),
-	}
-	if !math.IsNaN(w.cfg.analyticsRate) {
-		opts = append(opts, tracer.Tag(ext.EventSampleRate, w.cfg.analyticsRate))
-	}
-	carrier := messageCarrier{msg}
-	span, _ := tracer.StartSpanFromContext(ctx, "kafka.produce", opts...)
-	err := tracer.Inject(span.Context(), carrier)
-	log.Debug("contrib/segmentio/kafka.go.v0: Failed to inject span context into carrier, %v", err)
-	return span
-}
-
-func finishSpan(span ddtrace.Span, partition int, offset int64, err error) {
-	span.SetTag("partition", partition)
-	span.SetTag("offset", offset)
-	span.Finish(tracer.WithError(err))
 }
 
 // WriteMessages calls kafka.go.v0.Writer.WriteMessages and traces the requests.
@@ -152,11 +120,14 @@ func (w *Writer) WriteMessages(ctx context.Context, msgs ...kafka.Message) error
 	// treated individually, so we create a span for each one
 	spans := make([]ddtrace.Span, len(msgs))
 	for i := range msgs {
-		spans[i] = w.startSpan(ctx, &msgs[i])
+		tMsg := wrapMessage(&msgs[i])
+		tWriter := wrapTracingWriter(w.Writer)
+		spans[i] = w.tracer.StartProduceSpan(ctx, tWriter, tMsg)
+		w.tracer.SetProduceDSMCheckpoint(tMsg, tWriter)
 	}
 	err := w.Writer.WriteMessages(ctx, msgs...)
 	for i, span := range spans {
-		finishSpan(span, msgs[i].Partition, msgs[i].Offset, err)
+		w.tracer.FinishProduceSpan(span, msgs[i].Partition, msgs[i].Offset, err)
 	}
 	return err
 }

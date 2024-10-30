@@ -6,6 +6,7 @@
 package tracer
 
 import (
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -19,6 +20,7 @@ func waitForBuckets(c *concentrator, n int) bool {
 		time.Sleep(time.Millisecond * timeMultiplicator)
 		c.mu.Lock()
 		if len(c.buckets) == n {
+			c.mu.Unlock()
 			return true
 		}
 		c.mu.Unlock()
@@ -59,26 +61,26 @@ func TestConcentrator(t *testing.T) {
 		assert.Nil(c.stop)
 		assert.NotNil(c.buckets)
 		assert.Equal(c.cfg, cfg)
-		assert.EqualValues(c.stopped, 1)
+		assert.EqualValues(atomic.LoadUint32(&c.stopped), 1)
 	})
 
 	t.Run("start-stop", func(t *testing.T) {
 		assert := assert.New(t)
 		c := newConcentrator(&config{}, defaultStatsBucketSize)
-		assert.EqualValues(c.stopped, 1)
+		assert.EqualValues(atomic.LoadUint32(&c.stopped), 1)
 		c.Start()
-		assert.EqualValues(c.stopped, 0)
+		assert.EqualValues(atomic.LoadUint32(&c.stopped), 0)
 		c.Stop()
 		c.Stop()
-		assert.EqualValues(c.stopped, 1)
+		assert.EqualValues(atomic.LoadUint32(&c.stopped), 1)
 		c.Start()
-		assert.EqualValues(c.stopped, 0)
+		assert.EqualValues(atomic.LoadUint32(&c.stopped), 0)
 		c.Start()
 		c.Start()
-		assert.EqualValues(c.stopped, 0)
+		assert.EqualValues(atomic.LoadUint32(&c.stopped), 0)
 		c.Stop()
 		c.Stop()
-		assert.EqualValues(c.stopped, 1)
+		assert.EqualValues(atomic.LoadUint32(&c.stopped), 1)
 	})
 
 	t.Run("valid", func(t *testing.T) {
@@ -106,7 +108,8 @@ func TestConcentrator(t *testing.T) {
 	})
 
 	t.Run("ingester", func(t *testing.T) {
-		c := newConcentrator(&config{}, defaultStatsBucketSize)
+		transport := newDummyTransport()
+		c := newConcentrator(&config{transport: transport}, defaultStatsBucketSize)
 		c.Start()
 		assert.Len(t, c.buckets, 0)
 		c.In <- ss1
@@ -155,7 +158,22 @@ func TestConcentrator(t *testing.T) {
 				Duration: 1,
 			}
 			c.Stop()
-			assert.Zero(t, transport.Stats())
+			assert.NotEmpty(t, transport.Stats())
+		})
+
+		// stats should be sent if the concentrator is stopped
+		t.Run("stop", func(t *testing.T) {
+			transport := newDummyTransport()
+			c := newConcentrator(&config{transport: transport}, 500000)
+			assert.Len(t, transport.Stats(), 0)
+			c.Start()
+			c.In <- &aggregableSpan{
+				key:      key1,
+				Start:    time.Now().UnixNano(),
+				Duration: 1,
+			}
+			c.Stop()
+			assert.NotEmpty(t, transport.Stats())
 		})
 	})
 }

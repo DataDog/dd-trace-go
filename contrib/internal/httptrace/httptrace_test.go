@@ -6,21 +6,166 @@
 package httptrace
 
 import (
-	"math/rand"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
+	"strconv"
 	"testing"
-
-	"inet.af/netaddr"
-
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/normalizer"
+
+	"github.com/DataDog/appsec-internal-go/netip"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
+
+func TestGetErrorCodesFromInput(t *testing.T) {
+	codesOnly := "400,401,402"
+	rangesOnly := "400-405,408-410"
+	mixed := "400,403-405,407-410,412"
+	invalid1 := "1,100-200-300-"
+	invalid2 := "abc:@3$5^,"
+	empty := ""
+	t.Run("codesOnly", func(t *testing.T) {
+		fn := GetErrorCodesFromInput(codesOnly)
+		for i := 400; i <= 402; i++ {
+			assert.True(t, fn(i))
+		}
+		assert.False(t, fn(500))
+		assert.False(t, fn(0))
+	})
+	t.Run("rangesOnly", func(t *testing.T) {
+		fn := GetErrorCodesFromInput(rangesOnly)
+		for i := 400; i <= 405; i++ {
+			assert.True(t, fn(i))
+		}
+		for i := 408; i <= 410; i++ {
+			assert.True(t, fn(i))
+		}
+		assert.False(t, fn(406))
+		assert.False(t, fn(411))
+		assert.False(t, fn(500))
+	})
+	t.Run("mixed", func(t *testing.T) {
+		fn := GetErrorCodesFromInput(mixed)
+		assert.True(t, fn(400))
+		assert.False(t, fn(401))
+		for i := 403; i <= 405; i++ {
+			assert.True(t, fn(i))
+		}
+		assert.False(t, fn(406))
+		for i := 407; i <= 410; i++ {
+			assert.True(t, fn(i))
+		}
+		assert.False(t, fn(411))
+		assert.False(t, fn(500))
+	})
+	// invalid entries below should result in nils
+	t.Run("invalid1", func(t *testing.T) {
+		fn := GetErrorCodesFromInput(invalid1)
+		assert.Nil(t, fn)
+	})
+	t.Run("invalid2", func(t *testing.T) {
+		fn := GetErrorCodesFromInput(invalid2)
+		assert.Nil(t, fn)
+	})
+	t.Run("empty", func(t *testing.T) {
+		fn := GetErrorCodesFromInput(empty)
+		assert.Nil(t, fn)
+	})
+}
+
+func TestConfiguredErrorStatuses(t *testing.T) {
+	defer os.Unsetenv("DD_TRACE_HTTP_SERVER_ERROR_STATUSES")
+	t.Run("configured", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		os.Setenv("DD_TRACE_HTTP_SERVER_ERROR_STATUSES", "199-399,400,501")
+
+		// reset config based on new DD_TRACE_HTTP_SERVER_ERROR_STATUSES value
+		oldConfig := cfg
+		defer func() { cfg = oldConfig }()
+		cfg = newConfig()
+
+		statuses := []int{0, 200, 400, 500}
+		r := httptest.NewRequest(http.MethodGet, "/test", nil)
+		for i, status := range statuses {
+			sp, _ := StartRequestSpan(r)
+			FinishRequestSpan(sp, status)
+			spans := mt.FinishedSpans()
+			require.Len(t, spans, i+1)
+
+			switch status {
+			case 0:
+				assert.Equal(t, "200", spans[i].Tag(ext.HTTPCode))
+				assert.Nil(t, spans[i].Tag(ext.Error))
+			case 200, 400:
+				assert.Equal(t, strconv.Itoa(status), spans[i].Tag(ext.HTTPCode))
+				assert.Equal(t, fmt.Errorf("%s: %s", strconv.Itoa(status), http.StatusText(status)), spans[i].Tag(ext.Error).(error))
+			case 500:
+				assert.Equal(t, strconv.Itoa(status), spans[i].Tag(ext.HTTPCode))
+				assert.Nil(t, spans[i].Tag(ext.Error))
+			}
+		}
+	})
+	t.Run("zero", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		os.Setenv("DD_TRACE_HTTP_SERVER_ERROR_STATUSES", "0")
+
+		// reset config based on new DD_TRACE_HTTP_SERVER_ERROR_STATUSES value
+		oldConfig := cfg
+		defer func() { cfg = oldConfig }()
+		cfg = newConfig()
+
+		r := httptest.NewRequest(http.MethodGet, "/test", nil)
+		sp, _ := StartRequestSpan(r)
+		FinishRequestSpan(sp, 0)
+		spans := mt.FinishedSpans()
+		require.Len(t, spans, 1)
+		assert.Equal(t, "0", spans[0].Tag(ext.HTTPCode))
+		assert.Equal(t, fmt.Errorf("0: %s", http.StatusText(0)), spans[0].Tag(ext.Error).(error))
+	})
+}
+
+func TestHeaderTagsFromRequest(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	r := httptest.NewRequest(http.MethodGet, "/test", nil)
+	r.Header.Set("header1", "val1")
+	r.Header.Set("header2", " val2 ")
+	r.Header.Set("header3", "v a l 3")
+	r.Header.Set("x-datadog-header", "val4")
+
+	expectedHeaderTags := map[string]string{
+		"tag1": "val1",
+		"tag2": "val2",
+		"tag3": "v a l 3",
+		"tag4": "val4",
+	}
+
+	hs := []string{"header1:tag1", "header2:tag2", "header3:tag3", "x-datadog-header:tag4"}
+	ht := internal.NewLockMap(normalizer.HeaderTagSlice(hs))
+	s, _ := StartRequestSpan(r, HeaderTagsFromRequest(r, ht))
+	s.Finish()
+	spans := mt.FinishedSpans()
+	require.Len(t, spans, 1)
+
+	for expectedTag, expectedTagVal := range expectedHeaderTags {
+		assert.Equal(t, expectedTagVal, spans[0].Tags()[expectedTag])
+	}
+}
 
 func TestStartRequestSpan(t *testing.T) {
 	mt := mocktracer.Start()
@@ -29,176 +174,89 @@ func TestStartRequestSpan(t *testing.T) {
 	s, _ := StartRequestSpan(r)
 	s.Finish()
 	spans := mt.FinishedSpans()
-
 	require.Len(t, spans, 1)
 	assert.Equal(t, "example.com", spans[0].Tag("http.host"))
 }
 
-type IPTestCase struct {
-	name           string
-	remoteAddr     string
-	headers        map[string]string
-	expectedIP     netaddr.IP
-	multiHeaders   string
-	clientIPHeader string
-}
+// TestClientIP tests behavior of StartRequestSpan based on
+// the DD_TRACE_CLIENT_IP_ENABLED environment variable
+func TestTraceClientIPFlag(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
 
-func genIPTestCases() []IPTestCase {
-	ipv4Global := randGlobalIPv4().String()
-	ipv6Global := randGlobalIPv6().String()
-	ipv4Private := randPrivateIPv4().String()
-	ipv6Private := randPrivateIPv6().String()
-	tcs := []IPTestCase{}
-	// Simple ipv4 test cases over all headers
-	for _, header := range defaultIPHeaders {
-		tcs = append(tcs, IPTestCase{
-			name:       "ipv4-global." + header,
-			headers:    map[string]string{header: ipv4Global},
-			expectedIP: netaddr.MustParseIP(ipv4Global),
-		})
-		tcs = append(tcs, IPTestCase{
-			name:       "ipv4-private." + header,
-			headers:    map[string]string{header: ipv4Private},
-			expectedIP: netaddr.IP{},
-		})
+	tp := new(log.RecordLogger)
+	defer log.UseLogger(tp)()
+
+	// use 0.0.0.0 as ip address of all test cases
+	// more comprehensive ip address testing is done in testing
+	// of ClientIPTags in appsec/dyngo/instrumentation/httpsec
+	validIPAddr := "0.0.0.0"
+
+	type ipTestCase struct {
+		name                string
+		remoteAddr          string
+		traceClientIPEnvVal string
+		expectTrace         bool
+		expectedIP          netip.Addr
 	}
-	// Simple ipv6 test cases over all headers
-	for _, header := range defaultIPHeaders {
-		tcs = append(tcs, IPTestCase{
-			name:       "ipv6-global." + header,
-			headers:    map[string]string{header: ipv6Global},
-			expectedIP: netaddr.MustParseIP(ipv6Global),
-		})
-		tcs = append(tcs, IPTestCase{
-			name:       "ipv6-private." + header,
-			headers:    map[string]string{header: ipv6Private},
-			expectedIP: netaddr.IP{},
-		})
-	}
-	// private and global in same header
-	tcs = append([]IPTestCase{
-		{
-			name:       "ipv4-private+global",
-			headers:    map[string]string{"x-forwarded-for": ipv4Private + "," + ipv4Global},
-			expectedIP: netaddr.MustParseIP(ipv4Global),
-		},
-		{
-			name:       "ipv4-global+private",
-			headers:    map[string]string{"x-forwarded-for": ipv4Global + "," + ipv4Private},
-			expectedIP: netaddr.MustParseIP(ipv4Global),
-		},
-		{
-			name:       "ipv6-private+global",
-			headers:    map[string]string{"x-forwarded-for": ipv6Private + "," + ipv6Global},
-			expectedIP: netaddr.MustParseIP(ipv6Global),
-		},
-		{
-			name:       "ipv6-global+private",
-			headers:    map[string]string{"x-forwarded-for": ipv6Global + "," + ipv6Private},
-			expectedIP: netaddr.MustParseIP(ipv6Global),
-		},
-	}, tcs...)
-	// Invalid IPs (or a mix of valid/invalid over a single or multiple headers)
-	tcs = append([]IPTestCase{
-		{
-			name:       "invalid-ipv4",
-			headers:    map[string]string{"x-forwarded-for": "127..0.0.1"},
-			expectedIP: netaddr.IP{},
-		},
-		{
-			name:       "invalid-ipv4-recover",
-			headers:    map[string]string{"x-forwarded-for": "127..0.0.1, " + ipv4Global},
-			expectedIP: netaddr.MustParseIP(ipv4Global),
-		},
-		{
-			name:         "ipv4-multi-header-1",
-			headers:      map[string]string{"x-forwarded-for": "127.0.0.1", "forwarded-for": ipv4Global},
-			expectedIP:   netaddr.IP{},
-			multiHeaders: "x-forwarded-for,forwarded-for",
-		},
-		{
-			name:         "ipv4-multi-header-2",
-			headers:      map[string]string{"forwarded-for": ipv4Global, "x-forwarded-for": "127.0.0.1"},
-			expectedIP:   netaddr.IP{},
-			multiHeaders: "x-forwarded-for,forwarded-for",
-		},
-		{
-			name:       "invalid-ipv6",
-			headers:    map[string]string{"x-forwarded-for": "2001:0db8:2001:zzzz::"},
-			expectedIP: netaddr.IP{},
-		},
-		{
-			name:       "invalid-ipv6-recover",
-			headers:    map[string]string{"x-forwarded-for": "2001:0db8:2001:zzzz::, " + ipv6Global},
-			expectedIP: netaddr.MustParseIP(ipv6Global),
-		},
-		{
-			name:         "ipv6-multi-header-1",
-			headers:      map[string]string{"x-forwarded-for": "2001:0db8:2001:zzzz::", "forwarded-for": ipv6Global},
-			expectedIP:   netaddr.IP{},
-			multiHeaders: "x-forwarded-for,forwarded-for",
-		},
-		{
-			name:         "ipv6-multi-header-2",
-			headers:      map[string]string{"forwarded-for": ipv6Global, "x-forwarded-for": "2001:0db8:2001:zzzz::"},
-			expectedIP:   netaddr.IP{},
-			multiHeaders: "x-forwarded-for,forwarded-for",
-		},
-	}, tcs...)
-	tcs = append([]IPTestCase{
-		{
-			name:       "no-headers",
-			expectedIP: netaddr.IP{},
-		},
-		{
-			name:       "header-case",
-			expectedIP: netaddr.MustParseIP(ipv4Global),
-			headers:    map[string]string{"X-fOrWaRdEd-FoR": ipv4Global},
-		},
-		{
-			name:           "user-header",
-			expectedIP:     netaddr.MustParseIP(ipv4Global),
-			headers:        map[string]string{"x-forwarded-for": ipv6Global, "custom-header": ipv4Global},
-			clientIPHeader: "custom-header",
-		},
-		{
-			name:           "user-header-not-found",
-			expectedIP:     netaddr.IP{},
-			headers:        map[string]string{"x-forwarded-for": ipv4Global},
-			clientIPHeader: "custom-header",
-		},
-	}, tcs...)
 
-	return tcs
-}
+	oldConfig := cfg
+	defer func() { cfg = oldConfig }()
 
-func TestIPHeaders(t *testing.T) {
-	// Make sure to restore the real value of cfg.clientIPHeader at the end of the test
-	defer func(s string) { cfg.clientIPHeader = s }(cfg.clientIPHeader)
-	for _, tc := range genIPTestCases() {
+	for _, tc := range []ipTestCase{
+		{
+			name:                "Trace client IP set to true",
+			remoteAddr:          validIPAddr,
+			expectedIP:          netip.MustParseAddr(validIPAddr),
+			traceClientIPEnvVal: "true",
+			expectTrace:         true,
+		},
+		{
+			name:                "Trace client IP set to false",
+			remoteAddr:          validIPAddr,
+			expectedIP:          netip.MustParseAddr(validIPAddr),
+			traceClientIPEnvVal: "false",
+			expectTrace:         false,
+		},
+		{
+			name:                "Trace client IP unset",
+			remoteAddr:          validIPAddr,
+			expectedIP:          netip.MustParseAddr(validIPAddr),
+			traceClientIPEnvVal: "",
+			expectTrace:         false,
+		},
+		{
+			name:                "Trace client IP set to non-boolean value",
+			remoteAddr:          validIPAddr,
+			expectedIP:          netip.MustParseAddr(validIPAddr),
+			traceClientIPEnvVal: "asdadsasd",
+			expectTrace:         false,
+		},
+	} {
 		t.Run(tc.name, func(t *testing.T) {
-			header := http.Header{}
-			for k, v := range tc.headers {
-				header.Add(k, v)
-			}
-			r := http.Request{Header: header, RemoteAddr: tc.remoteAddr}
-			cfg.clientIPHeader = tc.clientIPHeader
-			spanCfg := ddtrace.StartSpanConfig{}
-			for _, opt := range genClientIPSpanTags(&r) {
-				opt(&spanCfg)
-			}
-			if tc.expectedIP.IsValid() {
-				require.Equal(t, tc.expectedIP.String(), spanCfg.Tags[ext.HTTPClientIP])
-				require.Nil(t, spanCfg.Tags[ext.MultipleIPHeaders])
+			t.Setenv(envTraceClientIPEnabled, tc.traceClientIPEnvVal)
+
+			// reset config based on new DD_TRACE_CLIENT_IP_ENABLED value
+			cfg = newConfig()
+
+			r := httptest.NewRequest(http.MethodGet, "/somePath", nil)
+			r.RemoteAddr = tc.remoteAddr
+			s, _ := StartRequestSpan(r)
+			s.Finish()
+			spans := mt.FinishedSpans()
+			targetSpan := spans[0]
+
+			if tc.expectTrace {
+				assert.Equal(t, tc.expectedIP.String(), targetSpan.Tag(ext.HTTPClientIP))
 			} else {
-				require.Nil(t, spanCfg.Tags[ext.HTTPClientIP])
-				if tc.multiHeaders != "" {
-					require.Equal(t, tc.multiHeaders, spanCfg.Tags[ext.MultipleIPHeaders])
-					for hdr, ip := range tc.headers {
-						require.Equal(t, ip, spanCfg.Tags[ext.HTTPRequestHeaders+"."+hdr])
-					}
+				assert.NotContains(t, targetSpan.Tags(), ext.HTTPClientIP)
+				if _, err := strconv.ParseBool(tc.traceClientIPEnvVal); err != nil && tc.traceClientIPEnvVal != "" {
+					logs := tp.Logs()
+					assert.Contains(t, logs[len(logs)-1], "Non-boolean value for env var DD_TRACE_CLIENT_IP_ENABLED")
+					tp.Reset()
 				}
 			}
+			mt.Reset()
 		})
 	}
 }
@@ -297,51 +355,20 @@ func TestURLTag(t *testing.T) {
 	}
 }
 
-func randIPv4() netaddr.IP {
-	return netaddr.IPv4(uint8(rand.Uint32()), uint8(rand.Uint32()), uint8(rand.Uint32()), uint8(rand.Uint32()))
-}
-
-func randIPv6() netaddr.IP {
-	return netaddr.IPv6Raw([16]byte{
-		uint8(rand.Uint32()), uint8(rand.Uint32()), uint8(rand.Uint32()), uint8(rand.Uint32()),
-		uint8(rand.Uint32()), uint8(rand.Uint32()), uint8(rand.Uint32()), uint8(rand.Uint32()),
-		uint8(rand.Uint32()), uint8(rand.Uint32()), uint8(rand.Uint32()), uint8(rand.Uint32()),
-		uint8(rand.Uint32()), uint8(rand.Uint32()), uint8(rand.Uint32()), uint8(rand.Uint32()),
-	})
-}
-
-func randGlobalIPv4() netaddr.IP {
-	for {
-		ip := randIPv4()
-		if isGlobal(ip) {
-			return ip
-		}
+func BenchmarkStartRequestSpan(b *testing.B) {
+	b.ReportAllocs()
+	r, err := http.NewRequest("GET", "http://example.com", nil)
+	if err != nil {
+		b.Errorf("Failed to create request: %v", err)
+		return
 	}
-}
-
-func randGlobalIPv6() netaddr.IP {
-	for {
-		ip := randIPv6()
-		if isGlobal(ip) {
-			return ip
-		}
+	opts := []ddtrace.StartSpanOption{
+		tracer.ServiceName("SomeService"),
+		tracer.ResourceName("SomeResource"),
+		tracer.Tag(ext.HTTPRoute, "/some/route/?"),
 	}
-}
-
-func randPrivateIPv4() netaddr.IP {
-	for {
-		ip := randIPv4()
-		if !isGlobal(ip) && ip.IsPrivate() {
-			return ip
-		}
-	}
-}
-
-func randPrivateIPv6() netaddr.IP {
-	for {
-		ip := randIPv6()
-		if !isGlobal(ip) && ip.IsPrivate() {
-			return ip
-		}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		StartRequestSpan(r, opts...)
 	}
 }

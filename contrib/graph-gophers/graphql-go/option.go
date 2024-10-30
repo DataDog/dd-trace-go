@@ -9,23 +9,25 @@ import (
 	"math"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
 )
 
+const defaultServiceName = "graphql.server"
+
 type config struct {
-	serviceName   string
-	analyticsRate float64
-	omitTrivial   bool
+	serviceName    string
+	querySpanName  string
+	analyticsRate  float64
+	omitTrivial    bool
+	traceVariables bool
 }
 
 // Option represents an option that can be used customize the Tracer.
 type Option func(*config)
 
 func defaults(cfg *config) {
-	cfg.serviceName = "graphql.server"
-	if svc := globalconfig.ServiceName(); svc != "" {
-		cfg.serviceName = svc
-	}
+	cfg.serviceName = namingschema.ServiceName(defaultServiceName)
+	cfg.querySpanName = namingschema.OpName(namingschema.GraphqlServer)
 	// cfg.analyticsRate = globalconfig.AnalyticsRate()
 	if internal.BoolEnv("DD_TRACE_GRAPHQL_ANALYTICS_ENABLED", false) {
 		cfg.analyticsRate = 1.0
@@ -64,9 +66,18 @@ func WithAnalyticsRate(rate float64) Option {
 	}
 }
 
-// WithOmitTrivial enables omission of graphql fields marked as trivial.
+// WithOmitTrivial enables omission of graphql fields marked as trivial. This
+// also opts trivial fields out of Threat Detection (and blocking).
 func WithOmitTrivial() Option {
 	return func(cfg *config) {
 		cfg.omitTrivial = true
+	}
+}
+
+// WithTraceVariables enables tracing of variables passed into GraphQL queries
+// and resolvers.
+func WithTraceVariables() Option {
+	return func(cfg *config) {
+		cfg.traceVariables = true
 	}
 }

@@ -3,6 +3,9 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2021 Datadog, Inc.
 
+//go:build !windows
+// +build !windows
+
 package traceproftest
 
 import (
@@ -27,7 +30,6 @@ func CPURusage(t testing.TB) time.Duration {
 	var rusage syscall.Rusage
 	if err := syscall.Getrusage(syscall.RUSAGE_SELF, &rusage); err != nil {
 		t.Fatal(err)
-		panic(err)
 	}
 	return timevalDuration(rusage.Stime) + timevalDuration(rusage.Utime)
 }

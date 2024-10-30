@@ -10,6 +10,8 @@ import (
 	"net"
 	nurl "net/url"
 	"strings"
+
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 )
 
 func parseSQLServerURL(url string) (map[string]string, error) {
@@ -43,7 +45,7 @@ func parseSQLServerURL(url string) (map[string]string, error) {
 	}
 
 	if u.Path != "" {
-		accrue("instanceName", u.Path[1:])
+		accrue(ext.MicrosoftSQLServerInstanceName, u.Path[1:])
 	}
 
 	q := u.Query()

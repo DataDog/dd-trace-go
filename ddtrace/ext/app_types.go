@@ -75,4 +75,7 @@ const (
 
 	// SpanTypeConsul marks a span as a Consul operation.
 	SpanTypeConsul = "consul"
+
+	// SpanTypeGraphql marks a span as a graphql operation.
+	SpanTypeGraphQL = "graphql"
 )

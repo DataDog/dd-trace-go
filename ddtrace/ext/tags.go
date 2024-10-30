@@ -9,10 +9,21 @@ package ext
 
 const (
 	// TargetHost sets the target host address.
+	// Deprecated: Use NetworkDestinationName instead for hostname and NetworkDestinationIP for IP addresses
 	TargetHost = "out.host"
 
+	// NetworkDestinationName is the remote hostname or similar where the outbound connection is being made to.
+	NetworkDestinationName = "network.destination.name"
+
+	// NetworkDestinationIP is the remote address where the outbound connection is being made to.
+	NetworkDestinationIP = "network.destination.ip"
+
 	// TargetPort sets the target host port.
+	// Deprecated: Use NetworkDestinationPort instead.
 	TargetPort = "out.port"
+
+	// NetworkDestinationPort is the remote port number of the outbound connection.
+	NetworkDestinationPort = "network.destination.port"
 
 	// SamplingPriority is the tag that marks the sampling priority of a span.
 	// Deprecated in favor of ManualKeep and ManualDrop.
@@ -42,14 +53,9 @@ const (
 	// HTTPClientIP sets the HTTP client IP tag.
 	HTTPClientIP = "http.client_ip"
 
-	// MultipleIPHeaders sets the multiple ip header tag used internally to tell the backend an error occurred when
-	// retrieving an HTTP request client IP.
-	// See https://datadoghq.atlassian.net/wiki/spaces/APS/pages/2118779066/Client+IP+addresses+resolution
-	MultipleIPHeaders = "_dd.multiple-ip-headers"
-
 	// HTTPRequestHeaders sets the HTTP request headers partial tag
 	// This tag is meant to be composed, i.e http.request.headers.headerX, http.request.headers.headerY, etc...
-	// See https://datadoghq.atlassian.net/wiki/spaces/APMINT/pages/2302444638/DD+TRACE+HEADER+TAGS
+	// See https://docs.datadoghq.com/tracing/trace_collection/tracing_naming_convention/#http-requests
 	HTTPRequestHeaders = "http.request.headers"
 
 	// SpanName is a pseudo-key for setting a span's operation name by means of
@@ -73,7 +79,7 @@ const (
 	Error = "error"
 
 	// ErrorMsg specifies the error message.
-	ErrorMsg = "error.msg"
+	ErrorMsg = "error.message"
 
 	// ErrorType specifies the error type.
 	ErrorType = "error.type"
@@ -105,4 +111,10 @@ const (
 
 	// RuntimeID is a tag that contains a unique id for this process.
 	RuntimeID = "runtime-id"
+
+	// Component defines library integration the span originated from.
+	Component = "component"
+
+	// SpanKind defines the kind of span based on Otel requirements (client, server, producer, consumer).
+	SpanKind = "span.kind"
 )

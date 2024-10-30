@@ -8,14 +8,18 @@ package tracer
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math"
+	"strings"
 	"testing"
 
-	"github.com/stretchr/testify/assert"
-
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/statsdtest"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestImplementsTraceWriter(t *testing.T) {
@@ -25,7 +29,7 @@ func TestImplementsTraceWriter(t *testing.T) {
 
 // makeSpan returns a span, adding n entries to meta and metrics each.
 func makeSpan(n int) *span {
-	s := newSpan("encodeName", "encodeService", "encodeResource", random.Uint64(), random.Uint64(), random.Uint64())
+	s := newSpan("encodeName", "encodeService", "encodeResource", randUint64(), randUint64(), randUint64())
 	for i := 0; i < n; i++ {
 		istr := fmt.Sprintf("%0.10d", i)
 		s.Meta[istr] = istr
@@ -95,7 +99,11 @@ func TestLogWriter(t *testing.T) {
 	t.Run("basic", func(t *testing.T) {
 		assert := assert.New(t)
 		var buf bytes.Buffer
-		h := newLogTraceWriter(newConfig())
+		cfg := newConfig()
+		statsd, err := newStatsdClient(cfg)
+		require.NoError(t, err)
+		defer statsd.Close()
+		h := newLogTraceWriter(cfg, statsd)
 		h.w = &buf
 		s := makeSpan(0)
 		for i := 0; i < 20; i++ {
@@ -104,8 +112,8 @@ func TestLogWriter(t *testing.T) {
 		h.flush()
 		v := struct{ Traces [][]map[string]interface{} }{}
 		d := json.NewDecoder(&buf)
-		err := d.Decode(&v)
-		assert.NoError(err)
+		err = d.Decode(&v)
+		assert.NoError(err, string(buf.Bytes()))
 		assert.Len(v.Traces, 20, "Expected 20 traces, but have %d", len(v.Traces))
 		for _, t := range v.Traces {
 			assert.Len(t, 2, "Expected 2 spans, but have %d", len(t))
@@ -117,7 +125,11 @@ func TestLogWriter(t *testing.T) {
 	t.Run("inf+nan", func(t *testing.T) {
 		assert := assert.New(t)
 		var buf bytes.Buffer
-		h := newLogTraceWriter(newConfig())
+		cfg := newConfig()
+		statsd, err := newStatsdClient(cfg)
+		require.NoError(t, err)
+		defer statsd.Close()
+		h := newLogTraceWriter(cfg, statsd)
 		h.w = &buf
 		s := makeSpan(0)
 		s.Metrics["nan"] = math.NaN()
@@ -125,7 +137,7 @@ func TestLogWriter(t *testing.T) {
 		s.Metrics["-inf"] = math.Inf(-1)
 		h.add([]*span{s})
 		h.flush()
-		json := string(buf.Bytes())
+		json := buf.String()
 		assert.NotContains(json, `"nan":`)
 		assert.NotContains(json, `"+inf":`)
 		assert.NotContains(json, `"-inf":`)
@@ -134,20 +146,25 @@ func TestLogWriter(t *testing.T) {
 	t.Run("fullspan", func(t *testing.T) {
 		assert := assert.New(t)
 		var buf bytes.Buffer
-		h := newLogTraceWriter(newConfig())
+		cfg := newConfig()
+		statsd, err := newStatsdClient(cfg)
+		require.NoError(t, err)
+		defer statsd.Close()
+		h := newLogTraceWriter(cfg, statsd)
 		h.w = &buf
 		type jsonSpan struct {
-			TraceID  string             `json:"trace_id"`
-			SpanID   string             `json:"span_id"`
-			ParentID string             `json:"parent_id"`
-			Name     string             `json:"name"`
-			Resource string             `json:"resource"`
-			Error    int32              `json:"error"`
-			Meta     map[string]string  `json:"meta"`
-			Metrics  map[string]float64 `json:"metrics"`
-			Start    int64              `json:"start"`
-			Duration int64              `json:"duration"`
-			Service  string             `json:"service"`
+			TraceID    string             `json:"trace_id"`
+			SpanID     string             `json:"span_id"`
+			ParentID   string             `json:"parent_id"`
+			Name       string             `json:"name"`
+			Resource   string             `json:"resource"`
+			Error      int32              `json:"error"`
+			Meta       map[string]string  `json:"meta"`
+			MetaStruct map[string]any     `json:"meta_struct"`
+			Metrics    map[string]float64 `json:"metrics"`
+			Start      int64              `json:"start"`
+			Duration   int64              `json:"duration"`
+			Service    string             `json:"service"`
 		}
 		type jsonPayload struct {
 			Traces [][]jsonSpan `json:"traces"`
@@ -159,6 +176,11 @@ func TestLogWriter(t *testing.T) {
 			Meta: map[string]string{
 				"env":     "prod",
 				"version": "1.26.0",
+			},
+			MetaStruct: map[string]any{
+				"_dd.stack": map[string]string{
+					"0": "github.com/DataDog/dd-trace-go/v1/internal/tracer.TestLogWriter",
+				},
 			},
 			Metrics: map[string]float64{
 				"widgets": 1e26,
@@ -181,9 +203,11 @@ func TestLogWriter(t *testing.T) {
 			Service:  "basicService",
 			Resource: "basicResource",
 			Meta: map[string]string{
-				"env":     "prod",
-				"version": "1.26.0",
+				"env":       "prod",
+				"version":   "1.26.0",
+				"_dd.stack": "{\"0\":\"github.com/DataDog/dd-trace-go/v1/internal/tracer.TestLogWriter\"}",
 			},
+			MetaStruct: nil,
 			Metrics: map[string]float64{
 				"widgets": 1e26,
 				"zero":    0.0,
@@ -201,7 +225,7 @@ func TestLogWriter(t *testing.T) {
 		h.flush()
 		d := json.NewDecoder(&buf)
 		var payload jsonPayload
-		err := d.Decode(&payload)
+		err = d.Decode(&payload)
 		assert.NoError(err)
 		assert.Equal(jsonPayload{[][]jsonSpan{{expected}}}, payload)
 	})
@@ -224,19 +248,23 @@ func TestLogWriter(t *testing.T) {
 }
 
 func TestLogWriterOverflow(t *testing.T) {
-	log.UseLogger(new(testLogger))
+	log.UseLogger(new(log.RecordLogger))
 	t.Run("single-too-big", func(t *testing.T) {
 		assert := assert.New(t)
 		var buf bytes.Buffer
-		var tg testStatsdClient
-		h := newLogTraceWriter(newConfig(withStatsdClient(&tg)))
+		var tg statsdtest.TestStatsdClient
+		cfg := newConfig(withStatsdClient(&tg))
+		statsd, err := newStatsdClient(cfg)
+		require.NoError(t, err)
+		defer statsd.Close()
+		h := newLogTraceWriter(cfg, statsd)
 		h.w = &buf
 		s := makeSpan(10000)
 		h.add([]*span{s})
 		h.flush()
 		v := struct{ Traces [][]map[string]interface{} }{}
 		d := json.NewDecoder(&buf)
-		err := d.Decode(&v)
+		err = d.Decode(&v)
 		assert.Equal(io.EOF, err)
 		assert.Contains(tg.CallNames(), "datadog.tracer.traces_dropped")
 	})
@@ -244,8 +272,12 @@ func TestLogWriterOverflow(t *testing.T) {
 	t.Run("split", func(t *testing.T) {
 		assert := assert.New(t)
 		var buf bytes.Buffer
-		var tg testStatsdClient
-		h := newLogTraceWriter(newConfig(withStatsdClient(&tg)))
+		var tg statsdtest.TestStatsdClient
+		cfg := newConfig(withStatsdClient(&tg))
+		statsd, err := newStatsdClient(cfg)
+		require.NoError(t, err)
+		defer statsd.Close()
+		h := newLogTraceWriter(cfg, statsd)
 		h.w = &buf
 		s := makeSpan(10)
 		var trace []*span
@@ -256,7 +288,7 @@ func TestLogWriterOverflow(t *testing.T) {
 		h.flush()
 		v := struct{ Traces [][]map[string]interface{} }{}
 		d := json.NewDecoder(&buf)
-		err := d.Decode(&v)
+		err = d.Decode(&v)
 		assert.NoError(err)
 		assert.Len(v.Traces, 1, "Expected 1 trace, but have %d", len(v.Traces))
 		spann := len(v.Traces[0])
@@ -272,7 +304,11 @@ func TestLogWriterOverflow(t *testing.T) {
 	t.Run("two-large", func(t *testing.T) {
 		assert := assert.New(t)
 		var buf bytes.Buffer
-		h := newLogTraceWriter(newConfig())
+		cfg := newConfig()
+		statsd, err := newStatsdClient(cfg)
+		require.NoError(t, err)
+		defer statsd.Close()
+		h := newLogTraceWriter(cfg, statsd)
 		h.w = &buf
 		s := makeSpan(4000)
 		h.add([]*span{s})
@@ -280,7 +316,7 @@ func TestLogWriterOverflow(t *testing.T) {
 		h.flush()
 		v := struct{ Traces [][]map[string]interface{} }{}
 		d := json.NewDecoder(&buf)
-		err := d.Decode(&v)
+		err = d.Decode(&v)
 		assert.NoError(err)
 		assert.Len(v.Traces, 1, "Expected 1 trace, but have %d", len(v.Traces))
 		assert.Len(v.Traces[0], 1, "Expected 1 span, but have %d", len(v.Traces[0]))
@@ -291,6 +327,100 @@ func TestLogWriterOverflow(t *testing.T) {
 		err = d.Decode(&v)
 		assert.Equal(io.EOF, err)
 	})
+}
+
+type failingTransport struct {
+	dummyTransport
+	failCount    int
+	sendAttempts int
+	tracesSent   bool
+	traces       spanLists
+	assert       *assert.Assertions
+}
+
+func (t *failingTransport) send(p *payload) (io.ReadCloser, error) {
+	t.sendAttempts++
+
+	traces, err := decode(p)
+	if err != nil {
+		return nil, err
+	}
+	if t.sendAttempts == 1 {
+		t.traces = traces
+	} else {
+		t.assert.Equal(t.traces, traces)
+	}
+
+	if t.failCount > 0 {
+		t.failCount--
+		return nil, errors.New("oops, I failed")
+	}
+
+	t.tracesSent = true
+	return io.NopCloser(strings.NewReader("OK")), nil
+}
+
+func TestTraceWriterFlushRetries(t *testing.T) {
+	testcases := []struct {
+		configRetries int
+		failCount     int
+		tracesSent    bool
+		expAttempts   int
+	}{
+		{configRetries: 0, failCount: 0, tracesSent: true, expAttempts: 1},
+		{configRetries: 0, failCount: 1, tracesSent: false, expAttempts: 1},
+
+		{configRetries: 1, failCount: 0, tracesSent: true, expAttempts: 1},
+		{configRetries: 1, failCount: 1, tracesSent: true, expAttempts: 2},
+		{configRetries: 1, failCount: 2, tracesSent: false, expAttempts: 2},
+
+		{configRetries: 2, failCount: 0, tracesSent: true, expAttempts: 1},
+		{configRetries: 2, failCount: 1, tracesSent: true, expAttempts: 2},
+		{configRetries: 2, failCount: 2, tracesSent: true, expAttempts: 3},
+		{configRetries: 2, failCount: 3, tracesSent: false, expAttempts: 3},
+	}
+
+	sentCounts := map[string]int64{
+		"datadog.tracer.decode_error": 1,
+		"datadog.tracer.flush_bytes":  197,
+		"datadog.tracer.flush_traces": 1,
+	}
+	droppedCounts := map[string]int64{
+		"datadog.tracer.traces_dropped": 1,
+	}
+
+	ss := []*span{makeSpan(0)}
+	for _, test := range testcases {
+		name := fmt.Sprintf("%d-%d-%t-%d", test.configRetries, test.failCount, test.tracesSent, test.expAttempts)
+		t.Run(name, func(t *testing.T) {
+			assert := assert.New(t)
+			p := &failingTransport{
+				failCount: test.failCount,
+				assert:    assert,
+			}
+			c := newConfig(func(c *config) {
+				c.transport = p
+				c.sendRetries = test.configRetries
+			})
+			var statsd statsdtest.TestStatsdClient
+
+			h := newAgentTraceWriter(c, nil, &statsd)
+			h.add(ss)
+
+			h.flush()
+			h.wg.Wait()
+
+			assert.Equal(test.expAttempts, p.sendAttempts)
+			assert.Equal(test.tracesSent, p.tracesSent)
+
+			assert.Equal(1, len(statsd.TimingCalls()))
+			if test.tracesSent {
+				assert.Equal(sentCounts, statsd.Counts())
+			} else {
+				assert.Equal(droppedCounts, statsd.Counts())
+			}
+		})
+	}
 }
 
 func BenchmarkJsonEncodeSpan(b *testing.B) {

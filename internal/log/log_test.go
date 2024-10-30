@@ -6,24 +6,24 @@
 package log
 
 import (
+	"bytes"
 	"fmt"
+	"os"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
-
 	"github.com/stretchr/testify/assert"
 )
 
-// testLogger implements a mock ddtrace.Logger.
+// testLogger implements a mock Logger.
 type testLogger struct {
 	mu    sync.RWMutex
 	lines []string
 }
 
-// Print implements ddtrace.Logger.
+// Print implements Logger.
 func (tp *testLogger) Log(msg string) {
 	tp.mu.Lock()
 	defer tp.mu.Unlock()
@@ -44,8 +44,78 @@ func (tp *testLogger) Reset() {
 	tp.mu.Unlock()
 }
 
+func TestLogDirectory(t *testing.T) {
+	t.Run("invalid", func(t *testing.T) {
+		f, err := OpenFileAtPath("/some/nonexistent/path")
+		assert.Nil(t, f)
+		assert.Error(t, err)
+	})
+	t.Run("valid", func(t *testing.T) {
+		// ensure File is created successfully
+		dir, err := os.MkdirTemp("", "example")
+		if err != nil {
+			t.Fatalf("Failure creating directory %v", err)
+		}
+		f, err := OpenFileAtPath(dir)
+		assert.Nil(t, err)
+		fp := dir + "/" + LoggerFile
+		assert.NotNil(t, f.file)
+		assert.Equal(t, fp, f.file.Name())
+		assert.False(t, f.closed)
+
+		// ensure this setting plays nicely with other log features
+		oldLvl := level
+		SetLevel(LevelDebug)
+		defer func() {
+			SetLevel(oldLvl)
+		}()
+		Info("info!")
+		Warn("warn!")
+		Debug("debug!")
+		// shorten errrate to test Error() behavior in a reasonable amount of time
+		oldRate := errrate
+		errrate = time.Microsecond
+		defer func() {
+			errrate = oldRate
+		}()
+		Error("error!")
+		time.Sleep(1 * time.Second)
+
+		b, err := os.ReadFile(fp)
+		if err != nil {
+			t.Fatalf("Failure reading file: %v", err)
+		}
+		// convert file content to []string{}, split by \n, to easily check its contents
+		lines := bytes.Split(b, []byte{'\n'})
+		var logs []string
+		for _, line := range lines {
+			logs = append(logs, string(line))
+		}
+
+		assert.True(t, containsMessage("INFO", "info!", logs))
+		assert.True(t, containsMessage("WARN", "warn!", logs))
+		assert.True(t, containsMessage("DEBUG", "debug!", logs))
+		assert.True(t, containsMessage("ERROR", "error!", logs))
+
+		f.Close()
+		assert.True(t, f.closed)
+
+		//ensure f.Close() is concurrent-safe and free of deadlocks
+		var wg sync.WaitGroup
+		for i := 0; i < 100; i++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				f.Close()
+			}()
+		}
+		wg.Wait()
+		assert.True(t, f.closed)
+	})
+}
+
 func TestLog(t *testing.T) {
-	defer func(old ddtrace.Logger) { UseLogger(old) }(logger)
+	defer func(old Logger) { UseLogger(old) }(logger)
 	tp := &testLogger{}
 	UseLogger(tp)
 
@@ -129,6 +199,55 @@ func TestLog(t *testing.T) {
 	})
 }
 
+func TestRecordLoggerIgnore(t *testing.T) {
+	tp := new(RecordLogger)
+	tp.Ignore("appsec")
+	tp.Log("this is an appsec log")
+	tp.Log("this is a tracer log")
+	assert.Len(t, tp.Logs(), 1)
+	assert.NotContains(t, tp.Logs()[0], "appsec")
+	tp.Reset()
+	tp.Log("this is an appsec log")
+	assert.Len(t, tp.Logs(), 1)
+	assert.Contains(t, tp.Logs()[0], "appsec")
+}
+
+func TestSetLoggingRate(t *testing.T) {
+	testCases := []struct {
+		input  string
+		result time.Duration
+	}{
+		{
+			input:  "",
+			result: time.Minute,
+		},
+		{
+			input:  "0",
+			result: 0 * time.Second,
+		},
+		{
+			input:  "10",
+			result: 10 * time.Second,
+		},
+		{
+			input:  "-1",
+			result: time.Minute,
+		},
+		{
+			input:  "this is not a number",
+			result: time.Minute,
+		},
+	}
+	for _, tC := range testCases {
+		tC := tC
+		errrate = time.Minute // reset global variable
+		t.Run(tC.input, func(t *testing.T) {
+			setLoggingRate(tC.input)
+			assert.Equal(t, tC.result, errrate)
+		})
+	}
+}
+
 func BenchmarkError(b *testing.B) {
 	Error("k %s", "a") // warm up cache
 	for i := 0; i < b.N; i++ {
@@ -147,4 +266,13 @@ func hasMsg(lvl, m string, lines []string) bool {
 
 func msg(lvl, msg string) string {
 	return fmt.Sprintf("%s %s: %s", prefixMsg, lvl, msg)
+}
+
+func containsMessage(lvl, m string, lines []string) bool {
+	for _, line := range lines {
+		if strings.Contains(line, msg(lvl, m)) {
+			return true
+		}
+	}
+	return false
 }

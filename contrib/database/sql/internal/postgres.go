@@ -134,22 +134,22 @@ func parseOpts(name string, o values) error {
 // parseURL no longer needs to be used by clients of this library since supplying a URL as a
 // connection string to sql.Open() is now supported:
 //
-//    sql.Open("postgres", "postgres://bob:secret@1.2.3.4:5432/mydb?sslmode=verify-full")
+//	sql.Open("postgres", "postgres://bob:secret@1.2.3.4:5432/mydb?sslmode=verify-full")
 //
 // It remains exported here for backwards-compatibility.
 //
 // parseURL converts a url to a connection string for driver.Open.
 // Example:
 //
-//    "postgres://bob:secret@1.2.3.4:5432/mydb?sslmode=verify-full"
+//	"postgres://bob:secret@1.2.3.4:5432/mydb?sslmode=verify-full"
 //
 // converts to:
 //
-//    "user=bob password=secret host=1.2.3.4 port=5432 dbname=mydb sslmode=verify-full"
+//	"user=bob password=secret host=1.2.3.4 port=5432 dbname=mydb sslmode=verify-full"
 //
 // A minimal example:
 //
-//    "postgres://"
+//	"postgres://"
 //
 // This will be blank, causing driver.Open to use all of the defaults
 func parseURL(url string) (string, error) {

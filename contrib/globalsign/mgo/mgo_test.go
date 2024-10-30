@@ -11,14 +11,16 @@ import (
 	"os"
 	"testing"
 
-	"github.com/globalsign/mgo"
-	"github.com/globalsign/mgo/bson"
-	"github.com/stretchr/testify/assert"
-
+	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/namingschematest"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
+
+	"github.com/globalsign/mgo"
+	"github.com/globalsign/mgo/bson"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestMain(m *testing.M) {
@@ -30,7 +32,9 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
-func testMongoCollectionCommand(assert *assert.Assertions, command func(*Collection)) []mocktracer.Span {
+func testMongoCollectionCommand(t *testing.T, command func(*Collection)) []mocktracer.Span {
+	assert := assert.New(t)
+
 	mt := mocktracer.Start()
 	defer mt.Stop()
 
@@ -42,10 +46,9 @@ func testMongoCollectionCommand(assert *assert.Assertions, command func(*Collect
 	)
 
 	session, err := Dial("localhost:27017", WithServiceName("unit-tests"), WithContext(ctx))
-	defer session.Close()
+	require.NoError(t, err)
 
-	assert.NotNil(session)
-	assert.Nil(err)
+	defer session.Close()
 
 	db := session.DB("my_db")
 	collection := db.C("MyCollection")
@@ -55,7 +58,51 @@ func testMongoCollectionCommand(assert *assert.Assertions, command func(*Collect
 	parentSpan.Finish()
 
 	spans := mt.FinishedSpans()
+
+	for _, val := range spans {
+		if val.OperationName() == "mongodb.query" {
+			assert.Equal("globalsign/mgo", val.Tag(ext.Component))
+			assert.Equal("MyCollection", val.Tag(ext.MongoDBCollection))
+			assert.Equal("localhost", val.Tag(ext.NetworkDestinationName))
+		}
+	}
+
 	return spans
+}
+
+func TestIter_NoSpanKind(t *testing.T) {
+	assert := assert.New(t)
+
+	entity := bson.D{
+		bson.DocElem{
+			Name: "entity",
+			Value: bson.DocElem{
+				Name:  "index",
+				Value: 0,
+			},
+		},
+	}
+
+	insert := func(collection *Collection) {
+		collection.Insert(entity)
+		var r bson.D
+		collection.Find(entity).Iter().Next(&r)
+		collection.UpdateId(r.Map()["_id"], entity)
+	}
+
+	spans := testMongoCollectionCommand(t, insert)
+	assert.Equal(5, len(spans))
+
+	numSpanKindClient := 0
+	for _, val := range spans {
+		if val.OperationName() != "mgo-unittest" {
+			assert.Equal("mongodb", val.Tag(ext.DBSystem))
+			if val, ok := val.Tags()[ext.SpanKind]; ok && val == ext.SpanKindClient {
+				numSpanKindClient++
+			}
+		}
+	}
+	assert.Equal(3, numSpanKindClient, "Iter() should not get span.kind tag")
 }
 
 func TestCollection_Insert(t *testing.T) {
@@ -66,15 +113,21 @@ func TestCollection_Insert(t *testing.T) {
 			Name: "entity",
 			Value: bson.DocElem{
 				Name:  "index",
-				Value: 0}}}
+				Value: 0,
+			},
+		},
+	}
 
 	insert := func(collection *Collection) {
 		collection.Insert(entity)
 	}
 
-	spans := testMongoCollectionCommand(assert, insert)
+	spans := testMongoCollectionCommand(t, insert)
 	assert.Equal(2, len(spans))
 	assert.Equal("mongodb.query", spans[0].OperationName())
+	assert.Equal(ext.SpanKindClient, spans[0].Tag(ext.SpanKind))
+	assert.Equal("mongodb", spans[0].Tag(ext.DBSystem))
+	assert.Equal("localhost", spans[0].Tag(ext.NetworkDestinationName))
 }
 
 func TestCollection_Update(t *testing.T) {
@@ -85,16 +138,22 @@ func TestCollection_Update(t *testing.T) {
 			Name: "entity",
 			Value: bson.DocElem{
 				Name:  "index",
-				Value: 0}}}
+				Value: 0,
+			},
+		},
+	}
 
 	insert := func(collection *Collection) {
 		collection.Insert(entity)
 		collection.Update(entity, entity)
 	}
 
-	spans := testMongoCollectionCommand(assert, insert)
+	spans := testMongoCollectionCommand(t, insert)
 	assert.Equal(3, len(spans))
 	assert.Equal("mongodb.query", spans[1].OperationName())
+	assert.Equal(ext.SpanKindClient, spans[1].Tag(ext.SpanKind))
+	assert.Equal("mongodb", spans[1].Tag(ext.DBSystem))
+	assert.Equal("localhost", spans[0].Tag(ext.NetworkDestinationName))
 }
 
 func TestCollection_UpdateId(t *testing.T) {
@@ -105,7 +164,10 @@ func TestCollection_UpdateId(t *testing.T) {
 			Name: "entity",
 			Value: bson.DocElem{
 				Name:  "index",
-				Value: 0}}}
+				Value: 0,
+			},
+		},
+	}
 
 	insert := func(collection *Collection) {
 		collection.Insert(entity)
@@ -114,9 +176,10 @@ func TestCollection_UpdateId(t *testing.T) {
 		collection.UpdateId(r.Map()["_id"], entity)
 	}
 
-	spans := testMongoCollectionCommand(assert, insert)
+	spans := testMongoCollectionCommand(t, insert)
 	assert.Equal(5, len(spans))
 	assert.Equal("mongodb.query", spans[3].OperationName())
+	assert.Equal("mongodb", spans[3].Tag(ext.DBSystem))
 }
 
 func TestIssue874(t *testing.T) {
@@ -128,7 +191,10 @@ func TestIssue874(t *testing.T) {
 			Name: "entity",
 			Value: bson.DocElem{
 				Name:  "index",
-				Value: 0}}}
+				Value: 0,
+			},
+		},
+	}
 
 	insert := func(collection *Collection) {
 		collection.Insert(entity)
@@ -142,7 +208,7 @@ func TestIssue874(t *testing.T) {
 		collection.UpdateId(r.Map()["_id"], entity)
 	}
 
-	spans := testMongoCollectionCommand(assert, insert)
+	spans := testMongoCollectionCommand(t, insert)
 	assert.Equal(9, len(spans))
 }
 
@@ -154,7 +220,10 @@ func TestCollection_Upsert(t *testing.T) {
 			Name: "entity",
 			Value: bson.DocElem{
 				Name:  "index",
-				Value: 0}}}
+				Value: 0,
+			},
+		},
+	}
 
 	insert := func(collection *Collection) {
 		collection.Insert(entity)
@@ -164,10 +233,12 @@ func TestCollection_Upsert(t *testing.T) {
 		collection.UpsertId(r.Map()["_id"], entity)
 	}
 
-	spans := testMongoCollectionCommand(assert, insert)
+	spans := testMongoCollectionCommand(t, insert)
 	assert.Equal(6, len(spans))
 	assert.Equal("mongodb.query", spans[1].OperationName())
+	assert.Equal("mongodb", spans[1].Tag(ext.DBSystem))
 	assert.Equal("mongodb.query", spans[4].OperationName())
+	assert.Equal("mongodb", spans[4].Tag(ext.DBSystem))
 }
 
 func TestCollection_UpdateAll(t *testing.T) {
@@ -178,16 +249,20 @@ func TestCollection_UpdateAll(t *testing.T) {
 			Name: "entity",
 			Value: bson.DocElem{
 				Name:  "index",
-				Value: 0}}}
+				Value: 0,
+			},
+		},
+	}
 
 	insert := func(collection *Collection) {
 		collection.Insert(entity)
 		collection.UpdateAll(entity, entity)
 	}
 
-	spans := testMongoCollectionCommand(assert, insert)
+	spans := testMongoCollectionCommand(t, insert)
 	assert.Equal(3, len(spans))
 	assert.Equal("mongodb.query", spans[1].OperationName())
+	assert.Equal("mongodb", spans[1].Tag(ext.DBSystem))
 }
 
 func TestCollection_FindId(t *testing.T) {
@@ -198,7 +273,10 @@ func TestCollection_FindId(t *testing.T) {
 			Name: "entity",
 			Value: bson.DocElem{
 				Name:  "index",
-				Value: 0}}}
+				Value: 0,
+			},
+		},
+	}
 
 	insert := func(collection *Collection) {
 		collection.Insert(entity)
@@ -208,7 +286,7 @@ func TestCollection_FindId(t *testing.T) {
 		collection.FindId(r.Map()["_id"]).Iter().Next(&r2)
 	}
 
-	spans := testMongoCollectionCommand(assert, insert)
+	spans := testMongoCollectionCommand(t, insert)
 	assert.Equal(6, len(spans))
 }
 
@@ -220,16 +298,20 @@ func TestCollection_Remove(t *testing.T) {
 			Name: "entity",
 			Value: bson.DocElem{
 				Name:  "index",
-				Value: 0}}}
+				Value: 0,
+			},
+		},
+	}
 
 	insert := func(collection *Collection) {
 		collection.Insert(entity)
 		collection.Remove(entity)
 	}
 
-	spans := testMongoCollectionCommand(assert, insert)
+	spans := testMongoCollectionCommand(t, insert)
 	assert.Equal(3, len(spans))
 	assert.Equal("mongodb.query", spans[1].OperationName())
+	assert.Equal("mongodb", spans[1].Tag(ext.DBSystem))
 }
 
 func TestCollection_RemoveId(t *testing.T) {
@@ -240,7 +322,10 @@ func TestCollection_RemoveId(t *testing.T) {
 			Name: "entity",
 			Value: bson.DocElem{
 				Name:  "index",
-				Value: 0}}}
+				Value: 0,
+			},
+		},
+	}
 
 	removeByID := func(collection *Collection) {
 		collection.Insert(entity)
@@ -253,9 +338,10 @@ func TestCollection_RemoveId(t *testing.T) {
 		assert.NoError(err)
 	}
 
-	spans := testMongoCollectionCommand(assert, removeByID)
+	spans := testMongoCollectionCommand(t, removeByID)
 	assert.Equal(5, len(spans))
 	assert.Equal("mongodb.query", spans[3].OperationName())
+	assert.Equal("mongodb", spans[3].Tag(ext.DBSystem))
 }
 
 func TestCollection_RemoveAll(t *testing.T) {
@@ -266,16 +352,20 @@ func TestCollection_RemoveAll(t *testing.T) {
 			Name: "entity",
 			Value: bson.DocElem{
 				Name:  "index",
-				Value: 0}}}
+				Value: 0,
+			},
+		},
+	}
 
 	insert := func(collection *Collection) {
 		collection.Insert(entity)
 		collection.RemoveAll(entity)
 	}
 
-	spans := testMongoCollectionCommand(assert, insert)
+	spans := testMongoCollectionCommand(t, insert)
 	assert.Equal(3, len(spans))
 	assert.Equal("mongodb.query", spans[1].OperationName())
+	assert.Equal("mongodb", spans[1].Tag(ext.DBSystem))
 }
 
 func TestCollection_DropCollection(t *testing.T) {
@@ -285,9 +375,10 @@ func TestCollection_DropCollection(t *testing.T) {
 		collection.DropCollection()
 	}
 
-	spans := testMongoCollectionCommand(assert, insert)
+	spans := testMongoCollectionCommand(t, insert)
 	assert.Equal(2, len(spans))
 	assert.Equal("mongodb.query", spans[0].OperationName())
+	assert.Equal("mongodb", spans[0].Tag(ext.DBSystem))
 }
 
 func TestCollection_Create(t *testing.T) {
@@ -297,9 +388,10 @@ func TestCollection_Create(t *testing.T) {
 		collection.Create(&mgo.CollectionInfo{})
 	}
 
-	spans := testMongoCollectionCommand(assert, insert)
+	spans := testMongoCollectionCommand(t, insert)
 	assert.Equal(2, len(spans))
 	assert.Equal("mongodb.query", spans[0].OperationName())
+	assert.Equal("mongodb", spans[0].Tag(ext.DBSystem))
 }
 
 func TestCollection_Count(t *testing.T) {
@@ -309,7 +401,7 @@ func TestCollection_Count(t *testing.T) {
 		collection.Count()
 	}
 
-	spans := testMongoCollectionCommand(assert, insert)
+	spans := testMongoCollectionCommand(t, insert)
 	assert.Equal(2, len(spans))
 	assert.Equal("mongodb.query", spans[0].OperationName())
 }
@@ -325,13 +417,13 @@ func TestCollection_IndexCommands(t *testing.T) {
 		collection.EnsureIndexKey("_id_")
 	}
 
-	spans := testMongoCollectionCommand(assert, indexTest)
-	assert.Equal(6, len(spans))
-	assert.Equal("mongodb.query", spans[0].OperationName())
-	assert.Equal("mongodb.query", spans[1].OperationName())
-	assert.Equal("mongodb.query", spans[2].OperationName())
-	assert.Equal("mongodb.query", spans[3].OperationName())
-	assert.Equal("mongodb.query", spans[4].OperationName())
+	spans := testMongoCollectionCommand(t, indexTest)
+	require.Equal(t, 6, len(spans))
+	for i := 0; i <= 4; i++ {
+		span := spans[i]
+		assert.Equal("mongodb.query", span.OperationName())
+		assert.Equal("mongodb", span.Tag(ext.DBSystem))
+	}
 	assert.Equal("mgo-unittest", spans[5].OperationName())
 }
 
@@ -343,7 +435,10 @@ func TestCollection_FindAndIter(t *testing.T) {
 			Name: "entity",
 			Value: bson.DocElem{
 				Name:  "index",
-				Value: 0}}}
+				Value: 0,
+			},
+		},
+	}
 
 	insert := func(collection *Collection) {
 		collection.Insert(entity)
@@ -359,12 +454,13 @@ func TestCollection_FindAndIter(t *testing.T) {
 		iter.Close()
 	}
 
-	spans := testMongoCollectionCommand(assert, insert)
-	assert.Equal(8, len(spans))
-	assert.Equal("mongodb.query", spans[3].OperationName())
-	assert.Equal("mongodb.query", spans[4].OperationName())
-	assert.Equal("mongodb.query", spans[5].OperationName())
-	assert.Equal("mongodb.query", spans[6].OperationName())
+	spans := testMongoCollectionCommand(t, insert)
+	require.Equal(t, 8, len(spans))
+	for i := 3; i <= 6; i++ {
+		span := spans[i]
+		assert.Equal("mongodb.query", span.OperationName())
+		assert.Equal("mongodb", span.Tag(ext.DBSystem))
+	}
 }
 
 func TestCollection_Bulk(t *testing.T) {
@@ -375,7 +471,10 @@ func TestCollection_Bulk(t *testing.T) {
 			Name: "entity",
 			Value: bson.DocElem{
 				Name:  "index",
-				Value: 0}}}
+				Value: 0,
+			},
+		},
+	}
 
 	insert := func(collection *Collection) {
 		bulk := collection.Bulk()
@@ -383,9 +482,10 @@ func TestCollection_Bulk(t *testing.T) {
 		bulk.Run()
 	}
 
-	spans := testMongoCollectionCommand(assert, insert)
+	spans := testMongoCollectionCommand(t, insert)
 	assert.Equal(2, len(spans))
 	assert.Equal("mongodb.query", spans[0].OperationName())
+	assert.Equal("mongodb", spans[0].Tag(ext.DBSystem))
 }
 
 func TestBadDial(t *testing.T) {
@@ -463,4 +563,47 @@ func TestAnalyticsSettings(t *testing.T) {
 
 		assertRate(t, mt, 0.23, WithAnalyticsRate(0.23))
 	})
+}
+
+func TestNamingSchema(t *testing.T) {
+	genSpans := namingschematest.GenSpansFn(func(t *testing.T, serviceOverride string) []mocktracer.Span {
+		var opts []DialOption
+		if serviceOverride != "" {
+			opts = append(opts, WithServiceName(serviceOverride))
+		}
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		session, err := Dial("localhost:27017", opts...)
+		require.NoError(t, err)
+		err = session.
+			DB("my_db").
+			C("MyCollection").
+			Insert(bson.D{bson.DocElem{Name: "entity", Value: bson.DocElem{Name: "index", Value: 0}}})
+		require.NoError(t, err)
+
+		return mt.FinishedSpans()
+	})
+	namingschematest.NewMongoDBTest(genSpans, "mongodb")(t)
+}
+
+func TestIssue2165(t *testing.T) {
+	assert := assert.New(t)
+	insert := func(collection *Collection) {
+		p := collection.Pipe(bson.M{})
+		p.One(nil)
+		p.Explain(nil)
+	}
+
+	spans := testMongoCollectionCommand(t, insert)
+	assert.Equal(3, len(spans))
+
+	for _, val := range spans {
+		if val.OperationName() != "mgo-unittest" {
+			assert.Equal("mongodb", val.Tag(ext.DBSystem))
+			if err, ok := val.Tags()[ext.Error]; ok {
+				assert.NotNil(err)
+			}
+		}
+	}
 }

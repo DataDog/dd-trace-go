@@ -6,78 +6,150 @@
 package grpc
 
 import (
-	"encoding/json"
-	"net"
+	"context"
+	"sync/atomic"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/grpcsec"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/httpsec"
-
-	"golang.org/x/net/context"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/peer"
+	"google.golang.org/grpc/status"
+
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/grpcsec"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/waf/actions"
 )
 
+func applyAction(blockAtomic *atomic.Pointer[actions.BlockGRPC], err *error) bool {
+	if blockAtomic == nil {
+		return false
+	}
+
+	block := blockAtomic.Load()
+	if block == nil {
+		return false
+	}
+
+	code, e := block.GRPCWrapper()
+	*err = status.Error(codes.Code(code), e.Error())
+	return true
+}
+
 // UnaryHandler wrapper to use when AppSec is enabled to monitor its execution.
-func appsecUnaryHandlerMiddleware(span ddtrace.Span, handler grpc.UnaryHandler) grpc.UnaryHandler {
-	httpsec.SetAppSecTags(span)
-	return func(ctx context.Context, req interface{}) (interface{}, error) {
+func appsecUnaryHandlerMiddleware(method string, span ddtrace.Span, handler grpc.UnaryHandler) grpc.UnaryHandler {
+	return func(ctx context.Context, req any) (res any, rpcErr error) {
 		md, _ := metadata.FromIncomingContext(ctx)
-		op := grpcsec.StartHandlerOperation(grpcsec.HandlerOperationArgs{Metadata: md}, nil)
+		var remoteAddr string
+		if p, ok := peer.FromContext(ctx); ok {
+			remoteAddr = p.Addr.String()
+		}
+
+		ctx, op, blockAtomic := grpcsec.StartHandlerOperation(ctx, grpcsec.HandlerOperationArgs{
+			Method:     method,
+			Metadata:   md,
+			RemoteAddr: remoteAddr,
+		})
+
 		defer func() {
-			events := op.Finish(grpcsec.HandlerOperationRes{})
-			instrumentation.SetTags(span, op.Tags())
-			if len(events) == 0 {
-				return
+			var statusCode int
+			if statusErr, ok := rpcErr.(interface{ GRPCStatus() *status.Status }); ok && !applyAction(blockAtomic, &rpcErr) {
+				statusCode = int(statusErr.GRPCStatus().Code())
 			}
-			setAppSecTags(ctx, span, events)
+			op.Finish(span, grpcsec.HandlerOperationRes{StatusCode: statusCode})
+			applyAction(blockAtomic, &rpcErr)
 		}()
-		defer grpcsec.StartReceiveOperation(grpcsec.ReceiveOperationArgs{}, op).Finish(grpcsec.ReceiveOperationRes{Message: req})
+
+		// Check if a blocking condition was detected so far with the start operation event (ip blocking, metadata blocking, etc.)
+		if applyAction(blockAtomic, &rpcErr) {
+			return
+		}
+
+		// As of our gRPC abstract operation definition, we must fake a receive operation for unary RPCs (the same model fits both unary and streaming RPCs)
+		if _ = grpcsec.MonitorRequestMessage(ctx, req); applyAction(blockAtomic, &rpcErr) {
+			return
+		}
+
+		defer func() {
+			_ = grpcsec.MonitorResponseMessage(ctx, res)
+			applyAction(blockAtomic, &rpcErr)
+		}()
+
+		// Call the original handler - let the deferred function above handle the blocking condition and return error
 		return handler(ctx, req)
 	}
 }
 
 // StreamHandler wrapper to use when AppSec is enabled to monitor its execution.
-func appsecStreamHandlerMiddleware(span ddtrace.Span, handler grpc.StreamHandler) grpc.StreamHandler {
-	httpsec.SetAppSecTags(span)
-	return func(srv interface{}, stream grpc.ServerStream) error {
-		md, _ := metadata.FromIncomingContext(stream.Context())
-		op := grpcsec.StartHandlerOperation(grpcsec.HandlerOperationArgs{Metadata: md}, nil)
+func appsecStreamHandlerMiddleware(method string, span ddtrace.Span, handler grpc.StreamHandler) grpc.StreamHandler {
+	return func(srv any, stream grpc.ServerStream) (rpcErr error) {
+		ctx := stream.Context()
+		md, _ := metadata.FromIncomingContext(ctx)
+		var remoteAddr string
+		if p, ok := peer.FromContext(ctx); ok {
+			remoteAddr = p.Addr.String()
+		}
+
+		// Create the handler operation and listen to blocking gRPC actions to detect a blocking condition
+		ctx, op, blockAtomic := grpcsec.StartHandlerOperation(ctx, grpcsec.HandlerOperationArgs{
+			Method:     method,
+			Metadata:   md,
+			RemoteAddr: remoteAddr,
+		})
+
+		// Create a ServerStream wrapper with appsec RPC handler operation and the Go context (to implement the ServerStream interface)
+
 		defer func() {
-			events := op.Finish(grpcsec.HandlerOperationRes{})
-			instrumentation.SetTags(span, op.Tags())
-			if len(events) == 0 {
-				return
+			var statusCode int
+			if res, ok := rpcErr.(interface{ Status() codes.Code }); ok && !applyAction(blockAtomic, &rpcErr) {
+				statusCode = int(res.Status())
 			}
-			setAppSecTags(stream.Context(), span, events)
+
+			op.Finish(span, grpcsec.HandlerOperationRes{StatusCode: statusCode})
+			applyAction(blockAtomic, &rpcErr)
 		}()
-		return handler(srv, appsecServerStream{ServerStream: stream, handlerOperation: op})
+
+		// Check if a blocking condition was detected so far with the start operation event (ip blocking, metadata blocking, etc.)
+		if applyAction(blockAtomic, &rpcErr) {
+			return
+		}
+
+		// Call the original handler - let the deferred function above handle the blocking condition and return error
+		return handler(srv, &appsecServerStream{
+			ServerStream:     stream,
+			handlerOperation: op,
+			ctx:              ctx,
+			action:           blockAtomic,
+			rpcErr:           &rpcErr,
+		})
 	}
 }
 
 type appsecServerStream struct {
 	grpc.ServerStream
 	handlerOperation *grpcsec.HandlerOperation
+	ctx              context.Context
+	action           *atomic.Pointer[actions.BlockGRPC]
+	rpcErr           *error
 }
 
 // RecvMsg implements grpc.ServerStream interface method to monitor its
 // execution with AppSec.
-func (ss appsecServerStream) RecvMsg(m interface{}) error {
-	op := grpcsec.StartReceiveOperation(grpcsec.ReceiveOperationArgs{}, ss.handlerOperation)
+func (ss *appsecServerStream) RecvMsg(msg any) (err error) {
 	defer func() {
-		op.Finish(grpcsec.ReceiveOperationRes{Message: m})
+		if _ = grpcsec.MonitorRequestMessage(ss.ctx, msg); applyAction(ss.action, ss.rpcErr) {
+			err = *ss.rpcErr
+		}
 	}()
-	return ss.ServerStream.RecvMsg(m)
+	return ss.ServerStream.RecvMsg(msg)
 }
 
-// Set the AppSec tags when security events were found.
-func setAppSecTags(ctx context.Context, span ddtrace.Span, events []json.RawMessage) {
-	md, _ := metadata.FromIncomingContext(ctx)
-	var addr net.Addr
-	if p, ok := peer.FromContext(ctx); ok {
-		addr = p.Addr
+func (ss *appsecServerStream) SendMsg(msg any) error {
+	if _ = grpcsec.MonitorResponseMessage(ss.ctx, msg); applyAction(ss.action, ss.rpcErr) {
+		return *ss.rpcErr
 	}
-	grpcsec.SetSecurityEventTags(span, events, addr, md)
+	return ss.ServerStream.SendMsg(msg)
+}
+
+func (ss *appsecServerStream) Context() context.Context {
+	return ss.ctx
 }

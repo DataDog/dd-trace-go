@@ -8,15 +8,20 @@ package profiler
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"math/rand"
 	"mime/multipart"
 	"net/http"
+	"net/textproto"
+	"os"
+	"strings"
 	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/orchestrion"
 )
 
 // maxRetries specifies the maximum number of retries to have when an error occurs.
@@ -39,9 +44,9 @@ func (p *profiler) upload(bat batch) error {
 		err = p.doRequest(bat)
 		if rerr, ok := err.(*retriableError); ok {
 			statsd.Count("datadog.profiling.go.upload_retry", 1, nil, 1)
-			wait := time.Duration(rand.Int63n(p.cfg.period.Nanoseconds()))
+			wait := time.Duration(rand.Int63n(p.cfg.period.Nanoseconds())) * time.Nanosecond
 			log.Error("Uploading profile failed: %v. Trying again in %s...", rerr, wait)
-			p.interruptibleSleep(time.Second)
+			p.interruptibleSleep(wait)
 			continue
 		}
 		if err != nil {
@@ -68,16 +73,20 @@ func (e retriableError) Error() string { return e.err.Error() }
 // doRequest makes an HTTP POST request to the Datadog Profiling API with the
 // given profile.
 func (p *profiler) doRequest(bat batch) error {
-	tags := make([]string, len(p.cfg.tags))
-	copy(tags, p.cfg.tags)
-	tags = append(tags,
+	tags := append(p.cfg.tags.Slice(),
 		fmt.Sprintf("service:%s", p.cfg.service),
-		fmt.Sprintf("env:%s", p.cfg.env),
 		// The profile_seq tag can be used to identify the first profile
 		// uploaded by a given runtime-id, identify missing profiles, etc.. See
 		// PROF-5612 (internal) for more details.
 		fmt.Sprintf("profile_seq:%d", bat.seq),
 	)
+	tags = append(tags, bat.extraTags...)
+	// If the user did not configure an "env" in the client, we should omit
+	// the tag so that the agent has a chance to supply a default tag.
+	// Otherwise, the tag supplied by the client will have priority.
+	if p.cfg.env != "" {
+		tags = append(tags, fmt.Sprintf("env:%s", p.cfg.env))
+	}
 	contentType, body, err := encode(bat, tags)
 	if err != nil {
 		return err
@@ -103,6 +112,9 @@ func (p *profiler) doRequest(bat batch) error {
 	if containerID != "" {
 		req.Header.Set("Datadog-Container-ID", containerID)
 	}
+	if entityID != "" {
+		req.Header.Set("Datadog-Entity-ID", entityID)
+	}
 	req.Header.Set("Content-Type", contentType)
 
 	resp, err := p.cfg.httpClient.Do(req)
@@ -125,41 +137,90 @@ func (p *profiler) doRequest(bat batch) error {
 	return errors.New(resp.Status)
 }
 
+type uploadEvent struct {
+	Start            string            `json:"start"`
+	End              string            `json:"end"`
+	Attachments      []string          `json:"attachments"`
+	Tags             string            `json:"tags_profiler"`
+	Family           string            `json:"family"`
+	Version          string            `json:"version"`
+	EndpointCounts   map[string]uint64 `json:"endpoint_counts,omitempty"`
+	CustomAttributes []string          `json:"custom_attributes,omitempty"`
+	Info             struct {
+		Profiler profilerInfo `json:"profiler"`
+	} `json:"info"`
+}
+
+// profilerInfo holds profiler-specific information which should be attached to
+// the event for backend consumption
+type profilerInfo struct {
+	SSI struct {
+		Mechanism string `json:"mechanism,omitempty"`
+	} `json:"ssi"`
+	// Activation distinguishes how the profiler was enabled, either "auto"
+	// (env var set via admission controller) or "manual"
+	Activation string `json:"activation"`
+}
+
 // encode encodes the profile as a multipart mime request.
 func encode(bat batch, tags []string) (contentType string, body io.Reader, err error) {
 	var buf bytes.Buffer
 
 	mw := multipart.NewWriter(&buf)
-	// write all of the profile metadata (including some useless ones)
-	// with a small helper function that makes error tracking less verbose.
-	writeField := func(k, v string) {
-		if err == nil {
-			err = mw.WriteField(k, v)
-		}
-	}
-	writeField("version", "3")
-	writeField("family", "go")
-	writeField("start", bat.start.Format(time.RFC3339))
-	writeField("end", bat.end.Format(time.RFC3339))
+
 	if bat.host != "" {
-		writeField("tags[]", fmt.Sprintf("host:%s", bat.host))
+		tags = append(tags, fmt.Sprintf("host:%s", bat.host))
 	}
-	writeField("tags[]", "runtime:go")
-	for _, tag := range tags {
-		writeField("tags[]", tag)
+	tags = append(tags, "runtime:go")
+
+	event := &uploadEvent{
+		Version:          "4",
+		Family:           "go",
+		Start:            bat.start.Format(time.RFC3339Nano),
+		End:              bat.end.Format(time.RFC3339Nano),
+		Tags:             strings.Join(tags, ","),
+		EndpointCounts:   bat.endpointCounts,
+		CustomAttributes: bat.customAttributes,
 	}
-	if err != nil {
-		return "", nil, err
+
+	// DD_PROFILING_ENABLED is only used to enable profiling when added with
+	// Orchestrion. The "auto" value comes from the Datadog Kubernetes
+	// admission controller. Otherwise, the client library doesn't care
+	// about the value and assumes it was something "truthy", or this code
+	// wouldn't run. We just track it to be consistent with other languages
+	if os.Getenv("DD_PROFILING_ENABLED") == "auto" {
+		event.Info.Profiler.Activation = "auto"
+	} else {
+		event.Info.Profiler.Activation = "manual"
 	}
+	if orchestrion.Enabled() {
+		event.Info.Profiler.SSI.Mechanism = "orchestrion"
+	} else {
+		event.Info.Profiler.SSI.Mechanism = "none"
+	}
+
 	for _, p := range bat.profiles {
-		formFile, err := mw.CreateFormFile(fmt.Sprintf("data[%s]", p.name), "pprof-data")
+		event.Attachments = append(event.Attachments, p.name)
+		f, err := mw.CreateFormFile(p.name, p.name)
 		if err != nil {
 			return "", nil, err
 		}
-		if _, err := formFile.Write(p.data); err != nil {
+		if _, err := f.Write(p.data); err != nil {
 			return "", nil, err
 		}
 	}
+
+	f, err := mw.CreatePart(textproto.MIMEHeader{
+		"Content-Disposition": []string{`form-data; name="event"; filename="event.json"`},
+		"Content-Type":        []string{"application/json"},
+	})
+	if err != nil {
+		return "", nil, err
+	}
+	if err := json.NewEncoder(f).Encode(event); err != nil {
+		return "", nil, err
+	}
+
 	if err := mw.Close(); err != nil {
 		return "", nil, err
 	}
