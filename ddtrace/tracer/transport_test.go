@@ -338,6 +338,11 @@ func TestWithHTTPClient(t *testing.T) {
 	var hits int
 	srv := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
 		hits++
+		if r.Method == http.MethodGet {
+			return
+		}
+		cl := r.Header.Get("Content-Length")
+		assert.NotZero(cl)
 	}))
 	defer srv.Close()
 
@@ -356,6 +361,7 @@ func TestWithHTTPClient(t *testing.T) {
 	assert.Len(rt.reqs, 2)
 	assert.Contains(rt.reqs[0].URL.Path, "/info")
 	assert.Contains(rt.reqs[1].URL.Path, "/traces")
+	assert.NotZero(rt.reqs[1].ContentLength)
 	assert.Equal(hits, 2)
 }
 
