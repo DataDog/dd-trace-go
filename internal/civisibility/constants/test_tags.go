@@ -101,6 +101,12 @@ const (
 
 	// CodeCoverageEnabled indicates that code coverage is enabled
 	CodeCoverageEnabled = "test.code_coverage.enabled"
+
+	// TestUnskippable indicates that the test is unskippable
+	TestUnskippable = "test.itr.unskippable"
+
+	// TestForcedToRun indicates that the test is forced to run because is unskippable
+	TestForcedToRun = "test.itr.forced_run"
 )
 
 // Define valid test status types.

@@ -117,10 +117,12 @@ func TestRetryWithFail(t *testing.T) {
 	}
 }
 
+//dd:test.unskippable
 func TestNormalPassingAfterRetryAlwaysFail(t *testing.T) {}
 
 var run int
 
+//dd:test.unskippable
 func TestEarlyFlakeDetection(t *testing.T) {
 	run++
 	fmt.Printf(" Run: %d", run)
