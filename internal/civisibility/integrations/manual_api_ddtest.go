@@ -29,8 +29,9 @@ var _ DdTest = (*tslvTest)(nil)
 // tslvTest implements the DdTest interface and represents an individual test within a suite.
 type tslvTest struct {
 	ciVisibilityCommon
-	suite *tslvTestSuite
-	name  string
+	testID uint64
+	suite  *tslvTestSuite
+	name   string
 }
 
 // createTest initializes a new test within a given suite.
@@ -60,10 +61,12 @@ func createTest(suite *tslvTestSuite, name string, startTime time.Time) DdTest {
 	}
 	span.SetTag(constants.TestModuleIDTag, fmt.Sprint(suite.module.moduleID))
 	span.SetTag(constants.TestSuiteIDTag, fmt.Sprint(suite.suiteID))
+	testID := span.Context().SpanID()
 
 	t := &tslvTest{
-		suite: suite,
-		name:  name,
+		testID: testID,
+		suite:  suite,
+		name:   name,
 		ciVisibilityCommon: ciVisibilityCommon{
 			startTime: startTime,
 			tags:      testTags,
@@ -76,6 +79,11 @@ func createTest(suite *tslvTestSuite, name string, startTime time.Time) DdTest {
 	PushCiVisibilityCloseAction(func() { t.Close(ResultStatusFail) })
 
 	return t
+}
+
+// TestID returns the ID of the test.
+func (t *tslvTest) TestID() uint64 {
+	return t.testID
 }
 
 // Name returns the name of the test.

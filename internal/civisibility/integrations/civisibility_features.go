@@ -39,6 +39,9 @@ type (
 )
 
 var (
+	// settingsInitializationOnce ensures we do the settings initialization just once
+	settingsInitializationOnce sync.Once
+
 	// additionalFeaturesInitializationOnce ensures we do the additional features initialization just once
 	additionalFeaturesInitializationOnce sync.Once
 
@@ -53,12 +56,14 @@ var (
 
 	// ciVisibilityFlakyRetriesSettings contains the CI Visibility Flaky Retries settings for this session
 	ciVisibilityFlakyRetriesSettings FlakyRetriesSetting
+
+	// ciVisibilitySkippables contains the CI Visibility skippable tests for this session
+	ciVisibilitySkippables map[string]map[string][]net.SkippableResponseDataAttributes
 )
 
-// ensureAdditionalFeaturesInitialization initialize all the additional features
-func ensureAdditionalFeaturesInitialization(serviceName string) {
-	additionalFeaturesInitializationOnce.Do(func() {
-		log.Debug("civisibility: initializing additional features")
+func ensureSettingsInitialization(serviceName string) {
+	settingsInitializationOnce.Do(func() {
+		log.Debug("civisibility: initializing settings")
 
 		// Create the CI Visibility client
 		ciVisibilityClient = net.NewClientWithServiceName(serviceName)
@@ -104,6 +109,17 @@ func ensureAdditionalFeaturesInitialization(serviceName string) {
 				<-uploadChannel
 			})
 		}
+	})
+}
+
+// ensureAdditionalFeaturesInitialization initialize all the additional features
+func ensureAdditionalFeaturesInitialization(serviceName string) {
+	additionalFeaturesInitializationOnce.Do(func() {
+		log.Debug("civisibility: initializing additional features")
+		ensureSettingsInitialization(serviceName)
+		if ciVisibilityClient == nil {
+			return
+		}
 
 		// if early flake detection is enabled then we run the early flake detection request
 		if ciVisibilitySettings.EarlyFlakeDetection.Enabled {
@@ -133,13 +149,26 @@ func ensureAdditionalFeaturesInitialization(serviceName string) {
 				ciVisibilitySettings.FlakyTestRetriesEnabled = false
 			}
 		}
+
+		// if ITR is enabled then we do the skippable tests request
+		if ciVisibilitySettings.TestsSkipping {
+			// get the skippable tests
+			correlationId, skippableTests, err := ciVisibilityClient.GetSkippableTests()
+			if err != nil {
+				log.Error("civisibility: error getting CI visibility skippable tests: %v", err)
+			} else if skippableTests != nil {
+				log.Debug("civisibility: skippable tests loaded: %d suites", len(skippableTests))
+				utils.AddCITags(constants.ItrCorrelationIDTag, correlationId)
+				ciVisibilitySkippables = skippableTests
+			}
+		}
 	})
 }
 
 // GetSettings gets the settings from the backend settings endpoint
 func GetSettings() *net.SettingsResponseData {
-	// call to ensure the additional features initialization is completed (service name can be null here)
-	ensureAdditionalFeaturesInitialization("")
+	// call to ensure the settings features initialization is completed (service name can be null here)
+	ensureSettingsInitialization("")
 	return &ciVisibilitySettings
 }
 
@@ -155,6 +184,13 @@ func GetFlakyRetriesSettings() *FlakyRetriesSetting {
 	// call to ensure the additional features initialization is completed (service name can be null here)
 	ensureAdditionalFeaturesInitialization("")
 	return &ciVisibilityFlakyRetriesSettings
+}
+
+// GetSkippableTests gets the skippable tests from the backend
+func GetSkippableTests() map[string]map[string][]net.SkippableResponseDataAttributes {
+	// call to ensure the additional features initialization is completed (service name can be null here)
+	ensureAdditionalFeaturesInitialization("")
+	return ciVisibilitySkippables
 }
 
 func uploadRepositoryChanges() (bytes int64, err error) {

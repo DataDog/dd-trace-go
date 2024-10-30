@@ -16,6 +16,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/constants"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/integrations"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/integrations/gotesting/coverage"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/utils"
 )
 
@@ -39,6 +40,9 @@ var (
 
 	// suitesCounters keeps track of the number of tests per suite.
 	suitesCounters = map[string]*int32{}
+
+	// numOfTestsSkipped keeps track of the number of tests skipped by ITR.
+	numOfTestsSkipped atomic.Uint64
 )
 
 type (
@@ -86,6 +90,33 @@ func (ddm *M) instrumentInternalTests(internalTests *[]testing.InternalTest) {
 		return
 	}
 
+	// Get the settings response for this session
+	settings := integrations.GetSettings()
+
+	// Check if the test is going to be skipped by ITR
+	if settings.ItrEnabled {
+		if settings.CodeCoverage && coverage.CanCollect() {
+			session.SetTag(constants.CodeCoverageEnabled, "true")
+		} else {
+			session.SetTag(constants.CodeCoverageEnabled, "true")
+		}
+
+		if settings.TestsSkipping {
+			session.SetTag(constants.ITRTestsSkippingEnabled, "true")
+			session.SetTag(constants.ITRTestsSkippingType, "test")
+
+			// Check if the test is going to be skipped by ITR
+			skippableTests := integrations.GetSkippableTests()
+			if skippableTests != nil {
+				if len(skippableTests) > 0 {
+					session.SetTag(constants.ITRTestsSkipped, "false")
+				}
+			}
+		} else {
+			session.SetTag(constants.ITRTestsSkippingEnabled, "false")
+		}
+	}
+
 	// Extract info from internal tests
 	testInfos = make([]*testingTInfo, len(*internalTests))
 	for idx, test := range *internalTests {
@@ -131,7 +162,30 @@ func (ddm *M) instrumentInternalTests(internalTests *[]testing.InternalTest) {
 // executeInternalTest wraps the original test function to include CI visibility instrumentation.
 func (ddm *M) executeInternalTest(testInfo *testingTInfo) func(*testing.T) {
 	originalFunc := runtime.FuncForPC(reflect.Indirect(reflect.ValueOf(testInfo.originalFunc)).Pointer())
+
+	// Get the settings response for this session
+	settings := integrations.GetSettings()
+	coverageEnabled := settings.CodeCoverage
+	testSkippedByITR := false
+
+	// Check if the test is going to be skipped by ITR
+	if settings.ItrEnabled && settings.TestsSkipping {
+		// Check if the test is going to be skipped by ITR
+		skippableTests := integrations.GetSkippableTests()
+		if skippableTests != nil {
+			if suitesMap, ok := skippableTests[testInfo.suiteName]; ok {
+				if _, ok := suitesMap[testInfo.testName]; ok {
+					testSkippedByITR = true
+				}
+			}
+		}
+	}
+
+	// Instrument the test function
 	instrumentedFunc := func(t *testing.T) {
+		// Set this func as a helper func of t
+		t.Helper()
+
 		// Get the metadata regarding the execution (in case is already created from the additional features)
 		execMeta := getTestMetadata(t)
 		if execMeta == nil {
@@ -161,9 +215,53 @@ func (ddm *M) executeInternalTest(testInfo *testingTInfo) func(*testing.T) {
 			test.SetTag(constants.TestIsRetry, "true")
 		}
 
+		// Check if the test needs to be skipped by ITR
+		if testSkippedByITR {
+			test.SetTag(constants.TestSkippedByITR, "true")
+			test.CloseWithFinishTimeAndSkipReason(integrations.ResultStatusSkip, time.Now(), constants.SkippedByITRReason)
+			session.SetTag(constants.ITRTestsSkipped, "true")
+			session.SetTag(constants.ITRTestsSkippingCount, numOfTestsSkipped.Add(1))
+			checkModuleAndSuite(module, suite)
+			t.Skip(constants.SkippedByITRReason)
+			return
+		}
+
+		// Check if the coverage is enabled
+		var tCoverage coverage.TestCoverage
+		var tParentOldBarrier chan bool
+		if coverageEnabled && coverage.CanCollect() {
+			// set the test coverage collector
+			testFile, _ := originalFunc.FileLine(originalFunc.Entry())
+			tCoverage = coverage.NewTestCoverage(
+				session.SessionID(),
+				module.ModuleID(),
+				suite.SuiteID(),
+				test.TestID(),
+				testFile)
+
+			// now we need to disable parallelism for the test in order to collect the test coverage
+			tParent := getTestParentPrivateFields(t)
+			if tParent != nil && tParent.barrier != nil {
+				tParentOldBarrier = *tParent.barrier
+				*tParent.barrier = nil
+			}
+		}
+
 		startTime := time.Now()
 		defer func() {
 			duration := time.Since(startTime)
+
+			if tCoverage != nil {
+				// Collect coverage after test execution so we can calculate the diff comparing to the baseline.
+				tCoverage.CollectCoverageAfterTestExecution()
+
+				// now we restore the original parent barrier
+				tParent := getTestParentPrivateFields(t)
+				if tParent != nil && tParent.barrier != nil {
+					*tParent.barrier = tParentOldBarrier
+				}
+			}
+
 			// check if is a new EFD test and the duration >= 5 min
 			if execMeta.isANewTest && duration.Minutes() >= 5 {
 				// Set the EFD retry abort reason
@@ -206,12 +304,22 @@ func (ddm *M) executeInternalTest(testInfo *testingTInfo) func(*testing.T) {
 			}
 		}()
 
+		if tCoverage != nil {
+			// Collect coverage before test execution so we can register a baseline.
+			tCoverage.CollectCoverageBeforeTestExecution()
+		}
+
 		// Execute the original test function.
 		testInfo.originalFunc(t)
 	}
 
 	// Register the instrumented func as an internal instrumented func (to avoid double instrumentation)
 	setInstrumentationMetadata(runtime.FuncForPC(reflect.Indirect(reflect.ValueOf(instrumentedFunc)).Pointer()), &instrumentationMetadata{IsInternal: true})
+
+	// If the test is going to be skipped by ITR then we don't apply the additional features
+	if testSkippedByITR {
+		return instrumentedFunc
+	}
 
 	// Get the additional feature wrapper
 	return applyAdditionalFeaturesToTestFunc(instrumentedFunc, &testInfo.commonInfo)

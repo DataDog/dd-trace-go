@@ -190,11 +190,14 @@ func applyFlakyTestRetriesAdditionalFeature(targetFunc func(*testing.T)) func(*t
 				initialRetryCount: flakyRetrySettings.RetryCount,
 				adjustRetryCount:  nil, // No adjustRetryCount
 				shouldRetry: func(ptrToLocalT *testing.T, executionIndex int, remainingRetries int64) bool {
-					remainingTotalRetries := atomic.AddInt64(&flakyRetrySettings.RemainingTotalRetryCount, -1)
 					// Decide whether to retry
-					return ptrToLocalT.Failed() && remainingRetries >= 0 && remainingTotalRetries >= 0
+					return ptrToLocalT.Failed() && remainingRetries >= 0 && atomic.LoadInt64(&flakyRetrySettings.RemainingTotalRetryCount) >= 0
 				},
-				perExecution: nil, // No perExecution needed
+				perExecution: func(ptrToLocalT *testing.T, executionIndex int, duration time.Duration) {
+					if executionIndex > 0 {
+						atomic.AddInt64(&flakyRetrySettings.RemainingTotalRetryCount, -1)
+					}
+				},
 				onRetryEnd: func(t *testing.T, executionIndex int, lastPtrToLocalT *testing.T) {
 					// Update original `t` with results from last execution
 					tCommonPrivates := getTestPrivateFields(t)
@@ -223,11 +226,11 @@ func applyFlakyTestRetriesAdditionalFeature(targetFunc func(*testing.T)) func(*t
 						}
 
 						fmt.Printf("    [ %v after %v retries by Datadog's auto test retries ]\n", status, executionIndex)
-					}
 
-					// Check if total retry count was exceeded
-					if flakyRetrySettings.RemainingTotalRetryCount < 1 {
-						fmt.Println("    the maximum number of total retries was exceeded.")
+						// Check if total retry count was exceeded
+						if atomic.LoadInt64(&flakyRetrySettings.RemainingTotalRetryCount) < 1 {
+							fmt.Println("    the maximum number of total retries was exceeded.")
+						}
 					}
 				},
 				execMetaAdjust: nil, // No execMetaAdjust needed

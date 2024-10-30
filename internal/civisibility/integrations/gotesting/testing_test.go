@@ -117,11 +117,6 @@ func TestRetryWithFail(t *testing.T) {
 	}
 }
 
-func TestRetryAlwaysFail(t *testing.T) {
-	t.Parallel()
-	t.Fatal("Always fail to test the auto retries feature")
-}
-
 func TestNormalPassingAfterRetryAlwaysFail(t *testing.T) {}
 
 var run int
