@@ -557,9 +557,6 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 	}
 
 	span.SpanLinks = append(span.SpanLinks, opts.SpanLinks...)
-	if parentCtx, ok := opts.Parent.(*spanContext); ok {
-		span.SpanLinks = append(span.SpanLinks, parentCtx.spanLinks...)
-	}
 
 	if t.config.hostname != "" {
 		span.setMeta(keyHostname, t.config.hostname)

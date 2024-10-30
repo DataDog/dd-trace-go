@@ -110,7 +110,7 @@ func TraceReceiveFunc(s Subscription, opts ...Option) func(ctx context.Context, 
 			tracer.Tag(ext.Component, componentName),
 			tracer.Tag(ext.SpanKind, ext.SpanKindConsumer),
 			tracer.Tag(ext.MessagingSystem, ext.MessagingSystemGCPPubsub),
-			tracer.ChildOf(parentSpanCtx),
+			tracer.ChildOfWithExtractedSpanLinks(parentSpanCtx),
 		}
 		if cfg.serviceName != "" {
 			opts = append(opts, tracer.ServiceName(cfg.serviceName))

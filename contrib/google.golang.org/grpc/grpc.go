@@ -71,7 +71,7 @@ func startSpanFromContext(
 	)
 	md, _ := metadata.FromIncomingContext(ctx) // nil is ok
 	if sctx, err := tracer.Extract(grpcutil.MDCarrier(md)); err == nil {
-		opts = append(opts, tracer.ChildOf(sctx))
+		opts = append(opts, tracer.ChildOfWithExtractedSpanLinks(sctx))
 	}
 	return tracer.StartSpanFromContext(ctx, operation, opts...)
 }
