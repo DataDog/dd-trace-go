@@ -50,6 +50,10 @@ func MonitorParsedHTTPBody(ctx context.Context, body any) error {
 // APM tracer middleware on use according to your blocking configuration.
 // This function always returns nil when appsec is disabled and doesn't block users.
 func SetUser(ctx context.Context, id string, opts ...tracer.UserMonitoringOption) error {
+	return setUser(ctx, id, usersec.UserSet, opts)
+}
+
+func setUser(ctx context.Context, id string, userEventType usersec.UserEventType, opts []tracer.UserMonitoringOption) error {
 	s, ok := tracer.SpanFromContext(ctx)
 	if !ok {
 		log.Debug("appsec: could not retrieve span from context. User ID tag won't be set")
@@ -61,11 +65,10 @@ func SetUser(ctx context.Context, id string, opts ...tracer.UserMonitoringOption
 		return nil
 	}
 
-	op, errPtr := usersec.StartUserLoginOperation(ctx, usersec.UserLoginOperationArgs{})
+	op, errPtr := usersec.StartUserLoginOperation(ctx, userEventType, usersec.UserLoginOperationArgs{})
 	op.Finish(usersec.UserLoginOperationRes{
 		UserID:    id,
 		SessionID: getSessionID(opts...),
-		Success:   true,
 	})
 
 	return *errPtr
@@ -85,7 +88,7 @@ func SetUser(ctx context.Context, id string, opts ...tracer.UserMonitoringOption
 // associated to them.
 func TrackUserLoginSuccessEvent(ctx context.Context, uid string, md map[string]string, opts ...tracer.UserMonitoringOption) error {
 	TrackCustomEvent(ctx, "users.login.success", md)
-	return SetUser(ctx, uid, opts...)
+	return setUser(ctx, uid, usersec.UserLoginSuccess, opts)
 }
 
 // TrackUserLoginFailureEvent sets a failed user login event, with the given
@@ -111,8 +114,8 @@ func TrackUserLoginFailureEvent(ctx context.Context, uid string, exists bool, md
 
 	TrackCustomEvent(ctx, "users.login.failure", md)
 
-	op, _ := usersec.StartUserLoginOperation(ctx, usersec.UserLoginOperationArgs{})
-	op.Finish(usersec.UserLoginOperationRes{UserID: uid, Success: false})
+	op, _ := usersec.StartUserLoginOperation(ctx, usersec.UserLoginFailure, usersec.UserLoginOperationArgs{})
+	op.Finish(usersec.UserLoginOperationRes{UserID: uid})
 }
 
 // TrackCustomEvent sets a custom event as service entry span tags. This span is
