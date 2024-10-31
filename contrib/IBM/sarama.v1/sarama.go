@@ -74,7 +74,8 @@ func WrapPartitionConsumer(pc sarama.PartitionConsumer, opts ...Option) sarama.P
 			// kafka supports headers, so try to extract a span context
 			carrier := NewConsumerMessageCarrier(msg)
 			if spanctx, err := tracer.Extract(carrier); err == nil {
-				opts = append(opts, tracer.ChildOfWithExtractedSpanLinks(spanctx))
+				opts = append(opts, tracer.WithExtractedSpanLinks(spanctx))
+				opts = append(opts, tracer.ChildOf(spanctx))
 			}
 			next := tracer.StartSpan(cfg.consumerSpanName, opts...)
 			// reinject the span context so consumers can pick it up
@@ -298,7 +299,8 @@ func startProducerSpan(cfg *config, version sarama.KafkaVersion, msg *sarama.Pro
 	}
 	// if there's a span context in the headers, use that as the parent
 	if spanctx, err := tracer.Extract(carrier); err == nil {
-		opts = append(opts, tracer.ChildOfWithExtractedSpanLinks(spanctx))
+		opts = append(opts, tracer.WithExtractedSpanLinks(spanctx))
+		opts = append(opts, tracer.ChildOf(spanctx))
 	}
 	span := tracer.StartSpan(cfg.producerSpanName, opts...)
 	if version.IsAtLeast(sarama.V0_11_0_0) {

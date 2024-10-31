@@ -62,7 +62,8 @@ func Middleware(opts ...Option) func(c *fiber.Ctx) error {
 			}
 		}
 		if spanctx, err := tracer.Extract(tracer.HTTPHeadersCarrier(h)); err == nil {
-			opts = append(opts, tracer.ChildOfWithExtractedSpanLinks(spanctx))
+			opts = append(opts, tracer.WithExtractedSpanLinks(spanctx))
+			opts = append(opts, tracer.ChildOf(spanctx))
 		}
 		opts = append(opts, cfg.spanOpts...)
 		opts = append(opts,

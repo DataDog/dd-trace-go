@@ -90,7 +90,8 @@ func (wc *wrappedClient) Do(req *http.Request) (*http.Response, error) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, wc.cfg.analyticsRate))
 	}
 	if spanctx, err := tracer.Extract(tracer.HTTPHeadersCarrier(req.Header)); err == nil {
-		opts = append(opts, tracer.ChildOfWithExtractedSpanLinks(spanctx))
+		opts = append(opts, tracer.WithExtractedSpanLinks(spanctx))
+		opts = append(opts, tracer.ChildOf(spanctx))
 	}
 
 	span, ctx := tracer.StartSpanFromContext(req.Context(), wc.cfg.spanName, opts...)
@@ -139,7 +140,8 @@ func WrapServer(h http.Handler, opts ...Option) http.Handler {
 			spanOpts = append(spanOpts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
 		}
 		if spanctx, err := tracer.Extract(tracer.HTTPHeadersCarrier(r.Header)); err == nil {
-			spanOpts = append(spanOpts, tracer.ChildOfWithExtractedSpanLinks(spanctx))
+			spanOpts = append(spanOpts, tracer.WithExtractedSpanLinks(spanctx))
+			spanOpts = append(spanOpts, tracer.ChildOf(spanctx))
 		}
 		span, ctx := tracer.StartSpanFromContext(r.Context(), "twirp.handler", spanOpts...)
 		defer span.Finish()

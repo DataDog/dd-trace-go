@@ -77,7 +77,8 @@ func (tr *KafkaTracer) StartConsumeSpan(msg Message) ddtrace.Span {
 	// kafka supports headers, so try to extract a span context
 	carrier := MessageCarrier{msg: msg}
 	if spanctx, err := tracer.Extract(carrier); err == nil {
-		opts = append(opts, tracer.ChildOfWithExtractedSpanLinks(spanctx))
+		opts = append(opts, tracer.WithExtractedSpanLinks(spanctx))
+		opts = append(opts, tracer.ChildOf(spanctx))
 	}
 	span, _ := tracer.StartSpanFromContext(tr.ctx, tr.consumerSpanName, opts...)
 	// reinject the span context so consumers can pick it up
