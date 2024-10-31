@@ -15,6 +15,7 @@ import (
 	"runtime"
 	"strings"
 
+	pb "github.com/DataDog/datadog-agent/pkg/proto/pbgo/trace"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/constants"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
@@ -186,7 +187,7 @@ func (t *ciVisibilityTransport) send(p *payload) (body io.ReadCloser, err error)
 // Returns:
 //
 //	An error indicating that stats are not supported.
-func (t *ciVisibilityTransport) sendStats(*statsPayload) error {
+func (t *ciVisibilityTransport) sendStats(*pb.ClientStatsPayload) error {
 	// Stats are not supported by CI Visibility agentless / EVP proxy.
 	return nil
 }
