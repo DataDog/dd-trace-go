@@ -89,6 +89,7 @@ func Is[T any](ctx context.Context, n ast.Node, pass *analysis.Pass) (context.Co
 // IsFuncCall returns true if the node is a function call.
 // The function call expression is stored in the context as "fn".
 // The package path of the function is stored as "pkg_path".
+// The parameters of the function are stored as "args".
 func IsFuncCall(ctx context.Context, n ast.Node, pass *analysis.Pass) (context.Context, bool) {
 	c, ok := n.(*ast.CallExpr)
 	if !ok {
@@ -103,6 +104,7 @@ func IsFuncCall(ctx context.Context, n ast.Node, pass *analysis.Pass) (context.C
 		return ctx, false
 	}
 	ctx = context.WithValue(ctx, "fn", fn)
+	ctx = context.WithValue(ctx, "args", c.Args)
 	ctx = context.WithValue(ctx, "pkg_path", fn.Pkg().Path())
 	return ctx, true
 }
