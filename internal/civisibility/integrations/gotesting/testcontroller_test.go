@@ -273,9 +273,8 @@ func runFlakyTestRetriesWithEarlyFlakyTestDetectionTests(m *testing.M) {
 	// 1 TestSkip
 	// 1 TestRetryWithPanic + 3 retry tests from testing_test.go
 	// 1 TestRetryWithFail + 3 retry tests from testing_test.go
-	// 1 TestRetryAlwaysFail + 10 retry tests from testing_test.go
 	// 1 TestNormalPassingAfterRetryAlwaysFail
-	// 11 TestEarlyFlakeDetection + 10 retries
+	// 1 TestEarlyFlakeDetection + 10 EFD retries
 	// 2 normal spans from testing_test.go
 
 	// check spans by resource name
@@ -294,19 +293,19 @@ func runFlakyTestRetriesWithEarlyFlakyTestDetectionTests(m *testing.M) {
 	checkSpansByResourceName(finishedSpans, "testing_test.go.TestRetryWithPanic", 4)
 	checkSpansByResourceName(finishedSpans, "testing_test.go.TestRetryWithFail", 4)
 	checkSpansByResourceName(finishedSpans, "testing_test.go.TestNormalPassingAfterRetryAlwaysFail", 1)
-	checkSpansByResourceName(finishedSpans, "testing_test.go.TestEarlyFlakeDetection", 21)
+	checkSpansByResourceName(finishedSpans, "testing_test.go.TestEarlyFlakeDetection", 11)
 
 	// check spans by tag
-	checkSpansByTagName(finishedSpans, constants.TestIsNew, 21)
-	checkSpansByTagName(finishedSpans, constants.TestIsRetry, 26)
+	checkSpansByTagName(finishedSpans, constants.TestIsNew, 11)
+	checkSpansByTagName(finishedSpans, constants.TestIsRetry, 16)
 
 	// check spans by type
 	checkSpansByType(finishedSpans,
-		48,
+		38,
 		1,
 		1,
 		2,
-		44,
+		34,
 		0)
 
 	fmt.Println("All tests passed.")

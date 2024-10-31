@@ -75,8 +75,8 @@ func createTest(suite *tslvTestSuite, name string, startTime time.Time) DdTest {
 		},
 	}
 
-	// Ensure to close everything before CI visibility exits. In CI visibility mode, we try to never lose data.
-	PushCiVisibilityCloseAction(func() { t.Close(ResultStatusFail) })
+	// Note: if the process is killed some tests will not be closed and will be lost. This is a known limitation.
+	// We will not close it because there's no a good test status to report in this case, and we don't want to report a false positive (pass, fail, or skip).
 
 	return t
 }
