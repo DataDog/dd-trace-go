@@ -61,13 +61,10 @@ func (s *Span) Tag(k string) interface{} {
 		return v
 	}
 	v, ok := s.m[k]
-	if !ok {
-		return nil
-	}
-	if v != nil {
+	if ok {
 		return v
 	}
-	return v
+	return nil
 }
 
 func (s *Span) Tags() map[string]interface{} {

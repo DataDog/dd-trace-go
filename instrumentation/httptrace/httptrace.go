@@ -17,7 +17,6 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
-	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/listener/httpsec"
 )
 
@@ -143,11 +142,4 @@ func HeaderTagsFromRequest(req *http.Request, headerTags instrumentation.HeaderT
 			cfg.Tags[t.key] = t.val
 		}
 	}
-}
-
-// This is a workaround needed because of v2 changes that prevents contribs from accessing
-// the internal directory. This function should not be used if the internal directory
-// can be accessed.
-func GetBoolEnv(key string, def bool) bool {
-	return internal.BoolEnv(key, def)
 }

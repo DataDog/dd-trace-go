@@ -311,16 +311,16 @@ func (p *Processor) flushInput() {
 func (p *Processor) run(tick <-chan time.Time) {
 	for {
 		select {
+		case <-p.stop:
+			// drop in flight payloads on the input channel
+			p.sendToAgent(p.flush(time.Now().Add(bucketDuration * 10)))
+			return
 		case now := <-tick:
 			p.sendToAgent(p.flush(now))
 		case done := <-p.flushRequest:
 			p.flushInput()
 			p.sendToAgent(p.flush(time.Now().Add(bucketDuration * 10)))
 			close(done)
-		case <-p.stop:
-			// drop in flight payloads on the input channel
-			p.sendToAgent(p.flush(time.Now().Add(bucketDuration * 10)))
-			return
 		default:
 			s := p.in.pop()
 			if s == nil {

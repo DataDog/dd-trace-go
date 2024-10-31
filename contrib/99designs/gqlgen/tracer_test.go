@@ -260,7 +260,7 @@ func TestInterceptOperation(t *testing.T) {
 		assertions.ElementsMatch(resNames, []string{readOp, parsingOp, validationOp, `mutation Name { name }`})
 		assertions.ElementsMatch(opNames, []string{readOp, parsingOp, validationOp, "graphql.mutation"})
 		assertions.NotNil(root)
-		assertions.NotNil(root.Tag(ext.Error))
+		assertions.NotNil(root.Tag(ext.ErrorMsg))
 	})
 
 	t.Run("intercept operation with graphQL Subscription", func(t *testing.T) {

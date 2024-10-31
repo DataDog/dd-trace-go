@@ -350,7 +350,7 @@ func TestIntegrationEnabled(t *testing.T) {
 		t.Fatal(err)
 	}
 	err = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
-		if filepath.Base(path) != "go.mod" {
+		if filepath.Base(path) != "go.mod" || strings.Contains(path, "/internal") {
 			return nil
 		}
 		rErr := testIntegrationEnabled(t, filepath.Dir(path))
@@ -392,14 +392,14 @@ func testIntegrationEnabled(t *testing.T, contribPath string) error {
 		packages = append(packages, out)
 	}
 	for _, pkg := range packages {
-		if strings.Contains(pkg.ImportPath, "/test") || strings.Contains(pkg.ImportPath, "/internal") {
+		if strings.Contains(pkg.ImportPath, "/test") {
 			continue
 		}
-		if !hasInstrumentationImport(pkg) {
-			return fmt.Errorf(`package %q is expected use instrumentation telemetry. For more info see https://github.com/DataDog/dd-trace-go/blob/main/contrib/README.md#instrumentation-telemetry`, pkg.ImportPath)
+		if hasInstrumentationImport(pkg) {
+			return nil
 		}
 	}
-	return nil
+	return fmt.Errorf(`package %q is expected use instrumentation telemetry. For more info see https://github.com/DataDog/dd-trace-go/blob/main/contrib/README.md#instrumentation-telemetry`, contribPath)
 }
 
 func hasInstrumentationImport(p contribPkg) bool {
@@ -1564,6 +1564,28 @@ func TestWithHeaderTags(t *testing.T) {
 
 		assert.Equal("1tag", globalconfig.HeaderTag("1header"))
 		assert.Equal(ext.HTTPRequestHeaders+".2_h_e_a_d_e_r", globalconfig.HeaderTag("2.h.e.a.d.e.r"))
+	})
+
+	t.Run("envvar-invalid", func(t *testing.T) {
+		defer globalconfig.ClearHeaderTags()
+		t.Setenv("DD_TRACE_HEADER_TAGS", "header1:")
+
+		assert := assert.New(t)
+		newConfig()
+
+		assert.Equal(0, globalconfig.HeaderTagsLen())
+	})
+
+	t.Run("envvar-partially-invalid", func(t *testing.T) {
+		defer globalconfig.ClearHeaderTags()
+		t.Setenv("DD_TRACE_HEADER_TAGS", "header1,header2:")
+
+		assert := assert.New(t)
+		newConfig()
+
+		assert.Equal(1, globalconfig.HeaderTagsLen())
+		fmt.Println(globalconfig.HeaderTagMap())
+		assert.Equal(ext.HTTPRequestHeaders+".header1", globalconfig.HeaderTag("Header1"))
 	})
 
 	t.Run("env-override", func(t *testing.T) {

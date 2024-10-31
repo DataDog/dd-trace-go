@@ -11,12 +11,12 @@ import (
 	"net/http/httptest"
 	"runtime"
 	"slices"
+	"strconv"
 	"testing"
 
-	ddhttp "github.com/DataDog/dd-trace-go/contrib/net/http/v2"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
-	ddtracer "github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 
 	"github.com/stretchr/testify/assert"
@@ -76,6 +76,60 @@ func Test_Foo(gt *testing.T) {
 	}
 }
 
+// Code inspired by contrib/net/http/roundtripper.go
+// It's not possible to import `contrib/net/http` package because it causes a circular dependency.
+// This is a simplified version of the code.
+type roundTripper struct {
+	base  http.RoundTripper
+	namer func(*http.Request) string
+}
+
+func (rt *roundTripper) RoundTrip(req *http.Request) (res *http.Response, err error) {
+	resourceName := rt.namer(req)
+	// Make a copy of the URL so we don't modify the outgoing request
+	url := *req.URL
+	url.User = nil // Do not include userinfo in the HTTPURL tag.
+	opts := []tracer.StartSpanOption{
+		tracer.SpanType(ext.SpanTypeHTTP),
+		tracer.ResourceName(resourceName),
+		tracer.Tag(ext.HTTPMethod, req.Method),
+		tracer.Tag(ext.HTTPURL, url.String()),
+		tracer.Tag(ext.SpanKind, ext.SpanKindClient),
+		tracer.Tag(ext.NetworkDestinationName, url.Hostname()),
+	}
+	span, ctx := tracer.StartSpanFromContext(req.Context(), "", opts...)
+	defer func() {
+		span.Finish()
+	}()
+	r2 := req.Clone(ctx)
+	res, err = rt.base.RoundTrip(r2)
+	if err != nil {
+		span.SetTag("http.errors", err.Error())
+	} else {
+		span.SetTag(ext.HTTPCode, strconv.Itoa(res.StatusCode))
+		// treat 5XX as errors
+		if res.StatusCode/100 == 5 {
+			span.SetTag("http.errors", res.Status)
+			span.SetTag(ext.Error, fmt.Errorf("%d: %s", res.StatusCode, http.StatusText(res.StatusCode)))
+		}
+	}
+	return res, err
+}
+
+// Code from contrib/net/http/roundtripper.go
+// It's not possible to import `contrib/net/http` package because it causes a circular dependency.
+func wrapRoundTripper(rt http.RoundTripper, namer func(*http.Request) string) http.RoundTripper {
+	if namer == nil {
+		namer = func(req *http.Request) string {
+			return ""
+		}
+	}
+	return &roundTripper{
+		base:  rt,
+		namer: namer,
+	}
+}
+
 // TestWithExternalCalls demonstrates testing with external HTTP calls.
 func TestWithExternalCalls(gt *testing.T) {
 	assertTest(gt)
@@ -94,7 +148,7 @@ func TestWithExternalCalls(gt *testing.T) {
 		ctx := (*T)(t).Context()
 
 		// Wrap the default HTTP transport for tracing
-		rt := ddhttp.WrapRoundTripper(http.DefaultTransport)
+		rt := wrapRoundTripper(http.DefaultTransport, nil)
 		client := &http.Client{
 			Transport: rt,
 		}
@@ -120,7 +174,7 @@ func TestWithExternalCalls(gt *testing.T) {
 		// we can also add custom tags to the test span by retrieving the
 		// context and call the `ddtracer.SpanFromContext` api
 		ctx := (*T)(t).Context()
-		span, _ := ddtracer.SpanFromContext(ctx)
+		span, _ := tracer.SpanFromContext(ctx)
 
 		// Custom namer function for the HTTP request
 		customNamer := func(req *http.Request) string {
@@ -131,7 +185,7 @@ func TestWithExternalCalls(gt *testing.T) {
 			return value
 		}
 
-		rt := ddhttp.WrapRoundTripper(http.DefaultTransport, ddhttp.RTWithResourceNamer(customNamer))
+		rt := wrapRoundTripper(http.DefaultTransport, customNamer)
 		client := &http.Client{
 			Transport: rt,
 		}

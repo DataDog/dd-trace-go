@@ -279,7 +279,7 @@ func TestWithInnerFunc(t *testing.T) {
 }
 
 func testAssertions(assert *assert.Assertions, now time.Time, testSpan *mocktracer.Span) {
-	assert.Equal(now, testSpan.StartTime())
+	assert.Equal(now.Unix(), testSpan.StartTime().Unix())
 	assert.Equal("my-module-framework.test", testSpan.OperationName())
 
 	tags := map[string]interface{}{
@@ -306,7 +306,7 @@ func testAssertions(assert *assert.Assertions, now time.Time, testSpan *mocktrac
 	assert.Contains(spanTags, constants.TestSourceStartLine)
 	assert.Contains(spanTags, constants.TestSourceEndLine)
 	// make sure the startLine < endLine
-	assert.Less(spanTags[constants.TestSourceStartLine].(int), spanTags[constants.TestSourceEndLine].(int))
+	assert.Less(spanTags[constants.TestSourceStartLine].(float64), spanTags[constants.TestSourceEndLine].(float64))
 
 	commonAssertions(assert, testSpan)
 }

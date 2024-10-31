@@ -13,7 +13,7 @@ import (
 	kafkatrace "github.com/DataDog/dd-trace-go/contrib/segmentio/kafka-go/v2"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 
-	kafka "github.com/segmentio/kafka-go"
+	"github.com/segmentio/kafka-go"
 )
 
 func ExampleWriter() {

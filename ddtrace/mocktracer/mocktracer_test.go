@@ -195,6 +195,7 @@ func TestTracerInject(t *testing.T) {
 
 	t.Run("ok", func(t *testing.T) {
 		mt := newMockTracer()
+		defer mt.Stop()
 		assert := assert.New(t)
 
 		sp := mt.StartSpan("op", tracer.WithSpanID(2))
@@ -300,6 +301,7 @@ func TestTracerExtract(t *testing.T) {
 		assert := assert.New(t)
 
 		mt := newMockTracer()
+		defer mt.Stop()
 		sp := mt.StartSpan("op", tracer.WithSpanID(2))
 		sp.SetTag(ext.ManualDrop, true)
 		sp.SetBaggageItem("a", "B")

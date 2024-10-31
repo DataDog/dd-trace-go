@@ -103,7 +103,6 @@ func runFlakyTestRetriesTests(m *testing.M) {
 	// 1 TestRetryAlwaysFail + 10 retry tests from testing_test.go
 	// 1 TestNormalPassingAfterRetryAlwaysFail
 	// 1 TestEarlyFlakeDetection
-	// 2 normal spans from testing_test.go
 
 	// check spans by resource name
 	checkSpansByResourceName(finishedSpans, "github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting", 1)
@@ -438,11 +437,6 @@ func setUpHttpServer(flakyRetriesEnabled bool, earlyFlakyDetectionEnabled bool, 
 
 			fmt.Printf("MockApi sending response: %v\n", response)
 			json.NewEncoder(w).Encode(&response)
-		} else if r.URL.Path == "/api/v2/git/repository/search_commits" {
-			w.Header().Set("Content-Type", "application/json")
-			w.Write([]byte("{}"))
-		} else if r.URL.Path == "/api/v2/git/repository/packfile" {
-			w.WriteHeader(http.StatusAccepted)
 		} else {
 			http.NotFound(w, r)
 		}
