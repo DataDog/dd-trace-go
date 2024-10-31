@@ -212,6 +212,10 @@ func (s *Span) SetTag(key string, value interface{}) {
 		return
 	}
 
+	if v, ok := value.([]byte); ok {
+		s.setMeta(key, string(v))
+	}
+
 	if value != nil {
 		// Arrays will be translated to dot notation. e.g.
 		// {"myarr.0": "foo", "myarr.1": "bar"}

@@ -277,8 +277,7 @@ func TestCustomTags(t *testing.T) {
 	s := spans[0]
 
 	assert.Equal(t, "bar", s.Tag("foo"))
-	assert.NotNil(t, s.Tag("key.0"))
-	// assert.Equal(t, []byte("key1"), s.Tag("key"))
+	assert.Equal(t, "key1", s.Tag("key"))
 }
 
 type consumerActionFn func(c *Consumer) (*kafka.Message, error)

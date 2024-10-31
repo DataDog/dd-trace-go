@@ -276,8 +276,7 @@ func TestCustomTags(t *testing.T) {
 	s := spans[0]
 
 	assert.Equal(t, "bar", s.Tag("foo"))
-	assert.NotNil(t, s.Tag("key.0")) // TODO(hannahkm): confirm how this test should run
-	// assert.Equal(t, []byte("key1"), s.Tag("key"))
+	assert.Equal(t, "key1", s.Tag("key"))
 }
 
 // Test we don't leak goroutines and properly close the span when Produce returns an error
