@@ -162,14 +162,15 @@ func applyAdditionalFeaturesToTestFunc(f func(*testing.T), testInfo *commonInfo)
 	// Target function
 	targetFunc := f
 
-	// Flaky test retries
-	if settings.FlakyTestRetriesEnabled {
-		targetFunc = applyFlakyTestRetriesAdditionalFeature(targetFunc)
+	// Early flake detection
+	var earlyFlakeDetectionApplied bool
+	if settings.EarlyFlakeDetection.Enabled {
+		targetFunc, earlyFlakeDetectionApplied = applyEarlyFlakeDetectionAdditionalFeature(testInfo, targetFunc, settings)
 	}
 
-	// Early flake detection
-	if settings.EarlyFlakeDetection.Enabled {
-		targetFunc = applyEarlyFlakeDetectionAdditionalFeature(testInfo, targetFunc, settings)
+	// Flaky test retries (only if EFD was not applied and if the feature is enabled)
+	if !earlyFlakeDetectionApplied && settings.FlakyTestRetriesEnabled {
+		targetFunc, _ = applyFlakyTestRetriesAdditionalFeature(targetFunc)
 	}
 
 	// Register the instrumented func as an internal instrumented func (to avoid double instrumentation)
@@ -178,7 +179,7 @@ func applyAdditionalFeaturesToTestFunc(f func(*testing.T), testInfo *commonInfo)
 }
 
 // applyFlakyTestRetriesAdditionalFeature applies the flaky test retries feature as a wrapper of a func(*testing.T)
-func applyFlakyTestRetriesAdditionalFeature(targetFunc func(*testing.T)) func(*testing.T) {
+func applyFlakyTestRetriesAdditionalFeature(targetFunc func(*testing.T)) (func(*testing.T), bool) {
 	flakyRetrySettings := integrations.GetFlakyRetriesSettings()
 
 	// If the retry count per test is > 1 and if we still have remaining total retry count
@@ -235,13 +236,13 @@ func applyFlakyTestRetriesAdditionalFeature(targetFunc func(*testing.T)) func(*t
 				},
 				execMetaAdjust: nil, // No execMetaAdjust needed
 			})
-		}
+		}, true
 	}
-	return targetFunc
+	return targetFunc, false
 }
 
 // applyEarlyFlakeDetectionAdditionalFeature applies the early flake detection feature as a wrapper of a func(*testing.T)
-func applyEarlyFlakeDetectionAdditionalFeature(testInfo *commonInfo, targetFunc func(*testing.T), settings *net.SettingsResponseData) func(*testing.T) {
+func applyEarlyFlakeDetectionAdditionalFeature(testInfo *commonInfo, targetFunc func(*testing.T), settings *net.SettingsResponseData) (func(*testing.T), bool) {
 	earlyFlakeDetectionData := integrations.GetEarlyFlakeDetectionSettings()
 	if earlyFlakeDetectionData != nil &&
 		len(earlyFlakeDetectionData.Tests) > 0 {
@@ -327,10 +328,10 @@ func applyEarlyFlakeDetectionAdditionalFeature(testInfo *commonInfo, targetFunc 
 						execMeta.isANewTest = true
 					},
 				})
-			}
+			}, true
 		}
 	}
-	return targetFunc
+	return targetFunc, false
 }
 
 // runTestWithRetry encapsulates the common retry logic for test functions.
