@@ -44,6 +44,22 @@ func copyFieldUsingPointers[V any](source any, target any, fieldName string) err
 		return err
 	}
 
+	if targetPtr == nil {
+		return errors.New("target pointer is nil")
+	}
+
+	if sourcePtr == nil {
+		return errors.New("source pointer is nil")
+	}
+
+	if (*V)(targetPtr) == nil {
+		return errors.New("target pointer value is nil")
+	}
+
+	if (*V)(sourcePtr) == nil {
+		return errors.New("source pointer value is nil")
+	}
+
 	*(*V)(targetPtr) = *(*V)(sourcePtr)
 	return nil
 }
@@ -60,28 +76,47 @@ type commonPrivateFields struct {
 	failed  *bool           // Test or benchmark has failed.
 	skipped *bool           // Test or benchmark has been skipped.
 	parent  *unsafe.Pointer // Parent common
+	barrier *chan bool      // Barrier for parallel tests
 }
 
 // AddLevel increase or decrease the testing.common.level field value, used by
 // testing.B to create the name of the benchmark test
 func (c *commonPrivateFields) AddLevel(delta int) int {
+	if c.mu == nil {
+		return 0
+	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if c.level == nil {
+		return 0
+	}
 	*c.level = *c.level + delta
 	return *c.level
 }
 
 // SetFailed set the boolean value in testing.common.failed field value
 func (c *commonPrivateFields) SetFailed(value bool) {
+	if c.mu == nil {
+		return
+	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if c.failed == nil {
+		return
+	}
 	*c.failed = value
 }
 
 // SetSkipped set the boolean value in testing.common.skipped field value
 func (c *commonPrivateFields) SetSkipped(value bool) {
+	if c.mu == nil {
+		return
+	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if c.skipped == nil {
+		return
+	}
 	*c.skipped = value
 }
 
@@ -92,7 +127,7 @@ func (c *commonPrivateFields) SetSkipped(value bool) {
 // getInternalTestArray gets the pointer to the testing.InternalTest array inside a
 // testing.M instance containing all the "root" tests
 func getInternalTestArray(m *testing.M) *[]testing.InternalTest {
-	if ptr, err := getFieldPointerFrom(m, "tests"); err == nil {
+	if ptr, err := getFieldPointerFrom(m, "tests"); err == nil && ptr != nil {
 		return (*[]testing.InternalTest)(ptr)
 	}
 	return nil
@@ -104,23 +139,26 @@ func getTestPrivateFields(t *testing.T) *commonPrivateFields {
 	testFields := &commonPrivateFields{}
 
 	// testing.common
-	if ptr, err := getFieldPointerFrom(t, "mu"); err == nil {
+	if ptr, err := getFieldPointerFrom(t, "mu"); err == nil && ptr != nil {
 		testFields.mu = (*sync.RWMutex)(ptr)
 	}
-	if ptr, err := getFieldPointerFrom(t, "level"); err == nil {
+	if ptr, err := getFieldPointerFrom(t, "level"); err == nil && ptr != nil {
 		testFields.level = (*int)(ptr)
 	}
-	if ptr, err := getFieldPointerFrom(t, "name"); err == nil {
+	if ptr, err := getFieldPointerFrom(t, "name"); err == nil && ptr != nil {
 		testFields.name = (*string)(ptr)
 	}
-	if ptr, err := getFieldPointerFrom(t, "failed"); err == nil {
+	if ptr, err := getFieldPointerFrom(t, "failed"); err == nil && ptr != nil {
 		testFields.failed = (*bool)(ptr)
 	}
-	if ptr, err := getFieldPointerFrom(t, "skipped"); err == nil {
+	if ptr, err := getFieldPointerFrom(t, "skipped"); err == nil && ptr != nil {
 		testFields.skipped = (*bool)(ptr)
 	}
-	if ptr, err := getFieldPointerFrom(t, "parent"); err == nil {
+	if ptr, err := getFieldPointerFrom(t, "parent"); err == nil && ptr != nil {
 		testFields.parent = (*unsafe.Pointer)(ptr)
+	}
+	if ptr, err := getFieldPointerFrom(t, "barrier"); err == nil {
+		testFields.barrier = (*chan bool)(ptr)
 	}
 
 	return testFields
@@ -136,20 +174,23 @@ func getTestParentPrivateFields(t *testing.T) *commonPrivateFields {
 		testFields := &commonPrivateFields{}
 
 		// testing.common
-		if ptr, err := getFieldPointerFromValue(value, "mu"); err == nil {
+		if ptr, err := getFieldPointerFromValue(value, "mu"); err == nil && ptr != nil {
 			testFields.mu = (*sync.RWMutex)(ptr)
 		}
-		if ptr, err := getFieldPointerFromValue(value, "level"); err == nil {
+		if ptr, err := getFieldPointerFromValue(value, "level"); err == nil && ptr != nil {
 			testFields.level = (*int)(ptr)
 		}
-		if ptr, err := getFieldPointerFromValue(value, "name"); err == nil {
+		if ptr, err := getFieldPointerFromValue(value, "name"); err == nil && ptr != nil {
 			testFields.name = (*string)(ptr)
 		}
-		if ptr, err := getFieldPointerFromValue(value, "failed"); err == nil {
+		if ptr, err := getFieldPointerFromValue(value, "failed"); err == nil && ptr != nil {
 			testFields.failed = (*bool)(ptr)
 		}
-		if ptr, err := getFieldPointerFromValue(value, "skipped"); err == nil {
+		if ptr, err := getFieldPointerFromValue(value, "skipped"); err == nil && ptr != nil {
 			testFields.skipped = (*bool)(ptr)
+		}
+		if ptr, err := getFieldPointerFromValue(value, "barrier"); err == nil {
+			testFields.barrier = (*chan bool)(ptr)
 		}
 
 		return testFields
@@ -165,8 +206,14 @@ type contextMatcher struct {
 
 // ClearSubNames clears the subname map used for creating unique names for subtests
 func (c *contextMatcher) ClearSubNames() {
+	if c.mu == nil {
+		return
+	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if c.subNames == nil {
+		return
+	}
 	*c.subNames = map[string]int32{}
 }
 
@@ -186,10 +233,10 @@ func getTestContextMatcherPrivateFields(t *testing.T) *contextMatcher {
 	matchMember = matchMember.Elem()
 
 	fields := &contextMatcher{}
-	if ptr, err := getFieldPointerFromValue(matchMember, "mu"); err == nil {
+	if ptr, err := getFieldPointerFromValue(matchMember, "mu"); err == nil && ptr != nil {
 		fields.mu = (*sync.RWMutex)(ptr)
 	}
-	if ptr, err := getFieldPointerFromValue(matchMember, "subNames"); err == nil {
+	if ptr, err := getFieldPointerFromValue(matchMember, "subNames"); err == nil && ptr != nil {
 		fields.subNames = (*map[string]int32)(ptr)
 	}
 
@@ -244,7 +291,7 @@ func copyTestWithoutParent(source *testing.T, target *testing.T) {
 // getInternalBenchmarkArray gets the pointer to the testing.InternalBenchmark array inside
 // a testing.M instance containing all the "root" benchmarks
 func getInternalBenchmarkArray(m *testing.M) *[]testing.InternalBenchmark {
-	if ptr, err := getFieldPointerFrom(m, "benchmarks"); err == nil {
+	if ptr, err := getFieldPointerFrom(m, "benchmarks"); err == nil && ptr != nil {
 		return (*[]testing.InternalBenchmark)(ptr)
 	}
 	return nil
@@ -267,30 +314,30 @@ func getBenchmarkPrivateFields(b *testing.B) *benchmarkPrivateFields {
 	}
 
 	// testing.common
-	if ptr, err := getFieldPointerFrom(b, "mu"); err == nil {
+	if ptr, err := getFieldPointerFrom(b, "mu"); err == nil && ptr != nil {
 		benchFields.mu = (*sync.RWMutex)(ptr)
 	}
-	if ptr, err := getFieldPointerFrom(b, "level"); err == nil {
+	if ptr, err := getFieldPointerFrom(b, "level"); err == nil && ptr != nil {
 		benchFields.level = (*int)(ptr)
 	}
-	if ptr, err := getFieldPointerFrom(b, "name"); err == nil {
+	if ptr, err := getFieldPointerFrom(b, "name"); err == nil && ptr != nil {
 		benchFields.name = (*string)(ptr)
 	}
-	if ptr, err := getFieldPointerFrom(b, "failed"); err == nil {
+	if ptr, err := getFieldPointerFrom(b, "failed"); err == nil && ptr != nil {
 		benchFields.failed = (*bool)(ptr)
 	}
-	if ptr, err := getFieldPointerFrom(b, "skipped"); err == nil {
+	if ptr, err := getFieldPointerFrom(b, "skipped"); err == nil && ptr != nil {
 		benchFields.skipped = (*bool)(ptr)
 	}
-	if ptr, err := getFieldPointerFrom(b, "parent"); err == nil {
+	if ptr, err := getFieldPointerFrom(b, "parent"); err == nil && ptr != nil {
 		benchFields.parent = (*unsafe.Pointer)(ptr)
 	}
 
 	// testing.B
-	if ptr, err := getFieldPointerFrom(b, "benchFunc"); err == nil {
+	if ptr, err := getFieldPointerFrom(b, "benchFunc"); err == nil && ptr != nil {
 		benchFields.benchFunc = (*func(b *testing.B))(ptr)
 	}
-	if ptr, err := getFieldPointerFrom(b, "result"); err == nil {
+	if ptr, err := getFieldPointerFrom(b, "result"); err == nil && ptr != nil {
 		benchFields.result = (*testing.BenchmarkResult)(ptr)
 	}
 

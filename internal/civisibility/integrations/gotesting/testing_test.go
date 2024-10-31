@@ -117,15 +117,12 @@ func TestRetryWithFail(t *testing.T) {
 	}
 }
 
-func TestRetryAlwaysFail(t *testing.T) {
-	t.Parallel()
-	t.Fatal("Always fail to test the auto retries feature")
-}
-
+//dd:test.unskippable
 func TestNormalPassingAfterRetryAlwaysFail(t *testing.T) {}
 
 var run int
 
+//dd:test.unskippable
 func TestEarlyFlakeDetection(t *testing.T) {
 	run++
 	fmt.Printf(" Run: %d", run)
