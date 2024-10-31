@@ -259,3 +259,17 @@ func setup(t *testing.T, customProp Propagator) string {
 	require.Len(t, tp.Logs(), 2)
 	return tp.Logs()[1]
 }
+
+func TestAgentURL(t *testing.T) {
+	assert := assert.New(t)
+	tp := new(log.RecordLogger)
+	tracer := newTracer(WithLogger(tp), WithUDS("var/run/datadog/apm.socket"))
+	defer tracer.Stop()
+	tp.Reset()
+	tp.Ignore("appsec: ", telemetry.LogPrefix)
+	logStartup(tracer)
+	for _, log := range tp.Logs() {
+		fmt.Printf("hello, %v\n\n", log)
+	}
+	assert.Regexp(`"agent_url":"unix://var/run/datadog/apm.socket"`, tp.Logs()[1])
+}
