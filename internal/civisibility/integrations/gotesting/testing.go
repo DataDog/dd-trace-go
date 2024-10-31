@@ -217,13 +217,18 @@ func (ddm *M) executeInternalTest(testInfo *testingTInfo) func(*testing.T) {
 
 		// Check if the test needs to be skipped by ITR
 		if testSkippedByITR {
-			test.SetTag(constants.TestSkippedByITR, "true")
-			test.CloseWithFinishTimeAndSkipReason(integrations.ResultStatusSkip, time.Now(), constants.SkippedByITRReason)
-			session.SetTag(constants.ITRTestsSkipped, "true")
-			session.SetTag(constants.ITRTestsSkippingCount, numOfTestsSkipped.Add(1))
-			checkModuleAndSuite(module, suite)
-			t.Skip(constants.SkippedByITRReason)
-			return
+			// check if the test was marked as unskippable
+			if test.Context().Value(constants.TestUnskippable) != true {
+				test.SetTag(constants.TestSkippedByITR, "true")
+				test.CloseWithFinishTimeAndSkipReason(integrations.ResultStatusSkip, time.Now(), constants.SkippedByITRReason)
+				session.SetTag(constants.ITRTestsSkipped, "true")
+				session.SetTag(constants.ITRTestsSkippingCount, numOfTestsSkipped.Add(1))
+				checkModuleAndSuite(module, suite)
+				t.Skip(constants.SkippedByITRReason)
+				return
+			} else {
+				test.SetTag(constants.TestForcedToRun, "true")
+			}
 		}
 
 		// Check if the coverage is enabled

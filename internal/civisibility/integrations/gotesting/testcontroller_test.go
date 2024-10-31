@@ -339,6 +339,10 @@ func runIntelligentTestRunnerTests(m *testing.M) {
 			Suite: "testing_test.go",
 			Name:  "TestRetryAlwaysFail",
 		},
+		{
+			Suite: "testing_test.go",
+			Name:  "TestNormalPassingAfterRetryAlwaysFail",
+		},
 	})
 	defer server.Close()
 
@@ -373,29 +377,34 @@ func runIntelligentTestRunnerTests(m *testing.M) {
 	checkSpansByResourceName(finishedSpans, "gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/integrations/gotesting", 1)
 	checkSpansByResourceName(finishedSpans, "reflections_test.go", 1)
 	checkSpansByResourceName(finishedSpans, "testing_test.go", 1)
-	itrTest01 := checkSpansByResourceName(finishedSpans, "testing_test.go.TestMyTest01", 1)
-	itrTest02 := checkSpansByResourceName(finishedSpans, "testing_test.go.TestMyTest02", 1)
+	checkSpansByResourceName(finishedSpans, "reflections_test.go.TestGetFieldPointerFrom", 1)
+	checkSpansByResourceName(finishedSpans, "reflections_test.go.TestGetInternalTestArray", 1)
+	checkSpansByResourceName(finishedSpans, "reflections_test.go.TestGetInternalBenchmarkArray", 1)
+	checkSpansByResourceName(finishedSpans, "reflections_test.go.TestCommonPrivateFields_AddLevel", 1)
+	checkSpansByResourceName(finishedSpans, "reflections_test.go.TestGetBenchmarkPrivateFields", 1)
+	checkSpansByResourceName(finishedSpans, "testing_test.go.TestMyTest01", 1)
+	checkSpansByResourceName(finishedSpans, "testing_test.go.TestMyTest02", 1)
 	checkSpansByResourceName(finishedSpans, "testing_test.go.TestMyTest02/sub01", 0)
 	checkSpansByResourceName(finishedSpans, "testing_test.go.TestMyTest02/sub01/sub03", 0)
-	itrTest03 := checkSpansByResourceName(finishedSpans, "testing_test.go.Test_Foo", 1)
+	checkSpansByResourceName(finishedSpans, "testing_test.go.Test_Foo", 1)
 	checkSpansByResourceName(finishedSpans, "testing_test.go.Test_Foo/yellow_should_return_color", 0)
 	checkSpansByResourceName(finishedSpans, "testing_test.go.Test_Foo/banana_should_return_fruit", 0)
 	checkSpansByResourceName(finishedSpans, "testing_test.go.Test_Foo/duck_should_return_animal", 0)
 	checkSpansByResourceName(finishedSpans, "testing_test.go.TestSkip", 1)
-	itrTest04 := checkSpansByResourceName(finishedSpans, "testing_test.go.TestRetryWithPanic", 1)
-	itrTest05 := checkSpansByResourceName(finishedSpans, "testing_test.go.TestRetryWithFail", 1)
+	checkSpansByResourceName(finishedSpans, "testing_test.go.TestRetryWithPanic", 1)
+	checkSpansByResourceName(finishedSpans, "testing_test.go.TestRetryWithFail", 1)
 	checkSpansByResourceName(finishedSpans, "testing_test.go.TestNormalPassingAfterRetryAlwaysFail", 1)
 	checkSpansByResourceName(finishedSpans, "testing_test.go.TestEarlyFlakeDetection", 1)
 
 	// check ITR spans
-	var itrTests []mocktracer.Span
-	itrTests = append(itrTests, itrTest01...)
-	itrTests = append(itrTests, itrTest02...)
-	itrTests = append(itrTests, itrTest03...)
-	itrTests = append(itrTests, itrTest04...)
-	itrTests = append(itrTests, itrTest05...)
-	checkSpansByTagValue(itrTests, constants.TestStatus, constants.TestStatusSkip, 5)
-	checkSpansByTagValue(itrTests, constants.TestSkipReason, constants.SkippedByITRReason, 5)
+	// 5 tests skipped by ITR and 1 normal skipped test
+	checkSpansByTagValue(finishedSpans, constants.TestStatus, constants.TestStatusSkip, 6)
+	checkSpansByTagValue(finishedSpans, constants.TestSkipReason, constants.SkippedByITRReason, 5)
+
+	// check unskippable tests
+	// 5 tests from unskippable suite in reflections_test.go and 2 unskippable tests from testing_test.go
+	checkSpansByTagValue(finishedSpans, constants.TestUnskippable, "true", 7)
+	checkSpansByTagValue(finishedSpans, constants.TestForcedToRun, "true", 1)
 
 	// check spans by type
 	checkSpansByType(finishedSpans,
