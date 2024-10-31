@@ -3,7 +3,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
-package consul
+package consul_test
 
 import (
 	"context"
@@ -12,8 +12,9 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
-
 	consul "github.com/hashicorp/consul/api"
+
+	ddconsul "github.com/DataDog/dd-trace-go/contrib/hashicorp/consul/v2"
 )
 
 // Here's an example illustrating a simple use case for interacting with consul with tracing enabled.
@@ -22,7 +23,7 @@ func Example() {
 	defer tracer.Stop()
 
 	// Get a new Consul client
-	client, err := NewClient(consul.DefaultConfig(), WithService("consul.example"))
+	client, err := ddconsul.NewClient(consul.DefaultConfig(), ddconsul.WithService("consul.example"))
 	if err != nil {
 		log.Fatal(err)
 	}
