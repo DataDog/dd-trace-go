@@ -31,6 +31,11 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
 	"github.com/aws/smithy-go/middleware"
 	smithyhttp "github.com/aws/smithy-go/transport/http"
+
+	eventBridgeTracer "gopkg.in/DataDog/dd-trace-go.v1/contrib/aws/internal/eventbridge"
+	sfnTracer "gopkg.in/DataDog/dd-trace-go.v1/contrib/aws/internal/sfn"
+	snsTracer "gopkg.in/DataDog/dd-trace-go.v1/contrib/aws/internal/sns"
+	sqsTracer "gopkg.in/DataDog/dd-trace-go.v1/contrib/aws/internal/sqs"
 )
 
 const componentName = "aws/aws-sdk-go-v2/aws"
@@ -104,6 +109,18 @@ func (mw *traceMiddleware) startTraceMiddleware(stack *middleware.Stack) error {
 			opts = append(opts, tracer.Tag(ext.EventSampleRate, mw.cfg.analyticsRate))
 		}
 		span, spanctx := tracer.StartSpanFromContext(ctx, spanName(serviceID, operation), opts...)
+
+		// Inject trace context
+		switch serviceID {
+		case "SQS":
+			sqsTracer.EnrichOperation(span, in, operation)
+		case "SNS":
+			snsTracer.EnrichOperation(span, in, operation)
+		case "EventBridge":
+			eventBridgeTracer.EnrichOperation(span, in, operation)
+		case "SFN":
+			sfnTracer.EnrichOperation(span, in, operation)
+		}
 
 		// Handle initialize and continue through the middleware chain.
 		out, metadata, err = next.HandleInitialize(spanctx, in)

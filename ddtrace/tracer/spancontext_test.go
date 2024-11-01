@@ -40,7 +40,7 @@ func TestNewSpanContextPushError(t *testing.T) {
 
 	tp := new(log.RecordLogger)
 	tp.Ignore("appsec: ", telemetry.LogPrefix)
-	_, _, _, stop := startTestTracer(t, WithLogger(tp), WithLambdaMode(true))
+	_, _, _, stop := startTestTracer(t, WithLogger(tp), WithLambdaMode(true), WithEnv("testEnv"))
 	defer stop()
 	parent := newBasicSpan("test1")                  // 1st span in trace
 	parent.context.trace.push(newBasicSpan("test2")) // 2nd span in trace
@@ -51,6 +51,7 @@ func TestNewSpanContextPushError(t *testing.T) {
 	child.context = newSpanContext(child, parent.context)
 
 	log.Flush()
+
 	assert.Contains(t, tp.Logs()[0], "ERROR: trace buffer full (2)")
 }
 
@@ -242,7 +243,7 @@ func TestSpanTracePushNoFinish(t *testing.T) {
 
 	tp := new(log.RecordLogger)
 	tp.Ignore("appsec: ", telemetry.LogPrefix)
-	_, _, _, stop := startTestTracer(t, WithLogger(tp), WithLambdaMode(true))
+	_, _, _, stop := startTestTracer(t, WithLogger(tp), WithLambdaMode(true), WithEnv("testEnv"))
 	defer stop()
 
 	buffer := newTrace()
@@ -756,7 +757,7 @@ func TestSpanContextPushFull(t *testing.T) {
 	traceMaxSize = 2
 	tp := new(log.RecordLogger)
 	tp.Ignore("appsec: ", telemetry.LogPrefix)
-	_, _, _, stop := startTestTracer(t, WithLogger(tp), WithLambdaMode(true))
+	_, _, _, stop := startTestTracer(t, WithLogger(tp), WithLambdaMode(true), WithEnv("testEnv"))
 	defer stop()
 
 	span1 := newBasicSpan("span1")

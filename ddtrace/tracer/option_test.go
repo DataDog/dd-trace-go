@@ -318,9 +318,7 @@ type contribPkg struct {
 
 func TestIntegrationEnabled(t *testing.T) {
 	body, err := exec.Command("go", "list", "-json", "../../contrib/...").Output()
-	if err != nil {
-		t.Fatalf(err.Error())
-	}
+	require.NoError(t, err, "go list command failed")
 	var packages []contribPkg
 	stream := json.NewDecoder(strings.NewReader(string(body)))
 	for stream.More() {
@@ -337,9 +335,7 @@ func TestIntegrationEnabled(t *testing.T) {
 		}
 		p := strings.Replace(pkg.Dir, pkg.Root, "../..", 1)
 		body, err := exec.Command("grep", "-rl", "MarkIntegrationImported", p).Output()
-		if err != nil {
-			t.Fatalf(err.Error())
-		}
+		require.NoError(t, err, "grep command failed")
 		assert.NotEqual(t, len(body), 0, "expected %s to call MarkIntegrationImported", pkg.Name)
 	}
 }
@@ -1390,6 +1386,28 @@ func TestWithHeaderTags(t *testing.T) {
 
 		assert.Equal("1tag", globalconfig.HeaderTag("1header"))
 		assert.Equal(ext.HTTPRequestHeaders+".2_h_e_a_d_e_r", globalconfig.HeaderTag("2.h.e.a.d.e.r"))
+	})
+
+	t.Run("envvar-invalid", func(t *testing.T) {
+		defer globalconfig.ClearHeaderTags()
+		t.Setenv("DD_TRACE_HEADER_TAGS", "header1:")
+
+		assert := assert.New(t)
+		newConfig()
+
+		assert.Equal(0, globalconfig.HeaderTagsLen())
+	})
+
+	t.Run("envvar-partially-invalid", func(t *testing.T) {
+		defer globalconfig.ClearHeaderTags()
+		t.Setenv("DD_TRACE_HEADER_TAGS", "header1,header2:")
+
+		assert := assert.New(t)
+		newConfig()
+
+		assert.Equal(1, globalconfig.HeaderTagsLen())
+		fmt.Println(globalconfig.HeaderTagMap())
+		assert.Equal(ext.HTTPRequestHeaders+".header1", globalconfig.HeaderTag("Header1"))
 	})
 
 	t.Run("env-override", func(t *testing.T) {

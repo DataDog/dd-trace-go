@@ -634,6 +634,11 @@ type agentFeatures struct {
 	// ignore indicates that we should ignore the agent in favor of user set values.
 	// It should only be used during testing.
 	ignore bool
+	// peerTags specifies precursor tags to aggregate stats on when client stats is enabled
+	peerTags []string
+
+	// defaultEnv is the trace-agent's default env, used for stats calculation if no env override is present
+	defaultEnv string
 }
 
 // HasFlag reports whether the agent has set the feat feature flag.
@@ -659,14 +664,19 @@ func loadAgentFeatures(agentDisabled bool, agentURL *url.URL, httpClient *http.C
 		return
 	}
 	defer resp.Body.Close()
+	type agentConfig struct {
+		defaultEnv string `json:"default_env"`
+	}
 	type infoResponse struct {
 		Endpoints     []string `json:"endpoints"`
 		ClientDropP0s bool     `json:"client_drop_p0s"`
 		FeatureFlags  []string `json:"feature_flags"`
+    PeerTags      []string    `json:"peer_tags"`
 		Config        struct {
 			StatsdPort int `json:"statsd_port"`
 		} `json:"config"`
 	}
+
 	var info infoResponse
 	if err := json.NewDecoder(resp.Body).Decode(&info); err != nil {
 		log.Error("Decoding features: %v", err)
@@ -1310,6 +1320,10 @@ func setHeaderTags(headerAsTags []string) bool {
 	globalconfig.ClearHeaderTags()
 	for _, h := range headerAsTags {
 		header, tag := normalizer.HeaderTag(h)
+		if len(header) == 0 || len(tag) == 0 {
+			log.Debug("Header-tag input is in unsupported format; dropping input value %v", h)
+			continue
+		}
 		globalconfig.SetHeaderTag(header, tag)
 	}
 	return true

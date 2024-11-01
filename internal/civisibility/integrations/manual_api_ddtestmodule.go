@@ -89,6 +89,11 @@ func createTestModule(session *tslvTestSession, name string, framework string, f
 	return module
 }
 
+// ModuleID returns the ID of the module.
+func (t *tslvTestModule) ModuleID() uint64 {
+	return t.moduleID
+}
+
 // Name returns the name of the test module.
 func (t *tslvTestModule) Name() string { return t.name }
 

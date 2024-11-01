@@ -48,6 +48,11 @@ type MockDdTest struct {
 	mock.Mock
 }
 
+func (m *MockDdTest) TestID() uint64 {
+	args := m.Called()
+	return args.Get(0).(uint64)
+}
+
 func (m *MockDdTest) Name() string {
 	args := m.Called()
 	return args.String(0)
@@ -82,6 +87,11 @@ func (m *MockDdTest) SetBenchmarkData(measureType string, data map[string]any) {
 type MockDdTestSession struct {
 	MockDdTslvEvent
 	mock.Mock
+}
+
+func (m *MockDdTestSession) SessionID() uint64 {
+	args := m.Called()
+	return args.Get(0).(uint64)
 }
 
 func (m *MockDdTestSession) Command() string {
@@ -128,6 +138,11 @@ type MockDdTestModule struct {
 	mock.Mock
 }
 
+func (m *MockDdTestModule) ModuleID() uint64 {
+	args := m.Called()
+	return args.Get(0).(uint64)
+}
+
 func (m *MockDdTestModule) Session() DdTestSession {
 	args := m.Called()
 	return args.Get(0).(DdTestSession)
@@ -165,6 +180,11 @@ func (m *MockDdTestModule) GetOrCreateSuiteWithStartTime(name string, startTime 
 type MockDdTestSuite struct {
 	MockDdTslvEvent
 	mock.Mock
+}
+
+func (m *MockDdTestSuite) SuiteID() uint64 {
+	args := m.Called()
+	return args.Get(0).(uint64)
 }
 
 func (m *MockDdTestSuite) Module() DdTestModule {
