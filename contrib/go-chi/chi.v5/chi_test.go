@@ -214,7 +214,7 @@ func TestError(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		httptrace.Temp()
+		httptrace.ResetCfg()
 
 		router := chi.NewRouter()
 		router.Use(Middleware(

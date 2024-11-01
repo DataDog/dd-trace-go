@@ -41,7 +41,6 @@ func defaults(cfg *config) {
 		cfg.analyticsRate = globalconfig.AnalyticsRate()
 	}
 	cfg.headerTags = globalconfig.HeaderTagMap()
-	cfg.isStatusError = isServerError
 	cfg.ignoreRequest = func(_ *http.Request) bool { return false }
 	cfg.resourceNamer = func(r *http.Request) string {
 		resourceName := chi.RouteContext(r.Context()).RoutePattern()
@@ -97,10 +96,6 @@ func WithStatusCheck(fn func(statusCode int) bool) Option {
 	return func(cfg *config) {
 		cfg.isStatusError = fn
 	}
-}
-
-func isServerError(statusCode int) bool {
-	return statusCode >= 500 && statusCode < 600
 }
 
 // WithHeaderTags enables the integration to attach HTTP request headers as span tags.

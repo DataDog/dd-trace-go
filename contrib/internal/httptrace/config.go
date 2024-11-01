@@ -39,8 +39,10 @@ type config struct {
 	isStatusError     func(statusCode int) bool
 }
 
-func Temp() {
+func ResetCfg() config {
+	oldCfg := cfg
 	cfg = newConfig()
+	return oldCfg
 }
 
 func newConfig() config {
