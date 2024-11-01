@@ -43,7 +43,6 @@ func defaults(cfg *config) {
 		cfg.analyticsRate = globalconfig.AnalyticsRate()
 	}
 	cfg.headerTags = globalconfig.HeaderTagMap()
-	cfg.isStatusError = isServerError
 	cfg.ignoreRequest = func(_ *http.Request) bool { return false }
 	cfg.modifyResourceName = func(s string) string { return s }
 	// for backward compatibility with modifyResourceName, initialize resourceName as nil.

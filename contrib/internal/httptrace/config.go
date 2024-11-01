@@ -6,6 +6,7 @@
 package httptrace
 
 import (
+	"fmt"
 	"os"
 	"regexp"
 	"strconv"
@@ -38,6 +39,10 @@ type config struct {
 	isStatusError     func(statusCode int) bool
 }
 
+func Temp() {
+	cfg = newConfig()
+}
+
 func newConfig() config {
 	c := config{
 		queryString:       !internal.BoolEnv(envQueryStringDisabled, false),
@@ -47,6 +52,7 @@ func newConfig() config {
 	}
 	v := os.Getenv(envServerErrorStatuses)
 	if fn := GetErrorCodesFromInput(v); fn != nil {
+		fmt.Println("MTOFF: is 200 error?", fn(200))
 		c.isStatusError = fn
 	}
 	if s, ok := os.LookupEnv(envQueryStringRegexp); !ok {
