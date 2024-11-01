@@ -37,10 +37,12 @@ func getLatestMajorVersion(repo string) (string, error) {
 	latest := ""
 	// match on version strings e.x. v9.3.0
 	majorVersionRegex := regexp.MustCompile(`^v(\d+)`) 
+	alphaBetaRegex := regexp.MustCompile(`alpha|beta`)
+
 
 	// Check latest major version seen
 	for _, tag := range tags {
-		if majorVersionRegex.MatchString(tag.Name) {
+		if majorVersionRegex.MatchString(tag.Name) && !alphaBetaRegex.MatchString(tag.Name) {
 			version := majorVersionRegex.FindString(tag.Name)
 			if latest == "" || version > latest {
 				latest = version
