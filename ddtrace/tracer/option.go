@@ -671,7 +671,7 @@ func loadAgentFeatures(agentDisabled bool, agentURL *url.URL, httpClient *http.C
 		Endpoints     []string `json:"endpoints"`
 		ClientDropP0s bool     `json:"client_drop_p0s"`
 		FeatureFlags  []string `json:"feature_flags"`
-    PeerTags      []string    `json:"peer_tags"`
+		PeerTags      []string `json:"peer_tags"`
 		Config        struct {
 			StatsdPort int `json:"statsd_port"`
 		} `json:"config"`
