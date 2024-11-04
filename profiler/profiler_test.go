@@ -236,8 +236,7 @@ func TestStopLatency(t *testing.T) {
 
 func TestFlushAndStop(t *testing.T) {
 	start := time.Now()
-	os.Setenv("DD_PROFILING_FLUSH_ON_EXIT", "1")
-	defer os.Unsetenv("DD_PROFILING_FLUSH_ON_EXIT")
+	t.Setenv("DD_PROFILING_FLUSH_ON_EXIT", "1")
 	received := startTestProfiler(t, 1,
 		WithProfileTypes(CPUProfile, HeapProfile),
 		WithPeriod(time.Hour),
@@ -279,8 +278,7 @@ func TestFlushAndStopTimeout(t *testing.T) {
 	}))
 	defer server.Close()
 
-	os.Setenv("DD_PROFILING_FLUSH_ON_EXIT", "1")
-	defer os.Unsetenv("DD_PROFILING_FLUSH_ON_EXIT")
+	t.Setenv("DD_PROFILING_FLUSH_ON_EXIT", "1")
 	Start(
 		WithAgentAddr(server.Listener.Addr().String()),
 		WithPeriod(time.Hour),
