@@ -115,7 +115,7 @@ func (c V1ImportURL) Fixes() []analysis.SuggestedFix {
 	if path == "" {
 		return nil
 	}
-	path = strings.Replace(path, "github.com/DataDog/dd-trace-go/v2", "github.com/DataDog/dd-trace-go/v2", 1)
+	path = strings.Replace(path, "gopkg.in/DataDog/dd-trace-go.v1", "github.com/DataDog/dd-trace-go/v2", 1)
 	return []analysis.SuggestedFix{
 		{
 			Message: "update import URL to v2",
@@ -133,7 +133,7 @@ func (c V1ImportURL) Fixes() []analysis.SuggestedFix {
 func (V1ImportURL) Probes() []Probe {
 	return []Probe{
 		IsImport,
-		HasPackagePrefix("github.com/DataDog/dd-trace-go/v2/"),
+		HasPackagePrefix("gopkg.in/Datadog/dd-trace-go.v1"),
 	}
 }
 
@@ -173,7 +173,7 @@ func (DDTraceTypes) Probes() []Probe {
 			Is[*ast.ValueSpec],
 			Is[*ast.Field],
 		),
-		ImportedFrom("github.com/DataDog/dd-trace-go/v2"),
+		ImportedFrom("gopkg.in/Datadog/dd-trace-go.v1"),
 		Not(DeclaresType[ddtrace.SpanContext]()),
 	}
 }
