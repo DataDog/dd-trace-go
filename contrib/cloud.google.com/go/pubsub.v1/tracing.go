@@ -10,7 +10,7 @@
 // The motivation of this package is to support orchestrion, which cannot use the main package because it imports
 // the cloud.google.com/go/pubsub package, and since orchestrion modifies the library code itself,
 // this would cause an import cycle.
-package tracing
+package pubsub
 
 import (
 	"context"
