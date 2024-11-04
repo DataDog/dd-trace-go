@@ -96,10 +96,6 @@ func WithStatusCheck(fn func(statusCode int) bool) Option {
 	}
 }
 
-func isServerError(statusCode int) bool {
-	return statusCode >= 500 && statusCode < 600
-}
-
 // WithIgnoreRequest specifies a function to use for determining if the
 // incoming HTTP request tracing should be skipped.
 func WithIgnoreRequest(fn func(r *http.Request) bool) Option {
