@@ -33,13 +33,13 @@ func WrapHandler(h fasthttp.RequestHandler, opts ...Option) fasthttp.RequestHand
 		fn(cfg)
 	}
 	log.Debug("contrib/valyala/fasthttp.v1: Configuring Middleware: cfg: %#v", cfg)
-	spanOpts := []tracer.StartSpanOption{
-		tracer.ServiceName(cfg.serviceName),
-	}
 	return func(fctx *fasthttp.RequestCtx) {
 		if cfg.ignoreRequest(fctx) {
 			h(fctx)
 			return
+		}
+		spanOpts := []tracer.StartSpanOption{
+			tracer.ServiceName(cfg.serviceName),
 		}
 		spanOpts = append(spanOpts, defaultSpanOptions(fctx)...)
 		fcc := &fasthttptrace.HTTPHeadersCarrier{
