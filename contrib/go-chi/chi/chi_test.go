@@ -186,6 +186,7 @@ func TestError(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
+		// re-run config defaults based on new DD_TRACE_HTTP_SERVER_ERROR_STATUSES value
 		httptrace.ResetCfg()
 
 		router := chi.NewRouter()

@@ -91,10 +91,8 @@ func TestConfiguredErrorStatuses(t *testing.T) {
 
 		os.Setenv("DD_TRACE_HTTP_SERVER_ERROR_STATUSES", "199-399,400,501")
 
-		// reset config based on new DD_TRACE_HTTP_SERVER_ERROR_STATUSES value
+		// re-run config defaults based on new DD_TRACE_HTTP_SERVER_ERROR_STATUSES value
 		ResetCfg()
-		// oldConfig := ResetCfg()
-		// defer func() { cfg = oldConfig }()
 
 		statuses := []int{0, 200, 400, 500}
 		r := httptest.NewRequest(http.MethodGet, "/test", nil)
@@ -123,10 +121,8 @@ func TestConfiguredErrorStatuses(t *testing.T) {
 
 		os.Setenv("DD_TRACE_HTTP_SERVER_ERROR_STATUSES", "0")
 
-		// reset config based on new DD_TRACE_HTTP_SERVER_ERROR_STATUSES value
+		// re-run config defaults based on new DD_TRACE_HTTP_SERVER_ERROR_STATUSES value
 		ResetCfg()
-		// oldConfig := ResetCfg()
-		// defer func() { cfg = oldConfig }()
 
 		r := httptest.NewRequest(http.MethodGet, "/test", nil)
 		sp, _ := StartRequestSpan(r)

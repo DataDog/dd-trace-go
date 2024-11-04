@@ -67,10 +67,8 @@ func FinishRequestSpan(s tracer.Span, status int, errorFn func(int) bool, opts .
 	var statusStr string
 	var fn func(int) bool
 	if errorFn == nil {
-		fmt.Println("MTOFF: errorFn is nil")
 		fn = cfg.isStatusError
 	} else {
-		fmt.Println("MTOFF: errorFn is not nil")
 		fn = errorFn
 	}
 	// if status is 0, treat it like 200 unless 0 was called out in DD_TRACE_HTTP_SERVER_ERROR_STATUSES
@@ -84,7 +82,6 @@ func FinishRequestSpan(s tracer.Span, status int, errorFn func(int) bool, opts .
 	} else {
 		statusStr = strconv.Itoa(status)
 		if fn(status) {
-			fmt.Println("MTOFF: FN 200 IS ERR")
 			s.SetTag(ext.Error, fmt.Errorf("%s: %s", statusStr, http.StatusText(status)))
 		}
 	}
