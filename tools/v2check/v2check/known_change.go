@@ -133,7 +133,7 @@ func (c V1ImportURL) Fixes() []analysis.SuggestedFix {
 func (V1ImportURL) Probes() []Probe {
 	return []Probe{
 		IsImport,
-		HasPackagePrefix("gopkg.in/Datadog/dd-trace-go.v1"),
+		HasPackagePrefix("gopkg.in/DataDog/dd-trace-go.v1/"),
 	}
 }
 

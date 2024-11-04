@@ -41,7 +41,7 @@ func (c V1Usage) Fixes() []analysis.SuggestedFix {
 func (c V1Usage) Probes() []v2check.Probe {
 	return []v2check.Probe{
 		v2check.IsFuncCall,
-		v2check.HasPackagePrefix("github.com/DataDog/dd-trace-go/v2/"),
+		v2check.HasPackagePrefix("gopkg.in/DataDog/dd-trace-go.v1"),
 	}
 }
 
