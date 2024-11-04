@@ -149,6 +149,7 @@ func logStartup(c *config) {
 		"endpoint_count_enabled":     c.endpointCountEnabled,
 		"custom_profiler_label_keys": c.customProfilerLabels,
 		"enabled":                    c.enabled,
+		"flush_on_exit":              c.flushOnExit,
 	}
 	b, err := json.Marshal(info)
 	if err != nil {
@@ -243,9 +244,7 @@ func defaultConfig() (*config, error) {
 	if v := os.Getenv("DD_VERSION"); v != "" {
 		WithVersion(v)(&c)
 	}
-	if internal.BoolEnv("DD_PROFILING_FLUSH_ON_EXIT", false) {
-		c.flushOnExit = true
-	}
+	c.flushOnExit = internal.BoolEnv("DD_PROFILING_FLUSH_ON_EXIT", false)
 
 	tags := make(map[string]string)
 	if v := os.Getenv("DD_TAGS"); v != "" {

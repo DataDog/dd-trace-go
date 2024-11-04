@@ -89,7 +89,6 @@ type profiler struct {
 	out             chan batch        // upload queue
 	uploadFunc      func(batch) error // defaults to (*profiler).upload; replaced in tests
 	exit            chan struct{}     // exit signals the profiler to stop; it is closed after stopping
-	flush           bool              // signals the profiler to flush the current profile on exit - protected by exit chan
 	stopOnce        sync.Once         // stopOnce ensures the profiler is stopped exactly once.
 	wg              sync.WaitGroup    // wg waits for all goroutines to exit when stopping.
 	met             *metrics          // metric collector state
@@ -242,9 +241,6 @@ func newProfiler(opts ...Option) (*profiler, error) {
 			p.deltas[pt] = newFastDeltaProfiler(d...)
 		}
 	}
-	if cfg.flushOnExit {
-		p.flush = true
-	}
 	p.uploadFunc = p.upload
 	return &p, nil
 }
@@ -389,7 +385,7 @@ func (p *profiler) collect(ticker <-chan time.Time) {
 			// is less than the configured profiling period, the ticker will block
 			// until the end of the profiling period.
 		case <-p.exit:
-			if !p.flush {
+			if !p.cfg.flushOnExit {
 				return
 			}
 			// If we're flushing, we enqueue the batch before exiting the loop.
@@ -466,7 +462,7 @@ func (p *profiler) send() {
 	for {
 		select {
 		case <-p.exit:
-			if !p.flush {
+			if !p.cfg.flushOnExit {
 				return
 			}
 		case bat, ok := <-p.out:
