@@ -243,7 +243,6 @@ func TestFlushAndStop(t *testing.T) {
 		WithPeriod(time.Hour),
 		WithUploadTimeout(time.Hour))
 
-	time.Sleep(1 * time.Second)
 	end := time.Now()
 	Stop()
 
@@ -288,7 +287,6 @@ func TestFlushAndStopTimeout(t *testing.T) {
 		WithUploadTimeout(uploadTimeout),
 	)
 
-	time.Sleep(500 * time.Millisecond)
 	start := time.Now()
 	Stop()
 
