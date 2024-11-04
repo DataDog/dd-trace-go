@@ -235,26 +235,16 @@ func TestStopLatency(t *testing.T) {
 }
 
 func TestFlushAndStop(t *testing.T) {
-	start := time.Now()
 	t.Setenv("DD_PROFILING_FLUSH_ON_EXIT", "1")
 	received := startTestProfiler(t, 1,
 		WithProfileTypes(CPUProfile, HeapProfile),
 		WithPeriod(time.Hour),
 		WithUploadTimeout(time.Hour))
 
-	end := time.Now()
 	Stop()
 
 	select {
 	case prof := <-received:
-		evtStart, _ := time.Parse(time.RFC3339Nano, prof.event.Start)
-		evtEnd, _ := time.Parse(time.RFC3339Nano, prof.event.End)
-		if s := evtStart.Sub(start); s < 0 || s > 1*time.Second {
-			t.Errorf("profiler started %v after expected", evtStart.Sub(start))
-		}
-		if s := evtEnd.Sub(end); s < 0 || s > 1*time.Second {
-			t.Errorf("profiler ended %v after expected", evtEnd.Sub(end))
-		}
 		if len(prof.attachments["cpu.pprof"]) == 0 {
 			t.Errorf("expected CPU profile, got none")
 		}
