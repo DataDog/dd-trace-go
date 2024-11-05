@@ -20,8 +20,8 @@ import (
 
 // Test Session
 
-// Ensures that tslvTestSession implements the DdTestSession interface.
-var _ DdTestSession = (*tslvTestSession)(nil)
+// Ensures that tslvTestSession implements the TestSession interface.
+var _ TestSession = (*tslvTestSession)(nil)
 
 // tslvTestSession implements the DdTestSession interface and represents a session for a set of tests.
 type tslvTestSession struct {
@@ -32,11 +32,11 @@ type tslvTestSession struct {
 	framework        string
 	frameworkVersion string
 
-	modules map[string]DdTestModule
+	modules map[string]TestModule
 }
 
 // CreateTestSession initializes a new test session with the given command and working directory.
-func CreateTestSession(options ...DdTestSessionStartOption) DdTestSession {
+func CreateTestSession(options ...TestSessionStartOption) TestSession {
 	defaults := &tslvTestSessionStartOptions{}
 	for _, f := range options {
 		f(defaults)
@@ -91,7 +91,7 @@ func CreateTestSession(options ...DdTestSessionStartOption) DdTestSession {
 		workingDirectory: defaults.workingDirectory,
 		framework:        defaults.framework,
 		frameworkVersion: defaults.frameworkVersion,
-		modules:          map[string]DdTestModule{},
+		modules:          map[string]TestModule{},
 		ciVisibilityCommon: ciVisibilityCommon{
 			startTime: defaults.startTime,
 			tags:      sessionTags,
@@ -123,7 +123,7 @@ func (t *tslvTestSession) Framework() string { return t.framework }
 func (t *tslvTestSession) WorkingDirectory() string { return t.workingDirectory }
 
 // Close closes the test session with the given exit code.
-func (t *tslvTestSession) Close(exitCode int, options ...DdTestSessionCloseOption) {
+func (t *tslvTestSession) Close(exitCode int, options ...TestSessionCloseOption) {
 	t.mutex.Lock()
 	defer t.mutex.Unlock()
 	if t.closed {
@@ -142,7 +142,7 @@ func (t *tslvTestSession) Close(exitCode int, options ...DdTestSessionCloseOptio
 	for _, m := range t.modules {
 		m.Close()
 	}
-	t.modules = map[string]DdTestModule{}
+	t.modules = map[string]TestModule{}
 
 	t.span.SetTag(constants.TestCommandExitCode, exitCode)
 	if exitCode == 0 {
@@ -161,7 +161,7 @@ func (t *tslvTestSession) Close(exitCode int, options ...DdTestSessionCloseOptio
 }
 
 // GetOrCreateModule returns an existing module or creates a new one with the given name, framework, framework version, and start time.
-func (t *tslvTestSession) GetOrCreateModule(name string, options ...DdTestModuleStartOption) DdTestModule {
+func (t *tslvTestSession) GetOrCreateModule(name string, options ...TestModuleStartOption) TestModule {
 	t.mutex.Lock()
 	defer t.mutex.Unlock()
 
@@ -178,7 +178,7 @@ func (t *tslvTestSession) GetOrCreateModule(name string, options ...DdTestModule
 		defaults.startTime = time.Now()
 	}
 
-	var mod DdTestModule
+	var mod TestModule
 	if v, ok := t.modules[name]; ok {
 		mod = v
 	} else {

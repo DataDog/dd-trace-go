@@ -29,27 +29,27 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
-func createDDTestSession(now time.Time) DdTestSession {
+func createDDTestSession(now time.Time) TestSession {
 	session := CreateTestSession(WithTestSessionCommand("my-command"), WithTestSessionWorkingDirectory("/tmp/wd"), WithTestSessionFramework("my-testing-framework", "framework-version"), WithTestSessionStartTime(now))
 	session.SetTag("my-tag", "my-value")
 	return session
 }
 
-func createDDTestModule(now time.Time) (DdTestSession, DdTestModule) {
+func createDDTestModule(now time.Time) (TestSession, TestModule) {
 	session := createDDTestSession(now)
 	module := session.GetOrCreateModule("my-module", WithTestModuleFramework("my-module-framework", "framework-version"), WithTestModuleStartTime(now))
 	module.SetTag("my-tag", "my-value")
 	return session, module
 }
 
-func createDDTestSuite(now time.Time) (DdTestSession, DdTestModule, DdTestSuite) {
+func createDDTestSuite(now time.Time) (TestSession, TestModule, TestSuite) {
 	session, module := createDDTestModule(now)
 	suite := module.GetOrCreateSuite("my-suite", WithTestSuiteStartTime(now))
 	suite.SetTag("my-tag", "my-value")
 	return session, module, suite
 }
 
-func createDDTest(now time.Time) (DdTestSession, DdTestModule, DdTestSuite, DdTest) {
+func createDDTest(now time.Time) (TestSession, TestModule, TestSuite, Test) {
 	session, module, suite := createDDTestSuite(now)
 	test := suite.CreateTest("my-test", WithTestStartTime(now))
 	test.SetTag("my-tag", "my-value")
@@ -76,7 +76,7 @@ func commonAssertions(assert *assert.Assertions, sessionSpan mocktracer.Span) {
 	assert.Contains(spanTags, constants.GitCommitSHA)
 }
 
-func TestSession(t *testing.T) {
+func TestTestSession(t *testing.T) {
 	mockTracer.Reset()
 	assert := assert.New(t)
 
@@ -119,7 +119,7 @@ func sessionAssertions(assert *assert.Assertions, now time.Time, sessionSpan moc
 	commonAssertions(assert, sessionSpan)
 }
 
-func TestModule(t *testing.T) {
+func TestTestModule(t *testing.T) {
 	mockTracer.Reset()
 	assert := assert.New(t)
 
@@ -166,7 +166,7 @@ func moduleAssertions(assert *assert.Assertions, now time.Time, moduleSpan mockt
 	commonAssertions(assert, moduleSpan)
 }
 
-func TestSuite(t *testing.T) {
+func TestTestSuite(t *testing.T) {
 	mockTracer.Reset()
 	assert := assert.New(t)
 
@@ -217,7 +217,7 @@ func suiteAssertions(assert *assert.Assertions, now time.Time, suiteSpan mocktra
 	commonAssertions(assert, suiteSpan)
 }
 
-func Test(t *testing.T) {
+func TestTest(t *testing.T) {
 	mockTracer.Reset()
 	assert := assert.New(t)
 

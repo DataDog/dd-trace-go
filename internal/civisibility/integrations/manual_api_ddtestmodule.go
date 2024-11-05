@@ -18,8 +18,8 @@ import (
 
 // Test Module
 
-// Ensures that tslvTestModule implements the DdTestModule interface.
-var _ DdTestModule = (*tslvTestModule)(nil)
+// Ensures that tslvTestModule implements the TestModule interface.
+var _ TestModule = (*tslvTestModule)(nil)
 
 // tslvTestModule implements the DdTestModule interface and represents a module within a test session.
 type tslvTestModule struct {
@@ -29,11 +29,11 @@ type tslvTestModule struct {
 	name      string
 	framework string
 
-	suites map[string]DdTestSuite
+	suites map[string]TestSuite
 }
 
 // createTestModule initializes a new test module within a given session.
-func createTestModule(session *tslvTestSession, name string, framework string, frameworkVersion string, startTime time.Time) DdTestModule {
+func createTestModule(session *tslvTestSession, name string, framework string, frameworkVersion string, startTime time.Time) TestModule {
 	// Ensure CI visibility is properly configured.
 	EnsureCiVisibilityInitialization()
 
@@ -75,7 +75,7 @@ func createTestModule(session *tslvTestSession, name string, framework string, f
 		moduleID:  moduleID,
 		name:      name,
 		framework: framework,
-		suites:    map[string]DdTestSuite{},
+		suites:    map[string]TestSuite{},
 		ciVisibilityCommon: ciVisibilityCommon{
 			startTime: startTime,
 			tags:      moduleTags,
@@ -104,10 +104,10 @@ func (t *tslvTestModule) Name() string { return t.name }
 func (t *tslvTestModule) Framework() string { return t.framework }
 
 // Session returns the test session to which the test module belongs.
-func (t *tslvTestModule) Session() DdTestSession { return t.session }
+func (t *tslvTestModule) Session() TestSession { return t.session }
 
 // Close closes the test module.
-func (t *tslvTestModule) Close(options ...DdTestModuleCloseOption) {
+func (t *tslvTestModule) Close(options ...TestModuleCloseOption) {
 	t.mutex.Lock()
 	defer t.mutex.Unlock()
 	if t.closed {
@@ -126,7 +126,7 @@ func (t *tslvTestModule) Close(options ...DdTestModuleCloseOption) {
 	for _, suite := range t.suites {
 		suite.Close()
 	}
-	t.suites = map[string]DdTestSuite{}
+	t.suites = map[string]TestSuite{}
 
 	t.span.Finish(tracer.FinishTime(defaults.finishTime))
 	t.closed = true
@@ -136,7 +136,7 @@ func (t *tslvTestModule) Close(options ...DdTestModuleCloseOption) {
 }
 
 // GetOrCreateSuite returns an existing suite or creates a new one with the given name.
-func (t *tslvTestModule) GetOrCreateSuite(name string, options ...DdTestSuiteStartOption) DdTestSuite {
+func (t *tslvTestModule) GetOrCreateSuite(name string, options ...TestSuiteStartOption) TestSuite {
 	t.mutex.Lock()
 	defer t.mutex.Unlock()
 
@@ -149,7 +149,7 @@ func (t *tslvTestModule) GetOrCreateSuite(name string, options ...DdTestSuiteSta
 		defaults.startTime = time.Now()
 	}
 
-	var suite DdTestSuite
+	var suite TestSuite
 	if v, ok := t.suites[name]; ok {
 		suite = v
 	} else {

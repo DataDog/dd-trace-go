@@ -30,7 +30,7 @@ func (m *MockDdTslvEvent) StartTime() time.Time {
 	return args.Get(0).(time.Time)
 }
 
-func (m *MockDdTslvEvent) SetError(options ...DdErrorOption) {
+func (m *MockDdTslvEvent) SetError(options ...ErrorOption) {
 	m.Called(options)
 }
 
@@ -54,12 +54,12 @@ func (m *MockDdTest) Name() string {
 	return args.String(0)
 }
 
-func (m *MockDdTest) Suite() DdTestSuite {
+func (m *MockDdTest) Suite() TestSuite {
 	args := m.Called()
-	return args.Get(0).(DdTestSuite)
+	return args.Get(0).(TestSuite)
 }
 
-func (m *MockDdTest) Close(status TestResultStatus, options ...DdTestCloseOption) {
+func (m *MockDdTest) Close(status TestResultStatus, options ...TestCloseOption) {
 	m.Called(status, options)
 }
 
@@ -97,13 +97,13 @@ func (m *MockDdTestSession) WorkingDirectory() string {
 	return args.String(0)
 }
 
-func (m *MockDdTestSession) Close(exitCode int, options ...DdTestSessionCloseOption) {
+func (m *MockDdTestSession) Close(exitCode int, options ...TestSessionCloseOption) {
 	m.Called(exitCode, options)
 }
 
-func (m *MockDdTestSession) GetOrCreateModule(name string, options ...DdTestModuleStartOption) DdTestModule {
+func (m *MockDdTestSession) GetOrCreateModule(name string, options ...TestModuleStartOption) TestModule {
 	args := m.Called(name, options)
-	return args.Get(0).(DdTestModule)
+	return args.Get(0).(TestModule)
 }
 
 // Mocking the DdTestModule interface
@@ -117,9 +117,9 @@ func (m *MockDdTestModule) ModuleID() uint64 {
 	return args.Get(0).(uint64)
 }
 
-func (m *MockDdTestModule) Session() DdTestSession {
+func (m *MockDdTestModule) Session() TestSession {
 	args := m.Called()
-	return args.Get(0).(DdTestSession)
+	return args.Get(0).(TestSession)
 }
 
 func (m *MockDdTestModule) Framework() string {
@@ -132,18 +132,18 @@ func (m *MockDdTestModule) Name() string {
 	return args.String(0)
 }
 
-func (m *MockDdTestModule) Close(options ...DdTestModuleCloseOption) {
+func (m *MockDdTestModule) Close(options ...TestModuleCloseOption) {
 	m.Called(options)
 }
 
-func (m *MockDdTestModule) GetOrCreateSuite(name string, options ...DdTestSuiteStartOption) DdTestSuite {
+func (m *MockDdTestModule) GetOrCreateSuite(name string, options ...TestSuiteStartOption) TestSuite {
 	args := m.Called(name, options)
-	return args.Get(0).(DdTestSuite)
+	return args.Get(0).(TestSuite)
 }
 
-func (m *MockDdTestModule) GetOrCreateSuiteWithStartTime(name string, startTime time.Time) DdTestSuite {
+func (m *MockDdTestModule) GetOrCreateSuiteWithStartTime(name string, startTime time.Time) TestSuite {
 	args := m.Called(name, startTime)
-	return args.Get(0).(DdTestSuite)
+	return args.Get(0).(TestSuite)
 }
 
 // Mocking the DdTestSuite interface
@@ -157,9 +157,9 @@ func (m *MockDdTestSuite) SuiteID() uint64 {
 	return args.Get(0).(uint64)
 }
 
-func (m *MockDdTestSuite) Module() DdTestModule {
+func (m *MockDdTestSuite) Module() TestModule {
 	args := m.Called()
-	return args.Get(0).(DdTestModule)
+	return args.Get(0).(TestModule)
 }
 
 func (m *MockDdTestSuite) Name() string {
@@ -167,13 +167,13 @@ func (m *MockDdTestSuite) Name() string {
 	return args.String(0)
 }
 
-func (m *MockDdTestSuite) Close(options ...DdTestSuiteCloseOption) {
+func (m *MockDdTestSuite) Close(options ...TestSuiteCloseOption) {
 	m.Called(options)
 }
 
-func (m *MockDdTestSuite) CreateTest(name string, options ...DdTestStartOption) DdTest {
+func (m *MockDdTestSuite) CreateTest(name string, options ...TestStartOption) Test {
 	args := m.Called(name, options)
-	return args.Get(0).(DdTest)
+	return args.Get(0).(Test)
 }
 
 // Unit tests
@@ -185,7 +185,7 @@ func TestDdTestSession(t *testing.T) {
 	mockSession.On("Close", 0, mock.Anything).Return()
 	mockSession.On("GetOrCreateModule", "test-module", mock.Anything).Return(new(MockDdTestModule))
 
-	session := (DdTestSession)(mockSession)
+	session := (TestSession)(mockSession)
 	assert.Equal(t, "test-command", session.Command())
 	assert.Equal(t, "test-framework", session.Framework())
 	assert.Equal(t, "/path/to/working/dir", session.WorkingDirectory())
@@ -218,7 +218,7 @@ func TestDdTestModule(t *testing.T) {
 	mockModule.On("Close", mock.Anything).Return()
 	mockModule.On("GetOrCreateSuite", "test-suite", mock.Anything).Return(new(MockDdTestSuite))
 
-	module := (DdTestModule)(mockModule)
+	module := (TestModule)(mockModule)
 
 	assert.Equal(t, "test-framework", module.Framework())
 	assert.Equal(t, "test-module", module.Name())
@@ -246,7 +246,7 @@ func TestDdTestSuite(t *testing.T) {
 	mockSuite.On("Close", mock.Anything).Return()
 	mockSuite.On("CreateTest", "test-name", mock.Anything).Return(new(MockDdTest))
 
-	suite := (DdTestSuite)(mockSuite)
+	suite := (TestSuite)(mockSuite)
 
 	assert.Equal(t, "test-suite", suite.Name())
 
@@ -274,7 +274,7 @@ func TestDdTest(t *testing.T) {
 	mockTest.On("SetTestFunc", mock.Anything).Return()
 	mockTest.On("SetBenchmarkData", "measure-type", mock.Anything).Return()
 
-	test := (DdTest)(mockTest)
+	test := (Test)(mockTest)
 
 	assert.Equal(t, "test-name", test.Name())
 

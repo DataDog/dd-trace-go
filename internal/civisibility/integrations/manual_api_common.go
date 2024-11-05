@@ -37,7 +37,7 @@ func (c *ciVisibilityCommon) Context() context.Context { return c.ctx }
 func (c *ciVisibilityCommon) StartTime() time.Time { return c.startTime }
 
 // SetError sets an error on the event.
-func (c *ciVisibilityCommon) SetError(options ...DdErrorOption) {
+func (c *ciVisibilityCommon) SetError(options ...ErrorOption) {
 	defaults := &tslvErrorOptions{}
 	for _, o := range options {
 		o(defaults)

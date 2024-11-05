@@ -27,7 +27,7 @@ const (
 
 var (
 	// session represents the CI visibility test session.
-	session integrations.DdTestSession
+	session integrations.TestSession
 
 	// testInfos holds information about the instrumented tests.
 	testInfos []*testingTInfo
@@ -514,7 +514,7 @@ func RunM(m *testing.M) int {
 }
 
 // checkModuleAndSuite checks and closes the modules and suites if all tests are executed.
-func checkModuleAndSuite(module integrations.DdTestModule, suite integrations.DdTestSuite) {
+func checkModuleAndSuite(module integrations.TestModule, suite integrations.TestSuite) {
 	// If all tests in a suite has been executed we can close the suite
 	if atomic.AddInt32(suitesCounters[suite.Name()], -1) <= 0 {
 		suite.Close()

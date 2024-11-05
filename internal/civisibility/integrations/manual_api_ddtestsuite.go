@@ -18,8 +18,8 @@ import (
 
 // Test Suite
 
-// Ensures that tslvTestSuite implements the DdTestSuite interface.
-var _ DdTestSuite = (*tslvTestSuite)(nil)
+// Ensures that tslvTestSuite implements the TestSuite interface.
+var _ TestSuite = (*tslvTestSuite)(nil)
 
 // tslvTestSuite implements the DdTestSuite interface and represents a suite of tests within a module.
 type tslvTestSuite struct {
@@ -30,7 +30,7 @@ type tslvTestSuite struct {
 }
 
 // createTestSuite initializes a new test suite within a given module.
-func createTestSuite(module *tslvTestModule, name string, startTime time.Time) DdTestSuite {
+func createTestSuite(module *tslvTestModule, name string, startTime time.Time) TestSuite {
 	if module == nil {
 		return nil
 	}
@@ -85,10 +85,10 @@ func (t *tslvTestSuite) SuiteID() uint64 {
 func (t *tslvTestSuite) Name() string { return t.name }
 
 // Module returns the module to which the test suite belongs.
-func (t *tslvTestSuite) Module() DdTestModule { return t.module }
+func (t *tslvTestSuite) Module() TestModule { return t.module }
 
 // Close closes the test suite with the given finish time.
-func (t *tslvTestSuite) Close(options ...DdTestSuiteCloseOption) {
+func (t *tslvTestSuite) Close(options ...TestSuiteCloseOption) {
 	t.mutex.Lock()
 	defer t.mutex.Unlock()
 	if t.closed {
@@ -109,13 +109,13 @@ func (t *tslvTestSuite) Close(options ...DdTestSuiteCloseOption) {
 }
 
 // SetError sets an error on the test suite and marks the module as having an error.
-func (t *tslvTestSuite) SetError(options ...DdErrorOption) {
+func (t *tslvTestSuite) SetError(options ...ErrorOption) {
 	t.ciVisibilityCommon.SetError(options...)
 	t.Module().SetTag(ext.Error, true)
 }
 
 // CreateTest creates a new test within the suite.
-func (t *tslvTestSuite) CreateTest(name string, options ...DdTestStartOption) DdTest {
+func (t *tslvTestSuite) CreateTest(name string, options ...TestStartOption) Test {
 	defaults := &tslvTestStartOptions{}
 	for _, opt := range options {
 		opt(defaults)

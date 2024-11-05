@@ -25,8 +25,8 @@ const (
 	ResultStatusSkip TestResultStatus = 2
 )
 
-// DdErrorOption is a function that sets an option for creating an error.
-type DdErrorOption func(*tslvErrorOptions)
+// ErrorOption is a function that sets an option for creating an error.
+type ErrorOption func(*tslvErrorOptions)
 
 // tslvErrorOptions is a struct that holds options for creating an error.
 type tslvErrorOptions struct {
@@ -37,12 +37,12 @@ type tslvErrorOptions struct {
 }
 
 // WithError sets the error on the options.
-func WithError(err error) DdErrorOption {
+func WithError(err error) ErrorOption {
 	return func(o *tslvErrorOptions) { o.err = err }
 }
 
 // WithErrorInfo sets detailed error information on the options.
-func WithErrorInfo(errType string, message string, callstack string) DdErrorOption {
+func WithErrorInfo(errType string, message string, callstack string) ErrorOption {
 	return func(o *tslvErrorOptions) {
 		o.errType = errType
 		o.message = message
@@ -59,14 +59,14 @@ type ddTslvEvent interface {
 	StartTime() time.Time
 
 	// SetError sets an error on the event.
-	SetError(options ...DdErrorOption)
+	SetError(options ...ErrorOption)
 
 	// SetTag sets a tag on the event.
 	SetTag(key string, value interface{})
 }
 
-// DdTestSessionStartOption represents an option that can be passed to CreateTestSession.
-type DdTestSessionStartOption func(*tslvTestSessionStartOptions)
+// TestSessionStartOption represents an option that can be passed to CreateTestSession.
+type TestSessionStartOption func(*tslvTestSessionStartOptions)
 
 // tslvTestSessionStartOptions contains the options for creating a new test session.
 type tslvTestSessionStartOptions struct {
@@ -78,17 +78,17 @@ type tslvTestSessionStartOptions struct {
 }
 
 // WithTestSessionCommand sets the command used to run the test session.
-func WithTestSessionCommand(command string) DdTestSessionStartOption {
+func WithTestSessionCommand(command string) TestSessionStartOption {
 	return func(o *tslvTestSessionStartOptions) { o.command = command }
 }
 
 // WithTestSessionWorkingDirectory sets the working directory of the test session.
-func WithTestSessionWorkingDirectory(workingDirectory string) DdTestSessionStartOption {
+func WithTestSessionWorkingDirectory(workingDirectory string) TestSessionStartOption {
 	return func(o *tslvTestSessionStartOptions) { o.workingDirectory = workingDirectory }
 }
 
 // WithTestSessionFramework sets the testing framework used in the test session.
-func WithTestSessionFramework(framework, frameworkVersion string) DdTestSessionStartOption {
+func WithTestSessionFramework(framework, frameworkVersion string) TestSessionStartOption {
 	return func(o *tslvTestSessionStartOptions) {
 		o.framework = framework
 		o.frameworkVersion = frameworkVersion
@@ -96,12 +96,12 @@ func WithTestSessionFramework(framework, frameworkVersion string) DdTestSessionS
 }
 
 // WithTestSessionStartTime sets the start time of the test session.
-func WithTestSessionStartTime(startTime time.Time) DdTestSessionStartOption {
+func WithTestSessionStartTime(startTime time.Time) TestSessionStartOption {
 	return func(o *tslvTestSessionStartOptions) { o.startTime = startTime }
 }
 
-// DdTestSessionCloseOption represents an option that can be passed to Close.
-type DdTestSessionCloseOption func(*tslvTestSessionCloseOptions)
+// TestSessionCloseOption represents an option that can be passed to Close.
+type TestSessionCloseOption func(*tslvTestSessionCloseOptions)
 
 // tslvTestSessionCloseOptions contains the options for closing a test session.
 type tslvTestSessionCloseOptions struct {
@@ -109,12 +109,12 @@ type tslvTestSessionCloseOptions struct {
 }
 
 // WithTestSessionFinishTime sets the finish time of the test session.
-func WithTestSessionFinishTime(finishTime time.Time) DdTestSessionCloseOption {
+func WithTestSessionFinishTime(finishTime time.Time) TestSessionCloseOption {
 	return func(o *tslvTestSessionCloseOptions) { o.finishTime = finishTime }
 }
 
-// DdTestModuleStartOption represents an option that can be passed to GetOrCreateModule.
-type DdTestModuleStartOption func(*tslvTestModuleStartOptions)
+// TestModuleStartOption represents an option that can be passed to GetOrCreateModule.
+type TestModuleStartOption func(*tslvTestModuleStartOptions)
 
 // tslvTestModuleOptions contains the options for creating a new test module.
 type tslvTestModuleStartOptions struct {
@@ -124,7 +124,7 @@ type tslvTestModuleStartOptions struct {
 }
 
 // WithTestModuleFramework sets the testing framework used by the test module.
-func WithTestModuleFramework(framework, frameworkVersion string) DdTestModuleStartOption {
+func WithTestModuleFramework(framework, frameworkVersion string) TestModuleStartOption {
 	return func(o *tslvTestModuleStartOptions) {
 		o.framework = framework
 		o.frameworkVersion = frameworkVersion
@@ -132,12 +132,12 @@ func WithTestModuleFramework(framework, frameworkVersion string) DdTestModuleSta
 }
 
 // WithTestModuleStartTime sets the start time of the test module.
-func WithTestModuleStartTime(startTime time.Time) DdTestModuleStartOption {
+func WithTestModuleStartTime(startTime time.Time) TestModuleStartOption {
 	return func(o *tslvTestModuleStartOptions) { o.startTime = startTime }
 }
 
-// DdTestSession represents a session for a set of tests.
-type DdTestSession interface {
+// TestSession represents a session for a set of tests.
+type TestSession interface {
 	ddTslvEvent
 
 	// SessionID returns the ID of the session.
@@ -153,14 +153,14 @@ type DdTestSession interface {
 	WorkingDirectory() string
 
 	// Close closes the test session with the given exit code.
-	Close(exitCode int, options ...DdTestSessionCloseOption)
+	Close(exitCode int, options ...TestSessionCloseOption)
 
 	// GetOrCreateModule returns an existing module or creates a new one with the given name.
-	GetOrCreateModule(name string, options ...DdTestModuleStartOption) DdTestModule
+	GetOrCreateModule(name string, options ...TestModuleStartOption) TestModule
 }
 
-// DdTestModuleCloseOption represents an option for closing a test module.
-type DdTestModuleCloseOption func(*tslvTestModuleCloseOptions)
+// TestModuleCloseOption represents an option for closing a test module.
+type TestModuleCloseOption func(*tslvTestModuleCloseOptions)
 
 // tslvTestModuleCloseOptions represents the options for closing a test module.
 type tslvTestModuleCloseOptions struct {
@@ -168,12 +168,12 @@ type tslvTestModuleCloseOptions struct {
 }
 
 // WithTestModuleFinishTime sets the finish time for closing the test module.
-func WithTestModuleFinishTime(finishTime time.Time) DdTestModuleCloseOption {
+func WithTestModuleFinishTime(finishTime time.Time) TestModuleCloseOption {
 	return func(o *tslvTestModuleCloseOptions) { o.finishTime = finishTime }
 }
 
-// DdTestSuiteStartOption represents an option for starting a test suite.
-type DdTestSuiteStartOption func(*tslvTestSuiteStartOptions)
+// TestSuiteStartOption represents an option for starting a test suite.
+type TestSuiteStartOption func(*tslvTestSuiteStartOptions)
 
 // tslvTestSuiteStartOptions represents the options for starting a test suite.
 type tslvTestSuiteStartOptions struct {
@@ -181,19 +181,19 @@ type tslvTestSuiteStartOptions struct {
 }
 
 // WithTestSuiteStartTime sets the start time for starting a test suite.
-func WithTestSuiteStartTime(startTime time.Time) DdTestSuiteStartOption {
+func WithTestSuiteStartTime(startTime time.Time) TestSuiteStartOption {
 	return func(o *tslvTestSuiteStartOptions) { o.startTime = startTime }
 }
 
-// DdTestModule represents a module within a test session.
-type DdTestModule interface {
+// TestModule represents a module within a test session.
+type TestModule interface {
 	ddTslvEvent
 
 	// ModuleID returns the ID of the module.
 	ModuleID() uint64
 
 	// Session returns the test session to which the module belongs.
-	Session() DdTestSession
+	Session() TestSession
 
 	// Framework returns the testing framework used by the module.
 	Framework() string
@@ -202,14 +202,14 @@ type DdTestModule interface {
 	Name() string
 
 	// Close closes the test module.
-	Close(options ...DdTestModuleCloseOption)
+	Close(options ...TestModuleCloseOption)
 
 	// GetOrCreateSuite returns an existing suite or creates a new one with the given name.
-	GetOrCreateSuite(name string, options ...DdTestSuiteStartOption) DdTestSuite
+	GetOrCreateSuite(name string, options ...TestSuiteStartOption) TestSuite
 }
 
-// DdTestSuiteCloseOption represents an option for closing a test suite.
-type DdTestSuiteCloseOption func(*tslvTestSuiteCloseOptions)
+// TestSuiteCloseOption represents an option for closing a test suite.
+type TestSuiteCloseOption func(*tslvTestSuiteCloseOptions)
 
 // tslvTestSuiteCloseOptions represents the options for closing a test suite.
 type tslvTestSuiteCloseOptions struct {
@@ -217,12 +217,12 @@ type tslvTestSuiteCloseOptions struct {
 }
 
 // WithTestSuiteFinishTime sets the finish time for closing the test suite.
-func WithTestSuiteFinishTime(finishTime time.Time) DdTestSuiteCloseOption {
+func WithTestSuiteFinishTime(finishTime time.Time) TestSuiteCloseOption {
 	return func(o *tslvTestSuiteCloseOptions) { o.finishTime = finishTime }
 }
 
-// DdTestStartOption represents an option for starting a test.
-type DdTestStartOption func(*tslvTestStartOptions)
+// TestStartOption represents an option for starting a test.
+type TestStartOption func(*tslvTestStartOptions)
 
 // tslvTestStartOptions represents the options for starting a test.
 type tslvTestStartOptions struct {
@@ -230,32 +230,32 @@ type tslvTestStartOptions struct {
 }
 
 // WithTestStartTime sets the start time for starting a test.
-func WithTestStartTime(startTime time.Time) DdTestStartOption {
+func WithTestStartTime(startTime time.Time) TestStartOption {
 	return func(o *tslvTestStartOptions) { o.startTime = startTime }
 }
 
-// DdTestSuite represents a suite of tests within a module.
-type DdTestSuite interface {
+// TestSuite represents a suite of tests within a module.
+type TestSuite interface {
 	ddTslvEvent
 
 	// SuiteID returns the ID of the suite.
 	SuiteID() uint64
 
 	// Module returns the module to which the suite belongs.
-	Module() DdTestModule
+	Module() TestModule
 
 	// Name returns the name of the suite.
 	Name() string
 
 	// Close closes the test suite.
-	Close(options ...DdTestSuiteCloseOption)
+	Close(options ...TestSuiteCloseOption)
 
 	// CreateTest creates a new test with the given name and options.
-	CreateTest(name string, options ...DdTestStartOption) DdTest
+	CreateTest(name string, options ...TestStartOption) Test
 }
 
-// DdTestCloseOption represents an option for closing a test.
-type DdTestCloseOption func(*tslvTestCloseOptions)
+// TestCloseOption represents an option for closing a test.
+type TestCloseOption func(*tslvTestCloseOptions)
 
 // tslvTestCloseOptions represents the options for closing a test.
 type tslvTestCloseOptions struct {
@@ -264,17 +264,17 @@ type tslvTestCloseOptions struct {
 }
 
 // WithTestFinishTime sets the finish time of the test.
-func WithTestFinishTime(finishTime time.Time) DdTestCloseOption {
+func WithTestFinishTime(finishTime time.Time) TestCloseOption {
 	return func(o *tslvTestCloseOptions) { o.finishTime = finishTime }
 }
 
 // WithTestSkipReason sets the skip reason of the test.
-func WithTestSkipReason(skipReason string) DdTestCloseOption {
+func WithTestSkipReason(skipReason string) TestCloseOption {
 	return func(o *tslvTestCloseOptions) { o.skipReason = skipReason }
 }
 
-// DdTest represents an individual test within a suite.
-type DdTest interface {
+// Test represents an individual test within a suite.
+type Test interface {
 	ddTslvEvent
 
 	// TestID returns the ID of the test.
@@ -284,10 +284,10 @@ type DdTest interface {
 	Name() string
 
 	// Suite returns the suite to which the test belongs.
-	Suite() DdTestSuite
+	Suite() TestSuite
 
 	// Close closes the test with the given status.
-	Close(status TestResultStatus, options ...DdTestCloseOption)
+	Close(status TestResultStatus, options ...TestCloseOption)
 
 	// SetTestFunc sets the function to be tested. (Sets the test.source tags and test.codeowners)
 	SetTestFunc(fn *runtime.Func)
