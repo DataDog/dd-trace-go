@@ -27,9 +27,8 @@ func GetSessionTestingEventType() TestingEventType {
 		return SessionHasCodeOwnerUnsupportedCiEventType
 	} else if hasCiProvider {
 		return SessionNoCodeOwnerIsSupportedCiEventType
-	} else {
-		return SessionNoCodeOwnerUnsupportedCiEventType
 	}
+	return SessionNoCodeOwnerUnsupportedCiEventType
 }
 
 // EventCreated the number of events created by CI Visibility
