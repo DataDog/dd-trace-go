@@ -92,29 +92,6 @@ func (t *tslvTest) Name() string { return t.name }
 // Suite returns the suite to which the test belongs.
 func (t *tslvTest) Suite() DdTestSuite { return t.suite }
 
-// DdTestCloseOption represents an option for closing a test.
-type DdTestCloseOption func(*tslvTestCloseOptions)
-
-// tslvTestCloseOptions represents the options for closing a test.
-type tslvTestCloseOptions struct {
-	finishTime time.Time
-	skipReason string
-}
-
-// WithTestFinishTime sets the finish time of the test.
-func WithTestFinishTime(finishTime time.Time) DdTestCloseOption {
-	return func(o *tslvTestCloseOptions) {
-		o.finishTime = finishTime
-	}
-}
-
-// WithTestSkipReason sets the skip reason of the test.
-func WithTestSkipReason(skipReason string) DdTestCloseOption {
-	return func(o *tslvTestCloseOptions) {
-		o.skipReason = skipReason
-	}
-}
-
 // Close closes the test with the given status.
 func (t *tslvTest) Close(status TestResultStatus, options ...DdTestCloseOption) {
 	t.mutex.Lock()

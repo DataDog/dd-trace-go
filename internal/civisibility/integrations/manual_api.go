@@ -8,13 +8,7 @@ package integrations
 import (
 	"context"
 	"runtime"
-	"sync"
 	"time"
-
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/constants"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/utils"
 )
 
 // TestResultStatus represents the result status of a test.
@@ -44,9 +38,7 @@ type tslvErrorOptions struct {
 
 // WithError sets the error on the options.
 func WithError(err error) DdErrorOption {
-	return func(o *tslvErrorOptions) {
-		o.err = err
-	}
+	return func(o *tslvErrorOptions) { o.err = err }
 }
 
 // WithErrorInfo sets detailed error information on the options.
@@ -73,6 +65,77 @@ type ddTslvEvent interface {
 	SetTag(key string, value interface{})
 }
 
+// DdTestSessionStartOption represents an option that can be passed to CreateTestSession.
+type DdTestSessionStartOption func(*tslvTestSessionStartOptions)
+
+// tslvTestSessionStartOptions contains the options for creating a new test session.
+type tslvTestSessionStartOptions struct {
+	command          string
+	workingDirectory string
+	framework        string
+	frameworkVersion string
+	startTime        time.Time
+}
+
+// WithTestSessionCommand sets the command used to run the test session.
+func WithTestSessionCommand(command string) DdTestSessionStartOption {
+	return func(o *tslvTestSessionStartOptions) { o.command = command }
+}
+
+// WithTestSessionWorkingDirectory sets the working directory of the test session.
+func WithTestSessionWorkingDirectory(workingDirectory string) DdTestSessionStartOption {
+	return func(o *tslvTestSessionStartOptions) { o.workingDirectory = workingDirectory }
+}
+
+// WithTestSessionFramework sets the testing framework used in the test session.
+func WithTestSessionFramework(framework, frameworkVersion string) DdTestSessionStartOption {
+	return func(o *tslvTestSessionStartOptions) {
+		o.framework = framework
+		o.frameworkVersion = frameworkVersion
+	}
+}
+
+// WithTestSessionStartTime sets the start time of the test session.
+func WithTestSessionStartTime(startTime time.Time) DdTestSessionStartOption {
+	return func(o *tslvTestSessionStartOptions) { o.startTime = startTime }
+}
+
+// DdTestSessionCloseOption represents an option that can be passed to Close.
+type DdTestSessionCloseOption func(*tslvTestSessionCloseOptions)
+
+// tslvTestSessionCloseOptions contains the options for closing a test session.
+type tslvTestSessionCloseOptions struct {
+	finishTime time.Time
+}
+
+// WithTestSessionFinishTime sets the finish time of the test session.
+func WithTestSessionFinishTime(finishTime time.Time) DdTestSessionCloseOption {
+	return func(o *tslvTestSessionCloseOptions) { o.finishTime = finishTime }
+}
+
+// DdTestModuleStartOption represents an option that can be passed to GetOrCreateModule.
+type DdTestModuleStartOption func(*tslvTestModuleStartOptions)
+
+// tslvTestModuleOptions contains the options for creating a new test module.
+type tslvTestModuleStartOptions struct {
+	framework        string
+	frameworkVersion string
+	startTime        time.Time
+}
+
+// WithTestModuleFramework sets the testing framework used by the test module.
+func WithTestModuleFramework(framework, frameworkVersion string) DdTestModuleStartOption {
+	return func(o *tslvTestModuleStartOptions) {
+		o.framework = framework
+		o.frameworkVersion = frameworkVersion
+	}
+}
+
+// WithTestModuleStartTime sets the start time of the test module.
+func WithTestModuleStartTime(startTime time.Time) DdTestModuleStartOption {
+	return func(o *tslvTestModuleStartOptions) { o.startTime = startTime }
+}
+
 // DdTestSession represents a session for a set of tests.
 type DdTestSession interface {
 	ddTslvEvent
@@ -94,6 +157,32 @@ type DdTestSession interface {
 
 	// GetOrCreateModule returns an existing module or creates a new one with the given name.
 	GetOrCreateModule(name string, options ...DdTestModuleStartOption) DdTestModule
+}
+
+// DdTestModuleCloseOption represents an option for closing a test module.
+type DdTestModuleCloseOption func(*tslvTestModuleCloseOptions)
+
+// tslvTestModuleCloseOptions represents the options for closing a test module.
+type tslvTestModuleCloseOptions struct {
+	finishTime time.Time
+}
+
+// WithTestModuleFinishTime sets the finish time for closing the test module.
+func WithTestModuleFinishTime(finishTime time.Time) DdTestModuleCloseOption {
+	return func(o *tslvTestModuleCloseOptions) { o.finishTime = finishTime }
+}
+
+// DdTestSuiteStartOption represents an option for starting a test suite.
+type DdTestSuiteStartOption func(*tslvTestSuiteStartOptions)
+
+// tslvTestSuiteStartOptions represents the options for starting a test suite.
+type tslvTestSuiteStartOptions struct {
+	startTime time.Time
+}
+
+// WithTestSuiteStartTime sets the start time for starting a test suite.
+func WithTestSuiteStartTime(startTime time.Time) DdTestSuiteStartOption {
+	return func(o *tslvTestSuiteStartOptions) { o.startTime = startTime }
 }
 
 // DdTestModule represents a module within a test session.
@@ -119,6 +208,32 @@ type DdTestModule interface {
 	GetOrCreateSuite(name string, options ...DdTestSuiteStartOption) DdTestSuite
 }
 
+// DdTestSuiteCloseOption represents an option for closing a test suite.
+type DdTestSuiteCloseOption func(*tslvTestSuiteCloseOptions)
+
+// tslvTestSuiteCloseOptions represents the options for closing a test suite.
+type tslvTestSuiteCloseOptions struct {
+	finishTime time.Time
+}
+
+// WithTestSuiteFinishTime sets the finish time for closing the test suite.
+func WithTestSuiteFinishTime(finishTime time.Time) DdTestSuiteCloseOption {
+	return func(o *tslvTestSuiteCloseOptions) { o.finishTime = finishTime }
+}
+
+// DdTestStartOption represents an option for starting a test.
+type DdTestStartOption func(*tslvTestStartOptions)
+
+// tslvTestStartOptions represents the options for starting a test.
+type tslvTestStartOptions struct {
+	startTime time.Time
+}
+
+// WithTestStartTime sets the start time for starting a test.
+func WithTestStartTime(startTime time.Time) DdTestStartOption {
+	return func(o *tslvTestStartOptions) { o.startTime = startTime }
+}
+
 // DdTestSuite represents a suite of tests within a module.
 type DdTestSuite interface {
 	ddTslvEvent
@@ -137,6 +252,25 @@ type DdTestSuite interface {
 
 	// CreateTest creates a new test with the given name and options.
 	CreateTest(name string, options ...DdTestStartOption) DdTest
+}
+
+// DdTestCloseOption represents an option for closing a test.
+type DdTestCloseOption func(*tslvTestCloseOptions)
+
+// tslvTestCloseOptions represents the options for closing a test.
+type tslvTestCloseOptions struct {
+	finishTime time.Time
+	skipReason string
+}
+
+// WithTestFinishTime sets the finish time of the test.
+func WithTestFinishTime(finishTime time.Time) DdTestCloseOption {
+	return func(o *tslvTestCloseOptions) { o.finishTime = finishTime }
+}
+
+// WithTestSkipReason sets the skip reason of the test.
+func WithTestSkipReason(skipReason string) DdTestCloseOption {
+	return func(o *tslvTestCloseOptions) { o.skipReason = skipReason }
 }
 
 // DdTest represents an individual test within a suite.
@@ -160,86 +294,4 @@ type DdTest interface {
 
 	// SetBenchmarkData sets benchmark data for the test.
 	SetBenchmarkData(measureType string, data map[string]any)
-}
-
-// common
-var _ ddTslvEvent = (*ciVisibilityCommon)(nil)
-
-// ciVisibilityCommon is a struct that implements the ddTslvEvent interface and provides common functionality for CI visibility.
-type ciVisibilityCommon struct {
-	startTime time.Time
-
-	tags   []tracer.StartSpanOption
-	span   tracer.Span
-	ctx    context.Context
-	mutex  sync.Mutex
-	closed bool
-}
-
-// Context returns the context of the event.
-func (c *ciVisibilityCommon) Context() context.Context { return c.ctx }
-
-// StartTime returns the start time of the event.
-func (c *ciVisibilityCommon) StartTime() time.Time { return c.startTime }
-
-// SetError sets an error on the event.
-func (c *ciVisibilityCommon) SetError(options ...DdErrorOption) {
-
-	defaults := &tslvErrorOptions{}
-	for _, o := range options {
-		o(defaults)
-	}
-
-	// if there is an error, set the span with the error
-	if defaults.err != nil {
-		c.span.SetTag(ext.Error, defaults.err)
-		return
-	}
-
-	// if there is no error, set the span with error the error info
-
-	// set the span with error:1
-	c.span.SetTag(ext.Error, true)
-
-	// set the error type
-	if defaults.errType != "" {
-		c.span.SetTag(ext.ErrorType, defaults.errType)
-	}
-
-	// set the error message
-	if defaults.message != "" {
-		c.span.SetTag(ext.ErrorMsg, defaults.message)
-	}
-
-	// set the error stacktrace
-	if defaults.callstack != "" {
-		c.span.SetTag(ext.ErrorStack, defaults.callstack)
-	}
-}
-
-// SetTag sets a tag on the event.
-func (c *ciVisibilityCommon) SetTag(key string, value interface{}) { c.span.SetTag(key, value) }
-
-// fillCommonTags adds common tags to the span options for CI visibility.
-func fillCommonTags(opts []tracer.StartSpanOption) []tracer.StartSpanOption {
-	opts = append(opts, []tracer.StartSpanOption{
-		tracer.Tag(constants.Origin, constants.CIAppTestOrigin),
-		tracer.Tag(ext.ManualKeep, true),
-	}...)
-
-	// Apply CI tags
-	for k, v := range utils.GetCITags() {
-		// Ignore the test session name (sent at the payload metadata level, see `civisibility_payload.go`)
-		if k == constants.TestSessionName {
-			continue
-		}
-		opts = append(opts, tracer.Tag(k, v))
-	}
-
-	// Apply CI metrics
-	for k, v := range utils.GetCIMetrics() {
-		opts = append(opts, tracer.Tag(k, v))
-	}
-
-	return opts
 }

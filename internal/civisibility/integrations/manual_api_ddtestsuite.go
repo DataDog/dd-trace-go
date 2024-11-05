@@ -87,21 +87,6 @@ func (t *tslvTestSuite) Name() string { return t.name }
 // Module returns the module to which the test suite belongs.
 func (t *tslvTestSuite) Module() DdTestModule { return t.module }
 
-// DdTestSuiteCloseOption represents an option for closing a test suite.
-type DdTestSuiteCloseOption func(*tslvTestSuiteCloseOptions)
-
-// tslvTestSuiteCloseOptions represents the options for closing a test suite.
-type tslvTestSuiteCloseOptions struct {
-	finishTime time.Time
-}
-
-// WithTestSuiteFinishTime sets the finish time for closing the test suite.
-func WithTestSuiteFinishTime(finishTime time.Time) DdTestSuiteCloseOption {
-	return func(o *tslvTestSuiteCloseOptions) {
-		o.finishTime = finishTime
-	}
-}
-
 // Close closes the test suite with the given finish time.
 func (t *tslvTestSuite) Close(options ...DdTestSuiteCloseOption) {
 	t.mutex.Lock()
@@ -127,21 +112,6 @@ func (t *tslvTestSuite) Close(options ...DdTestSuiteCloseOption) {
 func (t *tslvTestSuite) SetError(options ...DdErrorOption) {
 	t.ciVisibilityCommon.SetError(options...)
 	t.Module().SetTag(ext.Error, true)
-}
-
-// DdTestStartOption represents an option for starting a test.
-type DdTestStartOption func(*tslvTestStartOptions)
-
-// tslvTestStartOptions represents the options for starting a test.
-type tslvTestStartOptions struct {
-	startTime time.Time
-}
-
-// WithTestStartTime sets the start time for starting a test.
-func WithTestStartTime(startTime time.Time) DdTestStartOption {
-	return func(o *tslvTestStartOptions) {
-		o.startTime = startTime
-	}
 }
 
 // CreateTest creates a new test within the suite.

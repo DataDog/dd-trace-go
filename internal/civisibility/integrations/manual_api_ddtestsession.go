@@ -35,47 +35,6 @@ type tslvTestSession struct {
 	modules map[string]DdTestModule
 }
 
-// DdTestSessionStartOption represents an option that can be passed to CreateTestSession.
-type DdTestSessionStartOption func(*tslvTestSessionStartOptions)
-
-// tslvTestSessionStartOptions contains the options for creating a new test session.
-type tslvTestSessionStartOptions struct {
-	command          string
-	workingDirectory string
-	framework        string
-	frameworkVersion string
-	startTime        time.Time
-}
-
-// WithTestSessionCommand sets the command used to run the test session.
-func WithTestSessionCommand(command string) DdTestSessionStartOption {
-	return func(o *tslvTestSessionStartOptions) {
-		o.command = command
-	}
-}
-
-// WithTestSessionWorkingDirectory sets the working directory of the test session.
-func WithTestSessionWorkingDirectory(workingDirectory string) DdTestSessionStartOption {
-	return func(o *tslvTestSessionStartOptions) {
-		o.workingDirectory = workingDirectory
-	}
-}
-
-// WithTestSessionFramework sets the testing framework used in the test session.
-func WithTestSessionFramework(framework, frameworkVersion string) DdTestSessionStartOption {
-	return func(o *tslvTestSessionStartOptions) {
-		o.framework = framework
-		o.frameworkVersion = frameworkVersion
-	}
-}
-
-// WithTestSessionStartTime sets the start time of the test session.
-func WithTestSessionStartTime(startTime time.Time) DdTestSessionStartOption {
-	return func(o *tslvTestSessionStartOptions) {
-		o.startTime = startTime
-	}
-}
-
 // CreateTestSession initializes a new test session with the given command and working directory.
 func CreateTestSession(options ...DdTestSessionStartOption) DdTestSession {
 	defaults := &tslvTestSessionStartOptions{}
@@ -163,21 +122,6 @@ func (t *tslvTestSession) Framework() string { return t.framework }
 // WorkingDirectory returns the working directory of the test session.
 func (t *tslvTestSession) WorkingDirectory() string { return t.workingDirectory }
 
-// DdTestSessionCloseOption represents an option that can be passed to Close.
-type DdTestSessionCloseOption func(*tslvTestSessionCloseOptions)
-
-// tslvTestSessionCloseOptions contains the options for closing a test session.
-type tslvTestSessionCloseOptions struct {
-	finishTime time.Time
-}
-
-// WithTestSessionFinishTime sets the finish time of the test session.
-func WithTestSessionFinishTime(finishTime time.Time) DdTestSessionCloseOption {
-	return func(o *tslvTestSessionCloseOptions) {
-		o.finishTime = finishTime
-	}
-}
-
 // Close closes the test session with the given exit code.
 func (t *tslvTestSession) Close(exitCode int, options ...DdTestSessionCloseOption) {
 	t.mutex.Lock()
@@ -214,31 +158,6 @@ func (t *tslvTestSession) Close(exitCode int, options ...DdTestSessionCloseOptio
 	// Creating telemetry event finished
 	telemetry.EventFinished(t.framework, telemetry.GetSessionTestingEventType())
 	tracer.Flush()
-}
-
-// DdTestModuleStartOption represents an option that can be passed to GetOrCreateModule.
-type DdTestModuleStartOption func(*tslvTestModuleStartOptions)
-
-// tslvTestModuleOptions contains the options for creating a new test module.
-type tslvTestModuleStartOptions struct {
-	framework        string
-	frameworkVersion string
-	startTime        time.Time
-}
-
-// WithTestModuleFramework sets the testing framework used by the test module.
-func WithTestModuleFramework(framework, frameworkVersion string) DdTestModuleStartOption {
-	return func(o *tslvTestModuleStartOptions) {
-		o.framework = framework
-		o.frameworkVersion = frameworkVersion
-	}
-}
-
-// WithTestModuleStartTime sets the start time of the test module.
-func WithTestModuleStartTime(startTime time.Time) DdTestModuleStartOption {
-	return func(o *tslvTestModuleStartOptions) {
-		o.startTime = startTime
-	}
 }
 
 // GetOrCreateModule returns an existing module or creates a new one with the given name, framework, framework version, and start time.

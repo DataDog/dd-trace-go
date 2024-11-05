@@ -8,12 +8,12 @@ package integrations
 import (
 	"context"
 	"fmt"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/utils/telemetry"
 	"strings"
 	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/constants"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/utils/telemetry"
 )
 
 // Test Module
@@ -106,21 +106,6 @@ func (t *tslvTestModule) Framework() string { return t.framework }
 // Session returns the test session to which the test module belongs.
 func (t *tslvTestModule) Session() DdTestSession { return t.session }
 
-// DdTestModuleCloseOption represents an option for closing a test module.
-type DdTestModuleCloseOption func(*tslvTestModuleCloseOptions)
-
-// tslvTestModuleCloseOptions represents the options for closing a test module.
-type tslvTestModuleCloseOptions struct {
-	finishTime time.Time
-}
-
-// WithTestModuleFinishTime sets the finish time for closing the test module.
-func WithTestModuleFinishTime(finishTime time.Time) DdTestModuleCloseOption {
-	return func(o *tslvTestModuleCloseOptions) {
-		o.finishTime = finishTime
-	}
-}
-
 // Close closes the test module.
 func (t *tslvTestModule) Close(options ...DdTestModuleCloseOption) {
 	t.mutex.Lock()
@@ -148,21 +133,6 @@ func (t *tslvTestModule) Close(options ...DdTestModuleCloseOption) {
 
 	// Creating telemetry event finished
 	telemetry.EventFinished(t.framework, telemetry.ModuleEventType)
-}
-
-// DdTestSuiteStartOption represents an option for starting a test suite.
-type DdTestSuiteStartOption func(*tslvTestSuiteStartOptions)
-
-// tslvTestSuiteStartOptions represents the options for starting a test suite.
-type tslvTestSuiteStartOptions struct {
-	startTime time.Time
-}
-
-// WithTestSuiteStartTime sets the start time for starting a test suite.
-func WithTestSuiteStartTime(startTime time.Time) DdTestSuiteStartOption {
-	return func(o *tslvTestSuiteStartOptions) {
-		o.startTime = startTime
-	}
 }
 
 // GetOrCreateSuite returns an existing suite or creates a new one with the given name.
