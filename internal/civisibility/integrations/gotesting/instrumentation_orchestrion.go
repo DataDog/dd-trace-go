@@ -176,7 +176,7 @@ func instrumentTestingTFunc(f func(*testing.T)) func(*testing.T) {
 		defer func() {
 			if r := recover(); r != nil {
 				// Handle panic and set error information.
-				test.SetErrorInfo("panic", fmt.Sprint(r), utils.GetStacktrace(1))
+				test.SetError(integrations.WithErrorInfo("panic", fmt.Sprint(r), utils.GetStacktrace(1)))
 				test.Close(integrations.ResultStatusFail)
 				checkModuleAndSuite(module, suite)
 				// this is not an internal test. Retries are not applied to subtest (because the parent internal test is going to be retried)
@@ -222,7 +222,7 @@ func instrumentSetErrorInfo(tb testing.TB, errType string, errMessage string, sk
 	// Get the CI Visibility span and check if we can set the error type, message and stack
 	ciTestItem := getTestMetadata(tb)
 	if ciTestItem != nil && ciTestItem.test != nil && ciTestItem.error.CompareAndSwap(0, 1) {
-		ciTestItem.test.SetErrorInfo(errType, errMessage, utils.GetStacktrace(2+skip))
+		ciTestItem.test.SetError(integrations.WithErrorInfo(errType, errMessage, utils.GetStacktrace(2+skip)))
 	}
 }
 
@@ -403,7 +403,7 @@ func instrumentTestingBFunc(pb *testing.B, name string, f func(*testing.B)) (str
 
 		// Define a function to handle panic during benchmark finalization.
 		panicFunc := func(r any) {
-			test.SetErrorInfo("panic", fmt.Sprint(r), utils.GetStacktrace(1))
+			test.SetError(integrations.WithErrorInfo("panic", fmt.Sprint(r), utils.GetStacktrace(1)))
 			suite.SetTag(ext.Error, true)
 			module.SetTag(ext.Error, true)
 			test.Close(integrations.ResultStatusFail)

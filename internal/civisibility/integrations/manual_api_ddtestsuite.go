@@ -124,14 +124,8 @@ func (t *tslvTestSuite) Close(options ...DdTestSuiteCloseOption) {
 }
 
 // SetError sets an error on the test suite and marks the module as having an error.
-func (t *tslvTestSuite) SetError(err error) {
-	t.ciVisibilityCommon.SetError(err)
-	t.Module().SetTag(ext.Error, true)
-}
-
-// SetErrorInfo sets detailed error information on the test suite and marks the module as having an error.
-func (t *tslvTestSuite) SetErrorInfo(errType string, message string, callstack string) {
-	t.ciVisibilityCommon.SetErrorInfo(errType, message, callstack)
+func (t *tslvTestSuite) SetError(options ...DdErrorOption) {
+	t.ciVisibilityCommon.SetError(options...)
 	t.Module().SetTag(ext.Error, true)
 }
 

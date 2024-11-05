@@ -126,7 +126,7 @@ func TestModule(t *testing.T) {
 	now := time.Now()
 	session, module := createDDTestModule(now)
 	defer func() { session.Close(0) }()
-	module.SetErrorInfo("my-type", "my-message", "my-stack")
+	module.SetError(WithErrorInfo("my-type", "my-message", "my-stack"))
 
 	assert.NotNil(module.Context())
 	assert.Equal("my-module", module.Name())
@@ -176,7 +176,7 @@ func TestSuite(t *testing.T) {
 		session.Close(0)
 		module.Close()
 	}()
-	suite.SetErrorInfo("my-type", "my-message", "my-stack")
+	suite.SetError(WithErrorInfo("my-type", "my-message", "my-stack"))
 
 	assert.NotNil(suite.Context())
 	assert.Equal("my-suite", suite.Name())
@@ -228,8 +228,8 @@ func Test(t *testing.T) {
 		module.Close()
 		suite.Close()
 	}()
-	test.SetError(errors.New("we keep the last error"))
-	test.SetErrorInfo("my-type", "my-message", "my-stack")
+	test.SetError(WithError(errors.New("we keep the last error")))
+	test.SetError(WithErrorInfo("my-type", "my-message", "my-stack"))
 	pc, _, _, _ := runtime.Caller(0)
 	test.SetTestFunc(runtime.FuncForPC(pc))
 
@@ -259,8 +259,8 @@ func TestWithInnerFunc(t *testing.T) {
 		module.Close()
 		suite.Close()
 	}()
-	test.SetError(errors.New("we keep the last error"))
-	test.SetErrorInfo("my-type", "my-message", "my-stack")
+	test.SetError(WithError(errors.New("we keep the last error")))
+	test.SetError(WithErrorInfo("my-type", "my-message", "my-stack"))
 	func() {
 		pc, _, _, _ := runtime.Caller(0)
 		test.SetTestFunc(runtime.FuncForPC(pc))

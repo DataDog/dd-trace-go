@@ -277,7 +277,7 @@ func (ddm *M) executeInternalTest(testInfo *testingTInfo) func(*testing.T) {
 				// Handle panic and set error information.
 				execMeta.panicData = r
 				execMeta.panicStacktrace = utils.GetStacktrace(1)
-				test.SetErrorInfo("panic", fmt.Sprint(r), execMeta.panicStacktrace)
+				test.SetError(integrations.WithErrorInfo("panic", fmt.Sprint(r), execMeta.panicStacktrace))
 				suite.SetTag(ext.Error, true)
 				module.SetTag(ext.Error, true)
 				test.Close(integrations.ResultStatusFail)
@@ -480,7 +480,7 @@ func (ddm *M) executeInternalBenchmark(benchmarkInfo *testingBInfo) func(*testin
 
 		// Define a function to handle panic during benchmark finalization.
 		panicFunc := func(r any) {
-			test.SetErrorInfo("panic", fmt.Sprint(r), utils.GetStacktrace(1))
+			test.SetError(integrations.WithErrorInfo("panic", fmt.Sprint(r), utils.GetStacktrace(1)))
 			suite.SetTag(ext.Error, true)
 			module.SetTag(ext.Error, true)
 			test.Close(integrations.ResultStatusFail)

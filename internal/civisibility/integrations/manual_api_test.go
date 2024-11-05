@@ -30,12 +30,8 @@ func (m *MockDdTslvEvent) StartTime() time.Time {
 	return args.Get(0).(time.Time)
 }
 
-func (m *MockDdTslvEvent) SetError(err error) {
-	m.Called(err)
-}
-
-func (m *MockDdTslvEvent) SetErrorInfo(errType string, message string, callstack string) {
-	m.Called(errType, message, callstack)
+func (m *MockDdTslvEvent) SetError(options ...DdErrorOption) {
+	m.Called(options)
 }
 
 func (m *MockDdTslvEvent) SetTag(key string, value interface{}) {

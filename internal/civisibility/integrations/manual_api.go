@@ -31,6 +31,33 @@ const (
 	ResultStatusSkip TestResultStatus = 2
 )
 
+// DdErrorOption is a function that sets an option for creating an error.
+type DdErrorOption func(*tslvErrorOptions)
+
+// tslvErrorOptions is a struct that holds options for creating an error.
+type tslvErrorOptions struct {
+	err       error
+	errType   string
+	message   string
+	callstack string
+}
+
+// WithError sets the error on the options.
+func WithError(err error) DdErrorOption {
+	return func(o *tslvErrorOptions) {
+		o.err = err
+	}
+}
+
+// WithErrorInfo sets detailed error information on the options.
+func WithErrorInfo(errType string, message string, callstack string) DdErrorOption {
+	return func(o *tslvErrorOptions) {
+		o.errType = errType
+		o.message = message
+		o.callstack = callstack
+	}
+}
+
 // ddTslvEvent is an interface that provides common methods for CI visibility events.
 type ddTslvEvent interface {
 	// Context returns the context of the event.
@@ -40,10 +67,7 @@ type ddTslvEvent interface {
 	StartTime() time.Time
 
 	// SetError sets an error on the event.
-	SetError(err error)
-
-	// SetErrorInfo sets detailed error information on the event.
-	SetErrorInfo(errType string, message string, callstack string)
+	SetError(options ...DdErrorOption)
 
 	// SetTag sets a tag on the event.
 	SetTag(key string, value interface{})
@@ -159,28 +183,37 @@ func (c *ciVisibilityCommon) Context() context.Context { return c.ctx }
 func (c *ciVisibilityCommon) StartTime() time.Time { return c.startTime }
 
 // SetError sets an error on the event.
-func (c *ciVisibilityCommon) SetError(err error) {
-	c.span.SetTag(ext.Error, err)
-}
+func (c *ciVisibilityCommon) SetError(options ...DdErrorOption) {
 
-// SetErrorInfo sets detailed error information on the event.
-func (c *ciVisibilityCommon) SetErrorInfo(errType string, message string, callstack string) {
+	defaults := &tslvErrorOptions{}
+	for _, o := range options {
+		o(defaults)
+	}
+
+	// if there is an error, set the span with the error
+	if defaults.err != nil {
+		c.span.SetTag(ext.Error, defaults.err)
+		return
+	}
+
+	// if there is no error, set the span with error the error info
+
 	// set the span with error:1
 	c.span.SetTag(ext.Error, true)
 
 	// set the error type
-	if errType != "" {
-		c.span.SetTag(ext.ErrorType, errType)
+	if defaults.errType != "" {
+		c.span.SetTag(ext.ErrorType, defaults.errType)
 	}
 
 	// set the error message
-	if message != "" {
-		c.span.SetTag(ext.ErrorMsg, message)
+	if defaults.message != "" {
+		c.span.SetTag(ext.ErrorMsg, defaults.message)
 	}
 
 	// set the error stacktrace
-	if callstack != "" {
-		c.span.SetTag(ext.ErrorStack, callstack)
+	if defaults.callstack != "" {
+		c.span.SetTag(ext.ErrorStack, defaults.callstack)
 	}
 }
 
