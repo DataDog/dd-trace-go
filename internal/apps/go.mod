@@ -3,8 +3,8 @@ module github.com/DataDog/dd-trace-go/internal/apps/v2
 go 1.22.0
 
 require (
-	github.com/DataDog/dd-trace-go/contrib/net/http/v2 v2.0.0-20241024132757-00c300faaace
-	github.com/DataDog/dd-trace-go/v2 v2.0.0-beta.3.0.20241024132757-00c300faaace
+	github.com/DataDog/dd-trace-go/contrib/net/http/v2 v2.0.0-beta.6
+	github.com/DataDog/dd-trace-go/v2 v2.0.0-beta.6
 	golang.org/x/sync v0.7.0
 )
 
