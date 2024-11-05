@@ -129,13 +129,7 @@ type DdTest interface {
 	Suite() DdTestSuite
 
 	// Close closes the test with the given status.
-	Close(status TestResultStatus)
-
-	// CloseWithFinishTime closes the test with the given status and finish time.
-	CloseWithFinishTime(status TestResultStatus, finishTime time.Time)
-
-	// CloseWithFinishTimeAndSkipReason closes the test with the given status, finish time, and skip reason.
-	CloseWithFinishTimeAndSkipReason(status TestResultStatus, finishTime time.Time, skipReason string)
+	Close(status TestResultStatus, options ...DdTestCloseOption)
 
 	// SetTestFunc sets the function to be tested. (Sets the test.source tags and test.codeowners)
 	SetTestFunc(fn *runtime.Func)

@@ -92,20 +92,44 @@ func (t *tslvTest) Name() string { return t.name }
 // Suite returns the suite to which the test belongs.
 func (t *tslvTest) Suite() DdTestSuite { return t.suite }
 
-// Close closes the test with the given status and sets the finish time to the current time.
-func (t *tslvTest) Close(status TestResultStatus) { t.CloseWithFinishTime(status, time.Now()) }
+// DdTestCloseOption represents an option for closing a test.
+type DdTestCloseOption func(*tslvTestCloseOptions)
 
-// CloseWithFinishTime closes the test with the given status and finish time.
-func (t *tslvTest) CloseWithFinishTime(status TestResultStatus, finishTime time.Time) {
-	t.CloseWithFinishTimeAndSkipReason(status, finishTime, "")
+// tslvTestCloseOptions represents the options for closing a test.
+type tslvTestCloseOptions struct {
+	finishTime time.Time
+	skipReason string
 }
 
-// CloseWithFinishTimeAndSkipReason closes the test with the given status, finish time, and skip reason.
-func (t *tslvTest) CloseWithFinishTimeAndSkipReason(status TestResultStatus, finishTime time.Time, skipReason string) {
+// WithTestFinishTime sets the finish time of the test.
+func WithTestFinishTime(finishTime time.Time) DdTestCloseOption {
+	return func(o *tslvTestCloseOptions) {
+		o.finishTime = finishTime
+	}
+}
+
+// WithTestSkipReason sets the skip reason of the test.
+func WithTestSkipReason(skipReason string) DdTestCloseOption {
+	return func(o *tslvTestCloseOptions) {
+		o.skipReason = skipReason
+	}
+}
+
+// Close closes the test with the given status.
+func (t *tslvTest) Close(status TestResultStatus, options ...DdTestCloseOption) {
 	t.mutex.Lock()
 	defer t.mutex.Unlock()
 	if t.closed {
 		return
+	}
+
+	defaults := &tslvTestCloseOptions{}
+	for _, opt := range options {
+		opt(defaults)
+	}
+
+	if defaults.finishTime.IsZero() {
+		defaults.finishTime = time.Now()
 	}
 
 	switch status {
@@ -117,11 +141,11 @@ func (t *tslvTest) CloseWithFinishTimeAndSkipReason(status TestResultStatus, fin
 		t.span.SetTag(constants.TestStatus, constants.TestStatusSkip)
 	}
 
-	if skipReason != "" {
-		t.span.SetTag(constants.TestSkipReason, skipReason)
+	if defaults.skipReason != "" {
+		t.span.SetTag(constants.TestSkipReason, defaults.skipReason)
 	}
 
-	t.span.Finish(tracer.FinishTime(finishTime))
+	t.span.Finish(tracer.FinishTime(defaults.finishTime))
 	t.closed = true
 }
 

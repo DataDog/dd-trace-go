@@ -220,7 +220,7 @@ func (ddm *M) executeInternalTest(testInfo *testingTInfo) func(*testing.T) {
 			// check if the test was marked as unskippable
 			if test.Context().Value(constants.TestUnskippable) != true {
 				test.SetTag(constants.TestSkippedByITR, "true")
-				test.CloseWithFinishTimeAndSkipReason(integrations.ResultStatusSkip, time.Now(), constants.SkippedByITRReason)
+				test.Close(integrations.ResultStatusSkip, integrations.WithTestSkipReason(constants.SkippedByITRReason))
 				session.SetTag(constants.ITRTestsSkipped, "true")
 				session.SetTag(constants.ITRTestsSkippingCount, numOfTestsSkipped.Add(1))
 				checkModuleAndSuite(module, suite)
@@ -494,11 +494,11 @@ func (ddm *M) executeInternalBenchmark(benchmarkInfo *testingBInfo) func(*testin
 			test.SetTag(ext.Error, true)
 			suite.SetTag(ext.Error, true)
 			module.SetTag(ext.Error, true)
-			test.CloseWithFinishTime(integrations.ResultStatusFail, endTime)
+			test.Close(integrations.ResultStatusFail, integrations.WithTestFinishTime(endTime))
 		} else if iPfOfB.B.Skipped() {
-			test.CloseWithFinishTime(integrations.ResultStatusSkip, endTime)
+			test.Close(integrations.ResultStatusSkip, integrations.WithTestFinishTime(endTime))
 		} else {
-			test.CloseWithFinishTime(integrations.ResultStatusPass, endTime)
+			test.Close(integrations.ResultStatusPass, integrations.WithTestFinishTime(endTime))
 		}
 
 		checkModuleAndSuite(module, suite)

@@ -238,7 +238,7 @@ func instrumentCloseAndSkip(tb testing.TB, skipReason string) {
 	// Get the CI Visibility span and check if we can mark it as skipped and close it
 	ciTestItem := getTestMetadata(tb)
 	if ciTestItem != nil && ciTestItem.test != nil && ciTestItem.skipped.CompareAndSwap(0, 1) {
-		ciTestItem.test.CloseWithFinishTimeAndSkipReason(integrations.ResultStatusSkip, time.Now(), skipReason)
+		ciTestItem.test.Close(integrations.ResultStatusSkip, integrations.WithTestSkipReason(skipReason))
 	}
 }
 
@@ -417,11 +417,11 @@ func instrumentTestingBFunc(pb *testing.B, name string, f func(*testing.B)) (str
 			test.SetTag(ext.Error, true)
 			suite.SetTag(ext.Error, true)
 			module.SetTag(ext.Error, true)
-			test.CloseWithFinishTime(integrations.ResultStatusFail, endTime)
+			test.Close(integrations.ResultStatusFail, integrations.WithTestFinishTime(endTime))
 		} else if iPfOfB.B.Skipped() {
-			test.CloseWithFinishTime(integrations.ResultStatusSkip, endTime)
+			test.Close(integrations.ResultStatusSkip, integrations.WithTestFinishTime(endTime))
 		} else {
-			test.CloseWithFinishTime(integrations.ResultStatusPass, endTime)
+			test.Close(integrations.ResultStatusPass, integrations.WithTestFinishTime(endTime))
 		}
 
 		checkModuleAndSuite(module, suite)

@@ -63,16 +63,8 @@ func (m *MockDdTest) Suite() DdTestSuite {
 	return args.Get(0).(DdTestSuite)
 }
 
-func (m *MockDdTest) Close(status TestResultStatus) {
-	m.Called(status)
-}
-
-func (m *MockDdTest) CloseWithFinishTime(status TestResultStatus, finishTime time.Time) {
-	m.Called(status, finishTime)
-}
-
-func (m *MockDdTest) CloseWithFinishTimeAndSkipReason(status TestResultStatus, finishTime time.Time, skipReason string) {
-	m.Called(status, finishTime, skipReason)
+func (m *MockDdTest) Close(status TestResultStatus, options ...DdTestCloseOption) {
+	m.Called(status, options)
 }
 
 func (m *MockDdTest) SetTestFunc(fn *runtime.Func) {
@@ -282,9 +274,7 @@ func TestDdTest(t *testing.T) {
 	mockTest := new(MockDdTest)
 	mockTest.On("Name").Return("test-name")
 	mockTest.On("Suite").Return(new(MockDdTestSuite))
-	mockTest.On("Close", ResultStatusPass).Return()
-	mockTest.On("CloseWithFinishTime", ResultStatusPass, mock.Anything).Return()
-	mockTest.On("CloseWithFinishTimeAndSkipReason", ResultStatusSkip, mock.Anything, "SkipReason").Return()
+	mockTest.On("Close", mock.Anything, mock.Anything).Return()
 	mockTest.On("SetTestFunc", mock.Anything).Return()
 	mockTest.On("SetBenchmarkData", "measure-type", mock.Anything).Return()
 
@@ -296,15 +286,15 @@ func TestDdTest(t *testing.T) {
 	assert.NotNil(t, suite)
 
 	test.Close(ResultStatusPass)
-	mockTest.AssertCalled(t, "Close", ResultStatusPass)
+	mockTest.AssertCalled(t, "Close", ResultStatusPass, mock.Anything)
 
 	now := time.Now()
-	test.CloseWithFinishTime(ResultStatusPass, now)
-	mockTest.AssertCalled(t, "CloseWithFinishTime", ResultStatusPass, now)
+	test.Close(ResultStatusPass, WithTestFinishTime(now))
+	mockTest.AssertCalled(t, "Close", ResultStatusPass, mock.Anything)
 
 	skipReason := "SkipReason"
-	test.CloseWithFinishTimeAndSkipReason(ResultStatusSkip, now, skipReason)
-	mockTest.AssertCalled(t, "CloseWithFinishTimeAndSkipReason", ResultStatusSkip, now, skipReason)
+	test.Close(ResultStatusSkip, WithTestFinishTime(now), WithTestSkipReason(skipReason))
+	mockTest.AssertCalled(t, "Close", ResultStatusSkip, mock.Anything)
 
 	test.SetTestFunc(nil)
 	mockTest.AssertCalled(t, "SetTestFunc", (*runtime.Func)(nil))
