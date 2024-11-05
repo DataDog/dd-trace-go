@@ -19,6 +19,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/constants"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/utils"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/utils/telemetry"
 )
 
 // Test
@@ -78,6 +79,8 @@ func createTest(suite *tslvTestSuite, name string, startTime time.Time) Test {
 	// Note: if the process is killed some tests will not be closed and will be lost. This is a known limitation.
 	// We will not close it because there's no a good test status to report in this case, and we don't want to report a false positive (pass, fail, or skip).
 
+	// Creating telemetry event created
+	telemetry.EventCreated(t.suite.module.framework, telemetry.TestEventType)
 	return t
 }
 
@@ -124,6 +127,9 @@ func (t *tslvTest) Close(status TestResultStatus, options ...TestCloseOption) {
 
 	t.span.Finish(tracer.FinishTime(defaults.finishTime))
 	t.closed = true
+
+	// Creating telemetry event finished
+	telemetry.EventFinished(t.suite.module.framework, telemetry.TestEventType)
 }
 
 // SetError sets an error on the test and marks the suite and module as having an error.

@@ -14,6 +14,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/constants"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/utils/telemetry"
 )
 
 // Test Suite
@@ -73,6 +74,8 @@ func createTestSuite(module *tslvTestModule, name string, startTime time.Time) T
 	// Ensure to close everything before CI visibility exits. In CI visibility mode, we try to never lose data.
 	PushCiVisibilityCloseAction(func() { suite.Close() })
 
+	// Creating telemetry event created
+	telemetry.EventCreated(module.framework, telemetry.SuiteEventType)
 	return suite
 }
 
@@ -106,6 +109,9 @@ func (t *tslvTestSuite) Close(options ...TestSuiteCloseOption) {
 
 	t.span.Finish(tracer.FinishTime(defaults.finishTime))
 	t.closed = true
+
+	// Creating telemetry event finished
+	telemetry.EventFinished(t.module.framework, telemetry.ModuleEventType)
 }
 
 // SetError sets an error on the test suite and marks the module as having an error.
