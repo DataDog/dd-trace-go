@@ -9,44 +9,44 @@ import "gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 
 // EndpointPayloadBytes records the size in bytes of the serialized payload by CI Visibility.
 func EndpointPayloadBytes(endpointType EndpointType, value float64) {
-	telemetry.GlobalClient.Record(telemetry.NamespaceCiVisibility, telemetry.MetricKindDist, "endpoint_payload.bytes", value, []string{
+	telemetry.GlobalClient.Record(telemetry.NamespaceCiVisibility, telemetry.MetricKindDist, "endpoint_payload.bytes", value, removeEmptyStrings([]string{
 		(string)(endpointType),
-	}, true)
+	}), true)
 }
 
 // EndpointPayloadRequestsMs records the time it takes to send the payload sent to the endpoint in ms by CI Visibility.
 func EndpointPayloadRequestsMs(endpointType EndpointType, value float64) {
-	telemetry.GlobalClient.Record(telemetry.NamespaceCiVisibility, telemetry.MetricKindDist, "endpoint_payload.requests_ms", value, []string{
+	telemetry.GlobalClient.Record(telemetry.NamespaceCiVisibility, telemetry.MetricKindDist, "endpoint_payload.requests_ms", value, removeEmptyStrings([]string{
 		(string)(endpointType),
-	}, true)
+	}), true)
 }
 
 // EndpointPayloadEventsCount records the number of events in the payload sent to the endpoint by CI Visibility.
 func EndpointPayloadEventsCount(endpointType EndpointType, value float64) {
-	telemetry.GlobalClient.Record(telemetry.NamespaceCiVisibility, telemetry.MetricKindDist, "endpoint_payload.events_count", value, []string{
+	telemetry.GlobalClient.Record(telemetry.NamespaceCiVisibility, telemetry.MetricKindDist, "endpoint_payload.events_count", value, removeEmptyStrings([]string{
 		(string)(endpointType),
-	}, true)
+	}), true)
 }
 
 // EndpointEventsSerializationMs records the time it takes to serialize the events in the payload sent to the endpoint in ms by CI Visibility.
 func EndpointEventsSerializationMs(endpointType EndpointType, value float64) {
-	telemetry.GlobalClient.Record(telemetry.NamespaceCiVisibility, telemetry.MetricKindDist, "endpoint_payload.events_serialization_ms", value, []string{
+	telemetry.GlobalClient.Record(telemetry.NamespaceCiVisibility, telemetry.MetricKindDist, "endpoint_payload.events_serialization_ms", value, removeEmptyStrings([]string{
 		(string)(endpointType),
-	}, true)
+	}), true)
 }
 
 // GitCommandMs records the time it takes to execute a git command in ms by CI Visibility.
 func GitCommandMs(commandType CommandType, value float64) {
-	telemetry.GlobalClient.Record(telemetry.NamespaceCiVisibility, telemetry.MetricKindDist, "git.command_ms", value, []string{
+	telemetry.GlobalClient.Record(telemetry.NamespaceCiVisibility, telemetry.MetricKindDist, "git.command_ms", value, removeEmptyStrings([]string{
 		(string)(commandType),
-	}, true)
+	}), true)
 }
 
 // GitRequestsSearchCommitsMs records the time it takes to get the response of the search commit quest in ms by CI Visibility.
 func GitRequestsSearchCommitsMs(responseCompressedType ResponseCompressedType, value float64) {
-	telemetry.GlobalClient.Record(telemetry.NamespaceCiVisibility, telemetry.MetricKindDist, "git_requests.search_commits_ms", value, []string{
+	telemetry.GlobalClient.Record(telemetry.NamespaceCiVisibility, telemetry.MetricKindDist, "git_requests.search_commits_ms", value, removeEmptyStrings([]string{
 		(string)(responseCompressedType),
-	}, true)
+	}), true)
 }
 
 // GitRequestsObjectsPackMs records the time it takes to get the response of the objects pack request in ms by CI Visibility.
@@ -76,9 +76,9 @@ func ITRSkippableTestsRequestMs(value float64) {
 
 // ITRSkippableTestsResponseBytes records the number of bytes received by the endpoint. Tagged with a boolean flag set to true if response body is compressed.
 func ITRSkippableTestsResponseBytes(responseCompressedType ResponseCompressedType, value float64) {
-	telemetry.GlobalClient.Record(telemetry.NamespaceCiVisibility, telemetry.MetricKindDist, "itr_skippable_tests.response_bytes", value, []string{
+	telemetry.GlobalClient.Record(telemetry.NamespaceCiVisibility, telemetry.MetricKindDist, "itr_skippable_tests.response_bytes", value, removeEmptyStrings([]string{
 		(string)(responseCompressedType),
-	}, true)
+	}), true)
 }
 
 // CodeCoverageFiles records the number of files in the code coverage report by CI Visibility.
@@ -93,9 +93,9 @@ func EarlyFlakeDetectionRequestMs(value float64) {
 
 // EarlyFlakeDetectionResponseBytes records the number of bytes received by the endpoint. Tagged with a boolean flag set to true if response body is compressed.
 func EarlyFlakeDetectionResponseBytes(responseCompressedType ResponseCompressedType, value float64) {
-	telemetry.GlobalClient.Record(telemetry.NamespaceCiVisibility, telemetry.MetricKindDist, "early_flake_detection.response_bytes", value, []string{
+	telemetry.GlobalClient.Record(telemetry.NamespaceCiVisibility, telemetry.MetricKindDist, "early_flake_detection.response_bytes", value, removeEmptyStrings([]string{
 		(string)(responseCompressedType),
-	}, true)
+	}), true)
 }
 
 // EarlyFlakeDetectionResponseTests records the number of tests in the response of the early flake detection endpoint by CI Visibility.
