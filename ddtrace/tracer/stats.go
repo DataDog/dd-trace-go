@@ -3,8 +3,6 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
-//go:generate msgp -unexported -marshal=false -o=stats_msgp.go -tests=false
-
 package tracer
 
 import (
@@ -68,7 +66,7 @@ func newConcentrator(c *config, bucketSize int64) *concentrator {
 		// This should never actually happen as the agent MUST have an env configured to start-up
 		// That panic will be removed in a future release at which point we can remove this
 		env = "unknown-env"
-		log.Error("No DD Env found, normally the agent MUST have one")
+		log.Debug("No DD Env found, normally the agent should have one")
 	}
 	aggKey := stats.PayloadAggregationKey{
 		Hostname:     c.hostname,
