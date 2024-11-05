@@ -23,6 +23,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/constants"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/utils"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 )
 
 const (
@@ -194,6 +195,16 @@ func NewClientWithServiceNameAndSubdomain(serviceName, subdomain string) Client 
 
 	log.Debug("ciVisibilityHttpClient: new client created [id: %v, agentless: %v, url: %v, env: %v, serviceName: %v, subdomain: %v]",
 		id, agentlessEnabled, baseURL, environment, serviceName, subdomain)
+
+	if !telemetry.Disabled() {
+		telemetry.GlobalClient.ApplyOps(
+			telemetry.WithService(serviceName),
+			telemetry.WithEnv(environment),
+			telemetry.WithHTTPClient(requestHandler.Client),
+			telemetry.WithURL(agentlessEnabled, baseURL),
+		)
+	}
+
 	return &client{
 		id:               id,
 		agentless:        agentlessEnabled,
