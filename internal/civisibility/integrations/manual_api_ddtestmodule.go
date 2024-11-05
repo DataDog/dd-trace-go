@@ -8,6 +8,7 @@ package integrations
 import (
 	"context"
 	"fmt"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/utils/telemetry"
 	"strings"
 	"time"
 
@@ -86,6 +87,8 @@ func createTestModule(session *tslvTestSession, name string, framework string, f
 	// Ensure to close everything before CI visibility exits. In CI visibility mode, we try to never lose data.
 	PushCiVisibilityCloseAction(func() { module.Close() })
 
+	// Creating telemetry event created
+	telemetry.EventCreated(module.framework, telemetry.ModuleEventType)
 	return module
 }
 
@@ -103,15 +106,36 @@ func (t *tslvTestModule) Framework() string { return t.framework }
 // Session returns the test session to which the test module belongs.
 func (t *tslvTestModule) Session() DdTestSession { return t.session }
 
-// Close closes the test module and sets the finish time to the current time.
-func (t *tslvTestModule) Close() { t.CloseWithFinishTime(time.Now()) }
+// DdTestModuleCloseOption represents an option for closing a test module.
+type DdTestModuleCloseOption func(*tslvTestModuleCloseOptions)
 
-// CloseWithFinishTime closes the test module with the given finish time.
-func (t *tslvTestModule) CloseWithFinishTime(finishTime time.Time) {
+// tslvTestModuleCloseOptions represents the options for closing a test module.
+type tslvTestModuleCloseOptions struct {
+	finishTime time.Time
+}
+
+// WithTestModuleFinishTime sets the finish time for closing the test module.
+func WithTestModuleFinishTime(finishTime time.Time) DdTestModuleCloseOption {
+	return func(o *tslvTestModuleCloseOptions) {
+		o.finishTime = finishTime
+	}
+}
+
+// Close closes the test module.
+func (t *tslvTestModule) Close(options ...DdTestModuleCloseOption) {
 	t.mutex.Lock()
 	defer t.mutex.Unlock()
 	if t.closed {
 		return
+	}
+
+	defaults := &tslvTestModuleCloseOptions{}
+	for _, o := range options {
+		o(defaults)
+	}
+
+	if defaults.finishTime.IsZero() {
+		defaults.finishTime = time.Now()
 	}
 
 	for _, suite := range t.suites {
@@ -119,25 +143,47 @@ func (t *tslvTestModule) CloseWithFinishTime(finishTime time.Time) {
 	}
 	t.suites = map[string]DdTestSuite{}
 
-	t.span.Finish(tracer.FinishTime(finishTime))
+	t.span.Finish(tracer.FinishTime(defaults.finishTime))
 	t.closed = true
+
+	// Creating telemetry event finished
+	telemetry.EventFinished(t.framework, telemetry.ModuleEventType)
+}
+
+// DdTestSuiteStartOption represents an option for starting a test suite.
+type DdTestSuiteStartOption func(*tslvTestSuiteStartOptions)
+
+// tslvTestSuiteStartOptions represents the options for starting a test suite.
+type tslvTestSuiteStartOptions struct {
+	startTime time.Time
+}
+
+// WithTestSuiteStartTime sets the start time for starting a test suite.
+func WithTestSuiteStartTime(startTime time.Time) DdTestSuiteStartOption {
+	return func(o *tslvTestSuiteStartOptions) {
+		o.startTime = startTime
+	}
 }
 
 // GetOrCreateSuite returns an existing suite or creates a new one with the given name.
-func (t *tslvTestModule) GetOrCreateSuite(name string) DdTestSuite {
-	return t.GetOrCreateSuiteWithStartTime(name, time.Now())
-}
-
-// GetOrCreateSuiteWithStartTime returns an existing suite or creates a new one with the given name and start time.
-func (t *tslvTestModule) GetOrCreateSuiteWithStartTime(name string, startTime time.Time) DdTestSuite {
+func (t *tslvTestModule) GetOrCreateSuite(name string, options ...DdTestSuiteStartOption) DdTestSuite {
 	t.mutex.Lock()
 	defer t.mutex.Unlock()
+
+	defaults := &tslvTestSuiteStartOptions{}
+	for _, o := range options {
+		o(defaults)
+	}
+
+	if defaults.startTime.IsZero() {
+		defaults.startTime = time.Now()
+	}
 
 	var suite DdTestSuite
 	if v, ok := t.suites[name]; ok {
 		suite = v
 	} else {
-		suite = createTestSuite(t, name, startTime)
+		suite = createTestSuite(t, name, defaults.startTime)
 		t.suites[name] = suite
 	}
 

@@ -5,36 +5,61 @@
 
 package telemetry
 
-import "gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
+import (
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/constants"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/utils"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
+)
+
+func getTestingFramework(testingFramework string) TestingFramework {
+	telemetryFramework := UnknownFramework
+	if testingFramework == "golang.org/pkg/testing" {
+		telemetryFramework = GoTestingFramework
+	}
+	return telemetryFramework
+}
+func GetSessionTestingEventType() TestingEventType {
+	hasCodeOwners := utils.GetCodeOwners() != nil
+	_, hasCiProvider := utils.GetCITags()[constants.CIProviderName]
+	if hasCodeOwners && hasCiProvider {
+		return SessionHasCodeOwnerIsSupportedCiEventType
+	} else if hasCodeOwners {
+		return SessionHasCodeOwnerUnsupportedCiEventType
+	} else if hasCiProvider {
+		return SessionNoCodeOwnerIsSupportedCiEventType
+	} else {
+		return SessionNoCodeOwnerUnsupportedCiEventType
+	}
+}
 
 // EventCreated the number of events created by CI Visibility
-func EventCreated(testingFramework TestingFramework, eventType TestingEventType) {
+func EventCreated(testingFramework string, eventType TestingEventType) {
 	telemetry.GlobalClient.Count(telemetry.NamespaceCiVisibility, "event_created", 1.0, removeEmptyStrings([]string{
-		(string)(testingFramework),
+		(string)(getTestingFramework(testingFramework)),
 		(string)(eventType),
 	}), true)
 }
 
 // EventFinished the number of events finished by CI Visibility
-func EventFinished(testingFramework TestingFramework, eventType TestingEventType) {
+func EventFinished(testingFramework string, eventType TestingEventType) {
 	telemetry.GlobalClient.Count(telemetry.NamespaceCiVisibility, "event_finished", 1.0, removeEmptyStrings([]string{
-		(string)(testingFramework),
+		(string)(getTestingFramework(testingFramework)),
 		(string)(eventType),
 	}), true)
 }
 
 // CodeCoverageStarted the number of code coverage start calls by CI Visibility
-func CodeCoverageStarted(testingFramework TestingFramework, coverageLibraryType CoverageLibraryType) {
+func CodeCoverageStarted(testingFramework string, coverageLibraryType CoverageLibraryType) {
 	telemetry.GlobalClient.Count(telemetry.NamespaceCiVisibility, "code_coverage_started", 1.0, removeEmptyStrings([]string{
-		(string)(testingFramework),
+		(string)(getTestingFramework(testingFramework)),
 		(string)(coverageLibraryType),
 	}), true)
 }
 
 // CodeCoverageFinished the number of code coverage finished calls by CI Visibility
-func CodeCoverageFinished(testingFramework TestingFramework, coverageLibraryType CoverageLibraryType) {
+func CodeCoverageFinished(testingFramework string, coverageLibraryType CoverageLibraryType) {
 	telemetry.GlobalClient.Count(telemetry.NamespaceCiVisibility, "code_coverage_finished", 1.0, removeEmptyStrings([]string{
-		(string)(testingFramework),
+		(string)(getTestingFramework(testingFramework)),
 		(string)(coverageLibraryType),
 	}), true)
 }

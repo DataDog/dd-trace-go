@@ -195,7 +195,7 @@ func (ddm *M) executeInternalTest(testInfo *testingTInfo) func(*testing.T) {
 		}
 
 		// Create or retrieve the module, suite, and test for CI visibility.
-		module := session.GetOrCreateModuleWithFramework(testInfo.moduleName, testFramework, runtime.Version())
+		module := session.GetOrCreateModule(testInfo.moduleName)
 		suite := module.GetOrCreateSuite(testInfo.suiteName)
 		test := suite.CreateTest(testInfo.testName)
 		test.SetTestFunc(originalFunc)
@@ -391,9 +391,9 @@ func (ddm *M) executeInternalBenchmark(benchmarkInfo *testingBInfo) func(*testin
 		}
 
 		startTime := time.Now()
-		module := session.GetOrCreateModuleWithFrameworkAndStartTime(benchmarkInfo.moduleName, testFramework, runtime.Version(), startTime)
-		suite := module.GetOrCreateSuiteWithStartTime(benchmarkInfo.suiteName, startTime)
-		test := suite.CreateTestWithStartTime(benchmarkInfo.testName, startTime)
+		module := session.GetOrCreateModule(benchmarkInfo.moduleName, integrations.WithTestModuleStartTime(startTime))
+		suite := module.GetOrCreateSuite(benchmarkInfo.suiteName, integrations.WithTestSuiteStartTime(startTime))
+		test := suite.CreateTest(benchmarkInfo.testName, integrations.WithTestStartTime(startTime))
 		test.SetTestFunc(originalFunc)
 
 		// Run the original benchmark function.

@@ -30,28 +30,28 @@ func TestMain(m *testing.M) {
 }
 
 func createDDTestSession(now time.Time) DdTestSession {
-	session := CreateTestSessionWith("my-command", "/tmp/wd", "my-testing-framework", now)
+	session := CreateTestSession(WithTestSessionCommand("my-command"), WithTestSessionWorkingDirectory("/tmp/wd"), WithTestSessionFramework("my-testing-framework", "framework-version"), WithTestSessionStartTime(now))
 	session.SetTag("my-tag", "my-value")
 	return session
 }
 
 func createDDTestModule(now time.Time) (DdTestSession, DdTestModule) {
 	session := createDDTestSession(now)
-	module := session.GetOrCreateModuleWithFrameworkAndStartTime("my-module", "my-module-framework", "framework-version", now)
+	module := session.GetOrCreateModule("my-module", WithTestModuleFramework("my-module-framework", "framework-version"), WithTestModuleStartTime(now))
 	module.SetTag("my-tag", "my-value")
 	return session, module
 }
 
 func createDDTestSuite(now time.Time) (DdTestSession, DdTestModule, DdTestSuite) {
 	session, module := createDDTestModule(now)
-	suite := module.GetOrCreateSuiteWithStartTime("my-suite", now)
+	suite := module.GetOrCreateSuite("my-suite", WithTestSuiteStartTime(now))
 	suite.SetTag("my-tag", "my-value")
 	return session, module, suite
 }
 
 func createDDTest(now time.Time) (DdTestSession, DdTestModule, DdTestSuite, DdTest) {
 	session, module, suite := createDDTestSuite(now)
-	test := suite.CreateTestWithStartTime("my-test", now)
+	test := suite.CreateTest("my-test", WithTestStartTime(now))
 	test.SetTag("my-tag", "my-value")
 	return session, module, suite, test
 }

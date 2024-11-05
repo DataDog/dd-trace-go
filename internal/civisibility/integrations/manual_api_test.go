@@ -109,26 +109,12 @@ func (m *MockDdTestSession) WorkingDirectory() string {
 	return args.String(0)
 }
 
-func (m *MockDdTestSession) Close(exitCode int) {
-	m.Called(exitCode)
+func (m *MockDdTestSession) Close(exitCode int, options ...DdTestSessionCloseOption) {
+	m.Called(exitCode, options)
 }
 
-func (m *MockDdTestSession) CloseWithFinishTime(exitCode int, finishTime time.Time) {
-	m.Called(exitCode, finishTime)
-}
-
-func (m *MockDdTestSession) GetOrCreateModule(name string) DdTestModule {
-	args := m.Called(name)
-	return args.Get(0).(DdTestModule)
-}
-
-func (m *MockDdTestSession) GetOrCreateModuleWithFramework(name string, framework string, frameworkVersion string) DdTestModule {
-	args := m.Called(name, framework, frameworkVersion)
-	return args.Get(0).(DdTestModule)
-}
-
-func (m *MockDdTestSession) GetOrCreateModuleWithFrameworkAndStartTime(name string, framework string, frameworkVersion string, startTime time.Time) DdTestModule {
-	args := m.Called(name, framework, frameworkVersion, startTime)
+func (m *MockDdTestSession) GetOrCreateModule(name string, options ...DdTestModuleStartOption) DdTestModule {
+	args := m.Called(name, options)
 	return args.Get(0).(DdTestModule)
 }
 
@@ -158,16 +144,12 @@ func (m *MockDdTestModule) Name() string {
 	return args.String(0)
 }
 
-func (m *MockDdTestModule) Close() {
-	m.Called()
+func (m *MockDdTestModule) Close(options ...DdTestModuleCloseOption) {
+	m.Called(options)
 }
 
-func (m *MockDdTestModule) CloseWithFinishTime(finishTime time.Time) {
-	m.Called(finishTime)
-}
-
-func (m *MockDdTestModule) GetOrCreateSuite(name string) DdTestSuite {
-	args := m.Called(name)
+func (m *MockDdTestModule) GetOrCreateSuite(name string, options ...DdTestSuiteStartOption) DdTestSuite {
+	args := m.Called(name, options)
 	return args.Get(0).(DdTestSuite)
 }
 
@@ -197,21 +179,12 @@ func (m *MockDdTestSuite) Name() string {
 	return args.String(0)
 }
 
-func (m *MockDdTestSuite) Close() {
-	m.Called()
+func (m *MockDdTestSuite) Close(options ...DdTestSuiteCloseOption) {
+	m.Called(options)
 }
 
-func (m *MockDdTestSuite) CloseWithFinishTime(finishTime time.Time) {
-	m.Called(finishTime)
-}
-
-func (m *MockDdTestSuite) CreateTest(name string) DdTest {
-	args := m.Called(name)
-	return args.Get(0).(DdTest)
-}
-
-func (m *MockDdTestSuite) CreateTestWithStartTime(name string, startTime time.Time) DdTest {
-	args := m.Called(name, startTime)
+func (m *MockDdTestSuite) CreateTest(name string, options ...DdTestStartOption) DdTest {
+	args := m.Called(name, options)
 	return args.Get(0).(DdTest)
 }
 
@@ -221,11 +194,8 @@ func TestDdTestSession(t *testing.T) {
 	mockSession.On("Command").Return("test-command")
 	mockSession.On("Framework").Return("test-framework")
 	mockSession.On("WorkingDirectory").Return("/path/to/working/dir")
-	mockSession.On("Close", 0).Return()
-	mockSession.On("CloseWithFinishTime", 0, mock.Anything).Return()
-	mockSession.On("GetOrCreateModule", "test-module").Return(new(MockDdTestModule))
-	mockSession.On("GetOrCreateModuleWithFramework", "test-module", "test-framework", "1.0").Return(new(MockDdTestModule))
-	mockSession.On("GetOrCreateModuleWithFrameworkAndStartTime", "test-module", "test-framework", "1.0", mock.Anything).Return(new(MockDdTestModule))
+	mockSession.On("Close", 0, mock.Anything).Return()
+	mockSession.On("GetOrCreateModule", "test-module", mock.Anything).Return(new(MockDdTestModule))
 
 	session := (DdTestSession)(mockSession)
 	assert.Equal(t, "test-command", session.Command())
@@ -233,23 +203,23 @@ func TestDdTestSession(t *testing.T) {
 	assert.Equal(t, "/path/to/working/dir", session.WorkingDirectory())
 
 	session.Close(0)
-	mockSession.AssertCalled(t, "Close", 0)
+	mockSession.AssertCalled(t, "Close", 0, mock.Anything)
 
 	now := time.Now()
-	session.CloseWithFinishTime(0, now)
-	mockSession.AssertCalled(t, "CloseWithFinishTime", 0, now)
+	session.Close(0, WithTestSessionFinishTime(now))
+	mockSession.AssertCalled(t, "Close", 0, mock.Anything)
 
 	module := session.GetOrCreateModule("test-module")
 	assert.NotNil(t, module)
-	mockSession.AssertCalled(t, "GetOrCreateModule", "test-module")
+	mockSession.AssertCalled(t, "GetOrCreateModule", "test-module", mock.Anything)
 
-	module = session.GetOrCreateModuleWithFramework("test-module", "test-framework", "1.0")
+	module = session.GetOrCreateModule("test-module", WithTestModuleFramework("test-framework", "1.0"))
 	assert.NotNil(t, module)
-	mockSession.AssertCalled(t, "GetOrCreateModuleWithFramework", "test-module", "test-framework", "1.0")
+	mockSession.AssertCalled(t, "GetOrCreateModule", "test-module", mock.Anything)
 
-	module = session.GetOrCreateModuleWithFrameworkAndStartTime("test-module", "test-framework", "1.0", now)
+	module = session.GetOrCreateModule("test-module", WithTestModuleFramework("test-framework", "1.0"), WithTestModuleStartTime(now))
 	assert.NotNil(t, module)
-	mockSession.AssertCalled(t, "GetOrCreateModuleWithFrameworkAndStartTime", "test-module", "test-framework", "1.0", now)
+	mockSession.AssertCalled(t, "GetOrCreateModule", "test-module", mock.Anything)
 }
 
 func TestDdTestModule(t *testing.T) {
@@ -257,10 +227,8 @@ func TestDdTestModule(t *testing.T) {
 	mockModule.On("Session").Return(new(MockDdTestSession))
 	mockModule.On("Framework").Return("test-framework")
 	mockModule.On("Name").Return("test-module")
-	mockModule.On("Close").Return()
-	mockModule.On("CloseWithFinishTime", mock.Anything).Return()
-	mockModule.On("GetOrCreateSuite", "test-suite").Return(new(MockDdTestSuite))
-	mockModule.On("GetOrCreateSuiteWithStartTime", "test-suite", mock.Anything).Return(new(MockDdTestSuite))
+	mockModule.On("Close", mock.Anything).Return()
+	mockModule.On("GetOrCreateSuite", "test-suite", mock.Anything).Return(new(MockDdTestSuite))
 
 	module := (DdTestModule)(mockModule)
 
@@ -268,48 +236,46 @@ func TestDdTestModule(t *testing.T) {
 	assert.Equal(t, "test-module", module.Name())
 
 	module.Close()
-	mockModule.AssertCalled(t, "Close")
+	mockModule.AssertCalled(t, "Close", mock.Anything)
 
 	now := time.Now()
-	module.CloseWithFinishTime(now)
-	mockModule.AssertCalled(t, "CloseWithFinishTime", now)
+	module.Close(WithTestModuleFinishTime(now))
+	mockModule.AssertCalled(t, "Close", mock.Anything)
 
 	suite := module.GetOrCreateSuite("test-suite")
 	assert.NotNil(t, suite)
-	mockModule.AssertCalled(t, "GetOrCreateSuite", "test-suite")
+	mockModule.AssertCalled(t, "GetOrCreateSuite", "test-suite", mock.Anything)
 
-	suite = module.GetOrCreateSuiteWithStartTime("test-suite", now)
+	suite = module.GetOrCreateSuite("test-suite", WithTestSuiteStartTime(now))
 	assert.NotNil(t, suite)
-	mockModule.AssertCalled(t, "GetOrCreateSuiteWithStartTime", "test-suite", now)
+	mockModule.AssertCalled(t, "GetOrCreateSuite", "test-suite", mock.Anything)
 }
 
 func TestDdTestSuite(t *testing.T) {
 	mockSuite := new(MockDdTestSuite)
 	mockSuite.On("Module").Return(new(MockDdTestModule))
 	mockSuite.On("Name").Return("test-suite")
-	mockSuite.On("Close").Return()
-	mockSuite.On("CloseWithFinishTime", mock.Anything).Return()
-	mockSuite.On("CreateTest", "test-name").Return(new(MockDdTest))
-	mockSuite.On("CreateTestWithStartTime", "test-name", mock.Anything).Return(new(MockDdTest))
+	mockSuite.On("Close", mock.Anything).Return()
+	mockSuite.On("CreateTest", "test-name", mock.Anything).Return(new(MockDdTest))
 
 	suite := (DdTestSuite)(mockSuite)
 
 	assert.Equal(t, "test-suite", suite.Name())
 
 	suite.Close()
-	mockSuite.AssertCalled(t, "Close")
+	mockSuite.AssertCalled(t, "Close", mock.Anything)
 
 	now := time.Now()
-	suite.CloseWithFinishTime(now)
-	mockSuite.AssertCalled(t, "CloseWithFinishTime", now)
+	suite.Close(WithTestSuiteFinishTime(now))
+	mockSuite.AssertCalled(t, "Close", mock.Anything)
 
 	test := suite.CreateTest("test-name")
 	assert.NotNil(t, test)
-	mockSuite.AssertCalled(t, "CreateTest", "test-name")
+	mockSuite.AssertCalled(t, "CreateTest", "test-name", mock.Anything)
 
-	test = suite.CreateTestWithStartTime("test-name", now)
+	test = suite.CreateTest("test-name", WithTestStartTime(now))
 	assert.NotNil(t, test)
-	mockSuite.AssertCalled(t, "CreateTestWithStartTime", "test-name", now)
+	mockSuite.AssertCalled(t, "CreateTest", "test-name", mock.Anything)
 }
 
 func TestDdTest(t *testing.T) {

@@ -66,19 +66,10 @@ type DdTestSession interface {
 	WorkingDirectory() string
 
 	// Close closes the test session with the given exit code.
-	Close(exitCode int)
-
-	// CloseWithFinishTime closes the test session with the given exit code and finish time.
-	CloseWithFinishTime(exitCode int, finishTime time.Time)
+	Close(exitCode int, options ...DdTestSessionCloseOption)
 
 	// GetOrCreateModule returns an existing module or creates a new one with the given name.
-	GetOrCreateModule(name string) DdTestModule
-
-	// GetOrCreateModuleWithFramework returns an existing module or creates a new one with the given name, framework, and framework version.
-	GetOrCreateModuleWithFramework(name string, framework string, frameworkVersion string) DdTestModule
-
-	// GetOrCreateModuleWithFrameworkAndStartTime returns an existing module or creates a new one with the given name, framework, framework version, and start time.
-	GetOrCreateModuleWithFrameworkAndStartTime(name string, framework string, frameworkVersion string, startTime time.Time) DdTestModule
+	GetOrCreateModule(name string, options ...DdTestModuleStartOption) DdTestModule
 }
 
 // DdTestModule represents a module within a test session.
@@ -98,16 +89,10 @@ type DdTestModule interface {
 	Name() string
 
 	// Close closes the test module.
-	Close()
-
-	// CloseWithFinishTime closes the test module with the given finish time.
-	CloseWithFinishTime(finishTime time.Time)
+	Close(options ...DdTestModuleCloseOption)
 
 	// GetOrCreateSuite returns an existing suite or creates a new one with the given name.
-	GetOrCreateSuite(name string) DdTestSuite
-
-	// GetOrCreateSuiteWithStartTime returns an existing suite or creates a new one with the given name and start time.
-	GetOrCreateSuiteWithStartTime(name string, startTime time.Time) DdTestSuite
+	GetOrCreateSuite(name string, options ...DdTestSuiteStartOption) DdTestSuite
 }
 
 // DdTestSuite represents a suite of tests within a module.
@@ -124,16 +109,10 @@ type DdTestSuite interface {
 	Name() string
 
 	// Close closes the test suite.
-	Close()
+	Close(options ...DdTestSuiteCloseOption)
 
-	// CloseWithFinishTime closes the test suite with the given finish time.
-	CloseWithFinishTime(finishTime time.Time)
-
-	// CreateTest creates a new test with the given name.
-	CreateTest(name string) DdTest
-
-	// CreateTestWithStartTime creates a new test with the given name and start time.
-	CreateTestWithStartTime(name string, startTime time.Time) DdTest
+	// CreateTest creates a new test with the given name and options.
+	CreateTest(name string, options ...DdTestStartOption) DdTest
 }
 
 // DdTest represents an individual test within a suite.

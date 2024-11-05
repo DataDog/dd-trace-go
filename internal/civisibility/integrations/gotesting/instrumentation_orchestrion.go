@@ -44,7 +44,7 @@ func instrumentTestingM(m *testing.M) func(exitCode int) {
 	integrations.EnsureCiVisibilityInitialization()
 
 	// Create a new test session for CI visibility.
-	session = integrations.CreateTestSession()
+	session = integrations.CreateTestSession(integrations.WithTestSessionFramework(testFramework, runtime.Version()))
 
 	settings := integrations.GetSettings()
 	if settings != nil && settings.CodeCoverage {
@@ -131,7 +131,7 @@ func instrumentTestingTFunc(f func(*testing.T)) func(*testing.T) {
 		atomic.AddInt32(suitesCounters[suiteName], 1)
 
 		// Create or retrieve the module, suite, and test for CI visibility.
-		module := session.GetOrCreateModuleWithFramework(moduleName, testFramework, runtime.Version())
+		module := session.GetOrCreateModule(moduleName)
 		suite := module.GetOrCreateSuite(suiteName)
 		test := suite.CreateTest(t.Name())
 		test.SetTestFunc(originalFunc)
@@ -311,9 +311,9 @@ func instrumentTestingBFunc(pb *testing.B, name string, f func(*testing.B)) (str
 		bpf.AddLevel(-1)
 
 		startTime := time.Now()
-		module := session.GetOrCreateModuleWithFrameworkAndStartTime(moduleName, testFramework, runtime.Version(), startTime)
-		suite := module.GetOrCreateSuiteWithStartTime(suiteName, startTime)
-		test := suite.CreateTestWithStartTime(fmt.Sprintf("%s/%s", pb.Name(), name), startTime)
+		module := session.GetOrCreateModule(moduleName, integrations.WithTestModuleStartTime(startTime))
+		suite := module.GetOrCreateSuite(suiteName, integrations.WithTestSuiteStartTime(startTime))
+		test := suite.CreateTest(fmt.Sprintf("%s/%s", pb.Name(), name), integrations.WithTestStartTime(startTime))
 		test.SetTestFunc(originalFunc)
 
 		// Restore the original name without the sub-benchmark auto name.

@@ -87,18 +87,39 @@ func (t *tslvTestSuite) Name() string { return t.name }
 // Module returns the module to which the test suite belongs.
 func (t *tslvTestSuite) Module() DdTestModule { return t.module }
 
-// Close closes the test suite and sets the finish time to the current time.
-func (t *tslvTestSuite) Close() { t.CloseWithFinishTime(time.Now()) }
+// DdTestSuiteCloseOption represents an option for closing a test suite.
+type DdTestSuiteCloseOption func(*tslvTestSuiteCloseOptions)
 
-// CloseWithFinishTime closes the test suite with the given finish time.
-func (t *tslvTestSuite) CloseWithFinishTime(finishTime time.Time) {
+// tslvTestSuiteCloseOptions represents the options for closing a test suite.
+type tslvTestSuiteCloseOptions struct {
+	finishTime time.Time
+}
+
+// WithTestSuiteFinishTime sets the finish time for closing the test suite.
+func WithTestSuiteFinishTime(finishTime time.Time) DdTestSuiteCloseOption {
+	return func(o *tslvTestSuiteCloseOptions) {
+		o.finishTime = finishTime
+	}
+}
+
+// Close closes the test suite with the given finish time.
+func (t *tslvTestSuite) Close(options ...DdTestSuiteCloseOption) {
 	t.mutex.Lock()
 	defer t.mutex.Unlock()
 	if t.closed {
 		return
 	}
 
-	t.span.Finish(tracer.FinishTime(finishTime))
+	defaults := &tslvTestSuiteCloseOptions{}
+	for _, opt := range options {
+		opt(defaults)
+	}
+
+	if defaults.finishTime.IsZero() {
+		defaults.finishTime = time.Now()
+	}
+
+	t.span.Finish(tracer.FinishTime(defaults.finishTime))
 	t.closed = true
 }
 
@@ -114,12 +135,31 @@ func (t *tslvTestSuite) SetErrorInfo(errType string, message string, callstack s
 	t.Module().SetTag(ext.Error, true)
 }
 
-// CreateTest creates a new test with the given name and sets the start time to the current time.
-func (t *tslvTestSuite) CreateTest(name string) DdTest {
-	return t.CreateTestWithStartTime(name, time.Now())
+// DdTestStartOption represents an option for starting a test.
+type DdTestStartOption func(*tslvTestStartOptions)
+
+// tslvTestStartOptions represents the options for starting a test.
+type tslvTestStartOptions struct {
+	startTime time.Time
 }
 
-// CreateTestWithStartTime creates a new test with the given name and start time.
-func (t *tslvTestSuite) CreateTestWithStartTime(name string, startTime time.Time) DdTest {
-	return createTest(t, name, startTime)
+// WithTestStartTime sets the start time for starting a test.
+func WithTestStartTime(startTime time.Time) DdTestStartOption {
+	return func(o *tslvTestStartOptions) {
+		o.startTime = startTime
+	}
+}
+
+// CreateTest creates a new test within the suite.
+func (t *tslvTestSuite) CreateTest(name string, options ...DdTestStartOption) DdTest {
+	defaults := &tslvTestStartOptions{}
+	for _, opt := range options {
+		opt(defaults)
+	}
+
+	if defaults.startTime.IsZero() {
+		defaults.startTime = time.Now()
+	}
+
+	return createTest(t, name, defaults.startTime)
 }
