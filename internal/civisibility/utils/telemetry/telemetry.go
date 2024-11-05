@@ -3,7 +3,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
-package utils
+package telemetry
 
 // TestingFramework is a type for testing frameworks
 type TestingFramework string
