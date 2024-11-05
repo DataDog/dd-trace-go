@@ -8,7 +8,9 @@ package envoy
 import (
 	"context"
 	"errors"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 	"io"
+	"math"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -36,6 +38,13 @@ import (
 	httpsec2 "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener/httpsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
+
+const componentName = "envoy/service/ext_proc/v3"
+
+func init() {
+	telemetry.LoadIntegration(componentName)
+	tracer.MarkIntegrationImported("github.com/envoyproxy/go-control-plane/envoy/service/ext_proc/v3")
+}
 
 type CurrentRequest struct {
 	op          *httpsec.HandlerOperation
@@ -379,12 +388,16 @@ func doBlockRequest(currentRequest *CurrentRequest, blockAction *actions.BlockHT
 
 	httpsec2.SetResponseHeadersTags(currentRequest.span, headerToSet)
 	currentRequest.statusCode = blockAction.StatusCode
+	var int32StatusCode int32 = 0
+	if currentRequest.statusCode > 0 && currentRequest.statusCode <= math.MaxInt32 {
+		int32StatusCode = int32(currentRequest.statusCode)
+	}
 
 	return &extproc.ProcessingResponse{
 		Response: &extproc.ProcessingResponse_ImmediateResponse{
 			ImmediateResponse: &extproc.ImmediateResponse{
 				Status: &v32.HttpStatus{
-					Code: v32.StatusCode(currentRequest.statusCode),
+					Code: v32.StatusCode(int32StatusCode),
 				},
 				Headers: &extproc.HeaderMutation{
 					SetHeaders: headersMutation,
