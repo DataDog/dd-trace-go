@@ -5,7 +5,7 @@ go 1.22.0
 toolchain go1.23.1
 
 require (
-	github.com/DataDog/dd-trace-go/v2 v2.0.0-beta.3.0.20241024132757-00c300faaace
+	github.com/DataDog/dd-trace-go/v2 v2.0.0-beta.6
 	github.com/go-sql-driver/mysql v1.8.1
 	github.com/lib/pq v1.10.9
 	github.com/microsoft/go-mssqldb v1.7.2
