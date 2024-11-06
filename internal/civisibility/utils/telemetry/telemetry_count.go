@@ -178,13 +178,8 @@ func ITRSkippableTestsRequestErrors(errorType ErrorType) {
 }
 
 // ITRSkippableTestsResponseTests the number of tests received in the ITR skippable tests response by CI Visibility.
-func ITRSkippableTestsResponseTests() {
-	telemetry.GlobalClient.Count(telemetry.NamespaceCiVisibility, "itr_skippable_tests.response_tests", 1.0, nil, true)
-}
-
-// ITRSkippableTestsResponseSuites the number of suites received in the ITR skippable tests response by CI Visibility.
-func ITRSkippableTestsResponseSuites() {
-	telemetry.GlobalClient.Count(telemetry.NamespaceCiVisibility, "itr_skippable_tests.response_suites", 1.0, nil, true)
+func ITRSkippableTestsResponseTests(value float64) {
+	telemetry.GlobalClient.Count(telemetry.NamespaceCiVisibility, "itr_skippable_tests.response_tests", value, nil, true)
 }
 
 // ITRSkipped the number of ITR tests skipped by CI Visibility, tagged by the event type.

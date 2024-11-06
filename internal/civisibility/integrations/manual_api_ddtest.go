@@ -229,6 +229,7 @@ func (t *tslvTest) SetTestFunc(fn *runtime.Func) {
 		// if the function is marked as unskippable, set the appropriate tag
 		if isUnskippable {
 			t.SetTag(constants.TestUnskippable, "true")
+			telemetry.ITRUnskippable(telemetry.TestEventType)
 			t.ctx = context.WithValue(t.ctx, constants.TestUnskippable, true)
 		}
 	}

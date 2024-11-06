@@ -7,6 +7,8 @@ package net
 
 import (
 	"fmt"
+
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/utils/telemetry"
 )
 
 const (
@@ -72,9 +74,21 @@ func (c *client) GetSkippableTests() (correlationID string, skippables map[strin
 		},
 	}
 
-	response, err := c.handler.SendRequest(*c.getPostRequestConfig(skippableURLPath, body))
+	request := c.getPostRequestConfig(skippableURLPath, body)
+	if request.Compressed {
+		telemetry.ITRSkippableTestsRequest(telemetry.CompressedRequestCompressedType)
+	} else {
+		telemetry.ITRSkippableTestsRequest(telemetry.UncompressedRequestCompressedType)
+	}
+
+	response, err := c.handler.SendRequest(*request)
 	if err != nil {
+		telemetry.ITRSkippableTestsRequestErrors(telemetry.NetworkErrorType)
 		return "", nil, fmt.Errorf("sending skippable tests request: %s", err.Error())
+	}
+
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		telemetry.ITRSkippableTestsRequestErrors(telemetry.GetErrorTypeFromStatusCode(response.StatusCode))
 	}
 
 	var responseObject skippableResponse
@@ -83,6 +97,7 @@ func (c *client) GetSkippableTests() (correlationID string, skippables map[strin
 		return "", nil, fmt.Errorf("unmarshalling skippable tests response: %s", err.Error())
 	}
 
+	telemetry.ITRSkippableTestsResponseTests(float64(len(responseObject.Data)))
 	skippableTestsMap := map[string]map[string][]SkippableResponseDataAttributes{}
 	for _, data := range responseObject.Data {
 

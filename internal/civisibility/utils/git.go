@@ -66,8 +66,10 @@ func isGitFound() bool {
 // execGit executes a Git command with the given arguments.
 func execGit(commandType telemetry.CommandType, args ...string) (val []byte, err error) {
 	if commandType != telemetry.NotSpecifiedCommandsType {
+		startTime := time.Now()
 		telemetry.GitCommand(commandType)
 		defer func() {
+			telemetry.GitCommandMs(commandType, float64(time.Since(startTime).Milliseconds()))
 			var exitErr *exec.ExitError
 			if errors.As(err, &exitErr) {
 				switch exitErr.ExitCode() {

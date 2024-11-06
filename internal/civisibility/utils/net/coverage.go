@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/utils/telemetry"
 	"io"
+	"time"
 )
 
 const (
@@ -60,7 +61,10 @@ func (c *client) SendCoveragePayload(ciTestCovPayload io.Reader) error {
 		telemetry.EndpointPayloadRequests(telemetry.CodeCoverageUncompressedEndpointType)
 	}
 
+	startTime := time.Now()
 	response, responseErr := c.handler.SendRequest(request)
+	telemetry.EndpointPayloadRequestsMs(telemetry.CodeCoverageEndpointType, float64(time.Since(startTime).Milliseconds()))
+
 	if responseErr != nil {
 		telemetry.EndpointPayloadRequestsErrors(telemetry.CodeCoverageEndpointType, telemetry.NetworkErrorType)
 		telemetry.EndpointPayloadDropped(telemetry.CodeCoverageEndpointType)

@@ -10,8 +10,10 @@ import (
 	"encoding/binary"
 	"io"
 	"sync/atomic"
+	"time"
 
 	"github.com/tinylib/msgp/msgp"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/utils/telemetry"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
@@ -33,6 +35,9 @@ type coveragePayload struct {
 
 	// reader is used for reading the contents of buf.
 	reader *bytes.Reader
+
+	// serializationTime time to do serialization
+	serializationTime time.Duration
 }
 
 var _ io.Reader = (*coveragePayload)(nil)
@@ -49,6 +54,10 @@ func newCoveragePayload() *coveragePayload {
 // push pushes a new item into the stream.
 func (p *coveragePayload) push(testCoverageData *ciTestCoverageData) error {
 	p.buf.Grow(testCoverageData.Msgsize())
+	startTime := time.Now()
+	defer func() {
+		p.serializationTime += time.Since(startTime)
+	}()
 	if err := msgp.Encode(&p.buf, testCoverageData); err != nil {
 		return err
 	}
@@ -137,6 +146,7 @@ func (p *coveragePayload) Read(b []byte) (n int, err error) {
 //	A pointer to a bytes.Buffer containing the encoded CI Visibility coverage payload.
 //	An error if reading from the buffer or encoding the payload fails.
 func (p *coveragePayload) getBuffer() (*bytes.Buffer, error) {
+	startTime := time.Now()
 	log.Debug("coveragePayload: .getBuffer (count: %v)", p.itemCount())
 
 	// Create a buffer to read the current payload
@@ -157,5 +167,8 @@ func (p *coveragePayload) getBuffer() (*bytes.Buffer, error) {
 		return nil, err
 	}
 
+	telemetry.EndpointPayloadBytes(telemetry.CodeCoverageEndpointType, float64(encodedBuf.Len()))
+	telemetry.EndpointPayloadEventsCount(telemetry.CodeCoverageEndpointType, float64(p.itemCount()))
+	telemetry.EndpointEventsSerializationMs(telemetry.CodeCoverageEndpointType, float64(p.serializationTime.Milliseconds()+time.Since(startTime).Milliseconds()))
 	return encodedBuf, nil
 }

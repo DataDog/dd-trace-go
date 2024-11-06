@@ -7,6 +7,8 @@ package net
 
 import (
 	"fmt"
+
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/utils/telemetry"
 )
 
 const (
@@ -62,9 +64,21 @@ func (c *client) GetEarlyFlakeDetectionData() (*EfdResponseData, error) {
 		},
 	}
 
-	response, err := c.handler.SendRequest(*c.getPostRequestConfig(efdURLPath, body))
+	request := c.getPostRequestConfig(efdURLPath, body)
+	if request.Compressed {
+		telemetry.EarlyFlakeDetectionRequest(telemetry.CompressedRequestCompressedType)
+	} else {
+		telemetry.EarlyFlakeDetectionRequest(telemetry.UncompressedRequestCompressedType)
+	}
+
+	response, err := c.handler.SendRequest(*request)
 	if err != nil {
+		telemetry.EarlyFlakeDetectionRequestErrors(telemetry.NetworkErrorType)
 		return nil, fmt.Errorf("sending early flake detection request: %s", err.Error())
+	}
+
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		telemetry.EarlyFlakeDetectionRequestErrors(telemetry.GetErrorTypeFromStatusCode(response.StatusCode))
 	}
 
 	var responseObject efdResponse

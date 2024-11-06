@@ -18,6 +18,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/integrations"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/integrations/gotesting/coverage"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/utils"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/utils/telemetry"
 )
 
 const (
@@ -225,9 +226,11 @@ func (ddm *M) executeInternalTest(testInfo *testingTInfo) func(*testing.T) {
 				session.SetTag(constants.ITRTestsSkippingCount, numOfTestsSkipped.Add(1))
 				checkModuleAndSuite(module, suite)
 				t.Skip(constants.SkippedByITRReason)
+				telemetry.ITRSkipped(telemetry.TestEventType)
 				return
 			} else {
 				test.SetTag(constants.TestForcedToRun, "true")
+				telemetry.ITRForcedRun(telemetry.TestEventType)
 			}
 		}
 

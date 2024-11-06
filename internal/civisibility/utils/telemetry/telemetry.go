@@ -128,14 +128,9 @@ const (
 type SettingsResponseType []string
 
 var (
-	CoverageDisabledItrSkipDisabledSettingsResponseType           SettingsResponseType = []string{}
-	CoverageEnabledItrSkipDisabledSettingsResponseType            SettingsResponseType = []string{"coverage_enabled"}
-	CoverageDisabledItrSkipEnabledSettingsResponseType            SettingsResponseType = []string{"itrskip_enabled"}
-	CoverageEnabledItrSkipEnabledSettingsResponseType             SettingsResponseType = []string{"coverage_enabled", "itrskip_enabled"}
-	CoverageDisabledItrSkipDisabledEfdEnabledSettingsResponseType SettingsResponseType = []string{"early_flake_detection_enabled:true"}
-	CoverageEnabledItrSkipDisabledEfdEnabledSettingsResponseType  SettingsResponseType = []string{"coverage_enabled", "early_flake_detection_enabled:true"}
-	CoverageDisabledItrSkipEnabledEfdEnabledSettingsResponseType  SettingsResponseType = []string{"itrskip_enabled", "early_flake_detection_enabled:true"}
-	CoverageEnabledItrSkipEnabledEfdEnabledSettingsResponseType   SettingsResponseType = []string{"coverage_enabled", "itrskip_enabled", "early_flake_detection_enabled:true"}
+	CoverageEnabledSettingsResponseType SettingsResponseType = []string{"coverage_enabled"}
+	ItrSkipEnabledSettingsResponseType  SettingsResponseType = []string{"itrskip_enabled"}
+	EfdEnabledSettingsResponseType      SettingsResponseType = []string{"early_flake_detection_enabled:true"}
 )
 
 // removeEmptyStrings removes empty string values inside an array or use the same if not empty string is found.

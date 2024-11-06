@@ -9,16 +9,17 @@ import (
 	"bytes"
 	"compress/gzip"
 	"fmt"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/utils/telemetry"
 	"io"
 	"net/http"
 	"os"
 	"runtime"
 	"strings"
+	"time"
 
 	pb "github.com/DataDog/datadog-agent/pkg/proto/pbgo/trace"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/constants"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/utils/telemetry"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
 )
@@ -127,7 +128,7 @@ func newCiVisibilityTransport(config *config) *ciVisibilityTransport {
 //
 //	An io.ReadCloser for reading the response body, and an error if the operation fails.
 func (t *ciVisibilityTransport) send(p *payload) (body io.ReadCloser, err error) {
-	ciVisibilityPayload := &ciVisibilityPayload{p}
+	ciVisibilityPayload := &ciVisibilityPayload{p, 0}
 	buffer, bufferErr := ciVisibilityPayload.getBuffer(t.config)
 	if bufferErr != nil {
 		return nil, fmt.Errorf("cannot create buffer payload: %v", bufferErr)
@@ -160,7 +161,9 @@ func (t *ciVisibilityTransport) send(p *payload) (body io.ReadCloser, err error)
 	}
 
 	log.Debug("ciVisibilityTransport: sending transport request: %v bytes", buffer.Len())
+	startTime := time.Now()
 	response, err := t.config.httpClient.Do(req)
+	telemetry.EndpointPayloadRequestsMs(telemetry.TestCycleEndpointType, float64(time.Since(startTime).Milliseconds()))
 	if err != nil {
 		return nil, err
 	}
