@@ -17,8 +17,10 @@ type callType int64
 
 const (
 	callTypeGauge callType = iota
+	callTypeGaugeWithTimestamp
 	callTypeIncr
 	callTypeCount
+	callTypeCountWithTimestamp
 	callTypeTiming
 )
 
@@ -62,8 +64,14 @@ func (tg *TestStatsdClient) Gauge(name string, value float64, tags []string, rat
 	})
 }
 
-func (tg *TestStatsdClient) GaugeWithTimestamp(name string, value float64, tags []string, rate float64, timestamp time.Time) error {
-	panic("not implemented yet")
+func (tg *TestStatsdClient) GaugeWithTimestamp(name string, value float64, tags []string, rate float64, _ time.Time) error {
+	// TODO: handle timestamp argument
+	return tg.addMetric(callTypeGaugeWithTimestamp, tags, TestStatsdCall{
+		name:     name,
+		floatVal: value,
+		tags:     make([]string, len(tags)),
+		rate:     rate,
+	})
 }
 
 func (tg *TestStatsdClient) Incr(name string, tags []string, rate float64) error {
@@ -85,8 +93,15 @@ func (tg *TestStatsdClient) Count(name string, value int64, tags []string, rate 
 	})
 }
 
-func (tg *TestStatsdClient) CountWithTimestamp(name string, value int64, tags []string, rate float64, timestamp time.Time) error {
-	panic("not implemented yet")
+func (tg *TestStatsdClient) CountWithTimestamp(name string, value int64, tags []string, rate float64, _ time.Time) error {
+	// TODO: handle timestamp argument
+	tg.addCount(name, value)
+	return tg.addMetric(callTypeCountWithTimestamp, tags, TestStatsdCall{
+		name:   name,
+		intVal: value,
+		tags:   make([]string, len(tags)),
+		rate:   rate,
+	})
 }
 
 func (tg *TestStatsdClient) Timing(name string, value time.Duration, tags []string, rate float64) error {
