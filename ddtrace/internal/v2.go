@@ -201,7 +201,7 @@ func (sa SpanV2Adapter) SetOperationName(operationName string) {
 // SetTag implements ddtrace.Span.
 func (sa SpanV2Adapter) SetTag(key string, value interface{}) {
 	if key == ext.SamplingPriority {
-		key = "_sampling_priority_v1"
+		key = "_sampling_priority_v1shim"
 	}
 	sa.Span.SetTag(key, value)
 }
