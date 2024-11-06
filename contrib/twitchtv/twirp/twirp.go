@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"strconv"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
@@ -90,7 +91,9 @@ func (wc *wrappedClient) Do(req *http.Request) (*http.Response, error) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, wc.cfg.analyticsRate))
 	}
 	if spanctx, err := tracer.Extract(tracer.HTTPHeadersCarrier(req.Header)); err == nil {
-		opts = append(opts, tracer.WithExtractedSpanLinks(spanctx))
+		if linksCtx, err := spanctx.(ddtrace.SpanContextWithLinks); err && linksCtx.SpanLinks() != nil {
+			opts = append(opts, tracer.WithExtractedSpanLinks(spanctx))
+		}
 		opts = append(opts, tracer.ChildOf(spanctx))
 	}
 
@@ -140,7 +143,9 @@ func WrapServer(h http.Handler, opts ...Option) http.Handler {
 			spanOpts = append(spanOpts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
 		}
 		if spanctx, err := tracer.Extract(tracer.HTTPHeadersCarrier(r.Header)); err == nil {
-			spanOpts = append(spanOpts, tracer.WithExtractedSpanLinks(spanctx))
+			if linksCtx, err := spanctx.(ddtrace.SpanContextWithLinks); err && linksCtx.SpanLinks() != nil {
+				spanOpts = append(spanOpts, tracer.WithExtractedSpanLinks(spanctx))
+			}
 			spanOpts = append(spanOpts, tracer.ChildOf(spanctx))
 		}
 		span, ctx := tracer.StartSpanFromContext(r.Context(), "twirp.handler", spanOpts...)

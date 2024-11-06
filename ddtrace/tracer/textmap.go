@@ -6,6 +6,7 @@
 package tracer
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -264,19 +265,54 @@ func (p *chainedPropagator) Inject(spanCtx ddtrace.SpanContext, carrier interfac
 
 // Extract implements Propagator. This method will attempt to extract the context
 // based on the precedence order of the propagators. Generally, the first valid
-// trace context that could be extracted will be returned, and other extractors will
-// be ignored. However, the W3C tracestate header value will always be extracted and
-// stored in the local trace context even if a previous propagator has already succeeded
-// so long as the trace-ids match.
+// trace context that could be extracted will be returned. However, the W3C tracestate
+// header value will always be extracted and stored in the local trace context even if
+// a previous propagator has already succeeded so long as the trace-ids match.
+// Furthermore, if we have already successfully extracted a trace context and a
+// subsequent trace context has conflicting trace information, such information will
+// be relayed in the original trace context with a SpanLink.
 func (p *chainedPropagator) Extract(carrier interface{}) (ddtrace.SpanContext, error) {
-	var localCtx ddtrace.SpanContext
-	var ctx ddtrace.SpanContext
-	var err error
+	var ctx ddtrace.SpanContext // First valid trace context will be stored here
 	var links []ddtrace.SpanLink
 	for _, v := range p.extractors {
-		ctx, err = v.Extract(carrier)
-		if localCtx == nil {
-			localCtx = ctx
+		extractedCtx, err := v.Extract(carrier)
+		if ctx != nil { // A local trace context has already been extracted
+			if err == nil {
+				propagatorType, unkPropagatorType := getPropagatorType(v)
+				if unkPropagatorType != nil { // If the propagator type is not one that we expect, ignore this extraction
+					continue
+				}
+				if extractedCtx.(*spanContext).TraceID128() == ctx.(*spanContext).TraceID128() {
+					if propagatorType == "tracecontext" {
+						v.(*propagatorW3c).propagateTracestate(ctx.(*spanContext), extractedCtx.(*spanContext)) //Sending tracestate to the ctx to be returned
+						if extractedCtx.SpanID() != ctx.SpanID() {
+							var ddCtx *spanContext
+							if ddp := getDatadogPropagator(p); ddp != nil {
+								if ddSpanCtx, err := ddp.Extract(carrier); err == nil {
+									ddCtx, _ = ddSpanCtx.(*spanContext)
+								}
+							}
+							overrideDatadogParentID(ctx.(*spanContext), extractedCtx.(*spanContext), ddCtx)
+						}
+					}
+				} else {
+					var flags uint32
+					if tracer := extractedCtx.(*spanContext).trace; tracer != nil {
+						if flags = uint32(*tracer.priority); flags > 0 { // Set the flags based on the sampling priority
+							flags = 1
+						} else {
+							flags = 0
+						}
+					}
+					link := ddtrace.SpanLink{TraceID: extractedCtx.(*spanContext).TraceID(), TraceIDHigh: extractedCtx.(*spanContext).TraceIDUpper(), SpanID: extractedCtx.(*spanContext).SpanID(), Attributes: map[string]string{"reason": "terminated_context", "context_headers": propagatorType}, Flags: flags}
+					if propagatorType == "tracecontext" {
+						link.Tracestate = extractedCtx.(*spanContext).trace.propagatingTag(tracestateHeader)
+					}
+					links = append(links, link)
+				}
+			}
+		} else { // This is the first extracted trace context
+			ctx = extractedCtx
 			if ctx != nil {
 				if p.onlyExtractFirst {
 					// Return early if the customer configured that only the first successful
@@ -286,50 +322,16 @@ func (p *chainedPropagator) Extract(carrier interface{}) (ddtrace.SpanContext, e
 			} else if err != ErrSpanContextNotFound {
 				return nil, err
 			}
-		} else {
-			// A local trace context has already been extracted.
-			if err == nil {
-				if ctx.(*spanContext).TraceID128() == localCtx.(*spanContext).TraceID128() {
-					pw3c, isW3C := v.(*propagatorW3c)
-					if isW3C {
-						pw3c.propagateTracestate(localCtx.(*spanContext), ctx.(*spanContext))
-						if localCtx.SpanID() != ctx.SpanID() {
-							var ddCtx *spanContext
-							if ddp := getDatadogPropagator(p); ddp != nil {
-								if ddSpanCtx, err := ddp.Extract(carrier); err == nil {
-									ddCtx, _ = ddSpanCtx.(*spanContext)
-								}
-							}
-							overrideDatadogParentID(localCtx.(*spanContext), ctx.(*spanContext), ddCtx)
-						}
-					}
-				} else {
-					propagatorType := getPropagatorType(v)
-					var flags uint32
-					if tracer := ctx.(*spanContext).trace; tracer != nil {
-						if flags = uint32(*tracer.priority); flags > 0 {
-							flags = 1
-						} else {
-							flags = 0
-						}
-					}
-					link := ddtrace.SpanLink{TraceID: ctx.(*spanContext).TraceID(), TraceIDHigh: ctx.(*spanContext).TraceIDUpper(), SpanID: ctx.(*spanContext).SpanID(), Attributes: map[string]string{"reason": "terminated_context", "context_headers": propagatorType}, Flags: flags}
-					if propagatorType == "tracecontext" {
-						link.Tracestate = ctx.(*spanContext).trace.propagatingTag(tracestateHeader)
-					}
-					links = append(links, link)
-				}
-			}
 		}
 	}
 	if len(links) > 0 {
-		localCtx.(*spanContext).spanLinks = links
+		ctx.(*spanContext).spanLinks = links
 	}
-	if localCtx == nil {
+	if ctx == nil {
 		return nil, ErrSpanContextNotFound
 	}
 	log.Debug("Extracted span context: %#v", ctx)
-	return localCtx, nil
+	return ctx, nil
 }
 
 // propagateTracestate will add the tracestate propagating tag to the given
@@ -513,18 +515,20 @@ func validateTID(tid string) error {
 	return nil
 }
 
-func getPropagatorType(p Propagator) string {
+// getPropagatorType returns the type of the propagator used, or error if unknown
+// If the propagator type is unknown, logic relating to the propagator should be skipped.
+func getPropagatorType(p Propagator) (string, error) {
 	switch p.(type) {
 	case *propagatorW3c:
-		return "tracecontext"
+		return "tracecontext", nil
 	case *propagator:
-		return "datadog"
+		return "datadog", nil
 	case *propagatorB3:
-		return "b3multi"
+		return "b3multi", nil
 	case *propagatorB3SingleHeader:
-		return "b3"
+		return "b3", nil
 	default:
-		return ""
+		return "", errors.New("unknown propagator type")
 	}
 }
 

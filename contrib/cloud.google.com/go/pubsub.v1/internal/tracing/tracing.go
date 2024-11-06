@@ -110,7 +110,6 @@ func TraceReceiveFunc(s Subscription, opts ...Option) func(ctx context.Context, 
 			tracer.Tag(ext.Component, componentName),
 			tracer.Tag(ext.SpanKind, ext.SpanKindConsumer),
 			tracer.Tag(ext.MessagingSystem, ext.MessagingSystemGCPPubsub),
-			tracer.WithExtractedSpanLinks(parentSpanCtx),
 			tracer.ChildOf(parentSpanCtx),
 		}
 		if cfg.serviceName != "" {
@@ -118,6 +117,9 @@ func TraceReceiveFunc(s Subscription, opts ...Option) func(ctx context.Context, 
 		}
 		if cfg.measured {
 			opts = append(opts, tracer.Measured())
+		}
+		if linksCtx, err := parentSpanCtx.(ddtrace.SpanContextWithLinks); err && linksCtx.SpanLinks() != nil {
+			opts = append(opts, tracer.WithExtractedSpanLinks(parentSpanCtx))
 		}
 		span, ctx := tracer.StartSpanFromContext(ctx, cfg.receiveSpanName, opts...)
 		if msg.DeliveryAttempt != nil {
