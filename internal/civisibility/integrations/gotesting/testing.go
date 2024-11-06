@@ -16,6 +16,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/constants"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/integrations"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/integrations/gotesting/coverage"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/utils"
 )
 
@@ -39,6 +40,9 @@ var (
 
 	// suitesCounters keeps track of the number of tests per suite.
 	suitesCounters = map[string]*int32{}
+
+	// numOfTestsSkipped keeps track of the number of tests skipped by ITR.
+	numOfTestsSkipped atomic.Uint64
 )
 
 type (
@@ -82,54 +86,106 @@ func (ddm *M) Run() int {
 
 // instrumentInternalTests instruments the internal tests for CI visibility.
 func (ddm *M) instrumentInternalTests(internalTests *[]testing.InternalTest) {
-	if internalTests != nil {
-		// Extract info from internal tests
-		testInfos = make([]*testingTInfo, len(*internalTests))
-		for idx, test := range *internalTests {
-			moduleName, suiteName := utils.GetModuleAndSuiteName(reflect.Indirect(reflect.ValueOf(test.F)).Pointer())
-			testInfo := &testingTInfo{
-				originalFunc: test.F,
-				commonInfo: commonInfo{
-					moduleName: moduleName,
-					suiteName:  suiteName,
-					testName:   test.Name,
-				},
-			}
-
-			// Initialize module and suite counters if not already present.
-			if _, ok := modulesCounters[moduleName]; !ok {
-				var v int32
-				modulesCounters[moduleName] = &v
-			}
-			// Increment the test count in the module.
-			atomic.AddInt32(modulesCounters[moduleName], 1)
-
-			if _, ok := suitesCounters[suiteName]; !ok {
-				var v int32
-				suitesCounters[suiteName] = &v
-			}
-			// Increment the test count in the suite.
-			atomic.AddInt32(suitesCounters[suiteName], 1)
-
-			testInfos[idx] = testInfo
-		}
-
-		// Create new instrumented internal tests
-		newTestArray := make([]testing.InternalTest, len(*internalTests))
-		for idx, testInfo := range testInfos {
-			newTestArray[idx] = testing.InternalTest{
-				Name: testInfo.testName,
-				F:    ddm.executeInternalTest(testInfo),
-			}
-		}
-		*internalTests = newTestArray
+	if internalTests == nil {
+		return
 	}
+
+	// Get the settings response for this session
+	settings := integrations.GetSettings()
+
+	// Check if the test is going to be skipped by ITR
+	if settings.ItrEnabled {
+		if settings.CodeCoverage && coverage.CanCollect() {
+			session.SetTag(constants.CodeCoverageEnabled, "true")
+		} else {
+			session.SetTag(constants.CodeCoverageEnabled, "true")
+		}
+
+		if settings.TestsSkipping {
+			session.SetTag(constants.ITRTestsSkippingEnabled, "true")
+			session.SetTag(constants.ITRTestsSkippingType, "test")
+
+			// Check if the test is going to be skipped by ITR
+			skippableTests := integrations.GetSkippableTests()
+			if skippableTests != nil {
+				if len(skippableTests) > 0 {
+					session.SetTag(constants.ITRTestsSkipped, "false")
+				}
+			}
+		} else {
+			session.SetTag(constants.ITRTestsSkippingEnabled, "false")
+		}
+	}
+
+	// Extract info from internal tests
+	testInfos = make([]*testingTInfo, len(*internalTests))
+	for idx, test := range *internalTests {
+		moduleName, suiteName := utils.GetModuleAndSuiteName(reflect.Indirect(reflect.ValueOf(test.F)).Pointer())
+		testInfo := &testingTInfo{
+			originalFunc: test.F,
+			commonInfo: commonInfo{
+				moduleName: moduleName,
+				suiteName:  suiteName,
+				testName:   test.Name,
+			},
+		}
+
+		// Initialize module and suite counters if not already present.
+		if _, ok := modulesCounters[moduleName]; !ok {
+			var v int32
+			modulesCounters[moduleName] = &v
+		}
+		// Increment the test count in the module.
+		atomic.AddInt32(modulesCounters[moduleName], 1)
+
+		if _, ok := suitesCounters[suiteName]; !ok {
+			var v int32
+			suitesCounters[suiteName] = &v
+		}
+		// Increment the test count in the suite.
+		atomic.AddInt32(suitesCounters[suiteName], 1)
+
+		testInfos[idx] = testInfo
+	}
+
+	// Create new instrumented internal tests
+	newTestArray := make([]testing.InternalTest, len(*internalTests))
+	for idx, testInfo := range testInfos {
+		newTestArray[idx] = testing.InternalTest{
+			Name: testInfo.testName,
+			F:    ddm.executeInternalTest(testInfo),
+		}
+	}
+	*internalTests = newTestArray
 }
 
 // executeInternalTest wraps the original test function to include CI visibility instrumentation.
 func (ddm *M) executeInternalTest(testInfo *testingTInfo) func(*testing.T) {
 	originalFunc := runtime.FuncForPC(reflect.Indirect(reflect.ValueOf(testInfo.originalFunc)).Pointer())
+
+	// Get the settings response for this session
+	settings := integrations.GetSettings()
+	coverageEnabled := settings.CodeCoverage
+	testSkippedByITR := false
+
+	// Check if the test is going to be skipped by ITR
+	if settings.ItrEnabled && settings.TestsSkipping {
+		// Check if the test is going to be skipped by ITR
+		skippableTests := integrations.GetSkippableTests()
+		if skippableTests != nil {
+			if suitesMap, ok := skippableTests[testInfo.suiteName]; ok {
+				if _, ok := suitesMap[testInfo.testName]; ok {
+					testSkippedByITR = true
+				}
+			}
+		}
+	}
+
+	// Instrument the test function
 	instrumentedFunc := func(t *testing.T) {
+		// Set this func as a helper func of t
+		t.Helper()
+
 		// Get the metadata regarding the execution (in case is already created from the additional features)
 		execMeta := getTestMetadata(t)
 		if execMeta == nil {
@@ -159,9 +215,58 @@ func (ddm *M) executeInternalTest(testInfo *testingTInfo) func(*testing.T) {
 			test.SetTag(constants.TestIsRetry, "true")
 		}
 
+		// Check if the test needs to be skipped by ITR
+		if testSkippedByITR {
+			// check if the test was marked as unskippable
+			if test.Context().Value(constants.TestUnskippable) != true {
+				test.SetTag(constants.TestSkippedByITR, "true")
+				test.CloseWithFinishTimeAndSkipReason(integrations.ResultStatusSkip, time.Now(), constants.SkippedByITRReason)
+				session.SetTag(constants.ITRTestsSkipped, "true")
+				session.SetTag(constants.ITRTestsSkippingCount, numOfTestsSkipped.Add(1))
+				checkModuleAndSuite(module, suite)
+				t.Skip(constants.SkippedByITRReason)
+				return
+			} else {
+				test.SetTag(constants.TestForcedToRun, "true")
+			}
+		}
+
+		// Check if the coverage is enabled
+		var tCoverage coverage.TestCoverage
+		var tParentOldBarrier chan bool
+		if coverageEnabled && coverage.CanCollect() {
+			// set the test coverage collector
+			testFile, _ := originalFunc.FileLine(originalFunc.Entry())
+			tCoverage = coverage.NewTestCoverage(
+				session.SessionID(),
+				module.ModuleID(),
+				suite.SuiteID(),
+				test.TestID(),
+				testFile)
+
+			// now we need to disable parallelism for the test in order to collect the test coverage
+			tParent := getTestParentPrivateFields(t)
+			if tParent != nil && tParent.barrier != nil {
+				tParentOldBarrier = *tParent.barrier
+				*tParent.barrier = nil
+			}
+		}
+
 		startTime := time.Now()
 		defer func() {
 			duration := time.Since(startTime)
+
+			if tCoverage != nil {
+				// Collect coverage after test execution so we can calculate the diff comparing to the baseline.
+				tCoverage.CollectCoverageAfterTestExecution()
+
+				// now we restore the original parent barrier
+				tParent := getTestParentPrivateFields(t)
+				if tParent != nil && tParent.barrier != nil {
+					*tParent.barrier = tParentOldBarrier
+				}
+			}
+
 			// check if is a new EFD test and the duration >= 5 min
 			if execMeta.isANewTest && duration.Minutes() >= 5 {
 				// Set the EFD retry abort reason
@@ -204,6 +309,11 @@ func (ddm *M) executeInternalTest(testInfo *testingTInfo) func(*testing.T) {
 			}
 		}()
 
+		if tCoverage != nil {
+			// Collect coverage before test execution so we can register a baseline.
+			tCoverage.CollectCoverageBeforeTestExecution()
+		}
+
 		// Execute the original test function.
 		testInfo.originalFunc(t)
 	}
@@ -211,55 +321,62 @@ func (ddm *M) executeInternalTest(testInfo *testingTInfo) func(*testing.T) {
 	// Register the instrumented func as an internal instrumented func (to avoid double instrumentation)
 	setInstrumentationMetadata(runtime.FuncForPC(reflect.Indirect(reflect.ValueOf(instrumentedFunc)).Pointer()), &instrumentationMetadata{IsInternal: true})
 
+	// If the test is going to be skipped by ITR then we don't apply the additional features
+	if testSkippedByITR {
+		return instrumentedFunc
+	}
+
 	// Get the additional feature wrapper
 	return applyAdditionalFeaturesToTestFunc(instrumentedFunc, &testInfo.commonInfo)
 }
 
 // instrumentInternalBenchmarks instruments the internal benchmarks for CI visibility.
 func (ddm *M) instrumentInternalBenchmarks(internalBenchmarks *[]testing.InternalBenchmark) {
-	if internalBenchmarks != nil {
-		// Extract info from internal benchmarks
-		benchmarkInfos = make([]*testingBInfo, len(*internalBenchmarks))
-		for idx, benchmark := range *internalBenchmarks {
-			moduleName, suiteName := utils.GetModuleAndSuiteName(reflect.Indirect(reflect.ValueOf(benchmark.F)).Pointer())
-			benchmarkInfo := &testingBInfo{
-				originalFunc: benchmark.F,
-				commonInfo: commonInfo{
-					moduleName: moduleName,
-					suiteName:  suiteName,
-					testName:   benchmark.Name,
-				},
-			}
-
-			// Initialize module and suite counters if not already present.
-			if _, ok := modulesCounters[moduleName]; !ok {
-				var v int32
-				modulesCounters[moduleName] = &v
-			}
-			// Increment the test count in the module.
-			atomic.AddInt32(modulesCounters[moduleName], 1)
-
-			if _, ok := suitesCounters[suiteName]; !ok {
-				var v int32
-				suitesCounters[suiteName] = &v
-			}
-			// Increment the test count in the suite.
-			atomic.AddInt32(suitesCounters[suiteName], 1)
-
-			benchmarkInfos[idx] = benchmarkInfo
-		}
-
-		// Create a new instrumented internal benchmarks
-		newBenchmarkArray := make([]testing.InternalBenchmark, len(*internalBenchmarks))
-		for idx, benchmarkInfo := range benchmarkInfos {
-			newBenchmarkArray[idx] = testing.InternalBenchmark{
-				Name: benchmarkInfo.testName,
-				F:    ddm.executeInternalBenchmark(benchmarkInfo),
-			}
-		}
-
-		*internalBenchmarks = newBenchmarkArray
+	if internalBenchmarks == nil {
+		return
 	}
+
+	// Extract info from internal benchmarks
+	benchmarkInfos = make([]*testingBInfo, len(*internalBenchmarks))
+	for idx, benchmark := range *internalBenchmarks {
+		moduleName, suiteName := utils.GetModuleAndSuiteName(reflect.Indirect(reflect.ValueOf(benchmark.F)).Pointer())
+		benchmarkInfo := &testingBInfo{
+			originalFunc: benchmark.F,
+			commonInfo: commonInfo{
+				moduleName: moduleName,
+				suiteName:  suiteName,
+				testName:   benchmark.Name,
+			},
+		}
+
+		// Initialize module and suite counters if not already present.
+		if _, ok := modulesCounters[moduleName]; !ok {
+			var v int32
+			modulesCounters[moduleName] = &v
+		}
+		// Increment the test count in the module.
+		atomic.AddInt32(modulesCounters[moduleName], 1)
+
+		if _, ok := suitesCounters[suiteName]; !ok {
+			var v int32
+			suitesCounters[suiteName] = &v
+		}
+		// Increment the test count in the suite.
+		atomic.AddInt32(suitesCounters[suiteName], 1)
+
+		benchmarkInfos[idx] = benchmarkInfo
+	}
+
+	// Create a new instrumented internal benchmarks
+	newBenchmarkArray := make([]testing.InternalBenchmark, len(*internalBenchmarks))
+	for idx, benchmarkInfo := range benchmarkInfos {
+		newBenchmarkArray[idx] = testing.InternalBenchmark{
+			Name: benchmarkInfo.testName,
+			F:    ddm.executeInternalBenchmark(benchmarkInfo),
+		}
+	}
+
+	*internalBenchmarks = newBenchmarkArray
 }
 
 // executeInternalBenchmark wraps the original benchmark function to include CI visibility instrumentation.
@@ -268,7 +385,10 @@ func (ddm *M) executeInternalBenchmark(benchmarkInfo *testingBInfo) func(*testin
 	instrumentedInternalFunc := func(b *testing.B) {
 
 		// decrement level
-		getBenchmarkPrivateFields(b).AddLevel(-1)
+		pBench := getBenchmarkPrivateFields(b)
+		if pBench != nil {
+			pBench.AddLevel(-1)
+		}
 
 		startTime := time.Now()
 		module := session.GetOrCreateModuleWithFrameworkAndStartTime(benchmarkInfo.moduleName, testFramework, runtime.Version(), startTime)
@@ -296,9 +416,17 @@ func (ddm *M) executeInternalBenchmark(benchmarkInfo *testingBInfo) func(*testin
 
 			// Enable allocation reporting.
 			b.ReportAllocs()
+
 			// Retrieve the private fields of the inner testing.B.
 			iPfOfB = getBenchmarkPrivateFields(b)
+			if iPfOfB == nil {
+				panic("failed to get private fields of the inner testing.B")
+			}
+
 			// Replace the benchmark function with the original one (this must be executed only once - the first iteration[b.run1]).
+			if iPfOfB.benchFunc == nil {
+				panic("failed to get the original benchmark function")
+			}
 			*iPfOfB.benchFunc = benchmarkInfo.originalFunc
 
 			// Get the metadata regarding the execution (in case is already created from the additional features)

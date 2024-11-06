@@ -100,7 +100,7 @@ func TestConfiguredErrorStatuses(t *testing.T) {
 		r := httptest.NewRequest(http.MethodGet, "/test", nil)
 		for i, status := range statuses {
 			sp, _ := StartRequestSpan(r)
-			FinishRequestSpan(sp, status)
+			FinishRequestSpan(sp, status, nil)
 			spans := mt.FinishedSpans()
 			require.Len(t, spans, i+1)
 
@@ -130,7 +130,7 @@ func TestConfiguredErrorStatuses(t *testing.T) {
 
 		r := httptest.NewRequest(http.MethodGet, "/test", nil)
 		sp, _ := StartRequestSpan(r)
-		FinishRequestSpan(sp, 0)
+		FinishRequestSpan(sp, 0, nil)
 		spans := mt.FinishedSpans()
 		require.Len(t, spans, 1)
 		assert.Equal(t, "0", spans[0].Tag(ext.HTTPCode))

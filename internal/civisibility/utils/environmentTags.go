@@ -22,6 +22,7 @@ import (
 var (
 	// ciTags holds the CI/CD environment variable information.
 	ciTags      map[string]string
+	addedTags   map[string]string
 	ciTagsMutex sync.Mutex
 
 	// ciMetrics holds the CI/CD environment numeric variable information
@@ -63,6 +64,25 @@ func GetCIMetrics() map[string]float64 {
 	}
 
 	return ciMetrics
+}
+
+// AddCITags adds a new tag to the CI/CD tags map.
+func AddCITags(tagName, tagValue string) {
+	ciTagsMutex.Lock()
+	defer ciTagsMutex.Unlock()
+
+	// Add the tag to the added tags dictionary
+	if addedTags == nil {
+		addedTags = make(map[string]string)
+	}
+	addedTags[tagName] = tagValue
+
+	// Create a new map with the added tags
+	newTags := createCITagsMap()
+	for k, v := range addedTags {
+		newTags[k] = v
+	}
+	ciTags = newTags
 }
 
 // GetRelativePathFromCITagsSourceRoot calculates the relative path from the CI workspace root to the specified path.
