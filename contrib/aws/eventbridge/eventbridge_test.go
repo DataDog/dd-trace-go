@@ -72,7 +72,7 @@ func TestInjectTraceContext(t *testing.T) {
 
 	ctx := context.Background()
 	span, _ := tracer.StartSpanFromContext(ctx, "test-span")
-	baseTraceContext := fmt.Sprintf(`{"x-datadog-trace-id":"%s","x-datadog-parent-id":"%d","x-datadog-start-time":"123456789"`, span.Context().TraceID(), span.Context().SpanID())
+	baseTraceContext := fmt.Sprintf(`{"x-datadog-trace-id":"%d","x-datadog-parent-id":"%d","x-datadog-start-time":"123456789"`, span.Context().TraceIDLower(), span.Context().SpanID())
 
 	tests := []struct {
 		name     string
@@ -114,6 +114,8 @@ func TestInjectTraceContext(t *testing.T) {
 			injectTraceContext(baseTraceContext, &tt.entry)
 			tt.expected(t, &tt.entry)
 
+			fmt.Printf("entry = %+v\n", tt.entry)
+
 			var detail map[string]interface{}
 			err := json.Unmarshal([]byte(*tt.entry.Detail), &detail)
 			require.NoError(t, err)
@@ -137,7 +139,7 @@ func TestInjectTraceContext(t *testing.T) {
 
 			extractedSpanContext, err := tracer.Extract(&carrier)
 			assert.NoError(t, err)
-			assert.Equal(t, span.Context().TraceID(), extractedSpanContext.TraceID())
+			assert.Equal(t, span.Context().TraceIDLower(), extractedSpanContext.TraceIDLower())
 			assert.Equal(t, span.Context().SpanID(), extractedSpanContext.SpanID())
 		})
 	}
