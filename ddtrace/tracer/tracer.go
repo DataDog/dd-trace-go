@@ -181,7 +181,10 @@ func Start(opts ...StartOption) {
 	// appsec.Start() may use the telemetry client to report activation, so it is
 	// important this happens _AFTER_ startTelemetry() has been called, so the
 	// client is appropriately configured.
-	appsec.Start(appsecConfig.WithRCConfig(cfg))
+	appsecopts := make([]appsecConfig.StartOption, 0, len(t.config.appsecStartOptions)+1)
+	appsecopts = append(appsecopts, t.config.appsecStartOptions...)
+	appsecopts = append(appsecopts, appsecConfig.WithRCConfig(cfg))
+	appsec.Start(appsecopts...)
 	_ = t.hostname() // Prime the hostname cache
 }
 
