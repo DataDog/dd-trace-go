@@ -57,7 +57,7 @@ type StartConfig struct {
 	RC *remoteconfig.ClientConfig
 	// IsEnabled is a function that determines whether AppSec is enabled or not. When unset, the
 	// default [IsEnabled] function is used.
-	EnablementMode func() (EnablementMode, ConfigOrigin, error)
+	EnablementMode func() (EnablementMode, Origin, error)
 }
 
 type EnablementMode int8
@@ -71,11 +71,11 @@ const (
 	ForcedOn EnablementMode = 1
 )
 
-type ConfigOrigin uint8
+type Origin uint8
 
 const (
 	// OriginDefault is the origin of configuration values not explicitly set by the user in any way.
-	OriginDefault ConfigOrigin = iota
+	OriginDefault Origin = iota
 	// OriginEnvVar is the origin of configuration values set through environment variables.
 	OriginEnvVar
 	// OriginExplicitOption is the origin of configuration values set though explicit options in code.
@@ -84,7 +84,7 @@ const (
 
 func NewStartConfig(opts ...StartOption) *StartConfig {
 	c := &StartConfig{
-		EnablementMode: func() (mode EnablementMode, origin ConfigOrigin, err error) {
+		EnablementMode: func() (mode EnablementMode, origin Origin, err error) {
 			enabled, set, err := IsEnabledByEnvironment()
 			if set {
 				origin = OriginEnvVar
@@ -110,7 +110,7 @@ func NewStartConfig(opts ...StartOption) *StartConfig {
 // implemented by [IsEnabledByEnvironment].
 func WithEnablementMode(mode EnablementMode) StartOption {
 	return func(c *StartConfig) {
-		c.EnablementMode = func() (EnablementMode, ConfigOrigin, error) {
+		c.EnablementMode = func() (EnablementMode, Origin, error) {
 			return mode, OriginExplicitOption, nil
 		}
 	}
