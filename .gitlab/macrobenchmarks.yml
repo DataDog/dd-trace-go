@@ -56,10 +56,10 @@ variables:
 # 2. Rebuild image in Gitlab CI (build-images CI job in https://gitlab.ddbuild.io/DataDog/apm-reliability/benchmarking-platform/-/pipelines?page=1&scope=all&ref=go%2Fgo-prof-app)
 #
 
-.go121-benchmarks:
+.go123-benchmarks:
   extends: .benchmarks
   variables:
-    GO_VERSION: "1.21.12"
+    GO_VERSION: "1.23.0"
 
 .go122-benchmarks:
   extends: .benchmarks
@@ -123,8 +123,8 @@ go122-profile-trace-asm:
     ENABLE_APPSEC: "true"
     DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
 
-go121-baseline:
-  extends: .go121-benchmarks
+go123-baseline:
+  extends: .go123-benchmarks
   variables:
     ENABLE_DDPROF: "false"
     ENABLE_TRACING: "false"
@@ -132,8 +132,8 @@ go121-baseline:
     ENABLE_APPSEC: "false"
     DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
 
-go121-only-trace:
-  extends: .go121-benchmarks
+go123-only-trace:
+  extends: .go123-benchmarks
   variables:
     ENABLE_DDPROF: "false"
     ENABLE_TRACING: "true"
@@ -141,8 +141,8 @@ go121-only-trace:
     ENABLE_APPSEC: "false"
     DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
 
-go121-only-profile:
-  extends: .go121-benchmarks
+go123-only-profile:
+  extends: .go123-benchmarks
   variables:
     ENABLE_DDPROF: "false"
     ENABLE_TRACING: "false"
@@ -150,8 +150,8 @@ go121-only-profile:
     ENABLE_APPSEC: "false"
     DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
 
-go121-profile-trace:
-  extends: .go121-benchmarks
+go123-profile-trace:
+  extends: .go123-benchmarks
   variables:
     ENABLE_DDPROF: "false"
     ENABLE_TRACING: "true"
@@ -159,8 +159,8 @@ go121-profile-trace:
     ENABLE_APPSEC: "false"
     DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
 
-go121-trace-asm:
-  extends: .go121-benchmarks
+go123-trace-asm:
+  extends: .go123-benchmarks
   variables:
     ENABLE_DDPROF: "false"
     ENABLE_TRACING: "true"
@@ -168,8 +168,8 @@ go121-trace-asm:
     ENABLE_APPSEC: "true"
     DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
 
-go121-profile-trace-asm:
-  extends: .go121-benchmarks
+go123-profile-trace-asm:
+  extends: .go123-benchmarks
   variables:
     ENABLE_DDPROF: "false"
     ENABLE_TRACING: "true"

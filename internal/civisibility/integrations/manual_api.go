@@ -53,6 +53,9 @@ type ddTslvEvent interface {
 type DdTestSession interface {
 	ddTslvEvent
 
+	// SessionID returns the ID of the session.
+	SessionID() uint64
+
 	// Command returns the command used to run the session.
 	Command() string
 
@@ -82,6 +85,9 @@ type DdTestSession interface {
 type DdTestModule interface {
 	ddTslvEvent
 
+	// ModuleID returns the ID of the module.
+	ModuleID() uint64
+
 	// Session returns the test session to which the module belongs.
 	Session() DdTestSession
 
@@ -108,6 +114,9 @@ type DdTestModule interface {
 type DdTestSuite interface {
 	ddTslvEvent
 
+	// SuiteID returns the ID of the suite.
+	SuiteID() uint64
+
 	// Module returns the module to which the suite belongs.
 	Module() DdTestModule
 
@@ -130,6 +139,9 @@ type DdTestSuite interface {
 // DdTest represents an individual test within a suite.
 type DdTest interface {
 	ddTslvEvent
+
+	// TestID returns the ID of the test.
+	TestID() uint64
 
 	// Name returns the name of the test.
 	Name() string

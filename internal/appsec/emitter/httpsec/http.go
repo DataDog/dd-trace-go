@@ -136,6 +136,7 @@ func BeforeHandle(
 		PathParams:  pathParams,
 	})
 	tr := r.WithContext(ctx)
+	var blocked atomic.Bool
 
 	afterHandle := func() {
 		var statusCode int
@@ -147,27 +148,27 @@ func BeforeHandle(
 			StatusCode: statusCode,
 		}, span)
 
+		if blockPtr := blockAtomic.Swap(nil); blockPtr != nil {
+			blockPtr.Handler.ServeHTTP(w, tr)
+			blocked.Store(true)
+		}
+
 		// Execute the onBlock functions to make sure blocking works properly
 		// in case we are instrumenting the Gin framework
-		if blockPtr := blockAtomic.Load(); blockPtr != nil {
+		if blocked.Load() {
 			for _, f := range opts.OnBlock {
 				f()
-			}
-
-			if blockPtr.Handler != nil {
-				blockPtr.Handler.ServeHTTP(w, tr)
 			}
 		}
 	}
 
-	handled := false
-	if blockPtr := blockAtomic.Load(); blockPtr != nil && blockPtr.Handler != nil {
+	if blockPtr := blockAtomic.Swap(nil); blockPtr != nil {
 		// handler is replaced
 		blockPtr.Handler.ServeHTTP(w, tr)
-		blockPtr.Handler = nil
-		handled = true
+		blocked.Store(true)
 	}
-	return w, tr, afterHandle, handled
+
+	return w, tr, afterHandle, blocked.Load()
 }
 
 // WrapHandler wraps the given HTTP handler with the abstract HTTP operation defined by HandlerOperationArgs and

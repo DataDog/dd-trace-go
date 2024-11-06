@@ -91,16 +91,14 @@ func TestConfiguredErrorStatuses(t *testing.T) {
 
 		os.Setenv("DD_TRACE_HTTP_SERVER_ERROR_STATUSES", "199-399,400,501")
 
-		// reset config based on new DD_TRACE_HTTP_SERVER_ERROR_STATUSES value
-		oldConfig := cfg
-		defer func() { cfg = oldConfig }()
-		cfg = newConfig()
+		// re-run config defaults based on new DD_TRACE_HTTP_SERVER_ERROR_STATUSES value
+		ResetCfg()
 
 		statuses := []int{0, 200, 400, 500}
 		r := httptest.NewRequest(http.MethodGet, "/test", nil)
 		for i, status := range statuses {
 			sp, _ := StartRequestSpan(r)
-			FinishRequestSpan(sp, status)
+			FinishRequestSpan(sp, status, nil)
 			spans := mt.FinishedSpans()
 			require.Len(t, spans, i+1)
 
@@ -123,14 +121,12 @@ func TestConfiguredErrorStatuses(t *testing.T) {
 
 		os.Setenv("DD_TRACE_HTTP_SERVER_ERROR_STATUSES", "0")
 
-		// reset config based on new DD_TRACE_HTTP_SERVER_ERROR_STATUSES value
-		oldConfig := cfg
-		defer func() { cfg = oldConfig }()
-		cfg = newConfig()
+		// re-run config defaults based on new DD_TRACE_HTTP_SERVER_ERROR_STATUSES value
+		ResetCfg()
 
 		r := httptest.NewRequest(http.MethodGet, "/test", nil)
 		sp, _ := StartRequestSpan(r)
-		FinishRequestSpan(sp, 0)
+		FinishRequestSpan(sp, 0, nil)
 		spans := mt.FinishedSpans()
 		require.Len(t, spans, 1)
 		assert.Equal(t, "0", spans[0].Tag(ext.HTTPCode))

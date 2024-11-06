@@ -632,6 +632,12 @@ type agentFeatures struct {
 
 	// featureFlags specifies all the feature flags reported by the trace-agent.
 	featureFlags map[string]struct{}
+
+	// peerTags specifies precursor tags to aggregate stats on when client stats is enabled
+	peerTags []string
+
+	// defaultEnv is the trace-agent's default env, used for stats calculation if no env override is present
+	defaultEnv string
 }
 
 // HasFlag reports whether the agent has set the feat feature flag.
@@ -657,12 +663,18 @@ func loadAgentFeatures(agentDisabled bool, agentURL *url.URL, httpClient *http.C
 		return
 	}
 	defer resp.Body.Close()
-	type infoResponse struct {
-		Endpoints     []string `json:"endpoints"`
-		ClientDropP0s bool     `json:"client_drop_p0s"`
-		StatsdPort    int      `json:"statsd_port"`
-		FeatureFlags  []string `json:"feature_flags"`
+	type agentConfig struct {
+		defaultEnv string `json:"default_env"`
 	}
+	type infoResponse struct {
+		Endpoints     []string    `json:"endpoints"`
+		ClientDropP0s bool        `json:"client_drop_p0s"`
+		StatsdPort    int         `json:"statsd_port"`
+		FeatureFlags  []string    `json:"feature_flags"`
+		PeerTags      []string    `json:"peer_tags"`
+		Config        agentConfig `json:"config"`
+	}
+
 	var info infoResponse
 	if err := json.NewDecoder(resp.Body).Decode(&info); err != nil {
 		log.Error("Decoding features: %v", err)

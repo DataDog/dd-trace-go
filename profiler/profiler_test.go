@@ -22,6 +22,7 @@ import (
 	"runtime/trace"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -80,6 +81,20 @@ func TestStart(t *testing.T) {
 			assert.True(ok)
 		}
 		assert.Equal(DefaultDuration, activeProfiler.cfg.cpuDuration)
+		mu.Unlock()
+	})
+
+	t.Run("dd_profiling_not_enabled", func(t *testing.T) {
+		t.Setenv("DD_PROFILING_ENABLED", "false")
+		if err := Start(); err != nil {
+			t.Fatal(err)
+		}
+		defer Stop()
+
+		mu.Lock()
+		// if DD_PROFILING_ENABLED is false, the profiler should not be started even if Start() is called
+		// So we should not have an activeProfiler
+		assert.Nil(t, activeProfiler)
 		mu.Unlock()
 	})
 
@@ -216,6 +231,59 @@ func TestStopLatency(t *testing.T) {
 	elapsed := time.Since(start)
 	if elapsed > 500*time.Millisecond {
 		t.Errorf("profiler took %v to stop", elapsed)
+	}
+}
+
+func TestFlushAndStop(t *testing.T) {
+	t.Setenv("DD_PROFILING_FLUSH_ON_EXIT", "1")
+	received := startTestProfiler(t, 1,
+		WithProfileTypes(CPUProfile, HeapProfile),
+		WithPeriod(time.Hour),
+		WithUploadTimeout(time.Hour))
+
+	Stop()
+
+	select {
+	case prof := <-received:
+		if len(prof.attachments["cpu.pprof"]) == 0 {
+			t.Errorf("expected CPU profile, got none")
+		}
+		if len(prof.attachments["delta-heap.pprof"]) == 0 {
+			t.Errorf("expected heap profile, got none")
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatalf("profiler did not flush")
+	}
+}
+
+func TestFlushAndStopTimeout(t *testing.T) {
+	uploadTimeout := 1 * time.Second
+	var requests atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if h := r.Header.Get("DD-Telemetry-Request-Type"); len(h) > 0 {
+			return
+		}
+		requests.Add(1)
+		time.Sleep(2 * uploadTimeout)
+	}))
+	defer server.Close()
+
+	t.Setenv("DD_PROFILING_FLUSH_ON_EXIT", "1")
+	Start(
+		WithAgentAddr(server.Listener.Addr().String()),
+		WithPeriod(time.Hour),
+		WithUploadTimeout(uploadTimeout),
+	)
+
+	start := time.Now()
+	Stop()
+
+	elapsed := time.Since(start)
+	if elapsed > (maxRetries*uploadTimeout)+1*time.Second {
+		t.Errorf("profiler took %v to stop", elapsed)
+	}
+	if requests.Load() != maxRetries {
+		t.Errorf("expected %d requests, got %d", maxRetries, requests.Load())
 	}
 }
 
@@ -446,6 +514,19 @@ func TestImmediateProfile(t *testing.T) {
 	case <-timeout:
 		t.Fatal("should have received a profile already")
 	case <-profiles:
+	}
+}
+
+func TestEnabledFalse(t *testing.T) {
+	t.Setenv("DD_PROFILING_ENABLED", "false")
+	ch := startTestProfiler(t, 1, WithPeriod(10*time.Millisecond), WithProfileTypes())
+	select {
+	case <-ch:
+		t.Fatal("received profile when profiler should have been disabled")
+	case <-time.After(time.Second):
+		// This test might succeed incorrectly on an overloaded
+		// CI server, but is very likely to fail locally given a
+		// buggy implementation
 	}
 }
 

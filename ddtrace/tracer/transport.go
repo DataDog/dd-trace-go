@@ -17,6 +17,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	pb "github.com/DataDog/datadog-agent/pkg/proto/pbgo/trace"
+
 	traceinternal "gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
@@ -68,7 +70,7 @@ type transport interface {
 	// It returns a non-nil response body when no error occurred.
 	send(p *payload) (body io.ReadCloser, err error)
 	// sendStats sends the given stats payload to the agent.
-	sendStats(s *statsPayload) error
+	sendStats(s *pb.ClientStatsPayload) error
 	// endpoint returns the URL to which the transport will send traces.
 	endpoint() string
 }
@@ -110,7 +112,7 @@ func newHTTPTransport(url string, client *http.Client) *httpTransport {
 	}
 }
 
-func (t *httpTransport) sendStats(p *statsPayload) error {
+func (t *httpTransport) sendStats(p *pb.ClientStatsPayload) error {
 	var buf bytes.Buffer
 	if err := msgp.Encode(&buf, p); err != nil {
 		return err
@@ -143,11 +145,11 @@ func (t *httpTransport) send(p *payload) (body io.ReadCloser, err error) {
 	if err != nil {
 		return nil, fmt.Errorf("cannot create http request: %v", err)
 	}
+	req.ContentLength = int64(p.size())
 	for header, value := range t.headers {
 		req.Header.Set(header, value)
 	}
 	req.Header.Set(traceCountHeader, strconv.Itoa(p.itemCount()))
-	req.Header.Set("Content-Length", strconv.Itoa(p.size()))
 	req.Header.Set(headerComputedTopLevel, "yes")
 	if t, ok := traceinternal.GetGlobalTracer().(*tracer); ok {
 		if t.config.canComputeStats() {
