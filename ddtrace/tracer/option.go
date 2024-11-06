@@ -26,6 +26,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
+	appsecconfig "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/config"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/constants"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
@@ -113,6 +114,9 @@ var (
 type config struct {
 	// debug, when true, writes details to logs.
 	debug bool
+
+	// appsecStartOptions controls the options used when starting appsec features.
+	appsecStartOptions []appsecconfig.StartOption
 
 	// agent holds the capabilities of the agent and determines some
 	// of the behaviour of the tracer.
@@ -660,7 +664,7 @@ func loadAgentFeatures(agentDisabled bool, agentURL *url.URL, httpClient *http.C
 	}
 	defer resp.Body.Close()
 	type agentConfig struct {
-		defaultEnv string `json:"default_env"`
+		DefaultEnv string `json:"default_env"`
 	}
 	type infoResponse struct {
 		Endpoints     []string    `json:"endpoints"`
@@ -759,6 +763,25 @@ func statsTags(c *config) []string {
 func withNoopStats() StartOption {
 	return func(c *config) {
 		c.statsdClient = &statsd.NoOpClient{}
+	}
+}
+
+// WithAppSecEnabled specifies whether AppSec features should be activated
+// or not.
+//
+// By default, AppSec features are enabled if `DD_APPSEC_ENABLED` is set to a
+// truthy value; and may be enabled by remote configuration if
+// `DD_APPSEC_ENABLED` is not set at all.
+//
+// Using this option to explicitly disable appsec also prevents it from being
+// remote activated.
+func WithAppSecEnabled(enabled bool) StartOption {
+	mode := appsecconfig.ForcedOff
+	if enabled {
+		mode = appsecconfig.ForcedOn
+	}
+	return func(c *config) {
+		c.appsecStartOptions = append(c.appsecStartOptions, appsecconfig.WithEnablementMode(mode))
 	}
 }
 
