@@ -6,6 +6,7 @@
 package coverage
 
 import (
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/utils/telemetry"
 	"sync"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/utils/net"
@@ -44,6 +45,7 @@ func newCoverageWriter() *coverageWriter {
 }
 
 func (w *coverageWriter) add(coverage *testCoverage) {
+	telemetry.EventsEnqueueForSerialization()
 	ciTestCoverage := newCiTestCoverageData(coverage)
 	if err := w.payload.push(ciTestCoverage); err != nil {
 		log.Error("coverageWriter: Error encoding msgpack: %v", err)

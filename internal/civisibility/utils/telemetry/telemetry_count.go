@@ -18,6 +18,7 @@ func getTestingFramework(testingFramework string) TestingFramework {
 	}
 	return telemetryFramework
 }
+
 func GetSessionTestingEventType() TestingEventType {
 	hasCodeOwners := utils.GetCodeOwners() != nil
 	_, hasCiProvider := utils.GetCITags()[constants.CIProviderName]
@@ -29,6 +30,33 @@ func GetSessionTestingEventType() TestingEventType {
 		return SessionNoCodeOwnerIsSupportedCiEventType
 	}
 	return SessionNoCodeOwnerUnsupportedCiEventType
+}
+
+func GetErrorTypeFromStatusCode(statusCode int) ErrorType {
+	switch statusCode {
+	case 0:
+		return NetworkErrorType
+	case 400:
+		return StatusCode400ErrorType
+	case 401:
+		return StatusCode401ErrorType
+	case 403:
+		return StatusCode403ErrorType
+	case 404:
+		return StatusCode404ErrorType
+	case 408:
+		return StatusCode408ErrorType
+	case 429:
+		return StatusCode429ErrorType
+	default:
+		if statusCode >= 500 && statusCode < 600 {
+			return StatusCode5xxErrorType
+		} else if statusCode >= 400 && statusCode < 500 {
+			return StatusCode4xxErrorType
+		} else {
+			return StatusCodeErrorType
+		}
+	}
 }
 
 // EventCreated the number of events created by CI Visibility

@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"fmt"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/utils/telemetry"
 	"io"
 	"net/http"
 	"os"
@@ -170,6 +171,7 @@ func (t *ciVisibilityTransport) send(p *payload) (body io.ReadCloser, err error)
 		n, _ := response.Body.Read(msg)
 		_ = response.Body.Close()
 		txt := http.StatusText(code)
+		telemetry.EndpointPayloadRequestsErrors(telemetry.TestCycleEndpointType, telemetry.GetErrorTypeFromStatusCode(code))
 		if n > 0 {
 			return nil, fmt.Errorf("%s (Status: %s)", msg[:n], txt)
 		}
