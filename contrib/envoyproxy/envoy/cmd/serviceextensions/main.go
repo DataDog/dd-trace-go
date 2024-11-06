@@ -1,13 +1,19 @@
+// Unless explicitly stated otherwise all files in this repository are licensed
+// under the Apache License Version 2.0.
+// This product includes software developed at Datadog (https://www.datadoghq.com/).
+// Copyright 2016 Datadog, Inc.
+
 package main
 
 import (
 	"crypto/tls"
-	"gopkg.in/DataDog/dd-trace-go.v1/contrib/envoyproxy/envoy"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
 	"net"
 	"net/http"
 	"os"
+
+	"gopkg.in/DataDog/dd-trace-go.v1/contrib/envoyproxy/envoy"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
 
 	extproc "github.com/envoyproxy/go-control-plane/envoy/service/ext_proc/v3"
 	"github.com/gorilla/mux"
