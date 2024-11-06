@@ -7,6 +7,7 @@ package net
 
 import (
 	"fmt"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
 const (
@@ -88,5 +89,8 @@ func (c *client) GetSettings() (*SettingsResponseData, error) {
 		return nil, fmt.Errorf("unmarshalling settings response: %s", err.Error())
 	}
 
+	if log.DebugEnabled() {
+		log.Debug("civisibility.settings: %s", string(response.Body))
+	}
 	return &responseObject.Data.Attributes, nil
 }

@@ -104,7 +104,9 @@ func CreateTestSession(options ...TestSessionStartOption) TestSession {
 	PushCiVisibilityCloseAction(func() { s.Close(1) })
 
 	// Creating telemetry event created
-	telemetry.EventCreated(s.framework, telemetry.GetSessionTestingEventType())
+	hasCodeOwners := utils.GetCodeOwners() != nil
+	_, hasCiProvider := utils.GetCITags()[constants.CIProviderName]
+	telemetry.EventCreated(s.framework, telemetry.GetSessionTestingEventType(hasCodeOwners, hasCiProvider))
 	return s
 }
 
@@ -156,7 +158,9 @@ func (t *tslvTestSession) Close(exitCode int, options ...TestSessionCloseOption)
 	t.closed = true
 
 	// Creating telemetry event finished
-	telemetry.EventFinished(t.framework, telemetry.GetSessionTestingEventType())
+	hasCodeOwners := utils.GetCodeOwners() != nil
+	_, hasCiProvider := utils.GetCITags()[constants.CIProviderName]
+	telemetry.EventFinished(t.framework, telemetry.GetSessionTestingEventType(hasCodeOwners, hasCiProvider))
 	tracer.Flush()
 }
 

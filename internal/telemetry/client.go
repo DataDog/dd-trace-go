@@ -251,7 +251,7 @@ func (c *client) start(configuration []Configuration, namespace Namespace, flush
 	}
 
 	if flush {
-		c.flush()
+		c.flush(nil)
 	}
 	c.heartbeatInterval = heartbeatInterval()
 	c.heartbeatT = time.AfterFunc(c.heartbeatInterval, c.backgroundHeartbeat)
@@ -280,7 +280,16 @@ func (c *client) Stop() {
 	// close request types have no body
 	r := c.newRequest(RequestTypeAppClosing)
 	c.scheduleSubmit(r)
-	c.flush()
+	if internal.BoolEnv("DD_CIVISIBILITY_ENABLED", false) {
+		cnn := make(chan struct{})
+		c.flush(func() {
+			cnn <- struct{}{}
+			close(cnn)
+		})
+		<-cnn
+	} else {
+		c.flush(nil)
+	}
 }
 
 // Disabled returns whether instrumentation telemetry is disabled
@@ -382,7 +391,7 @@ func (c *client) Count(namespace Namespace, name string, value float64, tags []s
 // flush sends any outstanding telemetry messages and aggregated metrics to be
 // sent to the backend. Requests are sent in the background. Must be called
 // with c.mu locked
-func (c *client) flush() {
+func (c *client) flush(callback func()) {
 	// initialize submissions slice of capacity len(c.requests) + 2
 	// to hold all the new events, plus two potential metric events
 	submissions := make([]*Request, 0, len(c.requests)+2)
@@ -442,6 +451,10 @@ func (c *client) flush() {
 			if err != nil {
 				log("submission error: %s", err.Error())
 			}
+		}
+
+		if callback != nil {
+			callback()
 		}
 	}()
 }
@@ -555,6 +568,7 @@ func (r *Request) trySubmit() (retry bool, err error) {
 		return false, err
 	}
 
+	log("submitting telemetry request to %s\n%s", r.URL, string(b))
 	req, err := http.NewRequest(http.MethodPost, r.URL, bytes.NewReader(b))
 	if err != nil {
 		return false, err
@@ -598,6 +612,6 @@ func (c *client) backgroundHeartbeat() {
 		return
 	}
 	c.scheduleSubmit(c.newRequest(RequestTypeAppHeartbeat))
-	c.flush()
+	c.flush(nil)
 	c.heartbeatT.Reset(c.heartbeatInterval)
 }

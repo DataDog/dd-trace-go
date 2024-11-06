@@ -111,7 +111,7 @@ func (t *tslvTestSuite) Close(options ...TestSuiteCloseOption) {
 	t.closed = true
 
 	// Creating telemetry event finished
-	telemetry.EventFinished(t.module.framework, telemetry.ModuleEventType)
+	telemetry.EventFinished(t.module.framework, telemetry.SuiteEventType)
 }
 
 // SetError sets an error on the test suite and marks the module as having an error.
