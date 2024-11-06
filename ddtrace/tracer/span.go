@@ -534,6 +534,9 @@ func (s *Span) setMetric(key string, v float64) {
 		if v == float64(samplernames.AppSec) {
 			s.setSamplingPriorityLocked(ext.PriorityUserKeep, samplernames.AppSec)
 		}
+	case "_sampling_priority_v1shim":
+		// We have this for backward compatibility with the v1 shim.
+		s.setSamplingPriorityLocked(int(v), samplernames.Manual)
 	default:
 		s.metrics[key] = v
 	}
