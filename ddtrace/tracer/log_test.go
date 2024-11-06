@@ -8,6 +8,7 @@ package tracer
 import (
 	"fmt"
 	"math"
+	"regexp"
 	"testing"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
@@ -260,6 +261,15 @@ func setup(t *testing.T, customProp Propagator) string {
 	return tp.Logs()[1]
 }
 
+func findLogEntry(logs []string, pattern string) string {
+	for _, log := range logs {
+		if matched, _ := regexp.MatchString(pattern, log); matched {
+			return log
+		}
+	}
+	return ""
+}
+
 func TestAgentURL(t *testing.T) {
 	assert := assert.New(t)
 	tp := new(log.RecordLogger)
@@ -268,7 +278,8 @@ func TestAgentURL(t *testing.T) {
 	tp.Reset()
 	tp.Ignore("appsec: ", telemetry.LogPrefix)
 	logStartup(tracer)
-	assert.Regexp(`"agent_url":"unix://var/run/datadog/apm.socket"`, tp.Logs()[1])
+	logEntry := findLogEntry(tp.Logs(), `"agent_url":"unix://var/run/datadog/apm.socket"`)
+	assert.Regexp(`"agent_url":"unix://var/run/datadog/apm.socket"`, logEntry)
 }
 
 func TestAgentURLFromEnv(t *testing.T) {
@@ -280,7 +291,8 @@ func TestAgentURLFromEnv(t *testing.T) {
 	tp.Reset()
 	tp.Ignore("appsec: ", telemetry.LogPrefix)
 	logStartup(tracer)
-	assert.Regexp(`"agent_url":"unix://var/run/datadog/apm.socket"`, tp.Logs()[1])
+	logEntry := findLogEntry(tp.Logs(), `"agent_url":"unix://var/run/datadog/apm.socket"`)
+	assert.Regexp(`"agent_url":"unix://var/run/datadog/apm.socket"`, logEntry)
 }
 
 func TestInvalidAgentURL(t *testing.T) {
@@ -293,8 +305,9 @@ func TestInvalidAgentURL(t *testing.T) {
 	tp.Reset()
 	tp.Ignore("appsec: ", telemetry.LogPrefix)
 	logStartup(tracer)
+	logEntry := findLogEntry(tp.Logs(), `"agent_url":"http://localhost:8126/v0.4/traces"`)
 	// assert that it is the default URL
-	assert.Regexp(`"agent_url":"http://localhost:8126/v0.4/traces"`, tp.Logs()[0])
+	assert.Regexp(`"agent_url":"http://localhost:8126/v0.4/traces"`, logEntry)
 }
 
 func TestAgentURLConflict(t *testing.T) {
@@ -306,5 +319,6 @@ func TestAgentURLConflict(t *testing.T) {
 	tp.Reset()
 	tp.Ignore("appsec: ", telemetry.LogPrefix)
 	logStartup(tracer)
-	assert.Regexp(`"agent_url":"http://localhost:8126/v0.4/traces"`, tp.Logs()[0])
+	logEntry := findLogEntry(tp.Logs(), `"agent_url":"http://localhost:8126/v0.4/traces"`)
+	assert.Regexp(`"agent_url":"http://localhost:8126/v0.4/traces"`, logEntry)
 }
