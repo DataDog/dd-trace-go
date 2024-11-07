@@ -575,7 +575,6 @@ func (r *Request) trySubmit() (retry bool, err error) {
 		return false, err
 	}
 
-	log("submitting telemetry request to %s\n%s", r.URL, string(b))
 	req, err := http.NewRequest(http.MethodPost, r.URL, bytes.NewReader(b))
 	if err != nil {
 		return false, err
