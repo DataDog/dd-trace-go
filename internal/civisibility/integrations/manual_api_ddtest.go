@@ -129,7 +129,32 @@ func (t *tslvTest) Close(status TestResultStatus, options ...TestCloseOption) {
 	t.closed = true
 
 	// Creating telemetry event finished
-	telemetry.EventFinished(t.suite.module.framework, telemetry.TestEventType)
+	testingEventType := telemetry.TestEventType
+	if t.ctx.Value(constants.TestIsNew) == "true" {
+		testingEventType = append(testingEventType, telemetry.IsNewEventType...)
+	}
+	if t.ctx.Value(constants.TestIsRetry) == "true" {
+		testingEventType = append(testingEventType, telemetry.IsRetryEventType...)
+	}
+	if t.ctx.Value(constants.TestEarlyFlakeDetectionRetryAborted) == "slow" {
+		testingEventType = append(testingEventType, telemetry.EfdAbortSlowEventType...)
+	}
+	if t.ctx.Value(constants.TestType) == constants.TestTypeBenchmark {
+		testingEventType = append(testingEventType, telemetry.IsBenchmarkEventType...)
+	}
+	telemetry.EventFinished(t.suite.module.framework, testingEventType)
+}
+
+// SetTag sets a tag on the test event.
+func (t *tslvTest) SetTag(key string, value interface{}) {
+	t.ciVisibilityCommon.SetTag(key, value)
+	if key == constants.TestIsNew {
+		t.ctx = context.WithValue(t.ctx, constants.TestIsNew, value)
+	} else if key == constants.TestIsRetry {
+		t.ctx = context.WithValue(t.ctx, constants.TestIsRetry, value)
+	} else if key == constants.TestEarlyFlakeDetectionRetryAborted {
+		t.ctx = context.WithValue(t.ctx, constants.TestEarlyFlakeDetectionRetryAborted, value)
+	}
 }
 
 // SetError sets an error on the test and marks the suite and module as having an error.
@@ -247,6 +272,7 @@ func (t *tslvTest) SetTestFunc(fn *runtime.Func) {
 // SetBenchmarkData sets benchmark data for the test.
 func (t *tslvTest) SetBenchmarkData(measureType string, data map[string]any) {
 	t.span.SetTag(constants.TestType, constants.TestTypeBenchmark)
+	t.ctx = context.WithValue(t.ctx, constants.TestType, constants.TestTypeBenchmark)
 	for k, v := range data {
 		t.span.SetTag(fmt.Sprintf("benchmark.%s.%s", measureType, k), v)
 	}

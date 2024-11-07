@@ -105,15 +105,12 @@ func (w *ciVisibilityTraceWriter) flush() {
 
 		var count, size int
 		var err error
-		if ciTransport, ok := w.config.transport.(*ciVisibilityTransport); ok {
-			if ciTransport.agentless {
-				telemetry.EndpointPayloadRequests(telemetry.TestCycleRequestCompressedEndpointType)
-			} else {
-				telemetry.EndpointPayloadRequests(telemetry.TestCycleUncompressedEndpointType)
-			}
-		} else {
-			telemetry.EndpointPayloadRequests(telemetry.TestCycleUncompressedEndpointType)
+
+		requestCompressedType := telemetry.UncompressedRequestCompressedType
+		if ciTransport, ok := w.config.transport.(*ciVisibilityTransport); ok && ciTransport.agentless {
+			requestCompressedType = telemetry.CompressedRequestCompressedType
 		}
+		telemetry.EndpointPayloadRequests(telemetry.TestCycleEndpointType, requestCompressedType)
 
 		for attempt := 0; attempt <= w.config.sendRetries; attempt++ {
 			size, count = p.size(), p.itemCount()

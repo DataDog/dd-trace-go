@@ -104,9 +104,14 @@ func CreateTestSession(options ...TestSessionStartOption) TestSession {
 	PushCiVisibilityCloseAction(func() { s.Close(1) })
 
 	// Creating telemetry event created
-	hasCodeOwners := utils.GetCodeOwners() != nil
-	_, hasCiProvider := utils.GetCITags()[constants.CIProviderName]
-	telemetry.EventCreated(s.framework, telemetry.GetSessionTestingEventType(hasCodeOwners, hasCiProvider))
+	testingEventType := telemetry.SessionEventType
+	if utils.GetCodeOwners() != nil {
+		testingEventType = append(testingEventType, telemetry.HasCodeOwnerEventType...)
+	}
+	if _, hasCiProvider := utils.GetCITags()[constants.CIProviderName]; !hasCiProvider {
+		testingEventType = append(testingEventType, telemetry.UnsupportedCiEventType...)
+	}
+	telemetry.EventCreated(s.framework, testingEventType)
 	return s
 }
 
@@ -158,9 +163,14 @@ func (t *tslvTestSession) Close(exitCode int, options ...TestSessionCloseOption)
 	t.closed = true
 
 	// Creating telemetry event finished
-	hasCodeOwners := utils.GetCodeOwners() != nil
-	_, hasCiProvider := utils.GetCITags()[constants.CIProviderName]
-	telemetry.EventFinished(t.framework, telemetry.GetSessionTestingEventType(hasCodeOwners, hasCiProvider))
+	testingEventType := telemetry.SessionEventType
+	if utils.GetCodeOwners() != nil {
+		testingEventType = append(testingEventType, telemetry.HasCodeOwnerEventType...)
+	}
+	if _, hasCiProvider := utils.GetCITags()[constants.CIProviderName]; !hasCiProvider {
+		testingEventType = append(testingEventType, telemetry.UnsupportedCiEventType...)
+	}
+	telemetry.EventFinished(t.framework, testingEventType)
 	tracer.Flush()
 }
 

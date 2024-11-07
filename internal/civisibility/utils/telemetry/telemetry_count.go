@@ -17,17 +17,6 @@ func getTestingFramework(testingFramework string) TestingFramework {
 	return telemetryFramework
 }
 
-func GetSessionTestingEventType(hasCodeOwners, hasCiProvider bool) TestingEventType {
-	if hasCodeOwners && hasCiProvider {
-		return SessionHasCodeOwnerIsSupportedCiEventType
-	} else if hasCodeOwners {
-		return SessionHasCodeOwnerUnsupportedCiEventType
-	} else if hasCiProvider {
-		return SessionNoCodeOwnerIsSupportedCiEventType
-	}
-	return SessionNoCodeOwnerUnsupportedCiEventType
-}
-
 func GetErrorTypeFromStatusCode(statusCode int) ErrorType {
 	switch statusCode {
 	case 0:
@@ -57,14 +46,14 @@ func GetErrorTypeFromStatusCode(statusCode int) ErrorType {
 
 // EventCreated the number of events created by CI Visibility
 func EventCreated(testingFramework string, eventType TestingEventType) {
-	tags := []string{(string)(getTestingFramework(testingFramework))}
+	tags := []string{string(getTestingFramework(testingFramework))}
 	tags = append(tags, eventType...)
 	telemetry.GlobalClient.Count(telemetry.NamespaceCiVisibility, "event_created", 1.0, removeEmptyStrings(tags), true)
 }
 
 // EventFinished the number of events finished by CI Visibility
 func EventFinished(testingFramework string, eventType TestingEventType) {
-	tags := []string{(string)(getTestingFramework(testingFramework))}
+	tags := []string{string(getTestingFramework(testingFramework))}
 	tags = append(tags, eventType...)
 	telemetry.GlobalClient.Count(telemetry.NamespaceCiVisibility, "event_finished", 1.0, removeEmptyStrings(tags), true)
 }
@@ -72,16 +61,16 @@ func EventFinished(testingFramework string, eventType TestingEventType) {
 // CodeCoverageStarted the number of code coverage start calls by CI Visibility
 func CodeCoverageStarted(testingFramework string, coverageLibraryType CoverageLibraryType) {
 	telemetry.GlobalClient.Count(telemetry.NamespaceCiVisibility, "code_coverage_started", 1.0, removeEmptyStrings([]string{
-		(string)(getTestingFramework(testingFramework)),
-		(string)(coverageLibraryType),
+		string(getTestingFramework(testingFramework)),
+		string(coverageLibraryType),
 	}), true)
 }
 
 // CodeCoverageFinished the number of code coverage finished calls by CI Visibility
 func CodeCoverageFinished(testingFramework string, coverageLibraryType CoverageLibraryType) {
 	telemetry.GlobalClient.Count(telemetry.NamespaceCiVisibility, "code_coverage_finished", 1.0, removeEmptyStrings([]string{
-		(string)(getTestingFramework(testingFramework)),
-		(string)(coverageLibraryType),
+		string(getTestingFramework(testingFramework)),
+		string(coverageLibraryType),
 	}), true)
 }
 
@@ -91,13 +80,16 @@ func EventsEnqueueForSerialization() {
 }
 
 // EndpointPayloadRequests the number of requests sent to the endpoint, regardless of success, tagged by endpoint type
-func EndpointPayloadRequests(endpointAndCompressionType EndpointAndCompressionType) {
-	telemetry.GlobalClient.Count(telemetry.NamespaceCiVisibility, "endpoint_payload.requests", 1.0, removeEmptyStrings(endpointAndCompressionType), true)
+func EndpointPayloadRequests(endpointType EndpointType, requestCompressedType RequestCompressedType) {
+	telemetry.GlobalClient.Count(telemetry.NamespaceCiVisibility, "endpoint_payload.requests", 1.0, removeEmptyStrings([]string{
+		string(endpointType),
+		string(requestCompressedType),
+	}), true)
 }
 
 // EndpointPayloadRequestsErrors the number of requests sent to the endpoint that errored, tagget by the error type and endpoint type and status code
 func EndpointPayloadRequestsErrors(endpointType EndpointType, errorType ErrorType) {
-	tags := []string{(string)(endpointType)}
+	tags := []string{string(endpointType)}
 	tags = append(tags, errorType...)
 	telemetry.GlobalClient.Count(telemetry.NamespaceCiVisibility, "endpoint_payload.requests_errors", 1.0, removeEmptyStrings(tags), true)
 }
@@ -105,29 +97,29 @@ func EndpointPayloadRequestsErrors(endpointType EndpointType, errorType ErrorTyp
 // EndpointPayloadDropped the number of payloads dropped after all retries by CI Visibility
 func EndpointPayloadDropped(endpointType EndpointType) {
 	telemetry.GlobalClient.Count(telemetry.NamespaceCiVisibility, "endpoint_payload.dropped", 1.0, removeEmptyStrings([]string{
-		(string)(endpointType),
+		string(endpointType),
 	}), true)
 }
 
 // GitCommand the number of git commands executed by CI Visibility
 func GitCommand(commandType CommandType) {
 	telemetry.GlobalClient.Count(telemetry.NamespaceCiVisibility, "git.command", 1.0, removeEmptyStrings([]string{
-		(string)(commandType),
+		string(commandType),
 	}), true)
 }
 
 // GitCommandErrors the number of git command that errored by CI Visibility
 func GitCommandErrors(commandType CommandType, exitCode CommandExitCodeType) {
 	telemetry.GlobalClient.Count(telemetry.NamespaceCiVisibility, "git.command_errors", 1.0, removeEmptyStrings([]string{
-		(string)(commandType),
-		(string)(exitCode),
+		string(commandType),
+		string(exitCode),
 	}), true)
 }
 
 // GitRequestsSearchCommits the number of requests sent to the search commit endpoint, regardless of success.
 func GitRequestsSearchCommits(requestCompressed RequestCompressedType) {
 	telemetry.GlobalClient.Count(telemetry.NamespaceCiVisibility, "git_requests.search_commits", 1.0, removeEmptyStrings([]string{
-		(string)(requestCompressed),
+		string(requestCompressed),
 	}), true)
 }
 
@@ -139,7 +131,7 @@ func GitRequestsSearchCommitsErrors(errorType ErrorType) {
 // GitRequestsObjectsPack the number of requests sent to the objects pack endpoint, tagged by the request compressed type.
 func GitRequestsObjectsPack(requestCompressed RequestCompressedType) {
 	telemetry.GlobalClient.Count(telemetry.NamespaceCiVisibility, "git_requests.objects_pack", 1.0, removeEmptyStrings([]string{
-		(string)(requestCompressed),
+		string(requestCompressed),
 	}), true)
 }
 
@@ -151,7 +143,7 @@ func GitRequestsObjectsPackErrors(errorType ErrorType) {
 // GitRequestsSettings the number of requests sent to the settings endpoint, tagged by the request compressed type.
 func GitRequestsSettings(requestCompressed RequestCompressedType) {
 	telemetry.GlobalClient.Count(telemetry.NamespaceCiVisibility, "git_requests.settings", 1.0, removeEmptyStrings([]string{
-		(string)(requestCompressed),
+		string(requestCompressed),
 	}), true)
 }
 
@@ -168,7 +160,7 @@ func GitRequestsSettingsResponse(settingsResponseType SettingsResponseType) {
 // ITRSkippableTestsRequest the number of requests sent to the ITR skippable tests endpoint, tagged by the request compressed type.
 func ITRSkippableTestsRequest(requestCompressed RequestCompressedType) {
 	telemetry.GlobalClient.Count(telemetry.NamespaceCiVisibility, "itr_skippable_tests.request", 1.0, removeEmptyStrings([]string{
-		(string)(requestCompressed),
+		string(requestCompressed),
 	}), true)
 }
 
@@ -210,7 +202,7 @@ func CodeCoverageErrors() {
 // EarlyFlakeDetectionRequest the number of requests sent to the early flake detection endpoint, tagged by the request compressed type.
 func EarlyFlakeDetectionRequest(requestCompressed RequestCompressedType) {
 	telemetry.GlobalClient.Count(telemetry.NamespaceCiVisibility, "early_flake_detection.request", 1.0, removeEmptyStrings([]string{
-		(string)(requestCompressed),
+		string(requestCompressed),
 	}), true)
 }
 

@@ -56,9 +56,9 @@ func (c *client) SendCoveragePayload(ciTestCovPayload io.Reader) error {
 	}
 
 	if request.Compressed {
-		telemetry.EndpointPayloadRequests(telemetry.CodeCoverageRequestCompressedEndpointType)
+		telemetry.EndpointPayloadRequests(telemetry.CodeCoverageEndpointType, telemetry.CompressedRequestCompressedType)
 	} else {
-		telemetry.EndpointPayloadRequests(telemetry.CodeCoverageUncompressedEndpointType)
+		telemetry.EndpointPayloadRequests(telemetry.CodeCoverageEndpointType, telemetry.UncompressedRequestCompressedType)
 	}
 
 	startTime := time.Now()

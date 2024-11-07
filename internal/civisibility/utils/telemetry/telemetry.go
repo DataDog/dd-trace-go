@@ -17,22 +17,17 @@ const (
 type TestingEventType []string
 
 var (
-	TestEventType                                                   TestingEventType = []string{"event_type:test"}
-	BenchmarkTestEventType                                          TestingEventType = []string{"event_type:test", "is_benchmark"}
-	SuiteEventType                                                  TestingEventType = []string{"event_type:suite"}
-	ModuleEventType                                                 TestingEventType = []string{"event_type:module"}
-	SessionNoCodeOwnerIsSupportedCiEventType                        TestingEventType = []string{"event_type:session"}
-	SessionNoCodeOwnerUnsupportedCiEventType                        TestingEventType = []string{"event_type:session", "is_unsupported_ci"}
-	SessionHasCodeOwnerIsSupportedCiEventType                       TestingEventType = []string{"event_type:session", "has_codeowner"}
-	SessionHasCodeOwnerUnsupportedCiEventType                       TestingEventType = []string{"event_type:session", "has_codeowner", "is_unsupported_ci"}
-	TestEfdTestIsNewEventType                                       TestingEventType = []string{"event_type:test", "is_new:true"}
-	TestEfdTestIsNewEfdAbortSlowEventType                           TestingEventType = []string{"event_type:test", "is_new:true", "early_flake_detection_abort_reason:slow"}
-	TestBrowserDriverSeleniumEventType                              TestingEventType = []string{"event_type:test", "browser_driver:selenium"}
-	TestEfdTestIsNewBrowserDriverSeleniumEventType                  TestingEventType = []string{"event_type:test", "is_new:true", "browser_driver:selenium"}
-	TestEfdTestIsNewEfdAbortSlowBrowserDriverSeleniumEventType      TestingEventType = []string{"event_type:test", "is_new:true", "early_flake_detection_abort_reason:slow", "browser_driver:selenium"}
-	TestBrowserDriverSeleniumIsRumEventType                         TestingEventType = []string{"event_type:test", "browser_driver:selenium", "is_rum:true"}
-	TestEfdTestIsNewBrowserDriverSeleniumIsRumEventType             TestingEventType = []string{"event_type:test", "is_new:true", "browser_driver:selenium", "is_rum:true"}
-	TestEfdTestIsNewEfdAbortSlowBrowserDriverSeleniumIsRumEventType TestingEventType = []string{"event_type:test", "is_new:true", "early_flake_detection_abort_reason:slow", "browser_driver:selenium", "is_rum:true"}
+	TestEventType    TestingEventType = []string{"event_type:test"}
+	SuiteEventType   TestingEventType = []string{"event_type:suite"}
+	ModuleEventType  TestingEventType = []string{"event_type:module"}
+	SessionEventType TestingEventType = []string{"event_type:session"}
+
+	UnsupportedCiEventType TestingEventType = []string{"is_unsupported_ci"}
+	HasCodeOwnerEventType  TestingEventType = []string{"has_codeowner"}
+	IsNewEventType         TestingEventType = []string{"is_new:true"}
+	IsRetryEventType       TestingEventType = []string{"is_retry:true"}
+	EfdAbortSlowEventType  TestingEventType = []string{"early_flake_detection_abort_reason:slow"}
+	IsBenchmarkEventType   TestingEventType = []string{"is_benchmark"}
 )
 
 // CoverageLibraryType is a type for coverage library types
@@ -41,16 +36,6 @@ type CoverageLibraryType string
 const (
 	DefaultCoverageLibraryType CoverageLibraryType = "library:default"
 	UnknownCoverageLibraryType CoverageLibraryType = "library:unknown"
-)
-
-// EndpointAndCompressionType is a type for endpoint and compression types
-type EndpointAndCompressionType []string
-
-var (
-	TestCycleUncompressedEndpointType         EndpointAndCompressionType = []string{"endpoint:test_cycle"}
-	TestCycleRequestCompressedEndpointType    EndpointAndCompressionType = []string{"endpoint:test_cycle", "rq_compressed:true"}
-	CodeCoverageUncompressedEndpointType      EndpointAndCompressionType = []string{"endpoint:code_coverage"}
-	CodeCoverageRequestCompressedEndpointType EndpointAndCompressionType = []string{"endpoint:code_coverage", "rq_compressed:true"}
 )
 
 // EndpointType is a type for endpoint types

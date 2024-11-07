@@ -222,11 +222,11 @@ func (ddm *M) executeInternalTest(testInfo *testingTInfo) func(*testing.T) {
 			if test.Context().Value(constants.TestUnskippable) != true {
 				test.SetTag(constants.TestSkippedByITR, "true")
 				test.Close(integrations.ResultStatusSkip, integrations.WithTestSkipReason(constants.SkippedByITRReason))
+				telemetry.ITRSkipped(telemetry.TestEventType)
 				session.SetTag(constants.ITRTestsSkipped, "true")
 				session.SetTag(constants.ITRTestsSkippingCount, numOfTestsSkipped.Add(1))
 				checkModuleAndSuite(module, suite)
 				t.Skip(constants.SkippedByITRReason)
-				telemetry.ITRSkipped(telemetry.TestEventType)
 				return
 			} else {
 				test.SetTag(constants.TestForcedToRun, "true")
