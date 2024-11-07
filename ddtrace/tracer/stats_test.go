@@ -11,6 +11,9 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
+
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/constants"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/utils"
 )
 
 func TestAlignTs(t *testing.T) {
@@ -93,6 +96,20 @@ func TestConcentrator(t *testing.T) {
 			assert.Len(t, names, 2)
 			assert.NotNil(t, names["http.request"])
 			assert.NotNil(t, names["potato"])
+		})
+
+		t.Run("ciGitSha", func(t *testing.T) {
+			utils.AddCITags(constants.GitCommitSHA, "DEADBEEF")
+			transport := newDummyTransport()
+			c := newConcentrator(&config{transport: transport, env: "someEnv"}, (10 * time.Second).Nanoseconds())
+			assert.Len(t, transport.Stats(), 0)
+			ss1, ok := c.newTracerStatSpan(&s1, nil)
+			assert.True(t, ok)
+			c.Start()
+			c.In <- ss1
+			c.Stop()
+			actualStats := transport.Stats()
+			assert.Equal(t, "DEADBEEF", actualStats[0].GitCommitSha)
 		})
 
 		// stats should be sent if the concentrator is stopped
