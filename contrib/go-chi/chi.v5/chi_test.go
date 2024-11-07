@@ -16,6 +16,7 @@ import (
 	"testing"
 
 	pappsec "gopkg.in/DataDog/dd-trace-go.v1/appsec"
+	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/httptrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/namingschematest"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
@@ -206,6 +207,41 @@ func TestError(t *testing.T) {
 		assertSpan(assert, span, code)
 		wantErr := fmt.Sprintf("%d: %s", code, http.StatusText(code))
 		assert.Equal(wantErr, span.Tag(ext.Error).(error).Error())
+	})
+	t.Run("envvar", func(t *testing.T) {
+		assert := assert.New(t)
+		t.Setenv("DD_TRACE_HTTP_SERVER_ERROR_STATUSES", "200")
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		// re-run config defaults based on new DD_TRACE_HTTP_SERVER_ERROR_STATUSES value
+		httptrace.ResetCfg()
+
+		router := chi.NewRouter()
+		router.Use(Middleware(
+			WithServiceName("foobar")))
+		code := 200
+		// a handler with an error and make the requests
+		router.Get("/err", func(w http.ResponseWriter, r *http.Request) {
+			http.Error(w, fmt.Sprintf("%d!", code), code)
+		})
+		r := httptest.NewRequest("GET", "/err", nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, r)
+		response := w.Result()
+		defer response.Body.Close()
+		assert.Equal(response.StatusCode, code)
+
+		spans := mt.FinishedSpans()
+		assert.Len(spans, 1)
+		span := spans[0]
+		if span.Tag(ext.Error) == nil {
+			t.Fatal("Span missing error tags")
+		}
+		assertSpan(assert, span, code)
+		wantErr := fmt.Sprintf("%d: %s", code, http.StatusText(code))
+		assert.Equal(wantErr, span.Tag(ext.Error).(error).Error())
+
 	})
 	t.Run("integration overrides global", func(t *testing.T) {
 		assert := assert.New(t)
