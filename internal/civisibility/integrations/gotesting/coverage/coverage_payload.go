@@ -169,6 +169,6 @@ func (p *coveragePayload) getBuffer() (*bytes.Buffer, error) {
 
 	telemetry.EndpointPayloadBytes(telemetry.CodeCoverageEndpointType, float64(encodedBuf.Len()))
 	telemetry.EndpointPayloadEventsCount(telemetry.CodeCoverageEndpointType, float64(p.itemCount()))
-	telemetry.EndpointEventsSerializationMs(telemetry.CodeCoverageEndpointType, float64(p.serializationTime.Milliseconds()+time.Since(startTime).Milliseconds()))
+	telemetry.EndpointEventsSerializationMs(telemetry.CodeCoverageEndpointType, float64((p.serializationTime + time.Since(startTime)).Milliseconds()))
 	return encodedBuf, nil
 }

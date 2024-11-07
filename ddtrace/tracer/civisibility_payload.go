@@ -92,7 +92,7 @@ func (p *ciVisibilityPayload) getBuffer(config *config) (*bytes.Buffer, error) {
 
 	telemetry.EndpointPayloadEventsCount(telemetry.TestCycleEndpointType, float64(p.itemCount()))
 	telemetry.EndpointPayloadBytes(telemetry.TestCycleEndpointType, float64(encodedBuf.Len()))
-	telemetry.EndpointEventsSerializationMs(telemetry.TestCycleEndpointType, float64(p.serializationTime.Milliseconds()+time.Since(startTime).Milliseconds()))
+	telemetry.EndpointEventsSerializationMs(telemetry.TestCycleEndpointType, float64((p.serializationTime + time.Since(startTime)).Milliseconds()))
 	return encodedBuf, nil
 }
 
