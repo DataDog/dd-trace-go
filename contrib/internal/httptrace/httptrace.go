@@ -52,7 +52,8 @@ func StartRequestSpan(r *http.Request, opts ...ddtrace.StartSpanOption) (tracer.
 			}
 			if spanctx, err := tracer.Extract(tracer.HTTPHeadersCarrier(r.Header)); err == nil {
 				if linksCtx, err := spanctx.(ddtrace.SpanContextWithLinks); err && linksCtx.SpanLinks() != nil {
-					tracer.WithExtractedSpanLinks(spanctx)(cfg)
+					opts = append(opts, tracer.WithSpanLinks(linksCtx.SpanLinks()))
+					linksCtx.SetLinks(nil)
 				}
 				tracer.ChildOf(spanctx)(cfg)
 			}

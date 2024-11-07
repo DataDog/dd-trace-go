@@ -1274,15 +1274,6 @@ func ChildOf(ctx ddtrace.SpanContext) StartSpanOption {
 	}
 }
 
-func WithExtractedSpanLinks(ctx ddtrace.SpanContext) StartSpanOption {
-	return func(cfg *ddtrace.StartSpanConfig) {
-		if spanCtx, ok := ctx.(*spanContext); ok && spanCtx != nil && spanCtx.spanLinks != nil {
-			WithSpanLinks(spanCtx.spanLinks)(cfg)
-			spanCtx.spanLinks = nil //Extracted span links should not belong in the parent context of a span when it is started
-		}
-	}
-}
-
 // withContext associates the ctx with the span.
 func withContext(ctx context.Context) StartSpanOption {
 	return func(cfg *ddtrace.StartSpanConfig) {

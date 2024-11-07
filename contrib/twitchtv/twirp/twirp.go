@@ -92,7 +92,8 @@ func (wc *wrappedClient) Do(req *http.Request) (*http.Response, error) {
 	}
 	if spanctx, err := tracer.Extract(tracer.HTTPHeadersCarrier(req.Header)); err == nil {
 		if linksCtx, err := spanctx.(ddtrace.SpanContextWithLinks); err && linksCtx.SpanLinks() != nil {
-			opts = append(opts, tracer.WithExtractedSpanLinks(spanctx))
+			opts = append(opts, tracer.WithSpanLinks(linksCtx.SpanLinks()))
+			linksCtx.SetLinks(nil)
 		}
 		opts = append(opts, tracer.ChildOf(spanctx))
 	}
@@ -144,7 +145,8 @@ func WrapServer(h http.Handler, opts ...Option) http.Handler {
 		}
 		if spanctx, err := tracer.Extract(tracer.HTTPHeadersCarrier(r.Header)); err == nil {
 			if linksCtx, err := spanctx.(ddtrace.SpanContextWithLinks); err && linksCtx.SpanLinks() != nil {
-				spanOpts = append(spanOpts, tracer.WithExtractedSpanLinks(spanctx))
+				spanOpts = append(spanOpts, tracer.WithSpanLinks(linksCtx.SpanLinks()))
+				linksCtx.SetLinks(nil)
 			}
 			spanOpts = append(spanOpts, tracer.ChildOf(spanctx))
 		}

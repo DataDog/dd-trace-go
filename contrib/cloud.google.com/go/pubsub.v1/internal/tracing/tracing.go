@@ -119,7 +119,8 @@ func TraceReceiveFunc(s Subscription, opts ...Option) func(ctx context.Context, 
 			opts = append(opts, tracer.Measured())
 		}
 		if linksCtx, err := parentSpanCtx.(ddtrace.SpanContextWithLinks); err && linksCtx.SpanLinks() != nil {
-			opts = append(opts, tracer.WithExtractedSpanLinks(parentSpanCtx))
+			opts = append(opts, tracer.WithSpanLinks(linksCtx.SpanLinks()))
+			linksCtx.SetLinks(nil)
 		}
 		span, ctx := tracer.StartSpanFromContext(ctx, cfg.receiveSpanName, opts...)
 		if msg.DeliveryAttempt != nil {

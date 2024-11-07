@@ -276,51 +276,54 @@ func (p *chainedPropagator) Extract(carrier interface{}) (ddtrace.SpanContext, e
 	var links []ddtrace.SpanLink
 	for _, v := range p.extractors {
 		extractedCtx, err := v.Extract(carrier)
+		// Handling extraction errors. If it is the first extraction, return error. Else, ignore
+		if err != nil {
+			if ctx == nil && err != ErrSpanContextNotFound {
+				return nil, err
+			} else {
+				continue
+			}
+		}
 		if ctx != nil { // A local trace context has already been extracted
-			if err == nil {
-				propagatorType, unkPropagatorType := getPropagatorType(v)
-				if unkPropagatorType != nil { // If the propagator type is not one that we expect, ignore this extraction
-					continue
-				}
-				if extractedCtx.(*spanContext).TraceID128() == ctx.(*spanContext).TraceID128() {
-					if propagatorType == "tracecontext" {
-						v.(*propagatorW3c).propagateTracestate(ctx.(*spanContext), extractedCtx.(*spanContext)) //Sending tracestate to the ctx to be returned
-						if extractedCtx.SpanID() != ctx.SpanID() {
-							var ddCtx *spanContext
-							if ddp := getDatadogPropagator(p); ddp != nil {
-								if ddSpanCtx, err := ddp.Extract(carrier); err == nil {
-									ddCtx, _ = ddSpanCtx.(*spanContext)
-								}
+			propagatorType, err := getPropagatorType(v)
+			if err != nil { // Propagator is not one of the known, supported types. Ignore this extraction
+				log.Debug("Propagator type is unknown. Skipping extraction")
+				continue
+			}
+			if extractedCtx.(ddtrace.SpanContextW3C).TraceID128() == ctx.(ddtrace.SpanContextW3C).TraceID128() {
+				if propagatorType == "tracecontext" {
+					v.(*propagatorW3c).propagateTracestate(ctx.(*spanContext), extractedCtx.(*spanContext)) //Sending tracestate to the ctx to be returned
+					if extractedCtx.SpanID() != ctx.SpanID() {
+						var ddCtx *spanContext
+						if ddp := getDatadogPropagator(p); ddp != nil {
+							if ddSpanCtx, err := ddp.Extract(carrier); err == nil {
+								ddCtx, _ = ddSpanCtx.(*spanContext)
 							}
-							overrideDatadogParentID(ctx.(*spanContext), extractedCtx.(*spanContext), ddCtx)
 						}
+						overrideDatadogParentID(ctx.(*spanContext), extractedCtx.(*spanContext), ddCtx)
 					}
-				} else {
-					var flags uint32
-					if tracer := extractedCtx.(*spanContext).trace; tracer != nil {
-						if flags = uint32(*tracer.priority); flags > 0 { // Set the flags based on the sampling priority
-							flags = 1
-						} else {
-							flags = 0
-						}
-					}
-					link := ddtrace.SpanLink{TraceID: extractedCtx.(*spanContext).TraceID(), TraceIDHigh: extractedCtx.(*spanContext).TraceIDUpper(), SpanID: extractedCtx.(*spanContext).SpanID(), Attributes: map[string]string{"reason": "terminated_context", "context_headers": propagatorType}, Flags: flags}
-					if propagatorType == "tracecontext" {
-						link.Tracestate = extractedCtx.(*spanContext).trace.propagatingTag(tracestateHeader)
-					}
-					links = append(links, link)
 				}
+			} else {
+				var flags uint32
+				if tracer := extractedCtx.(*spanContext).trace; tracer != nil {
+					if flags = uint32(*tracer.priority); flags > 0 { // Set the flags based on the sampling priority
+						flags = 1
+					} else {
+						flags = 0
+					}
+				}
+				link := ddtrace.SpanLink{TraceID: extractedCtx.(*spanContext).TraceID(), TraceIDHigh: extractedCtx.(*spanContext).TraceIDUpper(), SpanID: extractedCtx.(*spanContext).SpanID(), Attributes: map[string]string{"reason": "terminated_context", "context_headers": propagatorType}, Flags: flags}
+				if propagatorType == "tracecontext" {
+					link.Tracestate = extractedCtx.(*spanContext).trace.propagatingTag(tracestateHeader)
+				}
+				links = append(links, link)
 			}
 		} else { // This is the first extracted trace context
 			ctx = extractedCtx
-			if ctx != nil {
-				if p.onlyExtractFirst {
-					// Return early if the customer configured that only the first successful
-					// extraction should occur.
-					return ctx, nil
-				}
-			} else if err != ErrSpanContextNotFound {
-				return nil, err
+			if ctx != nil && p.onlyExtractFirst {
+				// Return early if the customer configured that only the first successful
+				// extraction should occur.
+				return ctx, nil
 			}
 		}
 	}
@@ -515,8 +518,9 @@ func validateTID(tid string) error {
 	return nil
 }
 
-// getPropagatorType returns the type of the propagator used, or error if unknown
-// If the propagator type is unknown, logic relating to the propagator should be skipped.
+// getPropagatorType provides information about the underlying type of Propagator p. If
+// it is a supported type, a string representing the type and nil is returned. If the
+// type is unsupported, an error is returned.
 func getPropagatorType(p Propagator) (string, error) {
 	switch p.(type) {
 	case *propagatorW3c:

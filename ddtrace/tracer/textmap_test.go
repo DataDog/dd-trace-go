@@ -1972,34 +1972,63 @@ func TestInvalidTraceSpanLinkCreation(t *testing.T) {
 		for k, v := range testEnv {
 			t.Setenv(k, v)
 		}
-		var test = struct {
+		var test = []struct {
 			in  TextMapCarrier
 			out []ddtrace.SpanLink
 			tid []traceID
 		}{
-			in: TextMapCarrier{
-				DefaultTraceIDHeader:  "1",
-				DefaultParentIDHeader: "1",
-				DefaultPriorityHeader: "3",
-				traceparentHeader:     "00-00000000000000000000000000000002-0000000000000002-01",
-				tracestateHeader:      "dd=s:1;o:rum;t.usr.id:baz64~~",
+			{
+				in: TextMapCarrier{
+					DefaultTraceIDHeader:  "1",
+					DefaultParentIDHeader: "1",
+					DefaultPriorityHeader: "3",
+					traceparentHeader:     "00-00000000000000000000000000000002-0000000000000002-01",
+					tracestateHeader:      "dd=s:1;o:rum;t.usr.id:baz64~~",
+				},
+				out: []ddtrace.SpanLink{{TraceID: 2, TraceIDHigh: 0, SpanID: 2, Tracestate: "dd=s:1;o:rum;t.usr.id:baz64~~", Flags: 1, Attributes: map[string]string{"reason": "terminated_context", "context_headers": "tracecontext"}}, {TraceID: 1, TraceIDHigh: 0, SpanID: 1, Flags: 1, Attributes: map[string]string{"reason": "terminated_context", "context_headers": "datadog"}}},
+				tid: []traceID{traceIDFrom64Bits(1), traceIDFrom64Bits(2)},
 			},
-			out: []ddtrace.SpanLink{{TraceID: 2, TraceIDHigh: 0, SpanID: 2, Tracestate: "dd=s:1;o:rum;t.usr.id:baz64~~", Flags: 1, Attributes: map[string]string{"reason": "terminated_context", "context_headers": "tracecontext"}}, {TraceID: 1, TraceIDHigh: 0, SpanID: 1, Flags: 1, Attributes: map[string]string{"reason": "terminated_context", "context_headers": "datadog"}}},
-			tid: []traceID{traceIDFrom64Bits(1), traceIDFrom64Bits(2)},
+			{
+				in: TextMapCarrier{
+					DefaultTraceIDHeader:  "1",
+					DefaultParentIDHeader: "1",
+					DefaultPriorityHeader: "3",
+					traceparentHeader:     "00-00000000000000000000000000000001-0000000000000002-01",
+					tracestateHeader:      "dd=s:1;o:rum;t.usr.id:baz64~~",
+				},
+				out: nil,
+				tid: []traceID{traceIDFrom64Bits(1), traceIDFrom64Bits(1)},
+			},
 		}
-		t.Run(fmt.Sprintf("extract with env=%q", testEnv), func(t *testing.T) {
+		t.Run("InvalidTraceSpanLinkCreation", func(t *testing.T) {
 			tracer := newTracer(WithHTTPClient(c))
 			defer tracer.Stop()
 			assert := assert.New(t)
-			ctx, err := tracer.Extract(test.in)
+			ctx, err := tracer.Extract(test[0].in)
 			if err != nil {
 				t.Fatal(err)
 			}
 			sctx, ok := ctx.(*spanContext)
 			assert.True(ok)
 
-			assert.Equal(test.tid[i], sctx.traceID)
-			assert.Equal(test.out[i], sctx.spanLinks[0])
+			assert.Equal(test[0].tid[i], sctx.traceID)
+			assert.Equal(test[0].out[i], sctx.spanLinks[0])
+			assert.True(ok)
+		})
+
+		t.Run("ValidTraceSpanLinkCreation", func(t *testing.T) {
+			tracer := newTracer(WithHTTPClient(c))
+			defer tracer.Stop()
+			assert := assert.New(t)
+			ctx, err := tracer.Extract(test[1].in)
+			if err != nil {
+				t.Fatal(err)
+			}
+			sctx, ok := ctx.(*spanContext)
+			assert.True(ok)
+
+			assert.Equal(test[1].tid[i], sctx.traceID)
+			assert.Equal(test[1].out, sctx.spanLinks)
 			assert.True(ok)
 		})
 	}
