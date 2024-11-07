@@ -209,6 +209,7 @@ func NewClientWithServiceNameAndSubdomain(serviceName, subdomain string) Client 
 				telemetry.WithEnv(environment),
 				telemetry.WithHTTPClient(requestHandler.Client),
 				telemetry.WithURL(agentlessEnabled, baseURL),
+				telemetry.SyncFlushOnStop(),
 			)
 			telemetry.GlobalClient.ProductChange(telemetry.NamespaceCiVisibility, true, []telemetry.Configuration{
 				telemetry.StringConfig("service", serviceName),

@@ -82,9 +82,7 @@ func (c *client) productChange(namespace Namespace, enabled bool) {
 		products.Products.AppSec = ProductDetails{Enabled: enabled}
 	case NamespaceProfilers:
 		products.Products.Profiler = ProductDetails{Enabled: enabled}
-	case NamespaceTracers:
-		// Nothing to do
-	case NamespaceCiVisibility:
+	case NamespaceTracers, NamespaceCiVisibility:
 		// Nothing to do
 	default:
 		log("unknown product namespace: %q. The app-product-change telemetry event will not send", namespace)
