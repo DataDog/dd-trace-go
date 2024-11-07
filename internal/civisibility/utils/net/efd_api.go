@@ -7,6 +7,7 @@ package net
 
 import (
 	"fmt"
+	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/utils/telemetry"
 )
@@ -71,7 +72,10 @@ func (c *client) GetEarlyFlakeDetectionData() (*EfdResponseData, error) {
 		telemetry.EarlyFlakeDetectionRequest(telemetry.UncompressedRequestCompressedType)
 	}
 
+	startTime := time.Now()
 	response, err := c.handler.SendRequest(*request)
+	telemetry.EarlyFlakeDetectionRequestMs(float64(time.Since(startTime).Milliseconds()))
+
 	if err != nil {
 		telemetry.EarlyFlakeDetectionRequestErrors(telemetry.NetworkErrorType)
 		return nil, fmt.Errorf("sending early flake detection request: %s", err.Error())
@@ -80,6 +84,11 @@ func (c *client) GetEarlyFlakeDetectionData() (*EfdResponseData, error) {
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		telemetry.EarlyFlakeDetectionRequestErrors(telemetry.GetErrorTypeFromStatusCode(response.StatusCode))
 	}
+	if response.Compressed {
+		telemetry.EarlyFlakeDetectionResponseBytes(telemetry.CompressedResponseCompressedType, float64(len(response.Body)))
+	} else {
+		telemetry.EarlyFlakeDetectionResponseBytes(telemetry.UncompressedResponseCompressedType, float64(len(response.Body)))
+	}
 
 	var responseObject efdResponse
 	err = response.Unmarshal(&responseObject)
@@ -87,5 +96,17 @@ func (c *client) GetEarlyFlakeDetectionData() (*EfdResponseData, error) {
 		return nil, fmt.Errorf("unmarshalling early flake detection data response: %s", err.Error())
 	}
 
+	testCount := 0
+	if responseObject.Data.Attributes.Tests != nil {
+		for _, suites := range responseObject.Data.Attributes.Tests {
+			if suites == nil {
+				continue
+			}
+			for _, tests := range suites {
+				testCount += len(tests)
+			}
+		}
+	}
+	telemetry.EarlyFlakeDetectionResponseTests(float64(testCount))
 	return &responseObject.Data.Attributes, nil
 }

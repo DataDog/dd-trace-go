@@ -6,10 +6,10 @@
 package coverage
 
 import (
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/utils/telemetry"
 	"sync"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/utils/net"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/utils/telemetry"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
@@ -92,6 +92,7 @@ func (w *coverageWriter) flush() {
 			return
 		}
 
+		telemetry.CodeCoverageFiles(float64(p.itemCount()))
 		err = w.client.SendCoveragePayload(buf)
 		if err != nil {
 			log.Error("coverageWriter: failure sending coverage data: %v", err)

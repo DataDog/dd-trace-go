@@ -7,6 +7,7 @@ package net
 
 import (
 	"fmt"
+	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/utils/telemetry"
 )
@@ -81,7 +82,10 @@ func (c *client) GetSkippableTests() (correlationID string, skippables map[strin
 		telemetry.ITRSkippableTestsRequest(telemetry.UncompressedRequestCompressedType)
 	}
 
+	startTime := time.Now()
 	response, err := c.handler.SendRequest(*request)
+	telemetry.ITRSkippableTestsRequestMs(float64(time.Since(startTime).Milliseconds()))
+
 	if err != nil {
 		telemetry.ITRSkippableTestsRequestErrors(telemetry.NetworkErrorType)
 		return "", nil, fmt.Errorf("sending skippable tests request: %s", err.Error())
@@ -89,6 +93,12 @@ func (c *client) GetSkippableTests() (correlationID string, skippables map[strin
 
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		telemetry.ITRSkippableTestsRequestErrors(telemetry.GetErrorTypeFromStatusCode(response.StatusCode))
+	}
+
+	if response.Compressed {
+		telemetry.ITRSkippableTestsResponseBytes(telemetry.CompressedResponseCompressedType, float64(len(response.Body)))
+	} else {
+		telemetry.ITRSkippableTestsResponseBytes(telemetry.UncompressedResponseCompressedType, float64(len(response.Body)))
 	}
 
 	var responseObject skippableResponse
