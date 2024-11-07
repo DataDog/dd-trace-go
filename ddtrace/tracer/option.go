@@ -454,16 +454,18 @@ func newConfig(opts ...StartOption) *config {
 	if c.agentURL == nil {
 		c.agentURL = internal.AgentURLFromEnv()
 	}
-	if c.agentURL.Scheme == "unix" {
-		// If we're connecting over UDS we can just rely on the agent to provide the hostname
-		log.Debug("connecting to agent over unix, do not set hostname on any traces")
-		c.httpClient = udsClient(c.agentURL.Path, c.httpClientTimeout)
-		c.agentURL = &url.URL{
-			Scheme: "http",
-			Host:   fmt.Sprintf("UDS_%s", strings.NewReplacer(":", "_", "/", "_", `\`, "_").Replace(c.agentURL.Path)),
+	if c.httpClient == nil {
+		if c.agentURL.Scheme == "unix" {
+			// If we're connecting over UDS we can just rely on the agent to provide the hostname
+			log.Debug("connecting to agent over unix, do not set hostname on any traces")
+			c.httpClient = udsClient(c.agentURL.Path, c.httpClientTimeout)
+			c.agentURL = &url.URL{
+				Scheme: "http",
+				Host:   fmt.Sprintf("UDS_%s", strings.NewReplacer(":", "_", "/", "_", `\`, "_").Replace(c.agentURL.Path)),
+			}
+		} else {
+			c.httpClient = defaultHTTPClient(c.httpClientTimeout)
 		}
-	} else if c.httpClient == nil {
-		c.httpClient = defaultHTTPClient(c.httpClientTimeout)
 	}
 	WithGlobalTag(ext.RuntimeID, globalconfig.RuntimeID())(c)
 	globalTags := c.globalTags.get()

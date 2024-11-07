@@ -1510,3 +1510,16 @@ func TestWithStatsComputation(t *testing.T) {
 		assert.True(c.statsComputationEnabled)
 	})
 }
+
+func TestNoHTTPClientOverride(t *testing.T) {
+	t.Run("default", func(t *testing.T) {
+		assert := assert.New(t)
+		client := http.DefaultClient
+		client.Timeout = 30 * time.Second // Default is 10s
+		c := newConfig(
+			WithHTTPClient(client),
+			WithUDS("/tmp/agent.sock"),
+		)
+		assert.Equal(30*time.Second, c.httpClient.Timeout)
+	})
+}
