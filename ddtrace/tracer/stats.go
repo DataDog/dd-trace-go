@@ -74,7 +74,7 @@ func newConcentrator(c *config, bucketSize int64) *concentrator {
 		Hostname:     c.hostname,
 		Env:          env,
 		Version:      c.version,
-		ContainerID:  "",
+		ContainerID:  "", // This intentionally left empty as the Agent will attach the container ID only in certain situations.
 		GitCommitSha: utils.GetCITags()[constants.GitCommitSHA],
 		ImageTag:     "",
 	}
