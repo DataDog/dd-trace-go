@@ -17,7 +17,13 @@ import (
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/integrations"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/utils"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/utils/telemetry"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+)
+
+const (
+	// testFramework represents the name of the testing framework.
+	testFramework = "golang.org/pkg/testing"
 )
 
 type (
@@ -197,6 +203,9 @@ func (t *testCoverage) CollectCoverageBeforeTestExecution() {
 	_, err := tearDown(t.preCoverageFilename, "")
 	if err != nil {
 		log.Debug("civisibility.coverage: error getting coverage file: %v", err)
+		telemetry.CodeCoverageErrors()
+	} else {
+		telemetry.CodeCoverageStarted(testFramework, telemetry.DefaultCoverageLibraryType)
 	}
 }
 
@@ -210,6 +219,7 @@ func (t *testCoverage) CollectCoverageAfterTestExecution() {
 	_, err := tearDown(t.postCoverageFilename, "")
 	if err != nil {
 		log.Debug("civisibility.coverage: error getting coverage file: %v", err)
+		telemetry.CodeCoverageErrors()
 	}
 
 	var pChannel = make(chan struct{})
@@ -228,20 +238,28 @@ func (t *testCoverage) processCoverageData() {
 		t.postCoverageFilename == "" ||
 		t.preCoverageFilename == t.postCoverageFilename {
 		log.Debug("civisibility.coverage: no coverage data to process")
+		telemetry.CodeCoverageErrors()
 		return
 	}
 	preCoverage, err := parseCoverProfile(t.preCoverageFilename)
 	if err != nil {
 		log.Debug("civisibility.coverage: error parsing pre-coverage file: %v", err)
+		telemetry.CodeCoverageErrors()
 		return
 	}
 	postCoverage, err := parseCoverProfile(t.postCoverageFilename)
 	if err != nil {
 		log.Debug("civisibility.coverage: error parsing post-coverage file: %v", err)
+		telemetry.CodeCoverageErrors()
 		return
 	}
 
 	t.filesCovered = getFilesCovered(t.testFile, preCoverage, postCoverage)
+	telemetry.CodeCoverageFinished(testFramework, telemetry.DefaultCoverageLibraryType)
+	if len(t.filesCovered) == 0 {
+		telemetry.CodeCoverageIsEmpty()
+	}
+
 	covWriter.add(t)
 
 	err = os.Remove(t.preCoverageFilename)

@@ -17,12 +17,14 @@ import (
 	"os"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/constants"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/utils"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 )
 
 const (
@@ -71,7 +73,12 @@ type (
 	}
 )
 
-var _ Client = &client{}
+var (
+	_ Client = &client{}
+
+	// telemetryInit is used to initialize the telemetry client.
+	telemetryInit sync.Once
+)
 
 // NewClientWithServiceNameAndSubdomain creates a new client with the given service name and subdomain.
 func NewClientWithServiceNameAndSubdomain(serviceName, subdomain string) Client {
@@ -194,6 +201,25 @@ func NewClientWithServiceNameAndSubdomain(serviceName, subdomain string) Client 
 
 	log.Debug("ciVisibilityHttpClient: new client created [id: %v, agentless: %v, url: %v, env: %v, serviceName: %v, subdomain: %v]",
 		id, agentlessEnabled, baseURL, environment, serviceName, subdomain)
+
+	if !telemetry.Disabled() {
+		telemetryInit.Do(func() {
+			telemetry.GlobalClient.ApplyOps(
+				telemetry.WithService(serviceName),
+				telemetry.WithEnv(environment),
+				telemetry.WithHTTPClient(requestHandler.Client),
+				telemetry.WithURL(agentlessEnabled, baseURL),
+				telemetry.SyncFlushOnStop(),
+			)
+			telemetry.GlobalClient.ProductChange(telemetry.NamespaceCiVisibility, true, []telemetry.Configuration{
+				telemetry.StringConfig("service", serviceName),
+				telemetry.StringConfig("env", environment),
+				telemetry.BoolConfig("agentless", agentlessEnabled),
+				telemetry.StringConfig("test_session_name", ciTags[constants.TestSessionName]),
+			})
+		})
+	}
+
 	return &client{
 		id:               id,
 		agentless:        agentlessEnabled,

@@ -284,6 +284,9 @@ type config struct {
 	// ciVisibilityEnabled controls if the tracer is loaded with CI Visibility mode. default false
 	ciVisibilityEnabled bool
 
+	// ciVisibilityAgentless controls if the tracer is loaded with CI Visibility agentless mode. default false
+	ciVisibilityAgentless bool
+
 	// logDirectory is directory for tracer logs specified by user-setting DD_TRACE_LOG_DIRECTORY. default empty/unused
 	logDirectory string
 }
@@ -454,16 +457,18 @@ func newConfig(opts ...StartOption) *config {
 	if c.agentURL == nil {
 		c.agentURL = internal.AgentURLFromEnv()
 	}
-	if c.agentURL.Scheme == "unix" {
-		// If we're connecting over UDS we can just rely on the agent to provide the hostname
-		log.Debug("connecting to agent over unix, do not set hostname on any traces")
-		c.httpClient = udsClient(c.agentURL.Path, c.httpClientTimeout)
-		c.agentURL = &url.URL{
-			Scheme: "http",
-			Host:   fmt.Sprintf("UDS_%s", strings.NewReplacer(":", "_", "/", "_", `\`, "_").Replace(c.agentURL.Path)),
+	if c.httpClient == nil {
+		if c.agentURL.Scheme == "unix" {
+			// If we're connecting over UDS we can just rely on the agent to provide the hostname
+			log.Debug("connecting to agent over unix, do not set hostname on any traces")
+			c.httpClient = udsClient(c.agentURL.Path, c.httpClientTimeout)
+			c.agentURL = &url.URL{
+				Scheme: "http",
+				Host:   fmt.Sprintf("UDS_%s", strings.NewReplacer(":", "_", "/", "_", `\`, "_").Replace(c.agentURL.Path)),
+			}
+		} else {
+			c.httpClient = defaultHTTPClient(c.httpClientTimeout)
 		}
-	} else if c.httpClient == nil {
-		c.httpClient = defaultHTTPClient(c.httpClientTimeout)
 	}
 	WithGlobalTag(ext.RuntimeID, globalconfig.RuntimeID())(c)
 	globalTags := c.globalTags.get()
@@ -519,7 +524,9 @@ func newConfig(opts ...StartOption) *config {
 	}
 	// if using stdout or traces are disabled, agent is disabled
 	agentDisabled := c.logToStdout || !c.enabled.current
+	ignoreStatsdPort := c.agent.ignore // preserve the value of c.agent.ignore when testing
 	c.agent = loadAgentFeatures(agentDisabled, c.agentURL, c.httpClient)
+	c.agent.ignore = ignoreStatsdPort
 	info, ok := debug.ReadBuildInfo()
 	if !ok {
 		c.loadContribIntegrations([]*debug.Module{})
@@ -533,7 +540,7 @@ func newConfig(opts ...StartOption) *config {
 			// no config defined address; use defaults
 			addr = defaultDogstatsdAddr()
 		}
-		if agentport := c.agent.StatsdPort; agentport > 0 {
+		if agentport := c.agent.StatsdPort; agentport > 0 && !c.agent.ignore {
 			// the agent reported a non-standard port
 			host, _, err := net.SplitHostPort(addr)
 			if err == nil {
@@ -556,10 +563,12 @@ func newConfig(opts ...StartOption) *config {
 
 	// Check if CI Visibility mode is enabled
 	if internal.BoolEnv(constants.CIVisibilityEnabledEnvironmentVariable, false) {
-		c.ciVisibilityEnabled = true              // Enable CI Visibility mode
-		c.httpClientTimeout = time.Second * 45    // Increase timeout up to 45 seconds (same as other tracers in CIVis mode)
-		c.logStartup = false                      // If we are in CI Visibility mode we don't want to log the startup to stdout to avoid polluting the output
-		c.transport = newCiVisibilityTransport(c) // Replace the default transport with the CI Visibility transport
+		c.ciVisibilityEnabled = true               // Enable CI Visibility mode
+		c.httpClientTimeout = time.Second * 45     // Increase timeout up to 45 seconds (same as other tracers in CIVis mode)
+		c.logStartup = false                       // If we are in CI Visibility mode we don't want to log the startup to stdout to avoid polluting the output
+		ciTransport := newCiVisibilityTransport(c) // Create a default CI Visibility Transport
+		c.transport = ciTransport                  // Replace the default transport with the CI Visibility transport
+		c.ciVisibilityAgentless = ciTransport.agentless
 	}
 
 	return c
@@ -637,6 +646,9 @@ type agentFeatures struct {
 	// featureFlags specifies all the feature flags reported by the trace-agent.
 	featureFlags map[string]struct{}
 
+	// ignore indicates that we should ignore the agent in favor of user set values.
+	// It should only be used during testing.
+	ignore bool
 	// peerTags specifies precursor tags to aggregate stats on when client stats is enabled
 	peerTags []string
 
@@ -671,12 +683,13 @@ func loadAgentFeatures(agentDisabled bool, agentURL *url.URL, httpClient *http.C
 		DefaultEnv string `json:"default_env"`
 	}
 	type infoResponse struct {
-		Endpoints     []string    `json:"endpoints"`
-		ClientDropP0s bool        `json:"client_drop_p0s"`
-		StatsdPort    int         `json:"statsd_port"`
-		FeatureFlags  []string    `json:"feature_flags"`
-		PeerTags      []string    `json:"peer_tags"`
-		Config        agentConfig `json:"config"`
+		Endpoints     []string `json:"endpoints"`
+		ClientDropP0s bool     `json:"client_drop_p0s"`
+		FeatureFlags  []string `json:"feature_flags"`
+		PeerTags      []string `json:"peer_tags"`
+		Config        struct {
+			StatsdPort int `json:"statsd_port"`
+		} `json:"config"`
 	}
 
 	var info infoResponse
@@ -685,7 +698,7 @@ func loadAgentFeatures(agentDisabled bool, agentURL *url.URL, httpClient *http.C
 		return
 	}
 	features.DropP0s = info.ClientDropP0s
-	features.StatsdPort = info.StatsdPort
+	features.StatsdPort = info.Config.StatsdPort
 	for _, endpoint := range info.Endpoints {
 		switch endpoint {
 		case "/v0.6/stats":
@@ -801,6 +814,15 @@ func WithFeatureFlags(feats ...string) StartOption {
 			c.featureFlags[strings.TrimSpace(f)] = struct{}{}
 		}
 		log.Info("FEATURES enabled: %v", feats)
+	}
+}
+
+// withIgnoreAgent allows tests to ignore the agent running in CI so that we can
+// properly test user set StatsdPort.
+// This should only be used during testing.
+func withIgnoreAgent(ignore bool) StartOption {
+	return func(c *config) {
+		c.agent.ignore = ignore
 	}
 }
 

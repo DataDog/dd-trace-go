@@ -7,6 +7,9 @@ package net
 
 import (
 	"fmt"
+	"time"
+
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/utils/telemetry"
 )
 
 const (
@@ -43,9 +46,28 @@ func (c *client) GetCommits(localCommits []string) ([]string, error) {
 		})
 	}
 
-	response, err := c.handler.SendRequest(*c.getPostRequestConfig(searchCommitsURLPath, body))
+	request := c.getPostRequestConfig(searchCommitsURLPath, body)
+	if request.Compressed {
+		telemetry.GitRequestsSearchCommits(telemetry.CompressedRequestCompressedType)
+	} else {
+		telemetry.GitRequestsSearchCommits(telemetry.UncompressedRequestCompressedType)
+	}
+
+	startTime := time.Now()
+	response, err := c.handler.SendRequest(*request)
 	if err != nil {
+		telemetry.GitRequestsSearchCommitsErrors(telemetry.NetworkErrorType)
 		return nil, fmt.Errorf("sending search commits request: %s", err.Error())
+	}
+
+	if response.Compressed {
+		telemetry.GitRequestsSearchCommitsMs(telemetry.CompressedResponseCompressedType, float64(time.Since(startTime).Milliseconds()))
+	} else {
+		telemetry.GitRequestsSearchCommitsMs(telemetry.UncompressedResponseCompressedType, float64(time.Since(startTime).Milliseconds()))
+	}
+
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		telemetry.GitRequestsSearchCommitsErrors(telemetry.GetErrorTypeFromStatusCode(response.StatusCode))
 	}
 
 	var responseObject searchCommits
