@@ -13,6 +13,8 @@ import (
 	"github.com/DataDog/datadog-agent/pkg/obfuscate"
 	"github.com/DataDog/datadog-agent/pkg/trace/stats"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/constants"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/utils"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 
 	"github.com/DataDog/datadog-go/v5/statsd"
@@ -72,8 +74,8 @@ func newConcentrator(c *config, bucketSize int64) *concentrator {
 		Hostname:     c.hostname,
 		Env:          env,
 		Version:      c.version,
-		ContainerID:  "", //todo: verify these should be empty
-		GitCommitSha: "",
+		ContainerID:  "", // This intentionally left empty as the Agent will attach the container ID only in certain situations.
+		GitCommitSha: utils.GetCITags()[constants.GitCommitSHA],
 		ImageTag:     "",
 	}
 	spanConcentrator := stats.NewSpanConcentrator(sCfg, time.Now())
