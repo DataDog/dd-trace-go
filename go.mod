@@ -3,78 +3,78 @@ module gopkg.in/DataDog/dd-trace-go.v1
 go 1.22.0
 
 require (
-	github.com/DataDog/dd-trace-go/contrib/99designs/gqlgen/v2 v2.0.0-beta.8
-	github.com/DataDog/dd-trace-go/contrib/IBM/sarama/v2 v2.0.0-beta.8
-	github.com/DataDog/dd-trace-go/contrib/Shopify/sarama/v2 v2.0.0-beta.8
-	github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go-v2/v2 v2.0.0-beta.8
-	github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go/v2 v2.0.0-beta.8
-	github.com/DataDog/dd-trace-go/contrib/bradfitz/gomemcache/v2 v2.0.0-beta.8
-	github.com/DataDog/dd-trace-go/contrib/cloud.google.com/go/pubsub.v1/v2 v2.0.0-beta.8
-	github.com/DataDog/dd-trace-go/contrib/confluentinc/confluent-kafka-go/kafka.v2/v2 v2.0.0-beta.8
-	github.com/DataDog/dd-trace-go/contrib/confluentinc/confluent-kafka-go/kafka/v2 v2.0.0-beta.8
-	github.com/DataDog/dd-trace-go/contrib/database/sql/v2 v2.0.0-beta.8
-	github.com/DataDog/dd-trace-go/contrib/dimfeld/httptreemux.v5/v2 v2.0.0-beta.8
-	github.com/DataDog/dd-trace-go/contrib/elastic/go-elasticsearch.v6/v2 v2.0.0-beta.8
-	github.com/DataDog/dd-trace-go/contrib/emicklei/go-restful.v3/v2 v2.0.0-beta.8
-	github.com/DataDog/dd-trace-go/contrib/gin-gonic/gin/v2 v2.0.0-beta.8
-	github.com/DataDog/dd-trace-go/contrib/globalsign/mgo/v2 v2.0.0-beta.8
-	github.com/DataDog/dd-trace-go/contrib/go-chi/chi.v5/v2 v2.0.0-beta.8
-	github.com/DataDog/dd-trace-go/contrib/go-chi/chi/v2 v2.0.0-beta.8
-	github.com/DataDog/dd-trace-go/contrib/go-pg/pg.v10/v2 v2.0.0-beta.8
-	github.com/DataDog/dd-trace-go/contrib/go-redis/redis.v7/v2 v2.0.0-beta.8
-	github.com/DataDog/dd-trace-go/contrib/go-redis/redis.v8/v2 v2.0.0-beta.8
-	github.com/DataDog/dd-trace-go/contrib/go-redis/redis/v2 v2.0.0-beta.8
-	github.com/DataDog/dd-trace-go/contrib/go.mongodb.org/mongo-driver/v2 v2.0.0-beta.8
-	github.com/DataDog/dd-trace-go/contrib/gocql/gocql/v2 v2.0.0-beta.8
-	github.com/DataDog/dd-trace-go/contrib/gofiber/fiber.v2/v2 v2.0.0-beta.8
-	github.com/DataDog/dd-trace-go/contrib/gomodule/redigo/v2 v2.0.0-beta.8
-	github.com/DataDog/dd-trace-go/contrib/google.golang.org/api/v2 v2.0.0-beta.8
-	github.com/DataDog/dd-trace-go/contrib/google.golang.org/grpc/v2 v2.0.0-beta.8
-	github.com/DataDog/dd-trace-go/contrib/gorilla/mux/v2 v2.0.0-beta.8
-	github.com/DataDog/dd-trace-go/contrib/gorm.io/gorm.v1/v2 v2.0.0-beta.8
-	github.com/DataDog/dd-trace-go/contrib/graph-gophers/graphql-go/v2 v2.0.0-beta.8
-	github.com/DataDog/dd-trace-go/contrib/graphql-go/graphql/v2 v2.0.0-beta.8
-	github.com/DataDog/dd-trace-go/contrib/hashicorp/consul/v2 v2.0.0-beta.8
-	github.com/DataDog/dd-trace-go/contrib/hashicorp/vault/v2 v2.0.0-beta.8
-	github.com/DataDog/dd-trace-go/contrib/jackc/pgx.v5/v2 v2.0.0-beta.8
-	github.com/DataDog/dd-trace-go/contrib/jmoiron/sqlx/v2 v2.0.0-beta.8
-	github.com/DataDog/dd-trace-go/contrib/julienschmidt/httprouter/v2 v2.0.0-beta.8
-	github.com/DataDog/dd-trace-go/contrib/k8s.io/client-go/v2 v2.0.0-beta.8
-	github.com/DataDog/dd-trace-go/contrib/labstack/echo.v4/v2 v2.0.0-beta.8
-	github.com/DataDog/dd-trace-go/contrib/log/slog/v2 v2.0.0-beta.8
-	github.com/DataDog/dd-trace-go/contrib/miekg/dns/v2 v2.0.0-beta.8
-	github.com/DataDog/dd-trace-go/contrib/net/http/v2 v2.0.0-beta.8
-	github.com/DataDog/dd-trace-go/contrib/olivere/elastic.v5/v2 v2.0.0-beta.8
-	github.com/DataDog/dd-trace-go/contrib/redis/go-redis.v9/v2 v2.0.0-beta.8
-	github.com/DataDog/dd-trace-go/contrib/segmentio/kafka-go/v2 v2.0.0-beta.8
-	github.com/DataDog/dd-trace-go/contrib/sirupsen/logrus/v2 v2.0.0-beta.8
-	github.com/DataDog/dd-trace-go/contrib/syndtr/goleveldb/v2 v2.0.0-beta.8
-	github.com/DataDog/dd-trace-go/contrib/tidwall/buntdb/v2 v2.0.0-beta.8
-	github.com/DataDog/dd-trace-go/contrib/twitchtv/twirp/v2 v2.0.0-beta.8
-	github.com/DataDog/dd-trace-go/contrib/uptrace/bun/v2 v2.0.0-beta.8
-	github.com/DataDog/dd-trace-go/contrib/urfave/negroni/v2 v2.0.0-beta.8
-	github.com/DataDog/dd-trace-go/contrib/valyala/fasthttp/v2 v2.0.0-beta.8
-	github.com/DataDog/dd-trace-go/instrumentation/testutils/grpc/v2 v2.0.0-beta.8
-	github.com/DataDog/dd-trace-go/v2 v2.0.0-beta.8
+	github.com/DataDog/dd-trace-go/contrib/99designs/gqlgen/v2 v2.0.0-beta.9
+	github.com/DataDog/dd-trace-go/contrib/IBM/sarama/v2 v2.0.0-beta.9
+	github.com/DataDog/dd-trace-go/contrib/Shopify/sarama/v2 v2.0.0-beta.9
+	github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go-v2/v2 v2.0.0-beta.9
+	github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go/v2 v2.0.0-beta.9
+	github.com/DataDog/dd-trace-go/contrib/bradfitz/gomemcache/v2 v2.0.0-beta.9
+	github.com/DataDog/dd-trace-go/contrib/cloud.google.com/go/pubsub.v1/v2 v2.0.0-beta.9
+	github.com/DataDog/dd-trace-go/contrib/confluentinc/confluent-kafka-go/kafka.v2/v2 v2.0.0-beta.9
+	github.com/DataDog/dd-trace-go/contrib/confluentinc/confluent-kafka-go/kafka/v2 v2.0.0-beta.9
+	github.com/DataDog/dd-trace-go/contrib/database/sql/v2 v2.0.0-beta.9
+	github.com/DataDog/dd-trace-go/contrib/dimfeld/httptreemux.v5/v2 v2.0.0-beta.9
+	github.com/DataDog/dd-trace-go/contrib/elastic/go-elasticsearch.v6/v2 v2.0.0-beta.9
+	github.com/DataDog/dd-trace-go/contrib/emicklei/go-restful.v3/v2 v2.0.0-beta.9
+	github.com/DataDog/dd-trace-go/contrib/gin-gonic/gin/v2 v2.0.0-beta.9
+	github.com/DataDog/dd-trace-go/contrib/globalsign/mgo/v2 v2.0.0-beta.9
+	github.com/DataDog/dd-trace-go/contrib/go-chi/chi.v5/v2 v2.0.0-beta.9
+	github.com/DataDog/dd-trace-go/contrib/go-chi/chi/v2 v2.0.0-beta.9
+	github.com/DataDog/dd-trace-go/contrib/go-pg/pg.v10/v2 v2.0.0-beta.9
+	github.com/DataDog/dd-trace-go/contrib/go-redis/redis.v7/v2 v2.0.0-beta.9
+	github.com/DataDog/dd-trace-go/contrib/go-redis/redis.v8/v2 v2.0.0-beta.9
+	github.com/DataDog/dd-trace-go/contrib/go-redis/redis/v2 v2.0.0-beta.9
+	github.com/DataDog/dd-trace-go/contrib/go.mongodb.org/mongo-driver/v2 v2.0.0-beta.9
+	github.com/DataDog/dd-trace-go/contrib/gocql/gocql/v2 v2.0.0-beta.9
+	github.com/DataDog/dd-trace-go/contrib/gofiber/fiber.v2/v2 v2.0.0-beta.9
+	github.com/DataDog/dd-trace-go/contrib/gomodule/redigo/v2 v2.0.0-beta.9
+	github.com/DataDog/dd-trace-go/contrib/google.golang.org/api/v2 v2.0.0-beta.9
+	github.com/DataDog/dd-trace-go/contrib/google.golang.org/grpc/v2 v2.0.0-beta.9
+	github.com/DataDog/dd-trace-go/contrib/gorilla/mux/v2 v2.0.0-beta.9
+	github.com/DataDog/dd-trace-go/contrib/gorm.io/gorm.v1/v2 v2.0.0-beta.9
+	github.com/DataDog/dd-trace-go/contrib/graph-gophers/graphql-go/v2 v2.0.0-beta.9
+	github.com/DataDog/dd-trace-go/contrib/graphql-go/graphql/v2 v2.0.0-beta.9
+	github.com/DataDog/dd-trace-go/contrib/hashicorp/consul/v2 v2.0.0-beta.9
+	github.com/DataDog/dd-trace-go/contrib/hashicorp/vault/v2 v2.0.0-beta.9
+	github.com/DataDog/dd-trace-go/contrib/jackc/pgx.v5/v2 v2.0.0-beta.9
+	github.com/DataDog/dd-trace-go/contrib/jmoiron/sqlx/v2 v2.0.0-beta.9
+	github.com/DataDog/dd-trace-go/contrib/julienschmidt/httprouter/v2 v2.0.0-beta.9
+	github.com/DataDog/dd-trace-go/contrib/k8s.io/client-go/v2 v2.0.0-beta.9
+	github.com/DataDog/dd-trace-go/contrib/labstack/echo.v4/v2 v2.0.0-beta.9
+	github.com/DataDog/dd-trace-go/contrib/log/slog/v2 v2.0.0-beta.9
+	github.com/DataDog/dd-trace-go/contrib/miekg/dns/v2 v2.0.0-beta.9
+	github.com/DataDog/dd-trace-go/contrib/net/http/v2 v2.0.0-beta.9
+	github.com/DataDog/dd-trace-go/contrib/olivere/elastic.v5/v2 v2.0.0-beta.9
+	github.com/DataDog/dd-trace-go/contrib/redis/go-redis.v9/v2 v2.0.0-beta.9
+	github.com/DataDog/dd-trace-go/contrib/segmentio/kafka-go/v2 v2.0.0-beta.9
+	github.com/DataDog/dd-trace-go/contrib/sirupsen/logrus/v2 v2.0.0-beta.9
+	github.com/DataDog/dd-trace-go/contrib/syndtr/goleveldb/v2 v2.0.0-beta.9
+	github.com/DataDog/dd-trace-go/contrib/tidwall/buntdb/v2 v2.0.0-beta.9
+	github.com/DataDog/dd-trace-go/contrib/twitchtv/twirp/v2 v2.0.0-beta.9
+	github.com/DataDog/dd-trace-go/contrib/uptrace/bun/v2 v2.0.0-beta.9
+	github.com/DataDog/dd-trace-go/contrib/urfave/negroni/v2 v2.0.0-beta.9
+	github.com/DataDog/dd-trace-go/contrib/valyala/fasthttp/v2 v2.0.0-beta.9
+	github.com/DataDog/dd-trace-go/instrumentation/testutils/grpc/v2 v2.0.0-beta.9
+	github.com/DataDog/dd-trace-go/v2 v2.0.0-beta.9
 )
 
 require (
-	cloud.google.com/go/pubsub v1.40.0
+	cloud.google.com/go/pubsub v1.33.0
 	github.com/99designs/gqlgen v0.17.36
-	github.com/DataDog/appsec-internal-go v1.9.0
+	github.com/DataDog/appsec-internal-go v1.8.0
 	github.com/DataDog/gostackparse v0.7.0
 	github.com/IBM/sarama v1.40.0
 	github.com/Shopify/sarama v1.38.1
 	github.com/aws/aws-sdk-go v1.44.327
-	github.com/aws/aws-sdk-go-v2 v1.32.2
+	github.com/aws/aws-sdk-go-v2 v1.20.3
 	github.com/aws/aws-sdk-go-v2/config v1.18.21
 	github.com/aws/aws-sdk-go-v2/service/dynamodb v1.21.4
-	github.com/aws/aws-sdk-go-v2/service/eventbridge v1.35.2
+	github.com/aws/aws-sdk-go-v2/service/eventbridge v1.20.4
 	github.com/aws/aws-sdk-go-v2/service/kinesis v1.18.4
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.32.0
 	github.com/aws/aws-sdk-go-v2/service/sfn v1.19.4
-	github.com/aws/aws-sdk-go-v2/service/sns v1.33.2
-	github.com/aws/aws-sdk-go-v2/service/sqs v1.36.2
+	github.com/aws/aws-sdk-go-v2/service/sns v1.21.4
+	github.com/aws/aws-sdk-go-v2/service/sqs v1.24.4
 	github.com/bradfitz/gomemcache v0.0.0-20230611145640-acc696258285
 	github.com/confluentinc/confluent-kafka-go v1.9.2
 	github.com/confluentinc/confluent-kafka-go/v2 v2.2.0
@@ -95,11 +95,11 @@ require (
 	github.com/go-redis/redis v6.15.9+incompatible
 	github.com/go-redis/redis/v7 v7.4.1
 	github.com/go-redis/redis/v8 v8.11.5
-	github.com/go-sql-driver/mysql v1.8.1
+	github.com/go-sql-driver/mysql v1.6.0
 	github.com/gocql/gocql v1.6.0
 	github.com/gofiber/fiber/v2 v2.52.5
 	github.com/gomodule/redigo v1.8.9
-	github.com/google/pprof v0.0.0-20240409012703-83162a5b38cd
+	github.com/google/pprof v0.0.0-20230817174616-7a8ec2ada47b
 	github.com/gorilla/mux v1.8.0
 	github.com/graph-gophers/graphql-go v1.5.0
 	github.com/graphql-go/graphql v0.8.1
@@ -113,9 +113,9 @@ require (
 	github.com/julienschmidt/httprouter v1.3.0
 	github.com/labstack/echo v3.3.10+incompatible
 	github.com/labstack/echo/v4 v4.11.1
-	github.com/lib/pq v1.10.9
+	github.com/lib/pq v1.10.2
 	github.com/mattn/go-sqlite3 v1.14.18
-	github.com/microsoft/go-mssqldb v1.7.2
+	github.com/microsoft/go-mssqldb v0.21.0
 	github.com/miekg/dns v1.1.55
 	github.com/opentracing/opentracing-go v1.2.0
 	github.com/redis/go-redis/v9 v9.1.0
@@ -132,14 +132,14 @@ require (
 	github.com/valyala/fasthttp v1.51.0
 	github.com/zenazn/goji v1.0.1
 	go.mongodb.org/mongo-driver v1.12.1
-	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.49.0
-	go.opentelemetry.io/otel v1.27.0
-	go.opentelemetry.io/otel/trace v1.27.0
+	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.44.0
+	go.opentelemetry.io/otel v1.20.0
+	go.opentelemetry.io/otel/trace v1.20.0
 	go.uber.org/goleak v1.3.0
-	golang.org/x/time v0.6.0
-	google.golang.org/api v0.192.0
-	google.golang.org/grpc v1.65.0
-	google.golang.org/protobuf v1.35.1
+	golang.org/x/time v0.3.0
+	google.golang.org/api v0.128.0
+	google.golang.org/grpc v1.57.1
+	google.golang.org/protobuf v1.33.0
 	gopkg.in/jinzhu/gorm.v1 v1.9.2
 	gopkg.in/olivere/elastic.v3 v3.0.75
 	gopkg.in/olivere/elastic.v5 v5.0.84
@@ -147,50 +147,45 @@ require (
 	gorm.io/driver/postgres v1.4.6
 	gorm.io/driver/sqlserver v1.4.2
 	gorm.io/gorm v1.25.3
-	k8s.io/apimachinery v0.25.5
-	k8s.io/client-go v0.25.5
-	modernc.org/sqlite v1.32.0
+	k8s.io/apimachinery v0.23.17
+	k8s.io/client-go v0.23.17
+	modernc.org/sqlite v1.28.0
 )
 
 require (
-	cloud.google.com/go v0.115.0 // indirect
-	cloud.google.com/go/auth v0.8.1 // indirect
-	cloud.google.com/go/auth/oauth2adapt v0.2.3 // indirect
-	cloud.google.com/go/compute/metadata v0.5.0 // indirect
-	cloud.google.com/go/iam v1.1.12 // indirect
-	filippo.io/edwards25519 v1.1.0 // indirect
-	github.com/DataDog/datadog-agent/pkg/obfuscate v0.58.0 // indirect
-	github.com/DataDog/datadog-agent/pkg/remoteconfig/state v0.58.0 // indirect
-	github.com/DataDog/datadog-go/v5 v5.5.0 // indirect
-	github.com/DataDog/go-libddwaf/v3 v3.5.1 // indirect
-	github.com/DataDog/go-sqllexer v0.0.14 // indirect
+	cloud.google.com/go v0.110.7 // indirect
+	cloud.google.com/go/compute v1.23.0 // indirect
+	cloud.google.com/go/compute/metadata v0.2.3 // indirect
+	cloud.google.com/go/iam v1.1.2 // indirect
+	github.com/DataDog/datadog-agent/pkg/obfuscate v0.48.0 // indirect
+	github.com/DataDog/datadog-agent/pkg/remoteconfig/state v0.57.0 // indirect
+	github.com/DataDog/datadog-go/v5 v5.3.0 // indirect
+	github.com/DataDog/go-libddwaf/v3 v3.4.0 // indirect
 	github.com/DataDog/go-tuf v1.1.0-0.5.2 // indirect
 	github.com/DataDog/sketches-go v1.4.5 // indirect
 	github.com/Microsoft/go-winio v0.6.1 // indirect
-	github.com/PuerkitoBio/purell v1.1.1 // indirect
-	github.com/PuerkitoBio/urlesc v0.0.0-20170810143723-de5bf2ad4578 // indirect
 	github.com/agnivade/levenshtein v1.1.1 // indirect
 	github.com/andybalholm/brotli v1.0.6 // indirect
 	github.com/armon/go-metrics v0.4.1 // indirect
-	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.6.6 // indirect
-	github.com/aws/aws-sdk-go-v2/credentials v1.13.34 // indirect
-	github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.13.10 // indirect
-	github.com/aws/aws-sdk-go-v2/internal/configsources v1.3.21 // indirect
-	github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.6.21 // indirect
-	github.com/aws/aws-sdk-go-v2/internal/ini v1.8.1 // indirect
-	github.com/aws/aws-sdk-go-v2/internal/v4a v1.3.21 // indirect
-	github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.12.0 // indirect
+	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.4.13 // indirect
+	github.com/aws/aws-sdk-go-v2/credentials v1.13.20 // indirect
+	github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.13.2 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/configsources v1.1.40 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.4.34 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/ini v1.3.34 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/v4a v1.1.3 // indirect
+	github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.9.14 // indirect
 	github.com/aws/aws-sdk-go-v2/service/internal/checksum v1.1.35 // indirect
 	github.com/aws/aws-sdk-go-v2/service/internal/endpoint-discovery v1.7.34 // indirect
 	github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.9.34 // indirect
 	github.com/aws/aws-sdk-go-v2/service/internal/s3shared v1.15.3 // indirect
-	github.com/aws/aws-sdk-go-v2/service/sso v1.13.4 // indirect
-	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.15.4 // indirect
-	github.com/aws/aws-sdk-go-v2/service/sts v1.21.4 // indirect
-	github.com/aws/smithy-go v1.22.0 // indirect
+	github.com/aws/aws-sdk-go-v2/service/sso v1.12.8 // indirect
+	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.14.8 // indirect
+	github.com/aws/aws-sdk-go-v2/service/sts v1.18.9 // indirect
+	github.com/aws/smithy-go v1.14.2 // indirect
 	github.com/bytedance/sonic v1.10.0 // indirect
 	github.com/cenkalti/backoff/v3 v3.2.2 // indirect
-	github.com/cespare/xxhash/v2 v2.3.0 // indirect
+	github.com/cespare/xxhash/v2 v2.2.0 // indirect
 	github.com/chenzhuoyu/base64x v0.0.0-20230717121745-296ad89f973d // indirect
 	github.com/chenzhuoyu/iasm v0.9.0 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
@@ -202,15 +197,12 @@ require (
 	github.com/ebitengine/purego v0.6.0-alpha.5 // indirect
 	github.com/elastic/elastic-transport-go/v8 v8.1.0 // indirect
 	github.com/fatih/color v1.16.0 // indirect
-	github.com/felixge/httpsnoop v1.0.4 // indirect
+	github.com/felixge/httpsnoop v1.0.3 // indirect
 	github.com/gabriel-vasile/mimetype v1.4.2 // indirect
 	github.com/gin-contrib/sse v0.1.0 // indirect
 	github.com/go-jose/go-jose/v3 v3.0.3 // indirect
-	github.com/go-logr/logr v1.4.2 // indirect
+	github.com/go-logr/logr v1.3.0 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
-	github.com/go-openapi/jsonpointer v0.19.5 // indirect
-	github.com/go-openapi/jsonreference v0.19.5 // indirect
-	github.com/go-openapi/swag v0.19.14 // indirect
 	github.com/go-pg/zerochecker v0.2.0 // indirect
 	github.com/go-playground/locales v0.14.1 // indirect
 	github.com/go-playground/universal-translator v0.18.1 // indirect
@@ -221,15 +213,15 @@ require (
 	github.com/golang-sql/civil v0.0.0-20220223132316-b832511892a9 // indirect
 	github.com/golang-sql/sqlexp v0.1.0 // indirect
 	github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da // indirect
-	github.com/golang/protobuf v1.5.4 // indirect
+	github.com/golang/protobuf v1.5.3 // indirect
 	github.com/golang/snappy v0.0.4 // indirect
-	github.com/google/gnostic v0.5.7-v3refs // indirect
 	github.com/google/go-cmp v0.6.0 // indirect
 	github.com/google/gofuzz v1.2.0 // indirect
-	github.com/google/s2a-go v0.1.8 // indirect
-	github.com/google/uuid v1.6.0 // indirect
-	github.com/googleapis/enterprise-certificate-proxy v0.3.2 // indirect
-	github.com/googleapis/gax-go/v2 v2.13.0 // indirect
+	github.com/google/s2a-go v0.1.5 // indirect
+	github.com/google/uuid v1.5.0 // indirect
+	github.com/googleapis/enterprise-certificate-proxy v0.2.5 // indirect
+	github.com/googleapis/gax-go/v2 v2.11.0 // indirect
+	github.com/googleapis/gnostic v0.5.5 // indirect
 	github.com/gorilla/websocket v1.5.0 // indirect
 	github.com/hailocab/go-hostpool v0.0.0-20160125115350-e80d13ce29ed // indirect
 	github.com/hashicorp/errwrap v1.1.0 // indirect
@@ -242,9 +234,8 @@ require (
 	github.com/hashicorp/go-secure-stdlib/strutil v0.1.2 // indirect
 	github.com/hashicorp/go-sockaddr v1.0.2 // indirect
 	github.com/hashicorp/go-uuid v1.0.3 // indirect
-	github.com/hashicorp/go-version v1.7.0 // indirect
 	github.com/hashicorp/golang-lru v1.0.2 // indirect
-	github.com/hashicorp/golang-lru/v2 v2.0.7 // indirect
+	github.com/hashicorp/golang-lru/v2 v2.0.3 // indirect
 	github.com/hashicorp/hcl v1.0.1-vault-5 // indirect
 	github.com/hashicorp/serf v0.10.1 // indirect
 	github.com/hashicorp/vault/sdk v0.9.2 // indirect
@@ -262,6 +253,7 @@ require (
 	github.com/jmespath/go-jmespath v0.4.0 // indirect
 	github.com/josharian/intern v1.0.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
+	github.com/kballard/go-shellquote v0.0.0-20180428030007-95032a82bc51 // indirect
 	github.com/klauspost/compress v1.17.1 // indirect
 	github.com/klauspost/cpuid/v2 v2.2.5 // indirect
 	github.com/labstack/gommon v0.4.0 // indirect
@@ -271,12 +263,10 @@ require (
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/mattn/go-runewidth v0.0.15 // indirect
 	github.com/mitchellh/go-homedir v1.1.0 // indirect
-	github.com/mitchellh/mapstructure v1.5.1-0.20231216201459-8508981c8b6c // indirect
+	github.com/mitchellh/mapstructure v1.5.0 // indirect
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.2 // indirect
 	github.com/montanaflynn/stats v0.6.6 // indirect
-	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
-	github.com/ncruces/go-strftime v0.1.9 // indirect
 	github.com/outcaste-io/ristretto v0.2.3 // indirect
 	github.com/pelletier/go-toml/v2 v2.0.9 // indirect
 	github.com/philhofer/fwd v1.1.3-0.20240612014219-fbbf4953d986 // indirect
@@ -288,7 +278,7 @@ require (
 	github.com/richardartoul/molecule v1.0.1-0.20240531184615-7ca0df43c0b3 // indirect
 	github.com/rivo/uniseg v0.4.4 // indirect
 	github.com/ryanuber/go-glob v1.0.0 // indirect
-	github.com/secure-systems-lab/go-securesystemslib v0.8.0 // indirect
+	github.com/secure-systems-lab/go-securesystemslib v0.7.0 // indirect
 	github.com/spaolacci/murmur3 v1.1.0 // indirect
 	github.com/spf13/pflag v1.0.5 // indirect
 	github.com/tidwall/btree v1.6.0 // indirect
@@ -313,42 +303,43 @@ require (
 	github.com/xdg-go/scram v1.1.2 // indirect
 	github.com/xdg-go/stringprep v1.0.4 // indirect
 	github.com/youmark/pkcs8 v0.0.0-20181117223130-1be2e3e5546d // indirect
-	go.einride.tech/aip v0.67.1 // indirect
 	go.opencensus.io v0.24.0 // indirect
-	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.49.0 // indirect
-	go.opentelemetry.io/otel/metric v1.27.0 // indirect
-	go.opentelemetry.io/otel/sdk v1.27.0 // indirect
+	go.opentelemetry.io/otel/metric v1.20.0 // indirect
 	go.uber.org/atomic v1.11.0 // indirect
 	golang.org/x/arch v0.4.0 // indirect
-	golang.org/x/crypto v0.28.0 // indirect
-	golang.org/x/exp v0.0.0-20231108232855-2478ac86f678 // indirect
+	golang.org/x/crypto v0.25.0 // indirect
+	golang.org/x/exp v0.0.0-20230905200255-921286631fa9 // indirect
 	golang.org/x/mod v0.20.0 // indirect
-	golang.org/x/net v0.30.0 // indirect
-	golang.org/x/oauth2 v0.22.0 // indirect
-	golang.org/x/sync v0.8.0 // indirect
-	golang.org/x/sys v0.26.0 // indirect
-	golang.org/x/term v0.25.0 // indirect
-	golang.org/x/text v0.19.0 // indirect
-	golang.org/x/tools v0.24.0 // indirect
+	golang.org/x/net v0.26.0 // indirect
+	golang.org/x/oauth2 v0.9.0 // indirect
+	golang.org/x/sync v0.7.0 // indirect
+	golang.org/x/sys v0.23.0 // indirect
+	golang.org/x/term v0.22.0 // indirect
+	golang.org/x/text v0.16.0 // indirect
+	golang.org/x/tools v0.22.0 // indirect
 	golang.org/x/xerrors v0.0.0-20231012003039-104605ab7028 // indirect
-	google.golang.org/genproto v0.0.0-20240730163845-b1a4ccb954bf // indirect
-	google.golang.org/genproto/googleapis/api v0.0.0-20240725223205-93522f1f2a9f // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20240730163845-b1a4ccb954bf // indirect
+	google.golang.org/appengine v1.6.7 // indirect
+	google.golang.org/genproto v0.0.0-20230530153820-e85fd2cbaebc // indirect
+	google.golang.org/genproto/googleapis/api v0.0.0-20230530153820-e85fd2cbaebc // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20230530153820-e85fd2cbaebc // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
-	k8s.io/api v0.25.5 // indirect
-	k8s.io/klog/v2 v2.70.1 // indirect
-	k8s.io/kube-openapi v0.0.0-20220803162953-67bda5d908f1 // indirect
-	k8s.io/utils v0.0.0-20220728103510-ee6ede2d64ed // indirect
+	k8s.io/api v0.23.17 // indirect
+	k8s.io/klog/v2 v2.30.0 // indirect
+	k8s.io/kube-openapi v0.0.0-20211115234752-e816edb12b65 // indirect
+	k8s.io/utils v0.0.0-20211116205334-6203023598ed // indirect
+	lukechampine.com/uint128 v1.3.0 // indirect
 	mellium.im/sasl v0.3.1 // indirect
-	modernc.org/gc/v3 v3.0.0-20240107210532-573471604cb6 // indirect
-	modernc.org/libc v1.55.3 // indirect
+	modernc.org/cc/v3 v3.41.0 // indirect
+	modernc.org/ccgo/v3 v3.16.15 // indirect
+	modernc.org/libc v1.37.6 // indirect
 	modernc.org/mathutil v1.6.0 // indirect
-	modernc.org/memory v1.8.0 // indirect
+	modernc.org/memory v1.7.2 // indirect
+	modernc.org/opt v0.1.3 // indirect
 	modernc.org/strutil v1.2.0 // indirect
 	modernc.org/token v1.1.0 // indirect
-	sigs.k8s.io/json v0.0.0-20220713155537-f223a00ba0e2 // indirect
+	sigs.k8s.io/json v0.0.0-20211020170558-c049b76a60c6 // indirect
 	sigs.k8s.io/structured-merge-diff/v4 v4.2.3 // indirect
 	sigs.k8s.io/yaml v1.2.0 // indirect
 )
