@@ -216,7 +216,6 @@ func MakeHandlerOperationArgs(headers map[string][]string, method string, host s
 		PathParams:  map[string]string{},
 	}
 
-	args.Headers["host"] = []string{host}
 	return args
 }
 
