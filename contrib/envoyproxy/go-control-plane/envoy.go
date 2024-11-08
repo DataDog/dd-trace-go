@@ -1,7 +1,7 @@
 // Unless explicitly stated otherwise all files in this repository are licensed
 // under the Apache License Version 2.0.
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
-// Copyright 2024 Datadog, Inc.
+// Copyright 2016 Datadog, Inc.
 
 package go_control_plane
 
@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"strings"
 
+	grpctrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/google.golang.org/grpc"
 	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/httptrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
@@ -22,6 +23,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
@@ -37,16 +39,6 @@ func init() {
 	tracer.MarkIntegrationImported("github.com/envoyproxy/go-control-plane")
 }
 
-// appsecEnvoyExternalProcessorServer is a server that implements the Envoy ExternalProcessorServer interface.
-type appsecEnvoyExternalProcessorServer struct {
-	envoyextproc.ExternalProcessorServer
-}
-
-// AppsecEnvoyExternalProcessorServer creates and returns a new instance of appsecEnvoyExternalProcessorServer.
-func AppsecEnvoyExternalProcessorServer(userImplementation envoyextproc.ExternalProcessorServer) envoyextproc.ExternalProcessorServer {
-	return &appsecEnvoyExternalProcessorServer{userImplementation}
-}
-
 type currentRequest struct {
 	span                  tracer.Span
 	afterHandle           func()
@@ -55,102 +47,96 @@ type currentRequest struct {
 	wrappedResponseWriter http.ResponseWriter
 }
 
-// Process handles the bidirectional stream that Envoy uses to give the server control
-// over what the filter does. It processes incoming requests and sends appropriate responses
-// based on the type of request received.
-//
-// The method receive incoming requests, processes them, and sends responses back to the client.
-// It handles different types of requests such as request headers, response headers, request body,
-// response body, request trailers, and response trailers.
-//
-// If the request is blocked, it sends an immediate response and ends the stream. If an error occurs
-// during processing, it logs the error and returns an appropriate gRPC status error.
-func (s *appsecEnvoyExternalProcessorServer) Process(processServer envoyextproc.ExternalProcessor_ProcessServer) error {
-	var (
-		ctx                = processServer.Context()
-		blocked            bool
-		currentRequest     *currentRequest
-		processingRequest  envoyextproc.ProcessingRequest
-		processingResponse *envoyextproc.ProcessingResponse
-	)
+func StreamServerInterceptor(opts ...grpctrace.Option) grpc.StreamServerInterceptor {
+	interceptor := grpctrace.StreamServerInterceptor(opts...)
 
-	// Close the span when the request is done processing
-	defer func() {
-		if currentRequest == nil {
-			return
+	return func(srv any, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
+		if info.FullMethod != envoyextproc.ExternalProcessor_Process_FullMethodName {
+			return interceptor(srv, ss, info, handler)
 		}
 
-		log.Warn("external_processing: stream stopped during a request, making sure the current span is closed\n")
-		currentRequest.span.Finish()
-		currentRequest = nil
-	}()
+		var (
+			ctx                = ss.Context()
+			blocked            bool
+			currentRequest     *currentRequest
+			processingRequest  envoyextproc.ProcessingRequest
+			processingResponse *envoyextproc.ProcessingResponse
+		)
 
-	for {
-		select {
-		case <-ctx.Done():
-			if errors.Is(ctx.Err(), context.Canceled) {
+		// Close the span when the request is done processing
+		defer func() {
+			if currentRequest != nil {
+				log.Warn("external_processing: stream stopped during a request, making sure the current span is closed\n")
+				currentRequest.span.Finish()
+				currentRequest = nil
+			}
+		}()
+
+		for {
+			select {
+			case <-ctx.Done():
+				if errors.Is(ctx.Err(), context.Canceled) {
+					return nil
+				}
+
+				return ctx.Err()
+
+			default:
+			}
+
+			err := ss.RecvMsg(&processingRequest)
+			if err != nil {
+				// Note: Envoy is inconsistent with the "end_of_stream" value of its headers responses,
+				// so we can't fully rely on it to determine when it will close (cancel) the stream.
+				if err == io.EOF || err.(interface{ GRPCStatus() *status.Status }).GRPCStatus().Code() == codes.Canceled {
+					return nil
+				}
+
+				log.Warn("external_processing: error receiving request/response: %v\n", err)
+				return status.Errorf(codes.Unknown, "Error receiving request/response: %v", err)
+			}
+
+			processingResponse, err = envoyExternalProcessingRequestTypeAssert(&processingRequest)
+			if err != nil {
+				log.Error("external_processing: error asserting request type: %v\n", err)
+				return status.Errorf(codes.Unknown, "Error asserting request type: %v", err)
+			}
+
+			switch v := processingRequest.Request.(type) {
+			case *envoyextproc.ProcessingRequest_RequestHeaders:
+				processingResponse, currentRequest, blocked, err = ProcessRequestHeaders(ctx, v)
+			case *envoyextproc.ProcessingRequest_ResponseHeaders:
+				processingResponse, err = processResponseHeaders(v, currentRequest)
+				currentRequest = nil // Request is done, reset the current request
+			}
+
+			if err != nil {
+				log.Error("external_processing: error processing request: %v\n", err)
+				return err
+			}
+
+			// End of stream reached, no more data to process
+			if processingResponse == nil {
+				log.Debug("external_processing: end of stream reached")
 				return nil
 			}
 
-			return ctx.Err()
-		default:
-			// no op
-		}
-
-		err := processServer.RecvMsg(&processingRequest)
-		if err != nil {
-			// Note: Envoy is inconsistent with the "end_of_stream" value of its headers responses,
-			// so we can't fully rely on it to determine when it will close (cancel) the stream.
-			if s, ok := status.FromError(err); (ok && s.Code() == codes.Canceled) || err == io.EOF {
-				return nil
+			if err := ss.SendMsg(processingResponse); err != nil {
+				log.Warn("external_processing: error sending response (probably because of an Envoy timeout): %v", err)
+				return status.Errorf(codes.Unknown, "Error sending response (probably because of an Envoy timeout): %v", err)
 			}
 
-			log.Warn("external_processing: error receiving request/response: %v\n", err)
-			return status.Errorf(codes.Unknown, "Error receiving request/response: %v", err)
+			if blocked {
+				log.Debug("external_processing: request blocked, end the stream")
+				currentRequest = nil
+				return nil
+			}
 		}
-
-		processingResponse, err = envoyExternalProcessingRequestTypeAssert(&processingRequest)
-		if err != nil {
-			log.Error("external_processing: error asserting request type: %v\n", err)
-			return status.Errorf(codes.Unknown, "Error asserting request type: %v", err)
-		}
-
-		switch v := processingRequest.Request.(type) {
-		case *envoyextproc.ProcessingRequest_RequestHeaders:
-			processingResponse, currentRequest, blocked, err = processRequestHeaders(ctx, v)
-		case *envoyextproc.ProcessingRequest_ResponseHeaders:
-			processingResponse, err = processResponseHeaders(v, currentRequest)
-			currentRequest = nil // Request is done, reset the current request
-		}
-
-		if err != nil {
-			log.Error("external_processing: error processing request: %v\n", err)
-			return err
-		}
-
-		// End of stream reached, no more data to process
-		if processingResponse == nil {
-			log.Debug("external_processing: end of stream reached")
-			return nil
-		}
-
-		if err := processServer.SendMsg(processingResponse); err != nil {
-			log.Warn("external_processing: error sending response (probably because of an Envoy timeout): %v", err)
-			return status.Errorf(codes.Unknown, "Error sending response (probably because of an Envoy timeout): %v", err)
-		}
-
-		if !blocked {
-			continue
-		}
-
-		log.Debug("external_processing: request blocked, end the stream")
-		currentRequest = nil
-		return nil
 	}
 }
 
 func envoyExternalProcessingRequestTypeAssert(req *envoyextproc.ProcessingRequest) (*envoyextproc.ProcessingResponse, error) {
-	switch r := req.Request.(type) {
+	switch v := req.Request.(type) {
 	case *envoyextproc.ProcessingRequest_RequestHeaders, *envoyextproc.ProcessingRequest_ResponseHeaders:
 		return nil, nil
 
@@ -172,6 +158,8 @@ func envoyExternalProcessingRequestTypeAssert(req *envoyextproc.ProcessingReques
 		}, nil
 
 	case *envoyextproc.ProcessingRequest_ResponseBody:
+		r := req.Request.(*envoyextproc.ProcessingRequest_ResponseBody)
+
 		// Note: The end of stream bool value is not reliable
 		// Sometimes it's not set to true even if there is no more data to process
 		if r.ResponseBody.GetEndOfStream() {
@@ -189,11 +177,11 @@ func envoyExternalProcessingRequestTypeAssert(req *envoyextproc.ProcessingReques
 		}, nil
 
 	default:
-		return nil, status.Errorf(codes.Unknown, "Unknown request type: %T", r)
+		return nil, status.Errorf(codes.Unknown, "Unknown request type: %T", v)
 	}
 }
 
-func processRequestHeaders(ctx context.Context, req *envoyextproc.ProcessingRequest_RequestHeaders) (*envoyextproc.ProcessingResponse, *currentRequest, bool, error) {
+func ProcessRequestHeaders(ctx context.Context, req *envoyextproc.ProcessingRequest_RequestHeaders) (*envoyextproc.ProcessingResponse, *currentRequest, bool, error) {
 	log.Debug("external_processing: received request headers: %v\n", req.RequestHeaders)
 
 	request, err := newRequest(ctx, req)
@@ -340,7 +328,7 @@ func doBlockResponse(writer *fakeResponseWriter) *envoyextproc.ProcessingRespons
 				Headers: &envoyextproc.HeaderMutation{
 					SetHeaders: headersMutation,
 				},
-				Body: string(writer.body),
+				Body: writer.body,
 				GrpcStatus: &envoyextproc.GrpcStatus{
 					Status: 0,
 				},
