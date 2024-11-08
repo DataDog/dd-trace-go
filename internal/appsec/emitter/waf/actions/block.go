@@ -69,11 +69,6 @@ type (
 	// BlockHTTP are actions that interact with an HTTP request flow
 	BlockHTTP struct {
 		http.Handler
-
-		StatusCode       int `mapstructure:"status_code"`
-		RedirectLocation string
-		// BlockingTemplate is a function that returns the headers to be added and body to be written to the response
-		BlockingTemplate func(headers map[string][]string) (map[string][]string, []byte)
 	}
 )
 
@@ -130,11 +125,7 @@ func NewBlockAction(params map[string]any) []Action {
 }
 
 func newHTTPBlockRequestAction(status int, template string) *BlockHTTP {
-	return &BlockHTTP{
-		Handler:          newBlockHandler(status, template),
-		BlockingTemplate: newManualBlockHandler(template),
-		StatusCode:       status,
-	}
+	return &BlockHTTP{Handler: newBlockHandler(status, template)}
 }
 
 // newBlockHandler creates, initializes and returns a new BlockRequestAction
@@ -148,47 +139,16 @@ func newBlockHandler(status int, template string) http.Handler {
 		return htmlHandler
 	default:
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			h := findCorrectTemplate(jsonHandler, htmlHandler, r.Header.Get("Accept"))
-			h.(http.Handler).ServeHTTP(w, r)
-		})
-	}
-}
-
-func newManualBlockHandler(template string) func(headers map[string][]string) (map[string][]string, []byte) {
-	htmlHandler := newManualBlockDataHandler("text/html", blockedTemplateHTML)
-	jsonHandler := newManualBlockDataHandler("application/json", blockedTemplateJSON)
-	switch template {
-	case "json":
-		return jsonHandler
-	case "html":
-		return htmlHandler
-	default:
-		return func(headers map[string][]string) (map[string][]string, []byte) {
-			acceptHeader := ""
-			if hdr, ok := headers["Accept"]; ok && len(hdr) > 0 {
-				acceptHeader = hdr[0]
+			h := jsonHandler
+			hdr := r.Header.Get("Accept")
+			htmlIdx := strings.Index(hdr, "text/html")
+			jsonIdx := strings.Index(hdr, "application/json")
+			// Switch to html handler if text/html comes before application/json in the Accept header
+			if htmlIdx != -1 && (jsonIdx == -1 || htmlIdx < jsonIdx) {
+				h = htmlHandler
 			}
-			h := findCorrectTemplate(jsonHandler, htmlHandler, acceptHeader)
-			return h.(func(headers map[string][]string) (map[string][]string, []byte))(headers)
-		}
-	}
-}
-
-func findCorrectTemplate(jsonHandler interface{}, htmlHandler interface{}, acceptHeader string) interface{} {
-	h := jsonHandler
-	hdr := acceptHeader
-	htmlIdx := strings.Index(hdr, "text/html")
-	jsonIdx := strings.Index(hdr, "application/json")
-	// Switch to html handler if text/html comes before application/json in the Accept header
-	if htmlIdx != -1 && (jsonIdx == -1 || htmlIdx < jsonIdx) {
-		h = htmlHandler
-	}
-	return h
-}
-
-func newManualBlockDataHandler(ct string, template []byte) func(headers map[string][]string) (map[string][]string, []byte) {
-	return func(headers map[string][]string) (map[string][]string, []byte) {
-		return map[string][]string{"Content-Type": {ct}}, template
+			h.ServeHTTP(w, r)
+		})
 	}
 }
 

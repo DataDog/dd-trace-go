@@ -11,7 +11,6 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"net/url"
 	"strconv"
 	"strings"
 
@@ -28,29 +27,14 @@ var (
 )
 
 // StartRequestSpan starts an HTTP request span with the standard list of HTTP request span tags (http.method, http.url,
-// http.useragent) with a http.Request object. Any further span start option can be added with opts.
-func StartRequestSpan(r *http.Request, opts ...ddtrace.StartSpanOption) (tracer.Span, context.Context) {
-	return StartHttpSpan(
-		r.Context(),
-		r.Header,
-		r.Host,
-		r.Method,
-		urlFromRequest(r),
-		r.UserAgent(),
-		r.RemoteAddr,
-		opts...,
-	)
-}
-
-// StartHttpSpan starts an HTTP request span with the standard list of HTTP request span tags (http.method, http.url,
 // http.useragent). Any further span start option can be added with opts.
-func StartHttpSpan(ctx context.Context, headers map[string][]string, host string, method string, url string, userAgent string, remoteAddr string, opts ...ddtrace.StartSpanOption) (tracer.Span, context.Context) {
+func StartRequestSpan(r *http.Request, opts ...ddtrace.StartSpanOption) (tracer.Span, context.Context) {
 	// Append our span options before the given ones so that the caller can "overwrite" them.
 	// TODO(): rework span start option handling (https://github.com/DataDog/dd-trace-go/issues/1352)
 
 	var ipTags map[string]string
 	if cfg.traceClientIP {
-		ipTags, _ = httpsec.ClientIPTags(headers, true, remoteAddr)
+		ipTags, _ = httpsec.ClientIPTags(r.Header, true, r.RemoteAddr)
 	}
 	nopts := make([]ddtrace.StartSpanOption, 0, len(opts)+1+len(ipTags))
 	nopts = append(nopts,
@@ -59,12 +43,12 @@ func StartHttpSpan(ctx context.Context, headers map[string][]string, host string
 				cfg.Tags = make(map[string]interface{})
 			}
 			cfg.Tags[ext.SpanType] = ext.SpanTypeWeb
-			cfg.Tags[ext.HTTPMethod] = method
-			cfg.Tags[ext.HTTPURL] = url
-			cfg.Tags[ext.HTTPUserAgent] = userAgent
+			cfg.Tags[ext.HTTPMethod] = r.Method
+			cfg.Tags[ext.HTTPURL] = urlFromRequest(r)
+			cfg.Tags[ext.HTTPUserAgent] = r.UserAgent()
 			cfg.Tags["_dd.measured"] = 1
-			if host != "" {
-				cfg.Tags["http.host"] = host
+			if r.Host != "" {
+				cfg.Tags["http.host"] = r.Host
 			}
 			if spanctx, err := tracer.Extract(tracer.HTTPHeadersCarrier(r.Header)); err == nil {
 				// If there are span links as a result of context extraction, add them as a StartSpanOption
@@ -73,13 +57,12 @@ func StartHttpSpan(ctx context.Context, headers map[string][]string, host string
 				}
 				tracer.ChildOf(spanctx)(cfg)
 			}
-
 			for k, v := range ipTags {
 				cfg.Tags[k] = v
 			}
 		})
 	nopts = append(nopts, opts...)
-	return tracer.StartSpanFromContext(ctx, namingschema.OpName(namingschema.HTTPServer), nopts...)
+	return tracer.StartSpanFromContext(r.Context(), namingschema.OpName(namingschema.HTTPServer), nopts...)
 }
 
 // FinishRequestSpan finishes the given HTTP request span and sets the expected response-related tags such as the status
@@ -118,54 +101,27 @@ func urlFromRequest(r *http.Request) string {
 	// "For most requests, fields other than Path and RawQuery will be
 	// empty. (See RFC 7230, Section 5.3)"
 	// This is why we don't rely on url.URL.String(), url.URL.Host, url.URL.Scheme, etc...
+	var url string
+	path := r.URL.EscapedPath()
 	scheme := "http"
 	if r.TLS != nil {
 		scheme = "https"
 	}
-
-	return urlFromArgs(
-		r.URL.EscapedPath(),
-		scheme,
-		r.Host,
-		r.URL.RawQuery,
-		r.URL.EscapedFragment(),
-	)
-}
-
-// UrlFromUrl returns the full URL from a URL object. If query params are collected, they are obfuscated granted
-// obfuscation is not disabled by the user (through DD_TRACE_OBFUSCATION_QUERY_STRING_REGEXP)
-// See https://docs.datadoghq.com/tracing/configure_data_security#redacting-the-query-in-the-url for more information.
-func UrlFromUrl(u *url.URL) string {
-	scheme := "http"
-	if u.Scheme != "" {
-		scheme = u.Scheme
-	}
-	return urlFromArgs(
-		u.EscapedPath(),
-		scheme,
-		u.Host,
-		u.RawQuery,
-		u.EscapedFragment(),
-	)
-}
-
-func urlFromArgs(escapedPath string, scheme string, host string, rawQuery string, escapedFragment string) string {
-	var url string
-	if host != "" {
-		url = strings.Join([]string{scheme, "://", host, escapedPath}, "")
+	if r.Host != "" {
+		url = strings.Join([]string{scheme, "://", r.Host, path}, "")
 	} else {
-		url = escapedPath
+		url = path
 	}
 	// Collect the query string if we are allowed to report it and obfuscate it if possible/allowed
-	if cfg.queryString && rawQuery != "" {
-		query := rawQuery
+	if cfg.queryString && r.URL.RawQuery != "" {
+		query := r.URL.RawQuery
 		if cfg.queryStringRegexp != nil {
 			query = cfg.queryStringRegexp.ReplaceAllLiteralString(query, "<redacted>")
 		}
 		url = strings.Join([]string{url, query}, "?")
 	}
-	if escapedFragment != "" {
-		url = strings.Join([]string{url, escapedFragment}, "#")
+	if frag := r.URL.EscapedFragment(); frag != "" {
+		url = strings.Join([]string{url, frag}, "#")
 	}
 	return url
 }
