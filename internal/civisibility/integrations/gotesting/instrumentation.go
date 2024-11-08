@@ -30,14 +30,14 @@ type (
 
 	// testExecutionMetadata contains metadata regarding an unique *testing.T or *testing.B execution
 	testExecutionMetadata struct {
-		test                        integrations.DdTest // internal CI Visibility test event
-		error                       atomic.Int32        // flag to check if the test event has error data already
-		skipped                     atomic.Int32        // flag to check if the test event has skipped data already
-		panicData                   any                 // panic data recovered from an internal test execution when using an additional feature wrapper
-		panicStacktrace             string              // stacktrace from the panic recovered from an internal test
-		isARetry                    bool                // flag to tag if a current test execution is a retry
-		isANewTest                  bool                // flag to tag if a current test execution is part of a new test (EFD not known test)
-		hasAdditionalFeatureWrapper bool                // flag to check if the current execution is part of an additional feature wrapper
+		test                        integrations.Test // internal CI Visibility test event
+		error                       atomic.Int32      // flag to check if the test event has error data already
+		skipped                     atomic.Int32      // flag to check if the test event has skipped data already
+		panicData                   any               // panic data recovered from an internal test execution when using an additional feature wrapper
+		panicStacktrace             string            // stacktrace from the panic recovered from an internal test
+		isARetry                    bool              // flag to tag if a current test execution is a retry
+		isANewTest                  bool              // flag to tag if a current test execution is part of a new test (EFD not known test)
+		hasAdditionalFeatureWrapper bool              // flag to check if the current execution is part of an additional feature wrapper
 	}
 
 	// runTestWithRetryOptions contains the options for calling runTestWithRetry function
@@ -341,8 +341,8 @@ func runTestWithRetry(options *runTestWithRetryOptions) {
 	var lastPtrToLocalT *testing.T
 
 	// Module and suite for this test
-	var module integrations.DdTestModule
-	var suite integrations.DdTestSuite
+	var module integrations.TestModule
+	var suite integrations.TestSuite
 
 	// Check if we have execution metadata to propagate
 	originalExecMeta := getTestMetadata(options.t)

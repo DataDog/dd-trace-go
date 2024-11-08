@@ -36,7 +36,8 @@ func startTelemetry(c *config) {
 		telemetry.WithEnv(c.env),
 		telemetry.WithHTTPClient(c.httpClient),
 		// c.logToStdout is true if serverless is turned on
-		telemetry.WithURL(c.logToStdout, c.agentURL.String()),
+		// c.ciVisibilityAgentless is true if ci visibility mode is turned on and agentless writer is configured
+		telemetry.WithURL(c.logToStdout || c.ciVisibilityAgentless, c.agentURL.String()),
 		telemetry.WithVersion(c.version),
 	)
 	telemetryConfigs := []telemetry.Configuration{

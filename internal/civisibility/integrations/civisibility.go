@@ -19,6 +19,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/constants"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/utils"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 )
 
 // ciVisibilityCloseAction defines an action to be executed when CI visibility is closing.
@@ -130,6 +131,7 @@ func ExitCiVisibility() {
 		log.Debug("civisibility: flushing and stopping tracer")
 		tracer.Flush()
 		tracer.Stop()
+		telemetry.GlobalClient.Stop()
 		log.Debug("civisibility: done.")
 	}()
 	for _, v := range closeActions {

@@ -284,6 +284,9 @@ type config struct {
 	// ciVisibilityEnabled controls if the tracer is loaded with CI Visibility mode. default false
 	ciVisibilityEnabled bool
 
+	// ciVisibilityAgentless controls if the tracer is loaded with CI Visibility agentless mode. default false
+	ciVisibilityAgentless bool
+
 	// logDirectory is directory for tracer logs specified by user-setting DD_TRACE_LOG_DIRECTORY. default empty/unused
 	logDirectory string
 }
@@ -558,10 +561,12 @@ func newConfig(opts ...StartOption) *config {
 
 	// Check if CI Visibility mode is enabled
 	if internal.BoolEnv(constants.CIVisibilityEnabledEnvironmentVariable, false) {
-		c.ciVisibilityEnabled = true              // Enable CI Visibility mode
-		c.httpClientTimeout = time.Second * 45    // Increase timeout up to 45 seconds (same as other tracers in CIVis mode)
-		c.logStartup = false                      // If we are in CI Visibility mode we don't want to log the startup to stdout to avoid polluting the output
-		c.transport = newCiVisibilityTransport(c) // Replace the default transport with the CI Visibility transport
+		c.ciVisibilityEnabled = true               // Enable CI Visibility mode
+		c.httpClientTimeout = time.Second * 45     // Increase timeout up to 45 seconds (same as other tracers in CIVis mode)
+		c.logStartup = false                       // If we are in CI Visibility mode we don't want to log the startup to stdout to avoid polluting the output
+		ciTransport := newCiVisibilityTransport(c) // Create a default CI Visibility Transport
+		c.transport = ciTransport                  // Replace the default transport with the CI Visibility transport
+		c.ciVisibilityAgentless = ciTransport.agentless
 	}
 
 	return c
