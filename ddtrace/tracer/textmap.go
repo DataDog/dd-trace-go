@@ -270,13 +270,13 @@ func (p *chainedPropagator) Inject(spanCtx ddtrace.SpanContext, carrier interfac
 // a previous propagator has already succeeded so long as the trace-ids match.
 // Furthermore, if we have already successfully extracted a trace context and a
 // subsequent trace context has conflicting trace information, such information will
-// be relayed in the original trace context with a SpanLink.
+// be relayed in the returned SpanContext with a SpanLink.
 func (p *chainedPropagator) Extract(carrier interface{}) (ddtrace.SpanContext, error) {
 	var ctx ddtrace.SpanContext // First valid trace context will be stored here
 	var links []ddtrace.SpanLink
 	for _, v := range p.extractors {
 		extractedCtx, err := v.Extract(carrier)
-		// Handling extraction errors. If it is the first extraction, return error. Else, ignore
+		// Handling extraction errors. If it is the first extraction, distributed tracing breaks and return error. Else, ignore
 		if err != nil {
 			if ctx == nil && err != ErrSpanContextNotFound {
 				return nil, err
@@ -287,7 +287,7 @@ func (p *chainedPropagator) Extract(carrier interface{}) (ddtrace.SpanContext, e
 		if ctx != nil { // A local trace context has already been extracted
 			propagatorType, err := getPropagatorType(v)
 			if err != nil { // Propagator is not one of the known, supported types. Ignore this extraction
-				log.Debug("Propagator type is unknown. Skipping extraction")
+				log.Debug("Trace propagator type %T is unknown. Skipping trace extraction", v)
 				continue
 			}
 			if extractedCtx.(ddtrace.SpanContextW3C).TraceID128() == ctx.(ddtrace.SpanContextW3C).TraceID128() {
@@ -303,7 +303,7 @@ func (p *chainedPropagator) Extract(carrier interface{}) (ddtrace.SpanContext, e
 						overrideDatadogParentID(ctx.(*spanContext), extractedCtx.(*spanContext), ddCtx)
 					}
 				}
-			} else {
+			} else { //handle non-w3c propagators
 				var flags uint32
 				if tracer := extractedCtx.(*spanContext).trace; tracer != nil {
 					if flags = uint32(*tracer.priority); flags > 0 { // Set the flags based on the sampling priority

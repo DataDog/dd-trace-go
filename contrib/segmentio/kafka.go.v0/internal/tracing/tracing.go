@@ -49,7 +49,9 @@ func (tr *Tracer) StartConsumeSpan(ctx context.Context, msg Message) ddtrace.Spa
 	// kafka supports headers, so try to extract a span context
 	carrier := NewMessageCarrier(msg)
 	if spanctx, err := tracer.Extract(carrier); err == nil {
-		if linksCtx, err := spanctx.(ddtrace.SpanContextWithLinks); err && linksCtx.SpanLinks() != nil {
+		// If there are span links as a result of context extraction, add them as a StartSpanOption
+		// and remove from the extracted context as they belong to the span being created, not the parent span
+		if linksCtx, ok := spanctx.(ddtrace.SpanContextWithLinks); ok && linksCtx.SpanLinks() != nil {
 			opts = append(opts, tracer.WithSpanLinks(linksCtx.SpanLinks()))
 			linksCtx.SetLinks(nil)
 		}
