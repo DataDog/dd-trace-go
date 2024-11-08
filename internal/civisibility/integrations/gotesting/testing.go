@@ -18,6 +18,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/integrations"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/integrations/gotesting/coverage"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/utils"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/utils/telemetry"
 )
 
 const (
@@ -27,7 +28,7 @@ const (
 
 var (
 	// session represents the CI visibility test session.
-	session integrations.DdTestSession
+	session integrations.TestSession
 
 	// testInfos holds information about the instrumented tests.
 	testInfos []*testingTInfo
@@ -195,7 +196,7 @@ func (ddm *M) executeInternalTest(testInfo *testingTInfo) func(*testing.T) {
 		}
 
 		// Create or retrieve the module, suite, and test for CI visibility.
-		module := session.GetOrCreateModuleWithFramework(testInfo.moduleName, testFramework, runtime.Version())
+		module := session.GetOrCreateModule(testInfo.moduleName)
 		suite := module.GetOrCreateSuite(testInfo.suiteName)
 		test := suite.CreateTest(testInfo.testName)
 		test.SetTestFunc(originalFunc)
@@ -220,7 +221,8 @@ func (ddm *M) executeInternalTest(testInfo *testingTInfo) func(*testing.T) {
 			// check if the test was marked as unskippable
 			if test.Context().Value(constants.TestUnskippable) != true {
 				test.SetTag(constants.TestSkippedByITR, "true")
-				test.CloseWithFinishTimeAndSkipReason(integrations.ResultStatusSkip, time.Now(), constants.SkippedByITRReason)
+				test.Close(integrations.ResultStatusSkip, integrations.WithTestSkipReason(constants.SkippedByITRReason))
+				telemetry.ITRSkipped(telemetry.TestEventType)
 				session.SetTag(constants.ITRTestsSkipped, "true")
 				session.SetTag(constants.ITRTestsSkippingCount, numOfTestsSkipped.Add(1))
 				checkModuleAndSuite(module, suite)
@@ -228,6 +230,7 @@ func (ddm *M) executeInternalTest(testInfo *testingTInfo) func(*testing.T) {
 				return
 			} else {
 				test.SetTag(constants.TestForcedToRun, "true")
+				telemetry.ITRForcedRun(telemetry.TestEventType)
 			}
 		}
 
@@ -277,7 +280,7 @@ func (ddm *M) executeInternalTest(testInfo *testingTInfo) func(*testing.T) {
 				// Handle panic and set error information.
 				execMeta.panicData = r
 				execMeta.panicStacktrace = utils.GetStacktrace(1)
-				test.SetErrorInfo("panic", fmt.Sprint(r), execMeta.panicStacktrace)
+				test.SetError(integrations.WithErrorInfo("panic", fmt.Sprint(r), execMeta.panicStacktrace))
 				suite.SetTag(ext.Error, true)
 				module.SetTag(ext.Error, true)
 				test.Close(integrations.ResultStatusFail)
@@ -391,9 +394,9 @@ func (ddm *M) executeInternalBenchmark(benchmarkInfo *testingBInfo) func(*testin
 		}
 
 		startTime := time.Now()
-		module := session.GetOrCreateModuleWithFrameworkAndStartTime(benchmarkInfo.moduleName, testFramework, runtime.Version(), startTime)
-		suite := module.GetOrCreateSuiteWithStartTime(benchmarkInfo.suiteName, startTime)
-		test := suite.CreateTestWithStartTime(benchmarkInfo.testName, startTime)
+		module := session.GetOrCreateModule(benchmarkInfo.moduleName, integrations.WithTestModuleStartTime(startTime))
+		suite := module.GetOrCreateSuite(benchmarkInfo.suiteName, integrations.WithTestSuiteStartTime(startTime))
+		test := suite.CreateTest(benchmarkInfo.testName, integrations.WithTestStartTime(startTime))
 		test.SetTestFunc(originalFunc)
 
 		// Run the original benchmark function.
@@ -480,7 +483,7 @@ func (ddm *M) executeInternalBenchmark(benchmarkInfo *testingBInfo) func(*testin
 
 		// Define a function to handle panic during benchmark finalization.
 		panicFunc := func(r any) {
-			test.SetErrorInfo("panic", fmt.Sprint(r), utils.GetStacktrace(1))
+			test.SetError(integrations.WithErrorInfo("panic", fmt.Sprint(r), utils.GetStacktrace(1)))
 			suite.SetTag(ext.Error, true)
 			module.SetTag(ext.Error, true)
 			test.Close(integrations.ResultStatusFail)
@@ -494,11 +497,11 @@ func (ddm *M) executeInternalBenchmark(benchmarkInfo *testingBInfo) func(*testin
 			test.SetTag(ext.Error, true)
 			suite.SetTag(ext.Error, true)
 			module.SetTag(ext.Error, true)
-			test.CloseWithFinishTime(integrations.ResultStatusFail, endTime)
+			test.Close(integrations.ResultStatusFail, integrations.WithTestFinishTime(endTime))
 		} else if iPfOfB.B.Skipped() {
-			test.CloseWithFinishTime(integrations.ResultStatusSkip, endTime)
+			test.Close(integrations.ResultStatusSkip, integrations.WithTestFinishTime(endTime))
 		} else {
-			test.CloseWithFinishTime(integrations.ResultStatusPass, endTime)
+			test.Close(integrations.ResultStatusPass, integrations.WithTestFinishTime(endTime))
 		}
 
 		checkModuleAndSuite(module, suite)
@@ -514,7 +517,7 @@ func RunM(m *testing.M) int {
 }
 
 // checkModuleAndSuite checks and closes the modules and suites if all tests are executed.
-func checkModuleAndSuite(module integrations.DdTestModule, suite integrations.DdTestSuite) {
+func checkModuleAndSuite(module integrations.TestModule, suite integrations.TestSuite) {
 	// If all tests in a suite has been executed we can close the suite
 	if atomic.AddInt32(suitesCounters[suite.Name()], -1) <= 0 {
 		suite.Close()

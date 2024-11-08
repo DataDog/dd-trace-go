@@ -76,6 +76,8 @@ const (
 	NamespaceProfilers Namespace = "profilers"
 	// NamespaceAppSec is for application security management
 	NamespaceAppSec Namespace = "appsec"
+	// NamespaceCiVisibility is for CI Visibility
+	NamespaceCiVisibility Namespace = "civisibility"
 )
 
 // Application is identifying information about the app itself

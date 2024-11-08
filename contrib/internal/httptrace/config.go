@@ -38,6 +38,11 @@ type config struct {
 	isStatusError     func(statusCode int) bool
 }
 
+// ResetCfg sets local variable cfg back to its defaults (mainly useful for testing)
+func ResetCfg() {
+	cfg = newConfig()
+}
+
 func newConfig() config {
 	c := config{
 		queryString:       !internal.BoolEnv(envQueryStringDisabled, false),

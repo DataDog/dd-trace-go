@@ -175,6 +175,9 @@ func assertTest(t *testing.T) {
 
 		// Assert Session
 		if span.Tag(ext.SpanType) == constants.SpanTypeTestSession {
+			assert.Subset(spanTags, map[string]interface{}{
+				constants.TestFramework: "golang.org/pkg/testing",
+			})
 			assert.Contains(spanTags, constants.TestSessionIDTag)
 			assertCommon(assert, span)
 			hasSession = true

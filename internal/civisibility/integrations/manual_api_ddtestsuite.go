@@ -14,12 +14,13 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/constants"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/utils/telemetry"
 )
 
 // Test Suite
 
-// Ensures that tslvTestSuite implements the DdTestSuite interface.
-var _ DdTestSuite = (*tslvTestSuite)(nil)
+// Ensures that tslvTestSuite implements the TestSuite interface.
+var _ TestSuite = (*tslvTestSuite)(nil)
 
 // tslvTestSuite implements the DdTestSuite interface and represents a suite of tests within a module.
 type tslvTestSuite struct {
@@ -30,7 +31,7 @@ type tslvTestSuite struct {
 }
 
 // createTestSuite initializes a new test suite within a given module.
-func createTestSuite(module *tslvTestModule, name string, startTime time.Time) DdTestSuite {
+func createTestSuite(module *tslvTestModule, name string, startTime time.Time) TestSuite {
 	if module == nil {
 		return nil
 	}
@@ -73,6 +74,8 @@ func createTestSuite(module *tslvTestModule, name string, startTime time.Time) D
 	// Ensure to close everything before CI visibility exits. In CI visibility mode, we try to never lose data.
 	PushCiVisibilityCloseAction(func() { suite.Close() })
 
+	// Creating telemetry event created
+	telemetry.EventCreated(module.framework, telemetry.SuiteEventType)
 	return suite
 }
 
@@ -85,41 +88,48 @@ func (t *tslvTestSuite) SuiteID() uint64 {
 func (t *tslvTestSuite) Name() string { return t.name }
 
 // Module returns the module to which the test suite belongs.
-func (t *tslvTestSuite) Module() DdTestModule { return t.module }
+func (t *tslvTestSuite) Module() TestModule { return t.module }
 
-// Close closes the test suite and sets the finish time to the current time.
-func (t *tslvTestSuite) Close() { t.CloseWithFinishTime(time.Now()) }
-
-// CloseWithFinishTime closes the test suite with the given finish time.
-func (t *tslvTestSuite) CloseWithFinishTime(finishTime time.Time) {
+// Close closes the test suite with the given finish time.
+func (t *tslvTestSuite) Close(options ...TestSuiteCloseOption) {
 	t.mutex.Lock()
 	defer t.mutex.Unlock()
 	if t.closed {
 		return
 	}
 
-	t.span.Finish(tracer.FinishTime(finishTime))
+	defaults := &tslvTestSuiteCloseOptions{}
+	for _, opt := range options {
+		opt(defaults)
+	}
+
+	if defaults.finishTime.IsZero() {
+		defaults.finishTime = time.Now()
+	}
+
+	t.span.Finish(tracer.FinishTime(defaults.finishTime))
 	t.closed = true
+
+	// Creating telemetry event finished
+	telemetry.EventFinished(t.module.framework, telemetry.SuiteEventType)
 }
 
 // SetError sets an error on the test suite and marks the module as having an error.
-func (t *tslvTestSuite) SetError(err error) {
-	t.ciVisibilityCommon.SetError(err)
+func (t *tslvTestSuite) SetError(options ...ErrorOption) {
+	t.ciVisibilityCommon.SetError(options...)
 	t.Module().SetTag(ext.Error, true)
 }
 
-// SetErrorInfo sets detailed error information on the test suite and marks the module as having an error.
-func (t *tslvTestSuite) SetErrorInfo(errType string, message string, callstack string) {
-	t.ciVisibilityCommon.SetErrorInfo(errType, message, callstack)
-	t.Module().SetTag(ext.Error, true)
-}
+// CreateTest creates a new test within the suite.
+func (t *tslvTestSuite) CreateTest(name string, options ...TestStartOption) Test {
+	defaults := &tslvTestStartOptions{}
+	for _, opt := range options {
+		opt(defaults)
+	}
 
-// CreateTest creates a new test with the given name and sets the start time to the current time.
-func (t *tslvTestSuite) CreateTest(name string) DdTest {
-	return t.CreateTestWithStartTime(name, time.Now())
-}
+	if defaults.startTime.IsZero() {
+		defaults.startTime = time.Now()
+	}
 
-// CreateTestWithStartTime creates a new test with the given name and start time.
-func (t *tslvTestSuite) CreateTestWithStartTime(name string, startTime time.Time) DdTest {
-	return createTest(t, name, startTime)
+	return createTest(t, name, defaults.startTime)
 }
