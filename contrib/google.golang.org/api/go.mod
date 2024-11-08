@@ -3,7 +3,7 @@ module github.com/DataDog/dd-trace-go/contrib/google.golang.org/api/v2
 go 1.22.0
 
 require (
-	github.com/DataDog/dd-trace-go/contrib/net/http/v2 v2.0.0-beta.6
+	github.com/DataDog/dd-trace-go/contrib/net/http/v2 v2.0.0-beta.8
 	github.com/DataDog/dd-trace-go/v2 v2.0.0-beta.8
 	github.com/stretchr/testify v1.9.0
 	golang.org/x/oauth2 v0.22.0
