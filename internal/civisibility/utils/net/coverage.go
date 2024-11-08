@@ -8,7 +8,9 @@ package net
 import (
 	"errors"
 	"fmt"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/utils/telemetry"
 	"io"
+	"time"
 )
 
 const (
@@ -53,12 +55,25 @@ func (c *client) SendCoveragePayload(ciTestCovPayload io.Reader) error {
 		},
 	}
 
+	if request.Compressed {
+		telemetry.EndpointPayloadRequests(telemetry.CodeCoverageEndpointType, telemetry.CompressedRequestCompressedType)
+	} else {
+		telemetry.EndpointPayloadRequests(telemetry.CodeCoverageEndpointType, telemetry.UncompressedRequestCompressedType)
+	}
+
+	startTime := time.Now()
 	response, responseErr := c.handler.SendRequest(request)
+	telemetry.EndpointPayloadRequestsMs(telemetry.CodeCoverageEndpointType, float64(time.Since(startTime).Milliseconds()))
+
 	if responseErr != nil {
-		return fmt.Errorf("failed to send packfile request: %s", responseErr.Error())
+		telemetry.EndpointPayloadRequestsErrors(telemetry.CodeCoverageEndpointType, telemetry.NetworkErrorType)
+		telemetry.EndpointPayloadDropped(telemetry.CodeCoverageEndpointType)
+		return fmt.Errorf("failed to send coverage request: %s", responseErr.Error())
 	}
 
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		telemetry.EndpointPayloadRequestsErrors(telemetry.CodeCoverageEndpointType, telemetry.GetErrorTypeFromStatusCode(response.StatusCode))
+		telemetry.EndpointPayloadDropped(telemetry.CodeCoverageEndpointType)
 		return fmt.Errorf("unexpected response code %d: %s", response.StatusCode, string(response.Body))
 	}
 

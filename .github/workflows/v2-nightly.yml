@@ -13,6 +13,10 @@ jobs:
 
   codeql-v2:
     uses: DataDog/dd-trace-go/.github/workflows/codeql-analysis.yml@v2-dev
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
     secrets: inherit
     with:
       ref: refs/heads/v2-dev
