@@ -385,7 +385,6 @@ func TestGeneratedSpan(t *testing.T) {
 		require.Equal(t, "GET", span.Tag("http.method"))
 		require.Equal(t, "datadoghq.com", span.Tag("http.host"))
 		require.Equal(t, "GET /resource-span", span.Tag("resource.name"))
-		require.Equal(t, "datadoghq.com", span.Tag("http.request.headers.host"))
 		require.Equal(t, "server", span.Tag("span.kind"))
 		require.Equal(t, "Mistake Not...", span.Tag("http.useragent"))
 	})

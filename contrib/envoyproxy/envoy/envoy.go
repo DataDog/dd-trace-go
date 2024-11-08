@@ -17,6 +17,10 @@ import (
 	"strings"
 	"sync/atomic"
 
+	corev3 "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
+	v3 "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
+	extproc "github.com/envoyproxy/go-control-plane/envoy/service/ext_proc/v3"
+	v32 "github.com/envoyproxy/go-control-plane/envoy/type/v3"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
@@ -25,12 +29,6 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/waf/actions"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener/trace"
-
-	corev3 "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
-	v3 "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
-	extproc "github.com/envoyproxy/go-control-plane/envoy/service/ext_proc/v3"
-	v32 "github.com/envoyproxy/go-control-plane/envoy/type/v3"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/httptrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
@@ -87,9 +85,7 @@ func StreamServerInterceptor(opts ...grpctrace.Option) grpc.StreamServerIntercep
 		}
 
 		// Close the span when the request is done processing
-		defer func() {
-			closeSpan(currentRequest)
-		}()
+		defer closeSpan(currentRequest)
 
 		for {
 			select {
@@ -104,8 +100,7 @@ func StreamServerInterceptor(opts ...grpctrace.Option) grpc.StreamServerIntercep
 			}
 
 			var req extproc.ProcessingRequest
-			err := ss.RecvMsg(&req)
-			if err != nil {
+			if err := ss.RecvMsg(&req); err != nil {
 				// Note: Envoy is inconsistent with the "end_of_stream" value of its headers responses,
 				// so we can't fully rely on it to determine when it will close (cancel) the stream.
 				if err == io.EOF || err.(interface{ GRPCStatus() *status.Status }).GRPCStatus().Code() == codes.Canceled {
@@ -222,7 +217,7 @@ func ProcessRequestHeaders(ctx context.Context, req *extproc.ProcessingRequest_R
 	currentRequest.op, currentRequest.blockAction, _ = httpsec.StartOperation(ctx, currentRequest.requestArgs)
 
 	// Block handling: If triggered, we need to block the request, return an immediate response
-	if blockPtr := currentRequest.blockAction.Load(); blockPtr != nil {
+	if blockPtr := currentRequest.blockAction.Swap(nil); blockPtr != nil {
 		response := doBlockRequest(currentRequest, blockPtr, headers)
 		return response, nil
 	}
@@ -244,7 +239,7 @@ func verifyRequestHttp2RequestHeaders(headers map[string][]string) (string, stri
 	// :authority, :scheme, :path, :method
 
 	for _, header := range []string{":authority", ":scheme", ":path", ":method"} {
-		if _, ok := headers[header]; !ok {
+		if _, ok := headers[header]; !ok || len(headers[header]) == 0 {
 			return "", "", "", "", status.Errorf(codes.InvalidArgument, "Missing required header: %v", header)
 		}
 	}
@@ -255,7 +250,7 @@ func verifyRequestHttp2RequestHeaders(headers map[string][]string) (string, stri
 func verifyRequestHttp2ResponseHeaders(headers map[string][]string) (string, error) {
 	// :status
 
-	if _, ok := headers[":status"]; !ok {
+	if _, ok := headers[":status"]; !ok || len(headers[":status"]) == 0 {
 		return "", status.Errorf(codes.InvalidArgument, "Missing required header: %v", ":status")
 	}
 
@@ -286,11 +281,9 @@ func ProcessResponseHeaders(res *extproc.ProcessingRequest_ResponseHeaders, curr
 	currentRequest.op = nil
 
 	// Block handling: If triggered, we need to block the request, return an immediate response
-	if blockPtr := currentRequest.blockAction.Load(); blockPtr != nil {
+	if blockPtr := currentRequest.blockAction.Swap(nil); blockPtr != nil {
 		return doBlockRequest(currentRequest, blockPtr, headers), nil
 	}
-
-	httpsec2.SetResponseHeadersTags(currentRequest.span, headers)
 
 	// Note: (cf. comment in the stream error handling)
 	// The end of stream bool value is not reliable
@@ -311,7 +304,7 @@ func ProcessResponseHeaders(res *extproc.ProcessingRequest_ResponseHeaders, curr
 
 func createExternalProcessedSpan(ctx context.Context, headers map[string][]string, method string, host string, path string, remoteAddr string, ipTags map[string]string, parsedUrl *url.URL) tracer.Span {
 	userAgent := ""
-	if ua, ok := headers["User-Agent"]; ok {
+	if ua, ok := headers["User-Agent"]; ok || len(ua) > 0 {
 		userAgent = ua[0]
 	}
 
@@ -336,9 +329,6 @@ func createExternalProcessedSpan(ctx context.Context, headers map[string][]strin
 		}...,
 	)
 
-	httpsec2.SetRequestHeadersTags(span, headers)
-	trace.SetAppsecStaticTags(span)
-
 	return span
 }
 
@@ -350,6 +340,10 @@ func separateEnvoyHeaders(receivedHeaders []*corev3.HeaderValue) (map[string][]s
 	pseudoHeadersHttp2 := make(map[string][]string)
 	for _, v := range receivedHeaders {
 		key := v.GetKey()
+		if len(key) == 0 {
+			continue
+		}
+
 		if key[0] == ':' {
 			pseudoHeadersHttp2[key] = []string{string(v.GetRawValue())}
 		} else {
@@ -386,7 +380,6 @@ func doBlockRequest(currentRequest *CurrentRequest, blockAction *actions.BlockHT
 		})
 	}
 
-	httpsec2.SetResponseHeadersTags(currentRequest.span, headerToSet)
 	currentRequest.statusCode = blockAction.StatusCode
 	var int32StatusCode int32 = 0
 	if currentRequest.statusCode > 0 && currentRequest.statusCode <= math.MaxInt32 {
