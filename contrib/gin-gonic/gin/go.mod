@@ -3,7 +3,7 @@ module github.com/DataDog/dd-trace-go/contrib/gin-gonic/gin/v2
 go 1.22.0
 
 require (
-	github.com/DataDog/dd-trace-go/v2 v2.0.0-beta.7
+	github.com/DataDog/dd-trace-go/v2 v2.0.0-beta.8
 	github.com/gin-gonic/gin v1.9.1
 	github.com/stretchr/testify v1.9.0
 )

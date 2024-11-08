@@ -3,7 +3,7 @@ module github.com/DataDog/dd-trace-go/v2/tools/v2check/_stage
 go 1.22.0
 
 require (
-	github.com/DataDog/dd-trace-go/v2 v2.0.0-beta.7
+	github.com/DataDog/dd-trace-go/v2 v2.0.0-beta.8
 	gopkg.in/DataDog/dd-trace-go.v1 v1.69.1
 )
 
