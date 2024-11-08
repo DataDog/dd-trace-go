@@ -8,6 +8,7 @@ package tracer
 import (
 	"fmt"
 	"math"
+	"regexp"
 	"testing"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
@@ -260,4 +261,78 @@ func setup(t *testing.T, customProp Propagator) string {
 	logStartup(tracer)
 	require.Len(t, tp.Logs(), 2)
 	return tp.Logs()[1]
+}
+
+func findLogEntry(logs []string, pattern string) (string, bool) {
+	for _, log := range logs {
+		if matched, _ := regexp.MatchString(pattern, log); matched {
+			return log, true
+		}
+	}
+	return "", false
+}
+
+func TestAgentURL(t *testing.T) {
+	assert := assert.New(t)
+	tp := new(log.RecordLogger)
+	tracer := newTracer(WithLogger(tp), WithUDS("var/run/datadog/apm.socket"))
+	defer tracer.Stop()
+	tp.Reset()
+	tp.Ignore("appsec: ", telemetry.LogPrefix)
+	logStartup(tracer)
+	logEntry, found := findLogEntry(tp.Logs(), `"agent_url":"unix://var/run/datadog/apm.socket"`)
+	if !found {
+		t.Fatal("Expected to find log entry")
+	}
+	assert.Regexp(`"agent_url":"unix://var/run/datadog/apm.socket"`, logEntry)
+}
+
+func TestAgentURLFromEnv(t *testing.T) {
+	assert := assert.New(t)
+	t.Setenv("DD_TRACE_AGENT_URL", "unix://var/run/datadog/apm.socket")
+	tp := new(log.RecordLogger)
+	tracer := newTracer(WithLogger(tp))
+	defer tracer.Stop()
+	tp.Reset()
+	tp.Ignore("appsec: ", telemetry.LogPrefix)
+	logStartup(tracer)
+	logEntry, found := findLogEntry(tp.Logs(), `"agent_url":"unix://var/run/datadog/apm.socket"`)
+	if !found {
+		t.Fatal("Expected to find log entry")
+	}
+	assert.Regexp(`"agent_url":"unix://var/run/datadog/apm.socket"`, logEntry)
+}
+
+func TestInvalidAgentURL(t *testing.T) {
+	assert := assert.New(t)
+	// invalid socket URL
+	t.Setenv("DD_TRACE_AGENT_URL", "var/run/datadog/apm.socket")
+	tp := new(log.RecordLogger)
+	tracer := newTracer(WithLogger(tp))
+	defer tracer.Stop()
+	tp.Reset()
+	tp.Ignore("appsec: ", telemetry.LogPrefix)
+	logStartup(tracer)
+	logEntry, found := findLogEntry(tp.Logs(), `"agent_url":"http://localhost:8126/v0.4/traces"`)
+	if !found {
+		t.Fatal("Expected to find log entry")
+	}
+	// assert that it is the default URL
+	assert.Regexp(`"agent_url":"http://localhost:8126/v0.4/traces"`, logEntry)
+}
+
+func TestAgentURLConflict(t *testing.T) {
+	assert := assert.New(t)
+	t.Setenv("DD_TRACE_AGENT_URL", "unix://var/run/datadog/apm.socket")
+	tp := new(log.RecordLogger)
+	tracer := newTracer(WithLogger(tp), WithUDS("var/run/datadog/apm.socket"), WithAgentAddr("localhost:8126"))
+	defer tracer.Stop()
+	tp.Reset()
+	tp.Ignore("appsec: ", telemetry.LogPrefix)
+	logStartup(tracer)
+	logEntry, found := findLogEntry(tp.Logs(), `"agent_url":"http://localhost:8126/v0.4/traces"`)
+	if !found {
+		t.Fatal("Expected to find log entry")
+	}
+	assert.Regexp(`"agent_url":"http://localhost:8126/v0.4/traces"`, logEntry)
 }

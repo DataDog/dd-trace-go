@@ -105,6 +105,13 @@ func logStartup(t *tracer) {
 		injectorNames = "custom"
 		extractorNames = "custom"
 	}
+	// Determine the agent URL to use in the logs
+	var agentURL string
+	if t.config.originalAgentURL != nil && t.config.originalAgentURL.Scheme == "unix" {
+		agentURL = t.config.originalAgentURL.String()
+	} else {
+		agentURL = t.config.transport.endpoint()
+	}
 
 	info := startupInfo{
 		Date:                        time.Now().Format(time.RFC3339),
@@ -115,7 +122,7 @@ func logStartup(t *tracer) {
 		LangVersion:                 runtime.Version(),
 		Env:                         t.config.env,
 		Service:                     t.config.serviceName,
-		AgentURL:                    t.config.transport.endpoint(),
+		AgentURL:                    agentURL,
 		Debug:                       t.config.debug,
 		AnalyticsEnabled:            !math.IsNaN(globalconfig.AnalyticsRate()),
 		SampleRate:                  fmt.Sprintf("%f", t.rulesSampling.traces.globalRate),
