@@ -87,6 +87,7 @@ func TestStartSpanWithSpanLinks(t *testing.T) {
 	ctx := &spanContext{spanID: 789, traceID: traceIDFrom64Bits(789), spanLinks: []ddtrace.SpanLink{spanLink}}
 
 	t.Run("spanContext with spanLinks satisfies SpanContextWithLinks interface", func(t *testing.T) {
+		var _ ddtrace.SpanContextWithLinks = ctx
 		assert.Equal(t, len(ctx.SpanLinks()), 1)
 		assert.Equal(t, ctx.SpanLinks()[0], spanLink)
 	})
