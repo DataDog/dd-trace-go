@@ -172,6 +172,20 @@ func getLocalGitData() (localGitData, error) {
 		return gitData, errors.New("git executable not found")
 	}
 
+	// Ensure we have permissions to read the git directory
+	if currentDir, err := os.Getwd(); err == nil {
+		if gitDir, err := getParentGitFolder(currentDir); err == nil {
+			log.Debug("civisibility.git: setting permissions to git folder: %s", gitDir)
+			if out, err := execGitString(telemetry.NotSpecifiedCommandsType, "config", "--global", "--add", "safe.directory", gitDir); err != nil {
+				log.Debug("civisibility.git: error while setting permissions to git folder: %s\n%s\n%s", gitDir, err.Error(), out)
+			}
+		} else {
+			log.Debug("civisibility.git: error getting the parent git folder.")
+		}
+	} else {
+		log.Debug("civisibility.git: error getting the current working directory.")
+	}
+
 	// Extract the absolute path to the Git directory
 	log.Debug("civisibility.git: getting the absolute path to the Git directory")
 	out, err := execGitString(telemetry.NotSpecifiedCommandsType, "rev-parse", "--absolute-git-dir")
@@ -445,4 +459,32 @@ func CreatePackFiles(commitsToInclude []string, commitsToExclude []string) []str
 	}
 
 	return packFiles
+}
+
+// getParentGitFolder searches from the given directory upwards to find the nearest .git directory.
+func getParentGitFolder(innerFolder string) (string, error) {
+	if innerFolder == "" {
+		return "", nil
+	}
+
+	dir := innerFolder
+	for {
+		gitDirPath := filepath.Join(dir, ".git")
+		info, err := os.Stat(gitDirPath)
+		if err == nil && info.IsDir() {
+			return gitDirPath, nil
+		}
+		if err != nil && !os.IsNotExist(err) {
+			return "", err
+		}
+
+		parentDir := filepath.Dir(dir)
+		// If we've reached the root directory, stop the loop.
+		if parentDir == dir {
+			break
+		}
+		dir = parentDir
+	}
+
+	return "", nil
 }
