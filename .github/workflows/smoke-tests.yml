@@ -196,17 +196,13 @@ jobs:
       - name: Test
         run: docker run -p7777:7777 --rm smoke-test
 
-
-  on-failure:
-      runs-on: ubuntu-latest
-      if: ${{ always() && needs.go-get-u.result == 'failure'}}
-      needs:
-        - go-get-u
-      steps:
-      - uses: actions/checkout@v2
-      - name: Slack Notification
-        uses: rtCamp/action-slack-notify@v2
+      - name: Send Slack notification about failure
+        id: slack
+        if: ${{ always() && needs.go-get-u.result == 'failure' }}
+        uses: slackapi/slack-github-action@v1.27.0
+        with:
+          channel-id: 'C07VCBJUCEB'
+          # This data can be any valid JSON from a previous step in the GitHub Action
+          slack-message: "GitHub build result: ${{ job.status }}\n${{ github.event.pull_request.html_url || github.event.head_commit.url }}"
         env:
-          SLACK_TITLE: Workflow ${{ needs.go-get-u.result }}
-          SLACK_WEBHOOK: ${{ secrets.SMOKE_TESTS_SLACK_WEBHOOK_URL }}
-          SLACK_MESSAGE: Smoke Tests Failed
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
