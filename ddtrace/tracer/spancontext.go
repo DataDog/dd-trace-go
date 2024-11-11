@@ -183,12 +183,11 @@ func (c *spanContext) TraceID128Bytes() [16]byte {
 	return c.traceID
 }
 
+// SpanLinks implements ddtrace.SpanContextWithLinks
 func (c *spanContext) SpanLinks() []ddtrace.SpanLink {
-	return c.spanLinks
-}
-
-func (c *spanContext) SetLinks(links []ddtrace.SpanLink) {
-	c.spanLinks = links
+	cp := make([]ddtrace.SpanLink, len(c.spanLinks))
+	copy(cp, c.spanLinks)
+	return cp
 }
 
 // ForeachBaggageItem implements ddtrace.SpanContext.
