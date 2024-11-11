@@ -174,7 +174,7 @@ func getLocalGitData() (localGitData, error) {
 
 	// Ensure we have permissions to read the git directory
 	if currentDir, err := os.Getwd(); err == nil {
-		if gitDir, err := getParentGitFolder(currentDir); err == nil {
+		if gitDir, err := getParentGitFolder(currentDir); err == nil && gitDir != "" {
 			log.Debug("civisibility.git: setting permissions to git folder: %s", gitDir)
 			if out, err := execGitString(telemetry.NotSpecifiedCommandsType, "config", "--global", "--add", "safe.directory", gitDir); err != nil {
 				log.Debug("civisibility.git: error while setting permissions to git folder: %s\n%s\n%s", gitDir, err.Error(), out)
