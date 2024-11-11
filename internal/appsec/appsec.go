@@ -39,32 +39,41 @@ func Start(opts ...config.StartOption) {
 	telemetry := newAppsecTelemetry()
 	defer telemetry.emit()
 
+	startConfig := config.NewStartConfig(opts...)
+
 	// AppSec can start either:
-	// 1. Manually thanks to DD_APPSEC_ENABLED
+	// 1. Manually thanks to DD_APPSEC_ENABLED (or via [config.WithEnablementMode])
 	// 2. Remotely when DD_APPSEC_ENABLED is undefined
 	// Note: DD_APPSEC_ENABLED=false takes precedence over remote configuration
 	// and enforces to have AppSec disabled.
-	enabled, set, err := config.IsEnabled()
+	mode, modeOrigin, err := startConfig.EnablementMode()
 	if err != nil {
 		logUnexpectedStartError(err)
 		return
 	}
-	if set {
-		telemetry.addEnvConfig("DD_APPSEC_ENABLED", enabled)
+
+	switch modeOrigin {
+	case config.OriginEnvVar:
+		telemetry.addEnvConfig("DD_APPSEC_ENABLED", mode == config.ForcedOn)
+		if mode == config.ForcedOff {
+			log.Debug("appsec: disabled by the configuration: set the environment variable DD_APPSEC_ENABLED to true to enable it")
+			return
+		}
+	case config.OriginExplicitOption:
+		telemetry.addCodeConfig("WithEnablementMode", mode)
 	}
 
-	// Check if AppSec is explicitly disabled
-	if set && !enabled {
-		log.Debug("appsec: disabled by the configuration: set the environment variable DD_APPSEC_ENABLED to true to enable it")
+	// In any case, if we're forced off, we no longer have any business here...
+	if mode == config.ForcedOff {
 		return
 	}
 
 	// Check whether libddwaf - required for Threats Detection - is ok or not
 	if ok, err := waf.Health(); !ok {
 		// We need to avoid logging an error to APM tracing users who don't necessarily intend to enable appsec
-		if set {
+		if mode == config.ForcedOn {
 			// DD_APPSEC_ENABLED is explicitly set so we log an error
-			log.Error("appsec: threats detection cannot be enabled for the following reasons: %vappsec: no security activities will be collected. Please contact support at https://docs.datadoghq.com/help/ for help.", err)
+			log.Error("appsec: threats detection cannot be enabled for the following reasons: %v\nappsec: no security activities will be collected. Please contact support at https://docs.datadoghq.com/help/ for help.", err)
 		} else {
 			// DD_APPSEC_ENABLED is not set so we cannot know what the intent is here, we must log a
 			// debug message instead to avoid showing an error to APM-tracing-only users.
@@ -74,13 +83,10 @@ func Start(opts ...config.StartOption) {
 	}
 
 	// From this point we know that AppSec is either enabled or can be enabled through remote config
-	cfg, err := config.NewConfig()
+	cfg, err := startConfig.NewConfig()
 	if err != nil {
 		logUnexpectedStartError(err)
 		return
-	}
-	for _, opt := range opts {
-		opt(cfg)
 	}
 	appsec := newAppSec(cfg)
 
@@ -90,7 +96,7 @@ func Start(opts ...config.StartOption) {
 		log.Error("appsec: Remote config: disabled due to an instanciation error: %v", err)
 	}
 
-	if !set {
+	if mode == config.RCStandby {
 		// AppSec is not enforced by the env var and can be enabled through remote config
 		log.Debug("appsec: %s is not set, appsec won't start until activated through remote configuration", config.EnvEnabled)
 		if err := appsec.enableRemoteActivation(); err != nil {

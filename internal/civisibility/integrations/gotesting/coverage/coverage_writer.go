@@ -9,6 +9,7 @@ import (
 	"sync"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/utils/net"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/utils/telemetry"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
@@ -44,6 +45,7 @@ func newCoverageWriter() *coverageWriter {
 }
 
 func (w *coverageWriter) add(coverage *testCoverage) {
+	telemetry.EventsEnqueueForSerialization()
 	ciTestCoverage := newCiTestCoverageData(coverage)
 	if err := w.payload.push(ciTestCoverage); err != nil {
 		log.Error("coverageWriter: Error encoding msgpack: %v", err)
@@ -90,6 +92,7 @@ func (w *coverageWriter) flush() {
 			return
 		}
 
+		telemetry.CodeCoverageFiles(float64(p.itemCount()))
 		err = w.client.SendCoveragePayload(buf)
 		if err != nil {
 			log.Error("coverageWriter: failure sending coverage data: %v", err)

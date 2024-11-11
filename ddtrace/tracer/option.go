@@ -26,6 +26,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
+	appsecconfig "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/config"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/constants"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
@@ -114,6 +115,9 @@ type config struct {
 	// debug, when true, writes details to logs.
 	debug bool
 
+	// appsecStartOptions controls the options used when starting appsec features.
+	appsecStartOptions []appsecconfig.StartOption
+
 	// agent holds the capabilities of the agent and determines some
 	// of the behaviour of the tracer.
 	agent agentFeatures
@@ -156,6 +160,9 @@ type config struct {
 	// agentURL is the agent URL that receives traces from the tracer.
 	agentURL *url.URL
 
+	// originalAgentURL is the agent URL that receives traces from the tracer and does not get changed.
+	originalAgentURL *url.URL
+
 	// serviceMappings holds a set of service mappings to dynamically rename services
 	serviceMappings map[string]string
 
@@ -185,6 +192,9 @@ type config struct {
 
 	// runtimeMetrics specifies whether collection of runtime metrics is enabled.
 	runtimeMetrics bool
+
+	// runtimeMetricsV2 specifies whether collection of runtime metrics v2 is enabled.
+	runtimeMetricsV2 bool
 
 	// dogstatsdAddr specifies the address to connect for sending metrics to the
 	// Datadog Agent. If not set, it defaults to "localhost:8125" or to the
@@ -276,6 +286,9 @@ type config struct {
 
 	// ciVisibilityEnabled controls if the tracer is loaded with CI Visibility mode. default false
 	ciVisibilityEnabled bool
+
+	// ciVisibilityAgentless controls if the tracer is loaded with CI Visibility agentless mode. default false
+	ciVisibilityAgentless bool
 
 	// logDirectory is directory for tracer logs specified by user-setting DD_TRACE_LOG_DIRECTORY. default empty/unused
 	logDirectory string
@@ -381,6 +394,7 @@ func newConfig(opts ...StartOption) *config {
 	}
 	c.logStartup = internal.BoolEnv("DD_TRACE_STARTUP_LOGS", true)
 	c.runtimeMetrics = internal.BoolVal(getDDorOtelConfig("metrics"), false)
+	c.runtimeMetricsV2 = internal.BoolEnv("DD_RUNTIME_METRICS_V2_ENABLED", false)
 	c.debug = internal.BoolVal(getDDorOtelConfig("debugMode"), false)
 	c.logDirectory = os.Getenv("DD_TRACE_LOG_DIRECTORY")
 	c.enabled = newDynamicConfig("tracing_enabled", internal.BoolVal(getDDorOtelConfig("enabled"), true), func(b bool) bool { return true }, equal[bool])
@@ -446,16 +460,19 @@ func newConfig(opts ...StartOption) *config {
 	if c.agentURL == nil {
 		c.agentURL = internal.AgentURLFromEnv()
 	}
-	if c.agentURL.Scheme == "unix" {
-		// If we're connecting over UDS we can just rely on the agent to provide the hostname
-		log.Debug("connecting to agent over unix, do not set hostname on any traces")
-		c.httpClient = udsClient(c.agentURL.Path, c.httpClientTimeout)
-		c.agentURL = &url.URL{
-			Scheme: "http",
-			Host:   fmt.Sprintf("UDS_%s", strings.NewReplacer(":", "_", "/", "_", `\`, "_").Replace(c.agentURL.Path)),
+	c.originalAgentURL = c.agentURL // Preserve the original agent URL for logging
+	if c.httpClient == nil {
+		if c.agentURL.Scheme == "unix" {
+			// If we're connecting over UDS we can just rely on the agent to provide the hostname
+			log.Debug("connecting to agent over unix, do not set hostname on any traces")
+			c.httpClient = udsClient(c.agentURL.Path, c.httpClientTimeout)
+			c.agentURL = &url.URL{
+				Scheme: "http",
+				Host:   fmt.Sprintf("UDS_%s", strings.NewReplacer(":", "_", "/", "_", `\`, "_").Replace(c.agentURL.Path)),
+			}
+		} else {
+			c.httpClient = defaultHTTPClient(c.httpClientTimeout)
 		}
-	} else if c.httpClient == nil {
-		c.httpClient = defaultHTTPClient(c.httpClientTimeout)
 	}
 	WithGlobalTag(ext.RuntimeID, globalconfig.RuntimeID())(c)
 	globalTags := c.globalTags.get()
@@ -511,7 +528,9 @@ func newConfig(opts ...StartOption) *config {
 	}
 	// if using stdout or traces are disabled, agent is disabled
 	agentDisabled := c.logToStdout || !c.enabled.current
+	ignoreStatsdPort := c.agent.ignore // preserve the value of c.agent.ignore when testing
 	c.agent = loadAgentFeatures(agentDisabled, c.agentURL, c.httpClient)
+	c.agent.ignore = ignoreStatsdPort
 	info, ok := debug.ReadBuildInfo()
 	if !ok {
 		c.loadContribIntegrations([]*debug.Module{})
@@ -525,7 +544,7 @@ func newConfig(opts ...StartOption) *config {
 			// no config defined address; use defaults
 			addr = defaultDogstatsdAddr()
 		}
-		if agentport := c.agent.StatsdPort; agentport > 0 {
+		if agentport := c.agent.StatsdPort; agentport > 0 && !c.agent.ignore {
 			// the agent reported a non-standard port
 			host, _, err := net.SplitHostPort(addr)
 			if err == nil {
@@ -548,10 +567,12 @@ func newConfig(opts ...StartOption) *config {
 
 	// Check if CI Visibility mode is enabled
 	if internal.BoolEnv(constants.CIVisibilityEnabledEnvironmentVariable, false) {
-		c.ciVisibilityEnabled = true              // Enable CI Visibility mode
-		c.httpClientTimeout = time.Second * 45    // Increase timeout up to 45 seconds (same as other tracers in CIVis mode)
-		c.logStartup = false                      // If we are in CI Visibility mode we don't want to log the startup to stdout to avoid polluting the output
-		c.transport = newCiVisibilityTransport(c) // Replace the default transport with the CI Visibility transport
+		c.ciVisibilityEnabled = true               // Enable CI Visibility mode
+		c.httpClientTimeout = time.Second * 45     // Increase timeout up to 45 seconds (same as other tracers in CIVis mode)
+		c.logStartup = false                       // If we are in CI Visibility mode we don't want to log the startup to stdout to avoid polluting the output
+		ciTransport := newCiVisibilityTransport(c) // Create a default CI Visibility Transport
+		c.transport = ciTransport                  // Replace the default transport with the CI Visibility transport
+		c.ciVisibilityAgentless = ciTransport.agentless
 	}
 
 	return c
@@ -629,6 +650,9 @@ type agentFeatures struct {
 	// featureFlags specifies all the feature flags reported by the trace-agent.
 	featureFlags map[string]struct{}
 
+	// ignore indicates that we should ignore the agent in favor of user set values.
+	// It should only be used during testing.
+	ignore bool
 	// peerTags specifies precursor tags to aggregate stats on when client stats is enabled
 	peerTags []string
 
@@ -660,15 +684,16 @@ func loadAgentFeatures(agentDisabled bool, agentURL *url.URL, httpClient *http.C
 	}
 	defer resp.Body.Close()
 	type agentConfig struct {
-		defaultEnv string `json:"default_env"`
+		DefaultEnv string `json:"default_env"`
 	}
 	type infoResponse struct {
-		Endpoints     []string    `json:"endpoints"`
-		ClientDropP0s bool        `json:"client_drop_p0s"`
-		StatsdPort    int         `json:"statsd_port"`
-		FeatureFlags  []string    `json:"feature_flags"`
-		PeerTags      []string    `json:"peer_tags"`
-		Config        agentConfig `json:"config"`
+		Endpoints     []string `json:"endpoints"`
+		ClientDropP0s bool     `json:"client_drop_p0s"`
+		FeatureFlags  []string `json:"feature_flags"`
+		PeerTags      []string `json:"peer_tags"`
+		Config        struct {
+			StatsdPort int `json:"statsd_port"`
+		} `json:"config"`
 	}
 
 	var info infoResponse
@@ -677,7 +702,7 @@ func loadAgentFeatures(agentDisabled bool, agentURL *url.URL, httpClient *http.C
 		return
 	}
 	features.DropP0s = info.ClientDropP0s
-	features.StatsdPort = info.StatsdPort
+	features.StatsdPort = info.Config.StatsdPort
 	for _, endpoint := range info.Endpoints {
 		switch endpoint {
 		case "/v0.6/stats":
@@ -762,6 +787,25 @@ func withNoopStats() StartOption {
 	}
 }
 
+// WithAppSecEnabled specifies whether AppSec features should be activated
+// or not.
+//
+// By default, AppSec features are enabled if `DD_APPSEC_ENABLED` is set to a
+// truthy value; and may be enabled by remote configuration if
+// `DD_APPSEC_ENABLED` is not set at all.
+//
+// Using this option to explicitly disable appsec also prevents it from being
+// remote activated.
+func WithAppSecEnabled(enabled bool) StartOption {
+	mode := appsecconfig.ForcedOff
+	if enabled {
+		mode = appsecconfig.ForcedOn
+	}
+	return func(c *config) {
+		c.appsecStartOptions = append(c.appsecStartOptions, appsecconfig.WithEnablementMode(mode))
+	}
+}
+
 // WithFeatureFlags specifies a set of feature flags to enable. Please take into account
 // that most, if not all features flags are considered to be experimental and result in
 // unexpected bugs.
@@ -774,6 +818,15 @@ func WithFeatureFlags(feats ...string) StartOption {
 			c.featureFlags[strings.TrimSpace(f)] = struct{}{}
 		}
 		log.Info("FEATURES enabled: %v", feats)
+	}
+}
+
+// withIgnoreAgent allows tests to ignore the agent running in CI so that we can
+// properly test user set StatsdPort.
+// This should only be used during testing.
+func withIgnoreAgent(ignore bool) StartOption {
+	return func(c *config) {
+		c.agent.ignore = ignore
 	}
 }
 
