@@ -75,7 +75,6 @@ func startSpanFromContext(
 		// and remove from the extracted context as they belong to the span being created, not the parent span
 		if linksCtx, ok := sctx.(ddtrace.SpanContextWithLinks); ok && linksCtx.SpanLinks() != nil {
 			opts = append(opts, tracer.WithSpanLinks(linksCtx.SpanLinks()))
-			linksCtx.SetLinks(nil)
 		}
 		opts = append(opts, tracer.ChildOf(sctx))
 	}

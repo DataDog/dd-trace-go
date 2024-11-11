@@ -95,7 +95,6 @@ func (wc *wrappedClient) Do(req *http.Request) (*http.Response, error) {
 		// and remove from the extracted context as they belong to the span being created, not the parent span
 		if linksCtx, ok := spanctx.(ddtrace.SpanContextWithLinks); ok && linksCtx.SpanLinks() != nil {
 			opts = append(opts, tracer.WithSpanLinks(linksCtx.SpanLinks()))
-			linksCtx.SetLinks(nil)
 		}
 		opts = append(opts, tracer.ChildOf(spanctx))
 	}
@@ -150,7 +149,6 @@ func WrapServer(h http.Handler, opts ...Option) http.Handler {
 			// and remove from the extracted context as they belong to the span being created, not the parent span
 			if linksCtx, ok := spanctx.(ddtrace.SpanContextWithLinks); ok && linksCtx.SpanLinks() != nil {
 				spanOpts = append(spanOpts, tracer.WithSpanLinks(linksCtx.SpanLinks()))
-				linksCtx.SetLinks(nil)
 			}
 			spanOpts = append(spanOpts, tracer.ChildOf(spanctx))
 		}

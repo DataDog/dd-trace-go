@@ -122,7 +122,6 @@ func TraceReceiveFunc(s Subscription, opts ...Option) func(ctx context.Context, 
 		// and remove from the extracted context as they belong to the span being created, not the parent span
 		if linksCtx, ok := parentSpanCtx.(ddtrace.SpanContextWithLinks); ok && linksCtx.SpanLinks() != nil {
 			opts = append(opts, tracer.WithSpanLinks(linksCtx.SpanLinks()))
-			linksCtx.SetLinks(nil)
 		}
 		span, ctx := tracer.StartSpanFromContext(ctx, cfg.receiveSpanName, opts...)
 		if msg.DeliveryAttempt != nil {

@@ -81,7 +81,6 @@ func WrapPartitionConsumer(pc sarama.PartitionConsumer, opts ...Option) sarama.P
 				// and remove from the extracted context as they belong to the span being created, not the parent span
 				if linksCtx, ok := spanctx.(ddtrace.SpanContextWithLinks); ok && linksCtx.SpanLinks() != nil {
 					opts = append(opts, tracer.WithSpanLinks(linksCtx.SpanLinks()))
-					linksCtx.SetLinks(nil)
 				}
 				opts = append(opts, tracer.ChildOf(spanctx))
 			}
@@ -311,7 +310,6 @@ func startProducerSpan(cfg *config, version sarama.KafkaVersion, msg *sarama.Pro
 		// and remove from the extracted context as they belong to the span being created, not the parent span
 		if linksCtx, ok := spanctx.(ddtrace.SpanContextWithLinks); ok && linksCtx.SpanLinks() != nil {
 			opts = append(opts, tracer.WithSpanLinks(linksCtx.SpanLinks()))
-			linksCtx.SetLinks(nil)
 		}
 		opts = append(opts, tracer.ChildOf(spanctx))
 	}
