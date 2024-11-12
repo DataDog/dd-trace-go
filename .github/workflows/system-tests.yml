@@ -58,6 +58,7 @@ jobs:
           - APM_TRACING_E2E
           - APM_TRACING_E2E_SINGLE_SPAN
           - APM_TRACING_E2E_OTEL
+          - TRACING_CONFIG_SCENARIOS
         include:
           - weblog-variant: net-http
             scenario: REMOTE_CONFIG_MOCKED_BACKEND_ASM_FEATURES
