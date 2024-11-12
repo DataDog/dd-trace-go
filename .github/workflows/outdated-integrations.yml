@@ -14,10 +14,24 @@ concurrency:
 
 jobs:
   test:
-    name: 'Outdated Integrations'
+    name: Find new major versions for the contrib package dependencies
     runs-on: ubuntu-latest
     env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@v4
+      
       - run: go run latest_major_version.go
+
+      - run: git diff
+
+      # - name: Create Pull Request
+      #   id: pr
+      #   uses: peter-evans/create-pull-request@v6
+      #   with:
+      #     token: ${{ secrets.GITHUB_TOKEN }}
+      #     branch: "upgrade-latest-major-version"
+      #     commit-message: "Update latest majors file"
+      #     base: main
+      #     title: "chore: update latest majors"
+      #     labels: changelog/no-changelog
