@@ -8,6 +8,7 @@ package namingschema
 import (
 	"os"
 	"strings"
+	"sync"
 	"sync/atomic"
 
 	"github.com/DataDog/dd-trace-go/v2/internal"
@@ -23,6 +24,7 @@ const (
 )
 
 var (
+	mu                     sync.Mutex
 	activeNamingSchema     int32
 	removeFakeServiceNames bool
 	testMode               *bool
@@ -52,6 +54,9 @@ func LoadFromEnv() {
 }
 
 func GetConfig() Config {
+	mu.Lock()
+	defer mu.Unlock()
+
 	if testMode == nil {
 		v := internal.BoolEnv("__DD_TRACE_NAMING_SCHEMA_TEST", false)
 		testMode = &v
