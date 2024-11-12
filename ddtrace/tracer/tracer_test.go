@@ -21,6 +21,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 
@@ -2615,4 +2616,45 @@ func TestExecutionTraceSpanTagged(t *testing.T) {
 	assert.Equal(t, tracedSpan.Meta["go_execution_traced"], "yes")
 	assert.Equal(t, partialSpan.Meta["go_execution_traced"], "partial")
 	assert.NotContains(t, untracedSpan.Meta, "go_execution_traced")
+}
+
+func TestSetupSignalListener(t *testing.T) {
+	t.Run("flushes", func(t *testing.T) {
+		logger := new(log.RecordLogger)
+		tr := newUnstartedTracer(WithLogger(logger), WithEnv("test"))
+
+		sigChan := make(chan os.Signal, 1)
+		// A longer timeout is provided here to avoid CI flakiness
+		tr.setupSignalListener(sigChan, 10*time.Second)
+
+		sigChan <- syscall.SIGTERM
+
+		doneFlushing := <-tr.flush
+		doneFlushing <- struct{}{}
+		tr.wg.Wait()
+		assert.Contains(t, logger.Logs()[0], "Successfully flushed remaining data on SIGTERM.")
+	})
+	t.Run("timeout", func(t *testing.T) {
+		logger := new(log.RecordLogger)
+		tr := newUnstartedTracer(WithLogger(logger), WithEnv("test"))
+
+		sigChan := make(chan os.Signal, 1)
+		tr.setupSignalListener(sigChan, 100*time.Millisecond)
+
+		sigChan <- syscall.SIGTERM
+
+		<-tr.flush // Do not report a completed flush
+		tr.wg.Wait()
+		assert.Contains(t, logger.Logs()[0], "Timed out attempting to flush on SIGTERM, some data may have been lost.")
+	})
+	t.Run("tracerStopExits", func(t *testing.T) {
+		logger := new(log.RecordLogger)
+		tr := newUnstartedTracer(WithLogger(logger), WithEnv("test"))
+
+		sigChan := make(chan os.Signal, 1)
+		tr.setupSignalListener(sigChan, 100*time.Millisecond) // short timeout to make test cheaper to run
+
+		// Stop will wait for signal goroutine to exit, test will timeout if exit did not occur
+		tr.Stop()
+	})
 }

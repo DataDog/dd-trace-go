@@ -11,11 +11,13 @@ import (
 	"log/slog"
 	"math"
 	"os"
+	"os/signal"
 	"runtime/pprof"
 	rt "runtime/trace"
 	"strconv"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
@@ -188,6 +190,37 @@ func Start(opts ...StartOption) {
 	appsecopts = append(appsecopts, appsecConfig.WithRCConfig(cfg))
 	appsec.Start(appsecopts...)
 	_ = t.hostname() // Prime the hostname cache
+}
+
+// setupSignalListener starts a listener for SIGTERM to automatically flush tracer data.
+func (t *tracer) setupSignalListener(sigchan <-chan os.Signal, flushTimeout time.Duration) {
+	t.wg.Add(1)
+	go func() {
+		defer t.wg.Done()
+	sigWait:
+		for {
+			select {
+			case <-sigchan:
+				break sigWait
+			case <-t.stop:
+				return // Just return, tracer stopping will independently flush
+			}
+		}
+		done := make(chan struct{})
+		t.flush <- done
+		ctx, cancel := gocontext.WithTimeout(gocontext.Background(), flushTimeout)
+		defer cancel()
+		for {
+			select {
+			case <-ctx.Done():
+				log.Info("Timed out attempting to flush on SIGTERM, some data may have been lost.")
+				return
+			case <-done:
+				log.Info("Successfully flushed remaining data on SIGTERM.")
+				return
+			}
+		}
+	}()
 }
 
 // Stop stops the started tracer. Subsequent calls are valid but become no-op.
@@ -364,6 +397,9 @@ func newTracer(opts ...StartOption) *tracer {
 		t.reportHealthMetrics(statsInterval)
 	}()
 	t.stats.Start()
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGTERM)
+	t.setupSignalListener(sigChan, 5*time.Second) // Default flush timeout of 5 seconds on sigterm
 	return t
 }
 
