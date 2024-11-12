@@ -102,10 +102,10 @@ func main() {
 
 		normalizedMajor := strings.TrimSpace(strings.TrimPrefix(major, "v"))
 		normalizedLatestMajor := strings.TrimSpace(strings.TrimPrefix(latestVersion, "v"))
-		fmt.Printf("Latest version of %s: v%s\n", module, normalizedMajor)
-		fmt.Printf("Latest Github major version of %s: %s\n", module, normalizedLatestMajor)
+		fmt.Printf("Latest DD version of %s: v%s\n", module, normalizedMajor)
+
 		if normalizedMajor != normalizedLatestMajor {
-			fmt.Printf("New latest major version of %s available: %s\n", module, normalizedLatestMajor)
+			fmt.Printf("New latest major version of %s available: v%s\n", module, normalizedLatestMajor)
 		}
 	}
 }
