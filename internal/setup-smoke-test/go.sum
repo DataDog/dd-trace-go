@@ -6,10 +6,10 @@ github.com/DataDog/datadog-agent/pkg/remoteconfig/state v0.57.0 h1:LplNAmMgZvGU7
 github.com/DataDog/datadog-agent/pkg/remoteconfig/state v0.57.0/go.mod h1:4Vo3SJ24uzfKHUHLoFa8t8o+LH+7TCQ7sPcZDtOpSP4=
 github.com/DataDog/datadog-go/v5 v5.3.0 h1:2q2qjFOb3RwAZNU+ez27ZVDwErJv5/VpbBPprz7Z+s8=
 github.com/DataDog/datadog-go/v5 v5.3.0/go.mod h1:XRDJk1pTc00gm+ZDiBKsjh7oOOtJfYfglVCmFb8C2+Q=
-github.com/DataDog/dd-trace-go/contrib/net/http/v2 v2.0.0-beta.9 h1:y1gbt9Roky3Hf8CpJYiRveuE7lyScB20XELvOyBiA7o=
-github.com/DataDog/dd-trace-go/contrib/net/http/v2 v2.0.0-beta.9/go.mod h1:Ogdg/eKP4lIsQeUkgf8D8cbWRPb14f+Ls9mZJHyh3O8=
-github.com/DataDog/dd-trace-go/v2 v2.0.0-beta.9 h1:BszOJkZLmQg7EuQpVU4S8MnU91bpyNxts20Iq5Xbqsg=
-github.com/DataDog/dd-trace-go/v2 v2.0.0-beta.9/go.mod h1:woPHoAOfAIM7kl4GauR+qrWui7teNg44Um0verg2rzQ=
+github.com/DataDog/dd-trace-go/contrib/net/http/v2 v2.0.0-beta.10 h1:8bghse2g8FxPOPx7HD9q/9L99i1LQJrhhLRF+vfhcKw=
+github.com/DataDog/dd-trace-go/contrib/net/http/v2 v2.0.0-beta.10/go.mod h1:Qh8ecAdVawaJejJaKNesShIm2mKw2L/5VmrJdzrhQgU=
+github.com/DataDog/dd-trace-go/v2 v2.0.0-beta.10 h1:s3PDsV9pIfVizw15n3XCtKi4jIRmDMEoXKmT8B5wuT0=
+github.com/DataDog/dd-trace-go/v2 v2.0.0-beta.10/go.mod h1:woPHoAOfAIM7kl4GauR+qrWui7teNg44Um0verg2rzQ=
 github.com/DataDog/go-libddwaf/v3 v3.4.0 h1:NJ2W2vhYaOm1OWr1LJCbdgp7ezG/XLJcQKBmjFwhSuM=
 github.com/DataDog/go-libddwaf/v3 v3.4.0/go.mod h1:n98d9nZ1gzenRSk53wz8l6d34ikxS+hs62A31Fqmyi4=
 github.com/DataDog/go-tuf v1.1.0-0.5.2 h1:4CagiIekonLSfL8GMHRHcHudo1fQnxELS9g4tiAupQ4=
@@ -164,8 +164,8 @@ google.golang.org/grpc v1.57.1/go.mod h1:Sd+9RMTACXwmub0zcNY2c4arhtrbBYD1AUHI/dt
 google.golang.org/protobuf v1.26.0-rc.1/go.mod h1:jlhhOSvTdKEhbULTjvd4ARK9grFBp09yW+WbY/TyQbw=
 google.golang.org/protobuf v1.33.0 h1:uNO2rsAINq/JlFpSdYEKIZ0uKD/R9cpdv0T+yoGwGmI=
 google.golang.org/protobuf v1.33.0/go.mod h1:c6P6GXX6sHbq/GpV6MGZEdwhWPcYBgnhAHhKbcUYpos=
-gopkg.in/DataDog/dd-trace-go.v1 v1.999.0-beta.9 h1:Rlz7RTYBfE2i3T+otRW0KsUtwRF5mj8OMhORpEcHoJE=
-gopkg.in/DataDog/dd-trace-go.v1 v1.999.0-beta.9/go.mod h1:BE5OwBTvDwwmJPuT8nhPNpDr0IPZ5dR3gz5dMLHNvhQ=
+gopkg.in/DataDog/dd-trace-go.v1 v1.999.0-beta.10 h1:dARjiwwB9zLzum8Og0OM8l2TMKeYejIc0/Jz66L0Puo=
+gopkg.in/DataDog/dd-trace-go.v1 v1.999.0-beta.10/go.mod h1:hZ8/tXzcqMX9p82LA1R0r67SNE2rZ1NHKwmDE3Hq1mg=
 gopkg.in/check.v1 v0.0.0-20161208181325-20d25e280405/go.mod h1:Co6ibVJAznAaIkqp8huTwlJQCZ016jof/cbN4VW5Yz0=
 gopkg.in/check.v1 v1.0.0-20201130134442-10cb98267c6c h1:Hei/4ADfdWqJk1ZMxUNpqntNwaWcugrBjAiHlqqRiVk=
 gopkg.in/check.v1 v1.0.0-20201130134442-10cb98267c6c/go.mod h1:JHkPIbrfpd72SG/EVd6muEfDQjcINNoR0C8j2r3qZ4Q=
