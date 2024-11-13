@@ -55,6 +55,7 @@ jobs:
           - APPSEC_REQUEST_BLOCKING
           - APPSEC_API_SECURITY
           - APPSEC_RASP
+          - APPSEC_RUNTIME_ACTIVATION
           - APM_TRACING_E2E
           - APM_TRACING_E2E_SINGLE_SPAN
           - APM_TRACING_E2E_OTEL
