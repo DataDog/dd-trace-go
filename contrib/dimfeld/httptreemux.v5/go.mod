@@ -3,8 +3,8 @@ module github.com/DataDog/dd-trace-go/contrib/dimfeld/httptreemux.v5/v2
 go 1.22.0
 
 require (
-	github.com/DataDog/dd-trace-go/contrib/net/http/v2 v2.0.0-beta.9
-	github.com/DataDog/dd-trace-go/v2 v2.0.0-beta.9
+	github.com/DataDog/dd-trace-go/contrib/net/http/v2 v2.0.0-beta.10
+	github.com/DataDog/dd-trace-go/v2 v2.0.0-beta.10
 	github.com/dimfeld/httptreemux/v5 v5.5.0
 	github.com/stretchr/testify v1.9.0
 )

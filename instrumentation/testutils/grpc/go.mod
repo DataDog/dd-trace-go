@@ -3,7 +3,7 @@ module github.com/DataDog/dd-trace-go/instrumentation/testutils/grpc/v2
 go 1.22.0
 
 require (
-	github.com/DataDog/dd-trace-go/v2 v2.0.0-beta.9
+	github.com/DataDog/dd-trace-go/v2 v2.0.0-beta.10
 	google.golang.org/grpc v1.57.1
 	google.golang.org/protobuf v1.33.0
 )

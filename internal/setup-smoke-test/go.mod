@@ -3,8 +3,8 @@ module github.com/DataDog/dd-trace-go/v2/internal/setup-smoke-test
 go 1.22.0
 
 require (
-	github.com/DataDog/dd-trace-go/contrib/net/http/v2 v2.0.0-beta.9
-	github.com/DataDog/dd-trace-go/v2 v2.0.0-beta.9
+	github.com/DataDog/dd-trace-go/contrib/net/http/v2 v2.0.0-beta.10
+	github.com/DataDog/dd-trace-go/v2 v2.0.0-beta.10
 )
 
 require (

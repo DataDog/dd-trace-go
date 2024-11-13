@@ -3,7 +3,7 @@ module github.com/DataDog/dd-trace-go/contrib/hashicorp/consul/v2
 go 1.22.0
 
 require (
-	github.com/DataDog/dd-trace-go/v2 v2.0.0-beta.9
+	github.com/DataDog/dd-trace-go/v2 v2.0.0-beta.10
 	github.com/hashicorp/consul/api v1.24.0
 	github.com/stretchr/testify v1.9.0
 )
