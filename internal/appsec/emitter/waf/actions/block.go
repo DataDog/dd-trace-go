@@ -47,15 +47,23 @@ func init() {
 	registerActionHandler("block_request", NewBlockAction)
 }
 
+const (
+	BlockingTemplateJSON blockingTemplateType = "json"
+	BlockingTemplateHTML blockingTemplateType = "html"
+	BlockingTemplateAuto blockingTemplateType = "auto"
+)
+
 type (
+	blockingTemplateType string
+
 	// blockActionParams are the dynamic parameters to be provided to a "block_request"
 	// action type upon invocation
 	blockActionParams struct {
 		// GRPCStatusCode is the gRPC status code to be returned. Since 0 is the OK status, the value is nullable to
 		// be able to distinguish between unset and defaulting to Abort (10), or set to OK (0).
-		GRPCStatusCode *int   `mapstructure:"grpc_status_code,omitempty"`
-		StatusCode     int    `mapstructure:"status_code"`
-		Type           string `mapstructure:"type,omitempty"`
+		GRPCStatusCode *int                 `mapstructure:"grpc_status_code,omitempty"`
+		StatusCode     int                  `mapstructure:"status_code"`
+		Type           blockingTemplateType `mapstructure:"type,omitempty"`
 	}
 	// GRPCWrapper is an opaque prototype abstraction for a gRPC handler (to avoid importing grpc)
 	// that returns a status code and an error
@@ -70,6 +78,12 @@ type (
 	BlockHTTP struct {
 		http.Handler
 	}
+
+	HTTPBlockHandlerConfig struct {
+		Template    []byte
+		ContentType string
+		StatusCode  int
+	}
 )
 
 func (a *BlockGRPC) EmitData(op dyngo.Operation) {
@@ -83,32 +97,28 @@ func (a *BlockHTTP) EmitData(op dyngo.Operation) {
 }
 
 func newGRPCBlockRequestAction(status int) *BlockGRPC {
-	return &BlockGRPC{GRPCWrapper: newGRPCBlockHandler(status)}
-}
-
-func newGRPCBlockHandler(status int) GRPCWrapper {
-	return func() (uint32, error) {
+	return &BlockGRPC{GRPCWrapper: func() (uint32, error) {
 		return uint32(status), &events.BlockingSecurityEvent{}
-	}
+	}}
 }
 
 func blockParamsFromMap(params map[string]any) (blockActionParams, error) {
 	grpcCode := 10
-	p := blockActionParams{
-		Type:           "auto",
+	parsedParams := blockActionParams{
+		Type:           BlockingTemplateAuto,
 		StatusCode:     403,
 		GRPCStatusCode: &grpcCode,
 	}
 
-	if err := mapstructure.WeakDecode(params, &p); err != nil {
-		return p, err
+	if err := mapstructure.WeakDecode(params, &parsedParams); err != nil {
+		return parsedParams, err
 	}
 
-	if p.GRPCStatusCode == nil {
-		p.GRPCStatusCode = &grpcCode
+	if parsedParams.GRPCStatusCode == nil {
+		parsedParams.GRPCStatusCode = &grpcCode
 	}
 
-	return p, nil
+	return parsedParams, nil
 }
 
 // NewBlockAction creates an action for the "block_request" action type
@@ -124,38 +134,84 @@ func NewBlockAction(params map[string]any) []Action {
 	}
 }
 
-func newHTTPBlockRequestAction(status int, template string) *BlockHTTP {
-	return &BlockHTTP{Handler: newBlockHandler(status, template)}
+func newHTTPBlockRequestAction(statusCode int, template blockingTemplateType) *BlockHTTP {
+	return &BlockHTTP{Handler: http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		template := template
+		if template == BlockingTemplateAuto {
+			template = blockingTemplateTypeFromHeaders(request.Header)
+		}
+
+		if UnwrapGetStatusCode(writer) != 0 {
+			// The status code has already been set, so we can't change it, do nothing
+			return
+		}
+
+		blocker, found := UnwrapBlocker(writer)
+		if found {
+			// We found our custom response writer, so we can block futur calls to Write and WriteHeader
+			defer blocker()
+		}
+
+		writer.Header().Set("Content-Type", template.ContentType())
+		writer.WriteHeader(statusCode)
+		writer.Write(template.Template())
+	})}
 }
 
-// newBlockHandler creates, initializes and returns a new BlockRequestAction
-func newBlockHandler(status int, template string) http.Handler {
-	htmlHandler := newBlockRequestHandler(status, "text/html", blockedTemplateHTML)
-	jsonHandler := newBlockRequestHandler(status, "application/json", blockedTemplateJSON)
-	switch template {
-	case "json":
-		return jsonHandler
-	case "html":
-		return htmlHandler
-	default:
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			h := jsonHandler
-			hdr := r.Header.Get("Accept")
-			htmlIdx := strings.Index(hdr, "text/html")
-			jsonIdx := strings.Index(hdr, "application/json")
-			// Switch to html handler if text/html comes before application/json in the Accept header
-			if htmlIdx != -1 && (jsonIdx == -1 || htmlIdx < jsonIdx) {
-				h = htmlHandler
-			}
-			h.ServeHTTP(w, r)
-		})
+func blockingTemplateTypeFromHeaders(headers http.Header) blockingTemplateType {
+	hdr := headers.Get("Accept")
+	htmlIdx := strings.Index(hdr, "text/html")
+	jsonIdx := strings.Index(hdr, "application/json")
+	// Switch to html handler if text/html comes before application/json in the Accept header
+	if htmlIdx != -1 && (jsonIdx == -1 || htmlIdx < jsonIdx) {
+		return BlockingTemplateHTML
 	}
+
+	return BlockingTemplateJSON
 }
 
-func newBlockRequestHandler(status int, ct string, payload []byte) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", ct)
-		w.WriteHeader(status)
-		w.Write(payload)
+func (typ blockingTemplateType) Template() []byte {
+	if typ == BlockingTemplateHTML {
+		return blockedTemplateHTML
+	}
+
+	return blockedTemplateJSON
+}
+
+func (typ blockingTemplateType) ContentType() string {
+	if typ == BlockingTemplateHTML {
+		return "text/html"
+	}
+
+	return "application/json"
+}
+
+// UnwrapBlocker unwraps the right struct method from contrib/internal/httptrace.responseWriter
+// and returns the Block() function and if it was found.
+func UnwrapBlocker(writer http.ResponseWriter) (func(), bool) {
+	// this is part of the contrib/internal/httptrace.responseWriter interface
+	wrapped, ok := writer.(interface {
+		Block()
 	})
+	if !ok {
+		// Somehow we can't access the wrapped response writer, so we can't block the response
+		return nil, false
+	}
+
+	return wrapped.Block, true
+}
+
+// UnwrapGetStatusCode unwraps the right struct method from contrib/internal/httptrace.responseWriter
+// and calls it to know if a call to WriteHeader has been made and returns the status code.
+func UnwrapGetStatusCode(writer http.ResponseWriter) int {
+	// this is part of the contrib/internal/httptrace.responseWriter interface
+	wrapped, ok := writer.(interface {
+		Status() int
+	})
+	if !ok {
+		// Somehow we can't access the wrapped response writer, so we can't get the status code
+		return 0
+	}
+
+	return wrapped.Status()
 }

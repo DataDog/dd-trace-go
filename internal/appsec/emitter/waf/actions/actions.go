@@ -25,7 +25,7 @@ var actionHandlers = map[string]actionHandler{}
 
 func registerActionHandler(aType string, handler actionHandler) {
 	if _, ok := actionHandlers[aType]; ok {
-		log.Warn("appsec: action type `%s` already registered", aType)
+		log.Debug("appsec: action type `%s` already registered", aType)
 		return
 	}
 	actionHandlers[aType] = handler
