@@ -84,14 +84,12 @@ func TestStartSpanWithSpanLinks(t *testing.T) {
 	_, _, _, stop := startTestTracer(t)
 	defer stop()
 	spanLink := ddtrace.SpanLink{TraceID: 789, TraceIDHigh: 0, SpanID: 789, Attributes: map[string]string{"reason": "terminated_context", "context_headers": "datadog"}, Flags: 0}
-	var ctx ddtrace.SpanContext
-	ctx = &spanContext{spanID: 789, traceID: traceIDFrom64Bits(789), spanLinks: []ddtrace.SpanLink{spanLink}}
+	ctx := &spanContext{spanID: 789, traceID: traceIDFrom64Bits(789), spanLinks: []ddtrace.SpanLink{spanLink}}
 
 	t.Run("spanContext with spanLinks satisfies SpanContextWithLinks interface", func(t *testing.T) {
-		ctxLink, ok := ctx.(ddtrace.SpanContextWithLinks)
-		assert.True(t, ok)
-		assert.Equal(t, len(ctxLink.SpanLinks()), 1)
-		assert.Equal(t, ctxLink.SpanLinks()[0], spanLink)
+		var _ ddtrace.SpanContextWithLinks = ctx
+		assert.Equal(t, len(ctx.SpanLinks()), 1)
+		assert.Equal(t, ctx.SpanLinks()[0], spanLink)
 	})
 
 	t.Run("create span from spancontext with links", func(t *testing.T) {
