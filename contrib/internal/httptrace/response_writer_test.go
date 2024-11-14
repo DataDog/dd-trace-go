@@ -7,9 +7,12 @@ package httptrace
 
 import (
 	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
 )
 
 func Test_wrapResponseWriter(t *testing.T) {
@@ -32,5 +35,40 @@ func Test_wrapResponseWriter(t *testing.T) {
 		_, ok = w.(http.Pusher)
 		assert.True(t, ok)
 	})
+}
 
+func TestBlock(t *testing.T) {
+	appsec.Start()
+	defer appsec.Stop()
+
+	if !appsec.Enabled() {
+		t.Skip("appsec is not enabled")
+	}
+
+	t.Run("block-before-first-write", func(t *testing.T) {
+		recorder := httptest.NewRecorder()
+		rw := newResponseWriter(recorder)
+		rw.Block()
+		assert.False(t, rw.blocked)
+
+		rw.WriteHeader(http.StatusForbidden)
+
+		rw.Block()
+		assert.True(t, rw.blocked)
+
+		assert.Equal(t, http.StatusForbidden, recorder.Code)
+	})
+
+	t.Run("write-after-block", func(t *testing.T) {
+		recorder := httptest.NewRecorder()
+		rw := newResponseWriter(recorder)
+		rw.WriteHeader(http.StatusForbidden)
+		rw.Write([]byte("foo"))
+		rw.Block()
+		rw.WriteHeader(http.StatusOK)
+		rw.Write([]byte("bar"))
+
+		assert.Equal(t, http.StatusForbidden, recorder.Code)
+		assert.Equal(t, recorder.Body.String(), "foo")
+	})
 }
