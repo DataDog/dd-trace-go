@@ -290,33 +290,44 @@ func (p *chainedPropagator) Extract(carrier interface{}) (ddtrace.SpanContext, e
 				log.Debug("Trace propagator type %T is unknown. Skipping trace extraction", v)
 				continue
 			}
-			if extractedCtx.(ddtrace.SpanContextW3C).TraceID128() == ctx.(ddtrace.SpanContextW3C).TraceID128() {
-				if propagatorType == "tracecontext" {
-					v.(*propagatorW3c).propagateTracestate(ctx.(*spanContext), extractedCtx.(*spanContext)) //Sending tracestate to the ctx to be returned
-					if extractedCtx.SpanID() != ctx.SpanID() {
-						var ddCtx *spanContext
-						if ddp := getDatadogPropagator(p); ddp != nil {
-							if ddSpanCtx, err := ddp.Extract(carrier); err == nil {
-								ddCtx, _ = ddSpanCtx.(*spanContext)
-							}
+
+			// If we can't type assert to SpanContextW3C, we can't propagate tracestate or create span links, so skip this interation
+			extractedW3cCtx, ok1 := extractedCtx.(ddtrace.SpanContextW3C)
+			w3cCtx, ok2 := ctx.(ddtrace.SpanContextW3C)
+			if !ok1 || !ok2 {
+				continue
+			}
+
+			// We only want to override DatadogParentID and propagate tracestate if the current extraction is tracecontext and the ids match
+			if propagatorType == "tracecontext" && extractedW3cCtx.TraceID128() == w3cCtx.TraceID128() {
+				v.(*propagatorW3c).propagateTracestate(ctx.(*spanContext), extractedCtx.(*spanContext)) // Sending tracestate to the ctx to be returned
+				if extractedCtx.SpanID() != ctx.SpanID() {
+					var ddCtx *spanContext
+					if ddp := getDatadogPropagator(p); ddp != nil {
+						if ddSpanCtx, err := ddp.Extract(carrier); err == nil {
+							ddCtx, _ = ddSpanCtx.(*spanContext)
 						}
-						overrideDatadogParentID(ctx.(*spanContext), extractedCtx.(*spanContext), ddCtx)
 					}
+					overrideDatadogParentID(ctx.(*spanContext), extractedCtx.(*spanContext), ddCtx)
 				}
-			} else { //handle non-w3c propagators
-				var flags uint32
-				if tracer := extractedCtx.(*spanContext).trace; tracer != nil {
-					if flags = uint32(*tracer.priority); flags > 0 { // Set the flags based on the sampling priority
-						flags = 1
-					} else {
-						flags = 0
+			}
+
+			if extractedW3cCtx.TraceID128() != w3cCtx.TraceID128() {
+				if extractedContextStruct, ok := extractedCtx.(*spanContext); ok { // We can only populate span link information if we can cast to spanContext struct
+					var flags uint32
+					if extractedTrace := extractedContextStruct.trace; extractedTrace != nil {
+						if flags = uint32(*extractedTrace.priority); flags > 0 { // Set the flags based on the sampling priority
+							flags = 1
+						} else {
+							flags = 0
+						}
 					}
+					link := ddtrace.SpanLink{TraceID: extractedContextStruct.TraceID(), TraceIDHigh: extractedContextStruct.TraceIDUpper(), SpanID: extractedContextStruct.SpanID(), Attributes: map[string]string{"reason": "terminated_context", "context_headers": propagatorType}, Flags: flags}
+					if propagatorType == "tracecontext" {
+						link.Tracestate = extractedContextStruct.trace.propagatingTag(tracestateHeader)
+					}
+					links = append(links, link)
 				}
-				link := ddtrace.SpanLink{TraceID: extractedCtx.(*spanContext).TraceID(), TraceIDHigh: extractedCtx.(*spanContext).TraceIDUpper(), SpanID: extractedCtx.(*spanContext).SpanID(), Attributes: map[string]string{"reason": "terminated_context", "context_headers": propagatorType}, Flags: flags}
-				if propagatorType == "tracecontext" {
-					link.Tracestate = extractedCtx.(*spanContext).trace.propagatingTag(tracestateHeader)
-				}
-				links = append(links, link)
 			}
 		} else { // This is the first extracted trace context
 			ctx = extractedCtx
