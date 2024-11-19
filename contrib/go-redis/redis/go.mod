@@ -3,7 +3,7 @@ module github.com/DataDog/dd-trace-go/contrib/go-redis/redis/v2
 go 1.22.0
 
 require (
-	github.com/DataDog/dd-trace-go/v2 v2.0.0-beta.10
+	github.com/DataDog/dd-trace-go/v2 v2.0.0-beta.11
 	github.com/go-redis/redis v6.15.9+incompatible
 	github.com/stretchr/testify v1.9.0
 )

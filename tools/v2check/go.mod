@@ -3,7 +3,7 @@ module github.com/DataDog/dd-trace-go/v2/tools/v2check
 go 1.22.0
 
 require (
-	github.com/DataDog/dd-trace-go/v2 v2.0.0-beta.10
+	github.com/DataDog/dd-trace-go/v2 v2.0.0-beta.11
 	golang.org/x/tools v0.24.0
 )
 
