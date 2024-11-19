@@ -6,10 +6,10 @@ github.com/DataDog/datadog-agent/pkg/remoteconfig/state v0.57.1 h1:iP8pFB9IhRA1Z
 github.com/DataDog/datadog-agent/pkg/remoteconfig/state v0.57.1/go.mod h1:4Vo3SJ24uzfKHUHLoFa8t8o+LH+7TCQ7sPcZDtOpSP4=
 github.com/DataDog/datadog-go/v5 v5.5.0 h1:G5KHeB8pWBNXT4Jtw0zAkhdxEAWSpWH00geHI6LDrKU=
 github.com/DataDog/datadog-go/v5 v5.5.0/go.mod h1:K9kcYBlxkcPP8tvvjZZKs/m1edNAUFzBbdpTUKfCsuw=
-github.com/DataDog/dd-trace-go/contrib/database/sql/v2 v2.0.0-beta.10 h1:Szvm2gUWESmoWhog7lt4hvKi2beyXmk62vHNDpI0lY4=
-github.com/DataDog/dd-trace-go/contrib/database/sql/v2 v2.0.0-beta.10/go.mod h1:wMVCU9lPZpKfu6KtBbJMmTU7ZNNjcI7tkUfZMhXrFQc=
-github.com/DataDog/dd-trace-go/v2 v2.0.0-beta.10 h1:s3PDsV9pIfVizw15n3XCtKi4jIRmDMEoXKmT8B5wuT0=
-github.com/DataDog/dd-trace-go/v2 v2.0.0-beta.10/go.mod h1:woPHoAOfAIM7kl4GauR+qrWui7teNg44Um0verg2rzQ=
+github.com/DataDog/dd-trace-go/contrib/database/sql/v2 v2.0.0-beta.11 h1:BnXRkKya2Po+F7rCmTYKbZfdJPjXVGHCDwfDUxAtqPU=
+github.com/DataDog/dd-trace-go/contrib/database/sql/v2 v2.0.0-beta.11/go.mod h1:Z8LjDQLoNGr4D2RNgSnriRSmjl392YjaXojlrQRDRKA=
+github.com/DataDog/dd-trace-go/v2 v2.0.0-beta.11 h1:6vwU//TjBIghQKMgIP9UyIRhN/LWS1y8tYzvRnu8JZw=
+github.com/DataDog/dd-trace-go/v2 v2.0.0-beta.11/go.mod h1:woPHoAOfAIM7kl4GauR+qrWui7teNg44Um0verg2rzQ=
 github.com/DataDog/go-libddwaf/v3 v3.4.0 h1:NJ2W2vhYaOm1OWr1LJCbdgp7ezG/XLJcQKBmjFwhSuM=
 github.com/DataDog/go-libddwaf/v3 v3.4.0/go.mod h1:n98d9nZ1gzenRSk53wz8l6d34ikxS+hs62A31Fqmyi4=
 github.com/DataDog/go-sqllexer v0.0.16 h1:RoSUMS6MECyB3gTUIdydzXwK5NhEhv6GMJkS7ptsgRA=

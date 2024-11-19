@@ -2,15 +2,15 @@ module github.com/DataDog/dd-trace-go/internal/setup-smoke-test
 
 go 1.22.0
 
-require gopkg.in/DataDog/dd-trace-go.v1 v1.999.0-beta.10
+require gopkg.in/DataDog/dd-trace-go.v1 v1.999.0-beta.11
 
 require (
 	github.com/DataDog/appsec-internal-go v1.8.0 // indirect
 	github.com/DataDog/datadog-agent/pkg/obfuscate v0.48.0 // indirect
 	github.com/DataDog/datadog-agent/pkg/remoteconfig/state v0.57.0 // indirect
 	github.com/DataDog/datadog-go/v5 v5.3.0 // indirect
-	github.com/DataDog/dd-trace-go/contrib/net/http/v2 v2.0.0-beta.10 // indirect
-	github.com/DataDog/dd-trace-go/v2 v2.0.0-beta.10 // indirect
+	github.com/DataDog/dd-trace-go/contrib/net/http/v2 v2.0.0-beta.11 // indirect
+	github.com/DataDog/dd-trace-go/v2 v2.0.0-beta.11 // indirect
 	github.com/DataDog/go-libddwaf/v3 v3.4.0 // indirect
 	github.com/DataDog/go-tuf v1.1.0-0.5.2 // indirect
 	github.com/DataDog/gostackparse v0.7.0 // indirect

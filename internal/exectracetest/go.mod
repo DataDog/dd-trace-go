@@ -6,7 +6,7 @@ require (
 	github.com/google/pprof v0.0.0-20240409012703-83162a5b38cd
 	github.com/mattn/go-sqlite3 v1.14.18
 	golang.org/x/exp v0.0.0-20240506185415-9bf2ced13842
-	gopkg.in/DataDog/dd-trace-go.v1 v1.999.0-beta.10
+	gopkg.in/DataDog/dd-trace-go.v1 v1.999.0-beta.11
 )
 
 require (
@@ -14,8 +14,8 @@ require (
 	github.com/DataDog/datadog-agent/pkg/obfuscate v0.57.1 // indirect
 	github.com/DataDog/datadog-agent/pkg/remoteconfig/state v0.57.1 // indirect
 	github.com/DataDog/datadog-go/v5 v5.5.0 // indirect
-	github.com/DataDog/dd-trace-go/contrib/database/sql/v2 v2.0.0-beta.10 // indirect
-	github.com/DataDog/dd-trace-go/v2 v2.0.0-beta.10 // indirect
+	github.com/DataDog/dd-trace-go/contrib/database/sql/v2 v2.0.0-beta.11 // indirect
+	github.com/DataDog/dd-trace-go/v2 v2.0.0-beta.11 // indirect
 	github.com/DataDog/go-libddwaf/v3 v3.4.0 // indirect
 	github.com/DataDog/go-sqllexer v0.0.16 // indirect
 	github.com/DataDog/go-tuf v1.1.0-0.5.2 // indirect
