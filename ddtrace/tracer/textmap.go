@@ -311,8 +311,9 @@ func (p *chainedPropagator) Extract(carrier interface{}) (ddtrace.SpanContext, e
 					overrideDatadogParentID(ctx.(*spanContext), extractedCtx.(*spanContext), ddCtx)
 				}
 			}
-
+			fmt.Println("chceking ids: ", extractedW3cCtx.TraceID128(), "; ", w3cCtx.TraceID128())
 			if extractedW3cCtx.TraceID128() != w3cCtx.TraceID128() {
+				fmt.Println("about to create a span link")
 				if extractedContextStruct, ok := extractedCtx.(*spanContext); ok { // We can only populate span link information if we can cast to spanContext struct
 					var flags uint32
 					if extractedTrace := extractedContextStruct.trace; extractedTrace != nil {
@@ -326,6 +327,7 @@ func (p *chainedPropagator) Extract(carrier interface{}) (ddtrace.SpanContext, e
 					if propagatorType == "tracecontext" {
 						link.Tracestate = extractedContextStruct.trace.propagatingTag(tracestateHeader)
 					}
+					fmt.Println("Created link: ", link)
 					links = append(links, link)
 				}
 			}
