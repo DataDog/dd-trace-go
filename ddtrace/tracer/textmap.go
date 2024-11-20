@@ -291,7 +291,7 @@ func (p *chainedPropagator) Extract(carrier interface{}) (ddtrace.SpanContext, e
 				continue
 			}
 
-			// If we can't type assert to SpanContextW3C, we can't propagate tracestate or create span links, so skip this interation
+			// If we can't type assert to SpanContextW3C, we can't propagate tracestate or create span links, so skip this iteration
 			extractedW3cCtx, ok1 := extractedCtx.(ddtrace.SpanContextW3C)
 			w3cCtx, ok2 := ctx.(ddtrace.SpanContextW3C)
 			if !ok1 || !ok2 {
