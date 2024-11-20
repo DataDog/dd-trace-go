@@ -1246,8 +1246,8 @@ func SpanType(name string) StartSpanOption {
 func WithSpanLinks(links []ddtrace.SpanLink) StartSpanOption {
 	fmt.Println("Why are there no links pt 1?: ")
 	return func(cfg *ddtrace.StartSpanConfig) {
-		cfg.SpanLinks = append(cfg.SpanLinks, links...)
 		fmt.Println("Why are there no links?: ", cfg.SpanLinks)
+		cfg.SpanLinks = append(cfg.SpanLinks, links...)
 	}
 }
 
