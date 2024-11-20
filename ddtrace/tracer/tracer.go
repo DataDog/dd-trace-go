@@ -499,7 +499,6 @@ func (t *tracer) pushChunk(trace *chunk) {
 
 // StartSpan creates, starts, and returns a new Span with the given `operationName`.
 func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOption) ddtrace.Span {
-	fmt.Println("options: ", options)
 	if !t.config.enabled.current {
 		return internal.NoopSpan{}
 	}
@@ -507,6 +506,8 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 	for _, fn := range options {
 		fn(&opts)
 	}
+	fmt.Println("options: ", opts)
+	fmt.Println("options.spanLinks: ", opts.SpanLinks)
 	var startTime int64
 	if opts.StartTime.IsZero() {
 		startTime = now()
