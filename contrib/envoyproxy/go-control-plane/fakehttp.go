@@ -3,7 +3,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2024 Datadog, Inc.
 
-package envoy
+package go_control_plane
 
 import (
 	"context"
@@ -32,7 +32,7 @@ func checkPseudoRequestHeaders(headers map[string]string) error {
 	return nil
 }
 
-// checkPseudoResponseHeaders Verify the required HTTP2 headers are present
+// checkPseudoResponseHeaders verifies the required HTTP2 headers are present
 // Some mandatory headers need to be set. It can happen when it wasn't a real HTTP2 request sent by Envoy,
 func checkPseudoResponseHeaders(headers map[string]string) error {
 	if _, ok := headers[":status"]; !ok {
@@ -55,12 +55,12 @@ func getRemoteAddr(md metadata.MD) string {
 	return xfwd[length-1]
 }
 
-// partitionPeusdoHeaders Separate normal headers of the initial request made by the client and the pseudo headers of HTTP/2
+// splitPseudoHeaders splits normal headers of the initial request made by the client and the pseudo headers of HTTP/2
 // - Format the headers to be used by the tracer as a map[string][]string
 // - Set headers keys to be canonical
-func partitionPeusdoHeaders(receivedHeaders []*corev3.HeaderValue) (map[string][]string, map[string]string) {
-	headers := make(map[string][]string, len(receivedHeaders)-4)
-	pseudoHeaders := make(map[string]string, 4)
+func splitPseudoHeaders(receivedHeaders []*corev3.HeaderValue) (headers map[string][]string, pseudoHeaders map[string]string) {
+	headers = make(map[string][]string, len(receivedHeaders)-4)
+	pseudoHeaders = make(map[string]string, 4)
 	for _, v := range receivedHeaders {
 		key := v.GetKey()
 		if key == "" {
@@ -76,8 +76,8 @@ func partitionPeusdoHeaders(receivedHeaders []*corev3.HeaderValue) (map[string][
 	return headers, pseudoHeaders
 }
 
-func NewFakeResponseWriterFromExtProc(w http.ResponseWriter, res *extproc.ProcessingRequest_ResponseHeaders) error {
-	headers, pseudoHeaders := partitionPeusdoHeaders(res.ResponseHeaders.GetHeaders().GetHeaders())
+func createFakeResponseWriter(w http.ResponseWriter, res *extproc.ProcessingRequest_ResponseHeaders) error {
+	headers, pseudoHeaders := splitPseudoHeaders(res.ResponseHeaders.GetHeaders().GetHeaders())
 
 	if err := checkPseudoResponseHeaders(pseudoHeaders); err != nil {
 		return err
@@ -96,9 +96,9 @@ func NewFakeResponseWriterFromExtProc(w http.ResponseWriter, res *extproc.Proces
 	return nil
 }
 
-// NewRequestFromExtProc creates a new http.Request from an ext_proc RequestHeaders message
-func NewRequestFromExtProc(ctx context.Context, req *extproc.ProcessingRequest_RequestHeaders) (*http.Request, error) {
-	headers, pseudoHeaders := partitionPeusdoHeaders(req.RequestHeaders.GetHeaders().GetHeaders())
+// newRequest creates a new http.Request from an ext_proc RequestHeaders message
+func newRequest(ctx context.Context, req *extproc.ProcessingRequest_RequestHeaders) (*http.Request, error) {
+	headers, pseudoHeaders := splitPseudoHeaders(req.RequestHeaders.GetHeaders().GetHeaders())
 	if err := checkPseudoRequestHeaders(pseudoHeaders); err != nil {
 		return nil, err
 	}
@@ -137,15 +137,15 @@ func NewRequestFromExtProc(ctx context.Context, req *extproc.ProcessingRequest_R
 	}).WithContext(ctx), nil
 }
 
-type FakeResponseWriter struct {
+type fakeResponseWriter struct {
 	mu      sync.Mutex
 	status  int
 	body    []byte
 	headers http.Header
 }
 
-// Reset resets the FakeResponseWriter to its initial state
-func (w *FakeResponseWriter) Reset() {
+// Reset resets the fakeResponseWriter to its initial state
+func (w *fakeResponseWriter) Reset() {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	w.status = 0
@@ -154,36 +154,36 @@ func (w *FakeResponseWriter) Reset() {
 }
 
 // Status is not in the [http.ResponseWriter] interface, but it is cast into it by the tracing code
-func (w *FakeResponseWriter) Status() int {
+func (w *fakeResponseWriter) Status() int {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	return w.status
 }
 
-func (w *FakeResponseWriter) WriteHeader(status int) {
+func (w *fakeResponseWriter) WriteHeader(status int) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	w.status = status
 }
 
-func (w *FakeResponseWriter) Header() http.Header {
+func (w *fakeResponseWriter) Header() http.Header {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	return w.headers
 }
 
-func (w *FakeResponseWriter) Write(b []byte) (int, error) {
+func (w *fakeResponseWriter) Write(b []byte) (int, error) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	w.body = append(w.body, b...)
 	return len(b), nil
 }
 
-var _ http.ResponseWriter = &FakeResponseWriter{}
+var _ http.ResponseWriter = &fakeResponseWriter{}
 
-// NewFakeResponseWriter creates a new FakeResponseWriter that can be used to store the response a [http.Handler] made
-func NewFakeResponseWriter() *FakeResponseWriter {
-	return &FakeResponseWriter{
+// newFakeResponseWriter creates a new fakeResponseWriter that can be used to store the response a [http.Handler] made
+func newFakeResponseWriter() *fakeResponseWriter {
+	return &fakeResponseWriter{
 		headers: make(http.Header),
 	}
 }
