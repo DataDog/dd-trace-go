@@ -272,7 +272,6 @@ func (p *chainedPropagator) Inject(spanCtx ddtrace.SpanContext, carrier interfac
 // be relayed in the returned SpanContext with a SpanLink.
 func (p *chainedPropagator) Extract(carrier interface{}) (ddtrace.SpanContext, error) {
 	var ctx ddtrace.SpanContext
-	var ddCtx *spanContext
 	var links []ddtrace.SpanLink
 	for _, v := range p.extractors {
 		firstExtract := (ctx == nil) // ctx stores the most recently extracted ctx across iterations; if it's nil, no extractor has run yet
@@ -283,9 +282,6 @@ func (p *chainedPropagator) Extract(carrier interface{}) (ddtrace.SpanContext, e
 			}
 			if p.onlyExtractFirst { // Return early if only performing one extraction
 				return extractedCtx.(*spanContext), nil
-			}
-			if _, ok := v.(*propagator); ok {
-				ddCtx, _ = extractedCtx.(*spanContext)
 			}
 			ctx = extractedCtx
 		} else { // A local trace context has already been extracted
@@ -300,7 +296,14 @@ func (p *chainedPropagator) Extract(carrier interface{}) (ddtrace.SpanContext, e
 					pW3C.propagateTracestate(ctx2, extractedCtx2)
 					// If trace IDs match but span IDs do not, use extractedCtxW3c span ID for parenting
 					if extractedCtx2.SpanID() != ctx2.SpanID() {
-						overrideDatadogParentID(ctx2, extractedCtx2, ddCtx)
+						var ddCtx *spanContext
+						// Grab the datadog-propagated spancontext again
+						if ddp := getDatadogPropagator(p); ddp != nil {
+							if ddSpanCtx, err := ddp.Extract(carrier); err == nil {
+								ddCtx, _ = ddSpanCtx.(*spanContext)
+							}
+						}
+						overrideDatadogParentID(ctx.(*spanContext), extractedCtx.(*spanContext), ddCtx)
 					}
 				}
 			} else { // Trace IDs do not match - create span links
@@ -325,7 +328,8 @@ func (p *chainedPropagator) Extract(carrier interface{}) (ddtrace.SpanContext, e
 		spCtx.spanLinks = links
 	}
 	log.Debug("Extracted span context: %#v", ctx)
-	return ctx.(*spanContext), nil
+	return ctx, nil
+	// return ctx.(*spanContext), nil
 }
 
 // propagateTracestate will add the tracestate propagating tag to the given
