@@ -9,7 +9,6 @@ import (
 	v2 "github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 )
 
 // Start starts the tracer with the given set of options. It will stop and replace
@@ -55,14 +54,8 @@ func Inject(ctx ddtrace.SpanContext, carrier interface{}) error {
 // the user id can be propagated across traces using the WithPropagation() option.
 // See https://docs.datadoghq.com/security_platform/application_security/setup_and_configure/?tab=set_user#add-user-information-to-traces
 func SetUser(s Span, id string, opts ...UserMonitoringOption) {
-	if sp, ok := s.(internal.SpanV2Adapter); ok {
-		v2.SetUser(sp.Span, id, opts...)
-		return
-	}
-	if sp, ok := s.(mocktracer.MockspanV2Adapter); ok {
-		v2.SetUser(sp.Span.Unwrap(), id, opts...)
-	}
-
+	sp := s.(internal.SpanV2Adapter).Span
+	v2.SetUser(sp, id, opts...)
 }
 
 // Flush flushes any buffered traces. Flush is in effect only if a tracer
