@@ -8,6 +8,7 @@ package tracer
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 	"regexp"
 	"strings"
 	"sync"
@@ -298,11 +299,24 @@ func initalizeDynamicInstrumentationRemoteConfigState() {
 			time.Sleep(time.Second * 5)
 			diRCState.Lock()
 			for _, v := range diRCState.state {
+				accessStringsToMitigatePageFault(v.runtimeID, v.configPath, v.configContent)
 				passProbeConfiguration(v.runtimeID, v.configPath, v.configContent)
 			}
 			diRCState.Unlock()
 		}
 	}()
+}
+
+func accessStringsToMitigatePageFault(strs ...string) {
+	for i := range strs {
+		pageSize := os.Getpagesize()
+		for offset := 0; offset < len(strs[i]); offset += pageSize {
+			_ = strs[i][offset]
+		}
+		if len(strs[i]) > 0 {
+			_ = strs[i][len(strs[i])-1]
+		}
+	}
 }
 
 // startRemoteConfig starts the remote config client.
