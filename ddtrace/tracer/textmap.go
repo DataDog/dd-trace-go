@@ -6,7 +6,6 @@
 package tracer
 
 import (
-	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -263,89 +262,74 @@ func (p *chainedPropagator) Inject(spanCtx ddtrace.SpanContext, carrier interfac
 	return nil
 }
 
-// Extract implements Propagator. This method will attempt to extract the context
+// Extract implements Propagator. This method will attempt to extract a span context
 // based on the precedence order of the propagators. Generally, the first valid
 // trace context that could be extracted will be returned. However, the W3C tracestate
 // header value will always be extracted and stored in the local trace context even if
-// a previous propagator has already succeeded so long as the trace-ids match.
+// a previous propagator has succeeded so long as the trace-ids match.
 // Furthermore, if we have already successfully extracted a trace context and a
 // subsequent trace context has conflicting trace information, such information will
 // be relayed in the returned SpanContext with a SpanLink.
 func (p *chainedPropagator) Extract(carrier interface{}) (ddtrace.SpanContext, error) {
-	var ctx ddtrace.SpanContext // First valid trace context will be stored here
+	var ctx ddtrace.SpanContext
 	var links []ddtrace.SpanLink
 	for _, v := range p.extractors {
+		firstExtract := (ctx == nil) // ctx stores the most recently extracted ctx across iterations; if it's nil, no extractor has run yet
 		extractedCtx, err := v.Extract(carrier)
-		// Handling extraction errors. If it is the first extraction, distributed tracing breaks and return error. Else, ignore
-		if err != nil {
-			if ctx == nil && err != ErrSpanContextNotFound {
+		if firstExtract {
+			if err != nil && err != ErrSpanContextNotFound { // We only care if the first extraction returns an error because this breaks distributed tracing
 				return nil, err
-			} else {
-				continue
 			}
-		}
-		if ctx != nil { // A local trace context has already been extracted
-			propagatorType, err := getPropagatorType(v)
-			if err != nil { // Propagator is not one of the known, supported types. Ignore this extraction
-				log.Debug("Trace propagator type %T is unknown. Skipping trace extraction", v)
-				continue
+			if p.onlyExtractFirst { // Return early if only performing one extraction
+				return extractedCtx.(*spanContext), nil
 			}
-
-			// If we can't type assert to SpanContextW3C, we can't propagate tracestate or create span links, so skip this iteration
-			extractedW3cCtx, ok1 := extractedCtx.(ddtrace.SpanContextW3C)
-			w3cCtx, ok2 := ctx.(ddtrace.SpanContextW3C)
-			if !ok1 || !ok2 {
-				continue
-			}
-
-			// We only want to override DatadogParentID and propagate tracestate if the current extraction is tracecontext and the ids match
-			if propagatorType == "tracecontext" && extractedW3cCtx.TraceID128() == w3cCtx.TraceID128() {
-				v.(*propagatorW3c).propagateTracestate(ctx.(*spanContext), extractedCtx.(*spanContext)) // Sending tracestate to the ctx to be returned
-				if extractedCtx.SpanID() != ctx.SpanID() {
-					var ddCtx *spanContext
-					if ddp := getDatadogPropagator(p); ddp != nil {
-						if ddSpanCtx, err := ddp.Extract(carrier); err == nil {
-							ddCtx, _ = ddSpanCtx.(*spanContext)
-						}
-					}
-					overrideDatadogParentID(ctx.(*spanContext), extractedCtx.(*spanContext), ddCtx)
-				}
-			}
-
-			if extractedW3cCtx.TraceID128() != w3cCtx.TraceID128() {
-				if extractedContextStruct, ok := extractedCtx.(*spanContext); ok { // We can only populate span link information if we can cast to spanContext struct
-					var flags uint32
-					if extractedTrace := extractedContextStruct.trace; extractedTrace != nil {
-						if flags = uint32(*extractedTrace.priority); flags > 0 { // Set the flags based on the sampling priority
-							flags = 1
-						} else {
-							flags = 0
-						}
-					}
-					link := ddtrace.SpanLink{TraceID: extractedContextStruct.TraceID(), TraceIDHigh: extractedContextStruct.TraceIDUpper(), SpanID: extractedContextStruct.SpanID(), Attributes: map[string]string{"reason": "terminated_context", "context_headers": propagatorType}, Flags: flags}
-					if propagatorType == "tracecontext" {
-						link.Tracestate = extractedContextStruct.trace.propagatingTag(tracestateHeader)
-					}
-					links = append(links, link)
-				}
-			}
-		} else { // This is the first extracted trace context
 			ctx = extractedCtx
-			if ctx != nil && p.onlyExtractFirst {
-				// Return early if the customer configured that only the first successful
-				// extraction should occur.
-				return ctx, nil
+		} else { // A local trace context has already been extracted
+			extractedCtxW3c, ok1 := extractedCtx.(ddtrace.SpanContextW3C)
+			ctxW3c, ok2 := ctx.(ddtrace.SpanContextW3C)
+			// Must cast to SpanContextW3C to propgate tracestate and create span links, when necessary
+			if ok1 && ok2 {
+				if extractedCtxW3c.TraceID128() == ctxW3c.TraceID128() {
+					if pW3C, ok := v.(*propagatorW3c); ok {
+						pW3C.propagateTracestate(ctx.(*spanContext), extractedCtx.(*spanContext))
+						// If trace IDs match but span IDs do not, use extractedCtxW3c span ID for parenting
+						if extractedCtxW3c.SpanID() != ctxW3c.SpanID() {
+							var ddCtx *spanContext
+							// Grab the datadog-propagated spancontext again
+							if ddp := getDatadogPropagator(p); ddp != nil {
+								if ddSpanCtx, err := ddp.Extract(carrier); err == nil {
+									ddCtx, _ = ddSpanCtx.(*spanContext)
+								}
+							}
+							overrideDatadogParentID(ctx.(*spanContext), extractedCtx.(*spanContext), ddCtx)
+						}
+					}
+				} else { // Trace IDs do not match - create span links
+					if spCtx, ok := extractedCtx.(*spanContext); ok { // spanContext type contains all the methods we need to create valuable span links
+						link := ddtrace.SpanLink{TraceID: spCtx.TraceID(), SpanID: spCtx.SpanID(), TraceIDHigh: spCtx.TraceIDUpper(), Attributes: map[string]string{"reason": "terminated_context", "context_headers": "tracecontext"}}
+						if trace := spCtx.trace; trace != nil {
+							if flags := uint32(*trace.priority); flags > 0 { // Set the flags based on the sampling priority
+								link.Flags = 1
+							} else {
+								link.Flags = 0
+							}
+							link.Tracestate = spCtx.trace.propagatingTag(tracestateHeader)
+						}
+						links = append(links, link)
+					}
+				}
 			}
 		}
 	}
-	if len(links) > 0 {
-		ctx.(*spanContext).spanLinks = links
-	}
+	// 0 successful extractions
 	if ctx == nil {
 		return nil, ErrSpanContextNotFound
 	}
+	if spCtx, ok := ctx.(*spanContext); ok && len(links) > 0 {
+		spCtx.spanLinks = links
+	}
 	log.Debug("Extracted span context: %#v", ctx)
-	return ctx, nil
+	return ctx.(*spanContext), nil
 }
 
 // propagateTracestate will add the tracestate propagating tag to the given
@@ -529,24 +513,6 @@ func validateTID(tid string) error {
 	return nil
 }
 
-// getPropagatorType provides information about the underlying type of Propagator p. If
-// it is a supported type, a string representing the type and nil is returned. If the
-// type is unsupported, an error is returned.
-func getPropagatorType(p Propagator) (string, error) {
-	switch p.(type) {
-	case *propagatorW3c:
-		return "tracecontext", nil
-	case *propagator:
-		return "datadog", nil
-	case *propagatorB3:
-		return "b3multi", nil
-	case *propagatorB3SingleHeader:
-		return "b3", nil
-	default:
-		return "", errors.New("unknown propagator type")
-	}
-}
-
 // getDatadogPropagator returns the Datadog Propagator
 func getDatadogPropagator(cp *chainedPropagator) *propagator {
 	for _, e := range cp.extractors {
@@ -560,7 +526,11 @@ func getDatadogPropagator(cp *chainedPropagator) *propagator {
 
 // overrideDatadogParentID overrides the span ID of a context with the ID extracted from tracecontext headers
 // if the reparenting ID is not set on the context, the span ID from datadog headers is used.
+// spanContexts are passed by reference to avoid copying lock value in spanContext type
 func overrideDatadogParentID(ctx, w3cCtx, ddCtx *spanContext) {
+	if ctx == nil || w3cCtx == nil || ddCtx == nil {
+		return
+	}
 	ctx.spanID = w3cCtx.spanID
 	if w3cCtx.reparentID != "" {
 		ctx.reparentID = w3cCtx.reparentID
