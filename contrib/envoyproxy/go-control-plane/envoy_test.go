@@ -35,7 +35,7 @@ func TestAppSec(t *testing.T) {
 	}
 
 	setup := func() (envoyextproc.ExternalProcessorClient, mocktracer.Tracer, func()) {
-		rig, err := newEnvoyAppsecRig(false)
+		rig, err := newEnvoyAppsecRig(t, false)
 		require.NoError(t, err)
 
 		mt := mocktracer.Start()
@@ -76,7 +76,7 @@ func TestAppSec(t *testing.T) {
 		err = stream.Send(&envoyextproc.ProcessingRequest{
 			Request: &envoyextproc.ProcessingRequest_RequestHeaders{
 				RequestHeaders: &envoyextproc.HttpHeaders{
-					Headers: makeRequestHeaders(map[string]string{"User-Agent": "dd-test-scanner-log-block"}, "GET", "/"),
+					Headers: makeRequestHeaders(t, map[string]string{"User-Agent": "dd-test-scanner-log-block"}, "GET", "/"),
 				},
 			},
 		})
@@ -113,7 +113,7 @@ func TestBlockingWithUserRulesFile(t *testing.T) {
 	}
 
 	setup := func() (envoyextproc.ExternalProcessorClient, mocktracer.Tracer, func()) {
-		rig, err := newEnvoyAppsecRig(false)
+		rig, err := newEnvoyAppsecRig(t, false)
 		require.NoError(t, err)
 
 		mt := mocktracer.Start()
@@ -169,7 +169,7 @@ func TestBlockingWithUserRulesFile(t *testing.T) {
 		err = stream.Send(&envoyextproc.ProcessingRequest{
 			Request: &envoyextproc.ProcessingRequest_RequestHeaders{
 				RequestHeaders: &envoyextproc.HttpHeaders{
-					Headers: makeRequestHeaders(map[string]string{"User-Agent": "Mistake Not..."}, "GET", "/hello?match=match-request-query"),
+					Headers: makeRequestHeaders(t, map[string]string{"User-Agent": "Mistake Not..."}, "GET", "/hello?match=match-request-query"),
 				},
 			},
 		})
@@ -207,7 +207,7 @@ func TestBlockingWithUserRulesFile(t *testing.T) {
 		err = stream.Send(&envoyextproc.ProcessingRequest{
 			Request: &envoyextproc.ProcessingRequest_RequestHeaders{
 				RequestHeaders: &envoyextproc.HttpHeaders{
-					Headers: makeRequestHeaders(map[string]string{"Cookie": "foo=jdfoSDGFkivRG_234"}, "OPTIONS", "/"),
+					Headers: makeRequestHeaders(t, map[string]string{"Cookie": "foo=jdfoSDGFkivRG_234"}, "OPTIONS", "/"),
 				},
 			},
 		})
@@ -237,7 +237,7 @@ func TestBlockingWithUserRulesFile(t *testing.T) {
 
 func TestGeneratedSpan(t *testing.T) {
 	setup := func() (envoyextproc.ExternalProcessorClient, mocktracer.Tracer, func()) {
-		rig, err := newEnvoyAppsecRig(false)
+		rig, err := newEnvoyAppsecRig(t, false)
 		require.NoError(t, err)
 
 		mt := mocktracer.Start()
@@ -286,7 +286,7 @@ func TestXForwardedForHeaderClientIp(t *testing.T) {
 	}
 
 	setup := func() (envoyextproc.ExternalProcessorClient, mocktracer.Tracer, func()) {
-		rig, err := newEnvoyAppsecRig(false)
+		rig, err := newEnvoyAppsecRig(t, false)
 		require.NoError(t, err)
 
 		mt := mocktracer.Start()
@@ -336,7 +336,7 @@ func TestXForwardedForHeaderClientIp(t *testing.T) {
 		err = stream.Send(&envoyextproc.ProcessingRequest{
 			Request: &envoyextproc.ProcessingRequest_RequestHeaders{
 				RequestHeaders: &envoyextproc.HttpHeaders{
-					Headers: makeRequestHeaders(map[string]string{"User-Agent": "Mistake not...", "X-Forwarded-For": "1.2.3.4"}, "GET", "/"),
+					Headers: makeRequestHeaders(t, map[string]string{"User-Agent": "Mistake not...", "X-Forwarded-For": "1.2.3.4"}, "GET", "/"),
 				},
 			},
 		})
@@ -367,7 +367,9 @@ func TestXForwardedForHeaderClientIp(t *testing.T) {
 	})
 }
 
-func newEnvoyAppsecRig(traceClient bool, interceptorOpts ...ddgrpc.Option) (*envoyAppsecRig, error) {
+func newEnvoyAppsecRig(t *testing.T, traceClient bool, interceptorOpts ...ddgrpc.Option) (*envoyAppsecRig, error) {
+	t.Helper()
+
 	interceptorOpts = append([]ddgrpc.InterceptorOption{ddgrpc.WithServiceName("grpc")}, interceptorOpts...)
 
 	server := grpc.NewServer(
@@ -427,12 +429,14 @@ type envoyFixtureServer struct {
 // Helper functions
 
 func end2EndStreamRequest(t *testing.T, stream envoyextproc.ExternalProcessor_ProcessClient, path string, method string, requestHeaders map[string]string, responseHeaders map[string]string, blockOnResponse bool) {
+	t.Helper()
+
 	// First part: request
 	// 1- Send the headers
 	err := stream.Send(&envoyextproc.ProcessingRequest{
 		Request: &envoyextproc.ProcessingRequest_RequestHeaders{
 			RequestHeaders: &envoyextproc.HttpHeaders{
-				Headers: makeRequestHeaders(requestHeaders, method, path),
+				Headers: makeRequestHeaders(t, requestHeaders, method, path),
 			},
 		},
 	})
@@ -479,7 +483,7 @@ func end2EndStreamRequest(t *testing.T, stream envoyextproc.ExternalProcessor_Pr
 	err = stream.Send(&envoyextproc.ProcessingRequest{
 		Request: &envoyextproc.ProcessingRequest_ResponseHeaders{
 			ResponseHeaders: &envoyextproc.HttpHeaders{
-				Headers: makeResponseHeaders(responseHeaders, "200"),
+				Headers: makeResponseHeaders(t, responseHeaders, "200"),
 			},
 		},
 	})
@@ -512,6 +516,8 @@ func end2EndStreamRequest(t *testing.T, stream envoyextproc.ExternalProcessor_Pr
 }
 
 func checkForAppsecEvent(t *testing.T, finished []mocktracer.Span, expectedRuleIDs map[string]int) {
+	t.Helper()
+
 	// The request should have the attack attempts
 	event := finished[len(finished)-1].Tag("_dd.appsec.json")
 	require.NotNil(t, event, "the _dd.appsec.json tag was not found")
@@ -541,7 +547,9 @@ func checkForAppsecEvent(t *testing.T, finished []mocktracer.Span, expectedRuleI
 }
 
 // Construct request headers
-func makeRequestHeaders(headers map[string]string, method string, path string) *v3.HeaderMap {
+func makeRequestHeaders(t *testing.T, headers map[string]string, method string, path string) *v3.HeaderMap {
+	t.Helper()
+
 	h := &v3.HeaderMap{}
 	for k, v := range headers {
 		h.Headers = append(h.Headers, &v3.HeaderValue{Key: k, RawValue: []byte(v)})
@@ -557,7 +565,9 @@ func makeRequestHeaders(headers map[string]string, method string, path string) *
 	return h
 }
 
-func makeResponseHeaders(headers map[string]string, status string) *v3.HeaderMap {
+func makeResponseHeaders(t *testing.T, headers map[string]string, status string) *v3.HeaderMap {
+	t.Helper()
+
 	h := &v3.HeaderMap{}
 	for k, v := range headers {
 		h.Headers = append(h.Headers, &v3.HeaderValue{Key: k, RawValue: []byte(v)})
