@@ -8,6 +8,7 @@ package tracer
 import (
 	gocontext "context"
 	"encoding/binary"
+	"fmt"
 	"log/slog"
 	"math"
 	"os"
@@ -498,6 +499,7 @@ func (t *tracer) pushChunk(trace *chunk) {
 
 // StartSpan creates, starts, and returns a new Span with the given `operationName`.
 func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOption) ddtrace.Span {
+	fmt.Println("options: ", options)
 	if !t.config.enabled.current {
 		return internal.NoopSpan{}
 	}
