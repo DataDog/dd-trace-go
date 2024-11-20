@@ -3,7 +3,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
-package envoy
+package go_control_plane
 
 import (
 	"context"
@@ -32,18 +32,18 @@ import (
 	envoytypes "github.com/envoyproxy/go-control-plane/envoy/type/v3"
 )
 
-const componentName = "envoyproxy/go-control-plane/envoy/service/ext_proc/envoycore"
+const componentName = "envoyproxy/go-control-plane"
 
 func init() {
 	telemetry.LoadIntegration(componentName)
-	tracer.MarkIntegrationImported("github.com/envoyproxy/go-control-plane/envoy/service/ext_proc/envoycore")
+	tracer.MarkIntegrationImported("github.com/envoyproxy/go-control-plane")
 }
 
-type CurrentRequest struct {
+type currentRequest struct {
 	span                  tracer.Span
 	afterHandle           func()
 	ctx                   context.Context
-	fakeResponseWriter    *FakeResponseWriter
+	fakeResponseWriter    *fakeResponseWriter
 	wrappedResponseWriter http.ResponseWriter
 }
 
@@ -58,7 +58,7 @@ func StreamServerInterceptor(opts ...grpctrace.Option) grpc.StreamServerIntercep
 		var (
 			ctx                = ss.Context()
 			blocked            bool
-			currentRequest     *CurrentRequest
+			currentRequest     *currentRequest
 			processingRequest  envoyextproc.ProcessingRequest
 			processingResponse *envoyextproc.ProcessingResponse
 		)
@@ -106,7 +106,7 @@ func StreamServerInterceptor(opts ...grpctrace.Option) grpc.StreamServerIntercep
 			case *envoyextproc.ProcessingRequest_RequestHeaders:
 				processingResponse, currentRequest, blocked, err = ProcessRequestHeaders(ctx, v)
 			case *envoyextproc.ProcessingRequest_ResponseHeaders:
-				processingResponse, err = ProcessResponseHeaders(v, currentRequest)
+				processingResponse, err = processResponseHeaders(v, currentRequest)
 				currentRequest = nil // Request is done, reset the current request
 			}
 
@@ -181,16 +181,16 @@ func envoyExternalProcessingRequestTypeAssert(req *envoyextproc.ProcessingReques
 	}
 }
 
-func ProcessRequestHeaders(ctx context.Context, req *envoyextproc.ProcessingRequest_RequestHeaders) (*envoyextproc.ProcessingResponse, *CurrentRequest, bool, error) {
+func ProcessRequestHeaders(ctx context.Context, req *envoyextproc.ProcessingRequest_RequestHeaders) (*envoyextproc.ProcessingResponse, *currentRequest, bool, error) {
 	log.Debug("external_processing: received request headers: %v\n", req.RequestHeaders)
 
-	request, err := NewRequestFromExtProc(ctx, req)
+	request, err := newRequest(ctx, req)
 	if err != nil {
 		return nil, nil, false, status.Errorf(codes.InvalidArgument, "Error processing request headers from ext_proc: %v", err)
 	}
 
 	var blocked bool
-	fakeResponseWriter := NewFakeResponseWriter()
+	fakeResponseWriter := newFakeResponseWriter()
 	wrappedResponseWriter, request, afterHandle, blocked := httptrace.BeforeHandle(&httptrace.ServeConfig{
 		SpanOpts: []ddtrace.StartSpanOption{
 			tracer.Tag(ext.SpanKind, ext.SpanKindServer),
@@ -214,7 +214,7 @@ func ProcessRequestHeaders(ctx context.Context, req *envoyextproc.ProcessingRequ
 		return nil, nil, false, err
 	}
 
-	return processingResponse, &CurrentRequest{
+	return processingResponse, &currentRequest{
 		span:                  span,
 		ctx:                   request.Context(),
 		fakeResponseWriter:    fakeResponseWriter,
@@ -257,10 +257,10 @@ func propagationRequestHeaderMutation(span ddtrace.Span) (*envoyextproc.Processi
 	}, nil
 }
 
-func ProcessResponseHeaders(res *envoyextproc.ProcessingRequest_ResponseHeaders, currentRequest *CurrentRequest) (*envoyextproc.ProcessingResponse, error) {
+func processResponseHeaders(res *envoyextproc.ProcessingRequest_ResponseHeaders, currentRequest *currentRequest) (*envoyextproc.ProcessingResponse, error) {
 	log.Debug("external_processing: received response headers: %v\n", res.ResponseHeaders)
 
-	if err := NewFakeResponseWriterFromExtProc(currentRequest.wrappedResponseWriter, res); err != nil {
+	if err := createFakeResponseWriter(currentRequest.wrappedResponseWriter, res); err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "Error processing response headers from ext_proc: %v", err)
 	}
 
@@ -303,7 +303,7 @@ func ProcessResponseHeaders(res *envoyextproc.ProcessingRequest_ResponseHeaders,
 	}, nil
 }
 
-func doBlockResponse(writer *FakeResponseWriter) *envoyextproc.ProcessingResponse {
+func doBlockResponse(writer *fakeResponseWriter) *envoyextproc.ProcessingResponse {
 	var headersMutation []*envoycore.HeaderValueOption
 	for k, v := range writer.headers {
 		headersMutation = append(headersMutation, &envoycore.HeaderValueOption{
