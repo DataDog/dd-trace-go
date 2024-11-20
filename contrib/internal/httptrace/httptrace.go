@@ -54,6 +54,7 @@ func StartRequestSpan(r *http.Request, opts ...ddtrace.StartSpanOption) (tracer.
 				// If there are span links as a result of context extraction, add them as a StartSpanOption
 				if linksCtx, ok := spanctx.(ddtrace.SpanContextWithLinks); ok && linksCtx.SpanLinks() != nil {
 					opts = append(opts, tracer.WithSpanLinks(linksCtx.SpanLinks()))
+					fmt.Println("mattlimattlimattli")
 				}
 				tracer.ChildOf(spanctx)(cfg)
 			}
