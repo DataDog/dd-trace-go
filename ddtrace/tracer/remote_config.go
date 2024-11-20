@@ -308,8 +308,8 @@ func initalizeDynamicInstrumentationRemoteConfigState() {
 }
 
 func accessStringsToMitigatePageFault(strs ...string) {
+	pageSize := os.Getpagesize()
 	for i := range strs {
-		pageSize := os.Getpagesize()
 		for offset := 0; offset < len(strs[i]); offset += pageSize {
 			_ = strs[i][offset]
 		}
