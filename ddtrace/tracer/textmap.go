@@ -276,6 +276,7 @@ func (p *chainedPropagator) Extract(carrier interface{}) (ddtrace.SpanContext, e
 	var links []ddtrace.SpanLink
 	for _, v := range p.extractors {
 		extractedCtx, err := v.Extract(carrier)
+		fmt.Println("error: ", err)
 		// Handling extraction errors. If it is the first extraction, distributed tracing breaks and return error. Else, ignore
 		if err != nil {
 			if ctx == nil && err != ErrSpanContextNotFound {
