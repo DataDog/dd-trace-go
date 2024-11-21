@@ -484,9 +484,11 @@ func (p *propagator) extractTextMap(reader TextMapReader) (ddtrace.SpanContext, 
 			ctx.traceID.SetLower(lowerTid)
 		case p.cfg.ParentHeader:
 			ctx.spanID, err = parseUint64(v)
+			fmt.Println("error extracting spanid: ", err)
 			if err != nil {
 				return ErrSpanContextCorrupted
 			}
+			fmt.Println("spanid: ", ctx.spanID)
 		case p.cfg.PriorityHeader:
 			priority, err := strconv.Atoi(v)
 			if err != nil {
