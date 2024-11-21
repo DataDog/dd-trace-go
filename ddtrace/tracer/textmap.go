@@ -307,7 +307,7 @@ func (p *chainedPropagator) Extract(carrier interface{}) (ddtrace.SpanContext, e
 					}
 				}
 			} else { // Trace IDs do not match - create span links
-				link := ddtrace.SpanLink{TraceID: extractedCtx2.TraceID(), SpanID: extractedCtx2.SpanID(), TraceIDHigh: extractedCtx2.TraceIDUpper(), Attributes: map[string]string{"reason": "terminated_context", "context_headers": "tracecontext"}}
+				link := ddtrace.SpanLink{TraceID: extractedCtx2.TraceID(), SpanID: extractedCtx2.SpanID(), TraceIDHigh: extractedCtx2.TraceIDUpper(), Attributes: map[string]string{"reason": "terminated_context", "context_headers": getPropagatorName(v)}}
 				if trace := extractedCtx2.trace; trace != nil {
 					if flags := uint32(*trace.priority); flags > 0 { // Set the flags based on the sampling priority
 						link.Flags = 1
@@ -330,6 +330,21 @@ func (p *chainedPropagator) Extract(carrier interface{}) (ddtrace.SpanContext, e
 	log.Debug("Extracted span context: %#v", ctx)
 	return ctx, nil
 	// return ctx.(*spanContext), nil
+}
+
+func getPropagatorName(p Propagator) string {
+	switch p.(type) {
+	case *propagator:
+		return "datadog"
+	case *propagatorB3:
+		return "b3-multi"
+	case *propagatorB3SingleHeader:
+		return "b3-single"
+	case *propagatorW3c:
+		return "tracecontext"
+	default:
+		return ""
+	}
 }
 
 // propagateTracestate will add the tracestate propagating tag to the given
