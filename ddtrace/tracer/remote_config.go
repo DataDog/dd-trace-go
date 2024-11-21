@@ -317,6 +317,15 @@ func initalizeDynamicInstrumentationRemoteConfigState() {
 // the string. The purpose of this is to trigger a page fault and ensure that it
 // has been loaded into RAM, or is listed in the translation lookaside buffer.
 // We simply write the string to /dev/null for this purpose.
+//
+// The problem this solves is that the bpf program which hooks the
+// `passProbeConfiguration()` function from system-probe for the sake of getting
+// configs to Go's implementation of Dynamic Instrumentation will fail to read
+// the strings if a page fault is triggered. The `bpf_probe_read()` helper
+// disables paging because uprobe bpf programs can't sleep. As a result, page
+// faults will just cause the `bpf_probe_read()“ call to return an error and
+// not read any data. We need to mitigate this as much as possible for the
+// reliability of the Go DI product.
 func accessStringsToMitigatePageFault(devNull *os.File, strs ...string) {
 	if devNull == nil {
 		return
