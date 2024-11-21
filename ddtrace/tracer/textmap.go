@@ -337,9 +337,9 @@ func getPropagatorName(p Propagator) string {
 	case *propagator:
 		return "datadog"
 	case *propagatorB3:
-		return "b3-multi"
+		return "b3multi"
 	case *propagatorB3SingleHeader:
-		return "b3-single"
+		return "b3"
 	case *propagatorW3c:
 		return "tracecontext"
 	default:
