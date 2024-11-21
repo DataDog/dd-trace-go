@@ -295,11 +295,17 @@ func initalizeDynamicInstrumentationRemoteConfigState() {
 	}
 
 	go func() {
+		devNull, err := os.OpenFile("/dev/null", os.O_WRONLY, 0644)
+		if err != nil {
+			log.Debug("could not open /dev/null for writing config strings")
+		}
+		defer devNull.Close()
+
 		for {
 			time.Sleep(time.Second * 5)
 			diRCState.Lock()
 			for _, v := range diRCState.state {
-				accessStringsToMitigatePageFault(v.runtimeID, v.configPath, v.configContent)
+				accessStringsToMitigatePageFault(devNull, v.runtimeID, v.configPath, v.configContent)
 				passProbeConfiguration(v.runtimeID, v.configPath, v.configContent)
 			}
 			diRCState.Unlock()
@@ -307,15 +313,16 @@ func initalizeDynamicInstrumentationRemoteConfigState() {
 	}()
 }
 
-func accessStringsToMitigatePageFault(strs ...string) {
-	pageSize := os.Getpagesize()
+// accessStringsToMitigatePageFault iterates over each string, and accesses
+// the string. The purpose of this is to trigger a page fault and ensure that it
+// has been loaded into RAM, or is listed in the translation lookaside buffer.
+// We simply write the string to /dev/null for this purpose.
+func accessStringsToMitigatePageFault(devNull *os.File, strs ...string) {
+	if devNull == nil {
+		return
+	}
 	for i := range strs {
-		for offset := 0; offset < len(strs[i]); offset += pageSize {
-			_ = strs[i][offset]
-		}
-		if len(strs[i]) > 0 {
-			_ = strs[i][len(strs[i])-1]
-		}
+		devNull.WriteString(strs[i])
 	}
 }
 
