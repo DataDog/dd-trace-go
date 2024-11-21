@@ -312,7 +312,9 @@ func (p *chainedPropagator) Extract(carrier interface{}) (ddtrace.SpanContext, e
 				}
 			}
 			fmt.Println("chceking ids: ", extractedW3cCtx.TraceID128(), "; ", w3cCtx.TraceID128())
+			fmt.Println("spanids: ", extractedW3cCtx.TraceID128(), " ", w3cCtx.TraceID128())
 			if extractedW3cCtx.TraceID128() != w3cCtx.TraceID128() {
+
 				fmt.Println("about to create a span link")
 				if extractedContextStruct, ok := extractedCtx.(*spanContext); ok { // We can only populate span link information if we can cast to spanContext struct
 					var flags uint32
