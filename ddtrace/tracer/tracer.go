@@ -8,7 +8,6 @@ package tracer
 import (
 	gocontext "context"
 	"encoding/binary"
-	"fmt"
 	"log/slog"
 	"math"
 	"os"
@@ -505,9 +504,7 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 	var opts ddtrace.StartSpanConfig
 	for _, fn := range options {
 		fn(&opts)
-		fmt.Println("options: ", opts)
 	}
-	fmt.Println("options.spanLinks: ", opts.SpanLinks)
 	var startTime int64
 	if opts.StartTime.IsZero() {
 		startTime = now()

@@ -275,6 +275,7 @@ func (p *chainedPropagator) Extract(carrier interface{}) (ddtrace.SpanContext, e
 	var ctx ddtrace.SpanContext // First valid trace context will be stored here
 	var links []ddtrace.SpanLink
 	for _, v := range p.extractors {
+		fmt.Println("preextract")
 		extractedCtx, err := v.Extract(carrier)
 		fmt.Println("error: ", err)
 		// Handling extraction errors. If it is the first extraction, distributed tracing breaks and return error. Else, ignore
@@ -316,7 +317,6 @@ func (p *chainedPropagator) Extract(carrier interface{}) (ddtrace.SpanContext, e
 			fmt.Println("spanids: ", extractedW3cCtx.SpanID(), " ", w3cCtx.SpanID())
 			if extractedW3cCtx.TraceID128() != w3cCtx.TraceID128() {
 
-				fmt.Println("about to create a span link")
 				if extractedContextStruct, ok := extractedCtx.(*spanContext); ok { // We can only populate span link information if we can cast to spanContext struct
 					var flags uint32
 					if extractedTrace := extractedContextStruct.trace; extractedTrace != nil {
@@ -330,7 +330,6 @@ func (p *chainedPropagator) Extract(carrier interface{}) (ddtrace.SpanContext, e
 					if propagatorType == "tracecontext" {
 						link.Tracestate = extractedContextStruct.trace.propagatingTag(tracestateHeader)
 					}
-					fmt.Println("Created link: ", link)
 					links = append(links, link)
 				}
 			}
