@@ -299,7 +299,9 @@ func initalizeDynamicInstrumentationRemoteConfigState() {
 		if err != nil {
 			log.Debug("could not open /dev/null for writing config strings")
 		}
-		defer devNull.Close()
+		if devNull != nil {
+			defer devNull.Close()
+		}
 
 		for {
 			time.Sleep(time.Second * 5)
