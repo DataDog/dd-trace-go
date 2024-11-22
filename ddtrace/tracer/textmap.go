@@ -306,7 +306,7 @@ func (p *chainedPropagator) Extract(carrier interface{}) (ddtrace.SpanContext, e
 						overrideDatadogParentID(ctx.(*spanContext), extractedCtx.(*spanContext), ddCtx)
 					}
 				}
-			} else { // Trace IDs do not match - create span links
+			} else if extractedCtx2.SpanID() != 0 { // Trace IDs do not match and valid Span ID- create span links
 				link := ddtrace.SpanLink{TraceID: extractedCtx2.TraceID(), SpanID: extractedCtx2.SpanID(), TraceIDHigh: extractedCtx2.TraceIDUpper(), Attributes: map[string]string{"reason": "terminated_context", "context_headers": getPropagatorName(v)}}
 				if trace := extractedCtx2.trace; trace != nil {
 					if flags := uint32(*trace.priority); flags > 0 { // Set the flags based on the sampling priority
