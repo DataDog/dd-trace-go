@@ -8,7 +8,7 @@ package tracer
 import (
 	"encoding/json"
 	"fmt"
-	"os"
+	"io"
 	"regexp"
 	"strings"
 	"sync"
@@ -295,19 +295,11 @@ func initalizeDynamicInstrumentationRemoteConfigState() {
 	}
 
 	go func() {
-		devNull, err := os.OpenFile("/dev/null", os.O_WRONLY, 0644)
-		if err != nil {
-			log.Debug("could not open /dev/null for writing config strings")
-		}
-		if devNull != nil {
-			defer devNull.Close()
-		}
-
 		for {
 			time.Sleep(time.Second * 5)
 			diRCState.Lock()
 			for _, v := range diRCState.state {
-				accessStringsToMitigatePageFault(devNull, v.runtimeID, v.configPath, v.configContent)
+				accessStringsToMitigatePageFault(v.runtimeID, v.configPath, v.configContent)
 				passProbeConfiguration(v.runtimeID, v.configPath, v.configContent)
 			}
 			diRCState.Unlock()
@@ -317,7 +309,7 @@ func initalizeDynamicInstrumentationRemoteConfigState() {
 
 // accessStringsToMitigatePageFault iterates over each string to trigger a page fault,
 // ensuring it is loaded into RAM or listed in the translation lookaside buffer.
-// This is done by writing the string to /dev/null.
+// This is done by writing the string to io.Discard.
 //
 // This function addresses an issue with the bpf program that hooks the
 // `passProbeConfiguration()` function from system-probe. The bpf program fails
@@ -326,12 +318,9 @@ func initalizeDynamicInstrumentationRemoteConfigState() {
 // cause `bpf_probe_read()` to return an error and not read any data.
 // By preloading the strings, we mitigate this issue, enhancing the reliability
 // of the Go Dynamic Instrumentation product.
-func accessStringsToMitigatePageFault(devNull *os.File, strs ...string) {
-	if devNull == nil {
-		return
-	}
+func accessStringsToMitigatePageFault(strs ...string) {
 	for i := range strs {
-		devNull.WriteString(strs[i])
+		io.Discard.Write([]byte(strs[i]))
 	}
 }
 
