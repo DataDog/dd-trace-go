@@ -1977,7 +1977,7 @@ func TestSpanLinks(t *testing.T) {
 		}
 		w3cLink := ddtrace.SpanLink{TraceID: 2, TraceIDHigh: 0, SpanID: 2, Tracestate: "dd=s:1;o:rum;t.usr.id:baz64~~", Flags: 1, Attributes: map[string]string{"reason": "terminated_context", "context_headers": "tracecontext"}}
 		ddLink := ddtrace.SpanLink{TraceID: 1, TraceIDHigh: 0, SpanID: 1, Flags: 1, Attributes: map[string]string{"reason": "terminated_context", "context_headers": "datadog"}}
-		b3Link := ddtrace.SpanLink{TraceID: 3, TraceIDHigh: 0, SpanID: 3, Tracestate: "", Flags: 0, Attributes: map[string]string{"reason": "terminated_context", "context_headers": "b3-multi"}}
+		b3Link := ddtrace.SpanLink{TraceID: 3, TraceIDHigh: 0, SpanID: 3, Tracestate: "", Flags: 0, Attributes: map[string]string{"reason": "terminated_context", "context_headers": "b3multi"}}
 		tests := []struct {
 			name   string
 			envVal string
