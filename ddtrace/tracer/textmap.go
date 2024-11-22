@@ -294,7 +294,7 @@ func (p *chainedPropagator) Extract(carrier interface{}) (ddtrace.SpanContext, e
 			if extractedCtx2.TraceID128() == ctx2.TraceID128() {
 				if pW3C, ok := v.(*propagatorW3c); ok {
 					pW3C.propagateTracestate(ctx2, extractedCtx2)
-					// If trace IDs match but span IDs do not, use extractedCtxW3c span ID for parenting
+					// If trace IDs match but span IDs do not, use spanID from `*propagatorW3c` extractedCtx for parenting
 					if extractedCtx2.SpanID() != ctx2.SpanID() {
 						var ddCtx *spanContext
 						// Grab the datadog-propagated spancontext again
