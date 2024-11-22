@@ -39,6 +39,11 @@ func (w *responseWriter) Status() int {
 	return w.status
 }
 
+// Blocked returns whether the response has been blocked.
+func (w *responseWriter) Blocked() bool {
+	return w.blocked
+}
+
 // Block is supposed only once, after a response (one made by appsec code) as been sent. If it not the case, the function will do nothing.
 // All subsequent calls to Write and WriteHeader will be trigger a log warning users that the response has been blocked.
 func (w *responseWriter) Block() {

@@ -21,7 +21,10 @@ func withAppSec(next echo.HandlerFunc, span tracer.Span) echo.HandlerFunc {
 		for _, n := range c.ParamNames() {
 			params[n] = c.Param(n)
 		}
-		var err error
+		var (
+			err error
+			writer = &statusResponseWriter{Response: c.Response()}
+		)
 		handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			c.SetRequest(r)
 			err = next(c)
@@ -32,7 +35,7 @@ func withAppSec(next echo.HandlerFunc, span tracer.Span) echo.HandlerFunc {
 			}
 		})
 		// Wrap the echo response to allow monitoring of the response status code in httpsec.WrapHandler()
-		httpsec.WrapHandler(handler, span, params, nil).ServeHTTP(&statusResponseWriter{Response: c.Response()}, c.Request())
+		httpsec.WrapHandler(handler, span, params, nil).ServeHTTP(, c.Request())
 		// If an error occurred, wrap it under an echo.HTTPError. We need to do this so that APM doesn't override
 		// the response code tag with 500 in case it doesn't recognize the error type.
 		if _, ok := err.(*echo.HTTPError); !ok && err != nil {

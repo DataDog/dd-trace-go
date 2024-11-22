@@ -141,13 +141,12 @@ func newHTTPBlockRequestAction(statusCode int, template blockingTemplateType) *B
 			template = blockingTemplateTypeFromHeaders(request.Header)
 		}
 
-		if UnwrapGetStatusCode(writer) != 0 {
+		if code, found := UnwrapGetStatusCode(writer); found && code != 0 {
 			// The status code has already been set, so we can't change it, do nothing
 			return
 		}
 
-		blocker, found := UnwrapBlocker(writer)
-		if found {
+		if blocker, found := UnwrapBlocker(writer); found {
 			// We found our custom response writer, so we can block futur calls to Write and WriteHeader
 			defer blocker()
 		}
@@ -203,15 +202,15 @@ func UnwrapBlocker(writer http.ResponseWriter) (func(), bool) {
 
 // UnwrapGetStatusCode unwraps the right struct method from contrib/internal/httptrace.responseWriter
 // and calls it to know if a call to WriteHeader has been made and returns the status code.
-func UnwrapGetStatusCode(writer http.ResponseWriter) int {
+func UnwrapGetStatusCode(writer http.ResponseWriter) (int, bool) {
 	// this is part of the contrib/internal/httptrace.responseWriter interface
 	wrapped, ok := writer.(interface {
 		Status() int
 	})
 	if !ok {
 		// Somehow we can't access the wrapped response writer, so we can't get the status code
-		return 0
+		return 0, false
 	}
 
-	return wrapped.Status()
+	return wrapped.Status(), true
 }

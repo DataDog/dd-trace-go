@@ -66,6 +66,7 @@ func wrapResponseWriter(w http.ResponseWriter) (http.ResponseWriter, *responseWr
 		http.ResponseWriter
 		Status() int
 		Block()
+		Blocked() bool
 		Unwrap() http.ResponseWriter
 	}
 	switch {
