@@ -547,7 +547,9 @@ func newConfig(opts ...StartOption) *config {
 		if agentport := c.agent.StatsdPort; agentport > 0 && !c.agent.ignore {
 			// the agent reported a non-standard port
 			host, _, err := net.SplitHostPort(addr)
-			if err == nil {
+			// the code in the next if-block only makes sense if we are dealing with
+			// a user-defined TCP-based protocol URI.
+			if err == nil && host != "unix" {
 				// we have a valid host:port address; replace the port because
 				// the agent knows better
 				if host == "" {

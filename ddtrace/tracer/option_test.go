@@ -501,7 +501,24 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			assert.Equal(t, c.dogstatsdAddr, "10.1.0.12:4002")
 			assert.Equal(t, globalconfig.DogstatsdAddr(), "10.1.0.12:4002")
 		})
+
 		t.Run("uds", func(t *testing.T) {
+			assert := assert.New(t)
+			dir, err := os.MkdirTemp("", "socket")
+			if err != nil {
+				t.Fatal("Failed to create socket")
+			}
+			addr := filepath.Join(dir, "dsd.socket")
+			defer os.RemoveAll(addr)
+			tracer := newTracer(WithDogstatsdAddress("unix://" + addr))
+			defer tracer.Stop()
+			c := tracer.config
+			assert.NotNil(c)
+			assert.Equal("unix://"+addr, c.dogstatsdAddr)
+			assert.Equal("unix://"+addr, globalconfig.DogstatsdAddr())
+		})
+
+		t.Run("uds:ignore", func(t *testing.T) {
 			assert := assert.New(t)
 			dir, err := os.MkdirTemp("", "socket")
 			if err != nil {
@@ -512,6 +529,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			tracer := newTracer(WithDogstatsdAddress("unix://"+addr), withIgnoreAgent(true))
 			defer tracer.Stop()
 			c := tracer.config
+			assert.NotNil(c)
 			assert.Equal("unix://"+addr, c.dogstatsdAddr)
 			assert.Equal("unix://"+addr, globalconfig.DogstatsdAddr())
 		})
