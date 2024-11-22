@@ -329,7 +329,6 @@ func (p *chainedPropagator) Extract(carrier interface{}) (ddtrace.SpanContext, e
 	}
 	log.Debug("Extracted span context: %#v", ctx)
 	return ctx, nil
-	// return ctx.(*spanContext), nil
 }
 
 func getPropagatorName(p Propagator) string {
