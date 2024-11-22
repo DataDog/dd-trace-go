@@ -137,6 +137,9 @@ type config struct {
 	// failure.
 	sendRetries int
 
+	// traceRetryInterval is the interval between agent connection retries for submitting traces. It has no effect if sendRetries is not set
+	traceRetryInterval time.Duration
+
 	// logStartup, when true, causes various startup info to be written
 	// when the tracer starts.
 	logStartup bool
@@ -453,7 +456,7 @@ func newConfig(opts ...StartOption) *config {
 	if v := os.Getenv("DD_TRACE_PEER_SERVICE_MAPPING"); v != "" {
 		internal.ForEachStringTag(v, internal.DDTagsDelimiter, func(key, val string) { c.peerServiceMappings[key] = val })
 	}
-
+	c.traceRetryInterval = time.Millisecond
 	for _, fn := range opts {
 		fn(c)
 	}
@@ -882,6 +885,13 @@ func WithLambdaMode(enabled bool) StartOption {
 func WithSendRetries(retries int) StartOption {
 	return func(c *config) {
 		c.sendRetries = retries
+	}
+}
+
+// WithRetryInterval sets the interval for retrying trace submission to agent. Interval is in seconds.
+func WithRetryInterval(interval int) StartOption {
+	return func(c *config) {
+		c.traceRetryInterval = time.Duration(interval) * time.Second
 	}
 }
 
