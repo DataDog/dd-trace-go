@@ -154,9 +154,9 @@ func createCITagsMap() map[string]string {
 
 	// Check if the user provided the test service
 	if ddService := os.Getenv("DD_SERVICE"); ddService != "" {
-		ciTags[constants.UserProvidedTestServiceTag] = "true"
+		localTags[constants.UserProvidedTestServiceTag] = "true"
 	} else {
-		ciTags[constants.UserProvidedTestServiceTag] = "false"
+		localTags[constants.UserProvidedTestServiceTag] = "false"
 	}
 
 	// Populate missing git data
