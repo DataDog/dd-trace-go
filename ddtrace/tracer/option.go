@@ -133,11 +133,11 @@ type config struct {
 	// output instead of using the agent. This is used in Lambda environments.
 	logToStdout bool
 
-	// sendRetries is the number of times a trace payload send is retried upon
+	// sendRetries is the number of times a trace or CI Visibility payload send is retried upon
 	// failure.
 	sendRetries int
 
-	// retryInterval is the interval between agent connection retries for submitting traces. It has no effect if sendRetries is not set
+	// retryInterval is the interval between agent connection retries. It has no effect if sendRetries is not set
 	retryInterval time.Duration
 
 	// logStartup, when true, causes various startup info to be written
