@@ -21,7 +21,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       
-      - run: go run latest_major_version.go
+      - run: go run latest_major_version.go > latest_majors.txt
 
       - run: git diff
 
