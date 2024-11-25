@@ -21,7 +21,14 @@ const customProfileLabelLimit = 10
 // It may return an error if an API key is not provided by means of the
 // WithAPIKey option, or if a hostname is not found.
 func Start(opts ...Option) error {
-	return v2.Start(opts...)
+	// HACK: quick fix for removing any nil options without releasing a new v2 version
+	var filteredOpts []Option
+	for _, opt := range opts {
+		if opt != nil {
+			filteredOpts = append(filteredOpts, opt)
+		}
+	}
+	return v2.Start(filteredOpts...)
 }
 
 // Stop cancels any ongoing profiling or upload operations and returns after

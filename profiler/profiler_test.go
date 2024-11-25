@@ -637,3 +637,12 @@ func TestMetricsProfileStopEarlyNoLog(t *testing.T) {
 		}
 	}
 }
+
+func TestFilterNilOptionsOnStart(t *testing.T) {
+	// Test that nil options are filtered out when calling Start
+	// We set a nil option, because WithAPIKey was deprecated in v2, and
+	// we set also on purpose an option that will generate an error, as
+	// WithUploadTimeout(0) is not allowed.
+	err := Start(WithAPIKey("foo"), WithUploadTimeout(0))
+	require.Error(t, err)
+}
