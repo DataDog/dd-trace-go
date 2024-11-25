@@ -25,6 +25,7 @@ import (
 	v2 "github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 	maininternal "gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 
@@ -776,6 +777,20 @@ func TestEnvironment(t *testing.T) {
 		_, ok := spm[ext.Environment]
 		assert.False(ok)
 	})
+}
+
+func TestMockSpanSetUser(t *testing.T) {
+	assert := assert.New(t)
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	sp := StartSpan("http.request")
+	SetUser(sp, "testuser")
+	sp.Finish()
+
+	r := mt.FinishedSpans()
+	assert.Len(r, 1)
+	assert.Equal("testuser", r[0].Tag("usr.id"))
 }
 
 // BenchmarkConcurrentTracing tests the performance of spawning a lot of
