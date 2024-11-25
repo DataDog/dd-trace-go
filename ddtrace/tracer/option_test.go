@@ -787,6 +787,23 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			assert.Equal(t, time.Duration(10*time.Second), c.httpClient.Timeout)
 		})
 	})
+
+	t.Run("trace-retries", func(t *testing.T) {
+		c := newConfig()
+		assert.Equal(t, 0, c.sendRetries)
+		assert.Equal(t, time.Millisecond, c.traceRetryInterval)
+	})
+}
+
+func TestTraceRetry(t *testing.T) {
+	t.Run("sendRetries", func(t *testing.T) {
+		c := newConfig(WithSendRetries(10))
+		assert.Equal(t, 10, c.sendRetries)
+	})
+	t.Run("retryInterval", func(t *testing.T) {
+		c := newConfig(WithRetryInterval(10))
+		assert.Equal(t, 10*time.Second, c.traceRetryInterval)
+	})
 }
 
 func TestDefaultHTTPClient(t *testing.T) {

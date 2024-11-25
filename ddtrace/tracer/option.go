@@ -888,7 +888,7 @@ func WithSendRetries(retries int) StartOption {
 	}
 }
 
-// WithRetryInterval sets the interval for retrying trace submission to agent. Interval is in seconds.
+// WithRetryInterval sets the interval, in seconds, for retrying trace submission to agent.
 func WithRetryInterval(interval int) StartOption {
 	return func(c *config) {
 		c.traceRetryInterval = time.Duration(interval) * time.Second
