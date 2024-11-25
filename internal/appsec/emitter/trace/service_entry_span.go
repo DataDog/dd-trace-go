@@ -126,8 +126,6 @@ func (op *ServiceEntrySpanOperation) OnSpanTagEvent(tag SpanTag) {
 	op.SetTag(tag.Key, tag.Value)
 }
 
-// StartServiceEntrySpanOperation starts a new ServiceEntrySpanOperation and returns it along with a new context IF one is not already started
-// If a ServiceEntrySpanOperation is already started, it will return the existing one and the existing context
 func StartServiceEntrySpanOperation(ctx context.Context) (*ServiceEntrySpanOperation, context.Context) {
 	parent, _ := dyngo.FromContext(ctx)
 	op := &ServiceEntrySpanOperation{
