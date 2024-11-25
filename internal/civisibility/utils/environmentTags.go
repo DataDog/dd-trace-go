@@ -152,6 +152,13 @@ func createCITagsMap() map[string]string {
 	}
 	log.Debug("civisibility: test session name: %v", localTags[constants.TestSessionName])
 
+	// Check if the user provided the test service
+	if ddService := os.Getenv("DD_SERVICE"); ddService != "" {
+		ciTags[constants.UserProvidedTestServiceTag] = "true"
+	} else {
+		ciTags[constants.UserProvidedTestServiceTag] = "false"
+	}
+
 	// Populate missing git data
 	gitData, _ := getLocalGitData()
 
