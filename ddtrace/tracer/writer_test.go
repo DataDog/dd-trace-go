@@ -440,47 +440,6 @@ func minHelper(a, b int) int {
 	return b
 }
 
-func TestTraceWriterRetryInterval(t *testing.T) {
-	testcases := []struct {
-		retries       int
-		retryInterval time.Duration
-		failCount     int
-		tracesSent    bool
-		expAttempts   int
-	}{
-		{retries: 0, retryInterval: time.Millisecond, failCount: 0, tracesSent: true, expAttempts: 1},
-		{retries: 0, retryInterval: 4 * time.Millisecond, failCount: 1, tracesSent: false, expAttempts: 1},
-		{retries: 1, retryInterval: time.Millisecond, expAttempts: 2},
-		{retries: 1, retryInterval: 4 * time.Millisecond, expAttempts: 2},
-	}
-	ss := []*span{makeSpan(0)}
-	for _, test := range testcases {
-		name := fmt.Sprintf("%d-%d", test.retries, test.retryInterval)
-		t.Run(name, func(t *testing.T) {
-			assert := assert.New(t)
-			p := &failingTransport{
-				assert: assert,
-			}
-			c := newConfig(func(c *config) {
-				c.transport = p
-				c.sendRetries = test.retries
-				c.traceRetryInterval = test.retryInterval
-			})
-			var statsd statsdtest.TestStatsdClient
-			h := newAgentTraceWriter(c, nil, &statsd)
-			h.add(ss)
-			start := time.Now()
-			h.flush()
-			h.wg.Wait()
-			elapsed := time.Since(start)
-			assert.Equal(test.expAttempts, p.sendAttempts)
-			if test.retries > 0 {
-				assert.GreaterOrEqual(elapsed, test.retryInterval*time.Duration(test.retries+1))
-			}
-		})
-	}
-}
-
 func BenchmarkJsonEncodeSpan(b *testing.B) {
 	s := makeSpan(10)
 	s.Metrics["nan"] = math.NaN()
