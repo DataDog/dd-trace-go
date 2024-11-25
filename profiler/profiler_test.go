@@ -645,4 +645,5 @@ func TestFilterNilOptionsOnStart(t *testing.T) {
 	// WithUploadTimeout(0) is not allowed.
 	err := Start(WithAPIKey("foo"), WithUploadTimeout(0))
 	require.Error(t, err)
+	require.Contains(t, err.Error(), "invalid upload timeout, must be > 0: 0s")
 }
