@@ -412,11 +412,9 @@ func TestTraceWriterFlushRetries(t *testing.T) {
 
 			h := newAgentTraceWriter(c, nil, &statsd)
 			h.add(ss)
-			fmt.Println("start", time.Now())
 			start := time.Now()
 			h.flush()
 			h.wg.Wait()
-			fmt.Println("Done", time.Now())
 			elapsed := time.Since(start)
 
 			assert.Equal(test.expAttempts, p.sendAttempts)

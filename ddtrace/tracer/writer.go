@@ -9,7 +9,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"math"
 	"os"
@@ -99,15 +98,12 @@ func (h *agentTraceWriter) flush() {
 
 			<-h.climit
 			h.statsd.Timing("datadog.tracer.flush_duration", time.Since(start), nil, 1)
-			fmt.Println("in defer")
 			h.wg.Done()
 		}(time.Now())
 
 		var count, size int
 		var err error
-		fmt.Println("sendretries is", h.config.sendRetries)
 		for attempt := 0; attempt <= h.config.sendRetries; attempt++ {
-			fmt.Println("Attempt ", attempt)
 			size, count = p.size(), p.itemCount()
 			log.Debug("Attempt to send payload: size: %d traces: %d\n", size, count)
 			var rc io.ReadCloser
@@ -123,7 +119,6 @@ func (h *agentTraceWriter) flush() {
 			}
 			log.Error("failure sending traces (attempt %d), will retry: %v", attempt+1, err)
 			p.reset()
-			fmt.Println("resetting timer, retry interval is", h.config.traceRetryInterval)
 			time.Sleep(h.config.traceRetryInterval)
 		}
 		h.statsd.Count("datadog.tracer.traces_dropped", int64(count), []string{"reason:send_failed"}, 1)
