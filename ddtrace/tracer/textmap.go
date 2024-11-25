@@ -287,7 +287,7 @@ func (p *chainedPropagator) Extract(carrier interface{}) (ddtrace.SpanContext, e
 		} else { // A local trace context has already been extracted
 			extractedCtx2, ok1 := extractedCtx.(*spanContext)
 			ctx2, ok2 := ctx.(*spanContext)
-			// If we can't cast to SpanContextW3C, we can't propgate tracestate or create span links
+			// If we can't cast to spanContext, we can't propgate tracestate or create span links
 			if !ok1 || !ok2 {
 				continue
 			}
@@ -303,7 +303,7 @@ func (p *chainedPropagator) Extract(carrier interface{}) (ddtrace.SpanContext, e
 								ddCtx, _ = ddSpanCtx.(*spanContext)
 							}
 						}
-						overrideDatadogParentID(ctx.(*spanContext), extractedCtx.(*spanContext), ddCtx)
+						overrideDatadogParentID(ctx2, extractedCtx2, ddCtx)
 					}
 				}
 			} else if extractedCtx2.SpanID() != 0 { // Trace IDs do not match and valid Span ID- create span links
@@ -538,8 +538,8 @@ func getDatadogPropagator(cp *chainedPropagator) *propagator {
 	return nil
 }
 
-// overrideDatadogParentID overrides the span ID of a context with the ID extracted from tracecontext headers
-// if the reparenting ID is not set on the context, the span ID from datadog headers is used.
+// overrideDatadogParentID overrides the span ID of a context with the ID extracted from tracecontext headers.
+// If the reparenting ID is not set on the context, the span ID from datadog headers is used.
 // spanContexts are passed by reference to avoid copying lock value in spanContext type
 func overrideDatadogParentID(ctx, w3cCtx, ddCtx *spanContext) {
 	if ctx == nil || w3cCtx == nil || ddCtx == nil {
