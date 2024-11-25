@@ -406,7 +406,7 @@ func TestTraceWriterFlushRetries(t *testing.T) {
 			c := newConfig(func(c *config) {
 				c.transport = p
 				c.sendRetries = test.configRetries
-				c.traceRetryInterval = test.retryInterval
+				c.retryInterval = test.retryInterval
 			})
 			var statsd statsdtest.TestStatsdClient
 
@@ -427,13 +427,13 @@ func TestTraceWriterFlushRetries(t *testing.T) {
 				assert.Equal(droppedCounts, statsd.Counts())
 			}
 			if test.configRetries > 0 && test.failCount > 1 {
-				assert.GreaterOrEqual(elapsed, test.retryInterval*time.Duration(minHelper(test.configRetries+1, test.failCount)))
+				assert.GreaterOrEqual(elapsed, test.retryInterval*time.Duration(minInts(test.configRetries+1, test.failCount)))
 			}
 		})
 	}
 }
 
-func minHelper(a, b int) int {
+func minInts(a, b int) int {
 	if a < b {
 		return a
 	}

@@ -119,7 +119,7 @@ func (h *agentTraceWriter) flush() {
 			}
 			log.Error("failure sending traces (attempt %d), will retry: %v", attempt+1, err)
 			p.reset()
-			time.Sleep(h.config.traceRetryInterval)
+			time.Sleep(h.config.retryInterval)
 		}
 		h.statsd.Count("datadog.tracer.traces_dropped", int64(count), []string{"reason:send_failed"}, 1)
 		log.Error("lost %d traces: %v", count, err)

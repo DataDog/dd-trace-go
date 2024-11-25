@@ -791,7 +791,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 	t.Run("trace-retries", func(t *testing.T) {
 		c := newConfig()
 		assert.Equal(t, 0, c.sendRetries)
-		assert.Equal(t, time.Millisecond, c.traceRetryInterval)
+		assert.Equal(t, time.Millisecond, c.retryInterval)
 	})
 }
 
@@ -802,7 +802,7 @@ func TestTraceRetry(t *testing.T) {
 	})
 	t.Run("retryInterval", func(t *testing.T) {
 		c := newConfig(WithRetryInterval(10))
-		assert.Equal(t, 10*time.Second, c.traceRetryInterval)
+		assert.Equal(t, 10*time.Second, c.retryInterval)
 	})
 }
 
