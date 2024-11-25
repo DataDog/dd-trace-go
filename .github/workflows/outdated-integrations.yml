@@ -5,8 +5,6 @@ on:
     branches:
       - quinna.halim/update-outdated-integrations-workflow # TODO: remove, for testing
 
-permissions: read-all
-
 concurrency:
   # Automatically cancel previous runs if a new one is triggered to conserve resources.
   group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
@@ -16,6 +14,10 @@ jobs:
   test:
     name: Find new major versions for the contrib package dependencies
     runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: write
+      pull-requests: write
     env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
