@@ -25,13 +25,13 @@ jobs:
 
       - run: git diff
 
-      # - name: Create Pull Request
-      #   id: pr
-      #   uses: peter-evans/create-pull-request@v6
-      #   with:
-      #     token: ${{ secrets.GITHUB_TOKEN }}
-      #     branch: "upgrade-latest-major-version"
-      #     commit-message: "Update latest majors file"
-      #     base: main
-      #     title: "chore: update latest majors"
-      #     labels: changelog/no-changelog
+      - name: Create Pull Request
+        id: pr
+        uses: peter-evans/create-pull-request@v6
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          branch: "upgrade-latest-major-version"
+          commit-message: "Update latest majors file"
+          base: main
+          title: "chore: update latest majors"
+          labels: changelog/no-changelog
