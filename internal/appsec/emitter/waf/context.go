@@ -61,6 +61,8 @@ type (
 func (ContextArgs) IsArgOf(*ContextOperation)   {}
 func (ContextRes) IsResultOf(*ContextOperation) {}
 
+// StartContextOperation starts a new WAF context operation and returns the operation and the new context.
+// If a context operation already exist in the operation parent tree, it will return the existing operation.
 func StartContextOperation(ctx context.Context) (*ContextOperation, context.Context) {
 	entrySpanOp, ctx := trace.StartServiceEntrySpanOperation(ctx)
 	op := &ContextOperation{
