@@ -25,6 +25,7 @@ import (
 	smithyhttp "github.com/aws/smithy-go/transport/http"
 
 	eventBridgeTracer "github.com/DataDog/dd-trace-go/v2/contrib/aws/eventbridge"
+	sfnTracer "github.com/DataDog/dd-trace-go/v2/contrib/aws/sfn"
 	snsTracer "github.com/DataDog/dd-trace-go/v2/contrib/aws/sns"
 	sqsTracer "github.com/DataDog/dd-trace-go/v2/contrib/aws/sqs"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
@@ -113,6 +114,8 @@ func (mw *traceMiddleware) startTraceMiddleware(stack *middleware.Stack) error {
 			snsTracer.EnrichOperation(span, in, operation)
 		case "EventBridge":
 			eventBridgeTracer.EnrichOperation(span, in, operation)
+		case "SFN":
+			sfnTracer.EnrichOperation(span, in, operation)
 		}
 
 		// Handle initialize and continue through the middleware chain.
