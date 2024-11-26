@@ -39,7 +39,6 @@ require (
 	golang.org/x/xerrors v0.0.0-20240903120638-7835f813f4da
 	google.golang.org/grpc v1.65.0
 	google.golang.org/protobuf v1.35.1
-	gopkg.in/DataDog/dd-trace-go.v1 v1.70.1
 )
 
 require (

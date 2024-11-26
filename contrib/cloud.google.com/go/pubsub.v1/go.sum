@@ -11,8 +11,8 @@ cloud.google.com/go/kms v1.15.0/go.mod h1:c9J991h5DTl+kg7gi3MYomh12YEENGrf48ee/N
 cloud.google.com/go/pubsub v1.33.0 h1:6SPCPvWav64tj0sVX/+npCBKhUi/UjJehy9op/V3p2g=
 cloud.google.com/go/pubsub v1.33.0/go.mod h1:f+w71I33OMyxf9VpMVcZbnG5KSUkCOUHYpFd5U1GdRc=
 github.com/BurntSushi/toml v0.3.1/go.mod h1:xHWCNGjB5oqiDr8zfno3MHue2Ht5sIBksp03qcyfWMU=
-github.com/DataDog/appsec-internal-go v1.8.0 h1:1Tfn3LEogntRqZtf88twSApOCAAO3V+NILYhuQIo4J4=
-github.com/DataDog/appsec-internal-go v1.8.0/go.mod h1:wW0cRfWBo4C044jHGwYiyh5moQV2x0AhnwqMuiX7O/g=
+github.com/DataDog/appsec-internal-go v1.9.0 h1:cGOneFsg0JTRzWl5U2+og5dbtyW3N8XaYwc5nXe39Vw=
+github.com/DataDog/appsec-internal-go v1.9.0/go.mod h1:wW0cRfWBo4C044jHGwYiyh5moQV2x0AhnwqMuiX7O/g=
 github.com/DataDog/datadog-agent/pkg/obfuscate v0.59.0 h1:uX6/XoKMS7KYXe+R+vwgw+eRdmn16xfa9PDF5dxgumE=
 github.com/DataDog/datadog-agent/pkg/obfuscate v0.59.0/go.mod h1:ATVw8kr3U1Eqz3qBz9kS6WFDKji9XyoAsHKSlj3hPTM=
 github.com/DataDog/datadog-agent/pkg/proto v0.59.0 h1:hHgSABsmMpA3IatWlnYRAKlfqBACsWyqsLCEcUA8BCs=
@@ -27,8 +27,8 @@ github.com/DataDog/datadog-agent/pkg/util/scrubber v0.59.0 h1:p4uZow1IE/ve590aKq
 github.com/DataDog/datadog-agent/pkg/util/scrubber v0.59.0/go.mod h1:krOxbYZc4KKE7bdEDu10lLSQBjdeSFS/XDSclsaSf1Y=
 github.com/DataDog/datadog-go/v5 v5.5.0 h1:G5KHeB8pWBNXT4Jtw0zAkhdxEAWSpWH00geHI6LDrKU=
 github.com/DataDog/datadog-go/v5 v5.5.0/go.mod h1:K9kcYBlxkcPP8tvvjZZKs/m1edNAUFzBbdpTUKfCsuw=
-github.com/DataDog/go-libddwaf/v3 v3.4.0 h1:NJ2W2vhYaOm1OWr1LJCbdgp7ezG/XLJcQKBmjFwhSuM=
-github.com/DataDog/go-libddwaf/v3 v3.4.0/go.mod h1:n98d9nZ1gzenRSk53wz8l6d34ikxS+hs62A31Fqmyi4=
+github.com/DataDog/go-libddwaf/v3 v3.5.1 h1:GWA4ln4DlLxiXm+X7HA/oj0ZLcdCwOS81KQitegRTyY=
+github.com/DataDog/go-libddwaf/v3 v3.5.1/go.mod h1:n98d9nZ1gzenRSk53wz8l6d34ikxS+hs62A31Fqmyi4=
 github.com/DataDog/go-runtime-metrics-internal v0.0.0-20241106155157-194426bbbd59 h1:s4hgS6gqbXIakEMMujYiHCVVsB3R3oZtqEzPBMnFU2w=
 github.com/DataDog/go-runtime-metrics-internal v0.0.0-20241106155157-194426bbbd59/go.mod h1:quaQJ+wPN41xEC458FCpTwyROZm3MzmTZ8q8XOXQiPs=
 github.com/DataDog/go-sqllexer v0.0.16 h1:RoSUMS6MECyB3gTUIdydzXwK5NhEhv6GMJkS7ptsgRA=
