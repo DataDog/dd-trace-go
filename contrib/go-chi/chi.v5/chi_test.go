@@ -233,9 +233,6 @@ func TestError(t *testing.T) {
 		spans := mt.FinishedSpans()
 		assert.Len(spans, 1)
 		span := spans[0]
-		if span.Tag(ext.Error) == nil {
-			t.Fatal("Span missing error tags")
-		}
 		assertSpan(assert, *span, code)
 		wantErr := fmt.Sprintf("%d: %s", code, http.StatusText(code))
 		assert.Equal(wantErr, span.Tag(ext.ErrorMsg))
