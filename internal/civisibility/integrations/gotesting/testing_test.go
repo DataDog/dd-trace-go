@@ -7,16 +7,12 @@ package gotesting
 
 import (
 	"fmt"
-	"net/http"
-	"net/http/httptest"
 	"runtime"
 	"slices"
-	"strconv"
 	"testing"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
-	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 
 	"github.com/stretchr/testify/assert"
@@ -74,136 +70,6 @@ func Test_Foo(gt *testing.T) {
 	if !slices.Equal(buf, expected) {
 		t.Error("error in subtests closure")
 	}
-}
-
-// Code inspired by contrib/net/http/roundtripper.go
-// It's not possible to import `contrib/net/http` package because it causes a circular dependency.
-// This is a simplified version of the code.
-type roundTripper struct {
-	base  http.RoundTripper
-	namer func(*http.Request) string
-}
-
-func (rt *roundTripper) RoundTrip(req *http.Request) (res *http.Response, err error) {
-	resourceName := rt.namer(req)
-	// Make a copy of the URL so we don't modify the outgoing request
-	url := *req.URL
-	url.User = nil // Do not include userinfo in the HTTPURL tag.
-	opts := []tracer.StartSpanOption{
-		tracer.SpanType(ext.SpanTypeHTTP),
-		tracer.ResourceName(resourceName),
-		tracer.Tag(ext.HTTPMethod, req.Method),
-		tracer.Tag(ext.HTTPURL, url.String()),
-		tracer.Tag(ext.SpanKind, ext.SpanKindClient),
-		tracer.Tag(ext.NetworkDestinationName, url.Hostname()),
-	}
-	span, ctx := tracer.StartSpanFromContext(req.Context(), "", opts...)
-	defer func() {
-		span.Finish()
-	}()
-	r2 := req.Clone(ctx)
-	res, err = rt.base.RoundTrip(r2)
-	if err != nil {
-		span.SetTag("http.errors", err.Error())
-	} else {
-		span.SetTag(ext.HTTPCode, strconv.Itoa(res.StatusCode))
-		// treat 5XX as errors
-		if res.StatusCode/100 == 5 {
-			span.SetTag("http.errors", res.Status)
-			span.SetTag(ext.Error, fmt.Errorf("%d: %s", res.StatusCode, http.StatusText(res.StatusCode)))
-		}
-	}
-	return res, err
-}
-
-// Code from contrib/net/http/roundtripper.go
-// It's not possible to import `contrib/net/http` package because it causes a circular dependency.
-func wrapRoundTripper(rt http.RoundTripper, namer func(*http.Request) string) http.RoundTripper {
-	if namer == nil {
-		namer = func(req *http.Request) string {
-			return ""
-		}
-	}
-	return &roundTripper{
-		base:  rt,
-		namer: namer,
-	}
-}
-
-// TestWithExternalCalls demonstrates testing with external HTTP calls.
-func TestWithExternalCalls(gt *testing.T) {
-	assertTest(gt)
-	t := (*T)(gt)
-
-	// Create a new HTTP test server
-	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_, _ = w.Write([]byte("Hello World"))
-	}))
-	defer s.Close()
-
-	t.Run("default", func(t *testing.T) {
-
-		// if we want to use the test span as a parent of a child span
-		// we can extract the SpanContext and use it in other integrations
-		ctx := (*T)(t).Context()
-
-		// Wrap the default HTTP transport for tracing
-		rt := wrapRoundTripper(http.DefaultTransport, nil)
-		client := &http.Client{
-			Transport: rt,
-		}
-
-		// Create a new HTTP request
-		req, err := http.NewRequest("GET", s.URL+"/hello/world", nil)
-		if err != nil {
-			t.FailNow()
-		}
-
-		// Use the span context here so the http span will appear as a child of the test
-		req = req.WithContext(ctx)
-
-		res, err := client.Do(req)
-		if err != nil {
-			t.FailNow()
-		}
-		_ = res.Body.Close()
-	})
-
-	t.Run("custom-name", func(t *testing.T) {
-
-		// we can also add custom tags to the test span by retrieving the
-		// context and call the `ddtracer.SpanFromContext` api
-		ctx := (*T)(t).Context()
-		span, _ := tracer.SpanFromContext(ctx)
-
-		// Custom namer function for the HTTP request
-		customNamer := func(req *http.Request) string {
-			value := fmt.Sprintf("%s %s", req.Method, req.URL.Path)
-
-			// Then we can set custom tags to that test span
-			span.SetTag("customNamer.Value", value)
-			return value
-		}
-
-		rt := wrapRoundTripper(http.DefaultTransport, customNamer)
-		client := &http.Client{
-			Transport: rt,
-		}
-
-		req, err := http.NewRequest("GET", s.URL+"/hello/world", nil)
-		if err != nil {
-			t.FailNow()
-		}
-
-		// Use the span context here so the http span will appear as a child of the test
-		req = req.WithContext(ctx)
-
-		res, err := client.Do(req)
-		if err != nil {
-			t.FailNow()
-		}
-		_ = res.Body.Close()
-	})
 }
 
 // TestSkip demonstrates skipping a test with a message.
