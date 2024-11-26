@@ -58,7 +58,6 @@ func getLatestMajorVersion(repo string) (string, error) {
 
 func main() {
 
-	// Read and parse go.mod
 	data, err := os.ReadFile("integration_go.mod")
 	if err != nil {
 		fmt.Println("Error reading integration_go.mod:", err)
@@ -76,26 +75,23 @@ func main() {
 	// Match on versions with /v{major}
 	versionRegex := regexp.MustCompile(`^(?P<module>.+?)/v(\d+)$`)
 
-	// Iterate over the required modules
+	// Iterate over the required modules and update latest major version if necessary
 	for _, req := range modFile.Require {
 		module := req.Mod.Path
-		// version := req.Mod.Version
 
 		if match := versionRegex.FindStringSubmatch(module); match != nil {
 			url := match[1]   //  base module URL (e.g., github.com/foo)
 			major := match[2] //  major version (e.g., 2)
 
-			// Trim "github.com/" prefix from the module
 			moduleName := strings.TrimPrefix(strings.TrimSpace(url), "github.com/")
 
-			// Update latest major version if necessary
 			if existing, ok := latestMajor[moduleName]; !ok || existing < major {
 				latestMajor[moduleName] = major
-
 			}
 		}
 	}
 
+	// Output latest major version that we support.
 	// Check if a new major version in Github is available that we don't support.
 	// If so, output that a new latest is available.
 	for module, major := range latestMajor {
