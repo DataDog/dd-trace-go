@@ -13,9 +13,9 @@ import (
 	"go/types"
 	"strings"
 
-	"github.com/DataDog/dd-trace-go/v2/ddtrace"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"golang.org/x/tools/go/analysis"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 )
 
 // KnownChange models code expressions that must be changed to migrate to v2.
