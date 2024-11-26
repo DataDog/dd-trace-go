@@ -17,9 +17,9 @@ import (
 func TestNewHTTPBlockRequestAction(t *testing.T) {
 	mux := http.NewServeMux()
 	srv := httptest.NewServer(mux)
-	mux.HandleFunc("/json", newHTTPBlockRequestAction(403, "json").ServeHTTP)
-	mux.HandleFunc("/html", newHTTPBlockRequestAction(403, "html").ServeHTTP)
-	mux.HandleFunc("/auto", newHTTPBlockRequestAction(403, "auto").ServeHTTP)
+	mux.HandleFunc("/json", newHTTPBlockRequestAction(403, BlockingTemplateJSON).ServeHTTP)
+	mux.HandleFunc("/html", newHTTPBlockRequestAction(403, BlockingTemplateHTML).ServeHTTP)
+	mux.HandleFunc("/auto", newHTTPBlockRequestAction(403, BlockingTemplateAuto).ServeHTTP)
 	defer srv.Close()
 
 	t.Run("json", func(t *testing.T) {

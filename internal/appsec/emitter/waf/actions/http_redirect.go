@@ -25,9 +25,9 @@ func init() {
 }
 
 func redirectParamsFromMap(params map[string]any) (redirectActionParams, error) {
-	var p redirectActionParams
-	err := mapstructure.WeakDecode(params, &p)
-	return p, err
+	var parsedParams redirectActionParams
+	err := mapstructure.WeakDecode(params, &parsedParams)
+	return parsedParams, err
 }
 
 func newRedirectRequestAction(status int, loc string) *BlockHTTP {
@@ -38,9 +38,24 @@ func newRedirectRequestAction(status int, loc string) *BlockHTTP {
 
 	// If location is not set we fall back on a default block action
 	if loc == "" {
-		return &BlockHTTP{Handler: newBlockHandler(http.StatusForbidden, string(blockedTemplateJSON))}
+		return newHTTPBlockRequestAction(http.StatusForbidden, BlockingTemplateAuto)
 	}
-	return &BlockHTTP{Handler: http.RedirectHandler(loc, status)}
+
+	redirectHandler := http.RedirectHandler(loc, status)
+	return &BlockHTTP{Handler: http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if UnwrapGetStatusCode(writer) != 0 {
+			// The status code has already been set, so we can't change it, do nothing
+			return
+		}
+
+		blocker, found := UnwrapBlocker(writer)
+		if found {
+			// We found our custom response writer, so we can block futur calls to Write and WriteHeader
+			defer blocker()
+		}
+
+		redirectHandler.ServeHTTP(writer, request)
+	})}
 }
 
 // NewRedirectAction creates an action for the "redirect_request" action type

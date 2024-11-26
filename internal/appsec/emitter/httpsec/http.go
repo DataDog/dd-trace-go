@@ -56,20 +56,31 @@ type (
 func (HandlerOperationArgs) IsArgOf(*HandlerOperation)   {}
 func (HandlerOperationRes) IsResultOf(*HandlerOperation) {}
 
-func StartOperation(ctx context.Context, args HandlerOperationArgs) (*HandlerOperation, *atomic.Pointer[actions.BlockHTTP], context.Context) {
-	wafOp, ctx := waf.StartContextOperation(ctx)
+func StartOperation(w http.ResponseWriter, r *http.Request, pathParams map[string]string, opts *Config) (*HandlerOperation, *atomic.Bool, context.Context) {
+	wafOp, ctx := waf.StartContextOperation(r.Context())
 	op := &HandlerOperation{
 		Operation:        dyngo.NewOperation(wafOp),
 		ContextOperation: wafOp,
 	}
 
-	// We need to use an atomic pointer to store the action because the action may be created asynchronously in the future
-	var action atomic.Pointer[actions.BlockHTTP]
+	var blocked atomic.Bool
 	dyngo.OnData(op, func(a *actions.BlockHTTP) {
-		action.Store(a)
+		a.Handler.ServeHTTP(w, r)
+		for _, f := range opts.OnBlock {
+			f()
+		}
 	})
 
-	return op, &action, dyngo.StartAndRegisterOperation(ctx, op, args)
+	return op, &blocked, dyngo.StartAndRegisterOperation(ctx, op, HandlerOperationArgs{
+		Method:      r.Method,
+		RequestURI:  r.RequestURI,
+		Host:        r.Host,
+		RemoteAddr:  r.RemoteAddr,
+		Headers:     r.Header,
+		Cookies:     makeCookies(r.Cookies()),
+		QueryParams: r.URL.Query(),
+		PathParams:  pathParams,
+	})
 }
 
 // Finish the HTTP handler operation and its children operations and write everything to the service entry span.
@@ -125,18 +136,7 @@ func BeforeHandle(
 		opts.ResponseHeaderCopier = defaultWrapHandlerConfig.ResponseHeaderCopier
 	}
 
-	op, blockAtomic, ctx := StartOperation(r.Context(), HandlerOperationArgs{
-		Method:      r.Method,
-		RequestURI:  r.RequestURI,
-		Host:        r.Host,
-		RemoteAddr:  r.RemoteAddr,
-		Headers:     r.Header,
-		Cookies:     makeCookies(r.Cookies()),
-		QueryParams: r.URL.Query(),
-		PathParams:  pathParams,
-	})
-	tr := r.WithContext(ctx)
-	var blocked atomic.Bool
+	op, blocked, ctx := StartOperation(w, r, pathParams, opts)
 
 	afterHandle := func() {
 		var statusCode int
@@ -147,28 +147,9 @@ func BeforeHandle(
 			Headers:    opts.ResponseHeaderCopier(w),
 			StatusCode: statusCode,
 		}, span)
-
-		if blockPtr := blockAtomic.Swap(nil); blockPtr != nil {
-			blockPtr.Handler.ServeHTTP(w, tr)
-			blocked.Store(true)
-		}
-
-		// Execute the onBlock functions to make sure blocking works properly
-		// in case we are instrumenting the Gin framework
-		if blocked.Load() {
-			for _, f := range opts.OnBlock {
-				f()
-			}
-		}
 	}
 
-	if blockPtr := blockAtomic.Swap(nil); blockPtr != nil {
-		// handler is replaced
-		blockPtr.Handler.ServeHTTP(w, tr)
-		blocked.Store(true)
-	}
-
-	return w, tr, afterHandle, blocked.Load()
+	return w, r.WithContext(ctx), afterHandle, blocked.Load()
 }
 
 // WrapHandler wraps the given HTTP handler with the abstract HTTP operation defined by HandlerOperationArgs and
@@ -177,7 +158,6 @@ func BeforeHandle(
 // It is a specific patch meant for Gin, for which we must abort the
 // context since it uses a queue of handlers and it's the only way to make
 // sure other queued handlers don't get executed.
-// TODO: this patch must be removed/improved when we rework our actions/operations system
 func WrapHandler(handler http.Handler, span ddtrace.Span, pathParams map[string]string, opts *Config) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		tw, tr, afterHandle, handled := BeforeHandle(w, r, span, pathParams, opts)

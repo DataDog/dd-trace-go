@@ -335,15 +335,22 @@ func TestBlocking(t *testing.T) {
 		w.Write([]byte("Hello World!\n"))
 	})
 	mux.HandleFunc("/user", func(w http.ResponseWriter, r *http.Request) {
-		if err := pAppsec.SetUser(r.Context(), r.Header.Get("test-usr")); err != nil {
+		if r.Header.Get("write-before-block") != "" {
+			w.WriteHeader(204)
+		}
+
+		if err := pAppsec.SetUser(r.Context(), r.Header.Get("test-usr")); err != nil && r.Header.Get("write-after-block") == "" {
 			return
 		}
 		w.Write([]byte("Hello World!\n"))
 	})
 	mux.HandleFunc("/body", func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("write-before-block") != "" {
+			w.WriteHeader(204)
+		}
 		buf := new(strings.Builder)
 		io.Copy(buf, r.Body)
-		if err := pAppsec.MonitorParsedHTTPBody(r.Context(), buf.String()); err != nil {
+		if err := pAppsec.MonitorParsedHTTPBody(r.Context(), buf.String()); err != nil && r.Header.Get("write-after-block") == "" {
 			return
 		}
 		w.Write([]byte("Hello World!\n"))
@@ -395,6 +402,20 @@ func TestBlocking(t *testing.T) {
 			status:    403,
 			ruleMatch: userBlockingRule,
 		},
+		{
+			name:      "user/no-write-after-block",
+			headers:   map[string]string{"test-usr": "blocked-user-1", "write-after-block": "true"},
+			endpoint:  "/user",
+			status:    403,
+			ruleMatch: userBlockingRule,
+		},
+		{
+			name:      "user/cannot-block-because-write-before-block",
+			headers:   map[string]string{"test-usr": "blocked-user-1", "write-before-block": "true"},
+			endpoint:  "/user",
+			status:    204,
+			ruleMatch: userBlockingRule,
+		},
 		// This test checks that IP blocking happens BEFORE user blocking, since user blocking needs the request handler
 		// to be invoked while IP blocking doesn't
 		{
@@ -417,6 +438,22 @@ func TestBlocking(t *testing.T) {
 			reqBody:   "$globals",
 			ruleMatch: bodyBlockingRule,
 		},
+		{
+			name:      "body/no-write-after-block",
+			headers:   map[string]string{"write-after-block": "true"},
+			endpoint:  "/body",
+			status:    403,
+			reqBody:   "$globals",
+			ruleMatch: bodyBlockingRule,
+		},
+		{
+			name:      "body/cannot-block-because-write-before-block",
+			headers:   map[string]string{"write-before-block": "true"},
+			endpoint:  "/body",
+			status:    204,
+			reqBody:   "$globals",
+			ruleMatch: bodyBlockingRule,
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			mt := mocktracer.Start()
@@ -430,12 +467,17 @@ func TestBlocking(t *testing.T) {
 			require.NoError(t, err)
 			defer res.Body.Close()
 			require.Equal(t, tc.status, res.StatusCode)
-			b, err := io.ReadAll(res.Body)
+			body, err := io.ReadAll(res.Body)
 			require.NoError(t, err)
-			if tc.status == 200 {
-				require.Equal(t, "Hello World!\n", string(b))
-			} else {
-				require.NotEqual(t, "Hello World!\n", string(b))
+			switch tc.status {
+			case 200:
+				require.Equal(t, "Hello World!\n", string(body))
+			case 204:
+				require.Empty(t, string(body))
+			case 403:
+				require.Contains(t, string(body), "Security provided by Datadog")
+			default:
+				panic("unexpected status code")
 			}
 			if tc.ruleMatch != "" {
 				spans := mt.FinishedSpans()
