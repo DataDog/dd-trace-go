@@ -19,6 +19,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting/coverage"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
 )
 
@@ -44,6 +45,12 @@ func instrumentTestingM(m *testing.M) func(exitCode int) {
 
 	// Create a new test session for CI visibility.
 	session = integrations.CreateTestSession(integrations.WithTestSessionFramework(testFramework, runtime.Version()))
+
+	settings := integrations.GetSettings()
+	if settings != nil && settings.CodeCoverage {
+		// Initialize the runtime coverage if enabled.
+		coverage.InitializeCoverage(m)
+	}
 
 	ddm := (*M)(m)
 

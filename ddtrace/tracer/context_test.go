@@ -74,6 +74,39 @@ func TestStartSpanFromContext(t *testing.T) {
 	assert.Equal("/", got.resource)
 }
 
+func TestStartSpanWithSpanLinks(t *testing.T) {
+	_, _, _, stop, err := startTestTracer(t)
+	assert.NoError(t, err)
+	defer stop()
+	spanLink := SpanLink{TraceID: 789, TraceIDHigh: 0, SpanID: 789, Attributes: map[string]string{"reason": "terminated_context", "context_headers": "datadog"}, Flags: 0}
+	scctx := &SpanContextWithLinks{spanLinks: []SpanLink{spanLink}}
+	scctx.ctx = &SpanContext{
+		spanID:  789,
+		traceID: traceIDFrom64Bits(789),
+	}
+
+	t.Run("spanContext with spanLinks satisfies SpanContextWithLinks interface", func(t *testing.T) {
+		var _ *SpanContextWithLinks = scctx
+		assert.Equal(t, len(scctx.spanLinks), 1)
+		assert.Equal(t, scctx.spanLinks[0], spanLink)
+	})
+
+	t.Run("create span from spancontext with links", func(t *testing.T) {
+		var s *Span
+		s, _ = StartSpanFromContext(
+			context.Background(),
+			"http.request",
+			WithSpanLinks([]SpanLink{spanLink}),
+			ChildOf(scctx.ctx),
+		)
+
+		assert.Equal(t, 1, len(s.spanLinks))
+		assert.Equal(t, spanLink, s.spanLinks[0])
+
+		assert.Equal(t, 0, len(s.context.spanLinks)) // ensure that the span links are not added to the parent context
+	})
+}
+
 func TestStartSpanFromContextRace(t *testing.T) {
 	_, _, _, stop, err := startTestTracer(t)
 	assert.Nil(t, err)

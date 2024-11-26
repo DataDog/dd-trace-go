@@ -111,6 +111,17 @@ type SpanContext struct {
 	baggage    map[string]string
 	hasBaggage uint32 // atomic int for quick checking presence of baggage. 0 indicates no baggage, otherwise baggage exists.
 	origin     string // e.g. "synthetics"
+
+	spanLinks []SpanLink // links to related spans in separate|external|disconnected traces
+}
+
+// SpanContextWithLinks represents a SpanContext with additional methods for
+// access to the SpanLinks on the span context, if present.
+type SpanContextWithLinks struct {
+	ctx *SpanContext
+
+	// SpanLinks returns a copy of the span links on the SpanContext.
+	spanLinks []SpanLink
 }
 
 // Private interface for converting v1 span contexts to v2 ones.
@@ -224,6 +235,13 @@ func (c *SpanContext) TraceIDLower() uint64 {
 		return 0
 	}
 	return c.traceID.Lower()
+}
+
+// SpanLinks implements ddtrace.SpanContextWithLinks
+func (c *SpanContext) SpanLinks() []SpanLink {
+	cp := make([]SpanLink, len(c.spanLinks))
+	copy(cp, c.spanLinks)
+	return cp
 }
 
 // ForeachBaggageItem implements ddtrace.SpanContext.
