@@ -172,12 +172,10 @@ func FindOperation[T any, O interface {
 		return nil, false
 	}
 
-	const maxUnwrapping = 32
-	for i := 0; i < maxUnwrapping && op != nil; i++ {
-		if o, ok := op.(O); ok {
+	for current := op; current != nil; current = current.unwrap().parent {
+		if o, ok := current.(O); ok {
 			return o, true
 		}
-		op = op.Parent()
 	}
 
 	return nil, false
