@@ -260,7 +260,7 @@ func TestError(t *testing.T) {
 		span := spans[0]
 		assertSpan(assert, span, code)
 		wantErr := fmt.Sprintf("%d: %s", code, http.StatusText(code))
-		assert.Equal(wantErr, span.Tag(ext.Error).(error).Error())
+		assert.Equal(wantErr, span.Tag(ext.ErrorMsg))
 	})
 
 	t.Run("custom", func(t *testing.T) {
@@ -295,7 +295,7 @@ func TestError(t *testing.T) {
 		span := spans[0]
 		assertSpan(assert, span, code)
 		wantErr := fmt.Sprintf("%d: %s", code, http.StatusText(code))
-		assert.Equal(wantErr, span.Tag(ext.Error).(error).Error())
+		assert.Equal(wantErr, span.Tag(ext.ErrorMsg))
 	})
 
 	t.Run("integration overrides global", func(t *testing.T) {
@@ -331,7 +331,7 @@ func TestError(t *testing.T) {
 		span := spans[0]
 		assertSpan(assert, span, code)
 		wantErr := fmt.Sprintf("%d: %s", code, http.StatusText(code))
-		assert.Equal(wantErr, span.Tag(ext.Error).(error).Error())
+		assert.Equal(wantErr, span.Tag(ext.ErrorMsg))
 
 		mt.Reset()
 
