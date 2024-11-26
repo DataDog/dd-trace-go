@@ -36,7 +36,8 @@ func startTelemetry(c *config) {
 		telemetry.WithEnv(c.env),
 		telemetry.WithHTTPClient(c.httpClient),
 		// c.logToStdout is true if serverless is turned on
-		telemetry.WithURL(c.logToStdout, c.agentURL.String()),
+		// c.ciVisibilityAgentless is true if ci visibility mode is turned on and agentless writer is configured
+		telemetry.WithURL(c.logToStdout || c.ciVisibilityAgentless, c.agentURL.String()),
 		telemetry.WithVersion(c.version),
 	)
 	telemetryConfigs := []telemetry.Configuration{
@@ -54,6 +55,7 @@ func startTelemetry(c *config) {
 		{Name: "trace_agent_url", Value: c.agentURL.String()},
 		{Name: "agent_hostname", Value: c.hostname},
 		{Name: "runtime_metrics_enabled", Value: c.runtimeMetrics},
+		{Name: "runtime_metrics_v2_enabled", Value: c.runtimeMetricsV2},
 		{Name: "dogstatsd_addr", Value: c.dogstatsdAddr},
 		{Name: "debug_stack_enabled", Value: !c.noDebugStack},
 		{Name: "profiling_hotspots_enabled", Value: c.profilerHotspots},

@@ -7,7 +7,6 @@
 package chi // import "github.com/DataDog/dd-trace-go/contrib/go-chi/chi/v2"
 
 import (
-	"fmt"
 	"math"
 	"net/http"
 
@@ -55,11 +54,7 @@ func Middleware(opts ...Option) func(next http.Handler) http.Handler {
 			ww := middleware.NewWrapResponseWriter(w, r.ProtoMajor)
 			defer func() {
 				status := ww.Status()
-				var opts []tracer.FinishOption
-				if cfg.isStatusError(status) {
-					opts = []tracer.FinishOption{tracer.WithError(fmt.Errorf("%d: %s", status, http.StatusText(status)))}
-				}
-				httptrace.FinishRequestSpan(span, status, opts...)
+				httptrace.FinishRequestSpan(span, status, cfg.isStatusError)
 			}()
 
 			// pass the span through the request context

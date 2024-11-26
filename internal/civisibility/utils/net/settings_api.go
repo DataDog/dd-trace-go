@@ -7,6 +7,10 @@ package net
 
 import (
 	"fmt"
+	"time"
+
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
 const (
@@ -77,9 +81,23 @@ func (c *client) GetSettings() (*SettingsResponseData, error) {
 		},
 	}
 
-	response, err := c.handler.SendRequest(*c.getPostRequestConfig(settingsURLPath, body))
+	request := c.getPostRequestConfig(settingsURLPath, body)
+	if request.Compressed {
+		telemetry.GitRequestsSettings(telemetry.CompressedRequestCompressedType)
+	} else {
+		telemetry.GitRequestsSettings(telemetry.UncompressedRequestCompressedType)
+	}
+
+	startTime := time.Now()
+	response, err := c.handler.SendRequest(*request)
+	telemetry.GitRequestsSettingsMs(float64(time.Since(startTime).Milliseconds()))
 	if err != nil {
+		telemetry.GitRequestsSettingsErrors(telemetry.NetworkErrorType)
 		return nil, fmt.Errorf("sending get settings request: %s", err.Error())
+	}
+
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		telemetry.GitRequestsSettingsErrors(telemetry.GetErrorTypeFromStatusCode(response.StatusCode))
 	}
 
 	var responseObject settingsResponse
@@ -88,5 +106,20 @@ func (c *client) GetSettings() (*SettingsResponseData, error) {
 		return nil, fmt.Errorf("unmarshalling settings response: %s", err.Error())
 	}
 
+	if log.DebugEnabled() {
+		log.Debug("civisibility.settings: %s", string(response.Body))
+	}
+
+	var settingsResponseType telemetry.SettingsResponseType
+	if responseObject.Data.Attributes.CodeCoverage {
+		settingsResponseType = append(settingsResponseType, telemetry.CoverageEnabledSettingsResponseType...)
+	}
+	if responseObject.Data.Attributes.TestsSkipping {
+		settingsResponseType = append(settingsResponseType, telemetry.ItrSkipEnabledSettingsResponseType...)
+	}
+	if responseObject.Data.Attributes.EarlyFlakeDetection.Enabled {
+		settingsResponseType = append(settingsResponseType, telemetry.EfdEnabledSettingsResponseType...)
+	}
+	telemetry.GitRequestsSettingsResponse(settingsResponseType)
 	return &responseObject.Data.Attributes, nil
 }

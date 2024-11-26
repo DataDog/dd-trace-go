@@ -8,9 +8,11 @@ package tracer
 import (
 	"bytes"
 	"sync/atomic"
+	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/telemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/version"
@@ -21,6 +23,7 @@ import (
 // It embeds the generic payload structure and adds methods to handle CI Visibility specific data.
 type ciVisibilityPayload struct {
 	*payload
+	serializationTime time.Duration
 }
 
 // push adds a new CI Visibility event to the payload buffer.
@@ -35,6 +38,10 @@ type ciVisibilityPayload struct {
 //	An error if encoding the event fails.
 func (p *ciVisibilityPayload) push(event *ciVisibilityEvent) error {
 	p.buf.Grow(event.Msgsize())
+	startTime := time.Now()
+	defer func() {
+		p.serializationTime += time.Since(startTime)
+	}()
 	if err := msgp.Encode(&p.buf, event); err != nil {
 		return err
 	}
@@ -50,7 +57,7 @@ func (p *ciVisibilityPayload) push(event *ciVisibilityEvent) error {
 //	A pointer to a newly initialized civisibilitypayload instance.
 func newCiVisibilityPayload() *ciVisibilityPayload {
 	log.Debug("ciVisibilityPayload: creating payload instance")
-	return &ciVisibilityPayload{newPayload()}
+	return &ciVisibilityPayload{newPayload(), 0}
 }
 
 // getBuffer retrieves the complete body of the CI Visibility payload, including metadata.
@@ -65,6 +72,7 @@ func newCiVisibilityPayload() *ciVisibilityPayload {
 //	A pointer to a bytes.Buffer containing the encoded CI Visibility payload.
 //	An error if reading from the buffer or encoding the payload fails.
 func (p *ciVisibilityPayload) getBuffer(config *config) (*bytes.Buffer, error) {
+	startTime := time.Now()
 	log.Debug("ciVisibilityPayload: .getBuffer (count: %v)", p.itemCount())
 
 	// Create a buffer to read the current payload
@@ -82,6 +90,9 @@ func (p *ciVisibilityPayload) getBuffer(config *config) (*bytes.Buffer, error) {
 		return nil, err
 	}
 
+	telemetry.EndpointPayloadEventsCount(telemetry.TestCycleEndpointType, float64(p.itemCount()))
+	telemetry.EndpointPayloadBytes(telemetry.TestCycleEndpointType, float64(encodedBuf.Len()))
+	telemetry.EndpointEventsSerializationMs(telemetry.TestCycleEndpointType, float64((p.serializationTime + time.Since(startTime)).Milliseconds()))
 	return encodedBuf, nil
 }
 

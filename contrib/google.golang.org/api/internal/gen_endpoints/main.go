@@ -29,7 +29,7 @@ import (
 
 const (
 	// The github.com/googleapis/google-api-go-client version to use.
-	version = "v0.121.0"
+	version = "v0.192.0"
 )
 
 var (

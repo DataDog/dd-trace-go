@@ -9,6 +9,7 @@ import (
 	gocontext "context"
 	"encoding/binary"
 	"fmt"
+	"log/slog"
 	"math"
 	"os"
 	"runtime/pprof"
@@ -32,6 +33,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/traceprof"
 
 	"github.com/DataDog/datadog-agent/pkg/obfuscate"
+	"github.com/DataDog/go-runtime-metrics-internal/pkg/runtimemetrics"
 )
 
 type TracerConf struct { //nolint:revive
@@ -219,7 +221,10 @@ func Start(opts ...StartOption) error {
 	// appsec.Start() may use the telemetry client to report activation, so it is
 	// important this happens _AFTER_ startTelemetry() has been called, so the
 	// client is appropriately configured.
-	appsec.Start(appsecConfig.WithRCConfig(cfg))
+	appsecopts := make([]appsecConfig.StartOption, 0, len(t.config.appsecStartOptions)+1)
+	appsecopts = append(appsecopts, t.config.appsecStartOptions...)
+	appsecopts = append(appsecopts, appsecConfig.WithRCConfig(cfg))
+	appsec.Start(appsecopts...)
 	globalinternal.SetTracerInitialized(true)
 	return nil
 }
@@ -370,6 +375,14 @@ func newTracer(opts ...StartOption) (*tracer, error) {
 			defer t.wg.Done()
 			t.reportRuntimeMetrics(defaultMetricsReportInterval)
 		}()
+	}
+	if c.runtimeMetricsV2 {
+		l := slog.New(slogHandler{})
+		if err := runtimemetrics.Start(t.statsd, l); err == nil {
+			l.Debug("Runtime metrics v2 enabled.")
+		} else {
+			l.Error("Failed to enable runtime metrics v2", "err", err.Error())
+		}
 	}
 	if c.debugAbandonedSpans {
 		log.Info("Abandoned spans logs enabled.")
@@ -821,23 +834,18 @@ func (t *tracer) Submit(s *Span) {
 	tc := t.TracerConf()
 	if !tc.Disabled {
 		// we have an active tracer
-		if tc.CanComputeStats && shouldComputeStats(s) {
-			// the agent supports computed stats
-			t.submitStats(s)
+		if t.config.canComputeStats() {
+			statSpan, shouldCalc := t.stats.newTracerStatSpan(s, t.obfuscator)
+			if shouldCalc {
+				// the agent supports computed stats
+				select {
+				case t.stats.In <- statSpan:
+					// ok
+				default:
+					log.Error("Stats channel full, disregarding span.")
+				}
+			}
 		}
-		if tc.DebugAbandonedSpans {
-			// the tracer supports debugging abandoned spans
-			t.submitAbandonedSpan(s, true)
-		}
-	}
-}
-
-func (t *tracer) submitStats(s *Span) {
-	select {
-	case t.stats.In <- newAggregableSpan(s, t.obfuscator):
-		// ok
-	default:
-		log.Error("Stats channel full, disregarding span.")
 	}
 }
 

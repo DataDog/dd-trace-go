@@ -22,9 +22,10 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 
-	"github.com/DataDog/datadog-go/v5/statsd"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/DataDog/datadog-go/v5/statsd"
 )
 
 const otelHeaderPropagationStyle = "OTEL_PROPAGATORS"
@@ -1962,7 +1963,8 @@ func TestNonePropagator(t *testing.T) {
 		t.Setenv(headerPropagationStyleInject, "none,b3")
 		tp := new(log.RecordLogger)
 		tp.Ignore("appsec: ", telemetry.LogPrefix)
-		tracer, err := newTracer(WithLogger(tp))
+		tracer, err := newTracer(WithLogger(tp), WithEnv("test"))
+		assert.Nil(t, err)
 		defer tracer.Stop()
 		assert.NoError(t, err)
 		// reinitializing to capture log output, since propagators are parsed before logger is set

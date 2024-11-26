@@ -223,13 +223,10 @@ func TestTrace200(t *testing.T) {
 }
 
 func TestError(t *testing.T) {
-	assertSpan := func(assert *assert.Assertions, spans []*mocktracer.Span, code int) {
-		assert.Len(spans, 1)
-		span := spans[0]
+	assertSpan := func(assert *assert.Assertions, span *mocktracer.Span, code int) {
 		assert.Equal("http.request", span.OperationName())
+		assert.Equal("negroni.router", span.Tag(ext.ServiceName))
 		assert.Equal(strconv.Itoa(code), span.Tag(ext.HTTPCode))
-		wantErr := fmt.Sprintf("%d: %s", code, http.StatusText(code))
-		assert.Equal(wantErr, span.Tag(ext.ErrorMsg))
 	}
 
 	t.Run("default", func(t *testing.T) {
@@ -259,7 +256,11 @@ func TestError(t *testing.T) {
 
 		// verify the errors and status are correct
 		spans := mt.FinishedSpans()
-		assertSpan(assert, spans, code)
+		assert.Len(spans, 1)
+		span := spans[0]
+		assertSpan(assert, span, code)
+		wantErr := fmt.Sprintf("%d: %s", code, http.StatusText(code))
+		assert.Equal(wantErr, span.Tag(ext.Error).(error).Error())
 	})
 
 	t.Run("custom", func(t *testing.T) {
@@ -290,7 +291,67 @@ func TestError(t *testing.T) {
 
 		// verify the errors and status are correct
 		spans := mt.FinishedSpans()
-		assertSpan(assert, spans, code)
+		assert.Len(spans, 1)
+		span := spans[0]
+		assertSpan(assert, span, code)
+		wantErr := fmt.Sprintf("%d: %s", code, http.StatusText(code))
+		assert.Equal(wantErr, span.Tag(ext.Error).(error).Error())
+	})
+
+	t.Run("integration overrides global", func(t *testing.T) {
+		assert := assert.New(t)
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		t.Setenv("DD_TRACE_HTTP_SERVER_ERROR_STATUSES", "500")
+
+		// setup
+		router := negroni.New()
+		code := 404
+		router.Use(Middleware(WithStatusCheck(func(statusCode int) bool {
+			return statusCode == 404
+		})))
+
+		// a handler with an error and make the requests
+		mux := http.NewServeMux()
+		mux.HandleFunc("/404", func(w http.ResponseWriter, r *http.Request) {
+			http.Error(w, fmt.Sprintf("%d!", code), code)
+		})
+		router.UseHandler(mux)
+		r := httptest.NewRequest("GET", "/404", nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, r)
+		response := w.Result()
+		defer response.Body.Close()
+		assert.Equal(response.StatusCode, code)
+
+		// verify the errors and status are correct
+		spans := mt.FinishedSpans()
+		assert.Len(spans, 1)
+		span := spans[0]
+		assertSpan(assert, span, code)
+		wantErr := fmt.Sprintf("%d: %s", code, http.StatusText(code))
+		assert.Equal(wantErr, span.Tag(ext.Error).(error).Error())
+
+		mt.Reset()
+
+		code = 500
+		mux.HandleFunc("/500", func(w http.ResponseWriter, r *http.Request) {
+			http.Error(w, fmt.Sprintf("%d!", code), code)
+		})
+		r = httptest.NewRequest("GET", "/500", nil)
+		w = httptest.NewRecorder()
+		router.ServeHTTP(w, r)
+		response = w.Result()
+		defer response.Body.Close()
+		assert.Equal(response.StatusCode, 500)
+
+		// verify that span does not have error tag
+		spans = mt.FinishedSpans()
+		assert.Len(spans, 1)
+		span = spans[0]
+		assertSpan(assert, span, 500)
+		assert.Empty(span.Tag(ext.Error))
 	})
 }
 

@@ -45,7 +45,7 @@ func TestNewSpanContextPushError(t *testing.T) {
 
 	tp := new(log.RecordLogger)
 	tp.Ignore("appsec: ", telemetry.LogPrefix)
-	_, _, _, stop, err := startTestTracer(t, WithLogger(tp), WithLambdaMode(true))
+	_, _, _, stop, err := startTestTracer(t, WithLogger(tp), WithLambdaMode(true), WithEnv("testEnv"))
 	assert.Nil(t, err)
 	defer stop()
 	parent := newBasicSpan("test1")                  // 1st span in trace
@@ -253,8 +253,8 @@ func TestSpanTracePushNoFinish(t *testing.T) {
 
 	tp := new(log.RecordLogger)
 	tp.Ignore("appsec: ", telemetry.LogPrefix)
-	_, _, _, stop, err := startTestTracer(t, WithLogger(tp), WithLambdaMode(true))
-	assert.Nil(err)
+	_, _, _, stop, err := startTestTracer(t, WithLogger(tp), WithLambdaMode(true), WithEnv("testEnv"))
+	assert.Nil(t, err)
 	defer stop()
 
 	buffer := newTrace()
@@ -770,7 +770,7 @@ func TestSpanContextPushFull(t *testing.T) {
 	traceMaxSize = 2
 	tp := new(log.RecordLogger)
 	tp.Ignore("appsec: ", telemetry.LogPrefix)
-	_, _, _, stop, err := startTestTracer(t, WithLogger(tp), WithLambdaMode(true))
+	_, _, _, stop, err := startTestTracer(t, WithLogger(tp), WithLambdaMode(true), WithEnv("testEnv"))
 	assert.Nil(t, err)
 	defer stop()
 

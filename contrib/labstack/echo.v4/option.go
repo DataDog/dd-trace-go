@@ -8,11 +8,16 @@ package echo
 import (
 	"errors"
 	"math"
+	"os"
 
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/httptrace"
 
 	"github.com/labstack/echo/v4"
 )
+
+// envServerErrorStatuses is the name of the env var used to specify error status codes on http server spans
+const envServerErrorStatuses = "DD_TRACE_HTTP_SERVER_ERROR_STATUSES"
 
 type config struct {
 	serviceName       string
@@ -44,7 +49,11 @@ type IgnoreRequestFunc func(c echo.Context) bool
 func defaults(cfg *config) {
 	cfg.serviceName = instr.ServiceName(instrumentation.ComponentServer, nil)
 	cfg.analyticsRate = math.NaN()
-	cfg.isStatusError = isServerError
+	if fn := httptrace.GetErrorCodesFromInput(os.Getenv(envServerErrorStatuses)); fn != nil {
+		cfg.isStatusError = fn
+	} else {
+		cfg.isStatusError = isServerError
+	}
 	cfg.headerTags = instr.HTTPHeadersAsTags()
 	cfg.tags = make(map[string]interface{})
 	cfg.translateError = func(err error) (*echo.HTTPError, bool) {

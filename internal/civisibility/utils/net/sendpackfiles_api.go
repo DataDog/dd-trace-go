@@ -7,8 +7,10 @@ package net
 
 import (
 	"fmt"
-	"net/http"
 	"os"
+	"time"
+
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/telemetry"
 )
 
 const (
@@ -29,16 +31,20 @@ type (
 	}
 )
 
-func (c *client) SendPackFiles(packFiles []string) (bytes int64, err error) {
+func (c *client) SendPackFiles(commitSha string, packFiles []string) (bytes int64, err error) {
 	if len(packFiles) == 0 {
 		return 0, nil
+	}
+
+	if commitSha == "" {
+		commitSha = c.commitSha
 	}
 
 	pushedShaFormFile := FormFile{
 		FieldName: "pushedSha",
 		Content: pushedShaBody{
 			Data: pushedShaData{
-				ID:   c.commitSha,
+				ID:   commitSha,
 				Type: searchCommitsType,
 			},
 			Meta: pushedShaMeta{
@@ -71,18 +77,31 @@ func (c *client) SendPackFiles(packFiles []string) (bytes int64, err error) {
 			Backoff:    DefaultBackoff,
 		}
 
+		if request.Compressed {
+			telemetry.GitRequestsObjectsPack(telemetry.CompressedRequestCompressedType)
+		} else {
+			telemetry.GitRequestsObjectsPack(telemetry.UncompressedRequestCompressedType)
+		}
+
+		startTime := time.Now()
 		response, responseErr := c.handler.SendRequest(request)
+		telemetry.GitRequestsObjectsPackMs(float64(time.Since(startTime).Milliseconds()))
+
 		if responseErr != nil {
+			telemetry.GitRequestsObjectsPackErrors(telemetry.NetworkErrorType)
 			err = fmt.Errorf("failed to send packfile request: %s", responseErr.Error())
 			return
 		}
 
-		if response.StatusCode != http.StatusOK && response.StatusCode != http.StatusNoContent {
+		if response.StatusCode < 200 || response.StatusCode >= 300 {
+			telemetry.GitRequestsObjectsPackErrors(telemetry.GetErrorTypeFromStatusCode(response.StatusCode))
 			err = fmt.Errorf("unexpected response code %d: %s", response.StatusCode, string(response.Body))
 		}
 
 		bytes += int64(len(fileContent))
 	}
 
+	telemetry.GitRequestsObjectsPackFiles(float64(len(packFiles)))
+	telemetry.GitRequestsObjectsPackBytes(float64(bytes))
 	return
 }

@@ -8,7 +8,7 @@ package main
 import (
 	"fmt"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 )
 
 func main() {

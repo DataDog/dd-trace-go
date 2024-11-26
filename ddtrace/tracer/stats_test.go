@@ -11,22 +11,10 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
-)
 
-// waitForBuckets reports whether concentrator c contains n buckets within a 5ms
-// period.
-func waitForBuckets(c *concentrator, n int) bool {
-	for i := 0; i < 5; i++ {
-		time.Sleep(time.Millisecond * timeMultiplicator)
-		c.mu.Lock()
-		if len(c.buckets) == n {
-			c.mu.Unlock()
-			return true
-		}
-		c.mu.Unlock()
-	}
-	return false
-}
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
+)
 
 func TestAlignTs(t *testing.T) {
 	now := time.Now().UnixNano()
@@ -36,37 +24,22 @@ func TestAlignTs(t *testing.T) {
 }
 
 func TestConcentrator(t *testing.T) {
-	key1 := aggregation{
-		Name: "http.request",
+	bucketSize := int64(500_000)
+	s1 := Span{
+		name:     "http.request",
+		start:    time.Now().UnixNano() + 3*bucketSize,
+		duration: 1,
+		metrics:  map[string]float64{keyMeasured: 1},
 	}
-	ss1 := &aggregableSpan{
-		key:      key1,
-		Start:    time.Now().UnixNano() + 2*defaultStatsBucketSize,
-		Duration: (2 * time.Second).Nanoseconds(),
+	s2 := Span{
+		name:     "sql.query",
+		start:    time.Now().UnixNano() + 4*bucketSize,
+		duration: 1,
+		metrics:  map[string]float64{keyMeasured: 1},
 	}
-	key2 := aggregation{
-		Name: "sql.query",
-	}
-	ss2 := &aggregableSpan{
-		key:      key2,
-		Start:    time.Now().UnixNano() + 3*defaultStatsBucketSize,
-		Duration: (3 * time.Second).Nanoseconds(),
-	}
-
-	t.Run("new", func(t *testing.T) {
-		assert := assert.New(t)
-		cfg := &config{version: "1.2.3"}
-		c := newConcentrator(cfg, defaultStatsBucketSize)
-		assert.Equal(cap(c.In), 10000)
-		assert.Nil(c.stop)
-		assert.NotNil(c.buckets)
-		assert.Equal(c.cfg, cfg)
-		assert.EqualValues(atomic.LoadUint32(&c.stopped), 1)
-	})
-
 	t.Run("start-stop", func(t *testing.T) {
 		assert := assert.New(t)
-		c := newConcentrator(&config{}, defaultStatsBucketSize)
+		c := newConcentrator(&config{}, bucketSize)
 		assert.EqualValues(atomic.LoadUint32(&c.stopped), 1)
 		c.Start()
 		assert.EqualValues(atomic.LoadUint32(&c.stopped), 0)
@@ -82,83 +55,61 @@ func TestConcentrator(t *testing.T) {
 		c.Stop()
 		assert.EqualValues(atomic.LoadUint32(&c.stopped), 1)
 	})
-
-	t.Run("valid", func(t *testing.T) {
-		c := newConcentrator(&config{}, defaultStatsBucketSize)
-		btime := alignTs(ss1.Start+ss1.Duration, defaultStatsBucketSize)
-		c.add(ss1)
-		assert.Len(t, c.buckets, 1)
-		b, ok := c.buckets[btime]
-		assert.True(t, ok)
-		assert.Equal(t, b.start, uint64(btime))
-		assert.Equal(t, b.duration, uint64(defaultStatsBucketSize))
-	})
-
-	t.Run("grouping", func(t *testing.T) {
-		c := newConcentrator(&config{}, defaultStatsBucketSize)
-		c.add(ss1)
-		c.add(ss1)
-		assert.Len(t, c.buckets, 1)
-		_, ok := c.buckets[alignTs(ss1.Start+ss1.Duration, defaultStatsBucketSize)]
-		assert.True(t, ok)
-		c.add(ss2)
-		assert.Len(t, c.buckets, 2)
-		_, ok = c.buckets[alignTs(ss2.Start+ss2.Duration, defaultStatsBucketSize)]
-		assert.True(t, ok)
-	})
-
-	t.Run("ingester", func(t *testing.T) {
-		transport := newDummyTransport()
-		c := newConcentrator(&config{transport: transport}, defaultStatsBucketSize)
-		c.Start()
-		assert.Len(t, c.buckets, 0)
-		c.In <- ss1
-		if !waitForBuckets(c, 1) {
-			t.Fatal("sending to channel did not work")
-		}
-		c.Stop()
-	})
-
 	t.Run("flusher", func(t *testing.T) {
 		t.Run("old", func(t *testing.T) {
 			transport := newDummyTransport()
-			c := newConcentrator(&config{transport: transport}, 500000)
+			c := newConcentrator(&config{transport: transport, env: "someEnv"}, 500_000)
 			assert.Len(t, transport.Stats(), 0)
+			ss1, ok := c.newTracerStatSpan(&s1, nil)
+			assert.True(t, ok)
 			c.Start()
-			c.In <- &aggregableSpan{
-				key: key2,
-				// Start must be older than latest bucket to get flushed
-				Start:    time.Now().UnixNano() - 3*500000,
-				Duration: 1,
-			}
-			c.In <- &aggregableSpan{
-				key: key2,
-				// Start must be older than latest bucket to get flushed
-				Start:    time.Now().UnixNano() - 4*500000,
-				Duration: 1,
-			}
+			c.In <- ss1
 			time.Sleep(2 * time.Millisecond * timeMultiplicator)
 			c.Stop()
-			assert.NotZero(t, transport.Stats())
+			actualStats := transport.Stats()
+			assert.Len(t, actualStats, 1)
+			assert.Len(t, actualStats[0].Stats, 1)
+			assert.Len(t, actualStats[0].Stats[0].Stats, 1)
+			assert.Equal(t, "http.request", actualStats[0].Stats[0].Stats[0].Name)
 		})
 
 		t.Run("recent", func(t *testing.T) {
 			transport := newDummyTransport()
-			c := newConcentrator(&config{transport: transport}, 500000)
+			c := newConcentrator(&config{transport: transport, env: "someEnv"}, (10 * time.Second).Nanoseconds())
 			assert.Len(t, transport.Stats(), 0)
+			ss1, ok := c.newTracerStatSpan(&s1, nil)
+			assert.True(t, ok)
+			ss2, ok := c.newTracerStatSpan(&s2, nil)
+			assert.True(t, ok)
 			c.Start()
-			c.In <- &aggregableSpan{
-				key:      key2,
-				Start:    time.Now().UnixNano() + 5*500000,
-				Duration: 1,
-			}
-			c.In <- &aggregableSpan{
-				key:      key1,
-				Start:    time.Now().UnixNano() + 6*500000,
-				Duration: 1,
-			}
+			c.In <- ss1
+			c.In <- ss2
 			c.Stop()
-			assert.NotEmpty(t, transport.Stats())
+			actualStats := transport.Stats()
+			assert.Len(t, actualStats, 1)
+			assert.Len(t, actualStats[0].Stats, 1)
+			assert.Len(t, actualStats[0].Stats[0].Stats, 2)
+			names := map[string]struct{}{}
+			for _, stat := range actualStats[0].Stats[0].Stats {
+				names[stat.Name] = struct{}{}
+			}
+			assert.Len(t, names, 2)
+			assert.NotNil(t, names["http.request"])
+			assert.NotNil(t, names["potato"])
+		})
+
+		t.Run("ciGitSha", func(t *testing.T) {
+			utils.AddCITags(constants.GitCommitSHA, "DEADBEEF")
+			transport := newDummyTransport()
+			c := newConcentrator(&config{transport: transport, env: "someEnv"}, (10 * time.Second).Nanoseconds())
+			assert.Len(t, transport.Stats(), 0)
+			ss1, ok := c.newTracerStatSpan(&s1, nil)
+			assert.True(t, ok)
+			c.Start()
+			c.In <- ss1
+			c.Stop()
+			actualStats := transport.Stats()
+			assert.Equal(t, "DEADBEEF", actualStats[0].GitCommitSha)
 		})
 
 		// stats should be sent if the concentrator is stopped
@@ -166,12 +117,10 @@ func TestConcentrator(t *testing.T) {
 			transport := newDummyTransport()
 			c := newConcentrator(&config{transport: transport}, 500000)
 			assert.Len(t, transport.Stats(), 0)
+			ss1, ok := c.newTracerStatSpan(&s1, nil)
+			assert.True(t, ok)
 			c.Start()
-			c.In <- &aggregableSpan{
-				key:      key1,
-				Start:    time.Now().UnixNano(),
-				Duration: 1,
-			}
+			c.In <- ss1
 			c.Stop()
 			assert.NotEmpty(t, transport.Stats())
 		})

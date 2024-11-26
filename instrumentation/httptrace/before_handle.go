@@ -33,6 +33,8 @@ type ServeConfig struct {
 	FinishOpts []tracer.FinishOption
 	// SpanOpts specifies any options to be applied to the request starting span.
 	SpanOpts []tracer.StartSpanOption
+	// isStatusError allows customization of error code determination.
+	isStatusError func(int) bool
 }
 
 // BeforeHandle contains functionality that should be executed before a http.Handler runs.
@@ -59,9 +61,8 @@ func BeforeHandle(cfg *ServeConfig, w http.ResponseWriter, r *http.Request) (htt
 	span, ctx := StartRequestSpan(r, opts...)
 	rw, ddrw := wrapResponseWriter(w)
 	rt := r.WithContext(ctx)
-
 	closeSpan := func() {
-		FinishRequestSpan(span, ddrw.status, cfg.FinishOpts...)
+		FinishRequestSpan(span, ddrw.status, cfg.isStatusError, cfg.FinishOpts...)
 	}
 	afterHandle := closeSpan
 	handled := false

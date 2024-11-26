@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/telemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
@@ -60,6 +61,7 @@ func newCiVisibilityTraceWriter(c *config) *ciVisibilityTraceWriter {
 //
 //	trace - A slice of spans representing the trace to be added.
 func (w *ciVisibilityTraceWriter) add(trace []*Span) {
+	telemetry.EventsEnqueueForSerialization()
 	for _, s := range trace {
 		cvEvent := getCiVisibilityEvent(s)
 		if err := w.payload.push(cvEvent); err != nil {
@@ -103,6 +105,13 @@ func (w *ciVisibilityTraceWriter) flush() {
 
 		var count, size int
 		var err error
+
+		requestCompressedType := telemetry.UncompressedRequestCompressedType
+		if ciTransport, ok := w.config.transport.(*ciVisibilityTransport); ok && ciTransport.agentless {
+			requestCompressedType = telemetry.CompressedRequestCompressedType
+		}
+		telemetry.EndpointPayloadRequests(telemetry.TestCycleEndpointType, requestCompressedType)
+
 		for attempt := 0; attempt <= w.config.sendRetries; attempt++ {
 			size, count = p.size(), p.itemCount()
 			log.Debug("ciVisibilityTraceWriter: sending payload: size: %d events: %d\n", size, count)
@@ -116,5 +125,6 @@ func (w *ciVisibilityTraceWriter) flush() {
 			time.Sleep(time.Millisecond)
 		}
 		log.Error("ciVisibilityTraceWriter: lost %d events: %v", count, err)
+		telemetry.EndpointPayloadDropped(telemetry.TestCycleEndpointType)
 	}(oldp)
 }

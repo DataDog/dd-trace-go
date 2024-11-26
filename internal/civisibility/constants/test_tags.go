@@ -80,6 +80,33 @@ const (
 
 	// TestEarlyFlakeDetectionRetryAborted indicates a retry abort reason by the early flake detection feature
 	TestEarlyFlakeDetectionRetryAborted = "test.early_flake.abort_reason"
+
+	// TestSkippedByITR indicates a test skipped by the ITR feature
+	TestSkippedByITR = "test.skipped_by_itr"
+
+	// SkippedByITRReason indicates the reason why the test was skipped by the ITR feature
+	SkippedByITRReason = "Skipped by Datadog Intelligent Test Runner"
+
+	// ITRTestsSkipped indicates that tests were skipped by the ITR feature
+	ITRTestsSkipped = "_dd.ci.itr.tests_skipped"
+
+	// ITRTestsSkippingEnabled indicates that the ITR test skipping feature is enabled
+	ITRTestsSkippingEnabled = "test.itr.tests_skipping.enabled"
+
+	// ITRTestsSkippingType indicates the type of ITR test skipping
+	ITRTestsSkippingType = "test.itr.tests_skipping.type"
+
+	// ITRTestsSkippingCount indicates the number of tests skipped by the ITR feature
+	ITRTestsSkippingCount = "test.itr.tests_skipping.count"
+
+	// CodeCoverageEnabled indicates that code coverage is enabled
+	CodeCoverageEnabled = "test.code_coverage.enabled"
+
+	// TestUnskippable indicates that the test is unskippable
+	TestUnskippable = "test.itr.unskippable"
+
+	// TestForcedToRun indicates that the test is forced to run because is unskippable
+	TestForcedToRun = "test.itr.forced_run"
 )
 
 // Define valid test status types.

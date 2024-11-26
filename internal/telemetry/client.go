@@ -146,6 +146,9 @@ type client struct {
 	metrics    map[Namespace]map[string]*metric
 	newMetrics bool
 
+	// syncFlushOnStop forces a sync flush to ensure all metrics are sent before stopping the client
+	syncFlushOnStop bool
+
 	// Globally registered application configuration sent in the app-started request, along with the locally-defined
 	// configuration of the  event.
 	globalAppConfig []Configuration
@@ -256,7 +259,7 @@ func (c *client) start(configuration []Configuration, namespace Namespace, flush
 	}
 
 	if flush {
-		c.flush()
+		c.flush(false)
 	}
 	c.heartbeatInterval = heartbeatInterval()
 	c.heartbeatT = time.AfterFunc(c.heartbeatInterval, c.backgroundHeartbeat)
@@ -285,7 +288,7 @@ func (c *client) Stop() {
 	// close request types have no body
 	r := c.newRequest(RequestTypeAppClosing)
 	c.scheduleSubmit(r)
-	c.flush()
+	c.flush(c.syncFlushOnStop)
 }
 
 // Disabled returns whether instrumentation telemetry is disabled
@@ -387,7 +390,7 @@ func (c *client) Count(namespace Namespace, name string, value float64, tags []s
 // flush sends any outstanding telemetry messages and aggregated metrics to be
 // sent to the backend. Requests are sent in the background. Must be called
 // with c.mu locked
-func (c *client) flush() {
+func (c *client) flush(sync bool) {
 	// initialize submissions slice of capacity len(c.requests) + 2
 	// to hold all the new events, plus two potential metric events
 	submissions := make([]*Request, 0, len(c.requests)+2)
@@ -441,14 +444,20 @@ func (c *client) flush() {
 		}
 	}
 
-	go func() {
+	submit := func() {
 		for _, r := range submissions {
 			err := r.submit()
 			if err != nil {
 				log("submission error: %s", err.Error())
 			}
 		}
-	}()
+	}
+
+	if sync {
+		submit()
+	} else {
+		go submit()
+	}
 }
 
 var (
@@ -620,6 +629,6 @@ func (c *client) backgroundHeartbeat() {
 		return
 	}
 	c.scheduleSubmit(c.newRequest(RequestTypeAppHeartbeat))
-	c.flush()
+	c.flush(false)
 	c.heartbeatT.Reset(c.heartbeatInterval)
 }

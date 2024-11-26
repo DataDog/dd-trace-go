@@ -19,6 +19,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/httptrace"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils"
 
 	"github.com/go-chi/chi"
@@ -108,19 +109,10 @@ func TestTrace200(t *testing.T) {
 }
 
 func TestError(t *testing.T) {
-	assertSpan := func(assert *assert.Assertions, spans []*mocktracer.Span, code int) {
-		assert.Len(spans, 1)
-		if len(spans) < 1 {
-			t.Fatalf("no spans")
-		}
-		span := spans[0]
+	assertSpan := func(assert *assert.Assertions, span mocktracer.Span, code int) {
 		assert.Equal("http.request", span.OperationName())
 		assert.Equal("foobar", span.Tag(ext.ServiceName))
-
 		assert.Equal(strconv.Itoa(code), span.Tag(ext.HTTPCode))
-
-		wantErr := fmt.Sprintf("%d: %s", code, http.StatusText(code))
-		assert.Equal(wantErr, span.Tag(ext.ErrorMsg))
 	}
 
 	t.Run("default", func(t *testing.T) {
@@ -146,7 +138,11 @@ func TestError(t *testing.T) {
 
 		// verify the errors and status are correct
 		spans := mt.FinishedSpans()
-		assertSpan(assert, spans, code)
+		assert.Len(spans, 1)
+		span := spans[0]
+		assertSpan(assert, *span, code)
+		wantErr := fmt.Sprintf("%d: %s", code, http.StatusText(code))
+		assert.Equal(wantErr, span.Tag(ext.Error).(error).Error())
 	})
 
 	t.Run("custom", func(t *testing.T) {
@@ -176,7 +172,100 @@ func TestError(t *testing.T) {
 
 		// verify the errors and status are correct
 		spans := mt.FinishedSpans()
-		assertSpan(assert, spans, code)
+		assert.Len(spans, 1)
+		span := spans[0]
+		assertSpan(assert, *span, code)
+		wantErr := fmt.Sprintf("%d: %s", code, http.StatusText(code))
+		assert.Equal(wantErr, span.Tag(ext.Error).(error).Error())
+	})
+	t.Run("envvar", func(t *testing.T) {
+		assert := assert.New(t)
+		t.Setenv("DD_TRACE_HTTP_SERVER_ERROR_STATUSES", "200")
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		// re-run config defaults based on new DD_TRACE_HTTP_SERVER_ERROR_STATUSES value
+		httptrace.ResetCfg()
+
+		router := chi.NewRouter()
+		router.Use(Middleware(
+			WithService("foobar")))
+		code := 200
+		// a handler with an error and make the requests
+		router.Get("/err", func(w http.ResponseWriter, r *http.Request) {
+			http.Error(w, fmt.Sprintf("%d!", code), code)
+		})
+		r := httptest.NewRequest("GET", "/err", nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, r)
+		response := w.Result()
+		defer response.Body.Close()
+		assert.Equal(response.StatusCode, code)
+
+		spans := mt.FinishedSpans()
+		assert.Len(spans, 1)
+		span := spans[0]
+		if span.Tag(ext.Error) == nil {
+			t.Fatal("Span missing error tags")
+		}
+		assertSpan(assert, *span, code)
+		wantErr := fmt.Sprintf("%d: %s", code, http.StatusText(code))
+		assert.Equal(wantErr, span.Tag(ext.Error).(error).Error())
+	})
+	t.Run("integration overrides global", func(t *testing.T) {
+		assert := assert.New(t)
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		t.Setenv("DD_TRACE_HTTP_SERVER_ERROR_STATUSES", "500")
+
+		// setup
+		router := chi.NewRouter()
+		router.Use(Middleware(
+			WithService("foobar"),
+			WithStatusCheck(func(statusCode int) bool {
+				return statusCode == 404
+			}),
+		))
+		code := 404
+		// a handler with an error and make the requests
+		router.Get("/404", func(w http.ResponseWriter, r *http.Request) {
+			http.Error(w, fmt.Sprintf("%d!", code), code)
+		})
+		r := httptest.NewRequest("GET", "/404", nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, r)
+		response := w.Result()
+		defer response.Body.Close()
+		assert.Equal(response.StatusCode, code)
+
+		// verify the errors and status are correct
+		spans := mt.FinishedSpans()
+		assert.Len(spans, 1)
+		span := spans[0]
+		assertSpan(assert, *span, code)
+		wantErr := fmt.Sprintf("%d: %s", code, http.StatusText(code))
+		assert.Equal(wantErr, span.Tag(ext.Error).(error).Error())
+
+		mt.Reset()
+
+		code = 500
+		router.Get("/500", func(w http.ResponseWriter, r *http.Request) {
+			http.Error(w, fmt.Sprintf("%d!", code), code)
+		})
+		r = httptest.NewRequest("GET", "/500", nil)
+		w = httptest.NewRecorder()
+		router.ServeHTTP(w, r)
+		response = w.Result()
+		defer response.Body.Close()
+		assert.Equal(response.StatusCode, 500)
+
+		// verify that span does not have error tag
+		spans = mt.FinishedSpans()
+		assert.Len(spans, 1)
+		span = spans[0]
+		assertSpan(assert, *span, 500)
+		assert.Empty(span.Tag(ext.Error))
 	})
 }
 

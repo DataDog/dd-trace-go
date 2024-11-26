@@ -288,7 +288,8 @@ func (p *profiler) collect(ticker <-chan time.Time) {
 		endpointCounter.GetAndReset()
 	}()
 
-	for {
+	exit := false
+	for !exit {
 		bat := batch{
 			seq:   p.seq,
 			host:  p.cfg.hostname,
@@ -377,7 +378,11 @@ func (p *profiler) collect(ticker <-chan time.Time) {
 			// is less than the configured profiling period, the ticker will block
 			// until the end of the profiling period.
 		case <-p.exit:
-			return
+			if !p.cfg.flushOnExit {
+				return
+			}
+			// If we're flushing, we enqueue the batch before exiting the loop.
+			exit = true
 		}
 
 		// Include endpoint hits from tracer in profile `event.json`.
@@ -450,8 +455,13 @@ func (p *profiler) send() {
 	for {
 		select {
 		case <-p.exit:
-			return
-		case bat := <-p.out:
+			if !p.cfg.flushOnExit {
+				return
+			}
+		case bat, ok := <-p.out:
+			if !ok {
+				return
+			}
 			if err := p.outputDir(bat); err != nil {
 				log.Error("Failed to output profile to dir: %v", err)
 			}

@@ -165,7 +165,7 @@ func TestAutoDetectStatsd(t *testing.T) {
 	t.Run("agent", func(t *testing.T) {
 		t.Run("default", func(t *testing.T) {
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-				w.Write([]byte(`{"statsd_port":0}`))
+				w.Write([]byte(`{"endpoints": [], "config": {"statsd_port":0}}`))
 			}))
 			defer srv.Close()
 			cfg, err := newConfig(WithAgentAddr(strings.TrimPrefix(srv.URL, "http://")), WithAgentTimeout(2))
@@ -175,7 +175,7 @@ func TestAutoDetectStatsd(t *testing.T) {
 
 		t.Run("port", func(t *testing.T) {
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-				w.Write([]byte(`{"statsd_port":8999}`))
+				w.Write([]byte(`{"endpoints": [], "config": {"statsd_port":8999}}`))
 			}))
 			defer srv.Close()
 			cfg, err := newConfig(WithAgentAddr(strings.TrimPrefix(srv.URL, "http://")))
@@ -229,7 +229,7 @@ func TestLoadAgentFeatures(t *testing.T) {
 
 	t.Run("OK", func(t *testing.T) {
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-			w.Write([]byte(`{"endpoints":["/v0.6/stats"],"feature_flags":["a","b"],"client_drop_p0s":true,"statsd_port":8999}`))
+			w.Write([]byte(`{"endpoints":["/v0.6/stats"],"feature_flags":["a","b"],"client_drop_p0s":true,"config": {"statsd_port":8999}}`))
 		}))
 		defer srv.Close()
 		cfg, err := newConfig(WithAgentAddr(strings.TrimPrefix(srv.URL, "http://")), WithAgentTimeout(2))
@@ -248,7 +248,7 @@ func TestLoadAgentFeatures(t *testing.T) {
 	t.Run("discovery", func(t *testing.T) {
 		t.Setenv("DD_TRACE_FEATURES", "discovery")
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-			w.Write([]byte(`{"endpoints":["/v0.6/stats"],"client_drop_p0s":true,"statsd_port":8999}`))
+			w.Write([]byte(`{"endpoints":["/v0.6/stats"],"client_drop_p0s":true,"config":{"statsd_port":8999}}`))
 		}))
 		defer srv.Close()
 		cfg, err := newConfig(WithAgentAddr(strings.TrimPrefix(srv.URL, "http://")), WithAgentTimeout(2))
@@ -559,8 +559,8 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			defer tracer.Stop()
 			assert.NoError(t, err)
 			c := tracer.config
-			assert.Equal(t, c.dogstatsdAddr, "localhost:123")
-			assert.Equal(t, globalconfig.DogstatsdAddr(), "localhost:123")
+			assert.Equal(t, "localhost:123", c.dogstatsdAddr)
+			assert.Equal(t, "localhost:123", globalconfig.DogstatsdAddr())
 		})
 
 		t.Run("env-both", func(t *testing.T) {
@@ -1833,5 +1833,19 @@ func BenchmarkStartSpanConfig(b *testing.B) {
 				Tag(ext.HTTPRoute, "/some/route/?"),
 			)
 		}
+	})
+}
+
+func TestNoHTTPClientOverride(t *testing.T) {
+	t.Run("default", func(t *testing.T) {
+		assert := assert.New(t)
+		client := http.DefaultClient
+		client.Timeout = 30 * time.Second // Default is 10s
+		c, err := newConfig(
+			WithHTTPClient(client),
+			WithUDS("/tmp/agent.sock"),
+		)
+		assert.NotNil(err)
+		assert.Equal(30*time.Second, c.httpClient.Timeout)
 	})
 }

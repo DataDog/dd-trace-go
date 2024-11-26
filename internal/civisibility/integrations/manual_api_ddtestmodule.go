@@ -13,12 +13,13 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/telemetry"
 )
 
 // Test Module
 
-// Ensures that tslvTestModule implements the DdTestModule interface.
-var _ DdTestModule = (*tslvTestModule)(nil)
+// Ensures that tslvTestModule implements the TestModule interface.
+var _ TestModule = (*tslvTestModule)(nil)
 
 // tslvTestModule implements the DdTestModule interface and represents a module within a test session.
 type tslvTestModule struct {
@@ -28,11 +29,11 @@ type tslvTestModule struct {
 	name      string
 	framework string
 
-	suites map[string]DdTestSuite
+	suites map[string]TestSuite
 }
 
 // createTestModule initializes a new test module within a given session.
-func createTestModule(session *tslvTestSession, name string, framework string, frameworkVersion string, startTime time.Time) DdTestModule {
+func createTestModule(session *tslvTestSession, name string, framework string, frameworkVersion string, startTime time.Time) TestModule {
 	// Ensure CI visibility is properly configured.
 	EnsureCiVisibilityInitialization()
 
@@ -74,7 +75,7 @@ func createTestModule(session *tslvTestSession, name string, framework string, f
 		moduleID:  moduleID,
 		name:      name,
 		framework: framework,
-		suites:    map[string]DdTestSuite{},
+		suites:    map[string]TestSuite{},
 		ciVisibilityCommon: ciVisibilityCommon{
 			startTime: startTime,
 			tags:      moduleTags,
@@ -86,7 +87,14 @@ func createTestModule(session *tslvTestSession, name string, framework string, f
 	// Ensure to close everything before CI visibility exits. In CI visibility mode, we try to never lose data.
 	PushCiVisibilityCloseAction(func() { module.Close() })
 
+	// Creating telemetry event created
+	telemetry.EventCreated(module.framework, telemetry.ModuleEventType)
 	return module
+}
+
+// ModuleID returns the ID of the module.
+func (t *tslvTestModule) ModuleID() uint64 {
+	return t.moduleID
 }
 
 // Name returns the name of the test module.
@@ -96,43 +104,56 @@ func (t *tslvTestModule) Name() string { return t.name }
 func (t *tslvTestModule) Framework() string { return t.framework }
 
 // Session returns the test session to which the test module belongs.
-func (t *tslvTestModule) Session() DdTestSession { return t.session }
+func (t *tslvTestModule) Session() TestSession { return t.session }
 
-// Close closes the test module and sets the finish time to the current time.
-func (t *tslvTestModule) Close() { t.CloseWithFinishTime(time.Now()) }
-
-// CloseWithFinishTime closes the test module with the given finish time.
-func (t *tslvTestModule) CloseWithFinishTime(finishTime time.Time) {
+// Close closes the test module.
+func (t *tslvTestModule) Close(options ...TestModuleCloseOption) {
 	t.mutex.Lock()
 	defer t.mutex.Unlock()
 	if t.closed {
 		return
 	}
 
+	defaults := &tslvTestModuleCloseOptions{}
+	for _, o := range options {
+		o(defaults)
+	}
+
+	if defaults.finishTime.IsZero() {
+		defaults.finishTime = time.Now()
+	}
+
 	for _, suite := range t.suites {
 		suite.Close()
 	}
-	t.suites = map[string]DdTestSuite{}
+	t.suites = map[string]TestSuite{}
 
-	t.span.Finish(tracer.FinishTime(finishTime))
+	t.span.Finish(tracer.FinishTime(defaults.finishTime))
 	t.closed = true
+
+	// Creating telemetry event finished
+	telemetry.EventFinished(t.framework, telemetry.ModuleEventType)
 }
 
 // GetOrCreateSuite returns an existing suite or creates a new one with the given name.
-func (t *tslvTestModule) GetOrCreateSuite(name string) DdTestSuite {
-	return t.GetOrCreateSuiteWithStartTime(name, time.Now())
-}
-
-// GetOrCreateSuiteWithStartTime returns an existing suite or creates a new one with the given name and start time.
-func (t *tslvTestModule) GetOrCreateSuiteWithStartTime(name string, startTime time.Time) DdTestSuite {
+func (t *tslvTestModule) GetOrCreateSuite(name string, options ...TestSuiteStartOption) TestSuite {
 	t.mutex.Lock()
 	defer t.mutex.Unlock()
 
-	var suite DdTestSuite
+	defaults := &tslvTestSuiteStartOptions{}
+	for _, o := range options {
+		o(defaults)
+	}
+
+	if defaults.startTime.IsZero() {
+		defaults.startTime = time.Now()
+	}
+
+	var suite TestSuite
 	if v, ok := t.suites[name]; ok {
 		suite = v
 	} else {
-		suite = createTestSuite(t, name, startTime)
+		suite = createTestSuite(t, name, defaults.startTime)
 		t.suites[name] = suite
 	}
 

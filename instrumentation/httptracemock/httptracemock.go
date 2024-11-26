@@ -49,7 +49,7 @@ func (mux *ServeMux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	span, ctx := httptrace.StartRequestSpan(r, so...)
 	defer func() {
-		httptrace.FinishRequestSpan(span, 200)
+		httptrace.FinishRequestSpan(span, 200, nil)
 	}()
 	var h http.Handler = mux.ServeMux
 	if appsec.Enabled() {

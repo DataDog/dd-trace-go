@@ -43,7 +43,7 @@ func instrumentTestingM(m *testing.M) func(exitCode int) {
 	integrations.EnsureCiVisibilityInitialization()
 
 	// Create a new test session for CI visibility.
-	session = integrations.CreateTestSession()
+	session = integrations.CreateTestSession(integrations.WithTestSessionFramework(testFramework, runtime.Version()))
 
 	ddm := (*M)(m)
 
@@ -113,7 +113,7 @@ func instrumentTestingTFunc(f func(*testing.T)) func(*testing.T) {
 		atomic.AddInt32(suitesCounters[suiteName], 1)
 
 		// Create or retrieve the module, suite, and test for CI visibility.
-		module := session.GetOrCreateModuleWithFramework(moduleName, testFramework, runtime.Version())
+		module := session.GetOrCreateModule(moduleName)
 		suite := module.GetOrCreateSuite(suiteName)
 		test := suite.CreateTest(t.Name())
 		test.SetTestFunc(originalFunc)
@@ -158,7 +158,7 @@ func instrumentTestingTFunc(f func(*testing.T)) func(*testing.T) {
 		defer func() {
 			if r := recover(); r != nil {
 				// Handle panic and set error information.
-				test.SetErrorInfo("panic", fmt.Sprint(r), utils.GetStacktrace(1))
+				test.SetError(integrations.WithErrorInfo("panic", fmt.Sprint(r), utils.GetStacktrace(1)))
 				test.Close(integrations.ResultStatusFail)
 				checkModuleAndSuite(module, suite)
 				// this is not an internal test. Retries are not applied to subtest (because the parent internal test is going to be retried)
@@ -204,7 +204,7 @@ func instrumentSetErrorInfo(tb testing.TB, errType string, errMessage string, sk
 	// Get the CI Visibility span and check if we can set the error type, message and stack
 	ciTestItem := getTestMetadata(tb)
 	if ciTestItem != nil && ciTestItem.test != nil && ciTestItem.error.CompareAndSwap(0, 1) {
-		ciTestItem.test.SetErrorInfo(errType, errMessage, utils.GetStacktrace(2+skip))
+		ciTestItem.test.SetError(integrations.WithErrorInfo(errType, errMessage, utils.GetStacktrace(2+skip)))
 	}
 }
 
@@ -220,7 +220,7 @@ func instrumentCloseAndSkip(tb testing.TB, skipReason string) {
 	// Get the CI Visibility span and check if we can mark it as skipped and close it
 	ciTestItem := getTestMetadata(tb)
 	if ciTestItem != nil && ciTestItem.test != nil && ciTestItem.skipped.CompareAndSwap(0, 1) {
-		ciTestItem.test.CloseWithFinishTimeAndSkipReason(integrations.ResultStatusSkip, time.Now(), skipReason)
+		ciTestItem.test.Close(integrations.ResultStatusSkip, integrations.WithTestSkipReason(skipReason))
 	}
 }
 
@@ -290,9 +290,9 @@ func instrumentTestingBFunc(pb *testing.B, name string, f func(*testing.B)) (str
 		bpf.AddLevel(-1)
 
 		startTime := time.Now()
-		module := session.GetOrCreateModuleWithFrameworkAndStartTime(moduleName, testFramework, runtime.Version(), startTime)
-		suite := module.GetOrCreateSuiteWithStartTime(suiteName, startTime)
-		test := suite.CreateTestWithStartTime(fmt.Sprintf("%s/%s", pb.Name(), name), startTime)
+		module := session.GetOrCreateModule(moduleName, integrations.WithTestModuleStartTime(startTime))
+		suite := module.GetOrCreateSuite(suiteName, integrations.WithTestSuiteStartTime(startTime))
+		test := suite.CreateTest(fmt.Sprintf("%s/%s", pb.Name(), name), integrations.WithTestStartTime(startTime))
 		test.SetTestFunc(originalFunc)
 
 		// Restore the original name without the sub-benchmark auto name.
@@ -373,7 +373,7 @@ func instrumentTestingBFunc(pb *testing.B, name string, f func(*testing.B)) (str
 
 		// Define a function to handle panic during benchmark finalization.
 		panicFunc := func(r any) {
-			test.SetErrorInfo("panic", fmt.Sprint(r), utils.GetStacktrace(1))
+			test.SetError(integrations.WithErrorInfo("panic", fmt.Sprint(r), utils.GetStacktrace(1)))
 			suite.SetTag(ext.Error, true)
 			module.SetTag(ext.Error, true)
 			test.Close(integrations.ResultStatusFail)
@@ -387,11 +387,11 @@ func instrumentTestingBFunc(pb *testing.B, name string, f func(*testing.B)) (str
 			test.SetTag(ext.Error, true)
 			suite.SetTag(ext.Error, true)
 			module.SetTag(ext.Error, true)
-			test.CloseWithFinishTime(integrations.ResultStatusFail, endTime)
+			test.Close(integrations.ResultStatusFail, integrations.WithTestFinishTime(endTime))
 		} else if iPfOfB.B.Skipped() {
-			test.CloseWithFinishTime(integrations.ResultStatusSkip, endTime)
+			test.Close(integrations.ResultStatusSkip, integrations.WithTestFinishTime(endTime))
 		} else {
-			test.CloseWithFinishTime(integrations.ResultStatusPass, endTime)
+			test.Close(integrations.ResultStatusPass, integrations.WithTestFinishTime(endTime))
 		}
 
 		checkModuleAndSuite(module, suite)

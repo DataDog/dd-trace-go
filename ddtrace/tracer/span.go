@@ -11,7 +11,6 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
-	"math"
 	"os"
 	"reflect"
 	"runtime"
@@ -31,9 +30,10 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
 	"github.com/DataDog/dd-trace-go/v2/internal/traceprof"
 
-	"github.com/DataDog/datadog-agent/pkg/obfuscate"
 	"github.com/tinylib/msgp/msgp"
 	"golang.org/x/xerrors"
+
+	"github.com/DataDog/datadog-agent/pkg/obfuscate"
 )
 
 type (
@@ -642,12 +642,18 @@ func (s *Span) finish(finishTime int64) {
 	}
 
 	keep := true
-	if t := GetGlobalTracer(); t != nil {
-		tc := t.TracerConf()
+	if t, ok := GetGlobalTracer().(*tracer); ok {
+		if !t.config.enabled.current {
+			return
+		}
 		t.Submit(s)
-		if tc.CanDropP0s {
+		if t.config.canDropP0s() {
 			// the agent supports dropping p0's in the client
 			keep = shouldKeep(s)
+		}
+		if t.TracerConf().DebugAbandonedSpans {
+			// the tracer supports debugging abandoned spans
+			t.submitAbandonedSpan(s, true)
 		}
 	}
 	if keep {
@@ -665,40 +671,6 @@ func (s *Span) finish(finishTime int64) {
 		// Restore the labels of the parent span so any CPU samples after this
 		// point are attributed correctly.
 		pprof.SetGoroutineLabels(s.pprofCtxRestore)
-	}
-}
-
-// newAggregableSpan creates a new summary for the span s, within an application
-// version version.
-func newAggregableSpan(s *Span, obfuscator *obfuscate.Obfuscator) *aggregableSpan {
-	var statusCode uint32
-	if sc, ok := s.meta["http.status_code"]; ok && sc != "" {
-		if c, err := strconv.Atoi(sc); err == nil && c > 0 && c <= math.MaxInt32 {
-			statusCode = uint32(c)
-		}
-	}
-	var isTraceRoot trilean
-	if s.parentID == 0 {
-		isTraceRoot = trileanTrue
-	} else {
-		isTraceRoot = trileanFalse
-	}
-
-	key := aggregation{
-		Name:        s.name,
-		Resource:    obfuscatedResource(obfuscator, s.spanType, s.resource),
-		Service:     s.service,
-		Type:        s.spanType,
-		Synthetics:  strings.HasPrefix(s.meta[keyOrigin], "synthetics"),
-		StatusCode:  statusCode,
-		IsTraceRoot: isTraceRoot,
-	}
-	return &aggregableSpan{
-		key:      key,
-		Start:    s.start,
-		Duration: s.duration,
-		TopLevel: s.metrics[keyTopLevel] == 1,
-		Error:    s.error,
 	}
 }
 

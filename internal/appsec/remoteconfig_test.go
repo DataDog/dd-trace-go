@@ -8,6 +8,7 @@ package appsec
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"reflect"
 	"slices"
@@ -30,7 +31,7 @@ func TestASMFeaturesCallback(t *testing.T) {
 	}
 	enabledPayload := []byte(`{"asm":{"enabled":true}}`)
 	disabledPayload := []byte(`{"asm":{"enabled":false}}`)
-	cfg, err := config.NewConfig()
+	cfg, err := config.NewStartConfig().NewConfig()
 	require.NoError(t, err)
 	a := newAppSec(cfg)
 	err = a.startRC()
@@ -410,12 +411,45 @@ func TestRemoteActivationScenarios(t *testing.T) {
 		require.False(t, found)
 	})
 
+	t.Run("WithEnablementMode(EnabledModeForcedOn)", func(t *testing.T) {
+		for _, envVal := range []string{"", "true", "false"} {
+			t.Run(fmt.Sprintf("DD_APPSEC_ENABLED=%s", envVal), func(t *testing.T) {
+				t.Setenv(config.EnvEnabled, envVal)
+
+				remoteconfig.Reset()
+				Start(config.WithEnablementMode(config.ForcedOn), config.WithRCConfig(remoteconfig.DefaultClientConfig()))
+				defer Stop()
+
+				require.True(t, Enabled())
+				found, err := remoteconfig.HasCapability(remoteconfig.ASMActivation)
+				require.NoError(t, err)
+				require.False(t, found)
+				found, err = remoteconfig.HasProduct(rc.ProductASMFeatures)
+				require.NoError(t, err)
+				require.False(t, found)
+			})
+		}
+	})
+
 	t.Run("DD_APPSEC_ENABLED=false", func(t *testing.T) {
 		t.Setenv(config.EnvEnabled, "false")
 		Start(config.WithRCConfig(remoteconfig.DefaultClientConfig()))
 		defer Stop()
 		require.Nil(t, activeAppSec)
 		require.False(t, Enabled())
+	})
+
+	t.Run("WithEnablementMode(EnabledModeForcedOff)", func(t *testing.T) {
+		for _, envVal := range []string{"", "true", "false"} {
+			t.Run(fmt.Sprintf("DD_APPSEC_ENABLED=%s", envVal), func(t *testing.T) {
+				t.Setenv(config.EnvEnabled, envVal)
+
+				Start(config.WithEnablementMode(config.ForcedOff), config.WithRCConfig(remoteconfig.DefaultClientConfig()))
+				defer Stop()
+				require.Nil(t, activeAppSec)
+				require.False(t, Enabled())
+			})
+		}
 	})
 }
 
@@ -829,7 +863,7 @@ func TestWafRCUpdate(t *testing.T) {
 	}
 
 	t.Run("toggle-blocking", func(t *testing.T) {
-		cfg, err := config.NewConfig()
+		cfg, err := config.NewStartConfig().NewConfig()
 		require.NoError(t, err)
 		wafHandle, err := waf.NewHandle(cfg.RulesManager.Latest, cfg.Obfuscator.KeyRegex, cfg.Obfuscator.ValueRegex)
 		require.NoError(t, err)

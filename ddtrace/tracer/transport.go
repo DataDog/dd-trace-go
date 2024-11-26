@@ -16,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	pb "github.com/DataDog/datadog-agent/pkg/proto/pbgo/trace"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/internal/tracerstats"
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/version"
@@ -67,7 +68,7 @@ type transport interface {
 	// It returns a non-nil response body when no error occurred.
 	send(p *payload) (body io.ReadCloser, err error)
 	// sendStats sends the given stats payload to the agent.
-	sendStats(s *statsPayload) error
+	sendStats(s *pb.ClientStatsPayload) error
 	// endpoint returns the URL to which the transport will send traces.
 	endpoint() string
 }
@@ -109,7 +110,7 @@ func newHTTPTransport(url string, client *http.Client) *httpTransport {
 	}
 }
 
-func (t *httpTransport) sendStats(p *statsPayload) error {
+func (t *httpTransport) sendStats(p *pb.ClientStatsPayload) error {
 	var buf bytes.Buffer
 	if err := msgp.Encode(&buf, p); err != nil {
 		return err

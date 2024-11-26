@@ -717,7 +717,7 @@ func TestTracerRuntimeMetrics(t *testing.T) {
 	t.Run("on", func(t *testing.T) {
 		tp := new(log.RecordLogger)
 		tp.Ignore("appsec: ", telemetry.LogPrefix)
-		tracer, err := newTracer(WithRuntimeMetrics(), WithLogger(tp), WithDebugMode(true))
+		tracer, err := newTracer(WithRuntimeMetrics(), WithLogger(tp), WithDebugMode(true), WithEnv("test"))
 		defer tracer.Stop()
 		assert.NoError(t, err)
 		assert.Contains(t, tp.Logs()[0], "DEBUG: Runtime metrics enabled")
@@ -727,7 +727,7 @@ func TestTracerRuntimeMetrics(t *testing.T) {
 		t.Setenv("DD_RUNTIME_METRICS_ENABLED", "true")
 		tp := new(log.RecordLogger)
 		tp.Ignore("appsec: ", telemetry.LogPrefix)
-		tracer, err := newTracer(WithLogger(tp), WithDebugMode(true))
+		tracer, err := newTracer(WithLogger(tp), WithDebugMode(true), WithEnv("test"))
 		defer tracer.Stop()
 		assert.NoError(t, err)
 		assert.Contains(t, tp.Logs()[0], "DEBUG: Runtime metrics enabled")
@@ -2347,7 +2347,7 @@ func TestFlush(t *testing.T) {
 	tr.statsd = ts
 
 	transport := newDummyTransport()
-	c := newConcentrator(&config{transport: transport}, defaultStatsBucketSize)
+	c := newConcentrator(&config{transport: transport, env: "someEnv"}, defaultStatsBucketSize)
 	tr.stats = c
 	c.Start()
 	defer c.Stop()
@@ -2367,15 +2367,16 @@ loop:
 			time.Sleep(time.Millisecond)
 		}
 	}
-	as := &aggregableSpan{
-		key: aggregation{
-			Name: "http.request",
-		},
+	s := &Span{
+		name: "http.request",
 		// Start must be older than latest bucket to get flushed
-		Start:    time.Now().UnixNano() - 3*defaultStatsBucketSize,
-		Duration: 1,
+		start:    time.Now().UnixNano() - 3*defaultStatsBucketSize,
+		duration: 1,
+		metrics:  map[string]float64{keyMeasured: 1},
 	}
-	c.add(as)
+	statSpan, ok := c.newTracerStatSpan(s, tr.obfuscator)
+	assert.True(t, ok)
+	c.add(statSpan)
 
 	assert.Len(t, tw.Flushed(), 0)
 	assert.Zero(t, ts.Flushed())

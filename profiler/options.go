@@ -111,6 +111,8 @@ type config struct {
 	logStartup           bool
 	traceConfig          executionTraceConfig
 	endpointCountEnabled bool
+	enabled              bool
+	flushOnExit          bool
 }
 
 // logStartup records the configuration to the configured logger in JSON format
@@ -146,6 +148,8 @@ func logStartup(c *config) {
 		"execution_trace_size_limit": c.traceConfig.Limit,
 		"endpoint_count_enabled":     c.endpointCountEnabled,
 		"custom_profiler_label_keys": c.customProfilerLabels,
+		"enabled":                    c.enabled,
+		"flush_on_exit":              c.flushOnExit,
 	}
 	b, err := json.Marshal(info)
 	if err != nil {
@@ -231,6 +235,7 @@ func defaultConfig() (*config, error) {
 	if v := os.Getenv("DD_VERSION"); v != "" {
 		WithVersion(v)(&c)
 	}
+	c.flushOnExit = internal.BoolEnv("DD_PROFILING_FLUSH_ON_EXIT", false)
 
 	tags := make(map[string]string)
 	if v := os.Getenv("DD_TAGS"); v != "" {

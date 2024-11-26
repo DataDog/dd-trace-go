@@ -8,6 +8,7 @@ package net
 import (
 	"context"
 	"fmt"
+	"io"
 	"math"
 	"math/rand/v2"
 	"net"
@@ -16,27 +17,35 @@ import (
 	"os"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 )
 
 const (
-	DefaultMaxRetries int           = 5
-	DefaultBackoff    time.Duration = 150 * time.Millisecond
+	// DefaultMaxRetries is the default number of retries for a request.
+	DefaultMaxRetries int = 5
+	// DefaultBackoff is the default backoff time for a request.
+	DefaultBackoff time.Duration = 150 * time.Millisecond
 )
 
 type (
+	// Client is an interface for sending requests to the Datadog backend.
 	Client interface {
 		GetSettings() (*SettingsResponseData, error)
 		GetEarlyFlakeDetectionData() (*EfdResponseData, error)
 		GetCommits(localCommits []string) ([]string, error)
-		SendPackFiles(packFiles []string) (bytes int64, err error)
+		SendPackFiles(commitSha string, packFiles []string) (bytes int64, err error)
+		SendCoveragePayload(ciTestCovPayload io.Reader) error
+		GetSkippableTests() (correlationID string, skippables map[string]map[string][]SkippableResponseDataAttributes, err error)
 	}
 
+	// client is a client for sending requests to the Datadog backend.
 	client struct {
 		id                 string
 		agentless          bool
@@ -52,6 +61,7 @@ type (
 		handler            *RequestHandler
 	}
 
+	// testConfigurations represents the test configurations.
 	testConfigurations struct {
 		OsPlatform          string            `json:"os.platform,omitempty"`
 		OsVersion           string            `json:"os.version,omitempty"`
@@ -63,9 +73,15 @@ type (
 	}
 )
 
-var _ Client = &client{}
+var (
+	_ Client = &client{}
 
-func NewClientWithServiceName(serviceName string) Client {
+	// telemetryInit is used to initialize the telemetry client.
+	telemetryInit sync.Once
+)
+
+// NewClientWithServiceNameAndSubdomain creates a new client with the given service name and subdomain.
+func NewClientWithServiceNameAndSubdomain(serviceName, subdomain string) Client {
 	ciTags := utils.GetCITags()
 
 	// get the environment
@@ -131,7 +147,7 @@ func NewClientWithServiceName(serviceName string) Client {
 				site = v
 			}
 
-			baseURL = fmt.Sprintf("https://api.%s", site)
+			baseURL = fmt.Sprintf("https://%s.%s", subdomain, site)
 		} else {
 			// Use the custom agentless URL.
 			baseURL = agentlessURL
@@ -140,7 +156,7 @@ func NewClientWithServiceName(serviceName string) Client {
 		requestHandler = NewRequestHandler()
 	} else {
 		// Use agent mode with the EVP proxy.
-		defaultHeaders["X-Datadog-EVP-Subdomain"] = "api"
+		defaultHeaders["X-Datadog-EVP-Subdomain"] = subdomain
 
 		agentURL := internal.AgentURLFromEnv()
 		if agentURL.Scheme == "unix" {
@@ -183,8 +199,27 @@ func NewClientWithServiceName(serviceName string) Client {
 	defaultHeaders["trace_id"] = id
 	defaultHeaders["parent_id"] = id
 
-	log.Debug("ciVisibilityHttpClient: new client created [id: %v, agentless: %v, url: %v, env: %v, serviceName: %v]",
-		id, agentlessEnabled, baseURL, environment, serviceName)
+	log.Debug("ciVisibilityHttpClient: new client created [id: %v, agentless: %v, url: %v, env: %v, serviceName: %v, subdomain: %v]",
+		id, agentlessEnabled, baseURL, environment, serviceName, subdomain)
+
+	if !telemetry.Disabled() {
+		telemetryInit.Do(func() {
+			telemetry.GlobalClient.ApplyOps(
+				telemetry.WithService(serviceName),
+				telemetry.WithEnv(environment),
+				telemetry.WithHTTPClient(requestHandler.Client),
+				telemetry.WithURL(agentlessEnabled, baseURL),
+				telemetry.SyncFlushOnStop(),
+			)
+			telemetry.GlobalClient.ProductChange(telemetry.NamespaceCiVisibility, true, []telemetry.Configuration{
+				telemetry.StringConfig("service", serviceName),
+				telemetry.StringConfig("env", environment),
+				telemetry.BoolConfig("agentless", agentlessEnabled),
+				telemetry.StringConfig("test_session_name", ciTags[constants.TestSessionName]),
+			})
+		})
+	}
+
 	return &client{
 		id:               id,
 		agentless:        agentlessEnabled,
@@ -208,10 +243,17 @@ func NewClientWithServiceName(serviceName string) Client {
 	}
 }
 
+// NewClientWithServiceName creates a new client with the given service name.
+func NewClientWithServiceName(serviceName string) Client {
+	return NewClientWithServiceNameAndSubdomain(serviceName, "api")
+}
+
+// NewClient creates a new client with the default service name.
 func NewClient() Client {
 	return NewClientWithServiceName("")
 }
 
+// getURLPath returns the full URL path for the given URL path.
 func (c *client) getURLPath(urlPath string) string {
 	if c.agentless {
 		return fmt.Sprintf("%s/%s", c.baseURL, urlPath)
@@ -220,6 +262,7 @@ func (c *client) getURLPath(urlPath string) string {
 	return fmt.Sprintf("%s/%s/%s", c.baseURL, "evp_proxy/v2", urlPath)
 }
 
+// getPostRequestConfig	returns a new RequestConfig for a POST request.
 func (c *client) getPostRequestConfig(url string, body interface{}) *RequestConfig {
 	return &RequestConfig{
 		Method:     "POST",

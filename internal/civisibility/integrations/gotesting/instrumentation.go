@@ -30,14 +30,14 @@ type (
 
 	// testExecutionMetadata contains metadata regarding an unique *testing.T or *testing.B execution
 	testExecutionMetadata struct {
-		test                        integrations.DdTest // internal CI Visibility test event
-		error                       atomic.Int32        // flag to check if the test event has error data already
-		skipped                     atomic.Int32        // flag to check if the test event has skipped data already
-		panicData                   any                 // panic data recovered from an internal test execution when using an additional feature wrapper
-		panicStacktrace             string              // stacktrace from the panic recovered from an internal test
-		isARetry                    bool                // flag to tag if a current test execution is a retry
-		isANewTest                  bool                // flag to tag if a current test execution is part of a new test (EFD not known test)
-		hasAdditionalFeatureWrapper bool                // flag to check if the current execution is part of an additional feature wrapper
+		test                        integrations.Test // internal CI Visibility test event
+		error                       atomic.Int32      // flag to check if the test event has error data already
+		skipped                     atomic.Int32      // flag to check if the test event has skipped data already
+		panicData                   any               // panic data recovered from an internal test execution when using an additional feature wrapper
+		panicStacktrace             string            // stacktrace from the panic recovered from an internal test
+		isARetry                    bool              // flag to tag if a current test execution is a retry
+		isANewTest                  bool              // flag to tag if a current test execution is part of a new test (EFD not known test)
+		hasAdditionalFeatureWrapper bool              // flag to check if the current execution is part of an additional feature wrapper
 	}
 
 	// runTestWithRetryOptions contains the options for calling runTestWithRetry function
@@ -104,15 +104,15 @@ func getInstrumentationMetadata(fn *runtime.Func) *instrumentationMetadata {
 
 // setInstrumentationMetadata stores an instrumentation metadata for a given *runtime.Func.
 func setInstrumentationMetadata(fn *runtime.Func, metadata *instrumentationMetadata) {
-	instrumentationMapMutex.RLock()
-	defer instrumentationMapMutex.RUnlock()
+	instrumentationMapMutex.Lock()
+	defer instrumentationMapMutex.Unlock()
 	instrumentationMap[fn] = metadata
 }
 
 // createTestMetadata creates the CI visibility test metadata associated with a given *testing.T, *testing.B, *testing.common
 func createTestMetadata(tb testing.TB) *testExecutionMetadata {
-	ciVisibilityTestMetadataMutex.RLock()
-	defer ciVisibilityTestMetadataMutex.RUnlock()
+	ciVisibilityTestMetadataMutex.Lock()
+	defer ciVisibilityTestMetadataMutex.Unlock()
 	execMetadata := &testExecutionMetadata{}
 	ciVisibilityTestMetadata[reflect.ValueOf(tb).UnsafePointer()] = execMetadata
 	return execMetadata
@@ -135,8 +135,8 @@ func getTestMetadataFromPointer(ptr unsafe.Pointer) *testExecutionMetadata {
 
 // deleteTestMetadata delete the CI visibility test metadata associated with a given *testing.T, *testing.B, *testing.common
 func deleteTestMetadata(tb testing.TB) {
-	ciVisibilityTestMetadataMutex.RLock()
-	defer ciVisibilityTestMetadataMutex.RUnlock()
+	ciVisibilityTestMetadataMutex.Lock()
+	defer ciVisibilityTestMetadataMutex.Unlock()
 	delete(ciVisibilityTestMetadata, reflect.ValueOf(tb).UnsafePointer())
 }
 
@@ -162,14 +162,15 @@ func applyAdditionalFeaturesToTestFunc(f func(*testing.T), testInfo *commonInfo)
 	// Target function
 	targetFunc := f
 
-	// Flaky test retries
-	if settings.FlakyTestRetriesEnabled {
-		targetFunc = applyFlakyTestRetriesAdditionalFeature(targetFunc)
+	// Early flake detection
+	var earlyFlakeDetectionApplied bool
+	if settings.EarlyFlakeDetection.Enabled {
+		targetFunc, earlyFlakeDetectionApplied = applyEarlyFlakeDetectionAdditionalFeature(testInfo, targetFunc, settings)
 	}
 
-	// Early flake detection
-	if settings.EarlyFlakeDetection.Enabled {
-		targetFunc = applyEarlyFlakeDetectionAdditionalFeature(testInfo, targetFunc, settings)
+	// Flaky test retries (only if EFD was not applied and if the feature is enabled)
+	if !earlyFlakeDetectionApplied && settings.FlakyTestRetriesEnabled {
+		targetFunc, _ = applyFlakyTestRetriesAdditionalFeature(targetFunc)
 	}
 
 	// Register the instrumented func as an internal instrumented func (to avoid double instrumentation)
@@ -178,7 +179,7 @@ func applyAdditionalFeaturesToTestFunc(f func(*testing.T), testInfo *commonInfo)
 }
 
 // applyFlakyTestRetriesAdditionalFeature applies the flaky test retries feature as a wrapper of a func(*testing.T)
-func applyFlakyTestRetriesAdditionalFeature(targetFunc func(*testing.T)) func(*testing.T) {
+func applyFlakyTestRetriesAdditionalFeature(targetFunc func(*testing.T)) (func(*testing.T), bool) {
 	flakyRetrySettings := integrations.GetFlakyRetriesSettings()
 
 	// If the retry count per test is > 1 and if we still have remaining total retry count
@@ -226,13 +227,13 @@ func applyFlakyTestRetriesAdditionalFeature(targetFunc func(*testing.T)) func(*t
 				},
 				execMetaAdjust: nil, // No execMetaAdjust needed
 			})
-		}
+		}, true
 	}
-	return targetFunc
+	return targetFunc, false
 }
 
 // applyEarlyFlakeDetectionAdditionalFeature applies the early flake detection feature as a wrapper of a func(*testing.T)
-func applyEarlyFlakeDetectionAdditionalFeature(testInfo *commonInfo, targetFunc func(*testing.T), settings *net.SettingsResponseData) func(*testing.T) {
+func applyEarlyFlakeDetectionAdditionalFeature(testInfo *commonInfo, targetFunc func(*testing.T), settings *net.SettingsResponseData) (func(*testing.T), bool) {
 	earlyFlakeDetectionData := integrations.GetEarlyFlakeDetectionSettings()
 	if earlyFlakeDetectionData != nil &&
 		len(earlyFlakeDetectionData.Tests) > 0 {
@@ -312,10 +313,10 @@ func applyEarlyFlakeDetectionAdditionalFeature(testInfo *commonInfo, targetFunc 
 						execMeta.isANewTest = true
 					},
 				})
-			}
+			}, true
 		}
 	}
-	return targetFunc
+	return targetFunc, false
 }
 
 // runTestWithRetry encapsulates the common retry logic for test functions.
@@ -325,8 +326,8 @@ func runTestWithRetry(options *runTestWithRetryOptions) {
 	var lastPtrToLocalT *testing.T
 
 	// Module and suite for this test
-	var module integrations.DdTestModule
-	var suite integrations.DdTestSuite
+	var module integrations.TestModule
+	var suite integrations.TestSuite
 
 	// Check if we have execution metadata to propagate
 	originalExecMeta := getTestMetadata(options.t)
