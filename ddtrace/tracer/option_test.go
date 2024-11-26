@@ -1914,7 +1914,7 @@ func TestNoHTTPClientOverride(t *testing.T) {
 			WithHTTPClient(client),
 			WithUDS("/tmp/agent.sock"),
 		)
-		assert.NotNil(err)
+		assert.Nil(err)
 		assert.Equal(30*time.Second, c.httpClient.Timeout)
 	})
 }
