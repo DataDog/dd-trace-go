@@ -254,7 +254,7 @@ func TestSpanTracePushNoFinish(t *testing.T) {
 	tp := new(log.RecordLogger)
 	tp.Ignore("appsec: ", telemetry.LogPrefix)
 	_, _, _, stop, err := startTestTracer(t, WithLogger(tp), WithLambdaMode(true), WithEnv("testEnv"))
-	assert.Nil(t, err)
+	assert.NoError(err)
 	defer stop()
 
 	buffer := newTrace()
