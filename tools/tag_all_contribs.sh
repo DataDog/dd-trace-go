@@ -1,7 +1,7 @@
 #!/bin/bash
 
 version=v2.0.0-rc.1
-phase=0
+phase=1
 
 if [ $phase -eq 0 ]; then
     # Tag the main repo
@@ -28,11 +28,11 @@ if [ $phase -eq 2 ]; then
     find ./contrib -type f -name go.mod | while read f; do
         contrib=$(dirname $f)
         cd $contrib && pwd
-        git tag $(echo $contrib | sed 's#\.\/##')/v2.0.0-beta.11
+        git tag $(echo $contrib | sed 's#\.\/##')/$version
         go mod tidy
         git push --tags
         cd -
     done
 fi
 
-find . -type f -name go.mod | while read f; do cd $(dirname $f) && pwd && go mod tidy && cd -; done
+# find . -type f -name go.mod | while read f; do cd $(dirname $f) && pwd && go mod tidy && cd -; done

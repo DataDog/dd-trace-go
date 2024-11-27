@@ -14,7 +14,7 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/cloud.google.com/go/pubsub.v1/v2 v2.0.0-beta.11.0.20241126125201-9a75896811a3
 	github.com/DataDog/dd-trace-go/contrib/confluentinc/confluent-kafka-go/kafka.v2/v2 v2.0.0-beta.11.0.20241126125201-9a75896811a3
 	github.com/DataDog/dd-trace-go/contrib/confluentinc/confluent-kafka-go/kafka/v2 v2.0.0-beta.11.0.20241126125201-9a75896811a3
-	github.com/DataDog/dd-trace-go/contrib/database/sql/v2 v2.0.0-beta.11.0.20241126125201-9a75896811a3
+	github.com/DataDog/dd-trace-go/contrib/database/sql/v2 v2.0.0-rc.1
 	github.com/DataDog/dd-trace-go/contrib/dimfeld/httptreemux.v5/v2 v2.0.0-beta.11.0.20241126125201-9a75896811a3
 	github.com/DataDog/dd-trace-go/contrib/elastic/go-elasticsearch.v6/v2 v2.0.0-beta.11.0.20241126125201-9a75896811a3
 	github.com/DataDog/dd-trace-go/contrib/emicklei/go-restful.v3/v2 v2.0.0-beta.11.0.20241126125201-9a75896811a3
@@ -37,7 +37,7 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/hashicorp/vault/v2 v2.0.0-beta.11.0.20241126125201-9a75896811a3
 	github.com/DataDog/dd-trace-go/contrib/julienschmidt/httprouter/v2 v2.0.0-beta.11.0.20241126125201-9a75896811a3
 	github.com/DataDog/dd-trace-go/contrib/labstack/echo.v4/v2 v2.0.0-beta.11.0.20241126125201-9a75896811a3
-	github.com/DataDog/dd-trace-go/contrib/net/http/v2 v2.0.0-beta.11.0.20241126125201-9a75896811a3
+	github.com/DataDog/dd-trace-go/contrib/net/http/v2 v2.0.0-rc.1
 	github.com/DataDog/dd-trace-go/contrib/olivere/elastic.v5/v2 v2.0.0-beta.11.0.20241126125201-9a75896811a3
 	github.com/DataDog/dd-trace-go/contrib/redis/go-redis.v9/v2 v2.0.0-beta.11.0.20241126125201-9a75896811a3
 	github.com/DataDog/dd-trace-go/contrib/segmentio/kafka-go/v2 v2.0.0-beta.11.0.20241126125201-9a75896811a3
@@ -46,7 +46,7 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/twitchtv/twirp/v2 v2.0.0-beta.11.0.20241126125201-9a75896811a3
 	github.com/DataDog/dd-trace-go/contrib/urfave/negroni/v2 v2.0.0-beta.11.0.20241126125201-9a75896811a3
 	github.com/DataDog/dd-trace-go/instrumentation/testutils/grpc/v2 v2.0.0-beta.11
-	github.com/DataDog/dd-trace-go/v2 v2.0.0-beta.11.0.20241127065438-25e81dfd73a9
+	github.com/DataDog/dd-trace-go/v2 v2.0.0-rc.1
 	github.com/IBM/sarama v1.40.0
 	github.com/Shopify/sarama v1.38.1
 	github.com/aws/aws-sdk-go v1.44.327
