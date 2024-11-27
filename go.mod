@@ -14,10 +14,10 @@ require (
 	github.com/DataDog/gostackparse v0.7.0
 	github.com/DataDog/sketches-go v1.4.6
 	github.com/aws/aws-sdk-go-v2 v1.32.5
-	github.com/aws/aws-sdk-go-v2/service/eventbridge v1.35.2
-	github.com/aws/aws-sdk-go-v2/service/sfn v1.34.0
-	github.com/aws/aws-sdk-go-v2/service/sns v1.33.2
-	github.com/aws/aws-sdk-go-v2/service/sqs v1.36.2
+	github.com/aws/aws-sdk-go-v2/service/eventbridge v1.20.4
+	github.com/aws/aws-sdk-go-v2/service/sfn v1.19.4
+	github.com/aws/aws-sdk-go-v2/service/sns v1.21.4
+	github.com/aws/aws-sdk-go-v2/service/sqs v1.24.4
 	github.com/aws/smithy-go v1.22.1
 	github.com/eapache/queue/v2 v2.0.0-20230407133247-75960ed334e4
 	github.com/google/pprof v0.0.0-20230817174616-7a8ec2ada47b
@@ -50,9 +50,9 @@ require (
 	github.com/DataDog/opentelemetry-mapping-go/pkg/otlp/attributes v0.20.0 // indirect
 	github.com/Microsoft/go-winio v0.6.2 // indirect
 	github.com/andybalholm/brotli v1.0.6 // indirect
-	github.com/aws/aws-sdk-go-v2/internal/configsources v1.3.24 // indirect
-	github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.6.24 // indirect
-	github.com/aws/aws-sdk-go-v2/internal/v4a v1.3.21 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/configsources v1.1.40 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.4.34 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/v4a v1.1.3 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/cihub/seelog v0.0.0-20170130134532-f561c5e57575 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
