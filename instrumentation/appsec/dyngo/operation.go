@@ -90,7 +90,7 @@ func SwapRootOperation(new Operation) {
 // bubble-up the operation stack, which allows listening to future events that
 // might happen in the operation lifetime.
 type operation struct {
-	parent *operation
+	parent Operation
 	eventRegister
 	dataBroadcaster
 
@@ -147,11 +147,7 @@ func NewOperation(parent Operation) Operation {
 			parent = *ptr
 		}
 	}
-	var parentOp *operation
-	if parent != nil {
-		parentOp = parent.unwrap()
-	}
-	return &operation{parent: parentOp}
+	return &operation{parent: parent}
 }
 
 // FromContext looks into the given context (or the GLS if orchestrion is enabled) for a parent Operation and returns it.
@@ -165,13 +161,33 @@ func FromContext(ctx context.Context) (Operation, bool) {
 	return op, ok
 }
 
+// FindOperation looks into the current operation tree for the first operation matching the given type.
+// It has a hardcoded limit of 32 levels of depth even looking for the operation in the parent tree
+func FindOperation[T any, O interface {
+	Operation
+	*T
+}](ctx context.Context) (*T, bool) {
+	op, found := FromContext(ctx)
+	if !found {
+		return nil, false
+	}
+
+	for current := op; current != nil; current = current.unwrap().parent {
+		if o, ok := current.(O); ok {
+			return o, true
+		}
+	}
+
+	return nil, false
+}
+
 // StartOperation starts a new operation along with its arguments and emits a
 // start event with the operation arguments.
 func StartOperation[O Operation, E ArgOf[O]](op O, args E) {
 	// Bubble-up the start event starting from the parent operation as you can't
 	// listen for your own start event
-	for current := op.unwrap().parent; current != nil; current = current.parent {
-		emitEvent(&current.eventRegister, op, args)
+	for current := op.unwrap().parent; current != nil; current = current.Parent() {
+		emitEvent(&current.unwrap().eventRegister, op, args)
 	}
 }
 
@@ -206,8 +222,9 @@ func FinishOperation[O Operation, E ResultOf[O]](op O, results E) {
 		return
 	}
 
-	for current := o; current != nil; current = current.parent {
-		emitEvent(&current.eventRegister, op, results)
+	var current Operation = op
+	for ; current != nil; current = current.Parent() {
+		emitEvent(&current.unwrap().eventRegister, op, results)
 	}
 }
 
@@ -275,8 +292,8 @@ func EmitData[T any](op Operation, data T) {
 	// Bubble up the data to the stack of operations. Contrary to events,
 	// we also send the data to ourselves since SDK operations are leaf operations
 	// that both emit and listen for data (errors).
-	for current := o; current != nil; current = current.parent {
-		emitData(&current.dataBroadcaster, data)
+	for current := op; current != nil; current = current.Parent() {
+		emitData(&current.unwrap().dataBroadcaster, data)
 	}
 }
 

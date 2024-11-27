@@ -15,7 +15,6 @@ import (
 	// Blank import needed to use embed for the default blocked response payloads
 	_ "embed"
 	"net/http"
-	"sync"
 	"sync/atomic"
 
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/dyngo"
@@ -31,7 +30,9 @@ type (
 	HandlerOperation struct {
 		dyngo.Operation
 		*waf.ContextOperation
-		mu sync.RWMutex
+
+		// wafContextOwner indicates if the waf.ContextOperation was started by us or not and if we need to close it.
+		wafContextOwner bool
 	}
 
 	// HandlerOperationArgs is the HTTP handler operation arguments.
@@ -57,10 +58,15 @@ func (HandlerOperationArgs) IsArgOf(*HandlerOperation)   {}
 func (HandlerOperationRes) IsResultOf(*HandlerOperation) {}
 
 func StartOperation(ctx context.Context, args HandlerOperationArgs) (*HandlerOperation, *atomic.Pointer[actions.BlockHTTP], context.Context) {
-	wafOp, ctx := waf.StartContextOperation(ctx)
+	wafOp, found := dyngo.FindOperation[waf.ContextOperation](ctx)
+	if !found {
+		wafOp, ctx = waf.StartContextOperation(ctx)
+	}
+
 	op := &HandlerOperation{
 		Operation:        dyngo.NewOperation(wafOp),
 		ContextOperation: wafOp,
+		wafContextOwner:  !found, // If we started the parent operation, we finish it, otherwise we don't
 	}
 
 	// We need to use an atomic pointer to store the action because the action may be created asynchronously in the future
@@ -73,9 +79,11 @@ func StartOperation(ctx context.Context, args HandlerOperationArgs) (*HandlerOpe
 }
 
 // Finish the HTTP handler operation and its children operations and write everything to the service entry span.
-func (op *HandlerOperation) Finish(res HandlerOperationRes, span *trace.TagSetter) {
+func (op *HandlerOperation) Finish(res HandlerOperationRes, span trace.TagSetter) {
 	dyngo.FinishOperation(op, res)
-	op.ContextOperation.Finish(*span)
+	if op.wafContextOwner {
+		op.ContextOperation.Finish(span)
+	}
 }
 
 const monitorBodyErrorLog = `
@@ -145,7 +153,7 @@ func BeforeHandle(
 		op.Finish(HandlerOperationRes{
 			Headers:    opts.ResponseHeaderCopier(w),
 			StatusCode: statusCode,
-		}, &span)
+		}, span)
 
 		// Execute the onBlock functions to make sure blocking works properly
 		// in case we are instrumenting the Gin framework
