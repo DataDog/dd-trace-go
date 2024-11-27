@@ -27,6 +27,11 @@ func (hp *hotPointer[T]) Lock() *T {
 	return hp.value
 }
 
+// Unlock unlocks the lock
+func (hp *hotPointer[T]) Unlock() {
+	hp.writeMu.Unlock()
+}
+
 // StandbyValue returns the standby value WITHOUT locking. Which means it cannot be used concurrently.
 func (hp *hotPointer[T]) StandbyValue() *T {
 	return hp.standby

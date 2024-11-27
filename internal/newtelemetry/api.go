@@ -7,6 +7,8 @@ package newtelemetry
 
 import (
 	"net/http"
+
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/newtelemetry/types"
 )
 
 type ClientConfig struct {
@@ -14,47 +16,36 @@ type ClientConfig struct {
 	// Defaults to https://instrumentation-telemetry-intake.datadoghq.com/api/v2/apmtelemetry
 	AgentlessURL string
 
-	// AgentURL is the url to the agent without the path
+	// AgentURL is the url to the agent without the path,
 	AgentURL string
 
 	// APIKey is the API key to use for sending telemetry, defaults to the env var DD_API_KEY.
 	APIKey string
 
-	// HTTPClient is the http client to use for sending telemetry, defaults to http.DefaultClient.
+	// HTTPClient is the http client to use for sending telemetry, defaults to a http.DefaultClient copy.
 	HTTPClient http.RoundTripper
 }
 
-// NewClient creates a new telemetry client with the given service, environment, and version and config.
-func NewClient(service, env, version string, config ClientConfig) (Client, error) {
-	return nil, nil
-}
-
-// StartApp starts the telemetry client with the given client send the app-started telemetry and sets it as the global client.
-func StartApp(client Client) error {
-	return nil
-}
-
-// StopApp creates the app-stopped telemetry, adding to the queue and flush all the queue before stopping the client.
-func StopApp() {
-}
-
+// MetricHandle can be used to submit different values for the same metric.
 // MetricHandle is used to reduce lock contention when submitting metrics.
 // This can also be used ephemerally to submit a single metric value like this:
 //
-//	telemetry.Metric(telemetry.Appsec, "my-count").Submit(1.0, []string{"tag1:true", "tag2:1.0"})
+//	telemetry.Metric(telemetry.Appsec, "my-count", map[string]string{"tag1": "true", "tag2": "1.0"}).Submit(1.0)
 type MetricHandle interface {
-	Submit(value float64, tags []string)
+	Submit(value float64)
 
 	flush()
 }
 
-// Logger is the interface i
-type Logger interface {
+// TelemetryLogger is the interface implementing the telemetry logs. Supports log deduplication. All methods are Thread-safe
+// This is an interface for easier testing but all functions will be mirrored at the package level to call
+// the global client.
+type TelemetryLogger interface {
 	// WithTags creates a new Logger which will send a comma-separated list of tags with the next logs
-	WithTags(tags string) Logger
+	WithTags(tags string) TelemetryLogger
 
 	// WithStackTrace creates a new Logger which will send a stack trace generated for each next log.
-	WithStackTrace(tags string) Logger
+	WithStackTrace() TelemetryLogger
 
 	// Error sends a telemetry log at the ERROR level
 	Error(text string)
@@ -66,39 +57,60 @@ type Logger interface {
 	Debug(text string)
 }
 
-// Client constitutes all the functions available concurrently for the telemetry users.
+// Integration is an integration that is configured to be traced.
+type Integration struct {
+	Name        string
+	Version     string
+	AutoEnabled bool
+	Compatible  bool
+	Error       string
+}
+
+// Client constitutes all the functions available concurrently for the telemetry users. All methods are thread-safe
+// This is an interface for easier testing but all functions will be mirrored at the package level to call
+// the global client.
 type Client interface {
-	// Count creates a new metric handle for the given namespace and name that can be used to submit values.
-	Count(namespace Namespace, name string) MetricHandle
 
-	// Rate creates a new metric handle for the given namespace and name that can be used to submit values.
-	Rate(namespace Namespace, name string) MetricHandle
+	// Count creates a new metric handle for the given parameters that can be used to submit values.
+	Count(namespace types.Namespace, name string, tags map[string]string) MetricHandle
 
-	// Gauge creates a new metric handle for the given namespace and name that can be used to submit values.
-	Gauge(namespace Namespace, name string) MetricHandle
+	// Rate creates a new metric handle for the given parameters that can be used to submit values.
+	Rate(namespace types.Namespace, name string, tags map[string]string) MetricHandle
 
-	// Distribution creates a new metric handle for the given namespace and name that can be used to submit values.
-	Distribution(namespace Namespace, name string) MetricHandle
+	// Gauge creates a new metric handle for the given parameters that can be used to submit values.
+	Gauge(namespace types.Namespace, name string, tags map[string]string) MetricHandle
+
+	// Distribution creates a new metric handle for the given parameters that can be used to submit values.
+	Distribution(namespace types.Namespace, name string, tags map[string]string) MetricHandle
 
 	// Logger returns an implementation of the Logger interface which sends telemetry logs.
-	Logger() Logger
+	Logger() TelemetryLogger
 
-	// ProductOnOff sent the telemetry necessary to signal that a product is enabled/disabled.
-	ProductOnOff(product Namespace, enabled bool)
+	// ProductStarted declares a product to have started at the customer’s request
+	ProductStarted(product types.Namespace)
+
+	// ProductStopped declares a product to have being stopped by the customer
+	ProductStopped(product types.Namespace)
+
+	// ProductStartError declares that a product could not start because of the following error
+	ProductStartError(product types.Namespace, err error)
 
 	// AddAppConfig adds a key value pair to the app configuration and send the change to telemetry
 	// value has to be json serializable and the origin is the source of the change.
-	AddAppConfig(key string, value any, origin Origin)
+	AddAppConfig(key string, value any, origin types.Origin)
 
-	// AddBulkAppConfig adds a list of key value pairs to the app configuration and send the change to telemetry.
+	// AddBulkAppConfig adds a list of key value pairs to the app configuration and sends the change to telemetry.
 	// Same as AddAppConfig but for multiple values.
-	AddBulkAppConfig(kvs []Configuration)
+	AddBulkAppConfig(kvs map[string]any, origin types.Origin)
+
+	// MarkIntegrationAsLoaded marks an integration as loaded in the telemetry
+	MarkIntegrationAsLoaded(integration Integration)
 
 	// flush closes the client and flushes any remaining data.
 	flush()
 
 	// appStart sends the telemetry necessary to signal that the app is starting.
-	appStart()
+	appStart() error
 
 	// appStop sends the telemetry necessary to signal that the app is stopping and calls Close()
 	appStop()
