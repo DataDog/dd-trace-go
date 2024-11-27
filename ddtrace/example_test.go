@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
@@ -22,6 +24,15 @@ func Example_datadog() {
 	// Start the tracer and defer the Stop method.
 	tracer.Start(tracer.WithAgentAddr("host:port"))
 	defer tracer.Stop()
+
+	// If you expect your application to be shutdown via SIGTERM (e.g. a container in k8s)
+	// You likely want to listen for that signal and stop the tracer to ensure no data is lost
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGTERM)
+	go func() {
+		<-sigChan
+		tracer.Stop()
+	}()
 
 	// Start a root span.
 	span := tracer.StartSpan("get.data")
