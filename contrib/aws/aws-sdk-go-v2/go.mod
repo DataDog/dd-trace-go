@@ -14,7 +14,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/sfn v1.19.4
 	github.com/aws/aws-sdk-go-v2/service/sns v1.21.4
 	github.com/aws/aws-sdk-go-v2/service/sqs v1.24.4
-	github.com/aws/smithy-go v1.22.1
+	github.com/aws/smithy-go v1.14.2
 	github.com/stretchr/testify v1.9.0
 )
 
