@@ -540,7 +540,7 @@ func newConfig(opts ...StartOption) *config {
 	}
 	if c.statsdClient == nil {
 		// configure statsd client
-		addr := resolveDogstatsdAttr(c)
+		addr := resolveDogstatsdAddr(c)
 		globalconfig.SetDogstatsdAddr(addr)
 		c.dogstatsdAddr = addr
 	}
@@ -562,11 +562,11 @@ func newConfig(opts ...StartOption) *config {
 	return c
 }
 
-// resolveDogstatsdAttr resolves the Dogstatsd address to use, based on the user-defined
+// resolveDogstatsdAddr resolves the Dogstatsd address to use, based on the user-defined
 // address and the agent-reported port. If the agent reports a port, it will be used
 // instead of the user-defined address' port. UDS paths are honored regardless of the
 // agent-reported port.
-func resolveDogstatsdAttr(c *config) string {
+func resolveDogstatsdAddr(c *config) string {
 	addr := c.dogstatsdAddr
 	if addr == "" {
 		// no config defined address; use host and port from env vars
@@ -590,13 +590,13 @@ func resolveDogstatsdAttr(c *config) string {
 		// and these don't have ports
 		return addr
 	}
-	if host == "" {
-		// no host was provided; use the default hostname
-		host = defaultHostname
-	}
 	if port == defaultStatsdPort {
 		// the port is the default; use the already resolved address
 		return addr
+	}
+	if host == "" {
+		// no host was provided; use the default hostname
+		host = defaultHostname
 	}
 	// use agent-reported address if it differs from the user-defined TCP-based protocol URI
 	// we have a valid host:port address; replace the port because the agent knows better
