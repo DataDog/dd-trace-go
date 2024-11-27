@@ -1,7 +1,7 @@
 #!/bin/bash
 
 version=v2.0.0-rc.1
-phase=1
+phase=2
 
 if [ $phase -eq 0 ]; then
     # Tag the main repo
@@ -27,9 +27,14 @@ if [ $phase -eq 2 ]; then
     # Tag all contribs
     find ./contrib -type f -name go.mod | while read f; do
         contrib=$(dirname $f)
+        if [ "$contrib" == "./contrib/net/http" ]; then
+            continue
+        fi
+        if [ "$contrib" == "./contrib/database/sql" ]; then
+            continue
+        fi
         cd $contrib && pwd
         git tag $(echo $contrib | sed 's#\.\/##')/$version
-        go mod tidy
         git push --tags
         cd -
     done
