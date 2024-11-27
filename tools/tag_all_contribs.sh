@@ -13,9 +13,13 @@ fi
 if [ $phase -eq 1 ]; then
     # Tag main contribs
     cd ./contrib/net/http && pwd
+    git tag contrib/net/http/$version
+    git push --tags
     cd -
 
     cd ./contrib/database/sql && pwd
+    git tag contrib/database/sql/$version
+    git push --tags
     cd -
 fi
 
