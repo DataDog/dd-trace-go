@@ -1,7 +1,7 @@
 #!/bin/bash
 
 version=v2.0.0-rc.1
-phase=2
+phase=0
 
 if [ $phase -eq 0 ]; then
     # Tag the main repo
@@ -21,6 +21,13 @@ if [ $phase -eq 1 ]; then
     git tag contrib/database/sql/$version
     git push --tags
     cd -
+
+    cd ./instrumentation/testutils/grpc && pwd
+    git tag instrumentation/testutils/grpc/$version
+    git push --tags
+    cd -
+
+    echo "WARN: Please run go get in the contribs using the main contribs before running the next phase"
 fi
 
 if [ $phase -eq 2 ]; then
@@ -40,4 +47,4 @@ if [ $phase -eq 2 ]; then
     done
 fi
 
-# find . -type f -name go.mod | while read f; do cd $(dirname $f) && pwd && go mod tidy && cd -; done
+find . -type f -name go.mod | while read f; do cd $(dirname $f) && go mod tidy &> /dev/null && cd - &> /dev/null; done
