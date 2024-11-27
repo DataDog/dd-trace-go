@@ -15,6 +15,7 @@ var (
 	// We copy the transport to avoid using the default one, as it might be
 	// augmented with tracing and we don't want these calls to be recorded.
 	// See https://golang.org/pkg/net/http/#DefaultTransport .
+	//orchestrion:ignore
 	defaultHTTPClient = &http.Client{
 		Transport: &http.Transport{
 			Proxy: http.ProxyFromEnvironment,

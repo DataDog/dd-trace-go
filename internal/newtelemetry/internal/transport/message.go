@@ -1,14 +1,14 @@
 // Unless explicitly stated otherwise all files in this repository are licensed
 // under the Apache License Version 2.0.
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
-// Copyright 2022 Datadog, Inc.
+// Copyright 2024 Datadog, Inc.
 
-package newtelemetry
+package transport
 
 import (
-	"bytes"
-	"fmt"
 	"net/http"
+
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/newtelemetry/types"
 )
 
 // Request captures all necessary information for a telemetry event submission
@@ -17,19 +17,6 @@ type Request struct {
 	Header     *http.Header
 	HTTPClient *http.Client
 	URL        string
-}
-
-// Body is the common high-level structure encapsulating a telemetry request body
-type Body struct {
-	APIVersion  string      `json:"api_version"`
-	RequestType RequestType `json:"request_type"`
-	TracerTime  int64       `json:"tracer_time"`
-	RuntimeID   string      `json:"runtime_id"`
-	SeqID       int64       `json:"seq_id"`
-	Debug       bool        `json:"debug"`
-	Payload     interface{} `json:"payload"`
-	Application Application `json:"application"`
-	Host        Host        `json:"host"`
 }
 
 // RequestType determines how the Payload of a request should be handled
@@ -61,19 +48,6 @@ const (
 	// RequestTypeAppIntegrationsChange is sent when the telemetry client starts
 	// with info on which integrations are used.
 	RequestTypeAppIntegrationsChange RequestType = "app-integrations-change"
-)
-
-// Namespace describes an APM product to distinguish telemetry coming from
-// different products used by the same application
-type Namespace string
-
-const (
-	NamespaceGeneral   Namespace = "general"
-	NamespaceTracers   Namespace = "tracers"
-	NamespaceProfilers Namespace = "profilers"
-	NamespaceAppSec    Namespace = "appsec"
-	NamespaceIAST      Namespace = "iast"
-	NamespaceTelemetry Namespace = "telemetry"
 )
 
 // MetricType is the type of metric being sent, either count, gauge, rate or distribution
@@ -139,73 +113,15 @@ type ConfigurationChange struct {
 	RemoteConfig  *RemoteConfig   `json:"remote_config,omitempty"`
 }
 
-type Origin int
-
-const (
-	OriginDefault Origin = iota
-	OriginCode
-	OriginDDConfig
-	OriginEnvVar
-	OriginRemoteConfig
-)
-
-func (o Origin) String() string {
-	switch o {
-	case OriginDefault:
-		return "default"
-	case OriginCode:
-		return "code"
-	case OriginDDConfig:
-		return "dd_config"
-	case OriginEnvVar:
-		return "env_var"
-	case OriginRemoteConfig:
-		return "remote_config"
-	default:
-		return fmt.Sprintf("unknown origin %d", o)
-	}
-}
-
-func (o Origin) MarshalJSON() ([]byte, error) {
-	var b bytes.Buffer
-	b.WriteString(`"`)
-	b.WriteString(o.String())
-	b.WriteString(`"`)
-	return b.Bytes(), nil
-}
-
 // Configuration is a library-specific configuration value
 // that should be initialized through StringConfig, IntConfig, FloatConfig, or BoolConfig
 type Configuration struct {
 	Name  string      `json:"name"`
 	Value interface{} `json:"value"`
 	// origin is the source of the config. It is one of {default, env_var, code, dd_config, remote_config}.
-	Origin      Origin `json:"origin"`
-	Error       Error  `json:"error"`
-	IsOverriden bool   `json:"is_overridden"`
-}
-
-// TODO: be able to pass in origin, error, isOverriden info to config
-// constructors
-
-// StringConfig returns a Configuration struct with a string value
-func StringConfig(key string, val string) Configuration {
-	return Configuration{Name: key, Value: val}
-}
-
-// IntConfig returns a Configuration struct with a int value
-func IntConfig(key string, val int) Configuration {
-	return Configuration{Name: key, Value: val}
-}
-
-// FloatConfig returns a Configuration struct with a float value
-func FloatConfig(key string, val float64) Configuration {
-	return Configuration{Name: key, Value: val}
-}
-
-// BoolConfig returns a Configuration struct with a bool value
-func BoolConfig(key string, val bool) Configuration {
-	return Configuration{Name: key, Value: val}
+	Origin      types.Origin `json:"origin"`
+	Error       Error        `json:"error"`
+	IsOverriden bool         `json:"is_overridden"`
 }
 
 // ProductsPayload is the top-level key for the app-product-change payload.
@@ -263,13 +179,13 @@ type AdditionalPayload struct {
 
 // Metrics corresponds to the "generate-metrics" request type
 type Metrics struct {
-	Namespace Namespace `json:"namespace"`
-	Series    []Series  `json:"series"`
+	Namespace types.Namespace `json:"namespace"`
+	Series    []Series        `json:"series"`
 }
 
 // DistributionMetrics corresponds to the "distributions" request type
 type DistributionMetrics struct {
-	Namespace Namespace            `json:"namespace"`
+	Namespace types.Namespace      `json:"namespace"`
 	Series    []DistributionSeries `json:"series"`
 }
 
@@ -289,8 +205,8 @@ type Series struct {
 	// NOTE: If this field isn't present in the request, the API assumes
 	// the metric is common. So we can't "omitempty" even though the
 	// field is technically optional.
-	Common    bool      `json:"common"`
-	Namespace Namespace `json:"namespace,omitempty"`
+	Common    bool            `json:"common"`
+	Namespace types.Namespace `json:"namespace,omitempty"`
 }
 
 // DistributionSeries is a sequence of observations for a distribution metric.
