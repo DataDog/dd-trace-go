@@ -450,48 +450,102 @@ func TestTracerOptionsDefaults(t *testing.T) {
 	})
 
 	t.Run("dogstatsd", func(t *testing.T) {
+		// Simulate the agent (assuming no concurrency at all)
+		var fail bool
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			if fail {
+				w.WriteHeader(http.StatusInternalServerError)
+				return
+			}
+			w.Write([]byte(`{"endpoints":["/v0.6/stats"],"feature_flags":["a","b"],"client_drop_p0s":true,"config": {"statsd_port":8999}}`))
+		}))
+		defer srv.Close()
+
+		opts := []StartOption{
+			WithAgentAddr(strings.TrimPrefix(srv.URL, "http://")),
+		}
+
 		t.Run("default", func(t *testing.T) {
-			tracer := newTracer(WithAgentTimeout(2))
+			tracer := newTracer(opts...)
 			defer tracer.Stop()
 			c := tracer.config
-			assert.Equal(t, c.dogstatsdAddr, "localhost:8125")
-			assert.Equal(t, globalconfig.DogstatsdAddr(), "localhost:8125")
+			assert.Equal(t, "localhost:8125", c.dogstatsdAddr)
+			assert.Equal(t, "localhost:8125", globalconfig.DogstatsdAddr())
 		})
 
 		t.Run("env-host", func(t *testing.T) {
 			t.Setenv("DD_AGENT_HOST", "my-host")
-			tracer := newTracer(WithAgentTimeout(2))
+			tracer := newTracer(opts...)
 			defer tracer.Stop()
 			c := tracer.config
-			assert.Equal(t, c.dogstatsdAddr, "my-host:8125")
-			assert.Equal(t, globalconfig.DogstatsdAddr(), "my-host:8125")
+			assert.Equal(t, "my-host:8125", c.dogstatsdAddr)
+			assert.Equal(t, "my-host:8125", globalconfig.DogstatsdAddr())
 		})
 
 		t.Run("env-port", func(t *testing.T) {
 			t.Setenv("DD_DOGSTATSD_PORT", "123")
-			tracer := newTracer(WithAgentTimeout(2))
+			tracer := newTracer(opts...)
 			defer tracer.Stop()
 			c := tracer.config
-			assert.Equal(t, c.dogstatsdAddr, "localhost:123")
-			assert.Equal(t, globalconfig.DogstatsdAddr(), "localhost:123")
+			assert.Equal(t, "localhost:8999", c.dogstatsdAddr)
+			assert.Equal(t, "localhost:8999", globalconfig.DogstatsdAddr())
+		})
+
+		t.Run("env-port: agent not available", func(t *testing.T) {
+			t.Setenv("DD_DOGSTATSD_PORT", "123")
+			fail = true
+			tracer := newTracer(opts...)
+			defer tracer.Stop()
+			c := tracer.config
+			assert.Equal(t, "localhost:123", c.dogstatsdAddr)
+			assert.Equal(t, "localhost:123", globalconfig.DogstatsdAddr())
+			fail = false
 		})
 
 		t.Run("env-both", func(t *testing.T) {
 			t.Setenv("DD_AGENT_HOST", "my-host")
 			t.Setenv("DD_DOGSTATSD_PORT", "123")
-			tracer := newTracer(WithAgentTimeout(2))
+			tracer := newTracer(opts...)
 			defer tracer.Stop()
 			c := tracer.config
-			assert.Equal(t, c.dogstatsdAddr, "my-host:123")
-			assert.Equal(t, globalconfig.DogstatsdAddr(), "my-host:123")
+			assert.Equal(t, "my-host:8999", c.dogstatsdAddr)
+			assert.Equal(t, "my-host:8999", globalconfig.DogstatsdAddr())
+		})
+
+		t.Run("env-both: agent not available", func(t *testing.T) {
+			t.Setenv("DD_AGENT_HOST", "my-host")
+			t.Setenv("DD_DOGSTATSD_PORT", "123")
+			fail = true
+			tracer := newTracer(opts...)
+			defer tracer.Stop()
+			c := tracer.config
+			assert.Equal(t, "my-host:123", c.dogstatsdAddr)
+			assert.Equal(t, "my-host:123", globalconfig.DogstatsdAddr())
+			fail = false
 		})
 
 		t.Run("option", func(t *testing.T) {
-			tracer := newTracer(WithDogstatsdAddress("10.1.0.12:4002"))
+			o := make([]StartOption, len(opts))
+			copy(o, opts)
+			o = append(o, WithDogstatsdAddress("10.1.0.12:4002"))
+			tracer := newTracer(o...)
 			defer tracer.Stop()
 			c := tracer.config
-			assert.Equal(t, c.dogstatsdAddr, "10.1.0.12:4002")
-			assert.Equal(t, globalconfig.DogstatsdAddr(), "10.1.0.12:4002")
+			assert.Equal(t, "10.1.0.12:8999", c.dogstatsdAddr)
+			assert.Equal(t, "10.1.0.12:8999", globalconfig.DogstatsdAddr())
+		})
+
+		t.Run("option: agent not available", func(t *testing.T) {
+			o := make([]StartOption, len(opts))
+			copy(o, opts)
+			fail = true
+			o = append(o, WithDogstatsdAddress("10.1.0.12:4002"))
+			tracer := newTracer(o...)
+			defer tracer.Stop()
+			c := tracer.config
+			assert.Equal(t, "10.1.0.12:4002", c.dogstatsdAddr)
+			assert.Equal(t, "10.1.0.12:4002", globalconfig.DogstatsdAddr())
+			fail = false
 		})
 
 		t.Run("uds", func(t *testing.T) {

@@ -562,6 +562,10 @@ func newConfig(opts ...StartOption) *config {
 	return c
 }
 
+// resolveDogstatsdAttr resolves the Dogstatsd address to use, based on the user-defined
+// address and the agent-reported port. If the agent reports a port, it will be used
+// instead of the user-defined address' port. UDS paths are honored regardless of the
+// agent-reported port.
 func resolveDogstatsdAttr(c *config) string {
 	addr := c.dogstatsdAddr
 	if addr == "" {
@@ -572,8 +576,7 @@ func resolveDogstatsdAttr(c *config) string {
 	agentport := c.agent.StatsdPort
 	if agentport == 0 {
 		// the agent didn't report a port; use the already resolved address as
-		// features are loaded from the trace-agent, which may be not running
-		// and we want to push metrics to another statsd server
+		// features are loaded from the trace-agent, which might be not running
 		return addr
 	}
 	// the agent reported a port
