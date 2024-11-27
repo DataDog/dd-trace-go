@@ -115,15 +115,6 @@ type SpanContext struct {
 	spanLinks []SpanLink // links to related spans in separate|external|disconnected traces
 }
 
-// SpanContextWithLinks represents a SpanContext with additional methods for
-// access to the SpanLinks on the span context, if present.
-type SpanContextWithLinks struct {
-	ctx *SpanContext
-
-	// SpanLinks returns a copy of the span links on the SpanContext.
-	spanLinks []SpanLink
-}
-
 // Private interface for converting v1 span contexts to v2 ones.
 type spanContextV1Adapter interface {
 	SamplingDecision() uint32
@@ -237,7 +228,7 @@ func (c *SpanContext) TraceIDLower() uint64 {
 	return c.traceID.Lower()
 }
 
-// SpanLinks implements ddtrace.SpanContextWithLinks
+// SpanLinks implements ddtrace.SpanContext
 func (c *SpanContext) SpanLinks() []SpanLink {
 	cp := make([]SpanLink, len(c.spanLinks))
 	copy(cp, c.spanLinks)
