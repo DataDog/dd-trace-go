@@ -320,7 +320,7 @@ func initalizeDynamicInstrumentationRemoteConfigState() {
 // of the Go Dynamic Instrumentation product.
 func accessStringsToMitigatePageFault(strs ...string) {
 	for i := range strs {
-		io.Discard.Write([]byte(strs[i]))
+		io.WriteString(io.Discard, strs[i])
 	}
 }
 
