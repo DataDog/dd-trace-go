@@ -106,6 +106,9 @@ var (
 	// Replaced in tests
 	defaultSocketDSD = "/var/run/datadog/dsd.socket"
 
+	// defaultStatsdPort specifies the default port to use for connecting to the statsd server.
+	defaultStatsdPort = "8125"
+
 	// defaultMaxTagsHeaderLen specifies the default maximum length of the X-Datadog-Tags header value.
 	defaultMaxTagsHeaderLen = 128
 )
@@ -528,9 +531,7 @@ func newConfig(opts ...StartOption) *config {
 	}
 	// if using stdout or traces are disabled, agent is disabled
 	agentDisabled := c.logToStdout || !c.enabled.current
-	ignoreStatsdPort := c.agent.ignore // preserve the value of c.agent.ignore when testing
 	c.agent = loadAgentFeatures(agentDisabled, c.agentURL, c.httpClient)
-	c.agent.ignore = ignoreStatsdPort
 	info, ok := debug.ReadBuildInfo()
 	if !ok {
 		c.loadContribIntegrations([]*debug.Module{})
@@ -539,25 +540,7 @@ func newConfig(opts ...StartOption) *config {
 	}
 	if c.statsdClient == nil {
 		// configure statsd client
-		addr := c.dogstatsdAddr
-		if addr == "" {
-			// no config defined address; use defaults
-			addr = defaultDogstatsdAddr()
-		}
-		if agentport := c.agent.StatsdPort; agentport > 0 && !c.agent.ignore {
-			// the agent reported a non-standard port
-			host, _, err := net.SplitHostPort(addr)
-			// Use agent-reported address if it differs from the user-defined TCP-based protocol URI
-			if err == nil && host != "unix" {
-				// we have a valid host:port address; replace the port because
-				// the agent knows better
-				if host == "" {
-					host = defaultHostname
-				}
-				addr = net.JoinHostPort(host, strconv.Itoa(agentport))
-			}
-			// not a valid TCP address, leave it as it is (could be a socket connection)
-		}
+		addr := resolveDogstatsdAttr(c)
 		globalconfig.SetDogstatsdAddr(addr)
 		c.dogstatsdAddr = addr
 	}
@@ -577,6 +560,45 @@ func newConfig(opts ...StartOption) *config {
 	}
 
 	return c
+}
+
+func resolveDogstatsdAttr(c *config) string {
+	addr := c.dogstatsdAddr
+	if addr == "" {
+		// no config defined address; use host and port from env vars
+		// or default to localhost:8125 if not set
+		addr = defaultDogstatsdAddr()
+	}
+	agentport := c.agent.StatsdPort
+	if agentport == 0 {
+		// the agent didn't report a port; use the already resolved address as
+		// features are loaded from the trace-agent, which may be not running
+		// and we want to push metrics to another statsd server
+		return addr
+	}
+	// the agent reported a port
+	host, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		// parsing the address failed; use the already resolved address as is
+		return addr
+	}
+	if host == "unix" {
+		// no need to change the address because it's a UDS connection
+		// and these don't have ports
+		return addr
+	}
+	if host == "" {
+		// no host was provided; use the default hostname
+		host = defaultHostname
+	}
+	if port == defaultStatsdPort {
+		// the port is the default; use the already resolved address
+		return addr
+	}
+	// use agent-reported address if it differs from the user-defined TCP-based protocol URI
+	// we have a valid host:port address; replace the port because the agent knows better
+	addr = net.JoinHostPort(host, strconv.Itoa(agentport))
+	return addr
 }
 
 func newStatsdClient(c *config) (internal.StatsdClient, error) {
@@ -616,7 +638,7 @@ func defaultDogstatsdAddr() string {
 		// socket exists and user didn't specify otherwise via env vars
 		return "unix://" + defaultSocketDSD
 	}
-	host, port := defaultHostname, "8125"
+	host, port := defaultHostname, defaultStatsdPort
 	if envHost != "" {
 		host = envHost
 	}
@@ -651,9 +673,6 @@ type agentFeatures struct {
 	// featureFlags specifies all the feature flags reported by the trace-agent.
 	featureFlags map[string]struct{}
 
-	// ignore indicates that we should ignore the agent in favor of user set values.
-	// It should only be used during testing.
-	ignore bool
 	// peerTags specifies precursor tags to aggregate stats on when client stats is enabled
 	peerTags []string
 
@@ -684,9 +703,6 @@ func loadAgentFeatures(agentDisabled bool, agentURL *url.URL, httpClient *http.C
 		return
 	}
 	defer resp.Body.Close()
-	type agentConfig struct {
-		DefaultEnv string `json:"default_env"`
-	}
 	type infoResponse struct {
 		Endpoints     []string `json:"endpoints"`
 		ClientDropP0s bool     `json:"client_drop_p0s"`
@@ -819,15 +835,6 @@ func WithFeatureFlags(feats ...string) StartOption {
 			c.featureFlags[strings.TrimSpace(f)] = struct{}{}
 		}
 		log.Info("FEATURES enabled: %v", feats)
-	}
-}
-
-// withIgnoreAgent allows tests to ignore the agent running in CI so that we can
-// properly test user set StatsdPort.
-// This should only be used during testing.
-func withIgnoreAgent(ignore bool) StartOption {
-	return func(c *config) {
-		c.agent.ignore = ignore
 	}
 }
 
