@@ -104,15 +104,15 @@ func getInstrumentationMetadata(fn *runtime.Func) *instrumentationMetadata {
 
 // setInstrumentationMetadata stores an instrumentation metadata for a given *runtime.Func.
 func setInstrumentationMetadata(fn *runtime.Func, metadata *instrumentationMetadata) {
-	instrumentationMapMutex.RLock()
-	defer instrumentationMapMutex.RUnlock()
+	instrumentationMapMutex.Lock()
+	defer instrumentationMapMutex.Unlock()
 	instrumentationMap[fn] = metadata
 }
 
 // createTestMetadata creates the CI visibility test metadata associated with a given *testing.T, *testing.B, *testing.common
 func createTestMetadata(tb testing.TB) *testExecutionMetadata {
-	ciVisibilityTestMetadataMutex.RLock()
-	defer ciVisibilityTestMetadataMutex.RUnlock()
+	ciVisibilityTestMetadataMutex.Lock()
+	defer ciVisibilityTestMetadataMutex.Unlock()
 	execMetadata := &testExecutionMetadata{}
 	ciVisibilityTestMetadata[reflect.ValueOf(tb).UnsafePointer()] = execMetadata
 	return execMetadata
@@ -135,8 +135,8 @@ func getTestMetadataFromPointer(ptr unsafe.Pointer) *testExecutionMetadata {
 
 // deleteTestMetadata delete the CI visibility test metadata associated with a given *testing.T, *testing.B, *testing.common
 func deleteTestMetadata(tb testing.TB) {
-	ciVisibilityTestMetadataMutex.RLock()
-	defer ciVisibilityTestMetadataMutex.RUnlock()
+	ciVisibilityTestMetadataMutex.Lock()
+	defer ciVisibilityTestMetadataMutex.Unlock()
 	delete(ciVisibilityTestMetadata, reflect.ValueOf(tb).UnsafePointer())
 }
 

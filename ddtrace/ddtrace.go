@@ -38,11 +38,8 @@ type SpanContextW3C interface {
 type SpanContextWithLinks interface {
 	SpanContext
 
-	// SpanLinks returns the span links on the SpanContext.
+	// SpanLinks returns a copy of the span links on the SpanContext.
 	SpanLinks() []SpanLink
-
-	// Setlinks takes in a slice of SpanLinks and sets them to the SpanContext.
-	SetLinks(links []SpanLink)
 }
 
 // Tracer specifies an implementation of the Datadog tracer which allows starting
