@@ -66,8 +66,14 @@ func testStatsd(t *testing.T, cfg *config, addr string) {
 
 func TestStatsdUDPConnect(t *testing.T) {
 	t.Setenv("DD_DOGSTATSD_PORT", "8111")
-	testStatsd(t, newConfig(), net.JoinHostPort(defaultHostname, "8111"))
-	cfg := newConfig()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		// We simulate the agent not being able to provide the statsd port
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+
+	cfg := newConfig(WithAgentAddr(strings.TrimPrefix(srv.URL, "http://")))
+	testStatsd(t, cfg, net.JoinHostPort(defaultHostname, "8111"))
 	addr := net.JoinHostPort(defaultHostname, "8111")
 
 	client, err := newStatsdClient(cfg)
@@ -151,7 +157,14 @@ func TestAutoDetectStatsd(t *testing.T) {
 
 	t.Run("env", func(t *testing.T) {
 		t.Setenv("DD_DOGSTATSD_PORT", "8111")
-		testStatsd(t, newConfig(), net.JoinHostPort(defaultHostname, "8111"))
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			// We simulate the agent not being able to provide the statsd port
+			w.WriteHeader(http.StatusInternalServerError)
+		}))
+		defer srv.Close()
+
+		cfg := newConfig(WithAgentAddr(strings.TrimPrefix(srv.URL, "http://")))
+		testStatsd(t, cfg, net.JoinHostPort(defaultHostname, "8111"))
 	})
 
 	t.Run("agent", func(t *testing.T) {
@@ -457,7 +470,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 				w.WriteHeader(http.StatusInternalServerError)
 				return
 			}
-			w.Write([]byte(`{"endpoints":["/v0.6/stats"],"feature_flags":["a","b"],"client_drop_p0s":true,"config": {"statsd_port":8999}}`))
+			w.Write([]byte(`{"endpoints":["/v0.6/stats"],"feature_flags":["a","b"],"client_drop_p0s":true,"config": {"statsd_port":8125}}`))
 		}))
 		defer srv.Close()
 
@@ -487,8 +500,8 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			tracer := newTracer(opts...)
 			defer tracer.Stop()
 			c := tracer.config
-			assert.Equal(t, "localhost:8999", c.dogstatsdAddr)
-			assert.Equal(t, "localhost:8999", globalconfig.DogstatsdAddr())
+			assert.Equal(t, "localhost:8125", c.dogstatsdAddr)
+			assert.Equal(t, "localhost:8125", globalconfig.DogstatsdAddr())
 		})
 
 		t.Run("env-port: agent not available", func(t *testing.T) {
@@ -508,8 +521,8 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			tracer := newTracer(opts...)
 			defer tracer.Stop()
 			c := tracer.config
-			assert.Equal(t, "my-host:8999", c.dogstatsdAddr)
-			assert.Equal(t, "my-host:8999", globalconfig.DogstatsdAddr())
+			assert.Equal(t, "my-host:8125", c.dogstatsdAddr)
+			assert.Equal(t, "my-host:8125", globalconfig.DogstatsdAddr())
 		})
 
 		t.Run("env-both: agent not available", func(t *testing.T) {
@@ -531,8 +544,8 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			tracer := newTracer(o...)
 			defer tracer.Stop()
 			c := tracer.config
-			assert.Equal(t, "10.1.0.12:8999", c.dogstatsdAddr)
-			assert.Equal(t, "10.1.0.12:8999", globalconfig.DogstatsdAddr())
+			assert.Equal(t, "10.1.0.12:8125", c.dogstatsdAddr)
+			assert.Equal(t, "10.1.0.12:8125", globalconfig.DogstatsdAddr())
 		})
 
 		t.Run("option: agent not available", func(t *testing.T) {

@@ -580,7 +580,7 @@ func resolveDogstatsdAddr(c *config) string {
 		return addr
 	}
 	// the agent reported a port
-	host, port, err := net.SplitHostPort(addr)
+	host, _, err := net.SplitHostPort(addr)
 	if err != nil {
 		// parsing the address failed; use the already resolved address as is
 		return addr
@@ -588,10 +588,6 @@ func resolveDogstatsdAddr(c *config) string {
 	if host == "unix" {
 		// no need to change the address because it's a UDS connection
 		// and these don't have ports
-		return addr
-	}
-	if port == defaultStatsdPort {
-		// the port is the default; use the already resolved address
 		return addr
 	}
 	if host == "" {
