@@ -603,7 +603,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 		})
 
 		t.Run("env-both", func(t *testing.T) {
-			t.Setenv("DD_AGENT_HOST", "127.0.0.1")
+			t.Setenv("DD_AGENT_HOST", "my-host")
 			t.Setenv("DD_DOGSTATSD_PORT", "123")
 			tracer, err := newTracer(opts...)
 			assert.NoError(t, err)
@@ -630,7 +630,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			o := make([]StartOption, len(opts))
 			copy(o, opts)
 			o = append(o, WithDogstatsdAddress("10.1.0.12:4002"))
-			tracer, err := newTracer(opts...)
+			tracer, err := newTracer(o...)
 			assert.NoError(t, err)
 			defer tracer.Stop()
 			c := tracer.config
@@ -643,7 +643,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			copy(o, opts)
 			fail = true
 			o = append(o, WithDogstatsdAddress("10.1.0.12:4002"))
-			tracer, err := newTracer(opts...)
+			tracer, err := newTracer(o...)
 			assert.NoError(t, err)
 			defer tracer.Stop()
 			c := tracer.config
