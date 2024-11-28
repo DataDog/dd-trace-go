@@ -9,8 +9,8 @@ import (
 	"fmt"
 	"time"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/utils/telemetry"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
 const (

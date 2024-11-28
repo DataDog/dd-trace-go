@@ -9,7 +9,7 @@ import (
 	"fmt"
 	"strings"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 )
 
 var additionalConfigs []telemetry.Configuration

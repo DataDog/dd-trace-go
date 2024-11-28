@@ -4,7 +4,7 @@
 // Copyright 2016 Datadog, Inc.
 
 // Package fiber provides tracing functions for tracing the fiber package (https://github.com/gofiber/fiber).
-package fiber // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/gofiber/fiber.v2"
+package fiber // import "github.com/DataDog/dd-trace-go/contrib/gofiber/fiber.v2/v2"
 
 import (
 	"fmt"
@@ -12,20 +12,19 @@ import (
 	"net/http"
 	"strconv"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 
 	"github.com/gofiber/fiber/v2"
 )
 
 const componentName = "gofiber/fiber.v2"
 
+var instr *instrumentation.Instrumentation
+
 func init() {
-	telemetry.LoadIntegration(componentName)
-	tracer.MarkIntegrationImported("github.com/gofiber/fiber/v2")
+	instr = instrumentation.Load(instrumentation.PackageGoFiberV2)
 }
 
 // Middleware returns middleware that will trace incoming requests.
@@ -33,15 +32,15 @@ func Middleware(opts ...Option) func(c *fiber.Ctx) error {
 	cfg := new(config)
 	defaults(cfg)
 	for _, fn := range opts {
-		fn(cfg)
+		fn.apply(cfg)
 	}
-	log.Debug("gofiber/fiber.v2: Middleware: %#v", cfg)
+	instr.Logger().Debug("gofiber/fiber.v2: Middleware: %#v", cfg)
 	return func(c *fiber.Ctx) error {
 		if cfg.ignoreRequest(c) {
 			return c.Next()
 		}
 
-		opts := []ddtrace.StartSpanOption{
+		opts := []tracer.StartSpanOption{
 			tracer.SpanType(ext.SpanTypeWeb),
 			tracer.ServiceName(cfg.serviceName),
 			tracer.Tag(ext.HTTPMethod, c.Method()),

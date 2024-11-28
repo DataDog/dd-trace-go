@@ -12,8 +12,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/constants"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/utils"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
 )
 
 func TestAlignTs(t *testing.T) {
@@ -25,17 +25,17 @@ func TestAlignTs(t *testing.T) {
 
 func TestConcentrator(t *testing.T) {
 	bucketSize := int64(500_000)
-	s1 := span{
-		Name:     "http.request",
-		Start:    time.Now().UnixNano() + 3*bucketSize,
-		Duration: 1,
-		Metrics:  map[string]float64{keyMeasured: 1},
+	s1 := Span{
+		name:     "http.request",
+		start:    time.Now().UnixNano() + 3*bucketSize,
+		duration: 1,
+		metrics:  map[string]float64{keyMeasured: 1},
 	}
-	s2 := span{
-		Name:     "sql.query",
-		Start:    time.Now().UnixNano() + 4*bucketSize,
-		Duration: 1,
-		Metrics:  map[string]float64{keyMeasured: 1},
+	s2 := Span{
+		name:     "sql.query",
+		start:    time.Now().UnixNano() + 4*bucketSize,
+		duration: 1,
+		metrics:  map[string]float64{keyMeasured: 1},
 	}
 	t.Run("start-stop", func(t *testing.T) {
 		assert := assert.New(t)

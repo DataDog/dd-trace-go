@@ -11,7 +11,7 @@ import (
 	"math"
 	"sync"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal"
+	"github.com/DataDog/dd-trace-go/v2/internal"
 
 	"github.com/google/uuid"
 )

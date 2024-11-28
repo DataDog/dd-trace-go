@@ -12,10 +12,10 @@ import (
 
 	"github.com/DataDog/datadog-agent/pkg/obfuscate"
 	"github.com/DataDog/datadog-agent/pkg/trace/stats"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/constants"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/utils"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 
 	"github.com/DataDog/datadog-go/v5/statsd"
 )
@@ -150,13 +150,13 @@ func (c *concentrator) runIngester() {
 	}
 }
 
-func (c *concentrator) newTracerStatSpan(s *span, obfuscator *obfuscate.Obfuscator) (*tracerStatSpan, bool) {
-	statSpan, ok := c.spanConcentrator.NewStatSpan(s.Service, obfuscatedResource(obfuscator, s.Type, s.Resource),
-		s.Name, s.Type, s.ParentID, s.Start, s.Duration, s.Error, s.Meta, s.Metrics, c.cfg.agent.peerTags)
+func (c *concentrator) newTracerStatSpan(s *Span, obfuscator *obfuscate.Obfuscator) (*tracerStatSpan, bool) {
+	statSpan, ok := c.spanConcentrator.NewStatSpan(s.service, obfuscatedResource(obfuscator, s.spanType, s.resource),
+		s.name, s.spanType, s.parentID, s.start, s.duration, s.error, s.meta, s.metrics, c.cfg.agent.peerTags)
 	if !ok {
 		return nil, false
 	}
-	origin := s.Meta[keyOrigin]
+	origin := s.meta[keyOrigin]
 	return &tracerStatSpan{
 		statSpan: statSpan,
 		origin:   origin,

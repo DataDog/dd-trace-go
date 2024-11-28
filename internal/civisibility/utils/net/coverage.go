@@ -8,9 +8,10 @@ package net
 import (
 	"errors"
 	"fmt"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/utils/telemetry"
 	"io"
 	"time"
+
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/telemetry"
 )
 
 const (

@@ -11,22 +11,22 @@ import (
 	"regexp"
 	"testing"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-const logPrefixRegexp = `Datadog Tracer v[0-9]+\.[0-9]+\.[0-9]+(-(rc\.[0-9]+|dev))?`
+const logPrefixRegexp = `Datadog Tracer v[0-9]+\.[0-9]+\.[0-9]+(-((rc|beta)\.[0-9]+|dev))?`
 
 func TestStartupLog(t *testing.T) {
 	t.Run("basic", func(t *testing.T) {
 		assert := assert.New(t)
 		tp := new(log.RecordLogger)
-		tracer, _, _, stop := startTestTracer(t, WithLogger(tp))
+		tracer, _, _, stop, err := startTestTracer(t, WithLogger(tp))
+		require.NoError(t, err)
 		defer stop()
 
 		tp.Reset()
@@ -41,7 +41,7 @@ func TestStartupLog(t *testing.T) {
 		tp := new(log.RecordLogger)
 
 		t.Setenv("DD_TRACE_SAMPLE_RATE", "0.123")
-		tracer, _, _, stop := startTestTracer(t,
+		tracer, _, _, stop, err := startTestTracer(t,
 			WithLogger(tp),
 			WithService("configured.service"),
 			WithAgentAddr("test.host:1234"),
@@ -52,11 +52,12 @@ func TestStartupLog(t *testing.T) {
 			WithRuntimeMetrics(),
 			WithAnalyticsRate(1.0),
 			WithServiceVersion("2.3.4"),
-			WithSamplingRules([]SamplingRule{ServiceRule("mysql", 0.75)}),
+			WithSamplingRules(TraceSamplingRules(Rule{ServiceGlob: "mysql", Rate: 0.75})),
 			WithDebugMode(true),
 			WithOrchestrion(map[string]string{"version": "v1"}),
 			WithFeatureFlags("discovery"),
 		)
+		require.NoError(t, err)
 		defer globalconfig.SetAnalyticsRate(math.NaN())
 		defer globalconfig.SetServiceName("")
 		defer stop()
@@ -73,7 +74,7 @@ func TestStartupLog(t *testing.T) {
 		tp := new(log.RecordLogger)
 		t.Setenv("DD_TRACE_SAMPLE_RATE", "0.123")
 		t.Setenv("DD_TRACE_RATE_LIMIT", "1000.001")
-		tracer, _, _, stop := startTestTracer(t,
+		tracer, _, _, stop, err := startTestTracer(t,
 			WithLogger(tp),
 			WithService("configured.service"),
 			WithAgentAddr("test.host:1234"),
@@ -84,9 +85,10 @@ func TestStartupLog(t *testing.T) {
 			WithRuntimeMetrics(),
 			WithAnalyticsRate(1.0),
 			WithServiceVersion("2.3.4"),
-			WithSamplingRules([]SamplingRule{ServiceRule("mysql", 0.75)}),
+			WithSamplingRules(TraceSamplingRules(Rule{ServiceGlob: "mysql", Rate: 0.75})),
 			WithDebugMode(true),
 		)
+		require.NoError(t, err)
 		defer globalconfig.SetAnalyticsRate(math.NaN())
 		defer globalconfig.SetServiceName("")
 		defer stop()
@@ -102,21 +104,15 @@ func TestStartupLog(t *testing.T) {
 		assert := assert.New(t)
 		tp := new(log.RecordLogger)
 		t.Setenv("DD_TRACE_SAMPLING_RULES", `[{"service": "some.service","sample_rate": 0.234}, {"service": "other.service","sample_rate": 2}]`)
-		tracer, _, _, stop := startTestTracer(t, WithLogger(tp))
-		defer stop()
-
-		tp.Reset()
-		tp.Ignore("appsec: ", telemetry.LogPrefix)
-		logStartup(tracer)
-		require.Len(t, tp.Logs(), 2)
-		fmt.Println(tp.Logs()[1])
-		assert.Regexp(logPrefixRegexp+` INFO: DATADOG TRACER CONFIGURATION {"date":"[^"]*","os_name":"[^"]*","os_version":"[^"]*","version":"[^"]*","lang":"Go","lang_version":"[^"]*","env":"","service":"tracer\.test(\.exe)?","agent_url":"http://localhost:9/v0.4/traces","agent_error":"Post .*","debug":false,"analytics_enabled":false,"sample_rate":"NaN","sample_rate_limit":"100","trace_sampling_rules":\[{"service":"some\.service","sample_rate":0\.234}\],"span_sampling_rules":null,"sampling_rules_error":"\\n\\tat index 1: ignoring rule {Service:other.service Rate:2}: rate is out of \[0\.0, 1\.0] range","service_mappings":null,"tags":{"runtime-id":"[^"]*"},"runtime_metrics_enabled":false,"runtime_metrics_v2_enabled":false,"health_metrics_enabled":false,"profiler_code_hotspots_enabled":((false)|(true)),"profiler_endpoints_enabled":((false)|(true)),"dd_version":"","architecture":"[^"]*","global_service":"","lambda_mode":"false","appsec":((true)|(false)),"agent_features":{"DropP0s":((true)|(false)),"Stats":((true)|(false)),"StatsdPort":(0|8125)},"integrations":{.*},"partial_flush_enabled":false,"partial_flush_min_spans":1000,"orchestrion":{"enabled":false},"feature_flags":\[\],"propagation_style_inject":"datadog,tracecontext","propagation_style_extract":"datadog,tracecontext"}`, tp.Logs()[1])
+		_, _, _, _, err := startTestTracer(t, WithLogger(tp))
+		assert.Errorf(err, "found errors when parsing sampling rules: \n\tat index 1: ignoring rule {Service:other.service Rate:2}: rate is out of [0.0, 1.0] range")
 	})
 
 	t.Run("lambda", func(t *testing.T) {
 		assert := assert.New(t)
 		tp := new(log.RecordLogger)
-		tracer, _, _, stop := startTestTracer(t, WithLogger(tp), WithLambdaMode(true))
+		tracer, _, _, stop, err := startTestTracer(t, WithLogger(tp), WithLambdaMode(true))
+		require.NoError(t, err)
 		defer stop()
 
 		tp.Reset()
@@ -129,7 +125,8 @@ func TestStartupLog(t *testing.T) {
 	t.Run("integrations", func(t *testing.T) {
 		assert := assert.New(t)
 		tp := new(log.RecordLogger)
-		tracer, _, _, stop := startTestTracer(t, WithLogger(tp))
+		tracer, _, _, stop, err := startTestTracer(t, WithLogger(tp))
+		require.NoError(t, err)
 		defer stop()
 		tp.Reset()
 		tp.Ignore("appsec: ", telemetry.LogPrefix)
@@ -148,8 +145,8 @@ func TestLogSamplingRules(t *testing.T) {
 	tp := new(log.RecordLogger)
 	tp.Ignore("appsec: ", telemetry.LogPrefix)
 	t.Setenv("DD_TRACE_SAMPLING_RULES", `[{"service": "some.service", "sample_rate": 0.234}, {"service": "other.service"}, {"service": "last.service", "sample_rate": 0.56}, {"odd": "pairs"}, {"sample_rate": 9.10}]`)
-	_, _, _, stop := startTestTracer(t, WithLogger(tp), WithEnv("test"))
-	defer stop()
+	_, _, _, _, err := startTestTracer(t, WithLogger(tp), WithEnv("test"))
+	assert.Error(err)
 
 	assert.Len(tp.Logs(), 1)
 	assert.Regexp(logPrefixRegexp+` WARN: DIAGNOSTICS Error\(s\) parsing sampling rules: found errors:\n\tat index 4: ignoring rule {Rate:9\.10}: rate is out of \[0\.0, 1\.0] range$`, tp.Logs()[0])
@@ -161,7 +158,8 @@ func TestLogDefaultSampleRate(t *testing.T) {
 	tp.Ignore("appsec: ", telemetry.LogPrefix)
 	log.UseLogger(tp)
 	t.Setenv("DD_TRACE_SAMPLE_RATE", ``)
-	_, _, _, stop := startTestTracer(t, WithLogger(tp), WithEnv("test"))
+	_, _, _, stop, err := startTestTracer(t, WithLogger(tp), WithEnv("test"))
+	require.NoError(t, err)
 	defer stop()
 
 	assert.Len(tp.Logs(), 0)
@@ -170,7 +168,8 @@ func TestLogDefaultSampleRate(t *testing.T) {
 func TestLogAgentReachable(t *testing.T) {
 	assert := assert.New(t)
 	tp := new(log.RecordLogger)
-	tracer, _, _, stop := startTestTracer(t, WithLogger(tp))
+	tracer, _, _, stop, err := startTestTracer(t, WithLogger(tp))
+	require.NoError(t, err)
 	defer stop()
 	tp.Reset()
 	tp.Ignore("appsec: ", telemetry.LogPrefix)
@@ -183,7 +182,8 @@ func TestLogFormat(t *testing.T) {
 	assert := assert.New(t)
 	tp := new(log.RecordLogger)
 
-	tracer, _, _, stop := startTestTracer(t, WithLogger(tp), WithRuntimeMetrics(), WithDebugMode(true))
+	tracer, _, _, stop, err := startTestTracer(t, WithLogger(tp), WithRuntimeMetrics(), WithDebugMode(true))
+	require.NoError(t, err)
 	defer stop()
 	tp.Reset()
 	tp.Ignore("appsec: ", telemetry.LogPrefix)
@@ -239,10 +239,10 @@ func TestLogPropagators(t *testing.T) {
 
 type prop struct{}
 
-func (p *prop) Inject(context ddtrace.SpanContext, carrier interface{}) (e error) {
+func (p *prop) Inject(context *SpanContext, carrier interface{}) (e error) {
 	return
 }
-func (p *prop) Extract(carrier interface{}) (sctx ddtrace.SpanContext, e error) {
+func (p *prop) Extract(carrier interface{}) (sctx *SpanContext, e error) {
 	return
 }
 
@@ -250,10 +250,13 @@ func setup(t *testing.T, customProp Propagator) string {
 	tp := new(log.RecordLogger)
 	var tracer *tracer
 	var stop func()
+	var err error
 	if customProp != nil {
-		tracer, _, _, stop = startTestTracer(t, WithLogger(tp), WithPropagator(customProp))
+		tracer, _, _, stop, err = startTestTracer(t, WithLogger(tp), WithPropagator(customProp))
+		assert.NoError(t, err)
 	} else {
-		tracer, _, _, stop = startTestTracer(t, WithLogger(tp))
+		tracer, _, _, stop, err = startTestTracer(t, WithLogger(tp))
+		assert.NoError(t, err)
 	}
 	defer stop()
 	tp.Reset()
@@ -275,7 +278,8 @@ func findLogEntry(logs []string, pattern string) (string, bool) {
 func TestAgentURL(t *testing.T) {
 	assert := assert.New(t)
 	tp := new(log.RecordLogger)
-	tracer := newTracer(WithLogger(tp), WithUDS("var/run/datadog/apm.socket"))
+	tracer, err := newTracer(WithLogger(tp), WithUDS("var/run/datadog/apm.socket"))
+	assert.Nil(err)
 	defer tracer.Stop()
 	tp.Reset()
 	tp.Ignore("appsec: ", telemetry.LogPrefix)
@@ -291,7 +295,8 @@ func TestAgentURLFromEnv(t *testing.T) {
 	assert := assert.New(t)
 	t.Setenv("DD_TRACE_AGENT_URL", "unix://var/run/datadog/apm.socket")
 	tp := new(log.RecordLogger)
-	tracer := newTracer(WithLogger(tp))
+	tracer, err := newTracer(WithLogger(tp))
+	assert.Nil(err)
 	defer tracer.Stop()
 	tp.Reset()
 	tp.Ignore("appsec: ", telemetry.LogPrefix)
@@ -308,7 +313,8 @@ func TestInvalidAgentURL(t *testing.T) {
 	// invalid socket URL
 	t.Setenv("DD_TRACE_AGENT_URL", "var/run/datadog/apm.socket")
 	tp := new(log.RecordLogger)
-	tracer := newTracer(WithLogger(tp))
+	tracer, err := newTracer(WithLogger(tp))
+	assert.Nil(err)
 	defer tracer.Stop()
 	tp.Reset()
 	tp.Ignore("appsec: ", telemetry.LogPrefix)
@@ -325,7 +331,8 @@ func TestAgentURLConflict(t *testing.T) {
 	assert := assert.New(t)
 	t.Setenv("DD_TRACE_AGENT_URL", "unix://var/run/datadog/apm.socket")
 	tp := new(log.RecordLogger)
-	tracer := newTracer(WithLogger(tp), WithUDS("var/run/datadog/apm.socket"), WithAgentAddr("localhost:8126"))
+	tracer, err := newTracer(WithLogger(tp), WithUDS("var/run/datadog/apm.socket"), WithAgentAddr("localhost:8126"))
+	assert.Nil(err)
 	defer tracer.Stop()
 	tp.Reset()
 	tp.Ignore("appsec: ", telemetry.LogPrefix)

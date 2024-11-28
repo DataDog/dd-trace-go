@@ -16,7 +16,7 @@ import (
 func TestGetModuleAndSuiteName(t *testing.T) {
 	pc, _, _, _ := runtime.Caller(0) // Get the program counter of this function
 	module, suite := GetModuleAndSuiteName(pc)
-	expectedModule := "gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/utils"
+	expectedModule := "github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
 	expectedSuite := "names_test.go"
 
 	assert.True(t, strings.HasPrefix(module, expectedModule))

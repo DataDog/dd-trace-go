@@ -74,7 +74,7 @@ func TestCiVisibilityTraceWriterFlushRetries(t *testing.T) {
 		{configRetries: 2, failCount: 3, tracesSent: false, expAttempts: 3},
 	}
 
-	ss := []*span{makeSpan(0)}
+	ss := []*Span{makeSpan(0)}
 	for _, test := range testcases {
 		name := fmt.Sprintf("%d-%d-%t-%d", test.configRetries, test.failCount, test.tracesSent, test.expAttempts)
 		t.Run(name, func(t *testing.T) {
@@ -83,10 +83,11 @@ func TestCiVisibilityTraceWriterFlushRetries(t *testing.T) {
 				failCount: test.failCount,
 				assert:    assert,
 			}
-			c := newConfig(func(c *config) {
+			c, err := newConfig(func(c *config) {
 				c.transport = p
 				c.sendRetries = test.configRetries
 			})
+			assert.NoError(err)
 
 			h := newCiVisibilityTraceWriter(c)
 			h.add(ss)

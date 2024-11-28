@@ -5,7 +5,7 @@
 
 // Package twirp provides tracing functions for tracing clients and servers generated
 // by the twirp framework (https://github.com/twitchtv/twirp).
-package twirp // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/twitchtv/twirp"
+package twirp // import "github.com/DataDog/dd-trace-go/contrib/twitchtv/twirp/v2"
 
 import (
 	"context"
@@ -14,20 +14,19 @@ import (
 	"net/http"
 	"strconv"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 
 	"github.com/twitchtv/twirp"
 )
 
-const componentName = "twitchtv/twirp"
+const component = instrumentation.PackageTwitchTVTwirp
+
+var instr *instrumentation.Instrumentation
 
 func init() {
-	telemetry.LoadIntegration(componentName)
-	tracer.MarkIntegrationImported("github.com/twitchtv/twirp")
+	instr = instrumentation.Load(component)
 }
 
 type (
@@ -52,9 +51,9 @@ func WrapClient(c HTTPClient, opts ...Option) HTTPClient {
 	cfg := new(config)
 	clientDefaults(cfg)
 	for _, fn := range opts {
-		fn(cfg)
+		fn.apply(cfg)
 	}
-	log.Debug("contrib/twitchtv/twirp: Wrapping Client: %#v", cfg)
+	instr.Logger().Debug("contrib/twitchtv/twirp: Wrapping Client: %#v", cfg)
 	return &wrappedClient{c: c, cfg: cfg}
 }
 
@@ -64,7 +63,7 @@ func (wc *wrappedClient) Do(req *http.Request) (*http.Response, error) {
 		tracer.ServiceName(wc.cfg.serviceName),
 		tracer.Tag(ext.HTTPMethod, req.Method),
 		tracer.Tag(ext.HTTPURL, req.URL.Path),
-		tracer.Tag(ext.Component, componentName),
+		tracer.Tag(ext.Component, component),
 		tracer.Tag(ext.SpanKind, ext.SpanKindClient),
 		tracer.Tag(ext.RPCSystem, ext.RPCSystemTwirp),
 	}
@@ -98,7 +97,7 @@ func (wc *wrappedClient) Do(req *http.Request) (*http.Response, error) {
 
 	err := tracer.Inject(span.Context(), tracer.HTTPHeadersCarrier(req.Header))
 	if err != nil {
-		log.Warn("contrib/twitchtv/twirp.wrappedClient: failed to inject http headers: %v\n", err)
+		instr.Logger().Warn("contrib/twitchtv/twirp.wrappedClient: failed to inject http headers: %v\n", err)
 	}
 
 	req = req.WithContext(ctx)
@@ -121,16 +120,16 @@ func WrapServer(h http.Handler, opts ...Option) http.Handler {
 	cfg := new(config)
 	serverDefaults(cfg)
 	for _, fn := range opts {
-		fn(cfg)
+		fn.apply(cfg)
 	}
-	log.Debug("contrib/twitchtv/twirp: Wrapping Server: %#v", cfg)
+	instr.Logger().Debug("contrib/twitchtv/twirp: Wrapping Server: %#v", cfg)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		spanOpts := []tracer.StartSpanOption{
 			tracer.SpanType(ext.SpanTypeWeb),
 			tracer.ServiceName(cfg.serviceName),
 			tracer.Tag(ext.HTTPMethod, r.Method),
 			tracer.Tag(ext.HTTPURL, r.URL.Path),
-			tracer.Tag(ext.Component, componentName),
+			tracer.Tag(ext.Component, component),
 			tracer.Tag(ext.SpanKind, ext.SpanKindServer),
 			tracer.Tag(ext.RPCSystem, ext.RPCSystemTwirp),
 			tracer.Measured(),
@@ -155,9 +154,9 @@ func NewServerHooks(opts ...Option) *twirp.ServerHooks {
 	cfg := new(config)
 	serverDefaults(cfg)
 	for _, fn := range opts {
-		fn(cfg)
+		fn.apply(cfg)
 	}
-	log.Debug("contrib/twitchtv/twirp: Creating Server Hooks: %#v", cfg)
+	instr.Logger().Debug("contrib/twitchtv/twirp: Creating Server Hooks: %#v", cfg)
 	return &twirp.ServerHooks{
 		RequestReceived:  requestReceivedHook(cfg),
 		RequestRouted:    requestRoutedHook(),
@@ -168,11 +167,16 @@ func NewServerHooks(opts ...Option) *twirp.ServerHooks {
 }
 
 func serverSpanName(ctx context.Context) string {
-	serviceNameV0 := "twirp.service"
+	rpcService := ""
 	if svc, ok := twirp.ServiceName(ctx); ok {
-		serviceNameV0 = fmt.Sprintf("twirp.%s", svc)
+		rpcService = svc
 	}
-	return namingschema.OpNameOverrideV0(namingschema.TwirpServer, serviceNameV0)
+	return instr.OperationName(
+		instrumentation.ComponentServer,
+		instrumentation.OperationContext{
+			ext.RPCService: rpcService,
+		},
+	)
 }
 
 func requestReceivedHook(cfg *config) func(context.Context) (context.Context, error) {
@@ -181,7 +185,7 @@ func requestReceivedHook(cfg *config) func(context.Context) (context.Context, er
 			tracer.SpanType(ext.SpanTypeWeb),
 			tracer.ServiceName(cfg.serviceName),
 			tracer.Measured(),
-			tracer.Tag(ext.Component, componentName),
+			tracer.Tag(ext.Component, component),
 			tracer.Tag(ext.RPCSystem, ext.RPCSystemTwirp),
 		}
 		if pkg, ok := twirp.PackageName(ctx); ok {
@@ -198,7 +202,6 @@ func requestReceivedHook(cfg *config) func(context.Context) (context.Context, er
 			opts = append(opts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
 		}
 		span, ctx := tracer.StartSpanFromContext(ctx, serverSpanName(ctx), opts...)
-
 		ctx = context.WithValue(ctx, twirpSpanKey{}, span)
 		return ctx, nil
 	}
@@ -208,12 +211,12 @@ func requestRoutedHook() func(context.Context) (context.Context, error) {
 	return func(ctx context.Context) (context.Context, error) {
 		maybeSpan := ctx.Value(twirpSpanKey{})
 		if maybeSpan == nil {
-			log.Error("contrib/twitchtv/twirp.requestRoutedHook: found no span in context")
+			instr.Logger().Error("contrib/twitchtv/twirp.requestRoutedHook: found no span in context")
 			return ctx, nil
 		}
-		span, ok := maybeSpan.(tracer.Span)
+		span, ok := maybeSpan.(*tracer.Span)
 		if !ok {
-			log.Error("contrib/twitchtv/twirp.requestRoutedHook: found invalid span type in context")
+			instr.Logger().Error("contrib/twitchtv/twirp.requestRoutedHook: found invalid span type in context")
 			return ctx, nil
 		}
 		if method, ok := twirp.MethodName(ctx); ok {
@@ -237,7 +240,7 @@ func responseSentHook() func(context.Context) {
 		if maybeSpan == nil {
 			return
 		}
-		span, ok := maybeSpan.(tracer.Span)
+		span, ok := maybeSpan.(*tracer.Span)
 		if !ok {
 			return
 		}
