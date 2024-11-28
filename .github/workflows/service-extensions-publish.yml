@@ -2,11 +2,8 @@ name: Publish Service Extensions Callout images packages
 
 on:
   push:
-    branches:
-      - 'flavien/service-extensions'
-  release:
-    types:
-      - published
+    tags:
+      - 'v*.*'
   workflow_dispatch:
     inputs:
       tag_name:
@@ -16,84 +13,53 @@ on:
       commit_sha:
         description: 'Commit SHA to checkout'
         required: true
+      set_as_latest:
+        description: 'Set the tag as latest'
+        required: false
+        default: 'false'
 
 permissions:
   contents: read
   packages: write
 
+env:
+  TAG_NAME: ${{ github.ref_name || github.event.inputs.tag_name }}
+  REF_NAME: ${{ github.ref || github.event.inputs.commit_sha }}
+  COMMIT_SHA: ${{ github.sha || github.event.inputs.commit_sha }}
+  PUSH_LATEST: ${{ github.event.inputs.set_as_latest || 'true' }}
+
 jobs:
   publish-service-extensions:
     runs-on: ubuntu-latest
     steps:
-
-      - name: Get tag name
-        id: get_tag_name
-        run: |
-            if [ "${{ github.event_name }}" = "release" ]; then
-              echo "::set-output name=tag::${{ github.event.release.tag_name }}"
-              echo "Here1: tag=${{ github.event.release.tag_name }}"
-            else
-                if [ -z "${{ github.event.inputs.tag_name }}" ]; then
-                    echo "::set-output name=tag::dev"
-                    echo "Here2: tag=dev"
-                else
-                    echo "::set-output name=tag::${{ github.event.inputs.tag_name }}"
-                    echo "Here3: tag=${{ github.event.inputs.tag_name }}"
-                fi
-            fi
-            echo "Finally: ${{ steps.get_tag_name.outputs.tag }}"
-
       - name: Checkout
-        uses: actions/checkout@v4
-        if: github.event_name == 'release'
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
-          ref: ${{ steps.get_tag_name.outputs.tag }}
-
-      - name: Checkout
-        uses: actions/checkout@v4
-        if: github.event_name != 'release'
-        with:
-          ref: ${{ github.event.inputs.commit_sha || github.sha }}
-
-      - name: Set up Go 1.22
-        uses: actions/setup-go@v5
-        with:
-          go-version: 1.22
-        id: go
+          ref: ${{ env.REF_NAME }}
 
       - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
+        uses: docker/setup-qemu-action@49b3bc8e6bdd4a60e6116a5414239cba5943d3cf # V3.2.0
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@c47758b77c9736f4b2ef4073d4d51994fabfe349 # v3.7.1
 
       - name: Login to Docker
         shell: bash
         run: docker login -u publisher -p ${{ secrets.GITHUB_TOKEN }} ghcr.io
 
-      - name: Build and push [dev]
-        id: build-dev
-        if: github.event_name != 'release'
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: ./contrib/envoyproxy/envoy/cmd/serviceextensions/Dockerfile
-          platforms: linux/amd64,linux/arm64
-          push: true
-          tags: | # Use the commit SHA from the manual trigger or default to the SHA from the push event
-            ghcr.io/datadog/dd-trace-go/service-extensions-callout:${{ steps.get_tag_name.outputs.tag }}
-            ghcr.io/datadog/dd-trace-go/service-extensions-callout:${{ github.event.inputs.commit_sha || github.sha }}
+      - name: Replace slashes in ref name
+        id: replace_ref
+        run: echo "TAG_NAME=${TAG_NAME//\//-}" >> $GITHUB_ENV
 
-      - name: Build and push [release]
-        id: build-release
-        if: github.event_name == 'release'
-        uses: docker/build-push-action@v6
+      - name: Build and push
+        id: build
+        uses: docker/build-push-action@4f58ea79222b3b9dc2c8bbdd6debcef730109a75 # v6.9.0
         with:
           context: .
           file: ./contrib/envoyproxy/envoy/cmd/serviceextensions/Dockerfile
           platforms: linux/amd64,linux/arm64
           push: true
           tags: |
-            ghcr.io/datadog/dd-trace-go/service-extensions-callout:latest
-            ghcr.io/datadog/dd-trace-go/service-extensions-callout:${{ steps.get_tag_name.outputs.tag }}
-            ghcr.io/datadog/dd-trace-go/service-extensions-callout:${{ github.sha }}
+            ghcr.io/datadog/dd-trace-go/service-extensions-callout:${{ env.TAG_NAME }}
+            ghcr.io/datadog/dd-trace-go/service-extensions-callout:${{ env.COMMIT_SHA }}
+            ${{ env.PUSH_LATEST == 'true' && 'ghcr.io/datadog/dd-trace-go/service-extensions-callout:latest' }}
