@@ -51,7 +51,7 @@ func StreamServerInterceptor(opts ...grpctrace.Option) grpc.StreamServerIntercep
 	interceptor := grpctrace.StreamServerInterceptor(opts...)
 
 	return func(srv any, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
-		if info.FullMethod != envoyextproc.ExternalProcessor_Process_FullMethodName {
+		if info.FullMethod != "/envoy.service.ext_proc.v3.ExternalProcessor/Process" {
 			return interceptor(srv, ss, info, handler)
 		}
 
@@ -328,7 +328,7 @@ func doBlockResponse(writer *fakeResponseWriter) *envoyextproc.ProcessingRespons
 				Headers: &envoyextproc.HeaderMutation{
 					SetHeaders: headersMutation,
 				},
-				Body: writer.body,
+				Body: string(writer.body),
 				GrpcStatus: &envoyextproc.GrpcStatus{
 					Status: 0,
 				},
