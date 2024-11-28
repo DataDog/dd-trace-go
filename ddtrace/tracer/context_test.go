@@ -77,6 +77,39 @@ func TestStartSpanFromContext(t *testing.T) {
 	assert.Equal("/", st.Tag(ext.ResourceName))
 }
 
+func TestStartSpanWithSpanLinks(t *testing.T) {
+	_, _, _, stop := startTestTracer(t)
+	defer stop()
+	spanLink := ddtrace.SpanLink{TraceID: 789, TraceIDHigh: 0, SpanID: 789, Attributes: map[string]string{"reason": "terminated_context", "context_headers": "datadog"}, Flags: 0}
+	ctx := &spanContext{spanID: 789, traceID: traceIDFrom64Bits(789), spanLinks: []ddtrace.SpanLink{spanLink}}
+
+	t.Run("spanContext with spanLinks satisfies SpanContextWithLinks interface", func(t *testing.T) {
+		var _ ddtrace.SpanContextWithLinks = ctx
+		assert.Equal(t, len(ctx.SpanLinks()), 1)
+		assert.Equal(t, ctx.SpanLinks()[0], spanLink)
+	})
+
+	t.Run("create span from spancontext with links", func(t *testing.T) {
+		var s ddtrace.Span
+		s, _ = StartSpanFromContext(
+			context.Background(),
+			"http.request",
+			WithSpanLinks([]ddtrace.SpanLink{spanLink}),
+			ChildOf(ctx),
+		)
+		//checking that a span links are added to a child span that is created where span links are passed as an StartSpanOption
+		sp, ok := s.(*span)
+		if !ok {
+			assert.Fail(t, "couldn't cast to span")
+		}
+
+		assert.Equal(t, 1, len(sp.SpanLinks))
+		assert.Equal(t, spanLink, sp.SpanLinks[0])
+
+		assert.Equal(t, 0, len(sp.context.spanLinks)) // ensure that the span links are not added to the parent context
+	})
+}
+
 func TestStartSpanFromContextRace(t *testing.T) {
 	_, stop := startTestTracer(t)
 	defer stop()

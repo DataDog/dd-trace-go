@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 type contribPkg struct {
@@ -24,9 +25,7 @@ type contribPkg struct {
 func TestIntegrationEnabled(t *testing.T) {
 	t.Skip()
 	body, err := exec.Command("go", "list", "-json", "../../contrib/...").Output()
-	if err != nil {
-		t.Fatalf(err.Error())
-	}
+	require.NoError(t, err, "go list command failed")
 	var packages []contribPkg
 	stream := json.NewDecoder(strings.NewReader(string(body)))
 	for stream.More() {

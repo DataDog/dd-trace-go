@@ -81,13 +81,3 @@ func TrackUserLoginFailureEvent(ctx context.Context, uid string, exists bool, md
 func TrackCustomEvent(ctx context.Context, name string, md map[string]string) {
 	v2.TrackCustomEvent(ctx, name, md)
 }
-
-func getSessionID(opts ...tracer.UserMonitoringOption) string {
-	cfg := &tracer.UserMonitoringConfig{
-		Metadata: make(map[string]string),
-	}
-	for _, opt := range opts {
-		opt(cfg)
-	}
-	return cfg.SessionID
-}

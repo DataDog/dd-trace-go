@@ -95,9 +95,9 @@ jobs:
     needs: go-mod-caching
     strategy:
       matrix:
-        runs-on: [ macos-12, macos-14 ] # oldest and newest macos runners available - macos-14 mainly is here to cover the fact it is an ARM machine
+        runs-on: [ macos-13, macos-15 ] # oldest and newest macos runners available - macos-15 is an ARM runner
         go-version: [ "1.23", "1.22" ]
-      fail-fast: true # saving some CI time - macos runners too long to get
+      fail-fast: true # saving some CI time - macos runners are too long to get
     steps:
       - uses: actions/checkout@v4
 

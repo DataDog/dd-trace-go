@@ -66,6 +66,28 @@ func TestSpanOperationName(t *testing.T) {
 	assert.Equal("http.request", sm[ext.SpanName])
 }
 
+func TestShouldComputeStats(t *testing.T) {
+	for _, tt := range []struct {
+		metrics map[string]float64
+		want    bool
+	}{
+		{map[string]float64{keyMeasured: 2}, false},
+		{map[string]float64{keyMeasured: 1}, true},
+		{map[string]float64{keyMeasured: 0}, false},
+		{map[string]float64{keyTopLevel: 0}, false},
+		{map[string]float64{keyTopLevel: 1}, true},
+		{map[string]float64{keyTopLevel: 2}, false},
+		{map[string]float64{keyTopLevel: 2, keyMeasured: 1}, true},
+		{map[string]float64{keyTopLevel: 1, keyMeasured: 2}, true},
+		{map[string]float64{keyTopLevel: 2, keyMeasured: 2}, false},
+		{map[string]float64{}, false},
+	} {
+		t.Run("", func(t *testing.T) {
+			assert.Equal(t, shouldComputeStats(&span{Metrics: tt.metrics}), tt.want)
+		})
+	}
+}
+
 func TestSpanFinishWithTime(t *testing.T) {
 	assert := assert.New(t)
 	Start()

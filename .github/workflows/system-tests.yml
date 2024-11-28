@@ -47,6 +47,7 @@ jobs:
         scenario:
           - DEFAULT
           - INTEGRATIONS
+          - INTEGRATIONS_AWS
           - CROSSED_TRACING_LIBRARIES
           - APPSEC_DISABLED
           - APPSEC_BLOCKING
@@ -54,9 +55,11 @@ jobs:
           - APPSEC_REQUEST_BLOCKING
           - APPSEC_API_SECURITY
           - APPSEC_RASP
+          - APPSEC_RUNTIME_ACTIVATION
           - APM_TRACING_E2E
           - APM_TRACING_E2E_SINGLE_SPAN
           - APM_TRACING_E2E_OTEL
+          - TRACING_CONFIG_SCENARIOS
         include:
           - weblog-variant: net-http
             scenario: REMOTE_CONFIG_MOCKED_BACKEND_ASM_FEATURES

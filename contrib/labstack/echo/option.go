@@ -13,6 +13,9 @@ import (
 
 const defaultServiceName = "echo"
 
+// envServerErrorStatuses is the name of the env var used to specify error status codes on http server spans
+const envServerErrorStatuses = "DD_TRACE_HTTP_SERVER_ERROR_STATUSES"
+
 type config struct {
 	serviceName   string
 	analyticsRate float64

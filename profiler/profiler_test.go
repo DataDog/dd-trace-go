@@ -116,6 +116,28 @@ func TestStopLatency(t *testing.T) {
 	}
 }
 
+func TestFlushAndStop(t *testing.T) {
+	t.Setenv("DD_PROFILING_FLUSH_ON_EXIT", "1")
+	received := startTestProfiler(t, 1,
+		WithProfileTypes(CPUProfile, HeapProfile),
+		WithPeriod(time.Hour),
+		WithUploadTimeout(time.Hour))
+
+	Stop()
+
+	select {
+	case prof := <-received:
+		if len(prof.attachments["cpu.pprof"]) == 0 {
+			t.Errorf("expected CPU profile, got none")
+		}
+		if len(prof.attachments["delta-heap.pprof"]) == 0 {
+			t.Errorf("expected heap profile, got none")
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatalf("profiler did not flush")
+	}
+}
+
 type profileMeta struct {
 	tags        []string
 	headers     http.Header
@@ -312,6 +334,19 @@ func TestImmediateProfile(t *testing.T) {
 	case <-timeout:
 		t.Fatal("should have received a profile already")
 	case <-profiles:
+	}
+}
+
+func TestEnabledFalse(t *testing.T) {
+	t.Setenv("DD_PROFILING_ENABLED", "false")
+	ch := startTestProfiler(t, 1, WithPeriod(10*time.Millisecond), WithProfileTypes())
+	select {
+	case <-ch:
+		t.Fatal("received profile when profiler should have been disabled")
+	case <-time.After(time.Second):
+		// This test might succeed incorrectly on an overloaded
+		// CI server, but is very likely to fail locally given a
+		// buggy implementation
 	}
 }
 

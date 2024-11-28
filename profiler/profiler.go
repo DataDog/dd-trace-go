@@ -20,6 +20,9 @@ const customProfileLabelLimit = 10
 //
 // It may return an error if an API key is not provided by means of the
 // WithAPIKey option, or if a hostname is not found.
+//
+// If DD_PROFILING_ENABLED=false is set in the process environment, it will
+// prevent the profiler from starting.
 func Start(opts ...Option) error {
 	// HACK: quick fix for removing any nil options without releasing a new v2 version
 	var filteredOpts []Option

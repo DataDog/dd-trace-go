@@ -7,18 +7,20 @@ package kafka
 
 import (
 	"context"
+	"log"
 	"os"
 	"testing"
 	"time"
 
+	"github.com/segmentio/kafka-go"
+	"github.com/stretchr/testify/require"
+	"github.com/tj/assert"
+	"gopkg.in/DataDog/dd-trace-go.v1/contrib/segmentio/kafka.go.v0/internal/tracing"
 	"gopkg.in/DataDog/dd-trace-go.v1/datastreams"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-
-	kafka "github.com/segmentio/kafka-go"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 const (
@@ -27,9 +29,29 @@ const (
 	testReaderMaxWait = 10 * time.Millisecond
 )
 
-func skipIntegrationTest(t *testing.T) {
-	if _, ok := os.LookupEnv("INTEGRATION"); !ok {
-		t.Skip("🚧 Skipping integration test (INTEGRATION environment variable is not set)")
+var (
+	// add some dummy values to broker/addr to test bootstrap servers.
+	kafkaBrokers = []string{"localhost:9092", "localhost:9093", "localhost:9094"}
+)
+
+func TestMain(m *testing.M) {
+	_, ok := os.LookupEnv("INTEGRATION")
+	if !ok {
+		log.Println("🚧 Skipping integration test (INTEGRATION environment variable is not set)")
+		os.Exit(0)
+	}
+	cleanup := createTopic()
+	exitCode := m.Run()
+	cleanup()
+	os.Exit(exitCode)
+}
+
+func testWriter() *kafka.Writer {
+	return &kafka.Writer{
+		Addr:         kafka.TCP(kafkaBrokers...),
+		Topic:        testTopic,
+		RequiredAcks: kafka.RequireOne,
+		Balancer:     &kafka.LeastBytes{},
 	}
 }
 
@@ -77,30 +99,18 @@ to setup the integration test locally run:
 type readerOpFn func(t *testing.T, r *Reader)
 
 func genIntegrationTestSpans(t *testing.T, mt mocktracer.Tracer, writerOp func(t *testing.T, w *Writer), readerOp readerOpFn, writerOpts []Option, readerOpts []Option) ([]mocktracer.Span, []kafka.Message) {
-	skipIntegrationTest(t)
-
 	writtenMessages := []kafka.Message{}
 
-	// add some dummy values to broker/addr to test bootstrap servers.
-	kw := &kafka.Writer{
-		Addr:         kafka.TCP("localhost:9092", "localhost:9093", "localhost:9094"),
-		Topic:        testTopic,
-		RequiredAcks: kafka.RequireOne,
-		Completion: func(messages []kafka.Message, err error) {
-			writtenMessages = append(writtenMessages, messages...)
-		},
+	kw := testWriter()
+	kw.Completion = func(messages []kafka.Message, err error) {
+		writtenMessages = append(writtenMessages, messages...)
 	}
 	w := WrapWriter(kw, writerOpts...)
 	writerOp(t, w)
 	err := w.Close()
 	require.NoError(t, err)
 
-	r := NewReader(kafka.ReaderConfig{
-		Brokers: []string{"localhost:9092", "localhost:9093", "localhost:9094"},
-		GroupID: testGroupID,
-		Topic:   testTopic,
-		MaxWait: testReaderMaxWait,
-	}, readerOpts...)
+	r := WrapReader(testReader(), readerOpts...)
 	readerOp(t, r)
 	err = r.Close()
 	require.NoError(t, err)
@@ -148,8 +158,8 @@ func TestReadMessageFunctional(t *testing.T) {
 		[]Option{WithDataStreams()},
 	)
 
-	assert.Len(t, writtenMessages, len(messagesToWrite))
-	assert.Len(t, readMessages, len(messagesToWrite))
+	require.Len(t, writtenMessages, len(messagesToWrite))
+	require.Len(t, readMessages, len(messagesToWrite))
 
 	// producer span
 	s0 := spans[0]
@@ -164,7 +174,7 @@ func TestReadMessageFunctional(t *testing.T) {
 	assert.Equal(t, "kafka", s0.Tag(ext.MessagingSystem))
 	assert.Equal(t, "localhost:9092,localhost:9093,localhost:9094", s0.Tag(ext.KafkaBootstrapServers))
 
-	p, ok := datastreams.PathwayFromContext(datastreams.ExtractFromBase64Carrier(context.Background(), messageCarrier{&writtenMessages[0]}))
+	p, ok := datastreams.PathwayFromContext(datastreams.ExtractFromBase64Carrier(context.Background(), tracing.NewMessageCarrier(wrapMessage(&writtenMessages[0]))))
 	assert.True(t, ok)
 	expectedCtx, _ := tracer.SetDataStreamsCheckpoint(context.Background(), "direction:out", "topic:"+testTopic, "type:kafka")
 	expected, _ := datastreams.PathwayFromContext(expectedCtx)
@@ -184,10 +194,14 @@ func TestReadMessageFunctional(t *testing.T) {
 	assert.Equal(t, "kafka", s1.Tag(ext.MessagingSystem))
 	assert.Equal(t, "localhost:9092,localhost:9093,localhost:9094", s1.Tag(ext.KafkaBootstrapServers))
 
-	p, ok = datastreams.PathwayFromContext(datastreams.ExtractFromBase64Carrier(context.Background(), messageCarrier{&readMessages[0]}))
+	// context propagation
+	assert.Equal(t, s0.SpanID(), s1.ParentID(), "consume span should be child of the produce span")
+	assert.Equal(t, s0.TraceID(), s1.TraceID(), "spans should have the same trace id")
+
+	p, ok = datastreams.PathwayFromContext(datastreams.ExtractFromBase64Carrier(context.Background(), tracing.NewMessageCarrier(wrapMessage(&readMessages[0]))))
 	assert.True(t, ok)
 	expectedCtx, _ = tracer.SetDataStreamsCheckpoint(
-		datastreams.ExtractFromBase64Carrier(context.Background(), messageCarrier{&writtenMessages[0]}),
+		datastreams.ExtractFromBase64Carrier(context.Background(), tracing.NewMessageCarrier(wrapMessage(&writtenMessages[0]))),
 		"direction:in", "topic:"+testTopic, "type:kafka", "group:"+testGroupID,
 	)
 	expected, _ = datastreams.PathwayFromContext(expectedCtx)
@@ -244,7 +258,7 @@ func TestFetchMessageFunctional(t *testing.T) {
 	assert.Equal(t, "kafka", s0.Tag(ext.MessagingSystem))
 	assert.Equal(t, "localhost:9092,localhost:9093,localhost:9094", s0.Tag(ext.KafkaBootstrapServers))
 
-	p, ok := datastreams.PathwayFromContext(datastreams.ExtractFromBase64Carrier(context.Background(), messageCarrier{&writtenMessages[0]}))
+	p, ok := datastreams.PathwayFromContext(datastreams.ExtractFromBase64Carrier(context.Background(), tracing.NewMessageCarrier(wrapMessage(&writtenMessages[0]))))
 	assert.True(t, ok)
 	expectedCtx, _ := tracer.SetDataStreamsCheckpoint(context.Background(), "direction:out", "topic:"+testTopic, "type:kafka")
 	expected, _ := datastreams.PathwayFromContext(expectedCtx)
@@ -264,13 +278,162 @@ func TestFetchMessageFunctional(t *testing.T) {
 	assert.Equal(t, "kafka", s1.Tag(ext.MessagingSystem))
 	assert.Equal(t, "localhost:9092,localhost:9093,localhost:9094", s1.Tag(ext.KafkaBootstrapServers))
 
-	p, ok = datastreams.PathwayFromContext(datastreams.ExtractFromBase64Carrier(context.Background(), messageCarrier{&readMessages[0]}))
+	// context propagation
+	assert.Equal(t, s0.SpanID(), s1.ParentID(), "consume span should be child of the produce span")
+
+	p, ok = datastreams.PathwayFromContext(datastreams.ExtractFromBase64Carrier(context.Background(), tracing.NewMessageCarrier(wrapMessage(&readMessages[0]))))
 	assert.True(t, ok)
 	expectedCtx, _ = tracer.SetDataStreamsCheckpoint(
-		datastreams.ExtractFromBase64Carrier(context.Background(), messageCarrier{&writtenMessages[0]}),
+		datastreams.ExtractFromBase64Carrier(context.Background(), tracing.NewMessageCarrier(wrapMessage(&writtenMessages[0]))),
 		"direction:in", "topic:"+testTopic, "type:kafka", "group:"+testGroupID,
 	)
 	expected, _ = datastreams.PathwayFromContext(expectedCtx)
 	assert.NotEqual(t, expected.GetHash(), 0)
 	assert.Equal(t, expected.GetHash(), p.GetHash())
+}
+
+func TestProduceMultipleMessages(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	messages := []kafka.Message{
+		{
+			Key:   []byte("key1"),
+			Value: []byte("value1"),
+		},
+		{
+			Key:   []byte("key2"),
+			Value: []byte("value2"),
+		},
+		{
+			Key:   []byte("key3"),
+			Value: []byte("value3"),
+		},
+	}
+
+	writer := WrapWriter(testWriter())
+	reader := WrapReader(testReader())
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	err := writer.WriteMessages(ctx, messages...)
+	require.NoError(t, err)
+	require.NoError(t, writer.Close())
+
+	curMsg := 0
+	for curMsg < len(messages) {
+		readMsg, err := reader.ReadMessage(ctx)
+		require.NoError(t, err)
+		require.Equal(t, string(messages[curMsg].Key), string(readMsg.Key))
+		require.Equal(t, string(messages[curMsg].Value), string(readMsg.Value))
+		curMsg++
+	}
+	require.NoError(t, reader.Close())
+
+	spans := mt.FinishedSpans()
+	require.Len(t, spans, 6)
+
+	produceSpans := spans[0:3]
+	consumeSpans := spans[3:6]
+	for i := 0; i < 3; i++ {
+		ps := produceSpans[i]
+		cs := consumeSpans[i]
+
+		assert.Equal(t, "kafka.produce", ps.OperationName(), "wrong produce span name")
+		assert.Equal(t, "kafka.consume", cs.OperationName(), "wrong consume span name")
+		assert.Equal(t, cs.ParentID(), ps.SpanID(), "consume span should be child of a produce span")
+		assert.Equal(t, uint64(0), ps.ParentID(), "produce span should not be child of any span")
+		assert.Equal(t, cs.TraceID(), ps.TraceID(), "spans should be part of the same trace")
+	}
+}
+
+func TestNamingSchema(t *testing.T) {
+	genSpans := func(t *testing.T, serviceOverride string) []mocktracer.Span {
+		var opts []Option
+		if serviceOverride != "" {
+			opts = append(opts, WithServiceName(serviceOverride))
+		}
+
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		messagesToWrite := []kafka.Message{
+			{
+				Key:   []byte("key1"),
+				Value: []byte("value1"),
+			},
+		}
+
+		spans, _ := genIntegrationTestSpans(
+			t,
+			mt,
+			func(t *testing.T, w *Writer) {
+				err := w.WriteMessages(context.Background(), messagesToWrite...)
+				require.NoError(t, err, "Expected to write message to topic")
+			},
+			func(t *testing.T, r *Reader) {
+				ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+				defer cancel()
+				readMsg, err := r.FetchMessage(ctx)
+				require.NoError(t, err, "Expected to consume message")
+				assert.Equal(t, messagesToWrite[0].Value, readMsg.Value, "Values should be equal")
+
+				err = r.CommitMessages(context.Background(), readMsg)
+				assert.NoError(t, err, "Expected CommitMessages to not return an error")
+			},
+			opts,
+			opts,
+		)
+		return spans
+	}
+	namingschematest.NewKafkaTest(genSpans)(t)
+}
+
+// benchSpan is a package-level variable used to prevent compiler optimisations in the benchmarks below.
+var benchSpan ddtrace.Span
+
+func BenchmarkReaderStartSpan(b *testing.B) {
+	ctx := context.Background()
+	kafkaCfg := tracing.KafkaConfig{
+		BootstrapServers: "localhost:9092,localhost:9093,localhost:9094",
+		ConsumerGroupID:  testGroupID,
+	}
+	tr := tracing.NewTracer(kafkaCfg)
+	msg := kafka.Message{
+		Key:   []byte("key1"),
+		Value: []byte("value1"),
+	}
+	var result ddtrace.Span
+
+	b.ResetTimer()
+	for n := 0; n < b.N; n++ {
+		result = tr.StartConsumeSpan(ctx, wrapMessage(&msg))
+	}
+	benchSpan = result
+}
+
+func BenchmarkWriterStartSpan(b *testing.B) {
+	ctx := context.Background()
+	kafkaCfg := tracing.KafkaConfig{
+		BootstrapServers: "localhost:9092,localhost:9093,localhost:9094",
+		ConsumerGroupID:  testGroupID,
+	}
+	tr := tracing.NewTracer(kafkaCfg)
+	kw := &kafka.Writer{
+		Addr:         kafka.TCP("localhost:9092", "localhost:9093", "localhost:9094"),
+		Topic:        testTopic,
+		RequiredAcks: kafka.RequireOne,
+	}
+	msg := kafka.Message{
+		Key:   []byte("key1"),
+		Value: []byte("value1"),
+	}
+	var result ddtrace.Span
+
+	b.ResetTimer()
+	for n := 0; n < b.N; n++ {
+		result = tr.StartProduceSpan(ctx, wrapTracingWriter(kw), wrapMessage(&msg))
+	}
+	benchSpan = result
 }

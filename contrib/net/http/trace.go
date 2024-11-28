@@ -11,7 +11,6 @@ import (
 
 	v2 "github.com/DataDog/dd-trace-go/contrib/net/http/v2"
 	v2tracer "github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
 
@@ -27,25 +26,7 @@ var (
 )
 
 // ServeConfig specifies the tracing configuration when using TraceAndServe.
-type ServeConfig struct {
-	// Service specifies the service name to use. If left blank, the global service name
-	// will be inherited.
-	Service string
-	// Resource optionally specifies the resource name for this request.
-	Resource string
-	// QueryParams should be true in order to append the URL query values to the  "http.url" tag.
-	QueryParams bool
-	// Route is the request matched route if any, or is empty otherwise
-	Route string
-	// RouteParams specifies framework-specific route parameters (e.g. for route /user/:id coming
-	// in as /user/123 we'll have {"id": "123"}). This field is optional and is used for monitoring
-	// by AppSec. It is only taken into account when AppSec is enabled.
-	RouteParams map[string]string
-	// FinishOpts specifies any options to be used when finishing the request span.
-	FinishOpts []ddtrace.FinishOption
-	// SpanOpts specifies any options to be applied to the request starting span.
-	SpanOpts []ddtrace.StartSpanOption
-}
+type ServeConfig = v2.ServeConfig
 
 // TraceAndServe serves the handler h using the given ResponseWriter and Request, applying tracing
 // according to the specified config.

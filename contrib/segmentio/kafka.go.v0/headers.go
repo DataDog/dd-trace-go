@@ -7,10 +7,9 @@ package kafka
 
 import (
 	v2 "github.com/DataDog/dd-trace-go/contrib/segmentio/kafka-go/v2"
+	"github.com/segmentio/kafka-go"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-
-	"github.com/segmentio/kafka-go"
 )
 
 // ExtractSpanContext retrieves the SpanContext from a kafka.Message
