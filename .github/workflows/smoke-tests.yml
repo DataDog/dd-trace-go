@@ -37,7 +37,7 @@ jobs:
     #  Related to issue https://github.com/DataDog/dd-trace-go/issues/1607
     name: 'go get -u smoke test'
     runs-on: ubuntu-latest
-    if: github.repository_owner == 'DataDog' && github.ref_type == 'tag' && contains(github.ref_name, 'v2.0.0-beta.3') # only run on DataDog's repository, not in forks
+    if: github.repository_owner == 'DataDog' # only run on DataDog's repository, not in forks
     env:
       PACKAGES: ./internal/... ./ddtrace/... ./profiler/... ./appsec/...
     steps:
