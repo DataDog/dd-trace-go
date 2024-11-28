@@ -37,12 +37,6 @@ jobs:
         with:
           ref: ${{ env.REF_NAME }}
 
-      - name: Set up Go 1.22
-        uses: actions/setup-go@41dfa10bad2bb2ae585af6ee5bb4d7d973ad74ed # v5.1.0
-        with:
-          go-version: 1.22
-        id: go
-
       - name: Set up QEMU
         uses: docker/setup-qemu-action@49b3bc8e6bdd4a60e6116a5414239cba5943d3cf # V3.2.0
 

@@ -7,11 +7,13 @@ package main
 
 import (
 	"crypto/tls"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"net"
 	"net/http"
 	"os"
+	"strconv"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/contrib/envoyproxy/envoy"
+	"gopkg.in/DataDog/dd-trace-go.v1/contrib/envoyproxy/go-control-plane"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
 
@@ -35,40 +37,54 @@ type serviceExtensionConfig struct {
 }
 
 func loadConfig() serviceExtensionConfig {
-	extensionPort := os.Getenv("DD_SERVICE_EXTENSION_PORT")
-	if extensionPort == "" {
-		extensionPort = "443"
+	extensionPortInt := internal.IntEnv("DD_SERVICE_EXTENSION_PORT", 443)
+	if extensionPortInt < 1 || extensionPortInt > 65535 {
+		log.Error("service_extension: invalid port number: %d\n", extensionPortInt)
+		os.Exit(1)
 	}
 
-	extensionHost := os.Getenv("DD_SERVICE_EXTENSION_HOST")
-	if extensionHost == "" {
-		extensionHost = "0.0.0.0"
+	healthcheckPortInt := internal.IntEnv("DD_SERVICE_EXTENSION_HEALTHCHECK_PORT", 80)
+	if healthcheckPortInt < 1 || healthcheckPortInt > 65535 {
+		log.Error("service_extension: invalid port number: %d\n", healthcheckPortInt)
+		os.Exit(1)
 	}
 
-	healthcheckPort := os.Getenv("DD_SERVICE_EXTENSION_HEALTHCHECK_PORT")
-	if healthcheckPort == "" {
-		healthcheckPort = "80"
+	extensionHost := internal.IpEnv("DD_SERVICE_EXTENSION_HOST", "0.0.0.0")
+	extensionPortStr := strconv.FormatInt(int64(extensionPortInt), 10)
+	healthcheckPortStr := strconv.FormatInt(int64(extensionPortInt), 10)
+
+	// check if the ports are free
+	l, err := net.Listen("tcp", extensionHost+":"+extensionPortStr)
+	if err != nil {
+		log.Error("service_extension: failed to listen on extension %s:%s: %v\n", extensionHost, extensionPortStr, err)
+		os.Exit(1)
+	}
+	err = l.Close()
+	if err != nil {
+		log.Error("service_extension: failed to close listener on %s:%s: %v\n", extensionHost, extensionPortStr, err)
+		os.Exit(1)
+	}
+
+	l, err = net.Listen("tcp", extensionHost+":"+healthcheckPortStr)
+	if err != nil {
+		log.Error("service_extension: failed to listen on health check %s:%s: %v\n", extensionHost, healthcheckPortStr, err)
+		os.Exit(1)
+	}
+	err = l.Close()
+	if err != nil {
+		log.Error("service_extension: failed to close listener on %s:%s: %v\n", extensionHost, healthcheckPortStr, err)
+		os.Exit(1)
 	}
 
 	return serviceExtensionConfig{
-		extensionPort:   extensionPort,
+		extensionPort:   extensionPortStr,
 		extensionHost:   extensionHost,
-		healthcheckPort: healthcheckPort,
+		healthcheckPort: healthcheckPortStr,
 	}
 }
 
 func main() {
 	var extensionService AppsecCalloutExtensionService
-
-	// Force set ASM as enabled only if the environment variable is not set
-	// Note: If the environment variable is set to false, it should be disabled
-	if os.Getenv("DD_APPSEC_ENABLED") == "" {
-		if err := os.Setenv("DD_APPSEC_ENABLED", "1"); err != nil {
-			log.Error("service_extension: failed to set DD_APPSEC_ENABLED environment variable: %v\n", err)
-		}
-	}
-
-	// TODO: Enable ASM standalone mode when it is developed (should be done for Q4 2024)
 
 	// Set the DD_VERSION to the current tracer version if not set
 	if os.Getenv("DD_VERSION") == "" {
@@ -79,7 +95,8 @@ func main() {
 
 	config := loadConfig()
 
-	tracer.Start()
+	tracer.Start(tracer.WithAppSecEnabled(true))
+	// TODO: Enable ASM standalone mode when it is developed (should be done for Q4 2024)
 
 	go StartGPRCSsl(&extensionService, config)
 	log.Info("service_extension: callout gRPC server started on %s:%s\n", config.extensionHost, config.extensionPort)
@@ -94,13 +111,8 @@ func startHealthCheck(config serviceExtensionConfig) {
 	muxServer := mux.NewRouter()
 	muxServer.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		_, err := w.Write([]byte(`{"status": "ok", "library": {"language": "golang", "version": "` + version.Tag + `"}}`))
-		if err != nil {
-			w.WriteHeader(http.StatusInternalServerError)
-			return
-		}
-
 		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"status": "ok", "library": {"language": "golang", "version": "` + version.Tag + `"}}`))
 	})
 
 	server := &http.Server{
@@ -108,27 +120,29 @@ func startHealthCheck(config serviceExtensionConfig) {
 		Handler: muxServer,
 	}
 
-	println(server.ListenAndServe())
+	if err := server.ListenAndServe(); err != nil {
+		log.Error("service_extension: error starting health check http server: %v\n", err)
+	}
 }
 
 func StartGPRCSsl(service extproc.ExternalProcessorServer, config serviceExtensionConfig) {
 	cert, err := tls.LoadX509KeyPair("localhost.crt", "localhost.key")
 	if err != nil {
-		log.Error("Failed to load key pair: %v\n", err)
+		log.Error("service_extension: failed to load key pair: %v\n", err)
 	}
 
 	lis, err := net.Listen("tcp", config.extensionHost+":"+config.extensionPort)
 	if err != nil {
-		log.Error("Failed to listen: %v\n", err)
+		log.Error("service_extension: gRPC server failed to listen: %v\n", err)
 	}
 
-	si := envoy.StreamServerInterceptor()
+	si := go_control_plane.StreamServerInterceptor()
 	creds := credentials.NewServerTLSFromCert(&cert)
 	grpcServer := grpc.NewServer(grpc.StreamInterceptor(si), grpc.Creds(creds))
 
 	extproc.RegisterExternalProcessorServer(grpcServer, service)
 	reflection.Register(grpcServer)
 	if err := grpcServer.Serve(lis); err != nil {
-		log.Error("service_extension: failed to serve gRPC: %v\n", err)
+		log.Error("service_extension: error starting gRPC server: %v\n", err)
 	}
 }
