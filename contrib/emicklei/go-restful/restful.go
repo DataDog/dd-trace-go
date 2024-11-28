@@ -12,11 +12,10 @@ package restful
 import (
 	"math"
 
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
-	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/httptrace"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/httptrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 
 	"github.com/emicklei/go-restful"
@@ -37,7 +36,7 @@ func FilterFunc(configOpts ...Option) restful.FilterFunction {
 		opt(cfg)
 	}
 	log.Debug("contrib/emicklei/go-restful: Creating tracing filter: %#v", cfg)
-	spanOpts := []ddtrace.StartSpanOption{tracer.ServiceName(cfg.serviceName)}
+	spanOpts := []tracer.StartSpanOption{tracer.ServiceName(cfg.serviceName)}
 	return func(req *restful.Request, resp *restful.Response, chain *restful.FilterChain) {
 		spanOpts := append(spanOpts, tracer.ResourceName(req.SelectedRoutePath()))
 		spanOpts = append(spanOpts, tracer.Tag(ext.Component, componentName))

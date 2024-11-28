@@ -335,7 +335,7 @@ func TestStatusError(t *testing.T) {
 			defer mt.Stop()
 
 			if tt.envServerErrorStatusesVal != "" {
-				t.Setenv(envServerErrorStatuses, tt.envServerErrorStatusesVal)
+				t.Setenv("DD_TRACE_HTTP_SERVER_ERROR_STATUSES", tt.envServerErrorStatusesVal)
 			}
 
 			router := echo.New()

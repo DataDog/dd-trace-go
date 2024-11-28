@@ -13,10 +13,9 @@ import (
 	"testing"
 	"time"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -400,8 +399,8 @@ func BenchmarkTraceAndServe(b *testing.B) {
 	cfg := ServeConfig{
 		Service:     "service-name",
 		Resource:    "resource-name",
-		FinishOpts:  []ddtrace.FinishOption{},
-		SpanOpts:    []ddtrace.StartSpanOption{},
+		FinishOpts:  []tracer.FinishOption{},
+		SpanOpts:    []tracer.StartSpanOption{},
 		QueryParams: false,
 	}
 	b.ResetTimer()

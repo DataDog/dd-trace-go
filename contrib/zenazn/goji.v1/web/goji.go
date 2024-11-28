@@ -17,6 +17,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 
+	v2 "github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 	"github.com/zenazn/goji/web"
 )
@@ -62,13 +63,16 @@ func Middleware(opts ...Option) func(*web.C, http.Handler) http.Handler {
 					log.Warn("contrib/zenazn/goji.v1/web: routes are unavailable. To enable them add the goji Router middleware before the tracer middleware.")
 				})
 			}
-			httptrace.TraceAndServe(h, w, r, &httptrace.ServeConfig{
+			sc := &httptrace.ServeConfig{
 				Service:    cfg.serviceName,
 				Resource:   resource,
-				FinishOpts: cfg.finishOpts,
-				SpanOpts:   cfg.spanOpts,
+				FinishOpts: make([]v2.FinishOption, 1),
+				SpanOpts:   make([]v2.StartSpanOption, 1),
 				Route:      route,
-			})
+			}
+			sc.FinishOpts[0] = tracer.ApplyV1FinishOptions(cfg.finishOpts...)
+			sc.SpanOpts[0] = tracer.ApplyV1Options(cfg.spanOpts...)
+			httptrace.TraceAndServe(h, w, r, sc)
 		})
 	}
 }

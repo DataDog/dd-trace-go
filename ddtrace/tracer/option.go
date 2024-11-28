@@ -39,13 +39,7 @@ func MarkIntegrationImported(integration string) bool {
 // Using this option to explicitly disable appsec also prevents it from being
 // remote activated.
 func WithAppSecEnabled(enabled bool) StartOption {
-	mode := appsecconfig.ForcedOff
-	if enabled {
-		mode = appsecconfig.ForcedOn
-	}
-	return func(c *config) {
-		c.appsecStartOptions = append(c.appsecStartOptions, appsecconfig.WithEnablementMode(mode))
-	}
+	return v2.WithAppSecEnabled(enabled)
 }
 
 // WithFeatureFlags specifies a set of feature flags to enable. Please take into account

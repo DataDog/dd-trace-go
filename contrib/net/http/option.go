@@ -151,7 +151,3 @@ func RTWithIgnoreRequest(f func(*http.Request) bool) RoundTripperOption {
 func RTWithErrorCheck(fn func(err error) bool) RoundTripperOption {
 	return v2.WithErrorCheck(fn)
 }
-
-func isClientError(statusCode int) bool {
-	return statusCode >= 400 && statusCode < 500
-}

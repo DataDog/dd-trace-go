@@ -463,10 +463,6 @@ type pgxMockTracer struct {
 	called map[string]bool
 }
 
-var (
-	_ allPgxTracers = (*pgxMockTracer)(nil)
-)
-
 func (p *pgxMockTracer) TraceQueryStart(ctx context.Context, _ *pgx.Conn, _ pgx.TraceQueryStartData) context.Context {
 	p.called["query.start"] = true
 	return ctx

@@ -35,4 +35,4 @@ func WrapWriter(w *kafka.Writer, opts ...Option) *Writer {
 }
 
 // Writer wraps a kafka.Writer with tracing config data
-type Writer = v2.Writer
+type Writer = v2.KafkaWriter

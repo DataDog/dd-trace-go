@@ -11,7 +11,6 @@ import (
 
 	v2 "github.com/DataDog/dd-trace-go/contrib/net/http/v2"
 	v2tracer "github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
 
 var (
@@ -38,7 +37,7 @@ func TraceAndServe(h http.Handler, w http.ResponseWriter, r *http.Request, cfg *
 	c.QueryParams = cfg.QueryParams
 	c.Route = cfg.Route
 	c.RouteParams = cfg.RouteParams
-	c.FinishOpts[0] = tracer.ApplyV1FinishOptions(cfg.FinishOpts...)
-	c.SpanOpts[0] = tracer.ApplyV1Options(cfg.SpanOpts...)
+	c.FinishOpts = cfg.FinishOpts
+	c.SpanOpts = cfg.SpanOpts
 	v2.TraceAndServe(h, w, r, c)
 }
