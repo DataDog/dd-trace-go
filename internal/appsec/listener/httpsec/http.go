@@ -59,7 +59,7 @@ func (feature *Feature) OnRequest(op *httpsec.HandlerOperation, args httpsec.Han
 	headers := headersRemoveCookies(args.Headers)
 	headers["host"] = []string{args.Host}
 
-	SetRequestHeadersTags(op, headers)
+	setRequestHeadersTags(op, headers)
 
 	op.Run(op,
 		addresses.NewAddressesBuilder().
@@ -76,7 +76,7 @@ func (feature *Feature) OnRequest(op *httpsec.HandlerOperation, args httpsec.Han
 
 func (feature *Feature) OnResponse(op *httpsec.HandlerOperation, resp httpsec.HandlerOperationRes) {
 	headers := headersRemoveCookies(resp.Headers)
-	SetResponseHeadersTags(op, headers)
+	setResponseHeadersTags(op, headers)
 
 	builder := addresses.NewAddressesBuilder().
 		WithResponseHeadersNoCookies(headers).
