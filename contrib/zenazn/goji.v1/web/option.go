@@ -24,7 +24,7 @@ type config struct {
 type Option func(*config)
 
 func defaults(cfg *config) {
-	cfg.analyticsRate = instr.AnalyticsRate(false)
+	cfg.analyticsRate = instr.AnalyticsRate(true)
 	cfg.serviceName = instr.ServiceName(instrumentation.ComponentServer, nil)
 }
 

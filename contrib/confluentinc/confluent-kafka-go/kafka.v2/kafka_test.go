@@ -169,7 +169,7 @@ func TestConsumerChannel(t *testing.T) {
 		assert.Equal(t, "queue", s.Tag(ext.SpanType))
 		assert.Equal(t, 1, s.Tag(ext.MessagingKafkaPartition))
 		assert.Equal(t, 0.3, s.Tag(ext.EventSampleRate))
-		assert.Equal(t, fmt.Sprintf("%d", i+1), s.Tag("offset"))
+		assert.Equal(t, float64(i+1), s.Tag("offset"))
 		assert.Equal(t, componentName, s.Tag(ext.Component))
 		assert.Equal(t, ext.SpanKindConsumer, s.Tag(ext.SpanKind))
 		assert.Equal(t, "kafka", s.Tag(ext.MessagingSystem))

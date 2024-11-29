@@ -588,10 +588,6 @@ func BenchmarkSetTagField(b *testing.B) {
 	}
 }
 
-type boomError struct{}
-
-func (e *boomError) Error() string { return "boom" }
-
 type stringer struct{}
 
 func (s *stringer) String() string {

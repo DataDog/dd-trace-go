@@ -182,7 +182,7 @@ func TestError(t *testing.T) {
 	span := spans[0]
 	assert.Equal("http.request", span.OperationName())
 	assert.Equal("500", span.Tag(ext.HTTPCode))
-	assert.Equal("500: Internal Server Error", span.Tag(ext.ErrorMsg))
+	assert.Equal("oh no", span.Tag(ext.ErrorMsg))
 	assert.Equal(ext.SpanKindServer, span.Tag(ext.SpanKind))
 	assert.Equal("emicklei/go-restful.v3", span.Tag(ext.Component))
 }

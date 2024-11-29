@@ -18,7 +18,7 @@ type config struct {
 }
 
 func newConfig() *config {
-	rate := instr.AnalyticsRate(false)
+	rate := instr.AnalyticsRate(true)
 	serviceName := instr.ServiceName(instrumentation.ComponentServer, nil)
 	return &config{
 		serviceName:   serviceName,

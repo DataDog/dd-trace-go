@@ -84,7 +84,7 @@ func ApplyV1Options(opts ...ddtrace.StartSpanOption) v2.StartSpanOption {
 		if ssc.SpanID != 0 {
 			cfg.SpanID = ssc.SpanID
 		}
-		if ssc.SpanLinks != nil && len(ssc.SpanLinks) > 0 {
+		if len(ssc.SpanLinks) > 0 {
 			cfg.SpanLinks = ssc.SpanLinks
 		}
 		if !ssc.StartTime.IsZero() {

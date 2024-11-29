@@ -91,7 +91,6 @@ func (mta *mocktracerV2Adapter) SentDSMBacklogs() []datastreams.Backlog {
 // Stop implements Tracer.
 func (mta *mocktracerV2Adapter) Stop() {
 	mta.tracer.Stop()
-	mta.tracer = nil
 	setActive(false)
 }
 

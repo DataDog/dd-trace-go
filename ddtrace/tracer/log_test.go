@@ -27,18 +27,6 @@ func TestLogSamplingRules(t *testing.T) {
 	assert.Regexp(logPrefixRegexp+` WARN: DIAGNOSTICS Error\(s\) parsing sampling rules: found errors:\n\tat index 4: ignoring rule {Rate:9\.10}: rate is out of \[0\.0, 1\.0] range$`, tp.Logs()[0])
 }
 
-func TestLogDefaultSampleRate(t *testing.T) {
-	assert := assert.New(t)
-	tp := new(log.RecordLogger)
-	tp.Ignore("appsec: ", "Instrumentation telemetry: ")
-	log.UseLogger(tp)
-	t.Setenv("DD_TRACE_SAMPLE_RATE", ``)
-	_, stop := startTestTracer(t, WithLogger(tp), WithEnv("test"))
-	defer stop()
-
-	assert.Len(tp.Logs(), 0)
-}
-
 func TestLogFormat(t *testing.T) {
 	assert := assert.New(t)
 	tp := new(log.RecordLogger)

@@ -11,7 +11,7 @@ import (
 	"github.com/valyala/fasthttp"
 )
 
-const componentName = "valyala/fasthttp.v1"
+const componentName = "valyala/fasthttp"
 
 // WrapHandler wraps a fasthttp.RequestHandler with tracing middleware
 func WrapHandler(h fasthttp.RequestHandler, opts ...Option) fasthttp.RequestHandler {

@@ -345,7 +345,10 @@ type StartSpanOption = ddtrace.StartSpanOption
 func Tag(k string, v interface{}) StartSpanOption {
 	return func(cfg *ddtrace.StartSpanConfig) {
 		if cfg.Tags == nil {
-			cfg.Tags = map[string]interface{}{}
+			cfg.Tags = make(map[string]interface{})
+		}
+		if k == ext.SamplingPriority {
+			k = "_sampling_priority_v1shim"
 		}
 		cfg.Tags[k] = v
 	}

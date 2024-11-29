@@ -143,14 +143,17 @@ func (msa MockspanV2Adapter) Tag(k string) interface{} {
 			return v
 		}
 	case ext.SamplingPriority:
-		v := msa.Span.Tag("_sampling_priority_v1").(float64)
-		return int(v)
+		v := msa.Span.Tag("_sampling_priority_v1")
+		if v == nil {
+			return 0
+		}
+		return int(v.(float64))
 	case ext.ErrorStack:
 		v := msa.Span.Tag(k)
 		if v == nil {
 			// If ext.ErrorStack is not set, but ext.Error is, then we can assume that the
 			// stack trace is disabled.
-			if msa.Span.Tag(ext.Error) != nil {
+			if msa.Span.Tag(ext.ErrorMsg) != nil {
 				return "<debug stack disabled>"
 			}
 
