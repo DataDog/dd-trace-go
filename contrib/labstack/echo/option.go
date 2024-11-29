@@ -7,6 +7,7 @@ package echo
 
 import (
 	"math"
+	"os"
 
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 )
@@ -29,7 +30,11 @@ func defaults(cfg *config) {
 	cfg.analyticsRate = instr.AnalyticsRate(false)
 	cfg.serviceName = instr.ServiceName(instrumentation.ComponentServer, nil)
 	cfg.headerTags = instr.HTTPHeadersAsTags()
-	cfg.isStatusError = isServerError
+	if fn := httptrace.GetErrorCodesFromInput(os.Getenv(envServerErrorStatuses)); fn != nil {
+		cfg.isStatusError = fn
+	} else {
+		cfg.isStatusError = isServerError
+	}
 }
 
 // WithServiceName sets the given service name for the system.

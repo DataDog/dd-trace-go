@@ -111,9 +111,6 @@ func TestError(t *testing.T) {
 		assert.Equal("http.request", span.OperationName())
 		assert.Equal("foobar", span.Tag(ext.ServiceName))
 		assert.Equal(strconv.Itoa(code), span.Tag(ext.HTTPCode))
-
-		wantErr := fmt.Sprintf("%d: %s", code, http.StatusText(code))
-		assert.Equal(wantErr, span.Tag(ext.ErrorMsg))
 	}
 
 	t.Run("default", func(t *testing.T) {

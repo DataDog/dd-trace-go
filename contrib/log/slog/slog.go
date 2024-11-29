@@ -13,8 +13,6 @@ import (
 	v2 "github.com/DataDog/dd-trace-go/contrib/log/slog/v2"
 )
 
-const componentName = "log/slog"
-
 // NewJSONHandler is a convenience function that returns a *slog.JSONHandler logger enhanced with
 // tracing information.
 func NewJSONHandler(w io.Writer, opts *slog.HandlerOptions) slog.Handler {
