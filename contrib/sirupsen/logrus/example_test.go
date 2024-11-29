@@ -30,5 +30,5 @@ func ExampleHook() {
 	// Log as desired using the context-aware logger
 	cLog.Info("Completed some work!")
 	// Output:
-	// {"dd.span_id":0,"dd.trace_id":0,"level":"info","msg":"Completed some work!","time":"2000-01-01T01:01:01Z"}
+	// {"dd.span_id":0,"dd.trace_id":"00000000000000000000000000000000","level":"info","msg":"Completed some work!","time":"2000-01-01T01:01:01Z"}
 }

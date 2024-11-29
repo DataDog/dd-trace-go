@@ -8,14 +8,10 @@ package web
 import (
 	"math"
 
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
 )
-
-const defaultServiceName = "http.router"
 
 type config struct {
 	serviceName   string
@@ -28,12 +24,8 @@ type config struct {
 type Option func(*config)
 
 func defaults(cfg *config) {
-	if internal.BoolEnv("DD_TRACE_GOJI_ANALYTICS_ENABLED", false) {
-		cfg.analyticsRate = 1.0
-	} else {
-		cfg.analyticsRate = globalconfig.AnalyticsRate()
-	}
-	cfg.serviceName = namingschema.ServiceNameOverrideV0(defaultServiceName, defaultServiceName)
+	cfg.analyticsRate = instr.AnalyticsRate(true)
+	cfg.serviceName = instr.ServiceName(instrumentation.ComponentServer, nil)
 }
 
 // WithServiceName sets the given service name for the returned mux.

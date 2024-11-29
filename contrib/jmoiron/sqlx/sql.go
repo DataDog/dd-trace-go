@@ -12,64 +12,35 @@
 package sqlx // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/jmoiron/sqlx"
 
 import (
+	v2 "github.com/DataDog/dd-trace-go/contrib/jmoiron/sqlx/v2"
 	sqltraced "gopkg.in/DataDog/dd-trace-go.v1/contrib/database/sql"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 
 	"github.com/jmoiron/sqlx"
 )
 
-const componentName = "jmoiron/sqlx"
-
-func init() {
-	telemetry.LoadIntegration(componentName)
-	tracer.MarkIntegrationImported("github.com/jmoiron/sqlx")
-}
-
 // Open opens a new (traced) connection to the database using the given driver and source.
 // Note that the driver must formerly be registered using database/sql integration's Register.
 func Open(driverName, dataSourceName string, opts ...sqltraced.Option) (*sqlx.DB, error) {
-	db, err := sqltraced.Open(driverName, dataSourceName, opts...)
-	if err != nil {
-		return nil, err
-	}
-	return sqlx.NewDb(db, driverName), nil
+	return v2.Open(driverName, dataSourceName, opts...)
 }
 
 // MustOpen is the same as Open, but panics on error.
 // To get tracing, the driver must be formerly registered using the database/sql integration's
 // Register.
 func MustOpen(driverName, dataSourceName string) (*sqlx.DB, error) {
-	db, err := sqltraced.Open(driverName, dataSourceName)
-	if err != nil {
-		panic(err)
-	}
-	return sqlx.NewDb(db, driverName), nil
+	return v2.MustOpen(driverName, dataSourceName)
 }
 
 // Connect connects to the data source using the given driver.
 // To get tracing, the driver must be formerly registered using the database/sql integration's
 // Register.
 func Connect(driverName, dataSourceName string) (*sqlx.DB, error) {
-	db, err := Open(driverName, dataSourceName)
-	if err != nil {
-		return nil, err
-	}
-	err = db.Ping()
-	if err != nil {
-		db.Close()
-		return nil, err
-	}
-	return db, nil
+	return v2.Connect(driverName, dataSourceName)
 }
 
 // MustConnect connects to a database and panics on error.
 // To get tracing, the driver must be formerly registered using the database/sql integration's
 // Register.
 func MustConnect(driverName, dataSourceName string) *sqlx.DB {
-	db, err := Connect(driverName, dataSourceName)
-	if err != nil {
-		panic(err)
-	}
-	return db
+	return v2.MustConnect(driverName, dataSourceName)
 }

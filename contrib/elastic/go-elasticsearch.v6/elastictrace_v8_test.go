@@ -11,15 +11,13 @@ import (
 	"strings"
 	"testing"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/namingschematest"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils"
 	elasticsearch8 "github.com/elastic/go-elasticsearch/v8"
 	esapi8 "github.com/elastic/go-elasticsearch/v8/esapi"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 func checkGETTraceV8(assert *assert.Assertions, mt mocktracer.Tracer) {
@@ -106,7 +104,7 @@ func TestClientErrorCutoffV8(t *testing.T) {
 	assert.NoError(err)
 
 	span := mt.FinishedSpans()[0]
-	assert.Equal(`{"error":{`, span.Tag(ext.Error).(error).Error())
+	assert.True(strings.HasPrefix(span.Tag(ext.ErrorMsg).(string), `{"error":{`))
 }
 
 func TestClientV8Failure(t *testing.T) {
@@ -132,7 +130,7 @@ func TestClientV8Failure(t *testing.T) {
 
 	spans := mt.FinishedSpans()
 	assert.NotEmpty(spans[0].Tag(ext.Error))
-	assert.Equal("*net.OpError", fmt.Sprintf("%T", spans[0].Tag(ext.Error).(error)))
+	assert.Equal("*net.OpError", spans[0].Tag(ext.ErrorType))
 }
 
 func TestResourceNamerSettingsV8(t *testing.T) {
@@ -223,9 +221,7 @@ func TestAnalyticsSettingsV8(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		rate := globalconfig.AnalyticsRate()
-		defer globalconfig.SetAnalyticsRate(rate)
-		globalconfig.SetAnalyticsRate(0.4)
+		testutils.SetGlobalAnalyticsRate(t, 0.4)
 
 		assertRate(t, mt, 0.4)
 	})
@@ -248,55 +244,8 @@ func TestAnalyticsSettingsV8(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		rate := globalconfig.AnalyticsRate()
-		defer globalconfig.SetAnalyticsRate(rate)
-		globalconfig.SetAnalyticsRate(0.4)
+		testutils.SetGlobalAnalyticsRate(t, 0.4)
 
 		assertRate(t, mt, 0.23, WithAnalyticsRate(0.23))
 	})
-}
-
-func TestNamingSchema(t *testing.T) {
-	genSpans := func(t *testing.T, serviceOverride string) []mocktracer.Span {
-		var opts []ClientOption
-		if serviceOverride != "" {
-			opts = append(opts, WithServiceName(serviceOverride))
-		}
-		mt := mocktracer.Start()
-		defer mt.Stop()
-		cfg := elasticsearch8.Config{
-			Transport: NewRoundTripper(opts...),
-			Addresses: []string{
-				elasticV8URL,
-			},
-		}
-		client, err := elasticsearch8.NewClient(cfg)
-		require.NoError(t, err)
-
-		_, err = esapi8.IndexRequest{
-			Index:      "twitter",
-			DocumentID: "1",
-			Body:       strings.NewReader(`{"user": "test", "message": "hello"}`),
-		}.Do(context.Background(), client)
-		require.NoError(t, err)
-
-		spans := mt.FinishedSpans()
-		require.Len(t, spans, 1)
-		return spans
-	}
-	assertOpV0 := func(t *testing.T, spans []mocktracer.Span) {
-		require.Len(t, spans, 1)
-		assert.Equal(t, "elasticsearch.query", spans[0].OperationName())
-	}
-	assertOpV1 := func(t *testing.T, spans []mocktracer.Span) {
-		require.Len(t, spans, 1)
-		assert.Equal(t, "elasticsearch.query", spans[0].OperationName())
-	}
-	wantServiceNameV0 := namingschematest.ServiceNameAssertions{
-		WithDefaults:             []string{"elastic.client"},
-		WithDDService:            []string{"elastic.client"},
-		WithDDServiceAndOverride: []string{namingschematest.TestServiceOverride},
-	}
-	t.Run("ServiceName", namingschematest.NewServiceNameTest(genSpans, wantServiceNameV0))
-	t.Run("SpanName", namingschematest.NewSpanNameTest(genSpans, assertOpV0, assertOpV1))
 }

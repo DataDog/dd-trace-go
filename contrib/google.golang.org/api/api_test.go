@@ -9,14 +9,13 @@ import (
 	"context"
 	"io"
 	"net/http"
-	"regexp"
 	"strings"
 	"testing"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/api/books/v1"
@@ -170,9 +169,7 @@ func TestAnalyticsSettings(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		rate := globalconfig.AnalyticsRate()
-		defer globalconfig.SetAnalyticsRate(rate)
-		globalconfig.SetAnalyticsRate(0.4)
+		testutils.SetGlobalAnalyticsRate(t, 0.4)
 
 		assertRate(t, mt, 0.4)
 	})
@@ -195,9 +192,7 @@ func TestAnalyticsSettings(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		rate := globalconfig.AnalyticsRate()
-		defer globalconfig.SetAnalyticsRate(rate)
-		globalconfig.SetAnalyticsRate(0.4)
+		testutils.SetGlobalAnalyticsRate(t, 0.4)
 
 		assertRate(t, mt, 0.23, WithAnalyticsRate(0.23))
 	})
@@ -214,23 +209,5 @@ func BenchmarkWrapRoundTripper(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		svc.Bookshelves.List("montana.banana").Do()
-	}
-}
-
-func BenchmarkInitApiEndpointsTree(b *testing.B) {
-	b.ReportAllocs()
-
-	for i := 0; i < b.N; i++ {
-		initAPIEndpointsTree()
-	}
-}
-
-func TestTreeRegex(t *testing.T) {
-	apiEndpoints, err := loadEndpointsFromJSON()
-	require.NoError(t, err)
-
-	for _, e := range apiEndpoints {
-		_, err := regexp.Compile(e.PathRegex)
-		assert.NoErrorf(t, err, "pathRegexp: %s", e.PathRegex)
 	}
 }

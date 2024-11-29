@@ -6,14 +6,11 @@
 package httpsec
 
 import (
-	"net/http"
 	"net/netip"
 	"os"
 	"strings"
 
 	"github.com/DataDog/appsec-internal-go/httpsec"
-
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/trace"
 )
 
 const (
@@ -82,47 +79,6 @@ func ClientIPTags(headers map[string][]string, hasCanonicalHeaders bool, remoteA
 	return tags, clientIP
 }
 
-// NormalizeHTTPHeaders returns the HTTP headers following Datadog's
-// normalization format.
-func NormalizeHTTPHeaders(headers map[string][]string) (normalized map[string]string) {
-	if len(headers) == 0 {
-		return nil
-	}
-	normalized = make(map[string]string, len(collectedHeadersLookupMap))
-	for k, v := range headers {
-		k = normalizeHTTPHeaderName(k)
-		if _, found := collectedHeadersLookupMap[k]; found {
-			normalized[k] = normalizeHTTPHeaderValue(v)
-		}
-	}
-	if len(normalized) == 0 {
-		return nil
-	}
-	return normalized
-}
-
-// Remove cookies from the request headers and return the map of headers
-// Used from `server.request.headers.no_cookies` and server.response.headers.no_cookies` addresses for the WAF
-func headersRemoveCookies(headers http.Header) map[string][]string {
-	headersNoCookies := make(http.Header, len(headers))
-	for k, v := range headers {
-		k := strings.ToLower(k)
-		if k == "cookie" {
-			continue
-		}
-		headersNoCookies[k] = v
-	}
-	return headersNoCookies
-}
-
-func normalizeHTTPHeaderName(name string) string {
-	return strings.ToLower(name)
-}
-
-func normalizeHTTPHeaderValue(values []string) string {
-	return strings.Join(values, ",")
-}
-
 func init() {
 	makeCollectedHTTPHeadersLookupMap()
 	readMonitoredClientIPHeadersConfig()
@@ -133,6 +89,10 @@ func makeCollectedHTTPHeadersLookupMap() {
 	for _, h := range defaultCollectedHeaders {
 		collectedHeadersLookupMap[h] = struct{}{}
 	}
+}
+
+func normalizeHTTPHeaderName(name string) string {
+	return strings.ToLower(name)
 }
 
 func readMonitoredClientIPHeadersConfig() {
@@ -146,22 +106,5 @@ func readMonitoredClientIPHeadersConfig() {
 	} else {
 		// No specific IP header was configured, use the default list
 		monitoredClientIPHeadersCfg = defaultIPHeaders
-	}
-}
-
-// setRequestHeadersTags sets the AppSec-specific request headers span tags.
-func setRequestHeadersTags(span trace.TagSetter, headers map[string][]string) {
-	setHeadersTags(span, "http.request.headers.", headers)
-}
-
-// setResponseHeadersTags sets the AppSec-specific response headers span tags.
-func setResponseHeadersTags(span trace.TagSetter, headers map[string][]string) {
-	setHeadersTags(span, "http.response.headers.", headers)
-}
-
-// setHeadersTags sets the AppSec-specific headers span tags.
-func setHeadersTags(span trace.TagSetter, tagPrefix string, headers map[string][]string) {
-	for h, v := range NormalizeHTTPHeaders(headers) {
-		span.SetTag(tagPrefix+h, v)
 	}
 }
