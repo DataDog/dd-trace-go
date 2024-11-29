@@ -10,6 +10,7 @@ import (
 	"os"
 
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/httptrace"
 )
 
 // envServerErrorStatuses is the name of the env var used to specify error status codes on http server spans

@@ -12,7 +12,7 @@ import (
 func TestTracerStop(t *testing.T) {
 	mt := Start().(*mocktracerV2Adapter)
 	mt.Stop()
-	if mt.tracer != nil {
+	if IsActive() {
 		t.Fail()
 	}
 }

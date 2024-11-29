@@ -9,12 +9,6 @@ import (
 	v2 "github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go/v2/aws"
 )
 
-type config struct {
-	serviceName   string
-	analyticsRate float64
-	errCheck      func(err error) bool
-}
-
 // Option represents an option that can be passed to Dial.
 type Option = v2.Option
 

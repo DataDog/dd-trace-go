@@ -29,12 +29,3 @@ func ConnectConfig(ctx context.Context, connConfig *pgx.ConnConfig, opts ...Opti
 func ConnectWithOptions(ctx context.Context, connString string, options pgx.ParseConfigOptions, tracerOpts ...Option) (*pgx.Conn, error) {
 	return v2.ConnectWithOptions(ctx, connString, options, tracerOpts...)
 }
-
-// ConnectWithOptions is equivalent to pgx.ConnectWithOptions providing a connection augmented with tracing.
-func ConnectWithOptions(ctx context.Context, connString string, options pgx.ParseConfigOptions, tracerOpts ...Option) (*pgx.Conn, error) {
-	connConfig, err := pgx.ParseConfigWithOptions(connString, options)
-	if err != nil {
-		return nil, err
-	}
-	return ConnectConfig(ctx, connConfig, tracerOpts...)
-}

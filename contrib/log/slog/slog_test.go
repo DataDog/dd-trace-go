@@ -40,7 +40,7 @@ func assertLogEntry(t *testing.T, rawEntry, wantMsg, wantLevel string, span trac
 	traceID := strconv.FormatUint(span.Context().TraceID(), 16)
 	spanID := strconv.FormatUint(span.Context().SpanID(), 10)
 	// v2 generates 128-bit trace IDs, so we need to compare only the last second half
-	assert.Equal(t, traceID, entry[ext.LogKeyTraceID].(string)[len(traceID):], "trace id not found")
+	assert.True(t, strings.HasSuffix(entry[ext.LogKeyTraceID].(string), traceID), "trace id not found")
 	assert.Equal(t, spanID, entry[ext.LogKeySpanID], "span id not found")
 
 	if assertExtra != nil {

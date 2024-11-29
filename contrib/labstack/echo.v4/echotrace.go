@@ -12,6 +12,9 @@ import (
 	"github.com/labstack/echo/v4"
 )
 
+// envServerErrorStatuses is the name of the env var used to specify error status codes on http server spans
+const envServerErrorStatuses = "DD_TRACE_HTTP_SERVER_ERROR_STATUSES"
+
 // Middleware returns echo middleware which will trace incoming requests.
 func Middleware(opts ...Option) echo.MiddlewareFunc {
 	return v2.Middleware(opts...)
