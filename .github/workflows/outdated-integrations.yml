@@ -25,7 +25,7 @@ jobs:
       
       - run: go get github.com/Masterminds/semver/v3
 
-      - run: go run latest_major_version.go > latests.txt
+      - run: go run .github/workflows/apps/latest_major_version.go > latests.txt
 
       - run: git diff
 
