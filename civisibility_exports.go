@@ -34,7 +34,7 @@ var tests = make(map[uint64]civisibility.Test)
 // civisibility_initialize initializes the CI visibility integration.
 //
 //export civisibility_initialize
-func civisibility_initialize(runtime_name *C.char, runtime_version *C.char, framework *C.char, framework_version *C.char) {
+func civisibility_initialize(runtime_name *C.char, runtime_version *C.char, framework *C.char, framework_version *C.char, unix_start_time *C.longlong) {
 	if runtime_name != nil {
 		utils.AddCITags(constants.RuntimeName, C.GoString(runtime_name))
 	}
@@ -43,21 +43,29 @@ func civisibility_initialize(runtime_name *C.char, runtime_version *C.char, fram
 	}
 
 	utils.AddCITags("language", "shared-lib")
-
 	civisibility.EnsureCiVisibilityInitialization()
-	if framework == nil || framework_version == nil {
-		session = civisibility.CreateTestSession()
-	} else {
-		session = civisibility.CreateTestSession(civisibility.WithTestSessionFramework(C.GoString(framework), C.GoString(framework_version)))
+
+	var sessionOptions []civisibility.TestSessionStartOption
+	if framework != nil && framework_version != nil {
+		sessionOptions = append(sessionOptions, civisibility.WithTestSessionFramework(C.GoString(framework), C.GoString(framework_version)))
 	}
+	if unix_start_time != nil {
+		sessionOptions = append(sessionOptions, civisibility.WithTestSessionStartTime(time.Unix(int64(*unix_start_time), 0)))
+	}
+
+	session = civisibility.CreateTestSession(sessionOptions...)
 }
 
 // civisibility_shutdown shuts down the CI visibility integration.
 //
 //export civisibility_shutdown
-func civisibility_shutdown(exit_code C.int) {
+func civisibility_shutdown(exit_code C.int, unix_finish_time *C.longlong) {
 	if session != nil {
-		session.Close(int(exit_code))
+		if unix_finish_time != nil {
+			session.Close(int(exit_code), civisibility.WithTestSessionFinishTime(time.Unix(int64(*unix_finish_time), 0)))
+		} else {
+			session.Close(int(exit_code))
+		}
 	}
 	civisibility.ExitCiVisibility()
 }
