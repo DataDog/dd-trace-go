@@ -37,3 +37,5 @@ jobs:
           base: main
           title: "chore: update latest majors"
           labels: changelog/no-changelog
+          body: "Updating latest majors with new versions"
+

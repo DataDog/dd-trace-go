@@ -8,12 +8,17 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/Masterminds/semver/v3"
 	"golang.org/x/mod/modfile"
 	"net/http"
 	"os"
 	"regexp"
 	"strings"
 )
+
+type Tag struct {
+	Name string
+}
 
 func getLatestMajorVersion(repo string) (string, error) {
 	// Get latest major version available for repo from github.
@@ -37,23 +42,37 @@ func getLatestMajorVersion(repo string) (string, error) {
 	if err := json.NewDecoder(resp.Body).Decode(&tags); err != nil {
 		return "", err
 	}
+	latestByMajor := make(map[int]*semver.Version)
 
-	latest := ""
-	// match on version strings e.x. v9.3.0
-	majorVersionRegex := regexp.MustCompile(`^v(\d+)`)
-	alphaBetaRegex := regexp.MustCompile(`alpha|beta`)
-
-	// Check latest major version seen
 	for _, tag := range tags {
-		if majorVersionRegex.MatchString(tag.Name) && !alphaBetaRegex.MatchString(tag.Name) {
-			version := majorVersionRegex.FindString(tag.Name)
-			if latest == "" || version > latest {
-				latest = version
-			}
+		v, err := semver.NewVersion(tag.Name)
+		if err != nil {
+			continue // Skip invalid versions
+		}
+
+		if v.Prerelease() != "" {
+			continue // Ignore pre-release versions
+		}
+
+		major := int(v.Major())
+		if current, exists := latestByMajor[major]; !exists || v.GreaterThan(current) {
+			latestByMajor[major] = v
 		}
 	}
 
-	return latest, nil
+	var latestMajor *semver.Version
+	for _, v := range latestByMajor {
+		if latestMajor == nil || v.Major() > latestMajor.Major() {
+			latestMajor = v
+		}
+	}
+
+	if latestMajor != nil {
+		return fmt.Sprintf("v%d", latestMajor.Major()), nil
+	}
+
+	return "", fmt.Errorf("no valid versions found")
+
 }
 
 func main() {
@@ -70,7 +89,7 @@ func main() {
 		return
 	}
 
-	latestMajor := make(map[string]string)
+	latestMajor := make(map[string]*semver.Version)
 
 	// Match on versions with /v{major}
 	versionRegex := regexp.MustCompile(`^(?P<module>.+?)/v(\d+)$`)
@@ -80,13 +99,20 @@ func main() {
 		module := req.Mod.Path
 
 		if match := versionRegex.FindStringSubmatch(module); match != nil {
-			url := match[1]   //  base module URL (e.g., github.com/foo)
-			major := match[2] //  major version (e.g., 2)
+			url := match[1]                   //  base module URL (e.g., github.com/foo)
+			majorVersionStr := "v" + match[2] // Create semantic version string (e.g., "v2")
 
 			moduleName := strings.TrimPrefix(strings.TrimSpace(url), "github.com/")
 
-			if existing, ok := latestMajor[moduleName]; !ok || existing < major {
-				latestMajor[moduleName] = major
+			// Parse the semantic version
+			majorVersion, err := semver.NewVersion(majorVersionStr)
+			if err != nil {
+				fmt.Printf("Skip invalid version for module %s: %v\n", module, err)
+				continue
+			}
+
+			if existing, ok := latestMajor[moduleName]; !ok || majorVersion.GreaterThan(existing) {
+				latestMajor[moduleName] = majorVersion
 			}
 		}
 	}
@@ -95,18 +121,23 @@ func main() {
 	// Check if a new major version in Github is available that we don't support.
 	// If so, output that a new latest is available.
 	for module, major := range latestMajor {
-		latestVersion, err := getLatestMajorVersion(module)
+
+		latestVersion, err := getLatestMajorVersion(module) // latest version available
 		if err != nil {
 			fmt.Printf("Error fetching latest version for module '%s': %v\n", module, err)
 			continue
 		}
 
-		normalizedMajor := strings.TrimSpace(strings.TrimPrefix(major, "v"))
-		normalizedLatestMajor := strings.TrimSpace(strings.TrimPrefix(latestVersion, "v"))
-		fmt.Printf("Latest DD major version of %s: v%s\n", module, normalizedMajor)
-
-		if normalizedMajor != normalizedLatestMajor {
-			fmt.Printf("New latest major version of %s available: v%s\n", module, normalizedLatestMajor)
+		latestVersionParsed, err := semver.NewVersion(latestVersion)
+		if err != nil {
+			fmt.Printf("Error parsing latest version '%s' for module '%s': %v\n", latestVersion, module, err)
+			continue
 		}
+
+		fmt.Printf("Latest DD major version of %s: %d\n", module, major.Major())
+		if major.LessThan(latestVersionParsed) {
+			fmt.Printf("New latest major version of %s available: %d\n", module, latestVersionParsed.Major())
+		}
+
 	}
 }

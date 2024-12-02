@@ -1,4 +1,4 @@
-module gopkg.in/DataDog/dd-trace-go.v1
+module gopkg.in/DataDog/dd-trace-go.v1 // This file is manually maintained and updated
 
 go 1.22.0
 
