@@ -9,20 +9,19 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"path/filepath"
-	"regexp"
 	"strings"
 	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/constants"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/utils"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/utils/telemetry"
 )
 
 // Test Session
 
-// Ensures that tslvTestSession implements the DdTestSession interface.
-var _ DdTestSession = (*tslvTestSession)(nil)
+// Ensures that tslvTestSession implements the TestSession interface.
+var _ TestSession = (*tslvTestSession)(nil)
 
 // tslvTestSession implements the DdTestSession interface and represents a session for a set of tests.
 type tslvTestSession struct {
@@ -31,53 +30,55 @@ type tslvTestSession struct {
 	command          string
 	workingDirectory string
 	framework        string
+	frameworkVersion string
 
-	modules map[string]DdTestModule
+	modules map[string]TestModule
 }
 
-// CreateTestSession initializes a new test session. It automatically determines the command and working directory.
-func CreateTestSession() DdTestSession {
-	var cmd string
-	if len(os.Args) == 1 {
-		cmd = filepath.Base(os.Args[0])
-	} else {
-		cmd = fmt.Sprintf("%s %s ", filepath.Base(os.Args[0]), strings.Join(os.Args[1:], " "))
+// CreateTestSession initializes a new test session with the given command and working directory.
+func CreateTestSession(options ...TestSessionStartOption) TestSession {
+	defaults := &tslvTestSessionStartOptions{}
+	for _, f := range options {
+		f(defaults)
 	}
 
-	// Filter out some parameters to make the command more stable.
-	cmd = regexp.MustCompile(`(?si)-test.gocoverdir=(.*)\s`).ReplaceAllString(cmd, "")
-	cmd = regexp.MustCompile(`(?si)-test.v=(.*)\s`).ReplaceAllString(cmd, "")
-	cmd = regexp.MustCompile(`(?si)-test.testlogfile=(.*)\s`).ReplaceAllString(cmd, "")
-	cmd = strings.TrimSpace(cmd)
-	wd, err := os.Getwd()
-	if err == nil {
-		wd = utils.GetRelativePathFromCITagsSourceRoot(wd)
+	if defaults.command == "" {
+		defaults.command = utils.GetCITags()[constants.TestCommand]
 	}
-	return CreateTestSessionWith(cmd, wd, "", time.Now())
-}
+	if defaults.workingDirectory == "" {
+		wd, err := os.Getwd()
+		if err == nil {
+			wd = utils.GetRelativePathFromCITagsSourceRoot(wd)
+		}
+		defaults.workingDirectory = wd
+	}
+	if defaults.startTime.IsZero() {
+		defaults.startTime = time.Now()
+	}
 
-// CreateTestSessionWith initializes a new test session with specified command, working directory, framework, and start time.
-func CreateTestSessionWith(command string, workingDirectory string, framework string, startTime time.Time) DdTestSession {
 	// Ensure CI visibility is properly configured.
 	EnsureCiVisibilityInitialization()
 
-	operationName := "test_session"
-	if framework != "" {
-		operationName = fmt.Sprintf("%s.%s", strings.ToLower(framework), operationName)
-	}
-
-	resourceName := fmt.Sprintf("%s.%s", operationName, command)
-
 	sessionTags := []tracer.StartSpanOption{
 		tracer.Tag(constants.TestType, constants.TestTypeTest),
-		tracer.Tag(constants.TestCommand, command),
-		tracer.Tag(constants.TestCommandWorkingDirectory, workingDirectory),
+		tracer.Tag(constants.TestCommand, defaults.command),
+		tracer.Tag(constants.TestCommandWorkingDirectory, defaults.workingDirectory),
 	}
+
+	operationName := "test_session"
+	if defaults.framework != "" {
+		operationName = fmt.Sprintf("%s.%s", strings.ToLower(defaults.framework), operationName)
+		sessionTags = append(sessionTags,
+			tracer.Tag(constants.TestFramework, defaults.framework),
+			tracer.Tag(constants.TestFrameworkVersion, defaults.frameworkVersion))
+	}
+
+	resourceName := fmt.Sprintf("%s.%s", operationName, defaults.command)
 
 	testOpts := append(fillCommonTags([]tracer.StartSpanOption{
 		tracer.ResourceName(resourceName),
 		tracer.SpanType(constants.SpanTypeTestSession),
-		tracer.StartTime(startTime),
+		tracer.StartTime(defaults.startTime),
 	}), sessionTags...)
 
 	span, ctx := tracer.StartSpanFromContext(context.Background(), operationName, testOpts...)
@@ -86,12 +87,13 @@ func CreateTestSessionWith(command string, workingDirectory string, framework st
 
 	s := &tslvTestSession{
 		sessionID:        sessionID,
-		command:          command,
-		workingDirectory: workingDirectory,
-		framework:        framework,
-		modules:          map[string]DdTestModule{},
+		command:          defaults.command,
+		workingDirectory: defaults.workingDirectory,
+		framework:        defaults.framework,
+		frameworkVersion: defaults.frameworkVersion,
+		modules:          map[string]TestModule{},
 		ciVisibilityCommon: ciVisibilityCommon{
-			startTime: startTime,
+			startTime: defaults.startTime,
 			tags:      sessionTags,
 			span:      span,
 			ctx:       ctx,
@@ -101,7 +103,21 @@ func CreateTestSessionWith(command string, workingDirectory string, framework st
 	// Ensure to close everything before CI visibility exits. In CI visibility mode, we try to never lose data.
 	PushCiVisibilityCloseAction(func() { s.Close(1) })
 
+	// Creating telemetry event created
+	testingEventType := telemetry.SessionEventType
+	if utils.GetCodeOwners() != nil {
+		testingEventType = append(testingEventType, telemetry.HasCodeOwnerEventType...)
+	}
+	if _, hasCiProvider := utils.GetCITags()[constants.CIProviderName]; !hasCiProvider {
+		testingEventType = append(testingEventType, telemetry.UnsupportedCiEventType...)
+	}
+	telemetry.EventCreated(s.framework, testingEventType)
 	return s
+}
+
+// SessionID returns the ID of the test session.
+func (t *tslvTestSession) SessionID() uint64 {
+	return t.sessionID
 }
 
 // Command returns the command used to run the test session.
@@ -113,56 +129,74 @@ func (t *tslvTestSession) Framework() string { return t.framework }
 // WorkingDirectory returns the working directory of the test session.
 func (t *tslvTestSession) WorkingDirectory() string { return t.workingDirectory }
 
-// Close closes the test session with the given exit code and sets the finish time to the current time.
-func (t *tslvTestSession) Close(exitCode int) { t.CloseWithFinishTime(exitCode, time.Now()) }
-
-// CloseWithFinishTime closes the test session with the given exit code and finish time.
-func (t *tslvTestSession) CloseWithFinishTime(exitCode int, finishTime time.Time) {
+// Close closes the test session with the given exit code.
+func (t *tslvTestSession) Close(exitCode int, options ...TestSessionCloseOption) {
 	t.mutex.Lock()
 	defer t.mutex.Unlock()
 	if t.closed {
 		return
 	}
 
+	defaults := &tslvTestSessionCloseOptions{}
+	for _, f := range options {
+		f(defaults)
+	}
+
+	if defaults.finishTime.IsZero() {
+		defaults.finishTime = time.Now()
+	}
+
 	for _, m := range t.modules {
 		m.Close()
 	}
-	t.modules = map[string]DdTestModule{}
+	t.modules = map[string]TestModule{}
 
 	t.span.SetTag(constants.TestCommandExitCode, exitCode)
 	if exitCode == 0 {
 		t.span.SetTag(constants.TestStatus, constants.TestStatusPass)
 	} else {
-		t.SetErrorInfo("ExitCode", "exit code is not zero.", "")
+		t.SetError(WithErrorInfo("ExitCode", "exit code is not zero.", ""))
 		t.span.SetTag(constants.TestStatus, constants.TestStatusFail)
 	}
 
-	t.span.Finish(tracer.FinishTime(finishTime))
+	t.span.Finish(tracer.FinishTime(defaults.finishTime))
 	t.closed = true
 
+	// Creating telemetry event finished
+	testingEventType := telemetry.SessionEventType
+	if utils.GetCodeOwners() != nil {
+		testingEventType = append(testingEventType, telemetry.HasCodeOwnerEventType...)
+	}
+	if _, hasCiProvider := utils.GetCITags()[constants.CIProviderName]; !hasCiProvider {
+		testingEventType = append(testingEventType, telemetry.UnsupportedCiEventType...)
+	}
+	telemetry.EventFinished(t.framework, testingEventType)
 	tracer.Flush()
 }
 
-// GetOrCreateModule returns an existing module or creates a new one with the given name.
-func (t *tslvTestSession) GetOrCreateModule(name string) DdTestModule {
-	return t.GetOrCreateModuleWithFramework(name, "", "")
-}
-
-// GetOrCreateModuleWithFramework returns an existing module or creates a new one with the given name, framework, and framework version.
-func (t *tslvTestSession) GetOrCreateModuleWithFramework(name string, framework string, frameworkVersion string) DdTestModule {
-	return t.GetOrCreateModuleWithFrameworkAndStartTime(name, framework, frameworkVersion, time.Now())
-}
-
-// GetOrCreateModuleWithFrameworkAndStartTime returns an existing module or creates a new one with the given name, framework, framework version, and start time.
-func (t *tslvTestSession) GetOrCreateModuleWithFrameworkAndStartTime(name string, framework string, frameworkVersion string, startTime time.Time) DdTestModule {
+// GetOrCreateModule returns an existing module or creates a new one with the given name, framework, framework version, and start time.
+func (t *tslvTestSession) GetOrCreateModule(name string, options ...TestModuleStartOption) TestModule {
 	t.mutex.Lock()
 	defer t.mutex.Unlock()
 
-	var mod DdTestModule
+	defaults := &tslvTestModuleStartOptions{}
+	for _, f := range options {
+		f(defaults)
+	}
+
+	if defaults.framework == "" {
+		defaults.framework = t.framework
+		defaults.frameworkVersion = t.frameworkVersion
+	}
+	if defaults.startTime.IsZero() {
+		defaults.startTime = time.Now()
+	}
+
+	var mod TestModule
 	if v, ok := t.modules[name]; ok {
 		mod = v
 	} else {
-		mod = createTestModule(t, name, framework, frameworkVersion, startTime)
+		mod = createTestModule(t, name, defaults.framework, defaults.frameworkVersion, defaults.startTime)
 		t.modules[name] = mod
 	}
 

@@ -40,6 +40,9 @@ concurrency:
   # Automatically cancel previous runs if a new one is triggered to conserve resources.
   group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
 
+permissions:
+  contents: read
+
 jobs:
   # Prepare the cache of Go modules to share it will the other jobs.
   # This maximizes cache hits and minimizes the time spent downloading Go modules.
@@ -94,9 +97,9 @@ jobs:
     needs: go-mod-caching
     strategy:
       matrix:
-        runs-on: [ macos-12, macos-14 ] # oldest and newest macos runners available - macos-14 mainly is here to cover the fact it is an ARM machine
-        go-version: [ "1.22", "1.21" ]
-      fail-fast: true # saving some CI time - macos runners too long to get
+        runs-on: [ macos-13, macos-15 ] # oldest and newest macos runners available - macos-15 is an ARM runner
+        go-version: [ "1.23", "1.22" ]
+      fail-fast: true # saving some CI time - macos runners are too long to get
     steps:
       - uses: actions/checkout@v4
 
@@ -187,7 +190,7 @@ jobs:
     needs: go-mod-caching
     strategy:
       matrix:
-        go-version: [ "1.22", "1.21" ]
+        go-version: [ "1.23", "1.22" ]
         distribution: [ bookworm, bullseye, alpine ]
         platform: [ linux/amd64, linux/arm64 ]
 

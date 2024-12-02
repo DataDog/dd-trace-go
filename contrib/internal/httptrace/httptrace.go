@@ -18,7 +18,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/trace/httptrace"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener/httpsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
 )
 
@@ -34,7 +34,7 @@ func StartRequestSpan(r *http.Request, opts ...ddtrace.StartSpanOption) (tracer.
 
 	var ipTags map[string]string
 	if cfg.traceClientIP {
-		ipTags, _ = httptrace.ClientIPTags(r.Header, true, r.RemoteAddr)
+		ipTags, _ = httpsec.ClientIPTags(r.Header, true, r.RemoteAddr)
 	}
 	nopts := make([]ddtrace.StartSpanOption, 0, len(opts)+1+len(ipTags))
 	nopts = append(nopts,
@@ -62,18 +62,30 @@ func StartRequestSpan(r *http.Request, opts ...ddtrace.StartSpanOption) (tracer.
 }
 
 // FinishRequestSpan finishes the given HTTP request span and sets the expected response-related tags such as the status
-// code. Any further span finish option can be added with opts.
-func FinishRequestSpan(s tracer.Span, status int, opts ...tracer.FinishOption) {
+// code. If not nil, errorFn will override the isStatusError method on httptrace for determining error codes. Any further span finish option can be added with opts.
+func FinishRequestSpan(s tracer.Span, status int, errorFn func(int) bool, opts ...tracer.FinishOption) {
 	var statusStr string
+	var fn func(int) bool
+	if errorFn == nil {
+		fn = cfg.isStatusError
+	} else {
+		fn = errorFn
+	}
+	// if status is 0, treat it like 200 unless 0 was called out in DD_TRACE_HTTP_SERVER_ERROR_STATUSES
 	if status == 0 {
-		statusStr = "200"
+		if fn(status) {
+			statusStr = "0"
+			s.SetTag(ext.Error, fmt.Errorf("%s: %s", statusStr, http.StatusText(status)))
+		} else {
+			statusStr = "200"
+		}
 	} else {
 		statusStr = strconv.Itoa(status)
+		if fn(status) {
+			s.SetTag(ext.Error, fmt.Errorf("%s: %s", statusStr, http.StatusText(status)))
+		}
 	}
 	s.SetTag(ext.HTTPCode, statusStr)
-	if status >= 500 && status < 600 {
-		s.SetTag(ext.Error, fmt.Errorf("%s: %s", statusStr, http.StatusText(status)))
-	}
 	s.Finish(opts...)
 }
 

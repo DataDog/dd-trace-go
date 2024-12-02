@@ -13,7 +13,6 @@ import (
 	"fmt"
 	"net"
 	"net/http"
-	"os"
 	"runtime"
 	"runtime/debug"
 	"strings"
@@ -22,6 +21,7 @@ import (
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/hostname"
 	logger "gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/osinfo"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
@@ -68,7 +68,6 @@ var (
 		},
 		Timeout: 5 * time.Second,
 	}
-	hostname string
 
 	// protects agentlessURL, which may be changed for testing purposes
 	agentlessEndpointLock sync.RWMutex
@@ -83,10 +82,6 @@ var (
 )
 
 func init() {
-	h, err := os.Hostname()
-	if err == nil {
-		hostname = h
-	}
 	GlobalClient = new(client)
 }
 
@@ -145,6 +140,9 @@ type client struct {
 	// metrics are sent
 	metrics    map[Namespace]map[string]*metric
 	newMetrics bool
+
+	// syncFlushOnStop forces a sync flush to ensure all metrics are sent before stopping the client
+	syncFlushOnStop bool
 
 	// Globally registered application configuration sent in the app-started request, along with the locally-defined
 	// configuration of the  event.
@@ -256,7 +254,7 @@ func (c *client) start(configuration []Configuration, namespace Namespace, flush
 	}
 
 	if flush {
-		c.flush()
+		c.flush(false)
 	}
 	c.heartbeatInterval = heartbeatInterval()
 	c.heartbeatT = time.AfterFunc(c.heartbeatInterval, c.backgroundHeartbeat)
@@ -285,7 +283,7 @@ func (c *client) Stop() {
 	// close request types have no body
 	r := c.newRequest(RequestTypeAppClosing)
 	c.scheduleSubmit(r)
-	c.flush()
+	c.flush(c.syncFlushOnStop)
 }
 
 // Disabled returns whether instrumentation telemetry is disabled
@@ -387,7 +385,7 @@ func (c *client) Count(namespace Namespace, name string, value float64, tags []s
 // flush sends any outstanding telemetry messages and aggregated metrics to be
 // sent to the backend. Requests are sent in the background. Must be called
 // with c.mu locked
-func (c *client) flush() {
+func (c *client) flush(sync bool) {
 	// initialize submissions slice of capacity len(c.requests) + 2
 	// to hold all the new events, plus two potential metric events
 	submissions := make([]*Request, 0, len(c.requests)+2)
@@ -441,40 +439,27 @@ func (c *client) flush() {
 		}
 	}
 
-	go func() {
+	submit := func() {
 		for _, r := range submissions {
 			err := r.submit()
 			if err != nil {
 				log("submission error: %s", err.Error())
 			}
 		}
-	}()
-}
+	}
 
-var (
-	osName        string
-	osNameOnce    sync.Once
-	osVersion     string
-	osVersionOnce sync.Once
-)
-
-// XXX: is it actually safe to cache osName and osVersion? For example, can the
-// kernel be updated without stopping execution?
-
-func getOSName() string {
-	osNameOnce.Do(func() { osName = osinfo.OSName() })
-	return osName
-}
-
-func getOSVersion() string {
-	osVersionOnce.Do(func() { osVersion = osinfo.OSVersion() })
-	return osVersion
+	if sync {
+		submit()
+	} else {
+		go submit()
+	}
 }
 
 // newRequests populates a request with the common fields shared by all requests
 // sent through this Client
 func (c *client) newRequest(t RequestType) *Request {
 	c.seqID++
+	hostname := hostname.Get()
 	body := &Body{
 		APIVersion:  "v2",
 		RequestType: t,
@@ -491,11 +476,13 @@ func (c *client) newRequest(t RequestType) *Request {
 			LanguageVersion: runtime.Version(),
 		},
 		Host: Host{
-			Hostname:     hostname,
-			OS:           getOSName(),
-			OSVersion:    getOSVersion(),
-			Architecture: runtime.GOARCH,
-			// TODO (lievan): getting kernel name, release, version TBD
+			Hostname:      hostname,
+			OS:            osinfo.OSName(),
+			OSVersion:     osinfo.OSVersion(),
+			Architecture:  osinfo.Architecture(),
+			KernelName:    osinfo.KernelName(),
+			KernelRelease: osinfo.KernelRelease(),
+			KernelVersion: osinfo.KernelVersion(),
 		},
 	}
 
@@ -620,6 +607,6 @@ func (c *client) backgroundHeartbeat() {
 		return
 	}
 	c.scheduleSubmit(c.newRequest(RequestTypeAppHeartbeat))
-	c.flush()
+	c.flush(false)
 	c.heartbeatT.Reset(c.heartbeatInterval)
 }

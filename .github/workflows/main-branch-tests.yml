@@ -22,7 +22,7 @@ jobs:
   unit-integration-tests:
     strategy:
       matrix:
-        go-version: [ "1.21", "1.22" ]
+        go-version: [ "1.22", "1.23" ]
       fail-fast: false
     uses: ./.github/workflows/unit-integration-tests.yml
     with:
@@ -33,7 +33,7 @@ jobs:
     strategy:
       matrix:
         runs-on: [ macos-latest, windows-latest, ubuntu-latest ]
-        go-version: [ "1.21", "1.22" ]
+        go-version: [ "1.22", "1.23" ]
       fail-fast: false
     uses: ./.github/workflows/multios-unit-tests.yml
     with:

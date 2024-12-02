@@ -6,7 +6,9 @@
 package log
 
 import (
+	"bytes"
 	"fmt"
+	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -40,6 +42,76 @@ func (tp *testLogger) Reset() {
 	tp.mu.Lock()
 	tp.lines = tp.lines[:0]
 	tp.mu.Unlock()
+}
+
+func TestLogDirectory(t *testing.T) {
+	t.Run("invalid", func(t *testing.T) {
+		f, err := OpenFileAtPath("/some/nonexistent/path")
+		assert.Nil(t, f)
+		assert.Error(t, err)
+	})
+	t.Run("valid", func(t *testing.T) {
+		// ensure File is created successfully
+		dir, err := os.MkdirTemp("", "example")
+		if err != nil {
+			t.Fatalf("Failure creating directory %v", err)
+		}
+		f, err := OpenFileAtPath(dir)
+		assert.Nil(t, err)
+		fp := dir + "/" + LoggerFile
+		assert.NotNil(t, f.file)
+		assert.Equal(t, fp, f.file.Name())
+		assert.False(t, f.closed)
+
+		// ensure this setting plays nicely with other log features
+		oldLvl := level
+		SetLevel(LevelDebug)
+		defer func() {
+			SetLevel(oldLvl)
+		}()
+		Info("info!")
+		Warn("warn!")
+		Debug("debug!")
+		// shorten errrate to test Error() behavior in a reasonable amount of time
+		oldRate := errrate
+		errrate = time.Microsecond
+		defer func() {
+			errrate = oldRate
+		}()
+		Error("error!")
+		time.Sleep(1 * time.Second)
+
+		b, err := os.ReadFile(fp)
+		if err != nil {
+			t.Fatalf("Failure reading file: %v", err)
+		}
+		// convert file content to []string{}, split by \n, to easily check its contents
+		lines := bytes.Split(b, []byte{'\n'})
+		var logs []string
+		for _, line := range lines {
+			logs = append(logs, string(line))
+		}
+
+		assert.True(t, containsMessage("INFO", "info!", logs))
+		assert.True(t, containsMessage("WARN", "warn!", logs))
+		assert.True(t, containsMessage("DEBUG", "debug!", logs))
+		assert.True(t, containsMessage("ERROR", "error!", logs))
+
+		f.Close()
+		assert.True(t, f.closed)
+
+		//ensure f.Close() is concurrent-safe and free of deadlocks
+		var wg sync.WaitGroup
+		for i := 0; i < 100; i++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				f.Close()
+			}()
+		}
+		wg.Wait()
+		assert.True(t, f.closed)
+	})
 }
 
 func TestLog(t *testing.T) {
@@ -194,4 +266,13 @@ func hasMsg(lvl, m string, lines []string) bool {
 
 func msg(lvl, msg string) string {
 	return fmt.Sprintf("%s %s: %s", prefixMsg, lvl, msg)
+}
+
+func containsMessage(lvl, m string, lines []string) bool {
+	for _, line := range lines {
+		if strings.Contains(line, msg(lvl, m)) {
+			return true
+		}
+	}
+	return false
 }

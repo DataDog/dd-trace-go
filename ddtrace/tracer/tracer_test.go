@@ -24,6 +24,7 @@ import (
 	"testing"
 	"time"
 
+	pb "github.com/DataDog/datadog-agent/pkg/proto/pbgo/trace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
@@ -252,6 +253,27 @@ func TestTracerStart(t *testing.T) {
 		}
 		tr.Stop()
 		tr.Stop()
+	})
+}
+
+func TestTracerLogFile(t *testing.T) {
+	t.Run("valid", func(t *testing.T) {
+		dir, err := os.MkdirTemp("", "example")
+		if err != nil {
+			t.Fatalf("Failure to make temp dir: %v", err)
+		}
+		t.Setenv("DD_TRACE_LOG_DIRECTORY", dir)
+		tracer := newTracer()
+		assert.Equal(t, dir, tracer.config.logDirectory)
+		assert.NotNil(t, tracer.logFile)
+		assert.Equal(t, dir+"/"+log.LoggerFile, tracer.logFile.Name())
+	})
+	t.Run("invalid", func(t *testing.T) {
+		t.Setenv("DD_TRACE_LOG_DIRECTORY", "some/nonexistent/path")
+		tracer := newTracer()
+		defer Stop()
+		assert.Empty(t, tracer.config.logDirectory)
+		assert.Nil(t, tracer.logFile)
 	})
 }
 
@@ -690,7 +712,7 @@ func TestTracerRuntimeMetrics(t *testing.T) {
 	t.Run("on", func(t *testing.T) {
 		tp := new(log.RecordLogger)
 		tp.Ignore("appsec: ", telemetry.LogPrefix)
-		tracer := newTracer(WithRuntimeMetrics(), WithLogger(tp), WithDebugMode(true))
+		tracer := newTracer(WithRuntimeMetrics(), WithLogger(tp), WithDebugMode(true), WithEnv("test"))
 		defer tracer.Stop()
 		assert.Contains(t, tp.Logs()[0], "DEBUG: Runtime metrics enabled")
 	})
@@ -699,7 +721,7 @@ func TestTracerRuntimeMetrics(t *testing.T) {
 		t.Setenv("DD_RUNTIME_METRICS_ENABLED", "true")
 		tp := new(log.RecordLogger)
 		tp.Ignore("appsec: ", telemetry.LogPrefix)
-		tracer := newTracer(WithLogger(tp), WithDebugMode(true))
+		tracer := newTracer(WithLogger(tp), WithDebugMode(true), WithEnv("test"))
 		defer tracer.Stop()
 		assert.Contains(t, tp.Logs()[0], "DEBUG: Runtime metrics enabled")
 	})
@@ -2167,7 +2189,7 @@ func startTestTracer(t testing.TB, opts ...StartOption) (trc *tracer, transport 
 type dummyTransport struct {
 	sync.RWMutex
 	traces spanLists
-	stats  []*statsPayload
+	stats  []*pb.ClientStatsPayload
 }
 
 func newDummyTransport() *dummyTransport {
@@ -2180,14 +2202,14 @@ func (t *dummyTransport) Len() int {
 	return len(t.traces)
 }
 
-func (t *dummyTransport) sendStats(p *statsPayload) error {
+func (t *dummyTransport) sendStats(p *pb.ClientStatsPayload) error {
 	t.Lock()
 	t.stats = append(t.stats, p)
 	t.Unlock()
 	return nil
 }
 
-func (t *dummyTransport) Stats() []*statsPayload {
+func (t *dummyTransport) Stats() []*pb.ClientStatsPayload {
 	t.RLock()
 	defer t.RUnlock()
 	return t.stats
@@ -2324,7 +2346,7 @@ func TestFlush(t *testing.T) {
 	tr.statsd = ts
 
 	transport := newDummyTransport()
-	c := newConcentrator(&config{transport: transport}, defaultStatsBucketSize)
+	c := newConcentrator(&config{transport: transport, env: "someEnv"}, defaultStatsBucketSize)
 	tr.stats = c
 	c.Start()
 	defer c.Stop()
@@ -2344,15 +2366,16 @@ loop:
 			time.Sleep(time.Millisecond)
 		}
 	}
-	as := &aggregableSpan{
-		key: aggregation{
-			Name: "http.request",
-		},
+	s := &span{
+		Name: "http.request",
 		// Start must be older than latest bucket to get flushed
 		Start:    time.Now().UnixNano() - 3*defaultStatsBucketSize,
 		Duration: 1,
+		Metrics:  map[string]float64{keyMeasured: 1},
 	}
-	c.add(as)
+	statSpan, ok := c.newTracerStatSpan(s, tr.obfuscator)
+	assert.True(t, ok)
+	c.add(statSpan)
 
 	assert.Len(t, tw.Flushed(), 0)
 	assert.Zero(t, ts.Flushed())

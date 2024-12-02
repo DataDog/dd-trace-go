@@ -27,6 +27,9 @@ on:
   schedule:
     - cron:  '00 04 * * 2-6'
 
+permissions:
+  contents: read
+
 jobs:
   system-tests:
     if: github.event_name != 'pull_request' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == 'DataDog/dd-trace-go')
@@ -43,20 +46,25 @@ jobs:
           - uds-echo
         scenario:
           - DEFAULT
+          - INTEGRATIONS
+          - INTEGRATIONS_AWS
+          - CROSSED_TRACING_LIBRARIES
           - APPSEC_DISABLED
           - APPSEC_BLOCKING
           - APPSEC_BLOCKING_FULL_DENYLIST
           - APPSEC_REQUEST_BLOCKING
           - APPSEC_API_SECURITY
           - APPSEC_RASP
+          - APPSEC_RUNTIME_ACTIVATION
           - APM_TRACING_E2E
           - APM_TRACING_E2E_SINGLE_SPAN
           - APM_TRACING_E2E_OTEL
+          - TRACING_CONFIG_SCENARIOS
         include:
           - weblog-variant: net-http
             scenario: REMOTE_CONFIG_MOCKED_BACKEND_ASM_FEATURES
           - weblog-variant: net-http
-            scenario: REMOTE_CONFIG_MOCKED_BACKEND_ASM_FEATURES
+            scenario: REMOTE_CONFIG_MOCKED_BACKEND_LIVE_DEBUGGING
           - weblog-variant: net-http
             scenario: REMOTE_CONFIG_MOCKED_BACKEND_ASM_DD
           # AppSec scenarios that don't depend on the integrations, so we just run on the net/http variant
@@ -103,6 +111,8 @@ jobs:
       DD_API_KEY: ${{ secrets.DD_API_KEY }}
       SYSTEM_TESTS_E2E_DD_API_KEY: ${{ secrets.SYSTEM_TESTS_E2E_DD_API_KEY }}
       SYSTEM_TESTS_E2E_DD_APP_KEY: ${{ secrets.SYSTEM_TESTS_E2E_DD_APP_KEY }}
+      SYSTEM_TESTS_AWS_ACCESS_KEY_ID: ${{ secrets.SYSTEM_TESTS_IDM_AWS_ACCESS_KEY_ID }}
+      SYSTEM_TESTS_AWS_SECRET_ACCESS_KEY: ${{ secrets.SYSTEM_TESTS_IDM_AWS_SECRET_ACCESS_KEY }}
     name: Test (${{ matrix.weblog-variant }}, ${{ matrix.scenario }})
     steps:
       - name: Checkout system tests
@@ -134,7 +144,7 @@ jobs:
         run: tar -czvf artifact.tar.gz $(ls | grep logs)
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v4
         if: ${{ always() }}
         with:
           name: logs_${{ matrix.weblog-variant }}_${{ matrix.scenario }}

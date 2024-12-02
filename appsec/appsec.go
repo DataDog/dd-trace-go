@@ -19,7 +19,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/httpsec"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/sharedsec"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/usersec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
@@ -33,7 +33,7 @@ var appsecDisabledLog sync.Once
 // Note that passing the raw bytes of the HTTP request body is not expected and would
 // result in inaccurate attack detection.
 // This function always returns nil when appsec is disabled.
-func MonitorParsedHTTPBody(ctx context.Context, body interface{}) error {
+func MonitorParsedHTTPBody(ctx context.Context, body any) error {
 	if !appsec.Enabled() {
 		appsecDisabledLog.Do(func() { log.Warn("appsec: not enabled. Body blocking checks won't be performed.") })
 		return nil
@@ -50,6 +50,10 @@ func MonitorParsedHTTPBody(ctx context.Context, body interface{}) error {
 // APM tracer middleware on use according to your blocking configuration.
 // This function always returns nil when appsec is disabled and doesn't block users.
 func SetUser(ctx context.Context, id string, opts ...tracer.UserMonitoringOption) error {
+	return setUser(ctx, id, usersec.UserSet, opts)
+}
+
+func setUser(ctx context.Context, id string, userEventType usersec.UserEventType, opts []tracer.UserMonitoringOption) error {
 	s, ok := tracer.SpanFromContext(ctx)
 	if !ok {
 		log.Debug("appsec: could not retrieve span from context. User ID tag won't be set")
@@ -60,7 +64,14 @@ func SetUser(ctx context.Context, id string, opts ...tracer.UserMonitoringOption
 		appsecDisabledLog.Do(func() { log.Warn("appsec: not enabled. User blocking checks won't be performed.") })
 		return nil
 	}
-	return sharedsec.MonitorUser(ctx, id)
+
+	op, errPtr := usersec.StartUserLoginOperation(ctx, userEventType, usersec.UserLoginOperationArgs{})
+	op.Finish(usersec.UserLoginOperationRes{
+		UserID:    id,
+		SessionID: getSessionID(opts...),
+	})
+
+	return *errPtr
 }
 
 // TrackUserLoginSuccessEvent sets a successful user login event, with the given
@@ -76,18 +87,8 @@ func SetUser(ctx context.Context, id string, opts ...tracer.UserMonitoringOption
 // Take-Over (ATO) monitoring, ultimately blocking the IP address and/or user id
 // associated to them.
 func TrackUserLoginSuccessEvent(ctx context.Context, uid string, md map[string]string, opts ...tracer.UserMonitoringOption) error {
-	span := getRootSpan(ctx)
-	if span == nil {
-		return nil
-	}
-
-	const tagPrefix = "appsec.events.users.login.success."
-	span.SetTag(tagPrefix+"track", true)
-	for k, v := range md {
-		span.SetTag(tagPrefix+k, v)
-	}
-	span.SetTag(ext.SamplingPriority, ext.PriorityUserKeep)
-	return SetUser(ctx, uid, opts...)
+	TrackCustomEvent(ctx, "users.login.success", md)
+	return setUser(ctx, uid, usersec.UserLoginSuccess, opts)
 }
 
 // TrackUserLoginFailureEvent sets a failed user login event, with the given
@@ -106,14 +107,15 @@ func TrackUserLoginFailureEvent(ctx context.Context, uid string, exists bool, md
 		return
 	}
 
-	const tagPrefix = "appsec.events.users.login.failure."
-	span.SetTag(tagPrefix+"track", true)
-	span.SetTag(tagPrefix+"usr.id", uid)
-	span.SetTag(tagPrefix+"usr.exists", exists)
-	for k, v := range md {
-		span.SetTag(tagPrefix+k, v)
-	}
-	span.SetTag(ext.SamplingPriority, ext.PriorityUserKeep)
+	// We need to do the first call to SetTag ourselves because the map taken by TrackCustomEvent is map[string]string
+	// and not map [string]any, so the `exists` boolean variable does not fit int
+	span.SetTag("appsec.events.users.login.failure.usr.exists", exists)
+	span.SetTag("appsec.events.users.login.failure.usr.id", uid)
+
+	TrackCustomEvent(ctx, "users.login.failure", md)
+
+	op, _ := usersec.StartUserLoginOperation(ctx, usersec.UserLoginFailure, usersec.UserLoginOperationArgs{})
+	op.Finish(usersec.UserLoginOperationRes{UserID: uid})
 }
 
 // TrackCustomEvent sets a custom event as service entry span tags. This span is
@@ -152,4 +154,14 @@ func getRootSpan(ctx context.Context) tracer.Span {
 	}
 	log.Error("appsec: could not access the root span")
 	return nil
+}
+
+func getSessionID(opts ...tracer.UserMonitoringOption) string {
+	cfg := &tracer.UserMonitoringConfig{
+		Metadata: make(map[string]string),
+	}
+	for _, opt := range opts {
+		opt(cfg)
+	}
+	return cfg.SessionID
 }

@@ -1637,3 +1637,87 @@ func TestSetGlobalSampleRate(t *testing.T) {
 	assert.Equal(t, 0.0, rs.globalRate)
 	assert.False(t, b)
 }
+
+func TestSampleTagsRootOnly(t *testing.T) {
+	assert := assert.New(t)
+
+	t.Run("no-ctx-propagation", func(t *testing.T) {
+		Start(WithSamplingRules([]SamplingRule{
+			TagsResourceRule(map[string]string{"tag": "20"}, "", "", "", 1),
+			TagsResourceRule(nil, "root", "", "", 0),
+		}))
+		tr := internal.GetGlobalTracer()
+		defer tr.Stop()
+
+		root := tr.StartSpan("mysql.root", ResourceName("root"))
+		child := tr.StartSpan("mysql.child", ChildOf(root.Context()))
+		child.SetTag("tag", 20)
+
+		// root span should be sampled with the second rule
+		// sampling decision is 0, thus "_dd.limit_psr" is not present
+		assert.Contains(root.(*span).Metrics, keyRulesSamplerAppliedRate)
+		assert.Equal(0., root.(*span).Metrics[keyRulesSamplerAppliedRate])
+		assert.NotContains(root.(*span).Metrics, keyRulesSamplerLimiterRate)
+
+		// neither"_dd.limit_psr", nor "_dd.rule_psr" should be present
+		// on the child span
+		assert.NotContains(child.(*span).Metrics, keyRulesSamplerAppliedRate)
+		assert.NotContains(child.(*span).Metrics, keyRulesSamplerLimiterRate)
+
+		// setting this tag would change the result of sampling,
+		// which will occur after the span is finished
+		root.SetTag("tag", 20)
+		child.Finish()
+
+		// first sampling rule is applied, the sampling decision is 1
+		// and the "_dd.limit_psr" is present
+		root.Finish()
+		assert.Equal(1., root.(*span).Metrics[keyRulesSamplerAppliedRate])
+		assert.Contains(root.(*span).Metrics, keyRulesSamplerLimiterRate)
+
+		// neither"_dd.limit_psr", nor "_dd.rule_psr" should be present
+		// on the child span
+		assert.NotContains(child.(*span).Metrics, keyRulesSamplerAppliedRate)
+		assert.NotContains(child.(*span).Metrics, keyRulesSamplerLimiterRate)
+	})
+
+	t.Run("with-ctx-propagation", func(t *testing.T) {
+		Start(WithSamplingRules([]SamplingRule{
+			TagsResourceRule(map[string]string{"tag": "20"}, "", "", "", 1),
+			TagsResourceRule(nil, "root", "", "", 0),
+		}))
+		tr := internal.GetGlobalTracer()
+		defer tr.Stop()
+
+		root := tr.StartSpan("mysql.root", ResourceName("root"))
+		child := tr.StartSpan("mysql.child", ChildOf(root.Context()))
+		child.SetTag("tag", 20)
+
+		// root span should be sampled with the second rule
+		// sampling decision is 0, thus "_dd.limit_psr" is not present
+		assert.Equal(0., root.(*span).Metrics[keyRulesSamplerAppliedRate])
+		assert.Contains(root.(*span).Metrics, keyRulesSamplerAppliedRate)
+		assert.NotContains(root.(*span).Metrics, keyRulesSamplerLimiterRate)
+
+		// neither"_dd.limit_psr", nor "_dd.rule_psr" should be present
+		// on the child span
+		assert.NotContains(child.(*span).Metrics, keyRulesSamplerAppliedRate)
+		assert.NotContains(child.(*span).Metrics, keyRulesSamplerLimiterRate)
+
+		// context propagation locks the span, so no re-sampling should occur
+		tr.Inject(root.Context(), TextMapCarrier(map[string]string{}))
+		root.SetTag("tag", 20)
+
+		child.Finish()
+
+		// re-sampling should not occur
+		root.Finish()
+		assert.NotContains(child.(*span).Metrics, keyRulesSamplerAppliedRate)
+		assert.NotContains(root.(*span).Metrics, keyRulesSamplerLimiterRate)
+
+		// neither"_dd.limit_psr", nor "_dd.rule_psr" should be present
+		// on the child span
+		assert.NotContains(child.(*span).Metrics, keyRulesSamplerAppliedRate)
+		assert.NotContains(child.(*span).Metrics, keyRulesSamplerLimiterRate)
+	})
+}

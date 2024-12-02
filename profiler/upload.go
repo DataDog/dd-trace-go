@@ -16,10 +16,12 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/textproto"
+	"os"
 	"strings"
 	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/orchestrion"
 )
 
 // maxRetries specifies the maximum number of retries to have when an error occurs.
@@ -35,7 +37,9 @@ func (p *profiler) upload(bat batch) error {
 	for i := 0; i < maxRetries; i++ {
 		select {
 		case <-p.exit:
-			return nil
+			if !p.cfg.flushOnExit {
+				return nil
+			}
 		default:
 		}
 
@@ -96,6 +100,9 @@ func (p *profiler) doRequest(bat batch) error {
 	go func() {
 		select {
 		case <-p.exit:
+			if p.cfg.flushOnExit {
+				return
+			}
 		case <-funcExit:
 		}
 		cancel()
@@ -144,6 +151,20 @@ type uploadEvent struct {
 	Version          string            `json:"version"`
 	EndpointCounts   map[string]uint64 `json:"endpoint_counts,omitempty"`
 	CustomAttributes []string          `json:"custom_attributes,omitempty"`
+	Info             struct {
+		Profiler profilerInfo `json:"profiler"`
+	} `json:"info"`
+}
+
+// profilerInfo holds profiler-specific information which should be attached to
+// the event for backend consumption
+type profilerInfo struct {
+	SSI struct {
+		Mechanism string `json:"mechanism,omitempty"`
+	} `json:"ssi"`
+	// Activation distinguishes how the profiler was enabled, either "auto"
+	// (env var set via admission controller) or "manual"
+	Activation string `json:"activation"`
 }
 
 // encode encodes the profile as a multipart mime request.
@@ -165,6 +186,22 @@ func encode(bat batch, tags []string) (contentType string, body io.Reader, err e
 		Tags:             strings.Join(tags, ","),
 		EndpointCounts:   bat.endpointCounts,
 		CustomAttributes: bat.customAttributes,
+	}
+
+	// DD_PROFILING_ENABLED is only used to enable profiling when added with
+	// Orchestrion. The "auto" value comes from the Datadog Kubernetes
+	// admission controller. Otherwise, the client library doesn't care
+	// about the value and assumes it was something "truthy", or this code
+	// wouldn't run. We just track it to be consistent with other languages
+	if os.Getenv("DD_PROFILING_ENABLED") == "auto" {
+		event.Info.Profiler.Activation = "auto"
+	} else {
+		event.Info.Profiler.Activation = "manual"
+	}
+	if orchestrion.Enabled() {
+		event.Info.Profiler.SSI.Mechanism = "orchestrion"
+	} else {
+		event.Info.Profiler.SSI.Mechanism = "none"
 	}
 
 	for _, p := range bat.profiles {

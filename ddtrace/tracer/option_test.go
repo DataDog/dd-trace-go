@@ -66,8 +66,14 @@ func testStatsd(t *testing.T, cfg *config, addr string) {
 
 func TestStatsdUDPConnect(t *testing.T) {
 	t.Setenv("DD_DOGSTATSD_PORT", "8111")
-	testStatsd(t, newConfig(), net.JoinHostPort(defaultHostname, "8111"))
-	cfg := newConfig()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		// We simulate the agent not being able to provide the statsd port
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+
+	cfg := newConfig(WithAgentAddr(strings.TrimPrefix(srv.URL, "http://")))
+	testStatsd(t, cfg, net.JoinHostPort(defaultHostname, "8111"))
 	addr := net.JoinHostPort(defaultHostname, "8111")
 
 	client, err := newStatsdClient(cfg)
@@ -151,13 +157,20 @@ func TestAutoDetectStatsd(t *testing.T) {
 
 	t.Run("env", func(t *testing.T) {
 		t.Setenv("DD_DOGSTATSD_PORT", "8111")
-		testStatsd(t, newConfig(), net.JoinHostPort(defaultHostname, "8111"))
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			// We simulate the agent not being able to provide the statsd port
+			w.WriteHeader(http.StatusInternalServerError)
+		}))
+		defer srv.Close()
+
+		cfg := newConfig(WithAgentAddr(strings.TrimPrefix(srv.URL, "http://")))
+		testStatsd(t, cfg, net.JoinHostPort(defaultHostname, "8111"))
 	})
 
 	t.Run("agent", func(t *testing.T) {
 		t.Run("default", func(t *testing.T) {
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-				w.Write([]byte(`{"statsd_port":0}`))
+				w.Write([]byte(`{"endpoints": [], "config": {"statsd_port":0}}`))
 			}))
 			defer srv.Close()
 			cfg := newConfig(WithAgentAddr(strings.TrimPrefix(srv.URL, "http://")), WithAgentTimeout(2))
@@ -166,7 +179,7 @@ func TestAutoDetectStatsd(t *testing.T) {
 
 		t.Run("port", func(t *testing.T) {
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-				w.Write([]byte(`{"statsd_port":8999}`))
+				w.Write([]byte(`{"endpoints": [], "config": {"statsd_port":8999}}`))
 			}))
 			defer srv.Close()
 			cfg := newConfig(WithAgentAddr(strings.TrimPrefix(srv.URL, "http://")))
@@ -211,7 +224,7 @@ func TestLoadAgentFeatures(t *testing.T) {
 
 	t.Run("OK", func(t *testing.T) {
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-			w.Write([]byte(`{"endpoints":["/v0.6/stats"],"feature_flags":["a","b"],"client_drop_p0s":true,"statsd_port":8999}`))
+			w.Write([]byte(`{"endpoints":["/v0.6/stats"],"feature_flags":["a","b"],"client_drop_p0s":true,"config": {"statsd_port":8999}}`))
 		}))
 		defer srv.Close()
 		cfg := newConfig(WithAgentAddr(strings.TrimPrefix(srv.URL, "http://")), WithAgentTimeout(2))
@@ -229,7 +242,7 @@ func TestLoadAgentFeatures(t *testing.T) {
 	t.Run("discovery", func(t *testing.T) {
 		t.Setenv("DD_TRACE_FEATURES", "discovery")
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-			w.Write([]byte(`{"endpoints":["/v0.6/stats"],"client_drop_p0s":true,"statsd_port":8999}`))
+			w.Write([]byte(`{"endpoints":["/v0.6/stats"],"client_drop_p0s":true,"config":{"statsd_port":8999}}`))
 		}))
 		defer srv.Close()
 		cfg := newConfig(WithAgentAddr(strings.TrimPrefix(srv.URL, "http://")), WithAgentTimeout(2))
@@ -258,7 +271,7 @@ func TestAgentIntegration(t *testing.T) {
 		defer clearIntegrationsForTests()
 
 		cfg.loadContribIntegrations(nil)
-		assert.Equal(t, 57, len(cfg.integrations))
+		assert.Equal(t, 56, len(cfg.integrations))
 		for integrationName, v := range cfg.integrations {
 			assert.False(t, v.Instrumented, "integrationName=%s", integrationName)
 		}
@@ -303,39 +316,6 @@ func TestAgentIntegration(t *testing.T) {
 		cfg.loadContribIntegrations(deps)
 		assert.True(t, cfg.integrations["gRPC"].Available)
 		assert.Equal(t, cfg.integrations["gRPC"].Version, "v1.520")
-		assert.False(t, cfg.integrations["gRPC v12"].Available)
-	})
-
-	t.Run("grpc v12", func(t *testing.T) {
-		cfg := newConfig()
-		defer clearIntegrationsForTests()
-
-		d := debug.Module{
-			Path:    "google.golang.org/grpc",
-			Version: "v1.10",
-		}
-
-		deps := []*debug.Module{&d}
-		cfg.loadContribIntegrations(deps)
-		assert.True(t, cfg.integrations["gRPC v12"].Available)
-		assert.Equal(t, cfg.integrations["gRPC v12"].Version, "v1.10")
-		assert.False(t, cfg.integrations["gRPC"].Available)
-	})
-
-	t.Run("grpc bad", func(t *testing.T) {
-		cfg := newConfig()
-		defer clearIntegrationsForTests()
-
-		d := debug.Module{
-			Path:    "google.golang.org/grpc",
-			Version: "v10.10",
-		}
-
-		deps := []*debug.Module{&d}
-		cfg.loadContribIntegrations(deps)
-		assert.False(t, cfg.integrations["gRPC v12"].Available)
-		assert.Equal(t, cfg.integrations["gRPC v12"].Version, "")
-		assert.False(t, cfg.integrations["gRPC"].Available)
 	})
 
 	// ensure we clean up global state
@@ -351,9 +331,7 @@ type contribPkg struct {
 
 func TestIntegrationEnabled(t *testing.T) {
 	body, err := exec.Command("go", "list", "-json", "../../contrib/...").Output()
-	if err != nil {
-		t.Fatalf(err.Error())
-	}
+	require.NoError(t, err, "go list command failed")
 	var packages []contribPkg
 	stream := json.NewDecoder(strings.NewReader(string(body)))
 	for stream.More() {
@@ -370,9 +348,7 @@ func TestIntegrationEnabled(t *testing.T) {
 		}
 		p := strings.Replace(pkg.Dir, pkg.Root, "../..", 1)
 		body, err := exec.Command("grep", "-rl", "MarkIntegrationImported", p).Output()
-		if err != nil {
-			t.Fatalf(err.Error())
-		}
+		require.NoError(t, err, "grep command failed")
 		assert.NotEqual(t, len(body), 0, "expected %s to call MarkIntegrationImported", pkg.Name)
 	}
 }
@@ -487,57 +463,104 @@ func TestTracerOptionsDefaults(t *testing.T) {
 	})
 
 	t.Run("dogstatsd", func(t *testing.T) {
+		// Simulate the agent (assuming no concurrency at all)
+		var fail bool
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			if fail {
+				w.WriteHeader(http.StatusInternalServerError)
+				return
+			}
+			w.Write([]byte(`{"endpoints":["/v0.6/stats"],"feature_flags":["a","b"],"client_drop_p0s":true,"config": {"statsd_port":8125}}`))
+		}))
+		defer srv.Close()
+
+		opts := []StartOption{
+			WithAgentAddr(strings.TrimPrefix(srv.URL, "http://")),
+		}
+
 		t.Run("default", func(t *testing.T) {
-			tracer := newTracer(WithAgentTimeout(2))
+			tracer := newTracer(opts...)
 			defer tracer.Stop()
 			c := tracer.config
-			assert.Equal(t, c.dogstatsdAddr, "localhost:8125")
-			assert.Equal(t, globalconfig.DogstatsdAddr(), "localhost:8125")
+			assert.Equal(t, "localhost:8125", c.dogstatsdAddr)
+			assert.Equal(t, "localhost:8125", globalconfig.DogstatsdAddr())
 		})
 
 		t.Run("env-host", func(t *testing.T) {
 			t.Setenv("DD_AGENT_HOST", "my-host")
-			tracer := newTracer(WithAgentTimeout(2))
+			tracer := newTracer(opts...)
 			defer tracer.Stop()
 			c := tracer.config
-			assert.Equal(t, c.dogstatsdAddr, "my-host:8125")
-			assert.Equal(t, globalconfig.DogstatsdAddr(), "my-host:8125")
+			assert.Equal(t, "my-host:8125", c.dogstatsdAddr)
+			assert.Equal(t, "my-host:8125", globalconfig.DogstatsdAddr())
 		})
 
 		t.Run("env-port", func(t *testing.T) {
 			t.Setenv("DD_DOGSTATSD_PORT", "123")
-			tracer := newTracer(WithAgentTimeout(2))
+			tracer := newTracer(opts...)
 			defer tracer.Stop()
 			c := tracer.config
-			assert.Equal(t, c.dogstatsdAddr, "localhost:123")
-			assert.Equal(t, globalconfig.DogstatsdAddr(), "localhost:123")
+			assert.Equal(t, "localhost:8125", c.dogstatsdAddr)
+			assert.Equal(t, "localhost:8125", globalconfig.DogstatsdAddr())
+		})
+
+		t.Run("env-port: agent not available", func(t *testing.T) {
+			t.Setenv("DD_DOGSTATSD_PORT", "123")
+			fail = true
+			tracer := newTracer(opts...)
+			defer tracer.Stop()
+			c := tracer.config
+			assert.Equal(t, "localhost:123", c.dogstatsdAddr)
+			assert.Equal(t, "localhost:123", globalconfig.DogstatsdAddr())
+			fail = false
 		})
 
 		t.Run("env-both", func(t *testing.T) {
 			t.Setenv("DD_AGENT_HOST", "my-host")
 			t.Setenv("DD_DOGSTATSD_PORT", "123")
-			tracer := newTracer(WithAgentTimeout(2))
+			tracer := newTracer(opts...)
 			defer tracer.Stop()
 			c := tracer.config
-			assert.Equal(t, c.dogstatsdAddr, "my-host:123")
-			assert.Equal(t, globalconfig.DogstatsdAddr(), "my-host:123")
+			assert.Equal(t, "my-host:8125", c.dogstatsdAddr)
+			assert.Equal(t, "my-host:8125", globalconfig.DogstatsdAddr())
 		})
 
-		t.Run("env-env", func(t *testing.T) {
-			t.Setenv("DD_ENV", "testEnv")
-			tracer := newTracer(WithAgentTimeout(2))
+		t.Run("env-both: agent not available", func(t *testing.T) {
+			t.Setenv("DD_AGENT_HOST", "my-host")
+			t.Setenv("DD_DOGSTATSD_PORT", "123")
+			fail = true
+			tracer := newTracer(opts...)
 			defer tracer.Stop()
 			c := tracer.config
-			assert.Equal(t, "testEnv", c.env)
+			assert.Equal(t, "my-host:123", c.dogstatsdAddr)
+			assert.Equal(t, "my-host:123", globalconfig.DogstatsdAddr())
+			fail = false
 		})
 
 		t.Run("option", func(t *testing.T) {
-			tracer := newTracer(WithDogstatsdAddress("10.1.0.12:4002"))
+			o := make([]StartOption, len(opts))
+			copy(o, opts)
+			o = append(o, WithDogstatsdAddress("10.1.0.12:4002"))
+			tracer := newTracer(o...)
 			defer tracer.Stop()
 			c := tracer.config
-			assert.Equal(t, c.dogstatsdAddr, "10.1.0.12:4002")
-			assert.Equal(t, globalconfig.DogstatsdAddr(), "10.1.0.12:4002")
+			assert.Equal(t, "10.1.0.12:8125", c.dogstatsdAddr)
+			assert.Equal(t, "10.1.0.12:8125", globalconfig.DogstatsdAddr())
 		})
+
+		t.Run("option: agent not available", func(t *testing.T) {
+			o := make([]StartOption, len(opts))
+			copy(o, opts)
+			fail = true
+			o = append(o, WithDogstatsdAddress("10.1.0.12:4002"))
+			tracer := newTracer(o...)
+			defer tracer.Stop()
+			c := tracer.config
+			assert.Equal(t, "10.1.0.12:4002", c.dogstatsdAddr)
+			assert.Equal(t, "10.1.0.12:4002", globalconfig.DogstatsdAddr())
+			fail = false
+		})
+
 		t.Run("uds", func(t *testing.T) {
 			assert := assert.New(t)
 			dir, err := os.MkdirTemp("", "socket")
@@ -552,6 +575,14 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			assert.Equal("unix://"+addr, c.dogstatsdAddr)
 			assert.Equal("unix://"+addr, globalconfig.DogstatsdAddr())
 		})
+	})
+
+	t.Run("env-env", func(t *testing.T) {
+		t.Setenv("DD_ENV", "testEnv")
+		tracer := newTracer(WithAgentTimeout(2))
+		defer tracer.Stop()
+		c := tracer.config
+		assert.Equal(t, "testEnv", c.env)
 	})
 
 	t.Run("env-agentAddr", func(t *testing.T) {
@@ -1425,6 +1456,28 @@ func TestWithHeaderTags(t *testing.T) {
 		assert.Equal(ext.HTTPRequestHeaders+".2_h_e_a_d_e_r", globalconfig.HeaderTag("2.h.e.a.d.e.r"))
 	})
 
+	t.Run("envvar-invalid", func(t *testing.T) {
+		defer globalconfig.ClearHeaderTags()
+		t.Setenv("DD_TRACE_HEADER_TAGS", "header1:")
+
+		assert := assert.New(t)
+		newConfig()
+
+		assert.Equal(0, globalconfig.HeaderTagsLen())
+	})
+
+	t.Run("envvar-partially-invalid", func(t *testing.T) {
+		defer globalconfig.ClearHeaderTags()
+		t.Setenv("DD_TRACE_HEADER_TAGS", "header1,header2:")
+
+		assert := assert.New(t)
+		newConfig()
+
+		assert.Equal(1, globalconfig.HeaderTagsLen())
+		fmt.Println(globalconfig.HeaderTagMap())
+		assert.Equal(ext.HTTPRequestHeaders+".header1", globalconfig.HeaderTag("Header1"))
+	})
+
 	t.Run("env-override", func(t *testing.T) {
 		defer globalconfig.ClearHeaderTags()
 		assert := assert.New(t)
@@ -1523,5 +1576,18 @@ func TestWithStatsComputation(t *testing.T) {
 		t.Setenv("DD_TRACE_STATS_COMPUTATION_ENABLED", "false")
 		c := newConfig(WithStatsComputation(true))
 		assert.True(c.statsComputationEnabled)
+	})
+}
+
+func TestNoHTTPClientOverride(t *testing.T) {
+	t.Run("default", func(t *testing.T) {
+		assert := assert.New(t)
+		client := http.DefaultClient
+		client.Timeout = 30 * time.Second // Default is 10s
+		c := newConfig(
+			WithHTTPClient(client),
+			WithUDS("/tmp/agent.sock"),
+		)
+		assert.Equal(30*time.Second, c.httpClient.Timeout)
 	})
 }

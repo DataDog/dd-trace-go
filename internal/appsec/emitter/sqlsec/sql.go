@@ -11,14 +11,30 @@ import (
 
 	"gopkg.in/DataDog/dd-trace-go.v1/appsec/events"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/sqlsec/types"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
 var badInputContextOnce sync.Once
 
+type (
+	SQLOperation struct {
+		dyngo.Operation
+	}
+
+	SQLOperationArgs struct {
+		// Query corresponds to the addres `server.db.statement`
+		Query string
+		// Driver corresponds to the addres `server.db.system`
+		Driver string
+	}
+	SQLOperationRes struct{}
+)
+
+func (SQLOperationArgs) IsArgOf(*SQLOperation)   {}
+func (SQLOperationRes) IsResultOf(*SQLOperation) {}
+
 func ProtectSQLOperation(ctx context.Context, query, driver string) error {
-	opArgs := types.SQLOperationArgs{
+	opArgs := SQLOperationArgs{
 		Query:  query,
 		Driver: driver,
 	}
@@ -33,7 +49,7 @@ func ProtectSQLOperation(ctx context.Context, query, driver string) error {
 		return nil
 	}
 
-	op := &types.SQLOperation{
+	op := &SQLOperation{
 		Operation: dyngo.NewOperation(parent),
 	}
 
@@ -44,7 +60,7 @@ func ProtectSQLOperation(ctx context.Context, query, driver string) error {
 	})
 
 	dyngo.StartOperation(op, opArgs)
-	dyngo.FinishOperation(op, types.SQLOperationRes{})
+	dyngo.FinishOperation(op, SQLOperationRes{})
 
 	if err != nil {
 		log.Debug("appsec: outgoing SQL operation blocked by the WAF")

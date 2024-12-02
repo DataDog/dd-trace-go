@@ -177,8 +177,11 @@ var profileTypes = map[ProfileType]profileType{
 		Filename: "metrics.json",
 		Collect: func(p *profiler) ([]byte, error) {
 			var buf bytes.Buffer
-			p.interruptibleSleep(p.cfg.period)
+			interrupted := p.interruptibleSleep(p.cfg.period)
 			err := p.met.report(now(), &buf)
+			if err != nil && interrupted {
+				err = errProfilerStopped
+			}
 			return buf.Bytes(), err
 		},
 	},

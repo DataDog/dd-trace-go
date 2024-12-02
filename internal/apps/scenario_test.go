@@ -66,6 +66,42 @@ func TestScenario(t *testing.T) {
 			})
 		}
 	})
+
+	t.Run("gc-overhead", func(t *testing.T) {
+		scenarios := []struct {
+			version   string
+			endpoints []string
+		}{
+			{"v1", []string{"/vehicles/update_location", "/vehicles/list"}},
+		}
+		for _, s := range scenarios {
+			t.Run(s.version, func(t *testing.T) {
+				lc := newLaunchConfig(t)
+				lc.Version = s.version
+				process := lc.Launch(t)
+				defer process.Stop(t)
+				wc.HitEndpoints(t, process, s.endpoints...)
+			})
+		}
+	})
+
+	t.Run("worker-pool-bottleneck", func(t *testing.T) {
+		scenarios := []struct {
+			version   string
+			endpoints []string
+		}{
+			{"v1", []string{"/queue/push"}},
+		}
+		for _, s := range scenarios {
+			t.Run(s.version, func(t *testing.T) {
+				lc := newLaunchConfig(t)
+				lc.Version = s.version
+				process := lc.Launch(t)
+				defer process.Stop(t)
+				wc.HitEndpoints(t, process, s.endpoints...)
+			})
+		}
+	})
 }
 
 func newWorkloadConfig(t *testing.T) (wc workloadConfig) {
@@ -152,6 +188,13 @@ func appName(t *testing.T) string {
 }
 
 func serviceName(t *testing.T) string {
+	// Allow overriding the service name via env var
+	ddService := os.Getenv("DD_SERVICE")
+	if ddService != "" {
+		return ddService
+	}
+
+	// Otherwise derive the service name from the test name
 	return "dd-trace-go/" + strings.Join(strings.Split(t.Name(), "/")[1:], "/")
 }
 

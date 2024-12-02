@@ -7,6 +7,9 @@ on:
       - opened
       - reopened
       - edited
+permissions:
+  contents: read
+  pull-requests: write
 jobs:
   label_issues:
     runs-on: ubuntu-latest

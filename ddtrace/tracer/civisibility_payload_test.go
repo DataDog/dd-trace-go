@@ -7,6 +7,7 @@ package tracer
 
 import (
 	"bytes"
+	"encoding/json"
 	"io"
 	"strconv"
 	"strings"
@@ -15,6 +16,10 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/tinylib/msgp/msgp"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/constants"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/utils"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
 )
 
 func newCiVisibilityEventsList(n int) []*ciVisibilityEvent {
@@ -78,6 +83,50 @@ func TestCiVisibilityPayloadDecode(t *testing.T) {
 			assert.NoError(err)
 		})
 	}
+}
+
+func TestCiVisibilityPayloadEnvelope(t *testing.T) {
+	assert := assert.New(t)
+	p := newCiVisibilityPayload()
+	payload := p.writeEnvelope("none", []byte{})
+
+	// Encode the payload to message pack
+	encodedBuf := new(bytes.Buffer)
+	err := msgp.Encode(encodedBuf, payload)
+	assert.NoError(err)
+
+	// Convert the message pack to json
+	jsonBuf := new(bytes.Buffer)
+	_, err = msgp.CopyToJSON(jsonBuf, encodedBuf)
+	assert.NoError(err)
+
+	// Decode the json payload
+	var testCyclePayload ciTestCyclePayload
+	err = json.Unmarshal(jsonBuf.Bytes(), &testCyclePayload)
+	assert.NoError(err)
+
+	// Now let's assert the decoded envelope metadata
+	assert.Contains(testCyclePayload.Metadata, "*")
+	assert.Subset(testCyclePayload.Metadata["*"], map[string]string{
+		"language":        "go",
+		"runtime-id":      globalconfig.RuntimeID(),
+		"library_version": version.Tag,
+	})
+
+	testSessionName := utils.GetCITags()[constants.TestSessionName]
+	testSessionMap := map[string]string{constants.TestSessionName: testSessionName}
+
+	assert.Contains(testCyclePayload.Metadata, "test_session_end")
+	assert.Subset(testCyclePayload.Metadata["test_session_end"], testSessionMap)
+
+	assert.Contains(testCyclePayload.Metadata, "test_module_end")
+	assert.Subset(testCyclePayload.Metadata["test_module_end"], testSessionMap)
+
+	assert.Contains(testCyclePayload.Metadata, "test_suite_end")
+	assert.Subset(testCyclePayload.Metadata["test_suite_end"], testSessionMap)
+
+	assert.Contains(testCyclePayload.Metadata, "test")
+	assert.Subset(testCyclePayload.Metadata["test"], testSessionMap)
 }
 
 func BenchmarkCiVisibilityPayloadThroughput(b *testing.B) {

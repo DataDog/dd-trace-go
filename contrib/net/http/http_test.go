@@ -313,28 +313,14 @@ func TestServeMuxGo122Patterns(t *testing.T) {
 
 	// Check the /foo span
 	fooSpan := spans[1]
-	if fooW.Code == http.StatusOK {
-		assert.Equal("/foo", fooSpan.Tag(ext.HTTPRoute))
-		assert.Equal("GET /foo", fooSpan.Tag(ext.ResourceName))
-	} else {
-		// Until our go.mod version is go1.22 or greater, the mux will not
-		// understand the "GET /foo" pattern, causing the request to be handled
-		// by the 404 handler. Let's assert what we can, and mark the test as
-		// skipped to highlight the issue.
-		assert.Equal(http.StatusNotFound, fooW.Code)
-		assert.Equal(nil, fooSpan.Tag(ext.HTTPRoute))
-		// Using "GET " as a resource name doesn't seem ideal, but that's how
-		// the mux instrumentation deals with 404s right now.
-		assert.Equal("GET ", fooSpan.Tag(ext.ResourceName))
-		t.Skip("run `go mod edit -go=1.22` to run the full test")
-	}
-
+	assert.Equal(http.StatusOK, fooW.Code)
+	assert.Equal("/foo", fooSpan.Tag(ext.HTTPRoute))
+	assert.Equal("GET /foo", fooSpan.Tag(ext.ResourceName))
 }
 
 func TestWrapHandlerWithResourceNameNoRace(_ *testing.T) {
 	mt := mocktracer.Start()
 	defer mt.Stop()
-	r := httptest.NewRequest("GET", "/", nil)
 	resourceNamer := func(_ *http.Request) string {
 		return "custom-resource-name"
 	}
@@ -346,8 +332,9 @@ func TestWrapHandlerWithResourceNameNoRace(_ *testing.T) {
 	for i := 0; i < 10; i++ {
 		wg.Add(1)
 		go func() {
-			w := httptest.NewRecorder()
 			defer wg.Done()
+			w := httptest.NewRecorder()
+			r := httptest.NewRequest("GET", "/", nil)
 			mux.ServeHTTP(w, r)
 		}()
 	}
@@ -533,8 +520,12 @@ func handler200(w http.ResponseWriter, _ *http.Request) {
 	w.Write([]byte("OK\n"))
 }
 
-func handler500(w http.ResponseWriter, _ *http.Request) {
+func handler500(w http.ResponseWriter, r *http.Request) {
 	http.Error(w, "500!", http.StatusInternalServerError)
+}
+
+func handler400(w http.ResponseWriter, r *http.Request) {
+	http.Error(w, "400!", http.StatusBadRequest)
 }
 
 func BenchmarkHttpServeTrace(b *testing.B) {

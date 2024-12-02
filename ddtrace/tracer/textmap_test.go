@@ -24,9 +24,10 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/samplernames"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 
-	"github.com/DataDog/datadog-go/v5/statsd"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/DataDog/datadog-go/v5/statsd"
 )
 
 const otelHeaderPropagationStyle = "OTEL_PROPAGATORS"
@@ -1756,7 +1757,7 @@ func TestEnvVars(t *testing.T) {
 					},
 					out:        []uint64{8687463697196027922, 1311768467284833366},
 					priority:   1,
-					lastParent: "0000000000000000",
+					lastParent: "",
 				},
 			}
 			for i, tc := range tests {
@@ -1839,7 +1840,13 @@ func TestEnvVars(t *testing.T) {
 					if tc.priority != 0 {
 						sctx.setSamplingPriority(int(tc.priority), samplernames.Unknown)
 					}
-					assert.Equal(s.(*span).Meta["_dd.parent_id"], tc.lastParent)
+
+					if tc.lastParent == "" {
+						assert.Empty(s.(*span).Meta["_dd.parent_id"])
+					} else {
+						assert.Equal(s.(*span).Meta["_dd.parent_id"], tc.lastParent)
+					}
+
 					assert.Equal(true, sctx.updated)
 
 					headers := TextMapCarrier(map[string]string{})
@@ -1995,7 +2002,7 @@ func TestNonePropagator(t *testing.T) {
 		t.Setenv(headerPropagationStyleInject, "none,b3")
 		tp := new(log.RecordLogger)
 		tp.Ignore("appsec: ", telemetry.LogPrefix)
-		tracer := newTracer(WithLogger(tp))
+		tracer := newTracer(WithLogger(tp), WithEnv("test"))
 		defer tracer.Stop()
 		// reinitializing to capture log output, since propagators are parsed before logger is set
 		tracer.config.propagator = NewPropagator(&PropagatorConfig{})

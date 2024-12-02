@@ -12,169 +12,100 @@ package httpsec
 
 import (
 	"context"
-
 	// Blank import needed to use embed for the default blocked response payloads
 	_ "embed"
 	"net/http"
-	"strings"
+	"sync/atomic"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/appsec/events"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/httpsec/types"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/sharedsec"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/trace"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/trace/httptrace"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/stacktrace"
-
-	"github.com/DataDog/appsec-internal-go/netip"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/waf"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/waf/actions"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/waf/addresses"
 )
+
+// HandlerOperation type representing an HTTP operation. It must be created with
+// StartOperation() and finished with its Finish().
+type (
+	HandlerOperation struct {
+		dyngo.Operation
+		*waf.ContextOperation
+
+		// wafContextOwner indicates if the waf.ContextOperation was started by us or not and if we need to close it.
+		wafContextOwner bool
+	}
+
+	// HandlerOperationArgs is the HTTP handler operation arguments.
+	HandlerOperationArgs struct {
+		Method      string
+		RequestURI  string
+		Host        string
+		RemoteAddr  string
+		Headers     map[string][]string
+		Cookies     map[string][]string
+		QueryParams map[string][]string
+		PathParams  map[string]string
+	}
+
+	// HandlerOperationRes is the HTTP handler operation results.
+	HandlerOperationRes struct {
+		Headers    map[string][]string
+		StatusCode int
+	}
+)
+
+func (HandlerOperationArgs) IsArgOf(*HandlerOperation)   {}
+func (HandlerOperationRes) IsResultOf(*HandlerOperation) {}
+
+func StartOperation(ctx context.Context, args HandlerOperationArgs) (*HandlerOperation, *atomic.Pointer[actions.BlockHTTP], context.Context) {
+	wafOp, found := dyngo.FindOperation[waf.ContextOperation](ctx)
+	if !found {
+		wafOp, ctx = waf.StartContextOperation(ctx)
+	}
+
+	op := &HandlerOperation{
+		Operation:        dyngo.NewOperation(wafOp),
+		ContextOperation: wafOp,
+		wafContextOwner:  !found, // If we started the parent operation, we finish it, otherwise we don't
+	}
+
+	// We need to use an atomic pointer to store the action because the action may be created asynchronously in the future
+	var action atomic.Pointer[actions.BlockHTTP]
+	dyngo.OnData(op, func(a *actions.BlockHTTP) {
+		action.Store(a)
+	})
+
+	return op, &action, dyngo.StartAndRegisterOperation(ctx, op, args)
+}
+
+// Finish the HTTP handler operation and its children operations and write everything to the service entry span.
+func (op *HandlerOperation) Finish(res HandlerOperationRes, span ddtrace.Span) {
+	dyngo.FinishOperation(op, res)
+	if op.wafContextOwner {
+		op.ContextOperation.Finish(span)
+	}
+}
+
+const monitorBodyErrorLog = `
+"appsec: parsed http body monitoring ignored: could not find the http handler instrumentation metadata in the request context:
+	the request handler is not being monitored by a middleware function or the provided context is not the expected request context
+`
 
 // MonitorParsedBody starts and finishes the SDK body operation.
 // This function should not be called when AppSec is disabled in order to
 // get preciser error logs.
 func MonitorParsedBody(ctx context.Context, body any) error {
-	parent, _ := dyngo.FromContext(ctx)
-	if parent == nil {
-		log.Error("appsec: parsed http body monitoring ignored: could not find the http handler instrumentation metadata in the request context: the request handler is not being monitored by a middleware function or the provided context is not the expected request context")
-		return nil
-	}
-
-	return ExecuteSDKBodyOperation(parent, types.SDKBodyOperationArgs{Body: body})
-}
-
-// ExecuteSDKBodyOperation starts and finishes the SDK Body operation by emitting a dyngo start and finish events
-// An error is returned if the body associated to that operation must be blocked
-func ExecuteSDKBodyOperation(parent dyngo.Operation, args types.SDKBodyOperationArgs) error {
-	var err error
-	op := &types.SDKBodyOperation{Operation: dyngo.NewOperation(parent)}
-	dyngo.OnData(op, func(e *events.BlockingSecurityEvent) {
-		err = e
-	})
-	dyngo.StartOperation(op, args)
-	dyngo.FinishOperation(op, types.SDKBodyOperationRes{})
-	return err
-}
-
-// WrapHandler wraps the given HTTP handler with the abstract HTTP operation defined by HandlerOperationArgs and
-// HandlerOperationRes.
-// The onBlock params are used to cleanup the context when needed.
-// It is a specific patch meant for Gin, for which we must abort the
-// context since it uses a queue of handlers and it's the only way to make
-// sure other queued handlers don't get executed.
-// TODO: this patch must be removed/improved when we rework our actions/operations system
-func WrapHandler(handler http.Handler, span ddtrace.Span, pathParams map[string]string, opts *Config) http.Handler {
-	if opts == nil {
-		opts = defaultWrapHandlerConfig
-	} else if opts.ResponseHeaderCopier == nil {
-		opts.ResponseHeaderCopier = defaultWrapHandlerConfig.ResponseHeaderCopier
-	}
-
-	trace.SetAppSecEnabledTags(span)
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ipTags, clientIP := httptrace.ClientIPTags(r.Header, true, r.RemoteAddr)
-		log.Debug("appsec: http client ip detection returned `%s` given the http headers `%v`", clientIP, r.Header)
-		trace.SetTags(span, ipTags)
-
-		var bypassHandler http.Handler
-		var blocking bool
-		var stackTrace *stacktrace.Event
-		args := MakeHandlerOperationArgs(r, clientIP, pathParams)
-		ctx, op := StartOperation(r.Context(), args, func(op *types.Operation) {
-			dyngo.OnData(op, func(a *sharedsec.HTTPAction) {
-				blocking = true
-				bypassHandler = a.Handler
-			})
-			dyngo.OnData(op, func(a *sharedsec.StackTraceAction) {
-				stackTrace = &a.Event
-			})
-		})
-		r = r.WithContext(ctx)
-
-		defer func() {
-			events := op.Finish(MakeHandlerOperationRes(w))
-
-			// Execute the onBlock functions to make sure blocking works properly
-			// in case we are instrumenting the Gin framework
-			if blocking {
-				op.SetTag(trace.BlockedRequestTag, true)
-				for _, f := range opts.OnBlock {
-					f()
-				}
-			}
-
-			// Add stacktraces to the span, if any
-			if stackTrace != nil {
-				stacktrace.AddToSpan(span, stackTrace)
-			}
-
-			if bypassHandler != nil {
-				bypassHandler.ServeHTTP(w, r)
-			}
-
-			// Add the request headers span tags out of args.Headers instead of r.Header as it was normalized and some
-			// extra headers have been added such as the Host header which is removed from the original Go request headers
-			// map
-			setRequestHeadersTags(span, args.Headers)
-			setResponseHeadersTags(span, opts.ResponseHeaderCopier(w))
-			trace.SetTags(span, op.Tags())
-			if len(events) > 0 {
-				httptrace.SetSecurityEventsTags(span, events)
-			}
-		}()
-
-		if bypassHandler != nil {
-			handler = bypassHandler
-			bypassHandler = nil
-		}
-		handler.ServeHTTP(w, r)
-	})
-}
-
-// MakeHandlerOperationArgs creates the HandlerOperationArgs value.
-func MakeHandlerOperationArgs(r *http.Request, clientIP netip.Addr, pathParams map[string]string) types.HandlerOperationArgs {
-	cookies := makeCookies(r) // TODO(Julio-Guerra): avoid actively parsing the cookies thanks to dynamic instrumentation
-	headers := headersRemoveCookies(r.Header)
-	headers["host"] = []string{r.Host}
-	return types.HandlerOperationArgs{
-		Method:     r.Method,
-		RequestURI: r.RequestURI,
-		Headers:    headers,
-		Cookies:    cookies,
-		Query:      r.URL.Query(), // TODO(Julio-Guerra): avoid actively parsing the query values thanks to dynamic instrumentation
-		PathParams: pathParams,
-		ClientIP:   clientIP,
-	}
-}
-
-// MakeHandlerOperationRes creates the HandlerOperationRes value.
-func MakeHandlerOperationRes(w http.ResponseWriter) types.HandlerOperationRes {
-	var status int
-	if mw, ok := w.(interface{ Status() int }); ok {
-		status = mw.Status()
-	}
-	return types.HandlerOperationRes{Status: status, Headers: headersRemoveCookies(w.Header())}
-}
-
-// Remove cookies from the request headers and return the map of headers
-// Used from `server.request.headers.no_cookies` and server.response.headers.no_cookies` addresses for the WAF
-func headersRemoveCookies(headers http.Header) map[string][]string {
-	headersNoCookies := make(http.Header, len(headers))
-	for k, v := range headers {
-		k := strings.ToLower(k)
-		if k == "cookie" {
-			continue
-		}
-		headersNoCookies[k] = v
-	}
-	return headersNoCookies
+	return waf.RunSimple(ctx,
+		addresses.NewAddressesBuilder().
+			WithRequestBody(body).
+			Build(),
+		monitorBodyErrorLog,
+	)
 }
 
 // Return the map of parsed cookies if any and following the specification of
 // the rule address `server.request.cookies`.
-func makeCookies(r *http.Request) map[string][]string {
-	parsed := r.Cookies()
+func makeCookies(parsed []*http.Cookie) map[string][]string {
 	if len(parsed) == 0 {
 		return nil
 	}
@@ -185,18 +116,84 @@ func makeCookies(r *http.Request) map[string][]string {
 	return cookies
 }
 
-// StartOperation starts an HTTP handler operation, along with the given
-// context and arguments and emits a start event up in the operation stack.
-// The operation is linked to the global root operation since an HTTP operation
-// is always expected to be first in the operation stack.
-func StartOperation(ctx context.Context, args types.HandlerOperationArgs, setup ...func(*types.Operation)) (context.Context, *types.Operation) {
-	op := &types.Operation{
-		Operation:  dyngo.NewOperation(nil),
-		TagsHolder: trace.NewTagsHolder(),
-	}
-	for _, cb := range setup {
-		cb(op)
+// BeforeHandle contains the appsec functionality that should be executed before a http.Handler runs.
+// It returns the modified http.ResponseWriter and http.Request, an additional afterHandle function
+// that should be executed after the Handler runs, and a handled bool that instructs if the request has been handled
+// or not - in case it was handled, the original handler should not run.
+func BeforeHandle(
+	w http.ResponseWriter,
+	r *http.Request,
+	span ddtrace.Span,
+	pathParams map[string]string,
+	opts *Config,
+) (http.ResponseWriter, *http.Request, func(), bool) {
+	if opts == nil {
+		opts = defaultWrapHandlerConfig
+	} else if opts.ResponseHeaderCopier == nil {
+		opts.ResponseHeaderCopier = defaultWrapHandlerConfig.ResponseHeaderCopier
 	}
 
-	return dyngo.StartAndRegisterOperation(ctx, op, args), op
+	op, blockAtomic, ctx := StartOperation(r.Context(), HandlerOperationArgs{
+		Method:      r.Method,
+		RequestURI:  r.RequestURI,
+		Host:        r.Host,
+		RemoteAddr:  r.RemoteAddr,
+		Headers:     r.Header,
+		Cookies:     makeCookies(r.Cookies()),
+		QueryParams: r.URL.Query(),
+		PathParams:  pathParams,
+	})
+	tr := r.WithContext(ctx)
+	var blocked atomic.Bool
+
+	afterHandle := func() {
+		var statusCode int
+		if res, ok := w.(interface{ Status() int }); ok {
+			statusCode = res.Status()
+		}
+		op.Finish(HandlerOperationRes{
+			Headers:    opts.ResponseHeaderCopier(w),
+			StatusCode: statusCode,
+		}, span)
+
+		if blockPtr := blockAtomic.Swap(nil); blockPtr != nil {
+			blockPtr.Handler.ServeHTTP(w, tr)
+			blocked.Store(true)
+		}
+
+		// Execute the onBlock functions to make sure blocking works properly
+		// in case we are instrumenting the Gin framework
+		if blocked.Load() {
+			for _, f := range opts.OnBlock {
+				f()
+			}
+		}
+	}
+
+	if blockPtr := blockAtomic.Swap(nil); blockPtr != nil {
+		// handler is replaced
+		blockPtr.Handler.ServeHTTP(w, tr)
+		blocked.Store(true)
+	}
+
+	return w, tr, afterHandle, blocked.Load()
+}
+
+// WrapHandler wraps the given HTTP handler with the abstract HTTP operation defined by HandlerOperationArgs and
+// HandlerOperationRes.
+// The onBlock params are used to cleanup the context when needed.
+// It is a specific patch meant for Gin, for which we must abort the
+// context since it uses a queue of handlers and it's the only way to make
+// sure other queued handlers don't get executed.
+// TODO: this patch must be removed/improved when we rework our actions/operations system
+func WrapHandler(handler http.Handler, span ddtrace.Span, pathParams map[string]string, opts *Config) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		tw, tr, afterHandle, handled := BeforeHandle(w, r, span, pathParams, opts)
+		defer afterHandle()
+		if handled {
+			return
+		}
+
+		handler.ServeHTTP(tw, tr)
+	})
 }

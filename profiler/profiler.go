@@ -36,6 +36,10 @@ var (
 	activeProfiler *profiler
 	containerID    = internal.ContainerID() // replaced in tests
 	entityID       = internal.EntityID()    // replaced in tests
+
+	// errProfilerStopped is a sentinel for suppressng errors if we are
+	// about to stop the profiler
+	errProfilerStopped = errors.New("profiler stopped")
 )
 
 // Start starts the profiler. If the profiler is already running, it will be
@@ -43,6 +47,9 @@ var (
 //
 // It may return an error if an API key is not provided by means of the
 // WithAPIKey option, or if a hostname is not found.
+//
+// If DD_PROFILING_ENABLED=false is set in the process environment, it will
+// prevent the profiler from starting.
 func Start(opts ...Option) error {
 	mu.Lock()
 	defer mu.Unlock()
@@ -53,6 +60,9 @@ func Start(opts ...Option) error {
 	p, err := newProfiler(opts...)
 	if err != nil {
 		return err
+	}
+	if !p.cfg.enabled {
+		return nil
 	}
 	activeProfiler = p
 	activeProfiler.run()
@@ -285,7 +295,8 @@ func (p *profiler) collect(ticker <-chan time.Time) {
 		endpointCounter.GetAndReset()
 	}()
 
-	for {
+	exit := false
+	for !exit {
 		bat := batch{
 			seq:   p.seq,
 			host:  p.cfg.hostname,
@@ -343,9 +354,12 @@ func (p *profiler) collect(ticker <-chan time.Time) {
 				}
 				profs, err := p.runProfile(t)
 				if err != nil {
-					log.Error("Error getting %s profile: %v; skipping.", t, err)
-					tags := append(p.cfg.tags.Slice(), t.Tag())
-					p.cfg.statsd.Count("datadog.profiling.go.collect_error", 1, tags, 1)
+					if err != errProfilerStopped {
+						log.Error("Error getting %s profile: %v; skipping.", t, err)
+						tags := append(p.cfg.tags.Slice(), t.Tag())
+						p.cfg.statsd.Count("datadog.profiling.go.collect_error", 1, tags, 1)
+					}
+					return
 				}
 				mu.Lock()
 				defer mu.Unlock()
@@ -371,7 +385,11 @@ func (p *profiler) collect(ticker <-chan time.Time) {
 			// is less than the configured profiling period, the ticker will block
 			// until the end of the profiling period.
 		case <-p.exit:
-			return
+			if !p.cfg.flushOnExit {
+				return
+			}
+			// If we're flushing, we enqueue the batch before exiting the loop.
+			exit = true
 		}
 
 		// Include endpoint hits from tracer in profile `event.json`.
@@ -444,8 +462,13 @@ func (p *profiler) send() {
 	for {
 		select {
 		case <-p.exit:
-			return
-		case bat := <-p.out:
+			if !p.cfg.flushOnExit {
+				return
+			}
+		case bat, ok := <-p.out:
+			if !ok {
+				return
+			}
 			if err := p.outputDir(bat); err != nil {
 				log.Error("Failed to output profile to dir: %v", err)
 			}
@@ -480,10 +503,13 @@ func (p *profiler) outputDir(bat batch) error {
 
 // interruptibleSleep sleeps for the given duration or until interrupted by the
 // p.exit channel being closed.
-func (p *profiler) interruptibleSleep(d time.Duration) {
+// Returns whether the sleep was interrupted
+func (p *profiler) interruptibleSleep(d time.Duration) bool {
 	select {
 	case <-p.exit:
+		return true
 	case <-time.After(d):
+		return false
 	}
 }
 

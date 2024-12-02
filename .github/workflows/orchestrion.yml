@@ -17,6 +17,7 @@ concurrency:
 jobs:
   test:
     name: 'Run Tests'
-    uses: DataDog/orchestrion/.github/workflows/workflow_call.yml@eliott.bouhana/smoke-tests
+    uses: DataDog/orchestrion/.github/workflows/workflow_call.yml@main # we don't want to pin our own action
     with:
       dd-trace-go-ref: ${{ github.sha }}
+      runs-on: ubuntu-latest-16-cores

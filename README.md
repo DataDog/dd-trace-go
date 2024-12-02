@@ -10,7 +10,7 @@
 
 This repository contains Go packages for the client-side components of the Datadog product suite for Application Performance Monitoring, Continuous Profiling and Application Security Monitoring of Go applications.
 
-- [Datadog Application Performance Monitoring (APM)](https://docs.datadoghq.com/tracing/): Trace requests as they flow across web servers, databases and microservices so that developers have great visiblity into bottlenecks and troublesome requests.
+- [Datadog Application Performance Monitoring (APM)](https://docs.datadoghq.com/tracing/): Trace requests as they flow across web servers, databases and microservices so that developers have great visibility into bottlenecks and troublesome requests.
 The package [`gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer`](https://pkg.go.dev/gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer) allows you to trace any piece of your Go code, and commonly used Go libraries can be automatically traced thanks to our out-of-the-box integrations which can be found in the package [`gopkg.in/DataDog/dd-trace-go.v1/ddtrace/contrib`](https://pkg.go.dev/gopkg.in/DataDog/dd-trace-go.v1/contrib).
 
 - [Datadog Go Continuous Profiler](https://docs.datadoghq.com/profiler/): Continuously profile your Go apps to find CPU, memory, and synchronization bottlenecks, broken down by function name, and line number, to significantly reduce end-user latency and infrastructure costs.
@@ -53,9 +53,7 @@ Before considering contributions to the project, please take a moment to read ou
 
 ### Testing
 
-Tests can be run locally using the Go toolset. The grpc.v12 integration will fail (and this is normal), because it covers for deprecated methods. In the CI environment
-we vendor this version of the library inside the integration. Under normal circumstances this is not something that we want to do, because users using this integration
-might be running versions different from the vendored one, creating hard to debug conflicts.
+Tests can be run locally using the Go toolset.
 
 To run integration tests locally, you should set the `INTEGRATION` environment variable. The dependencies of the integration tests are best run via Docker. To get an
 idea about the versions and the set-up take a look at our [docker-compose config](./docker-compose.yaml).

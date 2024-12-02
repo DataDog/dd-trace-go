@@ -61,12 +61,18 @@ func (m *metrics) reset(now time.Time) {
 
 func (m *metrics) report(now time.Time, buf *bytes.Buffer) error {
 	period := now.Sub(m.collectedAt)
-
-	if period < time.Second {
-		// Profiler could be mis-configured to report more frequently than every second
-		// or a system clock issue causes time to run backwards.
-		// We can't emit valid metrics in either case.
-		return collectionTooFrequent{min: time.Second, observed: period}
+	if period <= 0 {
+		// It is technically possible, though very unlikely, for period
+		// to be 0 if the monotonic clock did not advance at all or if
+		// we somehow collected two metrics profiles closer together
+		// than the clock can measure. If the period is negative, this
+		// might be a Go runtime bug, since time.Time.Sub is supposed to
+		// work with monotonic time. Either way, bail out since
+		// something is probably going wrong
+		return fmt.Errorf(
+			"unexpected duration %v between metrics collections, first at %v, second at %v",
+			period, m.collectedAt, now,
+		)
 	}
 
 	previousStats := m.snapshot
@@ -74,34 +80,31 @@ func (m *metrics) report(now time.Time, buf *bytes.Buffer) error {
 
 	points := m.compute(&previousStats, &m.snapshot, period, now)
 	data, err := json.Marshal(removeInvalid(points))
-
 	if err != nil {
-		// NB the minimum period check and removeInvalid ensures we don't hit this case
+		// NB removeInvalid ensures we don't hit this case by dropping inf/NaN
 		return err
 	}
 
-	if _, err := buf.Write(data); err != nil {
-		return err
-	}
-
-	return nil
+	_, err = buf.Write(data)
+	return err
 }
 
 func computeMetrics(prev *metricsSnapshot, curr *metricsSnapshot, period time.Duration, now time.Time) []point {
+	periodSeconds := float64(period) / float64(time.Second)
 	return []point{
-		{metric: "go_alloc_bytes_per_sec", value: rate(curr.TotalAlloc, prev.TotalAlloc, period/time.Second)},
-		{metric: "go_allocs_per_sec", value: rate(curr.Mallocs, prev.Mallocs, period/time.Second)},
-		{metric: "go_frees_per_sec", value: rate(curr.Frees, prev.Frees, period/time.Second)},
-		{metric: "go_heap_growth_bytes_per_sec", value: rate(curr.HeapAlloc, prev.HeapAlloc, period/time.Second)},
-		{metric: "go_gcs_per_sec", value: rate(uint64(curr.NumGC), uint64(prev.NumGC), period/time.Second)},
-		{metric: "go_gc_pause_time", value: rate(curr.PauseTotalNs, prev.PauseTotalNs, period)}, // % of time spent paused
+		{metric: "go_alloc_bytes_per_sec", value: rate(curr.TotalAlloc, prev.TotalAlloc, periodSeconds)},
+		{metric: "go_allocs_per_sec", value: rate(curr.Mallocs, prev.Mallocs, periodSeconds)},
+		{metric: "go_frees_per_sec", value: rate(curr.Frees, prev.Frees, periodSeconds)},
+		{metric: "go_heap_growth_bytes_per_sec", value: rate(curr.HeapAlloc, prev.HeapAlloc, periodSeconds)},
+		{metric: "go_gcs_per_sec", value: rate(uint64(curr.NumGC), uint64(prev.NumGC), periodSeconds)},
+		{metric: "go_gc_pause_time", value: rate(curr.PauseTotalNs, prev.PauseTotalNs, float64(period))}, // % of time spent paused
 		{metric: "go_max_gc_pause_time", value: float64(maxPauseNs(&curr.MemStats, now.Add(-period)))},
 		{metric: "go_num_goroutine", value: float64(curr.NumGoroutine)},
 	}
 }
 
-func rate(curr, prev uint64, period time.Duration) float64 {
-	return float64(int64(curr)-int64(prev)) / float64(period)
+func rate(curr, prev uint64, period float64) float64 {
+	return float64(int64(curr)-int64(prev)) / period
 }
 
 // maxPauseNs returns maximum pause time within the recent period, assumes stats populated at period end

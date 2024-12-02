@@ -6,18 +6,35 @@
 package httpsec
 
 import (
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/config"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/httpsec/types"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener/sharedsec"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/trace"
-
-	"github.com/DataDog/appsec-internal-go/limiter"
-	"github.com/DataDog/go-libddwaf/v3"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/httpsec"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/waf"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/waf/addresses"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener"
 )
 
-// RegisterRoundTripperListener registers a listener on outgoing HTTP client requests to run the WAF.
-func RegisterRoundTripperListener(op dyngo.Operation, events *trace.SecurityEventsHolder, wafCtx *waf.Context, limiter limiter.Limiter) {
-	dyngo.On(op, sharedsec.MakeWAFRunListener(events, wafCtx, limiter, func(args types.RoundTripOperationArgs) waf.RunAddressData {
-		return waf.RunAddressData{Ephemeral: map[string]any{ServerIoNetURLAddr: args.URL}}
-	}))
+type SSRFProtectionFeature struct{}
+
+func (*SSRFProtectionFeature) String() string {
+	return "SSRF Protection"
+}
+
+func (*SSRFProtectionFeature) Stop() {}
+
+func NewSSRFProtectionFeature(config *config.Config, rootOp dyngo.Operation) (listener.Feature, error) {
+	if !config.RASP || !config.SupportedAddresses.AnyOf(addresses.ServerIoNetURLAddr) {
+		return nil, nil
+	}
+
+	feature := &SSRFProtectionFeature{}
+	dyngo.On(rootOp, feature.OnStart)
+	return feature, nil
+}
+
+func (*SSRFProtectionFeature) OnStart(op *httpsec.RoundTripOperation, args httpsec.RoundTripOperationArgs) {
+	dyngo.EmitData(op, waf.RunEvent{
+		Operation:      op,
+		RunAddressData: addresses.NewAddressesBuilder().WithURL(args.URL).Build(),
+	})
 }

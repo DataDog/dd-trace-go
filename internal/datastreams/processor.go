@@ -340,7 +340,11 @@ func (p *Processor) Start() {
 	}
 	p.stop = make(chan struct{})
 	p.flushRequest = make(chan chan<- struct{})
-	go p.reportStats()
+	p.wg.Add(1)
+	go func() {
+		defer p.wg.Done()
+		p.reportStats()
+	}()
 	p.wg.Add(1)
 	go func() {
 		defer p.wg.Done()
@@ -372,7 +376,14 @@ func (p *Processor) Stop() {
 }
 
 func (p *Processor) reportStats() {
-	for range time.NewTicker(time.Second * 10).C {
+	tick := time.NewTicker(time.Second * 10)
+	defer tick.Stop()
+	for {
+		select {
+		case <-p.stop:
+			return
+		case <-tick.C:
+		}
 		p.statsd.Count("datadog.datastreams.processor.payloads_in", atomic.SwapInt64(&p.stats.payloadsIn, 0), nil, 1)
 		p.statsd.Count("datadog.datastreams.processor.flushed_payloads", atomic.SwapInt64(&p.stats.flushedPayloads, 0), nil, 1)
 		p.statsd.Count("datadog.datastreams.processor.flushed_buckets", atomic.SwapInt64(&p.stats.flushedBuckets, 0), nil, 1)

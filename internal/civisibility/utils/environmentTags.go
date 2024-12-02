@@ -6,18 +6,28 @@
 package utils
 
 import (
+	"fmt"
+	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
+	"strings"
 	"sync"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/constants"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/osinfo"
 )
 
 var (
 	// ciTags holds the CI/CD environment variable information.
 	ciTags      map[string]string
+	addedTags   map[string]string
 	ciTagsMutex sync.Mutex
+
+	// ciMetrics holds the CI/CD environment numeric variable information
+	ciMetrics      map[string]float64
+	ciMetricsMutex sync.Mutex
 )
 
 // GetCITags retrieves and caches the CI/CD tags from environment variables.
@@ -36,6 +46,43 @@ func GetCITags() map[string]string {
 	}
 
 	return ciTags
+}
+
+// GetCIMetrics retrieves and caches the CI/CD metrics from environment variables.
+// It initializes the ciMetrics map if it is not already initialized.
+// This function is thread-safe due to the use of a mutex.
+//
+// Returns:
+//
+//	A map[string]float64 containing the CI/CD metrics.
+func GetCIMetrics() map[string]float64 {
+	ciMetricsMutex.Lock()
+	defer ciMetricsMutex.Unlock()
+
+	if ciMetrics == nil {
+		ciMetrics = createCIMetricsMap()
+	}
+
+	return ciMetrics
+}
+
+// AddCITags adds a new tag to the CI/CD tags map.
+func AddCITags(tagName, tagValue string) {
+	ciTagsMutex.Lock()
+	defer ciTagsMutex.Unlock()
+
+	// Add the tag to the added tags dictionary
+	if addedTags == nil {
+		addedTags = make(map[string]string)
+	}
+	addedTags[tagName] = tagValue
+
+	// Create a new map with the added tags
+	newTags := createCITagsMap()
+	for k, v := range addedTags {
+		newTags[k] = v
+	}
+	ciTags = newTags
 }
 
 // GetRelativePathFromCITagsSourceRoot calculates the relative path from the CI workspace root to the specified path.
@@ -68,12 +115,51 @@ func GetRelativePathFromCITagsSourceRoot(path string) string {
 //	A map[string]string containing the extracted CI/CD tags.
 func createCITagsMap() map[string]string {
 	localTags := getProviderTags()
+
+	// Populate runtime values
 	localTags[constants.OSPlatform] = runtime.GOOS
 	localTags[constants.OSVersion] = osinfo.OSVersion()
 	localTags[constants.OSArchitecture] = runtime.GOARCH
 	localTags[constants.RuntimeName] = runtime.Compiler
 	localTags[constants.RuntimeVersion] = runtime.Version()
+	log.Debug("civisibility: os platform: %v", runtime.GOOS)
+	log.Debug("civisibility: os architecture: %v", runtime.GOARCH)
+	log.Debug("civisibility: runtime version: %v", runtime.Version())
 
+	// Get command line test command
+	var cmd string
+	if len(os.Args) == 1 {
+		cmd = filepath.Base(os.Args[0])
+	} else {
+		cmd = fmt.Sprintf("%s %s ", filepath.Base(os.Args[0]), strings.Join(os.Args[1:], " "))
+	}
+
+	// Filter out some parameters to make the command more stable.
+	cmd = regexp.MustCompile(`(?si)-test.gocoverdir=(.*)\s`).ReplaceAllString(cmd, "")
+	cmd = regexp.MustCompile(`(?si)-test.v=(.*)\s`).ReplaceAllString(cmd, "")
+	cmd = regexp.MustCompile(`(?si)-test.testlogfile=(.*)\s`).ReplaceAllString(cmd, "")
+	cmd = strings.TrimSpace(cmd)
+	localTags[constants.TestCommand] = cmd
+	log.Debug("civisibility: test command: %v", cmd)
+
+	// Populate the test session name
+	if testSessionName, ok := os.LookupEnv(constants.CIVisibilityTestSessionNameEnvironmentVariable); ok {
+		localTags[constants.TestSessionName] = testSessionName
+	} else if jobName, ok := localTags[constants.CIJobName]; ok {
+		localTags[constants.TestSessionName] = fmt.Sprintf("%s-%s", jobName, cmd)
+	} else {
+		localTags[constants.TestSessionName] = cmd
+	}
+	log.Debug("civisibility: test session name: %v", localTags[constants.TestSessionName])
+
+	// Check if the user provided the test service
+	if ddService := os.Getenv("DD_SERVICE"); ddService != "" {
+		localTags[constants.UserProvidedTestServiceTag] = "true"
+	} else {
+		localTags[constants.UserProvidedTestServiceTag] = "false"
+	}
+
+	// Populate missing git data
 	gitData, _ := getLocalGitData()
 
 	// Populate Git metadata from the local Git repository if not already present in localTags
@@ -115,5 +201,20 @@ func createCITagsMap() map[string]string {
 		}
 	}
 
+	log.Debug("civisibility: workspace directory: %v", localTags[constants.CIWorkspacePath])
+	log.Debug("civisibility: common tags created with %v items", len(localTags))
 	return localTags
+}
+
+// createCIMetricsMap creates a map of CI/CD tags by extracting information from environment variables and runtime information.
+//
+// Returns:
+//
+//	A map[string]float64 containing the metrics extracted
+func createCIMetricsMap() map[string]float64 {
+	localMetrics := make(map[string]float64)
+	localMetrics[constants.LogicalCPUCores] = float64(runtime.NumCPU())
+
+	log.Debug("civisibility: common metrics created with %v items", len(localMetrics))
+	return localMetrics
 }

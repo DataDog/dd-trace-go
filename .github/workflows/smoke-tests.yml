@@ -27,6 +27,9 @@ on:
 env:
   TEST_RESULTS: /tmp/test-results # path to where test results will be saved
 
+permissions:
+  contents: read
+
 jobs:
   go-get-u:
     #  Run go get -u to upgrade dd-trace-go dependencies to their
@@ -70,13 +73,20 @@ jobs:
     # Run go mod tidy to ensure that all go.mod and go.sum files are up-to-date.
     name: 'go mod tidy smoke test'
     runs-on: ubuntu-latest
+    env:
+      # Users may build our library with GOTOOLCHAIN=local. If they do, and our
+      # go.mod file specifies a newer Go version than their local toolchain, their
+      # build will break. Run our tests with GOTOOLCHAIN=local to ensure that
+      # our library builds with all of the Go versions we claim to support,
+      # without having to download a newer one.
+      GOTOOLCHAIN: local
     steps:
       - uses: actions/checkout@v4
         with:
           ref: ${{ inputs.ref || github.ref }}
       - uses: actions/setup-go@v3
         with:
-          go-version: "1.21"
+          go-version: "1.22"
           cache: true
       - name: go mod tidy
         run: |-
@@ -99,7 +109,7 @@ jobs:
       matrix:
         # TODO: cross-compilation from/to different hardware architectures once
         #       github provides native ARM runners.
-        go: [ "1.21", "1.22", "1.23-rc" ]
+        go: [ "1.22", "1.23" ]
         build-env: [ alpine, bookworm, bullseye ]
         build-with-cgo: [ 0, 1 ]
         deployment-env: [ alpine, debian11, debian12, al2, al2023, busybox, scratch ]
@@ -171,7 +181,7 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: .
-          file: ./internal/apps/setup-smoke-test/Dockerfile
+          file: ./internal/setup-smoke-test/Dockerfile
           push: false
           load: true
           tags: smoke-test

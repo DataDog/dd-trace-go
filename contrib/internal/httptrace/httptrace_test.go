@@ -6,9 +6,11 @@
 package httptrace
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"strconv"
 	"testing"
 
@@ -24,6 +26,113 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestGetErrorCodesFromInput(t *testing.T) {
+	codesOnly := "400,401,402"
+	rangesOnly := "400-405,408-410"
+	mixed := "400,403-405,407-410,412"
+	invalid1 := "1,100-200-300-"
+	invalid2 := "abc:@3$5^,"
+	empty := ""
+	t.Run("codesOnly", func(t *testing.T) {
+		fn := GetErrorCodesFromInput(codesOnly)
+		for i := 400; i <= 402; i++ {
+			assert.True(t, fn(i))
+		}
+		assert.False(t, fn(500))
+		assert.False(t, fn(0))
+	})
+	t.Run("rangesOnly", func(t *testing.T) {
+		fn := GetErrorCodesFromInput(rangesOnly)
+		for i := 400; i <= 405; i++ {
+			assert.True(t, fn(i))
+		}
+		for i := 408; i <= 410; i++ {
+			assert.True(t, fn(i))
+		}
+		assert.False(t, fn(406))
+		assert.False(t, fn(411))
+		assert.False(t, fn(500))
+	})
+	t.Run("mixed", func(t *testing.T) {
+		fn := GetErrorCodesFromInput(mixed)
+		assert.True(t, fn(400))
+		assert.False(t, fn(401))
+		for i := 403; i <= 405; i++ {
+			assert.True(t, fn(i))
+		}
+		assert.False(t, fn(406))
+		for i := 407; i <= 410; i++ {
+			assert.True(t, fn(i))
+		}
+		assert.False(t, fn(411))
+		assert.False(t, fn(500))
+	})
+	// invalid entries below should result in nils
+	t.Run("invalid1", func(t *testing.T) {
+		fn := GetErrorCodesFromInput(invalid1)
+		assert.Nil(t, fn)
+	})
+	t.Run("invalid2", func(t *testing.T) {
+		fn := GetErrorCodesFromInput(invalid2)
+		assert.Nil(t, fn)
+	})
+	t.Run("empty", func(t *testing.T) {
+		fn := GetErrorCodesFromInput(empty)
+		assert.Nil(t, fn)
+	})
+}
+
+func TestConfiguredErrorStatuses(t *testing.T) {
+	defer os.Unsetenv("DD_TRACE_HTTP_SERVER_ERROR_STATUSES")
+	t.Run("configured", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		os.Setenv("DD_TRACE_HTTP_SERVER_ERROR_STATUSES", "199-399,400,501")
+
+		// re-run config defaults based on new DD_TRACE_HTTP_SERVER_ERROR_STATUSES value
+		ResetCfg()
+
+		statuses := []int{0, 200, 400, 500}
+		r := httptest.NewRequest(http.MethodGet, "/test", nil)
+		for i, status := range statuses {
+			sp, _ := StartRequestSpan(r)
+			FinishRequestSpan(sp, status, nil)
+			spans := mt.FinishedSpans()
+			require.Len(t, spans, i+1)
+
+			switch status {
+			case 0:
+				assert.Equal(t, "200", spans[i].Tag(ext.HTTPCode))
+				assert.Nil(t, spans[i].Tag(ext.Error))
+			case 200, 400:
+				assert.Equal(t, strconv.Itoa(status), spans[i].Tag(ext.HTTPCode))
+				assert.Equal(t, fmt.Errorf("%s: %s", strconv.Itoa(status), http.StatusText(status)), spans[i].Tag(ext.Error).(error))
+			case 500:
+				assert.Equal(t, strconv.Itoa(status), spans[i].Tag(ext.HTTPCode))
+				assert.Nil(t, spans[i].Tag(ext.Error))
+			}
+		}
+	})
+	t.Run("zero", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		os.Setenv("DD_TRACE_HTTP_SERVER_ERROR_STATUSES", "0")
+
+		// re-run config defaults based on new DD_TRACE_HTTP_SERVER_ERROR_STATUSES value
+		ResetCfg()
+
+		r := httptest.NewRequest(http.MethodGet, "/test", nil)
+		sp, _ := StartRequestSpan(r)
+		FinishRequestSpan(sp, 0, nil)
+		spans := mt.FinishedSpans()
+		require.Len(t, spans, 1)
+		assert.Equal(t, "0", spans[0].Tag(ext.HTTPCode))
+		assert.Equal(t, fmt.Errorf("0: %s", http.StatusText(0)), spans[0].Tag(ext.Error).(error))
+	})
+}
 
 func TestHeaderTagsFromRequest(t *testing.T) {
 	mt := mocktracer.Start()

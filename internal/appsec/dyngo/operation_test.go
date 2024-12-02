@@ -6,6 +6,7 @@
 package dyngo_test
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -16,6 +17,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
 
@@ -119,7 +122,7 @@ func TestUsage(t *testing.T) {
 		// HTTP body read listener appending the read results to a buffer
 		rawBodyListener := func(called *int, buf *[]byte) dyngo.EventListener[operation, HTTPHandlerArgs] {
 			return func(op operation, _ HTTPHandlerArgs) {
-				dyngo.OnFinish(op, func(op operation, res BodyReadRes) {
+				dyngo.OnFinish(op, func(_ operation, res BodyReadRes) {
 					*called++
 					*buf = append(*buf, res.Buf...)
 				})
@@ -128,7 +131,7 @@ func TestUsage(t *testing.T) {
 
 		// Dummy waf looking for the string `attack` in HTTPHandlerArgs
 		wafListener := func(called *int, blocked *bool) dyngo.EventListener[operation, HTTPHandlerArgs] {
-			return func(op operation, args HTTPHandlerArgs) {
+			return func(_ operation, args HTTPHandlerArgs) {
 				*called++
 
 				if strings.Contains(args.URL.RawQuery, "attack") {
@@ -148,14 +151,14 @@ func TestUsage(t *testing.T) {
 
 		jsonBodyValueListener := func(called *int, value *interface{}) dyngo.EventListener[operation, HTTPHandlerArgs] {
 			return func(op operation, _ HTTPHandlerArgs) {
-				dyngo.On(op, func(op operation, v JSONParserArgs) {
+				dyngo.On(op, func(op operation, _ JSONParserArgs) {
 					didBodyRead := false
 
 					dyngo.On(op, func(_ operation, _ BodyReadArgs) {
 						didBodyRead = true
 					})
 
-					dyngo.OnFinish(op, func(op operation, res JSONParserRes) {
+					dyngo.OnFinish(op, func(_ operation, res JSONParserRes) {
 						*called++
 						if !didBodyRead || res.Err != nil {
 							return
@@ -429,22 +432,22 @@ func TestSwapRootOperation(t *testing.T) {
 	dyngo.OnFinish(root, func(operation, MyOperationRes) { onFinishCalled++ })
 
 	dyngo.SwapRootOperation(root)
-	runOperation(nil, MyOperationArgs{}, MyOperationRes{}, func(op dyngo.Operation) {})
+	runOperation(nil, MyOperationArgs{}, MyOperationRes{}, func(_ dyngo.Operation) {})
 	require.Equal(t, 1, onStartCalled)
 	require.Equal(t, 1, onFinishCalled)
 
 	dyngo.SwapRootOperation(dyngo.NewRootOperation())
-	runOperation(nil, MyOperationArgs{}, MyOperationRes{}, func(op dyngo.Operation) {})
+	runOperation(nil, MyOperationArgs{}, MyOperationRes{}, func(_ dyngo.Operation) {})
 	require.Equal(t, 1, onStartCalled)
 	require.Equal(t, 1, onFinishCalled)
 
 	dyngo.SwapRootOperation(nil)
-	runOperation(nil, MyOperationArgs{}, MyOperationRes{}, func(op dyngo.Operation) {})
+	runOperation(nil, MyOperationArgs{}, MyOperationRes{}, func(_ dyngo.Operation) {})
 	require.Equal(t, 1, onStartCalled)
 	require.Equal(t, 1, onFinishCalled)
 
 	dyngo.SwapRootOperation(root)
-	runOperation(nil, MyOperationArgs{}, MyOperationRes{}, func(op dyngo.Operation) {})
+	runOperation(nil, MyOperationArgs{}, MyOperationRes{}, func(_ dyngo.Operation) {})
 	require.Equal(t, 2, onStartCalled)
 	require.Equal(t, 2, onFinishCalled)
 }
@@ -858,4 +861,52 @@ func BenchmarkGoAssumptions(b *testing.B) {
 			}
 		})
 	})
+}
+
+func testFindOperation[T any, O interface {
+	dyngo.Operation
+	*T
+}](arg dyngo.Operation, expectOp dyngo.Operation, expectFound bool) func(t *testing.T) {
+	return func(t *testing.T) {
+		t.Helper()
+
+		op, found := dyngo.FindOperation[T, O](dyngo.RegisterOperation(context.Background(), arg))
+		assert.Equal(t, expectFound, found, "FindOperation() found = %v, want %v", found, expectFound)
+		if !found {
+			return
+		}
+
+		if expectOp == nil {
+			assert.Nil(t, op, "FindOperation() op = %v, want %v", op, expectOp)
+		} else {
+			assert.EqualValues(t, expectOp, op, "FindOperation() op = %v, want %v", op, expectOp)
+		}
+	}
+}
+
+func TestFindOperation(t *testing.T) {
+	root := dyngo.NewOperation(nil)
+	type Op1 struct{ dyngo.Operation }
+	type Op2 struct{ dyngo.Operation }
+	type Op3 struct{ dyngo.Operation }
+
+	var op1 dyngo.Operation = &Op1{root}
+	var op2 dyngo.Operation = &Op2{root}
+	var op3 dyngo.Operation = &Op3{root}
+	var parentOp1 dyngo.Operation = &Op1{dyngo.NewOperation(op3)}
+	var parentOp2 dyngo.Operation = &Op2{dyngo.NewOperation(op1)}
+	var parentOp3 dyngo.Operation = &Op3{dyngo.NewOperation(op2)}
+	var gpOp1 dyngo.Operation = &Op1{dyngo.NewOperation(parentOp1)}
+	var gpOp2 dyngo.Operation = &Op2{dyngo.NewOperation(parentOp3)}
+	var gpOp3 dyngo.Operation = &Op3{dyngo.NewOperation(parentOp2)}
+
+	t.Run("no-parent", testFindOperation[Op1](root, nil, false))
+	t.Run("found", testFindOperation[Op1](op1, op1, true))
+	t.Run("not-found", testFindOperation[Op1](op2, nil, false))
+	t.Run("found-parent", testFindOperation[Op1](parentOp2, op1, true))
+	t.Run("found-parent-2", testFindOperation[Op2](gpOp3, parentOp2, true))
+	t.Run("not-found-parent", testFindOperation[Op1](parentOp3, nil, false))
+	t.Run("found-grandparent", testFindOperation[Op1](gpOp3, op1, true))
+	t.Run("found-grandparent-2", testFindOperation[Op3](gpOp1, op3, true))
+	t.Run("not-found-grandparent", testFindOperation[Op1](gpOp2, nil, false))
 }

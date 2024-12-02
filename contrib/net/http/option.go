@@ -8,7 +8,9 @@ package http
 import (
 	"math"
 	"net/http"
+	"os"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/httptrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
@@ -18,7 +20,13 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/normalizer"
 )
 
-const defaultServiceName = "http.router"
+const (
+	defaultServiceName = "http.router"
+	// envClientQueryStringEnabled is the name of the env var used to specify whether query string collection is enabled for http client spans.
+	envClientQueryStringEnabled = "DD_TRACE_HTTP_CLIENT_TAG_QUERY_STRING"
+	// envClientErrorStatuses is the name of the env var that specifies error status codes on http client spans
+	envClientErrorStatuses = "DD_TRACE_HTTP_CLIENT_ERROR_STATUSES"
+)
 
 type config struct {
 	serviceName   string
@@ -146,6 +154,8 @@ type roundTripperConfig struct {
 	spanOpts      []ddtrace.StartSpanOption
 	propagation   bool
 	errCheck      func(err error) bool
+	queryString   bool // reports whether the query string is included in the URL tag for http client spans
+	isStatusError func(statusCode int) bool
 }
 
 func newRoundTripperConfig() *roundTripperConfig {
@@ -156,14 +166,22 @@ func newRoundTripperConfig() *roundTripperConfig {
 	defaultSpanNamer := func(_ *http.Request) string {
 		return spanName
 	}
-	return &roundTripperConfig{
+
+	c := &roundTripperConfig{
 		serviceName:   namingschema.ServiceNameOverrideV0("", ""),
 		analyticsRate: globalconfig.AnalyticsRate(),
 		resourceNamer: defaultResourceNamer,
 		propagation:   true,
 		spanNamer:     defaultSpanNamer,
 		ignoreRequest: func(_ *http.Request) bool { return false },
+		queryString:   internal.BoolEnv(envClientQueryStringEnabled, true),
+		isStatusError: isClientError,
 	}
+	v := os.Getenv(envClientErrorStatuses)
+	if fn := httptrace.GetErrorCodesFromInput(v); fn != nil {
+		c.isStatusError = fn
+	}
+	return c
 }
 
 // A RoundTripperOption represents an option that can be passed to
@@ -263,4 +281,8 @@ func RTWithErrorCheck(fn func(err error) bool) RoundTripperOption {
 	return func(cfg *roundTripperConfig) {
 		cfg.errCheck = fn
 	}
+}
+
+func isClientError(statusCode int) bool {
+	return statusCode >= 400 && statusCode < 500
 }

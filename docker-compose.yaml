@@ -4,6 +4,9 @@ services:
     image: cassandra:3.11
     environment:
       JVM_OPTS: "-Xms750m -Xmx750m"
+      CASSANDRA_CLUSTER_NAME: "dd-trace-go-test-cluster"
+      CASSANDRA_DC: "dd-trace-go-test-datacenter"
+      CASSANDRA_ENDPOINT_SNITCH: "GossipingPropertyFileSnitch"
     ports:
       - "9042:9042"
   mysql:
@@ -97,9 +100,9 @@ services:
       TRACE_LANGUAGE: golang
       ENABLED_CHECKS: trace_stall,trace_count_header,trace_peer_service,trace_dd_service
       PORT: 9126
-      DD_SUPPRESS_TRACE_PARSE_ERRORS: true
-      DD_POOL_TRACE_CHECK_FAILURES: true
-      DD_DISABLE_ERROR_RESPONSES: true
+      DD_SUPPRESS_TRACE_PARSE_ERRORS: "true"
+      DD_POOL_TRACE_CHECK_FAILURES: "true"
+      DD_DISABLE_ERROR_RESPONSES: "true"
     ports:
       - "127.0.0.1:9126:9126"
   mongodb:
@@ -110,23 +113,24 @@ services:
     image: memcached:1.5.9
     ports:
       - "11211:11211"
-  zookeeper:
-    image: bitnami/zookeeper:latest
+  kafka:
+    image: confluentinc/confluent-local:7.5.0
     environment:
-      ALLOW_ANONYMOUS_LOGIN: "yes"
-    ports:
-      - "2181:2181"
-  kafka2:
-    image: darccio/kafka:2.13-2.8.1
-    environment:
-      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
-      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092
-      #KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INSIDE:PLAINTEXT,OUTSIDE:PLAINTEXT,LISTENER_NAME:PLAINTEXT
-      KAFKA_CREATE_TOPICS: gotest:1:1,gosegtest:1:1
-      KAFKA_BROKER_ID: 1
-    depends_on:
-      - zookeeper
+      KAFKA_LISTENERS: "PLAINTEXT://0.0.0.0:9093,BROKER://0.0.0.0:9092,CONTROLLER://0.0.0.0:9094"
+      KAFKA_ADVERTISED_LISTENERS: "PLAINTEXT://localhost:9093,BROKER://localhost:9092"
+      KAFKA_REST_BOOTSTRAP_SERVERS: "PLAINTEXT://0.0.0.0:9093,BROKER://0.0.0.0:9092"
+      KAFKA_CONTROLLER_QUORUM_VOTERS: "1@localhost:9094"
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: "BROKER:PLAINTEXT,PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT"
+      KAFKA_INTER_BROKER_LISTENER_NAME: "BROKER"
+      KAFKA_BROKER_ID: "1"
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: "1"
+      KAFKA_OFFSETS_TOPIC_NUM_PARTITIONS: "1"
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: "1"
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: "1"
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: "0"
+      KAFKA_NODE_ID: "1"
+      KAFKA_PROCESS_ROLES: "broker,controller"
+      KAFKA_CONTROLLER_LISTENER_NAMES: "CONTROLLER"
     ports:
       - "9092:9092"
   localstack:

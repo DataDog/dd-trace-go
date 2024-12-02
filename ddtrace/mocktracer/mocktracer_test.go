@@ -22,6 +22,8 @@ func TestStart(t *testing.T) {
 	if tt, ok := internal.GetGlobalTracer().(Tracer); !ok || tt != trc {
 		t.Fail()
 	}
+	// If the tracer isn't stopped it leaks goroutines, and breaks other tests.
+	trc.Stop()
 }
 
 func TestTracerStop(t *testing.T) {
@@ -37,6 +39,8 @@ func TestTracerStartSpan(t *testing.T) {
 
 	t.Run("with-service", func(t *testing.T) {
 		mt := newMockTracer()
+		defer mt.Stop()
+
 		parent := newSpan(mt, "http.request", &ddtrace.StartSpanConfig{Tags: parentTags})
 		s, ok := mt.StartSpan(
 			"db.query",
@@ -58,6 +62,8 @@ func TestTracerStartSpan(t *testing.T) {
 
 	t.Run("inherit", func(t *testing.T) {
 		mt := newMockTracer()
+		defer mt.Stop()
+
 		parent := newSpan(mt, "http.request", &ddtrace.StartSpanConfig{Tags: parentTags})
 		s, ok := mt.StartSpan("db.query", tracer.ChildOf(parent.Context())).(*mockspan)
 
@@ -74,6 +80,8 @@ func TestTracerStartSpan(t *testing.T) {
 
 func TestTracerFinishedSpans(t *testing.T) {
 	mt := newMockTracer()
+	defer mt.Stop()
+
 	assert.Empty(t, mt.FinishedSpans())
 	parent := mt.StartSpan("http.request")
 	child := mt.StartSpan("db.query", tracer.ChildOf(parent.Context()))
@@ -96,6 +104,8 @@ func TestTracerFinishedSpans(t *testing.T) {
 
 func TestTracerOpenSpans(t *testing.T) {
 	mt := newMockTracer()
+	defer mt.Stop()
+
 	assert.Empty(t, mt.OpenSpans())
 	parent := mt.StartSpan("http.request")
 	child := mt.StartSpan("db.query", tracer.ChildOf(parent.Context()))
@@ -114,6 +124,8 @@ func TestTracerOpenSpans(t *testing.T) {
 
 func TestTracerSetUser(t *testing.T) {
 	mt := newMockTracer()
+	defer mt.Stop()
+
 	span := mt.StartSpan("http.request")
 	tracer.SetUser(span, "test-user",
 		tracer.WithUserEmail("email"),
@@ -139,6 +151,7 @@ func TestTracerSetUser(t *testing.T) {
 func TestTracerReset(t *testing.T) {
 	assert := assert.New(t)
 	mt := newMockTracer()
+	defer mt.Stop()
 
 	span := mt.StartSpan("parent")
 	_ = mt.StartSpan("child", tracer.ChildOf(span.Context()))
@@ -157,6 +170,8 @@ func TestTracerReset(t *testing.T) {
 func TestTracerInject(t *testing.T) {
 	t.Run("errors", func(t *testing.T) {
 		mt := newMockTracer()
+		defer mt.Stop()
+
 		assert := assert.New(t)
 
 		err := mt.Inject(&spanContext{}, 2)

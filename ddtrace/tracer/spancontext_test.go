@@ -40,7 +40,7 @@ func TestNewSpanContextPushError(t *testing.T) {
 
 	tp := new(log.RecordLogger)
 	tp.Ignore("appsec: ", telemetry.LogPrefix)
-	_, _, _, stop := startTestTracer(t, WithLogger(tp), WithLambdaMode(true))
+	_, _, _, stop := startTestTracer(t, WithLogger(tp), WithLambdaMode(true), WithEnv("testEnv"))
 	defer stop()
 	parent := newBasicSpan("test1")                  // 1st span in trace
 	parent.context.trace.push(newBasicSpan("test2")) // 2nd span in trace
@@ -51,6 +51,7 @@ func TestNewSpanContextPushError(t *testing.T) {
 	child.context = newSpanContext(child, parent.context)
 
 	log.Flush()
+
 	assert.Contains(t, tp.Logs()[0], "ERROR: trace buffer full (2)")
 }
 
@@ -148,6 +149,25 @@ func TestSpanTracePushOne(t *testing.T) {
 	assert.Equal(0, len(trace.spans), "no more spans in the trace")
 }
 
+// Tests to confirm that when the payload queue is full, chunks are dropped
+// and the associated trace is counted as dropped.
+func TestTraceFinishChunk(t *testing.T) {
+	assert := assert.New(t)
+	tracer := newUnstartedTracer()
+	defer tracer.statsd.Close()
+
+	root := newSpan("name", "service", "resource", 0, 0, 0)
+	trace := root.context.trace
+
+	for i := 0; i < payloadQueueSize+1; i++ {
+		trace.mu.Lock()
+		c := chunk{spans: make([]*span, 1)}
+		trace.finishChunk(tracer, &c)
+		trace.mu.Unlock()
+	}
+	assert.Equal(uint32(1), tracer.totalTracesDropped)
+}
+
 func TestPartialFlush(t *testing.T) {
 	t.Setenv("DD_TRACE_PARTIAL_FLUSH_ENABLED", "true")
 	t.Setenv("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", "2")
@@ -223,7 +243,7 @@ func TestSpanTracePushNoFinish(t *testing.T) {
 
 	tp := new(log.RecordLogger)
 	tp.Ignore("appsec: ", telemetry.LogPrefix)
-	_, _, _, stop := startTestTracer(t, WithLogger(tp), WithLambdaMode(true))
+	_, _, _, stop := startTestTracer(t, WithLogger(tp), WithLambdaMode(true), WithEnv("testEnv"))
 	defer stop()
 
 	buffer := newTrace()
@@ -737,7 +757,7 @@ func TestSpanContextPushFull(t *testing.T) {
 	traceMaxSize = 2
 	tp := new(log.RecordLogger)
 	tp.Ignore("appsec: ", telemetry.LogPrefix)
-	_, _, _, stop := startTestTracer(t, WithLogger(tp), WithLambdaMode(true))
+	_, _, _, stop := startTestTracer(t, WithLogger(tp), WithLambdaMode(true), WithEnv("testEnv"))
 	defer stop()
 
 	span1 := newBasicSpan("span1")

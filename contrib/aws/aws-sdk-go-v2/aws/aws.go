@@ -31,6 +31,11 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
 	"github.com/aws/smithy-go/middleware"
 	smithyhttp "github.com/aws/smithy-go/transport/http"
+
+	eventBridgeTracer "gopkg.in/DataDog/dd-trace-go.v1/contrib/aws/internal/eventbridge"
+	sfnTracer "gopkg.in/DataDog/dd-trace-go.v1/contrib/aws/internal/sfn"
+	snsTracer "gopkg.in/DataDog/dd-trace-go.v1/contrib/aws/internal/sns"
+	sqsTracer "gopkg.in/DataDog/dd-trace-go.v1/contrib/aws/internal/sqs"
 )
 
 const componentName = "aws/aws-sdk-go-v2/aws"
@@ -104,6 +109,18 @@ func (mw *traceMiddleware) startTraceMiddleware(stack *middleware.Stack) error {
 			opts = append(opts, tracer.Tag(ext.EventSampleRate, mw.cfg.analyticsRate))
 		}
 		span, spanctx := tracer.StartSpanFromContext(ctx, spanName(serviceID, operation), opts...)
+
+		// Inject trace context
+		switch serviceID {
+		case "SQS":
+			sqsTracer.EnrichOperation(span, in, operation)
+		case "SNS":
+			snsTracer.EnrichOperation(span, in, operation)
+		case "EventBridge":
+			eventBridgeTracer.EnrichOperation(span, in, operation)
+		case "SFN":
+			sfnTracer.EnrichOperation(span, in, operation)
+		}
 
 		// Handle initialize and continue through the middleware chain.
 		out, metadata, err = next.HandleInitialize(spanctx, in)
@@ -229,21 +246,23 @@ func tableName(requestInput middleware.InitializeInput) string {
 func streamName(requestInput middleware.InitializeInput) string {
 	switch params := requestInput.Parameters.(type) {
 	case *kinesis.PutRecordInput:
-		return *params.StreamName
+		return coalesceNameOrArnResource(params.StreamName, params.StreamARN)
 	case *kinesis.PutRecordsInput:
-		return *params.StreamName
+		return coalesceNameOrArnResource(params.StreamName, params.StreamARN)
 	case *kinesis.AddTagsToStreamInput:
-		return *params.StreamName
+		return coalesceNameOrArnResource(params.StreamName, params.StreamARN)
 	case *kinesis.RemoveTagsFromStreamInput:
-		return *params.StreamName
+		return coalesceNameOrArnResource(params.StreamName, params.StreamARN)
 	case *kinesis.CreateStreamInput:
-		return *params.StreamName
+		if params.StreamName != nil {
+			return *params.StreamName
+		}
 	case *kinesis.DeleteStreamInput:
-		return *params.StreamName
+		return coalesceNameOrArnResource(params.StreamName, params.StreamARN)
 	case *kinesis.DescribeStreamInput:
-		return *params.StreamName
+		return coalesceNameOrArnResource(params.StreamName, params.StreamARN)
 	case *kinesis.DescribeStreamSummaryInput:
-		return *params.StreamName
+		return coalesceNameOrArnResource(params.StreamName, params.StreamARN)
 	case *kinesis.GetRecordsInput:
 		if params.StreamARN != nil {
 			streamArnValue := *params.StreamARN
@@ -352,4 +371,17 @@ func serviceName(cfg *config, awsService string) string {
 	}
 	defaultName := fmt.Sprintf("aws.%s", awsService)
 	return namingschema.ServiceNameOverrideV0(defaultName, defaultName)
+}
+
+func coalesceNameOrArnResource(name *string, arnVal *string) string {
+	if name != nil {
+		return *name
+	}
+
+	if arnVal != nil {
+		parts := strings.Split(*arnVal, "/")
+		return parts[len(parts)-1]
+	}
+
+	return ""
 }

@@ -87,9 +87,10 @@ func newMockTracer() *mocktracer {
 }
 
 // Stop deactivates the mock tracer and sets the active tracer to a no-op.
-func (*mocktracer) Stop() {
+func (t *mocktracer) Stop() {
 	internal.SetGlobalTracer(&internal.NoopTracer{})
 	internal.Testing = false
+	t.dsmProcessor.Stop()
 }
 
 func (t *mocktracer) StartSpan(operationName string, opts ...ddtrace.StartSpanOption) ddtrace.Span {

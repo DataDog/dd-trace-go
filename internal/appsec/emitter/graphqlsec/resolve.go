@@ -7,25 +7,57 @@ package graphqlsec
 
 import (
 	"context"
+
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/graphqlsec/types"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/trace"
 )
+
+type (
+	ResolveOperation struct {
+		dyngo.Operation
+	}
+
+	// ResolveOperationArgs describes arguments passed to a GraphQL field operation.
+	ResolveOperationArgs struct {
+		// TypeName is the name of the field's type
+		TypeName string
+		// FieldName is the name of the field
+		FieldName string
+		// Arguments is the arguments provided to the field resolver
+		Arguments map[string]any
+		// Trivial determines whether the resolution is trivial or not. Leave as false if undetermined.
+		Trivial bool
+	}
+
+	ResolveOperationRes struct {
+		// Data is the data returned from processing the GraphQL operation.
+		Data any
+		// Error is the error returned by processing the GraphQL Operation, if any.
+		Error error
+	}
+)
+
+// Finish the GraphQL Field operation, along with the given results, and emit a finish event up in
+// the operation stack.
+func (q *ResolveOperation) Finish(res ResolveOperationRes) {
+	dyngo.FinishOperation(q, res)
+}
+
+func (ResolveOperationArgs) IsArgOf(*ResolveOperation)   {}
+func (ResolveOperationRes) IsResultOf(*ResolveOperation) {}
 
 // StartResolveOperation starts a new GraphQL Resolve operation, along with the given arguments, and
 // emits a start event up in the operation stack. The operation is tracked on the returned context,
 // and can be extracted later on using FromContext.
-func StartResolveOperation(ctx context.Context, span trace.TagSetter, args types.ResolveOperationArgs) (context.Context, *types.ResolveOperation) {
+func StartResolveOperation(ctx context.Context, args ResolveOperationArgs) (context.Context, *ResolveOperation) {
 	parent, ok := dyngo.FromContext(ctx)
 	if !ok {
 		log.Debug("appsec: StartResolveOperation: no parent operation found in context")
 	}
 
-	op := &types.ResolveOperation{
+	op := &ResolveOperation{
 		Operation: dyngo.NewOperation(parent),
-		TagSetter: span,
 	}
 	return dyngo.StartAndRegisterOperation(ctx, op, args), op
 }

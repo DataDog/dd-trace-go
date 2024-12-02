@@ -670,6 +670,44 @@ func TestTrailingSlashRoutesWithBehaviorUseHandler(t *testing.T) {
 	})
 }
 
+func TestDuplicateWordsParamsHandler(t *testing.T) {
+	tests := []struct {
+		name  string
+		route string
+		url   string
+	}{
+		{
+			name:  "Test minimal case",
+			route: "/1a/:n",
+			url:   "/1a/1",
+		},
+		{
+			name:  "Test string with separators",
+			route: "/foo/2by4/bar/:n",
+			url:   "/foo/2by4/bar/2",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert := assert.New(t)
+			mt := mocktracer.Start()
+			defer mt.Stop()
+
+			router := New()
+			router.GET(tt.route, handler200)
+
+			r := httptest.NewRequest("GET", tt.url, nil)
+			w := httptest.NewRecorder()
+			router.ServeHTTP(w, r)
+
+			spans := mt.FinishedSpans()
+			assert.Equal(1, len(spans))
+			assert.Equal("GET "+tt.route, spans[0].Tag(ext.ResourceName))
+		})
+	}
+}
+
 func TestIsSupportedRedirectStatus(t *testing.T) {
 	tests := []struct {
 		name   string

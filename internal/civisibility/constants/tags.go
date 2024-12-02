@@ -10,6 +10,10 @@ const (
 	// This tag helps in identifying the source of the trace data.
 	Origin = "_dd.origin"
 
+	// LogicalCPUCores is a tag used to indicate the number of logical cpu cores
+	// This tag is used by the backend to perform calculations
+	LogicalCPUCores = "_dd.host.vcpu_count"
+
 	// CIAppTestOrigin defines the CIApp test origin value.
 	// This constant is used to tag traces that originate from CIApp test executions.
 	CIAppTestOrigin = "ciapp-test"
@@ -29,6 +33,9 @@ const (
 	// ItrCorrelationIDTag defines the correlation ID for the intelligent test runner tag for the CI Visibility Protocol.
 	// This constant is used to tag traces with the correlation ID for intelligent test runs.
 	ItrCorrelationIDTag string = "itr_correlation_id"
+
+	// UserProvidedTestServiceTag defines if the user provided the test service.
+	UserProvidedTestServiceTag string = "_dd.test.is_user_provided_service"
 )
 
 // Coverage tags

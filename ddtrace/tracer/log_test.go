@@ -8,8 +8,10 @@ package tracer
 import (
 	"fmt"
 	"math"
+	"regexp"
 	"testing"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
@@ -31,7 +33,7 @@ func TestStartupLog(t *testing.T) {
 		tp.Ignore("appsec: ", telemetry.LogPrefix)
 		logStartup(tracer)
 		require.Len(t, tp.Logs(), 2)
-		assert.Regexp(logPrefixRegexp+` INFO: DATADOG TRACER CONFIGURATION {"date":"[^"]*","os_name":"[^"]*","os_version":"[^"]*","version":"[^"]*","lang":"Go","lang_version":"[^"]*","env":"","service":"tracer\.test(\.exe)?","agent_url":"http://localhost:9/v0.4/traces","agent_error":"Post .*","debug":false,"analytics_enabled":false,"sample_rate":"NaN","sample_rate_limit":"disabled","trace_sampling_rules":null,"span_sampling_rules":null,"sampling_rules_error":"","service_mappings":null,"tags":{"runtime-id":"[^"]*"},"runtime_metrics_enabled":false,"health_metrics_enabled":false,"profiler_code_hotspots_enabled":((false)|(true)),"profiler_endpoints_enabled":((false)|(true)),"dd_version":"","architecture":"[^"]*","global_service":"","lambda_mode":"false","appsec":((true)|(false)),"agent_features":{"DropP0s":((true)|(false)),"Stats":((true)|(false)),"StatsdPort":0},"integrations":{.*},"partial_flush_enabled":false,"partial_flush_min_spans":1000,"orchestrion":{"enabled":false},"feature_flags":\[\],"propagation_style_inject":"datadog,tracecontext","propagation_style_extract":"datadog,tracecontext"}`, tp.Logs()[1])
+		assert.Regexp(logPrefixRegexp+` INFO: DATADOG TRACER CONFIGURATION {"date":"[^"]*","os_name":"[^"]*","os_version":"[^"]*","version":"[^"]*","lang":"Go","lang_version":"[^"]*","env":"","service":"tracer\.test(\.exe)?","agent_url":"http://localhost:9/v0.4/traces","agent_error":"Post .*","debug":false,"analytics_enabled":false,"sample_rate":"NaN","sample_rate_limit":"disabled","trace_sampling_rules":null,"span_sampling_rules":null,"sampling_rules_error":"","service_mappings":null,"tags":{"runtime-id":"[^"]*"},"runtime_metrics_enabled":false,"runtime_metrics_v2_enabled":false,"health_metrics_enabled":false,"profiler_code_hotspots_enabled":((false)|(true)),"profiler_endpoints_enabled":((false)|(true)),"dd_version":"","architecture":"[^"]*","global_service":"","lambda_mode":"false","appsec":((true)|(false)),"agent_features":{"DropP0s":((true)|(false)),"Stats":((true)|(false)),"StatsdPort":(0|8125)},"integrations":{.*},"partial_flush_enabled":false,"partial_flush_min_spans":1000,"orchestrion":{"enabled":false},"feature_flags":\[\],"propagation_style_inject":"datadog,tracecontext","propagation_style_extract":"datadog,tracecontext"}`, tp.Logs()[1])
 	})
 
 	t.Run("configured", func(t *testing.T) {
@@ -63,7 +65,7 @@ func TestStartupLog(t *testing.T) {
 		tp.Ignore("appsec: ", telemetry.LogPrefix)
 		logStartup(tracer)
 		require.Len(t, tp.Logs(), 2)
-		assert.Regexp(logPrefixRegexp+` INFO: DATADOG TRACER CONFIGURATION {"date":"[^"]*","os_name":"[^"]*","os_version":"[^"]*","version":"[^"]*","lang":"Go","lang_version":"[^"]*","env":"configuredEnv","service":"configured.service","agent_url":"http://localhost:9/v0.4/traces","agent_error":"Post .*","debug":true,"analytics_enabled":true,"sample_rate":"0\.123000","sample_rate_limit":"100","trace_sampling_rules":\[{"service":"mysql","sample_rate":0\.75}\],"span_sampling_rules":null,"sampling_rules_error":"","service_mappings":{"initial_service":"new_service"},"tags":{"runtime-id":"[^"]*","tag":"value","tag2":"NaN"},"runtime_metrics_enabled":true,"health_metrics_enabled":true,"profiler_code_hotspots_enabled":((false)|(true)),"profiler_endpoints_enabled":((false)|(true)),"dd_version":"2.3.4","architecture":"[^"]*","global_service":"configured.service","lambda_mode":"false","appsec":((true)|(false)),"agent_features":{"DropP0s":false,"Stats":false,"StatsdPort":0},"integrations":{.*},"partial_flush_enabled":false,"partial_flush_min_spans":1000,"orchestrion":{"enabled":true,"metadata":{"version":"v1"}},"feature_flags":\["discovery"\],"propagation_style_inject":"datadog,tracecontext","propagation_style_extract":"datadog,tracecontext"}`, tp.Logs()[1])
+		assert.Regexp(logPrefixRegexp+` INFO: DATADOG TRACER CONFIGURATION {"date":"[^"]*","os_name":"[^"]*","os_version":"[^"]*","version":"[^"]*","lang":"Go","lang_version":"[^"]*","env":"configuredEnv","service":"configured.service","agent_url":"http://localhost:9/v0.4/traces","agent_error":"Post .*","debug":true,"analytics_enabled":true,"sample_rate":"0\.123000","sample_rate_limit":"100","trace_sampling_rules":\[{"service":"mysql","sample_rate":0\.75}\],"span_sampling_rules":null,"sampling_rules_error":"","service_mappings":{"initial_service":"new_service"},"tags":{"runtime-id":"[^"]*","tag":"value","tag2":"NaN"},"runtime_metrics_enabled":true,"runtime_metrics_v2_enabled":false,"health_metrics_enabled":true,"profiler_code_hotspots_enabled":((false)|(true)),"profiler_endpoints_enabled":((false)|(true)),"dd_version":"2.3.4","architecture":"[^"]*","global_service":"configured.service","lambda_mode":"false","appsec":((true)|(false)),"agent_features":{"DropP0s":false,"Stats":false,"StatsdPort":(0|8125)},"integrations":{.*},"partial_flush_enabled":false,"partial_flush_min_spans":1000,"orchestrion":{"enabled":true,"metadata":{"version":"v1"}},"feature_flags":\["discovery"\],"propagation_style_inject":"datadog,tracecontext","propagation_style_extract":"datadog,tracecontext"}`, tp.Logs()[1])
 	})
 
 	t.Run("limit", func(t *testing.T) {
@@ -93,7 +95,7 @@ func TestStartupLog(t *testing.T) {
 		tp.Ignore("appsec: ", telemetry.LogPrefix)
 		logStartup(tracer)
 		require.Len(t, tp.Logs(), 2)
-		assert.Regexp(logPrefixRegexp+` INFO: DATADOG TRACER CONFIGURATION {"date":"[^"]*","os_name":"[^"]*","os_version":"[^"]*","version":"[^"]*","lang":"Go","lang_version":"[^"]*","env":"configuredEnv","service":"configured.service","agent_url":"http://localhost:9/v0.4/traces","agent_error":"Post .*","debug":true,"analytics_enabled":true,"sample_rate":"0\.123000","sample_rate_limit":"1000.001","trace_sampling_rules":\[{"service":"mysql","sample_rate":0\.75}\],"span_sampling_rules":null,"sampling_rules_error":"","service_mappings":{"initial_service":"new_service"},"tags":{"runtime-id":"[^"]*","tag":"value","tag2":"NaN"},"runtime_metrics_enabled":true,"health_metrics_enabled":true,"profiler_code_hotspots_enabled":((false)|(true)),"profiler_endpoints_enabled":((false)|(true)),"dd_version":"2.3.4","architecture":"[^"]*","global_service":"configured.service","lambda_mode":"false","appsec":((true)|(false)),"agent_features":{"DropP0s":false,"Stats":false,"StatsdPort":0},"integrations":{.*},"partial_flush_enabled":false,"partial_flush_min_spans":1000,"orchestrion":{"enabled":false},"feature_flags":\[\],"propagation_style_inject":"datadog,tracecontext","propagation_style_extract":"datadog,tracecontext"}`, tp.Logs()[1])
+		assert.Regexp(logPrefixRegexp+` INFO: DATADOG TRACER CONFIGURATION {"date":"[^"]*","os_name":"[^"]*","os_version":"[^"]*","version":"[^"]*","lang":"Go","lang_version":"[^"]*","env":"configuredEnv","service":"configured.service","agent_url":"http://localhost:9/v0.4/traces","agent_error":"Post .*","debug":true,"analytics_enabled":true,"sample_rate":"0\.123000","sample_rate_limit":"1000.001","trace_sampling_rules":\[{"service":"mysql","sample_rate":0\.75}\],"span_sampling_rules":null,"sampling_rules_error":"","service_mappings":{"initial_service":"new_service"},"tags":{"runtime-id":"[^"]*","tag":"value","tag2":"NaN"},"runtime_metrics_enabled":true,"runtime_metrics_v2_enabled":false,"health_metrics_enabled":true,"profiler_code_hotspots_enabled":((false)|(true)),"profiler_endpoints_enabled":((false)|(true)),"dd_version":"2.3.4","architecture":"[^"]*","global_service":"configured.service","lambda_mode":"false","appsec":((true)|(false)),"agent_features":{"DropP0s":false,"Stats":false,"StatsdPort":(0|8125)},"integrations":{.*},"partial_flush_enabled":false,"partial_flush_min_spans":1000,"orchestrion":{"enabled":false},"feature_flags":\[\],"propagation_style_inject":"datadog,tracecontext","propagation_style_extract":"datadog,tracecontext"}`, tp.Logs()[1])
 	})
 
 	t.Run("errors", func(t *testing.T) {
@@ -107,7 +109,8 @@ func TestStartupLog(t *testing.T) {
 		tp.Ignore("appsec: ", telemetry.LogPrefix)
 		logStartup(tracer)
 		require.Len(t, tp.Logs(), 2)
-		assert.Regexp(logPrefixRegexp+` INFO: DATADOG TRACER CONFIGURATION {"date":"[^"]*","os_name":"[^"]*","os_version":"[^"]*","version":"[^"]*","lang":"Go","lang_version":"[^"]*","env":"","service":"tracer\.test(\.exe)?","agent_url":"http://localhost:9/v0.4/traces","agent_error":"Post .*","debug":false,"analytics_enabled":false,"sample_rate":"NaN","sample_rate_limit":"100","trace_sampling_rules":\[{"service":"some\.service","sample_rate":0\.234}\],"span_sampling_rules":null,"sampling_rules_error":"\\n\\tat index 1: ignoring rule {Service:other.service Rate:2}: rate is out of \[0\.0, 1\.0] range","service_mappings":null,"tags":{"runtime-id":"[^"]*"},"runtime_metrics_enabled":false,"health_metrics_enabled":false,"profiler_code_hotspots_enabled":((false)|(true)),"profiler_endpoints_enabled":((false)|(true)),"dd_version":"","architecture":"[^"]*","global_service":"","lambda_mode":"false","appsec":((true)|(false)),"agent_features":{"DropP0s":((true)|(false)),"Stats":((true)|(false)),"StatsdPort":0},"integrations":{.*},"partial_flush_enabled":false,"partial_flush_min_spans":1000,"orchestrion":{"enabled":false},"feature_flags":\[\],"propagation_style_inject":"datadog,tracecontext","propagation_style_extract":"datadog,tracecontext"}`, tp.Logs()[1])
+		fmt.Println(tp.Logs()[1])
+		assert.Regexp(logPrefixRegexp+` INFO: DATADOG TRACER CONFIGURATION {"date":"[^"]*","os_name":"[^"]*","os_version":"[^"]*","version":"[^"]*","lang":"Go","lang_version":"[^"]*","env":"","service":"tracer\.test(\.exe)?","agent_url":"http://localhost:9/v0.4/traces","agent_error":"Post .*","debug":false,"analytics_enabled":false,"sample_rate":"NaN","sample_rate_limit":"100","trace_sampling_rules":\[{"service":"some\.service","sample_rate":0\.234}\],"span_sampling_rules":null,"sampling_rules_error":"\\n\\tat index 1: ignoring rule {Service:other.service Rate:2}: rate is out of \[0\.0, 1\.0] range","service_mappings":null,"tags":{"runtime-id":"[^"]*"},"runtime_metrics_enabled":false,"runtime_metrics_v2_enabled":false,"health_metrics_enabled":false,"profiler_code_hotspots_enabled":((false)|(true)),"profiler_endpoints_enabled":((false)|(true)),"dd_version":"","architecture":"[^"]*","global_service":"","lambda_mode":"false","appsec":((true)|(false)),"agent_features":{"DropP0s":((true)|(false)),"Stats":((true)|(false)),"StatsdPort":(0|8125)},"integrations":{.*},"partial_flush_enabled":false,"partial_flush_min_spans":1000,"orchestrion":{"enabled":false},"feature_flags":\[\],"propagation_style_inject":"datadog,tracecontext","propagation_style_extract":"datadog,tracecontext"}`, tp.Logs()[1])
 	})
 
 	t.Run("lambda", func(t *testing.T) {
@@ -120,7 +123,7 @@ func TestStartupLog(t *testing.T) {
 		tp.Ignore("appsec: ", telemetry.LogPrefix)
 		logStartup(tracer)
 		assert.Len(tp.Logs(), 1)
-		assert.Regexp(logPrefixRegexp+` INFO: DATADOG TRACER CONFIGURATION {"date":"[^"]*","os_name":"[^"]*","os_version":"[^"]*","version":"[^"]*","lang":"Go","lang_version":"[^"]*","env":"","service":"tracer\.test(\.exe)?","agent_url":"http://localhost:9/v0.4/traces","agent_error":"","debug":false,"analytics_enabled":false,"sample_rate":"NaN","sample_rate_limit":"disabled","trace_sampling_rules":null,"span_sampling_rules":null,"sampling_rules_error":"","service_mappings":null,"tags":{"runtime-id":"[^"]*"},"runtime_metrics_enabled":false,"health_metrics_enabled":false,"profiler_code_hotspots_enabled":((false)|(true)),"profiler_endpoints_enabled":((false)|(true)),"dd_version":"","architecture":"[^"]*","global_service":"","lambda_mode":"true","appsec":((true)|(false)),"agent_features":{"DropP0s":false,"Stats":false,"StatsdPort":0},"integrations":{.*},"partial_flush_enabled":false,"partial_flush_min_spans":1000,"orchestrion":{"enabled":false},"feature_flags":\[\],"propagation_style_inject":"datadog,tracecontext","propagation_style_extract":"datadog,tracecontext"}`, tp.Logs()[0])
+		assert.Regexp(logPrefixRegexp+` INFO: DATADOG TRACER CONFIGURATION {"date":"[^"]*","os_name":"[^"]*","os_version":"[^"]*","version":"[^"]*","lang":"Go","lang_version":"[^"]*","env":"","service":"tracer\.test(\.exe)?","agent_url":"http://localhost:9/v0.4/traces","agent_error":"","debug":false,"analytics_enabled":false,"sample_rate":"NaN","sample_rate_limit":"disabled","trace_sampling_rules":null,"span_sampling_rules":null,"sampling_rules_error":"","service_mappings":null,"tags":{"runtime-id":"[^"]*"},"runtime_metrics_enabled":false,"runtime_metrics_v2_enabled":false,"health_metrics_enabled":false,"profiler_code_hotspots_enabled":((false)|(true)),"profiler_endpoints_enabled":((false)|(true)),"dd_version":"","architecture":"[^"]*","global_service":"","lambda_mode":"true","appsec":((true)|(false)),"agent_features":{"DropP0s":false,"Stats":false,"StatsdPort":(0|8125)},"integrations":{.*},"partial_flush_enabled":false,"partial_flush_min_spans":1000,"orchestrion":{"enabled":false},"feature_flags":\[\],"propagation_style_inject":"datadog,tracecontext","propagation_style_extract":"datadog,tracecontext"}`, tp.Logs()[0])
 	})
 
 	t.Run("integrations", func(t *testing.T) {
@@ -145,7 +148,7 @@ func TestLogSamplingRules(t *testing.T) {
 	tp := new(log.RecordLogger)
 	tp.Ignore("appsec: ", telemetry.LogPrefix)
 	t.Setenv("DD_TRACE_SAMPLING_RULES", `[{"service": "some.service", "sample_rate": 0.234}, {"service": "other.service"}, {"service": "last.service", "sample_rate": 0.56}, {"odd": "pairs"}, {"sample_rate": 9.10}]`)
-	_, _, _, stop := startTestTracer(t, WithLogger(tp))
+	_, _, _, stop := startTestTracer(t, WithLogger(tp), WithEnv("test"))
 	defer stop()
 
 	assert.Len(tp.Logs(), 1)
@@ -158,7 +161,7 @@ func TestLogDefaultSampleRate(t *testing.T) {
 	tp.Ignore("appsec: ", telemetry.LogPrefix)
 	log.UseLogger(tp)
 	t.Setenv("DD_TRACE_SAMPLE_RATE", ``)
-	_, _, _, stop := startTestTracer(t, WithLogger(tp))
+	_, _, _, stop := startTestTracer(t, WithLogger(tp), WithEnv("test"))
 	defer stop()
 
 	assert.Len(tp.Logs(), 0)
@@ -179,11 +182,157 @@ func TestLogAgentReachable(t *testing.T) {
 func TestLogFormat(t *testing.T) {
 	assert := assert.New(t)
 	tp := new(log.RecordLogger)
-	tracer := newTracer(WithLogger(tp), WithRuntimeMetrics(), WithDebugMode(true))
-	defer tracer.Stop()
+
+	tracer, _, _, stop := startTestTracer(t, WithLogger(tp), WithRuntimeMetrics(), WithDebugMode(true))
+	defer stop()
 	tp.Reset()
 	tp.Ignore("appsec: ", telemetry.LogPrefix)
 	tracer.StartSpan("test", ServiceName("test-service"), ResourceName("/"), WithSpanID(12345))
 	assert.Len(tp.Logs(), 1)
 	assert.Regexp(logPrefixRegexp+` DEBUG: Started Span: dd.trace_id="12345" dd.span_id="12345" dd.parent_id="0", Operation: test, Resource: /, Tags: map.*, map.*`, tp.Logs()[0])
+}
+
+func TestLogPropagators(t *testing.T) {
+	t.Run("default", func(t *testing.T) {
+		assert := assert.New(t)
+		substring := `"propagation_style_inject":"datadog,tracecontext","propagation_style_extract":"datadog,tracecontext"`
+		log := setup(t, nil)
+		assert.Regexp(substring, log)
+	})
+	t.Run("datadog,tracecontext", func(t *testing.T) {
+		assert := assert.New(t)
+		t.Setenv("DD_TRACE_PROPAGATION_STYLE", "datadog,tracecontext")
+		substring := `"propagation_style_inject":"datadog,tracecontext","propagation_style_extract":"datadog,tracecontext"`
+		log := setup(t, nil)
+		assert.Regexp(substring, log)
+	})
+	t.Run("b3multi", func(t *testing.T) {
+		assert := assert.New(t)
+		t.Setenv("DD_TRACE_PROPAGATION_STYLE", "b3multi")
+		substring := `"propagation_style_inject":"b3multi","propagation_style_extract":"b3multi"`
+		log := setup(t, nil)
+		assert.Regexp(substring, log)
+	})
+	t.Run("none", func(t *testing.T) {
+		assert := assert.New(t)
+		t.Setenv("DD_TRACE_PROPAGATION_STYLE", "none")
+		substring := `"propagation_style_inject":"","propagation_style_extract":""`
+		log := setup(t, nil)
+		assert.Regexp(substring, log)
+	})
+	t.Run("different-injector-extractor", func(t *testing.T) {
+		assert := assert.New(t)
+		t.Setenv("DD_TRACE_PROPAGATION_STYLE_INJECT", "b3multi")
+		t.Setenv("DD_TRACE_PROPAGATION_STYLE_EXTRACT", "tracecontext")
+		substring := `"propagation_style_inject":"b3multi","propagation_style_extract":"tracecontext"`
+		log := setup(t, nil)
+		assert.Regexp(substring, log)
+	})
+	t.Run("custom-propagator", func(t *testing.T) {
+		assert := assert.New(t)
+		substring := `"propagation_style_inject":"custom","propagation_style_extract":"custom"`
+		p := &prop{}
+		log := setup(t, p)
+		assert.Regexp(substring, log)
+	})
+}
+
+type prop struct{}
+
+func (p *prop) Inject(context ddtrace.SpanContext, carrier interface{}) (e error) {
+	return
+}
+func (p *prop) Extract(carrier interface{}) (sctx ddtrace.SpanContext, e error) {
+	return
+}
+
+func setup(t *testing.T, customProp Propagator) string {
+	tp := new(log.RecordLogger)
+	var tracer *tracer
+	var stop func()
+	if customProp != nil {
+		tracer, _, _, stop = startTestTracer(t, WithLogger(tp), WithPropagator(customProp))
+	} else {
+		tracer, _, _, stop = startTestTracer(t, WithLogger(tp))
+	}
+	defer stop()
+	tp.Reset()
+	tp.Ignore("appsec: ", telemetry.LogPrefix)
+	logStartup(tracer)
+	require.Len(t, tp.Logs(), 2)
+	return tp.Logs()[1]
+}
+
+func findLogEntry(logs []string, pattern string) (string, bool) {
+	for _, log := range logs {
+		if matched, _ := regexp.MatchString(pattern, log); matched {
+			return log, true
+		}
+	}
+	return "", false
+}
+
+func TestAgentURL(t *testing.T) {
+	assert := assert.New(t)
+	tp := new(log.RecordLogger)
+	tracer := newTracer(WithLogger(tp), WithUDS("var/run/datadog/apm.socket"))
+	defer tracer.Stop()
+	tp.Reset()
+	tp.Ignore("appsec: ", telemetry.LogPrefix)
+	logStartup(tracer)
+	logEntry, found := findLogEntry(tp.Logs(), `"agent_url":"unix://var/run/datadog/apm.socket"`)
+	if !found {
+		t.Fatal("Expected to find log entry")
+	}
+	assert.Regexp(`"agent_url":"unix://var/run/datadog/apm.socket"`, logEntry)
+}
+
+func TestAgentURLFromEnv(t *testing.T) {
+	assert := assert.New(t)
+	t.Setenv("DD_TRACE_AGENT_URL", "unix://var/run/datadog/apm.socket")
+	tp := new(log.RecordLogger)
+	tracer := newTracer(WithLogger(tp))
+	defer tracer.Stop()
+	tp.Reset()
+	tp.Ignore("appsec: ", telemetry.LogPrefix)
+	logStartup(tracer)
+	logEntry, found := findLogEntry(tp.Logs(), `"agent_url":"unix://var/run/datadog/apm.socket"`)
+	if !found {
+		t.Fatal("Expected to find log entry")
+	}
+	assert.Regexp(`"agent_url":"unix://var/run/datadog/apm.socket"`, logEntry)
+}
+
+func TestInvalidAgentURL(t *testing.T) {
+	assert := assert.New(t)
+	// invalid socket URL
+	t.Setenv("DD_TRACE_AGENT_URL", "var/run/datadog/apm.socket")
+	tp := new(log.RecordLogger)
+	tracer := newTracer(WithLogger(tp))
+	defer tracer.Stop()
+	tp.Reset()
+	tp.Ignore("appsec: ", telemetry.LogPrefix)
+	logStartup(tracer)
+	logEntry, found := findLogEntry(tp.Logs(), `"agent_url":"http://localhost:8126/v0.4/traces"`)
+	if !found {
+		t.Fatal("Expected to find log entry")
+	}
+	// assert that it is the default URL
+	assert.Regexp(`"agent_url":"http://localhost:8126/v0.4/traces"`, logEntry)
+}
+
+func TestAgentURLConflict(t *testing.T) {
+	assert := assert.New(t)
+	t.Setenv("DD_TRACE_AGENT_URL", "unix://var/run/datadog/apm.socket")
+	tp := new(log.RecordLogger)
+	tracer := newTracer(WithLogger(tp), WithUDS("var/run/datadog/apm.socket"), WithAgentAddr("localhost:8126"))
+	defer tracer.Stop()
+	tp.Reset()
+	tp.Ignore("appsec: ", telemetry.LogPrefix)
+	logStartup(tracer)
+	logEntry, found := findLogEntry(tp.Logs(), `"agent_url":"http://localhost:8126/v0.4/traces"`)
+	if !found {
+		t.Fatal("Expected to find log entry")
+	}
+	assert.Regexp(`"agent_url":"http://localhost:8126/v0.4/traces"`, logEntry)
 }

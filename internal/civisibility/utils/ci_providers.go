@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/constants"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
 // providerType defines a function type that returns a map of string key-value pairs.
@@ -74,6 +75,14 @@ func getProviderTags() map[string]string {
 	for tag, value := range tags {
 		if value == "" {
 			delete(tags, tag)
+		}
+	}
+
+	if log.DebugEnabled() {
+		if providerName, ok := tags[constants.CIProviderName]; ok {
+			log.Debug("civisibility: detected ci provider: %v", providerName)
+		} else {
+			log.Debug("civisibility: no ci provider was detected.")
 		}
 	}
 
@@ -397,6 +406,38 @@ func extractGithubActions() map[string]string {
 	jsonString, err := getEnvVarsJSON("GITHUB_SERVER_URL", "GITHUB_REPOSITORY", "GITHUB_RUN_ID", "GITHUB_RUN_ATTEMPT")
 	if err == nil {
 		tags[constants.CIEnvVars] = string(jsonString)
+	}
+
+	// Extract PR information from the github event json file
+	eventFilePath := os.Getenv("GITHUB_EVENT_PATH")
+	if stats, ok := os.Stat(eventFilePath); ok == nil && !stats.IsDir() {
+		if eventFile, err := os.Open(eventFilePath); err == nil {
+			defer eventFile.Close()
+
+			var eventJSON struct {
+				PullRequest struct {
+					Base struct {
+						Sha string `json:"sha"`
+						Ref string `json:"ref"`
+					} `json:"base"`
+					Head struct {
+						Sha string `json:"sha"`
+					} `json:"head"`
+				} `json:"pull_request"`
+			}
+
+			eventDecoder := json.NewDecoder(eventFile)
+			if eventDecoder.Decode(&eventJSON) == nil {
+				tags[constants.GitHeadCommit] = eventJSON.PullRequest.Head.Sha
+				tags[constants.GitPrBaseCommit] = eventJSON.PullRequest.Base.Sha
+				tags[constants.GitPrBaseBranch] = eventJSON.PullRequest.Base.Ref
+			}
+		}
+	}
+
+	// Fallback if GitPrBaseBranch is not set
+	if tmpVal, ok := tags[constants.GitPrBaseBranch]; !ok || tmpVal == "" {
+		tags[constants.GitPrBaseBranch] = os.Getenv("GITHUB_BASE_REF")
 	}
 
 	return tags

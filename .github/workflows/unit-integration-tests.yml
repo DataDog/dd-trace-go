@@ -13,6 +13,15 @@ on:
 
 env:
   DD_APPSEC_WAF_TIMEOUT: 1m # Increase time WAF time budget to reduce CI flakiness
+  # Users may build our library with GOTOOLCHAIN=local. If they do, and our
+  # go.mod file specifies a newer Go version than their local toolchain, their
+  # build will break. Run our tests with GOTOOLCHAIN=local to ensure that
+  # our library builds with all of the Go versions we claim to support,
+  # without having to download a newer one.
+  GOTOOLCHAIN: local
+
+permissions:
+  contents: read
 
 jobs:
   copyright:
@@ -22,7 +31,10 @@ jobs:
         uses: actions/checkout@v3
         with:
           ref: ${{ inputs.ref || github.ref }}
-
+      - name: Setup go
+        uses: actions/setup-go@v5
+        with:
+          go-version: stable
       - name: Copyright
         run: |
           go run checkcopyright.go
@@ -85,6 +97,9 @@ jobs:
         image: cassandra:3.11
         env:
           JVM_OPTS: "-Xms750m -Xmx750m"
+          CASSANDRA_CLUSTER_NAME: "dd-trace-go-test-cluster"
+          CASSANDRA_DC: "dd-trace-go-test-datacenter"
+          CASSANDRA_ENDPOINT_SNITCH: "GossipingPropertyFileSnitch"
         ports:
           - 9042:9042
       mysql:
@@ -160,20 +175,24 @@ jobs:
         image: memcached:1.5.9
         ports:
           - 11211:11211
-      zookeeper:
-        image: bitnami/zookeeper:latest
-        env:
-          ALLOW_ANONYMOUS_LOGIN: "yes"
-        ports:
-          - 2181:2181
       kafka:
-        image: darccio/kafka:2.13-2.8.1
+        image: confluentinc/confluent-local:7.5.0
         env:
-          KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
-          KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
-          KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092
-          KAFKA_CREATE_TOPICS: gotest:1:1,gosegtest:1:1
-          KAFKA_BROKER_ID: 1
+          KAFKA_LISTENERS: "PLAINTEXT://0.0.0.0:9093,BROKER://0.0.0.0:9092,CONTROLLER://0.0.0.0:9094"
+          KAFKA_ADVERTISED_LISTENERS: "PLAINTEXT://localhost:9093,BROKER://localhost:9092"
+          KAFKA_REST_BOOTSTRAP_SERVERS: "PLAINTEXT://0.0.0.0:9093,BROKER://0.0.0.0:9092"
+          KAFKA_CONTROLLER_QUORUM_VOTERS: "1@localhost:9094"
+          KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: "BROKER:PLAINTEXT,PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT"
+          KAFKA_INTER_BROKER_LISTENER_NAME: "BROKER"
+          KAFKA_BROKER_ID: "1"
+          KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: "1"
+          KAFKA_OFFSETS_TOPIC_NUM_PARTITIONS: "1"
+          KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: "1"
+          KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: "1"
+          KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: "0"
+          KAFKA_NODE_ID: "1"
+          KAFKA_PROCESS_ROLES: "broker,controller"
+          KAFKA_CONTROLLER_LISTENER_NAMES: "CONTROLLER"
         ports:
           - 9092:9092
       localstack:
@@ -194,7 +213,7 @@ jobs:
       - name: Test Contrib
         run: |
             mkdir -p $TEST_RESULTS
-            PACKAGE_NAMES=$(go list ./contrib/... | grep -v -e grpc.v12 -e google.golang.org/api)
+            PACKAGE_NAMES=$(go list ./contrib/... | grep -v -e google.golang.org/api)
             gotestsum --junitfile ${TEST_RESULTS}/gotestsum-report.xml -- $PACKAGE_NAMES -v -race -coverprofile=coverage.txt -covermode=atomic
 
       - name: Upload the results to Datadog CI App
@@ -242,35 +261,9 @@ jobs:
 
       - name: Testing outlier google.golang.org/api
         run: |
-              go get google.golang.org/api@v0.121.0 # version used to generate code
+              go get google.golang.org/api@v0.192.0 # version used to generate code
               go mod tidy # Go1.16 doesn't update the sum file correctly after the go get, this tidy fixes it
               go test -v ./contrib/google.golang.org/api/...
-
-      - name: Testing outlier gRPC v1.2
-        run: |
-              # This hacky approach is necessary because running the tests regularly
-              # do not allow using grpc-go@v1.2.0 alongside sketches-go@v1.1.0.
-              # sketches-go@v1.0.0 is no longer possible to test because internal/datastreams/propagator.go
-              # expects sketches-go to have the package `github.com/DataDog/sketches-go/ddsketch/encoding` which
-              # is only present from v1.1.0 onwards.
-              go mod vendor
-
-              # Checkout grpc-go@v1.2.0
-              cd vendor/google.golang.org && rm -rf grpc
-              git clone https://github.com/grpc/grpc-go grpc && cd grpc
-              git fetch origin && git checkout v1.2.0 && cd ../../..
-
-              # Checkout sketches-go@v1.1.0
-              cd vendor/github.com/DataDog && rm -rf sketches-go
-              git clone https://github.com/DataDog/sketches-go && cd sketches-go
-              git fetch origin && git checkout v1.1.0 && cd ../../../..
-
-              # Revert to old metadata functions as FromIncomingContext and NewOutgoingContext are not present in v1.2.0.
-              # These functions were updated to current versions to avoid compilation errors in the development environments.
-              sed  -i 's/metadata\.FromIncomingContext/metadata.FromContext/g' ./contrib/google.golang.org/grpc.v12/*
-              sed  -i 's/metadata\.NewOutgoingContext/metadata.NewContext/g' ./contrib/google.golang.org/grpc.v12/*
-
-              go test -mod=vendor -v ./contrib/google.golang.org/grpc.v12/...
 
   test-core:
     runs-on:
