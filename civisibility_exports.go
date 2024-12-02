@@ -42,6 +42,8 @@ func civisibility_initialize(runtime_name *C.char, runtime_version *C.char, fram
 		utils.AddCITags(constants.RuntimeVersion, C.GoString(runtime_version))
 	}
 
+	utils.AddCITags("language", "shared-lib")
+
 	civisibility.EnsureCiVisibilityInitialization()
 	if framework == nil || framework_version == nil {
 		session = civisibility.CreateTestSession()
