@@ -39,5 +39,4 @@ jobs:
           base: main
           title: "chore: update latest majors"
           labels: changelog/no-changelog
-          body: "Updating latest with new major versions"
-
+          body: "Auto-generated PR from Outdated Integrations workflow to update latests major versions"
