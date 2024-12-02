@@ -7,6 +7,9 @@
 // +build civisibility
 
 // go build -tags civisibility -buildmode=c-shared -ldflags "-s -w" -o libcivisibility.dylib civisibility_exports.go
+// GOOS=linux GOARCH=arm64 CGO_ENABLED=1 go build -tags civisibility -buildmode=c-shared -ldflags "-s -w" -o libcivisibility.so civisibility_exports.go
+// GOOS=linux GOARCH=amd64 CGO_ENABLED=1 go build -tags civisibility -buildmode=c-shared -ldflags "-s -w" -o libcivisibility.so civisibility_exports.go
+// GOOS=windows GOARCH=amd64 CGO_ENABLED=1 go build -tags civisibility -buildmode=c-shared -ldflags "-s -w" -o libcivisibility.dll civisibility_exports.go
 
 package main
 
