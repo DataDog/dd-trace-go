@@ -43,7 +43,6 @@ func defaults(cfg *config) {
 		cfg.analyticsRate = globalconfig.AnalyticsRate()
 	}
 	cfg.headerTags = globalconfig.HeaderTagMap()
-	cfg.isStatusError = isServerError
 	cfg.ignoreRequest = func(_ *http.Request) bool { return false }
 	cfg.modifyResourceName = func(s string) string { return s }
 	// for backward compatibility with modifyResourceName, initialize resourceName as nil.
@@ -95,10 +94,6 @@ func WithStatusCheck(fn func(statusCode int) bool) Option {
 	return func(cfg *config) {
 		cfg.isStatusError = fn
 	}
-}
-
-func isServerError(statusCode int) bool {
-	return statusCode >= 500 && statusCode < 600
 }
 
 // WithIgnoreRequest specifies a function to use for determining if the

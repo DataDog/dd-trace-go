@@ -316,10 +316,11 @@ func TestErrorHandling(t *testing.T) {
 
 func TestStatusError(t *testing.T) {
 	for _, tt := range []struct {
-		isStatusError func(statusCode int) bool
-		err           error
-		code          string
-		handler       func(c echo.Context) error
+		isStatusError             func(statusCode int) bool
+		err                       error
+		code                      string
+		handler                   func(c echo.Context) error
+		envServerErrorStatusesVal string
 	}{
 		{
 			err:  errors.New("oh no"),
@@ -385,11 +386,43 @@ func TestStatusError(t *testing.T) {
 				return nil
 			},
 		},
+		{
+			isStatusError: nil,
+			err:           echo.NewHTTPError(http.StatusInternalServerError, "my error message"),
+			code:          "500",
+			handler: func(c echo.Context) error {
+				return echo.NewHTTPError(http.StatusInternalServerError, "my error message")
+			},
+			envServerErrorStatusesVal: "500",
+		},
+		// integration-level config applies regardless of envvar
+		{
+			isStatusError: func(statusCode int) bool { return statusCode == 400 },
+			err:           echo.NewHTTPError(http.StatusBadRequest, "my error message"),
+			code:          "400",
+			handler: func(c echo.Context) error {
+				return echo.NewHTTPError(http.StatusBadRequest, "my error message")
+			},
+			envServerErrorStatusesVal: "500",
+		},
+		// envvar impact is discarded if integration-level config has been applied
+		{
+			isStatusError: func(statusCode int) bool { return statusCode == 400 },
+			err:           nil,
+			code:          "500",
+			handler: func(c echo.Context) error {
+				return echo.NewHTTPError(http.StatusInternalServerError, "my error message")
+			},
+		},
 	} {
 		t.Run("", func(t *testing.T) {
 			assert := assert.New(t)
 			mt := mocktracer.Start()
 			defer mt.Stop()
+
+			if tt.envServerErrorStatusesVal != "" {
+				t.Setenv(envServerErrorStatuses, tt.envServerErrorStatusesVal)
+			}
 
 			router := echo.New()
 			opts := []Option{WithServiceName("foobar")}
@@ -403,7 +436,7 @@ func TestStatusError(t *testing.T) {
 			router.ServeHTTP(w, r)
 
 			spans := mt.FinishedSpans()
-			assert.Len(spans, 1)
+			require.Len(t, spans, 1)
 			span := spans[0]
 			assert.Equal("http.request", span.OperationName())
 			assert.Equal(ext.SpanTypeWeb, span.Tag(ext.SpanType))
@@ -413,8 +446,9 @@ func TestStatusError(t *testing.T) {
 			assert.Equal("GET", span.Tag(ext.HTTPMethod))
 			err := span.Tag(ext.Error)
 			if tt.err != nil {
-				assert.NotNil(err)
-				require.NotNil(t, span.Tag(ext.Error))
+				if !assert.NotNil(err) {
+					return
+				}
 				assert.Equal(tt.err.Error(), err.(error).Error())
 			} else {
 				assert.Nil(err)

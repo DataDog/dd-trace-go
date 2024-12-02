@@ -8,6 +8,7 @@ package tracer
 import (
 	gocontext "context"
 	"encoding/binary"
+	"log/slog"
 	"math"
 	"os"
 	"runtime/pprof"
@@ -32,6 +33,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/traceprof"
 
 	"github.com/DataDog/datadog-agent/pkg/obfuscate"
+	"github.com/DataDog/go-runtime-metrics-internal/pkg/runtimemetrics"
 )
 
 var _ ddtrace.Tracer = (*tracer)(nil)
@@ -181,7 +183,10 @@ func Start(opts ...StartOption) {
 	// appsec.Start() may use the telemetry client to report activation, so it is
 	// important this happens _AFTER_ startTelemetry() has been called, so the
 	// client is appropriately configured.
-	appsec.Start(appsecConfig.WithRCConfig(cfg))
+	appsecopts := make([]appsecConfig.StartOption, 0, len(t.config.appsecStartOptions)+1)
+	appsecopts = append(appsecopts, t.config.appsecStartOptions...)
+	appsecopts = append(appsecopts, appsecConfig.WithRCConfig(cfg))
+	appsec.Start(appsecopts...)
 	_ = t.hostname() // Prime the hostname cache
 }
 
@@ -328,6 +333,14 @@ func newTracer(opts ...StartOption) *tracer {
 			defer t.wg.Done()
 			t.reportRuntimeMetrics(defaultMetricsReportInterval)
 		}()
+	}
+	if c.runtimeMetricsV2 {
+		l := slog.New(slogHandler{})
+		if err := runtimemetrics.Start(t.statsd, l); err == nil {
+			l.Debug("Runtime metrics v2 enabled.")
+		} else {
+			l.Error("Failed to enable runtime metrics v2", "err", err.Error())
+		}
 	}
 	if c.debugAbandonedSpans {
 		log.Info("Abandoned spans logs enabled.")

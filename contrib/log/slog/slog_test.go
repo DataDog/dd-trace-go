@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"io"
 	"log/slog"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -22,29 +23,37 @@ import (
 	internallog "gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
-func assertLogEntry(t *testing.T, rawEntry, wantMsg, wantLevel string) {
+func assertLogEntry(t *testing.T, rawEntry, wantMsg, wantLevel string, span tracer.Span, assertExtra func(t *testing.T, entry map[string]interface{})) {
 	t.Helper()
 
-	var data map[string]interface{}
-	err := json.Unmarshal([]byte(rawEntry), &data)
-	require.NoError(t, err)
-	require.NotEmpty(t, data)
+	t.Log(rawEntry)
 
-	assert.Equal(t, wantMsg, data["msg"])
-	assert.Equal(t, wantLevel, data["level"])
-	assert.NotEmpty(t, data["time"])
-	assert.NotEmpty(t, data[ext.LogKeyTraceID])
-	assert.NotEmpty(t, data[ext.LogKeySpanID])
+	var entry map[string]interface{}
+	err := json.Unmarshal([]byte(rawEntry), &entry)
+	require.NoError(t, err)
+	require.NotEmpty(t, entry)
+
+	assert.Equal(t, wantMsg, entry["msg"])
+	assert.Equal(t, wantLevel, entry["level"])
+	assert.NotEmpty(t, entry["time"])
+
+	traceID := strconv.FormatUint(span.Context().TraceID(), 10)
+	spanID := strconv.FormatUint(span.Context().SpanID(), 10)
+	assert.Equal(t, traceID, entry[ext.LogKeyTraceID], "trace id not found")
+	assert.Equal(t, spanID, entry[ext.LogKeySpanID], "span id not found")
+
+	if assertExtra != nil {
+		assertExtra(t, entry)
+	}
 }
 
-func testLogger(t *testing.T, createHandler func(b *bytes.Buffer) slog.Handler) {
+func testLogger(t *testing.T, createLogger func(b io.Writer) *slog.Logger, assertExtra func(t *testing.T, entry map[string]interface{})) {
 	tracer.Start(tracer.WithLogger(internallog.DiscardLogger{}))
 	defer tracer.Stop()
 
 	// create the application logger
 	var b bytes.Buffer
-	h := createHandler(&b)
-	logger := slog.New(h)
+	logger := createLogger(&b)
 
 	// start a new span
 	span, ctx := tracer.StartSpanFromContext(context.Background(), "test")
@@ -60,19 +69,89 @@ func testLogger(t *testing.T, createHandler func(b *bytes.Buffer) slog.Handler) 
 	)
 	// assert log entries contain trace information
 	require.Len(t, logs, 2)
-	assertLogEntry(t, logs[0], "this is an info log with tracing information", "INFO")
-	assertLogEntry(t, logs[1], "this is an error log with tracing information", "ERROR")
+	assertLogEntry(t, logs[0], "this is an info log with tracing information", "INFO", span, assertExtra)
+	assertLogEntry(t, logs[1], "this is an error log with tracing information", "ERROR", span, assertExtra)
 }
 
 func TestNewJSONHandler(t *testing.T) {
-	testLogger(t, func(b *bytes.Buffer) slog.Handler {
-		return NewJSONHandler(b, nil)
-	})
+	testLogger(
+		t,
+		func(w io.Writer) *slog.Logger {
+			return slog.New(NewJSONHandler(w, nil))
+		},
+		nil,
+	)
 }
 
 func TestWrapHandler(t *testing.T) {
-	testLogger(t, func(b *bytes.Buffer) slog.Handler {
-		return WrapHandler(slog.NewJSONHandler(b, nil))
+	testLogger(
+		t,
+		func(w io.Writer) *slog.Logger {
+			return slog.New(WrapHandler(slog.NewJSONHandler(w, nil)))
+		},
+		nil,
+	)
+}
+
+func TestHandlerWithAttrs(t *testing.T) {
+	testLogger(
+		t,
+		func(w io.Writer) *slog.Logger {
+			return slog.New(NewJSONHandler(w, nil)).
+				With("key1", "val1").
+				With(ext.LogKeyTraceID, "trace-id").
+				With(ext.LogKeySpanID, "span-id")
+		},
+		nil,
+	)
+}
+
+func TestHandlerWithGroup(t *testing.T) {
+	t.Run("simple", func(t *testing.T) {
+		testLogger(
+			t,
+			func(w io.Writer) *slog.Logger {
+				return slog.New(NewJSONHandler(w, nil)).
+					WithGroup("some-group").
+					With("key1", "val1")
+			},
+			func(t *testing.T, entry map[string]interface{}) {
+				assert.Equal(t, map[string]interface{}{
+					"key1": "val1",
+				}, entry["some-group"], "group entry not found")
+			},
+		)
+	})
+
+	t.Run("nested groups", func(t *testing.T) {
+		testLogger(
+			t,
+			func(w io.Writer) *slog.Logger {
+				return slog.New(NewJSONHandler(w, nil)).
+					With("key0", "val0").
+					WithGroup("group1").
+					With("key1", "val1").
+					WithGroup("group1"). // repeat same key again
+					With("key1", "val1").
+					WithGroup("group2").
+					With("key2", "val2").
+					With("key3", "val3")
+			},
+			func(t *testing.T, entry map[string]interface{}) {
+				groupKeys := map[string]interface{}{
+					"key1": "val1",
+					"group1": map[string]interface{}{
+						"key1": "val1",
+						"group2": map[string]interface{}{
+							"key2": "val2",
+							"key3": "val3",
+						},
+					},
+				}
+				assert.Equal(t, "val0", entry["key0"], "root level key not found")
+				assert.Equal(t, groupKeys, entry["group1"], "nested group entries not found")
+			},
+		)
 	})
 }
 
@@ -104,6 +183,20 @@ func TestRecordClone(t *testing.T) {
 		return true
 	})
 	assert.True(t, foundSentinel)
+}
+
+func BenchmarkHandler(b *testing.B) {
+	span, ctx := tracer.StartSpanFromContext(context.Background(), "test")
+	defer span.Finish()
+
+	// create a logger with a bunch of nested groups and fields
+	logger := slog.New(NewJSONHandler(io.Discard, nil))
+	logger = logger.With("attr1", "val1").WithGroup("group1").With("attr2", "val2").WithGroup("group3").With("attr3", "val3")
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		logger.InfoContext(ctx, "some message")
+	}
 }
 
 // handlerGate calls a gate function before calling the underlying handler. This

@@ -37,14 +37,19 @@ func NewUserSecFeature(cfg *config.Config, rootOp dyngo.Operation) (listener.Fea
 }
 
 func (*Feature) OnFinish(op *usersec.UserLoginOperation, res usersec.UserLoginOperationRes) {
-	builder := addresses.NewAddressesBuilder().
-		WithUserID(res.UserID).
-		WithUserSessionID(res.SessionID)
+	builder := addresses.NewAddressesBuilder()
 
-	if res.Success {
-		builder = builder.WithUserLoginSuccess()
-	} else {
-		builder = builder.WithUserLoginFailure()
+	switch op.EventType {
+	case usersec.UserLoginSuccess:
+		builder = builder.WithUserLoginSuccess().
+			WithUserID(res.UserID).
+			WithUserSessionID(res.SessionID)
+	case usersec.UserLoginFailure:
+		builder = builder.WithUserLoginFailure().
+			WithUserID(res.UserID)
+	case usersec.UserSet:
+		builder = builder.WithUserID(res.UserID).
+			WithUserSessionID(res.SessionID)
 	}
 
 	dyngo.EmitData(op, waf.RunEvent{

@@ -19,6 +19,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/tinylib/msgp/msgp"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
@@ -27,6 +28,7 @@ const (
 	ContentTypeJSON            = "application/json"
 	ContentTypeJSONAlternative = "application/vnd.api+json"
 	ContentTypeOctetStream     = "application/octet-stream"
+	ContentTypeMessagePack     = "application/msgpack"
 	ContentEncodingGzip        = "gzip"
 	HeaderContentType          = "Content-Type"
 	HeaderContentEncoding      = "Content-Encoding"
@@ -34,6 +36,7 @@ const (
 	HeaderRateLimitReset       = "x-ratelimit-reset"
 	HTTPStatusTooManyRequests  = 429
 	FormatJSON                 = "json"
+	FormatMessagePack          = "msgpack"
 )
 
 // FormFile represents a file to be uploaded in a multipart form request.
@@ -63,6 +66,7 @@ type Response struct {
 	Format       string // Format of the response (json or msgpack)
 	StatusCode   int    // HTTP status code
 	CanUnmarshal bool   // Whether the response body can be unmarshalled
+	Compressed   bool   // Whether to use gzip compression
 }
 
 // Unmarshal deserializes the response body into the provided target based on the response format.
@@ -74,6 +78,13 @@ func (r *Response) Unmarshal(target interface{}) error {
 	switch r.Format {
 	case FormatJSON:
 		return json.Unmarshal(r.Body, target)
+	case FormatMessagePack:
+		if target.(msgp.Unmarshaler) != nil {
+			_, err := target.(msgp.Unmarshaler).UnmarshalMsg(r.Body)
+			return err
+		} else {
+			return errors.New("target must implement msgp.Unmarshaler for MessagePack unmarshalling")
+		}
 	default:
 		return fmt.Errorf("unsupported format '%s' for unmarshalling", r.Format)
 	}
@@ -116,8 +127,6 @@ func (rh *RequestHandler) SendRequest(config RequestConfig) (*Response, error) {
 	}
 
 	for attempt := 0; attempt <= config.MaxRetries; attempt++ {
-		log.Debug("ciVisibilityHttpClient: new request [method: %v, url: %v, attempt: %v, maxRetries: %v]",
-			config.Method, config.URL, attempt, config.MaxRetries)
 		stopRetries, rs, err := rh.internalSendRequest(&config, attempt)
 		if stopRetries {
 			return rs, err
@@ -143,7 +152,8 @@ func (rh *RequestHandler) internalSendRequest(config *RequestConfig, attempt int
 			for _, f := range config.Files {
 				files = append(files, f.FieldName)
 			}
-			log.Debug("ciVisibilityHttpClient: sending files %v", files)
+			log.Debug("ciVisibilityHttpClient: new request with files [method: %v, url: %v, attempt: %v, maxRetries: %v] %v",
+				config.Method, config.URL, attempt, config.MaxRetries, files)
 		}
 		req, err = http.NewRequest(config.Method, config.URL, bytes.NewBuffer(body))
 		if err != nil {
@@ -161,7 +171,8 @@ func (rh *RequestHandler) internalSendRequest(config *RequestConfig, attempt int
 		}
 
 		if log.DebugEnabled() {
-			log.Debug("ciVisibilityHttpClient: serialized body [compressed: %v] %v", config.Compressed, string(serializedBody))
+			log.Debug("ciVisibilityHttpClient: new request with body [method: %v, url: %v, attempt: %v, maxRetries: %v, compressed: %v] %v bytes",
+				config.Method, config.URL, attempt, config.MaxRetries, config.Compressed, len(serializedBody))
 		}
 
 		// Compress body if needed
@@ -179,6 +190,9 @@ func (rh *RequestHandler) internalSendRequest(config *RequestConfig, attempt int
 		if config.Format == FormatJSON {
 			req.Header.Set(HeaderContentType, ContentTypeJSON)
 		}
+		if config.Format == FormatMessagePack {
+			req.Header.Set(HeaderContentType, ContentTypeMessagePack)
+		}
 		if config.Compressed {
 			req.Header.Set(HeaderContentEncoding, ContentEncodingGzip)
 		}
@@ -189,6 +203,9 @@ func (rh *RequestHandler) internalSendRequest(config *RequestConfig, attempt int
 		if err != nil {
 			return true, nil, err
 		}
+
+		log.Debug("ciVisibilityHttpClient: new request [method: %v, url: %v, attempt: %v, maxRetries: %v]",
+			config.Method, config.URL, attempt, config.MaxRetries)
 	}
 
 	// Set that is possible to handle gzip responses
@@ -201,7 +218,7 @@ func (rh *RequestHandler) internalSendRequest(config *RequestConfig, attempt int
 
 	resp, err := rh.Client.Do(req)
 	if err != nil {
-		log.Debug("ciVisibilityHttpClient: error [%v].", err)
+		log.Debug("ciVisibilityHttpClient: error = %v", err)
 		// Retry if there's an error
 		exponentialBackoff(attempt, config.Backoff)
 		return false, nil, nil
@@ -211,10 +228,11 @@ func (rh *RequestHandler) internalSendRequest(config *RequestConfig, attempt int
 
 	// Capture the status code
 	statusCode := resp.StatusCode
-	log.Debug("ciVisibilityHttpClient: response status code [%v]", resp.StatusCode)
 
 	// Check for rate-limiting (HTTP 429)
 	if resp.StatusCode == HTTPStatusTooManyRequests {
+		log.Debug("ciVisibilityHttpClient: response status code = %v", resp.StatusCode)
+
 		rateLimitReset := resp.Header.Get(HeaderRateLimitReset)
 		if rateLimitReset != "" {
 			if resetTime, err := strconv.ParseInt(rateLimitReset, 10, 64); err == nil {
@@ -241,6 +259,7 @@ func (rh *RequestHandler) internalSendRequest(config *RequestConfig, attempt int
 	// Check status code for retries
 	if statusCode >= 406 {
 		// Retry if the status code is >= 406
+		log.Debug("ciVisibilityHttpClient: response status code = %v", resp.StatusCode)
 		exponentialBackoff(attempt, config.Backoff)
 		return false, nil, nil
 	}
@@ -251,7 +270,9 @@ func (rh *RequestHandler) internalSendRequest(config *RequestConfig, attempt int
 	}
 
 	// Decompress response if it is gzip compressed
+	compressedResponse := false
 	if resp.Header.Get(HeaderContentEncoding) == ContentEncodingGzip {
+		compressedResponse = true
 		responseBody, err = decompressData(responseBody)
 		if err != nil {
 			return true, nil, err
@@ -264,17 +285,19 @@ func (rh *RequestHandler) internalSendRequest(config *RequestConfig, attempt int
 	if err == nil {
 		if mediaType == ContentTypeJSON || mediaType == ContentTypeJSONAlternative {
 			responseFormat = FormatJSON
-			if log.DebugEnabled() {
-				log.Debug("ciVisibilityHttpClient: serialized response [%v]", string(responseBody))
-			}
 		}
+	}
+
+	if log.DebugEnabled() {
+		log.Debug("ciVisibilityHttpClient: response received [method: %v, url: %v, status_code: %v, format: %v] %v bytes",
+			config.Method, config.URL, resp.StatusCode, responseFormat, len(responseBody))
 	}
 
 	// Determine if we can unmarshal based on status code (2xx)
 	canUnmarshal := statusCode >= 200 && statusCode < 300
 
 	// Return the successful response with status code and unmarshal capability
-	return true, &Response{Body: responseBody, Format: responseFormat, StatusCode: statusCode, CanUnmarshal: canUnmarshal}, nil
+	return true, &Response{Body: responseBody, Format: responseFormat, StatusCode: statusCode, CanUnmarshal: canUnmarshal, Compressed: compressedResponse}, nil
 }
 
 // Helper functions for data serialization, compression, and handling multipart form data
@@ -285,10 +308,19 @@ func serializeData(data interface{}, format string) ([]byte, error) {
 	case []byte:
 		// If it's already a byte array, use it directly
 		return v, nil
+	case io.Reader:
+		// If it's an io.Reader, read the content
+		return io.ReadAll(v)
 	default:
 		// Otherwise, serialize it according to the specified format
 		if format == FormatJSON {
 			return json.Marshal(data)
+		}
+		if format == FormatMessagePack {
+			if data.(msgp.Marshaler) != nil {
+				return data.(msgp.Marshaler).MarshalMsg([]byte{})
+			}
+			return nil, errors.New("data must implement msgp.Marshaler for MessagePack serialization")
 		}
 	}
 	return nil, fmt.Errorf("unsupported format '%s' for data type '%T'", format, data)
@@ -338,12 +370,17 @@ func exponentialBackoff(retryCount int, initialDelay time.Duration) {
 func prepareContent(content interface{}, contentType string) ([]byte, error) {
 	if contentType == ContentTypeJSON {
 		return serializeData(content, FormatJSON)
+	} else if contentType == ContentTypeMessagePack {
+		return serializeData(content, FormatMessagePack)
 	} else if contentType == ContentTypeOctetStream {
 		// For binary data, ensure it's already in byte format
 		if data, ok := content.([]byte); ok {
 			return data, nil
 		}
-		return nil, errors.New("content must be []byte for octet-stream content type")
+		if reader, ok := content.(io.Reader); ok {
+			return io.ReadAll(reader)
+		}
+		return nil, errors.New("content must be []byte or an io.Reader for octet-stream content type")
 	}
 	return nil, errors.New("unsupported content type for serialization")
 }

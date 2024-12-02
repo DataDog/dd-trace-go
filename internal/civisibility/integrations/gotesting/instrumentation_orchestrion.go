@@ -19,6 +19,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/constants"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/integrations"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/integrations/gotesting/coverage"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/utils"
 )
 
@@ -35,7 +36,7 @@ import (
 func instrumentTestingM(m *testing.M) func(exitCode int) {
 	// Check if CI Visibility was disabled using the kill switch before trying to initialize it
 	atomic.StoreInt32(&ciVisibilityEnabledValue, -1)
-	if !isCiVisibilityEnabled() {
+	if !isCiVisibilityEnabled() || !testing.Testing() {
 		return func(exitCode int) {}
 	}
 
@@ -43,7 +44,13 @@ func instrumentTestingM(m *testing.M) func(exitCode int) {
 	integrations.EnsureCiVisibilityInitialization()
 
 	// Create a new test session for CI visibility.
-	session = integrations.CreateTestSession()
+	session = integrations.CreateTestSession(integrations.WithTestSessionFramework(testFramework, runtime.Version()))
+
+	settings := integrations.GetSettings()
+	if settings != nil && settings.CodeCoverage {
+		// Initialize the runtime coverage if enabled.
+		coverage.InitializeCoverage(m)
+	}
 
 	ddm := (*M)(m)
 
@@ -62,7 +69,18 @@ func instrumentTestingM(m *testing.M) func(exitCode int) {
 	return func(exitCode int) {
 		// Check for code coverage if enabled.
 		if testing.CoverMode() != "" {
-			coveragePercentage := testing.Coverage() * 100
+
+			var cov float64
+			// let's try first with our coverage package
+			if coverage.CanCollect() {
+				cov = coverage.GetCoverage()
+			}
+			if cov == 0 {
+				// if not we try we the default testing package
+				cov = testing.Coverage()
+			}
+
+			coveragePercentage := cov * 100
 			session.SetTag(constants.CodeCoveragePercentageOfTotalLines, coveragePercentage)
 		}
 
@@ -79,7 +97,7 @@ func instrumentTestingM(m *testing.M) func(exitCode int) {
 //go:linkname instrumentTestingTFunc
 func instrumentTestingTFunc(f func(*testing.T)) func(*testing.T) {
 	// Check if CI Visibility was disabled using the kill switch before instrumenting
-	if !isCiVisibilityEnabled() {
+	if !isCiVisibilityEnabled() || !testing.Testing() {
 		return f
 	}
 
@@ -113,7 +131,7 @@ func instrumentTestingTFunc(f func(*testing.T)) func(*testing.T) {
 		atomic.AddInt32(suitesCounters[suiteName], 1)
 
 		// Create or retrieve the module, suite, and test for CI visibility.
-		module := session.GetOrCreateModuleWithFramework(moduleName, testFramework, runtime.Version())
+		module := session.GetOrCreateModule(moduleName)
 		suite := module.GetOrCreateSuite(suiteName)
 		test := suite.CreateTest(t.Name())
 		test.SetTestFunc(originalFunc)
@@ -128,7 +146,7 @@ func instrumentTestingTFunc(f func(*testing.T)) func(*testing.T) {
 
 		// Because this is a subtest let's propagate some execution metadata from the parent test
 		testPrivateFields := getTestPrivateFields(t)
-		if testPrivateFields.parent != nil {
+		if testPrivateFields != nil && testPrivateFields.parent != nil {
 			parentExecMeta := getTestMetadataFromPointer(*testPrivateFields.parent)
 			if parentExecMeta != nil {
 				if parentExecMeta.isANewTest {
@@ -158,7 +176,7 @@ func instrumentTestingTFunc(f func(*testing.T)) func(*testing.T) {
 		defer func() {
 			if r := recover(); r != nil {
 				// Handle panic and set error information.
-				test.SetErrorInfo("panic", fmt.Sprint(r), utils.GetStacktrace(1))
+				test.SetError(integrations.WithErrorInfo("panic", fmt.Sprint(r), utils.GetStacktrace(1)))
 				test.Close(integrations.ResultStatusFail)
 				checkModuleAndSuite(module, suite)
 				// this is not an internal test. Retries are not applied to subtest (because the parent internal test is going to be retried)
@@ -204,7 +222,7 @@ func instrumentSetErrorInfo(tb testing.TB, errType string, errMessage string, sk
 	// Get the CI Visibility span and check if we can set the error type, message and stack
 	ciTestItem := getTestMetadata(tb)
 	if ciTestItem != nil && ciTestItem.test != nil && ciTestItem.error.CompareAndSwap(0, 1) {
-		ciTestItem.test.SetErrorInfo(errType, errMessage, utils.GetStacktrace(2+skip))
+		ciTestItem.test.SetError(integrations.WithErrorInfo(errType, errMessage, utils.GetStacktrace(2+skip)))
 	}
 }
 
@@ -220,7 +238,7 @@ func instrumentCloseAndSkip(tb testing.TB, skipReason string) {
 	// Get the CI Visibility span and check if we can mark it as skipped and close it
 	ciTestItem := getTestMetadata(tb)
 	if ciTestItem != nil && ciTestItem.test != nil && ciTestItem.skipped.CompareAndSwap(0, 1) {
-		ciTestItem.test.CloseWithFinishTimeAndSkipReason(integrations.ResultStatusSkip, time.Now(), skipReason)
+		ciTestItem.test.Close(integrations.ResultStatusSkip, integrations.WithTestSkipReason(skipReason))
 	}
 }
 
@@ -287,16 +305,21 @@ func instrumentTestingBFunc(pb *testing.B, name string, f func(*testing.B)) (str
 
 		// Decrement level.
 		bpf := getBenchmarkPrivateFields(b)
+		if bpf == nil {
+			panic("error getting private fields of the benchmark")
+		}
 		bpf.AddLevel(-1)
 
 		startTime := time.Now()
-		module := session.GetOrCreateModuleWithFrameworkAndStartTime(moduleName, testFramework, runtime.Version(), startTime)
-		suite := module.GetOrCreateSuiteWithStartTime(suiteName, startTime)
-		test := suite.CreateTestWithStartTime(fmt.Sprintf("%s/%s", pb.Name(), name), startTime)
+		module := session.GetOrCreateModule(moduleName, integrations.WithTestModuleStartTime(startTime))
+		suite := module.GetOrCreateSuite(suiteName, integrations.WithTestSuiteStartTime(startTime))
+		test := suite.CreateTest(fmt.Sprintf("%s/%s", pb.Name(), name), integrations.WithTestStartTime(startTime))
 		test.SetTestFunc(originalFunc)
 
 		// Restore the original name without the sub-benchmark auto name.
-		*bpf.name = subBenchmarkAutoNameRegex.ReplaceAllString(*bpf.name, "")
+		if bpf.name != nil {
+			*bpf.name = subBenchmarkAutoNameRegex.ReplaceAllString(*bpf.name, "")
+		}
 
 		// Run original benchmark.
 		var iPfOfB *benchmarkPrivateFields
@@ -317,7 +340,14 @@ func instrumentTestingBFunc(pb *testing.B, name string, f func(*testing.B)) (str
 
 			// First time we get the private fields of the inner testing.B.
 			iPfOfB = getBenchmarkPrivateFields(b)
+			if iPfOfB == nil {
+				panic("error getting private fields of the benchmark")
+			}
+
 			// Replace this function with the original one (executed only once - the first iteration[b.run1]).
+			if iPfOfB.benchFunc == nil {
+				panic("error getting the benchmark function")
+			}
 			*iPfOfB.benchFunc = f
 
 			// Get the metadata regarding the execution (in case is already created from the additional features)
@@ -373,7 +403,7 @@ func instrumentTestingBFunc(pb *testing.B, name string, f func(*testing.B)) (str
 
 		// Define a function to handle panic during benchmark finalization.
 		panicFunc := func(r any) {
-			test.SetErrorInfo("panic", fmt.Sprint(r), utils.GetStacktrace(1))
+			test.SetError(integrations.WithErrorInfo("panic", fmt.Sprint(r), utils.GetStacktrace(1)))
 			suite.SetTag(ext.Error, true)
 			module.SetTag(ext.Error, true)
 			test.Close(integrations.ResultStatusFail)
@@ -387,11 +417,11 @@ func instrumentTestingBFunc(pb *testing.B, name string, f func(*testing.B)) (str
 			test.SetTag(ext.Error, true)
 			suite.SetTag(ext.Error, true)
 			module.SetTag(ext.Error, true)
-			test.CloseWithFinishTime(integrations.ResultStatusFail, endTime)
+			test.Close(integrations.ResultStatusFail, integrations.WithTestFinishTime(endTime))
 		} else if iPfOfB.B.Skipped() {
-			test.CloseWithFinishTime(integrations.ResultStatusSkip, endTime)
+			test.Close(integrations.ResultStatusSkip, integrations.WithTestFinishTime(endTime))
 		} else {
-			test.CloseWithFinishTime(integrations.ResultStatusPass, endTime)
+			test.Close(integrations.ResultStatusPass, integrations.WithTestFinishTime(endTime))
 		}
 
 		checkModuleAndSuite(module, suite)

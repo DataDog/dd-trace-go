@@ -118,7 +118,7 @@ func TestMetrics(t *testing.T) {
 		client.Count(NamespaceTracers, "bonk", 4, []string{"org:1"}, false)
 
 		client.mu.Lock()
-		client.flush()
+		client.flush(false)
 		client.mu.Unlock()
 	}()
 
@@ -187,7 +187,7 @@ func TestDistributionMetrics(t *testing.T) {
 		client.Record(NamespaceTracers, MetricKindDist, "soobar", 1, nil, false)
 		client.Record(NamespaceTracers, MetricKindDist, "soobar", 3, nil, false)
 		client.mu.Lock()
-		client.flush()
+		client.flush(false)
 		client.mu.Unlock()
 	}()
 

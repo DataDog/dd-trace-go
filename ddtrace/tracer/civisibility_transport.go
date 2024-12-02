@@ -13,11 +13,13 @@ import (
 	"net/http"
 	"os"
 	"runtime"
-	"strconv"
 	"strings"
+	"time"
 
+	pb "github.com/DataDog/datadog-agent/pkg/proto/pbgo/trace"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/constants"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/utils/telemetry"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
 )
@@ -126,7 +128,7 @@ func newCiVisibilityTransport(config *config) *ciVisibilityTransport {
 //
 //	An io.ReadCloser for reading the response body, and an error if the operation fails.
 func (t *ciVisibilityTransport) send(p *payload) (body io.ReadCloser, err error) {
-	ciVisibilityPayload := &ciVisibilityPayload{p}
+	ciVisibilityPayload := &ciVisibilityPayload{p, 0}
 	buffer, bufferErr := ciVisibilityPayload.getBuffer(t.config)
 	if bufferErr != nil {
 		return nil, fmt.Errorf("cannot create buffer payload: %v", bufferErr)
@@ -154,13 +156,14 @@ func (t *ciVisibilityTransport) send(p *payload) (body io.ReadCloser, err error)
 	for header, value := range t.headers {
 		req.Header.Set(header, value)
 	}
-	req.Header.Set("Content-Length", strconv.Itoa(buffer.Len()))
 	if t.agentless {
 		req.Header.Set("Content-Encoding", "gzip")
 	}
 
 	log.Debug("ciVisibilityTransport: sending transport request: %v bytes", buffer.Len())
+	startTime := time.Now()
 	response, err := t.config.httpClient.Do(req)
+	telemetry.EndpointPayloadRequestsMs(telemetry.TestCycleEndpointType, float64(time.Since(startTime).Milliseconds()))
 	if err != nil {
 		return nil, err
 	}
@@ -171,6 +174,7 @@ func (t *ciVisibilityTransport) send(p *payload) (body io.ReadCloser, err error)
 		n, _ := response.Body.Read(msg)
 		_ = response.Body.Close()
 		txt := http.StatusText(code)
+		telemetry.EndpointPayloadRequestsErrors(telemetry.TestCycleEndpointType, telemetry.GetErrorTypeFromStatusCode(code))
 		if n > 0 {
 			return nil, fmt.Errorf("%s (Status: %s)", msg[:n], txt)
 		}
@@ -188,7 +192,7 @@ func (t *ciVisibilityTransport) send(p *payload) (body io.ReadCloser, err error)
 // Returns:
 //
 //	An error indicating that stats are not supported.
-func (t *ciVisibilityTransport) sendStats(*statsPayload) error {
+func (t *ciVisibilityTransport) sendStats(*pb.ClientStatsPayload) error {
 	// Stats are not supported by CI Visibility agentless / EVP proxy.
 	return nil
 }

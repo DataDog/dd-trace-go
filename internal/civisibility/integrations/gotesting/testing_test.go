@@ -7,16 +7,12 @@ package gotesting
 
 import (
 	"fmt"
-	"net/http"
-	"net/http/httptest"
 	"runtime"
 	"slices"
 	"testing"
 
-	ddhttp "gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
-	ddtracer "gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/constants"
 
 	"github.com/stretchr/testify/assert"
@@ -76,82 +72,6 @@ func Test_Foo(gt *testing.T) {
 	}
 }
 
-// TestWithExternalCalls demonstrates testing with external HTTP calls.
-func TestWithExternalCalls(gt *testing.T) {
-	assertTest(gt)
-	t := (*T)(gt)
-
-	// Create a new HTTP test server
-	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_, _ = w.Write([]byte("Hello World"))
-	}))
-	defer s.Close()
-
-	t.Run("default", func(t *testing.T) {
-
-		// if we want to use the test span as a parent of a child span
-		// we can extract the SpanContext and use it in other integrations
-		ctx := (*T)(t).Context()
-
-		// Wrap the default HTTP transport for tracing
-		rt := ddhttp.WrapRoundTripper(http.DefaultTransport)
-		client := &http.Client{
-			Transport: rt,
-		}
-
-		// Create a new HTTP request
-		req, err := http.NewRequest("GET", s.URL+"/hello/world", nil)
-		if err != nil {
-			t.FailNow()
-		}
-
-		// Use the span context here so the http span will appear as a child of the test
-		req = req.WithContext(ctx)
-
-		res, err := client.Do(req)
-		if err != nil {
-			t.FailNow()
-		}
-		_ = res.Body.Close()
-	})
-
-	t.Run("custom-name", func(t *testing.T) {
-
-		// we can also add custom tags to the test span by retrieving the
-		// context and call the `ddtracer.SpanFromContext` api
-		ctx := (*T)(t).Context()
-		span, _ := ddtracer.SpanFromContext(ctx)
-
-		// Custom namer function for the HTTP request
-		customNamer := func(req *http.Request) string {
-			value := fmt.Sprintf("%s %s", req.Method, req.URL.Path)
-
-			// Then we can set custom tags to that test span
-			span.SetTag("customNamer.Value", value)
-			return value
-		}
-
-		rt := ddhttp.WrapRoundTripper(http.DefaultTransport, ddhttp.RTWithResourceNamer(customNamer))
-		client := &http.Client{
-			Transport: rt,
-		}
-
-		req, err := http.NewRequest("GET", s.URL+"/hello/world", nil)
-		if err != nil {
-			t.FailNow()
-		}
-
-		// Use the span context here so the http span will appear as a child of the test
-		req = req.WithContext(ctx)
-
-		res, err := client.Do(req)
-		if err != nil {
-			t.FailNow()
-		}
-		_ = res.Body.Close()
-	})
-}
-
 // TestSkip demonstrates skipping a test with a message.
 func TestSkip(gt *testing.T) {
 	assertTest(gt)
@@ -197,15 +117,12 @@ func TestRetryWithFail(t *testing.T) {
 	}
 }
 
-func TestRetryAlwaysFail(t *testing.T) {
-	t.Parallel()
-	t.Fatal("Always fail to test the auto retries feature")
-}
-
+//dd:test.unskippable
 func TestNormalPassingAfterRetryAlwaysFail(t *testing.T) {}
 
 var run int
 
+//dd:test.unskippable
 func TestEarlyFlakeDetection(t *testing.T) {
 	run++
 	fmt.Printf(" Run: %d", run)
@@ -258,6 +175,9 @@ func assertTest(t *testing.T) {
 
 		// Assert Session
 		if span.Tag(ext.SpanType) == constants.SpanTypeTestSession {
+			assert.Subset(spanTags, map[string]interface{}{
+				constants.TestFramework: "golang.org/pkg/testing",
+			})
 			assert.Contains(spanTags, constants.TestSessionIDTag)
 			assertCommon(assert, span)
 			hasSession = true

@@ -12,6 +12,8 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+//dd:suite.unskippable
+
 // TestGetFieldPointerFrom tests the getFieldPointerFrom function.
 func TestGetFieldPointerFrom(t *testing.T) {
 	// Create a mock struct with a private field

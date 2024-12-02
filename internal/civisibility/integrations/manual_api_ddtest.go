@@ -19,22 +19,24 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/constants"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/utils"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/utils/telemetry"
 )
 
 // Test
 
-// Ensures that tslvTest implements the DdTest interface.
-var _ DdTest = (*tslvTest)(nil)
+// Ensures that tslvTest implements the Test interface.
+var _ Test = (*tslvTest)(nil)
 
 // tslvTest implements the DdTest interface and represents an individual test within a suite.
 type tslvTest struct {
 	ciVisibilityCommon
-	suite *tslvTestSuite
-	name  string
+	testID uint64
+	suite  *tslvTestSuite
+	name   string
 }
 
 // createTest initializes a new test within a given suite.
-func createTest(suite *tslvTestSuite, name string, startTime time.Time) DdTest {
+func createTest(suite *tslvTestSuite, name string, startTime time.Time) Test {
 	if suite == nil {
 		return nil
 	}
@@ -60,10 +62,12 @@ func createTest(suite *tslvTestSuite, name string, startTime time.Time) DdTest {
 	}
 	span.SetTag(constants.TestModuleIDTag, fmt.Sprint(suite.module.moduleID))
 	span.SetTag(constants.TestSuiteIDTag, fmt.Sprint(suite.suiteID))
+	testID := span.Context().SpanID()
 
 	t := &tslvTest{
-		suite: suite,
-		name:  name,
+		testID: testID,
+		suite:  suite,
+		name:   name,
 		ciVisibilityCommon: ciVisibilityCommon{
 			startTime: startTime,
 			tags:      testTags,
@@ -72,32 +76,40 @@ func createTest(suite *tslvTestSuite, name string, startTime time.Time) DdTest {
 		},
 	}
 
-	// Ensure to close everything before CI visibility exits. In CI visibility mode, we try to never lose data.
-	PushCiVisibilityCloseAction(func() { t.Close(ResultStatusFail) })
+	// Note: if the process is killed some tests will not be closed and will be lost. This is a known limitation.
+	// We will not close it because there's no a good test status to report in this case, and we don't want to report a false positive (pass, fail, or skip).
 
+	// Creating telemetry event created
+	telemetry.EventCreated(t.suite.module.framework, telemetry.TestEventType)
 	return t
+}
+
+// TestID returns the ID of the test.
+func (t *tslvTest) TestID() uint64 {
+	return t.testID
 }
 
 // Name returns the name of the test.
 func (t *tslvTest) Name() string { return t.name }
 
 // Suite returns the suite to which the test belongs.
-func (t *tslvTest) Suite() DdTestSuite { return t.suite }
+func (t *tslvTest) Suite() TestSuite { return t.suite }
 
-// Close closes the test with the given status and sets the finish time to the current time.
-func (t *tslvTest) Close(status TestResultStatus) { t.CloseWithFinishTime(status, time.Now()) }
-
-// CloseWithFinishTime closes the test with the given status and finish time.
-func (t *tslvTest) CloseWithFinishTime(status TestResultStatus, finishTime time.Time) {
-	t.CloseWithFinishTimeAndSkipReason(status, finishTime, "")
-}
-
-// CloseWithFinishTimeAndSkipReason closes the test with the given status, finish time, and skip reason.
-func (t *tslvTest) CloseWithFinishTimeAndSkipReason(status TestResultStatus, finishTime time.Time, skipReason string) {
+// Close closes the test with the given status.
+func (t *tslvTest) Close(status TestResultStatus, options ...TestCloseOption) {
 	t.mutex.Lock()
 	defer t.mutex.Unlock()
 	if t.closed {
 		return
+	}
+
+	defaults := &tslvTestCloseOptions{}
+	for _, opt := range options {
+		opt(defaults)
+	}
+
+	if defaults.finishTime.IsZero() {
+		defaults.finishTime = time.Now()
 	}
 
 	switch status {
@@ -109,24 +121,45 @@ func (t *tslvTest) CloseWithFinishTimeAndSkipReason(status TestResultStatus, fin
 		t.span.SetTag(constants.TestStatus, constants.TestStatusSkip)
 	}
 
-	if skipReason != "" {
-		t.span.SetTag(constants.TestSkipReason, skipReason)
+	if defaults.skipReason != "" {
+		t.span.SetTag(constants.TestSkipReason, defaults.skipReason)
 	}
 
-	t.span.Finish(tracer.FinishTime(finishTime))
+	t.span.Finish(tracer.FinishTime(defaults.finishTime))
 	t.closed = true
+
+	// Creating telemetry event finished
+	testingEventType := telemetry.TestEventType
+	if t.ctx.Value(constants.TestIsNew) == "true" {
+		testingEventType = append(testingEventType, telemetry.IsNewEventType...)
+	}
+	if t.ctx.Value(constants.TestIsRetry) == "true" {
+		testingEventType = append(testingEventType, telemetry.IsRetryEventType...)
+	}
+	if t.ctx.Value(constants.TestEarlyFlakeDetectionRetryAborted) == "slow" {
+		testingEventType = append(testingEventType, telemetry.EfdAbortSlowEventType...)
+	}
+	if t.ctx.Value(constants.TestType) == constants.TestTypeBenchmark {
+		testingEventType = append(testingEventType, telemetry.IsBenchmarkEventType...)
+	}
+	telemetry.EventFinished(t.suite.module.framework, testingEventType)
+}
+
+// SetTag sets a tag on the test event.
+func (t *tslvTest) SetTag(key string, value interface{}) {
+	t.ciVisibilityCommon.SetTag(key, value)
+	if key == constants.TestIsNew {
+		t.ctx = context.WithValue(t.ctx, constants.TestIsNew, value)
+	} else if key == constants.TestIsRetry {
+		t.ctx = context.WithValue(t.ctx, constants.TestIsRetry, value)
+	} else if key == constants.TestEarlyFlakeDetectionRetryAborted {
+		t.ctx = context.WithValue(t.ctx, constants.TestEarlyFlakeDetectionRetryAborted, value)
+	}
 }
 
 // SetError sets an error on the test and marks the suite and module as having an error.
-func (t *tslvTest) SetError(err error) {
-	t.ciVisibilityCommon.SetError(err)
-	t.Suite().SetTag(ext.Error, true)
-	t.Suite().Module().SetTag(ext.Error, true)
-}
-
-// SetErrorInfo sets detailed error information on the test and marks the suite and module as having an error.
-func (t *tslvTest) SetErrorInfo(errType string, message string, callstack string) {
-	t.ciVisibilityCommon.SetErrorInfo(errType, message, callstack)
+func (t *tslvTest) SetError(options ...ErrorOption) {
+	t.ciVisibilityCommon.SetError(options...)
 	t.Suite().SetTag(ext.Error, true)
 	t.Suite().Module().SetTag(ext.Error, true)
 }
@@ -147,8 +180,27 @@ func (t *tslvTest) SetTestFunc(fn *runtime.Func) {
 	// parse the entire file where the function is defined to create an abstract syntax tree (AST)
 	// if we can't parse the file (source code is not available) we silently bail out
 	fset := token.NewFileSet()
-	fileNode, err := parser.ParseFile(fset, absolutePath, nil, parser.AllErrors)
+	fileNode, err := parser.ParseFile(fset, absolutePath, nil, parser.AllErrors|parser.ParseComments)
 	if err == nil {
+
+		// let's check if the suite was marked as unskippable before
+		isUnskippable, hasUnskippableValue := t.suite.ctx.Value(constants.TestUnskippable).(bool)
+		if !hasUnskippableValue {
+			// check for suite level unskippable comment at the top of the file
+			for _, commentGroup := range fileNode.Comments {
+				for _, comment := range commentGroup.List {
+					if strings.Contains(comment.Text, "//dd:suite.unskippable") {
+						isUnskippable = true
+						break
+					}
+				}
+				if isUnskippable {
+					break
+				}
+			}
+			t.suite.ctx = context.WithValue(t.suite.ctx, constants.TestUnskippable, isUnskippable)
+		}
+
 		// get the function name without the package name
 		fullName := fn.Name()
 		firstDot := strings.LastIndex(fullName, ".") + 1
@@ -156,6 +208,7 @@ func (t *tslvTest) SetTestFunc(fn *runtime.Func) {
 
 		// variable to store the ending line of the function
 		var endLine int
+
 		// traverse the AST to find the function declaration for the target function
 		ast.Inspect(fileNode, func(n ast.Node) bool {
 			// check if the current node is a function declaration
@@ -164,6 +217,17 @@ func (t *tslvTest) SetTestFunc(fn *runtime.Func) {
 				if funcDecl.Name.Name == name {
 					// get the line number of the end of the function body
 					endLine = fset.Position(funcDecl.Body.End()).Line
+					// check for comments above the function declaration to look for unskippable tag
+					// but only if we haven't found a suite level unskippable comment
+					if !isUnskippable && funcDecl.Doc != nil {
+						for _, comment := range funcDecl.Doc.List {
+							if strings.Contains(comment.Text, "//dd:test.unskippable") {
+								isUnskippable = true
+								break
+							}
+						}
+					}
+
 					// stop further inspection since we have found the target function
 					return false
 				}
@@ -186,6 +250,13 @@ func (t *tslvTest) SetTestFunc(fn *runtime.Func) {
 		if endLine >= startLine {
 			t.SetTag(constants.TestSourceEndLine, endLine)
 		}
+
+		// if the function is marked as unskippable, set the appropriate tag
+		if isUnskippable {
+			t.SetTag(constants.TestUnskippable, "true")
+			telemetry.ITRUnskippable(telemetry.TestEventType)
+			t.ctx = context.WithValue(t.ctx, constants.TestUnskippable, true)
+		}
 	}
 
 	// get the codeowner of the function
@@ -201,6 +272,7 @@ func (t *tslvTest) SetTestFunc(fn *runtime.Func) {
 // SetBenchmarkData sets benchmark data for the test.
 func (t *tslvTest) SetBenchmarkData(measureType string, data map[string]any) {
 	t.span.SetTag(constants.TestType, constants.TestTypeBenchmark)
+	t.ctx = context.WithValue(t.ctx, constants.TestType, constants.TestTypeBenchmark)
 	for k, v := range data {
 		t.span.SetTag(fmt.Sprintf("benchmark.%s.%s", measureType, k), v)
 	}

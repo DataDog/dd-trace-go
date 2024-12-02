@@ -15,7 +15,6 @@ import (
 	// Blank import needed to use embed for the default blocked response payloads
 	_ "embed"
 	"net/http"
-	"sync"
 	"sync/atomic"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
@@ -31,7 +30,9 @@ type (
 	HandlerOperation struct {
 		dyngo.Operation
 		*waf.ContextOperation
-		mu sync.RWMutex
+
+		// wafContextOwner indicates if the waf.ContextOperation was started by us or not and if we need to close it.
+		wafContextOwner bool
 	}
 
 	// HandlerOperationArgs is the HTTP handler operation arguments.
@@ -57,10 +58,15 @@ func (HandlerOperationArgs) IsArgOf(*HandlerOperation)   {}
 func (HandlerOperationRes) IsResultOf(*HandlerOperation) {}
 
 func StartOperation(ctx context.Context, args HandlerOperationArgs) (*HandlerOperation, *atomic.Pointer[actions.BlockHTTP], context.Context) {
-	wafOp, ctx := waf.StartContextOperation(ctx)
+	wafOp, found := dyngo.FindOperation[waf.ContextOperation](ctx)
+	if !found {
+		wafOp, ctx = waf.StartContextOperation(ctx)
+	}
+
 	op := &HandlerOperation{
 		Operation:        dyngo.NewOperation(wafOp),
 		ContextOperation: wafOp,
+		wafContextOwner:  !found, // If we started the parent operation, we finish it, otherwise we don't
 	}
 
 	// We need to use an atomic pointer to store the action because the action may be created asynchronously in the future
@@ -75,7 +81,9 @@ func StartOperation(ctx context.Context, args HandlerOperationArgs) (*HandlerOpe
 // Finish the HTTP handler operation and its children operations and write everything to the service entry span.
 func (op *HandlerOperation) Finish(res HandlerOperationRes, span ddtrace.Span) {
 	dyngo.FinishOperation(op, res)
-	op.ContextOperation.Finish(span)
+	if op.wafContextOwner {
+		op.ContextOperation.Finish(span)
+	}
 }
 
 const monitorBodyErrorLog = `
@@ -136,6 +144,7 @@ func BeforeHandle(
 		PathParams:  pathParams,
 	})
 	tr := r.WithContext(ctx)
+	var blocked atomic.Bool
 
 	afterHandle := func() {
 		var statusCode int
@@ -147,27 +156,27 @@ func BeforeHandle(
 			StatusCode: statusCode,
 		}, span)
 
+		if blockPtr := blockAtomic.Swap(nil); blockPtr != nil {
+			blockPtr.Handler.ServeHTTP(w, tr)
+			blocked.Store(true)
+		}
+
 		// Execute the onBlock functions to make sure blocking works properly
 		// in case we are instrumenting the Gin framework
-		if blockPtr := blockAtomic.Load(); blockPtr != nil {
+		if blocked.Load() {
 			for _, f := range opts.OnBlock {
 				f()
-			}
-
-			if blockPtr.Handler != nil {
-				blockPtr.Handler.ServeHTTP(w, tr)
 			}
 		}
 	}
 
-	handled := false
-	if blockPtr := blockAtomic.Load(); blockPtr != nil && blockPtr.Handler != nil {
+	if blockPtr := blockAtomic.Swap(nil); blockPtr != nil {
 		// handler is replaced
 		blockPtr.Handler.ServeHTTP(w, tr)
-		blockPtr.Handler = nil
-		handled = true
+		blocked.Store(true)
 	}
-	return w, tr, afterHandle, handled
+
+	return w, tr, afterHandle, blocked.Load()
 }
 
 // WrapHandler wraps the given HTTP handler with the abstract HTTP operation defined by HandlerOperationArgs and
