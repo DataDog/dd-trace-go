@@ -325,17 +325,18 @@ func civisibility_test_set_test_source(test_id C.ulonglong, test_source_file *C.
 // status = 0: passed, 1: failed, 2: skipped
 //
 //export civisibility_close_test
-func civisibility_close_test(test_id uint64, status C.uchar, unix_finish_time *C.longlong) C.uchar {
+func civisibility_close_test(test_id C.ulonglong, status C.uchar, unix_finish_time *C.longlong) C.uchar {
 	testsMutex.Lock()
 	defer testsMutex.Unlock()
-	if test, ok := tests[test_id]; ok {
+	testID := uint64(test_id)
+	if test, ok := tests[testID]; ok {
 		var testOptions []civisibility.TestCloseOption
 		if unix_finish_time != nil {
 			testOptions = append(testOptions, civisibility.WithTestFinishTime(time.Unix(int64(*unix_finish_time), 0)))
 		}
 
 		test.Close(civisibility.TestResultStatus(status), testOptions...)
-		delete(tests, test_id)
+		delete(tests, testID)
 		return 1
 	}
 	return 0
