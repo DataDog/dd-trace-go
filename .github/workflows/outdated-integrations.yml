@@ -24,7 +24,8 @@ jobs:
       - uses: actions/checkout@v4
       
       - run: go get github.com/Masterminds/semver/v3
-      - run: go run latest_major_version.go > latest_majors.txt
+
+      - run: go run latest_major_version.go > latests.txt
 
       - run: git diff
 
@@ -34,9 +35,9 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           branch: "upgrade-latest-major-version"
-          commit-message: "Update latest majors file"
+          commit-message: "Update latests file"
           base: main
           title: "chore: update latest majors"
           labels: changelog/no-changelog
-          body: "Updating latest majors with new versions"
+          body: "Updating latest with new major versions"
 
