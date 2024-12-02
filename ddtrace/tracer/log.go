@@ -44,7 +44,6 @@ type startupInfo struct {
 	Tags                        map[string]string            `json:"tags"`                           // Global tags
 	RuntimeMetricsEnabled       bool                         `json:"runtime_metrics_enabled"`        // Whether runtime metrics are enabled
 	RuntimeMetricsV2Enabled     bool                         `json:"runtime_metrics_v2_enabled"`     // Whether runtime metrics v2 are enabled
-	HealthMetricsEnabled        bool                         `json:"health_metrics_enabled"`         // Whether health metrics are enabled
 	ProfilerCodeHotspotsEnabled bool                         `json:"profiler_code_hotspots_enabled"` // Whether profiler code hotspots are enabled
 	ProfilerEndpointsEnabled    bool                         `json:"profiler_endpoints_enabled"`     // Whether profiler endpoints are enabled
 	ApplicationVersion          string                       `json:"dd_version"`                     // Version of the user's application
@@ -133,7 +132,6 @@ func logStartup(t *tracer) {
 		Tags:                        tags,
 		RuntimeMetricsEnabled:       t.config.runtimeMetrics,
 		RuntimeMetricsV2Enabled:     t.config.runtimeMetricsV2,
-		HealthMetricsEnabled:        t.config.runtimeMetrics,
 		ApplicationVersion:          t.config.version,
 		ProfilerCodeHotspotsEnabled: t.config.profilerHotspots,
 		ProfilerEndpointsEnabled:    t.config.profilerEndpoints,
