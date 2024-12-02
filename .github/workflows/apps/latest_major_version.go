@@ -8,6 +8,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"sort"
 	"github.com/Masterminds/semver/v3"
 	"golang.org/x/mod/modfile"
 	"net/http"
@@ -120,7 +121,16 @@ func main() {
 	// Output latest major version that we support.
 	// Check if a new major version in Github is available that we don't support.
 	// If so, output that a new latest is available.
-	for module, major := range latestMajor {
+
+	// Sort the output
+	modules := make([]string, 0, len(latestMajor))
+	for module := range latestMajor {
+		modules = append(modules, module)
+	}
+	sort.Strings(modules)
+
+	for _, module := range modules {
+		major := latestMajor[module]
 
 		latestVersion, err := getLatestMajorVersion(module) // latest version available
 		if err != nil {
