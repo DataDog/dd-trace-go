@@ -6,13 +6,13 @@
 //go:build civisibility
 // +build civisibility
 
-// go build -tags civisibility -buildmode=c-shared -ldflags "-s -w" -o libcivisibility.dylib civisibility_exports.go
+// CGO_CFLAGS=-mmacosx-version-min=11.0 go build -tags civisibility -buildmode=c-archive -ldflags "-s -w" -o libcivisibility.a civisibility_exports.go
 //
-// GOOS=darwin GOARCH=arm64 CGO_ENABLED=1 go build -tags civisibility -buildmode=c-shared -ldflags "-s -w" -o libcivisibility.dylib civisibility_exports.go
-// GOOS=darwin GOARCH=amd64 CGO_ENABLED=1 go build -tags civisibility -buildmode=c-shared -ldflags "-s -w" -o libcivisibility.dylib civisibility_exports.go
-// GOOS=linux GOARCH=arm64 CGO_ENABLED=1 CC=aarch64-linux-gnu-gcc go build -tags civisibility -buildmode=c-shared -ldflags "-s -w" -o /tmp/lima/libcivisibility.so civisibility_exports.go
-// GOOS=linux GOARCH=amd64 CGO_ENABLED=1 CC=x86_64-linux-gnu-gcc go build -tags civisibility -buildmode=c-shared -ldflags "-s -w" -o /tmp/lima/libcivisibility.so civisibility_exports.go
-// GOOS=windows GOARCH=amd64 CGO_ENABLED=1 CC=x86_64-w64-mingw32-gcc go build -tags civisibility -buildmode=c-shared -ldflags "-s -w" -o libcivisibility.dll civisibility_exports.go
+// CGO_CFLAGS=-mmacosx-version-min=11.0 GOOS=darwin GOARCH=arm64 CGO_ENABLED=1 go build -tags civisibility -buildmode=c-archive -ldflags "-s -w" -o libcivisibility.a civisibility_exports.go
+// CGO_CFLAGS=-mmacosx-version-min=11.0 GOOS=darwin GOARCH=amd64 CGO_ENABLED=1 go build -tags civisibility -buildmode=c-archive -ldflags "-s -w" -o libcivisibility.a civisibility_exports.go
+// GOOS=linux GOARCH=arm64 CGO_ENABLED=1 CC=aarch64-linux-gnu-gcc go build -tags civisibility -buildmode=c-archive -ldflags "-s -w" -o /tmp/lima/libcivisibility.a civisibility_exports.go
+// GOOS=linux GOARCH=amd64 CGO_ENABLED=1 CC=x86_64-linux-gnu-gcc go build -tags civisibility -buildmode=c-archive -ldflags "-s -w" -o /tmp/lima/libcivisibility.a civisibility_exports.go
+// GOOS=windows GOARCH=amd64 CGO_ENABLED=1 CC=x86_64-w64-mingw32-gcc go build -tags civisibility -buildmode=c-archive -ldflags "-s -w" -o libcivisibility.lib civisibility_exports.go
 
 package main
 
@@ -21,11 +21,40 @@ struct unix_time {
     unsigned long long sec;
     unsigned long long nsec;
 };
+struct setting_early_flake_detection_slow_test_retries {
+	int ten_s;
+	int thirty_s;
+	int five_m;
+	int five_s;
+};
+struct setting_early_flake_detection {
+	unsigned char enabled;
+	struct setting_early_flake_detection_slow_test_retries slow_test_retries;
+	int faulty_session_threshold;
+};
+struct settings_response {
+	unsigned char code_coverage;
+	struct setting_early_flake_detection early_flake_detection;
+	unsigned char flaky_test_retries_enabled;
+	unsigned char itr_enabled;
+	unsigned char require_git;
+	unsigned char tests_skipping;
+};
+struct flaky_test_retries_settings {
+	int retry_count;
+	int total_retry_count;
+};
+struct known_test {
+	char* module_name;
+	char* suite_name;
+	char* test_name;
+};
 */
 import "C"
 import (
 	"sync"
 	"time"
+	"unsafe"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/constants"
 	civisibility "gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/integrations"
@@ -52,7 +81,7 @@ func getUnixTime(unixTime *C.struct_unix_time) time.Time {
 // civisibility_initialize initializes the CI visibility integration.
 //
 //export civisibility_initialize
-func civisibility_initialize(runtime_name *C.char, runtime_version *C.char, framework *C.char, framework_version *C.char, unix_start_time *C.struct_unix_time) {
+func civisibility_initialize(language *C.char, runtime_name *C.char, runtime_version *C.char, framework *C.char, framework_version *C.char, unix_start_time *C.struct_unix_time) {
 	if runtime_name != nil {
 		utils.AddCITags(constants.RuntimeName, C.GoString(runtime_name))
 	}
@@ -60,7 +89,12 @@ func civisibility_initialize(runtime_name *C.char, runtime_version *C.char, fram
 		utils.AddCITags(constants.RuntimeVersion, C.GoString(runtime_version))
 	}
 
-	utils.AddCITags("language", "shared-lib")
+	if language != nil {
+		utils.AddCITags("language", C.GoString(language))
+	} else {
+		utils.AddCITags("language", "shared-lib")
+	}
+
 	civisibility.EnsureCiVisibilityInitialization()
 
 	var sessionOptions []civisibility.TestSessionStartOption
@@ -401,6 +435,98 @@ func civisibility_close_test(test_id C.ulonglong, status C.uchar, skip_reason *C
 
 		test.Close(civisibility.TestResultStatus(status), testOptions...)
 		delete(tests, testID)
+		return 1
+	}
+	return 0
+}
+
+// civisibility_get_settings gets the CI visibility settings.
+//
+//export civisibility_get_settings
+func civisibility_get_settings() C.struct_settings_response {
+	var cSettings C.struct_settings_response
+	cSettings.code_coverage = 0
+	cSettings.early_flake_detection.enabled = 0
+	cSettings.early_flake_detection.slow_test_retries.ten_s = 0
+	cSettings.early_flake_detection.slow_test_retries.thirty_s = 0
+	cSettings.early_flake_detection.slow_test_retries.five_m = 0
+	cSettings.early_flake_detection.slow_test_retries.five_s = 0
+	cSettings.early_flake_detection.faulty_session_threshold = 0
+	cSettings.flaky_test_retries_enabled = 0
+	cSettings.itr_enabled = 0
+	cSettings.require_git = 0
+	cSettings.tests_skipping = 0
+
+	settings := civisibility.GetSettings()
+	if settings == nil {
+		return cSettings
+	}
+
+	cSettings.code_coverage = convertToUChar(settings.CodeCoverage)
+	cSettings.early_flake_detection.enabled = convertToUChar(settings.EarlyFlakeDetection.Enabled)
+	cSettings.early_flake_detection.slow_test_retries.ten_s = C.int(settings.EarlyFlakeDetection.SlowTestRetries.TenS)
+	cSettings.early_flake_detection.slow_test_retries.thirty_s = C.int(settings.EarlyFlakeDetection.SlowTestRetries.ThirtyS)
+	cSettings.early_flake_detection.slow_test_retries.five_m = C.int(settings.EarlyFlakeDetection.SlowTestRetries.FiveM)
+	cSettings.early_flake_detection.slow_test_retries.five_s = C.int(settings.EarlyFlakeDetection.SlowTestRetries.FiveS)
+	cSettings.early_flake_detection.faulty_session_threshold = C.int(settings.EarlyFlakeDetection.FaultySessionThreshold)
+	cSettings.flaky_test_retries_enabled = convertToUChar(settings.FlakyTestRetriesEnabled)
+	cSettings.itr_enabled = convertToUChar(settings.ItrEnabled)
+	cSettings.require_git = convertToUChar(settings.RequireGit)
+	cSettings.tests_skipping = convertToUChar(settings.TestsSkipping)
+
+	civisibility.GetEarlyFlakeDetectionSettings()
+	return cSettings
+}
+
+// civisibility_get_flaky_test_retries_settings gets the flaky test retries settings.
+//
+//export civisibility_get_flaky_test_retries_settings
+func civisibility_get_flaky_test_retries_settings() C.struct_flaky_test_retries_settings {
+	var cSettings C.struct_flaky_test_retries_settings
+	cSettings.retry_count = 0
+	cSettings.total_retry_count = 0
+
+	settings := civisibility.GetFlakyRetriesSettings()
+	if settings == nil {
+		return cSettings
+	}
+
+	cSettings.retry_count = C.int(settings.RetryCount)
+	cSettings.total_retry_count = C.int(settings.TotalRetryCount)
+	return cSettings
+}
+
+// civisibility_get_known_tests gets the known tests.
+//
+//export civisibility_get_known_tests
+func civisibility_get_known_tests(length *C.int) **C.struct_known_test {
+	var knownTests []*C.struct_known_test
+	for moduleName, module := range civisibility.GetEarlyFlakeDetectionSettings().Tests {
+		for suiteName, suite := range module {
+			for _, testName := range suite {
+				knownTest := &C.struct_known_test{
+					module_name: C.CString(moduleName),
+					suite_name:  C.CString(suiteName),
+					test_name:   C.CString(testName),
+				}
+				knownTests = append(knownTests, knownTest)
+			}
+		}
+	}
+
+	*length = C.int(len(knownTests))
+	var c_known_tests **C.struct_known_test
+	c_known_tests = (**C.struct_known_test)(C.malloc(C.size_t(*length) * C.size_t(unsafe.Sizeof(uintptr(0)))))
+
+	for _, knownTest := range knownTests {
+		*c_known_tests = knownTest
+		c_known_tests = (**C.struct_known_test)(unsafe.Pointer(uintptr(unsafe.Pointer(c_known_tests)) + unsafe.Sizeof(uintptr(0))))
+	}
+	return c_known_tests
+}
+
+func convertToUChar(value bool) C.uchar {
+	if value {
 		return 1
 	}
 	return 0
