@@ -7,9 +7,12 @@
 // +build civisibility
 
 // go build -tags civisibility -buildmode=c-shared -ldflags "-s -w" -o libcivisibility.dylib civisibility_exports.go
-// GOOS=linux GOARCH=arm64 CGO_ENABLED=1 go build -tags civisibility -buildmode=c-shared -ldflags "-s -w" -o libcivisibility.so civisibility_exports.go
-// GOOS=linux GOARCH=amd64 CGO_ENABLED=1 go build -tags civisibility -buildmode=c-shared -ldflags "-s -w" -o libcivisibility.so civisibility_exports.go
-// GOOS=windows GOARCH=amd64 CGO_ENABLED=1 go build -tags civisibility -buildmode=c-shared -ldflags "-s -w" -o libcivisibility.dll civisibility_exports.go
+//
+// GOOS=darwin GOARCH=arm64 CGO_ENABLED=1 go build -tags civisibility -buildmode=c-shared -ldflags "-s -w" -o libcivisibility.dylib civisibility_exports.go
+// GOOS=darwin GOARCH=amd64 CGO_ENABLED=1 go build -tags civisibility -buildmode=c-shared -ldflags "-s -w" -o libcivisibility.dylib civisibility_exports.go
+// GOOS=linux GOARCH=arm64 CGO_ENABLED=1 CC=aarch64-linux-gnu-gcc go build -tags civisibility -buildmode=c-shared -ldflags "-s -w" -o /tmp/lima/libcivisibility.so civisibility_exports.go
+// GOOS=linux GOARCH=amd64 CGO_ENABLED=1 CC=x86_64-linux-gnu-gcc go build -tags civisibility -buildmode=c-shared -ldflags "-s -w" -o /tmp/lima/libcivisibility.so civisibility_exports.go
+// GOOS=windows GOARCH=amd64 CGO_ENABLED=1 CC=x86_64-w64-mingw32-gcc go build -tags civisibility -buildmode=c-shared -ldflags "-s -w" -o libcivisibility.dll civisibility_exports.go
 
 package main
 
