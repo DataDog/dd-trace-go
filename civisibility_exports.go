@@ -499,12 +499,12 @@ func civisibility_get_flaky_test_retries_settings() C.struct_flaky_test_retries_
 // civisibility_get_known_tests gets the known tests.
 //
 //export civisibility_get_known_tests
-func civisibility_get_known_tests(length *C.int) **C.struct_known_test {
-	var knownTests []*C.struct_known_test
+func civisibility_get_known_tests(length *C.int) *C.struct_known_test {
+	var knownTests []C.struct_known_test
 	for moduleName, module := range civisibility.GetEarlyFlakeDetectionSettings().Tests {
 		for suiteName, suite := range module {
 			for _, testName := range suite {
-				knownTest := &C.struct_known_test{
+				knownTest := C.struct_known_test{
 					module_name: C.CString(moduleName),
 					suite_name:  C.CString(suiteName),
 					test_name:   C.CString(testName),
@@ -515,14 +515,13 @@ func civisibility_get_known_tests(length *C.int) **C.struct_known_test {
 	}
 
 	*length = C.int(len(knownTests))
-	var c_known_tests **C.struct_known_test
-	c_known_tests = (**C.struct_known_test)(C.malloc(C.size_t(*length) * C.size_t(unsafe.Sizeof(uintptr(0)))))
+	fKnownTests := (unsafe.Pointer)(C.malloc(C.size_t(len(knownTests) * 24)))
 
-	for _, knownTest := range knownTests {
-		*c_known_tests = knownTest
-		c_known_tests = (**C.struct_known_test)(unsafe.Pointer(uintptr(unsafe.Pointer(c_known_tests)) + unsafe.Sizeof(uintptr(0))))
+	for i, knownTest := range knownTests {
+		c_known_test := unsafe.Add(fKnownTests, i*24)
+		*(*C.struct_known_test)(c_known_test) = knownTest
 	}
-	return c_known_tests
+	return (*C.struct_known_test)(fKnownTests)
 }
 
 func convertToUChar(value bool) C.uchar {
