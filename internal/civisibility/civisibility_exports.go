@@ -49,7 +49,7 @@ struct known_test {
 	char* suite_name;
 	char* test_name;
 };
-struct skipable_test {
+struct skippable_test {
 	char* suite_name;
 	char* test_name;
 	char* parameters;
@@ -59,7 +59,6 @@ struct test_coverage_file {
 	char* filename;
 };
 struct test_coverage {
-	unsigned long long test_session_id;
 	unsigned long long test_suite_id;
 	unsigned long long span_id;
 	struct test_coverage_file* files;
@@ -82,7 +81,7 @@ import (
 
 const (
 	known_test_size         = 3 * int(unsafe.Sizeof(uintptr(0)))
-	skipable_test_size      = 4 * int(unsafe.Sizeof(uintptr(0)))
+	skippable_test_size     = 4 * int(unsafe.Sizeof(uintptr(0)))
 	test_coverage_size      = (4 * 8) + (1 * int(unsafe.Sizeof(uintptr(0))))
 	test_coverage_file_size = int(unsafe.Sizeof(uintptr(0)))
 )
@@ -105,21 +104,21 @@ var (
 type (
 	// ciTestCovPayload represents a test code coverage payload specifically designed for CI Visibility events.
 	ciTestCovPayload struct {
-		Version   int32                 `msg:"version"`   // Version of the payload
-		Coverages []*ciTestCoverageData `msg:"coverages"` // list of coverages
+		Version   int32                `json:"version"`   // Version of the payload
+		Coverages []ciTestCoverageData `json:"coverages"` // list of coverages
 	}
 
 	// ciTestCoverageData represents the coverage data for a single test.
 	ciTestCoverageData struct {
-		SessionID uint64                `msg:"test_session_id"` // identifier of this session
-		SuiteID   uint64                `msg:"test_suite_id"`   // identifier of the suite
-		SpanID    uint64                `msg:"span_id"`         // identifier of this test
-		Files     []*ciTestCoverageFile `msg:"files"`           // list of files covered
+		SessionID uint64               `json:"test_session_id"` // identifier of this session
+		SuiteID   uint64               `json:"test_suite_id"`   // identifier of the suite
+		SpanID    uint64               `json:"span_id"`         // identifier of this test
+		Files     []ciTestCoverageFile `json:"files"`           // list of files covered
 	}
 
 	// ciTestCoverageFile represents the coverage data for a single file.
 	ciTestCoverageFile struct {
-		FileName string `msg:"filename"` // name of the file
+		FileName string `json:"filename"` // name of the file
 	}
 )
 
@@ -550,7 +549,7 @@ func civisibility_get_flaky_test_retries_settings() C.struct_flaky_test_retries_
 // civisibility_get_known_tests gets the known tests.
 //
 //export civisibility_get_known_tests
-func civisibility_get_known_tests(length *C.int) *C.struct_known_test {
+func civisibility_get_known_tests(known_tests **C.struct_known_test) C.int {
 	var knownTests []C.struct_known_test
 	for moduleName, module := range civisibility.GetEarlyFlakeDetectionSettings().Tests {
 		for suiteName, suite := range module {
@@ -565,21 +564,21 @@ func civisibility_get_known_tests(length *C.int) *C.struct_known_test {
 		}
 	}
 
-	*length = C.int(len(knownTests))
 	fKnownTests := (unsafe.Pointer)(C.malloc(C.size_t(len(knownTests) * known_test_size)))
-
 	for i, knownTest := range knownTests {
 		c_known_test := unsafe.Add(fKnownTests, i*known_test_size)
 		*(*C.struct_known_test)(c_known_test) = knownTest
 	}
-	return (*C.struct_known_test)(fKnownTests)
+
+	*known_tests = (*C.struct_known_test)(fKnownTests)
+	return C.int(len(knownTests))
 }
 
 // civisibility_get_skippable_tests gets the skippable tests.
 //
 //export civisibility_get_skippable_tests
-func civisibility_get_skippable_tests(length *C.int) *C.struct_skipable_test {
-	var skippableTests []C.struct_skipable_test
+func civisibility_get_skippable_tests(skippable_tests **C.struct_skippable_test) C.int {
+	var skippableTests []C.struct_skippable_test
 	for kSuite, suites := range civisibility.GetSkippableTests() {
 		cSuiteName := C.CString(kSuite)
 		for kTest, test := range suites {
@@ -590,7 +589,7 @@ func civisibility_get_skippable_tests(length *C.int) *C.struct_skipable_test {
 					jsonBytes, _ := json.Marshal(skippableTest.Configurations.Custom)
 					custom_config = string(jsonBytes)
 				}
-				skippableTest := C.struct_skipable_test{
+				skippableTest := C.struct_skippable_test{
 					suite_name:                 cSuiteName,
 					test_name:                  cTestName,
 					parameters:                 C.CString(skippableTest.Parameters),
@@ -601,14 +600,15 @@ func civisibility_get_skippable_tests(length *C.int) *C.struct_skipable_test {
 		}
 	}
 
-	*length = C.int(len(skippableTests))
-	fSkippableTests := (unsafe.Pointer)(C.malloc(C.size_t(len(skippableTests) * skipable_test_size)))
+	fSkippableTests := (unsafe.Pointer)(C.malloc(C.size_t(len(skippableTests) * skippable_test_size)))
 
 	for i, skippableTest := range skippableTests {
-		c_skippable_test := unsafe.Add(fSkippableTests, i*skipable_test_size)
-		*(*C.struct_skipable_test)(c_skippable_test) = skippableTest
+		c_skippable_test := unsafe.Add(fSkippableTests, i*skippable_test_size)
+		*(*C.struct_skippable_test)(c_skippable_test) = skippableTest
 	}
-	return (*C.struct_skipable_test)(fSkippableTests)
+
+	*skippable_tests = (*C.struct_skippable_test)(fSkippableTests)
+	return C.int(len(skippableTests))
 }
 
 // civisibility_send_code_coverage_payload sends the code coverage payload.
@@ -617,21 +617,19 @@ func civisibility_get_skippable_tests(length *C.int) *C.struct_skipable_test {
 func civisibility_send_code_coverage_payload(coverages *C.struct_test_coverage, coverages_length C.int) {
 	covLength := int(coverages_length)
 	coveragePayload := ciTestCovPayload{
-		Version:   2,
-		Coverages: make([]*ciTestCoverageData, covLength),
+		Version: 2,
 	}
 	for i := 0; i < covLength; i++ {
 		coverage := *(*C.struct_test_coverage)(unsafe.Add(unsafe.Pointer(coverages), i*test_coverage_size))
 		coverageFilesLen := int(coverage.files_len)
-		coverageData := &ciTestCoverageData{
-			SessionID: uint64(coverage.test_session_id),
+		coverageData := ciTestCoverageData{
+			SessionID: session.SessionID(),
 			SuiteID:   uint64(coverage.test_suite_id),
 			SpanID:    uint64(coverage.span_id),
-			Files:     make([]*ciTestCoverageFile, coverageFilesLen),
 		}
 		for j := 0; j < coverageFilesLen; j++ {
 			file := *(*C.struct_test_coverage_file)(unsafe.Add(unsafe.Pointer(coverage.files), j*test_coverage_file_size))
-			coverageData.Files = append(coverageData.Files, &ciTestCoverageFile{FileName: C.GoString(file.filename)})
+			coverageData.Files = append(coverageData.Files, ciTestCoverageFile{FileName: C.GoString(file.filename)})
 		}
 		coveragePayload.Coverages = append(coveragePayload.Coverages, coverageData)
 	}
@@ -640,7 +638,7 @@ func civisibility_send_code_coverage_payload(coverages *C.struct_test_coverage, 
 		// Create a new buffer to encode the coverage payload in MessagePack format
 		encodedBuf := new(bytes.Buffer)
 		jsonbytes, err := json.Marshal(&coveragePayload)
-		if err != nil {
+		if err == nil {
 			encodedBuf.Write(jsonbytes)
 			client.SendCoveragePayloadWithFormat(encodedBuf, net.FormatJSON)
 		}

@@ -54,7 +54,7 @@ func (c *client) SendCoveragePayloadWithFormat(ciTestCovPayload io.Reader, forma
 		}
 	} else if format == FormatJSON {
 		coverageEvent = FormFile{
-			FieldName:   "coverage",
+			FieldName:   "coveragex",
 			Content:     ciTestCovPayload,
 			FileName:    "filecoveragex.json",
 			ContentType: ContentTypeJSON,
