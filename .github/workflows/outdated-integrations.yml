@@ -1,0 +1,41 @@
+name: Outdated Integrations
+on:
+  schedule:
+    - cron: "0 0 * * 0" # Runs every Sunday at midnight UTC
+  workflow_dispatch:
+
+concurrency:
+  # Automatically cancel previous runs if a new one is triggered to conserve resources.
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Find new major versions for the contrib package dependencies
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: write
+      pull-requests: write
+    env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      
+      - run: go get github.com/Masterminds/semver/v3
+
+      - run: go run .github/workflows/apps/latest_major_version.go > latests.txt
+
+      - run: git diff
+
+      - name: Create Pull Request
+        id: pr
+        uses: peter-evans/create-pull-request@v6
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          branch: "upgrade-latest-major-version"
+          commit-message: "Update latests file"
+          base: main
+          title: "chore: update latest majors"
+          labels: changelog/no-changelog
+          body: "Auto-generated PR from Outdated Integrations workflow to update latests major versions"
