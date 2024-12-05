@@ -629,7 +629,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 		t.Run("option", func(t *testing.T) {
 			o := make([]StartOption, len(opts))
 			copy(o, opts)
-			o = append(o, WithDogstatsdAddress("10.1.0.12:4002"))
+			o = append(o, WithDogstatsdAddr("10.1.0.12:4002"))
 			tracer, err := newTracer(o...)
 			assert.NoError(t, err)
 			defer tracer.Stop()
@@ -642,7 +642,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			o := make([]StartOption, len(opts))
 			copy(o, opts)
 			fail = true
-			o = append(o, WithDogstatsdAddress("10.1.0.12:4002"))
+			o = append(o, WithDogstatsdAddr("10.1.0.12:4002"))
 			tracer, err := newTracer(o...)
 			assert.NoError(t, err)
 			defer tracer.Stop()
@@ -663,7 +663,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			}
 			addr := filepath.Join(dir, "dsd.socket")
 			defer os.RemoveAll(addr)
-			tracer, err := newTracer(WithDogstatsdAddress("unix://" + addr))
+			tracer, err := newTracer(WithDogstatsdAddr("unix://" + addr))
 			assert.NoError(err)
 			defer tracer.Stop()
 			c := tracer.config
