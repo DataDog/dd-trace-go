@@ -61,16 +61,20 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/utils"
 )
 
-var session civisibility.TestSession
+const known_test_size = 3 * int(unsafe.Sizeof(uintptr(0)))
 
-var modulesMutex sync.RWMutex
-var modules = make(map[uint64]civisibility.TestModule)
+var (
+	session civisibility.TestSession
 
-var suitesMutex sync.RWMutex
-var suites = make(map[uint64]civisibility.TestSuite)
+	modulesMutex sync.RWMutex
+	modules      = make(map[uint64]civisibility.TestModule)
 
-var testsMutex sync.RWMutex
-var tests = make(map[uint64]civisibility.Test)
+	suitesMutex sync.RWMutex
+	suites      = make(map[uint64]civisibility.TestSuite)
+
+	testsMutex sync.RWMutex
+	tests      = make(map[uint64]civisibility.Test)
+)
 
 func getUnixTime(unixTime *C.struct_unix_time) time.Time {
 	seconds := int64(unixTime.sec)
@@ -515,10 +519,10 @@ func civisibility_get_known_tests(length *C.int) *C.struct_known_test {
 	}
 
 	*length = C.int(len(knownTests))
-	fKnownTests := (unsafe.Pointer)(C.malloc(C.size_t(len(knownTests) * 24)))
+	fKnownTests := (unsafe.Pointer)(C.malloc(C.size_t(len(knownTests) * known_test_size)))
 
 	for i, knownTest := range knownTests {
-		c_known_test := unsafe.Add(fKnownTests, i*24)
+		c_known_test := unsafe.Add(fKnownTests, i*known_test_size)
 		*(*C.struct_known_test)(c_known_test) = knownTest
 	}
 	return (*C.struct_known_test)(fKnownTests)
