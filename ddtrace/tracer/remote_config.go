@@ -8,6 +8,7 @@ package tracer
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"regexp"
 	"strings"
 	"sync"
@@ -298,11 +299,29 @@ func initalizeDynamicInstrumentationRemoteConfigState() {
 			time.Sleep(time.Second * 5)
 			diRCState.Lock()
 			for _, v := range diRCState.state {
+				accessStringsToMitigatePageFault(v.runtimeID, v.configPath, v.configContent)
 				passProbeConfiguration(v.runtimeID, v.configPath, v.configContent)
 			}
 			diRCState.Unlock()
 		}
 	}()
+}
+
+// accessStringsToMitigatePageFault iterates over each string to trigger a page fault,
+// ensuring it is loaded into RAM or listed in the translation lookaside buffer.
+// This is done by writing the string to io.Discard.
+//
+// This function addresses an issue with the bpf program that hooks the
+// `passProbeConfiguration()` function from system-probe. The bpf program fails
+// to read strings if a page fault occurs because the `bpf_probe_read()` helper
+// disables paging (uprobe bpf programs can't sleep). Consequently, page faults
+// cause `bpf_probe_read()` to return an error and not read any data.
+// By preloading the strings, we mitigate this issue, enhancing the reliability
+// of the Go Dynamic Instrumentation product.
+func accessStringsToMitigatePageFault(strs ...string) {
+	for i := range strs {
+		io.WriteString(io.Discard, strs[i])
+	}
 }
 
 // startRemoteConfig starts the remote config client.
