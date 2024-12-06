@@ -121,7 +121,7 @@ func startTelemetry(c *config) {
 		}
 		telemetry.GlobalClient.Count(
 			telemetry.NamespaceTracers,
-			"orchestrion_usage", 1,
+			"orchestrion.enabled", 1,
 			tags,
 			false, // Go-specific
 		)
