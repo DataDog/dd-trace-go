@@ -75,6 +75,9 @@ func (c *MockClient) Record(ns telemetry.Namespace, _ telemetry.MetricKind, name
 	_ = c.Called(ns, name, val, tags, common)
 	// record the val for tests that assert based on the value
 	if _, ok := c.Metrics[ns]; !ok {
+		if c.Metrics == nil {
+			c.Metrics = make(map[telemetry.Namespace]map[string]float64)
+		}
 		c.Metrics[ns] = map[string]float64{}
 	}
 	c.Metrics[ns][name] = val
