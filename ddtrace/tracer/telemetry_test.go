@@ -154,11 +154,19 @@ func TestTelemetryEnabled(t *testing.T) {
 		telemetryClient := new(telemetrytest.MockClient)
 		defer telemetry.MockGlobalClient(telemetryClient)()
 
+		telemetryClient.On("Count",
+			telemetry.NamespaceTracers,
+			"orchestrion_usage", 1.0,
+			[]string{"k1:v1", "k2:v2"},
+			false,
+		).Return()
+
 		Start(WithOrchestrion(map[string]string{"k1": "v1", "k2": "v2"}))
 		defer Stop()
 
 		telemetry.Check(t, telemetryClient.Configuration, "orchestrion_enabled", true)
 		telemetry.Check(t, telemetryClient.Configuration, "orchestrion_k1", "v1")
 		telemetry.Check(t, telemetryClient.Configuration, "orchestrion_k2", "v2")
+		telemetryClient.AssertExpectations(t)
 	})
 }

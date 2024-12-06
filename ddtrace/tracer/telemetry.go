@@ -7,7 +7,9 @@ package tracer
 
 import (
 	"fmt"
+	"slices"
 	"strings"
+	"testing"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 )
@@ -108,9 +110,21 @@ func startTelemetry(c *config) {
 				Value: fmt.Sprintf("rate:%f_maxPerSecond:%f", rule.Rate, rule.MaxPerSecond)})
 	}
 	if c.orchestrionCfg.Enabled {
+		tags := make([]string, 0, len(c.orchestrionCfg.Metadata))
 		for k, v := range c.orchestrionCfg.Metadata {
 			telemetryConfigs = append(telemetryConfigs, telemetry.Configuration{Name: "orchestrion_" + k, Value: v})
+			tags = append(tags, k+":"+v)
 		}
+		if testing.Testing() {
+			// In tests, ensure tags are consistently ordered...
+			slices.Sort(tags)
+		}
+		telemetry.GlobalClient.Count(
+			telemetry.NamespaceTracers,
+			"orchestrion_usage", 1,
+			tags,
+			false, // Go-specific
+		)
 	}
 	telemetryConfigs = append(telemetryConfigs, additionalConfigs...)
 	telemetry.GlobalClient.ProductChange(telemetry.NamespaceTracers, true, telemetryConfigs)

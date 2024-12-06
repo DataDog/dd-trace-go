@@ -82,7 +82,6 @@ func (c *MockClient) Record(ns telemetry.Namespace, _ telemetry.MetricKind, name
 
 // Count counts the value for the given metric
 func (c *MockClient) Count(ns telemetry.Namespace, name string, val float64, tags []string, common bool) {
-	c.On("Count", ns, name, val, tags, common).Return()
 	_ = c.Called(ns, name, val, tags, common)
 }
 
