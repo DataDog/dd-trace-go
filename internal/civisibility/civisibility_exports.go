@@ -8,7 +8,6 @@
 
 // CGO_CFLAGS=-mmacosx-version-min=11.0 go build -tags civisibility -buildmode=c-archive -ldflags "-s -w" -o libcivisibility.a civisibility_exports.go
 //
-// CGO_CFLAGS=-mmacosx-version-min=11.0 GOOS=darwin GOARCH=arm64 CGO_ENABLED=1 go build -tags civisibility -buildmode=c-archive -ldflags "-s -w" -o libcivisibility.a civisibility_exports.go
 // CGO_CFLAGS=-mmacosx-version-min=11.0 GOOS=darwin GOARCH=amd64 CGO_ENABLED=1 go build -tags civisibility -buildmode=c-archive -ldflags "-s -w" -o libcivisibility.a civisibility_exports.go
 // GOOS=linux GOARCH=arm64 CGO_ENABLED=1 CC=aarch64-linux-gnu-gcc go build -tags civisibility -buildmode=c-archive -ldflags "-s -w" -o /tmp/lima/libcivisibility.a civisibility_exports.go
 // GOOS=linux GOARCH=amd64 CGO_ENABLED=1 CC=x86_64-linux-gnu-gcc go build -tags civisibility -buildmode=c-archive -ldflags "-s -w" -o /tmp/lima/libcivisibility.a civisibility_exports.go
