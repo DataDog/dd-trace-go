@@ -165,6 +165,15 @@ func Start(opts ...StartOption) {
 	if t.dataStreams != nil {
 		t.dataStreams.Start()
 	}
+	if t.config.ciVisibilityEnabled {
+		// CI Visibility mode doesn't require remote configuration neither AppSec
+
+		// start instrumentation telemetry unless it is disabled through the
+		// DD_INSTRUMENTATION_TELEMETRY_ENABLED env var
+		startTelemetry(t.config)
+		return
+	}
+
 	// Start AppSec with remote configuration
 	cfg := remoteconfig.DefaultClientConfig()
 	cfg.AgentURL = t.config.agentURL.String()
