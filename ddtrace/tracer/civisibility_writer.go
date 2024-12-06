@@ -122,7 +122,7 @@ func (w *ciVisibilityTraceWriter) flush() {
 			}
 			log.Error("ciVisibilityTraceWriter: failure sending events (attempt %d), will retry: %v", attempt+1, err)
 			p.reset()
-			time.Sleep(time.Millisecond)
+			time.Sleep(w.config.retryInterval)
 		}
 		log.Error("ciVisibilityTraceWriter: lost %d events: %v", count, err)
 		telemetry.EndpointPayloadDropped(telemetry.TestCycleEndpointType)
