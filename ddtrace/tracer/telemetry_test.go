@@ -160,8 +160,9 @@ func TestTelemetryEnabled(t *testing.T) {
 		telemetry.Check(t, telemetryClient.Configuration, "orchestrion_enabled", true)
 		telemetry.Check(t, telemetryClient.Configuration, "orchestrion_k1", "v1")
 		telemetry.Check(t, telemetryClient.Configuration, "orchestrion_k2", "v2")
-		telemetryClient.AssertCalled(t, "Count",
+		telemetryClient.AssertCalled(t, "Record",
 			telemetry.NamespaceTracers,
+			telemetry.MetricKindGauge,
 			"orchestrion.enabled", 1.0,
 			[]string{"k1:v1", "k2:v2"},
 			false,

@@ -119,8 +119,9 @@ func startTelemetry(c *config) {
 			// In tests, ensure tags are consistently ordered...
 			slices.Sort(tags)
 		}
-		telemetry.GlobalClient.Count(
+		telemetry.GlobalClient.Record(
 			telemetry.NamespaceTracers,
+			telemetry.MetricKindGauge,
 			"orchestrion.enabled", 1,
 			tags,
 			false, // Go-specific
