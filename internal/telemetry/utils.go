@@ -12,7 +12,6 @@ import (
 	"math"
 	"sort"
 	"strings"
-	"testing"
 )
 
 // MockGlobalClient replaces the global telemetry client with a custom
@@ -30,8 +29,16 @@ func MockGlobalClient(client Client) func() {
 	}
 }
 
+// Errorfer is an interface that allows to call the `Errorf` method.
+// This is the same interface as `testing.T` because the goal of this
+// interface is to remove the need to import `testing` in this package
+// that is actually imported by users.
+type Errorfer interface {
+	Errorf(format string, args ...any)
+}
+
 // Check is a testing utility to assert that a target key in config contains the expected value
-func Check(t *testing.T, configuration []Configuration, key string, expected interface{}) {
+func Check(t Errorfer, configuration []Configuration, key string, expected interface{}) {
 	for _, kv := range configuration {
 		if kv.Name == key {
 			if kv.Value != expected {
