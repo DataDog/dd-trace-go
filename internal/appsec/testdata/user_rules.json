@@ -54,6 +54,33 @@
             ]
         },
         {
+            "id": "tst-037-008",
+            "name": "Test block on cookies",
+            "tags": {
+                "type": "lfi",
+                "crs_id": "000008",
+                "category": "attack_attempt"
+            },
+            "conditions": [
+                {
+                    "parameters": {
+                        "inputs": [
+                            {
+                                "address": "server.request.cookies"
+                            }
+                        ],
+                        "regex": "jdfoSDGFkivRG_234"
+                    },
+                    "operator": "match_regex"
+                }
+            ],
+            "transformers": [],
+            "on_match": [
+                "block"
+            ]
+        },
+
+        {
             "id": "headers-003",
             "name": "query match",
             "tags": {
