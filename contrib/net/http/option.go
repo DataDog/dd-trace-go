@@ -201,7 +201,7 @@ func newRoundTripperConfig() *roundTripperConfig {
 		commonConfig:  sharedCfg,
 		propagation:   true,
 		spanNamer:     defaultSpanNamer,
-		queryString:   options.GetBoolEnv(envClientQueryStringEnabled, true),
+		queryString:   options.GetBoolEnv(envClientQueryStringEnabled, false),
 		isStatusError: isClientError,
 	}
 	v := os.Getenv(envClientErrorStatuses)
