@@ -147,6 +147,19 @@ type client struct {
 	// Globally registered application configuration sent in the app-started request, along with the locally-defined
 	// configuration of the  event.
 	globalAppConfig []Configuration
+
+	// heartbeatMetrics is a set of metrics to be emitted each time a heartbeat is sent.
+	heartbeatMetrics []heartbeatMetric
+}
+
+// heartbeatMetric is a metric that is emitted each time a heartbeat is sent.
+type heartbeatMetric struct {
+	namespace Namespace
+	kind      MetricKind
+	name      string
+	value     func() float64 // Called to determine the current value of the metric.
+	tags      []string
+	common    bool
 }
 
 func log(msg string, args ...interface{}) {
@@ -338,14 +351,22 @@ func metricKey(name string, tags []string, kind MetricKind) string {
 	return name + string(kind) + strings.Join(tags, "-")
 }
 
-// Record sets the value for a gauge or distribution metric type
-// with the given name and tags. If the metric is not language-specific, common should be set to true
+// Record sets the value for a gauge or distribution metric type with the given
+// name and tags. If the metric is not language-specific, common should be set
+// to true
 func (c *client) Record(namespace Namespace, kind MetricKind, name string, value float64, tags []string, common bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if !c.started {
 		return
 	}
+	c.record(namespace, kind, name, value, tags, common)
+}
+
+// record sets the value for a gauge or distribution metric type with the given
+// name and tags. If the metric is not language-soecific, common should be set
+// to true. Must be called with c.mu locked.
+func (c *client) record(namespace Namespace, kind MetricKind, name string, value float64, tags []string, common bool) {
 	if _, ok := c.metrics[namespace]; !ok {
 		c.metrics[namespace] = map[string]*metric{}
 	}
@@ -606,7 +627,22 @@ func (c *client) backgroundHeartbeat() {
 	if !c.started {
 		return
 	}
+
+	// Emit all the metrics that were registered for heartbeat.
+	c.emitHeartbeatMetrics()
+
+	// Send the actual app heartbeat.
 	c.scheduleSubmit(c.newRequest(RequestTypeAppHeartbeat))
 	c.flush(false)
 	c.heartbeatT.Reset(c.heartbeatInterval)
+}
+
+// emitHeartbeatMetrics is invoked as part of each heartbeat tick, and is
+// responsible for emitting periodic metrics that are expected to be sent
+// throughout the lifetime of the service. These are typically gauge metrics.
+// Must be called with c.mu locked.
+func (c *client) emitHeartbeatMetrics() {
+	for _, m := range c.heartbeatMetrics {
+		c.record(m.namespace, m.kind, m.name, m.value(), m.tags, m.common)
+	}
 }

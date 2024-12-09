@@ -33,15 +33,7 @@ func startTelemetry(c *config) {
 		// Do not do extra work populating config data if instrumentation telemetry is disabled.
 		return
 	}
-	telemetry.GlobalClient.ApplyOps(
-		telemetry.WithService(c.serviceName),
-		telemetry.WithEnv(c.env),
-		telemetry.WithHTTPClient(c.httpClient),
-		// c.logToStdout is true if serverless is turned on
-		// c.ciVisibilityAgentless is true if ci visibility mode is turned on and agentless writer is configured
-		telemetry.WithURL(c.logToStdout || c.ciVisibilityAgentless, c.agentURL.String()),
-		telemetry.WithVersion(c.version),
-	)
+
 	telemetryConfigs := []telemetry.Configuration{
 		{Name: "trace_debug_enabled", Value: c.debug},
 		{Name: "agent_feature_drop_p0s", Value: c.agent.DropP0s},
@@ -73,6 +65,38 @@ func startTelemetry(c *config) {
 		c.traceSampleRules.toTelemetry(),
 		telemetry.Sanitize(telemetry.Configuration{Name: "span_sample_rules", Value: c.spanRules}),
 	}
+
+	// Process orchestrion enablement metric emission...
+	const orchestrionEnabledMetric = "orchestrion.enabled"
+	var (
+		orchestrionEnabledValue float64
+		orchestrionEnabledTags  []string
+	)
+	if c.orchestrionCfg.Enabled {
+		orchestrionEnabledValue = 1
+		orchestrionEnabledTags = make([]string, 0, len(c.orchestrionCfg.Metadata))
+		for k, v := range c.orchestrionCfg.Metadata {
+			telemetryConfigs = append(telemetryConfigs, telemetry.Configuration{Name: "orchestrion_" + k, Value: v})
+			orchestrionEnabledTags = append(orchestrionEnabledTags, k+":"+v)
+		}
+		if testing.Testing() {
+			// In tests, ensure tags are consistently ordered... Ordering is irrelevant outside of tests.
+			slices.Sort(orchestrionEnabledTags)
+		}
+	}
+
+	// Apply the GlobalClient options...
+	telemetry.GlobalClient.ApplyOps(
+		telemetry.WithService(c.serviceName),
+		telemetry.WithEnv(c.env),
+		telemetry.WithHTTPClient(c.httpClient),
+		// c.logToStdout is true if serverless is turned on
+		// c.ciVisibilityAgentless is true if ci visibility mode is turned on and agentless writer is configured
+		telemetry.WithURL(c.logToStdout || c.ciVisibilityAgentless, c.agentURL.String()),
+		telemetry.WithVersion(c.version),
+		telemetry.WithHeartbeatMetric(telemetry.NamespaceTracers, telemetry.MetricKindGauge, orchestrionEnabledMetric, func() float64 { return orchestrionEnabledValue }, orchestrionEnabledTags, false),
+	)
+
 	var peerServiceMapping []string
 	for key, value := range c.peerServiceMappings {
 		peerServiceMapping = append(peerServiceMapping, fmt.Sprintf("%s:%s", key, value))
@@ -109,24 +133,16 @@ func startTelemetry(c *config) {
 			telemetry.Configuration{Name: fmt.Sprintf("sr_%s_(%s)_(%s)", rule.ruleType.String(), service, name),
 				Value: fmt.Sprintf("rate:%f_maxPerSecond:%f", rule.Rate, rule.MaxPerSecond)})
 	}
-	if c.orchestrionCfg.Enabled {
-		tags := make([]string, 0, len(c.orchestrionCfg.Metadata))
-		for k, v := range c.orchestrionCfg.Metadata {
-			telemetryConfigs = append(telemetryConfigs, telemetry.Configuration{Name: "orchestrion_" + k, Value: v})
-			tags = append(tags, k+":"+v)
-		}
-		if testing.Testing() {
-			// In tests, ensure tags are consistently ordered...
-			slices.Sort(tags)
-		}
-		telemetry.GlobalClient.Record(
-			telemetry.NamespaceTracers,
-			telemetry.MetricKindGauge,
-			"orchestrion.enabled", 1,
-			tags,
-			false, // Go-specific
-		)
-	}
+
+	// Submit the initial metric tick
+	telemetry.GlobalClient.Record(
+		telemetry.NamespaceTracers,
+		telemetry.MetricKindGauge,
+		orchestrionEnabledMetric, orchestrionEnabledValue,
+		orchestrionEnabledTags,
+		false, // Go-specific
+	)
+
 	telemetryConfigs = append(telemetryConfigs, additionalConfigs...)
 	telemetry.GlobalClient.ProductChange(telemetry.NamespaceTracers, true, telemetryConfigs)
 }
