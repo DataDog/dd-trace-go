@@ -41,13 +41,13 @@ func (h slogHandler) Handle(ctx context.Context, r slog.Record) error {
 	msg := strings.Join(parts, " ")
 	switch r.Level {
 	case slog.LevelDebug:
-		log.Debug(msg)
+		log.Debug("%s", msg)
 	case slog.LevelInfo:
-		log.Info(msg)
+		log.Info("%s", msg)
 	case slog.LevelWarn:
-		log.Warn(msg)
+		log.Warn("%s", msg)
 	case slog.LevelError:
-		log.Error(msg)
+		log.Error("%s", msg)
 	}
 	return nil
 }
