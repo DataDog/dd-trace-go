@@ -129,10 +129,9 @@ func startTelemetry(c *config) {
 	}
 
 	// Submit the initial metric tick
-	telemetry.GlobalClient.Record(
+	telemetry.GlobalClient.Gauge(
 		telemetry.NamespaceTracers,
-		telemetry.MetricKindGauge,
-		orchestrionEnabledMetric, orchestrionEnabledValue,
+		orchestrionEnabledMetric, telemetry.GlobalClient.HeartbeatInterval(), orchestrionEnabledValue,
 		orchestrionEnabledTags,
 		false, // Go-specific
 	)

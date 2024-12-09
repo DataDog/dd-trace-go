@@ -33,10 +33,15 @@ type Client interface {
 	RegisterAppConfig(name string, val interface{}, origin Origin)
 	ProductChange(namespace Namespace, enabled bool, configuration []Configuration)
 	ConfigChange(configuration []Configuration)
-	Record(namespace Namespace, metric MetricKind, name string, value float64, tags []string, common bool)
+
 	Count(namespace Namespace, name string, value float64, tags []string, common bool)
+	Distribution(namespace Namespace, name string, value float64, tags []string, common bool)
+	Gauge(namespace Namespace, name string, interval time.Duration, value float64, tags []string, common bool)
+
 	ApplyOps(opts ...Option)
 	Stop()
+
+	HeartbeatInterval() time.Duration
 }
 
 var (
@@ -273,6 +278,10 @@ func (c *client) start(configuration []Configuration, namespace Namespace, flush
 	c.heartbeatT = time.AfterFunc(c.heartbeatInterval, c.backgroundHeartbeat)
 }
 
+func (c *client) HeartbeatInterval() time.Duration {
+	return c.heartbeatInterval
+}
+
 func heartbeatInterval() time.Duration {
 	heartbeat := internal.FloatEnv("DD_TELEMETRY_HEARTBEAT_INTERVAL", defaultHeartbeatInterval)
 	if heartbeat <= 0 || heartbeat > 3600 {
@@ -326,9 +335,10 @@ var (
 )
 
 type metric struct {
-	name  string
-	kind  MetricKind
-	value float64
+	name     string
+	kind     MetricKind
+	value    float64
+	interval int
 	// Unix timestamp
 	ts     float64
 	tags   []string
@@ -351,36 +361,6 @@ func metricKey(name string, tags []string, kind MetricKind) string {
 	return name + string(kind) + strings.Join(tags, "-")
 }
 
-// Record sets the value for a gauge or distribution metric type with the given
-// name and tags. If the metric is not language-specific, common should be set
-// to true
-func (c *client) Record(namespace Namespace, kind MetricKind, name string, value float64, tags []string, common bool) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if !c.started {
-		return
-	}
-	c.record(namespace, kind, name, value, tags, common)
-}
-
-// record sets the value for a gauge or distribution metric type with the given
-// name and tags. If the metric is not language-soecific, common should be set
-// to true. Must be called with c.mu locked.
-func (c *client) record(namespace Namespace, kind MetricKind, name string, value float64, tags []string, common bool) {
-	if _, ok := c.metrics[namespace]; !ok {
-		c.metrics[namespace] = map[string]*metric{}
-	}
-	key := metricKey(name, tags, kind)
-	m, ok := c.metrics[namespace][key]
-	if !ok {
-		m = newMetric(name, kind, tags, common)
-		c.metrics[namespace][key] = m
-	}
-	m.value = value
-	m.ts = float64(time.Now().Unix())
-	c.newMetrics = true
-}
-
 // Count adds the value to a count with the given name and tags. If the metric
 // is not language-specific, common should be set to true
 func (c *client) Count(namespace Namespace, name string, value float64, tags []string, common bool) {
@@ -389,6 +369,11 @@ func (c *client) Count(namespace Namespace, name string, value float64, tags []s
 	if !c.started {
 		return
 	}
+	c.count(namespace, name, value, tags, common)
+}
+
+// count implements Count, must be called with c.mu locked.
+func (c *client) count(namespace Namespace, name string, value float64, tags []string, common bool) {
 	if _, ok := c.metrics[namespace]; !ok {
 		c.metrics[namespace] = map[string]*metric{}
 	}
@@ -399,6 +384,62 @@ func (c *client) Count(namespace Namespace, name string, value float64, tags []s
 		c.metrics[namespace][key] = m
 	}
 	m.value += value
+	m.ts = float64(time.Now().Unix())
+	c.newMetrics = true
+}
+
+// Distribution sets the value for a distribution metric type with the given
+// name and tags. If the metric is not language-specific, common should be set
+// to true.
+func (c *client) Distribution(namespace Namespace, name string, value float64, tags []string, common bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if !c.started {
+		return
+	}
+	c.distribution(namespace, name, value, tags, common)
+}
+
+// distribution implements Distribution, must be called with c.mu locked.
+func (c *client) distribution(namespace Namespace, name string, value float64, tags []string, common bool) {
+	if _, ok := c.metrics[namespace]; !ok {
+		c.metrics[namespace] = map[string]*metric{}
+	}
+	key := metricKey(name, tags, MetricKindDist)
+	m, ok := c.metrics[namespace][key]
+	if !ok {
+		m = newMetric(name, MetricKindDist, tags, common)
+		c.metrics[namespace][key] = m
+	}
+	m.value = value
+	m.ts = float64(time.Now().Unix())
+	c.newMetrics = true
+}
+
+// Gauge sets the value for a gauge metric type with the given name and tags. If
+// the metric is not language-specific, common should be set to true.
+func (c *client) Gauge(namespace Namespace, name string, interval time.Duration, value float64, tags []string, common bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if !c.started {
+		return
+	}
+	c.gauge(namespace, name, interval, value, tags, common)
+}
+
+// gauge implements Gauge, must be called with c.mu locked.
+func (c *client) gauge(namespace Namespace, name string, interval time.Duration, value float64, tags []string, common bool) {
+	if _, ok := c.metrics[namespace]; !ok {
+		c.metrics[namespace] = map[string]*metric{}
+	}
+	key := metricKey(name, tags, MetricKindGauge)
+	m, ok := c.metrics[namespace][key]
+	if !ok {
+		m = newMetric(name, MetricKindGauge, tags, common)
+		m.interval = int(interval.Seconds())
+		c.metrics[namespace][key] = m
+	}
+	m.value = value
 	m.ts = float64(time.Now().Unix())
 	c.newMetrics = true
 }
@@ -430,20 +471,22 @@ func (c *client) flush(sync bool) {
 				Namespace: namespace,
 			}
 			for _, m := range c.metrics[namespace] {
-				if m.kind == MetricKindDist {
+				switch m.kind {
+				case MetricKindDist:
 					dPayload.Series = append(dPayload.Series, DistributionSeries{
 						Metric: m.name,
 						Tags:   m.tags,
 						Common: m.common,
 						Points: []float64{m.value},
 					})
-				} else {
+				default:
 					gPayload.Series = append(gPayload.Series, Series{
-						Metric: m.name,
-						Type:   string(m.kind),
-						Tags:   m.tags,
-						Common: m.common,
-						Points: [][2]float64{{m.ts, m.value}},
+						Metric:   m.name,
+						Type:     string(m.kind),
+						Interval: m.interval,
+						Tags:     m.tags,
+						Common:   m.common,
+						Points:   [][2]float64{{m.ts, m.value}},
 					})
 				}
 			}
@@ -643,6 +686,13 @@ func (c *client) backgroundHeartbeat() {
 // Must be called with c.mu locked.
 func (c *client) emitHeartbeatMetrics() {
 	for _, m := range c.heartbeatMetrics {
-		c.record(m.namespace, m.kind, m.name, m.value(), m.tags, m.common)
+		switch m.kind {
+		case MetricKindCount:
+			c.count(m.namespace, m.name, m.value(), m.tags, m.common)
+		case MetricKindDist:
+			c.distribution(m.namespace, m.name, m.value(), m.tags, m.common)
+		case MetricKindGauge:
+			c.gauge(m.namespace, m.name, c.HeartbeatInterval(), m.value(), m.tags, m.common)
+		}
 	}
 }

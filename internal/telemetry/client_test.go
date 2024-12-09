@@ -169,8 +169,8 @@ func TestMetrics(t *testing.T) {
 		client.start(nil, NamespaceTracers, true)
 
 		// Records should have the most recent value
-		client.Record(NamespaceTracers, MetricKindGauge, "foobar", 1, nil, false)
-		client.Record(NamespaceTracers, MetricKindGauge, "foobar", 2, nil, false)
+		client.Gauge(NamespaceTracers, "foobar", 1, 1, nil, false)
+		client.Gauge(NamespaceTracers, "foobar", 1, 2, nil, false)
 		// Counts should be aggregated
 		client.Count(NamespaceTracers, "baz", 3, nil, true)
 		client.Count(NamespaceTracers, "baz", 1, nil, true)
@@ -244,8 +244,8 @@ func TestDistributionMetrics(t *testing.T) {
 		}
 		client.start(nil, NamespaceTracers, true)
 		// Records should have the most recent value
-		client.Record(NamespaceTracers, MetricKindDist, "soobar", 1, nil, false)
-		client.Record(NamespaceTracers, MetricKindDist, "soobar", 3, nil, false)
+		client.distribution(NamespaceTracers, "soobar", 1, nil, false)
+		client.distribution(NamespaceTracers, "soobar", 3, nil, false)
 		client.mu.Lock()
 		client.flush(false)
 		client.mu.Unlock()
@@ -275,7 +275,7 @@ func TestDisabledClient(t *testing.T) {
 		URL: server.URL,
 	}
 	client.start(nil, NamespaceTracers, true)
-	client.Record(NamespaceTracers, MetricKindGauge, "foobar", 1, nil, false)
+	client.Gauge(NamespaceTracers, "foobar", 1, 1, nil, false)
 	client.Count(NamespaceTracers, "bonk", 4, []string{"org:1"}, false)
 	client.Stop()
 }
@@ -290,7 +290,7 @@ func TestNonStartedClient(t *testing.T) {
 	client := &client{
 		URL: server.URL,
 	}
-	client.Record(NamespaceTracers, MetricKindGauge, "foobar", 1, nil, false)
+	client.Gauge(NamespaceTracers, "foobar", 1, 1, nil, false)
 	client.Count(NamespaceTracers, "bonk", 4, []string{"org:1"}, false)
 	client.Stop()
 }

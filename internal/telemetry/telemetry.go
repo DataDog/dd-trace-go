@@ -121,6 +121,6 @@ func Time(namespace Namespace, name string, tags []string, common bool) (finish 
 	start := time.Now()
 	return func() {
 		elapsed := time.Since(start)
-		GlobalClient.Record(namespace, MetricKindDist, name, float64(elapsed.Milliseconds()), tags, common)
+		GlobalClient.Distribution(namespace, name, float64(elapsed.Milliseconds()), tags, common)
 	}
 }

@@ -9,6 +9,7 @@ package telemetrytest
 import (
 	"slices"
 	"sync"
+	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 
@@ -44,6 +45,12 @@ func (c *MockClient) ProductChange(namespace telemetry.Namespace, enabled bool, 
 	c.productChange(namespace, enabled)
 }
 
+func (c *MockClient) HeartbeatInterval() time.Duration {
+	c.On("HeartbeatInterval").Return(time.Second)
+	_ = c.Called()
+	return time.Second
+}
+
 // ProductStop signals a product has stopped and disables that product in the mock client.
 // ProductStop is NOOP for the tracer namespace, since the tracer is not considered a product.
 func (c *MockClient) ProductStop(namespace telemetry.Namespace) {
@@ -69,13 +76,30 @@ func (c *MockClient) productChange(namespace telemetry.Namespace, enabled bool) 
 	}
 }
 
-// Record stores the value for the given metric. It is currently mocked for `Gauge` and `Distribution` metric types.
-func (c *MockClient) Record(ns telemetry.Namespace, kind telemetry.MetricKind, name string, val float64, tags []string, common bool) {
+// Distribution stores the value for the given metric.
+func (c *MockClient) Distribution(ns telemetry.Namespace, name string, val float64, tags []string, common bool) {
 	// Ensure consistent ordering through expectations
 	slices.Sort(tags)
 
-	c.On("Record", ns, kind, name, val, tags, common).Return()
-	_ = c.Called(ns, kind, name, val, tags, common)
+	c.On("Distribution", ns, name, val, tags, common).Return()
+	_ = c.Called(ns, name, val, tags, common)
+	// record the val for tests that assert based on the value
+	if _, ok := c.Metrics[ns]; !ok {
+		if c.Metrics == nil {
+			c.Metrics = make(map[telemetry.Namespace]map[string]float64)
+		}
+		c.Metrics[ns] = map[string]float64{}
+	}
+	c.Metrics[ns][name] = val
+}
+
+// Record stores the value for the given metric. It is currently mocked for `Gauge` and `Distribution` metric types.
+func (c *MockClient) Gauge(ns telemetry.Namespace, name string, interval time.Duration, val float64, tags []string, common bool) {
+	// Ensure consistent ordering through expectations
+	slices.Sort(tags)
+
+	c.On("Gauge", ns, name, interval, val, tags, common).Return()
+	_ = c.Called(ns, name, interval, val, tags, common)
 	// record the val for tests that assert based on the value
 	if _, ok := c.Metrics[ns]; !ok {
 		if c.Metrics == nil {
