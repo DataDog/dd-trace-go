@@ -94,6 +94,7 @@ func (t *tracer) reportHealthMetrics(interval time.Duration) {
 			t.statsd.Count("datadog.tracer.spans_started", int64(atomic.SwapUint32(&t.spansStarted, 0)), nil, 1)
 			t.statsd.Count("datadog.tracer.spans_finished", int64(atomic.SwapUint32(&t.spansFinished, 0)), nil, 1)
 			t.statsd.Count("datadog.tracer.traces_dropped", int64(atomic.SwapUint32(&t.tracesDropped, 0)), []string{"reason:trace_too_large"}, 1)
+			t.statsd.Count("datadog.tracer.queue.enqueued.traces", int64(atomic.SwapUint32(&t.tracesQueued, 0)), nil, 1)
 		case <-t.stop:
 			return
 		}
