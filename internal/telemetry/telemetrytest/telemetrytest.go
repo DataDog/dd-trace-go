@@ -7,6 +7,7 @@
 package telemetrytest
 
 import (
+	"slices"
 	"sync"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
@@ -69,10 +70,12 @@ func (c *MockClient) productChange(namespace telemetry.Namespace, enabled bool) 
 }
 
 // Record stores the value for the given metric. It is currently mocked for `Gauge` and `Distribution` metric types.
-func (c *MockClient) Record(ns telemetry.Namespace, _ telemetry.MetricKind, name string, val float64, tags []string, common bool) {
-	c.On("Gauge", ns, name, val, tags, common).Return()
-	c.On("Record", ns, name, val, tags, common).Return()
-	_ = c.Called(ns, name, val, tags, common)
+func (c *MockClient) Record(ns telemetry.Namespace, kind telemetry.MetricKind, name string, val float64, tags []string, common bool) {
+	// Ensure consistent ordering through expectations
+	slices.Sort(tags)
+
+	c.On("Record", ns, kind, name, val, tags, common).Return()
+	_ = c.Called(ns, kind, name, val, tags, common)
 	// record the val for tests that assert based on the value
 	if _, ok := c.Metrics[ns]; !ok {
 		if c.Metrics == nil {

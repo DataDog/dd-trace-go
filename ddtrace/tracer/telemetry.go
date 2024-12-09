@@ -7,9 +7,7 @@ package tracer
 
 import (
 	"fmt"
-	"slices"
 	"strings"
-	"testing"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 )
@@ -78,10 +76,6 @@ func startTelemetry(c *config) {
 		for k, v := range c.orchestrionCfg.Metadata {
 			telemetryConfigs = append(telemetryConfigs, telemetry.Configuration{Name: "orchestrion_" + k, Value: v})
 			orchestrionEnabledTags = append(orchestrionEnabledTags, k+":"+v)
-		}
-		if testing.Testing() {
-			// In tests, ensure tags are consistently ordered... Ordering is irrelevant outside of tests.
-			slices.Sort(orchestrionEnabledTags)
 		}
 	}
 
