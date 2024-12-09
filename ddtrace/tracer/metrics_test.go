@@ -55,12 +55,34 @@ func TestReportHealthMetrics(t *testing.T) {
 
 	tracer.StartSpan("operation").Finish()
 	flush(1)
-	tg.Wait(assert, 3, 10*time.Second)
+	tg.Wait(assert, 4, 10*time.Second)
 
 	counts := tg.Counts()
 	assert.Equal(int64(1), counts["datadog.tracer.spans_started"])
 	assert.Equal(int64(1), counts["datadog.tracer.spans_finished"])
 	assert.Equal(int64(0), counts["datadog.tracer.traces_dropped"])
+	assert.Equal(int64(1), counts["datadog.tracer.queue.enqueued.traces"])
+}
+
+func TestEnqueuedTracesHealthMetric(t *testing.T) {
+	assert := assert.New(t)
+	var tg statsdtest.TestStatsdClient
+
+	defer func(old time.Duration) { statsInterval = old }(statsInterval)
+	statsInterval = time.Nanosecond
+
+	tracer, _, flush, stop := startTestTracer(t, withStatsdClient(&tg))
+	defer stop()
+
+	for i := 0; i < 3; i++ {
+		tracer.StartSpan("operation").Finish()
+	}
+	flush(3)
+	tg.Wait(assert, 1, 10*time.Second)
+
+	counts := tg.Counts()
+	assert.Equal(int64(3), counts["datadog.tracer.queue.enqueued.traces"])
+	assert.Equal(uint32(0), tracer.tracesQueued)
 }
 
 func TestTracerMetrics(t *testing.T) {

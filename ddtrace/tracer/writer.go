@@ -14,8 +14,10 @@ import (
 	"os"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 	globalinternal "gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
@@ -66,6 +68,10 @@ func (h *agentTraceWriter) add(trace []*span) {
 	if err := h.payload.push(trace); err != nil {
 		h.statsd.Incr("datadog.tracer.traces_dropped", []string{"reason:encoding_error"}, 1)
 		log.Error("Error encoding msgpack: %v", err)
+	}
+	tr, haveTracer := internal.GetGlobalTracer().(*tracer)
+	if haveTracer {
+		atomic.AddUint32(&tr.tracesQueued, 1) // TODO: This does not differentiate between complete traces and partial chunks
 	}
 	if h.payload.size() > payloadSizeLimit {
 		h.statsd.Incr("datadog.tracer.flush_triggered", []string{"reason:size"}, 1)
