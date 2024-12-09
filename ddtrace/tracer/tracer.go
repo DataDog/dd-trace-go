@@ -8,6 +8,7 @@ package tracer
 import (
 	gocontext "context"
 	"encoding/binary"
+	"fmt"
 	"log/slog"
 	"math"
 	"os"
@@ -347,6 +348,13 @@ func newTracer(opts ...StartOption) *tracer {
 		t.abandonedSpansDebugger = newAbandonedSpansDebugger()
 		t.abandonedSpansDebugger.Start(t.config.spanTimeout)
 	}
+	for name, conf := range c.integrations {
+		if !conf.Instrumented {
+			continue
+		}
+		t.statsd.Incr("datadog.tracer.instrumentations", []string{fmt.Sprintf("source:%s", name)}, 1)
+	}
+
 	t.wg.Add(1)
 	go func() {
 		defer t.wg.Done()
