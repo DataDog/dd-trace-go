@@ -9,6 +9,9 @@ on:
         type: string
   push:
     branches: [ main, master ]
+    tags-ignore:
+      - 'contrib/**'
+      - 'instrumentation/**'
   pull_request:
     # The branches below must be a subset of the branches above
     branches: [ main ]
