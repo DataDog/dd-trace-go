@@ -339,7 +339,7 @@ func newUnstartedTracer(opts ...StartOption) (*tracer, error) {
 		prioritySampling: sampler,
 		pid:              os.Getpid(),
 		logDroppedTraces: time.NewTicker(1 * time.Second),
-		stats:            newConcentrator(c, defaultStatsBucketSize),
+		stats:            newConcentrator(c, defaultStatsBucketSize, statsd),
 		obfuscator: obfuscate.NewObfuscator(obfuscate.Config{
 			SQL: obfuscate.SQLConfig{
 				TableNames:       c.agent.HasFlag("table_names"),

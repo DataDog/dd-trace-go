@@ -25,6 +25,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DataDog/datadog-go/v5/statsd"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/internal/tracerstats"
@@ -2347,7 +2348,7 @@ func TestFlush(t *testing.T) {
 	tr.statsd = ts
 
 	transport := newDummyTransport()
-	c := newConcentrator(&config{transport: transport, env: "someEnv"}, defaultStatsBucketSize)
+	c := newConcentrator(&config{transport: transport, env: "someEnv"}, defaultStatsBucketSize, &statsd.NoOpClient{})
 	tr.stats = c
 	c.Start()
 	defer c.Stop()
