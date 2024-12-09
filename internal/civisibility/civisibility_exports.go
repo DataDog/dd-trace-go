@@ -443,6 +443,7 @@ func civisibility_test_set_test_source(test_id C.ulonglong, test_source_file *C.
 	if test, ok := tests[uint64(test_id)]; ok {
 		if test_source_file != nil {
 			file := C.GoString(test_source_file)
+			file = utils.GetRelativePathFromCITagsSourceRoot(file)
 			test.SetTag(constants.TestSourceFile, file)
 
 			// get the codeowner of the function
@@ -628,7 +629,9 @@ func civisibility_send_code_coverage_payload(coverages *C.struct_test_coverage, 
 		}
 		for j := 0; j < coverageFilesLen; j++ {
 			file := *(*C.struct_test_coverage_file)(unsafe.Add(unsafe.Pointer(coverage.files), j*test_coverage_file_size))
-			coverageData.Files = append(coverageData.Files, ciTestCoverageFile{FileName: C.GoString(file.filename)})
+			coverageFile := ciTestCoverageFile{FileName: C.GoString(file.filename)}
+			coverageFile.FileName = utils.GetRelativePathFromCITagsSourceRoot(coverageFile.FileName)
+			coverageData.Files = append(coverageData.Files, coverageFile)
 		}
 		coveragePayload.Coverages = append(coveragePayload.Coverages, coverageData)
 	}
