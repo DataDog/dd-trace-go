@@ -9,7 +9,10 @@ on:
   push:
     branches:
       - main
-      - release-v*
+      - release-v*  
+    tags-ignore:
+      - 'contrib/**'
+      - 'instrumentation/**'
   schedule:
     - cron: '00 00 * * *'
   workflow_dispatch:
