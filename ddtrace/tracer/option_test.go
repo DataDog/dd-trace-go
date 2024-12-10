@@ -338,7 +338,7 @@ func TestIntegrationEnabled(t *testing.T) {
 		var out contribPkg
 		err := stream.Decode(&out)
 		if err != nil {
-			t.Fatalf(err.Error())
+			t.Fatal(err.Error())
 		}
 		packages = append(packages, out)
 	}
