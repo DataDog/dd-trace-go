@@ -534,7 +534,13 @@ func (t *trace) finishedOne(s *span) {
 }
 
 func (t *trace) finishChunk(tr *tracer, ch *chunk) {
-	atomic.AddUint32(&tr.spansFinished, uint32(len(ch.spans)))
+	for _, sp := range ch.spans {
+		if sp.source == "manual" {
+			atomic.AddUint32(&tr.spansFinished, 1)
+		} else {
+			tr.statsd.Count("datadog.tracer.spans_finished", 1, []string{fmt.Sprintf("source:%s", sp.source)}, 1)
+		}
+	}
 	tr.pushChunk(ch)
 	t.finished = 0 // important, because a buffer can be used for several flushes
 }
