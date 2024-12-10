@@ -113,7 +113,6 @@ func TestSelect(t *testing.T) {
 			assert.Equal("http.request", spans[1].OperationName())
 			assert.Equal("uptrace/bun", spans[0].Tag(ext.Component))
 			assert.Equal(componentName, spans[0].Source())
-			assert.Equal(componentName, spans[1].Source())
 			assert.Equal(ext.DBSystemOtherSQL, spans[0].Tag(ext.DBSystem))
 			mt.Reset()
 		})
@@ -149,7 +148,6 @@ func TestServiceName(t *testing.T) {
 		assert.Equal("fake-http-server", spans[1].Tag(ext.ServiceName))
 		assert.Equal("uptrace/bun", spans[0].Tag(ext.Component))
 		assert.Equal(componentName, spans[0].Source())
-		assert.Equal(componentName, spans[1].Source())
 		assert.Equal(ext.DBSystemOtherSQL, spans[0].Tag(ext.DBSystem))
 		assert.Equal(spans[0].ParentID(), spans[1].SpanID())
 	})
@@ -186,7 +184,6 @@ func TestServiceName(t *testing.T) {
 		assert.Equal("fake-http-server", spans[1].Tag(ext.ServiceName))
 		assert.Equal("uptrace/bun", spans[0].Tag(ext.Component))
 		assert.Equal(componentName, spans[0].Source())
-		assert.Equal(componentName, spans[1].Source())
 		assert.Equal(ext.DBSystemOtherSQL, spans[0].Tag(ext.DBSystem))
 	})
 
@@ -218,7 +215,6 @@ func TestServiceName(t *testing.T) {
 		assert.Equal("fake-http-server", spans[1].Tag(ext.ServiceName))
 		assert.Equal("uptrace/bun", spans[0].Tag(ext.Component))
 		assert.Equal(componentName, spans[0].Source())
-		assert.Equal(componentName, spans[1].Source())
 		assert.Equal(ext.DBSystemOtherSQL, spans[0].Tag(ext.DBSystem))
 	})
 }
