@@ -12,10 +12,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/DataDog/datadog-go/v5/statsd"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
-	"github.com/DataDog/dd-trace-go/v2/internal/statsdtest"
 )
 
 func TestAlignTs(t *testing.T) {
@@ -41,7 +39,7 @@ func TestConcentrator(t *testing.T) {
 	}
 	t.Run("start-stop", func(t *testing.T) {
 		assert := assert.New(t)
-		c := newConcentrator(&config{}, bucketSize, &statsd.NoOpClient{})
+		c := newConcentrator(&config{}, bucketSize)
 		assert.EqualValues(atomic.LoadUint32(&c.stopped), 1)
 		c.Start()
 		assert.EqualValues(atomic.LoadUint32(&c.stopped), 0)
@@ -60,7 +58,7 @@ func TestConcentrator(t *testing.T) {
 	t.Run("flusher", func(t *testing.T) {
 		t.Run("old", func(t *testing.T) {
 			transport := newDummyTransport()
-			c := newConcentrator(&config{transport: transport, env: "someEnv"}, 500_000, &statsd.NoOpClient{})
+			c := newConcentrator(&config{transport: transport, env: "someEnv"}, 500_000)
 			assert.Len(t, transport.Stats(), 0)
 			ss1, ok := c.newTracerStatSpan(&s1, nil)
 			assert.True(t, ok)
@@ -75,10 +73,9 @@ func TestConcentrator(t *testing.T) {
 			assert.Equal(t, "http.request", actualStats[0].Stats[0].Stats[0].Name)
 		})
 
-		t.Run("recent+stats", func(t *testing.T) {
+		t.Run("recent", func(t *testing.T) {
 			transport := newDummyTransport()
-			testStats := &statsdtest.TestStatsdClient{}
-			c := newConcentrator(&config{transport: transport, env: "someEnv"}, (10 * time.Second).Nanoseconds(), testStats)
+			c := newConcentrator(&config{transport: transport, env: "someEnv"}, (10 * time.Second).Nanoseconds())
 			assert.Len(t, transport.Stats(), 0)
 			ss1, ok := c.newTracerStatSpan(&s1, nil)
 			assert.True(t, ok)
@@ -99,13 +96,12 @@ func TestConcentrator(t *testing.T) {
 			assert.Len(t, names, 2)
 			assert.NotNil(t, names["http.request"])
 			assert.NotNil(t, names["potato"])
-			assert.Contains(t, testStats.CallNames(), "datadog.tracer.stats.spans_in")
 		})
 
 		t.Run("ciGitSha", func(t *testing.T) {
 			utils.AddCITags(constants.GitCommitSHA, "DEADBEEF")
 			transport := newDummyTransport()
-			c := newConcentrator(&config{transport: transport, env: "someEnv"}, (10 * time.Second).Nanoseconds(), &statsd.NoOpClient{})
+			c := newConcentrator(&config{transport: transport, env: "someEnv"}, (10 * time.Second).Nanoseconds())
 			assert.Len(t, transport.Stats(), 0)
 			ss1, ok := c.newTracerStatSpan(&s1, nil)
 			assert.True(t, ok)
@@ -119,7 +115,7 @@ func TestConcentrator(t *testing.T) {
 		// stats should be sent if the concentrator is stopped
 		t.Run("stop", func(t *testing.T) {
 			transport := newDummyTransport()
-			c := newConcentrator(&config{transport: transport}, 500000, &statsd.NoOpClient{})
+			c := newConcentrator(&config{transport: transport}, 500000)
 			assert.Len(t, transport.Stats(), 0)
 			ss1, ok := c.newTracerStatSpan(&s1, nil)
 			assert.True(t, ok)

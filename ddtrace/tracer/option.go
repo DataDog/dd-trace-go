@@ -1069,7 +1069,7 @@ func WithRuntimeMetrics() StartOption {
 	}
 }
 
-// WithDogstatsdAddr specifies the address to connect to for sending metrics to the Datadog
+// WithDogstatsdAddress specifies the address to connect to for sending metrics to the Datadog
 // Agent. It should be a "host:port" string, or the path to a unix domain socket.If not set, it
 // attempts to determine the address of the statsd service according to the following rules:
 //  1. Look for /var/run/datadog/dsd.socket and use it if present. IF NOT, continue to #2.
@@ -1077,7 +1077,7 @@ func WithRuntimeMetrics() StartOption {
 //  3. The port is retrieved from the agent. If not present, it is determined by DD_DOGSTATSD_PORT, and defaults to 8125
 //
 // This option is in effect when WithRuntimeMetrics is enabled.
-func WithDogstatsdAddr(addr string) StartOption {
+func WithDogstatsdAddress(addr string) StartOption {
 	return func(cfg *config) {
 		cfg.dogstatsdAddr = addr
 		globalconfig.SetDogstatsdAddr(addr)
