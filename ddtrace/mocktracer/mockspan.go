@@ -49,6 +49,8 @@ type Span interface {
 
 	// Stringer allows pretty-printing the span's fields for debugging.
 	fmt.Stringer
+
+	Source() string
 }
 
 func newSpan(t *mocktracer, operationName string, cfg *ddtrace.StartSpanConfig) *mockspan {

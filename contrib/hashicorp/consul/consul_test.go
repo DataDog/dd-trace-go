@@ -101,6 +101,7 @@ func TestKV(t *testing.T) {
 			assert.Equal("consul", span.Tag(ext.ServiceName))
 			assert.Equal(key, span.Tag("consul.key"))
 			assert.Equal("hashicorp/consul", span.Tag(ext.Component))
+			assert.Equal(componentName, span.Source())
 			assert.Equal(ext.SpanKindClient, span.Tag(ext.SpanKind))
 			assert.Equal("127.0.0.1", span.Tag(ext.NetworkDestinationName))
 			assert.Equal(ext.DBSystemConsulKV, span.Tag(ext.DBSystem))
