@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"testing/slogtest"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -84,13 +85,33 @@ func TestNewJSONHandler(t *testing.T) {
 }
 
 func TestWrapHandler(t *testing.T) {
-	testLogger(
-		t,
-		func(w io.Writer) *slog.Logger {
-			return slog.New(WrapHandler(slog.NewJSONHandler(w, nil)))
-		},
-		nil,
-	)
+	t.Run("testLogger", func(t *testing.T) {
+		testLogger(
+			t,
+			func(w io.Writer) *slog.Logger {
+				return slog.New(WrapHandler(slog.NewJSONHandler(w, nil)))
+			},
+			nil,
+		)
+	})
+
+	t.Run("slogtest", func(t *testing.T) {
+		var buf bytes.Buffer
+		h := WrapHandler(slog.NewJSONHandler(&buf, nil))
+		results := func() []map[string]any {
+			var ms []map[string]any
+			for _, line := range bytes.Split(buf.Bytes(), []byte{'\n'}) {
+				if len(line) == 0 {
+					continue
+				}
+				var m map[string]any
+				require.NoError(t, json.Unmarshal(line, &m))
+				ms = append(ms, m)
+			}
+			return ms
+		}
+		require.NoError(t, slogtest.TestHandler(h, results))
+	})
 }
 
 func TestHandlerWithAttrs(t *testing.T) {
