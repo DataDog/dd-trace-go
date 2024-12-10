@@ -535,6 +535,9 @@ func (t *trace) finishedOne(s *span) {
 
 func (t *trace) finishChunk(tr *tracer, ch *chunk) {
 	for _, sp := range ch.spans {
+		if sp == nil {
+			continue
+		}
 		if sp.source == "manual" {
 			atomic.AddUint32(&tr.spansFinished, 1)
 		} else {
