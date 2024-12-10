@@ -12,10 +12,5 @@ func Stop() {
 }
 
 func GetStopChan() chan struct{} {
-	// once.Do(func() {
-	// 	if stop == nil {
-	// 		stop = make(chan struct{})
-	// 	}
-	// })
 	return stop
 }
