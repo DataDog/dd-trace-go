@@ -151,14 +151,16 @@ func (t *httpTransport) send(p *payload) (body io.ReadCloser, err error) {
 	}
 	req.Header.Set(traceCountHeader, strconv.Itoa(p.itemCount()))
 	req.Header.Set(headerComputedTopLevel, "yes")
-	if t, ok := traceinternal.GetGlobalTracer().(*tracer); ok {
-		if t.config.canComputeStats() {
+	var tr *tracer
+	var tracerExists bool
+	if tr, tracerExists = traceinternal.GetGlobalTracer().(*tracer); tracerExists {
+		if tr.config.canComputeStats() {
 			req.Header.Set("Datadog-Client-Computed-Stats", "yes")
 		}
-		droppedTraces := int(atomic.SwapUint32(&t.droppedP0Traces, 0))
-		partialTraces := int(atomic.SwapUint32(&t.partialTraces, 0))
-		droppedSpans := int(atomic.SwapUint32(&t.droppedP0Spans, 0))
-		if stats := t.statsd; stats != nil {
+		droppedTraces := int(atomic.SwapUint32(&tr.droppedP0Traces, 0))
+		partialTraces := int(atomic.SwapUint32(&tr.partialTraces, 0))
+		droppedSpans := int(atomic.SwapUint32(&tr.droppedP0Spans, 0))
+		if stats := tr.statsd; stats != nil {
 			stats.Count("datadog.tracer.dropped_p0_traces", int64(droppedTraces),
 				[]string{fmt.Sprintf("partial:%s", strconv.FormatBool(partialTraces > 0))}, 1)
 			stats.Count("datadog.tracer.dropped_p0_spans", int64(droppedSpans), nil, 1)
@@ -168,9 +170,11 @@ func (t *httpTransport) send(p *payload) (body io.ReadCloser, err error) {
 	}
 	response, err := t.client.Do(req)
 	if err != nil {
+		reportAPIErrMetric(tracerExists, tr, response.StatusCode)
 		return nil, err
 	}
 	if code := response.StatusCode; code >= 400 {
+		reportAPIErrMetric(tracerExists, tr, code)
 		// error, check the body for context information and
 		// return a nice error.
 		msg := make([]byte, 1000)
@@ -183,6 +187,12 @@ func (t *httpTransport) send(p *payload) (body io.ReadCloser, err error) {
 		return nil, fmt.Errorf("%s", txt)
 	}
 	return response.Body, nil
+}
+
+func reportAPIErrMetric(tracerExists bool, t *tracer, statusCode int) {
+	if tracerExists {
+		t.statsd.Incr("datadog.tracer.api.errors", []string{fmt.Sprintf("status:%d", statusCode)}, 1)
+	}
 }
 
 func (t *httpTransport) endpoint() string {
