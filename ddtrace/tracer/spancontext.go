@@ -420,7 +420,11 @@ func (t *trace) push(sp *span) {
 	}
 	t.spans = append(t.spans, sp)
 	if haveTracer {
-		atomic.AddUint32(&tr.spansStarted, 1)
+		if sp.source == "manual" {
+			atomic.AddUint32(&tr.spansStarted, 1)
+		} else {
+			tr.statsd.Count("datadog.tracer.spans_started", 1, []string{fmt.Sprintf("source:%s", sp.source)}, 1)
+		}
 	}
 }
 
