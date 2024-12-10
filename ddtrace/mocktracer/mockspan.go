@@ -49,11 +49,14 @@ type Span interface {
 
 	// Stringer allows pretty-printing the span's fields for debugging.
 	fmt.Stringer
+
+	Source() string
 }
 
 func newSpan(t *mocktracer, operationName string, cfg *ddtrace.StartSpanConfig) *mockspan {
 	if cfg.Tags == nil {
 		cfg.Tags = make(map[string]interface{})
+		cfg.Tags[ext.Component] = "manual"
 	}
 	if cfg.Tags[ext.ResourceName] == nil {
 		cfg.Tags[ext.ResourceName] = operationName
@@ -102,6 +105,7 @@ type mockspan struct {
 	tags         map[string]interface{}
 	finishTime   time.Time
 	finished     bool
+	source       string
 
 	startTime time.Time
 	parentID  uint64
@@ -127,6 +131,9 @@ func (s *mockspan) SetTag(key string, value interface{}) {
 		case float64:
 			s.context.setSamplingPriority(int(p))
 		}
+	}
+	if key == ext.Component {
+		s.source = value.(string)
 	}
 	s.tags[key] = value
 }
@@ -283,4 +290,11 @@ func (s *mockspan) Root() tracer.Span {
 	}
 	root, _ := current.(*mockspan)
 	return root
+}
+
+// Source returns the component from which the mockspan was created.
+// This is used to test the source tag of the `datadog.tracer.spans_{started,finished}`
+// health metrics.
+func (s *mockspan) Source() string {
+	return s.source
 }

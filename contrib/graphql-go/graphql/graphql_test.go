@@ -57,6 +57,7 @@ func Test(t *testing.T) {
 		traceID := spans[0].TraceID()
 		for i := 1; i < len(spans); i++ {
 			assert.Equal(t, traceID, spans[i].TraceID())
+			assert.Equal(t, componentName, spans[i].Source())
 		}
 		assertSpanMatches(t, spans[0],
 			hasNoTag(ext.Error),
@@ -161,6 +162,7 @@ func Test(t *testing.T) {
 			hasTag(ext.ResourceName, "graphql.parse"),
 			hasTag(ext.Component, "graphql-go/graphql"),
 		)
+		assert.Equal(t, componentName, spans[0].Source())
 		assertSpanMatches(t, spans[1],
 			hasTag(ext.Error, resp.Errors[0].OriginalError()),
 			hasTag(ext.ServiceName, "test-graphql-service"),
@@ -168,6 +170,7 @@ func Test(t *testing.T) {
 			hasTag(ext.ResourceName, "graphql.server"),
 			hasTag(ext.Component, "graphql-go/graphql"),
 		)
+		assert.Equal(t, componentName, spans[1].Source())
 	})
 
 	t.Run("request fails validation", func(t *testing.T) {
@@ -191,6 +194,7 @@ func Test(t *testing.T) {
 			hasTag(ext.ResourceName, "graphql.parse"),
 			hasTag(ext.Component, "graphql-go/graphql"),
 		)
+		assert.Equal(t, componentName, spans[0].Source())
 		assertSpanMatches(t, spans[1],
 			hasTag(ext.Error, resp.Errors[0]),
 			hasTag(tagGraphqlOperationName, "TestQuery"),
@@ -200,6 +204,7 @@ func Test(t *testing.T) {
 			hasTag(ext.ResourceName, "graphql.validate"),
 			hasTag(ext.Component, "graphql-go/graphql"),
 		)
+		assert.Equal(t, componentName, spans[1].Source())
 		assertSpanMatches(t, spans[2],
 			hasTag(ext.Error, resp.Errors[0]),
 			hasTag(ext.ServiceName, "test-graphql-service"),
@@ -207,6 +212,7 @@ func Test(t *testing.T) {
 			hasTag(ext.ResourceName, "graphql.server"),
 			hasTag(ext.Component, "graphql-go/graphql"),
 		)
+		assert.Equal(t, componentName, spans[2].Source())
 	})
 }
 

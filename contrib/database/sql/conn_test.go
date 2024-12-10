@@ -108,6 +108,7 @@ func TestWithSpanTags(t *testing.T) {
 			}
 			assert.Equal(t, ext.SpanKindClient, connectSpan.Tag(ext.SpanKind))
 			assert.Equal(t, "database/sql", connectSpan.Tag(ext.Component))
+			assert.Equal(t, componentName, connectSpan.Source())
 			assert.Equal(t, tt.want.dbSystem, connectSpan.Tag(ext.DBSystem))
 
 			span := spans[1]
@@ -117,6 +118,7 @@ func TestWithSpanTags(t *testing.T) {
 			}
 			assert.Equal(t, ext.SpanKindClient, span.Tag(ext.SpanKind))
 			assert.Equal(t, "database/sql", span.Tag(ext.Component))
+			assert.Equal(t, componentName, connectSpan.Source())
 			assert.Equal(t, tt.want.dbSystem, connectSpan.Tag(ext.DBSystem))
 		})
 	}
@@ -368,6 +370,7 @@ func TestWithCustomTag(t *testing.T) {
 			}
 			assert.Equal(t, ext.SpanKindClient, connectSpan.Tag(ext.SpanKind))
 			assert.Equal(t, "database/sql", connectSpan.Tag(ext.Component))
+			assert.Equal(t, componentName, connectSpan.Source())
 			assert.Equal(t, tt.want.dbSystem, connectSpan.Tag(ext.DBSystem))
 
 			span := spans[1]
@@ -377,6 +380,7 @@ func TestWithCustomTag(t *testing.T) {
 			}
 			assert.Equal(t, ext.SpanKindClient, connectSpan.Tag(ext.SpanKind))
 			assert.Equal(t, "database/sql", connectSpan.Tag(ext.Component))
+			assert.Equal(t, componentName, connectSpan.Source())
 			assert.Equal(t, tt.want.dbSystem, connectSpan.Tag(ext.DBSystem))
 		})
 	}
