@@ -1,9 +1,8 @@
 name: Outdated Integrations
 on:
-  workflow_dispatch: # manually
-  push:
-    branches:
-      - quinna.halim/update-outdated-integrations-workflow # TODO: remove, for testing
+  schedule:
+    - cron: "0 0 * * 0" # Runs every Sunday at midnight UTC
+  workflow_dispatch:
 
 concurrency:
   # Automatically cancel previous runs if a new one is triggered to conserve resources.
