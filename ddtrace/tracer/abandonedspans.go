@@ -14,6 +14,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
@@ -77,27 +78,36 @@ type abandonedSpanCandidate struct {
 	TraceID, SpanID uint64
 	Start           int64
 	Finished        bool
+	Integration     string
 }
 
 func newAbandonedSpanCandidate(s *span, finished bool) *abandonedSpanCandidate {
+	var component string
+	if v, ok := s.Meta[ext.Component]; ok {
+		component = v
+	} else {
+		component = "manual"
+	}
 	// finished is explicit instead of implicit as s.finished may be not set
 	// at the moment of calling this method.
 	// Also, locking is not required as it's called while the span is already locked or it's
 	// being initialized.
-	return &abandonedSpanCandidate{
-		Name:     s.Name,
-		TraceID:  s.TraceID,
-		SpanID:   s.SpanID,
-		Start:    s.Start,
-		Finished: finished,
+	c := &abandonedSpanCandidate{
+		Name:        s.Name,
+		TraceID:     s.TraceID,
+		SpanID:      s.SpanID,
+		Start:       s.Start,
+		Finished:    finished,
+		Integration: component,
 	}
+	return c
 }
 
 // String takes a span and returns a human-readable string representing that span.
 func (s *abandonedSpanCandidate) String() string {
 	age := now() - s.Start
 	a := fmt.Sprintf("%d sec", age/1e9)
-	return fmt.Sprintf("[name: %s, span_id: %d, trace_id: %d, age: %s],", s.Name, s.SpanID, s.TraceID, a)
+	return fmt.Sprintf("[name: %s, integration: %s, span_id: %d, trace_id: %d, age: %s],", s.Name, s.Integration, s.SpanID, s.TraceID, a)
 }
 
 type abandonedSpansDebugger struct {

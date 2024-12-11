@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
 
@@ -58,7 +59,13 @@ func assertProcessedSpans(assert *assert.Assertions, t *tracer, startedSpans, fi
 
 func formatSpanString(s *span) string {
 	s.Lock()
-	msg := fmt.Sprintf("[name: %s, span_id: %d, trace_id: %d, age: %s],", s.Name, s.SpanID, s.TraceID, spanAge(s))
+	var integration string
+	if v, ok := s.Meta[ext.Component]; ok {
+		integration = v
+	} else {
+		integration = "manual"
+	}
+	msg := fmt.Sprintf("[name: %s, integration: %s, span_id: %d, trace_id: %d, age: %s],", s.Name, integration, s.SpanID, s.TraceID, spanAge(s))
 	s.Unlock()
 	return msg
 }
