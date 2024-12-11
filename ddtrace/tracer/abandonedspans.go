@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
@@ -301,6 +302,9 @@ func formatAbandonedSpans(b *bucket[uint64, *abandonedSpanCandidate], interval *
 		// user configured timeout, and discard it if it is not.
 		if interval != nil && curTime-s.Start < interval.Nanoseconds() {
 			continue
+		}
+		if t, ok := internal.GetGlobalTracer().(*tracer); ok {
+			t.statsd.Incr("datadog.tracer.abandoned_spans", []string{"name:" + s.Name, "integration:" + s.Integration}, 1)
 		}
 		spanCount++
 		msg := s.String()

@@ -14,6 +14,7 @@ import (
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/statsdtest"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
 
 	"github.com/stretchr/testify/assert"
@@ -68,6 +69,51 @@ func formatSpanString(s *span) string {
 	msg := fmt.Sprintf("[name: %s, integration: %s, span_id: %d, trace_id: %d, age: %s],", s.Name, integration, s.SpanID, s.TraceID, spanAge(s))
 	s.Unlock()
 	return msg
+}
+
+func TestAbandonedSpansMetric(t *testing.T) {
+	assert := assert.New(t)
+	var tg statsdtest.TestStatsdClient
+	tp := new(log.RecordLogger)
+	tickerInterval = 100 * time.Millisecond
+	t.Run("finished", func(t *testing.T) {
+		tp.Reset()
+		tg.Reset()
+		defer setTestTime()()
+		tracer, _, _, stop := startTestTracer(t, WithLogger(tp), WithDebugSpansMode(500*time.Millisecond), withStatsdClient(&tg))
+		defer stop()
+		s := tracer.StartSpan("operation", StartTime(spanStart)).(*span)
+		s.Finish()
+		assertProcessedSpans(assert, tracer, 1, 1)
+		assert.Empty(tg.GetCallsByName("datadog.tracer.abandoned_spans"))
+	})
+	t.Run("open", func(t *testing.T) {
+		tp.Reset()
+		tg.Reset()
+		defer setTestTime()()
+		tracer, _, _, stop := startTestTracer(t, WithLogger(tp), WithDebugSpansMode(500*time.Millisecond), withStatsdClient(&tg))
+		defer stop()
+		tracer.StartSpan("operation", StartTime(spanStart))
+		assertProcessedSpans(assert, tracer, 1, 0)
+		calls := tg.GetCallsByName("datadog.tracer.abandoned_spans")
+		assert.Len(calls, 1)
+		call := calls[0]
+		assert.Equal([]string{"name:operation", "integration:manual"}, call.Tags())
+	})
+	t.Run("both", func(t *testing.T) {
+		tp.Reset()
+		tg.Reset()
+		defer setTestTime()()
+		tracer, _, _, stop := startTestTracer(t, WithLogger(tp), WithDebugSpansMode(500*time.Millisecond), withStatsdClient(&tg))
+		defer stop()
+		sf := tracer.StartSpan("op", StartTime(spanStart)).(*span)
+		sf.Finish()
+		s := tracer.StartSpan("op2", StartTime(spanStart)).(*span)
+		assertProcessedSpans(assert, tracer, 2, 1)
+		calls := tg.GetCallsByName("datadog.tracer.abandoned_spans")
+		assert.Len(calls, 1)
+		s.Finish()
+	})
 }
 
 func TestReportAbandonedSpans(t *testing.T) {
