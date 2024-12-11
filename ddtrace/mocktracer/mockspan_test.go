@@ -34,7 +34,7 @@ func TestNewSpan(t *testing.T) {
 		assert.NotNil(s.context)
 		assert.NotZero(s.context.spanID)
 		assert.Equal(s.context.spanID, s.context.traceID)
-		assert.Equal("manual", s.source)
+		assert.Equal("manual", s.Integration())
 	})
 
 	t.Run("options", func(t *testing.T) {
@@ -78,7 +78,7 @@ func TestNewSpan(t *testing.T) {
 		assert.NotNil(s.context)
 		assert.Equal(uint64(1), s.parentID)
 		assert.Equal(uint64(2), s.context.traceID)
-		assert.Equal("sourceName", s.Source())
+		assert.Equal("sourceName", s.Integration())
 	})
 }
 
@@ -106,9 +106,9 @@ func TestSpanSetTagPriority(t *testing.T) {
 func TestSpanSetTagComponent(t *testing.T) {
 	assert := assert.New(t)
 	s := basicSpan("http.request")
-	assert.Equal(s.Source(), "manual")
+	assert.Equal(s.Integration(), "manual")
 	s.SetTag(ext.Component, "custom")
-	assert.Equal(s.Source(), "custom")
+	assert.Equal(s.Integration(), "custom")
 }
 
 func TestSpanTagImmutability(t *testing.T) {
