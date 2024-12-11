@@ -157,7 +157,7 @@ func TestCallbacks(t *testing.T) {
 			`INSERT INTO "products" ("created_at","updated_at","deleted_at","code","price") VALUES ($1,$2,$3,$4,$5) RETURNING "products"."id"`,
 			span.Tag(ext.ResourceName))
 		assert.Equal("gopkg.in/jinzhu/gorm.v1", span.Tag(ext.Component))
-		assert.Equal(componentName, span.Source())
+		assert.Equal(componentName, span.Integration())
 	})
 
 	t.Run("query", func(t *testing.T) {
@@ -182,7 +182,7 @@ func TestCallbacks(t *testing.T) {
 			`SELECT * FROM "products"  WHERE "products"."deleted_at" IS NULL AND ((code = $1)) ORDER BY "products"."id" ASC LIMIT 1`,
 			span.Tag(ext.ResourceName))
 		assert.Equal("gopkg.in/jinzhu/gorm.v1", span.Tag(ext.Component))
-		assert.Equal(componentName, span.Source())
+		assert.Equal(componentName, span.Integration())
 	})
 
 	t.Run("update", func(t *testing.T) {
@@ -208,7 +208,7 @@ func TestCallbacks(t *testing.T) {
 			`UPDATE "products" SET "price" = $1, "updated_at" = $2  WHERE "products"."deleted_at" IS NULL AND "products"."id" = $3`,
 			span.Tag(ext.ResourceName))
 		assert.Equal("gopkg.in/jinzhu/gorm.v1", span.Tag(ext.Component))
-		assert.Equal(componentName, span.Source())
+		assert.Equal(componentName, span.Integration())
 	})
 
 	t.Run("delete", func(t *testing.T) {
@@ -234,7 +234,7 @@ func TestCallbacks(t *testing.T) {
 			`UPDATE "products" SET "deleted_at"=$1  WHERE "products"."deleted_at" IS NULL AND "products"."id" = $2`,
 			span.Tag(ext.ResourceName))
 		assert.Equal("gopkg.in/jinzhu/gorm.v1", span.Tag(ext.Component))
-		assert.Equal(componentName, span.Source())
+		assert.Equal(componentName, span.Integration())
 	})
 }
 
@@ -381,7 +381,7 @@ func TestCustomTags(t *testing.T) {
 		`INSERT INTO "products" ("created_at","updated_at","deleted_at","code","price") VALUES ($1,$2,$3,$4,$5) RETURNING "products"."id"`,
 		span.Tag(ext.ResourceName))
 	assert.Equal("gopkg.in/jinzhu/gorm.v1", span.Tag(ext.Component))
-	assert.Equal(componentName, span.Source())
+	assert.Equal(componentName, span.Integration())
 }
 
 func TestError(t *testing.T) {

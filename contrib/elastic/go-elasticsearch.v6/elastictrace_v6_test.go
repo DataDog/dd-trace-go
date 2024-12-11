@@ -27,7 +27,7 @@ func checkGETTraceV6(assert *assert.Assertions, mt mocktracer.Tracer) {
 	assert.Equal("/twitter/tweet/1", span.Tag("elasticsearch.url"))
 	assert.Equal("GET", span.Tag("elasticsearch.method"))
 	assert.Equal("127.0.0.1", span.Tag(ext.NetworkDestinationName))
-	assert.Equal(componentName, span.Source())
+	assert.Equal(componentName, span.Integration())
 }
 
 func checkErrTraceV6(assert *assert.Assertions, mt mocktracer.Tracer) {
@@ -38,7 +38,7 @@ func checkErrTraceV6(assert *assert.Assertions, mt mocktracer.Tracer) {
 	assert.NotEmpty(span.Tag(ext.Error))
 	assert.Equal("*errors.errorString", fmt.Sprintf("%T", span.Tag(ext.Error).(error)))
 	assert.Equal("127.0.0.1", span.Tag(ext.NetworkDestinationName))
-	assert.Equal(componentName, span.Source())
+	assert.Equal(componentName, span.Integration())
 }
 
 func TestClientV6(t *testing.T) {

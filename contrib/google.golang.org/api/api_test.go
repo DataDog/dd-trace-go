@@ -65,7 +65,7 @@ func TestBooks(t *testing.T) {
 	assert.Equal(t, "GET", s0.Tag(ext.HTTPMethod))
 	assert.Equal(t, svc.BasePath+"books/v1/users/montana.banana/bookshelves", s0.Tag(ext.HTTPURL))
 	assert.Equal(t, "google.golang.org/api", s0.Tag(ext.Component))
-	assert.Equal(t, componentName, s0.Source())
+	assert.Equal(t, componentName, s0.Integration())
 	assert.Equal(t, ext.SpanKindClient, s0.Tag(ext.SpanKind))
 }
 
@@ -91,7 +91,7 @@ func TestCivicInfo(t *testing.T) {
 	assert.Equal(t, "GET", s0.Tag(ext.HTTPMethod))
 	assert.Equal(t, svc.BasePath+"civicinfo/v2/representatives", s0.Tag(ext.HTTPURL))
 	assert.Equal(t, "google.golang.org/api", s0.Tag(ext.Component))
-	assert.Equal(t, componentName, s0.Source())
+	assert.Equal(t, componentName, s0.Integration())
 	assert.Equal(t, ext.SpanKindClient, s0.Tag(ext.SpanKind))
 }
 
@@ -119,7 +119,7 @@ func TestURLShortener(t *testing.T) {
 	assert.Equal(t, "GET", s0.Tag(ext.HTTPMethod))
 	assert.Equal(t, "https://www.googleapis.com/urlshortener/v1/url/history", s0.Tag(ext.HTTPURL))
 	assert.Equal(t, "google.golang.org/api", s0.Tag(ext.Component))
-	assert.Equal(t, componentName, s0.Source())
+	assert.Equal(t, componentName, s0.Integration())
 	assert.Equal(t, ext.SpanKindClient, s0.Tag(ext.SpanKind))
 }
 
@@ -145,7 +145,7 @@ func TestWithEndpointMetadataDisabled(t *testing.T) {
 	assert.Equal(t, "GET", s0.Tag(ext.HTTPMethod))
 	assert.Equal(t, svc.BasePath+"civicinfo/v2/representatives", s0.Tag(ext.HTTPURL))
 	assert.Equal(t, "google.golang.org/api", s0.Tag(ext.Component))
-	assert.Equal(t, componentName, s0.Source())
+	assert.Equal(t, componentName, s0.Integration())
 	assert.Equal(t, ext.SpanKindClient, s0.Tag(ext.SpanKind))
 }
 

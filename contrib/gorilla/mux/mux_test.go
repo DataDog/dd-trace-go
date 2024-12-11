@@ -104,7 +104,7 @@ func TestHttpTracer(t *testing.T) {
 			assert.Equal(ht.wantResource, s.Tag(ext.ResourceName))
 			assert.Equal(ext.SpanKindServer, s.Tag(ext.SpanKind))
 			assert.Equal("gorilla/mux", s.Tag(ext.Component))
-			assert.Equal(componentName, s.Source())
+			assert.Equal(componentName, s.Integration())
 			if ht.wantRoute != "" {
 				assert.Equal(ht.wantRoute, s.Tag(ext.HTTPRoute))
 			} else {

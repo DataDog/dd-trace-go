@@ -62,7 +62,7 @@ func testMongoCollectionCommand(t *testing.T, command func(*Collection)) []mockt
 	for _, val := range spans {
 		if val.OperationName() == "mongodb.query" {
 			assert.Equal("globalsign/mgo", val.Tag(ext.Component))
-			assert.Equal(componentName, val.Source())
+			assert.Equal(componentName, val.Integration())
 			assert.Equal("MyCollection", val.Tag(ext.MongoDBCollection))
 			assert.Equal("localhost", val.Tag(ext.NetworkDestinationName))
 		}

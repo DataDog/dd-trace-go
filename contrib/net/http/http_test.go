@@ -164,7 +164,7 @@ func TestHttpTracer200(t *testing.T) {
 	assert.Equal("bar", s.Tag("foo"))
 	assert.Equal(ext.SpanKindServer, s.Tag(ext.SpanKind))
 	assert.Equal("net/http", s.Tag(ext.Component))
-	assert.Equal(componentName, s.Source())
+	assert.Equal(componentName, s.Integration())
 }
 
 func TestHttpTracer500(t *testing.T) {
@@ -195,7 +195,7 @@ func TestHttpTracer500(t *testing.T) {
 	assert.Equal("bar", s.Tag("foo"))
 	assert.Equal(ext.SpanKindServer, s.Tag(ext.SpanKind))
 	assert.Equal("net/http", s.Tag(ext.Component))
-	assert.Equal(componentName, s.Source())
+	assert.Equal(componentName, s.Integration())
 }
 
 func TestWrapHandler200(t *testing.T) {
@@ -228,7 +228,7 @@ func TestWrapHandler200(t *testing.T) {
 	assert.Equal("bar", s.Tag("foo"))
 	assert.Equal(ext.SpanKindServer, s.Tag(ext.SpanKind))
 	assert.Equal("net/http", s.Tag(ext.Component))
-	assert.Equal(componentName, s.Source())
+	assert.Equal(componentName, s.Integration())
 }
 
 func TestNoStack(t *testing.T) {
@@ -252,7 +252,7 @@ func TestNoStack(t *testing.T) {
 	assert.Equal("<debug stack disabled>", s.Tags()[ext.ErrorStack])
 	assert.Equal(ext.SpanKindServer, s.Tag(ext.SpanKind))
 	assert.Equal("net/http", s.Tag(ext.Component))
-	assert.Equal(componentName, s.Source())
+	assert.Equal(componentName, s.Integration())
 }
 
 func TestServeMuxUsesResourceNamer(t *testing.T) {
@@ -287,7 +287,7 @@ func TestServeMuxUsesResourceNamer(t *testing.T) {
 	assert.Equal("bar", s.Tag("foo"))
 	assert.Equal(ext.SpanKindServer, s.Tag(ext.SpanKind))
 	assert.Equal("net/http", s.Tag(ext.Component))
-	assert.Equal(componentName, s.Source())
+	assert.Equal(componentName, s.Integration())
 }
 
 func TestServeMuxGo122Patterns(t *testing.T) {

@@ -138,7 +138,7 @@ func TestConsumer(t *testing.T) {
 		assert.Equal(t, "queue", s.Tag(ext.SpanType))
 		assert.Equal(t, "kafka.consume", s.OperationName())
 		assert.Equal(t, "IBM/sarama", s.Tag(ext.Component))
-		assert.Equal(t, componentName, s.Source())
+		assert.Equal(t, componentName, s.Integration())
 		assert.Equal(t, ext.SpanKindConsumer, s.Tag(ext.SpanKind))
 		assert.Equal(t, "kafka", s.Tag(ext.MessagingSystem))
 
@@ -163,7 +163,7 @@ func TestConsumer(t *testing.T) {
 		assert.Equal(t, "queue", s.Tag(ext.SpanType))
 		assert.Equal(t, "kafka.consume", s.OperationName())
 		assert.Equal(t, "IBM/sarama", s.Tag(ext.Component))
-		assert.Equal(t, componentName, s.Source())
+		assert.Equal(t, componentName, s.Integration())
 		assert.Equal(t, ext.SpanKindConsumer, s.Tag(ext.SpanKind))
 		assert.Equal(t, "kafka", s.Tag(ext.MessagingSystem))
 
@@ -224,7 +224,7 @@ func TestSyncProducer(t *testing.T) {
 		assert.Equal(t, int32(0), s.Tag(ext.MessagingKafkaPartition))
 		assert.Equal(t, int64(0), s.Tag("offset"))
 		assert.Equal(t, "IBM/sarama", s.Tag(ext.Component))
-		assert.Equal(t, componentName, s.Source())
+		assert.Equal(t, componentName, s.Integration())
 		assert.Equal(t, ext.SpanKindProducer, s.Tag(ext.SpanKind))
 		assert.Equal(t, "kafka", s.Tag(ext.MessagingSystem))
 
@@ -288,7 +288,7 @@ func TestSyncProducerSendMessages(t *testing.T) {
 		assert.Equal(t, "kafka.produce", s.OperationName())
 		assert.Equal(t, int32(0), s.Tag(ext.MessagingKafkaPartition))
 		assert.Equal(t, "IBM/sarama", s.Tag(ext.Component))
-		assert.Equal(t, componentName, s.Source())
+		assert.Equal(t, componentName, s.Integration())
 		assert.Equal(t, ext.SpanKindProducer, s.Tag(ext.SpanKind))
 		assert.Equal(t, "kafka", s.Tag(ext.MessagingSystem))
 	}
@@ -343,7 +343,7 @@ func TestAsyncProducer(t *testing.T) {
 			assert.Nil(t, s.Tag("offset"))
 
 			assert.Equal(t, "IBM/sarama", s.Tag(ext.Component))
-			assert.Equal(t, componentName, s.Source())
+			assert.Equal(t, componentName, s.Integration())
 			assert.Equal(t, ext.SpanKindProducer, s.Tag(ext.SpanKind))
 			assert.Equal(t, "kafka", s.Tag(ext.MessagingSystem))
 
@@ -388,7 +388,7 @@ func TestAsyncProducer(t *testing.T) {
 			assert.Equal(t, int32(0), s.Tag(ext.MessagingKafkaPartition))
 			assert.Equal(t, int64(0), s.Tag("offset"))
 			assert.Equal(t, "IBM/sarama", s.Tag(ext.Component))
-			assert.Equal(t, componentName, s.Source())
+			assert.Equal(t, componentName, s.Integration())
 			assert.Equal(t, ext.SpanKindProducer, s.Tag(ext.SpanKind))
 			assert.Equal(t, "kafka", s.Tag(ext.MessagingSystem))
 

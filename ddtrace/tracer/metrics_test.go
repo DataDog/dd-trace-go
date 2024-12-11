@@ -83,11 +83,11 @@ func TestSpansStartedTags(t *testing.T) {
 		counts := tg.Counts()
 		assert.Equal(int64(1), counts["datadog.tracer.spans_started"])
 		for _, c := range tg.CountCalls() {
-			if slices.Equal(c.Tags, []string{"source:manual"}) {
+			if slices.Equal(c.Tags, []string{"integration:manual"}) {
 				return
 			}
 		}
-		assert.Fail("expected source:manual tag in spans_started")
+		assert.Fail("expected integration:manual tag in spans_started")
 	})
 
 	t.Run("other_source", func(t *testing.T) {
@@ -102,11 +102,11 @@ func TestSpansStartedTags(t *testing.T) {
 		counts := tg.Counts()
 		assert.Equal(int64(1), counts["datadog.tracer.spans_started"])
 		for _, c := range tg.CountCalls() {
-			if slices.Equal(c.Tags, []string{"source:contrib"}) {
+			if slices.Equal(c.Tags, []string{"integration:contrib"}) {
 				return
 			}
 		}
-		assert.Fail("expected source:contrib tag in spans_started")
+		assert.Fail("expected integration:contrib tag in spans_started")
 
 	})
 }

@@ -50,7 +50,7 @@ type Span interface {
 	// Stringer allows pretty-printing the span's fields for debugging.
 	fmt.Stringer
 
-	Source() string
+	Integration() string
 }
 
 func newSpan(t *mocktracer, operationName string, cfg *ddtrace.StartSpanConfig) *mockspan {
@@ -295,6 +295,6 @@ func (s *mockspan) Root() tracer.Span {
 // Source returns the component from which the mockspan was created.
 // This is used to test the source tag of the `datadog.tracer.spans_{started,finished}`
 // health metrics.
-func (s *mockspan) Source() string {
+func (s *mockspan) Integration() string {
 	return s.source
 }

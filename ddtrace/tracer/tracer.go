@@ -554,7 +554,7 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 		TraceID:      id,
 		Start:        startTime,
 		noDebugStack: t.config.noDebugStack,
-		source:       "manual",
+		integration:  "manual",
 	}
 
 	span.SpanLinks = append(span.SpanLinks, opts.SpanLinks...)
