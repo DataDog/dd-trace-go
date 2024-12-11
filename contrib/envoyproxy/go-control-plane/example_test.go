@@ -6,11 +6,19 @@
 package go_control_plane_test
 
 import (
-	"google.golang.org/grpc"
-	"gopkg.in/DataDog/dd-trace-go.v1/contrib/envoyproxy/go-control-plane"
 	"log"
 	"net"
+
+	"google.golang.org/grpc"
+
+	extprocv3 "github.com/envoyproxy/go-control-plane/envoy/service/ext_proc/v3"
+	gocontrolplane "gopkg.in/DataDog/dd-trace-go.v1/contrib/envoyproxy/go-control-plane"
 )
+
+// interface fpr external processing server
+type envoyExtProcServer struct {
+	extprocv3.ExternalProcessorServer
+}
 
 func Example_server() {
 	// Create a listener for the server.
@@ -19,11 +27,13 @@ func Example_server() {
 		log.Fatal(err)
 	}
 
-	// Create the server interceptor using the envoy go control plane package.
-	si := go_control_plane.StreamServerInterceptor()
-
 	// Initialize the grpc server as normal, using the envoy server interceptor.
-	s := grpc.NewServer(grpc.StreamInterceptor(si))
+	s := grpc.NewServer()
+	srv := &envoyExtProcServer{}
+
+	// Register the appsec envoy external processor service
+	appsecSrv := gocontrolplane.AppsecEnvoyExternalProcessorServer(srv)
+	extprocv3.RegisterExternalProcessorServer(s, appsecSrv)
 
 	// ... register your services
 

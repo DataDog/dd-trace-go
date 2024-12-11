@@ -370,12 +370,11 @@ func newEnvoyAppsecRig(t *testing.T, traceClient bool, interceptorOpts ...ddgrpc
 
 	interceptorOpts = append([]ddgrpc.InterceptorOption{ddgrpc.WithServiceName("grpc")}, interceptorOpts...)
 
-	server := grpc.NewServer(
-		grpc.StreamInterceptor(StreamServerInterceptor(interceptorOpts...)),
-	)
+	server := grpc.NewServer()
 
 	fixtureServer := new(envoyFixtureServer)
-	envoyextproc.RegisterExternalProcessorServer(server, fixtureServer)
+	appsecSrv := AppsecEnvoyExternalProcessorServer(fixtureServer)
+	envoyextproc.RegisterExternalProcessorServer(server, appsecSrv)
 
 	li, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
