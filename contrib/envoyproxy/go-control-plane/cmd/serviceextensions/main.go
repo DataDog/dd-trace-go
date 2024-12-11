@@ -13,7 +13,7 @@ import (
 	"os"
 	"strconv"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/contrib/envoyproxy/go-control-plane"
+	gocontrolplane "gopkg.in/DataDog/dd-trace-go.v1/contrib/envoyproxy/go-control-plane"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
 
@@ -51,7 +51,7 @@ func loadConfig() serviceExtensionConfig {
 
 	extensionHost := internal.IpEnv("DD_SERVICE_EXTENSION_HOST", "0.0.0.0")
 	extensionPortStr := strconv.FormatInt(int64(extensionPortInt), 10)
-	healthcheckPortStr := strconv.FormatInt(int64(extensionPortInt), 10)
+	healthcheckPortStr := strconv.FormatInt(int64(healthcheckPortInt), 10)
 
 	// check if the ports are free
 	l, err := net.Listen("tcp", extensionHost+":"+extensionPortStr)
@@ -129,20 +129,26 @@ func StartGPRCSsl(service extproc.ExternalProcessorServer, config serviceExtensi
 	cert, err := tls.LoadX509KeyPair("localhost.crt", "localhost.key")
 	if err != nil {
 		log.Error("service_extension: failed to load key pair: %v\n", err)
+		os.Exit(1)
+		return
 	}
 
 	lis, err := net.Listen("tcp", config.extensionHost+":"+config.extensionPort)
 	if err != nil {
 		log.Error("service_extension: gRPC server failed to listen: %v\n", err)
+		os.Exit(1)
+		return
 	}
 
-	si := go_control_plane.StreamServerInterceptor()
-	creds := credentials.NewServerTLSFromCert(&cert)
-	grpcServer := grpc.NewServer(grpc.StreamInterceptor(si), grpc.Creds(creds))
+	grpcCredentials := credentials.NewServerTLSFromCert(&cert)
+	grpcServer := grpc.NewServer(grpc.Creds(grpcCredentials))
 
-	extproc.RegisterExternalProcessorServer(grpcServer, service)
+	appsecEnvoyExternalProcessorServer := gocontrolplane.AppsecEnvoyExternalProcessorServer(service)
+
+	extproc.RegisterExternalProcessorServer(grpcServer, appsecEnvoyExternalProcessorServer)
 	reflection.Register(grpcServer)
 	if err := grpcServer.Serve(lis); err != nil {
 		log.Error("service_extension: error starting gRPC server: %v\n", err)
+		os.Exit(1)
 	}
 }
