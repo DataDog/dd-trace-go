@@ -63,6 +63,27 @@ func TestReportHealthMetrics(t *testing.T) {
 	assert.Equal(int64(0), counts["datadog.tracer.traces_dropped"])
 }
 
+func TestSpansStartedTags(t *testing.T) {
+	assert := assert.New(t)
+
+	var tg statsdtest.TestStatsdClient
+
+	defer func(old time.Duration) { statsInterval = old }(statsInterval)
+	statsInterval = time.Nanosecond
+
+	tracer, _, _, stop := startTestTracer(t, withStatsdClient(&tg))
+	defer stop()
+
+	tracer.StartSpan("operation").Finish()
+
+	tg.Wait(assert, 1, 10*time.Second)
+
+	counts := tg.Counts()
+	assert.Equal(int64(1), counts["datadog.tracer.spans_started"])
+	calls := tg.CountCalls()
+	assert.Contains(calls[0].Tags, "source:manual")
+}
+
 func TestTracerMetrics(t *testing.T) {
 	assert := assert.New(t)
 	var tg statsdtest.TestStatsdClient

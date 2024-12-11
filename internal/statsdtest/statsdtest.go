@@ -42,7 +42,7 @@ type TestStatsdCall struct {
 	floatVal float64
 	intVal   int64
 	timeVal  time.Duration
-	tags     []string
+	Tags     []string
 	rate     float64
 }
 
@@ -59,7 +59,7 @@ func (tg *TestStatsdClient) Gauge(name string, value float64, tags []string, rat
 	return tg.addMetric(callTypeGauge, tags, TestStatsdCall{
 		name:     name,
 		floatVal: value,
-		tags:     make([]string, len(tags)),
+		Tags:     make([]string, len(tags)),
 		rate:     rate,
 	})
 }
@@ -69,7 +69,7 @@ func (tg *TestStatsdClient) GaugeWithTimestamp(name string, value float64, tags 
 	return tg.addMetric(callTypeGaugeWithTimestamp, tags, TestStatsdCall{
 		name:     name,
 		floatVal: value,
-		tags:     make([]string, len(tags)),
+		Tags:     make([]string, len(tags)),
 		rate:     rate,
 	})
 }
@@ -78,7 +78,7 @@ func (tg *TestStatsdClient) Incr(name string, tags []string, rate float64) error
 	tg.addCount(name, 1)
 	return tg.addMetric(callTypeIncr, tags, TestStatsdCall{
 		name: name,
-		tags: make([]string, len(tags)),
+		Tags: make([]string, len(tags)),
 		rate: rate,
 	})
 }
@@ -88,7 +88,7 @@ func (tg *TestStatsdClient) Count(name string, value int64, tags []string, rate 
 	return tg.addMetric(callTypeCount, tags, TestStatsdCall{
 		name:   name,
 		intVal: value,
-		tags:   make([]string, len(tags)),
+		Tags:   make([]string, len(tags)),
 		rate:   rate,
 	})
 }
@@ -99,7 +99,7 @@ func (tg *TestStatsdClient) CountWithTimestamp(name string, value int64, tags []
 	return tg.addMetric(callTypeCountWithTimestamp, tags, TestStatsdCall{
 		name:   name,
 		intVal: value,
-		tags:   make([]string, len(tags)),
+		Tags:   make([]string, len(tags)),
 		rate:   rate,
 	})
 }
@@ -108,7 +108,7 @@ func (tg *TestStatsdClient) Timing(name string, value time.Duration, tags []stri
 	return tg.addMetric(callTypeTiming, tags, TestStatsdCall{
 		name:    name,
 		timeVal: value,
-		tags:    make([]string, len(tags)),
+		Tags:    make([]string, len(tags)),
 		rate:    rate,
 	})
 }
@@ -116,7 +116,7 @@ func (tg *TestStatsdClient) Timing(name string, value time.Duration, tags []stri
 func (tg *TestStatsdClient) addMetric(ct callType, tags []string, c TestStatsdCall) error {
 	tg.mu.Lock()
 	defer tg.mu.Unlock()
-	copy(c.tags, tags)
+	copy(c.Tags, tags)
 	switch ct {
 	case callTypeGauge:
 		tg.gaugeCalls = append(tg.gaugeCalls, c)
