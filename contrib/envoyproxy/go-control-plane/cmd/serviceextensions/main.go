@@ -13,7 +13,7 @@ import (
 	"os"
 	"strconv"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/contrib/envoyproxy/go-control-plane"
+	gocontrolplane "gopkg.in/DataDog/dd-trace-go.v1/contrib/envoyproxy/go-control-plane"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
 
@@ -140,11 +140,12 @@ func StartGPRCSsl(service extproc.ExternalProcessorServer, config serviceExtensi
 		return
 	}
 
-	si := go_control_plane.StreamServerInterceptor()
 	grpcCredentials := credentials.NewServerTLSFromCert(&cert)
-	grpcServer := grpc.NewServer(grpc.StreamInterceptor(si), grpc.Creds(grpcCredentials))
+	grpcServer := grpc.NewServer(grpc.Creds(grpcCredentials))
 
-	extproc.RegisterExternalProcessorServer(grpcServer, service)
+	appsecEnvoyExternalProcessorServer := gocontrolplane.AppsecEnvoyExternalProcessorServer(service)
+
+	extproc.RegisterExternalProcessorServer(grpcServer, appsecEnvoyExternalProcessorServer)
 	reflection.Register(grpcServer)
 	if err := grpcServer.Serve(lis); err != nil {
 		log.Error("service_extension: error starting gRPC server: %v\n", err)
