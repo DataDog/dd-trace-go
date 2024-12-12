@@ -12,7 +12,7 @@ require (
 	github.com/DataDog/datadog-agent/pkg/trace v0.58.0
 	github.com/DataDog/datadog-go/v5 v5.5.0
 	github.com/DataDog/go-libddwaf/v3 v3.5.1
-	github.com/DataDog/go-runtime-metrics-internal v0.0.0-20241106155157-194426bbbd59
+	github.com/DataDog/go-runtime-metrics-internal v0.0.3
 	github.com/DataDog/gostackparse v0.7.0
 	github.com/DataDog/sketches-go v1.4.5
 	github.com/IBM/sarama v1.40.0

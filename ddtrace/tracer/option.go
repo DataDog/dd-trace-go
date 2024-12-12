@@ -136,9 +136,12 @@ type config struct {
 	// output instead of using the agent. This is used in Lambda environments.
 	logToStdout bool
 
-	// sendRetries is the number of times a trace payload send is retried upon
+	// sendRetries is the number of times a trace or CI Visibility payload send is retried upon
 	// failure.
 	sendRetries int
+
+	// retryInterval is the interval between agent connection retries. It has no effect if sendRetries is not set
+	retryInterval time.Duration
 
 	// logStartup, when true, causes various startup info to be written
 	// when the tracer starts.
@@ -456,7 +459,7 @@ func newConfig(opts ...StartOption) *config {
 	if v := os.Getenv("DD_TRACE_PEER_SERVICE_MAPPING"); v != "" {
 		internal.ForEachStringTag(v, internal.DDTagsDelimiter, func(key, val string) { c.peerServiceMappings[key] = val })
 	}
-
+	c.retryInterval = time.Millisecond
 	for _, fn := range opts {
 		fn(c)
 	}
@@ -540,7 +543,7 @@ func newConfig(opts ...StartOption) *config {
 		c.ciVisibilityAgentless = ciTransport.agentless
 	}
 
-	// if using stdout or traces are disabled or ci visibility with agentless mode is enabled, agent is disabled
+	// if using stdout or traces are disabled or we are in ci visibility agentless mode, agent is disabled
 	agentDisabled := c.logToStdout || !c.enabled.current || c.ciVisibilityAgentless
 	c.agent = loadAgentFeatures(agentDisabled, c.agentURL, c.httpClient)
 	info, ok := debug.ReadBuildInfo()
@@ -559,7 +562,6 @@ func newConfig(opts ...StartOption) *config {
 	// This allows persisting the initial value of globalTags for future resets and updates.
 	globalTagsOrigin := c.globalTags.cfgOrigin
 	c.initGlobalTags(c.globalTags.get(), globalTagsOrigin)
-
 	return c
 }
 
@@ -890,6 +892,13 @@ func WithLambdaMode(enabled bool) StartOption {
 func WithSendRetries(retries int) StartOption {
 	return func(c *config) {
 		c.sendRetries = retries
+	}
+}
+
+// WithRetryInterval sets the interval, in seconds, for retrying submitting payloads to the agent.
+func WithRetryInterval(interval int) StartOption {
+	return func(c *config) {
+		c.retryInterval = time.Duration(interval) * time.Second
 	}
 }
 
