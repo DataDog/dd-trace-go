@@ -34,6 +34,7 @@ import (
 
 	"github.com/DataDog/datadog-agent/pkg/obfuscate"
 	"github.com/DataDog/go-runtime-metrics-internal/pkg/runtimemetrics"
+	"github.com/darccio/knobs"
 )
 
 var _ ddtrace.Tracer = (*tracer)(nil)
@@ -267,13 +268,14 @@ func newUnstartedTracer(opts ...StartOption) *tracer {
 	if spans != nil {
 		c.spanRules = spans
 	}
-	rulesSampler := newRulesSampler(c.traceRules, c.spanRules, c.globalSampleRate)
-	c.traceSampleRate = newDynamicConfig("trace_sample_rate", c.globalSampleRate, rulesSampler.traces.setGlobalSampleRate, equal[float64])
+	gsr := knobs.GetScope(c.Scope, globalSampleRate)
+	rulesSampler := newRulesSampler(c.traceRules, c.spanRules, gsr)
+	c.traceSampleRate = newDynamicConfig("trace_sample_rate", gsr, rulesSampler.traces.setGlobalSampleRate, equal[float64])
 	// If globalSampleRate returns NaN, it means the environment variable was not set or valid.
 	// We could always set the origin to "env_var" inconditionally, but then it wouldn't be possible
 	// to distinguish between the case where the environment variable was not set and the case where
 	// it default to NaN.
-	if !math.IsNaN(c.globalSampleRate) {
+	if !math.IsNaN(gsr) {
 		c.traceSampleRate.cfgOrigin = telemetry.OriginEnvVar
 	}
 	c.traceSampleRules = newDynamicConfig("trace_sample_rules", c.traceRules,

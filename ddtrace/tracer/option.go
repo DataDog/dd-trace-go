@@ -278,9 +278,6 @@ type config struct {
 	// Value from DD_DYNAMIC_INSTRUMENTATION_ENABLED, default false.
 	dynamicInstrumentationEnabled bool
 
-	// globalSampleRate holds sample rate read from environment variables.
-	globalSampleRate float64
-
 	// ciVisibilityEnabled controls if the tracer is loaded with CI Visibility mode. default false
 	ciVisibilityEnabled bool
 
@@ -292,6 +289,40 @@ type config struct {
 }
 
 var (
+	// globalSampleRate holds sample rate read from environment variables.
+	globalSampleRate = knobs.Register(&knobs.Definition[float64]{
+		Default: math.NaN(),
+		// Out of scope: detecting if both DD_TRACE_SAMPLE_RATE and OTEL_TRACES_SAMPLER are set
+		// and reporting warning log and telemetry "otel.env.hiding" if so.
+		EnvVars: []knobs.EnvVar{
+			{
+				Key: "DD_TRACE_SAMPLE_RATE",
+			},
+			{
+				Key: "OTEL_TRACES_SAMPLER",
+				Transform: func(v string) string {
+					v, err := mapSampleRate(v)
+					if err != nil {
+						log.Warn("ignoring OTEL_TRACES_SAMPLER, error: %v", err)
+						return ""
+					}
+					return v
+				},
+			},
+		},
+		Parse: func(s string) (float64, error) {
+			sampleRate, err := strconv.ParseFloat(s, 64)
+			if err != nil {
+				log.Warn("ignoring DD_TRACE_SAMPLE_RATE, error: %v", err)
+				return 0.0, knobs.ErrInvalidValue
+			} else if sampleRate < 0.0 || sampleRate > 1.0 {
+				log.Warn("ignoring DD_TRACE_SAMPLE_RATE: out of range %f", sampleRate)
+				return 0.0, knobs.ErrInvalidValue
+			}
+			return sampleRate, nil
+		},
+	})
+
 	// partialFlushEnabled specifices whether the tracer should enable partial flushing. Value
 	// from DD_TRACE_PARTIAL_FLUSH_ENABLED, default false.
 	partialFlushEnabled = knobs.Register(&knobs.Definition[bool]{
@@ -351,19 +382,6 @@ func newConfig(opts ...StartOption) *config {
 	c := new(config)
 	c.Scope = knobs.NewScope()
 	c.sampler = NewAllSampler()
-	sampleRate := math.NaN()
-	if r := getDDorOtelConfig("sampleRate"); r != "" {
-		var err error
-		sampleRate, err = strconv.ParseFloat(r, 64)
-		if err != nil {
-			log.Warn("ignoring DD_TRACE_SAMPLE_RATE, error: %v", err)
-			sampleRate = math.NaN()
-		} else if sampleRate < 0.0 || sampleRate > 1.0 {
-			log.Warn("ignoring DD_TRACE_SAMPLE_RATE: out of range %f", sampleRate)
-			sampleRate = math.NaN()
-		}
-	}
-	c.globalSampleRate = sampleRate
 	c.httpClientTimeout = time.Second * 10 // 10 seconds
 
 	if v := os.Getenv("OTEL_LOGS_EXPORTER"); v != "" {
