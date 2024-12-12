@@ -77,13 +77,15 @@ func TestSpansStartedTags(t *testing.T) {
 		defer stop()
 
 		tracer.StartSpan("operation").Finish()
-
 		tg.Wait(assert, 1, 100*time.Millisecond)
 
 		counts := tg.Counts()
 		assert.Equal(int64(1), counts["datadog.tracer.spans_started"])
 		for _, c := range tg.CountCalls() {
-			if slices.Equal(c.Tags, []string{"integration:manual"}) {
+			if c.GetName() != "datadog.tracer.spans_started" {
+				continue
+			}
+			if slices.Equal(c.GetTags(), []string{"integration:manual"}) {
 				return
 			}
 		}
@@ -96,13 +98,18 @@ func TestSpansStartedTags(t *testing.T) {
 		tracer, _, _, stop := startTestTracer(t, withStatsdClient(&tg))
 		defer stop()
 
-		tracer.StartSpan("operation", Tag(ext.Component, "contrib")).Finish()
+		sp := tracer.StartSpan("operation", Tag(ext.Component, "contrib"))
+		defer sp.Finish()
+
 		tg.Wait(assert, 1, 100*time.Millisecond)
 
 		counts := tg.Counts()
 		assert.Equal(int64(1), counts["datadog.tracer.spans_started"])
 		for _, c := range tg.CountCalls() {
-			if slices.Equal(c.Tags, []string{"integration:contrib"}) {
+			if c.GetName() != "datadog.tracer.spans_started" {
+				continue
+			}
+			if slices.Equal(c.GetTags(), []string{"integration:contrib"}) {
 				return
 			}
 		}

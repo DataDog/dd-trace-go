@@ -587,10 +587,6 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 		}
 
 	}
-	span.context = newSpanContext(span, context)
-	span.setMetric(ext.Pid, float64(t.pid))
-	span.setMeta("language", "go")
-
 	// add tags from options
 	for k, v := range opts.Tags {
 		span.SetTag(k, v)
@@ -599,6 +595,10 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 	for k, v := range t.config.globalTags.get() {
 		span.SetTag(k, v)
 	}
+	span.context = newSpanContext(span, context)
+	span.setMetric(ext.Pid, float64(t.pid))
+	span.setMeta("language", "go")
+
 	if t.config.serviceMappings != nil {
 		if newSvc, ok := t.config.serviceMappings[span.Service]; ok {
 			span.Service = newSvc
