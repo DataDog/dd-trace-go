@@ -66,7 +66,6 @@ type currentRequest struct {
 // If the request is blocked, it sends an immediate response and ends the stream. If an error occurs
 // during processing, it logs the error and returns an appropriate gRPC status error.
 func (s *appsecEnvoyExternalProcessorServer) Process(processServer envoyextproc.ExternalProcessor_ProcessServer) error {
-
 	var (
 		ctx                = processServer.Context()
 		blocked            bool
@@ -77,11 +76,13 @@ func (s *appsecEnvoyExternalProcessorServer) Process(processServer envoyextproc.
 
 	// Close the span when the request is done processing
 	defer func() {
-		if currentRequest != nil {
-			log.Warn("external_processing: stream stopped during a request, making sure the current span is closed\n")
-			currentRequest.span.Finish()
-			currentRequest = nil
+		if currentRequest == nil {
+			return
 		}
+
+		log.Warn("external_processing: stream stopped during a request, making sure the current span is closed\n")
+		currentRequest.span.Finish()
+		currentRequest = nil
 	}()
 
 	for {
@@ -92,8 +93,8 @@ func (s *appsecEnvoyExternalProcessorServer) Process(processServer envoyextproc.
 			}
 
 			return ctx.Err()
-
 		default:
+			// no op
 		}
 
 		err := processServer.RecvMsg(&processingRequest)
@@ -138,11 +139,13 @@ func (s *appsecEnvoyExternalProcessorServer) Process(processServer envoyextproc.
 			return status.Errorf(codes.Unknown, "Error sending response (probably because of an Envoy timeout): %v", err)
 		}
 
-		if blocked {
-			log.Debug("external_processing: request blocked, end the stream")
-			currentRequest = nil
-			return nil
+		if !blocked {
+			continue
 		}
+
+		log.Debug("external_processing: request blocked, end the stream")
+		currentRequest = nil
+		return nil
 	}
 }
 
