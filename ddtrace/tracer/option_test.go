@@ -34,6 +34,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/traceprof"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
 
+	"github.com/darccio/knobs"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -1506,46 +1507,46 @@ func TestHostnameDisabled(t *testing.T) {
 func TestPartialFlushing(t *testing.T) {
 	t.Run("None", func(t *testing.T) {
 		c := newConfig()
-		assert.False(t, c.partialFlushEnabled)
-		assert.Equal(t, partialFlushMinSpansDefault, c.partialFlushMinSpans)
+		assert.False(t, knobs.GetScope(c.Scope, partialFlushEnabled))
+		assert.Equal(t, 1000, knobs.GetScope(c.Scope, partialFlushMinSpans))
 	})
 	t.Run("Disabled-DefaultMinSpans", func(t *testing.T) {
 		t.Setenv("DD_TRACE_PARTIAL_FLUSH_ENABLED", "false")
 		c := newConfig()
-		assert.False(t, c.partialFlushEnabled)
-		assert.Equal(t, partialFlushMinSpansDefault, c.partialFlushMinSpans)
+		assert.False(t, knobs.GetScope(c.Scope, partialFlushEnabled))
+		assert.Equal(t, 1000, knobs.GetScope(c.Scope, partialFlushMinSpans))
 	})
 	t.Run("Default-SetMinSpans", func(t *testing.T) {
 		t.Setenv("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", "10")
 		c := newConfig()
-		assert.False(t, c.partialFlushEnabled)
-		assert.Equal(t, 10, c.partialFlushMinSpans)
+		assert.False(t, knobs.GetScope(c.Scope, partialFlushEnabled))
+		assert.Equal(t, 10, knobs.GetScope(c.Scope, partialFlushMinSpans))
 	})
 	t.Run("Enabled-DefaultMinSpans", func(t *testing.T) {
 		t.Setenv("DD_TRACE_PARTIAL_FLUSH_ENABLED", "true")
 		c := newConfig()
-		assert.True(t, c.partialFlushEnabled)
-		assert.Equal(t, partialFlushMinSpansDefault, c.partialFlushMinSpans)
+		assert.True(t, knobs.GetScope(c.Scope, partialFlushEnabled))
+		assert.Equal(t, 1000, knobs.GetScope(c.Scope, partialFlushMinSpans))
 	})
 	t.Run("Enabled-SetMinSpans", func(t *testing.T) {
 		t.Setenv("DD_TRACE_PARTIAL_FLUSH_ENABLED", "true")
 		t.Setenv("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", "10")
 		c := newConfig()
-		assert.True(t, c.partialFlushEnabled)
-		assert.Equal(t, 10, c.partialFlushMinSpans)
+		assert.True(t, knobs.GetScope(c.Scope, partialFlushEnabled))
+		assert.Equal(t, 10, knobs.GetScope(c.Scope, partialFlushMinSpans))
 	})
 	t.Run("Enabled-SetMinSpansNegative", func(t *testing.T) {
 		t.Setenv("DD_TRACE_PARTIAL_FLUSH_ENABLED", "true")
 		t.Setenv("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", "-1")
 		c := newConfig()
-		assert.True(t, c.partialFlushEnabled)
-		assert.Equal(t, partialFlushMinSpansDefault, c.partialFlushMinSpans)
+		assert.True(t, knobs.GetScope(c.Scope, partialFlushEnabled))
+		assert.Equal(t, 1000, knobs.GetScope(c.Scope, partialFlushMinSpans))
 	})
 	t.Run("WithPartialFlushOption", func(t *testing.T) {
 		c := newConfig()
 		WithPartialFlushing(20)(c)
-		assert.True(t, c.partialFlushEnabled)
-		assert.Equal(t, 20, c.partialFlushMinSpans)
+		assert.True(t, knobs.GetScope(c.Scope, partialFlushEnabled))
+		assert.Equal(t, 20, knobs.GetScope(c.Scope, partialFlushMinSpans))
 	})
 }
 
