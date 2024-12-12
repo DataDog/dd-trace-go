@@ -419,13 +419,6 @@ func (t *trace) push(sp *span) {
 		t.setSamplingPriorityLocked(int(v), samplernames.Unknown)
 	}
 	t.spans = append(t.spans, sp)
-	if haveTracer {
-		if sp.integration == "manual" {
-			atomic.AddUint32(&tr.spansStarted, 1)
-		} else {
-			tr.statsd.Count("datadog.tracer.spans_started", 1, []string{fmt.Sprintf("integration:%s", sp.integration)}, 1)
-		}
-	}
 }
 
 // setTraceTags sets all "trace level" tags on the provided span

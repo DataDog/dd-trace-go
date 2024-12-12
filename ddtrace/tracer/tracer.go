@@ -8,6 +8,7 @@ package tracer
 import (
 	gocontext "context"
 	"encoding/binary"
+	"fmt"
 	"log/slog"
 	"math"
 	"os"
@@ -587,6 +588,10 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 		}
 
 	}
+	span.context = newSpanContext(span, context)
+	span.setMetric(ext.Pid, float64(t.pid))
+	span.setMeta("language", "go")
+
 	// add tags from options
 	for k, v := range opts.Tags {
 		span.SetTag(k, v)
@@ -595,10 +600,6 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 	for k, v := range t.config.globalTags.get() {
 		span.SetTag(k, v)
 	}
-	span.context = newSpanContext(span, context)
-	span.setMetric(ext.Pid, float64(t.pid))
-	span.setMeta("language", "go")
-
 	if t.config.serviceMappings != nil {
 		if newSvc, ok := t.config.serviceMappings[span.Service]; ok {
 			span.Service = newSvc
@@ -647,6 +648,11 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 		default:
 			log.Error("Abandoned spans channel full, disregarding span.")
 		}
+	}
+	if span.integration == "manual" {
+		atomic.AddUint32(&t.spansStarted, 1)
+	} else {
+		t.statsd.Count("datadog.tracer.spans_started", 1, []string{fmt.Sprintf("integration:%s", span.integration)}, 1)
 	}
 	return span
 }
