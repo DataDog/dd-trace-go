@@ -19,6 +19,8 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/osinfo"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
+
+	"github.com/darccio/knobs"
 )
 
 // startupInfo contains various information about the status of the tracer on startup.
@@ -141,8 +143,8 @@ func logStartup(t *tracer) {
 		AgentFeatures:               t.config.agent,
 		Integrations:                t.config.integrations,
 		AppSec:                      appsec.Enabled(),
-		PartialFlushEnabled:         t.config.partialFlushEnabled,
-		PartialFlushMinSpans:        t.config.partialFlushMinSpans,
+		PartialFlushEnabled:         knobs.GetScope(t.config.Scope, partialFlushEnabled),
+		PartialFlushMinSpans:        knobs.GetScope(t.config.Scope, partialFlushMinSpans),
 		Orchestrion:                 t.config.orchestrionCfg,
 		FeatureFlags:                featureFlags,
 		PropagationStyleInject:      injectorNames,

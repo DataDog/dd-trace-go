@@ -23,6 +23,8 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/samplernames"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
+
+	"github.com/darccio/knobs"
 )
 
 var _ ddtrace.SpanContext = (*spanContext)(nil)
@@ -499,7 +501,7 @@ func (t *trace) finishedOne(s *span) {
 		return
 	}
 
-	doPartialFlush := tr.config.partialFlushEnabled && t.finished >= tr.config.partialFlushMinSpans
+	doPartialFlush := knobs.GetScope(tr.config.Scope, partialFlushEnabled) && t.finished >= knobs.GetScope(tr.config.Scope, partialFlushMinSpans)
 	if !doPartialFlush {
 		return // The trace hasn't completed and partial flushing will not occur
 	}
