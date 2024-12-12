@@ -212,8 +212,6 @@ func civisibility_shutdown(exit_code C.int, unix_finish_time *C.struct_unix_time
 //
 //export civisibility_create_module
 func civisibility_create_module(name *C.char, framework *C.char, framework_version *C.char, unix_start_time *C.struct_unix_time) C.ulonglong {
-	modulesMutex.Lock()
-	defer modulesMutex.Unlock()
 	var moduleOptions []civisibility.TestModuleStartOption
 	if framework != nil && framework_version != nil {
 		moduleOptions = append(moduleOptions, civisibility.WithTestModuleFramework(C.GoString(framework), C.GoString(framework_version)))
@@ -223,7 +221,11 @@ func civisibility_create_module(name *C.char, framework *C.char, framework_versi
 	}
 
 	module := session.GetOrCreateModule(C.GoString(name), moduleOptions...)
+
+	modulesMutex.Lock()
+	defer modulesMutex.Unlock()
 	modules[module.ModuleID()] = module
+
 	return C.ulonglong(module.ModuleID())
 }
 
@@ -270,15 +272,15 @@ func civisibility_module_set_error(module_id C.ulonglong, error_type *C.char, er
 //
 //export civisibility_close_module
 func civisibility_close_module(module_id C.ulonglong, unix_finish_time *C.struct_unix_time) C.uchar {
+	var moduleOptions []civisibility.TestModuleCloseOption
+	if unix_finish_time != nil {
+		moduleOptions = append(moduleOptions, civisibility.WithTestModuleFinishTime(getUnixTime(unix_finish_time)))
+	}
+	moduleID := uint64(module_id)
+
 	modulesMutex.Lock()
 	defer modulesMutex.Unlock()
-	moduleID := uint64(module_id)
 	if module, ok := modules[moduleID]; ok {
-		var moduleOptions []civisibility.TestModuleCloseOption
-		if unix_finish_time != nil {
-			moduleOptions = append(moduleOptions, civisibility.WithTestModuleFinishTime(getUnixTime(unix_finish_time)))
-		}
-
 		module.Close(moduleOptions...)
 		delete(modules, moduleID)
 		return 1
@@ -294,18 +296,20 @@ func civisibility_close_module(module_id C.ulonglong, unix_finish_time *C.struct
 //
 //export civisibility_create_test_suite
 func civisibility_create_test_suite(module_id C.ulonglong, name *C.char, unix_start_time *C.struct_unix_time) C.ulonglong {
+	var suiteOptions []civisibility.TestSuiteStartOption
+	if unix_start_time != nil {
+		suiteOptions = append(suiteOptions, civisibility.WithTestSuiteStartTime(getUnixTime(unix_start_time)))
+	}
+
 	modulesMutex.RLock()
 	defer modulesMutex.RUnlock()
 	if module, ok := modules[uint64(module_id)]; ok {
-		var suiteOptions []civisibility.TestSuiteStartOption
-		if unix_start_time != nil {
-			suiteOptions = append(suiteOptions, civisibility.WithTestSuiteStartTime(getUnixTime(unix_start_time)))
-		}
+		testSuite := module.GetOrCreateSuite(C.GoString(name), suiteOptions...)
 
 		suitesMutex.Lock()
 		defer suitesMutex.Unlock()
-		testSuite := module.GetOrCreateSuite(C.GoString(name), suiteOptions...)
 		suites[testSuite.SuiteID()] = testSuite
+
 		return C.ulonglong(testSuite.SuiteID())
 	}
 	return 0
@@ -354,15 +358,15 @@ func civisibility_suite_set_error(suite_id C.ulonglong, error_type *C.char, erro
 //
 //export civisibility_close_test_suite
 func civisibility_close_test_suite(suite_id C.ulonglong, unix_finish_time *C.struct_unix_time) C.uchar {
+	var suiteOptions []civisibility.TestSuiteCloseOption
+	if unix_finish_time != nil {
+		suiteOptions = append(suiteOptions, civisibility.WithTestSuiteFinishTime(getUnixTime(unix_finish_time)))
+	}
+	suiteID := uint64(suite_id)
+
 	suitesMutex.Lock()
 	defer suitesMutex.Unlock()
-	suiteID := uint64(suite_id)
 	if suite, ok := suites[suiteID]; ok {
-		var suiteOptions []civisibility.TestSuiteCloseOption
-		if unix_finish_time != nil {
-			suiteOptions = append(suiteOptions, civisibility.WithTestSuiteFinishTime(getUnixTime(unix_finish_time)))
-		}
-
 		suite.Close(suiteOptions...)
 		delete(suites, suiteID)
 		return 1
@@ -378,18 +382,20 @@ func civisibility_close_test_suite(suite_id C.ulonglong, unix_finish_time *C.str
 //
 //export civisibility_create_test
 func civisibility_create_test(suite_id C.ulonglong, name *C.char, unix_start_time *C.struct_unix_time) C.ulonglong {
+	var testOptions []civisibility.TestStartOption
+	if unix_start_time != nil {
+		testOptions = append(testOptions, civisibility.WithTestStartTime(getUnixTime(unix_start_time)))
+	}
+
 	suitesMutex.RLock()
 	defer suitesMutex.RUnlock()
 	if suite, ok := suites[uint64(suite_id)]; ok {
-		var testOptions []civisibility.TestStartOption
-		if unix_start_time != nil {
-			testOptions = append(testOptions, civisibility.WithTestStartTime(getUnixTime(unix_start_time)))
-		}
+		test := suite.CreateTest(C.GoString(name), testOptions...)
 
 		testsMutex.Lock()
 		defer testsMutex.Unlock()
-		test := suite.CreateTest(C.GoString(name), testOptions...)
 		tests[test.TestID()] = test
+
 		return C.ulonglong(test.TestID())
 	}
 	return 0
@@ -471,18 +477,18 @@ func civisibility_test_set_test_source(test_id C.ulonglong, test_source_file *C.
 //
 //export civisibility_close_test
 func civisibility_close_test(test_id C.ulonglong, status C.uchar, skip_reason *C.char, unix_finish_time *C.struct_unix_time) C.uchar {
+	var testOptions []civisibility.TestCloseOption
+	if skip_reason != nil {
+		testOptions = append(testOptions, civisibility.WithTestSkipReason(C.GoString(skip_reason)))
+	}
+	if unix_finish_time != nil {
+		testOptions = append(testOptions, civisibility.WithTestFinishTime(getUnixTime(unix_finish_time)))
+	}
+	testID := uint64(test_id)
+
 	testsMutex.Lock()
 	defer testsMutex.Unlock()
-	testID := uint64(test_id)
 	if test, ok := tests[testID]; ok {
-		var testOptions []civisibility.TestCloseOption
-		if skip_reason != nil {
-			testOptions = append(testOptions, civisibility.WithTestSkipReason(C.GoString(skip_reason)))
-		}
-		if unix_finish_time != nil {
-			testOptions = append(testOptions, civisibility.WithTestFinishTime(getUnixTime(unix_finish_time)))
-		}
-
 		test.Close(civisibility.TestResultStatus(status), testOptions...)
 		delete(tests, testID)
 		return 1
