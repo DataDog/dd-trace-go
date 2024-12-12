@@ -278,11 +278,11 @@ func TestTracerStart(t *testing.T) {
 		calls := tg.IncrCalls()
 		for _, c := range calls {
 			if c.GetName() == "datadog.tracer.instrumentations" {
-				assert.Equal(c.GetTags(), []string{"instrumentation:chi"})
+				assert.EqualValues(c.GetTags(), []string{"instrumentation:chi", "version:unknown"})
 				return
 			}
 		}
-		assert.Fail("expected instrumentation tag to contain `chi`")
+		assert.Fail("expected instrumentation to have appropriate tags")
 
 	})
 }

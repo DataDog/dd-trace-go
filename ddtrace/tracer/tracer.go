@@ -352,7 +352,11 @@ func newTracer(opts ...StartOption) *tracer {
 		if !conf.Instrumented {
 			continue
 		}
-		t.statsd.Incr("datadog.tracer.instrumentations", []string{fmt.Sprintf("instrumentation:%s", name)}, 1)
+		v := conf.Version
+		if v == "" {
+			v = "unknown"
+		}
+		t.statsd.Incr("datadog.tracer.instrumentations", []string{fmt.Sprintf("instrumentation:%s", name), fmt.Sprintf("version:%s", v)}, 1)
 	}
 
 	t.wg.Add(1)
