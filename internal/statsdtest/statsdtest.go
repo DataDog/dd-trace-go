@@ -55,6 +55,14 @@ func (tg *TestStatsdClient) addCount(name string, value int64) {
 	tg.counts[name] += value
 }
 
+func (tc *TestStatsdCall) GetTags() []string {
+	return tc.tags
+}
+
+func (tc *TestStatsdCall) GetName() string {
+	return tc.name
+}
+
 func (tg *TestStatsdClient) Gauge(name string, value float64, tags []string, rate float64) error {
 	return tg.addMetric(callTypeGauge, tags, TestStatsdCall{
 		name:     name,

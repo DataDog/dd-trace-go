@@ -257,20 +257,33 @@ func TestTracerStart(t *testing.T) {
 	})
 
 	t.Run("integration_health_metric", func(t *testing.T) {
+		assert := assert.New(t)
 		defer clearIntegrationsForTests()
 		var tg statsdtest.TestStatsdClient
 
 		ok := MarkIntegrationImported("github.com/go-chi/chi")
-		assert.True(t, ok)
+		assert.True(ok)
 		tr, _, _, stop := startTestTracer(t, withStatsdClient(&tg))
 		defer stop()
 
+		tg.Wait(assert, 1, 100*time.Millisecond)
+
 		conf, ok := tr.config.integrations["chi"]
-		assert.True(t, ok)
-		assert.True(t, conf.Instrumented)
+		assert.True(ok)
+		assert.True(conf.Instrumented)
 
 		counts := tg.Counts()
-		assert.Equal(t, int64(1), counts["datadog.tracer.instrumentations"])
+		assert.Equal(int64(1), counts["datadog.tracer.instrumentations"])
+
+		calls := tg.IncrCalls()
+		for _, c := range calls {
+			if c.GetName() == "datadog.tracer.instrumentations" {
+				assert.Equal(c.GetTags(), []string{"instrumentation:chi"})
+				return
+			}
+		}
+		assert.Fail("expected instrumentation tag to contain `chi`")
+
 	})
 }
 
