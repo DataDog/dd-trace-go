@@ -159,9 +159,6 @@ func Start(opts ...StartOption) {
 		return
 	}
 	internal.SetGlobalTracer(t)
-	if t.config.logStartup {
-		logStartup(t)
-	}
 	if t.dataStreams != nil {
 		t.dataStreams.Start()
 	}
@@ -200,6 +197,11 @@ func Start(opts ...StartOption) {
 	appsecopts = append(appsecopts, t.config.appsecStartOptions...)
 	appsecopts = append(appsecopts, appsecConfig.WithRCConfig(cfg))
 	appsec.Start(appsecopts...)
+
+	if t.config.logStartup {
+		logStartup(t)
+	}
+
 	_ = t.hostname() // Prime the hostname cache
 }
 
@@ -280,7 +282,8 @@ func newUnstartedTracer(opts ...StartOption) *tracer {
 	if spans != nil {
 		c.spanRules = spans
 	}
-	rulesSampler := newRulesSampler(c.traceRules, c.spanRules, c.globalSampleRate)
+
+	rulesSampler := newRulesSampler(c.traceRules, c.spanRules, c.globalSampleRate, c.traceRateLimit)
 	c.traceSampleRate = newDynamicConfig("trace_sample_rate", c.globalSampleRate, rulesSampler.traces.setGlobalSampleRate, equal[float64])
 	// If globalSampleRate returns NaN, it means the environment variable was not set or valid.
 	// We could always set the origin to "env_var" inconditionally, but then it wouldn't be possible
@@ -423,7 +426,9 @@ func (t *tracer) worker(tick <-chan time.Time) {
 			t.statsd.Incr("datadog.tracer.flush_triggered", []string{"reason:invoked"}, 1)
 			t.traceWriter.flush()
 			t.statsd.Flush()
-			t.stats.flushAndSend(time.Now(), withCurrentBucket)
+			if !t.config.tracingAsTransport {
+				t.stats.flushAndSend(time.Now(), withCurrentBucket)
+			}
 			// TODO(x): In reality, the traceWriter.flush() call is not synchronous
 			// when using the agent traceWriter. However, this functionality is used
 			// in Lambda so for that purpose this mechanism should suffice.

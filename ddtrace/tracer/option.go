@@ -27,7 +27,6 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	appsecconfig "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/config"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/constants"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
@@ -111,6 +110,9 @@ var (
 
 	// defaultMaxTagsHeaderLen specifies the default maximum length of the X-Datadog-Tags header value.
 	defaultMaxTagsHeaderLen = 128
+
+	// defaultRateLimit specifies the default trace rate limit used when DD_TRACE_RATE_LIMIT is not set.
+	defaultRateLimit = 100.0
 )
 
 // config holds the tracer configuration.
@@ -298,6 +300,12 @@ type config struct {
 
 	// logDirectory is directory for tracer logs specified by user-setting DD_TRACE_LOG_DIRECTORY. default empty/unused
 	logDirectory string
+
+	// tracingAsTransport specifies whether the tracer is running in transport-only mode, where traces are only sent when other products request it.
+	tracingAsTransport bool
+
+	// traceRateLimit specifies the rate limit for traces.
+	traceRateLimit float64
 }
 
 // orchestrionConfig contains Orchestrion configuration.
@@ -343,6 +351,23 @@ func newConfig(opts ...StartOption) *config {
 	}
 	c.globalSampleRate = sampleRate
 	c.httpClientTimeout = time.Second * 10 // 10 seconds
+
+	c.traceRateLimit = defaultRateLimit
+	origin := telemetry.OriginDefault
+	v := os.Getenv("DD_TRACE_RATE_LIMIT")
+	if v != "" {
+		l, err := strconv.ParseFloat(v, 64)
+		if err != nil {
+			log.Warn("DD_TRACE_RATE_LIMIT invalid, using default value %f: %v", defaultRateLimit, err)
+		} else if l < 0.0 {
+			log.Warn("DD_TRACE_RATE_LIMIT negative, using default value %f", defaultRateLimit)
+		} else {
+			c.traceRateLimit = l
+			origin = telemetry.OriginEnvVar
+		}
+	}
+
+	reportTelemetryOnAppStarted(telemetry.Configuration{Name: "trace_rate_limit", Value: c.traceRateLimit, Origin: origin})
 
 	if v := os.Getenv("OTEL_LOGS_EXPORTER"); v != "" {
 		log.Warn("OTEL_LOGS_EXPORTER is not supported")
@@ -532,19 +557,8 @@ func newConfig(opts ...StartOption) *config {
 	if c.debug {
 		log.SetLevel(log.LevelDebug)
 	}
-
-	// Check if CI Visibility mode is enabled
-	if internal.BoolEnv(constants.CIVisibilityEnabledEnvironmentVariable, false) {
-		c.ciVisibilityEnabled = true               // Enable CI Visibility mode
-		c.httpClientTimeout = time.Second * 45     // Increase timeout up to 45 seconds (same as other tracers in CIVis mode)
-		c.logStartup = false                       // If we are in CI Visibility mode we don't want to log the startup to stdout to avoid polluting the output
-		ciTransport := newCiVisibilityTransport(c) // Create a default CI Visibility Transport
-		c.transport = ciTransport                  // Replace the default transport with the CI Visibility transport
-		c.ciVisibilityAgentless = ciTransport.agentless
-	}
-
-	// if using stdout or traces are disabled or we are in ci visibility agentless mode, agent is disabled
-	agentDisabled := c.logToStdout || !c.enabled.current || c.ciVisibilityAgentless
+	// if using stdout or traces are disabled, agent is disabled
+	agentDisabled := c.logToStdout || !c.enabled.current
 	c.agent = loadAgentFeatures(agentDisabled, c.agentURL, c.httpClient)
 	info, ok := debug.ReadBuildInfo()
 	if !ok {
@@ -562,6 +576,21 @@ func newConfig(opts ...StartOption) *config {
 	// This allows persisting the initial value of globalTags for future resets and updates.
 	globalTagsOrigin := c.globalTags.cfgOrigin
 	c.initGlobalTags(c.globalTags.get(), globalTagsOrigin)
+
+	// TODO: change the name once APM Platform RFC is approved
+	if internal.BoolEnv("DD_EXPERIMENTAL_APPSEC_STANDALONE_ENABLED", false) {
+		// Enable tracing as transport layer mode
+		// This means to stop sending trace metrics, send one trace per minute and those force-kept by other products
+		// using the tracer as transport layer for their data. And finally adding the _dd.apm.enabled=0 tag to all traces
+		// to let the backend know that it needs to keep APM UI disabled.
+		c.tracingAsTransport = true
+		c.runtimeMetrics = false
+		c.runtimeMetricsV2 = false
+		c.globalSampleRate = 1.0
+		c.traceRateLimit = 1.0 / 60
+		WithGlobalTag("_dd.apm.enabled", 0)(c)
+	}
+
 	return c
 }
 
