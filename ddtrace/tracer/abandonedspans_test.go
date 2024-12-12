@@ -93,12 +93,12 @@ func TestAbandonedSpansMetric(t *testing.T) {
 		defer setTestTime()()
 		tracer, _, _, stop := startTestTracer(t, WithLogger(tp), WithDebugSpansMode(500*time.Millisecond), withStatsdClient(&tg))
 		defer stop()
-		tracer.StartSpan("operation", StartTime(spanStart))
+		tracer.StartSpan("operation", StartTime(spanStart), Tag(ext.Component, "some_integration_name"))
 		assertProcessedSpans(assert, tracer, 1, 0)
 		calls := tg.GetCallsByName("datadog.tracer.abandoned_spans")
 		assert.Len(calls, 1)
 		call := calls[0]
-		assert.Equal([]string{"name:operation", "integration:manual"}, call.Tags())
+		assert.Equal([]string{"name:operation", "integration:some_integration_name"}, call.Tags())
 	})
 	t.Run("both", func(t *testing.T) {
 		tp.Reset()
