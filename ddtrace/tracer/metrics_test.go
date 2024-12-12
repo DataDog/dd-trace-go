@@ -118,6 +118,58 @@ func TestSpansStartedTags(t *testing.T) {
 	})
 }
 
+func TestSpansFinishedTags(t *testing.T) {
+	var tg statsdtest.TestStatsdClient
+
+	defer func(old time.Duration) { statsInterval = old }(statsInterval)
+	statsInterval = time.Millisecond
+
+	t.Run("default", func(t *testing.T) {
+		assert := assert.New(t)
+		tracer, _, _, stop := startTestTracer(t, withStatsdClient(&tg))
+		defer stop()
+
+		tracer.StartSpan("operation").Finish()
+		tg.Wait(assert, 1, 100*time.Millisecond)
+
+		counts := tg.Counts()
+		assert.Equal(int64(1), counts["datadog.tracer.spans_finished"])
+		for _, c := range tg.CountCalls() {
+			if c.GetName() != "datadog.tracer.spans_finished" {
+				continue
+			}
+			if slices.Equal(c.GetTags(), []string{"integration:manual"}) {
+				return
+			}
+		}
+		assert.Fail("expected integration:manual tag in spans_finished")
+	})
+
+	t.Run("other_source", func(t *testing.T) {
+		tg.Reset()
+		assert := assert.New(t)
+		tracer, _, _, stop := startTestTracer(t, withStatsdClient(&tg))
+		defer stop()
+
+		tracer.StartSpan("operation", Tag(ext.Component, "contrib")).Finish()
+
+		tg.Wait(assert, 1, 100*time.Millisecond)
+
+		counts := tg.Counts()
+		assert.Equal(int64(1), counts["datadog.tracer.spans_finished"])
+		for _, c := range tg.CountCalls() {
+			if c.GetName() != "datadog.tracer.spans_finished" {
+				continue
+			}
+			if slices.Equal(c.GetTags(), []string{"integration:contrib"}) {
+				return
+			}
+		}
+		assert.Fail("expected integration:contrib tag in spans_finished")
+
+	})
+}
+
 func TestTracerMetrics(t *testing.T) {
 	assert := assert.New(t)
 	var tg statsdtest.TestStatsdClient
