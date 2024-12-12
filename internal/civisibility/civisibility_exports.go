@@ -580,9 +580,7 @@ func civisibility_get_known_tests(known_tests **C.struct_known_test) C.int {
 func civisibility_get_skippable_tests(skippable_tests **C.struct_skippable_test) C.int {
 	var skippableTests []C.struct_skippable_test
 	for kSuite, suites := range civisibility.GetSkippableTests() {
-		cSuiteName := C.CString(kSuite)
 		for kTest, test := range suites {
-			cTestName := C.CString(kTest)
 			for _, skippableTest := range test {
 				var custom_config string
 				if skippableTest.Configurations.Custom != nil {
@@ -590,8 +588,8 @@ func civisibility_get_skippable_tests(skippable_tests **C.struct_skippable_test)
 					custom_config = string(jsonBytes)
 				}
 				skippableTest := C.struct_skippable_test{
-					suite_name:                 cSuiteName,
-					test_name:                  cTestName,
+					suite_name:                 C.CString(kSuite),
+					test_name:                  C.CString(kTest),
 					parameters:                 C.CString(skippableTest.Parameters),
 					custom_configurations_json: C.CString(custom_config),
 				}
