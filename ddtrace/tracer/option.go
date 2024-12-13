@@ -37,6 +37,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
 
 	"github.com/DataDog/datadog-go/v5/statsd"
+	"github.com/darccio/knobs"
 )
 
 var contribIntegrations = map[string]struct {
@@ -115,6 +116,9 @@ var (
 
 // config holds the tracer configuration.
 type config struct {
+	*knobs.Scope
+
+
 	// debug, when true, writes details to logs.
 	debug bool
 
@@ -252,15 +256,6 @@ type config struct {
 	// misconfiguration
 	spanTimeout time.Duration
 
-	// partialFlushMinSpans is the number of finished spans in a single trace to trigger a
-	// partial flush, or 0 if partial flushing is disabled.
-	// Value from DD_TRACE_PARTIAL_FLUSH_MIN_SPANS, default 1000.
-	partialFlushMinSpans int
-
-	// partialFlushEnabled specifices whether the tracer should enable partial flushing. Value
-	// from DD_TRACE_PARTIAL_FLUSH_ENABLED, default false.
-	partialFlushEnabled bool
-
 	// statsComputationEnabled enables client-side stats computation (aka trace metrics).
 	statsComputationEnabled bool
 
@@ -297,6 +292,38 @@ type config struct {
 	logDirectory string
 }
 
+var (
+	// partialFlushEnabled specifices whether the tracer should enable partial flushing. Value
+	// from DD_TRACE_PARTIAL_FLUSH_ENABLED, default false.
+	partialFlushEnabled = knobs.Register(&knobs.Definition[bool]{
+		Default: false,
+		EnvVars: []knobs.EnvVar{{Key: "DD_TRACE_PARTIAL_FLUSH_ENABLED"}},
+		Parse:   knobs.ToBool,
+	})
+
+	// partialFlushMinSpans is the number of finished spans in a single trace to trigger a
+	// partial flush, or 0 if partial flushing is disabled.
+	// Value from DD_TRACE_PARTIAL_FLUSH_MIN_SPANS, default 1000.
+	partialFlushMinSpans = knobs.Register(&knobs.Definition[int]{
+		// TODO(partialFlush): consider logging a warning if DD_TRACE_PARTIAL_FLUSH_MIN_SPANS
+		// is set, but DD_TRACE_PARTIAL_FLUSH_ENABLED is not true. Or just assume it should be enabled
+		// if it's explicitly set, and don't require both variables to be configured.
+		Default:  1000,
+		EnvVars:  []knobs.EnvVar{{Key: "DD_TRACE_PARTIAL_FLUSH_MIN_SPANS"}},
+		Requires: []any{partialFlushEnabled},
+		Parse: func(v string) (int, error) {
+			i, _ := strconv.Atoi(v)
+			if i <= 0 {
+				return 0, knobs.ErrInvalidValue
+			} else if i >= traceMaxSize {
+				err := fmt.Errorf("value is above the max number of spans that can be kept in memory for a single trace (%d spans), so partial flushing will never trigger", traceMaxSize)
+				return 0, err
+			}
+			return i, nil
+		},
+	})
+)
+
 // orchestrionConfig contains Orchestrion configuration.
 type orchestrionConfig struct {
 	// Enabled indicates whether this tracer was instanciated via Orchestrion.
@@ -318,13 +345,11 @@ type StartOption func(*config)
 // maxPropagatedTagsLength limits the size of DD_TRACE_X_DATADOG_TAGS_MAX_LENGTH to prevent HTTP 413 responses.
 const maxPropagatedTagsLength = 512
 
-// partialFlushMinSpansDefault is the default number of spans for partial flushing, if enabled.
-const partialFlushMinSpansDefault = 1000
-
 // newConfig renders the tracer configuration based on defaults, environment variables
 // and passed user opts.
 func newConfig(opts ...StartOption) *config {
 	c := new(config)
+	c.Scope = knobs.NewScope()
 	c.sampler = NewAllSampler()
 	sampleRate := math.NaN()
 	if r := getDDorOtelConfig("sampleRate"); r != "" {
@@ -419,19 +444,6 @@ func newConfig(opts ...StartOption) *config {
 	}
 	c.statsComputationEnabled = internal.BoolEnv("DD_TRACE_STATS_COMPUTATION_ENABLED", false)
 	c.dataStreamsMonitoringEnabled = internal.BoolEnv("DD_DATA_STREAMS_ENABLED", false)
-	c.partialFlushEnabled = internal.BoolEnv("DD_TRACE_PARTIAL_FLUSH_ENABLED", false)
-	c.partialFlushMinSpans = internal.IntEnv("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", partialFlushMinSpansDefault)
-	if c.partialFlushMinSpans <= 0 {
-		log.Warn("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS=%d is not a valid value, setting to default %d", c.partialFlushMinSpans, partialFlushMinSpansDefault)
-		c.partialFlushMinSpans = partialFlushMinSpansDefault
-	} else if c.partialFlushMinSpans >= traceMaxSize {
-		log.Warn("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS=%d is above the max number of spans that can be kept in memory for a single trace (%d spans), so partial flushing will never trigger, setting to default %d", c.partialFlushMinSpans, traceMaxSize, partialFlushMinSpansDefault)
-		c.partialFlushMinSpans = partialFlushMinSpansDefault
-	}
-	// TODO(partialFlush): consider logging a warning if DD_TRACE_PARTIAL_FLUSH_MIN_SPANS
-	// is set, but DD_TRACE_PARTIAL_FLUSH_ENABLED is not true. Or just assume it should be enabled
-	// if it's explicitly set, and don't require both variables to be configured.
-
 	c.dynamicInstrumentationEnabled = internal.BoolEnv("DD_DYNAMIC_INSTRUMENTATION_ENABLED", false)
 
 	schemaVersionStr := os.Getenv("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA")
@@ -1192,8 +1204,8 @@ func WithDebugSpansMode(timeout time.Duration) StartOption {
 // is disabled by default.
 func WithPartialFlushing(numSpans int) StartOption {
 	return func(c *config) {
-		c.partialFlushEnabled = true
-		c.partialFlushMinSpans = numSpans
+		knobs.SetScope(c.Scope, partialFlushEnabled, knobs.Code, true)
+		knobs.SetScope(c.Scope, partialFlushMinSpans, knobs.Code, numSpans)
 	}
 }
 
