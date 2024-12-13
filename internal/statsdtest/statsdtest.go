@@ -46,6 +46,10 @@ type TestStatsdCall struct {
 	rate     float64
 }
 
+func (c *TestStatsdCall) Tags() []string {
+	return c.tags
+}
+
 func (tg *TestStatsdClient) addCount(name string, value int64) {
 	tg.mu.Lock()
 	defer tg.mu.Unlock()
@@ -212,6 +216,16 @@ func (tg *TestStatsdClient) CallsByName() map[string]int {
 		counts[c.name]++
 	}
 	return counts
+}
+
+func FilterCallsByName(calls []TestStatsdCall, name string) []TestStatsdCall {
+	var matches []TestStatsdCall
+	for _, c := range calls {
+		if c.name == name {
+			matches = append(matches, c)
+		}
+	}
+	return matches
 }
 
 func (tg *TestStatsdClient) Counts() map[string]int64 {
