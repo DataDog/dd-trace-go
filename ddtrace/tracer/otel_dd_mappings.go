@@ -93,8 +93,7 @@ func getDDorOtelConfig(configName string) string {
 		otelPrefix := "config_opentelemetry:"
 		if val != "" {
 			log.Warn("Both %v and %v are set, using %v=%v", config.ot, config.dd, config.dd, val)
-			telemetryTags := []string{ddPrefix + strings.ToLower(config.dd), otelPrefix + strings.ToLower(config.ot)}
-			telemetry.GlobalClient.Count(telemetry.NamespaceTracers, "otel.env.hiding", 1.0, telemetryTags, true)
+			reportHidingCount(config.dd, config.ot)
 		} else {
 			v, err := config.remapper(otVal)
 			if err != nil {
@@ -106,6 +105,13 @@ func getDDorOtelConfig(configName string) string {
 		}
 	}
 	return val
+}
+
+func reportHidingCount(dd, ot string) {
+	ddPrefix := "config_datadog:"
+	otelPrefix := "config_opentelemetry:"
+	telemetryTags := []string{ddPrefix + strings.ToLower(dd), otelPrefix + strings.ToLower(ot)}
+	telemetry.GlobalClient.Count(telemetry.NamespaceTracers, "otel.env.hiding", 1.0, telemetryTags, true)
 }
 
 // mapDDTags maps OTEL_RESOURCE_ATTRIBUTES to DD_TAGS
