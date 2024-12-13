@@ -734,6 +734,14 @@ func (t *tracer) Inject(ctx ddtrace.SpanContext, carrier interface{}) error {
 	if !t.config.enabled.current {
 		return nil
 	}
+
+	if t.config.tracingAsTransport {
+		// in tracing as transport mode, only propagate when there is an upstream appsec event
+		if ctx, ok := ctx.(*spanContext); ok && ctx.trace != nil && ctx.trace.propagatingTag("_dd.p.appsec") == "" {
+			return nil
+		}
+	}
+
 	t.updateSampling(ctx)
 	return t.config.propagator.Inject(ctx, carrier)
 }
@@ -773,7 +781,14 @@ func (t *tracer) Extract(carrier interface{}) (ddtrace.SpanContext, error) {
 	if !t.config.enabled.current {
 		return internal.NoopSpanContext{}, nil
 	}
-	return t.config.propagator.Extract(carrier)
+	ctx, err := t.config.propagator.Extract(carrier)
+	if t.config.tracingAsTransport {
+		// in tracing as transport mode, reset upstream sampling decision to make sure we keep 1 trace/minute
+		if ctx, ok := ctx.(*spanContext); ok && ctx.trace != nil && ctx.trace.propagatingTag("_dd.p.appsec") == "" {
+			ctx.trace.priority = nil
+		}
+	}
+	return ctx, err
 }
 
 // sampleRateMetricKey is the metric key holding the applied sample rate. Has to be the same as the Agent.

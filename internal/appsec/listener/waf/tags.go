@@ -83,6 +83,8 @@ func SetEventSpanTags(span trace.TagSetter, events []any) error {
 	span.SetTag("_dd.origin", "appsec")
 	// Set the appsec.event tag needed by the appsec backend
 	span.SetTag("appsec.event", true)
+	span.SetTag("_dd.p.appsec", "1")
+	span.SetTag("_sampling_priority_v1", "2")
 	return nil
 }
 
