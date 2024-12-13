@@ -497,25 +497,25 @@ func (z *tslvSpan) DecodeMsg(dc *msgp.Reader) (err error) {
 		case "test_session_id":
 			z.SessionID, err = dc.ReadUint64()
 			if err != nil {
-				err = msgp.WrapError(err, "SessionId")
+				err = msgp.WrapError(err, "SessionID")
 				return
 			}
 		case "test_module_id":
 			z.ModuleID, err = dc.ReadUint64()
 			if err != nil {
-				err = msgp.WrapError(err, "ModuleId")
+				err = msgp.WrapError(err, "ModuleID")
 				return
 			}
 		case "test_suite_id":
 			z.SuiteID, err = dc.ReadUint64()
 			if err != nil {
-				err = msgp.WrapError(err, "SuiteId")
+				err = msgp.WrapError(err, "SuiteID")
 				return
 			}
 		case "itr_correlation_id":
 			z.CorrelationID, err = dc.ReadString()
 			if err != nil {
-				err = msgp.WrapError(err, "CorrelationId")
+				err = msgp.WrapError(err, "CorrelationID")
 				return
 			}
 		case "name":
@@ -651,7 +651,7 @@ func (z *tslvSpan) DecodeMsg(dc *msgp.Reader) (err error) {
 
 // EncodeMsg implements msgp.Encodable
 func (z *tslvSpan) EncodeMsg(en *msgp.Writer) (err error) {
-	// omitempty: check for empty values
+	// check for omitted fields
 	zb0001Len := uint32(16)
 	var zb0001Mask uint16 /* 16 bits */
 	_ = zb0001Mask
@@ -699,7 +699,7 @@ func (z *tslvSpan) EncodeMsg(en *msgp.Writer) (err error) {
 	if zb0001Len == 0 {
 		return
 	}
-	if (zb0001Mask & 0x1) == 0 { // if not empty
+	if (zb0001Mask & 0x1) == 0 { // if not omitted
 		// write "test_session_id"
 		err = en.Append(0xaf, 0x74, 0x65, 0x73, 0x74, 0x5f, 0x73, 0x65, 0x73, 0x73, 0x69, 0x6f, 0x6e, 0x5f, 0x69, 0x64)
 		if err != nil {
@@ -711,7 +711,7 @@ func (z *tslvSpan) EncodeMsg(en *msgp.Writer) (err error) {
 			return
 		}
 	}
-	if (zb0001Mask & 0x2) == 0 { // if not empty
+	if (zb0001Mask & 0x2) == 0 { // if not omitted
 		// write "test_module_id"
 		err = en.Append(0xae, 0x74, 0x65, 0x73, 0x74, 0x5f, 0x6d, 0x6f, 0x64, 0x75, 0x6c, 0x65, 0x5f, 0x69, 0x64)
 		if err != nil {
@@ -723,7 +723,7 @@ func (z *tslvSpan) EncodeMsg(en *msgp.Writer) (err error) {
 			return
 		}
 	}
-	if (zb0001Mask & 0x4) == 0 { // if not empty
+	if (zb0001Mask & 0x4) == 0 { // if not omitted
 		// write "test_suite_id"
 		err = en.Append(0xad, 0x74, 0x65, 0x73, 0x74, 0x5f, 0x73, 0x75, 0x69, 0x74, 0x65, 0x5f, 0x69, 0x64)
 		if err != nil {
@@ -735,7 +735,7 @@ func (z *tslvSpan) EncodeMsg(en *msgp.Writer) (err error) {
 			return
 		}
 	}
-	if (zb0001Mask & 0x8) == 0 { // if not empty
+	if (zb0001Mask & 0x8) == 0 { // if not omitted
 		// write "itr_correlation_id"
 		err = en.Append(0xb2, 0x69, 0x74, 0x72, 0x5f, 0x63, 0x6f, 0x72, 0x72, 0x65, 0x6c, 0x61, 0x74, 0x69, 0x6f, 0x6e, 0x5f, 0x69, 0x64)
 		if err != nil {
@@ -807,7 +807,7 @@ func (z *tslvSpan) EncodeMsg(en *msgp.Writer) (err error) {
 		err = msgp.WrapError(err, "Duration")
 		return
 	}
-	if (zb0001Mask & 0x400) == 0 { // if not empty
+	if (zb0001Mask & 0x400) == 0 { // if not omitted
 		// write "span_id"
 		err = en.Append(0xa7, 0x73, 0x70, 0x61, 0x6e, 0x5f, 0x69, 0x64)
 		if err != nil {
@@ -819,7 +819,7 @@ func (z *tslvSpan) EncodeMsg(en *msgp.Writer) (err error) {
 			return
 		}
 	}
-	if (zb0001Mask & 0x800) == 0 { // if not empty
+	if (zb0001Mask & 0x800) == 0 { // if not omitted
 		// write "trace_id"
 		err = en.Append(0xa8, 0x74, 0x72, 0x61, 0x63, 0x65, 0x5f, 0x69, 0x64)
 		if err != nil {
@@ -831,7 +831,7 @@ func (z *tslvSpan) EncodeMsg(en *msgp.Writer) (err error) {
 			return
 		}
 	}
-	if (zb0001Mask & 0x1000) == 0 { // if not empty
+	if (zb0001Mask & 0x1000) == 0 { // if not omitted
 		// write "parent_id"
 		err = en.Append(0xa9, 0x70, 0x61, 0x72, 0x65, 0x6e, 0x74, 0x5f, 0x69, 0x64)
 		if err != nil {
@@ -853,7 +853,7 @@ func (z *tslvSpan) EncodeMsg(en *msgp.Writer) (err error) {
 		err = msgp.WrapError(err, "Error")
 		return
 	}
-	if (zb0001Mask & 0x4000) == 0 { // if not empty
+	if (zb0001Mask & 0x4000) == 0 { // if not omitted
 		// write "meta"
 		err = en.Append(0xa4, 0x6d, 0x65, 0x74, 0x61)
 		if err != nil {
@@ -877,7 +877,7 @@ func (z *tslvSpan) EncodeMsg(en *msgp.Writer) (err error) {
 			}
 		}
 	}
-	if (zb0001Mask & 0x8000) == 0 { // if not empty
+	if (zb0001Mask & 0x8000) == 0 { // if not omitted
 		// write "metrics"
 		err = en.Append(0xa7, 0x6d, 0x65, 0x74, 0x72, 0x69, 0x63, 0x73)
 		if err != nil {

@@ -62,6 +62,10 @@ func Middleware(opts ...Option) func(c *fiber.Ctx) error {
 			}
 		}
 		if spanctx, err := tracer.Extract(tracer.HTTPHeadersCarrier(h)); err == nil {
+			// If there are span links as a result of context extraction, add them as a StartSpanOption
+			if linksCtx, ok := spanctx.(ddtrace.SpanContextWithLinks); ok && linksCtx.SpanLinks() != nil {
+				opts = append(opts, tracer.WithSpanLinks(linksCtx.SpanLinks()))
+			}
 			opts = append(opts, tracer.ChildOf(spanctx))
 		}
 		opts = append(opts, cfg.spanOpts...)
