@@ -152,7 +152,7 @@ func Start(opts ...StartOption) {
 	}
 	defer telemetry.Time(telemetry.NamespaceGeneral, "init_time", nil, true)()
 	t := newTracer(opts...)
-	if !t.config.enabled.current {
+	if !knobs.GetScope(t.config.Scope, enabled) {
 		// TODO: instrumentation telemetry client won't get started
 		// if tracing is disabled, but we still want to capture this
 		// telemetry information. Will be fixed when the tracer and profiler
@@ -500,7 +500,7 @@ func (t *tracer) pushChunk(trace *chunk) {
 
 // StartSpan creates, starts, and returns a new Span with the given `operationName`.
 func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOption) ddtrace.Span {
-	if !t.config.enabled.current {
+	if !knobs.GetScope(t.config.Scope, enabled) {
 		return internal.NoopSpan{}
 	}
 	var opts ddtrace.StartSpanConfig
@@ -716,7 +716,7 @@ func (t *tracer) Stop() {
 
 // Inject uses the configured or default TextMap Propagator.
 func (t *tracer) Inject(ctx ddtrace.SpanContext, carrier interface{}) error {
-	if !t.config.enabled.current {
+	if !knobs.GetScope(t.config.Scope, enabled) {
 		return nil
 	}
 	t.updateSampling(ctx)
@@ -755,7 +755,7 @@ func (t *tracer) updateSampling(ctx ddtrace.SpanContext) {
 
 // Extract uses the configured or default TextMap Propagator.
 func (t *tracer) Extract(carrier interface{}) (ddtrace.SpanContext, error) {
-	if !t.config.enabled.current {
+	if !knobs.GetScope(t.config.Scope, enabled) {
 		return internal.NoopSpanContext{}, nil
 	}
 	return t.config.propagator.Extract(carrier)

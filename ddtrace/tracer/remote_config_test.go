@@ -18,6 +18,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry/telemetrytest"
 
 	"github.com/DataDog/datadog-agent/pkg/remoteconfig/state"
+	"github.com/darccio/knobs"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -395,7 +396,7 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 
 		applyStatus := tr.onRemoteConfigUpdate(input)
 		require.Equal(t, state.ApplyStateAcknowledged, applyStatus["path"].State)
-		require.Equal(t, false, tr.config.enabled.current)
+		require.Equal(t, false, tr.config.dynamic.enabled.current)
 		headers := TextMapCarrier{
 			traceparentHeader:      "00-12345678901234567890123456789012-1234567890123456-01",
 			tracestateHeader:       "dd=s:2;o:rum;t.usr.id:baz64~~",
@@ -417,7 +418,7 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 		input = remoteconfig.ProductUpdate{"path": nil}
 		applyStatus = tr.onRemoteConfigUpdate(input)
 		require.Equal(t, state.ApplyStateAcknowledged, applyStatus["path"].State)
-		require.Equal(t, false, tr.config.enabled.current)
+		require.Equal(t, false, knobs.GetScope(tr.config.Scope, enabled))
 
 		// turning tracing back explicitly is not allowed
 		input = remoteconfig.ProductUpdate{
@@ -427,7 +428,8 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 		}
 		applyStatus = tr.onRemoteConfigUpdate(input)
 		require.Equal(t, state.ApplyStateAcknowledged, applyStatus["path"].State)
-		require.Equal(t, false, tr.config.enabled.current)
+		require.Equal(t, false, tr.config.dynamic.enabled.current)
+		require.Equal(t, false, knobs.GetScope(tr.config.Scope, enabled))
 
 		telemetryClient.AssertNumberOfCalls(t, "ConfigChange", 1)
 	})

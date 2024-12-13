@@ -119,6 +119,10 @@ var (
 type config struct {
 	*knobs.Scope
 
+	dynamic struct {
+		// enabled reports whether tracing is enabled.
+		enabled dynamicConfig[bool]
+	}
 
 	// debug, when true, writes details to logs.
 	debug bool
@@ -235,9 +239,6 @@ type config struct {
 	// profilerEndpoints specifies whether profiler endpoint filtering is enabled.
 	profilerEndpoints bool
 
-	// enabled reports whether tracing is enabled.
-	enabled dynamicConfig[bool]
-
 	// enableHostnameDetection specifies whether the tracer should enable hostname detection.
 	enableHostnameDetection bool
 
@@ -295,6 +296,26 @@ var (
 )
 
 var (
+	enabled = knobs.Register(&knobs.Definition[bool]{
+		Default: true,
+		EnvVars: []knobs.EnvVar{
+			{
+				Key: "DD_TRACE_ENABLED",
+			},
+			{
+				Key:       "OTEL_TRACES_EXPORTER",
+				Transform: mapEnabled,
+			},
+		},
+		Parse: func(s string) (bool, error) {
+			if s == "" {
+				// Short-circuit if the value is empty, to avoid parsing errors.
+				return true, nil
+			}
+			return strconv.ParseBool(s)
+		},
+	})
+
 	// globalSampleRate holds sample rate read from environment variables.
 	globalSampleRate = knobs.Register(&knobs.Definition[float64]{
 		Default: math.NaN(),
@@ -450,9 +471,10 @@ func newConfig(opts ...StartOption) *config {
 	c.runtimeMetricsV2 = internal.BoolEnv("DD_RUNTIME_METRICS_V2_ENABLED", false)
 	c.debug = internal.BoolVal(getDDorOtelConfig("debugMode"), false)
 	c.logDirectory = os.Getenv("DD_TRACE_LOG_DIRECTORY")
-	c.enabled = newDynamicConfig("tracing_enabled", internal.BoolVal(getDDorOtelConfig("enabled"), true), func(b bool) bool { return true }, equal[bool])
+	c.dynamic.enabled = newDynamicConfig("tracing_enabled", knobs.GetScope(c.Scope, enabled), func(b bool) bool { knobs.SetScope(c.Scope, enabled, knobs.Code, b); return true }, equal[bool])
 	if _, ok := os.LookupEnv("DD_TRACE_ENABLED"); ok {
-		c.enabled.cfgOrigin = telemetry.OriginEnvVar
+		// TODO: shouldn't we track this for the OTEL_TRACES_EXPORTER case?
+		c.dynamic.enabled.cfgOrigin = telemetry.OriginEnvVar
 	}
 	c.profilerEndpoints = internal.BoolEnv(traceprof.EndpointEnvVar, true)
 	c.profilerHotspots = internal.BoolEnv(traceprof.CodeHotspotsEnvVar, true)
@@ -567,7 +589,7 @@ func newConfig(opts ...StartOption) *config {
 		log.SetLevel(log.LevelDebug)
 	}
 	// if using stdout or traces are disabled, agent is disabled
-	agentDisabled := c.logToStdout || !c.enabled.current
+	agentDisabled := c.logToStdout || !knobs.GetScope(c.Scope, enabled)
 	c.agent = loadAgentFeatures(agentDisabled, c.agentURL, c.httpClient)
 	info, ok := debug.ReadBuildInfo()
 	if !ok {
@@ -1169,7 +1191,7 @@ func WithHostname(name string) StartOption {
 // WithTraceEnabled allows specifying whether tracing will be enabled
 func WithTraceEnabled(enabled bool) StartOption {
 	return func(c *config) {
-		c.enabled = newDynamicConfig("tracing_enabled", enabled, func(b bool) bool { return true }, equal[bool])
+		c.dynamic.enabled.update(enabled, telemetry.OriginCode)
 	}
 }
 

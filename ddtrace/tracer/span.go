@@ -32,6 +32,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/samplernames"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/traceprof"
 
+	"github.com/darccio/knobs"
 	"github.com/tinylib/msgp/msgp"
 	"golang.org/x/xerrors"
 
@@ -548,7 +549,7 @@ func (s *span) finish(finishTime int64) {
 
 	keep := true
 	if t, ok := internal.GetGlobalTracer().(*tracer); ok {
-		if !t.config.enabled.current {
+		if !knobs.GetScope(t.config.Scope, enabled) {
 			return
 		}
 		// we have an active tracer

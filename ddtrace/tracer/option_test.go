@@ -637,8 +637,9 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			tracer := newTracer(WithAgentTimeout(2))
 			defer tracer.Stop()
 			c := tracer.config
-			assert.True(t, c.enabled.current)
-			assert.Equal(t, c.enabled.cfgOrigin, telemetry.OriginDefault)
+			assert.True(t, c.dynamic.enabled.current)
+			assert.True(t, knobs.GetScope(c.Scope, enabled))
+			assert.Equal(t, c.dynamic.enabled.cfgOrigin, telemetry.OriginDefault)
 		})
 
 		t.Run("override", func(t *testing.T) {
@@ -646,8 +647,9 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			tracer := newTracer(WithAgentTimeout(2))
 			defer tracer.Stop()
 			c := tracer.config
-			assert.False(t, c.enabled.current)
-			assert.Equal(t, c.enabled.cfgOrigin, telemetry.OriginEnvVar)
+			assert.False(t, c.dynamic.enabled.current)
+			assert.False(t, knobs.GetScope(c.Scope, enabled))
+			assert.Equal(t, c.dynamic.enabled.cfgOrigin, telemetry.OriginEnvVar)
 		})
 	})
 
@@ -1365,21 +1367,24 @@ func TestWithTraceEnabled(t *testing.T) {
 	t.Run("WithTraceEnabled", func(t *testing.T) {
 		assert := assert.New(t)
 		c := newConfig(WithTraceEnabled(false))
-		assert.False(c.enabled.current)
+		assert.False(c.dynamic.enabled.current)
+		assert.False(knobs.GetScope(c.Scope, enabled))
 	})
 
 	t.Run("otel-env", func(t *testing.T) {
 		assert := assert.New(t)
 		t.Setenv("OTEL_TRACES_EXPORTER", "none")
 		c := newConfig()
-		assert.False(c.enabled.current)
+		assert.False(c.dynamic.enabled.current)
+		assert.False(knobs.GetScope(c.Scope, enabled))
 	})
 
 	t.Run("dd-env", func(t *testing.T) {
 		assert := assert.New(t)
 		t.Setenv("DD_TRACE_ENABLED", "false")
 		c := newConfig()
-		assert.False(c.enabled.current)
+		assert.False(c.dynamic.enabled.current)
+		assert.False(knobs.GetScope(c.Scope, enabled))
 	})
 
 	t.Run("override-chain", func(t *testing.T) {
@@ -1388,10 +1393,12 @@ func TestWithTraceEnabled(t *testing.T) {
 		t.Setenv("OTEL_TRACES_EXPORTER", "none")
 		t.Setenv("DD_TRACE_ENABLED", "true")
 		c := newConfig()
-		assert.True(c.enabled.current)
+		assert.True(c.dynamic.enabled.current)
+		assert.True(knobs.GetScope(c.Scope, enabled))
 		// tracer option overrides dd env
 		c = newConfig(WithTraceEnabled(false))
-		assert.False(c.enabled.current)
+		assert.False(c.dynamic.enabled.current)
+		assert.False(knobs.GetScope(c.Scope, enabled))
 	})
 }
 
