@@ -32,7 +32,7 @@ require (
 	github.com/bradfitz/gomemcache v0.0.0-20230611145640-acc696258285
 	github.com/confluentinc/confluent-kafka-go v1.9.2
 	github.com/confluentinc/confluent-kafka-go/v2 v2.2.0
-	github.com/darccio/knobs v0.0.0-20241213130850-25d5d476358d
+	github.com/darccio/knobs v0.0.0-20241213135620-026046f4510d
 	github.com/denisenkom/go-mssqldb v0.11.0
 	github.com/dimfeld/httptreemux/v5 v5.5.0
 	github.com/eapache/queue/v2 v2.0.0-20230407133247-75960ed334e4

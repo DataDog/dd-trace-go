@@ -1032,8 +1032,8 @@ github.com/d2g/dhcp4 v0.0.0-20170904100407-a1d1b6c41b1c/go.mod h1:Ct2BUK8SB0YC1S
 github.com/d2g/dhcp4client v1.0.0/go.mod h1:j0hNfjhrt2SxUOw55nL0ATM/z4Yt3t2Kd1mW34z5W5s=
 github.com/d2g/dhcp4server v0.0.0-20181031114812-7d4a0a7f59a5/go.mod h1:Eo87+Kg/IX2hfWJfwxMzLyuSZyxSoAug2nGa1G2QAi8=
 github.com/d2g/hardwareaddr v0.0.0-20190221164911-e7d9fbe030e4/go.mod h1:bMl4RjIciD2oAxI7DmWRx6gbeqrkoLqv3MV0vzNad+I=
-github.com/darccio/knobs v0.0.0-20241213130850-25d5d476358d h1:L8EQePHnMVEnQglNhfHKwvWEcbSX//GodoksWP6uyB8=
-github.com/darccio/knobs v0.0.0-20241213130850-25d5d476358d/go.mod h1:nJ3ntDIyIQgqzTWF2QiL7eRNTy6iZJbBot3WcB+SymI=
+github.com/darccio/knobs v0.0.0-20241213135620-026046f4510d h1:fOnj9dUTHsRxV3DKhHhnJ/DUM5pURJ87cAN6pSrtefM=
+github.com/darccio/knobs v0.0.0-20241213135620-026046f4510d/go.mod h1:nJ3ntDIyIQgqzTWF2QiL7eRNTy6iZJbBot3WcB+SymI=
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc h1:U9qPSI2PIWSS1VwoXQT9A3Wy9MM3WgvqSxFWenqJduM=
