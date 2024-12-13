@@ -152,8 +152,8 @@ func (t *httpTransport) send(p *payload) (body io.ReadCloser, err error) {
 	req.Header.Set(traceCountHeader, strconv.Itoa(p.itemCount()))
 	req.Header.Set(headerComputedTopLevel, "yes")
 	var tr *tracer
-	var tracerExists bool
-	if tr, tracerExists = traceinternal.GetGlobalTracer().(*tracer); tracerExists {
+	var haveTracer bool
+	if tr, haveTracer = traceinternal.GetGlobalTracer().(*tracer); haveTracer {
 		if tr.config.canComputeStats() {
 			req.Header.Set("Datadog-Client-Computed-Stats", "yes")
 		}
@@ -170,11 +170,11 @@ func (t *httpTransport) send(p *payload) (body io.ReadCloser, err error) {
 	}
 	response, err := t.client.Do(req)
 	if err != nil {
-		reportAPIErrMetric(tracerExists, tr, response.StatusCode)
+		reportAPIErrorsMetric(haveTracer, response, err, tr)
 		return nil, err
 	}
 	if code := response.StatusCode; code >= 400 {
-		reportAPIErrMetric(tracerExists, tr, code)
+		reportAPIErrorsMetric(haveTracer, response, err, tr)
 		// error, check the body for context information and
 		// return a nice error.
 		msg := make([]byte, 1000)
@@ -189,10 +189,18 @@ func (t *httpTransport) send(p *payload) (body io.ReadCloser, err error) {
 	return response.Body, nil
 }
 
-func reportAPIErrMetric(tracerExists bool, t *tracer, statusCode int) {
-	if tracerExists {
-		t.statsd.Incr("datadog.tracer.api.errors", []string{fmt.Sprintf("status:%d", statusCode)}, 1)
+func reportAPIErrorsMetric(haveTracer bool, response *http.Response, err error, t *tracer) {
+	if !haveTracer {
+		return
 	}
+	var reason string
+	if err != nil {
+		reason = "network_failure"
+	}
+	if response != nil {
+		reason = fmt.Sprintf("server_response_%d", response.StatusCode)
+	}
+	t.statsd.Incr("datadog.tracer.api.errors", []string{"reason:" + reason}, 1)
 }
 
 func (t *httpTransport) endpoint() string {
