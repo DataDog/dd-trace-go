@@ -80,7 +80,7 @@ type tracer struct {
 	pid int
 
 	// These integers track metrics about spans and traces as they are started,
-	// finished and dropped
+	// finished, and dropped
 	spansStarted, spansFinished, tracesDropped uint32
 
 	// Keeps track of the total number of traces dropped for accurate logging.
