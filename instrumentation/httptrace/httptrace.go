@@ -56,7 +56,7 @@ func StartRequestSpan(r *http.Request, opts ...tracer.StartSpanOption) (*tracer.
 			}
 			if spanctx, err := tracer.Extract(tracer.HTTPHeadersCarrier(r.Header)); err == nil {
 				// If there are span links as a result of context extraction, add them as a StartSpanOption
-				if spanctx.SpanLinks() != nil {
+				if spanctx != nil && spanctx.SpanLinks() != nil {
 					tracer.WithSpanLinks(spanctx.SpanLinks())(cfg)
 				}
 				tracer.ChildOf(spanctx)(cfg)

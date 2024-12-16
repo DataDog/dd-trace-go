@@ -47,7 +47,7 @@ func WrapHandler(h fasthttp.RequestHandler, opts ...Option) fasthttp.RequestHand
 		}
 		if sctx, err := tracer.Extract(fcc); err == nil {
 			// If there are span links as a result of context extraction, add them as a StartSpanOption
-			if sctx.SpanLinks() != nil {
+			if sctx != nil && sctx.SpanLinks() != nil {
 				spanOpts = append(spanOpts, tracer.WithSpanLinks(sctx.SpanLinks()))
 			}
 			spanOpts = append(spanOpts, tracer.ChildOf(sctx))

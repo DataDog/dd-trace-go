@@ -77,7 +77,7 @@ func (tr *KafkaTracer) StartConsumeSpan(msg Message) *tracer.Span {
 	carrier := MessageCarrier{msg: msg}
 	if spanctx, err := tracer.Extract(carrier); err == nil {
 		// If there are span links as a result of context extraction, add them as a StartSpanOption
-		if spanctx.SpanLinks() != nil {
+		if spanctx != nil && spanctx.SpanLinks() != nil {
 			opts = append(opts, tracer.WithSpanLinks(spanctx.SpanLinks()))
 		}
 		opts = append(opts, tracer.ChildOf(spanctx))
