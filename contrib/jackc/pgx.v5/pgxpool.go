@@ -9,6 +9,7 @@ import (
 	"context"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/contribroutines"
 )
 
 func NewPool(ctx context.Context, connString string, opts ...Option) (*pgxpool.Pool, error) {
@@ -30,7 +31,7 @@ func NewPoolWithConfig(ctx context.Context, config *pgxpool.Config, opts ...Opti
 		return nil, err
 	}
 	if tracer.cfg.poolStats && tracer.cfg.statsdClient != nil {
-		go pollPoolStats(tracer.cfg.statsdClient, pool)
+		go pollPoolStats(tracer.cfg.statsdClient, pool, contribroutines.GetStopChan())
 	}
 	return pool, nil
 }
