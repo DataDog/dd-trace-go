@@ -82,7 +82,9 @@ func TestEnqueuedTracesHealthMetric(t *testing.T) {
 
 	counts := tg.Counts()
 	assert.Equal(int64(3), counts["datadog.tracer.queue.enqueued.traces"])
-	assert.Equal(uint32(0), tracer.tracesQueued)
+	w, ok := tracer.traceWriter.(*agentTraceWriter)
+	assert.True(ok)
+	assert.Equal(uint32(0), w.tracesQueued)
 }
 
 func TestTracerMetrics(t *testing.T) {
