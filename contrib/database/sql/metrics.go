@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/contribroutines"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
@@ -34,9 +33,8 @@ var interval = 10 * time.Second
 
 // pollDBStats calls (*DB).Stats on the db at a predetermined interval. It pushes the DBStats off to the statsd client.
 // the caller should always ensure that db & statsd are non-nil
-func pollDBStats(statsd internal.StatsdClient, db *sql.DB) {
+func pollDBStats(statsd internal.StatsdClient, db *sql.DB, stop chan struct{}) {
 	log.Debug("DB stats will be gathered and sent every %v.", interval)
-	stop := contribroutines.GetStopChan()
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	for {
