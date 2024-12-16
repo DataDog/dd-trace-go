@@ -802,7 +802,7 @@ func statsTags(c *config) []string {
 // withNoopStats is used for testing to disable statsd client
 func withNoopStats() StartOption {
 	return func(c *config) {
-		c.statsdClient = &statsd.NoOpClient{}
+		c.statsdClient = &statsd.NoOpClientDirect{}
 	}
 }
 
