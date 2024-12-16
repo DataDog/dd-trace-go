@@ -40,6 +40,7 @@ const (
 	PackageRedigo               Package = "gomodule/redigo"
 	PackageGoogleAPI            Package = "google.golang.org/api"
 	PackageGRPC                 Package = "google.golang.org/grpc"
+	PackageEnvoyExtProc         Package = "envoyproxy/go-control-plane"
 	// TODO: ...
 
 	PackageNetHTTP   Package = "net/http"
@@ -449,6 +450,18 @@ var packages = map[Package]PackageInfo{
 				buildServiceNameV0: staticName("grpc.client"),
 				buildOpNameV0:      staticName("grpc.client"),
 				buildOpNameV1:      staticName("grpc.client.request"),
+			},
+		},
+	},
+	PackageEnvoyExtProc: {
+		TracedPackage: "github.com/envoyproxy/go-control-plane/envoy/service/ext_proc/v3",
+		EnvVarPrefix:  "SERVICE_EXTENSION",
+		naming: map[Component]componentNames{
+			ComponentServer: {
+				useDDServiceV0:     true,
+				buildServiceNameV0: staticName("http.router"),
+				buildOpNameV0:      staticName("http.request"),
+				buildOpNameV1:      staticName("http.server.request"),
 			},
 		},
 	},
