@@ -52,7 +52,7 @@ func defaults(cfg *config) {
 		cfg.analyticsRate = globalconfig.AnalyticsRate()
 	}
 	cfg.serviceName = namingschema.ServiceName(defaultServiceName)
-	cfg.isStatusError = func(status int) bool { return status >= 500 && status < 600 }
+	cfg.isStatusError = isServerError
 	cfg.headerTags = globalconfig.HeaderTagMap()
 	cfg.spanOpts = []ddtrace.StartSpanOption{tracer.Measured()}
 	if !math.IsNaN(cfg.analyticsRate) {
@@ -60,6 +60,10 @@ func defaults(cfg *config) {
 	}
 	cfg.ignoreRequest = func(_ *http.Request) bool { return false }
 	cfg.resourceNamer = func(_ *http.Request) string { return "" }
+}
+
+func isServerError(status int) bool {
+	return status >= 500 && status < 600
 }
 
 // WithIgnoreRequest holds the function to use for determining if the
@@ -90,9 +94,9 @@ func WithHeaderTags(headers []string) Option {
 
 // WithStatusCheck sets a span to be an error if the passed function
 // returns true for a given status code.
-func WithStatusCheck(checker func(statusCode int) bool) Option {
+func WithStatusCheck(fn func(statusCode int) bool) Option {
 	return func(cfg *config) {
-		cfg.isStatusError = checker
+		cfg.isStatusError = fn
 	}
 }
 
