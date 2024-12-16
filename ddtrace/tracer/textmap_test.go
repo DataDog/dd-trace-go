@@ -652,7 +652,7 @@ func TestEnvVars(t *testing.T) {
 			}
 			for _, test := range tests {
 				t.Run(fmt.Sprintf("inject with env=%q", testEnv), func(t *testing.T) {
-					tracer, err := newTracer(WithHTTPClient(c), withStatsdClient(&statsd.NoOpClient{}))
+					tracer, err := newTracer(WithHTTPClient(c), withStatsdClient(&statsd.NoOpClientDirect{}))
 					defer tracer.Stop()
 					assert.NoError(t, err)
 					root := tracer.StartSpan("web.request")
@@ -722,7 +722,7 @@ func TestEnvVars(t *testing.T) {
 			}
 			for _, test := range tests {
 				t.Run(fmt.Sprintf("extract with env=%q", testEnv), func(t *testing.T) {
-					tracer, err := newTracer(WithHTTPClient(c), withStatsdClient(&statsd.NoOpClient{}))
+					tracer, err := newTracer(WithHTTPClient(c), withStatsdClient(&statsd.NoOpClientDirect{}))
 					defer tracer.Stop()
 					assert := assert.New(t)
 					assert.NoError(err)
@@ -758,7 +758,7 @@ func TestEnvVars(t *testing.T) {
 			}
 			for _, tc := range tests {
 				t.Run(fmt.Sprintf("extract with env=%q", testEnv), func(t *testing.T) {
-					tracer, err := newTracer(WithHTTPClient(c), withStatsdClient(&statsd.NoOpClient{}))
+					tracer, err := newTracer(WithHTTPClient(c), withStatsdClient(&statsd.NoOpClientDirect{}))
 					defer tracer.Stop()
 					assert := assert.New(t)
 					assert.NoError(err)
@@ -815,7 +815,7 @@ func TestEnvVars(t *testing.T) {
 			}
 			for _, tc := range tests {
 				t.Run(fmt.Sprintf("extract with env=%q", testEnv), func(t *testing.T) {
-					tracer, err := newTracer(WithHTTPClient(c), withStatsdClient(&statsd.NoOpClient{}))
+					tracer, err := newTracer(WithHTTPClient(c), withStatsdClient(&statsd.NoOpClientDirect{}))
 					defer tracer.Stop()
 					assert := assert.New(t)
 					assert.NoError(err)
@@ -851,7 +851,7 @@ func TestEnvVars(t *testing.T) {
 		}
 		for i, tc := range tests {
 			t.Run(fmt.Sprintf("b3 single header inject #%d", i), func(t *testing.T) {
-				tracer, err := newTracer(WithHTTPClient(c), withStatsdClient(&statsd.NoOpClient{}))
+				tracer, err := newTracer(WithHTTPClient(c), withStatsdClient(&statsd.NoOpClientDirect{}))
 				defer tracer.Stop()
 				assert.NoError(t, err)
 				root := tracer.StartSpan("myrequest")
@@ -907,7 +907,7 @@ func TestEnvVars(t *testing.T) {
 			}
 			for _, tc := range tests {
 				t.Run(fmt.Sprintf("inject with env=%q", testEnv), func(t *testing.T) {
-					tracer, err := newTracer(WithPropagator(NewPropagator(&PropagatorConfig{B3: true})), WithHTTPClient(c), withStatsdClient(&statsd.NoOpClient{}))
+					tracer, err := newTracer(WithPropagator(NewPropagator(&PropagatorConfig{B3: true})), WithHTTPClient(c), withStatsdClient(&statsd.NoOpClientDirect{}))
 					assert.NoError(t, err)
 					defer tracer.Stop()
 					root := tracer.StartSpan("web.request")
@@ -981,7 +981,7 @@ func TestEnvVars(t *testing.T) {
 			}
 			for _, tc := range tests {
 				t.Run(fmt.Sprintf("extract with env=%q", testEnv), func(t *testing.T) {
-					tracer, err := newTracer(WithHTTPClient(c), withStatsdClient(&statsd.NoOpClient{}))
+					tracer, err := newTracer(WithHTTPClient(c), withStatsdClient(&statsd.NoOpClientDirect{}))
 					defer tracer.Stop()
 					assert := assert.New(t)
 					assert.NoError(err)
@@ -1039,7 +1039,7 @@ func TestEnvVars(t *testing.T) {
 			}
 			for _, tc := range tests {
 				t.Run(fmt.Sprintf("inject and extract with env=%q", testEnv), func(t *testing.T) {
-					tracer, err := newTracer(WithHTTPClient(c), withStatsdClient(&statsd.NoOpClient{}))
+					tracer, err := newTracer(WithHTTPClient(c), withStatsdClient(&statsd.NoOpClientDirect{}))
 					defer tracer.Stop()
 					assert.NoError(t, err)
 					root := tracer.StartSpan("web.request")
@@ -1247,7 +1247,7 @@ func TestEnvVars(t *testing.T) {
 			}
 			for i, tc := range tests {
 				t.Run(fmt.Sprintf("#%v extract/valid  with env=%q", i, testEnv), func(t *testing.T) {
-					tracer, err := newTracer(WithHTTPClient(c), withStatsdClient(&statsd.NoOpClient{}))
+					tracer, err := newTracer(WithHTTPClient(c), withStatsdClient(&statsd.NoOpClientDirect{}))
 					defer tracer.Stop()
 					assert := assert.New(t)
 					assert.NoError(err)
@@ -1302,7 +1302,7 @@ func TestEnvVars(t *testing.T) {
 
 			for i, tc := range tests {
 				t.Run(fmt.Sprintf("#%v extract/invalid  with env=%q", i, testEnv), func(t *testing.T) {
-					tracer, err := newTracer(WithHTTPClient(c), withStatsdClient(&statsd.NoOpClient{}))
+					tracer, err := newTracer(WithHTTPClient(c), withStatsdClient(&statsd.NoOpClientDirect{}))
 					defer tracer.Stop()
 					assert := assert.New(t)
 					assert.NoError(err)
@@ -1354,7 +1354,7 @@ func TestEnvVars(t *testing.T) {
 			}
 			for i, tc := range tests {
 				t.Run(fmt.Sprintf("#%v extract/valid  with env=%q", i, testEnv), func(t *testing.T) {
-					tracer, err := newTracer(WithHTTPClient(c), withStatsdClient(&statsd.NoOpClient{}))
+					tracer, err := newTracer(WithHTTPClient(c), withStatsdClient(&statsd.NoOpClientDirect{}))
 					assert.NoError(t, err)
 					defer tracer.Stop()
 					assert := assert.New(t)
@@ -1554,7 +1554,7 @@ func TestEnvVars(t *testing.T) {
 			}
 			for i, tc := range tests {
 				t.Run(fmt.Sprintf("#%d w3c inject with env=%q", i, testEnv), func(t *testing.T) {
-					tracer, err := newTracer(WithHTTPClient(c), withStatsdClient(&statsd.NoOpClient{}))
+					tracer, err := newTracer(WithHTTPClient(c), withStatsdClient(&statsd.NoOpClientDirect{}))
 					defer tracer.Stop()
 					assert := assert.New(t)
 					assert.Nil(err)
@@ -1584,7 +1584,7 @@ func TestEnvVars(t *testing.T) {
 				})
 
 				t.Run(fmt.Sprintf("w3c inject with env=%q / testing tag list-member limit", testEnv), func(t *testing.T) {
-					tracer, err := newTracer(WithHTTPClient(c), withStatsdClient(&statsd.NoOpClient{}))
+					tracer, err := newTracer(WithHTTPClient(c), withStatsdClient(&statsd.NoOpClientDirect{}))
 					defer tracer.Stop()
 					assert := assert.New(t)
 					assert.Nil(err)
@@ -1652,7 +1652,7 @@ func TestEnvVars(t *testing.T) {
 		}
 		for i, tc := range tests {
 			t.Run(fmt.Sprintf("#%d", i), func(t *testing.T) {
-				tracer, err := newTracer(WithHTTPClient(c), withStatsdClient(&statsd.NoOpClient{}))
+				tracer, err := newTracer(WithHTTPClient(c), withStatsdClient(&statsd.NoOpClientDirect{}))
 				defer tracer.Stop()
 				assert := assert.New(t)
 				assert.NoError(err)
@@ -1725,7 +1725,7 @@ func TestEnvVars(t *testing.T) {
 			}
 			for i, tc := range tests {
 				t.Run(fmt.Sprintf("#%d w3c inject/extract with env=%q", i, testEnv), func(t *testing.T) {
-					tracer, err := newTracer(WithHTTPClient(c), withStatsdClient(&statsd.NoOpClient{}))
+					tracer, err := newTracer(WithHTTPClient(c), withStatsdClient(&statsd.NoOpClientDirect{}))
 					defer tracer.Stop()
 					assert := assert.New(t)
 					assert.NoError(err)
@@ -1787,7 +1787,7 @@ func TestEnvVars(t *testing.T) {
 			}
 			for i, tc := range tests {
 				t.Run(fmt.Sprintf("#%d w3c inject/extract with env=%q", i, testEnv), func(t *testing.T) {
-					tracer, err := newTracer(WithHTTPClient(c), withStatsdClient(&statsd.NoOpClient{}))
+					tracer, err := newTracer(WithHTTPClient(c), withStatsdClient(&statsd.NoOpClientDirect{}))
 					defer tracer.Stop()
 					assert := assert.New(t)
 					assert.NoError(err)
@@ -1871,7 +1871,7 @@ func TestEnvVars(t *testing.T) {
 			for i, tc := range tests {
 				t.Run(fmt.Sprintf("#%v extract with env=%q", i, testEnv), func(t *testing.T) {
 					assert := assert.New(t)
-					tracer, err := newTracer(WithHTTPClient(c), withStatsdClient(&statsd.NoOpClient{}))
+					tracer, err := newTracer(WithHTTPClient(c), withStatsdClient(&statsd.NoOpClientDirect{}))
 					assert.NoError(err)
 					defer tracer.Stop()
 					ctx, err := tracer.Extract(tc.in)
@@ -1915,6 +1915,93 @@ func TestTraceContextPrecedence(t *testing.T) {
 	assert.Equal(uint64(0x1), sctx.spanID)
 	p, _ := sctx.SamplingPriority()
 	assert.Equal(2, p)
+}
+
+// Assert that span links are generated only when trace headers contain divergent trace IDs
+func TestSpanLinks(t *testing.T) {
+	s, c := httpmem.ServerAndClient(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(404)
+	}))
+	defer s.Close()
+	t.Run("Links on divergent trace IDs", func(t *testing.T) {
+		carrier := TextMapCarrier{
+			DefaultTraceIDHeader:  "1",
+			DefaultParentIDHeader: "1",
+			DefaultPriorityHeader: "3",
+			traceparentHeader:     "00-00000000000000000000000000000002-0000000000000002-01",
+			tracestateHeader:      "dd=s:1;o:rum;t.usr.id:baz64~~",
+			b3TraceIDHeader:       "3",
+			b3SpanIDHeader:        "3",
+		}
+		w3cLink := SpanLink{TraceID: 2, TraceIDHigh: 0, SpanID: 2, Tracestate: "dd=s:1;o:rum;t.usr.id:baz64~~", Flags: 1, Attributes: map[string]string{"reason": "terminated_context", "context_headers": "tracecontext"}}
+		ddLink := SpanLink{TraceID: 1, TraceIDHigh: 0, SpanID: 1, Flags: 1, Attributes: map[string]string{"reason": "terminated_context", "context_headers": "datadog"}}
+		b3Link := SpanLink{TraceID: 3, TraceIDHigh: 0, SpanID: 3, Tracestate: "", Flags: 0, Attributes: map[string]string{"reason": "terminated_context", "context_headers": "b3multi"}}
+		tests := []struct {
+			name   string
+			envVal string
+			out    []SpanLink
+			tid    traceID
+		}{
+			{
+				name:   "datadog first",
+				envVal: "datadog,tracecontext,b3",
+				out:    []SpanLink{w3cLink, b3Link},
+				tid:    traceIDFrom64Bits(1),
+			},
+			{
+				name:   "tracecontext first",
+				envVal: "tracecontext,datadog,b3",
+				out:    []SpanLink{ddLink, b3Link},
+				tid:    traceIDFrom64Bits(2),
+			},
+			{
+				name:   "b3 first",
+				envVal: "b3,tracecontext,datadog",
+				out:    []SpanLink{w3cLink, ddLink},
+				tid:    traceIDFrom64Bits(3),
+			},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				if tt.envVal != "" {
+					t.Setenv(headerPropagationStyleExtract, tt.envVal)
+				}
+				tracer, err := newTracer(WithHTTPClient(c))
+				assert.NoError(t, err)
+				defer tracer.Stop()
+				assert := assert.New(t)
+				sctx, err := tracer.Extract(carrier)
+				if err != nil {
+					t.Fatal(err)
+				}
+
+				assert.Equal(tt.tid, sctx.traceID)
+				assert.Len(sctx.spanLinks, 2)
+				assert.Contains(sctx.spanLinks, tt.out[0])
+				assert.Contains(sctx.spanLinks, tt.out[1])
+			})
+		}
+	})
+	t.Run("No links on equal trace IDs", func(t *testing.T) {
+		carrier := TextMapCarrier{
+			DefaultTraceIDHeader:  "1",
+			DefaultParentIDHeader: "1",
+			DefaultPriorityHeader: "3",
+			traceparentHeader:     "00-00000000000000000000000000000001-0000000000000002-01",
+			tracestateHeader:      "dd=s:1;o:rum;t.usr.id:baz64~~",
+		}
+		tracer, err := newTracer(WithHTTPClient(c))
+		assert.NoError(t, err)
+		defer tracer.Stop()
+		assert := assert.New(t)
+		sctx, err := tracer.Extract(carrier)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		assert.Equal(traceIDFrom64Bits(1), sctx.traceID)
+		assert.Len(sctx.spanLinks, 0)
+	})
 }
 
 func TestW3CExtractsBaggage(t *testing.T) {

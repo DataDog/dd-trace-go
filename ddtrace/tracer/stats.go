@@ -132,7 +132,7 @@ func (c *concentrator) runFlusher(tick <-chan time.Time) {
 // statsd returns any tracer configured statsd client, or a no-op.
 func (c *concentrator) statsd() internal.StatsdClient {
 	if c.statsdClient == nil {
-		return &statsd.NoOpClient{}
+		return &statsd.NoOpClientDirect{}
 	}
 	return c.statsdClient
 }

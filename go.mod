@@ -10,7 +10,7 @@ require (
 	github.com/DataDog/datadog-agent/pkg/trace v0.59.0
 	github.com/DataDog/datadog-go/v5 v5.5.0
 	github.com/DataDog/go-libddwaf/v3 v3.5.1
-	github.com/DataDog/go-runtime-metrics-internal v0.0.0-20241106155157-194426bbbd59
+	github.com/DataDog/go-runtime-metrics-internal v0.0.4-0.20241206090539-a14610dc22b6
 	github.com/DataDog/gostackparse v0.7.0
 	github.com/DataDog/sketches-go v1.4.6
 	github.com/aws/aws-sdk-go-v2 v1.20.3
@@ -18,7 +18,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/sfn v1.19.4
 	github.com/aws/aws-sdk-go-v2/service/sns v1.21.4
 	github.com/aws/aws-sdk-go-v2/service/sqs v1.24.4
-	github.com/aws/smithy-go v1.14.2
+	github.com/aws/smithy-go v1.22.1
 	github.com/eapache/queue/v2 v2.0.0-20230407133247-75960ed334e4
 	github.com/google/pprof v0.0.0-20230817174616-7a8ec2ada47b
 	github.com/google/uuid v1.6.0
@@ -34,8 +34,8 @@ require (
 	go.opentelemetry.io/otel/trace v1.27.0
 	go.uber.org/atomic v1.11.0
 	go.uber.org/goleak v1.3.0
-	golang.org/x/mod v0.21.0
-	golang.org/x/sys v0.26.0
+	golang.org/x/mod v0.22.0
+	golang.org/x/sys v0.27.0
 	golang.org/x/time v0.7.0
 	golang.org/x/xerrors v0.0.0-20240903120638-7835f813f4da
 	google.golang.org/grpc v1.65.0
@@ -92,8 +92,8 @@ require (
 	go.opentelemetry.io/otel/metric v1.27.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
 	go.uber.org/zap v1.27.0 // indirect
-	golang.org/x/net v0.29.0 // indirect
-	golang.org/x/text v0.18.0 // indirect
+	golang.org/x/net v0.31.0 // indirect
+	golang.org/x/text v0.20.0 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20240730163845-b1a4ccb954bf // indirect
 	gopkg.in/ini.v1 v1.67.0 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect

@@ -17,6 +17,7 @@ use (
 	./contrib/dimfeld/httptreemux.v5
 	./contrib/elastic/go-elasticsearch.v6
 	./contrib/emicklei/go-restful.v3
+	./contrib/envoyproxy/go-control-plane
 	./contrib/gin-gonic/gin
 	./contrib/globalsign/mgo
 	./contrib/go-chi/chi

@@ -359,7 +359,6 @@ func newUnstartedTracer(opts ...StartOption) (*tracer, error) {
 				ReplaceDigits:    c.agent.HasFlag("quantize_sql_tables") || c.agent.HasFlag("replace_sql_digits"),
 				KeepSQLAlias:     c.agent.HasFlag("keep_sql_alias"),
 				DollarQuotedFunc: c.agent.HasFlag("dollar_quoted_func"),
-				Cache:            c.agent.HasFlag("sql_cache"),
 			},
 		}),
 		statsd:      statsd,
