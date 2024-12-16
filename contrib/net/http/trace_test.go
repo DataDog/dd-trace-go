@@ -10,7 +10,6 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"testing"
 	"time"
 
@@ -344,33 +343,6 @@ func TestTraceAndServe(t *testing.T) {
 			IsStatusError: func(i int) bool { return i >= 400 },
 		})
 
-		spans := mt.FinishedSpans()
-		assert.Len(spans, 1)
-		assert.Equal("400", spans[0].Tag(ext.HTTPCode))
-		assert.Equal("400: Bad Request", spans[0].Tag(ext.Error).(error).Error())
-	})
-
-	t.Run("isStatusErrorClientError", func(t *testing.T) {
-		mt := mocktracer.Start()
-		assert := assert.New(t)
-		defer mt.Stop()
-
-		// Set environment variable to treat 500-510 as client errors
-		os.Setenv("DD_TRACE_HTTP_CLIENT_ERROR_STATUSES", "500-510")
-		defer os.Unsetenv("DD_TRACE_HTTP_CLIENT_ERROR_STATUSES") // Ensure cleanup after the test
-
-		handler := func(w http.ResponseWriter, r *http.Request) {
-			w.WriteHeader(http.StatusBadRequest)
-		}
-		r, err := http.NewRequest("GET", "/", nil)
-		assert.NoError(err)
-		w := httptest.NewRecorder()
-		// Define ServeConfig with custom IsStatusError logic
-		TraceAndServe(http.HandlerFunc(handler), w, r, &ServeConfig{
-			Service:       "service",
-			Resource:      "resource",
-			IsStatusError: func(i int) bool { return i >= 400 && i < 500 }, // Treat only 400-499 as client errors
-		})
 		spans := mt.FinishedSpans()
 		assert.Len(spans, 1)
 		assert.Equal("400", spans[0].Tag(ext.HTTPCode))

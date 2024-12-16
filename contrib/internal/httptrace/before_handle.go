@@ -6,7 +6,6 @@
 package httptrace
 
 import (
-	"fmt"
 	"net/http"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/options"
