@@ -671,7 +671,7 @@ func TestEnvVars(t *testing.T) {
 			}
 			for _, test := range tests {
 				t.Run(fmt.Sprintf("inject with env=%q", testEnv), func(t *testing.T) {
-					tracer := newTracer(WithHTTPClient(c), withStatsdClient(&statsd.NoOpClient{}))
+					tracer := newTracer(WithHTTPClient(c), withStatsdClient(&statsd.NoOpClientDirect{}))
 					defer tracer.Stop()
 					root := tracer.StartSpan("web.request").(*span)
 					ctx, ok := root.Context().(*spanContext)
@@ -743,7 +743,7 @@ func TestEnvVars(t *testing.T) {
 			}
 			for _, test := range tests {
 				t.Run(fmt.Sprintf("extract with env=%q", testEnv), func(t *testing.T) {
-					tracer := newTracer(WithHTTPClient(c), withStatsdClient(&statsd.NoOpClient{}))
+					tracer := newTracer(WithHTTPClient(c), withStatsdClient(&statsd.NoOpClientDirect{}))
 					defer tracer.Stop()
 					assert := assert.New(t)
 					ctx, err := tracer.Extract(test.in)
@@ -782,7 +782,7 @@ func TestEnvVars(t *testing.T) {
 			}
 			for _, tc := range tests {
 				t.Run(fmt.Sprintf("extract with env=%q", testEnv), func(t *testing.T) {
-					tracer := newTracer(WithHTTPClient(c), withStatsdClient(&statsd.NoOpClient{}))
+					tracer := newTracer(WithHTTPClient(c), withStatsdClient(&statsd.NoOpClientDirect{}))
 					defer tracer.Stop()
 					assert := assert.New(t)
 					_, err := tracer.Extract(tc.in)
@@ -839,7 +839,7 @@ func TestEnvVars(t *testing.T) {
 			}
 			for _, tc := range tests {
 				t.Run(fmt.Sprintf("extract with env=%q", testEnv), func(t *testing.T) {
-					tracer := newTracer(WithHTTPClient(c), withStatsdClient(&statsd.NoOpClient{}))
+					tracer := newTracer(WithHTTPClient(c), withStatsdClient(&statsd.NoOpClientDirect{}))
 					defer tracer.Stop()
 					assert := assert.New(t)
 					ctx, err := tracer.Extract(tc.in)
@@ -876,7 +876,7 @@ func TestEnvVars(t *testing.T) {
 		}
 		for i, tc := range tests {
 			t.Run(fmt.Sprintf("b3 single header inject #%d", i), func(t *testing.T) {
-				tracer := newTracer(WithHTTPClient(c), withStatsdClient(&statsd.NoOpClient{}))
+				tracer := newTracer(WithHTTPClient(c), withStatsdClient(&statsd.NoOpClientDirect{}))
 				defer tracer.Stop()
 				root := tracer.StartSpan("myrequest").(*span)
 				ctx, ok := root.Context().(*spanContext)
@@ -934,7 +934,7 @@ func TestEnvVars(t *testing.T) {
 			}
 			for _, tc := range tests {
 				t.Run(fmt.Sprintf("inject with env=%q", testEnv), func(t *testing.T) {
-					tracer := newTracer(WithPropagator(NewPropagator(&PropagatorConfig{B3: true})), WithHTTPClient(c), withStatsdClient(&statsd.NoOpClient{}))
+					tracer := newTracer(WithPropagator(NewPropagator(&PropagatorConfig{B3: true})), WithHTTPClient(c), withStatsdClient(&statsd.NoOpClientDirect{}))
 					defer tracer.Stop()
 					root := tracer.StartSpan("web.request").(*span)
 					ctx, ok := root.Context().(*spanContext)
@@ -1009,7 +1009,7 @@ func TestEnvVars(t *testing.T) {
 			}
 			for _, tc := range tests {
 				t.Run(fmt.Sprintf("extract with env=%q", testEnv), func(t *testing.T) {
-					tracer := newTracer(WithHTTPClient(c), withStatsdClient(&statsd.NoOpClient{}))
+					tracer := newTracer(WithHTTPClient(c), withStatsdClient(&statsd.NoOpClientDirect{}))
 					defer tracer.Stop()
 					assert := assert.New(t)
 
@@ -1069,7 +1069,7 @@ func TestEnvVars(t *testing.T) {
 			}
 			for _, tc := range tests {
 				t.Run(fmt.Sprintf("inject and extract with env=%q", testEnv), func(t *testing.T) {
-					tracer := newTracer(WithHTTPClient(c), withStatsdClient(&statsd.NoOpClient{}))
+					tracer := newTracer(WithHTTPClient(c), withStatsdClient(&statsd.NoOpClientDirect{}))
 					defer tracer.Stop()
 					root := tracer.StartSpan("web.request").(*span)
 					root.SetTag(ext.SamplingPriority, -1)
@@ -1281,7 +1281,7 @@ func TestEnvVars(t *testing.T) {
 			}
 			for i, tc := range tests {
 				t.Run(fmt.Sprintf("#%v extract/valid  with env=%q", i, testEnv), func(t *testing.T) {
-					tracer := newTracer(WithHTTPClient(c), withStatsdClient(&statsd.NoOpClient{}))
+					tracer := newTracer(WithHTTPClient(c), withStatsdClient(&statsd.NoOpClientDirect{}))
 					defer tracer.Stop()
 					assert := assert.New(t)
 					ctx, err := tracer.Extract(tc.in)
@@ -1337,7 +1337,7 @@ func TestEnvVars(t *testing.T) {
 
 			for i, tc := range tests {
 				t.Run(fmt.Sprintf("#%v extract/invalid  with env=%q", i, testEnv), func(t *testing.T) {
-					tracer := newTracer(WithHTTPClient(c), withStatsdClient(&statsd.NoOpClient{}))
+					tracer := newTracer(WithHTTPClient(c), withStatsdClient(&statsd.NoOpClientDirect{}))
 					defer tracer.Stop()
 					assert := assert.New(t)
 					ctx, err := tracer.Extract(tc)
@@ -1389,7 +1389,7 @@ func TestEnvVars(t *testing.T) {
 			}
 			for i, tc := range tests {
 				t.Run(fmt.Sprintf("#%v extract/valid  with env=%q", i, testEnv), func(t *testing.T) {
-					tracer := newTracer(WithHTTPClient(c), withStatsdClient(&statsd.NoOpClient{}))
+					tracer := newTracer(WithHTTPClient(c), withStatsdClient(&statsd.NoOpClientDirect{}))
 					defer tracer.Stop()
 					assert := assert.New(t)
 					ctx, err := tracer.Extract(tc.inHeaders)
@@ -1591,7 +1591,7 @@ func TestEnvVars(t *testing.T) {
 			}
 			for i, tc := range tests {
 				t.Run(fmt.Sprintf("#%d w3c inject with env=%q", i, testEnv), func(t *testing.T) {
-					tracer := newTracer(WithHTTPClient(c), withStatsdClient(&statsd.NoOpClient{}))
+					tracer := newTracer(WithHTTPClient(c), withStatsdClient(&statsd.NoOpClientDirect{}))
 					defer tracer.Stop()
 					assert := assert.New(t)
 					root := tracer.StartSpan("web.request").(*span)
@@ -1621,7 +1621,7 @@ func TestEnvVars(t *testing.T) {
 				})
 
 				t.Run(fmt.Sprintf("w3c inject with env=%q / testing tag list-member limit", testEnv), func(t *testing.T) {
-					tracer := newTracer(WithHTTPClient(c), withStatsdClient(&statsd.NoOpClient{}))
+					tracer := newTracer(WithHTTPClient(c), withStatsdClient(&statsd.NoOpClientDirect{}))
 					defer tracer.Stop()
 					assert := assert.New(t)
 					root := tracer.StartSpan("web.request").(*span)
@@ -1689,7 +1689,7 @@ func TestEnvVars(t *testing.T) {
 		}
 		for i, tc := range tests {
 			t.Run(fmt.Sprintf("#%d", i), func(t *testing.T) {
-				tracer := newTracer(WithHTTPClient(c), withStatsdClient(&statsd.NoOpClient{}))
+				tracer := newTracer(WithHTTPClient(c), withStatsdClient(&statsd.NoOpClientDirect{}))
 				defer tracer.Stop()
 				assert := assert.New(t)
 				ctx, err := tracer.Extract(tc.inHeaders)
@@ -1764,7 +1764,7 @@ func TestEnvVars(t *testing.T) {
 			}
 			for i, tc := range tests {
 				t.Run(fmt.Sprintf("#%d w3c inject/extract with env=%q", i, testEnv), func(t *testing.T) {
-					tracer := newTracer(WithHTTPClient(c), withStatsdClient(&statsd.NoOpClient{}))
+					tracer := newTracer(WithHTTPClient(c), withStatsdClient(&statsd.NoOpClientDirect{}))
 					defer tracer.Stop()
 					assert := assert.New(t)
 					ctx, err := tracer.Extract(tc.in)
@@ -1828,7 +1828,7 @@ func TestEnvVars(t *testing.T) {
 			}
 			for i, tc := range tests {
 				t.Run(fmt.Sprintf("#%d w3c inject/extract with env=%q", i, testEnv), func(t *testing.T) {
-					tracer := newTracer(WithHTTPClient(c), withStatsdClient(&statsd.NoOpClient{}))
+					tracer := newTracer(WithHTTPClient(c), withStatsdClient(&statsd.NoOpClientDirect{}))
 					defer tracer.Stop()
 					assert := assert.New(t)
 					pCtx, err := tracer.Extract(tc.in)
@@ -1911,7 +1911,7 @@ func TestEnvVars(t *testing.T) {
 			}
 			for i, tc := range tests {
 				t.Run(fmt.Sprintf("#%v extract with env=%q", i, testEnv), func(t *testing.T) {
-					tracer := newTracer(WithHTTPClient(c), withStatsdClient(&statsd.NoOpClient{}))
+					tracer := newTracer(WithHTTPClient(c), withStatsdClient(&statsd.NoOpClientDirect{}))
 					defer tracer.Stop()
 					assert := assert.New(t)
 					ctx, err := tracer.Extract(tc.in)
