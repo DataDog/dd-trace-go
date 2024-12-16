@@ -13,9 +13,9 @@ var (
 )
 
 func Stop() {
+	mu.Lock()
+	defer mu.Unlock()
 	once.Do(func() {
-		mu.Lock()
-		defer mu.Unlock()
 		close(stop)
 	})
 }
