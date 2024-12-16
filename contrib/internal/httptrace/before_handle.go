@@ -62,9 +62,6 @@ func BeforeHandle(cfg *ServeConfig, w http.ResponseWriter, r *http.Request) (htt
 	rw, ddrw := wrapResponseWriter(w)
 	rt := r.WithContext(ctx)
 	closeSpan := func() {
-		if cfg.IsStatusError != nil && cfg.IsStatusError(ddrw.status) {
-			span.SetTag(ext.Error, fmt.Errorf("%d: %s", ddrw.status, http.StatusText(ddrw.status)))
-		}
 		FinishRequestSpan(span, ddrw.status, cfg.IsStatusError, cfg.FinishOpts...)
 	}
 	afterHandle := closeSpan
