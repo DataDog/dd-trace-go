@@ -190,8 +190,6 @@ func (t *httpTransport) send(p *payload) (body io.ReadCloser, err error) {
 }
 
 func reportAPIErrorsMetric(haveTracer bool, response *http.Response, err error, t *tracer) {
-	fmt.Println("hello?")
-	fmt.Println("Do we have a tracer?", haveTracer)
 	if !haveTracer {
 		return
 	}
