@@ -16,6 +16,13 @@ type responseWriter struct {
 	status int
 }
 
+// ResetStatusCode resets the status code of the response writer.
+func ResetStatusCode(w http.ResponseWriter) {
+	if rw, ok := w.(*responseWriter); ok {
+		rw.status = 0
+	}
+}
+
 func newResponseWriter(w http.ResponseWriter) *responseWriter {
 	return &responseWriter{w, 0}
 }
