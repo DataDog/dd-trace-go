@@ -8,7 +8,6 @@ package tracer
 import (
 	gocontext "context"
 	"encoding/binary"
-	"fmt"
 	"log/slog"
 	"math"
 	"os"
@@ -356,7 +355,7 @@ func newTracer(opts ...StartOption) *tracer {
 		if v == "" {
 			v = "unknown"
 		}
-		t.statsd.Incr("datadog.tracer.integrations", []string{fmt.Sprintf("integration:%s", name), fmt.Sprintf("integration_version:%s", v)}, 1)
+		t.statsd.Incr("datadog.tracer.integrations", []string{"integration:" + name, "integration_version:" + v}, 1)
 	}
 
 	t.wg.Add(1)
