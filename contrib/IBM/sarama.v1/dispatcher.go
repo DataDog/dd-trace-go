@@ -6,7 +6,6 @@
 package sarama
 
 import (
-	"fmt"
 	"math"
 
 	"github.com/IBM/sarama"
@@ -72,11 +71,6 @@ func (w *wrappedDispatcher) Run() {
 		// reinject the span context so consumers can pick it up
 		tracer.Inject(next.Context(), carrier)
 		setConsumeCheckpoint(w.cfg.dataStreamsEnabled, w.cfg.groupID, msg)
-
-		for _, h := range msg.Headers {
-			fmt.Printf("--- key: %s, value: %s\n", h.Key, h.Value)
-		}
-
 		w.messages <- msg
 
 		// if the next message was received, finish the previous span
