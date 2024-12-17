@@ -18,7 +18,7 @@ import (
 
 	ddgrpc "github.com/DataDog/dd-trace-go/contrib/google.golang.org/grpc/v2"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
-	"github.com/DataDog/dd-trace-go/v2/internal/appsec"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils"
 
 	v3 "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
 	"github.com/stretchr/testify/require"
@@ -26,9 +26,8 @@ import (
 )
 
 func TestAppSec(t *testing.T) {
-	appsec.Start()
-	defer appsec.Stop()
-	if !appsec.Enabled() {
+	testutils.StartAppSec(t)
+	if !instr.AppSecEnabled() {
 		t.Skip("appsec disabled")
 	}
 
@@ -104,9 +103,8 @@ func TestAppSec(t *testing.T) {
 
 func TestBlockingWithUserRulesFile(t *testing.T) {
 	t.Setenv("DD_APPSEC_RULES", "../../../internal/appsec/testdata/user_rules.json")
-	appsec.Start()
-	defer appsec.Stop()
-	if !appsec.Enabled() {
+	testutils.StartAppSec(t)
+	if !instr.AppSecEnabled() {
 		t.Skip("appsec disabled")
 	}
 
@@ -277,9 +275,8 @@ func TestGeneratedSpan(t *testing.T) {
 
 func TestXForwardedForHeaderClientIp(t *testing.T) {
 	t.Setenv("DD_APPSEC_RULES", "../../../internal/appsec/testdata/blocking.json")
-	appsec.Start()
-	defer appsec.Stop()
-	if !appsec.Enabled() {
+	testutils.StartAppSec(t)
+	if !instr.AppSecEnabled() {
 		t.Skip("appsec disabled")
 	}
 
