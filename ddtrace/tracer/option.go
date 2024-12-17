@@ -135,8 +135,12 @@ type config struct {
 	logToStdout bool
 
 	// sendRetries is the number of times a trace or CI Visibility payload send is retried upon
+	// sendRetries is the number of times a trace or CI Visibility payload send is retried upon
 	// failure.
 	sendRetries int
+
+	// retryInterval is the interval between agent connection retries. It has no effect if sendRetries is not set
+	retryInterval time.Duration
 
 	// retryInterval is the interval between agent connection retries. It has no effect if sendRetries is not set
 	retryInterval time.Duration
@@ -458,6 +462,7 @@ func newConfig(opts ...StartOption) (*config, error) {
 	if v := os.Getenv("DD_TRACE_PEER_SERVICE_MAPPING"); v != "" {
 		internal.ForEachStringTag(v, internal.DDTagsDelimiter, func(key, val string) { c.peerServiceMappings[key] = val })
 	}
+	c.retryInterval = time.Millisecond
 	c.retryInterval = time.Millisecond
 	for _, fn := range opts {
 		if fn == nil {
@@ -804,6 +809,7 @@ func statsTags(c *config) []string {
 // withNoopStats is used for testing to disable statsd client
 func withNoopStats() StartOption {
 	return func(c *config) {
+		c.statsdClient = &statsd.NoOpClientDirect{}
 		c.statsdClient = &statsd.NoOpClientDirect{}
 	}
 }

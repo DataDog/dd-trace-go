@@ -251,6 +251,7 @@ func (p *chainedPropagator) Inject(spanCtx *SpanContext, carrier interface{}) er
 }
 
 // Extract implements Propagator. This method will attempt to extract a span context
+// Extract implements Propagator. This method will attempt to extract a span context
 // based on the precedence order of the propagators. Generally, the first valid
 // trace context that could be extracted will be returned. However, the W3C tracestate
 // header value will always be extracted and stored in the local trace context even if
@@ -316,6 +317,21 @@ func (p *chainedPropagator) Extract(carrier interface{}) (*SpanContext, error) {
 	}
 	log.Debug("Extracted span context: %#v", ctx)
 	return ctx, nil
+}
+
+func getPropagatorName(p Propagator) string {
+	switch p.(type) {
+	case *propagator:
+		return "datadog"
+	case *propagatorB3:
+		return "b3multi"
+	case *propagatorB3SingleHeader:
+		return "b3"
+	case *propagatorW3c:
+		return "tracecontext"
+	default:
+		return ""
+	}
 }
 
 func getPropagatorName(p Propagator) string {
