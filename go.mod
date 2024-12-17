@@ -29,6 +29,7 @@ require (
 	github.com/stretchr/testify v1.10.0
 	github.com/tinylib/msgp v1.2.2
 	github.com/valyala/fasthttp v1.51.0
+	go.opentelemetry.io/collector/pdata/pprofile v0.104.0
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.49.0
 	go.opentelemetry.io/otel v1.31.0
 	go.opentelemetry.io/otel/trace v1.31.0
