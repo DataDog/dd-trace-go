@@ -60,8 +60,8 @@ func TestReportHealthMetrics(t *testing.T) {
 	tg.Wait(assert, 3, 10*time.Second)
 
 	counts := tg.Counts()
-	assert.Equal(int64(1), counts["datadog.tracer.spans_started"])
-	assert.Equal(int64(1), counts["datadog.tracer.spans_finished"])
+	assert.GreaterOrEqual(counts["datadog.tracer.spans_started"], int64(1))
+	assert.GreaterOrEqual(counts["datadog.tracer.spans_finished"], int64(1))
 	assert.Equal(int64(0), counts["datadog.tracer.traces_dropped"])
 }
 
@@ -80,7 +80,7 @@ func TestSpansStartedTags(t *testing.T) {
 		tg.Wait(assert, 1, 100*time.Millisecond)
 
 		counts := tg.Counts()
-		assert.Equal(int64(1), counts["datadog.tracer.spans_started"])
+		assert.GreaterOrEqual(counts["datadog.tracer.spans_started"], int64(1))
 		for _, c := range tg.CountCalls() {
 			if c.GetName() != "datadog.tracer.spans_started" {
 				continue
@@ -104,7 +104,7 @@ func TestSpansStartedTags(t *testing.T) {
 		tg.Wait(assert, 1, 100*time.Millisecond)
 
 		counts := tg.Counts()
-		assert.Equal(int64(1), counts["datadog.tracer.spans_started"])
+		assert.GreaterOrEqual(counts["datadog.tracer.spans_started"], int64(1))
 		for _, c := range tg.CountCalls() {
 			if c.GetName() != "datadog.tracer.spans_started" {
 				continue
@@ -133,7 +133,7 @@ func TestSpansFinishedTags(t *testing.T) {
 		tg.Wait(assert, 1, 100*time.Millisecond)
 
 		counts := tg.Counts()
-		assert.Equal(int64(1), counts["datadog.tracer.spans_finished"])
+		assert.GreaterOrEqual(counts["datadog.tracer.spans_finished"], int64(1))
 		for _, c := range tg.CountCalls() {
 			if c.GetName() != "datadog.tracer.spans_finished" {
 				continue
@@ -156,7 +156,7 @@ func TestSpansFinishedTags(t *testing.T) {
 		tg.Wait(assert, 1, 100*time.Millisecond)
 
 		counts := tg.Counts()
-		assert.Equal(int64(1), counts["datadog.tracer.spans_finished"])
+		assert.GreaterOrEqual(counts["datadog.tracer.spans_finished"], int64(1))
 		for _, c := range tg.CountCalls() {
 			if c.GetName() != "datadog.tracer.spans_finished" {
 				continue

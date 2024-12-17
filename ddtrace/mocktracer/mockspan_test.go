@@ -70,7 +70,7 @@ func TestNewSpan(t *testing.T) {
 		tr := new(mocktracer)
 		parentctx := &spanContext{spanID: 1, traceID: 2}
 		tags := make(map[string]interface{})
-		tags[ext.Component] = "sourceName"
+		tags[ext.Component] = "integrationName"
 		opts := &ddtrace.StartSpanConfig{Parent: parentctx, Tags: tags}
 		s := newSpan(tr, "opname", opts)
 
@@ -78,7 +78,7 @@ func TestNewSpan(t *testing.T) {
 		assert.NotNil(s.context)
 		assert.Equal(uint64(1), s.parentID)
 		assert.Equal(uint64(2), s.context.traceID)
-		assert.Equal("sourceName", s.Integration())
+		assert.Equal("integrationName", s.Integration())
 	})
 }
 

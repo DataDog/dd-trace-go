@@ -105,7 +105,7 @@ type mockspan struct {
 	tags         map[string]interface{}
 	finishTime   time.Time
 	finished     bool
-	source       string
+	integration  string
 
 	startTime time.Time
 	parentID  uint64
@@ -133,7 +133,7 @@ func (s *mockspan) SetTag(key string, value interface{}) {
 		}
 	}
 	if key == ext.Component {
-		s.source = value.(string)
+		s.integration = value.(string)
 	}
 	s.tags[key] = value
 }
@@ -292,9 +292,7 @@ func (s *mockspan) Root() tracer.Span {
 	return root
 }
 
-// Source returns the component from which the mockspan was created.
-// This is used to test the source tag of the `datadog.tracer.spans_{started,finished}`
-// health metrics.
+// Integration returns the component from which the mockspan was created.
 func (s *mockspan) Integration() string {
-	return s.source
+	return s.integration
 }

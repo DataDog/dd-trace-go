@@ -531,11 +531,14 @@ func (t *trace) finishChunk(tr *tracer, ch *chunk) {
 		if sp == nil {
 			continue
 		}
-		if sp.integration == "manual" {
-			atomic.AddUint32(&tr.spansFinished, 1)
-		} else {
-			tr.statsd.Count("datadog.tracer.spans_finished", 1, []string{fmt.Sprintf("integration:%s", sp.integration)}, 1)
+		if tr.spansFinished.spans == nil {
+			tr.spansFinished.spans = make(map[string]uint32)
 		}
+		tr.spansFinished.mu.Lock()
+		count := tr.spansFinished.spans[sp.integration]
+		atomic.AddUint32(&count, 1)
+		tr.spansFinished.spans[sp.integration] = count
+		tr.spansFinished.mu.Unlock()
 	}
 	tr.pushChunk(ch)
 	t.finished = 0 // important, because a buffer can be used for several flushes

@@ -8,7 +8,6 @@ package tracer
 import (
 	gocontext "context"
 	"encoding/binary"
-	"fmt"
 	"log/slog"
 	"math"
 	"os"
@@ -80,9 +79,15 @@ type tracer struct {
 	// pid of the process
 	pid int
 
-	// These integers track metrics about spans and traces as they are started,
-	// finished, and dropped
-	spansStarted, spansFinished, tracesDropped uint32
+	// These maps keep count of the number of spans started and finished from
+	// each component, including contribs and "manual" spans.
+	spansStarted, spansFinished struct {
+		mu    sync.Mutex
+		spans map[string]uint32
+	}
+
+	// tracesDropped track metrics about traces as they are dropped
+	tracesDropped uint32
 
 	// Keeps track of the total number of traces dropped for accurate logging.
 	totalTracesDropped uint32
@@ -649,11 +654,14 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 			log.Error("Abandoned spans channel full, disregarding span.")
 		}
 	}
-	if span.integration == "manual" {
-		atomic.AddUint32(&t.spansStarted, 1)
-	} else {
-		t.statsd.Count("datadog.tracer.spans_started", 1, []string{fmt.Sprintf("integration:%s", span.integration)}, 1)
+	if t.spansStarted.spans == nil {
+		t.spansStarted.spans = make(map[string]uint32)
 	}
+	t.spansStarted.mu.Lock()
+	defer t.spansStarted.mu.Unlock()
+	count := t.spansStarted.spans[span.integration]
+	atomic.AddUint32(&count, 1)
+	t.spansStarted.spans[span.integration] = count
 	return span
 }
 
