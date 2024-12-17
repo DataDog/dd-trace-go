@@ -6,7 +6,6 @@
 package tracer
 
 import (
-	"fmt"
 	"runtime"
 	"runtime/debug"
 	"sync/atomic"
@@ -94,14 +93,12 @@ func (t *tracer) reportHealthMetrics(interval time.Duration) {
 		case <-ticker.C:
 			t.spansStarted.mu.Lock()
 			for name, v := range t.spansStarted.spans {
-				tag := fmt.Sprintf("integration:%s", name)
-				t.statsd.Count("datadog.tracer.spans_started", int64(v), []string{tag}, 1)
+				t.statsd.Count("datadog.tracer.spans_started", int64(v), []string{"integration:" + name}, 1)
 			}
 			t.spansStarted.mu.Unlock()
 			t.spansFinished.mu.Lock()
 			for name, v := range t.spansFinished.spans {
-				tag := fmt.Sprintf("integration:%s", name)
-				t.statsd.Count("datadog.tracer.spans_finished", int64(v), []string{tag}, 1)
+				t.statsd.Count("datadog.tracer.spans_finished", int64(v), []string{"integration:" + name}, 1)
 			}
 			t.spansFinished.mu.Unlock()
 			t.statsd.Count("datadog.tracer.traces_dropped", int64(atomic.SwapUint32(&t.tracesDropped, 0)), []string{"reason:trace_too_large"}, 1)
