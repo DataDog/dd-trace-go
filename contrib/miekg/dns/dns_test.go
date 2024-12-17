@@ -191,7 +191,7 @@ func assertClientSpan(t *testing.T, s mocktracer.Span) {
 }
 
 func getFreeAddr(t *testing.T) net.Addr {
-	li, err := net.Listen("tcp", "127.0.0.1:2020")
+	li, err := net.Listen("tcp4", "127.0.0.1:2020")
 	if err != nil {
 		t.Fatal(err)
 	}
