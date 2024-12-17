@@ -273,14 +273,14 @@ func TestTracerStart(t *testing.T) {
 		assert.True(conf.Instrumented)
 
 		counts := tg.Counts()
-		assert.Equal(int64(1), counts["datadog.tracer.instrumentations"])
+		assert.Equal(int64(1), counts["datadog.tracer.integrations"])
 
 		calls := tg.IncrCalls()
-		for _, c := range statsdtest.FilterCallsByName(calls, "datadog.tracer.instrumentations") {
-			assert.EqualValues(c.GetTags(), []string{"instrumentation:chi", "instrumentation_version:unknown"})
+		for _, c := range statsdtest.FilterCallsByName(calls, "datadog.tracer.integrations") {
+			assert.EqualValues(c.GetTags(), []string{"integration:chi", "integration_version:unknown"})
 			return
 		}
-		assert.Fail("expected instrumentation to have appropriate tags")
+		assert.Fail("expected integration to have appropriate tags")
 
 	})
 }
