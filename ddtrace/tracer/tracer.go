@@ -654,11 +654,11 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 			log.Error("Abandoned spans channel full, disregarding span.")
 		}
 	}
+	t.spansStarted.mu.Lock()
+	defer t.spansStarted.mu.Unlock()
 	if t.spansStarted.spans == nil {
 		t.spansStarted.spans = make(map[string]uint32)
 	}
-	t.spansStarted.mu.Lock()
-	defer t.spansStarted.mu.Unlock()
 	count := t.spansStarted.spans[span.integration]
 	atomic.AddUint32(&count, 1)
 	t.spansStarted.spans[span.integration] = count
