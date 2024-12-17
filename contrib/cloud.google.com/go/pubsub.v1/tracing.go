@@ -117,6 +117,10 @@ func TraceReceiveFunc(s Subscription, opts ...Option) func(ctx context.Context, 
 		if cfg.measured {
 			opts = append(opts, tracer.Measured())
 		}
+		// If there are span links as a result of context extraction, add them as a StartSpanOption
+		if parentSpanCtx != nil && parentSpanCtx.SpanLinks() != nil {
+			opts = append(opts, tracer.WithSpanLinks(parentSpanCtx.SpanLinks()))
+		}
 		span, ctx := tracer.StartSpanFromContext(ctx, cfg.receiveSpanName, opts...)
 		if msg.DeliveryAttempt != nil {
 			span.SetTag("delivery_attempt", *msg.DeliveryAttempt)

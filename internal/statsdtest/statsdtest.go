@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -23,6 +24,8 @@ const (
 	callTypeCountWithTimestamp
 	callTypeTiming
 )
+
+var _ internal.StatsdClient = &TestStatsdClient{}
 
 type TestStatsdClient struct {
 	mu          sync.RWMutex
@@ -102,6 +105,10 @@ func (tg *TestStatsdClient) CountWithTimestamp(name string, value int64, tags []
 		tags:   make([]string, len(tags)),
 		rate:   rate,
 	})
+}
+
+func (tg *TestStatsdClient) DistributionSamples(_ string, _ []float64, _ []string, _ float64) error {
+	panic("not implemented")
 }
 
 func (tg *TestStatsdClient) Timing(name string, value time.Duration, tags []string, rate float64) error {

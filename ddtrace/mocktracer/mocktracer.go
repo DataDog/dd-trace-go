@@ -86,7 +86,7 @@ func newMockTracer() *mocktracer {
 	client := &http.Client{
 		Transport: t.dsmTransport,
 	}
-	t.dsmProcessor = datastreams.NewProcessor(&statsd.NoOpClient{}, "env", "service", "v1", &url.URL{Scheme: "http", Host: "agent-address"}, client)
+	t.dsmProcessor = datastreams.NewProcessor(&statsd.NoOpClientDirect{}, "env", "service", "v1", &url.URL{Scheme: "http", Host: "agent-address"}, client)
 	t.dsmProcessor.Start()
 	t.dsmProcessor.Flush()
 	return &t

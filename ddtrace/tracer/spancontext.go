@@ -228,6 +228,14 @@ func (c *SpanContext) TraceIDLower() uint64 {
 	return c.traceID.Lower()
 }
 
+// TraceIDUpper implements ddtrace.SpanContext.
+func (c *SpanContext) TraceIDUpper() uint64 {
+	if c == nil {
+		return 0
+	}
+	return c.traceID.Upper()
+}
+
 // SpanLinks implements ddtrace.SpanContext
 func (c *SpanContext) SpanLinks() []SpanLink {
 	cp := make([]SpanLink, len(c.spanLinks))

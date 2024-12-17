@@ -1,20 +1,21 @@
 // Unless explicitly stated otherwise all files in this repository are licensed
 // under the Apache License Version 2.0.
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
-// Copyright 2024 Datadog, Inc.
+// Copyright 2016 Datadog, Inc.
 
 package main
 
 import (
 	"encoding/json"
 	"fmt"
-	"sort"
-	"github.com/Masterminds/semver/v3"
-	"golang.org/x/mod/modfile"
 	"net/http"
 	"os"
 	"regexp"
+	"sort"
 	"strings"
+
+	"github.com/Masterminds/semver/v3"
+	"golang.org/x/mod/modfile"
 )
 
 type Tag struct {

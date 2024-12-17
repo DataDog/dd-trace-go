@@ -134,9 +134,12 @@ type config struct {
 	// output instead of using the agent. This is used in Lambda environments.
 	logToStdout bool
 
-	// sendRetries is the number of times a trace payload send is retried upon
+	// sendRetries is the number of times a trace or CI Visibility payload send is retried upon
 	// failure.
 	sendRetries int
+
+	// retryInterval is the interval between agent connection retries. It has no effect if sendRetries is not set
+	retryInterval time.Duration
 
 	// logStartup, when true, causes various startup info to be written
 	// when the tracer starts.
@@ -455,7 +458,7 @@ func newConfig(opts ...StartOption) (*config, error) {
 	if v := os.Getenv("DD_TRACE_PEER_SERVICE_MAPPING"); v != "" {
 		internal.ForEachStringTag(v, internal.DDTagsDelimiter, func(key, val string) { c.peerServiceMappings[key] = val })
 	}
-
+	c.retryInterval = time.Millisecond
 	for _, fn := range opts {
 		if fn == nil {
 			continue
@@ -801,7 +804,7 @@ func statsTags(c *config) []string {
 // withNoopStats is used for testing to disable statsd client
 func withNoopStats() StartOption {
 	return func(c *config) {
-		c.statsdClient = &statsd.NoOpClient{}
+		c.statsdClient = &statsd.NoOpClientDirect{}
 	}
 }
 
@@ -880,6 +883,13 @@ func WithLambdaMode(enabled bool) StartOption {
 func WithSendRetries(retries int) StartOption {
 	return func(c *config) {
 		c.sendRetries = retries
+	}
+}
+
+// WithRetryInterval sets the interval, in seconds, for retrying submitting payloads to the agent.
+func WithRetryInterval(interval int) StartOption {
+	return func(c *config) {
+		c.retryInterval = time.Duration(interval) * time.Second
 	}
 }
 

@@ -69,6 +69,10 @@ func startSpanFromContext(
 	)
 	md, _ := metadata.FromIncomingContext(ctx) // nil is ok
 	if sctx, err := tracer.Extract(grpcutil.MDCarrier(md)); err == nil {
+		// If there are span links as a result of context extraction, add them as a StartSpanOption
+		if sctx != nil && sctx.SpanLinks() != nil {
+			opts = append(opts, tracer.WithSpanLinks(sctx.SpanLinks()))
+		}
 		opts = append(opts, tracer.ChildOf(sctx))
 	}
 	return tracer.StartSpanFromContext(ctx, operation, opts...)

@@ -70,6 +70,8 @@ const (
 	PackageUptraceBun              Package = "uptrace/bun"
 	PackageLogSlog                 Package = "slog/log"
 
+	PackageEnvoyProxyGoControlPlane Package = "envoyproxy/go-control-plane"
+
 	// V1 contribs (deprecated in v2)
 	PackageEmickleiGoRestful Package = "emicklei/go-restful"
 	PackageGaryburdRedigo    Package = "garyburd/redigo"
@@ -796,6 +798,9 @@ var packages = map[Package]PackageInfo{
 				buildOpNameV1:      staticName("http.server.request"),
 			},
 		},
+	},
+	PackageEnvoyProxyGoControlPlane: {
+		TracedPackage: "github.com/envoyproxy/go-control-plane",
 	},
 }
 

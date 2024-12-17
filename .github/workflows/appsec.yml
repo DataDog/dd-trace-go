@@ -19,6 +19,9 @@ on:
   merge_group:
   push:
     branches: release-v*
+    tags-ignore:
+      - 'contrib/**'
+      - 'instrumentation/**'
 
 env:
   DD_APPSEC_WAF_TIMEOUT: 1m

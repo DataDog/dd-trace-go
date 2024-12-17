@@ -11,8 +11,9 @@ on:
     branches:
       - main
       - release-v*
-    tags:
-      - "v2.0.0-beta.3"
+    tags-ignore:
+      - 'contrib/**'
+      - 'instrumentation/**'
   pull_request:
     branches:
       - "**"

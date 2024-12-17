@@ -55,7 +55,11 @@ func StartRequestSpan(r *http.Request, opts ...tracer.StartSpanOption) (*tracer.
 				cfg.Tags["http.host"] = r.Host
 			}
 			if spanctx, err := tracer.Extract(tracer.HTTPHeadersCarrier(r.Header)); err == nil {
-				cfg.Parent = spanctx
+				// If there are span links as a result of context extraction, add them as a StartSpanOption
+				if spanctx != nil && spanctx.SpanLinks() != nil {
+					tracer.WithSpanLinks(spanctx.SpanLinks())(cfg)
+				}
+				tracer.ChildOf(spanctx)(cfg)
 			}
 			for k, v := range ipTags {
 				cfg.Tags[k] = v
