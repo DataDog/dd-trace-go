@@ -12,112 +12,104 @@ package main
 // #cgo android CFLAGS: --sysroot=$NDK_ROOT/toolchains/llvm/prebuilt/darwin-x86_64/sysroot
 // #cgo LDFLAGS: -s -w
 /*
-struct key_value_array {
-    struct key_value_pair* data;
-    unsigned long long len;
-};
-extern const int key_value_array_size;
-const int key_value_array_size = sizeof(struct key_value_array);
+typedef unsigned char Bool;
+typedef unsigned long long SessionID;
+typedef unsigned long long ModuleID;
+typedef unsigned long long SuiteID;
+typedef unsigned long long TestID;
 
-struct key_value_pair {
+typedef struct {
     char* key;
     char* value;
-};
-extern const int key_value_pair_size;
-const int key_value_pair_size = sizeof(struct key_value_pair);
+} KeyValuePair;
+const int KeyValuePair_Size = sizeof(KeyValuePair);
 
-struct init_settings {
+typedef struct {
+    KeyValuePair* data;
+    unsigned long long len;
+} KeyValueArray;
+const int KeyValueArray_Size = sizeof(KeyValueArray);
+
+typedef struct {
     char* language;
     char* runtime_name;
     char* runtime_version;
     char* working_directory;
-    struct key_value_array* environment_variables;
+    KeyValueArray* environment_variables;
 	// Unused fields
 	void* unused01;
 	void* unused02;
 	void* unused03;
 	void* unused04;
 	void* unused05;
-};
-extern const int init_settings_size;
-const int init_settings_size = sizeof(struct init_settings);
+} InitSettings;
+const int InitSettings_Size = sizeof(InitSettings);
 
-struct unix_time {
+typedef struct {
     unsigned long long sec;
     unsigned long long nsec;
-};
-extern const int unix_time_size;
-const int unix_time_size = sizeof(struct unix_time);
+} UnixTime;
+const int UnixTime_Size = sizeof(UnixTime);
 
-struct setting_early_flake_detection_slow_test_retries {
+typedef struct {
 	int ten_s;
 	int thirty_s;
 	int five_m;
 	int five_s;
-};
-extern const int setting_early_flake_detection_slow_test_retries_size;
-const int setting_early_flake_detection_slow_test_retries_size = sizeof(struct setting_early_flake_detection_slow_test_retries);
+} SettingsEarlyFlakeDetectionSlowRetries;
+const int SettingsEarlyFlakeDetectionSlowRetries_Size = sizeof(SettingsEarlyFlakeDetectionSlowRetries);
 
-struct setting_early_flake_detection {
-	unsigned char enabled;
-	struct setting_early_flake_detection_slow_test_retries slow_test_retries;
+typedef struct {
+	Bool enabled;
+	SettingsEarlyFlakeDetectionSlowRetries slow_test_retries;
 	int faulty_session_threshold;
-};
-extern const int setting_early_flake_detection_size;
-const int setting_early_flake_detection_size = sizeof(struct setting_early_flake_detection);
+} SettingsEarlyFlakeDetection;
+const int SettingsEarlyFlakeDetection_Size = sizeof(SettingsEarlyFlakeDetection);
 
-struct settings_response {
-	unsigned char code_coverage;
-	struct setting_early_flake_detection early_flake_detection;
-	unsigned char flaky_test_retries_enabled;
-	unsigned char itr_enabled;
-	unsigned char require_git;
-	unsigned char tests_skipping;
-};
-extern const int settings_response_size;
-const int settings_response_size = sizeof(struct settings_response);
+typedef struct {
+	Bool code_coverage;
+	SettingsEarlyFlakeDetection early_flake_detection;
+	Bool flaky_test_retries_enabled;
+	Bool itr_enabled;
+	Bool require_git;
+	Bool tests_skipping;
+} SettingsResponse;
+const int SettingsResponse_Size = sizeof(SettingsResponse);
 
-struct flaky_test_retries_settings {
+typedef struct {
 	int retry_count;
 	int total_retry_count;
-};
-extern const int flaky_test_retries_settings_size;
-const int flaky_test_retries_settings_size = sizeof(struct flaky_test_retries_settings);
+} FlakyTestRetriesSettings;
+const int FlakyTestRetriesSettings_Size = sizeof(FlakyTestRetriesSettings);
 
-struct known_test {
+typedef struct {
 	char* module_name;
 	char* suite_name;
 	char* test_name;
-};
-extern const int known_test_size;
-const int known_test_size = sizeof(struct known_test);
+} KnownTest;
+const int KnownTest_Size = sizeof(KnownTest);
 
-struct skippable_test {
+typedef struct {
 	char* suite_name;
 	char* test_name;
 	char* parameters;
 	char* custom_configurations_json;
-};
-extern const int skippable_test_size;
-const int skippable_test_size = sizeof(struct skippable_test);
+} SkippableTest;
+const int SkippableTest_Size = sizeof(SkippableTest);
 
-struct test_coverage_file {
+typedef struct {
 	char* filename;
 	char* bitmap;
-};
-extern const int test_coverage_file_size;
-const int test_coverage_file_size = sizeof(struct test_coverage_file);
+} TestCoverageFile;
+const int TestCoverageFile_Size = sizeof(TestCoverageFile);
 
-struct test_coverage {
-	unsigned long long test_suite_id;
-	unsigned long long span_id;
-	struct test_coverage_file* files;
+typedef struct {
+	SuiteID test_suite_id;
+	TestID span_id;
+	TestCoverageFile* files;
 	unsigned long long files_len;
-};
-extern const int test_coverage_size;
-const int test_coverage_size = sizeof(struct test_coverage);
-
-typedef unsigned char bool;
+} TestCoverage;
+const int TestCoverage_Size = sizeof(TestCoverage);
 */
 import "C"
 import (
@@ -136,9 +128,9 @@ import (
 // Utils
 // *******************************************************************************************************************
 
-// getUnixTime converts a C.struct_unix_time to Go's time.Time.
+// getUnixTime converts a C.UnixTime to Go's time.Time.
 // If unixTime is nil, returns time.Now() as a fallback.
-func getUnixTime(unixTime *C.struct_unix_time) time.Time {
+func getUnixTime(unixTime *C.UnixTime) time.Time {
 	// If pointer is nil, provide a fallback time.
 	if unixTime == nil {
 		return time.Now()
@@ -146,12 +138,12 @@ func getUnixTime(unixTime *C.struct_unix_time) time.Time {
 	return time.Unix(int64(unixTime.sec), int64(unixTime.nsec))
 }
 
-// toBool converts a Go bool to a C.bool (0 or 1).
-func toBool(value bool) C.bool {
+// toBool converts a Go bool to a C.Bool (0 or 1).
+func toBool(value bool) C.Bool {
 	if value {
-		return C.bool(1)
+		return C.Bool(1)
 	}
-	return C.bool(0)
+	return C.Bool(0)
 }
 
 // *******************************************************************************************************************
@@ -166,7 +158,7 @@ var (
 // test_optimization_initialize initializes the library with the given settings.
 //
 //export test_optimization_initialize
-func test_optimization_initialize(settings *C.struct_init_settings) C.bool {
+func test_optimization_initialize(settings *C.InitSettings) C.Bool {
 	if hasInitialized.Swap(true) {
 		return toBool(false)
 	}
@@ -175,9 +167,9 @@ func test_optimization_initialize(settings *C.struct_init_settings) C.bool {
 	if settings != nil {
 		if settings.environment_variables != nil {
 			sLen := int(settings.environment_variables.len)
-			kvSize := int(C.key_value_pair_size)
+			kvSize := int(C.KeyValuePair_Size)
 			for i := 0; i < sLen; i++ {
-				keyValue := (*C.struct_key_value_pair)(unsafe.Add(unsafe.Pointer(settings.environment_variables.data), i*kvSize))
+				keyValue := (*C.KeyValuePair)(unsafe.Add(unsafe.Pointer(settings.environment_variables.data), i*kvSize))
 				os.Setenv(C.GoString(keyValue.key), C.GoString(keyValue.value))
 			}
 		}
@@ -214,7 +206,7 @@ func test_optimization_initialize(settings *C.struct_init_settings) C.bool {
 // test_optimization_shutdown shuts down the library.
 //
 //export test_optimization_shutdown
-func test_optimization_shutdown() C.bool {
+func test_optimization_shutdown() C.Bool {
 	if !canShutdown.Swap(false) {
 		return toBool(false)
 	}
@@ -234,7 +226,7 @@ var (
 // test_optimization_session_create creates a new test session.
 //
 //export test_optimization_session_create
-func test_optimization_session_create(framework *C.char, framework_version *C.char, unix_start_time *C.struct_unix_time) C.ulonglong {
+func test_optimization_session_create(framework *C.char, framework_version *C.char, unix_start_time *C.UnixTime) C.SessionID {
 	var sessionOptions []civisibility.TestSessionStartOption
 	if framework != nil {
 		goFramework := C.GoString(framework)
@@ -255,13 +247,13 @@ func test_optimization_session_create(framework *C.char, framework_version *C.ch
 	sessionMutex.Lock()
 	defer sessionMutex.Unlock()
 	sessions[id] = session
-	return C.ulonglong(id)
+	return C.SessionID(id)
 }
 
 // test_optimization_session_close closes the test session with the given ID.
 //
 //export test_optimization_session_close
-func test_optimization_session_close(session_id C.ulonglong, exit_code C.int, unix_finish_time *C.struct_unix_time) C.bool {
+func test_optimization_session_close(session_id C.SessionID, exit_code C.int, unix_finish_time *C.UnixTime) C.Bool {
 	sessionMutex.Lock()
 	defer sessionMutex.Unlock()
 	if session, ok := sessions[uint64(session_id)]; ok {
