@@ -177,7 +177,7 @@ func (e *ciVisibilityEvent) SetOperationName(operationName string) {
 	e.Content.Name = e.span.Name
 }
 
-// BaggageItem retrieves the baggage item associated with the given key from the event's span.
+// GetBaggageItem retrieves the baggage item associated with the given key from the event's span.
 //
 // Parameters:
 //
@@ -186,8 +186,8 @@ func (e *ciVisibilityEvent) SetOperationName(operationName string) {
 // Returns:
 //
 //	The baggage item value.
-func (e *ciVisibilityEvent) BaggageItem(key string) string {
-	return e.span.BaggageItem(key)
+func (e *ciVisibilityEvent) GetBaggageItem(key string) string {
+	return e.span.GetBaggageItem(key)
 }
 
 // SetBaggageItem sets a baggage item on the event's span.
@@ -198,6 +198,26 @@ func (e *ciVisibilityEvent) BaggageItem(key string) string {
 //	val - The baggage item value.
 func (e *ciVisibilityEvent) SetBaggageItem(key, val string) {
 	e.span.SetBaggageItem(key, val)
+}
+
+// GetAllBaggageItems returns a copy of all baggage items from the event's span.
+// If there are no items, it returns an empty map.
+func (e *ciVisibilityEvent) GetAllBaggageItems() map[string]string {
+	return e.span.GetAllBaggageItems()
+}
+
+// RemoveBaggageItem removes a baggage item from the event's span.
+//
+// Parameters:
+//
+//	key - The baggage item key.
+func (e *ciVisibilityEvent) RemoveBaggageItem(key string) {
+	e.span.RemoveBaggageItem(key)
+}
+
+// RemoveAllBaggageItems removes all baggage items from the event's span.
+func (e *ciVisibilityEvent) RemoveAllBaggageItems() {
+	e.span.RemoveAllBaggageItems()
 }
 
 // Finish completes the event's span with optional finish options.

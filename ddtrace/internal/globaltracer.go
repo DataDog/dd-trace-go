@@ -75,10 +75,21 @@ func (NoopSpan) SetTag(_ string, _ interface{}) {}
 func (NoopSpan) SetOperationName(_ string) {}
 
 // BaggageItem implements ddtrace.Span.
-func (NoopSpan) BaggageItem(_ string) string { return "" }
+func (NoopSpan) GetBaggageItem(_ string) string { return "" }
 
 // SetBaggageItem implements ddtrace.Span.
 func (NoopSpan) SetBaggageItem(_, _ string) {}
+
+// RemoveBaggageItem implements ddtrace.Span.
+func (NoopSpan) RemoveBaggageItem(_ string) {}
+
+// RemoveAllBaggageItems implements ddtrace.Span.
+func (NoopSpan) RemoveAllBaggageItems() {}
+
+// GetAllBaggageItems implements ddtrace.Span.
+func (NoopSpan) GetAllBaggageItems() map[string]string {
+	return make(map[string]string)
+}
 
 // Finish implements ddtrace.Span.
 func (NoopSpan) Finish(_ ...ddtrace.FinishOption) {}

@@ -103,10 +103,26 @@ func (s *span) SetBaggageItem(key, val string) {
 	s.context.setBaggageItem(key, val)
 }
 
-// BaggageItem gets the value for a baggage item given its key. Returns the
+// GetBaggageItem gets the value for a baggage item given its key. Returns the
 // empty string if the value isn't found in this Span.
-func (s *span) BaggageItem(key string) string {
-	return s.context.baggageItem(key)
+func (s *span) GetBaggageItem(key string) string { // change this to GetBaggageItem
+	return s.context.getBaggageItem(key)
+}
+
+// GetAllBaggageItems returns a copy of all baggage items.
+// If no items exist, returns an empty map.
+func (s *span) GetAllBaggageItems() map[string]string {
+	return s.context.getAllBaggageItems()
+}
+
+// RemoveBaggageItem removes a single baggage item by its key.
+func (s *span) RemoveBaggageItem(key string) {
+	s.context.removeBaggageItem(key)
+}
+
+// RemoveAllBaggageItems removes all baggage items from the span.
+func (s *span) RemoveAllBaggageItems() {
+	s.context.removeAllBaggageItems()
 }
 
 // SetTag adds a set of key/value metadata to the span.

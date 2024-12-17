@@ -783,6 +783,14 @@ func TestSpanContextBaggage(t *testing.T) {
 	var ctx spanContext
 	ctx.setBaggageItem("key", "value")
 	assert.Equal("value", ctx.baggage["key"])
+	ctx.setBaggageItem("foo", "bar")
+	assert.Equal("bar", ctx.getBaggageItem("foo"))
+	ctx.removeBaggageItem("key")
+	assert.NotContains(ctx.baggage, "key")
+	ctx.setBaggageItem("key1", "value1")
+	assert.Equal(map[string]string{"foo": "bar", "key1": "value1"}, ctx.getAllBaggageItems())
+	ctx.removeAllBaggageItems()
+	assert.Empty(ctx.baggage)
 }
 
 func TestSpanContextIterator(t *testing.T) {

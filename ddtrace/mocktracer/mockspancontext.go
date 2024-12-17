@@ -48,10 +48,42 @@ func (sc *spanContext) setBaggageItem(k, v string) {
 	sc.baggage[k] = v
 }
 
-func (sc *spanContext) baggageItem(k string) string {
+func (sc *spanContext) getBaggageItem(k string) string {
 	sc.RLock()
 	defer sc.RUnlock()
 	return sc.baggage[k]
+}
+
+func (sc *spanContext) removeBaggageItem(k string) {
+	sc.Lock()
+	defer sc.Unlock()
+	if sc.baggage == nil {
+		return
+	}
+	delete(sc.baggage, k)
+	if len(sc.baggage) == 0 {
+		sc.baggage = nil
+	}
+}
+
+func (sc *spanContext) removeAllBaggageItems() {
+	sc.Lock()
+	defer sc.Unlock()
+	sc.baggage = nil
+}
+
+func (sc *spanContext) getAllBaggageItems() map[string]string {
+	sc.RLock()
+	defer sc.RUnlock()
+	if sc.baggage == nil {
+		return make(map[string]string)
+	}
+	// Return a copy to avoid callers mutating the internal map
+	copyMap := make(map[string]string, len(sc.baggage))
+	for key, val := range sc.baggage {
+		copyMap[key] = val
+	}
+	return copyMap
 }
 
 func (sc *spanContext) setSamplingPriority(p int) {

@@ -232,13 +232,55 @@ func (c *spanContext) setBaggageItem(key, val string) {
 	c.baggage[key] = val
 }
 
-func (c *spanContext) baggageItem(key string) string {
+func (c *spanContext) getBaggageItem(key string) string { // change this function name to getBaggageItem
 	if atomic.LoadUint32(&c.hasBaggage) == 0 {
 		return ""
 	}
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.baggage[key]
+}
+
+func (c *spanContext) getAllBaggageItems() map[string]string {
+	if atomic.LoadUint32(&c.hasBaggage) == 0 {
+		// Return an empty map to avoid nil issues
+		return map[string]string{}
+	}
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	copy := make(map[string]string, len(c.baggage))
+	for k, v := range c.baggage {
+		copy[k] = v
+	}
+	return copy
+}
+
+func (c *spanContext) removeBaggageItem(key string) {
+	if atomic.LoadUint32(&c.hasBaggage) == 0 {
+		return
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if _, ok := c.baggage[key]; ok {
+		delete(c.baggage, key)
+		// If baggage is now empty, reset hasBaggage
+		if len(c.baggage) == 0 {
+			atomic.StoreUint32(&c.hasBaggage, 0)
+			c.baggage = nil
+		}
+	}
+}
+
+func (c *spanContext) removeAllBaggageItems() {
+	if atomic.LoadUint32(&c.hasBaggage) == 0 {
+		return
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	// Clear baggage
+	c.baggage = nil
+	atomic.StoreUint32(&c.hasBaggage, 0)
 }
 
 func (c *spanContext) meta(key string) (val string, ok bool) {

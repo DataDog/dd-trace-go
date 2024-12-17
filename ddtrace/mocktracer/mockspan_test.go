@@ -144,7 +144,32 @@ func TestSpanBaggageFunctions(t *testing.T) {
 	t.Run("BaggageItem", func(t *testing.T) {
 		s := basicSpan("http.request")
 		s.SetBaggageItem("a", "b")
-		assert.Equal(t, "b", s.BaggageItem("a"))
+		assert.Equal(t, "b", s.GetBaggageItem("a"))
+	})
+
+	t.Run("GetAllBaggageItems", func(t *testing.T) {
+		s := basicSpan("http.request")
+		s.SetBaggageItem("a", "b")
+		s.SetBaggageItem("c", "d")
+		baggage := s.GetAllBaggageItems()
+		assert.Len(t, baggage, 2)
+		assert.Equal(t, "b", baggage["a"])
+		assert.Equal(t, "d", baggage["c"])
+	})
+
+	t.Run("RemoveBaggageItem", func(t *testing.T) {
+		s := basicSpan("http.request")
+		s.SetBaggageItem("a", "b")
+		s.RemoveBaggageItem("a")
+		assert.Empty(t, s.context.baggage)
+	})
+
+	t.Run("RemoveAllBaggageItems", func(t *testing.T) {
+		s := basicSpan("http.request")
+		s.SetBaggageItem("a", "b")
+		s.SetBaggageItem("c", "d")
+		s.RemoveAllBaggageItems()
+		assert.Empty(t, s.context.baggage)
 	})
 }
 
