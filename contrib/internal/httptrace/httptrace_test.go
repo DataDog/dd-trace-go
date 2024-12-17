@@ -358,6 +358,9 @@ func BenchmarkStartRequestSpan(b *testing.B) {
 		b.Errorf("Failed to create request: %v", err)
 		return
 	}
+
+	mt := mocktracer.Start()
+	defer mt.Stop()
 	opts := []ddtrace.StartSpanOption{
 		tracer.ServiceName("SomeService"),
 		tracer.ResourceName("SomeResource"),
