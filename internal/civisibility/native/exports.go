@@ -13,103 +13,105 @@ package main
 // #cgo LDFLAGS: -s -w
 /*
 typedef unsigned char Bool;
-typedef unsigned long long SessionID;
-typedef unsigned long long ModuleID;
-typedef unsigned long long SuiteID;
-typedef unsigned long long TestID;
+typedef unsigned long long Uint64;
+typedef Uint64 topt_SessionId;
+typedef Uint64 topt_ModuleId;
+typedef Uint64 topt_SuiteId;
+typedef Uint64 topt_TestId;
 
 typedef struct {
     char* key;
     char* value;
-} KeyValuePair;
-const int KeyValuePair_Size = sizeof(KeyValuePair);
+} topt_KeyValuePair;
+const int topt_KeyValuePair_Size = sizeof(topt_KeyValuePair_Size);
 
 typedef struct {
-    KeyValuePair* data;
-    unsigned long long len;
-} KeyValueArray;
-const int KeyValueArray_Size = sizeof(KeyValueArray);
+    topt_KeyValuePair* data;
+    Uint64 len;
+} topt_KeyValueArray;
+const int topt_KeyValueArray_Size = sizeof(topt_KeyValueArray);
 
 typedef struct {
     char* language;
     char* runtime_name;
     char* runtime_version;
     char* working_directory;
-    KeyValueArray* environment_variables;
+    topt_KeyValueArray* environment_variables;
+	topt_KeyValueArray* global_tags;
 	// Unused fields
 	void* unused01;
 	void* unused02;
 	void* unused03;
 	void* unused04;
 	void* unused05;
-} InitSettings;
-const int InitSettings_Size = sizeof(InitSettings);
+} topt_InitOptions;
+const int topt_InitOptions_Size = sizeof(topt_InitOptions);
 
 typedef struct {
-    unsigned long long sec;
-    unsigned long long nsec;
-} UnixTime;
-const int UnixTime_Size = sizeof(UnixTime);
+    Uint64 sec;
+    Uint64 nsec;
+} topt_UnixTime;
+const int topt_UnixTime_Size = sizeof(topt_UnixTime);
 
 typedef struct {
 	int ten_s;
 	int thirty_s;
 	int five_m;
 	int five_s;
-} SettingsEarlyFlakeDetectionSlowRetries;
-const int SettingsEarlyFlakeDetectionSlowRetries_Size = sizeof(SettingsEarlyFlakeDetectionSlowRetries);
+} topt_SettingsEarlyFlakeDetectionSlowRetries;
+const int topt_SettingsEarlyFlakeDetectionSlowRetries_Size = sizeof(topt_SettingsEarlyFlakeDetectionSlowRetries);
 
 typedef struct {
 	Bool enabled;
-	SettingsEarlyFlakeDetectionSlowRetries slow_test_retries;
+	topt_SettingsEarlyFlakeDetectionSlowRetries slow_test_retries;
 	int faulty_session_threshold;
-} SettingsEarlyFlakeDetection;
-const int SettingsEarlyFlakeDetection_Size = sizeof(SettingsEarlyFlakeDetection);
+} topt_SettingsEarlyFlakeDetection;
+const int topt_SettingsEarlyFlakeDetection_Size = sizeof(topt_SettingsEarlyFlakeDetection);
 
 typedef struct {
 	Bool code_coverage;
-	SettingsEarlyFlakeDetection early_flake_detection;
+	topt_SettingsEarlyFlakeDetection early_flake_detection;
 	Bool flaky_test_retries_enabled;
 	Bool itr_enabled;
 	Bool require_git;
 	Bool tests_skipping;
-} SettingsResponse;
-const int SettingsResponse_Size = sizeof(SettingsResponse);
+} topt_SettingsResponse;
+const int topt_SettingsResponse_Size = sizeof(topt_SettingsResponse);
 
 typedef struct {
 	int retry_count;
 	int total_retry_count;
-} FlakyTestRetriesSettings;
-const int FlakyTestRetriesSettings_Size = sizeof(FlakyTestRetriesSettings);
+} topt_FlakyTestRetriesSettings;
+const int topt_FlakyTestRetriesSettings_Size = sizeof(topt_FlakyTestRetriesSettings);
 
 typedef struct {
 	char* module_name;
 	char* suite_name;
 	char* test_name;
-} KnownTest;
-const int KnownTest_Size = sizeof(KnownTest);
+} topt_KnownTest;
+const int topt_KnownTest_Size = sizeof(topt_KnownTest);
 
 typedef struct {
 	char* suite_name;
 	char* test_name;
 	char* parameters;
 	char* custom_configurations_json;
-} SkippableTest;
-const int SkippableTest_Size = sizeof(SkippableTest);
+} topt_SkippableTest;
+const int topt_SkippableTest_Size = sizeof(topt_SkippableTest);
 
 typedef struct {
 	char* filename;
 	char* bitmap;
-} TestCoverageFile;
-const int TestCoverageFile_Size = sizeof(TestCoverageFile);
+} topt_TestCoverageFile;
+const int topt_TestCoverageFile_Size = sizeof(topt_TestCoverageFile);
 
 typedef struct {
-	SuiteID test_suite_id;
-	TestID span_id;
-	TestCoverageFile* files;
-	unsigned long long files_len;
-} TestCoverage;
-const int TestCoverage_Size = sizeof(TestCoverage);
+	topt_SuiteId test_suite_id;
+	topt_TestId span_id;
+	topt_TestCoverageFile* files;
+	Uint64 files_len;
+} topt_TestCoverage;
+const int topt_TestCoverage_Size = sizeof(topt_TestCoverage);
 */
 import "C"
 import (
@@ -130,7 +132,7 @@ import (
 
 // getUnixTime converts a C.UnixTime to Go's time.Time.
 // If unixTime is nil, returns time.Now() as a fallback.
-func getUnixTime(unixTime *C.UnixTime) time.Time {
+func getUnixTime(unixTime *C.topt_UnixTime) time.Time {
 	// If pointer is nil, provide a fallback time.
 	if unixTime == nil {
 		return time.Now()
@@ -155,26 +157,30 @@ var (
 	canShutdown    atomic.Bool // indicate if the library can be shut down
 )
 
-// test_optimization_initialize initializes the library with the given settings.
+// topt_initialize initializes the library with the given options.
 //
-//export test_optimization_initialize
-func test_optimization_initialize(settings *C.InitSettings) C.Bool {
+//export topt_initialize
+func topt_initialize(options *C.topt_InitOptions) C.Bool {
 	if hasInitialized.Swap(true) {
 		return toBool(false)
 	}
 
 	canShutdown.Store(true)
-	if settings != nil {
-		if settings.environment_variables != nil {
-			sLen := int(settings.environment_variables.len)
-			kvSize := int(C.KeyValuePair_Size)
+	var tags map[string]string
+	if options != nil {
+		if options.environment_variables != nil {
+			sLen := int(options.environment_variables.len)
+			kvSize := int(C.topt_KeyValuePair_Size)
 			for i := 0; i < sLen; i++ {
-				keyValue := (*C.KeyValuePair)(unsafe.Add(unsafe.Pointer(settings.environment_variables.data), i*kvSize))
+				keyValue := (*C.topt_KeyValuePair)(unsafe.Add(unsafe.Pointer(options.environment_variables.data), i*kvSize))
+				if keyValue.key == nil {
+					continue
+				}
 				os.Setenv(C.GoString(keyValue.key), C.GoString(keyValue.value))
 			}
 		}
-		if settings.working_directory != nil {
-			wd := C.GoString(settings.working_directory)
+		if options.working_directory != nil {
+			wd := C.GoString(options.working_directory)
 			if wd != "" {
 				if currentDir, err := os.Getwd(); err == nil {
 					defer func() {
@@ -184,29 +190,41 @@ func test_optimization_initialize(settings *C.InitSettings) C.Bool {
 				os.Chdir(wd)
 			}
 		}
-		if settings.runtime_name != nil {
-			utils.AddCITags(constants.RuntimeName, C.GoString(settings.runtime_name))
+		if options.runtime_name != nil {
+			tags[constants.RuntimeName] = C.GoString(options.runtime_name)
 		}
-		if settings.runtime_version != nil {
-			utils.AddCITags(constants.RuntimeVersion, C.GoString(settings.runtime_version))
+		if options.runtime_version != nil {
+			tags[constants.RuntimeVersion] = C.GoString(options.runtime_version)
 		}
-		if settings.language != nil {
-			utils.AddCITags("language", C.GoString(settings.language))
+		if options.language != nil {
+			tags["language"] = C.GoString(options.language)
 		} else {
-			utils.AddCITags("language", "native")
+			tags["language"] = "native"
+		}
+		if options.global_tags != nil {
+			sLen := int(options.global_tags.len)
+			kvSize := int(C.topt_KeyValuePair_Size)
+			for i := 0; i < sLen; i++ {
+				keyValue := (*C.topt_KeyValuePair)(unsafe.Add(unsafe.Pointer(options.global_tags.data), i*kvSize))
+				if keyValue.key == nil {
+					continue
+				}
+				tags[C.GoString(keyValue.key)] = C.GoString(keyValue.value)
+			}
 		}
 	} else {
-		utils.AddCITags("language", "native")
+		tags["language"] = "native"
 	}
 
+	utils.AddCITagsMap(tags)
 	civisibility.EnsureCiVisibilityInitialization()
 	return toBool(true)
 }
 
-// test_optimization_shutdown shuts down the library.
+// topt_shutdown shuts down the library.
 //
-//export test_optimization_shutdown
-func test_optimization_shutdown() C.Bool {
+//export topt_shutdown
+func topt_shutdown() C.Bool {
 	if !canShutdown.Swap(false) {
 		return toBool(false)
 	}
@@ -223,19 +241,13 @@ var (
 	sessions     = make(map[uint64]civisibility.TestSession) // map of test sessions
 )
 
-// test_optimization_session_create creates a new test session.
+// topt_session_create creates a new test session.
 //
-//export test_optimization_session_create
-func test_optimization_session_create(framework *C.char, framework_version *C.char, unix_start_time *C.UnixTime) C.SessionID {
+//export topt_session_create
+func topt_session_create(framework *C.char, framework_version *C.char, unix_start_time *C.topt_UnixTime) C.topt_SessionId {
 	var sessionOptions []civisibility.TestSessionStartOption
 	if framework != nil {
-		goFramework := C.GoString(framework)
-		goFrameworkVersion := ""
-		if framework_version != nil {
-			goFrameworkVersion = C.GoString(framework_version)
-		}
-
-		sessionOptions = append(sessionOptions, civisibility.WithTestSessionFramework(goFramework, goFrameworkVersion))
+		sessionOptions = append(sessionOptions, civisibility.WithTestSessionFramework(C.GoString(framework), C.GoString(framework_version)))
 	}
 	if unix_start_time != nil {
 		sessionOptions = append(sessionOptions, civisibility.WithTestSessionStartTime(getUnixTime(unix_start_time)))
@@ -247,13 +259,13 @@ func test_optimization_session_create(framework *C.char, framework_version *C.ch
 	sessionMutex.Lock()
 	defer sessionMutex.Unlock()
 	sessions[id] = session
-	return C.SessionID(id)
+	return C.topt_SessionId(id)
 }
 
-// test_optimization_session_close closes the test session with the given ID.
+// topt_session_close closes the test session with the given ID.
 //
-//export test_optimization_session_close
-func test_optimization_session_close(session_id C.SessionID, exit_code C.int, unix_finish_time *C.UnixTime) C.Bool {
+//export topt_session_close
+func topt_session_close(session_id C.topt_SessionId, exit_code C.int, unix_finish_time *C.topt_UnixTime) C.Bool {
 	sessionMutex.Lock()
 	defer sessionMutex.Unlock()
 	if session, ok := sessions[uint64(session_id)]; ok {
