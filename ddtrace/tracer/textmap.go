@@ -334,21 +334,6 @@ func getPropagatorName(p Propagator) string {
 	}
 }
 
-func getPropagatorName(p Propagator) string {
-	switch p.(type) {
-	case *propagator:
-		return "datadog"
-	case *propagatorB3:
-		return "b3multi"
-	case *propagatorB3SingleHeader:
-		return "b3"
-	case *propagatorW3c:
-		return "tracecontext"
-	default:
-		return ""
-	}
-}
-
 // propagateTracestate will add the tracestate propagating tag to the given
 // *spanContext. The W3C trace context will be extracted from the provided
 // carrier. The trace id of this W3C trace context must match the trace id

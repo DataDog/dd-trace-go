@@ -42,7 +42,6 @@ func TestConcentrator(t *testing.T) {
 	t.Run("start-stop", func(t *testing.T) {
 		assert := assert.New(t)
 		c := newConcentrator(&config{}, bucketSize, &statsd.NoOpClientDirect{})
-		c := newConcentrator(&config{}, bucketSize, &statsd.NoOpClientDirect{})
 		assert.EqualValues(atomic.LoadUint32(&c.stopped), 1)
 		c.Start()
 		assert.EqualValues(atomic.LoadUint32(&c.stopped), 0)
@@ -62,7 +61,6 @@ func TestConcentrator(t *testing.T) {
 		t.Run("old", func(t *testing.T) {
 			transport := newDummyTransport()
 			c := newConcentrator(&config{transport: transport, env: "someEnv"}, 500_000, &statsd.NoOpClientDirect{})
-			c := newConcentrator(&config{transport: transport, env: "someEnv"}, 500_000, &statsd.NoOpClientDirect{})
 			assert.Len(t, transport.Stats(), 0)
 			ss1, ok := c.newTracerStatSpan(&s1, nil)
 			assert.True(t, ok)
@@ -78,10 +76,7 @@ func TestConcentrator(t *testing.T) {
 		})
 
 		t.Run("recent+stats", func(t *testing.T) {
-		t.Run("recent+stats", func(t *testing.T) {
 			transport := newDummyTransport()
-			testStats := &statsdtest.TestStatsdClient{}
-			c := newConcentrator(&config{transport: transport, env: "someEnv"}, (10 * time.Second).Nanoseconds(), testStats)
 			testStats := &statsdtest.TestStatsdClient{}
 			c := newConcentrator(&config{transport: transport, env: "someEnv"}, (10 * time.Second).Nanoseconds(), testStats)
 			assert.Len(t, transport.Stats(), 0)
@@ -112,7 +107,6 @@ func TestConcentrator(t *testing.T) {
 			utils.AddCITags(constants.GitCommitSHA, "DEADBEEF")
 			transport := newDummyTransport()
 			c := newConcentrator(&config{transport: transport, env: "someEnv"}, (10 * time.Second).Nanoseconds(), &statsd.NoOpClientDirect{})
-			c := newConcentrator(&config{transport: transport, env: "someEnv"}, (10 * time.Second).Nanoseconds(), &statsd.NoOpClientDirect{})
 			assert.Len(t, transport.Stats(), 0)
 			ss1, ok := c.newTracerStatSpan(&s1, nil)
 			assert.True(t, ok)
@@ -126,7 +120,6 @@ func TestConcentrator(t *testing.T) {
 		// stats should be sent if the concentrator is stopped
 		t.Run("stop", func(t *testing.T) {
 			transport := newDummyTransport()
-			c := newConcentrator(&config{transport: transport}, 500000, &statsd.NoOpClientDirect{})
 			c := newConcentrator(&config{transport: transport}, 500000, &statsd.NoOpClientDirect{})
 			assert.Len(t, transport.Stats(), 0)
 			ss1, ok := c.newTracerStatSpan(&s1, nil)
