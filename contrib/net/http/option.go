@@ -52,7 +52,6 @@ func defaults(cfg *config) {
 		cfg.analyticsRate = globalconfig.AnalyticsRate()
 	}
 	cfg.serviceName = namingschema.ServiceName(defaultServiceName)
-	cfg.isStatusError = isServerError
 	cfg.headerTags = globalconfig.HeaderTagMap()
 	cfg.spanOpts = []ddtrace.StartSpanOption{tracer.Measured()}
 	if !math.IsNaN(cfg.analyticsRate) {
@@ -60,10 +59,6 @@ func defaults(cfg *config) {
 	}
 	cfg.ignoreRequest = func(_ *http.Request) bool { return false }
 	cfg.resourceNamer = func(_ *http.Request) string { return "" }
-}
-
-func isServerError(status int) bool {
-	return status >= 500 && status < 600
 }
 
 // WithIgnoreRequest holds the function to use for determining if the
