@@ -18,6 +18,14 @@ typedef Uint64 topt_SessionId;
 typedef Uint64 topt_ModuleId;
 typedef Uint64 topt_SuiteId;
 typedef Uint64 topt_TestId;
+typedef unsigned char topt_TestStatus;
+
+// topt_TestStatusPass is the status for a passing test.
+const topt_TestStatus topt_TestStatusPass = 0;
+// topt_TestStatusFail is the status for a failing test.
+const topt_TestStatus topt_TestStatusFail = 1;
+// topt_TestStatusSkip is the status for a skipped test.
+const topt_TestStatus topt_TestStatusSkip = 2;
 
 // topt_SessionResult is used to return the result of a session creation.
 typedef struct {
@@ -40,18 +48,28 @@ typedef struct {
 } topt_SuiteResult;
 const int topt_SuiteResult_Size = sizeof(topt_SuiteResult);
 
+// topt_TestResult is used to return the result of a test creation.
+typedef struct {
+	topt_TestId test_id;
+	Bool valid;
+} topt_TestResult;
+const int topt_TestResult_Size = sizeof(topt_TestResult);
+
+// topt_KeyValuePair is used to store a key-value pair.
 typedef struct {
     char* key;
     char* value;
 } topt_KeyValuePair;
 const int topt_KeyValuePair_Size = sizeof(topt_KeyValuePair_Size);
 
+// topt_KeyValueArray is used to store an array of key-value pairs.
 typedef struct {
     topt_KeyValuePair* data;
     Uint64 len;
 } topt_KeyValueArray;
 const int topt_KeyValueArray_Size = sizeof(topt_KeyValueArray);
 
+// topt_InitOptions is used to initialize the library.
 typedef struct {
     char* language;
     char* runtime_name;
@@ -68,11 +86,20 @@ typedef struct {
 } topt_InitOptions;
 const int topt_InitOptions_Size = sizeof(topt_InitOptions);
 
+// topt_UnixTime is used to store a Unix timestamp.
 typedef struct {
     Uint64 sec;
     Uint64 nsec;
 } topt_UnixTime;
 const int topt_UnixTime_Size = sizeof(topt_UnixTime);
+
+// topt_TestCloseOptions is used to close a test with additional options.
+typedef struct {
+	topt_TestStatus status;
+	topt_UnixTime* finish_time;
+	char* skip_reason;
+} topt_TestCloseOptions;
+const int topt_TestCloseOptions_Size = sizeof(topt_TestCloseOptions);
 
 typedef struct {
 	int ten_s;
@@ -181,60 +208,56 @@ var (
 // topt_initialize initializes the library with the given options.
 //
 //export topt_initialize
-func topt_initialize(options *C.topt_InitOptions) C.Bool {
+func topt_initialize(options C.topt_InitOptions) C.Bool {
 	if hasInitialized.Swap(true) {
 		return toBool(false)
 	}
 
 	canShutdown.Store(true)
 	var tags map[string]string
-	if options != nil {
-		if options.environment_variables != nil {
-			sLen := int(options.environment_variables.len)
-			kvSize := int(C.topt_KeyValuePair_Size)
-			for i := 0; i < sLen; i++ {
-				keyValue := (*C.topt_KeyValuePair)(unsafe.Add(unsafe.Pointer(options.environment_variables.data), i*kvSize))
-				if keyValue.key == nil {
-					continue
-				}
-				os.Setenv(C.GoString(keyValue.key), C.GoString(keyValue.value))
+	if options.environment_variables != nil {
+		sLen := int(options.environment_variables.len)
+		kvSize := int(C.topt_KeyValuePair_Size)
+		for i := 0; i < sLen; i++ {
+			keyValue := (*C.topt_KeyValuePair)(unsafe.Add(unsafe.Pointer(options.environment_variables.data), i*kvSize))
+			if keyValue.key == nil {
+				continue
 			}
+			os.Setenv(C.GoString(keyValue.key), C.GoString(keyValue.value))
 		}
-		if options.working_directory != nil {
-			wd := C.GoString(options.working_directory)
-			if wd != "" {
-				if currentDir, err := os.Getwd(); err == nil {
-					defer func() {
-						os.Chdir(currentDir)
-					}()
-				}
-				os.Chdir(wd)
+	}
+	if options.working_directory != nil {
+		wd := C.GoString(options.working_directory)
+		if wd != "" {
+			if currentDir, err := os.Getwd(); err == nil {
+				defer func() {
+					os.Chdir(currentDir)
+				}()
 			}
+			os.Chdir(wd)
 		}
-		if options.runtime_name != nil {
-			tags[constants.RuntimeName] = C.GoString(options.runtime_name)
-		}
-		if options.runtime_version != nil {
-			tags[constants.RuntimeVersion] = C.GoString(options.runtime_version)
-		}
-		if options.language != nil {
-			tags["language"] = C.GoString(options.language)
-		} else {
-			tags["language"] = "native"
-		}
-		if options.global_tags != nil {
-			sLen := int(options.global_tags.len)
-			kvSize := int(C.topt_KeyValuePair_Size)
-			for i := 0; i < sLen; i++ {
-				keyValue := (*C.topt_KeyValuePair)(unsafe.Add(unsafe.Pointer(options.global_tags.data), i*kvSize))
-				if keyValue.key == nil {
-					continue
-				}
-				tags[C.GoString(keyValue.key)] = C.GoString(keyValue.value)
-			}
-		}
+	}
+	if options.runtime_name != nil {
+		tags[constants.RuntimeName] = C.GoString(options.runtime_name)
+	}
+	if options.runtime_version != nil {
+		tags[constants.RuntimeVersion] = C.GoString(options.runtime_version)
+	}
+	if options.language != nil {
+		tags["language"] = C.GoString(options.language)
 	} else {
 		tags["language"] = "native"
+	}
+	if options.global_tags != nil {
+		sLen := int(options.global_tags.len)
+		kvSize := int(C.topt_KeyValuePair_Size)
+		for i := 0; i < sLen; i++ {
+			keyValue := (*C.topt_KeyValuePair)(unsafe.Add(unsafe.Pointer(options.global_tags.data), i*kvSize))
+			if keyValue.key == nil {
+				continue
+			}
+			tags[C.GoString(keyValue.key)] = C.GoString(keyValue.value)
+		}
 	}
 
 	utils.AddCITagsMap(tags)
@@ -276,13 +299,13 @@ func getSession(session_id C.topt_SessionId) (civisibility.TestSession, bool) {
 // topt_session_create creates a new test session.
 //
 //export topt_session_create
-func topt_session_create(framework *C.char, framework_version *C.char, unix_start_time *C.topt_UnixTime) C.topt_SessionResult {
+func topt_session_create(framework *C.char, framework_version *C.char, start_time *C.topt_UnixTime) C.topt_SessionResult {
 	var sessionOptions []civisibility.TestSessionStartOption
 	if framework != nil {
 		sessionOptions = append(sessionOptions, civisibility.WithTestSessionFramework(C.GoString(framework), C.GoString(framework_version)))
 	}
-	if unix_start_time != nil {
-		sessionOptions = append(sessionOptions, civisibility.WithTestSessionStartTime(getUnixTime(unix_start_time)))
+	if start_time != nil {
+		sessionOptions = append(sessionOptions, civisibility.WithTestSessionStartTime(getUnixTime(start_time)))
 	}
 
 	session := civisibility.CreateTestSession(sessionOptions...)
@@ -297,10 +320,10 @@ func topt_session_create(framework *C.char, framework_version *C.char, unix_star
 // topt_session_close closes the test session with the given ID.
 //
 //export topt_session_close
-func topt_session_close(session_id C.topt_SessionId, exit_code C.int, unix_finish_time *C.topt_UnixTime) C.Bool {
+func topt_session_close(session_id C.topt_SessionId, exit_code C.int, finish_time *C.topt_UnixTime) C.Bool {
 	if session, ok := getSession(session_id); ok {
-		if unix_finish_time != nil {
-			session.Close(int(exit_code), civisibility.WithTestSessionFinishTime(getUnixTime(unix_finish_time)))
+		if finish_time != nil {
+			session.Close(int(exit_code), civisibility.WithTestSessionFinishTime(getUnixTime(finish_time)))
 		} else {
 			session.Close(int(exit_code))
 		}
@@ -376,14 +399,14 @@ func getModule(module_id C.topt_ModuleId) (civisibility.TestModule, bool) {
 // topt_module_create creates a new test module.
 //
 //export topt_module_create
-func topt_module_create(session_id C.topt_SessionId, name *C.char, framework *C.char, framework_version *C.char, unix_start_time *C.topt_UnixTime) C.topt_ModuleResult {
+func topt_module_create(session_id C.topt_SessionId, name *C.char, framework *C.char, framework_version *C.char, start_time *C.topt_UnixTime) C.topt_ModuleResult {
 	if session, ok := getSession(session_id); ok {
 		var moduleOptions []civisibility.TestModuleStartOption
 		if framework != nil {
 			moduleOptions = append(moduleOptions, civisibility.WithTestModuleFramework(C.GoString(framework), C.GoString(framework_version)))
 		}
-		if unix_start_time != nil {
-			moduleOptions = append(moduleOptions, civisibility.WithTestModuleStartTime(getUnixTime(unix_start_time)))
+		if start_time != nil {
+			moduleOptions = append(moduleOptions, civisibility.WithTestModuleStartTime(getUnixTime(start_time)))
 		}
 
 		module := session.GetOrCreateModule(C.GoString(name), moduleOptions...)
@@ -401,10 +424,10 @@ func topt_module_create(session_id C.topt_SessionId, name *C.char, framework *C.
 // topt_module_close closes the test module with the given ID.
 //
 //export topt_module_close
-func topt_module_close(module_id C.topt_ModuleId, unix_finish_time *C.topt_UnixTime) C.Bool {
+func topt_module_close(module_id C.topt_ModuleId, finish_time *C.topt_UnixTime) C.Bool {
 	if module, ok := getModule(module_id); ok {
-		if unix_finish_time != nil {
-			module.Close(civisibility.WithTestModuleFinishTime(getUnixTime(unix_finish_time)))
+		if finish_time != nil {
+			module.Close(civisibility.WithTestModuleFinishTime(getUnixTime(finish_time)))
 		} else {
 			module.Close()
 		}
@@ -480,11 +503,11 @@ func getSuite(suite_id C.topt_SuiteId) (civisibility.TestSuite, bool) {
 // topt_suite_create creates a new test suite.
 //
 //export topt_suite_create
-func topt_suite_create(module_id C.topt_ModuleId, name *C.char, unix_start_time *C.topt_UnixTime) C.topt_SuiteResult {
+func topt_suite_create(module_id C.topt_ModuleId, name *C.char, start_time *C.topt_UnixTime) C.topt_SuiteResult {
 	if module, ok := getModule(module_id); ok {
 		var suiteOptions []civisibility.TestSuiteStartOption
-		if unix_start_time != nil {
-			suiteOptions = append(suiteOptions, civisibility.WithTestSuiteStartTime(getUnixTime(unix_start_time)))
+		if start_time != nil {
+			suiteOptions = append(suiteOptions, civisibility.WithTestSuiteStartTime(getUnixTime(start_time)))
 		}
 
 		suite := module.GetOrCreateSuite(C.GoString(name), suiteOptions...)
@@ -502,10 +525,10 @@ func topt_suite_create(module_id C.topt_ModuleId, name *C.char, unix_start_time 
 // topt_suite_close closes the test suite with the given ID.
 //
 //export topt_suite_close
-func topt_suite_close(suite_id C.topt_SuiteId, unix_finish_time *C.topt_UnixTime) C.Bool {
+func topt_suite_close(suite_id C.topt_SuiteId, finish_time *C.topt_UnixTime) C.Bool {
 	if suite, ok := getSuite(suite_id); ok {
-		if unix_finish_time != nil {
-			suite.Close(civisibility.WithTestSuiteFinishTime(getUnixTime(unix_finish_time)))
+		if finish_time != nil {
+			suite.Close(civisibility.WithTestSuiteFinishTime(getUnixTime(finish_time)))
 		} else {
 			suite.Close()
 		}
@@ -553,6 +576,170 @@ func topt_suite_set_number_tag(suite_id C.topt_SuiteId, key *C.char, value C.dou
 func topt_suite_set_error(suite_id C.topt_SuiteId, error_type *C.char, error_message *C.char, error_stacktrace *C.char) C.Bool {
 	if suite, ok := getSuite(suite_id); ok {
 		suite.SetError(civisibility.WithErrorInfo(C.GoString(error_type), C.GoString(error_message), C.GoString(error_stacktrace)))
+		return toBool(true)
+	}
+	return toBool(false)
+}
+
+// topt_suite_set_source sets the source file, start line, and end line for the test suite with the given ID.
+//
+//export topt_suite_set_source
+func topt_suite_set_source(suite_id C.topt_SuiteId, file *C.char, start_line *C.int, end_line *C.int) C.Bool {
+	if suite, ok := getSuite(suite_id); ok {
+		if file != nil {
+			gFile := C.GoString(file)
+			gFile = utils.GetRelativePathFromCITagsSourceRoot(gFile)
+			suite.SetTag(constants.TestSourceFile, gFile)
+
+			// get the codeowner of the function
+			codeOwners := utils.GetCodeOwners()
+			if codeOwners != nil {
+				match, found := codeOwners.Match("/" + gFile)
+				if found {
+					suite.SetTag(constants.TestCodeOwners, match.GetOwnersString())
+				}
+			}
+		}
+		if start_line != nil {
+			suite.SetTag(constants.TestSourceStartLine, int(*start_line))
+		}
+		if end_line != nil {
+			suite.SetTag(constants.TestSourceEndLine, int(*end_line))
+		}
+		return toBool(true)
+	}
+	return toBool(false)
+}
+
+// *******************************************************************************************************************
+// Tests
+// *******************************************************************************************************************
+
+var (
+	testMutex sync.RWMutex                         // mutex to protect the tests map
+	tests     = make(map[uint64]civisibility.Test) // map of test spans
+)
+
+func getTest(test_id C.topt_TestId) (civisibility.Test, bool) {
+	tId := uint64(test_id)
+	if tId == 0 {
+		return nil, false
+	}
+	testMutex.RLock()
+	defer testMutex.RUnlock()
+	test, ok := tests[tId]
+	return test, ok
+}
+
+// topt_test_create creates a new test span.
+//
+//export topt_test_create
+func topt_test_create(suite_id C.topt_SuiteId, name *C.char, start_time *C.topt_UnixTime) C.topt_TestResult {
+	if suite, ok := getSuite(suite_id); ok {
+		var testOptions []civisibility.TestStartOption
+		if start_time != nil {
+			testOptions = append(testOptions, civisibility.WithTestStartTime(getUnixTime(start_time)))
+		}
+
+		test := suite.CreateTest(C.GoString(name), testOptions...)
+		id := test.TestID()
+
+		testMutex.Lock()
+		defer testMutex.Unlock()
+		tests[id] = test
+		return C.topt_TestResult{test_id: C.topt_TestId(id), valid: toBool(true)}
+	}
+
+	return C.topt_TestResult{test_id: C.topt_TestId(0), valid: toBool(false)}
+}
+
+// topt_test_close closes the test span with the given ID.
+//
+//export topt_test_close
+func topt_test_close(test_id C.topt_TestId, options C.topt_TestCloseOptions) C.Bool {
+	if test, ok := getTest(test_id); ok {
+		var testOptions []civisibility.TestCloseOption
+		if options.skip_reason != nil {
+			testOptions = append(testOptions, civisibility.WithTestSkipReason(C.GoString(options.skip_reason)))
+		}
+		if options.finish_time != nil {
+			testOptions = append(testOptions, civisibility.WithTestFinishTime(getUnixTime(options.finish_time)))
+		}
+		test.Close(civisibility.TestResultStatus(options.status), testOptions...)
+
+		testMutex.Lock()
+		defer testMutex.Unlock()
+		delete(tests, uint64(test_id))
+		return toBool(true)
+	}
+
+	return toBool(false)
+}
+
+// topt_test_set_string_tag sets a string tag for the test span with the given ID.
+//
+//export topt_test_set_string_tag
+func topt_test_set_string_tag(test_id C.topt_TestId, key *C.char, value *C.char) C.Bool {
+	if key == nil {
+		return toBool(false)
+	}
+	if test, ok := getTest(test_id); ok {
+		test.SetTag(C.GoString(key), C.GoString(value))
+		return toBool(true)
+	}
+	return toBool(false)
+}
+
+// topt_test_set_number_tag sets a number tag for the test span with the given ID.
+//
+//export topt_test_set_number_tag
+func topt_test_set_number_tag(test_id C.topt_TestId, key *C.char, value C.double) C.Bool {
+	if key == nil {
+		return toBool(false)
+	}
+	if test, ok := getTest(test_id); ok {
+		test.SetTag(C.GoString(key), float64(value))
+		return toBool(true)
+	}
+	return toBool(false)
+}
+
+// topt_test_set_error sets an error for the test span with the given ID.
+//
+//export topt_test_set_error
+func topt_test_set_error(test_id C.topt_TestId, error_type *C.char, error_message *C.char, error_stacktrace *C.char) C.Bool {
+	if test, ok := getTest(test_id); ok {
+		test.SetError(civisibility.WithErrorInfo(C.GoString(error_type), C.GoString(error_message), C.GoString(error_stacktrace)))
+		return toBool(true)
+	}
+	return toBool(false)
+}
+
+// topt_test_set_source sets the source file, start line, and end line for the test span with the given ID.
+//
+//export topt_test_set_source
+func topt_test_set_source(test_id C.topt_TestId, file *C.char, start_line *C.int, end_line *C.int) C.Bool {
+	if test, ok := getTest(test_id); ok {
+		if file != nil {
+			gFile := C.GoString(file)
+			gFile = utils.GetRelativePathFromCITagsSourceRoot(gFile)
+			test.SetTag(constants.TestSourceFile, gFile)
+
+			// get the codeowner of the function
+			codeOwners := utils.GetCodeOwners()
+			if codeOwners != nil {
+				match, found := codeOwners.Match("/" + gFile)
+				if found {
+					test.SetTag(constants.TestCodeOwners, match.GetOwnersString())
+				}
+			}
+		}
+		if start_line != nil {
+			test.SetTag(constants.TestSourceStartLine, int(*start_line))
+		}
+		if end_line != nil {
+			test.SetTag(constants.TestSourceEndLine, int(*end_line))
+		}
 		return toBool(true)
 	}
 	return toBool(false)
