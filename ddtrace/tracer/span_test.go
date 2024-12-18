@@ -33,7 +33,7 @@ func newSpan(name, service, resource string, spanID, traceID, parentID uint64) *
 		Name:     name,
 		Service:  service,
 		Resource: resource,
-		Meta:     map[string]string{},
+		Meta:     defaultMetaMap(),
 		Metrics:  map[string]float64{},
 		SpanID:   spanID,
 		TraceID:  traceID,
@@ -1012,7 +1012,7 @@ func BenchmarkSetTagString(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		k := string(keys[i%len(keys)])
+		k := keys[i%len(keys)]
 		span.SetTag(k, "some text")
 	}
 }
@@ -1033,6 +1033,7 @@ func BenchmarkSetTagStringer(b *testing.B) {
 	span := newBasicSpan("bench.span")
 	keys := strings.Split("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ", "")
 	value := &stringer{}
+
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		k := keys[i%len(keys)]
@@ -1090,5 +1091,41 @@ func testConcurrentSpanSetTag(t *testing.T) {
 			wg.Done()
 		}()
 	}
+	wg.Wait()
+}
+
+func BenchmarkSpanFinish(b *testing.B) {
+	tracer := newTracer(withTransport(newDefaultTransport()))
+	tracer.config.partialFlushEnabled = false
+	defer tracer.Stop()
+	span := tracer.newRootSpan("pylons.request", "pylons", "/")
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		span.finished = false
+		span.Finish()
+	}
+}
+
+func BenchmarkConcurrentSpanSetTag(b *testing.B) {
+	span := newBasicSpan("root")
+	defer span.Finish()
+
+	wg := sync.WaitGroup{}
+	wg.Add(b.N)
+
+	// Preallocate goroutines to avoid benchmarking goroutine creation
+	pole := make(chan struct{})
+	for i := 0; i < b.N; i++ {
+		go func() {
+			// Wait for all goroutines to start
+			<-pole
+			span.SetTag("key", "value")
+			wg.Done()
+		}()
+	}
+
+	b.ResetTimer()
+	close(pole)
 	wg.Wait()
 }
