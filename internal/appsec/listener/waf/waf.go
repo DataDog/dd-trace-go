@@ -87,15 +87,22 @@ func (waf *Feature) onStart(op *waf.ContextOperation, _ waf.ContextArgs) {
 	waf.SetupActionHandlers(op)
 }
 
-func (waf *Feature) SetupActionHandlers(op *waf.ContextOperation) {
+func (*Feature) SetupActionHandlers(op *waf.ContextOperation) {
 	// Set the blocking tag on the operation when a blocking event is received
 	dyngo.OnData(op, func(_ *events.BlockingSecurityEvent) {
+		log.Debug("appsec: blocking event detected")
 		op.SetTag(BlockedRequestTag, true)
 	})
 
 	// Register the stacktrace if one is requested by a WAF action
 	dyngo.OnData(op, func(err *actions.StackTraceAction) {
+		log.Debug("appsec: registering stack trace for security purposes")
 		op.AddStackTraces(err.Event)
+	})
+
+	dyngo.OnData(op, func(_ *waf.SecurityEvent) {
+		log.Debug("appsec: WAF detected a suspicious event")
+		SetEventSpanTags(op)
 	})
 }
 
@@ -108,10 +115,9 @@ func (waf *Feature) onFinish(op *waf.ContextOperation, _ waf.ContextRes) {
 	ctx.Close()
 
 	AddWAFMonitoringTags(op, waf.handle.Diagnostics().Version, ctx.Stats().Metrics())
-	if err := SetEventSpanTags(op, op.Events()); err != nil {
-		log.Debug("appsec: failed to set event span tags: %v", err)
+	if wafEvents := op.Events(); len(wafEvents) > 0 {
+		op.SetSerializableTag("_dd.appsec.json", map[string][]any{"triggers": op.Events()})
 	}
-
 	op.SetSerializableTags(op.Derivatives())
 	if stacks := op.StackTraces(); len(stacks) > 0 {
 		op.SetTag(stacktrace.SpanKey, stacktrace.GetSpanValue(stacks...))

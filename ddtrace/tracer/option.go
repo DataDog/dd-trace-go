@@ -27,6 +27,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	appsecconfig "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/config"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/constants"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
@@ -557,8 +558,19 @@ func newConfig(opts ...StartOption) *config {
 	if c.debug {
 		log.SetLevel(log.LevelDebug)
 	}
-	// if using stdout or traces are disabled, agent is disabled
-	agentDisabled := c.logToStdout || !c.enabled.current
+
+	// Check if CI Visibility mode is enabled
+	if internal.BoolEnv(constants.CIVisibilityEnabledEnvironmentVariable, false) {
+		c.ciVisibilityEnabled = true               // Enable CI Visibility mode
+		c.httpClientTimeout = time.Second * 45     // Increase timeout up to 45 seconds (same as o
+		c.logStartup = false                       // If we are in CI Visibility mode we don't want to log the startup to stdout to avoid polluting the output
+		ciTransport := newCiVisibilityTransport(c) // Create a default CI Visibility Transport
+		c.transport = ciTransport                  // Replace the default transport with the CI Visibility transport
+		c.ciVisibilityAgentless = ciTransport.agentless
+	}
+
+	// if using stdout or traces are disabled or we are in ci visibility agentless mode, agent is disabled
+	agentDisabled := c.logToStdout || !c.enabled.current || c.ciVisibilityAgentless
 	c.agent = loadAgentFeatures(agentDisabled, c.agentURL, c.httpClient)
 	info, ok := debug.ReadBuildInfo()
 	if !ok {

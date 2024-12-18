@@ -6,6 +6,7 @@
 package httpsec
 
 import (
+	"encoding/json"
 	"fmt"
 	"net"
 	"net/netip"
@@ -209,11 +210,15 @@ func TestTags(t *testing.T) {
 				respHeadersCase := respHeadersCase
 				t.Run(fmt.Sprintf("%s-%s-%s", eventCase.name, reqHeadersCase.name, respHeadersCase.name), func(t *testing.T) {
 					var span MockSpan
-					err := waf.SetEventSpanTags(&span, eventCase.events)
+					waf.SetEventSpanTags(&span)
+					value, err := json.Marshal(map[string][]any{"triggers": eventCase.events})
 					if eventCase.expectedError {
 						require.Error(t, err)
 						return
 					}
+
+					span.SetTag("_dd.appsec.json", string(value))
+
 					require.NoError(t, err)
 					setRequestHeadersTags(&span, reqHeadersCase.headers)
 					setResponseHeadersTags(&span, respHeadersCase.headers)

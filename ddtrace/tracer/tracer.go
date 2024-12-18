@@ -737,7 +737,7 @@ func (t *tracer) Inject(ctx ddtrace.SpanContext, carrier interface{}) error {
 
 	if t.config.tracingAsTransport {
 		// in tracing as transport mode, only propagate when there is an upstream appsec event
-		if ctx, ok := ctx.(*spanContext); ok && ctx.trace != nil && ctx.trace.propagatingTag("_dd.p.appsec") == "" {
+		if ctx, ok := ctx.(*spanContext); ok && ctx.trace != nil && ctx.trace.propagatingTag("_dd.p.appsec") != "1" {
 			return nil
 		}
 	}
@@ -784,7 +784,7 @@ func (t *tracer) Extract(carrier interface{}) (ddtrace.SpanContext, error) {
 	ctx, err := t.config.propagator.Extract(carrier)
 	if t.config.tracingAsTransport {
 		// in tracing as transport mode, reset upstream sampling decision to make sure we keep 1 trace/minute
-		if ctx, ok := ctx.(*spanContext); ok && ctx.trace != nil && ctx.trace.propagatingTag("_dd.p.appsec") == "" {
+		if ctx, ok := ctx.(*spanContext); ok && ctx.trace.propagatingTag("_dd.p.appsec") != "1" {
 			ctx.trace.priority = nil
 		}
 	}
