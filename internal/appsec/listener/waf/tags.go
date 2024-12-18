@@ -62,17 +62,16 @@ func AddWAFMonitoringTags(th trace.TagSetter, rulesVersion string, stats map[str
 }
 
 // SetEventSpanTags sets the security event span tags related to an appsec event
-func SetEventSpanTags(op trace.TagSetter) {
+func SetEventSpanTags(span trace.TagSetter) {
 	// Keep this span due to the security event
 	//
 	// This is a workaround to tell the tracer that the trace was kept by AppSec.
 	// Passing any other value than `appsec.SamplerAppSec` has no effect.
 	// Customers should use `span.SetTag(ext.ManualKeep, true)` pattern
 	// to keep the trace, manually.
-	op.SetTag(ext.ManualKeep, samplernames.AppSec)
-	op.SetTag("_dd.origin", "appsec")
+	span.SetTag(ext.ManualKeep, samplernames.AppSec)
+	span.SetTag("_dd.origin", "appsec")
 	// Set the appsec.event tag needed by the appsec backend
-	op.SetTag("appsec.event", true)
-	op.SetTag("_dd.p.appsec", internal.PropagatingTagValue{Value: "1"})
-	op.SetTag("_sampling_priority_v1", "2")
+	span.SetTag("appsec.event", true)
+	span.SetTag("_dd.p.appsec", internal.PropagatingTagValue{Value: "1"})
 }
