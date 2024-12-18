@@ -20,6 +20,12 @@ typedef Uint64 topt_SuiteId;
 typedef Uint64 topt_TestId;
 
 typedef struct {
+	topt_ModuleId module_id;
+	Bool valid;
+} topt_ModuleResult;
+const int topt_ModuleResult_Size = sizeof(topt_ModuleResult);
+
+typedef struct {
     char* key;
     char* value;
 } topt_KeyValuePair;
@@ -149,7 +155,7 @@ func toBool(value bool) C.Bool {
 }
 
 // *******************************************************************************************************************
-// Initialization
+// General
 // *******************************************************************************************************************
 
 var (
@@ -241,6 +247,17 @@ var (
 	sessions     = make(map[uint64]civisibility.TestSession) // map of test sessions
 )
 
+func getSession(session_id C.topt_SessionId) (civisibility.TestSession, bool) {
+	sId := uint64(session_id)
+	if sId == 0 {
+		return nil, false
+	}
+	sessionMutex.RLock()
+	defer sessionMutex.RUnlock()
+	session, ok := sessions[sId]
+	return session, ok
+}
+
 // topt_session_create creates a new test session.
 //
 //export topt_session_create
@@ -266,15 +283,165 @@ func topt_session_create(framework *C.char, framework_version *C.char, unix_star
 //
 //export topt_session_close
 func topt_session_close(session_id C.topt_SessionId, exit_code C.int, unix_finish_time *C.topt_UnixTime) C.Bool {
-	sessionMutex.Lock()
-	defer sessionMutex.Unlock()
-	if session, ok := sessions[uint64(session_id)]; ok {
+	if session, ok := getSession(session_id); ok {
 		if unix_finish_time != nil {
 			session.Close(int(exit_code), civisibility.WithTestSessionFinishTime(getUnixTime(unix_finish_time)))
 		} else {
 			session.Close(int(exit_code))
 		}
+
+		sessionMutex.Lock()
+		defer sessionMutex.Unlock()
+		delete(sessions, uint64(session_id))
+		return toBool(true)
+	}
+
+	return toBool(false)
+}
+
+// topt_session_set_string_tag sets a string tag for the test session with the given ID.
+//
+//export topt_session_set_string_tag
+func topt_session_set_string_tag(session_id C.topt_SessionId, key *C.char, value *C.char) C.Bool {
+	if key == nil {
+		return toBool(false)
+	}
+	if session, ok := getSession(session_id); ok {
+		session.SetTag(C.GoString(key), C.GoString(value))
 		return toBool(true)
 	}
 	return toBool(false)
 }
+
+// topt_session_set_number_tag sets a number tag for the test session with the given ID.
+//
+//export topt_session_set_number_tag
+func topt_session_set_number_tag(session_id C.topt_SessionId, key *C.char, value C.double) C.Bool {
+	if key == nil {
+		return toBool(false)
+	}
+	if session, ok := getSession(session_id); ok {
+		session.SetTag(C.GoString(key), float64(value))
+		return toBool(true)
+	}
+	return toBool(false)
+}
+
+// topt_session_set_error sets an error for the test session with the given ID.
+//
+//export topt_session_set_error
+func topt_session_set_error(session_id C.topt_SessionId, error_type *C.char, error_message *C.char, error_stacktrace *C.char) C.Bool {
+	if session, ok := getSession(session_id); ok {
+		session.SetError(civisibility.WithErrorInfo(C.GoString(error_type), C.GoString(error_message), C.GoString(error_stacktrace)))
+		return toBool(true)
+	}
+	return toBool(false)
+}
+
+// *******************************************************************************************************************
+// Modules
+// *******************************************************************************************************************
+
+var (
+	moduleMutex sync.RWMutex                               // mutex to protect the modules map
+	modules     = make(map[uint64]civisibility.TestModule) // map of test modules
+)
+
+func getModule(module_id C.topt_ModuleId) (civisibility.TestModule, bool) {
+	mId := uint64(module_id)
+	if mId == 0 {
+		return nil, false
+	}
+	moduleMutex.RLock()
+	defer moduleMutex.RUnlock()
+	module, ok := modules[mId]
+	return module, ok
+}
+
+// topt_module_create creates a new test module.
+//
+//export topt_module_create
+func topt_module_create(session_id C.topt_SessionId, name *C.char, framework *C.char, framework_version *C.char, unix_start_time *C.topt_UnixTime) C.topt_ModuleResult {
+	if session, ok := getSession(session_id); ok {
+		var moduleOptions []civisibility.TestModuleStartOption
+		if framework != nil {
+			moduleOptions = append(moduleOptions, civisibility.WithTestModuleFramework(C.GoString(framework), C.GoString(framework_version)))
+		}
+		if unix_start_time != nil {
+			moduleOptions = append(moduleOptions, civisibility.WithTestModuleStartTime(getUnixTime(unix_start_time)))
+		}
+
+		module := session.GetOrCreateModule(C.GoString(name), moduleOptions...)
+		id := module.ModuleID()
+
+		moduleMutex.Lock()
+		defer moduleMutex.Unlock()
+		modules[id] = module
+		return C.topt_ModuleResult{module_id: C.topt_ModuleId(id), valid: toBool(true)}
+	}
+
+	return C.topt_ModuleResult{module_id: C.topt_ModuleId(0), valid: toBool(false)}
+}
+
+// topt_module_close closes the test module with the given ID.
+//
+//export topt_module_close
+func topt_module_close(module_id C.topt_ModuleId, unix_finish_time *C.topt_UnixTime) C.Bool {
+	if module, ok := getModule(module_id); ok {
+		if unix_finish_time != nil {
+			module.Close(civisibility.WithTestModuleFinishTime(getUnixTime(unix_finish_time)))
+		} else {
+			module.Close()
+		}
+
+		moduleMutex.Lock()
+		defer moduleMutex.Unlock()
+		delete(modules, uint64(module_id))
+		return toBool(true)
+	}
+
+	return toBool(false)
+}
+
+// topt_module_set_string_tag sets a string tag for the test module with the given ID.
+//
+//export topt_module_set_string_tag
+func topt_module_set_string_tag(module_id C.topt_ModuleId, key *C.char, value *C.char) C.Bool {
+	if key == nil {
+		return toBool(false)
+	}
+	if module, ok := getModule(module_id); ok {
+		module.SetTag(C.GoString(key), C.GoString(value))
+		return toBool(true)
+	}
+	return toBool(false)
+}
+
+// topt_module_set_number_tag sets a number tag for the test module with the given ID.
+//
+//export topt_module_set_number_tag
+func topt_module_set_number_tag(module_id C.topt_ModuleId, key *C.char, value C.double) C.Bool {
+	if key == nil {
+		return toBool(false)
+	}
+	if module, ok := getModule(module_id); ok {
+		module.SetTag(C.GoString(key), float64(value))
+		return toBool(true)
+	}
+	return toBool(false)
+}
+
+// topt_module_set_error sets an error for the test module with the given ID.
+//
+//export topt_module_set_error
+func topt_module_set_error(module_id C.topt_ModuleId, error_type *C.char, error_message *C.char, error_stacktrace *C.char) C.Bool {
+	if module, ok := getModule(module_id); ok {
+		module.SetError(civisibility.WithErrorInfo(C.GoString(error_type), C.GoString(error_message), C.GoString(error_stacktrace)))
+		return toBool(true)
+	}
+	return toBool(false)
+}
+
+// *******************************************************************************************************************
+// Suites
+// *******************************************************************************************************************
