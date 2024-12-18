@@ -18,6 +18,22 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  generate:
+    name: Verify root orchestrion.yml file is up-to-date
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+      - name: Setup Go
+        uses: actions/setup-go@v3
+        with:
+          go-version: stable
+          cache: true
+      - name: Run generator
+        run: go generate ./internal/orchestrion
+      - name: Check for changes
+        run: git diff --exit-code
+
   test:
     name: 'Run Tests'
     uses: DataDog/orchestrion/.github/workflows/workflow_call.yml@main # we don't want to pin our own action
