@@ -19,11 +19,26 @@ typedef Uint64 topt_ModuleId;
 typedef Uint64 topt_SuiteId;
 typedef Uint64 topt_TestId;
 
+// topt_SessionResult is used to return the result of a session creation.
+typedef struct {
+	topt_SessionId session_id;
+	Bool valid;
+} topt_SessionResult;
+const int topt_SessionResult_Size = sizeof(topt_SessionResult);
+
+// topt_ModuleResult is used to return the result of a module creation.
 typedef struct {
 	topt_ModuleId module_id;
 	Bool valid;
 } topt_ModuleResult;
 const int topt_ModuleResult_Size = sizeof(topt_ModuleResult);
+
+// topt_SuiteResult is used to return the result of a suite creation.
+typedef struct {
+	topt_SuiteId suite_id;
+	Bool valid;
+} topt_SuiteResult;
+const int topt_SuiteResult_Size = sizeof(topt_SuiteResult);
 
 typedef struct {
     char* key;
@@ -261,7 +276,7 @@ func getSession(session_id C.topt_SessionId) (civisibility.TestSession, bool) {
 // topt_session_create creates a new test session.
 //
 //export topt_session_create
-func topt_session_create(framework *C.char, framework_version *C.char, unix_start_time *C.topt_UnixTime) C.topt_SessionId {
+func topt_session_create(framework *C.char, framework_version *C.char, unix_start_time *C.topt_UnixTime) C.topt_SessionResult {
 	var sessionOptions []civisibility.TestSessionStartOption
 	if framework != nil {
 		sessionOptions = append(sessionOptions, civisibility.WithTestSessionFramework(C.GoString(framework), C.GoString(framework_version)))
@@ -276,7 +291,7 @@ func topt_session_create(framework *C.char, framework_version *C.char, unix_star
 	sessionMutex.Lock()
 	defer sessionMutex.Unlock()
 	sessions[id] = session
-	return C.topt_SessionId(id)
+	return C.topt_SessionResult{session_id: C.topt_SessionId(id), valid: toBool(true)}
 }
 
 // topt_session_close closes the test session with the given ID.
@@ -445,3 +460,100 @@ func topt_module_set_error(module_id C.topt_ModuleId, error_type *C.char, error_
 // *******************************************************************************************************************
 // Suites
 // *******************************************************************************************************************
+
+var (
+	suiteMutex sync.RWMutex                              // mutex to protect the suites map
+	suites     = make(map[uint64]civisibility.TestSuite) // map of test suites
+)
+
+func getSuite(suite_id C.topt_SuiteId) (civisibility.TestSuite, bool) {
+	sId := uint64(suite_id)
+	if sId == 0 {
+		return nil, false
+	}
+	suiteMutex.RLock()
+	defer suiteMutex.RUnlock()
+	suite, ok := suites[sId]
+	return suite, ok
+}
+
+// topt_suite_create creates a new test suite.
+//
+//export topt_suite_create
+func topt_suite_create(module_id C.topt_ModuleId, name *C.char, unix_start_time *C.topt_UnixTime) C.topt_SuiteResult {
+	if module, ok := getModule(module_id); ok {
+		var suiteOptions []civisibility.TestSuiteStartOption
+		if unix_start_time != nil {
+			suiteOptions = append(suiteOptions, civisibility.WithTestSuiteStartTime(getUnixTime(unix_start_time)))
+		}
+
+		suite := module.GetOrCreateSuite(C.GoString(name), suiteOptions...)
+		id := suite.SuiteID()
+
+		suiteMutex.Lock()
+		defer suiteMutex.Unlock()
+		suites[id] = suite
+		return C.topt_SuiteResult{suite_id: C.topt_SuiteId(id), valid: toBool(true)}
+	}
+
+	return C.topt_SuiteResult{suite_id: C.topt_SuiteId(0), valid: toBool(false)}
+}
+
+// topt_suite_close closes the test suite with the given ID.
+//
+//export topt_suite_close
+func topt_suite_close(suite_id C.topt_SuiteId, unix_finish_time *C.topt_UnixTime) C.Bool {
+	if suite, ok := getSuite(suite_id); ok {
+		if unix_finish_time != nil {
+			suite.Close(civisibility.WithTestSuiteFinishTime(getUnixTime(unix_finish_time)))
+		} else {
+			suite.Close()
+		}
+
+		suiteMutex.Lock()
+		defer suiteMutex.Unlock()
+		delete(suites, uint64(suite_id))
+		return toBool(true)
+	}
+
+	return toBool(false)
+}
+
+// topt_suite_set_string_tag sets a string tag for the test suite with the given ID.
+//
+//export topt_suite_set_string_tag
+func topt_suite_set_string_tag(suite_id C.topt_SuiteId, key *C.char, value *C.char) C.Bool {
+	if key == nil {
+		return toBool(false)
+	}
+	if suite, ok := getSuite(suite_id); ok {
+		suite.SetTag(C.GoString(key), C.GoString(value))
+		return toBool(true)
+	}
+	return toBool(false)
+}
+
+// topt_suite_set_number_tag sets a number tag for the test suite with the given ID.
+//
+//export topt_suite_set_number_tag
+func topt_suite_set_number_tag(suite_id C.topt_SuiteId, key *C.char, value C.double) C.Bool {
+	if key == nil {
+		return toBool(false)
+	}
+	if suite, ok := getSuite(suite_id); ok {
+		suite.SetTag(C.GoString(key), float64(value))
+		return toBool(true)
+	}
+	return toBool(false)
+}
+
+// topt_suite_set_error sets an error for the test suite with the given ID.
+//
+//export topt_suite_set_error
+func topt_suite_set_error(suite_id C.topt_SuiteId, error_type *C.char, error_message *C.char, error_stacktrace *C.char) C.Bool {
+	if suite, ok := getSuite(suite_id); ok {
+		suite.SetError(civisibility.WithErrorInfo(C.GoString(error_type), C.GoString(error_message), C.GoString(error_stacktrace)))
+		return toBool(true)
+	}
+	return toBool(false)
+}
