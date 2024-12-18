@@ -54,7 +54,7 @@ type tracerStatSpan struct {
 
 // newConcentrator creates a new concentrator using the given tracer
 // configuration c. It creates buckets of bucketSize nanoseconds duration.
-func newConcentrator(c *config, bucketSize int64) *concentrator {
+func newConcentrator(c *config, bucketSize int64, statsdClient internal.StatsdClient) *concentrator {
 	sCfg := &stats.SpanConcentratorConfig{
 		ComputeStatsBySpanKind: false,
 		BucketInterval:         defaultStatsBucketSize,
@@ -86,6 +86,7 @@ func newConcentrator(c *config, bucketSize int64) *concentrator {
 		cfg:              c,
 		aggregationKey:   aggKey,
 		spanConcentrator: spanConcentrator,
+		statsdClient:     statsdClient,
 	}
 }
 
@@ -131,7 +132,7 @@ func (c *concentrator) runFlusher(tick <-chan time.Time) {
 // statsd returns any tracer configured statsd client, or a no-op.
 func (c *concentrator) statsd() internal.StatsdClient {
 	if c.statsdClient == nil {
-		return &statsd.NoOpClient{}
+		return &statsd.NoOpClientDirect{}
 	}
 	return c.statsdClient
 }

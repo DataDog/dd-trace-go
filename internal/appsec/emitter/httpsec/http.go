@@ -15,11 +15,11 @@ import (
 	// Blank import needed to use embed for the default blocked response payloads
 	_ "embed"
 	"net/http"
-	"sync"
 	"sync/atomic"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/trace"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/waf"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/waf/actions"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/waf/addresses"
@@ -31,7 +31,9 @@ type (
 	HandlerOperation struct {
 		dyngo.Operation
 		*waf.ContextOperation
-		mu sync.RWMutex
+
+		// wafContextOwner indicates if the waf.ContextOperation was started by us or not and if we need to close it.
+		wafContextOwner bool
 	}
 
 	// HandlerOperationArgs is the HTTP handler operation arguments.
@@ -56,11 +58,16 @@ type (
 func (HandlerOperationArgs) IsArgOf(*HandlerOperation)   {}
 func (HandlerOperationRes) IsResultOf(*HandlerOperation) {}
 
-func StartOperation(ctx context.Context, args HandlerOperationArgs) (*HandlerOperation, *atomic.Pointer[actions.BlockHTTP], context.Context) {
-	wafOp, ctx := waf.StartContextOperation(ctx)
+func StartOperation(ctx context.Context, args HandlerOperationArgs, span trace.TagSetter) (*HandlerOperation, *atomic.Pointer[actions.BlockHTTP], context.Context) {
+	wafOp, found := dyngo.FindOperation[waf.ContextOperation](ctx)
+	if !found {
+		wafOp, ctx = waf.StartContextOperation(ctx, span)
+	}
+
 	op := &HandlerOperation{
 		Operation:        dyngo.NewOperation(wafOp),
 		ContextOperation: wafOp,
+		wafContextOwner:  !found, // If we started the parent operation, we finish it, otherwise we don't
 	}
 
 	// We need to use an atomic pointer to store the action because the action may be created asynchronously in the future
@@ -73,9 +80,11 @@ func StartOperation(ctx context.Context, args HandlerOperationArgs) (*HandlerOpe
 }
 
 // Finish the HTTP handler operation and its children operations and write everything to the service entry span.
-func (op *HandlerOperation) Finish(res HandlerOperationRes, span ddtrace.Span) {
+func (op *HandlerOperation) Finish(res HandlerOperationRes) {
 	dyngo.FinishOperation(op, res)
-	op.ContextOperation.Finish(span)
+	if op.wafContextOwner {
+		op.ContextOperation.Finish()
+	}
 }
 
 const monitorBodyErrorLog = `
@@ -134,7 +143,7 @@ func BeforeHandle(
 		Cookies:     makeCookies(r.Cookies()),
 		QueryParams: r.URL.Query(),
 		PathParams:  pathParams,
-	})
+	}, span)
 	tr := r.WithContext(ctx)
 	var blocked atomic.Bool
 
@@ -146,7 +155,7 @@ func BeforeHandle(
 		op.Finish(HandlerOperationRes{
 			Headers:    opts.ResponseHeaderCopier(w),
 			StatusCode: statusCode,
-		}, span)
+		})
 
 		if blockPtr := blockAtomic.Swap(nil); blockPtr != nil {
 			blockPtr.Handler.ServeHTTP(w, tr)

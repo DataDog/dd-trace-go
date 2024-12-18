@@ -42,6 +42,9 @@ type (
 	HandlerOperation struct {
 		dyngo.Operation
 		*waf.ContextOperation
+
+		// wafContextOwner indicates if the waf.ContextOperation was started by us or not and if we need to close it.
+		wafContextOwner bool
 	}
 
 	// HandlerOperationArgs is the grpc handler arguments.
@@ -74,11 +77,15 @@ func (HandlerOperationRes) IsResultOf(*HandlerOperation) {}
 // given arguments and parent operation, and emits a start event up in the
 // operation stack. When parent is nil, the operation is linked to the global
 // root operation.
-func StartHandlerOperation(ctx context.Context, args HandlerOperationArgs) (context.Context, *HandlerOperation, *atomic.Pointer[actions.BlockGRPC]) {
-	wafOp, ctx := waf.StartContextOperation(ctx)
+func StartHandlerOperation(ctx context.Context, span trace.TagSetter, args HandlerOperationArgs) (context.Context, *HandlerOperation, *atomic.Pointer[actions.BlockGRPC]) {
+	wafOp, found := dyngo.FindOperation[waf.ContextOperation](ctx)
+	if !found {
+		wafOp, ctx = waf.StartContextOperation(ctx, span)
+	}
 	op := &HandlerOperation{
 		Operation:        dyngo.NewOperation(wafOp),
 		ContextOperation: wafOp,
+		wafContextOwner:  !found, // If the parent is not found, we need to close the WAF context.
 	}
 
 	var block atomic.Pointer[actions.BlockGRPC]
@@ -110,7 +117,9 @@ func MonitorResponseMessage(ctx context.Context, msg any) error {
 
 // Finish the gRPC handler operation, along with the given results, and emit a
 // finish event up in the operation stack.
-func (op *HandlerOperation) Finish(span trace.TagSetter, res HandlerOperationRes) {
+func (op *HandlerOperation) Finish(res HandlerOperationRes) {
 	dyngo.FinishOperation(op, res)
-	op.ContextOperation.Finish(span)
+	if op.wafContextOwner {
+		op.ContextOperation.Finish()
+	}
 }
