@@ -60,20 +60,20 @@ func DurationEnv(key string, def time.Duration) time.Duration {
 	return v
 }
 
-// IpEnv returns the valid IP string value of an environment variable, or
-// def otherwise.
-func IpEnv(key string, def string) string {
+// IpEnv returns the valid IP value of an environment variable, or def otherwise.
+func IpEnv(key string, def net.IP) net.IP {
 	vv, ok := os.LookupEnv(key)
 	if !ok {
 		return def
 	}
 
-	if net.ParseIP(vv) == nil {
-		log.Warn("Non-IP value for env var %s, defaulting to %s", key, def)
+	ip := net.ParseIP(vv)
+	if ip == nil {
+		log.Warn("Non-IP value for env var %s, defaulting to %s", key, def.String())
 		return def
 	}
 
-	return vv
+	return ip
 }
 
 // ForEachStringTag runs fn on every key val pair encountered in str.
