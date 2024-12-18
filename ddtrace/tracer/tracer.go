@@ -165,6 +165,19 @@ func Start(opts ...StartOption) {
 	if t.dataStreams != nil {
 		t.dataStreams.Start()
 	}
+	if t.config.ciVisibilityAgentless {
+		// CI Visibility agentless mode doesn't require remote configuration.
+
+		// start instrumentation telemetry unless it is disabled through the
+		// DD_INSTRUMENTATION_TELEMETRY_ENABLED env var
+		startTelemetry(t.config)
+
+		// start appsec
+		appsec.Start(t.config.appsecStartOptions...)
+		_ = t.hostname() // Prime the hostname cache
+		return
+	}
+
 	// Start AppSec with remote configuration
 	cfg := remoteconfig.DefaultClientConfig()
 	cfg.AgentURL = t.config.agentURL.String()
@@ -307,7 +320,6 @@ func newUnstartedTracer(opts ...StartOption) *tracer {
 				ReplaceDigits:    c.agent.HasFlag("quantize_sql_tables") || c.agent.HasFlag("replace_sql_digits"),
 				KeepSQLAlias:     c.agent.HasFlag("keep_sql_alias"),
 				DollarQuotedFunc: c.agent.HasFlag("dollar_quoted_func"),
-				Cache:            c.agent.HasFlag("sql_cache"),
 			},
 		}),
 		statsd:      statsd,

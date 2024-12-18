@@ -11,8 +11,9 @@ on:
     branches:
       - main
       - release-v*
-    tags:
-      - "**"
+    tags-ignore:
+      - 'contrib/**'
+      - 'instrumentation/**'
 
 concurrency:
   group: ${{ github.ref }}
