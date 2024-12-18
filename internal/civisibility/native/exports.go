@@ -32,42 +32,42 @@ typedef struct {
 	topt_SessionId session_id;
 	Bool valid;
 } topt_SessionResult;
-const int topt_SessionResult_Size = sizeof(topt_SessionResult);
+const size_t topt_SessionResult_Size = sizeof(topt_SessionResult);
 
 // topt_ModuleResult is used to return the result of a module creation.
 typedef struct {
 	topt_ModuleId module_id;
 	Bool valid;
 } topt_ModuleResult;
-const int topt_ModuleResult_Size = sizeof(topt_ModuleResult);
+const size_t topt_ModuleResult_Size = sizeof(topt_ModuleResult);
 
 // topt_SuiteResult is used to return the result of a suite creation.
 typedef struct {
 	topt_SuiteId suite_id;
 	Bool valid;
 } topt_SuiteResult;
-const int topt_SuiteResult_Size = sizeof(topt_SuiteResult);
+const size_t topt_SuiteResult_Size = sizeof(topt_SuiteResult);
 
 // topt_TestResult is used to return the result of a test creation.
 typedef struct {
 	topt_TestId test_id;
 	Bool valid;
 } topt_TestResult;
-const int topt_TestResult_Size = sizeof(topt_TestResult);
+const size_t topt_TestResult_Size = sizeof(topt_TestResult);
 
 // topt_KeyValuePair is used to store a key-value pair.
 typedef struct {
     char* key;
     char* value;
 } topt_KeyValuePair;
-const int topt_KeyValuePair_Size = sizeof(topt_KeyValuePair_Size);
+const size_t topt_KeyValuePair_Size = sizeof(topt_KeyValuePair_Size);
 
 // topt_KeyValueArray is used to store an array of key-value pairs.
 typedef struct {
     topt_KeyValuePair* data;
-    Uint64 len;
+    size_t len;
 } topt_KeyValueArray;
-const int topt_KeyValueArray_Size = sizeof(topt_KeyValueArray);
+const size_t topt_KeyValueArray_Size = sizeof(topt_KeyValueArray);
 
 // topt_InitOptions is used to initialize the library.
 typedef struct {
@@ -84,14 +84,14 @@ typedef struct {
 	void* unused04;
 	void* unused05;
 } topt_InitOptions;
-const int topt_InitOptions_Size = sizeof(topt_InitOptions);
+const size_t topt_InitOptions_Size = sizeof(topt_InitOptions);
 
 // topt_UnixTime is used to store a Unix timestamp.
 typedef struct {
     Uint64 sec;
     Uint64 nsec;
 } topt_UnixTime;
-const int topt_UnixTime_Size = sizeof(topt_UnixTime);
+const size_t topt_UnixTime_Size = sizeof(topt_UnixTime);
 
 // topt_TestCloseOptions is used to close a test with additional options.
 typedef struct {
@@ -99,23 +99,25 @@ typedef struct {
 	topt_UnixTime* finish_time;
 	char* skip_reason;
 } topt_TestCloseOptions;
-const int topt_TestCloseOptions_Size = sizeof(topt_TestCloseOptions);
+const size_t topt_TestCloseOptions_Size = sizeof(topt_TestCloseOptions);
 
+// topt_SettingsEarlyFlakeDetectionSlowRetries is used to store the settings for slow retries in early flake detection.
 typedef struct {
 	int ten_s;
 	int thirty_s;
 	int five_m;
 	int five_s;
 } topt_SettingsEarlyFlakeDetectionSlowRetries;
-const int topt_SettingsEarlyFlakeDetectionSlowRetries_Size = sizeof(topt_SettingsEarlyFlakeDetectionSlowRetries);
+const size_t topt_SettingsEarlyFlakeDetectionSlowRetries_Size = sizeof(topt_SettingsEarlyFlakeDetectionSlowRetries);
 
 typedef struct {
 	Bool enabled;
 	topt_SettingsEarlyFlakeDetectionSlowRetries slow_test_retries;
 	int faulty_session_threshold;
 } topt_SettingsEarlyFlakeDetection;
-const int topt_SettingsEarlyFlakeDetection_Size = sizeof(topt_SettingsEarlyFlakeDetection);
+const size_t topt_SettingsEarlyFlakeDetection_Size = sizeof(topt_SettingsEarlyFlakeDetection);
 
+// topt_SettingsResponse is used to return the settings of the library.
 typedef struct {
 	Bool code_coverage;
 	topt_SettingsEarlyFlakeDetection early_flake_detection;
@@ -124,45 +126,53 @@ typedef struct {
 	Bool require_git;
 	Bool tests_skipping;
 } topt_SettingsResponse;
-const int topt_SettingsResponse_Size = sizeof(topt_SettingsResponse);
+const size_t topt_SettingsResponse_Size = sizeof(topt_SettingsResponse);
 
+// topt_FlakyTestRetriesSettings is used to store the settings for flaky test retries.
 typedef struct {
 	int retry_count;
 	int total_retry_count;
 } topt_FlakyTestRetriesSettings;
-const int topt_FlakyTestRetriesSettings_Size = sizeof(topt_FlakyTestRetriesSettings);
+const size_t topt_FlakyTestRetriesSettings_Size = sizeof(topt_FlakyTestRetriesSettings);
 
+// topt_KnownTest is used to store a known test.
 typedef struct {
 	char* module_name;
 	char* suite_name;
 	char* test_name;
 } topt_KnownTest;
-const int topt_KnownTest_Size = sizeof(topt_KnownTest);
+const size_t topt_KnownTest_Size = sizeof(topt_KnownTest);
 
+// topt_SkippableTest is used to store a skippable test.
 typedef struct {
 	char* suite_name;
 	char* test_name;
 	char* parameters;
 	char* custom_configurations_json;
 } topt_SkippableTest;
-const int topt_SkippableTest_Size = sizeof(topt_SkippableTest);
+const size_t topt_SkippableTest_Size = sizeof(topt_SkippableTest);
 
+// topt_TestCoverageFile is used to store a test coverage file.
 typedef struct {
 	char* filename;
 	char* bitmap;
 } topt_TestCoverageFile;
-const int topt_TestCoverageFile_Size = sizeof(topt_TestCoverageFile);
+const size_t topt_TestCoverageFile_Size = sizeof(topt_TestCoverageFile);
 
+// toptTestCoverage is used to store the test coverage data.
 typedef struct {
-	topt_SuiteId test_suite_id;
-	topt_TestId span_id;
+	topt_SessionId session_id;
+	topt_SuiteId suite_id;
+	topt_TestId test_id;
 	topt_TestCoverageFile* files;
-	Uint64 files_len;
+	size_t files_len;
 } topt_TestCoverage;
-const int topt_TestCoverage_Size = sizeof(topt_TestCoverage);
+const size_t topt_TestCoverage_Size = sizeof(topt_TestCoverage);
 */
 import "C"
 import (
+	"bytes"
+	"encoding/json"
 	"os"
 	"sync"
 	"sync/atomic"
@@ -172,6 +182,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/constants"
 	civisibility "gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/integrations"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/utils"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/utils/net"
 )
 
 // *******************************************************************************************************************
@@ -203,6 +214,29 @@ func toBool(value bool) C.Bool {
 var (
 	hasInitialized atomic.Bool // indicate if the library has been initialized
 	canShutdown    atomic.Bool // indicate if the library can be shut down
+
+	client = net.NewClientForCodeCoverage() // client to send code coverage payloads
+)
+
+type (
+	// ciTestCovPayload represents a test code coverage payload specifically designed for CI Visibility events.
+	ciTestCovPayload struct {
+		Version   int32                `json:"version"`   // Version of the payload
+		Coverages []ciTestCoverageData `json:"coverages"` // list of coverages
+	}
+
+	// ciTestCoverageData represents the coverage data for a single test.
+	ciTestCoverageData struct {
+		SessionID uint64               `json:"test_session_id"` // identifier of this session
+		SuiteID   uint64               `json:"test_suite_id"`   // identifier of the suite
+		SpanID    uint64               `json:"span_id"`         // identifier of this test
+		Files     []ciTestCoverageFile `json:"files"`           // list of files covered
+	}
+
+	// ciTestCoverageFile represents the coverage data for a single file.
+	ciTestCoverageFile struct {
+		FileName string `json:"filename"` // name of the file
+	}
 )
 
 // topt_initialize initializes the library with the given options.
@@ -216,9 +250,9 @@ func topt_initialize(options C.topt_InitOptions) C.Bool {
 	canShutdown.Store(true)
 	var tags map[string]string
 	if options.environment_variables != nil {
-		sLen := int(options.environment_variables.len)
-		kvSize := int(C.topt_KeyValuePair_Size)
-		for i := 0; i < sLen; i++ {
+		sLen := uint(options.environment_variables.len)
+		kvSize := uint(C.topt_KeyValuePair_Size)
+		for i := uint(0); i < sLen; i++ {
 			keyValue := (*C.topt_KeyValuePair)(unsafe.Add(unsafe.Pointer(options.environment_variables.data), i*kvSize))
 			if keyValue.key == nil {
 				continue
@@ -249,9 +283,9 @@ func topt_initialize(options C.topt_InitOptions) C.Bool {
 		tags["language"] = "native"
 	}
 	if options.global_tags != nil {
-		sLen := int(options.global_tags.len)
-		kvSize := int(C.topt_KeyValuePair_Size)
-		for i := 0; i < sLen; i++ {
+		sLen := uint(options.global_tags.len)
+		kvSize := uint(C.topt_KeyValuePair_Size)
+		for i := uint(0); i < sLen; i++ {
 			keyValue := (*C.topt_KeyValuePair)(unsafe.Add(unsafe.Pointer(options.global_tags.data), i*kvSize))
 			if keyValue.key == nil {
 				continue
@@ -274,6 +308,163 @@ func topt_shutdown() C.Bool {
 	}
 	civisibility.ExitCiVisibility()
 	return toBool(true)
+}
+
+// topt_get_settings returns the settings of the library.
+//
+//export topt_get_settings
+func topt_get_settings() C.topt_SettingsResponse {
+	settings := civisibility.GetSettings()
+	if settings == nil {
+		return C.topt_SettingsResponse{
+			code_coverage: toBool(false),
+			early_flake_detection: C.topt_SettingsEarlyFlakeDetection{
+				enabled: toBool(false),
+				slow_test_retries: C.topt_SettingsEarlyFlakeDetectionSlowRetries{
+					ten_s:    0,
+					thirty_s: 0,
+					five_m:   0,
+					five_s:   0,
+				},
+				faulty_session_threshold: 0,
+			},
+			flaky_test_retries_enabled: toBool(false),
+			itr_enabled:                toBool(false),
+			require_git:                toBool(false),
+			tests_skipping:             toBool(false),
+		}
+	}
+
+	return C.topt_SettingsResponse{
+		code_coverage: toBool(settings.CodeCoverage),
+		early_flake_detection: C.topt_SettingsEarlyFlakeDetection{
+			enabled: toBool(settings.EarlyFlakeDetection.Enabled),
+			slow_test_retries: C.topt_SettingsEarlyFlakeDetectionSlowRetries{
+				ten_s:    C.int(settings.EarlyFlakeDetection.SlowTestRetries.TenS),
+				thirty_s: C.int(settings.EarlyFlakeDetection.SlowTestRetries.ThirtyS),
+				five_m:   C.int(settings.EarlyFlakeDetection.SlowTestRetries.FiveM),
+				five_s:   C.int(settings.EarlyFlakeDetection.SlowTestRetries.FiveS),
+			},
+			faulty_session_threshold: C.int(settings.EarlyFlakeDetection.FaultySessionThreshold),
+		},
+		flaky_test_retries_enabled: toBool(settings.FlakyTestRetriesEnabled),
+		itr_enabled:                toBool(settings.ItrEnabled),
+		require_git:                toBool(settings.RequireGit),
+		tests_skipping:             toBool(settings.TestsSkipping),
+	}
+}
+
+// topt_get_flaky_test_retries_settings returns the settings for flaky test retries.
+//
+//export topt_get_flaky_test_retries_settings
+func topt_get_flaky_test_retries_settings() C.topt_FlakyTestRetriesSettings {
+	settings := civisibility.GetFlakyRetriesSettings()
+	if settings == nil {
+		return C.topt_FlakyTestRetriesSettings{
+			retry_count:       0,
+			total_retry_count: 0,
+		}
+	}
+
+	return C.topt_FlakyTestRetriesSettings{
+		retry_count:       C.int(settings.RetryCount),
+		total_retry_count: C.int(settings.TotalRetryCount),
+	}
+}
+
+// topt_get_known_tests returns the known tests.
+//
+//export topt_get_known_tests
+func topt_get_known_tests(known_tests **C.topt_KnownTest) C.size_t {
+	var knownTests []C.topt_KnownTest
+	for moduleName, module := range civisibility.GetEarlyFlakeDetectionSettings().Tests {
+		for suiteName, suite := range module {
+			for _, testName := range suite {
+				knownTests = append(knownTests, C.topt_KnownTest{
+					module_name: C.CString(moduleName),
+					suite_name:  C.CString(suiteName),
+					test_name:   C.CString(testName),
+				})
+			}
+		}
+	}
+
+	cKnownTests := unsafe.Pointer(C.malloc(C.size_t(len(knownTests) * C.topt_KnownTest_Size)))
+	for i, knownTest := range knownTests {
+		*(*C.topt_KnownTest)(unsafe.Add(cKnownTests, i*C.topt_KnownTest_Size)) = knownTest
+	}
+
+	*known_tests = (*C.topt_KnownTest)(cKnownTests)
+	return C.size_t(len(knownTests))
+}
+
+// topt_get_skippable_tests returns the skippable tests.
+//
+//export topt_get_skippable_tests
+func topt_get_skippable_tests(skippable_tests **C.topt_SkippableTest) C.size_t {
+	var skippableTests []C.topt_SkippableTest
+	for suite_name, sSuites := range civisibility.GetSkippableTests() {
+		for test_name, sTests := range sSuites {
+			for _, sTest := range sTests {
+				var custom_config string
+				if sTest.Configurations.Custom != nil {
+					jsonBytes, _ := json.Marshal(sTest.Configurations.Custom)
+					custom_config = string(jsonBytes)
+				}
+
+				skippableTests = append(skippableTests, C.topt_SkippableTest{
+					suite_name:                 C.CString(suite_name),
+					test_name:                  C.CString(test_name),
+					parameters:                 C.CString(sTest.Parameters),
+					custom_configurations_json: C.CString(custom_config),
+				})
+			}
+		}
+	}
+
+	cSkippableTests := unsafe.Pointer(C.malloc(C.size_t(len(skippableTests) * C.topt_SkippableTest_Size)))
+	for i, skippableTest := range skippableTests {
+		*(*C.topt_SkippableTest)(unsafe.Add(cSkippableTests, i*C.topt_SkippableTest_Size)) = skippableTest
+	}
+
+	*skippable_tests = (*C.topt_SkippableTest)(cSkippableTests)
+	return C.size_t(len(skippableTests))
+}
+
+// topt_send_code_coverage_payload sends the code coverage payload.
+//
+//export topt_send_code_coverage_payload
+func topt_send_code_coverage_payload(coverages *C.topt_TestCoverage, coverages_length C.size_t) {
+	covLength := uint(coverages_length)
+	coveragePayload := ciTestCovPayload{
+		Version: 2,
+	}
+	for i := uint(0); i < covLength; i++ {
+		coverage := *(*C.topt_TestCoverage)(unsafe.Add(unsafe.Pointer(coverages), i*C.topt_TestCoverage_Size))
+		coverageFilesLen := uint(coverage.files_len)
+		coverageData := ciTestCoverageData{
+			SessionID: uint64(coverage.session_id),
+			SuiteID:   uint64(coverage.suite_id),
+			SpanID:    uint64(coverage.test_id),
+		}
+		for j := uint(0); j < coverageFilesLen; j++ {
+			file := *(*C.topt_TestCoverageFile)(unsafe.Add(unsafe.Pointer(coverage.files), j*C.topt_TestCoverageFile_Size))
+			coverageFile := ciTestCoverageFile{FileName: C.GoString(file.filename)}
+			coverageFile.FileName = utils.GetRelativePathFromCITagsSourceRoot(coverageFile.FileName)
+			coverageData.Files = append(coverageData.Files, coverageFile)
+		}
+		coveragePayload.Coverages = append(coveragePayload.Coverages, coverageData)
+	}
+
+	if covLength > 0 {
+		// Create a new buffer to encode the coverage payload in MessagePack format
+		encodedBuf := new(bytes.Buffer)
+		jsonbytes, err := json.Marshal(&coveragePayload)
+		if err == nil {
+			encodedBuf.Write(jsonbytes)
+			client.SendCoveragePayloadWithFormat(encodedBuf, net.FormatJSON)
+		}
+	}
 }
 
 // *******************************************************************************************************************
