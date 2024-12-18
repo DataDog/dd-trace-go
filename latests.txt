@@ -1,0 +1,12 @@
+Latest DD major version of confluentinc/confluent-kafka-go: 2
+Latest DD major version of dimfeld/httptreemux: 5
+Latest DD major version of elastic/go-elasticsearch: 8
+Latest DD major version of emicklei/go-restful: 3
+Latest DD major version of go-chi/chi: 5
+Latest DD major version of go-pg/pg: 10
+Latest DD major version of go-redis/redis: 9
+Latest DD major version of gofiber/fiber: 2
+Latest DD major version of jackc/pgx: 5
+Latest DD major version of labstack/echo: 4
+Latest DD major version of redis/go-redis: 9
+Latest DD major version of vektah/gqlparser: 2
