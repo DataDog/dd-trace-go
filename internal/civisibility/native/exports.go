@@ -33,42 +33,48 @@ typedef struct {
 	topt_SessionId session_id;
 	Bool valid;
 } topt_SessionResult;
-const size_t topt_SessionResult_Size = sizeof(topt_SessionResult);
 
 // topt_ModuleResult is used to return the result of a module creation.
 typedef struct {
 	topt_ModuleId module_id;
 	Bool valid;
 } topt_ModuleResult;
-const size_t topt_ModuleResult_Size = sizeof(topt_ModuleResult);
 
 // topt_SuiteResult is used to return the result of a suite creation.
 typedef struct {
 	topt_SuiteId suite_id;
 	Bool valid;
 } topt_SuiteResult;
-const size_t topt_SuiteResult_Size = sizeof(topt_SuiteResult);
 
 // topt_TestResult is used to return the result of a test creation.
 typedef struct {
 	topt_TestId test_id;
 	Bool valid;
 } topt_TestResult;
-const size_t topt_TestResult_Size = sizeof(topt_TestResult);
 
 // topt_KeyValuePair is used to store a key-value pair.
 typedef struct {
     char* key;
     char* value;
 } topt_KeyValuePair;
-const size_t topt_KeyValuePair_Size = sizeof(topt_KeyValuePair);
 
 // topt_KeyValueArray is used to store an array of key-value pairs.
 typedef struct {
     topt_KeyValuePair* data;
     size_t len;
 } topt_KeyValueArray;
-const size_t topt_KeyValueArray_Size = sizeof(topt_KeyValueArray);
+
+// topt_KeyNumberPair is used to store a key-number pair.
+typedef struct {
+	char* key;
+	double value;
+} topt_KeyNumberPair;
+
+// topt_KeyNumberArray is used to store an array of key-number pairs.
+typedef struct {
+	topt_KeyNumberPair* data;
+	size_t len;
+} topt_KeyNumberArray;
 
 // topt_InitOptions is used to initialize the library.
 typedef struct {
@@ -85,14 +91,12 @@ typedef struct {
 	void* unused04;
 	void* unused05;
 } topt_InitOptions;
-const size_t topt_InitOptions_Size = sizeof(topt_InitOptions);
 
 // topt_UnixTime is used to store a Unix timestamp.
 typedef struct {
     Uint64 sec;
     Uint64 nsec;
 } topt_UnixTime;
-const size_t topt_UnixTime_Size = sizeof(topt_UnixTime);
 
 // topt_TestCloseOptions is used to close a test with additional options.
 typedef struct {
@@ -100,7 +104,6 @@ typedef struct {
 	topt_UnixTime* finish_time;
 	char* skip_reason;
 } topt_TestCloseOptions;
-const size_t topt_TestCloseOptions_Size = sizeof(topt_TestCloseOptions);
 
 // topt_SettingsEarlyFlakeDetectionSlowRetries is used to store the settings for slow retries in early flake detection.
 typedef struct {
@@ -109,14 +112,13 @@ typedef struct {
 	int five_m;
 	int five_s;
 } topt_SettingsEarlyFlakeDetectionSlowRetries;
-const size_t topt_SettingsEarlyFlakeDetectionSlowRetries_Size = sizeof(topt_SettingsEarlyFlakeDetectionSlowRetries);
 
+// topt_SettingsEarlyFlakeDetection is used to store the settings for early flake detection.
 typedef struct {
 	Bool enabled;
 	topt_SettingsEarlyFlakeDetectionSlowRetries slow_test_retries;
 	int faulty_session_threshold;
 } topt_SettingsEarlyFlakeDetection;
-const size_t topt_SettingsEarlyFlakeDetection_Size = sizeof(topt_SettingsEarlyFlakeDetection);
 
 // topt_SettingsResponse is used to return the settings of the library.
 typedef struct {
@@ -127,14 +129,12 @@ typedef struct {
 	Bool require_git;
 	Bool tests_skipping;
 } topt_SettingsResponse;
-const size_t topt_SettingsResponse_Size = sizeof(topt_SettingsResponse);
 
 // topt_FlakyTestRetriesSettings is used to store the settings for flaky test retries.
 typedef struct {
 	int retry_count;
 	int total_retry_count;
 } topt_FlakyTestRetriesSettings;
-const size_t topt_FlakyTestRetriesSettings_Size = sizeof(topt_FlakyTestRetriesSettings);
 
 // topt_KnownTest is used to store a known test.
 typedef struct {
@@ -142,14 +142,12 @@ typedef struct {
 	char* suite_name;
 	char* test_name;
 } topt_KnownTest;
-const size_t topt_KnownTest_Size = sizeof(topt_KnownTest);
 
 // topt_KnownTestArray is used to store an array of known tests.
 typedef struct {
 	topt_KnownTest* data;
 	size_t len;
 } topt_KnownTestArray;
-const size_t topt_KnownTestArray_Size = sizeof(topt_KnownTestArray);
 
 // topt_SkippableTest is used to store a skippable test.
 typedef struct {
@@ -158,14 +156,12 @@ typedef struct {
 	char* parameters;
 	char* custom_configurations_json;
 } topt_SkippableTest;
-const size_t topt_SkippableTest_Size = sizeof(topt_SkippableTest);
 
 // topt_SkippableTestArray is used to store an array of skippable tests.
 typedef struct {
 	topt_SkippableTest* data;
 	size_t len;
 } topt_SkippableTestArray;
-const size_t topt_SkippableTestArray_Size = sizeof(topt_SkippableTestArray);
 
 // topt_TestCoverageFile is used to store a test coverage file.
 typedef struct {
@@ -173,7 +169,6 @@ typedef struct {
 	void* bitmap;
 	size_t bitmap_len;
 } topt_TestCoverageFile;
-const size_t topt_TestCoverageFile_Size = sizeof(topt_TestCoverageFile);
 
 // toptTestCoverage is used to store the test coverage data.
 typedef struct {
@@ -183,7 +178,6 @@ typedef struct {
 	topt_TestCoverageFile* files;
 	size_t files_len;
 } topt_TestCoverage;
-const size_t topt_TestCoverage_Size = sizeof(topt_TestCoverage);
 */
 import "C"
 import (
@@ -199,6 +193,19 @@ import (
 	civisibility "gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/integrations"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/utils"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/utils/net"
+)
+
+// *******************************************************************************************************************
+// Struct sizes
+// *******************************************************************************************************************
+
+const (
+	topt_KeyValuePair_Size     = C.size_t(unsafe.Sizeof(C.topt_KeyValuePair{}))
+	topt_KeyNumberPair_Size    = C.size_t(unsafe.Sizeof(C.topt_KeyNumberPair{}))
+	topt_KnownTest_Size        = C.size_t(unsafe.Sizeof(C.topt_KnownTest{}))
+	topt_SkippableTest_Size    = C.size_t(unsafe.Sizeof(C.topt_SkippableTest{}))
+	topt_TestCoverageFile_Size = C.size_t(unsafe.Sizeof(C.topt_TestCoverageFile{}))
+	topt_TestCoverage_Size     = C.size_t(unsafe.Sizeof(C.topt_TestCoverage{}))
 )
 
 // *******************************************************************************************************************
@@ -267,10 +274,8 @@ func topt_initialize(options C.topt_InitOptions) C.Bool {
 	canShutdown.Store(true)
 	tags := make(map[string]string)
 	if options.environment_variables != nil {
-		sLen := uint(options.environment_variables.len)
-		kvSize := uint(C.topt_KeyValuePair_Size)
-		for i := uint(0); i < sLen; i++ {
-			keyValue := (*C.topt_KeyValuePair)(unsafe.Add(unsafe.Pointer(options.environment_variables.data), i*kvSize))
+		for i := C.size_t(0); i < options.environment_variables.len; i++ {
+			keyValue := (*C.topt_KeyValuePair)(unsafe.Add(unsafe.Pointer(options.environment_variables.data), i*topt_KeyValuePair_Size))
 			if keyValue.key == nil {
 				continue
 			}
@@ -300,10 +305,8 @@ func topt_initialize(options C.topt_InitOptions) C.Bool {
 		tags["language"] = "native"
 	}
 	if options.global_tags != nil {
-		sLen := uint(options.global_tags.len)
-		kvSize := uint(C.topt_KeyValuePair_Size)
-		for i := uint(0); i < sLen; i++ {
-			keyValue := (*C.topt_KeyValuePair)(unsafe.Add(unsafe.Pointer(options.global_tags.data), i*kvSize))
+		for i := C.size_t(0); i < options.global_tags.len; i++ {
+			keyValue := (*C.topt_KeyValuePair)(unsafe.Add(unsafe.Pointer(options.global_tags.data), i*topt_KeyValuePair_Size))
 			if keyValue.key == nil {
 				continue
 			}
@@ -406,9 +409,9 @@ func topt_get_known_tests() C.topt_KnownTestArray {
 		}
 	}
 
-	cKnownTests := unsafe.Pointer(C.malloc(C.size_t(len(knownTests)) * C.topt_KnownTest_Size))
+	cKnownTests := unsafe.Pointer(C.malloc(C.size_t(len(knownTests)) * topt_KnownTest_Size))
 	for i, knownTest := range knownTests {
-		*(*C.topt_KnownTest)(unsafe.Add(cKnownTests, C.size_t(i)*C.topt_KnownTest_Size)) = knownTest
+		*(*C.topt_KnownTest)(unsafe.Add(cKnownTests, C.size_t(i)*topt_KnownTest_Size)) = knownTest
 	}
 
 	return C.topt_KnownTestArray{
@@ -421,9 +424,8 @@ func topt_get_known_tests() C.topt_KnownTestArray {
 //
 //export topt_free_known_tests
 func topt_free_known_tests(knownTests C.topt_KnownTestArray) {
-	kLen := int(knownTests.len)
-	for i := 0; i < kLen; i++ {
-		knownTest := *(*C.topt_KnownTest)(unsafe.Add(unsafe.Pointer(knownTests.data), C.size_t(i)*C.topt_KnownTest_Size))
+	for i := C.size_t(0); i < knownTests.len; i++ {
+		knownTest := *(*C.topt_KnownTest)(unsafe.Add(unsafe.Pointer(knownTests.data), i*topt_KnownTest_Size))
 		C.free(unsafe.Pointer(knownTest.module_name))
 		C.free(unsafe.Pointer(knownTest.suite_name))
 		C.free(unsafe.Pointer(knownTest.test_name))
@@ -455,9 +457,9 @@ func topt_get_skippable_tests() C.topt_SkippableTestArray {
 		}
 	}
 
-	cSkippableTests := unsafe.Pointer(C.malloc(C.size_t(len(skippableTests)) * C.topt_SkippableTest_Size))
+	cSkippableTests := unsafe.Pointer(C.malloc(C.size_t(len(skippableTests)) * topt_SkippableTest_Size))
 	for i, skippableTest := range skippableTests {
-		*(*C.topt_SkippableTest)(unsafe.Add(cSkippableTests, C.size_t(i)*C.topt_SkippableTest_Size)) = skippableTest
+		*(*C.topt_SkippableTest)(unsafe.Add(cSkippableTests, C.size_t(i)*topt_SkippableTest_Size)) = skippableTest
 	}
 
 	return C.topt_SkippableTestArray{
@@ -470,9 +472,8 @@ func topt_get_skippable_tests() C.topt_SkippableTestArray {
 //
 //export topt_free_skippable_tests
 func topt_free_skippable_tests(skippableTests C.topt_SkippableTestArray) {
-	sLen := int(skippableTests.len)
-	for i := 0; i < sLen; i++ {
-		skippableTest := *(*C.topt_SkippableTest)(unsafe.Add(unsafe.Pointer(skippableTests.data), C.size_t(i)*C.topt_SkippableTest_Size))
+	for i := C.size_t(0); i < skippableTests.len; i++ {
+		skippableTest := *(*C.topt_SkippableTest)(unsafe.Add(unsafe.Pointer(skippableTests.data), i*topt_SkippableTest_Size))
 		C.free(unsafe.Pointer(skippableTest.suite_name))
 		C.free(unsafe.Pointer(skippableTest.test_name))
 		C.free(unsafe.Pointer(skippableTest.parameters))
@@ -485,20 +486,18 @@ func topt_free_skippable_tests(skippableTests C.topt_SkippableTestArray) {
 //
 //export topt_send_code_coverage_payload
 func topt_send_code_coverage_payload(coverages *C.topt_TestCoverage, coverages_length C.size_t) {
-	covLength := uint(coverages_length)
 	coveragePayload := ciTestCovPayload{
 		Version: 2,
 	}
-	for i := uint(0); i < covLength; i++ {
-		coverage := *(*C.topt_TestCoverage)(unsafe.Add(unsafe.Pointer(coverages), C.size_t(i)*C.topt_TestCoverage_Size))
-		coverageFilesLen := uint(coverage.files_len)
+	for i := C.size_t(0); i < coverages_length; i++ {
+		coverage := *(*C.topt_TestCoverage)(unsafe.Add(unsafe.Pointer(coverages), i*topt_TestCoverage_Size))
 		coverageData := ciTestCoverageData{
 			SessionID: uint64(coverage.session_id),
 			SuiteID:   uint64(coverage.suite_id),
 			SpanID:    uint64(coverage.test_id),
 		}
-		for j := uint(0); j < coverageFilesLen; j++ {
-			file := *(*C.topt_TestCoverageFile)(unsafe.Add(unsafe.Pointer(coverage.files), C.size_t(j)*C.topt_TestCoverageFile_Size))
+		for j := C.size_t(0); j < coverage.files_len; j++ {
+			file := *(*C.topt_TestCoverageFile)(unsafe.Add(unsafe.Pointer(coverage.files), j*topt_TestCoverageFile_Size))
 			coverageFile := ciTestCoverageFile{FileName: C.GoString(file.filename)}
 			coverageFile.FileName = utils.GetRelativePathFromCITagsSourceRoot(coverageFile.FileName)
 			if file.bitmap_len > 0 && file.bitmap != nil {
@@ -509,7 +508,7 @@ func topt_send_code_coverage_payload(coverages *C.topt_TestCoverage, coverages_l
 		coveragePayload.Coverages = append(coveragePayload.Coverages, coverageData)
 	}
 
-	if covLength > 0 {
+	if coverages_length > 0 {
 		// Create a new buffer to encode the coverage payload in MessagePack format
 		encodedBuf := new(bytes.Buffer)
 		jsonbytes, err := json.Marshal(&coveragePayload)
@@ -984,6 +983,46 @@ func topt_test_set_source(test_id C.topt_TestId, file *C.char, start_line *C.int
 		if end_line != nil {
 			test.SetTag(constants.TestSourceEndLine, int(*end_line))
 		}
+		return toBool(true)
+	}
+	return toBool(false)
+}
+
+// topt_test_set_benchmark_data sets the benchmark data for the test span with the given ID.
+//
+//export topt_test_set_benchmark_string_data
+func topt_test_set_benchmark_string_data(test_id C.topt_TestId, measure_type *C.char, data_array C.topt_KeyValueArray) C.Bool {
+	if test, ok := getTest(test_id); ok {
+		data := make(map[string]any)
+		for i := C.size_t(0); i < data_array.len; i++ {
+			keyValue := *(*C.topt_KeyValuePair)(unsafe.Add(unsafe.Pointer(data_array.data), i*topt_KeyValuePair_Size))
+			if keyValue.key == nil {
+				continue
+			}
+			data[C.GoString(keyValue.key)] = C.GoString(keyValue.value)
+		}
+
+		test.SetBenchmarkData(C.GoString(measure_type), data)
+		return toBool(true)
+	}
+	return toBool(false)
+}
+
+// topt_test_set_benchmark_number_data sets the benchmark number data for the test span with the given ID.
+//
+//export topt_test_set_benchmark_number_data
+func topt_test_set_benchmark_number_data(test_id C.topt_TestId, measure_type *C.char, data_array C.topt_KeyNumberArray) C.Bool {
+	if test, ok := getTest(test_id); ok {
+		data := make(map[string]any)
+		for i := C.size_t(0); i < data_array.len; i++ {
+			keyValue := *(*C.topt_KeyNumberPair)(unsafe.Add(unsafe.Pointer(data_array.data), i*topt_KeyNumberPair_Size))
+			if keyValue.key == nil {
+				continue
+			}
+			data[C.GoString(keyValue.key)] = float64(keyValue.value)
+		}
+
+		test.SetBenchmarkData(C.GoString(measure_type), data)
 		return toBool(true)
 	}
 	return toBool(false)
