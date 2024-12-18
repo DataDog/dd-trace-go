@@ -406,9 +406,9 @@ func topt_get_known_tests() C.topt_KnownTestArray {
 		}
 	}
 
-	cKnownTests := unsafe.Pointer(C.malloc(C.size_t(len(knownTests) * C.topt_KnownTest_Size)))
+	cKnownTests := unsafe.Pointer(C.malloc(C.size_t(len(knownTests)) * C.topt_KnownTest_Size))
 	for i, knownTest := range knownTests {
-		*(*C.topt_KnownTest)(unsafe.Add(cKnownTests, i*C.topt_KnownTest_Size)) = knownTest
+		*(*C.topt_KnownTest)(unsafe.Add(cKnownTests, C.size_t(i)*C.topt_KnownTest_Size)) = knownTest
 	}
 
 	return C.topt_KnownTestArray{
@@ -423,7 +423,7 @@ func topt_get_known_tests() C.topt_KnownTestArray {
 func topt_free_known_tests(knownTests C.topt_KnownTestArray) {
 	kLen := int(knownTests.len)
 	for i := 0; i < kLen; i++ {
-		knownTest := *(*C.topt_KnownTest)(unsafe.Add(unsafe.Pointer(knownTests.data), i*C.topt_KnownTest_Size))
+		knownTest := *(*C.topt_KnownTest)(unsafe.Add(unsafe.Pointer(knownTests.data), C.size_t(i)*C.topt_KnownTest_Size))
 		C.free(unsafe.Pointer(knownTest.module_name))
 		C.free(unsafe.Pointer(knownTest.suite_name))
 		C.free(unsafe.Pointer(knownTest.test_name))
@@ -455,9 +455,9 @@ func topt_get_skippable_tests() C.topt_SkippableTestArray {
 		}
 	}
 
-	cSkippableTests := unsafe.Pointer(C.malloc(C.size_t(len(skippableTests) * C.topt_SkippableTest_Size)))
+	cSkippableTests := unsafe.Pointer(C.malloc(C.size_t(len(skippableTests)) * C.topt_SkippableTest_Size))
 	for i, skippableTest := range skippableTests {
-		*(*C.topt_SkippableTest)(unsafe.Add(cSkippableTests, i*C.topt_SkippableTest_Size)) = skippableTest
+		*(*C.topt_SkippableTest)(unsafe.Add(cSkippableTests, C.size_t(i)*C.topt_SkippableTest_Size)) = skippableTest
 	}
 
 	return C.topt_SkippableTestArray{
@@ -472,7 +472,7 @@ func topt_get_skippable_tests() C.topt_SkippableTestArray {
 func topt_free_skippable_tests(skippableTests C.topt_SkippableTestArray) {
 	sLen := int(skippableTests.len)
 	for i := 0; i < sLen; i++ {
-		skippableTest := *(*C.topt_SkippableTest)(unsafe.Add(unsafe.Pointer(skippableTests.data), i*C.topt_SkippableTest_Size))
+		skippableTest := *(*C.topt_SkippableTest)(unsafe.Add(unsafe.Pointer(skippableTests.data), C.size_t(i)*C.topt_SkippableTest_Size))
 		C.free(unsafe.Pointer(skippableTest.suite_name))
 		C.free(unsafe.Pointer(skippableTest.test_name))
 		C.free(unsafe.Pointer(skippableTest.parameters))
@@ -490,7 +490,7 @@ func topt_send_code_coverage_payload(coverages *C.topt_TestCoverage, coverages_l
 		Version: 2,
 	}
 	for i := uint(0); i < covLength; i++ {
-		coverage := *(*C.topt_TestCoverage)(unsafe.Add(unsafe.Pointer(coverages), i*C.topt_TestCoverage_Size))
+		coverage := *(*C.topt_TestCoverage)(unsafe.Add(unsafe.Pointer(coverages), C.size_t(i)*C.topt_TestCoverage_Size))
 		coverageFilesLen := uint(coverage.files_len)
 		coverageData := ciTestCoverageData{
 			SessionID: uint64(coverage.session_id),
@@ -498,7 +498,7 @@ func topt_send_code_coverage_payload(coverages *C.topt_TestCoverage, coverages_l
 			SpanID:    uint64(coverage.test_id),
 		}
 		for j := uint(0); j < coverageFilesLen; j++ {
-			file := *(*C.topt_TestCoverageFile)(unsafe.Add(unsafe.Pointer(coverage.files), j*C.topt_TestCoverageFile_Size))
+			file := *(*C.topt_TestCoverageFile)(unsafe.Add(unsafe.Pointer(coverage.files), C.size_t(j)*C.topt_TestCoverageFile_Size))
 			coverageFile := ciTestCoverageFile{FileName: C.GoString(file.filename)}
 			coverageFile.FileName = utils.GetRelativePathFromCITagsSourceRoot(coverageFile.FileName)
 			if file.bitmap_len > 0 && file.bitmap != nil {
