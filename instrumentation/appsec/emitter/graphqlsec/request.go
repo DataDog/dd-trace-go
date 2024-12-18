@@ -44,10 +44,10 @@ type (
 
 // Finish the GraphQL query operation, along with the given results, and emit a finish event up in
 // the operation stack.
-func (op *RequestOperation) Finish(span trace.TagSetter, res RequestOperationRes) {
+func (op *RequestOperation) Finish(res RequestOperationRes) {
 	dyngo.FinishOperation(op, res)
 	if op.wafContextOwner {
-		op.ContextOperation.Finish(span)
+		op.ContextOperation.Finish()
 	}
 }
 
@@ -58,10 +58,10 @@ func (RequestOperationRes) IsResultOf(*RequestOperation) {}
 // emits a start event up in the operation stack. The operation is usually linked to tge global root
 // operation. The operation is tracked on the returned context, and can be extracted later on using
 // FromContext.
-func StartRequestOperation(ctx context.Context, args RequestOperationArgs) (context.Context, *RequestOperation) {
+func StartRequestOperation(ctx context.Context, span trace.TagSetter, args RequestOperationArgs) (context.Context, *RequestOperation) {
 	wafOp, found := dyngo.FindOperation[waf.ContextOperation](ctx)
 	if !found { // Usually we can find the HTTP Handler Operation as the parent, but it's technically optional
-		wafOp, ctx = waf.StartContextOperation(ctx)
+		wafOp, ctx = waf.StartContextOperation(ctx, span)
 	}
 
 	op := &RequestOperation{

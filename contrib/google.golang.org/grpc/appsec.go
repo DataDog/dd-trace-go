@@ -44,7 +44,7 @@ func appsecUnaryHandlerMiddleware(method string, span *tracer.Span, handler grpc
 			remoteAddr = p.Addr.String()
 		}
 
-		ctx, op, blockAtomic := grpcsec.StartHandlerOperation(ctx, grpcsec.HandlerOperationArgs{
+		ctx, op, blockAtomic := grpcsec.StartHandlerOperation(ctx, span, grpcsec.HandlerOperationArgs{
 			Method:     method,
 			Metadata:   md,
 			RemoteAddr: remoteAddr,
@@ -55,7 +55,7 @@ func appsecUnaryHandlerMiddleware(method string, span *tracer.Span, handler grpc
 			if statusErr, ok := rpcErr.(interface{ GRPCStatus() *status.Status }); ok && !applyAction(blockAtomic, &rpcErr) {
 				statusCode = int(statusErr.GRPCStatus().Code())
 			}
-			op.Finish(span, grpcsec.HandlerOperationRes{StatusCode: statusCode})
+			op.Finish(grpcsec.HandlerOperationRes{StatusCode: statusCode})
 			applyAction(blockAtomic, &rpcErr)
 		}()
 
@@ -90,7 +90,7 @@ func appsecStreamHandlerMiddleware(method string, span *tracer.Span, handler grp
 		}
 
 		// Create the handler operation and listen to blocking gRPC actions to detect a blocking condition
-		ctx, op, blockAtomic := grpcsec.StartHandlerOperation(ctx, grpcsec.HandlerOperationArgs{
+		ctx, op, blockAtomic := grpcsec.StartHandlerOperation(ctx, span, grpcsec.HandlerOperationArgs{
 			Method:     method,
 			Metadata:   md,
 			RemoteAddr: remoteAddr,
@@ -104,7 +104,7 @@ func appsecStreamHandlerMiddleware(method string, span *tracer.Span, handler grp
 				statusCode = int(res.Status())
 			}
 
-			op.Finish(span, grpcsec.HandlerOperationRes{StatusCode: statusCode})
+			op.Finish(grpcsec.HandlerOperationRes{StatusCode: statusCode})
 			applyAction(blockAtomic, &rpcErr)
 		}()
 

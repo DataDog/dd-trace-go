@@ -57,10 +57,10 @@ type (
 func (HandlerOperationArgs) IsArgOf(*HandlerOperation)   {}
 func (HandlerOperationRes) IsResultOf(*HandlerOperation) {}
 
-func StartOperation(ctx context.Context, args HandlerOperationArgs) (*HandlerOperation, *atomic.Pointer[actions.BlockHTTP], context.Context) {
+func StartOperation(ctx context.Context, args HandlerOperationArgs, span trace.TagSetter) (*HandlerOperation, *atomic.Pointer[actions.BlockHTTP], context.Context) {
 	wafOp, found := dyngo.FindOperation[waf.ContextOperation](ctx)
 	if !found {
-		wafOp, ctx = waf.StartContextOperation(ctx)
+		wafOp, ctx = waf.StartContextOperation(ctx, span)
 	}
 
 	op := &HandlerOperation{
@@ -82,7 +82,7 @@ func StartOperation(ctx context.Context, args HandlerOperationArgs) (*HandlerOpe
 func (op *HandlerOperation) Finish(res HandlerOperationRes, span trace.TagSetter) {
 	dyngo.FinishOperation(op, res)
 	if op.wafContextOwner {
-		op.ContextOperation.Finish(span)
+		op.ContextOperation.Finish()
 	}
 }
 
@@ -142,7 +142,7 @@ func BeforeHandle(
 		Cookies:     makeCookies(r.Cookies()),
 		QueryParams: r.URL.Query(),
 		PathParams:  pathParams,
-	})
+	}, span)
 	tr := r.WithContext(ctx)
 
 	afterHandle := func() {
