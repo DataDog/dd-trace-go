@@ -587,6 +587,23 @@ func newConfig(opts ...StartOption) *config {
 	// This allows persisting the initial value of globalTags for future resets and updates.
 	globalTagsOrigin := c.globalTags.cfgOrigin
 	c.initGlobalTags(c.globalTags.get(), globalTagsOrigin)
+
+	// TODO: change the name once APM Platform RFC is approved
+	if internal.BoolEnv("DD_EXPERIMENTAL_APPSEC_STANDALONE_ENABLED", false) {
+		// Enable tracing as transport layer mode
+		// This means to stop sending trace metrics, send one trace per minute and those force-kept by other products
+		// using the tracer as transport layer for their data. And finally adding the _dd.apm.enabled=0 tag to all traces
+		// to let the backend know that it needs to keep APM UI disabled.
+		c.globalSampleRate = 1.0
+		c.traceRateLimitPerSecond = 1.0 / 60
+		c.tracingAsTransport = true
+		WithGlobalTag("_dd.apm.enabled", 0)(c)
+		// Disable runtime metrics. In `tracingAsTransport` mode, we'll still
+		// tell the agent we computed them, so it doesn't do it either.
+		c.runtimeMetrics = false
+		c.runtimeMetricsV2 = false
+	}
+
 	return c
 }
 
