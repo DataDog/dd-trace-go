@@ -11,6 +11,7 @@ package main
 // #cgo darwin CFLAGS: -mmacosx-version-min=11.0
 // #cgo android CFLAGS: --sysroot=$NDK_ROOT/toolchains/llvm/prebuilt/darwin-x86_64/sysroot
 // #cgo LDFLAGS: -s -w
+// #include <stdlib.h>
 /*
 typedef unsigned char Bool;
 typedef unsigned long long Uint64;
@@ -143,6 +144,13 @@ typedef struct {
 } topt_KnownTest;
 const size_t topt_KnownTest_Size = sizeof(topt_KnownTest);
 
+// topt_KnownTestArray is used to store an array of known tests.
+typedef struct {
+	topt_KnownTest* data;
+	size_t len;
+} topt_KnownTestArray;
+const size_t topt_KnownTestArray_Size = sizeof(topt_KnownTestArray);
+
 // topt_SkippableTest is used to store a skippable test.
 typedef struct {
 	char* suite_name;
@@ -151,6 +159,13 @@ typedef struct {
 	char* custom_configurations_json;
 } topt_SkippableTest;
 const size_t topt_SkippableTest_Size = sizeof(topt_SkippableTest);
+
+// topt_SkippableTestArray is used to store an array of skippable tests.
+typedef struct {
+	topt_SkippableTest* data;
+	size_t len;
+} topt_SkippableTestArray;
+const size_t topt_SkippableTestArray_Size = sizeof(topt_SkippableTestArray);
 
 // topt_TestCoverageFile is used to store a test coverage file.
 typedef struct {
@@ -377,7 +392,7 @@ func topt_get_flaky_test_retries_settings() C.topt_FlakyTestRetriesSettings {
 // topt_get_known_tests returns the known tests.
 //
 //export topt_get_known_tests
-func topt_get_known_tests(known_tests **C.topt_KnownTest) C.size_t {
+func topt_get_known_tests() C.topt_KnownTestArray {
 	var knownTests []C.topt_KnownTest
 	for moduleName, module := range civisibility.GetEarlyFlakeDetectionSettings().Tests {
 		for suiteName, suite := range module {
@@ -396,14 +411,30 @@ func topt_get_known_tests(known_tests **C.topt_KnownTest) C.size_t {
 		*(*C.topt_KnownTest)(unsafe.Add(cKnownTests, i*C.topt_KnownTest_Size)) = knownTest
 	}
 
-	*known_tests = (*C.topt_KnownTest)(cKnownTests)
-	return C.size_t(len(knownTests))
+	return C.topt_KnownTestArray{
+		data: (*C.topt_KnownTest)(cKnownTests),
+		len:  C.size_t(len(knownTests)),
+	}
+}
+
+// topt_free_known_tests frees the known tests array
+//
+//export topt_free_known_tests
+func topt_free_known_tests(knownTests C.topt_KnownTestArray) {
+	kLen := int(knownTests.len)
+	for i := 0; i < kLen; i++ {
+		knownTest := *(*C.topt_KnownTest)(unsafe.Add(unsafe.Pointer(knownTests.data), i*C.topt_KnownTest_Size))
+		C.free(unsafe.Pointer(knownTest.module_name))
+		C.free(unsafe.Pointer(knownTest.suite_name))
+		C.free(unsafe.Pointer(knownTest.test_name))
+	}
+	C.free(unsafe.Pointer(knownTests.data))
 }
 
 // topt_get_skippable_tests returns the skippable tests.
 //
 //export topt_get_skippable_tests
-func topt_get_skippable_tests(skippable_tests **C.topt_SkippableTest) C.size_t {
+func topt_get_skippable_tests() C.topt_SkippableTestArray {
 	var skippableTests []C.topt_SkippableTest
 	for suite_name, sSuites := range civisibility.GetSkippableTests() {
 		for test_name, sTests := range sSuites {
@@ -429,8 +460,25 @@ func topt_get_skippable_tests(skippable_tests **C.topt_SkippableTest) C.size_t {
 		*(*C.topt_SkippableTest)(unsafe.Add(cSkippableTests, i*C.topt_SkippableTest_Size)) = skippableTest
 	}
 
-	*skippable_tests = (*C.topt_SkippableTest)(cSkippableTests)
-	return C.size_t(len(skippableTests))
+	return C.topt_SkippableTestArray{
+		data: (*C.topt_SkippableTest)(cSkippableTests),
+		len:  C.size_t(len(skippableTests)),
+	}
+}
+
+// topt_free_skippable_tests frees the skippable tests array
+//
+//export topt_free_skippable_tests
+func topt_free_skippable_tests(skippableTests C.topt_SkippableTestArray) {
+	sLen := int(skippableTests.len)
+	for i := 0; i < sLen; i++ {
+		skippableTest := *(*C.topt_SkippableTest)(unsafe.Add(unsafe.Pointer(skippableTests.data), i*C.topt_SkippableTest_Size))
+		C.free(unsafe.Pointer(skippableTest.suite_name))
+		C.free(unsafe.Pointer(skippableTest.test_name))
+		C.free(unsafe.Pointer(skippableTest.parameters))
+		C.free(unsafe.Pointer(skippableTest.custom_configurations_json))
+	}
+	C.free(unsafe.Pointer(skippableTests.data))
 }
 
 // topt_send_code_coverage_payload sends the code coverage payload.
