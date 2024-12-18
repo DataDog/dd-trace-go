@@ -48,7 +48,7 @@ func (sc *spanContext) setBaggageItem(k, v string) {
 	sc.baggage[k] = v
 }
 
-func (sc *spanContext) getBaggageItem(k string) string {
+func (sc *spanContext) baggageItem(k string) string {
 	sc.RLock()
 	defer sc.RUnlock()
 	return sc.baggage[k]

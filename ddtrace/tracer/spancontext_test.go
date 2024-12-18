@@ -784,7 +784,7 @@ func TestSpanContextBaggage(t *testing.T) {
 	ctx.setBaggageItem("key", "value")
 	assert.Equal("value", ctx.baggage["key"])
 	ctx.setBaggageItem("foo", "bar")
-	assert.Equal("bar", ctx.getBaggageItem("foo"))
+	assert.Equal("bar", ctx.baggageItem("foo"))
 	ctx.removeBaggageItem("key")
 	assert.NotContains(ctx.baggage, "key")
 	ctx.setBaggageItem("key1", "value1")

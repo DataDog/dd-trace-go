@@ -232,7 +232,7 @@ func (c *spanContext) setBaggageItem(key, val string) {
 	c.baggage[key] = val
 }
 
-func (c *spanContext) getBaggageItem(key string) string { // change this function name to getBaggageItem
+func (c *spanContext) baggageItem(key string) string {
 	if atomic.LoadUint32(&c.hasBaggage) == 0 {
 		return ""
 	}

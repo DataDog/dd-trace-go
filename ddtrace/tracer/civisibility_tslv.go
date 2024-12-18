@@ -177,7 +177,7 @@ func (e *ciVisibilityEvent) SetOperationName(operationName string) {
 	e.Content.Name = e.span.Name
 }
 
-// GetBaggageItem retrieves the baggage item associated with the given key from the event's span.
+// BaggageItem retrieves the baggage item associated with the given key from the event's span.
 //
 // Parameters:
 //
@@ -186,8 +186,8 @@ func (e *ciVisibilityEvent) SetOperationName(operationName string) {
 // Returns:
 //
 //	The baggage item value.
-func (e *ciVisibilityEvent) GetBaggageItem(key string) string {
-	return e.span.GetBaggageItem(key)
+func (e *ciVisibilityEvent) BaggageItem(key string) string {
+	return e.span.BaggageItem(key)
 }
 
 // SetBaggageItem sets a baggage item on the event's span.

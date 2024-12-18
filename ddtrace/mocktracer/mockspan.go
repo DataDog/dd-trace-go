@@ -176,9 +176,9 @@ func (s *mockspan) SetOperationName(operationName string) {
 	return
 }
 
-// GetBaggageItem returns the baggage item with the given key.
-func (s *mockspan) GetBaggageItem(key string) string {
-	return s.context.getBaggageItem(key)
+// BaggageItem returns the baggage item with the given key.
+func (s *mockspan) BaggageItem(key string) string {
+	return s.context.baggageItem(key)
 }
 
 // SetBaggageItem sets a new baggage item at the given key. The baggage

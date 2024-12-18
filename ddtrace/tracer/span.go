@@ -103,10 +103,10 @@ func (s *span) SetBaggageItem(key, val string) {
 	s.context.setBaggageItem(key, val)
 }
 
-// GetBaggageItem gets the value for a baggage item given its key. Returns the
+// BaggageItem gets the value for a baggage item given its key. Returns the
 // empty string if the value isn't found in this Span.
-func (s *span) GetBaggageItem(key string) string { // change this to GetBaggageItem
-	return s.context.getBaggageItem(key)
+func (s *span) BaggageItem(key string) string {
+	return s.context.baggageItem(key)
 }
 
 // GetAllBaggageItems returns a copy of all baggage items.

@@ -75,7 +75,7 @@ func (NoopSpan) SetTag(_ string, _ interface{}) {}
 func (NoopSpan) SetOperationName(_ string) {}
 
 // BaggageItem implements ddtrace.Span.
-func (NoopSpan) GetBaggageItem(_ string) string { return "" }
+func (NoopSpan) BaggageItem(_ string) string { return "" }
 
 // SetBaggageItem implements ddtrace.Span.
 func (NoopSpan) SetBaggageItem(_, _ string) {}

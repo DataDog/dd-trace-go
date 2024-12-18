@@ -278,8 +278,8 @@ func TestTracerExtract(t *testing.T) {
 		assert.Nil(err)
 		sc, ok = ctx.(*spanContext)
 		assert.True(ok)
-		assert.Equal("B", sc.getBaggageItem("a"))
-		assert.Equal("D", sc.getBaggageItem("c"))
+		assert.Equal("B", sc.baggageItem("a"))
+		assert.Equal("D", sc.baggageItem("c"))
 
 		ctx, err = mt.Extract(carry(traceHeader, "1", spanHeader, "2", priorityHeader, "-1"))
 		assert.Nil(err)
@@ -302,7 +302,7 @@ func TestTracerExtract(t *testing.T) {
 
 		assert.Equal(uint64(1), got.traceID)
 		assert.Equal(uint64(2), got.spanID)
-		assert.Equal("D", got.getBaggageItem("c"))
-		assert.Equal("B", got.getBaggageItem("a"))
+		assert.Equal("D", got.baggageItem("c"))
+		assert.Equal("B", got.baggageItem("a"))
 	})
 }
