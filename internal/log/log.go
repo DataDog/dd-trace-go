@@ -125,16 +125,6 @@ func GetLevel() Level {
 	return level
 }
 
-// Log writes the given message to the logger at the given level.
-func Log(lvl Level, msg string) {
-	switch lvl {
-	case LevelDebug:
-		Debug("%s", msg)
-	case LevelWarn:
-		Warn("%s", msg)
-	}
-}
-
 // DebugEnabled returns true if debug log messages are enabled. This can be used in extremely
 // hot code paths to avoid allocating the ...interface{} argument.
 func DebugEnabled() bool {
