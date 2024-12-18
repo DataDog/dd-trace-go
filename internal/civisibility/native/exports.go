@@ -155,7 +155,8 @@ const size_t topt_SkippableTest_Size = sizeof(topt_SkippableTest);
 // topt_TestCoverageFile is used to store a test coverage file.
 typedef struct {
 	char* filename;
-	char* bitmap;
+	void* bitmap;
+	size_t bitmap_len;
 } topt_TestCoverageFile;
 const size_t topt_TestCoverageFile_Size = sizeof(topt_TestCoverageFile);
 
@@ -236,6 +237,7 @@ type (
 	// ciTestCoverageFile represents the coverage data for a single file.
 	ciTestCoverageFile struct {
 		FileName string `json:"filename"` // name of the file
+		Bitmap   []byte `json:"bitmap"`   // coverage bitmap
 	}
 )
 
@@ -451,6 +453,9 @@ func topt_send_code_coverage_payload(coverages *C.topt_TestCoverage, coverages_l
 			file := *(*C.topt_TestCoverageFile)(unsafe.Add(unsafe.Pointer(coverage.files), j*C.topt_TestCoverageFile_Size))
 			coverageFile := ciTestCoverageFile{FileName: C.GoString(file.filename)}
 			coverageFile.FileName = utils.GetRelativePathFromCITagsSourceRoot(coverageFile.FileName)
+			if file.bitmap_len > 0 && file.bitmap != nil {
+				coverageFile.Bitmap = C.GoBytes(unsafe.Pointer(file.bitmap), C.int(file.bitmap_len))
+			}
 			coverageData.Files = append(coverageData.Files, coverageFile)
 		}
 		coveragePayload.Coverages = append(coveragePayload.Coverages, coverageData)
