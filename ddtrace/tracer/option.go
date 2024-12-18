@@ -220,7 +220,7 @@ func WithRuntimeMetrics() StartOption {
 //
 // This option is in effect when WithRuntimeMetrics is enabled.
 func WithDogstatsdAddress(addr string) StartOption {
-	return v2.WithDogstatsdAddress(addr)
+	return v2.WithDogstatsdAddr(addr)
 }
 
 // WithSamplingRules specifies the sampling rates to apply to spans based on the
