@@ -19,6 +19,7 @@ import (
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/trace"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/waf"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/waf/actions"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/waf/addresses"
@@ -57,10 +58,10 @@ type (
 func (HandlerOperationArgs) IsArgOf(*HandlerOperation)   {}
 func (HandlerOperationRes) IsResultOf(*HandlerOperation) {}
 
-func StartOperation(ctx context.Context, args HandlerOperationArgs) (*HandlerOperation, *atomic.Pointer[actions.BlockHTTP], context.Context) {
+func StartOperation(ctx context.Context, args HandlerOperationArgs, span trace.TagSetter) (*HandlerOperation, *atomic.Pointer[actions.BlockHTTP], context.Context) {
 	wafOp, found := dyngo.FindOperation[waf.ContextOperation](ctx)
 	if !found {
-		wafOp, ctx = waf.StartContextOperation(ctx)
+		wafOp, ctx = waf.StartContextOperation(ctx, span)
 	}
 
 	op := &HandlerOperation{
@@ -79,10 +80,10 @@ func StartOperation(ctx context.Context, args HandlerOperationArgs) (*HandlerOpe
 }
 
 // Finish the HTTP handler operation and its children operations and write everything to the service entry span.
-func (op *HandlerOperation) Finish(res HandlerOperationRes, span ddtrace.Span) {
+func (op *HandlerOperation) Finish(res HandlerOperationRes) {
 	dyngo.FinishOperation(op, res)
 	if op.wafContextOwner {
-		op.ContextOperation.Finish(span)
+		op.ContextOperation.Finish()
 	}
 }
 
@@ -142,7 +143,7 @@ func BeforeHandle(
 		Cookies:     makeCookies(r.Cookies()),
 		QueryParams: r.URL.Query(),
 		PathParams:  pathParams,
-	})
+	}, span)
 	tr := r.WithContext(ctx)
 	var blocked atomic.Bool
 
@@ -154,7 +155,7 @@ func BeforeHandle(
 		op.Finish(HandlerOperationRes{
 			Headers:    opts.ResponseHeaderCopier(w),
 			StatusCode: statusCode,
-		}, span)
+		})
 
 		if blockPtr := blockAtomic.Swap(nil); blockPtr != nil {
 			blockPtr.Handler.ServeHTTP(w, tr)

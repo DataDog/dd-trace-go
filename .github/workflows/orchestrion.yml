@@ -6,6 +6,9 @@ on:
   push:
     branches:
       - release-v*
+    tags-ignore:
+      - 'contrib/**'
+      - 'instrumentation/**'
 
 permissions: read-all
 

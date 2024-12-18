@@ -69,7 +69,7 @@ func TestCheckStatsdRequired(t *testing.T) {
 		cfg := new(config)
 		cfg.dbStats = true
 		cfg.checkStatsdRequired()
-		_, ok := cfg.statsdClient.(*statsd.Client)
+		_, ok := cfg.statsdClient.(*statsd.ClientDirect)
 		assert.True(t, ok)
 	})
 	t.Run("invalid address", func(t *testing.T) {
