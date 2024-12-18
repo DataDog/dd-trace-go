@@ -1361,7 +1361,7 @@ func WithHeaderTags(headerAsTags []string) StartOption {
 func WithTestDefaults(statsdClient any) StartOption {
 	return func(c *config) {
 		if statsdClient == nil {
-			statsdClient = &statsd.NoOpClient{}
+			statsdClient = &statsd.NoOpClientDirect{}
 		}
 		c.statsdClient = statsdClient.(internal.StatsdClient)
 		c.transport = newDummyTransport()
