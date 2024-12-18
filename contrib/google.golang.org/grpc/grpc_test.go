@@ -495,10 +495,6 @@ func TestPreservesMetadata(t *testing.T) {
 func TestStreamSendsErrorCode(t *testing.T) {
 	wantCode := codes.InvalidArgument.String()
 
-	// This mutes the logger output regarding service name validation in
-	// gRPC instrumentation.
-	globalconfig.SetServiceName("grpc")
-
 	mt := mocktracer.Start()
 	defer mt.Stop()
 
