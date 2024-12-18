@@ -60,7 +60,7 @@ typedef struct {
     char* key;
     char* value;
 } topt_KeyValuePair;
-const size_t topt_KeyValuePair_Size = sizeof(topt_KeyValuePair_Size);
+const size_t topt_KeyValuePair_Size = sizeof(topt_KeyValuePair);
 
 // topt_KeyValueArray is used to store an array of key-value pairs.
 typedef struct {
@@ -250,7 +250,7 @@ func topt_initialize(options C.topt_InitOptions) C.Bool {
 	}
 
 	canShutdown.Store(true)
-	var tags map[string]string
+	tags := make(map[string]string)
 	if options.environment_variables != nil {
 		sLen := uint(options.environment_variables.len)
 		kvSize := uint(C.topt_KeyValuePair_Size)
