@@ -42,6 +42,7 @@ func StartRequestSpan(r *http.Request, opts ...ddtrace.StartSpanOption) (tracer.
 			if cfg.Tags == nil {
 				cfg.Tags = make(map[string]interface{})
 			}
+
 			cfg.Tags[ext.SpanType] = ext.SpanTypeWeb
 			cfg.Tags[ext.HTTPMethod] = r.Method
 			cfg.Tags[ext.HTTPURL] = urlFromRequest(r)
@@ -50,9 +51,23 @@ func StartRequestSpan(r *http.Request, opts ...ddtrace.StartSpanOption) (tracer.
 			if r.Host != "" {
 				cfg.Tags["http.host"] = r.Host
 			}
-			if spanctx, err := tracer.Extract(tracer.HTTPHeadersCarrier(r.Header)); err == nil {
+
+			spanctx, err := tracer.Extract(tracer.HTTPHeadersCarrier(r.Header))
+			is_inferred_proxy_set := false
+			println("IN HERE inferredProxyEnabled is:")
+			println(internal.BoolEnv(inferredProxyServicesEnabled, false))
+			if internal.BoolEnv(inferredProxyServicesEnabled, false) {
+				if inferred_proxy_span_ctx := tryCreateInferredProxySpan(r.Header, spanctx); inferred_proxy_span_ctx != nil {
+					println("IN HERE")
+					cfg.Parent = inferred_proxy_span_ctx
+					is_inferred_proxy_set = true
+				}
+			}
+
+			if err != nil && !is_inferred_proxy_set {
 				cfg.Parent = spanctx
 			}
+
 			for k, v := range ipTags {
 				cfg.Tags[k] = v
 			}

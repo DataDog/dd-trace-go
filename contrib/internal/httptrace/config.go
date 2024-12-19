@@ -26,6 +26,9 @@ const (
 	envTraceClientIPEnabled = "DD_TRACE_CLIENT_IP_ENABLED"
 	// envServerErrorStatuses is the name of the env var used to specify error status codes on http server spans
 	envServerErrorStatuses = "DD_TRACE_HTTP_SERVER_ERROR_STATUSES"
+
+	//used for enabling inferred span tracing
+	inferredProxyServicesEnabled = "DD_TRACE_INFERRED_PROXY_SERVICES_ENABLED"
 )
 
 // defaultQueryStringRegexp is the regexp used for query string obfuscation if `envQueryStringRegexp` is empty.
