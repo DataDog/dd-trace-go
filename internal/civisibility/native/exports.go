@@ -13,13 +13,33 @@ package main
 // #cgo LDFLAGS: -s -w -llib
 // #include <stdlib.h>
 /*
+// Bool is a typedef for unsigned char used as a boolean type.
+// Values: 1 for true, 0 for false.
 typedef unsigned char Bool;
+
+// Uint64 is a typedef for unsigned long long, representing a 64-bit unsigned integer.
 typedef unsigned long long Uint64;
+
+// topt_TslvId is a typedef representing a generic 64-bit identifier used by sessions, modules, suites, and tests.
 typedef Uint64 topt_TslvId;
+
+// topt_SessionId is the identifier type for test sessions, uniquely representing a single test session in the system.
 typedef topt_TslvId topt_SessionId;
+
+// topt_ModuleId is the identifier type for test modules, uniquely representing a single module within a test session.
 typedef topt_TslvId topt_ModuleId;
+
+// topt_SuiteId is the identifier type for test suites, uniquely representing a test suite within a module.
 typedef topt_TslvId topt_SuiteId;
+
+// topt_TestId is the identifier type for individual tests, uniquely representing a test within a suite.
 typedef topt_TslvId topt_TestId;
+
+// topt_TestStatus is used to represent the outcome/status of a test.
+// Possible values:
+//   - topt_TestStatusPass (0): The test passed successfully.
+//   - topt_TestStatusFail (1): The test failed.
+//   - topt_TestStatusSkip (2): The test was skipped.
 typedef unsigned char topt_TestStatus;
 
 // topt_TestStatusPass is the status for a passing test.
@@ -29,55 +49,93 @@ const topt_TestStatus topt_TestStatusFail = 1;
 // topt_TestStatusSkip is the status for a skipped test.
 const topt_TestStatus topt_TestStatusSkip = 2;
 
-// topt_SessionResult is used to return the result of a session creation.
+// topt_SessionResult is returned by operations that create or retrieve a test session.
+// Fields:
+//   - session_id: The ID of the created or found session.
+//   - valid: A Bool indicating whether the operation succeeded.
 typedef struct {
 	topt_SessionId session_id;
 	Bool valid;
 } topt_SessionResult;
 
-// topt_ModuleResult is used to return the result of a module creation.
+// topt_ModuleResult is returned by operations that create or retrieve a test module.
+// Fields:
+//   - module_id: The ID of the created or found module.
+//   - valid: A Bool indicating whether the operation succeeded.
 typedef struct {
 	topt_ModuleId module_id;
 	Bool valid;
 } topt_ModuleResult;
 
-// topt_SuiteResult is used to return the result of a suite creation.
+// topt_SuiteResult is returned by operations that create or retrieve a test suite.
+// Fields:
+//   - suite_id: The ID of the created or found suite.
+//   - valid: A Bool indicating whether the operation succeeded.
 typedef struct {
 	topt_SuiteId suite_id;
 	Bool valid;
 } topt_SuiteResult;
 
-// topt_TestResult is used to return the result of a test creation.
+// topt_TestResult is returned by operations that create a test.
+// Fields:
+//   - test_id: The ID of the created test.
+//   - valid: A Bool indicating whether the operation succeeded.
 typedef struct {
 	topt_TestId test_id;
 	Bool valid;
 } topt_TestResult;
 
-// topt_KeyValuePair is used to store a key-value pair.
+// topt_KeyValuePair represents a single string-based key-value pair, commonly used for tags and metadata.
+// Fields:
+//   - key: A C-string containing the key.
+//   - value: A C-string containing the value.
 typedef struct {
     char* key;
     char* value;
 } topt_KeyValuePair;
 
-// topt_KeyValueArray is used to store an array of key-value pairs.
+// topt_KeyValueArray represents an array of key-value pairs.
+// Fields:
+//   - data: Pointer to an array of topt_KeyValuePair.
+//   - len: The length of the array.
+//
+// Used for passing lists of environment variables, tags, and other string metadata.
 typedef struct {
     topt_KeyValuePair* data;
     size_t len;
 } topt_KeyValueArray;
 
-// topt_KeyNumberPair is used to store a key-number pair.
+// topt_KeyNumberPair represents a single numeric key-value pair for numerical tags or metrics.
+// Fields:
+//   - key: A C-string containing the key.
+//   - value: A double representing the numeric value.
 typedef struct {
 	char* key;
 	double value;
 } topt_KeyNumberPair;
 
-// topt_KeyNumberArray is used to store an array of key-number pairs.
+// topt_KeyNumberArray represents an array of numeric key-value pairs.
+// Fields:
+//   - data: Pointer to an array of topt_KeyNumberPair.
+//   - len: The length of the array.
+//
+// Used for passing lists of numeric metrics, measurements, or counters as tags.
 typedef struct {
 	topt_KeyNumberPair* data;
 	size_t len;
 } topt_KeyNumberArray;
 
-// topt_InitOptions is used to initialize the library.
+// topt_InitOptions holds initialization data for the library.
+// Fields:
+//   - language: The programming language of the runtime (e.g., "go", "python"), optional.
+//   - runtime_name: The runtime name (e.g., "go", "dotnet"), optional.
+//   - runtime_version: The runtime version string (e.g., "1.18", "6.0"), optional.
+//   - working_directory: The directory where tests are executed, optional.
+//   - environment_variables: A pointer to a topt_KeyValueArray of environment variables, optional.
+//   - global_tags: A pointer to a topt_KeyValueArray of global tags, optional.
+//   - unused01 ... unused05: Reserved fields for future use.
+//
+// Used by topt_initialize to configure environment and tagging.
 typedef struct {
     char* language;
     char* runtime_name;
@@ -93,13 +151,21 @@ typedef struct {
 	void* unused05;
 } topt_InitOptions;
 
-// topt_UnixTime is used to store a Unix timestamp.
+// topt_UnixTime represents a point in time using seconds and nanoseconds since the Unix epoch.
+// Fields:
+//   - sec: Seconds since the Unix epoch.
+//   - nsec: Nanoseconds since the last whole second.
 typedef struct {
     Uint64 sec;
     Uint64 nsec;
 } topt_UnixTime;
 
-// topt_TestCloseOptions is used to close a test with additional options.
+// topt_TestCloseOptions specifies how to close a test, including its outcome and optional finishing time.
+// Fields:
+//   - status: A topt_TestStatus indicating pass/fail/skip.
+//   - finish_time: A pointer to a topt_UnixTime for when the test ended.
+//   - skip_reason: A string describing why the test was skipped if status is skip.
+//   - unused01 ... unused05: Reserved fields for future use.
 typedef struct {
 	topt_TestStatus status;
 	topt_UnixTime* finish_time;
@@ -112,7 +178,14 @@ typedef struct {
 	void* unused05;
 } topt_TestCloseOptions;
 
-// topt_SettingsEarlyFlakeDetectionSlowRetries is used to store the settings for slow retries in early flake detection.
+// topt_SettingsEarlyFlakeDetectionSlowRetries defines threshold-based retry settings for "slow" tests in early flake detection.
+// Fields:
+//   - ten_s: Retries triggered if test runs longer than 10 seconds.
+//   - thirty_s: Retries triggered if test runs longer than 30 seconds.
+//   - five_m: Retries triggered if test runs longer than 5 minutes.
+//   - five_s: Retries triggered if test runs longer than 5 seconds.
+//
+// These fields help configure how the system identifies flakiness based on test durations.
 typedef struct {
 	int ten_s;
 	int thirty_s;
@@ -120,14 +193,26 @@ typedef struct {
 	int five_s;
 } topt_SettingsEarlyFlakeDetectionSlowRetries;
 
-// topt_SettingsEarlyFlakeDetection is used to store the settings for early flake detection.
+// topt_SettingsEarlyFlakeDetection holds configuration for early flake detection features.
+// Fields:
+//   - enabled: Boolean indicating if early flake detection is on.
+//   - slow_test_retries: topt_SettingsEarlyFlakeDetectionSlowRetries structure defining retry rules for slow tests.
+//   - faulty_session_threshold: An integer threshold for deciding when a session is considered faulty.
 typedef struct {
 	Bool enabled;
 	topt_SettingsEarlyFlakeDetectionSlowRetries slow_test_retries;
 	int faulty_session_threshold;
 } topt_SettingsEarlyFlakeDetection;
 
-// topt_SettingsResponse is used to return the settings of the library.
+// topt_SettingsResponse returns the library’s current configuration and feature toggles.
+// Fields:
+//   - code_coverage: Boolean indicating if code coverage is enabled.
+//   - early_flake_detection: Contains early flake detection parameters.
+//   - flaky_test_retries_enabled: Boolean indicating if flaky test retries are enabled.
+//   - itr_enabled: Boolean indicating if Intelligent Test Runner (ITR) is enabled.
+//   - require_git: Boolean indicating if Git repository context is required.
+//   - tests_skipping: Boolean indicating if test skipping is enabled.
+//   - unused01 ... unused05: Reserved for future use.
 typedef struct {
 	Bool code_coverage;
 	topt_SettingsEarlyFlakeDetection early_flake_detection;
@@ -143,26 +228,43 @@ typedef struct {
 	void* unused05;
 } topt_SettingsResponse;
 
-// topt_FlakyTestRetriesSettings is used to store the settings for flaky test retries.
+// topt_FlakyTestRetriesSettings contains the configuration for how many times flaky tests should be retried.
+// Fields:
+//   - retry_count: Number of retries for a given flaky test.
+//   - total_retry_count: The cumulative number of retries permitted across all flaky tests.
 typedef struct {
 	int retry_count;
 	int total_retry_count;
 } topt_FlakyTestRetriesSettings;
 
-// topt_KnownTest is used to store a known test.
+// topt_KnownTest represents a known test within the system.
+// Fields:
+//   - module_name: The name of the test module.
+//   - suite_name: The name of the test suite.
+//   - test_name: The name of the test itself.
 typedef struct {
 	char* module_name;
 	char* suite_name;
 	char* test_name;
 } topt_KnownTest;
 
-// topt_KnownTestArray is used to store an array of known tests.
+// topt_KnownTestArray is a collection of known tests.
+// Fields:
+//   - data: Pointer to an array of topt_KnownTest.
+//   - len: The length of the array.
+//
+// Used by topt_get_known_tests to return a list of known tests.
 typedef struct {
 	topt_KnownTest* data;
 	size_t len;
 } topt_KnownTestArray;
 
-// topt_SkippableTest is used to store a skippable test.
+// topt_SkippableTest defines a test that can be skipped.
+// Fields:
+//   - suite_name: The suite containing the skippable test.
+//   - test_name: The test that can be skipped.
+//   - parameters: Optional parameters for the test.
+//   - custom_configurations_json: JSON string containing custom configurations for skipping logic.
 typedef struct {
 	char* suite_name;
 	char* test_name;
@@ -170,20 +272,35 @@ typedef struct {
 	char* custom_configurations_json;
 } topt_SkippableTest;
 
-// topt_SkippableTestArray is used to store an array of skippable tests.
+// topt_SkippableTestArray is a collection of skippable tests.
+// Fields:
+//   - data: Pointer to an array of topt_SkippableTest.
+//   - len: The length of the array.
+//
+// Returned by topt_get_skippable_tests.
 typedef struct {
 	topt_SkippableTest* data;
 	size_t len;
 } topt_SkippableTestArray;
 
-// topt_TestCoverageFile is used to store a test coverage file.
+// topt_TestCoverageFile represents coverage data for a single source file.
+// Fields:
+//   - filename: The name of the source file.
+//   - bitmap: A pointer to a coverage bitmap representing which lines were covered.
+//   - bitmap_len: The size of the bitmap in bytes.
 typedef struct {
 	char* filename;
 	void* bitmap;
 	size_t bitmap_len;
 } topt_TestCoverageFile;
 
-// toptTestCoverage is used to store the test coverage data.
+// topt_TestCoverage holds coverage information for a single test execution.
+// Fields:
+//   - session_id: The session this test belongs to.
+//   - suite_id: The suite this test belongs to.
+//   - test_id: The test’s own identifier.
+//   - files: An array of topt_TestCoverageFile representing coverage data for multiple files.
+//   - files_len: The number of files in the files array.
 typedef struct {
 	topt_SessionId session_id;
 	topt_SuiteId suite_id;
@@ -192,7 +309,17 @@ typedef struct {
 	size_t files_len;
 } topt_TestCoverage;
 
-// topt_SpanStartOptions is used to store the options for starting a span.
+// topt_SpanStartOptions provides configuration for starting a new span (a timing/trace operation).
+// Fields:
+//   - operation_name: The name of the operation represented by the span.
+//   - service_name: The name of the service this span belongs to, optional.
+//   - resource_name: The resource name (e.g., specific endpoint or function), optional.
+//   - span_type: A string indicating the type of the span (e.g., "web", "db"), optional.
+//   - start_time: Pointer to a topt_UnixTime marking when the span started, optional.
+//   - string_tags: Pointer to a topt_KeyValueArray of string tags for the span, optional.
+//   - number_tags: Pointer to a topt_KeyNumberArray of numeric tags for the span, optional.
+//
+// Used by topt_span_create to define span metadata.
 typedef struct {
 	char* operation_name;
 	char* service_name;
@@ -203,7 +330,10 @@ typedef struct {
 	topt_KeyNumberArray* number_tags;
 } topt_SpanStartOptions;
 
-// topt_SpanResult is used to store the result of a span creation.
+// topt_SpanResult is returned when a new span is created.
+// Fields:
+//   - span_id: The ID of the newly created span.
+//   - valid: A Bool indicating whether the creation was successful.
 typedef struct {
 	topt_TslvId span_id;
 	Bool valid;
