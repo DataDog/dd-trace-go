@@ -31,12 +31,36 @@ func TestSpanContextSetBaggage(t *testing.T) {
 	assert.Equal(t, sc.baggage["c"], "d")
 }
 
-func TestSpanContextGetBaggage(t *testing.T) {
+func TestSpanContextBaggage(t *testing.T) {
 	var sc spanContext
 	sc.setBaggageItem("a", "b")
 	sc.setBaggageItem("c", "d")
 	assert.Equal(t, sc.baggageItem("a"), "b")
 	assert.Equal(t, sc.baggageItem("c"), "d")
+}
+
+func TestSpanContextGetAllBaggage(t *testing.T) {
+	var sc spanContext
+	sc.setBaggageItem("a", "b")
+	sc.setBaggageItem("c", "d")
+	assert.Equal(t, map[string]string{"a": "b", "c": "d"}, sc.getAllBaggageItems())
+}
+
+func TestSpanContextRemoveBaggage(t *testing.T) {
+	var sc spanContext
+	sc.setBaggageItem("a", "b")
+	sc.setBaggageItem("c", "d")
+	sc.removeBaggageItem("a")
+	assert.Equal(t, sc.baggage["c"], "d")
+	assert.Empty(t, sc.baggage["a"])
+}
+
+func TestSpanContextRemoveAllBaggage(t *testing.T) {
+	var sc spanContext
+	sc.setBaggageItem("a", "b")
+	sc.setBaggageItem("c", "d")
+	sc.removeAllBaggageItems()
+	assert.Empty(t, sc.baggage)
 }
 
 func TestSpanContextIterator(t *testing.T) {

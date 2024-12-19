@@ -57,6 +57,42 @@ func TestSpanBaggage(t *testing.T) {
 	assert.Equal("value", span.BaggageItem("key"))
 }
 
+func TestSpanBaggageRemove(t *testing.T) {
+	assert := assert.New(t)
+
+	span := newBasicSpan("web.request")
+	span.SetBaggageItem("key", "value")
+	assert.Equal("value", span.BaggageItem("key"))
+	// test remove baggage
+	span.RemoveBaggageItem("key")
+	assert.Equal("", span.BaggageItem("key"))
+}
+
+func TestSpanBaggageRemoveAll(t *testing.T) {
+	assert := assert.New(t)
+
+	span := newBasicSpan("web.request")
+	span.SetBaggageItem("key", "value")
+	span.SetBaggageItem("key2", "value2")
+	assert.Equal("value", span.BaggageItem("key"))
+	assert.Equal("value2", span.BaggageItem("key2"))
+	// test remove all baggage
+	span.RemoveAllBaggageItems()
+	assert.Equal("", span.BaggageItem("key"))
+	assert.Equal("", span.BaggageItem("key2"))
+}
+
+func TestSpanBaggageGetAll(t *testing.T) {
+	assert := assert.New(t)
+
+	span := newBasicSpan("web.request")
+	span.SetBaggageItem("key", "value")
+	span.SetBaggageItem("key2", "value2")
+	baggage := span.GetAllBaggageItems()
+	assert.Equal("value", baggage["key"])
+	assert.Equal("value2", baggage["key2"])
+}
+
 func TestSpanContext(t *testing.T) {
 	assert := assert.New(t)
 
