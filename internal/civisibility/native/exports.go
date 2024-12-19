@@ -15,10 +15,11 @@ package main
 /*
 typedef unsigned char Bool;
 typedef unsigned long long Uint64;
-typedef Uint64 topt_SessionId;
-typedef Uint64 topt_ModuleId;
-typedef Uint64 topt_SuiteId;
-typedef Uint64 topt_TestId;
+typedef Uint64 topt_TslvId;
+typedef topt_TslvId topt_SessionId;
+typedef topt_TslvId topt_ModuleId;
+typedef topt_TslvId topt_SuiteId;
+typedef topt_TslvId topt_TestId;
 typedef unsigned char topt_TestStatus;
 
 // topt_TestStatusPass is the status for a passing test.
@@ -103,6 +104,12 @@ typedef struct {
 	topt_TestStatus status;
 	topt_UnixTime* finish_time;
 	char* skip_reason;
+	// Unused fields
+	void* unused01;
+	void* unused02;
+	void* unused03;
+	void* unused04;
+	void* unused05;
 } topt_TestCloseOptions;
 
 // topt_SettingsEarlyFlakeDetectionSlowRetries is used to store the settings for slow retries in early flake detection.
@@ -128,6 +135,12 @@ typedef struct {
 	Bool itr_enabled;
 	Bool require_git;
 	Bool tests_skipping;
+	// Unused fields
+	void* unused01;
+	void* unused02;
+	void* unused03;
+	void* unused04;
+	void* unused05;
 } topt_SettingsResponse;
 
 // topt_FlakyTestRetriesSettings is used to store the settings for flaky test retries.
@@ -178,10 +191,28 @@ typedef struct {
 	topt_TestCoverageFile* files;
 	size_t files_len;
 } topt_TestCoverage;
+
+// topt_SpanStartOptions is used to store the options for starting a span.
+typedef struct {
+	char* operation_name;
+	char* service_name;
+	char* resource_name;
+	char* span_type;
+	topt_UnixTime* start_time;
+    topt_KeyValueArray* string_tags;
+	topt_KeyNumberArray* number_tags;
+} topt_SpanStartOptions;
+
+// topt_SpanResult is used to store the result of a span creation.
+typedef struct {
+	topt_TslvId span_id;
+	Bool valid;
+} topt_SpanResult;
 */
 import "C"
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"os"
 	"sync"
@@ -189,6 +220,8 @@ import (
 	"time"
 	"unsafe"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
+	ddtracer "gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/constants"
 	civisibility "gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/integrations"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/utils"
@@ -1023,6 +1056,166 @@ func topt_test_set_benchmark_number_data(test_id C.topt_TestId, measure_type *C.
 		}
 
 		test.SetBenchmarkData(C.GoString(measure_type), data)
+		return toBool(true)
+	}
+	return toBool(false)
+}
+
+// *******************************************************************************************************************
+// Spans
+// *******************************************************************************************************************
+
+type (
+	// spanContainer represents a span and its context.
+	spanContainer struct {
+		span ddtracer.Span
+		ctx  context.Context
+	}
+)
+
+var (
+	spanMutex sync.RWMutex                     // mutex to protect the spans map
+	spans     = make(map[uint64]spanContainer) // map of spans
+)
+
+func getSpan(span_id C.topt_TslvId) (spanContainer, bool) {
+	sId := uint64(span_id)
+	if sId == 0 {
+		return spanContainer{}, false
+	}
+	spanMutex.RLock()
+	defer spanMutex.RUnlock()
+	span, ok := spans[sId]
+	return span, ok
+}
+
+func getContext(tslv_id C.topt_TslvId) context.Context {
+	if sContainer, ok := getSpan(C.topt_TestId(tslv_id)); ok {
+		return sContainer.ctx
+	}
+	if test, ok := getTest(C.topt_TestId(tslv_id)); ok {
+		return test.Context()
+	}
+	if suite, ok := getSuite(C.topt_SuiteId(tslv_id)); ok {
+		return suite.Context()
+	}
+	if module, ok := getModule(C.topt_ModuleId(tslv_id)); ok {
+		return module.Context()
+	}
+	if session, ok := getSession(C.topt_SessionId(tslv_id)); ok {
+		return session.Context()
+	}
+	return context.Background()
+}
+
+// topt_span_create creates a new span.
+//
+//export topt_span_create
+func topt_span_create(parent_id C.topt_TslvId, span_options C.topt_SpanStartOptions) C.topt_SpanResult {
+	var options []ddtracer.StartSpanOption
+	if span_options.start_time != nil {
+		options = append(options, ddtracer.StartTime(getUnixTime(span_options.start_time)))
+	}
+	if span_options.service_name != nil {
+		options = append(options, ddtracer.ServiceName(C.GoString(span_options.service_name)))
+	}
+	if span_options.resource_name != nil {
+		options = append(options, ddtracer.ResourceName(C.GoString(span_options.resource_name)))
+	}
+	if span_options.span_type != nil {
+		options = append(options, ddtracer.SpanType(C.GoString(span_options.span_type)))
+	}
+	if span_options.string_tags != nil {
+		for i := C.size_t(0); i < span_options.string_tags.len; i++ {
+			keyValue := (*C.topt_KeyValuePair)(unsafe.Add(unsafe.Pointer(span_options.string_tags.data), i*topt_KeyValuePair_Size))
+			if keyValue.key == nil {
+				continue
+			}
+			options = append(options, ddtracer.Tag(C.GoString(keyValue.key), C.GoString(keyValue.value)))
+		}
+	}
+	if span_options.number_tags != nil {
+		for i := C.size_t(0); i < span_options.number_tags.len; i++ {
+			keyValue := (*C.topt_KeyNumberPair)(unsafe.Add(unsafe.Pointer(span_options.number_tags.data), i*topt_KeyNumberPair_Size))
+			if keyValue.key == nil {
+				continue
+			}
+			options = append(options, ddtracer.Tag(C.GoString(keyValue.key), float64(keyValue.value)))
+		}
+	}
+
+	span, ctx := ddtracer.StartSpanFromContext(getContext(parent_id), C.GoString(span_options.operation_name), options...)
+	id := span.Context().SpanID()
+
+	spanMutex.Lock()
+	defer spanMutex.Unlock()
+	spans[id] = spanContainer{span: span, ctx: ctx}
+	return C.topt_SpanResult{span_id: C.topt_TslvId(id), valid: toBool(true)}
+}
+
+// topt_span_close closes the span with the given ID.
+//
+//export topt_span_close
+func topt_span_close(span_id C.topt_TslvId, finish_time *C.topt_UnixTime) C.Bool {
+	if sContainer, ok := getSpan(span_id); ok {
+		if finish_time != nil {
+			sContainer.span.Finish(ddtracer.FinishTime(getUnixTime(finish_time)))
+		} else {
+			sContainer.span.Finish()
+		}
+
+		spanMutex.Lock()
+		defer spanMutex.Unlock()
+		delete(spans, uint64(span_id))
+		return toBool(true)
+	}
+
+	return toBool(false)
+}
+
+// topt_span_set_string_tag sets a string tag for the span with the given ID.
+//
+//export topt_span_set_string_tag
+func topt_span_set_string_tag(span_id C.topt_TslvId, key *C.char, value *C.char) C.Bool {
+	if key == nil {
+		return toBool(false)
+	}
+	if sContainer, ok := getSpan(span_id); ok {
+		sContainer.span.SetTag(C.GoString(key), C.GoString(value))
+		return toBool(true)
+	}
+	return toBool(false)
+}
+
+// topt_span_set_number_tag sets a number tag for the span with the given ID.
+//
+//export topt_span_set_number_tag
+func topt_span_set_number_tag(span_id C.topt_TslvId, key *C.char, value C.double) C.Bool {
+	if key == nil {
+		return toBool(false)
+	}
+	if sContainer, ok := getSpan(span_id); ok {
+		sContainer.span.SetTag(C.GoString(key), float64(value))
+		return toBool(true)
+	}
+	return toBool(false)
+}
+
+// topt_span_set_error sets an error for the span with the given ID.
+//
+//export topt_span_set_error
+func topt_span_set_error(span_id C.topt_TslvId, error_type *C.char, error_message *C.char, error_stacktrace *C.char) C.Bool {
+	if sContainer, ok := getSpan(span_id); ok {
+		sContainer.span.SetTag(ext.Error, true)
+		if error_type != nil {
+			sContainer.span.SetTag(ext.ErrorType, C.GoString(error_type))
+		}
+		if error_message != nil {
+			sContainer.span.SetTag(ext.ErrorMsg, C.GoString(error_message))
+		}
+		if error_stacktrace != nil {
+			sContainer.span.SetTag(ext.ErrorStack, C.GoString(error_stacktrace))
+		}
 		return toBool(true)
 	}
 	return toBool(false)
