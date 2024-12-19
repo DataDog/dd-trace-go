@@ -371,6 +371,40 @@ const (
 	topt_TestCoverage_Size     = C.size_t(unsafe.Sizeof(C.topt_TestCoverage{}))
 )
 
+type (
+	// spanContainer represents a span and its context.
+	spanContainer struct {
+		span ddtracer.Span
+		ctx  context.Context
+	}
+
+	exportData struct {
+		hasInitialized atomic.Bool // indicate if the library has been initialized
+		canShutdown    atomic.Bool // indicate if the library can be shut down
+		client         net.Client  // client to send code coverage payloads
+
+		sessionMutex sync.RWMutex                        // mutex to protect the session map
+		sessions     map[uint64]civisibility.TestSession // map of test sessions
+		moduleMutex  sync.RWMutex                        // mutex to protect the modules map
+		modules      map[uint64]civisibility.TestModule  // map of test modules
+		suiteMutex   sync.RWMutex                        // mutex to protect the suites map
+		suites       map[uint64]civisibility.TestSuite   // map of test suites
+		testMutex    sync.RWMutex                        // mutex to protect the tests map
+		tests        map[uint64]civisibility.Test        // map of test spans
+		spanMutex    sync.RWMutex                        // mutex to protect the spans map
+		spans        map[uint64]spanContainer            // map of spans
+	}
+)
+
+var exports = exportData{
+	client:   net.NewClientForCodeCoverage(),
+	sessions: make(map[uint64]civisibility.TestSession),
+	modules:  make(map[uint64]civisibility.TestModule),
+	suites:   make(map[uint64]civisibility.TestSuite),
+	tests:    make(map[uint64]civisibility.Test),
+	spans:    make(map[uint64]spanContainer),
+}
+
 // *******************************************************************************************************************
 // Utils
 // *******************************************************************************************************************
@@ -396,13 +430,6 @@ func toBool(value bool) C.Bool {
 // *******************************************************************************************************************
 // General
 // *******************************************************************************************************************
-
-var (
-	hasInitialized atomic.Bool // indicate if the library has been initialized
-	canShutdown    atomic.Bool // indicate if the library can be shut down
-
-	client = net.NewClientForCodeCoverage() // client to send code coverage payloads
-)
 
 type (
 	// ciTestCovPayload represents a test code coverage payload specifically designed for CI Visibility events.
@@ -442,11 +469,11 @@ type (
 //
 //export topt_initialize
 func topt_initialize(options C.topt_InitOptions) C.Bool {
-	if hasInitialized.Swap(true) {
+	if exports.hasInitialized.Swap(true) {
 		return toBool(false)
 	}
 
-	canShutdown.Store(true)
+	exports.canShutdown.Store(true)
 	tags := make(map[string]string)
 	if options.environment_variables != nil {
 		for i := C.size_t(0); i < options.environment_variables.len; i++ {
@@ -503,7 +530,7 @@ func topt_initialize(options C.topt_InitOptions) C.Bool {
 //
 //export topt_shutdown
 func topt_shutdown() C.Bool {
-	if !canShutdown.Swap(false) {
+	if !exports.canShutdown.Swap(false) {
 		return toBool(false)
 	}
 	civisibility.ExitCiVisibility()
@@ -730,7 +757,7 @@ func topt_send_code_coverage_payload(coverages *C.topt_TestCoverage, coverages_l
 		jsonbytes, err := json.Marshal(&coveragePayload)
 		if err == nil {
 			encodedBuf.Write(jsonbytes)
-			client.SendCoveragePayloadWithFormat(encodedBuf, net.FormatJSON)
+			exports.client.SendCoveragePayloadWithFormat(encodedBuf, net.FormatJSON)
 		}
 	}
 }
@@ -739,19 +766,14 @@ func topt_send_code_coverage_payload(coverages *C.topt_TestCoverage, coverages_l
 // Sessions
 // *******************************************************************************************************************
 
-var (
-	sessionMutex sync.RWMutex                                // mutex to protect the session map
-	sessions     = make(map[uint64]civisibility.TestSession) // map of test sessions
-)
-
 func getSession(session_id C.topt_SessionId) (civisibility.TestSession, bool) {
 	sId := uint64(session_id)
 	if sId == 0 {
 		return nil, false
 	}
-	sessionMutex.RLock()
-	defer sessionMutex.RUnlock()
-	session, ok := sessions[sId]
+	exports.sessionMutex.RLock()
+	defer exports.sessionMutex.RUnlock()
+	session, ok := exports.sessions[sId]
 	return session, ok
 }
 
@@ -780,9 +802,9 @@ func topt_session_create(framework *C.char, framework_version *C.char, start_tim
 	session := civisibility.CreateTestSession(sessionOptions...)
 	id := session.SessionID()
 
-	sessionMutex.Lock()
-	defer sessionMutex.Unlock()
-	sessions[id] = session
+	exports.sessionMutex.Lock()
+	defer exports.sessionMutex.Unlock()
+	exports.sessions[id] = session
 	return C.topt_SessionResult{session_id: C.topt_SessionId(id), valid: toBool(true)}
 }
 
@@ -807,9 +829,9 @@ func topt_session_close(session_id C.topt_SessionId, exit_code C.int, finish_tim
 			session.Close(int(exit_code))
 		}
 
-		sessionMutex.Lock()
-		defer sessionMutex.Unlock()
-		delete(sessions, uint64(session_id))
+		exports.sessionMutex.Lock()
+		defer exports.sessionMutex.Unlock()
+		delete(exports.sessions, uint64(session_id))
 		return toBool(true)
 	}
 
@@ -890,19 +912,14 @@ func topt_session_set_error(session_id C.topt_SessionId, error_type *C.char, err
 // Modules
 // *******************************************************************************************************************
 
-var (
-	moduleMutex sync.RWMutex                               // mutex to protect the modules map
-	modules     = make(map[uint64]civisibility.TestModule) // map of test modules
-)
-
 func getModule(module_id C.topt_ModuleId) (civisibility.TestModule, bool) {
 	mId := uint64(module_id)
 	if mId == 0 {
 		return nil, false
 	}
-	moduleMutex.RLock()
-	defer moduleMutex.RUnlock()
-	module, ok := modules[mId]
+	exports.moduleMutex.RLock()
+	defer exports.moduleMutex.RUnlock()
+	module, ok := exports.modules[mId]
 	return module, ok
 }
 
@@ -934,9 +951,9 @@ func topt_module_create(session_id C.topt_SessionId, name *C.char, framework *C.
 		module := session.GetOrCreateModule(C.GoString(name), moduleOptions...)
 		id := module.ModuleID()
 
-		moduleMutex.Lock()
-		defer moduleMutex.Unlock()
-		modules[id] = module
+		exports.moduleMutex.Lock()
+		defer exports.moduleMutex.Unlock()
+		exports.modules[id] = module
 		return C.topt_ModuleResult{module_id: C.topt_ModuleId(id), valid: toBool(true)}
 	}
 
@@ -961,9 +978,9 @@ func topt_module_close(module_id C.topt_ModuleId, finish_time *C.topt_UnixTime) 
 			module.Close()
 		}
 
-		moduleMutex.Lock()
-		defer moduleMutex.Unlock()
-		delete(modules, uint64(module_id))
+		exports.moduleMutex.Lock()
+		defer exports.moduleMutex.Unlock()
+		delete(exports.modules, uint64(module_id))
 		return toBool(true)
 	}
 
@@ -1038,19 +1055,14 @@ func topt_module_set_error(module_id C.topt_ModuleId, error_type *C.char, error_
 // Suites
 // *******************************************************************************************************************
 
-var (
-	suiteMutex sync.RWMutex                              // mutex to protect the suites map
-	suites     = make(map[uint64]civisibility.TestSuite) // map of test suites
-)
-
 func getSuite(suite_id C.topt_SuiteId) (civisibility.TestSuite, bool) {
 	sId := uint64(suite_id)
 	if sId == 0 {
 		return nil, false
 	}
-	suiteMutex.RLock()
-	defer suiteMutex.RUnlock()
-	suite, ok := suites[sId]
+	exports.suiteMutex.RLock()
+	defer exports.suiteMutex.RUnlock()
+	suite, ok := exports.suites[sId]
 	return suite, ok
 }
 
@@ -1077,9 +1089,9 @@ func topt_suite_create(module_id C.topt_ModuleId, name *C.char, start_time *C.to
 		suite := module.GetOrCreateSuite(C.GoString(name), suiteOptions...)
 		id := suite.SuiteID()
 
-		suiteMutex.Lock()
-		defer suiteMutex.Unlock()
-		suites[id] = suite
+		exports.suiteMutex.Lock()
+		defer exports.suiteMutex.Unlock()
+		exports.suites[id] = suite
 		return C.topt_SuiteResult{suite_id: C.topt_SuiteId(id), valid: toBool(true)}
 	}
 
@@ -1104,9 +1116,9 @@ func topt_suite_close(suite_id C.topt_SuiteId, finish_time *C.topt_UnixTime) C.B
 			suite.Close()
 		}
 
-		suiteMutex.Lock()
-		defer suiteMutex.Unlock()
-		delete(suites, uint64(suite_id))
+		exports.suiteMutex.Lock()
+		defer exports.suiteMutex.Unlock()
+		delete(exports.suites, uint64(suite_id))
 		return toBool(true)
 	}
 
@@ -1222,19 +1234,14 @@ func topt_suite_set_source(suite_id C.topt_SuiteId, file *C.char, start_line *C.
 // Tests
 // *******************************************************************************************************************
 
-var (
-	testMutex sync.RWMutex                         // mutex to protect the tests map
-	tests     = make(map[uint64]civisibility.Test) // map of test spans
-)
-
 func getTest(test_id C.topt_TestId) (civisibility.Test, bool) {
 	tId := uint64(test_id)
 	if tId == 0 {
 		return nil, false
 	}
-	testMutex.RLock()
-	defer testMutex.RUnlock()
-	test, ok := tests[tId]
+	exports.testMutex.RLock()
+	defer exports.testMutex.RUnlock()
+	test, ok := exports.tests[tId]
 	return test, ok
 }
 
@@ -1261,9 +1268,9 @@ func topt_test_create(suite_id C.topt_SuiteId, name *C.char, start_time *C.topt_
 		test := suite.CreateTest(C.GoString(name), testOptions...)
 		id := test.TestID()
 
-		testMutex.Lock()
-		defer testMutex.Unlock()
-		tests[id] = test
+		exports.testMutex.Lock()
+		defer exports.testMutex.Unlock()
+		exports.tests[id] = test
 		return C.topt_TestResult{test_id: C.topt_TestId(id), valid: toBool(true)}
 	}
 
@@ -1291,9 +1298,9 @@ func topt_test_close(test_id C.topt_TestId, options C.topt_TestCloseOptions) C.B
 		}
 		test.Close(civisibility.TestResultStatus(options.status), testOptions...)
 
-		testMutex.Lock()
-		defer testMutex.Unlock()
-		delete(tests, uint64(test_id))
+		exports.testMutex.Lock()
+		defer exports.testMutex.Unlock()
+		delete(exports.tests, uint64(test_id))
 		return toBool(true)
 	}
 
@@ -1467,27 +1474,14 @@ func topt_test_set_benchmark_number_data(test_id C.topt_TestId, measure_type *C.
 // Spans
 // *******************************************************************************************************************
 
-type (
-	// spanContainer represents a span and its context.
-	spanContainer struct {
-		span ddtracer.Span
-		ctx  context.Context
-	}
-)
-
-var (
-	spanMutex sync.RWMutex                     // mutex to protect the spans map
-	spans     = make(map[uint64]spanContainer) // map of spans
-)
-
 func getSpan(span_id C.topt_TslvId) (spanContainer, bool) {
 	sId := uint64(span_id)
 	if sId == 0 {
 		return spanContainer{}, false
 	}
-	spanMutex.RLock()
-	defer spanMutex.RUnlock()
-	span, ok := spans[sId]
+	exports.spanMutex.RLock()
+	defer exports.spanMutex.RUnlock()
+	span, ok := exports.spans[sId]
 	return span, ok
 }
 
@@ -1558,9 +1552,9 @@ func topt_span_create(parent_id C.topt_TslvId, span_options C.topt_SpanStartOpti
 	span, ctx := ddtracer.StartSpanFromContext(getContext(parent_id), C.GoString(span_options.operation_name), options...)
 	id := span.Context().SpanID()
 
-	spanMutex.Lock()
-	defer spanMutex.Unlock()
-	spans[id] = spanContainer{span: span, ctx: ctx}
+	exports.spanMutex.Lock()
+	defer exports.spanMutex.Unlock()
+	exports.spans[id] = spanContainer{span: span, ctx: ctx}
 	return C.topt_SpanResult{span_id: C.topt_TslvId(id), valid: toBool(true)}
 }
 
@@ -1582,9 +1576,9 @@ func topt_span_close(span_id C.topt_TslvId, finish_time *C.topt_UnixTime) C.Bool
 			sContainer.span.Finish()
 		}
 
-		spanMutex.Lock()
-		defer spanMutex.Unlock()
-		delete(spans, uint64(span_id))
+		exports.spanMutex.Lock()
+		defer exports.spanMutex.Unlock()
+		delete(exports.spans, uint64(span_id))
 		return toBool(true)
 	}
 
