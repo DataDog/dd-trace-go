@@ -25,6 +25,7 @@ import (
 
 	sqlinternal "gopkg.in/DataDog/dd-trace-go.v1/contrib/database/sql/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/contribroutines"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 )
@@ -211,7 +212,7 @@ func OpenDB(c driver.Connector, opts ...Option) *sql.DB {
 	}
 	db := sql.OpenDB(tc)
 	if cfg.dbStats && cfg.statsdClient != nil {
-		go pollDBStats(cfg.statsdClient, db)
+		go pollDBStats(cfg.statsdClient, db, contribroutines.GetStopChan())
 	}
 	return db
 }
