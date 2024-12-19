@@ -35,7 +35,8 @@ func (p *contribPkg) hasInstrumentationImport() bool {
 
 // TestTelemetryEnabled verifies that the expected contrib packages leverage instrumentation telemetry
 func TestTelemetryEnabled(t *testing.T) {
-	root, err := filepath.Abs("../../../contrib")
+	p := fmt.Sprintf("..%c..%c..%ccontrib", os.PathSeparator, os.PathSeparator, os.PathSeparator)
+	root, err := filepath.Abs(p)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -61,6 +62,7 @@ func testTelemetryEnabled(t *testing.T, contribPath string) error {
 	t.Helper()
 	t.Log(contribPath)
 	pwd, err := os.Getwd()
+	separator := fmt.Sprintf("%c", os.PathSeparator)
 	if err != nil {
 		return err
 	}
@@ -70,7 +72,7 @@ func testTelemetryEnabled(t *testing.T, contribPath string) error {
 	if err = os.Chdir(contribPath); err != nil {
 		return err
 	}
-	body, err := exec.Command("go", "list", "-json", "./...").Output()
+	body, err := exec.Command("go", "list", "-json", "."+separator+"...").Output()
 	if err != nil {
 		t.Log(string(body))
 		return err
@@ -86,7 +88,7 @@ func testTelemetryEnabled(t *testing.T, contribPath string) error {
 		packages = append(packages, out)
 	}
 	for _, pkg := range packages {
-		if strings.Contains(pkg.ImportPath, "/test") || strings.Contains(pkg.ImportPath, "/internal") {
+		if strings.Contains(pkg.ImportPath, separator+"test") || strings.Contains(pkg.ImportPath, separator+"internal") {
 			continue
 		}
 		if !pkg.hasInstrumentationImport() {
