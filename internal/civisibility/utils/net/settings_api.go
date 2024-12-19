@@ -120,6 +120,9 @@ func (c *client) GetSettings() (*SettingsResponseData, error) {
 	if responseObject.Data.Attributes.EarlyFlakeDetection.Enabled {
 		settingsResponseType = append(settingsResponseType, telemetry.EfdEnabledSettingsResponseType...)
 	}
+	if responseObject.Data.Attributes.FlakyTestRetriesEnabled {
+		settingsResponseType = append(settingsResponseType, telemetry.FlakyTestRetriesEnabledSettingsResponseType...)
+	}
 	telemetry.GitRequestsSettingsResponse(settingsResponseType)
 	return &responseObject.Data.Attributes, nil
 }

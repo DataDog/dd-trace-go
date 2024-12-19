@@ -8,6 +8,9 @@ on:
   push:
     branches:
       - 'mq-working-branch-**'
+    tags-ignore:
+      - 'contrib/**'
+      - 'instrumentation/**'
 
 concurrency:
   group: ${{ github.ref }}

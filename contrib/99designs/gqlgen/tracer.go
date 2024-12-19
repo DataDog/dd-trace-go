@@ -103,7 +103,7 @@ func (t *gqlTracer) Validate(_ graphql.ExecutableSchema) error {
 func (t *gqlTracer) InterceptOperation(ctx context.Context, next graphql.OperationHandler) graphql.ResponseHandler {
 	opCtx := graphql.GetOperationContext(ctx)
 	span, ctx := t.createRootSpan(ctx, opCtx)
-	ctx, req := graphqlsec.StartRequestOperation(ctx, graphqlsec.RequestOperationArgs{
+	ctx, req := graphqlsec.StartRequestOperation(ctx, span, graphqlsec.RequestOperationArgs{
 		RawQuery:      opCtx.RawQuery,
 		OperationName: opCtx.OperationName,
 		Variables:     opCtx.Variables,
@@ -137,7 +137,7 @@ func (t *gqlTracer) InterceptOperation(ctx context.Context, next graphql.Operati
 		}
 
 		query.Finish(executionOperationRes)
-		req.Finish(span, requestOperationRes)
+		req.Finish(requestOperationRes)
 		return response
 	}
 }
