@@ -56,7 +56,6 @@ func cleanupTest() {
 func TestInferredProxySpans(t *testing.T) {
 
 	t.Run("should create parent and child spans for a 200", func(t *testing.T) {
-		t.Setenv(inferredProxyServicesEnabled, "true")
 		mt := mocktracer.Start()
 		defer mt.Stop()
 		loadTest(t)
@@ -67,8 +66,6 @@ func TestInferredProxySpans(t *testing.T) {
 
 		assert := assert.New(t)
 		assert.NoError(err)
-
-		// in go, 2 possible ways to create a testing env, Assert.New(t) or
 
 		for k, v := range inferredHeaders {
 			req.Header.Set(k, v)
@@ -103,7 +100,6 @@ func TestInferredProxySpans(t *testing.T) {
 	})
 
 	t.Run("should create parent and child spans for error", func(t *testing.T) {
-		t.Setenv("DD_INFERRED_PROXY_SERVICES_ENABLED", "true")
 		mt := mocktracer.Start()
 		defer mt.Stop()
 		loadTest(t)
@@ -144,7 +140,6 @@ func TestInferredProxySpans(t *testing.T) {
 	})
 
 	t.Run("should not create API Gateway spanif headers are missing", func(t *testing.T) {
-		t.Setenv("DD_INFERRED_PROXY_SERVICES_ENABLED", "true")
 		mt := mocktracer.Start()
 		defer mt.Stop()
 		loadTest(t)
@@ -167,7 +162,6 @@ func TestInferredProxySpans(t *testing.T) {
 
 	})
 	t.Run("should not create API Gateway span if x-dd-proxy is missing", func(t *testing.T) {
-		t.Setenv("DD_INFERRED_PROXY_SERVICES_ENABLED", "true")
 		mt := mocktracer.Start()
 		defer mt.Stop()
 		loadTest(t)
