@@ -40,12 +40,12 @@ if [ $phase -eq 3 ]; then
     cd -
 
     cd ./contrib/database/sql && pwd
-    git tag contrib/database/sql/$version
+    git tag -m "contrib/database/sql/$version release" contrib/database/sql/$version
     git push --tags
     cd -
 
     cd ./contrib/google.golang.org/grpc && pwd
-    git tag contrib/google.golang.org/grpc/$version
+    git tag -m "contrib/google.golang.org/grpc/$version release" contrib/google.golang.org/grpc/$version
     git push --tags
     cd -
 
@@ -66,7 +66,8 @@ if [ $phase -eq 4 ]; then
             continue
         fi
         cd $contrib && pwd
-        git tag $(echo $contrib | sed 's#\.\/##')/$version
+        tag=$(echo $contrib | sed 's#\.\/##')/$version
+        git tag -m "$tag release" $tag
         git push --tags
         cd -
     done
