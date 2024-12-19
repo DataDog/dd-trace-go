@@ -33,7 +33,7 @@ func startServer(t *testing.T, traced bool) (*dns.Server, func()) {
 	if traced {
 		h = dnstrace.WrapHandler(h)
 	}
-	addr := getFreeAddr(t).String()
+	addr := getAddr(t).String()
 	server := &dns.Server{
 		Addr:    addr,
 		Net:     "udp",
@@ -190,8 +190,8 @@ func assertClientSpan(t *testing.T, s mocktracer.Span) {
 	assert.Equal(t, ext.SpanKindClient, s.Tag(ext.SpanKind))
 }
 
-func getFreeAddr(t *testing.T) net.Addr {
-	li, err := net.Listen("tcp", "127.0.0.1:0")
+func getAddr(t *testing.T) net.Addr {
+	li, err := net.Listen("tcp4", "127.0.0.1:2020")
 	if err != nil {
 		t.Fatal(err)
 	}
