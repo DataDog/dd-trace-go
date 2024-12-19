@@ -100,7 +100,7 @@ func ExampleWrapConsumerGroupHandler() {
 
 	// trace your sarama.ConsumerGroupHandler implementation
 	var myHandler sarama.ConsumerGroupHandler
-	handler := saramatrace.WrapConsumerGroupHandler(myHandler)
+	handler := saramatrace.WrapConsumerGroupHandler(myHandler, saramatrace.WithGroupID(groupID))
 
 	ctx := context.Background()
 	for {

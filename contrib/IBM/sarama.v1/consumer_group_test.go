@@ -39,7 +39,7 @@ func TestWrapConsumerGroupHandler(t *testing.T) {
 		ready:       make(chan bool),
 		rcvMessages: make(chan *sarama.ConsumerMessage, 1),
 	}
-	tracedHandler := WrapConsumerGroupHandler(handler, WithDataStreams())
+	tracedHandler := WrapConsumerGroupHandler(handler, WithDataStreams(), WithGroupID(testGroupID))
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -112,7 +112,7 @@ func TestWrapConsumerGroupHandler(t *testing.T) {
 	assert.Equal(t, ext.SpanKindConsumer, s1.Tag(ext.SpanKind))
 	assert.Equal(t, "kafka", s1.Tag(ext.MessagingSystem))
 
-	assertDSMConsumerPathway(t, testTopic, "", consumeMsg, true)
+	assertDSMConsumerPathway(t, testTopic, testGroupID, consumeMsg, true)
 
 	assert.Equal(t, s0.SpanID(), s1.ParentID(), "spans are not parent-child")
 }
