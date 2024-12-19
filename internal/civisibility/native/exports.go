@@ -296,11 +296,19 @@ type (
 	}
 )
 
-// topt_initialize initializes the library with the given options.
-// It should be called before any other function.
-// If the library has already been initialized, it returns false.
-// If the initialization is successful, it returns true.
-// If the initialization fails, it returns false.
+// topt_initialize initializes the library with the given runtime and environment options.
+//
+// Parameters:
+//   - options: A struct of type topt_InitOptions containing initialization configuration such as language, runtime info, working directory, environment variables, and global tags.
+//
+// Returns:
+//   - C.Bool: Returns true if the library was successfully initialized, and false if it was already initialized or initialization failed.
+//
+// This function should be called before any other topt_ functions. If called multiple times, only the first call will have effect. Subsequent calls will return false.
+//
+// Example usage:
+//
+//	topt_initialize(myOptions)
 //
 //export topt_initialize
 func topt_initialize(options C.topt_InitOptions) C.Bool {
@@ -356,13 +364,12 @@ func topt_initialize(options C.topt_InitOptions) C.Bool {
 	return toBool(true)
 }
 
-// topt_shutdown shuts down the library.
-// It should be called when the library is no longer needed.
-// If the library has already been shut down, it returns false.
-// If the shutdown is successful, it returns true.
-// If the shutdown fails, it returns false.
-// After a successful shutdown, the library should not be used anymore.
-// If the library is used after a shutdown, the behavior is undefined.
+// topt_shutdown gracefully shuts down the library.
+//
+// Returns:
+//   - C.Bool: Returns true if the library was successfully shut down, and false if it was already shut down or never initialized.
+//
+// After calling this function, the library is no longer safe to use. All ongoing sessions, modules, suites, tests, and spans will be considered closed.
 //
 //export topt_shutdown
 func topt_shutdown() C.Bool {
@@ -373,8 +380,12 @@ func topt_shutdown() C.Bool {
 	return toBool(true)
 }
 
-// topt_get_settings returns the settings of the library.
-// If the settings are successfully retrieved, it returns the settings.
+// topt_get_settings retrieves the current configuration and feature flags of the library.
+//
+// Returns:
+//   - topt_SettingsResponse: A struct containing various settings such as code coverage enablement, early flake detection parameters, flaky test retries, and other integration-related flags.
+//
+// If no settings are available or if retrieval fails, it returns default values (mostly disabled).
 //
 //export topt_get_settings
 func topt_get_settings() C.topt_SettingsResponse {
@@ -418,9 +429,12 @@ func topt_get_settings() C.topt_SettingsResponse {
 	}
 }
 
-// topt_get_flaky_test_retries_settings returns the settings for flaky test retries.
-// If the settings are successfully retrieved, it returns the settings.
-// If the settings are not available, the retry count is 0 and the total retry count is 0.
+// topt_get_flaky_test_retries_settings retrieves the configuration for flaky test retries.
+//
+// Returns:
+//   - topt_FlakyTestRetriesSettings: Contains the retry count and total retry count for flaky tests.
+//
+// If no configuration is available, returns zeroed values.
 //
 //export topt_get_flaky_test_retries_settings
 func topt_get_flaky_test_retries_settings() C.topt_FlakyTestRetriesSettings {
@@ -438,9 +452,12 @@ func topt_get_flaky_test_retries_settings() C.topt_FlakyTestRetriesSettings {
 	}
 }
 
-// topt_get_known_tests returns the known tests.
-// If the known tests are successfully retrieved, it returns the known tests.
-// If the known tests are not available, it returns an empty array.
+// topt_get_known_tests returns an array of known tests collected from the early flake detection settings.
+//
+// Returns:
+//   - topt_KnownTestArray: A struct holding a dynamically allocated array of topt_KnownTest elements along with its length.
+//
+// Use topt_free_known_tests to free the allocated memory.
 //
 //export topt_get_known_tests
 func topt_get_known_tests() C.topt_KnownTestArray {
@@ -468,7 +485,12 @@ func topt_get_known_tests() C.topt_KnownTestArray {
 	}
 }
 
-// topt_free_known_tests frees the known tests array
+// topt_free_known_tests frees the memory allocated by topt_get_known_tests.
+//
+// Parameters:
+//   - knownTests: The topt_KnownTestArray previously returned by topt_get_known_tests.
+//
+// This function should be called after you are done using the known tests array to avoid memory leaks.
 //
 //export topt_free_known_tests
 func topt_free_known_tests(knownTests C.topt_KnownTestArray) {
@@ -481,10 +503,12 @@ func topt_free_known_tests(knownTests C.topt_KnownTestArray) {
 	C.free(unsafe.Pointer(knownTests.data))
 }
 
-// topt_get_skippable_tests returns the skippable tests.
-// If the skippable tests are successfully retrieved, it returns the skippable tests.
-// If the skippable tests are not available, it returns an empty array.
-// The custom configurations are stored as JSON strings.
+// topt_get_skippable_tests retrieves an array of tests that should be skipped, including their parameters and any custom configurations.
+//
+// Returns:
+//   - topt_SkippableTestArray: A struct containing a dynamically allocated array of topt_SkippableTest along with its length.
+//
+// Use topt_free_skippable_tests to free the allocated memory.
 //
 //export topt_get_skippable_tests
 func topt_get_skippable_tests() C.topt_SkippableTestArray {
@@ -519,7 +543,12 @@ func topt_get_skippable_tests() C.topt_SkippableTestArray {
 	}
 }
 
-// topt_free_skippable_tests frees the skippable tests array
+// topt_free_skippable_tests frees the memory allocated by topt_get_skippable_tests.
+//
+// Parameters:
+//   - skippableTests: The topt_SkippableTestArray previously returned by topt_get_skippable_tests.
+//
+// This function should be called after you are done using the skippable tests array to avoid memory leaks.
 //
 //export topt_free_skippable_tests
 func topt_free_skippable_tests(skippableTests C.topt_SkippableTestArray) {
@@ -533,7 +562,13 @@ func topt_free_skippable_tests(skippableTests C.topt_SkippableTestArray) {
 	C.free(unsafe.Pointer(skippableTests.data))
 }
 
-// topt_send_code_coverage_payload sends the code coverage payload to the backend.
+// topt_send_code_coverage_payload sends one or more code coverage payloads to the backend.
+//
+// Parameters:
+//   - coverages: A pointer to an array of topt_TestCoverage structs describing code coverage data for multiple tests.
+//   - coverages_length: The number of elements in the coverages array.
+//
+// This function will assemble the data into a payload and send it to the configured backend. It does not return a status; errors are handled internally.
 //
 //export topt_send_code_coverage_payload
 func topt_send_code_coverage_payload(coverages *C.topt_TestCoverage, coverages_length C.size_t) {
@@ -592,6 +627,16 @@ func getSession(session_id C.topt_SessionId) (civisibility.TestSession, bool) {
 
 // topt_session_create creates a new test session.
 //
+// Parameters:
+//   - framework: Optional name of the testing framework.
+//   - framework_version: Optional version of the testing framework.
+//   - start_time: Optional pointer to a topt_UnixTime representing the session start time. If nil, current time is used.
+//
+// Returns:
+//   - topt_SessionResult: A struct containing the session_id and a boolean indicating success.
+//
+// If successful, the session_id can be used with subsequent session-related functions. Each session should eventually be closed with topt_session_close.
+//
 //export topt_session_create
 func topt_session_create(framework *C.char, framework_version *C.char, start_time *C.topt_UnixTime) C.topt_SessionResult {
 	var sessionOptions []civisibility.TestSessionStartOption
@@ -611,7 +656,17 @@ func topt_session_create(framework *C.char, framework_version *C.char, start_tim
 	return C.topt_SessionResult{session_id: C.topt_SessionId(id), valid: toBool(true)}
 }
 
-// topt_session_close closes the test session with the given ID.
+// topt_session_close closes an existing test session.
+//
+// Parameters:
+//   - session_id: The ID of the session to close.
+//   - exit_code: The exit code of the overall test run (e.g., 0 for success).
+//   - finish_time: Optional pointer to a topt_UnixTime representing when the session ended. If nil, current time is used.
+//
+// Returns:
+//   - C.Bool: True if the session was found and closed, false otherwise.
+//
+// After this call, the session_id is no longer valid.
 //
 //export topt_session_close
 func topt_session_close(session_id C.topt_SessionId, exit_code C.int, finish_time *C.topt_UnixTime) C.Bool {
@@ -631,7 +686,17 @@ func topt_session_close(session_id C.topt_SessionId, exit_code C.int, finish_tim
 	return toBool(false)
 }
 
-// topt_session_set_string_tag sets a string tag for the test session with the given ID.
+// topt_session_set_string_tag sets a string tag on a test session.
+//
+// Parameters:
+//   - session_id: The ID of the session.
+//   - key: The string tag key.
+//   - value: The string tag value.
+//
+// Returns:
+//   - C.Bool: True if the tag was set successfully, false if the session was not found or key was nil.
+//
+// Tags add metadata to the session.
 //
 //export topt_session_set_string_tag
 func topt_session_set_string_tag(session_id C.topt_SessionId, key *C.char, value *C.char) C.Bool {
@@ -645,7 +710,17 @@ func topt_session_set_string_tag(session_id C.topt_SessionId, key *C.char, value
 	return toBool(false)
 }
 
-// topt_session_set_number_tag sets a number tag for the test session with the given ID.
+// topt_session_set_number_tag sets a numerical tag on a test session.
+//
+// Parameters:
+//   - session_id: The ID of the session.
+//   - key: The tag key.
+//   - value: A double representing the tag value.
+//
+// Returns:
+//   - C.Bool: True if the tag was set successfully, false otherwise.
+//
+// Similar to string tags, number tags provide numeric metadata on the session.
 //
 //export topt_session_set_number_tag
 func topt_session_set_number_tag(session_id C.topt_SessionId, key *C.char, value C.double) C.Bool {
@@ -659,7 +734,18 @@ func topt_session_set_number_tag(session_id C.topt_SessionId, key *C.char, value
 	return toBool(false)
 }
 
-// topt_session_set_error sets an error for the test session with the given ID.
+// topt_session_set_error marks a session as having encountered an error.
+//
+// Parameters:
+//   - session_id: The ID of the session.
+//   - error_type: A string describing the type/kind of error.
+//   - error_message: A string containing a descriptive error message.
+//   - error_stacktrace: A string containing the stacktrace or contextual error details.
+//
+// Returns:
+//   - C.Bool: True if the error was recorded successfully, false otherwise.
+//
+// Use this to indicate that something went wrong during the session.
 //
 //export topt_session_set_error
 func topt_session_set_error(session_id C.topt_SessionId, error_type *C.char, error_message *C.char, error_stacktrace *C.char) C.Bool {
@@ -690,7 +776,19 @@ func getModule(module_id C.topt_ModuleId) (civisibility.TestModule, bool) {
 	return module, ok
 }
 
-// topt_module_create creates a new test module.
+// topt_module_create creates or retrieves a test module within an existing session.
+//
+// Parameters:
+//   - session_id: The ID of the parent session.
+//   - name: The name of the test module.
+//   - framework: Optional name of the test framework.
+//   - framework_version: Optional version of the test framework.
+//   - start_time: Optional pointer to a topt_UnixTime for the module start time.
+//
+// Returns:
+//   - topt_ModuleResult: Contains the module_id and a validity flag.
+//
+// The created or retrieved module is identified by name and can be closed later with topt_module_close.
 //
 //export topt_module_create
 func topt_module_create(session_id C.topt_SessionId, name *C.char, framework *C.char, framework_version *C.char, start_time *C.topt_UnixTime) C.topt_ModuleResult {
@@ -715,7 +813,14 @@ func topt_module_create(session_id C.topt_SessionId, name *C.char, framework *C.
 	return C.topt_ModuleResult{module_id: C.topt_ModuleId(0), valid: toBool(false)}
 }
 
-// topt_module_close closes the test module with the given ID.
+// topt_module_close closes a test module.
+//
+// Parameters:
+//   - module_id: The ID of the module to close.
+//   - finish_time: Optional pointer to a topt_UnixTime representing the module end time.
+//
+// Returns:
+//   - C.Bool: True if the module was found and closed, false otherwise.
 //
 //export topt_module_close
 func topt_module_close(module_id C.topt_ModuleId, finish_time *C.topt_UnixTime) C.Bool {
@@ -735,7 +840,15 @@ func topt_module_close(module_id C.topt_ModuleId, finish_time *C.topt_UnixTime) 
 	return toBool(false)
 }
 
-// topt_module_set_string_tag sets a string tag for the test module with the given ID.
+// topt_module_set_string_tag adds a string tag to a test module.
+//
+// Parameters:
+//   - module_id: The module's ID.
+//   - key: Tag key string.
+//   - value: Tag value string.
+//
+// Returns:
+//   - C.Bool: True if successful, false otherwise.
 //
 //export topt_module_set_string_tag
 func topt_module_set_string_tag(module_id C.topt_ModuleId, key *C.char, value *C.char) C.Bool {
@@ -749,7 +862,15 @@ func topt_module_set_string_tag(module_id C.topt_ModuleId, key *C.char, value *C
 	return toBool(false)
 }
 
-// topt_module_set_number_tag sets a number tag for the test module with the given ID.
+// topt_module_set_number_tag adds a numeric tag to a test module.
+//
+// Parameters:
+//   - module_id: The module's ID.
+//   - key: Tag key string.
+//   - value: A double representing the numeric value.
+//
+// Returns:
+//   - C.Bool: True if successful, false otherwise.
 //
 //export topt_module_set_number_tag
 func topt_module_set_number_tag(module_id C.topt_ModuleId, key *C.char, value C.double) C.Bool {
@@ -763,7 +884,16 @@ func topt_module_set_number_tag(module_id C.topt_ModuleId, key *C.char, value C.
 	return toBool(false)
 }
 
-// topt_module_set_error sets an error for the test module with the given ID.
+// topt_module_set_error records an error for the specified test module.
+//
+// Parameters:
+//   - module_id: The module's ID.
+//   - error_type: Error classification or type.
+//   - error_message: Descriptive message of the error.
+//   - error_stacktrace: Stacktrace or additional error context.
+//
+// Returns:
+//   - C.Bool: True if the error was recorded, false otherwise.
 //
 //export topt_module_set_error
 func topt_module_set_error(module_id C.topt_ModuleId, error_type *C.char, error_message *C.char, error_stacktrace *C.char) C.Bool {
@@ -794,7 +924,17 @@ func getSuite(suite_id C.topt_SuiteId) (civisibility.TestSuite, bool) {
 	return suite, ok
 }
 
-// topt_suite_create creates a new test suite.
+// topt_suite_create creates or retrieves a test suite inside an existing module.
+//
+// Parameters:
+//   - module_id: The parent module's ID.
+//   - name: The name of the suite.
+//   - start_time: Optional pointer to a topt_UnixTime for the suite start time.
+//
+// Returns:
+//   - topt_SuiteResult: Contains the suite_id and a validity flag.
+//
+// Use topt_suite_close to close the suite when completed.
 //
 //export topt_suite_create
 func topt_suite_create(module_id C.topt_ModuleId, name *C.char, start_time *C.topt_UnixTime) C.topt_SuiteResult {
@@ -816,7 +956,14 @@ func topt_suite_create(module_id C.topt_ModuleId, name *C.char, start_time *C.to
 	return C.topt_SuiteResult{suite_id: C.topt_SuiteId(0), valid: toBool(false)}
 }
 
-// topt_suite_close closes the test suite with the given ID.
+// topt_suite_close closes a test suite.
+//
+// Parameters:
+//   - suite_id: The suite's ID.
+//   - finish_time: Optional pointer to a topt_UnixTime for the suite end time.
+//
+// Returns:
+//   - C.Bool: True if the suite was successfully closed, false otherwise.
 //
 //export topt_suite_close
 func topt_suite_close(suite_id C.topt_SuiteId, finish_time *C.topt_UnixTime) C.Bool {
@@ -836,7 +983,15 @@ func topt_suite_close(suite_id C.topt_SuiteId, finish_time *C.topt_UnixTime) C.B
 	return toBool(false)
 }
 
-// topt_suite_set_string_tag sets a string tag for the test suite with the given ID.
+// topt_suite_set_string_tag adds a string tag to a test suite.
+//
+// Parameters:
+//   - suite_id: The suite's ID.
+//   - key: Tag key string.
+//   - value: Tag value string.
+//
+// Returns:
+//   - C.Bool: True if successful, false otherwise.
 //
 //export topt_suite_set_string_tag
 func topt_suite_set_string_tag(suite_id C.topt_SuiteId, key *C.char, value *C.char) C.Bool {
@@ -850,7 +1005,15 @@ func topt_suite_set_string_tag(suite_id C.topt_SuiteId, key *C.char, value *C.ch
 	return toBool(false)
 }
 
-// topt_suite_set_number_tag sets a number tag for the test suite with the given ID.
+// topt_suite_set_number_tag adds a numeric tag to a test suite.
+//
+// Parameters:
+//   - suite_id: The suite's ID.
+//   - key: Tag key string.
+//   - value: A double representing the numeric value.
+//
+// Returns:
+//   - C.Bool: True if successful, false otherwise.
 //
 //export topt_suite_set_number_tag
 func topt_suite_set_number_tag(suite_id C.topt_SuiteId, key *C.char, value C.double) C.Bool {
@@ -864,7 +1027,16 @@ func topt_suite_set_number_tag(suite_id C.topt_SuiteId, key *C.char, value C.dou
 	return toBool(false)
 }
 
-// topt_suite_set_error sets an error for the test suite with the given ID.
+// topt_suite_set_error records an error for a test suite.
+//
+// Parameters:
+//   - suite_id: The suite's ID.
+//   - error_type: Type/category of the error.
+//   - error_message: The error message.
+//   - error_stacktrace: Detailed stacktrace or error context.
+//
+// Returns:
+//   - C.Bool: True if the error was recorded successfully, false otherwise.
 //
 //export topt_suite_set_error
 func topt_suite_set_error(suite_id C.topt_SuiteId, error_type *C.char, error_message *C.char, error_stacktrace *C.char) C.Bool {
@@ -875,7 +1047,18 @@ func topt_suite_set_error(suite_id C.topt_SuiteId, error_type *C.char, error_mes
 	return toBool(false)
 }
 
-// topt_suite_set_source sets the source file, start line, and end line for the test suite with the given ID.
+// topt_suite_set_source sets the source code reference for the suite.
+//
+// Parameters:
+//   - suite_id: The suite's ID.
+//   - file: The source file name associated with the suite.
+//   - start_line: Pointer to an integer representing the start line number in the source file.
+//   - end_line: Pointer to an integer representing the end line number in the source file.
+//
+// Returns:
+//   - C.Bool: True if the information was recorded successfully, false otherwise.
+//
+// This helps link tests to their source locations for better traceability.
 //
 //export topt_suite_set_source
 func topt_suite_set_source(suite_id C.topt_SuiteId, file *C.char, start_line *C.int, end_line *C.int) C.Bool {
@@ -925,7 +1108,17 @@ func getTest(test_id C.topt_TestId) (civisibility.Test, bool) {
 	return test, ok
 }
 
-// topt_test_create creates a new test span.
+// topt_test_create creates a new test within a suite.
+//
+// Parameters:
+//   - suite_id: The parent suite's ID.
+//   - name: The test name.
+//   - start_time: Optional pointer to a topt_UnixTime for the test start time.
+//
+// Returns:
+//   - topt_TestResult: Contains the test_id and a validity flag.
+//
+// Close the test later with topt_test_close once it completes.
 //
 //export topt_test_create
 func topt_test_create(suite_id C.topt_SuiteId, name *C.char, start_time *C.topt_UnixTime) C.topt_TestResult {
@@ -947,7 +1140,14 @@ func topt_test_create(suite_id C.topt_SuiteId, name *C.char, start_time *C.topt_
 	return C.topt_TestResult{test_id: C.topt_TestId(0), valid: toBool(false)}
 }
 
-// topt_test_close closes the test span with the given ID.
+// topt_test_close completes a test.
+//
+// Parameters:
+//   - test_id: The ID of the test to close.
+//   - options: A topt_TestCloseOptions struct specifying the test status, optional finish time, and skip reason.
+//
+// Returns:
+//   - C.Bool: True if the test was found and successfully closed, false otherwise.
 //
 //export topt_test_close
 func topt_test_close(test_id C.topt_TestId, options C.topt_TestCloseOptions) C.Bool {
@@ -970,7 +1170,15 @@ func topt_test_close(test_id C.topt_TestId, options C.topt_TestCloseOptions) C.B
 	return toBool(false)
 }
 
-// topt_test_set_string_tag sets a string tag for the test span with the given ID.
+// topt_test_set_string_tag adds a string tag to a test.
+//
+// Parameters:
+//   - test_id: The test's ID.
+//   - key: The tag key string.
+//   - value: The tag value string.
+//
+// Returns:
+//   - C.Bool: True if successful, false otherwise.
 //
 //export topt_test_set_string_tag
 func topt_test_set_string_tag(test_id C.topt_TestId, key *C.char, value *C.char) C.Bool {
@@ -984,7 +1192,15 @@ func topt_test_set_string_tag(test_id C.topt_TestId, key *C.char, value *C.char)
 	return toBool(false)
 }
 
-// topt_test_set_number_tag sets a number tag for the test span with the given ID.
+// topt_test_set_number_tag adds a numeric tag to a test.
+//
+// Parameters:
+//   - test_id: The test's ID.
+//   - key: The tag key string.
+//   - value: A double representing the numeric value.
+//
+// Returns:
+//   - C.Bool: True if successful, false otherwise.
 //
 //export topt_test_set_number_tag
 func topt_test_set_number_tag(test_id C.topt_TestId, key *C.char, value C.double) C.Bool {
@@ -998,7 +1214,16 @@ func topt_test_set_number_tag(test_id C.topt_TestId, key *C.char, value C.double
 	return toBool(false)
 }
 
-// topt_test_set_error sets an error for the test span with the given ID.
+// topt_test_set_error marks a test as having encountered an error.
+//
+// Parameters:
+//   - test_id: The test's ID.
+//   - error_type: The type of the error.
+//   - error_message: A descriptive error message.
+//   - error_stacktrace: A stacktrace or detailed error context.
+//
+// Returns:
+//   - C.Bool: True if the error was recorded successfully, false otherwise.
 //
 //export topt_test_set_error
 func topt_test_set_error(test_id C.topt_TestId, error_type *C.char, error_message *C.char, error_stacktrace *C.char) C.Bool {
@@ -1009,7 +1234,16 @@ func topt_test_set_error(test_id C.topt_TestId, error_type *C.char, error_messag
 	return toBool(false)
 }
 
-// topt_test_set_source sets the source file, start line, and end line for the test span with the given ID.
+// topt_test_set_source sets the source location for the test.
+//
+// Parameters:
+//   - test_id: The test's ID.
+//   - file: The source file name where the test is defined.
+//   - start_line: Pointer to an integer indicating the start line of the test definition.
+//   - end_line: Pointer to an integer indicating the end line of the test definition.
+//
+// Returns:
+//   - C.Bool: True if successful, false otherwise.
 //
 //export topt_test_set_source
 func topt_test_set_source(test_id C.topt_TestId, file *C.char, start_line *C.int, end_line *C.int) C.Bool {
@@ -1039,7 +1273,17 @@ func topt_test_set_source(test_id C.topt_TestId, file *C.char, start_line *C.int
 	return toBool(false)
 }
 
-// topt_test_set_benchmark_data sets the benchmark data for the test span with the given ID.
+// topt_test_set_benchmark_string_data sets benchmark-related data on a test using string key-value pairs.
+//
+// Parameters:
+//   - test_id: The test's ID.
+//   - measure_type: A string to categorize the benchmark data.
+//   - data_array: A topt_KeyValueArray containing string key-value pairs.
+//
+// Returns:
+//   - C.Bool: True if data was recorded successfully, false otherwise.
+//
+// Use this to attach performance metrics or custom benchmarking info in a string form.
 //
 //export topt_test_set_benchmark_string_data
 func topt_test_set_benchmark_string_data(test_id C.topt_TestId, measure_type *C.char, data_array C.topt_KeyValueArray) C.Bool {
@@ -1059,7 +1303,17 @@ func topt_test_set_benchmark_string_data(test_id C.topt_TestId, measure_type *C.
 	return toBool(false)
 }
 
-// topt_test_set_benchmark_number_data sets the benchmark number data for the test span with the given ID.
+// topt_test_set_benchmark_number_data sets benchmark-related data on a test using numeric key-value pairs.
+//
+// Parameters:
+//   - test_id: The test's ID.
+//   - measure_type: A string describing the type of measurement.
+//   - data_array: A topt_KeyNumberArray containing numeric key-value pairs.
+//
+// Returns:
+//   - C.Bool: True if data was recorded successfully, false otherwise.
+//
+// Use this to record numerical performance metrics or custom stats for a test.
 //
 //export topt_test_set_benchmark_number_data
 func topt_test_set_benchmark_number_data(test_id C.topt_TestId, measure_type *C.char, data_array C.topt_KeyNumberArray) C.Bool {
@@ -1126,7 +1380,16 @@ func getContext(tslv_id C.topt_TslvId) context.Context {
 	return context.Background()
 }
 
-// topt_span_create creates a new span.
+// topt_span_create creates a new generic span as a child of a session, module, suite, test, or another span.
+//
+// Parameters:
+//   - parent_id: The ID of the parent entity (session, module, suite, test, or span).
+//   - span_options: A topt_SpanStartOptions struct containing span metadata, such as operation name, service name, resource name, start time, and tags.
+//
+// Returns:
+//   - topt_SpanResult: Contains the new span_id and a validity flag.
+//
+// Spans represent trace segments and should be closed with topt_span_close.
 //
 //export topt_span_create
 func topt_span_create(parent_id C.topt_TslvId, span_options C.topt_SpanStartOptions) C.topt_SpanResult {
@@ -1171,7 +1434,14 @@ func topt_span_create(parent_id C.topt_TslvId, span_options C.topt_SpanStartOpti
 	return C.topt_SpanResult{span_id: C.topt_TslvId(id), valid: toBool(true)}
 }
 
-// topt_span_close closes the span with the given ID.
+// topt_span_close finishes a previously opened span.
+//
+// Parameters:
+//   - span_id: The ID of the span.
+//   - finish_time: Optional pointer to a topt_UnixTime representing when the span ended.
+//
+// Returns:
+//   - C.Bool: True if the span was found and closed successfully, false otherwise.
 //
 //export topt_span_close
 func topt_span_close(span_id C.topt_TslvId, finish_time *C.topt_UnixTime) C.Bool {
@@ -1191,7 +1461,15 @@ func topt_span_close(span_id C.topt_TslvId, finish_time *C.topt_UnixTime) C.Bool
 	return toBool(false)
 }
 
-// topt_span_set_string_tag sets a string tag for the span with the given ID.
+// topt_span_set_string_tag adds a string tag to a span.
+//
+// Parameters:
+//   - span_id: The span's ID.
+//   - key: Tag key string.
+//   - value: Tag value string.
+//
+// Returns:
+//   - C.Bool: True if successful, false otherwise.
 //
 //export topt_span_set_string_tag
 func topt_span_set_string_tag(span_id C.topt_TslvId, key *C.char, value *C.char) C.Bool {
@@ -1205,7 +1483,15 @@ func topt_span_set_string_tag(span_id C.topt_TslvId, key *C.char, value *C.char)
 	return toBool(false)
 }
 
-// topt_span_set_number_tag sets a number tag for the span with the given ID.
+// topt_span_set_number_tag adds a numeric tag to a span.
+//
+// Parameters:
+//   - span_id: The span's ID.
+//   - key: Tag key string.
+//   - value: A double representing the numeric value.
+//
+// Returns:
+//   - C.Bool: True if successful, false otherwise.
 //
 //export topt_span_set_number_tag
 func topt_span_set_number_tag(span_id C.topt_TslvId, key *C.char, value C.double) C.Bool {
@@ -1219,7 +1505,16 @@ func topt_span_set_number_tag(span_id C.topt_TslvId, key *C.char, value C.double
 	return toBool(false)
 }
 
-// topt_span_set_error sets an error for the span with the given ID.
+// topt_span_set_error marks the span as having encountered an error.
+//
+// Parameters:
+//   - span_id: The span's ID.
+//   - error_type: A string describing the error type.
+//   - error_message: A string describing the error message.
+//   - error_stacktrace: A string containing a stacktrace or additional error details.
+//
+// Returns:
+//   - C.Bool: True if the error was recorded, false otherwise.
 //
 //export topt_span_set_error
 func topt_span_set_error(span_id C.topt_TslvId, error_type *C.char, error_message *C.char, error_stacktrace *C.char) C.Bool {
