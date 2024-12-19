@@ -526,7 +526,7 @@ func TestStreamSendsErrorCode(t *testing.T) {
 		if s.Tag(ext.SpanKind) != ext.SpanKindServer {
 			continue
 		}
-		span = s
+		span = *s
 	}
 	assert.NotNilf(t, span, "at least one span should contain error code, the spans were:\n%v", spans)
 }
