@@ -30,24 +30,23 @@ func (h slogHandler) Enabled(ctx context.Context, lvl slog.Level) bool {
 }
 
 func (h slogHandler) Handle(ctx context.Context, r slog.Record) error {
-	parts := make([]string, 0, 1+len(h.attrs)+r.NumAttrs())
-	parts = append(parts, r.Message)
+	parts := make([]string, 0, len(h.attrs)+r.NumAttrs())
 	parts = append(parts, h.attrs...)
 	r.Attrs(func(a slog.Attr) bool {
 		parts = append(parts, formatAttr(a, h.groups))
 		return true
 	})
 
-	msg := strings.Join(parts, " ")
+	extra := strings.Join(parts, " ")
 	switch r.Level {
 	case slog.LevelDebug:
-		log.Debug(msg)
+		log.Debug("%s %s", r.Message, extra)
 	case slog.LevelInfo:
-		log.Info(msg)
+		log.Info("%s %s", r.Message, extra)
 	case slog.LevelWarn:
-		log.Warn(msg)
+		log.Warn("%s %s", r.Message, extra)
 	case slog.LevelError:
-		log.Error(msg)
+		log.Error("%s %s", r.Message, extra)
 	}
 	return nil
 }
