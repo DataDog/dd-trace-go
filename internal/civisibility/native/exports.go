@@ -297,6 +297,10 @@ type (
 )
 
 // topt_initialize initializes the library with the given options.
+// It should be called before any other function.
+// If the library has already been initialized, it returns false.
+// If the initialization is successful, it returns true.
+// If the initialization fails, it returns false.
 //
 //export topt_initialize
 func topt_initialize(options C.topt_InitOptions) C.Bool {
@@ -353,6 +357,12 @@ func topt_initialize(options C.topt_InitOptions) C.Bool {
 }
 
 // topt_shutdown shuts down the library.
+// It should be called when the library is no longer needed.
+// If the library has already been shut down, it returns false.
+// If the shutdown is successful, it returns true.
+// If the shutdown fails, it returns false.
+// After a successful shutdown, the library should not be used anymore.
+// If the library is used after a shutdown, the behavior is undefined.
 //
 //export topt_shutdown
 func topt_shutdown() C.Bool {
@@ -364,6 +374,7 @@ func topt_shutdown() C.Bool {
 }
 
 // topt_get_settings returns the settings of the library.
+// If the settings are successfully retrieved, it returns the settings.
 //
 //export topt_get_settings
 func topt_get_settings() C.topt_SettingsResponse {
@@ -408,6 +419,8 @@ func topt_get_settings() C.topt_SettingsResponse {
 }
 
 // topt_get_flaky_test_retries_settings returns the settings for flaky test retries.
+// If the settings are successfully retrieved, it returns the settings.
+// If the settings are not available, the retry count is 0 and the total retry count is 0.
 //
 //export topt_get_flaky_test_retries_settings
 func topt_get_flaky_test_retries_settings() C.topt_FlakyTestRetriesSettings {
@@ -426,6 +439,8 @@ func topt_get_flaky_test_retries_settings() C.topt_FlakyTestRetriesSettings {
 }
 
 // topt_get_known_tests returns the known tests.
+// If the known tests are successfully retrieved, it returns the known tests.
+// If the known tests are not available, it returns an empty array.
 //
 //export topt_get_known_tests
 func topt_get_known_tests() C.topt_KnownTestArray {
@@ -467,6 +482,9 @@ func topt_free_known_tests(knownTests C.topt_KnownTestArray) {
 }
 
 // topt_get_skippable_tests returns the skippable tests.
+// If the skippable tests are successfully retrieved, it returns the skippable tests.
+// If the skippable tests are not available, it returns an empty array.
+// The custom configurations are stored as JSON strings.
 //
 //export topt_get_skippable_tests
 func topt_get_skippable_tests() C.topt_SkippableTestArray {
@@ -515,7 +533,7 @@ func topt_free_skippable_tests(skippableTests C.topt_SkippableTestArray) {
 	C.free(unsafe.Pointer(skippableTests.data))
 }
 
-// topt_send_code_coverage_payload sends the code coverage payload.
+// topt_send_code_coverage_payload sends the code coverage payload to the backend.
 //
 //export topt_send_code_coverage_payload
 func topt_send_code_coverage_payload(coverages *C.topt_TestCoverage, coverages_length C.size_t) {
