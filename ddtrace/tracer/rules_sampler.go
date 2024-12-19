@@ -37,9 +37,9 @@ type rulesSampler struct {
 // Rules are split between trace and single span sampling rules according to their type.
 // Such rules are user-defined through environment variable or WithSamplingRules option.
 // Invalid rules or environment variable values are tolerated, by logging warnings and then ignoring them.
-func newRulesSampler(traceRules, spanRules []SamplingRule, traceSampleRate, rateLimit float64) *rulesSampler {
+func newRulesSampler(traceRules, spanRules []SamplingRule, traceSampleRate, rateLimitPerSecond float64) *rulesSampler {
 	return &rulesSampler{
-		traces: newTraceRulesSampler(traceRules, traceSampleRate, rateLimit),
+		traces: newTraceRulesSampler(traceRules, traceSampleRate, rateLimitPerSecond),
 		spans:  newSingleSpanRulesSampler(spanRules),
 	}
 }
@@ -372,11 +372,11 @@ type traceRulesSampler struct {
 
 // newTraceRulesSampler configures a *traceRulesSampler instance using the given set of rules.
 // Invalid rules or environment variable values are tolerated, by logging warnings and then ignoring them.
-func newTraceRulesSampler(rules []SamplingRule, traceSampleRate, rateLimit float64) *traceRulesSampler {
+func newTraceRulesSampler(rules []SamplingRule, traceSampleRate, rateLimitPerSecond float64) *traceRulesSampler {
 	return &traceRulesSampler{
 		rules:      rules,
 		globalRate: traceSampleRate,
-		limiter:    newRateLimiter(rateLimit),
+		limiter:    newRateLimiter(rateLimitPerSecond),
 	}
 }
 
@@ -528,9 +528,9 @@ func (rs *traceRulesSampler) limit() (float64, bool) {
 
 // newRateLimiter returns a rate limiter which restricts the number of traces sampled per second.
 // The limit is DD_TRACE_RATE_LIMIT if set, `defaultRateLimit` otherwise.
-func newRateLimiter(limit float64) *rateLimiter {
+func newRateLimiter(ratePerSecond float64) *rateLimiter {
 	return &rateLimiter{
-		limiter:  rate.NewLimiter(rate.Limit(limit), int(math.Ceil(limit))),
+		limiter:  rate.NewLimiter(rate.Limit(ratePerSecond), int(math.Ceil(ratePerSecond))),
 		prevTime: time.Now(),
 	}
 }

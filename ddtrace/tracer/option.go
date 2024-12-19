@@ -305,8 +305,8 @@ type config struct {
 	// tracingAsTransport specifies whether the tracer is running in transport-only mode, where traces are only sent when other products request it.
 	tracingAsTransport bool
 
-	// traceRateLimit specifies the rate limit for traces.
-	traceRateLimit float64
+	// traceRateLimitPerSecond specifies the rate limit for traces.
+	traceRateLimitPerSecond float64
 }
 
 // orchestrionConfig contains Orchestrion configuration.
@@ -353,22 +353,21 @@ func newConfig(opts ...StartOption) *config {
 	c.globalSampleRate = sampleRate
 	c.httpClientTimeout = time.Second * 10 // 10 seconds
 
-	c.traceRateLimit = defaultRateLimit
+	c.traceRateLimitPerSecond = defaultRateLimit
 	origin := telemetry.OriginDefault
-	v := os.Getenv("DD_TRACE_RATE_LIMIT")
-	if v != "" {
+	if v, ok := os.LookupEnv("DD_TRACE_RATE_LIMIT"); ok {
 		l, err := strconv.ParseFloat(v, 64)
 		if err != nil {
 			log.Warn("DD_TRACE_RATE_LIMIT invalid, using default value %f: %v", defaultRateLimit, err)
 		} else if l < 0.0 {
 			log.Warn("DD_TRACE_RATE_LIMIT negative, using default value %f", defaultRateLimit)
 		} else {
-			c.traceRateLimit = l
+			c.traceRateLimitPerSecond = l
 			origin = telemetry.OriginEnvVar
 		}
 	}
 
-	reportTelemetryOnAppStarted(telemetry.Configuration{Name: "trace_rate_limit", Value: c.traceRateLimit, Origin: origin})
+	reportTelemetryOnAppStarted(telemetry.Configuration{Name: "trace_rate_limit", Value: c.traceRateLimitPerSecond, Origin: origin})
 
 	if v := os.Getenv("OTEL_LOGS_EXPORTER"); v != "" {
 		log.Warn("OTEL_LOGS_EXPORTER is not supported")
@@ -599,7 +598,7 @@ func newConfig(opts ...StartOption) *config {
 		c.runtimeMetrics = false
 		c.runtimeMetricsV2 = false
 		c.globalSampleRate = 1.0
-		c.traceRateLimit = 1.0 / 60
+		c.traceRateLimitPerSecond = 1.0 / 60
 		WithGlobalTag("_dd.apm.enabled", 0)(c)
 	}
 
