@@ -255,6 +255,34 @@ func TestTracerStart(t *testing.T) {
 		tr.Stop()
 		tr.Stop()
 	})
+
+	t.Run("integration_health_metric", func(t *testing.T) {
+		assert := assert.New(t)
+		defer clearIntegrationsForTests()
+		var tg statsdtest.TestStatsdClient
+
+		ok := MarkIntegrationImported("github.com/go-chi/chi")
+		assert.True(ok)
+		tr, _, _, stop := startTestTracer(t, withStatsdClient(&tg))
+		defer stop()
+
+		tg.Wait(assert, 1, 100*time.Millisecond)
+
+		conf, ok := tr.config.integrations["chi"]
+		assert.True(ok)
+		assert.True(conf.Instrumented)
+
+		counts := tg.Counts()
+		assert.Equal(int64(1), counts["datadog.tracer.integrations"])
+
+		calls := tg.IncrCalls()
+		for _, c := range statsdtest.FilterCallsByName(calls, "datadog.tracer.integrations") {
+			assert.EqualValues(c.GetTags(), []string{"integration:chi", "integration_version:unknown"})
+			return
+		}
+		assert.Fail("expected integration to have appropriate tags")
+
+	})
 }
 
 func TestTracerLogFile(t *testing.T) {
