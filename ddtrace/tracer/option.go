@@ -561,7 +561,7 @@ func newConfig(opts ...StartOption) *config {
 	// Check if CI Visibility mode is enabled
 	if internal.BoolEnv(constants.CIVisibilityEnabledEnvironmentVariable, false) {
 		c.ciVisibilityEnabled = true               // Enable CI Visibility mode
-		c.httpClientTimeout = time.Second * 45     // Increase timeout up to 45 seconds (same as o
+		c.httpClientTimeout = time.Second * 45     // Increase timeout up to 45 seconds (same as other tracers in CIVis mode)
 		c.logStartup = false                       // If we are in CI Visibility mode we don't want to log the startup to stdout to avoid polluting the output
 		ciTransport := newCiVisibilityTransport(c) // Create a default CI Visibility Transport
 		c.transport = ciTransport                  // Replace the default transport with the CI Visibility transport
@@ -594,12 +594,14 @@ func newConfig(opts ...StartOption) *config {
 		// This means to stop sending trace metrics, send one trace per minute and those force-kept by other products
 		// using the tracer as transport layer for their data. And finally adding the _dd.apm.enabled=0 tag to all traces
 		// to let the backend know that it needs to keep APM UI disabled.
-		c.tracingAsTransport = true
-		c.runtimeMetrics = false
-		c.runtimeMetricsV2 = false
 		c.globalSampleRate = 1.0
 		c.traceRateLimitPerSecond = 1.0 / 60
+		c.tracingAsTransport = true
 		WithGlobalTag("_dd.apm.enabled", 0)(c)
+		// Disable runtime metrics. In `tracingAsTransport` mode, we'll still
+		// tell the agent we computed them, so it doesn't do it either.
+		c.runtimeMetrics = false
+		c.runtimeMetricsV2 = false
 	}
 
 	return c
