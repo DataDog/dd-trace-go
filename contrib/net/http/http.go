@@ -60,10 +60,11 @@ func (mux *ServeMux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	copy(so, mux.cfg.spanOpts)
 	so = append(so, httptrace.HeaderTagsFromRequest(r, mux.cfg.headerTags))
 	TraceAndServe(mux.ServeMux, w, r, &ServeConfig{
-		Service:  mux.cfg.serviceName,
-		Resource: resource,
-		SpanOpts: so,
-		Route:    route,
+		Service:       mux.cfg.serviceName,
+		Resource:      resource,
+		SpanOpts:      so,
+		Route:         route,
+		IsStatusError: mux.cfg.isStatusError,
 	})
 }
 
