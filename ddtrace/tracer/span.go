@@ -193,6 +193,12 @@ func (s *span) SetTag(key string, value interface{}) {
 			s.setMetaStruct(key, v.Value)
 			return
 		}
+
+		// Add this tag to propagating tags and to span tags
+		// reserved for internal use only
+		if v, ok := value.(sharedinternal.PropagatingTagValue); ok {
+			s.context.trace.setPropagatingTag(key, v.Value)
+		}
 	}
 
 	// not numeric, not a string, not a fmt.Stringer, not a bool, and not an error
