@@ -133,6 +133,7 @@ typedef struct {
 //   - working_directory: The directory where tests are executed, optional.
 //   - environment_variables: A pointer to a topt_KeyValueArray of environment variables, optional.
 //   - global_tags: A pointer to a topt_KeyValueArray of global tags, optional.
+//   - use_mock_tracer: A Bool indicating whether to use a mock tracer for testing.
 //   - unused01 ... unused05: Reserved fields for future use.
 //
 // Used by topt_initialize to configure environment and tagging.
@@ -143,6 +144,7 @@ typedef struct {
     char* working_directory;
     topt_KeyValueArray* environment_variables;
 	topt_KeyValueArray* global_tags;
+	Bool use_mock_tracer;
 	// Unused fields
 	void* unused01;
 	void* unused02;
@@ -351,6 +353,7 @@ import (
 	"unsafe"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 	ddtracer "gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/constants"
 	civisibility "gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/integrations"
@@ -393,6 +396,8 @@ type (
 		tests        map[uint64]civisibility.Test        // map of test spans
 		spanMutex    sync.RWMutex                        // mutex to protect the spans map
 		spans        map[uint64]spanContainer            // map of spans
+
+		mockTracer mocktracer.Tracer // mock tracer for testing
 	}
 )
 
@@ -425,6 +430,11 @@ func toBool(value bool) C.Bool {
 		return C.Bool(1)
 	}
 	return C.Bool(0)
+}
+
+// fromBool converts a C.Bool (0 or 1) to a Go bool.
+func fromBool(value C.Bool) bool {
+	return value != 0
 }
 
 // *******************************************************************************************************************
@@ -517,7 +527,12 @@ func topt_initialize(options C.topt_InitOptions) C.Bool {
 	}
 
 	utils.AddCITagsMap(tags)
-	civisibility.EnsureCiVisibilityInitialization()
+	if fromBool(options.use_mock_tracer) {
+		exports.mockTracer = civisibility.InitializeCIVisibilityMock()
+	} else {
+		civisibility.EnsureCiVisibilityInitialization()
+	}
+
 	return toBool(true)
 }
 
@@ -1653,6 +1668,45 @@ func topt_span_set_error(span_id C.topt_TslvId, error_type *C.char, error_messag
 		if error_stacktrace != nil {
 			sContainer.span.SetTag(ext.ErrorStack, C.GoString(error_stacktrace))
 		}
+		return toBool(true)
+	}
+	return toBool(false)
+}
+
+// *******************************************************************************************************************
+// Debugging
+// *******************************************************************************************************************
+
+// topt_reset_mock_tracer resets the internal mock tracer instance used for testing scenarios.
+//
+// This function is designed for use in testing and debugging environments where a mock tracer
+// has been previously initialized (via `topt_initialize` with `use_mock_tracer = true`) and
+// test instrumentation and traces need to be cleared and reset. Calling this function will
+// clear all previously recorded spans and state in the mock tracer, effectively returning it
+// to a fresh, uninitialized state.
+//
+// Returns:
+//   - C.Bool: Returns true if the mock tracer was successfully reset, or false if no mock tracer
+//     is currently available.
+//
+// Usage notes:
+//   - This function is intended for environments where deterministic or repeated tests occur
+//     and the test harness requires a clean slate of tracing data between tests.
+//   - Resetting the mock tracer does not affect real tracing operations in non-mock scenarios.
+//   - If the library is not configured to use the mock tracer, this function will return false.
+//
+// Example usage:
+//
+//	if topt_reset_mock_tracer() == C.Bool(1) {
+//	    // Mock tracer has been cleared and is ready for fresh test instrumentation.
+//	} else {
+//	    // No mock tracer was found, nothing to reset.
+//	}
+//
+//export topt_reset_mock_tracer
+func topt_reset_mock_tracer() C.Bool {
+	if exports.mockTracer != nil {
+		exports.mockTracer.Reset()
 		return toBool(true)
 	}
 	return toBool(false)
