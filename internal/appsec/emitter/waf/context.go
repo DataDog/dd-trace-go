@@ -56,6 +56,9 @@ type (
 		waf.RunAddressData
 		dyngo.Operation
 	}
+
+	// SecurityEvent is a dyngo data event sent when a security event is detected by the WAF
+	SecurityEvent struct{}
 )
 
 func (ContextArgs) IsArgOf(*ContextOperation)   {}

@@ -152,7 +152,9 @@ func (t *httpTransport) send(p *payload) (body io.ReadCloser, err error) {
 	req.Header.Set(traceCountHeader, strconv.Itoa(p.itemCount()))
 	req.Header.Set(headerComputedTopLevel, "yes")
 	if t, ok := traceinternal.GetGlobalTracer().(*tracer); ok {
-		if t.config.canComputeStats() {
+		if t.config.tracingAsTransport || t.config.canComputeStats() {
+			// tracingAsTransport uses this header to disable the trace agent's stats computation
+			// while making canComputeStats() always false to also disable client stats computation.
 			req.Header.Set("Datadog-Client-Computed-Stats", "yes")
 		}
 		droppedTraces := int(atomic.SwapUint32(&t.droppedP0Traces, 0))

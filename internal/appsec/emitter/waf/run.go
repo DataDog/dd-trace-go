@@ -53,7 +53,7 @@ func (op *ContextOperation) Run(eventReceiver dyngo.Operation, addrs waf.RunAddr
 	actions.SendActionEvents(eventReceiver, result.Actions)
 
 	if result.HasEvents() {
-		log.Debug("appsec: WAF detected a suspicious event")
+		dyngo.EmitData(op, &SecurityEvent{})
 	}
 }
 
