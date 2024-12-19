@@ -239,15 +239,15 @@ func Flush() {
 
 func flushLocked() {
 	for _, report := range erragg {
-		msg := fmt.Sprintf("%v", report.err)
+		var extra string
 		if report.count > defaultErrorLimit {
-			msg += fmt.Sprintf(", %d+ additional messages skipped (first occurrence: %s)", defaultErrorLimit, report.first.Format(time.RFC822))
+			extra = fmt.Sprintf(", %d+ additional messages skipped (first occurrence: %s)", defaultErrorLimit, report.first.Format(time.RFC822))
 		} else if report.count > 1 {
-			msg += fmt.Sprintf(", %d additional messages skipped (first occurrence: %s)", report.count-1, report.first.Format(time.RFC822))
+			extra = fmt.Sprintf(", %d additional messages skipped (first occurrence: %s)", report.count-1, report.first.Format(time.RFC822))
 		} else {
-			msg += fmt.Sprintf(" (occurred: %s)", report.first.Format(time.RFC822))
+			extra = fmt.Sprintf(" (occurred: %s)", report.first.Format(time.RFC822))
 		}
-		printMsg("ERROR", msg)
+		printMsg("ERROR", "%v%s", report.err, extra)
 	}
 	for k := range erragg {
 		// compiler-optimized map-clearing post go1.11 (golang/go#20138)
