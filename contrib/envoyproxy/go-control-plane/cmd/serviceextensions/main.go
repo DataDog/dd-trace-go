@@ -8,6 +8,7 @@ package main
 import (
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -44,31 +45,20 @@ type serviceExtensionConfig struct {
 
 func loadConfig() serviceExtensionConfig {
 	extensionPortInt := internal.IntEnv("DD_SERVICE_EXTENSION_PORT", 443)
-	if extensionPortInt < 1 || extensionPortInt > 65535 {
-		log.Error("service_extension: invalid port number: %d\n", extensionPortInt)
-		os.Exit(1)
-	}
-
 	healthcheckPortInt := internal.IntEnv("DD_SERVICE_EXTENSION_HEALTHCHECK_PORT", 80)
-	if healthcheckPortInt < 1 || healthcheckPortInt > 65535 {
-		log.Error("service_extension: invalid port number: %d\n", healthcheckPortInt)
-		os.Exit(1)
-	}
+	extensionHostStr := internal.IpEnv("DD_SERVICE_EXTENSION_HOST", net.IP{0, 0, 0, 0}).String()
 
-	extensionHost := internal.IpEnv("DD_SERVICE_EXTENSION_HOST", net.IP{0, 0, 0, 0})
 	extensionPortStr := strconv.FormatInt(int64(extensionPortInt), 10)
 	healthcheckPortStr := strconv.FormatInt(int64(healthcheckPortInt), 10)
 
 	return serviceExtensionConfig{
 		extensionPort:   extensionPortStr,
-		extensionHost:   extensionHost.String(),
+		extensionHost:   extensionHostStr,
 		healthcheckPort: healthcheckPortStr,
 	}
 }
 
 func main() {
-	var extensionService AppsecCalloutExtensionService
-
 	// Set the DD_VERSION to the current tracer version if not set
 	if os.Getenv("DD_VERSION") == "" {
 		if err := os.Setenv("DD_VERSION", version.Tag); err != nil {
@@ -78,10 +68,24 @@ func main() {
 
 	config := loadConfig()
 
+	if err := startService(config); err != nil {
+		log.Error("service_extension: %v\n", err)
+		log.Flush()
+		os.Exit(1)
+	}
+
+	log.Info("service_extension: shutting down\n")
+}
+
+func startService(config serviceExtensionConfig) error {
+	var extensionService AppsecCalloutExtensionService
+
 	tracer.Start(tracer.WithAppSecEnabled(true))
+	defer tracer.Stop()
 	// TODO: Enable ASM standalone mode when it is developed (should be done for Q4 2024)
 
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer cancel()
 	g, ctx := errgroup.WithContext(ctx)
 
 	g.Go(func() error {
@@ -93,12 +97,10 @@ func main() {
 	})
 
 	if err := g.Wait(); err != nil {
-		log.Error("service_extension: %v\n", err)
+		return err
 	}
 
-	log.Info("service_extension: shutting down\n")
-	cancel()
-	tracer.Stop()
+	return nil
 }
 
 func startHealthCheck(ctx context.Context, config serviceExtensionConfig) error {
@@ -124,7 +126,7 @@ func startHealthCheck(ctx context.Context, config serviceExtensionConfig) error 
 	}()
 
 	log.Info("service_extension: health check server started on %s:%s\n", config.extensionHost, config.healthcheckPort)
-	if err := server.ListenAndServe(); err != nil {
+	if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		return fmt.Errorf("health check http server: %v", err)
 	}
 
