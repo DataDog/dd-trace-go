@@ -188,6 +188,22 @@ func (s *mockspan) SetBaggageItem(key, val string) {
 	return
 }
 
+// RemoveBaggageItem removes the baggage item identified by the given key.
+func (s *mockspan) RemoveBaggageItem(key string) {
+	s.context.removeBaggageItem(key)
+}
+
+// RemoveAllBaggageItems removes all baggage items from this span.
+func (s *mockspan) RemoveAllBaggageItems() {
+	s.context.removeAllBaggageItems()
+}
+
+// GetAllBaggageItems returns a copy of all baggage items.
+// If there are no items, it returns an empty map.
+func (s *mockspan) GetAllBaggageItems() map[string]string {
+	return s.context.getAllBaggageItems()
+}
+
 // Finish finishes the current span with the given options.
 func (s *mockspan) Finish(opts ...ddtrace.FinishOption) {
 	var cfg ddtrace.FinishConfig
