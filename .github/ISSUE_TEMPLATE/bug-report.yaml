@@ -42,8 +42,8 @@ body:
 
   - type: input
     attributes:
-      label: Operating System
-      description: "Provide your operating system and version (e.g. `uname -a`)"
-      placeholder: Darwin Kernel Version 23.6.0
+      label: Go Env Output
+      description: "Provide the output from `go env`"
+      placeholder: "GOARCH='arm64' ... GOVERSION='go1.23.2' ..."
     validations:
       required: false
