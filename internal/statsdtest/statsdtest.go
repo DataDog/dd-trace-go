@@ -58,6 +58,10 @@ func (tg *TestStatsdClient) addCount(name string, value int64) {
 	tg.counts[name] += value
 }
 
+func (tc *TestStatsdCall) GetTags() []string {
+	return tc.tags
+}
+
 func (tg *TestStatsdClient) Gauge(name string, value float64, tags []string, rate float64) error {
 	return tg.addMetric(callTypeGauge, tags, TestStatsdCall{
 		name:     name,
@@ -219,6 +223,16 @@ func (tg *TestStatsdClient) CallsByName() map[string]int {
 		counts[c.name]++
 	}
 	return counts
+}
+
+func FilterCallsByName(calls []TestStatsdCall, name string) []TestStatsdCall {
+	var matches []TestStatsdCall
+	for _, c := range calls {
+		if c.name == name {
+			matches = append(matches, c)
+		}
+	}
+	return matches
 }
 
 func (tg *TestStatsdClient) Counts() map[string]int64 {

@@ -362,6 +362,17 @@ func newTracer(opts ...StartOption) *tracer {
 		t.abandonedSpansDebugger = newAbandonedSpansDebugger()
 		t.abandonedSpansDebugger.Start(t.config.spanTimeout)
 	}
+	for name, conf := range c.integrations {
+		if !conf.Instrumented {
+			continue
+		}
+		v := conf.Version
+		if v == "" {
+			v = "unknown"
+		}
+		t.statsd.Incr("datadog.tracer.integrations", []string{"integration:" + name, "integration_version:" + v}, 1)
+	}
+
 	t.wg.Add(1)
 	go func() {
 		defer t.wg.Done()
