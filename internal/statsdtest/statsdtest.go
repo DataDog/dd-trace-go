@@ -52,6 +52,9 @@ type TestStatsdCall struct {
 func (c *TestStatsdCall) Tags() []string {
 	return c.tags
 }
+func (c *TestStatsdCall) Name() string {
+	return c.name
+}
 
 func (tg *TestStatsdClient) addCount(name string, value int64) {
 	tg.mu.Lock()
