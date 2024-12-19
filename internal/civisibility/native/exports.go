@@ -1677,7 +1677,7 @@ func topt_span_set_error(span_id C.topt_TslvId, error_type *C.char, error_messag
 // Debugging
 // *******************************************************************************************************************
 
-// topt_reset_mock_tracer resets the internal mock tracer instance used for testing scenarios.
+// topt_debug_mock_tracer_reset resets the internal mock tracer instance used for testing scenarios.
 //
 // This function is designed for use in testing and debugging environments where a mock tracer
 // has been previously initialized (via `topt_initialize` with `use_mock_tracer = true`) and
@@ -1686,7 +1686,7 @@ func topt_span_set_error(span_id C.topt_TslvId, error_type *C.char, error_messag
 // to a fresh, uninitialized state.
 //
 // Returns:
-//   - C.Bool: Returns true if the mock tracer was successfully reset, or false if no mock tracer
+//   - Bool: Returns true if the mock tracer was successfully reset, or false if no mock tracer
 //     is currently available.
 //
 // Usage notes:
@@ -1697,14 +1697,14 @@ func topt_span_set_error(span_id C.topt_TslvId, error_type *C.char, error_messag
 //
 // Example usage:
 //
-//	if topt_reset_mock_tracer() == C.Bool(1) {
+//	if topt_debug_mock_tracer_reset() == 1 {
 //	    // Mock tracer has been cleared and is ready for fresh test instrumentation.
 //	} else {
 //	    // No mock tracer was found, nothing to reset.
 //	}
 //
-//export topt_reset_mock_tracer
-func topt_reset_mock_tracer() C.Bool {
+//export topt_debug_mock_tracer_reset
+func topt_debug_mock_tracer_reset() C.Bool {
 	if exports.mockTracer != nil {
 		exports.mockTracer.Reset()
 		return toBool(true)
