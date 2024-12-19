@@ -48,6 +48,7 @@ type TracerConf struct { //nolint:revive
 	EnvTag               string
 	VersionTag           string
 	ServiceTag           string
+	TracingAsTransport   bool
 }
 
 // Tracer specifies an implementation of the Datadog tracer which allows starting
@@ -859,6 +860,7 @@ func (t *tracer) TracerConf() TracerConf {
 		EnvTag:               t.config.env,
 		VersionTag:           t.config.version,
 		ServiceTag:           t.config.serviceName,
+		TracingAsTransport:   t.config.tracingAsTransport,
 	}
 }
 
