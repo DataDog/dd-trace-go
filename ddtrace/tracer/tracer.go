@@ -165,12 +165,22 @@ func Start(opts ...StartOption) {
 		return
 	}
 	internal.SetGlobalTracer(t)
-	if t.config.logStartup {
-		logStartup(t)
-	}
 	if t.dataStreams != nil {
 		t.dataStreams.Start()
 	}
+	if t.config.ciVisibilityAgentless {
+		// CI Visibility agentless mode doesn't require remote configuration.
+
+		// start instrumentation telemetry unless it is disabled through the
+		// DD_INSTRUMENTATION_TELEMETRY_ENABLED env var
+		startTelemetry(t.config)
+
+		// start appsec
+		appsec.Start(t.config.appsecStartOptions...)
+		_ = t.hostname() // Prime the hostname cache
+		return
+	}
+
 	// Start AppSec with remote configuration
 	cfg := remoteconfig.DefaultClientConfig()
 	cfg.AgentURL = t.config.agentURL.String()
@@ -193,6 +203,11 @@ func Start(opts ...StartOption) {
 	appsecopts = append(appsecopts, t.config.appsecStartOptions...)
 	appsecopts = append(appsecopts, appsecConfig.WithRCConfig(cfg))
 	appsec.Start(appsecopts...)
+
+	if t.config.logStartup {
+		logStartup(t)
+	}
+
 	_ = t.hostname() // Prime the hostname cache
 }
 
@@ -273,7 +288,8 @@ func newUnstartedTracer(opts ...StartOption) *tracer {
 	if spans != nil {
 		c.spanRules = spans
 	}
-	rulesSampler := newRulesSampler(c.traceRules, c.spanRules, c.globalSampleRate)
+
+	rulesSampler := newRulesSampler(c.traceRules, c.spanRules, c.globalSampleRate, c.traceRateLimitPerSecond)
 	c.traceSampleRate = newDynamicConfig("trace_sample_rate", c.globalSampleRate, rulesSampler.traces.setGlobalSampleRate, equal[float64])
 	// If globalSampleRate returns NaN, it means the environment variable was not set or valid.
 	// We could always set the origin to "env_var" inconditionally, but then it wouldn't be possible
@@ -313,7 +329,6 @@ func newUnstartedTracer(opts ...StartOption) *tracer {
 				ReplaceDigits:    c.agent.HasFlag("quantize_sql_tables") || c.agent.HasFlag("replace_sql_digits"),
 				KeepSQLAlias:     c.agent.HasFlag("keep_sql_alias"),
 				DollarQuotedFunc: c.agent.HasFlag("dollar_quoted_func"),
-				Cache:            c.agent.HasFlag("sql_cache"),
 			},
 		}),
 		statsd:      statsd,
@@ -417,7 +432,9 @@ func (t *tracer) worker(tick <-chan time.Time) {
 			t.statsd.Incr("datadog.tracer.flush_triggered", []string{"reason:invoked"}, 1)
 			t.traceWriter.flush()
 			t.statsd.Flush()
-			t.stats.flushAndSend(time.Now(), withCurrentBucket)
+			if !t.config.tracingAsTransport {
+				t.stats.flushAndSend(time.Now(), withCurrentBucket)
+			}
 			// TODO(x): In reality, the traceWriter.flush() call is not synchronous
 			// when using the agent traceWriter. However, this functionality is used
 			// in Lambda so for that purpose this mechanism should suffice.
@@ -732,6 +749,15 @@ func (t *tracer) Inject(ctx ddtrace.SpanContext, carrier interface{}) error {
 	if !t.config.enabled.current {
 		return nil
 	}
+
+	if t.config.tracingAsTransport {
+		// in tracing as transport mode, only propagate when there is an upstream appsec event
+		// TODO: replace with _dd.p.ts in the next iteration standardizing this for other products, comparing enabled products in `t.config` with their corresponding `_dd.p.ts` bitfields
+		if ctx, ok := ctx.(*spanContext); ok && ctx.trace != nil && ctx.trace.propagatingTag("_dd.p.appsec") != "1" {
+			return nil
+		}
+	}
+
 	t.updateSampling(ctx)
 	return t.config.propagator.Inject(ctx, carrier)
 }
@@ -771,7 +797,15 @@ func (t *tracer) Extract(carrier interface{}) (ddtrace.SpanContext, error) {
 	if !t.config.enabled.current {
 		return internal.NoopSpanContext{}, nil
 	}
-	return t.config.propagator.Extract(carrier)
+	ctx, err := t.config.propagator.Extract(carrier)
+	if t.config.tracingAsTransport {
+		// in tracing as transport mode, reset upstream sampling decision to make sure we keep 1 trace/minute
+		// TODO: replace with _dd.p.ts in the next iteration standardizing this for other products, comparing enabled products in `t.config` with their corresponding `_dd.p.ts` bitfields
+		if ctx, ok := ctx.(*spanContext); ok && ctx.trace.propagatingTag("_dd.p.appsec") != "1" {
+			ctx.trace.priority = nil
+		}
+	}
+	return ctx, err
 }
 
 // sampleRateMetricKey is the metric key holding the applied sample rate. Has to be the same as the Agent.

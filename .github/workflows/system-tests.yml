@@ -11,8 +11,9 @@ on:
     branches:
       - main
       - release-v*
-    tags:
-      - "**"
+    tags-ignore:
+      - 'contrib/**'
+      - 'instrumentation/**'
   pull_request:
     branches:
       - "**"
@@ -78,6 +79,8 @@ jobs:
             scenario: APPSEC_CORRUPTED_RULES
           - weblog-variant: net-http
             scenario: APPSEC_LOW_WAF_TIMEOUT
+          - weblog-variant: net-http
+            scenario: APPSEC_STANDALONE
           - weblog-variant: net-http
             scenario: APPSEC_CUSTOM_OBFUSCATION
           # APM scenarios requiring specific environment settings
