@@ -17,9 +17,25 @@ if [ $phase -eq 1 ]; then
 fi
 
 if [ $phase -eq 2 ]; then
+    # Tag all instrumentations
+    find ./instrumentation -type f -name go.mod | while read f; do
+        instrumentation=$(dirname $f)
+        if [ "$instrumentation" == "./instrumentation/internal/namingschematest" ]; then
+            continue
+        fi
+        cd $instrumentation && pwd
+        git tag $(echo $instrumentation | sed 's#\.\/##')/$version
+        git push --tags
+        cd -
+    done
+
+    echo "WARN: Please run go get in the contribs using instrumentations before running the next phase."
+fi
+
+if [ $phase -eq 3 ]; then
     # Tag main contribs
     cd ./contrib/net/http && pwd
-    git tag contrib/net/http/$version
+    git tag -m "contrib/net/http/$version release" contrib/net/http/$version
     git push --tags
     cd -
 
@@ -28,15 +44,15 @@ if [ $phase -eq 2 ]; then
     git push --tags
     cd -
 
-    cd ./instrumentation/testutils/grpc && pwd
-    git tag instrumentation/testutils/grpc/$version
+    cd ./contrib/google.golang.org/grpc && pwd
+    git tag contrib/google.golang.org/grpc/$version
     git push --tags
     cd -
 
-    echo "WARN: Please run go get in the contribs using the main contribs before running the next phase"
+    echo "WARN: Please run go get in the contribs using the main contribs before running the next phase."
 fi
 
-if [ $phase -eq 3 ]; then
+if [ $phase -eq 4 ]; then
     # Tag all contribs
     find ./contrib -type f -name go.mod | while read f; do
         contrib=$(dirname $f)
@@ -44,6 +60,9 @@ if [ $phase -eq 3 ]; then
             continue
         fi
         if [ "$contrib" == "./contrib/database/sql" ]; then
+            continue
+        fi
+        if [ "$contrib" == "./contrib/google.golang.org/grpc" ]; then
             continue
         fi
         cd $contrib && pwd
