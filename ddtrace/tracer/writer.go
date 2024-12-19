@@ -14,6 +14,7 @@ import (
 	"os"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	globalinternal "gopkg.in/DataDog/dd-trace-go.v1/internal"
@@ -50,6 +51,8 @@ type agentTraceWriter struct {
 
 	// statsd is used to send metrics
 	statsd globalinternal.StatsdClient
+
+	tracesQueued uint32
 }
 
 func newAgentTraceWriter(c *config, s *prioritySampler, statsdClient globalinternal.StatsdClient) *agentTraceWriter {
@@ -67,6 +70,7 @@ func (h *agentTraceWriter) add(trace []*span) {
 		h.statsd.Incr("datadog.tracer.traces_dropped", []string{"reason:encoding_error"}, 1)
 		log.Error("Error encoding msgpack: %v", err)
 	}
+	atomic.AddUint32(&h.tracesQueued, 1) // TODO: This does not differentiate between complete traces and partial chunks
 	if h.payload.size() > payloadSizeLimit {
 		h.statsd.Incr("datadog.tracer.flush_triggered", []string{"reason:size"}, 1)
 		h.flush()
@@ -94,6 +98,7 @@ func (h *agentTraceWriter) flush() {
 			// collection to avoid a memory leak when references to this object
 			// may still be kept by faulty transport implementations or the
 			// standard library. See dd-trace-go#976
+			h.statsd.Count("datadog.tracer.queue.enqueued.traces", int64(atomic.SwapUint32(&h.tracesQueued, 0)), nil, 1)
 			p.clear()
 
 			<-h.climit
