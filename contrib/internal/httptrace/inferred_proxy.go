@@ -8,6 +8,7 @@ import (
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 )
 
 const (
@@ -90,10 +91,10 @@ func tryCreateInferredProxySpan(headers http.Header, parent ddtrace.SpanContext)
 		return nil
 
 	}
-	// if internal.BoolEnv(inferredProxyServicesEnabled, false) {
-	// 	println("bool env false")
-	// 	return nil
-	// }
+	if !internal.BoolEnv(inferredProxyServicesEnabled, false) {
+		println("bool env false")
+		return nil
+	}
 
 	requestProxyContext := extractInferredProxyContext(headers)
 	if requestProxyContext == nil {
