@@ -79,9 +79,15 @@ type tracer struct {
 	// pid of the process
 	pid int
 
-	// These integers track metrics about spans and traces as they are started,
-	// finished, and dropped
-	spansStarted, spansFinished, tracesDropped uint32
+	// These maps keep count of the number of spans started and finished from
+	// each component, including contribs and "manual" spans.
+	spansStarted, spansFinished struct {
+		mu    sync.Mutex
+		spans map[string]uint32
+	}
+
+	// tracesDropped track metrics about traces as they are dropped
+	tracesDropped uint32
 
 	// Keeps track of the total number of traces dropped for accurate logging.
 	totalTracesDropped uint32
@@ -571,6 +577,7 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 		TraceID:      id,
 		Start:        startTime,
 		noDebugStack: t.config.noDebugStack,
+		integration:  "manual",
 	}
 
 	span.SpanLinks = append(span.SpanLinks, opts.SpanLinks...)
@@ -664,6 +671,14 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 			log.Error("Abandoned spans channel full, disregarding span.")
 		}
 	}
+	t.spansStarted.mu.Lock()
+	defer t.spansStarted.mu.Unlock()
+	if t.spansStarted.spans == nil {
+		t.spansStarted.spans = make(map[string]uint32)
+	}
+	count := t.spansStarted.spans[span.integration]
+	atomic.AddUint32(&count, 1)
+	t.spansStarted.spans[span.integration] = count
 	return span
 }
 

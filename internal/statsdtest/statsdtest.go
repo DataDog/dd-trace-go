@@ -49,6 +49,14 @@ type TestStatsdCall struct {
 	rate     float64
 }
 
+func (tc *TestStatsdCall) GetTags() []string {
+	return tc.tags
+}
+
+func (tc *TestStatsdCall) GetName() string {
+	return tc.name
+}
+
 func (tg *TestStatsdClient) addCount(name string, value int64) {
 	tg.mu.Lock()
 	defer tg.mu.Unlock()

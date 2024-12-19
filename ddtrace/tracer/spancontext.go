@@ -419,9 +419,6 @@ func (t *trace) push(sp *span) {
 		t.setSamplingPriorityLocked(int(v), samplernames.Unknown)
 	}
 	t.spans = append(t.spans, sp)
-	if haveTracer {
-		atomic.AddUint32(&tr.spansStarted, 1)
-	}
 }
 
 // setTraceTags sets all "trace level" tags on the provided span
@@ -530,7 +527,19 @@ func (t *trace) finishedOne(s *span) {
 }
 
 func (t *trace) finishChunk(tr *tracer, ch *chunk) {
-	atomic.AddUint32(&tr.spansFinished, uint32(len(ch.spans)))
+	for _, sp := range ch.spans {
+		if sp == nil {
+			continue
+		}
+		tr.spansFinished.mu.Lock()
+		if tr.spansFinished.spans == nil {
+			tr.spansFinished.spans = make(map[string]uint32)
+		}
+		count := tr.spansFinished.spans[sp.integration]
+		atomic.AddUint32(&count, 1)
+		tr.spansFinished.spans[sp.integration] = count
+		tr.spansFinished.mu.Unlock()
+	}
 	tr.pushChunk(ch)
 	t.finished = 0 // important, because a buffer can be used for several flushes
 }
