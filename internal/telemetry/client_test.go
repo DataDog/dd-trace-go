@@ -17,6 +17,8 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
+
+	logging "gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
 func TestClient(t *testing.T) {
@@ -448,4 +450,26 @@ func TestNoEmptyHeaders(t *testing.T) {
 	}
 	assertNotEmpty("Datadog-Container-ID")
 	assertNotEmpty("Datadog-Entity-ID")
+}
+
+func TestTelementryClientLogging(t *testing.T) {
+	var (
+		rl       = new(logging.RecordLogger)
+		oldLevel = logging.GetLevel()
+	)
+	logging.SetLevel(logging.LevelDebug)
+	undo := logging.UseLogger(rl)
+	defer func() {
+		logging.SetLevel(oldLevel)
+		undo()
+	}()
+
+	// We simulate a client that has already started
+	c := &client{
+		started: true,
+	}
+	c.start(nil, NamespaceTracers, true)
+
+	assert := assert.New(t)
+	assert.Contains(rl.Logs()[0], LogPrefix+"attempted to start telemetry client when client has already started - ignoring attempt")
 }

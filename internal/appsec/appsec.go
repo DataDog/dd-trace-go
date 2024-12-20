@@ -222,7 +222,7 @@ func init() {
 		Warn:  log.Warn,
 		Errorf: func(s string, a ...any) error {
 			err := fmt.Errorf(s, a...)
-			log.Error(err.Error())
+			log.Error("%v", err)
 			return err
 		},
 	})
