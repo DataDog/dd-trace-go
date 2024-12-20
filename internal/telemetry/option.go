@@ -56,6 +56,17 @@ func WithVersion(version string) Option {
 	}
 }
 
+// WithHeartbeatMetric register a metric data point to be emitted at each
+// heartbeat tick. This is useful to maintain gauge metrics at a specific level.
+func WithHeartbeatMetric(namespace Namespace, kind MetricKind, name string, value func() float64, tags []string, common bool) Option {
+	return func(client *client) {
+		client.heartbeatMetrics = append(
+			client.heartbeatMetrics,
+			heartbeatMetric{namespace, kind, name, value, tags, common},
+		)
+	}
+}
+
 // WithHTTPClient specifies the http client for the telemetry client
 func WithHTTPClient(httpClient *http.Client) Option {
 	return func(client *client) {
