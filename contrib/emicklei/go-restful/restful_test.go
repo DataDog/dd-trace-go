@@ -157,6 +157,7 @@ func TestTrace200(t *testing.T) {
 	assert.Equal("http://example.com/user/123", span.Tag(ext.HTTPURL))
 	assert.Equal(ext.SpanKindServer, span.Tag(ext.SpanKind))
 	assert.Equal("emicklei/go-restful", span.Tag(ext.Component))
+	assert.Equal(componentName, span.Integration())
 }
 
 func TestError(t *testing.T) {
@@ -191,6 +192,7 @@ func TestError(t *testing.T) {
 	assert.Equal(wantErr.Error(), span.Tag(ext.Error).(error).Error())
 	assert.Equal(ext.SpanKindServer, span.Tag(ext.SpanKind))
 	assert.Equal("emicklei/go-restful", span.Tag(ext.Component))
+	assert.Equal(componentName, span.Integration())
 }
 
 func TestPropagation(t *testing.T) {

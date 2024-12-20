@@ -6,9 +6,11 @@
 package tracer
 
 import (
+	"slices"
 	"testing"
 	"time"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	globalinternal "gopkg.in/DataDog/dd-trace-go.v1/internal"
 
 	"github.com/stretchr/testify/assert"
@@ -58,8 +60,8 @@ func TestReportHealthMetrics(t *testing.T) {
 	tg.Wait(assert, 4, 10*time.Second)
 
 	counts := tg.Counts()
-	assert.Equal(int64(1), counts["datadog.tracer.spans_started"])
-	assert.Equal(int64(1), counts["datadog.tracer.spans_finished"])
+	assert.GreaterOrEqual(counts["datadog.tracer.spans_started"], int64(1))
+	assert.GreaterOrEqual(counts["datadog.tracer.spans_finished"], int64(1))
 	assert.Equal(int64(0), counts["datadog.tracer.traces_dropped"])
 	assert.Equal(int64(1), counts["datadog.tracer.queue.enqueued.traces"])
 }
@@ -85,6 +87,111 @@ func TestEnqueuedTracesHealthMetric(t *testing.T) {
 	w, ok := tracer.traceWriter.(*agentTraceWriter)
 	assert.True(ok)
 	assert.Equal(uint32(0), w.tracesQueued)
+}
+
+func TestSpansStartedTags(t *testing.T) {
+	var tg statsdtest.TestStatsdClient
+
+	defer func(old time.Duration) { statsInterval = old }(statsInterval)
+	statsInterval = time.Millisecond
+
+	t.Run("default", func(t *testing.T) {
+		assert := assert.New(t)
+		tracer, _, _, stop := startTestTracer(t, withStatsdClient(&tg))
+		defer stop()
+
+		tracer.StartSpan("operation").Finish()
+		tg.Wait(assert, 1, 100*time.Millisecond)
+
+		counts := tg.Counts()
+		assert.GreaterOrEqual(counts["datadog.tracer.spans_started"], int64(1))
+		for _, c := range tg.CountCalls() {
+			if c.Name() != "datadog.tracer.spans_started" {
+				continue
+			}
+			if slices.Equal(c.Tags(), []string{"integration:manual"}) {
+				return
+			}
+		}
+		assert.Fail("expected integration:manual tag in spans_started")
+	})
+
+	t.Run("other_source", func(t *testing.T) {
+		tg.Reset()
+		assert := assert.New(t)
+		tracer, _, _, stop := startTestTracer(t, withStatsdClient(&tg))
+		defer stop()
+
+		sp := tracer.StartSpan("operation", Tag(ext.Component, "contrib"))
+		defer sp.Finish()
+
+		tg.Wait(assert, 1, 100*time.Millisecond)
+
+		counts := tg.Counts()
+		assert.GreaterOrEqual(counts["datadog.tracer.spans_started"], int64(1))
+		for _, c := range tg.CountCalls() {
+			if c.Name() != "datadog.tracer.spans_started" {
+				continue
+			}
+			if slices.Equal(c.Tags(), []string{"integration:contrib"}) {
+				return
+			}
+		}
+		assert.Fail("expected integration:contrib tag in spans_started")
+
+	})
+}
+
+func TestSpansFinishedTags(t *testing.T) {
+	var tg statsdtest.TestStatsdClient
+
+	defer func(old time.Duration) { statsInterval = old }(statsInterval)
+	statsInterval = time.Millisecond
+
+	t.Run("default", func(t *testing.T) {
+		assert := assert.New(t)
+		tracer, _, _, stop := startTestTracer(t, withStatsdClient(&tg))
+		defer stop()
+
+		tracer.StartSpan("operation").Finish()
+		tg.Wait(assert, 1, 100*time.Millisecond)
+
+		counts := tg.Counts()
+		assert.GreaterOrEqual(counts["datadog.tracer.spans_finished"], int64(1))
+		for _, c := range tg.CountCalls() {
+			if c.Name() != "datadog.tracer.spans_finished" {
+				continue
+			}
+			if slices.Equal(c.Tags(), []string{"integration:manual"}) {
+				return
+			}
+		}
+		assert.Fail("expected integration:manual tag in spans_finished")
+	})
+
+	t.Run("other_source", func(t *testing.T) {
+		tg.Reset()
+		assert := assert.New(t)
+		tracer, _, _, stop := startTestTracer(t, withStatsdClient(&tg))
+		defer stop()
+
+		tracer.StartSpan("operation", Tag(ext.Component, "contrib")).Finish()
+
+		tg.Wait(assert, 1, 100*time.Millisecond)
+
+		counts := tg.Counts()
+		assert.GreaterOrEqual(counts["datadog.tracer.spans_finished"], int64(1))
+		for _, c := range tg.CountCalls() {
+			if c.Name() != "datadog.tracer.spans_finished" {
+				continue
+			}
+			if slices.Equal(c.Tags(), []string{"integration:contrib"}) {
+				return
+			}
+		}
+		assert.Fail("expected integration:contrib tag in spans_finished")
+
+	})
 }
 
 func TestTracerMetrics(t *testing.T) {
