@@ -79,7 +79,7 @@ func StartOperation(ctx context.Context, args HandlerOperationArgs, span trace.T
 }
 
 // Finish the HTTP handler operation and its children operations and write everything to the service entry span.
-func (op *HandlerOperation) Finish(res HandlerOperationRes, span trace.TagSetter) {
+func (op *HandlerOperation) Finish(res HandlerOperationRes) {
 	dyngo.FinishOperation(op, res)
 	if op.wafContextOwner {
 		op.ContextOperation.Finish()
@@ -153,7 +153,7 @@ func BeforeHandle(
 		op.Finish(HandlerOperationRes{
 			Headers:    opts.ResponseHeaderCopier(w),
 			StatusCode: statusCode,
-		}, span)
+		})
 
 		// Execute the onBlock functions to make sure blocking works properly
 		// in case we are instrumenting the Gin framework

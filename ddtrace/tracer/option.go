@@ -109,6 +109,9 @@ var (
 
 	// defaultMaxTagsHeaderLen specifies the default maximum length of the X-Datadog-Tags header value.
 	defaultMaxTagsHeaderLen = 128
+
+	// defaultRateLimit specifies the default trace rate limit used when DD_TRACE_RATE_LIMIT is not set.
+	defaultRateLimit = 100.0
 )
 
 // config holds the tracer configuration.
@@ -134,7 +137,6 @@ type config struct {
 	// output instead of using the agent. This is used in Lambda environments.
 	logToStdout bool
 
-	// sendRetries is the number of times a trace or CI Visibility payload send is retried upon
 	// sendRetries is the number of times a trace or CI Visibility payload send is retried upon
 	// failure.
 	sendRetries int
@@ -297,6 +299,12 @@ type config struct {
 
 	// logDirectory is directory for tracer logs specified by user-setting DD_TRACE_LOG_DIRECTORY. default empty/unused
 	logDirectory string
+
+	// tracingAsTransport specifies whether the tracer is running in transport-only mode, where traces are only sent when other products request it.
+	tracingAsTransport bool
+
+	// traceRateLimitPerSecond specifies the rate limit for traces.
+	traceRateLimitPerSecond float64
 }
 
 // orchestrionConfig contains Orchestrion configuration.
@@ -342,6 +350,22 @@ func newConfig(opts ...StartOption) (*config, error) {
 	}
 	c.globalSampleRate = sampleRate
 	c.httpClientTimeout = time.Second * 10 // 10 seconds
+
+	c.traceRateLimitPerSecond = defaultRateLimit
+	origin := telemetry.OriginDefault
+	if v, ok := os.LookupEnv("DD_TRACE_RATE_LIMIT"); ok {
+		l, err := strconv.ParseFloat(v, 64)
+		if err != nil {
+			log.Warn("DD_TRACE_RATE_LIMIT invalid, using default value %f: %v", defaultRateLimit, err)
+		} else if l < 0.0 {
+			log.Warn("DD_TRACE_RATE_LIMIT negative, using default value %f", defaultRateLimit)
+		} else {
+			c.traceRateLimitPerSecond = l
+			origin = telemetry.OriginEnvVar
+		}
+	}
+
+	reportTelemetryOnAppStarted(telemetry.Configuration{Name: "trace_rate_limit", Value: c.traceRateLimitPerSecond, Origin: origin})
 
 	if v := os.Getenv("OTEL_LOGS_EXPORTER"); v != "" {
 		log.Warn("OTEL_LOGS_EXPORTER is not supported")
@@ -460,7 +484,6 @@ func newConfig(opts ...StartOption) (*config, error) {
 		internal.ForEachStringTag(v, internal.DDTagsDelimiter, func(key, val string) { c.peerServiceMappings[key] = val })
 	}
 	c.retryInterval = time.Millisecond
-	c.retryInterval = time.Millisecond
 	for _, fn := range opts {
 		if fn == nil {
 			continue
@@ -547,7 +570,7 @@ func newConfig(opts ...StartOption) (*config, error) {
 		c.ciVisibilityAgentless = ciTransport.agentless
 	}
 
-	// if using stdout or traces are disabled, or we are in ci visibility agentless mode, agent is disabled
+	// if using stdout or traces are disabled or we are in ci visibility agentless mode, agent is disabled
 	agentDisabled := c.logToStdout || !c.enabled.current || c.ciVisibilityAgentless
 	c.agent = loadAgentFeatures(agentDisabled, c.agentURL, c.httpClient)
 	info, ok := debug.ReadBuildInfo()
@@ -566,6 +589,23 @@ func newConfig(opts ...StartOption) (*config, error) {
 	// This allows persisting the initial value of globalTags for future resets and updates.
 	globalTagsOrigin := c.globalTags.cfgOrigin
 	c.initGlobalTags(c.globalTags.get(), globalTagsOrigin)
+
+	// TODO: change the name once APM Platform RFC is approved
+	if internal.BoolEnv("DD_EXPERIMENTAL_APPSEC_STANDALONE_ENABLED", false) {
+		// Enable tracing as transport layer mode
+		// This means to stop sending trace metrics, send one trace per minute and those force-kept by other products
+		// using the tracer as transport layer for their data. And finally adding the _dd.apm.enabled=0 tag to all traces
+		// to let the backend know that it needs to keep APM UI disabled.
+		c.globalSampleRate = 1.0
+		c.traceRateLimitPerSecond = 1.0 / 60
+		c.tracingAsTransport = true
+		WithGlobalTag("_dd.apm.enabled", 0)(c)
+		// Disable runtime metrics. In `tracingAsTransport` mode, we'll still
+		// tell the agent we computed them, so it doesn't do it either.
+		c.runtimeMetrics = false
+		c.runtimeMetricsV2 = false
+	}
+
 	return c, nil
 }
 
@@ -806,7 +846,6 @@ func statsTags(c *config) []string {
 // withNoopStats is used for testing to disable statsd client
 func withNoopStats() StartOption {
 	return func(c *config) {
-		c.statsdClient = &statsd.NoOpClientDirect{}
 		c.statsdClient = &statsd.NoOpClientDirect{}
 	}
 }

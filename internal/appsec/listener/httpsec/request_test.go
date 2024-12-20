@@ -6,6 +6,7 @@
 package httpsec
 
 import (
+	"encoding/json"
 	"fmt"
 	"net"
 	"net/netip"
@@ -15,6 +16,7 @@ import (
 	"google.golang.org/grpc/metadata"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/listener/waf"
 	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
 )
@@ -209,11 +211,15 @@ func TestTags(t *testing.T) {
 				respHeadersCase := respHeadersCase
 				t.Run(fmt.Sprintf("%s-%s-%s", eventCase.name, reqHeadersCase.name, respHeadersCase.name), func(t *testing.T) {
 					var span MockSpan
-					err := waf.SetEventSpanTags(&span, eventCase.events)
+					waf.SetEventSpanTags(&span)
+					value, err := json.Marshal(map[string][]any{"triggers": eventCase.events})
 					if eventCase.expectedError {
 						require.Error(t, err)
 						return
 					}
+
+					span.SetTag("_dd.appsec.json", string(value))
+
 					require.NoError(t, err)
 					setRequestHeadersTags(&span, reqHeadersCase.headers)
 					setResponseHeadersTags(&span, respHeadersCase.headers)
@@ -224,6 +230,7 @@ func TestTags(t *testing.T) {
 							"manual.keep":     true,
 							"appsec.event":    true,
 							"_dd.origin":      "appsec",
+							"_dd.p.appsec":    internal.PropagatingTagValue{Value: "1"},
 						})
 					}
 

@@ -19,7 +19,6 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
-	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 
 	"golang.org/x/time/rate"
 )
@@ -38,9 +37,9 @@ type rulesSampler struct {
 // Rules are split between trace and single span sampling rules according to their type.
 // Such rules are user-defined through environment variable or WithSamplingRules option.
 // Invalid rules or environment variable values are tolerated, by logging warnings and then ignoring them.
-func newRulesSampler(traceRules, spanRules []SamplingRule, traceSampleRate float64) *rulesSampler {
+func newRulesSampler(traceRules, spanRules []SamplingRule, traceSampleRate, rateLimitPerSecond float64) *rulesSampler {
 	return &rulesSampler{
-		traces: newTraceRulesSampler(traceRules, traceSampleRate),
+		traces: newTraceRulesSampler(traceRules, traceSampleRate, rateLimitPerSecond),
 		spans:  newSingleSpanRulesSampler(spanRules),
 	}
 }
@@ -356,11 +355,11 @@ type traceRulesSampler struct {
 
 // newTraceRulesSampler configures a *traceRulesSampler instance using the given set of rules.
 // Invalid rules or environment variable values are tolerated, by logging warnings and then ignoring them.
-func newTraceRulesSampler(rules []SamplingRule, traceSampleRate float64) *traceRulesSampler {
+func newTraceRulesSampler(rules []SamplingRule, traceSampleRate, rateLimitPerSecond float64) *traceRulesSampler {
 	return &traceRulesSampler{
 		rules:      rules,
 		globalRate: traceSampleRate,
-		limiter:    newRateLimiter(),
+		limiter:    newRateLimiter(rateLimitPerSecond),
 	}
 }
 
@@ -370,7 +369,7 @@ func (rs *traceRulesSampler) enabled() bool {
 	return len(rs.rules) > 0 || !math.IsNaN(rs.globalRate)
 }
 
-// Tests whether two sets of the rules are the same.
+// EqualsFalseNegative tests whether two sets of the rules are the same.
 // This returns result that can be false negative. If the result is true, then the two sets of rules
 // are guaranteed to be the same.
 // On the other hand, false can be returned while the two rulesets are logically the same.
@@ -510,30 +509,11 @@ func (rs *traceRulesSampler) limit() (float64, bool) {
 	return math.NaN(), false
 }
 
-// defaultRateLimit specifies the default trace rate limit used when DD_TRACE_RATE_LIMIT is not set.
-const defaultRateLimit = 100.0
-
 // newRateLimiter returns a rate limiter which restricts the number of traces sampled per second.
 // The limit is DD_TRACE_RATE_LIMIT if set, `defaultRateLimit` otherwise.
-func newRateLimiter() *rateLimiter {
-	limit := defaultRateLimit
-	origin := telemetry.OriginDefault
-	v := os.Getenv("DD_TRACE_RATE_LIMIT")
-	if v != "" {
-		l, err := strconv.ParseFloat(v, 64)
-		if err != nil {
-			log.Warn("DD_TRACE_RATE_LIMIT invalid, using default value %f: %v", limit, err)
-		} else if l < 0.0 {
-			log.Warn("DD_TRACE_RATE_LIMIT negative, using default value %f", limit)
-		} else {
-			// override the default limit
-			origin = telemetry.OriginEnvVar
-			limit = l
-		}
-	}
-	reportTelemetryOnAppStarted(telemetry.Configuration{Name: "trace_rate_limit", Value: limit, Origin: origin})
+func newRateLimiter(ratePerSecond float64) *rateLimiter {
 	return &rateLimiter{
-		limiter:  rate.NewLimiter(rate.Limit(limit), int(math.Ceil(limit))),
+		limiter:  rate.NewLimiter(rate.Limit(ratePerSecond), int(math.Ceil(ratePerSecond))),
 		prevTime: time.Now(),
 	}
 }

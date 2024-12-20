@@ -100,7 +100,6 @@ func TestConcentrator(t *testing.T) {
 			assert.NotNil(t, names["http.request"])
 			assert.NotNil(t, names["potato"])
 			assert.Contains(t, testStats.CallNames(), "datadog.tracer.stats.spans_in")
-			assert.Contains(t, testStats.CallNames(), "datadog.tracer.stats.spans_in")
 		})
 
 		t.Run("ciGitSha", func(t *testing.T) {

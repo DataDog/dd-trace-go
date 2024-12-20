@@ -79,6 +79,8 @@ jobs:
           - weblog-variant: net-http
             scenario: APPSEC_LOW_WAF_TIMEOUT
           - weblog-variant: net-http
+            scenario: APPSEC_STANDALONE
+          - weblog-variant: net-http
             scenario: APPSEC_CUSTOM_OBFUSCATION
           # APM scenarios requiring specific environment settings
           - scenario: APM_TRACING_E2E

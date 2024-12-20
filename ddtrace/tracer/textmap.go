@@ -251,7 +251,6 @@ func (p *chainedPropagator) Inject(spanCtx *SpanContext, carrier interface{}) er
 }
 
 // Extract implements Propagator. This method will attempt to extract a span context
-// Extract implements Propagator. This method will attempt to extract a span context
 // based on the precedence order of the propagators. Generally, the first valid
 // trace context that could be extracted will be returned. However, the W3C tracestate
 // header value will always be extracted and stored in the local trace context even if
@@ -293,18 +292,16 @@ func (p *chainedPropagator) Extract(carrier interface{}) (*SpanContext, error) {
 					}
 				}
 			} else { // Trace IDs do not match - create span links
-				if extractedCtx2 != nil {
-					link := SpanLink{TraceID: extractedCtx2.TraceIDLower(), SpanID: extractedCtx2.SpanID(), TraceIDHigh: extractedCtx2.TraceIDUpper(), Attributes: map[string]string{"reason": "terminated_context", "context_headers": getPropagatorName(v)}}
-					if trace := extractedCtx2.trace; trace != nil {
-						if flags := uint32(*trace.priority); flags > 0 { // Set the flags based on the sampling priority
-							link.Flags = 1
-						} else {
-							link.Flags = 0
-						}
-						link.Tracestate = extractedCtx2.trace.propagatingTag(tracestateHeader)
+				link := SpanLink{TraceID: extractedCtx2.TraceIDLower(), SpanID: extractedCtx2.SpanID(), TraceIDHigh: extractedCtx2.TraceIDUpper(), Attributes: map[string]string{"reason": "terminated_context", "context_headers": getPropagatorName(v)}}
+				if trace := extractedCtx2.trace; trace != nil {
+					if flags := uint32(*trace.priority); flags > 0 { // Set the flags based on the sampling priority
+						link.Flags = 1
+					} else {
+						link.Flags = 0
 					}
-					links = append(links, link)
+					link.Tracestate = extractedCtx2.trace.propagatingTag(tracestateHeader)
 				}
+				links = append(links, link)
 			}
 		}
 	}
