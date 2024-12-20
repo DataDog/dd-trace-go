@@ -76,16 +76,6 @@ func extractInferredProxyContext(headers http.Header) *ProxyContext {
 }
 
 func tryCreateInferredProxySpan(headers http.Header, parent ddtrace.SpanContext) ddtrace.SpanContext {
-	println("IN TRYCREATE")
-	println("headers are:")
-	for key, values := range headers {
-		fmt.Printf("Key: %s\n", key)
-		println(key)
-		for _, value := range values {
-			fmt.Printf("  Value: %s\n", value)
-			println(value)
-		}
-	}
 	if headers == nil {
 		println("headers nil")
 		return nil

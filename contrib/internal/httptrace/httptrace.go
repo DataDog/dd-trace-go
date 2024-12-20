@@ -54,11 +54,9 @@ func StartRequestSpan(r *http.Request, opts ...ddtrace.StartSpanOption) (tracer.
 
 			spanctx, err := tracer.Extract(tracer.HTTPHeadersCarrier(r.Header))
 			is_inferred_proxy_set := false
-			println("IN HERE inferredProxyEnabled is:")
-			println(internal.BoolEnv(inferredProxyServicesEnabled, false))
+
 			if internal.BoolEnv(inferredProxyServicesEnabled, false) {
 				if inferred_proxy_span_ctx := tryCreateInferredProxySpan(r.Header, spanctx); inferred_proxy_span_ctx != nil {
-					println("IN HERE")
 					cfg.Parent = inferred_proxy_span_ctx
 					is_inferred_proxy_set = true
 				}
