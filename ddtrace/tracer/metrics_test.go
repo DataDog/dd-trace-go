@@ -9,11 +9,11 @@ import (
 	"testing"
 	"time"
 
-	globalinternal "gopkg.in/DataDog/dd-trace-go.v1/internal"
+	globalinternal "github.com/DataDog/dd-trace-go/v2/internal"
 
 	"github.com/stretchr/testify/assert"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/statsdtest"
+	"github.com/DataDog/dd-trace-go/v2/internal/statsdtest"
 )
 
 func withStatsdClient(s globalinternal.StatsdClient) StartOption {
@@ -24,8 +24,9 @@ func withStatsdClient(s globalinternal.StatsdClient) StartOption {
 
 func TestReportRuntimeMetrics(t *testing.T) {
 	var tg statsdtest.TestStatsdClient
-	trc := newUnstartedTracer(withStatsdClient(&tg))
+	trc, err := newUnstartedTracer(withStatsdClient(&tg))
 	defer trc.statsd.Close()
+	assert.NoError(t, err)
 
 	trc.wg.Add(1)
 	go func() {
@@ -33,7 +34,7 @@ func TestReportRuntimeMetrics(t *testing.T) {
 		trc.reportRuntimeMetrics(time.Millisecond)
 	}()
 	assert := assert.New(t)
-	err := tg.Wait(assert, 35, 1*time.Second)
+	err = tg.Wait(assert, 35, 1*time.Second)
 	close(trc.stop)
 	assert.NoError(err)
 	calls := tg.CallNames()
@@ -50,7 +51,8 @@ func TestReportHealthMetrics(t *testing.T) {
 	defer func(old time.Duration) { statsInterval = old }(statsInterval)
 	statsInterval = time.Nanosecond
 
-	tracer, _, flush, stop := startTestTracer(t, withStatsdClient(&tg))
+	tracer, _, flush, stop, err := startTestTracer(t, withStatsdClient(&tg))
+	assert.Nil(err)
 	defer stop()
 
 	tracer.StartSpan("operation").Finish()
@@ -66,7 +68,8 @@ func TestReportHealthMetrics(t *testing.T) {
 func TestTracerMetrics(t *testing.T) {
 	assert := assert.New(t)
 	var tg statsdtest.TestStatsdClient
-	tracer, _, flush, stop := startTestTracer(t, withStatsdClient(&tg))
+	tracer, _, flush, stop, err := startTestTracer(t, withStatsdClient(&tg))
+	assert.Nil(err)
 
 	tracer.StartSpan("operation").Finish()
 	flush(1)

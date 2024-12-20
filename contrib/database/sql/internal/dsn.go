@@ -3,16 +3,22 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
-package internal // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/database/sql/internal"
+package internal
 
 import (
 	"net"
 	"net/url"
 	"strings"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 )
+
+var instr *instrumentation.Instrumentation
+
+func init() {
+	instr = instrumentation.Load(instrumentation.PackageDatabaseSQL)
+}
 
 // ParseDSN parses various supported DSN types into a map of key/value pairs which can be used as valid tags.
 func ParseDSN(driverName, dsn string) (meta map[string]string, err error) {
@@ -21,19 +27,19 @@ func ParseDSN(driverName, dsn string) (meta map[string]string, err error) {
 	case "mysql":
 		meta, err = parseMySQLDSN(dsn)
 		if err != nil {
-			log.Debug("Error parsing DSN for mysql: %v", err)
+			instr.Logger().Debug("Error parsing DSN for mysql: %v", err)
 			return
 		}
 	case "postgres", "pgx":
 		meta, err = parsePostgresDSN(dsn)
 		if err != nil {
-			log.Debug("Error parsing DSN for postgres: %v", err)
+			instr.Logger().Debug("Error parsing DSN for postgres: %v", err)
 			return
 		}
 	case "sqlserver":
 		meta, err = parseSQLServerDSN(dsn)
 		if err != nil {
-			log.Debug("Error parsing DSN for sqlserver: %v", err)
+			instr.Logger().Debug("Error parsing DSN for sqlserver: %v", err)
 			return
 		}
 	default:
@@ -41,7 +47,7 @@ func ParseDSN(driverName, dsn string) (meta map[string]string, err error) {
 		u, e := url.Parse(dsn)
 		if e != nil {
 			// dsn is not a valid URL, so just ignore
-			log.Debug("Error parsing driver name from DSN: %v", e)
+			instr.Logger().Debug("Error parsing driver name from DSN: %v", e)
 			return
 		}
 		if driverName != u.Scheme {

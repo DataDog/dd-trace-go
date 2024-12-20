@@ -16,10 +16,10 @@ import (
 	"time"
 	"unsafe"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/constants"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/integrations"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/utils/net"
+	"github.com/DataDog/dd-trace-go/v2/internal"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/net"
 )
 
 type (
@@ -191,29 +191,20 @@ func applyFlakyTestRetriesAdditionalFeature(targetFunc func(*testing.T)) (func(*
 				initialRetryCount: flakyRetrySettings.RetryCount,
 				adjustRetryCount:  nil, // No adjustRetryCount
 				shouldRetry: func(ptrToLocalT *testing.T, executionIndex int, remainingRetries int64) bool {
+					remainingTotalRetries := atomic.AddInt64(&flakyRetrySettings.RemainingTotalRetryCount, -1)
 					// Decide whether to retry
-					return ptrToLocalT.Failed() && remainingRetries >= 0 && atomic.LoadInt64(&flakyRetrySettings.RemainingTotalRetryCount) >= 0
+					return ptrToLocalT.Failed() && remainingRetries >= 0 && remainingTotalRetries >= 0
 				},
-				perExecution: func(ptrToLocalT *testing.T, executionIndex int, duration time.Duration) {
-					if executionIndex > 0 {
-						atomic.AddInt64(&flakyRetrySettings.RemainingTotalRetryCount, -1)
-					}
-				},
+				perExecution: nil, // No perExecution needed
 				onRetryEnd: func(t *testing.T, executionIndex int, lastPtrToLocalT *testing.T) {
 					// Update original `t` with results from last execution
 					tCommonPrivates := getTestPrivateFields(t)
-					if tCommonPrivates == nil {
-						panic("getting test private fields failed")
-					}
 					tCommonPrivates.SetFailed(lastPtrToLocalT.Failed())
 					tCommonPrivates.SetSkipped(lastPtrToLocalT.Skipped())
 
 					// Update parent status if failed
 					if lastPtrToLocalT.Failed() {
 						tParentCommonPrivates := getTestParentPrivateFields(t)
-						if tParentCommonPrivates == nil {
-							panic("getting test parent private fields failed")
-						}
 						tParentCommonPrivates.SetFailed(true)
 					}
 
@@ -227,11 +218,11 @@ func applyFlakyTestRetriesAdditionalFeature(targetFunc func(*testing.T)) (func(*
 						}
 
 						fmt.Printf("    [ %v after %v retries by Datadog's auto test retries ]\n", status, executionIndex)
+					}
 
-						// Check if total retry count was exceeded
-						if atomic.LoadInt64(&flakyRetrySettings.RemainingTotalRetryCount) < 1 {
-							fmt.Println("    the maximum number of total retries was exceeded.")
-						}
+					// Check if total retry count was exceeded
+					if flakyRetrySettings.RemainingTotalRetryCount < 1 {
+						fmt.Println("    the maximum number of total retries was exceeded.")
 					}
 				},
 				execMetaAdjust: nil, // No execMetaAdjust needed
@@ -298,9 +289,7 @@ func applyEarlyFlakeDetectionAdditionalFeature(testInfo *commonInfo, targetFunc 
 					onRetryEnd: func(t *testing.T, executionIndex int, lastPtrToLocalT *testing.T) {
 						// Update test status based on collected counts
 						tCommonPrivates := getTestPrivateFields(t)
-						if tCommonPrivates == nil {
-							panic("getting test private fields failed")
-						}
+						tParentCommonPrivates := getTestParentPrivateFields(t)
 						status := "passed"
 						if testPassCount == 0 {
 							if testSkipCount > 0 {
@@ -310,10 +299,6 @@ func applyEarlyFlakeDetectionAdditionalFeature(testInfo *commonInfo, targetFunc 
 							if testFailCount > 0 {
 								status = "failed"
 								tCommonPrivates.SetFailed(true)
-								tParentCommonPrivates := getTestParentPrivateFields(t)
-								if tParentCommonPrivates == nil {
-									panic("getting test parent private fields failed")
-								}
 								tParentCommonPrivates.SetFailed(true)
 							}
 						}
@@ -351,10 +336,7 @@ func runTestWithRetry(options *runTestWithRetryOptions) {
 
 	for {
 		// Clear the matcher subnames map before each execution to avoid subname tests being called "parent/subname#NN" due to retries
-		matcher := getTestContextMatcherPrivateFields(options.t)
-		if matcher != nil {
-			matcher.ClearSubNames()
-		}
+		getTestContextMatcherPrivateFields(options.t).ClearSubNames()
 
 		// Increment execution index
 		executionIndex++
@@ -366,12 +348,6 @@ func runTestWithRetry(options *runTestWithRetryOptions) {
 		// Create a dummy parent so we can run the test using this local copy
 		// without affecting the test parent
 		localTPrivateFields := getTestPrivateFields(ptrToLocalT)
-		if localTPrivateFields == nil {
-			panic("getting test private fields failed")
-		}
-		if localTPrivateFields.parent == nil {
-			panic("parent of the test is nil")
-		}
 		*localTPrivateFields.parent = unsafe.Pointer(&testing.T{})
 
 		// Create an execution metadata instance

@@ -37,7 +37,4 @@ jobs:
       - name: Run govulncheck
         run: govulncheck ./ddtrace/... ./appsec/... ./profiler/... ./internal/...
       - name: Run govulncheck-contribs
-        run: |
-          go list -f '{{.Dir}}' ./contrib/... | while read dir ; do
-            govulncheck -C $dir .
-          done
+        run: ./.github/workflows/apps/govulncheck-contribs-v2.sh

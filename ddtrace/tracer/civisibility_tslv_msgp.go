@@ -654,7 +654,6 @@ func (z *tslvSpan) EncodeMsg(en *msgp.Writer) (err error) {
 	// check for omitted fields
 	zb0001Len := uint32(16)
 	var zb0001Mask uint16 /* 16 bits */
-	_ = zb0001Mask
 	if z.SessionID == 0 {
 		zb0001Len--
 		zb0001Mask |= 0x1

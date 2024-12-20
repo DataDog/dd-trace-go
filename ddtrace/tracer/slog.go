@@ -10,7 +10,7 @@ import (
 	"log/slog"
 	"strings"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
 // slogHandler implements the slog.Handler interface to dispatch messages to our

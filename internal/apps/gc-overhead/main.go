@@ -15,7 +15,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"maps"
 	"math"
 	"math/rand/v2"
 	"net/http"
@@ -24,8 +23,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/DataDog/dd-trace-go/internal/apps"
-	httptrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http"
+	httptrace "github.com/DataDog/dd-trace-go/contrib/net/http/v2"
+	"github.com/DataDog/dd-trace-go/internal/apps/v2"
 )
 
 func main() {
@@ -132,7 +131,12 @@ func (m *MemoryStore) List() (vehicles []*Vehicle) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
-	for _, key := range slices.Sorted(maps.Keys(m.vehicles)) {
+	mv := make([]string, 0, len(m.vehicles))
+	for key := range m.vehicles {
+		mv = append(mv, key)
+	}
+	slices.Sort(mv)
+	for _, key := range mv {
 		vehicles = append(vehicles, m.vehicles[key].Copy())
 	}
 	return vehicles

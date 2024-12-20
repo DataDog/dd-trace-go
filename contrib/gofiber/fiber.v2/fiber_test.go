@@ -11,15 +11,13 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/namingschematest"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 func TestChildSpan(t *testing.T) {
@@ -28,7 +26,7 @@ func TestChildSpan(t *testing.T) {
 	defer mt.Stop()
 
 	router := fiber.New()
-	router.Use(Middleware(WithServiceName("foobar")))
+	router.Use(Middleware(WithService("foobar")))
 	router.Get("/user/:id", func(c *fiber.Ctx) error {
 		return c.SendString(c.Params("id"))
 	})
@@ -79,7 +77,7 @@ func TestTrace200(t *testing.T) {
 		defer mt.Stop()
 
 		router := fiber.New()
-		router.Use(Middleware(WithServiceName("foobar")))
+		router.Use(Middleware(WithService("foobar")))
 		router.Get("/user/:id", func(c *fiber.Ctx) error {
 			return c.SendString(c.Params("id"))
 		})
@@ -93,7 +91,7 @@ func TestTrace200(t *testing.T) {
 		defer mt.Stop()
 
 		router := fiber.New()
-		router.Use(Middleware(WithServiceName("foobar")))
+		router.Use(Middleware(WithService("foobar")))
 		router.Get("/user/:id", func(c *fiber.Ctx) error {
 			return c.SendString(c.Params("id"))
 		})
@@ -108,7 +106,7 @@ func TestStatusError(t *testing.T) {
 
 	// setup
 	router := fiber.New()
-	router.Use(Middleware(WithServiceName("foobar")))
+	router.Use(Middleware(WithService("foobar")))
 	code := 500
 	wantErr := fmt.Sprintf("%d: %s", code, http.StatusText(code))
 
@@ -134,7 +132,7 @@ func TestStatusError(t *testing.T) {
 	assert.Equal("foobar", span.Tag(ext.ServiceName))
 	assert.Equal("500", span.Tag(ext.HTTPCode))
 	assert.Equal("/err", span.Tag(ext.HTTPRoute))
-	assert.Equal(wantErr, span.Tag(ext.Error).(error).Error())
+	assert.Equal(wantErr, span.Tag(ext.ErrorMsg))
 }
 
 func TestCustomError(t *testing.T) {
@@ -143,7 +141,7 @@ func TestCustomError(t *testing.T) {
 	defer mt.Stop()
 
 	router := fiber.New()
-	router.Use(Middleware(WithServiceName("foobar")))
+	router.Use(Middleware(WithService("foobar")))
 
 	router.Get("/err", func(c *fiber.Ctx) error {
 		c.SendStatus(400)
@@ -165,7 +163,7 @@ func TestCustomError(t *testing.T) {
 	assert.Equal("http.request", span.OperationName())
 	assert.Equal("foobar", span.Tag(ext.ServiceName))
 	assert.Equal("400", span.Tag(ext.HTTPCode))
-	assert.Equal(fiber.ErrBadRequest, span.Tag(ext.Error).(*fiber.Error))
+	assert.Equal(fiber.ErrBadRequest.Error(), span.Tag(ext.ErrorMsg))
 	assert.Equal(ext.SpanKindServer, span.Tag(ext.SpanKind))
 	assert.Equal("gofiber/fiber.v2", span.Tag(ext.Component))
 	assert.Equal("/err", span.Tag(ext.HTTPRoute))
@@ -178,7 +176,7 @@ func TestUserContext(t *testing.T) {
 
 	// setup
 	router := fiber.New()
-	router.Use(Middleware(WithServiceName("foobar")))
+	router.Use(Middleware(WithService("foobar")))
 
 	router.Get("/", func(c *fiber.Ctx) error {
 		// check if not default empty context
@@ -225,7 +223,7 @@ func TestPropagation(t *testing.T) {
 	requestWithoutSpan := httptest.NewRequest("GET", "/span/exists/false", nil)
 
 	router := fiber.New()
-	router.Use(Middleware(WithServiceName("foobar")))
+	router.Use(Middleware(WithService("foobar")))
 	router.Get("/span/exists/true", func(c *fiber.Ctx) error {
 		s, _ := tracer.SpanFromContext(c.UserContext())
 		assert.Equal(s.Context().TraceID() == pspan.Context().TraceID(), true)
@@ -276,9 +274,7 @@ func TestAnalyticsSettings(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		rate := globalconfig.AnalyticsRate()
-		defer globalconfig.SetAnalyticsRate(rate)
-		globalconfig.SetAnalyticsRate(0.4)
+		testutils.SetGlobalAnalyticsRate(t, 0.4)
 
 		assertRate(t, mt, 0.4)
 	})
@@ -301,36 +297,10 @@ func TestAnalyticsSettings(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		rate := globalconfig.AnalyticsRate()
-		defer globalconfig.SetAnalyticsRate(rate)
-		globalconfig.SetAnalyticsRate(0.4)
+		testutils.SetGlobalAnalyticsRate(t, 0.4)
 
 		assertRate(t, mt, 0.23, WithAnalyticsRate(0.23))
 	})
-}
-
-func TestNamingSchema(t *testing.T) {
-	genSpans := namingschematest.GenSpansFn(func(t *testing.T, serviceOverride string) []mocktracer.Span {
-		var opts []Option
-		if serviceOverride != "" {
-			opts = append(opts, WithServiceName(serviceOverride))
-		}
-		mt := mocktracer.Start()
-		defer mt.Stop()
-
-		mux := fiber.New()
-		mux.Use(Middleware(opts...))
-		mux.Get("/200", func(c *fiber.Ctx) error {
-			return c.SendString("ok")
-		})
-		req := httptest.NewRequest("GET", "/200", nil)
-		resp, err := mux.Test(req)
-		require.NoError(t, err)
-		defer resp.Body.Close()
-
-		return mt.FinishedSpans()
-	})
-	namingschematest.NewHTTPServerTest(genSpans, "fiber")(t)
 }
 
 func TestIgnoreRequest(t *testing.T) {
