@@ -160,9 +160,11 @@ func (t *httpTransport) send(p *payload) (body io.ReadCloser, err error) {
 	}
 	response, err := t.client.Do(req)
 	if err != nil {
+		reportAPIErrorsMetric(response, err)
 		return nil, err
 	}
 	if code := response.StatusCode; code >= 400 {
+		reportAPIErrorsMetric(response, err)
 		// error, check the body for context information and
 		// return a nice error.
 		msg := make([]byte, 1000)
@@ -175,6 +177,21 @@ func (t *httpTransport) send(p *payload) (body io.ReadCloser, err error) {
 		return nil, fmt.Errorf("%s", txt)
 	}
 	return response.Body, nil
+}
+
+func reportAPIErrorsMetric(response *http.Response, err error) {
+	if t, ok := GetGlobalTracer().(*tracer); ok {
+		var reason string
+		if err != nil {
+			reason = "network_failure"
+		}
+		if response != nil {
+			reason = fmt.Sprintf("server_response_%d", response.StatusCode)
+		}
+		t.statsd.Incr("datadog.tracer.api.errors", []string{"reason:" + reason}, 1)
+	} else {
+		return
+	}
 }
 
 func (t *httpTransport) endpoint() string {
