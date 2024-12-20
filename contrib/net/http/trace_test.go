@@ -333,7 +333,6 @@ func TestTraceAndServe(t *testing.T) {
 		cfg := &ServeConfig{
 			Service:       "service",
 			Resource:      "resource",
-			IsStatusError: nil, // No integration-level configuration
 		}
 
 		handler := func(w http.ResponseWriter, r *http.Request) {
