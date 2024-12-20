@@ -37,10 +37,10 @@ func loadTest(t *testing.T) {
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/error" {
 			w.WriteHeader(http.StatusInternalServerError)
-			_ = json.NewEncoder(w).Encode(map[string]string{"message": "ERROR"})
+			json.NewEncoder(w).Encode(map[string]string{"message": "ERROR"})
 		} else {
 			w.WriteHeader(http.StatusOK)
-			_ = json.NewEncoder(w).Encode(map[string]string{"message": "OK"})
+			json.NewEncoder(w).Encode(map[string]string{"message": "OK"})
 		}
 	})
 	appListener = httptest.NewServer(mux)
