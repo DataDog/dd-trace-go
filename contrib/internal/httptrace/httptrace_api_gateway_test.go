@@ -88,11 +88,15 @@ func TestInferredProxySpans(t *testing.T) {
 		assert.True(web_req_span.ParentID() == gateway_span.SpanID())
 		for _, arg := range inferredHeaders {
 			header, tag := normalizer.HeaderTag(arg)
-			gateway_span_tags, ok := gateway_span.Tags()[tag]
-			if !ok {
+
+			// Default to an empty string if the tag does not exist
+			gateway_span_tags, exists := gateway_span.Tags()[tag]
+			if !exists {
 				gateway_span_tags = ""
 			}
-			assert.Equal(strings.Join(req.Header.Values(header), ","), gateway_span_tags)
+			expected_tags := strings.Join(req.Header.Values(header), ",")
+			// compare expected and actual values
+			assert.Equal(expected_tags, gateway_span_tags)
 		}
 
 		assert.Equal(2, len(spans))
@@ -129,11 +133,15 @@ func TestInferredProxySpans(t *testing.T) {
 		assert.True(web_req_span.ParentID() == gateway_span.SpanID())
 		for _, arg := range inferredHeaders {
 			header, tag := normalizer.HeaderTag(arg)
-			gateway_span_tags, ok := gateway_span.Tags()[tag]
-			if !ok {
+
+			// Default to an empty string if the tag does not exist
+			gateway_span_tags, exists := gateway_span.Tags()[tag]
+			if !exists {
 				gateway_span_tags = ""
 			}
-			assert.Equal(strings.Join(req.Header.Values(header), ","), gateway_span_tags)
+			expected_tags := strings.Join(req.Header.Values(header), ",")
+			// compare expected and actual values
+			assert.Equal(expected_tags, gateway_span_tags)
 		}
 		assert.Equal(2, len(spans))
 
@@ -190,7 +198,4 @@ func TestInferredProxySpans(t *testing.T) {
 		assert.Equal("http.request", spans[0].OperationName())
 
 	})
-
-	//loadTest(nil)
-
 }

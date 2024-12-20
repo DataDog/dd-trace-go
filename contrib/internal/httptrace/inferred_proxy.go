@@ -1,7 +1,6 @@
 package httptrace
 
 import (
-	"fmt"
 	"net/http"
 	"strconv"
 	"time"
@@ -9,6 +8,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
 const (
@@ -49,17 +49,17 @@ func extractInferredProxyContext(headers http.Header) *ProxyContext {
 
 	_, exists := headers[PROXY_HEADER_START_TIME_MS]
 	if !exists {
-		println("no proxy header start time")
+		log.Debug("Proxy header start time does not exist")
 		return nil
 	}
 
 	proxyHeaderSystem, exists := headers[PROXY_HEADER_SYSTEM]
 	if !exists {
-		println("no proxy header system")
+		log.Debug("Proxy header system does not exist")
 		return nil
 	}
 	if _, ok := supportedProxies[proxyHeaderSystem[0]]; !ok {
-		println("unsupported Proxy header system")
+		log.Debug("Unsupported Proxy header system")
 		return nil
 	}
 
@@ -77,28 +77,28 @@ func extractInferredProxyContext(headers http.Header) *ProxyContext {
 
 func tryCreateInferredProxySpan(headers http.Header, parent ddtrace.SpanContext) ddtrace.SpanContext {
 	if headers == nil {
-		println("headers nil")
+		log.Debug("Headers do not exist")
 		return nil
 
 	}
 	if !internal.BoolEnv(inferredProxyServicesEnabled, false) {
-		println("bool env false")
+		log.Debug("The inferred proxy services are not enabled")
 		return nil
 	}
 
 	requestProxyContext := extractInferredProxyContext(headers)
 	if requestProxyContext == nil {
-		println("requestProxyContext nil")
+		log.Debug("Unabole to extract inferred proxy context")
 		return nil
 	}
 
 	proxySpanInfo := supportedProxies[requestProxyContext.ProxySystemName]
-	fmt.Printf(`Successfully extracted inferred span info ${proxyContext} for proxy: ${proxyContext.proxySystemName}`)
+	log.Debug(`Successfully extracted inferred span info ${proxyContext} for proxy: ${proxyContext.proxySystemName}`)
 
 	// Parse Time string to Time Type
 	millis, err := strconv.ParseInt(requestProxyContext.RequestTime, 10, 64)
 	if err != nil {
-		fmt.Println("Error parsing time string:", err)
+		log.Debug("Error parsing time string: %v", err)
 		return nil
 	}
 
