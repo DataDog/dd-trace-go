@@ -1,6 +1,6 @@
 module github.com/DataDog/dd-trace-go/.github/workflows/apps
 
-go 1.23.3
+go 1.22.0
 
 require (
 	github.com/DataDog/dd-trace-go/v2 v2.0.0-rc.2
