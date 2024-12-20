@@ -20,7 +20,9 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	traceinternal "gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/statsdtest"
 )
 
 // getTestSpan returns a Span with different fields set
@@ -239,6 +241,89 @@ func TestCustomTransport(t *testing.T) {
 	// make sure our custom round tripper was used
 	assert.Len(crt.reqs, 1)
 	assert.Equal(hits, 1)
+}
+
+type ErrTransport struct{}
+
+func (t *ErrTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	return nil, fmt.Errorf("error in RoundTripper")
+}
+
+type ErrResponseTransport struct{}
+
+func (t *ErrResponseTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	return &http.Response{StatusCode: 400}, nil
+}
+
+type OkTransport struct{}
+
+func (t *OkTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	return &http.Response{StatusCode: 200}, nil
+}
+
+func TestApiErrorsMetric(t *testing.T) {
+	t.Run("error", func(t *testing.T) {
+		assert := assert.New(t)
+		c := &http.Client{
+			Transport: &ErrTransport{},
+		}
+		var tg statsdtest.TestStatsdClient
+		trc := newTracer(WithHTTPClient(c), withStatsdClient(&tg))
+		traceinternal.SetGlobalTracer(trc)
+		defer trc.Stop()
+
+		p, err := encode(getTestTrace(1, 1))
+		assert.NoError(err)
+
+		// We're expecting an error
+		_, err = trc.config.transport.send(p)
+		assert.Error(err)
+		calls := statsdtest.FilterCallsByName(tg.IncrCalls(), "datadog.tracer.api.errors")
+		assert.Len(calls, 1)
+		call := calls[0]
+		assert.Equal([]string{"reason:network_failure"}, call.Tags())
+
+	})
+	t.Run("response with err code", func(t *testing.T) {
+		assert := assert.New(t)
+		c := &http.Client{
+			Transport: &ErrResponseTransport{},
+		}
+		var tg statsdtest.TestStatsdClient
+		trc := newTracer(WithHTTPClient(c), withStatsdClient(&tg))
+		traceinternal.SetGlobalTracer(trc)
+		defer trc.Stop()
+
+		p, err := encode(getTestTrace(1, 1))
+		assert.NoError(err)
+
+		_, err = trc.config.transport.send(p)
+		assert.Error(err)
+
+		calls := statsdtest.FilterCallsByName(tg.IncrCalls(), "datadog.tracer.api.errors")
+		assert.Len(calls, 1)
+		call := calls[0]
+		assert.Equal([]string{"reason:server_response_400"}, call.Tags())
+	})
+	t.Run("successful send - no metric", func(t *testing.T) {
+		assert := assert.New(t)
+		var tg statsdtest.TestStatsdClient
+		c := &http.Client{
+			Transport: &OkTransport{},
+		}
+		trc := newTracer(WithHTTPClient(c), withStatsdClient(&tg))
+		traceinternal.SetGlobalTracer(trc)
+		defer trc.Stop()
+
+		p, err := encode(getTestTrace(1, 1))
+		assert.NoError(err)
+
+		_, err = trc.config.transport.send(p)
+		assert.NoError(err)
+
+		calls := statsdtest.FilterCallsByName(tg.IncrCalls(), "datadog.tracer.api.errors")
+		assert.Len(calls, 0)
+	})
 }
 
 func TestWithHTTPClient(t *testing.T) {
