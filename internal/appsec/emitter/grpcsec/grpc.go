@@ -77,10 +77,10 @@ func (HandlerOperationRes) IsResultOf(*HandlerOperation) {}
 // given arguments and parent operation, and emits a start event up in the
 // operation stack. When parent is nil, the operation is linked to the global
 // root operation.
-func StartHandlerOperation(ctx context.Context, args HandlerOperationArgs) (context.Context, *HandlerOperation, *atomic.Pointer[actions.BlockGRPC]) {
+func StartHandlerOperation(ctx context.Context, span trace.TagSetter, args HandlerOperationArgs) (context.Context, *HandlerOperation, *atomic.Pointer[actions.BlockGRPC]) {
 	wafOp, found := dyngo.FindOperation[waf.ContextOperation](ctx)
 	if !found {
-		wafOp, ctx = waf.StartContextOperation(ctx)
+		wafOp, ctx = waf.StartContextOperation(ctx, span)
 	}
 	op := &HandlerOperation{
 		Operation:        dyngo.NewOperation(wafOp),
@@ -117,9 +117,9 @@ func MonitorResponseMessage(ctx context.Context, msg any) error {
 
 // Finish the gRPC handler operation, along with the given results, and emit a
 // finish event up in the operation stack.
-func (op *HandlerOperation) Finish(span trace.TagSetter, res HandlerOperationRes) {
+func (op *HandlerOperation) Finish(res HandlerOperationRes) {
 	dyngo.FinishOperation(op, res)
 	if op.wafContextOwner {
-		op.ContextOperation.Finish(span)
+		op.ContextOperation.Finish()
 	}
 }

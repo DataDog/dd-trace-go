@@ -56,13 +56,16 @@ type (
 		waf.RunAddressData
 		dyngo.Operation
 	}
+
+	// SecurityEvent is a dyngo data event sent when a security event is detected by the WAF
+	SecurityEvent struct{}
 )
 
 func (ContextArgs) IsArgOf(*ContextOperation)   {}
 func (ContextRes) IsResultOf(*ContextOperation) {}
 
-func StartContextOperation(ctx context.Context) (*ContextOperation, context.Context) {
-	entrySpanOp, ctx := trace.StartServiceEntrySpanOperation(ctx)
+func StartContextOperation(ctx context.Context, span trace.TagSetter) (*ContextOperation, context.Context) {
+	entrySpanOp, ctx := trace.StartServiceEntrySpanOperation(ctx, span)
 	op := &ContextOperation{
 		Operation:                 dyngo.NewOperation(entrySpanOp),
 		ServiceEntrySpanOperation: entrySpanOp,
@@ -70,9 +73,9 @@ func StartContextOperation(ctx context.Context) (*ContextOperation, context.Cont
 	return op, dyngo.StartAndRegisterOperation(ctx, op, ContextArgs{})
 }
 
-func (op *ContextOperation) Finish(span trace.TagSetter) {
+func (op *ContextOperation) Finish() {
 	dyngo.FinishOperation(op, ContextRes{})
-	op.ServiceEntrySpanOperation.Finish(span)
+	op.ServiceEntrySpanOperation.Finish()
 }
 
 func (op *ContextOperation) SwapContext(ctx *waf.Context) *waf.Context {

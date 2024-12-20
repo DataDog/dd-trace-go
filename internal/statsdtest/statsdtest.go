@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 )
 
 type callType int64
@@ -23,6 +24,8 @@ const (
 	callTypeCountWithTimestamp
 	callTypeTiming
 )
+
+var _ internal.StatsdClient = &TestStatsdClient{}
 
 type TestStatsdClient struct {
 	mu          sync.RWMutex
@@ -114,6 +117,10 @@ func (tg *TestStatsdClient) CountWithTimestamp(name string, value int64, tags []
 		tags:   make([]string, len(tags)),
 		rate:   rate,
 	})
+}
+
+func (tg *TestStatsdClient) DistributionSamples(_ string, _ []float64, _ []string, _ float64) error {
+	panic("not implemented")
 }
 
 func (tg *TestStatsdClient) Timing(name string, value time.Duration, tags []string, rate float64) error {
@@ -226,6 +233,7 @@ func (tg *TestStatsdClient) CallsByName() map[string]int {
 	return counts
 }
 
+<<<<<<< HEAD
 func (tg *TestStatsdClient) GetCallsByName(name string) (calls []TestStatsdCall) {
 	tg.mu.RLock()
 	defer tg.mu.RUnlock()
@@ -250,6 +258,16 @@ func (tg *TestStatsdClient) GetCallsByName(name string) (calls []TestStatsdCall)
 		}
 	}
 	return calls
+=======
+func FilterCallsByName(calls []TestStatsdCall, name string) []TestStatsdCall {
+	var matches []TestStatsdCall
+	for _, c := range calls {
+		if c.name == name {
+			matches = append(matches, c)
+		}
+	}
+	return matches
+>>>>>>> main
 }
 
 func (tg *TestStatsdClient) Counts() map[string]int64 {
