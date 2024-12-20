@@ -233,7 +233,8 @@ func (tg *TestStatsdClient) CallsByName() map[string]int {
 	return counts
 }
 
-<<<<<<< HEAD
+// GetCallsByName returns a slice of TestStatsdCalls with the provided name on the TestStatsdClient
+// It's useful if you want to use any TestStatsdCall method calls on the result(s)
 func (tg *TestStatsdClient) GetCallsByName(name string) (calls []TestStatsdCall) {
 	tg.mu.RLock()
 	defer tg.mu.RUnlock()
@@ -258,7 +259,9 @@ func (tg *TestStatsdClient) GetCallsByName(name string) (calls []TestStatsdCall)
 		}
 	}
 	return calls
-=======
+}
+
+// FilterCallsByName returns a slice of TestStatsdCalls with the provided name, from the list of provided TestStatsdCalls
 func FilterCallsByName(calls []TestStatsdCall, name string) []TestStatsdCall {
 	var matches []TestStatsdCall
 	for _, c := range calls {
@@ -267,7 +270,6 @@ func FilterCallsByName(calls []TestStatsdCall, name string) []TestStatsdCall {
 		}
 	}
 	return matches
->>>>>>> main
 }
 
 func (tg *TestStatsdClient) Counts() map[string]int64 {
