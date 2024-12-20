@@ -300,7 +300,7 @@ func TestTraceAndServe(t *testing.T) {
 		assert.Equal("200", span.Tag(ext.HTTPCode))
 	})
 
-	t.Run("isStatusError", func(t *testing.T) {
+	t.Run("integrationLevelErrorHandling", func(t *testing.T) {
 		mt := mocktracer.Start()
 		assert := assert.New(t)
 		defer mt.Stop()
@@ -323,7 +323,35 @@ func TestTraceAndServe(t *testing.T) {
 		assert.Equal("400: Bad Request", spans[0].Tag(ext.Error).(error).Error())
 	})
 
-	t.Run("isStatusErrorEnv", func(t *testing.T) {
+	t.Run("envLevelErrorHandling", func(t *testing.T) {
+		mt := mocktracer.Start()
+		assert := assert.New(t)
+		defer mt.Stop()
+
+		t.Setenv("DD_TRACE_HTTP_SERVER_ERROR_STATUSES", "500")
+
+		cfg := &ServeConfig{
+			Service:       "service",
+			Resource:      "resource",
+			IsStatusError: nil, // No integration-level configuration
+		}
+
+		handler := func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusInternalServerError) // 500
+		}
+
+		r, err := http.NewRequest("GET", "/", nil)
+		assert.NoError(err)
+		w := httptest.NewRecorder()
+		TraceAndServe(http.HandlerFunc(handler), w, r, cfg)
+
+		spans := mt.FinishedSpans()
+		assert.Len(spans, 1)
+		assert.Equal("500", spans[0].Tag(ext.HTTPCode))
+		assert.Equal("500: Internal Server Error", spans[0].Tag(ext.Error).(error).Error())
+	})
+
+	t.Run("integrationOverridesEnvConfig", func(t *testing.T) {
 		mt := mocktracer.Start()
 		assert := assert.New(t)
 		defer mt.Stop()
