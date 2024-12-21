@@ -45,7 +45,7 @@ func (cs *clientStream) RecvMsg(m interface{}) (err error) {
 		if p, ok := peer.FromContext(cs.Context()); ok {
 			setSpanTargetFromPeer(span, *p)
 		}
-		defer func() { finishWithError(span, err, cs.cfg) }()
+		defer func() { finishWithError(span, err, cs.method, cs.cfg) }()
 	}
 	err = cs.ClientStream.RecvMsg(m)
 	return err
@@ -64,7 +64,7 @@ func (cs *clientStream) SendMsg(m interface{}) (err error) {
 		if p, ok := peer.FromContext(cs.Context()); ok {
 			setSpanTargetFromPeer(span, *p)
 		}
-		defer func() { finishWithError(span, err, cs.cfg) }()
+		defer func() { finishWithError(span, err, cs.method, cs.cfg) }()
 	}
 	err = cs.ClientStream.SendMsg(m)
 	return err
@@ -104,7 +104,7 @@ func StreamClientInterceptor(opts ...Option) grpc.StreamClientInterceptor {
 					return err
 				})
 			if err != nil {
-				finishWithError(span, err, cfg)
+				finishWithError(span, err, method, cfg)
 				return nil, err
 			}
 
@@ -116,7 +116,7 @@ func StreamClientInterceptor(opts ...Option) grpc.StreamClientInterceptor {
 
 			go func() {
 				<-stream.Context().Done()
-				finishWithError(span, stream.Context().Err(), cfg)
+				finishWithError(span, stream.Context().Err(), method, cfg)
 			}()
 		} else {
 			// if call tracing is disabled, just call streamer, but still return
@@ -158,7 +158,7 @@ func UnaryClientInterceptor(opts ...Option) grpc.UnaryClientInterceptor {
 			func(ctx context.Context, opts []grpc.CallOption) error {
 				return invoker(ctx, method, req, reply, cc, opts...)
 			})
-		finishWithError(span, err, cfg)
+		finishWithError(span, err, method, cfg)
 		return err
 	}
 }
