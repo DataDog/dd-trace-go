@@ -7,10 +7,10 @@ package waf
 
 import (
 	"encoding/json"
-	"fmt"
 
 	waf "github.com/DataDog/go-libddwaf/v3"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
@@ -61,18 +61,8 @@ func AddWAFMonitoringTags(th trace.TagSetter, rulesVersion string, stats map[str
 	}
 }
 
-// SetEventSpanTags sets the security event span tags into the service entry span.
-func SetEventSpanTags(span trace.TagSetter, events []any) error {
-	if len(events) == 0 {
-		return nil
-	}
-
-	// Set the appsec event span tag
-	val, err := makeEventTagValue(events)
-	if err != nil {
-		return err
-	}
-	span.SetTag("_dd.appsec.json", string(val))
+// SetEventSpanTags sets the security event span tags related to an appsec event
+func SetEventSpanTags(span trace.TagSetter) {
 	// Keep this span due to the security event
 	//
 	// This is a workaround to tell the tracer that the trace was kept by AppSec.
@@ -83,19 +73,5 @@ func SetEventSpanTags(span trace.TagSetter, events []any) error {
 	span.SetTag("_dd.origin", "appsec")
 	// Set the appsec.event tag needed by the appsec backend
 	span.SetTag("appsec.event", true)
-	return nil
-}
-
-// Create the value of the security event tag.
-func makeEventTagValue(events []any) (json.RawMessage, error) {
-	type eventTagValue struct {
-		Triggers []any `json:"triggers"`
-	}
-
-	tag, err := json.Marshal(eventTagValue{events})
-	if err != nil {
-		return nil, fmt.Errorf("unexpected error while serializing the appsec event span tag: %v", err)
-	}
-
-	return tag, nil
+	span.SetTag("_dd.p.appsec", internal.PropagatingTagValue{Value: "1"})
 }

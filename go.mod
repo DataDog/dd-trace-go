@@ -40,6 +40,7 @@ require (
 	github.com/elastic/go-elasticsearch/v8 v8.4.0
 	github.com/emicklei/go-restful v2.16.0+incompatible
 	github.com/emicklei/go-restful/v3 v3.11.0
+	github.com/envoyproxy/go-control-plane v0.12.0
 	github.com/garyburd/redigo v1.6.4
 	github.com/gin-gonic/gin v1.9.1
 	github.com/globalsign/mgo v0.0.0-20181015135952-eeefdecb41b8
@@ -93,17 +94,18 @@ require (
 	github.com/vektah/gqlparser/v2 v2.5.16
 	github.com/zenazn/goji v1.0.1
 	go.mongodb.org/mongo-driver v1.12.1
+	go.opentelemetry.io/collector/pdata/pprofile v0.104.0
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.49.0
 	go.opentelemetry.io/otel v1.27.0
 	go.opentelemetry.io/otel/trace v1.27.0
 	go.uber.org/goleak v1.3.0
 	golang.org/x/mod v0.20.0
 	golang.org/x/oauth2 v0.18.0
-	golang.org/x/sys v0.24.0
+	golang.org/x/sys v0.28.0
 	golang.org/x/time v0.6.0
 	golang.org/x/xerrors v0.0.0-20231012003039-104605ab7028
 	google.golang.org/api v0.169.0
-	google.golang.org/grpc v1.64.0
+	google.golang.org/grpc v1.64.1
 	google.golang.org/protobuf v1.34.2
 	gopkg.in/jinzhu/gorm.v1 v1.9.2
 	gopkg.in/olivere/elastic.v3 v3.0.75
@@ -154,6 +156,7 @@ require (
 	github.com/chenzhuoyu/base64x v0.0.0-20230717121745-296ad89f973d // indirect
 	github.com/chenzhuoyu/iasm v0.9.0 // indirect
 	github.com/cihub/seelog v0.0.0-20170130134532-f561c5e57575 // indirect
+	github.com/cncf/xds/go v0.0.0-20240318125728-8a4994d93e50 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
@@ -162,6 +165,7 @@ require (
 	github.com/eapache/queue v1.1.0 // indirect
 	github.com/ebitengine/purego v0.6.0-alpha.5 // indirect
 	github.com/elastic/elastic-transport-go/v8 v8.1.0 // indirect
+	github.com/envoyproxy/protoc-gen-validate v1.0.4 // indirect
 	github.com/fatih/color v1.16.0 // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect
 	github.com/gabriel-vasile/mimetype v1.4.2 // indirect
@@ -288,12 +292,12 @@ require (
 	go.uber.org/multierr v1.11.0 // indirect
 	go.uber.org/zap v1.27.0 // indirect
 	golang.org/x/arch v0.4.0 // indirect
-	golang.org/x/crypto v0.26.0 // indirect
+	golang.org/x/crypto v0.31.0 // indirect
 	golang.org/x/exp v0.0.0-20230905200255-921286631fa9 // indirect
-	golang.org/x/net v0.28.0 // indirect
-	golang.org/x/sync v0.8.0 // indirect
-	golang.org/x/term v0.23.0 // indirect
-	golang.org/x/text v0.17.0 // indirect
+	golang.org/x/net v0.33.0 // indirect
+	golang.org/x/sync v0.10.0 // indirect
+	golang.org/x/term v0.27.0 // indirect
+	golang.org/x/text v0.21.0 // indirect
 	golang.org/x/tools v0.24.0 // indirect
 	google.golang.org/appengine v1.6.8 // indirect
 	google.golang.org/genproto v0.0.0-20240213162025-012b6fc9bca9 // indirect

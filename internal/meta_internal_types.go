@@ -10,3 +10,9 @@ package internal
 type MetaStructValue struct {
 	Value any // TODO: further constraining Value's type, especially if it becomes public
 }
+
+// PropagatingTagValue is a custom type wrapper used to create tags that will be propagated
+// to downstream distributed traces via the `X-Datadog-Tags` HTTP header for example.
+type PropagatingTagValue struct {
+	Value string
+}
