@@ -49,8 +49,16 @@ type TestStatsdCall struct {
 	rate     float64
 }
 
-func (c *TestStatsdCall) Tags() []string {
-	return c.tags
+func (t TestStatsdCall) Name() string {
+	return t.name
+}
+
+func (t TestStatsdCall) Tags() []string {
+	return t.tags
+}
+
+func (t TestStatsdCall) IntVal() int64 {
+	return t.intVal
 }
 
 func (tg *TestStatsdClient) addCount(name string, value int64) {
@@ -225,6 +233,35 @@ func (tg *TestStatsdClient) CallsByName() map[string]int {
 	return counts
 }
 
+// GetCallsByName returns a slice of TestStatsdCalls with the provided name on the TestStatsdClient
+// It's useful if you want to use any TestStatsdCall method calls on the result(s)
+func (tg *TestStatsdClient) GetCallsByName(name string) (calls []TestStatsdCall) {
+	tg.mu.RLock()
+	defer tg.mu.RUnlock()
+	for _, c := range tg.gaugeCalls {
+		if c.Name() == name {
+			calls = append(calls, c)
+		}
+	}
+	for _, c := range tg.incrCalls {
+		if c.Name() == name {
+			calls = append(calls, c)
+		}
+	}
+	for _, c := range tg.countCalls {
+		if c.Name() == name {
+			calls = append(calls, c)
+		}
+	}
+	for _, c := range tg.timingCalls {
+		if c.Name() == name {
+			calls = append(calls, c)
+		}
+	}
+	return calls
+}
+
+// FilterCallsByName returns a slice of TestStatsdCalls with the provided name, from the list of provided TestStatsdCalls
 func FilterCallsByName(calls []TestStatsdCall, name string) []TestStatsdCall {
 	var matches []TestStatsdCall
 	for _, c := range calls {
