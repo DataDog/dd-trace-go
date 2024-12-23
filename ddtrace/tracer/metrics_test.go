@@ -44,7 +44,7 @@ func TestReportRuntimeMetrics(t *testing.T) {
 	assert.Contains(calls, "runtime.go.gc_stats.pause_quantiles.75p")
 }
 
-func TestReportHealthMetrics(t *testing.T) {
+func TestReportHealthMetricsAtInterval(t *testing.T) {
 	assert := assert.New(t)
 	var tg statsdtest.TestStatsdClient
 
