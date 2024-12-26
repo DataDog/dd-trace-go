@@ -26,7 +26,7 @@ jobs:
 
       - run: echo 'Smoke Tests workflow passed'
 
-      - run: go run parse_go_mod.go
+      - run: go run .github/workflows/apps/output_integration_versions.go 
 
       - run: git diff
 

@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"sort"
 	"regexp"
 	"strings"
 	"sync"
@@ -91,15 +92,20 @@ func fetchLatestVersion(module string) (string, error) {
 	}
 
 	versions := strings.Fields(stdout.String())
-	fmt.Println("Versions:", versions)
+	// fmt.Println("Versions:", versions)
 	if len(versions) < 1 {
 		return "", fmt.Errorf("no versions found for module: %s", module)
 	}
 
 	return versions[len(versions)-1], nil
 }
+func isModuleInstrumented(moduleName string, instrumentedSet map[string]struct{}) bool {
+	// whether the module has automatic tracing supported (by Orchestrion)
+	_, isInstrumented := instrumentedSet[moduleName]
+	return isInstrumented
+}
 
-func fetchAllLatestVersions(modules []ModuleVersion, instrumentedSet map[string]struct{}) []ModuleVersion {
+func fetchAllLatestVersions(modules []ModuleVersion) []ModuleVersion {
 	// Concurrently fetches the latest version of each module.
 		
 	var wg sync.WaitGroup
@@ -111,20 +117,18 @@ func fetchAllLatestVersions(modules []ModuleVersion, instrumentedSet map[string]
 	for _, mod := range modules {
 		go func(mod ModuleVersion) {
 			defer wg.Done()
-			fmt.Printf("Fetching latest version for module: %s\n", mod.Name)
 			latestVersion, err := fetchLatestVersion(mod.Name)
 			if err != nil {
 				fmt.Printf("Error fetching latest version for %s: %v\n", mod.Name, err)
 				mu.Lock()
-				updatedModules = append(updatedModules, ModuleVersion{mod.Name, mod.MinVersion, "Error", false})
+				updatedModules = append(updatedModules, ModuleVersion{mod.Name, mod.MinVersion, "Error", mod.isInstrumented})
 				mu.Unlock()
 				return
 			}
-			_, isInstrumented := instrumentedSet[mod.Name]
 
 			mu.Lock()
 			updatedModules = append(updatedModules, ModuleVersion{mod.Name, 
-				mod.MinVersion, latestVersion, isInstrumented})
+				mod.MinVersion, latestVersion, mod.isInstrumented})
 			mu.Unlock()
 		}(mod)
 	}
@@ -142,6 +146,12 @@ func outputVersionsAsMarkdown(modules []ModuleVersion, filePath string) error {
 
 	fmt.Fprintln(file, "| Dependency | Minimum Version | Maximum Version | Auto-Instrumented |")
 	fmt.Fprintln(file, "|------------|-----------------|-----------------|-----------------|")
+
+	// Sort modules by name
+	sort.Slice(modules, func(i, j int) bool {
+		return modules[i].Name < modules[j].Name
+	})
+
 	for _, mod := range modules {
 		fmt.Fprintf(file, "| %s | v%s | %s | %+v\n", mod.Name, mod.MinVersion, mod.MaxVersion, mod.isInstrumented)
 	}
@@ -149,7 +159,7 @@ func outputVersionsAsMarkdown(modules []ModuleVersion, filePath string) error {
 }
 
 func main() {
-	goModPath := "integration_go.mod" // Modify path as needed
+	goModPath := "integration_go.mod" // path to integration_go.mod
 	outputPath := "supported_versions.md"
 	instrumentedSet := map[string]struct{}{
 		"database/sql": {},
@@ -198,7 +208,11 @@ func main() {
 		return
 	}
 
-	modulesWithLatest := fetchAllLatestVersions(modules, instrumentedSet)
+	for i := range modules {
+		modules[i].isInstrumented = isModuleInstrumented(modules[i].Name, instrumentedSet)
+	}
+	
+	modulesWithLatest := fetchAllLatestVersions(modules)
 
 	err = outputVersionsAsMarkdown(modulesWithLatest, outputPath)
 	if err != nil {
