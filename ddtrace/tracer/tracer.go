@@ -840,7 +840,7 @@ func (t *tracer) Extract(carrier interface{}) (*SpanContext, error) {
 	if t.config.tracingAsTransport && err != nil {
 		// in tracing as transport mode, reset upstream sampling decision to make sure we keep 1 trace/minute
 		// TODO: replace with _dd.p.ts in the next iteration standardizing this for other products, comparing enabled products in `t.config` with their corresponding `_dd.p.ts` bitfields
-		if ctx.trace.propagatingTag("_dd.p.appsec") != "1" {
+		if ctx.trace != nil && ctx.trace.propagatingTag("_dd.p.appsec") != "1" {
 			ctx.trace.priority = nil
 		}
 	}
