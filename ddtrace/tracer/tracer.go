@@ -676,9 +676,7 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 	if t.spansStarted.spans == nil {
 		t.spansStarted.spans = make(map[string]uint32)
 	}
-	count := t.spansStarted.spans[span.integration]
-	atomic.AddUint32(&count, 1)
-	t.spansStarted.spans[span.integration] = count
+	t.spansStarted.spans[span.integration] += 1
 	return span
 }
 

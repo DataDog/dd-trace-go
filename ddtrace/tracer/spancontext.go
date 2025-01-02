@@ -535,9 +535,7 @@ func (t *trace) finishChunk(tr *tracer, ch *chunk) {
 		if tr.spansFinished.spans == nil {
 			tr.spansFinished.spans = make(map[string]uint32)
 		}
-		count := tr.spansFinished.spans[sp.integration]
-		atomic.AddUint32(&count, 1)
-		tr.spansFinished.spans[sp.integration] = count
+		tr.spansFinished.spans[sp.integration] += 1
 		tr.spansFinished.mu.Unlock()
 	}
 	tr.pushChunk(ch)
