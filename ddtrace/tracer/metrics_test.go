@@ -60,8 +60,8 @@ func TestReportHealthMetricsAtInterval(t *testing.T) {
 	tg.Wait(assert, 4, 10*time.Second)
 
 	counts := tg.Counts()
-	assert.GreaterOrEqual(counts["datadog.tracer.spans_started"], int64(1))
-	assert.GreaterOrEqual(counts["datadog.tracer.spans_finished"], int64(1))
+	assert.Equal(counts["datadog.tracer.spans_started"], int64(1))
+	assert.Equal(counts["datadog.tracer.spans_finished"], int64(1))
 	assert.Equal(int64(0), counts["datadog.tracer.traces_dropped"])
 	assert.Equal(int64(1), counts["datadog.tracer.queue.enqueued.traces"])
 }
@@ -104,7 +104,7 @@ func TestSpansStartedTags(t *testing.T) {
 		tg.Wait(assert, 1, 100*time.Millisecond)
 
 		counts := tg.Counts()
-		assert.GreaterOrEqual(counts["datadog.tracer.spans_started"], int64(1))
+		assert.Equal(counts["datadog.tracer.spans_started"], int64(1))
 		for _, c := range statsdtest.FilterCallsByName(tg.CountCalls(), "datadog.tracer.spans_started") {
 			if slices.Equal(c.Tags(), []string{"integration:manual"}) {
 				return
@@ -125,7 +125,7 @@ func TestSpansStartedTags(t *testing.T) {
 		tg.Wait(assert, 1, 100*time.Millisecond)
 
 		counts := tg.Counts()
-		assert.GreaterOrEqual(counts["datadog.tracer.spans_started"], int64(1))
+		assert.Equal(counts["datadog.tracer.spans_started"], int64(1))
 		for _, c := range statsdtest.FilterCallsByName(tg.CountCalls(), "datadog.tracer.spans_started") {
 			if slices.Equal(c.Tags(), []string{"integration:contrib"}) {
 				return
@@ -151,7 +151,7 @@ func TestSpansFinishedTags(t *testing.T) {
 		tg.Wait(assert, 1, 100*time.Millisecond)
 
 		counts := tg.Counts()
-		assert.GreaterOrEqual(counts["datadog.tracer.spans_finished"], int64(1))
+		assert.Equal(counts["datadog.tracer.spans_finished"], int64(1))
 		for _, c := range statsdtest.FilterCallsByName(tg.CountCalls(), "datadog.tracer.spans_finished") {
 			if slices.Equal(c.Tags(), []string{"integration:manual"}) {
 				return
@@ -171,7 +171,7 @@ func TestSpansFinishedTags(t *testing.T) {
 		tg.Wait(assert, 1, 100*time.Millisecond)
 
 		counts := tg.Counts()
-		assert.GreaterOrEqual(counts["datadog.tracer.spans_finished"], int64(1))
+		assert.Equal(counts["datadog.tracer.spans_finished"], int64(1))
 		for _, c := range statsdtest.FilterCallsByName(tg.CountCalls(), "datadog.tracer.spans_finished") {
 			if slices.Equal(c.Tags(), []string{"integration:contrib"}) {
 				return

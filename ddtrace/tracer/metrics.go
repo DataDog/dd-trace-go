@@ -96,11 +96,13 @@ func (t *tracer) reportHealthMetricsAtInterval(interval time.Duration) {
 			t.spansStarted.mu.Lock()
 			for name, v := range t.spansStarted.spans {
 				t.statsd.Count("datadog.tracer.spans_started", int64(v), []string{"integration:" + name}, 1)
+				t.spansStarted.spans[name] = 0
 			}
 			t.spansStarted.mu.Unlock()
 			t.spansFinished.mu.Lock()
 			for name, v := range t.spansFinished.spans {
 				t.statsd.Count("datadog.tracer.spans_finished", int64(v), []string{"integration:" + name}, 1)
+				t.spansFinished.spans[name] = 0
 			}
 			t.spansFinished.mu.Unlock()
 			t.statsd.Count("datadog.tracer.traces_dropped", int64(atomic.SwapUint32(&t.tracesDropped, 0)), []string{"reason:trace_too_large"}, 1)
