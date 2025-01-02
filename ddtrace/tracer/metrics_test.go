@@ -203,7 +203,7 @@ func TestHealthMetricRaces(t *testing.T) {
 	tg.Wait(assert, 2, 100*time.Millisecond)
 
 	counts := tg.Counts()
-	assert.Equal(int64(5), counts["datadog.tracer.spans_finished"])
+	assert.Equal(int64(5), counts["datadog.tracer.spans_started"])
 	assert.Equal(int64(5), counts["datadog.tracer.spans_finished"])
 
 }
