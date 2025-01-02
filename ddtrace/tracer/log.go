@@ -59,6 +59,7 @@ type startupInfo struct {
 	FeatureFlags                []string                     `json:"feature_flags"`
 	PropagationStyleInject      string                       `json:"propagation_style_inject"`  // Propagation style for inject
 	PropagationStyleExtract     string                       `json:"propagation_style_extract"` // Propagation style for extract
+	TracingAsTransport          bool                         `json:"tracing_as_transport"`      // Whether the tracer is disabled and other products are using it as a transport
 }
 
 // checkEndpoint tries to connect to the URL specified by endpoint.
@@ -147,6 +148,7 @@ func logStartup(t *tracer) {
 		FeatureFlags:                featureFlags,
 		PropagationStyleInject:      injectorNames,
 		PropagationStyleExtract:     extractorNames,
+		TracingAsTransport:          t.config.tracingAsTransport,
 	}
 	if _, _, err := samplingRulesFromEnv(); err != nil {
 		info.SamplingRulesError = fmt.Sprintf("%s", err)
