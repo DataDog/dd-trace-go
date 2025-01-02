@@ -105,10 +105,7 @@ func TestSpansStartedTags(t *testing.T) {
 
 		counts := tg.Counts()
 		assert.GreaterOrEqual(counts["datadog.tracer.spans_started"], int64(1))
-		for _, c := range tg.CountCalls() {
-			if c.Name() != "datadog.tracer.spans_started" {
-				continue
-			}
+		for _, c := range statsdtest.FilterCallsByName(tg.CountCalls(), "datadog.tracer.spans_started") {
 			if slices.Equal(c.Tags(), []string{"integration:manual"}) {
 				return
 			}
@@ -129,10 +126,7 @@ func TestSpansStartedTags(t *testing.T) {
 
 		counts := tg.Counts()
 		assert.GreaterOrEqual(counts["datadog.tracer.spans_started"], int64(1))
-		for _, c := range tg.CountCalls() {
-			if c.Name() != "datadog.tracer.spans_started" {
-				continue
-			}
+		for _, c := range statsdtest.FilterCallsByName(tg.CountCalls(), "datadog.tracer.spans_started") {
 			if slices.Equal(c.Tags(), []string{"integration:contrib"}) {
 				return
 			}
@@ -158,10 +152,7 @@ func TestSpansFinishedTags(t *testing.T) {
 
 		counts := tg.Counts()
 		assert.GreaterOrEqual(counts["datadog.tracer.spans_finished"], int64(1))
-		for _, c := range tg.CountCalls() {
-			if c.Name() != "datadog.tracer.spans_finished" {
-				continue
-			}
+		for _, c := range statsdtest.FilterCallsByName(tg.CountCalls(), "datadog.tracer.spans_finished") {
 			if slices.Equal(c.Tags(), []string{"integration:manual"}) {
 				return
 			}
@@ -181,10 +172,7 @@ func TestSpansFinishedTags(t *testing.T) {
 
 		counts := tg.Counts()
 		assert.GreaterOrEqual(counts["datadog.tracer.spans_finished"], int64(1))
-		for _, c := range tg.CountCalls() {
-			if c.Name() != "datadog.tracer.spans_finished" {
-				continue
-			}
+		for _, c := range statsdtest.FilterCallsByName(tg.CountCalls(), "datadog.tracer.spans_finished") {
 			if slices.Equal(c.Tags(), []string{"integration:contrib"}) {
 				return
 			}

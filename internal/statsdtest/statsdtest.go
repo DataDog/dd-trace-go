@@ -60,9 +60,6 @@ func (t TestStatsdCall) Tags() []string {
 func (t TestStatsdCall) IntVal() int64 {
 	return t.intVal
 }
-func (c *TestStatsdCall) Name() string {
-	return c.name
-}
 
 func (tg *TestStatsdClient) addCount(name string, value int64) {
 	tg.mu.Lock()
