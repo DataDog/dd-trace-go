@@ -25,8 +25,8 @@ func withStatsdClient(s globalinternal.StatsdClient) StartOption {
 func TestReportRuntimeMetrics(t *testing.T) {
 	var tg statsdtest.TestStatsdClient
 	trc, err := newUnstartedTracer(withStatsdClient(&tg))
-	defer trc.statsd.Close()
 	assert.NoError(t, err)
+	defer trc.statsd.Close()
 
 	trc.wg.Add(1)
 	go func() {
