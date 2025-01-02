@@ -837,7 +837,7 @@ func (t *tracer) Extract(carrier interface{}) (*SpanContext, error) {
 		return nil, nil
 	}
 	ctx, err := t.config.propagator.Extract(carrier)
-	if t.config.tracingAsTransport {
+	if t.config.tracingAsTransport && ctx.trace != nil {
 		// in tracing as transport mode, reset upstream sampling decision to make sure we keep 1 trace/minute
 		// TODO: replace with _dd.p.ts in the next iteration standardizing this for other products, comparing enabled products in `t.config` with their corresponding `_dd.p.ts` bitfields
 		if ctx.trace.propagatingTag("_dd.p.appsec") != "1" {
