@@ -1,28 +1,28 @@
 | Dependency | Minimum Version | Maximum Version | Auto-Instrumented |
 |------------|-----------------|-----------------|-----------------|
 | cloud.google.com/go/pubsub | v1.33.0 | v1.45.3 | true
-| github.com/99designs/gqlgen | v0.17.36 | v0.17.61 | true
-| github.com/IBM/sarama | v1.40.0 | v1.43.3 | true
-| github.com/Shopify/sarama | v1.38.1 | v1.43.3 | true
-| github.com/aws/aws-sdk-go | v1.44.327 | v1.55.5 | false
+| github.com/99designs/gqlgen | v0.17.36 | v0.17.62 | true
+| github.com/IBM/sarama | v1.40.0 | v1.44.0 | true
+| github.com/Shopify/sarama | v1.38.1 | v1.44.0 | true
+| github.com/aws/aws-sdk-go | v1.44.327 | v1.55.5 | true
 | github.com/aws/aws-sdk-go-v2 | v1.20.3 | v2.0.0-preview.4+incompatible | true
-| github.com/aws/aws-sdk-go-v2/config | v1.18.21 | v1.28.7 | false
-| github.com/aws/aws-sdk-go-v2/service/dynamodb | v1.21.4 | v1.38.1 | false
-| github.com/aws/aws-sdk-go-v2/service/ec2 | v1.93.2 | v1.198.1 | false
-| github.com/aws/aws-sdk-go-v2/service/eventbridge | v1.20.4 | v1.36.1 | false
-| github.com/aws/aws-sdk-go-v2/service/kinesis | v1.18.4 | v1.32.8 | false
-| github.com/aws/aws-sdk-go-v2/service/s3 | v1.32.0 | v1.71.1 | false
-| github.com/aws/aws-sdk-go-v2/service/sfn | v1.19.4 | v1.34.2 | false
-| github.com/aws/aws-sdk-go-v2/service/sns | v1.21.4 | v1.33.8 | false
-| github.com/aws/aws-sdk-go-v2/service/sqs | v1.24.4 | v1.37.3 | false
+| github.com/aws/aws-sdk-go-v2/config | v1.18.21 | v1.28.7 | true
+| github.com/aws/aws-sdk-go-v2/service/dynamodb | v1.21.4 | v1.38.1 | true
+| github.com/aws/aws-sdk-go-v2/service/ec2 | v1.93.2 | v1.198.1 | true
+| github.com/aws/aws-sdk-go-v2/service/eventbridge | v1.20.4 | v1.36.1 | true
+| github.com/aws/aws-sdk-go-v2/service/kinesis | v1.18.4 | v1.32.8 | true
+| github.com/aws/aws-sdk-go-v2/service/s3 | v1.32.0 | v1.71.1 | true
+| github.com/aws/aws-sdk-go-v2/service/sfn | v1.19.4 | v1.34.2 | true
+| github.com/aws/aws-sdk-go-v2/service/sns | v1.21.4 | v1.33.8 | true
+| github.com/aws/aws-sdk-go-v2/service/sqs | v1.24.4 | v1.37.4 | true
 | github.com/bradfitz/gomemcache | v0.0.0-20230611145640-acc696258285 | github.com/bradfitz/gomemcache | false
 | github.com/confluentinc/confluent-kafka-go | v1.9.2 | v1.9.3-RC3 | false
 | github.com/confluentinc/confluent-kafka-go/v2 | v2.2.0 | v2.6.1 | false
 | github.com/denisenkom/go-mssqldb | v0.11.0 | v0.12.3 | false
 | github.com/dimfeld/httptreemux/v5 | v5.5.0 | v5.5.0 | false
-| github.com/elastic/go-elasticsearch/v6 | v6.8.5 | v6.8.10 | false
-| github.com/elastic/go-elasticsearch/v7 | v7.17.10 | v7.17.10 | false
-| github.com/elastic/go-elasticsearch/v8 | v8.15.0 | v8.17.0 | false
+| github.com/elastic/go-elasticsearch/v6 | v6.8.5 | v6.8.10 | true
+| github.com/elastic/go-elasticsearch/v7 | v7.17.10 | v7.17.10 | true
+| github.com/elastic/go-elasticsearch/v8 | v8.15.0 | v8.17.0 | true
 | github.com/emicklei/go-restful | v2.16.0+incompatible | v2.16.0+incompatible | false
 | github.com/emicklei/go-restful/v3 | v3.11.0 | v3.12.1 | false
 | github.com/garyburd/redigo | v1.6.4 | v1.6.4 | false
@@ -37,7 +37,7 @@
 | github.com/go-redis/redis/v9 | v9.7.0   // renamed to redis/go-redis in v9 | v9.7.0 | false
 | github.com/go-sql-driver/mysql | v1.6.0 | v1.8.1 | false
 | github.com/gocql/gocql | v1.6.0 | v1.7.0 | true
-| github.com/gofiber/fiber/v2 | v2.52.5 | v2.52.5 | true
+| github.com/gofiber/fiber/v2 | v2.52.5 | v2.52.6 | true
 | github.com/gomodule/redigo | v1.8.9 | v1.9.2 | false
 | github.com/google/uuid | v1.5.0 | v1.6.0 | false
 | github.com/gorilla/mux | v1.8.0 | v1.8.1 | true
@@ -46,9 +46,9 @@
 | github.com/graphql-go/handler | v0.2.3 | v0.2.4 | false
 | github.com/hashicorp/consul/api | v1.24.0 | v1.31.0 | false
 | github.com/hashicorp/go-multierror | v1.1.1 | v1.1.1 | false
-| github.com/hashicorp/vault/api | v1.9.2 | v1.15.0 | false
-| github.com/hashicorp/vault/sdk | v0.9.2 | v0.14.0 | false
-| github.com/jackc/pgx/v5 | v5.6.0 | v5.7.2 | false
+| github.com/hashicorp/vault/api | v1.9.2 | v1.15.0 | true
+| github.com/hashicorp/vault/sdk | v0.9.2 | v0.14.0 | true
+| github.com/jackc/pgx/v5 | v5.6.0 | v5.7.2 | true
 | github.com/jinzhu/gorm | v1.9.16 | v1.9.16 | true
 | github.com/jmoiron/sqlx | v1.3.5 | v1.4.0 | false
 | github.com/julienschmidt/httprouter | v1.3.0 | v1.3.0 | true
@@ -64,8 +64,8 @@
 | github.com/syndtr/goleveldb | v1.0.1-0.20220721030215-126854af5e6d | v1.0.0 | false
 | github.com/tidwall/buntdb | v1.3.0 | v1.3.2 | false
 | github.com/twitchtv/twirp | v8.1.3+incompatible | v8.1.3+incompatible | true
-| github.com/uptrace/bun | v1.1.17 | v1.2.6 | false
-| github.com/uptrace/bun/dialect/sqlitedialect | v1.1.17 | v1.2.6 | false
+| github.com/uptrace/bun | v1.1.17 | v1.2.7 | false
+| github.com/uptrace/bun/dialect/sqlitedialect | v1.1.17 | v1.2.7 | false
 | github.com/urfave/negroni | v1.0.0 | v1.0.0 | false
 | github.com/valyala/fasthttp | v1.51.0 | v1.58.0 | false
 | github.com/vektah/gqlparser/v2 | v2.5.16 | v2.5.21 | false

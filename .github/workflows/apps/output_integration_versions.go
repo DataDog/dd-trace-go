@@ -27,6 +27,14 @@ type ModuleVersion struct {
 
 }
 
+func isSubdirectory(url, pattern string) bool {
+	if strings.HasPrefix(url, pattern) {
+		// Ensure the match is either exact or followed by a "/"
+		return len(url) == len(pattern) || url[len(pattern)] == '/'
+	}
+	return false
+}
+
 func parseGoMod(filePath string) ([]ModuleVersion, error) {
 	// This parses the go.mod file and extracts modules with their minimum versions.
 	var modules []ModuleVersion
@@ -101,7 +109,14 @@ func fetchLatestVersion(module string) (string, error) {
 }
 func isModuleInstrumented(moduleName string, instrumentedSet map[string]struct{}) bool {
 	// whether the module has automatic tracing supported (by Orchestrion)
-	_, isInstrumented := instrumentedSet[moduleName]
+	// _, isInstrumented := instrumentedSet[moduleName]
+	isInstrumented := false
+	for key := range instrumentedSet {
+		if isSubdirectory(moduleName, key) {
+			isInstrumented = true
+			break
+		}
+	}
 	return isInstrumented
 }
 
@@ -177,7 +192,7 @@ func main() {
 		"gorm.io/gorm": {},
 		"net/http": {},
 		"go.mongodb.org/mongo-driver/mongo": {},
-		"github.com/aws-sdk-go/aws": {},
+		"github.com/aws/aws-sdk-go": {},
 		"github.com/hashicorp/vault": {},
 		"github.com/IBM/sarama": {},
 		"github.com/Shopify/sarama": {},
