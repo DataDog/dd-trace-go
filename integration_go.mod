@@ -9,19 +9,9 @@ require (
 	github.com/Shopify/sarama v1.38.1     
 	github.com/aws/aws-sdk-go v1.44.327     
 	github.com/aws/aws-sdk-go-v2 v1.20.3
-	github.com/aws/aws-sdk-go-v2/config v1.18.21
-	github.com/aws/aws-sdk-go-v2/service/dynamodb v1.21.4
-	github.com/aws/aws-sdk-go-v2/service/ec2 v1.93.2
-	github.com/aws/aws-sdk-go-v2/service/eventbridge v1.20.4
-	github.com/aws/aws-sdk-go-v2/service/kinesis v1.18.4
-	github.com/aws/aws-sdk-go-v2/service/s3 v1.32.0
-	github.com/aws/aws-sdk-go-v2/service/sfn v1.19.4
-	github.com/aws/aws-sdk-go-v2/service/sns v1.21.4
-	github.com/aws/aws-sdk-go-v2/service/sqs v1.24.4
 	github.com/bradfitz/gomemcache v0.0.0-20230611145640-acc696258285     
 	github.com/confluentinc/confluent-kafka-go v1.9.2     
 	github.com/confluentinc/confluent-kafka-go/v2 v2.2.0
-	github.com/denisenkom/go-mssqldb v0.11.0
 	github.com/dimfeld/httptreemux/v5 v5.5.0     
 	github.com/elastic/go-elasticsearch/v6 v6.8.5     
 	github.com/elastic/go-elasticsearch/v7 v7.17.10
@@ -38,18 +28,15 @@ require (
 	github.com/go-redis/redis/v7 v7.4.1
 	github.com/go-redis/redis/v8 v8.11.5
 	github.com/go-redis/redis/v9 v9.7.0   // renamed to redis/go-redis in v9
-	github.com/go-sql-driver/mysql v1.6.0
 	github.com/gocql/gocql v1.6.0     
 	github.com/gofiber/fiber/v2 v2.52.5
 	github.com/gomodule/redigo v1.8.9     
 	github.com/google/pprof v0.0.0-20230817174616-7a8ec2ada47b
-	github.com/google/uuid v1.5.0
 	github.com/gorilla/mux v1.8.0     
 	github.com/graph-gophers/graphql-go v1.5.0     
 	github.com/graphql-go/graphql v0.8.1     
 	github.com/graphql-go/handler v0.2.3
 	github.com/hashicorp/consul/api v1.24.0     
-	github.com/hashicorp/go-multierror v1.1.1
 	github.com/hashicorp/go-secure-stdlib/parseutil v0.1.7
 	github.com/hashicorp/vault/api v1.9.2
 	github.com/hashicorp/vault/sdk v0.9.2
@@ -59,9 +46,6 @@ require (
 	github.com/julienschmidt/httprouter v1.3.0     
 	github.com/labstack/echo v3.3.10+incompatible     
 	github.com/labstack/echo/v4 v4.11.1
-	github.com/lib/pq v1.10.2
-	github.com/mattn/go-sqlite3 v1.14.18
-	github.com/microsoft/go-mssqldb v0.21.0
 	github.com/miekg/dns v1.1.55     
 	github.com/redis/go-redis/v9 v9.7.0     
 	github.com/segmentio/kafka-go v0.4.42     
