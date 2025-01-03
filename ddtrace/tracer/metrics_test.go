@@ -113,7 +113,7 @@ func TestSpansStartedTags(t *testing.T) {
 		assert.Fail("expected integration:manual tag in spans_started")
 	})
 
-	t.Run("other_source", func(t *testing.T) {
+	t.Run("custom_integration", func(t *testing.T) {
 		tg.Reset()
 		assert := assert.New(t)
 		tracer, _, _, stop := startTestTracer(t, withStatsdClient(&tg))
@@ -160,7 +160,7 @@ func TestSpansFinishedTags(t *testing.T) {
 		assert.Fail("expected integration:manual tag in spans_finished")
 	})
 
-	t.Run("other_source", func(t *testing.T) {
+	t.Run("custom_integration", func(t *testing.T) {
 		tg.Reset()
 		assert := assert.New(t)
 		tracer, _, _, stop := startTestTracer(t, withStatsdClient(&tg))
