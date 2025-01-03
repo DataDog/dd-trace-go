@@ -83,7 +83,7 @@ type tracer struct {
 	// each component, including contribs and "manual" spans.
 	spansStarted, spansFinished struct {
 		mu    sync.Mutex
-		spans map[string]uint32
+		spans map[string]int64
 	}
 
 	// tracesDropped track metrics about traces as they are dropped
@@ -674,7 +674,7 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 	t.spansStarted.mu.Lock()
 	defer t.spansStarted.mu.Unlock()
 	if t.spansStarted.spans == nil {
-		t.spansStarted.spans = make(map[string]uint32)
+		t.spansStarted.spans = make(map[string]int64)
 	}
 	t.spansStarted.spans[span.integration] += 1
 	return span

@@ -95,13 +95,13 @@ func (t *tracer) reportHealthMetricsAtInterval(interval time.Duration) {
 		case <-ticker.C:
 			t.spansStarted.mu.Lock()
 			for name, v := range t.spansStarted.spans {
-				t.statsd.Count("datadog.tracer.spans_started", int64(v), []string{"integration:" + name}, 1)
+				t.statsd.Count("datadog.tracer.spans_started", v, []string{"integration:" + name}, 1)
 				t.spansStarted.spans[name] = 0
 			}
 			t.spansStarted.mu.Unlock()
 			t.spansFinished.mu.Lock()
 			for name, v := range t.spansFinished.spans {
-				t.statsd.Count("datadog.tracer.spans_finished", int64(v), []string{"integration:" + name}, 1)
+				t.statsd.Count("datadog.tracer.spans_finished", v, []string{"integration:" + name}, 1)
 				t.spansFinished.spans[name] = 0
 			}
 			t.spansFinished.mu.Unlock()
