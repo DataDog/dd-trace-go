@@ -182,7 +182,7 @@ func TestSpansFinishedTags(t *testing.T) {
 	})
 }
 
-func TestHealthMetricRaces(t *testing.T) {
+func TestHealthMetricsRaceCondition(t *testing.T) {
 	assert := assert.New(t)
 
 	defer func(old time.Duration) { statsInterval = old }(statsInterval)
