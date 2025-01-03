@@ -18,6 +18,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/puzpuzpuz/xsync/v3"
+
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
@@ -81,10 +83,7 @@ type tracer struct {
 
 	// These maps keep count of the number of spans started and finished from
 	// each component, including contribs and "manual" spans.
-	spansStarted, spansFinished struct {
-		mu    sync.Mutex
-		spans map[string]int64
-	}
+	spansStarted, spansFinished *xsync.MapOf[string, int64]
 
 	// tracesDropped track metrics about traces as they are dropped
 	tracesDropped uint32
@@ -323,6 +322,8 @@ func newUnstartedTracer(opts ...StartOption) *tracer {
 		pid:              os.Getpid(),
 		logDroppedTraces: time.NewTicker(1 * time.Second),
 		stats:            newConcentrator(c, defaultStatsBucketSize, statsd),
+		spansStarted:     xsync.NewMapOf[string, int64](),
+		spansFinished:    xsync.NewMapOf[string, int64](),
 		obfuscator: obfuscate.NewObfuscator(obfuscate.Config{
 			SQL: obfuscate.SQLConfig{
 				TableNames:       c.agent.HasFlag("table_names"),
@@ -671,12 +672,11 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 			log.Error("Abandoned spans channel full, disregarding span.")
 		}
 	}
-	t.spansStarted.mu.Lock()
-	defer t.spansStarted.mu.Unlock()
-	if t.spansStarted.spans == nil {
-		t.spansStarted.spans = make(map[string]int64)
-	}
-	t.spansStarted.spans[span.integration] += 1
+	t.spansStarted.Compute(span.integration, func(oldValue int64, _ bool) (newValue int64, delete bool) {
+		newValue = oldValue + 1
+		delete = false
+		return
+	})
 	return span
 }
 

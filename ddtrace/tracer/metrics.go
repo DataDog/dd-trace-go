@@ -93,18 +93,22 @@ func (t *tracer) reportHealthMetricsAtInterval(interval time.Duration) {
 	for {
 		select {
 		case <-ticker.C:
-			t.spansStarted.mu.Lock()
-			for name, v := range t.spansStarted.spans {
-				t.statsd.Count("datadog.tracer.spans_started", v, []string{"integration:" + name}, 1)
-				t.spansStarted.spans[name] = 0
-			}
-			t.spansStarted.mu.Unlock()
-			t.spansFinished.mu.Lock()
-			for name, v := range t.spansFinished.spans {
-				t.statsd.Count("datadog.tracer.spans_finished", v, []string{"integration:" + name}, 1)
-				t.spansFinished.spans[name] = 0
-			}
-			t.spansFinished.mu.Unlock()
+			// if there are started spans, report the number spans with their integration, then
+			// reset the count
+			t.spansStarted.Range(func(key string, value int64) bool {
+				err := t.statsd.Count("datadog.tracer.spans_started", value, []string{"integration:" + key}, 1)
+				return err == nil
+			})
+			t.spansStarted.Clear()
+
+			// if there are finished spans, report the number spans with their integration, then
+			// reset the count
+			t.spansFinished.Range(func(key string, value int64) bool {
+				err := t.statsd.Count("datadog.tracer.spans_finished", value, []string{"integration:" + key}, 1)
+				return err == nil
+			})
+			t.spansFinished.Clear()
+
 			t.statsd.Count("datadog.tracer.traces_dropped", int64(atomic.SwapUint32(&t.tracesDropped, 0)), []string{"reason:trace_too_large"}, 1)
 		case <-t.stop:
 			return

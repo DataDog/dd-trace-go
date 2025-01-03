@@ -13,6 +13,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	globalinternal "gopkg.in/DataDog/dd-trace-go.v1/internal"
 
+	"github.com/puzpuzpuz/xsync/v3"
 	"github.com/stretchr/testify/assert"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/statsdtest"
@@ -102,7 +103,7 @@ func TestSpansStartedTags(t *testing.T) {
 
 		tracer.StartSpan("operation").Finish()
 		tg.Wait(assert, 1, 100*time.Millisecond)
-		assertSpanMetricCountsAreZero(t, tracer.spansStarted.spans)
+		assertSpanMetricCountsAreZero(t, tracer.spansStarted)
 
 		counts := tg.Counts()
 		assert.Equal(counts["datadog.tracer.spans_started"], int64(1))
@@ -124,7 +125,7 @@ func TestSpansStartedTags(t *testing.T) {
 		defer sp.Finish()
 
 		tg.Wait(assert, 1, 100*time.Millisecond)
-		assertSpanMetricCountsAreZero(t, tracer.spansStarted.spans)
+		assertSpanMetricCountsAreZero(t, tracer.spansStarted)
 
 		counts := tg.Counts()
 		assert.Equal(counts["datadog.tracer.spans_started"], int64(1))
@@ -151,7 +152,7 @@ func TestSpansFinishedTags(t *testing.T) {
 
 		tracer.StartSpan("operation").Finish()
 		tg.Wait(assert, 1, 100*time.Millisecond)
-		assertSpanMetricCountsAreZero(t, tracer.spansFinished.spans)
+		assertSpanMetricCountsAreZero(t, tracer.spansFinished)
 
 		counts := tg.Counts()
 		assert.Equal(counts["datadog.tracer.spans_finished"], int64(1))
@@ -172,7 +173,7 @@ func TestSpansFinishedTags(t *testing.T) {
 		tracer.StartSpan("operation", Tag(ext.Component, "contrib")).Finish()
 
 		tg.Wait(assert, 1, 100*time.Millisecond)
-		assertSpanMetricCountsAreZero(t, tracer.spansFinished.spans)
+		assertSpanMetricCountsAreZero(t, tracer.spansFinished)
 
 		counts := tg.Counts()
 		assert.Equal(counts["datadog.tracer.spans_finished"], int64(1))
@@ -210,8 +211,8 @@ func TestHealthMetricsRaceCondition(t *testing.T) {
 	assert.Equal(int64(5), counts["datadog.tracer.spans_started"])
 	assert.Equal(int64(5), counts["datadog.tracer.spans_finished"])
 
-	assertSpanMetricCountsAreZero(t, tracer.spansStarted.spans)
-	assertSpanMetricCountsAreZero(t, tracer.spansFinished.spans)
+	assertSpanMetricCountsAreZero(t, tracer.spansStarted)
+	assertSpanMetricCountsAreZero(t, tracer.spansFinished)
 }
 
 func TestTracerMetrics(t *testing.T) {
@@ -254,8 +255,8 @@ func BenchmarkSpansMetrics(b *testing.B) {
 	}
 }
 
-func assertSpanMetricCountsAreZero(t *testing.T, metric map[string]int64) {
-	for _, v := range metric {
-		assert.Equal(t, int64(0), v)
-	}
+func assertSpanMetricCountsAreZero(t *testing.T, metric *xsync.MapOf[string, int64]) {
+	metric.Range(func(_ string, value int64) bool {
+		return assert.Equal(t, int64(0), value)
+	})
 }
