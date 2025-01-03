@@ -11,9 +11,9 @@ import (
 	"slices"
 	"testing"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/constants"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -179,27 +179,27 @@ func assertTest(t *testing.T) {
 				constants.TestFramework: "golang.org/pkg/testing",
 			})
 			assert.Contains(spanTags, constants.TestSessionIDTag)
-			assertCommon(assert, span)
+			assertCommon(assert, *span)
 			hasSession = true
 		}
 
 		// Assert Module
 		if span.Tag(ext.SpanType) == constants.SpanTypeTestModule {
 			assert.Subset(spanTags, map[string]interface{}{
-				constants.TestModule:    "gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/integrations/gotesting",
+				constants.TestModule:    "github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting",
 				constants.TestFramework: "golang.org/pkg/testing",
 			})
 			assert.Contains(spanTags, constants.TestSessionIDTag)
 			assert.Contains(spanTags, constants.TestModuleIDTag)
 			assert.Contains(spanTags, constants.TestFrameworkVersion)
-			assertCommon(assert, span)
+			assertCommon(assert, *span)
 			hasModule = true
 		}
 
 		// Assert Suite
 		if span.Tag(ext.SpanType) == constants.SpanTypeTestSuite {
 			assert.Subset(spanTags, map[string]interface{}{
-				constants.TestModule:    "gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/integrations/gotesting",
+				constants.TestModule:    "github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting",
 				constants.TestFramework: "golang.org/pkg/testing",
 			})
 			assert.Contains(spanTags, constants.TestSessionIDTag)
@@ -207,14 +207,14 @@ func assertTest(t *testing.T) {
 			assert.Contains(spanTags, constants.TestSuiteIDTag)
 			assert.Contains(spanTags, constants.TestFrameworkVersion)
 			assert.Contains(spanTags, constants.TestSuite)
-			assertCommon(assert, span)
+			assertCommon(assert, *span)
 			hasSuite = true
 		}
 
 		// Assert Test
 		if span.Tag(ext.SpanType) == constants.SpanTypeTest {
 			assert.Subset(spanTags, map[string]interface{}{
-				constants.TestModule:    "gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/integrations/gotesting",
+				constants.TestModule:    "github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting",
 				constants.TestFramework: "golang.org/pkg/testing",
 				constants.TestSuite:     "testing_test.go",
 				constants.TestName:      t.Name(),
@@ -227,7 +227,7 @@ func assertTest(t *testing.T) {
 			assert.Contains(spanTags, constants.TestCodeOwners)
 			assert.Contains(spanTags, constants.TestSourceFile)
 			assert.Contains(spanTags, constants.TestSourceStartLine)
-			assertCommon(assert, span)
+			assertCommon(assert, *span)
 			hasTest = true
 		}
 	}

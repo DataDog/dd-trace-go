@@ -15,12 +15,12 @@ import (
 	"context"
 	"sync"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/httpsec"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/usersec"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/httpsec"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec/emitter/usersec"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
 var appsecDisabledLog sync.Once
@@ -50,10 +50,6 @@ func MonitorParsedHTTPBody(ctx context.Context, body any) error {
 // APM tracer middleware on use according to your blocking configuration.
 // This function always returns nil when appsec is disabled and doesn't block users.
 func SetUser(ctx context.Context, id string, opts ...tracer.UserMonitoringOption) error {
-	return setUser(ctx, id, usersec.UserSet, opts)
-}
-
-func setUser(ctx context.Context, id string, userEventType usersec.UserEventType, opts []tracer.UserMonitoringOption) error {
 	s, ok := tracer.SpanFromContext(ctx)
 	if !ok {
 		log.Debug("appsec: could not retrieve span from context. User ID tag won't be set")
@@ -65,10 +61,11 @@ func setUser(ctx context.Context, id string, userEventType usersec.UserEventType
 		return nil
 	}
 
-	op, errPtr := usersec.StartUserLoginOperation(ctx, userEventType, usersec.UserLoginOperationArgs{})
+	op, errPtr := usersec.StartUserLoginOperation(ctx, usersec.UserLoginOperationArgs{})
 	op.Finish(usersec.UserLoginOperationRes{
 		UserID:    id,
 		SessionID: getSessionID(opts...),
+		Success:   true,
 	})
 
 	return *errPtr
@@ -88,7 +85,7 @@ func setUser(ctx context.Context, id string, userEventType usersec.UserEventType
 // associated to them.
 func TrackUserLoginSuccessEvent(ctx context.Context, uid string, md map[string]string, opts ...tracer.UserMonitoringOption) error {
 	TrackCustomEvent(ctx, "users.login.success", md)
-	return setUser(ctx, uid, usersec.UserLoginSuccess, opts)
+	return SetUser(ctx, uid, opts...)
 }
 
 // TrackUserLoginFailureEvent sets a failed user login event, with the given
@@ -114,8 +111,8 @@ func TrackUserLoginFailureEvent(ctx context.Context, uid string, exists bool, md
 
 	TrackCustomEvent(ctx, "users.login.failure", md)
 
-	op, _ := usersec.StartUserLoginOperation(ctx, usersec.UserLoginFailure, usersec.UserLoginOperationArgs{})
-	op.Finish(usersec.UserLoginOperationRes{UserID: uid})
+	op, _ := usersec.StartUserLoginOperation(ctx, usersec.UserLoginOperationArgs{})
+	op.Finish(usersec.UserLoginOperationRes{UserID: uid, Success: false})
 }
 
 // TrackCustomEvent sets a custom event as service entry span tags. This span is
@@ -132,28 +129,20 @@ func TrackCustomEvent(ctx context.Context, name string, md map[string]string) {
 
 	tagPrefix := "appsec.events." + name + "."
 	span.SetTag(tagPrefix+"track", true)
-	span.SetTag(ext.SamplingPriority, ext.PriorityUserKeep)
+	span.SetTag(ext.ManualKeep, true)
 	for k, v := range md {
 		span.SetTag(tagPrefix+k, v)
 	}
 }
 
-// Return the root span from the span stored in the given Go context if it
-// implements the Root method. It returns nil otherwise.
-func getRootSpan(ctx context.Context) tracer.Span {
+// Return the root span from the span stored in the given Go context.
+func getRootSpan(ctx context.Context) *tracer.Span {
 	span, _ := tracer.SpanFromContext(ctx)
 	if span == nil {
 		log.Error("appsec: could not find a span in the given Go context")
 		return nil
 	}
-	type rooter interface {
-		Root() tracer.Span
-	}
-	if lrs, ok := span.(rooter); ok {
-		return lrs.Root()
-	}
-	log.Error("appsec: could not access the root span")
-	return nil
+	return span.Root()
 }
 
 func getSessionID(opts ...tracer.UserMonitoringOption) string {

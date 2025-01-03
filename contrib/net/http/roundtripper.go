@@ -13,12 +13,10 @@ import (
 	"strconv"
 	"strings"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/appsec/events"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/httpsec"
+	"github.com/DataDog/dd-trace-go/v2/appsec/events"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/httpsec"
 )
 
 type roundTripper struct {
@@ -35,7 +33,7 @@ func (rt *roundTripper) RoundTrip(req *http.Request) (res *http.Response, err er
 	// Make a copy of the URL so we don't modify the outgoing request
 	url := *req.URL
 	url.User = nil // Do not include userinfo in the HTTPURL tag.
-	opts := []ddtrace.StartSpanOption{
+	opts := []tracer.StartSpanOption{
 		tracer.SpanType(ext.SpanTypeHTTP),
 		tracer.ResourceName(resourceName),
 		tracer.Tag(ext.HTTPMethod, req.Method),
@@ -80,7 +78,7 @@ func (rt *roundTripper) RoundTrip(req *http.Request) (res *http.Response, err er
 		}
 	}
 
-	if appsec.RASPEnabled() {
+	if instr.AppSecRASPEnabled() {
 		if err := httpsec.ProtectRoundTrip(ctx, r2.URL.String()); err != nil {
 			return nil, err
 		}
@@ -115,7 +113,7 @@ func WrapRoundTripper(rt http.RoundTripper, opts ...RoundTripperOption) http.Rou
 	}
 	cfg := newRoundTripperConfig()
 	for _, opt := range opts {
-		opt(cfg)
+		opt.applyRoundTripper(cfg)
 	}
 	if wrapped, ok := rt.(*roundTripper); ok {
 		rt = wrapped.base

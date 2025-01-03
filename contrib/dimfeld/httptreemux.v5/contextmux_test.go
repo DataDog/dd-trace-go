@@ -10,9 +10,9 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 
 	"github.com/dimfeld/httptreemux/v5"
 	"github.com/stretchr/testify/assert"
@@ -24,7 +24,7 @@ func TestContextMux200(t *testing.T) {
 	defer mt.Stop()
 
 	router := NewWithContext(
-		WithServiceName("my-service"),
+		WithService("my-service"),
 		WithSpanOptions(tracer.Tag("testkey", "testvalue")),
 	)
 
@@ -49,7 +49,7 @@ func TestContextMux200(t *testing.T) {
 	assert.Equal("GET", s.Tag(ext.HTTPMethod))
 	assert.Equal("http://example.com"+url, s.Tag(ext.HTTPURL))
 	assert.Equal("testvalue", s.Tag("testkey"))
-	assert.Equal(nil, s.Tag(ext.Error))
+	assert.Zero(s.Tag(ext.ErrorMsg))
 }
 
 func TestContextMux404(t *testing.T) {
@@ -62,7 +62,7 @@ func TestContextMux404(t *testing.T) {
 	r := httptest.NewRequest("GET", url, nil)
 	w := httptest.NewRecorder()
 	NewWithContext(
-		WithServiceName("my-service"),
+		WithService("my-service"),
 		WithSpanOptions(tracer.Tag("testkey", "testvalue")),
 	).ServeHTTP(w, r)
 	assert.Equal(404, w.Code)
@@ -79,7 +79,7 @@ func TestContextMux404(t *testing.T) {
 	assert.Equal("GET", s.Tag(ext.HTTPMethod))
 	assert.Equal("http://example.com"+url, s.Tag(ext.HTTPURL))
 	assert.Equal("testvalue", s.Tag("testkey"))
-	assert.Equal(nil, s.Tag(ext.Error))
+	assert.Zero(s.Tag(ext.ErrorMsg))
 }
 
 func TestContextMux500(t *testing.T) {
@@ -88,7 +88,7 @@ func TestContextMux500(t *testing.T) {
 	defer mt.Stop()
 
 	router := NewWithContext(
-		WithServiceName("my-service"),
+		WithService("my-service"),
 		WithSpanOptions(tracer.Tag("testkey", "testvalue")),
 	)
 
@@ -112,7 +112,7 @@ func TestContextMux500(t *testing.T) {
 	assert.Equal("GET", s.Tag(ext.HTTPMethod))
 	assert.Equal("http://example.com"+url, s.Tag(ext.HTTPURL))
 	assert.Equal("testvalue", s.Tag("testkey"))
-	assert.Equal("500: Internal Server Error", s.Tag(ext.Error).(error).Error())
+	assert.Equal("500: Internal Server Error", s.Tag(ext.ErrorMsg))
 }
 
 func TestContextMuxDefaultResourceNamer(t *testing.T) {
@@ -201,7 +201,7 @@ func TestContextMuxDefaultResourceNamer(t *testing.T) {
 			assert.Equal("200", s.Tag(ext.HTTPCode))
 			assert.Equal(tc.method, s.Tag(ext.HTTPMethod))
 			assert.Equal("http://example.com"+tc.url, s.Tag(ext.HTTPURL))
-			assert.Equal(nil, s.Tag(ext.Error))
+			assert.Zero(s.Tag(ext.ErrorMsg))
 		})
 	}
 }
@@ -217,7 +217,7 @@ func TestContextMuxResourceNamer(t *testing.T) {
 	defer mt.Stop()
 
 	router := NewWithContext(
-		WithServiceName("my-service"),
+		WithService("my-service"),
 		WithSpanOptions(tracer.Tag("testkey", "testvalue")),
 		WithResourceNamer(staticNamer),
 	)
@@ -243,7 +243,7 @@ func TestContextMuxResourceNamer(t *testing.T) {
 	assert.Equal("GET", s.Tag(ext.HTTPMethod))
 	assert.Equal("http://example.com"+url, s.Tag(ext.HTTPURL))
 	assert.Equal("testvalue", s.Tag("testkey"))
-	assert.Equal(nil, s.Tag(ext.Error))
+	assert.Zero(s.Tag(ext.ErrorMsg))
 }
 
 func handlerWithContext200(t *testing.T, route string, params map[string]string) http.HandlerFunc {

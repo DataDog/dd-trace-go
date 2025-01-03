@@ -16,9 +16,9 @@ import (
 	envoyextproc "github.com/envoyproxy/go-control-plane/envoy/service/ext_proc/v3"
 	envoytypes "github.com/envoyproxy/go-control-plane/envoy/type/v3"
 
-	ddgrpc "gopkg.in/DataDog/dd-trace-go.v1/contrib/google.golang.org/grpc"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
+	ddgrpc "github.com/DataDog/dd-trace-go/contrib/google.golang.org/grpc/v2"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils"
 
 	v3 "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
 	"github.com/stretchr/testify/require"
@@ -26,9 +26,8 @@ import (
 )
 
 func TestAppSec(t *testing.T) {
-	appsec.Start()
-	defer appsec.Stop()
-	if !appsec.Enabled() {
+	testutils.StartAppSec(t)
+	if !instr.AppSecEnabled() {
 		t.Skip("appsec disabled")
 	}
 
@@ -104,9 +103,8 @@ func TestAppSec(t *testing.T) {
 
 func TestBlockingWithUserRulesFile(t *testing.T) {
 	t.Setenv("DD_APPSEC_RULES", "../../../internal/appsec/testdata/user_rules.json")
-	appsec.Start()
-	defer appsec.Stop()
-	if !appsec.Enabled() {
+	testutils.StartAppSec(t)
+	if !instr.AppSecEnabled() {
 		t.Skip("appsec disabled")
 	}
 
@@ -277,9 +275,8 @@ func TestGeneratedSpan(t *testing.T) {
 
 func TestXForwardedForHeaderClientIp(t *testing.T) {
 	t.Setenv("DD_APPSEC_RULES", "../../../internal/appsec/testdata/blocking.json")
-	appsec.Start()
-	defer appsec.Stop()
-	if !appsec.Enabled() {
+	testutils.StartAppSec(t)
+	if !instr.AppSecEnabled() {
 		t.Skip("appsec disabled")
 	}
 
@@ -368,7 +365,7 @@ func TestXForwardedForHeaderClientIp(t *testing.T) {
 func newEnvoyAppsecRig(t *testing.T, traceClient bool, interceptorOpts ...ddgrpc.Option) (*envoyAppsecRig, error) {
 	t.Helper()
 
-	interceptorOpts = append([]ddgrpc.InterceptorOption{ddgrpc.WithServiceName("grpc")}, interceptorOpts...)
+	interceptorOpts = append([]ddgrpc.Option{ddgrpc.WithService("grpc")}, interceptorOpts...)
 
 	server := grpc.NewServer()
 
@@ -512,7 +509,7 @@ func end2EndStreamRequest(t *testing.T, stream envoyextproc.ExternalProcessor_Pr
 	require.Equal(t, io.EOF, err)
 }
 
-func checkForAppsecEvent(t *testing.T, finished []mocktracer.Span, expectedRuleIDs map[string]int) {
+func checkForAppsecEvent(t *testing.T, finished []*mocktracer.Span, expectedRuleIDs map[string]int) {
 	t.Helper()
 
 	// The request should have the attack attempts

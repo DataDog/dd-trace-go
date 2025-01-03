@@ -16,11 +16,11 @@ import (
 	"time"
 	_ "unsafe"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/constants"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/integrations"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/integrations/gotesting/coverage"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/utils"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting/coverage"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
 )
 
 // ******************************************************************************************************************
@@ -36,7 +36,7 @@ import (
 func instrumentTestingM(m *testing.M) func(exitCode int) {
 	// Check if CI Visibility was disabled using the kill switch before trying to initialize it
 	atomic.StoreInt32(&ciVisibilityEnabledValue, -1)
-	if !isCiVisibilityEnabled() || !testing.Testing() {
+	if !isCiVisibilityEnabled() {
 		return func(exitCode int) {}
 	}
 
@@ -69,18 +69,7 @@ func instrumentTestingM(m *testing.M) func(exitCode int) {
 	return func(exitCode int) {
 		// Check for code coverage if enabled.
 		if testing.CoverMode() != "" {
-
-			var cov float64
-			// let's try first with our coverage package
-			if coverage.CanCollect() {
-				cov = coverage.GetCoverage()
-			}
-			if cov == 0 {
-				// if not we try we the default testing package
-				cov = testing.Coverage()
-			}
-
-			coveragePercentage := cov * 100
+			coveragePercentage := testing.Coverage() * 100
 			session.SetTag(constants.CodeCoveragePercentageOfTotalLines, coveragePercentage)
 		}
 
@@ -97,7 +86,7 @@ func instrumentTestingM(m *testing.M) func(exitCode int) {
 //go:linkname instrumentTestingTFunc
 func instrumentTestingTFunc(f func(*testing.T)) func(*testing.T) {
 	// Check if CI Visibility was disabled using the kill switch before instrumenting
-	if !isCiVisibilityEnabled() || !testing.Testing() {
+	if !isCiVisibilityEnabled() {
 		return f
 	}
 
@@ -146,7 +135,7 @@ func instrumentTestingTFunc(f func(*testing.T)) func(*testing.T) {
 
 		// Because this is a subtest let's propagate some execution metadata from the parent test
 		testPrivateFields := getTestPrivateFields(t)
-		if testPrivateFields != nil && testPrivateFields.parent != nil {
+		if testPrivateFields.parent != nil {
 			parentExecMeta := getTestMetadataFromPointer(*testPrivateFields.parent)
 			if parentExecMeta != nil {
 				if parentExecMeta.isANewTest {
@@ -305,9 +294,6 @@ func instrumentTestingBFunc(pb *testing.B, name string, f func(*testing.B)) (str
 
 		// Decrement level.
 		bpf := getBenchmarkPrivateFields(b)
-		if bpf == nil {
-			panic("error getting private fields of the benchmark")
-		}
 		bpf.AddLevel(-1)
 
 		startTime := time.Now()
@@ -317,9 +303,7 @@ func instrumentTestingBFunc(pb *testing.B, name string, f func(*testing.B)) (str
 		test.SetTestFunc(originalFunc)
 
 		// Restore the original name without the sub-benchmark auto name.
-		if bpf.name != nil {
-			*bpf.name = subBenchmarkAutoNameRegex.ReplaceAllString(*bpf.name, "")
-		}
+		*bpf.name = subBenchmarkAutoNameRegex.ReplaceAllString(*bpf.name, "")
 
 		// Run original benchmark.
 		var iPfOfB *benchmarkPrivateFields
@@ -340,14 +324,7 @@ func instrumentTestingBFunc(pb *testing.B, name string, f func(*testing.B)) (str
 
 			// First time we get the private fields of the inner testing.B.
 			iPfOfB = getBenchmarkPrivateFields(b)
-			if iPfOfB == nil {
-				panic("error getting private fields of the benchmark")
-			}
-
 			// Replace this function with the original one (executed only once - the first iteration[b.run1]).
-			if iPfOfB.benchFunc == nil {
-				panic("error getting the benchmark function")
-			}
 			*iPfOfB.benchFunc = f
 
 			// Get the metadata regarding the execution (in case is already created from the additional features)

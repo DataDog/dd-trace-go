@@ -14,9 +14,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
 var (
@@ -82,9 +81,9 @@ type abandonedSpanCandidate struct {
 	Integration     string
 }
 
-func newAbandonedSpanCandidate(s *span, finished bool) *abandonedSpanCandidate {
+func newAbandonedSpanCandidate(s *Span, finished bool) *abandonedSpanCandidate {
 	var component string
-	if v, ok := s.Meta[ext.Component]; ok {
+	if v, ok := s.meta[ext.Component]; ok {
 		component = v
 	} else {
 		component = "manual"
@@ -94,10 +93,10 @@ func newAbandonedSpanCandidate(s *span, finished bool) *abandonedSpanCandidate {
 	// Also, locking is not required as it's called while the span is already locked or it's
 	// being initialized.
 	c := &abandonedSpanCandidate{
-		Name:        s.Name,
-		TraceID:     s.TraceID,
-		SpanID:      s.SpanID,
-		Start:       s.Start,
+		Name:        s.name,
+		TraceID:     s.traceID,
+		SpanID:      s.spanID,
+		Start:       s.start,
 		Finished:    finished,
 		Integration: component,
 	}
@@ -303,7 +302,7 @@ func formatAbandonedSpans(b *bucket[uint64, *abandonedSpanCandidate], interval *
 		if interval != nil && curTime-s.Start < interval.Nanoseconds() {
 			continue
 		}
-		if t, ok := internal.GetGlobalTracer().(*tracer); ok {
+		if t, ok := GetGlobalTracer().(*tracer); ok {
 			t.statsd.Incr("datadog.tracer.abandoned_spans", []string{"name:" + s.Name, "integration:" + s.Integration}, 1)
 		}
 		spanCount++

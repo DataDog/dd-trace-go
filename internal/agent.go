@@ -10,7 +10,7 @@ import (
 	"net/url"
 	"os"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 
 	// OTel did a breaking change to the module go.opentelemetry.io/collector/pdata which is imported by the agent
 	// and go.opentelemetry.io/collector/pdata/pprofile depends on it and is breaking because of it

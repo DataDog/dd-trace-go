@@ -4,7 +4,7 @@
 // Copyright 2016 Datadog, Inc.
 
 // Package slog provides functions to correlate logs and traces using log/slog package (https://pkg.go.dev/log/slog).
-package slog // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/log/slog"
+package slog // import "github.com/DataDog/dd-trace-go/contrib/log/slog/v2"
 
 import (
 	"context"
@@ -12,16 +12,13 @@ import (
 	"log/slog"
 	"strconv"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 )
 
-const componentName = "log/slog"
-
 func init() {
-	telemetry.LoadIntegration(componentName)
-	tracer.MarkIntegrationImported("log/slog")
+	_ = instrumentation.Load(instrumentation.PackageLogSlog)
 }
 
 var _ slog.Handler = (*handler)(nil)
@@ -62,7 +59,7 @@ func (h *handler) Handle(ctx context.Context, rec slog.Record) error {
 	// set them at the root level.
 	span, ok := tracer.SpanFromContext(ctx)
 	if ok {
-		traceID := strconv.FormatUint(span.Context().TraceID(), 10)
+		traceID := span.Context().TraceID()
 		spanID := strconv.FormatUint(span.Context().SpanID(), 10)
 
 		attrs := []slog.Attr{

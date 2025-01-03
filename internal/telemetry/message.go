@@ -96,9 +96,11 @@ type Application struct {
 // Host is identifying information about the host on which the app
 // is running
 type Host struct {
-	Hostname      string `json:"hostname"`
-	OS            string `json:"os"`
-	OSVersion     string `json:"os_version,omitempty"`
+	Hostname  string `json:"hostname"`
+	OS        string `json:"os"`
+	OSVersion string `json:"os_version,omitempty"`
+	// TODO: Do we care about the kernel stuff? internal/osinfo gets most of
+	// this information in OSName/OSVersion
 	Architecture  string `json:"architecture"`
 	KernelName    string `json:"kernel_name"`
 	KernelRelease string `json:"kernel_release"`
