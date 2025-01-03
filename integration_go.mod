@@ -35,9 +35,7 @@ require (
 	github.com/gorilla/mux v1.8.0     
 	github.com/graph-gophers/graphql-go v1.5.0     
 	github.com/graphql-go/graphql v0.8.1     
-	github.com/graphql-go/handler v0.2.3
 	github.com/hashicorp/consul/api v1.24.0     
-	github.com/hashicorp/go-secure-stdlib/parseutil v0.1.7
 	github.com/hashicorp/vault/api v1.9.2
 	github.com/hashicorp/vault/sdk v0.9.2
 	github.com/jackc/pgx/v5 v5.6.0     
@@ -54,22 +52,15 @@ require (
 	github.com/tidwall/buntdb v1.3.0     
 	github.com/twitchtv/twirp v8.1.3+incompatible     
 	github.com/uptrace/bun v1.1.17     
-	github.com/uptrace/bun/dialect/sqlitedialect v1.1.17
 	github.com/urfave/negroni v1.0.0     
 	github.com/valyala/fasthttp v1.51.0     
-	github.com/vektah/gqlparser/v2 v2.5.16
 	github.com/zenazn/goji v1.0.1     
 	go.mongodb.org/mongo-driver v1.12.1     
-	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.44.0     
 	google.golang.org/api v0.128.0 
 	google.golang.org/grpc v1.57.1
-	google.golang.org/protobuf v1.33.0
 	gopkg.in/jinzhu/gorm.v1 v1.9.2     
 	gopkg.in/olivere/elastic.v3 v3.0.75     
 	gopkg.in/olivere/elastic.v5 v5.0.84
-	gorm.io/driver/mysql v1.0.1
-	gorm.io/driver/postgres v1.4.6
-	gorm.io/driver/sqlserver v1.4.2
 	gorm.io/gorm v1.25.3     
 	k8s.io/client-go v0.23.17     
 )
