@@ -533,7 +533,7 @@ func (t *trace) finishChunk(tr *tracer, ch *chunk) {
 		}
 		tr.spansFinished.mu.Lock()
 		if tr.spansFinished.spans == nil {
-			tr.spansFinished.spans = make(map[string]uint32)
+			tr.spansFinished.spans = make(map[string]int64)
 		}
 		tr.spansFinished.spans[sp.integration] += 1
 		tr.spansFinished.mu.Unlock()
