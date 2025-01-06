@@ -31,6 +31,7 @@ type config struct {
 	tags               map[string]interface{}
 	dbmPropagationMode tracer.DBMPropagationMode
 	dbStats            bool
+	statsTags		   []string
 	statsdClient       internal.StatsdClient
 }
 
@@ -290,5 +291,12 @@ func WithDBMPropagation(mode tracer.DBMPropagationMode) Option {
 func WithDBStats() Option {
 	return func(cfg *config) {
 		cfg.dbStats = true
+	}
+}
+
+func WithDBStatsTags(tags []string) Option {
+	return func(cfg *config) {
+		cfg.dbStats = true
+		cfg.statsTags = tags
 	}
 }
