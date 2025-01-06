@@ -8,6 +8,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
@@ -109,12 +110,16 @@ func tryCreateInferredProxySpan(headers http.Header, parent ddtrace.SpanContext)
 	// Create time.Time from Unix timestamp
 	parsedTime := time.Unix(seconds, nanoseconds)
 
+	configService := requestProxyContext.DomainName
+	if configService == "" {
+		configService = globalconfig.ServiceName()
+	}
 	config := ddtrace.StartSpanConfig{
-		Parent: parent,
-		//StartTime: requestProxyContext.RequestTime,
+		Parent:    parent,
 		StartTime: parsedTime,
 		Tags: map[string]interface{}{
-			"service":           requestProxyContext.DomainName,
+			"service":           configService,
+			"component":         proxySpanInfo.Component,
 			"HTTP_METHOD":       requestProxyContext.Method,
 			"PATH":              requestProxyContext.Path,
 			"STAGE":             requestProxyContext.Stage,
