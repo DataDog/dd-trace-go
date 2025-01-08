@@ -17,10 +17,7 @@ import (
 	"strings"
 	"sync"
 	"time"
-	// "io/fs"
-	// "path/filepath"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
-	// "gopkg.in/yaml.v3"
 )
 
 type ModuleVersion struct {
@@ -80,20 +77,10 @@ func parseGoMod(filePath string, packageMap map[string]string) ([]ModuleVersion,
 					Repository: match[1],
 					MinVersion: match[2],
 				}
-				// modules = append(modules, ModuleVersion{
-				// 	Repository: match[1],
-				// 	MinVersion: match[2],
-				// })
 				// if repository is in packageMap
 				if name, ok := packageMap[module.Repository]; ok {
 					module.Name = name
 				}
-				// name, ok := packageMap[Repository]
-				// if ok {
-				// 	modules = append(modules, ModuleVersion{
-				// 		Name: name,
-				// 	})
-				// }
 				modules = append(modules, module)
 			}
 		}
@@ -201,19 +188,13 @@ func outputVersionsAsMarkdown(modules []ModuleVersion, filePath string) error {
 }
 
 func main() {
-	// var instr *instrumentation.Instrumentation
-	// instr = instrumentation.Load(instrumentation.PackageChi) // testing
-	// package_name := instr.Package()
-	// repository := instr.Info().TracedPackage
+
 	packageMap := make(map[string]string) // map holding package names and repositories
 	for pkg, info := range instrumentation.GetPackages() {
 		fmt.Printf("Package: %s, Traced Package: %s\n", pkg, info.TracedPackage)
 		package_name := string(pkg)
 		packageMap[info.TracedPackage] = package_name
 	}
-	// fmt.Printf("instrumentation: %v", instr)
-	// fmt.Printf("package name: %v", package_name)
-	// fmt.Printf("repository: %v", repository)
 
 	goModPath := "integration_go.mod" // path to integration_go.mod
 	outputPath := "supported_versions.md"
@@ -257,47 +238,6 @@ func main() {
 		"github.com/julienschmidt/httprouter": {},
 		"github.com/sirupsen/logrus": {},
 	}
-	// contribDir := "contrib"
-
-	// Walk through contrib directory
-	// err := filepath.Walk(contribDir, func(path string, info fs.FileInfo, err error) error {
-	// 	if err != nil {
-	// 		return err
-	// 	}
-
-	// 	// Check if the current file is integration.yaml
-	// 	if info.Name() == "integration.yaml" {
-	// 		// Open and parse the YAML file
-	// 		file, err := os.Open(path)
-	// 		if err != nil {
-	// 			return fmt.Errorf("failed to open %s: %w", path, err)
-	// 		}
-	// 		defer file.Close()
-
-	// 		var integration Integration
-	// 		decoder := yaml.NewDecoder(file)
-	// 		if err := decoder.Decode(&integration); err != nil {
-	// 			return fmt.Errorf("failed to decode YAML in %s: %w", path, err)
-	// 		}
-
-	// 		// Add to the map
-	// 		packageMap[integration.Repository] = integration.Name
-	// 	}
-
-	// 	return nil
-	// })
-
-	// if err != nil {
-	// 	fmt.Printf("Error walking through contrib directory: %v\n", err)
-	// 	return
-	// }
-
-	// Print the package map
-	// fmt.Println("Packages and their repositories:")
-	// for repo, name := range packageMap {
-	// 	fmt.Printf("- %s: %s\n", repo, name)
-	// }
-
 
 	modules, err := parseGoMod(goModPath, packageMap)
 	if err != nil {
