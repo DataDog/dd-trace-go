@@ -181,7 +181,7 @@ func fetchAllLatestVersions(modules []ModuleVersion) []ModuleVersion {
 	return updatedModules
 }
 
-func outputVersionsAsMarkdown(modules []ModuleVersion, filePath string) error {
+func writeMarkdownFile(modules []ModuleVersion, filePath string) error {
 	file, err := os.Create(filePath)
 	if err != nil {
 		return fmt.Errorf("error creating file: %v", err)
@@ -204,28 +204,9 @@ func outputVersionsAsMarkdown(modules []ModuleVersion, filePath string) error {
 	return nil
 }
 
-func main() {
-
-	packageMap := make(map[string]string) // map holding package names and repositories
-	var modules []ModuleVersion
-
-	for pkg, info := range instrumentation.GetPackages() {
-		// fmt.Printf("Package: %s, Traced Package: %s\n", pkg, info.TracedPackage)
-		package_name := string(pkg)
-		repository := info.TracedPackage
-		packageMap[repository] = package_name
-		module, err := GetMinVersion(package_name, repository)
-		if err != nil {
-			fmt.Printf("Error getting min version for package %s: %v\n", package_name, err)
-			continue // Skip to the next iteration on error
-		}
-		modules = append(modules, module)
-	}
-
-	outputPath := "supported_versions.md"
-
+func initializeInstrumentedSet() map[string]struct{} {
 	// Hardcoded: this is from the table in https://github.com/DataDog/orchestrion
-	instrumentedSet := map[string]struct{}{
+	return map[string]struct{}{
 		"database/sql": {},
 		"github.com/gin-gonic/gin": {},
 		"github.com/go-chi/chi/v5": {},
@@ -265,18 +246,47 @@ func main() {
 		"github.com/julienschmidt/httprouter": {},
 		"github.com/sirupsen/logrus": {},
 	}
+}
 
+func processPackages(packageMap map[string]string) ([]ModuleVersion, error) {
+	var modules []ModuleVersion
+	for pkg, info := range instrumentation.GetPackages() {
+		package_name := string(pkg)
+		repository := info.TracedPackage
+		packageMap[repository] = package_name
 
+		module, err := GetMinVersion(package_name, repository)
+		if err != nil {
+			fmt.Printf("Error getting min version for package %s: %v\n", package_name, err)
+			continue
+		}
+		modules = append(modules, module)
+	}
+	return modules, nil
+
+}
+
+func main() {
+
+	packageMap := make(map[string]string) // map holding package names and repositories
+	outputPath := "supported_versions.md"
+	instrumentedSet := initializeInstrumentedSet()
+
+	modules, err := processPackages(packageMap)
+	if err != nil {
+		fmt.Printf("Error processing packages: %v\n", err)
+		return
+	}
+
+	// update with instrumented status
 	for i := range modules {
 		modules[i].isInstrumented = isModuleInstrumented(modules[i].Repository, instrumentedSet)
 	}
 	
 	modulesWithLatest := fetchAllLatestVersions(modules)
 
-	err := outputVersionsAsMarkdown(modulesWithLatest, outputPath)
-	if err != nil {
-		fmt.Printf("Error writing output file: %v\n", err)
-		return
+	if err := writeMarkdownFile(modulesWithLatest, outputPath); err != nil {
+		fmt.Println(err)
 	}
 
 	fmt.Println("Version information written to", outputPath)
