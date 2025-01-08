@@ -37,7 +37,7 @@ type Integration struct {
 
 func isSubdirectory(url, pattern string) bool {
 	if strings.HasPrefix(url, pattern) {
-		// Ensure the match is either exact or followed by a "/"
+		// match is either exact or followed by a "/"
 		return len(url) == len(pattern) || url[len(pattern)] == '/'
 	}
 	return false
@@ -81,7 +81,7 @@ func isModuleInstrumented(moduleName string, instrumentedSet map[string]struct{}
 	return isInstrumented
 }
 
-// GetMinVersion parses the go.mod file for a package and extracts the version of a given repository.
+// parses the go.mod file for a package and extracts the version of a given repository.
 func GetMinVersion(packageName, repositoryName string) (ModuleVersion, error) {
 	// Path to contrib/{packageName}
 	contribPath := filepath.Join("contrib", packageName)
