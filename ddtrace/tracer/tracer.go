@@ -83,7 +83,7 @@ type tracer struct {
 
 	// These maps keep count of the number of spans started and finished from
 	// each component, including contribs and "manual" spans.
-	spansStarted, spansFinished *xsync.MapOf[string, int64]
+	spansStarted, spansFinished *xsync.MapOf[string, *atomic.Int64]
 
 	// tracesDropped track metrics about traces as they are dropped
 	tracesDropped uint32
@@ -322,8 +322,8 @@ func newUnstartedTracer(opts ...StartOption) *tracer {
 		pid:              os.Getpid(),
 		logDroppedTraces: time.NewTicker(1 * time.Second),
 		stats:            newConcentrator(c, defaultStatsBucketSize, statsd),
-		spansStarted:     xsync.NewMapOf[string, int64](),
-		spansFinished:    xsync.NewMapOf[string, int64](),
+		spansStarted:     xsync.NewMapOf[string, *atomic.Int64](),
+		spansFinished:    xsync.NewMapOf[string, *atomic.Int64](),
 		obfuscator: obfuscate.NewObfuscator(obfuscate.Config{
 			SQL: obfuscate.SQLConfig{
 				TableNames:       c.agent.HasFlag("table_names"),
@@ -672,11 +672,11 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 			log.Error("Abandoned spans channel full, disregarding span.")
 		}
 	}
-	t.spansStarted.Compute(span.integration, func(oldValue int64, _ bool) (newValue int64, delete bool) {
-		newValue = oldValue + 1
-		delete = false
-		return
-	})
+	v, ok := t.spansStarted.Load(span.integration)
+	if !ok {
+		v, _ = t.spansStarted.LoadOrStore(span.integration, new(atomic.Int64))
+	}
+	v.Add(1)
 	return span
 }
 

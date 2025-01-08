@@ -7,6 +7,7 @@ package tracer
 
 import (
 	"slices"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -255,8 +256,8 @@ func BenchmarkSpansMetrics(b *testing.B) {
 	}
 }
 
-func assertSpanMetricCountsAreZero(t *testing.T, metric *xsync.MapOf[string, int64]) {
-	metric.Range(func(_ string, value int64) bool {
-		return assert.Equal(t, int64(0), value)
+func assertSpanMetricCountsAreZero(t *testing.T, metric *xsync.MapOf[string, *atomic.Int64]) {
+	metric.Range(func(_ string, value *atomic.Int64) bool {
+		return assert.Equal(t, int64(0), value.Load())
 	})
 }

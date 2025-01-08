@@ -531,11 +531,11 @@ func (t *trace) finishChunk(tr *tracer, ch *chunk) {
 		if sp == nil {
 			continue
 		}
-		tr.spansFinished.Compute(sp.integration, func(oldValue int64, _ bool) (newValue int64, delete bool) {
-			newValue = oldValue + 1
-			delete = false
-			return
-		})
+		v, ok := tr.spansFinished.Load(sp.integration)
+		if !ok {
+			v, _ = tr.spansFinished.LoadOrStore(sp.integration, new(atomic.Int64))
+		}
+		v.Add(1)
 	}
 	tr.pushChunk(ch)
 	t.finished = 0 // important, because a buffer can be used for several flushes
