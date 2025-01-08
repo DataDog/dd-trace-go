@@ -312,8 +312,6 @@ func TestTraceAndServe(t *testing.T) {
 		assert.NoError(err)
 		w := httptest.NewRecorder()
 		TraceAndServe(http.HandlerFunc(handler), w, r, &ServeConfig{
-			Service:       "service",
-			Resource:      "resource",
 			IsStatusError: func(i int) bool { return i >= 400 },
 		})
 
@@ -359,8 +357,6 @@ func TestTraceAndServe(t *testing.T) {
 		t.Setenv("DD_TRACE_HTTP_SERVER_ERROR_STATUSES", "500")
 
 		cfg := &ServeConfig{
-			Service:       "service",
-			Resource:      "resource",
 			IsStatusError: func(i int) bool { return i == 400 },
 		}
 
