@@ -17,6 +17,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"path/filepath"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 )
 
@@ -42,57 +43,6 @@ func isSubdirectory(url, pattern string) bool {
 	return false
 }
 
-func parseGoMod(filePath string, packageMap map[string]string) ([]ModuleVersion, error) {
-	// This parses the go.mod file and extracts modules with their minimum versions.
-	var modules []ModuleVersion
-
-	file, err := os.Open(filePath)
-	if err != nil {
-		return nil, fmt.Errorf("error: %s not found", filePath)
-	}
-	defer file.Close()
-
-	regex := regexp.MustCompile(`^\s*([^\s]+)\s+v([0-9]+\.[0-9]+\.[0-9]+.*)`)
-
-	scanner := bufio.NewScanner(file)
-	inRequireBlock := false
-
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-
-		if strings.HasPrefix(line, "require (") {
-			inRequireBlock = true
-			continue
-		}
-
-		if inRequireBlock && line == ")" {
-			inRequireBlock = false
-			continue
-		}
-
-		if inRequireBlock || strings.HasPrefix(line, "require ") {
-			match := regex.FindStringSubmatch(line)
-			if match != nil {
-				module := ModuleVersion{
-					Repository: match[1],
-					MinVersion: match[2],
-				}
-				// if repository is in packageMap
-				if name, ok := packageMap[module.Repository]; ok {
-					module.Name = name
-				}
-				modules = append(modules, module)
-			}
-		}
-	}
-
-	if err := scanner.Err(); err != nil {
-		return nil, fmt.Errorf("error reading file: %v", err)
-	}
-
-	return modules, nil
-}
-
 func fetchLatestVersion(module string) (string, error) {
 	// Fetches latest version with `go list`
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
@@ -112,7 +62,6 @@ func fetchLatestVersion(module string) (string, error) {
 	}
 
 	versions := strings.Fields(stdout.String())
-	// fmt.Println("Versions:", versions)
 	if len(versions) < 1 {
 		return "", fmt.Errorf("no versions found for module: %s", module)
 	}
@@ -130,6 +79,74 @@ func isModuleInstrumented(moduleName string, instrumentedSet map[string]struct{}
 		}
 	}
 	return isInstrumented
+}
+
+// GetMinVersion parses the go.mod file for a package and extracts the version of a given repository.
+func GetMinVersion(packageName, repositoryName string) (ModuleVersion, error) {
+	// Path to contrib/{packageName}
+	contribPath := filepath.Join("contrib", packageName)
+	goModPath := filepath.Join(contribPath, "go.mod")
+
+	// Check if go.mod exists in directory
+	if _, err := os.Stat(goModPath); os.IsNotExist(err) {
+		return ModuleVersion{}, fmt.Errorf("go.mod not found in %s", contribPath)
+	}
+
+	// Open and parse the go.mod file
+	file, err := os.Open(goModPath)
+	if err != nil {
+		return ModuleVersion{}, fmt.Errorf("failed to open go.mod: %w", err)
+	}
+	defer file.Close()
+
+	requireRegex := regexp.MustCompile(`^\s*([^\s]+)\s+v([0-9]+\.[0-9]+\.[0-9]+.*)`)
+
+	scanner := bufio.NewScanner(file)
+	inRequireBlock := false
+
+	var minVersion string
+
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+
+		if strings.HasPrefix(line, "require (") {
+			inRequireBlock = true
+			continue
+		}
+
+		if inRequireBlock && line == ")" {
+			inRequireBlock = false
+			continue
+		}
+
+		// Check for inline require statement (not in a block)
+		if !inRequireBlock && strings.HasPrefix(line, "require ") {
+			line = strings.TrimPrefix(line, "require ")
+		}
+
+		if inRequireBlock || strings.HasPrefix(line, repositoryName) {  // Process lines inside the require block or single-line requires
+			match := requireRegex.FindStringSubmatch(line)
+			if match != nil && match[1] == repositoryName {
+				minVersion = match[2]
+				break // Stop once we find the desired repository
+			}
+		}
+	}
+
+	if err := scanner.Err(); err != nil {
+		return ModuleVersion{}, fmt.Errorf("error reading go.mod: %w", err)
+	}
+
+	if minVersion == "" {
+		return ModuleVersion{}, fmt.Errorf("repository %s not found in go.mod", repositoryName)
+	}
+
+	// Return the module info
+	return ModuleVersion{
+		Name: packageName,
+		Repository:  repositoryName,
+		MinVersion:  minVersion,
+	}, nil
 }
 
 func fetchAllLatestVersions(modules []ModuleVersion) []ModuleVersion {
@@ -190,14 +207,24 @@ func outputVersionsAsMarkdown(modules []ModuleVersion, filePath string) error {
 func main() {
 
 	packageMap := make(map[string]string) // map holding package names and repositories
+	var modules []ModuleVersion
+
 	for pkg, info := range instrumentation.GetPackages() {
-		fmt.Printf("Package: %s, Traced Package: %s\n", pkg, info.TracedPackage)
+		// fmt.Printf("Package: %s, Traced Package: %s\n", pkg, info.TracedPackage)
 		package_name := string(pkg)
-		packageMap[info.TracedPackage] = package_name
+		repository := info.TracedPackage
+		packageMap[repository] = package_name
+		module, err := GetMinVersion(package_name, repository)
+		if err != nil {
+			fmt.Printf("Error getting min version for package %s: %v\n", package_name, err)
+			continue // Skip to the next iteration on error
+		}
+		modules = append(modules, module)
 	}
 
-	goModPath := "integration_go.mod" // path to integration_go.mod
 	outputPath := "supported_versions.md"
+
+	// Hardcoded: this is from the table in https://github.com/DataDog/orchestrion
 	instrumentedSet := map[string]struct{}{
 		"database/sql": {},
 		"github.com/gin-gonic/gin": {},
@@ -239,19 +266,14 @@ func main() {
 		"github.com/sirupsen/logrus": {},
 	}
 
-	modules, err := parseGoMod(goModPath, packageMap)
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
 
 	for i := range modules {
-		modules[i].isInstrumented = isModuleInstrumented(modules[i].Name, instrumentedSet)
+		modules[i].isInstrumented = isModuleInstrumented(modules[i].Repository, instrumentedSet)
 	}
 	
 	modulesWithLatest := fetchAllLatestVersions(modules)
 
-	err = outputVersionsAsMarkdown(modulesWithLatest, outputPath)
+	err := outputVersionsAsMarkdown(modulesWithLatest, outputPath)
 	if err != nil {
 		fmt.Printf("Error writing output file: %v\n", err)
 		return
