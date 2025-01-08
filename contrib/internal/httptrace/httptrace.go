@@ -38,27 +38,27 @@ func StartRequestSpan(r *http.Request, opts ...ddtrace.StartSpanOption) (tracer.
 	}
 	nopts := make([]ddtrace.StartSpanOption, 0, len(opts)+1+len(ipTags))
 	nopts = append(nopts,
-		func(cfg *ddtrace.StartSpanConfig) {
-			if cfg.Tags == nil {
-				cfg.Tags = make(map[string]interface{})
+		func(ssCfg *ddtrace.StartSpanConfig) {
+			if ssCfg.Tags == nil {
+				ssCfg.Tags = make(map[string]interface{})
 			}
-			cfg.Tags[ext.SpanType] = ext.SpanTypeWeb
-			cfg.Tags[ext.HTTPMethod] = r.Method
-			cfg.Tags[ext.HTTPURL] = urlFromRequest(r)
-			cfg.Tags[ext.HTTPUserAgent] = r.UserAgent()
-			cfg.Tags["_dd.measured"] = 1
+			ssCfg.Tags[ext.SpanType] = ext.SpanTypeWeb
+			ssCfg.Tags[ext.HTTPMethod] = r.Method
+			ssCfg.Tags[ext.HTTPURL] = UrlFromRequest(r, cfg.queryString)
+			ssCfg.Tags[ext.HTTPUserAgent] = r.UserAgent()
+			ssCfg.Tags["_dd.measured"] = 1
 			if r.Host != "" {
-				cfg.Tags["http.host"] = r.Host
+				ssCfg.Tags["http.host"] = r.Host
 			}
 			if spanctx, err := tracer.Extract(tracer.HTTPHeadersCarrier(r.Header)); err == nil {
 				// If there are span links as a result of context extraction, add them as a StartSpanOption
 				if linksCtx, ok := spanctx.(ddtrace.SpanContextWithLinks); ok && linksCtx.SpanLinks() != nil {
-					tracer.WithSpanLinks(linksCtx.SpanLinks())(cfg)
+					tracer.WithSpanLinks(linksCtx.SpanLinks())(ssCfg)
 				}
-				tracer.ChildOf(spanctx)(cfg)
+				tracer.ChildOf(spanctx)(ssCfg)
 			}
 			for k, v := range ipTags {
-				cfg.Tags[k] = v
+				ssCfg.Tags[k] = v
 			}
 		})
 	nopts = append(nopts, opts...)
@@ -96,7 +96,7 @@ func FinishRequestSpan(s tracer.Span, status int, errorFn func(int) bool, opts .
 // urlFromRequest returns the full URL from the HTTP request. If query params are collected, they are obfuscated granted
 // obfuscation is not disabled by the user (through DD_TRACE_OBFUSCATION_QUERY_STRING_REGEXP)
 // See https://docs.datadoghq.com/tracing/configure_data_security#redacting-the-query-in-the-url for more information.
-func urlFromRequest(r *http.Request) string {
+func UrlFromRequest(r *http.Request, queryString bool) string {
 	// Quoting net/http comments about net.Request.URL on server requests:
 	// "For most requests, fields other than Path and RawQuery will be
 	// empty. (See RFC 7230, Section 5.3)"
@@ -113,7 +113,7 @@ func urlFromRequest(r *http.Request) string {
 		url = path
 	}
 	// Collect the query string if we are allowed to report it and obfuscate it if possible/allowed
-	if cfg.queryString && r.URL.RawQuery != "" {
+	if queryString && r.URL.RawQuery != "" {
 		query := r.URL.RawQuery
 		if cfg.queryStringRegexp != nil {
 			query = cfg.queryStringRegexp.ReplaceAllLiteralString(query, "<redacted>")

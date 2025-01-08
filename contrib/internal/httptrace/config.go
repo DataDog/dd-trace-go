@@ -6,6 +6,7 @@
 package httptrace
 
 import (
+	"fmt"
 	"os"
 	"regexp"
 	"strconv"
@@ -46,7 +47,7 @@ func ResetCfg() {
 func newConfig() config {
 	c := config{
 		queryString:       !internal.BoolEnv(envQueryStringDisabled, false),
-		queryStringRegexp: defaultQueryStringRegexp,
+		queryStringRegexp: QueryStringRegexp(),
 		traceClientIP:     internal.BoolEnv(envTraceClientIPEnabled, false),
 		isStatusError:     isServerError,
 	}
@@ -54,21 +55,31 @@ func newConfig() config {
 	if fn := GetErrorCodesFromInput(v); fn != nil {
 		c.isStatusError = fn
 	}
-	if s, ok := os.LookupEnv(envQueryStringRegexp); !ok {
-		return c
-	} else if s == "" {
-		c.queryStringRegexp = nil
-		log.Debug("%s is set but empty. Query string obfuscation will be disabled.", envQueryStringRegexp)
-	} else if r, err := regexp.Compile(s); err == nil {
-		c.queryStringRegexp = r
-	} else {
-		log.Error("Could not compile regexp from %s. Using default regexp instead.", envQueryStringRegexp)
-	}
 	return c
 }
 
 func isServerError(statusCode int) bool {
 	return statusCode >= 500 && statusCode < 600
+}
+
+// DetermineQueryStringRegexp
+func QueryStringRegexp() *regexp.Regexp {
+	fmt.Println("hello?")
+	if s, ok := os.LookupEnv(envQueryStringRegexp); !ok {
+		fmt.Println("not set")
+		return defaultQueryStringRegexp
+	} else if s == "" {
+		fmt.Println("set to empty")
+		log.Debug("%s is set but empty. Query string obfuscation will be disabled.", envQueryStringRegexp)
+		return nil
+	} else if r, err := regexp.Compile(s); err == nil {
+		fmt.Println("set")
+		return r
+	} else {
+		fmt.Println("set to invalid")
+		log.Error("Could not compile regexp from %s. Using default regexp instead.", envQueryStringRegexp)
+		return defaultQueryStringRegexp
+	}
 }
 
 // GetErrorCodesFromInput parses a comma-separated string s to determine which codes are to be considered errors
