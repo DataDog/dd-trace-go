@@ -1,0 +1,321 @@
+// Unless explicitly stated otherwise all files in this repository are licensed
+// under the Apache License Version 2.0.
+// This product includes software developed at Datadog (https://www.datadoghq.com/).
+// Copyright 2024 Datadog, Inc.
+
+package main
+
+import (
+	"bufio"
+	"bytes"
+	"context"
+	"fmt"
+	"os"
+	"os/exec"
+	"sort"
+	"regexp"
+	"strings"
+	"sync"
+	"time"
+	// "io/fs"
+	// "path/filepath"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
+	// "gopkg.in/yaml.v3"
+)
+
+type ModuleVersion struct {
+	Name        string
+	MinVersion  string
+	MaxVersion  string
+	Repository  string
+	isInstrumented bool
+
+}
+
+type Integration struct {
+	Name       string `yaml:"name"`
+	Repository string `yaml:"repository"`
+}
+
+func isSubdirectory(url, pattern string) bool {
+	if strings.HasPrefix(url, pattern) {
+		// Ensure the match is either exact or followed by a "/"
+		return len(url) == len(pattern) || url[len(pattern)] == '/'
+	}
+	return false
+}
+
+func parseGoMod(filePath string, packageMap map[string]string) ([]ModuleVersion, error) {
+	// This parses the go.mod file and extracts modules with their minimum versions.
+	var modules []ModuleVersion
+
+	file, err := os.Open(filePath)
+	if err != nil {
+		return nil, fmt.Errorf("error: %s not found", filePath)
+	}
+	defer file.Close()
+
+	regex := regexp.MustCompile(`^\s*([^\s]+)\s+v([0-9]+\.[0-9]+\.[0-9]+.*)`)
+
+	scanner := bufio.NewScanner(file)
+	inRequireBlock := false
+
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+
+		if strings.HasPrefix(line, "require (") {
+			inRequireBlock = true
+			continue
+		}
+
+		if inRequireBlock && line == ")" {
+			inRequireBlock = false
+			continue
+		}
+
+		if inRequireBlock || strings.HasPrefix(line, "require ") {
+			match := regex.FindStringSubmatch(line)
+			if match != nil {
+				module := ModuleVersion{
+					Repository: match[1],
+					MinVersion: match[2],
+				}
+				// modules = append(modules, ModuleVersion{
+				// 	Repository: match[1],
+				// 	MinVersion: match[2],
+				// })
+				// if repository is in packageMap
+				if name, ok := packageMap[module.Repository]; ok {
+					module.Name = name
+				}
+				// name, ok := packageMap[Repository]
+				// if ok {
+				// 	modules = append(modules, ModuleVersion{
+				// 		Name: name,
+				// 	})
+				// }
+				modules = append(modules, module)
+			}
+		}
+	}
+
+	if err := scanner.Err(); err != nil {
+		return nil, fmt.Errorf("error reading file: %v", err)
+	}
+
+	return modules, nil
+}
+
+func fetchLatestVersion(module string) (string, error) {
+	// Fetches latest version with `go list`
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "go", "list", "-m", "-versions", module)
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	err := cmd.Run()
+	if ctx.Err() == context.DeadlineExceeded {
+		return "", fmt.Errorf("command timed out")
+	}
+	if err != nil {
+		return "", fmt.Errorf("command error: %s", stderr.String())
+	}
+
+	versions := strings.Fields(stdout.String())
+	// fmt.Println("Versions:", versions)
+	if len(versions) < 1 {
+		return "", fmt.Errorf("no versions found for module: %s", module)
+	}
+
+	return versions[len(versions)-1], nil
+}
+func isModuleInstrumented(moduleName string, instrumentedSet map[string]struct{}) bool {
+	// whether the module has automatic tracing supported (by Orchestrion)
+	// _, isInstrumented := instrumentedSet[moduleName]
+	isInstrumented := false
+	for key := range instrumentedSet {
+		if isSubdirectory(moduleName, key) {
+			isInstrumented = true
+			break
+		}
+	}
+	return isInstrumented
+}
+
+func fetchAllLatestVersions(modules []ModuleVersion) []ModuleVersion {
+	// Concurrently fetches the latest version of each module.
+		
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+
+	updatedModules := make([]ModuleVersion, 0, len(modules))
+
+	wg.Add(len(modules))
+	for _, mod := range modules {
+		go func(mod ModuleVersion) {
+			defer wg.Done()
+			latestVersion, err := fetchLatestVersion(mod.Repository)
+			if err != nil {
+				fmt.Printf("Error fetching latest version for %s: %v\n", mod.Repository, err)
+				mu.Lock()
+				updatedModules = append(updatedModules, ModuleVersion{mod.Name, mod.MinVersion, "Error", mod.Repository, mod.isInstrumented})
+				mu.Unlock()
+				return
+			}
+
+			mu.Lock()
+			updatedModules = append(updatedModules, ModuleVersion{mod.Name, 
+				mod.MinVersion, latestVersion, mod.Repository, mod.isInstrumented})
+			mu.Unlock()
+		}(mod)
+	}
+
+	wg.Wait()
+	return updatedModules
+}
+
+func outputVersionsAsMarkdown(modules []ModuleVersion, filePath string) error {
+	file, err := os.Create(filePath)
+	if err != nil {
+		return fmt.Errorf("error creating file: %v", err)
+	}
+	defer file.Close()
+
+	fmt.Fprintln(file, "| Dependency |    Repository  | Minimum Version | Maximum Version | Auto-Instrumented |")
+	fmt.Fprintln(file, "|------------|-----------------|-----------------|-----------------|-----------------|")
+
+	// Sort modules by name
+	sort.Slice(modules, func(i, j int) bool {
+		return modules[i].Name < modules[j].Name
+	})
+
+	for _, mod := range modules {
+		if mod.Name != "" {		
+			fmt.Fprintf(file, "| %s | %s | v%s | %s | %+v\n", mod.Name, mod.Repository, mod.MinVersion, mod.MaxVersion, mod.isInstrumented)
+	}	
+}
+	return nil
+}
+
+func main() {
+	// var instr *instrumentation.Instrumentation
+	// instr = instrumentation.Load(instrumentation.PackageChi) // testing
+	// package_name := instr.Package()
+	// repository := instr.Info().TracedPackage
+	packageMap := make(map[string]string) // map holding package names and repositories
+	for pkg, info := range instrumentation.GetPackages() {
+		fmt.Printf("Package: %s, Traced Package: %s\n", pkg, info.TracedPackage)
+		package_name := string(pkg)
+		packageMap[info.TracedPackage] = package_name
+	}
+	// fmt.Printf("instrumentation: %v", instr)
+	// fmt.Printf("package name: %v", package_name)
+	// fmt.Printf("repository: %v", repository)
+
+	goModPath := "integration_go.mod" // path to integration_go.mod
+	outputPath := "supported_versions.md"
+	instrumentedSet := map[string]struct{}{
+		"database/sql": {},
+		"github.com/gin-gonic/gin": {},
+		"github.com/go-chi/chi/v5": {},
+		"github.com/go-chi/chi": {},
+		"github.com/go-redis/redis/v7": {},
+		"github.com/go-redis/redis/v8": {},
+		"github.com/gofiber/fiber/v2": {},
+		"github.com/gomodule/redigo/redis": {},
+		"github.com/gorilla/mux": {},
+		"github.com/jinzhu/gorm": {},
+		"github.com/labstack/echo/v4": {},
+		"google.golang.org/grpc": {},
+		"gorm.io/gorm": {},
+		"net/http": {},
+		"go.mongodb.org/mongo-driver/mongo": {},
+		"github.com/aws/aws-sdk-go": {},
+		"github.com/hashicorp/vault": {},
+		"github.com/IBM/sarama": {},
+		"github.com/Shopify/sarama": {},
+		"k8s.io/client-go": {},
+		"log/slog": {},
+		"os": {},
+		"github.com/aws/aws-sdk-go-v2": {},
+		"github.com/redis/go-redis/v9": {},
+		"github.com/gocql/gocql": {},
+		"cloud.google.com/go/pubsub": {},
+		"github.com/99designs/gqlgen": {},
+		"github.com/redis/go-redis": {},
+		"github.com/graph-gophers/graphql-go": {},
+		"github.com/graphql-go/graphql": {},
+		"github.com/jackc/pgx": {},
+		"github.com/elastic/go-elasticsearch": {},
+		"github.com/twitchtv/twirp": {},
+		"github.com/segmentio/kafka-go": {},
+		"github.com/confluentinc/confluent-kafka-go/kafka": {},
+		"github.com/confluentinc/confluent-kafka-go/kafka/v2": {},
+		"github.com/julienschmidt/httprouter": {},
+		"github.com/sirupsen/logrus": {},
+	}
+	// contribDir := "contrib"
+
+	// Walk through contrib directory
+	// err := filepath.Walk(contribDir, func(path string, info fs.FileInfo, err error) error {
+	// 	if err != nil {
+	// 		return err
+	// 	}
+
+	// 	// Check if the current file is integration.yaml
+	// 	if info.Name() == "integration.yaml" {
+	// 		// Open and parse the YAML file
+	// 		file, err := os.Open(path)
+	// 		if err != nil {
+	// 			return fmt.Errorf("failed to open %s: %w", path, err)
+	// 		}
+	// 		defer file.Close()
+
+	// 		var integration Integration
+	// 		decoder := yaml.NewDecoder(file)
+	// 		if err := decoder.Decode(&integration); err != nil {
+	// 			return fmt.Errorf("failed to decode YAML in %s: %w", path, err)
+	// 		}
+
+	// 		// Add to the map
+	// 		packageMap[integration.Repository] = integration.Name
+	// 	}
+
+	// 	return nil
+	// })
+
+	// if err != nil {
+	// 	fmt.Printf("Error walking through contrib directory: %v\n", err)
+	// 	return
+	// }
+
+	// Print the package map
+	// fmt.Println("Packages and their repositories:")
+	// for repo, name := range packageMap {
+	// 	fmt.Printf("- %s: %s\n", repo, name)
+	// }
+
+
+	modules, err := parseGoMod(goModPath, packageMap)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+
+	for i := range modules {
+		modules[i].isInstrumented = isModuleInstrumented(modules[i].Name, instrumentedSet)
+	}
+	
+	modulesWithLatest := fetchAllLatestVersions(modules)
+
+	err = outputVersionsAsMarkdown(modulesWithLatest, outputPath)
+	if err != nil {
+		fmt.Printf("Error writing output file: %v\n", err)
+		return
+	}
+
+	fmt.Println("Version information written to", outputPath)
+}

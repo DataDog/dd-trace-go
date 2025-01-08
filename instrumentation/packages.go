@@ -523,7 +523,7 @@ var packages = map[Package]PackageInfo{
 		},
 	},
 	PackageTidwallBuntDB: {
-		TracedPackage: "tidwall/buntdb",
+		TracedPackage: "github.com/tidwall/buntdb",
 		EnvVarPrefix:  "BUNTDB",
 		naming: map[Component]componentNames{
 			ComponentDefault: {
@@ -535,7 +535,7 @@ var packages = map[Package]PackageInfo{
 		},
 	},
 	PackageSyndtrGoLevelDB: {
-		TracedPackage: "syndtr/goleveldb/leveldb",
+		TracedPackage: "github.com/syndtr/goleveldb",
 		EnvVarPrefix:  "LEVELDB",
 		naming: map[Component]componentNames{
 			ComponentDefault: {
@@ -804,6 +804,8 @@ var packages = map[Package]PackageInfo{
 	},
 }
 
+
+
 func staticName(name string) func(OperationContext) string {
 	return func(_ OperationContext) string {
 		return name
@@ -843,4 +845,8 @@ func isAWSMessagingSendOp(awsService, awsOperation string) bool {
 		return op == "publish"
 	}
 	return false
+}
+
+func GetPackages() map[Package]PackageInfo {
+	return packages
 }

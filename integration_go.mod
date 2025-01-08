@@ -35,7 +35,6 @@ require (
 	github.com/go-redis/redis v6.15.9+incompatible     
 	github.com/go-redis/redis/v7 v7.4.1
 	github.com/go-redis/redis/v8 v8.11.5
-	github.com/go-redis/redis/v9 v9.7.0   // renamed to redis/go-redis in v9
 	github.com/go-sql-driver/mysql v1.6.0
 	github.com/gocql/gocql v1.6.0     
 	github.com/gofiber/fiber/v2 v2.52.5
@@ -53,7 +52,7 @@ require (
 	github.com/julienschmidt/httprouter v1.3.0     
 	github.com/labstack/echo/v4 v4.11.1
 	github.com/miekg/dns v1.1.55     
-	github.com/redis/go-redis/v9 v9.7.0     
+	github.com/redis/go-redis/v9 v9.7.0
 	github.com/segmentio/kafka-go v0.4.42     
 	github.com/sirupsen/logrus v1.9.3     
 	github.com/syndtr/goleveldb v1.0.1-0.20220721030215-126854af5e6d     
