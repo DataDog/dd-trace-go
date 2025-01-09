@@ -6,6 +6,8 @@
 package sarama_test
 
 import (
+	"context"
+	"errors"
 	"log"
 
 	saramatrace "github.com/DataDog/dd-trace-go/contrib/IBM/sarama/v2"
@@ -14,7 +16,7 @@ import (
 	"github.com/IBM/sarama"
 )
 
-func Example_asyncProducer() {
+func ExampleWrapAsyncProducer() {
 	cfg := sarama.NewConfig()
 	cfg.Version = sarama.V0_11_0_0 // minimum version that supports headers which are required for tracing
 
@@ -33,7 +35,7 @@ func Example_asyncProducer() {
 	producer.Input() <- msg
 }
 
-func Example_syncProducer() {
+func ExampleWrapSyncProducer() {
 	cfg := sarama.NewConfig()
 	cfg.Producer.Return.Successes = true
 
@@ -55,7 +57,7 @@ func Example_syncProducer() {
 	}
 }
 
-func Example_consumer() {
+func ExampleWrapConsumer() {
 	consumer, err := sarama.NewConsumer([]string{"localhost:9092"}, nil)
 	if err != nil {
 		panic(err)
@@ -80,5 +82,40 @@ func Example_consumer() {
 
 		log.Printf("Consumed message offset %d\n", msg.Offset)
 		consumed++
+	}
+}
+
+func ExampleWrapConsumerGroupHandler() {
+	cfg := sarama.NewConfig()
+	cfg.Version = sarama.V0_11_0_0 // first version that supports headers
+	cfg.Producer.Return.Successes = true
+	cfg.Producer.Flush.Messages = 1
+
+	const groupID = "group-id"
+
+	consumerGroup, err := sarama.NewConsumerGroup([]string{"localhost:9092"}, groupID, cfg)
+	if err != nil {
+		panic(err)
+	}
+
+	// trace your sarama.ConsumerGroupHandler implementation
+	var myHandler sarama.ConsumerGroupHandler
+	handler := saramatrace.WrapConsumerGroupHandler(myHandler)
+
+	ctx := context.Background()
+	for {
+		// `Consume` should be called inside an infinite loop, when a
+		// server-side rebalance happens, the consumer session will need to be
+		// recreated to get the new claims
+		if err := consumerGroup.Consume(ctx, []string{"my-topic"}, handler); err != nil {
+			if errors.Is(err, sarama.ErrClosedConsumerGroup) {
+				return
+			}
+			log.Panicf("Error from consumer: %v", err)
+		}
+		// check if context was cancelled, signaling that the consumer should stop
+		if ctx.Err() != nil {
+			return
+		}
 	}
 }
