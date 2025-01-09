@@ -11,6 +11,7 @@ import (
 	"io"
 	"math"
 	"net/http"
+	"path"
 	"strings"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/httptrace"
@@ -204,6 +205,7 @@ func processRequestHeaders(ctx context.Context, req *envoyextproc.ProcessingRequ
 	var blocked bool
 	fakeResponseWriter := newFakeResponseWriter()
 	wrappedResponseWriter, request, afterHandle, blocked := httptrace.BeforeHandle(&httptrace.ServeConfig{
+		Resource: request.Method + " " + path.Clean(request.URL.Path),
 		SpanOpts: []ddtrace.StartSpanOption{
 			tracer.Tag(ext.SpanKind, ext.SpanKindServer),
 			tracer.Tag(ext.Component, componentName),
