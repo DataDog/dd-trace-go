@@ -26,67 +26,6 @@ const (
 	testTopic   = "gotest"
 )
 
-func genTestSpans(t *testing.T, serviceOverride string) []*mocktracer.Span {
-	var opts []Option
-	if serviceOverride != "" {
-		opts = append(opts, WithService(serviceOverride))
-	}
-	mt := mocktracer.Start()
-	defer mt.Stop()
-
-	broker := sarama.NewMockBroker(t, 1)
-	defer broker.Close()
-
-	broker.SetHandlerByMap(map[string]sarama.MockResponse{
-		"MetadataRequest": sarama.NewMockMetadataResponse(t).
-			SetBroker(broker.Addr(), broker.BrokerID()).
-			SetLeader("test-topic", 0, broker.BrokerID()),
-		"OffsetRequest": sarama.NewMockOffsetResponse(t).
-			SetOffset("test-topic", 0, sarama.OffsetOldest, 0).
-			SetOffset("test-topic", 0, sarama.OffsetNewest, 1),
-		"FetchRequest": sarama.NewMockFetchResponse(t, 1).
-			SetMessage("test-topic", 0, 0, sarama.StringEncoder("hello")),
-		"ProduceRequest": sarama.NewMockProduceResponse(t).
-			SetError("test-topic", 0, sarama.ErrNoError),
-	})
-	cfg := sarama.NewConfig()
-	cfg.Version = sarama.MinVersion
-	cfg.Producer.Return.Successes = true
-	cfg.Producer.Flush.Messages = 1
-
-	producer, err := sarama.NewSyncProducer([]string{broker.Addr()}, cfg)
-	require.NoError(t, err)
-	producer = WrapSyncProducer(cfg, producer, opts...)
-
-	c, err := sarama.NewConsumer([]string{broker.Addr()}, cfg)
-	require.NoError(t, err)
-	defer func(c sarama.Consumer) {
-		err := c.Close()
-		require.NoError(t, err)
-	}(c)
-	c = WrapConsumer(c, opts...)
-
-	msg1 := &sarama.ProducerMessage{
-		Topic:    "test-topic",
-		Value:    sarama.StringEncoder("test 1"),
-		Metadata: "test",
-	}
-	_, _, err = producer.SendMessage(msg1)
-	require.NoError(t, err)
-
-	pc, err := c.ConsumePartition("test-topic", 0, 0)
-	require.NoError(t, err)
-	_ = <-pc.Messages()
-	err = pc.Close()
-	require.NoError(t, err)
-	// wait for the channel to be closed
-	<-pc.Messages()
-
-	spans := mt.FinishedSpans()
-	require.Len(t, spans, 2)
-	return spans
-}
-
 func newMockBroker(t *testing.T) *sarama.MockBroker {
 	broker := sarama.NewMockBroker(t, 1)
 
