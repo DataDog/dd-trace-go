@@ -7,6 +7,7 @@ package tracer
 
 import (
 	"slices"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -198,13 +199,17 @@ func TestHealthMetricsRaceCondition(t *testing.T) {
 	tracer, _, flush, stop := startTestTracer(t, withStatsdClient(&tg))
 	defer stop()
 
+	wg := sync.WaitGroup{}
 	for range 5 {
+		wg.Add(1)
 		go func() {
+			defer wg.Done()
 			sp := tracer.StartSpan("operation")
 			time.Sleep(100 * time.Millisecond)
 			sp.Finish()
 		}()
 	}
+	wg.Wait()
 	flush(5)
 	tg.Wait(assert, 2, 100*time.Millisecond)
 
