@@ -9,6 +9,7 @@ replace gopkg.in/DataDog/dd-trace-go.v1 => ../../..
 require (
 	github.com/DataDog/orchestrion v1.0.3-rc.1.0.20250109145419-86f02c486a31
 	github.com/stretchr/testify v1.10.0
+	github.com/tinylib/msgp v1.2.5
 	gopkg.in/DataDog/dd-trace-go.v1 v1.71.0-rc.4
 )
 
@@ -182,7 +183,6 @@ require (
 	github.com/sirupsen/logrus v1.9.3 // indirect
 	github.com/sosodev/duration v1.3.1 // indirect
 	github.com/spaolacci/murmur3 v1.1.0 // indirect
-	github.com/tinylib/msgp v1.2.5 // indirect
 	github.com/tklauser/go-sysconf v0.3.14 // indirect
 	github.com/tklauser/numcpus v0.9.0 // indirect
 	github.com/twitchtv/twirp v8.1.3+incompatible // indirect
