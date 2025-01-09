@@ -93,9 +93,8 @@ func FinishRequestSpan(s tracer.Span, status int, errorFn func(int) bool, opts .
 	s.Finish(opts...)
 }
 
-// urlFromRequest returns the full URL from the HTTP request. If query params are collected, they are obfuscated granted
-// obfuscation is not disabled by the user (through DD_TRACE_OBFUSCATION_QUERY_STRING_REGEXP)
-// See https://docs.datadoghq.com/tracing/configure_data_security#redacting-the-query-in-the-url for more information.
+// UrlFromRequest returns the full URL from the HTTP request. If queryString is true, params are collected and they are obfuscated either by the default query string obfuscator or the custom obfuscator provided by the user (through DD_TRACE_OBFUSCATION_QUERY_STRING_REGEXP)
+// See https://docs.datadoghq.com/tracing/configure_data_security/?tab=net#redact-query-strings for more information.
 func UrlFromRequest(r *http.Request, queryString bool) string {
 	// Quoting net/http comments about net.Request.URL on server requests:
 	// "For most requests, fields other than Path and RawQuery will be
