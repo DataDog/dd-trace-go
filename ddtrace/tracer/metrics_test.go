@@ -60,6 +60,7 @@ func TestReportHealthMetricsAtInterval(t *testing.T) {
 
 	tracer.StartSpan("operation").Finish()
 	flush(1)
+	time.Sleep(100 * time.Millisecond)
 	tg.Wait(assert, 4, 10*time.Second)
 
 	counts := tg.Counts()
