@@ -1,6 +1,11 @@
 name: Orchestrion
 on:
   workflow_dispatch: # manually
+    inputs:
+      orchestrion-version:
+        description: Orchestrion version to use for integration testing
+        type: string
+        required: false
   pull_request:
   merge_group:
   push:
@@ -19,24 +24,101 @@ concurrency:
 
 jobs:
   generate:
-    name: Verify root orchestrion.yml file is up-to-date
+    name: Verify root orchestrion.tool.go file is up-to-date
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
       - name: Setup Go
-        uses: actions/setup-go@v3
+        uses: actions/setup-go@v5
         with:
           go-version: stable
           cache: true
+          cache-dependency-path: '**/go.mod'
       - name: Run generator
         run: go generate ./internal/orchestrion
       - name: Check for changes
         run: git diff --exit-code
 
-  test:
-    name: 'Run Tests'
-    uses: DataDog/orchestrion/.github/workflows/workflow_call.yml@main # we don't want to pin our own action
-    with:
-      dd-trace-go-ref: ${{ github.sha }}
-      runs-on: ubuntu-latest-16-cores
+  integration-test:
+    strategy:
+      fail-fast: false
+      matrix:
+        runs-on:
+          - ubuntu
+          - macos
+          - windows
+        go-version: [oldstable, stable]
+        mode: [DRIVER]
+        include:
+          # Alternate build modes (only on ubuntu with oldstable, so we save up CI time)
+          - runs-on: ubuntu
+            go-version: oldstable
+            mode: TOOLEXEC
+          - runs-on: ubuntu
+            go-version: oldstable
+            mode: GOFLAGS
+    name: Integration Test (${{ matrix.runs-on }} / ${{ matrix.go-version }} / ${{ matrix.mode }})
+    runs-on: ${{ matrix.runs-on == 'ubuntu' && fromJson('{"labels":"ubuntu-16-core-latest","group":"Large Runner Shared Public"}') || (matrix.runs-on == 'windows' && fromJson('{"labels":"windows-shared-8core","group":"LARGE WINDOWS SHARED"}')) || format('{0}-latest', matrix.runs-on) }}
+    env:
+      # Ryuk is problematic with concurrent executions, and unnecessary in ephemeral environments like GHA.
+      TESTCONTAINERS_RYUK_DISABLED: true
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ matrix.go-version }}
+          cache: true
+          cache-dependency-path: 'internal/orchestrion/_integration/go.mod'
+
+      # ddapm-test-agent is used to observe side effects from the tracer during integration tests.
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: 3.x
+          cache: pip
+          cache-dependency-path: 'internal/orchestrion/_integration/requirements-dev.txt'
+      - name: Install ddapm-test-agent
+        run: pip install -r internal/orchestrion/_integration/requirements-dev.txt
+
+      # If we're in workflow_dispatch, maybe we need to up/downgrade orchestrion
+      - name: Set up orchestrion
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.orchestrion-version != ''
+        run: |-
+          go get "github.com/DataDog/orchestrion@${VERSION}"
+          go mod tidy
+        working-directory: internal/orchestrion/_integration
+        env:
+          VERSION: ${{ github.event.inputs.orchestrion-version }}
+      # We install the binary to the GOBIN, so it's easy to use
+      - name: Install orchestrion binary
+        run: |-
+          go install "github.com/DataDog/orchestrion"
+        working-directory: internal/orchestrion/_integration
+
+      # Finally, we run the test suite!
+      - name: Run Tests
+        shell: bash
+        run: |-
+          case "${MODE}" in
+          "DRIVER")
+            orchestrion go test -shuffle=on ./...
+            ;;
+          "TOOLEXEC")
+            go test -shuffle=on -toolexec='orchestrion toolexec' ./...
+            ;;
+          "GOFLAGS")
+            export GOFLAGS="${GOFLAGS} '-toolexec=orchestrion toolexec'"
+            go test -shuffle=on ./...
+            ;;
+          *)
+            echo "Unknown mode: ${MODE}"
+            ;;
+          esac
+        working-directory: internal/orchestrion/_integration
+        env:
+          GOFLAGS: -tags=githubci${{ matrix.mode == 'DRIVER' && ',buildtag' || ''}} # The "buildtag" tag is used in //dd:span integration tests
+          MODE: ${{ matrix.mode }}
+          DD_ORCHESTRION_IS_GOMOD_VERSION: true # Prevent auto-respawn, which is problematic with installs from commit SHA

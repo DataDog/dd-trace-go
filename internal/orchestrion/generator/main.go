@@ -152,7 +152,7 @@ func validateValidConfig(rootDir string) error {
 		return fmt.Errorf("replace gopkg.in/DataDog/dd-trace-go.v1: %w", err)
 	}
 	// TODO: Remove before shipping
-	if err := goCmd(tmp, "mod", "edit", "-replace", "github.com/DataDog/orchestrion=/Users/romain.marcadier/Development/Datadog/orchestrion"); err != nil {
+	if err := goCmd(tmp, "mod", "edit", "-require", "github.com/DataDog/orchestrion@v1.0.3-rc.1.0.20250109145419-86f02c486a31"); err != nil {
 		return fmt.Errorf("replace gopkg.in/DataDog/dd-trace-go.v1: %w", err)
 	}
 
