@@ -164,13 +164,6 @@ func assertDSMConsumerPathway(t *testing.T, topic, groupID string, msg *sarama.C
 	if withProducer {
 		ctx, _ = tracer.SetDataStreamsCheckpoint(context.Background(), "direction:out", "topic:"+testTopic, "type:kafka")
 	}
-
-	//ctx, _ := tracer.SetDataStreamsCheckpointWithParams(
-	//	datastreams.ExtractFromBase64Carrier(context.Background(), carrier),
-	//	options.CheckpointParams{PayloadSize: getConsumerMsgSize(msg)},
-	//	edgeTags...,
-	//)
-
 	ctx, _ = tracer.SetDataStreamsCheckpoint(ctx, edgeTags...)
 	want, _ := datastreams.PathwayFromContext(ctx)
 
