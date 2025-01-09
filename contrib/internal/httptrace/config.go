@@ -61,7 +61,6 @@ func isServerError(statusCode int) bool {
 	return statusCode >= 500 && statusCode < 600
 }
 
-// DetermineQueryStringRegexp
 func QueryStringRegexp() *regexp.Regexp {
 	if s, ok := os.LookupEnv(envQueryStringRegexp); !ok {
 		return defaultQueryStringRegexp
