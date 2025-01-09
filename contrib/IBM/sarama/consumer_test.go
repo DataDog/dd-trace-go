@@ -63,11 +63,11 @@ func TestWrapConsumer(t *testing.T) {
 		s := spans[0]
 		spanctx, err := tracer.Extract(NewConsumerMessageCarrier(msg1))
 		assert.NoError(t, err)
-		assert.Equal(t, spanctx.TraceID(), s.TraceID(),
+		assert.Equal(t, spanctx.TraceIDLower(), s.TraceID(),
 			"span context should be injected into the consumer message headers")
 
-		assert.Equal(t, int32(0), s.Tag(ext.MessagingKafkaPartition))
-		assert.Equal(t, int64(0), s.Tag("offset"))
+		assert.Equal(t, float64(0), s.Tag(ext.MessagingKafkaPartition))
+		assert.Equal(t, float64(0), s.Tag("offset"))
 		assert.Equal(t, "kafka", s.Tag(ext.ServiceName))
 		assert.Equal(t, "Consume Topic test-topic", s.Tag(ext.ResourceName))
 		assert.Equal(t, "queue", s.Tag(ext.SpanType))
@@ -82,11 +82,11 @@ func TestWrapConsumer(t *testing.T) {
 		s := spans[1]
 		spanctx, err := tracer.Extract(NewConsumerMessageCarrier(msg2))
 		assert.NoError(t, err)
-		assert.Equal(t, spanctx.TraceID(), s.TraceID(),
+		assert.Equal(t, spanctx.TraceIDLower(), s.TraceID(),
 			"span context should be injected into the consumer message headers")
 
-		assert.Equal(t, int32(0), s.Tag(ext.MessagingKafkaPartition))
-		assert.Equal(t, int64(1), s.Tag("offset"))
+		assert.Equal(t, float64(0), s.Tag(ext.MessagingKafkaPartition))
+		assert.Equal(t, float64(1), s.Tag("offset"))
 		assert.Equal(t, "kafka", s.Tag(ext.ServiceName))
 		assert.Equal(t, "Consume Topic test-topic", s.Tag(ext.ResourceName))
 		assert.Equal(t, "queue", s.Tag(ext.SpanType))
