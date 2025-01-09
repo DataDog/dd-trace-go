@@ -36,6 +36,9 @@ func StartRequestSpan(r *http.Request, opts ...ddtrace.StartSpanOption) (tracer.
 	if cfg.traceClientIP {
 		ipTags, _ = httpsec.ClientIPTags(r.Header, true, r.RemoteAddr)
 	}
+
+	isInferredProxySpan := cfg.isInferredProxyServiceEnabled
+
 	nopts := make([]ddtrace.StartSpanOption, 0, len(opts)+1+len(ipTags))
 	nopts = append(nopts,
 		func(cfg *ddtrace.StartSpanConfig) {
@@ -53,16 +56,16 @@ func StartRequestSpan(r *http.Request, opts ...ddtrace.StartSpanOption) (tracer.
 			}
 
 			spanctx, err := tracer.Extract(tracer.HTTPHeadersCarrier(r.Header))
-			is_inferred_proxy_set := false
+			isInferredProxySet := false
 
-			if internal.BoolEnv(inferredProxyServicesEnabled, false) {
+			if isInferredProxySpan {
 				if inferred_proxy_span_ctx := tryCreateInferredProxySpan(r.Header, spanctx); inferred_proxy_span_ctx != nil {
 					cfg.Parent = inferred_proxy_span_ctx
-					is_inferred_proxy_set = true
+					isInferredProxySet = true
 				}
 			}
 
-			if err != nil && !is_inferred_proxy_set {
+			if err != nil && !isInferredProxySet {
 				cfg.Parent = spanctx
 			}
 
