@@ -100,11 +100,13 @@ func UrlFromRequest(r *http.Request, queryString bool) string {
 	// Quoting net/http comments about net.Request.URL on server requests:
 	// "For most requests, fields other than Path and RawQuery will be
 	// empty. (See RFC 7230, Section 5.3)"
-	// This is why we don't rely on url.URL.String(), url.URL.Host, url.URL.Scheme, etc...
+	// This is why we can't rely entirely on url.URL.String(), url.URL.Host, url.URL.Scheme, etc...
 	var url string
 	path := r.URL.EscapedPath()
 	scheme := "http"
-	if r.TLS != nil {
+	if s := r.URL.Scheme; s != "" {
+		scheme = s
+	} else if r.TLS != nil {
 		scheme = "https"
 	}
 	if r.Host != "" {

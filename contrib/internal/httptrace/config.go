@@ -6,7 +6,6 @@
 package httptrace
 
 import (
-	"fmt"
 	"os"
 	"regexp"
 	"strconv"
@@ -64,19 +63,14 @@ func isServerError(statusCode int) bool {
 
 // DetermineQueryStringRegexp
 func QueryStringRegexp() *regexp.Regexp {
-	fmt.Println("hello?")
 	if s, ok := os.LookupEnv(envQueryStringRegexp); !ok {
-		fmt.Println("not set")
 		return defaultQueryStringRegexp
 	} else if s == "" {
-		fmt.Println("set to empty")
 		log.Debug("%s is set but empty. Query string obfuscation will be disabled.", envQueryStringRegexp)
 		return nil
 	} else if r, err := regexp.Compile(s); err == nil {
-		fmt.Println("set")
 		return r
 	} else {
-		fmt.Println("set to invalid")
 		log.Error("Could not compile regexp from %s. Using default regexp instead.", envQueryStringRegexp)
 		return defaultQueryStringRegexp
 	}
