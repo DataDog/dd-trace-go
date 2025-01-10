@@ -93,7 +93,7 @@ func (t *tracer) reportHealthMetricsAtInterval(interval time.Duration) {
 	for {
 		select {
 		case <-ticker.C:
-			// if there are started spans, report the number spans with their integration, then
+			// if there are started spans, report the of number spans with their integration, then
 			// reset the count
 			t.spansStarted.Range(func(key string, value *atomic.Int64) bool {
 				err := t.statsd.Count("datadog.tracer.spans_started", value.Load(), []string{"integration:" + key}, 1)
@@ -101,7 +101,7 @@ func (t *tracer) reportHealthMetricsAtInterval(interval time.Duration) {
 				return err == nil
 			})
 
-			// if there are finished spans, report the number spans with their integration, then
+			// if there are finished spans, report the number of spans with their integration, then
 			// reset the count
 			t.spansFinished.Range(func(key string, value *atomic.Int64) bool {
 				err := t.statsd.Count("datadog.tracer.spans_finished", value.Load(), []string{"integration:" + key}, 1)

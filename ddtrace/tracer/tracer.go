@@ -81,7 +81,7 @@ type tracer struct {
 	// pid of the process
 	pid int
 
-	// These maps keep count of the number of spans started and finished from
+	// These maps count the spans started and finished from
 	// each component, including contribs and "manual" spans.
 	spansStarted, spansFinished *xsync.MapOf[string, *atomic.Int64]
 
