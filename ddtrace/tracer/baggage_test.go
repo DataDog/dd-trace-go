@@ -114,4 +114,23 @@ func TestBaggageFunctions(t *testing.T) {
 			t.Errorf("Baggage(ctx, \"customKey\") = %q; want \"customValue\"", got)
 		}
 	})
+
+	t.Run("explicitOkCheck", func(t *testing.T) {
+		ctx := context.Background()
+
+		// Check an unset key
+		val, ok := Baggage(ctx, "unsetKey")
+		if ok {
+			t.Errorf("Expected unset key to return ok=false, got ok=true with val=%q", val)
+		}
+
+		ctx = SetBaggage(ctx, "testKey", "testVal")
+		val, ok = Baggage(ctx, "testKey")
+		if !ok {
+			t.Error("Expected key \"testKey\" to be present, got ok=false")
+		}
+		if val != "testVal" {
+			t.Errorf("Expected \"testVal\"; got %q", val)
+		}
+	})
 }
