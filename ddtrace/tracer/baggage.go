@@ -16,33 +16,40 @@ type baggageKey struct{}
 // baggageMap retrieves the map that holds baggage from the context.
 // Returns nil if no baggage map is stored in the context.
 func baggageMap(ctx context.Context) map[string]string {
-	bm, _ := ctx.Value(baggageKey{}).(map[string]string)
+	val := ctx.Value(baggageKey{})
+	bm, ok := val.(map[string]string)
+	if !ok {
+		// bm is not a map[string]string or val was nil
+		return nil
+	}
 	return bm
 }
 
-// WithBaggage returns a new context with the given baggage map set.
-func WithBaggage(ctx context.Context, baggage map[string]string) context.Context {
+// withBaggage returns a new context with the given baggage map set.
+func withBaggage(ctx context.Context, baggage map[string]string) context.Context {
 	return context.WithValue(ctx, baggageKey{}, baggage)
 }
 
 // SetBaggage sets or updates a single baggage key/value pair in the context.
+// If the key already exists, this function overwrites the existing value.
 func SetBaggage(ctx context.Context, key, value string) context.Context {
 	bm := baggageMap(ctx)
 	if bm == nil {
 		bm = make(map[string]string)
 	}
 	bm[key] = value
-	return WithBaggage(ctx, bm)
+	return withBaggage(ctx, bm)
 }
 
 // Baggage retrieves the value associated with a baggage key.
 // If the key isn't found, it returns an empty string.
-func Baggage(ctx context.Context, key string) string {
+func Baggage(ctx context.Context, key string) (string, bool) {
 	bm := baggageMap(ctx)
 	if bm == nil {
-		return ""
+		return "", false
 	}
-	return bm[key]
+	value, ok := bm[key]
+	return value, ok
 }
 
 // RemoveBaggage removes the specified key from the baggage (if present).
@@ -53,7 +60,7 @@ func RemoveBaggage(ctx context.Context, key string) context.Context {
 		return ctx
 	}
 	delete(bm, key)
-	return WithBaggage(ctx, bm)
+	return withBaggage(ctx, bm)
 }
 
 // AllBaggage returns a **copy** of all baggage items in the context,
@@ -71,5 +78,5 @@ func AllBaggage(ctx context.Context) map[string]string {
 
 // ClearBaggage completely removes all baggage items from the context.
 func ClearBaggage(ctx context.Context) context.Context {
-	return WithBaggage(ctx, nil)
+	return withBaggage(ctx, nil)
 }

@@ -18,14 +18,19 @@ func TestBaggageFunctions(t *testing.T) {
 		ctx = SetBaggage(ctx, "foo", "bar")
 
 		// Retrieve that value
-		got := Baggage(ctx, "foo")
-		want := "bar"
-		if got != want {
-			t.Errorf("Baggage(ctx, \"foo\") = %q; want %q", got, want)
+		got, ok := Baggage(ctx, "foo")
+		if !ok {
+			t.Error("Expected key \"foo\" to be found in baggage, got ok=false")
+		}
+		if got != "bar" {
+			t.Errorf("Baggage(ctx, \"foo\") = %q; want \"bar\"", got)
 		}
 
 		// Ensure retrieving a non-existent key returns an empty string
-		got = Baggage(ctx, "missingKey")
+		got, ok = Baggage(ctx, "missingKey")
+		if ok {
+			t.Error("Expected key \"missingKey\" to not be found, got ok=true")
+		}
 		if got != "" {
 			t.Errorf("Baggage(ctx, \"missingKey\") = %q; want \"\"", got)
 		}
@@ -54,7 +59,8 @@ func TestBaggageFunctions(t *testing.T) {
 
 		// Confirm returned map is a copy, not the original
 		all["key1"] = "modified"
-		if Baggage(ctx, "key1") == "modified" {
+		val, _ := Baggage(ctx, "key1")
+		if val == "modified" {
 			t.Error("AllBaggage returned a map that mutates the original baggage!")
 		}
 	})
@@ -69,7 +75,10 @@ func TestBaggageFunctions(t *testing.T) {
 		ctx = RemoveBaggage(ctx, "deleteMe")
 
 		// Verify removal
-		got := Baggage(ctx, "deleteMe")
+		got, ok := Baggage(ctx, "deleteMe")
+		if ok {
+			t.Error("Expected key \"deleteMe\" to be removed, got ok=true")
+		}
 		if got != "" {
 			t.Errorf("Expected empty string for removed key; got %q", got)
 		}
@@ -92,15 +101,15 @@ func TestBaggageFunctions(t *testing.T) {
 		}
 	})
 
-	t.Run("WithBaggage", func(t *testing.T) {
+	t.Run("withBaggage", func(t *testing.T) {
 		ctx := context.Background()
 
 		// Create a map and insert into context directly
 		initialMap := map[string]string{"customKey": "customValue"}
-		ctx = WithBaggage(ctx, initialMap)
+		ctx = withBaggage(ctx, initialMap)
 
 		// Verify
-		got := Baggage(ctx, "customKey")
+		got, _ := Baggage(ctx, "customKey")
 		if got != "customValue" {
 			t.Errorf("Baggage(ctx, \"customKey\") = %q; want \"customValue\"", got)
 		}
