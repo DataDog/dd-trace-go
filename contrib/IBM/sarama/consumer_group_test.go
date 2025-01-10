@@ -91,7 +91,7 @@ func TestWrapConsumerGroupHandler(t *testing.T) {
 	s0 := spans[0]
 	assert.Equal(t, "kafka", s0.Tag(ext.ServiceName))
 	assert.Equal(t, "queue", s0.Tag(ext.SpanType))
-	assert.Equal(t, "Produce Topic gotest", s0.Tag(ext.ResourceName))
+	assert.Equal(t, "Produce Topic gotest_ibm_sarama", s0.Tag(ext.ResourceName))
 	assert.Equal(t, "kafka.produce", s0.OperationName())
 	assert.Equal(t, float64(0), s0.Tag(ext.MessagingKafkaPartition))
 	assert.NotNil(t, s0.Tag("offset"))
@@ -104,7 +104,7 @@ func TestWrapConsumerGroupHandler(t *testing.T) {
 	s1 := spans[1]
 	assert.Equal(t, "kafka", s1.Tag(ext.ServiceName))
 	assert.Equal(t, "queue", s1.Tag(ext.SpanType))
-	assert.Equal(t, "Consume Topic gotest", s1.Tag(ext.ResourceName))
+	assert.Equal(t, "Consume Topic gotest_ibm_sarama", s1.Tag(ext.ResourceName))
 	assert.Equal(t, "kafka.consume", s1.OperationName())
 	assert.Equal(t, float64(0), s1.Tag(ext.MessagingKafkaPartition))
 	assert.NotNil(t, s1.Tag("offset"))
