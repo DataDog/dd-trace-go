@@ -6,6 +6,12 @@ on:
         description: Orchestrion version to use for integration testing
         type: string
         required: false
+  workflow_call: # From github.com/DataDog/orchestrion
+    inputs:
+      orchestrion-version:
+        description: Orchestrion version to use for integration testing
+        type: string
+        required: true
   pull_request:
   merge_group:
   push:
@@ -19,12 +25,13 @@ permissions: read-all
 
 concurrency:
   # Automatically cancel previous runs if a new one is triggered to conserve resources.
-  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}${{ (github.event_name == 'workflow_dispatch' || github.event_name == 'workflow-call') && format('-{0}', github.event.inputs.orchestrion-version) || '' }}
   cancel-in-progress: true
 
 jobs:
   generate:
     name: Verify generated files are up-to-date
+    if: github.event_name != 'workflow_call'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
@@ -83,9 +90,9 @@ jobs:
       - name: Install ddapm-test-agent
         run: pip install -r internal/orchestrion/_integration/internal/agent/requirements-dev.txt
 
-      # If we're in workflow_dispatch, maybe we need to up/downgrade orchestrion
+      # If we're in workflow_dispatch/call, maybe we need to up/downgrade orchestrion
       - name: Set up orchestrion
-        if: github.event_name == 'workflow_dispatch' && github.event.inputs.orchestrion-version != ''
+        if: (github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call') && github.event.inputs.orchestrion-version != ''
         run: |-
           go get "github.com/DataDog/orchestrion@${VERSION}"
           go mod tidy
