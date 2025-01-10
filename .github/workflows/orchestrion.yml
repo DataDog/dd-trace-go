@@ -12,6 +12,11 @@ on:
         description: Orchestrion version to use for integration testing
         type: string
         required: true
+      collect-coverage:
+        description: Whether to collect orchestrion coverage data or not
+        type: boolean
+        default: false
+        required: false
   pull_request:
   merge_group:
   push:
@@ -74,6 +79,7 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
       - name: Setup Go
+        id: setup-of
         uses: actions/setup-go@v5
         with:
           go-version: ${{ matrix.go-version }}
@@ -101,8 +107,16 @@ jobs:
           VERSION: ${{ github.event.inputs.orchestrion-version }}
       # We install the binary to the GOBIN, so it's easy to use
       - name: Install orchestrion binary
+        if: github.event_name != 'workflow_call' || !github.event.inputs.collect-coverage
         run: |-
           go install "github.com/DataDog/orchestrion"
+        working-directory: internal/orchestrion/_integration
+      - name: Build orchestrion binary
+        if: github.event_name == 'workflow_call' && github.event.inputs.collect-coverage
+        shell: bash
+        run: |-
+          go build -cover -covermode=atomic -coverpkg="github.com/DataDog/orchestrion/..." -o=/usr/local/bin/orchestrion "github.com/DataDog/orchestrion"
+          echo "GOCOVERDIR=$(mktemp -d)" >> "${GITHUB_ENV}"
         working-directory: internal/orchestrion/_integration
 
       # Finally, we run the test suite!
@@ -129,3 +143,21 @@ jobs:
           GOFLAGS: -tags=githubci${{ matrix.mode == 'DRIVER' && ',buildtag' || ''}} # The "buildtag" tag is used in //dd:span integration tests
           MODE: ${{ matrix.mode }}
           DD_ORCHESTRION_IS_GOMOD_VERSION: true # Prevent auto-respawn, which is problematic with installs from commit SHA
+
+      # If in workflow_call, we collected coverage data we need to upload
+      - name: Consolidate coverage report
+        if: github.event_name == 'workflow_call' && github.event.inputs.collect-coverage
+        run: go tool covdata textfmt -i "${GOCOVERDIR}" -o ./coverage/integration.out
+      - name: Determine go minor version
+        if: github.event_name == 'workflow_call' && github.event.inputs.collect-coverage
+        id: go
+        shell: bash
+        run: |-
+          set -euo pipefail
+          echo "version=$(echo '${{ steps.setup-go.outputs.go-version }}' | cut -d'.' -f1,2)" >> "${GITHUB_OUTPUT}"
+      - name: Upload coverage report
+        if: github.event_name == 'workflow_call' && github.event.inputs.collect-coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-integration+${{ matrix.mode }}+go${{ steps.go.outputs.version }}+${{ runner.os }}+${{ runner.arch }}
+          path: ./coverage/integration.out
