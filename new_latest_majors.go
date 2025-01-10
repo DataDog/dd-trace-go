@@ -156,7 +156,7 @@ func GetLatestMajorContrib(repository string) (string, error) {
 	return latestVersion, nil
 }
 
-// extractVersionFromGoMod parses the go.mod file and extracts the version of the specified repository.
+// // // extractVersionFromGoMod parses the go.mod file and extracts the version of the specified repository.
 func extractVersionFromGoMod(goModPath string, repository string) (string, error) {
 	file, err := os.Open(goModPath)
 	if err != nil {
