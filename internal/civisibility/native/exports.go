@@ -340,6 +340,36 @@ typedef struct {
 	topt_TslvId span_id;
 	Bool valid;
 } topt_SpanResult;
+
+// topt_MockSpan represents a mock span for testing purposes.
+// Fields:
+//   - span_id: The ID of the span.
+//   - trace_id: The ID of the trace this span belongs to.
+//   - parent_span_id: The ID of the parent span.
+//   - start_time: The time when the span started.
+//   - finish_time: The time when the span finished.
+//   - operation_name: The name of the operation represented by the span.
+//   - string_tags: An array of string tags for the span.
+//   - number_tags: An array of numeric tags for the span.
+typedef struct {
+ 	topt_TslvId span_id;
+	topt_TslvId trace_id;
+	topt_TslvId parent_span_id;
+	topt_UnixTime start_time;
+	topt_UnixTime finish_time;
+	char* operation_name;
+    topt_KeyValueArray string_tags;
+	topt_KeyNumberArray number_tags;
+} topt_MockSpan;
+
+// topt_MockSpanArray is an array of mock spans.
+// Fields:
+//   - data: Pointer to an array of topt_MockSpan.
+//   - len: The length of the array.
+typedef struct {
+	topt_MockSpan* data;
+	size_t len;
+} topt_MockSpanArray;
 */
 import "C"
 import (
@@ -372,6 +402,7 @@ const (
 	topt_SkippableTest_Size    = C.size_t(unsafe.Sizeof(C.topt_SkippableTest{}))
 	topt_TestCoverageFile_Size = C.size_t(unsafe.Sizeof(C.topt_TestCoverageFile{}))
 	topt_TestCoverage_Size     = C.size_t(unsafe.Sizeof(C.topt_TestCoverage{}))
+	topt_MockSpan_Size         = C.size_t(unsafe.Sizeof(C.topt_MockSpan{}))
 )
 
 type (
@@ -422,6 +453,14 @@ func getUnixTime(unixTime *C.topt_UnixTime) time.Time {
 		return time.Now()
 	}
 	return time.Unix(int64(unixTime.sec), int64(unixTime.nsec))
+}
+
+// toUnixTime converts a Go time.Time to C.UnixTime.
+func toUnixTime(t time.Time) C.topt_UnixTime {
+	return C.topt_UnixTime{
+		sec:  C.Uint64(t.Unix()),
+		nsec: C.Uint64(t.Nanosecond()),
+	}
 }
 
 // toBool converts a Go bool to a C.Bool (0 or 1).
@@ -666,13 +705,15 @@ func topt_get_known_tests() C.topt_KnownTestArray {
 //
 //export topt_free_known_tests
 func topt_free_known_tests(knownTests C.topt_KnownTestArray) {
-	for i := C.size_t(0); i < knownTests.len; i++ {
-		knownTest := *(*C.topt_KnownTest)(unsafe.Add(unsafe.Pointer(knownTests.data), i*topt_KnownTest_Size))
-		C.free(unsafe.Pointer(knownTest.module_name))
-		C.free(unsafe.Pointer(knownTest.suite_name))
-		C.free(unsafe.Pointer(knownTest.test_name))
+	if knownTests.data != nil {
+		for i := C.size_t(0); i < knownTests.len; i++ {
+			knownTest := *(*C.topt_KnownTest)(unsafe.Add(unsafe.Pointer(knownTests.data), i*topt_KnownTest_Size))
+			C.free(unsafe.Pointer(knownTest.module_name))
+			C.free(unsafe.Pointer(knownTest.suite_name))
+			C.free(unsafe.Pointer(knownTest.test_name))
+		}
+		C.free(unsafe.Pointer(knownTests.data))
 	}
-	C.free(unsafe.Pointer(knownTests.data))
 }
 
 // topt_get_skippable_tests retrieves an array of tests that should be skipped, including their parameters and any custom configurations.
@@ -724,14 +765,16 @@ func topt_get_skippable_tests() C.topt_SkippableTestArray {
 //
 //export topt_free_skippable_tests
 func topt_free_skippable_tests(skippableTests C.topt_SkippableTestArray) {
-	for i := C.size_t(0); i < skippableTests.len; i++ {
-		skippableTest := *(*C.topt_SkippableTest)(unsafe.Add(unsafe.Pointer(skippableTests.data), i*topt_SkippableTest_Size))
-		C.free(unsafe.Pointer(skippableTest.suite_name))
-		C.free(unsafe.Pointer(skippableTest.test_name))
-		C.free(unsafe.Pointer(skippableTest.parameters))
-		C.free(unsafe.Pointer(skippableTest.custom_configurations_json))
+	if skippableTests.data != nil {
+		for i := C.size_t(0); i < skippableTests.len; i++ {
+			skippableTest := *(*C.topt_SkippableTest)(unsafe.Add(unsafe.Pointer(skippableTests.data), i*topt_SkippableTest_Size))
+			C.free(unsafe.Pointer(skippableTest.suite_name))
+			C.free(unsafe.Pointer(skippableTest.test_name))
+			C.free(unsafe.Pointer(skippableTest.parameters))
+			C.free(unsafe.Pointer(skippableTest.custom_configurations_json))
+		}
+		C.free(unsafe.Pointer(skippableTests.data))
 	}
-	C.free(unsafe.Pointer(skippableTests.data))
 }
 
 // topt_send_code_coverage_payload sends one or more code coverage payloads to the backend.
@@ -1710,4 +1753,198 @@ func topt_debug_mock_tracer_reset() C.Bool {
 		return toBool(true)
 	}
 	return toBool(false)
+}
+
+func getMockSpanArrayFromSpanSlice(spans []mocktracer.Span) C.topt_MockSpanArray {
+	spansCount := len(spans)
+	if spansCount == 0 {
+		return C.topt_MockSpanArray{len: C.size_t(0)}
+	}
+
+	spansSlice := make([]C.topt_MockSpan, spansCount)
+	for i, span := range spans {
+		mSpan := C.topt_MockSpan{
+			span_id:        C.topt_TslvId(span.SpanID()),
+			trace_id:       C.topt_TslvId(span.TraceID()),
+			parent_span_id: C.topt_TslvId(span.ParentID()),
+			start_time:     toUnixTime(span.StartTime()),
+			finish_time:    toUnixTime(span.FinishTime()),
+			operation_name: C.CString(span.OperationName()),
+		}
+
+		var stringTagsSlice []C.topt_KeyValuePair
+		var numberTagsSlice []C.topt_KeyNumberPair
+		for key, value := range span.Tags() {
+			if strVal, ok := value.(string); ok {
+				stringTagsSlice = append(stringTagsSlice, C.topt_KeyValuePair{
+					key:   C.CString(key),
+					value: C.CString(strVal),
+				})
+			}
+			if numVal, ok := value.(float64); ok {
+				numberTagsSlice = append(numberTagsSlice, C.topt_KeyNumberPair{
+					key:   C.CString(key),
+					value: C.double(numVal),
+				})
+			}
+		}
+
+		stringTagsData := unsafe.Pointer(C.malloc(C.size_t(len(stringTagsSlice)) * topt_KeyValuePair_Size))
+		for i, tag := range stringTagsSlice {
+			*(*C.topt_KeyValuePair)(unsafe.Add(stringTagsData, C.size_t(i)*topt_KeyValuePair_Size)) = tag
+		}
+		mSpan.string_tags = C.topt_KeyValueArray{
+			data: (*C.topt_KeyValuePair)(stringTagsData),
+			len:  C.size_t(len(stringTagsSlice)),
+		}
+
+		numberTagsData := unsafe.Pointer(C.malloc(C.size_t(len(numberTagsSlice)) * topt_KeyNumberPair_Size))
+		for i, tag := range numberTagsSlice {
+			*(*C.topt_KeyNumberPair)(unsafe.Add(numberTagsData, C.size_t(i)*topt_KeyNumberPair_Size)) = tag
+		}
+		mSpan.number_tags = C.topt_KeyNumberArray{
+			data: (*C.topt_KeyNumberPair)(numberTagsData),
+			len:  C.size_t(len(numberTagsSlice)),
+		}
+
+		spansSlice[i] = mSpan
+	}
+
+	cSpans := unsafe.Pointer(C.malloc(C.size_t(spansCount) * topt_MockSpan_Size))
+	for i, mSpan := range spansSlice {
+		*(*C.topt_MockSpan)(unsafe.Add(cSpans, C.size_t(i)*topt_MockSpan_Size)) = mSpan
+	}
+
+	return C.topt_MockSpanArray{
+		data: (*C.topt_MockSpan)(cSpans),
+		len:  C.size_t(spansCount),
+	}
+}
+
+// topt_debug_mock_tracer_get_finished_spans retrieves all spans that have been finished in the mock tracer.
+//
+// This function returns a dynamically allocated array of `topt_MockSpan` structs, each representing a
+// completed span recorded by the currently active mock tracer (if any).
+//
+// Returns:
+//   - `topt_MockSpanArray`: A struct containing a pointer to an array of `topt_MockSpan` and its length. If
+//     the mock tracer is not in use or no spans have been finished, the returned `len` will be zero.
+//
+// Usage notes:
+//   - This function is only meaningful if `topt_initialize` was called with `use_mock_tracer = true`; otherwise
+//     it will return an empty array.
+//   - The memory allocated for the returned array (and its internal C strings) must be freed using
+//     `topt_debug_mock_tracer_free_mock_span_array` to avoid memory leaks.
+//
+// Example usage:
+//
+//	// Call this after tests or instrumentation are complete to inspect finished spans.
+//	finishedSpans := topt_debug_mock_tracer_get_finished_spans()
+//	if finishedSpans.len > 0 {
+//	    // Process the finished spans...
+//	}
+//	topt_debug_mock_tracer_free_mock_span_array(finishedSpans)
+//
+//export topt_debug_mock_tracer_get_finished_spans
+func topt_debug_mock_tracer_get_finished_spans() C.topt_MockSpanArray {
+	if exports.mockTracer == nil {
+		return C.topt_MockSpanArray{len: C.size_t(0)}
+	}
+
+	spans := exports.mockTracer.FinishedSpans()
+	return getMockSpanArrayFromSpanSlice(spans)
+}
+
+// topt_debug_mock_tracer_get_open_spans retrieves all spans that are currently
+// in-progress (open) in the mock tracer.
+//
+// Returns:
+//   - topt_MockSpanArray: A struct containing a pointer to an array of topt_MockSpan
+//     and its length. If the mock tracer is not in use, or if there are no open spans,
+//     the returned array will have len = 0.
+//
+// Usage notes:
+//   - This function is only meaningful if topt_initialize was called with
+//     use_mock_tracer = true; otherwise, it will return an empty array.
+//   - The memory allocated for the returned array (and all C strings within each
+//     topt_MockSpan) must be freed using topt_debug_mock_tracer_free_mock_span_array
+//     to avoid memory leaks.
+//
+// Example usage:
+//
+//	topt_MockSpanArray openSpans = topt_debug_mock_tracer_get_open_spans();
+//	if (openSpans.len > 0) {
+//	    // Inspect or log the in-progress spans here...
+//	}
+//	topt_debug_mock_tracer_free_mock_span_array(openSpans);
+//
+//export topt_debug_mock_tracer_get_open_spans
+func topt_debug_mock_tracer_get_open_spans() C.topt_MockSpanArray {
+	if exports.mockTracer == nil {
+		return C.topt_MockSpanArray{len: C.size_t(0)}
+	}
+
+	spans := exports.mockTracer.OpenSpans()
+	return getMockSpanArrayFromSpanSlice(spans)
+}
+
+// topt_debug_mock_tracer_free_mock_span_array deallocates all memory previously
+// allocated and returned by the mock tracer retrieval functions (e.g.,
+// topt_debug_mock_tracer_get_finished_spans or topt_debug_mock_tracer_get_open_spans).
+//
+// Parameters:
+//   - spans: A topt_MockSpanArray structure obtained from
+//     topt_debug_mock_tracer_get_finished_spans or topt_debug_mock_tracer_get_open_spans.
+//
+// What this function frees:
+//   - The top-level array of topt_MockSpan itself.
+//   - Each operation_name string (if not NULL).
+//   - All strings (both key and value) inside each topt_KeyValuePair in string_tags.
+//   - All key strings inside each topt_KeyNumberPair in number_tags.
+//
+// Usage notes:
+//   - You must call this function once you have finished inspecting or using
+//     the spans data, to avoid memory leaks.
+//   - If spans.data is NULL or spans.len is zero, this function does nothing.
+//
+// Example usage:
+//
+//	topt_MockSpanArray finishedSpans = topt_debug_mock_tracer_get_finished_spans();
+//	if (finishedSpans.len > 0) {
+//	    // Process or log the finished spans here...
+//	}
+//	topt_debug_mock_tracer_free_mock_span_array(finishedSpans);
+//
+//export topt_debug_mock_tracer_free_mock_span_array
+func topt_debug_mock_tracer_free_mock_span_array(spans C.topt_MockSpanArray) {
+	if spans.data != nil {
+		for i := C.size_t(0); i < spans.len; i++ {
+			mSpan := *(*C.topt_MockSpan)(unsafe.Add(unsafe.Pointer(spans.data), i*topt_MockSpan_Size))
+			if mSpan.operation_name != nil {
+				C.free(unsafe.Pointer(mSpan.operation_name))
+			}
+			if mSpan.string_tags.data != nil {
+				for j := C.size_t(0); j < mSpan.string_tags.len; j++ {
+					tag := *(*C.topt_KeyValuePair)(unsafe.Add(unsafe.Pointer(mSpan.string_tags.data), j*topt_KeyValuePair_Size))
+					if tag.key != nil {
+						C.free(unsafe.Pointer(tag.key))
+					}
+					if tag.value != nil {
+						C.free(unsafe.Pointer(tag.value))
+					}
+				}
+				C.free(unsafe.Pointer(mSpan.string_tags.data))
+			}
+			if mSpan.number_tags.data != nil {
+				for j := C.size_t(0); j < mSpan.number_tags.len; j++ {
+					tag := *(*C.topt_KeyNumberPair)(unsafe.Add(unsafe.Pointer(mSpan.number_tags.data), j*topt_KeyNumberPair_Size))
+					if tag.key != nil {
+						C.free(unsafe.Pointer(tag.key))
+					}
+				}
+				C.free(unsafe.Pointer(mSpan.number_tags.data))
+			}
+		}
+		C.free(unsafe.Pointer(spans.data))
+	}
 }
