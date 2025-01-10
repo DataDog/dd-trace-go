@@ -787,6 +787,10 @@ func topt_free_skippable_tests(skippableTests C.topt_SkippableTestArray) {
 //
 //export topt_send_code_coverage_payload
 func topt_send_code_coverage_payload(coverages *C.topt_TestCoverage, coverages_length C.size_t) {
+	if coverages == nil || coverages_length == 0 {
+		return
+	}
+
 	coveragePayload := ciTestCovPayload{
 		Version: 2,
 	}
@@ -809,14 +813,12 @@ func topt_send_code_coverage_payload(coverages *C.topt_TestCoverage, coverages_l
 		coveragePayload.Coverages = append(coveragePayload.Coverages, coverageData)
 	}
 
-	if coverages_length > 0 {
-		// Create a new buffer to encode the coverage payload in MessagePack format
-		encodedBuf := new(bytes.Buffer)
-		jsonbytes, err := json.Marshal(&coveragePayload)
-		if err == nil {
-			encodedBuf.Write(jsonbytes)
-			exports.client.SendCoveragePayloadWithFormat(encodedBuf, net.FormatJSON)
-		}
+	// Create a new buffer to encode the coverage payload in MessagePack format
+	encodedBuf := new(bytes.Buffer)
+	jsonbytes, err := json.Marshal(&coveragePayload)
+	if err == nil {
+		encodedBuf.Write(jsonbytes)
+		exports.client.SendCoveragePayloadWithFormat(encodedBuf, net.FormatJSON)
 	}
 }
 
@@ -997,6 +999,10 @@ func getModule(module_id C.topt_ModuleId) (civisibility.TestModule, bool) {
 //
 //export topt_module_create
 func topt_module_create(session_id C.topt_SessionId, name *C.char, framework *C.char, framework_version *C.char, start_time *C.topt_UnixTime) C.topt_ModuleResult {
+	if name == nil {
+		return C.topt_ModuleResult{module_id: C.topt_ModuleId(0), valid: toBool(false)}
+	}
+
 	if session, ok := getSession(session_id); ok {
 		var moduleOptions []civisibility.TestModuleStartOption
 		if framework != nil {
@@ -1138,6 +1144,10 @@ func getSuite(suite_id C.topt_SuiteId) (civisibility.TestSuite, bool) {
 //
 //export topt_suite_create
 func topt_suite_create(module_id C.topt_ModuleId, name *C.char, start_time *C.topt_UnixTime) C.topt_SuiteResult {
+	if name == nil {
+		return C.topt_SuiteResult{suite_id: C.topt_SuiteId(0), valid: toBool(false)}
+	}
+
 	if module, ok := getModule(module_id); ok {
 		var suiteOptions []civisibility.TestSuiteStartOption
 		if start_time != nil {
@@ -1317,6 +1327,10 @@ func getTest(test_id C.topt_TestId) (civisibility.Test, bool) {
 //
 //export topt_test_create
 func topt_test_create(suite_id C.topt_SuiteId, name *C.char, start_time *C.topt_UnixTime) C.topt_TestResult {
+	if name == nil {
+		return C.topt_TestResult{test_id: C.topt_TestId(0), valid: toBool(false)}
+	}
+
 	if suite, ok := getSuite(suite_id); ok {
 		var testOptions []civisibility.TestStartOption
 		if start_time != nil {
@@ -1482,6 +1496,10 @@ func topt_test_set_source(test_id C.topt_TestId, file *C.char, start_line *C.int
 //
 //export topt_test_set_benchmark_string_data
 func topt_test_set_benchmark_string_data(test_id C.topt_TestId, measure_type *C.char, data_array C.topt_KeyValueArray) C.Bool {
+	if measure_type == nil {
+		return toBool(false)
+	}
+
 	if test, ok := getTest(test_id); ok {
 		data := make(map[string]any)
 		for i := C.size_t(0); i < data_array.len; i++ {
@@ -1512,6 +1530,10 @@ func topt_test_set_benchmark_string_data(test_id C.topt_TestId, measure_type *C.
 //
 //export topt_test_set_benchmark_number_data
 func topt_test_set_benchmark_number_data(test_id C.topt_TestId, measure_type *C.char, data_array C.topt_KeyNumberArray) C.Bool {
+	if measure_type == nil {
+		return toBool(false)
+	}
+
 	if test, ok := getTest(test_id); ok {
 		data := make(map[string]any)
 		for i := C.size_t(0); i < data_array.len; i++ {
@@ -1575,6 +1597,10 @@ func getContext(tslv_id C.topt_TslvId) context.Context {
 //
 //export topt_span_create
 func topt_span_create(parent_id C.topt_TslvId, span_options C.topt_SpanStartOptions) C.topt_SpanResult {
+	if span_options.operation_name == nil {
+		return C.topt_SpanResult{span_id: C.topt_TslvId(0), valid: toBool(false)}
+	}
+
 	var options []ddtracer.StartSpanOption
 	if span_options.start_time != nil {
 		options = append(options, ddtracer.StartTime(getUnixTime(span_options.start_time)))
