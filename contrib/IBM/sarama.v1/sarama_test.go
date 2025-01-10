@@ -23,8 +23,8 @@ import (
 var kafkaBrokers = []string{"localhost:9092", "localhost:9093", "localhost:9094"}
 
 const (
-	testGroupID = "gotest"
-	testTopic   = "gotest"
+	testGroupID = "gotest_ibm_sarama"
+	testTopic   = "gotest_ibm_sarama"
 )
 
 func TestNamingSchema(t *testing.T) {
