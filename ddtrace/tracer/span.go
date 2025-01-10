@@ -722,6 +722,13 @@ func (s *span) Format(f fmt.State, c rune) {
 	}
 }
 
+func getMeta(s *span, key string) (string, bool) {
+	s.RLock()
+	defer s.RUnlock()
+	val, ok := s.Meta[key]
+	return val, ok
+}
+
 const (
 	keySamplingPriority     = "_sampling_priority_v1"
 	keySamplingPriorityRate = "_dd.agent_psr"
