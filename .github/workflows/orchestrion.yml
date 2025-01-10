@@ -81,7 +81,7 @@ jobs:
           cache: pip
           cache-dependency-path: 'internal/orchestrion/_integration/internal/agent/requirements-dev.txt'
       - name: Install ddapm-test-agent
-        run: pip install -r internal/orchestrion/_integration/requirements-dev.txt
+        run: pip install -r internal/orchestrion/_integration/internal/agent/requirements-dev.txt
 
       # If we're in workflow_dispatch, maybe we need to up/downgrade orchestrion
       - name: Set up orchestrion
