@@ -46,11 +46,15 @@ func patternValues(pattern string, request *http.Request) map[string]string {
 
 func getPatternNames(pattern string) []string {
 	if v, ok := patternSegmentsCache.Load(pattern); ok {
+		if v == nil {
+			return nil
+		}
 		return v.([]string)
 	}
 
 	segments, err := patternNames(pattern)
 	if err != nil {
+		// Ignore the error: Something as gone wrong, but we are not eager to find out why.
 		log.Debug("contrib/net/http: failed to parse mux path pattern %q: %v", pattern, err)
 		// here we fallthrough instead of returning to load a nil value into the cache to avoid reparsing the pattern.
 	}
