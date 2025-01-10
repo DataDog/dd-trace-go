@@ -61,6 +61,24 @@ func getPatternNames(pattern string) []string {
 
 // patternNames returns the names of the wildcards in the pattern.
 // Based on https://cs.opensource.google/go/go/+/refs/tags/go1.23.4:src/net/http/pattern.go;l=84
+// but very simplified as we know that the pattern returned must be valid or `net/http` would have panicked earlier.
+//
+// The pattern string's syntax is
+//
+//	[METHOD] [HOST]/[PATH]
+//
+// where:
+//   - METHOD is an HTTP method
+//   - HOST is a hostname
+//   - PATH consists of slash-separated segments, where each segment is either
+//     a literal or a wildcard of the form "{name}", "{name...}", or "{$}".
+//
+// METHOD, HOST and PATH are all optional; that is, the string can be "/".
+// If METHOD is present, it must be followed by at least one space or tab.
+// Wildcard names must be valid Go identifiers.
+// The "{$}" and "{name...}" wildcard must occur at the end of PATH.
+// PATH may end with a '/'.
+// Wildcard names in a path must be distinct.
 func patternNames(pattern string) ([]string, error) {
 	if len(pattern) == 0 {
 		return nil, errors.New("empty pattern")
