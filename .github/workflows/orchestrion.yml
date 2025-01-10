@@ -24,7 +24,7 @@ concurrency:
 
 jobs:
   generate:
-    name: Verify root orchestrion.tool.go file is up-to-date
+    name: Verify generated files are up-to-date
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
@@ -36,7 +36,7 @@ jobs:
           cache: true
           cache-dependency-path: '**/go.mod'
       - name: Run generator
-        run: go generate ./internal/orchestrion
+        run: go generate ./internal/orchestrion/...
       - name: Check for changes
         run: git diff --exit-code
 
@@ -79,7 +79,7 @@ jobs:
         with:
           python-version: 3.x
           cache: pip
-          cache-dependency-path: 'internal/orchestrion/_integration/requirements-dev.txt'
+          cache-dependency-path: 'internal/orchestrion/_integration/internal/agent/requirements-dev.txt'
       - name: Install ddapm-test-agent
         run: pip install -r internal/orchestrion/_integration/requirements-dev.txt
 
