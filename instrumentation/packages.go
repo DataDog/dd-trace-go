@@ -739,6 +739,10 @@ var packages = map[Package]PackageInfo{
 	},
 }
 
+func GetPackages() map[Package]PackageInfo {
+	return packages // TODO: change to return a deep copy
+}
+
 func staticName(name string) func(OperationContext) string {
 	return func(_ OperationContext) string {
 		return name
