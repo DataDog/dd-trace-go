@@ -31,6 +31,7 @@ import (
 	httptrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/config"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
@@ -945,7 +946,7 @@ func TestAttackerFingerprinting(t *testing.T) {
 
 	// Start and trace an HTTP server
 	mux := httptrace.NewServeMux()
-	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/test", func(w http.ResponseWriter, r *http.Request) {
 		pAppsec.TrackUserLoginSuccessEvent(
 			r.Context(),
 			"toto",
@@ -956,31 +957,58 @@ func TestAttackerFingerprinting(t *testing.T) {
 
 		w.Write([]byte("Hello World!\n"))
 	})
+
+	mux.HandleFunc("/id/auth/v1/login", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(401)
+	})
+
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
 
-	mt := mocktracer.Start()
-	defer mt.Stop()
-	req, err := http.NewRequest("POST", srv.URL+"/test?x=1", nil)
-	require.NoError(t, err)
-	req.AddCookie(&http.Cookie{Name: "cookie", Value: "value"})
-	resp, err := srv.Client().Do(req)
-	require.NoError(t, err)
-	defer resp.Body.Close()
+	for _, tc := range []struct {
+		name string
+		url  string
+	}{
+		{
+			name: "SDK",
+			url:  "/test?x=1",
+		},
+		{
+			name: "WAF",
+			url:  "/?x=$globals",
+		},
+		{
+			name: "CustomRule",
+			url:  "/id/auth/v1/login",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			mt := mocktracer.Start()
+			defer mt.Stop()
 
-	require.Len(t, mt.FinishedSpans(), 1)
+			req, err := http.NewRequest("POST", srv.URL+tc.url, nil)
+			require.NoError(t, err)
+			req.AddCookie(&http.Cookie{Name: "cookie", Value: "value"})
+			resp, err := srv.Client().Do(req)
+			require.NoError(t, err)
+			defer resp.Body.Close()
 
-	tags := mt.FinishedSpans()[0].Tags()
+			require.Len(t, mt.FinishedSpans(), 1)
 
-	require.Contains(t, tags, "_dd.appsec.fp.http.header")
-	require.Contains(t, tags, "_dd.appsec.fp.http.endpoint")
-	require.Contains(t, tags, "_dd.appsec.fp.http.network")
-	require.Contains(t, tags, "_dd.appsec.fp.session")
+			tags := mt.FinishedSpans()[0].Tags()
 
-	require.Regexp(t, `^hdr-`, tags["_dd.appsec.fp.http.header"])
-	require.Regexp(t, `^http-`, tags["_dd.appsec.fp.http.endpoint"])
-	require.Regexp(t, `^ssn-`, tags["_dd.appsec.fp.session"])
-	require.Regexp(t, `^net-`, tags["_dd.appsec.fp.http.network"])
+			require.Contains(t, tags, "_dd.appsec.fp.http.header")
+			require.Contains(t, tags, "_dd.appsec.fp.http.endpoint")
+			require.Contains(t, tags, "_dd.appsec.fp.http.network")
+			require.Contains(t, tags, "_dd.appsec.fp.session")
+
+			require.Regexp(t, `^hdr-`, tags["_dd.appsec.fp.http.header"])
+			require.Regexp(t, `^http-`, tags["_dd.appsec.fp.http.endpoint"])
+			require.Regexp(t, `^ssn-`, tags["_dd.appsec.fp.session"])
+			require.Regexp(t, `^net-`, tags["_dd.appsec.fp.http.network"])
+		})
+
+	}
 }
 
 func init() {
