@@ -12,6 +12,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+//go:generate go run github.com/DataDog/dd-trace-go/internal/orchestrion/_integration/internal/generator
+
 func TestOrchestrionPresent(t *testing.T) {
 	require.True(t, built.WithOrchestrion, "this test was not built with orchestrion enabled")
 }

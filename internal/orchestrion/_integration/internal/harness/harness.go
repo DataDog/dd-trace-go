@@ -26,7 +26,7 @@ type TestCase interface {
 	// are not satisfied by the test environment.
 	//
 	// The tracer is not yet started when Setup is executed.
-	Setup(context.Context, testing.TB)
+	Setup(context.Context, *testing.T)
 
 	// Run executes the test case after starting the tracer. This should perform
 	// the necessary calls to produce trace information from injected
@@ -34,7 +34,7 @@ type TestCase interface {
 	// is expected to be successful, database call does not error out, etc...).
 	// The tracer is shut down after the Run function returns, ensuring
 	// outstanding spans are flushed to the agent.
-	Run(context.Context, testing.TB)
+	Run(context.Context, *testing.T)
 
 	// ExpectedTraces returns a trace.Traces object describing all traces expected
 	// to be produced by the [TestCase.Run] function. There should be one entry
@@ -44,7 +44,7 @@ type TestCase interface {
 	ExpectedTraces() trace.Traces
 }
 
-func Run(t testing.TB, tc TestCase) {
+func Run(t *testing.T, tc TestCase) {
 	t.Helper()
 	require.True(t, built.WithOrchestrion, "this test suite must be run with orchestrion enabled")
 
@@ -53,12 +53,10 @@ func Run(t testing.TB, tc TestCase) {
 	defer mockAgent.Close()
 
 	ctx := context.Background()
-	if t, ok := t.(*testing.T); ok {
-		if deadline, ok := t.Deadline(); ok {
-			var cancel context.CancelFunc
-			ctx, cancel = context.WithDeadline(context.Background(), deadline)
-			defer cancel()
-		}
+	if deadline, ok := t.Deadline(); ok {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithDeadline(context.Background(), deadline)
+		defer cancel()
 	}
 
 	t.Log("Running setup")
