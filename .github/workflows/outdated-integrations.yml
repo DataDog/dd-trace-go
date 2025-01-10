@@ -22,12 +22,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       
-      - run: go get github.com/Masterminds/semver/v3
-
-      - run: go run .github/workflows/apps/latest_major_version.go > latests.txt
+      - run: go run new_latest_majors.go > latests.txt
 
       - run: git diff
 
+      # note: this will only create a PR if there is a new major available
       - name: Create Pull Request
         id: pr
         uses: peter-evans/create-pull-request@v6
