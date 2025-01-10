@@ -30,13 +30,14 @@ permissions: read-all
 
 concurrency:
   # Automatically cancel previous runs if a new one is triggered to conserve resources.
-  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}${{ (github.event_name == 'workflow_dispatch' || github.event_name == 'workflow-call') && format('-{0}', github.event.inputs.orchestrion-version) || '' }}
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}${{ inputs.orchestrion-version && format('-{0}', inputs.orchestrion-version) }}
   cancel-in-progress: true
 
 jobs:
   generate:
     name: Verify generated files are up-to-date
-    if: github.event_name != 'workflow_call'
+    # Don't run in workflow_call or workflow_dispatch
+    if: github.event_name == 'workflow_dispatch' || inputs.orchestrion-version == ''
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
@@ -78,8 +79,12 @@ jobs:
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
+        with:
+          repository: ${{ github.event != 'workflow_dispatch' && inputs.orchestrion-version != '' && 'DataDog/dd-trace-go' || github.repository }}
+          # TODO: workflow_call ref should be set to `main` before merging...
+          ref: ${{ github.event != 'workflow_dispatch' && inputs.orchestrion-version != '' && 'romain.marcadier/APPSEC-55160/orchestrion' || github.sha }}
       - name: Setup Go
-        id: setup-of
+        id: setup-go
         uses: actions/setup-go@v5
         with:
           go-version: ${{ matrix.go-version }}
@@ -98,7 +103,7 @@ jobs:
 
       # If we're in workflow_dispatch/call, maybe we need to up/downgrade orchestrion
       - name: Set up orchestrion
-        if: (github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call') && github.event.inputs.orchestrion-version != ''
+        if: inputs.orchestrion-version != ''
         run: |-
           go get "github.com/DataDog/orchestrion@${VERSION}"
           go mod tidy
@@ -107,12 +112,12 @@ jobs:
           VERSION: ${{ github.event.inputs.orchestrion-version }}
       # We install the binary to the GOBIN, so it's easy to use
       - name: Install orchestrion binary
-        if: github.event_name != 'workflow_call' || !github.event.inputs.collect-coverage
+        if: !inputs.collect-coverage
         run: |-
           go install "github.com/DataDog/orchestrion"
         working-directory: internal/orchestrion/_integration
       - name: Build orchestrion binary
-        if: github.event_name == 'workflow_call' && github.event.inputs.collect-coverage
+        if: inputs.collect-coverage
         shell: bash
         run: |-
           go build -cover -covermode=atomic -coverpkg="github.com/DataDog/orchestrion/..." -o=/usr/local/bin/orchestrion "github.com/DataDog/orchestrion"
@@ -146,17 +151,17 @@ jobs:
 
       # If in workflow_call, we collected coverage data we need to upload
       - name: Consolidate coverage report
-        if: github.event_name == 'workflow_call' && github.event.inputs.collect-coverage
+        if: inputs.collect-coverage
         run: go tool covdata textfmt -i "${GOCOVERDIR}" -o ./coverage/integration.out
       - name: Determine go minor version
-        if: github.event_name == 'workflow_call' && github.event.inputs.collect-coverage
+        if: inputs.collect-coverage
         id: go
         shell: bash
         run: |-
           set -euo pipefail
           echo "version=$(echo '${{ steps.setup-go.outputs.go-version }}' | cut -d'.' -f1,2)" >> "${GITHUB_OUTPUT}"
       - name: Upload coverage report
-        if: github.event_name == 'workflow_call' && github.event.inputs.collect-coverage
+        if: inputs.collect-coverage
         uses: actions/upload-artifact@v4
         with:
           name: coverage-integration+${{ matrix.mode }}+go${{ steps.go.outputs.version }}+${{ runner.os }}+${{ runner.arch }}
