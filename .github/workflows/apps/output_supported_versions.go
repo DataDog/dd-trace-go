@@ -6,28 +6,28 @@
 package main
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"fmt"
 	"os"
 	"os/exec"
-	"sort"
+	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"sync"
 	"time"
-	"path/filepath"
+
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
+	"golang.org/x/mod/modfile"
 )
 
 type ModuleVersion struct {
-	Name        string
-	MinVersion  string
-	MaxVersion  string
-	Repository  string
+	Name           string
+	MinVersion     string
+	MaxVersion     string
+	Repository     string
 	isInstrumented bool
-
 }
 
 type Integration struct {
@@ -92,66 +92,44 @@ func GetMinVersion(packageName, repositoryName string) (ModuleVersion, error) {
 		return ModuleVersion{}, fmt.Errorf("go.mod not found in %s", contribPath)
 	}
 
-	// Open and parse the go.mod file
-	file, err := os.Open(goModPath)
+	// Read the go.mod
+	data, err := os.ReadFile(goModPath)
 	if err != nil {
-		return ModuleVersion{}, fmt.Errorf("failed to open go.mod: %w", err)
+		return ModuleVersion{}, fmt.Errorf("failed to read go.mod: %w", err)
 	}
-	defer file.Close()
 
-	requireRegex := regexp.MustCompile(`^\s*([^\s]+)\s+v([0-9]+\.[0-9]+\.[0-9]+.*)`)
+	// Parse the go.mod
+	f, err := modfile.Parse(goModPath, data, nil)
+	if err != nil {
+		return ModuleVersion{}, fmt.Errorf("failed to parse go.mod: %w", err)
+	}
 
-	scanner := bufio.NewScanner(file)
-	inRequireBlock := false
+	// match the repository name
+	repoPattern := fmt.Sprintf(`\b%s\b`, strings.ReplaceAll(repositoryName, "/", `/`))
+	repoRegex, err := regexp.Compile(repoPattern)
+	if err != nil {
+		return ModuleVersion{}, fmt.Errorf("invalid repository regex pattern: %w", err)
+	}
 
-	var minVersion string
-
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-
-		if strings.HasPrefix(line, "require (") {
-			inRequireBlock = true
-			continue
-		}
-
-		if inRequireBlock && line == ")" {
-			inRequireBlock = false
-			continue
-		}
-
-		// Check for inline require statement (not in a block)
-		if !inRequireBlock && strings.HasPrefix(line, "require ") {
-			line = strings.TrimPrefix(line, "require ")
-		}
-
-		if inRequireBlock || strings.HasPrefix(line, repositoryName) {  // Process lines inside the require block or single-line requires
-			match := requireRegex.FindStringSubmatch(line)
-			if match != nil && match[1] == repositoryName {
-				minVersion = match[2]
-				break // Stop once we find the desired repository
-			}
+	// Iterate through require dependencies
+	for _, req := range f.Require {
+		if repoRegex.MatchString(req.Mod.Path) {
+			return ModuleVersion{
+				Name:           req.Mod.Path,
+				MinVersion:     req.Mod.Version,
+				MaxVersion:     "",
+				Repository:     req.Mod.Path,
+				isInstrumented: false,
+			}, nil
 		}
 	}
 
-	if err := scanner.Err(); err != nil {
-		return ModuleVersion{}, fmt.Errorf("error reading go.mod: %w", err)
-	}
-
-	if minVersion == "" {
-		return ModuleVersion{}, fmt.Errorf("repository %s not found in go.mod", repositoryName)
-	}
-
-	// Return the module info
-	return ModuleVersion{
-		Name: packageName,
-		Repository:  repositoryName,
-		MinVersion:  minVersion,
-	}, nil
+	return ModuleVersion{}, fmt.Errorf("repository %s not found in go.mod", repositoryName)
 }
 
 func fetchAllLatestVersions(modules []ModuleVersion) []ModuleVersion {
 	// Concurrently fetches the latest version of each module.
-		
+
 	var wg sync.WaitGroup
 	var mu sync.Mutex
 
@@ -171,7 +149,7 @@ func fetchAllLatestVersions(modules []ModuleVersion) []ModuleVersion {
 			}
 
 			mu.Lock()
-			updatedModules = append(updatedModules, ModuleVersion{mod.Name, 
+			updatedModules = append(updatedModules, ModuleVersion{mod.Name,
 				mod.MinVersion, latestVersion, mod.Repository, mod.isInstrumented})
 			mu.Unlock()
 		}(mod)
@@ -197,54 +175,54 @@ func writeMarkdownFile(modules []ModuleVersion, filePath string) error {
 	})
 
 	for _, mod := range modules {
-		if mod.Name != "" {		
+		if mod.Name != "" {
 			fmt.Fprintf(file, "| %s | %s | v%s | %s | %+v\n", mod.Name, mod.Repository, mod.MinVersion, mod.MaxVersion, mod.isInstrumented)
-	}	
-}
+		}
+	}
 	return nil
 }
 
 func initializeInstrumentedSet() map[string]struct{} {
 	// Hardcoded: this is from the table in https://github.com/DataDog/orchestrion
 	return map[string]struct{}{
-		"database/sql": {},
-		"github.com/gin-gonic/gin": {},
-		"github.com/go-chi/chi/v5": {},
-		"github.com/go-chi/chi": {},
-		"github.com/go-redis/redis/v7": {},
-		"github.com/go-redis/redis/v8": {},
-		"github.com/gofiber/fiber/v2": {},
-		"github.com/gomodule/redigo/redis": {},
-		"github.com/gorilla/mux": {},
-		"github.com/jinzhu/gorm": {},
-		"github.com/labstack/echo/v4": {},
-		"google.golang.org/grpc": {},
-		"gorm.io/gorm": {},
-		"net/http": {},
-		"go.mongodb.org/mongo-driver/mongo": {},
-		"github.com/aws/aws-sdk-go": {},
-		"github.com/hashicorp/vault": {},
-		"github.com/IBM/sarama": {},
-		"github.com/Shopify/sarama": {},
-		"k8s.io/client-go": {},
-		"log/slog": {},
-		"os": {},
-		"github.com/aws/aws-sdk-go-v2": {},
-		"github.com/redis/go-redis/v9": {},
-		"github.com/gocql/gocql": {},
-		"cloud.google.com/go/pubsub": {},
-		"github.com/99designs/gqlgen": {},
-		"github.com/redis/go-redis": {},
-		"github.com/graph-gophers/graphql-go": {},
-		"github.com/graphql-go/graphql": {},
-		"github.com/jackc/pgx": {},
-		"github.com/elastic/go-elasticsearch": {},
-		"github.com/twitchtv/twirp": {},
-		"github.com/segmentio/kafka-go": {},
-		"github.com/confluentinc/confluent-kafka-go/kafka": {},
+		"database/sql":                                        {},
+		"github.com/gin-gonic/gin":                            {},
+		"github.com/go-chi/chi/v5":                            {},
+		"github.com/go-chi/chi":                               {},
+		"github.com/go-redis/redis/v7":                        {},
+		"github.com/go-redis/redis/v8":                        {},
+		"github.com/gofiber/fiber/v2":                         {},
+		"github.com/gomodule/redigo/redis":                    {},
+		"github.com/gorilla/mux":                              {},
+		"github.com/jinzhu/gorm":                              {},
+		"github.com/labstack/echo/v4":                         {},
+		"google.golang.org/grpc":                              {},
+		"gorm.io/gorm":                                        {},
+		"net/http":                                            {},
+		"go.mongodb.org/mongo-driver/mongo":                   {},
+		"github.com/aws/aws-sdk-go":                           {},
+		"github.com/hashicorp/vault":                          {},
+		"github.com/IBM/sarama":                               {},
+		"github.com/Shopify/sarama":                           {},
+		"k8s.io/client-go":                                    {},
+		"log/slog":                                            {},
+		"os":                                                  {},
+		"github.com/aws/aws-sdk-go-v2":                        {},
+		"github.com/redis/go-redis/v9":                        {},
+		"github.com/gocql/gocql":                              {},
+		"cloud.google.com/go/pubsub":                          {},
+		"github.com/99designs/gqlgen":                         {},
+		"github.com/redis/go-redis":                           {},
+		"github.com/graph-gophers/graphql-go":                 {},
+		"github.com/graphql-go/graphql":                       {},
+		"github.com/jackc/pgx":                                {},
+		"github.com/elastic/go-elasticsearch":                 {},
+		"github.com/twitchtv/twirp":                           {},
+		"github.com/segmentio/kafka-go":                       {},
+		"github.com/confluentinc/confluent-kafka-go/kafka":    {},
 		"github.com/confluentinc/confluent-kafka-go/kafka/v2": {},
-		"github.com/julienschmidt/httprouter": {},
-		"github.com/sirupsen/logrus": {},
+		"github.com/julienschmidt/httprouter":                 {},
+		"github.com/sirupsen/logrus":                          {},
 	}
 }
 
@@ -282,7 +260,7 @@ func main() {
 	for i := range modules {
 		modules[i].isInstrumented = isModuleInstrumented(modules[i].Repository, instrumentedSet)
 	}
-	
+
 	modulesWithLatest := fetchAllLatestVersions(modules)
 
 	if err := writeMarkdownFile(modulesWithLatest, outputPath); err != nil {
