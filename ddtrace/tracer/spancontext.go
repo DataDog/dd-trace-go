@@ -520,16 +520,6 @@ func (t *trace) finishedOne(s *span) {
 }
 
 func (t *trace) finishChunk(tr *tracer, ch *chunk) {
-	for _, sp := range ch.spans {
-		if sp == nil {
-			continue
-		}
-		v, ok := tr.spansFinished.Load(sp.integration)
-		if !ok {
-			v, _ = tr.spansFinished.LoadOrStore(sp.integration, new(atomic.Int64))
-		}
-		v.Add(1)
-	}
 	tr.pushChunk(ch)
 	t.finished = 0 // important, because a buffer can be used for several flushes
 }
