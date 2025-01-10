@@ -63,7 +63,7 @@ func (mux *ServeMux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		Resource:    resource,
 		SpanOpts:    so,
 		Route:       route,
-		RouteParams: patternValues(r),
+		RouteParams: patternValues(pattern, r),
 	})
 }
 
@@ -83,6 +83,7 @@ func WrapHandler(h http.Handler, service, resource string, opts ...Option) http.
 			h.ServeHTTP(w, req)
 			return
 		}
+		// TODO: add calls to patternRoute and patternValues once 1.23 is the minimum supported version because 1.23 adds an `(*http.Request).Pattern` field
 		resc := resource
 		if r := cfg.resourceNamer(req); r != "" {
 			resc = r
@@ -91,11 +92,10 @@ func WrapHandler(h http.Handler, service, resource string, opts ...Option) http.
 		copy(so, cfg.spanOpts)
 		so = append(so, httptrace.HeaderTagsFromRequest(req, cfg.headerTags))
 		TraceAndServe(h, w, req, &ServeConfig{
-			Service:     service,
-			Resource:    resc,
-			FinishOpts:  cfg.finishOpts,
-			SpanOpts:    so,
-			RouteParams: patternValues(req),
+			Service:    service,
+			Resource:   resc,
+			FinishOpts: cfg.finishOpts,
+			SpanOpts:   so,
 		})
 	})
 }

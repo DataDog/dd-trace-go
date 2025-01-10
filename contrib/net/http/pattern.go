@@ -32,14 +32,14 @@ func patternRoute(s string) string {
 var patternSegmentsCache sync.Map // map[string][]string
 
 // patternValues return the path parameter values and names from the request.
-func patternValues(r *http.Request) map[string]string {
-	if r.Pattern == "" { // using <=1.21 serve mux behavior, aborting
+func patternValues(pattern string, request *http.Request) map[string]string {
+	if pattern == "" { // using <=1.21 serve mux behavior, aborting
 		return nil
 	}
-	names := getPatternNames(r.Pattern)
+	names := getPatternNames(pattern)
 	res := make(map[string]string, len(names))
 	for _, name := range names {
-		res[name] = r.PathValue(name)
+		res[name] = request.PathValue(name)
 	}
 	return res
 }
@@ -52,22 +52,22 @@ func getPatternNames(pattern string) []string {
 	segments, err := patternNames(pattern)
 	if err != nil {
 		log.Debug("contrib/net/http: failed to parse mux path pattern %q: %v", pattern, err)
-		return nil
+		// here we fallthrough instead of returning to load a nil value into the cache to avoid reparsing the pattern.
 	}
 
-	v, _ := patternSegmentsCache.LoadOrStore(pattern, segments)
-	return v.([]string)
+	patternSegmentsCache.Store(pattern, segments)
+	return segments
 }
 
 // patternNames returns the names of the wildcards in the pattern.
 // Based on https://cs.opensource.google/go/go/+/refs/tags/go1.23.4:src/net/http/pattern.go;l=84
-func patternNames(s string) ([]string, error) {
-	if len(s) == 0 {
+func patternNames(pattern string) ([]string, error) {
+	if len(pattern) == 0 {
 		return nil, errors.New("empty pattern")
 	}
-	method, rest, found := s, "", false
-	if i := strings.IndexAny(s, " \t"); i >= 0 {
-		method, rest, found = s[:i], strings.TrimLeft(s[i+1:], " \t"), true
+	method, rest, found := pattern, "", false
+	if i := strings.IndexAny(pattern, " \t"); i >= 0 {
+		method, rest, found = pattern[:i], strings.TrimLeft(pattern[i+1:], " \t"), true
 	}
 	if !found {
 		rest = method

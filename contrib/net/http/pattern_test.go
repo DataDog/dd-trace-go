@@ -66,7 +66,8 @@ func TestPathParams(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			mux := NewServeMux()
 			mux.HandleFunc(tt.pattern, func(_ http.ResponseWriter, r *http.Request) {
-				params := patternValues(r)
+				_, pattern := mux.Handler(r)
+				params := patternValues(pattern, r)
 				assert.Equal(t, tt.expected, params)
 			})
 
