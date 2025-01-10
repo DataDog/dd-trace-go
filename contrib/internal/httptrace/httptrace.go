@@ -26,9 +26,18 @@ var (
 	cfg = newConfig()
 )
 
+type inferredSpanCreatedCtxKey struct{}
+
+type inferredState struct {
+	inferCtx             context.Context
+	inferredProxySpan    tracer.Span
+	inferredProxySpanCtx ddtrace.SpanContext
+	isInferredProxySet   bool
+}
+
 // StartRequestSpan starts an HTTP request span with the standard list of HTTP request span tags (http.method, http.url,
 // http.useragent). Any further span start option can be added with opts.
-func StartRequestSpan(r *http.Request, opts ...ddtrace.StartSpanOption) (tracer.Span, context.Context) {
+func StartRequestSpan(r *http.Request, opts ...ddtrace.StartSpanOption) (tracer.Span, context.Context, func(status int, errorFn func(int) bool, opts ...tracer.FinishOption)) {
 	// Append our span options before the given ones so that the caller can "overwrite" them.
 	// TODO(): rework span start option handling (https://github.com/DataDog/dd-trace-go/issues/1352)
 
@@ -37,44 +46,87 @@ func StartRequestSpan(r *http.Request, opts ...ddtrace.StartSpanOption) (tracer.
 		ipTags, _ = httpsec.ClientIPTags(r.Header, true, r.RemoteAddr)
 	}
 
-	isInferredProxySpan := cfg.isInferredProxyServiceEnabled
-
 	nopts := make([]ddtrace.StartSpanOption, 0, len(opts)+1+len(ipTags))
-	nopts = append(nopts,
-		func(cfg *ddtrace.StartSpanConfig) {
-			if cfg.Tags == nil {
-				cfg.Tags = make(map[string]interface{})
-			}
+	spanParentCtx, spanParentErr := tracer.Extract(tracer.HTTPHeadersCarrier(r.Header))
 
-			cfg.Tags[ext.SpanType] = ext.SpanTypeWeb
-			cfg.Tags[ext.HTTPMethod] = r.Method
-			cfg.Tags[ext.HTTPURL] = urlFromRequest(r)
-			cfg.Tags[ext.HTTPUserAgent] = r.UserAgent()
-			cfg.Tags["_dd.measured"] = 1
-			if r.Host != "" {
-				cfg.Tags["http.host"] = r.Host
-			}
+	s := &inferredState{
+		inferCtx:           nil,
+		isInferredProxySet: false,
+	}
 
-			spanctx, err := tracer.Extract(tracer.HTTPHeadersCarrier(r.Header))
-			isInferredProxySet := false
+	// Check if proxy span is already set in context
+	isInferredProxySpan := cfg.isInferredProxyServiceEnabled
+	if existingSet, ok := r.Context().Value(inferredSpanCreatedCtxKey{}).(bool); ok {
+		s.isInferredProxySet = existingSet
+	}
 
-			if isInferredProxySpan {
-				if inferred_proxy_span_ctx := tryCreateInferredProxySpan(r.Header, spanctx); inferred_proxy_span_ctx != nil {
-					cfg.Parent = inferred_proxy_span_ctx
-					isInferredProxySet = true
+	if isInferredProxySpan && !s.isInferredProxySet {
+		if s.inferredProxySpan, s.inferredProxySpanCtx = tryCreateInferredProxySpan(r.Header, spanParentCtx); s.inferredProxySpanCtx != nil {
+			s.isInferredProxySet = true
+			s.inferCtx = context.WithValue(r.Context(), inferredSpanCreatedCtxKey{}, s.isInferredProxySet)
+
+			nopts = append(nopts,
+				func(cfg *ddtrace.StartSpanConfig) {
+					if cfg.Tags == nil {
+						cfg.Tags = make(map[string]interface{})
+					}
+
+					cfg.Tags[ext.SpanType] = ext.SpanTypeWeb
+					cfg.Tags[ext.HTTPMethod] = r.Method
+					cfg.Tags[ext.HTTPURL] = urlFromRequest(r)
+					cfg.Tags[ext.HTTPUserAgent] = r.UserAgent()
+					cfg.Tags["_dd.measured"] = 1
+					if r.Host != "" {
+						cfg.Tags["http.host"] = r.Host
+					}
+
+					cfg.Parent = s.inferredProxySpanCtx
+
+					for k, v := range ipTags {
+						cfg.Tags[k] = v
+					}
+				})
+		}
+	} else {
+		nopts = append(nopts,
+			func(cfg *ddtrace.StartSpanConfig) {
+				if cfg.Tags == nil {
+					cfg.Tags = make(map[string]interface{})
 				}
-			}
 
-			if err != nil && !isInferredProxySet {
-				cfg.Parent = spanctx
-			}
+				cfg.Tags[ext.SpanType] = ext.SpanTypeWeb
+				cfg.Tags[ext.HTTPMethod] = r.Method
+				cfg.Tags[ext.HTTPURL] = urlFromRequest(r)
+				cfg.Tags[ext.HTTPUserAgent] = r.UserAgent()
+				cfg.Tags["_dd.measured"] = 1
+				if r.Host != "" {
+					cfg.Tags["http.host"] = r.Host
+				}
 
-			for k, v := range ipTags {
-				cfg.Tags[k] = v
-			}
-		})
+				if spanParentErr != nil {
+					cfg.Parent = spanParentCtx
+				}
+
+				for k, v := range ipTags {
+					cfg.Tags[k] = v
+				}
+			})
+	}
+
 	nopts = append(nopts, opts...)
-	return tracer.StartSpanFromContext(r.Context(), namingschema.OpName(namingschema.HTTPServer), nopts...)
+
+	// Use stored context or fallback to request context
+	if s.inferCtx == nil {
+		s.inferCtx = r.Context()
+	}
+
+	span, ctx := tracer.StartSpanFromContext(s.inferCtx, namingschema.OpName(namingschema.HTTPServer), nopts...)
+	return span, ctx, func(status int, errorFn func(int) bool, opts ...tracer.FinishOption) {
+		FinishRequestSpan(span, status, errorFn, opts...)
+		if s.isInferredProxySet {
+			FinishRequestSpan(s.inferredProxySpan, status, errorFn, opts...)
+		}
+	}
 }
 
 // FinishRequestSpan finishes the given HTTP request span and sets the expected response-related tags such as the status

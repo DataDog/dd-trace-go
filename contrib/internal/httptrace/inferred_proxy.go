@@ -76,21 +76,21 @@ func extractInferredProxyContext(headers http.Header) *ProxyContext {
 
 }
 
-func tryCreateInferredProxySpan(headers http.Header, parent ddtrace.SpanContext) ddtrace.SpanContext {
+func tryCreateInferredProxySpan(headers http.Header, parent ddtrace.SpanContext) (tracer.Span, ddtrace.SpanContext) {
 	if headers == nil {
 		log.Debug("Headers do not exist")
-		return nil
+		return nil, nil
 
 	}
 	if !internal.BoolEnv(inferredProxyServicesEnabled, false) {
 		log.Debug("The inferred proxy services are not enabled")
-		return nil
+		return nil, nil
 	}
 
 	requestProxyContext := extractInferredProxyContext(headers)
 	if requestProxyContext == nil {
 		log.Debug("Unabole to extract inferred proxy context")
-		return nil
+		return nil, nil
 	}
 
 	proxySpanInfo := supportedProxies[requestProxyContext.ProxySystemName]
@@ -100,7 +100,7 @@ func tryCreateInferredProxySpan(headers http.Header, parent ddtrace.SpanContext)
 	millis, err := strconv.ParseInt(requestProxyContext.RequestTime, 10, 64)
 	if err != nil {
 		log.Debug("Error parsing time string: %v", err)
-		return nil
+		return nil, nil
 	}
 
 	// Convert milliseconds to seconds and nanoseconds
@@ -129,10 +129,9 @@ func tryCreateInferredProxySpan(headers http.Header, parent ddtrace.SpanContext)
 	}
 
 	span := tracer.StartSpan(proxySpanInfo.SpanName, tracer.StartTime(config.StartTime), tracer.ChildOf(config.Parent), tracer.Tag("service", config.Tags["service"]))
-	defer span.Finish()
 	for k, v := range config.Tags {
 		span.SetTag(k, v)
 	}
 
-	return span.Context()
+	return span, span.Context()
 }

@@ -11,7 +11,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/normalizer"
 
-	"github.com/stretchr/testify/assert"
+	as "github.com/stretchr/testify/assert"
 )
 
 var appListener *httptest.Server
@@ -37,15 +37,23 @@ func loadTest(t *testing.T) {
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/error" {
 			w.WriteHeader(http.StatusInternalServerError)
-			json.NewEncoder(w).Encode(map[string]string{"message": "ERROR"})
+			err := json.NewEncoder(w).Encode(map[string]string{"message": "ERROR"})
+			if err != nil {
+				return
+			}
 		} else {
 			w.WriteHeader(http.StatusOK)
-			json.NewEncoder(w).Encode(map[string]string{"message": "OK"})
+			err := json.NewEncoder(w).Encode(map[string]string{"message": "OK"})
+			if err != nil {
+				return
+			}
 		}
 	})
+
 	appListener = httptest.NewServer(mux)
 
 }
+
 func cleanupTest() {
 	// close server
 	if appListener != nil {
@@ -64,16 +72,17 @@ func TestInferredProxySpans(t *testing.T) {
 		client := &http.Client{}
 		req, err := http.NewRequest("GET", fmt.Sprintf("%s/", appListener.URL), nil)
 
-		assert := assert.New(t)
+		assert := as.New(t)
 		assert.NoError(err)
 
 		for k, v := range inferredHeaders {
 			req.Header.Set(k, v)
 		}
 
-		sp, _ := StartRequestSpan(req)
+		cfg = newConfig()
+		_, _, finishSpans := StartRequestSpan(req)
 		resp, err := client.Do(req)
-		FinishRequestSpan(sp, resp.StatusCode, nil)
+		finishSpans(resp.StatusCode, nil)
 
 		spans := mt.FinishedSpans()
 
@@ -81,22 +90,22 @@ func TestInferredProxySpans(t *testing.T) {
 		assert.Equal(http.StatusOK, resp.StatusCode)
 
 		assert.Equal(2, len(spans))
-		gateway_span := spans[0]
-		web_req_span := spans[1]
-		assert.Equal("aws.apigateway", gateway_span.OperationName())
-		assert.Equal("http.request", web_req_span.OperationName())
-		assert.True(web_req_span.ParentID() == gateway_span.SpanID())
+		gatewaySpan := spans[1]
+		webReqSpan := spans[0]
+		assert.Equal("aws.apigateway", gatewaySpan.OperationName())
+		assert.Equal("http.request", webReqSpan.OperationName())
+		assert.True(webReqSpan.ParentID() == gatewaySpan.SpanID())
 		for _, arg := range inferredHeaders {
 			header, tag := normalizer.HeaderTag(arg)
 
 			// Default to an empty string if the tag does not exist
-			gateway_span_tags, exists := gateway_span.Tags()[tag]
+			gatewaySpanTags, exists := gatewaySpan.Tags()[tag]
 			if !exists {
-				gateway_span_tags = ""
+				gatewaySpanTags = ""
 			}
-			expected_tags := strings.Join(req.Header.Values(header), ",")
+			expectedTags := strings.Join(req.Header.Values(header), ",")
 			// compare expected and actual values
-			assert.Equal(expected_tags, gateway_span_tags)
+			assert.Equal(expectedTags, gatewaySpanTags)
 		}
 
 		assert.Equal(2, len(spans))
@@ -111,43 +120,44 @@ func TestInferredProxySpans(t *testing.T) {
 
 		client := &http.Client{}
 		req, err := http.NewRequest("GET", fmt.Sprintf("%s/error", appListener.URL), nil)
-		assert := assert.New(t)
+		assert := as.New(t)
 		assert.NoError(err)
 		for k, v := range inferredHeaders {
 			req.Header.Set(k, v)
 		}
 
-		sp, _ := StartRequestSpan(req)
+		cfg = newConfig()
+		_, _, finishSpans := StartRequestSpan(req)
 		resp, err := client.Do(req)
-		FinishRequestSpan(sp, resp.StatusCode, nil)
+		finishSpans(resp.StatusCode, nil)
 
 		assert.NoError(err)
 		assert.Equal(http.StatusInternalServerError, resp.StatusCode)
 
 		spans := mt.FinishedSpans()
 		assert.Equal(2, len(spans))
-		gateway_span := spans[0]
-		web_req_span := spans[1]
-		assert.Equal("aws.apigateway", gateway_span.OperationName())
-		assert.Equal("http.request", web_req_span.OperationName())
-		assert.True(web_req_span.ParentID() == gateway_span.SpanID())
+		gatewaySpan := spans[1]
+		webReqSpan := spans[0]
+		assert.Equal("aws.apigateway", gatewaySpan.OperationName())
+		assert.Equal("http.request", webReqSpan.OperationName())
+		assert.True(webReqSpan.ParentID() == gatewaySpan.SpanID())
 		for _, arg := range inferredHeaders {
 			header, tag := normalizer.HeaderTag(arg)
 
 			// Default to an empty string if the tag does not exist
-			gateway_span_tags, exists := gateway_span.Tags()[tag]
+			gatewaySpanTags, exists := gatewaySpan.Tags()[tag]
 			if !exists {
-				gateway_span_tags = ""
+				gatewaySpanTags = ""
 			}
-			expected_tags := strings.Join(req.Header.Values(header), ",")
+			expectedTags := strings.Join(req.Header.Values(header), ",")
 			// compare expected and actual values
-			assert.Equal(expected_tags, gateway_span_tags)
+			assert.Equal(expectedTags, gatewaySpanTags)
 		}
 		assert.Equal(2, len(spans))
 
 	})
 
-	t.Run("should not create API Gateway spanif headers are missing", func(t *testing.T) {
+	t.Run("should not create API Gateway span if headers are missing", func(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 		loadTest(t)
@@ -155,12 +165,13 @@ func TestInferredProxySpans(t *testing.T) {
 
 		client := &http.Client{}
 		req, err := http.NewRequest("GET", fmt.Sprintf("%s/no-aws-headers", appListener.URL), nil)
-		assert := assert.New(t)
+		assert := as.New(t)
 		assert.NoError(err)
 
-		sp, _ := StartRequestSpan(req)
+		cfg = newConfig()
+		_, _, finishSpans := StartRequestSpan(req)
 		resp, err := client.Do(req)
-		FinishRequestSpan(sp, resp.StatusCode, nil)
+		finishSpans(resp.StatusCode, nil)
 		assert.NoError(err)
 		assert.Equal(http.StatusOK, resp.StatusCode)
 
@@ -169,6 +180,7 @@ func TestInferredProxySpans(t *testing.T) {
 		assert.Equal("http.request", spans[0].OperationName())
 
 	})
+
 	t.Run("should not create API Gateway span if x-dd-proxy is missing", func(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
@@ -177,7 +189,7 @@ func TestInferredProxySpans(t *testing.T) {
 
 		client := &http.Client{}
 		req, err := http.NewRequest("GET", fmt.Sprintf("%s/no-aws-headers", appListener.URL), nil)
-		assert := assert.New(t)
+		assert := as.New(t)
 		assert.NoError(err)
 
 		for k, v := range inferredHeaders {
@@ -186,9 +198,10 @@ func TestInferredProxySpans(t *testing.T) {
 			}
 		}
 
-		sp, _ := StartRequestSpan(req)
+		cfg = newConfig()
+		_, _, finishSpans := StartRequestSpan(req)
 		resp, err := client.Do(req)
-		FinishRequestSpan(sp, resp.StatusCode, nil)
+		finishSpans(resp.StatusCode, nil)
 
 		assert.NoError(err)
 		assert.Equal(http.StatusOK, resp.StatusCode)
@@ -197,5 +210,53 @@ func TestInferredProxySpans(t *testing.T) {
 		assert.Equal(1, len(spans))
 		assert.Equal("http.request", spans[0].OperationName())
 
+	})
+
+	t.Run("should create only 1 API Gateway span", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+		loadTest(t)
+		defer cleanupTest()
+
+		client := &http.Client{}
+		req, err := http.NewRequest("GET", fmt.Sprintf("%s/", appListener.URL), nil)
+
+		assert := as.New(t)
+		assert.NoError(err)
+
+		for k, v := range inferredHeaders {
+			req.Header.Set(k, v)
+		}
+
+		cfg = newConfig()
+		_, _, finishSpans := StartRequestSpan(req)
+		resp, err := client.Do(req)
+		finishSpans(resp.StatusCode, nil)
+
+		spans := mt.FinishedSpans()
+
+		assert.NoError(err)
+		assert.Equal(http.StatusOK, resp.StatusCode)
+
+		assert.Equal(2, len(spans))
+		gatewaySpan := spans[1]
+		webReqSpan := spans[0]
+		assert.Equal("aws.apigateway", gatewaySpan.OperationName())
+		assert.Equal("http.request", webReqSpan.OperationName())
+		assert.True(webReqSpan.ParentID() == gatewaySpan.SpanID())
+		for _, arg := range inferredHeaders {
+			header, tag := normalizer.HeaderTag(arg)
+
+			// Default to an empty string if the tag does not exist
+			gatewaySpanTags, exists := gatewaySpan.Tags()[tag]
+			if !exists {
+				gatewaySpanTags = ""
+			}
+			expectedTags := strings.Join(req.Header.Values(header), ",")
+			// compare expected and actual values
+			assert.Equal(expectedTags, gatewaySpanTags)
+		}
+
+		assert.Equal(2, len(spans))
 	})
 }

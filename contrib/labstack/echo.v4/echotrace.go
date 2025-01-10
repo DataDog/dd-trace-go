@@ -8,10 +8,6 @@ package echo
 
 import (
 	"fmt"
-	"math"
-	"net/http"
-	"strconv"
-
 	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/httptrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/options"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
@@ -20,6 +16,8 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
+	"math"
+	"net/http"
 
 	"github.com/labstack/echo/v4"
 )
@@ -48,6 +46,7 @@ func Middleware(opts ...Option) echo.MiddlewareFunc {
 		tracer.Tag(ext.Component, componentName),
 		tracer.Tag(ext.SpanKind, ext.SpanKindServer),
 	)
+
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
 			// If we have an ignoreRequestFunc, use it to see if we proceed with tracing
@@ -72,10 +71,7 @@ func Middleware(opts ...Option) echo.MiddlewareFunc {
 				finishOpts = []tracer.FinishOption{tracer.NoDebugStack()}
 			}
 
-			span, ctx := httptrace.StartRequestSpan(request, opts...)
-			defer func() {
-				span.Finish(finishOpts...)
-			}()
+			span, ctx, finishSpans := httptrace.StartRequestSpan(request, opts...)
 
 			// pass the span through the request context
 			c.SetRequest(request.WithContext(ctx))
@@ -85,6 +81,7 @@ func Middleware(opts ...Option) echo.MiddlewareFunc {
 			}
 			// serve the request to the next middleware
 			err := next(c)
+			var echoStatus int
 			if err != nil && !shouldIgnoreError(cfg, err) {
 				// It is impossible to determine what the final status code of a request is in echo.
 				// This is the best we can do.
@@ -92,13 +89,14 @@ func Middleware(opts ...Option) echo.MiddlewareFunc {
 					if cfg.isStatusError(echoErr.Code) {
 						finishOpts = append(finishOpts, tracer.WithError(err))
 					}
-					span.SetTag(ext.HTTPCode, strconv.Itoa(echoErr.Code))
+					echoStatus = echoErr.Code
+
 				} else {
 					// Any error that is not an *echo.HTTPError will be treated as an error with 500 status code.
 					if cfg.isStatusError(500) {
 						finishOpts = append(finishOpts, tracer.WithError(err))
 					}
-					span.SetTag(ext.HTTPCode, "500")
+					echoStatus = 500
 				}
 			} else if status := c.Response().Status; status > 0 {
 				if cfg.isStatusError(status) {
@@ -106,15 +104,25 @@ func Middleware(opts ...Option) echo.MiddlewareFunc {
 						finishOpts = append(finishOpts, tracer.WithError(statusErr))
 					}
 				}
-				span.SetTag(ext.HTTPCode, strconv.Itoa(status))
+				echoStatus = status
 			} else {
 				if cfg.isStatusError(200) {
 					if statusErr := errorFromStatusCode(200); !shouldIgnoreError(cfg, statusErr) {
 						finishOpts = append(finishOpts, tracer.WithError(statusErr))
 					}
 				}
-				span.SetTag(ext.HTTPCode, "200")
+				echoStatus = 200
 			}
+			defer func() {
+				finishSpans(echoStatus, func(status int) bool {
+					if cfg.isStatusError(status) {
+						if statusErr := errorFromStatusCode(status); !shouldIgnoreError(cfg, statusErr) {
+							return true
+						}
+					}
+					return false
+				}, finishOpts...)
+			}()
 			return err
 		}
 	}
