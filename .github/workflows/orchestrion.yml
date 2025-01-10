@@ -71,7 +71,7 @@ jobs:
           - runs-on: ubuntu
             go-version: oldstable
             mode: GOFLAGS
-    name: Integration Test (${{ matrix.runs-on }} / ${{ matrix.go-version }} / ${{ matrix.mode }})
+    name: Integration Test (${{ matrix.runs-on }} | ${{ matrix.go-version }} | ${{ matrix.mode }})
     runs-on: ${{ matrix.runs-on == 'ubuntu' && fromJson('{"labels":"ubuntu-16-core-latest","group":"Large Runner Shared Public"}') || (matrix.runs-on == 'windows' && fromJson('{"labels":"windows-shared-8core","group":"LARGE WINDOWS SHARED"}')) || format('{0}-latest', matrix.runs-on) }}
     env:
       # Ryuk is problematic with concurrent executions, and unnecessary in ephemeral environments like GHA.
@@ -109,10 +109,10 @@ jobs:
           go mod tidy
         working-directory: internal/orchestrion/_integration
         env:
-          VERSION: ${{ github.event.inputs.orchestrion-version }}
+          VERSION: ${{ inputs.orchestrion-version }}
       # We install the binary to the GOBIN, so it's easy to use
       - name: Install orchestrion binary
-        if: !inputs.collect-coverage
+        if: '!inputs.collect-coverage'
         run: |-
           go install "github.com/DataDog/orchestrion"
         working-directory: internal/orchestrion/_integration
