@@ -6,7 +6,6 @@
 package tracer
 
 import (
-	"slices"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -111,11 +110,8 @@ func TestSpansStartedTags(t *testing.T) {
 		counts := tg.Counts()
 		assert.Equal(counts["datadog.tracer.spans_started"], int64(1))
 		for _, c := range statsdtest.FilterCallsByName(tg.CountCalls(), "datadog.tracer.spans_started") {
-			if slices.Equal(c.Tags(), []string{"integration:manual"}) {
-				return
-			}
+			assert.Equal([]string{"integration:manual"}, c.Tags())
 		}
-		assert.Fail("expected integration:manual tag in spans_started")
 	})
 
 	t.Run("custom_integration", func(t *testing.T) {
@@ -133,12 +129,8 @@ func TestSpansStartedTags(t *testing.T) {
 		counts := tg.Counts()
 		assert.Equal(counts["datadog.tracer.spans_started"], int64(1))
 		for _, c := range statsdtest.FilterCallsByName(tg.CountCalls(), "datadog.tracer.spans_started") {
-			if slices.Equal(c.Tags(), []string{"integration:contrib"}) {
-				return
-			}
+			assert.Equal([]string{"integration:contrib"}, c.Tags())
 		}
-		assert.Fail("expected integration:contrib tag in spans_started")
-
 	})
 }
 
@@ -160,11 +152,8 @@ func TestSpansFinishedTags(t *testing.T) {
 		counts := tg.Counts()
 		assert.Equal(counts["datadog.tracer.spans_finished"], int64(1))
 		for _, c := range statsdtest.FilterCallsByName(tg.CountCalls(), "datadog.tracer.spans_finished") {
-			if slices.Equal(c.Tags(), []string{"integration:manual"}) {
-				return
-			}
+			assert.Equal([]string{"integration:manual"}, c.Tags())
 		}
-		assert.Fail("expected integration:manual tag in spans_finished")
 	})
 
 	t.Run("custom_integration", func(t *testing.T) {
@@ -181,12 +170,8 @@ func TestSpansFinishedTags(t *testing.T) {
 		counts := tg.Counts()
 		assert.Equal(counts["datadog.tracer.spans_finished"], int64(1))
 		for _, c := range statsdtest.FilterCallsByName(tg.CountCalls(), "datadog.tracer.spans_finished") {
-			if slices.Equal(c.Tags(), []string{"integration:contrib"}) {
-				return
-			}
+			assert.Equal([]string{"integration:contrib"}, c.Tags())
 		}
-		assert.Fail("expected integration:contrib tag in spans_finished")
-
 	})
 }
 
