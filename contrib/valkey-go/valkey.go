@@ -1,0 +1,347 @@
+// Unless explicitly stated otherwise all files in this repository are licensed
+// under the Apache License Version 2.0.
+// This product includes software developed at Datadog (https://www.datadoghq.com/).
+// Copyright 2016 Datadog, Inc.
+
+// Package redis provides tracing functions for tracing the go-redis/redis package (https://github.com/go-redis/redis).
+// This package supports versions up to go-redis 6.15.
+package valkey
+
+import (
+	"context"
+	"math"
+	"net"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/valkey-io/valkey-go"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
+)
+
+const componentName = "valkey-go/valkey"
+
+func init() {
+	telemetry.LoadIntegration(componentName)
+	tracer.MarkIntegrationImported("github.com/valkey/valkey-go")
+}
+
+var (
+	_ valkey.CoreClient      = (*coreClient)(nil)
+	_ valkey.Client          = (*client)(nil)
+	_ valkey.DedicatedClient = (*dedicatedClient)(nil)
+)
+
+type coreClient struct {
+	valkey.Client
+	option       valkey.ClientOption
+	clientConfig clientConfig
+	host         string
+	port         int
+}
+
+type client struct {
+	coreClient
+}
+
+type dedicatedClient struct {
+	coreClient
+	dedicatedClient valkey.DedicatedClient
+}
+
+func NewClient(option valkey.ClientOption, opts ...ClientOption) (valkey.Client, error) {
+	valkeyClient, err := valkey.NewClient(option)
+	if err != nil {
+		return nil, err
+	}
+	var cfg clientConfig
+	defaults(&cfg)
+	for _, fn := range opts {
+		fn(&cfg)
+	}
+	var host, portStr string
+	var port int
+	if len(option.InitAddress) == 1 {
+		host, portStr, err = net.SplitHostPort(option.InitAddress[0])
+		if err != nil {
+			log.Error("valkey.ClientOption.InitAddress contains invalid address: %s", err)
+		}
+		port, _ = strconv.Atoi(portStr)
+	}
+	core := coreClient{
+		Client:       valkeyClient,
+		option:       option,
+		clientConfig: cfg,
+		host:         host,
+		port:         port,
+	}
+	return &client{
+		coreClient: core,
+	}, nil
+}
+
+type commander interface {
+	Commands() []string
+}
+
+func processCmd(commander commander) (command, statement string, size int) {
+	commands := commander.Commands()
+	if len(commands) == 0 {
+		return "", "", 0
+	}
+	command = commands[0]
+	statement = strings.Join(commands, "\n")
+	return command, statement, len(statement)
+}
+
+func processMultiCmds(multi []commander) (command, statement string, size int) {
+	var commands []string
+	var statements []string
+	for _, cmd := range multi {
+		cmdStr, stmt, cmdSize := processCmd(cmd)
+		size += cmdSize
+		commands = append(commands, cmdStr)
+		statements = append(statements, stmt)
+	}
+	command = strings.Join(commands, " ")
+	statement = strings.Join(statements, "\n")
+	return command, statement, size
+}
+
+func processMultiCompleted(multi ...valkey.Completed) (command, statement string, size int) {
+	cmds := make([]commander, len(multi))
+	for i, cmd := range multi {
+		cmds[i] = &cmd
+	}
+	return processMultiCmds(cmds)
+}
+
+func processMultiCacheableTTL(multi ...valkey.CacheableTTL) (command, statement string, size int) {
+	cmds := make([]commander, len(multi))
+	for i, cmd := range multi {
+		cmds[i] = &cmd.Cmd
+	}
+	return processMultiCmds(cmds)
+}
+
+func firstError(s []valkey.ValkeyResult) error {
+	for _, result := range s {
+		if err := result.Error(); err != nil && !valkey.IsValkeyNil(err) {
+			return err
+		}
+	}
+	return nil
+}
+
+func setClientCacheTags(s tracer.Span, result valkey.ValkeyResult) {
+	s.SetTag(ext.ValkeyClientCacheHit, result.IsCacheHit())
+	s.SetTag(ext.ValkeyClientCacheTTL, result.CacheTTL())
+	s.SetTag(ext.ValkeyClientCachePTTL, result.CachePTTL())
+	s.SetTag(ext.ValkeyClientCachePXAT, result.CachePXAT())
+}
+
+type buildStartSpanOptionsInput struct {
+	command        string
+	statement      string
+	size           int
+	isWrite        bool
+	isBlock        bool
+	isMulti        bool
+	isStream       bool
+	skipRawCommand bool
+}
+
+func (c *coreClient) buildStartSpanOptions(input buildStartSpanOptionsInput) []tracer.StartSpanOption {
+	opts := []tracer.StartSpanOption{
+		tracer.SpanType(ext.SpanTypeValkey),
+		tracer.ServiceName(c.clientConfig.serviceName),
+		tracer.Tag(ext.TargetHost, c.host),
+		tracer.Tag(ext.TargetPort, c.port),
+		tracer.Tag(ext.ValkeyClientVersion, valkey.LibVer),
+		tracer.Tag(ext.ValkeyClientName, valkey.LibName),
+		tracer.Tag(ext.Component, componentName),
+		tracer.Tag(ext.SpanKind, ext.SpanKindClient),
+		tracer.Tag(ext.DBType, ext.DBSystemValkey),
+		tracer.Tag(ext.DBSystem, ext.DBSystemValkey),
+		tracer.Tag(ext.ValkeyDatabaseIndex, c.option.SelectDB),
+		tracer.Tag(ext.ValkeyClientCommandWrite, input.isWrite),
+		tracer.Tag(ext.ValkeyClientCommandBlock, input.isBlock),
+		tracer.Tag(ext.ValkeyClientCommandMulti, input.isMulti),
+		tracer.Tag(ext.ValkeyClientCommandStream, input.isStream),
+		tracer.Tag(ext.ValkeyClientCommandWithPassword, c.option.Password != ""),
+	}
+	if input.command != "" {
+		opts = append(opts, []tracer.StartSpanOption{
+			// valkeyotel tags
+			tracer.Tag("db.stmt_size", input.size),
+			tracer.Tag("db.operation", input.command),
+		}...)
+		if input.skipRawCommand {
+			opts = append(opts, tracer.ResourceName(input.command))
+			opts = append(opts, tracer.Tag(ext.DBStatement, input.command))
+		} else {
+			opts = append(opts, tracer.ResourceName(input.statement))
+			opts = append(opts, tracer.Tag(ext.DBStatement, input.statement))
+		}
+	}
+	if c.option.ClientName != "" {
+		opts = append(opts, tracer.Tag(ext.DBApplication, c.option.ClientName))
+	}
+	if c.option.Username != "" {
+		opts = append(opts, tracer.Tag(ext.DBUser, c.option.Username))
+	}
+	if !math.IsNaN(c.clientConfig.analyticsRate) {
+		opts = append(opts, tracer.Tag(ext.EventSampleRate, c.clientConfig.analyticsRate))
+	}
+	return opts
+}
+
+func (c *coreClient) Do(ctx context.Context, cmd valkey.Completed) (resp valkey.ValkeyResult) {
+	command, statement, size := processCmd(&cmd)
+	span, ctx := tracer.StartSpanFromContext(ctx, c.clientConfig.spanName, c.buildStartSpanOptions(buildStartSpanOptionsInput{
+		command:        command,
+		statement:      statement,
+		size:           size,
+		isWrite:        cmd.IsWrite(),
+		isBlock:        cmd.IsBlock(),
+		skipRawCommand: c.clientConfig.skipRaw,
+	})...)
+	resp = c.Client.Do(ctx, cmd)
+	setClientCacheTags(span, resp)
+	defer span.Finish(tracer.WithError(resp.Error()))
+	return resp
+}
+
+func (c *coreClient) DoMulti(ctx context.Context, multi ...valkey.Completed) (resp []valkey.ValkeyResult) {
+	command, statement, size := processMultiCompleted(multi...)
+	span, ctx := tracer.StartSpanFromContext(ctx, c.clientConfig.spanName, c.buildStartSpanOptions(buildStartSpanOptionsInput{
+		command:        command,
+		statement:      statement,
+		size:           size,
+		isMulti:        true,
+		skipRawCommand: c.clientConfig.skipRaw,
+	})...)
+	resp = c.Client.DoMulti(ctx, multi...)
+	defer span.Finish(tracer.WithError(firstError(resp)))
+	return resp
+}
+
+func (c *coreClient) Receive(ctx context.Context, subscribe valkey.Completed, fn func(msg valkey.PubSubMessage)) (err error) {
+	command, statement, size := processCmd(&subscribe)
+	span, ctx := tracer.StartSpanFromContext(ctx, c.clientConfig.spanName, c.buildStartSpanOptions(buildStartSpanOptionsInput{
+		command:        command,
+		statement:      statement,
+		size:           size,
+		isWrite:        subscribe.IsWrite(),
+		isBlock:        subscribe.IsBlock(),
+		skipRawCommand: c.clientConfig.skipRaw,
+	})...)
+	err = c.Client.Receive(ctx, subscribe, fn)
+	defer span.Finish(tracer.WithError(err))
+	return err
+}
+
+func (c *client) DoCache(ctx context.Context, cmd valkey.Cacheable, ttl time.Duration) (resp valkey.ValkeyResult) {
+	command, statement, size := processCmd(&cmd)
+	span, ctx := tracer.StartSpanFromContext(ctx, c.clientConfig.spanName, c.buildStartSpanOptions(buildStartSpanOptionsInput{
+		command:        command,
+		statement:      statement,
+		size:           size,
+		isMulti:        cmd.IsMGet(),
+		skipRawCommand: c.clientConfig.skipRaw,
+	})...)
+	resp = c.Client.DoCache(ctx, cmd, ttl)
+	setClientCacheTags(span, resp)
+	defer span.Finish(tracer.WithError(resp.Error()))
+	return resp
+}
+
+func (c *client) DoMultiCache(ctx context.Context, multi ...valkey.CacheableTTL) (resp []valkey.ValkeyResult) {
+	command, statement, size := processMultiCacheableTTL(multi...)
+	span, ctx := tracer.StartSpanFromContext(ctx, c.clientConfig.spanName, c.buildStartSpanOptions(buildStartSpanOptionsInput{
+		command:        command,
+		statement:      statement,
+		size:           size,
+		isWrite:        true,
+		skipRawCommand: c.clientConfig.skipRaw,
+	})...)
+	resp = c.Client.DoMultiCache(ctx, multi...)
+	defer span.Finish(tracer.WithError(firstError(resp)))
+	return resp
+}
+
+func (c *client) DoStream(ctx context.Context, cmd valkey.Completed) (resp valkey.ValkeyResultStream) {
+	command, statement, size := processCmd(&cmd)
+	span, ctx := tracer.StartSpanFromContext(ctx, c.clientConfig.spanName, c.buildStartSpanOptions(buildStartSpanOptionsInput{
+		command:        command,
+		statement:      statement,
+		size:           size,
+		isWrite:        cmd.IsWrite(),
+		isBlock:        cmd.IsBlock(),
+		isStream:       true,
+		skipRawCommand: c.clientConfig.skipRaw,
+	})...)
+	resp = c.Client.DoStream(ctx, cmd)
+	defer span.Finish(tracer.WithError(resp.Error()))
+	return resp
+}
+
+func (c *client) DoMultiStream(ctx context.Context, multi ...valkey.Completed) (resp valkey.MultiValkeyResultStream) {
+	command, statement, size := processMultiCompleted(multi...)
+	span, ctx := tracer.StartSpanFromContext(ctx, c.clientConfig.spanName, c.buildStartSpanOptions(buildStartSpanOptionsInput{
+		command:        command,
+		statement:      statement,
+		size:           size,
+		isMulti:        true,
+		isStream:       true,
+		skipRawCommand: c.clientConfig.skipRaw,
+	})...)
+	resp = c.Client.DoMultiStream(ctx, multi...)
+	defer span.Finish(tracer.WithError(resp.Error()))
+	return resp
+}
+
+func (c *client) Dedicated(fn func(valkey.DedicatedClient) error) (err error) {
+	return c.Client.Dedicated(func(dc valkey.DedicatedClient) error {
+		return fn(&dedicatedClient{
+			coreClient:      c.coreClient,
+			dedicatedClient: dc,
+		})
+	})
+}
+
+func (c *client) Dedicate() (client valkey.DedicatedClient, cancel func()) {
+	dedicated, cancel := c.coreClient.Client.Dedicate()
+	return &dedicatedClient{
+		coreClient:      c.coreClient,
+		dedicatedClient: dedicated,
+	}, cancel
+}
+
+func (c *client) Nodes() map[string]valkey.Client {
+	nodes := c.Client.Nodes()
+	for addr, valkeyClient := range nodes {
+		host, portStr, err := net.SplitHostPort(addr)
+		if err != nil {
+			log.Error("invalid address is set to valkey client: %s", err)
+		}
+		port, _ := strconv.Atoi(portStr)
+		nodes[addr] = &client{
+			coreClient: coreClient{
+				Client:       valkeyClient,
+				option:       c.option,
+				clientConfig: c.clientConfig,
+				host:         host,
+				port:         port,
+			},
+		}
+	}
+	return nodes
+}
+
+func (c *dedicatedClient) SetPubSubHooks(hooks valkey.PubSubHooks) <-chan error {
+	return c.dedicatedClient.SetPubSubHooks(hooks)
+}

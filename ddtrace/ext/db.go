@@ -32,6 +32,7 @@ const (
 	DBSystemOtherSQL      = "other_sql"
 	DBSystemElasticsearch = "elasticsearch"
 	DBSystemRedis         = "redis"
+	DBSystemValkey        = "valkey"
 	DBSystemMongoDB       = "mongodb"
 	DBSystemCassandra     = "cassandra"
 	DBSystemConsulKV      = "consul"
@@ -55,6 +56,45 @@ const (
 const (
 	// RedisDatabaseIndex indicates the Redis database index connected to.
 	RedisDatabaseIndex = "db.redis.database_index"
+)
+
+// Valkey tags.
+const (
+	// ValkeyDatabaseIndex specifies the index of the database being connected to.
+	ValkeyDatabaseIndex = "db.valkey.database_index"
+
+	// ValkeyClientVersion denotes the version of the Valkey client in use.
+	ValkeyClientVersion = "db.valkey.client.version"
+
+	// ValkeyClientName indicates the name of the Valkey client being used.
+	ValkeyClientName = "db.valkey.client.name"
+
+	// ValkeyClientCacheHit is the remaining TTL in seconds of client side cache.
+	ValkeyClientCacheHit = "db.valkey.client.cache.hit"
+
+	// ValkeyClientCacheTTL captures the Time-To-Live (TTL) of a cached entry in the client.
+	ValkeyClientCacheTTL = "db.valkey.client.cache.ttl"
+
+	// ValkeyClientCachePTTL is the remaining PTTL in seconds of client side cache.
+	ValkeyClientCachePTTL = "db.valkey.client.cache.pttl"
+
+	// ValkeyClientCachePXAT is the remaining PXAT in seconds of client side cache.
+	ValkeyClientCachePXAT = "db.valkey.client.cache.pxat"
+
+	// ValkeyClientCommandWrite indicates whether a command involves a write operation.
+	ValkeyClientCommandWrite = "db.valkey.client.command.write"
+
+	// ValkeyClientCommandBlock indicates whether a command is blocking.
+	ValkeyClientCommandBlock = "db.valkey.client.command.block"
+
+	// ValkeyClientCommandMulti specifies whether multiple Valkey commands are sent together.
+	ValkeyClientCommandMulti = "db.valkey.client.command.multi"
+
+	// ValkeyClientCommandStream indicates whether a command uses a dedicated connection to stream responses directly.
+	ValkeyClientCommandStream = "db.valkey.client.command.stream"
+
+	// ValkeyClientCommandWithPassword indicates whether a command was executed with password authentication.
+	ValkeyClientCommandWithPassword = "db.valkey.client.command.with_password"
 )
 
 // Cassandra tags.
