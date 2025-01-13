@@ -10,7 +10,7 @@ package main
 
 // #cgo darwin CFLAGS: -mmacosx-version-min=11.0
 // #cgo android CFLAGS: --sysroot=$NDK_ROOT/toolchains/llvm/prebuilt/darwin-x86_64/sysroot
-// #cgo LDFLAGS: -s -w -llib
+// #cgo LDFLAGS: -s -w
 // #include <stdlib.h>
 /*
 // Bool is a typedef for unsigned char used as a boolean type.
@@ -43,11 +43,11 @@ typedef topt_TslvId topt_TestId;
 typedef unsigned char topt_TestStatus;
 
 // topt_TestStatusPass is the status for a passing test.
-const topt_TestStatus topt_TestStatusPass = 0;
+static const topt_TestStatus topt_TestStatusPass = 0;
 // topt_TestStatusFail is the status for a failing test.
-const topt_TestStatus topt_TestStatusFail = 1;
+static const topt_TestStatus topt_TestStatusFail = 1;
 // topt_TestStatusSkip is the status for a skipped test.
-const topt_TestStatus topt_TestStatusSkip = 2;
+static const topt_TestStatus topt_TestStatusSkip = 2;
 
 // topt_SessionResult is returned by operations that create or retrieve a test session.
 // Fields:
