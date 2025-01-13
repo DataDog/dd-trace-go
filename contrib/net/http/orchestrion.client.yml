@@ -53,10 +53,12 @@ aspects:
           imports:
             context: context
             ddtrace: gopkg.in/DataDog/dd-trace-go.v1/ddtrace
+            os: os
           links:
             - gopkg.in/DataDog/dd-trace-go.v1/internal/appsec
             - gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/httpsec
             - gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer
+            - gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/httptrace
           template: |-
             //go:linkname __dd_appsec_RASPEnabled gopkg.in/DataDog/dd-trace-go.v1/internal/appsec.RASPEnabled
             func __dd_appsec_RASPEnabled() bool
@@ -82,9 +84,23 @@ aspects:
             //go:linkname __dd_tracer_Inject gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer.Inject
             func __dd_tracer_Inject(ddtrace.SpanContext, any) error
 
+            //go:linkname __dd_tracer_GetErrorCodesFromInput gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/httptrace.GetErrorCodesFromInput
+            func __dd_httptrace_GetErrorCodesFromInput(string) func(int) bool
+
             type __dd_tracer_HTTPHeadersCarrier Header
             func (c __dd_tracer_HTTPHeadersCarrier) Set(key, val string) {
               Header(c).Set(key, val)
+            }
+
+            var __dd_isError = func(statusCode int) bool {
+              // Treat HTTP 4XX as errors
+              return statusCode >= 400 && statusCode < 500
+            }
+
+            func init() {
+              if fn := __dd_httptrace_GetErrorCodesFromInput(os.GetEnv("DD_TRACE_HTTP_CLIENT_ERROR_STATUSES")); fn != nil {
+                __dd_isError = fn
+              }
             }
       - prepend-statements:
           imports:
@@ -150,8 +166,7 @@ aspects:
                   span.SetTag(ext.Error, {{ $err }})
                 } else {
                   span.SetTag(ext.HTTPCode, strconv.Itoa({{ $res }}.StatusCode))
-                  if {{ $res }}.StatusCode >= 400 && {{ $res}}.StatusCode < 500 {
-                    // Treat HTTP 4XX as errors
+                  if __dd_isError({{ $res }}) {
                     span.SetTag("http.errors", {{ $res }}.Status)
                     span.SetTag(ext.Error, fmt.Errorf("%d: %s", {{ $res }}.StatusCode, StatusText({{ $res }}.StatusCode)))
                   }
