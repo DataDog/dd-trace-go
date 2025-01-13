@@ -114,9 +114,7 @@ jobs:
       - name: Set up orchestrion
         if: inputs.orchestrion-version != ''
         run: |-
-          go mod edit                                                                                                   \
-            -replace="github.com/DataDog/orchestrion=${{ github.workspace }}/orchestrion"                               \
-            -replace="github.com/DataDog/orchestrion/instrument=${{ github.workspace }}/orchestrion/instrument"
+          go mod edit -replace="github.com/DataDog/orchestrion=${{ github.workspace }}/orchestrion" -replace="github.com/DataDog/orchestrion/instrument=${{ github.workspace }}/orchestrion/instrument"
           go mod tidy -go ${{ steps.setup-go.outputs.go-version }}
         working-directory: ${{ github.workspace }}/dd-trace-go/internal/orchestrion/_integration
         env:
