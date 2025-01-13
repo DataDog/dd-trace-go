@@ -98,7 +98,8 @@ aspects:
             }
 
             func init() {
-              if fn := __dd_httptrace_GetErrorCodesFromInput(os.GetEnv("DD_TRACE_HTTP_CLIENT_ERROR_STATUSES")); fn != nil {
+              v := os.GetEnv("DD_TRACE_HTTP_CLIENT_ERROR_STATUSES")
+              if fn := __dd_httptrace_GetErrorCodesFromInput(v); fn != nil {
                 __dd_isError = fn
               }
             }
@@ -166,7 +167,7 @@ aspects:
                   span.SetTag(ext.Error, {{ $err }})
                 } else {
                   span.SetTag(ext.HTTPCode, strconv.Itoa({{ $res }}.StatusCode))
-                  if __dd_isError({{ $res }}) {
+                  if __dd_isError({{ $res }}.StatusCode) {
                     span.SetTag("http.errors", {{ $res }}.Status)
                     span.SetTag(ext.Error, fmt.Errorf("%d: %s", {{ $res }}.StatusCode, StatusText({{ $res }}.StatusCode)))
                   }
