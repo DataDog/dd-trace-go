@@ -159,7 +159,7 @@ jobs:
           esac
         working-directory: ${{ github.workspace }}/dd-trace-go/internal/orchestrion/_integration
         env:
-          GOFLAGS: -timeout=30m -tags=githubci${{ matrix.mode == 'DRIVER' && ',buildtag' || ''}} # The "buildtag" tag is used in //dd:span integration tests
+          GOFLAGS: -timeout=30m ${{ matrix.runs-on == 'ubuntu' && '-p=4' || '' }} -tags=githubci${{ matrix.mode == 'DRIVER' && ',buildtag' || ''}} # The "buildtag" tag is used in //dd:span integration tests
           MODE: ${{ matrix.mode }}
           DD_ORCHESTRION_IS_GOMOD_VERSION: true # Prevent auto-respawn, which is problematic with installs from commit SHA
 
