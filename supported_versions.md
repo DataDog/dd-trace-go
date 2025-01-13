@@ -5,7 +5,7 @@
 | Shopify/sarama | github.com/Shopify/sarama | v1.38.1 | v1.45.0 | true
 | aws/aws-sdk-go | github.com/aws/aws-sdk-go | v1.44.327 | v1.55.5 | true
 | aws/aws-sdk-go-v2 | github.com/aws/aws-sdk-go-v2 | v1.20.3 | v2.0.0-preview.4+incompatible | true
-| bradfitz/gomemcache | github.com/bradfitz/gomemcache | v0.0.0-20230611145640-acc696258285 | github.com/bradfitz/gomemcache | false
+| bradfitz/gomemcache | github.com/bradfitz/gomemcache | v0.0.0-20230611145640-acc696258285 | v0.0.0-20230905024940-24af94b03874 | false
 | cloud.google.com/go/pubsub.v1 | cloud.google.com/go/pubsub | v1.36.1 | v1.45.3 | true
 | confluentinc/confluent-kafka-go/kafka | github.com/confluentinc/confluent-kafka-go | v1.9.2 | v1.9.3-RC3 | false
 | confluentinc/confluent-kafka-go/kafka.v2 | github.com/confluentinc/confluent-kafka-go/v2 | v2.2.0 | v2.8.0 | false
@@ -14,7 +14,7 @@
 | emicklei/go-restful.v3 | github.com/emicklei/go-restful/v3 | v3.11.0 | v3.12.1 | false
 | envoyproxy/go-control-plane | github.com/envoyproxy/go-control-plane | v0.13.1 | v0.13.4 | false
 | gin-gonic/gin | github.com/gin-gonic/gin | v1.9.1 | v1.10.0 | true
-| globalsign/mgo | github.com/globalsign/mgo | v0.0.0-20181015135952-eeefdecb41b8 | github.com/globalsign/mgo | false
+| globalsign/mgo | github.com/globalsign/mgo | v0.0.0-20181015135952-eeefdecb41b8 | v0.0.0-20181015135952-eeefdecb41b8 | false
 | go-chi/chi | github.com/go-chi/chi | v1.5.4 | v4.1.2+incompatible | true
 | go-chi/chi.v5 | github.com/go-chi/chi/v5 | v5.0.10 | v5.2.0 | true
 | go-pg/pg.v10 | github.com/go-pg/pg/v10 | v10.11.1 | v10.14.0 | false
@@ -25,7 +25,7 @@
 | gocql/gocql | github.com/gocql/gocql | v1.6.0 | v1.7.0 | true
 | gofiber/fiber.v2 | github.com/gofiber/fiber/v2 | v2.52.5 | v2.52.6 | true
 | gomodule/redigo | github.com/gomodule/redigo | v1.8.9 | v1.9.2 | false
-| google.golang.org/api | google.golang.org/api | v0.169.0 | v0.215.0 | false
+| google.golang.org/api | google.golang.org/api | v0.169.0 | v0.216.0 | false
 | google.golang.org/grpc | google.golang.org/grpc | v1.69.0 | v1.71.0-dev | true
 | gorilla/mux | github.com/gorilla/mux | v1.8.0 | v1.8.1 | true
 | graph-gophers/graphql-go | github.com/graph-gophers/graphql-go | v1.5.0 | v1.5.0 | true

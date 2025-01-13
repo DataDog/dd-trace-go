@@ -26,8 +26,10 @@ jobs:
 
       - run: echo 'Smoke Tests workflow passed'
 
-      - run: go run .github/workflows/apps/output_integration_versions.go 
+      - run: go run .github/workflows/apps/output_supported_versions.go 
 
+      - run: go mod tidy
+      
       - run: git diff
 
       # note: This will only run when there *are* changes to integration versions

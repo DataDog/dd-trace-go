@@ -804,8 +804,6 @@ var packages = map[Package]PackageInfo{
 	},
 }
 
-
-
 func staticName(name string) func(OperationContext) string {
 	return func(_ OperationContext) string {
 		return name
@@ -847,6 +845,10 @@ func isAWSMessagingSendOp(awsService, awsOperation string) bool {
 	return false
 }
 
-func GetPackages() map[Package]PackageInfo {
-	return packages
+func GetPackages() map[Package]string {
+	copy := make(map[Package]string)
+	for pkg, info := range packages {
+		copy[pkg] = info.TracedPackage
+	}
+	return copy
 }

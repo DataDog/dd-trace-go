@@ -62,11 +62,53 @@ func fetchLatestVersion(module string) (string, error) {
 	}
 
 	versions := strings.Fields(stdout.String())
+	latestVersion := ""
+
 	if len(versions) < 1 {
 		return "", fmt.Errorf("no versions found for module: %s", module)
 	}
 
-	return versions[len(versions)-1], nil
+	if len(versions) == 1 {
+		// go get -d <module>@latest
+		// go list -m <module>
+		// Run `go get -d <module>@latest` to fetch the latest version of the module.
+		cmdGet := exec.CommandContext(ctx, "go", "get", module+"@latest")
+		var getStdout, getStderr bytes.Buffer
+		cmdGet.Stdout = &getStdout
+		cmdGet.Stderr = &getStderr
+
+		// Execute the `go get` command.
+		err := cmdGet.Run()
+		// if err != nil {
+		// 	return "", fmt.Errorf("failed to fetch latest version with go get: %s", getStderr.String())
+		// }
+
+		// Run `go list -m <module>` to retrieve the exact version fetched.
+		cmdList := exec.CommandContext(ctx, "go", "list", "-m", module)
+		var listStdout, listStderr bytes.Buffer
+		cmdList.Stdout = &listStdout
+		cmdList.Stderr = &listStderr
+
+		// Execute the `go list` command.
+		err = cmdList.Run()
+		if err != nil {
+			return "", fmt.Errorf("failed to retrieve module version with go list: %s", listStderr.String())
+		}
+		result := strings.Fields(listStdout.String())
+		if len(result) < 2 {
+			return "", fmt.Errorf("unexpected output format from go list: %s", listStdout.String())
+		}
+		latestVersion = result[1]
+		// if latestVersion == "" {
+		// 	return "", fmt.Errorf("failed to determine the latest version for module: %s", module)
+		// }
+	}
+
+	if len(versions) > 1 {
+		latestVersion = versions[len(versions)-1]
+	}
+
+	return latestVersion, nil
 }
 func isModuleInstrumented(moduleName string, instrumentedSet map[string]struct{}) bool {
 	// whether the module has automatic tracing supported (by Orchestrion)
@@ -115,7 +157,7 @@ func GetMinVersion(packageName, repositoryName string) (ModuleVersion, error) {
 	for _, req := range f.Require {
 		if repoRegex.MatchString(req.Mod.Path) {
 			return ModuleVersion{
-				Name:           req.Mod.Path,
+				Name:           packageName,
 				MinVersion:     req.Mod.Version,
 				MaxVersion:     "",
 				Repository:     req.Mod.Path,
@@ -176,7 +218,7 @@ func writeMarkdownFile(modules []ModuleVersion, filePath string) error {
 
 	for _, mod := range modules {
 		if mod.Name != "" {
-			fmt.Fprintf(file, "| %s | %s | v%s | %s | %+v\n", mod.Name, mod.Repository, mod.MinVersion, mod.MaxVersion, mod.isInstrumented)
+			fmt.Fprintf(file, "| %s | %s | %s | %s | %+v\n", mod.Name, mod.Repository, mod.MinVersion, mod.MaxVersion, mod.isInstrumented)
 		}
 	}
 	return nil
@@ -228,14 +270,13 @@ func initializeInstrumentedSet() map[string]struct{} {
 
 func processPackages(packageMap map[string]string) ([]ModuleVersion, error) {
 	var modules []ModuleVersion
-	for pkg, info := range instrumentation.GetPackages() {
+	for pkg, repository := range instrumentation.GetPackages() {
 		package_name := string(pkg)
-		repository := info.TracedPackage
 		packageMap[repository] = package_name
 
 		module, err := GetMinVersion(package_name, repository)
 		if err != nil {
-			fmt.Printf("Error getting min version for package %s: %v\n", package_name, err)
+			// fmt.Printf("Error getting min version for package %s: %v\n", package_name, err)
 			continue
 		}
 		modules = append(modules, module)
