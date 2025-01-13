@@ -14,6 +14,7 @@ import (
 	"math"
 	"strings"
 	"testing"
+	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/statsdtest"
@@ -363,30 +364,36 @@ func (t *failingTransport) send(p *payload) (io.ReadCloser, error) {
 func TestTraceWriterFlushRetries(t *testing.T) {
 	testcases := []struct {
 		configRetries int
+		retryInterval time.Duration
 		failCount     int
 		tracesSent    bool
 		expAttempts   int
 	}{
-		{configRetries: 0, failCount: 0, tracesSent: true, expAttempts: 1},
-		{configRetries: 0, failCount: 1, tracesSent: false, expAttempts: 1},
+		{configRetries: 0, retryInterval: time.Millisecond, failCount: 0, tracesSent: true, expAttempts: 1},
+		{configRetries: 0, retryInterval: time.Millisecond, failCount: 1, tracesSent: false, expAttempts: 1},
 
-		{configRetries: 1, failCount: 0, tracesSent: true, expAttempts: 1},
-		{configRetries: 1, failCount: 1, tracesSent: true, expAttempts: 2},
-		{configRetries: 1, failCount: 2, tracesSent: false, expAttempts: 2},
+		{configRetries: 1, retryInterval: time.Millisecond, failCount: 0, tracesSent: true, expAttempts: 1},
+		{configRetries: 1, retryInterval: time.Millisecond, failCount: 1, tracesSent: true, expAttempts: 2},
+		{configRetries: 1, retryInterval: time.Millisecond, failCount: 2, tracesSent: false, expAttempts: 2},
 
-		{configRetries: 2, failCount: 0, tracesSent: true, expAttempts: 1},
-		{configRetries: 2, failCount: 1, tracesSent: true, expAttempts: 2},
-		{configRetries: 2, failCount: 2, tracesSent: true, expAttempts: 3},
-		{configRetries: 2, failCount: 3, tracesSent: false, expAttempts: 3},
+		{configRetries: 2, retryInterval: time.Millisecond, failCount: 0, tracesSent: true, expAttempts: 1},
+		{configRetries: 2, retryInterval: time.Millisecond, failCount: 1, tracesSent: true, expAttempts: 2},
+		{configRetries: 2, retryInterval: time.Millisecond, failCount: 2, tracesSent: true, expAttempts: 3},
+		{configRetries: 2, retryInterval: time.Millisecond, failCount: 3, tracesSent: false, expAttempts: 3},
+
+		{configRetries: 1, retryInterval: 2 * time.Millisecond, failCount: 1, tracesSent: true, expAttempts: 2},
+		{configRetries: 2, retryInterval: 2 * time.Millisecond, failCount: 2, tracesSent: true, expAttempts: 3},
 	}
 
 	sentCounts := map[string]int64{
-		"datadog.tracer.decode_error": 1,
-		"datadog.tracer.flush_bytes":  197,
-		"datadog.tracer.flush_traces": 1,
+		"datadog.tracer.decode_error":          1,
+		"datadog.tracer.flush_bytes":           185,
+		"datadog.tracer.flush_traces":          1,
+		"datadog.tracer.queue.enqueued.traces": 1,
 	}
 	droppedCounts := map[string]int64{
-		"datadog.tracer.traces_dropped": 1,
+		"datadog.tracer.queue.enqueued.traces": 1,
+		"datadog.tracer.traces_dropped":        1,
 	}
 
 	ss := []*span{makeSpan(0)}
@@ -401,14 +408,16 @@ func TestTraceWriterFlushRetries(t *testing.T) {
 			c := newConfig(func(c *config) {
 				c.transport = p
 				c.sendRetries = test.configRetries
+				c.retryInterval = test.retryInterval
 			})
 			var statsd statsdtest.TestStatsdClient
 
 			h := newAgentTraceWriter(c, nil, &statsd)
 			h.add(ss)
-
+			start := time.Now()
 			h.flush()
 			h.wg.Wait()
+			elapsed := time.Since(start)
 
 			assert.Equal(test.expAttempts, p.sendAttempts)
 			assert.Equal(test.tracesSent, p.tracesSent)
@@ -419,8 +428,18 @@ func TestTraceWriterFlushRetries(t *testing.T) {
 			} else {
 				assert.Equal(droppedCounts, statsd.Counts())
 			}
+			if test.configRetries > 0 && test.failCount > 1 {
+				assert.GreaterOrEqual(elapsed, test.retryInterval*time.Duration(minInts(test.configRetries+1, test.failCount)))
+			}
 		})
 	}
+}
+
+func minInts(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
 
 func BenchmarkJsonEncodeSpan(b *testing.B) {

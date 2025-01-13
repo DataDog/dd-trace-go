@@ -299,6 +299,102 @@ func TestTraceAndServe(t *testing.T) {
 		assert.Equal("/path?<redacted>", span.Tag(ext.HTTPURL))
 		assert.Equal("200", span.Tag(ext.HTTPCode))
 	})
+
+	t.Run("integrationLevelErrorHandling", func(t *testing.T) {
+		mt := mocktracer.Start()
+		assert := assert.New(t)
+		defer mt.Stop()
+
+		handler := func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusBadRequest)
+		}
+		r, err := http.NewRequest("GET", "/", nil)
+		assert.NoError(err)
+		w := httptest.NewRecorder()
+		TraceAndServe(http.HandlerFunc(handler), w, r, &ServeConfig{
+			IsStatusError: func(i int) bool { return i >= 400 },
+		})
+
+		spans := mt.FinishedSpans()
+		assert.Len(spans, 1)
+		assert.Equal("400", spans[0].Tag(ext.HTTPCode))
+		assert.Equal("400: Bad Request", spans[0].Tag(ext.Error).(error).Error())
+	})
+
+	t.Run("envLevelErrorHandling", func(t *testing.T) {
+		mt := mocktracer.Start()
+		assert := assert.New(t)
+		defer mt.Stop()
+
+		t.Setenv("DD_TRACE_HTTP_SERVER_ERROR_STATUSES", "500")
+
+		cfg := &ServeConfig{
+			Service:       "service",
+			Resource:      "resource",
+		}
+
+		handler := func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusInternalServerError) // 500
+		}
+
+		r, err := http.NewRequest("GET", "/", nil)
+		assert.NoError(err)
+		w := httptest.NewRecorder()
+		TraceAndServe(http.HandlerFunc(handler), w, r, cfg)
+
+		spans := mt.FinishedSpans()
+		assert.Len(spans, 1)
+		assert.Equal("500", spans[0].Tag(ext.HTTPCode))
+		assert.Equal("500: Internal Server Error", spans[0].Tag(ext.Error).(error).Error())
+	})
+
+	t.Run("integrationOverridesEnvConfig", func(t *testing.T) {
+		mt := mocktracer.Start()
+		assert := assert.New(t)
+		defer mt.Stop()
+
+		// Set environment variable to treat 500 as an error
+		t.Setenv("DD_TRACE_HTTP_SERVER_ERROR_STATUSES", "500")
+
+		cfg := &ServeConfig{
+			IsStatusError: func(i int) bool { return i == 400 },
+		}
+
+		// Test a 400 response, which should be reported as an error
+		handler400 := func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusBadRequest) // 400
+		}
+
+		r400, err := http.NewRequest("GET", "/", nil)
+		assert.NoError(err)
+		w400 := httptest.NewRecorder()
+		TraceAndServe(http.HandlerFunc(handler400), w400, r400, cfg)
+
+		spans := mt.FinishedSpans()
+		assert.Len(spans, 1)
+		assert.Equal("400", spans[0].Tag(ext.HTTPCode))
+		assert.Equal("400: Bad Request", spans[0].Tag(ext.Error).(error).Error())
+
+		// Reset the tracer
+		mt.Reset()
+
+		// Test a 500 response, which should NOT be reported as an error,
+		// even though the environment variable says 500 is an error.
+		handler500 := func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusInternalServerError) // 500
+		}
+
+		r500, err := http.NewRequest("GET", "/", nil)
+		assert.NoError(err)
+		w500 := httptest.NewRecorder()
+		TraceAndServe(http.HandlerFunc(handler500), w500, r500, cfg)
+
+		spans = mt.FinishedSpans()
+		assert.Len(spans, 1)
+		assert.Equal("500", spans[0].Tag(ext.HTTPCode))
+		// Confirm that the span is NOT marked as an error.
+		assert.Nil(spans[0].Tag(ext.Error))
+	})
 }
 
 func TestTraceAndServeHost(t *testing.T) {

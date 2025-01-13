@@ -338,12 +338,12 @@ func TestIntegrationEnabled(t *testing.T) {
 		var out contribPkg
 		err := stream.Decode(&out)
 		if err != nil {
-			t.Fatalf(err.Error())
+			t.Fatal(err.Error())
 		}
 		packages = append(packages, out)
 	}
 	for _, pkg := range packages {
-		if strings.Contains(pkg.ImportPath, "/test") || strings.Contains(pkg.ImportPath, "/internal") {
+		if strings.Contains(pkg.ImportPath, "/test") || strings.Contains(pkg.ImportPath, "/internal") || strings.Contains(pkg.ImportPath, "/cmd") {
 			continue
 		}
 		p := strings.Replace(pkg.Dir, pkg.Root, "../..", 1)
@@ -854,6 +854,23 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			c := newConfig()
 			assert.Equal(t, time.Duration(10*time.Second), c.httpClient.Timeout)
 		})
+	})
+
+	t.Run("trace-retries", func(t *testing.T) {
+		c := newConfig()
+		assert.Equal(t, 0, c.sendRetries)
+		assert.Equal(t, time.Millisecond, c.retryInterval)
+	})
+}
+
+func TestTraceRetry(t *testing.T) {
+	t.Run("sendRetries", func(t *testing.T) {
+		c := newConfig(WithSendRetries(10))
+		assert.Equal(t, 10, c.sendRetries)
+	})
+	t.Run("retryInterval", func(t *testing.T) {
+		c := newConfig(WithRetryInterval(10))
+		assert.Equal(t, 10*time.Second, c.retryInterval)
 	})
 }
 

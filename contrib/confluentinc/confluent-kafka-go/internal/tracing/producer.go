@@ -67,6 +67,10 @@ func (tr *KafkaTracer) StartProduceSpan(msg Message) ddtrace.Span {
 	// if there's a span context in the headers, use that as the parent
 	carrier := NewMessageCarrier(msg)
 	if spanctx, err := tracer.Extract(carrier); err == nil {
+		// If there are span links as a result of context extraction, add them as a StartSpanOption
+		if linksCtx, ok := spanctx.(ddtrace.SpanContextWithLinks); ok && linksCtx.SpanLinks() != nil {
+			opts = append(opts, tracer.WithSpanLinks(linksCtx.SpanLinks()))
+		}
 		opts = append(opts, tracer.ChildOf(spanctx))
 	}
 	span, _ := tracer.StartSpanFromContext(tr.ctx, tr.producerSpanName, opts...)

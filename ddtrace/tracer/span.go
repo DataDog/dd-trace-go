@@ -78,7 +78,7 @@ type span struct {
 	TraceID    uint64             `msg:"trace_id"`              // lower 64-bits of the root span identifier
 	ParentID   uint64             `msg:"parent_id"`             // identifier of the span's direct parent
 	Error      int32              `msg:"error"`                 // error status of the span; 0 means no errors
-	SpanLinks  []ddtrace.SpanLink `msg:"span_links"`            // links to other spans
+	SpanLinks  []ddtrace.SpanLink `msg:"span_links,omitempty"`  // links to other spans
 
 	goExecTraced bool         `msg:"-"`
 	noDebugStack bool         `msg:"-"` // disables debug stack traces
@@ -192,6 +192,12 @@ func (s *span) SetTag(key string, value interface{}) {
 		if v, ok := value.(sharedinternal.MetaStructValue); ok {
 			s.setMetaStruct(key, v.Value)
 			return
+		}
+
+		// Add this tag to propagating tags and to span tags
+		// reserved for internal use only
+		if v, ok := value.(sharedinternal.PropagatingTagValue); ok {
+			s.context.trace.setPropagatingTag(key, v.Value)
 		}
 	}
 
@@ -714,6 +720,13 @@ func (s *span) Format(f fmt.State, c rune) {
 	default:
 		fmt.Fprintf(f, "%%!%c(ddtrace.Span=%v)", c, s)
 	}
+}
+
+func getMeta(s *span, key string) (string, bool) {
+	s.RLock()
+	defer s.RUnlock()
+	val, ok := s.Meta[key]
+	return val, ok
 }
 
 const (
