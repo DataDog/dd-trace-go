@@ -54,7 +54,7 @@ func pollDBStats(statsd internal.StatsdClient, db *sql.DB, tracerStop chan struc
 			statsd.Gauge(MaxLifetimeClosed, float64(stat.MaxLifetimeClosed), []string{}, 1)
 		case <-tracerStop:
 			return
-		case <-dbClose:
+		case <-dbStop:
 			return
 		}
 	}
@@ -75,15 +75,15 @@ func statsTags(c *config) []string {
 }
 
 var (
-	dbClose chan struct{} = make(chan struct{})
-	once    sync.Once
-	mu      sync.Mutex
+	dbStop chan struct{} = make(chan struct{})
+	once   sync.Once
+	mu     sync.Mutex
 )
 
-func Close() {
+func dbClose() {
 	mu.Lock()
 	defer mu.Unlock()
 	once.Do(func() {
-		close(dbClose)
+		close(dbStop)
 	})
 }

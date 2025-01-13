@@ -534,11 +534,11 @@ func TestNamingSchema(t *testing.T) {
 func TestDBClose(t *testing.T) {
 	db := setupPostgres(t)
 
-	// assert that "close" channel is closed on the call to db.Close()
+	// assert that dbStop channel is closed on the call to db.Close()
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go func() {
-		<-dbClose
+		<-dbStop
 		wg.Done()
 	}()
 	db.Close()
