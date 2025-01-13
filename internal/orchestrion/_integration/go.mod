@@ -2,8 +2,6 @@ module github.com/DataDog/dd-trace-go/internal/orchestrion/_integration
 
 go 1.22.10
 
-toolchain go1.23.4
-
 replace gopkg.in/DataDog/dd-trace-go.v1 => ../../..
 
 require (
