@@ -84,7 +84,7 @@ aspects:
             //go:linkname __dd_tracer_Inject gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer.Inject
             func __dd_tracer_Inject(ddtrace.SpanContext, any) error
 
-            //go:linkname __dd_tracer_GetErrorCodesFromInput gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/httptrace.GetErrorCodesFromInput
+            //go:linkname __dd_httptrace_GetErrorCodesFromInput gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/httptrace.GetErrorCodesFromInput
             func __dd_httptrace_GetErrorCodesFromInput(string) func(int) bool
 
             type __dd_tracer_HTTPHeadersCarrier Header
