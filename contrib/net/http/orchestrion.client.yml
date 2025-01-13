@@ -98,7 +98,7 @@ aspects:
             }
 
             func init() {
-              v := os.GetEnv("DD_TRACE_HTTP_CLIENT_ERROR_STATUSES")
+              v := os.Getenv("DD_TRACE_HTTP_CLIENT_ERROR_STATUSES")
               if fn := __dd_httptrace_GetErrorCodesFromInput(v); fn != nil {
                 __dd_isError = fn
               }
