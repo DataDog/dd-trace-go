@@ -168,26 +168,31 @@ func fetchAllLatestVersions(modules []ModuleVersion) []ModuleVersion {
 	var wg sync.WaitGroup
 	var mu sync.Mutex
 
-	updatedModules := make([]ModuleVersion, 0, len(modules))
+	updatedModules := make([]ModuleVersion, len(modules))
 
 	wg.Add(len(modules))
-	for _, mod := range modules {
-		go func(mod ModuleVersion) {
+	for i, mod := range modules {
+		go func(i int, mod ModuleVersion) {
 			defer wg.Done()
 			latestVersion, err := fetchLatestVersion(mod.Repository)
 			if err != nil {
 				fmt.Printf("Error fetching latest version for %s: %v\n", mod.Repository, err)
 				mu.Lock()
-				updatedModules = append(updatedModules, ModuleVersion{mod.Name, mod.MinVersion, "Error", mod.Repository, mod.isInstrumented})
+				updatedModules[i] = ModuleVersion{mod.Name, mod.MinVersion, "Error", mod.Repository, mod.isInstrumented}
 				mu.Unlock()
 				return
 			}
 
 			mu.Lock()
-			updatedModules = append(updatedModules, ModuleVersion{mod.Name,
-				mod.MinVersion, latestVersion, mod.Repository, mod.isInstrumented})
+			updatedModules[i] = ModuleVersion{
+				Name:           mod.Name,
+				MinVersion:     mod.MinVersion,
+				MaxVersion:     latestVersion,
+				Repository:     mod.Repository,
+				isInstrumented: mod.isInstrumented,
+			}
 			mu.Unlock()
-		}(mod)
+		}(i, mod)
 	}
 
 	wg.Wait()
