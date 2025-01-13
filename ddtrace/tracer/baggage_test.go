@@ -26,7 +26,7 @@ func TestBaggageFunctions(t *testing.T) {
 			t.Errorf("Baggage(ctx, \"foo\") = %q; want \"bar\"", got)
 		}
 
-		// Ensure retrieving a non-existent key returns an empty string
+		// Ensure retrieving a non-existent key returns an empty string and false
 		got, ok = Baggage(ctx, "missingKey")
 		if ok {
 			t.Error("Expected key \"missingKey\" to not be found, got ok=true")
