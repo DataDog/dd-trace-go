@@ -44,72 +44,65 @@ func isSubdirectory(url, pattern string) bool {
 }
 
 func fetchLatestVersion(module string) (string, error) {
-	// Fetches latest version with `go list`
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
+	// Run `go list -m -versions` to fetch available versions
 	cmd := exec.CommandContext(ctx, "go", "list", "-m", "-versions", module)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
-	err := cmd.Run()
-	if ctx.Err() == context.DeadlineExceeded {
-		return "", fmt.Errorf("command timed out")
-	}
-	if err != nil {
+	if err := cmd.Run(); err != nil {
+		if ctx.Err() == context.DeadlineExceeded {
+			return "", fmt.Errorf("command timed out")
+		}
 		return "", fmt.Errorf("command error: %s", stderr.String())
 	}
 
+	// Parse the output into a list of versions
 	versions := strings.Fields(stdout.String())
-	latestVersion := ""
-
-	if len(versions) < 1 {
+	if len(versions) == 0 {
 		return "", fmt.Errorf("no versions found for module: %s", module)
 	}
 
+	// Handle cases with one or more versions
 	if len(versions) == 1 {
-		// go get -d <module>@latest
-		// go list -m <module>
-		// Run `go get -d <module>@latest` to fetch the latest version of the module.
-		cmdGet := exec.CommandContext(ctx, "go", "get", module+"@latest")
-		var getStdout, getStderr bytes.Buffer
-		cmdGet.Stdout = &getStdout
-		cmdGet.Stderr = &getStderr
-
-		// Execute the `go get` command.
-		err := cmdGet.Run()
-		// if err != nil {
-		// 	return "", fmt.Errorf("failed to fetch latest version with go get: %s", getStderr.String())
-		// }
-
-		// Run `go list -m <module>` to retrieve the exact version fetched.
-		cmdList := exec.CommandContext(ctx, "go", "list", "-m", module)
-		var listStdout, listStderr bytes.Buffer
-		cmdList.Stdout = &listStdout
-		cmdList.Stderr = &listStderr
-
-		// Execute the `go list` command.
-		err = cmdList.Run()
-		if err != nil {
-			return "", fmt.Errorf("failed to retrieve module version with go list: %s", listStderr.String())
-		}
-		result := strings.Fields(listStdout.String())
-		if len(result) < 2 {
-			return "", fmt.Errorf("unexpected output format from go list: %s", listStdout.String())
-		}
-		latestVersion = result[1]
-		// if latestVersion == "" {
-		// 	return "", fmt.Errorf("failed to determine the latest version for module: %s", module)
-		// }
+		// If only one version, fetch the latest version using `go get` and `go list`
+		return fetchLatestUsingGoGet(ctx, module)
 	}
 
-	if len(versions) > 1 {
-		latestVersion = versions[len(versions)-1]
-	}
-
-	return latestVersion, nil
+	// Return the last version (latest) from the versions list
+	return versions[len(versions)-1], nil
 }
+
+// Helper function to fetch the latest version using `go get` and `go list`
+func fetchLatestUsingGoGet(ctx context.Context, module string) (string, error) {
+	// Run `go get -d <module>@latest`
+	cmdGet := exec.CommandContext(ctx, "go", "get", "-d", module+"@latest")
+	if err := cmdGet.Run(); err != nil {
+		return "", fmt.Errorf("failed to fetch latest version with go get: %w", err)
+	}
+
+	// Run `go list -m <module>` to retrieve the exact version fetched
+	cmdList := exec.CommandContext(ctx, "go", "list", "-m", module)
+	var stdout, stderr bytes.Buffer
+	cmdList.Stdout = &stdout
+	cmdList.Stderr = &stderr
+
+	if err := cmdList.Run(); err != nil {
+		return "", fmt.Errorf("failed to retrieve module version with go list: %s", stderr.String())
+	}
+
+	// Extract the version from the output
+	result := strings.Fields(stdout.String())
+	if len(result) < 2 {
+		return "", fmt.Errorf("unexpected output format from go list: %s", stdout.String())
+	}
+
+	return result[1], nil
+}
+
 func isModuleInstrumented(moduleName string, instrumentedSet map[string]struct{}) bool {
 	// whether the module has automatic tracing supported (by Orchestrion)
 	// _, isInstrumented := instrumentedSet[moduleName]
@@ -276,7 +269,6 @@ func processPackages(packageMap map[string]string) ([]ModuleVersion, error) {
 
 		module, err := GetMinVersion(package_name, repository)
 		if err != nil {
-			// fmt.Printf("Error getting min version for package %s: %v\n", package_name, err)
 			continue
 		}
 		modules = append(modules, module)
