@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bufio"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -10,9 +9,11 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
+	"golang.org/x/mod/modfile"
 	"golang.org/x/mod/semver"
 )
 
@@ -20,15 +21,7 @@ func getLatestMajor(repo string) (string, error) {
 	// Get the latest major version available on GitHub
 	const prefix = "github.com/"
 	const apiBaseURL = "https://api.github.com/repos/%s/tags"
-
-	// Truncate "github.com/" and the version suffix
-	lastSlashIndex := strings.LastIndex(repo, "/")
-	if lastSlashIndex == -1 || !strings.HasPrefix(repo, prefix) {
-		return "", fmt.Errorf("invalid repository format: %s", repo)
-	}
-	trimmedRepo := repo[len(prefix):lastSlashIndex]
-	url := fmt.Sprintf(apiBaseURL, trimmedRepo)
-	fmt.Printf("Base repo: %s\n", trimmedRepo)
+	url := fmt.Sprintf(apiBaseURL, repo)
 
 	// Fetch tags from GitHub
 	resp, err := http.Get(url)
@@ -93,12 +86,11 @@ func getLatestMajor(repo string) (string, error) {
 // 	// return the largest major version associated
 
 // GetLatestMajorContrib finds the latest major version of a repository in the contrib directory.
-// TODO: modify this to only walk through contrib once, and store the repository => major versions
 func GetLatestMajorContrib(repository string) (string, error) {
 	const contribDir = "contrib"
 
-	// Prepare the repository matching pattern -
-	// ex. repository = "redis/go-redis" should match on any repository that contains redis/go-redis
+	// Prepare the repository matching pattern
+	// ex. repository = "redis/go-redis" should match on any directory that contains redis/go-redis
 	repoPattern := fmt.Sprintf(`^%s/%s(/.*)?`, contribDir, strings.ReplaceAll(repository, "/", "/"))
 
 	// Compile regex for matching contrib directory entries
@@ -121,15 +113,10 @@ func GetLatestMajorContrib(repository string) (string, error) {
 		}
 
 		// Look for go.mod file
-
 		goModPath := filepath.Join(path, "go.mod")
-		// fmt.Printf("Looking for go.mod: %s\n", goModPath)
 		if _, err := os.Stat(goModPath); err != nil {
 			return nil // No go.mod file, skip
 		}
-
-		// Log the path where a go.mod file is found
-		fmt.Printf("Found go.mod in: %s\n", goModPath)
 
 		// Parse the go.mod file to find the version
 		version, err := extractVersionFromGoMod(goModPath, repository)
@@ -156,43 +143,40 @@ func GetLatestMajorContrib(repository string) (string, error) {
 	return latestVersion, nil
 }
 
-// // // extractVersionFromGoMod parses the go.mod file and extracts the version of the specified repository.
 func extractVersionFromGoMod(goModPath string, repository string) (string, error) {
-	file, err := os.Open(goModPath)
+	data, err := os.ReadFile(goModPath)
 	if err != nil {
-		return "", fmt.Errorf("failed to open go.mod: %v", err)
+		return "", fmt.Errorf("failed to read go.mod: %v", err)
 	}
-	defer file.Close()
+	var versions []string
 
-	repoPattern := fmt.Sprintf(`\b%s\b`, strings.ReplaceAll(repository, "/", "/"))
-	repoRegex, err := regexp.Compile(repoPattern)
+	// parse go.mod
+	modFile, err := modfile.Parse(goModPath, data, nil)
 	if err != nil {
-		return "", fmt.Errorf("invalid repository regex pattern: %v", err)
+		return "", fmt.Errorf("failed to parse go.mod: %v", err)
 	}
 
-	var version string
-	scanner := bufio.NewScanner(file)
-	for scanner.Scan() {
-		line := scanner.Text()
-
-		// Match lines in the require block with the repository pattern
-		if repoRegex.MatchString(line) {
-			parts := strings.Fields(line)
-			if len(parts) >= 2 && semver.IsValid(parts[1]) {
-				version = parts[1]
+	for _, req := range modFile.Require {
+		if strings.Contains(req.Mod.Path, repository) { // check if module path contains repository substring
+			if semver.IsValid(req.Mod.Version) {
+				versions = append(versions, req.Mod.Version)
 			}
 		}
+
 	}
 
-	if err := scanner.Err(); err != nil {
-		return "", fmt.Errorf("error reading go.mod: %v", err)
+	if len(versions) == 0 {
+		return "", errors.New("no valid versions found for repository in go.mod")
 	}
 
-	if version == "" {
-		return "", errors.New("no valid version found for repository in go.mod")
-	}
+	// Sort versions in descending order
+	// Return the greatest version
+	sort.Slice(versions, func(i, j int) bool {
+		return semver.Compare(versions[i], versions[j]) > 0
+	})
 
-	return version, nil
+	return versions[0], nil
+
 }
 
 // ValidateRepository checks if the repository string starts with "github.com" and ends with a version suffix.
@@ -213,36 +197,37 @@ func ValidateRepository(repo string) bool {
 
 func main() {
 
-	// packageMap := make(map[string]string) // map holding package names and repositories
-	// var modules []ModuleVersion // this should store the module/contrib name, and the version
 	packages := instrumentation.GetPackages()
 	integrations := make(map[string]struct{})
 
-	for pkg, info := range packages {
-		fmt.Printf("Package: %s, Traced Package: %s\n", pkg, info.TracedPackage)
+	for _, info := range packages {
 		repository := info.TracedPackage
 
 		// repo starts with github and ends in version suffix
-		// Get the latest major on GH
 		if ValidateRepository(repository) {
-			latest_major_version, err := getLatestMajor(repository)
+			const prefix = "github.com"
+
+			// check if we've seen this integration before
+			lastSlashIndex := strings.LastIndex(repository, "/")
+			baseRepo := repository[len(prefix)+1 : lastSlashIndex]
+			if _, exists := integrations[baseRepo]; exists {
+				continue
+			}
+
+			fmt.Printf("Base repo: %s\n", baseRepo)
+
+			// Get the latest major from GH
+			latest_major_version, err := getLatestMajor(baseRepo)
 			if err != nil {
 				fmt.Printf("Error getting min version for repo %s: %v\n", repository, err)
 				continue
 			}
-			const prefix = "github.com"
-
-			// if we've seen this baseRepo before, continue
-
-			lastSlashIndex := strings.LastIndex(repository, "/")
-			baseRepo := repository[len(prefix)+1 : lastSlashIndex] // TODO: tidy this
-			if _, exists := integrations[baseRepo]; exists {       // check for duplicates
-				continue
-			}
-
 			integrations[baseRepo] = struct{}{}
 
+			// Get the latest major from go.mod
 			latest_major_contrib, err := GetLatestMajorContrib(baseRepo)
+			fmt.Printf("latest major on go.mod: %s\n", latest_major_contrib)
+
 			if err != nil {
 				fmt.Printf("Error getting latest major from go.mod for %s: %v\n", repository, err)
 			}
@@ -256,4 +241,5 @@ func main() {
 
 		}
 	}
+
 }
