@@ -14,7 +14,8 @@ func NewClient(service, env, version string, config ClientConfig) (Client, error
 	return nil, nil
 }
 
-type client struct{}
+type client struct {
+}
 
 func (c client) MarkIntegrationAsLoaded(integration Integration) {
 	//TODO implement me
