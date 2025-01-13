@@ -6,9 +6,12 @@
 package sql
 
 import (
+	"sync"
 	"testing"
 
+	"github.com/DataDog/datadog-go/v5/statsd"
 	"github.com/stretchr/testify/assert"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/contribroutines"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 )
 
@@ -63,4 +66,31 @@ func TestStatsTags(t *testing.T) {
 		assert.Contains(t, tags, "tag:value")
 	})
 	resetGlobalConfig()
+}
+
+func TestPollDBStats(t *testing.T) {
+	db := setupPostgres(t)
+	tracerStop := contribroutines.GetStopChan()
+	t.Run("tracerStop", func(t *testing.T) {
+		var wg sync.WaitGroup
+
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			pollDBStats(&statsd.NoOpClientDirect{}, db, tracerStop)
+		}()
+		contribroutines.Stop()
+		wg.Wait()
+	})
+	t.Run("dbStop", func(t *testing.T) {
+		var wg sync.WaitGroup
+
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			pollDBStats(&statsd.NoOpClientDirect{}, db, tracerStop)
+		}()
+		db.Close()
+		wg.Wait()
+	})
 }

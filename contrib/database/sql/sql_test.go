@@ -7,6 +7,7 @@ package sql
 
 import (
 	"context"
+	"database/sql"
 	"database/sql/driver"
 	"errors"
 	"fmt"
@@ -528,4 +529,27 @@ func TestNamingSchema(t *testing.T) {
 		t.Run("ServiceName", namingschematest.NewServiceNameTest(genSpans, wantServiceNameV0))
 		t.Run("SpanName", namingschematest.NewSpanNameTest(genSpans, assertOpV0, assertOpV1))
 	})
+}
+
+func TestDBClose(t *testing.T) {
+	db := setupPostgres(t)
+
+	// assert that "close" channel is closed on the call to db.Close()
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		<-dbClose
+		wg.Done()
+	}()
+	db.Close()
+	wg.Wait()
+}
+
+func setupPostgres(t *testing.T) *sql.DB {
+	driverName := "postgres"
+	Register(driverName, &pq.Driver{})
+	defer unregister(driverName)
+	db, err := Open(driverName, "postgres://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable")
+	require.NoError(t, err)
+	return db
 }
