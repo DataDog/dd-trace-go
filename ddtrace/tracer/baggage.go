@@ -13,16 +13,16 @@ import (
 // We use a struct{} so it won't conflict with keys from other packages.
 type baggageKey struct{}
 
-// baggageMap retrieves the map that holds baggage from the context.
-// Returns nil if no baggage map is stored in the context.
-func baggageMap(ctx context.Context) map[string]string {
+// baggageMap returns the baggage map from the given context and a bool indicating
+// whether the baggage exists or not. If the bool is false, the returned map is nil.
+func baggageMap(ctx context.Context) (map[string]string, bool) {
 	val := ctx.Value(baggageKey{})
 	bm, ok := val.(map[string]string)
 	if !ok {
-		// bm is not a map[string]string or val was nil
-		return nil
+		// val was nil or not a map[string]string
+		return nil, false
 	}
-	return bm
+	return bm, true
 }
 
 // withBaggage returns a new context with the given baggage map set.
@@ -33,8 +33,9 @@ func withBaggage(ctx context.Context, baggage map[string]string) context.Context
 // SetBaggage sets or updates a single baggage key/value pair in the context.
 // If the key already exists, this function overwrites the existing value.
 func SetBaggage(ctx context.Context, key, value string) context.Context {
-	bm := baggageMap(ctx)
-	if bm == nil {
+	bm, ok := baggageMap(ctx)
+	if !ok {
+		// If there's no baggage map yet, create one
 		bm = make(map[string]string)
 	}
 	bm[key] = value
@@ -44,8 +45,8 @@ func SetBaggage(ctx context.Context, key, value string) context.Context {
 // Baggage retrieves the value associated with a baggage key.
 // If the key isn't found, it returns an empty string.
 func Baggage(ctx context.Context, key string) (string, bool) {
-	bm := baggageMap(ctx)
-	if bm == nil {
+	bm, ok := baggageMap(ctx)
+	if !ok {
 		return "", false
 	}
 	value, ok := bm[key]
@@ -54,8 +55,8 @@ func Baggage(ctx context.Context, key string) (string, bool) {
 
 // RemoveBaggage removes the specified key from the baggage (if present).
 func RemoveBaggage(ctx context.Context, key string) context.Context {
-	bm := baggageMap(ctx)
-	if bm == nil {
+	bm, ok := baggageMap(ctx)
+	if !ok {
 		// nothing to remove
 		return ctx
 	}
@@ -65,8 +66,8 @@ func RemoveBaggage(ctx context.Context, key string) context.Context {
 
 // AllBaggage returns a **copy** of all baggage items in the context,
 func AllBaggage(ctx context.Context) map[string]string {
-	bm := baggageMap(ctx)
-	if bm == nil {
+	bm, ok := baggageMap(ctx)
+	if !ok {
 		return nil
 	}
 	copyMap := make(map[string]string, len(bm))
