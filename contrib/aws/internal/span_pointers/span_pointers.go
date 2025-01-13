@@ -1,6 +1,8 @@
 package span_pointers
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"github.com/aws/smithy-go/middleware"
 	smithyhttp "github.com/aws/smithy-go/transport/http"
@@ -48,5 +50,24 @@ func HandleS3Operation(in middleware.DeserializeInput, out middleware.Deserializ
 		return
 	}
 
-	fmt.Printf("S3 operation details - Bucket: %s, Key: %s, ETag: %s\n", bucket, key, etag)
+	// Hash calculation rules: https://github.com/DataDog/dd-span-pointer-rules/blob/main/AWS/S3/Object/README.md
+	components := []string{bucket, key, etag}
+	hash := generatePointerHash(components)
+	fmt.Printf("Hash: %s\n", hash)
+}
+
+// generatePointerHash generates a unique hash from an array of strings by joining them with | before hashing.
+// Used to uniquely identify AWS requests for span pointers.
+// Returns a 32-character hash uniquely identifying the components.
+func generatePointerHash(components []string) string {
+	h := sha256.New()
+	for i, component := range components {
+		if i > 0 {
+			h.Write([]byte("|"))
+		}
+		h.Write([]byte(component))
+	}
+
+	fullHash := h.Sum(nil)
+	return hex.EncodeToString(fullHash[:SpanPointerHashLengthBytes])
 }
