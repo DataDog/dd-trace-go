@@ -7,14 +7,21 @@ package contribroutines
 import "sync"
 
 var (
-	stop chan struct{} = make(chan struct{})
+	stop chan struct{}
 	once sync.Once
 	mu   sync.Mutex
 )
 
+func InitStopChan() {
+	stop = make(chan struct{})
+}
+
 func Stop() {
 	mu.Lock()
 	defer mu.Unlock()
+	if stop == nil {
+		InitStopChan()
+	}
 	once.Do(func() {
 		close(stop)
 	})

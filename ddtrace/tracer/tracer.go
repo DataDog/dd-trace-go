@@ -204,6 +204,7 @@ func Start(opts ...StartOption) {
 	}
 
 	_ = t.hostname() // Prime the hostname cache
+	contribroutines.InitStopChan()
 }
 
 // Stop stops the started tracer. Subsequent calls are valid but become no-op.

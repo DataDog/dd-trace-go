@@ -30,6 +30,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 	maininternal "gopkg.in/DataDog/dd-trace-go.v1/internal"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/contribroutines"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/statsdtest"
@@ -254,6 +255,27 @@ func TestTracerStart(t *testing.T) {
 		}
 		tr.Stop()
 		tr.Stop()
+	})
+	t.Run("contribroutines", func(t *testing.T) {
+		// assert tracer.Start initializes contribroutines.stop
+		Start()
+		s1 := contribroutines.GetStopChan()
+		assert.NotNil(t, s1)
+
+		// assert tracer.Stop closes the channel
+		var wg sync.WaitGroup
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-s1
+		}()
+		Stop()
+		wg.Wait()
+
+		// assert tracer.Start initializes contribroutines.stop to a new channel every time
+		Start()
+		s2 := contribroutines.GetStopChan()
+		assert.NotEqual(t, s1, s2)
 	})
 }
 
