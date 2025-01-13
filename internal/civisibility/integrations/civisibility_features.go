@@ -224,7 +224,7 @@ func uploadRepositoryChanges() (bytes int64, err error) {
 	hasBeenUnshallowed, err := utils.UnshallowGitRepository()
 	if err != nil || !hasBeenUnshallowed {
 		if err != nil {
-			log.Warn(err.Error())
+			log.Warn("%v", err)
 		}
 		// if unshallowing the repository failed or if there's nothing to unshallow then we try to upload the packfiles from
 		// the initial commit data
