@@ -22,7 +22,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       
-      - run: go run new_latest_majors.go > latests.txt
+      - run: go run .github/workflows/apps/outdated_github_majors.go > latests.txt
 
       - run: git diff
 

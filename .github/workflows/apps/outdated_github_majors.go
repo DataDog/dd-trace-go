@@ -216,6 +216,8 @@ func main() {
 	// packageMap := make(map[string]string) // map holding package names and repositories
 	// var modules []ModuleVersion // this should store the module/contrib name, and the version
 	packages := instrumentation.GetPackages()
+	integrations := make(map[string]struct{})
+
 	for pkg, info := range packages {
 		fmt.Printf("Package: %s, Traced Package: %s\n", pkg, info.TracedPackage)
 		repository := info.TracedPackage
@@ -228,22 +230,27 @@ func main() {
 				fmt.Printf("Error getting min version for repo %s: %v\n", repository, err)
 				continue
 			}
-			// fmt.Printf("latest major on github: %s", latest_major_version)
 			const prefix = "github.com"
 
+			// if we've seen this baseRepo before, continue
+
 			lastSlashIndex := strings.LastIndex(repository, "/")
-			trimmedRepo := repository[len(prefix)+1 : lastSlashIndex] // TODO: tidy this
-			latest_major_contrib, err := GetLatestMajorContrib(trimmedRepo)
+			baseRepo := repository[len(prefix)+1 : lastSlashIndex] // TODO: tidy this
+			if _, exists := integrations[baseRepo]; exists {       // check for duplicates
+				continue
+			}
+
+			integrations[baseRepo] = struct{}{}
+
+			latest_major_contrib, err := GetLatestMajorContrib(baseRepo)
 			if err != nil {
 				fmt.Printf("Error getting latest major from go.mod for %s: %v\n", repository, err)
 			}
 
-			fmt.Printf("latest major on go.mod: %s", latest_major_contrib)
-
 			if semver.Major(latest_major_contrib) != latest_major_version {
-				fmt.Printf("major on go.mod: %s", semver.Major(latest_major_contrib))
-				fmt.Printf("major on github: %s", latest_major_version)
-				fmt.Printf("repository %s has a new major latest avaialble: %s", trimmedRepo, latest_major_version)
+				fmt.Printf("major on go.mod: %s\n", semver.Major(latest_major_contrib))
+				fmt.Printf("major on github: %s\n", latest_major_version)
+				fmt.Printf("repository %s has a new major latest on github: %s\n", baseRepo, latest_major_version)
 
 			}
 
