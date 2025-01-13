@@ -108,11 +108,16 @@ func (c *SQLCommentCarrier) Inject(spanCtx ddtrace.SpanContext) error {
 		fallthrough
 	case DBMPropagationModeService:
 		if ctx, ok := spanCtx.(*spanContext); ok {
-			if e, ok := ctx.meta(ext.Environment); ok && e != "" {
-				tags[sqlCommentEnv] = e
-			}
-			if v, ok := ctx.meta(ext.Version); ok && v != "" {
-				tags[sqlCommentParentVersion] = v
+			if ctx.span != nil {
+				if e, ok := getMeta(ctx.span, ext.Environment); ok && e != "" {
+					tags[sqlCommentEnv] = e
+				}
+				if v, ok := getMeta(ctx.span, ext.Version); ok && v != "" {
+					tags[sqlCommentParentVersion] = v
+				}
+				if v, ok := getMeta(ctx.span, ext.PeerService); ok && v != "" {
+					tags[sqlCommentPeerService] = v
+				}
 			}
 			if c.PeerDBName != "" {
 				tags[sqlCommentPeerDBName] = c.PeerDBName
@@ -120,9 +125,7 @@ func (c *SQLCommentCarrier) Inject(spanCtx ddtrace.SpanContext) error {
 			if c.PeerDBHostname != "" {
 				tags[sqlCommentPeerHostname] = c.PeerDBHostname
 			}
-			if v, ok := ctx.meta(ext.PeerService); ok && v != "" {
-				tags[sqlCommentPeerService] = v
-			} else if c.PeerService != "" {
+			if tags[sqlCommentPeerService] == "" && c.PeerService != "" {
 				tags[sqlCommentPeerService] = c.PeerService
 			}
 		}

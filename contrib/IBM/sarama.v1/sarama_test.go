@@ -7,12 +7,11 @@ package sarama
 
 import (
 	"context"
+	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/namingschematest"
 	"testing"
 	"time"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/namingschematest"
 	"gopkg.in/DataDog/dd-trace-go.v1/datastreams"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 
@@ -20,6 +19,17 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+var kafkaBrokers = []string{"localhost:9092", "localhost:9093", "localhost:9094"}
+
+const (
+	testGroupID = "gotest_ibm_sarama"
+	testTopic   = "gotest_ibm_sarama"
+)
+
+func TestNamingSchema(t *testing.T) {
+	namingschematest.NewKafkaTest(genTestSpans)(t)
+}
 
 func genTestSpans(t *testing.T, serviceOverride string) []mocktracer.Span {
 	var opts []Option
@@ -82,324 +92,6 @@ func genTestSpans(t *testing.T, serviceOverride string) []mocktracer.Span {
 	return spans
 }
 
-func TestConsumer(t *testing.T) {
-	mt := mocktracer.Start()
-	defer mt.Stop()
-
-	broker := sarama.NewMockBroker(t, 0)
-	defer broker.Close()
-
-	broker.SetHandlerByMap(map[string]sarama.MockResponse{
-		"MetadataRequest": sarama.NewMockMetadataResponse(t).
-			SetBroker(broker.Addr(), broker.BrokerID()).
-			SetLeader("test-topic", 0, broker.BrokerID()),
-		"OffsetRequest": sarama.NewMockOffsetResponse(t).
-			SetOffset("test-topic", 0, sarama.OffsetOldest, 0).
-			SetOffset("test-topic", 0, sarama.OffsetNewest, 1),
-		"FetchRequest": sarama.NewMockFetchResponse(t, 1).
-			SetMessage("test-topic", 0, 0, sarama.StringEncoder("hello")).
-			SetMessage("test-topic", 0, 1, sarama.StringEncoder("world")),
-	})
-	cfg := sarama.NewConfig()
-	cfg.Version = sarama.MinVersion
-
-	client, err := sarama.NewClient([]string{broker.Addr()}, cfg)
-	require.NoError(t, err)
-	defer client.Close()
-
-	consumer, err := sarama.NewConsumerFromClient(client)
-	require.NoError(t, err)
-	defer consumer.Close()
-
-	consumer = WrapConsumer(consumer, WithDataStreams())
-
-	partitionConsumer, err := consumer.ConsumePartition("test-topic", 0, 0)
-	require.NoError(t, err)
-	msg1 := <-partitionConsumer.Messages()
-	msg2 := <-partitionConsumer.Messages()
-	err = partitionConsumer.Close()
-	require.NoError(t, err)
-	// wait for the channel to be closed
-	<-partitionConsumer.Messages()
-
-	spans := mt.FinishedSpans()
-	require.Len(t, spans, 2)
-	{
-		s := spans[0]
-		spanctx, err := tracer.Extract(NewConsumerMessageCarrier(msg1))
-		assert.NoError(t, err)
-		assert.Equal(t, spanctx.TraceID(), s.TraceID(),
-			"span context should be injected into the consumer message headers")
-
-		assert.Equal(t, int32(0), s.Tag(ext.MessagingKafkaPartition))
-		assert.Equal(t, int64(0), s.Tag("offset"))
-		assert.Equal(t, "kafka", s.Tag(ext.ServiceName))
-		assert.Equal(t, "Consume Topic test-topic", s.Tag(ext.ResourceName))
-		assert.Equal(t, "queue", s.Tag(ext.SpanType))
-		assert.Equal(t, "kafka.consume", s.OperationName())
-		assert.Equal(t, "IBM/sarama", s.Tag(ext.Component))
-		assert.Equal(t, ext.SpanKindConsumer, s.Tag(ext.SpanKind))
-		assert.Equal(t, "kafka", s.Tag(ext.MessagingSystem))
-
-		p, ok := datastreams.PathwayFromContext(datastreams.ExtractFromBase64Carrier(context.Background(), NewConsumerMessageCarrier(msg1)))
-		require.True(t, ok, "pathway not found in context")
-		expectedCtx, _ := tracer.SetDataStreamsCheckpoint(context.Background(), "direction:in", "topic:test-topic", "type:kafka")
-		expected, _ := datastreams.PathwayFromContext(expectedCtx)
-		assert.NotEqual(t, expected.GetHash(), 0)
-		assert.Equal(t, expected.GetHash(), p.GetHash())
-	}
-	{
-		s := spans[1]
-		spanctx, err := tracer.Extract(NewConsumerMessageCarrier(msg2))
-		assert.NoError(t, err)
-		assert.Equal(t, spanctx.TraceID(), s.TraceID(),
-			"span context should be injected into the consumer message headers")
-
-		assert.Equal(t, int32(0), s.Tag(ext.MessagingKafkaPartition))
-		assert.Equal(t, int64(1), s.Tag("offset"))
-		assert.Equal(t, "kafka", s.Tag(ext.ServiceName))
-		assert.Equal(t, "Consume Topic test-topic", s.Tag(ext.ResourceName))
-		assert.Equal(t, "queue", s.Tag(ext.SpanType))
-		assert.Equal(t, "kafka.consume", s.OperationName())
-		assert.Equal(t, "IBM/sarama", s.Tag(ext.Component))
-		assert.Equal(t, ext.SpanKindConsumer, s.Tag(ext.SpanKind))
-		assert.Equal(t, "kafka", s.Tag(ext.MessagingSystem))
-
-		p, ok := datastreams.PathwayFromContext(datastreams.ExtractFromBase64Carrier(context.Background(), NewConsumerMessageCarrier(msg2)))
-		require.True(t, ok, "pathway not found in context")
-		expectedCtx, _ := tracer.SetDataStreamsCheckpoint(context.Background(), "direction:in", "topic:test-topic", "type:kafka")
-		expected, _ := datastreams.PathwayFromContext(expectedCtx)
-		assert.NotEqual(t, expected.GetHash(), 0)
-		assert.Equal(t, expected.GetHash(), p.GetHash())
-	}
-}
-
-func TestSyncProducer(t *testing.T) {
-	mt := mocktracer.Start()
-	defer mt.Stop()
-
-	seedBroker := sarama.NewMockBroker(t, 1)
-	defer seedBroker.Close()
-
-	leader := sarama.NewMockBroker(t, 2)
-	defer leader.Close()
-
-	metadataResponse := new(sarama.MetadataResponse)
-	metadataResponse.Version = 1
-	metadataResponse.AddBroker(leader.Addr(), leader.BrokerID())
-	metadataResponse.AddTopicPartition("my_topic", 0, leader.BrokerID(), nil, nil, nil, sarama.ErrNoError)
-	seedBroker.Returns(metadataResponse)
-
-	prodSuccess := new(sarama.ProduceResponse)
-	prodSuccess.Version = 2
-	prodSuccess.AddTopicPartition("my_topic", 0, sarama.ErrNoError)
-	leader.Returns(prodSuccess)
-
-	cfg := sarama.NewConfig()
-	cfg.Version = sarama.V0_11_0_0 // first version that supports headers
-	cfg.Producer.Return.Successes = true
-
-	producer, err := sarama.NewSyncProducer([]string{seedBroker.Addr()}, cfg)
-	require.NoError(t, err)
-	producer = WrapSyncProducer(cfg, producer, WithDataStreams())
-
-	msg1 := &sarama.ProducerMessage{
-		Topic:    "my_topic",
-		Value:    sarama.StringEncoder("test 1"),
-		Metadata: "test",
-	}
-	_, _, err = producer.SendMessage(msg1)
-	require.NoError(t, err)
-
-	spans := mt.FinishedSpans()
-	assert.Len(t, spans, 1)
-	{
-		s := spans[0]
-		assert.Equal(t, "kafka", s.Tag(ext.ServiceName))
-		assert.Equal(t, "queue", s.Tag(ext.SpanType))
-		assert.Equal(t, "Produce Topic my_topic", s.Tag(ext.ResourceName))
-		assert.Equal(t, "kafka.produce", s.OperationName())
-		assert.Equal(t, int32(0), s.Tag(ext.MessagingKafkaPartition))
-		assert.Equal(t, int64(0), s.Tag("offset"))
-		assert.Equal(t, "IBM/sarama", s.Tag(ext.Component))
-		assert.Equal(t, ext.SpanKindProducer, s.Tag(ext.SpanKind))
-		assert.Equal(t, "kafka", s.Tag(ext.MessagingSystem))
-
-		p, ok := datastreams.PathwayFromContext(datastreams.ExtractFromBase64Carrier(context.Background(), NewProducerMessageCarrier(msg1)))
-		require.True(t, ok, "pathway not found in context")
-		expectedCtx, _ := tracer.SetDataStreamsCheckpoint(context.Background(), "direction:out", "topic:my_topic", "type:kafka")
-		expected, _ := datastreams.PathwayFromContext(expectedCtx)
-		assert.NotEqual(t, expected.GetHash(), 0)
-		assert.Equal(t, expected.GetHash(), p.GetHash())
-	}
-}
-
-func TestSyncProducerSendMessages(t *testing.T) {
-	mt := mocktracer.Start()
-	defer mt.Stop()
-
-	seedBroker := sarama.NewMockBroker(t, 1)
-	defer seedBroker.Close()
-	leader := sarama.NewMockBroker(t, 2)
-	defer leader.Close()
-
-	metadataResponse := new(sarama.MetadataResponse)
-	metadataResponse.Version = 1
-	metadataResponse.AddBroker(leader.Addr(), leader.BrokerID())
-	metadataResponse.AddTopicPartition("my_topic", 0, leader.BrokerID(), nil, nil, nil, sarama.ErrNoError)
-	seedBroker.Returns(metadataResponse)
-
-	prodSuccess := new(sarama.ProduceResponse)
-	prodSuccess.Version = 2
-	prodSuccess.AddTopicPartition("my_topic", 0, sarama.ErrNoError)
-	leader.Returns(prodSuccess)
-
-	cfg := sarama.NewConfig()
-	cfg.Version = sarama.V0_11_0_0 // first version that supports headers
-	cfg.Producer.Return.Successes = true
-	cfg.Producer.Flush.Messages = 2
-
-	producer, err := sarama.NewSyncProducer([]string{seedBroker.Addr()}, cfg)
-	require.NoError(t, err)
-	producer = WrapSyncProducer(cfg, producer, WithDataStreams())
-
-	msg1 := &sarama.ProducerMessage{
-		Topic:    "my_topic",
-		Value:    sarama.StringEncoder("test 1"),
-		Metadata: "test",
-	}
-	msg2 := &sarama.ProducerMessage{
-		Topic:    "my_topic",
-		Value:    sarama.StringEncoder("test 2"),
-		Metadata: "test",
-	}
-	err = producer.SendMessages([]*sarama.ProducerMessage{msg1, msg2})
-	require.NoError(t, err)
-
-	spans := mt.FinishedSpans()
-	require.Len(t, spans, 2)
-	for _, s := range spans {
-		assert.Equal(t, "kafka", s.Tag(ext.ServiceName))
-		assert.Equal(t, "queue", s.Tag(ext.SpanType))
-		assert.Equal(t, "Produce Topic my_topic", s.Tag(ext.ResourceName))
-		assert.Equal(t, "kafka.produce", s.OperationName())
-		assert.Equal(t, int32(0), s.Tag(ext.MessagingKafkaPartition))
-		assert.Equal(t, "IBM/sarama", s.Tag(ext.Component))
-		assert.Equal(t, ext.SpanKindProducer, s.Tag(ext.SpanKind))
-		assert.Equal(t, "kafka", s.Tag(ext.MessagingSystem))
-	}
-
-	for _, msg := range []*sarama.ProducerMessage{msg1, msg2} {
-		p, ok := datastreams.PathwayFromContext(datastreams.ExtractFromBase64Carrier(context.Background(), NewProducerMessageCarrier(msg)))
-		if !assert.True(t, ok, "pathway not found in context") {
-			continue
-		}
-		expectedCtx, _ := tracer.SetDataStreamsCheckpoint(context.Background(), "direction:out", "topic:my_topic", "type:kafka")
-		expected, _ := datastreams.PathwayFromContext(expectedCtx)
-		assert.NotEqual(t, expected.GetHash(), 0)
-		assert.Equal(t, expected.GetHash(), p.GetHash())
-	}
-}
-
-func TestAsyncProducer(t *testing.T) {
-	// the default for producers is a fire-and-forget model that doesn't return
-	// successes
-	t.Run("Without Successes", func(t *testing.T) {
-		mt := mocktracer.Start()
-		defer mt.Stop()
-
-		broker := newMockBroker(t)
-
-		cfg := sarama.NewConfig()
-		cfg.Version = sarama.V0_11_0_0
-		producer, err := sarama.NewAsyncProducer([]string{broker.Addr()}, cfg)
-		require.NoError(t, err)
-		producer = WrapAsyncProducer(nil, producer, WithDataStreams())
-
-		msg1 := &sarama.ProducerMessage{
-			Topic: "my_topic",
-			Value: sarama.StringEncoder("test 1"),
-		}
-		producer.Input() <- msg1
-
-		waitForSpans(mt, 1)
-
-		spans := mt.FinishedSpans()
-		require.Len(t, spans, 1)
-		{
-			s := spans[0]
-			assert.Equal(t, "kafka", s.Tag(ext.ServiceName))
-			assert.Equal(t, "queue", s.Tag(ext.SpanType))
-			assert.Equal(t, "Produce Topic my_topic", s.Tag(ext.ResourceName))
-			assert.Equal(t, "kafka.produce", s.OperationName())
-
-			// these tags are set in the finishProducerSpan function, but in this case it's never used, and instead we
-			// automatically finish spans after being started because we don't have a way to know when they are finished.
-			assert.Nil(t, s.Tag(ext.MessagingKafkaPartition))
-			assert.Nil(t, s.Tag("offset"))
-
-			assert.Equal(t, "IBM/sarama", s.Tag(ext.Component))
-			assert.Equal(t, ext.SpanKindProducer, s.Tag(ext.SpanKind))
-			assert.Equal(t, "kafka", s.Tag(ext.MessagingSystem))
-
-			p, ok := datastreams.PathwayFromContext(datastreams.ExtractFromBase64Carrier(context.Background(), NewProducerMessageCarrier(msg1)))
-			require.True(t, ok, "pathway not found in context")
-			expectedCtx, _ := tracer.SetDataStreamsCheckpoint(context.Background(), "direction:out", "topic:my_topic", "type:kafka")
-			expected, _ := datastreams.PathwayFromContext(expectedCtx)
-			assert.NotEqual(t, expected.GetHash(), 0)
-			assert.Equal(t, expected.GetHash(), p.GetHash())
-		}
-	})
-
-	t.Run("With Successes", func(t *testing.T) {
-		mt := mocktracer.Start()
-		defer mt.Stop()
-
-		broker := newMockBroker(t)
-
-		cfg := sarama.NewConfig()
-		cfg.Version = sarama.V0_11_0_0
-		cfg.Producer.Return.Successes = true
-
-		producer, err := sarama.NewAsyncProducer([]string{broker.Addr()}, cfg)
-		require.NoError(t, err)
-		producer = WrapAsyncProducer(cfg, producer, WithDataStreams())
-
-		msg1 := &sarama.ProducerMessage{
-			Topic: "my_topic",
-			Value: sarama.StringEncoder("test 1"),
-		}
-		producer.Input() <- msg1
-		<-producer.Successes()
-
-		spans := mt.FinishedSpans()
-		require.Len(t, spans, 1)
-		{
-			s := spans[0]
-			assert.Equal(t, "kafka", s.Tag(ext.ServiceName))
-			assert.Equal(t, "queue", s.Tag(ext.SpanType))
-			assert.Equal(t, "Produce Topic my_topic", s.Tag(ext.ResourceName))
-			assert.Equal(t, "kafka.produce", s.OperationName())
-			assert.Equal(t, int32(0), s.Tag(ext.MessagingKafkaPartition))
-			assert.Equal(t, int64(0), s.Tag("offset"))
-			assert.Equal(t, "IBM/sarama", s.Tag(ext.Component))
-			assert.Equal(t, ext.SpanKindProducer, s.Tag(ext.SpanKind))
-			assert.Equal(t, "kafka", s.Tag(ext.MessagingSystem))
-
-			p, ok := datastreams.PathwayFromContext(datastreams.ExtractFromBase64Carrier(context.Background(), NewProducerMessageCarrier(msg1)))
-			require.True(t, ok, "pathway not found in context")
-			expectedCtx, _ := tracer.SetDataStreamsCheckpoint(context.Background(), "direction:out", "topic:my_topic", "type:kafka")
-			expected, _ := datastreams.PathwayFromContext(expectedCtx)
-			assert.NotEqual(t, expected.GetHash(), 0)
-			assert.Equal(t, expected.GetHash(), p.GetHash())
-		}
-	})
-}
-
-func TestNamingSchema(t *testing.T) {
-	namingschematest.NewKafkaTest(genTestSpans)(t)
-}
-
 func newMockBroker(t *testing.T) *sarama.MockBroker {
 	broker := sarama.NewMockBroker(t, 1)
 
@@ -432,4 +124,49 @@ func waitForSpans(mt mocktracer.Tracer, sz int) {
 		}
 		time.Sleep(time.Millisecond * 100)
 	}
+}
+
+func assertDSMProducerPathway(t *testing.T, topic string, msg *sarama.ProducerMessage) {
+	t.Helper()
+
+	got, ok := datastreams.PathwayFromContext(datastreams.ExtractFromBase64Carrier(
+		context.Background(),
+		NewProducerMessageCarrier(msg),
+	))
+	require.True(t, ok, "pathway not found in kafka message")
+
+	ctx, _ := tracer.SetDataStreamsCheckpoint(
+		context.Background(),
+		"direction:out", "topic:"+topic, "type:kafka",
+	)
+	want, _ := datastreams.PathwayFromContext(ctx)
+
+	assert.NotEqual(t, want.GetHash(), 0)
+	assert.Equal(t, want.GetHash(), got.GetHash())
+}
+
+func assertDSMConsumerPathway(t *testing.T, topic, groupID string, msg *sarama.ConsumerMessage, withProducer bool) {
+	t.Helper()
+
+	carrier := NewConsumerMessageCarrier(msg)
+	got, ok := datastreams.PathwayFromContext(datastreams.ExtractFromBase64Carrier(
+		context.Background(),
+		carrier,
+	))
+	require.True(t, ok, "pathway not found in kafka message")
+
+	edgeTags := []string{"direction:in", "topic:" + topic, "type:kafka"}
+	if groupID != "" {
+		edgeTags = append(edgeTags, "group:"+groupID)
+	}
+
+	ctx := context.Background()
+	if withProducer {
+		ctx, _ = tracer.SetDataStreamsCheckpoint(context.Background(), "direction:out", "topic:"+testTopic, "type:kafka")
+	}
+	ctx, _ = tracer.SetDataStreamsCheckpoint(ctx, edgeTags...)
+	want, _ := datastreams.PathwayFromContext(ctx)
+
+	assert.NotEqual(t, want.GetHash(), 0)
+	assert.Equal(t, want.GetHash(), got.GetHash())
 }
