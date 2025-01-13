@@ -192,18 +192,18 @@ aspects:
       # Wire the context that is found to the handlers...
       - wrap-expression:
           imports:
-            instrument: github.com/DataDog/orchestrion/instrument/net/http
+            httptrace: gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http
           template: |-
             {{- $ctx := .Function.ArgumentOfType "context.Context" -}}
             {{- $req := .Function.ArgumentOfType "*net/http.Request" }}
             {{- if $ctx -}}
-              instrument.{{ .AST.Fun.Name }}(
+              httptrace.{{ .AST.Fun.Name }}(
                 {{ $ctx }},
                 {{ range .AST.Args }}{{ . }},
                 {{ end }}
               )
             {{- else if $req -}}
-              instrument.{{ .AST.Fun.Name }}(
+              httptrace.{{ .AST.Fun.Name }}(
                 {{ $req }}.Context(),
                 {{ range .AST.Args }}{{ . }},
                 {{ end }}
