@@ -329,8 +329,8 @@ func TestTraceAndServe(t *testing.T) {
 		t.Setenv("DD_TRACE_HTTP_SERVER_ERROR_STATUSES", "500")
 
 		cfg := &ServeConfig{
-			Service:       "service",
-			Resource:      "resource",
+			Service:  "service",
+			Resource: "resource",
 		}
 
 		handler := func(w http.ResponseWriter, r *http.Request) {
