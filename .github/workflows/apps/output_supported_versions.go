@@ -78,8 +78,8 @@ func fetchLatestVersion(module string) (string, error) {
 
 // Helper function to fetch the latest version using `go get` and `go list`
 func fetchLatestUsingGoGet(ctx context.Context, module string) (string, error) {
-	// Run `go get -d <module>@latest`
-	cmdGet := exec.CommandContext(ctx, "go", "get", "-d", module+"@latest")
+	// Run `go get <module>@latest`
+	cmdGet := exec.CommandContext(ctx, "go", "get", module+"@latest")
 	if err := cmdGet.Run(); err != nil {
 		return "", fmt.Errorf("failed to fetch latest version with go get: %w", err)
 	}
