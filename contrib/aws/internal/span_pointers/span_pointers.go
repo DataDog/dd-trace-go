@@ -38,21 +38,11 @@ func HandleS3Operation(in middleware.DeserializeInput, out middleware.Deserializ
 
 	// URL format: https://BUCKETNAME.s3.REGION.amazonaws.com/KEYNAME?x-id=OPERATIONNAME
 	key := strings.TrimPrefix(req.URL.Path, "/")
-	if key == "" {
-		log.Debug("Unable to create S3 span pointer because key could not be found.")
-		return
-	}
-
 	bucket := strings.Split(req.URL.Host, ".")[0]
-	if bucket == "" {
-		log.Debug("Unable to create S3 span pointer because bucket could not be found.")
-		return
-	}
-
 	// the AWS SDK sometimes wraps the eTag in quotes
 	etag := strings.Trim(res.Header.Get("ETag"), "\"")
-	if etag == "" {
-		log.Debug("Unable to create S3 span pointer because eTag could not be found.")
+	if key == "" || bucket == "" || etag == "" {
+		log.Debug("Unable to create S3 span pointer because key could not be found.")
 		return
 	}
 
