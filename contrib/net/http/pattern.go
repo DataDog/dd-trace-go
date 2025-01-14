@@ -7,9 +7,11 @@ package http
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 	"sync"
+	"unicode"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
@@ -111,6 +113,7 @@ func parsePatternNames(pattern string) ([]string, error) {
 
 	// At this point, rest is the path.
 	var names []string
+	seenNames := make(map[string]bool)
 	for len(rest) > 0 {
 		// Invariant: rest[0] == '/'.
 		rest = rest[1:]
@@ -143,9 +146,32 @@ func parsePatternNames(pattern string) ([]string, error) {
 			if multi && len(rest) != 0 {
 				return nil, errors.New("{...} wildcard not at end")
 			}
+			if name == "" {
+				return nil, errors.New("empty wildcard name")
+			}
+			if !isValidWildcardName(name) {
+				return nil, fmt.Errorf("bad wildcard name %q", name)
+			}
+			if seenNames[name] {
+				return nil, fmt.Errorf("duplicate wildcard name %q", name)
+			}
+			seenNames[name] = true
 			names = append(names, name)
 		}
 	}
 
 	return names, nil
+}
+
+func isValidWildcardName(s string) bool {
+	if s == "" {
+		return false
+	}
+	// Valid Go identifier.
+	for i, c := range s {
+		if !unicode.IsLetter(c) && c != '_' && (i == 0 || !unicode.IsDigit(c)) {
+			return false
+		}
+	}
+	return true
 }

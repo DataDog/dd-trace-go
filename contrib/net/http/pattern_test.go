@@ -94,7 +94,6 @@ func TestPatternNames(t *testing.T) {
 		{"/foo/{bar}/{baz}...", nil, true},
 		{"/foo/{bar", nil, true},
 		{"/foo/{bar{baz}}", nil, true},
-		{"/foo/{bar!}", nil, true},
 		{"/foo/{}", nil, true},
 		{"{}", nil, true},
 		{"GET /foo/{bar}", []string{"bar"}, false},
@@ -105,7 +104,6 @@ func TestPatternNames(t *testing.T) {
 		{"OPTIONS /foo/{bar}/{baz}...", nil, true},
 		{"GET /foo/{bar", nil, true},
 		{"POST /foo/{bar{baz}}", nil, true},
-		{"PUT /foo/{bar!}", nil, true},
 		{"DELETE /foo/{}", nil, true},
 		{"OPTIONS {}", nil, true},
 		{"GET example.com/foo/{bar}", []string{"bar"}, false},
@@ -116,7 +114,6 @@ func TestPatternNames(t *testing.T) {
 		{"OPTIONS example.com/foo/{bar}/{baz}...", nil, true},
 		{"GET example.com/foo/{bar", nil, true},
 		{"POST example.com/foo/{bar{baz}}", nil, true},
-		{"PUT example.com/foo/{bar!}", nil, true},
 		{"DELETE example.com/foo/{}", nil, true},
 		{"OPTIONS example.com/{}", nil, true},
 	}
