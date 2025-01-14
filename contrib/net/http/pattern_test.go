@@ -123,7 +123,7 @@ func TestPatternNames(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.pattern, func(t *testing.T) {
-			names, err := patternNames(tt.pattern)
+			names, err := parsePatternNames(tt.pattern)
 			if tt.err {
 				assert.Error(t, err)
 				assert.Nil(t, names)

@@ -7,11 +7,9 @@ package http
 
 import (
 	"errors"
-	"fmt"
 	"net/http"
 	"strings"
 	"sync"
-	"unicode"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
@@ -52,7 +50,7 @@ func getPatternNames(pattern string) []string {
 		return v.([]string)
 	}
 
-	segments, err := patternNames(pattern)
+	segments, err := parsePatternNames(pattern)
 	if err != nil {
 		// Ignore the error: Something as gone wrong, but we are not eager to find out why.
 		log.Debug("contrib/net/http: failed to parse mux path pattern %q: %v", pattern, err)
@@ -63,7 +61,7 @@ func getPatternNames(pattern string) []string {
 	return segments
 }
 
-// patternNames returns the names of the wildcards in the pattern.
+// parsePatternNames returns the names of the wildcards in the pattern.
 // Based on https://cs.opensource.google/go/go/+/refs/tags/go1.23.4:src/net/http/pattern.go;l=84
 // but very simplified as we know that the pattern returned must be valid or `net/http` would have panicked earlier.
 //
@@ -83,7 +81,12 @@ func getPatternNames(pattern string) []string {
 // The "{$}" and "{name...}" wildcard must occur at the end of PATH.
 // PATH may end with a '/'.
 // Wildcard names in a path must be distinct.
-func patternNames(pattern string) ([]string, error) {
+//
+// Some examples could be:
+//   - "/foo/{bar}" returns ["bar"]
+//   - "/foo/{bar}/{baz}" returns ["bar", "baz"]
+//   - "/foo" returns []
+func parsePatternNames(pattern string) ([]string, error) {
 	if len(pattern) == 0 {
 		return nil, errors.New("empty pattern")
 	}
@@ -108,7 +111,6 @@ func patternNames(pattern string) ([]string, error) {
 
 	// At this point, rest is the path.
 	var names []string
-	seenNames := make(map[string]bool)
 	for len(rest) > 0 {
 		// Invariant: rest[0] == '/'.
 		rest = rest[1:]
@@ -141,32 +143,9 @@ func patternNames(pattern string) ([]string, error) {
 			if multi && len(rest) != 0 {
 				return nil, errors.New("{...} wildcard not at end")
 			}
-			if name == "" {
-				return nil, errors.New("empty wildcard name")
-			}
-			if !isValidWildcardName(name) {
-				return nil, fmt.Errorf("bad wildcard name %q", name)
-			}
-			if seenNames[name] {
-				return nil, fmt.Errorf("duplicate wildcard name %q", name)
-			}
-			seenNames[name] = true
 			names = append(names, name)
 		}
 	}
 
 	return names, nil
-}
-
-func isValidWildcardName(s string) bool {
-	if s == "" {
-		return false
-	}
-	// Valid Go identifier.
-	for i, c := range s {
-		if !unicode.IsLetter(c) && c != '_' && (i == 0 || !unicode.IsDigit(c)) {
-			return false
-		}
-	}
-	return true
 }
