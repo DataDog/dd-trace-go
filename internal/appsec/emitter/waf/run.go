@@ -61,7 +61,7 @@ func (op *ContextOperation) Run(eventReceiver dyngo.Operation, addrs waf.RunAddr
 func RunSimple(ctx context.Context, addrs waf.RunAddressData, errorLog string) error {
 	parent, _ := dyngo.FromContext(ctx)
 	if parent == nil {
-		log.Error(errorLog)
+		log.Error("%s", errorLog)
 		return nil
 	}
 

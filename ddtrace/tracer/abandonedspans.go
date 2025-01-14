@@ -284,7 +284,7 @@ func (d *abandonedSpansDebugger) log(interval *time.Duration) {
 		log.Warn("Too many abandoned spans. Truncating message.")
 		sb.WriteString("...")
 	}
-	log.Warn(sb.String())
+	log.Warn("%s", sb.String())
 }
 
 // formatAbandonedSpans takes a bucket and returns a human-readable string representing
