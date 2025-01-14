@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -85,8 +86,8 @@ func getLatestMajor(repo string) (string, error) {
 // 	// if no repository exists that matches this pattern, error
 // 	// return the largest major version associated
 
-// GetLatestMajorContrib finds the latest major version of a repository in the contrib directory.
-func GetLatestMajorContrib(repository string) (string, error) {
+// getLatestMajorContrib finds the latest major version of a repository in the contrib directory.
+func getLatestMajorContrib(repository string) (string, error) {
 	const contribDir = "contrib"
 
 	// Prepare the repository matching pattern
@@ -179,9 +180,9 @@ func extractVersionFromGoMod(goModPath string, repository string) (string, error
 
 }
 
-// ValidateRepository checks if the repository string starts with "github.com" and ends with a version suffix.
+// validateRepository checks if the repository string starts with "github.com" and ends with a version suffix.
 // Returns true if the repository is valid, false otherwise.
-func ValidateRepository(repo string) bool {
+func validateRepository(repo string) bool {
 	const prefix = "github.com/"
 	if !strings.HasPrefix(repo, prefix) {
 		return false
@@ -196,7 +197,7 @@ func ValidateRepository(repo string) bool {
 }
 
 func main() {
-
+	log.SetFlags(0) // disable date and time logging
 	packages := instrumentation.GetPackages()
 	integrations := make(map[string]struct{})
 
@@ -204,7 +205,7 @@ func main() {
 		repository := info.TracedPackage
 
 		// repo starts with github and ends in version suffix
-		if ValidateRepository(repository) {
+		if validateRepository(repository) {
 			const prefix = "github.com"
 
 			// check if we've seen this integration before
@@ -214,29 +215,27 @@ func main() {
 				continue
 			}
 
-			fmt.Printf("Base repo: %s\n", baseRepo)
+			log.Printf("Base repo: %s\n", baseRepo)
 
 			// Get the latest major from GH
 			latest_major_version, err := getLatestMajor(baseRepo)
 			if err != nil {
-				fmt.Printf("Error getting min version for repo %s: %v\n", repository, err)
+				log.Printf("Error getting min version for repo %s: %v\n", repository, err)
 				continue
 			}
 			integrations[baseRepo] = struct{}{}
 
 			// Get the latest major from go.mod
-			latest_major_contrib, err := GetLatestMajorContrib(baseRepo)
-			fmt.Printf("latest major on go.mod: %s\n", latest_major_contrib)
+			latest_major_contrib, err := getLatestMajorContrib(baseRepo)
 
 			if err != nil {
-				fmt.Printf("Error getting latest major from go.mod for %s: %v\n", repository, err)
+				log.Printf("Error getting latest major from go.mod for %s: %v\n", repository, err)
 			}
+			log.Printf("major on go.mod: %s\n", semver.Major(latest_major_contrib))
+			log.Printf("major on github: %s\n", latest_major_version)
 
 			if semver.Major(latest_major_contrib) != latest_major_version {
-				fmt.Printf("major on go.mod: %s\n", semver.Major(latest_major_contrib))
-				fmt.Printf("major on github: %s\n", latest_major_version)
-				fmt.Printf("repository %s has a new major latest on github: %s\n", baseRepo, latest_major_version)
-
+				log.Printf("repository %s has a new major latest on github: %s\n", baseRepo, latest_major_version)
 			}
 
 		}
