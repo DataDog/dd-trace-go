@@ -128,7 +128,6 @@ func (mw *traceMiddleware) startTraceMiddleware(stack *middleware.Stack) error {
 		if err != nil && (mw.cfg.errCheck == nil || mw.cfg.errCheck(err)) {
 			span.SetTag(ext.Error, err)
 		}
-		span.Finish()
 
 		return out, metadata, err
 	}), middleware.After)
@@ -363,6 +362,8 @@ func (mw *traceMiddleware) deserializeTraceMiddleware(stack *middleware.Stack) e
 		if serviceID == "S3" {
 			span_pointers.HandleS3Operation(in, out, span)
 		}
+
+		span.Finish()
 
 		return out, metadata, err
 	}), middleware.Before)
