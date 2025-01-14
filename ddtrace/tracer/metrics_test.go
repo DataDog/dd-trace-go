@@ -52,14 +52,13 @@ func TestReportHealthMetricsAtInterval(t *testing.T) {
 	var tg statsdtest.TestStatsdClient
 
 	defer func(old time.Duration) { statsInterval = old }(statsInterval)
-	statsInterval = time.Nanosecond
+	statsInterval = time.Millisecond
 
 	tracer, _, flush, stop := startTestTracer(t, withStatsdClient(&tg))
 	defer stop()
 
 	tracer.StartSpan("operation").Finish()
 	flush(1)
-	time.Sleep(100 * time.Millisecond)
 	tg.Wait(assert, 4, 10*time.Second)
 
 	counts := tg.Counts()
