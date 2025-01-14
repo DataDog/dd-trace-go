@@ -2,7 +2,6 @@
 // under the Apache License Version 2.0.
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
-
 package http
 
 import (
@@ -114,7 +113,6 @@ type RoundTripperBeforeFunc func(*http.Request, ddtrace.Span)
 // A RoundTripperAfterFunc can be used to modify a span after an http
 // RoundTrip is made. It is possible for the http Response to be nil.
 type RoundTripperAfterFunc func(*http.Response, ddtrace.Span)
-
 type roundTripperConfig struct {
 	before        RoundTripperBeforeFunc
 	after         RoundTripperAfterFunc
@@ -243,6 +241,14 @@ func RTWithPropagation(propagation bool) RoundTripperOption {
 func RTWithIgnoreRequest(f func(*http.Request) bool) RoundTripperOption {
 	return func(cfg *roundTripperConfig) {
 		cfg.ignoreRequest = f
+	}
+}
+
+// WithStatusCheck sets a span to be an error if the passed function
+// returns true for a given status code.
+func WithStatusCheck(fn func(statusCode int) bool) Option {
+	return func(cfg *cfg.Config) {
+		cfg.IsStatusError = fn
 	}
 }
 

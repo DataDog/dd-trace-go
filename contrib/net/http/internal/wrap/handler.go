@@ -42,10 +42,11 @@ func Handler(h http.Handler, service, resource string, opts ...config.Option) ht
 			copy(so, cfg.SpanOpts)
 			so = append(so, httptrace.HeaderTagsFromRequest(req, cfg.HeaderTags))
 			TraceAndServe(h, w, req, &httptrace.ServeConfig{
-				Service:    service,
-				Resource:   resc,
-				FinishOpts: cfg.FinishOpts,
-				SpanOpts:   so,
+				Service:       service,
+				Resource:      resc,
+				FinishOpts:    cfg.FinishOpts,
+				SpanOpts:      so,
+				IsStatusError: cfg.IsStatusError,
 			})
 		},
 	}

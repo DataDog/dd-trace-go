@@ -27,6 +27,7 @@ type Config struct {
 	FinishOpts    []ddtrace.FinishOption
 	IgnoreRequest func(*http.Request) bool
 	ResourceNamer func(*http.Request) string
+	IsStatusError func(int) bool
 	HeaderTags    *internal.LockMap
 	ServiceName   string
 	AnalyticsRate float64
