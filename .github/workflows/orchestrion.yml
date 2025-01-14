@@ -47,7 +47,31 @@ jobs:
       - name: Check for changes
         run: git diff --exit-code
 
+  go-versions-matrix:
+    name: Go Versions Matrix
+    runs-on: ubuntu-latest
+    outputs:
+      json: ${{ steps.matrix.outputs.json }}
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ inputs.orchestrion-version != '' && 'DataDog/dd-trace-go' || github.repository }}
+          ref: ${{ inputs.orchestrion-version != '' && 'romain.marcadier/APPSEC-55160/orchestrion' || github.sha }} # TODO: Change to `main` in workflow_call case
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: stable
+          cache: true
+          cache-dependency-path: '**/go.mod'
+      - name: Compute Matrix
+        id: matrix
+        run: |-
+          echo -n "json="                      >> "${GITHUB_OUTPUT}"
+          go run ./internal/orchestrion/matrix >> "${GITHUB_OUTPUT}"
+
   integration-test:
+    needs: [go-versions-matrix]
     strategy:
       fail-fast: false
       matrix:
@@ -55,7 +79,7 @@ jobs:
           - ubuntu
           - macos
           - windows
-        go-version: [oldstable, stable]
+        go-version: ${{ fromJSON(needs.go-versions-matrix.outputs.json) }}
         mode: [DRIVER]
         include:
           # Alternate build modes (only on ubuntu with oldstable, so we save up CI time)
