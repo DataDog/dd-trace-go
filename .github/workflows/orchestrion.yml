@@ -77,13 +77,20 @@ jobs:
       # Ryuk is problematic with concurrent executions, and unnecessary in ephemeral environments like GHA.
       TESTCONTAINERS_RYUK_DISABLED: true
     steps:
+      - name: Determine dd-trace-go ref
+        id: find-repo-ref
+        shell: bash
+        # github.workflow_ref is "<owner>/<repo>/<path-to-workflow.yml>@<ref>"
+        run: |-
+          set -euo pipefail
+          echo "repository=$(echo '${{ github.workflow_ref }}' | cut -d'/' -f1,2)" >> "${GITHUB_OUTPUT}"
+          echo "ref=$(echo '${{ github.workflow_ref }}' | cut -d'@' -f2)" >> "${GITHUB_OUTPUT}"
       - name: Checkout Code
         uses: actions/checkout@v4
         with:
           path: ${{ github.workspace }}/dd-trace-go
-          repository: ${{ github.event != 'workflow_dispatch' && inputs.orchestrion-version != '' && 'DataDog/dd-trace-go' || github.repository }}
-          # TODO: workflow_call ref should be set to `main` before merging...
-          ref: ${{ github.event != 'workflow_dispatch' && inputs.orchestrion-version != '' && 'romain.marcadier/APPSEC-55160/orchestrion' || github.sha }}
+          repository: ${{ steps.find-repo-ref.outputs.repository }}
+          ref: ${{ steps.find-repo-ref.outputs.ref }}
       - name: Setup Go
         id: setup-go
         uses: actions/setup-go@v5
