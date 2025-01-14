@@ -162,7 +162,9 @@ jobs:
         shell: bash
         run: |-
           mkdir -p "${{ github.workspace }}/orchestrion/coverage"
-          go tool covdata textfmt -i "${GOCOVERDIR}" -o ${{ github.workspace }}/orchestrion/coverage/integration.out
+          go tool covdata textfmt -i "${GOCOVERDIR}" -o "${WORKSPACE}/orchestrion/coverage/integration.out"
+        env:
+          WORKSPACE: ${{ github.workspace }}
       - name: Determine go minor version
         if: inputs.collect-coverage
         id: go
