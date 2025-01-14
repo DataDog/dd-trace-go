@@ -31,7 +31,7 @@ type config struct {
 	tags               map[string]interface{}
 	dbmPropagationMode tracer.DBMPropagationMode
 	dbStats            bool
-	statsTags		   []string
+	statsTags          []string
 	statsdClient       internal.StatsdClient
 }
 
