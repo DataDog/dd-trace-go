@@ -20,15 +20,15 @@ aspects:
           # We need to use go:linkname to refer to a number of declarations in order to avoid creating
           # circular dependencies, as these features have transitive dependencies on `net/http`...
           links:
-            - github.com/DataDog/orchestrion/instrument
+            - gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http
           template: |-
-            //go:linkname __dd_orchestrion_instrument_WrapHandler github.com/DataDog/orchestrion/instrument.WrapHandler
-            func __dd_orchestrion_instrument_WrapHandler(handler Handler) Handler
+            //go:linkname __dd_contrib_net_http_internal_orchestrion_WrapHandler gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http/internal/orchestrion.WrapHandler
+            func __dd_contrib_net_http_internal_orchestrion_WrapHandler(Handler) Handler
       - prepend-statements:
           template: |-
             {{- $srv := .Function.Receiver -}}
             if {{ $srv }}.Handler == nil {
-              {{ $srv }}.Handler = __dd_orchestrion_instrument_WrapHandler(DefaultServeMux)
+              {{ $srv }}.Handler = __dd_contrib_net_http_internal_orchestrion_WrapHandler(DefaultServeMux)
             } else {
-              {{ $srv }}.Handler = __dd_orchestrion_instrument_WrapHandler({{ $srv }}.Handler)
+              {{ $srv }}.Handler = __dd_contrib_net_http_internal_orchestrion_WrapHandler({{ $srv }}.Handler)
             }

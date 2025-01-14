@@ -8,7 +8,7 @@ require (
 	cloud.google.com/go/pubsub v1.44.0
 	github.com/99designs/gqlgen v0.17.62
 	github.com/DataDog/go-libddwaf/v3 v3.5.1
-	github.com/DataDog/orchestrion v1.0.3-rc.1.0.20250113144450-cb858f6c987c
+	github.com/DataDog/orchestrion v1.0.3-rc.1.0.20250114094042-8616c1bcb819
 	github.com/IBM/sarama v1.44.0
 	github.com/Shopify/sarama v1.38.1
 	github.com/aws/aws-sdk-go v1.55.5

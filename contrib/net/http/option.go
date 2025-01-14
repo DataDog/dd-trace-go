@@ -11,6 +11,7 @@ import (
 	"os"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/httptrace"
+	cfg "gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http/internal/config"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
@@ -21,57 +22,30 @@ import (
 )
 
 const (
-	defaultServiceName = "http.router"
 	// envClientQueryStringEnabled is the name of the env var used to specify whether query string collection is enabled for http client spans.
 	envClientQueryStringEnabled = "DD_TRACE_HTTP_CLIENT_TAG_QUERY_STRING"
 	// envClientErrorStatuses is the name of the env var that specifies error status codes on http client spans
 	envClientErrorStatuses = "DD_TRACE_HTTP_CLIENT_ERROR_STATUSES"
 )
 
-type config struct {
-	serviceName   string
-	analyticsRate float64
-	spanOpts      []ddtrace.StartSpanOption
-	finishOpts    []ddtrace.FinishOption
-	ignoreRequest func(*http.Request) bool
-	resourceNamer func(*http.Request) string
-	headerTags    *internal.LockMap
-}
+// Option represents an option that can be passed to NewServeMux or WrapHandler.
+type Option = cfg.Option
 
 // MuxOption has been deprecated in favor of Option.
 type MuxOption = Option
 
-// Option represents an option that can be passed to NewServeMux or WrapHandler.
-type Option func(*config)
-
-func defaults(cfg *config) {
-	if internal.BoolEnv("DD_TRACE_HTTP_ANALYTICS_ENABLED", false) {
-		cfg.analyticsRate = 1.0
-	} else {
-		cfg.analyticsRate = globalconfig.AnalyticsRate()
-	}
-	cfg.serviceName = namingschema.ServiceName(defaultServiceName)
-	cfg.headerTags = globalconfig.HeaderTagMap()
-	cfg.spanOpts = []ddtrace.StartSpanOption{tracer.Measured()}
-	if !math.IsNaN(cfg.analyticsRate) {
-		cfg.spanOpts = append(cfg.spanOpts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
-	}
-	cfg.ignoreRequest = func(_ *http.Request) bool { return false }
-	cfg.resourceNamer = func(_ *http.Request) string { return "" }
-}
-
 // WithIgnoreRequest holds the function to use for determining if the
 // incoming HTTP request should not be traced.
 func WithIgnoreRequest(f func(*http.Request) bool) MuxOption {
-	return func(cfg *config) {
-		cfg.ignoreRequest = f
+	return func(cfg *cfg.Config) {
+		cfg.IgnoreRequest = f
 	}
 }
 
 // WithServiceName sets the given service name for the returned ServeMux.
 func WithServiceName(name string) MuxOption {
-	return func(cfg *config) {
-		cfg.serviceName = name
+	return func(cfg *cfg.Config) {
+		cfg.ServiceName = name
 	}
 }
 
@@ -81,32 +55,32 @@ func WithServiceName(name string) MuxOption {
 // Special headers can not be sub-selected. E.g., an entire Cookie header would be transmitted, without the ability to choose specific Cookies.
 func WithHeaderTags(headers []string) Option {
 	headerTagsMap := normalizer.HeaderTagSlice(headers)
-	return func(cfg *config) {
-		cfg.headerTags = internal.NewLockMap(headerTagsMap)
+	return func(cfg *cfg.Config) {
+		cfg.HeaderTags = internal.NewLockMap(headerTagsMap)
 	}
 }
 
 // WithAnalytics enables Trace Analytics for all started spans.
 func WithAnalytics(on bool) MuxOption {
-	return func(cfg *config) {
+	return func(cfg *cfg.Config) {
 		if on {
-			cfg.analyticsRate = 1.0
-			cfg.spanOpts = append(cfg.spanOpts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
+			cfg.AnalyticsRate = 1.0
+			cfg.SpanOpts = append(cfg.SpanOpts, tracer.Tag(ext.EventSampleRate, cfg.AnalyticsRate))
 		} else {
-			cfg.analyticsRate = math.NaN()
+			cfg.AnalyticsRate = math.NaN()
 		}
 	}
 }
 
 // WithAnalyticsRate sets the sampling rate for Trace Analytics events
 // correlated to started spans.
-func WithAnalyticsRate(rate float64) MuxOption {
-	return func(cfg *config) {
+func WithAnalyticsRate(rate float64) Option {
+	return func(cfg *cfg.Config) {
 		if rate >= 0.0 && rate <= 1.0 {
-			cfg.analyticsRate = rate
-			cfg.spanOpts = append(cfg.spanOpts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
+			cfg.AnalyticsRate = rate
+			cfg.SpanOpts = append(cfg.SpanOpts, tracer.Tag(ext.EventSampleRate, cfg.AnalyticsRate))
 		} else {
-			cfg.analyticsRate = math.NaN()
+			cfg.AnalyticsRate = math.NaN()
 		}
 	}
 }
@@ -114,24 +88,22 @@ func WithAnalyticsRate(rate float64) MuxOption {
 // WithSpanOptions defines a set of additional ddtrace.StartSpanOption to be added
 // to spans started by the integration.
 func WithSpanOptions(opts ...ddtrace.StartSpanOption) Option {
-	return func(cfg *config) {
-		cfg.spanOpts = append(cfg.spanOpts, opts...)
+	return func(cfg *cfg.Config) {
+		cfg.SpanOpts = append(cfg.SpanOpts, opts...)
 	}
 }
 
 // WithResourceNamer populates the name of a resource based on a custom function.
 func WithResourceNamer(namer func(req *http.Request) string) Option {
-	return func(cfg *config) {
-		cfg.resourceNamer = namer
-	}
+	return cfg.WithResourceNamer(namer)
 }
 
 // NoDebugStack prevents stack traces from being attached to spans finishing
 // with an error. This is useful in situations where errors are frequent and
 // performance is critical.
 func NoDebugStack() Option {
-	return func(cfg *config) {
-		cfg.finishOpts = append(cfg.finishOpts, tracer.NoDebugStack())
+	return func(cfg *cfg.Config) {
+		cfg.FinishOpts = append(cfg.FinishOpts, tracer.NoDebugStack())
 	}
 }
 

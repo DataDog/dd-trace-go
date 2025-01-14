@@ -685,6 +685,8 @@ github.com/DataDog/opentelemetry-mapping-go/pkg/otlp/attributes v0.22.0 h1:yfk2c
 github.com/DataDog/opentelemetry-mapping-go/pkg/otlp/attributes v0.22.0/go.mod h1:9qzpnBSxSOnKzbF/uHket3SSlQihQHix/ZRC2nZUUYQ=
 github.com/DataDog/orchestrion v1.0.3-rc.1.0.20250113144450-cb858f6c987c h1:PbUXSwd1SoEodHlpomUGKWKC4lxV7c2PblxvtR9t2jY=
 github.com/DataDog/orchestrion v1.0.3-rc.1.0.20250113144450-cb858f6c987c/go.mod h1:gaLp2xwAzjGLWKrz+sUPri+3kVgo4fI3e35geUHOGqk=
+github.com/DataDog/orchestrion v1.0.3-rc.1.0.20250114094042-8616c1bcb819 h1:VQ97Zi8Vz/vRoOoujCao4CBMI9/2Uir6vq79OnGWrak=
+github.com/DataDog/orchestrion v1.0.3-rc.1.0.20250114094042-8616c1bcb819/go.mod h1:gaLp2xwAzjGLWKrz+sUPri+3kVgo4fI3e35geUHOGqk=
 github.com/DataDog/sketches-go v1.4.6 h1:acd5fb+QdUzGrosfNLwrIhqyrbMORpvBy7mE+vHlT3I=
 github.com/DataDog/sketches-go v1.4.6/go.mod h1:7Y8GN8Jf66DLyDhc94zuWA3uHEt/7ttt8jHOBWWrSOg=
 github.com/GoogleCloudPlatform/grpc-gcp-go/grpcgcp v1.5.2 h1:DBjmt6/otSdULyJdVg2BlG0qGZO5tKL4VzOs0jpvw5Q=
