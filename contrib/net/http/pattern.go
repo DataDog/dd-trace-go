@@ -33,7 +33,7 @@ var patternSegmentsCache sync.Map // map[string][]string
 
 // patternValues return the path parameter values and names from the request.
 func patternValues(pattern string, request *http.Request) map[string]string {
-	if pattern == "" { // using <=1.21 serve mux behavior, aborting
+	if pattern == "" {
 		return nil
 	}
 	names := getPatternNames(pattern)

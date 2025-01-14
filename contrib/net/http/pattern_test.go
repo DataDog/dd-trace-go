@@ -11,6 +11,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 )
 
 func TestPathParams(t *testing.T) {
@@ -131,4 +133,37 @@ func TestPatternNames(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestServeMuxGo122Patterns(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	// A mux with go1.21 patterns ("/bar") and go1.22 patterns ("GET /foo")
+	mux := NewServeMux()
+	mux.HandleFunc("/bar", func(_ http.ResponseWriter, _ *http.Request) {})
+	mux.HandleFunc("GET /foo", func(_ http.ResponseWriter, _ *http.Request) {})
+
+	// Try to hit both routes
+	barW := httptest.NewRecorder()
+	mux.ServeHTTP(barW, httptest.NewRequest("GET", "/bar", nil))
+	fooW := httptest.NewRecorder()
+	mux.ServeHTTP(fooW, httptest.NewRequest("GET", "/foo", nil))
+
+	// Assert the number of spans
+	assert := assert.New(t)
+	spans := mt.FinishedSpans()
+	assert.Equal(2, len(spans))
+
+	// Check the /bar span
+	barSpan := spans[0]
+	assert.Equal(http.StatusOK, barW.Code)
+	assert.Equal("/bar", barSpan.Tag(ext.HTTPRoute))
+	assert.Equal("GET /bar", barSpan.Tag(ext.ResourceName))
+
+	// Check the /foo span
+	fooSpan := spans[1]
+	assert.Equal(http.StatusOK, fooW.Code)
+	assert.Equal("/foo", fooSpan.Tag(ext.HTTPRoute))
+	assert.Equal("GET /foo", fooSpan.Tag(ext.ResourceName))
 }
