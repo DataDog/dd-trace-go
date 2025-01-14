@@ -11,14 +11,14 @@ import (
 )
 
 func TestBaggageFunctions(t *testing.T) {
-	t.Run("SetBaggage and Baggage", func(t *testing.T) {
+	t.Run("Set and Get", func(t *testing.T) {
 		ctx := context.Background()
 
 		// Set a key/value in the baggage
-		ctx = SetBaggage(ctx, "foo", "bar")
+		ctx = Set(ctx, "foo", "bar")
 
 		// Retrieve that value
-		got, ok := Baggage(ctx, "foo")
+		got, ok := Get(ctx, "foo")
 		if !ok {
 			t.Error("Expected key \"foo\" to be found in baggage, got ok=false")
 		}
@@ -27,7 +27,7 @@ func TestBaggageFunctions(t *testing.T) {
 		}
 
 		// Ensure retrieving a non-existent key returns an empty string and false
-		got, ok = Baggage(ctx, "missingKey")
+		got, ok = Get(ctx, "missingKey")
 		if ok {
 			t.Error("Expected key \"missingKey\" to not be found, got ok=true")
 		}
@@ -36,15 +36,15 @@ func TestBaggageFunctions(t *testing.T) {
 		}
 	})
 
-	t.Run("AllBaggage", func(t *testing.T) {
+	t.Run("GetAll", func(t *testing.T) {
 		ctx := context.Background()
 
 		// Set multiple baggage entries
-		ctx = SetBaggage(ctx, "key1", "value1")
-		ctx = SetBaggage(ctx, "key2", "value2")
+		ctx = Set(ctx, "key1", "value1")
+		ctx = Set(ctx, "key2", "value2")
 
 		// Retrieve all baggage entries
-		all := AllBaggage(ctx)
+		all := GetAll(ctx)
 		if len(all) != 2 {
 			t.Fatalf("Expected 2 items in baggage; got %d", len(all))
 		}
@@ -59,23 +59,23 @@ func TestBaggageFunctions(t *testing.T) {
 
 		// Confirm returned map is a copy, not the original
 		all["key1"] = "modified"
-		val, _ := Baggage(ctx, "key1")
+		val, _ := Get(ctx, "key1")
 		if val == "modified" {
 			t.Error("AllBaggage returned a map that mutates the original baggage!")
 		}
 	})
 
-	t.Run("RemoveBaggage", func(t *testing.T) {
+	t.Run("Remove", func(t *testing.T) {
 		ctx := context.Background()
 
 		// Add baggage to remove
-		ctx = SetBaggage(ctx, "deleteMe", "toBeRemoved")
+		ctx = Set(ctx, "deleteMe", "toBeRemoved")
 
 		// Remove it
-		ctx = RemoveBaggage(ctx, "deleteMe")
+		ctx = Remove(ctx, "deleteMe")
 
 		// Verify removal
-		got, ok := Baggage(ctx, "deleteMe")
+		got, ok := Get(ctx, "deleteMe")
 		if ok {
 			t.Error("Expected key \"deleteMe\" to be removed, got ok=true")
 		}
@@ -84,18 +84,18 @@ func TestBaggageFunctions(t *testing.T) {
 		}
 	})
 
-	t.Run("ClearBaggage", func(t *testing.T) {
+	t.Run("Clear", func(t *testing.T) {
 		ctx := context.Background()
 
 		// Add multiple items
-		ctx = SetBaggage(ctx, "k1", "v1")
-		ctx = SetBaggage(ctx, "k2", "v2")
+		ctx = Set(ctx, "k1", "v1")
+		ctx = Set(ctx, "k2", "v2")
 
 		// Clear all baggage
-		ctx = ClearBaggage(ctx)
+		ctx = Clear(ctx)
 
 		// Check that everything is gone
-		all := AllBaggage(ctx)
+		all := GetAll(ctx)
 		if len(all) != 0 {
 			t.Errorf("Expected no items after clearing baggage; got %d", len(all))
 		}
@@ -109,7 +109,7 @@ func TestBaggageFunctions(t *testing.T) {
 		ctx = withBaggage(ctx, initialMap)
 
 		// Verify
-		got, _ := Baggage(ctx, "customKey")
+		got, _ := Get(ctx, "customKey")
 		if got != "customValue" {
 			t.Errorf("Baggage(ctx, \"customKey\") = %q; want \"customValue\"", got)
 		}
@@ -119,13 +119,13 @@ func TestBaggageFunctions(t *testing.T) {
 		ctx := context.Background()
 
 		// Check an unset key
-		val, ok := Baggage(ctx, "unsetKey")
+		val, ok := Get(ctx, "unsetKey")
 		if ok {
 			t.Errorf("Expected unset key to return ok=false, got ok=true with val=%q", val)
 		}
 
-		ctx = SetBaggage(ctx, "testKey", "testVal")
-		val, ok = Baggage(ctx, "testKey")
+		ctx = Set(ctx, "testKey", "testVal")
+		val, ok = Get(ctx, "testKey")
 		if !ok {
 			t.Error("Expected key \"testKey\" to be present, got ok=false")
 		}

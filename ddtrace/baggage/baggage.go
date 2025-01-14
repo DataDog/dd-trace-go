@@ -30,9 +30,9 @@ func withBaggage(ctx context.Context, baggage map[string]string) context.Context
 	return context.WithValue(ctx, baggageKey{}, baggage)
 }
 
-// SetBaggage sets or updates a single baggage key/value pair in the context.
+// Set sets or updates a single baggage key/value pair in the context.
 // If the key already exists, this function overwrites the existing value.
-func SetBaggage(ctx context.Context, key, value string) context.Context {
+func Set(ctx context.Context, key, value string) context.Context {
 	bm, ok := baggageMap(ctx)
 	if !ok {
 		// If there's no baggage map yet, create one
@@ -42,9 +42,9 @@ func SetBaggage(ctx context.Context, key, value string) context.Context {
 	return withBaggage(ctx, bm)
 }
 
-// Baggage retrieves the value associated with a baggage key.
+// Get retrieves the value associated with a baggage key.
 // If the key isn't found, it returns an empty string.
-func Baggage(ctx context.Context, key string) (string, bool) {
+func Get(ctx context.Context, key string) (string, bool) {
 	bm, ok := baggageMap(ctx)
 	if !ok {
 		return "", false
@@ -53,8 +53,8 @@ func Baggage(ctx context.Context, key string) (string, bool) {
 	return value, ok
 }
 
-// RemoveBaggage removes the specified key from the baggage (if present).
-func RemoveBaggage(ctx context.Context, key string) context.Context {
+// Remove removes the specified key from the baggage (if present).
+func Remove(ctx context.Context, key string) context.Context {
 	bm, ok := baggageMap(ctx)
 	if !ok {
 		// nothing to remove
@@ -64,8 +64,8 @@ func RemoveBaggage(ctx context.Context, key string) context.Context {
 	return withBaggage(ctx, bm)
 }
 
-// AllBaggage returns a **copy** of all baggage items in the context,
-func AllBaggage(ctx context.Context) map[string]string {
+// GetAll returns a **copy** of all baggage items in the context,
+func GetAll(ctx context.Context) map[string]string {
 	bm, ok := baggageMap(ctx)
 	if !ok {
 		return nil
@@ -77,7 +77,7 @@ func AllBaggage(ctx context.Context) map[string]string {
 	return copyMap
 }
 
-// ClearBaggage completely removes all baggage items from the context.
-func ClearBaggage(ctx context.Context) context.Context {
+// Clear completely removes all baggage items from the context.
+func Clear(ctx context.Context) context.Context {
 	return withBaggage(ctx, nil)
 }
