@@ -25,6 +25,10 @@ import (
 
 var instr *instrumentation.Instrumentation
 
+// in v2 this mod was renamed to olivere/elastic.v5, so we use this instead of instrumentation.PackageOlivereElasticV5
+// to keep the same component name.
+const componentName = "olivere/elastic"
+
 func init() {
 	instr = instrumentation.Load(instrumentation.PackageOlivereElasticV5)
 }
@@ -60,7 +64,7 @@ func (t *httpTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 		tracer.Tag("elasticsearch.method", method),
 		tracer.Tag("elasticsearch.url", url),
 		tracer.Tag("elasticsearch.params", req.URL.Query().Encode()),
-		tracer.Tag(ext.Component, instrumentation.PackageOlivereElasticV5),
+		tracer.Tag(ext.Component, componentName),
 		tracer.Tag(ext.SpanKind, ext.SpanKindClient),
 		tracer.Tag(ext.DBSystem, ext.DBSystemElasticsearch),
 		tracer.Tag(ext.NetworkDestinationName, req.URL.Hostname()),
