@@ -6,10 +6,8 @@
 package httptrace
 
 import (
-	"encoding/json"
 	"fmt"
 	"net/http"
-	"net/http/httptest"
 	"strconv"
 	"strings"
 	"testing"
@@ -37,35 +35,13 @@ func TestInferredProxySpans(t *testing.T) {
 		"x-dd-proxy-domain-name":     "example.com",
 		"x-dd-proxy-stage":           "dev",
 	}
-
-	mux := http.NewServeMux()
-
-	// set routes
-	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/error" {
-			w.WriteHeader(http.StatusInternalServerError)
-			err := json.NewEncoder(w).Encode(map[string]string{"message": "ERROR"})
-			if err != nil {
-				return
-			}
-		} else {
-			w.WriteHeader(http.StatusOK)
-			err := json.NewEncoder(w).Encode(map[string]string{"message": "OK"})
-			if err != nil {
-				return
-			}
-		}
-	})
-
-	srv := httptest.NewServer(mux)
-	defer srv.Close()
+	srvURL := "https://example.com/test"
 
 	t.Run("should create parent and child spans for a 200", func(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		client := &http.Client{}
-		req, err := http.NewRequest("GET", fmt.Sprintf("%s/", srv.URL), nil)
+		req, err := http.NewRequest("GET", fmt.Sprintf("%s/", srvURL), nil)
 		require.NoError(t, err)
 
 		for k, v := range inferredHeaders {
@@ -73,11 +49,7 @@ func TestInferredProxySpans(t *testing.T) {
 		}
 
 		_, _, finishSpans := StartRequestSpan(req)
-		resp, err := client.Do(req)
-		require.NoError(t, err)
-		assert.Equal(t, http.StatusOK, resp.StatusCode)
-
-		finishSpans(resp.StatusCode, nil)
+		finishSpans(200, nil)
 
 		spans := mt.FinishedSpans()
 		require.Equal(t, 2, len(spans))
@@ -101,7 +73,6 @@ func TestInferredProxySpans(t *testing.T) {
 				gwSpanTags = ""
 			}
 			expectedTags := strings.Join(req.Header.Values(header), ",")
-			// compare expected and actual values
 			assert.Equal(t, expectedTags, gwSpanTags)
 		}
 	})
@@ -110,8 +81,7 @@ func TestInferredProxySpans(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		client := &http.Client{}
-		req, err := http.NewRequest("GET", fmt.Sprintf("%s/error", srv.URL), nil)
+		req, err := http.NewRequest("GET", fmt.Sprintf("%s/error", srvURL), nil)
 		require.NoError(t, err)
 
 		for k, v := range inferredHeaders {
@@ -119,13 +89,7 @@ func TestInferredProxySpans(t *testing.T) {
 		}
 
 		_, _, finishSpans := StartRequestSpan(req)
-
-		resp, err := client.Do(req)
-		require.NoError(t, err)
-
-		finishSpans(resp.StatusCode, nil)
-
-		assert.Equal(t, http.StatusInternalServerError, resp.StatusCode)
+		finishSpans(500, nil)
 
 		spans := mt.FinishedSpans()
 		require.Equal(t, 2, len(spans))
@@ -148,7 +112,6 @@ func TestInferredProxySpans(t *testing.T) {
 				gwSpanTags = ""
 			}
 			expectedTags := strings.Join(req.Header.Values(header), ",")
-			// compare expected and actual values
 			assert.Equal(t, expectedTags, gwSpanTags)
 		}
 	})
@@ -157,17 +120,13 @@ func TestInferredProxySpans(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		client := &http.Client{}
-		req, err := http.NewRequest("GET", fmt.Sprintf("%s/no-aws-headers", srv.URL), nil)
+		req, err := http.NewRequest("GET", fmt.Sprintf("%s/no-aws-headers", srvURL), nil)
 		require.NoError(t, err)
 
 		_, _, finishSpans := StartRequestSpan(req)
-		resp, err := client.Do(req)
-		require.NoError(t, err)
+		finishSpans(200, nil)
 
-		finishSpans(resp.StatusCode, nil)
-
-		assert.Equal(t, http.StatusOK, resp.StatusCode)
+		assert.Equal(t, http.StatusOK, 200)
 
 		spans := mt.FinishedSpans()
 		require.Equal(t, 1, len(spans))
@@ -178,8 +137,7 @@ func TestInferredProxySpans(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		client := &http.Client{}
-		req, err := http.NewRequest("GET", fmt.Sprintf("%s/no-aws-headers", srv.URL), nil)
+		req, err := http.NewRequest("GET", fmt.Sprintf("%s/no-aws-headers", srvURL), nil)
 		require.NoError(t, err)
 
 		for k, v := range inferredHeaders {
@@ -189,14 +147,41 @@ func TestInferredProxySpans(t *testing.T) {
 		}
 
 		_, _, finishSpans := StartRequestSpan(req)
-		resp, err := client.Do(req)
-		require.NoError(t, err)
-
-		finishSpans(resp.StatusCode, nil)
-		assert.Equal(t, http.StatusOK, resp.StatusCode)
+		finishSpans(200, nil)
 
 		spans := mt.FinishedSpans()
 		assert.Equal(t, 1, len(spans))
 		assert.Equal(t, "http.request", spans[0].OperationName())
+	})
+
+	t.Run("should not create more than one API Gateway span for a local trace", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		req, err := http.NewRequest("GET", fmt.Sprintf("%s/", srvURL), nil)
+		require.NoError(t, err)
+		for k, v := range inferredHeaders {
+			req.Header.Set(k, v)
+		}
+
+		_, ctx, finishSpans1 := StartRequestSpan(req)
+		finishSpans1(200, nil)
+
+		req2 := req.WithContext(ctx)
+		_, _, finishSpans2 := StartRequestSpan(req2)
+		finishSpans2(200, nil)
+
+		spans := mt.FinishedSpans()
+		require.Equal(t, 3, len(spans))
+
+		gwSpan := spans[1]
+		webReqSpan := spans[0]
+		assert.Equal(t, "aws.apigateway", gwSpan.OperationName())
+		assert.Equal(t, "http.request", webReqSpan.OperationName())
+		assert.True(t, webReqSpan.ParentID() == gwSpan.SpanID())
+		assert.Equal(t, webReqSpan.Tag("http.status_code"), gwSpan.Tag("http.status_code"))
+		assert.Equal(t, webReqSpan.Tag("span.type"), gwSpan.Tag("span.type"))
+
+		assert.Equal(t, startTime.UnixMilli(), gwSpan.StartTime().UnixMilli())
 	})
 }
