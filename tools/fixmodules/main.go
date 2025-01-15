@@ -13,17 +13,17 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"golang.org/x/mod/modfile"
 	"io/fs"
 	"log"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"slices"
 	"sort"
 	"strings"
 )
-
-const goVersion = "1.21"
 
 func init() {
 	flag.Usage = func() {
@@ -101,6 +101,8 @@ func main() {
 		fixDir = resolved
 	}
 
+	goVersion := getProjectGoVersion(root)
+	log.Printf("using go version globally %s\n", goVersion)
 	log.Printf("finding modules recursively from %s\n", fixDir)
 
 	fixModules, err := findModules(fixDir)
@@ -160,9 +162,11 @@ func main() {
 			return cmp.Compare(a.Old.Path, b.Old.Path)
 		})
 
-		log.Printf("fixing module: %s", modPath)
-		log.Printf("  need replaces: %v", replaces)
-		if err := fixModule(allModules, mod, replaces); err != nil {
+		log.Printf("adding module replaces %q\n", modPath)
+		for _, r := range replaces {
+			log.Printf("  %s => %s\n", r.Old.Path, r.New.Path)
+		}
+		if err := fixModule(allModules, mod, goVersion, replaces); err != nil {
 			log.Fatal(err)
 		}
 	}
@@ -176,7 +180,9 @@ func getLocalReplace(mods map[string]GoMod, mod, require string) Replace {
 	if err != nil {
 		log.Fatal(err)
 	}
-
+	if !strings.HasPrefix(rel, "./") && !strings.HasPrefix(rel, "../") {
+		rel = "./" + rel
+	}
 	return Replace{
 		Old: Module{
 			Path: require,
@@ -202,7 +208,7 @@ func readModule(path string) (GoMod, error) {
 	return m, nil
 }
 
-func fixModule(mods map[string]GoMod, mod GoMod, replaces []Replace) error {
+func fixModule(mods map[string]GoMod, mod GoMod, goVersion string, replaces []Replace) error {
 	// first, clean previous local replaces
 	for _, replace := range mod.Replace {
 		if _, ok := mods[replace.Old.Path]; ok {
@@ -289,11 +295,13 @@ func findModules(root string) (map[string]GoMod, error) {
 
 func getModGoFiles(mod GoMod) ([]string, error) {
 	var goFiles []string
+	var nestedMods []string
 	foundGoMod := false
 
-	err := filepath.WalkDir(mod.dir, func(path string, d fs.DirEntry, err error) error {
-		if d.Name() == "go.mod" {
+	err := filepath.WalkDir(mod.dir, func(path string, f fs.DirEntry, err error) error {
+		if f.Name() == "go.mod" {
 			if foundGoMod {
+				nestedMods = append(nestedMods, filepath.Dir(path))
 				return fs.SkipAll
 			}
 			foundGoMod = true
@@ -306,7 +314,22 @@ func getModGoFiles(mod GoMod) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	return goFiles, nil
+
+	shouldInclude := func(path string) bool {
+		for _, nm := range nestedMods {
+			if strings.HasPrefix(path, nm) {
+				return false
+			}
+		}
+		return true
+	}
+	var filtered []string
+	for _, f := range goFiles {
+		if shouldInclude(f) {
+			filtered = append(filtered, f)
+		}
+	}
+	return filtered, nil
 }
 
 func findImports(goFiles []string) ([]string, error) {
@@ -337,4 +360,16 @@ func findImports(goFiles []string) ([]string, error) {
 	}
 	sort.Strings(imports)
 	return imports, nil
+}
+
+func getProjectGoVersion(root string) string {
+	b, err := os.ReadFile(path.Join(root, "go.mod"))
+	if err != nil {
+		log.Fatal(err)
+	}
+	f, err := modfile.Parse("go.mod", b, nil)
+	if err != nil {
+		panic(err)
+	}
+	return f.Go.Version
 }
