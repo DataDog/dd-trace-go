@@ -855,7 +855,7 @@ func TestSpanLog(t *testing.T) {
 		span.Finish()
 		expect := fmt.Sprintf(`dd.service=tracer.test dd.env=testenv dd.trace_id=%q dd.span_id="87654321" dd.parent_id="0"`, span.context.TraceID128())
 		assert.Equal(expect, fmt.Sprintf("%v", span))
-		v, _ := span.context.meta(keyTraceID128)
+		v, _ := getMeta(span, keyTraceID128)
 		assert.NotEmpty(v)
 	})
 
@@ -871,7 +871,7 @@ func TestSpanLog(t *testing.T) {
 		span.context.traceID.SetUpper(1)
 		span.Finish()
 		assert.Equal(`dd.service=tracer.test dd.env=testenv dd.trace_id="00000000000000010000000005397fb1" dd.span_id="87654321" dd.parent_id="0"`, fmt.Sprintf("%v", span))
-		v, _ := span.context.meta(keyTraceID128)
+		v, _ := getMeta(span, keyTraceID128)
 		assert.Equal("0000000000000001", v)
 	})
 
@@ -887,7 +887,7 @@ func TestSpanLog(t *testing.T) {
 		span.Finish()
 		assert.False(span.context.traceID.HasUpper()) // it should not have generated upper bits
 		assert.Equal(`dd.service=tracer.test dd.env=testenv dd.trace_id="87654321" dd.span_id="87654321" dd.parent_id="0"`, fmt.Sprintf("%v", span))
-		v, _ := span.context.meta(keyTraceID128)
+		v, _ := getMeta(span, keyTraceID128)
 		assert.Equal("", v)
 	})
 }

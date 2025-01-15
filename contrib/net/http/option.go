@@ -37,6 +37,7 @@ type config struct {
 	finishOpts    []ddtrace.FinishOption
 	ignoreRequest func(*http.Request) bool
 	resourceNamer func(*http.Request) string
+	isStatusError func(int) bool
 	headerTags    *internal.LockMap
 }
 
@@ -85,6 +86,14 @@ func WithHeaderTags(headers []string) Option {
 	headerTagsMap := normalizer.HeaderTagSlice(headers)
 	return func(cfg *config) {
 		cfg.headerTags = internal.NewLockMap(headerTagsMap)
+	}
+}
+
+// WithStatusCheck sets a span to be an error if the passed function
+// returns true for a given status code.
+func WithStatusCheck(fn func(statusCode int) bool) Option {
+	return func(cfg *config) {
+		cfg.isStatusError = fn
 	}
 }
 
