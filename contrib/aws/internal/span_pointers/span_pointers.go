@@ -63,7 +63,7 @@ func HandleS3Operation(in middleware.DeserializeInput, out middleware.Deserializ
 		TraceID:     123,
 		SpanID:      456,
 		TraceIDHigh: 789,
-		Tracestate:  "",
+		Tracestate:  "0",
 		Flags:       0,
 		Attributes: map[string]string{
 			"ptr.kind":  S3PointerKind,
