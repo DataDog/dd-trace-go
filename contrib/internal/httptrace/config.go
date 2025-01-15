@@ -48,31 +48,35 @@ func ResetCfg() {
 
 func newConfig() config {
 	c := config{
-		queryString:                  !internal.BoolEnv(envQueryStringDisabled, false),
-		queryStringRegexp:            defaultQueryStringRegexp,
-		traceClientIP:                internal.BoolEnv(envTraceClientIPEnabled, false),
-		isStatusError:                isServerError,
-		inferredProxyServicesEnabled: internal.BoolEnv(envInferredProxyServicesEnabled, false),
+		queryString:       !internal.BoolEnv(envQueryStringDisabled, false),
+		queryStringRegexp: QueryStringRegexp(),
+		traceClientIP:     internal.BoolEnv(envTraceClientIPEnabled, false),
+		isStatusError:     isServerError,
+    inferredProxyServicesEnabled: internal.BoolEnv(envInferredProxyServicesEnabled, false),
 	}
 	v := os.Getenv(envServerErrorStatuses)
 	if fn := GetErrorCodesFromInput(v); fn != nil {
 		c.isStatusError = fn
-	}
-	if s, ok := os.LookupEnv(envQueryStringRegexp); !ok {
-		return c
-	} else if s == "" {
-		c.queryStringRegexp = nil
-		log.Debug("%s is set but empty. Query string obfuscation will be disabled.", envQueryStringRegexp)
-	} else if r, err := regexp.Compile(s); err == nil {
-		c.queryStringRegexp = r
-	} else {
-		log.Error("Could not compile regexp from %s. Using default regexp instead.", envQueryStringRegexp)
 	}
 	return c
 }
 
 func isServerError(statusCode int) bool {
 	return statusCode >= 500 && statusCode < 600
+}
+
+func QueryStringRegexp() *regexp.Regexp {
+	if s, ok := os.LookupEnv(envQueryStringRegexp); !ok {
+		return defaultQueryStringRegexp
+	} else if s == "" {
+		log.Debug("%s is set but empty. Query string obfuscation will be disabled.", envQueryStringRegexp)
+		return nil
+	} else if r, err := regexp.Compile(s); err == nil {
+		return r
+	} else {
+		log.Error("Could not compile regexp from %s. Using default regexp instead.", envQueryStringRegexp)
+		return defaultQueryStringRegexp
+	}
 }
 
 // GetErrorCodesFromInput parses a comma-separated string s to determine which codes are to be considered errors
