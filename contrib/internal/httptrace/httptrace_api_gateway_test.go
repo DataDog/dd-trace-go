@@ -10,31 +10,34 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/normalizer"
-
-	as "github.com/stretchr/testify/assert"
 )
 
-var inferredHeaders = map[string]string{
-	"x-dd-proxy":                 "aws-apigateway",
-	"x-dd-proxy-request-time-ms": "1729780025473",
-	"x-dd-proxy-path":            "/test",
-	"x-dd-proxy-httpmethod":      "GET",
-	"x-dd-proxy-domain-name":     "example.com",
-	"x-dd-proxy-stage":           "dev",
-}
-
-// mock the aws server
-func loadTest(t *testing.T) *httptest.Server {
-	// Set environment variables
+func TestInferredProxySpans(t *testing.T) {
 	t.Setenv("DD_SERVICE", "aws-server")
 	t.Setenv("DD_TRACE_INFERRED_PROXY_SERVICES_ENABLED", "true")
+	ResetCfg()
 
-	// set up http server
+	startTime := time.Now().Add(-5 * time.Second)
+
+	inferredHeaders := map[string]string{
+		"x-dd-proxy":                 "aws-apigateway",
+		"x-dd-proxy-request-time-ms": strconv.FormatInt(startTime.UnixMilli(), 10),
+		"x-dd-proxy-path":            "/test",
+		"x-dd-proxy-httpmethod":      "GET",
+		"x-dd-proxy-domain-name":     "example.com",
+		"x-dd-proxy-stage":           "dev",
+	}
+
 	mux := http.NewServeMux()
 
 	// set routes
@@ -54,141 +57,130 @@ func loadTest(t *testing.T) *httptest.Server {
 		}
 	})
 
-	return httptest.NewServer(mux)
-
-}
-
-func TestInferredProxySpans(t *testing.T) {
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
 
 	t.Run("should create parent and child spans for a 200", func(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
-		appListener := loadTest(t)
 
 		client := &http.Client{}
-		req, err := http.NewRequest("GET", fmt.Sprintf("%s/", appListener.URL), nil)
-		assert := as.New(t)
-		assert.NoError(err)
+		req, err := http.NewRequest("GET", fmt.Sprintf("%s/", srv.URL), nil)
+		require.NoError(t, err)
 
 		for k, v := range inferredHeaders {
 			req.Header.Set(k, v)
 		}
 
-		cfg = newConfig()
 		_, _, finishSpans := StartRequestSpan(req)
 		resp, err := client.Do(req)
+		require.NoError(t, err)
+		assert.Equal(t, http.StatusOK, resp.StatusCode)
+
 		finishSpans(resp.StatusCode, nil)
 
 		spans := mt.FinishedSpans()
+		require.Equal(t, 2, len(spans))
 
-		assert.NoError(err)
-		assert.Equal(http.StatusOK, resp.StatusCode)
-
-		assert.Equal(2, len(spans))
-		gatewaySpan := spans[1]
+		gwSpan := spans[1]
 		webReqSpan := spans[0]
-		assert.Equal("aws.apigateway", gatewaySpan.OperationName())
-		assert.Equal("http.request", webReqSpan.OperationName())
-		assert.True(webReqSpan.ParentID() == gatewaySpan.SpanID())
-		assert.Equal(webReqSpan.Tag("http.status_code"), gatewaySpan.Tag("http.status_code"))
-		assert.Equal(webReqSpan.Tag("span.type"), gatewaySpan.Tag("span.type"))
+		assert.Equal(t, "aws.apigateway", gwSpan.OperationName())
+		assert.Equal(t, "http.request", webReqSpan.OperationName())
+		assert.True(t, webReqSpan.ParentID() == gwSpan.SpanID())
+		assert.Equal(t, webReqSpan.Tag("http.status_code"), gwSpan.Tag("http.status_code"))
+		assert.Equal(t, webReqSpan.Tag("span.type"), gwSpan.Tag("span.type"))
+
+		assert.Equal(t, startTime.UnixMilli(), gwSpan.StartTime().UnixMilli())
 
 		for _, arg := range inferredHeaders {
 			header, tag := normalizer.HeaderTag(arg)
 
 			// Default to an empty string if the tag does not exist
-			gatewaySpanTags, exists := gatewaySpan.Tags()[tag]
+			gwSpanTags, exists := gwSpan.Tags()[tag]
 			if !exists {
-				gatewaySpanTags = ""
+				gwSpanTags = ""
 			}
 			expectedTags := strings.Join(req.Header.Values(header), ",")
 			// compare expected and actual values
-			assert.Equal(expectedTags, gatewaySpanTags)
+			assert.Equal(t, expectedTags, gwSpanTags)
 		}
-
-		assert.Equal(2, len(spans))
-
 	})
 
 	t.Run("should create parent and child spans for error", func(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
-		appListener := loadTest(t)
 
 		client := &http.Client{}
-		req, err := http.NewRequest("GET", fmt.Sprintf("%s/error", appListener.URL), nil)
-		assert := as.New(t)
-		assert.NoError(err)
+		req, err := http.NewRequest("GET", fmt.Sprintf("%s/error", srv.URL), nil)
+		require.NoError(t, err)
+
 		for k, v := range inferredHeaders {
 			req.Header.Set(k, v)
 		}
 
-		cfg = newConfig()
 		_, _, finishSpans := StartRequestSpan(req)
+
 		resp, err := client.Do(req)
+		require.NoError(t, err)
+
 		finishSpans(resp.StatusCode, nil)
 
-		assert.NoError(err)
-		assert.Equal(http.StatusInternalServerError, resp.StatusCode)
+		assert.Equal(t, http.StatusInternalServerError, resp.StatusCode)
 
 		spans := mt.FinishedSpans()
-		assert.Equal(2, len(spans))
-		gatewaySpan := spans[1]
+		require.Equal(t, 2, len(spans))
+
+		gwSpan := spans[1]
 		webReqSpan := spans[0]
-		assert.Equal("aws.apigateway", gatewaySpan.OperationName())
-		assert.Equal("http.request", webReqSpan.OperationName())
-		assert.True(webReqSpan.ParentID() == gatewaySpan.SpanID())
-		assert.Equal(webReqSpan.Tag("http.status_code"), gatewaySpan.Tag("http.status_code"))
-		assert.Equal(webReqSpan.Tag("span.type"), gatewaySpan.Tag("span.type"))
+		assert.Equal(t, "aws.apigateway", gwSpan.OperationName())
+		assert.Equal(t, "http.request", webReqSpan.OperationName())
+		assert.True(t, webReqSpan.ParentID() == gwSpan.SpanID())
+		assert.Equal(t, webReqSpan.Tag("http.status_code"), gwSpan.Tag("http.status_code"))
+		assert.Equal(t, webReqSpan.Tag("span.type"), gwSpan.Tag("span.type"))
+		assert.Equal(t, startTime.UnixMilli(), gwSpan.StartTime().UnixMilli())
+
 		for _, arg := range inferredHeaders {
 			header, tag := normalizer.HeaderTag(arg)
 
 			// Default to an empty string if the tag does not exist
-			gatewaySpanTags, exists := gatewaySpan.Tags()[tag]
+			gwSpanTags, exists := gwSpan.Tags()[tag]
 			if !exists {
-				gatewaySpanTags = ""
+				gwSpanTags = ""
 			}
 			expectedTags := strings.Join(req.Header.Values(header), ",")
 			// compare expected and actual values
-			assert.Equal(expectedTags, gatewaySpanTags)
+			assert.Equal(t, expectedTags, gwSpanTags)
 		}
-		assert.Equal(2, len(spans))
-
 	})
 
 	t.Run("should not create API Gateway span if headers are missing", func(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
-		appListener := loadTest(t)
 
 		client := &http.Client{}
-		req, err := http.NewRequest("GET", fmt.Sprintf("%s/no-aws-headers", appListener.URL), nil)
-		assert := as.New(t)
-		assert.NoError(err)
+		req, err := http.NewRequest("GET", fmt.Sprintf("%s/no-aws-headers", srv.URL), nil)
+		require.NoError(t, err)
 
-		cfg = newConfig()
 		_, _, finishSpans := StartRequestSpan(req)
 		resp, err := client.Do(req)
+		require.NoError(t, err)
+
 		finishSpans(resp.StatusCode, nil)
 
-		assert.NoError(err)
-		assert.Equal(http.StatusOK, resp.StatusCode)
+		assert.Equal(t, http.StatusOK, resp.StatusCode)
 
 		spans := mt.FinishedSpans()
-		assert.Equal(1, len(spans))
-		assert.Equal("http.request", spans[0].OperationName())
-
+		require.Equal(t, 1, len(spans))
+		assert.Equal(t, "http.request", spans[0].OperationName())
 	})
 
 	t.Run("should not create API Gateway span if x-dd-proxy is missing", func(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
-		appListener := loadTest(t)
 
 		client := &http.Client{}
-		req, err := http.NewRequest("GET", fmt.Sprintf("%s/no-aws-headers", appListener.URL), nil)
-		assert := as.New(t)
-		assert.NoError(err)
+		req, err := http.NewRequest("GET", fmt.Sprintf("%s/no-aws-headers", srv.URL), nil)
+		require.NoError(t, err)
 
 		for k, v := range inferredHeaders {
 			if k != "x-dd-proxy" {
@@ -196,17 +188,15 @@ func TestInferredProxySpans(t *testing.T) {
 			}
 		}
 
-		cfg = newConfig()
 		_, _, finishSpans := StartRequestSpan(req)
 		resp, err := client.Do(req)
-		finishSpans(resp.StatusCode, nil)
+		require.NoError(t, err)
 
-		assert.NoError(err)
-		assert.Equal(http.StatusOK, resp.StatusCode)
+		finishSpans(resp.StatusCode, nil)
+		assert.Equal(t, http.StatusOK, resp.StatusCode)
 
 		spans := mt.FinishedSpans()
-		assert.Equal(1, len(spans))
-		assert.Equal("http.request", spans[0].OperationName())
-
+		assert.Equal(t, 1, len(spans))
+		assert.Equal(t, "http.request", spans[0].OperationName())
 	})
 }

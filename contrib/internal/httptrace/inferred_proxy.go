@@ -97,19 +97,12 @@ func tryCreateInferredProxySpan(headers http.Header, parent ddtrace.SpanContext,
 	proxySpanInfo := supportedProxies[requestProxyContext.ProxySystemName]
 	log.Debug(`Successfully extracted inferred span info ${proxyContext} for proxy: ${proxyContext.proxySystemName}`)
 
-	// Parse Time string to Time Type
-	millis, err := strconv.ParseInt(requestProxyContext.RequestTime, 10, 64)
+	startTimeUnixMilli, err := strconv.ParseInt(requestProxyContext.RequestTime, 10, 64)
 	if err != nil {
 		log.Debug("Error parsing time string: %v", err)
 		return nil
 	}
-
-	// Convert milliseconds to seconds and nanoseconds
-	seconds := millis / 1000
-	nanoseconds := (millis % 1000) * int64(time.Millisecond)
-
-	// Create time.Time from Unix timestamp
-	parsedTime := time.Unix(seconds, nanoseconds)
+	startTime := time.UnixMilli(startTimeUnixMilli)
 
 	configService := requestProxyContext.DomainName
 	if configService == "" {
@@ -126,7 +119,7 @@ func tryCreateInferredProxySpan(headers http.Header, parent ddtrace.SpanContext,
 			}
 
 			cfg.Parent = parent
-			cfg.StartTime = parsedTime
+			cfg.StartTime = startTime
 
 			cfg.Tags[ext.SpanType] = ext.SpanTypeWeb
 			cfg.Tags[ext.ServiceName] = configService
