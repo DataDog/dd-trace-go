@@ -52,6 +52,10 @@ type (
 )
 
 func (c *client) GetEarlyFlakeDetectionData() (*EfdResponseData, error) {
+	if c.repositoryURL == "" || c.commitSha == "" {
+		return nil, fmt.Errorf("civisibility.GetEarlyFlakeDetectionData: repository URL and commit SHA are required")
+	}
+
 	body := efdRequest{
 		Data: efdRequestHeader{
 			ID:   c.id,

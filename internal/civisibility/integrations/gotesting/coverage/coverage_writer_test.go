@@ -70,16 +70,21 @@ func TestCoverageWriterFlushError(t *testing.T) {
 
 // MockClient is a mock implementation of the Client interface for testing purposes.
 type MockClient struct {
-	SendCoveragePayloadFunc        func(ciTestCovPayload io.Reader) error
-	GetSettingsFunc                func() (*net.SettingsResponseData, error)
-	GetEarlyFlakeDetectionDataFunc func() (*net.EfdResponseData, error)
-	GetCommitsFunc                 func(localCommits []string) ([]string, error)
-	SendPackFilesFunc              func(commitSha string, packFiles []string) (bytes int64, err error)
-	GetSkippableTestsFunc          func() (correlationId string, skippables map[string]map[string][]net.SkippableResponseDataAttributes, err error)
+	SendCoveragePayloadFunc           func(ciTestCovPayload io.Reader) error
+	SendCoveragePayloadWithFormatFunc func(ciTestCovPayload io.Reader, format string) error
+	GetSettingsFunc                   func() (*net.SettingsResponseData, error)
+	GetEarlyFlakeDetectionDataFunc    func() (*net.EfdResponseData, error)
+	GetCommitsFunc                    func(localCommits []string) ([]string, error)
+	SendPackFilesFunc                 func(commitSha string, packFiles []string) (bytes int64, err error)
+	GetSkippableTestsFunc             func() (correlationId string, skippables map[string]map[string][]net.SkippableResponseDataAttributes, err error)
 }
 
 func (m *MockClient) SendCoveragePayload(ciTestCovPayload io.Reader) error {
 	return m.SendCoveragePayloadFunc(ciTestCovPayload)
+}
+
+func (m *MockClient) SendCoveragePayloadWithFormat(ciTestCovPayload io.Reader, format string) error {
+	return m.SendCoveragePayloadWithFormatFunc(ciTestCovPayload, format)
 }
 
 func (m *MockClient) GetSettings() (*net.SettingsResponseData, error) {
