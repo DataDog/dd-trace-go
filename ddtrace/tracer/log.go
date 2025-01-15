@@ -44,7 +44,6 @@ type startupInfo struct {
 	Tags                        map[string]string            `json:"tags"`                           // Global tags
 	RuntimeMetricsEnabled       bool                         `json:"runtime_metrics_enabled"`        // Whether runtime metrics are enabled
 	RuntimeMetricsV2Enabled     bool                         `json:"runtime_metrics_v2_enabled"`     // Whether runtime metrics v2 are enabled
-	HealthMetricsEnabled        bool                         `json:"health_metrics_enabled"`         // Whether health metrics are enabled
 	ProfilerCodeHotspotsEnabled bool                         `json:"profiler_code_hotspots_enabled"` // Whether profiler code hotspots are enabled
 	ProfilerEndpointsEnabled    bool                         `json:"profiler_endpoints_enabled"`     // Whether profiler endpoints are enabled
 	ApplicationVersion          string                       `json:"dd_version"`                     // Version of the user's application
@@ -60,6 +59,7 @@ type startupInfo struct {
 	FeatureFlags                []string                     `json:"feature_flags"`
 	PropagationStyleInject      string                       `json:"propagation_style_inject"`  // Propagation style for inject
 	PropagationStyleExtract     string                       `json:"propagation_style_extract"` // Propagation style for extract
+	TracingAsTransport          bool                         `json:"tracing_as_transport"`      // Whether the tracer is disabled and other products are using it as a transport
 }
 
 // checkEndpoint tries to connect to the URL specified by endpoint.
@@ -133,7 +133,6 @@ func logStartup(t *tracer) {
 		Tags:                        tags,
 		RuntimeMetricsEnabled:       t.config.runtimeMetrics,
 		RuntimeMetricsV2Enabled:     t.config.runtimeMetricsV2,
-		HealthMetricsEnabled:        t.config.runtimeMetrics,
 		ApplicationVersion:          t.config.version,
 		ProfilerCodeHotspotsEnabled: t.config.profilerHotspots,
 		ProfilerEndpointsEnabled:    t.config.profilerEndpoints,
@@ -149,6 +148,7 @@ func logStartup(t *tracer) {
 		FeatureFlags:                featureFlags,
 		PropagationStyleInject:      injectorNames,
 		PropagationStyleExtract:     extractorNames,
+		TracingAsTransport:          t.config.tracingAsTransport,
 	}
 	if _, _, err := samplingRulesFromEnv(); err != nil {
 		info.SamplingRulesError = fmt.Sprintf("%s", err)

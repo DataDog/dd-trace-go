@@ -106,8 +106,14 @@ var (
 	// Replaced in tests
 	defaultSocketDSD = "/var/run/datadog/dsd.socket"
 
+	// defaultStatsdPort specifies the default port to use for connecting to the statsd server.
+	defaultStatsdPort = "8125"
+
 	// defaultMaxTagsHeaderLen specifies the default maximum length of the X-Datadog-Tags header value.
 	defaultMaxTagsHeaderLen = 128
+
+	// defaultRateLimit specifies the default trace rate limit used when DD_TRACE_RATE_LIMIT is not set.
+	defaultRateLimit = 100.0
 )
 
 // config holds the tracer configuration.
@@ -133,9 +139,12 @@ type config struct {
 	// output instead of using the agent. This is used in Lambda environments.
 	logToStdout bool
 
-	// sendRetries is the number of times a trace payload send is retried upon
+	// sendRetries is the number of times a trace or CI Visibility payload send is retried upon
 	// failure.
 	sendRetries int
+
+	// retryInterval is the interval between agent connection retries. It has no effect if sendRetries is not set
+	retryInterval time.Duration
 
 	// logStartup, when true, causes various startup info to be written
 	// when the tracer starts.
@@ -292,6 +301,12 @@ type config struct {
 
 	// logDirectory is directory for tracer logs specified by user-setting DD_TRACE_LOG_DIRECTORY. default empty/unused
 	logDirectory string
+
+	// tracingAsTransport specifies whether the tracer is running in transport-only mode, where traces are only sent when other products request it.
+	tracingAsTransport bool
+
+	// traceRateLimitPerSecond specifies the rate limit for traces.
+	traceRateLimitPerSecond float64
 }
 
 // orchestrionConfig contains Orchestrion configuration.
@@ -337,6 +352,22 @@ func newConfig(opts ...StartOption) *config {
 	}
 	c.globalSampleRate = sampleRate
 	c.httpClientTimeout = time.Second * 10 // 10 seconds
+
+	c.traceRateLimitPerSecond = defaultRateLimit
+	origin := telemetry.OriginDefault
+	if v, ok := os.LookupEnv("DD_TRACE_RATE_LIMIT"); ok {
+		l, err := strconv.ParseFloat(v, 64)
+		if err != nil {
+			log.Warn("DD_TRACE_RATE_LIMIT invalid, using default value %f: %v", defaultRateLimit, err)
+		} else if l < 0.0 {
+			log.Warn("DD_TRACE_RATE_LIMIT negative, using default value %f", defaultRateLimit)
+		} else {
+			c.traceRateLimitPerSecond = l
+			origin = telemetry.OriginEnvVar
+		}
+	}
+
+	reportTelemetryOnAppStarted(telemetry.Configuration{Name: "trace_rate_limit", Value: c.traceRateLimitPerSecond, Origin: origin})
 
 	if v := os.Getenv("OTEL_LOGS_EXPORTER"); v != "" {
 		log.Warn("OTEL_LOGS_EXPORTER is not supported")
@@ -453,7 +484,7 @@ func newConfig(opts ...StartOption) *config {
 	if v := os.Getenv("DD_TRACE_PEER_SERVICE_MAPPING"); v != "" {
 		internal.ForEachStringTag(v, internal.DDTagsDelimiter, func(key, val string) { c.peerServiceMappings[key] = val })
 	}
-
+	c.retryInterval = time.Millisecond
 	for _, fn := range opts {
 		fn(c)
 	}
@@ -526,44 +557,6 @@ func newConfig(opts ...StartOption) *config {
 	if c.debug {
 		log.SetLevel(log.LevelDebug)
 	}
-	// if using stdout or traces are disabled, agent is disabled
-	agentDisabled := c.logToStdout || !c.enabled.current
-	ignoreStatsdPort := c.agent.ignore // preserve the value of c.agent.ignore when testing
-	c.agent = loadAgentFeatures(agentDisabled, c.agentURL, c.httpClient)
-	c.agent.ignore = ignoreStatsdPort
-	info, ok := debug.ReadBuildInfo()
-	if !ok {
-		c.loadContribIntegrations([]*debug.Module{})
-	} else {
-		c.loadContribIntegrations(info.Deps)
-	}
-	if c.statsdClient == nil {
-		// configure statsd client
-		addr := c.dogstatsdAddr
-		if addr == "" {
-			// no config defined address; use defaults
-			addr = defaultDogstatsdAddr()
-		}
-		if agentport := c.agent.StatsdPort; agentport > 0 && !c.agent.ignore {
-			// the agent reported a non-standard port
-			host, _, err := net.SplitHostPort(addr)
-			if err == nil {
-				// we have a valid host:port address; replace the port because
-				// the agent knows better
-				if host == "" {
-					host = defaultHostname
-				}
-				addr = net.JoinHostPort(host, strconv.Itoa(agentport))
-			}
-			// not a valid TCP address, leave it as it is (could be a socket connection)
-		}
-		globalconfig.SetDogstatsdAddr(addr)
-		c.dogstatsdAddr = addr
-	}
-	// Re-initialize the globalTags config with the value constructed from the environment and start options
-	// This allows persisting the initial value of globalTags for future resets and updates.
-	globalTagsOrigin := c.globalTags.cfgOrigin
-	c.initGlobalTags(c.globalTags.get(), globalTagsOrigin)
 
 	// Check if CI Visibility mode is enabled
 	if internal.BoolEnv(constants.CIVisibilityEnabledEnvironmentVariable, false) {
@@ -575,7 +568,81 @@ func newConfig(opts ...StartOption) *config {
 		c.ciVisibilityAgentless = ciTransport.agentless
 	}
 
+	// if using stdout or traces are disabled or we are in ci visibility agentless mode, agent is disabled
+	agentDisabled := c.logToStdout || !c.enabled.current || c.ciVisibilityAgentless
+	c.agent = loadAgentFeatures(agentDisabled, c.agentURL, c.httpClient)
+	info, ok := debug.ReadBuildInfo()
+	if !ok {
+		c.loadContribIntegrations([]*debug.Module{})
+	} else {
+		c.loadContribIntegrations(info.Deps)
+	}
+	if c.statsdClient == nil {
+		// configure statsd client
+		addr := resolveDogstatsdAddr(c)
+		globalconfig.SetDogstatsdAddr(addr)
+		c.dogstatsdAddr = addr
+	}
+	// Re-initialize the globalTags config with the value constructed from the environment and start options
+	// This allows persisting the initial value of globalTags for future resets and updates.
+	globalTagsOrigin := c.globalTags.cfgOrigin
+	c.initGlobalTags(c.globalTags.get(), globalTagsOrigin)
+
+	// TODO: change the name once APM Platform RFC is approved
+	if internal.BoolEnv("DD_EXPERIMENTAL_APPSEC_STANDALONE_ENABLED", false) {
+		// Enable tracing as transport layer mode
+		// This means to stop sending trace metrics, send one trace per minute and those force-kept by other products
+		// using the tracer as transport layer for their data. And finally adding the _dd.apm.enabled=0 tag to all traces
+		// to let the backend know that it needs to keep APM UI disabled.
+		c.globalSampleRate = 1.0
+		c.traceRateLimitPerSecond = 1.0 / 60
+		c.tracingAsTransport = true
+		WithGlobalTag("_dd.apm.enabled", 0)(c)
+		// Disable runtime metrics. In `tracingAsTransport` mode, we'll still
+		// tell the agent we computed them, so it doesn't do it either.
+		c.runtimeMetrics = false
+		c.runtimeMetricsV2 = false
+	}
+
 	return c
+}
+
+// resolveDogstatsdAddr resolves the Dogstatsd address to use, based on the user-defined
+// address and the agent-reported port. If the agent reports a port, it will be used
+// instead of the user-defined address' port. UDS paths are honored regardless of the
+// agent-reported port.
+func resolveDogstatsdAddr(c *config) string {
+	addr := c.dogstatsdAddr
+	if addr == "" {
+		// no config defined address; use host and port from env vars
+		// or default to localhost:8125 if not set
+		addr = defaultDogstatsdAddr()
+	}
+	agentport := c.agent.StatsdPort
+	if agentport == 0 {
+		// the agent didn't report a port; use the already resolved address as
+		// features are loaded from the trace-agent, which might be not running
+		return addr
+	}
+	// the agent reported a port
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		// parsing the address failed; use the already resolved address as is
+		return addr
+	}
+	if host == "unix" {
+		// no need to change the address because it's a UDS connection
+		// and these don't have ports
+		return addr
+	}
+	if host == "" {
+		// no host was provided; use the default hostname
+		host = defaultHostname
+	}
+	// use agent-reported address if it differs from the user-defined TCP-based protocol URI
+	// we have a valid host:port address; replace the port because the agent knows better
+	addr = net.JoinHostPort(host, strconv.Itoa(agentport))
+	return addr
 }
 
 func newStatsdClient(c *config) (internal.StatsdClient, error) {
@@ -615,7 +682,7 @@ func defaultDogstatsdAddr() string {
 		// socket exists and user didn't specify otherwise via env vars
 		return "unix://" + defaultSocketDSD
 	}
-	host, port := defaultHostname, "8125"
+	host, port := defaultHostname, defaultStatsdPort
 	if envHost != "" {
 		host = envHost
 	}
@@ -650,9 +717,6 @@ type agentFeatures struct {
 	// featureFlags specifies all the feature flags reported by the trace-agent.
 	featureFlags map[string]struct{}
 
-	// ignore indicates that we should ignore the agent in favor of user set values.
-	// It should only be used during testing.
-	ignore bool
 	// peerTags specifies precursor tags to aggregate stats on when client stats is enabled
 	peerTags []string
 
@@ -683,9 +747,6 @@ func loadAgentFeatures(agentDisabled bool, agentURL *url.URL, httpClient *http.C
 		return
 	}
 	defer resp.Body.Close()
-	type agentConfig struct {
-		DefaultEnv string `json:"default_env"`
-	}
 	type infoResponse struct {
 		Endpoints     []string `json:"endpoints"`
 		ClientDropP0s bool     `json:"client_drop_p0s"`
@@ -783,7 +844,7 @@ func statsTags(c *config) []string {
 // withNoopStats is used for testing to disable statsd client
 func withNoopStats() StartOption {
 	return func(c *config) {
-		c.statsdClient = &statsd.NoOpClient{}
+		c.statsdClient = &statsd.NoOpClientDirect{}
 	}
 }
 
@@ -818,15 +879,6 @@ func WithFeatureFlags(feats ...string) StartOption {
 			c.featureFlags[strings.TrimSpace(f)] = struct{}{}
 		}
 		log.Info("FEATURES enabled: %v", feats)
-	}
-}
-
-// withIgnoreAgent allows tests to ignore the agent running in CI so that we can
-// properly test user set StatsdPort.
-// This should only be used during testing.
-func withIgnoreAgent(ignore bool) StartOption {
-	return func(c *config) {
-		c.agent.ignore = ignore
 	}
 }
 
@@ -882,6 +934,13 @@ func WithLambdaMode(enabled bool) StartOption {
 func WithSendRetries(retries int) StartOption {
 	return func(c *config) {
 		c.sendRetries = retries
+	}
+}
+
+// WithRetryInterval sets the interval, in seconds, for retrying submitting payloads to the agent.
+func WithRetryInterval(interval int) StartOption {
+	return func(c *config) {
+		c.retryInterval = time.Duration(interval) * time.Second
 	}
 }
 

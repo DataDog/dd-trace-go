@@ -22,6 +22,9 @@ type (
 		dyngo.Operation
 		// used in case we don't have a parent operation
 		*waf.ContextOperation
+
+		// wafContextOwner indicates if the waf.ContextOperation was started by us or not and if we need to close it.
+		wafContextOwner bool
 	}
 
 	// RequestOperationArgs describes arguments passed to a GraphQL request.
@@ -41,10 +44,10 @@ type (
 
 // Finish the GraphQL query operation, along with the given results, and emit a finish event up in
 // the operation stack.
-func (op *RequestOperation) Finish(span trace.TagSetter, res RequestOperationRes) {
+func (op *RequestOperation) Finish(res RequestOperationRes) {
 	dyngo.FinishOperation(op, res)
-	if op.ContextOperation != nil {
-		op.ContextOperation.Finish(span)
+	if op.wafContextOwner {
+		op.ContextOperation.Finish()
 	}
 }
 
@@ -55,14 +58,16 @@ func (RequestOperationRes) IsResultOf(*RequestOperation) {}
 // emits a start event up in the operation stack. The operation is usually linked to tge global root
 // operation. The operation is tracked on the returned context, and can be extracted later on using
 // FromContext.
-func StartRequestOperation(ctx context.Context, args RequestOperationArgs) (context.Context, *RequestOperation) {
-	parent, ok := dyngo.FromContext(ctx)
-	op := &RequestOperation{}
-	if !ok { // Usually we can find the HTTP Handler Operation as the parent but it's technically optional
-		op.ContextOperation, ctx = waf.StartContextOperation(ctx)
-		op.Operation = dyngo.NewOperation(op.ContextOperation)
-	} else {
-		op.Operation = dyngo.NewOperation(parent)
+func StartRequestOperation(ctx context.Context, span trace.TagSetter, args RequestOperationArgs) (context.Context, *RequestOperation) {
+	wafOp, found := dyngo.FindOperation[waf.ContextOperation](ctx)
+	if !found { // Usually we can find the HTTP Handler Operation as the parent, but it's technically optional
+		wafOp, ctx = waf.StartContextOperation(ctx, span)
+	}
+
+	op := &RequestOperation{
+		Operation:        dyngo.NewOperation(wafOp),
+		ContextOperation: wafOp,
+		wafContextOwner:  !found, // If we started the parent operation, we finish it, otherwise we don't
 	}
 
 	return dyngo.StartAndRegisterOperation(ctx, op, args), op
