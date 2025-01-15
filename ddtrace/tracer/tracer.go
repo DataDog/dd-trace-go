@@ -570,6 +570,7 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 		SpanID:       id,
 		TraceID:      id,
 		Start:        startTime,
+		DD:           &ddMeta{},
 		noDebugStack: t.config.noDebugStack,
 	}
 
