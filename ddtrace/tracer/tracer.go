@@ -8,6 +8,7 @@ package tracer
 import (
 	gocontext "context"
 	"encoding/binary"
+	"fmt"
 	"log/slog"
 	"math"
 	"os"
@@ -563,6 +564,7 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 		id = generateSpanID(startTime)
 	}
 	// span defaults
+	fmt.Println("Creating span")
 	span := &span{
 		Name:         operationName,
 		Service:      t.config.serviceName,
@@ -573,8 +575,13 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 		DD:           &ddMeta{},
 		noDebugStack: t.config.noDebugStack,
 	}
+	fmt.Println("Span created")
+	fmt.Printf("Span DD before: %+v\n", span.DD)
+	fmt.Printf("Span links before: %+v\n", span.DD.SpanLinks)
 
 	span.DD.SpanLinks = append(span.DD.SpanLinks, opts.SpanLinks...)
+	fmt.Printf("Span DD after: %+v\n", span.DD)
+	fmt.Printf("Span links after: %+v\n", span.DD.SpanLinks)
 
 	if t.config.hostname != "" {
 		span.setMeta(keyHostname, t.config.hostname)
