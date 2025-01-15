@@ -13,6 +13,8 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
+type StartSpanOption = ddtrace.StartSpanOption
+
 const (
 	ProxyHeaderSystem      = "X-Dd-Proxy"
 	ProxyHeaderStartTimeMs = "X-Dd-Proxy-Request-Time-Ms"
@@ -74,7 +76,7 @@ func extractInferredProxyContext(headers http.Header) *ProxyContext {
 
 }
 
-func tryCreateInferredProxySpan(headers http.Header, parent ddtrace.SpanContext) tracer.Span {
+func tryCreateInferredProxySpan(headers http.Header, parent ddtrace.SpanContext, opts ...StartSpanOption) tracer.Span {
 	if headers == nil {
 		log.Debug("Headers do not exist")
 		return nil
@@ -109,25 +111,30 @@ func tryCreateInferredProxySpan(headers http.Header, parent ddtrace.SpanContext)
 		configService = globalconfig.ServiceName()
 	}
 
-	config := ddtrace.StartSpanConfig{
-		Parent:    parent,
-		StartTime: parsedTime,
-		Tags: map[string]interface{}{
-			ext.SpanType:     ext.SpanTypeWeb,
-			ext.ServiceName:  configService,
-			ext.Component:    proxySpanInfo.Component,
-			ext.HTTPMethod:   requestProxyContext.Method,
-			ext.HTTPURL:      requestProxyContext.DomainName + requestProxyContext.Path,
-			ext.HTTPRoute:    requestProxyContext.Path,
-			ext.ResourceName: fmt.Sprintf("%s %s", requestProxyContext.Method, requestProxyContext.Path),
-			"stage":          requestProxyContext.Stage,
-		},
-	}
+	optsLocal := make([]StartSpanOption, len(opts), len(opts)+1)
+	copy(optsLocal, opts)
 
-	span := tracer.StartSpan(proxySpanInfo.SpanName, tracer.StartTime(config.StartTime), tracer.ChildOf(config.Parent), tracer.Tag("service", config.Tags[ext.ServiceName]))
-	for k, v := range config.Tags {
-		span.SetTag(k, v)
-	}
+	optsLocal = append(optsLocal,
+		func(cfg *ddtrace.StartSpanConfig) {
+			if cfg.Tags == nil {
+				cfg.Tags = make(map[string]interface{})
+			}
+
+			cfg.Parent = parent
+			cfg.StartTime = parsedTime
+
+			cfg.Tags[ext.SpanType] = ext.SpanTypeWeb
+			cfg.Tags[ext.ServiceName] = configService
+			cfg.Tags[ext.Component] = proxySpanInfo.Component
+			cfg.Tags[ext.HTTPMethod] = requestProxyContext.Method
+			cfg.Tags[ext.HTTPURL] = requestProxyContext.DomainName + requestProxyContext.Path
+			cfg.Tags[ext.HTTPRoute] = requestProxyContext.Path
+			cfg.Tags[ext.ResourceName] = fmt.Sprintf("%s %s", requestProxyContext.Method, requestProxyContext.Path)
+			cfg.Tags["stage"] = requestProxyContext.Stage
+		},
+	)
+
+	span := tracer.StartSpan(proxySpanInfo.SpanName, optsLocal...)
 
 	return span
 }
