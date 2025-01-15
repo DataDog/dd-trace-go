@@ -712,7 +712,8 @@ func TestSpanLog(t *testing.T) {
 		tracer, _, _, stop := startTestTracer(t)
 		defer stop()
 		span := tracer.StartSpan("test.request").(*span)
-		expect := fmt.Sprintf(`dd.trace_id="%d" dd.span_id="%d" dd.parent_id="0"`, span.TraceID, span.SpanID)
+		sctx := span.Context().(*spanContext)
+		expect := fmt.Sprintf(`dd.trace_id="%s" dd.span_id="%d" dd.parent_id="0"`, sctx.TraceID128(), span.SpanID)
 		assert.Equal(expect, fmt.Sprintf("%v", span))
 	}
 	t.Run("noservice_first", noServiceTest)
@@ -722,7 +723,8 @@ func TestSpanLog(t *testing.T) {
 		tracer, _, _, stop := startTestTracer(t, WithService("tracer.test"))
 		defer stop()
 		span := tracer.StartSpan("test.request").(*span)
-		expect := fmt.Sprintf(`dd.service=tracer.test dd.trace_id="%d" dd.span_id="%d" dd.parent_id="0"`, span.TraceID, span.SpanID)
+		sctx := span.Context().(*spanContext)
+		expect := fmt.Sprintf(`dd.service=tracer.test dd.trace_id="%s" dd.span_id="%d" dd.parent_id="0"`, sctx.TraceID128(), span.SpanID)
 		assert.Equal(expect, fmt.Sprintf("%v", span))
 	})
 
@@ -731,7 +733,8 @@ func TestSpanLog(t *testing.T) {
 		tracer, _, _, stop := startTestTracer(t, WithService("tracer.test"), WithEnv("testenv"))
 		defer stop()
 		span := tracer.StartSpan("test.request").(*span)
-		expect := fmt.Sprintf(`dd.service=tracer.test dd.env=testenv dd.trace_id="%d" dd.span_id="%d" dd.parent_id="0"`, span.TraceID, span.SpanID)
+		sctx := span.Context().(*spanContext)
+		expect := fmt.Sprintf(`dd.service=tracer.test dd.env=testenv dd.trace_id="%s" dd.span_id="%d" dd.parent_id="0"`, sctx.TraceID128(), span.SpanID)
 		assert.Equal(expect, fmt.Sprintf("%v", span))
 	})
 
@@ -740,7 +743,8 @@ func TestSpanLog(t *testing.T) {
 		tracer, _, _, stop := startTestTracer(t, WithService("tracer.test"), WithServiceVersion("1.2.3"))
 		defer stop()
 		span := tracer.StartSpan("test.request").(*span)
-		expect := fmt.Sprintf(`dd.service=tracer.test dd.version=1.2.3 dd.trace_id="%d" dd.span_id="%d" dd.parent_id="0"`, span.TraceID, span.SpanID)
+		sctx := span.Context().(*spanContext)
+		expect := fmt.Sprintf(`dd.service=tracer.test dd.version=1.2.3 dd.trace_id="%s" dd.span_id="%d" dd.parent_id="0"`, sctx.TraceID128(), span.SpanID)
 		assert.Equal(expect, fmt.Sprintf("%v", span))
 	})
 
@@ -749,7 +753,8 @@ func TestSpanLog(t *testing.T) {
 		tracer, _, _, stop := startTestTracer(t, WithService("tracer.test"), WithServiceVersion("1.2.3"), WithEnv("testenv"))
 		defer stop()
 		span := tracer.StartSpan("test.request").(*span)
-		expect := fmt.Sprintf(`dd.service=tracer.test dd.env=testenv dd.version=1.2.3 dd.trace_id="%d" dd.span_id="%d" dd.parent_id="0"`, span.TraceID, span.SpanID)
+		sctx := span.Context().(*spanContext)
+		expect := fmt.Sprintf(`dd.service=tracer.test dd.env=testenv dd.version=1.2.3 dd.trace_id="%s" dd.span_id="%d" dd.parent_id="0"`, sctx.TraceID128(), span.SpanID)
 		assert.Equal(expect, fmt.Sprintf("%v", span))
 	})
 
@@ -761,7 +766,8 @@ func TestSpanLog(t *testing.T) {
 		tracer, _, _, stop := startTestTracer(t, WithService("tracer.test"), WithServiceVersion("1.2.3"), WithEnv("testenv"))
 		defer stop()
 		span := tracer.StartSpan("test.request", ServiceName("subservice name")).(*span)
-		expect := fmt.Sprintf(`dd.service=tracer.test dd.env=testenv dd.version=1.2.3 dd.trace_id="%d" dd.span_id="%d" dd.parent_id="0"`, span.TraceID, span.SpanID)
+		sctx := span.Context().(*spanContext)
+		expect := fmt.Sprintf(`dd.service=tracer.test dd.env=testenv dd.version=1.2.3 dd.trace_id="%s" dd.span_id="%d" dd.parent_id="0"`, sctx.TraceID128(), span.SpanID)
 		assert.Equal(expect, fmt.Sprintf("%v", span))
 	})
 
@@ -773,7 +779,8 @@ func TestSpanLog(t *testing.T) {
 		tracer, _, _, stop := startTestTracer(t)
 		defer stop()
 		span := tracer.StartSpan("test.request").(*span)
-		expect := fmt.Sprintf(`dd.service=tracer.test dd.env=testenv dd.version=1.2.3 dd.trace_id="%d" dd.span_id="%d" dd.parent_id="0"`, span.TraceID, span.SpanID)
+		sctx := span.Context().(*spanContext)
+		expect := fmt.Sprintf(`dd.service=tracer.test dd.env=testenv dd.version=1.2.3 dd.trace_id="%s" dd.span_id="%d" dd.parent_id="0"`, sctx.TraceID128(), span.SpanID)
 		assert.Equal(expect, fmt.Sprintf("%v", span))
 	})
 
@@ -782,7 +789,8 @@ func TestSpanLog(t *testing.T) {
 		tracer, _, _, stop := startTestTracer(t, WithService("tracer.test"), WithServiceVersion("1.2.3"))
 		defer stop()
 		span := tracer.StartSpan("test.request").(*span)
-		expect := fmt.Sprintf(`%%!b(ddtrace.Span=dd.service=tracer.test dd.version=1.2.3 dd.trace_id="%d" dd.span_id="%d" dd.parent_id="0")`, span.TraceID, span.SpanID)
+		sctx := span.Context().(*spanContext)
+		expect := fmt.Sprintf(`%%!b(ddtrace.Span=dd.service=tracer.test dd.version=1.2.3 dd.trace_id="%s" dd.span_id="%d" dd.parent_id="0")`, sctx.TraceID128(), span.SpanID)
 		assert.Equal(expect, fmt.Sprintf("%b", span))
 	})
 
@@ -790,9 +798,10 @@ func TestSpanLog(t *testing.T) {
 		assert := assert.New(t)
 		tracer, _, _, stop := startTestTracer(t, WithService("tracer.test"), WithServiceVersion("1.2.3"), WithEnv("testenv"))
 		span := tracer.StartSpan("test.request").(*span)
+		sctx := span.Context().(*spanContext)
 		stop()
 		// no service, env, or version after the tracer is stopped
-		expect := fmt.Sprintf(`dd.trace_id="%d" dd.span_id="%d" dd.parent_id="0"`, span.TraceID, span.SpanID)
+		expect := fmt.Sprintf(`dd.trace_id="%s" dd.span_id="%d" dd.parent_id="0"`, sctx.TraceID128(), span.SpanID)
 		assert.Equal(expect, fmt.Sprintf("%v", span))
 	})
 
@@ -803,10 +812,11 @@ func TestSpanLog(t *testing.T) {
 		assert := assert.New(t)
 		tracer, _, _, stop := startTestTracer(t)
 		span := tracer.StartSpan("test.request").(*span)
+		sctx := span.Context().(*spanContext)
 		stop()
 		// service is not included: it is cleared when we stop the tracer
 		// env, version are included: it reads the environment variable when there is no tracer
-		expect := fmt.Sprintf(`dd.env=testenv dd.version=1.2.3 dd.trace_id="%d" dd.span_id="%d" dd.parent_id="0"`, span.TraceID, span.SpanID)
+		expect := fmt.Sprintf(`dd.env=testenv dd.version=1.2.3 dd.trace_id="%s" dd.span_id="%d" dd.parent_id="0"`, sctx.TraceID128(), span.SpanID)
 		assert.Equal(expect, fmt.Sprintf("%v", span))
 	})
 
@@ -825,7 +835,7 @@ func TestSpanLog(t *testing.T) {
 	})
 
 	t.Run("128-bit-logging-only", func(t *testing.T) {
-		// Logging 128-bit trace ids is enabled, but it's not present in
+		// Logging 128-bit trace ids is enabled, but format is not present in
 		// the span. So only the lower 64 bits should be logged in decimal form.
 		t.Setenv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", "false")
 		assert := assert.New(t)
