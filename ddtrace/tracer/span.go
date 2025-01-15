@@ -78,8 +78,7 @@ type span struct {
 	TraceID    uint64             `msg:"trace_id"`              // lower 64-bits of the root span identifier
 	ParentID   uint64             `msg:"parent_id"`             // identifier of the span's direct parent
 	Error      int32              `msg:"error"`                 // error status of the span; 0 means no errors
-	ddMeta     *ddMeta            `msg:"_dd,omitempty"`         // nested fields under _dd
-	//SpanLinks  []ddtrace.SpanLink `msg:"span_links,omitempty"`
+	SpanLinks  []ddtrace.SpanLink `msg:"span_links,omitempty"`  // links to other spans
 
 	goExecTraced bool         `msg:"-"`
 	noDebugStack bool         `msg:"-"` // disables debug stack traces
@@ -90,10 +89,6 @@ type span struct {
 	pprofCtxRestore context.Context `msg:"-"` // contains pprof.WithLabel labels of the parent span (if any) that need to be restored when this span finishes
 
 	taskEnd func() // ends execution tracer (runtime/trace) task, if started
-}
-
-type ddMeta struct {
-	SpanLinks []ddtrace.SpanLink `msg:"span_links,omitempty"` // links to other spans
 }
 
 // Context yields the SpanContext for this Span. Note that the return
@@ -470,7 +465,7 @@ func (s *span) setMetric(key string, v float64) {
 }
 
 func (s *span) AddSpanLinks(spanLinks ...ddtrace.SpanLink) {
-	s.ddMeta.SpanLinks = append(s.ddMeta.SpanLinks, spanLinks...)
+	s.SpanLinks = append(s.SpanLinks, spanLinks...)
 }
 
 // Finish closes this Span (but not its children) providing the duration
