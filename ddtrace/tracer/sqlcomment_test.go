@@ -213,6 +213,35 @@ func TestSQLCommentCarrier(t *testing.T) {
 	}
 }
 
+// https://github.com/DataDog/dd-trace-go/issues/2837
+func TestSQLCommentCarrierInjectNilSpan(t *testing.T) {
+	tracer := newTracer()
+	defer tracer.Stop()
+
+	headers := TextMapCarrier(map[string]string{
+		DefaultTraceIDHeader:  "4",
+		DefaultParentIDHeader: "1",
+		originHeader:          "synthetics",
+		b3TraceIDHeader:       "0021dc1807524785",
+		traceparentHeader:     "00-00000000000000000000000000000004-2222222222222222-01",
+		tracestateHeader:      "dd=s:2;o:rum;p:0000000000000001;t.tid:1230000000000000~~,othervendor=t61rcWkgMzE",
+	})
+
+	spanCtx, err := tracer.Extract(headers)
+	require.NoError(t, err)
+
+	carrier := SQLCommentCarrier{
+		Query:          "SELECT * from FOO",
+		Mode:           DBMPropagationModeFull,
+		DBServiceName:  "whiskey-db",
+		PeerDBHostname: "",
+		PeerDBName:     "",
+		PeerService:    "",
+	}
+	err = carrier.Inject(spanCtx)
+	require.NoError(t, err)
+}
+
 func TestExtractOpenTelemetryTraceInformation(t *testing.T) {
 	// open-telemetry supports 128 bit trace ids
 	traceID := "5bd66ef5095369c7b0d1f8f4bd33716a"
