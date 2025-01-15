@@ -120,7 +120,7 @@ type SpanLink struct {
 	// Attributes is a mapping of keys to string values. These values are used to add additional context to the span link.
 	Attributes map[string]string `msg:"attributes,omitempty" json:"attributes"`
 	// Tracestate is the tracestate of the linked span. This field is optional.
-	Tracestate string `msg:"tracestate,omitempty" json:"tracestate"`
+	Tracestate string `msg:"tracestate" json:"tracestate"`
 	// Flags represents the W3C trace flags of the linked span. This field is optional.
 	Flags uint32 `msg:"flags,omitempty" json:"flags"`
 }
