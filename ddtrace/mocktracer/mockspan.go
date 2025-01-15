@@ -110,6 +110,11 @@ type mockspan struct {
 	links     []ddtrace.SpanLink
 }
 
+func (s *mockspan) AddSpanLinks(spanLinks ...ddtrace.SpanLink) {
+	//TODO implement me
+	panic("implement me")
+}
+
 // SetTag sets a given tag on the span.
 func (s *mockspan) SetTag(key string, value interface{}) {
 	s.Lock()
