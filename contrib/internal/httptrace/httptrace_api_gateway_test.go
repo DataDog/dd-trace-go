@@ -67,7 +67,6 @@ func TestInferredProxySpans(t *testing.T) {
 
 		client := &http.Client{}
 		req, err := http.NewRequest("GET", fmt.Sprintf("%s/", appListener.URL), nil)
-
 		assert := as.New(t)
 		assert.NoError(err)
 
@@ -91,6 +90,9 @@ func TestInferredProxySpans(t *testing.T) {
 		assert.Equal("aws.apigateway", gatewaySpan.OperationName())
 		assert.Equal("http.request", webReqSpan.OperationName())
 		assert.True(webReqSpan.ParentID() == gatewaySpan.SpanID())
+		assert.Equal(webReqSpan.Tag("http.status_code"), gatewaySpan.Tag("http.status_code"))
+		assert.Equal(webReqSpan.Tag("span.type"), gatewaySpan.Tag("span.type"))
+
 		for _, arg := range inferredHeaders {
 			header, tag := normalizer.HeaderTag(arg)
 
@@ -136,6 +138,8 @@ func TestInferredProxySpans(t *testing.T) {
 		assert.Equal("aws.apigateway", gatewaySpan.OperationName())
 		assert.Equal("http.request", webReqSpan.OperationName())
 		assert.True(webReqSpan.ParentID() == gatewaySpan.SpanID())
+		assert.Equal(webReqSpan.Tag("http.status_code"), gatewaySpan.Tag("http.status_code"))
+		assert.Equal(webReqSpan.Tag("span.type"), gatewaySpan.Tag("span.type"))
 		for _, arg := range inferredHeaders {
 			header, tag := normalizer.HeaderTag(arg)
 
