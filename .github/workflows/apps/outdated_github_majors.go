@@ -206,8 +206,7 @@ func main() {
 	packages := instrumentation.GetPackages()
 	integrations := make(map[string]struct{})
 
-	for _, info := range packages {
-		repository := info.TracedPackage
+	for _, repository := range packages {
 
 		// repo starts with github and ends in version suffix
 		if validateRepository(repository) {
@@ -215,23 +214,23 @@ func main() {
 
 			// check if we've seen this integration before
 			lastSlashIndex := strings.LastIndex(repository, "/")
-			baseRepo := repository[len(prefix)+1 : lastSlashIndex]
-			if _, exists := integrations[baseRepo]; exists {
+			module := repository[len(prefix)+1 : lastSlashIndex]
+			if _, exists := integrations[module]; exists {
 				continue
 			}
 
-			log.Printf("Base repo: %s\n", baseRepo)
+			log.Printf("Module: %s\n", module)
 
 			// Get the latest major from GH
-			latest_major_version, err := getLatestMajor(baseRepo)
+			latest_major_version, err := getLatestMajor(module)
 			if err != nil {
-				log.Printf("Error getting min version for repo %s: %v\n", repository, err)
+				log.Printf("Error getting github major for %s: %v\n", repository, err)
 				continue
 			}
-			integrations[baseRepo] = struct{}{}
+			integrations[module] = struct{}{}
 
 			// Get the latest major from go.mod
-			latest_major_contrib, err := getLatestMajorContrib(baseRepo)
+			latest_major_contrib, err := getLatestMajorContrib(module)
 
 			if err != nil {
 				log.Printf("Error getting latest major from go.mod for %s: %v\n", repository, err)
@@ -240,7 +239,11 @@ func main() {
 			log.Printf("major on github: %s\n", latest_major_version)
 
 			if semver.Major(latest_major_contrib) != latest_major_version {
-				log.Printf("repository %s has a new major latest on github: %s\n", baseRepo, latest_major_version)
+				// special casing: go-redis/redis renamed to redis/go-redis in v9
+				if module == "go-redis/redis" && latest_major_version == "v9" {
+					continue
+				}
+				log.Printf("repository %s has a new major latest on github: %s\n", module, latest_major_version)
 			}
 
 		}
