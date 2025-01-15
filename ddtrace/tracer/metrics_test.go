@@ -175,6 +175,53 @@ func TestSpansFinishedTags(t *testing.T) {
 	})
 }
 
+func TestMultipleSpanIntegrationTags(t *testing.T) {
+	var tg statsdtest.TestStatsdClient
+	tg.Reset()
+
+	defer func(old time.Duration) { statsInterval = old }(statsInterval)
+	statsInterval = time.Millisecond
+
+	assert := assert.New(t)
+	tracer, _, flush, stop := startTestTracer(t, withStatsdClient(&tg))
+	defer stop()
+
+	// integration:manual
+	for range 5 {
+		tracer.StartSpan("operation").Finish()
+	}
+
+	// integration:net/http
+	for range 3 {
+		tracer.StartSpan("operation", Tag(ext.Component, "net/http")).Finish()
+	}
+
+	// integration:contrib
+	for range 2 {
+		tracer.StartSpan("operation", Tag(ext.Component, "contrib")).Finish()
+	}
+	flush(10)
+	tg.Wait(assert, 2, 100*time.Millisecond)
+
+	counts := tg.Counts()
+	assert.Equal(counts["datadog.tracer.spans_started"], int64(10))
+	assert.Equal(counts["datadog.tracer.spans_finished"], int64(10))
+
+	assertSpanMetricCountsAreZero(t, tracer.spansStarted)
+	assertSpanMetricCountsAreZero(t, tracer.spansFinished)
+
+	startCalls := statsdtest.FilterCallsByName(tg.CountCalls(), "datadog.tracer.spans_started")
+	assert.Equal(int64(5), tg.CountCallsByTag(startCalls, "integration:manual"))
+	assert.Equal(int64(3), tg.CountCallsByTag(startCalls, "integration:net/http"))
+	assert.Equal(int64(2), tg.CountCallsByTag(startCalls, "integration:contrib"))
+
+	finishedCalls := statsdtest.FilterCallsByName(tg.CountCalls(), "datadog.tracer.spans_finished")
+	assert.Equal(int64(5), tg.CountCallsByTag(finishedCalls, "integration:manual"))
+	assert.Equal(int64(3), tg.CountCallsByTag(finishedCalls, "integration:net/http"))
+	assert.Equal(int64(2), tg.CountCallsByTag(finishedCalls, "integration:contrib"))
+
+}
+
 func TestHealthMetricsRaceCondition(t *testing.T) {
 	assert := assert.New(t)
 
