@@ -6,35 +6,8 @@
 package newtelemetry
 
 import (
-	"net/http"
-	"time"
-
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/newtelemetry/types"
 )
-
-type ClientConfig struct {
-	// AgentlessURL is the full URL to the agentless telemetry endpoint. (Either AgentlessURL or AgentURL must be set or both)
-	// Defaults to https://instrumentation-telemetry-intake.datadoghq.com/api/v2/apmtelemetry
-	AgentlessURL string
-
-	// AgentURL is the url of the agent to send telemetry to. (Either AgentlessURL or AgentURL must be set or both)
-	AgentURL string
-
-	// HTTPClient is the http client to use for sending telemetry, defaults to a http.DefaultClient copy.
-	HTTPClient http.RoundTripper
-
-	// HeartbeatInterval is the interval at which to send a heartbeat payload, defaults to 60s.
-	// The maximum value is 60s.
-	HeartbeatInterval time.Duration
-
-	// FlushIntervalRange is the interval at which the client flushes the data.
-	// By default, the client will start to flush at 60s intervals and will reduce the interval based on the load till it hit 15s
-	// Both values cannot be higher than 60s because the heartbeat need to be sent at least every 60s.
-	FlushIntervalRange struct {
-		Min time.Duration
-		Max time.Duration
-	}
-}
 
 // MetricHandle can be used to submit different values for the same metric.
 // MetricHandle is used to reduce lock contention when submitting metrics.
@@ -125,6 +98,6 @@ type Client interface {
 	// appStart sends the telemetry necessary to signal that the app is starting.
 	appStart() error
 
-	// appStop sends the telemetry necessary to signal that the app is stopping and calls Close()
+	// appStop sends the telemetry necessary to signal that the app is stopping and calls flush()
 	appStop()
 }

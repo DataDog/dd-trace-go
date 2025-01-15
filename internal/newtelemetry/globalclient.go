@@ -33,7 +33,6 @@ func SwapClient(client Client) {
 func StopApp() {
 	if client := globalClient.Swap(nil); client != nil && *client != nil {
 		(*client).appStop()
-		(*client).flush()
 	}
 }
 
