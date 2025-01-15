@@ -363,6 +363,7 @@ func (mw *traceMiddleware) deserializeTraceMiddleware(stack *middleware.Stack) e
 			span_pointers.HandleS3Operation(in, out, span)
 		}
 
+		fmt.Println("Finishing span")
 		span.Finish()
 
 		return out, metadata, err
