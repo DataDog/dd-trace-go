@@ -6,10 +6,35 @@
 package main
 
 import (
+	"fmt"
+	"os"
+	"os/exec"
+	"strings"
+
 	gts "gotest.tools/gotestsum/cmd"
 )
 
+// go list ./... | grep -v -e google.golang.org/api -e sarama -e confluent-kafka-go -e cmemprof | sort >packages.txt
+// gotestsum --junitfile ${REPORT} -- $(cat packages.txt) -v -coverprofile=coverage.txt -covermode=atomic -timeout 15m
+
 func main() {
-	gts.Run("test", []string{})
+	listArgs := "go list ./... | grep -v -e google.golang.org/api -e sarama -e confluent-kafka-go -e cmemprof | sort >packages.txt"
+	cmd := exec.Command("bash", "-c", listArgs)
+	basepath, _ := os.Getwd()
+	root := strings.Split(basepath, ".github")[0]
+	cmd.Dir = root
+	err := cmd.Run()
+	if err != nil {
+		fmt.Printf("error building packages.txt: %s\n", err.Error())
+	}
+	pkgOut, err := exec.Command("cat", "packages.txt").Output()
+	if err != nil {
+		fmt.Printf("error getting packages.txt: %s\n", err.Error())
+	}
+	gtsArgs := []string{"--junitfile", "gotestsum-report.xml", "--", string(pkgOut), "-v", "-coverprofile=coverage.txt", "-covermode=atomic", "-timeout 15m"}
+	err = gts.Run("gotestsum", gtsArgs)
+	if err != nil {
+		fmt.Printf("error building junitfile: %s\n", err.Error())
+	}
 
 }
