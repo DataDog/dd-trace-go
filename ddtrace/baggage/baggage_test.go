@@ -36,7 +36,7 @@ func TestBaggageFunctions(t *testing.T) {
 		}
 	})
 
-	t.Run("GetAll", func(t *testing.T) {
+	t.Run("All", func(t *testing.T) {
 		ctx := context.Background()
 
 		// Set multiple baggage entries
@@ -44,7 +44,7 @@ func TestBaggageFunctions(t *testing.T) {
 		ctx = Set(ctx, "key2", "value2")
 
 		// Retrieve all baggage entries
-		all := GetAll(ctx)
+		all := All(ctx)
 		if len(all) != 2 {
 			t.Fatalf("Expected 2 items in baggage; got %d", len(all))
 		}
@@ -95,7 +95,7 @@ func TestBaggageFunctions(t *testing.T) {
 		ctx = Clear(ctx)
 
 		// Check that everything is gone
-		all := GetAll(ctx)
+		all := All(ctx)
 		if len(all) != 0 {
 			t.Errorf("Expected no items after clearing baggage; got %d", len(all))
 		}

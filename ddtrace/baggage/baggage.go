@@ -64,8 +64,8 @@ func Remove(ctx context.Context, key string) context.Context {
 	return withBaggage(ctx, bm)
 }
 
-// GetAll returns a **copy** of all baggage items in the context,
-func GetAll(ctx context.Context) map[string]string {
+// All returns a **copy** of all baggage items in the context,
+func All(ctx context.Context) map[string]string {
 	bm, ok := baggageMap(ctx)
 	if !ok {
 		return nil
