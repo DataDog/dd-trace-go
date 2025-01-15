@@ -469,7 +469,7 @@ func (s *span) AddSpanLinks(spanLinks ...ddtrace.SpanLink) {
 	if s.Meta == nil {
 		s.Meta = make(map[string]string, 1)
 	}
-	s.Meta["span_links"] = "[{}]"
+	s.Meta["span_links"] = "[{\"some\": \"val\"}]"
 }
 
 // Finish closes this Span (but not its children) providing the duration
