@@ -162,7 +162,7 @@ func isSubdirectory(url, pattern string) bool {
 func getCurrentVersion(integrationName, modName string) (ModuleVersion, error) {
 	if _, ok := stdlibPackages[integrationName]; ok {
 		return ModuleVersion{
-			Name:           modName,
+			Name:           integrationName,
 			MinVersion:     "-",
 			MaxVersion:     "-",
 			Repository:     modName,
@@ -202,7 +202,7 @@ func getCurrentVersion(integrationName, modName string) (ModuleVersion, error) {
 	for _, req := range f.Require {
 		if repoRegex.MatchString(req.Mod.Path) {
 			return ModuleVersion{
-				Name:           modName,
+				Name:           integrationName,
 				MinVersion:     req.Mod.Version,
 				MaxVersion:     "",
 				Repository:     req.Mod.Path,
@@ -251,8 +251,8 @@ func writeMarkdownFile(modules []ModuleVersion, filePath string) error {
 	}
 	defer file.Close()
 
-	fmt.Fprintln(file, "| Dependency |    Repository  | Minimum Version | Maximum Version | Auto-Instrumented |")
-	fmt.Fprintln(file, "|------------|-----------------|-----------------|-----------------|-----------------|")
+	fmt.Fprintln(file, "|   Module    |   Integration   | Minimum Version | Maximum Version | Auto-Instrumented |")
+	fmt.Fprintln(file, "|-------------|-----------------|-----------------|-----------------|-----------------|")
 
 	// Sort modules by name
 	sort.Slice(modules, func(i, j int) bool {
