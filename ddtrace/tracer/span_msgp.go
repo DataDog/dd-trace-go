@@ -388,25 +388,6 @@ func (z *span) DecodeMsg(dc *msgp.Reader) (err error) {
 					}
 				}
 			}
-		case "span_links":
-			var zb0006 uint32
-			zb0006, err = dc.ReadArrayHeader()
-			if err != nil {
-				err = msgp.WrapError(err, "SpanLinks")
-				return
-			}
-			if cap(z.SpanLinks) >= int(zb0006) {
-				z.SpanLinks = (z.SpanLinks)[:zb0006]
-			} else {
-				z.SpanLinks = make([]ddtrace.SpanLink, zb0006)
-			}
-			for za0006 := range z.SpanLinks {
-				err = z.SpanLinks[za0006].DecodeMsg(dc)
-				if err != nil {
-					err = msgp.WrapError(err, "SpanLinks", za0006)
-					return
-				}
-			}
 		default:
 			err = dc.Skip()
 			if err != nil {
@@ -421,8 +402,8 @@ func (z *span) DecodeMsg(dc *msgp.Reader) (err error) {
 // EncodeMsg implements msgp.Encodable
 func (z *span) EncodeMsg(en *msgp.Writer) (err error) {
 	// check for omitted fields
-	zb0001Len := uint32(15)
-	var zb0001Mask uint16 /* 15 bits */
+	zb0001Len := uint32(14)
+	var zb0001Mask uint16 /* 14 bits */
 	_ = zb0001Mask
 	if z.Meta == nil {
 		zb0001Len--
@@ -435,10 +416,6 @@ func (z *span) EncodeMsg(en *msgp.Writer) (err error) {
 	if z.DD == nil {
 		zb0001Len--
 		zb0001Mask |= 0x2000
-	}
-	if z.SpanLinks == nil {
-		zb0001Len--
-		zb0001Mask |= 0x4000
 	}
 	// variable map header, size zb0001Len
 	err = en.Append(0x80 | uint8(zb0001Len))
@@ -652,25 +629,6 @@ func (z *span) EncodeMsg(en *msgp.Writer) (err error) {
 				}
 			}
 		}
-		if (zb0001Mask & 0x4000) == 0 { // if not omitted
-			// write "span_links"
-			err = en.Append(0xaa, 0x73, 0x70, 0x61, 0x6e, 0x5f, 0x6c, 0x69, 0x6e, 0x6b, 0x73)
-			if err != nil {
-				return
-			}
-			err = en.WriteArrayHeader(uint32(len(z.SpanLinks)))
-			if err != nil {
-				err = msgp.WrapError(err, "SpanLinks")
-				return
-			}
-			for za0006 := range z.SpanLinks {
-				err = z.SpanLinks[za0006].EncodeMsg(en)
-				if err != nil {
-					err = msgp.WrapError(err, "SpanLinks", za0006)
-					return
-				}
-			}
-		}
 	}
 	return
 }
@@ -699,10 +657,6 @@ func (z *span) Msgsize() (s int) {
 		for za0005 := range z.DD.SpanLinks {
 			s += z.DD.SpanLinks[za0005].Msgsize()
 		}
-	}
-	s += 11 + msgp.ArrayHeaderSize
-	for za0006 := range z.SpanLinks {
-		s += z.SpanLinks[za0006].Msgsize()
 	}
 	return
 }

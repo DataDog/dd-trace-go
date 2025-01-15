@@ -79,7 +79,7 @@ type span struct {
 	ParentID   uint64             `msg:"parent_id"`             // identifier of the span's direct parent
 	Error      int32              `msg:"error"`                 // error status of the span; 0 means no errors
 	DD         *ddMeta            `msg:"_dd,omitempty"`         // nested fields under _dd
-	SpanLinks  []ddtrace.SpanLink `msg:"span_links,omitempty"`
+	//SpanLinks  []ddtrace.SpanLink `msg:"span_links,omitempty"`
 
 	goExecTraced bool         `msg:"-"`
 	noDebugStack bool         `msg:"-"` // disables debug stack traces
