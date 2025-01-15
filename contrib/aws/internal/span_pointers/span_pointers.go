@@ -60,8 +60,8 @@ func HandleS3Operation(in middleware.DeserializeInput, out middleware.Deserializ
 	link := ddtrace.SpanLink{
 		// We leave trace_id, span_id, trade_id_high, tracestate, and flags as 0 or empty.
 		// The Datadog frontend will use `ptr.hash` to find the linked span.
-		TraceID:     1,
-		SpanID:      2,
+		TraceID:     0,
+		SpanID:      0,
 		TraceIDHigh: 3,
 		Tracestate:  " ",
 		Flags:       1,
