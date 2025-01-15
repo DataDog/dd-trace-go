@@ -78,7 +78,7 @@ type span struct {
 	TraceID    uint64             `msg:"trace_id"`              // lower 64-bits of the root span identifier
 	ParentID   uint64             `msg:"parent_id"`             // identifier of the span's direct parent
 	Error      int32              `msg:"error"`                 // error status of the span; 0 means no errors
-	DD         *ddMeta            `msg:"_dd,omitempty"`         // nested fields under _dd
+	ddMeta     *ddMeta            `msg:"_dd,omitempty"`         // nested fields under _dd
 	//SpanLinks  []ddtrace.SpanLink `msg:"span_links,omitempty"`
 
 	goExecTraced bool         `msg:"-"`
@@ -470,7 +470,7 @@ func (s *span) setMetric(key string, v float64) {
 }
 
 func (s *span) AddSpanLinks(spanLinks ...ddtrace.SpanLink) {
-	s.DD.SpanLinks = append(s.DD.SpanLinks, spanLinks...)
+	s.ddMeta.SpanLinks = append(s.ddMeta.SpanLinks, spanLinks...)
 }
 
 // Finish closes this Span (but not its children) providing the duration

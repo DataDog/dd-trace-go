@@ -572,16 +572,11 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 		SpanID:       id,
 		TraceID:      id,
 		Start:        startTime,
-		DD:           &ddMeta{},
+		ddMeta:       &ddMeta{},
 		noDebugStack: t.config.noDebugStack,
 	}
-	fmt.Println("Span created")
-	fmt.Printf("Span DD before: %+v\n", span.DD)
-	fmt.Printf("Span links before: %+v\n", span.DD.SpanLinks)
 
-	span.DD.SpanLinks = append(span.DD.SpanLinks, opts.SpanLinks...)
-	fmt.Printf("Span DD after: %+v\n", span.DD)
-	fmt.Printf("Span links after: %+v\n", span.DD.SpanLinks)
+	span.AddSpanLinks(opts.SpanLinks...)
 
 	if t.config.hostname != "" {
 		span.setMeta(keyHostname, t.config.hostname)

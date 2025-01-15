@@ -338,25 +338,25 @@ func (z *span) DecodeMsg(dc *msgp.Reader) (err error) {
 			if dc.IsNil() {
 				err = dc.ReadNil()
 				if err != nil {
-					err = msgp.WrapError(err, "DD")
+					err = msgp.WrapError(err, "ddMeta")
 					return
 				}
-				z.DD = nil
+				z.ddMeta = nil
 			} else {
-				if z.DD == nil {
-					z.DD = new(ddMeta)
+				if z.ddMeta == nil {
+					z.ddMeta = new(ddMeta)
 				}
 				var zb0004 uint32
 				zb0004, err = dc.ReadMapHeader()
 				if err != nil {
-					err = msgp.WrapError(err, "DD")
+					err = msgp.WrapError(err, "ddMeta")
 					return
 				}
 				for zb0004 > 0 {
 					zb0004--
 					field, err = dc.ReadMapKeyPtr()
 					if err != nil {
-						err = msgp.WrapError(err, "DD")
+						err = msgp.WrapError(err, "ddMeta")
 						return
 					}
 					switch msgp.UnsafeString(field) {
@@ -364,25 +364,25 @@ func (z *span) DecodeMsg(dc *msgp.Reader) (err error) {
 						var zb0005 uint32
 						zb0005, err = dc.ReadArrayHeader()
 						if err != nil {
-							err = msgp.WrapError(err, "DD", "SpanLinks")
+							err = msgp.WrapError(err, "ddMeta", "SpanLinks")
 							return
 						}
-						if cap(z.DD.SpanLinks) >= int(zb0005) {
-							z.DD.SpanLinks = (z.DD.SpanLinks)[:zb0005]
+						if cap(z.ddMeta.SpanLinks) >= int(zb0005) {
+							z.ddMeta.SpanLinks = (z.ddMeta.SpanLinks)[:zb0005]
 						} else {
-							z.DD.SpanLinks = make([]ddtrace.SpanLink, zb0005)
+							z.ddMeta.SpanLinks = make([]ddtrace.SpanLink, zb0005)
 						}
-						for za0005 := range z.DD.SpanLinks {
-							err = z.DD.SpanLinks[za0005].DecodeMsg(dc)
+						for za0005 := range z.ddMeta.SpanLinks {
+							err = z.ddMeta.SpanLinks[za0005].DecodeMsg(dc)
 							if err != nil {
-								err = msgp.WrapError(err, "DD", "SpanLinks", za0005)
+								err = msgp.WrapError(err, "ddMeta", "SpanLinks", za0005)
 								return
 							}
 						}
 					default:
 						err = dc.Skip()
 						if err != nil {
-							err = msgp.WrapError(err, "DD")
+							err = msgp.WrapError(err, "ddMeta")
 							return
 						}
 					}
@@ -413,7 +413,7 @@ func (z *span) EncodeMsg(en *msgp.Writer) (err error) {
 		zb0001Len--
 		zb0001Mask |= 0x100
 	}
-	if z.DD == nil {
+	if z.ddMeta == nil {
 		zb0001Len--
 		zb0001Mask |= 0x2000
 	}
@@ -589,7 +589,7 @@ func (z *span) EncodeMsg(en *msgp.Writer) (err error) {
 			if err != nil {
 				return
 			}
-			if z.DD == nil {
+			if z.ddMeta == nil {
 				err = en.WriteNil()
 				if err != nil {
 					return
@@ -599,7 +599,7 @@ func (z *span) EncodeMsg(en *msgp.Writer) (err error) {
 				zb0002Len := uint32(1)
 				var zb0002Mask uint8 /* 1 bits */
 				_ = zb0002Mask
-				if z.DD.SpanLinks == nil {
+				if z.ddMeta.SpanLinks == nil {
 					zb0002Len--
 					zb0002Mask |= 0x1
 				}
@@ -614,15 +614,15 @@ func (z *span) EncodeMsg(en *msgp.Writer) (err error) {
 					if err != nil {
 						return
 					}
-					err = en.WriteArrayHeader(uint32(len(z.DD.SpanLinks)))
+					err = en.WriteArrayHeader(uint32(len(z.ddMeta.SpanLinks)))
 					if err != nil {
-						err = msgp.WrapError(err, "DD", "SpanLinks")
+						err = msgp.WrapError(err, "ddMeta", "SpanLinks")
 						return
 					}
-					for za0005 := range z.DD.SpanLinks {
-						err = z.DD.SpanLinks[za0005].EncodeMsg(en)
+					for za0005 := range z.ddMeta.SpanLinks {
+						err = z.ddMeta.SpanLinks[za0005].EncodeMsg(en)
 						if err != nil {
-							err = msgp.WrapError(err, "DD", "SpanLinks", za0005)
+							err = msgp.WrapError(err, "ddMeta", "SpanLinks", za0005)
 							return
 						}
 					}
@@ -650,12 +650,12 @@ func (z *span) Msgsize() (s int) {
 		}
 	}
 	s += 8 + msgp.Uint64Size + 9 + msgp.Uint64Size + 10 + msgp.Uint64Size + 6 + msgp.Int32Size + 4
-	if z.DD == nil {
+	if z.ddMeta == nil {
 		s += msgp.NilSize
 	} else {
 		s += 1 + 11 + msgp.ArrayHeaderSize
-		for za0005 := range z.DD.SpanLinks {
-			s += z.DD.SpanLinks[za0005].Msgsize()
+		for za0005 := range z.ddMeta.SpanLinks {
+			s += z.ddMeta.SpanLinks[za0005].Msgsize()
 		}
 	}
 	return
