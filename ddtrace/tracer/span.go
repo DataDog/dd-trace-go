@@ -65,20 +65,21 @@ type errorConfig struct {
 type span struct {
 	sync.RWMutex `msg:"-"` // all fields are protected by this RWMutex
 
-	Name       string             `msg:"name"`                     // operation name
-	Service    string             `msg:"service"`                  // service name (i.e. "grpc.server", "http.request")
-	Resource   string             `msg:"resource"`                 // resource name (i.e. "/user?id=123", "SELECT * FROM users")
-	Type       string             `msg:"type"`                     // protocol associated with the span (i.e. "web", "db", "cache")
-	Start      int64              `msg:"start"`                    // span start time expressed in nanoseconds since epoch
-	Duration   int64              `msg:"duration"`                 // duration of the span expressed in nanoseconds
-	Meta       map[string]string  `msg:"meta,omitempty"`           // arbitrary map of metadata
-	MetaStruct metaStructMap      `msg:"meta_struct,omitempty"`    // arbitrary map of metadata with structured values
-	Metrics    map[string]float64 `msg:"metrics,omitempty"`        // arbitrary map of numeric metrics
-	SpanID     uint64             `msg:"span_id"`                  // identifier of this span
-	TraceID    uint64             `msg:"trace_id"`                 // lower 64-bits of the root span identifier
-	ParentID   uint64             `msg:"parent_id"`                // identifier of the span's direct parent
-	Error      int32              `msg:"error"`                    // error status of the span; 0 means no errors
-	SpanLinks  []ddtrace.SpanLink `msg:"_dd.span_links,omitempty"` // links to other spans
+	Name       string             `msg:"name"`                  // operation name
+	Service    string             `msg:"service"`               // service name (i.e. "grpc.server", "http.request")
+	Resource   string             `msg:"resource"`              // resource name (i.e. "/user?id=123", "SELECT * FROM users")
+	Type       string             `msg:"type"`                  // protocol associated with the span (i.e. "web", "db", "cache")
+	Start      int64              `msg:"start"`                 // span start time expressed in nanoseconds since epoch
+	Duration   int64              `msg:"duration"`              // duration of the span expressed in nanoseconds
+	Meta       map[string]string  `msg:"meta,omitempty"`        // arbitrary map of metadata
+	MetaStruct metaStructMap      `msg:"meta_struct,omitempty"` // arbitrary map of metadata with structured values
+	Metrics    map[string]float64 `msg:"metrics,omitempty"`     // arbitrary map of numeric metrics
+	SpanID     uint64             `msg:"span_id"`               // identifier of this span
+	TraceID    uint64             `msg:"trace_id"`              // lower 64-bits of the root span identifier
+	ParentID   uint64             `msg:"parent_id"`             // identifier of the span's direct parent
+	Error      int32              `msg:"error"`                 // error status of the span; 0 means no errors
+	DD         *ddMeta            `msg:"_dd,omitempty"`         // nested fields under _dd
+	SpanLinks  []ddtrace.SpanLink `msg:"span_links,omitempty"`
 
 	goExecTraced bool         `msg:"-"`
 	noDebugStack bool         `msg:"-"` // disables debug stack traces
@@ -89,6 +90,10 @@ type span struct {
 	pprofCtxRestore context.Context `msg:"-"` // contains pprof.WithLabel labels of the parent span (if any) that need to be restored when this span finishes
 
 	taskEnd func() // ends execution tracer (runtime/trace) task, if started
+}
+
+type ddMeta struct {
+	SpanLinks []ddtrace.SpanLink `msg:"span_links,omitempty"` // links to other spans
 }
 
 // Context yields the SpanContext for this Span. Note that the return
@@ -465,7 +470,7 @@ func (s *span) setMetric(key string, v float64) {
 }
 
 func (s *span) AddSpanLinks(spanLinks ...ddtrace.SpanLink) {
-	s.SpanLinks = append(s.SpanLinks, spanLinks...)
+	s.DD.SpanLinks = append(s.DD.SpanLinks, spanLinks...)
 }
 
 // Finish closes this Span (but not its children) providing the duration

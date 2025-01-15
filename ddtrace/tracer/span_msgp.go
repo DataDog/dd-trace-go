@@ -8,6 +8,100 @@ import (
 )
 
 // DecodeMsg implements msgp.Decodable
+func (z *ddMeta) DecodeMsg(dc *msgp.Reader) (err error) {
+	var field []byte
+	_ = field
+	var zb0001 uint32
+	zb0001, err = dc.ReadMapHeader()
+	if err != nil {
+		err = msgp.WrapError(err)
+		return
+	}
+	for zb0001 > 0 {
+		zb0001--
+		field, err = dc.ReadMapKeyPtr()
+		if err != nil {
+			err = msgp.WrapError(err)
+			return
+		}
+		switch msgp.UnsafeString(field) {
+		case "span_links":
+			var zb0002 uint32
+			zb0002, err = dc.ReadArrayHeader()
+			if err != nil {
+				err = msgp.WrapError(err, "SpanLinks")
+				return
+			}
+			if cap(z.SpanLinks) >= int(zb0002) {
+				z.SpanLinks = (z.SpanLinks)[:zb0002]
+			} else {
+				z.SpanLinks = make([]ddtrace.SpanLink, zb0002)
+			}
+			for za0001 := range z.SpanLinks {
+				err = z.SpanLinks[za0001].DecodeMsg(dc)
+				if err != nil {
+					err = msgp.WrapError(err, "SpanLinks", za0001)
+					return
+				}
+			}
+		default:
+			err = dc.Skip()
+			if err != nil {
+				err = msgp.WrapError(err)
+				return
+			}
+		}
+	}
+	return
+}
+
+// EncodeMsg implements msgp.Encodable
+func (z *ddMeta) EncodeMsg(en *msgp.Writer) (err error) {
+	// check for omitted fields
+	zb0001Len := uint32(1)
+	var zb0001Mask uint8 /* 1 bits */
+	_ = zb0001Mask
+	if z.SpanLinks == nil {
+		zb0001Len--
+		zb0001Mask |= 0x1
+	}
+	// variable map header, size zb0001Len
+	err = en.Append(0x80 | uint8(zb0001Len))
+	if err != nil {
+		return
+	}
+	if (zb0001Mask & 0x1) == 0 { // if not omitted
+		// write "span_links"
+		err = en.Append(0xaa, 0x73, 0x70, 0x61, 0x6e, 0x5f, 0x6c, 0x69, 0x6e, 0x6b, 0x73)
+		if err != nil {
+			return
+		}
+		err = en.WriteArrayHeader(uint32(len(z.SpanLinks)))
+		if err != nil {
+			err = msgp.WrapError(err, "SpanLinks")
+			return
+		}
+		for za0001 := range z.SpanLinks {
+			err = z.SpanLinks[za0001].EncodeMsg(en)
+			if err != nil {
+				err = msgp.WrapError(err, "SpanLinks", za0001)
+				return
+			}
+		}
+	}
+	return
+}
+
+// Msgsize returns an upper bound estimate of the number of bytes occupied by the serialized message
+func (z *ddMeta) Msgsize() (s int) {
+	s = 1 + 11 + msgp.ArrayHeaderSize
+	for za0001 := range z.SpanLinks {
+		s += z.SpanLinks[za0001].Msgsize()
+	}
+	return
+}
+
+// DecodeMsg implements msgp.Decodable
 func (z *errorConfig) DecodeMsg(dc *msgp.Reader) (err error) {
 	var field []byte
 	_ = field
@@ -240,22 +334,76 @@ func (z *span) DecodeMsg(dc *msgp.Reader) (err error) {
 				err = msgp.WrapError(err, "Error")
 				return
 			}
-		case "_dd.span_links":
-			var zb0004 uint32
-			zb0004, err = dc.ReadArrayHeader()
+		case "_dd":
+			if dc.IsNil() {
+				err = dc.ReadNil()
+				if err != nil {
+					err = msgp.WrapError(err, "DD")
+					return
+				}
+				z.DD = nil
+			} else {
+				if z.DD == nil {
+					z.DD = new(ddMeta)
+				}
+				var zb0004 uint32
+				zb0004, err = dc.ReadMapHeader()
+				if err != nil {
+					err = msgp.WrapError(err, "DD")
+					return
+				}
+				for zb0004 > 0 {
+					zb0004--
+					field, err = dc.ReadMapKeyPtr()
+					if err != nil {
+						err = msgp.WrapError(err, "DD")
+						return
+					}
+					switch msgp.UnsafeString(field) {
+					case "span_links":
+						var zb0005 uint32
+						zb0005, err = dc.ReadArrayHeader()
+						if err != nil {
+							err = msgp.WrapError(err, "DD", "SpanLinks")
+							return
+						}
+						if cap(z.DD.SpanLinks) >= int(zb0005) {
+							z.DD.SpanLinks = (z.DD.SpanLinks)[:zb0005]
+						} else {
+							z.DD.SpanLinks = make([]ddtrace.SpanLink, zb0005)
+						}
+						for za0005 := range z.DD.SpanLinks {
+							err = z.DD.SpanLinks[za0005].DecodeMsg(dc)
+							if err != nil {
+								err = msgp.WrapError(err, "DD", "SpanLinks", za0005)
+								return
+							}
+						}
+					default:
+						err = dc.Skip()
+						if err != nil {
+							err = msgp.WrapError(err, "DD")
+							return
+						}
+					}
+				}
+			}
+		case "span_links":
+			var zb0006 uint32
+			zb0006, err = dc.ReadArrayHeader()
 			if err != nil {
 				err = msgp.WrapError(err, "SpanLinks")
 				return
 			}
-			if cap(z.SpanLinks) >= int(zb0004) {
-				z.SpanLinks = (z.SpanLinks)[:zb0004]
+			if cap(z.SpanLinks) >= int(zb0006) {
+				z.SpanLinks = (z.SpanLinks)[:zb0006]
 			} else {
-				z.SpanLinks = make([]ddtrace.SpanLink, zb0004)
+				z.SpanLinks = make([]ddtrace.SpanLink, zb0006)
 			}
-			for za0005 := range z.SpanLinks {
-				err = z.SpanLinks[za0005].DecodeMsg(dc)
+			for za0006 := range z.SpanLinks {
+				err = z.SpanLinks[za0006].DecodeMsg(dc)
 				if err != nil {
-					err = msgp.WrapError(err, "SpanLinks", za0005)
+					err = msgp.WrapError(err, "SpanLinks", za0006)
 					return
 				}
 			}
@@ -273,8 +421,8 @@ func (z *span) DecodeMsg(dc *msgp.Reader) (err error) {
 // EncodeMsg implements msgp.Encodable
 func (z *span) EncodeMsg(en *msgp.Writer) (err error) {
 	// check for omitted fields
-	zb0001Len := uint32(14)
-	var zb0001Mask uint16 /* 14 bits */
+	zb0001Len := uint32(15)
+	var zb0001Mask uint16 /* 15 bits */
 	_ = zb0001Mask
 	if z.Meta == nil {
 		zb0001Len--
@@ -284,9 +432,13 @@ func (z *span) EncodeMsg(en *msgp.Writer) (err error) {
 		zb0001Len--
 		zb0001Mask |= 0x100
 	}
-	if z.SpanLinks == nil {
+	if z.DD == nil {
 		zb0001Len--
 		zb0001Mask |= 0x2000
+	}
+	if z.SpanLinks == nil {
+		zb0001Len--
+		zb0001Mask |= 0x4000
 	}
 	// variable map header, size zb0001Len
 	err = en.Append(0x80 | uint8(zb0001Len))
@@ -455,8 +607,54 @@ func (z *span) EncodeMsg(en *msgp.Writer) (err error) {
 			return
 		}
 		if (zb0001Mask & 0x2000) == 0 { // if not omitted
-			// write "_dd.span_links"
-			err = en.Append(0xae, 0x5f, 0x64, 0x64, 0x2e, 0x73, 0x70, 0x61, 0x6e, 0x5f, 0x6c, 0x69, 0x6e, 0x6b, 0x73)
+			// write "_dd"
+			err = en.Append(0xa3, 0x5f, 0x64, 0x64)
+			if err != nil {
+				return
+			}
+			if z.DD == nil {
+				err = en.WriteNil()
+				if err != nil {
+					return
+				}
+			} else {
+				// check for omitted fields
+				zb0002Len := uint32(1)
+				var zb0002Mask uint8 /* 1 bits */
+				_ = zb0002Mask
+				if z.DD.SpanLinks == nil {
+					zb0002Len--
+					zb0002Mask |= 0x1
+				}
+				// variable map header, size zb0002Len
+				err = en.Append(0x80 | uint8(zb0002Len))
+				if err != nil {
+					return
+				}
+				if (zb0002Mask & 0x1) == 0 { // if not omitted
+					// write "span_links"
+					err = en.Append(0xaa, 0x73, 0x70, 0x61, 0x6e, 0x5f, 0x6c, 0x69, 0x6e, 0x6b, 0x73)
+					if err != nil {
+						return
+					}
+					err = en.WriteArrayHeader(uint32(len(z.DD.SpanLinks)))
+					if err != nil {
+						err = msgp.WrapError(err, "DD", "SpanLinks")
+						return
+					}
+					for za0005 := range z.DD.SpanLinks {
+						err = z.DD.SpanLinks[za0005].EncodeMsg(en)
+						if err != nil {
+							err = msgp.WrapError(err, "DD", "SpanLinks", za0005)
+							return
+						}
+					}
+				}
+			}
+		}
+		if (zb0001Mask & 0x4000) == 0 { // if not omitted
+			// write "span_links"
+			err = en.Append(0xaa, 0x73, 0x70, 0x61, 0x6e, 0x5f, 0x6c, 0x69, 0x6e, 0x6b, 0x73)
 			if err != nil {
 				return
 			}
@@ -465,10 +663,10 @@ func (z *span) EncodeMsg(en *msgp.Writer) (err error) {
 				err = msgp.WrapError(err, "SpanLinks")
 				return
 			}
-			for za0005 := range z.SpanLinks {
-				err = z.SpanLinks[za0005].EncodeMsg(en)
+			for za0006 := range z.SpanLinks {
+				err = z.SpanLinks[za0006].EncodeMsg(en)
 				if err != nil {
-					err = msgp.WrapError(err, "SpanLinks", za0005)
+					err = msgp.WrapError(err, "SpanLinks", za0006)
 					return
 				}
 			}
@@ -493,9 +691,18 @@ func (z *span) Msgsize() (s int) {
 			s += msgp.StringPrefixSize + len(za0003) + msgp.Float64Size
 		}
 	}
-	s += 8 + msgp.Uint64Size + 9 + msgp.Uint64Size + 10 + msgp.Uint64Size + 6 + msgp.Int32Size + 15 + msgp.ArrayHeaderSize
-	for za0005 := range z.SpanLinks {
-		s += z.SpanLinks[za0005].Msgsize()
+	s += 8 + msgp.Uint64Size + 9 + msgp.Uint64Size + 10 + msgp.Uint64Size + 6 + msgp.Int32Size + 4
+	if z.DD == nil {
+		s += msgp.NilSize
+	} else {
+		s += 1 + 11 + msgp.ArrayHeaderSize
+		for za0005 := range z.DD.SpanLinks {
+			s += z.DD.SpanLinks[za0005].Msgsize()
+		}
+	}
+	s += 11 + msgp.ArrayHeaderSize
+	for za0006 := range z.SpanLinks {
+		s += z.SpanLinks[za0006].Msgsize()
 	}
 	return
 }
