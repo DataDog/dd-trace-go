@@ -466,6 +466,7 @@ func (s *span) setMetric(key string, v float64) {
 
 func (s *span) AddSpanLinks(spanLinks ...ddtrace.SpanLink) {
 	s.SpanLinks = append(s.SpanLinks, spanLinks...)
+	s.Meta["span_links"] = "[{}]"
 }
 
 // Finish closes this Span (but not its children) providing the duration
