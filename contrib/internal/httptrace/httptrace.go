@@ -42,17 +42,10 @@ func StartRequestSpan(r *http.Request, opts ...ddtrace.StartSpanOption) (tracer.
 	}
 
 	nopts := make([]ddtrace.StartSpanOption, 0, len(opts)+1+len(ipTags))
-	inferredStartSpanOpts := make([]ddtrace.StartSpanOption, 0, 1)
-
-	spanParentCtx, spanParentErr := tracer.Extract(tracer.HTTPHeadersCarrier(r.Header))
-	var spanLinksCtx ddtrace.SpanContextWithLinks
-
-	if spanParentErr == nil {
-		if linksCtx, ok := spanParentCtx.(ddtrace.SpanContextWithLinks); ok {
-			spanLinksCtx = linksCtx
-			inferredStartSpanOpts = append(inferredStartSpanOpts, tracer.WithSpanLinks(spanLinksCtx.SpanLinks()))
-		}
-	}
+	var (
+		spanLinksCtx                 ddtrace.SpanContextWithLinks
+		spanParentCtx, spanParentErr = tracer.Extract(tracer.HTTPHeadersCarrier(r.Header))
+	)
 
 	var inferredProxySpan tracer.Span
 	inferredProxySpanCreated := false
@@ -62,6 +55,15 @@ func StartRequestSpan(r *http.Request, opts ...ddtrace.StartSpanOption) (tracer.
 	}
 
 	if cfg.inferredProxyServicesEnabled && !inferredProxySpanCreated {
+		inferredStartSpanOpts := make([]ddtrace.StartSpanOption, 0, 1)
+
+		if spanParentErr == nil {
+			if linksCtx, ok := spanParentCtx.(ddtrace.SpanContextWithLinks); ok {
+				spanLinksCtx = linksCtx
+				inferredStartSpanOpts = append(inferredStartSpanOpts, tracer.WithSpanLinks(spanLinksCtx.SpanLinks()))
+			}
+		}
+
 		if inferredProxySpan = tryCreateInferredProxySpan(r.Header, spanParentCtx, inferredStartSpanOpts...); inferredProxySpan != nil {
 			inferredProxySpanCreated = true
 			spanParentCtx = inferredProxySpan.Context()
@@ -83,13 +85,13 @@ func StartRequestSpan(r *http.Request, opts ...ddtrace.StartSpanOption) (tracer.
 			}
 
 			if inferredProxySpanCreated {
-				tracer.ChildOf(spanParentCtx)(cfg)
+				tracer.ChildOf(spanParentCtx)(ssCfg)
 			} else if spanctx, err := tracer.Extract(tracer.HTTPHeadersCarrier(r.Header)); err == nil {
-				tracer.ChildOf(spanctx)(cfg)
+				tracer.ChildOf(spanctx)(ssCfg)
 			}
 
 			if spanParentErr != nil && !inferredProxySpanCreated && spanLinksCtx != nil {
-				tracer.WithSpanLinks(spanLinksCtx.SpanLinks())(cfg)
+				tracer.WithSpanLinks(spanLinksCtx.SpanLinks())(ssCfg)
 			}
 
 			for k, v := range ipTags {
