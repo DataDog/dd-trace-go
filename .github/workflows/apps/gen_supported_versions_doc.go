@@ -116,7 +116,7 @@ func main() {
 
 func fetchLatestVersion(module string) (string, error) {
 	if _, ok := stdlibPackages[module]; ok {
-		return "-", nil
+		return "N/A", nil
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
@@ -163,8 +163,8 @@ func getCurrentVersion(integrationName, modName string) (ModuleVersion, error) {
 	if _, ok := stdlibPackages[integrationName]; ok {
 		return ModuleVersion{
 			Name:           integrationName,
-			MinVersion:     "-",
-			MaxVersion:     "-",
+			MinVersion:     "N/A",
+			MaxVersion:     "N/A",
 			Repository:     modName,
 			isInstrumented: false,
 		}, nil
@@ -245,23 +245,59 @@ func fetchAllLatestVersions(modules []ModuleVersion) []ModuleVersion {
 }
 
 func writeMarkdownFile(modules []ModuleVersion, filePath string) error {
-	file, err := os.Create(filePath)
-	if err != nil {
-		return fmt.Errorf("error creating file: %v", err)
-	}
-	defer file.Close()
-
-	fmt.Fprintln(file, "|   Module    |   Integration   | Minimum Version | Maximum Version | Auto-Instrumented |")
-	fmt.Fprintln(file, "|-------------|-----------------|-----------------|-----------------|-----------------|")
-
 	// Sort modules by name
 	sort.Slice(modules, func(i, j int) bool {
 		return modules[i].Name < modules[j].Name
 	})
 
+	maxColumnLength := []int{0, 0, 0, 0, 0}
+
+	rows := [][]string{
+		{"Module", "Datadog Integration", "Minimum Tested Version", "Maximum Tested Version", "Auto-Instrumented"},
+		{"-", "-", "-", "-", "-"},
+	}
 	for _, mod := range modules {
-		if mod.Name != "" {
-			fmt.Fprintf(file, "| %s | %s | %s | %s | %t |\n", mod.Name, mod.Repository, mod.MinVersion, mod.MaxVersion, mod.isInstrumented)
+		rows = append(rows, []string{
+			modWithPkgDevURL(mod.Repository, mod.Repository),
+			integrationWithPackageURL(mod.Name),
+			fmt.Sprintf("`%s`", mod.MinVersion),
+			fmt.Sprintf("`%s`", mod.MaxVersion),
+			boolToMarkdown(mod.isInstrumented),
+		})
+	}
+	for _, row := range rows {
+		for i, col := range row {
+			if len(col) > maxColumnLength[i] {
+				maxColumnLength[i] = len(col)
+			}
+		}
+	}
+	for _, row := range rows {
+		for i, col := range row {
+			char := " "
+			if col == "-" {
+				char = "-"
+			}
+			if len(col) < maxColumnLength[i] {
+				row[i] = row[i] + strings.Repeat(char, maxColumnLength[i]-len(col))
+			}
+			row[i] = char + row[i] + char
+		}
+	}
+
+	file, err := os.Create(filePath)
+	if err != nil {
+		return fmt.Errorf("error creating file: %w", err)
+	}
+	defer func() {
+		if err := file.Close(); err != nil {
+			log.Printf("failed to closed file: %v\n", err)
+		}
+	}()
+
+	for _, row := range rows {
+		if _, err := fmt.Fprintln(file, "|"+strings.Join(row, "|")+"|"); err != nil {
+			return fmt.Errorf("failed to write line: %w", err)
 		}
 	}
 	return nil
@@ -292,4 +328,20 @@ func runCommand(ctx context.Context, dir string, commandAndArgs ...string) ([]by
 		return nil, fmt.Errorf("failed to run command %q: %v", strings.Join(commandAndArgs, " "), err)
 	}
 	return b, nil
+}
+
+func integrationWithPackageURL(integrationName string) string {
+	modURL := fmt.Sprintf("github.com/DataDog/dd-trace-go/contrib/%s/v2", integrationName)
+	return modWithPkgDevURL("contrib/"+integrationName, modURL)
+}
+
+func modWithPkgDevURL(name, modURL string) string {
+	return fmt.Sprintf("[%s](https://pkg.go.dev/%s)", name, modURL)
+}
+
+func boolToMarkdown(val bool) string {
+	if val {
+		return ":white_check_mark:"
+	}
+	return " "
 }
