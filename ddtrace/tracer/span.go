@@ -465,9 +465,6 @@ func (s *span) setMetric(key string, v float64) {
 }
 
 func (s *span) AddSpanLinks(spanLinks ...ddtrace.SpanLink) {
-	s.Lock()
-	defer s.Unlock()
-
 	s.SpanLinks = append(s.SpanLinks, spanLinks...)
 	if s.Meta == nil {
 		s.Meta = make(map[string]string, 1)
