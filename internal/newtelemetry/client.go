@@ -6,6 +6,8 @@
 package newtelemetry
 
 import (
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/newtelemetry/internal"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/newtelemetry/internal/transport"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/newtelemetry/types"
 )
 
@@ -15,74 +17,78 @@ func NewClient(service, env, version string, config ClientConfig) (Client, error
 }
 
 type client struct {
+	tracerConfig internal.TracerConfig
+	writer       internal.Writer
+	payloadQueue internal.RingQueue[transport.Payload]
+
+	// Data sources
+	integrations  integrations
+	products      products
+	configuration configuration
 }
 
-func (c client) MarkIntegrationAsLoaded(integration Integration) {
+func (c *client) MarkIntegrationAsLoaded(integration Integration) {
+	c.integrations.Add(integration)
+}
+
+func (c *client) Count(_ types.Namespace, _ string, _ map[string]string) MetricHandle {
 	//TODO implement me
 	panic("implement me")
 }
 
-func (c client) Count(namespace types.Namespace, name string, tags map[string]string) MetricHandle {
+func (c *client) Rate(_ types.Namespace, _ string, _ map[string]string) MetricHandle {
 	//TODO implement me
 	panic("implement me")
 }
 
-func (c client) Rate(namespace types.Namespace, name string, tags map[string]string) MetricHandle {
+func (c *client) Gauge(_ types.Namespace, _ string, _ map[string]string) MetricHandle {
 	//TODO implement me
 	panic("implement me")
 }
 
-func (c client) Gauge(namespace types.Namespace, name string, tags map[string]string) MetricHandle {
+func (c *client) Distribution(_ types.Namespace, _ string, _ map[string]string) MetricHandle {
 	//TODO implement me
 	panic("implement me")
 }
 
-func (c client) Distribution(namespace types.Namespace, name string, tags map[string]string) MetricHandle {
+func (c *client) Logger() TelemetryLogger {
 	//TODO implement me
 	panic("implement me")
 }
 
-func (c client) Logger() TelemetryLogger {
+func (c *client) ProductStarted(product types.Namespace) {
+	c.products.Add(product, true, nil)
+}
+
+func (c *client) ProductStopped(product types.Namespace) {
+	c.products.Add(product, false, nil)
+}
+
+func (c *client) ProductStartError(product types.Namespace, err error) {
+	c.products.Add(product, false, err)
+}
+
+func (c *client) AddAppConfig(key string, value any, origin types.Origin) {
+	c.configuration.Add(key, value, origin)
+}
+
+func (c *client) AddBulkAppConfig(kvs map[string]any, origin types.Origin) {
+	for key, value := range kvs {
+		c.configuration.Add(key, value, origin)
+	}
+}
+
+func (c *client) flush() {
 	//TODO implement me
 	panic("implement me")
 }
 
-func (c client) ProductStarted(product types.Namespace) {
+func (c *client) appStart() error {
 	//TODO implement me
 	panic("implement me")
 }
 
-func (c client) ProductStopped(product types.Namespace) {
-	//TODO implement me
-	panic("implement me")
-}
-
-func (c client) ProductStartError(product types.Namespace, err error) {
-	//TODO implement me
-	panic("implement me")
-}
-
-func (c client) AddAppConfig(key string, value any, origin types.Origin) {
-	//TODO implement me
-	panic("implement me")
-}
-
-func (c client) AddBulkAppConfig(kvs map[string]any, origin types.Origin) {
-	//TODO implement me
-	panic("implement me")
-}
-
-func (c client) flush() {
-	//TODO implement me
-	panic("implement me")
-}
-
-func (c client) appStart() error {
-	//TODO implement me
-	panic("implement me")
-}
-
-func (c client) appStop() {
+func (c *client) appStop() {
 	//TODO implement me
 	panic("implement me")
 }

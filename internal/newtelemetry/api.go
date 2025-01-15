@@ -7,30 +7,42 @@ package newtelemetry
 
 import (
 	"net/http"
+	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/newtelemetry/types"
 )
 
 type ClientConfig struct {
-	// AgentlessURL is the full URL to the agentless telemetry endpoint.
+	// AgentlessURL is the full URL to the agentless telemetry endpoint. (Either AgentlessURL or AgentURL must be set or both)
 	// Defaults to https://instrumentation-telemetry-intake.datadoghq.com/api/v2/apmtelemetry
 	AgentlessURL string
 
-	// AgentURL is the url to the agent without the path,
+	// AgentURL is the url of the agent to send telemetry to. (Either AgentlessURL or AgentURL must be set or both)
 	AgentURL string
-
-	// APIKey is the API key to use for sending telemetry, defaults to the env var DD_API_KEY.
-	APIKey string
 
 	// HTTPClient is the http client to use for sending telemetry, defaults to a http.DefaultClient copy.
 	HTTPClient http.RoundTripper
+
+	// HeartbeatInterval is the interval at which to send a heartbeat payload, defaults to 60s.
+	// The maximum value is 60s.
+	HeartbeatInterval time.Duration
+
+	// FlushIntervalRange is the interval at which the client flushes the data.
+	// By default, the client will start to flush at 60s intervals and will reduce the interval based on the load till it hit 15s
+	// Both values cannot be higher than 60s because the heartbeat need to be sent at least every 60s.
+	FlushIntervalRange struct {
+		Min time.Duration
+		Max time.Duration
+	}
 }
 
 // MetricHandle can be used to submit different values for the same metric.
 // MetricHandle is used to reduce lock contention when submitting metrics.
 // This can also be used ephemerally to submit a single metric value like this:
 //
-//	telemetry.Metric(telemetry.Appsec, "my-count", map[string]string{"tag1": "true", "tag2": "1.0"}).Submit(1.0)
+// ```go
+// telemetry.Metric(telemetry.Appsec, "my-count", map[string]string{"tag1": "true", "tag2": "1.0"}).Submit(1.0)
+// ```
 type MetricHandle interface {
 	Submit(value float64)
 
@@ -59,11 +71,12 @@ type TelemetryLogger interface {
 
 // Integration is an integration that is configured to be traced.
 type Integration struct {
-	Name        string
-	Version     string
-	AutoEnabled bool
-	Compatible  bool
-	Error       string
+	// Name is an arbitrary string that must stay constant for the integration.
+	Name string
+	// Version is the version of the integration/dependency that is being loaded.
+	Version string
+	// Error is the error that occurred while loading the integration.
+	Error string
 }
 
 // Client constitutes all the functions available concurrently for the telemetry users. All methods are thread-safe
