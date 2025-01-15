@@ -77,8 +77,6 @@ func (s *appsecEnvoyExternalProcessorServer) Process(processServer envoyextproc.
 
 	// Close the span when the request is done processing
 	defer func() {
-		defer log.Flush()
-
 		if currentRequest == nil {
 			return
 		}
