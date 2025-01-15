@@ -83,8 +83,10 @@ func StartRequestSpan(r *http.Request, opts ...ddtrace.StartSpanOption) (tracer.
 				cfg.Tags["http.host"] = r.Host
 			}
 
-			if spanParentErr != nil || inferredProxySpanCreated {
-				cfg.Parent = spanParentCtx
+			if inferredProxySpanCreated {
+				tracer.ChildOf(spanParentCtx)(cfg)
+			} else if spanctx, err := tracer.Extract(tracer.HTTPHeadersCarrier(r.Header)); err == nil {
+				tracer.ChildOf(spanctx)(cfg)
 			}
 
 			if spanParentErr != nil && !inferredProxySpanCreated && spanLinksCtx != nil {
@@ -108,7 +110,7 @@ func StartRequestSpan(r *http.Request, opts ...ddtrace.StartSpanOption) (tracer.
 	span, ctx := tracer.StartSpanFromContext(requestContext, namingschema.OpName(namingschema.HTTPServer), nopts...)
 	return span, ctx, func(status int, errorFn func(int) bool, opts ...tracer.FinishOption) {
 		FinishRequestSpan(span, status, errorFn, opts...)
-		if inferredProxySpanCreated {
+		if inferredProxySpanCreated && inferredProxySpan != nil {
 			FinishRequestSpan(inferredProxySpan, status, errorFn, opts...)
 		}
 	}
