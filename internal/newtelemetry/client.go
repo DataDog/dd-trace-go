@@ -6,6 +6,8 @@
 package newtelemetry
 
 import (
+	"errors"
+
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/newtelemetry/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/newtelemetry/internal/transport"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/newtelemetry/types"
@@ -13,18 +15,67 @@ import (
 
 // NewClient creates a new telemetry client with the given service, environment, and version and config.
 func NewClient(service, env, version string, config ClientConfig) (Client, error) {
-	return nil, nil
+	if service == "" {
+		return nil, errors.New("service name must not be empty")
+	}
+
+	if env == "" {
+		return nil, errors.New("environment name must not be empty")
+	}
+
+	if version == "" {
+		return nil, errors.New("version must not be empty")
+	}
+
+	config = defaultConfig(config)
+	if err := config.validateConfig(); err != nil {
+		return nil, err
+	}
+
+	tracerConfig := internal.TracerConfig{
+		Service: service,
+		Env:     env,
+		Version: version,
+	}
+
+	writerConfig, err := config.ToWriterConfig(tracerConfig)
+	if err != nil {
+		return nil, err
+	}
+
+	writer, err := internal.NewWriter(writerConfig)
+	if err != nil {
+		return nil, err
+	}
+
+	client := &client{
+		tracerConfig: tracerConfig,
+		writer:       writer,
+		payloadQueue: internal.NewRingQueue[transport.Payload](),
+	}
+
+	client.dataSources = append(
+		client.dataSources,
+		&client.integrations,
+		&client.products,
+		&client.configuration,
+	)
+	return client, nil
 }
 
 type client struct {
 	tracerConfig internal.TracerConfig
 	writer       internal.Writer
-	payloadQueue internal.RingQueue[transport.Payload]
+	payloadQueue *internal.RingQueue[transport.Payload]
 
 	// Data sources
 	integrations  integrations
 	products      products
 	configuration configuration
+
+	dataSources []interface {
+		Payload() transport.Payload
+	}
 }
 
 func (c *client) MarkIntegrationAsLoaded(integration Integration) {
@@ -78,14 +129,23 @@ func (c *client) AddBulkAppConfig(kvs map[string]any, origin types.Origin) {
 	}
 }
 
+func (c *client) gatherPayloads() []transport.Payload {
+	var res []transport.Payload
+	for _, ds := range c.dataSources {
+		if payload := ds.Payload(); payload != nil {
+			res = append(res, payload)
+		}
+	}
+	return res
+}
+
 func (c *client) flush() {
 	//TODO implement me
 	panic("implement me")
 }
 
 func (c *client) appStart() error {
-	//TODO implement me
-	panic("implement me")
+	return nil
 }
 
 func (c *client) appStop() {
