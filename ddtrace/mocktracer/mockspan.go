@@ -133,7 +133,9 @@ func (s *mockspan) SetTag(key string, value interface{}) {
 		}
 	}
 	if key == ext.Component {
-		s.integration = value.(string)
+		if v, ok := value.(string); ok {
+			s.integration = v
+		}
 	}
 	s.tags[key] = value
 }
