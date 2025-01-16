@@ -1,0 +1,56 @@
+#!/usr/bin/env ruby
+
+require 'open3'
+
+def run_benchmark(bench_name, ref_package)
+	%w[main v2-dev].each do |ref|
+		system("git checkout #{ref}")
+
+		pkg_url = package_url(ref, ref_package)
+		stdout, stderr, status = Open3.capture3("go test -benchmem -run=^$ -count=100 -bench ^#{bench_name}$ #{pkg_url}")
+		if status.success?
+			# Unconditionally replace the v1 package URL with the v2 package URL.
+			# This is necessary because v1 and v2 has different import paths, and
+			# benchstat will not be able to match the benchmarks otherwise.
+			stdout.gsub!(pkg_url, package_url('v2-dev', ref_package))
+			File.write("/tmp/#{bench_name}-#{ref}.txt", stdout)
+		else
+			puts stderr
+		end
+	end
+
+	system("benchstat -table .config -row .fullname -col .file /tmp/#{bench_name}-main.txt /tmp/#{bench_name}-v2-dev.txt")
+end
+
+def package_url(ref, package)
+	if ref == 'v2-dev'
+		if package.start_with?('contrib/')
+			"github.com/DataDog/dd-trace-go/#{package}/v2"
+		else
+			"github.com/DataDog/dd-trace-go/v2/#{package}"
+		end
+	elsif package == 'instrumentation/httptrace'
+		"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/httptrace"
+	else
+		"gopkg.in/DataDog/dd-trace-go.v1/#{package}"
+	end
+end
+
+def benchmarks
+	{
+		'BenchmarkHttpServeTrace' => 'contrib/net/http',
+		'BenchmarkInjectW3C' => 'ddtrace/tracer',
+		'BenchmarkPartialFlushing' => 'ddtrace/tracer',
+		'BenchmarkSampleWAFContext' => 'internal/appsec',
+		'BenchmarkSetTagStringer' => 'ddtrace/tracer',
+		'BenchmarkSingleSpanRetention' => 'ddtrace/tracer',
+		'BenchmarkStartRequestSpan' => 'instrumentation/httptrace',
+		'BenchmarkStartSpan' => 'ddtrace/tracer',
+		'BenchmarkTracerAddSpans' => 'ddtrace/tracer',
+	}
+end
+
+benchmarks.each do |name, ref_package|
+	run_benchmark(name, ref_package)
+end
+
