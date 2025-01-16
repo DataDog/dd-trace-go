@@ -2,7 +2,7 @@
 // under the Apache License Version 2.0.
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
-package valkey_test
+package valkey
 
 import (
 	"context"
@@ -14,9 +14,10 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/valkey-io/valkey-go"
-	valkeytrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/valkey-go"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
 
 var (
@@ -35,11 +36,89 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
+func TestPeerTags(t *testing.T) {
+	tests := []struct {
+		initAddress  string
+		expectedTags map[string]interface{}
+	}{
+		{
+			initAddress: "127.0.0.1:6379",
+			expectedTags: map[string]interface{}{
+				ext.PeerService:  "valkey",
+				ext.PeerHostIPV4: "127.0.0.1",
+				ext.PeerPort:     6379,
+			},
+		},
+		{
+			initAddress: "[::1]:6379",
+			expectedTags: map[string]interface{}{
+				ext.PeerService:  "valkey",
+				ext.PeerHostIPV6: "::1",
+				ext.PeerPort:     6379,
+			},
+		},
+		{
+			initAddress: "[2001:db8::2]:6379",
+			expectedTags: map[string]interface{}{
+				ext.PeerService:  "valkey",
+				ext.PeerHostIPV6: "2001:db8::2",
+				ext.PeerPort:     6379,
+			},
+		},
+		{
+			initAddress: "[2001:db8::2%lo]:6379",
+			expectedTags: map[string]interface{}{
+				ext.PeerService:  "valkey",
+				ext.PeerHostname: "2001:db8::2%lo",
+				ext.PeerPort:     6379,
+			},
+		},
+		{
+			initAddress: "::1:7777",
+			expectedTags: map[string]interface{}{
+				ext.PeerService:  "valkey",
+				ext.PeerHostname: "",
+				ext.PeerPort:     0,
+			},
+		},
+		{
+			initAddress: ":::7777",
+			expectedTags: map[string]interface{}{
+				ext.PeerService:  "valkey",
+				ext.PeerHostname: "",
+				ext.PeerPort:     0,
+			},
+		},
+		{
+			initAddress: "localhost:7777",
+			expectedTags: map[string]interface{}{
+				ext.PeerService:  "valkey",
+				ext.PeerHostname: "localhost",
+				ext.PeerPort:     7777,
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.initAddress, func(t *testing.T) {
+			host, port := splitHostPort(tt.initAddress)
+			client := coreClient{
+				host: host,
+				port: port,
+			}
+			var startSpanConfig ddtrace.StartSpanConfig
+			for _, tag := range client.peerTags() {
+				tag(&startSpanConfig)
+			}
+			require.Equal(t, tt.expectedTags, startSpanConfig.Tags)
+		})
+	}
+}
+
 func TestNewClient(t *testing.T) {
 	tests := []struct {
 		name                     string
 		valkeyClientOptions      valkey.ClientOption
-		valkeytraceClientOptions []valkeytrace.ClientOption
+		valkeytraceClientOptions []ClientOption
 		valkeytraceClientEnvVars map[string]string
 		createSpans              func(*testing.T, context.Context, valkey.Client)
 		assertNewClientError     func(*testing.T, error)
@@ -74,19 +153,15 @@ func TestNewClient(t *testing.T) {
 				Username:    valkeyUsername,
 				Password:    valkeyPassword,
 			},
-			valkeytraceClientOptions: []valkeytrace.ClientOption{
-				valkeytrace.WithServiceName("my-valkey-client"),
-				valkeytrace.WithAnalytics(true),
-				valkeytrace.WithSkipRawCommand(true),
+			valkeytraceClientOptions: []ClientOption{
+				WithAnalytics(true),
+				WithSkipRawCommand(true),
 			},
 			createSpans: func(t *testing.T, ctx context.Context, client valkey.Client) {
 				assert.NoError(t, client.Do(ctx, client.B().Set().Key("test_key").Value("test_value").Build()).Error())
 			},
 			assertSpans: []func(t *testing.T, span mocktracer.Span){
 				func(t *testing.T, span mocktracer.Span) {
-					assert.Equal(t, "my-valkey-client", span.Tag(ext.ServiceName))
-					assert.Equal(t, "127.0.0.1", span.Tag(ext.TargetHost))
-					assert.Equal(t, valkeyPort, span.Tag(ext.TargetPort))
 					assert.Equal(t, "SET", span.Tag(ext.DBStatement))
 					assert.Equal(t, "SET", span.Tag(ext.ResourceName))
 					assert.Greater(t, span.Tag("db.stmt_size"), 0)
@@ -119,9 +194,6 @@ func TestNewClient(t *testing.T) {
 			},
 			assertSpans: []func(t *testing.T, span mocktracer.Span){
 				func(t *testing.T, span mocktracer.Span) {
-					assert.Equal(t, "valkey.client", span.Tag(ext.ServiceName))
-					assert.Equal(t, "127.0.0.1", span.Tag(ext.TargetHost))
-					assert.Equal(t, valkeyPort, span.Tag(ext.TargetPort))
 					assert.Equal(t, "SET\ntest_key\ntest_value\nGET\ntest_key", span.Tag(ext.DBStatement))
 					assert.Equal(t, "SET\ntest_key\ntest_value\nGET\ntest_key", span.Tag(ext.ResourceName))
 					assert.Greater(t, span.Tag("db.stmt_size"), 0)
@@ -155,9 +227,6 @@ func TestNewClient(t *testing.T) {
 			},
 			assertSpans: []func(t *testing.T, span mocktracer.Span){
 				func(t *testing.T, span mocktracer.Span) {
-					assert.Equal(t, "valkey.client", span.Tag(ext.ServiceName))
-					assert.Equal(t, "127.0.0.1", span.Tag(ext.TargetHost))
-					assert.Equal(t, valkeyPort, span.Tag(ext.TargetPort))
 					assert.Greater(t, span.Tag("db.stmt_size"), 0)
 					assert.Equal(t, "HMGET\nmk\n1\n2", span.Tag(ext.DBStatement))
 					assert.Equal(t, "HMGET\nmk\n1\n2", span.Tag(ext.ResourceName))
@@ -175,9 +244,6 @@ func TestNewClient(t *testing.T) {
 					assert.Nil(t, span.Tag(ext.Error))
 				},
 				func(t *testing.T, span mocktracer.Span) {
-					assert.Equal(t, "valkey.client", span.Tag(ext.ServiceName))
-					assert.Equal(t, "127.0.0.1", span.Tag(ext.TargetHost))
-					assert.Equal(t, valkeyPort, span.Tag(ext.TargetPort))
 					assert.Greater(t, span.Tag("db.stmt_size"), 0)
 					assert.Equal(t, "HMGET\nmk\n1\n2", span.Tag(ext.DBStatement))
 					assert.Equal(t, "HMGET\nmk\n1\n2", span.Tag(ext.ResourceName))
@@ -204,7 +270,6 @@ func TestNewClient(t *testing.T) {
 				Password:    valkeyPassword,
 			},
 			valkeytraceClientEnvVars: map[string]string{
-				"DD_TRACE_VALKEY_SERVICE_NAME":      "my-valkey-client",
 				"DD_TRACE_VALKEY_ANALYTICS_ENABLED": "true",
 				"DD_TRACE_VALKEY_SKIP_RAW_COMMAND":  "true",
 			},
@@ -214,9 +279,6 @@ func TestNewClient(t *testing.T) {
 			},
 			assertSpans: []func(t *testing.T, span mocktracer.Span){
 				func(t *testing.T, span mocktracer.Span) {
-					assert.Equal(t, "my-valkey-client", span.Tag(ext.ServiceName))
-					assert.Equal(t, "127.0.0.1", span.Tag(ext.TargetHost))
-					assert.Equal(t, valkeyPort, span.Tag(ext.TargetPort))
 					assert.Equal(t, "GET", span.Tag(ext.DBStatement))
 					assert.Equal(t, "GET", span.Tag(ext.ResourceName))
 					assert.Greater(t, span.Tag("db.stmt_size"), 0)
@@ -252,9 +314,6 @@ func TestNewClient(t *testing.T) {
 			},
 			assertSpans: []func(t *testing.T, span mocktracer.Span){
 				func(t *testing.T, span mocktracer.Span) {
-					assert.Equal(t, "valkey.client", span.Tag(ext.ServiceName))
-					assert.Equal(t, "127.0.0.1", span.Tag(ext.TargetHost))
-					assert.Equal(t, valkeyPort, span.Tag(ext.TargetPort))
 					assert.Greater(t, span.Tag("db.stmt_size"), 0)
 					assert.Equal(t, "SUBSCRIBE\ntest_channel", span.Tag(ext.DBStatement))
 					assert.Equal(t, "SUBSCRIBE\ntest_channel", span.Tag(ext.ResourceName))
@@ -276,25 +335,40 @@ func TestNewClient(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			ctx := context.Background()
 			mt := mocktracer.Start()
 			defer mt.Stop()
 			for k, v := range tt.valkeytraceClientEnvVars {
 				t.Setenv(k, v)
 			}
-			client, err := valkeytrace.NewClient(tt.valkeyClientOptions, tt.valkeytraceClientOptions...)
+			span, ctx := tracer.StartSpanFromContext(context.Background(), "test.root", tracer.ServiceName("test-service"))
+			client, err := NewClient(tt.valkeyClientOptions, tt.valkeytraceClientOptions...)
 			if tt.assertNewClientError == nil {
 				require.NoErrorf(t, err, tt.name)
 			} else {
 				tt.assertNewClientError(t, err)
+				span.Finish()
 				return
 			}
 			tt.createSpans(t, ctx, client)
+			span.Finish() // test.root exists in the last span.
 			spans := mt.FinishedSpans()
-			require.Len(t, spans, len(tt.assertSpans))
+			require.Len(t, spans, len(tt.assertSpans)+1) // +1 for test.root
 			for i, span := range spans {
+				if span.OperationName() == "test.root" {
+					continue
+				}
 				tt.assertSpans[i](t, span)
-				// Following assertions are common to all spans
+				t.Log("Following assertions are common to all spans")
+				assert.Equalf(t,
+					"test-service",
+					span.Tag(ext.ServiceName),
+					"service name should not be overwritten as per DD_APM_PEER_TAGS_AGGREGATION in trace-agent",
+				)
+				assert.Equal(t, "valkey", span.Tag(ext.PeerService))
+				assert.Equal(t, "127.0.0.1", span.Tag(ext.PeerHostIPV4))
+				assert.Equal(t, "127.0.0.1", span.Tag(ext.TargetHost))
+				assert.Equal(t, valkeyPort, span.Tag(ext.PeerPort))
+				assert.Equal(t, valkeyPort, span.Tag(ext.TargetPort))
 				assert.NotNil(t, span)
 				assert.True(t, span.Tag(ext.ValkeyClientCommandWithPassword).(bool))
 				assert.Equal(t, tt.valkeyClientOptions.Username, span.Tag(ext.DBUser))
@@ -304,6 +378,7 @@ func TestNewClient(t *testing.T) {
 				assert.Equal(t, "valkey-go/valkey", span.Tag(ext.Component))
 				assert.Equal(t, "valkey", span.Tag(ext.DBType))
 				assert.Equal(t, "valkey", span.Tag(ext.DBSystem))
+				assert.Equal(t, "valkey", span.Tag(ext.DBInstance))
 			}
 		})
 	}

@@ -9,16 +9,12 @@ package valkey
 
 import (
 	"math"
-	"os"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
 )
 
-const defaultServiceName = "valkey.client"
-
 type clientConfig struct {
-	serviceName   string
 	spanName      string
 	analyticsRate float64
 	skipRaw       bool
@@ -28,17 +24,11 @@ type clientConfig struct {
 type ClientOption func(*clientConfig)
 
 func defaults(cfg *clientConfig) {
-	cfg.serviceName = namingschema.ServiceNameOverrideV0(defaultServiceName, defaultServiceName)
 	cfg.spanName = namingschema.OpName(namingschema.ValkeyOutbound)
 	if internal.BoolEnv("DD_TRACE_VALKEY_ANALYTICS_ENABLED", false) {
 		cfg.analyticsRate = 1.0
 	} else {
 		cfg.analyticsRate = math.NaN()
-	}
-	if v := os.Getenv("DD_TRACE_VALKEY_SERVICE_NAME"); v == "" {
-		cfg.serviceName = defaultServiceName
-	} else {
-		cfg.serviceName = v
 	}
 	cfg.skipRaw = internal.BoolEnv("DD_TRACE_VALKEY_SKIP_RAW_COMMAND", false)
 }
@@ -49,13 +39,6 @@ func defaults(cfg *clientConfig) {
 func WithSkipRawCommand(skip bool) ClientOption {
 	return func(cfg *clientConfig) {
 		cfg.skipRaw = skip
-	}
-}
-
-// WithServiceName sets the given service name for the client.
-func WithServiceName(name string) ClientOption {
-	return func(cfg *clientConfig) {
-		cfg.serviceName = name
 	}
 }
 

@@ -62,14 +62,10 @@ func NewClient(option valkey.ClientOption, opts ...ClientOption) (valkey.Client,
 	for _, fn := range opts {
 		fn(&cfg)
 	}
-	var host, portStr string
+	var host string
 	var port int
 	if len(option.InitAddress) == 1 {
-		host, portStr, err = net.SplitHostPort(option.InitAddress[0])
-		if err != nil {
-			log.Error("valkey.ClientOption.InitAddress contains invalid address: %s", err)
-		}
-		port, _ = strconv.Atoi(portStr)
+		host, port = splitHostPort(option.InitAddress[0])
 	}
 	core := coreClient{
 		Client:       valkeyClient,
@@ -81,6 +77,16 @@ func NewClient(option valkey.ClientOption, opts ...ClientOption) (valkey.Client,
 	return &client{
 		coreClient: core,
 	}, nil
+}
+
+func splitHostPort(addr string) (string, int) {
+	host, portStr, err := net.SplitHostPort(addr)
+	if err != nil {
+		log.Error("%q cannot be split: %s", addr, err)
+		return "", 0
+	}
+	port, _ := strconv.Atoi(portStr)
+	return host, port
 }
 
 type commander interface {
@@ -154,10 +160,26 @@ type buildStartSpanOptionsInput struct {
 	skipRawCommand bool
 }
 
+func (c *coreClient) peerTags() []tracer.StartSpanOption {
+	ipAddr := net.ParseIP(c.host)
+	var peerHostKey string
+	if ipAddr == nil {
+		peerHostKey = ext.PeerHostname
+	} else if ipAddr.To4() != nil {
+		peerHostKey = ext.PeerHostIPV4
+	} else {
+		peerHostKey = ext.PeerHostIPV6
+	}
+	return []tracer.StartSpanOption{
+		tracer.Tag(ext.PeerService, ext.DBSystemValkey),
+		tracer.Tag(peerHostKey, c.host),
+		tracer.Tag(ext.PeerPort, c.port),
+	}
+}
+
 func (c *coreClient) buildStartSpanOptions(input buildStartSpanOptionsInput) []tracer.StartSpanOption {
 	opts := []tracer.StartSpanOption{
 		tracer.SpanType(ext.SpanTypeValkey),
-		tracer.ServiceName(c.clientConfig.serviceName),
 		tracer.Tag(ext.TargetHost, c.host),
 		tracer.Tag(ext.TargetPort, c.port),
 		tracer.Tag(ext.ValkeyClientVersion, valkey.LibVer),
@@ -166,6 +188,7 @@ func (c *coreClient) buildStartSpanOptions(input buildStartSpanOptionsInput) []t
 		tracer.Tag(ext.SpanKind, ext.SpanKindClient),
 		tracer.Tag(ext.DBType, ext.DBSystemValkey),
 		tracer.Tag(ext.DBSystem, ext.DBSystemValkey),
+		tracer.Tag(ext.DBInstance, ext.DBSystemValkey),
 		tracer.Tag(ext.ValkeyDatabaseIndex, c.option.SelectDB),
 		tracer.Tag(ext.ValkeyClientCommandWrite, input.isWrite),
 		tracer.Tag(ext.ValkeyClientCommandBlock, input.isBlock),
@@ -173,6 +196,7 @@ func (c *coreClient) buildStartSpanOptions(input buildStartSpanOptionsInput) []t
 		tracer.Tag(ext.ValkeyClientCommandStream, input.isStream),
 		tracer.Tag(ext.ValkeyClientCommandWithPassword, c.option.Password != ""),
 	}
+	opts = append(opts, c.peerTags()...)
 	if input.command != "" {
 		opts = append(opts, []tracer.StartSpanOption{
 			// valkeyotel tags
@@ -324,11 +348,7 @@ func (c *client) Dedicate() (client valkey.DedicatedClient, cancel func()) {
 func (c *client) Nodes() map[string]valkey.Client {
 	nodes := c.Client.Nodes()
 	for addr, valkeyClient := range nodes {
-		host, portStr, err := net.SplitHostPort(addr)
-		if err != nil {
-			log.Error("invalid address is set to valkey client: %s", err)
-		}
-		port, _ := strconv.Atoi(portStr)
+		host, port := splitHostPort(addr)
 		nodes[addr] = &client{
 			coreClient: coreClient{
 				Client:       valkeyClient,
