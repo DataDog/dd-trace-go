@@ -15,6 +15,7 @@ import (
 type products struct {
 	mu       sync.Mutex
 	products map[types.Namespace]transport.Product
+	size     int
 }
 
 func (p *products) Add(namespace types.Namespace, enabled bool, err error) {
@@ -34,7 +35,12 @@ func (p *products) Add(namespace types.Namespace, enabled bool, err error) {
 		}
 	}
 
+	if product, ok := p.products[namespace]; ok {
+		p.size -= len(namespace) + len(product.Error.Message)
+	}
+
 	p.products[namespace] = product
+	p.size += len(namespace) + len(product.Error.Message)
 }
 
 func (p *products) Payload() transport.Payload {
@@ -48,5 +54,12 @@ func (p *products) Payload() transport.Payload {
 		Products: p.products,
 	}
 	p.products = nil
+	p.size = 0
 	return res
+}
+
+func (p *products) Size() int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.size
 }

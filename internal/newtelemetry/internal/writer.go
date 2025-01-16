@@ -14,7 +14,6 @@ import (
 	"net"
 	"net/http"
 	"runtime"
-	"strconv"
 	"sync"
 	"time"
 
@@ -77,6 +76,8 @@ func newBody(config TracerConfig, debugMode bool) *transport.Body {
 type Writer interface {
 	// Flush does a synchronous call to the telemetry endpoint with the given payload. Thread-safe.
 	// It returns the number of bytes sent and an error if any.
+	// Keep in mind that errors can be returned even if the payload was sent successfully.
+	// Please check if the number of bytes sent is greater than 0 to know if the payload was sent.
 	Flush(transport.Payload) (int, error)
 }
 
@@ -91,8 +92,9 @@ type WriterConfig struct {
 	// TracerConfig is the configuration the tracer sent when the telemetry client was created (required)
 	TracerConfig
 	// Endpoints is a list of requests that will be used alongside the body of the telemetry data to create the requests to the telemetry endpoint (required to not be empty)
+	// The writer will try each endpoint in order until it gets a 2XX HTTP response from the server
 	Endpoints []*http.Request
-	// HTTPClient is the http client that will be used to send the telemetry data (defaults to the default http client)
+	// HTTPClient is the http client that will be used to send the telemetry data (defaults to a copy of [http.DefaultClient])
 	HTTPClient *http.Client
 	// Debug is a flag that indicates whether the telemetry client is in debug mode (defaults to false)
 	Debug bool
@@ -102,6 +104,9 @@ func NewWriter(config WriterConfig) (Writer, error) {
 	if config.HTTPClient == nil {
 		config.HTTPClient = defaultHTTPClient
 	}
+
+	// Don't allow the client to have a timeout higher than 5 seconds
+	config.HTTPClient.Timeout = min(config.HTTPClient.Timeout, 5*time.Second)
 
 	if len(config.Endpoints) == 0 {
 		return nil, fmt.Errorf("telemetry/writer: no endpoints provided")
@@ -129,7 +134,6 @@ func preBakeRequest(body *transport.Body, endpoint *http.Request) *http.Request 
 	for key, val := range map[string]string{
 		"Content-Type":               "application/json",
 		"DD-Telemetry-API-Version":   body.APIVersion,
-		"DD-Telemetry-Debug-Enabled": strconv.FormatBool(body.Debug),
 		"DD-Client-Library-Language": body.Application.LanguageName,
 		"DD-Client-Library-Version":  body.Application.TracerVersion,
 		"DD-Agent-Env":               body.Application.Env,
@@ -147,6 +151,11 @@ func preBakeRequest(body *transport.Body, endpoint *http.Request) *http.Request 
 		}
 		clonedEndpoint.Header.Add(key, val)
 	}
+
+	if body.Debug {
+		clonedEndpoint.Header.Add("DD-Telemetry-Debug-Enabled", "true")
+	}
+
 	return clonedEndpoint
 }
 

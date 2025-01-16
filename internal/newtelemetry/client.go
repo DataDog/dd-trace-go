@@ -8,6 +8,7 @@ package newtelemetry
 import (
 	"errors"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/newtelemetry/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/newtelemetry/internal/transport"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/newtelemetry/types"
@@ -51,22 +52,23 @@ func NewClient(service, env, version string, config ClientConfig) (Client, error
 	client := &client{
 		tracerConfig: tracerConfig,
 		writer:       writer,
-		payloadQueue: internal.NewRingQueue[transport.Payload](),
+		clientConfig: config,
 	}
 
-	client.dataSources = append(
-		client.dataSources,
+	client.ticker = internal.NewTicker(client, config.FlushIntervalRange.Min, config.FlushIntervalRange.Max)
+	client.dataSources = append(client.dataSources,
 		&client.integrations,
 		&client.products,
 		&client.configuration,
 	)
+
 	return client, nil
 }
 
 type client struct {
 	tracerConfig internal.TracerConfig
 	writer       internal.Writer
-	payloadQueue *internal.RingQueue[transport.Payload]
+	clientConfig ClientConfig
 
 	// Data sources
 	integrations  integrations
@@ -75,7 +77,10 @@ type client struct {
 
 	dataSources []interface {
 		Payload() transport.Payload
+		Size() int
 	}
+
+	ticker *internal.Ticker
 }
 
 func (c *client) MarkIntegrationAsLoaded(integration Integration) {
@@ -129,28 +134,68 @@ func (c *client) AddBulkAppConfig(kvs map[string]any, origin types.Origin) {
 	}
 }
 
-func (c *client) gatherPayloads() []transport.Payload {
-	var res []transport.Payload
-	for _, ds := range c.dataSources {
-		if payload := ds.Payload(); payload != nil {
-			res = append(res, payload)
-		}
-	}
-	return res
+func (c *client) Config() ClientConfig {
+	return c.clientConfig
 }
 
-func (c *client) flush() {
-	//TODO implement me
-	panic("implement me")
+func (c *client) Flush() (int, error) {
+	var payloads []transport.Payload
+	for _, ds := range c.dataSources {
+		if payload := ds.Payload(); payload != nil {
+			payloads = append(payloads, payload)
+		}
+	}
+
+	return c.flush(payloads)
+}
+
+// flush sends all the data sources to the writer by let them flow through the given wrapper function.
+// The wrapper function is used to transform the payloads before sending them to the writer.
+func (c *client) flush(payloads []transport.Payload) (int, error) {
+	if len(payloads) == 0 {
+		return 0, nil
+	}
+
+	var (
+		nbBytes int
+		err     error
+	)
+
+	for _, payload := range payloads {
+		nbBytesOfPayload, payloadErr := c.writer.Flush(payload)
+		if nbBytes > 0 {
+			log.Debug("non-fatal error while flushing telemetry data: %v", err)
+			err = nil
+		}
+
+		nbBytes += nbBytesOfPayload
+		err = errors.Join(err, payloadErr)
+	}
+
+	return nbBytes, err
 }
 
 func (c *client) appStart() error {
-	return nil
+	//TODO implement me
+	panic("implement me")
 }
 
 func (c *client) appStop() {
 	//TODO implement me
 	panic("implement me")
+}
+
+func (c *client) size() int {
+	size := 0
+	for _, ds := range c.dataSources {
+		size += ds.Size()
+	}
+	return size
+}
+
+func (c *client) Close() error {
+	c.ticker.Stop()
+	return nil
 }
 
 var _ Client = (*client)(nil)
