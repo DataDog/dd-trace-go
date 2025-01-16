@@ -271,7 +271,6 @@ func TestControlFlow(t *testing.T) {
 			},
 			handler: func(echo.Context) error {
 				panic("unexpected control flow")
-				return nil
 			},
 			test: func(t *testing.T, rec *httptest.ResponseRecorder, mt mocktracer.Tracer, err error) {
 				require.Error(t, err)
