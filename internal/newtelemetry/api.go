@@ -6,6 +6,8 @@
 package newtelemetry
 
 import (
+	"io"
+
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/newtelemetry/types"
 )
 
@@ -56,6 +58,7 @@ type Integration struct {
 // This is an interface for easier testing but all functions will be mirrored at the package level to call
 // the global client.
 type Client interface {
+	io.Closer
 
 	// Count creates a new metric handle for the given parameters that can be used to submit values.
 	Count(namespace types.Namespace, name string, tags map[string]string) MetricHandle
@@ -92,12 +95,14 @@ type Client interface {
 	// MarkIntegrationAsLoaded marks an integration as loaded in the telemetry
 	MarkIntegrationAsLoaded(integration Integration)
 
-	// flush closes the client and flushes any remaining data.
-	flush()
+	// Flush closes the client and flushes any remaining data.
+	// Flush returns the number of bytes sent and an error if any.
+	// Any error returned means that the data was not sent.
+	Flush() (int, error)
 
-	// appStart sends the telemetry necessary to signal that the app is starting.
+	// appStart sends the telemetry necessary to signal that the app is starting. and calls start()
 	appStart() error
 
-	// appStop sends the telemetry necessary to signal that the app is stopping and calls flush()
+	// appStop sends the telemetry necessary to signal that the app is stopping and calls Close()
 	appStop()
 }

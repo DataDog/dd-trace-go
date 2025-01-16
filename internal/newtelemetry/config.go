@@ -33,7 +33,7 @@ type ClientConfig struct {
 	HeartbeatInterval time.Duration
 
 	// FlushIntervalRange is the interval at which the client flushes the data.
-	// By default, the client will start to flush at 60s intervals and will reduce the interval based on the load till it hit 15s
+	// By default, the client will start to Flush at 60s intervals and will reduce the interval based on the load till it hit 15s
 	// Both values cannot be higher than 60s because the heartbeat need to be sent at least every 60s.
 	FlushIntervalRange struct {
 		Min time.Duration

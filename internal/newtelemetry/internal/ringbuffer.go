@@ -9,9 +9,6 @@ import (
 	"sync"
 )
 
-const maxRingBufferSize = 1 << 14
-const startingRingBufferSize = 1 << 8
-
 type RingQueue[T any] struct {
 	// buffer is the slice that contains the data.
 	buffer []T
@@ -22,41 +19,43 @@ type RingQueue[T any] struct {
 	// mu is the lock for the buffer, head and tail.
 	mu sync.Mutex
 	// pool is the pool of buffers. Normally there should only be one or 2 buffers in the pool.
-	pool sync.Pool
+	pool          sync.Pool
+	maxBufferSize int
 }
 
-func NewRingQueue[T any]() *RingQueue[T] {
+func NewRingQueue[T any](minSize, maxSize int) *RingQueue[T] {
 	return &RingQueue[T]{
-		buffer: make([]T, startingRingBufferSize),
+		buffer:        make([]T, minSize),
+		maxBufferSize: maxSize,
 		pool: sync.Pool{
-			New: func() any { return make([]T, startingRingBufferSize) },
+			New: func() any { return make([]T, minSize) },
 		},
 	}
 }
 
 // Enqueue adds a value to the buffer.
-func (rb *RingQueue[T]) Enqueue(val T) {
+func (rb *RingQueue[T]) Enqueue(val T) bool {
 	rb.mu.Lock()
 	defer rb.mu.Unlock()
 
 	rb.buffer[rb.tail] = val
 	rb.tail = (rb.tail + 1) % len(rb.buffer)
 
-	if rb.tail == rb.head && len(rb.buffer) == maxRingBufferSize { // We loose one element
+	if rb.tail == rb.head && len(rb.buffer) == rb.maxBufferSize { // We loose one element
 		rb.head = (rb.head + 1) % len(rb.buffer)
-		// TODO: maybe log that we lost an element
-		return
+		return false
 	}
 
-	// We need to resize the buffer, we double the size, this should happen 10 times before we reach the max size
+	// We need to resize the buffer, we double the size and cap it to maxBufferSize
 	if rb.tail == rb.head {
-		newBuffer := make([]T, cap(rb.buffer)*2)
+		newBuffer := make([]T, min(cap(rb.buffer)*2, rb.maxBufferSize))
 		copy(newBuffer, rb.buffer[rb.head:])
 		copy(newBuffer[len(rb.buffer)-rb.head:], rb.buffer[:rb.tail])
 		rb.head = 0
 		rb.tail = len(rb.buffer) - 1
 		rb.buffer = newBuffer
 	}
+	return true
 }
 
 // Dequeue removes a value from the buffer.
@@ -99,5 +98,5 @@ func (rb *RingQueue[T]) IsFull() bool {
 	rb.mu.Lock()
 	defer rb.mu.Unlock()
 
-	return (rb.tail+1)%len(rb.buffer) == rb.head && len(rb.buffer) == maxRingBufferSize
+	return (rb.tail+1)%len(rb.buffer) == rb.head && len(rb.buffer) == rb.maxBufferSize
 }
