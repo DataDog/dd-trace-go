@@ -8,6 +8,7 @@ package sarama
 import (
 	"context"
 	"log"
+	"os"
 	"sync"
 	"testing"
 
@@ -20,6 +21,10 @@ import (
 )
 
 func TestWrapConsumerGroupHandler(t *testing.T) {
+	if _, ok := os.LookupEnv("INTEGRATION"); !ok {
+		t.Skip("🚧 Skipping integration test (INTEGRATION environment variable is not set)")
+	}
+
 	mt := mocktracer.Start()
 	defer mt.Stop()
 
