@@ -151,7 +151,7 @@ type client struct {
 
 func log(msg string, args ...interface{}) {
 	// Debug level so users aren't spammed with telemetry info.
-	logger.Debug(fmt.Sprintf(LogPrefix+msg, args...))
+	logger.Debug(LogPrefix+msg, args...)
 }
 
 // RegisterAppConfig allows to register a globally-defined application configuration.

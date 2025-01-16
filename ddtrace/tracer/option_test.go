@@ -338,12 +338,12 @@ func TestIntegrationEnabled(t *testing.T) {
 		var out contribPkg
 		err := stream.Decode(&out)
 		if err != nil {
-			t.Fatalf(err.Error())
+			t.Fatal(err.Error())
 		}
 		packages = append(packages, out)
 	}
 	for _, pkg := range packages {
-		if strings.Contains(pkg.ImportPath, "/test") || strings.Contains(pkg.ImportPath, "/internal") {
+		if strings.Contains(pkg.ImportPath, "/test") || strings.Contains(pkg.ImportPath, "/internal") || strings.Contains(pkg.ImportPath, "/cmd") {
 			continue
 		}
 		p := strings.Replace(pkg.Dir, pkg.Root, "../..", 1)

@@ -254,7 +254,7 @@ func TestGeneratedSpan(t *testing.T) {
 		stream, err := client.Process(ctx)
 		require.NoError(t, err)
 
-		end2EndStreamRequest(t, stream, "/resource-span", "GET", map[string]string{"user-agent": "Mistake Not...", "test-key": "test-value"}, map[string]string{"response-test-key": "response-test-value"}, false)
+		end2EndStreamRequest(t, stream, "/../../../resource-span/.?id=test", "GET", map[string]string{"user-agent": "Mistake Not...", "test-key": "test-value"}, map[string]string{"response-test-key": "response-test-value"}, false)
 
 		err = stream.CloseSend()
 		require.NoError(t, err)
@@ -266,10 +266,10 @@ func TestGeneratedSpan(t *testing.T) {
 		// Check for tags
 		span := finished[0]
 		require.Equal(t, "http.request", span.OperationName())
-		require.Equal(t, "https://datadoghq.com/resource-span", span.Tag("http.url"))
+		require.Equal(t, "https://datadoghq.com/../../../resource-span/.?id=test", span.Tag("http.url"))
 		require.Equal(t, "GET", span.Tag("http.method"))
 		require.Equal(t, "datadoghq.com", span.Tag("http.host"))
-		//		require.Equal(t, "GET /resource-span", span.Tag("resource.name"))
+		require.Equal(t, "GET /resource-span", span.Tag("resource.name"))
 		require.Equal(t, "server", span.Tag("span.kind"))
 		require.Equal(t, "Mistake Not...", span.Tag("http.useragent"))
 	})
@@ -362,6 +362,53 @@ func TestXForwardedForHeaderClientIp(t *testing.T) {
 		require.Equal(t, 1, span.Tag("_dd.appsec.enabled"))
 		require.Equal(t, true, span.Tag("appsec.event"))
 		require.Equal(t, true, span.Tag("appsec.blocked"))
+	})
+}
+
+func TestMalformedEnvoyProcessing(t *testing.T) {
+	appsec.Start()
+	defer appsec.Stop()
+	if !appsec.Enabled() {
+		t.Skip("appsec disabled")
+	}
+
+	setup := func() (envoyextproc.ExternalProcessorClient, mocktracer.Tracer, func()) {
+		rig, err := newEnvoyAppsecRig(t, false)
+		require.NoError(t, err)
+
+		mt := mocktracer.Start()
+
+		return rig.client, mt, func() {
+			rig.Close()
+			mt.Stop()
+		}
+	}
+
+	t.Run("response-received-without-request", func(t *testing.T) {
+		client, mt, cleanup := setup()
+		defer cleanup()
+
+		ctx := context.Background()
+		stream, err := client.Process(ctx)
+		require.NoError(t, err)
+
+		err = stream.Send(&envoyextproc.ProcessingRequest{
+			Request: &envoyextproc.ProcessingRequest_ResponseHeaders{
+				ResponseHeaders: &envoyextproc.HttpHeaders{
+					Headers: makeResponseHeaders(t, map[string]string{}, "400"),
+				},
+			},
+		})
+		require.NoError(t, err)
+
+		_, err = stream.Recv()
+		require.Error(t, err)
+		stream.Recv()
+
+		// No span created, the request is invalid.
+		// Span couldn't be created without request data
+		finished := mt.FinishedSpans()
+		require.Len(t, finished, 0)
 	})
 }
 

@@ -72,7 +72,7 @@ type contextData struct {
 // finish closes the top-level request operation, as well as the server span.
 func (c *contextData) finish(data any, err error) {
 	defer c.serverSpan.Finish(tracer.WithError(err))
-	c.requestOp.Finish(c.serverSpan, graphqlsec.RequestOperationRes{Data: data, Error: err})
+	c.requestOp.Finish(graphqlsec.RequestOperationRes{Data: data, Error: err})
 }
 
 var extensionName = reflect.TypeOf((*datadogExtension)(nil)).Elem().Name()
@@ -97,7 +97,7 @@ func (i datadogExtension) Init(ctx context.Context, params *graphql.Params) cont
 		tracer.Tag(ext.Component, componentName),
 		tracer.Measured(),
 	)
-	ctx, request := graphqlsec.StartRequestOperation(ctx, graphqlsec.RequestOperationArgs{
+	ctx, request := graphqlsec.StartRequestOperation(ctx, span, graphqlsec.RequestOperationArgs{
 		RawQuery:      params.RequestString,
 		Variables:     params.VariableValues,
 		OperationName: params.OperationName,

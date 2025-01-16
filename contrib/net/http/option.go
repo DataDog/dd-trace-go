@@ -26,6 +26,8 @@ const (
 	envClientQueryStringEnabled = "DD_TRACE_HTTP_CLIENT_TAG_QUERY_STRING"
 	// envClientErrorStatuses is the name of the env var that specifies error status codes on http client spans
 	envClientErrorStatuses = "DD_TRACE_HTTP_CLIENT_ERROR_STATUSES"
+	// envQueryStringRegexp is the name of the env var used to specify the regexp to use for query string obfuscation.
+	envQueryStringRegexp = "DD_TRACE_OBFUSCATION_QUERY_STRING_REGEXP"
 )
 
 type config struct {
@@ -35,6 +37,7 @@ type config struct {
 	finishOpts    []ddtrace.FinishOption
 	ignoreRequest func(*http.Request) bool
 	resourceNamer func(*http.Request) string
+	isStatusError func(int) bool
 	headerTags    *internal.LockMap
 }
 
@@ -83,6 +86,14 @@ func WithHeaderTags(headers []string) Option {
 	headerTagsMap := normalizer.HeaderTagSlice(headers)
 	return func(cfg *config) {
 		cfg.headerTags = internal.NewLockMap(headerTagsMap)
+	}
+}
+
+// WithStatusCheck sets a span to be an error if the passed function
+// returns true for a given status code.
+func WithStatusCheck(fn func(statusCode int) bool) Option {
+	return func(cfg *config) {
+		cfg.isStatusError = fn
 	}
 }
 
@@ -174,7 +185,7 @@ func newRoundTripperConfig() *roundTripperConfig {
 		propagation:   true,
 		spanNamer:     defaultSpanNamer,
 		ignoreRequest: func(_ *http.Request) bool { return false },
-		queryString:   internal.BoolEnv(envClientQueryStringEnabled, false),
+		queryString:   internal.BoolEnv(envClientQueryStringEnabled, true),
 		isStatusError: isClientError,
 	}
 	v := os.Getenv(envClientErrorStatuses)
