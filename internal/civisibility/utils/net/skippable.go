@@ -60,6 +60,10 @@ type (
 )
 
 func (c *client) GetSkippableTests() (correlationID string, skippables map[string]map[string][]SkippableResponseDataAttributes, err error) {
+	if c.repositoryURL == "" || c.commitSha == "" {
+		err = fmt.Errorf("civisibility.GetSkippableTests: repository URL and commit SHA are required")
+		return
+	}
 
 	body := skippableRequest{
 		Data: skippableRequestHeader{
