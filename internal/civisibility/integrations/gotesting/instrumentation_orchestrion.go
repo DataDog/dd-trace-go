@@ -114,6 +114,14 @@ func instrumentTestingTFunc(f func(*testing.T)) func(*testing.T) {
 	}
 
 	instrumentedFn := func(t *testing.T) {
+		// Check if we have testify suite data related to this test
+		testifyData := getTestifyTest(t)
+		if testifyData != nil {
+			// If we have testify data, we need to extract the module and suite name from the testify suite
+			moduleName = testifyData.moduleName
+			suiteName = testifyData.suiteName
+		}
+
 		// Initialize module counters if not already present.
 		if _, ok := modulesCounters[moduleName]; !ok {
 			var v int32
@@ -134,7 +142,14 @@ func instrumentTestingTFunc(f func(*testing.T)) func(*testing.T) {
 		module := session.GetOrCreateModule(moduleName)
 		suite := module.GetOrCreateSuite(suiteName)
 		test := suite.CreateTest(t.Name())
-		test.SetTestFunc(originalFunc)
+
+		// If we have testify data we use the method function from testify so the test source is properly set
+		if testifyData != nil {
+			test.SetTestFunc(testifyData.methodFunc)
+		} else {
+			// If not, let's set the original function
+			test.SetTestFunc(originalFunc)
+		}
 
 		// Get the metadata regarding the execution (in case is already created from the additional features)
 		execMeta := getTestMetadata(t)
@@ -429,4 +444,11 @@ func instrumentTestingBFunc(pb *testing.B, name string, f func(*testing.B)) (str
 	setCiVisibilityBenchmarkFunc(originalFunc)
 	setCiVisibilityBenchmarkFunc(runtime.FuncForPC(reflect.Indirect(reflect.ValueOf(instrumentedFunc)).Pointer()))
 	return subBenchmarkAutoName, instrumentedFunc
+}
+
+// instrumentTestifySuiteRun helper function to instrument the testify Suite.Run function
+//
+//go:linkname instrumentTestifySuiteRun
+func instrumentTestifySuiteRun(t *testing.T, suite any) {
+	registerTestifySuite(t, suite)
 }
