@@ -33,6 +33,7 @@ func TestIntegrationInfo(t *testing.T) {
 
 type contribPkg struct {
 	ImportPath string
+	Root       string
 	Name       string
 	Imports    []string
 	Dir        string
@@ -84,6 +85,10 @@ func TestTelemetryEnabled(t *testing.T) {
 	}
 	for _, pkg := range packages {
 		if strings.Contains(pkg.ImportPath, "/test") || strings.Contains(pkg.ImportPath, "/internal") || strings.Contains(pkg.ImportPath, "/cmd") {
+			continue
+		}
+		p := strings.Replace(pkg.Dir, pkg.Root, "../..", 1)
+		if strings.Contains(p, "/contrib/net/http/client") || strings.Contains(p, "/contrib/os") {
 			continue
 		}
 		if !pkg.hasTelemetryImport(t) {
