@@ -5,9 +5,10 @@
 
 package http
 
-// Import "./internal/orchestrion" so that it's present in the dependency
-// closure when compile-time instrumentation is used. This is necessary for the
-// `orchestrion.server.yml` configuraton to be valid.
+// Import "./internal/orchestrion" and "./client" so that they're present in the
+// dependency closure when compile-time instrumentation is used. This is
+// necessary for the `orchestrion.server.yml` configuraton to be valid.
 import (
+	_ "gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http/client"
 	_ "gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http/internal/orchestrion"
 )
