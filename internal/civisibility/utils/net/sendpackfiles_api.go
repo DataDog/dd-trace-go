@@ -40,6 +40,11 @@ func (c *client) SendPackFiles(commitSha string, packFiles []string) (bytes int6
 		commitSha = c.commitSha
 	}
 
+	if c.repositoryURL == "" || commitSha == "" {
+		err = fmt.Errorf("civisibility.SendPackFiles: repository URL and commit SHA are required")
+		return
+	}
+
 	pushedShaFormFile := FormFile{
 		FieldName: "pushedSha",
 		Content: pushedShaBody{
