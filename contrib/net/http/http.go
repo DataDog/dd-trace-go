@@ -33,8 +33,15 @@ func NewServeMux(opts ...Option) *ServeMux {
 	cfg.spanOpts = append(cfg.spanOpts, tracer.Tag(ext.SpanKind, ext.SpanKindServer))
 	cfg.spanOpts = append(cfg.spanOpts, tracer.Tag(ext.Component, componentName))
 	log.Debug("contrib/net/http: Configuring ServeMux: %#v", cfg)
+
+	// wrap a ServeMux if provided, otherwise create a new one
+	mux := cfg.mux
+	if mux == nil {
+		mux = http.NewServeMux()
+	}
+
 	return &ServeMux{
-		ServeMux: http.NewServeMux(),
+		ServeMux: mux,
 		cfg:      cfg,
 	}
 }

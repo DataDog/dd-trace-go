@@ -39,6 +39,7 @@ type config struct {
 	resourceNamer func(*http.Request) string
 	isStatusError func(int) bool
 	headerTags    *internal.LockMap
+	mux           *http.ServeMux
 }
 
 // MuxOption has been deprecated in favor of Option.
@@ -61,6 +62,13 @@ func defaults(cfg *config) {
 	}
 	cfg.ignoreRequest = func(_ *http.Request) bool { return false }
 	cfg.resourceNamer = func(_ *http.Request) string { return "" }
+}
+
+// WithServeMux sets the given *http.ServeMux as the underlying ServeMux
+func WithServeMux(mux *http.ServeMux) MuxOption {
+	return func(cfg *config) {
+		cfg.mux = mux
+	}
 }
 
 // WithIgnoreRequest holds the function to use for determining if the
