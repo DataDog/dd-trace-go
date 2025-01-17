@@ -32,6 +32,10 @@ type (
 )
 
 func (c *client) GetCommits(localCommits []string) ([]string, error) {
+	if c.repositoryURL == "" {
+		return nil, fmt.Errorf("civisibility.GetCommits: repository URL is required")
+	}
+
 	body := searchCommits{
 		Data: []searchCommitsData{},
 		Meta: searchCommitsMeta{

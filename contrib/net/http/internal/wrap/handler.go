@@ -41,12 +41,15 @@ func Handler(h http.Handler, service, resource string, opts ...config.Option) ht
 			so := make([]ddtrace.StartSpanOption, len(cfg.SpanOpts), len(cfg.SpanOpts)+1)
 			copy(so, cfg.SpanOpts)
 			so = append(so, httptrace.HeaderTagsFromRequest(req, cfg.HeaderTags))
+			pattern := getPattern(nil, req)
 			TraceAndServe(h, w, req, &httptrace.ServeConfig{
 				Service:       service,
 				Resource:      resc,
 				FinishOpts:    cfg.FinishOpts,
 				SpanOpts:      so,
 				IsStatusError: cfg.IsStatusError,
+				Route:         patternRoute(pattern),
+				RouteParams:   patternValues(pattern, req),
 			})
 		},
 	}

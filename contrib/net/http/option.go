@@ -144,7 +144,7 @@ func newRoundTripperConfig() *roundTripperConfig {
 		propagation:   true,
 		spanNamer:     defaultSpanNamer,
 		ignoreRequest: func(_ *http.Request) bool { return false },
-		queryString:   internal.BoolEnv(envClientQueryStringEnabled, false),
+		queryString:   internal.BoolEnv(envClientQueryStringEnabled, true),
 		isStatusError: isClientError,
 	}
 	v := os.Getenv(envClientErrorStatuses)
