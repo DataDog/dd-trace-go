@@ -25,7 +25,6 @@ import (
 
 	sqlinternal "gopkg.in/DataDog/dd-trace-go.v1/contrib/database/sql/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/contribroutines"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 )
@@ -140,6 +139,7 @@ type tracedConnector struct {
 	connector  driver.Connector
 	driverName string
 	cfg        *config
+	dbClose    chan struct{}
 }
 
 func (t *tracedConnector) Connect(ctx context.Context) (driver.Conn, error) {
@@ -175,7 +175,7 @@ func (t *tracedConnector) Driver() driver.Driver {
 // Close sends a signal on  any goroutines that rely on an open DB to stop.
 // This method will be invoked when DB.Close() is called: https://cs.opensource.google/go/go/+/refs/tags/go1.23.4:src/database/sql/sql.go;l=943-947
 func (t *tracedConnector) Close() error {
-	dbClose()
+	close(t.dbClose)
 	return nil
 }
 
@@ -216,10 +216,11 @@ func OpenDB(c driver.Connector, opts ...Option) *sql.DB {
 		connector:  c,
 		driverName: driverName,
 		cfg:        cfg,
+		dbClose:    make(chan struct{}),
 	}
 	db := sql.OpenDB(tc)
 	if cfg.dbStats && cfg.statsdClient != nil {
-		go pollDBStats(cfg.statsdClient, db, contribroutines.GetStopChan())
+		go pollDBStats(cfg.statsdClient, db, tc.dbClose)
 	}
 	return db
 }

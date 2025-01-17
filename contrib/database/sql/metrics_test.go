@@ -11,7 +11,6 @@ import (
 
 	"github.com/DataDog/datadog-go/v5/statsd"
 	"github.com/stretchr/testify/assert"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/contribroutines"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 )
 
@@ -68,29 +67,15 @@ func TestStatsTags(t *testing.T) {
 	resetGlobalConfig()
 }
 
-func TestPollDBStats(t *testing.T) {
+func TestPollDBStatsStop(t *testing.T) {
 	db := setupPostgres(t)
-	tracerStop := contribroutines.GetStopChan()
-	t.Run("tracerStop", func(t *testing.T) {
-		var wg sync.WaitGroup
-
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			pollDBStats(&statsd.NoOpClientDirect{}, db, tracerStop)
-		}()
-		contribroutines.Stop()
-		wg.Wait()
-	})
-	t.Run("dbStop", func(t *testing.T) {
-		var wg sync.WaitGroup
-
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			pollDBStats(&statsd.NoOpClientDirect{}, db, tracerStop)
-		}()
-		db.Close()
-		wg.Wait()
-	})
+	var wg sync.WaitGroup
+	stop := make(chan struct{})
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		pollDBStats(&statsd.NoOpClientDirect{}, db, stop)
+	}()
+	close(stop)
+	wg.Wait()
 }

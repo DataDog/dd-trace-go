@@ -24,7 +24,6 @@ import (
 	globalinternal "gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
 	appsecConfig "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/config"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/contribroutines"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/datastreams"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/hostname"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
@@ -204,7 +203,6 @@ func Start(opts ...StartOption) {
 	}
 
 	_ = t.hostname() // Prime the hostname cache
-	contribroutines.InitStopChan()
 }
 
 // Stop stops the started tracer. Subsequent calls are valid but become no-op.
@@ -729,7 +727,6 @@ func (t *tracer) Stop() {
 	if t.logFile != nil {
 		t.logFile.Close()
 	}
-	contribroutines.Stop()
 }
 
 // Inject uses the configured or default TextMap Propagator.

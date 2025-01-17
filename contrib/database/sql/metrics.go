@@ -7,7 +7,6 @@ package sql // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/database/sql"
 
 import (
 	"database/sql"
-	"sync"
 	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
@@ -34,7 +33,7 @@ var interval = 10 * time.Second
 
 // pollDBStats calls (*DB).Stats on the db at a predetermined interval. It pushes the DBStats off to the statsd client.
 // the caller should always ensure that db & statsd are non-nil
-func pollDBStats(statsd internal.StatsdClient, db *sql.DB, tracerStop chan struct{}) {
+func pollDBStats(statsd internal.StatsdClient, db *sql.DB, stop chan struct{}) {
 	log.Debug("DB stats will be gathered and sent every %v.", interval)
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
@@ -52,9 +51,7 @@ func pollDBStats(statsd internal.StatsdClient, db *sql.DB, tracerStop chan struc
 			statsd.Gauge(MaxIdleClosed, float64(stat.MaxIdleClosed), []string{}, 1)
 			statsd.Gauge(MaxIdleTimeClosed, float64(stat.MaxIdleTimeClosed), []string{}, 1)
 			statsd.Gauge(MaxLifetimeClosed, float64(stat.MaxLifetimeClosed), []string{}, 1)
-		case <-tracerStop:
-			return
-		case <-dbStop:
+		case <-stop:
 			return
 		}
 	}
@@ -72,18 +69,4 @@ func statsTags(c *config) []string {
 		}
 	}
 	return tags
-}
-
-var (
-	dbStop chan struct{} = make(chan struct{})
-	once   sync.Once
-	mu     sync.Mutex
-)
-
-func dbClose() {
-	mu.Lock()
-	defer mu.Unlock()
-	once.Do(func() {
-		close(dbStop)
-	})
 }
