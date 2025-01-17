@@ -17,9 +17,7 @@ var (
 
 // StartApp starts the telemetry client with the given client send the app-started telemetry and sets it as the global (*client).
 func StartApp(client Client) error {
-	if err := client.appStart(); err != nil {
-		return err
-	}
+	client.appStart()
 	SwapClient(client)
 	return nil
 }
