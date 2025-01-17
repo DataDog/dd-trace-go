@@ -100,8 +100,8 @@ type Client interface {
 	// Any error returned means that the data was not sent.
 	Flush() (int, error)
 
-	// appStart sends the telemetry necessary to signal that the app is starting. and calls start()
-	appStart() error
+	// appStart sends the telemetry necessary to signal that the app is starting.
+	appStart()
 
 	// appStop sends the telemetry necessary to signal that the app is stopping and calls Close()
 	appStop()

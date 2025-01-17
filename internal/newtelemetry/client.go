@@ -7,6 +7,7 @@ package newtelemetry
 
 import (
 	"errors"
+	"sync"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/newtelemetry/internal"
@@ -50,9 +51,10 @@ func NewClient(service, env, version string, config ClientConfig) (Client, error
 	}
 
 	client := &client{
-		tracerConfig: tracerConfig,
-		writer:       writer,
-		clientConfig: config,
+		tracerConfig:     tracerConfig,
+		writer:           writer,
+		clientConfig:     config,
+		flushTransformer: internal.MessageBatchTransformer,
 	}
 
 	client.ticker = internal.NewTicker(client, config.FlushIntervalRange.Min, config.FlushIntervalRange.Max)
@@ -81,6 +83,10 @@ type client struct {
 	}
 
 	ticker *internal.Ticker
+
+	// flushTransformer is the transformer to use for the next flush
+	flushTransformer   internal.Transformer
+	flushTransformerMu sync.Mutex
 }
 
 func (c *client) MarkIntegrationAsLoaded(integration Integration) {
@@ -156,6 +162,16 @@ func (c *client) flush(payloads []transport.Payload) (int, error) {
 		return 0, nil
 	}
 
+	// Always add the Heartbeat to the payloads
+	payloads = append(payloads, transport.AppHeartbeat{})
+
+	// Transform the payloads
+	{
+		c.flushTransformerMu.Lock()
+		payloads, c.flushTransformer = c.flushTransformer.Transform(payloads)
+		c.flushTransformerMu.Unlock()
+	}
+
 	var (
 		nbBytes int
 		err     error
@@ -175,14 +191,16 @@ func (c *client) flush(payloads []transport.Payload) (int, error) {
 	return nbBytes, err
 }
 
-func (c *client) appStart() error {
-	//TODO implement me
-	panic("implement me")
+func (c *client) appStart() {
+	c.flushTransformerMu.Lock()
+	defer c.flushTransformerMu.Unlock()
+	c.flushTransformer = internal.AppStartedTransformer
 }
 
 func (c *client) appStop() {
-	//TODO implement me
-	panic("implement me")
+	c.flushTransformerMu.Lock()
+	defer c.flushTransformerMu.Unlock()
+	c.flushTransformer = internal.AppClosingTransformer
 }
 
 func (c *client) size() int {

@@ -47,6 +47,11 @@ var defaultHTTPClient = &http.Client{
 }
 
 func newBody(config TracerConfig, debugMode bool) *transport.Body {
+	hostname := hostname.Get()
+	if hostname == "" {
+		hostname = "unknown"
+	}
+
 	return &transport.Body{
 		APIVersion: "v2",
 		RuntimeID:  globalconfig.RuntimeID(),
@@ -60,7 +65,7 @@ func newBody(config TracerConfig, debugMode bool) *transport.Body {
 			LanguageVersion: runtime.Version(),
 		},
 		Host: transport.Host{
-			Hostname:      hostname.Get(),
+			Hostname:      hostname,
 			OS:            osinfo.OSName(),
 			OSVersion:     osinfo.OSVersion(),
 			Architecture:  osinfo.Architecture(),

@@ -43,7 +43,6 @@ func NewTicker(flusher flusher, minInterval, maxInterval time.Duration) *Ticker 
 			if err != nil {
 				// Reset the interval to the maximum value
 				ticker.AdjustTickSpeed(maxInterval)
-				return
 			}
 		}
 	}()
