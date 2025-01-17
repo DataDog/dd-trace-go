@@ -13,6 +13,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"os"
 	"runtime"
 	"sync"
 	"time"
@@ -47,9 +48,13 @@ var defaultHTTPClient = &http.Client{
 }
 
 func newBody(config TracerConfig, debugMode bool) *transport.Body {
-	hostname := hostname.Get()
-	if hostname == "" {
-		hostname = "unknown"
+	osHostname, err := os.Hostname()
+	if err != nil {
+		osHostname = hostname.Get()
+	}
+
+	if osHostname == "" {
+		osHostname = "unknown" // hostname field is not allowed to be empty
 	}
 
 	return &transport.Body{
@@ -65,7 +70,7 @@ func newBody(config TracerConfig, debugMode bool) *transport.Body {
 			LanguageVersion: runtime.Version(),
 		},
 		Host: transport.Host{
-			Hostname:      hostname,
+			Hostname:      osHostname,
 			OS:            osinfo.OSName(),
 			OSVersion:     osinfo.OSVersion(),
 			Architecture:  osinfo.Architecture(),
