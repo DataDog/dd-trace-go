@@ -6,17 +6,32 @@
 package newtelemetry
 
 import (
-	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
 	"os"
 	"time"
 
+	globalinternal "gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/newtelemetry/internal"
 )
 
 type ClientConfig struct {
+	// DependencyCollectionEnabled determines whether dependency data is sent via telemetry.
+	// If false, libraries should not send the app-dependencies-loaded event.
+	// We default this to true since Application Security Monitoring uses this data to detect vulnerabilities in the ASM-SCA product
+	// This can be controlled via the env var DD_TELEMETRY_DEPENDENCY_COLLECTION_ENABLED
+	DependencyCollectionEnabled bool
+
+	// MetricsEnabled etermines whether metrics are sent via telemetry.
+	// If false, libraries should not send the generate-metrics or distributions events.
+	// This can be controlled via the env var DD_TELEMETRY_METRICS_ENABLED
+	MetricsEnabled bool
+
+	// LogsEnabled determines whether logs are sent via telemetry.
+	// This can be controlled via the env var DD_TELEMETRY_LOG_COLLECTION_ENABLED
+	LogsEnabled bool
+
 	// AgentlessURL is the full URL to the agentless telemetry endpoint. (optional)
 	// Defaults to https://instrumentation-telemetry-intake.datadoghq.com/api/v2/apmtelemetry
 	AgentlessURL string
@@ -45,6 +60,11 @@ type ClientConfig struct {
 
 	// APIKey is the API key to use for sending telemetry to the agentless endpoint. (using DD_API_KEY env var by default)
 	APIKey string
+
+	// EarlyFlushPayloadSize is the size of the payload that will trigger an early flush.
+	// This is necessary because backend won't allow payloads larger than 5MB.
+	// The default value here will be 2MB to take into account the large inaccuracy in estimating the size of payloads
+	EarlyFlushPayloadSize int
 }
 
 const (
@@ -53,7 +73,7 @@ const (
 	agentlessURL = "https://instrumentation-telemetry-intake.datadoghq.com/api/v2/apmtelemetry"
 
 	// defaultHeartbeatInterval is the default interval at which the agent sends a heartbeat.
-	defaultHeartbeatInterval = 60.0 * time.Second
+	defaultHeartbeatInterval = 60 // seconds
 
 	// defaultMinFlushInterval is the default interval at which the client flushes the data.
 	defaultMinFlushInterval = 15.0 * time.Second
@@ -62,6 +82,10 @@ const (
 	defaultMaxFlushInterval = 60.0 * time.Second
 
 	agentProxyAPIPath = "/telemetry/proxy/api/v2/apmtelemetry"
+
+	defaultEarlyFlushPayloadSize = 2 * 1024 * 1024 // 2MB
+
+	maxPayloadSize = 5 * 1024 * 1024 // 5MB
 )
 
 // clamp squeezes a value between a minimum and maximum value.
@@ -70,10 +94,6 @@ func clamp[T ~int64](value, minVal, maxVal T) T {
 }
 
 func (config ClientConfig) validateConfig() error {
-	if config.AgentlessURL == "" && config.AgentURL == "" {
-		return errors.New("either AgentlessURL or AgentURL must be set")
-	}
-
 	if config.HeartbeatInterval > 60*time.Second {
 		return fmt.Errorf("HeartbeatInterval cannot be higher than 60s, got %v", config.HeartbeatInterval)
 	}
@@ -84,6 +104,10 @@ func (config ClientConfig) validateConfig() error {
 
 	if config.FlushIntervalRange.Min > config.FlushIntervalRange.Max {
 		return fmt.Errorf("FlushIntervalRange Min cannot be higher than Max, got Min: %v, Max: %v", config.FlushIntervalRange.Min, config.FlushIntervalRange.Max)
+	}
+
+	if config.EarlyFlushPayloadSize > maxPayloadSize || config.EarlyFlushPayloadSize <= 0 {
+		return fmt.Errorf("EarlyFlushPayloadSize must be between 0 and 5MB, got %v", config.EarlyFlushPayloadSize)
 	}
 
 	return nil
@@ -100,7 +124,7 @@ func defaultConfig(config ClientConfig) ClientConfig {
 	}
 
 	if config.HeartbeatInterval == 0 {
-		config.HeartbeatInterval = defaultHeartbeatInterval
+		config.HeartbeatInterval = time.Duration(globalinternal.IntEnv("DD_TELEMETRY_HEARTBEAT_INTERVAL", defaultHeartbeatInterval)) * time.Second
 	} else {
 		config.HeartbeatInterval = clamp(config.HeartbeatInterval, time.Microsecond, 60*time.Second)
 	}
@@ -117,10 +141,22 @@ func defaultConfig(config ClientConfig) ClientConfig {
 		config.FlushIntervalRange.Max = clamp(config.FlushIntervalRange.Max, time.Microsecond, 60*time.Second)
 	}
 
+	if !config.DependencyCollectionEnabled {
+		config.DependencyCollectionEnabled = globalinternal.BoolEnv("DD_TELEMETRY_DEPENDENCY_COLLECTION_ENABLED", true)
+	}
+
+	if !config.MetricsEnabled {
+		config.MetricsEnabled = globalinternal.BoolEnv("DD_TELEMETRY_METRICS_ENABLED", true)
+	}
+
+	if !config.LogsEnabled {
+		config.LogsEnabled = globalinternal.BoolEnv("DD_TELEMETRY_LOG_COLLECTION_ENABLED", true)
+	}
+
 	return config
 }
 
-func (config ClientConfig) ToWriterConfig(tracerConfig internal.TracerConfig) (internal.WriterConfig, error) {
+func NewWriterConfig(config ClientConfig, tracerConfig internal.TracerConfig) (internal.WriterConfig, error) {
 	endpoints := make([]*http.Request, 0, 2)
 	if config.AgentURL != "" {
 		baseURL, err := url.Parse(config.AgentURL)

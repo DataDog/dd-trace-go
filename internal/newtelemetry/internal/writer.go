@@ -111,7 +111,12 @@ func NewWriter(config WriterConfig) (Writer, error) {
 	}
 
 	// Don't allow the client to have a timeout higher than 5 seconds
-	config.HTTPClient.Timeout = min(config.HTTPClient.Timeout, 5*time.Second)
+	// This is to avoid blocking the client for too long in case of network issues
+	if config.HTTPClient.Timeout > 5*time.Second {
+		copyClient := *config.HTTPClient
+		config.HTTPClient = &copyClient
+		config.HTTPClient.Timeout = 5 * time.Second
+	}
 
 	if len(config.Endpoints) == 0 {
 		return nil, fmt.Errorf("telemetry/writer: no endpoints provided")
