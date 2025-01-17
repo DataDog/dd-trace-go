@@ -40,7 +40,7 @@ func NewClient(service, env, version string, config ClientConfig) (Client, error
 		Version: version,
 	}
 
-	writerConfig, err := config.ToWriterConfig(tracerConfig)
+	writerConfig, err := NewWriterConfig(config, tracerConfig)
 	if err != nil {
 		return nil, err
 	}
@@ -199,8 +199,10 @@ func (c *client) appStart() {
 
 func (c *client) appStop() {
 	c.flushTransformerMu.Lock()
-	defer c.flushTransformerMu.Unlock()
 	c.flushTransformer = internal.AppClosingTransformer
+	c.flushTransformerMu.Unlock()
+	c.Flush()
+	c.Close()
 }
 
 func (c *client) size() int {
