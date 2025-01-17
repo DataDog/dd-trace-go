@@ -12,6 +12,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"os/exec"
+	"strings"
 	"testing"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
@@ -94,7 +95,7 @@ func runFlakyTestRetriesTests(m *testing.M) {
 
 	// 1 session span
 	// 1 module span
-	// 2 suite span (testing_test.go and reflections_test.go)
+	// 4 suite span (testing_test.go, testify_test.go, testify_test.go/MySuite and reflections_test.go)
 	// 5 tests from reflections_test.go
 	// 1 TestMyTest01
 	// 1 TestMyTest02 + 2 subtests
@@ -104,10 +105,13 @@ func runFlakyTestRetriesTests(m *testing.M) {
 	// 1 TestRetryWithFail + 3 retry tests from testing_test.go
 	// 1 TestNormalPassingAfterRetryAlwaysFail
 	// 1 TestEarlyFlakeDetection
+	// 3 tests from testify_test.go and testify_test.go/MySuite
 
 	// check spans by resource name
 	checkSpansByResourceName(finishedSpans, "gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/integrations/gotesting", 1)
 	checkSpansByResourceName(finishedSpans, "reflections_test.go", 1)
+	checkSpansByResourceName(finishedSpans, "testify_test.go", 1)
+	checkSpansByResourceName(finishedSpans, "testify_test.go/MySuite", 1)
 	checkSpansByResourceName(finishedSpans, "testing_test.go", 1)
 	checkSpansByResourceName(finishedSpans, "testing_test.go.TestMyTest01", 1)
 	checkSpansByResourceName(finishedSpans, "testing_test.go.TestMyTest02", 1)
@@ -122,6 +126,14 @@ func runFlakyTestRetriesTests(m *testing.M) {
 	checkSpansByResourceName(finishedSpans, "testing_test.go.TestRetryWithFail", 4)
 	checkSpansByResourceName(finishedSpans, "testing_test.go.TestNormalPassingAfterRetryAlwaysFail", 1)
 	checkSpansByResourceName(finishedSpans, "testing_test.go.TestEarlyFlakeDetection", 1)
+	checkSpansByResourceName(finishedSpans, "testify_test.go.TestTestifyLikeTest", 1)
+	testifySub01 := checkSpansByResourceName(finishedSpans, "testify_test.go/MySuite.TestTestifyLikeTest/TestMySuite", 1)[0]
+	checkSpansByResourceName(finishedSpans, "testify_test.go/MySuite.TestTestifyLikeTest/TestMySuite/sub01", 1)
+
+	// check that testify span has the correct source file
+	if !strings.HasSuffix(testifySub01.Tag("test.source.file").(string), "/testify_test.go") {
+		panic(fmt.Sprintf("source file should be testify_test.go, got %s", testifySub01.Tag("test.source.file").(string)))
+	}
 
 	// check spans by tag
 	checkSpansByTagName(finishedSpans, constants.TestIsRetry, 6)
@@ -131,8 +143,8 @@ func runFlakyTestRetriesTests(m *testing.M) {
 		28,
 		1,
 		1,
-		2,
-		24,
+		4,
+		27,
 		0)
 
 	fmt.Println("All tests passed.")
@@ -171,7 +183,7 @@ func runEarlyFlakyTestDetectionTests(m *testing.M) {
 
 	// 1 session span
 	// 1 module span
-	// 2 suite span (testing_test.go and reflections_test.go)
+	// 4 suite span (testing_test.go, testify_test.go, testify_test.go/MySuite and reflections_test.go)
 	// 5 tests from reflections_test.go
 	// 11 TestMyTest01
 	// 11 TestMyTest02 + 22 subtests
@@ -182,10 +194,13 @@ func runEarlyFlakyTestDetectionTests(m *testing.M) {
 	// 11 TestNormalPassingAfterRetryAlwaysFail
 	// 11 TestEarlyFlakeDetection
 	// 22 normal spans from testing_test.go
+	// 33 tests from testify_test.go and testify_test.go/MySuite
 
 	// check spans by resource name
 	checkSpansByResourceName(finishedSpans, "gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/integrations/gotesting", 1)
 	checkSpansByResourceName(finishedSpans, "reflections_test.go", 1)
+	checkSpansByResourceName(finishedSpans, "testify_test.go", 1)
+	checkSpansByResourceName(finishedSpans, "testify_test.go/MySuite", 1)
 	checkSpansByResourceName(finishedSpans, "testing_test.go", 1)
 	checkSpansByResourceName(finishedSpans, "testing_test.go.TestMyTest01", 11)
 	checkSpansByResourceName(finishedSpans, "testing_test.go.TestMyTest02", 11)
@@ -200,18 +215,26 @@ func runEarlyFlakyTestDetectionTests(m *testing.M) {
 	checkSpansByResourceName(finishedSpans, "testing_test.go.TestRetryWithFail", 11)
 	checkSpansByResourceName(finishedSpans, "testing_test.go.TestNormalPassingAfterRetryAlwaysFail", 11)
 	checkSpansByResourceName(finishedSpans, "testing_test.go.TestEarlyFlakeDetection", 11)
+	checkSpansByResourceName(finishedSpans, "testify_test.go.TestTestifyLikeTest", 11)
+	testifySub01 := checkSpansByResourceName(finishedSpans, "testify_test.go/MySuite.TestTestifyLikeTest/TestMySuite", 11)[0]
+	checkSpansByResourceName(finishedSpans, "testify_test.go/MySuite.TestTestifyLikeTest/TestMySuite/sub01", 11)
+
+	// check that testify span has the correct source file
+	if !strings.HasSuffix(testifySub01.Tag("test.source.file").(string), "/testify_test.go") {
+		panic(fmt.Sprintf("source file should be testify_test.go, got %s", testifySub01.Tag("test.source.file").(string)))
+	}
 
 	// check spans by tag
-	checkSpansByTagName(finishedSpans, constants.TestIsNew, 143)
-	checkSpansByTagName(finishedSpans, constants.TestIsRetry, 130)
+	checkSpansByTagName(finishedSpans, constants.TestIsNew, 176)
+	checkSpansByTagName(finishedSpans, constants.TestIsRetry, 160)
 
 	// check spans by type
 	checkSpansByType(finishedSpans,
 		152,
 		1,
 		1,
-		2,
-		148,
+		4,
+		181,
 		0)
 
 	fmt.Println("All tests passed.")
@@ -241,6 +264,13 @@ func runFlakyTestRetriesWithEarlyFlakyTestDetectionTests(m *testing.M) {
 					"TestRetryAlwaysFail",
 					"TestNormalPassingAfterRetryAlwaysFail",
 				},
+				"testify_test.go": []string{
+					"TestTestifyLikeTest",
+				},
+				"testify_test.go/MySuite": []string{
+					"TestTestifyLikeTest/TestMySuite",
+					"TestTestifyLikeTest/TestMySuite/sub01",
+				},
 			},
 		},
 	}, false, nil)
@@ -264,7 +294,7 @@ func runFlakyTestRetriesWithEarlyFlakyTestDetectionTests(m *testing.M) {
 
 	// 1 session span
 	// 1 module span
-	// 2 suite span (testing_test.go and reflections_test.go)
+	// 4 suite span (testing_test.go, testify_test.go, testify_test.go/MySuite and reflections_test.go)
 	// 5 tests from reflections_test.go
 	// 1 TestMyTest01
 	// 1 TestMyTest02 + 2 subtests
@@ -276,10 +306,13 @@ func runFlakyTestRetriesWithEarlyFlakyTestDetectionTests(m *testing.M) {
 	// 1 TestNormalPassingAfterRetryAlwaysFail
 	// 1 TestEarlyFlakeDetection + 10 EFD retries
 	// 2 normal spans from testing_test.go
+	// 3 tests from testify_test.go and testify_test.go/MySuite
 
 	// check spans by resource name
 	checkSpansByResourceName(finishedSpans, "gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/integrations/gotesting", 1)
 	checkSpansByResourceName(finishedSpans, "reflections_test.go", 1)
+	checkSpansByResourceName(finishedSpans, "testify_test.go", 1)
+	checkSpansByResourceName(finishedSpans, "testify_test.go/MySuite", 1)
 	checkSpansByResourceName(finishedSpans, "testing_test.go", 1)
 	checkSpansByResourceName(finishedSpans, "testing_test.go.TestMyTest01", 1)
 	checkSpansByResourceName(finishedSpans, "testing_test.go.TestMyTest02", 1)
@@ -294,6 +327,14 @@ func runFlakyTestRetriesWithEarlyFlakyTestDetectionTests(m *testing.M) {
 	checkSpansByResourceName(finishedSpans, "testing_test.go.TestRetryWithFail", 4)
 	checkSpansByResourceName(finishedSpans, "testing_test.go.TestNormalPassingAfterRetryAlwaysFail", 1)
 	checkSpansByResourceName(finishedSpans, "testing_test.go.TestEarlyFlakeDetection", 11)
+	checkSpansByResourceName(finishedSpans, "testify_test.go.TestTestifyLikeTest", 1)
+	testifySub01 := checkSpansByResourceName(finishedSpans, "testify_test.go/MySuite.TestTestifyLikeTest/TestMySuite", 1)[0]
+	checkSpansByResourceName(finishedSpans, "testify_test.go/MySuite.TestTestifyLikeTest/TestMySuite/sub01", 1)
+
+	// check that testify span has the correct source file
+	if !strings.HasSuffix(testifySub01.Tag("test.source.file").(string), "/testify_test.go") {
+		panic(fmt.Sprintf("source file should be testify_test.go, got %s", testifySub01.Tag("test.source.file").(string)))
+	}
 
 	// check spans by tag
 	checkSpansByTagName(finishedSpans, constants.TestIsNew, 11)
@@ -304,8 +345,8 @@ func runFlakyTestRetriesWithEarlyFlakyTestDetectionTests(m *testing.M) {
 		38,
 		1,
 		1,
-		2,
-		34,
+		4,
+		37,
 		0)
 
 	fmt.Println("All tests passed.")
@@ -361,7 +402,7 @@ func runIntelligentTestRunnerTests(m *testing.M) {
 
 	// 1 session span
 	// 1 module span
-	// 2 suite span (testing_test.go and reflections_test.go)
+	// 4 suite span (testing_test.go, testify_test.go, testify_test.go/MySuite and reflections_test.go)
 	// 5 tests from reflections_test.go
 	// 1 TestMyTest01
 	// 1 TestMyTest02
@@ -372,10 +413,13 @@ func runIntelligentTestRunnerTests(m *testing.M) {
 	// 1 TestRetryAlwaysFail
 	// 1 TestNormalPassingAfterRetryAlwaysFail
 	// 1 TestEarlyFlakeDetection
+	// 3 tests from testify_test.go and testify_test.go/MySuite
 
 	// check spans by resource name
 	checkSpansByResourceName(finishedSpans, "gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/integrations/gotesting", 1)
 	checkSpansByResourceName(finishedSpans, "reflections_test.go", 1)
+	checkSpansByResourceName(finishedSpans, "testify_test.go", 1)
+	checkSpansByResourceName(finishedSpans, "testify_test.go/MySuite", 1)
 	checkSpansByResourceName(finishedSpans, "testing_test.go", 1)
 	checkSpansByResourceName(finishedSpans, "reflections_test.go.TestGetFieldPointerFrom", 1)
 	checkSpansByResourceName(finishedSpans, "reflections_test.go.TestGetInternalTestArray", 1)
@@ -395,6 +439,14 @@ func runIntelligentTestRunnerTests(m *testing.M) {
 	checkSpansByResourceName(finishedSpans, "testing_test.go.TestRetryWithFail", 1)
 	checkSpansByResourceName(finishedSpans, "testing_test.go.TestNormalPassingAfterRetryAlwaysFail", 1)
 	checkSpansByResourceName(finishedSpans, "testing_test.go.TestEarlyFlakeDetection", 1)
+	checkSpansByResourceName(finishedSpans, "testify_test.go.TestTestifyLikeTest", 1)
+	testifySub01 := checkSpansByResourceName(finishedSpans, "testify_test.go/MySuite.TestTestifyLikeTest/TestMySuite", 1)[0]
+	checkSpansByResourceName(finishedSpans, "testify_test.go/MySuite.TestTestifyLikeTest/TestMySuite/sub01", 1)
+
+	// check that testify span has the correct source file
+	if !strings.HasSuffix(testifySub01.Tag("test.source.file").(string), "/testify_test.go") {
+		panic(fmt.Sprintf("source file should be testify_test.go, got %s", testifySub01.Tag("test.source.file").(string)))
+	}
 
 	// check ITR spans
 	// 5 tests skipped by ITR and 1 normal skipped test
@@ -411,8 +463,8 @@ func runIntelligentTestRunnerTests(m *testing.M) {
 		17,
 		1,
 		1,
-		2,
-		13,
+		4,
+		16,
 		0)
 
 	fmt.Println("All tests passed.")
