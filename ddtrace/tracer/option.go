@@ -677,7 +677,10 @@ func udsClient(socketPath string, timeout time.Duration) *http.Client {
 
 // defaultDogstatsdAddr returns the default connection address for Dogstatsd.
 func defaultDogstatsdAddr() string {
-	envHost, envPort := os.Getenv("DD_AGENT_HOST"), os.Getenv("DD_DOGSTATSD_PORT")
+	envHost, envPort := os.Getenv("DD_DOGSTATSD_HOST"), os.Getenv("DD_DOGSTATSD_PORT")
+	if envHost == "" {
+		envHost = os.Getenv("DD_AGENT_HOST")
+	}
 	if _, err := os.Stat(defaultSocketDSD); err == nil && envHost == "" && envPort == "" {
 		// socket exists and user didn't specify otherwise via env vars
 		return "unix://" + defaultSocketDSD
