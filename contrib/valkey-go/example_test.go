@@ -18,6 +18,8 @@ import (
 // To start tracing Valkey, simply create a new client using the library and continue
 // using as you normally would.
 func Example() {
+	tracer.Start()
+	defer tracer.Stop()
 	vk, err := valkeytrace.NewClient(valkey.ClientOption{
 		InitAddress: []string{"localhost:6379"},
 	})
