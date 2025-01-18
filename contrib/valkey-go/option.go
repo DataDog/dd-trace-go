@@ -3,8 +3,6 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
-// Package redis provides tracing functions for tracing the go-redis/redis package (https://github.com/go-redis/redis).
-// This package supports versions up to go-redis 6.15.
 package valkey
 
 import (
