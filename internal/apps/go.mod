@@ -4,7 +4,7 @@ go 1.23.0
 
 require (
 	golang.org/x/sync v0.10.0
-	gopkg.in/DataDog/dd-trace-go.v1 v1.64.0
+	gopkg.in/DataDog/dd-trace-go.v1 v1.70.3
 )
 
 require (
