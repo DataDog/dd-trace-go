@@ -18,6 +18,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 )
 
@@ -38,6 +39,7 @@ type coreClient struct {
 	valkey.Client
 	option       valkey.ClientOption
 	clientConfig clientConfig
+	spanName     string
 	host         string
 	port         int
 }
@@ -70,6 +72,7 @@ func NewClient(option valkey.ClientOption, opts ...ClientOption) (valkey.Client,
 		Client:       valkeyClient,
 		option:       option,
 		clientConfig: cfg,
+		spanName:     namingschema.OpName(namingschema.ValkeyOutbound),
 		host:         host,
 		port:         port,
 	}
@@ -224,7 +227,7 @@ func (c *coreClient) buildStartSpanOptions(input buildStartSpanOptionsInput) []t
 
 func (c *coreClient) Do(ctx context.Context, cmd valkey.Completed) (resp valkey.ValkeyResult) {
 	command, statement, size := processCmd(&cmd)
-	span, ctx := tracer.StartSpanFromContext(ctx, c.clientConfig.spanName, c.buildStartSpanOptions(buildStartSpanOptionsInput{
+	span, ctx := tracer.StartSpanFromContext(ctx, c.spanName, c.buildStartSpanOptions(buildStartSpanOptionsInput{
 		command:        command,
 		statement:      statement,
 		size:           size,
@@ -240,7 +243,7 @@ func (c *coreClient) Do(ctx context.Context, cmd valkey.Completed) (resp valkey.
 
 func (c *coreClient) DoMulti(ctx context.Context, multi ...valkey.Completed) (resp []valkey.ValkeyResult) {
 	command, statement, size := processMultiCompleted(multi...)
-	span, ctx := tracer.StartSpanFromContext(ctx, c.clientConfig.spanName, c.buildStartSpanOptions(buildStartSpanOptionsInput{
+	span, ctx := tracer.StartSpanFromContext(ctx, c.spanName, c.buildStartSpanOptions(buildStartSpanOptionsInput{
 		command:        command,
 		statement:      statement,
 		size:           size,
@@ -254,7 +257,7 @@ func (c *coreClient) DoMulti(ctx context.Context, multi ...valkey.Completed) (re
 
 func (c *coreClient) Receive(ctx context.Context, subscribe valkey.Completed, fn func(msg valkey.PubSubMessage)) (err error) {
 	command, statement, size := processCmd(&subscribe)
-	span, ctx := tracer.StartSpanFromContext(ctx, c.clientConfig.spanName, c.buildStartSpanOptions(buildStartSpanOptionsInput{
+	span, ctx := tracer.StartSpanFromContext(ctx, c.spanName, c.buildStartSpanOptions(buildStartSpanOptionsInput{
 		command:        command,
 		statement:      statement,
 		size:           size,
@@ -269,7 +272,7 @@ func (c *coreClient) Receive(ctx context.Context, subscribe valkey.Completed, fn
 
 func (c *client) DoCache(ctx context.Context, cmd valkey.Cacheable, ttl time.Duration) (resp valkey.ValkeyResult) {
 	command, statement, size := processCmd(&cmd)
-	span, ctx := tracer.StartSpanFromContext(ctx, c.clientConfig.spanName, c.buildStartSpanOptions(buildStartSpanOptionsInput{
+	span, ctx := tracer.StartSpanFromContext(ctx, c.spanName, c.buildStartSpanOptions(buildStartSpanOptionsInput{
 		command:        command,
 		statement:      statement,
 		size:           size,
@@ -284,7 +287,7 @@ func (c *client) DoCache(ctx context.Context, cmd valkey.Cacheable, ttl time.Dur
 
 func (c *client) DoMultiCache(ctx context.Context, multi ...valkey.CacheableTTL) (resp []valkey.ValkeyResult) {
 	command, statement, size := processMultiCacheableTTL(multi...)
-	span, ctx := tracer.StartSpanFromContext(ctx, c.clientConfig.spanName, c.buildStartSpanOptions(buildStartSpanOptionsInput{
+	span, ctx := tracer.StartSpanFromContext(ctx, c.spanName, c.buildStartSpanOptions(buildStartSpanOptionsInput{
 		command:        command,
 		statement:      statement,
 		size:           size,
@@ -298,7 +301,7 @@ func (c *client) DoMultiCache(ctx context.Context, multi ...valkey.CacheableTTL)
 
 func (c *client) DoStream(ctx context.Context, cmd valkey.Completed) (resp valkey.ValkeyResultStream) {
 	command, statement, size := processCmd(&cmd)
-	span, ctx := tracer.StartSpanFromContext(ctx, c.clientConfig.spanName, c.buildStartSpanOptions(buildStartSpanOptionsInput{
+	span, ctx := tracer.StartSpanFromContext(ctx, c.spanName, c.buildStartSpanOptions(buildStartSpanOptionsInput{
 		command:        command,
 		statement:      statement,
 		size:           size,
@@ -314,7 +317,7 @@ func (c *client) DoStream(ctx context.Context, cmd valkey.Completed) (resp valke
 
 func (c *client) DoMultiStream(ctx context.Context, multi ...valkey.Completed) (resp valkey.MultiValkeyResultStream) {
 	command, statement, size := processMultiCompleted(multi...)
-	span, ctx := tracer.StartSpanFromContext(ctx, c.clientConfig.spanName, c.buildStartSpanOptions(buildStartSpanOptionsInput{
+	span, ctx := tracer.StartSpanFromContext(ctx, c.spanName, c.buildStartSpanOptions(buildStartSpanOptionsInput{
 		command:        command,
 		statement:      statement,
 		size:           size,

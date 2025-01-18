@@ -9,11 +9,9 @@ import (
 	"math"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
 )
 
 type clientConfig struct {
-	spanName      string
 	analyticsRate float64
 	skipRaw       bool
 }
@@ -22,7 +20,6 @@ type clientConfig struct {
 type ClientOption func(*clientConfig)
 
 func defaults(cfg *clientConfig) {
-	cfg.spanName = namingschema.OpName(namingschema.ValkeyOutbound)
 	if internal.BoolEnv("DD_TRACE_VALKEY_ANALYTICS_ENABLED", false) {
 		cfg.analyticsRate = 1.0
 	} else {
