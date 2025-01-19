@@ -48,11 +48,11 @@ func ResetCfg() {
 
 func newConfig() config {
 	c := config{
-		queryString:       !internal.BoolEnv(envQueryStringDisabled, false),
-		queryStringRegexp: QueryStringRegexp(),
-		traceClientIP:     internal.BoolEnv(envTraceClientIPEnabled, false),
-		isStatusError:     isServerError,
-    inferredProxyServicesEnabled: internal.BoolEnv(envInferredProxyServicesEnabled, false),
+		queryString:                  !internal.BoolEnv(envQueryStringDisabled, false),
+		queryStringRegexp:            QueryStringRegexp(),
+		traceClientIP:                internal.BoolEnv(envTraceClientIPEnabled, false),
+		isStatusError:                isServerError,
+		inferredProxyServicesEnabled: internal.BoolEnv(envInferredProxyServicesEnabled, false),
 	}
 	v := os.Getenv(envServerErrorStatuses)
 	if fn := GetErrorCodesFromInput(v); fn != nil {

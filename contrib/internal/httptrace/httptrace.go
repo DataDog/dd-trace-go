@@ -10,6 +10,7 @@ package httptrace
 import (
 	"context"
 	"fmt"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -45,22 +46,32 @@ func StartRequestSpan(r *http.Request, opts ...ddtrace.StartSpanOption) (tracer.
 	spanParentCtx, spanParentErr := tracer.Extract(tracer.HTTPHeadersCarrier(r.Header))
 	spanLinksCtx, spanLinksOk := spanParentCtx.(ddtrace.SpanContextWithLinks)
 
-	var inferredProxySpan tracer.Span = nil
+	var inferredProxySpan tracer.Span
+	inferredProxySpanCreated := false
 
-	if cfg.inferredProxyServicesEnabled {
-		inferredStartSpanOpts := make([]ddtrace.StartSpanOption, 0, 1)
+	if created, ok := r.Context().Value(inferredSpanCreatedCtxKey{}).(bool); ok {
+		inferredProxySpanCreated = created
+	}
+
+	if cfg.inferredProxyServicesEnabled && !inferredProxySpanCreated {
+		var inferredStartSpanOpts []ddtrace.StartSpanOption
 
 		if spanLinksOk {
 			inferredStartSpanOpts = append(inferredStartSpanOpts, tracer.WithSpanLinks(spanLinksCtx.SpanLinks()))
 		}
 
-		if inferredProxySpan = tryCreateInferredProxySpan(r.Header, spanParentCtx, inferredStartSpanOpts...); inferredProxySpan != nil {
-			r.Header.Del(ProxyHeaderSystem)
-			r.Header.Del(ProxyHeaderStartTimeMs)
-			r.Header.Del(ProxyHeaderPath)
-			r.Header.Del(ProxyHeaderHttpMethod)
-			r.Header.Del(ProxyHeaderDomain)
-			r.Header.Del(ProxyHeaderStage)
+		// Attempt to extract the inferred proxy context
+		requestProxyContext, err := extractInferredProxyContext(r.Header)
+		if err != nil {
+			log.Debug(err.Error())
+		} else {
+			// Start the inferred proxy span
+			inferredProxySpan, err = startInferredProxySpan(requestProxyContext, spanParentCtx, inferredStartSpanOpts...)
+			if err != nil {
+				log.Debug(err.Error())
+			} else {
+				inferredProxySpanCreated = true // Successfully created the span
+			}
 		}
 	}
 

@@ -12,6 +12,9 @@ package echo
 import (
 	"errors"
 	"fmt"
+	"math"
+	"net/http"
+
 	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/httptrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/options"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
@@ -19,8 +22,6 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
-	"math"
-	"net/http"
 
 	"github.com/labstack/echo"
 )

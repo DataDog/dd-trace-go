@@ -6,6 +6,7 @@
 package httptrace
 
 import (
+	"errors"
 	"fmt"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"net/http"
@@ -18,98 +19,111 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
-type StartSpanOption = ddtrace.StartSpanOption
-
+// These constants are intended to be used by tracers to extract and infer
+// parent span information for distributed tracing systems.
 const (
-	ProxyHeaderSystem      = "X-Dd-Proxy"
+	// ProxyHeaderSystem is the header used to indicate the source of the
+	// proxy. In the case of AWS API Gateway, the value of this header
+	// will always be 'aws-apigateway'.
+	ProxyHeaderSystem = "X-Dd-Proxy"
+
+	// ProxyHeaderStartTimeMs is the header used to indicate the start time
+	// of the request in milliseconds. This value corresponds to the
+	// 'context.requestTimeEpoch' in AWS API Gateway, providing a timestamp
+	// for when the request was initiated.
 	ProxyHeaderStartTimeMs = "X-Dd-Proxy-Request-Time-Ms"
-	ProxyHeaderPath        = "X-Dd-Proxy-Path"
-	ProxyHeaderHttpMethod  = "X-Dd-Proxy-Httpmethod"
-	ProxyHeaderDomain      = "X-Dd-Proxy-Domain-Name"
-	ProxyHeaderStage       = "X-Dd-Proxy-Stage"
+
+	// ProxyHeaderPath is the header used to indicate the path of the
+	// request. This value corresponds to 'context.path' in AWS API Gateway,
+	// and helps identify the resource that the request is targeting.
+	ProxyHeaderPath = "X-Dd-Proxy-Path"
+
+	// ProxyHeaderHttpMethod is the header used to indicate the HTTP method
+	// of the request (e.g., GET, POST, PUT, DELETE). This value corresponds
+	// to 'context.httpMethod' in AWS API Gateway, and provides the method
+	// used to make the request.
+	ProxyHeaderHttpMethod = "X-Dd-Proxy-Httpmethod"
+
+	// ProxyHeaderDomain is the header used to indicate the AWS domain name
+	// handling the request. This value corresponds to 'context.domainName'
+	// in AWS API Gateway, which represents the custom domain associated
+	// with the API Gateway.
+	ProxyHeaderDomain = "X-Dd-Proxy-Domain-Name"
+
+	// ProxyHeaderStage is the header used to indicate the AWS stage name
+	// for the API request. This value corresponds to 'context.stage' in
+	// AWS API Gateway, and provides the stage (e.g., dev, prod, etc.)
+	// in which the request is being processed.
+	ProxyHeaderStage = "X-Dd-Proxy-Stage"
 )
 
-type ProxyDetails struct {
-	SpanName  string `json:"spanName"`
-	Component string `json:"component"`
+type proxyDetails struct {
+	spanName  string
+	component string
+}
+
+type proxyContext struct {
+	startTime       time.Time
+	method          string
+	path            string
+	stage           string
+	domainName      string
+	proxySystemName string
 }
 
 var (
-	supportedProxies = map[string]ProxyDetails{
+	supportedProxies = map[string]proxyDetails{
 		"aws-apigateway": {
-			SpanName:  "aws.apigateway",
-			Component: "aws-apigateway",
+			spanName:  "aws.apigateway",
+			component: "aws-apigateway",
 		},
 	}
 )
 
-type ProxyContext struct {
-	RequestTime     string `json:"requestTime"`
-	Method          string `json:"method"`
-	Path            string `json:"path"`
-	Stage           string `json:"stage"`
-	DomainName      string `json:"domainName"`
-	ProxySystemName string `json:"proxySystemName"`
-}
-
-func extractInferredProxyContext(headers http.Header) *ProxyContext {
+func extractInferredProxyContext(headers http.Header) (*proxyContext, error) {
 	_, exists := headers[ProxyHeaderStartTimeMs]
 	if !exists {
-		log.Debug("Proxy header start time does not exist")
-		return nil
+		return nil, errors.New("proxy header start time does not exist")
 	}
 
 	proxyHeaderSystem, exists := headers[ProxyHeaderSystem]
 	if !exists {
-		log.Debug("Proxy header system does not exist")
-		return nil
+		return nil, errors.New("proxy header system does not exist")
 	}
 
 	if _, ok := supportedProxies[proxyHeaderSystem[0]]; !ok {
-		log.Debug("Unsupported Proxy header system")
-		return nil
+		return nil, errors.New("unsupported Proxy header system")
 	}
 
-	return &ProxyContext{
-		RequestTime:     headers[ProxyHeaderStartTimeMs][0],
-		Method:          headers[ProxyHeaderHttpMethod][0],
-		Path:            headers[ProxyHeaderPath][0],
-		Stage:           headers[ProxyHeaderStage][0],
-		DomainName:      headers[ProxyHeaderDomain][0],
-		ProxySystemName: headers[ProxyHeaderSystem][0],
+	pc := proxyContext{
+		method:          headers.Get(ProxyHeaderHttpMethod),
+		path:            headers.Get(ProxyHeaderPath),
+		stage:           headers.Get(ProxyHeaderStage),
+		domainName:      headers.Get(ProxyHeaderDomain),
+		proxySystemName: headers.Get(ProxyHeaderSystem),
 	}
 
+	startTimeUnixMilli, err := strconv.ParseInt(headers[ProxyHeaderStartTimeMs][0], 10, 64)
+	if err != nil {
+		return nil, fmt.Errorf("error parsing time string: %v", err)
+	}
+	pc.startTime = time.UnixMilli(startTimeUnixMilli)
+
+	return &pc, nil
 }
 
-func tryCreateInferredProxySpan(headers http.Header, parent ddtrace.SpanContext, opts ...StartSpanOption) tracer.Span {
-	if headers == nil {
-		log.Debug("Headers do not exist")
-		return nil
-
-	}
-
-	requestProxyContext := extractInferredProxyContext(headers)
-	if requestProxyContext == nil {
-		log.Debug("Unable to extract inferred proxy context")
-		return nil
-	}
-
-	proxySpanInfo := supportedProxies[requestProxyContext.ProxySystemName]
+func startInferredProxySpan(requestProxyContext *proxyContext, parent ddtrace.SpanContext, opts ...ddtrace.StartSpanOption) (tracer.Span, error) {
+	proxySpanInfo := supportedProxies[requestProxyContext.proxySystemName]
 	log.Debug(`Successfully extracted inferred span info ${proxyContext} for proxy: ${proxyContext.proxySystemName}`)
 
-	startTimeUnixMilli, err := strconv.ParseInt(requestProxyContext.RequestTime, 10, 64)
-	if err != nil {
-		log.Debug("Error parsing time string: %v", err)
-		return nil
-	}
-	startTime := time.UnixMilli(startTimeUnixMilli)
+	startTime := requestProxyContext.startTime
 
-	configService := requestProxyContext.DomainName
+	configService := requestProxyContext.domainName
 	if configService == "" {
 		configService = globalconfig.ServiceName()
 	}
 
-	optsLocal := make([]StartSpanOption, len(opts), len(opts)+1)
+	optsLocal := make([]ddtrace.StartSpanOption, len(opts), len(opts)+1)
 	copy(optsLocal, opts)
 
 	optsLocal = append(optsLocal,
@@ -123,16 +137,16 @@ func tryCreateInferredProxySpan(headers http.Header, parent ddtrace.SpanContext,
 
 			cfg.Tags[ext.SpanType] = ext.SpanTypeWeb
 			cfg.Tags[ext.ServiceName] = configService
-			cfg.Tags[ext.Component] = proxySpanInfo.Component
-			cfg.Tags[ext.HTTPMethod] = requestProxyContext.Method
-			cfg.Tags[ext.HTTPURL] = requestProxyContext.DomainName + requestProxyContext.Path
-			cfg.Tags[ext.HTTPRoute] = requestProxyContext.Path
-			cfg.Tags[ext.ResourceName] = fmt.Sprintf("%s %s", requestProxyContext.Method, requestProxyContext.Path)
-			cfg.Tags["stage"] = requestProxyContext.Stage
+			cfg.Tags[ext.Component] = proxySpanInfo.component
+			cfg.Tags[ext.HTTPMethod] = requestProxyContext.method
+			cfg.Tags[ext.HTTPURL] = requestProxyContext.domainName + requestProxyContext.path
+			cfg.Tags[ext.HTTPRoute] = requestProxyContext.path
+			cfg.Tags[ext.ResourceName] = fmt.Sprintf("%s %s", requestProxyContext.method, requestProxyContext.path)
+			cfg.Tags["stage"] = requestProxyContext.stage
 		},
 	)
 
-	span := tracer.StartSpan(proxySpanInfo.SpanName, optsLocal...)
+	span := tracer.StartSpan(proxySpanInfo.spanName, optsLocal...)
 
-	return span
+	return span, nil
 }
