@@ -155,6 +155,10 @@ jobs:
           echo "GOCOVERDIR=$(mktemp -d)" >> "${GITHUB_ENV}"
         working-directory: ${{ github.workspace }}/dd-trace-go/internal/orchestrion/_integration
 
+      - name: Download modules
+        run: go mod download
+        working-directory: ${{ github.workspace }}/dd-trace-go/internal/orchestrion/_integration
+
       # Finally, we run the test suite!
       - name: Run Tests
         shell: bash
