@@ -34,7 +34,16 @@ func NewRingQueue[T any](minSize, maxSize int) *RingQueue[T] {
 }
 
 // Enqueue adds a value to the buffer.
-func (rb *RingQueue[T]) Enqueue(val T) bool {
+func (rb *RingQueue[T]) Enqueue(vals ...T) bool {
+	for _, val := range vals {
+		if !rb.enqueueLocked(val) {
+			return false
+		}
+	}
+	return true
+}
+
+func (rb *RingQueue[T]) enqueueLocked(val T) bool {
 	rb.mu.Lock()
 	defer rb.mu.Unlock()
 
@@ -82,7 +91,7 @@ func (rb *RingQueue[T]) GetBuffer() []T {
 
 // ReleaseBuffer returns the buffer to the pool.
 func (rb *RingQueue[T]) ReleaseBuffer(buf []T) {
-	rb.pool.Put(buf)
+	rb.pool.Put(buf[:cap(buf)]) // Make sure nobody reduced the length of the buffer
 }
 
 // IsEmpty returns true if the buffer is empty.

@@ -85,6 +85,7 @@ const (
 
 	defaultEarlyFlushPayloadSize = 2 * 1024 * 1024 // 2MB
 
+	// maxPayloadSize is specified by the backend to be 5MB. The goal is to never reach this value otherwise our data will be silently dropped.
 	maxPayloadSize = 5 * 1024 * 1024 // 5MB
 )
 
@@ -151,6 +152,10 @@ func defaultConfig(config ClientConfig) ClientConfig {
 
 	if !config.LogsEnabled {
 		config.LogsEnabled = globalinternal.BoolEnv("DD_TELEMETRY_LOG_COLLECTION_ENABLED", true)
+	}
+
+	if config.EarlyFlushPayloadSize == 0 {
+		config.EarlyFlushPayloadSize = defaultEarlyFlushPayloadSize
 	}
 
 	return config
