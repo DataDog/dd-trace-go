@@ -3,6 +3,14 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2024 Datadog, Inc.
 
+// This program generates the `orchestrion.tool.go` file at the root of the
+// repository, which contains the necessary directives to facilitate onboarding
+// of orchestrion. The `orchestrion.tool.go` file contains an import directive
+// for every package in `dd-trace-go` that contains an `orchestrion.yml` file.
+// Orchestrion uses this file when users import
+// `gopkg.in/DataDog/dd-trace-go.v1` in their application's
+// `orchestrion.tool.go` file, intending to enable every available feature of
+// the tracer library.
 package main
 
 import (
