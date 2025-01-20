@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/appsec/events"
+	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/httptrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/namingschematest"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
@@ -211,7 +212,7 @@ func TestRoundTripperNetworkError(t *testing.T) {
 }
 
 func TestRoundTripperNetworkErrorWithErrorCheck(t *testing.T) {
-	failedRequest := func(t *testing.T, mt mocktracer.Tracer, forwardErr bool, opts ...RoundTripperOption) mocktracer.Span {
+	failedRequest := func(t *testing.T, mt mocktracer.Tracer, forwardErr bool, _ ...RoundTripperOption) mocktracer.Span {
 		done := make(chan struct{})
 		s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			_, err := tracer.Extract(tracer.HTTPHeadersCarrier(r.Header))
@@ -652,7 +653,7 @@ func TestClientQueryStringObfuscated(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		t.Setenv(envQueryStringRegexp, "")
+		t.Setenv(httptrace.EnvQueryStringRegexp, "")
 
 		rt := WrapRoundTripper(http.DefaultTransport)
 		client := &http.Client{
@@ -670,7 +671,7 @@ func TestClientQueryStringObfuscated(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		t.Setenv(envQueryStringRegexp, "^custom")
+		t.Setenv(httptrace.EnvQueryStringRegexp, "^custom")
 
 		rt := WrapRoundTripper(http.DefaultTransport)
 		client := &http.Client{
