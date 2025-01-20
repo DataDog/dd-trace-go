@@ -155,7 +155,7 @@ jobs:
         working-directory: ${{ github.workspace }}/dd-trace-go/internal/orchestrion/_integration
 
       - name: Download modules
-        run: go mod download
+        run: go mod tidy && git diff
         working-directory: ${{ github.workspace }}/dd-trace-go/internal/orchestrion/_integration
 
       # Finally, we run the test suite!
@@ -164,7 +164,6 @@ jobs:
         run: |-
           echo "Working directory: ${PWD}"
           orchestrion version
-          go env
 
           case "${MODE}" in
           "DRIVER")
