@@ -42,6 +42,7 @@ func (pc *partitionConsumer) Messages() <-chan *sarama.ConsumerMessage {
 
 // WrapPartitionConsumer wraps a sarama.PartitionConsumer causing each received
 // message to be traced.
+// Deprecated: use `IBM/sarama` instead.
 func WrapPartitionConsumer(pc sarama.PartitionConsumer, opts ...Option) sarama.PartitionConsumer {
 	cfg := new(config)
 	defaults(cfg)
@@ -120,6 +121,7 @@ func (c *consumer) ConsumePartition(topic string, partition int32, offset int64)
 
 // WrapConsumer wraps a sarama.Consumer wrapping any PartitionConsumer created
 // via Consumer.ConsumePartition.
+// Deprecated: use `IBM/sarama` instead.
 func WrapConsumer(c sarama.Consumer, opts ...Option) sarama.Consumer {
 	return &consumer{
 		Consumer: c,
@@ -169,6 +171,7 @@ func (p *syncProducer) SendMessages(msgs []*sarama.ProducerMessage) error {
 
 // WrapSyncProducer wraps a sarama.SyncProducer so that all produced messages
 // are traced.
+// Deprecated: use `IBM/sarama` instead.
 func WrapSyncProducer(saramaConfig *sarama.Config, producer sarama.SyncProducer, opts ...Option) sarama.SyncProducer {
 	cfg := new(config)
 	defaults(cfg)
@@ -213,6 +216,7 @@ func (p *asyncProducer) Errors() <-chan *sarama.ProducerError {
 // or not successes will be returned. Tracing requires at least sarama.V0_11_0_0
 // version which is the first version that supports headers. Only spans of
 // successfully published messages have partition and offset tags set.
+// Deprecated: use `IBM/sarama` instead.
 func WrapAsyncProducer(saramaConfig *sarama.Config, p sarama.AsyncProducer, opts ...Option) sarama.AsyncProducer {
 	cfg := new(config)
 	defaults(cfg)
