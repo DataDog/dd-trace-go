@@ -30,18 +30,16 @@ func NewClient(service, env, version string, config ClientConfig) (Client, error
 		return nil, errors.New("version must not be empty")
 	}
 
+	return newClient(internal.TracerConfig{Service: service, Env: env, Version: version}, config)
+}
+
+func newClient(tracerConfig internal.TracerConfig, config ClientConfig) (*client, error) {
 	config = defaultConfig(config)
 	if err := config.validateConfig(); err != nil {
 		return nil, err
 	}
 
-	tracerConfig := internal.TracerConfig{
-		Service: service,
-		Env:     env,
-		Version: version,
-	}
-
-	writerConfig, err := NewWriterConfig(config, tracerConfig)
+	writerConfig, err := newWriterConfig(config, tracerConfig)
 	if err != nil {
 		return nil, err
 	}

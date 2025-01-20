@@ -37,6 +37,10 @@ func (t *defaultMapper) Transform(payloads []transport.Payload) ([]transport.Pay
 type messageBatchReducer struct{}
 
 func (t *messageBatchReducer) Transform(payloads []transport.Payload) ([]transport.Payload, Mapper) {
+	if len(payloads) <= 1 {
+		return payloads, t
+	}
+
 	messages := make([]transport.Message, len(payloads))
 	for _, payload := range payloads {
 		messages = append(messages, transport.Message{
