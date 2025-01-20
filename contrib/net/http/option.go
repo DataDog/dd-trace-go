@@ -10,7 +10,7 @@ import (
 	"os"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/httptrace"
-	cfg "gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http/internal/config"
+	internalconfig "gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http/internal/config"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
@@ -28,7 +28,7 @@ const (
 )
 
 // Option represents an option that can be passed to NewServeMux or WrapHandler.
-type Option = cfg.Option
+type Option = internalconfig.Option
 
 // MuxOption has been deprecated in favor of Option.
 type MuxOption = Option
@@ -36,14 +36,14 @@ type MuxOption = Option
 // WithIgnoreRequest holds the function to use for determining if the
 // incoming HTTP request should not be traced.
 func WithIgnoreRequest(f func(*http.Request) bool) MuxOption {
-	return func(cfg *cfg.Config) {
+	return func(cfg *internalconfig.Config) {
 		cfg.IgnoreRequest = f
 	}
 }
 
 // WithServiceName sets the given service name for the returned ServeMux.
 func WithServiceName(name string) MuxOption {
-	return func(cfg *cfg.Config) {
+	return func(cfg *internalconfig.Config) {
 		cfg.ServiceName = name
 	}
 }
@@ -54,14 +54,14 @@ func WithServiceName(name string) MuxOption {
 // Special headers can not be sub-selected. E.g., an entire Cookie header would be transmitted, without the ability to choose specific Cookies.
 func WithHeaderTags(headers []string) Option {
 	headerTagsMap := normalizer.HeaderTagSlice(headers)
-	return func(cfg *cfg.Config) {
+	return func(cfg *internalconfig.Config) {
 		cfg.HeaderTags = internal.NewLockMap(headerTagsMap)
 	}
 }
 
 // WithAnalytics enables Trace Analytics for all started spans.
 func WithAnalytics(on bool) MuxOption {
-	return func(cfg *cfg.Config) {
+	return func(cfg *internalconfig.Config) {
 		if on {
 			cfg.AnalyticsRate = 1.0
 			cfg.SpanOpts = append(cfg.SpanOpts, tracer.Tag(ext.EventSampleRate, cfg.AnalyticsRate))
@@ -74,7 +74,7 @@ func WithAnalytics(on bool) MuxOption {
 // WithAnalyticsRate sets the sampling rate for Trace Analytics events
 // correlated to started spans.
 func WithAnalyticsRate(rate float64) Option {
-	return func(cfg *cfg.Config) {
+	return func(cfg *internalconfig.Config) {
 		if rate >= 0.0 && rate <= 1.0 {
 			cfg.AnalyticsRate = rate
 			cfg.SpanOpts = append(cfg.SpanOpts, tracer.Tag(ext.EventSampleRate, cfg.AnalyticsRate))
@@ -87,21 +87,21 @@ func WithAnalyticsRate(rate float64) Option {
 // WithSpanOptions defines a set of additional ddtrace.StartSpanOption to be added
 // to spans started by the integration.
 func WithSpanOptions(opts ...ddtrace.StartSpanOption) Option {
-	return func(cfg *cfg.Config) {
+	return func(cfg *internalconfig.Config) {
 		cfg.SpanOpts = append(cfg.SpanOpts, opts...)
 	}
 }
 
 // WithResourceNamer populates the name of a resource based on a custom function.
 func WithResourceNamer(namer func(req *http.Request) string) Option {
-	return cfg.WithResourceNamer(namer)
+	return internalconfig.WithResourceNamer(namer)
 }
 
 // NoDebugStack prevents stack traces from being attached to spans finishing
 // with an error. This is useful in situations where errors are frequent and
 // performance is critical.
 func NoDebugStack() Option {
-	return func(cfg *cfg.Config) {
+	return func(cfg *internalconfig.Config) {
 		cfg.FinishOpts = append(cfg.FinishOpts, tracer.NoDebugStack())
 	}
 }
@@ -247,7 +247,7 @@ func RTWithIgnoreRequest(f func(*http.Request) bool) RoundTripperOption {
 // WithStatusCheck sets a span to be an error if the passed function
 // returns true for a given status code.
 func WithStatusCheck(fn func(statusCode int) bool) Option {
-	return func(cfg *cfg.Config) {
+	return func(cfg *internalconfig.Config) {
 		cfg.IsStatusError = fn
 	}
 }
