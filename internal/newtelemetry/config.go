@@ -161,7 +161,7 @@ func defaultConfig(config ClientConfig) ClientConfig {
 	return config
 }
 
-func NewWriterConfig(config ClientConfig, tracerConfig internal.TracerConfig) (internal.WriterConfig, error) {
+func newWriterConfig(config ClientConfig, tracerConfig internal.TracerConfig) (internal.WriterConfig, error) {
 	endpoints := make([]*http.Request, 0, 2)
 	if config.AgentURL != "" {
 		baseURL, err := url.Parse(config.AgentURL)
