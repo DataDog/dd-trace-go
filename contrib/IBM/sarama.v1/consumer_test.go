@@ -6,6 +6,7 @@
 package sarama
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/IBM/sarama"
@@ -20,6 +21,7 @@ import (
 func TestWrapConsumer(t *testing.T) {
 	cfg := newIntegrationTestConfig(t)
 	cfg.Version = sarama.MinVersion
+	topic := topicName(t)
 
 	mt := mocktracer.Start()
 	defer mt.Stop()
@@ -30,12 +32,29 @@ func TestWrapConsumer(t *testing.T) {
 
 	consumer, err := sarama.NewConsumerFromClient(client)
 	require.NoError(t, err)
+	consumer = WrapConsumer(consumer, WithDataStreams())
 	defer consumer.Close()
 
-	consumer = WrapConsumer(consumer, WithDataStreams())
-
-	partitionConsumer, err := consumer.ConsumePartition("test-topic", 0, 0)
+	partitionConsumer, err := consumer.ConsumePartition(topic, 0, 0)
 	require.NoError(t, err)
+	defer partitionConsumer.Close()
+
+	p, err := sarama.NewSyncProducer(kafkaBrokers, cfg)
+	require.NoError(t, err)
+	defer func() {
+		assert.NoError(t, p.Close())
+	}()
+
+	for i := 1; i <= 2; i++ {
+		produceMsg := &sarama.ProducerMessage{
+			Topic:    topic,
+			Value:    sarama.StringEncoder(fmt.Sprintf("test %d", i)),
+			Metadata: fmt.Sprintf("test %d", i),
+		}
+		_, _, err = p.SendMessage(produceMsg)
+		require.NoError(t, err)
+	}
+
 	msg1 := <-partitionConsumer.Messages()
 	msg2 := <-partitionConsumer.Messages()
 	err = partitionConsumer.Close()
@@ -56,14 +75,14 @@ func TestWrapConsumer(t *testing.T) {
 		assert.Equal(t, int32(0), s.Tag(ext.MessagingKafkaPartition))
 		assert.NotNil(t, s.Tag("offset"))
 		assert.Equal(t, "kafka", s.Tag(ext.ServiceName))
-		assert.Equal(t, "Consume Topic test-topic", s.Tag(ext.ResourceName))
+		assert.Equal(t, "Consume Topic "+topic, s.Tag(ext.ResourceName))
 		assert.Equal(t, "queue", s.Tag(ext.SpanType))
 		assert.Equal(t, "kafka.consume", s.OperationName())
 		assert.Equal(t, "IBM/sarama", s.Tag(ext.Component))
 		assert.Equal(t, ext.SpanKindConsumer, s.Tag(ext.SpanKind))
 		assert.Equal(t, "kafka", s.Tag(ext.MessagingSystem))
 
-		assertDSMConsumerPathway(t, "test-topic", "", msg1, false)
+		assertDSMConsumerPathway(t, topic, "", msg1, false)
 	}
 	{
 		s := spans[1]
@@ -75,13 +94,13 @@ func TestWrapConsumer(t *testing.T) {
 		assert.Equal(t, int32(0), s.Tag(ext.MessagingKafkaPartition))
 		assert.NotNil(t, s.Tag("offset"))
 		assert.Equal(t, "kafka", s.Tag(ext.ServiceName))
-		assert.Equal(t, "Consume Topic test-topic", s.Tag(ext.ResourceName))
+		assert.Equal(t, "Consume Topic "+topic, s.Tag(ext.ResourceName))
 		assert.Equal(t, "queue", s.Tag(ext.SpanType))
 		assert.Equal(t, "kafka.consume", s.OperationName())
 		assert.Equal(t, "IBM/sarama", s.Tag(ext.Component))
 		assert.Equal(t, ext.SpanKindConsumer, s.Tag(ext.SpanKind))
 		assert.Equal(t, "kafka", s.Tag(ext.MessagingSystem))
 
-		assertDSMConsumerPathway(t, "test-topic", "", msg2, false)
+		assertDSMConsumerPathway(t, topic, "", msg2, false)
 	}
 }

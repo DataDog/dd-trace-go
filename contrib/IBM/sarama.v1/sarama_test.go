@@ -9,6 +9,7 @@ import (
 	"context"
 	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/namingschematest"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -25,17 +26,13 @@ var (
 	kafkaBrokers = []string{"localhost:9092"}
 )
 
-const (
-	testGroupID = "gotest_ibm_sarama"
-	testTopic   = "gotest_ibm_sarama"
-)
-
 func TestNamingSchema(t *testing.T) {
 	namingschematest.NewKafkaTest(genTestSpans)(t)
 }
 
 func genTestSpans(t *testing.T, serviceOverride string) []mocktracer.Span {
 	cfg := newIntegrationTestConfig(t)
+	topic := topicName(t)
 
 	var opts []Option
 	if serviceOverride != "" {
@@ -47,25 +44,31 @@ func genTestSpans(t *testing.T, serviceOverride string) []mocktracer.Span {
 	producer, err := sarama.NewSyncProducer(kafkaBrokers, cfg)
 	require.NoError(t, err)
 	producer = WrapSyncProducer(cfg, producer, opts...)
+	defer func() {
+		assert.NoError(t, producer.Close())
+	}()
 
 	c, err := sarama.NewConsumer(kafkaBrokers, cfg)
 	require.NoError(t, err)
-	defer func(c sarama.Consumer) {
-		err := c.Close()
-		require.NoError(t, err)
-	}(c)
 	c = WrapConsumer(c, opts...)
+	defer func() {
+		assert.NoError(t, c.Close())
+	}()
 
 	msg1 := &sarama.ProducerMessage{
-		Topic:    "test-topic",
+		Topic:    topic,
 		Value:    sarama.StringEncoder("test 1"),
 		Metadata: "test",
 	}
 	_, _, err = producer.SendMessage(msg1)
 	require.NoError(t, err)
 
-	pc, err := c.ConsumePartition("test-topic", 0, 0)
+	pc, err := c.ConsumePartition(topic, 0, 0)
 	require.NoError(t, err)
+	defer func() {
+		assert.NoError(t, pc.Close())
+	}()
+
 	_ = <-pc.Messages()
 	err = pc.Close()
 	require.NoError(t, err)
@@ -142,11 +145,16 @@ func assertDSMConsumerPathway(t *testing.T, topic, groupID string, msg *sarama.C
 
 	ctx := context.Background()
 	if withProducer {
-		ctx, _ = tracer.SetDataStreamsCheckpoint(context.Background(), "direction:out", "topic:"+testTopic, "type:kafka")
+		ctx, _ = tracer.SetDataStreamsCheckpoint(context.Background(), "direction:out", "topic:"+topicName(t), "type:kafka")
 	}
 	ctx, _ = tracer.SetDataStreamsCheckpoint(ctx, edgeTags...)
 	want, _ := datastreams.PathwayFromContext(ctx)
 
 	assert.NotEqual(t, want.GetHash(), 0)
 	assert.Equal(t, want.GetHash(), got.GetHash())
+}
+
+// topicName returns a unique topic name for the current test, which ensures results are not affected by each other.
+func topicName(t *testing.T) string {
+	return strings.ReplaceAll("IBM/sarama/"+t.Name(), "/", "_")
 }

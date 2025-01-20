@@ -18,6 +18,7 @@ import (
 
 func TestSyncProducer(t *testing.T) {
 	cfg := newIntegrationTestConfig(t)
+	topic := topicName(t)
 
 	mt := mocktracer.Start()
 	defer mt.Stop()
@@ -25,9 +26,12 @@ func TestSyncProducer(t *testing.T) {
 	producer, err := sarama.NewSyncProducer(kafkaBrokers, cfg)
 	require.NoError(t, err)
 	producer = WrapSyncProducer(cfg, producer, WithDataStreams())
+	defer func() {
+		assert.NoError(t, producer.Close())
+	}()
 
 	msg1 := &sarama.ProducerMessage{
-		Topic:    "my_topic",
+		Topic:    topic,
 		Value:    sarama.StringEncoder("test 1"),
 		Metadata: "test",
 	}
@@ -40,7 +44,7 @@ func TestSyncProducer(t *testing.T) {
 		s := spans[0]
 		assert.Equal(t, "kafka", s.Tag(ext.ServiceName))
 		assert.Equal(t, "queue", s.Tag(ext.SpanType))
-		assert.Equal(t, "Produce Topic my_topic", s.Tag(ext.ResourceName))
+		assert.Equal(t, "Produce Topic "+topic, s.Tag(ext.ResourceName))
 		assert.Equal(t, "kafka.produce", s.OperationName())
 		assert.Equal(t, int32(0), s.Tag(ext.MessagingKafkaPartition))
 		assert.NotNil(t, s.Tag("offset"))
@@ -48,12 +52,13 @@ func TestSyncProducer(t *testing.T) {
 		assert.Equal(t, ext.SpanKindProducer, s.Tag(ext.SpanKind))
 		assert.Equal(t, "kafka", s.Tag(ext.MessagingSystem))
 
-		assertDSMProducerPathway(t, "my_topic", msg1)
+		assertDSMProducerPathway(t, topic, msg1)
 	}
 }
 
 func TestSyncProducerSendMessages(t *testing.T) {
 	cfg := newIntegrationTestConfig(t)
+	topic := topicName(t)
 
 	mt := mocktracer.Start()
 	defer mt.Stop()
@@ -61,14 +66,17 @@ func TestSyncProducerSendMessages(t *testing.T) {
 	producer, err := sarama.NewSyncProducer(kafkaBrokers, cfg)
 	require.NoError(t, err)
 	producer = WrapSyncProducer(cfg, producer, WithDataStreams())
+	defer func() {
+		assert.NoError(t, producer.Close())
+	}()
 
 	msg1 := &sarama.ProducerMessage{
-		Topic:    "my_topic",
+		Topic:    topic,
 		Value:    sarama.StringEncoder("test 1"),
 		Metadata: "test",
 	}
 	msg2 := &sarama.ProducerMessage{
-		Topic:    "my_topic",
+		Topic:    topic,
 		Value:    sarama.StringEncoder("test 2"),
 		Metadata: "test",
 	}
@@ -80,7 +88,7 @@ func TestSyncProducerSendMessages(t *testing.T) {
 	for _, s := range spans {
 		assert.Equal(t, "kafka", s.Tag(ext.ServiceName))
 		assert.Equal(t, "queue", s.Tag(ext.SpanType))
-		assert.Equal(t, "Produce Topic my_topic", s.Tag(ext.ResourceName))
+		assert.Equal(t, "Produce Topic "+topic, s.Tag(ext.ResourceName))
 		assert.Equal(t, "kafka.produce", s.OperationName())
 		assert.Equal(t, int32(0), s.Tag(ext.MessagingKafkaPartition))
 		assert.Equal(t, "IBM/sarama", s.Tag(ext.Component))
@@ -89,7 +97,7 @@ func TestSyncProducerSendMessages(t *testing.T) {
 	}
 
 	for _, msg := range []*sarama.ProducerMessage{msg1, msg2} {
-		assertDSMProducerPathway(t, "my_topic", msg)
+		assertDSMProducerPathway(t, topic, msg)
 	}
 }
 
@@ -99,6 +107,7 @@ func TestWrapAsyncProducer(t *testing.T) {
 	t.Run("Without Successes", func(t *testing.T) {
 		cfg := newIntegrationTestConfig(t)
 		cfg.Producer.Return.Successes = false
+		topic := topicName(t)
 
 		mt := mocktracer.Start()
 		defer mt.Stop()
@@ -106,9 +115,12 @@ func TestWrapAsyncProducer(t *testing.T) {
 		producer, err := sarama.NewAsyncProducer(kafkaBrokers, cfg)
 		require.NoError(t, err)
 		producer = WrapAsyncProducer(cfg, producer, WithDataStreams())
+		defer func() {
+			assert.NoError(t, producer.Close())
+		}()
 
 		msg1 := &sarama.ProducerMessage{
-			Topic: "my_topic",
+			Topic: topic,
 			Value: sarama.StringEncoder("test 1"),
 		}
 		producer.Input() <- msg1
@@ -121,7 +133,7 @@ func TestWrapAsyncProducer(t *testing.T) {
 			s := spans[0]
 			assert.Equal(t, "kafka", s.Tag(ext.ServiceName))
 			assert.Equal(t, "queue", s.Tag(ext.SpanType))
-			assert.Equal(t, "Produce Topic my_topic", s.Tag(ext.ResourceName))
+			assert.Equal(t, "Produce Topic "+topic, s.Tag(ext.ResourceName))
 			assert.Equal(t, "kafka.produce", s.OperationName())
 
 			// these tags are set in the finishProducerSpan function, but in this case it's never used, and instead we
@@ -133,13 +145,14 @@ func TestWrapAsyncProducer(t *testing.T) {
 			assert.Equal(t, ext.SpanKindProducer, s.Tag(ext.SpanKind))
 			assert.Equal(t, "kafka", s.Tag(ext.MessagingSystem))
 
-			assertDSMProducerPathway(t, "my_topic", msg1)
+			assertDSMProducerPathway(t, topic, msg1)
 		}
 	})
 
 	t.Run("With Successes", func(t *testing.T) {
 		cfg := newIntegrationTestConfig(t)
 		cfg.Producer.Return.Successes = true
+		topic := topicName(t)
 
 		mt := mocktracer.Start()
 		defer mt.Stop()
@@ -147,9 +160,12 @@ func TestWrapAsyncProducer(t *testing.T) {
 		producer, err := sarama.NewAsyncProducer(kafkaBrokers, cfg)
 		require.NoError(t, err)
 		producer = WrapAsyncProducer(cfg, producer, WithDataStreams())
+		defer func() {
+			assert.NoError(t, producer.Close())
+		}()
 
 		msg1 := &sarama.ProducerMessage{
-			Topic: "my_topic",
+			Topic: topic,
 			Value: sarama.StringEncoder("test 1"),
 		}
 		producer.Input() <- msg1
@@ -161,7 +177,7 @@ func TestWrapAsyncProducer(t *testing.T) {
 			s := spans[0]
 			assert.Equal(t, "kafka", s.Tag(ext.ServiceName))
 			assert.Equal(t, "queue", s.Tag(ext.SpanType))
-			assert.Equal(t, "Produce Topic my_topic", s.Tag(ext.ResourceName))
+			assert.Equal(t, "Produce Topic "+topic, s.Tag(ext.ResourceName))
 			assert.Equal(t, "kafka.produce", s.OperationName())
 			assert.Equal(t, int32(0), s.Tag(ext.MessagingKafkaPartition))
 			assert.NotNil(t, s.Tag("offset"))
@@ -169,7 +185,7 @@ func TestWrapAsyncProducer(t *testing.T) {
 			assert.Equal(t, ext.SpanKindProducer, s.Tag(ext.SpanKind))
 			assert.Equal(t, "kafka", s.Tag(ext.MessagingSystem))
 
-			assertDSMProducerPathway(t, "my_topic", msg1)
+			assertDSMProducerPathway(t, topic, msg1)
 		}
 	})
 }
