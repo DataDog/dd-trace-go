@@ -167,6 +167,7 @@ jobs:
         run: |-
           echo "Working directory: ${PWD}"
           orchestrion version
+          go env
 
           case "${MODE}" in
           "DRIVER")
