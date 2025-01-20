@@ -218,3 +218,17 @@ jobs:
         with:
           name: coverage-integration+${{ matrix.mode }}+go${{ steps.go.outputs.version }}+${{ runner.os }}+${{ runner.arch }}
           path: ${{ github.workspace }}/orchestrion/coverage/integration.out
+
+  # This is a simple join point to make it easy to set up branch protection rules in GitHub.
+  integration-test-done:
+    name: Orchestrion Integration Tests
+    needs: integration-test
+    runs-on: ubuntu-latest
+    if: success() || failure()
+    steps:
+      - name: Success
+        if: needs.integration-test.result == 'success'
+        run: echo "Success!"
+      - name: Failure
+        if: needs.integration-test.result != 'success'
+        run: echo "Failure!" && exit 1
