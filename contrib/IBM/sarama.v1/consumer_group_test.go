@@ -8,7 +8,6 @@ package sarama
 import (
 	"context"
 	"log"
-	"os"
 	"sync"
 	"testing"
 
@@ -21,17 +20,10 @@ import (
 )
 
 func TestWrapConsumerGroupHandler(t *testing.T) {
-	if _, ok := os.LookupEnv("INTEGRATION"); !ok {
-		t.Skip("🚧 Skipping integration test (INTEGRATION environment variable is not set)")
-	}
+	cfg := newIntegrationTestConfig(t)
 
 	mt := mocktracer.Start()
 	defer mt.Stop()
-
-	cfg := sarama.NewConfig()
-	cfg.Version = sarama.V0_11_0_0 // first version that supports headers
-	cfg.Producer.Return.Successes = true
-	cfg.Producer.Flush.Messages = 1
 
 	cg, err := sarama.NewConsumerGroup(kafkaBrokers, testGroupID, cfg)
 	require.NoError(t, err)

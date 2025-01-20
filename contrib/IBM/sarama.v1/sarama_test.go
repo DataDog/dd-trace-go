@@ -8,6 +8,7 @@ package sarama
 import (
 	"context"
 	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/namingschematest"
+	"os"
 	"testing"
 	"time"
 
@@ -20,7 +21,9 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-var kafkaBrokers = []string{"localhost:9092", "localhost:9093", "localhost:9094"}
+var (
+	kafkaBrokers = []string{"localhost:9092"}
+)
 
 const (
 	testGroupID = "gotest_ibm_sarama"
@@ -32,6 +35,8 @@ func TestNamingSchema(t *testing.T) {
 }
 
 func genTestSpans(t *testing.T, serviceOverride string) []mocktracer.Span {
+	cfg := newIntegrationTestConfig(t)
+
 	var opts []Option
 	if serviceOverride != "" {
 		opts = append(opts, WithServiceName(serviceOverride))
@@ -39,31 +44,11 @@ func genTestSpans(t *testing.T, serviceOverride string) []mocktracer.Span {
 	mt := mocktracer.Start()
 	defer mt.Stop()
 
-	broker := sarama.NewMockBroker(t, 1)
-	defer broker.Close()
-
-	broker.SetHandlerByMap(map[string]sarama.MockResponse{
-		"MetadataRequest": sarama.NewMockMetadataResponse(t).
-			SetBroker(broker.Addr(), broker.BrokerID()).
-			SetLeader("test-topic", 0, broker.BrokerID()),
-		"OffsetRequest": sarama.NewMockOffsetResponse(t).
-			SetOffset("test-topic", 0, sarama.OffsetOldest, 0).
-			SetOffset("test-topic", 0, sarama.OffsetNewest, 1),
-		"FetchRequest": sarama.NewMockFetchResponse(t, 1).
-			SetMessage("test-topic", 0, 0, sarama.StringEncoder("hello")),
-		"ProduceRequest": sarama.NewMockProduceResponse(t).
-			SetError("test-topic", 0, sarama.ErrNoError),
-	})
-	cfg := sarama.NewConfig()
-	cfg.Version = sarama.MinVersion
-	cfg.Producer.Return.Successes = true
-	cfg.Producer.Flush.Messages = 1
-
-	producer, err := sarama.NewSyncProducer([]string{broker.Addr()}, cfg)
+	producer, err := sarama.NewSyncProducer(kafkaBrokers, cfg)
 	require.NoError(t, err)
 	producer = WrapSyncProducer(cfg, producer, opts...)
 
-	c, err := sarama.NewConsumer([]string{broker.Addr()}, cfg)
+	c, err := sarama.NewConsumer(kafkaBrokers, cfg)
 	require.NoError(t, err)
 	defer func(c sarama.Consumer) {
 		err := c.Close()
@@ -86,28 +71,23 @@ func genTestSpans(t *testing.T, serviceOverride string) []mocktracer.Span {
 	require.NoError(t, err)
 	// wait for the channel to be closed
 	<-pc.Messages()
+	waitForSpans(mt, 2)
 
 	spans := mt.FinishedSpans()
 	require.Len(t, spans, 2)
 	return spans
 }
 
-func newMockBroker(t *testing.T) *sarama.MockBroker {
-	broker := sarama.NewMockBroker(t, 1)
-
-	metadataResponse := new(sarama.MetadataResponse)
-	metadataResponse.Version = 1
-	metadataResponse.AddBroker(broker.Addr(), broker.BrokerID())
-	metadataResponse.AddTopicPartition("my_topic", 0, broker.BrokerID(), nil, nil, nil, sarama.ErrNoError)
-	broker.Returns(metadataResponse)
-
-	prodSuccess := new(sarama.ProduceResponse)
-	prodSuccess.Version = 2
-	prodSuccess.AddTopicPartition("my_topic", 0, sarama.ErrNoError)
-	for i := 0; i < 10; i++ {
-		broker.Returns(prodSuccess)
+func newIntegrationTestConfig(t *testing.T) *sarama.Config {
+	if _, ok := os.LookupEnv("INTEGRATION"); !ok {
+		t.Skip("🚧 Skipping integration test (INTEGRATION environment variable is not set)")
 	}
-	return broker
+
+	cfg := sarama.NewConfig()
+	cfg.Version = sarama.V0_11_0_0 // first version that supports headers
+	cfg.Producer.Return.Successes = true
+	cfg.Producer.Flush.Messages = 1
+	return cfg
 }
 
 // waitForSpans polls the mock tracer until the expected number of spans

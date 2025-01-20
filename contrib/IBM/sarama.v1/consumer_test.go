@@ -18,27 +18,13 @@ import (
 )
 
 func TestWrapConsumer(t *testing.T) {
+	cfg := newIntegrationTestConfig(t)
+	cfg.Version = sarama.MinVersion
+
 	mt := mocktracer.Start()
 	defer mt.Stop()
 
-	broker := sarama.NewMockBroker(t, 0)
-	defer broker.Close()
-
-	broker.SetHandlerByMap(map[string]sarama.MockResponse{
-		"MetadataRequest": sarama.NewMockMetadataResponse(t).
-			SetBroker(broker.Addr(), broker.BrokerID()).
-			SetLeader("test-topic", 0, broker.BrokerID()),
-		"OffsetRequest": sarama.NewMockOffsetResponse(t).
-			SetOffset("test-topic", 0, sarama.OffsetOldest, 0).
-			SetOffset("test-topic", 0, sarama.OffsetNewest, 1),
-		"FetchRequest": sarama.NewMockFetchResponse(t, 1).
-			SetMessage("test-topic", 0, 0, sarama.StringEncoder("hello")).
-			SetMessage("test-topic", 0, 1, sarama.StringEncoder("world")),
-	})
-	cfg := sarama.NewConfig()
-	cfg.Version = sarama.MinVersion
-
-	client, err := sarama.NewClient([]string{broker.Addr()}, cfg)
+	client, err := sarama.NewClient(kafkaBrokers, cfg)
 	require.NoError(t, err)
 	defer client.Close()
 
@@ -56,6 +42,7 @@ func TestWrapConsumer(t *testing.T) {
 	require.NoError(t, err)
 	// wait for the channel to be closed
 	<-partitionConsumer.Messages()
+	waitForSpans(mt, 2)
 
 	spans := mt.FinishedSpans()
 	require.Len(t, spans, 2)
@@ -67,7 +54,7 @@ func TestWrapConsumer(t *testing.T) {
 			"span context should be injected into the consumer message headers")
 
 		assert.Equal(t, int32(0), s.Tag(ext.MessagingKafkaPartition))
-		assert.Equal(t, int64(0), s.Tag("offset"))
+		assert.NotNil(t, s.Tag("offset"))
 		assert.Equal(t, "kafka", s.Tag(ext.ServiceName))
 		assert.Equal(t, "Consume Topic test-topic", s.Tag(ext.ResourceName))
 		assert.Equal(t, "queue", s.Tag(ext.SpanType))
@@ -86,7 +73,7 @@ func TestWrapConsumer(t *testing.T) {
 			"span context should be injected into the consumer message headers")
 
 		assert.Equal(t, int32(0), s.Tag(ext.MessagingKafkaPartition))
-		assert.Equal(t, int64(1), s.Tag("offset"))
+		assert.NotNil(t, s.Tag("offset"))
 		assert.Equal(t, "kafka", s.Tag(ext.ServiceName))
 		assert.Equal(t, "Consume Topic test-topic", s.Tag(ext.ResourceName))
 		assert.Equal(t, "queue", s.Tag(ext.SpanType))
