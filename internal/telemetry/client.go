@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"os"
 	"runtime"
 	"runtime/debug"
 	"strings"
@@ -21,7 +22,6 @@ import (
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/hostname"
 	logger "gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/osinfo"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
@@ -79,9 +79,16 @@ var (
 
 	// LogPrefix specifies the prefix for all telemetry logging
 	LogPrefix = "Instrumentation telemetry: "
+
+	hostname string
 )
 
 func init() {
+	var err error
+	hostname, err = os.Hostname()
+	if err != nil {
+		hostname = "unknown"
+	}
 	GlobalClient = new(client)
 }
 
@@ -459,7 +466,6 @@ func (c *client) flush(sync bool) {
 // sent through this Client
 func (c *client) newRequest(t RequestType) *Request {
 	c.seqID++
-	hostname := hostname.Get()
 	body := &Body{
 		APIVersion:  "v2",
 		RequestType: t,
