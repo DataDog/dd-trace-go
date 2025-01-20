@@ -154,8 +154,11 @@ jobs:
           echo "GOCOVERDIR=$(mktemp -d)" >> "${GITHUB_ENV}"
         working-directory: ${{ github.workspace }}/dd-trace-go/internal/orchestrion/_integration
 
-      - name: Download modules
-        run: go mod tidy && git diff
+      # Run a `go mod tidy` because GitHub will run this on a candidate merge commit, and if there
+      # have been dependecy updates on the `main` branch, the `go.mod` and `go.sum` files for the
+      # integration test suite may no longer be up-to-date.
+      - name: Run 'go mod tidy'
+        run: go mod tidy
         working-directory: ${{ github.workspace }}/dd-trace-go/internal/orchestrion/_integration
 
       # Finally, we run the test suite!

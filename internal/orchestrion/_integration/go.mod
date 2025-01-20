@@ -18,7 +18,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/dynamodb v1.38.1
 	github.com/cenkalti/backoff/v4 v4.3.0
 	github.com/confluentinc/confluent-kafka-go v1.9.2
-	github.com/confluentinc/confluent-kafka-go/v2 v2.2.0
+	github.com/confluentinc/confluent-kafka-go/v2 v2.4.0
 	github.com/docker/go-connections v0.5.0
 	github.com/elastic/go-elasticsearch/v6 v6.8.5
 	github.com/elastic/go-elasticsearch/v7 v7.17.1
@@ -32,7 +32,7 @@ require (
 	github.com/gofiber/fiber/v2 v2.52.6
 	github.com/gomodule/redigo v1.9.2
 	github.com/google/uuid v1.6.0
-	github.com/gorilla/mux v1.8.0
+	github.com/gorilla/mux v1.8.1
 	github.com/graph-gophers/graphql-go v1.5.0
 	github.com/graphql-go/graphql v0.8.1
 	github.com/graphql-go/handler v0.2.3
