@@ -91,9 +91,6 @@ jobs:
             mode: GOFLAGS
     name: Integration Test (${{ matrix.runs-on }} | ${{ matrix.go-version }} | ${{ matrix.mode }})
     runs-on: ${{ matrix.runs-on == 'ubuntu' && fromJson('{"labels":"ubuntu-16-core-latest","group":"Large Runner Shared Public"}') || (matrix.runs-on == 'windows' && fromJson('{"labels":"windows-shared-8core","group":"LARGE WINDOWS SHARED"}')) || format('{0}-latest', matrix.runs-on) }}
-    env:
-      # Ryuk is problematic with concurrent executions, and unnecessary in ephemeral environments like GHA.
-      TESTCONTAINERS_RYUK_DISABLED: true
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -101,13 +98,25 @@ jobs:
           path: ${{ github.workspace }}/dd-trace-go
           repository: ${{ inputs.orchestrion-version != '' && 'DataDog/dd-trace-go' || github.repository }}
           ref: ${{ inputs.orchestrion-version != '' && 'romain.marcadier/APPSEC-55160/orchestrion' || github.sha }} # TODO: Change to `main` in workflow_call case
+      # If we're in workflow_dispatch/call, maybe we need to up/downgrade orchestrion
+      - name: Check out orchestrion
+        if: inputs.orchestrion-version != ''
+        id: checkout-orchestrion
+        uses: actions/checkout@v4
+        with:
+          path: ${{ github.workspace }}/orchestrion
+          repository: DataDog/orchestrion
+          ref: ${{ inputs.orchestrion-version }}
+
       - name: Setup Go
         id: setup-go
         uses: actions/setup-go@v5
         with:
           go-version: ${{ matrix.go-version }}
           cache: true
-          cache-dependency-path: '${{ github.workspace }}/dd-trace-go/internal/orchestrion/_integration/go.mod'
+          cache-dependency-path: |-
+            ${{ github.workspace }}/dd-trace-go/internal/orchestrion/_integration/go.mod
+            ${{ github.workspace }}/orchestrion/go.mod
 
       # ddapm-test-agent is used to observe side effects from the tracer during integration tests.
       - name: Set up Python
@@ -119,15 +128,6 @@ jobs:
       - name: Install ddapm-test-agent
         run: pip install -r ${{ github.workspace }}/dd-trace-go/internal/orchestrion/_integration/internal/agent/requirements-dev.txt
 
-      # If we're in workflow_dispatch/call, maybe we need to up/downgrade orchestrion
-      - name: Check out orchestrion
-        if: inputs.orchestrion-version != ''
-        id: checkout-orchestrion
-        uses: actions/checkout@v4
-        with:
-          path: ${{ github.workspace }}/orchestrion
-          repository: DataDog/orchestrion
-          ref: ${{ inputs.orchestrion-version }}
       - name: Set up orchestrion
         if: inputs.orchestrion-version != ''
         run: |-
@@ -139,8 +139,7 @@ jobs:
       # We install the binary to the GOBIN, so it's easy to use
       - name: Install orchestrion binary
         if: '!inputs.collect-coverage'
-        run: |-
-          go install "github.com/DataDog/orchestrion"
+        run: go install "github.com/DataDog/orchestrion"
         working-directory: ${{ github.workspace }}/dd-trace-go/internal/orchestrion/_integration
       - name: Build orchestrion binary
         if: inputs.collect-coverage
@@ -163,14 +162,19 @@ jobs:
       - name: Run Tests
         shell: bash
         run: |-
+          echo "Working directory: ${PWD}"
+
           case "${MODE}" in
           "DRIVER")
+            echo "Starting test suite in DRIVER mode"
             orchestrion go test -shuffle=on ./...
             ;;
           "TOOLEXEC")
+            echo "Starting test suite in TOOLEXEC mode"
             go test -shuffle=on -toolexec='orchestrion toolexec' ./...
             ;;
           "GOFLAGS")
+            echo "Starting test suite in GOFLAGS mode"
             export GOFLAGS="${GOFLAGS} '-toolexec=orchestrion toolexec'"
             go test -shuffle=on ./...
             ;;
@@ -180,9 +184,15 @@ jobs:
           esac
         working-directory: ${{ github.workspace }}/dd-trace-go/internal/orchestrion/_integration
         env:
-          GOFLAGS: -timeout=30m ${{ matrix.runs-on == 'ubuntu' && '-p=4' || '' }} -tags=githubci${{ matrix.mode == 'DRIVER' && ',buildtag' || ''}} # The "buildtag" tag is used in //dd:span integration tests
           MODE: ${{ matrix.mode }}
-          DD_ORCHESTRION_IS_GOMOD_VERSION: true # Prevent auto-respawn, which is problematic with installs from commit SHA
+          # The "buildtag" tag is used in //dd:span integration tests
+          GOFLAGS: -timeout=30m ${{ matrix.runs-on == 'ubuntu' && '-p=4' || '' }} -tags=githubci${{ matrix.mode == 'DRIVER' && ',buildtag' || ''}}
+          # Prevent auto-respawn, which is problematic with installs from commit SHA
+          DD_ORCHESTRION_IS_GOMOD_VERSION: true
+          # Ryuk is problematic with concurrent executions, and unnecessary in ephemeral environments like GHA.
+          TESTCONTAINERS_RYUK_DISABLED: true
+          # TODO: Remove
+          ORCHESTRION_LOG_LEVEL: debug
 
       # If in workflow_call, we collected coverage data we need to upload
       - name: Consolidate coverage report
