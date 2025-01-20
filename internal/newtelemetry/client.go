@@ -11,6 +11,7 @@ import (
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/newtelemetry/internal"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/newtelemetry/internal/mapper"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/newtelemetry/internal/transport"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/newtelemetry/types"
 )
@@ -51,18 +52,24 @@ func NewClient(service, env, version string, config ClientConfig) (Client, error
 	}
 
 	client := &client{
-		tracerConfig:     tracerConfig,
-		writer:           writer,
-		clientConfig:     config,
-		flushTransformer: internal.MessageBatchTransformer,
+		tracerConfig: tracerConfig,
+		writer:       writer,
+		clientConfig: config,
+		flushMapper:  mapper.NewDefaultMapper(config.HeartbeatInterval),
+		// This means that, by default, we incur dataloss if we spend ~30mins without flushing, considering we send telemetry data this looks reasonable.
+		// This also means that in the worst case scenario, memory-wise, the app is stabilized after running for 30mins.
+		payloadQueue: internal.NewRingQueue[transport.Payload](4, 32),
 	}
 
-	client.ticker = internal.NewTicker(client, config.FlushIntervalRange.Min, config.FlushIntervalRange.Max)
 	client.dataSources = append(client.dataSources,
 		&client.integrations,
 		&client.products,
 		&client.configuration,
 	)
+
+	client.flushTicker = internal.NewTicker(func() {
+		client.Flush()
+	}, config.FlushIntervalRange.Min, config.FlushIntervalRange.Max)
 
 	return client, nil
 }
@@ -76,17 +83,19 @@ type client struct {
 	integrations  integrations
 	products      products
 	configuration configuration
-
-	dataSources []interface {
+	dataSources   []interface {
 		Payload() transport.Payload
-		Size() int
 	}
 
-	ticker *internal.Ticker
+	flushTicker     *internal.Ticker
+	heartbeatTicker *internal.Ticker
 
-	// flushTransformer is the transformer to use for the next flush
-	flushTransformer   internal.Transformer
-	flushTransformerMu sync.Mutex
+	// flushMapper is the transformer to use for the next flush on the gather payloads on this tick
+	flushMapper   mapper.Mapper
+	flushMapperMu sync.Mutex
+
+	// payloadQueue is used when we cannot flush previously built payloads
+	payloadQueue *internal.RingQueue[transport.Payload]
 }
 
 func (c *client) MarkIntegrationAsLoaded(integration Integration) {
@@ -144,7 +153,7 @@ func (c *client) Config() ClientConfig {
 	return c.clientConfig
 }
 
-func (c *client) Flush() (int, error) {
+func (c *client) Flush() {
 	var payloads []transport.Payload
 	for _, ds := range c.dataSources {
 		if payload := ds.Payload(); payload != nil {
@@ -152,69 +161,81 @@ func (c *client) Flush() (int, error) {
 		}
 	}
 
-	return c.flush(payloads)
+	_, _ = c.flush(payloads)
 }
 
-// flush sends all the data sources to the writer by let them flow through the given wrapper function.
-// The wrapper function is used to transform the payloads before sending them to the writer.
+// flush sends all the data sources to the writer by let them flow through the given transformer function.
+// The transformer function is used to transform the payloads before sending them to the writer.
 func (c *client) flush(payloads []transport.Payload) (int, error) {
-	if len(payloads) == 0 {
-		return 0, nil
-	}
-
-	// Always add the Heartbeat to the payloads
-	payloads = append(payloads, transport.AppHeartbeat{})
-
 	// Transform the payloads
 	{
-		c.flushTransformerMu.Lock()
-		payloads, c.flushTransformer = c.flushTransformer.Transform(payloads)
-		c.flushTransformerMu.Unlock()
+		c.flushMapperMu.Lock()
+		payloads, c.flushMapper = c.flushMapper.Transform(payloads)
+		c.flushMapperMu.Unlock()
 	}
 
+	c.payloadQueue.Enqueue(payloads...)
+	payloads = c.payloadQueue.GetBuffer()
+	defer c.payloadQueue.ReleaseBuffer(payloads)
+
 	var (
-		nbBytes int
-		err     error
+		nbBytes       int
+		nonFatalErros []error
 	)
 
-	for _, payload := range payloads {
-		nbBytesOfPayload, payloadErr := c.writer.Flush(payload)
+	for i, payload := range payloads {
+		if payload == nil {
+			continue
+		}
+
+		nbBytesOfPayload, err := c.writer.Flush(payload)
 		if nbBytes > 0 {
-			log.Debug("non-fatal error while flushing telemetry data: %v", err)
+			nonFatalErros = append(nonFatalErros, err)
 			err = nil
 		}
 
+		if err != nil {
+			// We stop flushing when we encounter a fatal error, put the payloads in the
+			log.Error("error while flushing telemetry data: %v", err)
+			c.payloadQueue.Enqueue(payloads[i:]...)
+			return nbBytes, err
+		}
+
+		if nbBytesOfPayload > c.clientConfig.EarlyFlushPayloadSize {
+			// We increase the speed of the flushTicker to try to flush the remaining payloads faster as we are at risk of sending too large payloads to the backend
+			c.flushTicker.IncreaseSpeed()
+		}
+
 		nbBytes += nbBytesOfPayload
-		err = errors.Join(err, payloadErr)
 	}
 
-	return nbBytes, err
+	if len(nonFatalErros) > 0 {
+		log.Debug("non-fatal error while flushing telemetry data: %v", errors.Join(nonFatalErros...))
+	}
+
+	return nbBytes, nil
 }
 
 func (c *client) appStart() {
-	c.flushTransformerMu.Lock()
-	defer c.flushTransformerMu.Unlock()
-	c.flushTransformer = internal.AppStartedTransformer
+	c.flushMapperMu.Lock()
+	defer c.flushMapperMu.Unlock()
+
+	// Wrap the current flushMapper with the AppStartedMapper so we can add the app-started event to the payloads using available payloads at the time of the call one minute later
+	c.flushMapper = mapper.NewAppStartedMapper(c.flushMapper)
 }
 
 func (c *client) appStop() {
-	c.flushTransformerMu.Lock()
-	c.flushTransformer = internal.AppClosingTransformer
-	c.flushTransformerMu.Unlock()
+	c.flushMapperMu.Lock()
+	c.flushMapper = mapper.NewAppClosingMapper(c.flushMapper)
+	c.flushMapperMu.Unlock()
+
+	// Flush locks the flushMapperMu mutex, so we need to call it outside the lock
 	c.Flush()
 	c.Close()
 }
 
-func (c *client) size() int {
-	size := 0
-	for _, ds := range c.dataSources {
-		size += ds.Size()
-	}
-	return size
-}
-
 func (c *client) Close() error {
-	c.ticker.Stop()
+	c.flushTicker.Stop()
 	return nil
 }
 

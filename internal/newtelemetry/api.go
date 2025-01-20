@@ -96,9 +96,7 @@ type Client interface {
 	MarkIntegrationAsLoaded(integration Integration)
 
 	// Flush closes the client and flushes any remaining data.
-	// Flush returns the number of bytes sent and an error if any.
-	// Any error returned means that the data was not sent.
-	Flush() (int, error)
+	Flush()
 
 	// appStart sends the telemetry necessary to signal that the app is starting.
 	appStart()

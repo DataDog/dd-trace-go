@@ -10,9 +10,7 @@ import (
 	"time"
 )
 
-type flusher interface {
-	Flush() (int, error)
-}
+type TickFunc func()
 
 type Ticker struct {
 	*time.Ticker
@@ -23,10 +21,10 @@ type Ticker struct {
 	maxInterval time.Duration
 	minInterval time.Duration
 
-	flusher flusher
+	tickFunc TickFunc
 }
 
-func NewTicker(flusher flusher, minInterval, maxInterval time.Duration) *Ticker {
+func NewTicker(tickFunc TickFunc, minInterval, maxInterval time.Duration) *Ticker {
 	ticker := &Ticker{
 		Ticker:    time.NewTicker(maxInterval),
 		tickSpeed: maxInterval,
@@ -34,26 +32,30 @@ func NewTicker(flusher flusher, minInterval, maxInterval time.Duration) *Ticker 
 		maxInterval: maxInterval,
 		minInterval: minInterval,
 
-		flusher: flusher,
+		tickFunc: tickFunc,
 	}
 
 	go func() {
 		for range ticker.C {
-			_, err := flusher.Flush()
-			if err != nil {
-				// Reset the interval to the maximum value
-				ticker.AdjustTickSpeed(maxInterval)
-			}
+			tickFunc()
 		}
 	}()
 
 	return ticker
 }
 
-func (t *Ticker) AdjustTickSpeed(interval time.Duration) {
+func (t *Ticker) IncreaseSpeed() {
 	t.tickSpeedMu.Lock()
 	defer t.tickSpeedMu.Unlock()
 
-	t.tickSpeed = interval
-	t.Reset(interval)
+	t.tickSpeed = max(t.tickSpeed/2, t.minInterval)
+	t.Reset(t.tickSpeed)
+}
+
+func (t *Ticker) DecreaseSpeed() {
+	t.tickSpeedMu.Lock()
+	defer t.tickSpeedMu.Unlock()
+
+	t.tickSpeed = min(t.tickSpeed*2, t.maxInterval)
+	t.Reset(t.tickSpeed)
 }

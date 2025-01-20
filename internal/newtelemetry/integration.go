@@ -14,14 +14,12 @@ import (
 type integrations struct {
 	mu           sync.Mutex
 	integrations []Integration
-	size         int
 }
 
 func (i *integrations) Add(integration Integration) {
 	i.mu.Lock()
 	defer i.mu.Unlock()
 	i.integrations = append(i.integrations, integration)
-	i.size += len(integration.Name) + len(integration.Version) + len(integration.Error)
 }
 
 func (i *integrations) Payload() transport.Payload {
@@ -41,14 +39,7 @@ func (i *integrations) Payload() transport.Payload {
 		}
 	}
 	i.integrations = nil
-	i.size = 0
 	return transport.AppIntegrationChange{
 		Integrations: integrations,
 	}
-}
-
-func (i *integrations) Size() int {
-	i.mu.Lock()
-	defer i.mu.Unlock()
-	return i.size
 }
