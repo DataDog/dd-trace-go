@@ -34,7 +34,7 @@ meta:
     ```
 
 extends:
-  - ../../internal/orchestrion/_.orchestrion.yml
+  - ../../internal/orchestrion/gls.orchestrion.yml
 
 aspects:
   # Automatically manage the tracer lifecycle
