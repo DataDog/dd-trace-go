@@ -8,6 +8,7 @@ package newtelemetry
 import (
 	"sync/atomic"
 
+	globalinternal "gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/newtelemetry/types"
 )
 
@@ -17,6 +18,10 @@ var (
 
 // StartApp starts the telemetry client with the given client send the app-started telemetry and sets it as the global (*client).
 func StartApp(client Client) error {
+	if Disabled() {
+		return nil
+	}
+
 	client.appStart()
 	SwapClient(client)
 	return nil
@@ -24,6 +29,10 @@ func StartApp(client Client) error {
 
 // SwapClient swaps the global client with the given client and Flush the old (*client).
 func SwapClient(client Client) {
+	if Disabled() {
+		return
+	}
+
 	if oldClient := globalClient.Swap(&client); oldClient != nil && *oldClient != nil {
 		(*oldClient).Close()
 	}
@@ -31,12 +40,27 @@ func SwapClient(client Client) {
 
 // StopApp creates the app-stopped telemetry, adding to the queue and Flush all the queue before stopping the (*client).
 func StopApp() {
+	if Disabled() {
+		return
+	}
+
 	if client := globalClient.Swap(nil); client != nil && *client != nil {
 		(*client).appStop()
 	}
 }
 
+// Disabled returns whether instrumentation telemetry is disabled
+// according to the DD_INSTRUMENTATION_TELEMETRY_ENABLED env var
+func Disabled() bool {
+	return !globalinternal.BoolEnv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", true)
+}
+
+// Count creates a new metric handle for the given parameters that can be used to submit values.
 func Count(namespace types.Namespace, name string, tags map[string]string) MetricHandle {
+	if Disabled() {
+		return nil
+	}
+
 	if client := globalClient.Load(); client != nil && *client != nil {
 		return (*client).Count(namespace, name, tags)
 	}
@@ -46,6 +70,10 @@ func Count(namespace types.Namespace, name string, tags map[string]string) Metri
 
 // Rate creates a new metric handle for the given parameters that can be used to submit values.
 func Rate(namespace types.Namespace, name string, tags map[string]string) MetricHandle {
+	if Disabled() {
+		return nil
+	}
+
 	if client := globalClient.Load(); client != nil && *client != nil {
 		return (*client).Rate(namespace, name, tags)
 	}
@@ -55,6 +83,10 @@ func Rate(namespace types.Namespace, name string, tags map[string]string) Metric
 
 // Gauge creates a new metric handle for the given parameters that can be used to submit values.
 func Gauge(namespace types.Namespace, name string, tags map[string]string) MetricHandle {
+	if Disabled() {
+		return nil
+	}
+
 	if client := globalClient.Load(); client != nil && *client != nil {
 		return (*client).Gauge(namespace, name, tags)
 	}
@@ -64,6 +96,10 @@ func Gauge(namespace types.Namespace, name string, tags map[string]string) Metri
 
 // Distribution creates a new metric handle for the given parameters that can be used to submit values.
 func Distribution(namespace types.Namespace, name string, tags map[string]string) MetricHandle {
+	if Disabled() {
+		return nil
+	}
+
 	if client := globalClient.Load(); client != nil && *client != nil {
 		return (*client).Distribution(namespace, name, tags)
 	}
@@ -73,6 +109,10 @@ func Distribution(namespace types.Namespace, name string, tags map[string]string
 
 // Logger returns an implementation of the TelemetryLogger interface which sends telemetry logs.
 func Logger() TelemetryLogger {
+	if Disabled() {
+		return nil
+	}
+
 	if client := globalClient.Load(); client != nil && *client != nil {
 		return (*client).Logger()
 	}
@@ -82,6 +122,10 @@ func Logger() TelemetryLogger {
 
 // ProductStarted declares a product to have started at the customer’s request
 func ProductStarted(product types.Namespace) {
+	if Disabled() {
+		return
+	}
+
 	if client := globalClient.Load(); client != nil && *client != nil {
 		(*client).ProductStarted(product)
 	}
@@ -89,6 +133,10 @@ func ProductStarted(product types.Namespace) {
 
 // ProductStopped declares a product to have being stopped by the customer
 func ProductStopped(product types.Namespace) {
+	if Disabled() {
+		return
+	}
+
 	if client := globalClient.Load(); client != nil && *client != nil {
 		(*client).ProductStopped(product)
 	}
@@ -96,6 +144,10 @@ func ProductStopped(product types.Namespace) {
 
 // ProductStartError declares that a product could not start because of the following error
 func ProductStartError(product types.Namespace, err error) {
+	if Disabled() {
+		return
+	}
+
 	if client := globalClient.Load(); client != nil && *client != nil {
 		(*client).ProductStartError(product, err)
 	}
@@ -104,6 +156,10 @@ func ProductStartError(product types.Namespace, err error) {
 // AddAppConfig adds a key value pair to the app configuration and send the change to telemetry
 // value has to be json serializable and the origin is the source of the change.
 func AddAppConfig(key string, value any, origin types.Origin) {
+	if Disabled() {
+		return
+	}
+
 	if client := globalClient.Load(); client != nil && *client != nil {
 		(*client).AddAppConfig(key, value, origin)
 	}
@@ -112,6 +168,10 @@ func AddAppConfig(key string, value any, origin types.Origin) {
 // AddBulkAppConfig adds a list of key value pairs to the app configuration and sends the change to telemetry.
 // Same as AddAppConfig but for multiple values.
 func AddBulkAppConfig(kvs map[string]any, origin types.Origin) {
+	if Disabled() {
+		return
+	}
+
 	if client := globalClient.Load(); client != nil && *client != nil {
 		(*client).AddBulkAppConfig(kvs, origin)
 	}
