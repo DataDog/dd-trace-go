@@ -146,6 +146,10 @@ func NewWriter(config WriterConfig) (Writer, error) {
 // https://github.com/DataDog/instrumentation-telemetry-api-docs/blob/cf17b41a30fbf31d54e2cfbfc983875d58b02fe1/GeneratedDocumentation/ApiDocs/v2/overview.md#required-http-headers
 func preBakeRequest(body *transport.Body, endpoint *http.Request) *http.Request {
 	clonedEndpoint := endpoint.Clone(context.Background())
+	if clonedEndpoint.Header == nil {
+		clonedEndpoint.Header = make(http.Header, 11)
+	}
+
 	for key, val := range map[string]string{
 		"Content-Type":               "application/json",
 		"DD-Telemetry-API-Version":   body.APIVersion,
@@ -216,12 +220,12 @@ func (w *writer) Flush(payload transport.Payload) (int, error) {
 		sumRead int
 	)
 	for _, endpoint := range w.endpoints {
-		sumRead = 0
 		request := w.newRequest(endpoint, payload)
 		request.Body = &SumReaderCloser{ReadCloser: request.Body, n: &sumRead}
 		response, err := w.httpClient.Do(request)
 		if err != nil {
-			errs = append(errs, fmt.Errorf("telemetry/writer: while trying endpoint %q: %w", request.URL.String(), err))
+			errs = append(errs, fmt.Errorf("telemetry/writer: %w", err))
+			sumRead = 0
 			continue
 		}
 
@@ -231,7 +235,8 @@ func (w *writer) Flush(payload transport.Payload) (int, error) {
 
 		if response.StatusCode >= 300 || response.StatusCode < 200 {
 			respBodyBytes, _ := io.ReadAll(response.Body) // maybe we can find an error reason in the response body
-			errs = append(errs, fmt.Errorf("telemetry/writer: while trying endpoint %q: unexpected status code: %q (received body: %q)", request.URL.String(), response.Status, string(respBodyBytes)))
+			errs = append(errs, fmt.Errorf("telemetry/writer: unexpected status code: %q (received body: %q)", response.Status, string(respBodyBytes)))
+			sumRead = 0
 			continue
 		}
 
