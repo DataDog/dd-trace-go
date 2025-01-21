@@ -154,10 +154,6 @@ type buildStartSpanOptionsInput struct {
 	command        string
 	statement      string
 	size           int
-	isWrite        bool
-	isBlock        bool
-	isMulti        bool
-	isStream       bool
 	skipRawCommand bool
 }
 
@@ -191,11 +187,6 @@ func (c *coreClient) buildStartSpanOptions(input buildStartSpanOptionsInput) []t
 		tracer.Tag(ext.DBSystem, ext.DBSystemValkey),
 		tracer.Tag(ext.DBInstance, ext.DBSystemValkey),
 		tracer.Tag(ext.ValkeyDatabaseIndex, c.option.SelectDB),
-		tracer.Tag(ext.ValkeyClientCommandWrite, input.isWrite),
-		tracer.Tag(ext.ValkeyClientCommandBlock, input.isBlock),
-		tracer.Tag(ext.ValkeyClientCommandMulti, input.isMulti),
-		tracer.Tag(ext.ValkeyClientCommandStream, input.isStream),
-		tracer.Tag(ext.ValkeyClientCommandWithPassword, c.option.Password != ""),
 	}
 	opts = append(opts, c.peerTags()...)
 	if input.command != "" {
@@ -227,8 +218,6 @@ func (c *coreClient) Do(ctx context.Context, cmd valkey.Completed) (resp valkey.
 		command:        command,
 		statement:      statement,
 		size:           size,
-		isWrite:        cmd.IsWrite(),
-		isBlock:        cmd.IsBlock(),
 		skipRawCommand: c.clientConfig.skipRaw,
 	})...)
 	resp = c.Client.Do(ctx, cmd)
@@ -243,7 +232,6 @@ func (c *coreClient) DoMulti(ctx context.Context, multi ...valkey.Completed) (re
 		command:        command,
 		statement:      statement,
 		size:           size,
-		isMulti:        true,
 		skipRawCommand: c.clientConfig.skipRaw,
 	})...)
 	resp = c.Client.DoMulti(ctx, multi...)
@@ -257,8 +245,6 @@ func (c *coreClient) Receive(ctx context.Context, subscribe valkey.Completed, fn
 		command:        command,
 		statement:      statement,
 		size:           size,
-		isWrite:        subscribe.IsWrite(),
-		isBlock:        subscribe.IsBlock(),
 		skipRawCommand: c.clientConfig.skipRaw,
 	})...)
 	err = c.Client.Receive(ctx, subscribe, fn)
@@ -272,7 +258,6 @@ func (c *client) DoCache(ctx context.Context, cmd valkey.Cacheable, ttl time.Dur
 		command:        command,
 		statement:      statement,
 		size:           size,
-		isMulti:        cmd.IsMGet(),
 		skipRawCommand: c.clientConfig.skipRaw,
 	})...)
 	resp = c.Client.DoCache(ctx, cmd, ttl)
@@ -287,7 +272,6 @@ func (c *client) DoMultiCache(ctx context.Context, multi ...valkey.CacheableTTL)
 		command:        command,
 		statement:      statement,
 		size:           size,
-		isWrite:        true,
 		skipRawCommand: c.clientConfig.skipRaw,
 	})...)
 	resp = c.Client.DoMultiCache(ctx, multi...)
@@ -301,9 +285,6 @@ func (c *client) DoStream(ctx context.Context, cmd valkey.Completed) (resp valke
 		command:        command,
 		statement:      statement,
 		size:           size,
-		isWrite:        cmd.IsWrite(),
-		isBlock:        cmd.IsBlock(),
-		isStream:       true,
 		skipRawCommand: c.clientConfig.skipRaw,
 	})...)
 	resp = c.Client.DoStream(ctx, cmd)
@@ -317,8 +298,6 @@ func (c *client) DoMultiStream(ctx context.Context, multi ...valkey.Completed) (
 		command:        command,
 		statement:      statement,
 		size:           size,
-		isMulti:        true,
-		isStream:       true,
 		skipRawCommand: c.clientConfig.skipRaw,
 	})...)
 	resp = c.Client.DoMultiStream(ctx, multi...)

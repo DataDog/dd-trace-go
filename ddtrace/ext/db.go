@@ -80,21 +80,6 @@ const (
 
 	// ValkeyClientCachePXAT is the remaining PXAT in seconds of client side cache.
 	ValkeyClientCachePXAT = "db.valkey.client.cache.pxat"
-
-	// ValkeyClientCommandWrite indicates whether a command involves a write operation.
-	ValkeyClientCommandWrite = "db.valkey.client.command.write"
-
-	// ValkeyClientCommandBlock indicates whether a command is blocking.
-	ValkeyClientCommandBlock = "db.valkey.client.command.block"
-
-	// ValkeyClientCommandMulti specifies whether multiple Valkey commands are sent together.
-	ValkeyClientCommandMulti = "db.valkey.client.command.multi"
-
-	// ValkeyClientCommandStream indicates whether a command uses a dedicated connection to stream responses directly.
-	ValkeyClientCommandStream = "db.valkey.client.command.stream"
-
-	// ValkeyClientCommandWithPassword indicates whether a command was executed with password authentication.
-	ValkeyClientCommandWithPassword = "db.valkey.client.command.with_password"
 )
 
 // Cassandra tags.
