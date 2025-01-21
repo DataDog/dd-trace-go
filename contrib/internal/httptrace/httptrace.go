@@ -66,12 +66,8 @@ func StartRequestSpan(r *http.Request, opts ...ddtrace.StartSpanOption) (tracer.
 			log.Debug(err.Error())
 		} else {
 			// Start the inferred proxy span
-			inferredProxySpan, err = startInferredProxySpan(requestProxyContext, spanParentCtx, inferredStartSpanOpts...)
-			if err != nil {
-				log.Debug(err.Error())
-			} else {
-				inferredProxySpanCreated = true // Successfully created the span
-			}
+			inferredProxySpan = startInferredProxySpan(requestProxyContext, spanParentCtx, inferredStartSpanOpts...)
+			inferredProxySpanCreated = true // Successfully created the span
 		}
 	}
 
