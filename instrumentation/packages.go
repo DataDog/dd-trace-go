@@ -40,7 +40,6 @@ const (
 	PackageRedigo               Package = "gomodule/redigo"
 	PackageGoogleAPI            Package = "google.golang.org/api"
 	PackageGRPC                 Package = "google.golang.org/grpc"
-	// TODO: ...
 
 	PackageNetHTTP   Package = "net/http"
 	PackageIBMSarama Package = "IBM/sarama"
@@ -49,15 +48,15 @@ const (
 	PackageUrfaveNegroni           Package = "urfave/negroni"
 	PackageTwitchTVTwirp           Package = "twitchtv/twirp"
 	PackageTidwallBuntDB           Package = "tidwall/buntdb"
-	PackageSyndtrGoLevelDB         Package = "syndtr/goleveldb/leveldb"
+	PackageSyndtrGoLevelDB         Package = "syndtr/goleveldb"
 	PackageSirupsenLogrus          Package = "sirupsen/logrus"
 	PackageShopifySarama           Package = "Shopify/sarama"
 	PackageSegmentioKafkaGo        Package = "segmentio/kafka-go"
 	PackageRedisGoRedisV9          Package = "redis/go-redis.v9"
-	PackageOlivereElasticV5        Package = "olivere/elastic"
+	PackageOlivereElasticV5        Package = "olivere/elastic.v5"
 	PackageMiekgDNS                Package = "miekg/dns"
 	PackageLabstackEchoV4          Package = "labstack/echo.v4"
-	PackageK8SClientGo             Package = "k8s.io/client-go/kubernetes"
+	PackageK8SClientGo             Package = "k8s.io/client-go"
 	PackageJulienschmidtHTTPRouter Package = "julienschmidt/httprouter"
 	PackageJmoironSQLx             Package = "jmoiron/sqlx"
 	PackageJackcPGXV5              Package = "jackc/pgx.v5"
@@ -68,17 +67,9 @@ const (
 	PackageGormIOGormV1            Package = "gorm.io/gorm.v1"
 	PackageGorillaMux              Package = "gorilla/mux"
 	PackageUptraceBun              Package = "uptrace/bun"
-	PackageLogSlog                 Package = "slog/log"
+	PackageLogSlog                 Package = "log/slog"
 
 	PackageEnvoyProxyGoControlPlane Package = "envoyproxy/go-control-plane"
-
-	// V1 contribs (deprecated in v2)
-	PackageEmickleiGoRestful Package = "emicklei/go-restful"
-	PackageGaryburdRedigo    Package = "garyburd/redigo"
-	PackageLabstackEcho      Package = "labstack/echo"
-	PackageGopkgJinzhuGormV1 Package = "gopkg.in/jinzhu/gorm.v1"
-	PackageJinzhuGorm        Package = "jinzhu/gorm"
-	PackageGojiV1Web         Package = "zenazn/goji.v1/web"
 )
 
 type Component int
@@ -523,7 +514,7 @@ var packages = map[Package]PackageInfo{
 		},
 	},
 	PackageTidwallBuntDB: {
-		TracedPackage: "tidwall/buntdb",
+		TracedPackage: "github.com/tidwall/buntdb",
 		EnvVarPrefix:  "BUNTDB",
 		naming: map[Component]componentNames{
 			ComponentDefault: {
@@ -535,7 +526,7 @@ var packages = map[Package]PackageInfo{
 		},
 	},
 	PackageSyndtrGoLevelDB: {
-		TracedPackage: "syndtr/goleveldb/leveldb",
+		TracedPackage: "github.com/syndtr/goleveldb",
 		EnvVarPrefix:  "LEVELDB",
 		naming: map[Component]componentNames{
 			ComponentDefault: {
@@ -626,7 +617,7 @@ var packages = map[Package]PackageInfo{
 		},
 	},
 	PackageK8SClientGo: {
-		TracedPackage: "k8s.io/client-go/kubernetes",
+		TracedPackage: "k8s.io/client-go",
 	},
 	PackageJulienschmidtHTTPRouter: {
 		TracedPackage: "github.com/julienschmidt/httprouter",
@@ -717,7 +708,7 @@ var packages = map[Package]PackageInfo{
 		},
 	},
 	PackageGormIOGormV1: {
-		TracedPackage: "gorm.io/gorm.v1",
+		TracedPackage: "gorm.io/gorm",
 	},
 	PackageGorillaMux: {
 		TracedPackage: "github.com/gorilla/mux",
@@ -742,62 +733,6 @@ var packages = map[Package]PackageInfo{
 	},
 	PackageLogSlog: {
 		TracedPackage: "log/slog",
-	},
-	PackageEmickleiGoRestful: {
-		TracedPackage: "github.com/emicklei/go-restful",
-		EnvVarPrefix:  "RESTFUL",
-		naming: map[Component]componentNames{
-			ComponentServer: {
-				useDDServiceV0:     false,
-				buildServiceNameV0: staticName("go-restful"),
-				buildOpNameV0:      staticName("http.request"),
-				buildOpNameV1:      staticName("http.server.request"),
-			},
-		},
-	},
-	PackageGaryburdRedigo: {
-		TracedPackage: "github.com/garyburd/redigo",
-		EnvVarPrefix:  "REDIGO",
-		naming: map[Component]componentNames{
-			ComponentDefault: {
-				useDDServiceV0:     false,
-				buildServiceNameV0: staticName("redis.conn"),
-				buildOpNameV0:      staticName("redis.command"),
-				buildOpNameV1:      staticName("redis.command"),
-			},
-		},
-	},
-	PackageLabstackEcho: {
-		TracedPackage: "github.com/labstack/echo",
-		EnvVarPrefix:  "ECHO",
-		naming: map[Component]componentNames{
-			ComponentServer: {
-				useDDServiceV0:     true,
-				buildServiceNameV0: staticName("echo"),
-				buildOpNameV0:      staticName("http.request"),
-				buildOpNameV1:      staticName("http.server.request"),
-			},
-		},
-	},
-	PackageGopkgJinzhuGormV1: {
-		TracedPackage: "gopkg.in/jinzhu/gorm.v1",
-		EnvVarPrefix:  "GORM",
-	},
-	PackageJinzhuGorm: {
-		TracedPackage: "github.com/jinzhu/gorm",
-		EnvVarPrefix:  "GORM",
-	},
-	PackageGojiV1Web: {
-		TracedPackage: "github.com/zenazn/goji/web",
-		EnvVarPrefix:  "GOJI",
-		naming: map[Component]componentNames{
-			ComponentServer: {
-				useDDServiceV0:     true,
-				buildServiceNameV0: staticName("http.router"),
-				buildOpNameV0:      staticName("http.request"),
-				buildOpNameV1:      staticName("http.server.request"),
-			},
-		},
 	},
 	PackageEnvoyProxyGoControlPlane: {
 		TracedPackage: "github.com/envoyproxy/go-control-plane",
@@ -843,4 +778,13 @@ func isAWSMessagingSendOp(awsService, awsOperation string) bool {
 		return op == "publish"
 	}
 	return false
+}
+
+// GetPackages returns a map of Package to the corresponding instrumented module.
+func GetPackages() map[Package]string {
+	cp := make(map[Package]string)
+	for pkg, info := range packages {
+		cp[pkg] = info.TracedPackage
+	}
+	return cp
 }

@@ -18,6 +18,8 @@ import (
 
 var instr *instrumentation.Instrumentation
 
+const componentName = "k8s.io/client-go/kubernetes"
+
 func init() {
 	instr = instrumentation.Load(instrumentation.PackageK8SClientGo)
 }
@@ -48,7 +50,7 @@ func wrapRoundTripperWithOptions(rt http.RoundTripper, opts ...httptrace.RoundTr
 	copy(localOpts, opts) // make a copy of the opts, to avoid data races and side effects.
 	localOpts = append(localOpts, httptrace.WithBefore(func(req *http.Request, span *tracer.Span) {
 		span.SetTag(ext.ResourceName, RequestToResource(req.Method, req.URL.Path))
-		span.SetTag(ext.Component, instrumentation.PackageK8SClientGo)
+		span.SetTag(ext.Component, componentName)
 		span.SetTag(ext.SpanKind, ext.SpanKindClient)
 		traceID := span.Context().TraceID()
 		if traceID == tracer.TraceIDZero {
