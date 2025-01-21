@@ -187,6 +187,7 @@ func (c *coreClient) buildStartSpanOptions(input buildStartSpanOptionsInput) []t
 		tracer.Tag(ext.SpanKind, ext.SpanKindClient),
 		tracer.Tag(ext.DBSystem, ext.DBSystemValkey),
 		tracer.Tag(ext.ValkeyDatabaseIndex, c.option.SelectDB),
+		tracer.Tag("db.out", c.option.SelectDB),
 	}
 	opts = append(opts, c.peerTags()...)
 	if input.command != "" {

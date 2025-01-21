@@ -336,6 +336,8 @@ func TestNewClient(t *testing.T) {
 				assert.Equal(t, "127.0.0.1", span.Tag(ext.TargetHost))
 				assert.Equal(t, valkeyPort, span.Tag(ext.PeerPort))
 				assert.Equal(t, valkeyPort, span.Tag(ext.TargetPort))
+				assert.Equal(t, 0, span.Tag(ext.ValkeyDatabaseIndex))
+				assert.Equal(t, 0, span.Tag("db.out"))
 				assert.NotNil(t, span)
 				assert.Equal(t, tt.valkeyClientOptions.Username, span.Tag(ext.DBUser))
 				assert.Equal(t, "valkey.command", span.OperationName())
