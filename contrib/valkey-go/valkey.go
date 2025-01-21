@@ -8,7 +8,6 @@ package valkey
 
 import (
 	"context"
-	"math"
 	"net"
 	"strconv"
 	"strings"
@@ -218,9 +217,6 @@ func (c *coreClient) buildStartSpanOptions(input buildStartSpanOptionsInput) []t
 	}
 	if c.option.Username != "" {
 		opts = append(opts, tracer.Tag(ext.DBUser, c.option.Username))
-	}
-	if !math.IsNaN(c.clientConfig.analyticsRate) {
-		opts = append(opts, tracer.Tag(ext.EventSampleRate, c.clientConfig.analyticsRate))
 	}
 	return opts
 }

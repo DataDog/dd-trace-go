@@ -154,7 +154,6 @@ func TestNewClient(t *testing.T) {
 				Password:    valkeyPassword,
 			},
 			valkeytraceClientOptions: []ClientOption{
-				WithAnalytics(true),
 				WithSkipRawCommand(true),
 			},
 			createSpans: func(t *testing.T, ctx context.Context, client valkey.Client) {
@@ -175,7 +174,6 @@ func TestNewClient(t *testing.T) {
 					assert.Less(t, span.Tag(ext.ValkeyClientCachePXAT), int64(0))
 					assert.Less(t, span.Tag(ext.ValkeyClientCachePTTL), int64(0))
 					assert.Nil(t, span.Tag(ext.DBApplication))
-					assert.Equal(t, 1.0, span.Tag(ext.EventSampleRate))
 					assert.Nil(t, span.Tag(ext.Error))
 				},
 			},
@@ -207,7 +205,6 @@ func TestNewClient(t *testing.T) {
 					assert.Nil(t, span.Tag(ext.ValkeyClientCachePXAT))
 					assert.Nil(t, span.Tag(ext.ValkeyClientCachePTTL))
 					assert.Equal(t, "my-valkey-client", span.Tag(ext.DBApplication))
-					assert.Nil(t, span.Tag(ext.EventSampleRate))
 					assert.Nil(t, span.Tag(ext.Error))
 				},
 			},
@@ -240,7 +237,6 @@ func TestNewClient(t *testing.T) {
 					assert.False(t, span.Tag(ext.ValkeyClientCommandBlock).(bool))
 					assert.False(t, span.Tag(ext.ValkeyClientCommandMulti).(bool))
 					assert.Nil(t, span.Tag(ext.DBApplication))
-					assert.Nil(t, span.Tag(ext.EventSampleRate))
 					assert.Nil(t, span.Tag(ext.Error))
 				},
 				func(t *testing.T, span mocktracer.Span) {
@@ -257,7 +253,6 @@ func TestNewClient(t *testing.T) {
 					assert.False(t, span.Tag(ext.ValkeyClientCommandBlock).(bool))
 					assert.False(t, span.Tag(ext.ValkeyClientCommandMulti).(bool))
 					assert.Nil(t, span.Tag(ext.DBApplication))
-					assert.Nil(t, span.Tag(ext.EventSampleRate))
 					assert.Nil(t, span.Tag(ext.Error))
 				},
 			},
@@ -270,8 +265,7 @@ func TestNewClient(t *testing.T) {
 				Password:    valkeyPassword,
 			},
 			valkeytraceClientEnvVars: map[string]string{
-				"DD_TRACE_VALKEY_ANALYTICS_ENABLED": "true",
-				"DD_TRACE_VALKEY_SKIP_RAW_COMMAND":  "true",
+				"DD_TRACE_VALKEY_SKIP_RAW_COMMAND": "true",
 			},
 			createSpans: func(t *testing.T, ctx context.Context, client valkey.Client) {
 				resp := client.DoStream(ctx, client.B().Get().Key("test_key").Build())
@@ -292,7 +286,6 @@ func TestNewClient(t *testing.T) {
 					assert.Nil(t, span.Tag(ext.ValkeyClientCachePXAT))
 					assert.Nil(t, span.Tag(ext.ValkeyClientCachePTTL))
 					assert.Nil(t, span.Tag(ext.DBApplication))
-					assert.Equal(t, 1.0, span.Tag(ext.EventSampleRate))
 					assert.Nil(t, span.Tag(ext.Error))
 				},
 			},
@@ -327,7 +320,6 @@ func TestNewClient(t *testing.T) {
 					assert.False(t, span.Tag(ext.ValkeyClientCommandBlock).(bool))
 					assert.False(t, span.Tag(ext.ValkeyClientCommandMulti).(bool))
 					assert.Nil(t, span.Tag(ext.DBApplication))
-					assert.Nil(t, span.Tag(ext.EventSampleRate))
 					assert.Equal(t, context.DeadlineExceeded, span.Tag(ext.Error).(error))
 				},
 			},

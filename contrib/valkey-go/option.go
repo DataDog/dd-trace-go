@@ -6,25 +6,17 @@
 package valkey
 
 import (
-	"math"
-
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 )
 
 type clientConfig struct {
-	analyticsRate float64
-	skipRaw       bool
+	skipRaw bool
 }
 
 // ClientOption represents an option that can be used to create or wrap a client.
 type ClientOption func(*clientConfig)
 
 func defaults(cfg *clientConfig) {
-	if internal.BoolEnv("DD_TRACE_VALKEY_ANALYTICS_ENABLED", false) {
-		cfg.analyticsRate = 1.0
-	} else {
-		cfg.analyticsRate = math.NaN()
-	}
 	cfg.skipRaw = internal.BoolEnv("DD_TRACE_VALKEY_SKIP_RAW_COMMAND", false)
 }
 
@@ -34,28 +26,5 @@ func defaults(cfg *clientConfig) {
 func WithSkipRawCommand(skip bool) ClientOption {
 	return func(cfg *clientConfig) {
 		cfg.skipRaw = skip
-	}
-}
-
-// WithAnalytics enables Trace Analytics for all started spans.
-func WithAnalytics(on bool) ClientOption {
-	return func(cfg *clientConfig) {
-		if on {
-			cfg.analyticsRate = 1.0
-		} else {
-			cfg.analyticsRate = math.NaN()
-		}
-	}
-}
-
-// WithAnalyticsRate sets the sampling rate for Trace Analytics events
-// correlated to started spans.
-func WithAnalyticsRate(rate float64) ClientOption {
-	return func(cfg *clientConfig) {
-		if rate >= 0.0 && rate <= 1.0 {
-			cfg.analyticsRate = rate
-		} else {
-			cfg.analyticsRate = math.NaN()
-		}
 	}
 }
