@@ -345,7 +345,6 @@ func TestNewClient(t *testing.T) {
 				assert.Equal(t, "valkey-go/valkey", span.Tag(ext.Component))
 				assert.Equal(t, "valkey", span.Tag(ext.DBType))
 				assert.Equal(t, "valkey", span.Tag(ext.DBSystem))
-				assert.Equal(t, "valkey", span.Tag(ext.DBInstance))
 			}
 		})
 	}

@@ -185,7 +185,6 @@ func (c *coreClient) buildStartSpanOptions(input buildStartSpanOptionsInput) []t
 		tracer.Tag(ext.SpanKind, ext.SpanKindClient),
 		tracer.Tag(ext.DBType, ext.DBSystemValkey),
 		tracer.Tag(ext.DBSystem, ext.DBSystemValkey),
-		tracer.Tag(ext.DBInstance, ext.DBSystemValkey),
 		tracer.Tag(ext.ValkeyDatabaseIndex, c.option.SelectDB),
 	}
 	opts = append(opts, c.peerTags()...)
