@@ -3,7 +3,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
-// Package valkey provides tracing functions for tracing the valkey/valkey-go package (https://github.com/valkey-io/valkey-go).
+// Package valkey provides tracing functions for tracing the valkey-io/valkey-go package (https://github.com/valkey-io/valkey-go).
 package valkey
 
 import (
@@ -21,7 +21,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 )
 
-const componentName = "valkey-go/valkey"
+const componentName = "valkey-io/valkey-go"
 
 func init() {
 	telemetry.LoadIntegration(componentName)

@@ -343,7 +343,7 @@ func TestNewClient(t *testing.T) {
 				assert.Equal(t, "valkey.command", span.OperationName())
 				assert.Equal(t, "client", span.Tag(ext.SpanKind))
 				assert.Equal(t, ext.SpanTypeValkey, span.Tag(ext.SpanType))
-				assert.Equal(t, "valkey-go/valkey", span.Tag(ext.Component))
+				assert.Equal(t, "valkey-io/valkey-go", span.Tag(ext.Component))
 				assert.Equal(t, "valkey", span.Tag(ext.DBSystem))
 			}
 		})
