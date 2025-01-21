@@ -7,6 +7,7 @@ package httptrace
 
 import (
 	"fmt"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"net/http"
 	"strconv"
 	"strings"
@@ -58,6 +59,7 @@ func TestInferredProxySpans(t *testing.T) {
 		webReqSpan := spans[0]
 		assert.Equal(t, "aws.apigateway", gwSpan.OperationName())
 		assert.Equal(t, "http.request", webReqSpan.OperationName())
+		assert.Equal(t, "example.com", gwSpan.Tag("service.name"))
 		assert.True(t, webReqSpan.ParentID() == gwSpan.SpanID())
 		assert.Equal(t, webReqSpan.Tag("http.status_code"), gwSpan.Tag("http.status_code"))
 		assert.Equal(t, webReqSpan.Tag("span.type"), gwSpan.Tag("span.type"))
@@ -98,10 +100,14 @@ func TestInferredProxySpans(t *testing.T) {
 		webReqSpan := spans[0]
 		assert.Equal(t, "aws.apigateway", gwSpan.OperationName())
 		assert.Equal(t, "http.request", webReqSpan.OperationName())
+		assert.Equal(t, "example.com", gwSpan.Tag("service.name"))
 		assert.True(t, webReqSpan.ParentID() == gwSpan.SpanID())
 		assert.Equal(t, webReqSpan.Tag("http.status_code"), gwSpan.Tag("http.status_code"))
 		assert.Equal(t, webReqSpan.Tag("span.type"), gwSpan.Tag("span.type"))
 		assert.Equal(t, startTime.UnixMilli(), gwSpan.StartTime().UnixMilli())
+
+		assert.Equal(t, "500: Internal Server Error", gwSpan.Tag(ext.Error).(error).Error())
+		assert.Equal(t, "500: Internal Server Error", webReqSpan.Tag(ext.Error).(error).Error())
 
 		for _, arg := range inferredHeaders {
 			header, tag := normalizer.HeaderTag(arg)
@@ -178,6 +184,7 @@ func TestInferredProxySpans(t *testing.T) {
 		webReqSpan := spans[0]
 		assert.Equal(t, "aws.apigateway", gwSpan.OperationName())
 		assert.Equal(t, "http.request", webReqSpan.OperationName())
+		assert.Equal(t, "example.com", gwSpan.Tag("service.name"))
 		assert.True(t, webReqSpan.ParentID() == gwSpan.SpanID())
 		assert.Equal(t, webReqSpan.Tag("http.status_code"), gwSpan.Tag("http.status_code"))
 		assert.Equal(t, webReqSpan.Tag("span.type"), gwSpan.Tag("span.type"))
