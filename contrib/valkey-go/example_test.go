@@ -7,11 +7,10 @@ package valkey_test
 
 import (
 	"context"
-	"log/slog"
+	"log"
 
 	"github.com/valkey-io/valkey-go"
 	valkeytrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/valkey-go"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
 
@@ -20,23 +19,17 @@ import (
 func Example() {
 	tracer.Start()
 	defer tracer.Stop()
+
 	vk, err := valkeytrace.NewClient(valkey.ClientOption{
 		InitAddress: []string{"localhost:6379"},
 	})
 	if err != nil {
-		slog.Error(err.Error())
+		log.Fatal(err)
 		return
 	}
 
-	span, ctx := tracer.StartSpanFromContext(context.Background(), "parent.request",
-		tracer.SpanType(ext.SpanTypeValkey),
-		tracer.ServiceName("web"),
-		tracer.ResourceName("/home"),
-	)
-
-	if err := vk.Do(ctx, vk.B().Set().Key("key").Value("value").Build()).Error(); err != nil {
-		slog.ErrorContext(ctx, "set a value", slog.Any("error", err))
+	if err := vk.Do(context.Background(), vk.B().Set().Key("key").Value("value").Build()).Error(); err != nil {
+		log.Fatal(err)
+		return
 	}
-
-	span.Finish()
 }
