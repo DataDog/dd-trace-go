@@ -7,6 +7,8 @@ package sarama
 
 import (
 	"context"
+	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -19,29 +21,20 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-var kafkaBrokers = []string{"localhost:9092", "localhost:9093", "localhost:9094"}
-
-const (
-	testGroupID = "gotest_ibm_sarama"
-	testTopic   = "gotest_ibm_sarama"
+var (
+	kafkaBrokers = []string{"localhost:9092"}
 )
 
-func newMockBroker(t *testing.T) *sarama.MockBroker {
-	broker := sarama.NewMockBroker(t, 1)
-
-	metadataResponse := new(sarama.MetadataResponse)
-	metadataResponse.Version = 1
-	metadataResponse.AddBroker(broker.Addr(), broker.BrokerID())
-	metadataResponse.AddTopicPartition("my_topic", 0, broker.BrokerID(), nil, nil, nil, sarama.ErrNoError)
-	broker.Returns(metadataResponse)
-
-	prodSuccess := new(sarama.ProduceResponse)
-	prodSuccess.Version = 2
-	prodSuccess.AddTopicPartition("my_topic", 0, sarama.ErrNoError)
-	for i := 0; i < 10; i++ {
-		broker.Returns(prodSuccess)
+func newIntegrationTestConfig(t *testing.T) *sarama.Config {
+	if _, ok := os.LookupEnv("INTEGRATION"); !ok {
+		t.Skip("🚧 Skipping integration test (INTEGRATION environment variable is not set)")
 	}
-	return broker
+
+	cfg := sarama.NewConfig()
+	cfg.Version = sarama.V0_11_0_0 // first version that supports headers
+	cfg.Producer.Return.Successes = true
+	cfg.Producer.Flush.Messages = 1
+	return cfg
 }
 
 // waitForSpans polls the mock tracer until the expected number of spans
@@ -96,11 +89,16 @@ func assertDSMConsumerPathway(t *testing.T, topic, groupID string, msg *sarama.C
 
 	ctx := context.Background()
 	if withProducer {
-		ctx, _ = tracer.SetDataStreamsCheckpoint(context.Background(), "direction:out", "topic:"+testTopic, "type:kafka")
+		ctx, _ = tracer.SetDataStreamsCheckpoint(context.Background(), "direction:out", "topic:"+topicName(t), "type:kafka")
 	}
 	ctx, _ = tracer.SetDataStreamsCheckpoint(ctx, edgeTags...)
 	want, _ := datastreams.PathwayFromContext(ctx)
 
 	assert.NotEqual(t, want.GetHash(), 0)
 	assert.Equal(t, want.GetHash(), got.GetHash())
+}
+
+// topicName returns a unique topic name for the current test, which ensures results are not affected by each other.
+func topicName(t *testing.T) string {
+	return strings.ReplaceAll("IBM/sarama/"+t.Name(), "/", "_")
 }
