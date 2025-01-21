@@ -237,7 +237,6 @@ func TestHealthMetricsRaceCondition(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			sp := tracer.StartSpan("operation")
-			time.Sleep(100 * time.Millisecond)
 			sp.Finish()
 		}()
 	}
