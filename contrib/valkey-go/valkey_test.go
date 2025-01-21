@@ -169,7 +169,6 @@ func TestNewClient(t *testing.T) {
 					assert.Less(t, span.Tag(ext.ValkeyClientCacheTTL), int64(0))
 					assert.Less(t, span.Tag(ext.ValkeyClientCachePXAT), int64(0))
 					assert.Less(t, span.Tag(ext.ValkeyClientCachePTTL), int64(0))
-					assert.Nil(t, span.Tag(ext.DBApplication))
 					assert.Nil(t, span.Tag(ext.Error))
 				},
 			},
@@ -196,7 +195,6 @@ func TestNewClient(t *testing.T) {
 					assert.Nil(t, span.Tag(ext.ValkeyClientCacheTTL))
 					assert.Nil(t, span.Tag(ext.ValkeyClientCachePXAT))
 					assert.Nil(t, span.Tag(ext.ValkeyClientCachePTTL))
-					assert.Equal(t, "my-valkey-client", span.Tag(ext.DBApplication))
 					assert.Nil(t, span.Tag(ext.Error))
 				},
 			},
@@ -224,7 +222,6 @@ func TestNewClient(t *testing.T) {
 					assert.Greater(t, span.Tag(ext.ValkeyClientCacheTTL), int64(0))
 					assert.Greater(t, span.Tag(ext.ValkeyClientCachePXAT), int64(0))
 					assert.Greater(t, span.Tag(ext.ValkeyClientCachePTTL), int64(0))
-					assert.Nil(t, span.Tag(ext.DBApplication))
 					assert.Nil(t, span.Tag(ext.Error))
 				},
 				func(t *testing.T, span mocktracer.Span) {
@@ -236,7 +233,6 @@ func TestNewClient(t *testing.T) {
 					assert.Greater(t, span.Tag(ext.ValkeyClientCacheTTL), int64(0))
 					assert.Greater(t, span.Tag(ext.ValkeyClientCachePXAT), int64(0))
 					assert.Greater(t, span.Tag(ext.ValkeyClientCachePTTL), int64(0))
-					assert.Nil(t, span.Tag(ext.DBApplication))
 					assert.Nil(t, span.Tag(ext.Error))
 				},
 			},
@@ -265,7 +261,6 @@ func TestNewClient(t *testing.T) {
 					assert.Nil(t, span.Tag(ext.ValkeyClientCacheTTL))
 					assert.Nil(t, span.Tag(ext.ValkeyClientCachePXAT))
 					assert.Nil(t, span.Tag(ext.ValkeyClientCachePTTL))
-					assert.Nil(t, span.Tag(ext.DBApplication))
 					assert.Nil(t, span.Tag(ext.Error))
 				},
 			},
@@ -295,7 +290,6 @@ func TestNewClient(t *testing.T) {
 					assert.Nil(t, span.Tag(ext.ValkeyClientCacheTTL))
 					assert.Nil(t, span.Tag(ext.ValkeyClientCachePXAT))
 					assert.Nil(t, span.Tag(ext.ValkeyClientCachePTTL))
-					assert.Nil(t, span.Tag(ext.DBApplication))
 					assert.Equal(t, context.DeadlineExceeded, span.Tag(ext.Error).(error))
 				},
 			},

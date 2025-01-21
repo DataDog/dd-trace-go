@@ -201,9 +201,6 @@ func (c *coreClient) buildStartSpanOptions(input buildStartSpanOptionsInput) []t
 			opts = append(opts, tracer.Tag(ext.DBStatement, input.statement))
 		}
 	}
-	if c.option.ClientName != "" {
-		opts = append(opts, tracer.Tag(ext.DBApplication, c.option.ClientName))
-	}
 	if c.option.Username != "" {
 		opts = append(opts, tracer.Tag(ext.DBUser, c.option.Username))
 	}
