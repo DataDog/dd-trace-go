@@ -80,6 +80,6 @@ require (
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 )
 
-replace github.com/DataDog/dd-trace-go/v2 => ../..
-
 replace github.com/DataDog/dd-trace-go/contrib/net/http/v2 => ../../contrib/net/http
+
+replace github.com/DataDog/dd-trace-go/v2 => ../..

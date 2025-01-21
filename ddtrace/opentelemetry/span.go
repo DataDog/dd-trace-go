@@ -9,7 +9,6 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"strconv"
 	"strings"
 	"sync"
@@ -85,7 +84,7 @@ func (s *span) End(options ...oteltrace.SpanEndOption) {
 		if err == nil {
 			s.DD.SetTag("events", string(b))
 		} else {
-			log.Debug(fmt.Sprintf("Issue marshaling span events; events dropped from span meta\n%v", err))
+			log.Debug("Issue marshaling span events; events dropped from span meta\n%v", err)
 		}
 	}
 	var finishCfg = oteltrace.NewSpanEndConfig(options...)

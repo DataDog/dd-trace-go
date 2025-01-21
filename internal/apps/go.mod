@@ -88,5 +88,6 @@ require (
 	google.golang.org/protobuf v1.35.1 // indirect
 )
 
-// use local version of dd-trace-go
+replace github.com/DataDog/dd-trace-go/contrib/net/http/v2 => ../../contrib/net/http
+
 replace github.com/DataDog/dd-trace-go/v2 => ../..
