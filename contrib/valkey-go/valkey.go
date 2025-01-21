@@ -176,6 +176,8 @@ func (c *coreClient) peerTags() []tracer.StartSpanOption {
 
 func (c *coreClient) buildStartSpanOptions(input buildStartSpanOptionsInput) []tracer.StartSpanOption {
 	opts := []tracer.StartSpanOption{
+		tracer.ResourceName(input.statement),
+		tracer.Tag(ext.DBStatement, input.statement),
 		tracer.SpanType(ext.SpanTypeValkey),
 		tracer.Tag(ext.TargetHost, c.host),
 		tracer.Tag(ext.TargetPort, c.port),
@@ -193,13 +195,9 @@ func (c *coreClient) buildStartSpanOptions(input buildStartSpanOptionsInput) []t
 			tracer.Tag("db.stmt_size", input.size),
 			tracer.Tag("db.operation", input.command),
 		}...)
-		if input.skipRawCommand {
-			opts = append(opts, tracer.ResourceName(input.command))
-			opts = append(opts, tracer.Tag(ext.DBStatement, input.command))
-		} else {
-			opts = append(opts, tracer.ResourceName(input.statement))
-			opts = append(opts, tracer.Tag(ext.DBStatement, input.statement))
-		}
+	}
+	if input.skipRawCommand {
+		opts = append(opts, tracer.Tag(ext.ValkeyRawCommand, input.skipRawCommand))
 	}
 	if c.option.Username != "" {
 		opts = append(opts, tracer.Tag(ext.DBUser, c.option.Username))

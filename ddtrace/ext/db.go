@@ -60,6 +60,9 @@ const (
 
 // Valkey tags.
 const (
+	// ValkeyRawCommand allows to set the raw command for tags.
+	ValkeyRawCommand = "valkey.raw_command"
+
 	// ValkeyDatabaseIndex specifies the index of the database being connected to.
 	ValkeyDatabaseIndex = "db.valkey.database_index"
 
