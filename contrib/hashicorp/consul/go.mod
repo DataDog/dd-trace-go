@@ -94,3 +94,8 @@ require (
 )
 
 replace github.com/DataDog/dd-trace-go/v2 => ../../..
+
+// Pin github.com/armon/go-metrics to the last version available to avoid breaking changes
+// due to the migration to github.com/hashicorp/go-metrics.
+// This will be a no-op once hashicorp/consul/api is updated to use the new go-metrics package.
+replace github.com/armon/go-metrics => github.com/armon/go-metrics v0.4.1
