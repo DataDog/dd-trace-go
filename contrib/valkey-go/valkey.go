@@ -183,7 +183,6 @@ func (c *coreClient) buildStartSpanOptions(input buildStartSpanOptionsInput) []t
 		tracer.Tag(ext.ValkeyClientName, valkey.LibName),
 		tracer.Tag(ext.Component, componentName),
 		tracer.Tag(ext.SpanKind, ext.SpanKindClient),
-		tracer.Tag(ext.DBType, ext.DBSystemValkey),
 		tracer.Tag(ext.DBSystem, ext.DBSystemValkey),
 		tracer.Tag(ext.ValkeyDatabaseIndex, c.option.SelectDB),
 	}
