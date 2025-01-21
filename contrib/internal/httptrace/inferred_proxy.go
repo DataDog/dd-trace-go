@@ -112,7 +112,7 @@ func extractInferredProxyContext(headers http.Header) (*proxyContext, error) {
 	return &pc, nil
 }
 
-func startInferredProxySpan(requestProxyContext *proxyContext, parent ddtrace.SpanContext, opts ...ddtrace.StartSpanOption) (tracer.Span, error) {
+func startInferredProxySpan(requestProxyContext *proxyContext, parent ddtrace.SpanContext, opts ...ddtrace.StartSpanOption) tracer.Span {
 	proxySpanInfo := supportedProxies[requestProxyContext.proxySystemName]
 	log.Debug(`Successfully extracted inferred span info ${proxyContext} for proxy: ${proxyContext.proxySystemName}`)
 
@@ -148,5 +148,5 @@ func startInferredProxySpan(requestProxyContext *proxyContext, parent ddtrace.Sp
 
 	span := tracer.StartSpan(proxySpanInfo.spanName, optsLocal...)
 
-	return span, nil
+	return span
 }
