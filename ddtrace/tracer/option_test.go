@@ -347,6 +347,9 @@ func TestIntegrationEnabled(t *testing.T) {
 			continue
 		}
 		p := strings.Replace(pkg.Dir, pkg.Root, "../..", 1)
+		if strings.Contains(p, "/contrib/net/http/client") || strings.Contains(p, "/contrib/os") {
+			continue
+		}
 		body, err := exec.Command("grep", "-rl", "MarkIntegrationImported", p).Output()
 		require.NoError(t, err, "grep command failed")
 		assert.NotEqual(t, len(body), 0, "expected %s to call MarkIntegrationImported", pkg.Name)

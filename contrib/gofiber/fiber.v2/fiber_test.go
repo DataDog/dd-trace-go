@@ -6,6 +6,7 @@
 package fiber
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -178,11 +179,30 @@ func TestUserContext(t *testing.T) {
 
 	// setup
 	router := fiber.New()
+
+	// define a custom context key
+	type contextKey string
+	const fooKey contextKey = "foo"
+
+	// add a middleware that adds a value to the context
+	router.Use(func(c *fiber.Ctx) error {
+		ctx := context.WithValue(c.UserContext(), fooKey, "bar")
+		c.SetUserContext(ctx)
+		return c.Next()
+	})
+
+	// add the middleware
 	router.Use(Middleware(WithServiceName("foobar")))
 
 	router.Get("/", func(c *fiber.Ctx) error {
 		// check if not default empty context
 		assert.NotEmpty(c.UserContext())
+
+		// checks that the user context still has the information provided before using the middleware
+		foo, ok := c.UserContext().Value(fooKey).(string)
+		assert.True(ok)
+		assert.Equal(foo, "bar")
+
 		span, _ := tracer.StartSpanFromContext(c.UserContext(), "http.request")
 		defer span.Finish()
 		return c.SendString("test")
