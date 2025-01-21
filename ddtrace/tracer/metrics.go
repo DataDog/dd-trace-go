@@ -99,10 +99,7 @@ func (t *tracer) reportHealthMetricsAtInterval(interval time.Duration) {
 			// our count to 0 regardless of if Count succeeded to cleanup before the next interval.
 			t.spansStarted.Range(func(key string, value *atomic.Int64) bool {
 				v := value.Swap(0)
-				err := t.statsd.Count("datadog.tracer.spans_started", v, []string{"integration:" + key}, 1)
-				if err != nil {
-					log.Debug("Error while reporting spans started from integration %s: %s", key, err.Error())
-				}
+				t.statsd.Count("datadog.tracer.spans_started", v, []string{"integration:" + key}, 1)
 				return true
 			})
 
@@ -112,10 +109,7 @@ func (t *tracer) reportHealthMetricsAtInterval(interval time.Duration) {
 			// our count to 0 regardless of if Count succeeded to cleanup before the next interval.
 			t.spansFinished.Range(func(key string, value *atomic.Int64) bool {
 				v := value.Swap(0)
-				err := t.statsd.Count("datadog.tracer.spans_finished", v, []string{"integration:" + key}, 1)
-				if err != nil {
-					log.Debug("Error while reporting spans finished from integration %s: %s", key, err.Error())
-				}
+				t.statsd.Count("datadog.tracer.spans_finished", v, []string{"integration:" + key}, 1)
 				return true
 			})
 
