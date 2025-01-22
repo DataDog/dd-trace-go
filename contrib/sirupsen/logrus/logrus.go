@@ -10,12 +10,15 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 
 	"github.com/sirupsen/logrus"
 )
 
 const componentName = "sirupsen/logrus"
+
+var log128bits = internal.BoolEnv("DD_TRACE_128_BIT_TRACEID_LOGGING_ENABLED", true)
 
 func init() {
 	telemetry.LoadIntegration(componentName)
@@ -36,9 +39,8 @@ func (d *DDContextLogHook) Fire(e *logrus.Entry) error {
 	if !found {
 		return nil
 	}
-	spanCtx128, ok := span.Context().(ddtrace.SpanContextW3C)
-	if ok {
-		e.Data[ext.LogKeyTraceID] = spanCtx128.TraceID128()
+	if ctxW3c, ok := span.Context().(ddtrace.SpanContextW3C); ok && log128bits {
+		e.Data[ext.LogKeyTraceID] = ctxW3c.TraceID128()
 	} else {
 		e.Data[ext.LogKeyTraceID] = span.Context().TraceID()
 	}
