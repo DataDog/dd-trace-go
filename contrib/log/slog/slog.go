@@ -58,7 +58,7 @@ func (h *handler) Handle(ctx context.Context, rec slog.Record) error {
 	// In case the user has created group loggers, we ignore those and
 	// set them at the root level.
 	span, ok := tracer.SpanFromContext(ctx)
-	if ok {
+	if ok && span.Context().TraceID() != tracer.TraceIDZero {
 		traceID := span.Context().TraceID()
 		spanID := strconv.FormatUint(span.Context().SpanID(), 10)
 

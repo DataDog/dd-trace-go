@@ -48,8 +48,29 @@ func assertLogEntry(t *testing.T, rawEntry, wantMsg, wantLevel string, span *tra
 	}
 }
 
+func assertLogEntryNoTrace(t *testing.T, rawEntry, wantMsg, wantLevel string) {
+	t.Helper()
+
+	t.Log(rawEntry)
+
+	var entry map[string]interface{}
+	err := json.Unmarshal([]byte(rawEntry), &entry)
+	require.NoError(t, err)
+	require.NotEmpty(t, entry)
+
+	assert.Equal(t, wantMsg, entry["msg"])
+	assert.Equal(t, wantLevel, entry["level"])
+	assert.NotEmpty(t, entry["time"])
+
+	assert.NotContains(t, entry, ext.LogKeyTraceID)
+	assert.NotContains(t, entry, ext.LogKeySpanID)
+}
+
 func testLogger(t *testing.T, createLogger func(b io.Writer) *slog.Logger, assertExtra func(t *testing.T, entry map[string]interface{})) {
-	tracer.Start(tracer.WithLogger(testutils.DiscardLogger()))
+	tracer.Start(
+		tracer.WithTraceEnabled(true),
+		tracer.WithLogger(testutils.DiscardLogger()),
+	)
 	defer tracer.Stop()
 
 	// create the application logger
@@ -74,25 +95,50 @@ func testLogger(t *testing.T, createLogger func(b io.Writer) *slog.Logger, asser
 	assertLogEntry(t, logs[1], "this is an error log with tracing information", "ERROR", span, assertExtra)
 }
 
-func TestNewJSONHandler(t *testing.T) {
-	testLogger(
-		t,
-		func(w io.Writer) *slog.Logger {
-			return slog.New(NewJSONHandler(w, nil))
-		},
-		nil,
+func testLoggerNoTrace(t *testing.T, createLogger func(b io.Writer) *slog.Logger) {
+	tracer.Start(
+		tracer.WithTraceEnabled(false),
+		tracer.WithLogger(testutils.DiscardLogger()),
 	)
+	defer tracer.Stop()
+
+	// create the application logger
+	var b bytes.Buffer
+	logger := createLogger(&b)
+
+	// start a new span
+	span, ctx := tracer.StartSpanFromContext(context.Background(), "test")
+	defer span.Finish()
+
+	// log a message using the context containing span information
+	logger.Log(ctx, slog.LevelInfo, "this is an info log with tracing information")
+	logger.Log(ctx, slog.LevelError, "this is an error log with tracing information")
+
+	logs := strings.Split(
+		strings.TrimRight(b.String(), "\n"),
+		"\n",
+	)
+	// assert log entries contain trace information
+	require.Len(t, logs, 2)
+	assertLogEntryNoTrace(t, logs[0], "this is an info log with tracing information", "INFO")
+	assertLogEntryNoTrace(t, logs[1], "this is an error log with tracing information", "ERROR")
+}
+
+func TestNewJSONHandler(t *testing.T) {
+	createLogger := func(w io.Writer) *slog.Logger {
+		return slog.New(NewJSONHandler(w, nil))
+	}
+	testLogger(t, createLogger, nil)
+	testLoggerNoTrace(t, createLogger)
 }
 
 func TestWrapHandler(t *testing.T) {
 	t.Run("testLogger", func(t *testing.T) {
-		testLogger(
-			t,
-			func(w io.Writer) *slog.Logger {
-				return slog.New(WrapHandler(slog.NewJSONHandler(w, nil)))
-			},
-			nil,
-		)
+		createLogger := func(w io.Writer) *slog.Logger {
+			return slog.New(WrapHandler(slog.NewJSONHandler(w, nil)))
+		}
+		testLogger(t, createLogger, nil)
+		testLoggerNoTrace(t, createLogger)
 	})
 
 	t.Run("slogtest", func(t *testing.T) {
