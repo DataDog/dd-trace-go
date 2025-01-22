@@ -38,6 +38,7 @@ func assertLogEntry(t *testing.T, rawEntry, wantMsg, wantLevel string, span trac
 	assert.Equal(t, wantLevel, entry["level"])
 	assert.NotEmpty(t, entry["time"])
 
+	//TODO: Update tests to account for 128bit logging by default
 	traceID := strconv.FormatUint(span.Context().TraceID(), 10)
 	spanID := strconv.FormatUint(span.Context().SpanID(), 10)
 	assert.Equal(t, traceID, entry[ext.LogKeyTraceID], "trace id not found")
