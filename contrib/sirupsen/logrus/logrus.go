@@ -7,6 +7,7 @@
 package logrus
 
 import (
+	"fmt"
 	"strconv"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
@@ -37,13 +38,16 @@ func (d *DDContextLogHook) Levels() []logrus.Level {
 
 // Fire implements logrus.Hook interface, attaches trace and span details found in entry context
 func (d *DDContextLogHook) Fire(e *logrus.Entry) error {
+	fmt.Println("Is it enabled?", log128bits)
 	span, found := tracer.SpanFromContext(e.Context)
 	if !found {
 		return nil
 	}
 	if ctxW3c, ok := span.Context().(ddtrace.SpanContextW3C); ok && log128bits {
+		fmt.Println("a true?")
 		e.Data[ext.LogKeyTraceID] = ctxW3c.TraceID128()
 	} else {
+		fmt.Println("false")
 		e.Data[ext.LogKeyTraceID] = strconv.FormatUint(span.Context().TraceID(), 10)
 	}
 	e.Data[ext.LogKeySpanID] = strconv.FormatUint(span.Context().SpanID(), 10)
