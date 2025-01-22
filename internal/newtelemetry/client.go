@@ -187,7 +187,7 @@ func (c *client) flush(payloads []transport.Payload) (int, error) {
 		}
 
 		nbBytesOfPayload, err := c.writer.Flush(payload)
-		if nbBytes > 0 {
+		if nbBytes > 0 && err != nil {
 			nonFatalErros = append(nonFatalErros, err)
 			err = nil
 		}
@@ -208,7 +208,11 @@ func (c *client) flush(payloads []transport.Payload) (int, error) {
 	}
 
 	if len(nonFatalErros) > 0 {
-		log.Debug("non-fatal error while flushing telemetry data: %v", errors.Join(nonFatalErros...))
+		err := "error"
+		if len(nonFatalErros) > 1 {
+			err = "errors"
+		}
+		log.Debug("non-fatal %s while flushing telemetry data: %v", err, errors.Join(nonFatalErros...))
 	}
 
 	return nbBytes, nil
@@ -217,19 +221,13 @@ func (c *client) flush(payloads []transport.Payload) (int, error) {
 func (c *client) appStart() {
 	c.flushMapperMu.Lock()
 	defer c.flushMapperMu.Unlock()
-
-	// Wrap the current flushMapper with the AppStartedMapper so we can add the app-started event to the payloads using available payloads at the time of the call one minute later
 	c.flushMapper = mapper.NewAppStartedMapper(c.flushMapper)
 }
 
 func (c *client) appStop() {
 	c.flushMapperMu.Lock()
+	defer c.flushMapperMu.Unlock()
 	c.flushMapper = mapper.NewAppClosingMapper(c.flushMapper)
-	c.flushMapperMu.Unlock()
-
-	// Flush locks the flushMapperMu mutex, so we need to call it outside the lock
-	c.Flush()
-	c.Close()
 }
 
 func (c *client) Close() error {

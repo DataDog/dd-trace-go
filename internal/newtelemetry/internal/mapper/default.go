@@ -16,11 +16,15 @@ import (
 // NewDefaultMapper returns a Mapper that transforms payloads into a MessageBatch and adds a heartbeat message.
 // The heartbeat message is added every heartbeatInterval.
 func NewDefaultMapper(heartbeatInterval time.Duration) Mapper {
-	return &defaultMapper{
+	mapper := &defaultMapper{
 		heartbeatEnricher: heartbeatEnricher{
 			rateLimiter: rate.NewLimiter(rate.Every(heartbeatInterval), 1),
 		},
 	}
+
+	// The rate limiter is initialized with a token, but we want the first heartbeat to be sent in one minute, so we consume the token
+	mapper.heartbeatEnricher.rateLimiter.Allow()
+	return mapper
 }
 
 type defaultMapper struct {
@@ -42,11 +46,11 @@ func (t *messageBatchReducer) Transform(payloads []transport.Payload) ([]transpo
 	}
 
 	messages := make([]transport.Message, len(payloads))
-	for _, payload := range payloads {
-		messages = append(messages, transport.Message{
-			Payload:     payload,
+	for i, payload := range payloads {
+		messages[i] = transport.Message{
 			RequestType: payload.RequestType(),
-		})
+			Payload:     payload,
+		}
 	}
 
 	return []transport.Payload{transport.MessageBatch{Payload: messages}}, t

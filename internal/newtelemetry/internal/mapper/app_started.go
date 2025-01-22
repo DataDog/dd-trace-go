@@ -10,16 +10,19 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/newtelemetry/internal/transport"
 )
 
-type appStarted struct {
+type appStartedReducer struct {
 	wrapper
 }
 
+// NewAppStartedMapper returns a new Mapper that adds an AppStarted payload to the beginning of all payloads
+// and pass it down to irs underlying mapper.
+// The AppStarted payload ingest the [transport.AppClientConfigurationChange] and [transport.AppProductChange] payloads
 func NewAppStartedMapper(underlying Mapper) Mapper {
-	return &appStarted{wrapper{underlying}}
+	return &appStartedReducer{wrapper{underlying}}
 }
 
-func (t *appStarted) Transform(payloads []transport.Payload) ([]transport.Payload, Mapper) {
-	appStarted := &transport.AppStarted{
+func (t *appStartedReducer) Transform(payloads []transport.Payload) ([]transport.Payload, Mapper) {
+	appStarted := transport.AppStarted{
 		InstallSignature: transport.InstallSignature{
 			InstallID:   globalconfig.InstrumentationInstallID(),
 			InstallType: globalconfig.InstrumentationInstallType(),
@@ -39,8 +42,6 @@ func (t *appStarted) Transform(payloads []transport.Payload) ([]transport.Payloa
 		}
 	}
 
-	// Following the documentation, an app-started payload cannot be put in a message-batch one so we don't forward it to the next transformation,
-	// and we also need to put the app-started payload at the beginning of the slice
-	mappedPayloads, nextMapper := t.wrapper.Transform(payloadLefts)
-	return append([]transport.Payload{appStarted}, mappedPayloads...), nextMapper
+	// The app-started event should be the first event in the payload
+	return t.wrapper.Transform(append([]transport.Payload{appStarted}, payloadLefts...))
 }

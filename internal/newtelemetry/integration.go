@@ -34,7 +34,7 @@ func (i *integrations) Payload() transport.Payload {
 		integrations[idx] = transport.Integration{
 			Name:    integration.Name,
 			Version: integration.Version,
-			Enabled: true,
+			Enabled: integration.Error == "", // no error means the integration was enabled successfully
 			Error:   integration.Error,
 		}
 	}

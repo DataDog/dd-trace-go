@@ -9,6 +9,7 @@ import (
 	"sync"
 )
 
+// RingQueue is a thread-safe ring buffer can be used to store a fixed number of elements and overwrite old values when full.
 type RingQueue[T any] struct {
 	// buffer is the slice that contains the data.
 	buffer []T
@@ -23,6 +24,7 @@ type RingQueue[T any] struct {
 	maxBufferSize int
 }
 
+// NewRingQueue creates a new RingQueue with a minimum size and a maximum size.
 func NewRingQueue[T any](minSize, maxSize int) *RingQueue[T] {
 	return &RingQueue[T]{
 		buffer:        make([]T, minSize),
@@ -33,24 +35,22 @@ func NewRingQueue[T any](minSize, maxSize int) *RingQueue[T] {
 	}
 }
 
-// Enqueue adds a value to the buffer.
+// Enqueue adds one or multiple values to the buffer. returns false if the buffer is full.
 func (rb *RingQueue[T]) Enqueue(vals ...T) bool {
+	rb.mu.Lock()
+	defer rb.mu.Unlock()
+	spaceLeft := true
 	for _, val := range vals {
-		if !rb.enqueueLocked(val) {
-			return false
-		}
+		spaceLeft = rb.enqueueLocked(val)
 	}
-	return true
+	return spaceLeft
 }
 
 func (rb *RingQueue[T]) enqueueLocked(val T) bool {
-	rb.mu.Lock()
-	defer rb.mu.Unlock()
-
 	rb.buffer[rb.tail] = val
 	rb.tail = (rb.tail + 1) % len(rb.buffer)
 
-	if rb.tail == rb.head && len(rb.buffer) == rb.maxBufferSize { // We loose one element
+	if rb.tail == rb.head && len(rb.buffer) == rb.maxBufferSize { // We lost one element
 		rb.head = (rb.head + 1) % len(rb.buffer)
 		return false
 	}

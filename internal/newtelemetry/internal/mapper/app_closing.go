@@ -9,14 +9,15 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/newtelemetry/internal/transport"
 )
 
+// NewAppClosingMapper returns a new Mapper that appends an AppClosing payload to the given payloads and calls the underlying Mapper with it.
 func NewAppClosingMapper(underlying Mapper) Mapper {
-	return &appClosing{wrapper{underlying}}
+	return &appClosingEnricher{wrapper{underlying}}
 }
 
-type appClosing struct {
+type appClosingEnricher struct {
 	wrapper
 }
 
-func (t *appClosing) Transform(payloads []transport.Payload) ([]transport.Payload, Mapper) {
+func (t *appClosingEnricher) Transform(payloads []transport.Payload) ([]transport.Payload, Mapper) {
 	return t.wrapper.Transform(append(payloads, transport.AppClosing{}))
 }
