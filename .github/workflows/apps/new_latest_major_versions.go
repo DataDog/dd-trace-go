@@ -228,14 +228,13 @@ func main() {
 			continue
 		}
 
-		contrib_latests[base] = version_major_contrib
-		// if latestContribMajor, ok := contrib_latests[base]; ok {
-		// 	if compareVersions(version_major_contrib, latestContribMajor) {
-		// 		contrib_latests[base] = version_major_contrib // TODO: check if this is needed
-		// 	}
-		// } else {
-		// 	contrib_latests[base] = version_major_contrib
-		// }
+		if current_latest, ok := contrib_latests[base]; ok {
+			if compareVersions(version_major_contrib, current_latest) {
+				contrib_latests[base] = version_major_contrib
+			}
+		} else {
+			contrib_latests[base] = version_major_contrib
+		}
 
 		// Step 2:
 		// create the string repository@{version} and run command go list -m -json <repository>@<version>
