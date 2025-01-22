@@ -50,7 +50,8 @@ type Integration struct {
 	Name string
 	// Version is the version of the integration/dependency that is being loaded.
 	Version string
-	// Error is the error that occurred while loading the integration.
+	// Error is the error that occurred while loading the integration. If this field is specified, the integration is
+	// considered to be having been forcefully disabled because of the error.
 	Error string
 }
 
@@ -101,6 +102,6 @@ type Client interface {
 	// appStart sends the telemetry necessary to signal that the app is starting.
 	appStart()
 
-	// appStop sends the telemetry necessary to signal that the app is stopping and calls Close()
+	// appStop sends the telemetry necessary to signal that the app is stopping.
 	appStop()
 }

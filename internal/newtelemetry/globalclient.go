@@ -17,14 +17,13 @@ var (
 )
 
 // StartApp starts the telemetry client with the given client send the app-started telemetry and sets it as the global (*client).
-func StartApp(client Client) error {
-	if Disabled() {
-		return nil
+func StartApp(client Client) {
+	if Disabled() || globalClient.Load() != nil {
+		return
 	}
 
 	client.appStart()
 	SwapClient(client)
-	return nil
 }
 
 // SwapClient swaps the global client with the given client and Flush the old (*client).
@@ -40,12 +39,14 @@ func SwapClient(client Client) {
 
 // StopApp creates the app-stopped telemetry, adding to the queue and Flush all the queue before stopping the (*client).
 func StopApp() {
-	if Disabled() {
+	if Disabled() || globalClient.Load() == nil {
 		return
 	}
 
 	if client := globalClient.Swap(nil); client != nil && *client != nil {
 		(*client).appStop()
+		(*client).Flush()
+		(*client).Close()
 	}
 }
 
