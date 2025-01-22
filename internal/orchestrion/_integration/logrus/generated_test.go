@@ -13,6 +13,10 @@ import (
 	"github.com/DataDog/dd-trace-go/internal/orchestrion/_integration/internal/harness"
 )
 
+func TestEchoMiddleware(t *testing.T) {
+	harness.Run(t, new(TestCaseEchoMiddleware))
+}
+
 func TestGlobalLogger(t *testing.T) {
 	harness.Run(t, new(TestCaseGlobalLogger))
 }
