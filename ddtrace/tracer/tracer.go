@@ -865,21 +865,23 @@ func (t *tracer) TracerConf() TracerConf {
 }
 
 func (t *tracer) Submit(s *Span) {
-	tc := t.TracerConf()
-	if !tc.Disabled {
-		// we have an active tracer
-		if t.config.canComputeStats() {
-			statSpan, shouldCalc := t.stats.newTracerStatSpan(s, t.obfuscator)
-			if shouldCalc {
-				// the agent supports computed stats
-				select {
-				case t.stats.In <- statSpan:
-					// ok
-				default:
-					log.Error("Stats channel full, disregarding span.")
-				}
-			}
-		}
+	if !t.config.enabled.current {
+		return
+	}
+	// we have an active tracer
+	if !t.config.canDropP0s() {
+		return
+	}
+	statSpan, shouldCalc := t.stats.newTracerStatSpan(s, t.obfuscator)
+	if !shouldCalc {
+		return
+	}
+	// the agent supports computed stats
+	select {
+	case t.stats.In <- statSpan:
+		// ok
+	default:
+		log.Error("Stats channel full, disregarding span.")
 	}
 }
 
