@@ -7,6 +7,8 @@
 package logrus
 
 import (
+	"strconv"
+
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
@@ -42,8 +44,8 @@ func (d *DDContextLogHook) Fire(e *logrus.Entry) error {
 	if ctxW3c, ok := span.Context().(ddtrace.SpanContextW3C); ok && log128bits {
 		e.Data[ext.LogKeyTraceID] = ctxW3c.TraceID128()
 	} else {
-		e.Data[ext.LogKeyTraceID] = span.Context().TraceID()
+		e.Data[ext.LogKeyTraceID] = strconv.FormatUint(span.Context().TraceID(), 10)
 	}
-	e.Data[ext.LogKeySpanID] = span.Context().SpanID()
+	e.Data[ext.LogKeySpanID] = strconv.FormatUint(span.Context().SpanID(), 10)
 	return nil
 }
