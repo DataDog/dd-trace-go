@@ -43,30 +43,31 @@ func StartRequestSpan(r *http.Request, opts ...ddtrace.StartSpanOption) (tracer.
 	}
 
 	nopts := make([]ddtrace.StartSpanOption, 0, len(opts)+1+len(ipTags))
-	spanParentCtx, spanParentErr := tracer.Extract(tracer.HTTPHeadersCarrier(r.Header))
-	spanLinksCtx, spanLinksOk := spanParentCtx.(ddtrace.SpanContextWithLinks)
 
 	var inferredProxySpan tracer.Span
-	inferredProxySpanCreated := false
 
-	if created, ok := r.Context().Value(inferredSpanCreatedCtxKey{}).(bool); ok {
-		inferredProxySpanCreated = created
-	}
+	if cfg.inferredProxyServicesEnabled {
+		inferredProxySpanCreated := false
 
-	if cfg.inferredProxyServicesEnabled && !inferredProxySpanCreated {
-		var inferredStartSpanOpts []ddtrace.StartSpanOption
-
-		if spanLinksOk {
-			inferredStartSpanOpts = append(inferredStartSpanOpts, tracer.WithSpanLinks(spanLinksCtx.SpanLinks()))
+		if created, ok := r.Context().Value(inferredSpanCreatedCtxKey{}).(bool); ok {
+			inferredProxySpanCreated = created
 		}
 
-		// Attempt to extract the inferred proxy context
-		requestProxyContext, err := extractInferredProxyContext(r.Header)
-		if err != nil {
-			log.Debug(err.Error())
-		} else {
-			// Start the inferred proxy span
-			inferredProxySpan = startInferredProxySpan(requestProxyContext, spanParentCtx, inferredStartSpanOpts...)
+		if !inferredProxySpanCreated {
+			var inferredStartSpanOpts []ddtrace.StartSpanOption
+
+			requestProxyContext, err := extractInferredProxyContext(r.Header)
+			if err != nil {
+				log.Debug(err.Error())
+			} else {
+				spanParentCtx, spanParentErr := tracer.Extract(tracer.HTTPHeadersCarrier(r.Header))
+				if spanParentErr == nil {
+					if spanLinksCtx, spanLinksOk := spanParentCtx.(ddtrace.SpanContextWithLinks); spanLinksOk {
+						inferredStartSpanOpts = append(inferredStartSpanOpts, tracer.WithSpanLinks(spanLinksCtx.SpanLinks()))
+					}
+				}
+				inferredProxySpan = startInferredProxySpan(requestProxyContext, spanParentCtx, inferredStartSpanOpts...)
+			}
 		}
 	}
 
@@ -86,11 +87,14 @@ func StartRequestSpan(r *http.Request, opts ...ddtrace.StartSpanOption) (tracer.
 
 			if inferredProxySpan != nil {
 				tracer.ChildOf(inferredProxySpan.Context())(ssCfg)
-			} else if spanParentErr == nil {
-				if spanLinksOk {
-					tracer.WithSpanLinks(spanLinksCtx.SpanLinks())(ssCfg)
+			} else {
+				spanParentCtx, spanParentErr := tracer.Extract(tracer.HTTPHeadersCarrier(r.Header))
+				if spanParentErr == nil {
+					if spanLinksCtx, spanLinksOk := spanParentCtx.(ddtrace.SpanContextWithLinks); spanLinksOk {
+						tracer.WithSpanLinks(spanLinksCtx.SpanLinks())(ssCfg)
+					}
+					tracer.ChildOf(spanParentCtx)(ssCfg)
 				}
-				tracer.ChildOf(spanParentCtx)(ssCfg)
 			}
 
 			for k, v := range ipTags {
@@ -100,11 +104,9 @@ func StartRequestSpan(r *http.Request, opts ...ddtrace.StartSpanOption) (tracer.
 
 	nopts = append(nopts, opts...)
 
-	var requestContext context.Context
+	var requestContext = r.Context()
 	if inferredProxySpan != nil {
 		requestContext = context.WithValue(r.Context(), inferredSpanCreatedCtxKey{}, true)
-	} else {
-		requestContext = context.WithValue(r.Context(), inferredSpanCreatedCtxKey{}, false)
 	}
 
 	span, ctx := tracer.StartSpanFromContext(requestContext, namingschema.OpName(namingschema.HTTPServer), nopts...)
