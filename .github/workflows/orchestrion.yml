@@ -57,7 +57,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: ${{ inputs.orchestrion-version != '' && 'DataDog/dd-trace-go' || github.repository }}
-          ref: ${{ inputs.orchestrion-version != '' && 'romain.marcadier/APPSEC-55160/orchestrion' || github.sha }} # TODO: Change to `main` in workflow_call case
+          ref: ${{ inputs.orchestrion-version != '' && 'main' || github.sha }}
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
@@ -97,7 +97,7 @@ jobs:
         with:
           path: ${{ github.workspace }}/dd-trace-go
           repository: ${{ inputs.orchestrion-version != '' && 'DataDog/dd-trace-go' || github.repository }}
-          ref: ${{ inputs.orchestrion-version != '' && 'romain.marcadier/APPSEC-55160/orchestrion' || github.sha }} # TODO: Change to `main` in workflow_call case
+          ref: ${{ inputs.orchestrion-version != '' && 'main' || github.sha }}
       # If we're in workflow_dispatch/call, maybe we need to up/downgrade orchestrion
       - name: Check out orchestrion
         if: inputs.orchestrion-version != ''
