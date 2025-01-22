@@ -30,6 +30,15 @@ type ModuleInfo struct {
 	} `json:"Origin"`
 }
 
+// stdlibPackages are used to skip in version checking.
+// TODO: can we make this exported and export from gen_supported_versions_doc.go or put it in instrumentation/packages.go?
+var stdLibPackages = map[string]struct{}{
+	"log/slog":     {},
+	"os":           {},
+	"net/http":     {},
+	"database/sql": {},
+}
+
 func getGoModVersion(repository string, pkg string) (string, error) {
 	// ex: package: aws/aws-sdk-go-v2
 	// repository: github.com/aws/aws-sdk-go-v2
@@ -160,9 +169,7 @@ func truncateVersion(pkg string) string {
 
 // split, ex v5.3.2 => v5
 func truncateMajorVersion(version string) string {
-	// Split the version by "."
 	parts := strings.Split(version, ".")
-	// Return the first part (e.g., "v5")
 	return parts[0]
 }
 
@@ -199,28 +206,36 @@ func main() {
 
 		// Step 1: get the version from the module go.mod
 		fmt.Printf("package: %v\n", pkg)
-		fmt.Printf("repository: %v\n", repository)
-		base := truncateVersion(string(pkg))
+		// fmt.Printf("repository: %v\n", repository)
 
+		// if it is part of the standard packages, continue
+		if _, ok := stdLibPackages[repository]; ok {
+			continue
+		}
+
+		base := truncateVersion(string(pkg))
 		version, err := getGoModVersion(repository, string(pkg))
 		if err != nil {
-			return
+			fmt.Printf("%v go.mod not found.", pkg)
+			continue
 		}
 		fmt.Printf("version: %v\n", version)
 
 		// check if need to update contrib_latests
-		// fmt.Printf("Getting latest contrib major")
 		version_major_contrib := truncateMajorVersion(version)
 		if err != nil {
 			fmt.Println(err)
+			continue
 		}
-		if latestContribMajor, ok := contrib_latests[base]; ok {
-			if compareVersions(version_major_contrib, latestContribMajor) {
-				contrib_latests[base] = version_major_contrib // TODO: check if this is needed
-			}
-		} else {
-			contrib_latests[base] = version_major_contrib
-		}
+
+		contrib_latests[base] = version_major_contrib
+		// if latestContribMajor, ok := contrib_latests[base]; ok {
+		// 	if compareVersions(version_major_contrib, latestContribMajor) {
+		// 		contrib_latests[base] = version_major_contrib // TODO: check if this is needed
+		// 	}
+		// } else {
+		// 	contrib_latests[base] = version_major_contrib
+		// }
 
 		// Step 2:
 		// create the string repository@{version} and run command go list -m -json <repository>@<version>
@@ -256,7 +271,7 @@ func main() {
 			latest := getLatestVersion(versions)
 			fmt.Printf("Latest version for %s: %s\n", major, latest)
 
-			// Fetch `go.mod`
+			// Fetch `go.mod` with command
 			// curl https://raw.githubusercontent.com/<module>/refs/tags/<latest>/go.mod
 			goModURL := fmt.Sprintf("https://raw.githubusercontent.com/%s/refs/tags/%s/go.mod", base, latest)
 			isGoModule, modName := fetchGoMod(goModURL)
@@ -274,12 +289,14 @@ func main() {
 					github_latests[base] = major
 				}
 			} else {
-				// fmt.Printf("adding to github latests: %s, major %s\n", base, major)
 				github_latests[base] = major
 			}
 		}
 
 	}
+
+	// check if there are any outdated majors
+	// output if there is a new major package we do not support
 	for base, contribMajor := range contrib_latests {
 		if latestGithubMajor, ok := github_latests[base]; ok {
 			if compareVersions(latestGithubMajor, contribMajor) {
@@ -288,7 +305,4 @@ func main() {
 		}
 	}
 
-	// for key, value := range github_latests {
-	// 	fmt.Printf("%s: %s\n", key, value)
-	// }
 }
