@@ -37,26 +37,21 @@ var interval = 10 * time.Second
 func pollPoolStats(statsd internal.StatsdClient, pool *pgxpool.Pool) {
 	// TODO: Create stop condition for pgx on db.Close
 	log.Debug("contrib/jackc/pgx.v5: Traced pool connection found: Pool stats will be gathered and sent every %v.", interval)
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ticker.C:
-			log.Debug("contrib/jackc/pgx.v5: Reporting pgxpool.Stat metrics...")
-			stat := pool.Stat()
-			statsd.Gauge(AcquireCount, float64(stat.AcquireCount()), []string{}, 1)
-			statsd.Timing(AcquireDuration, stat.AcquireDuration(), []string{}, 1)
-			statsd.Gauge(AcquiredConns, float64(stat.AcquiredConns()), []string{}, 1)
-			statsd.Gauge(CanceledAcquireCount, float64(stat.CanceledAcquireCount()), []string{}, 1)
-			statsd.Gauge(ConstructingConns, float64(stat.ConstructingConns()), []string{}, 1)
-			statsd.Gauge(EmptyAcquireCount, float64(stat.EmptyAcquireCount()), []string{}, 1)
-			statsd.Gauge(IdleConns, float64(stat.IdleConns()), []string{}, 1)
-			statsd.Gauge(MaxConns, float64(stat.MaxConns()), []string{}, 1)
-			statsd.Gauge(TotalConns, float64(stat.TotalConns()), []string{}, 1)
-			statsd.Gauge(NewConnsCount, float64(stat.NewConnsCount()), []string{}, 1)
-			statsd.Gauge(MaxLifetimeDestroyCount, float64(stat.MaxLifetimeDestroyCount()), []string{}, 1)
-			statsd.Gauge(MaxIdleDestroyCount, float64(stat.MaxIdleDestroyCount()), []string{}, 1)
-		}
+	for range time.NewTicker(interval).C {
+		log.Debug("contrib/jackc/pgx.v5: Reporting pgxpool.Stat metrics...")
+		stat := pool.Stat()
+		statsd.Gauge(AcquireCount, float64(stat.AcquireCount()), []string{}, 1)
+		statsd.Timing(AcquireDuration, stat.AcquireDuration(), []string{}, 1)
+		statsd.Gauge(AcquiredConns, float64(stat.AcquiredConns()), []string{}, 1)
+		statsd.Gauge(CanceledAcquireCount, float64(stat.CanceledAcquireCount()), []string{}, 1)
+		statsd.Gauge(ConstructingConns, float64(stat.ConstructingConns()), []string{}, 1)
+		statsd.Gauge(EmptyAcquireCount, float64(stat.EmptyAcquireCount()), []string{}, 1)
+		statsd.Gauge(IdleConns, float64(stat.IdleConns()), []string{}, 1)
+		statsd.Gauge(MaxConns, float64(stat.MaxConns()), []string{}, 1)
+		statsd.Gauge(TotalConns, float64(stat.TotalConns()), []string{}, 1)
+		statsd.Gauge(NewConnsCount, float64(stat.NewConnsCount()), []string{}, 1)
+		statsd.Gauge(MaxLifetimeDestroyCount, float64(stat.MaxLifetimeDestroyCount()), []string{}, 1)
+		statsd.Gauge(MaxIdleDestroyCount, float64(stat.MaxIdleDestroyCount()), []string{}, 1)
 	}
 }
 
