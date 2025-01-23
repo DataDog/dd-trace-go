@@ -85,10 +85,9 @@ type client struct {
 		Payload() transport.Payload
 	}
 
-	flushTicker     *internal.Ticker
-	heartbeatTicker *internal.Ticker
+	flushTicker *internal.Ticker
 
-	// flushMapper is the transformer to use for the next flush on the gather payloads on this tick
+	// flushMapper is the transformer to use for the next flush on the gathered payloads on this tick
 	flushMapper   mapper.Mapper
 	flushMapperMu sync.Mutex
 
