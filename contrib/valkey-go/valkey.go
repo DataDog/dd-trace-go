@@ -186,40 +186,40 @@ func (c *coreClient) buildStartSpanOptions(input buildStartSpanOptionsInput) []t
 	return opts
 }
 
-func (c *coreClient) Do(ctx context.Context, cmd valkey.Completed) (resp valkey.ValkeyResult) {
+func (c *coreClient) Do(ctx context.Context, cmd valkey.Completed) valkey.ValkeyResult {
 	command, statement := processCmd(&cmd)
 	span, ctx := tracer.StartSpanFromContext(ctx, c.spanName, c.buildStartSpanOptions(buildStartSpanOptionsInput{
 		command:    command,
 		statement:  statement,
 		rawCommand: c.clientConfig.rawCommand,
 	})...)
-	resp = c.Client.Do(ctx, cmd)
+	resp := c.Client.Do(ctx, cmd)
 	setClientCacheTags(span, resp)
-	defer span.Finish(tracer.WithError(resp.Error()))
+	span.Finish(tracer.WithError(resp.Error()))
 	return resp
 }
 
-func (c *coreClient) DoMulti(ctx context.Context, multi ...valkey.Completed) (resp []valkey.ValkeyResult) {
+func (c *coreClient) DoMulti(ctx context.Context, multi ...valkey.Completed) []valkey.ValkeyResult {
 	command, statement := processMultiCompleted(multi...)
 	span, ctx := tracer.StartSpanFromContext(ctx, c.spanName, c.buildStartSpanOptions(buildStartSpanOptionsInput{
 		command:    command,
 		statement:  statement,
 		rawCommand: c.clientConfig.rawCommand,
 	})...)
-	resp = c.Client.DoMulti(ctx, multi...)
-	defer span.Finish(tracer.WithError(firstError(resp)))
+	resp := c.Client.DoMulti(ctx, multi...)
+	span.Finish(tracer.WithError(firstError(resp)))
 	return resp
 }
 
-func (c *coreClient) Receive(ctx context.Context, subscribe valkey.Completed, fn func(msg valkey.PubSubMessage)) (err error) {
+func (c *coreClient) Receive(ctx context.Context, subscribe valkey.Completed, fn func(msg valkey.PubSubMessage)) error {
 	command, statement := processCmd(&subscribe)
 	span, ctx := tracer.StartSpanFromContext(ctx, c.spanName, c.buildStartSpanOptions(buildStartSpanOptionsInput{
 		command:    command,
 		statement:  statement,
 		rawCommand: c.clientConfig.rawCommand,
 	})...)
-	err = c.Client.Receive(ctx, subscribe, fn)
-	defer span.Finish(tracer.WithError(err))
+	err := c.Client.Receive(ctx, subscribe, fn)
+	span.Finish(tracer.WithError(err))
 	return err
 }
 
@@ -260,19 +260,19 @@ func (c *client) DoStream(ctx context.Context, cmd valkey.Completed) (resp valke
 	return resp
 }
 
-func (c *client) DoMultiStream(ctx context.Context, multi ...valkey.Completed) (resp valkey.MultiValkeyResultStream) {
+func (c *client) DoMultiStream(ctx context.Context, multi ...valkey.Completed) valkey.MultiValkeyResultStream {
 	command, statement := processMultiCompleted(multi...)
 	span, ctx := tracer.StartSpanFromContext(ctx, c.spanName, c.buildStartSpanOptions(buildStartSpanOptionsInput{
 		command:    command,
 		statement:  statement,
 		rawCommand: c.clientConfig.rawCommand,
 	})...)
-	resp = c.Client.DoMultiStream(ctx, multi...)
-	defer span.Finish(tracer.WithError(resp.Error()))
+	resp := c.Client.DoMultiStream(ctx, multi...)
+	span.Finish(tracer.WithError(resp.Error()))
 	return resp
 }
 
-func (c *client) Dedicated(fn func(valkey.DedicatedClient) error) (err error) {
+func (c *client) Dedicated(fn func(valkey.DedicatedClient) error) error {
 	return c.Client.Dedicated(func(dc valkey.DedicatedClient) error {
 		return fn(&dedicatedClient{
 			coreClient:      c.coreClient,

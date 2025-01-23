@@ -182,6 +182,65 @@ func TestNewClient(t *testing.T) {
 			},
 		},
 		{
+			name: "Test SET command with timeout",
+			valkeyClientOptions: valkey.ClientOption{
+				InitAddress: []string{fmt.Sprintf("127.0.0.1:%d", valkeyPort)},
+				Username:    valkeyUsername,
+				Password:    valkeyPassword,
+			},
+			createSpans: func(t *testing.T, ctx context.Context, client valkey.Client) {
+				ctxWithTimeout, cancel := context.WithTimeout(ctx, time.Nanosecond)
+				client.Do(ctxWithTimeout, client.B().Set().Key("k1").Value("v1").Build())
+				cancel()
+			},
+			assertSpans: []func(t *testing.T, span mocktracer.Span){
+				func(t *testing.T, span mocktracer.Span) {
+					assert.Equal(t, "SET", span.Tag(ext.DBStatement))
+					assert.Equal(t, "SET", span.Tag(ext.ResourceName))
+					assert.False(t, span.Tag(ext.ValkeyRawCommand).(bool))
+					assert.False(t, span.Tag(ext.ValkeyClientCacheHit).(bool))
+					assert.Less(t, span.Tag(ext.ValkeyClientCacheTTL), int64(0))
+					assert.Less(t, span.Tag(ext.ValkeyClientCachePXAT), int64(0))
+					assert.Less(t, span.Tag(ext.ValkeyClientCachePTTL), int64(0))
+					assert.Equal(t, context.DeadlineExceeded, span.Tag(ext.Error).(error))
+				},
+			},
+		},
+		{
+			name: "Test SET/GET/SET/GET command with timeout and option",
+			valkeyClientOptions: valkey.ClientOption{
+				InitAddress: []string{fmt.Sprintf("127.0.0.1:%d", valkeyPort)},
+				Username:    valkeyUsername,
+				Password:    valkeyPassword,
+			},
+			valkeytraceClientOptions: []ClientOption{
+				WithRawCommand(true),
+			},
+			createSpans: func(t *testing.T, ctx context.Context, client valkey.Client) {
+				ctxWithTimeout, cancel := context.WithTimeout(ctx, time.Nanosecond)
+				client.DoMulti(
+					ctxWithTimeout,
+					client.B().Set().Key("k1").Value("v1").Build(),
+					client.B().Get().Key("k1").Build(),
+					client.B().Set().Key("k2").Value("v2").Build(),
+					client.B().Get().Key("k2").Build(),
+				)
+				cancel()
+			},
+			assertSpans: []func(t *testing.T, span mocktracer.Span){
+				func(t *testing.T, span mocktracer.Span) {
+					assert.Equal(t, "SET\nk1\nv1\nGET\nk1\nSET\nk2\nv2\nGET\nk2", span.Tag(ext.DBStatement))
+					assert.Equal(t, "SET\nk1\nv1\nGET\nk1\nSET\nk2\nv2\nGET\nk2", span.Tag(ext.ResourceName))
+					assert.True(t, span.Tag(ext.ValkeyRawCommand).(bool))
+					assert.Nil(t, span.Tag(ext.ValkeyClientCacheHit))
+					assert.Nil(t, span.Tag(ext.ValkeyClientCacheTTL))
+					assert.Nil(t, span.Tag(ext.ValkeyClientCachePXAT))
+					assert.Nil(t, span.Tag(ext.ValkeyClientCachePTTL))
+					assert.Equal(t, context.DeadlineExceeded, span.Tag(ext.Error).(error))
+				},
+			},
+		},
+		{
 			name: "Test SUBSCRIBE command with timeout",
 			valkeyClientOptions: valkey.ClientOption{
 				InitAddress: []string{fmt.Sprintf("127.0.0.1:%d", valkeyPort)},
