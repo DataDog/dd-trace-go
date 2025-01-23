@@ -9,11 +9,15 @@ import (
 	"sync/atomic"
 
 	globalinternal "gopkg.in/DataDog/dd-trace-go.v1/internal"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/newtelemetry/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/newtelemetry/types"
 )
 
 var (
 	globalClient atomic.Pointer[Client]
+
+	// actionQueue contains all actions done on the global client done before StartApp() with an actual client object is called
+	actionQueue = internal.NewRingQueue[func(Client)](16, 512)
 )
 
 // StartApp starts the telemetry client with the given client send the app-started telemetry and sets it as the global (*client).
@@ -22,8 +26,15 @@ func StartApp(client Client) {
 		return
 	}
 
-	client.appStart()
 	SwapClient(client)
+
+	actions := actionQueue.GetBuffer()
+	defer actionQueue.ReleaseBuffer(actions)
+	for _, action := range actions {
+		action(client)
+	}
+
+	client.appStart()
 }
 
 // SwapClient swaps the global client with the given client and Flush the old (*client).
@@ -129,6 +140,10 @@ func ProductStarted(product types.Namespace) {
 
 	if client := globalClient.Load(); client != nil && *client != nil {
 		(*client).ProductStarted(product)
+	} else {
+		actionQueue.Enqueue(func(client Client) {
+			client.ProductStarted(product)
+		})
 	}
 }
 
@@ -140,6 +155,10 @@ func ProductStopped(product types.Namespace) {
 
 	if client := globalClient.Load(); client != nil && *client != nil {
 		(*client).ProductStopped(product)
+	} else {
+		actionQueue.Enqueue(func(client Client) {
+			client.ProductStopped(product)
+		})
 	}
 }
 
@@ -151,6 +170,10 @@ func ProductStartError(product types.Namespace, err error) {
 
 	if client := globalClient.Load(); client != nil && *client != nil {
 		(*client).ProductStartError(product, err)
+	} else {
+		actionQueue.Enqueue(func(client Client) {
+			client.ProductStartError(product, err)
+		})
 	}
 }
 
@@ -163,6 +186,10 @@ func AddAppConfig(key string, value any, origin types.Origin) {
 
 	if client := globalClient.Load(); client != nil && *client != nil {
 		(*client).AddAppConfig(key, value, origin)
+	} else {
+		actionQueue.Enqueue(func(client Client) {
+			client.AddAppConfig(key, value, origin)
+		})
 	}
 }
 
@@ -175,5 +202,9 @@ func AddBulkAppConfig(kvs map[string]any, origin types.Origin) {
 
 	if client := globalClient.Load(); client != nil && *client != nil {
 		(*client).AddBulkAppConfig(kvs, origin)
+	} else {
+		actionQueue.Enqueue(func(client Client) {
+			client.AddBulkAppConfig(kvs, origin)
+		})
 	}
 }
