@@ -7,6 +7,9 @@
 package logrus
 
 import (
+	"os"
+	"strconv"
+
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
@@ -23,6 +26,18 @@ func init() {
 // DDContextLogHook ensures that any span in the log context is correlated to log output.
 type DDContextLogHook struct{}
 
+type config struct {
+	log128bits bool
+}
+
+var cfg = newConfig()
+
+func newConfig() *config {
+	return &config{
+		log128bits: os.Getenv("DD_TRACE_128_BIT_TRACEID_LOGGING_ENABLED") != "false",
+	}
+}
+
 // Levels implements logrus.Hook interface, this hook applies to all defined levels
 func (d *DDContextLogHook) Levels() []logrus.Level {
 	return []logrus.Level{logrus.PanicLevel, logrus.FatalLevel, logrus.ErrorLevel, logrus.WarnLevel, logrus.InfoLevel, logrus.DebugLevel, logrus.TraceLevel}
@@ -34,7 +49,11 @@ func (d *DDContextLogHook) Fire(e *logrus.Entry) error {
 	if !found {
 		return nil
 	}
-	e.Data[ext.LogKeyTraceID] = span.Context().TraceID()
-	e.Data[ext.LogKeySpanID] = span.Context().SpanID()
+	if cfg.log128bits && span.Context().TraceID() != tracer.TraceIDZero {
+		e.Data[ext.LogKeyTraceID] = span.Context().TraceID()
+	} else {
+		e.Data[ext.LogKeyTraceID] = strconv.FormatUint(span.Context().TraceIDLower(), 10)
+	}
+	e.Data[ext.LogKeySpanID] = strconv.FormatUint(span.Context().SpanID(), 10)
 	return nil
 }
