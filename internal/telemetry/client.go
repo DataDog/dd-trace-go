@@ -32,6 +32,7 @@ import (
 type Client interface {
 	RegisterAppConfig(name string, val interface{}, origin Origin)
 	ProductChange(namespace Namespace, enabled bool, configuration []Configuration)
+	IntegrationConfigChange(configuration []Configuration)
 	ConfigChange(configuration []Configuration)
 	Record(namespace Namespace, metric MetricKind, name string, value float64, tags []string, common bool)
 	Count(namespace Namespace, name string, value float64, tags []string, common bool)

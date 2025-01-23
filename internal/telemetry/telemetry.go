@@ -45,6 +45,29 @@ func (c *client) ProductChange(namespace Namespace, enabled bool, configuration 
 	}
 }
 
+// IntegrationConfigChange is a thread-safe method to enqueue an app-started event.
+func (c *client) IntegrationConfigChange(configuration []Configuration) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.integrationConfigChange(configuration)
+}
+
+// integrationConfigChange enqueues an app-started event to be flushed.
+// Must be called with c.mu locked.
+func (c *client) integrationConfigChange(configuration []Configuration) {
+	if !c.started {
+		log("attempted to send config change event, but telemetry client has not started")
+		return
+	}
+	if len(configuration) > 0 {
+		configChange := new(ConfigurationChange)
+		configChange.Configuration = configuration
+		configReq := c.newRequest(RequestTypeAppStarted)
+		configReq.Body.Payload = configChange
+		c.scheduleSubmit(configReq)
+	}
+}
+
 // ConfigChange is a thread-safe method to enqueue an app-client-configuration-change event.
 func (c *client) ConfigChange(configuration []Configuration) {
 	c.mu.Lock()

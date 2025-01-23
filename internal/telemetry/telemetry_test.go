@@ -47,6 +47,20 @@ func TestConfigChange(t *testing.T) {
 	Check(t, configPayload.Configuration, "delta_profiles", true)
 }
 
+func TestIntegrationConfigChange(t *testing.T) {
+	client := new(client)
+	client.start(nil, NamespaceTracers, true)
+	client.integrationConfigChange([]Configuration{BoolConfig("delta_profiles", true)})
+	require.Len(t, client.requests, 1)
+
+	body := client.requests[0].Body
+	assert.Equal(t, RequestTypeAppStarted, body.RequestType)
+	var configPayload = client.requests[0].Body.Payload.(*ConfigurationChange)
+	require.Len(t, configPayload.Configuration, 1)
+
+	Check(t, configPayload.Configuration, "delta_profiles", true)
+}
+
 // mockServer initializes a server that expects a strict amount of telemetry events. It saves these
 // events in a slice until the expected number of events is reached.
 // the `genTelemetry` argument accepts a function that should generate the expected telemetry events via calls to the global client

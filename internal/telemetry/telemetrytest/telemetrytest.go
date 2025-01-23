@@ -101,3 +101,9 @@ func (c *MockClient) ConfigChange(args []telemetry.Configuration) {
 	c.On("ConfigChange", args).Return()
 	_ = c.Called(args)
 }
+
+// IntegrationConfigChange is a mock for the IntegrationConfigChange method.
+func (c *MockClient) IntegrationConfigChange(args []telemetry.Configuration) {
+	c.On("IntegrationConfigChange", args).Return()
+	_ = c.Called(args)
+}
