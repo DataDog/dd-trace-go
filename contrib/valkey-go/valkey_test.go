@@ -14,7 +14,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/valkey-io/valkey-go"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
@@ -34,84 +33,6 @@ func TestMain(m *testing.M) {
 		os.Exit(0)
 	}
 	os.Exit(m.Run())
-}
-
-func TestPeerTags(t *testing.T) {
-	tests := []struct {
-		initAddress  string
-		expectedTags map[string]interface{}
-	}{
-		{
-			initAddress: "127.0.0.1:6379",
-			expectedTags: map[string]interface{}{
-				ext.PeerService:  "valkey",
-				ext.PeerHostIPV4: "127.0.0.1",
-				ext.PeerPort:     6379,
-			},
-		},
-		{
-			initAddress: "[::1]:6379",
-			expectedTags: map[string]interface{}{
-				ext.PeerService:  "valkey",
-				ext.PeerHostIPV6: "::1",
-				ext.PeerPort:     6379,
-			},
-		},
-		{
-			initAddress: "[2001:db8::2]:6379",
-			expectedTags: map[string]interface{}{
-				ext.PeerService:  "valkey",
-				ext.PeerHostIPV6: "2001:db8::2",
-				ext.PeerPort:     6379,
-			},
-		},
-		{
-			initAddress: "[2001:db8::2%lo]:6379",
-			expectedTags: map[string]interface{}{
-				ext.PeerService:  "valkey",
-				ext.PeerHostname: "2001:db8::2%lo",
-				ext.PeerPort:     6379,
-			},
-		},
-		{
-			initAddress: "::1:7777",
-			expectedTags: map[string]interface{}{
-				ext.PeerService:  "valkey",
-				ext.PeerHostname: "",
-				ext.PeerPort:     0,
-			},
-		},
-		{
-			initAddress: ":::7777",
-			expectedTags: map[string]interface{}{
-				ext.PeerService:  "valkey",
-				ext.PeerHostname: "",
-				ext.PeerPort:     0,
-			},
-		},
-		{
-			initAddress: "localhost:7777",
-			expectedTags: map[string]interface{}{
-				ext.PeerService:  "valkey",
-				ext.PeerHostname: "localhost",
-				ext.PeerPort:     7777,
-			},
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.initAddress, func(t *testing.T) {
-			host, port := splitHostPort(tt.initAddress)
-			client := coreClient{
-				host: host,
-				port: port,
-			}
-			var startSpanConfig ddtrace.StartSpanConfig
-			for _, tag := range client.peerTags() {
-				tag(&startSpanConfig)
-			}
-			require.Equal(t, tt.expectedTags, startSpanConfig.Tags)
-		})
-	}
 }
 
 func TestNewClient(t *testing.T) {
@@ -319,10 +240,7 @@ func TestNewClient(t *testing.T) {
 					span.Tag(ext.ServiceName),
 					"service name should not be overwritten as per DD_APM_PEER_TAGS_AGGREGATION in trace-agent",
 				)
-				assert.Equal(t, "valkey", span.Tag(ext.PeerService))
-				assert.Equal(t, "127.0.0.1", span.Tag(ext.PeerHostIPV4))
 				assert.Equal(t, "127.0.0.1", span.Tag(ext.TargetHost))
-				assert.Equal(t, valkeyPort, span.Tag(ext.PeerPort))
 				assert.Equal(t, valkeyPort, span.Tag(ext.TargetPort))
 				assert.Equal(t, 0, span.Tag(ext.ValkeyDatabaseIndex))
 				assert.Equal(t, 0, span.Tag(ext.TargetDB))

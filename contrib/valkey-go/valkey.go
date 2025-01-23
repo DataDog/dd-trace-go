@@ -155,23 +155,6 @@ type buildStartSpanOptionsInput struct {
 	skipRawCommand bool
 }
 
-func (c *coreClient) peerTags() []tracer.StartSpanOption {
-	ipAddr := net.ParseIP(c.host)
-	var peerHostKey string
-	if ipAddr == nil {
-		peerHostKey = ext.PeerHostname
-	} else if ipAddr.To4() != nil {
-		peerHostKey = ext.PeerHostIPV4
-	} else {
-		peerHostKey = ext.PeerHostIPV6
-	}
-	return []tracer.StartSpanOption{
-		tracer.Tag(ext.PeerService, ext.DBSystemValkey),
-		tracer.Tag(peerHostKey, c.host),
-		tracer.Tag(ext.PeerPort, c.port),
-	}
-}
-
 func (c *coreClient) buildStartSpanOptions(input buildStartSpanOptionsInput) []tracer.StartSpanOption {
 	opts := []tracer.StartSpanOption{
 		tracer.ResourceName(input.statement),
@@ -187,7 +170,6 @@ func (c *coreClient) buildStartSpanOptions(input buildStartSpanOptionsInput) []t
 		tracer.Tag(ext.DBSystem, ext.DBSystemValkey),
 		tracer.Tag(ext.ValkeyDatabaseIndex, c.option.SelectDB),
 	}
-	opts = append(opts, c.peerTags()...)
 	if input.skipRawCommand {
 		opts = append(opts, tracer.Tag(ext.ValkeyRawCommand, input.skipRawCommand))
 	}
