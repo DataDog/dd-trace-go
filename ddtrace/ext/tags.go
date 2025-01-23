@@ -22,6 +22,9 @@ const (
 	// Deprecated: Use NetworkDestinationPort instead.
 	TargetPort = "out.port"
 
+	// TargetPort sets the target db.
+	TargetDB = "out.db"
+
 	// NetworkDestinationPort is the remote port number of the outbound connection.
 	NetworkDestinationPort = "network.destination.port"
 

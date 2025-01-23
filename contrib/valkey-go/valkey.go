@@ -179,13 +179,13 @@ func (c *coreClient) buildStartSpanOptions(input buildStartSpanOptionsInput) []t
 		tracer.SpanType(ext.SpanTypeValkey),
 		tracer.Tag(ext.TargetHost, c.host),
 		tracer.Tag(ext.TargetPort, c.port),
+		tracer.Tag(ext.TargetDB, c.option.SelectDB),
 		tracer.Tag(ext.ValkeyClientVersion, valkey.LibVer),
 		tracer.Tag(ext.ValkeyClientName, valkey.LibName),
 		tracer.Tag(ext.Component, componentName),
 		tracer.Tag(ext.SpanKind, ext.SpanKindClient),
 		tracer.Tag(ext.DBSystem, ext.DBSystemValkey),
 		tracer.Tag(ext.ValkeyDatabaseIndex, c.option.SelectDB),
-		tracer.Tag("db.out", c.option.SelectDB),
 	}
 	opts = append(opts, c.peerTags()...)
 	if input.skipRawCommand {
