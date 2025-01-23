@@ -12,7 +12,6 @@ import (
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 
 	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
@@ -43,7 +42,7 @@ func TestFire128BitDisabled(t *testing.T) {
 	t.Setenv("DD_TRACE_128_BIT_TRACEID_LOGGING_ENABLED", "false")
 
 	// Re-initialize to account for race condition between setting env var in the test and reading it in the contrib
-	log128bits = internal.BoolEnv("DD_TRACE_128_BIT_TRACEID_LOGGING_ENABLED", true)
+	cfg = newConfig()
 
 	tracer.Start()
 	defer tracer.Stop()

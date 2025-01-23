@@ -12,16 +12,30 @@ import (
 	"log/slog"
 	"strconv"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 )
 
 const componentName = "log/slog"
 
+var cfg = newConfig()
+
 func init() {
 	telemetry.LoadIntegration(componentName)
 	tracer.MarkIntegrationImported("log/slog")
+}
+
+type config struct {
+	log128bits bool
+}
+
+func newConfig() *config {
+	return &config{
+		log128bits: internal.BoolEnv("DD_TRACE_128_BIT_TRACEID_LOGGING_ENABLED", true),
+	}
 }
 
 var _ slog.Handler = (*handler)(nil)
@@ -62,7 +76,12 @@ func (h *handler) Handle(ctx context.Context, rec slog.Record) error {
 	// set them at the root level.
 	span, ok := tracer.SpanFromContext(ctx)
 	if ok {
-		traceID := strconv.FormatUint(span.Context().TraceID(), 10)
+		var traceID string
+		if ctxW3c, ok := span.Context().(ddtrace.SpanContextW3C); ok && cfg.log128bits {
+			traceID = ctxW3c.TraceID128()
+		} else {
+			traceID = strconv.FormatUint(span.Context().TraceID(), 10)
+		}
 		spanID := strconv.FormatUint(span.Context().SpanID(), 10)
 
 		attrs := []slog.Attr{

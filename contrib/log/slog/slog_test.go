@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"io"
 	"log/slog"
+	"os"
 	"strconv"
 	"strings"
 	"testing"
@@ -19,12 +20,13 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	internallog "gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
-func assertLogEntry(t *testing.T, rawEntry, wantMsg, wantLevel string, span tracer.Span, assertExtra func(t *testing.T, entry map[string]interface{})) {
+func assertLogEntry(t *testing.T, rawEntry, wantMsg, wantLevel string, traceID string, spanID string, assertExtra func(t *testing.T, entry map[string]interface{})) {
 	t.Helper()
 
 	t.Log(rawEntry)
@@ -38,9 +40,6 @@ func assertLogEntry(t *testing.T, rawEntry, wantMsg, wantLevel string, span trac
 	assert.Equal(t, wantLevel, entry["level"])
 	assert.NotEmpty(t, entry["time"])
 
-	//TODO: Update tests to account for 128bit logging by default
-	traceID := strconv.FormatUint(span.Context().TraceID(), 10)
-	spanID := strconv.FormatUint(span.Context().SpanID(), 10)
 	assert.Equal(t, traceID, entry[ext.LogKeyTraceID], "trace id not found")
 	assert.Equal(t, spanID, entry[ext.LogKeySpanID], "span id not found")
 
@@ -61,6 +60,18 @@ func testLogger(t *testing.T, createLogger func(b io.Writer) *slog.Logger, asser
 	span, ctx := tracer.StartSpanFromContext(context.Background(), "test")
 	defer span.Finish()
 
+	var traceID string
+	spanID := strconv.FormatUint(span.Context().SpanID(), 10)
+	if log128bits, ok := os.LookupEnv("DD_TRACE_128_BIT_TRACEID_LOGGING_ENABLED"); ok && log128bits == "false" {
+		// Re-initialize to account for race condition between setting env var in the test and reading it in the contrib
+		cfg = newConfig()
+		traceID = strconv.FormatUint(span.Context().TraceID(), 10)
+	} else {
+		ctxW3c, ok := span.Context().(ddtrace.SpanContextW3C)
+		assert.True(t, ok)
+		traceID = ctxW3c.TraceID128()
+	}
+
 	// log a message using the context containing span information
 	logger.Log(ctx, slog.LevelInfo, "this is an info log with tracing information")
 	logger.Log(ctx, slog.LevelError, "this is an error log with tracing information")
@@ -71,9 +82,43 @@ func testLogger(t *testing.T, createLogger func(b io.Writer) *slog.Logger, asser
 	)
 	// assert log entries contain trace information
 	require.Len(t, logs, 2)
-	assertLogEntry(t, logs[0], "this is an info log with tracing information", "INFO", span, assertExtra)
-	assertLogEntry(t, logs[1], "this is an error log with tracing information", "ERROR", span, assertExtra)
+
+	assertLogEntry(t, logs[0], "this is an info log with tracing information", "INFO", traceID, spanID, assertExtra)
+	assertLogEntry(t, logs[1], "this is an error log with tracing information", "ERROR", traceID, spanID, assertExtra)
 }
+
+// func testLogger128BitDisabled(t *testing.T, createLogger func(b io.Writer) *slog.Logger, assertExtra func(t *testing.T, entry map[string]interface{})) {
+// 	tracer.Start(tracer.WithLogger(internallog.DiscardLogger{}))
+// 	defer tracer.Stop()
+
+// 	// create the application logger
+// 	var b bytes.Buffer
+// 	logger := createLogger(&b)
+
+// 	// start a new span
+// 	span, ctx := tracer.StartSpanFromContext(context.Background(), "test")
+// 	defer span.Finish()
+
+// 	t.Setenv("DD_TRACE_128_BIT_TRACEID_LOGGING_ENABLED", "false")
+// 	// Re-initialize to account for race condition between setting env var in the test and reading it in the contrib
+// 	cfg = newConfig()
+// 	// log a message using the context containing span information
+// 	logger.Log(ctx, slog.LevelInfo, "this is an info log with tracing information")
+// 	logger.Log(ctx, slog.LevelError, "this is an error log with tracing information")
+
+// 	logs := strings.Split(
+// 		strings.TrimRight(b.String(), "\n"),
+// 		"\n",
+// 	)
+// 	// assert log entries contain trace information
+// 	require.Len(t, logs, 2)
+
+// 	// Assert that 64 bit IDs are logged when 128bit logging is disabled
+// 	traceID := strconv.FormatUint(span.Context().TraceID(), 10)
+// 	spanID := strconv.FormatUint(span.Context().SpanID(), 10)
+// 	assertLogEntry(t, logs[0], "this is an info log with tracing information", "INFO", traceID, spanID, assertExtra)
+// 	assertLogEntry(t, logs[1], "this is an error log with tracing information", "ERROR", traceID, spanID, assertExtra)
+// }
 
 func TestNewJSONHandler(t *testing.T) {
 	testLogger(
@@ -205,6 +250,20 @@ func TestRecordClone(t *testing.T) {
 		return true
 	})
 	assert.True(t, foundSentinel)
+}
+
+func Test128BitLoggingDisabled(t *testing.T) {
+	os.Setenv("DD_TRACE_128_BIT_TRACEID_LOGGING_ENABLED", "false")
+	defer os.Unsetenv("DD_TRACE_128_BIT_TRACEID_LOGGING_ENABLED")
+	t.Run("testLogger", func(t *testing.T) {
+		testLogger(
+			t,
+			func(w io.Writer) *slog.Logger {
+				return slog.New(WrapHandler(slog.NewJSONHandler(w, nil)))
+			},
+			nil,
+		)
+	})
 }
 
 func BenchmarkHandler(b *testing.B) {

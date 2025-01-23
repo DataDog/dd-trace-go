@@ -7,7 +7,6 @@
 package logrus
 
 import (
-	"fmt"
 	"strconv"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
@@ -21,8 +20,6 @@ import (
 
 const componentName = "sirupsen/logrus"
 
-var log128bits = internal.BoolEnv("DD_TRACE_128_BIT_TRACEID_LOGGING_ENABLED", true)
-
 func init() {
 	telemetry.LoadIntegration(componentName)
 	tracer.MarkIntegrationImported("github.com/sirupsen/logrus")
@@ -31,6 +28,18 @@ func init() {
 // DDContextLogHook ensures that any span in the log context is correlated to log output.
 type DDContextLogHook struct{}
 
+type config struct {
+	log128bits bool
+}
+
+var cfg = newConfig()
+
+func newConfig() *config {
+	return &config{
+		log128bits: internal.BoolEnv("DD_TRACE_128_BIT_TRACEID_LOGGING_ENABLED", true),
+	}
+}
+
 // Levels implements logrus.Hook interface, this hook applies to all defined levels
 func (d *DDContextLogHook) Levels() []logrus.Level {
 	return []logrus.Level{logrus.PanicLevel, logrus.FatalLevel, logrus.ErrorLevel, logrus.WarnLevel, logrus.InfoLevel, logrus.DebugLevel, logrus.TraceLevel}
@@ -38,16 +47,13 @@ func (d *DDContextLogHook) Levels() []logrus.Level {
 
 // Fire implements logrus.Hook interface, attaches trace and span details found in entry context
 func (d *DDContextLogHook) Fire(e *logrus.Entry) error {
-	fmt.Println("Is it enabled?", log128bits)
 	span, found := tracer.SpanFromContext(e.Context)
 	if !found {
 		return nil
 	}
-	if ctxW3c, ok := span.Context().(ddtrace.SpanContextW3C); ok && log128bits {
-		fmt.Println("a true?")
+	if ctxW3c, ok := span.Context().(ddtrace.SpanContextW3C); ok && cfg.log128bits {
 		e.Data[ext.LogKeyTraceID] = ctxW3c.TraceID128()
 	} else {
-		fmt.Println("false")
 		e.Data[ext.LogKeyTraceID] = strconv.FormatUint(span.Context().TraceID(), 10)
 	}
 	e.Data[ext.LogKeySpanID] = strconv.FormatUint(span.Context().SpanID(), 10)
