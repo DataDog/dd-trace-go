@@ -163,8 +163,6 @@ func TestNewClient(t *testing.T) {
 				func(t *testing.T, span mocktracer.Span) {
 					assert.Equal(t, "SET\ntest_key\ntest_value", span.Tag(ext.DBStatement))
 					assert.Equal(t, "SET\ntest_key\ntest_value", span.Tag(ext.ResourceName))
-					assert.Greater(t, span.Tag("db.stmt_size"), 0)
-					assert.Equal(t, "SET", span.Tag("db.operation"))
 					assert.True(t, span.Tag(ext.ValkeyRawCommand).(bool))
 					assert.False(t, span.Tag(ext.ValkeyClientCacheHit).(bool))
 					assert.Less(t, span.Tag(ext.ValkeyClientCacheTTL), int64(0))
@@ -190,8 +188,6 @@ func TestNewClient(t *testing.T) {
 				func(t *testing.T, span mocktracer.Span) {
 					assert.Equal(t, "SET\ntest_key\ntest_value\nGET\ntest_key", span.Tag(ext.DBStatement))
 					assert.Equal(t, "SET\ntest_key\ntest_value\nGET\ntest_key", span.Tag(ext.ResourceName))
-					assert.Greater(t, span.Tag("db.stmt_size"), 0)
-					assert.Equal(t, "SET GET", span.Tag("db.operation"))
 					assert.Nil(t, span.Tag(ext.ValkeyRawCommand))
 					assert.Nil(t, span.Tag(ext.ValkeyClientCacheHit))
 					assert.Nil(t, span.Tag(ext.ValkeyClientCacheTTL))
@@ -216,10 +212,8 @@ func TestNewClient(t *testing.T) {
 			},
 			assertSpans: []func(t *testing.T, span mocktracer.Span){
 				func(t *testing.T, span mocktracer.Span) {
-					assert.Greater(t, span.Tag("db.stmt_size"), 0)
 					assert.Equal(t, "HMGET\nmk\n1\n2", span.Tag(ext.DBStatement))
 					assert.Equal(t, "HMGET\nmk\n1\n2", span.Tag(ext.ResourceName))
-					assert.Equal(t, "HMGET", span.Tag("db.operation"))
 					assert.False(t, span.Tag(ext.ValkeyClientCacheHit).(bool))
 					assert.Greater(t, span.Tag(ext.ValkeyClientCacheTTL), int64(0))
 					assert.Greater(t, span.Tag(ext.ValkeyClientCachePXAT), int64(0))
@@ -227,10 +221,8 @@ func TestNewClient(t *testing.T) {
 					assert.Nil(t, span.Tag(ext.Error))
 				},
 				func(t *testing.T, span mocktracer.Span) {
-					assert.Greater(t, span.Tag("db.stmt_size"), 0)
 					assert.Equal(t, "HMGET\nmk\n1\n2", span.Tag(ext.DBStatement))
 					assert.Equal(t, "HMGET\nmk\n1\n2", span.Tag(ext.ResourceName))
-					assert.Equal(t, "HMGET", span.Tag("db.operation"))
 					assert.Nil(t, span.Tag(ext.ValkeyRawCommand))
 					assert.True(t, span.Tag(ext.ValkeyClientCacheHit).(bool))
 					assert.Greater(t, span.Tag(ext.ValkeyClientCacheTTL), int64(0))
@@ -258,8 +250,6 @@ func TestNewClient(t *testing.T) {
 				func(t *testing.T, span mocktracer.Span) {
 					assert.Equal(t, "GET\ntest_key", span.Tag(ext.DBStatement))
 					assert.Equal(t, "GET\ntest_key", span.Tag(ext.ResourceName))
-					assert.Greater(t, span.Tag("db.stmt_size"), 0)
-					assert.Equal(t, "GET", span.Tag("db.operation"))
 					assert.True(t, span.Tag(ext.ValkeyRawCommand).(bool))
 					assert.Nil(t, span.Tag(ext.ValkeyClientCacheHit))
 					assert.Nil(t, span.Tag(ext.ValkeyClientCacheTTL))
@@ -286,10 +276,8 @@ func TestNewClient(t *testing.T) {
 			},
 			assertSpans: []func(t *testing.T, span mocktracer.Span){
 				func(t *testing.T, span mocktracer.Span) {
-					assert.Greater(t, span.Tag("db.stmt_size"), 0)
 					assert.Equal(t, "SUBSCRIBE\ntest_channel", span.Tag(ext.DBStatement))
 					assert.Equal(t, "SUBSCRIBE\ntest_channel", span.Tag(ext.ResourceName))
-					assert.Equal(t, "SUBSCRIBE", span.Tag("db.operation"))
 					assert.Nil(t, span.Tag(ext.ValkeyRawCommand))
 					assert.Nil(t, span.Tag(ext.ValkeyClientCacheHit))
 					assert.Nil(t, span.Tag(ext.ValkeyClientCacheTTL))
