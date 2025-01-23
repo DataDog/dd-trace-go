@@ -7,25 +7,55 @@ package logrus
 
 import (
 	"context"
+	"strconv"
 	"testing"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 
 	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
 )
 
-func TestFire(t *testing.T) {
+func TestFire128BitEnabled(t *testing.T) {
+	// By default, trace IDs are logged in 128bit format
 	tracer.Start()
 	defer tracer.Stop()
+	sp, sctx := tracer.StartSpanFromContext(context.Background(), "testSpan", tracer.WithSpanID(1234))
+
+	hook := &DDContextLogHook{}
+	e := logrus.NewEntry(logrus.New())
+	e.Context = sctx
+	err := hook.Fire(e)
+	assert.NoError(t, err)
+
+	ctxW3c, ok := sp.Context().(ddtrace.SpanContextW3C)
+	assert.True(t, ok)
+
+	assert.Equal(t, ctxW3c.TraceID128(), e.Data["dd.trace_id"])
+	assert.Equal(t, strconv.FormatUint(sp.Context().SpanID(), 10), e.Data["dd.span_id"])
+}
+
+func TestFire128BitDisabled(t *testing.T) {
+	// By default, trace IDs are logged in 128bit format
+
+	t.Setenv("DD_TRACE_128_BIT_TRACEID_LOGGING_ENABLED", "false")
+
+	// Re-initialize to account for race condition between setting env var in the test and reading it in the contrib
+	log128bits = internal.BoolEnv("DD_TRACE_128_BIT_TRACEID_LOGGING_ENABLED", true)
+
+	tracer.Start()
+	defer tracer.Stop()
+	id := 1234
 	_, sctx := tracer.StartSpanFromContext(context.Background(), "testSpan", tracer.WithSpanID(1234))
 
 	hook := &DDContextLogHook{}
 	e := logrus.NewEntry(logrus.New())
 	e.Context = sctx
 	err := hook.Fire(e)
-
 	assert.NoError(t, err)
-	assert.Equal(t, uint64(1234), e.Data["dd.trace_id"])
-	assert.Equal(t, uint64(1234), e.Data["dd.span_id"])
+
+	assert.Equal(t, strconv.Itoa(id), e.Data["dd.trace_id"])
+	assert.Equal(t, strconv.Itoa(id), e.Data["dd.span_id"])
 }
