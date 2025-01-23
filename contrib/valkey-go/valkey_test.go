@@ -75,7 +75,7 @@ func TestNewClient(t *testing.T) {
 				Password:    valkeyPassword,
 			},
 			valkeytraceClientOptions: []ClientOption{
-				WithSkipRawCommand(true),
+				WithRawCommand(true),
 			},
 			createSpans: func(t *testing.T, ctx context.Context, client valkey.Client) {
 				assert.NoError(t, client.Do(ctx, client.B().Set().Key("test_key").Value("test_value").Build()).Error())
@@ -107,9 +107,9 @@ func TestNewClient(t *testing.T) {
 			},
 			assertSpans: []func(t *testing.T, span mocktracer.Span){
 				func(t *testing.T, span mocktracer.Span) {
-					assert.Equal(t, "SET\ntest_key\ntest_value\nGET\ntest_key", span.Tag(ext.DBStatement))
-					assert.Equal(t, "SET\ntest_key\ntest_value\nGET\ntest_key", span.Tag(ext.ResourceName))
-					assert.Nil(t, span.Tag(ext.ValkeyRawCommand))
+					assert.Equal(t, "SET GET", span.Tag(ext.DBStatement))
+					assert.Equal(t, "SET GET", span.Tag(ext.ResourceName))
+					assert.False(t, span.Tag(ext.ValkeyRawCommand).(bool))
 					assert.Nil(t, span.Tag(ext.ValkeyClientCacheHit))
 					assert.Nil(t, span.Tag(ext.ValkeyClientCacheTTL))
 					assert.Nil(t, span.Tag(ext.ValkeyClientCachePXAT))
@@ -133,8 +133,9 @@ func TestNewClient(t *testing.T) {
 			},
 			assertSpans: []func(t *testing.T, span mocktracer.Span){
 				func(t *testing.T, span mocktracer.Span) {
-					assert.Equal(t, "HMGET\nmk\n1\n2", span.Tag(ext.DBStatement))
-					assert.Equal(t, "HMGET\nmk\n1\n2", span.Tag(ext.ResourceName))
+					assert.Equal(t, "HMGET", span.Tag(ext.DBStatement))
+					assert.Equal(t, "HMGET", span.Tag(ext.ResourceName))
+					assert.False(t, span.Tag(ext.ValkeyRawCommand).(bool))
 					assert.False(t, span.Tag(ext.ValkeyClientCacheHit).(bool))
 					assert.Greater(t, span.Tag(ext.ValkeyClientCacheTTL), int64(0))
 					assert.Greater(t, span.Tag(ext.ValkeyClientCachePXAT), int64(0))
@@ -142,9 +143,9 @@ func TestNewClient(t *testing.T) {
 					assert.Nil(t, span.Tag(ext.Error))
 				},
 				func(t *testing.T, span mocktracer.Span) {
-					assert.Equal(t, "HMGET\nmk\n1\n2", span.Tag(ext.DBStatement))
-					assert.Equal(t, "HMGET\nmk\n1\n2", span.Tag(ext.ResourceName))
-					assert.Nil(t, span.Tag(ext.ValkeyRawCommand))
+					assert.Equal(t, "HMGET", span.Tag(ext.DBStatement))
+					assert.Equal(t, "HMGET", span.Tag(ext.ResourceName))
+					assert.False(t, span.Tag(ext.ValkeyRawCommand).(bool))
 					assert.True(t, span.Tag(ext.ValkeyClientCacheHit).(bool))
 					assert.Greater(t, span.Tag(ext.ValkeyClientCacheTTL), int64(0))
 					assert.Greater(t, span.Tag(ext.ValkeyClientCachePXAT), int64(0))
@@ -161,7 +162,7 @@ func TestNewClient(t *testing.T) {
 				Password:    valkeyPassword,
 			},
 			valkeytraceClientEnvVars: map[string]string{
-				"DD_TRACE_VALKEY_SKIP_RAW_COMMAND": "true",
+				"DD_TRACE_VALKEY_RAW_COMMAND": "true",
 			},
 			createSpans: func(t *testing.T, ctx context.Context, client valkey.Client) {
 				resp := client.DoStream(ctx, client.B().Get().Key("test_key").Build())
@@ -197,9 +198,9 @@ func TestNewClient(t *testing.T) {
 			},
 			assertSpans: []func(t *testing.T, span mocktracer.Span){
 				func(t *testing.T, span mocktracer.Span) {
-					assert.Equal(t, "SUBSCRIBE\ntest_channel", span.Tag(ext.DBStatement))
-					assert.Equal(t, "SUBSCRIBE\ntest_channel", span.Tag(ext.ResourceName))
-					assert.Nil(t, span.Tag(ext.ValkeyRawCommand))
+					assert.Equal(t, "SUBSCRIBE", span.Tag(ext.DBStatement))
+					assert.Equal(t, "SUBSCRIBE", span.Tag(ext.ResourceName))
+					assert.False(t, span.Tag(ext.ValkeyRawCommand).(bool))
 					assert.Nil(t, span.Tag(ext.ValkeyClientCacheHit))
 					assert.Nil(t, span.Tag(ext.ValkeyClientCacheTTL))
 					assert.Nil(t, span.Tag(ext.ValkeyClientCachePXAT))

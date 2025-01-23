@@ -10,21 +10,21 @@ import (
 )
 
 type clientConfig struct {
-	skipRaw bool
+	rawCommand bool
 }
 
 // ClientOption represents an option that can be used to create or wrap a client.
 type ClientOption func(*clientConfig)
 
 func defaults(cfg *clientConfig) {
-	cfg.skipRaw = internal.BoolEnv("DD_TRACE_VALKEY_SKIP_RAW_COMMAND", false)
+	// Unless Agent supports obfuscation for valkey, we should not enable raw command.
+	cfg.rawCommand = internal.BoolEnv("DD_TRACE_VALKEY_RAW_COMMAND", false)
 }
 
-// WithSkipRawCommand reports whether to skip setting the raw command value
-// on instrumenation spans. This may be useful if the Datadog Agent is not
-// set up to obfuscate this value and it could contain sensitive information.
-func WithSkipRawCommand(skip bool) ClientOption {
+// WithRawCommand reports whether to keep the raw command value
+// on instrumenation spans.
+func WithRawCommand(rawCommand bool) ClientOption {
 	return func(cfg *clientConfig) {
-		cfg.skipRaw = skip
+		cfg.rawCommand = rawCommand
 	}
 }

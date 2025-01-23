@@ -150,15 +150,13 @@ func setClientCacheTags(s tracer.Span, result valkey.ValkeyResult) {
 }
 
 type buildStartSpanOptionsInput struct {
-	command        string
-	statement      string
-	skipRawCommand bool
+	command    string
+	statement  string
+	rawCommand bool
 }
 
 func (c *coreClient) buildStartSpanOptions(input buildStartSpanOptionsInput) []tracer.StartSpanOption {
 	opts := []tracer.StartSpanOption{
-		tracer.ResourceName(input.statement),
-		tracer.Tag(ext.DBStatement, input.statement),
 		tracer.SpanType(ext.SpanTypeValkey),
 		tracer.Tag(ext.TargetHost, c.host),
 		tracer.Tag(ext.TargetPort, c.port),
@@ -169,9 +167,18 @@ func (c *coreClient) buildStartSpanOptions(input buildStartSpanOptionsInput) []t
 		tracer.Tag(ext.SpanKind, ext.SpanKindClient),
 		tracer.Tag(ext.DBSystem, ext.DBSystemValkey),
 		tracer.Tag(ext.ValkeyDatabaseIndex, c.option.SelectDB),
+		tracer.Tag(ext.ValkeyRawCommand, input.rawCommand),
 	}
-	if input.skipRawCommand {
-		opts = append(opts, tracer.Tag(ext.ValkeyRawCommand, input.skipRawCommand))
+	if c.clientConfig.rawCommand {
+		opts = append(opts, []tracer.StartSpanOption{
+			tracer.ResourceName(input.statement),
+			tracer.Tag(ext.DBStatement, input.statement),
+		}...)
+	} else {
+		opts = append(opts, []tracer.StartSpanOption{
+			tracer.ResourceName(input.command),
+			tracer.Tag(ext.DBStatement, input.command),
+		}...)
 	}
 	if c.option.Username != "" {
 		opts = append(opts, tracer.Tag(ext.DBUser, c.option.Username))
@@ -182,9 +189,9 @@ func (c *coreClient) buildStartSpanOptions(input buildStartSpanOptionsInput) []t
 func (c *coreClient) Do(ctx context.Context, cmd valkey.Completed) (resp valkey.ValkeyResult) {
 	command, statement := processCmd(&cmd)
 	span, ctx := tracer.StartSpanFromContext(ctx, c.spanName, c.buildStartSpanOptions(buildStartSpanOptionsInput{
-		command:        command,
-		statement:      statement,
-		skipRawCommand: c.clientConfig.skipRaw,
+		command:    command,
+		statement:  statement,
+		rawCommand: c.clientConfig.rawCommand,
 	})...)
 	resp = c.Client.Do(ctx, cmd)
 	setClientCacheTags(span, resp)
@@ -195,9 +202,9 @@ func (c *coreClient) Do(ctx context.Context, cmd valkey.Completed) (resp valkey.
 func (c *coreClient) DoMulti(ctx context.Context, multi ...valkey.Completed) (resp []valkey.ValkeyResult) {
 	command, statement := processMultiCompleted(multi...)
 	span, ctx := tracer.StartSpanFromContext(ctx, c.spanName, c.buildStartSpanOptions(buildStartSpanOptionsInput{
-		command:        command,
-		statement:      statement,
-		skipRawCommand: c.clientConfig.skipRaw,
+		command:    command,
+		statement:  statement,
+		rawCommand: c.clientConfig.rawCommand,
 	})...)
 	resp = c.Client.DoMulti(ctx, multi...)
 	defer span.Finish(tracer.WithError(firstError(resp)))
@@ -207,9 +214,9 @@ func (c *coreClient) DoMulti(ctx context.Context, multi ...valkey.Completed) (re
 func (c *coreClient) Receive(ctx context.Context, subscribe valkey.Completed, fn func(msg valkey.PubSubMessage)) (err error) {
 	command, statement := processCmd(&subscribe)
 	span, ctx := tracer.StartSpanFromContext(ctx, c.spanName, c.buildStartSpanOptions(buildStartSpanOptionsInput{
-		command:        command,
-		statement:      statement,
-		skipRawCommand: c.clientConfig.skipRaw,
+		command:    command,
+		statement:  statement,
+		rawCommand: c.clientConfig.rawCommand,
 	})...)
 	err = c.Client.Receive(ctx, subscribe, fn)
 	defer span.Finish(tracer.WithError(err))
@@ -219,9 +226,9 @@ func (c *coreClient) Receive(ctx context.Context, subscribe valkey.Completed, fn
 func (c *client) DoCache(ctx context.Context, cmd valkey.Cacheable, ttl time.Duration) (resp valkey.ValkeyResult) {
 	command, statement := processCmd(&cmd)
 	span, ctx := tracer.StartSpanFromContext(ctx, c.spanName, c.buildStartSpanOptions(buildStartSpanOptionsInput{
-		command:        command,
-		statement:      statement,
-		skipRawCommand: c.clientConfig.skipRaw,
+		command:    command,
+		statement:  statement,
+		rawCommand: c.clientConfig.rawCommand,
 	})...)
 	resp = c.Client.DoCache(ctx, cmd, ttl)
 	setClientCacheTags(span, resp)
@@ -232,9 +239,9 @@ func (c *client) DoCache(ctx context.Context, cmd valkey.Cacheable, ttl time.Dur
 func (c *client) DoMultiCache(ctx context.Context, multi ...valkey.CacheableTTL) (resp []valkey.ValkeyResult) {
 	command, statement := processMultiCacheableTTL(multi...)
 	span, ctx := tracer.StartSpanFromContext(ctx, c.spanName, c.buildStartSpanOptions(buildStartSpanOptionsInput{
-		command:        command,
-		statement:      statement,
-		skipRawCommand: c.clientConfig.skipRaw,
+		command:    command,
+		statement:  statement,
+		rawCommand: c.clientConfig.rawCommand,
 	})...)
 	resp = c.Client.DoMultiCache(ctx, multi...)
 	defer span.Finish(tracer.WithError(firstError(resp)))
@@ -244,9 +251,9 @@ func (c *client) DoMultiCache(ctx context.Context, multi ...valkey.CacheableTTL)
 func (c *client) DoStream(ctx context.Context, cmd valkey.Completed) (resp valkey.ValkeyResultStream) {
 	command, statement := processCmd(&cmd)
 	span, ctx := tracer.StartSpanFromContext(ctx, c.spanName, c.buildStartSpanOptions(buildStartSpanOptionsInput{
-		command:        command,
-		statement:      statement,
-		skipRawCommand: c.clientConfig.skipRaw,
+		command:    command,
+		statement:  statement,
+		rawCommand: c.clientConfig.rawCommand,
 	})...)
 	resp = c.Client.DoStream(ctx, cmd)
 	defer span.Finish(tracer.WithError(resp.Error()))
@@ -256,9 +263,9 @@ func (c *client) DoStream(ctx context.Context, cmd valkey.Completed) (resp valke
 func (c *client) DoMultiStream(ctx context.Context, multi ...valkey.Completed) (resp valkey.MultiValkeyResultStream) {
 	command, statement := processMultiCompleted(multi...)
 	span, ctx := tracer.StartSpanFromContext(ctx, c.spanName, c.buildStartSpanOptions(buildStartSpanOptionsInput{
-		command:        command,
-		statement:      statement,
-		skipRawCommand: c.clientConfig.skipRaw,
+		command:    command,
+		statement:  statement,
+		rawCommand: c.clientConfig.rawCommand,
 	})...)
 	resp = c.Client.DoMultiStream(ctx, multi...)
 	defer span.Finish(tracer.WithError(resp.Error()))
