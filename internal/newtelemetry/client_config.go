@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"runtime/debug"
 	"time"
 
 	globalinternal "gopkg.in/DataDog/dd-trace-go.v1/internal"
@@ -17,11 +18,11 @@ import (
 )
 
 type ClientConfig struct {
-	// DependencyCollectionEnabled determines whether dependency data is sent via telemetry.
-	// If false, libraries should not send the app-dependencies-loaded event.
-	// We default this to true since Application Security Monitoring uses this data to detect vulnerabilities in the ASM-SCA product
+	// DependencyLoader determines how dependency data is sent via telemetry.
+	// If nil, the library should not send the app-dependencies-loaded event.
+	// The default value is [debug.ReadBuildInfo] since Application Security Monitoring uses this data to detect vulnerabilities in the ASM-SCA product
 	// This can be controlled via the env var DD_TELEMETRY_DEPENDENCY_COLLECTION_ENABLED
-	DependencyCollectionEnabled bool
+	DependencyLoader func() (*debug.BuildInfo, bool)
 
 	// MetricsEnabled etermines whether metrics are sent via telemetry.
 	// If false, libraries should not send the generate-metrics or distributions events.
@@ -148,8 +149,8 @@ func defaultConfig(config ClientConfig) ClientConfig {
 		config.FlushIntervalRange.Max = clamp(config.FlushIntervalRange.Max, time.Microsecond, 60*time.Second)
 	}
 
-	if !config.DependencyCollectionEnabled {
-		config.DependencyCollectionEnabled = globalinternal.BoolEnv("DD_TELEMETRY_DEPENDENCY_COLLECTION_ENABLED", true)
+	if config.DependencyLoader == nil && globalinternal.BoolEnv("DD_TELEMETRY_DEPENDENCY_COLLECTION_ENABLED", true) {
+		config.DependencyLoader = debug.ReadBuildInfo
 	}
 
 	if !config.MetricsEnabled {
