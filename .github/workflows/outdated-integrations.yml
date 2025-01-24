@@ -22,6 +22,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       
+      - run: go clean -modcache
+      
       - run: go run .github/workflows/apps/new_latest_major_versions.go
 
       - run: git diff
