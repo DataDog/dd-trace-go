@@ -11,6 +11,6 @@ while read p; do
     else 
         echo "$p" >> "$temp_file"
     fi
-done < ../../../gotestsum-report.xml
+done < $1
 
-mv "$temp_file" ../../../gotestsum-report.xml
+mv "$temp_file" $1
