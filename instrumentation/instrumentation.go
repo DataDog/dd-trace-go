@@ -74,8 +74,7 @@ func (i *Instrumentation) OperationName(component Component, opCtx OperationCont
 		return ""
 	}
 
-	cfg := namingschema.GetConfig()
-	switch cfg.NamingSchemaVersion {
+	switch namingschema.GetVersion() {
 	case namingschema.VersionV1:
 		return op.buildOpNameV1(opCtx)
 	default:
