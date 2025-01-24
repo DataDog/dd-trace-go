@@ -11,6 +11,7 @@ import (
 	"context"
 	"fmt"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 	"net/http"
 	"strconv"
 	"strings"
@@ -67,6 +68,8 @@ func StartRequestSpan(r *http.Request, opts ...ddtrace.StartSpanOption) (tracer.
 					}
 				}
 				inferredProxySpan = startInferredProxySpan(requestProxyContext, spanParentCtx, inferredStartSpanOpts...)
+				telemetry.GlobalClient.ConfigChange([]telemetry.Configuration{{Name: "inferred_proxy_services_enabled",
+					Value: cfg.inferredProxyServicesEnabled}})
 			}
 		}
 	}
