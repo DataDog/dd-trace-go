@@ -31,6 +31,11 @@ type ModuleInfo struct {
 	} `json:"Origin"`
 }
 
+type GithubLatests struct {
+	Version string
+	Module  string
+}
+
 func getGoModVersion(repository string, pkg string) (string, error) {
 	// ex: package: aws/aws-sdk-go-v2
 	// repository: github.com/aws/aws-sdk-go-v2
@@ -65,6 +70,7 @@ func getGoModVersion(repository string, pkg string) (string, error) {
 
 func getModuleOrigin(repository, version string) (string, error) {
 	cmd := exec.Command("go", "list", "-m", "-json", fmt.Sprintf("%s@%s", repository, version))
+	cmd.Env = append(os.Environ(), "GOPROXY=direct")
 	output, err := cmd.Output()
 
 	if err != nil {
@@ -191,8 +197,8 @@ func truncateMajorVersion(version string) string {
 func main() {
 	log.SetFlags(0) // disable date and time logging
 	// Find latest major
-	github_latests := map[string]string{}  // map module (base name) => latest on github
-	contrib_latests := map[string]string{} // map module (base name) => latest on go.mod
+	github_latests := map[string]GithubLatests{} // map module (base name) => latest on github
+	contrib_latests := map[string]string{}       // map module (base name) => latest on go.mod
 
 	for pkg, repository := range instrumentation.GetPackages() {
 
@@ -210,10 +216,11 @@ func main() {
 			fmt.Printf("%v go.mod not found.", pkg)
 			continue
 		}
-		fmt.Printf("version: %v\n", version)
 
 		// check if need to update contrib_latests
 		version_major_contrib := truncateMajorVersion(version)
+		fmt.Printf("version: %v\n", version_major_contrib)
+
 		if err != nil {
 			fmt.Println(err)
 			continue
@@ -259,26 +266,24 @@ func main() {
 		// Get the latest version for each major
 		for major, versions := range majors {
 			latest := getLatestVersion(versions)
-			fmt.Printf("Latest version for %s: %s\n", major, latest)
+			// fmt.Printf("Latest version for %s: %s\n", major, latest)
 
-			// Fetch `go.mod` with command
-			// curl https://raw.githubusercontent.com/<module>/refs/tags/<latest>/go.mod
+			// Fetch `go.mod`
 			goModURL := fmt.Sprintf("https://raw.githubusercontent.com/%s/refs/tags/%s/go.mod", base, latest)
 			isGoModule, modName := fetchGoMod(goModURL)
 			if isGoModule {
 				fmt.Printf("Module name for %s: %s\n", latest, modName)
 			} else {
-				// fmt.Printf("Version %s does not belong to a Go module\n", latest)
 				continue
 			}
 			// latest_major := truncateMajorVersion(latest)
-			if latestGithubMajor, ok := github_latests[base]; ok {
-				if semver.Compare(major, latestGithubMajor) > 0 {
+			if latestGithub, ok := github_latests[base]; ok {
+				if semver.Compare(major, latestGithub.Version) > 0 {
 					// if latest > latestGithubMajor
-					github_latests[base] = major
+					github_latests[base] = GithubLatests{major, modName}
 				}
 			} else {
-				github_latests[base] = major
+				github_latests[base] = GithubLatests{major, modName}
 			}
 		}
 
@@ -287,9 +292,14 @@ func main() {
 	// check if there are any outdated majors
 	// output if there is a new major package we do not support
 	for base, contribMajor := range contrib_latests {
-		if latestGithubMajor, ok := github_latests[base]; ok {
-			if semver.Compare(latestGithubMajor, contribMajor) > 0 {
-				fmt.Printf("New latest major on Github: %s", latestGithubMajor)
+		if latestGithub, ok := github_latests[base]; ok {
+			if semver.Compare(latestGithub.Version, contribMajor) > 0 {
+				if base == "go-redis/redis" && latestGithub.Version == "v9" {
+					continue // go-redis/redis => redis/go-redis in v9
+				}
+				fmt.Printf("New latest major %s of repository %s on Github at module: %s\n", latestGithub.Version, base, latestGithub.Module)
+				fmt.Printf("latest contrib major: %v\n", contribMajor)
+				fmt.Printf("latest github major: %v\n", latestGithub.Version)
 			}
 		}
 	}
