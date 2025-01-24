@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
@@ -27,6 +28,8 @@ import (
 var (
 	cfg = newConfig()
 )
+
+var reportTelemetryConfigOnce sync.Once
 
 type inferredSpanCreatedCtxKey struct{}
 
@@ -68,8 +71,11 @@ func StartRequestSpan(r *http.Request, opts ...ddtrace.StartSpanOption) (tracer.
 					}
 				}
 				inferredProxySpan = startInferredProxySpan(requestProxyContext, spanParentCtx, inferredStartSpanOpts...)
-				telemetry.GlobalClient.ConfigChange([]telemetry.Configuration{{Name: "inferred_proxy_services_enabled",
-					Value: cfg.inferredProxyServicesEnabled}})
+				reportTelemetryConfigOnce.Do(func() {
+					telemetry.GlobalClient.ConfigChange([]telemetry.Configuration{{Name: "inferred_proxy_services_enabled",
+						Value: cfg.inferredProxyServicesEnabled}})
+					log.Debug("ConfigChange called with %v, %v:", "inferred_proxy_services_enabled", cfg.inferredProxyServicesEnabled)
+				})
 			}
 		}
 	}
