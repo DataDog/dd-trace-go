@@ -13,6 +13,4 @@ while read p; do
     fi
 done < ../../../gotestsum-report.xml
 
-rm -f "$temp_file"
-
 mv "$temp_file" ../../../gotestsum-report.xml
