@@ -10,11 +10,12 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
+	"net/http"
 	"os"
 	"regexp"
 	"sort"
-	"strconv"
 	"strings"
 
 	"os/exec"
@@ -28,15 +29,6 @@ type ModuleInfo struct {
 	Origin struct {
 		URL string `json:"url"`
 	} `json:"Origin"`
-}
-
-// stdlibPackages are used to skip in version checking.
-// TODO: can we make this exported and export from gen_supported_versions_doc.go or put it in instrumentation/packages.go?
-var stdLibPackages = map[string]struct{}{
-	"log/slog":     {},
-	"os":           {},
-	"net/http":     {},
-	"database/sql": {},
 }
 
 func getGoModVersion(repository string, pkg string) (string, error) {
@@ -126,32 +118,55 @@ func groupByMajor(tags []string) map[string][]string {
 
 // Get the latest version for a list of versions
 func getLatestVersion(versions []string) string {
-	sort.Slice(versions, func(i, j int) bool {
-		return semver.Compare(versions[i], versions[j]) < 0
+
+	// Filter out pre-release versions and non-valid versions
+	validVersions := make([]string, 0)
+	for _, v := range versions {
+		if semver.IsValid(v) && semver.Prerelease(v) == "" {
+			validVersions = append(validVersions, v)
+		}
+	}
+	sort.Slice(validVersions, func(i, j int) bool {
+		return semver.Compare(validVersions[i], validVersions[j]) < 0
 	})
-	return versions[len(versions)-1]
+	return validVersions[len(validVersions)-1]
 }
 
 func fetchGoMod(url string) (bool, string) {
-	cmd := exec.Command("curl", "-v", "-s", "-f", url)
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
 
-	err := cmd.Run()
+	// Create an HTTP client and make a GET request
+	resp, err := http.Get(url)
 	if err != nil {
-		// If `curl` fails, check if it's because of a 404
-		if exitErr, ok := err.(*exec.ExitError); ok && exitErr.ExitCode() == 22 { // HTTP 404
-			return false, ""
-		}
-		fmt.Printf("Error running curl: %v\n", err)
+		fmt.Printf("Error making HTTP request: %v\n", err)
+		return false, ""
+	}
+	defer resp.Body.Close()
+
+	// Check if the HTTP status is 404
+	if resp.StatusCode == http.StatusNotFound {
 		return false, ""
 	}
 
-	// Parse the output to check for a `module` line
-	scanner := bufio.NewScanner(&stdout)
-	for scanner.Scan() {
-		line := scanner.Text()
+	// Handle other HTTP errors
+	if resp.StatusCode != http.StatusOK {
+		fmt.Printf("Unexpected HTTP status: %d\n", resp.StatusCode)
+		return false, ""
+	}
+
+	// Read response
+	reader := bufio.NewReader(resp.Body)
+	for {
+		line, err := reader.ReadString('\n')
+		if err != nil && err != io.EOF {
+			fmt.Printf("Error reading response body: %v\n", err)
+			return false, ""
+		}
+
+		if err == io.EOF {
+			break
+		}
+
+		line = strings.TrimSpace(line)
 		if strings.HasPrefix(line, "module ") {
 			return true, strings.TrimSpace(strings.TrimPrefix(line, "module "))
 		}
@@ -173,29 +188,6 @@ func truncateMajorVersion(version string) string {
 	return parts[0]
 }
 
-// Comparator for version strings
-func compareVersions(v1, v2 string) bool {
-	// if v1 > v2 return true
-	re := regexp.MustCompile(`^v(\d+)$`)
-
-	// Extract the numeric part from the first version
-	match1 := re.FindStringSubmatch(v1)
-	match2 := re.FindStringSubmatch(v2)
-
-	if len(match1) < 2 || len(match2) < 2 {
-		panic("Invalid version format") // Ensure valid versions like "v1", "v2", etc.
-	}
-
-	// Convert the numeric part to integers
-	num1, _ := strconv.Atoi(match1[1])
-	num2, _ := strconv.Atoi(match2[1])
-
-	if num1 <= num2 {
-		return false
-	}
-	return true
-}
-
 func main() {
 	log.SetFlags(0) // disable date and time logging
 	// Find latest major
@@ -206,10 +198,9 @@ func main() {
 
 		// Step 1: get the version from the module go.mod
 		fmt.Printf("package: %v\n", pkg)
-		// fmt.Printf("repository: %v\n", repository)
 
 		// if it is part of the standard packages, continue
-		if _, ok := stdLibPackages[repository]; ok {
+		if _, ok := instrumentation.StandardPackages[repository]; ok {
 			continue
 		}
 
@@ -229,7 +220,7 @@ func main() {
 		}
 
 		if current_latest, ok := contrib_latests[base]; ok {
-			if compareVersions(version_major_contrib, current_latest) {
+			if semver.Compare(version_major_contrib, current_latest) > 0 {
 				contrib_latests[base] = version_major_contrib
 			}
 		} else {
@@ -262,7 +253,7 @@ func main() {
 
 		// 4. Get the latest version of each major. For each latest version of each major:
 		// curl https://raw.githubusercontent.com/<module>/refs/tags/v4.18.3/go.mod
-		// 5a. If request returns 404, module is not a go module. This means version belongs to the module without any /v at the end.
+		// 5a. If request returns 404, module is not a go module. This means version belongs to the module without /v at the end.
 		// 5b. If request returns a `go.mod`, parse the modfile and extract the mod name
 
 		// Get the latest version for each major
@@ -277,13 +268,12 @@ func main() {
 			if isGoModule {
 				fmt.Printf("Module name for %s: %s\n", latest, modName)
 			} else {
-				fmt.Printf("Version %s does not belong to a Go module\n", latest)
+				// fmt.Printf("Version %s does not belong to a Go module\n", latest)
 				continue
 			}
 			// latest_major := truncateMajorVersion(latest)
 			if latestGithubMajor, ok := github_latests[base]; ok {
-				// fmt.Printf("latest github major:%s", latestGithubMajor)
-				if compareVersions(major, latestGithubMajor) {
+				if semver.Compare(major, latestGithubMajor) > 0 {
 					// if latest > latestGithubMajor
 					github_latests[base] = major
 				}
@@ -298,7 +288,7 @@ func main() {
 	// output if there is a new major package we do not support
 	for base, contribMajor := range contrib_latests {
 		if latestGithubMajor, ok := github_latests[base]; ok {
-			if compareVersions(latestGithubMajor, contribMajor) {
+			if semver.Compare(latestGithubMajor, contribMajor) > 0 {
 				fmt.Printf("New latest major on Github: %s", latestGithubMajor)
 			}
 		}
