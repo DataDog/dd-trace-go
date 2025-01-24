@@ -6,7 +6,7 @@ for file in "$@"; do
     # force write a new line at the end of the gotestsum-report.xml, or else
     # the loop will skip the last line.
     # fixes issue with a missing </testsuites>
-    echo -e "\n" >> $1
+    echo -e "\n" >> $file
 
     while read p; do
         # we might try to report gotestsum-report.xml multiple times, so don't
