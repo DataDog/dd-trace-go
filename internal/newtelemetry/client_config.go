@@ -47,6 +47,9 @@ type ClientConfig struct {
 	// The maximum value is 60s.
 	HeartbeatInterval time.Duration
 
+	// ExtendedHeartbeatInterval is the interval at which to send an extended heartbeat payload, defaults to 24h.
+	ExtendedHeartbeatInterval time.Duration
+
 	// FlushIntervalRange is the interval at which the client flushes the data.
 	// By default, the client will start to Flush at 60s intervals and will reduce the interval based on the load till it hit 15s
 	// Both values cannot be higher than 60s because the heartbeat need to be sent at least every 60s.
@@ -74,6 +77,9 @@ const (
 
 	// defaultHeartbeatInterval is the default interval at which the agent sends a heartbeat.
 	defaultHeartbeatInterval = 60 // seconds
+
+	// defaultExtendedHeartbeatInterval is the default interval at which the agent sends an extended heartbeat.
+	defaultExtendedHeartbeatInterval = 24 * time.Hour
 
 	// defaultMinFlushInterval is the default interval at which the client flushes the data.
 	defaultMinFlushInterval = 15.0 * time.Second
@@ -156,6 +162,10 @@ func defaultConfig(config ClientConfig) ClientConfig {
 
 	if config.EarlyFlushPayloadSize == 0 {
 		config.EarlyFlushPayloadSize = defaultEarlyFlushPayloadSize
+	}
+
+	if config.ExtendedHeartbeatInterval == 0 {
+		config.ExtendedHeartbeatInterval = defaultExtendedHeartbeatInterval
 	}
 
 	return config

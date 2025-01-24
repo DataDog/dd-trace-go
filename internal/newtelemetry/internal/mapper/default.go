@@ -15,15 +15,17 @@ import (
 
 // NewDefaultMapper returns a Mapper that transforms payloads into a MessageBatch and adds a heartbeat message.
 // The heartbeat message is added every heartbeatInterval.
-func NewDefaultMapper(heartbeatInterval time.Duration) Mapper {
+func NewDefaultMapper(heartbeatInterval, extendedHeartBeatInterval time.Duration) Mapper {
 	mapper := &defaultMapper{
 		heartbeatEnricher: heartbeatEnricher{
-			rateLimiter: rate.NewLimiter(rate.Every(heartbeatInterval), 1),
+			RL:                  rate.NewLimiter(rate.Every(heartbeatInterval), 1),
+			extendedHeartbeatRL: rate.NewLimiter(rate.Every(extendedHeartBeatInterval), 1),
 		},
 	}
 
 	// The rate limiter is initialized with a token, but we want the first heartbeat to be sent in one minute, so we consume the token
-	mapper.heartbeatEnricher.rateLimiter.Allow()
+	mapper.heartbeatEnricher.RL.Allow()
+	mapper.heartbeatEnricher.extendedHeartbeatRL.Allow()
 	return mapper
 }
 
@@ -57,33 +59,41 @@ func (t *messageBatchReducer) Transform(payloads []transport.Payload) ([]transpo
 }
 
 type heartbeatEnricher struct {
-	rateLimiter *rate.Limiter
+	RL                  *rate.Limiter
+	extendedHeartbeatRL *rate.Limiter
+
+	extendedHeartbeat transport.AppExtendedHeartbeat
+	heartBeat         transport.AppHeartbeat
 }
 
 func (t *heartbeatEnricher) Transform(payloads []transport.Payload) ([]transport.Payload, Mapper) {
-	if !t.rateLimiter.Allow() {
-		return payloads, t
-	}
-
-	extendedHeartbeat := transport.AppExtendedHeartbeat{}
-	payloadLefts := make([]transport.Payload, 0, len(payloads))
+	// Built the extended heartbeat using other payloads
+	// Composition described here:
+	// https://github.com/DataDog/instrumentation-telemetry-api-docs/blob/main/GeneratedDocumentation/ApiDocs/v2/producing-telemetry.md#app-extended-heartbeat
 	for _, payload := range payloads {
-		switch payload.(type) {
+		switch p := payload.(type) {
+		case transport.AppStarted:
+			// Should be sent only once anyway
+			t.extendedHeartbeat.Configuration = p.Configuration
 		case transport.AppDependenciesLoaded:
-			extendedHeartbeat.Dependencies = payload.(transport.AppDependenciesLoaded).Dependencies
+			if t.extendedHeartbeat.Dependencies == nil {
+				t.extendedHeartbeat.Dependencies = p.Dependencies
+			}
 		case transport.AppIntegrationChange:
-			extendedHeartbeat.Integrations = payload.(transport.AppIntegrationChange).Integrations
-		case transport.AppClientConfigurationChange:
-			extendedHeartbeat.Configuration = payload.(transport.AppClientConfigurationChange).Configuration
-		default:
-			payloadLefts = append(payloadLefts, payload)
+			// The number of integrations should be small enough so we can just append to the list
+			t.extendedHeartbeat.Integrations = append(t.extendedHeartbeat.Integrations, p.Integrations...)
 		}
 	}
 
-	if len(payloadLefts) == len(payloads) {
-		// No Payloads were consumed by the extended heartbeat, we can add a regular heartbeat
-		return append(payloads, transport.AppHeartbeat{}), t
+	if !t.RL.Allow() {
+		// We don't send anything
+		return payloads, t
 	}
 
-	return append(payloadLefts, extendedHeartbeat), t
+	if t.extendedHeartbeatRL.Allow() {
+		// We have an extended heartbeat to send
+		return append(payloads, t.extendedHeartbeat), t
+	}
+
+	return append(payloads, t.heartBeat), t
 }

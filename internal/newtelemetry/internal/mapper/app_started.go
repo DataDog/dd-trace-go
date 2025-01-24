@@ -42,6 +42,7 @@ func (t *appStartedReducer) Transform(payloads []transport.Payload) ([]transport
 		}
 	}
 
-	// The app-started event should be the first event in the payload
-	return t.wrapper.Transform(append([]transport.Payload{appStarted}, payloadLefts...))
+	// The app-started event should be the first event in the payload and not in an message-batch
+	payloads, mapper := t.wrapper.Transform(payloadLefts)
+	return append([]transport.Payload{appStarted}, payloads...), mapper
 }

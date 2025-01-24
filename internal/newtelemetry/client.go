@@ -53,7 +53,7 @@ func newClient(tracerConfig internal.TracerConfig, config ClientConfig) (*client
 		tracerConfig: tracerConfig,
 		writer:       writer,
 		clientConfig: config,
-		flushMapper:  mapper.NewDefaultMapper(config.HeartbeatInterval),
+		flushMapper:  mapper.NewDefaultMapper(config.HeartbeatInterval, config.ExtendedHeartbeatInterval),
 		// This means that, by default, we incur dataloss if we spend ~30mins without flushing, considering we send telemetry data this looks reasonable.
 		// This also means that in the worst case scenario, memory-wise, the app is stabilized after running for 30mins.
 		payloadQueue: internal.NewRingQueue[transport.Payload](4, 32),
