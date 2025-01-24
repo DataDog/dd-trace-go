@@ -43,7 +43,7 @@ runs:
         chmod +x datadog-ci
     - name: Add CodeOwners to JUnit files
       shell: bash
-      run: actions/add-codeowners/codeowners.sh 
+      run: ../add-codeowners/codeowners.sh 
     - name: Upload the JUnit files
       shell: bash
       run: |
