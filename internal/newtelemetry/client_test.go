@@ -8,8 +8,10 @@ package newtelemetry
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"runtime"
+	"runtime/debug"
 	"testing"
 	"time"
 
@@ -388,11 +390,75 @@ func TestClientFlush(t *testing.T) {
 				require.IsType(t, transport.AppClosing{}, payload)
 			},
 		},
+		{
+			name: "app-dependencies-loaded",
+			clientConfig: ClientConfig{
+				DependencyLoader: func() (*debug.BuildInfo, bool) {
+					return &debug.BuildInfo{
+						Deps: []*debug.Module{
+							{Path: "test", Version: "v1.0.0"},
+							{Path: "test2", Version: "v2.0.0"},
+							{Path: "test3", Version: "3.0.0"},
+						},
+					}, true
+				},
+			},
+			expect: func(t *testing.T, payload transport.Payload) {
+				require.IsType(t, transport.AppDependenciesLoaded{}, payload)
+				deps := payload.(transport.AppDependenciesLoaded)
+
+				assert.Len(t, deps.Dependencies, 3)
+				assert.Equal(t, deps.Dependencies[0].Name, "test")
+				assert.Equal(t, deps.Dependencies[0].Version, "1.0.0")
+				assert.Equal(t, deps.Dependencies[1].Name, "test2")
+				assert.Equal(t, deps.Dependencies[1].Version, "2.0.0")
+				assert.Equal(t, deps.Dependencies[2].Name, "test3")
+				assert.Equal(t, deps.Dependencies[2].Version, "3.0.0")
+			},
+		},
+		{
+			name: "app-many-dependencies-loaded",
+			clientConfig: ClientConfig{
+				DependencyLoader: func() (*debug.BuildInfo, bool) {
+					modules := make([]*debug.Module, 2001)
+					for i := range modules {
+						modules[i] = &debug.Module{
+							Path:    fmt.Sprintf("test-%d", i),
+							Version: fmt.Sprintf("v%d.0.0", i),
+						}
+					}
+					return &debug.BuildInfo{
+						Deps: modules,
+					}, true
+				},
+			},
+			expect: func(t *testing.T, payload transport.Payload) {
+				require.IsType(t, transport.AppDependenciesLoaded{}, payload)
+				deps := payload.(transport.AppDependenciesLoaded)
+
+				if len(deps.Dependencies) != 2000 && len(deps.Dependencies) != 1 {
+					t.Fatalf("expected 2000 and 1 dependencies, got %d", len(deps.Dependencies))
+				}
+
+				if len(deps.Dependencies) == 1 {
+					assert.Equal(t, deps.Dependencies[0].Name, "test-0")
+					assert.Equal(t, deps.Dependencies[0].Version, "0.0.0")
+					return
+				}
+
+				for i := range deps.Dependencies {
+					assert.Equal(t, deps.Dependencies[i].Name, fmt.Sprintf("test-%d", i))
+					assert.Equal(t, deps.Dependencies[i].Version, fmt.Sprintf("%d.0.0", i))
+				}
+			},
+		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
-			test.clientConfig.AgentURL = "http://localhost:8126"
-			c, err := newClient(tracerConfig, test.clientConfig)
+			config := defaultConfig(test.clientConfig)
+			config.AgentURL = "http://localhost:8126"
+			config.DependencyLoader = test.clientConfig.DependencyLoader // Don't use the default dependency loader
+			c, err := newClient(tracerConfig, config)
 			require.NoError(t, err)
 			defer c.Close()
 
@@ -550,6 +616,9 @@ func TestClientEnd2End(t *testing.T) {
 				},
 				Debug: true,
 			}
+
+			clientConfig = defaultConfig(clientConfig)
+			clientConfig.DependencyLoader = nil
 
 			c, err := newClient(tracerConfig, clientConfig)
 			require.NoError(t, err)

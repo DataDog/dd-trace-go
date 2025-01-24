@@ -30,15 +30,15 @@ func NewClient(service, env, version string, config ClientConfig) (Client, error
 		return nil, errors.New("version must not be empty")
 	}
 
-	return newClient(internal.TracerConfig{Service: service, Env: env, Version: version}, config)
-}
-
-func newClient(tracerConfig internal.TracerConfig, config ClientConfig) (*client, error) {
 	config = defaultConfig(config)
 	if err := config.validateConfig(); err != nil {
 		return nil, err
 	}
 
+	return newClient(internal.TracerConfig{Service: service, Env: env, Version: version}, config)
+}
+
+func newClient(tracerConfig internal.TracerConfig, config ClientConfig) (*client, error) {
 	writerConfig, err := newWriterConfig(config, tracerConfig)
 	if err != nil {
 		return nil, err
@@ -57,12 +57,17 @@ func newClient(tracerConfig internal.TracerConfig, config ClientConfig) (*client
 		// This means that, by default, we incur dataloss if we spend ~30mins without flushing, considering we send telemetry data this looks reasonable.
 		// This also means that in the worst case scenario, memory-wise, the app is stabilized after running for 30mins.
 		payloadQueue: internal.NewRingQueue[transport.Payload](4, 32),
+
+		dependencies: dependencies{
+			DependencyLoader: config.DependencyLoader,
+		},
 	}
 
 	client.dataSources = append(client.dataSources,
 		&client.integrations,
 		&client.products,
 		&client.configuration,
+		&client.dependencies,
 	)
 
 	client.flushTicker = internal.NewTicker(func() {
@@ -81,6 +86,7 @@ type client struct {
 	integrations  integrations
 	products      products
 	configuration configuration
+	dependencies  dependencies
 	dataSources   []interface {
 		Payload() transport.Payload
 	}

@@ -1,0 +1,91 @@
+// Unless explicitly stated otherwise all files in this repository are licensed
+// under the Apache License Version 2.0.
+// This product includes software developed at Datadog (https://www.datadoghq.com/).
+// Copyright 2025 Datadog, Inc.
+
+package newtelemetry
+
+import (
+	"runtime/debug"
+	"strings"
+	"sync"
+
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/newtelemetry/internal/transport"
+)
+
+type dependencies struct {
+	DependencyLoader func() (*debug.BuildInfo, bool)
+
+	once sync.Once
+
+	mu       sync.Mutex
+	payloads []transport.Payload
+}
+
+func (d *dependencies) Payload() transport.Payload {
+	if d.DependencyLoader == nil {
+		return nil
+	}
+
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	d.once.Do(func() {
+		deps := d.loadDeps()
+		// Requirement described here:
+		// https://github.com/DataDog/instrumentation-telemetry-api-docs/blob/main/GeneratedDocumentation/ApiDocs/v2/producing-telemetry.md#app-dependencies-loaded
+		if len(deps) > 2000 {
+			log.Debug("telemetry: too many (%d) dependencies to send, sending over multiple payloads", len(deps))
+		}
+
+		for i := 0; i < len(deps); i += 2000 {
+			end := min(i+2000, len(deps))
+
+			d.payloads = append(d.payloads, transport.AppDependenciesLoaded{
+				Dependencies: deps[i:end],
+			})
+		}
+	})
+
+	if len(d.payloads) == 0 {
+		return nil
+	}
+
+	payloadZero := d.payloads[0]
+	if len(d.payloads) == 1 {
+		d.payloads = nil
+	}
+
+	if len(d.payloads) > 1 {
+		d.payloads = d.payloads[1:]
+	}
+
+	return payloadZero
+}
+
+func (d *dependencies) loadDeps() []transport.Dependency {
+	deps, ok := d.DependencyLoader()
+	if !ok {
+		log.Debug("telemetry: could not read build info, no dependencies will be reported")
+		return nil
+	}
+
+	transportDeps := make([]transport.Dependency, 0, len(deps.Deps))
+	for _, dep := range deps.Deps {
+		if dep == nil {
+			continue
+		}
+
+		if dep.Replace != nil && dep.Replace.Version != "" {
+			dep = dep.Replace
+		}
+
+		transportDeps = append(transportDeps, transport.Dependency{
+			Name:    dep.Path,
+			Version: strings.TrimPrefix(dep.Version, "v"),
+		})
+	}
+
+	return transportDeps
+}
