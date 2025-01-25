@@ -42,7 +42,6 @@ require (
 	github.com/gocql/gocql v1.6.0     
 	github.com/gofiber/fiber/v2 v2.52.5
 	github.com/gomodule/redigo v1.8.9     
-	github.com/google/pprof v0.0.0-20230817174616-7a8ec2ada47b
 	github.com/google/uuid v1.5.0
 	github.com/gorilla/mux v1.8.0     
 	github.com/graph-gophers/graphql-go v1.5.0     
@@ -50,7 +49,6 @@ require (
 	github.com/graphql-go/handler v0.2.3
 	github.com/hashicorp/consul/api v1.24.0     
 	github.com/hashicorp/go-multierror v1.1.1
-	github.com/hashicorp/go-secure-stdlib/parseutil v0.1.7
 	github.com/hashicorp/vault/api v1.9.2
 	github.com/hashicorp/vault/sdk v0.9.2
 	github.com/jackc/pgx/v5 v5.6.0     
