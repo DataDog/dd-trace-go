@@ -8,12 +8,12 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"sort"
 	"github.com/Masterminds/semver/v3"
 	"golang.org/x/mod/modfile"
 	"net/http"
 	"os"
 	"regexp"
+	"sort"
 	"strings"
 )
 
