@@ -62,7 +62,6 @@ func (*TestCase) ExpectedTraces() trace.Traces {
 					},
 					Meta: map[string]string{
 						"component": "gorm.io/gorm.v1",
-						"span.kind": "client",
 					},
 					Children: trace.Traces{
 						{
