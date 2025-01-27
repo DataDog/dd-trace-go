@@ -25,18 +25,3 @@ jobs:
       - run: go clean -modcache
       
       - run: go run .github/workflows/apps/new_latest_major_versions.go
-
-      - run: git diff
-
-      # note: this will only create a PR if there is a new major available
-      - name: Create Pull Request
-        id: pr
-        uses: peter-evans/create-pull-request@c5a7806660adbe173f04e3e038b0ccdcd758773c # v6.1.0
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          branch: "upgrade-latest-major-version"
-          commit-message: "Update latests file"
-          base: main
-          title: "chore: update latest majors"
-          labels: changelog/no-changelog
-          body: "Auto-generated PR from Outdated Integrations workflow to update latests major versions"
