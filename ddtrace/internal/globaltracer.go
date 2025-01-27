@@ -80,6 +80,8 @@ func (NoopSpan) BaggageItem(_ string) string { return "" }
 // SetBaggageItem implements ddtrace.Span.
 func (NoopSpan) SetBaggageItem(_, _ string) {}
 
+func (s NoopSpan) AddSpanLinks(_ ...ddtrace.SpanLink) {}
+
 // Finish implements ddtrace.Span.
 func (NoopSpan) Finish(_ ...ddtrace.FinishOption) {}
 

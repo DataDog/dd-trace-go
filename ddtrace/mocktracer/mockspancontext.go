@@ -23,11 +23,20 @@ type spanContext struct {
 	spanID  uint64
 	traceID uint64
 	span    *mockspan // context owner
+
+	spanLinks []ddtrace.SpanLink
 }
 
 func (sc *spanContext) TraceID() uint64 { return sc.traceID }
 
 func (sc *spanContext) SpanID() uint64 { return sc.spanID }
+
+// SpanLinks implements ddtrace.SpanContextWithLinks
+func (sc *spanContext) SpanLinks() []ddtrace.SpanLink {
+	cp := make([]ddtrace.SpanLink, len(sc.spanLinks))
+	copy(cp, sc.spanLinks)
+	return cp
+}
 
 func (sc *spanContext) ForeachBaggageItem(handler func(k, v string) bool) {
 	sc.RLock()

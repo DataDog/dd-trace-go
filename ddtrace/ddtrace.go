@@ -79,6 +79,9 @@ type Span interface {
 	// item should propagate to all descendant spans, both in- and cross-process.
 	SetBaggageItem(key, val string)
 
+	// AddSpanLinks appends the given links to the span's span links.
+	AddSpanLinks(spanLinks ...SpanLink)
+
 	// Finish finishes the current span with the given options. Finish calls should be idempotent.
 	Finish(opts ...FinishOption)
 
@@ -121,6 +124,27 @@ type SpanLink struct {
 	// Flags represents the W3C trace flags of the linked span. This field is optional.
 	Flags uint32 `msg:"flags,omitempty" json:"flags"`
 }
+
+// MarshalJSON default 0 for TraceIDHigh
+//func (s SpanLink) MarshalJSON() ([]byte, error) {
+//	type Alias SpanLink
+//	fmt.Println("MarshalJSON method called")
+//	return json.Marshal(struct {
+//		TraceID     uint64            `json:"trace_id"`
+//		TraceIDHigh uint64            `json:"trace_id_high"`
+//		SpanID      uint64            `json:"span_id"`
+//		Attributes  map[string]string `json:"attributes,omitempty"`
+//		Tracestate  string            `json:"tracestate"`
+//		Flags       uint32            `json:"flags"`
+//	}{
+//		TraceID:     s.TraceID,
+//		TraceIDHigh: s.TraceIDHigh,
+//		SpanID:      s.SpanID,
+//		Attributes:  s.Attributes,
+//		Tracestate:  s.Tracestate,
+//		Flags:       s.Flags,
+//	})
+//}
 
 // StartSpanOption is a configuration option that can be used with a Tracer's StartSpan method.
 type StartSpanOption func(cfg *StartSpanConfig)

@@ -8,6 +8,7 @@
 package tracer
 
 import (
+	"fmt"
 	"strconv"
 
 	"github.com/tinylib/msgp/msgp"
@@ -153,6 +154,10 @@ type ciVisibilityEvent struct {
 	Content tslvSpan `msg:"content"` // Content of the event
 
 	span *span `msg:"-"` // Associated span (not marshaled)
+}
+
+func (z *ciVisibilityEvent) AddSpanLinks(spanLinks ...ddtrace.SpanLink) {
+	fmt.Println("TODO implement")
 }
 
 // SetTag sets a tag on the event's span and updates the content metadata and metrics.

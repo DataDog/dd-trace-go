@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/contrib/aws/internal/span_pointers"
 	"gopkg.in/DataDog/dd-trace-go.v1/contrib/aws/internal/tags"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
@@ -127,7 +128,6 @@ func (mw *traceMiddleware) startTraceMiddleware(stack *middleware.Stack) error {
 		if err != nil && (mw.cfg.errCheck == nil || mw.cfg.errCheck(err)) {
 			span.SetTag(ext.Error, err)
 		}
-		span.Finish()
 
 		return out, metadata, err
 	}), middleware.After)
@@ -356,6 +356,15 @@ func (mw *traceMiddleware) deserializeTraceMiddleware(stack *middleware.Stack) e
 		if requestID, ok := awsmiddleware.GetRequestIDMetadata(metadata); ok {
 			span.SetTag(tags.AWSRequestID, requestID)
 		}
+
+		// Create S3 span pointer
+		serviceID := awsmiddleware.GetServiceID(ctx)
+		if serviceID == "S3" {
+			span_pointers.HandleS3Operation(in, out, span)
+		}
+
+		fmt.Println("Finishing span")
+		span.Finish()
 
 		return out, metadata, err
 	}), middleware.Before)
