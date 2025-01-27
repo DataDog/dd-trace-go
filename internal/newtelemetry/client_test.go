@@ -12,6 +12,10 @@ import (
 	"net/http"
 	"runtime"
 	"runtime/debug"
+	"slices"
+	"strconv"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -452,6 +456,178 @@ func TestClientFlush(t *testing.T) {
 				}
 			},
 		},
+		{
+			name: "single-log-debug",
+			when: func(c *client) {
+				c.Log(LogDebug, "test")
+			},
+			expect: func(t *testing.T, payload transport.Payload) {
+				require.IsType(t, transport.Logs{}, payload)
+				logs := payload.(transport.Logs)
+				require.Len(t, logs.Logs, 1)
+				assert.Equal(t, logs.Logs[0].Level, transport.LogLevelDebug)
+				assert.Equal(t, logs.Logs[0].Message, "test")
+			},
+		},
+		{
+			name: "single-log-warn",
+			when: func(c *client) {
+				c.Log(LogWarn, "test")
+			},
+			expect: func(t *testing.T, payload transport.Payload) {
+				require.IsType(t, transport.Logs{}, payload)
+				logs := payload.(transport.Logs)
+				require.Len(t, logs.Logs, 1)
+				assert.Equal(t, logs.Logs[0].Level, transport.LogLevelWarn)
+				assert.Equal(t, logs.Logs[0].Message, "test")
+			},
+		},
+		{
+			name: "single-log-error",
+			when: func(c *client) {
+				c.Log(LogError, "test")
+			},
+			expect: func(t *testing.T, payload transport.Payload) {
+				require.IsType(t, transport.Logs{}, payload)
+				logs := payload.(transport.Logs)
+				require.Len(t, logs.Logs, 1)
+				assert.Equal(t, logs.Logs[0].Level, transport.LogLevelError)
+				assert.Equal(t, logs.Logs[0].Message, "test")
+			},
+		},
+		{
+			name: "multiple-logs-same-key",
+			when: func(c *client) {
+				c.Log(LogError, "test")
+				c.Log(LogError, "test")
+				c.Log(LogError, "test")
+			},
+			expect: func(t *testing.T, payload transport.Payload) {
+				require.IsType(t, transport.Logs{}, payload)
+				logs := payload.(transport.Logs)
+				require.Len(t, logs.Logs, 1)
+				assert.Equal(t, logs.Logs[0].Level, transport.LogLevelError)
+				assert.Equal(t, logs.Logs[0].Message, "test")
+				assert.Equal(t, logs.Logs[0].Count, uint32(3))
+			},
+		},
+		{
+			name: "single-log-with-tag",
+			when: func(c *client) {
+				c.Log(LogError, "test", WithTags(map[string]string{"key": "value"}))
+			},
+			expect: func(t *testing.T, payload transport.Payload) {
+				require.IsType(t, transport.Logs{}, payload)
+				logs := payload.(transport.Logs)
+				require.Len(t, logs.Logs, 1)
+				assert.Equal(t, logs.Logs[0].Level, transport.LogLevelError)
+				assert.Equal(t, logs.Logs[0].Message, "test")
+				assert.Equal(t, logs.Logs[0].Tags, "key:value")
+			},
+		},
+		{
+			name: "single-log-with-tags",
+			when: func(c *client) {
+				c.Log(LogError, "test", WithTags(map[string]string{"key": "value", "key2": "value2"}))
+			},
+			expect: func(t *testing.T, payload transport.Payload) {
+				require.IsType(t, transport.Logs{}, payload)
+				logs := payload.(transport.Logs)
+				require.Len(t, logs.Logs, 1)
+				assert.Equal(t, logs.Logs[0].Level, transport.LogLevelError)
+				assert.Equal(t, logs.Logs[0].Message, "test")
+				tags := strings.Split(logs.Logs[0].Tags, ",")
+				assert.Contains(t, tags, "key:value")
+				assert.Contains(t, tags, "key2:value2")
+			},
+		},
+		{
+			name: "single-log-with-tags-and-without",
+			when: func(c *client) {
+				c.Log(LogError, "test", WithTags(map[string]string{"key": "value", "key2": "value2"}))
+				c.Log(LogError, "test")
+			},
+			expect: func(t *testing.T, payload transport.Payload) {
+				require.IsType(t, transport.Logs{}, payload)
+				logs := payload.(transport.Logs)
+				require.Len(t, logs.Logs, 2)
+
+				slices.SortStableFunc(logs.Logs, func(i, j transport.LogMessage) int {
+					return strings.Compare(i.Tags, j.Tags)
+				})
+
+				assert.Equal(t, logs.Logs[0].Level, transport.LogLevelError)
+				assert.Equal(t, logs.Logs[0].Message, "test")
+				assert.Equal(t, logs.Logs[0].Count, uint32(1))
+				assert.Empty(t, logs.Logs[0].Tags)
+
+				assert.Equal(t, logs.Logs[1].Level, transport.LogLevelError)
+				assert.Equal(t, logs.Logs[1].Message, "test")
+				assert.Equal(t, logs.Logs[1].Count, uint32(1))
+				tags := strings.Split(logs.Logs[1].Tags, ",")
+				assert.Contains(t, tags, "key:value")
+				assert.Contains(t, tags, "key2:value2")
+			},
+		},
+		{
+			name: "single-log-with-stacktrace",
+			when: func(c *client) {
+				c.Log(LogError, "test", WithStacktrace())
+			},
+			expect: func(t *testing.T, payload transport.Payload) {
+				require.IsType(t, transport.Logs{}, payload)
+				logs := payload.(transport.Logs)
+				require.Len(t, logs.Logs, 1)
+				assert.Equal(t, logs.Logs[0].Level, transport.LogLevelError)
+				assert.Equal(t, logs.Logs[0].Message, "test")
+				assert.Contains(t, logs.Logs[0].StackTrace, "internal/newtelemetry/client_test.go")
+			},
+		},
+		{
+			name: "single-log-with-stacktrace-and-tags",
+			when: func(c *client) {
+				c.Log(LogError, "test", WithStacktrace(), WithTags(map[string]string{"key": "value", "key2": "value2"}))
+			},
+			expect: func(t *testing.T, payload transport.Payload) {
+				require.IsType(t, transport.Logs{}, payload)
+				logs := payload.(transport.Logs)
+				require.Len(t, logs.Logs, 1)
+				assert.Equal(t, logs.Logs[0].Level, transport.LogLevelError)
+				assert.Equal(t, logs.Logs[0].Message, "test")
+				assert.Contains(t, logs.Logs[0].StackTrace, "internal/newtelemetry/client_test.go")
+				tags := strings.Split(logs.Logs[0].Tags, ",")
+				assert.Contains(t, tags, "key:value")
+				assert.Contains(t, tags, "key2:value2")
+
+			},
+		},
+		{
+			name: "multiple-logs-different-levels",
+			when: func(c *client) {
+				c.Log(LogError, "test")
+				c.Log(LogWarn, "test")
+				c.Log(LogDebug, "test")
+			},
+			expect: func(t *testing.T, payload transport.Payload) {
+				require.IsType(t, transport.Logs{}, payload)
+				logs := payload.(transport.Logs)
+				require.Len(t, logs.Logs, 3)
+
+				slices.SortStableFunc(logs.Logs, func(i, j transport.LogMessage) int {
+					return strings.Compare(string(i.Level), string(j.Level))
+				})
+
+				assert.Equal(t, logs.Logs[0].Level, transport.LogLevelDebug)
+				assert.Equal(t, logs.Logs[0].Message, "test")
+				assert.Equal(t, logs.Logs[0].Count, uint32(1))
+				assert.Equal(t, logs.Logs[1].Level, transport.LogLevelError)
+				assert.Equal(t, logs.Logs[1].Message, "test")
+				assert.Equal(t, logs.Logs[1].Count, uint32(1))
+				assert.Equal(t, logs.Logs[2].Level, transport.LogLevelWarn)
+				assert.Equal(t, logs.Logs[2].Message, "test")
+				assert.Equal(t, logs.Logs[2].Count, uint32(1))
+			},
+		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
@@ -628,4 +804,103 @@ func TestClientEnd2End(t *testing.T) {
 			c.Flush()
 		})
 	}
+}
+
+func BenchmarkLogs(b *testing.B) {
+	clientConfig := ClientConfig{
+		HeartbeatInterval:         time.Hour,
+		ExtendedHeartbeatInterval: time.Hour,
+		AgentURL:                  "http://localhost:8126",
+	}
+
+	b.Run("simple", func(b *testing.B) {
+		c, err := NewClient("test-service", "test-env", "1.0.0", clientConfig)
+		require.NoError(b, err)
+
+		defer c.Close()
+
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			c.Log(LogDebug, "this is supposed to be a DEBUG log of representative length with a variable message: "+strconv.Itoa(i%10))
+		}
+	})
+
+	b.Run("with-tags", func(b *testing.B) {
+		c, err := NewClient("test-service", "test-env", "1.0.0", clientConfig)
+		require.NoError(b, err)
+
+		defer c.Close()
+
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			c.Log(LogWarn, "this is supposed to be a WARN log of representative length", WithTags(map[string]string{"key": strconv.Itoa(i % 10)}))
+		}
+	})
+
+	b.Run("with-stacktrace", func(b *testing.B) {
+		c, err := NewClient("test-service", "test-env", "1.0.0", clientConfig)
+		require.NoError(b, err)
+
+		defer c.Close()
+
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			c.Log(LogError, "this is supposed to be a ERROR log of representative length", WithStacktrace())
+		}
+	})
+}
+
+func BenchmarkWorstCaseScenarioFloodLogging(b *testing.B) {
+	nbSameLogs := 10
+	nbDifferentLogs := 100
+	nbGoroutines := 25
+
+	clientConfig := ClientConfig{
+		HeartbeatInterval:         time.Hour,
+		ExtendedHeartbeatInterval: time.Hour,
+		FlushIntervalRange: struct {
+			Min time.Duration
+			Max time.Duration
+		}{Min: time.Second, Max: time.Second},
+		AgentURL: "http://localhost:8126",
+
+		// Empty transport to avoid sending data to the agent
+		HTTPClient: &http.Client{
+			Timeout: 5 * time.Second,
+			Transport: &testRoundTripper{
+				roundTrip: func(_ *http.Request) (*http.Response, error) {
+					return &http.Response{
+						StatusCode: http.StatusOK,
+					}, nil
+				},
+			},
+		},
+	}
+
+	c, err := NewClient("test-service", "test-env", "1.0.0", clientConfig)
+	require.NoError(b, err)
+
+	defer c.Close()
+
+	b.ResetTimer()
+
+	for x := 0; x < b.N; x++ {
+		var wg sync.WaitGroup
+
+		for i := 0; i < nbGoroutines; i++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				for j := 0; j < nbDifferentLogs; j++ {
+					for k := 0; k < nbSameLogs; k++ {
+						c.Log(LogDebug, "this is supposed to be a DEBUG log of representative length"+strconv.Itoa(i), WithTags(map[string]string{"key": strconv.Itoa(j)}))
+					}
+				}
+			}()
+		}
+
+		wg.Wait()
+	}
+
+	b.Log("Called (*client).Log ", nbGoroutines*nbDifferentLogs*nbSameLogs, " times")
 }

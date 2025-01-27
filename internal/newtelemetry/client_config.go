@@ -199,6 +199,10 @@ func newWriterConfig(config ClientConfig, tracerConfig internal.TracerConfig) (i
 		endpoints = append(endpoints, request)
 	}
 
+	if len(endpoints) == 0 {
+		return internal.WriterConfig{}, fmt.Errorf("telemetry: could not build any endpoint, please provide an AgentURL or an APIKey with an optional AgentlessURL")
+	}
+
 	return internal.WriterConfig{
 		TracerConfig: tracerConfig,
 		Endpoints:    endpoints,
