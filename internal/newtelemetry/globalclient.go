@@ -16,8 +16,8 @@ import (
 var (
 	globalClient atomic.Pointer[Client]
 
-	// actionQueue contains all actions done on the global client done before StartApp() with an actual client object is called
-	actionQueue = internal.NewRingQueue[func(Client)](16, 512)
+	// globalClientRecorder contains all actions done on the global client done before StartApp() with an actual client object is called
+	globalClientRecorder = internal.NewRecorder[Client]()
 )
 
 // StartApp starts the telemetry client with the given client send the app-started telemetry and sets it as the global (*client).
@@ -28,11 +28,7 @@ func StartApp(client Client) {
 
 	SwapClient(client)
 
-	actions := actionQueue.GetBuffer()
-	defer actionQueue.ReleaseBuffer(actions)
-	for _, action := range actions {
-		action(client)
-	}
+	globalClientRecorder.Replay(client)
 
 	client.appStart()
 }
@@ -73,11 +69,11 @@ func Count(namespace types.Namespace, name string, tags map[string]string) Metri
 		return nil
 	}
 
-	if client := globalClient.Load(); client != nil && *client != nil {
-		return (*client).Count(namespace, name, tags)
+	client := globalClient.Load()
+	if client == nil || *client == nil {
+		return nil
 	}
-
-	return nil
+	return (*client).Count(namespace, name, tags)
 }
 
 // Rate creates a new metric handle for the given parameters that can be used to submit values.
@@ -86,11 +82,11 @@ func Rate(namespace types.Namespace, name string, tags map[string]string) Metric
 		return nil
 	}
 
-	if client := globalClient.Load(); client != nil && *client != nil {
-		return (*client).Rate(namespace, name, tags)
+	client := globalClient.Load()
+	if client == nil || *client == nil {
+		return nil
 	}
-
-	return nil
+	return (*client).Rate(namespace, name, tags)
 }
 
 // Gauge creates a new metric handle for the given parameters that can be used to submit values.
@@ -99,11 +95,11 @@ func Gauge(namespace types.Namespace, name string, tags map[string]string) Metri
 		return nil
 	}
 
-	if client := globalClient.Load(); client != nil && *client != nil {
-		return (*client).Gauge(namespace, name, tags)
+	client := globalClient.Load()
+	if client == nil || *client == nil {
+		return nil
 	}
-
-	return nil
+	return (*client).Gauge(namespace, name, tags)
 }
 
 // Distribution creates a new metric handle for the given parameters that can be used to submit values.
@@ -112,99 +108,108 @@ func Distribution(namespace types.Namespace, name string, tags map[string]string
 		return nil
 	}
 
-	if client := globalClient.Load(); client != nil && *client != nil {
-		return (*client).Distribution(namespace, name, tags)
-	}
-
-	return nil
-}
-
-// Logger returns an implementation of the TelemetryLogger interface which sends telemetry logs.
-func Logger() TelemetryLogger {
-	if Disabled() {
+	client := globalClient.Load()
+	if client == nil || *client == nil {
 		return nil
 	}
-
-	if client := globalClient.Load(); client != nil && *client != nil {
-		return (*client).Logger()
-	}
-
-	return nil
+	return (*client).Distribution(namespace, name, tags)
 }
 
-// ProductStarted declares a product to have started at the customer’s request
+func Log(level LogLevel, text string, options ...LogOption) {
+	globalClientCall(func(client Client) {
+		client.Log(level, text, options...)
+	})
+}
+
+// ProductStarted declares a product to have started at the customer’s request. If telemetry is disabled, it will do nothing.
+// If the telemetry client has not started yet, it will record the action and replay it once the client is started.
 func ProductStarted(product types.Namespace) {
-	if Disabled() {
-		return
-	}
-
-	if client := globalClient.Load(); client != nil && *client != nil {
-		(*client).ProductStarted(product)
-	} else {
-		actionQueue.Enqueue(func(client Client) {
-			client.ProductStarted(product)
-		})
-	}
+	globalClientCall(func(client Client) {
+		client.ProductStarted(product)
+	})
 }
 
-// ProductStopped declares a product to have being stopped by the customer
+// ProductStopped declares a product to have being stopped by the customer. If telemetry is disabled, it will do nothing.
+// If the telemetry client has not started yet, it will record the action and replay it once the client is started.
 func ProductStopped(product types.Namespace) {
-	if Disabled() {
-		return
-	}
-
-	if client := globalClient.Load(); client != nil && *client != nil {
-		(*client).ProductStopped(product)
-	} else {
-		actionQueue.Enqueue(func(client Client) {
-			client.ProductStopped(product)
-		})
-	}
+	globalClientCall(func(client Client) {
+		client.ProductStopped(product)
+	})
 }
 
-// ProductStartError declares that a product could not start because of the following error
+// ProductStartError declares that a product could not start because of the following error. If telemetry is disabled, it will do nothing.
+// If the telemetry client has not started yet, it will record the action and replay it once the client is started.
 func ProductStartError(product types.Namespace, err error) {
-	if Disabled() {
-		return
-	}
-
-	if client := globalClient.Load(); client != nil && *client != nil {
-		(*client).ProductStartError(product, err)
-	} else {
-		actionQueue.Enqueue(func(client Client) {
-			client.ProductStartError(product, err)
-		})
-	}
+	globalClientCall(func(client Client) {
+		client.ProductStartError(product, err)
+	})
 }
 
 // AddAppConfig adds a key value pair to the app configuration and send the change to telemetry
-// value has to be json serializable and the origin is the source of the change.
+// value has to be json serializable and the origin is the source of the change. If telemetry is disabled, it will do nothing.
+// If the telemetry client has not started yet, it will record the action and replay it once the client is started.
 func AddAppConfig(key string, value any, origin types.Origin) {
-	if Disabled() {
-		return
-	}
-
-	if client := globalClient.Load(); client != nil && *client != nil {
-		(*client).AddAppConfig(key, value, origin)
-	} else {
-		actionQueue.Enqueue(func(client Client) {
-			client.AddAppConfig(key, value, origin)
-		})
-	}
+	globalClientCall(func(client Client) {
+		client.AddAppConfig(key, value, origin)
+	})
 }
 
 // AddBulkAppConfig adds a list of key value pairs to the app configuration and sends the change to telemetry.
-// Same as AddAppConfig but for multiple values.
+// Same as AddAppConfig but for multiple values. If telemetry is disabled, it will do nothing.
+// If the telemetry client has not started yet, it will record the action and replay it once the client is started.
 func AddBulkAppConfig(kvs map[string]any, origin types.Origin) {
+	globalClientCall(func(client Client) {
+		client.AddBulkAppConfig(kvs, origin)
+	})
+}
+
+// globalClientCall takes a function that takes a Client and calls it with the global client if it exists.
+// otherwise, it records the action for when the client is started.
+func globalClientCall(fun func(client Client)) {
 	if Disabled() {
 		return
 	}
 
-	if client := globalClient.Load(); client != nil && *client != nil {
-		(*client).AddBulkAppConfig(kvs, origin)
-	} else {
-		actionQueue.Enqueue(func(client Client) {
-			client.AddBulkAppConfig(kvs, origin)
+	client := globalClient.Load()
+	if client == nil || *client == nil {
+		globalClientRecorder.Record(func(client Client) {
+			fun(client)
+		})
+		return
+	}
+
+	fun(*client)
+}
+
+type metricsHotPointer struct {
+	ptr      atomic.Pointer[MetricHandle]
+	recorder internal.Recorder[MetricHandle]
+}
+
+func (t *metricsHotPointer) Submit(value float64) {
+	inner := t.ptr.Load()
+	if inner == nil || *inner == nil {
+		t.recorder.Record(func(handle MetricHandle) {
+			handle.Submit(value)
 		})
 	}
+
+	(*inner).Submit(value)
 }
+
+func (t *metricsHotPointer) flush() {
+	inner := t.ptr.Load()
+	if inner == nil || *inner == nil {
+		return
+	}
+
+	(*inner).flush()
+}
+
+func (t *metricsHotPointer) swap(handle MetricHandle) {
+	if t.ptr.Swap(&handle) == nil {
+		t.recorder.Replay(handle)
+	}
+}
+
+var _ MetricHandle = (*metricsHotPointer)(nil)

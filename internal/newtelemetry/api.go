@@ -24,26 +24,6 @@ type MetricHandle interface {
 	flush()
 }
 
-// TelemetryLogger is the interface implementing the telemetry logs. Supports log deduplication. All methods are Thread-safe
-// This is an interface for easier testing but all functions will be mirrored at the package level to call
-// the global client.
-type TelemetryLogger interface {
-	// WithTags creates a new Logger which will send a comma-separated list of tags with the next logs
-	WithTags(tags string) TelemetryLogger
-
-	// WithStackTrace creates a new Logger which will send a stack trace generated for each next log.
-	WithStackTrace() TelemetryLogger
-
-	// Error sends a telemetry log at the ERROR level
-	Error(text string)
-
-	// Warn sends a telemetry log at the WARN level
-	Warn(text string)
-
-	// Debug sends a telemetry log at the DEBUG level
-	Debug(text string)
-}
-
 // Integration is an integration that is configured to be traced.
 type Integration struct {
 	// Name is an arbitrary string that must stay constant for the integration.
@@ -73,8 +53,9 @@ type Client interface {
 	// Distribution creates a new metric handle for the given parameters that can be used to submit values.
 	Distribution(namespace types.Namespace, name string, tags map[string]string) MetricHandle
 
-	// Logger returns an implementation of the Logger interface which sends telemetry logs.
-	Logger() TelemetryLogger
+	// Log sends a telemetry log at the desired level with the given text and options.
+	// Options include sending key-value pairs as tags, and a stack trace frozen from inside the Log function.
+	Log(level LogLevel, text string, options ...LogOption)
 
 	// ProductStarted declares a product to have started at the customer’s request
 	ProductStarted(product types.Namespace)
