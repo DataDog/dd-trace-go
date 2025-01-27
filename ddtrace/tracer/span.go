@@ -533,7 +533,7 @@ func (s *span) Finish(opts ...ddtrace.FinishOption) {
 		}
 	}
 
-	s.serializeSpanLinksInMeta()
+	//s.serializeSpanLinksInMeta()
 
 	s.finish(t)
 	orchestrion.GLSPopValue(sharedinternal.ActiveSpanKey)
