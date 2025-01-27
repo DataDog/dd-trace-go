@@ -15,24 +15,35 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/newtelemetry/internal/transport"
 )
 
-type LogOption func(key *loggerKey)
+type LogOption func(key *loggerKey, value *loggerValue)
 
+// WithTags returns a LogOption that sets the tags for the telemetry log message. Tags are key-value pairs that are then
+// serialized into a simple "key:value,key2:value2" format. No quoting or escaping is performed.
 func WithTags(tags map[string]string) LogOption {
 	compiledTags := ""
 	for k, v := range tags {
 		compiledTags += k + ":" + v + ","
 	}
 	compiledTags = strings.TrimSuffix(compiledTags, ",")
-	return func(key *loggerKey) {
+	return func(key *loggerKey, _ *loggerValue) {
+		if key == nil {
+			return
+		}
 		key.tags = compiledTags
 	}
 }
 
+// WithStacktrace returns a LogOption that sets the stacktrace for the telemetry log message. The stacktrace is a string
+// that is generated inside the WithStacktrace function. Logs demultiplication does not take the stacktrace into account.
+// This means that a log that has been demultiplicated will only show of the first log.
 func WithStacktrace() LogOption {
 	buf := make([]byte, 1<<12)
-	runtime.Stack(buf, false)
-	return func(key *loggerKey) {
-		key.stacktrace = string(buf)
+	buf = buf[:runtime.Stack(buf, false)]
+	return func(_ *loggerKey, value *loggerValue) {
+		if value == nil {
+			return
+		}
+		value.stacktrace = string(buf)
 	}
 }
 
@@ -45,15 +56,15 @@ const (
 )
 
 type loggerKey struct {
-	tags       string
-	message    string
-	level      LogLevel
-	stacktrace string
+	tags    string
+	message string
+	level   LogLevel
 }
 
 type loggerValue struct {
-	count atomic.Uint32
-	time  int64 // Unix timestamp
+	count      atomic.Uint32
+	stacktrace string
+	time       int64 // Unix timestamp
 }
 
 type logger struct {
@@ -75,7 +86,7 @@ func (logger *logger) Add(level LogLevel, text string, opts ...LogOption) {
 	}
 
 	for _, opt := range opts {
-		opt(&key)
+		opt(&key, nil)
 	}
 
 	val, ok := store.Load(key)
@@ -88,7 +99,11 @@ func (logger *logger) Add(level LogLevel, text string, opts ...LogOption) {
 		time: time.Now().Unix(),
 	}
 
-	newVal.count.Add(1)
+	for _, opt := range opts {
+		opt(&key, newVal)
+	}
+
+	newVal.count.Store(1)
 	store.Store(key, newVal)
 }
 
@@ -107,7 +122,7 @@ func (logger *logger) Payload() transport.Payload {
 			Level:      k.level,
 			Tags:       k.tags,
 			Count:      v.count.Load(),
-			StackTrace: k.stacktrace,
+			StackTrace: v.stacktrace,
 			TracerTime: v.time,
 		})
 		return true
