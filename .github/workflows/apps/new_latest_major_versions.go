@@ -36,36 +36,66 @@ type GithubLatests struct {
 	Module  string
 }
 
-func getGoModVersion(repository string, pkg string) (string, error) {
+func getGoModVersion(repository string, pkg string) (string, string, error) {
 	// ex: package: aws/aws-sdk-go-v2
 	// repository: github.com/aws/aws-sdk-go-v2
 	// look for go.mod in contrib/{package}
 	// if it exists, look for repository in the go.mod
 	// parse the version associated with repository
 	// Define the path to the go.mod file within the contrib/{pkg} directory
+	repository = truncateVersionSuffix(repository)
+
 	goModPath := fmt.Sprintf("contrib/%s/go.mod", pkg)
 
 	// Read the go.mod file
 	content, err := os.ReadFile(goModPath)
 	if err != nil {
-		return "", fmt.Errorf("failed to read go.mod file at %s: %w", goModPath, err)
+		return "", "", fmt.Errorf("failed to read go.mod file at %s: %w", goModPath, err)
 	}
 
 	// Parse the go.mod file
 	modFile, err := modfile.Parse(goModPath, content, nil)
 	if err != nil {
-		return "", fmt.Errorf("failed to parse go.mod file at %s: %w", goModPath, err)
+		return "", "", fmt.Errorf("failed to parse go.mod file at %s: %w", goModPath, err)
 	}
+
+	// keep track of largest version from go.mod
+	var largestVersion string
+	var largestVersionRepo string
 
 	// Search for the module matching the repository
 	for _, req := range modFile.Require {
 		if strings.HasPrefix(req.Mod.Path, repository) {
-			return req.Mod.Version, nil
+			version := req.Mod.Version
+
+			if !semver.IsValid(version) {
+				return "", "", fmt.Errorf("invalid semantic version %s in go.mod", version)
+			}
+
+			if largestVersion == "" || semver.Compare(version, largestVersion) > 0 {
+				largestVersion = version
+				largestVersionRepo = req.Mod.Path
+			}
 		}
 	}
 
-	// If the repository is not found in the dependencies
-	return "", fmt.Errorf("repository %s not found in go.mod file", repository)
+	if largestVersion == "" {
+		// If the repository is not found in the dependencies
+		return "", "", fmt.Errorf("repository %s not found in go.mod file", repository)
+	}
+	return largestVersionRepo, largestVersion, nil
+
+}
+
+func truncateVersionSuffix(repository string) string {
+	parts := strings.Split(repository, "/")
+	lastPart := parts[len(parts)-1]
+
+	if len(lastPart) > 1 && strings.HasPrefix(lastPart, "v") && semver.IsValid(lastPart) {
+		return strings.Join(parts[:len(parts)-1], "/")
+	}
+
+	return repository
 }
 
 func getModuleOrigin(repository, version string) (string, error) {
@@ -211,7 +241,7 @@ func main() {
 		}
 
 		base := truncateVersion(string(pkg))
-		version, err := getGoModVersion(repository, string(pkg))
+		repo, version, err := getGoModVersion(repository, string(pkg))
 		if err != nil {
 			fmt.Printf("%v go.mod not found.", pkg)
 			continue
@@ -239,7 +269,7 @@ func main() {
 		// this should return a JSON
 		// extract Origin[URL] if the JSON contains it, otherwise continue
 
-		origin, err := getModuleOrigin(repository, version)
+		origin, err := getModuleOrigin(repo, version)
 		if err != nil {
 			fmt.Printf("Error: %v\n", err)
 			continue
