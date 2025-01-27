@@ -23,7 +23,7 @@ type TestCase struct {
 
 func (tc *TestCase) Setup(_ context.Context, t *testing.T) {
 	var err error
-	tc.DB, err = gorm.Open(sqlite.Open("file::memory:"), &gorm.Config{})
+	tc.DB, err = gorm.Open(sqlite.Open("file::memory:"))
 	require.NoError(t, err)
 
 	require.NoError(t, tc.DB.AutoMigrate(&Note{}))
@@ -62,6 +62,22 @@ func (*TestCase) ExpectedTraces() trace.Traces {
 					},
 					Meta: map[string]string{
 						"component": "gorm.io/gorm.v1",
+						"span.kind": "client",
+					},
+					Children: trace.Traces{
+						{
+							Tags: map[string]any{
+								"resource": "SELECT * FROM `notes` WHERE user_id = ? AND `notes`.`deleted_at` IS NULL ORDER BY `notes`.`id` LIMIT 1",
+								"type":     "sql",
+								"name":     "sqlite3.query",
+								"service":  "sqlite3.db",
+							},
+							Meta: map[string]string{
+								"component": "database/sql",
+								"span.kind": "client",
+								"db.system": "other_sql",
+							},
+						},
 					},
 				},
 			},
