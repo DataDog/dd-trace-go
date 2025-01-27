@@ -114,7 +114,7 @@ type SpanLink struct {
 	// TraceID represents the low 64 bits of the linked span's trace id. This field is required.
 	TraceID uint64 `msg:"trace_id" json:"trace_id"`
 	// TraceIDHigh represents the high 64 bits of the linked span's trace id. This field is only set if the linked span's trace id is 128 bits.
-	TraceIDHigh uint64 `msg:"trace_id_high" json:"trace_id_high"`
+	TraceIDHigh uint64 `msg:"trace_id_high2" json:"trace_id_high"`
 	// SpanID represents the linked span's span id.
 	SpanID uint64 `msg:"span_id" json:"span_id"`
 	// Attributes is a mapping of keys to string values. These values are used to add additional context to the span link.
