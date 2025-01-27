@@ -7,6 +7,7 @@ package valkey
 import (
 	"context"
 	"fmt"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"os"
 	"testing"
 	"time"
@@ -19,11 +20,15 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
 
-var (
+const (
 	// See docker-compose.yaml
 	valkeyPort     = 6380
 	valkeyUsername = "default"
 	valkeyPassword = "password-for-default"
+)
+
+var (
+	valkeyAddrs = []string{fmt.Sprintf("127.0.0.1:%d", valkeyPort)}
 )
 
 func TestMain(m *testing.M) {
@@ -36,187 +41,146 @@ func TestMain(m *testing.M) {
 }
 
 func TestNewClient(t *testing.T) {
+	prevName := globalconfig.ServiceName()
+	defer globalconfig.SetServiceName(prevName)
+	globalconfig.SetServiceName("global-service")
+	
 	tests := []struct {
-		name                     string
-		valkeyClientOptions      valkey.ClientOption
-		valkeytraceClientOptions []ClientOption
-		valkeytraceClientEnvVars map[string]string
-		createSpans              func(*testing.T, context.Context, valkey.Client)
-		assertNewClientError     func(*testing.T, error)
-		assertSpans              []func(*testing.T, mocktracer.Span)
+		name            string
+		opts            []Option
+		runTest         func(*testing.T, context.Context, valkey.Client)
+		assertSpans     func(*testing.T, []mocktracer.Span)
+		wantServiceName string
 	}{
 		{
-			name: "Test invalid username",
-			valkeyClientOptions: valkey.ClientOption{
-				InitAddress: []string{fmt.Sprintf("127.0.0.1:%d", valkeyPort)},
-				Username:    "invalid-username",
-				Password:    valkeyPassword,
-			},
-			assertNewClientError: func(t *testing.T, err error) {
-				assert.EqualError(t, err, "WRONGPASS invalid username-password pair or user is disabled.")
-			},
-		},
-		{
-			name: "Test invalid password",
-			valkeyClientOptions: valkey.ClientOption{
-				InitAddress: []string{fmt.Sprintf("127.0.0.1:%d", valkeyPort)},
-				Username:    valkeyUsername,
-				Password:    "invalid",
-			},
-			assertNewClientError: func(t *testing.T, err error) {
-				assert.EqualError(t, err, "WRONGPASS invalid username-password pair or user is disabled.")
-			},
-		},
-		{
-			name: "Test SET command with custom options",
-			valkeyClientOptions: valkey.ClientOption{
-				InitAddress: []string{fmt.Sprintf("127.0.0.1:%d", valkeyPort)},
-				Username:    valkeyUsername,
-				Password:    valkeyPassword,
-			},
-			valkeytraceClientOptions: []ClientOption{
+			name: "Test SET command with raw command",
+			opts: []Option{
 				WithRawCommand(true),
+				WithServiceName("test-service"),
 			},
-			createSpans: func(t *testing.T, ctx context.Context, client valkey.Client) {
+			runTest: func(t *testing.T, ctx context.Context, client valkey.Client) {
 				assert.NoError(t, client.Do(ctx, client.B().Set().Key("test_key").Value("test_value").Build()).Error())
 			},
-			assertSpans: []func(t *testing.T, span mocktracer.Span){
-				func(t *testing.T, span mocktracer.Span) {
-					assert.Equal(t, "SET\ntest_key\ntest_value", span.Tag(ext.DBStatement))
-					assert.Equal(t, "SET\ntest_key\ntest_value", span.Tag(ext.ResourceName))
-					assert.True(t, span.Tag(ext.ValkeyRawCommand).(bool))
-					assert.False(t, span.Tag(ext.ValkeyClientCacheHit).(bool))
-					assert.Less(t, span.Tag(ext.ValkeyClientCacheTTL), int64(0))
-					assert.Less(t, span.Tag(ext.ValkeyClientCachePXAT), int64(0))
-					assert.Less(t, span.Tag(ext.ValkeyClientCachePTTL), int64(0))
-					assert.Nil(t, span.Tag(ext.Error))
-				},
+			assertSpans: func(t *testing.T, spans []mocktracer.Span) {
+				require.Len(t, spans, 1)
+
+				span := spans[0]
+				assert.Equal(t, "SET", span.Tag(ext.ResourceName))
+				assert.Equal(t, "SET test_key test_value", span.Tag(ext.ValkeyRawCommand))
+				assert.Equal(t, false, span.Tag(ext.ValkeyClientCacheHit))
+				assert.Less(t, span.Tag(ext.ValkeyClientCacheTTL), int64(0))
+				assert.Less(t, span.Tag(ext.ValkeyClientCachePXAT), int64(0))
+				assert.Less(t, span.Tag(ext.ValkeyClientCachePTTL), int64(0))
+				assert.Nil(t, span.Tag(ext.Error))
 			},
+			wantServiceName: "test-service",
 		},
 		{
-			name: "Test SET/GET commands",
-			valkeyClientOptions: valkey.ClientOption{
-				InitAddress: []string{fmt.Sprintf("127.0.0.1:%d", valkeyPort)},
-				Username:    valkeyUsername,
-				Password:    valkeyPassword,
-				ClientName:  "my-valkey-client",
+			name: "Test SET command without raw command",
+			opts: nil,
+			runTest: func(t *testing.T, ctx context.Context, client valkey.Client) {
+				require.NoError(t, client.Do(ctx, client.B().Set().Key("test_key").Value("test_value").Build()).Error())
 			},
-			createSpans: func(t *testing.T, ctx context.Context, client valkey.Client) {
+			assertSpans: func(t *testing.T, spans []mocktracer.Span) {
+				require.Len(t, spans, 1)
+
+				span := spans[0]
+				assert.Equal(t, "SET", span.Tag(ext.ResourceName))
+				assert.Nil(t, span.Tag(ext.ValkeyRawCommand))
+				assert.Equal(t, false, span.Tag(ext.ValkeyClientCacheHit))
+				assert.Less(t, span.Tag(ext.ValkeyClientCacheTTL), int64(0))
+				assert.Less(t, span.Tag(ext.ValkeyClientCachePXAT), int64(0))
+				assert.Less(t, span.Tag(ext.ValkeyClientCachePTTL), int64(0))
+				assert.Nil(t, span.Tag(ext.Error))
+			},
+			wantServiceName: "global-service",
+		},
+		{
+			name: "Test SET GET multi command",
+			opts: []Option{
+				WithRawCommand(true),
+			},
+			runTest: func(t *testing.T, ctx context.Context, client valkey.Client) {
 				resp := client.DoMulti(ctx, client.B().Set().Key("test_key").Value("test_value").Build(), client.B().Get().Key("test_key").Build())
-				assert.Len(t, resp, 2)
+				require.Len(t, resp, 2)
 			},
-			assertSpans: []func(t *testing.T, span mocktracer.Span){
-				func(t *testing.T, span mocktracer.Span) {
-					assert.Equal(t, "SET GET", span.Tag(ext.DBStatement))
-					assert.Equal(t, "SET GET", span.Tag(ext.ResourceName))
-					assert.False(t, span.Tag(ext.ValkeyRawCommand).(bool))
-					assert.Nil(t, span.Tag(ext.ValkeyClientCacheHit))
-					assert.Nil(t, span.Tag(ext.ValkeyClientCacheTTL))
-					assert.Nil(t, span.Tag(ext.ValkeyClientCachePXAT))
-					assert.Nil(t, span.Tag(ext.ValkeyClientCachePTTL))
-					assert.Nil(t, span.Tag(ext.Error))
-				},
+			assertSpans: func(t *testing.T, spans []mocktracer.Span) {
+				require.Len(t, spans, 1)
+
+				span := spans[0]
+				assert.Equal(t, "SET GET", span.Tag(ext.ResourceName))
+				assert.Equal(t, "SET test_key test_value GET test_key", span.Tag(ext.ValkeyRawCommand))
+				assert.Nil(t, span.Tag(ext.ValkeyClientCacheHit))
+				assert.Nil(t, span.Tag(ext.ValkeyClientCacheTTL))
+				assert.Nil(t, span.Tag(ext.ValkeyClientCachePXAT))
+				assert.Nil(t, span.Tag(ext.ValkeyClientCachePTTL))
+				assert.Nil(t, span.Tag(ext.Error))
 			},
+			wantServiceName: "global-service",
 		},
 		{
 			name: "Test HMGET command with cache",
-			valkeyClientOptions: valkey.ClientOption{
-				InitAddress: []string{fmt.Sprintf("127.0.0.1:%d", valkeyPort)},
-				Username:    valkeyUsername,
-				Password:    valkeyPassword,
-			},
-			createSpans: func(t *testing.T, ctx context.Context, client valkey.Client) {
-				assert.NoError(t, client.DoCache(ctx, client.B().Hmget().Key("mk").Field("1", "2").Cache(), time.Minute).Error())
-				resp, err := client.DoCache(ctx, client.B().Hmget().Key("mk").Field("1", "2").Cache(), time.Minute).ToArray()
-				assert.Len(t, resp, 2)
-				assert.NoError(t, err)
-			},
-			assertSpans: []func(t *testing.T, span mocktracer.Span){
-				func(t *testing.T, span mocktracer.Span) {
-					assert.Equal(t, "HMGET", span.Tag(ext.DBStatement))
-					assert.Equal(t, "HMGET", span.Tag(ext.ResourceName))
-					assert.False(t, span.Tag(ext.ValkeyRawCommand).(bool))
-					assert.False(t, span.Tag(ext.ValkeyClientCacheHit).(bool))
-					assert.Greater(t, span.Tag(ext.ValkeyClientCacheTTL), int64(0))
-					assert.Greater(t, span.Tag(ext.ValkeyClientCachePXAT), int64(0))
-					assert.Greater(t, span.Tag(ext.ValkeyClientCachePTTL), int64(0))
-					assert.Nil(t, span.Tag(ext.Error))
-				},
-				func(t *testing.T, span mocktracer.Span) {
-					assert.Equal(t, "HMGET", span.Tag(ext.DBStatement))
-					assert.Equal(t, "HMGET", span.Tag(ext.ResourceName))
-					assert.False(t, span.Tag(ext.ValkeyRawCommand).(bool))
-					assert.True(t, span.Tag(ext.ValkeyClientCacheHit).(bool))
-					assert.Greater(t, span.Tag(ext.ValkeyClientCacheTTL), int64(0))
-					assert.Greater(t, span.Tag(ext.ValkeyClientCachePXAT), int64(0))
-					assert.Greater(t, span.Tag(ext.ValkeyClientCachePTTL), int64(0))
-					assert.Nil(t, span.Tag(ext.Error))
-				},
-			},
-		},
-		{
-			name: "Test GET command with stream with env vars",
-			valkeyClientOptions: valkey.ClientOption{
-				InitAddress: []string{fmt.Sprintf("127.0.0.1:%d", valkeyPort)},
-				Username:    valkeyUsername,
-				Password:    valkeyPassword,
-			},
-			valkeytraceClientEnvVars: map[string]string{
-				"DD_TRACE_VALKEY_RAW_COMMAND": "true",
-			},
-			createSpans: func(t *testing.T, ctx context.Context, client valkey.Client) {
-				resp := client.DoStream(ctx, client.B().Get().Key("test_key").Build())
-				assert.NoError(t, resp.Error())
-			},
-			assertSpans: []func(t *testing.T, span mocktracer.Span){
-				func(t *testing.T, span mocktracer.Span) {
-					assert.Equal(t, "GET\ntest_key", span.Tag(ext.DBStatement))
-					assert.Equal(t, "GET\ntest_key", span.Tag(ext.ResourceName))
-					assert.True(t, span.Tag(ext.ValkeyRawCommand).(bool))
-					assert.Nil(t, span.Tag(ext.ValkeyClientCacheHit))
-					assert.Nil(t, span.Tag(ext.ValkeyClientCacheTTL))
-					assert.Nil(t, span.Tag(ext.ValkeyClientCachePXAT))
-					assert.Nil(t, span.Tag(ext.ValkeyClientCachePTTL))
-					assert.Nil(t, span.Tag(ext.Error))
-				},
-			},
-		},
-		{
-			name: "Test SET command with timeout",
-			valkeyClientOptions: valkey.ClientOption{
-				InitAddress: []string{fmt.Sprintf("127.0.0.1:%d", valkeyPort)},
-				Username:    valkeyUsername,
-				Password:    valkeyPassword,
-			},
-			createSpans: func(t *testing.T, ctx context.Context, client valkey.Client) {
-				ctxWithTimeout, cancel := context.WithTimeout(ctx, time.Nanosecond)
-				client.Do(ctxWithTimeout, client.B().Set().Key("k1").Value("v1").Build())
-				cancel()
-			},
-			assertSpans: []func(t *testing.T, span mocktracer.Span){
-				func(t *testing.T, span mocktracer.Span) {
-					assert.Equal(t, "SET", span.Tag(ext.DBStatement))
-					assert.Equal(t, "SET", span.Tag(ext.ResourceName))
-					assert.False(t, span.Tag(ext.ValkeyRawCommand).(bool))
-					assert.False(t, span.Tag(ext.ValkeyClientCacheHit).(bool))
-					assert.Less(t, span.Tag(ext.ValkeyClientCacheTTL), int64(0))
-					assert.Less(t, span.Tag(ext.ValkeyClientCachePXAT), int64(0))
-					assert.Less(t, span.Tag(ext.ValkeyClientCachePTTL), int64(0))
-					assert.Equal(t, context.DeadlineExceeded, span.Tag(ext.Error).(error))
-				},
-			},
-		},
-		{
-			name: "Test SET/GET/SET/GET command with timeout and option",
-			valkeyClientOptions: valkey.ClientOption{
-				InitAddress: []string{fmt.Sprintf("127.0.0.1:%d", valkeyPort)},
-				Username:    valkeyUsername,
-				Password:    valkeyPassword,
-			},
-			valkeytraceClientOptions: []ClientOption{
+			opts: []Option{
 				WithRawCommand(true),
 			},
-			createSpans: func(t *testing.T, ctx context.Context, client valkey.Client) {
+			runTest: func(t *testing.T, ctx context.Context, client valkey.Client) {
+				assert.NoError(t, client.DoCache(ctx, client.B().Hmget().Key("mk").Field("1", "2").Cache(), time.Minute).Error())
+				resp, err := client.DoCache(ctx, client.B().Hmget().Key("mk").Field("1", "2").Cache(), time.Minute).ToArray()
+				require.Len(t, resp, 2)
+				require.NoError(t, err)
+			},
+			assertSpans: func(t *testing.T, spans []mocktracer.Span) {
+				require.Len(t, spans, 2)
+
+				span := spans[0]
+				assert.Equal(t, "HMGET", span.Tag(ext.ResourceName))
+				assert.Equal(t, "HMGET mk 1 2", span.Tag(ext.ValkeyRawCommand))
+				assert.Equal(t, false, span.Tag(ext.ValkeyClientCacheHit))
+				assert.Greater(t, span.Tag(ext.ValkeyClientCacheTTL), int64(0))
+				assert.Greater(t, span.Tag(ext.ValkeyClientCachePXAT), int64(0))
+				assert.Greater(t, span.Tag(ext.ValkeyClientCachePTTL), int64(0))
+				assert.Nil(t, span.Tag(ext.Error))
+
+				span = spans[1]
+				assert.Equal(t, "HMGET", span.Tag(ext.ResourceName))
+				assert.Equal(t, "HMGET mk 1 2", span.Tag(ext.ValkeyRawCommand))
+				assert.Equal(t, true, span.Tag(ext.ValkeyClientCacheHit))
+				assert.Greater(t, span.Tag(ext.ValkeyClientCacheTTL), int64(0))
+				assert.Greater(t, span.Tag(ext.ValkeyClientCachePXAT), int64(0))
+				assert.Greater(t, span.Tag(ext.ValkeyClientCachePTTL), int64(0))
+				assert.Nil(t, span.Tag(ext.Error))
+			},
+			wantServiceName: "global-service",
+		},
+		{
+			name: "Test GET stream command",
+			opts: []Option{
+				WithRawCommand(true),
+			},
+			runTest: func(t *testing.T, ctx context.Context, client valkey.Client) {
+				resp := client.DoStream(ctx, client.B().Get().Key("test_key").Build())
+				require.NoError(t, resp.Error())
+			},
+			assertSpans: func(t *testing.T, spans []mocktracer.Span) {
+				require.Len(t, spans, 1)
+
+				span := spans[0]
+				assert.Equal(t, "GET", span.Tag(ext.ResourceName))
+				assert.Equal(t, "GET test_key", span.Tag(ext.ValkeyRawCommand))
+				assert.Nil(t, span.Tag(ext.ValkeyClientCacheHit))
+				assert.Nil(t, span.Tag(ext.ValkeyClientCacheTTL))
+				assert.Nil(t, span.Tag(ext.ValkeyClientCachePXAT))
+				assert.Nil(t, span.Tag(ext.ValkeyClientCachePTTL))
+				assert.Nil(t, span.Tag(ext.Error))
+			},
+			wantServiceName: "global-service",
+		},
+		{
+			name: "Test multi command should be limited to 5",
+			opts: []Option{
+				WithRawCommand(true),
+			},
+			runTest: func(t *testing.T, ctx context.Context, client valkey.Client) {
 				ctxWithTimeout, cancel := context.WithTimeout(ctx, time.Nanosecond)
 				client.DoMulti(
 					ctxWithTimeout,
@@ -224,91 +188,112 @@ func TestNewClient(t *testing.T) {
 					client.B().Get().Key("k1").Build(),
 					client.B().Set().Key("k2").Value("v2").Build(),
 					client.B().Get().Key("k2").Build(),
+					client.B().Set().Key("k3").Value("v3").Build(),
+					client.B().Get().Key("k3").Build(),
 				)
 				cancel()
 			},
-			assertSpans: []func(t *testing.T, span mocktracer.Span){
-				func(t *testing.T, span mocktracer.Span) {
-					assert.Equal(t, "SET\nk1\nv1\nGET\nk1\nSET\nk2\nv2\nGET\nk2", span.Tag(ext.DBStatement))
-					assert.Equal(t, "SET\nk1\nv1\nGET\nk1\nSET\nk2\nv2\nGET\nk2", span.Tag(ext.ResourceName))
-					assert.True(t, span.Tag(ext.ValkeyRawCommand).(bool))
-					assert.Nil(t, span.Tag(ext.ValkeyClientCacheHit))
-					assert.Nil(t, span.Tag(ext.ValkeyClientCacheTTL))
-					assert.Nil(t, span.Tag(ext.ValkeyClientCachePXAT))
-					assert.Nil(t, span.Tag(ext.ValkeyClientCachePTTL))
-					assert.Equal(t, context.DeadlineExceeded, span.Tag(ext.Error).(error))
-				},
+			assertSpans: func(t *testing.T, spans []mocktracer.Span) {
+				require.Len(t, spans, 1)
+
+				span := spans[0]
+				assert.Equal(t, "SET GET SET GET SET", span.Tag(ext.ResourceName))
+				assert.Equal(t, "SET k1 v1 GET k1 SET k2 v2 GET k2 SET k3 v3", span.Tag(ext.ValkeyRawCommand))
+				assert.Nil(t, span.Tag(ext.ValkeyClientCacheHit))
+				assert.Nil(t, span.Tag(ext.ValkeyClientCacheTTL))
+				assert.Nil(t, span.Tag(ext.ValkeyClientCachePXAT))
+				assert.Nil(t, span.Tag(ext.ValkeyClientCachePTTL))
+				assert.Equal(t, context.DeadlineExceeded, span.Tag(ext.Error).(error))
 			},
+			wantServiceName: "global-service",
 		},
 		{
 			name: "Test SUBSCRIBE command with timeout",
-			valkeyClientOptions: valkey.ClientOption{
-				InitAddress: []string{fmt.Sprintf("127.0.0.1:%d", valkeyPort)},
-				Username:    valkeyUsername,
-				Password:    valkeyPassword,
+			opts: []Option{
+				WithRawCommand(true),
 			},
-			createSpans: func(t *testing.T, ctx context.Context, client valkey.Client) {
+			runTest: func(t *testing.T, ctx context.Context, client valkey.Client) {
 				ctxWithTimeout, cancel := context.WithTimeout(ctx, time.Millisecond)
-				assert.Equal(t,
+				require.EqualError(t,
 					context.DeadlineExceeded,
-					client.Receive(ctxWithTimeout, client.B().Subscribe().Channel("test_channel").Build(), func(msg valkey.PubSubMessage) {}),
+					client.Receive(ctxWithTimeout, client.B().Subscribe().Channel("test_channel").Build(), func(msg valkey.PubSubMessage) {}).Error(),
 				)
 				cancel()
 			},
-			assertSpans: []func(t *testing.T, span mocktracer.Span){
-				func(t *testing.T, span mocktracer.Span) {
-					assert.Equal(t, "SUBSCRIBE", span.Tag(ext.DBStatement))
-					assert.Equal(t, "SUBSCRIBE", span.Tag(ext.ResourceName))
-					assert.False(t, span.Tag(ext.ValkeyRawCommand).(bool))
-					assert.Nil(t, span.Tag(ext.ValkeyClientCacheHit))
-					assert.Nil(t, span.Tag(ext.ValkeyClientCacheTTL))
-					assert.Nil(t, span.Tag(ext.ValkeyClientCachePXAT))
-					assert.Nil(t, span.Tag(ext.ValkeyClientCachePTTL))
-					assert.Equal(t, context.DeadlineExceeded, span.Tag(ext.Error).(error))
-				},
+			assertSpans: func(t *testing.T, spans []mocktracer.Span) {
+				require.Len(t, spans, 1)
+
+				span := spans[0]
+				assert.Equal(t, "SUBSCRIBE", span.Tag(ext.ResourceName))
+				assert.Equal(t, "SUBSCRIBE test_channel", span.Tag(ext.ValkeyRawCommand))
+				assert.Nil(t, span.Tag(ext.ValkeyClientCacheHit))
+				assert.Nil(t, span.Tag(ext.ValkeyClientCacheTTL))
+				assert.Nil(t, span.Tag(ext.ValkeyClientCachePXAT))
+				assert.Nil(t, span.Tag(ext.ValkeyClientCachePTTL))
+				assert.Equal(t, context.DeadlineExceeded, span.Tag(ext.Error).(error))
 			},
+			wantServiceName: "global-service",
+		},
+		{
+			name: "Test Dedicated client",
+			opts: []Option{
+				WithRawCommand(true),
+			},
+			runTest: func(t *testing.T, ctx context.Context, client valkey.Client) {
+				err := client.Dedicated(func(d valkey.DedicatedClient) error {
+					return d.Do(ctx, client.B().Set().Key("test_key").Value("test_value").Build()).Error()
+				})
+				require.NoError(t, err)
+			},
+			assertSpans: func(t *testing.T, spans []mocktracer.Span) {
+				require.Len(t, spans, 1)
+
+				span := spans[0]
+				assert.Equal(t, "SET", span.Tag(ext.ResourceName))
+				assert.Equal(t, "SET test_key test_value", span.Tag(ext.ValkeyRawCommand))
+				assert.Equal(t, false, span.Tag(ext.ValkeyClientCacheHit))
+				assert.Less(t, span.Tag(ext.ValkeyClientCacheTTL), int64(0))
+				assert.Less(t, span.Tag(ext.ValkeyClientCachePXAT), int64(0))
+				assert.Less(t, span.Tag(ext.ValkeyClientCachePTTL), int64(0))
+				assert.Nil(t, span.Tag(ext.Error))
+			},
+			wantServiceName: "global-service",
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			mt := mocktracer.Start()
 			defer mt.Stop()
-			for k, v := range tt.valkeytraceClientEnvVars {
-				t.Setenv(k, v)
+
+			valkeyClientOption := valkey.ClientOption{
+				InitAddress: valkeyAddrs,
+				Username:    valkeyUsername,
+				Password:    valkeyPassword,
 			}
-			span, ctx := tracer.StartSpanFromContext(context.Background(), "test.root", tracer.ServiceName("test-service"))
-			client, err := NewClient(tt.valkeyClientOptions, tt.valkeytraceClientOptions...)
-			if tt.assertNewClientError == nil {
-				require.NoErrorf(t, err, tt.name)
-			} else {
-				tt.assertNewClientError(t, err)
-				span.Finish()
-				return
-			}
-			tt.createSpans(t, ctx, client)
-			span.Finish() // test.root exists in the last span.
+			client, err := NewClient(valkeyClientOption, tt.opts...)
+			require.NoError(t, err)
+
+			root, ctx := tracer.StartSpanFromContext(context.Background(), "test.root", tracer.ServiceName("test-service"))
+			tt.runTest(t, ctx, client)
+			root.Finish() // test.root exists in the last span.
+
 			spans := mt.FinishedSpans()
-			require.Len(t, spans, len(tt.assertSpans)+1) // +1 for test.root
-			for i, span := range spans {
+			tt.assertSpans(t, spans[:len(spans)-1])
+
+			for _, span := range spans {
 				if span.OperationName() == "test.root" {
 					continue
 				}
-				tt.assertSpans[i](t, span)
-				t.Log("Following assertions are common to all spans")
-				assert.Equalf(t,
-					"test-service",
-					span.Tag(ext.ServiceName),
-					"service name should not be overwritten as per DD_APM_PEER_TAGS_AGGREGATION in trace-agent",
-				)
+
+				// The following assertions are common to all spans
+				assert.Equal(t, tt.wantServiceName, span.Tag(ext.ServiceName))
 				assert.Equal(t, "127.0.0.1", span.Tag(ext.TargetHost))
-				assert.Equal(t, valkeyPort, span.Tag(ext.TargetPort))
-				assert.Equal(t, 0, span.Tag(ext.ValkeyDatabaseIndex))
-				assert.Equal(t, 0, span.Tag(ext.TargetDB))
-				assert.NotNil(t, span)
-				assert.Equal(t, tt.valkeyClientOptions.Username, span.Tag(ext.DBUser))
+				assert.Equal(t, "6380", span.Tag(ext.TargetPort))
+				assert.Equal(t, "0", span.Tag(ext.TargetDB))
+				assert.Equal(t, "default", span.Tag(ext.DBUser))
 				assert.Equal(t, "valkey.command", span.OperationName())
 				assert.Equal(t, "client", span.Tag(ext.SpanKind))
-				assert.Equal(t, ext.SpanTypeValkey, span.Tag(ext.SpanType))
+				assert.Equal(t, "valkey", span.Tag(ext.SpanType))
 				assert.Equal(t, "valkey-io/valkey-go", span.Tag(ext.Component))
 				assert.Equal(t, "valkey", span.Tag(ext.DBSystem))
 			}

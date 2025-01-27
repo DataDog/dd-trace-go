@@ -63,15 +63,6 @@ const (
 	// ValkeyRawCommand allows to set the raw command for tags.
 	ValkeyRawCommand = "valkey.raw_command"
 
-	// ValkeyDatabaseIndex specifies the index of the database being connected to.
-	ValkeyDatabaseIndex = "db.valkey.database_index"
-
-	// ValkeyClientVersion denotes the version of the Valkey client in use.
-	ValkeyClientVersion = "db.valkey.client.version"
-
-	// ValkeyClientName indicates the name of the Valkey client being used.
-	ValkeyClientName = "db.valkey.client.name"
-
 	// ValkeyClientCacheHit is the remaining TTL in seconds of client side cache.
 	ValkeyClientCacheHit = "db.valkey.client.cache.hit"
 

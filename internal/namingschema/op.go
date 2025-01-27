@@ -31,7 +31,6 @@ const (
 	// cache
 	MemcachedOutbound
 	RedisOutbound
-	ValkeyOutbound
 
 	// db
 	ElasticSearchOutbound
@@ -76,8 +75,6 @@ func opV1(t IntegrationType) string {
 		return "memcached.command"
 	case RedisOutbound:
 		return "redis.command"
-	case ValkeyOutbound:
-		return "valkey.command"
 
 	// Database
 	case ElasticSearchOutbound:
@@ -124,8 +121,6 @@ func opV0(t IntegrationType) string {
 		return "memcached.query"
 	case RedisOutbound:
 		return "redis.command"
-	case ValkeyOutbound:
-		return "valkey.command"
 	case ElasticSearchOutbound:
 		return "elasticsearch.query"
 	case MongoDBOutbound:
