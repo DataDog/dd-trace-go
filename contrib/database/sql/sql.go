@@ -173,7 +173,7 @@ func (t *tracedConnector) Driver() driver.Driver {
 }
 
 // Close closes the dbClose channel
-// This method will be invoked when DB.Close() is called: https://cs.opensource.google/go/go/+/refs/tags/go1.23.4:src/database/sql/sql.go;l=943-947
+// This method will be invoked when DB.Close() is called, which we expect to occur only once: https://cs.opensource.google/go/go/+/refs/tags/go1.23.4:src/database/sql/sql.go;l=918-950
 func (t *tracedConnector) Close() error {
 	close(t.dbClose)
 	return nil
