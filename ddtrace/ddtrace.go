@@ -106,27 +106,6 @@ type SpanContext interface {
 	ForeachBaggageItem(handler func(k, v string) bool)
 }
 
-// MarshalJSON default 0 for TraceIDHigh
-//func (s SpanLink) MarshalJSON() ([]byte, error) {
-//	type Alias SpanLink
-//	fmt.Println("MarshalJSON method called")
-//	return json.Marshal(struct {
-//		TraceID     uint64            `json:"trace_id"`
-//		TraceIDHigh uint64            `json:"trace_id_high"`
-//		SpanID      uint64            `json:"span_id"`
-//		Attributes  map[string]string `json:"attributes,omitempty"`
-//		Tracestate  string            `json:"tracestate"`
-//		Flags       uint32            `json:"flags"`
-//	}{
-//		TraceID:     s.TraceID,
-//		TraceIDHigh: s.TraceIDHigh,
-//		SpanID:      s.SpanID,
-//		Attributes:  s.Attributes,
-//		Tracestate:  s.Tracestate,
-//		Flags:       s.Flags,
-//	})
-//}
-
 // StartSpanOption is a configuration option that can be used with a Tracer's StartSpan method.
 type StartSpanOption func(cfg *StartSpanConfig)
 
