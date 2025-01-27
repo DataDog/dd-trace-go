@@ -464,6 +464,11 @@ func (s *span) setMetric(key string, v float64) {
 	}
 }
 
+// AddSpanLinks appends the given links to the span's span links.
+func (s *span) AddSpanLinks(spanLinks ...ddtrace.SpanLink) {
+	s.SpanLinks = append(s.SpanLinks, spanLinks...)
+}
+
 // Finish closes this Span (but not its children) providing the duration
 // of its part of the tracing session.
 func (s *span) Finish(opts ...ddtrace.FinishOption) {
