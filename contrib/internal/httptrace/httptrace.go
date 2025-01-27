@@ -41,6 +41,15 @@ func StartRequestSpan(r *http.Request, opts ...ddtrace.StartSpanOption) (tracer.
 	// Append our span options before the given ones so that the caller can "overwrite" them.
 	// TODO(): rework span start option handling (https://github.com/DataDog/dd-trace-go/issues/1352)
 
+	// we cannot track the configuration in newConfig because it's called during init() and the the telemetry client
+	// is not initialized yet
+	reportTelemetryConfigOnce.Do(func() {
+		telemetry.GlobalClient.ConfigChange([]telemetry.Configuration{
+			{Name: "inferred_proxy_services_enabled", Value: cfg.inferredProxyServicesEnabled},
+		})
+		log.Debug("internal/httptrace: telemetry.ConfigChange called with cfg: %v:", cfg)
+	})
+
 	var ipTags map[string]string
 	if cfg.traceClientIP {
 		ipTags, _ = httpsec.ClientIPTags(r.Header, true, r.RemoteAddr)
@@ -71,11 +80,6 @@ func StartRequestSpan(r *http.Request, opts ...ddtrace.StartSpanOption) (tracer.
 					}
 				}
 				inferredProxySpan = startInferredProxySpan(requestProxyContext, spanParentCtx, inferredStartSpanOpts...)
-				reportTelemetryConfigOnce.Do(func() {
-					telemetry.GlobalClient.ConfigChange([]telemetry.Configuration{{Name: "inferred_proxy_services_enabled",
-						Value: cfg.inferredProxyServicesEnabled}})
-					log.Debug("ConfigChange called with %v, %v:", "inferred_proxy_services_enabled", cfg.inferredProxyServicesEnabled)
-				})
 			}
 		}
 	}
