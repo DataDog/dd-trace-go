@@ -16,6 +16,7 @@ package ddtrace // import "gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
@@ -129,6 +130,7 @@ type SpanLink struct {
 // MarshalJSON default 0 for TraceIDHigh
 func (s SpanLink) MarshalJSON() ([]byte, error) {
 	type Alias SpanLink
+	fmt.Println("MarshalJSON method called")
 	return json.Marshal(struct {
 		TraceID     uint64            `json:"trace_id"`
 		TraceIDHigh uint64            `json:"trace_id_high"`
