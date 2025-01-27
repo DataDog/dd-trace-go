@@ -22,20 +22,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       
-      - run: go get github.com/Masterminds/semver/v3
-
-      - run: go run .github/workflows/apps/latest_major_version.go > latests.txt
-
-      - run: git diff
-
-      - name: Create Pull Request
-        id: pr
-        uses: peter-evans/create-pull-request@v6
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          branch: "upgrade-latest-major-version"
-          commit-message: "Update latests file"
-          base: main
-          title: "chore: update latest majors"
-          labels: changelog/no-changelog
-          body: "Auto-generated PR from Outdated Integrations workflow to update latests major versions"
+      - run: go clean -modcache
+      
+      - run: go run .github/workflows/apps/new_latest_major_versions.go
