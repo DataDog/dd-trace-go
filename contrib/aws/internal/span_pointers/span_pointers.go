@@ -11,7 +11,6 @@ import (
 	"fmt"
 	"github.com/aws/smithy-go/middleware"
 	smithyhttp "github.com/aws/smithy-go/transport/http"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"strings"
@@ -47,26 +46,19 @@ func HandleS3Operation(in middleware.DeserializeInput, out middleware.Deserializ
 	}
 
 	// Hash calculation rules: https://github.com/DataDog/dd-span-pointer-rules/blob/main/AWS/S3/Object/README.md
-	components := []string{bucket, key, etag}
-	hash := generatePointerHash(components)
+	//components := []string{bucket, key, etag}
+	//hash := generatePointerHash(components)
 
-	//ctxWithLinks, ok := span.Context().(ddtrace.SpanContextWithLinks)
-	//if !ok {
-	//	log.Debug("Span links could not be found. Unable to create S3 span pointer.")
-	//	return
+	//link := ddtrace.SpanLink{
+	//	// We leave trace_id, span_id, trade_id_high, tracestate, and flags as 0 or empty.
+	//	// The Datadog frontend will use `ptr.hash` to find the linked span.
+	//	Attributes: map[string]string{
+	//		"ptr.kind":  S3PointerKind,
+	//		"ptr.dir":   PointerDownDirection,
+	//		"ptr.hash":  hash,
+	//		"link.kind": LinkKind,
+	//	},
 	//}
-
-	//links := ctxWithLinks.SpanLinks()
-	link := ddtrace.SpanLink{
-		// We leave trace_id, span_id, trade_id_high, tracestate, and flags as 0 or empty.
-		// The Datadog frontend will use `ptr.hash` to find the linked span.
-		Attributes: map[string]string{
-			"ptr.kind":  S3PointerKind,
-			"ptr.dir":   PointerDownDirection,
-			"ptr.hash":  hash,
-			"link.kind": LinkKind,
-		},
-	}
 	fmt.Println("Adding link...")
 	//span.AddSpanLinks(link)
 	fmt.Println("Link added!")
