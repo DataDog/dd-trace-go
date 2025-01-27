@@ -70,6 +70,10 @@ func newClient(tracerConfig internal.TracerConfig, config ClientConfig) (*client
 		&client.dependencies,
 	)
 
+	if config.LogsEnabled {
+		client.dataSources = append(client.dataSources, &client.logger)
+	}
+
 	client.flushTicker = internal.NewTicker(func() {
 		client.Flush()
 	}, config.FlushIntervalRange.Min, config.FlushIntervalRange.Max)
@@ -87,6 +91,7 @@ type client struct {
 	products      products
 	configuration configuration
 	dependencies  dependencies
+	logger        logger
 	dataSources   []interface {
 		Payload() transport.Payload
 	}
@@ -99,6 +104,14 @@ type client struct {
 
 	// payloadQueue is used when we cannot flush previously built payloads
 	payloadQueue *internal.RingQueue[transport.Payload]
+}
+
+func (c *client) Log(level LogLevel, text string, options ...LogOption) {
+	if !c.clientConfig.LogsEnabled {
+		return
+	}
+
+	c.logger.Add(level, text, options...)
 }
 
 func (c *client) MarkIntegrationAsLoaded(integration Integration) {
@@ -121,11 +134,6 @@ func (c *client) Gauge(_ types.Namespace, _ string, _ map[string]string) MetricH
 }
 
 func (c *client) Distribution(_ types.Namespace, _ string, _ map[string]string) MetricHandle {
-	//TODO implement me
-	panic("implement me")
-}
-
-func (c *client) Logger() TelemetryLogger {
 	//TODO implement me
 	panic("implement me")
 }

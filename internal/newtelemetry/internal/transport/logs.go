@@ -24,8 +24,8 @@ const (
 type LogMessage struct {
 	Message    string   `json:"message"`
 	Level      LogLevel `json:"level"`
-	Count      int      `json:"count,omitempty"`
+	Count      uint32   `json:"count,omitempty"`
 	Tags       string   `json:"tags,omitempty"` // comma separated list of tags, e.g. "tag1:1,tag2:toto"
 	StackTrace string   `json:"stack_trace,omitempty"`
-	TracerTime int      `json:"tracer_time,omitempty"` // Unix timestamp in seconds
+	TracerTime int64    `json:"tracer_time,omitempty"` // Unix timestamp in seconds
 }
