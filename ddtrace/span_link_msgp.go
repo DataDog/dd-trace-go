@@ -151,7 +151,7 @@ func (z *SpanLink) DecodeMsg(dc *msgp.Reader) (err error) {
 				err = msgp.WrapError(err, "TraceID")
 				return
 			}
-		case "trace_id_high":
+		case "trace_id_high2":
 			z.TraceIDHigh, err = dc.ReadUint64()
 			if err != nil {
 				err = msgp.WrapError(err, "TraceIDHigh")
@@ -244,8 +244,8 @@ func (z *SpanLink) EncodeMsg(en *msgp.Writer) (err error) {
 			err = msgp.WrapError(err, "TraceID")
 			return
 		}
-		// write "trace_id_high"
-		err = en.Append(0xad, 0x74, 0x72, 0x61, 0x63, 0x65, 0x5f, 0x69, 0x64, 0x5f, 0x68, 0x69, 0x67, 0x68)
+		// write "trace_id_high2"
+		err = en.Append(0xae, 0x74, 0x72, 0x61, 0x63, 0x65, 0x5f, 0x69, 0x64, 0x5f, 0x68, 0x69, 0x67, 0x68, 0x32)
 		if err != nil {
 			return
 		}
@@ -314,7 +314,7 @@ func (z *SpanLink) EncodeMsg(en *msgp.Writer) (err error) {
 
 // Msgsize returns an upper bound estimate of the number of bytes occupied by the serialized message
 func (z *SpanLink) Msgsize() (s int) {
-	s = 1 + 9 + msgp.Uint64Size + 14 + msgp.Uint64Size + 8 + msgp.Uint64Size + 11 + msgp.MapHeaderSize
+	s = 1 + 9 + msgp.Uint64Size + 15 + msgp.Uint64Size + 8 + msgp.Uint64Size + 11 + msgp.MapHeaderSize
 	if z.Attributes != nil {
 		for za0001, za0002 := range z.Attributes {
 			_ = za0002
