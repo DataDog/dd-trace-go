@@ -739,13 +739,6 @@ var packages = map[Package]PackageInfo{
 	},
 }
 
-var StandardPackages = map[string]struct{}{
-	"log/slog":     {},
-	"os":           {},
-	"net/http":     {},
-	"database/sql": {},
-}
-
 func staticName(name string) func(OperationContext) string {
 	return func(_ OperationContext) string {
 		return name
