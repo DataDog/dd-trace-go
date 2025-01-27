@@ -222,9 +222,21 @@ func (z *SpanLink) EncodeMsg(en *msgp.Writer) (err error) {
 	zb0001Len := uint32(6)
 	var zb0001Mask uint8 /* 6 bits */
 	_ = zb0001Mask
+	if z.TraceIDHigh == 0 {
+		zb0001Len--
+		zb0001Mask |= 0x2
+	}
 	if z.Attributes == nil {
 		zb0001Len--
 		zb0001Mask |= 0x8
+	}
+	if z.Tracestate == "" {
+		zb0001Len--
+		zb0001Mask |= 0x10
+	}
+	if z.Flags == 0 {
+		zb0001Len--
+		zb0001Mask |= 0x20
 	}
 	// variable map header, size zb0001Len
 	err = en.Append(0x80 | uint8(zb0001Len))
@@ -244,15 +256,17 @@ func (z *SpanLink) EncodeMsg(en *msgp.Writer) (err error) {
 			err = msgp.WrapError(err, "TraceID")
 			return
 		}
-		// write "trace_id_high"
-		err = en.Append(0xad, 0x74, 0x72, 0x61, 0x63, 0x65, 0x5f, 0x69, 0x64, 0x5f, 0x68, 0x69, 0x67, 0x68)
-		if err != nil {
-			return
-		}
-		err = en.WriteUint64(z.TraceIDHigh)
-		if err != nil {
-			err = msgp.WrapError(err, "TraceIDHigh")
-			return
+		if (zb0001Mask & 0x2) == 0 { // if not omitted
+			// write "trace_id_high"
+			err = en.Append(0xad, 0x74, 0x72, 0x61, 0x63, 0x65, 0x5f, 0x69, 0x64, 0x5f, 0x68, 0x69, 0x67, 0x68)
+			if err != nil {
+				return
+			}
+			err = en.WriteUint64(z.TraceIDHigh)
+			if err != nil {
+				err = msgp.WrapError(err, "TraceIDHigh")
+				return
+			}
 		}
 		// write "span_id"
 		err = en.Append(0xa7, 0x73, 0x70, 0x61, 0x6e, 0x5f, 0x69, 0x64)
@@ -288,25 +302,29 @@ func (z *SpanLink) EncodeMsg(en *msgp.Writer) (err error) {
 				}
 			}
 		}
-		// write "tracestate"
-		err = en.Append(0xaa, 0x74, 0x72, 0x61, 0x63, 0x65, 0x73, 0x74, 0x61, 0x74, 0x65)
-		if err != nil {
-			return
+		if (zb0001Mask & 0x10) == 0 { // if not omitted
+			// write "tracestate"
+			err = en.Append(0xaa, 0x74, 0x72, 0x61, 0x63, 0x65, 0x73, 0x74, 0x61, 0x74, 0x65)
+			if err != nil {
+				return
+			}
+			err = en.WriteString(z.Tracestate)
+			if err != nil {
+				err = msgp.WrapError(err, "Tracestate")
+				return
+			}
 		}
-		err = en.WriteString(z.Tracestate)
-		if err != nil {
-			err = msgp.WrapError(err, "Tracestate")
-			return
-		}
-		// write "flags"
-		err = en.Append(0xa5, 0x66, 0x6c, 0x61, 0x67, 0x73)
-		if err != nil {
-			return
-		}
-		err = en.WriteUint32(z.Flags)
-		if err != nil {
-			err = msgp.WrapError(err, "Flags")
-			return
+		if (zb0001Mask & 0x20) == 0 { // if not omitted
+			// write "flags"
+			err = en.Append(0xa5, 0x66, 0x6c, 0x61, 0x67, 0x73)
+			if err != nil {
+				return
+			}
+			err = en.WriteUint32(z.Flags)
+			if err != nil {
+				err = msgp.WrapError(err, "Flags")
+				return
+			}
 		}
 	}
 	return
