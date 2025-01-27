@@ -68,14 +68,8 @@ func HandleS3Operation(in middleware.DeserializeInput, out middleware.Deserializ
 		},
 	}
 	fmt.Println("Adding link...")
-	span.AddSpanLinks(link)
+	//span.AddSpanLinks(link)
 	fmt.Println("Link added!")
-	//links = append(links, link)
-	//if spanLinksJsonBytes, err := json.Marshal(links); err == nil {
-	//	span.SetTag("_dd.span_links", string(spanLinksJsonBytes))
-	//} else {
-	//	log.Debug("Span links could not be marshalled. Unable to create S3 span pointer.")
-	//}
 }
 
 // generatePointerHash generates a unique hash from an array of strings by joining them with | before hashing.
