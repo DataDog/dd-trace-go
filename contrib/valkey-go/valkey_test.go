@@ -7,7 +7,6 @@ package valkey
 import (
 	"context"
 	"fmt"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"os"
 	"testing"
 	"time"
@@ -15,9 +14,11 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/valkey-io/valkey-go"
+
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 )
 
 const (
@@ -44,7 +45,7 @@ func TestNewClient(t *testing.T) {
 	prevName := globalconfig.ServiceName()
 	defer globalconfig.SetServiceName(prevName)
 	globalconfig.SetServiceName("global-service")
-	
+
 	tests := []struct {
 		name            string
 		opts            []Option

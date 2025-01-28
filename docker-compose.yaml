@@ -43,10 +43,10 @@ services:
       - "6379:6379"
   valkey:
     image: valkey/valkey:8
+    environment:
+      VALKEY_EXTRA_FLAGS: "--port 6380 --requirepass password-for-default"
     ports:
       - "6380:6380"
-    # https://valkey.io/topics/acl/
-    command: [ "valkey-server", "--port", "6380", "--requirepass", "password-for-default" ]
   elasticsearch2:
     image: elasticsearch:2
     environment:
