@@ -95,13 +95,16 @@ func testLogger(t *testing.T, createLogger func(b io.Writer) *slog.Logger, asser
 	assertLogEntry(t, logs[1], "this is an error log with tracing information", "ERROR", span, assertExtra)
 }
 
-func testLoggerNoTrace(t *testing.T, createLogger func(b io.Writer) *slog.Logger) {
+func testLoggerTraceDisabled(t *testing.T, createLogger func(b io.Writer) *slog.Logger) {
 	tracer.Start(
 		tracer.WithTraceEnabled(false),
 		tracer.WithLogger(internallog.DiscardLogger{}),
 	)
 	defer tracer.Stop()
+	testLoggerNoTrace(t, createLogger)
+}
 
+func testLoggerNoTrace(t *testing.T, createLogger func(b io.Writer) *slog.Logger) {
 	// create the application logger
 	var b bytes.Buffer
 	logger := createLogger(&b)
@@ -111,17 +114,17 @@ func testLoggerNoTrace(t *testing.T, createLogger func(b io.Writer) *slog.Logger
 	defer span.Finish()
 
 	// log a message using the context containing span information
-	logger.Log(ctx, slog.LevelInfo, "this is an info log with tracing information")
-	logger.Log(ctx, slog.LevelError, "this is an error log with tracing information")
+	logger.Log(ctx, slog.LevelInfo, "this is an info log without tracing information")
+	logger.Log(ctx, slog.LevelError, "this is an error log without tracing information")
 
 	logs := strings.Split(
 		strings.TrimRight(b.String(), "\n"),
 		"\n",
 	)
-	// assert log entries contain trace information
+	// assert log entries do not contain trace information
 	require.Len(t, logs, 2)
-	assertLogEntryNoTrace(t, logs[0], "this is an info log with tracing information", "INFO")
-	assertLogEntryNoTrace(t, logs[1], "this is an error log with tracing information", "ERROR")
+	assertLogEntryNoTrace(t, logs[0], "this is an info log without tracing information", "INFO")
+	assertLogEntryNoTrace(t, logs[1], "this is an error log without tracing information", "ERROR")
 }
 
 func TestNewJSONHandler(t *testing.T) {
@@ -129,7 +132,7 @@ func TestNewJSONHandler(t *testing.T) {
 		return slog.New(NewJSONHandler(w, nil))
 	}
 	testLogger(t, createLogger, nil)
-	testLoggerNoTrace(t, createLogger)
+	testLoggerTraceDisabled(t, createLogger)
 }
 
 func TestWrapHandler(t *testing.T) {
@@ -138,7 +141,7 @@ func TestWrapHandler(t *testing.T) {
 			return slog.New(WrapHandler(slog.NewJSONHandler(w, nil)))
 		}
 		testLogger(t, createLogger, nil)
-		testLoggerNoTrace(t, createLogger)
+		testLoggerTraceDisabled(t, createLogger)
 	})
 
 	t.Run("slogtest", func(t *testing.T) {
@@ -250,6 +253,19 @@ func TestRecordClone(t *testing.T) {
 		return true
 	})
 	assert.True(t, foundSentinel)
+}
+
+func TestDDLogInjectionDisabled(t *testing.T) {
+	t.Setenv(logInjection, "false")
+	createLogger := func(w io.Writer) *slog.Logger {
+		return slog.New(NewJSONHandler(w, nil))
+	}
+	tracer.Start()
+	defer tracer.Stop()
+	// Re-initialize to account for race condition between setting env var in the test and reading it in the contrib
+	cfg = newConfig()
+	testLoggerNoTrace(t, createLogger)
+
 }
 
 func BenchmarkHandler(b *testing.B) {

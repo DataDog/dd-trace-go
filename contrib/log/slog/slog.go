@@ -10,6 +10,7 @@ import (
 	"context"
 	"io"
 	"log/slog"
+	"os"
 	"strconv"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
@@ -18,6 +19,9 @@ import (
 )
 
 const componentName = "log/slog"
+const logInjection = "DD_LOGS_INJECTION"
+
+var cfg = newConfig()
 
 func init() {
 	telemetry.LoadIntegration(componentName)
@@ -29,6 +33,16 @@ var _ slog.Handler = (*handler)(nil)
 type group struct {
 	name  string
 	attrs []slog.Attr
+}
+
+type config struct {
+	enabled bool
+}
+
+func newConfig() *config {
+	return &config{
+		enabled: os.Getenv(logInjection) != "false",
+	}
 }
 
 // NewJSONHandler is a convenience function that returns a *slog.JSONHandler logger enhanced with
@@ -56,25 +70,27 @@ func (h *handler) Enabled(ctx context.Context, level slog.Level) bool {
 func (h *handler) Handle(ctx context.Context, rec slog.Record) error {
 	reqHandler := h.wrapped
 
-	// We need to ensure the trace id and span id keys are set at the root level:
-	// https://docs.datadoghq.com/tracing/other_telemetry/connect_logs_and_traces/
-	// In case the user has created group loggers, we ignore those and
-	// set them at the root level.
-	span, ok := tracer.SpanFromContext(ctx)
-	if ok && span.Context().TraceID() != 0 {
-		traceID := strconv.FormatUint(span.Context().TraceID(), 10)
-		spanID := strconv.FormatUint(span.Context().SpanID(), 10)
+	if cfg.enabled {
+		// We need to ensure the trace id and span id keys are set at the root level:
+		// https://docs.datadoghq.com/tracing/other_telemetry/connect_logs_and_traces/
+		// In case the user has created group loggers, we ignore those and
+		// set them at the root level.
+		span, ok := tracer.SpanFromContext(ctx)
+		if ok && span.Context().TraceID() != 0 {
+			traceID := strconv.FormatUint(span.Context().TraceID(), 10)
+			spanID := strconv.FormatUint(span.Context().SpanID(), 10)
 
-		attrs := []slog.Attr{
-			slog.String(ext.LogKeyTraceID, traceID),
-			slog.String(ext.LogKeySpanID, spanID),
+			attrs := []slog.Attr{
+				slog.String(ext.LogKeyTraceID, traceID),
+				slog.String(ext.LogKeySpanID, spanID),
+			}
+			reqHandler = reqHandler.WithAttrs(attrs)
 		}
-		reqHandler = reqHandler.WithAttrs(attrs)
-	}
-	for _, g := range h.groups {
-		reqHandler = reqHandler.WithGroup(g.name)
-		if len(g.attrs) > 0 {
-			reqHandler = reqHandler.WithAttrs(g.attrs)
+		for _, g := range h.groups {
+			reqHandler = reqHandler.WithGroup(g.name)
+			if len(g.attrs) > 0 {
+				reqHandler = reqHandler.WithAttrs(g.attrs)
+			}
 		}
 	}
 	return reqHandler.Handle(ctx, rec)

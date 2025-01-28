@@ -7,6 +7,8 @@
 package logrus
 
 import (
+	"os"
+
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
@@ -15,6 +17,7 @@ import (
 )
 
 const componentName = "sirupsen/logrus"
+const logInjection = "DD_LOGS_INJECTION"
 
 func init() {
 	telemetry.LoadIntegration(componentName)
@@ -24,6 +27,18 @@ func init() {
 // DDContextLogHook ensures that any span in the log context is correlated to log output.
 type DDContextLogHook struct{}
 
+type config struct {
+	enabled bool
+}
+
+var cfg = newConfig()
+
+func newConfig() *config {
+	return &config{
+		enabled: os.Getenv(logInjection) != "false",
+	}
+}
+
 // Levels implements logrus.Hook interface, this hook applies to all defined levels
 func (d *DDContextLogHook) Levels() []logrus.Level {
 	return []logrus.Level{logrus.PanicLevel, logrus.FatalLevel, logrus.ErrorLevel, logrus.WarnLevel, logrus.InfoLevel, logrus.DebugLevel, logrus.TraceLevel}
@@ -31,6 +46,9 @@ func (d *DDContextLogHook) Levels() []logrus.Level {
 
 // Fire implements logrus.Hook interface, attaches trace and span details found in entry context
 func (d *DDContextLogHook) Fire(e *logrus.Entry) error {
+	if !cfg.enabled {
+		return nil
+	}
 	span, found := tracer.SpanFromContext(e.Context)
 	if !found {
 		return nil
