@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"runtime"
 	"sort"
 	"sync"
 	"testing"
@@ -439,17 +440,23 @@ func Test_heartbeatInterval(t *testing.T) {
 }
 
 func TestNoEmptyHeaders(t *testing.T) {
+	t.Setenv("DD_EXTERNAL_ENV", "it-false,cn-nginx-webserver,pu-75a2b6d5-3949-4afb-ad0d-92ff0674e759")
 	c := &client{}
 	req := c.newRequest(RequestTypeAppStarted)
 	assertNotEmpty := func(header string) {
 		headers := *req.Header
 		vals := headers[header]
+		assert.Greater(t, len(vals), 0, "header %s should not be empty", header)
 		for _, v := range vals {
 			assert.NotEmpty(t, v, "%s header should not be empty", header)
 		}
 	}
-	assertNotEmpty("Datadog-Container-ID")
-	assertNotEmpty("Datadog-Entity-ID")
+	if runtime.GOOS == "linux" {
+		// These headers are only set on Linux
+		assertNotEmpty("Datadog-Container-ID")
+		assertNotEmpty("Datadog-Entity-ID")
+	}
+	assertNotEmpty("Datadog-External-Env")
 }
 
 func TestTelementryClientLogging(t *testing.T) {
