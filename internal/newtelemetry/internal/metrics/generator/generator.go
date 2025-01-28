@@ -1,0 +1,143 @@
+// Unless explicitly stated otherwise all files in this repository are licensed
+// under the Apache License Version 2.0.
+// This product includes software developed at Datadog (https://www.datadoghq.com/).
+// Copyright 2025 Datadog, Inc.
+
+package main
+
+import (
+	"bytes"
+	"encoding/base64"
+	"encoding/json"
+	"flag"
+	"fmt"
+	"io"
+	"net/http"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"runtime"
+	"strings"
+
+	"golang.org/x/exp/slices"
+)
+
+// This represents the base64-encoded URL of api.github.com to download the configuration file.
+// This can be easily decoded manually, but it is encoded to prevent the URL from being scanned by bots.
+const (
+	commonMetricsURL = "aHR0cHM6Ly9hcGkuZ2l0aHViLmNvbS9yZXBvcy9EYXRhRG9nL2RkLWdvL2NvbnRlbnRzL3RyYWNlL2FwcHMvdHJhY2VyLXRlbGVtZXRyeS1pbnRha2UvdGVsZW1ldHJ5LW1ldHJpY3Mvc3RhdGljL2NvbW1vbl9tZXRyaWNzLmpzb24="
+	goMetricsURL     = "aHR0cHM6Ly9hcGkuZ2l0aHViLmNvbS9yZXBvcy9EYXRhRG9nL2RkLWdvL2NvbnRlbnRzL3RyYWNlL2FwcHMvdHJhY2VyLXRlbGVtZXRyeS1pbnRha2UvdGVsZW1ldHJ5LW1ldHJpY3Mvc3RhdGljL2dvbGFuZ19tZXRyaWNzLmpzb24="
+)
+
+func base64Decode(encoded string) string {
+	decoded, _ := io.ReadAll(base64.NewDecoder(base64.StdEncoding, strings.NewReader(encoded)))
+	return string(decoded)
+}
+
+func downloadFromDdgo(remoteURL, localPath, branch, token string, getMetricNames func(map[string]any) []string) error {
+	request, err := http.NewRequest(http.MethodGet, remoteURL, nil)
+	if err != nil {
+		return err
+	}
+
+	// Following the documentation described here:
+	// https://docs.github.com/en/rest/repos/contents?apiVersion=2022-11-28
+
+	request.Header.Add("Authorization", "Bearer "+token)
+	request.Header.Add("Accept", "application/vnd.github.v3.raw")
+	request.Header.Add("X-GitHub-Api-Version", "2022-11-28")
+	request.URL.Query().Add("ref", branch)
+
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		return err
+	}
+
+	defer response.Body.Close()
+
+	if response.StatusCode != http.StatusOK {
+		return fmt.Errorf("unexpected status code: %s", response.Status)
+	}
+
+	var decoded map[string]any
+
+	if err := json.NewDecoder(response.Body).Decode(&decoded); err != nil {
+		return err
+	}
+
+	metricNames := getMetricNames(decoded)
+	slices.SortStableFunc(metricNames, strings.Compare)
+
+	fp, err := os.OpenFile(localPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+	if err != nil {
+		return err
+	}
+
+	defer fp.Close()
+
+	encoder := json.NewEncoder(fp)
+	encoder.SetIndent("", "    ")
+	return encoder.Encode(metricNames)
+}
+
+func getCommonMetricNames(input map[string]any) []string {
+	var names []string
+	for category, value := range input {
+		if strings.HasPrefix(category, "$") {
+			continue
+		}
+
+		metrics := value.(map[string]any)
+		for metricKey := range metrics {
+			names = append(names, metricKey)
+		}
+	}
+	return names
+}
+
+func getGoMetricNames(input map[string]any) []string {
+	var names []string
+	for key := range input {
+		if strings.HasPrefix(key, "$") {
+			continue
+		}
+		names = append(names, key)
+	}
+	return names
+}
+
+func main() {
+	branch := flag.String("branch", "prod", "The branch to get the configuration from")
+	flag.Parse()
+
+	githubToken := os.Getenv("GITHUB_TOKEN")
+	if githubToken == "" {
+		if _, err := exec.LookPath("gh"); err != nil {
+			fmt.Println("Please specify a GITHUB_TOKEN environment variable or install the GitHub CLI.")
+			os.Exit(2)
+		}
+
+		var buf bytes.Buffer
+		cmd := exec.Command("gh", "auth", "token")
+		cmd.Stdout = &buf
+		cmd.Stderr = os.Stderr
+		if err := cmd.Run(); err != nil {
+			fmt.Println("Failed to run `gh auth token`:", err)
+			os.Exit(1)
+		}
+
+		githubToken = strings.TrimSpace(buf.String())
+	}
+
+	_, thisFile, _, _ := runtime.Caller(0)
+	dir := filepath.Dir(thisFile)
+	if err := downloadFromDdgo(base64Decode(commonMetricsURL), filepath.Join(dir, "..", "common_metrics.json"), *branch, githubToken, getCommonMetricNames); err != nil {
+		fmt.Println("Failed to download common metrics:", err)
+		os.Exit(1)
+	}
+
+	if err := downloadFromDdgo(base64Decode(goMetricsURL), filepath.Join(dir, "..", "golang_metrics.json"), *branch, githubToken, getGoMetricNames); err != nil {
+		fmt.Println("Failed to download golang metrics:", err)
+		os.Exit(1)
+	}
+}
