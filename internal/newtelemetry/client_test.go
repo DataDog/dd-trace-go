@@ -80,15 +80,6 @@ func TestNewClient(t *testing.T) {
 	}
 }
 
-type testWriter struct {
-	flush func(transport.Payload)
-}
-
-func (w *testWriter) Flush(payloads transport.Payload) (int, error) {
-	w.flush(payloads)
-	return 1, nil
-}
-
 func TestClientFlush(t *testing.T) {
 	tracerConfig := internal.TracerConfig{
 		Service: "test-service",
@@ -99,14 +90,15 @@ func TestClientFlush(t *testing.T) {
 		name         string
 		clientConfig ClientConfig
 		when         func(c *client)
-		expect       func(*testing.T, transport.Payload)
+		expect       func(*testing.T, []transport.Payload)
 	}{
 		{
 			name: "heartbeat",
 			clientConfig: ClientConfig{
 				HeartbeatInterval: time.Nanosecond,
 			},
-			expect: func(t *testing.T, payload transport.Payload) {
+			expect: func(t *testing.T, payloads []transport.Payload) {
+				payload := payloads[0]
 				require.IsType(t, transport.AppHeartbeat{}, payload)
 				assert.Equal(t, payload.RequestType(), transport.RequestTypeAppHeartbeat)
 			},
@@ -120,7 +112,8 @@ func TestClientFlush(t *testing.T) {
 			when: func(c *client) {
 				c.AddAppConfig("key", "value", types.OriginDefault)
 			},
-			expect: func(t *testing.T, payload transport.Payload) {
+			expect: func(t *testing.T, payloads []transport.Payload) {
+				payload := payloads[0]
 				require.IsType(t, transport.MessageBatch{}, payload)
 				batch := payload.(transport.MessageBatch)
 				require.Len(t, batch.Payload, 2)
@@ -139,7 +132,8 @@ func TestClientFlush(t *testing.T) {
 			when: func(c *client) {
 				c.MarkIntegrationAsLoaded(Integration{Name: "test-integration", Version: "1.0.0"})
 			},
-			expect: func(t *testing.T, payload transport.Payload) {
+			expect: func(t *testing.T, payloads []transport.Payload) {
+				payload := payloads[0]
 				require.IsType(t, transport.MessageBatch{}, payload)
 				batch := payload.(transport.MessageBatch)
 				require.Len(t, batch.Payload, 2)
@@ -155,7 +149,8 @@ func TestClientFlush(t *testing.T) {
 			when: func(c *client) {
 				c.AddAppConfig("key", "value", types.OriginDefault)
 			},
-			expect: func(t *testing.T, payload transport.Payload) {
+			expect: func(t *testing.T, payloads []transport.Payload) {
+				payload := payloads[0]
 				require.IsType(t, transport.AppClientConfigurationChange{}, payload)
 				config := payload.(transport.AppClientConfigurationChange)
 				assert.Len(t, config.Configuration, 1)
@@ -169,7 +164,8 @@ func TestClientFlush(t *testing.T) {
 			when: func(c *client) {
 				c.AddAppConfig("key", "value", types.OriginDefault)
 			},
-			expect: func(t *testing.T, payload transport.Payload) {
+			expect: func(t *testing.T, payloads []transport.Payload) {
+				payload := payloads[0]
 				require.IsType(t, transport.AppClientConfigurationChange{}, payload)
 				config := payload.(transport.AppClientConfigurationChange)
 				assert.Len(t, config.Configuration, 1)
@@ -183,7 +179,8 @@ func TestClientFlush(t *testing.T) {
 			when: func(c *client) {
 				c.ProductStarted("test-product")
 			},
-			expect: func(t *testing.T, payload transport.Payload) {
+			expect: func(t *testing.T, payloads []transport.Payload) {
+				payload := payloads[0]
 				require.IsType(t, transport.AppProductChange{}, payload)
 				productChange := payload.(transport.AppProductChange)
 				assert.Len(t, productChange.Products, 1)
@@ -195,7 +192,8 @@ func TestClientFlush(t *testing.T) {
 			when: func(c *client) {
 				c.ProductStartError("test-product", errors.New("test-error"))
 			},
-			expect: func(t *testing.T, payload transport.Payload) {
+			expect: func(t *testing.T, payloads []transport.Payload) {
+				payload := payloads[0]
 				require.IsType(t, transport.AppProductChange{}, payload)
 				productChange := payload.(transport.AppProductChange)
 				assert.Len(t, productChange.Products, 1)
@@ -208,7 +206,8 @@ func TestClientFlush(t *testing.T) {
 			when: func(c *client) {
 				c.ProductStopped("test-product")
 			},
-			expect: func(t *testing.T, payload transport.Payload) {
+			expect: func(t *testing.T, payloads []transport.Payload) {
+				payload := payloads[0]
 				require.IsType(t, transport.AppProductChange{}, payload)
 				productChange := payload.(transport.AppProductChange)
 				assert.Len(t, productChange.Products, 1)
@@ -220,7 +219,8 @@ func TestClientFlush(t *testing.T) {
 			when: func(c *client) {
 				c.MarkIntegrationAsLoaded(Integration{Name: "test-integration", Version: "1.0.0"})
 			},
-			expect: func(t *testing.T, payload transport.Payload) {
+			expect: func(t *testing.T, payloads []transport.Payload) {
+				payload := payloads[0]
 				require.IsType(t, transport.AppIntegrationChange{}, payload)
 				integrationChange := payload.(transport.AppIntegrationChange)
 				assert.Len(t, integrationChange.Integrations, 1)
@@ -234,7 +234,8 @@ func TestClientFlush(t *testing.T) {
 			when: func(c *client) {
 				c.MarkIntegrationAsLoaded(Integration{Name: "test-integration", Version: "1.0.0", Error: "test-error"})
 			},
-			expect: func(t *testing.T, payload transport.Payload) {
+			expect: func(t *testing.T, payloads []transport.Payload) {
+				payload := payloads[0]
 				require.IsType(t, transport.AppIntegrationChange{}, payload)
 				integrationChange := payload.(transport.AppIntegrationChange)
 				assert.Len(t, integrationChange.Integrations, 1)
@@ -250,7 +251,8 @@ func TestClientFlush(t *testing.T) {
 				c.ProductStarted("test-product")
 				c.MarkIntegrationAsLoaded(Integration{Name: "test-integration", Version: "1.0.0"})
 			},
-			expect: func(t *testing.T, payload transport.Payload) {
+			expect: func(t *testing.T, payloads []transport.Payload) {
+				payload := payloads[0]
 				require.IsType(t, transport.MessageBatch{}, payload)
 				batch := payload.(transport.MessageBatch)
 				assert.Len(t, batch.Payload, 2)
@@ -281,7 +283,8 @@ func TestClientFlush(t *testing.T) {
 				c.ProductStarted("test-product")
 				c.MarkIntegrationAsLoaded(Integration{Name: "test-integration", Version: "1.0.0"})
 			},
-			expect: func(t *testing.T, payload transport.Payload) {
+			expect: func(t *testing.T, payloads []transport.Payload) {
+				payload := payloads[0]
 				require.IsType(t, transport.MessageBatch{}, payload)
 				batch := payload.(transport.MessageBatch)
 				assert.Len(t, batch.Payload, 3)
@@ -310,7 +313,8 @@ func TestClientFlush(t *testing.T) {
 			when: func(c *client) {
 				c.appStart()
 			},
-			expect: func(t *testing.T, payload transport.Payload) {
+			expect: func(t *testing.T, payloads []transport.Payload) {
+				payload := payloads[0]
 				require.IsType(t, transport.AppStarted{}, payload)
 				appStart := payload.(transport.AppStarted)
 				assert.Equal(t, appStart.InstallSignature.InstallID, globalconfig.InstrumentationInstallID())
@@ -324,7 +328,8 @@ func TestClientFlush(t *testing.T) {
 				c.appStart()
 				c.ProductStarted("test-product")
 			},
-			expect: func(t *testing.T, payload transport.Payload) {
+			expect: func(t *testing.T, payloads []transport.Payload) {
+				payload := payloads[0]
 				require.IsType(t, transport.AppStarted{}, payload)
 				appStart := payload.(transport.AppStarted)
 				assert.Equal(t, appStart.Products[types.Namespace("test-product")].Enabled, true)
@@ -336,7 +341,8 @@ func TestClientFlush(t *testing.T) {
 				c.appStart()
 				c.AddAppConfig("key", "value", types.OriginDefault)
 			},
-			expect: func(t *testing.T, payload transport.Payload) {
+			expect: func(t *testing.T, payloads []transport.Payload) {
+				payload := payloads[0]
 				require.IsType(t, transport.AppStarted{}, payload)
 				appStart := payload.(transport.AppStarted)
 				require.Len(t, appStart.Configuration, 1)
@@ -350,19 +356,21 @@ func TestClientFlush(t *testing.T) {
 				c.appStart()
 				c.MarkIntegrationAsLoaded(Integration{Name: "test-integration", Version: "1.0.0"})
 			},
-			expect: func(t *testing.T, payload transport.Payload) {
-				switch p := payload.(type) {
-				case transport.AppStarted:
-					assert.Equal(t, globalconfig.InstrumentationInstallID(), p.InstallSignature.InstallID)
-					assert.Equal(t, globalconfig.InstrumentationInstallType(), p.InstallSignature.InstallType)
-					assert.Equal(t, globalconfig.InstrumentationInstallTime(), p.InstallSignature.InstallTime)
-				case transport.AppIntegrationChange:
-					assert.Len(t, p.Integrations, 1)
-					assert.Equal(t, p.Integrations[0].Name, "test-integration")
-					assert.Equal(t, p.Integrations[0].Version, "1.0.0")
-				default:
-					t.Fatalf("unexpected payload type: %T", p)
-				}
+			expect: func(t *testing.T, payloads []transport.Payload) {
+				payload := payloads[0]
+				require.IsType(t, transport.AppStarted{}, payload)
+				appStart := payload.(transport.AppStarted)
+				assert.Equal(t, globalconfig.InstrumentationInstallID(), appStart.InstallSignature.InstallID)
+				assert.Equal(t, globalconfig.InstrumentationInstallType(), appStart.InstallSignature.InstallType)
+				assert.Equal(t, globalconfig.InstrumentationInstallTime(), appStart.InstallSignature.InstallTime)
+
+				payload = payloads[1]
+				require.IsType(t, transport.AppIntegrationChange{}, payload)
+				p := payload.(transport.AppIntegrationChange)
+
+				assert.Len(t, p.Integrations, 1)
+				assert.Equal(t, p.Integrations[0].Name, "test-integration")
+				assert.Equal(t, p.Integrations[0].Version, "1.0.0")
 			},
 		},
 		{
@@ -373,16 +381,16 @@ func TestClientFlush(t *testing.T) {
 			when: func(c *client) {
 				c.appStart()
 			},
-			expect: func(t *testing.T, payload transport.Payload) {
-				switch p := payload.(type) {
-				case transport.AppStarted:
-					assert.Equal(t, globalconfig.InstrumentationInstallID(), p.InstallSignature.InstallID)
-					assert.Equal(t, globalconfig.InstrumentationInstallType(), p.InstallSignature.InstallType)
-					assert.Equal(t, globalconfig.InstrumentationInstallTime(), p.InstallSignature.InstallTime)
-				case transport.AppHeartbeat:
-				default:
-					t.Fatalf("unexpected payload type: %T", p)
-				}
+			expect: func(t *testing.T, payloads []transport.Payload) {
+				payload := payloads[0]
+				require.IsType(t, transport.AppStarted{}, payload)
+				appStart := payload.(transport.AppStarted)
+				assert.Equal(t, globalconfig.InstrumentationInstallID(), appStart.InstallSignature.InstallID)
+				assert.Equal(t, globalconfig.InstrumentationInstallType(), appStart.InstallSignature.InstallType)
+				assert.Equal(t, globalconfig.InstrumentationInstallTime(), appStart.InstallSignature.InstallTime)
+
+				payload = payloads[1]
+				require.IsType(t, transport.AppHeartbeat{}, payload)
 			},
 		},
 		{
@@ -390,7 +398,8 @@ func TestClientFlush(t *testing.T) {
 			when: func(c *client) {
 				c.appStop()
 			},
-			expect: func(t *testing.T, payload transport.Payload) {
+			expect: func(t *testing.T, payloads []transport.Payload) {
+				payload := payloads[0]
 				require.IsType(t, transport.AppClosing{}, payload)
 			},
 		},
@@ -407,7 +416,8 @@ func TestClientFlush(t *testing.T) {
 					}, true
 				},
 			},
-			expect: func(t *testing.T, payload transport.Payload) {
+			expect: func(t *testing.T, payloads []transport.Payload) {
+				payload := payloads[0]
 				require.IsType(t, transport.AppDependenciesLoaded{}, payload)
 				deps := payload.(transport.AppDependenciesLoaded)
 
@@ -436,7 +446,8 @@ func TestClientFlush(t *testing.T) {
 					}, true
 				},
 			},
-			expect: func(t *testing.T, payload transport.Payload) {
+			expect: func(t *testing.T, payloads []transport.Payload) {
+				payload := payloads[0]
 				require.IsType(t, transport.AppDependenciesLoaded{}, payload)
 				deps := payload.(transport.AppDependenciesLoaded)
 
@@ -461,7 +472,8 @@ func TestClientFlush(t *testing.T) {
 			when: func(c *client) {
 				c.Log(LogDebug, "test")
 			},
-			expect: func(t *testing.T, payload transport.Payload) {
+			expect: func(t *testing.T, payloads []transport.Payload) {
+				payload := payloads[0]
 				require.IsType(t, transport.Logs{}, payload)
 				logs := payload.(transport.Logs)
 				require.Len(t, logs.Logs, 1)
@@ -474,7 +486,8 @@ func TestClientFlush(t *testing.T) {
 			when: func(c *client) {
 				c.Log(LogWarn, "test")
 			},
-			expect: func(t *testing.T, payload transport.Payload) {
+			expect: func(t *testing.T, payloads []transport.Payload) {
+				payload := payloads[0]
 				require.IsType(t, transport.Logs{}, payload)
 				logs := payload.(transport.Logs)
 				require.Len(t, logs.Logs, 1)
@@ -487,7 +500,8 @@ func TestClientFlush(t *testing.T) {
 			when: func(c *client) {
 				c.Log(LogError, "test")
 			},
-			expect: func(t *testing.T, payload transport.Payload) {
+			expect: func(t *testing.T, payloads []transport.Payload) {
+				payload := payloads[0]
 				require.IsType(t, transport.Logs{}, payload)
 				logs := payload.(transport.Logs)
 				require.Len(t, logs.Logs, 1)
@@ -502,7 +516,8 @@ func TestClientFlush(t *testing.T) {
 				c.Log(LogError, "test")
 				c.Log(LogError, "test")
 			},
-			expect: func(t *testing.T, payload transport.Payload) {
+			expect: func(t *testing.T, payloads []transport.Payload) {
+				payload := payloads[0]
 				require.IsType(t, transport.Logs{}, payload)
 				logs := payload.(transport.Logs)
 				require.Len(t, logs.Logs, 1)
@@ -516,7 +531,8 @@ func TestClientFlush(t *testing.T) {
 			when: func(c *client) {
 				c.Log(LogError, "test", WithTags(map[string]string{"key": "value"}))
 			},
-			expect: func(t *testing.T, payload transport.Payload) {
+			expect: func(t *testing.T, payloads []transport.Payload) {
+				payload := payloads[0]
 				require.IsType(t, transport.Logs{}, payload)
 				logs := payload.(transport.Logs)
 				require.Len(t, logs.Logs, 1)
@@ -530,7 +546,8 @@ func TestClientFlush(t *testing.T) {
 			when: func(c *client) {
 				c.Log(LogError, "test", WithTags(map[string]string{"key": "value", "key2": "value2"}))
 			},
-			expect: func(t *testing.T, payload transport.Payload) {
+			expect: func(t *testing.T, payloads []transport.Payload) {
+				payload := payloads[0]
 				require.IsType(t, transport.Logs{}, payload)
 				logs := payload.(transport.Logs)
 				require.Len(t, logs.Logs, 1)
@@ -547,7 +564,8 @@ func TestClientFlush(t *testing.T) {
 				c.Log(LogError, "test", WithTags(map[string]string{"key": "value", "key2": "value2"}))
 				c.Log(LogError, "test")
 			},
-			expect: func(t *testing.T, payload transport.Payload) {
+			expect: func(t *testing.T, payloads []transport.Payload) {
+				payload := payloads[0]
 				require.IsType(t, transport.Logs{}, payload)
 				logs := payload.(transport.Logs)
 				require.Len(t, logs.Logs, 2)
@@ -574,7 +592,8 @@ func TestClientFlush(t *testing.T) {
 			when: func(c *client) {
 				c.Log(LogError, "test", WithStacktrace())
 			},
-			expect: func(t *testing.T, payload transport.Payload) {
+			expect: func(t *testing.T, payloads []transport.Payload) {
+				payload := payloads[0]
 				require.IsType(t, transport.Logs{}, payload)
 				logs := payload.(transport.Logs)
 				require.Len(t, logs.Logs, 1)
@@ -588,7 +607,8 @@ func TestClientFlush(t *testing.T) {
 			when: func(c *client) {
 				c.Log(LogError, "test", WithStacktrace(), WithTags(map[string]string{"key": "value", "key2": "value2"}))
 			},
-			expect: func(t *testing.T, payload transport.Payload) {
+			expect: func(t *testing.T, payloads []transport.Payload) {
+				payload := payloads[0]
 				require.IsType(t, transport.Logs{}, payload)
 				logs := payload.(transport.Logs)
 				require.Len(t, logs.Logs, 1)
@@ -608,7 +628,8 @@ func TestClientFlush(t *testing.T) {
 				c.Log(LogWarn, "test")
 				c.Log(LogDebug, "test")
 			},
-			expect: func(t *testing.T, payload transport.Payload) {
+			expect: func(t *testing.T, payloads []transport.Payload) {
+				payload := payloads[0]
 				require.IsType(t, transport.Logs{}, payload)
 				logs := payload.(transport.Logs)
 				require.Len(t, logs.Logs, 3)
@@ -638,22 +659,17 @@ func TestClientFlush(t *testing.T) {
 			require.NoError(t, err)
 			defer c.Close()
 
-			var writerFlushCalled bool
-
-			c.writer = &testWriter{
-				flush: func(payload transport.Payload) {
-					writerFlushCalled = true
-					if test.expect != nil {
-						test.expect(t, payload)
-					}
-				},
-			}
+			recordWriter := &internal.RecordWriter{}
+			c.writer = recordWriter
 
 			if test.when != nil {
 				test.when(c)
 			}
 			c.Flush()
-			require.Truef(t, writerFlushCalled, "expected writer.Flush() to be called")
+
+			payloads := recordWriter.Payloads()
+			require.LessOrEqual(t, 1, len(payloads))
+			test.expect(t, payloads)
 		})
 	}
 }

@@ -253,9 +253,19 @@ type RecordWriter struct {
 	payloads []transport.Payload
 }
 
-func (w *RecordWriter) Flush(payload transport.Payload) error {
+func (w *RecordWriter) Flush(payload transport.Payload) (int, error) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	w.payloads = append(w.payloads, payload)
-	return nil
+	return 1, nil
 }
+
+func (w *RecordWriter) Payloads() []transport.Payload {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	copyPayloads := make([]transport.Payload, len(w.payloads))
+	copy(copyPayloads, w.payloads)
+	return copyPayloads
+}
+
+var _ Writer = (*RecordWriter)(nil)
