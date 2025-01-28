@@ -23,12 +23,18 @@ func NewRecorder[T any]() Recorder[T] {
 }
 
 func (r Recorder[T]) Record(f func(T)) {
+	if r.queue == nil {
+		return
+	}
 	if !r.queue.Enqueue(f) {
 		log.Debug("telemetry: recorder queue is full, dropping record")
 	}
 }
 
 func (r Recorder[T]) Replay(t T) {
+	if r.queue == nil {
+		return
+	}
 	for {
 		f := r.queue.Dequeue()
 		if f == nil {
