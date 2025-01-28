@@ -133,3 +133,7 @@ func BoolVal(val string, def bool) bool {
 	}
 	return v
 }
+
+func ExternalEnvironment() string {
+	return os.Getenv("DD_EXTERNAL_ENV")
+}
