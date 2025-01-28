@@ -2657,7 +2657,7 @@ func TestInjectBaggagePropagatorEncoding(t *testing.T) {
 
 	root := tracer.StartSpan("web.request").(*span)
 	ctx := root.Context()
-	ctx.(*spanContext).baggage = map[string]string{"userId": "Amélie"}
+	ctx.(*spanContext).baggage = map[string]string{"userId": "Amélie", "serverNode": "DF 28"}
 	headers := http.Header{}
 
 	carrier := HTTPHeadersCarrier(headers)
@@ -2669,5 +2669,33 @@ func TestInjectBaggagePropagatorEncoding(t *testing.T) {
 
 	assert.Equal(headers.Get("tid"), tid)
 	assert.Equal(headers.Get("pid"), pid)
-	assert.Equal(headers.Get("baggage"), "userId=Am%C3%A9lie")
+	assert.Equal(headers.Get("baggage"), "userId=Am%C3%A9lie,serverNode=DF+28")
+}
+
+func TestInjectBaggagePropagatorEncodingSpecialCharacters(t *testing.T) {
+	assert := assert.New(t)
+
+	propagator := NewPropagator(&PropagatorConfig{
+		BaggageHeader: "baggage",
+		TraceHeader:   "tid",
+		ParentHeader:  "pid",
+	})
+	tracer := newTracer(WithPropagator(propagator))
+	defer tracer.Stop()
+
+	root := tracer.StartSpan("web.request").(*span)
+	ctx := root.Context()
+	ctx.(*spanContext).baggage = map[string]string{",;\\()/:<=>?@[]{}": ",;\\"}
+	headers := http.Header{}
+
+	carrier := HTTPHeadersCarrier(headers)
+	err := tracer.Inject(ctx, carrier)
+	assert.Nil(err)
+
+	tid := strconv.FormatUint(root.TraceID, 10)
+	pid := strconv.FormatUint(root.SpanID, 10)
+
+	assert.Equal(headers.Get("tid"), tid)
+	assert.Equal(headers.Get("pid"), pid)
+	assert.Equal(headers.Get("baggage"), "%2C%3B%5C%28%29%2F%3A%3C%3D%3E%3F%40%5B%5D%7B%7D=%2C%3B%5C")
 }

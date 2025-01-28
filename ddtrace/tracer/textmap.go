@@ -1299,9 +1299,34 @@ func extractTraceID128(ctx *spanContext, v string) error {
 // function for baggage items
 
 const (
-	baggageMaxItems = 64
-	baggageMaxBytes = 8192
+	baggageMaxItems     = 64
+	baggageMaxBytes     = 8192
+	safeCharactersKey   = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!#$%&'*+-.^_`|~"
+	safeCharactersValue = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!#$%&'()*+-./:<>?@[]^_`{|}~"
 )
+
+// encodeKey encodes a key with the specified safe characters
+func encodeKey(key string) string {
+	return urlEncode(strings.TrimSpace(key), safeCharactersKey)
+}
+
+// encodeValue encodes a value with the specified safe characters
+func encodeValue(value string) string {
+	return urlEncode(strings.TrimSpace(value), safeCharactersValue)
+}
+
+// urlEncode performs percent-encoding while respecting the safe characters
+func urlEncode(input string, safeCharacters string) string {
+	var encoded strings.Builder
+	for _, c := range input {
+		if strings.ContainsRune(safeCharacters, c) {
+			encoded.WriteRune(c)
+		} else {
+			encoded.WriteString(url.QueryEscape(string(c)))
+		}
+	}
+	return encoded.String()
+}
 
 // propagatorBaggage implements Propagator and injects/extracts span contexts
 // using baggage headers.
@@ -1344,8 +1369,8 @@ func (*propagatorBaggage) injectTextMap(spanCtx ddtrace.SpanContext, writer Text
 			break
 		}
 
-		encodedKey := url.QueryEscape(key)
-		encodedValue := url.QueryEscape(value)
+		encodedKey := encodeKey(key)
+		encodedValue := encodeValue(value)
 		item := fmt.Sprintf("%s=%s", encodedKey, encodedValue)
 
 		itemSize := len(item)
