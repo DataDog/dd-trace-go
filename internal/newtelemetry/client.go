@@ -185,13 +185,19 @@ func (c *client) flush(payloads []transport.Payload) (int, error) {
 		c.flushMapperMu.Unlock()
 	}
 
+	if c.payloadQueue.IsEmpty() && len(payloads) == 0 {
+		c.flushTicker.DecreaseSpeed()
+		return 0, nil
+	}
+
 	c.payloadQueue.Enqueue(payloads...)
 	payloads = c.payloadQueue.GetBuffer()
 	defer c.payloadQueue.ReleaseBuffer(payloads)
 
 	var (
-		nbBytes       int
-		nonFatalErros []error
+		nbBytes        int
+		speedIncreased bool
+		failedCalls    []internal.EndpointRequestResult
 	)
 
 	for i, payload := range payloads {
@@ -199,33 +205,36 @@ func (c *client) flush(payloads []transport.Payload) (int, error) {
 			continue
 		}
 
-		nbBytesOfPayload, err := c.writer.Flush(payload)
-		if nbBytes > 0 && err != nil {
-			nonFatalErros = append(nonFatalErros, err)
-			err = nil
-		}
-
+		results, err := c.writer.Flush(payload)
 		if err != nil {
-			// We stop flushing when we encounter a fatal error, put the payloads in the
+			// We stop flushing when we encounter a fatal error, put the payloads in the queue and return the error
 			log.Error("error while flushing telemetry data: %v", err)
 			c.payloadQueue.Enqueue(payloads[i:]...)
 			return nbBytes, err
 		}
 
-		if nbBytesOfPayload > c.clientConfig.EarlyFlushPayloadSize {
+		failedCalls = append(failedCalls, results[:len(results)-1]...)
+		successfulCall := results[len(results)-1]
+
+		if !speedIncreased && successfulCall.PayloadByteSize > c.clientConfig.EarlyFlushPayloadSize {
 			// We increase the speed of the flushTicker to try to flush the remaining payloads faster as we are at risk of sending too large payloads to the backend
 			c.flushTicker.IncreaseSpeed()
+			speedIncreased = true
 		}
 
-		nbBytes += nbBytesOfPayload
+		nbBytes += successfulCall.PayloadByteSize
 	}
 
-	if len(nonFatalErros) > 0 {
-		err := "error"
-		if len(nonFatalErros) > 1 {
-			err = "errors"
+	if len(failedCalls) > 0 {
+		errName := "error"
+		if len(failedCalls) > 1 {
+			errName = "errors"
 		}
-		log.Debug("non-fatal %s while flushing telemetry data: %v", err, errors.Join(nonFatalErros...))
+		var errs []error
+		for _, call := range failedCalls {
+			errs = append(errs, call.Error)
+		}
+		log.Debug("non-fatal %s while flushing telemetry data: %v", errName, errors.Join(errs...))
 	}
 
 	return nbBytes, nil
