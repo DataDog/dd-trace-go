@@ -6,7 +6,7 @@
 package transport
 
 import (
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/newtelemetry/types"
+	"github.com/elastic/go-elasticsearch/v8/typedapi/types"
 )
 
 // All objects in this file are used to define the payload of the requests sent
@@ -14,7 +14,7 @@ import (
 // https://github.com/DataDog/instrumentation-telemetry-api-docs/tree/dad49961203d74ec8236b68ce4b54bbb7ed8716f/GeneratedDocumentation/ApiDocs/v2/SchemaDocumentation/Schemas
 
 type Distributions struct {
-	Namespace     types.Namespace      `json:"namespace"`
+	Namespace     Namespace            `json:"namespace"`
 	Series        []DistributionSeries `json:"series"`
 	SkipAllowlist bool                 `json:"skip_allowlist,omitempty"`
 }

@@ -88,8 +88,13 @@ func getCommonMetricNames(input map[string]any) []string {
 		}
 
 		metrics := value.(map[string]any)
-		for metricKey := range metrics {
+		for metricKey, value := range metrics {
 			names = append(names, metricKey)
+			if aliases, ok := value.(map[string]any)["aliases"]; ok {
+				for _, alias := range aliases.([]any) {
+					names = append(names, alias.(string))
+				}
+			}
 		}
 	}
 	return names

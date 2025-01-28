@@ -5,16 +5,12 @@
 
 package transport
 
-import (
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/newtelemetry/types"
-)
-
 // ConfKeyValue is a library-specific configuration value
 type ConfKeyValue struct {
-	Name   string       `json:"name"`
-	Value  any          `json:"value"` // can be any type of integer, float, string, or boolean
-	Origin types.Origin `json:"origin"`
-	Error  Error        `json:"error,omitempty"`
+	Name   string `json:"name"`
+	Value  any    `json:"value"` // can be any type of integer, float, string, or boolean
+	Origin Origin `json:"origin"`
+	Error  Error  `json:"error,omitempty"`
 
 	// SeqID is used to track the total number of configuration key value pairs applied across the tracer
 	SeqID uint64 `json:"seq_id,omitempty"`

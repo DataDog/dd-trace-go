@@ -11,14 +11,14 @@ import (
 
 	"go.uber.org/atomic"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/newtelemetry/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/newtelemetry/internal/knownmetrics"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/newtelemetry/internal/transport"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/newtelemetry/types"
 )
 
 type metricKey struct {
-	namespace types.Namespace
+	namespace Namespace
 	kind      transport.MetricType
 	name      string
 	tags      string
@@ -30,23 +30,35 @@ type metrics struct {
 }
 
 // LoadOrStore returns a MetricHandle for the given metric key. If the metric key does not exist, it will be created.
-func (m *metrics) LoadOrStore(namespace types.Namespace, kind transport.MetricType, name string, tags map[string]string) MetricHandle {
+func (m *metrics) LoadOrStore(namespace Namespace, kind transport.MetricType, name string, tags map[string]string) MetricHandle {
+	if !knownmetrics.IsKnownMetricName(name) {
+		log.Debug("telemetry: metric name %q is not a known metric, please update the list of metrics name or check that your wrote the name correctly. "+
+			"The metric will still be sent.", name)
+	}
+
 	compiledTags := ""
 	for k, v := range tags {
 		compiledTags += k + ":" + v + ","
 	}
-	key := metricKey{namespace: namespace, kind: kind, name: name, tags: strings.TrimSuffix(compiledTags, ",")}
-	handle, _ := m.store.LoadOrStore(key, newMetric(key))
-	return handle
-}
+	var (
+		key    = metricKey{namespace: namespace, kind: kind, name: name, tags: strings.TrimSuffix(compiledTags, ",")}
+		handle MetricHandle
+		loaded bool
+	)
 
-func newMetric(key metricKey) MetricHandle {
-	switch key.kind {
+	switch kind {
 	case transport.CountMetric:
-		return &count{key: key}
-	default:
-		panic("unsupported metric type: " + key.kind)
+		handle, _ = m.store.LoadOrStore(key, &count{metric: metric{key: key}})
+	case transport.GaugeMetric:
+		handle, _ = m.store.LoadOrStore(key, &gauge{metric: metric{key: key}})
+	case transport.RateMetric:
+		handle, loaded = m.store.LoadOrStore(key, &rate{metric: metric{key: key}})
+		if !loaded {
+			handle.(*rate).intervalStart = time.Now()
+		}
 	}
+
+	return handle
 }
 
 func (m *metrics) Payload() transport.Payload {
@@ -57,36 +69,87 @@ func (m *metrics) Payload() transport.Payload {
 		}
 		return true
 	})
+
+	if len(series) == 0 {
+		return nil
+	}
+
 	return transport.GenerateMetrics{Series: series, SkipAllowlist: m.skipAllowlist}
 }
 
-type count struct {
-	key       metricKey
-	submit    atomic.Bool
-	value     atomic.Float64
-	timestamp atomic.Int64
+type metric struct {
+	key metricKey
+
+	// Values set during Submit()
+	newSubmit  atomic.Bool
+	value      atomic.Float64
+	submitTime atomic.Int64
 }
 
-func (c *count) Submit(value float64) {
-	// There is kind-of a race condition here, but it's not a big deal, as the value and the timestamp will be sufficiently close together
-	c.submit.Store(true)
-	c.value.Add(value)
-	c.timestamp.Store(time.Now().Unix())
+func (c *metric) submit() {
+	c.newSubmit.Store(true)
+	c.submitTime.Store(time.Now().Unix())
 }
 
-func (c *count) payload() transport.MetricData {
-	if submit := c.submit.Swap(false); !submit {
+func (c *metric) payload() transport.MetricData {
+	if submit := c.newSubmit.Swap(false); !submit {
 		return transport.MetricData{}
 	}
 
-	return transport.MetricData{
+	var tags []string
+	if c.key.tags != "" {
+		tags = strings.Split(c.key.tags, ",")
+	}
+
+	data := transport.MetricData{
 		Metric:    c.key.name,
 		Namespace: c.key.namespace,
-		Tags:      strings.Split(c.key.tags, ","),
+		Tags:      tags,
 		Type:      c.key.kind,
 		Common:    knownmetrics.IsCommonMetricName(c.key.name),
 		Points: [][2]any{
-			{c.timestamp.Load(), c.value.Load()},
+			{c.submitTime.Load(), c.value.Load()},
 		},
 	}
+
+	return data
+}
+
+type count struct {
+	metric
+}
+
+func (c *count) Submit(value float64) {
+	c.submit()
+	c.value.Add(value)
+}
+
+type gauge struct {
+	metric
+}
+
+func (c *gauge) Submit(value float64) {
+	c.submit()
+	c.value.Store(value)
+}
+
+type rate struct {
+	metric
+	intervalStart time.Time
+}
+
+func (c *rate) Submit(value float64) {
+	c.submit()
+	c.value.Add(value)
+}
+
+func (c *rate) payload() transport.MetricData {
+	payload := c.metric.payload()
+	if payload.Metric == "" {
+		return payload
+	}
+
+	payload.Interval = int64(time.Since(c.intervalStart).Seconds())
+	payload.Points[0][1] = c.value.Load() / float64(payload.Interval)
+	return payload
 }

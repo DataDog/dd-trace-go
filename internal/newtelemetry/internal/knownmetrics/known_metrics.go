@@ -3,7 +3,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2025 Datadog, Inc.
 
-//go:generate go run gopkg.in/DataDog/dd-trace-go.v1/internal/newtelemetry/internal/metrics/generator
+//go:generate go run gopkg.in/DataDog/dd-trace-go.v1/internal/newtelemetry/internal/knownmetrics/generator
 
 package knownmetrics
 

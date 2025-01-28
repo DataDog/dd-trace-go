@@ -25,7 +25,6 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/newtelemetry/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/newtelemetry/internal/transport"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/newtelemetry/types"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/osinfo"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
 )
@@ -110,7 +109,7 @@ func TestClientFlush(t *testing.T) {
 				ExtendedHeartbeatInterval: time.Nanosecond,
 			},
 			when: func(c *client) {
-				c.AddAppConfig("key", "value", types.OriginDefault)
+				c.AddAppConfig("key", "value", OriginDefault)
 			},
 			expect: func(t *testing.T, payloads []transport.Payload) {
 				payload := payloads[0]
@@ -147,7 +146,7 @@ func TestClientFlush(t *testing.T) {
 		{
 			name: "configuration-default",
 			when: func(c *client) {
-				c.AddAppConfig("key", "value", types.OriginDefault)
+				c.AddAppConfig("key", "value", OriginDefault)
 			},
 			expect: func(t *testing.T, payloads []transport.Payload) {
 				payload := payloads[0]
@@ -156,13 +155,13 @@ func TestClientFlush(t *testing.T) {
 				assert.Len(t, config.Configuration, 1)
 				assert.Equal(t, config.Configuration[0].Name, "key")
 				assert.Equal(t, config.Configuration[0].Value, "value")
-				assert.Equal(t, config.Configuration[0].Origin, types.OriginDefault)
+				assert.Equal(t, config.Configuration[0].Origin, OriginDefault)
 			},
 		},
 		{
 			name: "configuration-default",
 			when: func(c *client) {
-				c.AddAppConfig("key", "value", types.OriginDefault)
+				c.AddAppConfig("key", "value", OriginDefault)
 			},
 			expect: func(t *testing.T, payloads []transport.Payload) {
 				payload := payloads[0]
@@ -171,7 +170,7 @@ func TestClientFlush(t *testing.T) {
 				assert.Len(t, config.Configuration, 1)
 				assert.Equal(t, config.Configuration[0].Name, "key")
 				assert.Equal(t, config.Configuration[0].Value, "value")
-				assert.Equal(t, config.Configuration[0].Origin, types.OriginDefault)
+				assert.Equal(t, config.Configuration[0].Origin, OriginDefault)
 			},
 		},
 		{
@@ -184,7 +183,7 @@ func TestClientFlush(t *testing.T) {
 				require.IsType(t, transport.AppProductChange{}, payload)
 				productChange := payload.(transport.AppProductChange)
 				assert.Len(t, productChange.Products, 1)
-				assert.True(t, productChange.Products[types.Namespace("test-product")].Enabled)
+				assert.True(t, productChange.Products[Namespace("test-product")].Enabled)
 			},
 		},
 		{
@@ -197,8 +196,8 @@ func TestClientFlush(t *testing.T) {
 				require.IsType(t, transport.AppProductChange{}, payload)
 				productChange := payload.(transport.AppProductChange)
 				assert.Len(t, productChange.Products, 1)
-				assert.False(t, productChange.Products[types.Namespace("test-product")].Enabled)
-				assert.Equal(t, "test-error", productChange.Products[types.Namespace("test-product")].Error.Message)
+				assert.False(t, productChange.Products[Namespace("test-product")].Enabled)
+				assert.Equal(t, "test-error", productChange.Products[Namespace("test-product")].Error.Message)
 			},
 		},
 		{
@@ -211,7 +210,7 @@ func TestClientFlush(t *testing.T) {
 				require.IsType(t, transport.AppProductChange{}, payload)
 				productChange := payload.(transport.AppProductChange)
 				assert.Len(t, productChange.Products, 1)
-				assert.False(t, productChange.Products[types.Namespace("test-product")].Enabled)
+				assert.False(t, productChange.Products[Namespace("test-product")].Enabled)
 			},
 		},
 		{
@@ -261,7 +260,7 @@ func TestClientFlush(t *testing.T) {
 					case transport.AppProductChange:
 						assert.Equal(t, transport.RequestTypeAppProductChange, payload.RequestType)
 						assert.Len(t, p.Products, 1)
-						assert.True(t, p.Products[types.Namespace("test-product")].Enabled)
+						assert.True(t, p.Products[Namespace("test-product")].Enabled)
 					case transport.AppIntegrationChange:
 						assert.Equal(t, transport.RequestTypeAppIntegrationsChange, payload.RequestType)
 						assert.Len(t, p.Integrations, 1)
@@ -293,7 +292,7 @@ func TestClientFlush(t *testing.T) {
 					case transport.AppProductChange:
 						assert.Equal(t, transport.RequestTypeAppProductChange, payload.RequestType)
 						assert.Len(t, p.Products, 1)
-						assert.True(t, p.Products[types.Namespace("test-product")].Enabled)
+						assert.True(t, p.Products[Namespace("test-product")].Enabled)
 					case transport.AppIntegrationChange:
 						assert.Equal(t, transport.RequestTypeAppIntegrationsChange, payload.RequestType)
 						assert.Len(t, p.Integrations, 1)
@@ -332,14 +331,14 @@ func TestClientFlush(t *testing.T) {
 				payload := payloads[0]
 				require.IsType(t, transport.AppStarted{}, payload)
 				appStart := payload.(transport.AppStarted)
-				assert.Equal(t, appStart.Products[types.Namespace("test-product")].Enabled, true)
+				assert.Equal(t, appStart.Products[Namespace("test-product")].Enabled, true)
 			},
 		},
 		{
 			name: "app-started-with-configuration",
 			when: func(c *client) {
 				c.appStart()
-				c.AddAppConfig("key", "value", types.OriginDefault)
+				c.AddAppConfig("key", "value", OriginDefault)
 			},
 			expect: func(t *testing.T, payloads []transport.Payload) {
 				payload := payloads[0]
@@ -647,6 +646,42 @@ func TestClientFlush(t *testing.T) {
 				assert.Equal(t, logs.Logs[2].Level, transport.LogLevelWarn)
 				assert.Equal(t, logs.Logs[2].Message, "test")
 				assert.Equal(t, logs.Logs[2].Count, uint32(1))
+			},
+		},
+		{
+			name: "simple-count",
+			when: func(c *client) {
+				c.Count(NamespaceTracers, "init_time", nil).Submit(1)
+			},
+			expect: func(t *testing.T, payloads []transport.Payload) {
+				payload := payloads[0]
+				require.IsType(t, transport.GenerateMetrics{}, payload)
+				metrics := payload.(transport.GenerateMetrics)
+				require.Len(t, metrics.Series, 1)
+				assert.Equal(t, metrics.Series[0].Type, transport.CountMetric)
+				assert.Equal(t, metrics.Series[0].Namespace, NamespaceTracers)
+				assert.Equal(t, metrics.Series[0].Metric, "init_time")
+				assert.Empty(t, metrics.Series[0].Tags)
+				assert.NotZero(t, metrics.Series[0].Points[0][0])
+				assert.Equal(t, metrics.Series[0].Points[0][1], 1.0)
+			},
+		},
+		{
+			name: "simple-gauge",
+			when: func(c *client) {
+				c.Gauge(NamespaceTracers, "init_time", nil).Submit(1)
+			},
+			expect: func(t *testing.T, payloads []transport.Payload) {
+				payload := payloads[0]
+				require.IsType(t, transport.GenerateMetrics{}, payload)
+				metrics := payload.(transport.GenerateMetrics)
+				require.Len(t, metrics.Series, 1)
+				assert.Equal(t, metrics.Series[0].Type, transport.GaugeMetric)
+				assert.Equal(t, metrics.Series[0].Namespace, NamespaceTracers)
+				assert.Equal(t, metrics.Series[0].Metric, "init_time")
+				assert.Empty(t, metrics.Series[0].Tags)
+				assert.NotZero(t, metrics.Series[0].Points[0][0])
+				assert.Equal(t, metrics.Series[0].Points[0][1], 1.0)
 			},
 		},
 	} {

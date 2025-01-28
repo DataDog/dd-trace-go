@@ -9,7 +9,30 @@ import (
 	"io"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/newtelemetry/internal/transport"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/newtelemetry/types"
+)
+
+// Namespace describes a product to distinguish telemetry coming from
+// different products used by the same application
+type Namespace = transport.Namespace
+
+const (
+	NamespaceGeneral   = transport.NamespaceGeneral
+	NamespaceTracers   = transport.NamespaceTracers
+	NamespaceProfilers = transport.NamespaceProfilers
+	NamespaceAppSec    = transport.NamespaceAppSec
+	NamespaceIAST      = transport.NamespaceIAST
+	NamespaceTelemetry = transport.NamespaceTelemetry
+)
+
+// Origin describes the source of a configuration change
+type Origin = transport.Origin
+
+const (
+	OriginDefault      = transport.OriginDefault
+	OriginCode         = transport.OriginCode
+	OriginDDConfig     = transport.OriginDDConfig
+	OriginEnvVar       = transport.OriginEnvVar
+	OriginRemoteConfig = transport.OriginRemoteConfig
 )
 
 // MetricHandle can be used to submit different values for the same metric.
@@ -43,37 +66,37 @@ type Client interface {
 	io.Closer
 
 	// Count creates a new metric handle for the given parameters that can be used to submit values.
-	Count(namespace types.Namespace, name string, tags map[string]string) MetricHandle
+	Count(namespace Namespace, name string, tags map[string]string) MetricHandle
 
 	// Rate creates a new metric handle for the given parameters that can be used to submit values.
-	Rate(namespace types.Namespace, name string, tags map[string]string) MetricHandle
+	Rate(namespace Namespace, name string, tags map[string]string) MetricHandle
 
 	// Gauge creates a new metric handle for the given parameters that can be used to submit values.
-	Gauge(namespace types.Namespace, name string, tags map[string]string) MetricHandle
+	Gauge(namespace Namespace, name string, tags map[string]string) MetricHandle
 
 	// Distribution creates a new metric handle for the given parameters that can be used to submit values.
-	Distribution(namespace types.Namespace, name string, tags map[string]string) MetricHandle
+	Distribution(namespace Namespace, name string, tags map[string]string) MetricHandle
 
 	// Log sends a telemetry log at the desired level with the given text and options.
 	// Options include sending key-value pairs as tags, and a stack trace frozen from inside the Log function.
 	Log(level LogLevel, text string, options ...LogOption)
 
 	// ProductStarted declares a product to have started at the customer’s request
-	ProductStarted(product types.Namespace)
+	ProductStarted(product Namespace)
 
 	// ProductStopped declares a product to have being stopped by the customer
-	ProductStopped(product types.Namespace)
+	ProductStopped(product Namespace)
 
 	// ProductStartError declares that a product could not start because of the following error
-	ProductStartError(product types.Namespace, err error)
+	ProductStartError(product Namespace, err error)
 
 	// AddAppConfig adds a key value pair to the app configuration and send the change to telemetry
 	// value has to be json serializable and the origin is the source of the change.
-	AddAppConfig(key string, value any, origin types.Origin)
+	AddAppConfig(key string, value any, origin Origin)
 
 	// AddBulkAppConfig adds a list of key value pairs to the app configuration and sends the change to telemetry.
 	// Same as AddAppConfig but for multiple values.
-	AddBulkAppConfig(kvs map[string]any, origin types.Origin)
+	AddBulkAppConfig(kvs map[string]any, origin Origin)
 
 	// MarkIntegrationAsLoaded marks an integration as loaded in the telemetry
 	MarkIntegrationAsLoaded(integration Integration)

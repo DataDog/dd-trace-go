@@ -13,7 +13,6 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/newtelemetry/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/newtelemetry/internal/mapper"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/newtelemetry/internal/transport"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/newtelemetry/types"
 )
 
 // NewClient creates a new telemetry client with the given service, environment, and version and config.
@@ -126,40 +125,40 @@ func (c *client) MarkIntegrationAsLoaded(integration Integration) {
 	c.integrations.Add(integration)
 }
 
-func (c *client) Count(namespace types.Namespace, name string, tags map[string]string) MetricHandle {
+func (c *client) Count(namespace Namespace, name string, tags map[string]string) MetricHandle {
 	return c.metrics.LoadOrStore(namespace, transport.CountMetric, name, tags)
 }
 
-func (c *client) Rate(namespace types.Namespace, name string, tags map[string]string) MetricHandle {
+func (c *client) Rate(namespace Namespace, name string, tags map[string]string) MetricHandle {
 	return c.metrics.LoadOrStore(namespace, transport.RateMetric, name, tags)
 }
 
-func (c *client) Gauge(namespace types.Namespace, name string, tags map[string]string) MetricHandle {
+func (c *client) Gauge(namespace Namespace, name string, tags map[string]string) MetricHandle {
 	return c.metrics.LoadOrStore(namespace, transport.GaugeMetric, name, tags)
 }
 
-func (c *client) Distribution(_ types.Namespace, _ string, _ map[string]string) MetricHandle {
+func (c *client) Distribution(_ Namespace, _ string, _ map[string]string) MetricHandle {
 	//TODO implement me
 	panic("implement me")
 }
 
-func (c *client) ProductStarted(product types.Namespace) {
+func (c *client) ProductStarted(product Namespace) {
 	c.products.Add(product, true, nil)
 }
 
-func (c *client) ProductStopped(product types.Namespace) {
+func (c *client) ProductStopped(product Namespace) {
 	c.products.Add(product, false, nil)
 }
 
-func (c *client) ProductStartError(product types.Namespace, err error) {
+func (c *client) ProductStartError(product Namespace, err error) {
 	c.products.Add(product, false, err)
 }
 
-func (c *client) AddAppConfig(key string, value any, origin types.Origin) {
+func (c *client) AddAppConfig(key string, value any, origin Origin) {
 	c.configuration.Add(key, value, origin)
 }
 
-func (c *client) AddBulkAppConfig(kvs map[string]any, origin types.Origin) {
+func (c *client) AddBulkAppConfig(kvs map[string]any, origin Origin) {
 	for key, value := range kvs {
 		c.configuration.Add(key, value, origin)
 	}

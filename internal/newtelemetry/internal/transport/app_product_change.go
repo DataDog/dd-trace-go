@@ -5,15 +5,11 @@
 
 package transport
 
-import (
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/newtelemetry/types"
-)
-
 type AppProductChange struct {
 	Products Products `json:"products"`
 }
 
-type Products map[types.Namespace]Product
+type Products map[Namespace]Product
 
 func (AppProductChange) RequestType() RequestType {
 	return RequestTypeAppProductChange

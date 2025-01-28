@@ -9,19 +9,18 @@ import (
 	"sync"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/newtelemetry/internal/transport"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/newtelemetry/types"
 )
 
 type products struct {
 	mu       sync.Mutex
-	products map[types.Namespace]transport.Product
+	products map[Namespace]transport.Product
 }
 
-func (p *products) Add(namespace types.Namespace, enabled bool, err error) {
+func (p *products) Add(namespace Namespace, enabled bool, err error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if p.products == nil {
-		p.products = make(map[types.Namespace]transport.Product)
+		p.products = make(map[Namespace]transport.Product)
 	}
 
 	product := transport.Product{

@@ -9,7 +9,6 @@ import (
 	"sync"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/newtelemetry/internal/transport"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/newtelemetry/types"
 )
 
 type configuration struct {
@@ -18,7 +17,7 @@ type configuration struct {
 	seqID  uint64
 }
 
-func (c *configuration) Add(key string, value any, origin types.Origin) {
+func (c *configuration) Add(key string, value any, origin Origin) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 

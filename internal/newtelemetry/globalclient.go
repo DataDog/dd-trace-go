@@ -12,7 +12,6 @@ import (
 	globalinternal "gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/newtelemetry/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/newtelemetry/internal/transport"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/newtelemetry/types"
 )
 
 var (
@@ -82,7 +81,7 @@ func Disabled() bool {
 // Count creates a new metric handle for the given parameters that can be used to submit values.
 // Count will always return a MetricHandle, even if telemetry is disabled or the client has yet to start.
 // The MetricHandle is then swapped with the actual MetricHandle once the client is started.
-func Count(namespace types.Namespace, name string, tags map[string]string) MetricHandle {
+func Count(namespace Namespace, name string, tags map[string]string) MetricHandle {
 	return globalClientNewMetric(func(client Client) MetricHandle {
 		return client.Count(namespace, name, tags)
 	})
@@ -91,7 +90,7 @@ func Count(namespace types.Namespace, name string, tags map[string]string) Metri
 // Rate creates a new metric handle for the given parameters that can be used to submit values.
 // Rate will always return a MetricHandle, even if telemetry is disabled or the client has yet to start.
 // The MetricHandle is then swapped with the actual MetricHandle once the client is started.
-func Rate(namespace types.Namespace, name string, tags map[string]string) MetricHandle {
+func Rate(namespace Namespace, name string, tags map[string]string) MetricHandle {
 	return globalClientNewMetric(func(client Client) MetricHandle {
 		return client.Rate(namespace, name, tags)
 	})
@@ -100,7 +99,7 @@ func Rate(namespace types.Namespace, name string, tags map[string]string) Metric
 // Gauge creates a new metric handle for the given parameters that can be used to submit values.
 // Gauge will always return a MetricHandle, even if telemetry is disabled or the client has yet to start.
 // The MetricHandle is then swapped with the actual MetricHandle once the client is started.
-func Gauge(namespace types.Namespace, name string, tags map[string]string) MetricHandle {
+func Gauge(namespace Namespace, name string, tags map[string]string) MetricHandle {
 	return globalClientNewMetric(func(client Client) MetricHandle {
 		return client.Gauge(namespace, name, tags)
 	})
@@ -109,7 +108,7 @@ func Gauge(namespace types.Namespace, name string, tags map[string]string) Metri
 // Distribution creates a new metric handle for the given parameters that can be used to submit values.
 // Distribution will always return a MetricHandle, even if telemetry is disabled or the client has yet to start.
 // The MetricHandle is then swapped with the actual MetricHandle once the client is started.
-func Distribution(namespace types.Namespace, name string, tags map[string]string) MetricHandle {
+func Distribution(namespace Namespace, name string, tags map[string]string) MetricHandle {
 	return globalClientNewMetric(func(client Client) MetricHandle {
 		return client.Distribution(namespace, name, tags)
 	})
@@ -142,7 +141,7 @@ func Log(level LogLevel, text string, options ...LogOption) {
 
 // ProductStarted declares a product to have started at the customer’s request. If telemetry is disabled, it will do nothing.
 // If the telemetry client has not started yet, it will record the action and replay it once the client is started.
-func ProductStarted(product types.Namespace) {
+func ProductStarted(product Namespace) {
 	globalClientCall(func(client Client) {
 		client.ProductStarted(product)
 	})
@@ -150,7 +149,7 @@ func ProductStarted(product types.Namespace) {
 
 // ProductStopped declares a product to have being stopped by the customer. If telemetry is disabled, it will do nothing.
 // If the telemetry client has not started yet, it will record the action and replay it once the client is started.
-func ProductStopped(product types.Namespace) {
+func ProductStopped(product Namespace) {
 	globalClientCall(func(client Client) {
 		client.ProductStopped(product)
 	})
@@ -158,7 +157,7 @@ func ProductStopped(product types.Namespace) {
 
 // ProductStartError declares that a product could not start because of the following error. If telemetry is disabled, it will do nothing.
 // If the telemetry client has not started yet, it will record the action and replay it once the client is started.
-func ProductStartError(product types.Namespace, err error) {
+func ProductStartError(product Namespace, err error) {
 	globalClientCall(func(client Client) {
 		client.ProductStartError(product, err)
 	})
@@ -167,7 +166,7 @@ func ProductStartError(product types.Namespace, err error) {
 // AddAppConfig adds a key value pair to the app configuration and send the change to telemetry
 // value has to be json serializable and the origin is the source of the change. If telemetry is disabled, it will do nothing.
 // If the telemetry client has not started yet, it will record the action and replay it once the client is started.
-func AddAppConfig(key string, value any, origin types.Origin) {
+func AddAppConfig(key string, value any, origin Origin) {
 	globalClientCall(func(client Client) {
 		client.AddAppConfig(key, value, origin)
 	})
@@ -176,7 +175,7 @@ func AddAppConfig(key string, value any, origin types.Origin) {
 // AddBulkAppConfig adds a list of key value pairs to the app configuration and sends the change to telemetry.
 // Same as AddAppConfig but for multiple values. If telemetry is disabled, it will do nothing.
 // If the telemetry client has not started yet, it will record the action and replay it once the client is started.
-func AddBulkAppConfig(kvs map[string]any, origin types.Origin) {
+func AddBulkAppConfig(kvs map[string]any, origin Origin) {
 	globalClientCall(func(client Client) {
 		client.AddBulkAppConfig(kvs, origin)
 	})

@@ -5,18 +5,14 @@
 
 package transport
 
-import (
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/newtelemetry/types"
-)
-
 // All objects in this file are used to define the payload of the requests sent
 // to the telemetry API.
 // https://github.com/DataDog/instrumentation-telemetry-api-docs/tree/dad49961203d74ec8236b68ce4b54bbb7ed8716f/GeneratedDocumentation/ApiDocs/v2/SchemaDocumentation/Schemas
 
 type GenerateMetrics struct {
-	Namespace     types.Namespace `json:"namespace,omitempty"`
-	Series        []MetricData    `json:"series"`
-	SkipAllowlist bool            `json:"skip_allowlist,omitempty"`
+	Namespace     Namespace    `json:"namespace,omitempty"`
+	Series        []MetricData `json:"series"`
+	SkipAllowlist bool         `json:"skip_allowlist,omitempty"`
 }
 
 func (GenerateMetrics) RequestType() RequestType {
@@ -51,6 +47,6 @@ type MetricData struct {
 	// NOTE: If this field isn't present in the request, the API assumes
 	// the metric is common. So we can't "omitempty" even though the
 	// field is technically optional.
-	Common    bool            `json:"common"`
-	Namespace types.Namespace `json:"namespace,omitempty"`
+	Common    bool      `json:"common"`
+	Namespace Namespace `json:"namespace,omitempty"`
 }
