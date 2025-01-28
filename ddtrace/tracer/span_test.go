@@ -976,7 +976,7 @@ func TestSpanLog(t *testing.T) {
 	})
 
 	t.Run("128-bit-logging-with-empty-upper-bits", func(t *testing.T) {
-		// Logging 128-bit trace ids is enabled, and but the upper 64 bits
+		// Logging 128-bit trace ids is enabled, but the upper 64 bits
 		// are empty, so the dd.trace_id should be printed as raw digits (not hex).
 		t.Setenv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", "false")
 		assert := assert.New(t)
