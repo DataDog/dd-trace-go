@@ -484,6 +484,7 @@ func (s *span) serializeSpanLinksInMeta() {
 	}
 	spanLinkBytes, err := json.Marshal(s.SpanLinks)
 	if err != nil {
+		log.Debug("Unable to marshal span links. Not adding span links to span meta.")
 		return
 	}
 	if s.Meta == nil {
