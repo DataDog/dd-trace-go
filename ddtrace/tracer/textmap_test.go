@@ -2595,3 +2595,79 @@ func FuzzStringMutator(f *testing.F) {
 		}
 	})
 }
+
+func TestInjectBaggagePropagator(t *testing.T) {
+
+	assert := assert.New(t)
+
+	propagator := NewPropagator(&PropagatorConfig{
+		BaggageHeader: "baggage",
+		TraceHeader:   "tid",
+		ParentHeader:  "pid",
+	})
+	tracer := newTracer(WithPropagator(propagator))
+	defer tracer.Stop()
+
+	root := tracer.StartSpan("web.request").(*span)
+	root.SetBaggageItem("foo", "bar")
+	ctx := root.Context()
+	headers := http.Header{}
+
+	carrier := HTTPHeadersCarrier(headers)
+	err := tracer.Inject(ctx, carrier)
+	assert.Nil(err)
+
+	tid := strconv.FormatUint(root.TraceID, 10)
+	pid := strconv.FormatUint(root.SpanID, 10)
+
+	assert.Equal(headers.Get("tid"), tid)
+	assert.Equal(headers.Get("pid"), pid)
+	assert.Equal(headers.Get("baggage"), "foo=bar")
+}
+
+func TestExtractBaggagePropagator(t *testing.T) {
+	tracer := newTracer()
+	defer tracer.Stop()
+	headers := TextMapCarrier{
+		DefaultTraceIDHeader:  "4",
+		DefaultParentIDHeader: "1",
+		DefaultBaggageHeader:  "foo=bar",
+	}
+	s, err := tracer.Extract(headers)
+	assert.NoError(t, err)
+	got := make(map[string]string)
+	s.ForeachBaggageItem(func(k, v string) bool {
+		got[k] = v
+		return true
+	})
+	assert.Len(t, got, 1)
+	assert.Equal(t, "bar", got["foo"])
+}
+
+func TestInjectBaggagePropagatorEncoding(t *testing.T) {
+	assert := assert.New(t)
+
+	propagator := NewPropagator(&PropagatorConfig{
+		BaggageHeader: "baggage",
+		TraceHeader:   "tid",
+		ParentHeader:  "pid",
+	})
+	tracer := newTracer(WithPropagator(propagator))
+	defer tracer.Stop()
+
+	root := tracer.StartSpan("web.request").(*span)
+	ctx := root.Context()
+	ctx.(*spanContext).baggage = map[string]string{"userId": "Amélie"}
+	headers := http.Header{}
+
+	carrier := HTTPHeadersCarrier(headers)
+	err := tracer.Inject(ctx, carrier)
+	assert.Nil(err)
+
+	tid := strconv.FormatUint(root.TraceID, 10)
+	pid := strconv.FormatUint(root.SpanID, 10)
+
+	assert.Equal(headers.Get("tid"), tid)
+	assert.Equal(headers.Get("pid"), pid)
+	assert.Equal(headers.Get("baggage"), "userId=Am%C3%A9lie")
+}

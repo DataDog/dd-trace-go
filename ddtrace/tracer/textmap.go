@@ -8,9 +8,11 @@ package tracer
 import (
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
+	"sync/atomic"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
@@ -90,6 +92,9 @@ const (
 	// DefaultPriorityHeader specifies the key that will be used in HTTP headers
 	// or text maps to store the sampling priority value.
 	DefaultPriorityHeader = "x-datadog-sampling-priority"
+
+	// add comment here - Rachel
+	DefaultBaggageHeader = "baggage"
 )
 
 // originHeader specifies the name of the header indicating the origin of the trace.
@@ -127,6 +132,9 @@ type PropagatorConfig struct {
 	// B3 specifies if B3 headers should be added for trace propagation.
 	// See https://github.com/openzipkin/b3-propagation
 	B3 bool
+
+	// add comment here - Rachel
+	BaggageHeader string
 }
 
 // NewPropagator returns a new propagator which uses TextMap to inject
@@ -154,6 +162,9 @@ func NewPropagator(cfg *PropagatorConfig, propagators ...Propagator) Propagator 
 	}
 	if cfg.PriorityHeader == "" {
 		cfg.PriorityHeader = DefaultPriorityHeader
+	}
+	if cfg.BaggageHeader == "" {
+		cfg.BaggageHeader = DefaultBaggageHeader
 	}
 	cp := new(chainedPropagator)
 	cp.onlyExtractFirst = internal.BoolEnv("DD_TRACE_PROPAGATION_EXTRACT_FIRST", false)
@@ -196,8 +207,8 @@ type chainedPropagator struct {
 // a warning and be ignored.
 func getPropagators(cfg *PropagatorConfig, ps string) ([]Propagator, string) {
 	dd := &propagator{cfg}
-	defaultPs := []Propagator{dd, &propagatorW3c{}}
-	defaultPsName := "datadog,tracecontext"
+	defaultPs := []Propagator{dd, &propagatorW3c{}, &propagatorBaggage{}}
+	defaultPsName := "datadog,tracecontext,baggage"
 	if cfg.B3 {
 		defaultPs = append(defaultPs, &propagatorB3{})
 		defaultPsName += ",b3"
@@ -226,6 +237,9 @@ func getPropagators(cfg *PropagatorConfig, ps string) ([]Propagator, string) {
 			listNames = append(listNames, v)
 		case "tracecontext":
 			list = append(list, &propagatorW3c{})
+			listNames = append(listNames, v)
+		case "baggage":
+			list = append(list, &propagatorBaggage{})
 			listNames = append(listNames, v)
 		case "b3", "b3multi":
 			if !cfg.B3 {
@@ -319,6 +333,15 @@ func (p *chainedPropagator) Extract(carrier interface{}) (ddtrace.SpanContext, e
 				links = append(links, link)
 			}
 		}
+		// if the baggage propagator exists in the extracted propagators
+		// it must always be extracted
+		// cases where it's just baggage being extracted? (no trace context)
+		if _, ok := v.(*propagatorBaggage); ok {
+			if extractedCtx != nil {
+				ctx.(*spanContext).baggage = extractedCtx.(*spanContext).baggage // hasBaggage is set on extractedCtx
+				atomic.StoreUint32(&ctx.(*spanContext).hasBaggage, 1)            // might need to change
+			}
+		}
 	}
 	// 0 successful extractions
 	if ctx == nil {
@@ -341,6 +364,8 @@ func getPropagatorName(p Propagator) string {
 		return "b3"
 	case *propagatorW3c:
 		return "tracecontext"
+	case *propagatorBaggage:
+		return "baggage"
 	default:
 		return ""
 	}
@@ -1268,4 +1293,132 @@ func extractTraceID128(ctx *spanContext, v string) error {
 		return ErrSpanContextCorrupted
 	}
 	return nil
+}
+
+// comment to self: need to add encoding and decoding (including the allowed/not allowed characters)
+// function for baggage items
+
+const (
+	baggageMaxItems = 64
+	baggageMaxBytes = 8192
+)
+
+// propagatorBaggage implements Propagator and injects/extracts span contexts
+// using baggage headers.
+type propagatorBaggage struct{}
+
+func (p *propagatorBaggage) Inject(spanCtx ddtrace.SpanContext, carrier interface{}) error {
+	switch c := carrier.(type) {
+	case TextMapWriter:
+		return p.injectTextMap(spanCtx, c)
+	default:
+		return ErrInvalidCarrier
+	}
+}
+
+// injectTextMap propagates baggage items from the span context into the writer,
+// in the format of a single HTTP "baggage" header. Baggage consists of key=value pairs,
+// separated by commas. This function enforces a maximum number of baggage items and a maximum overall size.
+// If either limit is exceeded, excess items or bytes are dropped, and a warning is logged.
+//
+// Example of a single "baggage" header:
+// baggage: foo=bar,baz=qux
+//
+// Each key and value pair is encoded and added to the existing baggage header in <key>=<value> format,
+// joined together by commas,
+func (*propagatorBaggage) injectTextMap(spanCtx ddtrace.SpanContext, writer TextMapWriter) error {
+	ctx, _ := spanCtx.(*spanContext)
+
+	// If the context is nil or has no baggage, we don't need to inject anything.
+	if ctx == nil || len(ctx.baggage) == 0 {
+		return nil
+	}
+
+	baggageItems := make([]string, 0, len(ctx.baggage))
+	totalSize := 0
+	count := 0
+
+	for key, value := range ctx.baggage {
+		if count >= baggageMaxItems {
+			log.Warn("Baggage item limit exceeded. Only the first %d items will be propagated.", baggageMaxItems)
+			break
+		}
+
+		encodedKey := url.QueryEscape(key)
+		encodedValue := url.QueryEscape(value)
+		item := fmt.Sprintf("%s=%s", encodedKey, encodedValue)
+
+		itemSize := len(item)
+		if count > 0 {
+			itemSize++ // for the comma
+		}
+
+		if totalSize+itemSize > baggageMaxBytes {
+			log.Warn("Baggage size limit exceeded. Only the first %d bytes will be propagated.", baggageMaxBytes)
+			break
+		}
+
+		baggageItems = append(baggageItems, item)
+		totalSize += itemSize
+		count++
+	}
+
+	if len(baggageItems) > 0 {
+		writer.Set("baggage", strings.Join(baggageItems, ","))
+	}
+
+	return nil
+}
+
+func (p *propagatorBaggage) Extract(carrier interface{}) (ddtrace.SpanContext, error) {
+	switch c := carrier.(type) {
+	case TextMapReader:
+		return p.extractTextMap(c)
+	default:
+		return nil, ErrInvalidCarrier
+	}
+}
+
+func (*propagatorBaggage) extractTextMap(reader TextMapReader) (ddtrace.SpanContext, error) {
+	var baggageHeader string
+	var ctx spanContext
+	err := reader.ForeachKey(func(k, v string) error {
+		if strings.ToLower(k) == "baggage" {
+			baggageHeader = v
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	ctx.baggage = make(map[string]string)
+
+	if baggageHeader == "" {
+		return &ctx, nil
+	}
+
+	pairs := strings.Split(baggageHeader, ",")
+	for _, pair := range pairs {
+		pair = strings.TrimSpace(pair)
+		if !strings.Contains(pair, "=") {
+			// If a pair doesn't contain '=', treat it as invalid.
+			return nil, fmt.Errorf("Invalid baggage item: %s", pair)
+		}
+
+		keyValue := strings.SplitN(pair, "=", 2)
+		rawKey := strings.TrimSpace(keyValue[0])
+		rawValue := strings.TrimSpace(keyValue[1])
+
+		decKey, errKey := url.QueryUnescape(rawKey)
+		decVal, errVal := url.QueryUnescape(rawValue)
+		if errKey != nil || errVal != nil {
+			return nil, fmt.Errorf("Invalid baggage item: %s", pair)
+		}
+		ctx.baggage[decKey] = decVal
+	}
+	if len(ctx.baggage) > 0 {
+		atomic.StoreUint32(&ctx.hasBaggage, 1)
+	}
+	return &ctx, nil
 }
