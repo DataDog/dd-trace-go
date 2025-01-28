@@ -271,7 +271,7 @@ func TestAgentIntegration(t *testing.T) {
 		defer clearIntegrationsForTests()
 
 		cfg.loadContribIntegrations(nil)
-		assert.Equal(t, 56, len(cfg.integrations))
+		assert.Equal(t, 57, len(cfg.integrations))
 		for integrationName, v := range cfg.integrations {
 			assert.False(t, v.Instrumented, "integrationName=%s", integrationName)
 		}
@@ -346,8 +346,9 @@ func TestIntegrationEnabled(t *testing.T) {
 		if strings.Contains(pkg.ImportPath, "/test") || strings.Contains(pkg.ImportPath, "/internal") || strings.Contains(pkg.ImportPath, "/cmd") {
 			continue
 		}
-		p := strings.Replace(pkg.Dir, pkg.Root, "../..", 1)
-		if strings.Contains(p, "/contrib/net/http/client") || strings.Contains(p, "/contrib/os") {
+		sep := string(os.PathSeparator)
+		p := strings.Replace(pkg.Dir, pkg.Root, filepath.Join("..", ".."), 1)
+		if strings.Contains(p, filepath.Join(sep, "contrib", "net", "http", "client")) || strings.Contains(p, filepath.Join(sep, "contrib", "os")) {
 			continue
 		}
 		body, err := exec.Command("grep", "-rl", "MarkIntegrationImported", p).Output()
