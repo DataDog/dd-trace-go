@@ -210,3 +210,22 @@ aspects:
       - prepend-statements:
           template: |-
             __dd_civisibility_instrumentSkipNow({{ .Function.Receiver }})
+
+  - id: testify.suite.Run
+    join-point:
+      all-of:
+        - import-path: github.com/stretchr/testify/suite
+        - function-body:
+            function:
+              - name: Run
+    advice:
+      - inject-declarations:
+          links:
+            - gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/integrations/gotesting
+          template: |-
+            //go:linkname __dd_civisibility_instrumentTestifySuiteRun gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/integrations/gotesting.instrumentTestifySuiteRun
+            func __dd_civisibility_instrumentTestifySuiteRun(*testing.T, any)
+
+      - prepend-statements:
+          template: |-
+            __dd_civisibility_instrumentTestifySuiteRun({{ .Function.Argument 0 }}, {{ .Function.Argument 1 }})
