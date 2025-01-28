@@ -507,6 +507,9 @@ func (c *client) newRequest(t RequestType) *Request {
 	if eid := internal.EntityID(); eid != "" {
 		header.Set("Datadog-Entity-ID", eid)
 	}
+	if extEnv := internal.ExternalEnvironment(); extEnv != "" {
+		header.Set("Datadog-External-Env", extEnv)
+	}
 	if c.URL == getAgentlessURL() {
 		header.Set("DD-API-KEY", c.APIKey)
 	}

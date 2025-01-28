@@ -104,6 +104,9 @@ func newHTTPTransport(url string, client *http.Client) *httpTransport {
 	if eid := internal.EntityID(); eid != "" {
 		defaultHeaders["Datadog-Entity-ID"] = eid
 	}
+	if extEnv := internal.ExternalEnvironment(); extEnv != "" {
+		defaultHeaders["Datadog-External-Env"] = extEnv
+	}
 	return &httpTransport{
 		traceURL: fmt.Sprintf("%s/v0.4/traces", url),
 		statsURL: fmt.Sprintf("%s/v0.6/stats", url),
