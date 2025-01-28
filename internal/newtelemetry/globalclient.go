@@ -6,6 +6,7 @@
 package newtelemetry
 
 import (
+	"sync"
 	"sync/atomic"
 
 	globalinternal "gopkg.in/DataDog/dd-trace-go.v1/internal"
@@ -18,6 +19,10 @@ var (
 
 	// globalClientRecorder contains all actions done on the global client done before StartApp() with an actual client object is called
 	globalClientRecorder = internal.NewRecorder[Client]()
+
+	// metricsHandleHotPointers contains all the metricsHotPointer, used to replay actions done before the actual MetricHandle is set
+	metricsHandleHotPointers   []metricsHotPointer
+	metricsHandleHotPointersMu sync.Mutex
 )
 
 // StartApp starts the telemetry client with the given client send the app-started telemetry and sets it as the global (*client).
@@ -41,6 +46,14 @@ func SwapClient(client Client) {
 
 	if oldClient := globalClient.Swap(&client); oldClient != nil && *oldClient != nil {
 		(*oldClient).Close()
+
+		// Swap all metrics hot pointers to the actual MetricHandle
+		metricsHandleHotPointersMu.Lock()
+		defer metricsHandleHotPointersMu.Unlock()
+		for i := range metricsHandleHotPointers {
+			hotPointer := &metricsHandleHotPointers[i]
+			hotPointer.swap(hotPointer.maker(client))
+		}
 	}
 }
 
@@ -57,62 +70,67 @@ func StopApp() {
 	}
 }
 
+var telemetryClientDisabled = globalinternal.BoolEnv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", true)
+
 // Disabled returns whether instrumentation telemetry is disabled
 // according to the DD_INSTRUMENTATION_TELEMETRY_ENABLED env var
 func Disabled() bool {
-	return !globalinternal.BoolEnv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", true)
+	return telemetryClientDisabled
 }
 
 // Count creates a new metric handle for the given parameters that can be used to submit values.
+// Count will always return a MetricHandle, even if telemetry is disabled or the client has yet to start.
+// The MetricHandle is then swapped with the actual MetricHandle once the client is started.
 func Count(namespace types.Namespace, name string, tags map[string]string) MetricHandle {
-	if Disabled() {
-		return nil
-	}
-
-	client := globalClient.Load()
-	if client == nil || *client == nil {
-		return nil
-	}
-	return (*client).Count(namespace, name, tags)
+	return newMetric(func(client Client) MetricHandle {
+		return client.Count(namespace, name, tags)
+	})
 }
 
 // Rate creates a new metric handle for the given parameters that can be used to submit values.
+// Rate will always return a MetricHandle, even if telemetry is disabled or the client has yet to start.
+// The MetricHandle is then swapped with the actual MetricHandle once the client is started.
 func Rate(namespace types.Namespace, name string, tags map[string]string) MetricHandle {
-	if Disabled() {
-		return nil
-	}
-
-	client := globalClient.Load()
-	if client == nil || *client == nil {
-		return nil
-	}
-	return (*client).Rate(namespace, name, tags)
+	return newMetric(func(client Client) MetricHandle {
+		return client.Rate(namespace, name, tags)
+	})
 }
 
 // Gauge creates a new metric handle for the given parameters that can be used to submit values.
+// Gauge will always return a MetricHandle, even if telemetry is disabled or the client has yet to start.
+// The MetricHandle is then swapped with the actual MetricHandle once the client is started.
 func Gauge(namespace types.Namespace, name string, tags map[string]string) MetricHandle {
-	if Disabled() {
-		return nil
-	}
-
-	client := globalClient.Load()
-	if client == nil || *client == nil {
-		return nil
-	}
-	return (*client).Gauge(namespace, name, tags)
+	return newMetric(func(client Client) MetricHandle {
+		return client.Gauge(namespace, name, tags)
+	})
 }
 
 // Distribution creates a new metric handle for the given parameters that can be used to submit values.
+// Distribution will always return a MetricHandle, even if telemetry is disabled or the client has yet to start.
+// The MetricHandle is then swapped with the actual MetricHandle once the client is started.
 func Distribution(namespace types.Namespace, name string, tags map[string]string) MetricHandle {
+	return newMetric(func(client Client) MetricHandle {
+		return client.Distribution(namespace, name, tags)
+	})
+}
+
+func newMetric(maker func(client Client) MetricHandle) MetricHandle {
 	if Disabled() {
-		return nil
+		// Act as a noop if telemetry is disabled
+		return &metricsHotPointer{}
 	}
 
 	client := globalClient.Load()
+	wrapper := newMetricsHotPointer(maker)
 	if client == nil || *client == nil {
-		return nil
+		wrapper.recorder = internal.NewRecorder[MetricHandle]()
 	}
-	return (*client).Distribution(namespace, name, tags)
+
+	globalClientCall(func(client Client) {
+		wrapper.swap(maker(client))
+	})
+
+	return wrapper
 }
 
 func Log(level LogLevel, text string, options ...LogOption) {
@@ -181,12 +199,26 @@ func globalClientCall(fun func(client Client)) {
 	fun(*client)
 }
 
+func newMetricsHotPointer(maker func(client Client) MetricHandle) *metricsHotPointer {
+	metricsHandleHotPointersMu.Lock()
+	defer metricsHandleHotPointersMu.Unlock()
+
+	metricsHandleHotPointers = append(metricsHandleHotPointers, metricsHotPointer{maker: maker})
+	return &metricsHandleHotPointers[len(metricsHandleHotPointers)-1]
+}
+
+// metricsHotPointer is a MetricHandle that holds a pointer to another MetricHandle and a recorder to replay actions done before the actual MetricHandle is set.
 type metricsHotPointer struct {
 	ptr      atomic.Pointer[MetricHandle]
 	recorder internal.Recorder[MetricHandle]
+	maker    func(client Client) MetricHandle
 }
 
 func (t *metricsHotPointer) Submit(value float64) {
+	if Disabled() {
+		return
+	}
+
 	inner := t.ptr.Load()
 	if inner == nil || *inner == nil {
 		t.recorder.Record(func(handle MetricHandle) {
