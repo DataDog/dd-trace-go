@@ -1295,9 +1295,6 @@ func extractTraceID128(ctx *spanContext, v string) error {
 	return nil
 }
 
-// comment to self: need to add encoding and decoding (including the allowed/not allowed characters)
-// function for baggage items
-
 const (
 	baggageMaxItems     = 64
 	baggageMaxBytes     = 8192
