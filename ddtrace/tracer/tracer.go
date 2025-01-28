@@ -573,7 +573,7 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 		noDebugStack: t.config.noDebugStack,
 	}
 
-	span.SpanLinks = append(span.SpanLinks, opts.SpanLinks...)
+	span.AddSpanLinks(opts.SpanLinks...)
 
 	if t.config.hostname != "" {
 		span.setMeta(keyHostname, t.config.hostname)
