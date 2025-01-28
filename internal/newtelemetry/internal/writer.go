@@ -85,10 +85,19 @@ func newBody(config TracerConfig, debugMode bool) *transport.Body {
 // The telemetry data is sent as a JSON payload as described in the API documentation.
 type Writer interface {
 	// Flush does a synchronous call to the telemetry endpoint with the given payload. Thread-safe.
-	// It returns the number of bytes sent and an error if any.
-	// Keep in mind that errors can be returned even if the payload was sent successfully.
-	// Please check if the number of bytes sent is greater than 0 to know if the payload was sent.
-	Flush(transport.Payload) (int, error)
+	// It returns a non-empty [EndpointRequestResult] slice and a nil error if the payload was sent successfully.
+	// Otherwise, the error is a call to [errors.Join] on all errors that occurred.
+	Flush(transport.Payload) ([]EndpointRequestResult, error)
+}
+
+// EndpointRequestResult is returned by the Flush method of the Writer interface.
+type EndpointRequestResult struct {
+	// Error is the error that occurred when sending the payload to the endpoint. This is nil if the payload was sent successfully.
+	Error error
+	// PayloadByteSize is the number of bytes that were sent to the endpoint, zero if the payload was not sent.
+	PayloadByteSize int
+	// CallDuration is the duration of the call to the endpoint if the call was successful
+	CallDuration time.Duration
 }
 
 type writer struct {
@@ -202,49 +211,75 @@ func (w *writer) newRequest(endpoint *http.Request, payload transport.Payload) *
 // SumReaderCloser is a ReadCloser that wraps another ReadCloser and counts the number of bytes read.
 type SumReaderCloser struct {
 	io.ReadCloser
-	n *int
+	n int
 }
 
 func (s *SumReaderCloser) Read(p []byte) (n int, err error) {
 	n, err = s.ReadCloser.Read(p)
-	*s.n += n
+	s.n += n
 	return
 }
 
-func (w *writer) Flush(payload transport.Payload) (int, error) {
+// WriterStatusCodeError is an error that is returned when the writer receives an unexpected status code from the server.
+type WriterStatusCodeError struct {
+	StatusCode string
+	Body       string
+}
+
+func (w *WriterStatusCodeError) Error() string {
+	return fmt.Sprintf("unexpected status code: %q (received body: %q)", w.StatusCode, w.Body)
+}
+
+func (w *writer) Flush(payload transport.Payload) ([]EndpointRequestResult, error) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
-	var (
-		errs    []error
-		sumRead int
-	)
+	var results []EndpointRequestResult
 	for _, endpoint := range w.endpoints {
-		request := w.newRequest(endpoint, payload)
-		request.Body = &SumReaderCloser{ReadCloser: request.Body, n: &sumRead}
+		var (
+			request         = w.newRequest(endpoint, payload)
+			sumReaderCloser = &SumReaderCloser{ReadCloser: request.Body}
+			now             = time.Now()
+		)
+
+		request.Body = sumReaderCloser
 		response, err := w.httpClient.Do(request)
 		if err != nil {
-			errs = append(errs, fmt.Errorf("telemetry/writer: %w", err))
-			sumRead = 0
+			results = append(results, EndpointRequestResult{Error: err})
 			continue
 		}
 
-		// Currently we have a maximum of 3 endpoints so we can afford to close bodies at the end of the function
-		//goland:noinspection GoDeferInLoop
+		// We only have a few endpoints, so we can afford to keep the response body stream open until we are done with it
 		defer response.Body.Close()
 
 		if response.StatusCode >= 300 || response.StatusCode < 200 {
 			respBodyBytes, _ := io.ReadAll(response.Body) // maybe we can find an error reason in the response body
-			errs = append(errs, fmt.Errorf("telemetry/writer: unexpected status code: %q (received body: %q)", response.Status, string(respBodyBytes)))
-			sumRead = 0
+			results = append(results, EndpointRequestResult{Error: &WriterStatusCodeError{
+				StatusCode: response.Status,
+				Body:       string(respBodyBytes),
+			}})
 			continue
 		}
+
+		results = append(results, EndpointRequestResult{
+			PayloadByteSize: sumReaderCloser.n,
+			CallDuration:    time.Since(now),
+		})
 
 		// We succeeded, no need to try the other endpoints
 		break
 	}
 
-	return sumRead, errors.Join(errs...)
+	var err error
+	if results[len(results)-1].Error != nil {
+		var errs []error
+		for _, result := range results {
+			errs = append(errs, result.Error)
+		}
+		err = errors.Join(errs...)
+	}
+
+	return results, err
 }
 
 // RecordWriter is a Writer that stores the payloads in memory. Used for testing purposes
@@ -253,11 +288,16 @@ type RecordWriter struct {
 	payloads []transport.Payload
 }
 
-func (w *RecordWriter) Flush(payload transport.Payload) (int, error) {
+func (w *RecordWriter) Flush(payload transport.Payload) ([]EndpointRequestResult, error) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	w.payloads = append(w.payloads, payload)
-	return 1, nil
+	return []EndpointRequestResult{
+		{
+			PayloadByteSize: 1,
+			CallDuration:    time.Nanosecond,
+		},
+	}, nil
 }
 
 func (w *RecordWriter) Payloads() []transport.Payload {
