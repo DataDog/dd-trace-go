@@ -61,6 +61,9 @@ func newClient(tracerConfig internal.TracerConfig, config ClientConfig) (*client
 		dependencies: dependencies{
 			DependencyLoader: config.DependencyLoader,
 		},
+		metrics: metrics{
+			skipAllowlist: config.Debug,
+		},
 	}
 
 	client.dataSources = append(client.dataSources,
@@ -72,6 +75,10 @@ func newClient(tracerConfig internal.TracerConfig, config ClientConfig) (*client
 
 	if config.LogsEnabled {
 		client.dataSources = append(client.dataSources, &client.logger)
+	}
+
+	if config.MetricsEnabled {
+		client.dataSources = append(client.dataSources, &client.metrics)
 	}
 
 	client.flushTicker = internal.NewTicker(func() {
@@ -92,6 +99,7 @@ type client struct {
 	configuration configuration
 	dependencies  dependencies
 	logger        logger
+	metrics       metrics
 	dataSources   []interface {
 		Payload() transport.Payload
 	}
@@ -118,19 +126,16 @@ func (c *client) MarkIntegrationAsLoaded(integration Integration) {
 	c.integrations.Add(integration)
 }
 
-func (c *client) Count(_ types.Namespace, _ string, _ map[string]string) MetricHandle {
-	//TODO implement me
-	panic("implement me")
+func (c *client) Count(namespace types.Namespace, name string, tags map[string]string) MetricHandle {
+	return c.metrics.LoadOrStore(namespace, transport.CountMetric, name, tags)
 }
 
-func (c *client) Rate(_ types.Namespace, _ string, _ map[string]string) MetricHandle {
-	//TODO implement me
-	panic("implement me")
+func (c *client) Rate(namespace types.Namespace, name string, tags map[string]string) MetricHandle {
+	return c.metrics.LoadOrStore(namespace, transport.RateMetric, name, tags)
 }
 
-func (c *client) Gauge(_ types.Namespace, _ string, _ map[string]string) MetricHandle {
-	//TODO implement me
-	panic("implement me")
+func (c *client) Gauge(namespace types.Namespace, name string, tags map[string]string) MetricHandle {
+	return c.metrics.LoadOrStore(namespace, transport.GaugeMetric, name, tags)
 }
 
 func (c *client) Distribution(_ types.Namespace, _ string, _ map[string]string) MetricHandle {

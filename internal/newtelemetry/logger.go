@@ -8,10 +8,10 @@ package newtelemetry
 import (
 	"runtime"
 	"strings"
-	"sync"
 	"sync/atomic"
 	"time"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/newtelemetry/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/newtelemetry/internal/transport"
 )
 
@@ -68,13 +68,13 @@ type loggerValue struct {
 }
 
 type logger struct {
-	store atomic.Pointer[sync.Map]
+	store atomic.Pointer[internal.TypedSyncMap[loggerKey, *loggerValue]]
 }
 
 func (logger *logger) Add(level LogLevel, text string, opts ...LogOption) {
 	store := logger.store.Load()
 	if store == nil {
-		store = new(sync.Map)
+		store = new(internal.TypedSyncMap[loggerKey, *loggerValue])
 		for logger.store.CompareAndSwap(nil, store) {
 			continue
 		}
@@ -91,7 +91,7 @@ func (logger *logger) Add(level LogLevel, text string, opts ...LogOption) {
 
 	val, ok := store.Load(key)
 	if ok {
-		val.(*loggerValue).count.Add(1)
+		val.count.Add(1)
 		return
 	}
 
@@ -114,16 +114,14 @@ func (logger *logger) Payload() transport.Payload {
 	}
 
 	var logs []transport.LogMessage
-	store.Range(func(key, value any) bool {
-		k := key.(loggerKey)
-		v := value.(*loggerValue)
+	store.Range(func(key loggerKey, value *loggerValue) bool {
 		logs = append(logs, transport.LogMessage{
-			Message:    k.message,
-			Level:      k.level,
-			Tags:       k.tags,
-			Count:      v.count.Load(),
-			StackTrace: v.stacktrace,
-			TracerTime: v.time,
+			Message:    key.message,
+			Level:      key.level,
+			Tags:       key.tags,
+			Count:      value.count.Load(),
+			StackTrace: value.stacktrace,
+			TracerTime: value.time,
 		})
 		return true
 	})

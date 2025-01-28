@@ -5,7 +5,7 @@
 
 //go:generate go run gopkg.in/DataDog/dd-trace-go.v1/internal/newtelemetry/internal/metrics/generator
 
-package metrics
+package knownmetrics
 
 import (
 	_ "embed"

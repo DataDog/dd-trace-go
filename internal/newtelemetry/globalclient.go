@@ -11,6 +11,7 @@ import (
 
 	globalinternal "gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/newtelemetry/internal"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/newtelemetry/internal/transport"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/newtelemetry/types"
 )
 
@@ -82,7 +83,7 @@ func Disabled() bool {
 // Count will always return a MetricHandle, even if telemetry is disabled or the client has yet to start.
 // The MetricHandle is then swapped with the actual MetricHandle once the client is started.
 func Count(namespace types.Namespace, name string, tags map[string]string) MetricHandle {
-	return newMetric(func(client Client) MetricHandle {
+	return globalClientNewMetric(func(client Client) MetricHandle {
 		return client.Count(namespace, name, tags)
 	})
 }
@@ -91,7 +92,7 @@ func Count(namespace types.Namespace, name string, tags map[string]string) Metri
 // Rate will always return a MetricHandle, even if telemetry is disabled or the client has yet to start.
 // The MetricHandle is then swapped with the actual MetricHandle once the client is started.
 func Rate(namespace types.Namespace, name string, tags map[string]string) MetricHandle {
-	return newMetric(func(client Client) MetricHandle {
+	return globalClientNewMetric(func(client Client) MetricHandle {
 		return client.Rate(namespace, name, tags)
 	})
 }
@@ -100,7 +101,7 @@ func Rate(namespace types.Namespace, name string, tags map[string]string) Metric
 // Gauge will always return a MetricHandle, even if telemetry is disabled or the client has yet to start.
 // The MetricHandle is then swapped with the actual MetricHandle once the client is started.
 func Gauge(namespace types.Namespace, name string, tags map[string]string) MetricHandle {
-	return newMetric(func(client Client) MetricHandle {
+	return globalClientNewMetric(func(client Client) MetricHandle {
 		return client.Gauge(namespace, name, tags)
 	})
 }
@@ -109,12 +110,12 @@ func Gauge(namespace types.Namespace, name string, tags map[string]string) Metri
 // Distribution will always return a MetricHandle, even if telemetry is disabled or the client has yet to start.
 // The MetricHandle is then swapped with the actual MetricHandle once the client is started.
 func Distribution(namespace types.Namespace, name string, tags map[string]string) MetricHandle {
-	return newMetric(func(client Client) MetricHandle {
+	return globalClientNewMetric(func(client Client) MetricHandle {
 		return client.Distribution(namespace, name, tags)
 	})
 }
 
-func newMetric(maker func(client Client) MetricHandle) MetricHandle {
+func globalClientNewMetric(maker func(client Client) MetricHandle) MetricHandle {
 	if Disabled() {
 		// Act as a noop if telemetry is disabled
 		return &metricsHotPointer{}
@@ -229,13 +230,8 @@ func (t *metricsHotPointer) Submit(value float64) {
 	(*inner).Submit(value)
 }
 
-func (t *metricsHotPointer) flush() {
-	inner := t.ptr.Load()
-	if inner == nil || *inner == nil {
-		return
-	}
-
-	(*inner).flush()
+func (t *metricsHotPointer) payload() transport.MetricData {
+	return transport.MetricData{}
 }
 
 func (t *metricsHotPointer) swap(handle MetricHandle) {

@@ -37,9 +37,10 @@ const (
 type MetricData struct {
 	Metric string `json:"metric"`
 	// Points stores pairs of timestamps and values
-	Points [][2]float64 `json:"points"`
+	// This first value should be an int64 timestamp and the second should be a float64 value
+	Points [][2]any `json:"points"`
 	// Interval is required only for gauge and rate metrics
-	Interval int `json:"interval,omitempty"`
+	Interval int64 `json:"interval,omitempty"`
 	// Type cannot be of type distribution because there is a different payload for it
 	Type MetricType `json:"type,omitempty"`
 	Tags []string   `json:"tags,omitempty"`

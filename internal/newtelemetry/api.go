@@ -8,6 +8,7 @@ package newtelemetry
 import (
 	"io"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/newtelemetry/internal/transport"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/newtelemetry/types"
 )
 
@@ -21,7 +22,7 @@ import (
 type MetricHandle interface {
 	Submit(value float64)
 
-	flush()
+	payload() transport.MetricData
 }
 
 // Integration is an integration that is configured to be traced.
