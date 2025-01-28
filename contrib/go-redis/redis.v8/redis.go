@@ -78,7 +78,7 @@ func additionalTagOptions(client redis.UniversalClient) []ddtrace.StartSpanOptio
 		opt := clientOptions.Options()
 		if opt.Addr == "FailoverClient" {
 			additionalTags = []ddtrace.StartSpanOption{
-				tracer.Tag("out.db", strconv.Itoa(opt.DB)),
+				tracer.Tag(ext.TargetDB, strconv.Itoa(opt.DB)),
 				tracer.Tag(ext.RedisDatabaseIndex, opt.DB),
 			}
 		} else {
@@ -90,7 +90,7 @@ func additionalTagOptions(client redis.UniversalClient) []ddtrace.StartSpanOptio
 			additionalTags = []ddtrace.StartSpanOption{
 				tracer.Tag(ext.TargetHost, host),
 				tracer.Tag(ext.TargetPort, port),
-				tracer.Tag("out.db", strconv.Itoa(opt.DB)),
+				tracer.Tag(ext.TargetDB, strconv.Itoa(opt.DB)),
 				tracer.Tag(ext.RedisDatabaseIndex, opt.DB),
 			}
 		}
