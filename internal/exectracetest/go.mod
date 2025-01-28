@@ -5,7 +5,7 @@ go 1.22.10
 require (
 	github.com/google/pprof v0.0.0-20230817174616-7a8ec2ada47b
 	github.com/mattn/go-sqlite3 v1.14.18
-	golang.org/x/exp v0.0.0-20240506185415-9bf2ced13842
+	golang.org/x/exp v0.0.0-20240719175910-8a7402abbf56
 	gopkg.in/DataDog/dd-trace-go.v1 v1.70.3
 )
 
