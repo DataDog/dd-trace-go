@@ -6,9 +6,13 @@
 package sql
 
 import (
+	"sync"
 	"testing"
 
+	"github.com/DataDog/datadog-go/v5/statsd"
+	"github.com/lib/pq"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 )
 
@@ -63,4 +67,23 @@ func TestStatsTags(t *testing.T) {
 		assert.Contains(t, tags, "tag:value")
 	})
 	resetGlobalConfig()
+}
+
+func TestPollDBStatsStop(t *testing.T) {
+	driverName := "postgres"
+	Register(driverName, &pq.Driver{}, WithServiceName("postgres-test"), WithAnalyticsRate(0.2))
+	defer unregister(driverName)
+	db, err := Open(driverName, "postgres://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable")
+	require.NoError(t, err)
+	defer db.Close()
+
+	var wg sync.WaitGroup
+	stop := make(chan struct{})
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		pollDBStats(&statsd.NoOpClientDirect{}, db, stop)
+	}()
+	close(stop)
+	wg.Wait()
 }
