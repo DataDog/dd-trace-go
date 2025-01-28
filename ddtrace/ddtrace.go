@@ -79,9 +79,6 @@ type Span interface {
 	// item should propagate to all descendant spans, both in- and cross-process.
 	SetBaggageItem(key, val string)
 
-	// AddSpanLinks appends the given links to the span's span links.
-	AddSpanLinks(spanLinks ...SpanLink)
-
 	// Finish finishes the current span with the given options. Finish calls should be idempotent.
 	Finish(opts ...FinishOption)
 

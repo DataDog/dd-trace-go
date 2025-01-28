@@ -200,15 +200,6 @@ func (e *ciVisibilityEvent) SetBaggageItem(key, val string) {
 	e.span.SetBaggageItem(key, val)
 }
 
-// AddSpanLinks appends the given links to the span's span links.
-//
-// Parameters:
-//
-// spanLinks - list of span links to append.
-func (e *ciVisibilityEvent) AddSpanLinks(spanLinks ...ddtrace.SpanLink) {
-	e.span.SpanLinks = append(e.span.SpanLinks, spanLinks...)
-}
-
 // Finish completes the event's span with optional finish options.
 //
 // Parameters:

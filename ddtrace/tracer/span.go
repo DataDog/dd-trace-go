@@ -92,6 +92,13 @@ type span struct {
 	taskEnd func() // ends execution tracer (runtime/trace) task, if started
 }
 
+type SpanWithLinks interface {
+	ddtrace.Span
+
+	// AddSpanLinks appends the given links to span's span links.
+	AddSpanLinks(spanLinks ...ddtrace.SpanLink)
+}
+
 // Context yields the SpanContext for this Span. Note that the return
 // value of Context() is still valid after a call to Finish(). This is
 // called the span context and it is different from Go's context.
