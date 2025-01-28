@@ -346,8 +346,9 @@ func TestIntegrationEnabled(t *testing.T) {
 		if strings.Contains(pkg.ImportPath, "/test") || strings.Contains(pkg.ImportPath, "/internal") || strings.Contains(pkg.ImportPath, "/cmd") {
 			continue
 		}
-		p := strings.Replace(pkg.Dir, pkg.Root, "../..", 1)
-		if strings.Contains(p, "/contrib/net/http/client") || strings.Contains(p, "/contrib/os") {
+		sep := string(os.PathSeparator)
+		p := strings.Replace(pkg.Dir, pkg.Root, filepath.Join("..", ".."), 1)
+		if strings.Contains(p, filepath.Join(sep, "contrib", "net", "http", "client")) || strings.Contains(p, filepath.Join(sep, "contrib", "os")) {
 			continue
 		}
 		body, err := exec.Command("grep", "-rl", "MarkIntegrationImported", p).Output()
