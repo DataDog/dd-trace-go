@@ -14,7 +14,7 @@ for file in "$@"; do
         if [[ "$p" =~ \<testcase && ! "$p" =~ "file=" ]]; then
             class=$(echo "$p" | grep -o '.v1/[^"]*"')
             file_name=$(echo "${class:3}" | sed 's/.$//') # trim off the edges to get the path
-            new_line=$(echo "$p" | sed "s|></testcase>| file=\"$file_name\"></testcase>|")
+            new_line=$(echo "$p" | sed "s|<testcase \([^>]*\)>|<testcase \1 file=\"$file_name\">|")
             echo "$new_line" >> "$temp_file"
         else 
             echo "$p" >> "$temp_file"
