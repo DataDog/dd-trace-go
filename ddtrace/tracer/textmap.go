@@ -470,9 +470,9 @@ func (p *propagator) Extract(carrier interface{}) (ddtrace.SpanContext, error) {
 func (p *propagator) extractTextMap(reader TextMapReader) (ddtrace.SpanContext, error) {
 	var ctx spanContext
 	err := reader.ForeachKey(func(k, v string) error {
-		fmt.Println("TEST: key exists")
 		var err error
 		key := strings.ToLower(k)
+		fmt.Println("header key:", key)
 		switch key {
 		case p.cfg.TraceHeader:
 			var lowerTid uint64
@@ -501,6 +501,7 @@ func (p *propagator) extractTextMap(reader TextMapReader) (ddtrace.SpanContext, 
 				ctx.setBaggageItem(strings.TrimPrefix(key, p.cfg.BaggagePrefix), v)
 			}
 		}
+		fmt.Println("default case; header does not match trace header")
 		return nil
 	})
 	if err != nil {
@@ -517,6 +518,7 @@ func (p *propagator) extractTextMap(reader TextMapReader) (ddtrace.SpanContext, 
 		}
 	}
 	if ctx.traceID.Empty() || (ctx.spanID == 0 && ctx.origin != "synthetics") {
+		fmt.Println("returning spancontextnot found")
 		return nil, ErrSpanContextNotFound
 	}
 	return &ctx, nil
