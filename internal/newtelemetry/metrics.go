@@ -6,10 +6,10 @@
 package newtelemetry
 
 import (
+	"math"
 	"strings"
+	"sync/atomic"
 	"time"
-
-	"go.uber.org/atomic"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/newtelemetry/internal"
@@ -84,7 +84,7 @@ type metric struct {
 
 	// Values set during Submit()
 	newSubmit  atomic.Bool
-	value      atomic.Float64
+	value      atomic.Uint64 // Actually a float64, but we need atomic operations
 	submitTime atomic.Int64
 }
 
@@ -110,11 +110,21 @@ func (c *metric) payload() transport.MetricData {
 		Type:      c.key.kind,
 		Common:    knownmetrics.IsCommonMetric(c.key.namespace, string(c.key.kind), c.key.name),
 		Points: [][2]any{
-			{c.submitTime.Load(), c.value.Load()},
+			{c.submitTime.Load(), math.Float64frombits(c.value.Load())},
 		},
 	}
 
 	return data
+}
+
+func (c *metric) add(value float64) {
+	for {
+		oldValue := math.Float64frombits(c.value.Load())
+		newValue := oldValue + value
+		if c.value.CompareAndSwap(math.Float64bits(oldValue), math.Float64bits(newValue)) {
+			return
+		}
+	}
 }
 
 type count struct {
@@ -123,7 +133,7 @@ type count struct {
 
 func (c *count) Submit(value float64) {
 	c.submit()
-	c.value.Add(value)
+	c.add(value)
 }
 
 type gauge struct {
@@ -132,7 +142,7 @@ type gauge struct {
 
 func (c *gauge) Submit(value float64) {
 	c.submit()
-	c.value.Store(value)
+	c.value.Store(math.Float64bits(value))
 }
 
 type rate struct {
@@ -142,7 +152,7 @@ type rate struct {
 
 func (c *rate) Submit(value float64) {
 	c.submit()
-	c.value.Add(value)
+	c.add(value)
 }
 
 func (c *rate) payload() transport.MetricData {
@@ -152,6 +162,6 @@ func (c *rate) payload() transport.MetricData {
 	}
 
 	payload.Interval = int64(time.Since(c.intervalStart).Seconds())
-	payload.Points[0][1] = c.value.Load() / float64(payload.Interval)
+	payload.Points[0][1] = math.Float64frombits(c.value.Load()) / float64(payload.Interval)
 	return payload
 }
