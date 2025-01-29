@@ -13,6 +13,7 @@ import (
 	"slices"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/newtelemetry/internal/transport"
 )
 
 //go:embed common_metrics.json
@@ -21,33 +22,42 @@ var commonMetricsJSON []byte
 //go:embed golang_metrics.json
 var golangMetricsJSON []byte
 
+type Declaration struct {
+	Namespace transport.Namespace `json:"namespace"`
+	Type      string              `json:"type"`
+	Name      string              `json:"name"`
+}
+
 var (
 	commonMetrics = parseMetricNames(commonMetricsJSON)
 	golangMetrics = parseMetricNames(golangMetricsJSON)
 )
 
-func parseMetricNames(bytes []byte) []string {
-	var names []string
+func parseMetricNames(bytes []byte) []Declaration {
+	var names []Declaration
 	if err := json.Unmarshal(bytes, &names); err != nil {
 		log.Error("telemetry: failed to parse metric names: %v", err)
 	}
 	return names
 }
 
-// IsKnownMetricName returns true if the given metric name is a known metric by the backend
+// IsKnownMetric returns true if the given metric name is a known metric by the backend
 // This is linked to generated common_metrics.json file and golang_metrics.json file. If you added new metrics to the backend, you should rerun the generator.
-func IsKnownMetricName(name string) bool {
-	return slices.Contains(commonMetrics, name) || slices.Contains(golangMetrics, name)
+func IsKnownMetric(namespace transport.Namespace, typ, name string) bool {
+	decl := Declaration{Namespace: namespace, Type: typ, Name: name}
+	return slices.Contains(commonMetrics, decl) || slices.Contains(golangMetrics, decl)
 }
 
-// IsCommonMetricName returns true if the given metric name is a known common (cross-language) metric by the backend
+// IsCommonMetric returns true if the given metric name is a known common (cross-language) metric by the backend
 // This is linked to the generated common_metrics.json file. If you added new metrics to the backend, you should rerun the generator.
-func IsCommonMetricName(name string) bool {
-	return slices.Contains(commonMetrics, name)
+func IsCommonMetric(namespace transport.Namespace, typ, name string) bool {
+	decl := Declaration{Namespace: namespace, Type: typ, Name: name}
+	return slices.Contains(commonMetrics, decl)
 }
 
-// IsLanguageMetricName returns true if the given metric name is a known Go language metric by the backend
+// IsLanguageMetric returns true if the given metric name is a known Go language metric by the backend
 // This is linked to the generated golang_metrics.json file. If you added new metrics to the backend, you should rerun the generator.
-func IsLanguageMetricName(name string) bool {
-	return slices.Contains(golangMetrics, name)
+func IsLanguageMetric(typ, name string) bool {
+	decl := Declaration{Type: typ, Name: name}
+	return slices.Contains(golangMetrics, decl)
 }

@@ -20,6 +20,9 @@ import (
 	"strings"
 
 	"golang.org/x/exp/slices"
+
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/newtelemetry/internal/knownmetrics"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/newtelemetry/internal/transport"
 )
 
 // This represents the base64-encoded URL of api.github.com to download the configuration file.
@@ -34,7 +37,7 @@ func base64Decode(encoded string) string {
 	return string(decoded)
 }
 
-func downloadFromDdgo(remoteURL, localPath, branch, token string, getMetricNames func(map[string]any) []string) error {
+func downloadFromDdgo(remoteURL, localPath, branch, token string, getMetricNames func(map[string]any) []knownmetrics.Declaration) error {
 	request, err := http.NewRequest(http.MethodGet, remoteURL, nil)
 	if err != nil {
 		return err
@@ -66,7 +69,15 @@ func downloadFromDdgo(remoteURL, localPath, branch, token string, getMetricNames
 	}
 
 	metricNames := getMetricNames(decoded)
-	slices.SortStableFunc(metricNames, strings.Compare)
+	slices.SortStableFunc(metricNames, func(i, j knownmetrics.Declaration) int {
+		if i.Namespace != j.Namespace {
+			return strings.Compare(string(i.Namespace), string(j.Namespace))
+		}
+		if i.Type != j.Type {
+			return strings.Compare(i.Type, j.Type)
+		}
+		return strings.Compare(i.Name, j.Name)
+	})
 
 	fp, err := os.OpenFile(localPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
 	if err != nil {
@@ -80,8 +91,8 @@ func downloadFromDdgo(remoteURL, localPath, branch, token string, getMetricNames
 	return encoder.Encode(metricNames)
 }
 
-func getCommonMetricNames(input map[string]any) []string {
-	var names []string
+func getCommonMetricNames(input map[string]any) []knownmetrics.Declaration {
+	var names []knownmetrics.Declaration
 	for category, value := range input {
 		if strings.HasPrefix(category, "$") {
 			continue
@@ -89,10 +100,16 @@ func getCommonMetricNames(input map[string]any) []string {
 
 		metrics := value.(map[string]any)
 		for metricKey, value := range metrics {
-			names = append(names, metricKey)
+			metric := knownmetrics.Declaration{
+				Namespace: transport.Namespace(category),
+				Name:      metricKey,
+				Type:      value.(map[string]any)["metric_type"].(string),
+			}
+			names = append(names, metric)
 			if aliases, ok := value.(map[string]any)["aliases"]; ok {
 				for _, alias := range aliases.([]any) {
-					names = append(names, alias.(string))
+					metric.Name = alias.(string)
+					names = append(names, metric)
 				}
 			}
 		}
@@ -100,13 +117,16 @@ func getCommonMetricNames(input map[string]any) []string {
 	return names
 }
 
-func getGoMetricNames(input map[string]any) []string {
-	var names []string
-	for key := range input {
+func getGoMetricNames(input map[string]any) []knownmetrics.Declaration {
+	var names []knownmetrics.Declaration
+	for key, value := range input {
 		if strings.HasPrefix(key, "$") {
 			continue
 		}
-		names = append(names, key)
+		names = append(names, knownmetrics.Declaration{
+			Name: key,
+			Type: value.(map[string]any)["metric_type"].(string),
+		})
 	}
 	return names
 }

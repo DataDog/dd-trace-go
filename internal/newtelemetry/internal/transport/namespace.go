@@ -8,10 +8,13 @@ package transport
 type Namespace string
 
 const (
-	NamespaceGeneral   Namespace = "general"
-	NamespaceTracers   Namespace = "tracers"
-	NamespaceProfilers Namespace = "profilers"
-	NamespaceAppSec    Namespace = "appsec"
-	NamespaceIAST      Namespace = "iast"
-	NamespaceTelemetry Namespace = "telemetry"
+	NamespaceGeneral      Namespace = "general"
+	NamespaceTracers      Namespace = "tracers"
+	NamespaceProfilers    Namespace = "profilers"
+	NamespaceAppSec       Namespace = "appsec"
+	NamespaceIAST         Namespace = "iast"
+	NamespaceTelemetry    Namespace = "telemetry"
+	NamespaceCIVisibility Namespace = "civisibility"
+	NamespaceMLOps        Namespace = "mlops"
+	NamespaceRUM          Namespace = "rum"
 )

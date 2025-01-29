@@ -29,7 +29,7 @@ type distributions struct {
 
 // LoadOrStore returns a MetricHandle for the given distribution metric. If the metric key does not exist, it will be created.
 func (d *distributions) LoadOrStore(namespace Namespace, name string, tags map[string]string) MetricHandle {
-	if !knownmetrics.IsKnownMetricName(name) {
+	if !knownmetrics.IsKnownMetric(namespace, "distribution", name) {
 		log.Debug("telemetry: metric name %q is not a known metric, please update the list of metrics name or check that your wrote the name correctly. "+
 			"The metric will still be sent.", name)
 	}
@@ -41,11 +41,6 @@ func (d *distributions) LoadOrStore(namespace Namespace, name string, tags map[s
 
 	key := distributionKey{namespace: namespace, name: name, tags: strings.TrimSuffix(compiledTags, ",")}
 
-	// Max size is a 2^14 array of float64 (2^3 bytes) which makes a distribution 128KB bytes array _at worse_.
-	// Considering we add a point per user request on a simple http server, we would be losing data after 2^14 requests per minute or about 280 requests per second or under 3ms per request.
-	// If this throughput is constant, the telemetry client flush ticker speed will increase to, at best, double twice to flush 15 seconds of data each time.
-	// Which will bring our max throughput to 1100 points per second or about 750µs per request.
-	// TODO: tweak this value once we get telemetry data from the telemetry client
 	handle, _ := d.store.LoadOrStore(key, &distribution{key: key, values: internal.NewRingQueue[float64](1<<8, 1<<14)})
 
 	return handle
@@ -74,12 +69,12 @@ type distribution struct {
 	values    *internal.RingQueue[float64]
 }
 
-var logLossOnce sync.Once
+var distrLogLossOnce sync.Once
 
 func (d *distribution) Submit(value float64) {
 	d.newSubmit.Store(true)
 	if !d.values.Enqueue(value) {
-		logLossOnce.Do(func() {
+		distrLogLossOnce.Do(func() {
 			log.Debug("telemetry: distribution %q is losing values because the buffer is full", d.key.name)
 		})
 	}
@@ -99,7 +94,7 @@ func (d *distribution) payload() transport.DistributionSeries {
 		Metric:    d.key.name,
 		Namespace: d.key.namespace,
 		Tags:      tags,
-		Common:    knownmetrics.IsCommonMetricName(d.key.name),
+		Common:    knownmetrics.IsCommonMetric(d.key.namespace, "distribution", d.key.name),
 		Points:    d.values.Flush(),
 	}
 

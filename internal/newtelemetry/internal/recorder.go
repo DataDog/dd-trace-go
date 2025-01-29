@@ -5,17 +5,13 @@
 
 package internal
 
-import (
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-)
-
 // Recorder is a generic thread-safe type that records functions that could have taken place before object T was created.
 // Once object T is created, the Recorder can replay all the recorded functions with object T as an argument.
 type Recorder[T any] struct {
 	queue *RingQueue[func(T)]
 }
 
-// NewRecorder creates a new [Recorder] instance. with 512 as the maximum number of recorded functions.
+// NewRecorder creates a new [Recorder] instance. with 512 as the maximum number of recorded functions before overflowing.
 func NewRecorder[T any]() Recorder[T] {
 	return Recorder[T]{
 		// TODO: tweak this value once we get telemetry data from the telemetry client
@@ -23,13 +19,13 @@ func NewRecorder[T any]() Recorder[T] {
 	}
 }
 
-func (r Recorder[T]) Record(f func(T)) {
+// Record takes a function and records it in the Recorder's queue. If the queue is full, it returns false.
+// Once Replay is called, all recorded functions will be replayed with object T as an argument in order of recording.
+func (r Recorder[T]) Record(f func(T)) bool {
 	if r.queue == nil {
-		return
+		return true
 	}
-	if !r.queue.Enqueue(f) {
-		log.Debug("telemetry: recorder queue is full, dropping record")
-	}
+	return r.queue.Enqueue(f)
 }
 
 func (r Recorder[T]) Replay(t T) {

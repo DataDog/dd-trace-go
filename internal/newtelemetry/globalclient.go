@@ -10,8 +10,8 @@ import (
 	"sync/atomic"
 
 	globalinternal "gopkg.in/DataDog/dd-trace-go.v1/internal"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/newtelemetry/internal"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/newtelemetry/internal/transport"
 )
 
 var (
@@ -181,6 +181,8 @@ func AddBulkAppConfig(kvs map[string]any, origin Origin) {
 	})
 }
 
+var globalClientLogLossOnce sync.Once
+
 // globalClientCall takes a function that takes a Client and calls it with the global client if it exists.
 // otherwise, it records the action for when the client is started.
 func globalClientCall(fun func(client Client)) {
@@ -190,9 +192,13 @@ func globalClientCall(fun func(client Client)) {
 
 	client := globalClient.Load()
 	if client == nil || *client == nil {
-		globalClientRecorder.Record(func(client Client) {
+		if !globalClientRecorder.Record(func(client Client) {
 			fun(client)
-		})
+		}) {
+			globalClientLogLossOnce.Do(func() {
+				log.Debug("telemetry: global client recorder queue is full, dropping telemetry data, please start the telemetry client earlier to avoid data loss")
+			})
+		}
 		return
 	}
 
@@ -206,6 +212,8 @@ func newMetricsHotPointer(maker func(client Client) MetricHandle) *metricsHotPoi
 	metricsHandleHotPointers = append(metricsHandleHotPointers, metricsHotPointer{maker: maker})
 	return &metricsHandleHotPointers[len(metricsHandleHotPointers)-1]
 }
+
+var metricLogLossOnce sync.Once
 
 // metricsHotPointer is a MetricHandle that holds a pointer to another MetricHandle and a recorder to replay actions done before the actual MetricHandle is set.
 type metricsHotPointer struct {
@@ -221,16 +229,16 @@ func (t *metricsHotPointer) Submit(value float64) {
 
 	inner := t.ptr.Load()
 	if inner == nil || *inner == nil {
-		t.recorder.Record(func(handle MetricHandle) {
+		if !t.recorder.Record(func(handle MetricHandle) {
 			handle.Submit(value)
-		})
+		}) {
+			metricLogLossOnce.Do(func() {
+				log.Debug("telemetry: metric is losing values because the telemetry client has not been started yet, dropping telemetry data, please start the telemetry client earlier to avoid data loss")
+			})
+		}
 	}
 
 	(*inner).Submit(value)
-}
-
-func (t *metricsHotPointer) payload() transport.MetricData {
-	return transport.MetricData{}
 }
 
 func (t *metricsHotPointer) swap(handle MetricHandle) {

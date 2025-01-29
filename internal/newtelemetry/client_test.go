@@ -886,7 +886,7 @@ func TestClientFlush(t *testing.T) {
 			},
 		},
 		{
-			name: "full-distribution",
+			name: "distribution-overflow",
 			when: func(c *client) {
 				handler := c.Distribution(NamespaceGeneral, "init_time", nil)
 				for i := 0; i < 1<<16; i++ {
@@ -911,7 +911,9 @@ func TestClientFlush(t *testing.T) {
 			t.Parallel()
 			config := defaultConfig(test.clientConfig)
 			config.AgentURL = "http://localhost:8126"
-			config.DependencyLoader = test.clientConfig.DependencyLoader // Don't use the default dependency loader
+			config.DependencyLoader = test.clientConfig.DependencyLoader             // Don't use the default dependency loader
+			config.InternalMetricsEnabled = test.clientConfig.InternalMetricsEnabled // only enabled internal metrics when explicitly set
+			config.InternalMetricsEnabled = false
 			c, err := newClient(tracerConfig, config)
 			require.NoError(t, err)
 			defer c.Close()
@@ -934,15 +936,23 @@ func TestClientFlush(t *testing.T) {
 func TestMetricsDisabled(t *testing.T) {
 	t.Setenv("DD_TELEMETRY_METRICS_ENABLED", "false")
 
-	client, err := NewClient("test-service", "test-env", "1.0.0", ClientConfig{AgentURL: "http://localhost:8126"})
+	c, err := NewClient("test-service", "test-env", "1.0.0", ClientConfig{AgentURL: "http://localhost:8126"})
 	require.NoError(t, err)
 
-	defer client.Close()
+	recordWriter := &internal.RecordWriter{}
+	c.(*client).writer = recordWriter
 
-	assert.NotNil(t, client.Gauge(NamespaceTracers, "init_time", nil))
-	assert.NotNil(t, client.Count(NamespaceTracers, "init_time", nil))
-	assert.NotNil(t, client.Rate(NamespaceTracers, "init_time", nil))
-	assert.NotNil(t, client.Distribution(NamespaceGeneral, "init_time", nil))
+	defer c.Close()
+
+	assert.NotNil(t, c.Gauge(NamespaceTracers, "init_time", nil))
+	assert.NotNil(t, c.Count(NamespaceTracers, "init_time", nil))
+	assert.NotNil(t, c.Rate(NamespaceTracers, "init_time", nil))
+	assert.NotNil(t, c.Distribution(NamespaceGeneral, "init_time", nil))
+
+	c.Flush()
+
+	payloads := recordWriter.Payloads()
+	require.Len(t, payloads, 0)
 }
 
 type testRoundTripper struct {
@@ -1149,11 +1159,8 @@ func BenchmarkWorstCaseScenarioFloodLogging(b *testing.B) {
 	clientConfig := ClientConfig{
 		HeartbeatInterval:         time.Hour,
 		ExtendedHeartbeatInterval: time.Hour,
-		FlushIntervalRange: struct {
-			Min time.Duration
-			Max time.Duration
-		}{Min: time.Second, Max: time.Second},
-		AgentURL: "http://localhost:8126",
+		FlushInterval:             Range[time.Duration]{Min: time.Second, Max: time.Second},
+		AgentURL:                  "http://localhost:8126",
 
 		// Empty transport to avoid sending data to the agent
 		HTTPClient: &http.Client{
@@ -1326,11 +1333,9 @@ func BenchmarkWorstCaseScenarioFloodMetrics(b *testing.B) {
 	clientConfig := ClientConfig{
 		HeartbeatInterval:         time.Hour,
 		ExtendedHeartbeatInterval: time.Hour,
-		FlushIntervalRange: struct {
-			Min time.Duration
-			Max time.Duration
-		}{Min: time.Second, Max: time.Second},
-		AgentURL: "http://localhost:8126",
+		FlushInterval:             Range[time.Duration]{Min: time.Second, Max: time.Second},
+		DistributionsSize:         Range[int]{256, -1},
+		AgentURL:                  "http://localhost:8126",
 
 		// Empty transport to avoid sending data to the agent
 		HTTPClient: &http.Client{

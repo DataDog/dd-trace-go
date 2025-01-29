@@ -37,7 +37,7 @@ type metrics struct {
 
 // LoadOrStore returns a MetricHandle for the given metric key. If the metric key does not exist, it will be created.
 func (m *metrics) LoadOrStore(namespace Namespace, kind transport.MetricType, name string, tags map[string]string) MetricHandle {
-	if !knownmetrics.IsKnownMetricName(name) {
+	if !knownmetrics.IsKnownMetric(namespace, string(kind), name) {
 		log.Debug("telemetry: metric name %q is not a known metric, please update the list of metrics name or check that your wrote the name correctly. "+
 			"The metric will still be sent.", name)
 	}
@@ -108,7 +108,7 @@ func (c *metric) payload() transport.MetricData {
 		Namespace: c.key.namespace,
 		Tags:      tags,
 		Type:      c.key.kind,
-		Common:    knownmetrics.IsCommonMetricName(c.key.name),
+		Common:    knownmetrics.IsCommonMetric(c.key.namespace, string(c.key.kind), c.key.name),
 		Points: [][2]any{
 			{c.submitTime.Load(), c.value.Load()},
 		},

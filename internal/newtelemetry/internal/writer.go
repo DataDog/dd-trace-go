@@ -98,6 +98,8 @@ type EndpointRequestResult struct {
 	PayloadByteSize int
 	// CallDuration is the duration of the call to the endpoint if the call was successful
 	CallDuration time.Duration
+	// StatusCode is the status code of the response from the endpoint even if the call failed but only with an actual HTTP error
+	StatusCode int
 }
 
 type writer struct {
@@ -257,7 +259,7 @@ func (w *writer) Flush(payload transport.Payload) ([]EndpointRequestResult, erro
 			results = append(results, EndpointRequestResult{Error: &WriterStatusCodeError{
 				StatusCode: response.Status,
 				Body:       string(respBodyBytes),
-			}})
+			}, StatusCode: response.StatusCode})
 			continue
 		}
 

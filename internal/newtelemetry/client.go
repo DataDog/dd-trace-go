@@ -7,6 +7,8 @@ package newtelemetry
 
 import (
 	"errors"
+	"os"
+	"strconv"
 	"sync"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
@@ -53,10 +55,7 @@ func newClient(tracerConfig internal.TracerConfig, config ClientConfig) (*client
 		writer:       writer,
 		clientConfig: config,
 		flushMapper:  mapper.NewDefaultMapper(config.HeartbeatInterval, config.ExtendedHeartbeatInterval),
-		// This means that, by default, we incur dataloss if we spend ~30mins without flushing, considering we send telemetry data this looks reasonable.
-		// This also means that in the worst case scenario, memory-wise, the app is stabilized after running for 30mins.
-		// TODO: tweak this value once we get real telemetry data from the telemetry client
-		payloadQueue: internal.NewRingQueue[transport.Payload](4, 32),
+		payloadQueue: internal.NewRingQueue[transport.Payload](config.PayloadQueueSize.Min, config.PayloadQueueSize.Max),
 
 		dependencies: dependencies{
 			DependencyLoader: config.DependencyLoader,
@@ -86,7 +85,7 @@ func newClient(tracerConfig internal.TracerConfig, config ClientConfig) (*client
 
 	client.flushTicker = internal.NewTicker(func() {
 		client.Flush()
-	}, config.FlushIntervalRange.Min, config.FlushIntervalRange.Max)
+	}, config.FlushInterval.Min, config.FlushInterval.Max)
 
 	return client, nil
 }
@@ -230,6 +229,7 @@ func (c *client) flush(payloads []transport.Payload) (int, error) {
 		}
 
 		results, err := c.writer.Flush(payload)
+		c.computeFlushMetrics(results, err)
 		if err != nil {
 			// We stop flushing when we encounter a fatal error, put the payloads in the queue and return the error
 			log.Error("error while flushing telemetry data: %v", err)
@@ -262,6 +262,49 @@ func (c *client) flush(payloads []transport.Payload) (int, error) {
 	}
 
 	return nbBytes, nil
+}
+
+// computeFlushMetrics computes and submits the metrics for the flush operation using the output from the writer.Flush method.
+// It will submit the number of requests, responses, errors, the number of bytes sent and the duration of the call that was successful.
+func (c *client) computeFlushMetrics(results []internal.EndpointRequestResult, err error) {
+	if !c.clientConfig.InternalMetricsEnabled {
+		return
+	}
+
+	indexToEndpoint := func(i int) string {
+		if i == 0 {
+			return "agent"
+		}
+		return "agentless"
+	}
+
+	for i, result := range results {
+		c.Count(transport.NamespaceTelemetry, "telemetry_api.requests", map[string]string{"endpoint": indexToEndpoint(i)}).Submit(1)
+		if result.StatusCode != 0 {
+			c.Count(transport.NamespaceTelemetry, "telemetry_api.responses", map[string]string{"endpoint": indexToEndpoint(i), "status_code": strconv.Itoa(result.StatusCode)}).Submit(1)
+		}
+
+		if result.Error != nil {
+			typ := "network"
+			if os.IsTimeout(result.Error) {
+				typ = "timeout"
+			}
+			var writerStatusCodeError *internal.WriterStatusCodeError
+			if errors.As(result.Error, &writerStatusCodeError) {
+				typ = "status_code"
+			}
+			c.Count(transport.NamespaceTelemetry, "telemetry_api.errors", map[string]string{"endpoint": indexToEndpoint(i), "type": typ}).Submit(1)
+		}
+	}
+
+	if err != nil {
+		return
+	}
+
+	successfulCall := results[len(results)-1]
+	endpoint := indexToEndpoint(len(results) - 1)
+	c.Distribution(transport.NamespaceTelemetry, "telemetry_api.bytes", map[string]string{"endpoint": endpoint}).Submit(float64(successfulCall.PayloadByteSize))
+	c.Distribution(transport.NamespaceTelemetry, "telemetry_api.ms", map[string]string{"endpoint": endpoint}).Submit(float64(successfulCall.CallDuration.Milliseconds()))
 }
 
 func (c *client) appStart() {

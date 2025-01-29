@@ -16,12 +16,14 @@ import (
 type Namespace = transport.Namespace
 
 const (
-	NamespaceGeneral   = transport.NamespaceGeneral
-	NamespaceTracers   = transport.NamespaceTracers
-	NamespaceProfilers = transport.NamespaceProfilers
-	NamespaceAppSec    = transport.NamespaceAppSec
-	NamespaceIAST      = transport.NamespaceIAST
-	NamespaceTelemetry = transport.NamespaceTelemetry
+	NamespaceGeneral      = transport.NamespaceGeneral
+	NamespaceTracers      = transport.NamespaceTracers
+	NamespaceProfilers    = transport.NamespaceProfilers
+	NamespaceAppSec       = transport.NamespaceAppSec
+	NamespaceIAST         = transport.NamespaceIAST
+	NamespaceCIVisibility = transport.NamespaceCIVisibility
+	NamespaceMLOps        = transport.NamespaceMLOps
+	NamespaceRUM          = transport.NamespaceRUM
 )
 
 // Origin describes the source of a configuration change
