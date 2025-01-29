@@ -64,6 +64,9 @@ func newClient(tracerConfig internal.TracerConfig, config ClientConfig) (*client
 		metrics: metrics{
 			skipAllowlist: config.Debug,
 		},
+		distributions: distributions{
+			skipAllowlist: config.Debug,
+		},
 	}
 
 	client.dataSources = append(client.dataSources,

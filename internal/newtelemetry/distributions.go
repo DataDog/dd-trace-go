@@ -46,7 +46,7 @@ func (d *distributions) LoadOrStore(namespace Namespace, name string, tags map[s
 	// If this throughput is constant, the telemetry client flush ticker speed will increase to, at best, double twice to flush 15 seconds of data each time.
 	// Which will bring our max throughput to 1100 points per second or about 750µs per request.
 	// TODO: tweak this value once we get telemetry data from the telemetry client
-	handle, _ := d.store.LoadOrStore(key, &distribution{values: internal.NewRingQueue[float64](1<<8, 1<<14)})
+	handle, _ := d.store.LoadOrStore(key, &distribution{key: key, values: internal.NewRingQueue[float64](1<<8, 1<<14)})
 
 	return handle
 }
@@ -95,18 +95,12 @@ func (d *distribution) payload() transport.DistributionSeries {
 		tags = strings.Split(d.key.tags, ",")
 	}
 
-	points := d.values.GetBuffer()
-	defer d.values.ReleaseBuffer(points)
-
-	copyPoints := make([]float64, len(points))
-	copy(copyPoints, points)
-
 	data := transport.DistributionSeries{
 		Metric:    d.key.name,
 		Namespace: d.key.namespace,
 		Tags:      tags,
 		Common:    knownmetrics.IsCommonMetricName(d.key.name),
-		Points:    copyPoints,
+		Points:    d.values.Flush(),
 	}
 
 	return data

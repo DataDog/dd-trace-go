@@ -81,12 +81,32 @@ func (rb *RingQueue[T]) Dequeue() T {
 func (rb *RingQueue[T]) GetBuffer() []T {
 	rb.mu.Lock()
 	defer rb.mu.Unlock()
+	return rb.getBufferLocked()
+}
 
+func (rb *RingQueue[T]) getBufferLocked() []T {
 	prevBuf := rb.buffer
 	rb.buffer = rb.pool.Get().([]T)
 	rb.head = 0
 	rb.tail = len(rb.buffer) - 1
 	return prevBuf
+}
+
+// Flush returns a copy of the buffer and resets it.
+func (rb *RingQueue[T]) Flush() []T {
+	rb.mu.Lock()
+	head, tail := rb.head, rb.tail
+	buf := rb.getBufferLocked()
+	rb.mu.Unlock()
+
+	defer rb.ReleaseBuffer(buf)
+
+	copyBuf := make([]T, 0, len(buf))
+	for i := head; i != tail; i = (i + 1) % len(buf) {
+		copyBuf = append(copyBuf, buf[i])
+	}
+
+	return copyBuf
 }
 
 // ReleaseBuffer returns the buffer to the pool.

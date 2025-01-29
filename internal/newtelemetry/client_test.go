@@ -476,8 +476,8 @@ func TestClientFlush(t *testing.T) {
 				require.IsType(t, transport.Logs{}, payload)
 				logs := payload.(transport.Logs)
 				require.Len(t, logs.Logs, 1)
-				assert.Equal(t, logs.Logs[0].Level, transport.LogLevelDebug)
-				assert.Equal(t, logs.Logs[0].Message, "test")
+				assert.Equal(t, transport.LogLevelDebug, logs.Logs[0].Level)
+				assert.Equal(t, "test", logs.Logs[0].Message)
 			},
 		},
 		{
@@ -490,8 +490,8 @@ func TestClientFlush(t *testing.T) {
 				require.IsType(t, transport.Logs{}, payload)
 				logs := payload.(transport.Logs)
 				require.Len(t, logs.Logs, 1)
-				assert.Equal(t, logs.Logs[0].Level, transport.LogLevelWarn)
-				assert.Equal(t, logs.Logs[0].Message, "test")
+				assert.Equal(t, transport.LogLevelWarn, logs.Logs[0].Level)
+				assert.Equal(t, "test", logs.Logs[0].Message)
 			},
 		},
 		{
@@ -504,8 +504,8 @@ func TestClientFlush(t *testing.T) {
 				require.IsType(t, transport.Logs{}, payload)
 				logs := payload.(transport.Logs)
 				require.Len(t, logs.Logs, 1)
-				assert.Equal(t, logs.Logs[0].Level, transport.LogLevelError)
-				assert.Equal(t, logs.Logs[0].Message, "test")
+				assert.Equal(t, transport.LogLevelError, logs.Logs[0].Level)
+				assert.Equal(t, "test", logs.Logs[0].Message)
 			},
 		},
 		{
@@ -520,9 +520,9 @@ func TestClientFlush(t *testing.T) {
 				require.IsType(t, transport.Logs{}, payload)
 				logs := payload.(transport.Logs)
 				require.Len(t, logs.Logs, 1)
-				assert.Equal(t, logs.Logs[0].Level, transport.LogLevelError)
-				assert.Equal(t, logs.Logs[0].Message, "test")
-				assert.Equal(t, logs.Logs[0].Count, uint32(3))
+				assert.Equal(t, transport.LogLevelError, logs.Logs[0].Level)
+				assert.Equal(t, "test", logs.Logs[0].Message)
+				assert.Equal(t, uint32(3), logs.Logs[0].Count)
 			},
 		},
 		{
@@ -535,9 +535,9 @@ func TestClientFlush(t *testing.T) {
 				require.IsType(t, transport.Logs{}, payload)
 				logs := payload.(transport.Logs)
 				require.Len(t, logs.Logs, 1)
-				assert.Equal(t, logs.Logs[0].Level, transport.LogLevelError)
-				assert.Equal(t, logs.Logs[0].Message, "test")
-				assert.Equal(t, logs.Logs[0].Tags, "key:value")
+				assert.Equal(t, transport.LogLevelError, logs.Logs[0].Level)
+				assert.Equal(t, "test", logs.Logs[0].Message)
+				assert.Equal(t, "key:value", logs.Logs[0].Tags)
 			},
 		},
 		{
@@ -550,8 +550,8 @@ func TestClientFlush(t *testing.T) {
 				require.IsType(t, transport.Logs{}, payload)
 				logs := payload.(transport.Logs)
 				require.Len(t, logs.Logs, 1)
-				assert.Equal(t, logs.Logs[0].Level, transport.LogLevelError)
-				assert.Equal(t, logs.Logs[0].Message, "test")
+				assert.Equal(t, transport.LogLevelError, logs.Logs[0].Level)
+				assert.Equal(t, "test", logs.Logs[0].Message)
 				tags := strings.Split(logs.Logs[0].Tags, ",")
 				assert.Contains(t, tags, "key:value")
 				assert.Contains(t, tags, "key2:value2")
@@ -573,14 +573,14 @@ func TestClientFlush(t *testing.T) {
 					return strings.Compare(i.Tags, j.Tags)
 				})
 
-				assert.Equal(t, logs.Logs[0].Level, transport.LogLevelError)
-				assert.Equal(t, logs.Logs[0].Message, "test")
-				assert.Equal(t, logs.Logs[0].Count, uint32(1))
+				assert.Equal(t, transport.LogLevelError, logs.Logs[0].Level)
+				assert.Equal(t, "test", logs.Logs[0].Message)
+				assert.Equal(t, uint32(1), logs.Logs[0].Count)
 				assert.Empty(t, logs.Logs[0].Tags)
 
-				assert.Equal(t, logs.Logs[1].Level, transport.LogLevelError)
-				assert.Equal(t, logs.Logs[1].Message, "test")
-				assert.Equal(t, logs.Logs[1].Count, uint32(1))
+				assert.Equal(t, transport.LogLevelError, logs.Logs[1].Level)
+				assert.Equal(t, "test", logs.Logs[1].Message)
+				assert.Equal(t, uint32(1), logs.Logs[1].Count)
 				tags := strings.Split(logs.Logs[1].Tags, ",")
 				assert.Contains(t, tags, "key:value")
 				assert.Contains(t, tags, "key2:value2")
@@ -596,8 +596,8 @@ func TestClientFlush(t *testing.T) {
 				require.IsType(t, transport.Logs{}, payload)
 				logs := payload.(transport.Logs)
 				require.Len(t, logs.Logs, 1)
-				assert.Equal(t, logs.Logs[0].Level, transport.LogLevelError)
-				assert.Equal(t, logs.Logs[0].Message, "test")
+				assert.Equal(t, transport.LogLevelError, logs.Logs[0].Level)
+				assert.Equal(t, "test", logs.Logs[0].Message)
 				assert.Contains(t, logs.Logs[0].StackTrace, "internal/newtelemetry/client_test.go")
 			},
 		},
@@ -611,8 +611,8 @@ func TestClientFlush(t *testing.T) {
 				require.IsType(t, transport.Logs{}, payload)
 				logs := payload.(transport.Logs)
 				require.Len(t, logs.Logs, 1)
-				assert.Equal(t, logs.Logs[0].Level, transport.LogLevelError)
-				assert.Equal(t, logs.Logs[0].Message, "test")
+				assert.Equal(t, transport.LogLevelError, logs.Logs[0].Level)
+				assert.Equal(t, "test", logs.Logs[0].Message)
 				assert.Contains(t, logs.Logs[0].StackTrace, "internal/newtelemetry/client_test.go")
 				tags := strings.Split(logs.Logs[0].Tags, ",")
 				assert.Contains(t, tags, "key:value")
@@ -637,15 +637,15 @@ func TestClientFlush(t *testing.T) {
 					return strings.Compare(string(i.Level), string(j.Level))
 				})
 
-				assert.Equal(t, logs.Logs[0].Level, transport.LogLevelDebug)
-				assert.Equal(t, logs.Logs[0].Message, "test")
-				assert.Equal(t, logs.Logs[0].Count, uint32(1))
-				assert.Equal(t, logs.Logs[1].Level, transport.LogLevelError)
-				assert.Equal(t, logs.Logs[1].Message, "test")
-				assert.Equal(t, logs.Logs[1].Count, uint32(1))
-				assert.Equal(t, logs.Logs[2].Level, transport.LogLevelWarn)
-				assert.Equal(t, logs.Logs[2].Message, "test")
-				assert.Equal(t, logs.Logs[2].Count, uint32(1))
+				assert.Equal(t, transport.LogLevelDebug, logs.Logs[0].Level)
+				assert.Equal(t, "test", logs.Logs[0].Message)
+				assert.Equal(t, uint32(1), logs.Logs[0].Count)
+				assert.Equal(t, transport.LogLevelError, logs.Logs[1].Level)
+				assert.Equal(t, "test", logs.Logs[1].Message)
+				assert.Equal(t, uint32(1), logs.Logs[1].Count)
+				assert.Equal(t, transport.LogLevelWarn, logs.Logs[2].Level)
+				assert.Equal(t, "test", logs.Logs[2].Message)
+				assert.Equal(t, uint32(1), logs.Logs[2].Count)
 			},
 		},
 		{
@@ -658,12 +658,89 @@ func TestClientFlush(t *testing.T) {
 				require.IsType(t, transport.GenerateMetrics{}, payload)
 				metrics := payload.(transport.GenerateMetrics)
 				require.Len(t, metrics.Series, 1)
-				assert.Equal(t, metrics.Series[0].Type, transport.CountMetric)
-				assert.Equal(t, metrics.Series[0].Namespace, NamespaceTracers)
-				assert.Equal(t, metrics.Series[0].Metric, "init_time")
+				assert.Equal(t, transport.CountMetric, metrics.Series[0].Type)
+				assert.Equal(t, NamespaceTracers, metrics.Series[0].Namespace)
+				assert.Equal(t, "init_time", metrics.Series[0].Metric)
 				assert.Empty(t, metrics.Series[0].Tags)
 				assert.NotZero(t, metrics.Series[0].Points[0][0])
-				assert.Equal(t, metrics.Series[0].Points[0][1], 1.0)
+				assert.Equal(t, 1.0, metrics.Series[0].Points[0][1])
+			},
+		},
+		{
+			name: "count-multiple-call-same-handle",
+			when: func(c *client) {
+				handle1 := c.Count(NamespaceTracers, "init_time", nil)
+				handle2 := c.Count(NamespaceTracers, "init_time", nil)
+
+				handle2.Submit(1)
+				handle1.Submit(1)
+				handle1.Submit(3)
+				handle2.Submit(2)
+				handle2.Submit(10)
+			},
+			expect: func(t *testing.T, payloads []transport.Payload) {
+				payload := payloads[0]
+				require.IsType(t, transport.GenerateMetrics{}, payload)
+				metrics := payload.(transport.GenerateMetrics)
+				require.Len(t, metrics.Series, 1)
+				assert.Equal(t, transport.CountMetric, metrics.Series[0].Type)
+				assert.Equal(t, NamespaceTracers, metrics.Series[0].Namespace)
+				assert.Equal(t, "init_time", metrics.Series[0].Metric)
+				assert.Empty(t, metrics.Series[0].Tags)
+				assert.NotZero(t, metrics.Series[0].Points[0][0])
+				assert.Equal(t, 17.0, metrics.Series[0].Points[0][1])
+			},
+		},
+		{
+			name: "multiple-count-by-name",
+			when: func(c *client) {
+				c.Count(NamespaceTracers, "init_time_1", nil).Submit(1)
+				c.Count(NamespaceTracers, "init_time_2", nil).Submit(2)
+			},
+			expect: func(t *testing.T, payloads []transport.Payload) {
+				payload := payloads[0]
+				require.IsType(t, transport.GenerateMetrics{}, payload)
+				metrics := payload.(transport.GenerateMetrics)
+				require.Len(t, metrics.Series, 2)
+
+				assert.Equal(t, transport.CountMetric, metrics.Series[0].Type)
+				assert.Equal(t, NamespaceTracers, metrics.Series[0].Namespace)
+				assert.Equal(t, "init_time_"+strconv.Itoa(int(metrics.Series[0].Points[0][1].(float64))), metrics.Series[0].Metric)
+
+				assert.Empty(t, metrics.Series[0].Tags)
+				assert.NotZero(t, metrics.Series[0].Points[0][0])
+
+				assert.Equal(t, transport.CountMetric, metrics.Series[1].Type)
+				assert.Equal(t, NamespaceTracers, metrics.Series[1].Namespace)
+				assert.Equal(t, "init_time_"+strconv.Itoa(int(metrics.Series[1].Points[0][1].(float64))), metrics.Series[1].Metric)
+				assert.Empty(t, metrics.Series[1].Tags)
+				assert.NotZero(t, metrics.Series[1].Points[0][0])
+			},
+		},
+		{
+			name: "multiple-count-by-tags",
+			when: func(c *client) {
+				c.Count(NamespaceTracers, "init_time", map[string]string{"test": "1"}).Submit(1)
+				c.Count(NamespaceTracers, "init_time", map[string]string{"test": "2"}).Submit(2)
+			},
+			expect: func(t *testing.T, payloads []transport.Payload) {
+				payload := payloads[0]
+				require.IsType(t, transport.GenerateMetrics{}, payload)
+				metrics := payload.(transport.GenerateMetrics)
+				require.Len(t, metrics.Series, 2)
+
+				assert.Equal(t, transport.CountMetric, metrics.Series[0].Type)
+				assert.Equal(t, NamespaceTracers, metrics.Series[0].Namespace)
+				assert.Equal(t, "init_time", metrics.Series[0].Metric)
+
+				assert.Contains(t, metrics.Series[0].Tags, "test:"+strconv.Itoa(int(metrics.Series[0].Points[0][1].(float64))))
+				assert.NotZero(t, metrics.Series[0].Points[0][0])
+
+				assert.Equal(t, transport.CountMetric, metrics.Series[1].Type)
+				assert.Equal(t, NamespaceTracers, metrics.Series[1].Namespace)
+				assert.Equal(t, "init_time", metrics.Series[1].Metric)
+				assert.Contains(t, metrics.Series[1].Tags, "test:"+strconv.Itoa(int(metrics.Series[1].Points[0][1].(float64))))
+				assert.NotZero(t, metrics.Series[1].Points[0][0])
 			},
 		},
 		{
@@ -676,12 +753,157 @@ func TestClientFlush(t *testing.T) {
 				require.IsType(t, transport.GenerateMetrics{}, payload)
 				metrics := payload.(transport.GenerateMetrics)
 				require.Len(t, metrics.Series, 1)
-				assert.Equal(t, metrics.Series[0].Type, transport.GaugeMetric)
-				assert.Equal(t, metrics.Series[0].Namespace, NamespaceTracers)
-				assert.Equal(t, metrics.Series[0].Metric, "init_time")
+				assert.Equal(t, transport.GaugeMetric, metrics.Series[0].Type)
+				assert.Equal(t, NamespaceTracers, metrics.Series[0].Namespace)
+				assert.Equal(t, "init_time", metrics.Series[0].Metric)
 				assert.Empty(t, metrics.Series[0].Tags)
 				assert.NotZero(t, metrics.Series[0].Points[0][0])
-				assert.Equal(t, metrics.Series[0].Points[0][1], 1.0)
+				assert.Equal(t, 1.0, metrics.Series[0].Points[0][1])
+			},
+		},
+		{
+			name: "multiple-gauge-by-name",
+			when: func(c *client) {
+				c.Gauge(NamespaceTracers, "init_time_1", nil).Submit(1)
+				c.Gauge(NamespaceTracers, "init_time_2", nil).Submit(2)
+			},
+			expect: func(t *testing.T, payloads []transport.Payload) {
+				payload := payloads[0]
+				require.IsType(t, transport.GenerateMetrics{}, payload)
+				metrics := payload.(transport.GenerateMetrics)
+				require.Len(t, metrics.Series, 2)
+
+				assert.Equal(t, transport.GaugeMetric, metrics.Series[0].Type)
+				assert.Equal(t, NamespaceTracers, metrics.Series[0].Namespace)
+				assert.Equal(t, "init_time_"+strconv.Itoa(int(metrics.Series[0].Points[0][1].(float64))), metrics.Series[0].Metric)
+
+				assert.Empty(t, metrics.Series[0].Tags)
+				assert.NotZero(t, metrics.Series[0].Points[0][0])
+
+				assert.Equal(t, transport.GaugeMetric, metrics.Series[1].Type)
+				assert.Equal(t, NamespaceTracers, metrics.Series[1].Namespace)
+				assert.Equal(t, "init_time_"+strconv.Itoa(int(metrics.Series[1].Points[0][1].(float64))), metrics.Series[1].Metric)
+				assert.Empty(t, metrics.Series[1].Tags)
+				assert.NotZero(t, metrics.Series[1].Points[0][0])
+			},
+		},
+		{
+			name: "multiple-gauge-by-tags",
+			when: func(c *client) {
+				c.Gauge(NamespaceTracers, "init_time", map[string]string{"test": "1"}).Submit(1)
+				c.Gauge(NamespaceTracers, "init_time", map[string]string{"test": "2"}).Submit(2)
+			},
+			expect: func(t *testing.T, payloads []transport.Payload) {
+				payload := payloads[0]
+				require.IsType(t, transport.GenerateMetrics{}, payload)
+				metrics := payload.(transport.GenerateMetrics)
+				require.Len(t, metrics.Series, 2)
+
+				assert.Equal(t, transport.GaugeMetric, metrics.Series[0].Type)
+				assert.Equal(t, NamespaceTracers, metrics.Series[0].Namespace)
+				assert.Equal(t, "init_time", metrics.Series[0].Metric)
+
+				assert.Contains(t, metrics.Series[0].Tags, "test:"+strconv.Itoa(int(metrics.Series[0].Points[0][1].(float64))))
+				assert.NotZero(t, metrics.Series[0].Points[0][0])
+
+				assert.Equal(t, transport.GaugeMetric, metrics.Series[1].Type)
+				assert.Equal(t, NamespaceTracers, metrics.Series[1].Namespace)
+				assert.Equal(t, "init_time", metrics.Series[1].Metric)
+				assert.Contains(t, metrics.Series[1].Tags, "test:"+strconv.Itoa(int(metrics.Series[1].Points[0][1].(float64))))
+				assert.NotZero(t, metrics.Series[1].Points[0][0])
+			},
+		},
+		{
+			name: "simple-rate",
+			when: func(c *client) {
+				handle := c.Rate(NamespaceTracers, "init_time", nil)
+				handle.Submit(1)
+
+				rate := handle.(*rate)
+				rate.intervalStart = rate.intervalStart.Add(-time.Second) // So the rate is not +Infinity because the interval is zero
+			},
+			expect: func(t *testing.T, payloads []transport.Payload) {
+				payload := payloads[0]
+				require.IsType(t, transport.GenerateMetrics{}, payload)
+				metrics := payload.(transport.GenerateMetrics)
+				require.Len(t, metrics.Series, 1)
+				assert.Equal(t, transport.RateMetric, metrics.Series[0].Type)
+				assert.Equal(t, NamespaceTracers, metrics.Series[0].Namespace)
+				assert.Equal(t, "init_time", metrics.Series[0].Metric)
+				assert.Empty(t, metrics.Series[0].Tags)
+				assert.NotZero(t, metrics.Series[0].Interval)
+				assert.NotZero(t, metrics.Series[0].Points[0][0])
+				assert.LessOrEqual(t, metrics.Series[0].Points[0][1], 1.1)
+			},
+		},
+		{
+			name: "simple-distribution",
+			when: func(c *client) {
+				c.Distribution(NamespaceGeneral, "init_time", nil).Submit(1)
+			},
+			expect: func(t *testing.T, payloads []transport.Payload) {
+				payload := payloads[0]
+				require.IsType(t, payload, transport.Distributions{})
+				distributions := payload.(transport.Distributions)
+				require.Len(t, distributions.Series, 1)
+				assert.Equal(t, NamespaceGeneral, distributions.Series[0].Namespace)
+				assert.Equal(t, "init_time", distributions.Series[0].Metric)
+				assert.Empty(t, distributions.Series[0].Tags)
+				require.Len(t, distributions.Series[0].Points, 1)
+				assert.Equal(t, 1.0, distributions.Series[0].Points[0])
+			},
+		},
+		{
+			name: "multiple-distribution-by-name",
+			when: func(c *client) {
+				c.Distribution(NamespaceTracers, "init_time_1", nil).Submit(1)
+				c.Distribution(NamespaceTracers, "init_time_2", nil).Submit(2)
+			},
+			expect: func(t *testing.T, payloads []transport.Payload) {
+				payload := payloads[0]
+				require.IsType(t, payload, transport.Distributions{})
+				distributions := payload.(transport.Distributions)
+				require.Len(t, distributions.Series, 2)
+
+				assert.Equal(t, "init_time_"+strconv.Itoa(int(distributions.Series[0].Points[0])), distributions.Series[0].Metric)
+				assert.Equal(t, "init_time_"+strconv.Itoa(int(distributions.Series[1].Points[0])), distributions.Series[1].Metric)
+			},
+		},
+		{
+			name: "multiple-distribution-by-tags",
+			when: func(c *client) {
+				c.Distribution(NamespaceTracers, "init_time", map[string]string{"test": "1"}).Submit(1)
+				c.Distribution(NamespaceTracers, "init_time", map[string]string{"test": "2"}).Submit(2)
+			},
+			expect: func(t *testing.T, payloads []transport.Payload) {
+				payload := payloads[0]
+				require.IsType(t, payload, transport.Distributions{})
+				distributions := payload.(transport.Distributions)
+				require.Len(t, distributions.Series, 2)
+
+				assert.Contains(t, distributions.Series[0].Tags, "test:"+strconv.Itoa(int(distributions.Series[0].Points[0])))
+				assert.Contains(t, distributions.Series[1].Tags, "test:"+strconv.Itoa(int(distributions.Series[1].Points[0])))
+			},
+		},
+		{
+			name: "full-distribution",
+			when: func(c *client) {
+				handler := c.Distribution(NamespaceGeneral, "init_time", nil)
+				for i := 0; i < 1<<16; i++ {
+					handler.Submit(float64(i))
+				}
+			},
+			expect: func(t *testing.T, payloads []transport.Payload) {
+				payload := payloads[0]
+				require.IsType(t, payload, transport.Distributions{})
+				distributions := payload.(transport.Distributions)
+				require.Len(t, distributions.Series, 1)
+				assert.Equal(t, NamespaceGeneral, distributions.Series[0].Namespace)
+				assert.Equal(t, "init_time", distributions.Series[0].Metric)
+				assert.Empty(t, distributions.Series[0].Tags)
+
+				// Should not contain the first passed point
+				assert.NotContains(t, distributions.Series[0].Points, 0.0)
 			},
 		},
 	} {
@@ -707,6 +929,20 @@ func TestClientFlush(t *testing.T) {
 			test.expect(t, payloads)
 		})
 	}
+}
+
+func TestMetricsDisabled(t *testing.T) {
+	t.Setenv("DD_TELEMETRY_METRICS_ENABLED", "false")
+
+	client, err := NewClient("test-service", "test-env", "1.0.0", ClientConfig{AgentURL: "http://localhost:8126"})
+	require.NoError(t, err)
+
+	defer client.Close()
+
+	assert.NotNil(t, client.Gauge(NamespaceTracers, "init_time", nil))
+	assert.NotNil(t, client.Count(NamespaceTracers, "init_time", nil))
+	assert.NotNil(t, client.Rate(NamespaceTracers, "init_time", nil))
+	assert.NotNil(t, client.Distribution(NamespaceGeneral, "init_time", nil))
 }
 
 type testRoundTripper struct {
@@ -865,6 +1101,7 @@ func BenchmarkLogs(b *testing.B) {
 	}
 
 	b.Run("simple", func(b *testing.B) {
+		b.ReportAllocs()
 		c, err := NewClient("test-service", "test-env", "1.0.0", clientConfig)
 		require.NoError(b, err)
 
@@ -877,6 +1114,7 @@ func BenchmarkLogs(b *testing.B) {
 	})
 
 	b.Run("with-tags", func(b *testing.B) {
+		b.ReportAllocs()
 		c, err := NewClient("test-service", "test-env", "1.0.0", clientConfig)
 		require.NoError(b, err)
 
@@ -889,6 +1127,7 @@ func BenchmarkLogs(b *testing.B) {
 	})
 
 	b.Run("with-stacktrace", func(b *testing.B) {
+		b.ReportAllocs()
 		c, err := NewClient("test-service", "test-env", "1.0.0", clientConfig)
 		require.NoError(b, err)
 
@@ -902,6 +1141,7 @@ func BenchmarkLogs(b *testing.B) {
 }
 
 func BenchmarkWorstCaseScenarioFloodLogging(b *testing.B) {
+	b.ReportAllocs()
 	nbSameLogs := 10
 	nbDifferentLogs := 100
 	nbGoroutines := 25
@@ -953,5 +1193,216 @@ func BenchmarkWorstCaseScenarioFloodLogging(b *testing.B) {
 		wg.Wait()
 	}
 
-	b.Log("Called (*client).Log ", nbGoroutines*nbDifferentLogs*nbSameLogs, " times")
+	b.ReportMetric(float64(b.Elapsed().Nanoseconds()/int64(nbGoroutines*nbDifferentLogs*nbSameLogs*b.N)), "ns/log")
+}
+
+func BenchmarkMetrics(b *testing.B) {
+	b.ReportAllocs()
+	clientConfig := ClientConfig{
+		HeartbeatInterval:         time.Hour,
+		ExtendedHeartbeatInterval: time.Hour,
+		AgentURL:                  "http://localhost:8126",
+	}
+
+	b.Run("count+get-handle", func(b *testing.B) {
+		b.ReportAllocs()
+		c, err := NewClient("test-service", "test-env", "1.0.0", clientConfig)
+		require.NoError(b, err)
+
+		defer c.Close()
+
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			c.Count(NamespaceTracers, "init_time", nil).Submit(1)
+		}
+	})
+
+	b.Run("count+handle-reused", func(b *testing.B) {
+		b.ReportAllocs()
+		c, err := NewClient("test-service", "test-env", "1.0.0", clientConfig)
+		require.NoError(b, err)
+
+		defer c.Close()
+
+		handle := c.Count(NamespaceTracers, "init_time", nil)
+
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			handle.Submit(1)
+		}
+	})
+
+	b.Run("gauge+get-handle", func(b *testing.B) {
+		b.ReportAllocs()
+		c, err := NewClient("test-service", "test-env", "1.0.0", clientConfig)
+		require.NoError(b, err)
+
+		defer c.Close()
+
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			c.Gauge(NamespaceTracers, "init_time", nil).Submit(1)
+		}
+	})
+
+	b.Run("gauge+handle-reused", func(b *testing.B) {
+		b.ReportAllocs()
+		c, err := NewClient("test-service", "test-env", "1.0.0", clientConfig)
+		require.NoError(b, err)
+
+		defer c.Close()
+
+		handle := c.Gauge(NamespaceTracers, "init_time", nil)
+
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			handle.Submit(1)
+		}
+	})
+
+	b.Run("rate+get-handle", func(b *testing.B) {
+		b.ReportAllocs()
+		c, err := NewClient("test-service", "test-env", "1.0.0", clientConfig)
+		require.NoError(b, err)
+
+		defer c.Close()
+
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			c.Rate(NamespaceTracers, "init_time", nil).Submit(1)
+		}
+	})
+
+	b.Run("rate+handle-reused", func(b *testing.B) {
+		b.ReportAllocs()
+		c, err := NewClient("test-service", "test-env", "1.0.0", clientConfig)
+		require.NoError(b, err)
+
+		defer c.Close()
+
+		handle := c.Rate(NamespaceTracers, "init_time", nil)
+
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			handle.Submit(1)
+		}
+	})
+
+	b.Run("distribution+get-handle", func(b *testing.B) {
+		b.ReportAllocs()
+		c, err := NewClient("test-service", "test-env", "1.0.0", clientConfig)
+		require.NoError(b, err)
+
+		defer c.Close()
+
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			c.Distribution(NamespaceTracers, "init_time", nil).Submit(1)
+		}
+	})
+
+	b.Run("distribution+handle-reused", func(b *testing.B) {
+		b.ReportAllocs()
+		c, err := NewClient("test-service", "test-env", "1.0.0", clientConfig)
+		require.NoError(b, err)
+
+		defer c.Close()
+
+		handle := c.Distribution(NamespaceTracers, "init_time", nil)
+
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			handle.Submit(1)
+		}
+	})
+}
+
+func BenchmarkWorstCaseScenarioFloodMetrics(b *testing.B) {
+	b.ReportAllocs()
+	nbSameMetric := 10
+	nbDifferentMetrics := 100
+	nbGoroutines := 25
+
+	clientConfig := ClientConfig{
+		HeartbeatInterval:         time.Hour,
+		ExtendedHeartbeatInterval: time.Hour,
+		FlushIntervalRange: struct {
+			Min time.Duration
+			Max time.Duration
+		}{Min: time.Second, Max: time.Second},
+		AgentURL: "http://localhost:8126",
+
+		// Empty transport to avoid sending data to the agent
+		HTTPClient: &http.Client{
+			Timeout: 5 * time.Second,
+			Transport: &testRoundTripper{
+				roundTrip: func(_ *http.Request) (*http.Response, error) {
+					return &http.Response{
+						StatusCode: http.StatusOK,
+					}, nil
+				},
+			},
+		},
+	}
+
+	b.Run("get-handle", func(b *testing.B) {
+		c, err := NewClient("test-service", "test-env", "1.0.0", clientConfig)
+		require.NoError(b, err)
+
+		defer c.Close()
+
+		b.ResetTimer()
+
+		for x := 0; x < b.N; x++ {
+			var wg sync.WaitGroup
+
+			for i := 0; i < nbGoroutines; i++ {
+				wg.Add(1)
+				go func() {
+					defer wg.Done()
+					for j := 0; j < nbDifferentMetrics; j++ {
+						for k := 0; k < nbSameMetric; k++ {
+							c.Count(NamespaceTracers, "init_time", map[string]string{"test": "1"}).Submit(1)
+						}
+					}
+				}()
+			}
+
+			wg.Wait()
+		}
+
+		b.ReportMetric(float64(b.Elapsed().Nanoseconds()/int64(nbGoroutines*nbDifferentMetrics*nbSameMetric*b.N)), "ns/point")
+	})
+
+	b.Run("handle-reused", func(b *testing.B) {
+		c, err := NewClient("test-service", "test-env", "1.0.0", clientConfig)
+		require.NoError(b, err)
+
+		defer c.Close()
+
+		b.ResetTimer()
+
+		for x := 0; x < b.N; x++ {
+			var wg sync.WaitGroup
+
+			handle := c.Count(NamespaceTracers, "init_time", map[string]string{"test": "1"})
+			for i := 0; i < nbGoroutines; i++ {
+				wg.Add(1)
+				go func() {
+					defer wg.Done()
+					for j := 0; j < nbDifferentMetrics; j++ {
+
+						for k := 0; k < nbSameMetric; k++ {
+							handle.Submit(1)
+						}
+					}
+				}()
+			}
+
+			wg.Wait()
+		}
+
+		b.ReportMetric(float64(b.Elapsed().Nanoseconds()/int64(nbGoroutines*nbDifferentMetrics*nbSameMetric*b.N)), "ns/point")
+	})
+
 }
