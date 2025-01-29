@@ -55,6 +55,7 @@ aspects:
             ddtrace: gopkg.in/DataDog/dd-trace-go.v1/ddtrace
             os: os
           links:
+            - gopkg.in/DataDog/dd-trace-go.v1/internal
             - gopkg.in/DataDog/dd-trace-go.v1/internal/appsec
             - gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/httpsec
             - gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer
