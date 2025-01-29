@@ -55,6 +55,7 @@ func newClient(tracerConfig internal.TracerConfig, config ClientConfig) (*client
 		flushMapper:  mapper.NewDefaultMapper(config.HeartbeatInterval, config.ExtendedHeartbeatInterval),
 		// This means that, by default, we incur dataloss if we spend ~30mins without flushing, considering we send telemetry data this looks reasonable.
 		// This also means that in the worst case scenario, memory-wise, the app is stabilized after running for 30mins.
+		// TODO: tweak this value once we get real telemetry data from the telemetry client
 		payloadQueue: internal.NewRingQueue[transport.Payload](4, 32),
 
 		dependencies: dependencies{
@@ -77,7 +78,7 @@ func newClient(tracerConfig internal.TracerConfig, config ClientConfig) (*client
 	}
 
 	if config.MetricsEnabled {
-		client.dataSources = append(client.dataSources, &client.metrics)
+		client.dataSources = append(client.dataSources, &client.metrics, &client.distributions)
 	}
 
 	client.flushTicker = internal.NewTicker(func() {
@@ -99,6 +100,7 @@ type client struct {
 	dependencies  dependencies
 	logger        logger
 	metrics       metrics
+	distributions distributions
 	dataSources   []interface {
 		Payload() transport.Payload
 	}
@@ -125,21 +127,36 @@ func (c *client) MarkIntegrationAsLoaded(integration Integration) {
 	c.integrations.Add(integration)
 }
 
+type noopMetricHandle struct{}
+
+func (noopMetricHandle) Submit(_ float64) {}
+
 func (c *client) Count(namespace Namespace, name string, tags map[string]string) MetricHandle {
+	if !c.clientConfig.MetricsEnabled {
+		return noopMetricHandle{}
+	}
 	return c.metrics.LoadOrStore(namespace, transport.CountMetric, name, tags)
 }
 
 func (c *client) Rate(namespace Namespace, name string, tags map[string]string) MetricHandle {
+	if !c.clientConfig.MetricsEnabled {
+		return noopMetricHandle{}
+	}
 	return c.metrics.LoadOrStore(namespace, transport.RateMetric, name, tags)
 }
 
 func (c *client) Gauge(namespace Namespace, name string, tags map[string]string) MetricHandle {
+	if !c.clientConfig.MetricsEnabled {
+		return noopMetricHandle{}
+	}
 	return c.metrics.LoadOrStore(namespace, transport.GaugeMetric, name, tags)
 }
 
-func (c *client) Distribution(_ Namespace, _ string, _ map[string]string) MetricHandle {
-	//TODO implement me
-	panic("implement me")
+func (c *client) Distribution(namespace Namespace, name string, tags map[string]string) MetricHandle {
+	if !c.clientConfig.MetricsEnabled {
+		return noopMetricHandle{}
+	}
+	return c.distributions.LoadOrStore(namespace, name, tags)
 }
 
 func (c *client) ProductStarted(product Namespace) {

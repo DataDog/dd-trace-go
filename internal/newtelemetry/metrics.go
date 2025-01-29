@@ -24,8 +24,14 @@ type metricKey struct {
 	tags      string
 }
 
+// metricsHandle is the internal equivalent of MetricHandle for Count/Rate/Gauge metrics that are sent via the payload [transport.GenerateMetrics].
+type metricHandle interface {
+	MetricHandle
+	payload() transport.MetricData
+}
+
 type metrics struct {
-	store         internal.TypedSyncMap[metricKey, MetricHandle]
+	store         internal.TypedSyncMap[metricKey, metricHandle]
 	skipAllowlist bool // Debugging feature to skip the allowlist of known metrics
 }
 
@@ -40,22 +46,18 @@ func (m *metrics) LoadOrStore(namespace Namespace, kind transport.MetricType, na
 	for k, v := range tags {
 		compiledTags += k + ":" + v + ","
 	}
+
 	var (
 		key    = metricKey{namespace: namespace, kind: kind, name: name, tags: strings.TrimSuffix(compiledTags, ",")}
 		handle MetricHandle
-		loaded bool
 	)
-
 	switch kind {
 	case transport.CountMetric:
 		handle, _ = m.store.LoadOrStore(key, &count{metric: metric{key: key}})
 	case transport.GaugeMetric:
 		handle, _ = m.store.LoadOrStore(key, &gauge{metric: metric{key: key}})
 	case transport.RateMetric:
-		handle, loaded = m.store.LoadOrStore(key, &rate{metric: metric{key: key}})
-		if !loaded {
-			handle.(*rate).intervalStart = time.Now()
-		}
+		handle, _ = m.store.LoadOrStore(key, &rate{metric: metric{key: key}, intervalStart: time.Now()})
 	}
 
 	return handle
@@ -63,7 +65,7 @@ func (m *metrics) LoadOrStore(namespace Namespace, kind transport.MetricType, na
 
 func (m *metrics) Payload() transport.Payload {
 	series := make([]transport.MetricData, 0, m.store.Len())
-	m.store.Range(func(_ metricKey, handle MetricHandle) bool {
+	m.store.Range(func(_ metricKey, handle metricHandle) bool {
 		if payload := handle.payload(); payload.Metric != "" {
 			series = append(series, payload)
 		}

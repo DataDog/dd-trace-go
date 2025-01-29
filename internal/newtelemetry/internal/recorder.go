@@ -18,6 +18,7 @@ type Recorder[T any] struct {
 // NewRecorder creates a new [Recorder] instance. with 512 as the maximum number of recorded functions.
 func NewRecorder[T any]() Recorder[T] {
 	return Recorder[T]{
+		// TODO: tweak this value once we get telemetry data from the telemetry client
 		queue: NewRingQueue[func(T)](16, 512),
 	}
 }

@@ -44,8 +44,6 @@ const (
 // ```
 type MetricHandle interface {
 	Submit(value float64)
-
-	payload() transport.MetricData
 }
 
 // Integration is an integration that is configured to be traced.
