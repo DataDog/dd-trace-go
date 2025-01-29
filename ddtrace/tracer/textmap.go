@@ -281,11 +281,12 @@ func (p *chainedPropagator) Extract(carrier interface{}) (ddtrace.SpanContext, e
 				return nil, err
 			}
 			if p.onlyExtractFirst { // Return early if only performing one extraction
-				if sc, ok := extractedCtx.(*spanContext); ok {
-					return sc, nil
-				}
+				// if sc, ok := extractedCtx.(*spanContext); ok {
+				// 	return sc, nil
+				// }
 				fmt.Println("TEST: propagator is:", getPropagatorName(v))
 				// return nil, ErrInvalidSpanContext
+				return extractedCtx.(*spanContext), nil
 			}
 			ctx = extractedCtx
 		} else { // A local trace context has already been extracted
