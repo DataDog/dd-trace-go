@@ -285,7 +285,7 @@ func (p *chainedPropagator) Extract(carrier interface{}) (ddtrace.SpanContext, e
 					return sc, nil
 				}
 				fmt.Println("TEST: propagator is:", getPropagatorName(v))
-				return nil, ErrInvalidSpanContext
+				// return nil, ErrInvalidSpanContext
 			}
 			ctx = extractedCtx
 		} else { // A local trace context has already been extracted
@@ -500,8 +500,8 @@ func (p *propagator) extractTextMap(reader TextMapReader) (ddtrace.SpanContext, 
 			if strings.HasPrefix(key, p.cfg.BaggagePrefix) {
 				ctx.setBaggageItem(strings.TrimPrefix(key, p.cfg.BaggagePrefix), v)
 			}
+			fmt.Println("default case; header does not match trace header")
 		}
-		fmt.Println("default case; header does not match trace header")
 		return nil
 	})
 	if err != nil {
