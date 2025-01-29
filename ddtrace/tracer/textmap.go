@@ -281,7 +281,11 @@ func (p *chainedPropagator) Extract(carrier interface{}) (ddtrace.SpanContext, e
 				return nil, err
 			}
 			if p.onlyExtractFirst { // Return early if only performing one extraction
-				return extractedCtx.(*spanContext), nil
+				if sc, ok := extractedCtx.(*spanContext); ok {
+					return sc, nil
+				}
+				fmt.Println("TEST: propagator is:", getPropagatorName(v))
+				return nil, ErrInvalidSpanContext
 			}
 			ctx = extractedCtx
 		} else { // A local trace context has already been extracted
@@ -466,6 +470,7 @@ func (p *propagator) Extract(carrier interface{}) (ddtrace.SpanContext, error) {
 func (p *propagator) extractTextMap(reader TextMapReader) (ddtrace.SpanContext, error) {
 	var ctx spanContext
 	err := reader.ForeachKey(func(k, v string) error {
+		fmt.Println("TEST: key exists")
 		var err error
 		key := strings.ToLower(k)
 		switch key {
