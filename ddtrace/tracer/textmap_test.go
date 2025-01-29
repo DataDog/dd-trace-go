@@ -2245,42 +2245,46 @@ func TestOtelPropagator(t *testing.T) {
 }
 
 // Assert that extraction returns a ErrSpanContextNotFound error when no trace context headers are found
-func TestMissingHeadersExtraction(t *testing.T) {
-	t.Run("single header", func(t *testing.T) {
-		t.Setenv(headerPropagationStyleExtract, "datadog")
-		tracer := newTracer()
-		defer tracer.Stop()
-		ctx, err := tracer.Extract(TextMapCarrier{})
-		assert.Equal(t, ErrSpanContextNotFound, err)
-		assert.Nil(t, ctx)
-	})
-	t.Run("single header - extractFirst", func(t *testing.T) {
-		// Assert that extraction fails gracefully when no trace context headers are found, and DD_TRACE_PROPAGATION_EXTRACT_FIRST=true is configured
-		t.Setenv(headerPropagationStyleExtract, "datadog")
-		t.Setenv("DD_TRACE_PROPAGATION_EXTRACT_FIRST", "true")
-		tracer := newTracer()
-		defer tracer.Stop()
-		ctx, err := tracer.Extract(TextMapCarrier{})
-		assert.Equal(t, ErrSpanContextNotFound, err)
-		assert.Nil(t, ctx)
-	})
-	t.Run("multi header", func(t *testing.T) {
-		t.Setenv(headerPropagationStyleExtract, "datadog,tracecontext")
-		tracer := newTracer()
-		defer tracer.Stop()
-		ctx, err := tracer.Extract(TextMapCarrier{})
-		assert.Equal(t, ErrSpanContextNotFound, err)
-		assert.Nil(t, ctx)
-	})
-	t.Run("multi header - extractFirst", func(t *testing.T) {
-		t.Setenv(headerPropagationStyleExtract, "datadog,tracecontext")
-		t.Setenv("DD_TRACE_PROPAGATION_EXTRACT_FIRST", "true")
-		tracer := newTracer()
-		defer tracer.Stop()
-		ctx, err := tracer.Extract(TextMapCarrier{})
-		assert.Equal(t, ErrSpanContextNotFound, err)
-		assert.Nil(t, ctx)
-	})
+func TestExtractNoHeaders(t *testing.T) {
+	tests := []struct {
+		name         string
+		extractEnv   string
+		extractFirst bool
+	}{
+		{
+			name:         "single header",
+			extractEnv:   "datadog",
+			extractFirst: false,
+		},
+		{
+			name:         "single header - extractFirst",
+			extractEnv:   "datadog",
+			extractFirst: true,
+		},
+		{
+			name:         "multi header",
+			extractEnv:   "datadog,tracecontext",
+			extractFirst: false,
+		},
+		{
+			name:         "multi header - extractFirst",
+			extractEnv:   "datadog,tracecontext",
+			extractFirst: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv(headerPropagationStyleExtract, tt.extractEnv)
+			if tt.extractFirst {
+				t.Setenv("DD_TRACE_PROPAGATION_EXTRACT_FIRST", "true")
+			}
+			tracer := newTracer()
+			defer tracer.Stop()
+			ctx, err := tracer.Extract(TextMapCarrier{})
+			assert.Equal(t, ErrSpanContextNotFound, err)
+			assert.Nil(t, ctx)
+		})
+	}
 }
 
 func BenchmarkInjectDatadog(b *testing.B) {
