@@ -161,7 +161,7 @@ func (m *MockClient) RegisterAppConfig(key string, value any, origin newtelemetr
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.On("RegisterAppConfig", key, value, origin)
-	m.Configuration = append(m.Configuration, newtelemetry.Configuration{Key: key, Value: value, Origin: origin})
+	m.Configuration = append(m.Configuration, newtelemetry.Configuration{Name: key, Value: value, Origin: origin})
 }
 
 func (m *MockClient) RegisterAppConfigs(kvs ...newtelemetry.Configuration) {

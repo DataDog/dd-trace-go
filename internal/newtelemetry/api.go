@@ -15,26 +15,32 @@ import (
 // different products used by the same application
 type Namespace = transport.Namespace
 
+// Goland is having a hard time with the following const block, it keeps deleting the type of the consts
+//
+//goland:noinspection GoVarAndConstTypeMayBeOmitted
 const (
-	NamespaceGeneral      = transport.NamespaceGeneral
-	NamespaceTracers      = transport.NamespaceTracers
-	NamespaceProfilers    = transport.NamespaceProfilers
-	NamespaceAppSec       = transport.NamespaceAppSec
-	NamespaceIAST         = transport.NamespaceIAST
-	NamespaceCIVisibility = transport.NamespaceCIVisibility
-	NamespaceMLOps        = transport.NamespaceMLOps
-	NamespaceRUM          = transport.NamespaceRUM
+	NamespaceGeneral      Namespace = transport.NamespaceGeneral
+	NamespaceTracers      Namespace = transport.NamespaceTracers
+	NamespaceProfilers    Namespace = transport.NamespaceProfilers
+	NamespaceAppSec       Namespace = transport.NamespaceAppSec
+	NamespaceIAST         Namespace = transport.NamespaceIAST
+	NamespaceCIVisibility Namespace = transport.NamespaceCIVisibility
+	NamespaceMLOps        Namespace = transport.NamespaceMLOps
+	NamespaceRUM          Namespace = transport.NamespaceRUM
 )
 
 // Origin describes the source of a configuration change
 type Origin = transport.Origin
 
+// Goland is having a hard time with the following const block, it keeps deleting the type of the consts
+//
+//goland:noinspection GoVarAndConstTypeMayBeOmitted
 const (
-	OriginDefault      = transport.OriginDefault
-	OriginCode         = transport.OriginCode
-	OriginDDConfig     = transport.OriginDDConfig
-	OriginEnvVar       = transport.OriginEnvVar
-	OriginRemoteConfig = transport.OriginRemoteConfig
+	OriginDefault      Origin = transport.OriginDefault
+	OriginCode         Origin = transport.OriginCode
+	OriginDDConfig     Origin = transport.OriginDDConfig
+	OriginEnvVar       Origin = transport.OriginEnvVar
+	OriginRemoteConfig Origin = transport.OriginRemoteConfig
 )
 
 // MetricHandle can be used to submit different values for the same metric.
@@ -65,7 +71,7 @@ type Integration struct {
 // Configuration is a key-value pair that is used to configure the application.
 type Configuration struct {
 	// Key is the key of the configuration.
-	Key string
+	Name string
 	// Value is the value of the configuration. Need to be json serializable.
 	Value any
 	// Origin is the source of the configuration change.

@@ -176,6 +176,46 @@ func TestClientFlush(t *testing.T) {
 			},
 		},
 		{
+			name: "configuration-complex-values",
+			when: func(c *client) {
+				c.RegisterAppConfigs(
+					Configuration{Name: "key1", Value: []string{"value1", "value2"}, Origin: OriginDefault},
+					Configuration{Name: "key2", Value: map[string]string{"key": "value", "key2": "value2"}, Origin: OriginCode},
+					Configuration{Name: "key3", Value: []int{1, 2, 3}, Origin: OriginDDConfig},
+					Configuration{Name: "key4", Value: struct {
+						A string
+					}{A: "1"}, Origin: OriginEnvVar},
+					Configuration{Name: "key5", Value: map[int]struct{ X int }{1: {X: 1}}, Origin: OriginRemoteConfig},
+				)
+			},
+			expect: func(t *testing.T, payloads []transport.Payload) {
+				payload := payloads[0]
+				require.IsType(t, transport.AppClientConfigurationChange{}, payload)
+				config := payload.(transport.AppClientConfigurationChange)
+
+				slices.SortStableFunc(config.Configuration, func(a, b transport.ConfKeyValue) int {
+					return strings.Compare(a.Name, b.Name)
+				})
+
+				assert.Len(t, config.Configuration, 5)
+				assert.Equal(t, "key1", config.Configuration[0].Name)
+				assert.Equal(t, "value1,value2", config.Configuration[0].Value)
+				assert.Equal(t, OriginDefault, config.Configuration[0].Origin)
+				assert.Equal(t, "key2", config.Configuration[1].Name)
+				assert.Equal(t, "key:value,key2:value2", config.Configuration[1].Value)
+				assert.Equal(t, OriginCode, config.Configuration[1].Origin)
+				assert.Equal(t, "key3", config.Configuration[2].Name)
+				assert.Equal(t, "1,2,3", config.Configuration[2].Value)
+				assert.Equal(t, OriginDDConfig, config.Configuration[2].Origin)
+				assert.Equal(t, "key4", config.Configuration[3].Name)
+				assert.Equal(t, "{1}", config.Configuration[3].Value)
+				assert.Equal(t, OriginEnvVar, config.Configuration[3].Origin)
+				assert.Equal(t, "key5", config.Configuration[4].Name)
+				assert.Equal(t, "1:{1}", config.Configuration[4].Value)
+				assert.Equal(t, OriginRemoteConfig, config.Configuration[4].Origin)
+			},
+		},
+		{
 			name: "product-start",
 			when: func(c *client) {
 				c.ProductStarted("test-product")
