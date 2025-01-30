@@ -190,6 +190,24 @@ func RegisterAppConfigs(kvs ...Configuration) {
 	})
 }
 
+// MarkIntegrationAsLoaded marks an integration as loaded in the telemetry. If telemetry is disabled
+// or the client has not started yet it will record the action and replay it once the client is started.
+func MarkIntegrationAsLoaded(integration Integration) {
+	globalClientCall(func(client Client) {
+		client.MarkIntegrationAsLoaded(integration)
+	})
+}
+
+// LoadIntegration marks an integration as loaded in the telemetry client. If telemetry is disabled, it will do nothing.
+// If the telemetry client has not started yet, it will record the action and replay it once the client is started.
+func LoadIntegration(integration string) {
+	globalClientCall(func(client Client) {
+		client.MarkIntegrationAsLoaded(Integration{
+			Name: integration,
+		})
+	})
+}
+
 var globalClientLogLossOnce sync.Once
 
 // globalClientCall takes a function that takes a Client and calls it with the global client if it exists.
@@ -243,6 +261,7 @@ func (t *metricsHotPointer) Submit(value float64) {
 				log.Debug("telemetry: metric is losing values because the telemetry client has not been started yet, dropping telemetry data, please start the telemetry client earlier to avoid data loss")
 			})
 		}
+		return
 	}
 
 	(*inner).Submit(value)

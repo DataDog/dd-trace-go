@@ -37,7 +37,8 @@ type metricKey struct {
 }
 
 func (m *MockClient) Close() error {
-	return nil
+	m.On("Close").Return()
+	return m.Called().Error(0)
 }
 
 type MockMetricHandle struct {
@@ -48,14 +49,14 @@ type MockMetricHandle struct {
 }
 
 func (m *MockMetricHandle) Submit(value float64) {
-	m.On("Submit", value)
+	m.On("Submit", value).Return()
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.submit(m.value, value)
 }
 
 func (m *MockMetricHandle) Get() float64 {
-	m.On("Get")
+	m.On("Get").Return()
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return *m.value
@@ -64,7 +65,7 @@ func (m *MockMetricHandle) Get() float64 {
 func (m *MockClient) Count(namespace newtelemetry.Namespace, name string, tags []string) newtelemetry.MetricHandle {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.On("Count", namespace, name, tags)
+	m.On("Count", namespace, name, tags).Return()
 	key := metricKey{Namespace: namespace, Name: name, Tags: strings.Join(tags, ","), Kind: "count"}
 	if _, ok := m.Metrics[key]; !ok {
 		init := 0.0
@@ -79,7 +80,7 @@ func (m *MockClient) Count(namespace newtelemetry.Namespace, name string, tags [
 func (m *MockClient) Rate(namespace newtelemetry.Namespace, name string, tags []string) newtelemetry.MetricHandle {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.On("Rate", namespace, name, tags)
+	m.On("Rate", namespace, name, tags).Return()
 	key := metricKey{Namespace: namespace, Name: name, Tags: strings.Join(tags, ","), Kind: "rate"}
 	if _, ok := m.Metrics[key]; !ok {
 		init := 0.0
@@ -94,7 +95,7 @@ func (m *MockClient) Rate(namespace newtelemetry.Namespace, name string, tags []
 func (m *MockClient) Gauge(namespace newtelemetry.Namespace, name string, tags []string) newtelemetry.MetricHandle {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.On("Gauge", namespace, name, tags)
+	m.On("Gauge", namespace, name, tags).Return()
 	key := metricKey{Namespace: namespace, Name: name, Tags: strings.Join(tags, ","), Kind: "gauge"}
 	if _, ok := m.Metrics[key]; !ok {
 		init := 0.0
@@ -109,7 +110,7 @@ func (m *MockClient) Gauge(namespace newtelemetry.Namespace, name string, tags [
 func (m *MockClient) Distribution(namespace newtelemetry.Namespace, name string, tags []string) newtelemetry.MetricHandle {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.On("Distribution", namespace, name, tags)
+	m.On("Distribution", namespace, name, tags).Return()
 	key := metricKey{Namespace: namespace, Name: name, Tags: strings.Join(tags, ","), Kind: "distribution"}
 	if _, ok := m.Metrics[key]; !ok {
 		init := 0.0
@@ -124,67 +125,70 @@ func (m *MockClient) Distribution(namespace newtelemetry.Namespace, name string,
 func (m *MockClient) Log(level newtelemetry.LogLevel, text string, options ...newtelemetry.LogOption) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.On("Log", level, text, options)
+	m.On("Log", level, text, options).Return()
 	m.Logs[level] = text
 }
 
 func (m *MockClient) ProductStarted(product newtelemetry.Namespace) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.On("ProductStarted", product)
+	m.On("ProductStarted", product).Return()
 	m.Products[product] = true
 }
 
 func (m *MockClient) ProductStopped(product newtelemetry.Namespace) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.On("ProductStopped", product)
+	m.On("ProductStopped", product).Return()
 	m.Products[product] = false
 }
 
 func (m *MockClient) ProductStartError(product newtelemetry.Namespace, err error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.On("ProductStartError", product, err)
+	m.On("ProductStartError", product, err).Return()
 	m.Products[product] = false
 }
 
 func (m *MockClient) RegisterAppConfig(key string, value any, origin newtelemetry.Origin) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.On("RegisterAppConfig", key, value, origin)
+	m.On("RegisterAppConfig", key, value, origin).Return()
+	m.Called(key, value, origin)
 	m.Configuration = append(m.Configuration, newtelemetry.Configuration{Name: key, Value: value, Origin: origin})
 }
 
 func (m *MockClient) RegisterAppConfigs(kvs ...newtelemetry.Configuration) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.On("RegisterAppConfigs", kvs)
+	m.On("RegisterAppConfigs", kvs).Return()
+	m.Called(kvs)
 	m.Configuration = append(m.Configuration, kvs...)
 }
 
 func (m *MockClient) MarkIntegrationAsLoaded(integration newtelemetry.Integration) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.On("MarkIntegrationAsLoaded", integration)
+	m.On("MarkIntegrationAsLoaded", integration).Return()
+	m.Called(integration)
 	m.Integrations = append(m.Integrations, integration.Name)
 }
 
 func (m *MockClient) Flush() {
-	m.On("Flush")
+	m.On("Flush").Return()
 }
 
 func (m *MockClient) AppStart() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.On("AppStart")
+	m.On("AppStart").Return()
 	m.Started = true
 }
 
 func (m *MockClient) AppStop() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.On("AppStop")
+	m.On("AppStop").Return()
 	m.Stopped = true
 }
 
