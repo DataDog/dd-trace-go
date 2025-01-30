@@ -127,11 +127,13 @@ func NewClientWithServiceNameAndSubdomain(serviceName, subdomain string) Client 
 	defaultHeaders := map[string]string{}
 	var baseURL string
 	var requestHandler *RequestHandler
+	var agentURL *url.URL
+	var APIKeyValue string
 
 	agentlessEnabled := internal.BoolEnv(constants.CIVisibilityAgentlessEnabledEnvironmentVariable, false)
 	if agentlessEnabled {
 		// Agentless mode is enabled.
-		APIKeyValue := os.Getenv(constants.APIKeyEnvironmentVariable)
+		APIKeyValue = os.Getenv(constants.APIKeyEnvironmentVariable)
 		if APIKeyValue == "" {
 			log.Error("An API key is required for agentless mode. Use the DD_API_KEY env variable to set it")
 			return nil
@@ -160,7 +162,7 @@ func NewClientWithServiceNameAndSubdomain(serviceName, subdomain string) Client 
 		// Use agent mode with the EVP proxy.
 		defaultHeaders["X-Datadog-EVP-Subdomain"] = subdomain
 
-		agentURL := internal.AgentURLFromEnv()
+		agentURL = internal.AgentURLFromEnv()
 		if agentURL.Scheme == "unix" {
 			// If we're connecting over UDS we can just rely on the agent to provide the hostname
 			log.Debug("connecting to agent over unix, do not set hostname on any traces")
@@ -206,19 +208,23 @@ func NewClientWithServiceNameAndSubdomain(serviceName, subdomain string) Client 
 
 	if !telemetry.Disabled() {
 		telemetryInit.Do(func() {
-			telemetry.GlobalClient.ApplyOps(
-				telemetry.WithService(serviceName),
-				telemetry.WithEnv(environment),
-				telemetry.WithHTTPClient(requestHandler.Client),
-				telemetry.WithURL(agentlessEnabled, baseURL),
-				telemetry.SyncFlushOnStop(),
-			)
-			telemetry.GlobalClient.ProductChange(telemetry.NamespaceCiVisibility, true, []telemetry.Configuration{
-				telemetry.StringConfig("service", serviceName),
-				telemetry.StringConfig("env", environment),
-				telemetry.BoolConfig("agentless", agentlessEnabled),
-				telemetry.StringConfig("test_session_name", ciTags[constants.TestSessionName]),
-			})
+			telemetry.ProductStarted(telemetry.NamespaceTracers)
+			if telemetry.GlobalClient() != nil {
+				return
+			}
+			cfg := telemetry.ClientConfig{
+				HTTPClient: requestHandler.Client,
+				APIKey:     APIKeyValue,
+			}
+			if agentURL != nil {
+				cfg.AgentURL = agentURL.String()
+			}
+			client, err := telemetry.NewClient(serviceName, environment, os.Getenv("DD_VERSION"), cfg)
+			if err != nil {
+				log.Debug("civisibility: failed to create telemetry client: %v", err)
+				return
+			}
+			telemetry.StartApp(client)
 		})
 	}
 

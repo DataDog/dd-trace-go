@@ -7,6 +7,7 @@ package tracer
 
 import (
 	"fmt"
+	"reflect"
 	"testing"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
@@ -16,6 +17,24 @@ import (
 
 	"github.com/stretchr/testify/assert"
 )
+
+func mockGlobalClient(client telemetry.Client) func() {
+	orig := telemetry.GlobalClient()
+	telemetry.SwapClient(client)
+	return func() {
+		telemetry.SwapClient(orig)
+	}
+}
+
+func checkConfig(t *testing.T, cfgs []telemetry.Configuration, key string, value any) {
+	for _, c := range cfgs {
+		if c.Name == key && reflect.DeepEqual(c.Value, value) {
+			return
+		}
+	}
+
+	t.Fatalf("could not find configuration key %s with value %v", key, value)
+}
 
 func TestTelemetryEnabled(t *testing.T) {
 	t.Run("tracer start", func(t *testing.T) {
@@ -48,30 +67,23 @@ func TestTelemetryEnabled(t *testing.T) {
 
 		assert.True(t, telemetryClient.Started)
 		telemetryClient.AssertNumberOfCalls(t, "ApplyOps", 1)
-		telemetry.Check(t, telemetryClient.Configuration, "trace_debug_enabled", true)
-		telemetry.Check(t, telemetryClient.Configuration, "service", "test-serv")
-		telemetry.Check(t, telemetryClient.Configuration, "env", "test-env")
-		telemetry.Check(t, telemetryClient.Configuration, "runtime_metrics_enabled", true)
-		telemetry.Check(t, telemetryClient.Configuration, "stats_computation_enabled", false)
-		telemetry.Check(t, telemetryClient.Configuration, "trace_enabled", true)
-		telemetry.Check(t, telemetryClient.Configuration, "trace_span_attribute_schema", 0)
-		telemetry.Check(t, telemetryClient.Configuration, "trace_peer_service_defaults_enabled", true)
-		telemetry.Check(t, telemetryClient.Configuration, "trace_peer_service_mapping", "key:val")
-		telemetry.Check(t, telemetryClient.Configuration, "debug_stack_enabled", false)
-		telemetry.Check(t, telemetryClient.Configuration, "orchestrion_enabled", false)
-		telemetry.Check(t, telemetryClient.Configuration, "trace_sample_rate", nil) // default value is NaN which is sanitized to nil
-		telemetry.Check(t, telemetryClient.Configuration, "trace_header_tags", "key:val,key2:val2")
-		telemetry.Check(t, telemetryClient.Configuration, "trace_sample_rules",
+		checkConfig(t, telemetryClient.Configuration, "trace_debug_enabled", true)
+		checkConfig(t, telemetryClient.Configuration, "service", "test-serv")
+		checkConfig(t, telemetryClient.Configuration, "env", "test-env")
+		checkConfig(t, telemetryClient.Configuration, "runtime_metrics_enabled", true)
+		checkConfig(t, telemetryClient.Configuration, "stats_computation_enabled", false)
+		checkConfig(t, telemetryClient.Configuration, "trace_enabled", true)
+		checkConfig(t, telemetryClient.Configuration, "trace_span_attribute_schema", 0)
+		checkConfig(t, telemetryClient.Configuration, "trace_peer_service_defaults_enabled", true)
+		checkConfig(t, telemetryClient.Configuration, "trace_peer_service_mapping", "key:val")
+		checkConfig(t, telemetryClient.Configuration, "debug_stack_enabled", false)
+		checkConfig(t, telemetryClient.Configuration, "orchestrion_enabled", false)
+		checkConfig(t, telemetryClient.Configuration, "trace_sample_rate", nil) // default value is NaN which is sanitized to nil
+		checkConfig(t, telemetryClient.Configuration, "trace_header_tags", "key:val,key2:val2")
+		checkConfig(t, telemetryClient.Configuration, "trace_sample_rules",
 			`[{"service":"test-serv","name":"op-name","resource":"resource-*","sample_rate":0.1,"tags":{"tag-a":"tv-a??"}}]`)
-		telemetry.Check(t, telemetryClient.Configuration, "span_sample_rules", "[]")
-		if metrics, ok := telemetryClient.Metrics[telemetry.NamespaceGeneral]; ok {
-			if initTime, ok := metrics["init_time"]; ok {
-				assert.True(t, initTime > float64(0), "expected positive init time, but got %f", initTime)
-				return
-			}
-			t.Fatalf("could not find general init time in telemetry client metrics")
-		}
-		t.Fatalf("could not find tracer namespace in telemetry client metrics")
+		checkConfig(t, telemetryClient.Configuration, "span_sample_rules", "[]")
+		assert.NotZero(t, telemetryClient.Distribution(telemetry.NamespaceTracers, "init_time", nil).Get())
 	})
 
 	t.Run("telemetry customer or dynamic rules", func(t *testing.T) {
@@ -90,7 +102,7 @@ func TestTelemetryEnabled(t *testing.T) {
 			rule.Provenance = prov
 
 			telemetryClient := new(telemetrytest.MockClient)
-			defer telemetry.MockGlobalClient(telemetryClient)()
+			defer mockGlobalClient(telemetryClient)()
 			Start(WithService("test-serv"),
 				WithSamplingRules([]SamplingRule{rule}),
 			)
@@ -98,7 +110,7 @@ func TestTelemetryEnabled(t *testing.T) {
 			defer Stop()
 
 			assert.True(t, telemetryClient.Started)
-			telemetry.Check(t, telemetryClient.Configuration, "trace_sample_rules",
+			checkConfig(t, telemetryClient.Configuration, "trace_sample_rules",
 				fmt.Sprintf(`[{"service":"test-serv","name":"op-name","resource":"resource-*","sample_rate":0.1,"tags":{"tag-a":"tv-a??"},"provenance":"%s"}]`, prov.String()))
 		}
 	})
@@ -117,7 +129,7 @@ func TestTelemetryEnabled(t *testing.T) {
 		}
 
 		telemetryClient := new(telemetrytest.MockClient)
-		defer telemetry.MockGlobalClient(telemetryClient)()
+		defer mockGlobalClient(telemetryClient)()
 		Start(WithService("test-serv"),
 			WithSamplingRules(rules),
 		)
@@ -125,15 +137,15 @@ func TestTelemetryEnabled(t *testing.T) {
 		defer Stop()
 
 		assert.True(t, telemetryClient.Started)
-		telemetry.Check(t, telemetryClient.Configuration, "trace_sample_rules",
+		checkConfig(t, telemetryClient.Configuration, "trace_sample_rules",
 			`[{"service":"test-serv","name":"op-name","resource":"resource-*","sample_rate":0.1,"tags":{"tag-a":"tv-a??"}}]`)
-		telemetry.Check(t, telemetryClient.Configuration, "span_sample_rules",
+		checkConfig(t, telemetryClient.Configuration, "span_sample_rules",
 			`[{"service":"test-serv","name":"op-name","sample_rate":0.1}]`)
 	})
 
 	t.Run("tracer start with empty rules", func(t *testing.T) {
 		telemetryClient := new(telemetrytest.MockClient)
-		defer telemetry.MockGlobalClient(telemetryClient)()
+		defer mockGlobalClient(telemetryClient)()
 
 		t.Setenv("DD_TRACE_SAMPLING_RULES", "")
 		t.Setenv("DD_SPAN_SAMPLING_RULES", "")
@@ -144,15 +156,16 @@ func TestTelemetryEnabled(t *testing.T) {
 		assert.True(t, telemetryClient.Started)
 		var cfgs []telemetry.Configuration
 		for _, c := range telemetryClient.Configuration {
-			cfgs = append(cfgs, telemetry.Sanitize(c))
+			c.Value = telemetry.SanitizeConfigValue(c.Value)
+			cfgs = append(cfgs)
 		}
-		telemetry.Check(t, cfgs, "trace_sample_rules", "[]")
-		telemetry.Check(t, cfgs, "span_sample_rules", "[]")
+		checkConfig(t, cfgs, "trace_sample_rules", "[]")
+		checkConfig(t, cfgs, "span_sample_rules", "[]")
 	})
 
 	t.Run("profiler start, tracer start", func(t *testing.T) {
 		telemetryClient := new(telemetrytest.MockClient)
-		defer telemetry.MockGlobalClient(telemetryClient)()
+		defer mockGlobalClient(telemetryClient)()
 		profiler.Start()
 		defer profiler.Stop()
 		Start(
@@ -160,18 +173,18 @@ func TestTelemetryEnabled(t *testing.T) {
 		)
 		defer globalconfig.SetServiceName("")
 		defer Stop()
-		telemetry.Check(t, telemetryClient.Configuration, "service", "test-serv")
+		checkConfig(t, telemetryClient.Configuration, "service", "test-serv")
 		telemetryClient.AssertNumberOfCalls(t, "ApplyOps", 2)
 	})
 	t.Run("orchestrion telemetry", func(t *testing.T) {
 		telemetryClient := new(telemetrytest.MockClient)
-		defer telemetry.MockGlobalClient(telemetryClient)()
+		defer mockGlobalClient(telemetryClient)()
 
 		Start(WithOrchestrion(map[string]string{"k1": "v1", "k2": "v2"}))
 		defer Stop()
 
-		telemetry.Check(t, telemetryClient.Configuration, "orchestrion_enabled", true)
-		telemetry.Check(t, telemetryClient.Configuration, "orchestrion_k1", "v1")
-		telemetry.Check(t, telemetryClient.Configuration, "orchestrion_k2", "v2")
+		checkConfig(t, telemetryClient.Configuration, "orchestrion_enabled", true)
+		checkConfig(t, telemetryClient.Configuration, "orchestrion_k1", "v1")
+		checkConfig(t, telemetryClient.Configuration, "orchestrion_k2", "v2")
 	})
 }

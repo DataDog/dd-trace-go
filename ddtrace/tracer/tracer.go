@@ -185,7 +185,9 @@ var statsInterval = 10 * time.Second
 // any running tracer, meaning that calling it several times will result in a restart
 // of the tracer by replacing the current instance with a new one.
 func Start(opts ...StartOption) error {
-	defer telemetry.Time(telemetry.NamespaceGeneral, "init_time", nil, true)()
+	defer func(now time.Time) {
+		telemetry.Distribution(telemetry.NamespaceGeneral, "init_time", nil).Submit(float64(time.Since(now).Milliseconds()))
+	}(time.Now())
 	t, err := newTracer(opts...)
 	if err != nil {
 		return err
