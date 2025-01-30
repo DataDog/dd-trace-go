@@ -188,11 +188,6 @@ func (s *mockspan) SetBaggageItem(key, val string) {
 	return
 }
 
-// AddSpanLinks appends the given links to the span's span links.
-func (s *mockspan) AddSpanLinks(spanLinks ...ddtrace.SpanLink) {
-	s.links = append(s.links, spanLinks...)
-}
-
 // Finish finishes the current span with the given options.
 func (s *mockspan) Finish(opts ...ddtrace.FinishOption) {
 	var cfg ddtrace.FinishConfig
