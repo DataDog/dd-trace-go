@@ -308,13 +308,13 @@ func (c *client) computeFlushMetrics(results []internal.EndpointRequestResult, e
 	c.Distribution(transport.NamespaceTelemetry, "telemetry_api.ms", map[string]string{"endpoint": endpoint}).Submit(float64(successfulCall.CallDuration.Milliseconds()))
 }
 
-func (c *client) appStart() {
+func (c *client) AppStart() {
 	c.flushMapperMu.Lock()
 	defer c.flushMapperMu.Unlock()
 	c.flushMapper = mapper.NewAppStartedMapper(c.flushMapper)
 }
 
-func (c *client) appStop() {
+func (c *client) AppStop() {
 	c.flushMapperMu.Lock()
 	defer c.flushMapperMu.Unlock()
 	c.flushMapper = mapper.NewAppClosingMapper(c.flushMapper)

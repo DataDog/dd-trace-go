@@ -35,7 +35,7 @@ func StartApp(client Client) {
 
 	globalClientRecorder.Replay(client)
 
-	client.appStart()
+	client.AppStart()
 }
 
 // SwapClient swaps the global client with the given client and Flush the old (*client).
@@ -64,7 +64,7 @@ func StopApp() {
 	}
 
 	if client := globalClient.Swap(nil); client != nil && *client != nil {
-		(*client).appStop()
+		(*client).AppStop()
 		(*client).Flush()
 		(*client).Close()
 	}

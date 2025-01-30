@@ -1,0 +1,201 @@
+// Unless explicitly stated otherwise all files in this repository are licensed
+// under the Apache License Version 2.0.
+// This product includes software developed at Datadog (https://www.datadoghq.com/).
+// Copyright 2022 Datadog, Inc.
+
+// Package newtelemetrytest provides a mock implementation of the newtelemetry client for testing purposes
+package newtelemetrytest
+
+import (
+	"strings"
+	"sync"
+
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/newtelemetry"
+
+	"github.com/stretchr/testify/mock"
+)
+
+// MockClient implements Client and is used for testing purposes outside the newtelemetry package,
+// e.g. the tracer and profiler.
+type MockClient struct {
+	mock.Mock
+	mu            sync.Mutex
+	Started       bool
+	Stopped       bool
+	Configuration map[string]any
+	Logs          map[newtelemetry.LogLevel]string
+	Integrations  []string
+	Products      map[newtelemetry.Namespace]bool
+	Metrics       map[metricKey]*float64
+}
+
+type metricKey struct {
+	Namespace newtelemetry.Namespace
+	Name      string
+	Tags      string
+	Kind      string
+}
+
+func (m *MockClient) Close() error {
+	return nil
+}
+
+func tagsString(tags map[string]string) string {
+	compiledTags := ""
+	for k, v := range tags {
+		compiledTags += k + ":" + v + ","
+	}
+	return strings.TrimSuffix(compiledTags, ",")
+}
+
+type MockMetricHandle struct {
+	mock.Mock
+	mu     sync.Mutex
+	submit func(ptr *float64, value float64)
+	value  *float64
+}
+
+func (m *MockMetricHandle) Submit(value float64) {
+	m.On("Submit", value)
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.submit(m.value, value)
+}
+
+func (m *MockMetricHandle) Get() float64 {
+	m.On("Get")
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return *m.value
+}
+
+func (m *MockClient) Count(namespace newtelemetry.Namespace, name string, tags map[string]string) newtelemetry.MetricHandle {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.On("Count", namespace, name, tags)
+	key := metricKey{Namespace: namespace, Name: name, Tags: tagsString(tags), Kind: "count"}
+	if _, ok := m.Metrics[key]; !ok {
+		init := 0.0
+		m.Metrics[key] = &init
+	}
+
+	return &MockMetricHandle{value: m.Metrics[key], submit: func(ptr *float64, value float64) {
+		*ptr += value
+	}}
+}
+
+func (m *MockClient) Rate(namespace newtelemetry.Namespace, name string, tags map[string]string) newtelemetry.MetricHandle {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.On("Rate", namespace, name, tags)
+	key := metricKey{Namespace: namespace, Name: name, Tags: tagsString(tags), Kind: "rate"}
+	if _, ok := m.Metrics[key]; !ok {
+		init := 0.0
+		m.Metrics[key] = &init
+	}
+
+	return &MockMetricHandle{value: m.Metrics[key], submit: func(ptr *float64, value float64) {
+		*ptr += value
+	}}
+}
+
+func (m *MockClient) Gauge(namespace newtelemetry.Namespace, name string, tags map[string]string) newtelemetry.MetricHandle {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.On("Gauge", namespace, name, tags)
+	key := metricKey{Namespace: namespace, Name: name, Tags: tagsString(tags), Kind: "gauge"}
+	if _, ok := m.Metrics[key]; !ok {
+		init := 0.0
+		m.Metrics[key] = &init
+	}
+
+	return &MockMetricHandle{value: m.Metrics[key], submit: func(ptr *float64, value float64) {
+		*ptr = value
+	}}
+}
+
+func (m *MockClient) Distribution(namespace newtelemetry.Namespace, name string, tags map[string]string) newtelemetry.MetricHandle {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.On("Distribution", namespace, name, tags)
+	key := metricKey{Namespace: namespace, Name: name, Tags: tagsString(tags), Kind: "distribution"}
+	if _, ok := m.Metrics[key]; !ok {
+		init := 0.0
+		m.Metrics[key] = &init
+	}
+
+	return &MockMetricHandle{value: m.Metrics[key], submit: func(ptr *float64, value float64) {
+		*ptr = value
+	}}
+}
+
+func (m *MockClient) Log(level newtelemetry.LogLevel, text string, options ...newtelemetry.LogOption) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.On("Log", level, text, options)
+	m.Logs[level] = text
+}
+
+func (m *MockClient) ProductStarted(product newtelemetry.Namespace) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.On("ProductStarted", product)
+	m.Products[product] = true
+}
+
+func (m *MockClient) ProductStopped(product newtelemetry.Namespace) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.On("ProductStopped", product)
+	m.Products[product] = false
+}
+
+func (m *MockClient) ProductStartError(product newtelemetry.Namespace, err error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.On("ProductStartError", product, err)
+	m.Products[product] = false
+}
+
+func (m *MockClient) AddAppConfig(key string, value any, origin newtelemetry.Origin) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.On("AddAppConfig", key, value, origin)
+	m.Configuration[key] = value
+}
+
+func (m *MockClient) AddBulkAppConfig(kvs map[string]any, origin newtelemetry.Origin) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.On("AddBulkAppConfig", kvs, origin)
+	for k, v := range kvs {
+		m.Configuration[k] = v
+	}
+}
+
+func (m *MockClient) MarkIntegrationAsLoaded(integration newtelemetry.Integration) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.On("MarkIntegrationAsLoaded", integration)
+	m.Integrations = append(m.Integrations, integration.Name)
+}
+
+func (m *MockClient) Flush() {
+	m.On("Flush")
+}
+
+func (m *MockClient) AppStart() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.On("AppStart")
+	m.Started = true
+}
+
+func (m *MockClient) AppStop() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.On("AppStop")
+	m.Stopped = true
+}
+
+var _ newtelemetry.Client = (*MockClient)(nil)

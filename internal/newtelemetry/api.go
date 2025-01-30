@@ -107,9 +107,9 @@ type Client interface {
 	// Flush closes the client and flushes any remaining data.
 	Flush()
 
-	// appStart sends the telemetry necessary to signal that the app is starting.
-	appStart()
+	// AppStart sends the telemetry necessary to signal that the app is starting.
+	AppStart()
 
-	// appStop sends the telemetry necessary to signal that the app is stopping.
-	appStop()
+	// AppStop sends the telemetry necessary to signal that the app is stopping.
+	AppStop()
 }

@@ -312,7 +312,7 @@ func TestClientFlush(t *testing.T) {
 		{
 			name: "app-started",
 			when: func(c *client) {
-				c.appStart()
+				c.AppStart()
 			},
 			expect: func(t *testing.T, payloads []transport.Payload) {
 				payload := payloads[0]
@@ -326,7 +326,7 @@ func TestClientFlush(t *testing.T) {
 		{
 			name: "app-started-with-product",
 			when: func(c *client) {
-				c.appStart()
+				c.AppStart()
 				c.ProductStarted("test-product")
 			},
 			expect: func(t *testing.T, payloads []transport.Payload) {
@@ -339,7 +339,7 @@ func TestClientFlush(t *testing.T) {
 		{
 			name: "app-started-with-configuration",
 			when: func(c *client) {
-				c.appStart()
+				c.AppStart()
 				c.AddAppConfig("key", "value", OriginDefault)
 			},
 			expect: func(t *testing.T, payloads []transport.Payload) {
@@ -354,7 +354,7 @@ func TestClientFlush(t *testing.T) {
 		{
 			name: "app-started+integrations",
 			when: func(c *client) {
-				c.appStart()
+				c.AppStart()
 				c.MarkIntegrationAsLoaded(Integration{Name: "test-integration", Version: "1.0.0"})
 			},
 			expect: func(t *testing.T, payloads []transport.Payload) {
@@ -380,7 +380,7 @@ func TestClientFlush(t *testing.T) {
 				HeartbeatInterval: time.Nanosecond,
 			},
 			when: func(c *client) {
-				c.appStart()
+				c.AppStart()
 			},
 			expect: func(t *testing.T, payloads []transport.Payload) {
 				payload := payloads[0]
@@ -397,7 +397,7 @@ func TestClientFlush(t *testing.T) {
 		{
 			name: "app-stopped",
 			when: func(c *client) {
-				c.appStop()
+				c.AppStop()
 			},
 			expect: func(t *testing.T, payloads []transport.Payload) {
 				payload := payloads[0]
@@ -1028,7 +1028,7 @@ func TestClientEnd2End(t *testing.T) {
 		{
 			name: "app-start",
 			when: func(c *client) {
-				c.appStart()
+				c.AppStart()
 			},
 			expect: func(t *testing.T, bodies []transport.Body) {
 				require.Len(t, bodies, 1)
@@ -1038,7 +1038,7 @@ func TestClientEnd2End(t *testing.T) {
 		{
 			name: "app-stop",
 			when: func(c *client) {
-				c.appStop()
+				c.AppStop()
 			},
 			expect: func(t *testing.T, bodies []transport.Body) {
 				require.Len(t, bodies, 1)
@@ -1048,8 +1048,8 @@ func TestClientEnd2End(t *testing.T) {
 		{
 			name: "app-start+app-stop",
 			when: func(c *client) {
-				c.appStart()
-				c.appStop()
+				c.AppStart()
+				c.AppStop()
 			},
 			expect: func(t *testing.T, bodies []transport.Body) {
 				require.Len(t, bodies, 2)
@@ -1060,7 +1060,7 @@ func TestClientEnd2End(t *testing.T) {
 		{
 			name: "fail-agent-endpoint",
 			when: func(c *client) {
-				c.appStart()
+				c.AppStart()
 			},
 			roundtrip: func(_ *testing.T, req *http.Request) (*http.Response, error) {
 				if strings.Contains(req.URL.Host, "localhost") {
@@ -1077,7 +1077,7 @@ func TestClientEnd2End(t *testing.T) {
 		{
 			name: "fail-all-endpoint",
 			when: func(c *client) {
-				c.appStart()
+				c.AppStart()
 			},
 			roundtrip: func(_ *testing.T, _ *http.Request) (*http.Response, error) {
 				return nil, errors.New("failed")
