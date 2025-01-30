@@ -79,11 +79,12 @@ func (dc *dynamicConfig[T]) handleRC(val *T) bool {
 func (dc *dynamicConfig[T]) toTelemetry() telemetry.Configuration {
 	dc.RLock()
 	defer dc.RUnlock()
-	return telemetry.Sanitize(telemetry.Configuration{
+	value := telemetry.SanitizeConfigValue(dc.current)
+	return telemetry.Configuration{
 		Name:   dc.cfgName,
-		Value:  dc.current,
+		Value:  value,
 		Origin: dc.cfgOrigin,
-	})
+	}
 }
 
 func equal[T comparable](x, y T) bool {

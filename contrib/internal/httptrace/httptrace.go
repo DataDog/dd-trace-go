@@ -10,12 +10,13 @@ package httptrace
 import (
 	"context"
 	"fmt"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 	"net/http"
 	"strconv"
 	"strings"
 	"sync"
+
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
@@ -44,10 +45,8 @@ func StartRequestSpan(r *http.Request, opts ...ddtrace.StartSpanOption) (tracer.
 	// we cannot track the configuration in newConfig because it's called during init() and the the telemetry client
 	// is not initialized yet
 	reportTelemetryConfigOnce.Do(func() {
-		telemetry.GlobalClient.ConfigChange([]telemetry.Configuration{
-			{Name: "inferred_proxy_services_enabled", Value: cfg.inferredProxyServicesEnabled},
-		})
-		log.Debug("internal/httptrace: telemetry.ConfigChange called with cfg: %v:", cfg)
+		telemetry.RegisterAppConfig("inferred_proxy_services_enabled", cfg.inferredProxyServicesEnabled, telemetry.OriginEnvVar)
+		log.Debug("internal/httptrace: telemetry.RegisterAppConfig called with cfg: %v", cfg)
 	})
 
 	var ipTags map[string]string

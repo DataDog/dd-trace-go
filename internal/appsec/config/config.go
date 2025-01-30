@@ -24,7 +24,7 @@ func init() {
 
 // Register the global app telemetry configuration.
 func registerAppConfigTelemetry() {
-	registerSCAAppConfigTelemetry(telemetry.GlobalClient)
+	registerSCAAppConfigTelemetry(telemetry.GlobalClient())
 }
 
 // Register the global app telemetry configuration related to the Software Composition Analysis (SCA) product.
