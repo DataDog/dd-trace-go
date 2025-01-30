@@ -25,6 +25,15 @@ var (
 	metricsHandleHotPointersMu sync.Mutex
 )
 
+// GlobalClient returns the global telemetry client.
+func GlobalClient() Client {
+	client := globalClient.Load()
+	if client == nil {
+		return nil
+	}
+	return *client
+}
+
 // StartApp starts the telemetry client with the given client send the app-started telemetry and sets it as the global (*client).
 func StartApp(client Client) {
 	if Disabled() || globalClient.Load() != nil {
