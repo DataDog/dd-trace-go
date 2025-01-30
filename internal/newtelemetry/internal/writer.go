@@ -173,7 +173,7 @@ func preBakeRequest(body *transport.Body, endpoint *http.Request) *http.Request 
 		"DD-Agent-Install-Time":      globalconfig.InstrumentationInstallTime(),
 		"Datadog-Container-ID":       internal.ContainerID(),
 		"Datadog-Entity-ID":          internal.EntityID(),
-		// TODO: Add support for Cloud provider/resource-type/resource-id headers in another PR and package
+		// TODO: add support for Cloud provider/resource-type/resource-id headers in another PR and package
 		// Described here: https://github.com/DataDog/instrumentation-telemetry-api-docs/blob/cf17b41a30fbf31d54e2cfbfc983875d58b02fe1/GeneratedDocumentation/ApiDocs/v2/overview.md#setting-the-serverless-telemetry-headers
 	} {
 		if val == "" {
@@ -224,12 +224,12 @@ func (s *SumReaderCloser) Read(p []byte) (n int, err error) {
 
 // WriterStatusCodeError is an error that is returned when the writer receives an unexpected status code from the server.
 type WriterStatusCodeError struct {
-	StatusCode string
-	Body       string
+	Status string
+	Body   string
 }
 
 func (w *WriterStatusCodeError) Error() string {
-	return fmt.Sprintf("unexpected status code: %q (received body: %q)", w.StatusCode, w.Body)
+	return fmt.Sprintf("unexpected status code: %q (received body: %q)", w.Status, w.Body)
 }
 
 func (w *writer) Flush(payload transport.Payload) ([]EndpointRequestResult, error) {
@@ -257,8 +257,8 @@ func (w *writer) Flush(payload transport.Payload) ([]EndpointRequestResult, erro
 		if response.StatusCode >= 300 || response.StatusCode < 200 {
 			respBodyBytes, _ := io.ReadAll(response.Body) // maybe we can find an error reason in the response body
 			results = append(results, EndpointRequestResult{Error: &WriterStatusCodeError{
-				StatusCode: response.Status,
-				Body:       string(respBodyBytes),
+				Status: response.Status,
+				Body:   string(respBodyBytes),
 			}, StatusCode: response.StatusCode})
 			continue
 		}
@@ -266,6 +266,7 @@ func (w *writer) Flush(payload transport.Payload) ([]EndpointRequestResult, erro
 		results = append(results, EndpointRequestResult{
 			PayloadByteSize: sumReaderCloser.n,
 			CallDuration:    time.Since(now),
+			StatusCode:      response.StatusCode,
 		})
 
 		// We succeeded, no need to try the other endpoints

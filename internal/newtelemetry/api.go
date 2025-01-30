@@ -45,7 +45,10 @@ const (
 // telemetry.Metric(telemetry.Appsec, "my-count", map[string]string{"tag1": "true", "tag2": "1.0"}).Submit(1.0)
 // ```
 type MetricHandle interface {
+	// Submit submits a value to the metric handle.
 	Submit(value float64)
+	// Get returns the last value submitted to the metric handle.
+	Get() float64
 }
 
 // Integration is an integration that is configured to be traced.

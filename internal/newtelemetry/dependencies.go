@@ -36,7 +36,7 @@ func (d *dependencies) Payload() transport.Payload {
 		// Requirement described here:
 		// https://github.com/DataDog/instrumentation-telemetry-api-docs/blob/main/GeneratedDocumentation/ApiDocs/v2/producing-telemetry.md#app-dependencies-loaded
 		if len(deps) > 2000 {
-			log.Debug("telemetry: too many (%d) dependencies to send, sending over multiple payloads", len(deps))
+			log.Debug("telemetry: too many (%d) dependencies to send, sending over multiple bodies", len(deps))
 		}
 
 		for i := 0; i < len(deps); i += 2000 {

@@ -241,6 +241,15 @@ func (t *metricsHotPointer) Submit(value float64) {
 	(*inner).Submit(value)
 }
 
+func (t *metricsHotPointer) Get() float64 {
+	inner := t.ptr.Load()
+	if inner == nil || *inner == nil {
+		return 0
+	}
+
+	return (*inner).Get()
+}
+
 func (t *metricsHotPointer) swap(handle MetricHandle) {
 	if t.ptr.Swap(&handle) == nil {
 		t.recorder.Replay(handle)

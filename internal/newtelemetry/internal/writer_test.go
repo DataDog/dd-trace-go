@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -138,9 +139,11 @@ func TestWriter_Flush_Failure(t *testing.T) {
 	config.Endpoints = append(config.Endpoints, req)
 	writer, _ := NewWriter(config)
 
-	bytesSent, err := writer.Flush(&payload)
+	results, err := writer.Flush(&payload)
 	require.Error(t, err)
-	assert.Zero(t, bytesSent)
+	assert.Len(t, results, 1)
+	assert.Equal(t, http.StatusBadRequest, results[0].StatusCode)
+	assert.ErrorContains(t, err, `400 Bad Request`)
 	assert.True(t, marshalJSONCalled)
 	assert.True(t, payloadReceived)
 }
@@ -191,10 +194,20 @@ func TestWriter_Flush_MultipleEndpoints(t *testing.T) {
 	config.Endpoints = append(config.Endpoints, req2)
 	writer, _ := NewWriter(config)
 
-	bytesSent, err := writer.Flush(&payload)
-	require.ErrorContains(t, err, `telemetry/writer: unexpected status code: "500 Internal Server Error" (received body: "")`)
+	results, err := writer.Flush(&payload)
+	assert.NoError(t, err)
 
-	assert.NotZero(t, bytesSent)
+	assert.Len(t, results, 2)
+	assert.Equal(t, http.StatusInternalServerError, results[0].StatusCode)
+	assert.ErrorContains(t, results[0].Error, `500 Internal Server Error`)
+	assert.Equal(t, time.Duration(0), results[0].CallDuration)
+	assert.Zero(t, results[0].PayloadByteSize)
+
+	assert.Equal(t, http.StatusOK, results[1].StatusCode)
+	assert.InDelta(t, time.Duration(1), results[1].CallDuration, float64(time.Millisecond))
+	assert.NotZero(t, results[1].PayloadByteSize)
+	assert.NoError(t, results[1].Error)
+
 	assert.Equal(t, 2, marshalJSONCalled)
 	assert.True(t, payloadReceived2)
 }

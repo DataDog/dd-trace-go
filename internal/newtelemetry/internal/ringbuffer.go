@@ -11,12 +11,8 @@ import (
 
 // RingQueue is a thread-safe ring buffer can be used to store a fixed number of elements and overwrite old values when full.
 type RingQueue[T any] struct {
-	// buffer is the slice that contains the data.
-	buffer []T
-	// head is the index of the first element in the buffer.
-	head int
-	// tail is the index of the last element in the buffer.
-	tail int
+	buffer            []T
+	head, tail, count int
 	// mu is the lock for the buffer, head and tail.
 	mu sync.Mutex
 	// pool is the pool of buffers. Normally there should only be one or 2 buffers in the pool.
@@ -35,97 +31,130 @@ func NewRingQueue[T any](minSize, maxSize int) *RingQueue[T] {
 	}
 }
 
+// Length returns the number of elements currently stored in the queue.
+func (rq *RingQueue[T]) Length() int {
+	return rq.count
+}
+
+func (rq *RingQueue[T]) resizeLocked() {
+	newBuf := make([]T, min(rq.count*2, rq.maxBufferSize))
+
+	if rq.tail > rq.head {
+		copy(newBuf, rq.buffer[rq.head:rq.tail])
+	} else {
+		n := copy(newBuf, rq.buffer[rq.head:])
+		copy(newBuf[n:], rq.buffer[:rq.tail])
+	}
+
+	rq.head = 0
+	rq.tail = rq.count
+	rq.buffer = newBuf
+}
+
+func (rq *RingQueue[T]) enqueueLocked(elem T) bool {
+	spaceLeft := true
+	if rq.count == len(rq.buffer) {
+		if len(rq.buffer) == rq.maxBufferSize {
+			spaceLeft = false
+			// bitwise modulus
+			rq.head = (rq.head + 1) % len(rq.buffer)
+			rq.count--
+		} else {
+			rq.resizeLocked()
+		}
+	}
+
+	rq.buffer[rq.tail] = elem
+	rq.tail = (rq.tail + 1) % len(rq.buffer)
+	rq.count++
+	return spaceLeft
+}
+
+// ReversePeek returns the last element that was enqueued without removing it.
+func (rq *RingQueue[T]) ReversePeek() T {
+	rq.mu.Lock()
+	defer rq.mu.Unlock()
+	return rq.buffer[(rq.tail-1+len(rq.buffer))%len(rq.buffer)]
+}
+
+// Peek returns the first element that was enqueued without removing it.
+func (rq *RingQueue[T]) Peek() T {
+	rq.mu.Lock()
+	defer rq.mu.Unlock()
+	return rq.buffer[rq.head]
+}
+
 // Enqueue adds one or multiple values to the buffer. returns false if the buffer is full.
-func (rb *RingQueue[T]) Enqueue(vals ...T) bool {
-	rb.mu.Lock()
-	defer rb.mu.Unlock()
+func (rq *RingQueue[T]) Enqueue(vals ...T) bool {
+	rq.mu.Lock()
+	defer rq.mu.Unlock()
 	spaceLeft := true
 	for _, val := range vals {
-		spaceLeft = rb.enqueueLocked(val)
+		spaceLeft = rq.enqueueLocked(val)
 	}
 	return spaceLeft
 }
 
-func (rb *RingQueue[T]) enqueueLocked(val T) bool {
-	rb.buffer[rb.tail] = val
-	rb.tail = (rb.tail + 1) % len(rb.buffer)
-
-	if rb.tail == rb.head && len(rb.buffer) == rb.maxBufferSize { // We lost one element
-		rb.head = (rb.head + 1) % len(rb.buffer)
-		return false
-	}
-
-	// We need to resize the buffer, we double the size and cap it to maxBufferSize
-	if rb.tail == rb.head {
-		newBuffer := make([]T, min(cap(rb.buffer)*2, rb.maxBufferSize))
-		copy(newBuffer, rb.buffer[rb.head:])
-		copy(newBuffer[len(rb.buffer)-rb.head:], rb.buffer[:rb.tail])
-		rb.head = 0
-		rb.tail = len(rb.buffer) - 1
-		rb.buffer = newBuffer
-	}
-	return true
-}
-
 // Dequeue removes a value from the buffer.
-func (rb *RingQueue[T]) Dequeue() T {
-	rb.mu.Lock()
-	defer rb.mu.Unlock()
+func (rq *RingQueue[T]) Dequeue() T {
+	rq.mu.Lock()
+	defer rq.mu.Unlock()
 
-	val := rb.buffer[rb.head]
-	rb.head = (rb.head + 1) % len(rb.buffer)
-	return val
+	ret := rq.buffer[rq.head]
+	// bitwise modulus
+	rq.head = (rq.head + 1) % len(rq.buffer)
+	rq.count--
+	return ret
 }
 
 // GetBuffer returns the current buffer and resets it.
-func (rb *RingQueue[T]) GetBuffer() []T {
-	rb.mu.Lock()
-	defer rb.mu.Unlock()
-	return rb.getBufferLocked()
+func (rq *RingQueue[T]) GetBuffer() []T {
+	rq.mu.Lock()
+	defer rq.mu.Unlock()
+	return rq.getBufferLocked()
 }
 
-func (rb *RingQueue[T]) getBufferLocked() []T {
-	prevBuf := rb.buffer
-	rb.buffer = rb.pool.Get().([]T)
-	rb.head = 0
-	rb.tail = len(rb.buffer) - 1
+func (rq *RingQueue[T]) getBufferLocked() []T {
+	prevBuf := rq.buffer
+	rq.buffer = rq.pool.Get().([]T)
+	rq.head, rq.tail, rq.count = 0, 0, 0
 	return prevBuf
 }
 
 // Flush returns a copy of the buffer and resets it.
-func (rb *RingQueue[T]) Flush() []T {
-	rb.mu.Lock()
-	head, tail := rb.head, rb.tail
-	buf := rb.getBufferLocked()
-	rb.mu.Unlock()
+func (rq *RingQueue[T]) Flush() []T {
+	rq.mu.Lock()
+	head, count := rq.head, rq.count
+	buf := rq.getBufferLocked()
+	rq.mu.Unlock()
 
-	defer rb.ReleaseBuffer(buf)
+	defer rq.ReleaseBuffer(buf)
 
-	copyBuf := make([]T, 0, len(buf))
-	for i := head; i != tail; i = (i + 1) % len(buf) {
-		copyBuf = append(copyBuf, buf[i])
+	copyBuf := make([]T, count)
+	for i := 0; i < count; i++ {
+		copyBuf[i] = buf[(head+i)%len(buf)]
 	}
 
 	return copyBuf
 }
 
 // ReleaseBuffer returns the buffer to the pool.
-func (rb *RingQueue[T]) ReleaseBuffer(buf []T) {
-	rb.pool.Put(buf[:cap(buf)]) // Make sure nobody reduced the length of the buffer
+func (rq *RingQueue[T]) ReleaseBuffer(buf []T) {
+	rq.pool.Put(buf[:cap(buf)]) // Make sure nobody reduced the length of the buffer
 }
 
 // IsEmpty returns true if the buffer is empty.
-func (rb *RingQueue[T]) IsEmpty() bool {
-	rb.mu.Lock()
-	defer rb.mu.Unlock()
+func (rq *RingQueue[T]) IsEmpty() bool {
+	rq.mu.Lock()
+	defer rq.mu.Unlock()
 
-	return rb.head == rb.tail
+	return rq.count == 0
 }
 
 // IsFull returns true if the buffer is full and cannot accept more elements.
-func (rb *RingQueue[T]) IsFull() bool {
-	rb.mu.Lock()
-	defer rb.mu.Unlock()
+func (rq *RingQueue[T]) IsFull() bool {
+	rq.mu.Lock()
+	defer rq.mu.Unlock()
 
-	return (rb.tail+1)%len(rb.buffer) == rb.head && len(rb.buffer) == rb.maxBufferSize
+	return len(rq.buffer) == rq.count && len(rq.buffer) == rq.maxBufferSize
 }

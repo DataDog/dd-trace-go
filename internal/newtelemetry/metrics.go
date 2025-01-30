@@ -17,6 +17,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/newtelemetry/internal/transport"
 )
 
+// metricKey is used as a key in the metrics store hash map.
 type metricKey struct {
 	namespace Namespace
 	kind      transport.MetricType
@@ -85,46 +86,35 @@ type metric struct {
 	// Values set during Submit()
 	newSubmit  atomic.Bool
 	value      atomic.Uint64 // Actually a float64, but we need atomic operations
-	submitTime atomic.Int64
+	submitTime atomic.Int64  // Unix timestamp
 }
 
-func (c *metric) submit() {
-	c.newSubmit.Store(true)
-	c.submitTime.Store(time.Now().Unix())
+func (m *metric) Get() float64 {
+	return math.Float64frombits(m.value.Load())
 }
 
-func (c *metric) payload() transport.MetricData {
-	if submit := c.newSubmit.Swap(false); !submit {
+func (m *metric) payload() transport.MetricData {
+	if submit := m.newSubmit.Swap(false); !submit {
 		return transport.MetricData{}
 	}
 
 	var tags []string
-	if c.key.tags != "" {
-		tags = strings.Split(c.key.tags, ",")
+	if m.key.tags != "" {
+		tags = strings.Split(m.key.tags, ",")
 	}
 
 	data := transport.MetricData{
-		Metric:    c.key.name,
-		Namespace: c.key.namespace,
+		Metric:    m.key.name,
+		Namespace: m.key.namespace,
 		Tags:      tags,
-		Type:      c.key.kind,
-		Common:    knownmetrics.IsCommonMetric(c.key.namespace, string(c.key.kind), c.key.name),
+		Type:      m.key.kind,
+		Common:    knownmetrics.IsCommonMetric(m.key.namespace, string(m.key.kind), m.key.name),
 		Points: [][2]any{
-			{c.submitTime.Load(), math.Float64frombits(c.value.Load())},
+			{m.submitTime.Load(), math.Float64frombits(m.value.Load())},
 		},
 	}
 
 	return data
-}
-
-func (c *metric) add(value float64) {
-	for {
-		oldValue := math.Float64frombits(c.value.Load())
-		newValue := oldValue + value
-		if c.value.CompareAndSwap(math.Float64bits(oldValue), math.Float64bits(newValue)) {
-			return
-		}
-	}
 }
 
 type count struct {
@@ -132,17 +122,25 @@ type count struct {
 }
 
 func (c *count) Submit(value float64) {
-	c.submit()
-	c.add(value)
+	c.newSubmit.Store(true)
+	c.submitTime.Store(time.Now().Unix())
+	for {
+		oldValue := c.Get()
+		newValue := oldValue + value
+		if c.value.CompareAndSwap(math.Float64bits(oldValue), math.Float64bits(newValue)) {
+			return
+		}
+	}
 }
 
 type gauge struct {
 	metric
 }
 
-func (c *gauge) Submit(value float64) {
-	c.submit()
-	c.value.Store(math.Float64bits(value))
+func (g *gauge) Submit(value float64) {
+	g.newSubmit.Store(true)
+	g.submitTime.Store(time.Now().Unix())
+	g.value.Store(math.Float64bits(value))
 }
 
 type rate struct {
@@ -150,18 +148,25 @@ type rate struct {
 	intervalStart time.Time
 }
 
-func (c *rate) Submit(value float64) {
-	c.submit()
-	c.add(value)
+func (r *rate) Submit(value float64) {
+	r.newSubmit.Store(true)
+	r.submitTime.Store(time.Now().Unix())
+	for {
+		oldValue := r.Get()
+		newValue := oldValue + value
+		if r.value.CompareAndSwap(math.Float64bits(oldValue), math.Float64bits(newValue)) {
+			return
+		}
+	}
 }
 
-func (c *rate) payload() transport.MetricData {
-	payload := c.metric.payload()
+func (r *rate) payload() transport.MetricData {
+	payload := r.metric.payload()
 	if payload.Metric == "" {
 		return payload
 	}
 
-	payload.Interval = int64(time.Since(c.intervalStart).Seconds())
-	payload.Points[0][1] = math.Float64frombits(c.value.Load()) / float64(payload.Interval)
+	payload.Interval = int64(time.Since(r.intervalStart).Seconds())
+	payload.Points[0][1] = r.Get() / float64(payload.Interval)
 	return payload
 }

@@ -6,9 +6,11 @@
 package newtelemetry
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"runtime"
 	"runtime/debug"
@@ -956,11 +958,58 @@ func TestMetricsDisabled(t *testing.T) {
 }
 
 type testRoundTripper struct {
+	t         *testing.T
 	roundTrip func(*http.Request) (*http.Response, error)
+	bodies    []transport.Body
 }
 
 func (t *testRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	defer req.Body.Close()
+	body, err := io.ReadAll(req.Body)
+	require.NoError(t.t, err)
+	req.Body = io.NopCloser(bytes.NewReader(body))
+	t.bodies = append(t.bodies, parseRequest(t.t, req.Header, body))
 	return t.roundTrip(req)
+}
+
+func parseRequest(t *testing.T, headers http.Header, raw []byte) transport.Body {
+	t.Helper()
+
+	assert.Equal(t, "v2", headers.Get("DD-Telemetry-API-Version"))
+	assert.Equal(t, "application/json", headers.Get("Content-Type"))
+	assert.Equal(t, "go", headers.Get("DD-Client-Library-Language"))
+	assert.Equal(t, "test-env", headers.Get("DD-Agent-Env"))
+	assert.Equal(t, version.Tag, headers.Get("DD-Client-Library-Version"))
+	assert.Equal(t, globalconfig.InstrumentationInstallID(), headers.Get("DD-Agent-Install-Id"))
+	assert.Equal(t, globalconfig.InstrumentationInstallType(), headers.Get("DD-Agent-Install-Type"))
+	assert.Equal(t, globalconfig.InstrumentationInstallTime(), headers.Get("DD-Agent-Install-Time"))
+
+	assert.NotEmpty(t, headers.Get("DD-Agent-Hostname"))
+
+	var body transport.Body
+	require.NoError(t, json.Unmarshal(raw, &body))
+
+	assert.Equal(t, string(body.RequestType), headers.Get("DD-Telemetry-Request-Type"))
+	assert.Equal(t, "test-service", body.Application.ServiceName)
+	assert.Equal(t, "test-env", body.Application.Env)
+	assert.Equal(t, "1.0.0", body.Application.ServiceVersion)
+	assert.Equal(t, "go", body.Application.LanguageName)
+	assert.Equal(t, runtime.Version(), body.Application.LanguageVersion)
+
+	assert.NotEmpty(t, body.Host.Hostname)
+	assert.Equal(t, osinfo.OSName(), body.Host.OS)
+	assert.Equal(t, osinfo.OSVersion(), body.Host.OSVersion)
+	assert.Equal(t, osinfo.Architecture(), body.Host.Architecture)
+	assert.Equal(t, osinfo.KernelName(), body.Host.KernelName)
+	assert.Equal(t, osinfo.KernelRelease(), body.Host.KernelRelease)
+	assert.Equal(t, osinfo.KernelVersion(), body.Host.KernelVersion)
+
+	assert.Equal(t, "v2", body.APIVersion)
+	assert.NotZero(t, body.TracerTime)
+	assert.LessOrEqual(t, int64(1), body.SeqID)
+	assert.Equal(t, globalconfig.RuntimeID(), body.RuntimeID)
+
+	return body
 }
 
 func TestClientEnd2End(t *testing.T) {
@@ -970,63 +1019,20 @@ func TestClientEnd2End(t *testing.T) {
 		Version: "1.0.0",
 	}
 
-	parseRequest := func(t *testing.T, request *http.Request) transport.Body {
-		assert.Equal(t, "v2", request.Header.Get("DD-Telemetry-API-Version"))
-		assert.Equal(t, "application/json", request.Header.Get("Content-Type"))
-		assert.Equal(t, "go", request.Header.Get("DD-Client-Library-Language"))
-		assert.Equal(t, "test-env", request.Header.Get("DD-Agent-Env"))
-		assert.Equal(t, version.Tag, request.Header.Get("DD-Client-Library-Version"))
-		assert.Equal(t, globalconfig.InstrumentationInstallID(), request.Header.Get("DD-Agent-Install-Id"))
-		assert.Equal(t, globalconfig.InstrumentationInstallType(), request.Header.Get("DD-Agent-Install-Type"))
-		assert.Equal(t, globalconfig.InstrumentationInstallTime(), request.Header.Get("DD-Agent-Install-Time"))
-		assert.Equal(t, "true", request.Header.Get("DD-Telemetry-Debug-Enabled"))
-
-		assert.NotEmpty(t, request.Header.Get("DD-Agent-Hostname"))
-
-		var body transport.Body
-		require.NoError(t, json.NewDecoder(request.Body).Decode(&body))
-
-		assert.Equal(t, string(body.RequestType), request.Header.Get("DD-Telemetry-Request-Type"))
-		assert.Equal(t, "test-service", body.Application.ServiceName)
-		assert.Equal(t, "test-env", body.Application.Env)
-		assert.Equal(t, "1.0.0", body.Application.ServiceVersion)
-		assert.Equal(t, "go", body.Application.LanguageName)
-		assert.Equal(t, runtime.Version(), body.Application.LanguageVersion)
-
-		assert.NotEmpty(t, body.Host.Hostname)
-		assert.Equal(t, osinfo.OSName(), body.Host.OS)
-		assert.Equal(t, osinfo.OSVersion(), body.Host.OSVersion)
-		assert.Equal(t, osinfo.Architecture(), body.Host.Architecture)
-		assert.Equal(t, osinfo.KernelName(), body.Host.KernelName)
-		assert.Equal(t, osinfo.KernelRelease(), body.Host.KernelRelease)
-		assert.Equal(t, osinfo.KernelVersion(), body.Host.KernelVersion)
-
-		assert.Equal(t, true, body.Debug)
-		assert.Equal(t, "v2", body.APIVersion)
-		assert.NotZero(t, body.TracerTime)
-		assert.LessOrEqual(t, int64(1), body.SeqID)
-		assert.Equal(t, globalconfig.RuntimeID(), body.RuntimeID)
-
-		return body
-	}
-
 	for _, test := range []struct {
-		name   string
-		when   func(*client)
-		expect func(*testing.T, *http.Request) (*http.Response, error)
+		name      string
+		when      func(*client)
+		roundtrip func(*testing.T, *http.Request) (*http.Response, error)
+		expect    func(*testing.T, []transport.Body)
 	}{
 		{
 			name: "app-start",
 			when: func(c *client) {
 				c.appStart()
 			},
-			expect: func(t *testing.T, request *http.Request) (*http.Response, error) {
-				assert.Equal(t, string(transport.RequestTypeAppStarted), request.Header.Get("DD-Telemetry-Request-Type"))
-				body := parseRequest(t, request)
-				assert.Equal(t, transport.RequestTypeAppStarted, body.RequestType)
-				return &http.Response{
-					StatusCode: http.StatusOK,
-				}, nil
+			expect: func(t *testing.T, bodies []transport.Body) {
+				require.Len(t, bodies, 1)
+				assert.Equal(t, transport.RequestTypeAppStarted, bodies[0].RequestType)
 			},
 		},
 		{
@@ -1034,13 +1040,9 @@ func TestClientEnd2End(t *testing.T) {
 			when: func(c *client) {
 				c.appStop()
 			},
-			expect: func(t *testing.T, request *http.Request) (*http.Response, error) {
-				assert.Equal(t, string(transport.RequestTypeAppClosing), request.Header.Get("DD-Telemetry-Request-Type"))
-				body := parseRequest(t, request)
-				assert.Equal(t, transport.RequestTypeAppClosing, body.RequestType)
-				return &http.Response{
-					StatusCode: http.StatusOK,
-				}, nil
+			expect: func(t *testing.T, bodies []transport.Body) {
+				require.Len(t, bodies, 1)
+				assert.Equal(t, transport.RequestTypeAppClosing, bodies[0].RequestType)
 			},
 		},
 		{
@@ -1049,43 +1051,61 @@ func TestClientEnd2End(t *testing.T) {
 				c.appStart()
 				c.appStop()
 			},
-			expect: func(t *testing.T, request *http.Request) (*http.Response, error) {
-				body := parseRequest(t, request)
-
-				switch request.Header.Get("DD-Telemetry-Request-Type") {
-				case string(transport.RequestTypeAppStarted):
-					payload := body.Payload.(*transport.AppStarted)
-					assert.Equal(t, globalconfig.InstrumentationInstallID(), payload.InstallSignature.InstallID)
-					assert.Equal(t, globalconfig.InstrumentationInstallType(), payload.InstallSignature.InstallType)
-					assert.Equal(t, globalconfig.InstrumentationInstallTime(), payload.InstallSignature.InstallTime)
-				case string(transport.RequestTypeAppClosing):
-
-				default:
-					t.Fatalf("unexpected request type: %s", request.Header.Get("DD-Telemetry-Request-Type"))
+			expect: func(t *testing.T, bodies []transport.Body) {
+				require.Len(t, bodies, 2)
+				assert.Equal(t, transport.RequestTypeAppStarted, bodies[0].RequestType)
+				assert.Equal(t, transport.RequestTypeAppClosing, bodies[1].RequestType)
+			},
+		},
+		{
+			name: "fail-agent-endpoint",
+			when: func(c *client) {
+				c.appStart()
+			},
+			roundtrip: func(_ *testing.T, req *http.Request) (*http.Response, error) {
+				if strings.Contains(req.URL.Host, "localhost") {
+					return nil, errors.New("failed")
 				}
-
-				return &http.Response{
-					StatusCode: http.StatusOK,
-				}, nil
+				return &http.Response{StatusCode: http.StatusOK}, nil
+			},
+			expect: func(t *testing.T, bodies []transport.Body) {
+				require.Len(t, bodies, 2)
+				require.Equal(t, transport.RequestTypeAppStarted, bodies[0].RequestType)
+				require.Equal(t, transport.RequestTypeAppStarted, bodies[1].RequestType)
+			},
+		},
+		{
+			name: "fail-all-endpoint",
+			when: func(c *client) {
+				c.appStart()
+			},
+			roundtrip: func(_ *testing.T, _ *http.Request) (*http.Response, error) {
+				return nil, errors.New("failed")
+			},
+			expect: func(t *testing.T, bodies []transport.Body) {
+				require.Len(t, bodies, 2)
+				require.Equal(t, transport.RequestTypeAppStarted, bodies[0].RequestType)
+				require.Equal(t, transport.RequestTypeAppStarted, bodies[1].RequestType)
 			},
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
+			rt := &testRoundTripper{
+				t: t,
+				roundTrip: func(req *http.Request) (*http.Response, error) {
+					if test.roundtrip != nil {
+						return test.roundtrip(t, req)
+					}
+					return &http.Response{StatusCode: http.StatusOK}, nil
+				},
+			}
 			clientConfig := ClientConfig{
 				AgentURL: "http://localhost:8126",
+				APIKey:   "apikey",
 				HTTPClient: &http.Client{
-					Timeout: 5 * time.Second,
-					Transport: &testRoundTripper{
-						roundTrip: func(req *http.Request) (*http.Response, error) {
-							if test.expect != nil {
-								return test.expect(t, req)
-							}
-							return &http.Response{
-								StatusCode: http.StatusOK,
-							}, nil
-						},
-					},
+					Timeout:   5 * time.Second,
+					Transport: rt,
 				},
 				Debug: true,
 			}
@@ -1099,8 +1119,46 @@ func TestClientEnd2End(t *testing.T) {
 
 			test.when(c)
 			c.Flush()
+			test.expect(t, rt.bodies)
 		})
 	}
+}
+
+func TestSendingFailures(t *testing.T) {
+	cfg := ClientConfig{
+		AgentURL: "http://localhost:8126",
+		HTTPClient: &http.Client{
+			Timeout: 5 * time.Second,
+			Transport: &testRoundTripper{
+				t: t,
+				roundTrip: func(_ *http.Request) (*http.Response, error) {
+					return nil, errors.New("failed")
+				},
+			},
+		},
+	}
+
+	c, err := newClient(internal.TracerConfig{
+		Service: "test-service",
+		Env:     "test-env",
+		Version: "1.0.0",
+	}, defaultConfig(cfg))
+
+	require.NoError(t, err)
+	defer c.Close()
+
+	c.Log(LogError, "test")
+	c.Flush()
+
+	require.False(t, c.payloadQueue.IsEmpty())
+	payload := c.payloadQueue.ReversePeek()
+	require.NotNil(t, payload)
+
+	assert.Equal(t, transport.RequestTypeLogs, payload.RequestType())
+	logs := payload.(transport.Logs)
+	assert.Len(t, logs.Logs, 1)
+	assert.Equal(t, transport.LogLevelError, logs.Logs[0].Level)
+	assert.Equal(t, "test", logs.Logs[0].Message)
 }
 
 func BenchmarkLogs(b *testing.B) {

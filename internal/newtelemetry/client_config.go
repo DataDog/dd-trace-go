@@ -84,8 +84,8 @@ type ClientConfig struct {
 	APIKey string
 
 	// EarlyFlushPayloadSize is the size of the payload that will trigger an early flush.
-	// This is necessary because backend won't allow payloads larger than 5MB.
-	// The default value here will be 2MB to take into account the large inaccuracy in estimating the size of payloads
+	// This is necessary because backend won't allow bodies larger than 5MB.
+	// The default value here will be 2MB to take into account the large inaccuracy in estimating the size of bodies
 	EarlyFlushPayloadSize int
 }
 
@@ -116,7 +116,7 @@ var (
 	// TODO: tweak this value once we get real telemetry data from the telemetry client
 	defaultPayloadQueueSize = Range[int]{
 		Min: 4,
-		Max: 21,
+		Max: 32,
 	}
 
 	// TODO: tweak this value once we get telemetry data from the telemetry client

@@ -73,8 +73,10 @@ func (b *Body) UnmarshalJSON(bytes []byte) error {
 		return err
 	}
 
-	if err = json.Unmarshal(anyMap["debug"], &b.Debug); err != nil {
-		return err
+	if _, ok := anyMap["debug"]; ok {
+		if err = json.Unmarshal(anyMap["debug"], &b.Debug); err != nil {
+			return err
+		}
 	}
 
 	if err = json.Unmarshal(anyMap["application"], &b.Application); err != nil {

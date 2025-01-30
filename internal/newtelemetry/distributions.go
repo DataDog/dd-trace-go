@@ -25,6 +25,7 @@ type distributionKey struct {
 type distributions struct {
 	store         internal.TypedSyncMap[distributionKey, *distribution]
 	skipAllowlist bool // Debugging feature to skip the allowlist of known metrics
+	queueSize     Range[int]
 }
 
 // LoadOrStore returns a MetricHandle for the given distribution metric. If the metric key does not exist, it will be created.
@@ -41,7 +42,7 @@ func (d *distributions) LoadOrStore(namespace Namespace, name string, tags map[s
 
 	key := distributionKey{namespace: namespace, name: name, tags: strings.TrimSuffix(compiledTags, ",")}
 
-	handle, _ := d.store.LoadOrStore(key, &distribution{key: key, values: internal.NewRingQueue[float64](1<<8, 1<<14)})
+	handle, _ := d.store.LoadOrStore(key, &distribution{key: key, values: internal.NewRingQueue[float64](d.queueSize.Min, d.queueSize.Max)})
 
 	return handle
 }
@@ -78,6 +79,10 @@ func (d *distribution) Submit(value float64) {
 			log.Debug("telemetry: distribution %q is losing values because the buffer is full", d.key.name)
 		})
 	}
+}
+
+func (d *distribution) Get() float64 {
+	return d.values.ReversePeek()
 }
 
 func (d *distribution) payload() transport.DistributionSeries {

@@ -65,6 +65,7 @@ func newClient(tracerConfig internal.TracerConfig, config ClientConfig) (*client
 		},
 		distributions: distributions{
 			skipAllowlist: config.Debug,
+			queueSize:     config.DistributionsSize,
 		},
 	}
 
@@ -109,11 +110,11 @@ type client struct {
 
 	flushTicker *internal.Ticker
 
-	// flushMapper is the transformer to use for the next flush on the gathered payloads on this tick
+	// flushMapper is the transformer to use for the next flush on the gathered bodies on this tick
 	flushMapper   mapper.Mapper
 	flushMapperMu sync.Mutex
 
-	// payloadQueue is used when we cannot flush previously built payloads
+	// payloadQueue is used when we cannot flush previously built bodies
 	payloadQueue *internal.RingQueue[transport.Payload]
 }
 
@@ -132,6 +133,10 @@ func (c *client) MarkIntegrationAsLoaded(integration Integration) {
 type noopMetricHandle struct{}
 
 func (noopMetricHandle) Submit(_ float64) {}
+
+func (noopMetricHandle) Get() float64 {
+	return 0
+}
 
 func (c *client) Count(namespace Namespace, name string, tags map[string]string) MetricHandle {
 	if !c.clientConfig.MetricsEnabled {
@@ -199,9 +204,9 @@ func (c *client) Flush() {
 }
 
 // flush sends all the data sources to the writer by let them flow through the given transformer function.
-// The transformer function is used to transform the payloads before sending them to the writer.
+// The transformer function is used to transform the bodies before sending them to the writer.
 func (c *client) flush(payloads []transport.Payload) (int, error) {
-	// Transform the payloads
+	// Transform the bodies
 	{
 		c.flushMapperMu.Lock()
 		payloads, c.flushMapper = c.flushMapper.Transform(payloads)
@@ -213,9 +218,9 @@ func (c *client) flush(payloads []transport.Payload) (int, error) {
 		return 0, nil
 	}
 
+	// We enqueue the new payloads to preserve the order of the payloads
 	c.payloadQueue.Enqueue(payloads...)
-	payloads = c.payloadQueue.GetBuffer()
-	defer c.payloadQueue.ReleaseBuffer(payloads)
+	payloads = c.payloadQueue.Flush()
 
 	var (
 		nbBytes        int
@@ -224,14 +229,10 @@ func (c *client) flush(payloads []transport.Payload) (int, error) {
 	)
 
 	for i, payload := range payloads {
-		if payload == nil {
-			continue
-		}
-
 		results, err := c.writer.Flush(payload)
 		c.computeFlushMetrics(results, err)
 		if err != nil {
-			// We stop flushing when we encounter a fatal error, put the payloads in the queue and return the error
+			// We stop flushing when we encounter a fatal error, put the bodies in the queue and return the error
 			log.Error("error while flushing telemetry data: %v", err)
 			c.payloadQueue.Enqueue(payloads[i:]...)
 			return nbBytes, err
@@ -241,7 +242,7 @@ func (c *client) flush(payloads []transport.Payload) (int, error) {
 		successfulCall := results[len(results)-1]
 
 		if !speedIncreased && successfulCall.PayloadByteSize > c.clientConfig.EarlyFlushPayloadSize {
-			// We increase the speed of the flushTicker to try to flush the remaining payloads faster as we are at risk of sending too large payloads to the backend
+			// We increase the speed of the flushTicker to try to flush the remaining bodies faster as we are at risk of sending too large bodies to the backend
 			c.flushTicker.IncreaseSpeed()
 			speedIncreased = true
 		}
