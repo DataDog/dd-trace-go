@@ -138,28 +138,28 @@ func (noopMetricHandle) Get() float64 {
 	return 0
 }
 
-func (c *client) Count(namespace Namespace, name string, tags map[string]string) MetricHandle {
+func (c *client) Count(namespace Namespace, name string, tags []string) MetricHandle {
 	if !c.clientConfig.MetricsEnabled {
 		return noopMetricHandle{}
 	}
 	return c.metrics.LoadOrStore(namespace, transport.CountMetric, name, tags)
 }
 
-func (c *client) Rate(namespace Namespace, name string, tags map[string]string) MetricHandle {
+func (c *client) Rate(namespace Namespace, name string, tags []string) MetricHandle {
 	if !c.clientConfig.MetricsEnabled {
 		return noopMetricHandle{}
 	}
 	return c.metrics.LoadOrStore(namespace, transport.RateMetric, name, tags)
 }
 
-func (c *client) Gauge(namespace Namespace, name string, tags map[string]string) MetricHandle {
+func (c *client) Gauge(namespace Namespace, name string, tags []string) MetricHandle {
 	if !c.clientConfig.MetricsEnabled {
 		return noopMetricHandle{}
 	}
 	return c.metrics.LoadOrStore(namespace, transport.GaugeMetric, name, tags)
 }
 
-func (c *client) Distribution(namespace Namespace, name string, tags map[string]string) MetricHandle {
+func (c *client) Distribution(namespace Namespace, name string, tags []string) MetricHandle {
 	if !c.clientConfig.MetricsEnabled {
 		return noopMetricHandle{}
 	}
@@ -280,9 +280,9 @@ func (c *client) computeFlushMetrics(results []internal.EndpointRequestResult, e
 	}
 
 	for i, result := range results {
-		c.Count(transport.NamespaceTelemetry, "telemetry_api.requests", map[string]string{"endpoint": indexToEndpoint(i)}).Submit(1)
+		c.Count(transport.NamespaceTelemetry, "telemetry_api.requests", []string{"endpoint:" + indexToEndpoint(i)}).Submit(1)
 		if result.StatusCode != 0 {
-			c.Count(transport.NamespaceTelemetry, "telemetry_api.responses", map[string]string{"endpoint": indexToEndpoint(i), "status_code": strconv.Itoa(result.StatusCode)}).Submit(1)
+			c.Count(transport.NamespaceTelemetry, "telemetry_api.responses", []string{"endpoint:" + indexToEndpoint(i), "status_code:" + strconv.Itoa(result.StatusCode)}).Submit(1)
 		}
 
 		if result.Error != nil {
@@ -294,7 +294,7 @@ func (c *client) computeFlushMetrics(results []internal.EndpointRequestResult, e
 			if errors.As(result.Error, &writerStatusCodeError) {
 				typ = "status_code"
 			}
-			c.Count(transport.NamespaceTelemetry, "telemetry_api.errors", map[string]string{"endpoint": indexToEndpoint(i), "type": typ}).Submit(1)
+			c.Count(transport.NamespaceTelemetry, "telemetry_api.errors", []string{"endpoint:" + indexToEndpoint(i), "type:" + typ}).Submit(1)
 		}
 	}
 
@@ -304,8 +304,8 @@ func (c *client) computeFlushMetrics(results []internal.EndpointRequestResult, e
 
 	successfulCall := results[len(results)-1]
 	endpoint := indexToEndpoint(len(results) - 1)
-	c.Distribution(transport.NamespaceTelemetry, "telemetry_api.bytes", map[string]string{"endpoint": endpoint}).Submit(float64(successfulCall.PayloadByteSize))
-	c.Distribution(transport.NamespaceTelemetry, "telemetry_api.ms", map[string]string{"endpoint": endpoint}).Submit(float64(successfulCall.CallDuration.Milliseconds()))
+	c.Distribution(transport.NamespaceTelemetry, "telemetry_api.bytes", []string{"endpoint:" + endpoint}).Submit(float64(successfulCall.PayloadByteSize))
+	c.Distribution(transport.NamespaceTelemetry, "telemetry_api.ms", []string{"endpoint:" + endpoint}).Submit(float64(successfulCall.CallDuration.Milliseconds()))
 }
 
 func (c *client) AppStart() {

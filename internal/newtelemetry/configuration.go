@@ -51,7 +51,7 @@ func (c *configuration) Payload() transport.Payload {
 		if conf.Origin == "" {
 			conf.Origin = transport.OriginDefault
 		}
-		conf.Value = sanitizeConfigValue(conf.Value)
+		conf.Value = SanitizeConfigValue(conf.Value)
 		conf.SeqID = c.seqID
 		configs[idx] = conf
 		idx++
@@ -63,8 +63,8 @@ func (c *configuration) Payload() transport.Payload {
 	}
 }
 
-// sanitizeConfigValue sanitizes the value of a configuration key to ensure it can be marshalled.
-func sanitizeConfigValue(value any) any {
+// SanitizeConfigValue sanitizes the value of a configuration key to ensure it can be marshalled.
+func SanitizeConfigValue(value any) any {
 	if value == nil {
 		return ""
 	}

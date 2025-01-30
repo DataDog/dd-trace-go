@@ -85,16 +85,20 @@ type Client interface {
 	io.Closer
 
 	// Count creates a new metric handle for the given parameters that can be used to submit values.
-	Count(namespace Namespace, name string, tags map[string]string) MetricHandle
+	// Tags cannot contain commas.
+	Count(namespace Namespace, name string, tags []string) MetricHandle
 
 	// Rate creates a new metric handle for the given parameters that can be used to submit values.
-	Rate(namespace Namespace, name string, tags map[string]string) MetricHandle
+	// Tags cannot contain commas.
+	Rate(namespace Namespace, name string, tags []string) MetricHandle
 
 	// Gauge creates a new metric handle for the given parameters that can be used to submit values.
-	Gauge(namespace Namespace, name string, tags map[string]string) MetricHandle
+	// Tags cannot contain commas.
+	Gauge(namespace Namespace, name string, tags []string) MetricHandle
 
 	// Distribution creates a new metric handle for the given parameters that can be used to submit values.
-	Distribution(namespace Namespace, name string, tags map[string]string) MetricHandle
+	// Tags cannot contain commas.
+	Distribution(namespace Namespace, name string, tags []string) MetricHandle
 
 	// Log sends a telemetry log at the desired level with the given text and options.
 	// Options include sending key-value pairs as tags, and a stack trace frozen from inside the Log function.

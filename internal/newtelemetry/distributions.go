@@ -29,18 +29,13 @@ type distributions struct {
 }
 
 // LoadOrStore returns a MetricHandle for the given distribution metric. If the metric key does not exist, it will be created.
-func (d *distributions) LoadOrStore(namespace Namespace, name string, tags map[string]string) MetricHandle {
+func (d *distributions) LoadOrStore(namespace Namespace, name string, tags []string) MetricHandle {
 	if !knownmetrics.IsKnownMetric(namespace, "distribution", name) {
 		log.Debug("telemetry: metric name %q is not a known metric, please update the list of metrics name or check that your wrote the name correctly. "+
 			"The metric will still be sent.", name)
 	}
 
-	compiledTags := ""
-	for k, v := range tags {
-		compiledTags += k + ":" + v + ","
-	}
-
-	key := distributionKey{namespace: namespace, name: name, tags: strings.TrimSuffix(compiledTags, ",")}
+	key := distributionKey{namespace: namespace, name: name, tags: strings.Join(tags, ",")}
 
 	handle, _ := d.store.LoadOrStore(key, &distribution{key: key, values: internal.NewRingQueue[float64](d.queueSize.Min, d.queueSize.Max)})
 

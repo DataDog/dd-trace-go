@@ -3,8 +3,8 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2022 Datadog, Inc.
 
-// Package newtelemetrytest provides a mock implementation of the newtelemetry client for testing purposes
-package newtelemetrytest
+// Package telemetrytest provides a mock implementation of the newtelemetry client for testing purposes
+package telemetrytest
 
 import (
 	"strings"
@@ -40,14 +40,6 @@ func (m *MockClient) Close() error {
 	return nil
 }
 
-func tagsString(tags map[string]string) string {
-	compiledTags := ""
-	for k, v := range tags {
-		compiledTags += k + ":" + v + ","
-	}
-	return strings.TrimSuffix(compiledTags, ",")
-}
-
 type MockMetricHandle struct {
 	mock.Mock
 	mu     sync.Mutex
@@ -69,11 +61,11 @@ func (m *MockMetricHandle) Get() float64 {
 	return *m.value
 }
 
-func (m *MockClient) Count(namespace newtelemetry.Namespace, name string, tags map[string]string) newtelemetry.MetricHandle {
+func (m *MockClient) Count(namespace newtelemetry.Namespace, name string, tags []string) newtelemetry.MetricHandle {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.On("Count", namespace, name, tags)
-	key := metricKey{Namespace: namespace, Name: name, Tags: tagsString(tags), Kind: "count"}
+	key := metricKey{Namespace: namespace, Name: name, Tags: strings.Join(tags, ","), Kind: "count"}
 	if _, ok := m.Metrics[key]; !ok {
 		init := 0.0
 		m.Metrics[key] = &init
@@ -84,11 +76,11 @@ func (m *MockClient) Count(namespace newtelemetry.Namespace, name string, tags m
 	}}
 }
 
-func (m *MockClient) Rate(namespace newtelemetry.Namespace, name string, tags map[string]string) newtelemetry.MetricHandle {
+func (m *MockClient) Rate(namespace newtelemetry.Namespace, name string, tags []string) newtelemetry.MetricHandle {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.On("Rate", namespace, name, tags)
-	key := metricKey{Namespace: namespace, Name: name, Tags: tagsString(tags), Kind: "rate"}
+	key := metricKey{Namespace: namespace, Name: name, Tags: strings.Join(tags, ","), Kind: "rate"}
 	if _, ok := m.Metrics[key]; !ok {
 		init := 0.0
 		m.Metrics[key] = &init
@@ -99,11 +91,11 @@ func (m *MockClient) Rate(namespace newtelemetry.Namespace, name string, tags ma
 	}}
 }
 
-func (m *MockClient) Gauge(namespace newtelemetry.Namespace, name string, tags map[string]string) newtelemetry.MetricHandle {
+func (m *MockClient) Gauge(namespace newtelemetry.Namespace, name string, tags []string) newtelemetry.MetricHandle {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.On("Gauge", namespace, name, tags)
-	key := metricKey{Namespace: namespace, Name: name, Tags: tagsString(tags), Kind: "gauge"}
+	key := metricKey{Namespace: namespace, Name: name, Tags: strings.Join(tags, ","), Kind: "gauge"}
 	if _, ok := m.Metrics[key]; !ok {
 		init := 0.0
 		m.Metrics[key] = &init
@@ -114,11 +106,11 @@ func (m *MockClient) Gauge(namespace newtelemetry.Namespace, name string, tags m
 	}}
 }
 
-func (m *MockClient) Distribution(namespace newtelemetry.Namespace, name string, tags map[string]string) newtelemetry.MetricHandle {
+func (m *MockClient) Distribution(namespace newtelemetry.Namespace, name string, tags []string) newtelemetry.MetricHandle {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.On("Distribution", namespace, name, tags)
-	key := metricKey{Namespace: namespace, Name: name, Tags: tagsString(tags), Kind: "distribution"}
+	key := metricKey{Namespace: namespace, Name: name, Tags: strings.Join(tags, ","), Kind: "distribution"}
 	if _, ok := m.Metrics[key]; !ok {
 		init := 0.0
 		m.Metrics[key] = &init

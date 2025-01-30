@@ -90,7 +90,7 @@ func Disabled() bool {
 // Count creates a new metric handle for the given parameters that can be used to submit values.
 // Count will always return a MetricHandle, even if telemetry is disabled or the client has yet to start.
 // The MetricHandle is then swapped with the actual MetricHandle once the client is started.
-func Count(namespace Namespace, name string, tags map[string]string) MetricHandle {
+func Count(namespace Namespace, name string, tags []string) MetricHandle {
 	return globalClientNewMetric(func(client Client) MetricHandle {
 		return client.Count(namespace, name, tags)
 	})
@@ -99,7 +99,7 @@ func Count(namespace Namespace, name string, tags map[string]string) MetricHandl
 // Rate creates a new metric handle for the given parameters that can be used to submit values.
 // Rate will always return a MetricHandle, even if telemetry is disabled or the client has yet to start.
 // The MetricHandle is then swapped with the actual MetricHandle once the client is started.
-func Rate(namespace Namespace, name string, tags map[string]string) MetricHandle {
+func Rate(namespace Namespace, name string, tags []string) MetricHandle {
 	return globalClientNewMetric(func(client Client) MetricHandle {
 		return client.Rate(namespace, name, tags)
 	})
@@ -108,7 +108,7 @@ func Rate(namespace Namespace, name string, tags map[string]string) MetricHandle
 // Gauge creates a new metric handle for the given parameters that can be used to submit values.
 // Gauge will always return a MetricHandle, even if telemetry is disabled or the client has yet to start.
 // The MetricHandle is then swapped with the actual MetricHandle once the client is started.
-func Gauge(namespace Namespace, name string, tags map[string]string) MetricHandle {
+func Gauge(namespace Namespace, name string, tags []string) MetricHandle {
 	return globalClientNewMetric(func(client Client) MetricHandle {
 		return client.Gauge(namespace, name, tags)
 	})
@@ -117,7 +117,7 @@ func Gauge(namespace Namespace, name string, tags map[string]string) MetricHandl
 // Distribution creates a new metric handle for the given parameters that can be used to submit values.
 // Distribution will always return a MetricHandle, even if telemetry is disabled or the client has yet to start.
 // The MetricHandle is then swapped with the actual MetricHandle once the client is started.
-func Distribution(namespace Namespace, name string, tags map[string]string) MetricHandle {
+func Distribution(namespace Namespace, name string, tags []string) MetricHandle {
 	return globalClientNewMetric(func(client Client) MetricHandle {
 		return client.Distribution(namespace, name, tags)
 	})

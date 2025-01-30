@@ -37,19 +37,14 @@ type metrics struct {
 }
 
 // LoadOrStore returns a MetricHandle for the given metric key. If the metric key does not exist, it will be created.
-func (m *metrics) LoadOrStore(namespace Namespace, kind transport.MetricType, name string, tags map[string]string) MetricHandle {
+func (m *metrics) LoadOrStore(namespace Namespace, kind transport.MetricType, name string, tags []string) MetricHandle {
 	if !knownmetrics.IsKnownMetric(namespace, string(kind), name) {
 		log.Debug("telemetry: metric name %q is not a known metric, please update the list of metrics name or check that your wrote the name correctly. "+
 			"The metric will still be sent.", name)
 	}
 
-	compiledTags := ""
-	for k, v := range tags {
-		compiledTags += k + ":" + v + ","
-	}
-
 	var (
-		key    = metricKey{namespace: namespace, kind: kind, name: name, tags: strings.TrimSuffix(compiledTags, ",")}
+		key    = metricKey{namespace: namespace, kind: kind, name: name, tags: strings.Join(tags, ",")}
 		handle MetricHandle
 	)
 	switch kind {

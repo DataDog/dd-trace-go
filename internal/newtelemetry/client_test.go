@@ -570,7 +570,7 @@ func TestClientFlush(t *testing.T) {
 		{
 			name: "single-log-with-tag",
 			when: func(c *client) {
-				c.Log(LogError, "test", WithTags(map[string]string{"key": "value"}))
+				c.Log(LogError, "test", WithTags([]string{"key:value"}))
 			},
 			expect: func(t *testing.T, payloads []transport.Payload) {
 				payload := payloads[0]
@@ -585,7 +585,7 @@ func TestClientFlush(t *testing.T) {
 		{
 			name: "single-log-with-tags",
 			when: func(c *client) {
-				c.Log(LogError, "test", WithTags(map[string]string{"key": "value", "key2": "value2"}))
+				c.Log(LogError, "test", WithTags([]string{"key:value", "key2:value2"}))
 			},
 			expect: func(t *testing.T, payloads []transport.Payload) {
 				payload := payloads[0]
@@ -602,7 +602,7 @@ func TestClientFlush(t *testing.T) {
 		{
 			name: "single-log-with-tags-and-without",
 			when: func(c *client) {
-				c.Log(LogError, "test", WithTags(map[string]string{"key": "value", "key2": "value2"}))
+				c.Log(LogError, "test", WithTags([]string{"key:value", "key2:value2"}))
 				c.Log(LogError, "test")
 			},
 			expect: func(t *testing.T, payloads []transport.Payload) {
@@ -646,7 +646,7 @@ func TestClientFlush(t *testing.T) {
 		{
 			name: "single-log-with-stacktrace-and-tags",
 			when: func(c *client) {
-				c.Log(LogError, "test", WithStacktrace(), WithTags(map[string]string{"key": "value", "key2": "value2"}))
+				c.Log(LogError, "test", WithStacktrace(), WithTags([]string{"key:value", "key2:value2"}))
 			},
 			expect: func(t *testing.T, payloads []transport.Payload) {
 				payload := payloads[0]
@@ -762,8 +762,8 @@ func TestClientFlush(t *testing.T) {
 		{
 			name: "multiple-count-by-tags",
 			when: func(c *client) {
-				c.Count(NamespaceTracers, "init_time", map[string]string{"test": "1"}).Submit(1)
-				c.Count(NamespaceTracers, "init_time", map[string]string{"test": "2"}).Submit(2)
+				c.Count(NamespaceTracers, "init_time", []string{"test:1"}).Submit(1)
+				c.Count(NamespaceTracers, "init_time", []string{"test:2"}).Submit(2)
 			},
 			expect: func(t *testing.T, payloads []transport.Payload) {
 				payload := payloads[0]
@@ -832,8 +832,8 @@ func TestClientFlush(t *testing.T) {
 		{
 			name: "multiple-gauge-by-tags",
 			when: func(c *client) {
-				c.Gauge(NamespaceTracers, "init_time", map[string]string{"test": "1"}).Submit(1)
-				c.Gauge(NamespaceTracers, "init_time", map[string]string{"test": "2"}).Submit(2)
+				c.Gauge(NamespaceTracers, "init_time", []string{"test:1"}).Submit(1)
+				c.Gauge(NamespaceTracers, "init_time", []string{"test:2"}).Submit(2)
 			},
 			expect: func(t *testing.T, payloads []transport.Payload) {
 				payload := payloads[0]
@@ -914,8 +914,8 @@ func TestClientFlush(t *testing.T) {
 		{
 			name: "multiple-distribution-by-tags",
 			when: func(c *client) {
-				c.Distribution(NamespaceTracers, "init_time", map[string]string{"test": "1"}).Submit(1)
-				c.Distribution(NamespaceTracers, "init_time", map[string]string{"test": "2"}).Submit(2)
+				c.Distribution(NamespaceTracers, "init_time", []string{"test:1"}).Submit(1)
+				c.Distribution(NamespaceTracers, "init_time", []string{"test:2"}).Submit(2)
 			},
 			expect: func(t *testing.T, payloads []transport.Payload) {
 				payload := payloads[0]
@@ -1230,7 +1230,7 @@ func BenchmarkLogs(b *testing.B) {
 
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
-			c.Log(LogWarn, "this is supposed to be a WARN log of representative length", WithTags(map[string]string{"key": strconv.Itoa(i % 10)}))
+			c.Log(LogWarn, "this is supposed to be a WARN log of representative length", WithTags([]string{"key:" + strconv.Itoa(i%10)}))
 		}
 	})
 
@@ -1289,7 +1289,7 @@ func BenchmarkWorstCaseScenarioFloodLogging(b *testing.B) {
 				defer wg.Done()
 				for j := 0; j < nbDifferentLogs; j++ {
 					for k := 0; k < nbSameLogs; k++ {
-						c.Log(LogDebug, "this is supposed to be a DEBUG log of representative length"+strconv.Itoa(i), WithTags(map[string]string{"key": strconv.Itoa(j)}))
+						c.Log(LogDebug, "this is supposed to be a DEBUG log of representative length"+strconv.Itoa(i), WithTags([]string{"key:" + strconv.Itoa(j)}))
 					}
 				}
 			}()
@@ -1465,7 +1465,7 @@ func BenchmarkWorstCaseScenarioFloodMetrics(b *testing.B) {
 					defer wg.Done()
 					for j := 0; j < nbDifferentMetrics; j++ {
 						for k := 0; k < nbSameMetric; k++ {
-							c.Count(NamespaceTracers, "init_time", map[string]string{"test": "1"}).Submit(1)
+							c.Count(NamespaceTracers, "init_time", []string{"test:1"}).Submit(1)
 						}
 					}
 				}()
@@ -1488,7 +1488,7 @@ func BenchmarkWorstCaseScenarioFloodMetrics(b *testing.B) {
 		for x := 0; x < b.N; x++ {
 			var wg sync.WaitGroup
 
-			handle := c.Count(NamespaceTracers, "init_time", map[string]string{"test": "1"})
+			handle := c.Count(NamespaceTracers, "init_time", []string{"test:1"})
 			for i := 0; i < nbGoroutines; i++ {
 				wg.Add(1)
 				go func() {

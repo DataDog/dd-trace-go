@@ -19,12 +19,8 @@ type LogOption func(key *loggerKey, value *loggerValue)
 
 // WithTags returns a LogOption that sets the tags for the telemetry log message. Tags are key-value pairs that are then
 // serialized into a simple "key:value,key2:value2" format. No quoting or escaping is performed.
-func WithTags(tags map[string]string) LogOption {
-	compiledTags := ""
-	for k, v := range tags {
-		compiledTags += k + ":" + v + ","
-	}
-	compiledTags = strings.TrimSuffix(compiledTags, ",")
+func WithTags(tags []string) LogOption {
+	compiledTags := strings.Join(tags, ",")
 	return func(key *loggerKey, _ *loggerValue) {
 		if key == nil {
 			return
