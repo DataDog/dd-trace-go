@@ -62,6 +62,16 @@ type Integration struct {
 	Error string
 }
 
+// Configuration is a key-value pair that is used to configure the application.
+type Configuration struct {
+	// Key is the key of the configuration.
+	Key string
+	// Value is the value of the configuration. Need to be json serializable.
+	Value any
+	// Origin is the source of the configuration change.
+	Origin Origin
+}
+
 // Client constitutes all the functions available concurrently for the telemetry users. All methods are thread-safe
 // This is an interface for easier testing but all functions will be mirrored at the package level to call
 // the global client.
@@ -93,13 +103,13 @@ type Client interface {
 	// ProductStartError declares that a product could not start because of the following error
 	ProductStartError(product Namespace, err error)
 
-	// AddAppConfig adds a key value pair to the app configuration and send the change to telemetry
+	// RegisterAppConfig adds a key value pair to the app configuration and send the change to telemetry
 	// value has to be json serializable and the origin is the source of the change.
-	AddAppConfig(key string, value any, origin Origin)
+	RegisterAppConfig(key string, value any, origin Origin)
 
-	// AddBulkAppConfig adds a list of key value pairs to the app configuration and sends the change to telemetry.
+	// RegisterAppConfigs adds a list of key value pairs to the app configuration and sends the change to telemetry.
 	// Same as AddAppConfig but for multiple values.
-	AddBulkAppConfig(kvs map[string]any, origin Origin)
+	RegisterAppConfigs(kvs ...Configuration)
 
 	// MarkIntegrationAsLoaded marks an integration as loaded in the telemetry
 	MarkIntegrationAsLoaded(integration Integration)
@@ -108,8 +118,10 @@ type Client interface {
 	Flush()
 
 	// AppStart sends the telemetry necessary to signal that the app is starting.
+	// Preferred use via StartApp package level function
 	AppStart()
 
 	// AppStop sends the telemetry necessary to signal that the app is stopping.
+	// Preferred use via StopApp package level function
 	AppStop()
 }

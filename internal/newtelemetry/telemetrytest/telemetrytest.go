@@ -22,7 +22,7 @@ type MockClient struct {
 	mu            sync.Mutex
 	Started       bool
 	Stopped       bool
-	Configuration map[string]any
+	Configuration []newtelemetry.Configuration
 	Logs          map[newtelemetry.LogLevel]string
 	Integrations  []string
 	Products      map[newtelemetry.Namespace]bool
@@ -157,20 +157,18 @@ func (m *MockClient) ProductStartError(product newtelemetry.Namespace, err error
 	m.Products[product] = false
 }
 
-func (m *MockClient) AddAppConfig(key string, value any, origin newtelemetry.Origin) {
+func (m *MockClient) RegisterAppConfig(key string, value any, origin newtelemetry.Origin) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.On("AddAppConfig", key, value, origin)
-	m.Configuration[key] = value
+	m.On("RegisterAppConfig", key, value, origin)
+	m.Configuration = append(m.Configuration, newtelemetry.Configuration{Key: key, Value: value, Origin: origin})
 }
 
-func (m *MockClient) AddBulkAppConfig(kvs map[string]any, origin newtelemetry.Origin) {
+func (m *MockClient) RegisterAppConfigs(kvs ...newtelemetry.Configuration) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.On("AddBulkAppConfig", kvs, origin)
-	for k, v := range kvs {
-		m.Configuration[k] = v
-	}
+	m.On("RegisterAppConfigs", kvs)
+	m.Configuration = append(m.Configuration, kvs...)
 }
 
 func (m *MockClient) MarkIntegrationAsLoaded(integration newtelemetry.Integration) {

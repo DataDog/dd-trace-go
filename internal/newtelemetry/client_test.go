@@ -111,7 +111,7 @@ func TestClientFlush(t *testing.T) {
 				ExtendedHeartbeatInterval: time.Nanosecond,
 			},
 			when: func(c *client) {
-				c.AddAppConfig("key", "value", OriginDefault)
+				c.RegisterAppConfig("key", "value", OriginDefault)
 			},
 			expect: func(t *testing.T, payloads []transport.Payload) {
 				payload := payloads[0]
@@ -148,7 +148,7 @@ func TestClientFlush(t *testing.T) {
 		{
 			name: "configuration-default",
 			when: func(c *client) {
-				c.AddAppConfig("key", "value", OriginDefault)
+				c.RegisterAppConfig("key", "value", OriginDefault)
 			},
 			expect: func(t *testing.T, payloads []transport.Payload) {
 				payload := payloads[0]
@@ -163,7 +163,7 @@ func TestClientFlush(t *testing.T) {
 		{
 			name: "configuration-default",
 			when: func(c *client) {
-				c.AddAppConfig("key", "value", OriginDefault)
+				c.RegisterAppConfig("key", "value", OriginDefault)
 			},
 			expect: func(t *testing.T, payloads []transport.Payload) {
 				payload := payloads[0]
@@ -340,7 +340,7 @@ func TestClientFlush(t *testing.T) {
 			name: "app-started-with-configuration",
 			when: func(c *client) {
 				c.AppStart()
-				c.AddAppConfig("key", "value", OriginDefault)
+				c.RegisterAppConfig("key", "value", OriginDefault)
 			},
 			expect: func(t *testing.T, payloads []transport.Payload) {
 				payload := payloads[0]

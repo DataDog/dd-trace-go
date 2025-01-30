@@ -17,7 +17,7 @@ type configuration struct {
 	seqID  uint64
 }
 
-func (c *configuration) Add(key string, value any, origin Origin) {
+func (c *configuration) Add(kv Configuration) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -25,10 +25,10 @@ func (c *configuration) Add(key string, value any, origin Origin) {
 		c.config = make(map[string]transport.ConfKeyValue)
 	}
 
-	c.config[key] = transport.ConfKeyValue{
-		Name:   key,
-		Value:  value,
-		Origin: origin,
+	c.config[kv.Key] = transport.ConfKeyValue{
+		Name:   kv.Key,
+		Value:  kv.Value,
+		Origin: kv.Origin,
 	}
 }
 

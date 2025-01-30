@@ -172,21 +172,21 @@ func ProductStartError(product Namespace, err error) {
 	})
 }
 
-// AddAppConfig adds a key value pair to the app configuration and send the change to telemetry
+// RegisterAppConfig adds a key value pair to the app configuration and send the change to telemetry
 // value has to be json serializable and the origin is the source of the change. If telemetry is disabled, it will do nothing.
 // If the telemetry client has not started yet, it will record the action and replay it once the client is started.
-func AddAppConfig(key string, value any, origin Origin) {
+func RegisterAppConfig(key string, value any, origin Origin) {
 	globalClientCall(func(client Client) {
-		client.AddAppConfig(key, value, origin)
+		client.RegisterAppConfig(key, value, origin)
 	})
 }
 
-// AddBulkAppConfig adds a list of key value pairs to the app configuration and sends the change to telemetry.
+// RegisterAppConfigs adds a list of key value pairs to the app configuration and sends the change to telemetry.
 // Same as AddAppConfig but for multiple values. If telemetry is disabled, it will do nothing.
 // If the telemetry client has not started yet, it will record the action and replay it once the client is started.
-func AddBulkAppConfig(kvs map[string]any, origin Origin) {
+func RegisterAppConfigs(kvs ...Configuration) {
 	globalClientCall(func(client Client) {
-		client.AddBulkAppConfig(kvs, origin)
+		client.RegisterAppConfigs(kvs...)
 	})
 }
 
@@ -201,9 +201,7 @@ func globalClientCall(fun func(client Client)) {
 
 	client := globalClient.Load()
 	if client == nil || *client == nil {
-		if !globalClientRecorder.Record(func(client Client) {
-			fun(client)
-		}) {
+		if !globalClientRecorder.Record(fun) {
 			globalClientLogLossOnce.Do(func() {
 				log.Debug("telemetry: global client recorder queue is full, dropping telemetry data, please start the telemetry client earlier to avoid data loss")
 			})

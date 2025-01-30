@@ -178,13 +178,13 @@ func (c *client) ProductStartError(product Namespace, err error) {
 	c.products.Add(product, false, err)
 }
 
-func (c *client) AddAppConfig(key string, value any, origin Origin) {
-	c.configuration.Add(key, value, origin)
+func (c *client) RegisterAppConfig(key string, value any, origin Origin) {
+	c.configuration.Add(Configuration{key, value, origin})
 }
 
-func (c *client) AddBulkAppConfig(kvs map[string]any, origin Origin) {
-	for key, value := range kvs {
-		c.configuration.Add(key, value, origin)
+func (c *client) RegisterAppConfigs(kvs ...Configuration) {
+	for _, value := range kvs {
+		c.configuration.Add(value)
 	}
 }
 
@@ -324,5 +324,3 @@ func (c *client) Close() error {
 	c.flushTicker.Stop()
 	return nil
 }
-
-var _ Client = (*client)(nil)
