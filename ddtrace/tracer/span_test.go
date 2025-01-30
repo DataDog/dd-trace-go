@@ -6,8 +6,10 @@
 package tracer
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"runtime"
 	"strings"
 	"sync"
@@ -1091,4 +1093,47 @@ func testConcurrentSpanSetTag(t *testing.T) {
 		}()
 	}
 	wg.Wait()
+}
+
+func TestSpanLinksInMeta(t *testing.T) {
+	t.Run("no_links", func(t *testing.T) {
+		tracer := newTracer()
+		defer tracer.Stop()
+
+		sp := tracer.StartSpan("test-no-links")
+		sp.Finish()
+
+		internalSpan := sp.(*span)
+		_, ok := internalSpan.Meta["_dd.span_links"]
+		assert.False(t, ok, "Expected no _dd.span_links in Meta.")
+	})
+
+	t.Run("with_links", func(t *testing.T) {
+		tracer := newTracer()
+		defer tracer.Stop()
+
+		sp, ok := tracer.StartSpan("test-with-links").(SpanWithLinks)
+		require.True(t, ok, "Span does not implement SpanWithLinks interface")
+
+		// Add a couple of links.
+		sp.AddSpanLinks(
+			ddtrace.SpanLink{SpanID: 123, TraceID: 456},
+			ddtrace.SpanLink{SpanID: 789, TraceID: 012},
+		)
+		sp.Finish()
+
+		internalSpan := sp.(*span)
+		raw, ok := internalSpan.Meta["_dd.span_links"]
+		require.True(t, ok, "Expected _dd.span_links in Meta after adding links.")
+
+		var links []ddtrace.SpanLink
+		err := json.Unmarshal([]byte(raw), &links)
+		require.NoError(t, err, "Failed to unmarshal links JSON")
+		require.Len(t, links, 2, "Expected 2 links in _dd.span_links JSON")
+
+		assert.Equal(t, uint64(123), links[0].SpanID)
+		assert.Equal(t, uint64(456), links[0].TraceID)
+		assert.Equal(t, uint64(789), links[1].SpanID)
+		assert.Equal(t, uint64(012), links[1].TraceID)
+	})
 }
