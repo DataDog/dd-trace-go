@@ -22,10 +22,10 @@ var (
 // Accessors set by orchestrion in the runtime package. If orchestrion is not enabled, these will be nil as per the default values.
 
 //revive:disable:var-naming
-//go:linkname __dd_orchestrion_gls_get __dd_orchestrion_gls_get
+//go:linkname __dd_orchestrion_gls_get __dd_orchestrion_gls_get.V2
 var __dd_orchestrion_gls_get func() any
 
-//go:linkname __dd_orchestrion_gls_set __dd_orchestrion_gls_set
+//go:linkname __dd_orchestrion_gls_set __dd_orchestrion_gls_set.V2
 var __dd_orchestrion_gls_set func(any)
 
 //revive:enable:var-naming
