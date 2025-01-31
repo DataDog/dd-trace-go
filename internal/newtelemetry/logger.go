@@ -64,18 +64,10 @@ type loggerValue struct {
 }
 
 type logger struct {
-	store atomic.Pointer[internal.TypedSyncMap[loggerKey, *loggerValue]]
+	store internal.TypedSyncMap[loggerKey, *loggerValue]
 }
 
 func (logger *logger) Add(level LogLevel, text string, opts ...LogOption) {
-	store := logger.store.Load()
-	if store == nil {
-		store = new(internal.TypedSyncMap[loggerKey, *loggerValue])
-		for logger.store.CompareAndSwap(nil, store) {
-			continue
-		}
-	}
-
 	key := loggerKey{
 		message: text,
 		level:   level,
@@ -85,32 +77,22 @@ func (logger *logger) Add(level LogLevel, text string, opts ...LogOption) {
 		opt(&key, nil)
 	}
 
-	val, ok := store.Load(key)
-	if ok {
-		val.count.Add(1)
-		return
+	value, loaded := logger.store.LoadOrStore(key, &loggerValue{})
+	if !loaded {
+		// If we were the first to store the value, we need to set the time and apply the options
+		value.time = time.Now().Unix()
+		for _, opt := range opts {
+			opt(nil, value)
+		}
 	}
 
-	newVal := &loggerValue{
-		time: time.Now().Unix(),
-	}
-
-	for _, opt := range opts {
-		opt(&key, newVal)
-	}
-
-	newVal.count.Store(1)
-	store.Store(key, newVal)
+	value.count.Add(1)
 }
 
 func (logger *logger) Payload() transport.Payload {
-	store := logger.store.Swap(nil)
-	if store == nil {
-		return nil
-	}
-
 	var logs []transport.LogMessage
-	store.Range(func(key loggerKey, value *loggerValue) bool {
+	logger.store.Range(func(key loggerKey, value *loggerValue) bool {
+		logger.store.Delete(key)
 		logs = append(logs, transport.LogMessage{
 			Message:    key.message,
 			Level:      key.level,
@@ -122,6 +104,9 @@ func (logger *logger) Payload() transport.Payload {
 		return true
 	})
 
-	store.Clear()
+	if len(logs) == 0 {
+		return nil
+	}
+
 	return transport.Logs{Logs: logs}
 }
