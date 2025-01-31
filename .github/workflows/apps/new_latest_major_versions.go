@@ -173,8 +173,9 @@ func fetchGoMod(url string) (bool, string) {
 	// Create an HTTP client and make a GET request
 	resp, err := http.Get(url)
 	if err != nil {
-		fmt.Printf("Error making HTTP request: %v\n", err)
+		// fmt.Printf("Error making HTTP request: %v\n", err)
 		return false, ""
+		// return false, "", fmt.Errorf("failed to get go.mod from url: %w", err)
 	}
 	defer resp.Body.Close()
 
@@ -230,13 +231,14 @@ func main() {
 	github_latests := map[string]GithubLatests{} // map module (base name) => latest on github
 	contrib_latests := map[string]string{}       // map module (base name) => latest on go.mod
 
-	for pkg, repository := range instrumentation.GetPackages() {
+	for pkg, packageInfo := range instrumentation.GetPackages() {
 
 		// Step 1: get the version from the module go.mod
 		fmt.Printf("package: %v\n", pkg)
+		repository := packageInfo.TracedPackage
 
 		// if it is part of the standard packages, continue
-		if _, ok := instrumentation.StandardPackages[repository]; ok {
+		if packageInfo.IsStdLib {
 			continue
 		}
 

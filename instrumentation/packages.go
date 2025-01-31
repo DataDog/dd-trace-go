@@ -93,6 +93,7 @@ type PackageInfo struct {
 	external bool
 
 	TracedPackage string
+	IsStdLib      bool
 	EnvVarPrefix  string
 
 	naming map[Component]componentNames
@@ -218,6 +219,7 @@ var packages = map[Package]PackageInfo{
 	},
 	PackageDatabaseSQL: {
 		TracedPackage: "database/sql",
+		IsStdLib:      true,
 		EnvVarPrefix:  "SQL",
 		naming: map[Component]componentNames{
 			ComponentDefault: {
@@ -449,6 +451,7 @@ var packages = map[Package]PackageInfo{
 
 	PackageNetHTTP: {
 		TracedPackage: "net/http",
+		IsStdLib:      true,
 		EnvVarPrefix:  "HTTP",
 		naming: map[Component]componentNames{
 			ComponentServer: {
@@ -733,17 +736,11 @@ var packages = map[Package]PackageInfo{
 	},
 	PackageLogSlog: {
 		TracedPackage: "log/slog",
+		IsStdLib:      true,
 	},
 	PackageEnvoyProxyGoControlPlane: {
 		TracedPackage: "github.com/envoyproxy/go-control-plane",
 	},
-}
-
-var StandardPackages = map[string]struct{}{
-	"log/slog":     {},
-	"os":           {},
-	"net/http":     {},
-	"database/sql": {},
 }
 
 func staticName(name string) func(OperationContext) string {
@@ -788,10 +785,10 @@ func isAWSMessagingSendOp(awsService, awsOperation string) bool {
 }
 
 // GetPackages returns a map of Package to the corresponding instrumented module.
-func GetPackages() map[Package]string {
-	cp := make(map[Package]string)
+func GetPackages() map[Package]PackageInfo {
+	cp := make(map[Package]PackageInfo)
 	for pkg, info := range packages {
-		cp[pkg] = info.TracedPackage
+		cp[pkg] = info
 	}
 	return cp
 }
