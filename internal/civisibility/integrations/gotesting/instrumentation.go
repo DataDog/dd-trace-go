@@ -243,15 +243,15 @@ func applyFlakyTestRetriesAdditionalFeature(targetFunc func(*testing.T)) (func(*
 
 // applyEarlyFlakeDetectionAdditionalFeature applies the early flake detection feature as a wrapper of a func(*testing.T)
 func applyEarlyFlakeDetectionAdditionalFeature(testInfo *commonInfo, targetFunc func(*testing.T), settings *net.SettingsResponseData) (func(*testing.T), bool) {
-	earlyFlakeDetectionData := integrations.GetEarlyFlakeDetectionSettings()
-	if earlyFlakeDetectionData != nil &&
-		len(earlyFlakeDetectionData.Tests) > 0 {
+	knownTestsData := integrations.GetKnownTests()
+	if knownTestsData != nil &&
+		len(knownTestsData.Tests) > 0 {
 
 		// Define is a known test flag
 		isAKnownTest := false
 
 		// Check if the test is a known test or a new one
-		if knownSuites, ok := earlyFlakeDetectionData.Tests[testInfo.moduleName]; ok {
+		if knownSuites, ok := knownTestsData.Tests[testInfo.moduleName]; ok {
 			if knownTests, ok := knownSuites[testInfo.suiteName]; ok {
 				if slices.Contains(knownTests, testInfo.testName) {
 					isAKnownTest = true

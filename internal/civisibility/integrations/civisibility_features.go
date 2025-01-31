@@ -51,8 +51,8 @@ var (
 	// ciVisibilitySettings contains the CI Visibility settings for this session
 	ciVisibilitySettings net.SettingsResponseData
 
-	// ciVisibilityEarlyFlakyDetectionSettings contains the CI Visibility Early Flake Detection data for this session
-	ciVisibilityEarlyFlakyDetectionSettings net.EfdResponseData
+	// ciVisibilityKnownTests contains the CI Visibility Known Tests data for this session
+	ciVisibilityKnownTests net.KnownTestsResponseData
 
 	// ciVisibilityFlakyRetriesSettings contains the CI Visibility Flaky Retries settings for this session
 	ciVisibilityFlakyRetriesSettings FlakyRetriesSetting
@@ -121,14 +121,14 @@ func ensureAdditionalFeaturesInitialization(serviceName string) {
 			return
 		}
 
-		// if early flake detection is enabled then we run the early flake detection request
-		if ciVisibilitySettings.EarlyFlakeDetection.Enabled {
-			ciEfdData, err := ciVisibilityClient.GetEarlyFlakeDetectionData()
+		// if early flake detection is enabled then we run the known tests request
+		if ciVisibilitySettings.KnownTestsEnabled {
+			ciEfdData, err := ciVisibilityClient.GetKnownTests()
 			if err != nil {
-				log.Error("civisibility: error getting CI visibility early flake detection data: %v", err)
+				log.Error("civisibility: error getting CI visibility known tests data: %v", err)
 			} else if ciEfdData != nil {
-				ciVisibilityEarlyFlakyDetectionSettings = *ciEfdData
-				log.Debug("civisibility: early flake detection data loaded.")
+				ciVisibilityKnownTests = *ciEfdData
+				log.Debug("civisibility: known tests data loaded.")
 			}
 		}
 
@@ -172,11 +172,11 @@ func GetSettings() *net.SettingsResponseData {
 	return &ciVisibilitySettings
 }
 
-// GetEarlyFlakeDetectionSettings gets the early flake detection known tests data
-func GetEarlyFlakeDetectionSettings() *net.EfdResponseData {
+// GetKnownTests gets the known tests data
+func GetKnownTests() *net.KnownTestsResponseData {
 	// call to ensure the additional features initialization is completed (service name can be null here)
 	ensureAdditionalFeaturesInitialization("")
-	return &ciVisibilityEarlyFlakyDetectionSettings
+	return &ciVisibilityKnownTests
 }
 
 // GetFlakyRetriesSettings gets the flaky retries settings
