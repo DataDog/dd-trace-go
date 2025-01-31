@@ -2,6 +2,10 @@ module github.com/DataDog/dd-trace-go/v2
 
 go 1.22.0
 
+// This replace is a temporary workaround to deal with a breaking change here that is used by the datadog-agent
+// It can safely be removed once this PR is released: https://github.com/DataDog/datadog-agent/pull/33370
+replace github.com/DataDog/opentelemetry-mapping-go/pkg/otlp/attributes => github.com/DataDog/opentelemetry-mapping-go/pkg/otlp/attributes v0.20.0
+
 require (
 	github.com/DataDog/appsec-internal-go v1.9.0
 	github.com/DataDog/datadog-agent/pkg/obfuscate v0.59.0

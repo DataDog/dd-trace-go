@@ -105,7 +105,7 @@ func TestConcentrator(t *testing.T) {
 		t.Run("ciGitSha", func(t *testing.T) {
 			utils.AddCITags(constants.GitCommitSHA, "DEADBEEF")
 			transport := newDummyTransport()
-			c := newConcentrator(&config{transport: transport, env: "someEnv"}, (10 * time.Second).Nanoseconds(), &statsd.NoOpClientDirect{})
+			c := newConcentrator(&config{transport: transport, env: "someEnv", ciVisibilityEnabled: true}, (10 * time.Second).Nanoseconds(), &statsd.NoOpClientDirect{})
 			assert.Len(t, transport.Stats(), 0)
 			ss1, ok := c.newTracerStatSpan(&s1, nil)
 			assert.True(t, ok)
