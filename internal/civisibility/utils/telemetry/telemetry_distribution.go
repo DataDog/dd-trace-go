@@ -86,9 +86,9 @@ func CodeCoverageFiles(value float64) {
 	telemetry.Distribution(telemetry.NamespaceCIVisibility, "code_coverage.files", nil).Submit(value)
 }
 
-// EarlyFlakeDetectionRequestMs records the time it takes to get the response of the early flake detection endpoint request in ms by CI Visibility.
-func EarlyFlakeDetectionRequestMs(value float64) {
-	telemetry.GlobalClient.Record(telemetry.NamespaceCiVisibility, telemetry.MetricKindDist, "early_flake_detection.request_ms", value, nil, true)
+// KnownTestsRequestMs records the time it takes to get the response of the known tests endpoint request in ms by CI Visibility.
+func KnownTestsRequestMs(value float64) {
+	telemetry.Distribution(telemetry.NamespaceCIVisibility, "known_tests.request_ms", nil).Submit(value)
 }
 
 // KnownTestsResponseBytes records the number of bytes received by the endpoint. Tagged with a boolean flag set to true if response body is compressed.
