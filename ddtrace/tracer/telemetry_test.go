@@ -39,7 +39,7 @@ func checkConfig(t *testing.T, cfgs []telemetry.Configuration, key string, value
 func TestTelemetryEnabled(t *testing.T) {
 	t.Run("tracer start", func(t *testing.T) {
 		telemetryClient := new(telemetrytest.MockClient)
-		defer telemetry.MockGlobalClient(telemetryClient)()
+		defer mockGlobalClient(telemetryClient)()
 
 		Start(
 			WithDebugMode(true),

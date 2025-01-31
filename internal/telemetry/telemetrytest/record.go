@@ -157,14 +157,15 @@ func (r *RecordClient) ProductStartError(product telemetry.Namespace, _ error) {
 }
 
 func (r *RecordClient) RegisterAppConfig(key string, value any, origin telemetry.Origin) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.Configuration = append(r.Configuration, telemetry.Configuration{Name: key, Value: value, Origin: origin})
+	r.RegisterAppConfigs(telemetry.Configuration{Name: key, Value: value, Origin: origin})
 }
 
 func (r *RecordClient) RegisterAppConfigs(kvs ...telemetry.Configuration) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	for i := range kvs {
+		kvs[i].Value = telemetry.SanitizeConfigValue(kvs[i].Value)
+	}
 	r.Configuration = append(r.Configuration, kvs...)
 }
 
@@ -189,6 +190,7 @@ func (r *RecordClient) AppStop() {
 }
 
 func CheckConfig(t *testing.T, cfgs []telemetry.Configuration, key string, value any) {
+	t.Helper()
 	for _, c := range cfgs {
 		if c.Name == key && reflect.DeepEqual(c.Value, value) {
 			return

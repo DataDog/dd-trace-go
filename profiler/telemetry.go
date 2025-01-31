@@ -25,18 +25,6 @@ func startTelemetry(c *config) {
 		_, ok := c.types[t]
 		return ok
 	}
-	if telemetry.GlobalClient() == nil {
-		client, err := telemetry.NewClient(c.service, c.env, c.version, telemetry.ClientConfig{
-			HTTPClient: c.httpClient,
-			APIKey:     c.apiKey,
-			AgentURL:   c.agentURL,
-		})
-		if err != nil {
-			log.Debug("profiler: failed to create telemetry client: %v", err)
-			return
-		}
-		telemetry.StartApp(client)
-	}
 	telemetry.ProductStarted(telemetry.NamespaceProfilers)
 	telemetry.RegisterAppConfigs(
 		[]telemetry.Configuration{
@@ -64,4 +52,16 @@ func startTelemetry(c *config) {
 			{Name: "flush_on_exit", Value: c.flushOnExit},
 		}...,
 	)
+	if telemetry.GlobalClient() == nil {
+		client, err := telemetry.NewClient(c.service, c.env, c.version, telemetry.ClientConfig{
+			HTTPClient: c.httpClient,
+			APIKey:     c.apiKey,
+			AgentURL:   c.agentURL,
+		})
+		if err != nil {
+			log.Debug("profiler: failed to create telemetry client: %v", err)
+			return
+		}
+		telemetry.StartApp(client)
+	}
 }

@@ -34,21 +34,6 @@ func startTelemetry(c *config) {
 		return
 	}
 
-	if telemetry.GlobalClient() == nil {
-		cfg := telemetry.ClientConfig{
-			HTTPClient: c.httpClient,
-			AgentURL:   c.agentURL.String(),
-		}
-		if c.logToStdout || c.ciVisibilityAgentless {
-			cfg.APIKey = os.Getenv("DD_API_KEY")
-		}
-		client, err := telemetry.NewClient(c.serviceName, c.env, c.version, cfg)
-		if err != nil {
-			log.Debug("profiler: failed to create telemetry client: %v", err)
-			return
-		}
-		telemetry.StartApp(client)
-	}
 	telemetry.ProductStarted(telemetry.NamespaceTracers)
 	telemetryConfigs := []telemetry.Configuration{
 		{Name: "trace_debug_enabled", Value: c.debug},
@@ -125,4 +110,17 @@ func startTelemetry(c *config) {
 	}
 	telemetryConfigs = append(telemetryConfigs, additionalConfigs...)
 	telemetry.RegisterAppConfigs(telemetryConfigs...)
+	cfg := telemetry.ClientConfig{
+		HTTPClient: c.httpClient,
+		AgentURL:   c.agentURL.String(),
+	}
+	if c.logToStdout || c.ciVisibilityAgentless {
+		cfg.APIKey = os.Getenv("DD_API_KEY")
+	}
+	client, err := telemetry.NewClient(c.serviceName, c.env, c.version, cfg)
+	if err != nil {
+		log.Debug("profiler: failed to create telemetry client: %v", err)
+		return
+	}
+	telemetry.StartApp(client)
 }

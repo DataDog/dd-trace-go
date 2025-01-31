@@ -115,10 +115,9 @@ func TestExtractError(t *testing.T) {
 }
 
 func TestSpanTelemetry(t *testing.T) {
-	telemetryClient := new(telemetrytest.MockClient)
-	defer telemetry.MockGlobalClient(telemetryClient)()
+	telemetryClient := new(telemetrytest.RecordClient)
+	defer telemetry.MockClient(telemetryClient)()
 	opentracing.SetGlobalTracer(New())
 	_ = opentracing.StartSpan("opentracing.span")
-	telemetryClient.AssertCalled(t, "Count", telemetry.NamespaceTracers, "spans_created", 1.0, telemetryTags, true)
-	telemetryClient.AssertNumberOfCalls(t, "Count", 1)
+	assert.NotZero(t, telemetryClient.Count(telemetry.NamespaceTracers, "spans_created", telemetryTags).Get())
 }

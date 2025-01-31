@@ -208,5 +208,5 @@ func KnownTestsRequest(requestCompressed RequestCompressedType) {
 
 // KnownTestsRequestErrors the number of requests sent to the known tests endpoint that errored, tagged by the error type.
 func KnownTestsRequestErrors(errorType ErrorType) {
-	telemetry.Count(telemetry.NamespaceCIVisibility, "known_tests.request_errors",  removeEmptyStrings(errorType)).Submit(1.0)
+	telemetry.Count(telemetry.NamespaceCIVisibility, "known_tests.request_errors", removeEmptyStrings(errorType)).Submit(1.0)
 }

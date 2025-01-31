@@ -39,7 +39,7 @@ func TestNewSpanContextPushError(t *testing.T) {
 	defer setupteardown(2, 2)()
 
 	tp := new(log.RecordLogger)
-	tp.Ignore("appsec: ", telemetry.LogPrefix)
+	tp.Ignore("appsec: ", "telemetry")
 	_, _, _, stop := startTestTracer(t, WithLogger(tp), WithLambdaMode(true), WithEnv("testEnv"))
 	defer stop()
 	parent := newBasicSpan("test1")                  // 1st span in trace
@@ -172,9 +172,9 @@ func TestPartialFlush(t *testing.T) {
 	t.Setenv("DD_TRACE_PARTIAL_FLUSH_ENABLED", "true")
 	t.Setenv("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", "2")
 	t.Run("WithFlush", func(t *testing.T) {
-		telemetryClient := new(telemetrytest.MockClient)
-		telemetryClient.ProductChange(telemetry.NamespaceTracers, true, nil)
-		defer telemetry.MockGlobalClient(telemetryClient)()
+		telemetryClient := new(telemetrytest.RecordClient)
+		telemetryClient.ProductStarted(telemetry.NamespaceTracers)
+		defer telemetry.MockClient(telemetryClient)()
 		tracer, transport, flush, stop := startTestTracer(t)
 		defer stop()
 
@@ -198,10 +198,9 @@ func TestPartialFlush(t *testing.T) {
 		comparePayloadSpans(t, children[0], ts[0][0])
 		comparePayloadSpans(t, children[1], ts[0][1])
 
-		telemetryClient.AssertCalled(t, "Count", telemetry.NamespaceTracers, "trace_partial_flush.count", 1.0, []string{"reason:large_trace"}, true)
-		// TODO: (Support MetricKindDist) Re-enable these when we actually support `MetricKindDist`
-		//telemetryClient.AssertCalled(t, "Record", telemetry.NamespaceTracers, "trace_partial_flush.spans_closed", 2.0, []string(nil), true) // Typed-nil here to not break usage of reflection in `mock` library.
-		//telemetryClient.AssertCalled(t, "Record", telemetry.NamespaceTracers, "trace_partial_flush.spans_remaining", 1.0, []string(nil), true)
+		assert.Equal(t, 1.0, telemetryClient.Count(telemetry.NamespaceTracers, "trace_partial_flush.count", []string{"reason:large_trace"}).Get())
+		assert.Equal(t, 2.0, telemetryClient.Distribution(telemetry.NamespaceTracers, "trace_partial_flush.spans_closed", nil).Get())
+		assert.Equal(t, 1.0, telemetryClient.Distribution(telemetry.NamespaceTracers, "trace_partial_flush.spans_remaining", nil).Get())
 
 		root.Finish()
 		flush(1)
@@ -214,9 +213,6 @@ func TestPartialFlush(t *testing.T) {
 		assert.Equal(t, 1.0, ts[0][1].Metrics[keySamplingPriority]) // the tag should only be on the first span in the chunk
 		comparePayloadSpans(t, root.(*span), tsRoot[0][0])
 		comparePayloadSpans(t, children[2], tsRoot[0][1])
-		telemetryClient.AssertNumberOfCalls(t, "Count", 1)
-		// TODO: (Support MetricKindDist) Re-enable this when we actually support `MetricKindDist`
-		// telemetryClient.AssertNumberOfCalls(t, "Record", 2)
 	})
 
 	// This test covers an issue where partial flushing + a rate sampler would panic
@@ -242,7 +238,7 @@ func TestSpanTracePushNoFinish(t *testing.T) {
 	assert := assert.New(t)
 
 	tp := new(log.RecordLogger)
-	tp.Ignore("appsec: ", telemetry.LogPrefix)
+	tp.Ignore("appsec: ", "telemetry")
 	_, _, _, stop := startTestTracer(t, WithLogger(tp), WithLambdaMode(true), WithEnv("testEnv"))
 	defer stop()
 
@@ -756,7 +752,7 @@ func TestSpanContextPushFull(t *testing.T) {
 	defer func(old int) { traceMaxSize = old }(traceMaxSize)
 	traceMaxSize = 2
 	tp := new(log.RecordLogger)
-	tp.Ignore("appsec: ", telemetry.LogPrefix)
+	tp.Ignore("appsec: ", "telemetry")
 	_, _, _, stop := startTestTracer(t, WithLogger(tp), WithLambdaMode(true), WithEnv("testEnv"))
 	defer stop()
 
