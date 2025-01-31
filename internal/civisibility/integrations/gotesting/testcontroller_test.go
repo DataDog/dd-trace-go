@@ -153,9 +153,9 @@ func runFlakyTestRetriesTests(m *testing.M) {
 
 func runEarlyFlakyTestDetectionTests(m *testing.M) {
 	// mock the settings api to enable automatic test retries
-	server := setUpHttpServer(false, true, &net.EfdResponseData{
-		Tests: net.EfdResponseDataModules{
-			"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting": net.EfdResponseDataSuites{
+	server := setUpHttpServer(false, true, &net.KnownTestsResponseData{
+		Tests: net.KnownTestsResponseDataModules{
+			"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting": net.KnownTestsResponseDataSuites{
 				"reflections_test.go": []string{
 					"TestGetFieldPointerFrom",
 					"TestGetInternalTestArray",
@@ -243,9 +243,9 @@ func runEarlyFlakyTestDetectionTests(m *testing.M) {
 
 func runFlakyTestRetriesWithEarlyFlakyTestDetectionTests(m *testing.M) {
 	// mock the settings api to enable automatic test retries
-	server := setUpHttpServer(true, true, &net.EfdResponseData{
-		Tests: net.EfdResponseDataModules{
-			"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting": net.EfdResponseDataSuites{
+	server := setUpHttpServer(true, true, &net.KnownTestsResponseData{
+		Tests: net.KnownTestsResponseDataModules{
+			"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting": net.KnownTestsResponseDataSuites{
 				"reflections_test.go": []string{
 					"TestGetFieldPointerFrom",
 					"TestGetInternalTestArray",
@@ -569,7 +569,7 @@ type (
 )
 
 func setUpHttpServer(flakyRetriesEnabled bool,
-	earlyFlakyDetectionEnabled bool, earlyFlakyDetectionData *net.EfdResponseData,
+	earlyFlakyDetectionEnabled bool, earlyFlakyDetectionData *net.KnownTestsResponseData,
 	itrEnabled bool, itrData []net.SkippableResponseDataAttributes) *httptest.Server {
 	// mock the settings api to enable automatic test retries
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -591,6 +591,7 @@ func setUpHttpServer(flakyRetriesEnabled bool,
 				FlakyTestRetriesEnabled: flakyRetriesEnabled,
 				ItrEnabled:              itrEnabled,
 				TestsSkipping:           itrEnabled,
+				KnownTestsEnabled:       earlyFlakyDetectionEnabled,
 			}
 			response.Data.Attributes.EarlyFlakeDetection.Enabled = earlyFlakyDetectionEnabled
 			response.Data.Attributes.EarlyFlakeDetection.SlowTestRetries.FiveS = 10
@@ -604,9 +605,9 @@ func setUpHttpServer(flakyRetriesEnabled bool,
 			w.Header().Set("Content-Type", "application/json")
 			response := struct {
 				Data struct {
-					ID         string              `json:"id"`
-					Type       string              `json:"type"`
-					Attributes net.EfdResponseData `json:"attributes"`
+					ID         string                     `json:"id"`
+					Type       string                     `json:"type"`
+					Attributes net.KnownTestsResponseData `json:"attributes"`
 				} `json:"data,omitempty"`
 			}{}
 
@@ -685,11 +686,11 @@ func getSpansWithTagName(spans []*mocktracer.Span, tag string) []mocktracer.Span
 	return result
 }
 
-func getSpansWithTagNameAndValue(spans []*mocktracer.Span, tag, value string) []mocktracer.Span {
+func getSpansWithTagNameAndValue(spans []mocktracer.Span, tag, value string) []mocktracer.Span {
 	var result []mocktracer.Span
 	for _, span := range spans {
 		if span.Tag(tag) == value {
-			result = append(result, *span)
+			result = append(result, span)
 		}
 	}
 
