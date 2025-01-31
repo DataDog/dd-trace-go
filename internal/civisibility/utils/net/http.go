@@ -358,7 +358,7 @@ func decompressData(data []byte) ([]byte, error) {
 
 // exponentialBackoff performs an exponential backoff with retries.
 func exponentialBackoff(retryCount int, initialDelay time.Duration) {
-	maxDelay := 30 * time.Second
+	maxDelay := 10 * time.Second
 	delay := initialDelay * (1 << uint(retryCount)) // Exponential backoff
 	if delay > maxDelay {
 		delay = maxDelay
