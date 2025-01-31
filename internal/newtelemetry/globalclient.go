@@ -45,6 +45,10 @@ func StartApp(client Client) {
 	globalClientRecorder.Replay(client)
 
 	client.AppStart()
+
+	go func() {
+		client.Flush()
+	}()
 }
 
 // SwapClient swaps the global client with the given client and Flush the old (*client).
