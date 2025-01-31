@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -33,6 +34,7 @@ func TestIntegrationInfo(t *testing.T) {
 
 type contribPkg struct {
 	ImportPath string
+	Root       string
 	Name       string
 	Imports    []string
 	Dir        string
@@ -84,6 +86,11 @@ func TestTelemetryEnabled(t *testing.T) {
 	}
 	for _, pkg := range packages {
 		if strings.Contains(pkg.ImportPath, "/test") || strings.Contains(pkg.ImportPath, "/internal") || strings.Contains(pkg.ImportPath, "/cmd") {
+			continue
+		}
+		sep := string(os.PathSeparator)
+		p := strings.Replace(pkg.Dir, pkg.Root, filepath.Join("..", ".."), 1)
+		if strings.Contains(p, filepath.Join(sep, "contrib", "net", "http", "client")) || strings.Contains(p, filepath.Join(sep, "contrib", "os")) {
 			continue
 		}
 		if !pkg.hasTelemetryImport(t) {

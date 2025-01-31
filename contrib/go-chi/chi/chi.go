@@ -51,11 +51,11 @@ func Middleware(opts ...Option) func(next http.Handler) http.Handler {
 				opts = append(opts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
 			}
 			opts = append(opts, httptrace.HeaderTagsFromRequest(r, cfg.headerTags))
-			span, ctx := httptrace.StartRequestSpan(r, opts...)
+			span, ctx, finishSpans := httptrace.StartRequestSpan(r, opts...)
 			ww := middleware.NewWrapResponseWriter(w, r.ProtoMajor)
 			defer func() {
 				status := ww.Status()
-				httptrace.FinishRequestSpan(span, status, cfg.isStatusError)
+				finishSpans(status, cfg.isStatusError)
 			}()
 
 			// pass the span through the request context

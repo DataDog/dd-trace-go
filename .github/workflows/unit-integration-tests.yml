@@ -57,6 +57,16 @@ jobs:
           fail_on_error: true
           reporter: github-pr-review
 
+      - name: golangci-lint (internal/orchestrion/_integration)
+        uses: reviewdog/action-golangci-lint@v2
+        with:
+          golangci_lint_flags: "--timeout 10m" # We are hitting timeout when there is no cache
+          go_version: ${{ inputs.go-version }}
+          golangci_lint_version: v1.59.1
+          fail_on_error: true
+          reporter: github-pr-review
+          workdir: internal/orchestrion/_integration
+
   test-contrib:
     runs-on:
       group: "APM Larger Runners"
@@ -134,6 +144,12 @@ jobs:
         image: redis:3.2
         ports:
           - 6379:6379
+      valkey:
+        image: valkey/valkey:8
+        env:
+          VALKEY_EXTRA_FLAGS: "--port 6380 --requirepass password-for-default"
+        ports:
+          - 6380:6380
       elasticsearch2:
         image: elasticsearch:2
         env:

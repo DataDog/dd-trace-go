@@ -42,6 +42,10 @@ runs:
         curl -L --fail "https://github.com/DataDog/datadog-ci/releases/latest/download/datadog-ci_${{ env.DD_CI_CLI_BUILD }}" --output datadog-ci    
         chmod +x datadog-ci
 
+    - name: Add CodeOwners to JUnit files
+      shell: bash
+      run: cd ./.github/actions/add-codeowners && ./codeowners.sh ${{ inputs.files }}
+
     - name: Upload the JUnit files
       shell: bash
       run: |

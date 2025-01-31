@@ -11,9 +11,10 @@ import (
 	"net/http"
 	"os"
 	"strconv"
-	"strings"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/appsec/events"
+	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/httptrace"
+	"gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http/internal/config"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
@@ -39,8 +40,8 @@ func (rt *roundTripper) RoundTrip(req *http.Request) (res *http.Response, err er
 		tracer.SpanType(ext.SpanTypeHTTP),
 		tracer.ResourceName(resourceName),
 		tracer.Tag(ext.HTTPMethod, req.Method),
-		tracer.Tag(ext.HTTPURL, urlFromRequest(req, rt.cfg.queryString)),
-		tracer.Tag(ext.Component, componentName),
+		tracer.Tag(ext.HTTPURL, httptrace.UrlFromRequest(req, rt.cfg.queryString)),
+		tracer.Tag(ext.Component, config.ComponentName),
 		tracer.Tag(ext.SpanKind, ext.SpanKindClient),
 		tracer.Tag(ext.NetworkDestinationName, url.Hostname()),
 	}
@@ -133,33 +134,4 @@ func WrapClient(c *http.Client, opts ...RoundTripperOption) *http.Client {
 	}
 	c.Transport = WrapRoundTripper(c.Transport, opts...)
 	return c
-}
-
-// urlFromRequest returns the URL from the HTTP request. The URL query string is included in the return object iff queryString is true
-// See https://docs.datadoghq.com/tracing/configure_data_security#redacting-the-query-in-the-url for more information.
-func urlFromRequest(r *http.Request, queryString bool) string {
-	// Quoting net/http comments about net.Request.URL on server requests:
-	// "For most requests, fields other than Path and RawQuery will be
-	// empty. (See RFC 7230, Section 5.3)"
-	// This is why we don't rely on url.URL.String(), url.URL.Host, url.URL.Scheme, etc...
-	var url string
-	path := r.URL.EscapedPath()
-	scheme := r.URL.Scheme
-	if r.TLS != nil {
-		scheme = "https"
-	}
-	if r.Host != "" {
-		url = strings.Join([]string{scheme, "://", r.Host, path}, "")
-	} else {
-		url = path
-	}
-	// Collect the query string if we are allowed to report it and obfuscate it if possible/allowed
-	if queryString && r.URL.RawQuery != "" {
-		query := r.URL.RawQuery
-		url = strings.Join([]string{url, query}, "?")
-	}
-	if frag := r.URL.EscapedFragment(); frag != "" {
-		url = strings.Join([]string{url, frag}, "#")
-	}
-	return url
 }

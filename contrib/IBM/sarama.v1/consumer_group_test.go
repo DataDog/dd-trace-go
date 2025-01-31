@@ -20,15 +20,14 @@ import (
 )
 
 func TestWrapConsumerGroupHandler(t *testing.T) {
+	cfg := newIntegrationTestConfig(t)
+	topic := topicName(t)
+	groupID := "IBM/sarama/TestWrapConsumerGroupHandler"
+
 	mt := mocktracer.Start()
 	defer mt.Stop()
 
-	cfg := sarama.NewConfig()
-	cfg.Version = sarama.V0_11_0_0 // first version that supports headers
-	cfg.Producer.Return.Successes = true
-	cfg.Producer.Flush.Messages = 1
-
-	cg, err := sarama.NewConsumerGroup(kafkaBrokers, testGroupID, cfg)
+	cg, err := sarama.NewConsumerGroup(kafkaBrokers, groupID, cfg)
 	require.NoError(t, err)
 	defer func() {
 		assert.NoError(t, cg.Close())
@@ -39,7 +38,7 @@ func TestWrapConsumerGroupHandler(t *testing.T) {
 		ready:       make(chan bool),
 		rcvMessages: make(chan *sarama.ConsumerMessage, 1),
 	}
-	tracedHandler := WrapConsumerGroupHandler(handler, WithDataStreams(), WithGroupID(testGroupID))
+	tracedHandler := WrapConsumerGroupHandler(handler, WithDataStreams(), WithGroupID(groupID))
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -52,7 +51,7 @@ func TestWrapConsumerGroupHandler(t *testing.T) {
 			// `Consume` should be called inside an infinite loop, when a
 			// server-side rebalance happens, the consumer session will need to be
 			// recreated to get the new claims
-			if err := cg.Consume(ctx, []string{testTopic}, tracedHandler); err != nil {
+			if err := cg.Consume(ctx, []string{topic}, tracedHandler); err != nil {
 				assert.ErrorIs(t, err, sarama.ErrClosedConsumerGroup)
 				return
 			}
@@ -68,12 +67,13 @@ func TestWrapConsumerGroupHandler(t *testing.T) {
 
 	p, err := sarama.NewSyncProducer(kafkaBrokers, cfg)
 	require.NoError(t, err)
-
-	require.NoError(t, err)
 	p = WrapSyncProducer(cfg, p, WithDataStreams())
+	defer func() {
+		assert.NoError(t, p.Close())
+	}()
 
 	produceMsg := &sarama.ProducerMessage{
-		Topic:    testTopic,
+		Topic:    topic,
 		Value:    sarama.StringEncoder("test 1"),
 		Metadata: "test",
 	}
@@ -91,7 +91,7 @@ func TestWrapConsumerGroupHandler(t *testing.T) {
 	s0 := spans[0]
 	assert.Equal(t, "kafka", s0.Tag(ext.ServiceName))
 	assert.Equal(t, "queue", s0.Tag(ext.SpanType))
-	assert.Equal(t, "Produce Topic gotest_ibm_sarama", s0.Tag(ext.ResourceName))
+	assert.Equal(t, "Produce Topic "+topic, s0.Tag(ext.ResourceName))
 	assert.Equal(t, "kafka.produce", s0.OperationName())
 	assert.Equal(t, int32(0), s0.Tag(ext.MessagingKafkaPartition))
 	assert.NotNil(t, s0.Tag("offset"))
@@ -99,12 +99,12 @@ func TestWrapConsumerGroupHandler(t *testing.T) {
 	assert.Equal(t, ext.SpanKindProducer, s0.Tag(ext.SpanKind))
 	assert.Equal(t, "kafka", s0.Tag(ext.MessagingSystem))
 
-	assertDSMProducerPathway(t, testTopic, produceMsg)
+	assertDSMProducerPathway(t, topic, produceMsg)
 
 	s1 := spans[1]
 	assert.Equal(t, "kafka", s1.Tag(ext.ServiceName))
 	assert.Equal(t, "queue", s1.Tag(ext.SpanType))
-	assert.Equal(t, "Consume Topic gotest_ibm_sarama", s1.Tag(ext.ResourceName))
+	assert.Equal(t, "Consume Topic "+topic, s1.Tag(ext.ResourceName))
 	assert.Equal(t, "kafka.consume", s1.OperationName())
 	assert.Equal(t, int32(0), s1.Tag(ext.MessagingKafkaPartition))
 	assert.NotNil(t, s1.Tag("offset"))
@@ -112,7 +112,7 @@ func TestWrapConsumerGroupHandler(t *testing.T) {
 	assert.Equal(t, ext.SpanKindConsumer, s1.Tag(ext.SpanKind))
 	assert.Equal(t, "kafka", s1.Tag(ext.MessagingSystem))
 
-	assertDSMConsumerPathway(t, testTopic, testGroupID, consumeMsg, true)
+	assertDSMConsumerPathway(t, topic, groupID, consumeMsg, true)
 
 	assert.Equal(t, s0.SpanID(), s1.ParentID(), "spans are not parent-child")
 }

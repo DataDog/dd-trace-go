@@ -31,6 +31,7 @@ import (
 	httptrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	globalinternal "gopkg.in/DataDog/dd-trace-go.v1/internal"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/config"
@@ -861,6 +862,81 @@ func TestSuspiciousAttackerBlocking(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestWafEventsInMetaStruct(t *testing.T) {
+	t.Setenv("DD_APPSEC_RULES", "testdata/user_rules.json")
+	appsec.Start(config.WithMetaStructAvailable(true))
+	defer appsec.Stop()
+
+	if !appsec.Enabled() {
+		t.Skip("appsec disabled")
+	}
+
+	// Start and trace an HTTP server
+	mux := httptrace.NewServeMux()
+	mux.HandleFunc("/hello", func(w http.ResponseWriter, _ *http.Request) {
+		w.Write([]byte("Hello World!\n"))
+	})
+	mux.HandleFunc("/response-header", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("match-response-header", "match-response-header")
+		w.WriteHeader(204)
+	})
+
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	for _, tc := range []struct {
+		name string
+		url  string
+		rule string
+	}{
+		{
+			name: "custom-001",
+			url:  "/hello",
+			rule: "custom-001",
+		},
+		{
+			name: "custom-action",
+			url:  "/hello?match=match-request-query",
+			rule: "query-002",
+		},
+		{
+			name: "response-headers",
+			url:  "/response-header",
+			rule: "headers-003",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			mt := mocktracer.Start()
+			defer mt.Stop()
+
+			req, err := http.NewRequest("GET", srv.URL+tc.url, nil)
+			require.NoError(t, err)
+
+			res, err := srv.Client().Do(req)
+			require.NoError(t, err)
+			defer res.Body.Close()
+
+			spans := mt.FinishedSpans()
+			require.Len(t, spans, 1)
+
+			tag := spans[0].Tag("appsec")
+			require.IsType(t, globalinternal.MetaStructValue{}, tag)
+
+			events := tag.(globalinternal.MetaStructValue).Value
+			require.IsType(t, map[string][]any{}, events)
+
+			triggers := events.(map[string][]any)["triggers"]
+			ids := make([]string, 0, len(triggers))
+			for _, trigger := range triggers {
+				ids = append(ids, trigger.(map[string]any)["rule"].(map[string]any)["id"].(string))
+			}
+
+			require.Contains(t, ids, tc.rule)
+		})
+	}
+
 }
 
 // BenchmarkSampleWAFContext benchmarks the creation of a WAF context and running the WAF on a request/response pair

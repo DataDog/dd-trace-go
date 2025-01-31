@@ -82,6 +82,8 @@ jobs:
           - weblog-variant: net-http
             scenario: APPSEC_STANDALONE
           - weblog-variant: net-http
+            scenario: APPSEC_META_STRUCT_DISABLED
+          - weblog-variant: net-http
             scenario: APPSEC_CUSTOM_OBFUSCATION
           # APM scenarios requiring specific environment settings
           - scenario: APM_TRACING_E2E
@@ -106,6 +108,9 @@ jobs:
             weblog-variant: graphql-go
           - scenario: GRAPHQL_APPSEC
             weblog-variant: gqlgen
+          # Service Extensions System Tests
+          - scenario: EXTERNAL_PROCESSING
+          - scenario: EXTERNAL_PROCESSING_BLOCKING
 
       fail-fast: false
     env:
