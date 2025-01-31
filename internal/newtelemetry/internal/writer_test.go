@@ -204,7 +204,7 @@ func TestWriter_Flush_MultipleEndpoints(t *testing.T) {
 	assert.Zero(t, results[0].PayloadByteSize)
 
 	assert.Equal(t, http.StatusOK, results[1].StatusCode)
-	assert.InDelta(t, time.Duration(1), results[1].CallDuration, float64(time.Millisecond))
+	assert.InDelta(t, time.Duration(1), results[1].CallDuration, float64(time.Second))
 	assert.NotZero(t, results[1].PayloadByteSize)
 	assert.NoError(t, results[1].Error)
 

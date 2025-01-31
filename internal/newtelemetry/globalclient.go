@@ -21,7 +21,7 @@ var (
 	globalClientRecorder = internal.NewRecorder[Client]()
 
 	// metricsHandleHotPointers contains all the metricsHotPointer, used to replay actions done before the actual MetricHandle is set
-	metricsHandleHotPointers   []metricsHotPointer
+	metricsHandleHotPointers   []*metricsHotPointer
 	metricsHandleHotPointersMu sync.Mutex
 )
 
@@ -62,8 +62,7 @@ func SwapClient(client Client) {
 		metricsHandleHotPointersMu.Lock()
 		defer metricsHandleHotPointersMu.Unlock()
 		for i := range metricsHandleHotPointers {
-			hotPointer := &metricsHandleHotPointers[i]
-			hotPointer.swap(hotPointer.maker(client))
+			metricsHandleHotPointers[i].swap(metricsHandleHotPointers[i].maker(client))
 		}
 	}
 }
@@ -236,8 +235,9 @@ func newMetricsHotPointer(maker func(client Client) MetricHandle) *metricsHotPoi
 	metricsHandleHotPointersMu.Lock()
 	defer metricsHandleHotPointersMu.Unlock()
 
-	metricsHandleHotPointers = append(metricsHandleHotPointers, metricsHotPointer{maker: maker})
-	return &metricsHandleHotPointers[len(metricsHandleHotPointers)-1]
+	hotPtr := &metricsHotPointer{maker: maker}
+	metricsHandleHotPointers = append(metricsHandleHotPointers, hotPtr)
+	return hotPtr
 }
 
 var metricLogLossOnce sync.Once
