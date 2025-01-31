@@ -36,7 +36,7 @@ func GlobalClient() Client {
 
 // StartApp starts the telemetry client with the given client send the app-started telemetry and sets it as the global (*client).
 func StartApp(client Client) {
-	if Disabled() || globalClient.Load() != nil {
+	if Disabled() || GlobalClient() != nil {
 		return
 	}
 
@@ -55,8 +55,10 @@ func SwapClient(client Client) {
 
 	if oldClient := globalClient.Swap(&client); oldClient != nil && *oldClient != nil {
 		(*oldClient).Close()
+	}
 
-		// Swap all metrics hot pointers to the actual MetricHandle
+	if client != nil {
+		// Swap all metrics hot pointers to the new MetricHandle
 		metricsHandleHotPointersMu.Lock()
 		defer metricsHandleHotPointersMu.Unlock()
 		for i := range metricsHandleHotPointers {
@@ -68,7 +70,7 @@ func SwapClient(client Client) {
 
 // StopApp creates the app-stopped telemetry, adding to the queue and Flush all the queue before stopping the (*client).
 func StopApp() {
-	if Disabled() || globalClient.Load() == nil {
+	if Disabled() || GlobalClient() == nil {
 		return
 	}
 
@@ -79,12 +81,12 @@ func StopApp() {
 	}
 }
 
-var telemetryClientDisabled = globalinternal.BoolEnv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", true)
+var telemetryClientEnabled = globalinternal.BoolEnv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", true)
 
 // Disabled returns whether instrumentation telemetry is disabled
 // according to the DD_INSTRUMENTATION_TELEMETRY_ENABLED env var
 func Disabled() bool {
-	return telemetryClientDisabled
+	return !telemetryClientEnabled
 }
 
 // Count creates a new metric handle for the given parameters that can be used to submit values.

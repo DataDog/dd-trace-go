@@ -48,7 +48,7 @@ const (
 // This can also be used ephemerally to submit a single metric value like this:
 //
 // ```go
-// telemetry.Metric(telemetry.Appsec, "my-count", map[string]string{"tag1": "true", "tag2": "1.0"}).Submit(1.0)
+// telemetry.metric(telemetry.Appsec, "my-count", map[string]string{"tag1": "true", "tag2": "1.0"}).Submit(1.0)
 // ```
 type MetricHandle interface {
 	// Submit submits a value to the metric handle.
