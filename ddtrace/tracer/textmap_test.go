@@ -2202,6 +2202,50 @@ func TestOtelPropagator(t *testing.T) {
 	}
 }
 
+// Assert that extraction returns a ErrSpanContextNotFound error when no trace context headers are found
+func TestExtractNoHeaders(t *testing.T) {
+	tests := []struct {
+		name         string
+		extractEnv   string
+		extractFirst bool
+	}{
+		{
+			name:         "single header",
+			extractEnv:   "datadog",
+			extractFirst: false,
+		},
+		{
+			name:         "single header - extractFirst",
+			extractEnv:   "datadog",
+			extractFirst: true,
+		},
+		{
+			name:         "multi header",
+			extractEnv:   "datadog,tracecontext",
+			extractFirst: false,
+		},
+		{
+			name:         "multi header - extractFirst",
+			extractEnv:   "datadog,tracecontext",
+			extractFirst: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv(headerPropagationStyleExtract, tt.extractEnv)
+			if tt.extractFirst {
+				t.Setenv("DD_TRACE_PROPAGATION_EXTRACT_FIRST", "true")
+			}
+			tracer, err := newTracer()
+			assert.NoError(t, err)
+			defer tracer.Stop()
+			ctx, err := tracer.Extract(TextMapCarrier{})
+			assert.Equal(t, ErrSpanContextNotFound, err)
+			assert.Nil(t, ctx)
+		})
+	}
+}
+
 func BenchmarkInjectDatadog(b *testing.B) {
 	b.Setenv(headerPropagationStyleInject, "datadog")
 	tracer, err := newTracer()
