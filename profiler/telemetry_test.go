@@ -15,19 +15,11 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func mockGlobalClient(client telemetry.Client) func() {
-	orig := telemetry.GlobalClient()
-	telemetry.SwapClient(client)
-	return func() {
-		telemetry.SwapClient(orig)
-	}
-}
-
 // Test that the profiler sends the correct telemetry information
 func TestTelemetryEnabled(t *testing.T) {
 	t.Run("tracer start, profiler start", func(t *testing.T) {
-		telemetryClient := new(telemetrytest.MockClient)
-		defer mockGlobalClient(telemetryClient)()
+		telemetryClient := new(telemetrytest.RecordClient)
+		defer telemetry.MockClient(telemetryClient)()
 
 		tracer.Start()
 		defer tracer.Stop()
@@ -41,11 +33,10 @@ func TestTelemetryEnabled(t *testing.T) {
 
 		assert.True(t, telemetryClient.Products[telemetry.NamespaceProfilers])
 		assert.Contains(t, telemetryClient.Configuration, telemetry.Configuration{Name: "heap_profile_enabled", Value: true})
-		telemetryClient.AssertCalled(t, "ProductStarted", telemetry.NamespaceProfilers)
 	})
 	t.Run("only profiler start", func(t *testing.T) {
-		telemetryClient := new(telemetrytest.MockClient)
-		defer mockGlobalClient(telemetryClient)()
+		telemetryClient := new(telemetrytest.RecordClient)
+		defer telemetry.MockClient(telemetryClient)()
 		Start(
 			WithProfileTypes(
 				HeapProfile,
@@ -55,6 +46,5 @@ func TestTelemetryEnabled(t *testing.T) {
 
 		assert.True(t, telemetryClient.Products[telemetry.NamespaceProfilers])
 		assert.Contains(t, telemetryClient.Configuration, telemetry.Configuration{Name: "heap_profile_enabled", Value: true})
-		telemetryClient.AssertCalled(t, "ProductStarted", telemetry.NamespaceProfilers)
 	})
 }
