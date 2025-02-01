@@ -24,4 +24,11 @@ jobs:
       
       - run: go clean -modcache
       
+      - name: Add dependencies
+        run: |
+          go get github.com/go-git/go-billy/v5/memfs
+          go get github.com/go-git/go-git/v5
+          go get github.com/go-git/go-git/v5/plumbing
+          go get github.com/go-git/go-git/v5/storage/memory
+
       - run: go run .github/workflows/apps/new_latest_major_versions.go

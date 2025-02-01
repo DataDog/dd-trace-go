@@ -338,7 +338,7 @@ func main() {
 
 		// check if need to update contrib_latests
 		version_major_contrib := truncateMajorVersion(version)
-		fmt.Printf("version: %v\n", version_major_contrib)
+		// fmt.Printf("version: %v\n", version_major_contrib)
 
 		if err != nil {
 			fmt.Println(err)
