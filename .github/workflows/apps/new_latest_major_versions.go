@@ -101,13 +101,12 @@ func getGoModVersion(repository string, pkg string) (string, string, error) {
 	return largestVersionRepo, largestVersion, nil
 
 }
-
 func fetchGoModGit(repoURL, tag string, results chan<- PackageResult) {
 	log.Printf("Fetching go.mod for repo: %s, tag: %s", repoURL, tag)
-
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
+	// Create filesystem without close operation
 	fs := memfs.New()
 	storer := memory.NewStorage()
 
@@ -128,23 +127,22 @@ func fetchGoModGit(repoURL, tag string, results chan<- PackageResult) {
 		return
 	}
 
-	// if err != nil {
-	// 	results <- PackageResult{Error: fmt.Errorf("failed to clone repo: %w", err)}
-	// 	return
-	// }
-
 	worktree, err := repo.Worktree()
 	if err != nil {
 		results <- PackageResult{Error: fmt.Errorf("failed to get worktree: %w", err)}
 		return
 	}
 
-	// Parallelize checkout and file reading
 	var wg sync.WaitGroup
 	wg.Add(1)
 
 	go func() {
 		defer wg.Done()
+		defer func() {
+			if r := recover(); r != nil {
+				log.Printf("Recovered from panic: %v", r)
+			}
+		}()
 
 		err = worktree.Checkout(&git.CheckoutOptions{
 			Force:                     true,
@@ -152,41 +150,61 @@ func fetchGoModGit(repoURL, tag string, results chan<- PackageResult) {
 			Branch:                    plumbing.NewTagReferenceName(tag),
 			SparseCheckoutDirectories: []string{"go.mod"},
 		})
-
 		if err != nil {
 			log.Printf("Error checking out file: %v", err)
-			results <- PackageResult{Error: fmt.Errorf("failed to checkout file: %w", err)}
+			select {
+			case results <- PackageResult{Error: fmt.Errorf("failed to checkout file: %w", err)}:
+			case <-ctx.Done():
+				log.Printf("Context cancelled while sending result")
+			}
 			return
 		}
 
 		f, err := fs.Open("go.mod")
 		if err != nil {
-			log.Printf("Failed to open go.mod in repository: %s, tag: %s", repoURL, tag)
-			results <- PackageResult{Error: fmt.Errorf("failed to open file: %w", err)}
+			log.Printf("Failed to open go.mod in repository: %s", repoURL)
+			select {
+			case results <- PackageResult{Error: fmt.Errorf("failed to open file: %w", err)}:
+			case <-ctx.Done():
+				log.Printf("Context cancelled while sending result")
+			}
 			return
 		}
-		defer f.Close()
+		defer f.Close() // Only close the file, not the filesystem
 
 		b, err := io.ReadAll(f)
 		if err != nil {
 			log.Printf("Failed to read file content: %v", err)
-			results <- PackageResult{Error: fmt.Errorf("failed to read file content: %w", err)}
+			select {
+			case results <- PackageResult{Error: fmt.Errorf("failed to read file content: %w", err)}:
+			case <-ctx.Done():
+				log.Printf("Context cancelled while sending result")
+			}
 			return
 		}
 
 		mf, err := modfile.Parse("go.mod", b, nil)
 		if err != nil {
 			log.Printf("Failed to parse modfile: %v", err)
-			results <- PackageResult{Error: fmt.Errorf("failed to parse modfile: %w", err)}
+			select {
+			case results <- PackageResult{Error: fmt.Errorf("failed to parse modfile: %w", err)}:
+			case <-ctx.Done():
+				log.Printf("Context cancelled while sending result")
+			}
 			return
 		}
 
-		results <- PackageResult{ModulePath: mf.Module.Mod.Path, LatestVersion: tag}
+		select {
+		case results <- PackageResult{ModulePath: mf.Module.Mod.Path, LatestVersion: tag}:
+		case <-ctx.Done():
+			log.Printf("Context cancelled while sending result")
+		}
 	}()
 
-	wg.Wait() // Ensure the goroutine finishes before returning
+	log.Printf("Waiting for goroutine to complete...")
+	wg.Wait()
+	log.Printf("Goroutine completed")
 	log.Printf("Successfully fetched go.mod for %s@%s", repoURL, tag)
-
 }
 
 func truncateVersionSuffix(repository string) string {
