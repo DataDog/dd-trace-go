@@ -12,17 +12,23 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"net/http"
 	"os"
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 
 	"os/exec"
 
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 	"golang.org/x/mod/modfile"
 	"golang.org/x/mod/semver"
+
+	// Missing dependencies
+	"github.com/go-git/go-billy/v5/memfs"
+	"github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/go-git/go-git/v5/storage/memory"
 )
 
 type ModuleInfo struct {
@@ -34,6 +40,13 @@ type ModuleInfo struct {
 type GithubLatests struct {
 	Version string
 	Module  string
+}
+
+type PackageResult struct {
+	Base          string
+	LatestVersion string
+	ModulePath    string
+	Error         error
 }
 
 func getGoModVersion(repository string, pkg string) (string, string, error) {
@@ -84,6 +97,77 @@ func getGoModVersion(repository string, pkg string) (string, string, error) {
 		return "", "", fmt.Errorf("repository %s not found in go.mod file", repository)
 	}
 	return largestVersionRepo, largestVersion, nil
+
+}
+
+func fetchGoModGit(repoURL, tag string, wg *sync.WaitGroup, results chan<- PackageResult) {
+	defer wg.Done()
+
+	log.Printf("fetching %s@%s\n", repoURL, tag)
+	if !strings.HasSuffix(repoURL, ".git") {
+		repoURL = repoURL + ".git"
+	}
+
+	storer := memory.NewStorage()
+	fs := memfs.New()
+
+	repo, err := git.Clone(storer, fs, &git.CloneOptions{
+		URL:           repoURL,
+		Depth:         1,
+		SingleBranch:  true,
+		ReferenceName: plumbing.NewTagReferenceName(tag),
+		Progress:      os.Stdout,
+		NoCheckout:    true,
+	})
+	if err != nil {
+		results <- PackageResult{Error: fmt.Errorf("failed to clone repo: %w", err)}
+		return
+	}
+
+	worktree, err := repo.Worktree()
+	if err != nil {
+		results <- PackageResult{Error: fmt.Errorf("failed to get worktree: %w", err)}
+		return
+	}
+
+	err = worktree.Checkout(&git.CheckoutOptions{
+		Force:                     true,
+		Create:                    false,
+		Branch:                    plumbing.NewTagReferenceName(tag),
+		SparseCheckoutDirectories: []string{"go.mod"},
+	})
+	if err != nil {
+		results <- PackageResult{Error: fmt.Errorf("failed to checkout file: %w", err)}
+		return
+	}
+
+	f, err := fs.Open("go.mod")
+	if err != nil {
+		log.Printf("Failed to open go.mod in repository: %s, tag: %s", repoURL, tag)
+		results <- PackageResult{Error: fmt.Errorf("failed to open file: %w", err)}
+		return
+	}
+	defer f.Close()
+	// defer func() {
+	// 	if cerr := f.Close(); cerr != nil && err == nil {
+	// 		err = cerr
+	// 	}
+	// }()
+
+	b, err := io.ReadAll(f)
+	if err != nil {
+		results <- PackageResult{Error: fmt.Errorf("failed to read content: %w", err)}
+		// return nil, fmt.Errorf("failed to read file content: %w", err)
+		return
+	}
+
+	mf, err := modfile.Parse("go.mod", b, nil)
+	if err != nil {
+		results <- PackageResult{Error: fmt.Errorf("failed to parse modfile: %w", err)}
+		return
+	}
+	fmt.Printf("Success fetching Go mod")
+	results <- PackageResult{ModulePath: mf.Module.Mod.Path, LatestVersion: tag}
 
 }
 
@@ -168,49 +252,49 @@ func getLatestVersion(versions []string) string {
 	return validVersions[len(validVersions)-1]
 }
 
-func fetchGoMod(url string) (bool, string) {
+// func fetchGoMod(url string) (bool, string) {
 
-	// Create an HTTP client and make a GET request
-	resp, err := http.Get(url)
-	if err != nil {
-		// fmt.Printf("Error making HTTP request: %v\n", err)
-		return false, ""
-		// return false, "", fmt.Errorf("failed to get go.mod from url: %w", err)
-	}
-	defer resp.Body.Close()
+// 	// Create an HTTP client and make a GET request
+// 	resp, err := http.Get(url)
+// 	if err != nil {
+// 		// fmt.Printf("Error making HTTP request: %v\n", err)
+// 		return false, ""
+// 		// return false, "", fmt.Errorf("failed to get go.mod from url: %w", err)
+// 	}
+// 	defer resp.Body.Close()
 
-	// Check if the HTTP status is 404
-	if resp.StatusCode == http.StatusNotFound {
-		return false, ""
-	}
+// 	// Check if the HTTP status is 404
+// 	if resp.StatusCode == http.StatusNotFound {
+// 		return false, ""
+// 	}
 
-	// Handle other HTTP errors
-	if resp.StatusCode != http.StatusOK {
-		fmt.Printf("Unexpected HTTP status: %d\n", resp.StatusCode)
-		return false, ""
-	}
+// 	// Handle other HTTP errors
+// 	if resp.StatusCode != http.StatusOK {
+// 		fmt.Printf("Unexpected HTTP status: %d\n", resp.StatusCode)
+// 		return false, ""
+// 	}
 
-	// Read response
-	reader := bufio.NewReader(resp.Body)
-	for {
-		line, err := reader.ReadString('\n')
-		if err != nil && err != io.EOF {
-			fmt.Printf("Error reading response body: %v\n", err)
-			return false, ""
-		}
+// 	// Read response
+// 	reader := bufio.NewReader(resp.Body)
+// 	for {
+// 		line, err := reader.ReadString('\n')
+// 		if err != nil && err != io.EOF {
+// 			fmt.Printf("Error reading response body: %v\n", err)
+// 			return false, ""
+// 		}
 
-		if err == io.EOF {
-			break
-		}
+// 		if err == io.EOF {
+// 			break
+// 		}
 
-		line = strings.TrimSpace(line)
-		if strings.HasPrefix(line, "module ") {
-			return true, strings.TrimSpace(strings.TrimPrefix(line, "module "))
-		}
-	}
+// 		line = strings.TrimSpace(line)
+// 		if strings.HasPrefix(line, "module ") {
+// 			return true, strings.TrimSpace(strings.TrimPrefix(line, "module "))
+// 		}
+// 	}
 
-	return false, ""
-}
+// 	return false, ""
+// }
 
 func truncateVersion(pkg string) string {
 	// Regular expression to match ".v{X}" or "/v{X}" where {X} is a number
@@ -230,6 +314,9 @@ func main() {
 	// Find latest major
 	github_latests := map[string]GithubLatests{} // map module (base name) => latest on github
 	contrib_latests := map[string]string{}       // map module (base name) => latest on go.mod
+
+	var wg sync.WaitGroup
+	results := make(chan PackageResult, 10) // Buffered channel to avoid blocking
 
 	for pkg, packageInfo := range instrumentation.GetPackages() {
 
@@ -296,31 +383,62 @@ func main() {
 		// 5b. If request returns a `go.mod`, parse the modfile and extract the mod name
 
 		// Get the latest version for each major
-		for major, versions := range majors {
+		for _, versions := range majors {
 			latest := getLatestVersion(versions)
+			// modFile, err := fetchGoModGit(origin, latest)
+
+			// Fetch go.mod in a goroutine
+			wg.Add(1)
+			go fetchGoModGit(origin, latest, &wg, results)
+			// if err != nil {
+			// 	continue
+			// }
+
 			// fmt.Printf("Latest version for %s: %s\n", major, latest)
 
-			// Fetch `go.mod`
-			goModURL := fmt.Sprintf("https://raw.githubusercontent.com/%s/refs/tags/%s/go.mod", base, latest)
-			isGoModule, modName := fetchGoMod(goModURL)
-			if isGoModule {
-				fmt.Printf("Module name for %s: %s\n", latest, modName)
-			} else {
-				continue
-			}
+			// // Fetch `go.mod`
+			// goModURL := fmt.Sprintf("https://raw.githubusercontent.com/%s/refs/tags/%s/go.mod", base, latest)
+			// isGoModule, modName := fetchGoMod(goModURL)
+			// if isGoModule {
+			// 	fmt.Printf("Module name for %s: %s\n", latest, modName)
+			// } else {
+			// 	continue
+			// }
 			// latest_major := truncateMajorVersion(latest)
-			if latestGithub, ok := github_latests[base]; ok {
-				if semver.Compare(major, latestGithub.Version) > 0 {
-					// if latest > latestGithubMajor
-					github_latests[base] = GithubLatests{major, modName}
-				}
-			} else {
-				github_latests[base] = GithubLatests{major, modName}
-			}
+			// if latestGithub, ok := github_latests[base]; ok {
+			// 	if semver.Compare(major, latestGithub.Version) > 0 {
+			// 		// if latest > latestGithubMajor
+			// 		github_latests[base] = GithubLatests{major, modFile.Module.Mod.Path}
+			// 	}
+			// } else {
+			// 	github_latests[base] = GithubLatests{major, modFile.Module.Mod.Path}
+			// }
+
 		}
 
 	}
 
+	// Close the results channel once all goroutines finish
+	go func() {
+		wg.Wait()
+		close(results)
+	}()
+
+	// Iterate through results
+	for result := range results {
+		if result.Error != nil {
+			fmt.Println("Error:", result.Error)
+			continue
+		}
+
+		if latestGithub, ok := github_latests[result.Base]; ok {
+			if semver.Compare(result.LatestVersion, latestGithub.Version) > 0 {
+				github_latests[result.Base] = GithubLatests{result.LatestVersion, result.ModulePath}
+			}
+		} else {
+			github_latests[result.Base] = GithubLatests{result.LatestVersion, result.ModulePath}
+		}
+	}
 	// check if there are any outdated majors
 	// output if there is a new major package we do not support
 	for base, contribMajor := range contrib_latests {
