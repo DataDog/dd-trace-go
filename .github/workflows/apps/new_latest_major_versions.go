@@ -100,16 +100,15 @@ func getGoModVersion(repository string, pkg string) (string, string, error) {
 
 }
 
-func fetchGoModGit(repoURL, tag string, wg *sync.WaitGroup, results chan<- PackageResult) {
-	defer wg.Done()
-
-	log.Printf("fetching %s@%s\n", repoURL, tag)
+func fetchGoModGit(repoURL, tag string, results chan<- PackageResult) {
+	// Ensure WG counter is decreased
+	log.Printf("Fetching go.mod for repo: %s, tag: %s", repoURL, tag)
 	if !strings.HasSuffix(repoURL, ".git") {
 		repoURL = repoURL + ".git"
 	}
 
-	storer := memory.NewStorage()
 	fs := memfs.New()
+	storer := memory.NewStorage()
 
 	repo, err := git.Clone(storer, fs, &git.CloneOptions{
 		URL:           repoURL,
@@ -130,44 +129,53 @@ func fetchGoModGit(repoURL, tag string, wg *sync.WaitGroup, results chan<- Packa
 		return
 	}
 
-	err = worktree.Checkout(&git.CheckoutOptions{
-		Force:                     true,
-		Create:                    false,
-		Branch:                    plumbing.NewTagReferenceName(tag),
-		SparseCheckoutDirectories: []string{"go.mod"},
-	})
-	if err != nil {
-		results <- PackageResult{Error: fmt.Errorf("failed to checkout file: %w", err)}
-		return
-	}
+	// Parallelize checkout and file reading
+	var wg sync.WaitGroup
+	wg.Add(1)
 
-	f, err := fs.Open("go.mod")
-	if err != nil {
-		log.Printf("Failed to open go.mod in repository: %s, tag: %s", repoURL, tag)
-		results <- PackageResult{Error: fmt.Errorf("failed to open file: %w", err)}
-		return
-	}
-	defer f.Close()
-	// defer func() {
-	// 	if cerr := f.Close(); cerr != nil && err == nil {
-	// 		err = cerr
-	// 	}
-	// }()
+	go func() {
+		defer wg.Done()
 
-	b, err := io.ReadAll(f)
-	if err != nil {
-		results <- PackageResult{Error: fmt.Errorf("failed to read content: %w", err)}
-		// return nil, fmt.Errorf("failed to read file content: %w", err)
-		return
-	}
+		err = worktree.Checkout(&git.CheckoutOptions{
+			Force:                     true,
+			Create:                    false,
+			Branch:                    plumbing.NewTagReferenceName(tag),
+			SparseCheckoutDirectories: []string{"go.mod"},
+		})
 
-	mf, err := modfile.Parse("go.mod", b, nil)
-	if err != nil {
-		results <- PackageResult{Error: fmt.Errorf("failed to parse modfile: %w", err)}
-		return
-	}
-	fmt.Printf("Success fetching Go mod")
-	results <- PackageResult{ModulePath: mf.Module.Mod.Path, LatestVersion: tag}
+		if err != nil {
+			log.Printf("Error checking out file: %v", err)
+			results <- PackageResult{Error: fmt.Errorf("failed to checkout file: %w", err)}
+			return
+		}
+
+		f, err := fs.Open("go.mod")
+		if err != nil {
+			log.Printf("Failed to open go.mod in repository: %s, tag: %s", repoURL, tag)
+			results <- PackageResult{Error: fmt.Errorf("failed to open file: %w", err)}
+			return
+		}
+		defer f.Close()
+
+		b, err := io.ReadAll(f)
+		if err != nil {
+			log.Printf("Failed to read file content: %v", err)
+			results <- PackageResult{Error: fmt.Errorf("failed to read file content: %w", err)}
+			return
+		}
+
+		mf, err := modfile.Parse("go.mod", b, nil)
+		if err != nil {
+			log.Printf("Failed to parse modfile: %v", err)
+			results <- PackageResult{Error: fmt.Errorf("failed to parse modfile: %w", err)}
+			return
+		}
+
+		results <- PackageResult{ModulePath: mf.Module.Mod.Path, LatestVersion: tag}
+	}()
+
+	wg.Wait() // Ensure the goroutine finishes before returning
+	log.Printf("Successfully fetched go.mod for %s@%s", repoURL, tag)
 
 }
 
@@ -252,50 +260,6 @@ func getLatestVersion(versions []string) string {
 	return validVersions[len(validVersions)-1]
 }
 
-// func fetchGoMod(url string) (bool, string) {
-
-// 	// Create an HTTP client and make a GET request
-// 	resp, err := http.Get(url)
-// 	if err != nil {
-// 		// fmt.Printf("Error making HTTP request: %v\n", err)
-// 		return false, ""
-// 		// return false, "", fmt.Errorf("failed to get go.mod from url: %w", err)
-// 	}
-// 	defer resp.Body.Close()
-
-// 	// Check if the HTTP status is 404
-// 	if resp.StatusCode == http.StatusNotFound {
-// 		return false, ""
-// 	}
-
-// 	// Handle other HTTP errors
-// 	if resp.StatusCode != http.StatusOK {
-// 		fmt.Printf("Unexpected HTTP status: %d\n", resp.StatusCode)
-// 		return false, ""
-// 	}
-
-// 	// Read response
-// 	reader := bufio.NewReader(resp.Body)
-// 	for {
-// 		line, err := reader.ReadString('\n')
-// 		if err != nil && err != io.EOF {
-// 			fmt.Printf("Error reading response body: %v\n", err)
-// 			return false, ""
-// 		}
-
-// 		if err == io.EOF {
-// 			break
-// 		}
-
-// 		line = strings.TrimSpace(line)
-// 		if strings.HasPrefix(line, "module ") {
-// 			return true, strings.TrimSpace(strings.TrimPrefix(line, "module "))
-// 		}
-// 	}
-
-// 	return false, ""
-// }
-
 func truncateVersion(pkg string) string {
 	// Regular expression to match ".v{X}" or "/v{X}" where {X} is a number
 	re := regexp.MustCompile(`(\.v\d+|/v\d+)$`)
@@ -315,7 +279,7 @@ func main() {
 	github_latests := map[string]GithubLatests{} // map module (base name) => latest on github
 	contrib_latests := map[string]string{}       // map module (base name) => latest on go.mod
 
-	var wg sync.WaitGroup
+	// var wg sync.WaitGroup
 	results := make(chan PackageResult, 10) // Buffered channel to avoid blocking
 
 	for pkg, packageInfo := range instrumentation.GetPackages() {
@@ -338,7 +302,6 @@ func main() {
 
 		// check if need to update contrib_latests
 		version_major_contrib := truncateMajorVersion(version)
-		// fmt.Printf("version: %v\n", version_major_contrib)
 
 		if err != nil {
 			fmt.Println(err)
@@ -385,44 +348,12 @@ func main() {
 		// Get the latest version for each major
 		for _, versions := range majors {
 			latest := getLatestVersion(versions)
-			// modFile, err := fetchGoModGit(origin, latest)
 
-			// Fetch go.mod in a goroutine
-			wg.Add(1)
-			go fetchGoModGit(origin, latest, &wg, results)
-			// if err != nil {
-			// 	continue
-			// }
-
-			// fmt.Printf("Latest version for %s: %s\n", major, latest)
-
-			// // Fetch `go.mod`
-			// goModURL := fmt.Sprintf("https://raw.githubusercontent.com/%s/refs/tags/%s/go.mod", base, latest)
-			// isGoModule, modName := fetchGoMod(goModURL)
-			// if isGoModule {
-			// 	fmt.Printf("Module name for %s: %s\n", latest, modName)
-			// } else {
-			// 	continue
-			// }
-			// latest_major := truncateMajorVersion(latest)
-			// if latestGithub, ok := github_latests[base]; ok {
-			// 	if semver.Compare(major, latestGithub.Version) > 0 {
-			// 		// if latest > latestGithubMajor
-			// 		github_latests[base] = GithubLatests{major, modFile.Module.Mod.Path}
-			// 	}
-			// } else {
-			// 	github_latests[base] = GithubLatests{major, modFile.Module.Mod.Path}
-			// }
+			fetchGoModGit(origin, latest, results)
 
 		}
 
 	}
-
-	// Close the results channel once all goroutines finish
-	go func() {
-		wg.Wait()
-		close(results)
-	}()
 
 	// Iterate through results
 	for result := range results {
