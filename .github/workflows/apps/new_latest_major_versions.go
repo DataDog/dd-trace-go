@@ -8,6 +8,7 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -17,6 +18,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"os/exec"
 
@@ -101,16 +103,15 @@ func getGoModVersion(repository string, pkg string) (string, string, error) {
 }
 
 func fetchGoModGit(repoURL, tag string, results chan<- PackageResult) {
-	// Ensure WG counter is decreased
 	log.Printf("Fetching go.mod for repo: %s, tag: %s", repoURL, tag)
-	if !strings.HasSuffix(repoURL, ".git") {
-		repoURL = repoURL + ".git"
-	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
 
 	fs := memfs.New()
 	storer := memory.NewStorage()
 
-	repo, err := git.Clone(storer, fs, &git.CloneOptions{
+	repo, err := git.CloneContext(ctx, storer, fs, &git.CloneOptions{
 		URL:           repoURL,
 		Depth:         1,
 		SingleBranch:  true,
@@ -119,9 +120,18 @@ func fetchGoModGit(repoURL, tag string, results chan<- PackageResult) {
 		NoCheckout:    true,
 	})
 	if err != nil {
-		results <- PackageResult{Error: fmt.Errorf("failed to clone repo: %w", err)}
+		select {
+		case results <- PackageResult{Error: fmt.Errorf("failed to clone repo: %w", err)}:
+		case <-ctx.Done():
+			log.Printf("Context cancelled while sending result")
+		}
 		return
 	}
+
+	// if err != nil {
+	// 	results <- PackageResult{Error: fmt.Errorf("failed to clone repo: %w", err)}
+	// 	return
+	// }
 
 	worktree, err := repo.Worktree()
 	if err != nil {
