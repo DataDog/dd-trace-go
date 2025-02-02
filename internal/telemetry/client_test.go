@@ -54,7 +54,67 @@ func TestClient(t *testing.T) {
 		t.Fatal("Heartbeat took more than 30 seconds. Should have been ~1 second")
 	case <-heartbeat:
 	}
+}
 
+func TestHeartbeatMetric(t *testing.T) {
+	t.Setenv("DD_TELEMETRY_HEARTBEAT_INTERVAL", "1")
+	heartbeat := make(chan struct{})
+	metrics := make(chan string)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		h := r.Header.Get("DD-Telemetry-Request-Type")
+		if len(h) == 0 {
+			t.Fatal("didn't get telemetry request type header")
+		}
+		switch RequestType(h) {
+		case RequestTypeAppHeartbeat:
+			select {
+			case heartbeat <- struct{}{}:
+			default:
+			}
+		case RequestTypeGenerateMetrics:
+			var data struct {
+				Payload *Metrics
+			}
+			if err := json.NewDecoder(r.Body).Decode(&data); err != nil {
+				t.Fatal(err)
+			}
+			for _, s := range data.Payload.Series {
+				select {
+				case metrics <- s.Metric:
+				default:
+				}
+			}
+		}
+	}))
+	defer server.Close()
+
+	client := &client{
+		URL: server.URL,
+	}
+	const metricName = "test.metric"
+	client.ApplyOps(WithHeartbeatMetric(NamespaceGeneral, MetricKindGauge, metricName, func() float64 { return 1 }, nil, false))
+
+	client.mu.Lock()
+	client.start(nil, NamespaceTracers, true)
+	client.start(nil, NamespaceTracers, true) // test idempotence
+	client.mu.Unlock()
+	defer client.Stop()
+
+	timeout := time.After(30 * time.Second)
+	waitingForHeartbeat := true
+	waitingForMetric := true
+	for waitingForHeartbeat || waitingForMetric {
+		select {
+		case <-timeout:
+			t.Fatal("Heartbeat took more than 30 seconds. Should have been ~1 second")
+		case <-heartbeat:
+			waitingForHeartbeat = false
+		case m := <-metrics:
+			assert.Equal(t, metricName, m)
+			waitingForMetric = false
+		}
+	}
 }
 
 func TestMetrics(t *testing.T) {
@@ -111,8 +171,8 @@ func TestMetrics(t *testing.T) {
 		client.start(nil, NamespaceTracers, true)
 
 		// Records should have the most recent value
-		client.Record(NamespaceTracers, MetricKindGauge, "foobar", 1, nil, false)
-		client.Record(NamespaceTracers, MetricKindGauge, "foobar", 2, nil, false)
+		client.Gauge(NamespaceTracers, "foobar", 1, 1, nil, false)
+		client.Gauge(NamespaceTracers, "foobar", 1, 2, nil, false)
 		// Counts should be aggregated
 		client.Count(NamespaceTracers, "baz", 3, nil, true)
 		client.Count(NamespaceTracers, "baz", 1, nil, true)
@@ -186,8 +246,8 @@ func TestDistributionMetrics(t *testing.T) {
 		}
 		client.start(nil, NamespaceTracers, true)
 		// Records should have the most recent value
-		client.Record(NamespaceTracers, MetricKindDist, "soobar", 1, nil, false)
-		client.Record(NamespaceTracers, MetricKindDist, "soobar", 3, nil, false)
+		client.distribution(NamespaceTracers, "soobar", 1, nil, false)
+		client.distribution(NamespaceTracers, "soobar", 3, nil, false)
 		client.mu.Lock()
 		client.flush(false)
 		client.mu.Unlock()
@@ -217,7 +277,7 @@ func TestDisabledClient(t *testing.T) {
 		URL: server.URL,
 	}
 	client.start(nil, NamespaceTracers, true)
-	client.Record(NamespaceTracers, MetricKindGauge, "foobar", 1, nil, false)
+	client.Gauge(NamespaceTracers, "foobar", 1, 1, nil, false)
 	client.Count(NamespaceTracers, "bonk", 4, []string{"org:1"}, false)
 	client.Stop()
 }
@@ -232,7 +292,7 @@ func TestNonStartedClient(t *testing.T) {
 	client := &client{
 		URL: server.URL,
 	}
-	client.Record(NamespaceTracers, MetricKindGauge, "foobar", 1, nil, false)
+	client.Gauge(NamespaceTracers, "foobar", 1, 1, nil, false)
 	client.Count(NamespaceTracers, "bonk", 4, []string{"org:1"}, false)
 	client.Stop()
 }
