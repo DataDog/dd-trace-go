@@ -62,6 +62,7 @@ type (
 		ItrEnabled              bool `json:"itr_enabled"`
 		RequireGit              bool `json:"require_git"`
 		TestsSkipping           bool `json:"tests_skipping"`
+		KnownTestsEnabled       bool `json:"known_tests_enabled"`
 	}
 )
 
