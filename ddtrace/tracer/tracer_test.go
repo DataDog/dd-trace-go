@@ -78,8 +78,8 @@ var (
 
 // This test is meant to flake. We are using this to test quality gates.
 // TODO : REMOVE THIS TEST BEFORE MERGING
-func TestFlaky(t *testing.T) {
-	n := rand.Intn(2)
+func TestNewFlaky(t *testing.T) {
+	n := rand.Intn(3)
 	assert.Equal(t, n, 0)
 
 }
