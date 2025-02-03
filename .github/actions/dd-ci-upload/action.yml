@@ -56,4 +56,4 @@ runs:
 
     - name: Activate Quality Gates
       shell: bash
-      run: ./datadog-ci gate evaluate
+      run: env DD_API_KEY=${{ inputs.dd-api-key }} ./datadog-ci gate evaluate
