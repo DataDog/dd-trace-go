@@ -74,7 +74,19 @@ func TestMain(m *testing.M) {
 
 func runFlakyTestRetriesTests(m *testing.M) {
 	// mock the settings api to enable automatic test retries
-	server := setUpHttpServer(true, false, nil, false, nil)
+	server := setUpHttpServer(true, true, false, &net.KnownTestsResponseData{
+		Tests: net.KnownTestsResponseDataModules{
+			"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/integrations/gotesting": net.KnownTestsResponseDataSuites{
+				"reflections_test.go": []string{
+					"TestGetFieldPointerFrom",
+					"TestGetInternalTestArray",
+					"TestGetInternalBenchmarkArray",
+					"TestCommonPrivateFields_AddLevel",
+					"TestGetBenchmarkPrivateFields",
+				},
+			},
+		},
+	}, false, nil)
 	defer server.Close()
 
 	// set a custom retry count
@@ -137,6 +149,13 @@ func runFlakyTestRetriesTests(m *testing.M) {
 
 	// check spans by tag
 	checkSpansByTagName(finishedSpans, constants.TestIsRetry, 6)
+	trrSpan := checkSpansByTagName(finishedSpans, constants.TestRetryReason, 6)[0]
+	if trrSpan.Tag(constants.TestRetryReason) != "atr" {
+		panic(fmt.Sprintf("expected retry reason to be %s, got %s", "atr", trrSpan.Tag(constants.TestRetryReason)))
+	}
+
+	// check the test is new tag
+	checkSpansByTagName(finishedSpans, constants.TestIsNew, 22)
 
 	// check spans by type
 	checkSpansByType(finishedSpans,
@@ -153,7 +172,7 @@ func runFlakyTestRetriesTests(m *testing.M) {
 
 func runEarlyFlakyTestDetectionTests(m *testing.M) {
 	// mock the settings api to enable automatic test retries
-	server := setUpHttpServer(false, true, &net.KnownTestsResponseData{
+	server := setUpHttpServer(false, true, true, &net.KnownTestsResponseData{
 		Tests: net.KnownTestsResponseDataModules{
 			"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting": net.KnownTestsResponseDataSuites{
 				"reflections_test.go": []string{
@@ -227,6 +246,10 @@ func runEarlyFlakyTestDetectionTests(m *testing.M) {
 	// check spans by tag
 	checkSpansByTagName(finishedSpans, constants.TestIsNew, 176)
 	checkSpansByTagName(finishedSpans, constants.TestIsRetry, 160)
+	trrSpan := checkSpansByTagName(finishedSpans, constants.TestRetryReason, 160)[0]
+	if trrSpan.Tag(constants.TestRetryReason) != "efd" {
+		panic(fmt.Sprintf("expected retry reason to be %s, got %s", "efd", trrSpan.Tag(constants.TestRetryReason)))
+	}
 
 	// check spans by type
 	checkSpansByType(finishedSpans,
@@ -243,7 +266,7 @@ func runEarlyFlakyTestDetectionTests(m *testing.M) {
 
 func runFlakyTestRetriesWithEarlyFlakyTestDetectionTests(m *testing.M) {
 	// mock the settings api to enable automatic test retries
-	server := setUpHttpServer(true, true, &net.KnownTestsResponseData{
+	server := setUpHttpServer(true, true, true, &net.KnownTestsResponseData{
 		Tests: net.KnownTestsResponseDataModules{
 			"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting": net.KnownTestsResponseDataSuites{
 				"reflections_test.go": []string{
@@ -355,7 +378,7 @@ func runFlakyTestRetriesWithEarlyFlakyTestDetectionTests(m *testing.M) {
 
 func runIntelligentTestRunnerTests(m *testing.M) {
 	// mock the settings api to enable automatic test retries
-	server := setUpHttpServer(true, false, nil, true, []net.SkippableResponseDataAttributes{
+	server := setUpHttpServer(true, true, false, nil, true, []net.SkippableResponseDataAttributes{
 		{
 			Suite: "testing_test.go",
 			Name:  "TestMyTest01",
@@ -569,8 +592,10 @@ type (
 )
 
 func setUpHttpServer(flakyRetriesEnabled bool,
+	knownTestsEnabled bool,
 	earlyFlakyDetectionEnabled bool, earlyFlakyDetectionData *net.KnownTestsResponseData,
 	itrEnabled bool, itrData []net.SkippableResponseDataAttributes) *httptest.Server {
+	enableKnownTests := knownTestsEnabled || earlyFlakyDetectionEnabled
 	// mock the settings api to enable automatic test retries
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		fmt.Printf("MockApi received request: %s\n", r.URL.Path)
@@ -591,7 +616,7 @@ func setUpHttpServer(flakyRetriesEnabled bool,
 				FlakyTestRetriesEnabled: flakyRetriesEnabled,
 				ItrEnabled:              itrEnabled,
 				TestsSkipping:           itrEnabled,
-				KnownTestsEnabled:       earlyFlakyDetectionEnabled,
+				KnownTestsEnabled:       enableKnownTests,
 			}
 			response.Data.Attributes.EarlyFlakeDetection.Enabled = earlyFlakyDetectionEnabled
 			response.Data.Attributes.EarlyFlakeDetection.SlowTestRetries.FiveS = 10
@@ -601,7 +626,7 @@ func setUpHttpServer(flakyRetriesEnabled bool,
 
 			fmt.Printf("MockApi sending response: %v\n", response)
 			json.NewEncoder(w).Encode(&response)
-		} else if earlyFlakyDetectionEnabled && r.URL.Path == "/api/v2/ci/libraries/tests" {
+		} else if enableKnownTests && r.URL.Path == "/api/v2/ci/libraries/tests" {
 			w.Header().Set("Content-Type", "application/json")
 			response := struct {
 				Data struct {

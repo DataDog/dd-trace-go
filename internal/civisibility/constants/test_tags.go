@@ -78,6 +78,9 @@ const (
 	// This constant is used to tag test events that are part of a retry execution
 	TestIsRetry = "test.is_retry"
 
+	// TestRetryReason indicates the reason for retrying the test
+	TestRetryReason = "test.retry_reason"
+
 	// TestEarlyFlakeDetectionRetryAborted indicates a retry abort reason by the early flake detection feature
 	TestEarlyFlakeDetectionRetryAborted = "test.early_flake.abort_reason"
 
