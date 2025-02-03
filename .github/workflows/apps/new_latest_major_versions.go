@@ -34,14 +34,7 @@ type ModuleInfo struct {
 
 type GithubLatests struct {
 	Version string
-	Module  string
-}
-
-type PackageResult struct {
-	Base          string
-	LatestVersion string
-	ModulePath    string
-	Error         error
+	Module  string // the base name of the module
 }
 
 func getGoModVersion(repository string, pkg string) (string, string, error) {
@@ -97,15 +90,17 @@ func getGoModVersion(repository string, pkg string) (string, string, error) {
 
 func fetchGoMod(origin, tag string) (*modfile.File, error) {
 	// https://raw.githubusercontent.com/gin-gonic/gin/refs/tags/v1.7.7/go.mod
-	if !strings.HasPrefix(origin, "https://github.com") {
-		return nil, fmt.Errorf("provider not supported: %s", origin)
-	}
 
+	// Process the URL
 	repoPath := strings.TrimPrefix(origin, "https://github.com/")
+	repoPath = strings.TrimPrefix(repoPath, "https://gopkg.in/")
 	repoPath = strings.TrimSuffix(repoPath, ".git")
+	// Remove .vX version suffix if present (e.g., ".v1", ".v2")
+	repoPath = regexp.MustCompile(`\.v\d+$`).ReplaceAllString(repoPath, "")
+
 	url := fmt.Sprintf("https://raw.githubusercontent.com/%s/refs/tags/%s/go.mod", repoPath, tag)
 
-	log.Printf("fetching %s\n", url)
+	// log.Printf("fetching %s\n", url)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -119,6 +114,8 @@ func fetchGoMod(origin, tag string) (*modfile.File, error) {
 	if err != nil {
 		return nil, err
 	}
+	defer resp.Body.Close()
+
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
 	}
@@ -226,15 +223,10 @@ func truncateMajorVersion(version string) string {
 }
 
 func main() {
-	// log.SetFlags(0) // disable date and time logging
-	log.Println("starting")
 
 	// Find latest major
 	github_latests := map[string]GithubLatests{} // map module (base name) => latest on github
 	contrib_latests := map[string]string{}       // map module (base name) => latest on go.mod
-
-	// var wg sync.WaitGroup
-	results := make(chan PackageResult, 10) // Buffered channel to avoid blocking
 
 	for pkg, packageInfo := range instrumentation.GetPackages() {
 
@@ -300,7 +292,7 @@ func main() {
 		// 5b. If request returns a `go.mod`, parse the modfile and extract the mod name
 
 		// Get the latest version for each major
-		for _, versions := range majors {
+		for major, versions := range majors {
 			latest := getLatestVersion(versions)
 
 			log.Printf("fetching go.mod for %s@%s\n", origin, latest)
@@ -310,24 +302,17 @@ func main() {
 				continue
 			}
 			log.Printf("go.mod for %s@%s: %s\n", origin, latest, f.Module.Mod.Path)
-		}
-	}
-
-	// Iterate through results
-	for result := range results {
-		if result.Error != nil {
-			fmt.Println("Error:", result.Error)
-			continue
-		}
-
-		if latestGithub, ok := github_latests[result.Base]; ok {
-			if semver.Compare(result.LatestVersion, latestGithub.Version) > 0 {
-				github_latests[result.Base] = GithubLatests{result.LatestVersion, result.ModulePath}
+			if latestGithub, ok := github_latests[base]; ok {
+				if semver.Compare(major, latestGithub.Version) > 0 {
+					// if latest > latestGithubMajor
+					github_latests[base] = GithubLatests{major, base}
+				}
+			} else {
+				github_latests[base] = GithubLatests{major, base}
 			}
-		} else {
-			github_latests[result.Base] = GithubLatests{result.LatestVersion, result.ModulePath}
 		}
 	}
+
 	// check if there are any outdated majors
 	// output if there is a new major package we do not support
 	for base, contribMajor := range contrib_latests {
