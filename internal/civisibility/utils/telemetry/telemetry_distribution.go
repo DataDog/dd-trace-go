@@ -86,19 +86,19 @@ func CodeCoverageFiles(value float64) {
 	telemetry.GlobalClient.Record(telemetry.NamespaceCiVisibility, telemetry.MetricKindDist, "code_coverage.files", value, nil, true)
 }
 
-// EarlyFlakeDetectionRequestMs records the time it takes to get the response of the early flake detection endpoint request in ms by CI Visibility.
-func EarlyFlakeDetectionRequestMs(value float64) {
-	telemetry.GlobalClient.Record(telemetry.NamespaceCiVisibility, telemetry.MetricKindDist, "early_flake_detection.request_ms", value, nil, true)
+// KnownTestsRequestMs records the time it takes to get the response of the known tests endpoint request in ms by CI Visibility.
+func KnownTestsRequestMs(value float64) {
+	telemetry.GlobalClient.Record(telemetry.NamespaceCiVisibility, telemetry.MetricKindDist, "known_tests.request_ms", value, nil, true)
 }
 
-// EarlyFlakeDetectionResponseBytes records the number of bytes received by the endpoint. Tagged with a boolean flag set to true if response body is compressed.
-func EarlyFlakeDetectionResponseBytes(responseCompressedType ResponseCompressedType, value float64) {
-	telemetry.GlobalClient.Record(telemetry.NamespaceCiVisibility, telemetry.MetricKindDist, "early_flake_detection.response_bytes", value, removeEmptyStrings([]string{
+// KnownTestsResponseBytes records the number of bytes received by the endpoint. Tagged with a boolean flag set to true if response body is compressed.
+func KnownTestsResponseBytes(responseCompressedType ResponseCompressedType, value float64) {
+	telemetry.GlobalClient.Record(telemetry.NamespaceCiVisibility, telemetry.MetricKindDist, "known_tests.response_bytes", value, removeEmptyStrings([]string{
 		(string)(responseCompressedType),
 	}), true)
 }
 
-// EarlyFlakeDetectionResponseTests records the number of tests in the response of the early flake detection endpoint by CI Visibility.
-func EarlyFlakeDetectionResponseTests(value float64) {
-	telemetry.GlobalClient.Record(telemetry.NamespaceCiVisibility, telemetry.MetricKindDist, "early_flake_detection.response_tests", value, nil, true)
+// KnownTestsResponseTests records the number of tests in the response of the known tests endpoint by CI Visibility.
+func KnownTestsResponseTests(value float64) {
+	telemetry.GlobalClient.Record(telemetry.NamespaceCiVisibility, telemetry.MetricKindDist, "known_tests.response_tests", value, nil, true)
 }

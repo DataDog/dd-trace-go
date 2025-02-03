@@ -74,7 +74,19 @@ func TestMain(m *testing.M) {
 
 func runFlakyTestRetriesTests(m *testing.M) {
 	// mock the settings api to enable automatic test retries
-	server := setUpHttpServer(true, false, nil, false, nil)
+	server := setUpHttpServer(true, true, false, &net.KnownTestsResponseData{
+		Tests: net.KnownTestsResponseDataModules{
+			"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/integrations/gotesting": net.KnownTestsResponseDataSuites{
+				"reflections_test.go": []string{
+					"TestGetFieldPointerFrom",
+					"TestGetInternalTestArray",
+					"TestGetInternalBenchmarkArray",
+					"TestCommonPrivateFields_AddLevel",
+					"TestGetBenchmarkPrivateFields",
+				},
+			},
+		},
+	}, false, nil)
 	defer server.Close()
 
 	// set a custom retry count
@@ -137,6 +149,13 @@ func runFlakyTestRetriesTests(m *testing.M) {
 
 	// check spans by tag
 	checkSpansByTagName(finishedSpans, constants.TestIsRetry, 6)
+	trrSpan := checkSpansByTagName(finishedSpans, constants.TestRetryReason, 6)[0]
+	if trrSpan.Tag(constants.TestRetryReason) != "atr" {
+		panic(fmt.Sprintf("expected retry reason to be %s, got %s", "atr", trrSpan.Tag(constants.TestRetryReason)))
+	}
+
+	// check the test is new tag
+	checkSpansByTagName(finishedSpans, constants.TestIsNew, 27)
 
 	// check spans by type
 	checkSpansByType(finishedSpans,
@@ -153,9 +172,9 @@ func runFlakyTestRetriesTests(m *testing.M) {
 
 func runEarlyFlakyTestDetectionTests(m *testing.M) {
 	// mock the settings api to enable automatic test retries
-	server := setUpHttpServer(false, true, &net.EfdResponseData{
-		Tests: net.EfdResponseDataModules{
-			"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting": net.EfdResponseDataSuites{
+	server := setUpHttpServer(false, true, true, &net.KnownTestsResponseData{
+		Tests: net.KnownTestsResponseDataModules{
+			"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting": net.KnownTestsResponseDataSuites{
 				"reflections_test.go": []string{
 					"TestGetFieldPointerFrom",
 					"TestGetInternalTestArray",
@@ -227,6 +246,10 @@ func runEarlyFlakyTestDetectionTests(m *testing.M) {
 	// check spans by tag
 	checkSpansByTagName(finishedSpans, constants.TestIsNew, 176)
 	checkSpansByTagName(finishedSpans, constants.TestIsRetry, 160)
+	trrSpan := checkSpansByTagName(finishedSpans, constants.TestRetryReason, 160)[0]
+	if trrSpan.Tag(constants.TestRetryReason) != "efd" {
+		panic(fmt.Sprintf("expected retry reason to be %s, got %s", "efd", trrSpan.Tag(constants.TestRetryReason)))
+	}
 
 	// check spans by type
 	checkSpansByType(finishedSpans,
@@ -243,9 +266,9 @@ func runEarlyFlakyTestDetectionTests(m *testing.M) {
 
 func runFlakyTestRetriesWithEarlyFlakyTestDetectionTests(m *testing.M) {
 	// mock the settings api to enable automatic test retries
-	server := setUpHttpServer(true, true, &net.EfdResponseData{
-		Tests: net.EfdResponseDataModules{
-			"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting": net.EfdResponseDataSuites{
+	server := setUpHttpServer(true, true, true, &net.KnownTestsResponseData{
+		Tests: net.KnownTestsResponseDataModules{
+			"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting": net.KnownTestsResponseDataSuites{
 				"reflections_test.go": []string{
 					"TestGetFieldPointerFrom",
 					"TestGetInternalTestArray",
@@ -355,7 +378,7 @@ func runFlakyTestRetriesWithEarlyFlakyTestDetectionTests(m *testing.M) {
 
 func runIntelligentTestRunnerTests(m *testing.M) {
 	// mock the settings api to enable automatic test retries
-	server := setUpHttpServer(true, false, nil, true, []net.SkippableResponseDataAttributes{
+	server := setUpHttpServer(true, true, false, nil, true, []net.SkippableResponseDataAttributes{
 		{
 			Suite: "testing_test.go",
 			Name:  "TestMyTest01",
@@ -521,7 +544,7 @@ func checkSpansByType(finishedSpans []*mocktracer.Span,
 	}
 }
 
-func checkSpansByResourceName(finishedSpans []*mocktracer.Span, resourceName string, count int) []mocktracer.Span {
+func checkSpansByResourceName(finishedSpans []*mocktracer.Span, resourceName string, count int) []*mocktracer.Span {
 	spans := getSpansWithResourceName(finishedSpans, resourceName)
 	numOfSpans := len(spans)
 	if numOfSpans != count {
@@ -531,7 +554,7 @@ func checkSpansByResourceName(finishedSpans []*mocktracer.Span, resourceName str
 	return spans
 }
 
-func checkSpansByTagName(finishedSpans []*mocktracer.Span, tagName string, count int) []mocktracer.Span {
+func checkSpansByTagName(finishedSpans []*mocktracer.Span, tagName string, count int) []*mocktracer.Span {
 	spans := getSpansWithTagName(finishedSpans, tagName)
 	numOfSpans := len(spans)
 	if numOfSpans != count {
@@ -541,7 +564,7 @@ func checkSpansByTagName(finishedSpans []*mocktracer.Span, tagName string, count
 	return spans
 }
 
-func checkSpansByTagValue(finishedSpans []*mocktracer.Span, tagName, tagValue string, count int) []mocktracer.Span {
+func checkSpansByTagValue(finishedSpans []*mocktracer.Span, tagName, tagValue string, count int) []*mocktracer.Span {
 	spans := getSpansWithTagNameAndValue(finishedSpans, tagName, tagValue)
 	numOfSpans := len(spans)
 	if numOfSpans != count {
@@ -569,8 +592,10 @@ type (
 )
 
 func setUpHttpServer(flakyRetriesEnabled bool,
-	earlyFlakyDetectionEnabled bool, earlyFlakyDetectionData *net.EfdResponseData,
+	knownTestsEnabled bool,
+	earlyFlakyDetectionEnabled bool, earlyFlakyDetectionData *net.KnownTestsResponseData,
 	itrEnabled bool, itrData []net.SkippableResponseDataAttributes) *httptest.Server {
+	enableKnownTests := knownTestsEnabled || earlyFlakyDetectionEnabled
 	// mock the settings api to enable automatic test retries
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		fmt.Printf("MockApi received request: %s\n", r.URL.Path)
@@ -591,6 +616,7 @@ func setUpHttpServer(flakyRetriesEnabled bool,
 				FlakyTestRetriesEnabled: flakyRetriesEnabled,
 				ItrEnabled:              itrEnabled,
 				TestsSkipping:           itrEnabled,
+				KnownTestsEnabled:       enableKnownTests,
 			}
 			response.Data.Attributes.EarlyFlakeDetection.Enabled = earlyFlakyDetectionEnabled
 			response.Data.Attributes.EarlyFlakeDetection.SlowTestRetries.FiveS = 10
@@ -600,13 +626,13 @@ func setUpHttpServer(flakyRetriesEnabled bool,
 
 			fmt.Printf("MockApi sending response: %v\n", response)
 			json.NewEncoder(w).Encode(&response)
-		} else if earlyFlakyDetectionEnabled && r.URL.Path == "/api/v2/ci/libraries/tests" {
+		} else if enableKnownTests && r.URL.Path == "/api/v2/ci/libraries/tests" {
 			w.Header().Set("Content-Type", "application/json")
 			response := struct {
 				Data struct {
-					ID         string              `json:"id"`
-					Type       string              `json:"type"`
-					Attributes net.EfdResponseData `json:"attributes"`
+					ID         string                     `json:"id"`
+					Type       string                     `json:"type"`
+					Attributes net.KnownTestsResponseData `json:"attributes"`
 				} `json:"data,omitempty"`
 			}{}
 
@@ -652,51 +678,51 @@ func setUpHttpServer(flakyRetriesEnabled bool,
 	return server
 }
 
-func getSpansWithType(spans []*mocktracer.Span, spanType string) []mocktracer.Span {
-	var result []mocktracer.Span
+func getSpansWithType(spans []*mocktracer.Span, spanType string) []*mocktracer.Span {
+	var result []*mocktracer.Span
 	for _, span := range spans {
 		if span.Tag(ext.SpanType) == spanType {
-			result = append(result, *span)
+			result = append(result, span)
 		}
 	}
 
 	return result
 }
 
-func getSpansWithResourceName(spans []*mocktracer.Span, resourceName string) []mocktracer.Span {
-	var result []mocktracer.Span
+func getSpansWithResourceName(spans []*mocktracer.Span, resourceName string) []*mocktracer.Span {
+	var result []*mocktracer.Span
 	for _, span := range spans {
 		if span.Tag(ext.ResourceName) == resourceName {
-			result = append(result, *span)
+			result = append(result, span)
 		}
 	}
 
 	return result
 }
 
-func getSpansWithTagName(spans []*mocktracer.Span, tag string) []mocktracer.Span {
-	var result []mocktracer.Span
+func getSpansWithTagName(spans []*mocktracer.Span, tag string) []*mocktracer.Span {
+	var result []*mocktracer.Span
 	for _, span := range spans {
 		if span.Tag(tag) != nil {
-			result = append(result, *span)
+			result = append(result, span)
 		}
 	}
 
 	return result
 }
 
-func getSpansWithTagNameAndValue(spans []*mocktracer.Span, tag, value string) []mocktracer.Span {
-	var result []mocktracer.Span
+func getSpansWithTagNameAndValue(spans []*mocktracer.Span, tag, value string) []*mocktracer.Span {
+	var result []*mocktracer.Span
 	for _, span := range spans {
 		if span.Tag(tag) == value {
-			result = append(result, *span)
+			result = append(result, span)
 		}
 	}
 
 	return result
 }
 
-func showResourcesNameFromSpans(spans []mocktracer.Span) {
+func showResourcesNameFromSpans(spans []*mocktracer.Span) {
 	for i, span := range spans {
 		fmt.Printf("  [%d] = %v\n", i, span.Tag(ext.ResourceName))
 	}
