@@ -13,24 +13,17 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net/http"
 	"os"
+	"os/exec"
 	"regexp"
 	"sort"
 	"strings"
-	"sync"
 	"time"
-
-	"os/exec"
 
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 	"golang.org/x/mod/modfile"
 	"golang.org/x/mod/semver"
-
-	// Missing dependencies
-	"github.com/go-git/go-billy/v5/memfs"
-	"github.com/go-git/go-git/v5"
-	"github.com/go-git/go-git/v5/plumbing"
-	"github.com/go-git/go-git/v5/storage/memory"
 )
 
 type ModuleInfo struct {
@@ -101,110 +94,41 @@ func getGoModVersion(repository string, pkg string) (string, string, error) {
 	return largestVersionRepo, largestVersion, nil
 
 }
-func fetchGoModGit(repoURL, tag string, results chan<- PackageResult) {
-	log.Printf("Fetching go.mod for repo: %s, tag: %s", repoURL, tag)
+
+func fetchGoMod(origin, tag string) (*modfile.File, error) {
+	// https://raw.githubusercontent.com/gin-gonic/gin/refs/tags/v1.7.7/go.mod
+	if !strings.HasPrefix(origin, "https://github.com") {
+		return nil, fmt.Errorf("provider not supported: %s", origin)
+	}
+
+	repoPath := strings.TrimPrefix(origin, "https://github.com/")
+	repoPath = strings.TrimSuffix(repoPath, ".git")
+	url := fmt.Sprintf("https://raw.githubusercontent.com/%s/refs/tags/%s/go.mod", repoPath, tag)
+
+	log.Printf("fetching %s\n", url)
+
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	// Create filesystem without close operation
-	fs := memfs.New()
-	storer := memory.NewStorage()
-
-	repo, err := git.CloneContext(ctx, storer, fs, &git.CloneOptions{
-		URL:           repoURL,
-		Depth:         1,
-		SingleBranch:  true,
-		ReferenceName: plumbing.NewTagReferenceName(tag),
-		Progress:      os.Stdout,
-		NoCheckout:    true,
-	})
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
-		select {
-		case results <- PackageResult{Error: fmt.Errorf("failed to clone repo: %w", err)}:
-		case <-ctx.Done():
-			log.Printf("Context cancelled while sending result")
-		}
-		return
+		return nil, err
 	}
 
-	worktree, err := repo.Worktree()
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		results <- PackageResult{Error: fmt.Errorf("failed to get worktree: %w", err)}
-		return
+		return nil, err
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
 	}
 
-	var wg sync.WaitGroup
-	wg.Add(1)
+	b, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
 
-	go func() {
-		defer wg.Done()
-		defer func() {
-			if r := recover(); r != nil {
-				log.Printf("Recovered from panic: %v", r)
-			}
-		}()
-
-		err = worktree.Checkout(&git.CheckoutOptions{
-			Force:                     true,
-			Create:                    false,
-			Branch:                    plumbing.NewTagReferenceName(tag),
-			SparseCheckoutDirectories: []string{"go.mod"},
-		})
-		if err != nil {
-			log.Printf("Error checking out file: %v", err)
-			select {
-			case results <- PackageResult{Error: fmt.Errorf("failed to checkout file: %w", err)}:
-			case <-ctx.Done():
-				log.Printf("Context cancelled while sending result")
-			}
-			return
-		}
-
-		f, err := fs.Open("go.mod")
-		if err != nil {
-			log.Printf("Failed to open go.mod in repository: %s", repoURL)
-			select {
-			case results <- PackageResult{Error: fmt.Errorf("failed to open file: %w", err)}:
-			case <-ctx.Done():
-				log.Printf("Context cancelled while sending result")
-			}
-			return
-		}
-		defer f.Close() // Only close the file, not the filesystem
-
-		b, err := io.ReadAll(f)
-		if err != nil {
-			log.Printf("Failed to read file content: %v", err)
-			select {
-			case results <- PackageResult{Error: fmt.Errorf("failed to read file content: %w", err)}:
-			case <-ctx.Done():
-				log.Printf("Context cancelled while sending result")
-			}
-			return
-		}
-
-		mf, err := modfile.Parse("go.mod", b, nil)
-		if err != nil {
-			log.Printf("Failed to parse modfile: %v", err)
-			select {
-			case results <- PackageResult{Error: fmt.Errorf("failed to parse modfile: %w", err)}:
-			case <-ctx.Done():
-				log.Printf("Context cancelled while sending result")
-			}
-			return
-		}
-
-		select {
-		case results <- PackageResult{ModulePath: mf.Module.Mod.Path, LatestVersion: tag}:
-		case <-ctx.Done():
-			log.Printf("Context cancelled while sending result")
-		}
-	}()
-
-	log.Printf("Waiting for goroutine to complete...")
-	wg.Wait()
-	log.Printf("Goroutine completed")
-	log.Printf("Successfully fetched go.mod for %s@%s", repoURL, tag)
+	return modfile.Parse("go.mod", b, nil)
 }
 
 func truncateVersionSuffix(repository string) string {
@@ -302,7 +226,9 @@ func truncateMajorVersion(version string) string {
 }
 
 func main() {
-	log.SetFlags(0) // disable date and time logging
+	// log.SetFlags(0) // disable date and time logging
+	log.Println("starting")
+
 	// Find latest major
 	github_latests := map[string]GithubLatests{} // map module (base name) => latest on github
 	contrib_latests := map[string]string{}       // map module (base name) => latest on go.mod
@@ -377,10 +303,14 @@ func main() {
 		for _, versions := range majors {
 			latest := getLatestVersion(versions)
 
-			fetchGoModGit(origin, latest, results)
-
+			log.Printf("fetching go.mod for %s@%s\n", origin, latest)
+			f, err := fetchGoMod(origin, latest)
+			if err != nil {
+				log.Printf("failed to fetch go.mod for %s@%s: %+v\n", origin, latest, err)
+				continue
+			}
+			log.Printf("go.mod for %s@%s: %s\n", origin, latest, f.Module.Mod.Path)
 		}
-
 	}
 
 	// Iterate through results
