@@ -53,3 +53,7 @@ runs:
           --service ${{ inputs.service }} \
           --tags "${{ inputs.tags }}" \
           ${{ inputs.files }}
+
+    - name: Activate Quality Gates
+      shell: bash
+      run: datadog-ci gate evaluate

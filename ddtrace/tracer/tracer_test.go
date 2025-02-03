@@ -13,6 +13,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math/rand"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -74,6 +75,14 @@ var (
 	// integration indicates if the test suite should run integration tests.
 	integration bool
 )
+
+// This test is meant to flake. We are using this to test quality gates.
+// TODO : REMOVE THIS TEST BEFORE MERGING
+func TestFlaky(t *testing.T) {
+	n := rand.Intn(2)
+	assert.Equal(t, n, 0)
+
+}
 
 func TestMain(m *testing.M) {
 	if maininternal.BoolEnv("DD_APPSEC_ENABLED", false) {
