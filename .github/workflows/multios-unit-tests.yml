@@ -63,6 +63,7 @@ jobs:
         uses: ./.github/actions/dd-ci-upload
         with:
           dd-api-key: ${{ secrets.DD_CI_API_KEY }}
+          dd-app-key: ${{ secrets.DD_CI_APP_KEY }}
           files: ${{ env.REPORT }}
           tags: go:${{ inputs.go-version }},arch:${{ runner.arch }},os:${{ runner.os }},distribution:${{ runner.distribution }}
 

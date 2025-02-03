@@ -238,6 +238,7 @@ jobs:
         uses: ./.github/actions/dd-ci-upload
         with:
           dd-api-key: ${{ secrets.DD_CI_API_KEY }}
+          dd-app-key: ${{ secrets.DD_CI_APP_KEY }}
           files: ${{ env.TEST_RESULTS }}/gotestsum-report*.xml
           tags: go:${{ inputs.go-version }},arch:${{ runner.arch }},os:${{ runner.os }},distribution:${{ runner.distribution }}
 
@@ -330,6 +331,7 @@ jobs:
         uses: ./.github/actions/dd-ci-upload
         with:
           dd-api-key: ${{ secrets.DD_CI_API_KEY }}
+          dd-app-key: ${{ secrets.DD_CI_APP_KEY }}
           files: ${{ env.TEST_RESULTS }}/gotestsum-report.xml ${{ env.TEST_RESULTS }}/gotestsum-report-exectrace.xml
           tags: go:${{ inputs.go-version }}},arch:${{ runner.arch }},os:${{ runner.os }},distribution:${{ runner.distribution }}
       - name: Upload Coverage

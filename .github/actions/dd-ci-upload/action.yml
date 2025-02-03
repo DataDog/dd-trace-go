@@ -5,6 +5,9 @@ inputs:
   dd-api-key:
     required: true
     description: Datadog API key to use to upload the junit files
+  dd-app-key:
+    required: true
+    description: Datadog APP key to use to access quality gates
   service:
     required: false
     default: dd-trace-go
@@ -56,4 +59,4 @@ runs:
 
     - name: Activate Quality Gates
       shell: bash
-      run: env DD_API_KEY=${{ inputs.dd-api-key }} ./datadog-ci gate evaluate
+      run: env DD_API_KEY=${{ inputs.dd-api-key }} DD_APP_KEY=${{ inputs.dd-app-key }} ./datadog-ci gate evaluate
