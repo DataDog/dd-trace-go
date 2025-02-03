@@ -1423,7 +1423,6 @@ func BenchmarkMetrics(b *testing.B) {
 }
 
 func BenchmarkWorstCaseScenarioFloodMetrics(b *testing.B) {
-	b.ReportAllocs()
 	nbSameMetric := 10
 	nbDifferentMetrics := 100
 	nbGoroutines := 25
@@ -1449,6 +1448,7 @@ func BenchmarkWorstCaseScenarioFloodMetrics(b *testing.B) {
 	}
 
 	b.Run("get-handle", func(b *testing.B) {
+		b.ReportAllocs()
 		c, err := NewClient("test-service", "test-env", "1.0.0", clientConfig)
 		require.NoError(b, err)
 
@@ -1478,6 +1478,7 @@ func BenchmarkWorstCaseScenarioFloodMetrics(b *testing.B) {
 	})
 
 	b.Run("handle-reused", func(b *testing.B) {
+		b.ReportAllocs()
 		c, err := NewClient("test-service", "test-env", "1.0.0", clientConfig)
 		require.NoError(b, err)
 
