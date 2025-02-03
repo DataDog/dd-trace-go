@@ -273,15 +273,22 @@ func (p *chainedPropagator) Inject(spanCtx ddtrace.SpanContext, carrier interfac
 func (p *chainedPropagator) Extract(carrier interface{}) (ddtrace.SpanContext, error) {
 	var ctx ddtrace.SpanContext
 	var links []ddtrace.SpanLink
+
 	for _, v := range p.extractors {
 		firstExtract := (ctx == nil) // ctx stores the most recently extracted ctx across iterations; if it's nil, no extractor has run yet
 		extractedCtx, err := v.Extract(carrier)
+
 		if firstExtract {
-			if err != nil && err != ErrSpanContextNotFound { // We only care if the first extraction returns an error because this breaks distributed tracing
-				return nil, err
+			if err != nil {
+				if p.onlyExtractFirst { // Every error is relevant when we are relying on the first extractor
+					return nil, err
+				}
+				if err != ErrSpanContextNotFound { // We don't care about ErrSpanContextNotFound because we could find a span context in a subsequent extractor
+					return nil, err
+				}
 			}
-			if p.onlyExtractFirst { // Return early if only performing one extraction
-				return extractedCtx.(*spanContext), nil
+			if p.onlyExtractFirst {
+				return extractedCtx, nil
 			}
 			ctx = extractedCtx
 		} else { // A local trace context has already been extracted
