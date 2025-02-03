@@ -130,6 +130,11 @@ func ensureAdditionalFeaturesInitialization(serviceName string) {
 				ciVisibilityKnownTests = *ciEfdData
 				log.Debug("civisibility: known tests data loaded.")
 			}
+		} else {
+			// "known_tests_enabled" parameter works as a kill-switch for EFD, so if “known_tests_enabled” is false it
+			// will disable EFD even if “early_flake_detection.enabled” is set to true (which should not happen normally,
+			// the backend should disable both of them in that case)
+			ciVisibilitySettings.EarlyFlakeDetection.Enabled = false
 		}
 
 		// if flaky test retries is enabled then let's load the flaky retries settings

@@ -170,6 +170,12 @@ func instrumentTestingTFunc(f func(*testing.T)) func(*testing.T) {
 				if parentExecMeta.isARetry {
 					execMeta.isARetry = true
 				}
+				if parentExecMeta.isEFDExecution {
+					execMeta.isEFDExecution = true
+				}
+				if parentExecMeta.isATRExecution {
+					execMeta.isATRExecution = true
+				}
 			}
 		}
 
@@ -186,6 +192,15 @@ func instrumentTestingTFunc(f func(*testing.T)) func(*testing.T) {
 		if execMeta.isARetry {
 			// Set the retry tag
 			test.SetTag(constants.TestIsRetry, "true")
+
+			// If the execution is an EFD execution we tag the test event reason
+			if execMeta.isEFDExecution {
+				// Set the EFD as the retry reason
+				test.SetTag(constants.TestRetryReason, "efd")
+			} else if execMeta.isATRExecution {
+				// Set the ATR as the retry reason
+				test.SetTag(constants.TestRetryReason, "atr")
+			}
 		}
 
 		defer func() {
