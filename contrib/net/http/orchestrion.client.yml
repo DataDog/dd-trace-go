@@ -55,6 +55,7 @@ aspects:
             ddtrace: gopkg.in/DataDog/dd-trace-go.v1/ddtrace
             os: os
           links:
+            - gopkg.in/DataDog/dd-trace-go.v1/internal
             - gopkg.in/DataDog/dd-trace-go.v1/internal/appsec
             - gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/httpsec
             - gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer
@@ -87,6 +88,12 @@ aspects:
             //go:linkname __dd_httptrace_GetErrorCodesFromInput gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/httptrace.GetErrorCodesFromInput
             func __dd_httptrace_GetErrorCodesFromInput(string) func(int) bool
 
+            //go:linkname __dd_httptrace_UrlFromRequest gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/httptrace.UrlFromRequest
+            func __dd_httptrace_UrlFromRequest(*Request, bool) string
+
+            //go:linkname __dd_internal_BoolEnv gopkg.in/DataDog/dd-trace-go.v1/internal.BoolEnv
+            func __dd_internal_BoolEnv(string, bool) bool
+
             type __dd_tracer_HTTPHeadersCarrier Header
             func (c __dd_tracer_HTTPHeadersCarrier) Set(key, val string) {
               Header(c).Set(key, val)
@@ -96,6 +103,8 @@ aspects:
               // Treat HTTP 4XX as errors
               return statusCode >= 400 && statusCode < 500
             }
+
+            var __dd_queryStringEnabled = __dd_internal_BoolEnv("DD_TRACE_HTTP_CLIENT_TAG_QUERY_STRING", true)
 
             func init() {
               v := os.Getenv("DD_TRACE_HTTP_CLIENT_ERROR_STATUSES")
@@ -130,7 +139,7 @@ aspects:
                 __dd_tracer_SpanType(ext.SpanTypeHTTP),
                 __dd_tracer_ResourceName(resourceName),
                 __dd_tracer_Tag(ext.HTTPMethod, {{ $req }}.Method),
-                __dd_tracer_Tag(ext.HTTPURL, url.String()),
+                __dd_tracer_Tag(ext.HTTPURL, __dd_httptrace_UrlFromRequest({{ $req }}, __dd_queryStringEnabled)),
                 __dd_tracer_Tag(ext.Component, "net/http"),
                 __dd_tracer_Tag(ext.SpanKind, ext.SpanKindClient),
                 __dd_tracer_Tag(ext.NetworkDestinationName, url.Hostname()),

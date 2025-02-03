@@ -10,9 +10,12 @@ package httptrace
 import (
 	"context"
 	"fmt"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/baggage"
@@ -27,17 +30,61 @@ var (
 	cfg = newConfig()
 )
 
+var reportTelemetryConfigOnce sync.Once
+
+type inferredSpanCreatedCtxKey struct{}
+
+type FinishSpanFunc = func(status int, errorFn func(int) bool, opts ...tracer.FinishOption)
+
 // StartRequestSpan starts an HTTP request span with the standard list of HTTP request span tags (http.method, http.url,
 // http.useragent). Any further span start option can be added with opts.
-func StartRequestSpan(r *http.Request, opts ...ddtrace.StartSpanOption) (tracer.Span, context.Context) {
+func StartRequestSpan(r *http.Request, opts ...ddtrace.StartSpanOption) (tracer.Span, context.Context, FinishSpanFunc) {
 	// Append our span options before the given ones so that the caller can "overwrite" them.
 	// TODO(): rework span start option handling (https://github.com/DataDog/dd-trace-go/issues/1352)
+
+	// we cannot track the configuration in newConfig because it's called during init() and the the telemetry client
+	// is not initialized yet
+	reportTelemetryConfigOnce.Do(func() {
+		telemetry.GlobalClient.ConfigChange([]telemetry.Configuration{
+			{Name: "inferred_proxy_services_enabled", Value: cfg.inferredProxyServicesEnabled},
+		})
+		log.Debug("internal/httptrace: telemetry.ConfigChange called with cfg: %v:", cfg)
+	})
 
 	var ipTags map[string]string
 	if cfg.traceClientIP {
 		ipTags, _ = httpsec.ClientIPTags(r.Header, true, r.RemoteAddr)
 	}
+
 	nopts := make([]ddtrace.StartSpanOption, 0, len(opts)+1+len(ipTags))
+
+	var inferredProxySpan tracer.Span
+
+	if cfg.inferredProxyServicesEnabled {
+		inferredProxySpanCreated := false
+
+		if created, ok := r.Context().Value(inferredSpanCreatedCtxKey{}).(bool); ok {
+			inferredProxySpanCreated = created
+		}
+
+		if !inferredProxySpanCreated {
+			var inferredStartSpanOpts []ddtrace.StartSpanOption
+
+			requestProxyContext, err := extractInferredProxyContext(r.Header)
+			if err != nil {
+				log.Debug(err.Error())
+			} else {
+				spanParentCtx, spanParentErr := tracer.Extract(tracer.HTTPHeadersCarrier(r.Header))
+				if spanParentErr == nil {
+					if spanLinksCtx, spanLinksOk := spanParentCtx.(ddtrace.SpanContextWithLinks); spanLinksOk {
+						inferredStartSpanOpts = append(inferredStartSpanOpts, tracer.WithSpanLinks(spanLinksCtx.SpanLinks()))
+					}
+				}
+				inferredProxySpan = startInferredProxySpan(requestProxyContext, spanParentCtx, inferredStartSpanOpts...)
+			}
+		}
+	}
+
 	nopts = append(nopts,
 		func(ssCfg *ddtrace.StartSpanConfig) {
 			if ssCfg.Tags == nil {
@@ -51,33 +98,38 @@ func StartRequestSpan(r *http.Request, opts ...ddtrace.StartSpanOption) (tracer.
 			if r.Host != "" {
 				ssCfg.Tags["http.host"] = r.Host
 			}
-			if spanctx, err := tracer.Extract(tracer.HTTPHeadersCarrier(r.Header)); err == nil {
-				// If there are span links as a result of context extraction, add them as a StartSpanOption
-				if linksCtx, ok := spanctx.(ddtrace.SpanContextWithLinks); ok && linksCtx.SpanLinks() != nil {
-					tracer.WithSpanLinks(linksCtx.SpanLinks())(ssCfg)
-				}
-				tracer.ChildOf(spanctx)(ssCfg)
 
-				baggageMap := make(map[string]string)
-				spanctx.ForeachBaggageItem(func(k, v string) bool {
-					baggageMap[k] = v
-					return true
-				})
-				if len(baggageMap) > 0 {
-					ctx := r.Context()
-					for k, v := range baggageMap {
-						ctx = baggage.Set(ctx, k, v)
+			if inferredProxySpan != nil {
+				tracer.ChildOf(inferredProxySpan.Context())(ssCfg)
+			} else {
+				spanParentCtx, spanParentErr := tracer.Extract(tracer.HTTPHeadersCarrier(r.Header))
+				if spanParentErr == nil {
+					if spanLinksCtx, spanLinksOk := spanParentCtx.(ddtrace.SpanContextWithLinks); spanLinksOk {
+						tracer.WithSpanLinks(spanLinksCtx.SpanLinks())(ssCfg)
 					}
-					r = r.WithContext(ctx)
+					tracer.ChildOf(spanParentCtx)(ssCfg)
 				}
-
 			}
+
 			for k, v := range ipTags {
 				ssCfg.Tags[k] = v
 			}
 		})
+
 	nopts = append(nopts, opts...)
-	return tracer.StartSpanFromContext(r.Context(), namingschema.OpName(namingschema.HTTPServer), nopts...)
+
+	var requestContext = r.Context()
+	if inferredProxySpan != nil {
+		requestContext = context.WithValue(r.Context(), inferredSpanCreatedCtxKey{}, true)
+	}
+
+	span, ctx := tracer.StartSpanFromContext(requestContext, namingschema.OpName(namingschema.HTTPServer), nopts...)
+	return span, ctx, func(status int, errorFn func(int) bool, opts ...tracer.FinishOption) {
+		FinishRequestSpan(span, status, errorFn, opts...)
+		if inferredProxySpan != nil {
+			FinishRequestSpan(inferredProxySpan, status, errorFn, opts...)
+		}
+	}
 }
 
 // FinishRequestSpan finishes the given HTTP request span and sets the expected response-related tags such as the status
