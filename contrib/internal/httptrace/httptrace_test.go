@@ -376,7 +376,7 @@ func TestStartRequestSpanWithBaggage(t *testing.T) {
 
 	r := httptest.NewRequest(http.MethodGet, "/somePath", nil)
 	r.Header.Set("baggage", "key1=value1,key2=value2")
-	s, _ := StartRequestSpan(r)
+	s, _, _ := StartRequestSpan(r)
 	s.Finish()
 	spanBm := make(map[string]string)
 	s.Context().ForeachBaggageItem(func(k, v string) bool {
