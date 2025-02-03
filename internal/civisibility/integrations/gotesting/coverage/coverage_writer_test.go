@@ -73,7 +73,7 @@ type MockClient struct {
 	SendCoveragePayloadFunc           func(ciTestCovPayload io.Reader) error
 	SendCoveragePayloadWithFormatFunc func(ciTestCovPayload io.Reader, format string) error
 	GetSettingsFunc                   func() (*net.SettingsResponseData, error)
-	GetEarlyFlakeDetectionDataFunc    func() (*net.KnownTestsResponseData, error)
+	GetKnownTestsFunc                 func() (*net.KnownTestsResponseData, error)
 	GetCommitsFunc                    func(localCommits []string) ([]string, error)
 	SendPackFilesFunc                 func(commitSha string, packFiles []string) (bytes int64, err error)
 	GetSkippableTestsFunc             func() (correlationId string, skippables map[string]map[string][]net.SkippableResponseDataAttributes, err error)
@@ -92,7 +92,7 @@ func (m *MockClient) GetSettings() (*net.SettingsResponseData, error) {
 }
 
 func (m *MockClient) GetKnownTests() (*net.KnownTestsResponseData, error) {
-	return m.GetEarlyFlakeDetectionDataFunc()
+	return m.GetKnownTestsFunc()
 }
 
 func (m *MockClient) GetCommits(localCommits []string) ([]string, error) {
