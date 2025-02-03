@@ -5,9 +5,7 @@
 
 package transport
 
-type MessageBatch struct {
-	Payload []Message `json:"payload"`
-}
+type MessageBatch []Message
 
 func (MessageBatch) RequestType() RequestType {
 	return RequestTypeMessageBatch

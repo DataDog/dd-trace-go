@@ -55,7 +55,7 @@ func (t *messageBatchReducer) Transform(payloads []transport.Payload) ([]transpo
 		}
 	}
 
-	return []transport.Payload{transport.MessageBatch{Payload: messages}}, t
+	return []transport.Payload{transport.MessageBatch(messages)}, t
 }
 
 type heartbeatEnricher struct {

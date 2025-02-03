@@ -89,26 +89,24 @@ func (b *Body) UnmarshalJSON(bytes []byte) error {
 	}
 
 	if b.RequestType == RequestTypeMessageBatch {
-		var messageBatch struct {
-			Payload []struct {
-				RequestType RequestType     `json:"request_type"`
-				Payload     json.RawMessage `json:"payload"`
-			} `json:"payload"`
+		var messageBatch []struct {
+			RequestType RequestType     `json:"request_type"`
+			Payload     json.RawMessage `json:"payload"`
 		}
 
 		if err = json.Unmarshal(anyMap["payload"], &messageBatch); err != nil {
 			return err
 		}
 
-		batch := make([]Message, len(messageBatch.Payload))
-		for i, message := range messageBatch.Payload {
+		batch := make([]Message, len(messageBatch))
+		for i, message := range messageBatch {
 			payload, err := unmarshalPayload(message.Payload, message.RequestType)
 			if err != nil {
 				return err
 			}
 			batch[i] = Message{RequestType: message.RequestType, Payload: payload}
 		}
-		b.Payload = MessageBatch{Payload: batch}
+		b.Payload = MessageBatch(batch)
 		return nil
 	}
 

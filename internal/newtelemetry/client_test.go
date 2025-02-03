@@ -117,11 +117,11 @@ func TestClientFlush(t *testing.T) {
 				payload := payloads[0]
 				require.IsType(t, transport.MessageBatch{}, payload)
 				batch := payload.(transport.MessageBatch)
-				require.Len(t, batch.Payload, 2)
-				assert.Equal(t, transport.RequestTypeAppClientConfigurationChange, batch.Payload[0].RequestType)
-				assert.Equal(t, transport.RequestTypeAppExtendedHeartBeat, batch.Payload[1].RequestType)
+				require.Len(t, batch, 2)
+				assert.Equal(t, transport.RequestTypeAppClientConfigurationChange, batch[0].RequestType)
+				assert.Equal(t, transport.RequestTypeAppExtendedHeartBeat, batch[1].RequestType)
 
-				assert.Len(t, batch.Payload[1].Payload.(transport.AppExtendedHeartbeat).Configuration, 0)
+				assert.Len(t, batch[1].Payload.(transport.AppExtendedHeartbeat).Configuration, 0)
 			},
 		},
 		{
@@ -137,12 +137,12 @@ func TestClientFlush(t *testing.T) {
 				payload := payloads[0]
 				require.IsType(t, transport.MessageBatch{}, payload)
 				batch := payload.(transport.MessageBatch)
-				require.Len(t, batch.Payload, 2)
-				assert.Equal(t, transport.RequestTypeAppIntegrationsChange, batch.Payload[0].RequestType)
-				assert.Equal(t, transport.RequestTypeAppExtendedHeartBeat, batch.Payload[1].RequestType)
-				assert.Len(t, batch.Payload[1].Payload.(transport.AppExtendedHeartbeat).Integrations, 1)
-				assert.Equal(t, batch.Payload[1].Payload.(transport.AppExtendedHeartbeat).Integrations[0].Name, "test-integration")
-				assert.Equal(t, batch.Payload[1].Payload.(transport.AppExtendedHeartbeat).Integrations[0].Version, "1.0.0")
+				require.Len(t, batch, 2)
+				assert.Equal(t, transport.RequestTypeAppIntegrationsChange, batch[0].RequestType)
+				assert.Equal(t, transport.RequestTypeAppExtendedHeartBeat, batch[1].RequestType)
+				assert.Len(t, batch[1].Payload.(transport.AppExtendedHeartbeat).Integrations, 1)
+				assert.Equal(t, batch[1].Payload.(transport.AppExtendedHeartbeat).Integrations[0].Name, "test-integration")
+				assert.Equal(t, batch[1].Payload.(transport.AppExtendedHeartbeat).Integrations[0].Version, "1.0.0")
 			},
 		},
 		{
@@ -296,8 +296,8 @@ func TestClientFlush(t *testing.T) {
 				payload := payloads[0]
 				require.IsType(t, transport.MessageBatch{}, payload)
 				batch := payload.(transport.MessageBatch)
-				assert.Len(t, batch.Payload, 2)
-				for _, payload := range batch.Payload {
+				assert.Len(t, batch, 2)
+				for _, payload := range batch {
 					switch p := payload.Payload.(type) {
 					case transport.AppProductChange:
 						assert.Equal(t, transport.RequestTypeAppProductChange, payload.RequestType)
@@ -328,8 +328,8 @@ func TestClientFlush(t *testing.T) {
 				payload := payloads[0]
 				require.IsType(t, transport.MessageBatch{}, payload)
 				batch := payload.(transport.MessageBatch)
-				assert.Len(t, batch.Payload, 3)
-				for _, payload := range batch.Payload {
+				assert.Len(t, batch, 3)
+				for _, payload := range batch {
 					switch p := payload.Payload.(type) {
 					case transport.AppProductChange:
 						assert.Equal(t, transport.RequestTypeAppProductChange, payload.RequestType)
@@ -1095,6 +1095,21 @@ func TestClientEnd2End(t *testing.T) {
 				require.Len(t, bodies, 2)
 				assert.Equal(t, transport.RequestTypeAppStarted, bodies[0].RequestType)
 				assert.Equal(t, transport.RequestTypeAppClosing, bodies[1].RequestType)
+			},
+		},
+		{
+			name: "message-batch",
+			when: func(c *client) {
+				c.RegisterAppConfig("key", "value", OriginCode)
+				c.ProductStarted(NamespaceAppSec)
+			},
+			expect: func(t *testing.T, bodies []transport.Body) {
+				require.Len(t, bodies, 1)
+				assert.Equal(t, transport.RequestTypeMessageBatch, bodies[0].RequestType)
+				batch := bodies[0].Payload.(transport.MessageBatch)
+				require.Len(t, batch, 2)
+				assert.Equal(t, transport.RequestTypeAppProductChange, batch[0].RequestType)
+				assert.Equal(t, transport.RequestTypeAppClientConfigurationChange, batch[1].RequestType)
 			},
 		},
 		{
