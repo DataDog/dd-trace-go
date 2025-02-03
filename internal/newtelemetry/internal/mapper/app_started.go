@@ -32,11 +32,11 @@ func (t *appStartedReducer) Transform(payloads []transport.Payload) ([]transport
 
 	payloadLefts := make([]transport.Payload, 0, len(payloads))
 	for _, payload := range payloads {
-		switch payload.(type) {
+		switch payload := payload.(type) {
 		case transport.AppClientConfigurationChange:
-			appStarted.Configuration = payload.(transport.AppClientConfigurationChange).Configuration
+			appStarted.Configuration = payload.Configuration
 		case transport.AppProductChange:
-			appStarted.Products = payload.(transport.AppProductChange).Products
+			appStarted.Products = payload.Products
 		default:
 			payloadLefts = append(payloadLefts, payload)
 		}

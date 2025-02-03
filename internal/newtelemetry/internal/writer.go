@@ -255,7 +255,7 @@ func (w *writer) Flush(payload transport.Payload) ([]EndpointRequestResult, erro
 		defer response.Body.Close()
 
 		if response.StatusCode >= 300 || response.StatusCode < 200 {
-			respBodyBytes, _ := io.ReadAll(response.Body) // maybe we can find an error reason in the response body
+			respBodyBytes, _ := io.ReadAll(io.LimitReader(response.Body, 256)) // maybe we can find an error reason in the response body
 			results = append(results, EndpointRequestResult{Error: &WriterStatusCodeError{
 				Status: response.Status,
 				Body:   string(respBodyBytes),

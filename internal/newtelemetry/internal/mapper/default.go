@@ -71,17 +71,17 @@ func (t *heartbeatEnricher) Transform(payloads []transport.Payload) ([]transport
 	// Composition described here:
 	// https://github.com/DataDog/instrumentation-telemetry-api-docs/blob/main/GeneratedDocumentation/ApiDocs/v2/producing-telemetry.md#app-extended-heartbeat
 	for _, payload := range payloads {
-		switch p := payload.(type) {
+		switch payload := payload.(type) {
 		case transport.AppStarted:
 			// Should be sent only once anyway
-			t.extendedHeartbeat.Configuration = p.Configuration
+			t.extendedHeartbeat.Configuration = payload.Configuration
 		case transport.AppDependenciesLoaded:
 			if t.extendedHeartbeat.Dependencies == nil {
-				t.extendedHeartbeat.Dependencies = p.Dependencies
+				t.extendedHeartbeat.Dependencies = payload.Dependencies
 			}
 		case transport.AppIntegrationChange:
 			// The number of integrations should be small enough so we can just append to the list
-			t.extendedHeartbeat.Integrations = append(t.extendedHeartbeat.Integrations, p.Integrations...)
+			t.extendedHeartbeat.Integrations = append(t.extendedHeartbeat.Integrations, payload.Integrations...)
 		}
 	}
 

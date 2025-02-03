@@ -65,16 +65,9 @@ type ClientConfig struct {
 	FlushInterval Range[time.Duration]
 
 	// PayloadQueueSize is the size of the payload queue.
-	// This means that, by default, we incur dataloss if we spend ~30mins without flushing, considering we send telemetry data this looks reasonable.
-	// This also means that in the worst case scenario, memory-wise, the app is stabilized after running for 30mins.
-	// Ideally both values should be power of 2 because of the way the ring queue is implemented as it's growing
 	PayloadQueueSize Range[int]
 
 	// DistributionsSize is the size of the distribution queue.
-	// Default max size is a 2^14 array of float64 (2^3 bytes) which makes a distribution 128KB bytes array _at worse_.
-	// Considering we add a point per user request on a simple http server, we would be losing data after 2^14 requests per minute or about 280 requests per second or under 3ms per request.
-	// If this throughput is constant, the telemetry client flush ticker speed will increase to, at best, double twice to flush 15 seconds of data each time.
-	// Which will bring our max throughput to 1100 points per second or about 750µs per request.
 	DistributionsSize Range[int]
 
 	// Debug enables debug mode for the telemetry clientt and sent it to the backend so it logs the request
@@ -114,12 +107,19 @@ var (
 	maxPayloadSize = 5 * 1024 * 1024 // 5MB
 
 	// TODO: tweak this value once we get real telemetry data from the telemetry client
+	// This means that, by default, we incur dataloss if we spend ~30mins without flushing, considering we send telemetry data this looks reasonable.
+	// This also means that in the worst case scenario, memory-wise, the app is stabilized after running for 30mins.
+	// Ideally both values should be power of 2 because of the way the ring queue is implemented as it's growing
 	defaultPayloadQueueSize = Range[int]{
 		Min: 4,
 		Max: 32,
 	}
 
 	// TODO: tweak this value once we get telemetry data from the telemetry client
+	// Default max size is a 2^14 array of float64 (2^3 bytes) which makes a distribution 128KB bytes array _at worse_.
+	// Considering we add a point per user request on a simple http server, we would be losing data after 2^14 requests per minute or about 280 requests per second or under 3ms per request.
+	// If this throughput is constant, the telemetry client flush ticker speed will increase to, at best, double twice to flush 15 seconds of data each time.
+	// Which will bring our max throughput to 1100 points per second or about 750µs per request.
 	distributionsSize = Range[int]{
 		Min: 1 << 8,
 		Max: 1 << 14,

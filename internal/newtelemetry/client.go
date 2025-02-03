@@ -192,8 +192,22 @@ func (c *client) Config() ClientConfig {
 	return c.clientConfig
 }
 
+// Flush sends all the data sources before calling flush
+// This function is called by the flushTicker so it should not panic, or it will crash the whole customer application.
+// If a panic occurs, we stop the telemetry and log the error.
 func (c *client) Flush() {
-	var payloads []transport.Payload
+	defer func() {
+		r := recover()
+		if r == nil {
+			return
+		}
+		log.Warn("panic while flushing telemetry data, stopping telemetry: %v", r)
+		if gc, ok := GlobalClient().(*client); ok && gc == c {
+			SwapClient(nil)
+		}
+	}()
+
+	payloads := make([]transport.Payload, 0, 8)
 	for _, ds := range c.dataSources {
 		if payload := ds.Payload(); payload != nil {
 			payloads = append(payloads, payload)
@@ -203,19 +217,26 @@ func (c *client) Flush() {
 	_, _ = c.flush(payloads)
 }
 
+func (c *client) transform(payloads []transport.Payload) []transport.Payload {
+	c.flushMapperMu.Lock()
+	defer c.flushMapperMu.Unlock()
+	payloads, c.flushMapper = c.flushMapper.Transform(payloads)
+	return payloads
+}
+
 // flush sends all the data sources to the writer by let them flow through the given transformer function.
 // The transformer function is used to transform the bodies before sending them to the writer.
 func (c *client) flush(payloads []transport.Payload) (int, error) {
-	// Transform the bodies
-	{
-		c.flushMapperMu.Lock()
-		payloads, c.flushMapper = c.flushMapper.Transform(payloads)
-		c.flushMapperMu.Unlock()
-	}
+	payloads = c.transform(payloads)
 
 	if c.payloadQueue.IsEmpty() && len(payloads) == 0 {
-		c.flushTicker.DecreaseSpeed()
 		return 0, nil
+	}
+
+	if c.payloadQueue.IsEmpty() {
+		c.flushTicker.CanDecreaseSpeed()
+	} else if c.payloadQueue.IsFull() {
+		c.flushTicker.CanIncreaseSpeed()
 	}
 
 	// We enqueue the new payloads to preserve the order of the payloads
@@ -243,7 +264,7 @@ func (c *client) flush(payloads []transport.Payload) (int, error) {
 
 		if !speedIncreased && successfulCall.PayloadByteSize > c.clientConfig.EarlyFlushPayloadSize {
 			// We increase the speed of the flushTicker to try to flush the remaining bodies faster as we are at risk of sending too large bodies to the backend
-			c.flushTicker.IncreaseSpeed()
+			c.flushTicker.CanIncreaseSpeed()
 			speedIncreased = true
 		}
 

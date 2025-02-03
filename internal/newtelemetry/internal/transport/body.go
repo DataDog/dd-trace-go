@@ -46,6 +46,7 @@ type Body struct {
 	Host        Host        `json:"host"`
 }
 
+// UnmarshalJSON is used to test the telemetry client end to end
 func (b *Body) UnmarshalJSON(bytes []byte) error {
 	var anyMap map[string]json.RawMessage
 	var err error

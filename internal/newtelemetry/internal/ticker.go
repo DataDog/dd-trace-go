@@ -44,7 +44,7 @@ func NewTicker(tickFunc TickFunc, minInterval, maxInterval time.Duration) *Ticke
 	return ticker
 }
 
-func (t *Ticker) IncreaseSpeed() {
+func (t *Ticker) CanIncreaseSpeed() {
 	t.tickSpeedMu.Lock()
 	defer t.tickSpeedMu.Unlock()
 
@@ -52,7 +52,7 @@ func (t *Ticker) IncreaseSpeed() {
 	t.Reset(t.tickSpeed)
 }
 
-func (t *Ticker) DecreaseSpeed() {
+func (t *Ticker) CanDecreaseSpeed() {
 	t.tickSpeedMu.Lock()
 	defer t.tickSpeedMu.Unlock()
 
