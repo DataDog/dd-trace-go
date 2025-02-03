@@ -15,6 +15,7 @@ import (
 	"strings"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/baggage"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
@@ -56,6 +57,20 @@ func StartRequestSpan(r *http.Request, opts ...ddtrace.StartSpanOption) (tracer.
 					tracer.WithSpanLinks(linksCtx.SpanLinks())(ssCfg)
 				}
 				tracer.ChildOf(spanctx)(ssCfg)
+
+				baggageMap := make(map[string]string)
+				spanctx.ForeachBaggageItem(func(k, v string) bool {
+					baggageMap[k] = v
+					return true
+				})
+				if len(baggageMap) > 0 {
+					ctx := r.Context()
+					for k, v := range baggageMap {
+						ctx = baggage.Set(ctx, k, v)
+					}
+					r = r.WithContext(ctx)
+				}
+
 			}
 			for k, v := range ipTags {
 				ssCfg.Tags[k] = v
