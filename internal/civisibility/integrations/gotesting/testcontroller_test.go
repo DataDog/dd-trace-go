@@ -155,7 +155,7 @@ func runFlakyTestRetriesTests(m *testing.M) {
 	}
 
 	// check the test is new tag
-	checkSpansByTagName(finishedSpans, constants.TestIsNew, 22)
+	checkSpansByTagName(finishedSpans, constants.TestIsNew, 27)
 
 	// check spans by type
 	checkSpansByType(finishedSpans,
