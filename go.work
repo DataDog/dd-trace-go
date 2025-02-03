@@ -66,6 +66,7 @@ use (
 	./internal/exectracetest
 	./internal/setup-smoke-test
 	./internal/traceprof/traceproftest
+	./tools/autoreleasetagger
 	./tools/fixmodules
 	./tools/v2check
 	./tools/v2check/_stage
