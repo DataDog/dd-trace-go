@@ -338,8 +338,12 @@ func (p *chainedPropagator) Extract(carrier interface{}) (ddtrace.SpanContext, e
 		// cases where it's just baggage being extracted? (no trace context)
 		if _, ok := v.(*propagatorBaggage); ok {
 			if extractedCtx != nil {
-				ctx.(*spanContext).baggage = extractedCtx.(*spanContext).baggage // hasBaggage is set on extractedCtx
-				atomic.StoreUint32(&ctx.(*spanContext).hasBaggage, 1)            // might need to change
+				if ctxSpan, ok := ctx.(*spanContext); ok {
+					if extractedSpan, ok := extractedCtx.(*spanContext); ok {
+						ctxSpan.baggage = extractedSpan.baggage
+						atomic.StoreUint32(&ctxSpan.hasBaggage, 1)
+					}
+				}
 			}
 		}
 	}
