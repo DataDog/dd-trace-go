@@ -56,4 +56,4 @@ runs:
 
     - name: Activate Quality Gates
       shell: bash
-      run: datadog-ci gate evaluate
+      run: ./datadog-ci gate evaluate
