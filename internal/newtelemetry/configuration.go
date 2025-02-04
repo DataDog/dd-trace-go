@@ -81,9 +81,19 @@ func SanitizeConfigValue(value any) any {
 	case float64:
 		// https://github.com/golang/go/issues/59627
 		if math.IsNaN(val) || math.IsInf(val, 0) {
-			return ""
+			return nil
 		}
 		return val
+	case []string:
+		return strings.Join(val, ",") // Retro compatibility with old code
+	}
+
+	if _, ok := value.(json.Marshaler); ok {
+		return value
+	}
+
+	if v, ok := value.(fmt.Stringer); ok {
+		return v.String()
 	}
 
 	valueOf := reflect.ValueOf(value)
@@ -100,12 +110,14 @@ func SanitizeConfigValue(value any) any {
 	switch {
 	case valueOf.Kind() == reflect.Slice, valueOf.Kind() == reflect.Array:
 		var sb strings.Builder
+		sb.WriteString("[")
 		for i := 0; i < valueOf.Len(); i++ {
 			if i > 0 {
-				sb.WriteString(",")
+				sb.WriteString(" ")
 			}
-			sb.WriteString(fmt.Sprintf("%v", valueOf.Index(i)))
+			sb.WriteString(fmt.Sprintf("%v", valueOf.Index(i).Interface()))
 		}
+		sb.WriteString("]")
 		return sb.String()
 	case valueOf.Kind() == reflect.Map:
 		kvPair := make([]struct {
@@ -137,10 +149,6 @@ func SanitizeConfigValue(value any) any {
 		}
 
 		return sb.String()
-	}
-
-	if _, ok := value.(json.Marshaler); ok {
-		return value
 	}
 
 	return fmt.Sprintf("%v", value)

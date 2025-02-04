@@ -205,7 +205,7 @@ func TestClientFlush(t *testing.T) {
 				assert.Equal(t, "key:value,key2:value2", config.Configuration[1].Value)
 				assert.Equal(t, OriginCode, config.Configuration[1].Origin)
 				assert.Equal(t, "key3", config.Configuration[2].Name)
-				assert.Equal(t, "1,2,3", config.Configuration[2].Value)
+				assert.Equal(t, "[1 2 3]", config.Configuration[2].Value)
 				assert.Equal(t, OriginDDConfig, config.Configuration[2].Origin)
 				assert.Equal(t, "key4", config.Configuration[3].Name)
 				assert.Equal(t, "{1}", config.Configuration[3].Value)
