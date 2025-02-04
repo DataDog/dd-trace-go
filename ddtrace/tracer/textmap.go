@@ -328,7 +328,7 @@ func (p *chainedPropagator) Extract(carrier interface{}) (ddtrace.SpanContext, e
 					}
 				}
 			} else { // Trace IDs do not match - create span links
-				link := ddtrace.SpanLink{TraceID: extractedCtx2.TraceID(), SpanID: extractedCtx2.SpanID(), TraceIDHigh: extractedCtx2.TraceIDUpper(), Attributes: map[string]string{"reason": "terminated_context", "context_headers": getPropagatorName(v)}}
+				link := ddtrace.SpanLink{TraceID: extractedCtx2.TraceID(), SpanID: extractedCtx2.SpanID(), TraceIDHigh: extractedCtx2.TraceIDUpper(), Attributes: map[string]string{"reason": "terminated_context", "context_headers": getPropagatorName(v)}} // causing errors w/ baggage
 				if trace := extractedCtx2.trace; trace != nil {
 					if flags := uint32(*trace.priority); flags > 0 { // Set the flags based on the sampling priority
 						link.Flags = 1
@@ -340,20 +340,17 @@ func (p *chainedPropagator) Extract(carrier interface{}) (ddtrace.SpanContext, e
 				links = append(links, link)
 			}
 		}
-		// if the baggage propagator exists in the extracted propagators
-		// it must always be extracted
-		// cases where it's just baggage being extracted? (no trace context)
-		if _, ok := v.(*propagatorBaggage); ok {
-			if extractedCtx != nil {
-				if ctxSpan, ok := ctx.(*spanContext); ok {
-					if extractedSpan, ok := extractedCtx.(*spanContext); ok {
-						ctxSpan.baggage = extractedSpan.baggage
-						atomic.StoreUint32(&ctxSpan.hasBaggage, 1)
-					}
+
+		if _, ok := v.(*propagatorBaggage); ok && extractedCtx != nil {
+			if ctxSpan, ok := ctx.(*spanContext); ok {
+				if extractedSpan, ok := extractedCtx.(*spanContext); ok && len(extractedSpan.baggage) > 0 {
+					ctxSpan.baggage = extractedSpan.baggage
+					atomic.StoreUint32(&ctxSpan.hasBaggage, 1)
 				}
 			}
 		}
 	}
+
 	// 0 successful extractions
 	if ctx == nil {
 		return nil, ErrSpanContextNotFound
