@@ -59,6 +59,9 @@ var (
 
 	// ciVisibilitySkippables contains the CI Visibility skippable tests for this session
 	ciVisibilitySkippables map[string]map[string][]net.SkippableResponseDataAttributes
+
+	// ciVisibilityTestManagementTests contains the CI Visibility test management tests for this session
+	ciVisibilityTestManagementTests net.TestManagementTestsResponseDataModules
 )
 
 func ensureSettingsInitialization(serviceName string) {
@@ -167,6 +170,28 @@ func ensureAdditionalFeaturesInitialization(serviceName string) {
 				ciVisibilitySkippables = skippableTests
 			}
 		}
+
+		// if test management is enabled then we check if it was disabled by the environment variable
+		if ciVisibilitySettings.TestManagement.Enabled {
+			testManagementEnabledByEnv := internal.BoolEnv(constants.CIVisibilityTestManagementEnabledEnvironmentVariable, true)
+			testManagementAttemptToFixRetriesEnv := internal.IntEnv(constants.CIVisibilityTestManagementAttemptToFixRetriesEnvironmentVariable, -1)
+			if testManagementEnabledByEnv {
+				if testManagementAttemptToFixRetriesEnv != -1 {
+					ciVisibilitySettings.TestManagement.AttemptToFixRetries = testManagementAttemptToFixRetriesEnv
+				}
+
+				testManagementTests, err := ciVisibilityClient.GetTestManagementTests()
+				if err != nil {
+					log.Error("civisibility: error getting CI visibility test management tests: %v", err)
+				} else if testManagementTests != nil {
+					ciVisibilityTestManagementTests = *testManagementTests
+					log.Debug("civisibility: test management loaded [attemptToFixRetries: %v]: %v", ciVisibilitySettings.TestManagement.AttemptToFixRetries, ciVisibilityTestManagementTests)
+				}
+			} else {
+				ciVisibilitySettings.TestManagement.Enabled = false
+				log.Warn("civisibility: test management was disabled by the environment variable")
+			}
+		}
 	})
 }
 
@@ -182,6 +207,13 @@ func GetKnownTests() *net.KnownTestsResponseData {
 	// call to ensure the additional features initialization is completed (service name can be null here)
 	ensureAdditionalFeaturesInitialization("")
 	return &ciVisibilityKnownTests
+}
+
+// GetTestManagementTestsData gets the test management tests data
+func GetTestManagementTestsData() *net.TestManagementTestsResponseDataModules {
+	// call to ensure the additional features initialization is completed (service name can be null here)
+	ensureAdditionalFeaturesInitialization("")
+	return &ciVisibilityTestManagementTests
 }
 
 // GetFlakyRetriesSettings gets the flaky retries settings
