@@ -100,8 +100,6 @@ func fetchGoMod(origin, tag string) (*modfile.File, error) {
 
 	url := fmt.Sprintf("https://raw.githubusercontent.com/%s/refs/tags/%s/go.mod", repoPath, tag)
 
-	// log.Printf("fetching %s\n", url)
-
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
@@ -271,16 +269,13 @@ func main() {
 		if err != nil {
 			fmt.Printf("Error: %v\n", err)
 			continue
-		} else {
-			fmt.Printf("origin URL: %s\n", origin)
 		}
-
 		// 2. From the VCS url, do `git ls-remote --tags <vcs_url>` to get the tags
 		// output:
 		// 3. Parse the tags, and extract all the majors from them (ex v2, v3, v4)
 		tags, err := getTags(origin)
 		if err != nil {
-			fmt.Println("Error fetching tags:", err)
+			fmt.Println("Error fetching tags: %v", err)
 			continue
 		}
 
@@ -318,8 +313,10 @@ func main() {
 	for base, contribMajor := range contrib_latests {
 		if latestGithub, ok := github_latests[base]; ok {
 			if semver.Compare(latestGithub.Version, contribMajor) > 0 {
-				if base == "go-redis/redis" && latestGithub.Version == "v9" {
-					continue // go-redis/redis => redis/go-redis in v9
+				if (base == "go-redis/redis" && latestGithub.Version == "v9") || (base == "k8s.io/client-go") {
+					// go-redis/redis => redis/go-redis in v9
+					// for k8s.io we provide a generic http client middleware that can be plugged with any of the versions
+					continue
 				}
 				fmt.Printf("New latest major %s of repository %s on Github at module: %s\n", latestGithub.Version, base, latestGithub.Module)
 				fmt.Printf("latest contrib major: %v\n", contribMajor)
