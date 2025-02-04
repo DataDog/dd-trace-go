@@ -280,12 +280,13 @@ func TestOpenOptions(t *testing.T) {
 		m := testutils.NewMockStatsdClient()
 		Register(driverName, &pq.Driver{})
 		defer unregister(driverName)
-		_, err := Open(driverName, dsn, withStatsdClient(m), WithDBStats())
+		db, err := Open(driverName, dsn, withStatsdClient(m), WithDBStats())
 		require.NoError(t, err)
 
 		// The polling interval has been reduced to 500ms for the sake of this test, so at least one round of `pollDBStats` should be complete in 1s
 		deadline := time.Now().Add(1 * time.Second)
 		wantStats := []string{MaxOpenConnections, OpenConnections, InUse, Idle, WaitCount, WaitDuration, MaxIdleClosed, MaxIdleTimeClosed, MaxLifetimeClosed}
+		var calls1 []string
 		for {
 			if time.Now().After(deadline) {
 				t.Fatalf("Stats not collected in expected interval of %v", interval)
@@ -299,11 +300,16 @@ func TestOpenOptions(t *testing.T) {
 					}
 				}
 				// all expected stats have been collected; exit out of loop, test should pass
+				calls1 = calls
 				break
 			}
 			// not all stats have been collected yet, try again in 50ms
 			time.Sleep(50 * time.Millisecond)
 		}
+		// Close DB and assert the no further stats have been collected; db.Close should stop the pollDBStats goroutine.
+		db.Close()
+		time.Sleep(50 * time.Millisecond)
+		assert.Equal(t, calls1, m.CallNames())
 	})
 }
 
