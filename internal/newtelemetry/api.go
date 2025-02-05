@@ -78,25 +78,28 @@ type Configuration struct {
 	Origin Origin
 }
 
+// LogOption is a function that modifies the log message that is sent to the telemetry.
+type LogOption func(key *loggerKey, value *loggerValue)
+
 // Client constitutes all the functions available concurrently for the telemetry users. All methods are thread-safe
 // This is an interface for easier testing but all functions will be mirrored at the package level to call
 // the global client.
 type Client interface {
 	io.Closer
 
-	// Count creates a new metric handle for the given parameters that can be used to submit values.
+	// Count obtains the metric handle for the given parameters, or creates a new one if none was created just yet.
 	// Tags cannot contain commas.
 	Count(namespace Namespace, name string, tags []string) MetricHandle
 
-	// Rate creates a new metric handle for the given parameters that can be used to submit values.
+	// Rate obtains the metric handle for the given parameters, or creates a new one if none was created just yet.
 	// Tags cannot contain commas.
 	Rate(namespace Namespace, name string, tags []string) MetricHandle
 
-	// Gauge creates a new metric handle for the given parameters that can be used to submit values.
+	// Gauge obtains the metric handle for the given parameters, or creates a new one if none was created just yet.
 	// Tags cannot contain commas.
 	Gauge(namespace Namespace, name string, tags []string) MetricHandle
 
-	// Distribution creates a new metric handle for the given parameters that can be used to submit values.
+	// Distribution obtains the metric handle for the given parameters, or creates a new one if none was created just yet.
 	// Tags cannot contain commas.
 	Distribution(namespace Namespace, name string, tags []string) MetricHandle
 

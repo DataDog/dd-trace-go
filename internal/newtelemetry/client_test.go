@@ -865,7 +865,10 @@ func TestClientFlush(t *testing.T) {
 				handle.Submit(1)
 
 				rate := handle.(*rate)
-				rate.intervalStart = rate.intervalStart.Add(-time.Second) // So the rate is not +Infinity because the interval is zero
+				// So the rate is not +Infinity because the interval is zero
+				now := rate.intervalStart.Load()
+				sub := now.Add(-time.Second)
+				rate.intervalStart.Store(&sub)
 			},
 			expect: func(t *testing.T, payloads []transport.Payload) {
 				payload := payloads[0]

@@ -7,7 +7,6 @@ package newtelemetry
 
 import (
 	"sync"
-	"sync/atomic"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/newtelemetry/internal"
@@ -52,16 +51,13 @@ func (d *distributions) Payload() transport.Payload {
 }
 
 type distribution struct {
-	key metricKey
-
-	newSubmit atomic.Bool
-	values    *internal.RingQueue[float64]
+	key    metricKey
+	values *internal.RingQueue[float64]
 }
 
 var distrLogLossOnce sync.Once
 
 func (d *distribution) Submit(value float64) {
-	d.newSubmit.Store(true)
 	if !d.values.Enqueue(value) {
 		distrLogLossOnce.Do(func() {
 			log.Debug("telemetry: distribution %q is losing values because the buffer is full", d.key.name)
@@ -74,7 +70,7 @@ func (d *distribution) Get() float64 {
 }
 
 func (d *distribution) payload() transport.DistributionSeries {
-	if submit := d.newSubmit.Swap(false); !submit {
+	if d.values.IsEmpty() {
 		return transport.DistributionSeries{}
 	}
 

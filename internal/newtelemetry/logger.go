@@ -15,8 +15,6 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/newtelemetry/internal/transport"
 )
 
-type LogOption func(key *loggerKey, value *loggerValue)
-
 // WithTags returns a LogOption that sets the tags for the telemetry log message. Tags are key-value pairs that are then
 // serialized into a simple "key:value,key2:value2" format. No quoting or escaping is performed.
 func WithTags(tags []string) LogOption {

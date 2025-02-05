@@ -10,6 +10,7 @@ import (
 	"math"
 	"sort"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -88,7 +89,13 @@ func (m *metrics) LoadOrStore(namespace Namespace, kind transport.MetricType, na
 	case transport.GaugeMetric:
 		handle, loaded = m.store.LoadOrStore(key, &gauge{metric: metric{key: key}})
 	case transport.RateMetric:
-		handle, loaded = m.store.LoadOrStore(key, &rate{metric: metric{key: key}, intervalStart: time.Now()})
+		handle, loaded = m.store.LoadOrStore(key, &rate{metric: metric{key: key}})
+		if !loaded {
+			// Initialize the interval start for rate metrics
+			r := handle.(*rate)
+			now := time.Now()
+			r.intervalStart.Store(&now)
+		}
 	default:
 		log.Warn("telemetry: unknown metric type %q", kind)
 		return nil
@@ -119,49 +126,84 @@ func (m *metrics) Payload() transport.Payload {
 	return transport.GenerateMetrics{Series: series, SkipAllowlist: m.skipAllowlist}
 }
 
-type metric struct {
-	key metricKey
+type metricPoint struct {
+	value float64
+	time  time.Time
+}
 
-	// Values set during Submit()
-	newSubmit  atomic.Bool
-	value      atomic.Uint64 // Actually a float64, but we need atomic operations
-	submitTime atomic.Int64  // Unix timestamp
+var metricPointPool = sync.Pool{
+	New: func() any {
+		return &metricPoint{value: math.NaN()}
+	},
+}
+
+type metric struct {
+	key           metricKey
+	ptr           atomic.Pointer[metricPoint]
+	intervalStart atomic.Pointer[time.Time]
 }
 
 func (m *metric) Get() float64 {
-	return math.Float64frombits(m.value.Load())
+	if ptr := m.ptr.Load(); ptr != nil {
+		return ptr.value
+	}
+
+	return math.NaN()
 }
 
 func (m *metric) payload() transport.MetricData {
-	if submit := m.newSubmit.Swap(false); !submit {
+	point := m.ptr.Swap(nil)
+	if point == nil {
 		return transport.MetricData{}
 	}
 
-	data := transport.MetricData{
+	var (
+		value           = point.value
+		intervalStart   = m.intervalStart.Swap(nil)
+		intervalSeconds float64
+	)
+
+	// Rate metric only
+	if intervalStart != nil {
+		intervalSeconds = time.Since(*intervalStart).Seconds()
+		if int64(intervalSeconds) == 0 { // Interval for rate is too small, we prefer not sending data over sending something wrong
+			return transport.MetricData{}
+		}
+
+		value = value / intervalSeconds
+	}
+
+	return transport.MetricData{
 		Metric:    m.key.name,
 		Namespace: m.key.namespace,
 		Tags:      m.key.SplitTags(),
 		Type:      m.key.kind,
 		Common:    knownmetrics.IsCommonMetric(m.key.namespace, m.key.kind, m.key.name),
+		Interval:  int64(intervalSeconds),
 		Points: [][2]any{
-			{m.submitTime.Load(), math.Float64frombits(m.value.Load())},
+			{point.time.Unix(), value},
 		},
 	}
-
-	return data
 }
 
 type count struct {
 	metric
 }
 
-func (c *count) Submit(value float64) {
-	c.newSubmit.Store(true)
-	c.submitTime.Store(time.Now().Unix())
+func (m *count) Submit(newValue float64) {
+	newPoint := metricPointPool.Get().(*metricPoint)
+	newPoint.time = time.Now()
 	for {
-		oldValue := c.Get()
-		newValue := oldValue + value
-		if c.value.CompareAndSwap(math.Float64bits(oldValue), math.Float64bits(newValue)) {
+		oldPoint := m.ptr.Load()
+		var oldValue float64
+		if oldPoint != nil {
+			oldValue = oldPoint.value
+		}
+		newPoint.value = oldValue + newValue
+		if m.ptr.CompareAndSwap(oldPoint, newPoint) {
+			if oldPoint != nil {
+				metricPointPool.Put(oldPoint)
+			}
 			return
 		}
 	}
@@ -171,36 +213,40 @@ type gauge struct {
 	metric
 }
 
-func (g *gauge) Submit(value float64) {
-	g.newSubmit.Store(true)
-	g.submitTime.Store(time.Now().Unix())
-	g.value.Store(math.Float64bits(value))
-}
-
-type rate struct {
-	metric
-	intervalStart time.Time
-}
-
-func (r *rate) Submit(value float64) {
-	r.newSubmit.Store(true)
-	r.submitTime.Store(time.Now().Unix())
+func (m *gauge) Submit(value float64) {
+	newPoint := metricPointPool.Get().(*metricPoint)
+	newPoint.time = time.Now()
+	newPoint.value = value
 	for {
-		oldValue := r.Get()
-		newValue := oldValue + value
-		if r.value.CompareAndSwap(math.Float64bits(oldValue), math.Float64bits(newValue)) {
+		oldPoint := m.ptr.Load()
+		if m.ptr.CompareAndSwap(oldPoint, newPoint) {
+			if oldPoint != nil {
+				metricPointPool.Put(oldPoint)
+			}
 			return
 		}
 	}
 }
 
-func (r *rate) payload() transport.MetricData {
-	payload := r.metric.payload()
-	if payload.Metric == "" {
-		return payload
-	}
+type rate struct {
+	metric
+}
 
-	payload.Interval = int64(time.Since(r.intervalStart).Seconds())
-	payload.Points[0][1] = r.Get() / float64(payload.Interval)
-	return payload
+func (m *rate) Submit(newValue float64) {
+	newPoint := metricPointPool.Get().(*metricPoint)
+	newPoint.time = time.Now()
+	for {
+		oldPoint := m.ptr.Load()
+		var oldValue float64
+		if oldPoint != nil {
+			oldValue = oldPoint.value
+		}
+		newPoint.value = oldValue + newValue
+		if m.ptr.CompareAndSwap(oldPoint, newPoint) {
+			if oldPoint != nil {
+				metricPointPool.Put(oldPoint)
+			}
+			return
+		}
+	}
 }
