@@ -8,7 +8,7 @@ require (
 	cloud.google.com/go/pubsub v1.44.0
 	github.com/99designs/gqlgen v0.17.62
 	github.com/DataDog/go-libddwaf/v3 v3.5.1
-	github.com/DataDog/orchestrion v1.0.3-rc.1.0.20250120134012-8c2a6e2c1d70
+	github.com/DataDog/orchestrion v1.0.4
 	github.com/IBM/sarama v1.44.0
 	github.com/Shopify/sarama v1.38.1
 	github.com/aws/aws-sdk-go v1.55.5
@@ -63,7 +63,7 @@ require (
 	google.golang.org/api v0.213.0
 	google.golang.org/grpc v1.69.2
 	google.golang.org/grpc/examples v0.0.0-20250110041721-2d4daf347590
-	gopkg.in/DataDog/dd-trace-go.v1 v1.71.0-rc.4
+	gopkg.in/DataDog/dd-trace-go.v1 v1.71.0
 	gorm.io/driver/sqlite v1.5.7
 	gorm.io/gorm v1.25.12
 	gotest.tools/v3 v3.5.1
@@ -78,6 +78,7 @@ require (
 	cloud.google.com/go/compute/metadata v0.6.0 // indirect
 	cloud.google.com/go/iam v1.2.1 // indirect
 	dario.cat/mergo v1.0.0 // indirect
+	filippo.io/edwards25519 v1.1.0 // indirect
 	github.com/Azure/go-ansiterm v0.0.0-20210617225240-d185dfc1b5a1 // indirect
 	github.com/DataDog/appsec-internal-go v1.9.0 // indirect
 	github.com/DataDog/datadog-agent/pkg/obfuscate v0.60.1 // indirect
