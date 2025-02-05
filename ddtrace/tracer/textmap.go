@@ -292,6 +292,14 @@ func (p *chainedPropagator) Extract(carrier interface{}) (ddtrace.SpanContext, e
 		firstExtract := (ctx == nil) // ctx stores the most recently extracted ctx across iterations; if it's nil, no extractor has run yet
 		extractedCtx, err := v.Extract(carrier)
 
+		// If the extractor is the baggage propagator and its baggage is empty,
+		// treat it as if nothing was extracted.
+		if _, ok := v.(*propagatorBaggage); ok {
+			if extractedSpan, ok := extractedCtx.(*spanContext); ok && len(extractedSpan.baggage) == 0 {
+				extractedCtx = nil
+			}
+		}
+
 		if firstExtract {
 			if err != nil {
 				if p.onlyExtractFirst { // Every error is relevant when we are relying on the first extractor
