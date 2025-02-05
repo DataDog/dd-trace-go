@@ -211,8 +211,6 @@ func Start(opts ...StartOption) error {
 		// DD_INSTRUMENTATION_TELEMETRY_ENABLED env var
 		startTelemetry(t.config)
 
-		// start appsec
-		appsec.Start(t.config.appsecStartOptions...)
 		globalinternal.SetTracerInitialized(true)
 		return nil
 	}
