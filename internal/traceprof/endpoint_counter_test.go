@@ -7,6 +7,7 @@ package traceprof
 
 import (
 	"fmt"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -25,6 +26,24 @@ func TestEndpointCounter(t *testing.T) {
 		ec.Inc("foobar")
 		require.Equal(t, map[string]uint64{"foobar": 1}, ec.GetAndReset())
 		require.Equal(t, map[string]uint64{}, ec.GetAndReset())
+	})
+
+	t.Run("fixed limit parallel", func(t *testing.T) {
+		ec := NewEndpointCounter(10)
+		var wg sync.WaitGroup
+		for i := range 10 {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				for j := range 10 {
+					// Non-overlapping keys
+					// TODO: explain why (if?) this is a good thing to check
+					ec.Inc(fmt.Sprintf("%d", i*10+j))
+				}
+			}()
+		}
+		wg.Wait()
+		require.Len(t, ec.GetAndReset(), 10)
 	})
 
 	t.Run("no limit", func(t *testing.T) {
