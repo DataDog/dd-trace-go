@@ -169,8 +169,6 @@ func Start(opts ...StartOption) {
 		// DD_INSTRUMENTATION_TELEMETRY_ENABLED env var
 		startTelemetry(t.config)
 
-		// start appsec
-		appsec.Start(t.config.appsecStartOptions...)
 		_ = t.hostname() // Prime the hostname cache
 		return
 	}
