@@ -95,8 +95,8 @@ type span struct {
 type SpanWithLinks interface {
 	ddtrace.Span
 
-	// AddSpanLinks appends the given links to span's span links.
-	AddSpanLinks(spanLinks ...ddtrace.SpanLink)
+	// AddSpanLink appends the given link to span's span links.
+	AddSpanLink(link ddtrace.SpanLink)
 }
 
 // Context yields the SpanContext for this Span. Note that the return
@@ -472,9 +472,9 @@ func (s *span) setMetric(key string, v float64) {
 	}
 }
 
-// AddSpanLinks appends the given links to the span's span links.
-func (s *span) AddSpanLinks(spanLinks ...ddtrace.SpanLink) {
-	s.SpanLinks = append(s.SpanLinks, spanLinks...)
+// AddSpanLink appends the given link to the span's span links.
+func (s *span) AddSpanLink(link ddtrace.SpanLink) {
+	s.SpanLinks = append(s.SpanLinks, link)
 }
 
 // serializeSpanLinksInMeta saves span links as a JSON string under `Span[meta][_dd.span_links]`.

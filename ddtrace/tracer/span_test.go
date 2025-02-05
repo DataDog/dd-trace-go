@@ -1115,11 +1115,8 @@ func TestSpanLinksInMeta(t *testing.T) {
 		sp, ok := tracer.StartSpan("test-with-links").(SpanWithLinks)
 		require.True(t, ok, "Span does not implement SpanWithLinks interface")
 
-		// Add a couple of links.
-		sp.AddSpanLinks(
-			ddtrace.SpanLink{SpanID: 123, TraceID: 456},
-			ddtrace.SpanLink{SpanID: 789, TraceID: 012},
-		)
+		sp.AddSpanLink(ddtrace.SpanLink{SpanID: 123, TraceID: 456})
+		sp.AddSpanLink(ddtrace.SpanLink{SpanID: 789, TraceID: 012})
 		sp.Finish()
 
 		internalSpan := sp.(*span)
