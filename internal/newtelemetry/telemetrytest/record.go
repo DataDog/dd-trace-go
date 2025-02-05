@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/newtelemetry"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/newtelemetry/internal/transport"
 )
 
 type MetricKey struct {
@@ -76,7 +77,7 @@ func (r *RecordClient) metric(kind string, namespace newtelemetry.Namespace, nam
 }
 
 func (r *RecordClient) Count(namespace newtelemetry.Namespace, name string, tags []string) newtelemetry.MetricHandle {
-	return r.metric("count", namespace, name, tags, func(handle *RecordMetricHandle, value float64) {
+	return r.metric(string(transport.CountMetric), namespace, name, tags, func(handle *RecordMetricHandle, value float64) {
 		handle.count += value
 	}, func(handle *RecordMetricHandle) float64 {
 		return handle.count
@@ -84,7 +85,7 @@ func (r *RecordClient) Count(namespace newtelemetry.Namespace, name string, tags
 }
 
 func (r *RecordClient) Rate(namespace newtelemetry.Namespace, name string, tags []string) newtelemetry.MetricHandle {
-	handle := r.metric("rate", namespace, name, tags, func(handle *RecordMetricHandle, value float64) {
+	handle := r.metric(string(transport.RateMetric), namespace, name, tags, func(handle *RecordMetricHandle, value float64) {
 		handle.count += value
 		handle.rate = float64(handle.count) / time.Since(handle.rateStart).Seconds()
 	}, func(handle *RecordMetricHandle) float64 {
@@ -96,7 +97,7 @@ func (r *RecordClient) Rate(namespace newtelemetry.Namespace, name string, tags 
 }
 
 func (r *RecordClient) Gauge(namespace newtelemetry.Namespace, name string, tags []string) newtelemetry.MetricHandle {
-	return r.metric("gauge", namespace, name, tags, func(handle *RecordMetricHandle, value float64) {
+	return r.metric(string(transport.GaugeMetric), namespace, name, tags, func(handle *RecordMetricHandle, value float64) {
 		handle.gauge = value
 	}, func(handle *RecordMetricHandle) float64 {
 		return handle.gauge
@@ -104,7 +105,7 @@ func (r *RecordClient) Gauge(namespace newtelemetry.Namespace, name string, tags
 }
 
 func (r *RecordClient) Distribution(namespace newtelemetry.Namespace, name string, tags []string) newtelemetry.MetricHandle {
-	return r.metric("distribution", namespace, name, tags, func(handle *RecordMetricHandle, value float64) {
+	return r.metric(string(transport.DistMetric), namespace, name, tags, func(handle *RecordMetricHandle, value float64) {
 		handle.distrib = append(handle.distrib, value)
 	}, func(handle *RecordMetricHandle) float64 {
 		var sum float64

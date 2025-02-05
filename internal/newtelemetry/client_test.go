@@ -87,12 +87,15 @@ func TestClientFlush(t *testing.T) {
 		Env:     "test-env",
 		Version: "1.0.0",
 	}
-	for _, test := range []struct {
+
+	type testParams struct {
 		name         string
 		clientConfig ClientConfig
 		when         func(c *client)
 		expect       func(*testing.T, []transport.Payload)
-	}{
+	}
+
+	testcases := []testParams{
 		{
 			name: "heartbeat",
 			clientConfig: ClientConfig{
@@ -948,7 +951,9 @@ func TestClientFlush(t *testing.T) {
 				assert.NotContains(t, distributions.Series[0].Points, 0.0)
 			},
 		},
-	} {
+	}
+
+	for _, test := range testcases {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 			config := defaultConfig(test.clientConfig)

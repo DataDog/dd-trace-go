@@ -28,6 +28,7 @@ func (r Recorder[T]) Record(f func(T)) bool {
 	return r.queue.Enqueue(f)
 }
 
+// Replay uses T as an argument to replay all recorded functions in order of recording.
 func (r Recorder[T]) Replay(t T) {
 	if r.queue == nil {
 		return
@@ -39,4 +40,9 @@ func (r Recorder[T]) Replay(t T) {
 		}
 		f(t)
 	}
+}
+
+// Clear clears the Recorder's queue.
+func (r Recorder[T]) Clear() {
+	r.queue.ReleaseBuffer(r.queue.GetBuffer())
 }

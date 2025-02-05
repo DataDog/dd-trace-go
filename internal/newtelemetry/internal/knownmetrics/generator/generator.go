@@ -73,7 +73,7 @@ func downloadFromDdgo(remoteURL, localPath, branch, token string, getMetricNames
 			return strings.Compare(string(i.Namespace), string(j.Namespace))
 		}
 		if i.Type != j.Type {
-			return strings.Compare(i.Type, j.Type)
+			return strings.Compare(string(i.Type), string(j.Type))
 		}
 		return strings.Compare(i.Name, j.Name)
 	})
@@ -102,7 +102,7 @@ func getCommonMetricNames(input map[string]any) []knownmetrics.Declaration {
 			metric := knownmetrics.Declaration{
 				Namespace: transport.Namespace(category),
 				Name:      metricKey,
-				Type:      value.(map[string]any)["metric_type"].(string),
+				Type:      transport.MetricType(value.(map[string]any)["metric_type"].(string)),
 			}
 			names = append(names, metric)
 			if aliases, ok := value.(map[string]any)["aliases"]; ok {
@@ -124,7 +124,7 @@ func getGoMetricNames(input map[string]any) []knownmetrics.Declaration {
 		}
 		names = append(names, knownmetrics.Declaration{
 			Name: key,
-			Type: value.(map[string]any)["metric_type"].(string),
+			Type: transport.MetricType(value.(map[string]any)["metric_type"].(string)),
 		})
 	}
 	return names

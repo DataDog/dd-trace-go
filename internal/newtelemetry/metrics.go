@@ -6,7 +6,9 @@
 package newtelemetry
 
 import (
+	"fmt"
 	"math"
+	"sort"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -25,6 +27,42 @@ type metricKey struct {
 	tags      string
 }
 
+func (k metricKey) SplitTags() []string {
+	if k.tags == "" {
+		return nil
+	}
+	return strings.Split(k.tags, ",")
+}
+
+func validateMetricKey(namespace Namespace, kind transport.MetricType, name string, tags []string) error {
+	if len(name) == 0 {
+		return fmt.Errorf("telemetry: metric name with tags %v should be empty", tags)
+	}
+
+	if !knownmetrics.IsKnownMetric(namespace, kind, name) {
+		return fmt.Errorf("telemetry: metric name %q of kind %q in namespace %q is not a known metric, please update the list of metrics name or check that your wrote the name correctly. "+
+			"The metric will still be sent", name, string(kind), namespace)
+	}
+
+	for _, tag := range tags {
+		if len(tag) == 0 {
+			return fmt.Errorf("telemetry: metric %q has should not have empty tags", name)
+		}
+
+		if strings.Contains(tag, ",") {
+			return fmt.Errorf("telemetry: metric %q tag %q should not contain commas", name, tag)
+		}
+	}
+
+	return nil
+}
+
+// newMetricKey returns a new metricKey with the given parameters with the tags sorted and joined by commas.
+func newMetricKey(namespace Namespace, kind transport.MetricType, name string, tags []string) metricKey {
+	sort.Strings(tags)
+	return metricKey{namespace: namespace, kind: kind, name: name, tags: strings.Join(tags, ",")}
+}
+
 // metricsHandle is the internal equivalent of MetricHandle for Count/Rate/Gauge metrics that are sent via the payload [transport.GenerateMetrics].
 type metricHandle interface {
 	MetricHandle
@@ -38,22 +76,28 @@ type metrics struct {
 
 // LoadOrStore returns a MetricHandle for the given metric key. If the metric key does not exist, it will be created.
 func (m *metrics) LoadOrStore(namespace Namespace, kind transport.MetricType, name string, tags []string) MetricHandle {
-	if !knownmetrics.IsKnownMetric(namespace, string(kind), name) {
-		log.Debug("telemetry: metric name %q is not a known metric, please update the list of metrics name or check that your wrote the name correctly. "+
-			"The metric will still be sent.", name)
-	}
 
 	var (
-		key    = metricKey{namespace: namespace, kind: kind, name: name, tags: strings.Join(tags, ",")}
+		key    = newMetricKey(namespace, kind, name, tags)
 		handle MetricHandle
+		loaded bool
 	)
 	switch kind {
 	case transport.CountMetric:
-		handle, _ = m.store.LoadOrStore(key, &count{metric: metric{key: key}})
+		handle, loaded = m.store.LoadOrStore(key, &count{metric: metric{key: key}})
 	case transport.GaugeMetric:
-		handle, _ = m.store.LoadOrStore(key, &gauge{metric: metric{key: key}})
+		handle, loaded = m.store.LoadOrStore(key, &gauge{metric: metric{key: key}})
 	case transport.RateMetric:
-		handle, _ = m.store.LoadOrStore(key, &rate{metric: metric{key: key}, intervalStart: time.Now()})
+		handle, loaded = m.store.LoadOrStore(key, &rate{metric: metric{key: key}, intervalStart: time.Now()})
+	default:
+		log.Warn("telemetry: unknown metric type %q", kind)
+		return nil
+	}
+
+	if !loaded { // The metric is new: validate and log issues about it
+		if err := validateMetricKey(namespace, kind, name, tags); err != nil {
+			log.Warn("telemetry: %v", err)
+		}
 	}
 
 	return handle
@@ -93,17 +137,12 @@ func (m *metric) payload() transport.MetricData {
 		return transport.MetricData{}
 	}
 
-	var tags []string
-	if m.key.tags != "" {
-		tags = strings.Split(m.key.tags, ",")
-	}
-
 	data := transport.MetricData{
 		Metric:    m.key.name,
 		Namespace: m.key.namespace,
-		Tags:      tags,
+		Tags:      m.key.SplitTags(),
 		Type:      m.key.kind,
-		Common:    knownmetrics.IsCommonMetric(m.key.namespace, string(m.key.kind), m.key.name),
+		Common:    knownmetrics.IsCommonMetric(m.key.namespace, m.key.kind, m.key.name),
 		Points: [][2]any{
 			{m.submitTime.Load(), math.Float64frombits(m.value.Load())},
 		},

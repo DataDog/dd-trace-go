@@ -23,9 +23,9 @@ var commonMetricsJSON []byte
 var golangMetricsJSON []byte
 
 type Declaration struct {
-	Namespace transport.Namespace `json:"namespace"`
-	Type      string              `json:"type"`
-	Name      string              `json:"name"`
+	Namespace transport.Namespace  `json:"namespace"`
+	Type      transport.MetricType `json:"type"`
+	Name      string               `json:"name"`
 }
 
 var (
@@ -43,21 +43,21 @@ func parseMetricNames(bytes []byte) []Declaration {
 
 // IsKnownMetric returns true if the given metric name is a known metric by the backend
 // This is linked to generated common_metrics.json file and golang_metrics.json file. If you added new metrics to the backend, you should rerun the generator.
-func IsKnownMetric(namespace transport.Namespace, typ, name string) bool {
+func IsKnownMetric(namespace transport.Namespace, typ transport.MetricType, name string) bool {
 	decl := Declaration{Namespace: namespace, Type: typ, Name: name}
 	return slices.Contains(commonMetrics, decl) || slices.Contains(golangMetrics, decl)
 }
 
 // IsCommonMetric returns true if the given metric name is a known common (cross-language) metric by the backend
 // This is linked to the generated common_metrics.json file. If you added new metrics to the backend, you should rerun the generator.
-func IsCommonMetric(namespace transport.Namespace, typ, name string) bool {
+func IsCommonMetric(namespace transport.Namespace, typ transport.MetricType, name string) bool {
 	decl := Declaration{Namespace: namespace, Type: typ, Name: name}
 	return slices.Contains(commonMetrics, decl)
 }
 
 // IsLanguageMetric returns true if the given metric name is a known Go language metric by the backend
 // This is linked to the generated golang_metrics.json file. If you added new metrics to the backend, you should rerun the generator.
-func IsLanguageMetric(typ, name string) bool {
+func IsLanguageMetric(typ transport.MetricType, name string) bool {
 	decl := Declaration{Type: typ, Name: name}
 	return slices.Contains(golangMetrics, decl)
 }

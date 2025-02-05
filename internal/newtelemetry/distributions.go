@@ -6,7 +6,6 @@
 package newtelemetry
 
 import (
-	"strings"
 	"sync"
 	"sync/atomic"
 
@@ -16,35 +15,29 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/newtelemetry/internal/transport"
 )
 
-type distributionKey struct {
-	namespace Namespace
-	name      string
-	tags      string
-}
-
 type distributions struct {
-	store         internal.TypedSyncMap[distributionKey, *distribution]
+	store         internal.TypedSyncMap[metricKey, *distribution]
 	skipAllowlist bool // Debugging feature to skip the allowlist of known metrics
 	queueSize     Range[int]
 }
 
 // LoadOrStore returns a MetricHandle for the given distribution metric. If the metric key does not exist, it will be created.
 func (d *distributions) LoadOrStore(namespace Namespace, name string, tags []string) MetricHandle {
-	if !knownmetrics.IsKnownMetric(namespace, "distribution", name) {
-		log.Debug("telemetry: metric name %q is not a known metric, please update the list of metrics name or check that your wrote the name correctly. "+
-			"The metric will still be sent.", name)
+	kind := transport.DistMetric
+	key := newMetricKey(namespace, kind, name, tags)
+	handle, loaded := d.store.LoadOrStore(key, &distribution{key: key, values: internal.NewRingQueue[float64](d.queueSize.Min, d.queueSize.Max)})
+	if !loaded { // The metric is new: validate and log issues about it
+		if err := validateMetricKey(namespace, kind, name, tags); err != nil {
+			log.Warn("telemetry: %v", err)
+		}
 	}
-
-	key := distributionKey{namespace: namespace, name: name, tags: strings.Join(tags, ",")}
-
-	handle, _ := d.store.LoadOrStore(key, &distribution{key: key, values: internal.NewRingQueue[float64](d.queueSize.Min, d.queueSize.Max)})
 
 	return handle
 }
 
 func (d *distributions) Payload() transport.Payload {
 	series := make([]transport.DistributionSeries, 0, d.store.Len())
-	d.store.Range(func(_ distributionKey, handle *distribution) bool {
+	d.store.Range(func(_ metricKey, handle *distribution) bool {
 		if payload := handle.payload(); payload.Metric != "" {
 			series = append(series, payload)
 		}
@@ -59,7 +52,7 @@ func (d *distributions) Payload() transport.Payload {
 }
 
 type distribution struct {
-	key distributionKey
+	key metricKey
 
 	newSubmit atomic.Bool
 	values    *internal.RingQueue[float64]
@@ -85,16 +78,11 @@ func (d *distribution) payload() transport.DistributionSeries {
 		return transport.DistributionSeries{}
 	}
 
-	var tags []string
-	if d.key.tags != "" {
-		tags = strings.Split(d.key.tags, ",")
-	}
-
 	data := transport.DistributionSeries{
 		Metric:    d.key.name,
 		Namespace: d.key.namespace,
-		Tags:      tags,
-		Common:    knownmetrics.IsCommonMetric(d.key.namespace, "distribution", d.key.name),
+		Tags:      d.key.SplitTags(),
+		Common:    knownmetrics.IsCommonMetric(d.key.namespace, d.key.kind, d.key.name),
 		Points:    d.values.Flush(),
 	}
 

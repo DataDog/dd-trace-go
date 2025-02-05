@@ -130,14 +130,6 @@ func (c *client) MarkIntegrationAsLoaded(integration Integration) {
 	c.integrations.Add(integration)
 }
 
-type noopMetricHandle struct{}
-
-func (noopMetricHandle) Submit(_ float64) {}
-
-func (noopMetricHandle) Get() float64 {
-	return 0
-}
-
 func (c *client) Count(namespace Namespace, name string, tags []string) MetricHandle {
 	if !c.clientConfig.MetricsEnabled {
 		return noopMetricHandle{}
