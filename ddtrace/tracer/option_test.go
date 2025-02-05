@@ -224,7 +224,7 @@ func TestLoadAgentFeatures(t *testing.T) {
 
 	t.Run("OK", func(t *testing.T) {
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-			w.Write([]byte(`{"endpoints":["/v0.6/stats"],"feature_flags":["a","b"],"client_drop_p0s":true,"config": {"statsd_port":8999}}`))
+			w.Write([]byte(`{"endpoints":["/v0.6/stats"],"feature_flags":["a","b"],"client_drop_p0s":true,"peer_tags":["peer.hostname"],"config": {"statsd_port":8999}}`))
 		}))
 		defer srv.Close()
 		cfg := newConfig(WithAgentAddr(strings.TrimPrefix(srv.URL, "http://")), WithAgentTimeout(2))
@@ -237,6 +237,7 @@ func TestLoadAgentFeatures(t *testing.T) {
 		assert.True(t, cfg.agent.Stats)
 		assert.True(t, cfg.agent.HasFlag("a"))
 		assert.True(t, cfg.agent.HasFlag("b"))
+		assert.EqualValues(t, cfg.agent.peerTags, []string{"peer.hostname"})
 	})
 
 	t.Run("discovery", func(t *testing.T) {
@@ -271,7 +272,7 @@ func TestAgentIntegration(t *testing.T) {
 		defer clearIntegrationsForTests()
 
 		cfg.loadContribIntegrations(nil)
-		assert.Equal(t, 56, len(cfg.integrations))
+		assert.Equal(t, 57, len(cfg.integrations))
 		for integrationName, v := range cfg.integrations {
 			assert.False(t, v.Instrumented, "integrationName=%s", integrationName)
 		}

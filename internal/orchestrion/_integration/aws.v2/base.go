@@ -9,7 +9,6 @@ package awsv2
 
 import (
 	"context"
-	"fmt"
 	"testing"
 
 	"github.com/DataDog/dd-trace-go/internal/orchestrion/_integration/internal/containers"
@@ -67,7 +66,7 @@ func (b *base) expectedTraces() trace.Traces {
 					Meta: map[string]string{
 						"http.method":              "POST",
 						"http.status_code":         "200",
-						"http.url":                 fmt.Sprintf("http://localhost:%s/", b.port),
+						"http.url":                 "/",
 						"network.destination.name": "localhost",
 						"component":                "net/http",
 						"span.kind":                "client",

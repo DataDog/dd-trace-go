@@ -2,6 +2,10 @@ module gopkg.in/DataDog/dd-trace-go.v1
 
 go 1.22.0
 
+// This replace is a temporary workaround to deal with a breaking change here that is used by the datadog-agent
+// It can safely be removed once this PR is released: https://github.com/DataDog/datadog-agent/pull/33370
+replace github.com/DataDog/opentelemetry-mapping-go/pkg/otlp/attributes => github.com/DataDog/opentelemetry-mapping-go/pkg/otlp/attributes v0.20.0
+
 require (
 	cloud.google.com/go/pubsub v1.37.0
 	github.com/99designs/gqlgen v0.17.36
@@ -90,6 +94,7 @@ require (
 	github.com/uptrace/bun v1.1.17
 	github.com/uptrace/bun/dialect/sqlitedialect v1.1.17
 	github.com/urfave/negroni v1.0.0
+	github.com/valkey-io/valkey-go v1.0.52
 	github.com/valyala/fasthttp v1.51.0
 	github.com/vektah/gqlparser/v2 v2.5.16
 	github.com/zenazn/goji v1.0.1
@@ -294,7 +299,7 @@ require (
 	go.uber.org/zap v1.27.0 // indirect
 	golang.org/x/arch v0.4.0 // indirect
 	golang.org/x/crypto v0.31.0 // indirect
-	golang.org/x/exp v0.0.0-20230905200255-921286631fa9 // indirect
+	golang.org/x/exp v0.0.0-20240719175910-8a7402abbf56 // indirect
 	golang.org/x/net v0.33.0 // indirect
 	golang.org/x/term v0.27.0 // indirect
 	golang.org/x/text v0.21.0 // indirect

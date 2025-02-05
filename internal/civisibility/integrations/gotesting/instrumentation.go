@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"reflect"
 	"runtime"
-	"slices"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -36,7 +35,9 @@ type (
 		panicData                   any               // panic data recovered from an internal test execution when using an additional feature wrapper
 		panicStacktrace             string            // stacktrace from the panic recovered from an internal test
 		isARetry                    bool              // flag to tag if a current test execution is a retry
-		isANewTest                  bool              // flag to tag if a current test execution is part of a new test (EFD not known test)
+		isANewTest                  bool              // flag to tag if a current test execution is part of a new test
+		isEFDExecution              bool              // flag to tag if a current test execution is part of an EFD execution
+		isATRExecution              bool              // flag to tag if a current test execution is part of an ATR execution
 		hasAdditionalFeatureWrapper bool              // flag to check if the current execution is part of an additional feature wrapper
 	}
 
@@ -234,7 +235,10 @@ func applyFlakyTestRetriesAdditionalFeature(targetFunc func(*testing.T)) (func(*
 						}
 					}
 				},
-				execMetaAdjust: nil, // No execMetaAdjust needed
+				execMetaAdjust: func(execMeta *testExecutionMetadata, executionIndex int) {
+					// Set the flag ATR execution to true
+					execMeta.isATRExecution = true
+				},
 			})
 		}, true
 	}
@@ -243,95 +247,82 @@ func applyFlakyTestRetriesAdditionalFeature(targetFunc func(*testing.T)) (func(*
 
 // applyEarlyFlakeDetectionAdditionalFeature applies the early flake detection feature as a wrapper of a func(*testing.T)
 func applyEarlyFlakeDetectionAdditionalFeature(testInfo *commonInfo, targetFunc func(*testing.T), settings *net.SettingsResponseData) (func(*testing.T), bool) {
-	earlyFlakeDetectionData := integrations.GetEarlyFlakeDetectionSettings()
-	if earlyFlakeDetectionData != nil &&
-		len(earlyFlakeDetectionData.Tests) > 0 {
-
-		// Define is a known test flag
-		isAKnownTest := false
-
-		// Check if the test is a known test or a new one
-		if knownSuites, ok := earlyFlakeDetectionData.Tests[testInfo.moduleName]; ok {
-			if knownTests, ok := knownSuites[testInfo.suiteName]; ok {
-				if slices.Contains(knownTests, testInfo.testName) {
-					isAKnownTest = true
-				}
-			}
-		}
-
-		// If it's a new test, then we apply the EFD wrapper
-		if !isAKnownTest {
-			return func(t *testing.T) {
-				var testPassCount, testSkipCount, testFailCount int
-
-				runTestWithRetry(&runTestWithRetryOptions{
-					targetFunc:        targetFunc,
-					t:                 t,
-					initialRetryCount: 0,
-					adjustRetryCount: func(duration time.Duration) int64 {
-						slowTestRetriesSettings := settings.EarlyFlakeDetection.SlowTestRetries
-						durationSecs := duration.Seconds()
-						if durationSecs < 5 {
-							return int64(slowTestRetriesSettings.FiveS)
-						} else if durationSecs < 10 {
-							return int64(slowTestRetriesSettings.TenS)
-						} else if durationSecs < 30 {
-							return int64(slowTestRetriesSettings.ThirtyS)
-						} else if duration.Minutes() < 5 {
-							return int64(slowTestRetriesSettings.FiveM)
-						}
-						return 0
-					},
-					shouldRetry: func(ptrToLocalT *testing.T, executionIndex int, remainingRetries int64) bool {
-						return remainingRetries >= 0
-					},
-					perExecution: func(ptrToLocalT *testing.T, executionIndex int, duration time.Duration) {
-						// Collect test results
-						if ptrToLocalT.Failed() {
-							testFailCount++
-						} else if ptrToLocalT.Skipped() {
-							testSkipCount++
-						} else {
-							testPassCount++
-						}
-					},
-					onRetryEnd: func(t *testing.T, executionIndex int, lastPtrToLocalT *testing.T) {
-						// Update test status based on collected counts
-						tCommonPrivates := getTestPrivateFields(t)
-						if tCommonPrivates == nil {
-							panic("getting test private fields failed")
-						}
-						status := "passed"
-						if testPassCount == 0 {
-							if testSkipCount > 0 {
-								status = "skipped"
-								tCommonPrivates.SetSkipped(true)
-							}
-							if testFailCount > 0 {
-								status = "failed"
-								tCommonPrivates.SetFailed(true)
-								tParentCommonPrivates := getTestParentPrivateFields(t)
-								if tParentCommonPrivates == nil {
-									panic("getting test parent private fields failed")
-								}
-								tParentCommonPrivates.SetFailed(true)
-							}
-						}
-
-						// Print summary after retries
-						if executionIndex > 0 {
-							fmt.Printf("  [ %v after %v retries by Datadog's early flake detection ]\n", status, executionIndex)
-						}
-					},
-					execMetaAdjust: func(execMeta *testExecutionMetadata, executionIndex int) {
-						// Set the flag new test to true
-						execMeta.isANewTest = true
-					},
-				})
-			}, true
-		}
+	isKnown, hasKnownData := isKnownTest(testInfo)
+	if !hasKnownData || isKnown {
+		return targetFunc, false
 	}
-	return targetFunc, false
+
+	// If it's a new test, then we apply the EFD wrapper
+	return func(t *testing.T) {
+		var testPassCount, testSkipCount, testFailCount int
+
+		runTestWithRetry(&runTestWithRetryOptions{
+			targetFunc:        targetFunc,
+			t:                 t,
+			initialRetryCount: 0,
+			adjustRetryCount: func(duration time.Duration) int64 {
+				slowTestRetriesSettings := settings.EarlyFlakeDetection.SlowTestRetries
+				durationSecs := duration.Seconds()
+				if durationSecs < 5 {
+					return int64(slowTestRetriesSettings.FiveS)
+				} else if durationSecs < 10 {
+					return int64(slowTestRetriesSettings.TenS)
+				} else if durationSecs < 30 {
+					return int64(slowTestRetriesSettings.ThirtyS)
+				} else if duration.Minutes() < 5 {
+					return int64(slowTestRetriesSettings.FiveM)
+				}
+				return 0
+			},
+			shouldRetry: func(ptrToLocalT *testing.T, executionIndex int, remainingRetries int64) bool {
+				return remainingRetries >= 0
+			},
+			perExecution: func(ptrToLocalT *testing.T, executionIndex int, duration time.Duration) {
+				// Collect test results
+				if ptrToLocalT.Failed() {
+					testFailCount++
+				} else if ptrToLocalT.Skipped() {
+					testSkipCount++
+				} else {
+					testPassCount++
+				}
+			},
+			onRetryEnd: func(t *testing.T, executionIndex int, lastPtrToLocalT *testing.T) {
+				// Update test status based on collected counts
+				tCommonPrivates := getTestPrivateFields(t)
+				if tCommonPrivates == nil {
+					panic("getting test private fields failed")
+				}
+				status := "passed"
+				if testPassCount == 0 {
+					if testSkipCount > 0 {
+						status = "skipped"
+						tCommonPrivates.SetSkipped(true)
+					}
+					if testFailCount > 0 {
+						status = "failed"
+						tCommonPrivates.SetFailed(true)
+						tParentCommonPrivates := getTestParentPrivateFields(t)
+						if tParentCommonPrivates == nil {
+							panic("getting test parent private fields failed")
+						}
+						tParentCommonPrivates.SetFailed(true)
+					}
+				}
+
+				// Print summary after retries
+				if executionIndex > 0 {
+					fmt.Printf("  [ %v after %v retries by Datadog's early flake detection ]\n", status, executionIndex)
+				}
+			},
+			execMetaAdjust: func(execMeta *testExecutionMetadata, executionIndex int) {
+				// Set the flag new test to true
+				execMeta.isANewTest = true
+				// Set the flag EFD execution to true
+				execMeta.isEFDExecution = true
+			},
+		})
+	}, true
 }
 
 // runTestWithRetry encapsulates the common retry logic for test functions.
@@ -385,6 +376,12 @@ func runTestWithRetry(options *runTestWithRetryOptions) {
 			}
 			if originalExecMeta.isARetry {
 				execMeta.isARetry = true
+			}
+			if originalExecMeta.isEFDExecution {
+				execMeta.isEFDExecution = true
+			}
+			if originalExecMeta.isATRExecution {
+				execMeta.isATRExecution = true
 			}
 		}
 
