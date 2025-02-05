@@ -1370,17 +1370,28 @@ func (p *propagatorBaggage) Inject(spanCtx ddtrace.SpanContext, carrier interfac
 // joined together by commas,
 func (*propagatorBaggage) injectTextMap(spanCtx ddtrace.SpanContext, writer TextMapWriter) error {
 	ctx, _ := spanCtx.(*spanContext)
-
-	// If the context is nil or has no baggage, we don't need to inject anything.
-	if ctx == nil || len(ctx.baggage) == 0 {
+	if ctx == nil {
 		return nil
 	}
 
-	baggageItems := make([]string, 0, len(ctx.baggage))
+	// Copy the baggage map under the read lock to avoid data races.
+	ctx.mu.RLock()
+	baggageCopy := make(map[string]string, len(ctx.baggage))
+	for k, v := range ctx.baggage {
+		baggageCopy[k] = v
+	}
+	ctx.mu.RUnlock()
+
+	// If the baggage is empty, do nothing.
+	if len(baggageCopy) == 0 {
+		return nil
+	}
+
+	baggageItems := make([]string, 0, len(baggageCopy))
 	totalSize := 0
 	count := 0
 
-	for key, value := range ctx.baggage {
+	for key, value := range baggageCopy {
 		if count >= baggageMaxItems {
 			log.Warn("Baggage item limit exceeded. Only the first %d items will be propagated.", baggageMaxItems)
 			break
@@ -1392,7 +1403,7 @@ func (*propagatorBaggage) injectTextMap(spanCtx ddtrace.SpanContext, writer Text
 
 		itemSize := len(item)
 		if count > 0 {
-			itemSize++ // for the comma
+			itemSize++ // account for the comma separator
 		}
 
 		if totalSize+itemSize > baggageMaxBytes {
