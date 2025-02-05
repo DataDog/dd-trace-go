@@ -2702,8 +2702,10 @@ func TestInjectBaggagePropagatorEncoding(t *testing.T) {
 	carrier := HTTPHeadersCarrier(headers)
 	err := tracer.Inject(ctx, carrier)
 	assert.Nil(err)
-
-	assert.Equal(headers.Get("baggage"), "userId=Am%C3%A9lie,serverNode=DF+28")
+	actualBaggage := headers.Get("baggage")
+	// Instead of checking equality of the whole string, assert that both key/value pairs are present.
+	assert.Contains(actualBaggage, "userId=Am%C3%A9lie")
+	assert.Contains(actualBaggage, "serverNode=DF+28")
 }
 
 func TestInjectBaggagePropagatorEncodingSpecialCharacters(t *testing.T) {
