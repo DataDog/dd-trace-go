@@ -86,6 +86,25 @@ func StartRequestSpan(r *http.Request, opts ...ddtrace.StartSpanOption) (tracer.
 		}
 	}
 
+	// Propagate baggage *before* starting the span.
+	if inferredProxySpan == nil {
+		spanParentCtx, spanParentErr := tracer.Extract(tracer.HTTPHeadersCarrier(r.Header))
+		if spanParentErr == nil {
+			baggageMap := make(map[string]string)
+			spanParentCtx.ForeachBaggageItem(func(k, v string) bool {
+				baggageMap[k] = v
+				return true
+			})
+			if len(baggageMap) > 0 {
+				ctx := r.Context()
+				for k, v := range baggageMap {
+					ctx = baggage.Set(ctx, k, v)
+				}
+				r = r.WithContext(ctx)
+			}
+		}
+	}
+
 	nopts = append(nopts,
 		func(ssCfg *ddtrace.StartSpanConfig) {
 			if ssCfg.Tags == nil {
@@ -109,18 +128,6 @@ func StartRequestSpan(r *http.Request, opts ...ddtrace.StartSpanOption) (tracer.
 						tracer.WithSpanLinks(spanLinksCtx.SpanLinks())(ssCfg)
 					}
 					tracer.ChildOf(spanParentCtx)(ssCfg)
-				}
-				baggageMap := make(map[string]string)
-				spanParentCtx.ForeachBaggageItem(func(k, v string) bool {
-					baggageMap[k] = v
-					return true
-				})
-				if len(baggageMap) > 0 {
-					ctx := r.Context()
-					for k, v := range baggageMap {
-						ctx = baggage.Set(ctx, k, v)
-					}
-					r = r.WithContext(ctx)
 				}
 			}
 
