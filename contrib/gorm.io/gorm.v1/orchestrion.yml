@@ -13,4 +13,18 @@ aspects:
     join-point:
       function-call: gorm.io/gorm.Open
     advice:
-      - replace-function: gopkg.in/DataDog/dd-trace-go.v1/contrib/gorm.io/gorm.v1.Open
+      - wrap-expression:
+          imports:
+            gorm: gorm.io/gorm
+            gormtrace: gopkg.in/DataDog/dd-trace-go.v1/contrib/gorm.io/gorm.v1
+          template: |-
+            func() (*gorm.DB, error) {
+              db, err := {{ . }}
+              if err != nil {
+                return nil, err
+              }
+              if err := db.Use(gormtrace.NewTracePlugin()); err != nil {
+                return nil, err
+              }
+              return db, nil
+            }()

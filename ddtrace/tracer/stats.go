@@ -70,12 +70,17 @@ func newConcentrator(c *config, bucketSize int64, statsdClient internal.StatsdCl
 		env = "unknown-env"
 		log.Debug("No DD Env found, normally the agent should have one")
 	}
+	gitCommitSha := ""
+	if c.ciVisibilityEnabled {
+		// We only have this data if we're in CI Visibility
+		gitCommitSha = utils.GetCITags()[constants.GitCommitSHA]
+	}
 	aggKey := stats.PayloadAggregationKey{
 		Hostname:     c.hostname,
 		Env:          env,
 		Version:      c.version,
 		ContainerID:  "", // This intentionally left empty as the Agent will attach the container ID only in certain situations.
-		GitCommitSha: utils.GetCITags()[constants.GitCommitSHA],
+		GitCommitSha: gitCommitSha,
 		ImageTag:     "",
 	}
 	spanConcentrator := stats.NewSpanConcentrator(sCfg, time.Now())
