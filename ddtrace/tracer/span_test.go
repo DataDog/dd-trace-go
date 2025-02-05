@@ -1053,6 +1053,27 @@ func BenchmarkSetTagField(b *testing.B) {
 	}
 }
 
+func BenchmarkSerializeSpanLinksInMeta(b *testing.B) {
+	span := newBasicSpan("bench.span")
+
+	span.AddSpanLink(ddtrace.SpanLink{SpanID: 123, TraceID: 456})
+	span.AddSpanLink(ddtrace.SpanLink{SpanID: 789, TraceID: 101})
+
+	// Sample span pointer
+	attributes := map[string]string{
+		"link.kind": "span-pointer",
+		"ptr.dir":   "d",
+		"ptr.hash":  "eb29cb7d923f904f02bd8b3d85e228ed",
+		"ptr.kind":  "aws.s3.object",
+	}
+	span.AddSpanLink(ddtrace.SpanLink{TraceID: 0, SpanID: 0, Attributes: attributes})
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		span.serializeSpanLinksInMeta()
+	}
+}
+
 type boomError struct{}
 
 func (e *boomError) Error() string { return "boom" }
