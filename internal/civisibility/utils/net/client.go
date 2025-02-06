@@ -29,16 +29,16 @@ import (
 
 const (
 	// DefaultMaxRetries is the default number of retries for a request.
-	DefaultMaxRetries int = 5
+	DefaultMaxRetries int = 3
 	// DefaultBackoff is the default backoff time for a request.
-	DefaultBackoff time.Duration = 150 * time.Millisecond
+	DefaultBackoff time.Duration = 100 * time.Millisecond
 )
 
 type (
 	// Client is an interface for sending requests to the Datadog backend.
 	Client interface {
 		GetSettings() (*SettingsResponseData, error)
-		GetEarlyFlakeDetectionData() (*EfdResponseData, error)
+		GetKnownTests() (*KnownTestsResponseData, error)
 		GetCommits(localCommits []string) ([]string, error)
 		SendPackFiles(commitSha string, packFiles []string) (bytes int64, err error)
 		SendCoveragePayload(ciTestCovPayload io.Reader) error

@@ -52,9 +52,9 @@ func Middleware(service string, opts ...Option) gin.HandlerFunc {
 		}
 		opts = append(opts, tracer.Tag(ext.HTTPRoute, c.FullPath()))
 		opts = append(opts, httptrace.HeaderTagsFromRequest(c.Request, cfg.headerTags))
-		span, ctx := httptrace.StartRequestSpan(c.Request, opts...)
+		span, ctx, finishSpans := httptrace.StartRequestSpan(c.Request, opts...)
 		defer func() {
-			httptrace.FinishRequestSpan(span, c.Writer.Status(), nil)
+			finishSpans(c.Writer.Status(), nil)
 		}()
 
 		// pass the span through the request context
