@@ -114,18 +114,19 @@ type RoundTripperBeforeFunc func(*http.Request, ddtrace.Span)
 // RoundTrip is made. It is possible for the http Response to be nil.
 type RoundTripperAfterFunc func(*http.Response, ddtrace.Span)
 type roundTripperConfig struct {
-	before        RoundTripperBeforeFunc
-	after         RoundTripperAfterFunc
-	analyticsRate float64
-	serviceName   string
-	resourceNamer func(req *http.Request) string
-	spanNamer     func(req *http.Request) string
-	ignoreRequest func(*http.Request) bool
-	spanOpts      []ddtrace.StartSpanOption
-	propagation   bool
-	errCheck      func(err error) bool
-	queryString   bool // reports whether the query string is included in the URL tag for http client spans
-	isStatusError func(statusCode int) bool
+	before          RoundTripperBeforeFunc
+	after           RoundTripperAfterFunc
+	analyticsRate   float64
+	serviceName     string
+	resourceNamer   func(req *http.Request) string
+	spanNamer       func(req *http.Request) string
+	ignoreRequest   func(*http.Request) bool
+	spanOpts        []ddtrace.StartSpanOption
+	propagation     bool
+	errCheck        func(err error) bool
+	queryString     bool // reports whether the query string is included in the URL tag for http client spans
+	isStatusError   func(statusCode int) bool
+	integrationTags *internal.IntegrationTags
 }
 
 func newRoundTripperConfig() *roundTripperConfig {
@@ -138,14 +139,15 @@ func newRoundTripperConfig() *roundTripperConfig {
 	}
 
 	c := &roundTripperConfig{
-		serviceName:   namingschema.ServiceNameOverrideV0("", ""),
-		analyticsRate: globalconfig.AnalyticsRate(),
-		resourceNamer: defaultResourceNamer,
-		propagation:   true,
-		spanNamer:     defaultSpanNamer,
-		ignoreRequest: func(_ *http.Request) bool { return false },
-		queryString:   internal.BoolEnv(envClientQueryStringEnabled, true),
-		isStatusError: isClientError,
+		serviceName:     namingschema.ServiceNameOverrideV0("", ""),
+		analyticsRate:   globalconfig.AnalyticsRate(),
+		resourceNamer:   defaultResourceNamer,
+		propagation:     true,
+		spanNamer:       defaultSpanNamer,
+		ignoreRequest:   func(_ *http.Request) bool { return false },
+		queryString:     internal.BoolEnv(envClientQueryStringEnabled, true),
+		isStatusError:   isClientError,
+		integrationTags: globalconfig.IntegrationTags(),
 	}
 	v := os.Getenv(envClientErrorStatuses)
 	if fn := httptrace.GetErrorCodesFromInput(v); fn != nil {

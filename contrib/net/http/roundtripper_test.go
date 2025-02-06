@@ -28,6 +28,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/waf/addresses"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
+	internallog "gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -829,4 +830,96 @@ func TestAppsec(t *testing.T) {
 			// require.Contains(t, appsecJSON, `"span_id":`+strconv.FormatUint(requestSpan.SpanID(), 10))
 		})
 	}
+}
+
+func TestIntegrationTags(t *testing.T) {
+	srv1 := httptest.NewServer(nil)
+	defer srv1.Close()
+	srv1URL, err := url.Parse(srv1.URL)
+	require.NoError(t, err)
+
+	srv2 := httptest.NewServer(nil)
+	defer srv2.Close()
+	srv2URL, err := url.Parse(srv2.URL)
+	require.NoError(t, err)
+
+	integrationTagsEnv := `[
+	{
+		"component": "net/http",
+		"query": [
+			{"span.kind": "server", "server.port": "%s"},
+			{"span.kind": "client", "server.port": "%s", "http.request.method": "GET"}
+		],
+		"tags": {
+			"tag1": "val1"
+		}
+	},
+	{
+		"component": "net/http",
+		"query": [
+			{"span.kind": "server", "server.port": "%s"}
+		],
+		"tags": {
+			"tag2": "val2"
+		}
+	}
+]`
+	t.Setenv("DD_TRACE_INTEGRATION_TAGS", fmt.Sprintf(integrationTagsEnv, srv1URL.Port(), srv2URL.Port(), srv2URL.Port()))
+
+	// force start-stop the real tracer to load the config
+	tracer.Start(tracer.WithLogger(internallog.DiscardLogger{}))
+	tracer.Stop()
+
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	mux := NewServeMux()
+	mux.HandleFunc("/200", handler200)
+	mux.HandleFunc("/500", handler500)
+
+	srv1.Config.Handler = mux
+	srv2.Config.Handler = mux
+
+	client := WrapClient(&http.Client{})
+
+	req, err := http.NewRequest(http.MethodGet, srv1.URL+"/200", nil)
+	require.NoError(t, err)
+	resp, err := client.Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	req, err = http.NewRequest(http.MethodGet, srv2.URL+"/200", nil)
+	require.NoError(t, err)
+	resp, err = client.Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	spans := mt.FinishedSpans()
+	require.Len(t, spans, 4)
+
+	spanSrv1 := spans[0]
+	spanClient1 := spans[1]
+	spanSrv2 := spans[2]
+	spanClient2 := spans[3]
+
+	assert.Equal(t, "server", spanSrv1.Tag("span.kind"))
+	assert.Equal(t, "server", spanSrv2.Tag("span.kind"))
+	assert.Equal(t, "client", spanClient1.Tag("span.kind"))
+	assert.Equal(t, "client", spanClient2.Tag("span.kind"))
+
+	// server1
+	assert.Equal(t, "val1", spanSrv1.Tag("tag1"), "server1 missing tag1")
+	assert.Nil(t, spanSrv1.Tag("tag2"), "server1 should not have tag2")
+
+	// client1
+	assert.Nil(t, spanClient1.Tag("tag1"), "client should not have tag1")
+	assert.Nil(t, spanClient1.Tag("tag2"), "client should not have tag2")
+
+	// server2
+	assert.Nil(t, spanSrv2.Tag("tag1"), "server2 should not have tag1")
+	assert.Equal(t, "val2", spanSrv2.Tag("tag2"), "server2 missing tag2")
+
+	// client2
+	assert.Equal(t, "val1", spanClient2.Tag("tag1"), "client2 missing tag1")
+	assert.Nil(t, spanClient2.Tag("tag2"), "client2 should not have tag2")
 }

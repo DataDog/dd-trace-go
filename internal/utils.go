@@ -6,6 +6,9 @@
 package internal
 
 import (
+	"fmt"
+	"sort"
+	"strings"
 	"sync"
 	"sync/atomic"
 )
@@ -67,4 +70,73 @@ func (l *LockMap) Get(k string) string {
 	l.RLock()
 	defer l.RUnlock()
 	return l.m[k]
+}
+
+type IntegrationTags struct {
+	Rules []IntegrationTagsRule
+	Cache map[string]map[string]string
+}
+
+func (i *IntegrationTags) Get(component string, instanceKeys map[string]string) map[string]string {
+	instanceKeys["component"] = component
+	cacheKey := mapToKey(instanceKeys)
+
+	fmt.Println(cacheKey)
+	if res, ok := i.Cache[cacheKey]; ok {
+		fmt.Printf("got from cache: %s\n", cacheKey)
+		return res
+	}
+
+	tags := getRuleTags(i.Rules, component, instanceKeys)
+	i.Cache[cacheKey] = tags
+	return tags
+}
+
+func mapToKey(m map[string]string) string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
+	var sb strings.Builder
+	for i, k := range keys {
+		sb.WriteString(k)
+		sb.WriteString("=")
+		sb.WriteString(m[k])
+		if i < len(keys)-1 {
+			sb.WriteString(";")
+		}
+	}
+	return sb.String()
+}
+
+func getRuleTags(rules []IntegrationTagsRule, component string, instanceKeys map[string]string) map[string]string {
+	for _, rule := range rules {
+		if rule.Component != component {
+			continue
+		}
+		// the list of rules are joined by an OR logic
+		for _, q := range rule.Query {
+			// each rule's key/value pairs are joined by an AND logic (all must match)
+			match := true
+			for k, v := range q {
+				if val, ok := instanceKeys[k]; !ok || val != v {
+					// no match, check next rule
+					match = false
+					break
+				}
+			}
+			if match {
+				return rule.Tags
+			}
+		}
+	}
+	return nil
+}
+
+type IntegrationTagsRule struct {
+	Component string              `json:"component"`
+	Query     []map[string]string `json:"query"`
+	Tags      map[string]string   `json:"tags"`
 }

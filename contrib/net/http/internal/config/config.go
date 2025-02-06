@@ -23,14 +23,15 @@ const (
 )
 
 type Config struct {
-	SpanOpts      []ddtrace.StartSpanOption
-	FinishOpts    []ddtrace.FinishOption
-	IgnoreRequest func(*http.Request) bool
-	ResourceNamer func(*http.Request) string
-	IsStatusError func(int) bool
-	HeaderTags    *internal.LockMap
-	ServiceName   string
-	AnalyticsRate float64
+	SpanOpts        []ddtrace.StartSpanOption
+	FinishOpts      []ddtrace.FinishOption
+	IgnoreRequest   func(*http.Request) bool
+	ResourceNamer   func(*http.Request) string
+	IsStatusError   func(int) bool
+	HeaderTags      *internal.LockMap
+	ServiceName     string
+	AnalyticsRate   float64
+	IntegrationTags *internal.IntegrationTags
 }
 
 // Option represents an option that can be passed to NewServeMux or WrapHandler.
@@ -52,6 +53,7 @@ func Default() *Config {
 	}
 	cfg.IgnoreRequest = func(_ *http.Request) bool { return false }
 	cfg.ResourceNamer = func(_ *http.Request) string { return "" }
+	cfg.IntegrationTags = globalconfig.IntegrationTags()
 
 	return cfg
 }
