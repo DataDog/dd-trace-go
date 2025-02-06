@@ -159,9 +159,6 @@ func Start(opts ...StartOption) {
 		return
 	}
 	internal.SetGlobalTracer(t)
-	if t.dataStreams != nil {
-		t.dataStreams.Start()
-	}
 	if t.config.ciVisibilityAgentless {
 		// CI Visibility agentless mode doesn't require remote configuration.
 
@@ -182,6 +179,9 @@ func Start(opts ...StartOption) {
 	cfg.ServiceName = t.config.serviceName
 	if err := t.startRemoteConfig(cfg); err != nil {
 		log.Warn("Remote config startup error: %s", err)
+	}
+	if t.dataStreams != nil {
+		t.dataStreams.Start(&cfg)
 	}
 
 	// start instrumentation telemetry unless it is disabled through the

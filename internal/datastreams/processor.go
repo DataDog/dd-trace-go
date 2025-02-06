@@ -8,6 +8,7 @@ package datastreams
 import (
 	"context"
 	"fmt"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/remoteconfig"
 	"math"
 	"net/http"
 	"net/url"
@@ -191,6 +192,7 @@ type Processor struct {
 	version              string
 	// used for tests
 	timeSource func() time.Time
+	rc         *remoteconfig.ClientConfig
 }
 
 func (p *Processor) time() time.Time {
@@ -332,12 +334,14 @@ func (p *Processor) run(tick <-chan time.Time) {
 	}
 }
 
-func (p *Processor) Start() {
+func (p *Processor) Start(rc *remoteconfig.ClientConfig) {
 	if atomic.SwapUint64(&p.stopped, 0) == 0 {
 		// already running
 		log.Warn("(*Processor).Start called more than once. This is likely a programming error.")
 		return
 	}
+	p.rc = rc
+	p.startRemoteConfig()
 	p.stop = make(chan struct{})
 	p.flushRequest = make(chan chan<- struct{})
 	p.wg.Add(1)
@@ -368,6 +372,7 @@ func (p *Processor) Flush() {
 }
 
 func (p *Processor) Stop() {
+	p.stopRemoteConfig()
 	if atomic.SwapUint64(&p.stopped, 1) > 0 {
 		return
 	}
