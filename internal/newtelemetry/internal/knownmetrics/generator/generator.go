@@ -11,7 +11,6 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"io"
 	"net/http"
 	"os"
 	"os/exec"
@@ -32,7 +31,7 @@ const (
 )
 
 func base64Decode(encoded string) string {
-	decoded, _ := io.ReadAll(base64.NewDecoder(base64.StdEncoding, strings.NewReader(encoded)))
+	decoded, _ := base64.StdEncoding.DecodeString(encoded)
 	return string(decoded)
 }
 
@@ -78,7 +77,7 @@ func downloadFromDdgo(remoteURL, localPath, branch, token string, getMetricNames
 		return strings.Compare(i.Name, j.Name)
 	})
 
-	fp, err := os.OpenFile(localPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+	fp, err := os.Create(localPath)
 	if err != nil {
 		return err
 	}
