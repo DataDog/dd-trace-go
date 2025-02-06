@@ -936,6 +936,78 @@ func TestPropagationDefaults(t *testing.T) {
 	assert.Equal(*child.context.trace.priority, -1.)
 }
 
+func TestPropagationDefaultIncludesBaggage(t *testing.T) {
+	assert := assert.New(t)
+
+	tracer := newTracer()
+	defer tracer.Stop()
+	root := tracer.StartSpan("web.request").(*span)
+	root.SetBaggageItem("foo", "bar")
+	root.SetTag(ext.SamplingPriority, -1)
+	ctx := root.Context().(*spanContext)
+	headers := http.Header{}
+
+	// inject the spanContext
+	carrier := HTTPHeadersCarrier(headers)
+	err := tracer.Inject(ctx, carrier)
+	assert.Nil(err)
+
+	tid := strconv.FormatUint(root.TraceID, 10)
+	pid := strconv.FormatUint(root.SpanID, 10)
+
+	assert.Equal(headers.Get(DefaultTraceIDHeader), tid)
+	assert.Equal(headers.Get(DefaultParentIDHeader), pid)
+	assert.Equal(headers.Get(DefaultPriorityHeader), "-1")
+	assert.Equal(headers.Get(DefaultBaggageHeader), "foo=bar")
+
+	// retrieve the spanContext
+	propagated, err := tracer.Extract(carrier)
+	assert.Nil(err)
+	pctx := propagated.(*spanContext)
+
+	// compare if there is a Context match
+	assert.Equal(ctx.traceID, pctx.traceID)
+	assert.Equal(ctx.spanID, pctx.spanID)
+	assert.Equal(*ctx.trace.priority, -1.)
+	assert.Equal(ctx.baggage, pctx.baggage)
+
+	// ensure a child can be created
+	child := tracer.StartSpan("db.query", ChildOf(propagated)).(*span)
+
+	assert.NotEqual(uint64(0), child.TraceID)
+	assert.NotEqual(uint64(0), child.SpanID)
+	assert.Equal(root.SpanID, child.ParentID)
+	assert.Equal(root.TraceID, child.ParentID)
+	assert.Equal(*child.context.trace.priority, -1.)
+}
+
+func TestPropagationStyleOnlyBaggage(t *testing.T) {
+	t.Setenv(headerPropagationStyle, "baggage")
+	assert := assert.New(t)
+
+	tracer := newTracer()
+	defer tracer.Stop()
+	root := tracer.StartSpan("web.request").(*span)
+	root.SetBaggageItem("foo", "bar")
+	ctx := root.Context().(*spanContext)
+	headers := http.Header{}
+
+	// inject the spanContext
+	carrier := HTTPHeadersCarrier(headers)
+	err := tracer.Inject(ctx, carrier)
+	assert.Nil(err)
+
+	assert.Equal(headers.Get(DefaultBaggageHeader), "foo=bar")
+
+	// retrieve the spanContext
+	propagated, err := tracer.Extract(carrier)
+	assert.Nil(err)
+	pctx := propagated.(*spanContext)
+
+	// compare if there is a Context match
+	assert.Equal(ctx.baggage, pctx.baggage)
+}
+
 func TestTracerSamplingPriorityPropagation(t *testing.T) {
 	assert := assert.New(t)
 	tracer := newTracer()
