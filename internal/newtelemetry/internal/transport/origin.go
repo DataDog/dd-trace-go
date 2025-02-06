@@ -10,8 +10,8 @@ type Origin string
 
 const (
 	OriginDefault      Origin = "default"
-	OriginCode                = "code"
-	OriginDDConfig            = "dd_config"
-	OriginEnvVar              = "env_var"
-	OriginRemoteConfig        = "remote_config"
+	OriginCode         Origin = "code"
+	OriginDDConfig     Origin = "dd_config"
+	OriginEnvVar       Origin = "env_var"
+	OriginRemoteConfig Origin = "remote_config"
 )

@@ -10,7 +10,6 @@ import (
 	"math"
 	"sort"
 	"strings"
-	"sync"
 	"sync/atomic"
 	"time"
 
@@ -72,8 +71,8 @@ type metricHandle interface {
 
 type metrics struct {
 	store         internal.TypedSyncMap[metricKey, metricHandle]
+	pool          *internal.SyncPool[*metricPoint]
 	skipAllowlist bool // Debugging feature to skip the allowlist of known metrics
-	pool          sync.Pool
 }
 
 // LoadOrStore returns a MetricHandle for the given metric key. If the metric key does not exist, it will be created.
@@ -86,11 +85,11 @@ func (m *metrics) LoadOrStore(namespace Namespace, kind transport.MetricType, na
 	)
 	switch kind {
 	case transport.CountMetric:
-		handle, loaded = m.store.LoadOrStore(key, &count{metric: metric{key: key, pool: &m.pool}})
+		handle, loaded = m.store.LoadOrStore(key, &count{metric: metric{key: key, pool: m.pool}})
 	case transport.GaugeMetric:
-		handle, loaded = m.store.LoadOrStore(key, &gauge{metric: metric{key: key, pool: &m.pool}})
+		handle, loaded = m.store.LoadOrStore(key, &gauge{metric: metric{key: key, pool: m.pool}})
 	case transport.RateMetric:
-		handle, loaded = m.store.LoadOrStore(key, &rate{count: count{metric: metric{key: key, pool: &m.pool}}})
+		handle, loaded = m.store.LoadOrStore(key, &rate{count: count{metric: metric{key: key, pool: m.pool}}})
 		if !loaded {
 			// Initialize the interval start for rate metrics
 			r := handle.(*rate)
@@ -136,7 +135,7 @@ type metricPoint struct {
 type metric struct {
 	key  metricKey
 	ptr  atomic.Pointer[metricPoint]
-	pool *sync.Pool
+	pool *internal.SyncPool[*metricPoint]
 }
 
 func (m *metric) Get() float64 {
@@ -179,7 +178,7 @@ type count struct {
 }
 
 func (m *count) Submit(newValue float64) {
-	newPoint := m.pool.Get().(*metricPoint)
+	newPoint := m.pool.Get()
 	newPoint.time = time.Now()
 	for {
 		oldPoint := m.ptr.Load()
@@ -203,7 +202,7 @@ type gauge struct {
 }
 
 func (g *gauge) Submit(value float64) {
-	newPoint := g.pool.Get().(*metricPoint)
+	newPoint := g.pool.Get()
 	newPoint.time = time.Now()
 	newPoint.value = value
 	for {

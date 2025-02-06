@@ -16,6 +16,7 @@ import (
 
 type distributions struct {
 	store         internal.TypedSyncMap[metricKey, *distribution]
+	pool          *internal.SyncPool[[]float64]
 	skipAllowlist bool // Debugging feature to skip the allowlist of known metrics
 	queueSize     Range[int]
 }
@@ -24,7 +25,10 @@ type distributions struct {
 func (d *distributions) LoadOrStore(namespace Namespace, name string, tags []string) MetricHandle {
 	kind := transport.DistMetric
 	key := newMetricKey(namespace, kind, name, tags)
-	handle, loaded := d.store.LoadOrStore(key, &distribution{key: key, values: internal.NewRingQueue[float64](d.queueSize.Min, d.queueSize.Max)})
+	handle, loaded := d.store.LoadOrStore(key, &distribution{
+		key:    key,
+		values: internal.NewRingQueueWithPool[float64](d.queueSize.Min, d.queueSize.Max, d.pool),
+	})
 	if !loaded { // The metric is new: validate and log issues about it
 		if err := validateMetricKey(namespace, kind, name, tags); err != nil {
 			log.Warn("telemetry: %v", err)

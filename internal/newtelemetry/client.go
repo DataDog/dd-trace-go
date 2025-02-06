@@ -62,13 +62,12 @@ func newClient(tracerConfig internal.TracerConfig, config ClientConfig) (*client
 		},
 		metrics: metrics{
 			skipAllowlist: config.Debug,
-			pool: sync.Pool{
-				New: func() any { return &metricPoint{} },
-			},
+			pool:          internal.NewSyncPool(func() *metricPoint { return &metricPoint{} }),
 		},
 		distributions: distributions{
 			skipAllowlist: config.Debug,
 			queueSize:     config.DistributionsSize,
+			pool:          internal.NewSyncPool(func() []float64 { return make([]float64, config.DistributionsSize.Min) }),
 		},
 	}
 

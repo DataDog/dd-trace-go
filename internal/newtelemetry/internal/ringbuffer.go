@@ -16,7 +16,7 @@ type RingQueue[T any] struct {
 	// mu is the lock for the buffer, head and tail.
 	mu sync.Mutex
 	// pool is the pool of buffers. Normally there should only be one or 2 buffers in the pool.
-	pool          sync.Pool
+	pool          *SyncPool[[]T]
 	maxBufferSize int
 }
 
@@ -25,9 +25,16 @@ func NewRingQueue[T any](minSize, maxSize int) *RingQueue[T] {
 	return &RingQueue[T]{
 		buffer:        make([]T, minSize),
 		maxBufferSize: maxSize,
-		pool: sync.Pool{
-			New: func() any { return make([]T, minSize) },
-		},
+		pool:          NewSyncPool[[]T](func() []T { return make([]T, minSize) }),
+	}
+}
+
+// NewRingQueueWithPool creates a new RingQueue with a minimum size, a maximum size and a pool. Make sure the pool is properly initialized with the right type
+func NewRingQueueWithPool[T any](minSize, maxSize int, pool *SyncPool[[]T]) *RingQueue[T] {
+	return &RingQueue[T]{
+		buffer:        make([]T, minSize),
+		maxBufferSize: maxSize,
+		pool:          pool,
 	}
 }
 
@@ -121,7 +128,7 @@ func (rq *RingQueue[T]) GetBuffer() []T {
 
 func (rq *RingQueue[T]) getBufferLocked() []T {
 	prevBuf := rq.buffer
-	rq.buffer = rq.pool.Get().([]T)
+	rq.buffer = rq.pool.Get()
 	rq.head, rq.tail, rq.count = 0, 0, 0
 	return prevBuf
 }

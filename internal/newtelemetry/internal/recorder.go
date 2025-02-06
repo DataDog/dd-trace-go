@@ -11,16 +11,21 @@ type Recorder[T any] struct {
 	queue *RingQueue[func(T)]
 }
 
+// TODO: tweak these values once we get telemetry data from the telemetry client
+const (
+	minQueueCap = 16  // Initial queue capacity
+	maxQueueCap = 512 // Maximum queue capacity
+)
+
 // NewRecorder creates a new [Recorder] instance. with 512 as the maximum number of recorded functions before overflowing.
 func NewRecorder[T any]() Recorder[T] {
 	return Recorder[T]{
-		// TODO: tweak this value once we get telemetry data from the telemetry client
-		queue: NewRingQueue[func(T)](16, 512),
+		queue: NewRingQueue[func(T)](minQueueCap, maxQueueCap),
 	}
 }
 
-// Record takes a function and records it in the Recorder's queue. If the queue is full, it returns false.
-// Once Replay is called, all recorded functions will be replayed with object T as an argument in order of recording.
+// Record takes a function and records it in the [Recorder]'s queue. If the queue is full, it returns false.
+// Once [Recorder.Replay] is called, all recorded functions will be replayed with object T as an argument in order of recording.
 func (r Recorder[T]) Record(f func(T)) bool {
 	if r.queue == nil {
 		return true
