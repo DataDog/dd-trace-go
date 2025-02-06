@@ -13,13 +13,18 @@ import (
 
 type integrations struct {
 	mu           sync.Mutex
-	integrations []Integration
+	integrations []transport.Integration
 }
 
 func (i *integrations) Add(integration Integration) {
 	i.mu.Lock()
 	defer i.mu.Unlock()
-	i.integrations = append(i.integrations, integration)
+	i.integrations = append(i.integrations, transport.Integration{
+		Name:    integration.Name,
+		Version: integration.Version,
+		Enabled: integration.Error == "", // no error means the integration was enabled successfully
+		Error:   integration.Error,
+	})
 }
 
 func (i *integrations) Payload() transport.Payload {
@@ -28,16 +33,7 @@ func (i *integrations) Payload() transport.Payload {
 	if len(i.integrations) == 0 {
 		return nil
 	}
-
-	integrations := make([]transport.Integration, len(i.integrations))
-	for idx, integration := range i.integrations {
-		integrations[idx] = transport.Integration{
-			Name:    integration.Name,
-			Version: integration.Version,
-			Enabled: integration.Error == "", // no error means the integration was enabled successfully
-			Error:   integration.Error,
-		}
-	}
+	integrations := i.integrations
 	i.integrations = nil
 	return transport.AppIntegrationChange{
 		Integrations: integrations,

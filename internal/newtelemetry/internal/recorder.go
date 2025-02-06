@@ -12,15 +12,15 @@ type Recorder[T any] struct {
 }
 
 // TODO: tweak these values once we get telemetry data from the telemetry client
-const (
-	minQueueCap = 16  // Initial queue capacity
-	maxQueueCap = 512 // Maximum queue capacity
-)
+var queueCap = Range[int]{
+	Min: 16,  // Initial queue capacity
+	Max: 512, // Maximum queue capacity
+}
 
 // NewRecorder creates a new [Recorder] instance. with 512 as the maximum number of recorded functions before overflowing.
 func NewRecorder[T any]() Recorder[T] {
 	return Recorder[T]{
-		queue: NewRingQueue[func(T)](minQueueCap, maxQueueCap),
+		queue: NewRingQueue[func(T)](queueCap),
 	}
 }
 
@@ -49,5 +49,5 @@ func (r Recorder[T]) Replay(t T) {
 
 // Clear clears the Recorder's queue.
 func (r Recorder[T]) Clear() {
-	r.queue.ReleaseBuffer(r.queue.GetBuffer())
+	r.queue.Clear()
 }

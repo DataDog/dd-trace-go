@@ -70,7 +70,7 @@ type metricHandle interface {
 }
 
 type metrics struct {
-	store         internal.TypedSyncMap[metricKey, metricHandle]
+	store         internal.SyncMap[metricKey, metricHandle]
 	pool          *internal.SyncPool[*metricPoint]
 	skipAllowlist bool // Debugging feature to skip the allowlist of known metrics
 }

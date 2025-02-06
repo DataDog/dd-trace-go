@@ -58,6 +58,7 @@ func (c *configuration) Payload() transport.Payload {
 		c.seqID++
 		delete(c.config, conf.Name)
 	}
+
 	return transport.AppClientConfigurationChange{
 		Configuration: configs,
 	}

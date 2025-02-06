@@ -55,7 +55,7 @@ func newClient(tracerConfig internal.TracerConfig, config ClientConfig) (*client
 		writer:       writer,
 		clientConfig: config,
 		flushMapper:  mapper.NewDefaultMapper(config.HeartbeatInterval, config.ExtendedHeartbeatInterval),
-		payloadQueue: internal.NewRingQueue[transport.Payload](config.PayloadQueueSize.Min, config.PayloadQueueSize.Max),
+		payloadQueue: internal.NewRingQueue[transport.Payload](config.PayloadQueueSize),
 
 		dependencies: dependencies{
 			DependencyLoader: config.DependencyLoader,
@@ -86,19 +86,22 @@ func newClient(tracerConfig internal.TracerConfig, config ClientConfig) (*client
 		client.dataSources = append(client.dataSources, &client.metrics, &client.distributions)
 	}
 
-	client.flushTicker = internal.NewTicker(func() {
-		client.Flush()
-	}, config.FlushInterval.Min, config.FlushInterval.Max)
+	client.flushTicker = internal.NewTicker(client.Flush, config.FlushInterval)
 
 	return client, nil
 }
 
+// dataSources is where the data that will be flushed is coming from. I.e metrics, logs, configurations, etc.
+type dataSource interface {
+	Payload() transport.Payload
+}
+
 type client struct {
 	tracerConfig internal.TracerConfig
-	writer       internal.Writer
 	clientConfig ClientConfig
 
 	// Data sources
+	dataSources   []dataSource
 	integrations  integrations
 	products      products
 	configuration configuration
@@ -106,17 +109,18 @@ type client struct {
 	logger        logger
 	metrics       metrics
 	distributions distributions
-	dataSources   []interface {
-		Payload() transport.Payload
-	}
-
-	flushTicker *internal.Ticker
 
 	// flushMapper is the transformer to use for the next flush on the gathered bodies on this tick
 	flushMapper   mapper.Mapper
 	flushMapperMu sync.Mutex
 
-	// payloadQueue is used when we cannot flush previously built bodies
+	// flushTicker is the ticker that triggers a call to client.Flush every flush interval
+	flushTicker *internal.Ticker
+
+	// writer is the writer to use to send the payloads to the backend or the agent
+	writer internal.Writer
+
+	// payloadQueue is used when we cannot flush previously built payload for multiple reasons.
 	payloadQueue *internal.RingQueue[transport.Payload]
 }
 
@@ -196,7 +200,7 @@ func (c *client) Flush() {
 			return
 		}
 		log.Warn("panic while flushing telemetry data, stopping telemetry: %v", r)
-		telemetryClientEnabled = false
+		telemetryClientDisabled = true
 		if gc, ok := GlobalClient().(*client); ok && gc == c {
 			SwapClient(nil)
 		}
@@ -219,8 +223,8 @@ func (c *client) transform(payloads []transport.Payload) []transport.Payload {
 	return payloads
 }
 
-// flush sends all the data sources to the writer by let them flow through the given transformer function.
-// The transformer function is used to transform the bodies before sending them to the writer.
+// flush sends all the data sources to the writer after having sent them through the [transform] function.
+// It returns the amount of bytes sent to the writer.
 func (c *client) flush(payloads []transport.Payload) (int, error) {
 	payloads = c.transform(payloads)
 
@@ -228,12 +232,7 @@ func (c *client) flush(payloads []transport.Payload) (int, error) {
 		return 0, nil
 	}
 
-	if c.payloadQueue.IsEmpty() {
-		c.flushTicker.CanDecreaseSpeed()
-	} else if c.payloadQueue.IsFull() {
-		c.flushTicker.CanIncreaseSpeed()
-	}
-
+	emptyQueue := c.payloadQueue.IsEmpty()
 	// We enqueue the new payloads to preserve the order of the payloads
 	c.payloadQueue.Enqueue(payloads...)
 	payloads = c.payloadQueue.Flush()
@@ -249,7 +248,11 @@ func (c *client) flush(payloads []transport.Payload) (int, error) {
 		c.computeFlushMetrics(results, err)
 		if err != nil {
 			// We stop flushing when we encounter a fatal error, put the bodies in the queue and return the error
-			log.Error("error while flushing telemetry data: %v", err)
+			if results[len(results)-1].StatusCode == 413 { // If the payload is too large we have no way to divide it, we can only skip it...
+				log.Warn("telemetry: tried sending a payload that was too large, dropping it")
+				continue
+			}
+			log.Warn("error while flushing telemetry data: %v", err)
 			c.payloadQueue.Enqueue(payloads[i:]...)
 			return nbBytes, err
 		}
@@ -266,16 +269,16 @@ func (c *client) flush(payloads []transport.Payload) (int, error) {
 		nbBytes += successfulCall.PayloadByteSize
 	}
 
+	if emptyQueue && !speedIncreased { // If we did not send a very big payload, and we have no payloads
+		c.flushTicker.CanDecreaseSpeed()
+	}
+
 	if len(failedCalls) > 0 {
-		errName := "error"
-		if len(failedCalls) > 1 {
-			errName = "errors"
-		}
 		var errs []error
 		for _, call := range failedCalls {
 			errs = append(errs, call.Error)
 		}
-		log.Debug("non-fatal %s while flushing telemetry data: %v", errName, errors.Join(errs...))
+		log.Debug("non-fatal error(s) while flushing telemetry data: %v", errors.Join(errs...))
 	}
 
 	return nbBytes, nil
@@ -283,45 +286,46 @@ func (c *client) flush(payloads []transport.Payload) (int, error) {
 
 // computeFlushMetrics computes and submits the metrics for the flush operation using the output from the writer.Flush method.
 // It will submit the number of requests, responses, errors, the number of bytes sent and the duration of the call that was successful.
-func (c *client) computeFlushMetrics(results []internal.EndpointRequestResult, err error) {
-	if !c.clientConfig.InternalMetricsEnabled {
+func (c *client) computeFlushMetrics(results []internal.EndpointRequestResult, reason error) {
+	if !c.clientConfig.internalMetricsEnabled {
 		return
 	}
 
 	indexToEndpoint := func(i int) string {
-		if i == 0 {
+		if i == 0 && c.clientConfig.AgentURL != "" {
 			return "agent"
 		}
 		return "agentless"
 	}
 
 	for i, result := range results {
-		c.Count(transport.NamespaceTelemetry, "telemetry_api.requests", []string{"endpoint:" + indexToEndpoint(i)}).Submit(1)
+		endpoint := "endpoint:" + indexToEndpoint(i)
+		c.Count(transport.NamespaceTelemetry, "telemetry_api.requests", []string{endpoint}).Submit(1)
 		if result.StatusCode != 0 {
-			c.Count(transport.NamespaceTelemetry, "telemetry_api.responses", []string{"endpoint:" + indexToEndpoint(i), "status_code:" + strconv.Itoa(result.StatusCode)}).Submit(1)
+			c.Count(transport.NamespaceTelemetry, "telemetry_api.responses", []string{endpoint, "status_code:" + strconv.Itoa(result.StatusCode)}).Submit(1)
 		}
 
 		if result.Error != nil {
-			typ := "network"
+			typ := "type:network"
 			if os.IsTimeout(result.Error) {
-				typ = "timeout"
+				typ = "type:timeout"
 			}
 			var writerStatusCodeError *internal.WriterStatusCodeError
 			if errors.As(result.Error, &writerStatusCodeError) {
-				typ = "status_code"
+				typ = "type:status_code"
 			}
-			c.Count(transport.NamespaceTelemetry, "telemetry_api.errors", []string{"endpoint:" + indexToEndpoint(i), "type:" + typ}).Submit(1)
+			c.Count(transport.NamespaceTelemetry, "telemetry_api.errors", []string{endpoint, typ}).Submit(1)
 		}
 	}
 
-	if err != nil {
+	if reason != nil {
 		return
 	}
 
 	successfulCall := results[len(results)-1]
-	endpoint := indexToEndpoint(len(results) - 1)
-	c.Distribution(transport.NamespaceTelemetry, "telemetry_api.bytes", []string{"endpoint:" + endpoint}).Submit(float64(successfulCall.PayloadByteSize))
-	c.Distribution(transport.NamespaceTelemetry, "telemetry_api.ms", []string{"endpoint:" + endpoint}).Submit(float64(successfulCall.CallDuration.Milliseconds()))
+	endpoint := "endpoint:" + indexToEndpoint(len(results)-1)
+	c.Distribution(transport.NamespaceTelemetry, "telemetry_api.bytes", []string{endpoint}).Submit(float64(successfulCall.PayloadByteSize))
+	c.Distribution(transport.NamespaceTelemetry, "telemetry_api.ms", []string{endpoint}).Submit(float64(successfulCall.CallDuration.Milliseconds()))
 }
 
 func (c *client) AppStart() {

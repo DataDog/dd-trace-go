@@ -24,23 +24,17 @@ type dependencies struct {
 }
 
 func (d *dependencies) Payload() transport.Payload {
-	if d.DependencyLoader == nil {
-		return nil
-	}
-
-	d.mu.Lock()
-	defer d.mu.Unlock()
-
 	d.once.Do(func() {
 		deps := d.loadDeps()
 		// Requirement described here:
 		// https://github.com/DataDog/instrumentation-telemetry-api-docs/blob/main/GeneratedDocumentation/ApiDocs/v2/producing-telemetry.md#app-dependencies-loaded
-		if len(deps) > 2000 {
+		const maxPerPayload = 2000
+		if len(deps) > maxPerPayload {
 			log.Debug("telemetry: too many (%d) dependencies to send, sending over multiple bodies", len(deps))
 		}
 
-		for i := 0; i < len(deps); i += 2000 {
-			end := min(i+2000, len(deps))
+		for i := 0; i < len(deps); i += maxPerPayload {
+			end := min(i+maxPerPayload, len(deps))
 
 			d.payloads = append(d.payloads, transport.AppDependenciesLoaded{
 				Dependencies: deps[i:end],
@@ -48,10 +42,14 @@ func (d *dependencies) Payload() transport.Payload {
 		}
 	})
 
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
 	if len(d.payloads) == 0 {
 		return nil
 	}
 
+	// return payloads one by one
 	payloadZero := d.payloads[0]
 	if len(d.payloads) == 1 {
 		d.payloads = nil
@@ -64,7 +62,12 @@ func (d *dependencies) Payload() transport.Payload {
 	return payloadZero
 }
 
+// loadDeps returns the dependencies from the DependencyLoader, formatted for telemetry intake.
 func (d *dependencies) loadDeps() []transport.Dependency {
+	if d.DependencyLoader == nil {
+		return nil
+	}
+
 	deps, ok := d.DependencyLoader()
 	if !ok {
 		log.Debug("telemetry: could not read build info, no dependencies will be reported")

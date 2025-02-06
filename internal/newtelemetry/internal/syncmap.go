@@ -9,11 +9,11 @@ import (
 	"sync"
 )
 
-type TypedSyncMap[K comparable, V any] struct {
+type SyncMap[K comparable, V any] struct {
 	sync.Map
 }
 
-func (m *TypedSyncMap[K, V]) Load(key K) (value V, ok bool) {
+func (m *SyncMap[K, V]) Load(key K) (value V, ok bool) {
 	v, ok := m.Map.Load(key)
 	if !ok {
 		return
@@ -22,32 +22,31 @@ func (m *TypedSyncMap[K, V]) Load(key K) (value V, ok bool) {
 	return
 }
 
-func (m *TypedSyncMap[K, V]) Range(f func(key K, value V) bool) {
+func (m *SyncMap[K, V]) Range(f func(key K, value V) bool) {
 	m.Map.Range(func(key, value interface{}) bool {
 		return f(key.(K), value.(V))
 	})
 }
 
-func (m *TypedSyncMap[K, V]) Len() int {
+func (m *SyncMap[K, V]) Len() int {
 	count := 0
-	m.Map.Range(func(_, _ interface{}) bool {
+	m.Map.Range(func(_, _ any) bool {
 		count++
 		return true
 	})
 	return count
 }
 
-func (m *TypedSyncMap[K, V]) LoadOrStore(key K, value V) (actual V, loaded bool) {
+func (m *SyncMap[K, V]) LoadOrStore(key K, value V) (actual V, loaded bool) {
 	v, loaded := m.Map.LoadOrStore(key, value)
-	actual = v.(V)
-	return
+	return v.(V), loaded
 }
 
-func (m *TypedSyncMap[K, V]) LoadAndDelete(key K) (value V, loaded bool) {
+func (m *SyncMap[K, V]) LoadAndDelete(key K) (value V, loaded bool) {
 	v, loaded := m.Map.LoadAndDelete(key)
 	if !loaded {
-		return
+		var zero V
+		return zero, loaded
 	}
-	value = v.(V)
-	return
+	return v.(V), true
 }

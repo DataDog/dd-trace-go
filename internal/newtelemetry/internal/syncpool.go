@@ -9,12 +9,12 @@ import (
 	"sync"
 )
 
-// SyncPool is a wrapper around sync.Pool that provides type safety.
+// SyncPool is a wrapper around [sync.Pool] that provides type safety.
 type SyncPool[T any] struct {
 	pool *sync.Pool
 }
 
-// NewSyncPool creates a new SyncPool with the given new function.
+// NewSyncPool creates a new Pool with the given new function.
 func NewSyncPool[T any](new func() T) *SyncPool[T] {
 	return &SyncPool[T]{
 		pool: &sync.Pool{

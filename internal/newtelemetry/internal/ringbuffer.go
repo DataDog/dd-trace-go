@@ -16,35 +16,40 @@ type RingQueue[T any] struct {
 	// mu is the lock for the buffer, head and tail.
 	mu sync.Mutex
 	// pool is the pool of buffers. Normally there should only be one or 2 buffers in the pool.
-	pool          *SyncPool[[]T]
-	maxBufferSize int
+	pool *SyncPool[[]T]
+	// BufferSizes is the range of buffer sizes that the ring queue can have.
+	BufferSizes Range[int]
 }
 
 // NewRingQueue creates a new RingQueue with a minimum size and a maximum size.
-func NewRingQueue[T any](minSize, maxSize int) *RingQueue[T] {
+func NewRingQueue[T any](rang Range[int]) *RingQueue[T] {
 	return &RingQueue[T]{
-		buffer:        make([]T, minSize),
-		maxBufferSize: maxSize,
-		pool:          NewSyncPool[[]T](func() []T { return make([]T, minSize) }),
+		buffer:      make([]T, rang.Min),
+		pool:        NewSyncPool[[]T](func() []T { return make([]T, rang.Min) }),
+		BufferSizes: rang,
 	}
 }
 
 // NewRingQueueWithPool creates a new RingQueue with a minimum size, a maximum size and a pool. Make sure the pool is properly initialized with the right type
-func NewRingQueueWithPool[T any](minSize, maxSize int, pool *SyncPool[[]T]) *RingQueue[T] {
+func NewRingQueueWithPool[T any](rang Range[int], pool *SyncPool[[]T]) *RingQueue[T] {
 	return &RingQueue[T]{
-		buffer:        make([]T, minSize),
-		maxBufferSize: maxSize,
-		pool:          pool,
+		buffer:      make([]T, rang.Min),
+		pool:        pool,
+		BufferSizes: rang,
 	}
 }
 
 // Length returns the number of elements currently stored in the queue.
 func (rq *RingQueue[T]) Length() int {
+	rq.mu.Lock()
+	defer rq.mu.Unlock()
+
 	return rq.count
 }
 
 func (rq *RingQueue[T]) resizeLocked() {
-	newBuf := make([]T, min(rq.count*2, rq.maxBufferSize))
+	newBuf := make([]T, rq.BufferSizes.Clamp(rq.count*2))
+	defer rq.releaseBuffer(rq.buffer)
 
 	if rq.tail > rq.head {
 		copy(newBuf, rq.buffer[rq.head:rq.tail])
@@ -61,7 +66,7 @@ func (rq *RingQueue[T]) resizeLocked() {
 func (rq *RingQueue[T]) enqueueLocked(elem T) bool {
 	spaceLeft := true
 	if rq.count == len(rq.buffer) {
-		if len(rq.buffer) == rq.maxBufferSize {
+		if len(rq.buffer) == rq.BufferSizes.Max {
 			spaceLeft = false
 			// bitwise modulus
 			rq.head = (rq.head + 1) % len(rq.buffer)
@@ -81,20 +86,21 @@ func (rq *RingQueue[T]) enqueueLocked(elem T) bool {
 func (rq *RingQueue[T]) ReversePeek() T {
 	rq.mu.Lock()
 	defer rq.mu.Unlock()
+	if rq.count == 0 {
+		var zero T
+		return zero
+	}
 	return rq.buffer[(rq.tail-1+len(rq.buffer))%len(rq.buffer)]
 }
 
-// Peek returns the first element that was enqueued without removing it.
-func (rq *RingQueue[T]) Peek() T {
-	rq.mu.Lock()
-	defer rq.mu.Unlock()
-	return rq.buffer[rq.head]
-}
-
-// Enqueue adds one or multiple values to the buffer. returns false if the buffer is full.
+// Enqueue adds one or multiple values to the buffer. Returns false if at least one item had to be pulled out from the queue to make space for new ones
 func (rq *RingQueue[T]) Enqueue(vals ...T) bool {
 	rq.mu.Lock()
 	defer rq.mu.Unlock()
+	if len(vals) == 0 {
+		return rq.IsFull()
+	}
+
 	spaceLeft := true
 	for _, val := range vals {
 		spaceLeft = rq.enqueueLocked(val)
@@ -119,8 +125,8 @@ func (rq *RingQueue[T]) Dequeue() T {
 	return ret
 }
 
-// GetBuffer returns the current buffer and resets it.
-func (rq *RingQueue[T]) GetBuffer() []T {
+// getBuffer returns the current buffer and resets it.
+func (rq *RingQueue[T]) getBuffer() []T {
 	rq.mu.Lock()
 	defer rq.mu.Unlock()
 	return rq.getBufferLocked()
@@ -140,7 +146,7 @@ func (rq *RingQueue[T]) Flush() []T {
 	buf := rq.getBufferLocked()
 	rq.mu.Unlock()
 
-	defer rq.ReleaseBuffer(buf)
+	defer rq.releaseBuffer(buf)
 
 	copyBuf := make([]T, count)
 	for i := 0; i < count; i++ {
@@ -150,8 +156,8 @@ func (rq *RingQueue[T]) Flush() []T {
 	return copyBuf
 }
 
-// ReleaseBuffer returns the buffer to the pool.
-func (rq *RingQueue[T]) ReleaseBuffer(buf []T) {
+// releaseBuffer returns the buffer to the pool.
+func (rq *RingQueue[T]) releaseBuffer(buf []T) {
 	var zero T
 	buf = buf[:cap(buf)] // Make sure nobody reduced the length of the buffer
 	for i := range buf {
@@ -162,10 +168,7 @@ func (rq *RingQueue[T]) ReleaseBuffer(buf []T) {
 
 // IsEmpty returns true if the buffer is empty.
 func (rq *RingQueue[T]) IsEmpty() bool {
-	rq.mu.Lock()
-	defer rq.mu.Unlock()
-
-	return rq.count == 0
+	return rq.Length() == 0
 }
 
 // IsFull returns true if the buffer is full and cannot accept more elements.
@@ -173,5 +176,16 @@ func (rq *RingQueue[T]) IsFull() bool {
 	rq.mu.Lock()
 	defer rq.mu.Unlock()
 
-	return len(rq.buffer) == rq.count && len(rq.buffer) == rq.maxBufferSize
+	return len(rq.buffer) == rq.count && len(rq.buffer) == rq.BufferSizes.Max
+}
+
+// Clear removes all elements from the buffer.
+func (rq *RingQueue[T]) Clear() {
+	rq.mu.Lock()
+	defer rq.mu.Unlock()
+	rq.head, rq.tail, rq.count = 0, 0, 0
+	var zero T
+	for i := range rq.buffer {
+		rq.buffer[i] = zero
+	}
 }

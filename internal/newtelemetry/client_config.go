@@ -17,29 +17,21 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/newtelemetry/internal"
 )
 
-type Range[T any] struct {
-	Min T
-	Max T
-}
-
 type ClientConfig struct {
 	// DependencyLoader determines how dependency data is sent via telemetry.
 	// If nil, the library should not send the app-dependencies-loaded event.
 	// The default value is [debug.ReadBuildInfo] since Application Security Monitoring uses this data to detect vulnerabilities in the ASM-SCA product
-	// This can be controlled via the env var DD_TELEMETRY_DEPENDENCY_COLLECTION_ENABLED
+	// This can only be controlled via the env var DD_TELEMETRY_DEPENDENCY_COLLECTION_ENABLED
 	DependencyLoader func() (*debug.BuildInfo, bool)
 
 	// MetricsEnabled determines whether metrics are sent via telemetry.
 	// If false, libraries should not send the generate-metrics or distributions events.
-	// This can be controlled via the env var DD_TELEMETRY_METRICS_ENABLED
+	// This can only be controlled via the env var DD_TELEMETRY_METRICS_ENABLED
 	MetricsEnabled bool
 
 	// LogsEnabled determines whether logs are sent via telemetry.
-	// This can be controlled via the env var DD_TELEMETRY_LOG_COLLECTION_ENABLED
+	// This can only be controlled via the env var DD_TELEMETRY_LOG_COLLECTION_ENABLED
 	LogsEnabled bool
-
-	// InternalMetricsEnabled determines whether client stats metrics are sent via telemetry.
-	InternalMetricsEnabled bool
 
 	// AgentlessURL is the full URL to the agentless telemetry endpoint. (optional)
 	// Defaults to https://instrumentation-telemetry-intake.datadoghq.com/api/v2/apmtelemetry
@@ -61,16 +53,16 @@ type ClientConfig struct {
 
 	// FlushInterval is the interval at which the client flushes the data.
 	// By default, the client will start to Flush at 60s intervals and will reduce the interval based on the load till it hit 15s
-	// Both values cannot be higher than 60s because the heartbeat need to be sent at least every 60s.
-	FlushInterval Range[time.Duration]
+	// Both values cannot be higher than 60s because the heartbeat need to be sent at least every 60s. Values will be clamped otherwise.
+	FlushInterval internal.Range[time.Duration]
 
-	// PayloadQueueSize is the size of the payload queue.
-	PayloadQueueSize Range[int]
+	// PayloadQueueSize is the size of the payload queue. Default range is [4, 32].
+	PayloadQueueSize internal.Range[int]
 
-	// DistributionsSize is the size of the distribution queue.
-	DistributionsSize Range[int]
+	// DistributionsSize is the size of the distribution queue. Default range is [2^8, 2^14].
+	DistributionsSize internal.Range[int]
 
-	// Debug enables debug mode for the telemetry clientt and sent it to the backend so it logs the request
+	// Debug enables debug mode for the telemetry client and sent it to the backend so it logs the request
 	Debug bool
 
 	// APIKey is the API key to use for sending telemetry to the agentless endpoint. (using DD_API_KEY env var by default)
@@ -80,6 +72,9 @@ type ClientConfig struct {
 	// This is necessary because backend won't allow bodies larger than 5MB.
 	// The default value here will be 2MB to take into account the large inaccuracy in estimating the size of bodies
 	EarlyFlushPayloadSize int
+
+	// internalMetricsEnabled determines whether client stats metrics are sent via telemetry. Default to true.
+	internalMetricsEnabled bool
 }
 
 var (
@@ -88,29 +83,37 @@ var (
 	agentlessURL = "https://instrumentation-telemetry-intake.datadoghq.com/api/v2/apmtelemetry"
 
 	// defaultHeartbeatInterval is the default interval at which the agent sends a heartbeat.
-	defaultHeartbeatInterval = 60 // seconds
+	defaultHeartbeatInterval = time.Minute // seconds
 
 	// defaultExtendedHeartbeatInterval is the default interval at which the agent sends an extended heartbeat.
 	defaultExtendedHeartbeatInterval = 24 * time.Hour
 
 	// defaultMinFlushInterval is the default interval at which the client flushes the data.
-	defaultMinFlushInterval = 15.0 * time.Second
+	defaultFlushIntervalRange = internal.Range[time.Duration]{
+		Min: 15 * time.Second,
+		Max: 60 * time.Second,
+	}
 
-	// defaultMaxFlushInterval is the default interval at which the client flushes the data.
-	defaultMaxFlushInterval = 60.0 * time.Second
+	defaultAuthorizedHearbeatRange = internal.Range[time.Duration]{
+		Min: time.Microsecond,
+		Max: time.Minute,
+	}
 
 	agentProxyAPIPath = "/telemetry/proxy/api/v2/apmtelemetry"
 
 	defaultEarlyFlushPayloadSize = 2 * 1024 * 1024 // 2MB
 
-	// maxPayloadSize is specified by the backend to be 5MB. The goal is to never reach this value otherwise our data will be silently dropped.
-	maxPayloadSize = 5 * 1024 * 1024 // 5MB
+	// authorizedPayloadSize.Max is specified by the backend to be 5MB. The goal is to never reach this value otherwise our data will be silently dropped.
+	authorizedPayloadSize = internal.Range[int]{
+		Min: 0,
+		Max: 5 * 1024 * 1024, // 5MB
+	}
 
 	// TODO: tweak this value once we get real telemetry data from the telemetry client
 	// This means that, by default, we incur dataloss if we spend ~30mins without flushing, considering we send telemetry data this looks reasonable.
 	// This also means that in the worst case scenario, memory-wise, the app is stabilized after running for 30mins.
 	// Ideally both values should be power of 2 because of the way the ring queue is implemented as it's growing
-	defaultPayloadQueueSize = Range[int]{
+	defaultPayloadQueueSize = internal.Range[int]{
 		Min: 4,
 		Max: 32,
 	}
@@ -120,31 +123,26 @@ var (
 	// Considering we add a point per user request on a simple http server, we would be losing data after 2^14 requests per minute or about 280 requests per second or under 3ms per request.
 	// If this throughput is constant, the telemetry client flush ticker speed will increase to, at best, double twice to flush 15 seconds of data each time.
 	// Which will bring our max throughput to 1100 points per second or about 750µs per request.
-	distributionsSize = Range[int]{
+	distributionsSize = internal.Range[int]{
 		Min: 1 << 8,
 		Max: 1 << 14,
 	}
 )
 
-// clamp squeezes a value between a minimum and maximum value.
-func clamp[T ~int64](value, minVal, maxVal T) T {
-	return max(min(maxVal, value), minVal)
-}
-
 func (config ClientConfig) validateConfig() error {
-	if config.HeartbeatInterval > 60*time.Second {
+	if config.HeartbeatInterval > time.Minute {
 		return fmt.Errorf("HeartbeatInterval cannot be higher than 60s, got %v", config.HeartbeatInterval)
 	}
 
-	if config.FlushInterval.Min > 60*time.Second || config.FlushInterval.Max > 60*time.Second {
+	if config.FlushInterval.Min > time.Minute || config.FlushInterval.Max > time.Minute {
 		return fmt.Errorf("FlushIntervalRange cannot be higher than 60s, got Min: %v, Max: %v", config.FlushInterval.Min, config.FlushInterval.Max)
 	}
 
-	if config.FlushInterval.Min > config.FlushInterval.Max {
+	if !config.FlushInterval.IsOrdered() {
 		return fmt.Errorf("FlushIntervalRange Min cannot be higher than Max, got Min: %v, Max: %v", config.FlushInterval.Min, config.FlushInterval.Max)
 	}
 
-	if config.EarlyFlushPayloadSize > maxPayloadSize || config.EarlyFlushPayloadSize <= 0 {
+	if !authorizedPayloadSize.Contains(config.EarlyFlushPayloadSize) {
 		return fmt.Errorf("EarlyFlushPayloadSize must be between 0 and 5MB, got %v", config.EarlyFlushPayloadSize)
 	}
 
@@ -159,24 +157,27 @@ func defaultConfig(config ClientConfig) ClientConfig {
 
 	if config.APIKey == "" {
 		config.APIKey = os.Getenv("DD_API_KEY")
+		if config.APIKey == "" {
+			config.APIKey = os.Getenv("DD-API-KEY")
+		}
 	}
 
 	if config.HeartbeatInterval == 0 {
-		config.HeartbeatInterval = time.Duration(globalinternal.IntEnv("DD_TELEMETRY_HEARTBEAT_INTERVAL", defaultHeartbeatInterval)) * time.Second
+		config.HeartbeatInterval = globalinternal.DurationEnv("DD_TELEMETRY_HEARTBEAT_INTERVAL", defaultHeartbeatInterval)
 	} else {
-		config.HeartbeatInterval = clamp(config.HeartbeatInterval, time.Microsecond, 60*time.Second)
+		config.HeartbeatInterval = defaultAuthorizedHearbeatRange.Clamp(config.HeartbeatInterval)
 	}
 
 	if config.FlushInterval.Min == 0 {
-		config.FlushInterval.Min = defaultMinFlushInterval
+		config.FlushInterval.Min = defaultFlushIntervalRange.Min
 	} else {
-		config.FlushInterval.Min = clamp(config.FlushInterval.Min, time.Microsecond, 60*time.Second)
+		config.FlushInterval.Min = defaultAuthorizedHearbeatRange.Clamp(config.FlushInterval.Min)
 	}
 
 	if config.FlushInterval.Max == 0 {
-		config.FlushInterval.Max = defaultMaxFlushInterval
+		config.FlushInterval.Max = defaultFlushIntervalRange.Max
 	} else {
-		config.FlushInterval.Max = clamp(config.FlushInterval.Max, time.Microsecond, 60*time.Second)
+		config.FlushInterval.Max = defaultAuthorizedHearbeatRange.Clamp(config.FlushInterval.Max)
 	}
 
 	if config.DependencyLoader == nil && globalinternal.BoolEnv("DD_TELEMETRY_DEPENDENCY_COLLECTION_ENABLED", true) {
@@ -191,8 +192,8 @@ func defaultConfig(config ClientConfig) ClientConfig {
 		config.LogsEnabled = globalinternal.BoolEnv("DD_TELEMETRY_LOG_COLLECTION_ENABLED", true)
 	}
 
-	if !config.InternalMetricsEnabled {
-		config.InternalMetricsEnabled = true
+	if !config.internalMetricsEnabled {
+		config.internalMetricsEnabled = true
 	}
 
 	if config.EarlyFlushPayloadSize == 0 {

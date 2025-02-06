@@ -11,7 +11,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/newtelemetry"
 )
 
-func divideArgs(args ...any) ([]newtelemetry.LogOption, []any) {
+func divideArgs(args []any) ([]newtelemetry.LogOption, []any) {
 	if len(args) == 0 {
 		return nil, nil
 	}
@@ -30,18 +30,20 @@ func divideArgs(args ...any) ([]newtelemetry.LogOption, []any) {
 
 // Debug sends a telemetry payload with a debug log message to the backend.
 func Debug(format string, args ...any) {
-	options, fmtArgs := divideArgs(args...)
-	newtelemetry.Log(newtelemetry.LogDebug, fmt.Sprintf(format, fmtArgs...), options...)
+	log(newtelemetry.LogDebug, format, args)
 }
 
 // Warn sends a telemetry payload with a warning log message to the backend.
 func Warn(format string, args ...any) {
-	options, fmtArgs := divideArgs(args...)
-	newtelemetry.Log(newtelemetry.LogWarn, fmt.Sprintf(format, fmtArgs...), options...)
+	log(newtelemetry.LogWarn, format, args)
 }
 
 // Error sends a telemetry payload with an error log message to the backend.
 func Error(format string, args ...any) {
-	options, fmtArgs := divideArgs(args...)
-	newtelemetry.Log(newtelemetry.LogError, fmt.Sprintf(format, fmtArgs...), options...)
+	log(newtelemetry.LogError, format, args)
+}
+
+func log(lvl newtelemetry.LogLevel, format string, args []any) {
+	opts, fmtArgs := divideArgs(args)
+	newtelemetry.Log(lvl, fmt.Sprintf(format, fmtArgs...), opts...)
 }

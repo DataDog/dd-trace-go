@@ -13,30 +13,26 @@ import (
 type TickFunc func()
 
 type Ticker struct {
-	*time.Ticker
+	ticker *time.Ticker
 
 	tickSpeedMu sync.Mutex
 	tickSpeed   time.Duration
 
-	maxInterval time.Duration
-	minInterval time.Duration
+	interval Range[time.Duration]
 
 	tickFunc TickFunc
 }
 
-func NewTicker(tickFunc TickFunc, minInterval, maxInterval time.Duration) *Ticker {
+func NewTicker(tickFunc TickFunc, interval Range[time.Duration]) *Ticker {
 	ticker := &Ticker{
-		Ticker:    time.NewTicker(maxInterval),
-		tickSpeed: maxInterval,
-
-		maxInterval: maxInterval,
-		minInterval: minInterval,
-
-		tickFunc: tickFunc,
+		ticker:    time.NewTicker(interval.Max),
+		tickSpeed: interval.Max,
+		interval:  interval,
+		tickFunc:  tickFunc,
 	}
 
 	go func() {
-		for range ticker.C {
+		for range ticker.ticker.C {
 			tickFunc()
 		}
 	}()
@@ -48,14 +44,30 @@ func (t *Ticker) CanIncreaseSpeed() {
 	t.tickSpeedMu.Lock()
 	defer t.tickSpeedMu.Unlock()
 
-	t.tickSpeed = max(t.tickSpeed/2, t.minInterval)
-	t.Reset(t.tickSpeed)
+	oldTickSpeed := t.tickSpeed
+	t.tickSpeed = t.interval.Clamp(t.tickSpeed / 2)
+
+	if oldTickSpeed == t.tickSpeed {
+		return
+	}
+
+	t.ticker.Reset(t.tickSpeed)
 }
 
 func (t *Ticker) CanDecreaseSpeed() {
 	t.tickSpeedMu.Lock()
 	defer t.tickSpeedMu.Unlock()
 
-	t.tickSpeed = min(t.tickSpeed*2, t.maxInterval)
-	t.Reset(t.tickSpeed)
+	oldTickSpeed := t.tickSpeed
+	t.tickSpeed = t.interval.Clamp(t.tickSpeed * 2)
+
+	if oldTickSpeed == t.tickSpeed {
+		return
+	}
+
+	t.ticker.Reset(t.tickSpeed)
+}
+
+func (t *Ticker) Stop() {
+	t.ticker.Stop()
 }

@@ -962,8 +962,8 @@ func TestClientFlush(t *testing.T) {
 			config := defaultConfig(test.clientConfig)
 			config.AgentURL = "http://localhost:8126"
 			config.DependencyLoader = test.clientConfig.DependencyLoader             // Don't use the default dependency loader
-			config.InternalMetricsEnabled = test.clientConfig.InternalMetricsEnabled // only enabled internal metrics when explicitly set
-			config.InternalMetricsEnabled = false
+			config.internalMetricsEnabled = test.clientConfig.internalMetricsEnabled // only enabled internal metrics when explicitly set
+			config.internalMetricsEnabled = false
 			c, err := newClient(tracerConfig, config)
 			require.NoError(t, err)
 			defer c.Close()
@@ -1286,7 +1286,7 @@ func BenchmarkWorstCaseScenarioFloodLogging(b *testing.B) {
 	clientConfig := ClientConfig{
 		HeartbeatInterval:         time.Hour,
 		ExtendedHeartbeatInterval: time.Hour,
-		FlushInterval:             Range[time.Duration]{Min: time.Second, Max: time.Second},
+		FlushInterval:             internal.Range[time.Duration]{Min: time.Second, Max: time.Second},
 		AgentURL:                  "http://localhost:8126",
 
 		// Empty transport to avoid sending data to the agent
@@ -1453,8 +1453,8 @@ func BenchmarkWorstCaseScenarioFloodMetrics(b *testing.B) {
 	clientConfig := ClientConfig{
 		HeartbeatInterval:         time.Hour,
 		ExtendedHeartbeatInterval: time.Hour,
-		FlushInterval:             Range[time.Duration]{Min: time.Second, Max: time.Second},
-		DistributionsSize:         Range[int]{256, -1},
+		FlushInterval:             internal.Range[time.Duration]{Min: time.Second, Max: time.Second},
+		DistributionsSize:         internal.Range[int]{Min: 256, Max: -1},
 		AgentURL:                  "http://localhost:8126",
 
 		// Empty transport to avoid sending data to the agent

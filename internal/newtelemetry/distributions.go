@@ -15,10 +15,10 @@ import (
 )
 
 type distributions struct {
-	store         internal.TypedSyncMap[metricKey, *distribution]
+	store         internal.SyncMap[metricKey, *distribution]
 	pool          *internal.SyncPool[[]float64]
+	queueSize     internal.Range[int]
 	skipAllowlist bool // Debugging feature to skip the allowlist of known metrics
-	queueSize     Range[int]
 }
 
 // LoadOrStore returns a MetricHandle for the given distribution metric. If the metric key does not exist, it will be created.
@@ -27,7 +27,7 @@ func (d *distributions) LoadOrStore(namespace Namespace, name string, tags []str
 	key := newMetricKey(namespace, kind, name, tags)
 	handle, loaded := d.store.LoadOrStore(key, &distribution{
 		key:    key,
-		values: internal.NewRingQueueWithPool[float64](d.queueSize.Min, d.queueSize.Max, d.pool),
+		values: internal.NewRingQueueWithPool[float64](d.queueSize, d.pool),
 	})
 	if !loaded { // The metric is new: validate and log issues about it
 		if err := validateMetricKey(namespace, kind, name, tags); err != nil {
@@ -57,13 +57,13 @@ func (d *distributions) Payload() transport.Payload {
 type distribution struct {
 	key    metricKey
 	values *internal.RingQueue[float64]
-}
 
-var distrLogLossOnce sync.Once
+	logLoss sync.Once
+}
 
 func (d *distribution) Submit(value float64) {
 	if !d.values.Enqueue(value) {
-		distrLogLossOnce.Do(func() {
+		d.logLoss.Do(func() {
 			log.Debug("telemetry: distribution %q is losing values because the buffer is full", d.key.name)
 		})
 	}

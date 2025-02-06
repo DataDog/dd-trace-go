@@ -22,7 +22,7 @@ var (
 	globalClientRecorder = internal.NewRecorder[Client]()
 
 	// metricsHandleSwappablePointers contains all the swappableMetricHandle, used to replay actions done before the actual MetricHandle is set
-	metricsHandleSwappablePointers internal.TypedSyncMap[metricKey, *swappableMetricHandle]
+	metricsHandleSwappablePointers internal.SyncMap[metricKey, *swappableMetricHandle]
 )
 
 // GlobalClient returns the global telemetry client.
@@ -37,19 +37,20 @@ func GlobalClient() Client {
 // StartApp starts the telemetry client with the given client send the app-started telemetry and sets it as the global (*client)
 // then calls client.Flush on the client asynchronously.
 func StartApp(client Client) {
-	if Disabled() || GlobalClient() != nil {
+	if Disabled() {
+		return
+	}
+
+	if GlobalClient() != nil {
+		log.Debug("telemetry: StartApp called multiple times, ignoring")
 		return
 	}
 
 	SwapClient(client)
 
-	globalClientRecorder.Replay(client)
-
 	client.AppStart()
 
-	go func() {
-		client.Flush()
-	}()
+	go client.Flush()
 }
 
 // SwapClient swaps the global client with the given client and Flush the old (*client).
@@ -63,6 +64,7 @@ func SwapClient(client Client) {
 	}
 
 	if client != nil {
+		globalClientRecorder.Replay(client)
 		// Swap all metrics hot pointers to the new MetricHandle
 		metricsHandleSwappablePointers.Range(func(_ metricKey, value *swappableMetricHandle) bool {
 			value.swap(value.maker(client))
@@ -89,10 +91,6 @@ func MockClient(client Client) func() {
 
 // StopApp creates the app-stopped telemetry, adding to the queue and Flush all the queue before stopping the (*client).
 func StopApp() {
-	if Disabled() || GlobalClient() == nil {
-		return
-	}
-
 	if client := globalClient.Swap(nil); client != nil && *client != nil {
 		(*client).AppStop()
 		(*client).Flush()
@@ -100,38 +98,40 @@ func StopApp() {
 	}
 }
 
-var telemetryClientEnabled = globalinternal.BoolEnv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", true)
+var telemetryClientDisabled = !globalinternal.BoolEnv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", true)
 
 // Disabled returns whether instrumentation telemetry is disabled
 // according to the DD_INSTRUMENTATION_TELEMETRY_ENABLED env var
 func Disabled() bool {
-	return !telemetryClientEnabled
+	return telemetryClientDisabled
 }
 
 // Count creates a new metric handle for the given parameters that can be used to submit values.
-// Count will always return a MetricHandle, even if telemetry is disabled or the client has yet to start.
-// The MetricHandle is then swapped with the actual MetricHandle once the client is started.
+// Count will always return a [MetricHandle], even if telemetry is disabled or the client has yet to start.
+// The [MetricHandle] is then swapped with the actual [MetricHandle] once the client is started.
 func Count(namespace Namespace, name string, tags []string) MetricHandle {
 	return globalClientNewMetric(namespace, transport.CountMetric, name, tags)
 }
 
 // Rate creates a new metric handle for the given parameters that can be used to submit values.
-// Rate will always return a MetricHandle, even if telemetry is disabled or the client has yet to start.
-// The MetricHandle is then swapped with the actual MetricHandle once the client is started.
+// Rate will always return a [MetricHandle], even if telemetry is disabled or the client has yet to start.
+// The [MetricHandle] is then swapped with the actual [MetricHandle] once the client is started.
 func Rate(namespace Namespace, name string, tags []string) MetricHandle {
 	return globalClientNewMetric(namespace, transport.RateMetric, name, tags)
 }
 
 // Gauge creates a new metric handle for the given parameters that can be used to submit values.
-// Gauge will always return a MetricHandle, even if telemetry is disabled or the client has yet to start.
-// The MetricHandle is then swapped with the actual MetricHandle once the client is started.
+// Gauge will always return a [MetricHandle], even if telemetry is disabled or the client has yet to start.
+// The [MetricHandle] is then swapped with the actual [MetricHandle] once the client is started.
 func Gauge(namespace Namespace, name string, tags []string) MetricHandle {
 	return globalClientNewMetric(namespace, transport.GaugeMetric, name, tags)
 }
 
 // Distribution creates a new metric handle for the given parameters that can be used to submit values.
-// Distribution will always return a MetricHandle, even if telemetry is disabled or the client has yet to start.
-// The MetricHandle is then swapped with the actual MetricHandle once the client is started.
+// Distribution will always return a [MetricHandle], even if telemetry is disabled or the client has yet to start.
+// The [MetricHandle] is then swapped with the actual [MetricHandle] once the client is started.
+// The Get() method of the [MetricHandle] will return the last value submitted.
+// Distribution MetricHandle is advised to be held in a variable more than the rest of the metric types to avoid too many useless allocations.
 func Distribution(namespace Namespace, name string, tags []string) MetricHandle {
 	return globalClientNewMetric(namespace, transport.DistMetric, name, tags)
 }

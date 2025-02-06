@@ -15,7 +15,7 @@ import (
 // different products used by the same application
 type Namespace = transport.Namespace
 
-// Goland is having a hard time with the following const block, it keeps deleting the type of the consts
+// Goland is having a hard time with the following const block, it keeps deleting the type
 //
 //goland:noinspection GoVarAndConstTypeMayBeOmitted
 const (
@@ -32,7 +32,7 @@ const (
 // Origin describes the source of a configuration change
 type Origin = transport.Origin
 
-// Goland is having a hard time with the following const block, it keeps deleting the type of the consts
+// Goland is having a hard time with the following const block, it keeps deleting the type
 //
 //goland:noinspection GoVarAndConstTypeMayBeOmitted
 const (
@@ -41,6 +41,18 @@ const (
 	OriginDDConfig     Origin = transport.OriginDDConfig
 	OriginEnvVar       Origin = transport.OriginEnvVar
 	OriginRemoteConfig Origin = transport.OriginRemoteConfig
+)
+
+// LogLevel describes the level of a log message
+type LogLevel = transport.LogLevel
+
+// Goland is having a hard time with the following const block, it keeps deleting the type
+//
+//goland:noinspection GoVarAndConstTypeMayBeOmitted
+const (
+	LogDebug LogLevel = transport.LogLevelDebug
+	LogWarn  LogLevel = transport.LogLevelWarn
+	LogError LogLevel = transport.LogLevelError
 )
 
 // MetricHandle can be used to submit different values for the same metric.

@@ -31,7 +31,7 @@ func WithTags(tags []string) LogOption {
 // that is generated inside the WithStacktrace function. Logs demultiplication does not take the stacktrace into account.
 // This means that a log that has been demultiplicated will only show of the first log.
 func WithStacktrace() LogOption {
-	buf := make([]byte, 1<<12)
+	buf := make([]byte, 4_096)
 	buf = buf[:runtime.Stack(buf, false)]
 	return func(_ *loggerKey, value *loggerValue) {
 		if value == nil {
@@ -40,14 +40,6 @@ func WithStacktrace() LogOption {
 		value.stacktrace = string(buf)
 	}
 }
-
-type LogLevel = transport.LogLevel
-
-const (
-	LogDebug = transport.LogLevelDebug
-	LogWarn  = transport.LogLevelWarn
-	LogError = transport.LogLevelError
-)
 
 type loggerKey struct {
 	tags    string
@@ -62,7 +54,7 @@ type loggerValue struct {
 }
 
 type logger struct {
-	store internal.TypedSyncMap[loggerKey, *loggerValue]
+	store internal.SyncMap[loggerKey, *loggerValue]
 }
 
 func (logger *logger) Add(level LogLevel, text string, opts ...LogOption) {

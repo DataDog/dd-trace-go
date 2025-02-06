@@ -21,6 +21,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/hostname"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/newtelemetry/internal/transport"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/osinfo"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
@@ -122,6 +123,10 @@ type WriterConfig struct {
 }
 
 func NewWriter(config WriterConfig) (Writer, error) {
+	if len(config.Endpoints) == 0 {
+		return nil, fmt.Errorf("telemetry/writer: no endpoints provided")
+	}
+
 	if config.HTTPClient == nil {
 		config.HTTPClient = defaultHTTPClient
 	}
@@ -132,10 +137,7 @@ func NewWriter(config WriterConfig) (Writer, error) {
 		copyClient := *config.HTTPClient
 		config.HTTPClient = &copyClient
 		config.HTTPClient.Timeout = 5 * time.Second
-	}
-
-	if len(config.Endpoints) == 0 {
-		return nil, fmt.Errorf("telemetry/writer: no endpoints provided")
+		log.Debug("telemetry/writer: client timeout was higher than 5 seconds, clamping it to 5 seconds")
 	}
 
 	body := newBody(config.TracerConfig, config.Debug)
@@ -191,17 +193,16 @@ func preBakeRequest(body *transport.Body, endpoint *http.Request) *http.Request 
 
 // newRequest creates a new http.Request with the given payload and the necessary headers.
 func (w *writer) newRequest(endpoint *http.Request, payload transport.Payload) *http.Request {
-	pipeReader, pipeWriter := io.Pipe()
-	request := endpoint.Clone(context.Background())
-
 	w.body.SeqID++
 	w.body.TracerTime = time.Now().Unix()
 	w.body.RequestType = payload.RequestType()
 	w.body.Payload = payload
 
-	request.Body = pipeReader
+	request := endpoint.Clone(context.Background())
 	request.Header.Set("DD-Telemetry-Request-Type", string(payload.RequestType()))
 
+	pipeReader, pipeWriter := io.Pipe()
+	request.Body = pipeReader
 	go func() {
 		// No need to wait on this because the http client will close the pipeReader which will close the pipeWriter and finish the goroutine
 		pipeWriter.CloseWithError(json.NewEncoder(pipeWriter).Encode(w.body))
