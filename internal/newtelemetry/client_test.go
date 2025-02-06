@@ -1271,6 +1271,12 @@ func BenchmarkLogs(b *testing.B) {
 	})
 }
 
+type noopTransport struct{}
+
+func (noopTransport) RoundTrip(*http.Request) (*http.Response, error) {
+	return &http.Response{StatusCode: http.StatusOK}, nil
+}
+
 func BenchmarkWorstCaseScenarioFloodLogging(b *testing.B) {
 	b.ReportAllocs()
 	nbSameLogs := 10
@@ -1285,14 +1291,8 @@ func BenchmarkWorstCaseScenarioFloodLogging(b *testing.B) {
 
 		// Empty transport to avoid sending data to the agent
 		HTTPClient: &http.Client{
-			Timeout: 5 * time.Second,
-			Transport: &testRoundTripper{
-				roundTrip: func(_ *http.Request) (*http.Response, error) {
-					return &http.Response{
-						StatusCode: http.StatusOK,
-					}, nil
-				},
-			},
+			Timeout:   5 * time.Second,
+			Transport: noopTransport{},
 		},
 	}
 
@@ -1341,7 +1341,7 @@ func BenchmarkMetrics(b *testing.B) {
 
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
-			c.Count(NamespaceTracers, "init_time", nil).Submit(1)
+			c.Count(NamespaceGeneral, "logs_created", nil).Submit(1)
 		}
 	})
 
@@ -1352,7 +1352,7 @@ func BenchmarkMetrics(b *testing.B) {
 
 		defer c.Close()
 
-		handle := c.Count(NamespaceTracers, "init_time", nil)
+		handle := c.Count(NamespaceGeneral, "logs_created", nil)
 
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
@@ -1369,7 +1369,7 @@ func BenchmarkMetrics(b *testing.B) {
 
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
-			c.Gauge(NamespaceTracers, "init_time", nil).Submit(1)
+			c.Gauge(NamespaceTracers, "stats_buckets", nil).Submit(1)
 		}
 	})
 
@@ -1380,7 +1380,7 @@ func BenchmarkMetrics(b *testing.B) {
 
 		defer c.Close()
 
-		handle := c.Gauge(NamespaceTracers, "init_time", nil)
+		handle := c.Gauge(NamespaceTracers, "stats_buckets", nil)
 
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
@@ -1425,7 +1425,7 @@ func BenchmarkMetrics(b *testing.B) {
 
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
-			c.Distribution(NamespaceTracers, "init_time", nil).Submit(1)
+			c.Distribution(NamespaceGeneral, "init_time", nil).Submit(1)
 		}
 	})
 
@@ -1436,7 +1436,7 @@ func BenchmarkMetrics(b *testing.B) {
 
 		defer c.Close()
 
-		handle := c.Distribution(NamespaceTracers, "init_time", nil)
+		handle := c.Distribution(NamespaceGeneral, "init_time", nil)
 
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
@@ -1446,9 +1446,9 @@ func BenchmarkMetrics(b *testing.B) {
 }
 
 func BenchmarkWorstCaseScenarioFloodMetrics(b *testing.B) {
-	nbSameMetric := 10
-	nbDifferentMetrics := 100
-	nbGoroutines := 25
+	nbSameMetric := 1000
+	nbDifferentMetrics := 50
+	nbGoroutines := 50
 
 	clientConfig := ClientConfig{
 		HeartbeatInterval:         time.Hour,
@@ -1459,14 +1459,8 @@ func BenchmarkWorstCaseScenarioFloodMetrics(b *testing.B) {
 
 		// Empty transport to avoid sending data to the agent
 		HTTPClient: &http.Client{
-			Timeout: 5 * time.Second,
-			Transport: &testRoundTripper{
-				roundTrip: func(_ *http.Request) (*http.Response, error) {
-					return &http.Response{
-						StatusCode: http.StatusOK,
-					}, nil
-				},
-			},
+			Timeout:   5 * time.Second,
+			Transport: noopTransport{},
 		},
 	}
 
@@ -1487,8 +1481,9 @@ func BenchmarkWorstCaseScenarioFloodMetrics(b *testing.B) {
 				go func() {
 					defer wg.Done()
 					for j := 0; j < nbDifferentMetrics; j++ {
+						metricName := "init_time_" + strconv.Itoa(j)
 						for k := 0; k < nbSameMetric; k++ {
-							c.Count(NamespaceTracers, "init_time", []string{"test:1"}).Submit(1)
+							c.Count(NamespaceGeneral, metricName, []string{"test:1"}).Submit(1)
 						}
 					}
 				}()
@@ -1512,15 +1507,17 @@ func BenchmarkWorstCaseScenarioFloodMetrics(b *testing.B) {
 		for x := 0; x < b.N; x++ {
 			var wg sync.WaitGroup
 
-			handle := c.Count(NamespaceTracers, "init_time", []string{"test:1"})
+			handles := make([]MetricHandle, nbDifferentMetrics)
+			for i := 0; i < nbDifferentMetrics; i++ {
+				handles[i] = c.Count(NamespaceGeneral, "init_time_"+strconv.Itoa(i), []string{"test:1"})
+			}
 			for i := 0; i < nbGoroutines; i++ {
 				wg.Add(1)
 				go func() {
 					defer wg.Done()
 					for j := 0; j < nbDifferentMetrics; j++ {
-
 						for k := 0; k < nbSameMetric; k++ {
-							handle.Submit(1)
+							handles[j].Submit(1)
 						}
 					}
 				}()

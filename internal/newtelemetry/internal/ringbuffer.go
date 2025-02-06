@@ -100,6 +100,11 @@ func (rq *RingQueue[T]) Dequeue() T {
 	rq.mu.Lock()
 	defer rq.mu.Unlock()
 
+	if rq.count == 0 {
+		var zero T
+		return zero
+	}
+
 	ret := rq.buffer[rq.head]
 	// bitwise modulus
 	rq.head = (rq.head + 1) % len(rq.buffer)
@@ -140,7 +145,12 @@ func (rq *RingQueue[T]) Flush() []T {
 
 // ReleaseBuffer returns the buffer to the pool.
 func (rq *RingQueue[T]) ReleaseBuffer(buf []T) {
-	rq.pool.Put(buf[:cap(buf)]) // Make sure nobody reduced the length of the buffer
+	var zero T
+	buf = buf[:cap(buf)] // Make sure nobody reduced the length of the buffer
+	for i := range buf {
+		buf[i] = zero
+	}
+	rq.pool.Put(buf)
 }
 
 // IsEmpty returns true if the buffer is empty.

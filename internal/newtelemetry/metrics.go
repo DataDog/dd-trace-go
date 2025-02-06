@@ -37,21 +37,21 @@ func (k metricKey) SplitTags() []string {
 
 func validateMetricKey(namespace Namespace, kind transport.MetricType, name string, tags []string) error {
 	if len(name) == 0 {
-		return fmt.Errorf("telemetry: metric name with tags %v should be empty", tags)
+		return fmt.Errorf("metric name with tags %v should be empty", tags)
 	}
 
 	if !knownmetrics.IsKnownMetric(namespace, kind, name) {
-		return fmt.Errorf("telemetry: metric name %q of kind %q in namespace %q is not a known metric, please update the list of metrics name or check that your wrote the name correctly. "+
+		return fmt.Errorf("metric name %q of kind %q in namespace %q is not a known metric, please update the list of metrics name or check that your wrote the name correctly. "+
 			"The metric will still be sent", name, string(kind), namespace)
 	}
 
 	for _, tag := range tags {
 		if len(tag) == 0 {
-			return fmt.Errorf("telemetry: metric %q has should not have empty tags", name)
+			return fmt.Errorf("metric %q has should not have empty tags", name)
 		}
 
 		if strings.Contains(tag, ",") {
-			return fmt.Errorf("telemetry: metric %q tag %q should not contain commas", name, tag)
+			return fmt.Errorf("metric %q tag %q should not contain commas", name, tag)
 		}
 	}
 
@@ -67,12 +67,13 @@ func newMetricKey(namespace Namespace, kind transport.MetricType, name string, t
 // metricsHandle is the internal equivalent of MetricHandle for Count/Rate/Gauge metrics that are sent via the payload [transport.GenerateMetrics].
 type metricHandle interface {
 	MetricHandle
-	payload() transport.MetricData
+	Payload() transport.MetricData
 }
 
 type metrics struct {
 	store         internal.TypedSyncMap[metricKey, metricHandle]
 	skipAllowlist bool // Debugging feature to skip the allowlist of known metrics
+	pool          sync.Pool
 }
 
 // LoadOrStore returns a MetricHandle for the given metric key. If the metric key does not exist, it will be created.
@@ -85,11 +86,11 @@ func (m *metrics) LoadOrStore(namespace Namespace, kind transport.MetricType, na
 	)
 	switch kind {
 	case transport.CountMetric:
-		handle, loaded = m.store.LoadOrStore(key, &count{metric: metric{key: key}})
+		handle, loaded = m.store.LoadOrStore(key, &count{metric: metric{key: key, pool: &m.pool}})
 	case transport.GaugeMetric:
-		handle, loaded = m.store.LoadOrStore(key, &gauge{metric: metric{key: key}})
+		handle, loaded = m.store.LoadOrStore(key, &gauge{metric: metric{key: key, pool: &m.pool}})
 	case transport.RateMetric:
-		handle, loaded = m.store.LoadOrStore(key, &rate{metric: metric{key: key}})
+		handle, loaded = m.store.LoadOrStore(key, &rate{count: count{metric: metric{key: key, pool: &m.pool}}})
 		if !loaded {
 			// Initialize the interval start for rate metrics
 			r := handle.(*rate)
@@ -113,7 +114,7 @@ func (m *metrics) LoadOrStore(namespace Namespace, kind transport.MetricType, na
 func (m *metrics) Payload() transport.Payload {
 	series := make([]transport.MetricData, 0, m.store.Len())
 	m.store.Range(func(_ metricKey, handle metricHandle) bool {
-		if payload := handle.payload(); payload.Metric != "" {
+		if payload := handle.Payload(); payload.Type != "" {
 			series = append(series, payload)
 		}
 		return true
@@ -131,16 +132,11 @@ type metricPoint struct {
 	time  time.Time
 }
 
-var metricPointPool = sync.Pool{
-	New: func() any {
-		return &metricPoint{value: math.NaN()}
-	},
-}
-
+// metric is a meta t
 type metric struct {
-	key           metricKey
-	ptr           atomic.Pointer[metricPoint]
-	intervalStart atomic.Pointer[time.Time]
+	key  metricKey
+	ptr  atomic.Pointer[metricPoint]
+	pool *sync.Pool
 }
 
 func (m *metric) Get() float64 {
@@ -151,26 +147,18 @@ func (m *metric) Get() float64 {
 	return math.NaN()
 }
 
-func (m *metric) payload() transport.MetricData {
+func (m *metric) Payload() transport.MetricData {
 	point := m.ptr.Swap(nil)
 	if point == nil {
 		return transport.MetricData{}
 	}
+	defer m.pool.Put(point)
+	return m.payload(point)
+}
 
-	var (
-		value           = point.value
-		intervalStart   = m.intervalStart.Swap(nil)
-		intervalSeconds float64
-	)
-
-	// Rate metric only
-	if intervalStart != nil {
-		intervalSeconds = time.Since(*intervalStart).Seconds()
-		if int64(intervalSeconds) == 0 { // Interval for rate is too small, we prefer not sending data over sending something wrong
-			return transport.MetricData{}
-		}
-
-		value = value / intervalSeconds
+func (m *metric) payload(point *metricPoint) transport.MetricData {
+	if point == nil {
+		return transport.MetricData{}
 	}
 
 	return transport.MetricData{
@@ -179,19 +167,19 @@ func (m *metric) payload() transport.MetricData {
 		Tags:      m.key.SplitTags(),
 		Type:      m.key.kind,
 		Common:    knownmetrics.IsCommonMetric(m.key.namespace, m.key.kind, m.key.name),
-		Interval:  int64(intervalSeconds),
 		Points: [][2]any{
-			{point.time.Unix(), value},
+			{point.time.Unix(), point.value},
 		},
 	}
 }
 
+// count is a metric that represents a single value that is incremented over time and flush and reset at zero when flushed
 type count struct {
 	metric
 }
 
 func (m *count) Submit(newValue float64) {
-	newPoint := metricPointPool.Get().(*metricPoint)
+	newPoint := m.pool.Get().(*metricPoint)
 	newPoint.time = time.Now()
 	for {
 		oldPoint := m.ptr.Load()
@@ -202,51 +190,74 @@ func (m *count) Submit(newValue float64) {
 		newPoint.value = oldValue + newValue
 		if m.ptr.CompareAndSwap(oldPoint, newPoint) {
 			if oldPoint != nil {
-				metricPointPool.Put(oldPoint)
+				m.pool.Put(oldPoint)
 			}
 			return
 		}
 	}
 }
 
+// gauge is a metric that represents a single value at a point in time that is not incremental
 type gauge struct {
 	metric
 }
 
-func (m *gauge) Submit(value float64) {
-	newPoint := metricPointPool.Get().(*metricPoint)
+func (g *gauge) Submit(value float64) {
+	newPoint := g.pool.Get().(*metricPoint)
 	newPoint.time = time.Now()
 	newPoint.value = value
 	for {
-		oldPoint := m.ptr.Load()
-		if m.ptr.CompareAndSwap(oldPoint, newPoint) {
+		oldPoint := g.ptr.Load()
+		if g.ptr.CompareAndSwap(oldPoint, newPoint) {
 			if oldPoint != nil {
-				metricPointPool.Put(oldPoint)
+				g.pool.Put(oldPoint)
 			}
 			return
 		}
 	}
 }
 
+// rate is like a count metric but the value sent is divided by an interval of time that is also sent/
 type rate struct {
-	metric
+	count
+	intervalStart atomic.Pointer[time.Time]
 }
 
-func (m *rate) Submit(newValue float64) {
-	newPoint := metricPointPool.Get().(*metricPoint)
-	newPoint.time = time.Now()
-	for {
-		oldPoint := m.ptr.Load()
-		var oldValue float64
-		if oldPoint != nil {
-			oldValue = oldPoint.value
-		}
-		newPoint.value = oldValue + newValue
-		if m.ptr.CompareAndSwap(oldPoint, newPoint) {
-			if oldPoint != nil {
-				metricPointPool.Put(oldPoint)
-			}
-			return
-		}
+func (r *rate) Get() float64 {
+	sum := r.count.Get()
+	intervalStart := r.intervalStart.Load()
+	if intervalStart == nil {
+		return math.NaN()
 	}
+
+	intervalSeconds := time.Since(*intervalStart).Seconds()
+	if int64(intervalSeconds) == 0 { // Interval for rate is too small, we prefer not sending data over sending something wrong
+		return math.NaN()
+	}
+
+	return sum / intervalSeconds
+}
+
+func (r *rate) Payload() transport.MetricData {
+	now := time.Now()
+	intervalStart := r.intervalStart.Swap(&now)
+	if intervalStart == nil {
+		return transport.MetricData{}
+	}
+
+	intervalSeconds := time.Since(*intervalStart).Seconds()
+	if int64(intervalSeconds) == 0 { // Interval for rate is too small, we prefer not sending data over sending something wrong
+		return transport.MetricData{}
+	}
+
+	point := r.ptr.Swap(nil)
+	if point == nil {
+		return transport.MetricData{}
+	}
+	defer r.pool.Put(point)
+
+	point.value /= intervalSeconds
+	payload := r.metric.payload(point)
+	payload.Interval = int64(intervalSeconds)
+	return payload
 }

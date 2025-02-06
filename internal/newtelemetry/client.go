@@ -62,6 +62,9 @@ func newClient(tracerConfig internal.TracerConfig, config ClientConfig) (*client
 		},
 		metrics: metrics{
 			skipAllowlist: config.Debug,
+			pool: sync.Pool{
+				New: func() any { return &metricPoint{} },
+			},
 		},
 		distributions: distributions{
 			skipAllowlist: config.Debug,
@@ -194,6 +197,7 @@ func (c *client) Flush() {
 			return
 		}
 		log.Warn("panic while flushing telemetry data, stopping telemetry: %v", r)
+		telemetryClientEnabled = false
 		if gc, ok := GlobalClient().(*client); ok && gc == c {
 			SwapClient(nil)
 		}

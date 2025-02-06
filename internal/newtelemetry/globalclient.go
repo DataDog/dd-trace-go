@@ -224,9 +224,11 @@ func globalClientCall(fun func(client Client)) {
 	fun(*client)
 }
 
+var noopMetricHandleInstance = noopMetricHandle{}
+
 func globalClientNewMetric(namespace Namespace, kind transport.MetricType, name string, tags []string) MetricHandle {
 	if Disabled() {
-		return noopMetricHandle{}
+		return noopMetricHandleInstance
 	}
 
 	maker := func(client Client) MetricHandle {
