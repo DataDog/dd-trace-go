@@ -23,6 +23,7 @@ import (
 	v3 "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/metadata"
 )
 
 func TestAppSec(t *testing.T) {
@@ -272,6 +273,45 @@ func TestGeneratedSpan(t *testing.T) {
 		require.Equal(t, "GET /resource-span", span.Tag("resource.name"))
 		require.Equal(t, "server", span.Tag("span.kind"))
 		require.Equal(t, "Mistake Not...", span.Tag("http.useragent"))
+	})
+
+	t.Run("span-with-injected-context", func(t *testing.T) {
+		client, mt, cleanup := setup()
+		defer cleanup()
+
+		ctx := context.Background()
+
+		// add metadata to the context
+		ctx = metadata.AppendToOutgoingContext(ctx,
+			"x-datadog-trace-id", "12345",
+			"x-datadog-parent-id", "67890",
+		)
+
+		stream, err := client.Process(ctx)
+		require.NoError(t, err)
+
+		end2EndStreamRequest(t, stream, "/../../../resource-span/.?id=test", "GET", map[string]string{"user-agent": "Mistake Not...", "test-key": "test-value"}, map[string]string{"response-test-key": "response-test-value"}, false)
+
+		err = stream.CloseSend()
+		require.NoError(t, err)
+		stream.Recv() // to flush the spans
+
+		finished := mt.FinishedSpans()
+		require.Len(t, finished, 1)
+
+		// Check for tags
+		span := finished[0]
+		require.Equal(t, "http.request", span.OperationName())
+		require.Equal(t, "https://datadoghq.com/../../../resource-span/.?id=test", span.Tag("http.url"))
+		require.Equal(t, "GET", span.Tag("http.method"))
+		require.Equal(t, "datadoghq.com", span.Tag("http.host"))
+		require.Equal(t, "GET /resource-span", span.Tag("resource.name"))
+		require.Equal(t, "server", span.Tag("span.kind"))
+		require.Equal(t, "Mistake Not...", span.Tag("http.useragent"))
+
+		// Check for trace context
+		require.Equal(t, uint64(12345), span.Context().TraceID())
+		require.Equal(t, uint64(67890), span.ParentID())
 	})
 }
 
