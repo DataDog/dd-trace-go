@@ -9,7 +9,6 @@ on:
         type: string
   push:
     branches:
-      - hannahkm/bump-golangcilint
       - main
       - release-v*
     tags-ignore:
