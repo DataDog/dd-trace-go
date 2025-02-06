@@ -11,14 +11,14 @@ import (
 )
 
 type appStartedReducer struct {
-	wrapper
+	next Mapper
 }
 
 // NewAppStartedMapper returns a new Mapper that adds an AppStarted payload to the beginning of all payloads
 // and pass it down to irs underlying mapper.
 // The AppStarted payload ingest the [transport.AppClientConfigurationChange] and [transport.AppProductChange] payloads
-func NewAppStartedMapper(underlying Mapper) Mapper {
-	return &appStartedReducer{wrapper{underlying}}
+func NewAppStartedMapper(next Mapper) Mapper {
+	return &appStartedReducer{next: next}
 }
 
 func (t *appStartedReducer) Transform(payloads []transport.Payload) ([]transport.Payload, Mapper) {
@@ -43,6 +43,6 @@ func (t *appStartedReducer) Transform(payloads []transport.Payload) ([]transport
 	}
 
 	// The app-started event should be the first event in the payload and not in an message-batch
-	payloads, mapper := t.wrapper.Transform(payloadLefts)
+	payloads, mapper := t.next.Transform(payloadLefts)
 	return append([]transport.Payload{appStarted}, payloads...), mapper
 }

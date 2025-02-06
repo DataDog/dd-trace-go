@@ -10,14 +10,14 @@ import (
 )
 
 // NewAppClosingMapper returns a new Mapper that appends an AppClosing payload to the given payloads and calls the underlying Mapper with it.
-func NewAppClosingMapper(underlying Mapper) Mapper {
-	return &appClosingEnricher{wrapper{underlying}}
+func NewAppClosingMapper(next Mapper) Mapper {
+	return &appClosingEnricher{next: next}
 }
 
 type appClosingEnricher struct {
-	wrapper
+	next Mapper
 }
 
 func (t *appClosingEnricher) Transform(payloads []transport.Payload) ([]transport.Payload, Mapper) {
-	return t.wrapper.Transform(append(payloads, transport.AppClosing{}))
+	return t.next.Transform(append(payloads, transport.AppClosing{}))
 }
