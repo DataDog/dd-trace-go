@@ -38,7 +38,7 @@ type (
 	// Client is an interface for sending requests to the Datadog backend.
 	Client interface {
 		GetSettings() (*SettingsResponseData, error)
-		GetEarlyFlakeDetectionData() (*EfdResponseData, error)
+		GetKnownTests() (*KnownTestsResponseData, error)
 		GetCommits(localCommits []string) ([]string, error)
 		SendPackFiles(commitSha string, packFiles []string) (bytes int64, err error)
 		SendCoveragePayload(ciTestCovPayload io.Reader) error
