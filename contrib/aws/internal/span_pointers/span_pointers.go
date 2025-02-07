@@ -25,8 +25,8 @@ const (
 	S3PointerKind              = "aws.s3.object"
 )
 
-func AddSpanPointers(serviceId string, in middleware.DeserializeInput, out middleware.DeserializeOutput, span tracer.Span) {
-	switch serviceId {
+func AddSpanPointers(serviceID string, in middleware.DeserializeInput, out middleware.DeserializeOutput, span tracer.Span) {
+	switch serviceID {
 	case "S3":
 		handleS3Operation(in, out, span)
 	}
