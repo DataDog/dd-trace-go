@@ -127,7 +127,6 @@ func (mw *traceMiddleware) startTraceMiddleware(stack *middleware.Stack) error {
 		if err != nil && (mw.cfg.errCheck == nil || mw.cfg.errCheck(err)) {
 			span.SetTag(ext.Error, err)
 		}
-		span.Finish()
 
 		return out, metadata, err
 	}), middleware.After)
@@ -356,6 +355,8 @@ func (mw *traceMiddleware) deserializeTraceMiddleware(stack *middleware.Stack) e
 		if requestID, ok := awsmiddleware.GetRequestIDMetadata(metadata); ok {
 			span.SetTag(tags.AWSRequestID, requestID)
 		}
+
+		span.Finish()
 
 		return out, metadata, err
 	}), middleware.Before)
