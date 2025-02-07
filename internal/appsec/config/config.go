@@ -58,6 +58,8 @@ type StartConfig struct {
 	// IsEnabled is a function that determines whether AppSec is enabled or not. When unset, the
 	// default [IsEnabled] function is used.
 	EnablementMode func() (EnablementMode, Origin, error)
+	// MetaStructAvailable is true if meta struct is supported by the trace agent.
+	MetaStructAvailable bool
 }
 
 type EnablementMode int8
@@ -123,6 +125,12 @@ func WithRCConfig(cfg remoteconfig.ClientConfig) StartOption {
 	}
 }
 
+func WithMetaStructAvailable(available bool) StartOption {
+	return func(c *StartConfig) {
+		c.MetaStructAvailable = available
+	}
+}
+
 // Config is the AppSec configuration.
 type Config struct {
 	// rules loaded via the env var DD_APPSEC_RULES. When not set, the builtin rules will be used
@@ -141,6 +149,8 @@ type Config struct {
 	RASP bool
 	// SupportedAddresses are the addresses that the AppSec listener will bind to.
 	SupportedAddresses AddressSet
+	// MetaStructAvailable is true if meta struct is supported by the trace agent.
+	MetaStructAvailable bool
 }
 
 // AddressSet is a set of WAF addresses.
@@ -201,12 +211,13 @@ func (c *StartConfig) NewConfig() (*Config, error) {
 	}
 
 	return &Config{
-		RulesManager:   r,
-		WAFTimeout:     internal.WAFTimeoutFromEnv(),
-		TraceRateLimit: int64(internal.RateLimitFromEnv()),
-		Obfuscator:     internal.NewObfuscatorConfig(),
-		APISec:         internal.NewAPISecConfig(),
-		RASP:           internal.RASPEnabled(),
-		RC:             c.RC,
+		RulesManager:        r,
+		WAFTimeout:          internal.WAFTimeoutFromEnv(),
+		TraceRateLimit:      int64(internal.RateLimitFromEnv()),
+		Obfuscator:          internal.NewObfuscatorConfig(),
+		APISec:              internal.NewAPISecConfig(),
+		RASP:                internal.RASPEnabled(),
+		RC:                  c.RC,
+		MetaStructAvailable: c.MetaStructAvailable,
 	}, nil
 }

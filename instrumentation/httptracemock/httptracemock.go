@@ -47,10 +47,8 @@ func (mux *ServeMux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	copy(so, mux.spanOpts)
 	so = append(so, tracer.ResourceName(resource))
 
-	span, ctx := httptrace.StartRequestSpan(r, so...)
-	defer func() {
-		httptrace.FinishRequestSpan(span, 200, nil)
-	}()
+	span, ctx, finishSpans := httptrace.StartRequestSpan(r, so...)
+	defer finishSpans(r.Response.StatusCode, nil)
 	var h http.Handler = mux.ServeMux
 	if appsec.Enabled() {
 		h = httpsec.WrapHandler(h, span, nil, nil)

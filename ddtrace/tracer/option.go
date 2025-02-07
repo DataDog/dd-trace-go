@@ -97,6 +97,7 @@ var contribIntegrations = map[string]struct {
 	"github.com/uptrace/bun":                        {"Bun", false},
 	"github.com/urfave/negroni":                     {"Negroni", false},
 	"github.com/valyala/fasthttp":                   {"FastHTTP", false},
+	"github.com/valkey-io/valkey-go":                {"Valkey", false},
 }
 
 var (
@@ -679,7 +680,10 @@ func udsClient(socketPath string, timeout time.Duration) *http.Client {
 
 // defaultDogstatsdAddr returns the default connection address for Dogstatsd.
 func defaultDogstatsdAddr() string {
-	envHost, envPort := os.Getenv("DD_AGENT_HOST"), os.Getenv("DD_DOGSTATSD_PORT")
+	envHost, envPort := os.Getenv("DD_DOGSTATSD_HOST"), os.Getenv("DD_DOGSTATSD_PORT")
+	if envHost == "" {
+		envHost = os.Getenv("DD_AGENT_HOST")
+	}
 	if _, err := os.Stat(defaultSocketDSD); err == nil && envHost == "" && envPort == "" {
 		// socket exists and user didn't specify otherwise via env vars
 		return "unix://" + defaultSocketDSD
@@ -724,6 +728,9 @@ type agentFeatures struct {
 
 	// defaultEnv is the trace-agent's default env, used for stats calculation if no env override is present
 	defaultEnv string
+
+	// metaStructAvailable reports whether the trace-agent can receive spans with the `meta_struct` field.
+	metaStructAvailable bool
 }
 
 // HasFlag reports whether the agent has set the feat feature flag.
@@ -750,11 +757,12 @@ func loadAgentFeatures(agentDisabled bool, agentURL *url.URL, httpClient *http.C
 	}
 	defer resp.Body.Close()
 	type infoResponse struct {
-		Endpoints     []string `json:"endpoints"`
-		ClientDropP0s bool     `json:"client_drop_p0s"`
-		FeatureFlags  []string `json:"feature_flags"`
-		PeerTags      []string `json:"peer_tags"`
-		Config        struct {
+		Endpoints      []string `json:"endpoints"`
+		ClientDropP0s  bool     `json:"client_drop_p0s"`
+		FeatureFlags   []string `json:"feature_flags"`
+		PeerTags       []string `json:"peer_tags"`
+		SpanMetaStruct bool     `json:"span_meta_structs"`
+		Config         struct {
 			StatsdPort int `json:"statsd_port"`
 		} `json:"config"`
 	}
@@ -764,8 +772,10 @@ func loadAgentFeatures(agentDisabled bool, agentURL *url.URL, httpClient *http.C
 		log.Error("Decoding features: %v", err)
 		return
 	}
+
 	features.DropP0s = info.ClientDropP0s
 	features.StatsdPort = info.Config.StatsdPort
+	features.metaStructAvailable = info.SpanMetaStruct
 	features.peerTags = info.PeerTags
 	for _, endpoint := range info.Endpoints {
 		switch endpoint {

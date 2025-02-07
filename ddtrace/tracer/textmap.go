@@ -261,6 +261,7 @@ func (p *chainedPropagator) Inject(spanCtx *SpanContext, carrier interface{}) er
 func (p *chainedPropagator) Extract(carrier interface{}) (*SpanContext, error) {
 	var ctx *SpanContext
 	var links []SpanLink
+
 	for _, v := range p.extractors {
 		firstExtract := (ctx == nil) // ctx stores the most recently extracted ctx across iterations; if it's nil, no extractor has run yet
 		extractedCtx, err := v.Extract(carrier)

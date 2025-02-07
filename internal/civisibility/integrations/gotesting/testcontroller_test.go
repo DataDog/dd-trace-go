@@ -76,7 +76,7 @@ func runFlakyTestRetriesTests(m *testing.M) {
 	// mock the settings api to enable automatic test retries
 	server := setUpHttpServer(true, true, false, &net.KnownTestsResponseData{
 		Tests: net.KnownTestsResponseDataModules{
-			"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/integrations/gotesting": net.KnownTestsResponseDataSuites{
+			"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting": net.KnownTestsResponseDataSuites{
 				"reflections_test.go": []string{
 					"TestGetFieldPointerFrom",
 					"TestGetInternalTestArray",
@@ -155,7 +155,7 @@ func runFlakyTestRetriesTests(m *testing.M) {
 	}
 
 	// check the test is new tag
-	checkSpansByTagName(finishedSpans, constants.TestIsNew, 27)
+	checkSpansByTagName(finishedSpans, constants.TestIsNew, 22)
 
 	// check spans by type
 	checkSpansByType(finishedSpans,

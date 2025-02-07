@@ -20,6 +20,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 
 	rc "github.com/DataDog/datadog-agent/pkg/remoteconfig/state"
@@ -185,6 +186,10 @@ func Start(config ClientConfig) error {
 	startOnce.Do(func() {
 		client, err = newClient(config)
 		if err != nil {
+			return
+		}
+		if !internal.BoolEnv("DD_REMOTE_CONFIGURATION_ENABLED", true) {
+			// Don't start polling if the feature is disabled explicitly
 			return
 		}
 		go func() {

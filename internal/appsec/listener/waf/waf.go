@@ -13,13 +13,13 @@ import (
 	"github.com/DataDog/appsec-internal-go/limiter"
 	wafv3 "github.com/DataDog/go-libddwaf/v3"
 
-	"github.com/DataDog/dd-trace-go/v2/internal/appsec/listener"
-
 	"github.com/DataDog/dd-trace-go/v2/appsec/events"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/dyngo"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/waf/actions"
+	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/emitter/waf"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec/listener"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/stacktrace"
 )
@@ -30,6 +30,10 @@ type Feature struct {
 	handle          *wafv3.Handle
 	supportedAddrs  config.AddressSet
 	reportRulesTags sync.Once
+
+	// Determine if we can use [internal.MetaStructValue] to delegate the WAF events serialization to the trace writer
+	// or if we have to use the [SerializableTag] method to serialize the events
+	metaStructAvailable bool
 }
 
 func NewWAFFeature(cfg *config.Config, rootOp dyngo.Operation) (listener.Feature, error) {
@@ -55,10 +59,11 @@ func NewWAFFeature(cfg *config.Config, rootOp dyngo.Operation) (listener.Feature
 	tokenTicker.Start()
 
 	feature := &Feature{
-		handle:         newHandle,
-		timeout:        cfg.WAFTimeout,
-		limiter:        tokenTicker,
-		supportedAddrs: cfg.SupportedAddresses,
+		handle:              newHandle,
+		timeout:             cfg.WAFTimeout,
+		limiter:             tokenTicker,
+		supportedAddrs:      cfg.SupportedAddresses,
+		metaStructAvailable: cfg.MetaStructAvailable,
 	}
 
 	dyngo.On(rootOp, feature.onStart)
@@ -116,7 +121,12 @@ func (waf *Feature) onFinish(op *waf.ContextOperation, _ waf.ContextRes) {
 
 	AddWAFMonitoringTags(op, waf.handle.Diagnostics().Version, ctx.Stats().Metrics())
 	if wafEvents := op.Events(); len(wafEvents) > 0 {
-		op.SetSerializableTag("_dd.appsec.json", map[string][]any{"triggers": op.Events()})
+		tagValue := map[string][]any{"triggers": wafEvents}
+		if waf.metaStructAvailable {
+			op.SetTag("appsec", internal.MetaStructValue{Value: tagValue})
+		} else {
+			op.SetSerializableTag("_dd.appsec.json", tagValue)
+		}
 	}
 	op.SetSerializableTags(op.Derivatives())
 	if stacks := op.StackTraces(); len(stacks) > 0 {

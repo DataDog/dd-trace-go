@@ -362,6 +362,52 @@ func TestXForwardedForHeaderClientIp(t *testing.T) {
 	})
 }
 
+func TestMalformedEnvoyProcessing(t *testing.T) {
+	testutils.StartAppSec(t)
+	if !instr.AppSecEnabled() {
+		t.Skip("appsec disabled")
+	}
+
+	setup := func() (envoyextproc.ExternalProcessorClient, mocktracer.Tracer, func()) {
+		rig, err := newEnvoyAppsecRig(t, false)
+		require.NoError(t, err)
+
+		mt := mocktracer.Start()
+
+		return rig.client, mt, func() {
+			rig.Close()
+			mt.Stop()
+		}
+	}
+
+	t.Run("response-received-without-request", func(t *testing.T) {
+		client, mt, cleanup := setup()
+		defer cleanup()
+
+		ctx := context.Background()
+		stream, err := client.Process(ctx)
+		require.NoError(t, err)
+
+		err = stream.Send(&envoyextproc.ProcessingRequest{
+			Request: &envoyextproc.ProcessingRequest_ResponseHeaders{
+				ResponseHeaders: &envoyextproc.HttpHeaders{
+					Headers: makeResponseHeaders(t, map[string]string{}, "400"),
+				},
+			},
+		})
+		require.NoError(t, err)
+
+		_, err = stream.Recv()
+		require.Error(t, err)
+		stream.Recv()
+
+		// No span created, the request is invalid.
+		// Span couldn't be created without request data
+		finished := mt.FinishedSpans()
+		require.Len(t, finished, 0)
+	})
+}
+
 func newEnvoyAppsecRig(t *testing.T, traceClient bool, interceptorOpts ...ddgrpc.Option) (*envoyAppsecRig, error) {
 	t.Helper()
 

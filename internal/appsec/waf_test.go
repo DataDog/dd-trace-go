@@ -30,6 +30,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/waf/addresses"
 	httptrace "github.com/DataDog/dd-trace-go/v2/instrumentation/httptracemock"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils"
+	globalinternal "github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/config"
 
@@ -714,6 +715,81 @@ func TestSuspiciousAttackerBlocking(t *testing.T) {
 	}
 }
 
+func TestWafEventsInMetaStruct(t *testing.T) {
+	t.Setenv("DD_APPSEC_RULES", "testdata/user_rules.json")
+	appsec.Start(config.WithMetaStructAvailable(true))
+	defer appsec.Stop()
+
+	if !appsec.Enabled() {
+		t.Skip("appsec disabled")
+	}
+
+	// Start and trace an HTTP server
+	mux := httptrace.NewServeMux()
+	mux.HandleFunc("/hello", func(w http.ResponseWriter, _ *http.Request) {
+		w.Write([]byte("Hello World!\n"))
+	})
+	mux.HandleFunc("/response-header", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("match-response-header", "match-response-header")
+		w.WriteHeader(204)
+	})
+
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	for _, tc := range []struct {
+		name string
+		url  string
+		rule string
+	}{
+		{
+			name: "custom-001",
+			url:  "/hello",
+			rule: "custom-001",
+		},
+		{
+			name: "custom-action",
+			url:  "/hello?match=match-request-query",
+			rule: "query-002",
+		},
+		{
+			name: "response-headers",
+			url:  "/response-header",
+			rule: "headers-003",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			mt := mocktracer.Start()
+			defer mt.Stop()
+
+			req, err := http.NewRequest("GET", srv.URL+tc.url, nil)
+			require.NoError(t, err)
+
+			res, err := srv.Client().Do(req)
+			require.NoError(t, err)
+			defer res.Body.Close()
+
+			spans := mt.FinishedSpans()
+			require.Len(t, spans, 1)
+
+			tag := spans[0].Tag("appsec")
+			require.IsType(t, globalinternal.MetaStructValue{}, tag)
+
+			events := tag.(globalinternal.MetaStructValue).Value
+			require.IsType(t, map[string][]any{}, events)
+
+			triggers := events.(map[string][]any)["triggers"]
+			ids := make([]string, 0, len(triggers))
+			for _, trigger := range triggers {
+				ids = append(ids, trigger.(map[string]any)["rule"].(map[string]any)["id"].(string))
+			}
+
+			require.Contains(t, ids, tc.rule)
+		})
+	}
+
+}
+
 // BenchmarkSampleWAFContext benchmarks the creation of a WAF context and running the WAF on a request/response pair
 // This is a basic sample of what could happen in a real-world scenario.
 func BenchmarkSampleWAFContext(b *testing.B) {
@@ -797,7 +873,7 @@ func TestAttackerFingerprinting(t *testing.T) {
 
 	// Start and trace an HTTP server
 	mux := httptrace.NewServeMux()
-	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/test", func(w http.ResponseWriter, r *http.Request) {
 		pAppsec.TrackUserLoginSuccessEvent(
 			r.Context(),
 			"toto",
@@ -808,31 +884,58 @@ func TestAttackerFingerprinting(t *testing.T) {
 
 		w.Write([]byte("Hello World!\n"))
 	})
+
+	mux.HandleFunc("/id/auth/v1/login", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(401)
+	})
+
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
 
-	mt := mocktracer.Start()
-	defer mt.Stop()
-	req, err := http.NewRequest("POST", srv.URL+"/test?x=1", nil)
-	require.NoError(t, err)
-	req.AddCookie(&http.Cookie{Name: "cookie", Value: "value"})
-	resp, err := srv.Client().Do(req)
-	require.NoError(t, err)
-	defer resp.Body.Close()
+	for _, tc := range []struct {
+		name string
+		url  string
+	}{
+		{
+			name: "SDK",
+			url:  "/test?x=1",
+		},
+		{
+			name: "WAF",
+			url:  "/?x=$globals",
+		},
+		{
+			name: "CustomRule",
+			url:  "/id/auth/v1/login",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			mt := mocktracer.Start()
+			defer mt.Stop()
 
-	require.Len(t, mt.FinishedSpans(), 1)
+			req, err := http.NewRequest("POST", srv.URL+tc.url, nil)
+			require.NoError(t, err)
+			req.AddCookie(&http.Cookie{Name: "cookie", Value: "value"})
+			resp, err := srv.Client().Do(req)
+			require.NoError(t, err)
+			defer resp.Body.Close()
 
-	tags := mt.FinishedSpans()[0].Tags()
+			require.Len(t, mt.FinishedSpans(), 1)
 
-	require.Contains(t, tags, "_dd.appsec.fp.http.header")
-	require.Contains(t, tags, "_dd.appsec.fp.http.endpoint")
-	require.Contains(t, tags, "_dd.appsec.fp.http.network")
-	require.Contains(t, tags, "_dd.appsec.fp.session")
+			tags := mt.FinishedSpans()[0].Tags()
 
-	require.Regexp(t, `^hdr-`, tags["_dd.appsec.fp.http.header"])
-	require.Regexp(t, `^http-`, tags["_dd.appsec.fp.http.endpoint"])
-	require.Regexp(t, `^ssn-`, tags["_dd.appsec.fp.session"])
-	require.Regexp(t, `^net-`, tags["_dd.appsec.fp.http.network"])
+			require.Contains(t, tags, "_dd.appsec.fp.http.header")
+			require.Contains(t, tags, "_dd.appsec.fp.http.endpoint")
+			require.Contains(t, tags, "_dd.appsec.fp.http.network")
+			require.Contains(t, tags, "_dd.appsec.fp.session")
+
+			require.Regexp(t, `^hdr-`, tags["_dd.appsec.fp.http.header"])
+			require.Regexp(t, `^http-`, tags["_dd.appsec.fp.http.endpoint"])
+			require.Regexp(t, `^ssn-`, tags["_dd.appsec.fp.session"])
+			require.Regexp(t, `^net-`, tags["_dd.appsec.fp.http.network"])
+		})
+
+	}
 }
 
 func init() {

@@ -59,11 +59,11 @@ func BeforeHandle(cfg *ServeConfig, w http.ResponseWriter, r *http.Request) (htt
 	if cfg.Route != "" {
 		opts = append(opts, tracer.Tag(ext.HTTPRoute, cfg.Route))
 	}
-	span, ctx := StartRequestSpan(r, opts...)
+	span, ctx, finishSpans := StartRequestSpan(r, opts...)
 	rw, ddrw := wrapResponseWriter(w)
 	rt := r.WithContext(ctx)
 	closeSpan := func() {
-		FinishRequestSpan(span, ddrw.status, cfg.IsStatusError, cfg.FinishOpts...)
+		finishSpans(ddrw.status, cfg.IsStatusError, cfg.FinishOpts...)
 	}
 	afterHandle := closeSpan
 	handled := false

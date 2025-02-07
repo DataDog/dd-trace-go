@@ -1,4 +1,4 @@
-module github.com/Datadog/dd-trace-go/contrib/envoyproxy/go-control-plane/v2
+module github.com/DataDog/dd-trace-go/contrib/envoyproxy/go-control-plane/v2
 
 go 1.22.0
 

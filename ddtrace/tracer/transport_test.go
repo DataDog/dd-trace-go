@@ -412,7 +412,8 @@ func TestExternalEnvironment(t *testing.T) {
 	u, err := url.Parse(srv.URL)
 	assert.NoError(err)
 	c := &http.Client{}
-	trc := newTracer(WithAgentTimeout(2), WithAgentAddr(u.Host), WithHTTPClient(c))
+	trc, err := newTracer(WithAgentTimeout(2), WithAgentAddr(u.Host), WithHTTPClient(c))
+	assert.NoError(err)
 	defer trc.Stop()
 
 	p, err := encode(getTestTrace(1, 1))
