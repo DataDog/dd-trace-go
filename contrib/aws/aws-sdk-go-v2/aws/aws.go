@@ -8,7 +8,7 @@ package aws
 import (
 	"context"
 	"fmt"
-	"gopkg.in/DataDog/dd-trace-go.v1/contrib/aws/internal/span_pointers"
+	spanpointers "gopkg.in/DataDog/dd-trace-go.v1/contrib/aws/internal/span_pointers"
 	"math"
 	"strings"
 	"time"
@@ -359,7 +359,7 @@ func (mw *traceMiddleware) deserializeTraceMiddleware(stack *middleware.Stack) e
 
 		// Create span pointers
 		serviceID := awsmiddleware.GetServiceID(ctx)
-		span_pointers.AddSpanPointers(serviceID, in, out, span)
+		spanpointers.AddSpanPointers(serviceID, in, out, span)
 
 		span.Finish()
 

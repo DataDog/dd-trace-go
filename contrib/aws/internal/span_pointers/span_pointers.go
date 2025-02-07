@@ -3,7 +3,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
-package span_pointers
+package spanpointers
 
 import (
 	"crypto/sha256"
