@@ -10,17 +10,9 @@ package http // import "github.com/DataDog/dd-trace-go/contrib/net/http/v2"
 import (
 	"net/http"
 
-	"github.com/DataDog/dd-trace-go/v2/instrumentation"
+	"github.com/DataDog/dd-trace-go/contrib/net/http/v2/internal/wrap"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/httptrace"
 )
-
-const componentName = instrumentation.PackageNetHTTP
-
-var instr *instrumentation.Instrumentation
-
-func init() {
-	instr = instrumentation.Load(instrumentation.PackageNetHTTP)
-}
 
 // ServeConfig specifies the tracing configuration when using TraceAndServe.
 type ServeConfig = httptrace.ServeConfig
@@ -28,11 +20,5 @@ type ServeConfig = httptrace.ServeConfig
 // TraceAndServe serves the handler h using the given ResponseWriter and Request, applying tracing
 // according to the specified config.
 func TraceAndServe(h http.Handler, w http.ResponseWriter, r *http.Request, cfg *ServeConfig) {
-	tw, tr, afterHandle, handled := httptrace.BeforeHandle(cfg, w, r)
-	defer afterHandle()
-
-	if handled {
-		return
-	}
-	h.ServeHTTP(tw, tr)
+	wrap.TraceAndServe(h, w, r, cfg)
 }

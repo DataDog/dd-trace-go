@@ -21,6 +21,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	internal "github.com/DataDog/dd-trace-go/contrib/net/http/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/appsec/events"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
@@ -663,7 +664,7 @@ func TestAppsec(t *testing.T) {
 			defer mt.Stop()
 
 			testutils.StartAppSec(t)
-			if !instr.AppSecEnabled() {
+			if !internal.Instrumentation.AppSecEnabled() {
 				t.Skip("appsec not enabled")
 			}
 
