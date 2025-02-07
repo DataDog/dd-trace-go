@@ -9,7 +9,11 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"github.com/aws/smithy-go/middleware"
+	smithyhttp "github.com/aws/smithy-go/transport/http"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"strings"
 )
 
 const (
@@ -24,8 +28,56 @@ const (
 func AddSpanPointers(serviceId string, in middleware.DeserializeInput, out middleware.DeserializeOutput, span tracer.Span) {
 	switch serviceId {
 	case "S3":
-		//handleS3Operation(in, out, span);
+		handleS3Operation(in, out, span)
 	}
+}
+
+func handleS3Operation(in middleware.DeserializeInput, out middleware.DeserializeOutput, span tracer.Span) {
+	spanWithLinks, ok := span.(tracer.SpanWithLinks)
+	if !ok {
+		return
+	}
+
+	req, ok := in.Request.(*smithyhttp.Request)
+	if !ok {
+		return
+	}
+	res, ok := out.RawResponse.(*smithyhttp.Response)
+	if !ok {
+		return
+	}
+
+	// URL format: https://BUCKETNAME.s3.REGION.amazonaws.com/KEYNAME?x-id=OPERATIONNAME
+	key := strings.TrimPrefix(req.URL.Path, "/")
+	bucket := strings.Split(req.URL.Host, ".")[0]
+	// the AWS SDK sometimes wraps the eTag in quotes
+	etag := strings.Trim(res.Header.Get("ETag"), "\"")
+	if key == "" || bucket == "" || etag == "" {
+		log.Debug("Unable to create S3 span pointer because required fields could not be found.")
+		return
+	}
+
+	// Hash calculation rules: https://github.com/DataDog/dd-span-pointer-rules/blob/main/AWS/S3/Object/README.md
+	components := []string{bucket, key, etag}
+	hash := generatePointerHash(components)
+
+	link := ddtrace.SpanLink{
+		// We leave trace_id, span_id, trade_id_high, tracestate, and flags as 0 or empty.
+		// The Datadog frontend will use `ptr.hash` to find the linked span.
+		TraceID:     0,
+		SpanID:      0,
+		TraceIDHigh: 0,
+		Flags:       0,
+		Tracestate:  "",
+		Attributes: map[string]string{
+			"ptr.kind":  S3PointerKind,
+			"ptr.dir":   PointerDownDirection,
+			"ptr.hash":  hash,
+			"link.kind": LinkKind,
+		},
+	}
+
+	spanWithLinks.AddSpanLink(link)
 }
 
 // generatePointerHash generates a unique hash from an array of strings by joining them with | before hashing.
