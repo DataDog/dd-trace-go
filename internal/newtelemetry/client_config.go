@@ -83,7 +83,7 @@ var (
 	agentlessURL = "https://instrumentation-telemetry-intake.datadoghq.com/api/v2/apmtelemetry"
 
 	// defaultHeartbeatInterval is the default interval at which the agent sends a heartbeat.
-	defaultHeartbeatInterval = time.Minute // seconds
+	defaultHeartbeatInterval = time.Minute
 
 	// defaultExtendedHeartbeatInterval is the default interval at which the agent sends an extended heartbeat.
 	defaultExtendedHeartbeatInterval = 24 * time.Hour
@@ -162,12 +162,6 @@ func defaultConfig(config ClientConfig) ClientConfig {
 		}
 	}
 
-	if config.HeartbeatInterval == 0 {
-		config.HeartbeatInterval = globalinternal.DurationEnv("DD_TELEMETRY_HEARTBEAT_INTERVAL", defaultHeartbeatInterval)
-	} else {
-		config.HeartbeatInterval = defaultAuthorizedHearbeatRange.Clamp(config.HeartbeatInterval)
-	}
-
 	if config.FlushInterval.Min == 0 {
 		config.FlushInterval.Min = defaultFlushIntervalRange.Min
 	} else {
@@ -179,6 +173,16 @@ func defaultConfig(config ClientConfig) ClientConfig {
 	} else {
 		config.FlushInterval.Max = defaultAuthorizedHearbeatRange.Clamp(config.FlushInterval.Max)
 	}
+
+	heartBeatInterval := defaultHeartbeatInterval
+	if config.HeartbeatInterval != 0 {
+		heartBeatInterval = config.HeartbeatInterval
+	}
+
+	envVal := globalinternal.FloatEnv("DD_TELEMETRY_HEARTBEAT_INTERVAL", heartBeatInterval.Seconds())
+	config.HeartbeatInterval = defaultAuthorizedHearbeatRange.Clamp(time.Duration(envVal * float64(time.Second)))
+	// Make sure we flush at least at each heartbeat interval
+	config.FlushInterval = config.FlushInterval.ReduceMax(config.HeartbeatInterval)
 
 	if config.DependencyLoader == nil && globalinternal.BoolEnv("DD_TELEMETRY_DEPENDENCY_COLLECTION_ENABLED", true) {
 		config.DependencyLoader = debug.ReadBuildInfo

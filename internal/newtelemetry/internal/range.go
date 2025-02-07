@@ -29,3 +29,11 @@ func (r Range[T]) Contains(value T) bool {
 func (r Range[T]) Clamp(value T) T {
 	return max(min(r.Max, value), r.Min)
 }
+
+// ReduceMax returns a new range where value is the new max and min is either the current min or the new value to make sure the range is ordered.
+func (r Range[T]) ReduceMax(value T) Range[T] {
+	return Range[T]{
+		Min: min(r.Min, value),
+		Max: value,
+	}
+}
