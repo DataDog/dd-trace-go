@@ -163,6 +163,12 @@ func defaultConfig(config ClientConfig) ClientConfig {
 		}
 	}
 
+	if config.HeartbeatInterval == 0 {
+		config.HeartbeatInterval = globalinternal.DurationEnv("DD_TELEMETRY_HEARTBEAT_INTERVAL", defaultHeartbeatInterval)
+	} else {
+		config.HeartbeatInterval = defaultAuthorizedHearbeatRange.Clamp(config.HeartbeatInterval)
+	}
+
 	if config.FlushInterval.Min == 0 {
 		config.FlushInterval.Min = defaultFlushIntervalRange.Min
 	} else {
