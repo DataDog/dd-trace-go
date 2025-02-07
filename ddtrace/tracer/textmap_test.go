@@ -2044,7 +2044,6 @@ func TestSpanLinks(t *testing.T) {
 		assert.True(ok)
 
 		assert.Equal(traceIDFrom64Bits(1), sctx.traceID)
-		// in attributes baggage i added to context_headers so the length is no longer 0 but 1
 		assert.Len(sctx.spanLinks, 0)
 	})
 }
