@@ -22,9 +22,6 @@ import (
 
 	gocontrolplane "github.com/DataDog/dd-trace-go/contrib/envoyproxy/go-control-plane/v2"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
-	"github.com/DataDog/dd-trace-go/v2/internal"
-	"github.com/DataDog/dd-trace-go/v2/internal/log"
-	"github.com/DataDog/dd-trace-go/v2/internal/version"
 
 	extproc "github.com/envoyproxy/go-control-plane/envoy/service/ext_proc/v3"
 	"github.com/gorilla/mux"
@@ -44,9 +41,9 @@ type serviceExtensionConfig struct {
 }
 
 func loadConfig() serviceExtensionConfig {
-	extensionPortInt := internal.IntEnv("DD_SERVICE_EXTENSION_PORT", 443)
-	healthcheckPortInt := internal.IntEnv("DD_SERVICE_EXTENSION_HEALTHCHECK_PORT", 80)
-	extensionHostStr := internal.IpEnv("DD_SERVICE_EXTENSION_HOST", net.IP{0, 0, 0, 0}).String()
+	extensionPortInt := intEnv("DD_SERVICE_EXTENSION_PORT", 443)
+	healthcheckPortInt := intEnv("DD_SERVICE_EXTENSION_HEALTHCHECK_PORT", 80)
+	extensionHostStr := ipEnv("DD_SERVICE_EXTENSION_HOST", net.IP{0, 0, 0, 0}).String()
 
 	extensionPortStr := strconv.FormatInt(int64(extensionPortInt), 10)
 	healthcheckPortStr := strconv.FormatInt(int64(healthcheckPortInt), 10)
@@ -58,10 +55,12 @@ func loadConfig() serviceExtensionConfig {
 	}
 }
 
+var log = NewLogger()
+
 func main() {
 	// Set the DD_VERSION to the current tracer version if not set
 	if os.Getenv("DD_VERSION") == "" {
-		if err := os.Setenv("DD_VERSION", version.Tag); err != nil {
+		if err := os.Setenv("DD_VERSION", version); err != nil {
 			log.Error("service_extension: failed to set DD_VERSION environment variable: %v\n", err)
 		}
 	}
@@ -70,7 +69,6 @@ func main() {
 
 	if err := startService(config); err != nil {
 		log.Error("service_extension: %v\n", err)
-		log.Flush()
 		os.Exit(1)
 	}
 
@@ -108,7 +106,7 @@ func startHealthCheck(ctx context.Context, config serviceExtensionConfig) error 
 	muxServer.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{"status": "ok", "library": {"language": "golang", "version": "` + version.Tag + `"}}`))
+		w.Write([]byte(`{"status": "ok", "library": {"language": "golang", "version": "` + version + `"}}`))
 	})
 
 	server := &http.Server{
