@@ -228,19 +228,16 @@ func TestWithQueryParams(t *testing.T) {
 func TestWithStatusCheck(t *testing.T) {
 	for _, ht := range []struct {
 		name          string
-		code          int
 		hasErr        bool
 		isStatusError func(statusCode int) bool
 	}{
 		{
 			name:          "without-statuscheck",
-			code:          http.StatusInternalServerError,
 			hasErr:        true,
 			isStatusError: nil,
 		},
 		{
 			name:          "with-statuscheck",
-			code:          http.StatusInternalServerError,
 			hasErr:        false,
 			isStatusError: func(statusCode int) bool { return false },
 		},
@@ -255,7 +252,7 @@ func TestWithStatusCheck(t *testing.T) {
 			mux := NewRouter(WithStatusCheck(ht.isStatusError))
 			mux.Handle("/500", errorHandler(http.StatusInternalServerError))
 			mux.ServeHTTP(w, r)
-			assert.Equal(ht.code, http.StatusInternalServerError)
+			assert.Equal(http.StatusInternalServerError, w.Code)
 
 			spans := mt.FinishedSpans()
 			assert.Equal(1, len(spans))
