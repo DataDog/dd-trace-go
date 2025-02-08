@@ -225,6 +225,48 @@ func TestWithQueryParams(t *testing.T) {
 	assert.Equal("http://localhost/200?<redacted>&id=3&name=5", mt.FinishedSpans()[0].Tags()[ext.HTTPURL])
 }
 
+func TestWithStatusCheck(t *testing.T) {
+	for _, ht := range []struct {
+		name          string
+		code          int
+		hasErr        bool
+		isStatusError func(statusCode int) bool
+	}{
+		{
+			name:          "without-statuscheck",
+			code:          http.StatusInternalServerError,
+			hasErr:        true,
+			isStatusError: nil,
+		},
+		{
+			name:          "with-statuscheck",
+			code:          http.StatusInternalServerError,
+			hasErr:        false,
+			isStatusError: func(statusCode int) bool { return false },
+		},
+	} {
+		t.Run(ht.name, func(t *testing.T) {
+			assert := assert.New(t)
+			mt := mocktracer.Start()
+			defer mt.Stop()
+
+			r := httptest.NewRequest("GET", "/500", nil)
+			w := httptest.NewRecorder()
+			mux := NewRouter(WithStatusCheck(ht.isStatusError))
+			mux.Handle("/500", errorHandler(http.StatusInternalServerError))
+			mux.ServeHTTP(w, r)
+			assert.Equal(ht.code, http.StatusInternalServerError)
+
+			spans := mt.FinishedSpans()
+			assert.Equal(1, len(spans))
+
+			s := spans[0]
+			_, ok := s.Tag(ext.Error).(error)
+			assert.Equal(ht.hasErr, ok)
+		})
+	}
+}
+
 func TestSpanOptions(t *testing.T) {
 	assert := assert.New(t)
 	mt := mocktracer.Start()
