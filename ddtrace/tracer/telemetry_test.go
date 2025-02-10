@@ -66,7 +66,7 @@ func TestTelemetryEnabled(t *testing.T) {
 		telemetry.Check(t, telemetryClient.Configuration, "span_sample_rules", "[]")
 		if metrics, ok := telemetryClient.Metrics[telemetry.NamespaceGeneral]; ok {
 			if initTime, ok := metrics["init_time"]; ok {
-				assert.True(t, initTime > 0)
+				assert.True(t, initTime > 0, "expected positive init time, but got %f", initTime)
 				return
 			}
 			t.Fatalf("could not find general init time in telemetry client metrics")
