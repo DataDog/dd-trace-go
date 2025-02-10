@@ -25,6 +25,7 @@ type Ticker struct {
 	tickFunc TickFunc
 
 	stopChan chan struct{}
+	stopped  bool
 }
 
 func NewTicker(tickFunc TickFunc, interval Range[time.Duration]) *Ticker {
@@ -81,7 +82,11 @@ func (t *Ticker) CanDecreaseSpeed() {
 }
 
 func (t *Ticker) Stop() {
+	if t.stopped {
+		return
+	}
 	t.ticker.Stop()
 	t.stopChan <- struct{}{}
 	close(t.stopChan)
+	t.stopped = true
 }

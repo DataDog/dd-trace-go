@@ -188,6 +188,10 @@ func defaultConfig(config ClientConfig) ClientConfig {
 	// Make sure we flush at least at each heartbeat interval
 	config.FlushInterval = config.FlushInterval.ReduceMax(config.HeartbeatInterval)
 
+	if config.HeartbeatInterval == config.FlushInterval.Max { // Since the go ticker is not exact when it comes to the interval, we need to make sure the heartbeat is actually sent
+		config.HeartbeatInterval = config.HeartbeatInterval - 10*time.Millisecond
+	}
+
 	if config.DependencyLoader == nil && globalinternal.BoolEnv("DD_TELEMETRY_DEPENDENCY_COLLECTION_ENABLED", true) {
 		config.DependencyLoader = debug.ReadBuildInfo
 	}
