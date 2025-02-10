@@ -39,31 +39,49 @@ func TestNewClient(t *testing.T) {
 		newErr       string
 	}{
 		{
-			name: "empty service",
-			tracerConfig: internal.TracerConfig{
-				Service: "",
-				Env:     "test-env",
-				Version: "1.0.0",
-			},
-			newErr: "service name must not be empty",
-		},
-		{
-			name: "empty environment",
-			tracerConfig: internal.TracerConfig{
-				Service: "test-service",
-				Env:     "",
-				Version: "1.0.0",
-			},
-			newErr: "environment name must not be empty",
-		},
-		{
-			name: "empty version",
+			name: "nominal",
 			tracerConfig: internal.TracerConfig{
 				Service: "test-service",
 				Env:     "test-env",
-				Version: "",
+				Version: "1.0.0",
 			},
-			newErr: "version must not be empty",
+			clientConfig: ClientConfig{
+				AgentURL: "http://localhost:8126",
+			},
+		},
+		{
+			name:         "empty service",
+			tracerConfig: internal.TracerConfig{},
+			newErr:       "service name must not be empty",
+		},
+		{
+			name: "empty agent url",
+			tracerConfig: internal.TracerConfig{
+				Service: "test-service",
+			},
+			clientConfig: ClientConfig{},
+			newErr:       "could not build any endpoint",
+		},
+		{
+			name: "invalid agent url",
+			tracerConfig: internal.TracerConfig{
+				Service: "test-service",
+			},
+			clientConfig: ClientConfig{
+				AgentURL: "toto_protocol://localhost:8126",
+			},
+			newErr: "invalid agent URL",
+		},
+		{
+			name: "Too big payload size",
+			tracerConfig: internal.TracerConfig{
+				Service: "test-service",
+			},
+			clientConfig: ClientConfig{
+				AgentURL:              "http://localhost:8126",
+				EarlyFlushPayloadSize: 64 * 1024 * 1024, // 64MB
+			},
+			newErr: "EarlyFlushPayloadSize must be between 0 and 5MB",
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {

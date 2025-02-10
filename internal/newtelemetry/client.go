@@ -23,14 +23,6 @@ func NewClient(service, env, version string, config ClientConfig) (Client, error
 		return nil, errors.New("service name must not be empty")
 	}
 
-	if env == "" {
-		return nil, errors.New("environment name must not be empty")
-	}
-
-	if version == "" {
-		return nil, errors.New("version must not be empty")
-	}
-
 	config = defaultConfig(config)
 	if err := config.validateConfig(); err != nil {
 		return nil, err
@@ -213,7 +205,12 @@ func (c *client) Flush() {
 		}
 	}
 
-	_, _ = c.flush(payloads)
+	nbBytes, err := c.flush(payloads)
+	if err != nil {
+		log.Warn("error while flushing telemetry data: %v", err)
+	}
+
+	log.Debug("flushed %d bytes of telemetry data", nbBytes)
 }
 
 func (c *client) transform(payloads []transport.Payload) []transport.Payload {
@@ -252,7 +249,6 @@ func (c *client) flush(payloads []transport.Payload) (int, error) {
 				log.Warn("telemetry: tried sending a payload that was too large, dropping it")
 				continue
 			}
-			log.Warn("error while flushing telemetry data: %v", err)
 			c.payloadQueue.Enqueue(payloads[i:]...)
 			return nbBytes, err
 		}

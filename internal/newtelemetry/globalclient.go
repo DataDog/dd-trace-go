@@ -50,7 +50,10 @@ func StartApp(client Client) {
 
 	client.AppStart()
 
-	go client.Flush()
+	go func() {
+		client.Flush()
+		log.Debug("telemetry: sucessfully flushed the telemetry app-started payload")
+	}()
 }
 
 // SwapClient swaps the global client with the given client and Flush the old (*client).
