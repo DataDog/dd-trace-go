@@ -70,6 +70,7 @@ const (
 	PackageLogSlog                 Package = "log/slog"
 
 	PackageEnvoyProxyGoControlPlane Package = "envoyproxy/go-control-plane"
+	PackageOS                       Package = "os"
 )
 
 type Component int
@@ -736,6 +737,9 @@ var packages = map[Package]PackageInfo{
 	},
 	PackageEnvoyProxyGoControlPlane: {
 		TracedPackage: "github.com/envoyproxy/go-control-plane",
+	},
+	PackageOS: {
+		TracedPackage: "os",
 	},
 }
 
