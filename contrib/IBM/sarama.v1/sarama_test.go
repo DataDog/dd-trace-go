@@ -7,6 +7,7 @@ package sarama
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -366,4 +367,54 @@ func waitForSpans(mt mocktracer.Tracer, sz int) {
 		}
 		time.Sleep(time.Millisecond * 100)
 	}
+}
+
+func assertDSMProducerPathway(t *testing.T, topic string, msg *sarama.ProducerMessage) {
+	t.Helper()
+
+	got, ok := datastreams.PathwayFromContext(datastreams.ExtractFromBase64Carrier(
+		context.Background(),
+		NewProducerMessageCarrier(msg),
+	))
+	require.True(t, ok, "pathway not found in kafka message")
+
+	ctx, _ := tracer.SetDataStreamsCheckpoint(
+		context.Background(),
+		"direction:out", "topic:"+topic, "type:kafka",
+	)
+	want, _ := datastreams.PathwayFromContext(ctx)
+
+	assert.NotEqual(t, want.GetHash(), 0)
+	assert.Equal(t, want.GetHash(), got.GetHash())
+}
+
+func assertDSMConsumerPathway(t *testing.T, topic, groupID string, msg *sarama.ConsumerMessage, withProducer bool) {
+	t.Helper()
+
+	carrier := NewConsumerMessageCarrier(msg)
+	got, ok := datastreams.PathwayFromContext(datastreams.ExtractFromBase64Carrier(
+		context.Background(),
+		carrier,
+	))
+	require.True(t, ok, "pathway not found in kafka message")
+
+	edgeTags := []string{"direction:in", "topic:" + topic, "type:kafka"}
+	if groupID != "" {
+		edgeTags = append(edgeTags, "group:"+groupID)
+	}
+
+	ctx := context.Background()
+	if withProducer {
+		ctx, _ = tracer.SetDataStreamsCheckpoint(context.Background(), "direction:out", "topic:"+topicName(t), "type:kafka")
+	}
+	ctx, _ = tracer.SetDataStreamsCheckpoint(ctx, edgeTags...)
+	want, _ := datastreams.PathwayFromContext(ctx)
+
+	assert.NotEqual(t, want.GetHash(), 0)
+	assert.Equal(t, want.GetHash(), got.GetHash())
+}
+
+// topicName returns a unique topic name for the current test, which ensures results are not affected by each other.
+func topicName(t *testing.T) string {
+	return strings.ReplaceAll("IBM/sarama/"+t.Name(), "/", "_")
 }

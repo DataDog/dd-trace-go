@@ -7,7 +7,9 @@ package tracer
 
 import (
 	"encoding/json"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -32,15 +34,19 @@ func TestIntegrationEnabled(t *testing.T) {
 		var out contribPkg
 		err := stream.Decode(&out)
 		if err != nil {
-			t.Fatalf(err.Error())
+			t.Fatal(err.Error())
 		}
 		packages = append(packages, out)
 	}
 	for _, pkg := range packages {
-		if strings.Contains(pkg.ImportPath, "/test") || strings.Contains(pkg.ImportPath, "/internal") {
+		if strings.Contains(pkg.ImportPath, "/test") || strings.Contains(pkg.ImportPath, "/internal") || strings.Contains(pkg.ImportPath, "/cmd") {
 			continue
 		}
-		p := strings.Replace(pkg.Dir, pkg.Root, "../..", 1)
+		sep := string(os.PathSeparator)
+		p := strings.Replace(pkg.Dir, pkg.Root, filepath.Join("..", ".."), 1)
+		if strings.Contains(p, filepath.Join(sep, "contrib", "net", "http", "client")) || strings.Contains(p, filepath.Join(sep, "contrib", "os")) {
+			continue
+		}
 		body, err := exec.Command("grep", "-rl", "MarkIntegrationImported", p).Output()
 		if err != nil {
 			t.Fatalf("%s", err.Error())

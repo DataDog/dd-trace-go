@@ -2,7 +2,6 @@
 // under the Apache License Version 2.0.
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
-
 package http
 
 import (
@@ -143,6 +142,14 @@ func RTWithPropagation(propagation bool) RoundTripperOption {
 // outgoing HTTP request should not be traced.
 func RTWithIgnoreRequest(f func(*http.Request) bool) RoundTripperOption {
 	return v2.WithIgnoreRequest(f)
+}
+
+// WithStatusCheck sets a span to be an error if the passed function
+// returns true for a given status code.
+func WithStatusCheck(fn func(statusCode int) bool) Option {
+	return func(cfg *internalconfig.Config) {
+		cfg.IsStatusError = fn
+	}
 }
 
 // RTWithErrorCheck specifies a function fn which determines whether the passed

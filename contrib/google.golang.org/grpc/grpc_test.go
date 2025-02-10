@@ -518,20 +518,20 @@ func TestStreamSendsErrorCode(t *testing.T) {
 	// to flush the spans
 	_, _ = stream.Recv()
 
-	containsErrorCode := false
 	spans := mt.FinishedSpans()
 
-	// check if at least one span has error code
+	// check if at least one span with spank.kind=server has error code
+	var span mocktracer.Span
 	for _, s := range spans {
-		if s.Tag(tagCode) == wantCode {
-			containsErrorCode = true
+		if s.Tag(tagCode) != wantCode {
+			continue
 		}
+		if s.Tag(ext.SpanKind) != ext.SpanKindServer {
+			continue
+		}
+		span = s
 	}
-	assert.True(t, containsErrorCode, "at least one span should contain error code, the spans were:\n%v", spans)
-
-	// ensure that last span contains error code also
-	gotLastSpanCode := spans[len(spans)-1].Tag(tagCode)
-	assert.Equal(t, wantCode, gotLastSpanCode, "last span should contain error code")
+	assert.NotNilf(t, span, "at least one span should contain error code, the spans were:\n%v", spans)
 }
 
 // fixtureServer a dummy implementation of our grpc fixtureServer.

@@ -19,6 +19,9 @@ import (
 var (
 	// defaultMaxTagsHeaderLen specifies the default maximum length of the X-Datadog-Tags header value.
 	defaultMaxTagsHeaderLen = 128
+
+	// defaultRateLimit specifies the default trace rate limit used when DD_TRACE_RATE_LIMIT is not set.
+	defaultRateLimit = 100.0
 )
 
 // StartOption represents a function that can be provided as a parameter to Start.
@@ -90,6 +93,13 @@ func WithLambdaMode(enabled bool) StartOption {
 // most `retries` times.
 func WithSendRetries(retries int) StartOption {
 	return v2.WithSendRetries(retries)
+}
+
+// WithRetryInterval sets the interval, in seconds, for retrying submitting payloads to the agent.
+func WithRetryInterval(interval int) StartOption {
+	return func(c *config) {
+		c.retryInterval = time.Duration(interval) * time.Second
+	}
 }
 
 // WithPropagator sets an alternative propagator to be used by the tracer.

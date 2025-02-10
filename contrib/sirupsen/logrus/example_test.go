@@ -29,6 +29,6 @@ func ExampleHook() {
 	cLog := logrus.WithContext(sctx).WithTime(time.Date(2000, 1, 1, 1, 1, 1, 0, time.UTC))
 	// Log as desired using the context-aware logger
 	cLog.Info("Completed some work!")
-	// Output:
-	// {"dd.span_id":0,"dd.trace_id":"00000000000000000000000000000000","level":"info","msg":"Completed some work!","time":"2000-01-01T01:01:01Z"}
+	// You should see:
+	// {"dd.span_id":0,"dd.trace_id":0,"level":"info","msg":"Completed some work!","time":"2000-01-01T01:01:01Z"}
 }

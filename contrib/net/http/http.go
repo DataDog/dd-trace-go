@@ -17,8 +17,6 @@ type ServeMux struct {
 	*v2.ServeMux
 }
 
-// NewServeMux allocates and returns an http.ServeMux augmented with the
-// global tracer.
 func NewServeMux(opts ...Option) *ServeMux {
 	m := v2.NewServeMux(opts...)
 	return &ServeMux{m}
