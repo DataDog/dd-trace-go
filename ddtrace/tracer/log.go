@@ -174,4 +174,5 @@ func logStartup(t *tracer) {
 		return
 	}
 	log.Info("DATADOG TRACER CONFIGURATION %s\n", string(bs))
+	telemetrylog.Debug("DATADOG TRACER CONFIGURATION %s\n", string(bs))
 }
