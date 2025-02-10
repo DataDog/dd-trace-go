@@ -57,6 +57,7 @@ jobs:
       # - name: golangci-lint
       #   uses: reviewdog/action-golangci-lint@dd3fda91790ca90e75049e5c767509dc0ec7d99b # v2.7.0
       #   with:
+      #     golangci_lint_flags: "--timeout 10m" # We are hitting timeout when there is no cache
       #     go_version: ${{ inputs.go-version }}
       #     golangci_lint_version: v1.63.4
       #     fail_level: error

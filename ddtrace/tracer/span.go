@@ -10,6 +10,7 @@ package tracer
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"os"
 	"reflect"
@@ -548,6 +549,27 @@ func (s *Span) setMetric(key string, v float64) {
 	}
 }
 
+// AddSpanLink appends the given link to the span's span links.
+func (s *Span) AddSpanLink(link SpanLink) {
+	s.spanLinks = append(s.spanLinks, link)
+}
+
+// serializeSpanLinksInMeta saves span links as a JSON string under `Span[meta][_dd.span_links]`.
+func (s *Span) serializeSpanLinksInMeta() {
+	if len(s.spanLinks) == 0 {
+		return
+	}
+	spanLinkBytes, err := json.Marshal(s.spanLinks)
+	if err != nil {
+		log.Debug("Unable to marshal span links. Not adding span links to span meta.")
+		return
+	}
+	if s.meta == nil {
+		s.meta = make(map[string]string)
+	}
+	s.meta["_dd.span_links"] = string(spanLinkBytes)
+}
+
 // Finish closes this Span (but not its children) providing the duration
 // of its part of the tracing session.
 func (s *Span) Finish(opts ...FinishOption) {
@@ -605,6 +627,8 @@ func (s *Span) Finish(opts ...FinishOption) {
 			}
 		}
 	}
+
+	s.serializeSpanLinksInMeta()
 
 	s.finish(t)
 	orchestrion.GLSPopValue(sharedinternal.ActiveSpanKey)

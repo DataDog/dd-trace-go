@@ -6,6 +6,7 @@
 package tracer
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"runtime"
@@ -144,6 +145,23 @@ func TestAddSpanLink(t *testing.T) {
 	assert.Equal(spanLinkSampled.TraceID, uint64(0x4))
 	assert.Equal(spanLinkSampled.SpanID, uint64(0x3))
 	assert.Equal(spanLinkSampled.Flags, uint32(2147483649))
+}
+
+func BenchmarkAddSpanLink(b *testing.B) {
+	rootSpan := newSpan("root", "service", "res", 123, 456, 0)
+	spanContext := newSpanContext(rootSpan, nil)
+	attrs := map[string]string{"key1": "val1"}
+	link := SpanLink{
+		TraceID:     spanContext.TraceIDLower(),
+		TraceIDHigh: spanContext.TraceIDUpper(),
+		SpanID:      spanContext.SpanID(),
+		Attributes:  attrs,
+	}
+
+	b.ResetTimer()
+	for n := 0; n < b.N; n++ {
+		rootSpan.AddSpanLink(link)
+	}
 }
 
 func TestSpanOperationName(t *testing.T) {
@@ -1220,6 +1238,27 @@ func BenchmarkSetTagField(b *testing.B) {
 	}
 }
 
+func BenchmarkSerializeSpanLinksInMeta(b *testing.B) {
+	span := newBasicSpan("bench.span")
+
+	span.AddSpanLink(SpanLink{SpanID: 123, TraceID: 456})
+	span.AddSpanLink(SpanLink{SpanID: 789, TraceID: 101})
+
+	// Sample span pointer
+	attributes := map[string]string{
+		"link.kind": "span-pointer",
+		"ptr.dir":   "d",
+		"ptr.hash":  "eb29cb7d923f904f02bd8b3d85e228ed",
+		"ptr.kind":  "aws.s3.object",
+	}
+	span.AddSpanLink(SpanLink{TraceID: 0, SpanID: 0, Attributes: attributes})
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		span.serializeSpanLinksInMeta()
+	}
+}
+
 type boomError struct{}
 
 func (e *boomError) Error() string { return "boom" }
@@ -1261,4 +1300,45 @@ func testConcurrentSpanSetTag(t *testing.T) {
 		}()
 	}
 	wg.Wait()
+}
+
+func TestSpanLinksInMeta(t *testing.T) {
+	t.Run("no_links", func(t *testing.T) {
+		tracer, err := newTracer()
+		require.NoError(t, err)
+		defer tracer.Stop()
+
+		sp := tracer.StartSpan("test-no-links")
+		sp.Finish()
+
+		internalSpan := sp
+		_, ok := internalSpan.meta["_dd.span_links"]
+		assert.False(t, ok, "Expected no _dd.span_links in Meta.")
+	})
+
+	t.Run("with_links", func(t *testing.T) {
+		tracer, err := newTracer()
+		require.NoError(t, err)
+		defer tracer.Stop()
+
+		sp := tracer.StartSpan("test-with-links")
+
+		sp.AddSpanLink(SpanLink{SpanID: 123, TraceID: 456})
+		sp.AddSpanLink(SpanLink{SpanID: 789, TraceID: 012})
+		sp.Finish()
+
+		internalSpan := sp
+		raw, ok := internalSpan.meta["_dd.span_links"]
+		require.True(t, ok, "Expected _dd.span_links in Meta after adding links.")
+
+		var links []SpanLink
+		err = json.Unmarshal([]byte(raw), &links)
+		require.NoError(t, err, "Failed to unmarshal links JSON")
+		require.Len(t, links, 2, "Expected 2 links in _dd.span_links JSON")
+
+		assert.Equal(t, uint64(123), links[0].SpanID)
+		assert.Equal(t, uint64(456), links[0].TraceID)
+		assert.Equal(t, uint64(789), links[1].SpanID)
+		assert.Equal(t, uint64(012), links[1].TraceID)
+	})
 }
