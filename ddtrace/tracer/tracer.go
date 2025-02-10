@@ -8,6 +8,8 @@ package tracer
 import (
 	gocontext "context"
 	"encoding/binary"
+	"fmt"
+	"github.com/google/uuid"
 	"log/slog"
 	"math"
 	"os"
@@ -200,7 +202,31 @@ func Start(opts ...StartOption) {
 		logStartup(t)
 	}
 
+	// store the configuration in an in-memory file, allowing it to be read to
+	// determine if the process is instrumented with a tracer and to retrive
+	// relevant tracing information.
+	storeConfig(t.config)
+
 	_ = t.hostname() // Prime the hostname cache
+}
+
+func storeConfig(c *config) {
+	uuid, _ := uuid.NewRandom()
+	name := fmt.Sprintf("datadog-tracer-info-%s", uuid.String()[0:8])
+
+	metadata := TracerMetadata{
+		SchemaVersion:      1,
+		RuntimeId:          "TBD", ///< Where to get it?
+		Language:           "golang",
+		Version:            "1.2.3",
+		Hostname:           c.hostname,
+		ServiceName:        c.serviceName,
+		ServiceEnvironment: c.env,
+		ServiceVersion:     c.version,
+	}
+
+	data, _ := metadata.MarshalMsg(nil)
+	globalinternal.CreateMemfd(name, data)
 }
 
 // Stop stops the started tracer. Subsequent calls are valid but become no-op.
