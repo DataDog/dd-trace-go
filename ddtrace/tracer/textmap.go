@@ -93,7 +93,8 @@ const (
 	// or text maps to store the sampling priority value.
 	DefaultPriorityHeader = "x-datadog-sampling-priority"
 
-	// add comment here - Rachel
+	// DefaultBaggageHeader specifies the key that will be used in HTTP headers
+	// or text maps to store the baggage value.
 	DefaultBaggageHeader = "baggage"
 )
 
@@ -133,7 +134,8 @@ type PropagatorConfig struct {
 	// See https://github.com/openzipkin/b3-propagation
 	B3 bool
 
-	// add comment here - Rachel
+	// BaggageHeader specifies the map key that will be used to store the baggage key-value pairs.
+	// It defaults to DefaultBaggageHeader.
 	BaggageHeader string
 }
 
