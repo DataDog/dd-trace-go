@@ -40,7 +40,7 @@ func validateMetricKey(namespace Namespace, kind transport.MetricType, name stri
 	}
 
 	if !knownmetrics.IsKnownMetric(namespace, kind, name) {
-		return fmt.Errorf("metric name %q of kind %q in namespace %q is not a known metric, please update the list of metrics name or check that your wrote the name correctly. "+
+		return fmt.Errorf("metric name %q of kind %q in namespace %q is not a known metric, please update the list of metrics name or check that you wrote the name correctly. "+
 			"The metric will still be sent", name, string(kind), namespace)
 	}
 

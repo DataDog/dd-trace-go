@@ -66,14 +66,16 @@ func SwapClient(client Client) {
 		(*oldClient).Close()
 	}
 
-	if client != nil {
-		globalClientRecorder.Replay(client)
-		// Swap all metrics hot pointers to the new MetricHandle
-		metricsHandleSwappablePointers.Range(func(_ metricKey, value *swappableMetricHandle) bool {
-			value.swap(value.maker(client))
-			return true
-		})
+	if client == nil {
+		return
 	}
+
+	globalClientRecorder.Replay(client)
+	// Swap all metrics hot pointers to the new MetricHandle
+	metricsHandleSwappablePointers.Range(func(_ metricKey, value *swappableMetricHandle) bool {
+		value.swap(value.maker(client))
+		return true
+	})
 }
 
 // MockClient swaps the global client with the given client and clears the recorder to make sure external calls are not replayed.

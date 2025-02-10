@@ -20,8 +20,8 @@ import (
 
 type ClientConfig struct {
 	// DependencyLoader determines how dependency data is sent via telemetry.
-	// If nil, the library should not send the app-dependencies-loaded event.
 	// The default value is [debug.ReadBuildInfo] since Application Security Monitoring uses this data to detect vulnerabilities in the ASM-SCA product
+	// To disable this feature, please implement a function that returns nil, false.
 	// This can only be controlled via the env var DD_TELEMETRY_DEPENDENCY_COLLECTION_ENABLED
 	DependencyLoader func() (*debug.BuildInfo, bool)
 
