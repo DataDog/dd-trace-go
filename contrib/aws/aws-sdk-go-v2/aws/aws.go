@@ -24,10 +24,11 @@ import (
 	"github.com/aws/smithy-go/middleware"
 	smithyhttp "github.com/aws/smithy-go/transport/http"
 
-	eventBridgeTracer "github.com/DataDog/dd-trace-go/v2/contrib/aws/eventbridge"
-	sfnTracer "github.com/DataDog/dd-trace-go/v2/contrib/aws/sfn"
-	snsTracer "github.com/DataDog/dd-trace-go/v2/contrib/aws/sns"
-	sqsTracer "github.com/DataDog/dd-trace-go/v2/contrib/aws/sqs"
+	eventBridgeTracer "github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go-v2/v2/eventbridge"
+	"github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go-v2/v2/internal"
+	sfnTracer "github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go-v2/v2/sfn"
+	snsTracer "github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go-v2/v2/sns"
+	sqsTracer "github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go-v2/v2/sqs"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
@@ -39,6 +40,7 @@ var instr *instrumentation.Instrumentation
 
 func init() {
 	instr = instrumentation.Load(instrumentation.PackageAWSSDKGoV2)
+	internal.Logger = instr.Logger()
 }
 
 type spanTimestampKey struct{}

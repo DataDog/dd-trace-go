@@ -11,8 +11,8 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go-v2/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
-	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/eventbridge"
 	"github.com/aws/aws-sdk-go-v2/service/eventbridge/types"
@@ -36,7 +36,7 @@ func EnrichOperation(span *tracer.Span, in middleware.InitializeInput, operation
 func handlePutEvents(span *tracer.Span, in middleware.InitializeInput) {
 	params, ok := in.Parameters.(*eventbridge.PutEventsInput)
 	if !ok {
-		log.Debug("Unable to read PutEvents params")
+		internal.Logger.Debug("Unable to read PutEvents params")
 		return
 	}
 
@@ -44,7 +44,7 @@ func handlePutEvents(span *tracer.Span, in middleware.InitializeInput) {
 	carrier := tracer.TextMapCarrier{}
 	err := tracer.Inject(span.Context(), carrier)
 	if err != nil {
-		log.Debug("Unable to inject trace context: %s", err)
+		internal.Logger.Debug("Unable to inject trace context: %s", err)
 		return
 	}
 
@@ -54,7 +54,7 @@ func handlePutEvents(span *tracer.Span, in middleware.InitializeInput) {
 
 	carrierJSON, err := json.Marshal(carrier)
 	if err != nil {
-		log.Debug("Unable to marshal trace context: %s", err)
+		internal.Logger.Debug("Unable to marshal trace context: %s", err)
 		return
 	}
 
@@ -89,7 +89,7 @@ func injectTraceContext(baseTraceContext string, entryPtr *types.PutEventsReques
 
 	// Basic JSON structure validation
 	if len(detail) < 2 || detail[len(detail)-1] != '}' {
-		log.Debug("Unable to parse detail JSON. Not injecting trace context into EventBridge payload.")
+		internal.Logger.Debug("Unable to parse detail JSON. Not injecting trace context into EventBridge payload.")
 		return
 	}
 
@@ -105,7 +105,7 @@ func injectTraceContext(baseTraceContext string, entryPtr *types.PutEventsReques
 
 	// Check sizes
 	if len(newDetail) > maxSizeBytes {
-		log.Debug("Payload size too large to pass context")
+		internal.Logger.Debug("Payload size too large to pass context")
 		return
 	}
 

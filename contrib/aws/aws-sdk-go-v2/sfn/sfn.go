@@ -9,8 +9,8 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go-v2/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
-	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/aws/aws-sdk-go-v2/service/sfn"
 	"github.com/aws/smithy-go/middleware"
 )
@@ -27,7 +27,7 @@ func EnrichOperation(span *tracer.Span, in middleware.InitializeInput, operation
 func handleStartExecution(span *tracer.Span, in middleware.InitializeInput) {
 	params, ok := in.Parameters.(*sfn.StartExecutionInput)
 	if !ok {
-		log.Debug("Unable to read StartExecutionInput params")
+		internal.Logger.Debug("Unable to read StartExecutionInput params")
 		return
 	}
 
@@ -38,7 +38,7 @@ func handleStartExecution(span *tracer.Span, in middleware.InitializeInput) {
 func handleStartSyncExecution(span *tracer.Span, in middleware.InitializeInput) {
 	params, ok := in.Parameters.(*sfn.StartSyncExecutionInput)
 	if !ok {
-		log.Debug("Unable to read StartSyncExecutionInput params")
+		internal.Logger.Debug("Unable to read StartSyncExecutionInput params")
 		return
 	}
 
@@ -52,13 +52,13 @@ func injectTraceContext(span *tracer.Span, input *string) *string {
 	}
 	traceCtxCarrier := tracer.TextMapCarrier{}
 	if err := tracer.Inject(span.Context(), traceCtxCarrier); err != nil {
-		log.Debug("Unable to inject trace context: %s", err)
+		internal.Logger.Debug("Unable to inject trace context: %s", err)
 		return input
 	}
 
 	traceCtxJSON, err := json.Marshal(traceCtxCarrier)
 	if err != nil {
-		log.Debug("Unable to marshal trace context: %s", err)
+		internal.Logger.Debug("Unable to marshal trace context: %s", err)
 		return input
 	}
 
