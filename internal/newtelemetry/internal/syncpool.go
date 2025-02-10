@@ -15,11 +15,11 @@ type SyncPool[T any] struct {
 }
 
 // NewSyncPool creates a new Pool with the given new function.
-func NewSyncPool[T any](new func() T) *SyncPool[T] {
+func NewSyncPool[T any](newT func() T) *SyncPool[T] {
 	return &SyncPool[T]{
 		pool: &sync.Pool{
 			New: func() any {
-				return new()
+				return newT()
 			},
 		},
 	}
