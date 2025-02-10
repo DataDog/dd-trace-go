@@ -73,6 +73,9 @@ func (c *MockClient) Record(ns telemetry.Namespace, _ telemetry.MetricKind, name
 	c.On("Gauge", ns, name, val, tags, common).Return()
 	c.On("Record", ns, name, val, tags, common).Return()
 	_ = c.Called(ns, name, val, tags, common)
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	// record the val for tests that assert based on the value
 	if _, ok := c.Metrics[ns]; !ok {
 		c.Metrics[ns] = map[string]float64{}
