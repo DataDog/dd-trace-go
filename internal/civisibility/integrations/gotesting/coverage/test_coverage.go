@@ -215,12 +215,7 @@ func (t *testCoverage) CollectCoverageAfterTestExecution() {
 		return
 	}
 
-	t.postCoverageFilename = filepath.Join(temporaryDir, fmt.Sprintf("%d-%d-%d-post.out", t.moduleID, t.suiteID, t.testID))
-	_, err := tearDown(t.postCoverageFilename, "")
-	if err != nil {
-		log.Debug("civisibility.coverage: error getting coverage file: %v", err)
-		telemetry.CodeCoverageErrors()
-	}
+	t.getCoverageData()
 
 	var pChannel = make(chan struct{})
 	integrations.PushCiVisibilityCloseAction(func() {
@@ -230,6 +225,16 @@ func (t *testCoverage) CollectCoverageAfterTestExecution() {
 		t.processCoverageData()
 		pChannel <- struct{}{}
 	}()
+}
+
+// getCoverageData gets the coverage data.
+func (t *testCoverage) getCoverageData() {
+	t.postCoverageFilename = filepath.Join(temporaryDir, fmt.Sprintf("%d-%d-%d-post.out", t.moduleID, t.suiteID, t.testID))
+	_, err := tearDown(t.postCoverageFilename, "")
+	if err != nil {
+		log.Debug("civisibility.coverage: error getting coverage file: %v", err)
+		telemetry.CodeCoverageErrors()
+	}
 }
 
 // processCoverageData processes the coverage data.
