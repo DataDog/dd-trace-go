@@ -8,6 +8,8 @@ package internal
 import (
 	"sync"
 	"time"
+
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
 type TickFunc func()
@@ -21,6 +23,8 @@ type Ticker struct {
 	interval Range[time.Duration]
 
 	tickFunc TickFunc
+
+	stopChan chan struct{}
 }
 
 func NewTicker(tickFunc TickFunc, interval Range[time.Duration]) *Ticker {
@@ -29,11 +33,17 @@ func NewTicker(tickFunc TickFunc, interval Range[time.Duration]) *Ticker {
 		tickSpeed: interval.Max,
 		interval:  interval,
 		tickFunc:  tickFunc,
+		stopChan:  make(chan struct{}),
 	}
 
 	go func() {
-		for range ticker.ticker.C {
-			tickFunc()
+		for {
+			select {
+			case <-ticker.ticker.C:
+				tickFunc()
+			case <-ticker.stopChan:
+				break
+			}
 		}
 	}()
 
@@ -51,6 +61,7 @@ func (t *Ticker) CanIncreaseSpeed() {
 		return
 	}
 
+	log.Debug("telemetry: increasing flush speed to an interval of %s", t.tickSpeed)
 	t.ticker.Reset(t.tickSpeed)
 }
 
@@ -65,9 +76,12 @@ func (t *Ticker) CanDecreaseSpeed() {
 		return
 	}
 
+	log.Debug("telemetry: decreasing flush speed to an interval of %s", t.tickSpeed)
 	t.ticker.Reset(t.tickSpeed)
 }
 
 func (t *Ticker) Stop() {
 	t.ticker.Stop()
+	t.stopChan <- struct{}{}
+	close(t.stopChan)
 }

@@ -207,10 +207,12 @@ func (c *client) Flush() {
 
 	nbBytes, err := c.flush(payloads)
 	if err != nil {
-		log.Warn("error while flushing telemetry data: %v", err)
+		log.Warn("telemetry: error while flushing: %v", err)
 	}
 
-	log.Debug("flushed %d bytes of telemetry data", nbBytes)
+	if c.clientConfig.Debug {
+		log.Debug("telemetry: flushed %d bytes of data", nbBytes)
+	}
 }
 
 func (c *client) transform(payloads []transport.Payload) []transport.Payload {
