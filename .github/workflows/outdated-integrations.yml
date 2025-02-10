@@ -31,4 +31,4 @@ jobs:
           go get github.com/go-git/go-git/v5/plumbing
           go get github.com/go-git/go-git/v5/storage/memory
 
-      - run: go run .github/workflows/apps/new_latest_major_versions.go
+      - run: go run .github/workflows/apps/latest_major_versions.go
