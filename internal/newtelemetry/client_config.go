@@ -14,6 +14,7 @@ import (
 	"time"
 
 	globalinternal "gopkg.in/DataDog/dd-trace-go.v1/internal"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/newtelemetry/internal"
 )
 
@@ -181,6 +182,9 @@ func defaultConfig(config ClientConfig) ClientConfig {
 
 	envVal := globalinternal.FloatEnv("DD_TELEMETRY_HEARTBEAT_INTERVAL", heartBeatInterval.Seconds())
 	config.HeartbeatInterval = defaultAuthorizedHearbeatRange.Clamp(time.Duration(envVal * float64(time.Second)))
+	if config.HeartbeatInterval != defaultHeartbeatInterval {
+		log.Debug("telemetry: using custom heartbeat interval %v", config.HeartbeatInterval)
+	}
 	// Make sure we flush at least at each heartbeat interval
 	config.FlushInterval = config.FlushInterval.ReduceMax(config.HeartbeatInterval)
 
