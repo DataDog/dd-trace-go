@@ -3,7 +3,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
-package fasthttptrace
+package fasthttp
 
 import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"

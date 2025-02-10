@@ -3,11 +3,10 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
-package fasthttptrace
+package fasthttp
 
 import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
-	"github.com/DataDog/dd-trace-go/v2/internal"
 
 	"github.com/valyala/fasthttp"
 )
@@ -19,6 +18,6 @@ import (
 // If the ChildOf option is passed, it will only be used as the parent if there is no span found in `fctx`.
 func StartSpanFromContext(fctx *fasthttp.RequestCtx, operationName string, opts ...tracer.StartSpanOption) *tracer.Span {
 	s, _ := tracer.StartSpanFromContext(fctx, operationName, opts...)
-	fctx.SetUserValue(internal.ActiveSpanKey, s)
+	fctx.SetUserValue(instr.ActiveSpanKey(), s)
 	return s
 }

@@ -155,3 +155,7 @@ func NewHeaderTags(headers []string) HeaderTags {
 func (i *Instrumentation) HTTPHeadersAsTags() HeaderTags {
 	return globalconfig.HeaderTagMap()
 }
+
+func (i *Instrumentation) ActiveSpanKey() any {
+	return internal.ActiveSpanKey
+}

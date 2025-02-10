@@ -15,7 +15,6 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
-	"github.com/DataDog/dd-trace-go/v2/instrumentation/fasthttptrace"
 )
 
 const component = instrumentation.PackageValyalaFastHTTP
@@ -42,7 +41,7 @@ func WrapHandler(h fasthttp.RequestHandler, opts ...Option) fasthttp.RequestHand
 			tracer.ServiceName(cfg.serviceName),
 		}
 		spanOpts = append(spanOpts, defaultSpanOptions(fctx)...)
-		fcc := &fasthttptrace.HTTPHeadersCarrier{
+		fcc := &HTTPHeadersCarrier{
 			ReqHeader: &fctx.Request.Header,
 		}
 		if sctx, err := tracer.Extract(fcc); err == nil {
@@ -52,7 +51,7 @@ func WrapHandler(h fasthttp.RequestHandler, opts ...Option) fasthttp.RequestHand
 			}
 			spanOpts = append(spanOpts, tracer.ChildOf(sctx))
 		}
-		span := fasthttptrace.StartSpanFromContext(fctx, "http.request", spanOpts...)
+		span := StartSpanFromContext(fctx, "http.request", spanOpts...)
 		defer span.Finish()
 		h(fctx)
 		span.SetTag(ext.ResourceName, cfg.resourceNamer(fctx))
