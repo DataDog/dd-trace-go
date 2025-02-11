@@ -71,6 +71,14 @@ const (
 
 	PackageEnvoyProxyGoControlPlane Package = "envoyproxy/go-control-plane"
 	PackageOS                       Package = "os"
+
+	// Deprecated packages
+	PackageEmickleiGoRestful Package = "emicklei/go-restful"
+	PackageGaryburdRedigo    Package = "garyburd/redigo"
+	PackageGopkgJinZhuGorm   Package = "gopkg.in/jinzhu/gorm.v1"
+	PackageGojiV1Web         Package = "zenazn/goji.v1/web"
+	PackageJinzhuGorm        Package = "jinzhu/gorm"
+	PackageLabstackEcho      Package = "labstack/echo"
 )
 
 type Component int
