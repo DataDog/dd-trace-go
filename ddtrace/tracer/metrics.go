@@ -99,7 +99,7 @@ func (t *tracer) reportHealthMetricsAtInterval(interval time.Duration) {
 			// our count to 0 regardless of if Count succeeded to cleanup before the next interval.
 			t.spansStarted.Range(func(key string, value *atomic.Int64) bool {
 				old := value.Swap(0)
-				t.statsd.Count("datadog.tracer.spans_started", v, []string{"integration:" + key}, 1)
+				t.statsd.Count("datadog.tracer.spans_started", old, []string{"integration:" + key}, 1)
 				return true
 			})
 
