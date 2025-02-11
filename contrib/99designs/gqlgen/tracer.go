@@ -246,9 +246,9 @@ func serverSpanName(octx *graphql.OperationContext) string {
 
 func isIntrospectionQuery(octx *graphql.OperationContext) bool {
 	if octx.Operation != nil {
-		return octx.OperationName == "IntrospectionQuery" || octx.Operation.Name == "IntrospectionQuery"
+		return octx.Operation.Name == "IntrospectionQuery"
 	}
-	return false
+	return octx.OperationName == "IntrospectionQuery"
 }
 
 // Ensure all of these interfaces are implemented.
