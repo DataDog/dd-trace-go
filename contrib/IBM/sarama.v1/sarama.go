@@ -38,3 +38,9 @@ func WrapSyncProducer(saramaConfig *sarama.Config, producer sarama.SyncProducer,
 func WrapAsyncProducer(saramaConfig *sarama.Config, p sarama.AsyncProducer, opts ...Option) sarama.AsyncProducer {
 	return v2.WrapAsyncProducer(saramaConfig, p, opts...)
 }
+
+// WrapConsumerGroupHandler wraps a sarama.ConsumerGroupHandler causing each received
+// message to be traced.
+func WrapConsumerGroupHandler(handler sarama.ConsumerGroupHandler, opts ...Option) sarama.ConsumerGroupHandler {
+	return v2.WrapConsumerGroupHandler(handler, opts...)
+}

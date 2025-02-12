@@ -6,37 +6,19 @@
 package valkey
 
 import (
-	"gopkg.in/DataDog/dd-trace-go.v1/internal"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
+	v2 "github.com/DataDog/dd-trace-go/contrib/valkey-io/valkey-go/v2"
 )
 
-type config struct {
-	rawCommand  bool
-	serviceName string
-}
-
 // Option represents an option that can be used to create or wrap a client.
-type Option func(*config)
-
-func defaultConfig() *config {
-	return &config{
-		// Do not include the raw command by default since it could contain sensitive data.
-		rawCommand:  internal.BoolEnv("DD_TRACE_VALKEY_RAW_COMMAND", false),
-		serviceName: namingschema.ServiceName(defaultServiceName),
-	}
-}
+type Option = v2.Option
 
 // WithRawCommand can be used to set a tag `valkey.raw_command` in the created spans (disabled by default).
 // Warning: please note the datadog-agent currently does not support obfuscation for this tag, so use this at your own risk.
 func WithRawCommand(rawCommand bool) Option {
-	return func(cfg *config) {
-		cfg.rawCommand = rawCommand
-	}
+	return v2.WithRawCommand(rawCommand)
 }
 
 // WithServiceName sets the given service name for the client.
 func WithServiceName(name string) Option {
-	return func(cfg *config) {
-		cfg.serviceName = name
-	}
+	return v2.WithService(name)
 }

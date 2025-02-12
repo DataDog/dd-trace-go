@@ -10,5 +10,5 @@ package http
 // necessary for the `orchestrion.server.yml` configuraton to be valid.
 import (
 	_ "gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http/client"
-	_ "gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http/internal/orchestrion"
+	// _ "gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http/internal/orchestrion"
 )

@@ -97,9 +97,7 @@ func WithSendRetries(retries int) StartOption {
 
 // WithRetryInterval sets the interval, in seconds, for retrying submitting payloads to the agent.
 func WithRetryInterval(interval int) StartOption {
-	return func(c *config) {
-		c.retryInterval = time.Duration(interval) * time.Second
-	}
+	return v2.WithRetryInterval(interval)
 }
 
 // WithPropagator sets an alternative propagator to be used by the tracer.

@@ -147,9 +147,7 @@ func RTWithIgnoreRequest(f func(*http.Request) bool) RoundTripperOption {
 // WithStatusCheck sets a span to be an error if the passed function
 // returns true for a given status code.
 func WithStatusCheck(fn func(statusCode int) bool) Option {
-	return func(cfg *internalconfig.Config) {
-		cfg.IsStatusError = fn
-	}
+	return v2.WithStatusCheck(fn)
 }
 
 // RTWithErrorCheck specifies a function fn which determines whether the passed

@@ -30,7 +30,7 @@ const componentName = "gopkg.in/jinzhu/gorm.v1"
 var instr *instrumentation.Instrumentation
 
 func init() {
-	instr = instrumentation.Load(instrumentation.PackageGopkgJinzhuGormV1)
+	instr = instrumentation.Load(instrumentation.PackageGopkgJinZhuGormV1)
 }
 
 const (
