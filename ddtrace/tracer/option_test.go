@@ -571,14 +571,14 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			assert.Equal(t, "localhost:8125", globalconfig.DogstatsdAddr())
 		})
 
-		t.Run("env-host", func(t *testing.T) {
+		t.Run("env-agent_host", func(t *testing.T) {
 			t.Setenv("DD_AGENT_HOST", "my-host")
 			tracer, err := newTracer(opts...)
 			assert.NoError(t, err)
 			defer tracer.Stop()
 			c := tracer.config
-			assert.Equal(t, "127.0.0.1:8125", c.dogstatsdAddr)
-			assert.Equal(t, "127.0.0.1:8125", globalconfig.DogstatsdAddr())
+			assert.Equal(t, "my-host:8125", c.dogstatsdAddr)
+			assert.Equal(t, "my-host:8125", globalconfig.DogstatsdAddr())
 		})
 
 		t.Run("env-dogstatsd_host", func(t *testing.T) {
@@ -613,7 +613,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			fail = false
 		})
 
-		t.Run("env-both", func(t *testing.T) {
+		t.Run("env-all", func(t *testing.T) {
 			t.Setenv("DD_DOGSTATSD_HOST", "my-host")
 			t.Setenv("DD_DOGSTATSD_PORT", "123")
 			t.Setenv("DD_AGENT_HOST", "other-host")
@@ -621,11 +621,11 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			assert.NoError(t, err)
 			defer tracer.Stop()
 			c := tracer.config
-			assert.Equal(t, "127.0.0.1:8125", c.dogstatsdAddr)
-			assert.Equal(t, "127.0.0.1:8125", globalconfig.DogstatsdAddr())
+			assert.Equal(t, "my-host:8125", c.dogstatsdAddr)
+			assert.Equal(t, "my-host:8125", globalconfig.DogstatsdAddr())
 		})
 
-		t.Run("env-both: agent not available", func(t *testing.T) {
+		t.Run("env-all: agent not available", func(t *testing.T) {
 			t.Setenv("DD_DOGSTATSD_HOST", "my-host")
 			t.Setenv("DD_DOGSTATSD_PORT", "123")
 			t.Setenv("DD_AGENT_HOST", "other-host")
@@ -634,8 +634,8 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			assert.NoError(t, err)
 			defer tracer.Stop()
 			c := tracer.config
-			assert.Equal(t, "127.0.0.1:123", c.dogstatsdAddr)
-			assert.Equal(t, "127.0.0.1:123", globalconfig.DogstatsdAddr())
+			assert.Equal(t, "my-host:123", c.dogstatsdAddr)
+			assert.Equal(t, "my-host:123", globalconfig.DogstatsdAddr())
 			fail = false
 		})
 
@@ -692,6 +692,15 @@ func TestTracerOptionsDefaults(t *testing.T) {
 		defer tracer.Stop()
 		c := tracer.config
 		assert.Equal(t, "testEnv", c.env)
+	})
+
+	t.Run("env-agentAddr", func(t *testing.T) {
+		t.Setenv("DD_AGENT_HOST", "trace-agent")
+		tracer, err := newTracer(WithAgentTimeout(2))
+		assert.NoError(t, err)
+		defer tracer.Stop()
+		c := tracer.config
+		assert.Equal(t, &url.URL{Scheme: "http", Host: "trace-agent:8126"}, c.agentURL)
 	})
 
 	t.Run("env-agentURL", func(t *testing.T) {
