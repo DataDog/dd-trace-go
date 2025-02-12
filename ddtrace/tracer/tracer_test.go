@@ -2189,12 +2189,13 @@ func startTestTracer(t testing.TB, opts ...StartOption) (trc *tracer, transport 
 // Mock Transport with a real Encoder
 type dummyTransport struct {
 	sync.RWMutex
-	traces spanLists
-	stats  []*pb.ClientStatsPayload
+	traces     spanLists
+	stats      []*pb.ClientStatsPayload
+	obfVersion int
 }
 
 func newDummyTransport() *dummyTransport {
-	return &dummyTransport{traces: spanLists{}}
+	return &dummyTransport{traces: spanLists{}, obfVersion: -1}
 }
 
 func (t *dummyTransport) Len() int {
@@ -2203,9 +2204,10 @@ func (t *dummyTransport) Len() int {
 	return len(t.traces)
 }
 
-func (t *dummyTransport) sendStats(p *pb.ClientStatsPayload) error {
+func (t *dummyTransport) sendStats(p *pb.ClientStatsPayload, obfVersion int) error {
 	t.Lock()
 	t.stats = append(t.stats, p)
+	t.obfVersion = obfVersion
 	t.Unlock()
 	return nil
 }
@@ -2214,6 +2216,12 @@ func (t *dummyTransport) Stats() []*pb.ClientStatsPayload {
 	t.RLock()
 	defer t.RUnlock()
 	return t.stats
+}
+
+func (t *dummyTransport) ObfuscationVersion() int {
+	t.RLock()
+	defer t.RUnlock()
+	return t.obfVersion
 }
 
 func (t *dummyTransport) send(p *payload) (io.ReadCloser, error) {
