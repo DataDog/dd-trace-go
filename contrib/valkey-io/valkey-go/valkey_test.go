@@ -55,7 +55,7 @@ func TestNewClient(t *testing.T) {
 			name: "Test SET command with raw command",
 			opts: []Option{
 				WithRawCommand(true),
-				WithServiceName("test-service"),
+				WithService("test-service"),
 			},
 			runTest: func(t *testing.T, ctx context.Context, client valkey.Client) {
 				assert.NoError(t, client.Do(ctx, client.B().Set().Key("test_key").Value("test_value").Build()).Error())
