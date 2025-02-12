@@ -18,7 +18,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
-	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils"
 )
 
 const (
@@ -42,15 +42,13 @@ func TestMain(m *testing.M) {
 }
 
 func TestNewClient(t *testing.T) {
-	prevName := globalconfig.ServiceName()
-	defer globalconfig.SetServiceName(prevName)
-	globalconfig.SetServiceName("global-service")
+	testutils.SetGlobalServiceName(t, "global-service")
 
 	tests := []struct {
 		name            string
 		opts            []Option
 		runTest         func(*testing.T, context.Context, valkey.Client)
-		assertSpans     func(*testing.T, []mocktracer.Span)
+		assertSpans     func(*testing.T, []*mocktracer.Span)
 		wantServiceName string
 	}{
 		{
@@ -62,7 +60,7 @@ func TestNewClient(t *testing.T) {
 			runTest: func(t *testing.T, ctx context.Context, client valkey.Client) {
 				assert.NoError(t, client.Do(ctx, client.B().Set().Key("test_key").Value("test_value").Build()).Error())
 			},
-			assertSpans: func(t *testing.T, spans []mocktracer.Span) {
+			assertSpans: func(t *testing.T, spans []*mocktracer.Span) {
 				require.Len(t, spans, 1)
 
 				span := spans[0]
@@ -82,7 +80,7 @@ func TestNewClient(t *testing.T) {
 			runTest: func(t *testing.T, ctx context.Context, client valkey.Client) {
 				require.NoError(t, client.Do(ctx, client.B().Set().Key("test_key").Value("test_value").Build()).Error())
 			},
-			assertSpans: func(t *testing.T, spans []mocktracer.Span) {
+			assertSpans: func(t *testing.T, spans []*mocktracer.Span) {
 				require.Len(t, spans, 1)
 
 				span := spans[0]
@@ -105,7 +103,7 @@ func TestNewClient(t *testing.T) {
 				resp := client.DoMulti(ctx, client.B().Set().Key("test_key").Value("test_value").Build(), client.B().Get().Key("test_key").Build())
 				require.Len(t, resp, 2)
 			},
-			assertSpans: func(t *testing.T, spans []mocktracer.Span) {
+			assertSpans: func(t *testing.T, spans []*mocktracer.Span) {
 				require.Len(t, spans, 1)
 
 				span := spans[0]
@@ -130,7 +128,7 @@ func TestNewClient(t *testing.T) {
 				require.Len(t, resp, 2)
 				require.NoError(t, err)
 			},
-			assertSpans: func(t *testing.T, spans []mocktracer.Span) {
+			assertSpans: func(t *testing.T, spans []*mocktracer.Span) {
 				require.Len(t, spans, 2)
 
 				span := spans[0]
@@ -162,7 +160,7 @@ func TestNewClient(t *testing.T) {
 				resp := client.DoStream(ctx, client.B().Get().Key("test_key").Build())
 				require.NoError(t, resp.Error())
 			},
-			assertSpans: func(t *testing.T, spans []mocktracer.Span) {
+			assertSpans: func(t *testing.T, spans []*mocktracer.Span) {
 				require.Len(t, spans, 1)
 
 				span := spans[0]
@@ -194,7 +192,7 @@ func TestNewClient(t *testing.T) {
 				)
 				cancel()
 			},
-			assertSpans: func(t *testing.T, spans []mocktracer.Span) {
+			assertSpans: func(t *testing.T, spans []*mocktracer.Span) {
 				require.Len(t, spans, 1)
 
 				span := spans[0]
@@ -221,7 +219,7 @@ func TestNewClient(t *testing.T) {
 				)
 				cancel()
 			},
-			assertSpans: func(t *testing.T, spans []mocktracer.Span) {
+			assertSpans: func(t *testing.T, spans []*mocktracer.Span) {
 				require.Len(t, spans, 1)
 
 				span := spans[0]
@@ -246,7 +244,7 @@ func TestNewClient(t *testing.T) {
 				})
 				require.NoError(t, err)
 			},
-			assertSpans: func(t *testing.T, spans []mocktracer.Span) {
+			assertSpans: func(t *testing.T, spans []*mocktracer.Span) {
 				require.Len(t, spans, 1)
 
 				span := spans[0]

@@ -6,8 +6,8 @@
 package valkey
 
 import (
-	"github.com/DataDog/dd-trace-go/v2/internal"
-	"github.com/DataDog/dd-trace-go/v2/internal/namingschema"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/options"
 )
 
 type config struct {
@@ -21,8 +21,8 @@ type Option func(*config)
 func defaultConfig() *config {
 	return &config{
 		// Do not include the raw command by default since it could contain sensitive data.
-		rawCommand:  internal.BoolEnv("DD_TRACE_VALKEY_RAW_COMMAND", false),
-		serviceName: namingschema.ServiceName(defaultServiceName),
+		rawCommand:  options.GetBoolEnv("DD_TRACE_VALKEY_RAW_COMMAND", false),
+		serviceName: instr.ServiceName(instrumentation.ComponentClient, nil),
 	}
 }
 

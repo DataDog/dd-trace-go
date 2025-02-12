@@ -69,6 +69,7 @@ const (
 	PackageUptraceBun              Package = "uptrace/bun"
 	PackageLogSlog                 Package = "log/slog"
 
+	PackageValkeyIoValkeyGo         Package = "valkey-io/valkey-go"
 	PackageEnvoyProxyGoControlPlane Package = "envoyproxy/go-control-plane"
 	PackageOS                       Package = "os"
 

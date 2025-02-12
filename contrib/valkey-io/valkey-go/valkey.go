@@ -15,18 +15,14 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
-	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 	"github.com/valkey-io/valkey-go"
 )
 
-const (
-	componentName      = "valkey-io/valkey-go"
-	defaultServiceName = "valkey.client"
-)
+var instr *instrumentation.Instrumentation
 
 func init() {
-	telemetry.LoadIntegration(componentName)
-	tracer.MarkIntegrationImported("github.com/valkey-io/valkey-go")
+	instr = instrumentation.Load(instrumentation.PackageValkeyIoValkeyGo)
 }
 
 var (
@@ -178,14 +174,14 @@ type command struct {
 	raw       string
 }
 
-func (c *client) startSpan(ctx context.Context, cmd command) (tracer.Span, context.Context) {
+func (c *client) startSpan(ctx context.Context, cmd command) (*tracer.Span, context.Context) {
 	opts := []tracer.StartSpanOption{
 		tracer.ServiceName(c.cfg.serviceName),
 		tracer.ResourceName(cmd.statement),
 		tracer.SpanType(ext.SpanTypeValkey),
 		tracer.Tag(ext.TargetHost, c.host),
 		tracer.Tag(ext.TargetPort, c.port),
-		tracer.Tag(ext.Component, componentName),
+		tracer.Tag(ext.Component, instrumentation.PackageValkeyIoValkeyGo),
 		tracer.Tag(ext.SpanKind, ext.SpanKindClient),
 		tracer.Tag(ext.DBSystem, ext.DBSystemValkey),
 		tracer.Tag(ext.TargetDB, c.dbIndex),
@@ -205,7 +201,7 @@ func (c *client) startSpan(ctx context.Context, cmd command) (tracer.Span, conte
 	return tracer.StartSpanFromContext(ctx, "valkey.command", opts...)
 }
 
-func (c *client) finishSpan(span tracer.Span, err error) {
+func (c *client) finishSpan(span *tracer.Span, err error) {
 	var opts []tracer.FinishOption
 	if err != nil && !valkey.IsValkeyNil(err) {
 		opts = append(opts, tracer.WithError(err))
@@ -276,7 +272,7 @@ func firstError(s []valkey.ValkeyResult) error {
 	return nil
 }
 
-func setClientCacheTags(s tracer.Span, result valkey.ValkeyResult) {
+func setClientCacheTags(s *tracer.Span, result valkey.ValkeyResult) {
 	s.SetTag(ext.ValkeyClientCacheHit, result.IsCacheHit())
 	s.SetTag(ext.ValkeyClientCacheTTL, result.CacheTTL())
 	s.SetTag(ext.ValkeyClientCachePTTL, result.CachePTTL())
