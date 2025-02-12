@@ -107,8 +107,8 @@ func TestInferredProxySpans(t *testing.T) {
 		assert.Equal(t, webReqSpan.Tag("span.type"), gwSpan.Tag("span.type"))
 		assert.Equal(t, startTime.UnixMilli(), gwSpan.StartTime().UnixMilli())
 
-		assert.Equal(t, "500: Internal Server Error", gwSpan.Tag(ext.Error).(error).Error())
-		assert.Equal(t, "500: Internal Server Error", webReqSpan.Tag(ext.Error).(error).Error())
+		assert.Equal(t, "500: Internal Server Error", gwSpan.Tag(ext.ErrorMsg))
+		assert.Equal(t, "500: Internal Server Error", webReqSpan.Tag(ext.ErrorMsg))
 
 		for _, arg := range inferredHeaders {
 			header, tag := normalizer.HeaderTag(arg)
