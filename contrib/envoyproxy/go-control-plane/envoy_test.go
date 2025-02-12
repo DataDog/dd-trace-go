@@ -308,7 +308,7 @@ func TestGeneratedSpan(t *testing.T) {
 		require.Equal(t, "Mistake Not...", span.Tag("http.useragent"))
 
 		// Check for trace context
-		require.Equal(t, uint64(12345), span.Context().TraceID())
+		require.Equal(t, "00000000000000000000000000003039", span.Context().TraceID())
 		require.Equal(t, uint64(67890), span.ParentID())
 	})
 }
