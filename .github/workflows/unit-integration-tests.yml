@@ -53,15 +53,17 @@ jobs:
           ref: ${{ inputs.ref || github.ref }}
 
       ## Disabled for v2 until the main PR is merged,
-      ## as it's too large for reviewdog: https://github.com/DataDog/dd-trace-go/actions/runs/8423412332/job/23064985838#step:3:94
-      # - name: golangci-lint
-      #   uses: reviewdog/action-golangci-lint@dd3fda91790ca90e75049e5c767509dc0ec7d99b # v2.7.0
-      #   with:
-      #     golangci_lint_flags: "--timeout 10m" # We are hitting timeout when there is no cache
-      #     go_version: ${{ inputs.go-version }}
-      #     golangci_lint_version: v1.63.4
-      #     fail_level: error
-      #     reporter: github-pr-review
+      - name: golangci-lint
+        ## Disabled for v2 until the main PR is merged,
+        ## as it's too large for reviewdog: https://github.com/DataDog/dd-trace-go/actions/runs/8423412332/job/23064985838#step:3:94
+        if: false
+        uses: reviewdog/action-golangci-lint@dd3fda91790ca90e75049e5c767509dc0ec7d99b # v2.7.0
+        with:
+          golangci_lint_flags: "--timeout 10m" # We are hitting timeout when there is no cache
+          go_version: ${{ inputs.go-version }}
+          golangci_lint_version: v1.63.4
+          fail_level: error
+          reporter: github-pr-review
 
       - name: golangci-lint (internal/orchestrion/_integration)
         # Disable while Orchestrion is not ported to v2
