@@ -34,6 +34,7 @@ type config struct {
 var cfg = newConfig()
 
 func newConfig() *config {
+	log.Info("MTOFF: loading logrus config")
 	return &config{
 		log128bits: os.Getenv("DD_TRACE_128_BIT_TRACEID_LOGGING_ENABLED") != "false",
 	}
