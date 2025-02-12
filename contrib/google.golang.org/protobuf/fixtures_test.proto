@@ -1,0 +1,25 @@
+syntax = "proto3";
+
+option go_package = "gopkg.in/DataDog/dd-trace-go.v1/contrib/google.golang.org/protobuf";
+
+package protobuf;
+
+
+// FixtureSubMessage is used to test enums in schema tracking
+message FixtureSubMessage {
+  enum State {
+    Unset = 0;
+    Ready = 1;
+    Paused = 2;
+  }
+  State state = 1;
+}
+
+// FixtureMessage is used to test schema tracking
+message FixtureMessage {
+  string name = 1;
+  repeated bool flags = 2;
+  optional int32 count = 3;
+  map<string, string> tags = 4;
+  FixtureSubMessage sub_message = 5;
+}
