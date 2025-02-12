@@ -32,8 +32,10 @@ func TestFire128BitEnabled(t *testing.T) {
 	ctxW3c, ok := sp.Context().(ddtrace.SpanContextW3C)
 	assert.True(t, ok)
 
-	assert.Equal(t, ctxW3c.TraceID128(), e.Data["dd.trace_id"])
+	assert.Equal(t, ctxW3c.TraceID128(), e.Data["dd.trace_d"])
 	assert.Equal(t, strconv.FormatUint(sp.Context().SpanID(), 10), e.Data["dd.span_id"])
+
+	logrus.WithContext(sctx).Warn("hello")
 }
 
 func TestFire128BitDisabled(t *testing.T) {
