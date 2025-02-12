@@ -1319,6 +1319,13 @@ func WithSpanLinks(links []ddtrace.SpanLink) StartSpanOption {
 	}
 }
 
+// WithSpanEvents sets span events on the started span.
+func WithSpanEvents(events []ddtrace.SpanEvent) StartSpanOption {
+	return func(cfg *ddtrace.StartSpanConfig) {
+		cfg.SpanEvents = append(cfg.SpanEvents, events...)
+	}
+}
+
 var measuredTag = Tag(keyMeasured, 1)
 
 // Measured marks this span to be measured for metrics and stats calculations.
