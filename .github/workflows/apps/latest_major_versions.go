@@ -46,24 +46,22 @@ func main() {
 
 	for pkg, packageInfo := range instrumentation.GetPackages() {
 
-		// Step 1: get the version from the module go.mod
+		// 1. Get package and version from the module go.mod
 		fmt.Printf("package: %v\n", pkg)
 		repository := packageInfo.TracedPackage
 
-		// if it is part of the standard packages, continue
 		if packageInfo.IsStdLib {
 			continue
 		}
 
-		base := truncateVersion(string(pkg))
+		base := getBaseVersion(string(pkg))
 		repo, version, err := getGoModVersion(repository, string(pkg))
 		if err != nil {
 			fmt.Printf("%v go.mod not found.", pkg)
 			continue
 		}
 
-		// check if need to update contribLatests
-		versionMajorContrib := truncateMajorVersion(version)
+		versionMajorContrib := getMajorVersion(version)
 
 		if currentLatest, ok := contribLatests[base]; ok {
 			if semver.Compare(versionMajorContrib, currentLatest) > 0 {
@@ -73,10 +71,8 @@ func main() {
 			contribLatests[base] = versionMajorContrib
 		}
 
-		// Step 2:
-		// create the string repository@{version} and run command go list -m -json <repository>@<version>
-		// this should return a JSON
-		// extract Origin[URL] if the JSON contains it, otherwise continue
+		// 2. Create the string repository@{version} and run command go list -m -json <repository>@<version>.
+		//    This should return a JSON: extract Origin[URL] if the JSON contains it, otherwise continue
 
 		origin, err := getModuleOrigin(repo, version)
 		if err != nil {
@@ -84,9 +80,8 @@ func main() {
 			continue
 		}
 
-		// 2. From the VCS url, do `git ls-remote --tags <vcs_url>` to get the tags
-		// output:
-		// 3. Parse the tags, and extract all the majors from them (ex v2, v3, v4)
+		// 3. From the VCS url, do `git ls-remote --tags <vcs_url>` to get the tags
+		//    Parse the tags, and extract all the majors from them (ex v2, v3, v4)
 		tags, err := getTags(origin)
 		if err != nil {
 			log.Printf("error fetching tags from origin: %v", err)
@@ -99,8 +94,8 @@ func main() {
 		// curl https://raw.githubusercontent.com/<module>/refs/tags/v4.18.3/go.mod
 		// 5a. If request returns 404, module is not a go module. This means version belongs to the module without /v at the end.
 		// 5b. If request returns a `go.mod`, parse the modfile and extract the mod name
-
 		// Get the latest version for each major
+
 		for major, versions := range majors {
 			latest := getLatestVersion(versions)
 
@@ -110,10 +105,8 @@ func main() {
 				log.Printf("failed to fetch go.mod for %s@%s: %+v\n", origin, latest, err)
 				continue
 			}
-			log.Printf("go.mod for %s@%s: %s\n", origin, latest, f.Module.Mod.Path)
 			if latestGithub, ok := githubLatests[base]; ok {
 				if semver.Compare(major, latestGithub.Version) > 0 {
-					// if latest > latestGithubMajor
 					githubLatests[base] = GithubLatests{major, base}
 				}
 			} else {
@@ -122,8 +115,8 @@ func main() {
 		}
 	}
 
-	// check if there are any outdated majors
-	// output if there is a new major package we do not support
+	// 6. Check if there are any outdated majors
+	// 	  Output if there is a new major package we do not support
 	for base, contribMajor := range contribLatests {
 		if latestGithub, ok := githubLatests[base]; ok {
 			if semver.Compare(latestGithub.Version, contribMajor) > 0 {
@@ -142,11 +135,10 @@ func main() {
 }
 
 func fetchGoMod(origin, tag string) (*modfile.File, error) {
-	// Process the URL
+	// Parse and process the URL
 	repoPath := strings.TrimPrefix(origin, "https://github.com/")
 	repoPath = strings.TrimPrefix(repoPath, "https://gopkg.in/")
 	repoPath = strings.TrimSuffix(repoPath, ".git")
-	// Remove .vX version suffix if present (e.g., ".v1", ".v2")
 	repoPath = regexp.MustCompile(`\.v\d+$`).ReplaceAllString(repoPath, "")
 
 	url := fmt.Sprintf("https://raw.githubusercontent.com/%s/refs/tags/%s/go.mod", repoPath, tag)
@@ -257,25 +249,22 @@ func getLatestVersion(versions []string) string {
 	return validVersions[len(validVersions)-1]
 }
 
-func truncateVersion(pkg string) string {
-	// Regular expression to match ".v{X}" or "/v{X}" where {X} is a number
-	re := regexp.MustCompile(`(\.v\d+|/v\d+)$`)
+func getBaseVersion(pkg string) string {
+	// Match on the pattern ".v{X}" or "/v{X}" where {X} is a number
 	// Replace the matched pattern with an empty string
+	re := regexp.MustCompile(`(\.v\d+|/v\d+)$`)
 	return re.ReplaceAllString(pkg, "")
 }
 
-// split, ex v5.3.2 => v5
-func truncateMajorVersion(version string) string {
+func getMajorVersion(version string) string {
 	parts := strings.Split(version, ".")
 	return parts[0]
 }
 
 func getGoModVersion(pkg string, instrumentationName string) (string, string, error) {
-	// ex: package: aws/aws-sdk-go-v2
-	// repository: github.com/aws/aws-sdk-go-v2
-	// look for go.mod in contrib/{package}
-	// if it exists, look for repository in the go.mod
-	// parse the version associated with repository
+	// Look for go.mod in contrib/{package}
+	// If go.mod exists, look for repository name in the go.mod
+	// Parse the version associated with repository
 	// Define the path to the go.mod file within the contrib/{pkg} directory
 	pkg = truncateVersionSuffix(pkg)
 
@@ -293,7 +282,7 @@ func getGoModVersion(pkg string, instrumentationName string) (string, string, er
 		return "", "", fmt.Errorf("failed to parse go.mod file at %s: %w", goModPath, err)
 	}
 
-	// keep track of largest version from go.mod
+	// Keep track of largest version from go.mod
 	var largestVersion string
 	var largestVersionRepo string
 
@@ -314,7 +303,7 @@ func getGoModVersion(pkg string, instrumentationName string) (string, string, er
 	}
 
 	if largestVersion == "" {
-		// If the repository is not found in the dependencies
+		// If the repository is not found in the dependencies, return
 		return "", "", fmt.Errorf("package %s not found in go.mod file", pkg)
 	}
 	return largestVersionRepo, largestVersion, nil
