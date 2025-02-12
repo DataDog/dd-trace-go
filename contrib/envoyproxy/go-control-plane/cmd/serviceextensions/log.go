@@ -23,49 +23,25 @@ func NewLogger() *Logger {
 }
 
 // Info logs an informational message
-func (l *Logger) Info(v ...interface{}) {
-	l.SetPrefix("INFO: ")
-	l.Println(v...)
-}
-
-// Infof logs an informational message with formatting
-func (l *Logger) Infof(format string, v ...interface{}) {
+func (l *Logger) Info(format string, v ...interface{}) {
 	l.SetPrefix("INFO: ")
 	l.Printf(format, v...)
 }
 
 // Warn logs a warning message
-func (l *Logger) Warn(v ...interface{}) {
-	l.SetPrefix("WARN: ")
-	l.Println(v...)
-}
-
-// Warnf logs a warning message with formatting
-func (l *Logger) Warnf(format string, v ...interface{}) {
+func (l *Logger) Warn(format string, v ...interface{}) {
 	l.SetPrefix("WARN: ")
 	l.Printf(format, v...)
 }
 
 // Error logs an error message
-func (l *Logger) Error(v ...interface{}) {
-	l.SetPrefix("ERROR: ")
-	l.Println(v...)
-}
-
-// Errorf logs an error message with formatting
-func (l *Logger) Errorf(format string, v ...interface{}) {
+func (l *Logger) Error(format string, v ...interface{}) {
 	l.SetPrefix("ERROR: ")
 	l.Printf(format, v...)
 }
 
 // Debug logs a debug message
-func (l *Logger) Debug(v ...interface{}) {
-	l.SetPrefix("DEBUG: ")
-	l.Println(v...)
-}
-
-// Debugf logs a debug message with formatting
-func (l *Logger) Debugf(format string, v ...interface{}) {
+func (l *Logger) Debug(format string, v ...interface{}) {
 	l.SetPrefix("DEBUG: ")
 	l.Printf(format, v...)
 }
