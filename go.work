@@ -57,6 +57,7 @@ use (
 	./contrib/twitchtv/twirp
 	./contrib/uptrace/bun
 	./contrib/urfave/negroni
+	./contrib/valkey-io/valkey-go
 	./contrib/valyala/fasthttp
 	./instrumentation/internal/namingschematest
 	./instrumentation/testutils/grpc
