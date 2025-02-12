@@ -25,6 +25,8 @@ const (
 	S3PointerKind              = "aws.s3.object"
 )
 
+var separatorBytes = []byte("|")
+
 func AddSpanPointers(serviceID string, in middleware.DeserializeInput, out middleware.DeserializeOutput, span tracer.Span) {
 	switch serviceID {
 	case "S3":
@@ -87,7 +89,7 @@ func generatePointerHash(components []string) string {
 	h := sha256.New()
 	for i, component := range components {
 		if i > 0 {
-			h.Write([]byte("|"))
+			h.Write(separatorBytes)
 		}
 		h.Write([]byte(component))
 	}
