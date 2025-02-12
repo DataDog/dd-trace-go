@@ -731,6 +731,9 @@ type agentFeatures struct {
 
 	// metaStructAvailable reports whether the trace-agent can receive spans with the `meta_struct` field.
 	metaStructAvailable bool
+
+	// obfuscationVersion reports the trace-agent's version of obfuscation logic. A value of 0 means this field wasn't present.
+	obfuscationVersion int
 }
 
 // HasFlag reports whether the agent has set the feat feature flag.
@@ -757,12 +760,13 @@ func loadAgentFeatures(agentDisabled bool, agentURL *url.URL, httpClient *http.C
 	}
 	defer resp.Body.Close()
 	type infoResponse struct {
-		Endpoints      []string `json:"endpoints"`
-		ClientDropP0s  bool     `json:"client_drop_p0s"`
-		FeatureFlags   []string `json:"feature_flags"`
-		PeerTags       []string `json:"peer_tags"`
-		SpanMetaStruct bool     `json:"span_meta_structs"`
-		Config         struct {
+		Endpoints          []string `json:"endpoints"`
+		ClientDropP0s      bool     `json:"client_drop_p0s"`
+		FeatureFlags       []string `json:"feature_flags"`
+		PeerTags           []string `json:"peer_tags"`
+		SpanMetaStruct     bool     `json:"span_meta_structs"`
+		ObfuscationVersion int      `json:"obfuscation_version"`
+		Config             struct {
 			StatsdPort int `json:"statsd_port"`
 		} `json:"config"`
 	}
@@ -777,6 +781,7 @@ func loadAgentFeatures(agentDisabled bool, agentURL *url.URL, httpClient *http.C
 	features.StatsdPort = info.Config.StatsdPort
 	features.metaStructAvailable = info.SpanMetaStruct
 	features.peerTags = info.PeerTags
+	features.obfuscationVersion = info.ObfuscationVersion
 	for _, endpoint := range info.Endpoints {
 		switch endpoint {
 		case "/v0.6/stats":
@@ -1421,12 +1426,13 @@ func WithTestDefaults(statsdClient any) StartOption {
 // Mock Transport with a real Encoder
 type dummyTransport struct {
 	sync.RWMutex
-	traces spanLists
-	stats  []*pb.ClientStatsPayload
+	traces     spanLists
+	stats      []*pb.ClientStatsPayload
+	obfVersion int
 }
 
 func newDummyTransport() *dummyTransport {
-	return &dummyTransport{traces: spanLists{}}
+	return &dummyTransport{traces: spanLists{}, obfVersion: -1}
 }
 
 func (t *dummyTransport) Len() int {
@@ -1435,9 +1441,10 @@ func (t *dummyTransport) Len() int {
 	return len(t.traces)
 }
 
-func (t *dummyTransport) sendStats(p *pb.ClientStatsPayload) error {
+func (t *dummyTransport) sendStats(p *pb.ClientStatsPayload, obfVersion int) error {
 	t.Lock()
 	t.stats = append(t.stats, p)
+	t.obfVersion = obfVersion
 	t.Unlock()
 	return nil
 }
@@ -1446,6 +1453,12 @@ func (t *dummyTransport) Stats() []*pb.ClientStatsPayload {
 	t.RLock()
 	defer t.RUnlock()
 	return t.stats
+}
+
+func (t *dummyTransport) ObfuscationVersion() int {
+	t.RLock()
+	defer t.RUnlock()
+	return t.obfVersion
 }
 
 func (t *dummyTransport) send(p *payload) (io.ReadCloser, error) {

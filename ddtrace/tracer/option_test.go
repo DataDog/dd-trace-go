@@ -241,7 +241,7 @@ func TestLoadAgentFeatures(t *testing.T) {
 
 	t.Run("OK", func(t *testing.T) {
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-			w.Write([]byte(`{"endpoints":["/v0.6/stats"],"feature_flags":["a","b"],"client_drop_p0s":true,"peer_tags":["peer.hostname"],"config": {"statsd_port":8999}}`))
+			w.Write([]byte(`{"endpoints":["/v0.6/stats"],"feature_flags":["a","b"],"client_drop_p0s":true,"obfuscation_version":2,"peer_tags":["peer.hostname"],"config": {"statsd_port":8999}}`))
 		}))
 		defer srv.Close()
 		cfg, err := newConfig(WithAgentAddr(strings.TrimPrefix(srv.URL, "http://")), WithAgentTimeout(2))
@@ -256,6 +256,7 @@ func TestLoadAgentFeatures(t *testing.T) {
 		assert.True(t, cfg.agent.HasFlag("a"))
 		assert.True(t, cfg.agent.HasFlag("b"))
 		assert.EqualValues(t, cfg.agent.peerTags, []string{"peer.hostname"})
+		assert.Equal(t, 2, cfg.agent.obfuscationVersion)
 	})
 
 	t.Run("discovery", func(t *testing.T) {
