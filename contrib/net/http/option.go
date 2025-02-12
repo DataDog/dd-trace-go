@@ -19,11 +19,12 @@ import (
 )
 
 const (
-	defaultServiceName = "http.router"
 	// envClientQueryStringEnabled is the name of the env var used to specify whether query string collection is enabled for http client spans.
 	envClientQueryStringEnabled = "DD_TRACE_HTTP_CLIENT_TAG_QUERY_STRING"
 	// envClientErrorStatuses is the name of the env var that specifies error status codes on http client spans
 	envClientErrorStatuses = "DD_TRACE_HTTP_CLIENT_ERROR_STATUSES"
+	// envQueryStringRegexp is the name of the env var used to specify the regexp to use for query string obfuscation.
+	envQueryStringRegexp = "DD_TRACE_OBFUSCATION_QUERY_STRING_REGEXP"
 )
 
 // Option describes options for http.ServeMux.
@@ -140,7 +141,7 @@ func newRoundTripperConfig() *internal.RoundTripperConfig {
 		CommonConfig:  sharedCfg,
 		Propagation:   true,
 		SpanNamer:     defaultSpanNamer,
-		QueryString:   options.GetBoolEnv(envClientQueryStringEnabled, false),
+		QueryString:   options.GetBoolEnv(envClientQueryStringEnabled, true),
 		IsStatusError: isClientError,
 	}
 	v := os.Getenv(envClientErrorStatuses)
