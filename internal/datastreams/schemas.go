@@ -30,6 +30,7 @@ func SampleSchema() (weight int64) {
 }
 
 func (s *schemaSampler) sampleSchema(currentTimeNs int64) (weight int64) {
+	s.weight.Add(1)
 	lastSample := s.lastSampleMillis.Load()
 	if currentTimeNs >= lastSample+schemaSampleIntervalNs {
 		if s.lastSampleMillis.CompareAndSwap(lastSample, currentTimeNs) {
