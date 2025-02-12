@@ -306,7 +306,10 @@ func TestCollectCoverageAfterTestExecution(t *testing.T) {
 	f.WriteString("mode: count\n")
 	f.Close()
 
-	tc.CollectCoverageAfterTestExecution()
+	err = tc.getCoverageData()
+	if err != nil {
+		t.Errorf("getCoverageData returned error: %v", err)
+	}
 
 	if tc.postCoverageFilename == "" {
 		t.Error("postCoverageFilename is empty after CollectCoverageAfterTestExecution")
