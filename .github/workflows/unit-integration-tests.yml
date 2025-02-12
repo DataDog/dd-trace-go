@@ -64,6 +64,8 @@ jobs:
       #     reporter: github-pr-review
 
       - name: golangci-lint (internal/orchestrion/_integration)
+        # Disable while Orchestrion is not ported to v2
+        if: false
         uses: reviewdog/action-golangci-lint@dd3fda91790ca90e75049e5c767509dc0ec7d99b # v2.7.0
         with:
           golangci_lint_flags: "--timeout 10m" # We are hitting timeout when there is no cache
