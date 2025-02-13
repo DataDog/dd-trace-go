@@ -142,6 +142,7 @@ func startInferredProxySpan(requestProxyContext *proxyContext, parent *tracer.Sp
 			cfg.Tags[ext.HTTPURL] = requestProxyContext.domainName + requestProxyContext.path
 			cfg.Tags[ext.HTTPRoute] = requestProxyContext.path
 			cfg.Tags[ext.ResourceName] = fmt.Sprintf("%s %s", requestProxyContext.method, requestProxyContext.path)
+			cfg.Tags["_dd.inferred_span"] = 1
 			cfg.Tags["stage"] = requestProxyContext.stage
 		},
 	)
