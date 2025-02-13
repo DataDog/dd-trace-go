@@ -729,6 +729,9 @@ type agentFeatures struct {
 
 	// metaStructAvailable reports whether the trace-agent can receive spans with the `meta_struct` field.
 	metaStructAvailable bool
+
+	// spanEvents reports whether the trace-agent can receive spans with the `span_events` field.
+	spanEventsAvailable bool
 }
 
 // HasFlag reports whether the agent has set the feat feature flag.
@@ -760,6 +763,7 @@ func loadAgentFeatures(agentDisabled bool, agentURL *url.URL, httpClient *http.C
 		FeatureFlags   []string `json:"feature_flags"`
 		PeerTags       []string `json:"peer_tags"`
 		SpanMetaStruct bool     `json:"span_meta_structs"`
+		SpanEvents     bool     `json:"span_events"`
 		Config         struct {
 			StatsdPort int `json:"statsd_port"`
 		} `json:"config"`
@@ -775,6 +779,7 @@ func loadAgentFeatures(agentDisabled bool, agentURL *url.URL, httpClient *http.C
 	features.StatsdPort = info.Config.StatsdPort
 	features.metaStructAvailable = info.SpanMetaStruct
 	features.peerTags = info.PeerTags
+	features.spanEventsAvailable = info.SpanEvents
 	for _, endpoint := range info.Endpoints {
 		switch endpoint {
 		case "/v0.6/stats":
@@ -1319,7 +1324,7 @@ func WithSpanLinks(links []ddtrace.SpanLink) StartSpanOption {
 	}
 }
 
-// WithSpanEvents sets span events on the started span.
+// WithSpanEvents adds the provided span events to the started span.
 func WithSpanEvents(events []ddtrace.SpanEvent) StartSpanOption {
 	return func(cfg *ddtrace.StartSpanConfig) {
 		cfg.SpanEvents = append(cfg.SpanEvents, events...)

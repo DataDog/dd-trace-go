@@ -7,6 +7,9 @@ package gqlgen
 
 import (
 	"math"
+	"os"
+	"slices"
+	"strings"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
@@ -20,6 +23,7 @@ type config struct {
 	withoutTraceIntrospectionQuery    bool
 	withoutTraceTrivialResolvedFields bool
 	tags                              map[string]interface{}
+	errExtensions                     []string
 }
 
 // An Option configures the gqlgen integration.
@@ -29,6 +33,17 @@ func defaults(cfg *config) {
 	cfg.serviceName = namingschema.ServiceNameOverrideV0(defaultServiceName, defaultServiceName)
 	cfg.analyticsRate = globalconfig.AnalyticsRate()
 	cfg.tags = make(map[string]interface{})
+	if s := os.Getenv("DD_TRACE_GRAPHQL_ERROR_EXTENSIONS"); s != "" {
+		values := strings.Split(s, ",")
+		for _, v := range values {
+			cleanupVal := strings.TrimSpace(v)
+			if cleanupVal != "" {
+				cfg.errExtensions = append(cfg.errExtensions)
+			}
+		}
+		slices.Sort(cfg.errExtensions)
+		cfg.errExtensions = slices.Compact(cfg.errExtensions)
+	}
 }
 
 // WithAnalytics enables or disables Trace Analytics for all started spans.

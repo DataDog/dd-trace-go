@@ -42,6 +42,7 @@ package gqlgen
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"math"
 	"time"
@@ -50,11 +51,13 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/graphqlsec"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 
 	"github.com/99designs/gqlgen/graphql"
 	"github.com/vektah/gqlparser/v2/ast"
+	"github.com/vektah/gqlparser/v2/gqlerror"
 )
 
 const componentName = "99designs/gqlgen"
@@ -117,11 +120,25 @@ func (t *gqlTracer) InterceptOperation(ctx context.Context, next graphql.Operati
 	return func(ctx context.Context) *graphql.Response {
 		response := responseHandler(ctx)
 		if span != nil {
-			var err error
+			var (
+				spanErr    error
+				spanEvents []ddtrace.SpanEvent
+			)
 			if len(response.Errors) > 0 {
-				err = response.Errors
+				spanErr = response.Errors
 			}
-			defer span.Finish(tracer.WithError(err))
+			spanEvents = make([]ddtrace.SpanEvent, 0, len(response.Errors))
+			ts := time.Now()
+			for _, err := range response.Errors {
+				evt := ddtrace.NewSpanEvent(
+					ext.GraphqlQueryErrorEvent,
+					ddtrace.WithSpanEventTimestamp(ts),
+					ddtrace.WithSpanEventAttributes(errToSpanEventAttributes(err, t.cfg)),
+				)
+				spanEvents = append(spanEvents, evt)
+			}
+			// TODO: set spanEvents in the span
+			defer span.Finish(tracer.WithError(spanErr))
 		}
 
 		var (
@@ -242,6 +259,70 @@ func serverSpanName(octx *graphql.OperationContext) string {
 		nameV0 = fmt.Sprintf("%s.%s", ext.SpanTypeGraphQL, octx.Operation.Operation)
 	}
 	return namingschema.OpNameOverrideV0(namingschema.GraphqlServer, nameV0)
+}
+
+func errToSpanEventAttributes(gErr *gqlerror.Error, cfg *config) map[string]any {
+	res := map[string]any{
+		"message":    gErr.Message,
+		"type":       "*gqlerror.Error", // TODO: check reflect.TypeOf(v).String()
+		"stacktrace": "",                // TODO: should use same behavior as the tracer
+		"location":   parseErrLocations(gErr.Locations),
+		"path":       parseErrPath(gErr.Path),
+	}
+	setErrExtensions(res, gErr.Extensions, cfg.errExtensions)
+	return res
+}
+
+func parseErrLocations(locs []gqlerror.Location) []string {
+	res := make([]string, 0, len(locs))
+	for _, loc := range locs {
+		res = append(res, fmt.Sprintf("%d:%d", loc.Line, loc.Column))
+	}
+	return res
+}
+
+func parseErrPath(p ast.Path) []string {
+	res := make([]string, 0, len(p))
+	for _, v := range p {
+		switch v := v.(type) {
+		case ast.PathIndex:
+			res = append(res, fmt.Sprintf("%d", v))
+		case ast.PathName:
+			res = append(res, string(v))
+		default:
+			log.Debug("cannot parse graphql path elem: unknown type: %T", v)
+		}
+	}
+	return res
+}
+
+func setErrExtensions(result map[string]any, extensions map[string]any, whitelist []string) {
+	for _, errExt := range whitelist {
+		val, ok := extensions[errExt]
+		if !ok {
+			continue
+		}
+		key := fmt.Sprintf("extensions.%s", errExt)
+		mapVal, err := errExtensionMapValue(val)
+		if err != nil {
+			log.Debug("failed to set error extension as span event attribute %s: %v", errExt, err)
+			continue
+		}
+		result[key] = mapVal
+	}
+}
+
+func errExtensionMapValue(val any) (any, error) {
+	switch v := val.(type) {
+	case string, bool, int, uint, int64, uint64, uint8, uint16, uint32, uintptr, int8, int16, int32, float64, float32:
+		return v, nil
+	default:
+		b, err := json.Marshal(val)
+		if err != nil {
+			return nil, err
+		}
+		return string(b), nil
+	}
 }
 
 // Ensure all of these interfaces are implemented.

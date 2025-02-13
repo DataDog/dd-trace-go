@@ -1,14 +1,22 @@
-package ddtrace
+// Unless explicitly stated otherwise all files in this repository are licensed
+// under the Apache License Version 2.0.
+// This product includes software developed at Datadog (https://www.datadoghq.com/).
+// Copyright 2025 Datadog, Inc.
+
+package tracer
 
 import (
 	"encoding/json"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 )
 
-func TestNewSpanEvent(t *testing.T) {
+func Test_toSpanEventsMsg(t *testing.T) {
 	type customType struct {
 		Field1 string
 		Field2 int
@@ -76,17 +84,22 @@ func TestNewSpanEvent(t *testing.T) {
 		"key10": {Type: spanEventAttributeTypeDouble, DoubleValue: 123},
 	}
 	ts := time.Date(2025, 2, 12, 9, 0, 0, 0, time.UTC)
-	event := NewSpanEvent("test", WithSpanEventTimestamp(ts), WithSpanEventAttributes(attrs))
+	event := ddtrace.NewSpanEvent("test", ddtrace.WithSpanEventTimestamp(ts), ddtrace.WithSpanEventAttributes(attrs))
 	require.NotNil(t, event)
 
-	assert.Equal(t, "test", event.name)
-	assert.EqualValues(t, ts.UnixNano(), event.timeUnixNano)
-	assert.Equal(t, wantAttrs, event.attributes)
-	assert.Equal(t, attrs, event.rawAttributes)
+	assert.Equal(t, "test", event.Name)
+	assert.Equal(t, ts, event.Time)
+	assert.Equal(t, attrs, event.Attributes)
 
-	b, err := json.Marshal(event)
+	eventMsg := toSpanEventsMsg([]ddtrace.SpanEvent{event}, true)[0]
+	assert.Equal(t, "test", eventMsg.Name)
+	assert.EqualValues(t, ts.UnixNano(), eventMsg.TimeUnixNano)
+	assert.Equal(t, wantAttrs, eventMsg.Attributes)
+	assert.Equal(t, attrs, eventMsg.RawAttributes)
+
+	b, err := json.Marshal(eventMsg)
 	require.NoError(t, err)
-	wantJSON := `{"time_unix_nano":1739350800000000000,"name":"test","attributes":{"key1":"val1","key10":123,"key11":{"hello":"world"},"key12":{"Field1":"field1","Field2":2},"key2":123,"key3":123,"key4":123,"key5":[1,2,3],"key6":[1,2,3],"key7":[true,false,true],"key8":["1","2","3"],"key9":[1.1,2.2,3.3]}}`
+	wantJSON := `{"name":"test","time_unix_nano":1739350800000000000,"attributes":{"key1":"val1","key10":123,"key11":{"hello":"world"},"key12":{"Field1":"field1","Field2":2},"key2":123,"key3":123,"key4":123,"key5":[1,2,3],"key6":[1,2,3],"key7":[true,false,true],"key8":["1","2","3"],"key9":[1.1,2.2,3.3]}}`
 
 	assert.Equal(t, wantJSON, string(b))
 }
