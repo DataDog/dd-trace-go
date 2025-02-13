@@ -44,6 +44,7 @@ type (
 		SendCoveragePayload(ciTestCovPayload io.Reader) error
 		SendCoveragePayloadWithFormat(ciTestCovPayload io.Reader, format string) error
 		GetSkippableTests() (correlationID string, skippables map[string]map[string][]SkippableResponseDataAttributes, err error)
+		GetTestManagementTests() (*TestManagementTestsResponseDataModules, error)
 	}
 
 	// client is a client for sending requests to the Datadog backend.

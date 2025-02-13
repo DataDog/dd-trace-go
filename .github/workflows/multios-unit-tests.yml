@@ -60,6 +60,7 @@ jobs:
           gotestsum --junitfile ${REPORT} -- $(cat packages.txt) -v -coverprofile=coverage.txt -covermode=atomic -timeout 15m
       - name: Upload the results to Datadog CI App
         if: always()
+        continue-on-error: true
         uses: ./.github/actions/dd-ci-upload
         with:
           dd-api-key: ${{ secrets.DD_CI_API_KEY }}
