@@ -81,6 +81,8 @@ jobs:
           - weblog-variant: net-http
             scenario: APPSEC_STANDALONE
           - weblog-variant: net-http
+            scenario: APPSEC_META_STRUCT_DISABLED
+          - weblog-variant: net-http
             scenario: APPSEC_CUSTOM_OBFUSCATION
           # APM scenarios requiring specific environment settings
           - scenario: APM_TRACING_E2E
@@ -105,6 +107,9 @@ jobs:
             weblog-variant: graphql-go
           - scenario: GRAPHQL_APPSEC
             weblog-variant: gqlgen
+          # Service Extensions System Tests
+          - scenario: EXTERNAL_PROCESSING
+          - scenario: EXTERNAL_PROCESSING_BLOCKING
 
       fail-fast: false
     env:
@@ -118,13 +123,13 @@ jobs:
     name: Test (${{ matrix.weblog-variant }}, ${{ matrix.scenario }})
     steps:
       - name: Checkout system tests
-        uses: actions/checkout@v3
+        uses: actions/checkout@f43a0e5ff2bd294095638e18286ca9a3d1956744 # v3.6.0
         with:
           repository: 'DataDog/system-tests'
           ref: refs/heads/dario.castane/AIT-3705/dd-trace-go.v2
 
       - name: Checkout dd-trace-go
-        uses: actions/checkout@v3
+        uses: actions/checkout@f43a0e5ff2bd294095638e18286ca9a3d1956744 # v3.6.0
         with:
           ref: ${{ inputs.branch_ref || github.ref }}
           path: 'binaries/dd-trace-go'
@@ -146,7 +151,7 @@ jobs:
         run: tar -czvf artifact.tar.gz $(ls | grep logs)
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4.6.0
         if: ${{ always() }}
         with:
           name: logs_${{ matrix.weblog-variant }}_${{ matrix.scenario }}

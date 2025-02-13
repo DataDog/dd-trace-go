@@ -48,3 +48,24 @@ const (
 	// This constant is used to tag traces with the percentage of code lines covered during the test session.
 	CodeCoveragePercentageOfTotalLines string = "test.code_coverage.lines_pct"
 )
+
+// Capabilities
+const (
+	// LibraryCapabilitiesTestImpactAnalysis is a tag used to indicate the test impact analysis capability of the library.
+	LibraryCapabilitiesTestImpactAnalysis = "_dd.library_capabilities.test_impact_analysis"
+
+	// LibraryCapabilitiesEarlyFlakeDetection is a tag used to indicate the early flake detection capability of the library.
+	LibraryCapabilitiesEarlyFlakeDetection = "_dd.library_capabilities.early_flake_detection"
+
+	// LibraryCapabilitiesAutoTestRetries is a tag used to indicate the auto test retries capability of the library.
+	LibraryCapabilitiesAutoTestRetries = "_dd.library_capabilities.auto_test_retries"
+
+	// LibraryCapabilitiesTestManagementQuarantine is a tag used to indicate the quarantine capability of the library.
+	LibraryCapabilitiesTestManagementQuarantine = "_dd.library_capabilities.test_management.quarantine"
+
+	// LibraryCapabilitiesTestManagementDisable is a tag used to indicate the disable capability of the library.
+	LibraryCapabilitiesTestManagementDisable = "_dd.library_capabilities.test_management.disable"
+
+	// LibraryCapabilitiesTestManagementAttemptToFix is a tag used to indicate the attempt to fix capability of the library.
+	LibraryCapabilitiesTestManagementAttemptToFix = "_dd.library_capabilities.test_management.attempt_to_fix"
+)

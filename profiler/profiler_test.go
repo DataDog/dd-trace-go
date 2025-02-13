@@ -84,6 +84,20 @@ func TestStart(t *testing.T) {
 		mu.Unlock()
 	})
 
+	t.Run("dd_profiling_not_enabled", func(t *testing.T) {
+		t.Setenv("DD_PROFILING_ENABLED", "false")
+		if err := Start(); err != nil {
+			t.Fatal(err)
+		}
+		defer Stop()
+
+		mu.Lock()
+		// if DD_PROFILING_ENABLED is false, the profiler should not be started even if Start() is called
+		// So we should not have an activeProfiler
+		assert.Nil(t, activeProfiler)
+		mu.Unlock()
+	})
+
 	t.Run("options", func(t *testing.T) {
 		if err := Start(); err != nil {
 			t.Fatal(err)
@@ -515,6 +529,19 @@ func TestImmediateProfile(t *testing.T) {
 	case <-timeout:
 		t.Fatal("should have received a profile already")
 	case <-profiles:
+	}
+}
+
+func TestEnabledFalse(t *testing.T) {
+	t.Setenv("DD_PROFILING_ENABLED", "false")
+	ch := startTestProfiler(t, 1, WithPeriod(10*time.Millisecond), WithProfileTypes())
+	select {
+	case <-ch:
+		t.Fatal("received profile when profiler should have been disabled")
+	case <-time.After(time.Second):
+		// This test might succeed incorrectly on an overloaded
+		// CI server, but is very likely to fail locally given a
+		// buggy implementation
 	}
 }
 

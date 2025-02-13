@@ -9,7 +9,7 @@ package ext
 
 const (
 	// TargetHost sets the target host address.
-	// Legacy: Kept for backwards compatability. Use NetworkDestinationName for hostname
+	// Legacy: Kept for backwards compatibility. Use NetworkDestinationName for hostname
 	// and NetworkDestinationIP for IP addresses
 	TargetHost = "out.host"
 
@@ -22,6 +22,9 @@ const (
 	// TargetPort sets the target host port.
 	// Legacy: Kept for backwards compatability. Use NetworkDestinationPort instead.
 	TargetPort = "out.port"
+
+	// TargetDB sets the target db.
+	TargetDB = "out.db"
 
 	// NetworkDestinationPort is the remote port number of the outbound connection.
 	NetworkDestinationPort = "network.destination.port"

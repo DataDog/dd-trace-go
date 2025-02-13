@@ -1,4 +1,4 @@
-module github.com/Datadog/dd-trace-go/contrib/envoyproxy/go-control-plane/v2
+module github.com/DataDog/dd-trace-go/contrib/envoyproxy/go-control-plane/v2
 
 go 1.22.0
 
@@ -6,7 +6,9 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/google.golang.org/grpc/v2 v2.0.0-rc.2
 	github.com/DataDog/dd-trace-go/v2 v2.0.0-rc.2
 	github.com/envoyproxy/go-control-plane v0.13.1
+	github.com/gorilla/mux v1.8.1
 	github.com/stretchr/testify v1.10.0
+	golang.org/x/sync v0.10.0
 	google.golang.org/grpc v1.69.0
 )
 

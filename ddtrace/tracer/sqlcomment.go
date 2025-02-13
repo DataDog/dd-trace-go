@@ -85,24 +85,25 @@ func (c *SQLCommentCarrier) Inject(ctx *SpanContext) error {
 		tags[sqlCommentTraceParent] = encodeTraceParent(traceID, c.SpanID, sampled)
 		fallthrough
 	case DBMPropagationModeService:
-		if ctx != nil {
-			if e, ok := ctx.meta(ext.Environment); ok && e != "" {
+		if ctx != nil && ctx.span != nil {
+			if e, ok := getMeta(ctx.span, ext.Environment); ok && e != "" {
 				tags[sqlCommentEnv] = e
 			}
-			if v, ok := ctx.meta(ext.Version); ok && v != "" {
+			if v, ok := getMeta(ctx.span, ext.Version); ok && v != "" {
 				tags[sqlCommentParentVersion] = v
 			}
-			if c.PeerDBName != "" {
-				tags[sqlCommentPeerDBName] = c.PeerDBName
-			}
-			if c.PeerDBHostname != "" {
-				tags[sqlCommentPeerHostname] = c.PeerDBHostname
-			}
-			if v, ok := ctx.meta(ext.PeerService); ok && v != "" {
+			if v, ok := getMeta(ctx.span, ext.PeerService); ok && v != "" {
 				tags[sqlCommentPeerService] = v
-			} else if c.PeerService != "" {
-				tags[sqlCommentPeerService] = c.PeerService
 			}
+		}
+		if c.PeerDBName != "" {
+			tags[sqlCommentPeerDBName] = c.PeerDBName
+		}
+		if c.PeerDBHostname != "" {
+			tags[sqlCommentPeerHostname] = c.PeerDBHostname
+		}
+		if tags[sqlCommentPeerService] == "" && c.PeerService != "" {
+			tags[sqlCommentPeerService] = c.PeerService
 		}
 		if globalconfig.ServiceName() != "" {
 			tags[sqlCommentParentService] = globalconfig.ServiceName()

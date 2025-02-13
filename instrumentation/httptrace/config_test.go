@@ -29,7 +29,7 @@ func TestConfig(t *testing.T) {
 			name: "bad-values",
 			env: map[string]string{
 				envQueryStringDisabled: "invalid",
-				envQueryStringRegexp:   "+",
+				EnvQueryStringRegexp:   "+",
 			},
 			cfg: defaultCfg,
 		},
@@ -42,7 +42,7 @@ func TestConfig(t *testing.T) {
 		},
 		{
 			name: "disable-query-obf",
-			env:  map[string]string{envQueryStringRegexp: ""},
+			env:  map[string]string{EnvQueryStringRegexp: ""},
 			cfg: config{
 				queryString: true,
 			},

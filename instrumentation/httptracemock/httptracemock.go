@@ -34,6 +34,16 @@ func NewServeMux() *ServeMux {
 	}
 }
 
+type responseWriter struct {
+	http.ResponseWriter
+	statusCode int
+}
+
+func (rw *responseWriter) WriteHeader(code int) {
+	rw.statusCode = code
+	rw.ResponseWriter.WriteHeader(code)
+}
+
 // ServeHTTP dispatches the request to the handler
 // whose pattern most closely matches the request URL.
 // We only need to rewrite this function to be able to trace
@@ -47,13 +57,14 @@ func (mux *ServeMux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	copy(so, mux.spanOpts)
 	so = append(so, tracer.ResourceName(resource))
 
-	span, ctx := httptrace.StartRequestSpan(r, so...)
+	rw := &responseWriter{ResponseWriter: w}
+	span, ctx, finishSpans := httptrace.StartRequestSpan(r, so...)
 	defer func() {
-		httptrace.FinishRequestSpan(span, 200, nil)
+		finishSpans(rw.statusCode, nil)
 	}()
 	var h http.Handler = mux.ServeMux
 	if appsec.Enabled() {
 		h = httpsec.WrapHandler(h, span, nil, nil)
 	}
-	h.ServeHTTP(w, r.WithContext(ctx))
+	h.ServeHTTP(rw, r.WithContext(ctx))
 }

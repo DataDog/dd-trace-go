@@ -11,14 +11,6 @@ import (
 	"os"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
-
-	// OTel did a breaking change to the module go.opentelemetry.io/collector/pdata which is imported by the agent
-	// and go.opentelemetry.io/collector/pdata/pprofile depends on it and is breaking because of it
-	// For some reason the dependency closure won't let use upgrade this module past the point where it does not break anymore
-	// So we are forced to add a blank import of this module to give us back the control over its version
-	//
-	// TODO: remove this once github.com/datadog-agent/pkg/trace has upgraded both modules past the breaking change
-	_ "go.opentelemetry.io/collector/pdata/pprofile"
 )
 
 const (

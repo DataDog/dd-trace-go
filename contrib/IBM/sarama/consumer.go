@@ -7,6 +7,7 @@ package sarama
 
 import (
 	"context"
+
 	"github.com/IBM/sarama"
 
 	"github.com/DataDog/dd-trace-go/v2/datastreams"
