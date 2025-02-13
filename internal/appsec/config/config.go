@@ -19,25 +19,20 @@ import (
 )
 
 func init() {
-	registerAppConfigTelemetry()
-}
-
-// Register the global app telemetry configuration.
-func registerAppConfigTelemetry() {
-	registerSCAAppConfigTelemetry(telemetry.GlobalClient)
+	registerSCAAppConfigTelemetry()
 }
 
 // Register the global app telemetry configuration related to the Software Composition Analysis (SCA) product.
 // Report over telemetry whether SCA's enablement env var was set or not along with its value. Nothing is reported in
 // case of an error or if the env var is not set.
-func registerSCAAppConfigTelemetry(client telemetry.Client) {
+func registerSCAAppConfigTelemetry() {
 	val, defined, err := parseBoolEnvVar(EnvSCAEnabled)
 	if err != nil {
 		log.Error("appsec: %v", err)
 		return
 	}
 	if defined {
-		client.RegisterAppConfig(EnvSCAEnabled, val, telemetry.OriginEnvVar)
+		telemetry.RegisterAppConfig(EnvSCAEnabled, val, telemetry.OriginEnvVar)
 	}
 }
 
