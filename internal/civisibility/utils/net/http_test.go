@@ -786,9 +786,9 @@ func TestSendRequestWithInvalidRetryAfterHeader(t *testing.T) {
 
 func TestExponentialBackoffWithMaxDelay(t *testing.T) {
 	start := time.Now()
-	exponentialBackoff(10, 1*time.Second) // Should be limited to maxDelay (30s)
+	exponentialBackoff(10, 1*time.Second) // Should be limited to maxDelay (10s)
 	duration := time.Since(start)
-	assert.LessOrEqual(t, duration, 31*time.Second)
+	assert.LessOrEqual(t, duration, 11*time.Second)
 }
 
 func TestSendRequestWithContextTimeout(t *testing.T) {

@@ -211,8 +211,6 @@ func Start(opts ...StartOption) error {
 		// DD_INSTRUMENTATION_TELEMETRY_ENABLED env var
 		startTelemetry(t.config)
 
-		// start appsec
-		appsec.Start(t.config.appsecStartOptions...)
 		globalinternal.SetTracerInitialized(true)
 		return nil
 	}
@@ -237,7 +235,7 @@ func Start(opts ...StartOption) error {
 	// client is appropriately configured.
 	appsecopts := make([]appsecConfig.StartOption, 0, len(t.config.appsecStartOptions)+1)
 	appsecopts = append(appsecopts, t.config.appsecStartOptions...)
-	appsecopts = append(appsecopts, appsecConfig.WithRCConfig(cfg))
+	appsecopts = append(appsecopts, appsecConfig.WithRCConfig(cfg), appsecConfig.WithMetaStructAvailable(t.config.agent.metaStructAvailable))
 	appsec.Start(appsecopts...)
 	globalinternal.SetTracerInitialized(true)
 	return nil
@@ -865,21 +863,23 @@ func (t *tracer) TracerConf() TracerConf {
 }
 
 func (t *tracer) Submit(s *Span) {
-	tc := t.TracerConf()
-	if !tc.Disabled {
-		// we have an active tracer
-		if t.config.canComputeStats() {
-			statSpan, shouldCalc := t.stats.newTracerStatSpan(s, t.obfuscator)
-			if shouldCalc {
-				// the agent supports computed stats
-				select {
-				case t.stats.In <- statSpan:
-					// ok
-				default:
-					log.Error("Stats channel full, disregarding span.")
-				}
-			}
-		}
+	if !t.config.enabled.current {
+		return
+	}
+	// we have an active tracer
+	if !t.config.canDropP0s() {
+		return
+	}
+	statSpan, shouldCalc := t.stats.newTracerStatSpan(s, t.obfuscator)
+	if !shouldCalc {
+		return
+	}
+	// the agent supports computed stats
+	select {
+	case t.stats.In <- statSpan:
+		// ok
+	default:
+		log.Error("Stats channel full, disregarding span.")
 	}
 }
 

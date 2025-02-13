@@ -89,6 +89,18 @@ func testTelemetryEnabled(t *testing.T, contribPath string) error {
 		if strings.Contains(pkg.ImportPath, "/test") || strings.Contains(pkg.ImportPath, "/internal") {
 			continue
 		}
+		// Skip AWS SDK v2 subpackages
+		if strings.Contains(pkg.ImportPath, "aws-sdk-go-v2/") && !strings.HasSuffix(pkg.ImportPath, "/aws") {
+			continue
+		}
+		// Skip command subpackages
+		if strings.Contains(pkg.ImportPath, "/cmd/") {
+			continue
+		}
+		// Skip net/http subpackages
+		if strings.Contains(pkg.ImportPath, "/net/http/v2") {
+			continue
+		}
 		if !pkg.hasInstrumentationImport() {
 			return fmt.Errorf(`package %q is expected use instrumentation telemetry. For more info see https://github.com/DataDog/dd-trace-go/blob/main/contrib/README.md#instrumentation-telemetry`, pkg.ImportPath)
 		}

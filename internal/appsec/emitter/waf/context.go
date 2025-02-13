@@ -92,7 +92,7 @@ func (op *ContextOperation) AddEvents(events ...any) {
 	}
 
 	if !op.limiter.Allow() {
-		log.Warn("appsec: too many WAF events, stopping further reporting")
+		log.Error("appsec: too many WAF events, stopping further reporting")
 		return
 	}
 

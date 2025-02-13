@@ -17,6 +17,7 @@ import (
 	_ "unsafe"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting/coverage"
@@ -36,7 +37,7 @@ import (
 func instrumentTestingM(m *testing.M) func(exitCode int) {
 	// Check if CI Visibility was disabled using the kill switch before trying to initialize it
 	atomic.StoreInt32(&ciVisibilityEnabledValue, -1)
-	if !isCiVisibilityEnabled() {
+	if !isCiVisibilityEnabled() || !testing.Testing() {
 		return func(exitCode int) {}
 	}
 
@@ -47,9 +48,15 @@ func instrumentTestingM(m *testing.M) func(exitCode int) {
 	session = integrations.CreateTestSession(integrations.WithTestSessionFramework(testFramework, runtime.Version()))
 
 	settings := integrations.GetSettings()
-	if settings != nil && settings.CodeCoverage {
-		// Initialize the runtime coverage if enabled.
-		coverage.InitializeCoverage(m)
+	if settings != nil {
+		if settings.CodeCoverage {
+			// Initialize the runtime coverage if enabled.
+			coverage.InitializeCoverage(m)
+		}
+		if settings.TestManagement.Enabled && internal.BoolEnv(constants.CIVisibilityTestManagementEnabledEnvironmentVariable, true) {
+			// Set the test management tag if enabled.
+			session.SetTag(constants.TestManagementEnabled, "true")
+		}
 	}
 
 	ddm := (*M)(m)
@@ -69,7 +76,18 @@ func instrumentTestingM(m *testing.M) func(exitCode int) {
 	return func(exitCode int) {
 		// Check for code coverage if enabled.
 		if testing.CoverMode() != "" {
-			coveragePercentage := testing.Coverage() * 100
+
+			var cov float64
+			// let's try first with our coverage package
+			if coverage.CanCollect() {
+				cov = coverage.GetCoverage()
+			}
+			if cov == 0 {
+				// if not we try we the default testing package
+				cov = testing.Coverage()
+			}
+
+			coveragePercentage := cov * 100
 			session.SetTag(constants.CodeCoveragePercentageOfTotalLines, coveragePercentage)
 		}
 
@@ -86,7 +104,7 @@ func instrumentTestingM(m *testing.M) func(exitCode int) {
 //go:linkname instrumentTestingTFunc
 func instrumentTestingTFunc(f func(*testing.T)) func(*testing.T) {
 	// Check if CI Visibility was disabled using the kill switch before instrumenting
-	if !isCiVisibilityEnabled() {
+	if !isCiVisibilityEnabled() || !testing.Testing() {
 		return f
 	}
 
@@ -150,15 +168,16 @@ func instrumentTestingTFunc(f func(*testing.T)) func(*testing.T) {
 
 		// Because this is a subtest let's propagate some execution metadata from the parent test
 		testPrivateFields := getTestPrivateFields(t)
-		if testPrivateFields.parent != nil {
+		if testPrivateFields != nil && testPrivateFields.parent != nil {
 			parentExecMeta := getTestMetadataFromPointer(*testPrivateFields.parent)
 			if parentExecMeta != nil {
-				if parentExecMeta.isANewTest {
-					execMeta.isANewTest = true
-				}
-				if parentExecMeta.isARetry {
-					execMeta.isARetry = true
-				}
+				execMeta.isANewTest = execMeta.isANewTest || parentExecMeta.isANewTest
+				execMeta.isARetry = execMeta.isARetry || parentExecMeta.isARetry
+				execMeta.isEFDExecution = execMeta.isEFDExecution || parentExecMeta.isEFDExecution
+				execMeta.isATRExecution = execMeta.isATRExecution || parentExecMeta.isATRExecution
+				execMeta.isQuarantined = execMeta.isQuarantined || parentExecMeta.isQuarantined
+				execMeta.isDisabled = execMeta.isDisabled || parentExecMeta.isDisabled
+				execMeta.isAttemptToFix = execMeta.isAttemptToFix || parentExecMeta.isAttemptToFix
 			}
 		}
 
@@ -175,11 +194,41 @@ func instrumentTestingTFunc(f func(*testing.T)) func(*testing.T) {
 		if execMeta.isARetry {
 			// Set the retry tag
 			test.SetTag(constants.TestIsRetry, "true")
+
+			// If the execution is an EFD execution we tag the test event reason
+			if execMeta.isEFDExecution {
+				// Set the EFD as the retry reason
+				test.SetTag(constants.TestRetryReason, "efd")
+			} else if execMeta.isATRExecution {
+				// Set the ATR as the retry reason
+				test.SetTag(constants.TestRetryReason, "atr")
+			} else if execMeta.isAttemptToFix {
+				// Set the attempt to fix as the retry reason
+				test.SetTag(constants.TestRetryReason, "attempt_to_fix")
+			}
+		}
+
+		// If the test is an attempt to fix we tag the test event
+		if execMeta.isAttemptToFix {
+			test.SetTag(constants.TestIsAttempToFix, "true")
+		}
+
+		// If the test is quarantined we tag the test event
+		if execMeta.isQuarantined {
+			test.SetTag(constants.TestIsQuarantined, "true")
+		}
+
+		// If the test is disabled we tag the test event
+		if execMeta.isDisabled {
+			test.SetTag(constants.TestIsDisabled, "true")
 		}
 
 		defer func() {
 			if r := recover(); r != nil {
 				// Handle panic and set error information.
+				if execMeta.isARetry && execMeta.isLastRetry && execMeta.allRetriesFailed {
+					test.SetTag(constants.TestHasFailedAllRetries, "true")
+				}
 				test.SetError(integrations.WithErrorInfo("panic", fmt.Sprint(r), utils.GetStacktrace(1)))
 				test.Close(integrations.ResultStatusFail)
 				checkModuleAndSuite(module, suite)
@@ -193,6 +242,9 @@ func instrumentTestingTFunc(f func(*testing.T)) func(*testing.T) {
 			} else {
 				// Normal finalization: determine the test result based on its state.
 				if t.Failed() {
+					if execMeta.isARetry && execMeta.isLastRetry && execMeta.allRetriesFailed {
+						test.SetTag(constants.TestHasFailedAllRetries, "true")
+					}
 					test.SetTag(ext.Error, true)
 					suite.SetTag(ext.Error, true)
 					module.SetTag(ext.Error, true)
@@ -200,6 +252,9 @@ func instrumentTestingTFunc(f func(*testing.T)) func(*testing.T) {
 				} else if t.Skipped() {
 					test.Close(integrations.ResultStatusSkip)
 				} else {
+					if execMeta.isARetry && execMeta.isLastRetry && execMeta.allAttemptsPassed {
+						test.SetTag(constants.TestAttemptToFixPassed, "true")
+					}
 					test.Close(integrations.ResultStatusPass)
 				}
 				checkModuleAndSuite(module, suite)
@@ -309,6 +364,9 @@ func instrumentTestingBFunc(pb *testing.B, name string, f func(*testing.B)) (str
 
 		// Decrement level.
 		bpf := getBenchmarkPrivateFields(b)
+		if bpf == nil {
+			panic("error getting private fields of the benchmark")
+		}
 		bpf.AddLevel(-1)
 
 		startTime := time.Now()
@@ -318,7 +376,9 @@ func instrumentTestingBFunc(pb *testing.B, name string, f func(*testing.B)) (str
 		test.SetTestFunc(originalFunc)
 
 		// Restore the original name without the sub-benchmark auto name.
-		*bpf.name = subBenchmarkAutoNameRegex.ReplaceAllString(*bpf.name, "")
+		if bpf.name != nil {
+			*bpf.name = subBenchmarkAutoNameRegex.ReplaceAllString(*bpf.name, "")
+		}
 
 		// Run original benchmark.
 		var iPfOfB *benchmarkPrivateFields
@@ -339,7 +399,14 @@ func instrumentTestingBFunc(pb *testing.B, name string, f func(*testing.B)) (str
 
 			// First time we get the private fields of the inner testing.B.
 			iPfOfB = getBenchmarkPrivateFields(b)
+			if iPfOfB == nil {
+				panic("error getting private fields of the benchmark")
+			}
+
 			// Replace this function with the original one (executed only once - the first iteration[b.run1]).
+			if iPfOfB.benchFunc == nil {
+				panic("error getting the benchmark function")
+			}
 			*iPfOfB.benchFunc = f
 
 			// Get the metadata regarding the execution (in case is already created from the additional features)

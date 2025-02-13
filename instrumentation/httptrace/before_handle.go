@@ -11,6 +11,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/httpsec"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/options"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec"
 )
 
@@ -45,8 +46,10 @@ func BeforeHandle(cfg *ServeConfig, w http.ResponseWriter, r *http.Request) (htt
 	if cfg == nil {
 		cfg = new(ServeConfig)
 	}
-	opts := make([]tracer.StartSpanOption, len(cfg.SpanOpts))
-	copy(opts, cfg.SpanOpts)
+	opts := options.Expand(cfg.SpanOpts, 2, 3)
+	// Pre-append span.kind and component tags to the options so that they can be overridden.
+	opts[0] = tracer.Tag(ext.SpanKind, ext.SpanKindServer)
+	opts[1] = tracer.Tag(ext.Component, "net/http")
 	if cfg.Service != "" {
 		opts = append(opts, tracer.ServiceName(cfg.Service))
 	}
@@ -56,13 +59,11 @@ func BeforeHandle(cfg *ServeConfig, w http.ResponseWriter, r *http.Request) (htt
 	if cfg.Route != "" {
 		opts = append(opts, tracer.Tag(ext.HTTPRoute, cfg.Route))
 	}
-	// Pre-append span.kind and component tags to the options so that they can be overridden.
-	opts = append([]tracer.StartSpanOption{tracer.Tag(ext.SpanKind, ext.SpanKindServer), tracer.Tag(ext.Component, "net/http")}, opts...)
-	span, ctx := StartRequestSpan(r, opts...)
+	span, ctx, finishSpans := StartRequestSpan(r, opts...)
 	rw, ddrw := wrapResponseWriter(w)
 	rt := r.WithContext(ctx)
 	closeSpan := func() {
-		FinishRequestSpan(span, ddrw.status, cfg.IsStatusError, cfg.FinishOpts...)
+		finishSpans(ddrw.status, cfg.IsStatusError, cfg.FinishOpts...)
 	}
 	afterHandle := closeSpan
 	handled := false

@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"runtime"
 	"sort"
 	"sync"
 	"testing"
@@ -18,6 +19,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
+	"github.com/DataDog/dd-trace-go/v2/internal"
 	logging "github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
@@ -439,11 +441,18 @@ func Test_heartbeatInterval(t *testing.T) {
 }
 
 func TestNoEmptyHeaders(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("skipping test on non-linux OS")
+	}
+	if internal.EntityID() == "" || internal.ContainerID() == "" {
+		t.Skip("skipping test when entity ID and container ID are not available")
+	}
 	c := &client{}
 	req := c.newRequest(RequestTypeAppStarted)
 	assertNotEmpty := func(header string) {
 		headers := *req.Header
 		vals := headers[header]
+		assert.Greater(t, len(vals), 0, "header %s should not be empty", header)
 		for _, v := range vals {
 			assert.NotEmpty(t, v, "%s header should not be empty", header)
 		}

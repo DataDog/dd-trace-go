@@ -76,6 +76,28 @@ func splitPseudoHeaders(receivedHeaders []*corev3.HeaderValue) (headers map[stri
 	return headers, pseudoHeaders
 }
 
+// mergeMetadataHeaders merges the metadata headers of the grpc connection into the http headers of the request
+// - Skip pseudo headers and headers that are already set
+// - Set headers keys to be canonical
+func mergeMetadataHeaders(md metadata.MD, headers http.Header) {
+	for k, v := range md {
+		if strings.HasPrefix(k, ":") {
+			continue
+		}
+
+		// Skip the content-type header of the grpc request
+		// Note: all envoy set headers are lower-case
+		if k == "content-type" {
+			continue
+		}
+
+		k = http.CanonicalHeaderKey(k)
+		if _, ok := headers[k]; !ok {
+			headers[k] = v
+		}
+	}
+}
+
 func createFakeResponseWriter(w http.ResponseWriter, res *extproc.ProcessingRequest_ResponseHeaders) error {
 	headers, pseudoHeaders := splitPseudoHeaders(res.ResponseHeaders.GetHeaders().GetHeaders())
 
@@ -103,6 +125,13 @@ func newRequest(ctx context.Context, req *extproc.ProcessingRequest_RequestHeade
 		return nil, err
 	}
 
+	var remoteAddr string
+	md, ok := metadata.FromIncomingContext(ctx)
+	if ok {
+		mergeMetadataHeaders(md, headers)
+		remoteAddr = getRemoteAddr(md)
+	}
+
 	parsedURL, err := url.Parse(fmt.Sprintf("%s://%s%s", pseudoHeaders[":scheme"], pseudoHeaders[":authority"], pseudoHeaders[":path"]))
 	if err != nil {
 		return nil, fmt.Errorf(
@@ -111,12 +140,6 @@ func newRequest(ctx context.Context, req *extproc.ProcessingRequest_RequestHeade
 			pseudoHeaders[":host"],
 			pseudoHeaders[":path"],
 			err)
-	}
-
-	var remoteAddr string
-	md, ok := metadata.FromIncomingContext(ctx)
-	if ok {
-		remoteAddr = getRemoteAddr(md)
 	}
 
 	var tlsState *tls.ConnectionState

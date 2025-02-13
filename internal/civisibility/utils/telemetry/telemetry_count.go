@@ -199,14 +199,14 @@ func CodeCoverageErrors() {
 	telemetry.GlobalClient.Count(telemetry.NamespaceCiVisibility, "code_coverage.errors", 1.0, nil, true)
 }
 
-// EarlyFlakeDetectionRequest the number of requests sent to the early flake detection endpoint, tagged by the request compressed type.
-func EarlyFlakeDetectionRequest(requestCompressed RequestCompressedType) {
-	telemetry.GlobalClient.Count(telemetry.NamespaceCiVisibility, "early_flake_detection.request", 1.0, removeEmptyStrings([]string{
+// KnownTestsRequest the number of requests sent to the known tests endpoint, tagged by the request compressed type.
+func KnownTestsRequest(requestCompressed RequestCompressedType) {
+	telemetry.GlobalClient.Count(telemetry.NamespaceCiVisibility, "known_tests.request", 1.0, removeEmptyStrings([]string{
 		string(requestCompressed),
 	}), true)
 }
 
-// EarlyFlakeDetectionRequestErrors the number of requests sent to the early flake detection endpoint that errored, tagged by the error type.
-func EarlyFlakeDetectionRequestErrors(errorType ErrorType) {
-	telemetry.GlobalClient.Count(telemetry.NamespaceCiVisibility, "early_flake_detection.request_errors", 1.0, removeEmptyStrings(errorType), true)
+// KnownTestsRequestErrors the number of requests sent to the known tests endpoint that errored, tagged by the error type.
+func KnownTestsRequestErrors(errorType ErrorType) {
+	telemetry.GlobalClient.Count(telemetry.NamespaceCiVisibility, "known_tests.request_errors", 1.0, removeEmptyStrings(errorType), true)
 }

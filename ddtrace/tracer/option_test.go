@@ -241,7 +241,7 @@ func TestLoadAgentFeatures(t *testing.T) {
 
 	t.Run("OK", func(t *testing.T) {
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-			w.Write([]byte(`{"endpoints":["/v0.6/stats"],"feature_flags":["a","b"],"client_drop_p0s":true,"config": {"statsd_port":8999}}`))
+			w.Write([]byte(`{"endpoints":["/v0.6/stats"],"feature_flags":["a","b"],"client_drop_p0s":true,"obfuscation_version":2,"peer_tags":["peer.hostname"],"config": {"statsd_port":8999}}`))
 		}))
 		defer srv.Close()
 		cfg, err := newConfig(WithAgentAddr(strings.TrimPrefix(srv.URL, "http://")), WithAgentTimeout(2))
@@ -255,6 +255,8 @@ func TestLoadAgentFeatures(t *testing.T) {
 		assert.True(t, cfg.agent.Stats)
 		assert.True(t, cfg.agent.HasFlag("a"))
 		assert.True(t, cfg.agent.HasFlag("b"))
+		assert.EqualValues(t, cfg.agent.peerTags, []string{"peer.hostname"})
+		assert.Equal(t, 2, cfg.agent.obfuscationVersion)
 	})
 
 	t.Run("discovery", func(t *testing.T) {
@@ -291,7 +293,7 @@ func TestAgentIntegration(t *testing.T) {
 		defer clearIntegrationsForTests()
 
 		cfg.loadContribIntegrations(nil)
-		assert.Equal(t, 51, len(cfg.integrations))
+		assert.Equal(t, 52, len(cfg.integrations))
 		for integrationName, v := range cfg.integrations {
 			assert.False(t, v.Instrumented, "integrationName=%s", integrationName)
 		}
@@ -404,7 +406,7 @@ func testIntegrationEnabled(t *testing.T, contribPath string) error {
 		packages = append(packages, out)
 	}
 	for _, pkg := range packages {
-		if strings.Contains(pkg.ImportPath, "/test") {
+		if strings.Contains(pkg.ImportPath, "/test") || strings.Contains(pkg.ImportPath, "/internal") || strings.Contains(pkg.ImportPath, "/cmd") {
 			continue
 		}
 		if hasInstrumentationImport(pkg) {
@@ -570,14 +572,24 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			assert.Equal(t, "localhost:8125", globalconfig.DogstatsdAddr())
 		})
 
-		t.Run("env-host", func(t *testing.T) {
-			t.Setenv("DD_AGENT_HOST", "127.0.0.1")
+		t.Run("env-agent_host", func(t *testing.T) {
+			t.Setenv("DD_AGENT_HOST", "localhost")
 			tracer, err := newTracer(opts...)
 			assert.NoError(t, err)
 			defer tracer.Stop()
 			c := tracer.config
-			assert.Equal(t, "127.0.0.1:8125", c.dogstatsdAddr)
-			assert.Equal(t, "127.0.0.1:8125", globalconfig.DogstatsdAddr())
+			assert.Equal(t, "localhost:8125", c.dogstatsdAddr)
+			assert.Equal(t, "localhost:8125", globalconfig.DogstatsdAddr())
+		})
+
+		t.Run("env-dogstatsd_host", func(t *testing.T) {
+			t.Setenv("DD_DOGSTATSD_HOST", "localhost")
+			tracer, err := newTracer(opts...)
+			assert.NoError(t, err)
+			defer tracer.Stop()
+			c := tracer.config
+			assert.Equal(t, "localhost:8125", c.dogstatsdAddr)
+			assert.Equal(t, "localhost:8125", globalconfig.DogstatsdAddr())
 		})
 
 		t.Run("env-port", func(t *testing.T) {
@@ -602,27 +614,29 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			fail = false
 		})
 
-		t.Run("env-both", func(t *testing.T) {
-			t.Setenv("DD_AGENT_HOST", "127.0.0.1")
+		t.Run("env-all", func(t *testing.T) {
+			t.Setenv("DD_DOGSTATSD_HOST", "localhost")
 			t.Setenv("DD_DOGSTATSD_PORT", "123")
+			t.Setenv("DD_AGENT_HOST", "other-host")
 			tracer, err := newTracer(opts...)
 			assert.NoError(t, err)
 			defer tracer.Stop()
 			c := tracer.config
-			assert.Equal(t, "127.0.0.1:8125", c.dogstatsdAddr)
-			assert.Equal(t, "127.0.0.1:8125", globalconfig.DogstatsdAddr())
+			assert.Equal(t, "localhost:8125", c.dogstatsdAddr)
+			assert.Equal(t, "localhost:8125", globalconfig.DogstatsdAddr())
 		})
 
-		t.Run("env-both: agent not available", func(t *testing.T) {
-			t.Setenv("DD_AGENT_HOST", "127.0.0.1")
+		t.Run("env-all: agent not available", func(t *testing.T) {
+			t.Setenv("DD_DOGSTATSD_HOST", "localhost")
 			t.Setenv("DD_DOGSTATSD_PORT", "123")
+			t.Setenv("DD_AGENT_HOST", "other-host")
 			fail = true
 			tracer, err := newTracer(opts...)
 			assert.NoError(t, err)
 			defer tracer.Stop()
 			c := tracer.config
-			assert.Equal(t, "127.0.0.1:123", c.dogstatsdAddr)
-			assert.Equal(t, "127.0.0.1:123", globalconfig.DogstatsdAddr())
+			assert.Equal(t, "localhost:123", c.dogstatsdAddr)
+			assert.Equal(t, "localhost:123", globalconfig.DogstatsdAddr())
 			fail = false
 		})
 
@@ -679,6 +693,15 @@ func TestTracerOptionsDefaults(t *testing.T) {
 		defer tracer.Stop()
 		c := tracer.config
 		assert.Equal(t, "testEnv", c.env)
+	})
+
+	t.Run("env-agentAddr", func(t *testing.T) {
+		t.Setenv("DD_AGENT_HOST", "localhost")
+		tracer, err := newTracer(WithAgentTimeout(2))
+		assert.NoError(t, err)
+		defer tracer.Stop()
+		c := tracer.config
+		assert.Equal(t, &url.URL{Scheme: "http", Host: "localhost:8126"}, c.agentURL)
 	})
 
 	t.Run("env-agentURL", func(t *testing.T) {
@@ -1061,12 +1084,43 @@ func TestDefaultDogstatsdAddr(t *testing.T) {
 		assert.Equal(t, defaultDogstatsdAddr(), "localhost:8125")
 	})
 
-	t.Run("env", func(t *testing.T) {
-		t.Setenv("DD_DOGSTATSD_PORT", "8111")
-		assert.Equal(t, defaultDogstatsdAddr(), "localhost:8111")
+	t.Run("host-env", func(t *testing.T) {
+		t.Setenv("DD_DOGSTATSD_HOST", "111.111.1.1")
+		t.Setenv("DD_AGENT_HOST", "222.222.2.2")
+		assert.Equal(t, "111.111.1.1:8125", defaultDogstatsdAddr())
 	})
 
-	t.Run("env+socket", func(t *testing.T) {
+	t.Run("port-env", func(t *testing.T) {
+		t.Setenv("DD_DOGSTATSD_PORT", "8111")
+		assert.Equal(t, defaultDogstatsdAddr(), "localhost:8111")
+		t.Setenv("DD_AGENT_HOST", "222.222.2.2")
+		assert.Equal(t, defaultDogstatsdAddr(), "222.222.2.2:8111")
+	})
+
+	t.Run("host-env+port-env", func(t *testing.T) {
+		t.Setenv("DD_DOGSTATSD_HOST", "111.111.1.1")
+		t.Setenv("DD_DOGSTATSD_PORT", "8888")
+		t.Setenv("DD_AGENT_HOST", "222.222.2.2")
+		assert.Equal(t, "111.111.1.1:8888", defaultDogstatsdAddr())
+	})
+
+	t.Run("host-env+socket", func(t *testing.T) {
+		t.Setenv("DD_DOGSTATSD_HOST", "111.111.1.1")
+		assert.Equal(t, "111.111.1.1:8125", defaultDogstatsdAddr())
+		f, err := os.CreateTemp("", "dsd.socket")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := f.Close(); err != nil {
+			t.Fatal(err)
+		}
+		defer os.RemoveAll(f.Name())
+		defer func(old string) { defaultSocketDSD = old }(defaultSocketDSD)
+		defaultSocketDSD = f.Name()
+		assert.Equal(t, "111.111.1.1:8125", defaultDogstatsdAddr())
+	})
+
+	t.Run("port-env+socket", func(t *testing.T) {
 		t.Setenv("DD_DOGSTATSD_PORT", "8111")
 		assert.Equal(t, defaultDogstatsdAddr(), "localhost:8111")
 		f, err := os.CreateTemp("", "dsd.socket")

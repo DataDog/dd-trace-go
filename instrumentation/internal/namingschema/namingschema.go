@@ -66,10 +66,14 @@ func GetConfig() Config {
 		globalconfig.SetServiceName(os.Getenv("DD_SERVICE"))
 	}
 	return Config{
-		NamingSchemaVersion:    Version(atomic.LoadInt32(&activeNamingSchema)),
+		NamingSchemaVersion:    GetVersion(),
 		RemoveFakeServiceNames: removeFakeServiceNames,
 		DDService:              globalconfig.ServiceName(),
 	}
+}
+
+func GetVersion() Version {
+	return Version(atomic.LoadInt32(&activeNamingSchema))
 }
 
 func setVersion(v Version) {

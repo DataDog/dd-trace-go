@@ -26,7 +26,8 @@ func BenchmarkIter(b *testing.B) {
 
 func TestLockMapThrash(t *testing.T) {
 	wg := sync.WaitGroup{}
-	ctx, _ := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	t.Cleanup(cancel)
 	lm := NewLockMap(map[string]string{})
 	wg.Add(6)
 	for i := 0; i < 3; i++ {
