@@ -171,6 +171,9 @@ func runFlakyTestRetriesTests(m *testing.M) {
 		27,
 		0)
 
+	// check capabilities tags
+	checkCapabilitiesTags(finishedSpans)
+
 	fmt.Println("All tests passed.")
 	os.Exit(0)
 }
@@ -266,6 +269,9 @@ func runEarlyFlakyTestDetectionTests(m *testing.M) {
 		4,
 		181,
 		0)
+
+	// check capabilities tags
+	checkCapabilitiesTags(finishedSpans)
 
 	fmt.Println("All tests passed.")
 	os.Exit(0)
@@ -380,6 +386,9 @@ func runFlakyTestRetriesWithEarlyFlakyTestDetectionTests(m *testing.M) {
 		4,
 		37,
 		0)
+
+	// check capabilities tags
+	checkCapabilitiesTags(finishedSpans)
 
 	fmt.Println("All tests passed.")
 	os.Exit(0)
@@ -499,6 +508,9 @@ func runIntelligentTestRunnerTests(m *testing.M) {
 		4,
 		16,
 		0)
+
+	// check capabilities tags
+	checkCapabilitiesTags(finishedSpans)
 
 	fmt.Println("All tests passed.")
 	os.Exit(0)
@@ -620,6 +632,11 @@ func runTestManagementTests(m *testing.M) {
 	checkSpansByTagValue(testRetryWithPanic, constants.TestAttemptToFixPassed, "true", 0)        // Attempt to fix passed false (reported in the latest retry)
 	checkSpansByTagValue(testRetryWithPanic, constants.TestStatus, constants.TestStatusFail, 10) // All tests passed
 
+	// check capabilities tags
+	checkCapabilitiesTags(finishedSpans)
+
+	fmt.Println("All tests passed.")
+	os.Exit(0)
 }
 
 func checkSpansByType(finishedSpans []*mocktracer.Span,
@@ -700,6 +717,28 @@ func checkSpansByTagValue(finishedSpans []*mocktracer.Span, tagName, tagValue st
 	}
 
 	return spans
+}
+
+func checkCapabilitiesTags(finishedSpans []*mocktracer.Span) {
+	numOfSessions := len(getSpansWithType(finishedSpans, constants.SpanTypeTestSession))
+	if len(getSpansWithTagName(finishedSpans, constants.LibraryCapabilitiesTestImpactAnalysis)) != len(finishedSpans)-numOfSessions {
+		panic(fmt.Sprintf("expected all spans to have the %s tag", constants.LibraryCapabilitiesTestImpactAnalysis))
+	}
+	if len(getSpansWithTagName(finishedSpans, constants.LibraryCapabilitiesEarlyFlakeDetection)) != len(finishedSpans)-numOfSessions {
+		panic(fmt.Sprintf("expected all spans to have the %s tag", constants.LibraryCapabilitiesEarlyFlakeDetection))
+	}
+	if len(getSpansWithTagName(finishedSpans, constants.LibraryCapabilitiesAutoTestRetries)) != len(finishedSpans)-numOfSessions {
+		panic(fmt.Sprintf("expected all spans to have the %s tag", constants.LibraryCapabilitiesAutoTestRetries))
+	}
+	if len(getSpansWithTagName(finishedSpans, constants.LibraryCapabilitiesTestManagementQuarantine)) != len(finishedSpans)-numOfSessions {
+		panic(fmt.Sprintf("expected all spans to have the %s tag", constants.LibraryCapabilitiesTestManagementQuarantine))
+	}
+	if len(getSpansWithTagName(finishedSpans, constants.LibraryCapabilitiesTestManagementDisable)) != len(finishedSpans)-numOfSessions {
+		panic(fmt.Sprintf("expected all spans to have the %s tag", constants.LibraryCapabilitiesTestManagementDisable))
+	}
+	if len(getSpansWithTagName(finishedSpans, constants.LibraryCapabilitiesTestManagementAttemptToFix)) != len(finishedSpans)-numOfSessions {
+		panic(fmt.Sprintf("expected all spans to have the %s tag", constants.LibraryCapabilitiesTestManagementAttemptToFix))
+	}
 }
 
 type (
