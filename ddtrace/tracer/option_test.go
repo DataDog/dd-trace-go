@@ -696,12 +696,12 @@ func TestTracerOptionsDefaults(t *testing.T) {
 	})
 
 	t.Run("env-agentAddr", func(t *testing.T) {
-		t.Setenv("DD_AGENT_HOST", "trace-agent")
+		t.Setenv("DD_AGENT_HOST", "localhost")
 		tracer, err := newTracer(WithAgentTimeout(2))
 		assert.NoError(t, err)
 		defer tracer.Stop()
 		c := tracer.config
-		assert.Equal(t, &url.URL{Scheme: "http", Host: "trace-agent:8126"}, c.agentURL)
+		assert.Equal(t, &url.URL{Scheme: "http", Host: "localhost:8126"}, c.agentURL)
 	})
 
 	t.Run("env-agentURL", func(t *testing.T) {
