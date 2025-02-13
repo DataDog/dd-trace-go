@@ -5,7 +5,7 @@ go 1.22.10
 require (
 	github.com/google/pprof v0.0.0-20240409012703-83162a5b38cd
 	github.com/mattn/go-sqlite3 v1.14.18
-	golang.org/x/exp v0.0.0-20240719175910-8a7402abbf56
+	golang.org/x/exp v0.0.0-20241108190413-2d47ceb2692f
 	gopkg.in/DataDog/dd-trace-go.v1 v1.999.0-beta.15
 )
 
@@ -18,11 +18,11 @@ require (
 	github.com/DataDog/datadog-agent/pkg/util/log v0.59.0 // indirect
 	github.com/DataDog/datadog-agent/pkg/util/scrubber v0.59.0 // indirect
 	github.com/DataDog/datadog-go/v5 v5.5.0 // indirect
-	github.com/DataDog/dd-trace-go/contrib/database/sql/v2 v2.0.0-rc.2 // indirect
-	github.com/DataDog/dd-trace-go/v2 v2.0.0-rc.2 // indirect
+	github.com/DataDog/dd-trace-go/contrib/database/sql/v2 v2.0.0-rc.2.0.20250213143039-4a99d1721242 // indirect
+	github.com/DataDog/dd-trace-go/v2 v2.0.0-rc.2.0.20250213143039-4a99d1721242 // indirect
 	github.com/DataDog/go-libddwaf/v3 v3.5.1 // indirect
 	github.com/DataDog/go-runtime-metrics-internal v0.0.4-0.20241206090539-a14610dc22b6 // indirect
-	github.com/DataDog/go-sqllexer v0.0.14 // indirect
+	github.com/DataDog/go-sqllexer v0.0.16 // indirect
 	github.com/DataDog/go-tuf v1.1.0-0.5.2 // indirect
 	github.com/DataDog/opentelemetry-mapping-go/pkg/otlp/attributes v0.20.0 // indirect
 	github.com/DataDog/sketches-go v1.4.6 // indirect
@@ -67,17 +67,15 @@ require (
 	go.uber.org/atomic v1.11.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
 	go.uber.org/zap v1.27.0 // indirect
-	golang.org/x/mod v0.20.0 // indirect
-	golang.org/x/net v0.33.0 // indirect
-	golang.org/x/sync v0.10.0 // indirect
-	golang.org/x/sys v0.28.0 // indirect
+	golang.org/x/mod v0.22.0 // indirect
+	golang.org/x/net v0.34.0 // indirect
+	golang.org/x/sys v0.29.0 // indirect
 	golang.org/x/text v0.21.0 // indirect
-	golang.org/x/time v0.6.0 // indirect
-	golang.org/x/tools v0.24.0 // indirect
-	golang.org/x/xerrors v0.0.0-20231012003039-104605ab7028 // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20240730163845-b1a4ccb954bf // indirect
-	google.golang.org/grpc v1.64.1 // indirect
-	google.golang.org/protobuf v1.34.2 // indirect
+	golang.org/x/time v0.7.0 // indirect
+	golang.org/x/xerrors v0.0.0-20240903120638-7835f813f4da // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20241015192408-796eee8c2d53 // indirect
+	google.golang.org/grpc v1.69.0 // indirect
+	google.golang.org/protobuf v1.35.1 // indirect
 	gopkg.in/ini.v1 v1.67.0 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 )
