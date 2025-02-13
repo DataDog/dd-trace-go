@@ -30,7 +30,6 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/waf/addresses"
 	httptrace "github.com/DataDog/dd-trace-go/v2/instrumentation/httptracemock"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils"
-	globalinternal "github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/config"
 
@@ -772,13 +771,10 @@ func TestWafEventsInMetaStruct(t *testing.T) {
 			spans := mt.FinishedSpans()
 			require.Len(t, spans, 1)
 
-			tag := spans[0].Tag("appsec")
-			require.IsType(t, globalinternal.MetaStructValue{}, tag)
+			events, ok := spans[0].Tag("appsec").(map[string][]any)
+			require.True(t, ok)
 
-			events := tag.(globalinternal.MetaStructValue).Value
-			require.IsType(t, map[string][]any{}, events)
-
-			triggers := events.(map[string][]any)["triggers"]
+			triggers := events["triggers"]
 			ids := make([]string, 0, len(triggers))
 			for _, trigger := range triggers {
 				ids = append(ids, trigger.(map[string]any)["rule"].(map[string]any)["id"].(string))
