@@ -21,6 +21,8 @@ const (
 	maxMessageAttributes = 10
 )
 
+var instr = internal.Instr
+
 func EnrichOperation(span *tracer.Span, in middleware.InitializeInput, operation string) {
 	switch operation {
 	case "Publish":
@@ -33,13 +35,13 @@ func EnrichOperation(span *tracer.Span, in middleware.InitializeInput, operation
 func handlePublish(span *tracer.Span, in middleware.InitializeInput) {
 	params, ok := in.Parameters.(*sns.PublishInput)
 	if !ok {
-		internal.Logger.Debug("Unable to read PublishInput params")
+		instr.Logger().Debug("Unable to read PublishInput params")
 		return
 	}
 
 	traceContext, err := getTraceContext(span)
 	if err != nil {
-		internal.Logger.Debug("Unable to get trace context: %s", err.Error())
+		instr.Logger().Debug("Unable to get trace context: %s", err.Error())
 		return
 	}
 
@@ -53,13 +55,13 @@ func handlePublish(span *tracer.Span, in middleware.InitializeInput) {
 func handlePublishBatch(span *tracer.Span, in middleware.InitializeInput) {
 	params, ok := in.Parameters.(*sns.PublishBatchInput)
 	if !ok {
-		internal.Logger.Debug("Unable to read PublishBatch params")
+		instr.Logger().Debug("Unable to read PublishBatch params")
 		return
 	}
 
 	traceContext, err := getTraceContext(span)
 	if err != nil {
-		internal.Logger.Debug("Unable to get trace context: %s", err.Error())
+		instr.Logger().Debug("Unable to get trace context: %s", err.Error())
 		return
 	}
 
@@ -98,7 +100,7 @@ func injectTraceContext(traceContext types.MessageAttributeValue, messageAttribu
 	// https://docs.aws.amazon.com/sns/latest/dg/sns-message-attributes.html
 	// Only inject if there's room.
 	if len(messageAttributes) >= maxMessageAttributes {
-		internal.Logger.Info("Cannot inject trace context: message already has maximum allowed attributes")
+		instr.Logger().Info("Cannot inject trace context: message already has maximum allowed attributes")
 		return
 	}
 

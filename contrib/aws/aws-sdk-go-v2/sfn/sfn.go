@@ -15,6 +15,8 @@ import (
 	"github.com/aws/smithy-go/middleware"
 )
 
+var instr = internal.Instr
+
 func EnrichOperation(span *tracer.Span, in middleware.InitializeInput, operation string) {
 	switch operation {
 	case "StartExecution":
@@ -27,7 +29,7 @@ func EnrichOperation(span *tracer.Span, in middleware.InitializeInput, operation
 func handleStartExecution(span *tracer.Span, in middleware.InitializeInput) {
 	params, ok := in.Parameters.(*sfn.StartExecutionInput)
 	if !ok {
-		internal.Logger.Debug("Unable to read StartExecutionInput params")
+		instr.Logger().Debug("Unable to read StartExecutionInput params")
 		return
 	}
 
@@ -38,7 +40,7 @@ func handleStartExecution(span *tracer.Span, in middleware.InitializeInput) {
 func handleStartSyncExecution(span *tracer.Span, in middleware.InitializeInput) {
 	params, ok := in.Parameters.(*sfn.StartSyncExecutionInput)
 	if !ok {
-		internal.Logger.Debug("Unable to read StartSyncExecutionInput params")
+		instr.Logger().Debug("Unable to read StartSyncExecutionInput params")
 		return
 	}
 
@@ -52,13 +54,13 @@ func injectTraceContext(span *tracer.Span, input *string) *string {
 	}
 	traceCtxCarrier := tracer.TextMapCarrier{}
 	if err := tracer.Inject(span.Context(), traceCtxCarrier); err != nil {
-		internal.Logger.Debug("Unable to inject trace context: %s", err)
+		instr.Logger().Debug("Unable to inject trace context: %s", err)
 		return input
 	}
 
 	traceCtxJSON, err := json.Marshal(traceCtxCarrier)
 	if err != nil {
-		internal.Logger.Debug("Unable to marshal trace context: %s", err)
+		instr.Logger().Debug("Unable to marshal trace context: %s", err)
 		return input
 	}
 

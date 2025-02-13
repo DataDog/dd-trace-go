@@ -26,6 +26,8 @@ const (
 	maxSizeBytes    = 256 * 1024 // 256 KB
 )
 
+var instr = internal.Instr
+
 func EnrichOperation(span *tracer.Span, in middleware.InitializeInput, operation string) {
 	switch operation {
 	case "PutEvents":
@@ -36,7 +38,7 @@ func EnrichOperation(span *tracer.Span, in middleware.InitializeInput, operation
 func handlePutEvents(span *tracer.Span, in middleware.InitializeInput) {
 	params, ok := in.Parameters.(*eventbridge.PutEventsInput)
 	if !ok {
-		internal.Logger.Debug("Unable to read PutEvents params")
+		instr.Logger().Debug("Unable to read PutEvents params")
 		return
 	}
 
@@ -44,7 +46,7 @@ func handlePutEvents(span *tracer.Span, in middleware.InitializeInput) {
 	carrier := tracer.TextMapCarrier{}
 	err := tracer.Inject(span.Context(), carrier)
 	if err != nil {
-		internal.Logger.Debug("Unable to inject trace context: %s", err)
+		instr.Logger().Debug("Unable to inject trace context: %s", err)
 		return
 	}
 
@@ -54,7 +56,7 @@ func handlePutEvents(span *tracer.Span, in middleware.InitializeInput) {
 
 	carrierJSON, err := json.Marshal(carrier)
 	if err != nil {
-		internal.Logger.Debug("Unable to marshal trace context: %s", err)
+		instr.Logger().Debug("Unable to marshal trace context: %s", err)
 		return
 	}
 
@@ -89,7 +91,7 @@ func injectTraceContext(baseTraceContext string, entryPtr *types.PutEventsReques
 
 	// Basic JSON structure validation
 	if len(detail) < 2 || detail[len(detail)-1] != '}' {
-		internal.Logger.Debug("Unable to parse detail JSON. Not injecting trace context into EventBridge payload.")
+		instr.Logger().Debug("Unable to parse detail JSON. Not injecting trace context into EventBridge payload.")
 		return
 	}
 
@@ -105,7 +107,7 @@ func injectTraceContext(baseTraceContext string, entryPtr *types.PutEventsReques
 
 	// Check sizes
 	if len(newDetail) > maxSizeBytes {
-		internal.Logger.Debug("Payload size too large to pass context")
+		instr.Logger().Debug("Payload size too large to pass context")
 		return
 	}
 

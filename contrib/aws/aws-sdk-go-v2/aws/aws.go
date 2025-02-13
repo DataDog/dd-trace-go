@@ -36,12 +36,7 @@ import (
 
 const componentName = "aws/aws-sdk-go-v2/aws"
 
-var instr *instrumentation.Instrumentation
-
-func init() {
-	instr = instrumentation.Load(instrumentation.PackageAWSSDKGoV2)
-	internal.Logger = instr.Logger()
-}
+var instr = internal.Instr
 
 type spanTimestampKey struct{}
 

@@ -21,6 +21,8 @@ const (
 	maxMessageAttributes = 10
 )
 
+var instr = internal.Instr
+
 func EnrichOperation(span *tracer.Span, in middleware.InitializeInput, operation string) {
 	switch operation {
 	case "SendMessage":
@@ -33,13 +35,13 @@ func EnrichOperation(span *tracer.Span, in middleware.InitializeInput, operation
 func handleSendMessage(span *tracer.Span, in middleware.InitializeInput) {
 	params, ok := in.Parameters.(*sqs.SendMessageInput)
 	if !ok {
-		internal.Logger.Debug("Unable to read SendMessage params")
+		instr.Logger().Debug("Unable to read SendMessage params")
 		return
 	}
 
 	traceContext, err := getTraceContext(span)
 	if err != nil {
-		internal.Logger.Debug("Unable to get trace context: %s", err.Error())
+		instr.Logger().Debug("Unable to get trace context: %s", err.Error())
 		return
 	}
 
@@ -53,13 +55,13 @@ func handleSendMessage(span *tracer.Span, in middleware.InitializeInput) {
 func handleSendMessageBatch(span *tracer.Span, in middleware.InitializeInput) {
 	params, ok := in.Parameters.(*sqs.SendMessageBatchInput)
 	if !ok {
-		internal.Logger.Debug("Unable to read SendMessageBatch params")
+		instr.Logger().Debug("Unable to read SendMessageBatch params")
 		return
 	}
 
 	traceContext, err := getTraceContext(span)
 	if err != nil {
-		internal.Logger.Debug("Unable to get trace context: %s", err.Error())
+		instr.Logger().Debug("Unable to get trace context: %s", err.Error())
 		return
 	}
 
@@ -96,7 +98,7 @@ func injectTraceContext(traceContext types.MessageAttributeValue, messageAttribu
 	// https://docs.aws.amazon.com/AWSSimpleQueueService/latest/SQSDeveloperGuide/sqs-message-metadata.html#sqs-message-attributes
 	// Only inject if there's room.
 	if len(messageAttributes) >= maxMessageAttributes {
-		internal.Logger.Info("Cannot inject trace context: message already has maximum allowed attributes")
+		instr.Logger().Info("Cannot inject trace context: message already has maximum allowed attributes")
 		return
 	}
 
