@@ -719,7 +719,7 @@ func checkSpansByTagValue(finishedSpans []*mocktracer.Span, tagName, tagValue st
 	return spans
 }
 
-func checkCapabilitiesTags(finishedSpans []mocktracer.Span) {
+func checkCapabilitiesTags(finishedSpans []*mocktracer.Span) {
 	numOfSessions := len(getSpansWithType(finishedSpans, constants.SpanTypeTestSession))
 	if len(getSpansWithTagName(finishedSpans, constants.LibraryCapabilitiesTestImpactAnalysis)) != len(finishedSpans)-numOfSessions {
 		panic(fmt.Sprintf("expected all spans to have the %s tag", constants.LibraryCapabilitiesTestImpactAnalysis))
