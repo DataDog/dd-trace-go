@@ -39,5 +39,6 @@ func TraceAndServe(h http.Handler, w http.ResponseWriter, r *http.Request, cfg *
 	c.RouteParams = cfg.RouteParams
 	c.FinishOpts = cfg.FinishOpts
 	c.SpanOpts = cfg.SpanOpts
+	c.IsStatusError = cfg.IsStatusError
 	v2.TraceAndServe(h, w, r, c)
 }
