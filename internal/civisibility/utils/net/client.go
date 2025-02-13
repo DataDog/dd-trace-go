@@ -128,18 +128,18 @@ func NewClientWithServiceNameAndSubdomain(serviceName, subdomain string) Client 
 	var baseURL string
 	var requestHandler *RequestHandler
 	var agentURL *url.URL
-	var APIKeyValue string
+	var apiKeyValue string
 
 	agentlessEnabled := internal.BoolEnv(constants.CIVisibilityAgentlessEnabledEnvironmentVariable, false)
 	if agentlessEnabled {
 		// Agentless mode is enabled.
-		APIKeyValue = os.Getenv(constants.APIKeyEnvironmentVariable)
-		if APIKeyValue == "" {
+		apiKeyValue = os.Getenv(constants.APIKeyEnvironmentVariable)
+		if apiKeyValue == "" {
 			log.Error("An API key is required for agentless mode. Use the DD_API_KEY env variable to set it")
 			return nil
 		}
 
-		defaultHeaders["dd-api-key"] = APIKeyValue
+		defaultHeaders["dd-api-key"] = apiKeyValue
 
 		// Check for a custom agentless URL.
 		agentlessURL := os.Getenv(constants.CIVisibilityAgentlessURLEnvironmentVariable)
@@ -208,13 +208,19 @@ func NewClientWithServiceNameAndSubdomain(serviceName, subdomain string) Client 
 
 	if !telemetry.Disabled() {
 		telemetryInit.Do(func() {
-			telemetry.ProductStarted(telemetry.NamespaceTracers)
+			telemetry.ProductStarted(telemetry.NamespaceCIVisibility)
+			telemetry.RegisterAppConfigs(
+				telemetry.Configuration{Name: "service", Value: serviceName},
+				telemetry.Configuration{Name: "env", Value: environment},
+				telemetry.Configuration{Name: "agentless", Value: agentlessEnabled},
+				telemetry.Configuration{Name: "test_session_name", Value: ciTags[constants.TestSessionName]},
+			)
 			if telemetry.GlobalClient() != nil {
 				return
 			}
 			cfg := telemetry.ClientConfig{
 				HTTPClient: requestHandler.Client,
-				APIKey:     APIKeyValue,
+				APIKey:     apiKeyValue,
 			}
 			if agentURL != nil {
 				cfg.AgentURL = agentURL.String()
