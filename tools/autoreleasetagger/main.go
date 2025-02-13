@@ -212,7 +212,11 @@ func run(dryRun bool, remote string, disablePush bool, root, version string, exc
 		slog.Info("Processing module", "module", mod.Module.Path)
 
 		slog.Info("Updating dependencies", "module", mod.Module.Path)
-		if err := updateDependencies(dryRun, mod); err != nil {
+		if err := updateDependencies(dryRun, mod, version); err != nil {
+			return fmt.Errorf("failed to update dependencies: %w", err)
+		}
+
+		if err := modTidy(dryRun, mod); err != nil {
 			return fmt.Errorf("failed to update dependencies: %w", err)
 		}
 
@@ -288,8 +292,29 @@ func pushTagIfMissing(dir, remote, tagName string) error {
 	return runCommand(dir, "git", "push", remote, tagName)
 }
 
-// updateDependencies updates the given module with 'go mod tidy'.
-func updateDependencies(dryRun bool, mod GoMod) error {
+// updateDependencies edits the given module dependencies from dd-trace-go.
+func updateDependencies(dryRun bool, mod GoMod, version string) error {
+	slog.Debug("Edit dd-trace-go dependencies", "module", mod.Module.Path)
+	if dryRun {
+		slog.Debug("Skipping editing dd-trace-go dependencies in dry-run mode")
+		return nil
+	}
+
+	for _, req := range mod.Require {
+		// Exclude no dd-trace-go dependencies.
+		if !strings.HasPrefix(req.Path, "github.com/DataDog/dd-trace-go") {
+			continue
+		}
+		require := fmt.Sprintf("-require=%s@%s", req.Path, version)
+		if err := runCommand(mod.dir, "go", "mod", "edit", require); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// modTidy updates the given module with 'go mod tidy'.
+func modTidy(dryRun bool, mod GoMod) error {
 	slog.Debug("Running go mod tidy", "module", mod.Module.Path)
 	if dryRun {
 		slog.Debug("Skipping go mod tidy in dry-run mode")
