@@ -6,21 +6,29 @@
 package kafka
 
 import (
-	"gopkg.in/DataDog/dd-trace-go.v1/contrib/segmentio/kafka.go.v0/internal/tracing"
+	v2 "github.com/DataDog/dd-trace-go/contrib/segmentio/kafka-go/v2"
 )
 
 // An Option customizes the config.
-type Option = tracing.Option
+type Option = v2.Option
 
 // WithServiceName sets the config service name to serviceName.
-var WithServiceName = tracing.WithServiceName
+func WithServiceName(serviceName string) Option {
+	return v2.WithService(serviceName)
+}
 
 // WithAnalytics enables Trace Analytics for all started spans.
-var WithAnalytics = tracing.WithAnalytics
+func WithAnalytics(on bool) Option {
+	return v2.WithAnalytics(on)
+}
 
 // WithAnalyticsRate sets the sampling rate for Trace Analytics events
 // correlated to started spans.
-var WithAnalyticsRate = tracing.WithAnalyticsRate
+func WithAnalyticsRate(rate float64) Option {
+	return v2.WithAnalyticsRate(rate)
+}
 
 // WithDataStreams enables the Data Streams monitoring product features: https://www.datadoghq.com/product/data-streams-monitoring/
-var WithDataStreams = tracing.WithDataStreams
+func WithDataStreams() Option {
+	return v2.WithDataStreams()
+}

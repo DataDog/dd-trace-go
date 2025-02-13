@@ -14,11 +14,11 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/valkey-io/valkey-go"
-
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
+
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils"
 )
 
 const (
@@ -42,9 +42,7 @@ func TestMain(m *testing.M) {
 }
 
 func TestNewClient(t *testing.T) {
-	prevName := globalconfig.ServiceName()
-	defer globalconfig.SetServiceName(prevName)
-	globalconfig.SetServiceName("global-service")
+	testutils.SetGlobalServiceName(t, "global-service")
 
 	tests := []struct {
 		name            string

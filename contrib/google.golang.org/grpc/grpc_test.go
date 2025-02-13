@@ -18,14 +18,12 @@ import (
 	"testing"
 	"time"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/lists"
-	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/namingschematest"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/tinylib/msgp/msgp"
@@ -419,9 +417,9 @@ func TestSpanTree(t *testing.T) {
 				serverSpans++
 				if !reqMsgFound {
 					assert.Equal("{\"name\":\"break\"}", ms.Tag(tagRequest))
-					metadataTag := ms.Tag(tagMetadataPrefix + "custom_metadata_key").([]string)
-					assert.Len(metadataTag, 1)
-					assert.Equal("custom_metadata_value", metadataTag[0])
+					metadataTag := ms.Tag(tagMetadataPrefix + "custom_metadata_key.0").(string)
+					assert.NotEmpty(metadataTag)
+					assert.Equal("custom_metadata_value", metadataTag)
 					reqMsgFound = true
 				}
 			}
@@ -489,7 +487,7 @@ func TestPreservesMetadata(t *testing.T) {
 	assert.NotContains(t, s.Tags(), tagMetadataPrefix+"x-datadog-trace-id")
 	assert.NotContains(t, s.Tags(), tagMetadataPrefix+"x-datadog-parent-id")
 	assert.NotContains(t, s.Tags(), tagMetadataPrefix+"x-datadog-sampling-priority")
-	assert.Equal(t, []string{"test-value"}, s.Tag(tagMetadataPrefix+"test-key"))
+	assert.Equal(t, "test-value", s.Tag(tagMetadataPrefix+"test-key.0"))
 }
 
 func TestStreamSendsErrorCode(t *testing.T) {
@@ -707,9 +705,7 @@ func TestAnalyticsSettings(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		rate := globalconfig.AnalyticsRate()
-		defer globalconfig.SetAnalyticsRate(rate)
-		globalconfig.SetAnalyticsRate(0.4)
+		testutils.SetGlobalAnalyticsRate(t, 0.4)
 
 		assertRate(t, mt, 0.4)
 	})
@@ -732,9 +728,7 @@ func TestAnalyticsSettings(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		rate := globalconfig.AnalyticsRate()
-		defer globalconfig.SetAnalyticsRate(rate)
-		globalconfig.SetAnalyticsRate(0.4)
+		testutils.SetGlobalAnalyticsRate(t, 0.4)
 
 		assertRate(t, mt, 0.23, WithAnalyticsRate(0.23))
 	})
@@ -757,8 +751,8 @@ func TestIgnoredMethods(t *testing.T) {
 		}{
 			{ignore: []string{}, exp: 2},
 			{ignore: []string{"/some/endpoint"}, exp: 2},
-			{ignore: []string{"/grpc.Fixture/Ping"}, exp: 1},
-			{ignore: []string{"/grpc.Fixture/Ping", "/additional/endpoint"}, exp: 1},
+			{ignore: []string{"/grpc.Fixture/Ping"}, exp: 0},
+			{ignore: []string{"/grpc.Fixture/Ping", "/additional/endpoint"}, exp: 0},
 		} {
 			rig, err := newRig(true, WithIgnoredMethods(c.ignore...))
 			if err != nil {
@@ -787,8 +781,8 @@ func TestIgnoredMethods(t *testing.T) {
 			// server span: 1 send + 2 recv(OK + EOF) + 1 stream finish(EOF)
 			{ignore: []string{}, exp: 7},
 			{ignore: []string{"/some/endpoint"}, exp: 7},
-			{ignore: []string{"/grpc.Fixture/StreamPing"}, exp: 3},
-			{ignore: []string{"/grpc.Fixture/StreamPing", "/additional/endpoint"}, exp: 3},
+			{ignore: []string{"/grpc.Fixture/StreamPing"}, exp: 0},
+			{ignore: []string{"/grpc.Fixture/StreamPing", "/additional/endpoint"}, exp: 0},
 		} {
 			rig, err := newRig(true, WithIgnoredMethods(c.ignore...))
 			if err != nil {
@@ -900,9 +894,9 @@ func TestIgnoredMetadata(t *testing.T) {
 		ignore []string
 		exp    int
 	}{
-		{ignore: []string{}, exp: 5},
-		{ignore: []string{"test-key"}, exp: 4},
-		{ignore: []string{"test-key", "test-key2"}, exp: 3},
+		{ignore: []string{}, exp: 8},
+		{ignore: []string{"test-key"}, exp: 7},
+		{ignore: []string{"test-key", "test-key2"}, exp: 6},
 	} {
 		rig, err := newRig(true, WithMetadataTags(), WithIgnoredMetadata(c.ignore...))
 		if err != nil {
@@ -1002,7 +996,7 @@ func TestCustomTag(t *testing.T) {
 		value interface{}
 	}{
 		{key: "foo", value: "bar"},
-		{key: "val", value: 123},
+		{key: "val", value: float64(123)},
 	} {
 		rig, err := newRig(true, WithCustomTag(c.key, c.value))
 		if err != nil {
@@ -1028,52 +1022,6 @@ func TestCustomTag(t *testing.T) {
 		rig.Close()
 		mt.Reset()
 	}
-}
-
-func TestServerNamingSchema(t *testing.T) {
-	genSpans := getGenSpansFn(false, true)
-	assertOpV0 := func(t *testing.T, spans []mocktracer.Span) {
-		require.Len(t, spans, 4)
-		for i := 0; i < 4; i++ {
-			assert.Equal(t, "grpc.server", spans[i].OperationName())
-		}
-	}
-	assertOpV1 := func(t *testing.T, spans []mocktracer.Span) {
-		require.Len(t, spans, 4)
-		for i := 0; i < 4; i++ {
-			assert.Equal(t, "grpc.server.request", spans[i].OperationName())
-		}
-	}
-	wantServiceNameV0 := namingschematest.ServiceNameAssertions{
-		WithDefaults:             lists.RepeatString("grpc.server", 4),
-		WithDDService:            lists.RepeatString(namingschematest.TestDDService, 4),
-		WithDDServiceAndOverride: lists.RepeatString(namingschematest.TestServiceOverride, 4),
-	}
-	t.Run("ServiceName", namingschematest.NewServiceNameTest(genSpans, wantServiceNameV0))
-	t.Run("SpanName", namingschematest.NewSpanNameTest(genSpans, assertOpV0, assertOpV1))
-}
-
-func TestClientNamingSchema(t *testing.T) {
-	genSpans := getGenSpansFn(true, false)
-	assertOpV0 := func(t *testing.T, spans []mocktracer.Span) {
-		require.Len(t, spans, 4)
-		for i := 0; i < 4; i++ {
-			assert.Equal(t, "grpc.client", spans[i].OperationName())
-		}
-	}
-	assertOpV1 := func(t *testing.T, spans []mocktracer.Span) {
-		require.Len(t, spans, 4)
-		for i := 0; i < 4; i++ {
-			assert.Equal(t, "grpc.client.request", spans[i].OperationName())
-		}
-	}
-	wantServiceNameV0 := namingschematest.ServiceNameAssertions{
-		WithDefaults:             lists.RepeatString("grpc.client", 4),
-		WithDDService:            lists.RepeatString("grpc.client", 4),
-		WithDDServiceAndOverride: lists.RepeatString(namingschematest.TestServiceOverride, 4),
-	}
-	t.Run("ServiceName", namingschematest.NewServiceNameTest(genSpans, wantServiceNameV0))
-	t.Run("SpanName", namingschematest.NewSpanNameTest(genSpans, assertOpV0, assertOpV1))
 }
 
 func TestWithErrorDetailTags(t *testing.T) {
@@ -1113,55 +1061,6 @@ func TestWithErrorDetailTags(t *testing.T) {
 		assert.Equal(t, c.details2, serverSpan.Tag("grpc.status_details._2"))
 		rig.Close()
 		mt.Reset()
-	}
-}
-
-func getGenSpansFn(traceClient, traceServer bool) namingschematest.GenSpansFn {
-	return func(t *testing.T, serviceOverride string) []mocktracer.Span {
-		var opts []Option
-		if serviceOverride != "" {
-			opts = append(opts, WithServiceName(serviceOverride))
-		}
-		// exclude the grpc.message spans as they are not affected by naming schema
-		opts = append(opts, WithStreamMessages(false))
-		mt := mocktracer.Start()
-		defer mt.Stop()
-
-		var serverInterceptors []grpc.ServerOption
-		if traceServer {
-			serverInterceptors = append(serverInterceptors,
-				grpc.UnaryInterceptor(UnaryServerInterceptor(opts...)),
-				grpc.StreamInterceptor(StreamServerInterceptor(opts...)),
-				grpc.StatsHandler(NewServerStatsHandler(opts...)),
-			)
-		}
-		clientInterceptors := []grpc.DialOption{grpc.WithInsecure()}
-		if traceClient {
-			clientInterceptors = append(clientInterceptors,
-				grpc.WithUnaryInterceptor(UnaryClientInterceptor(opts...)),
-				grpc.WithStreamInterceptor(StreamClientInterceptor(opts...)),
-				grpc.WithStatsHandler(NewClientStatsHandler(opts...)),
-			)
-		}
-		rig, err := newRigWithInterceptors(serverInterceptors, clientInterceptors)
-		require.NoError(t, err)
-		defer func() { assert.NoError(t, rig.Close()) }()
-		_, err = rig.client.Ping(context.Background(), &FixtureRequest{Name: "pass"})
-		require.NoError(t, err)
-
-		stream, err := rig.client.StreamPing(context.Background())
-		require.NoError(t, err)
-		err = stream.Send(&FixtureRequest{Name: "break"})
-		require.NoError(t, err)
-		_, err = stream.Recv()
-		require.NoError(t, err)
-		err = stream.CloseSend()
-		require.NoError(t, err)
-		// to flush the spans
-		_, _ = stream.Recv()
-
-		waitForSpans(mt, 4)
-		return mt.FinishedSpans()
 	}
 }
 
