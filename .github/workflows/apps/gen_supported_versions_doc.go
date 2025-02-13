@@ -306,11 +306,12 @@ func writeMarkdownFile(modules []ModuleVersion, filePath string) error {
 func processPackages() ([]ModuleVersion, error) {
 	var modules []ModuleVersion
 	for integrationName, mod := range instrumentation.GetPackages() {
-		module, err := getCurrentVersion(string(integrationName), mod)
+		modName := mod.TracedPackage
+		module, err := getCurrentVersion(string(integrationName), modName)
 		if err != nil {
 			return nil, err
 		}
-		modules = append(modules, module)
+		modules = append(modules, modName)
 	}
 	return modules, nil
 
