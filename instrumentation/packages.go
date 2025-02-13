@@ -748,11 +748,75 @@ var packages = map[Package]PackageInfo{
 		TracedPackage: "log/slog",
 		IsStdLib:      true,
 	},
+	PackageValkeyIoValkeyGo: {
+		TracedPackage: "github.com/valkey-io/valkey-go",
+		EnvVarPrefix:  "VALKEY",
+		naming: map[Component]componentNames{
+			ComponentDefault: {
+				useDDServiceV0:     true,
+				buildServiceNameV0: staticName("valkey.client"),
+			},
+		},
+	},
 	PackageEnvoyProxyGoControlPlane: {
 		TracedPackage: "github.com/envoyproxy/go-control-plane",
 	},
 	PackageOS: {
 		TracedPackage: "os",
+	},
+	PackageEmickleiGoRestful: {
+		TracedPackage: "github.com/emicklei/go-restful",
+		EnvVarPrefix:  "RESTFUL",
+		naming: map[Component]componentNames{
+			ComponentServer: {
+				useDDServiceV0:     false,
+				buildServiceNameV0: staticName("go-restful"),
+				buildOpNameV0:      staticName("http.request"),
+				buildOpNameV1:      staticName("http.server.request"),
+			},
+		},
+	},
+	PackageGaryburdRedigo: {
+		TracedPackage: "github.com/garyburd/redigo",
+		EnvVarPrefix:  "REDIGO",
+		naming: map[Component]componentNames{
+			ComponentDefault: {
+				useDDServiceV0:     false,
+				buildServiceNameV0: staticName("redis.conn"),
+				buildOpNameV0:      staticName("redis.command"),
+				buildOpNameV1:      staticName("redis.command"),
+			},
+		},
+	},
+	PackageGopkgJinZhuGormV1: {
+		TracedPackage: "gopkg.in/jinzhu/gorm.v1",
+	},
+	PackageGojiV1Web: {
+		TracedPackage: "github.com/zenazn/goji/web",
+		EnvVarPrefix:  "GOJI",
+		naming: map[Component]componentNames{
+			ComponentServer: {
+				useDDServiceV0:     true,
+				buildServiceNameV0: staticName("http.router"),
+				buildOpNameV0:      staticName("http.request"),
+				buildOpNameV1:      staticName("http.server.request"),
+			},
+		},
+	},
+	PackageJinzhuGorm: {
+		TracedPackage: "github.com/jinzhu/gorm",
+	},
+	PackageLabstackEcho: {
+		TracedPackage: "github.com/labstack/echo",
+		EnvVarPrefix:  "ECHO",
+		naming: map[Component]componentNames{
+			ComponentServer: {
+				useDDServiceV0:     true,
+				buildServiceNameV0: staticName("echo"),
+				buildOpNameV0:      staticName("http.request"),
+				buildOpNameV1:      staticName("http.server.request"),
+			},
+		},
 	},
 }
 
