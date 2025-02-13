@@ -308,6 +308,9 @@ type config struct {
 
 	// traceRateLimitPerSecond specifies the rate limit for traces.
 	traceRateLimitPerSecond float64
+
+	// integrationTags allows to set custom tags on integrations.
+	integrationTags []internal.IntegrationTagsRule
 }
 
 // orchestrionConfig contains Orchestrion configuration.
@@ -603,6 +606,16 @@ func newConfig(opts ...StartOption) *config {
 		// tell the agent we computed them, so it doesn't do it either.
 		c.runtimeMetrics = false
 		c.runtimeMetricsV2 = false
+	}
+
+	if iTagsStr := os.Getenv("DD_TRACE_INTEGRATION_TAGS"); iTagsStr != "" {
+		var iTagsRules []internal.IntegrationTagsRule
+		if err := json.Unmarshal([]byte(iTagsStr), &iTagsRules); err != nil {
+			log.Warn("failed to parse DD_TRACE_INTEGRATION_TAGS: %v", err)
+		} else {
+			c.integrationTags = iTagsRules
+			globalconfig.SetIntegrationTagsRules(iTagsRules)
+		}
 	}
 
 	return c

@@ -6,6 +6,7 @@
 package wrap
 
 import (
+	"net"
 	"net/http"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/httptrace"
@@ -55,6 +56,11 @@ func (mux *ServeMux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	so := make([]ddtrace.StartSpanOption, len(mux.cfg.SpanOpts), len(mux.cfg.SpanOpts)+1)
 	copy(so, mux.cfg.SpanOpts)
 	so = append(so, httptrace.HeaderTagsFromRequest(r, mux.cfg.HeaderTags))
+
+	for k, v := range serverIntegrationTags(mux.cfg, r) {
+		so = append(so, tracer.Tag(k, v))
+	}
+
 	TraceAndServe(mux.ServeMux, w, r, &httptrace.ServeConfig{
 		Service:       mux.cfg.ServiceName,
 		Resource:      resource,
@@ -63,4 +69,30 @@ func (mux *ServeMux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		IsStatusError: mux.cfg.IsStatusError,
 		RouteParams:   patternValues(pattern, r),
 	})
+}
+
+func serverIntegrationTags(cfg *config.Config, req *http.Request) map[string]string {
+	host, port := serverHostPort(req)
+
+	q := map[string]string{
+		"span.kind":           ext.SpanKindServer,
+		"server.address":      host,
+		"server.port":         port,
+		"url.path":            req.URL.Path,
+		"http.request.method": req.Method,
+	}
+	return cfg.IntegrationTags.Get(config.ComponentName, q)
+}
+
+func serverHostPort(req *http.Request) (string, string) {
+	ctxLocalAddr := req.Context().Value(http.LocalAddrContextKey)
+	if ctxLocalAddr == nil {
+		return "", ""
+	}
+	addr, ok := ctxLocalAddr.(net.Addr)
+	if !ok {
+		return "", ""
+	}
+	host, port, _ := net.SplitHostPort(addr.String())
+	return host, port
 }

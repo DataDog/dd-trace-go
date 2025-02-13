@@ -57,6 +57,11 @@ func (rt *roundTripper) RoundTrip(req *http.Request) (res *http.Response, err er
 	if len(rt.cfg.spanOpts) > 0 {
 		opts = append(opts, rt.cfg.spanOpts...)
 	}
+	if tags := rt.clientIntegrationTags(req); tags != nil {
+		for k, v := range tags {
+			opts = append(opts, tracer.Tag(k, v))
+		}
+	}
 	span, ctx := tracer.StartSpanFromContext(req.Context(), spanName, opts...)
 	defer func() {
 		if rt.cfg.after != nil {
@@ -106,6 +111,17 @@ func (rt *roundTripper) RoundTrip(req *http.Request) (res *http.Response, err er
 // Unwrap returns the original http.RoundTripper.
 func (rt *roundTripper) Unwrap() http.RoundTripper {
 	return rt.base
+}
+
+func (rt *roundTripper) clientIntegrationTags(req *http.Request) map[string]string {
+	q := map[string]string{
+		"span.kind":           "client",
+		"server.address":      req.URL.Hostname(),
+		"server.port":         req.URL.Port(),
+		"url.path":            req.URL.Path,
+		"http.request.method": req.Method,
+	}
+	return rt.cfg.integrationTags.Get(config.ComponentName, q)
 }
 
 // WrapRoundTripper returns a new RoundTripper which traces all requests sent

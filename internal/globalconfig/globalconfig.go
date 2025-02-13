@@ -20,16 +20,21 @@ var cfg = &config{
 	analyticsRate: math.NaN(),
 	runtimeID:     uuid.New().String(),
 	headersAsTags: internal.NewLockMap(map[string]string{}),
+	integrationTags: &internal.IntegrationTags{
+		Rules: nil,
+		Cache: make(map[string]map[string]string),
+	},
 }
 
 type config struct {
-	mu            sync.RWMutex
-	analyticsRate float64
-	serviceName   string
-	runtimeID     string
-	headersAsTags *internal.LockMap
-	dogstatsdAddr string
-	statsTags     []string
+	mu              sync.RWMutex
+	analyticsRate   float64
+	serviceName     string
+	runtimeID       string
+	headersAsTags   *internal.LockMap
+	dogstatsdAddr   string
+	statsTags       []string
+	integrationTags *internal.IntegrationTags
 }
 
 // AnalyticsRate returns the sampling rate at which events should be marked. It uses
@@ -129,4 +134,16 @@ func HeaderTagsLen() int {
 // It is invoked when WithHeaderTags is called, in order to overwrite the config
 func ClearHeaderTags() {
 	cfg.headersAsTags.Clear()
+}
+
+func SetIntegrationTagsRules(rules []internal.IntegrationTagsRule) {
+	cfg.mu.Lock()
+	defer cfg.mu.Unlock()
+	cfg.integrationTags.Rules = rules
+}
+
+func IntegrationTags() *internal.IntegrationTags {
+	cfg.mu.RLock()
+	defer cfg.mu.RUnlock()
+	return cfg.integrationTags
 }
