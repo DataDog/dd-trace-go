@@ -39,7 +39,7 @@ func (b *RunAddressDataBuilder) WithRawURI(uri string) *RunAddressDataBuilder {
 
 func (b *RunAddressDataBuilder) WithHeadersNoCookies(headers map[string][]string) *RunAddressDataBuilder {
 	if len(headers) == 0 {
-		return b
+		headers = nil
 	}
 	b.Persistent[ServerRequestHeadersNoCookiesAddr] = headers
 	return b
