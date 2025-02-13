@@ -239,7 +239,7 @@ func (s *Span) SetTag(key string, value interface{}) {
 		// Can be sent as messagepack in `meta_struct` instead of `meta`
 		// reserved for internal use only
 		if v, ok := value.(sharedinternal.MetaStructValue); ok {
-			s.setMetaStruct(key, v)
+			s.setMetaStruct(key, v.Value)
 			return
 		}
 
