@@ -222,6 +222,11 @@ func NewClientWithServiceNameAndSubdomain(serviceName, subdomain string) Client 
 		})
 	}
 
+	bName := ciTags[constants.GitBranch]
+	if bName == "" {
+		bName = "auto:git-detached-head"
+	}
+
 	return &client{
 		id:               id,
 		agentless:        agentlessEnabled,
@@ -231,7 +236,7 @@ func NewClientWithServiceNameAndSubdomain(serviceName, subdomain string) Client 
 		workingDirectory: ciTags[constants.CIWorkspacePath],
 		repositoryURL:    ciTags[constants.GitRepositoryURL],
 		commitSha:        ciTags[constants.GitCommitSHA],
-		branchName:       ciTags[constants.GitBranch],
+		branchName:       bName,
 		testConfigurations: testConfigurations{
 			OsPlatform:     ciTags[constants.OSPlatform],
 			OsVersion:      ciTags[constants.OSVersion],
