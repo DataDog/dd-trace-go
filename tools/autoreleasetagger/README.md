@@ -1,6 +1,6 @@
 # Auto Release Tagger
 
-This tool ensures that all modules in a monorepo are tagged correctly, respecting dependency order—tagging dependencies first before their dependents.
+This tool ensures that all modules in a monorepo are tagged correctly, respecting dependency order by tagging dependencies first before their dependents.
 
 - **Automatic Versioning**: Determines the next version based on existing tags.
 - **Nested Module Support**: Tags all modules in a repository.
