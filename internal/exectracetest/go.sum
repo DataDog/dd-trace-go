@@ -14,10 +14,10 @@ github.com/DataDog/datadog-agent/pkg/util/scrubber v0.59.0 h1:p4uZow1IE/ve590aKq
 github.com/DataDog/datadog-agent/pkg/util/scrubber v0.59.0/go.mod h1:krOxbYZc4KKE7bdEDu10lLSQBjdeSFS/XDSclsaSf1Y=
 github.com/DataDog/datadog-go/v5 v5.5.0 h1:G5KHeB8pWBNXT4Jtw0zAkhdxEAWSpWH00geHI6LDrKU=
 github.com/DataDog/datadog-go/v5 v5.5.0/go.mod h1:K9kcYBlxkcPP8tvvjZZKs/m1edNAUFzBbdpTUKfCsuw=
-github.com/DataDog/dd-trace-go/contrib/database/sql/v2 v2.0.0-rc.2.0.20250213143039-4a99d1721242 h1:50SPZhjUKF62GBgm8yTM0O2ZHLBRXgQBXEIBz+llty4=
-github.com/DataDog/dd-trace-go/contrib/database/sql/v2 v2.0.0-rc.2.0.20250213143039-4a99d1721242/go.mod h1:ag9XjRz4YoQrXmFmqxgWLKRx3QMhDkLOasZJiZIWp9U=
-github.com/DataDog/dd-trace-go/v2 v2.0.0-rc.2.0.20250213143039-4a99d1721242 h1:IO/CFYpAOzrM++W1nMFhb4RDLdAXL1Y8ewn9kidK7nI=
-github.com/DataDog/dd-trace-go/v2 v2.0.0-rc.2.0.20250213143039-4a99d1721242/go.mod h1:+HpiuQ1eUERLJjhE65fCypESyVt3sZ91bm4ybM22lks=
+github.com/DataDog/dd-trace-go/contrib/database/sql/v2 v2.0.0-rc.3 h1:YY1UndtkBxh6IkVMnU5h1He0MifszlfFgpgtVZ/W0lg=
+github.com/DataDog/dd-trace-go/contrib/database/sql/v2 v2.0.0-rc.3/go.mod h1:49q6D44Q35KGa5n28YoqhytPysZINkW7u9/2apA3gII=
+github.com/DataDog/dd-trace-go/v2 v2.0.0-rc.3 h1:wISEv4Yw/TwVi4wnEslNiTowGYanqJA711l5CQWiMVw=
+github.com/DataDog/dd-trace-go/v2 v2.0.0-rc.3/go.mod h1:+HpiuQ1eUERLJjhE65fCypESyVt3sZ91bm4ybM22lks=
 github.com/DataDog/go-libddwaf/v3 v3.5.1 h1:GWA4ln4DlLxiXm+X7HA/oj0ZLcdCwOS81KQitegRTyY=
 github.com/DataDog/go-libddwaf/v3 v3.5.1/go.mod h1:n98d9nZ1gzenRSk53wz8l6d34ikxS+hs62A31Fqmyi4=
 github.com/DataDog/go-runtime-metrics-internal v0.0.4-0.20241206090539-a14610dc22b6 h1:bpitH5JbjBhfcTG+H2RkkiUXpYa8xSuIPnyNtTaSPog=
