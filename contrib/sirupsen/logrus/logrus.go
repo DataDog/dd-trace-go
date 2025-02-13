@@ -7,13 +7,13 @@
 package logrus
 
 import (
-	"fmt"
 	"os"
 	"strconv"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 
 	"github.com/sirupsen/logrus"
 )
@@ -34,7 +34,7 @@ type config struct {
 var cfg = newConfig()
 
 func newConfig() *config {
-	fmt.Println("MTOFF: loading logrus config")
+	log.Info("MTOFF: in logrus config")
 	return &config{
 		log128bits: os.Getenv("DD_TRACE_128_BIT_TRACEID_LOGGING_ENABLED") != "false",
 	}
@@ -47,18 +47,20 @@ func (d *DDContextLogHook) Levels() []logrus.Level {
 
 // Fire implements logrus.Hook interface, attaches trace and span details found in entry context
 func (d *DDContextLogHook) Fire(e *logrus.Entry) error {
-	fmt.Println("MTOFF: in dD Hooks FIRE")
+	log.Info("MTOFF: in dD Hooks FIRE")
 	span, found := tracer.SpanFromContext(e.Context)
 	if !found {
 		return nil
 	}
 	if cfg.log128bits && span.Context().TraceID() != tracer.TraceIDZero {
-		fmt.Println("MTOFF: 128bit trace id enabled")
+		log.Info("MTOFF: 128bit trace id enabled")
 		e.Data[ext.LogKeyTraceID] = span.Context().TraceID()
 	} else {
-		fmt.Println("MTOFF: 128bit trace id disabled")
+		log.Info("MTOFF: 128bit trace id disabled")
 		e.Data[ext.LogKeyTraceID] = strconv.FormatUint(span.Context().TraceIDLower(), 10)
 	}
 	e.Data[ext.LogKeySpanID] = strconv.FormatUint(span.Context().SpanID(), 10)
+	// for testing
+	e.Data["some.other.key"] = "some.random.value"
 	return nil
 }

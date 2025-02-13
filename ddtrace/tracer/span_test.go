@@ -959,7 +959,8 @@ func TestSpanLog(t *testing.T) {
 		span.Finish()
 		expect := fmt.Sprintf(`dd.service=tracer.test dd.env=testenv dd.trace_id=%q dd.span_id="87654321" dd.parent_id="0"`, span.context.TraceID())
 		assert.Equal(expect, fmt.Sprintf("%v", span))
-<<<<<<< HEAD
+		v, _ := getMeta(span, keyTraceID128)
+		assert.NotEmpty(v)
 	})
 
 	t.Run("128-bit-logging-only", func(t *testing.T) {
@@ -976,10 +977,6 @@ func TestSpanLog(t *testing.T) {
 		span.Finish()
 		expect := `dd.service=tracer.test dd.env=testenv dd.trace_id="12345678" dd.span_id="87654321" dd.parent_id="0"`
 		assert.Equal(expect, fmt.Sprintf("%v", span))
-=======
-		v, _ := getMeta(span, keyTraceID128)
-		assert.NotEmpty(v)
->>>>>>> v2-dev
 	})
 
 	t.Run("128-bit-logging-with-small-upper-bits", func(t *testing.T) {
