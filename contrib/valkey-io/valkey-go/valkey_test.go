@@ -66,11 +66,11 @@ func TestNewClient(t *testing.T) {
 				span := spans[0]
 				assert.Equal(t, "SET", span.Tag(ext.ResourceName))
 				assert.Equal(t, "SET test_key test_value", span.Tag(ext.ValkeyRawCommand))
-				assert.Equal(t, false, span.Tag(ext.ValkeyClientCacheHit))
-				assert.Less(t, span.Tag(ext.ValkeyClientCacheTTL), int64(0))
-				assert.Less(t, span.Tag(ext.ValkeyClientCachePXAT), int64(0))
-				assert.Less(t, span.Tag(ext.ValkeyClientCachePTTL), int64(0))
-				assert.Nil(t, span.Tag(ext.Error))
+				assert.Equal(t, "false", span.Tag(ext.ValkeyClientCacheHit))
+				assert.Less(t, span.Tag(ext.ValkeyClientCacheTTL), float64(0))
+				assert.Less(t, span.Tag(ext.ValkeyClientCachePXAT), float64(0))
+				assert.Less(t, span.Tag(ext.ValkeyClientCachePTTL), float64(0))
+				assert.Nil(t, span.Tag(ext.ErrorMsg))
 			},
 			wantServiceName: "test-service",
 		},
@@ -86,11 +86,11 @@ func TestNewClient(t *testing.T) {
 				span := spans[0]
 				assert.Equal(t, "SET", span.Tag(ext.ResourceName))
 				assert.Nil(t, span.Tag(ext.ValkeyRawCommand))
-				assert.Equal(t, false, span.Tag(ext.ValkeyClientCacheHit))
-				assert.Less(t, span.Tag(ext.ValkeyClientCacheTTL), int64(0))
-				assert.Less(t, span.Tag(ext.ValkeyClientCachePXAT), int64(0))
-				assert.Less(t, span.Tag(ext.ValkeyClientCachePTTL), int64(0))
-				assert.Nil(t, span.Tag(ext.Error))
+				assert.Equal(t, "false", span.Tag(ext.ValkeyClientCacheHit))
+				assert.Less(t, span.Tag(ext.ValkeyClientCacheTTL), float64(0))
+				assert.Less(t, span.Tag(ext.ValkeyClientCachePXAT), float64(0))
+				assert.Less(t, span.Tag(ext.ValkeyClientCachePTTL), float64(0))
+				assert.Nil(t, span.Tag(ext.ErrorMsg))
 			},
 			wantServiceName: "global-service",
 		},
@@ -113,7 +113,7 @@ func TestNewClient(t *testing.T) {
 				assert.Nil(t, span.Tag(ext.ValkeyClientCacheTTL))
 				assert.Nil(t, span.Tag(ext.ValkeyClientCachePXAT))
 				assert.Nil(t, span.Tag(ext.ValkeyClientCachePTTL))
-				assert.Nil(t, span.Tag(ext.Error))
+				assert.Nil(t, span.Tag(ext.ErrorMsg))
 			},
 			wantServiceName: "global-service",
 		},
@@ -134,20 +134,20 @@ func TestNewClient(t *testing.T) {
 				span := spans[0]
 				assert.Equal(t, "HMGET", span.Tag(ext.ResourceName))
 				assert.Equal(t, "HMGET mk 1 2", span.Tag(ext.ValkeyRawCommand))
-				assert.Equal(t, false, span.Tag(ext.ValkeyClientCacheHit))
-				assert.Greater(t, span.Tag(ext.ValkeyClientCacheTTL), int64(0))
-				assert.Greater(t, span.Tag(ext.ValkeyClientCachePXAT), int64(0))
-				assert.Greater(t, span.Tag(ext.ValkeyClientCachePTTL), int64(0))
-				assert.Nil(t, span.Tag(ext.Error))
+				assert.Equal(t, "false", span.Tag(ext.ValkeyClientCacheHit))
+				assert.Greater(t, span.Tag(ext.ValkeyClientCacheTTL), float64(0))
+				assert.Greater(t, span.Tag(ext.ValkeyClientCachePXAT), float64(0))
+				assert.Greater(t, span.Tag(ext.ValkeyClientCachePTTL), float64(0))
+				assert.Nil(t, span.Tag(ext.ErrorMsg))
 
 				span = spans[1]
 				assert.Equal(t, "HMGET", span.Tag(ext.ResourceName))
 				assert.Equal(t, "HMGET mk 1 2", span.Tag(ext.ValkeyRawCommand))
-				assert.Equal(t, true, span.Tag(ext.ValkeyClientCacheHit))
-				assert.Greater(t, span.Tag(ext.ValkeyClientCacheTTL), int64(0))
-				assert.Greater(t, span.Tag(ext.ValkeyClientCachePXAT), int64(0))
-				assert.Greater(t, span.Tag(ext.ValkeyClientCachePTTL), int64(0))
-				assert.Nil(t, span.Tag(ext.Error))
+				assert.Equal(t, "true", span.Tag(ext.ValkeyClientCacheHit))
+				assert.Greater(t, span.Tag(ext.ValkeyClientCacheTTL), float64(0))
+				assert.Greater(t, span.Tag(ext.ValkeyClientCachePXAT), float64(0))
+				assert.Greater(t, span.Tag(ext.ValkeyClientCachePTTL), float64(0))
+				assert.Nil(t, span.Tag(ext.ErrorMsg))
 			},
 			wantServiceName: "global-service",
 		},
@@ -170,7 +170,7 @@ func TestNewClient(t *testing.T) {
 				assert.Nil(t, span.Tag(ext.ValkeyClientCacheTTL))
 				assert.Nil(t, span.Tag(ext.ValkeyClientCachePXAT))
 				assert.Nil(t, span.Tag(ext.ValkeyClientCachePTTL))
-				assert.Nil(t, span.Tag(ext.Error))
+				assert.Nil(t, span.Tag(ext.ErrorMsg))
 			},
 			wantServiceName: "global-service",
 		},
@@ -202,7 +202,7 @@ func TestNewClient(t *testing.T) {
 				assert.Nil(t, span.Tag(ext.ValkeyClientCacheTTL))
 				assert.Nil(t, span.Tag(ext.ValkeyClientCachePXAT))
 				assert.Nil(t, span.Tag(ext.ValkeyClientCachePTTL))
-				assert.Equal(t, context.DeadlineExceeded, span.Tag(ext.Error).(error))
+				assert.Equal(t, context.DeadlineExceeded.Error(), span.Tag(ext.ErrorMsg))
 			},
 			wantServiceName: "global-service",
 		},
@@ -229,7 +229,7 @@ func TestNewClient(t *testing.T) {
 				assert.Nil(t, span.Tag(ext.ValkeyClientCacheTTL))
 				assert.Nil(t, span.Tag(ext.ValkeyClientCachePXAT))
 				assert.Nil(t, span.Tag(ext.ValkeyClientCachePTTL))
-				assert.Equal(t, context.DeadlineExceeded, span.Tag(ext.Error).(error))
+				assert.Equal(t, context.DeadlineExceeded.Error(), span.Tag(ext.ErrorMsg))
 			},
 			wantServiceName: "global-service",
 		},
@@ -250,11 +250,11 @@ func TestNewClient(t *testing.T) {
 				span := spans[0]
 				assert.Equal(t, "SET", span.Tag(ext.ResourceName))
 				assert.Equal(t, "SET test_key test_value", span.Tag(ext.ValkeyRawCommand))
-				assert.Equal(t, false, span.Tag(ext.ValkeyClientCacheHit))
-				assert.Less(t, span.Tag(ext.ValkeyClientCacheTTL), int64(0))
-				assert.Less(t, span.Tag(ext.ValkeyClientCachePXAT), int64(0))
-				assert.Less(t, span.Tag(ext.ValkeyClientCachePTTL), int64(0))
-				assert.Nil(t, span.Tag(ext.Error))
+				assert.Equal(t, "false", span.Tag(ext.ValkeyClientCacheHit))
+				assert.Less(t, span.Tag(ext.ValkeyClientCacheTTL), float64(0))
+				assert.Less(t, span.Tag(ext.ValkeyClientCachePXAT), float64(0))
+				assert.Less(t, span.Tag(ext.ValkeyClientCachePTTL), float64(0))
+				assert.Nil(t, span.Tag(ext.ErrorMsg))
 			},
 			wantServiceName: "global-service",
 		},
