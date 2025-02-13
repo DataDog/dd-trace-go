@@ -1,6 +1,8 @@
 # Auto Release Tagger
 
-This tool ensures that all modules in a monorepo are tagged correctly, respecting dependency order by tagging dependencies first before their dependents.
+This tool ensures that all modules in dd-trace-go are tagged correctly for release, respecting dependency order by tagging dependencies first before their dependents.
+
+The repository has a structure consisting of nested modules for all the contribs and some packages to reduce the dependency surface to the strictly required dependencies.
 
 - **Automatic Versioning**: Determines the next version based on existing tags.
 - **Nested Module Support**: Tags all modules in a repository.
@@ -18,13 +20,13 @@ Run the following command to tag the release:
 go run ./tools/autoreleasetagger -root ../..
 ```
 
-Dry run:
+Dry run: Simulate the tagging process to check for potential issues.
 
 ```sh
 go run ./tools/autoreleasetagger -dry-run -root ../..
 ```
 
-Run without pushing tags:
+Run without pushing tags: Tag all the modules to release but don't push them.
 
 ```sh
 go run ./tools/autoreleasetagger -disable-push -root ../..
