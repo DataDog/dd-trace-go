@@ -8,6 +8,8 @@ package traceprof
 import (
 	"sync"
 	"sync/atomic"
+
+	"github.com/puzpuzpuz/xsync/v3"
 )
 
 // globalEndpointCounter is shared between the profiler and the tracer.
@@ -38,7 +40,11 @@ func GlobalEndpointCounter() *EndpointCounter {
 // NewEndpointCounter returns a new NewEndpointCounter that will track hit
 // counts for up to limit endpoints. A limit of <= 0 indicates no limit.
 func NewEndpointCounter(limit int) *EndpointCounter {
-	return &EndpointCounter{enabled: 1, limit: limit, counts: map[string]uint64{}}
+	return &EndpointCounter{
+		enabled: 1,
+		limit:   limit,
+		counts:  xsync.NewMapOf[string, *xsync.Counter](),
+	}
 }
 
 // EndpointCounter counts hits per endpoint.
@@ -50,7 +56,7 @@ func NewEndpointCounter(limit int) *EndpointCounter {
 type EndpointCounter struct {
 	enabled uint64
 	mu      sync.Mutex
-	counts  map[string]uint64
+	counts  *xsync.MapOf[string, *xsync.Counter]
 	limit   int
 }
 
@@ -69,30 +75,59 @@ func (e *EndpointCounter) Inc(endpoint string) {
 		return
 	}
 
-	// Acquire lock until func returns
-	e.mu.Lock()
-	defer e.mu.Unlock()
-
-	// Don't add another endpoint to the map if the limit is reached. See
-	// globalEndpointCounter comment.
-	count, ok := e.counts[endpoint]
-	if !ok && e.limit > 0 && len(e.counts) >= e.limit {
+	count, ok := e.counts.Load(endpoint)
+	if !ok {
+		// If we haven't seen this endpoint yet, add it. Another
+		// goroutine might be racing to add it, so use
+		// LoadOrStore: we'll only store if this goroutine
+		// "wins" the race to add it, and we'll have a small
+		// wasted allocation if the goroutine "loses" the race.
+		// In microbenchmarks this seems to be faster than a
+		// single LoadOrCompute
+		// TODO: our tests pass whether or not we re-set ok
+		// here. re-setting seems right because we need to check
+		// whether we hit the limit _if_ we added
+		// Can we test more thoroughly?
+		count, ok = e.counts.LoadOrStore(endpoint, xsync.NewCounter())
+	}
+	if !ok && e.limit > 0 && e.counts.Size() > e.limit {
+		// If we went over the limit when we added the counter,
+		// delete it.
+		// TODO: this is racy: another goroutine might also add
+		// a different endpoint and exceed the limit _after_
+		// this one, yet we check the size first end delete our
+		// endpoint _before_ the other goroutine.
+		// Does it matter in practice?
+		e.counts.Delete(endpoint)
 		return
 	}
 	// Increment the endpoint count
-	e.counts[endpoint] = count + 1
+	count.Inc()
+	return
 }
 
 // GetAndReset returns the hit counts for all endpoints and resets their counts
 // back to 0.
 func (e *EndpointCounter) GetAndReset() map[string]uint64 {
-	// Acquire lock until func returns
-	e.mu.Lock()
-	defer e.mu.Unlock()
-
-	// Return current counts and reset internal map.
-	counts := e.counts
-	e.counts = make(map[string]uint64)
+	// Try to right-size the allocation
+	counts := make(map[string]uint64, e.counts.Size())
+	e.counts.Range(func(key string, _ *xsync.Counter) bool {
+		// TODO: in https://github.com/felixge/countermap/blob/main/xsync_map_counter_map.go,
+		// Felix reads the input value and then deletes the key.
+		// A LoadAndDelete ensures we don't miss updates to the
+		// count for the endpoint: either we get them here or in
+		// the next cycle. We could also consider not deleting
+		// the value, but instead reset it, if we aren't at the
+		// size limit? Would be nice if xsync.Counter had a
+		// Swap operation for that.
+		v, ok := e.counts.LoadAndDelete(key)
+		if ok {
+			// ok should always be true unless we're calling
+			// GetAndReset concurrently somewhere else...
+			counts[key] = uint64(v.Value())
+		}
+		return true
+	})
 	return counts
 }
 
