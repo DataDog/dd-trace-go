@@ -154,19 +154,20 @@ jobs:
           echo "GOCOVERDIR=$(mktemp -d)" >> "${GITHUB_ENV}"
         working-directory: ${{ github.workspace }}/dd-trace-go/internal/orchestrion/_integration
 
-      - name: Configure Datadog Test Optimization
-        uses: datadog/test-visibility-github-action@v2
-        with:
-          languages: go
-          api_key: ${{ secrets.DD_API_KEY }}
-          site: datadoghq.com
-
       # Run a `go mod tidy` because GitHub will run this on a candidate merge commit, and if there
       # have been dependecy updates on the `main` branch, the `go.mod` and `go.sum` files for the
       # integration test suite may no longer be up-to-date.
       - name: Run 'go mod tidy'
         run: go mod tidy
         working-directory: ${{ github.workspace }}/dd-trace-go/internal/orchestrion/_integration
+
+      # Activate Test Optimization so we can track our tests in the backend.
+      - name: Configure Datadog Test Optimization
+        uses: datadog/test-visibility-github-action@6401c5199ec81fb6a4e16003f50e66facbd25731
+        with:
+          languages: go
+          api_key: ${{ secrets.DD_API_KEY }}
+          site: datadoghq.com
 
       # Finally, we run the test suite!
       - name: Run Tests
