@@ -5,9 +5,14 @@
 
 package moduleB
 
-import "moduleA"
+import (
+	"example.com/root"
+	"example.com/root/moduleA"
+)
+
+var version = root.Version
 
 // HelloB returns a greeting that includes moduleA's greeting.
 func HelloB() string {
-	return "Hello B + " + moduleA.HelloA()
+	return "Hello B + " + moduleA.HelloA() + " + " + version
 }

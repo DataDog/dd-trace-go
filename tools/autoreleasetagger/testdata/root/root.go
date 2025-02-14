@@ -9,3 +9,5 @@ package root
 func HelloRoot() string {
 	return "Hello from root"
 }
+
+const Version = "0.0.0"
