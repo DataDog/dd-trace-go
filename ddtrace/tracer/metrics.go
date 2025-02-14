@@ -108,8 +108,8 @@ func (t *tracer) reportHealthMetricsAtInterval(interval time.Duration) {
 			// the Count() function reports the total number of event occurrences in one time interval. We reset
 			// our count to 0 regardless of if Count succeeded to cleanup before the next interval.
 			t.spansFinished.Range(func(key string, value *atomic.Int64) bool {
-				v := value.Swap(0)
-				t.statsd.Count("datadog.tracer.spans_finished", v, []string{"integration:" + key}, 1)
+				old := value.Swap(0)
+				t.statsd.Count("datadog.tracer.spans_finished", old, []string{"integration:" + key}, 1)
 				return true
 			})
 
