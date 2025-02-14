@@ -167,6 +167,7 @@ func TestWrapHandler(t *testing.T) {
 	assert.Equal(t, "dns", span.Tag(ext.ServiceName))
 	assert.Equal(t, "QUERY", span.Tag(ext.ResourceName))
 	assert.Equal(t, "miekg/dns", span.Tag(ext.Component))
+	assert.Equal(t, "miekg/dns", span.Integration())
 	assert.Equal(t, ext.SpanKindServer, span.Tag(ext.SpanKind))
 }
 
@@ -190,6 +191,7 @@ func assertClientSpan(t *testing.T, s mocktracer.Span) {
 	assert.Equal(t, "dns", s.Tag(ext.ServiceName))
 	assert.Equal(t, "QUERY", s.Tag(ext.ResourceName))
 	assert.Equal(t, "miekg/dns", s.Tag(ext.Component))
+	assert.Equal(t, "miekg/dns", s.Integration())
 	assert.Equal(t, ext.SpanKindClient, s.Tag(ext.SpanKind))
 }
 

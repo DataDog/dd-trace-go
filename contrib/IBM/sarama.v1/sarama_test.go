@@ -7,11 +7,12 @@ package sarama
 
 import (
 	"context"
-	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/namingschematest"
 	"os"
 	"strings"
 	"testing"
 	"time"
+
+	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/namingschematest"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/datastreams"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"

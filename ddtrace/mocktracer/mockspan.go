@@ -49,11 +49,14 @@ type Span interface {
 
 	// Stringer allows pretty-printing the span's fields for debugging.
 	fmt.Stringer
+
+	Integration() string
 }
 
 func newSpan(t *mocktracer, operationName string, cfg *ddtrace.StartSpanConfig) *mockspan {
 	if cfg.Tags == nil {
 		cfg.Tags = make(map[string]interface{})
+		cfg.Tags[ext.Component] = "manual"
 	}
 	if cfg.Tags[ext.ResourceName] == nil {
 		cfg.Tags[ext.ResourceName] = operationName
@@ -102,6 +105,7 @@ type mockspan struct {
 	tags         map[string]interface{}
 	finishTime   time.Time
 	finished     bool
+	integration  string
 
 	startTime time.Time
 	parentID  uint64
@@ -126,6 +130,11 @@ func (s *mockspan) SetTag(key string, value interface{}) {
 			s.context.setSamplingPriority(p)
 		case float64:
 			s.context.setSamplingPriority(int(p))
+		}
+	}
+	if key == ext.Component {
+		if v, ok := value.(string); ok {
+			s.integration = v
 		}
 	}
 	s.tags[key] = value
@@ -283,4 +292,9 @@ func (s *mockspan) Root() tracer.Span {
 	}
 	root, _ := current.(*mockspan)
 	return root
+}
+
+// Integration returns the component from which the mockspan was created.
+func (s *mockspan) Integration() string {
+	return s.integration
 }
