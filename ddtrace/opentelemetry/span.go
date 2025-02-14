@@ -7,16 +7,14 @@ package opentelemetry
 
 import (
 	"encoding/binary"
-	"encoding/json"
 	"errors"
-	"strconv"
-	"strings"
-	"sync"
-
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"strconv"
+	"strings"
+	"sync"
 
 	"go.opentelemetry.io/otel/attribute"
 	otelcodes "go.opentelemetry.io/otel/codes"
@@ -36,7 +34,7 @@ type span struct {
 	finishOpts []tracer.FinishOption
 	statusInfo
 	*oteltracer
-	events []spanEvent
+	events []ddtrace.SpanEvent
 }
 
 func (s *span) TracerProvider() oteltrace.TracerProvider { return s.oteltracer.provider }
@@ -45,13 +43,6 @@ func (s *span) SetName(name string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.attributes[ext.SpanName] = strings.ToLower(name)
-}
-
-// spanEvent holds information about span events
-type spanEvent struct {
-	Name         string                 `json:"name"`
-	TimeUnixNano int64                  `json:"time_unix_nano"`
-	Attributes   map[string]interface{} `json:"attributes,omitempty"`
 }
 
 func (s *span) End(options ...oteltrace.SpanEndOption) {
@@ -80,11 +71,8 @@ func (s *span) End(options ...oteltrace.SpanEndOption) {
 		s.DD.SetTag(k, v)
 	}
 	if s.events != nil {
-		b, err := json.Marshal(s.events)
-		if err == nil {
-			s.DD.SetTag("events", string(b))
-		} else {
-			log.Debug("Issue marshaling span events; events dropped from span meta\n%v", err)
+		if spanWithEvents, ok := s.DD.(tracer.SpanWithEvents); ok {
+			spanWithEvents.AddEvents(s.events...)
 		}
 	}
 	var finishCfg = oteltrace.NewSpanEndConfig(options...)
@@ -196,10 +184,10 @@ func (s *span) AddEvent(name string, opts ...oteltrace.EventOption) {
 	for _, a := range c.Attributes() {
 		attrs[string(a.Key)] = a.Value.AsInterface()
 	}
-	e := spanEvent{
-		Name:         name,
-		TimeUnixNano: c.Timestamp().UnixNano(),
-		Attributes:   attrs,
+	e := ddtrace.SpanEvent{
+		Name:       name,
+		Time:       c.Timestamp(),
+		Attributes: attrs,
 	}
 	s.events = append(s.events, e)
 }

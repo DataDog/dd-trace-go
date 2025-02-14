@@ -156,6 +156,9 @@ type StartSpanConfig struct {
 
 	// SpanLink represents a causal relationship between two spans. A span can have multiple links.
 	SpanLinks []SpanLink
+
+	// SpanEvents represents a list of events for this span.
+	SpanEvents []SpanEvent
 }
 
 // Logger implementations are able to log given messages that the tracer or profiler might output.

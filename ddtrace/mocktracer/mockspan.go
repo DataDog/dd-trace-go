@@ -47,6 +47,9 @@ type Span interface {
 	// Context returns the span's SpanContext.
 	Context() ddtrace.SpanContext
 
+	// Events returns the span's []SpanEvents.
+	Events() []ddtrace.SpanEvent
+
 	// Stringer allows pretty-printing the span's fields for debugging.
 	fmt.Stringer
 }
@@ -108,6 +111,7 @@ type mockspan struct {
 	context   *spanContext
 	tracer    *mocktracer
 	links     []ddtrace.SpanLink
+	events    []ddtrace.SpanEvent
 }
 
 // SetTag sets a given tag on the span.
@@ -186,6 +190,17 @@ func (s *mockspan) BaggageItem(key string) string {
 func (s *mockspan) SetBaggageItem(key, val string) {
 	s.context.setBaggageItem(key, val)
 	return
+}
+
+// AddEvents implements tracer.SpanWithEvents.
+func (s *mockspan) AddEvents(events ...ddtrace.SpanEvent) {
+	s.Lock()
+	defer s.Unlock()
+	s.events = append(s.events, events...)
+}
+
+func (s *mockspan) Events() []ddtrace.SpanEvent {
+	return s.events
 }
 
 // Finish finishes the current span with the given options.
