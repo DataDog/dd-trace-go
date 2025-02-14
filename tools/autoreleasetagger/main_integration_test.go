@@ -57,10 +57,6 @@ func TestAutoReleaseTaggerIntegration(t *testing.T) {
 		filepath.Join(tmpDir, "go.mod"),
 	)
 	copyTestdata(t,
-		filepath.Join("testdata", "root", "go.work"),
-		filepath.Join(tmpDir, "go.work"),
-	)
-	copyTestdata(t,
 		filepath.Join("testdata", "root", "root.go"),
 		filepath.Join(tmpDir, "root.go"),
 	)
