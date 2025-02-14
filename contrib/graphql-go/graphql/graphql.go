@@ -3,7 +3,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
-package graphql // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/graph-go/graphql"
+package graphql // import "github.com/DataDog/dd-trace-go/contrib/graph-go/graphql/v2"
 
 import (
 	"context"
@@ -11,11 +11,10 @@ import (
 	"math"
 	"reflect"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/graphqlsec"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/graphqlsec"
 
 	"github.com/graphql-go/graphql"
 	"github.com/graphql-go/graphql/gqlerrors"
@@ -23,16 +22,14 @@ import (
 	"github.com/hashicorp/go-multierror"
 )
 
-const componentName = "graphql-go/graphql"
-
 var (
+	instr       *instrumentation.Instrumentation
 	spanTagKind = tracer.Tag(ext.SpanKind, ext.SpanKindServer)
 	spanTagType = tracer.Tag(ext.SpanType, ext.SpanTypeGraphQL)
 )
 
 func init() {
-	telemetry.LoadIntegration(componentName)
-	tracer.MarkIntegrationImported("github.com/graphql-go/graphql")
+	instr = instrumentation.Load(instrumentation.PackageGraphQLGoGraphQL)
 }
 
 const (
@@ -52,7 +49,7 @@ func NewSchema(config graphql.SchemaConfig, options ...Option) (graphql.Schema, 
 	extension := datadogExtension{}
 	defaults(&extension.config)
 	for _, opt := range options {
-		opt(&extension.config)
+		opt.apply(&extension.config)
 	}
 	config.Extensions = append(config.Extensions, extension)
 	return graphql.NewSchema(config)
@@ -62,7 +59,7 @@ type datadogExtension struct{ config }
 
 type contextKey struct{}
 type contextData struct {
-	serverSpan    tracer.Span
+	serverSpan    *tracer.Span
 	requestOp     *graphqlsec.RequestOperation
 	variables     map[string]any
 	query         string
@@ -94,7 +91,7 @@ func (i datadogExtension) Init(ctx context.Context, params *graphql.Params) cont
 		tracer.ServiceName(i.config.serviceName),
 		spanTagKind,
 		spanTagType,
-		tracer.Tag(ext.Component, componentName),
+		tracer.Tag(ext.Component, instrumentation.PackageGraphQLGoGraphQL),
 		tracer.Measured(),
 	)
 	ctx, request := graphqlsec.StartRequestOperation(ctx, span, graphqlsec.RequestOperationArgs{
@@ -119,12 +116,12 @@ func (i datadogExtension) Name() string {
 // ParseDidStart is being called before starting the parse
 func (i datadogExtension) ParseDidStart(ctx context.Context) (context.Context, graphql.ParseFinishFunc) {
 	data, _ := ctx.Value(contextKey{}).(contextData)
-	opts := []ddtrace.StartSpanOption{
+	opts := []tracer.StartSpanOption{
 		tracer.ServiceName(i.config.serviceName),
 		spanTagKind,
 		spanTagType,
 		tracer.Tag(tagGraphqlSource, data.query),
-		tracer.Tag(ext.Component, componentName),
+		tracer.Tag(ext.Component, instrumentation.PackageGraphQLGoGraphQL),
 		tracer.Measured(),
 	}
 	if data.operationName != "" {
@@ -146,12 +143,12 @@ func (i datadogExtension) ParseDidStart(ctx context.Context) (context.Context, g
 // ValidationDidStart is called just before the validation begins
 func (i datadogExtension) ValidationDidStart(ctx context.Context) (context.Context, graphql.ValidationFinishFunc) {
 	data, _ := ctx.Value(contextKey{}).(contextData)
-	opts := []ddtrace.StartSpanOption{
+	opts := []tracer.StartSpanOption{
 		tracer.ServiceName(i.config.serviceName),
 		spanTagKind,
 		spanTagType,
 		tracer.Tag(tagGraphqlSource, data.query),
-		tracer.Tag(ext.Component, componentName),
+		tracer.Tag(ext.Component, instrumentation.PackageGraphQLGoGraphQL),
 		tracer.Measured(),
 	}
 	if data.operationName != "" {
@@ -177,12 +174,12 @@ func (i datadogExtension) ValidationDidStart(ctx context.Context) (context.Conte
 // ExecutionDidStart notifies about the start of the execution
 func (i datadogExtension) ExecutionDidStart(ctx context.Context) (context.Context, graphql.ExecutionFinishFunc) {
 	data, _ := ctx.Value(contextKey{}).(contextData)
-	opts := []ddtrace.StartSpanOption{
+	opts := []tracer.StartSpanOption{
 		tracer.ServiceName(i.config.serviceName),
 		spanTagKind,
 		spanTagType,
 		tracer.Tag(tagGraphqlSource, data.query),
-		tracer.Tag(ext.Component, componentName),
+		tracer.Tag(ext.Component, instrumentation.PackageGraphQLGoGraphQL),
 		tracer.Measured(),
 	}
 	if data.operationName != "" {
@@ -222,13 +219,13 @@ func (i datadogExtension) ResolveFieldDidStart(ctx context.Context, info *graphq
 	default:
 		operationName = info.FieldName
 	}
-	opts := []ddtrace.StartSpanOption{
+	opts := []tracer.StartSpanOption{
 		tracer.ServiceName(i.config.serviceName),
 		spanTagKind,
 		spanTagType,
 		tracer.Tag(tagGraphqlField, info.FieldName),
 		tracer.Tag(tagGraphqlOperationType, info.Operation.GetOperation()),
-		tracer.Tag(ext.Component, componentName),
+		tracer.Tag(ext.Component, instrumentation.PackageGraphQLGoGraphQL),
 		tracer.Tag(ext.ResourceName, fmt.Sprintf("%s.%s", info.ParentType.Name(), info.FieldName)),
 		tracer.Measured(),
 	}

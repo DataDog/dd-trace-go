@@ -9,11 +9,14 @@ import (
 	"context"
 	"log"
 
-	buntdbtrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/tidwall/buntdb"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	buntdbtrace "github.com/DataDog/dd-trace-go/contrib/tidwall/buntdb/v2"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 )
 
 func Example() {
+	tracer.Start()
+	defer tracer.Stop()
+
 	db, err := buntdbtrace.Open(":memory:")
 	if err != nil {
 		log.Fatal(err)

@@ -131,6 +131,8 @@ go123-baseline:
     ENABLE_PROFILING: "false"
     ENABLE_APPSEC: "false"
     DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
+    LOAD_TESTS: normal_operation_io-bound,high_load_io-bound|normal_operation_cpu-bound,high_load_cpu-bound|normal_operation_cgo-cpu-bound,high_load_cgo-cpu-bound|normal_operation_cpu-bound-x-client-ip-enabled,high_load_cpu-bound-x-client-ip-enabled
+    PARALLELIZE: "true"
 
 go123-only-trace:
   extends: .go123-benchmarks
@@ -140,6 +142,8 @@ go123-only-trace:
     ENABLE_PROFILING: "false"
     ENABLE_APPSEC: "false"
     DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
+    LOAD_TESTS: normal_operation_io-bound,high_load_io-bound|normal_operation_cpu-bound,high_load_cpu-bound|normal_operation_cgo-cpu-bound,high_load_cgo-cpu-bound|normal_operation_cpu-bound-x-client-ip-enabled,high_load_cpu-bound-x-client-ip-enabled
+    PARALLELIZE: "true"
 
 go123-only-profile:
   extends: .go123-benchmarks
@@ -149,6 +153,8 @@ go123-only-profile:
     ENABLE_PROFILING: "true"
     ENABLE_APPSEC: "false"
     DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
+    LOAD_TESTS: normal_operation_io-bound,high_load_io-bound|normal_operation_cpu-bound,high_load_cpu-bound|normal_operation_cgo-cpu-bound,high_load_cgo-cpu-bound|normal_operation_cpu-bound-x-client-ip-enabled,high_load_cpu-bound-x-client-ip-enabled
+    PARALLELIZE: "true"
 
 go123-profile-trace:
   extends: .go123-benchmarks
@@ -158,6 +164,8 @@ go123-profile-trace:
     ENABLE_PROFILING: "true"
     ENABLE_APPSEC: "false"
     DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
+    LOAD_TESTS: normal_operation_io-bound,high_load_io-bound|normal_operation_cpu-bound,high_load_cpu-bound|normal_operation_cgo-cpu-bound,high_load_cgo-cpu-bound|normal_operation_cpu-bound-x-client-ip-enabled,high_load_cpu-bound-x-client-ip-enabled
+    PARALLELIZE: "true"
 
 go123-trace-asm:
   extends: .go123-benchmarks
@@ -167,6 +175,8 @@ go123-trace-asm:
     ENABLE_PROFILING: "false"
     ENABLE_APPSEC: "true"
     DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
+    LOAD_TESTS: normal_operation_io-bound,high_load_io-bound|normal_operation_cpu-bound,high_load_cpu-bound|normal_operation_cgo-cpu-bound,high_load_cgo-cpu-bound|normal_operation_cpu-bound-x-client-ip-enabled,high_load_cpu-bound-x-client-ip-enabled
+    PARALLELIZE: "true"
 
 go123-profile-trace-asm:
   extends: .go123-benchmarks
@@ -176,6 +186,8 @@ go123-profile-trace-asm:
     ENABLE_PROFILING: "true"
     ENABLE_APPSEC: "true"
     DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
+    LOAD_TESTS: normal_operation_io-bound,high_load_io-bound|normal_operation_cpu-bound,high_load_cpu-bound|normal_operation_cgo-cpu-bound,high_load_cgo-cpu-bound|normal_operation_cpu-bound-x-client-ip-enabled,high_load_cpu-bound-x-client-ip-enabled
+    PARALLELIZE: "true"
 
 #
 # Macro benchmarks for Service Extensions

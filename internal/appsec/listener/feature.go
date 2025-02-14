@@ -6,8 +6,8 @@
 package listener
 
 import (
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/config"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/dyngo"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec/config"
 )
 
 // Feature is an interface that represents a feature that can be started and stopped.

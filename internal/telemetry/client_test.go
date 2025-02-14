@@ -19,8 +19,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal"
-	logging "gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal"
+	logging "github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
 func TestClient(t *testing.T) {

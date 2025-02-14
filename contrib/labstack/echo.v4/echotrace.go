@@ -11,23 +11,19 @@ import (
 	"math"
 	"net/http"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/httptrace"
-	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/options"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/httptrace"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/options"
 
 	"github.com/labstack/echo/v4"
 )
 
-const componentName = "labstack/echo.v4"
+var instr *instrumentation.Instrumentation
 
 func init() {
-	telemetry.LoadIntegration(componentName)
-	tracer.MarkIntegrationImported("github.com/labstack/echo/v4")
+	instr = instrumentation.Load(instrumentation.PackageLabstackEchoV4)
 }
 
 // Middleware returns echo middleware which will trace incoming requests.
@@ -35,16 +31,16 @@ func Middleware(opts ...Option) echo.MiddlewareFunc {
 	cfg := new(config)
 	defaults(cfg)
 	for _, fn := range opts {
-		fn(cfg)
+		fn.apply(cfg)
 	}
-	log.Debug("contrib/labstack/echo.v4: Configuring Middleware: %#v", cfg)
-	spanOpts := make([]ddtrace.StartSpanOption, 0, 3+len(cfg.tags))
+	instr.Logger().Debug("contrib/labstack/echo.v4: Configuring Middleware: %#v", cfg)
+	spanOpts := make([]tracer.StartSpanOption, 0, 3+len(cfg.tags))
 	spanOpts = append(spanOpts, tracer.ServiceName(cfg.serviceName))
 	for k, v := range cfg.tags {
 		spanOpts = append(spanOpts, tracer.Tag(k, v))
 	}
 	spanOpts = append(spanOpts,
-		tracer.Tag(ext.Component, componentName),
+		tracer.Tag(ext.Component, instrumentation.PackageLabstackEchoV4),
 		tracer.Tag(ext.SpanKind, ext.SpanKindServer),
 	)
 
@@ -58,7 +54,7 @@ func Middleware(opts ...Option) echo.MiddlewareFunc {
 			request := c.Request()
 			route := c.Path()
 			resource := request.Method + " " + route
-			opts := options.Copy(spanOpts...) // opts must be a copy of spanOpts, locally scoped, to avoid races.
+			opts := options.Copy(spanOpts) // opts must be a copy of spanOpts, locally scoped, to avoid races.
 			if !math.IsNaN(cfg.analyticsRate) {
 				opts = append(opts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
 			}
@@ -77,7 +73,7 @@ func Middleware(opts ...Option) echo.MiddlewareFunc {
 			// pass the span through the request context
 			c.SetRequest(request.WithContext(ctx))
 
-			if appsec.Enabled() {
+			if instr.AppSecEnabled() {
 				next = withAppSec(next, span)
 			}
 			// serve the request to the next middleware
