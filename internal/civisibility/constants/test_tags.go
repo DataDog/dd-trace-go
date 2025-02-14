@@ -110,6 +110,24 @@ const (
 
 	// TestForcedToRun indicates that the test is forced to run because is unskippable
 	TestForcedToRun = "test.itr.forced_run"
+
+	// TestIsQuarantined indicates that the test is quarantined
+	TestIsQuarantined = "test.test_management.is_quarantined"
+
+	// TestIsDisabled indicates that the test is disabled
+	TestIsDisabled = "test.test_management.is_test_disabled"
+
+	// TestIsAttempToFix indicates that the test is an attempt to fix
+	TestIsAttempToFix = "test.test_management.is_attempt_to_fix"
+
+	// TestHasFailedAllRetries indicates that the test has failed all retries
+	TestHasFailedAllRetries = "test.has_failed_all_retries"
+
+	// TestAttemptToFixPassed indicates that the attempt to fix has passed
+	TestAttemptToFixPassed = "test.test_management.attempt_to_fix_passed"
+
+	// TestManagementEnabled indicates that the test management feature is enabled
+	TestManagementEnabled = "test.test_management.enabled"
 )
 
 // Define valid test status types.

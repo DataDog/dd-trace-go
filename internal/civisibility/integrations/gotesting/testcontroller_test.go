@@ -32,7 +32,7 @@ func TestMain(m *testing.M) {
 	log.SetLevel(log.LevelDebug)
 
 	// We need to spawn separated test process for each scenario
-	scenarios := []string{"TestFlakyTestRetries", "TestEarlyFlakeDetection", "TestFlakyTestRetriesAndEarlyFlakeDetection", "TestIntelligentTestRunner"}
+	scenarios := []string{"TestFlakyTestRetries", "TestEarlyFlakeDetection", "TestFlakyTestRetriesAndEarlyFlakeDetection", "TestIntelligentTestRunner", "TestManagementTests"}
 
 	if internal.BoolEnv(scenarios[0], false) {
 		fmt.Printf("Scenario %s started.\n", scenarios[0])
@@ -46,6 +46,9 @@ func TestMain(m *testing.M) {
 	} else if internal.BoolEnv(scenarios[3], false) {
 		fmt.Printf("Scenario %s started.\n", scenarios[3])
 		runIntelligentTestRunnerTests(m)
+	} else if internal.BoolEnv(scenarios[4], false) {
+		fmt.Printf("Scenario %s started.\n", scenarios[4])
+		runTestManagementTests(m)
 	} else {
 		fmt.Println("Starting tests...")
 		for _, v := range scenarios {
@@ -86,7 +89,9 @@ func runFlakyTestRetriesTests(m *testing.M) {
 				},
 			},
 		},
-	}, false, nil)
+	},
+		false, nil,
+		false, nil)
 	defer server.Close()
 
 	// set a custom retry count
@@ -166,6 +171,9 @@ func runFlakyTestRetriesTests(m *testing.M) {
 		27,
 		0)
 
+	// check capabilities tags
+	checkCapabilitiesTags(finishedSpans)
+
 	fmt.Println("All tests passed.")
 	os.Exit(0)
 }
@@ -184,7 +192,9 @@ func runEarlyFlakyTestDetectionTests(m *testing.M) {
 				},
 			},
 		},
-	}, false, nil)
+	},
+		false, nil,
+		false, nil)
 	defer server.Close()
 
 	// initialize the mock tracer for doing assertions on the finished spans
@@ -260,6 +270,9 @@ func runEarlyFlakyTestDetectionTests(m *testing.M) {
 		181,
 		0)
 
+	// check capabilities tags
+	checkCapabilitiesTags(finishedSpans)
+
 	fmt.Println("All tests passed.")
 	os.Exit(0)
 }
@@ -296,7 +309,9 @@ func runFlakyTestRetriesWithEarlyFlakyTestDetectionTests(m *testing.M) {
 				},
 			},
 		},
-	}, false, nil)
+	},
+		false, nil,
+		false, nil)
 	defer server.Close()
 
 	// set a custom retry count
@@ -372,6 +387,9 @@ func runFlakyTestRetriesWithEarlyFlakyTestDetectionTests(m *testing.M) {
 		37,
 		0)
 
+	// check capabilities tags
+	checkCapabilitiesTags(finishedSpans)
+
 	fmt.Println("All tests passed.")
 	os.Exit(0)
 }
@@ -407,7 +425,8 @@ func runIntelligentTestRunnerTests(m *testing.M) {
 			Suite: "testing_test.go",
 			Name:  "TestNormalPassingAfterRetryAlwaysFail",
 		},
-	})
+	},
+		false, nil)
 	defer server.Close()
 
 	// initialize the mock tracer for doing assertions on the finished spans
@@ -489,6 +508,132 @@ func runIntelligentTestRunnerTests(m *testing.M) {
 		4,
 		16,
 		0)
+
+	// check capabilities tags
+	checkCapabilitiesTags(finishedSpans)
+
+	fmt.Println("All tests passed.")
+	os.Exit(0)
+}
+
+func runTestManagementTests(m *testing.M) {
+	// mock the settings api to enable quarantine and disable tests
+	server := setUpHttpServer(false, false, false, nil, false, nil, true,
+		&net.TestManagementTestsResponseDataModules{
+			Modules: map[string]net.TestManagementTestsResponseDataSuites{
+				"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/integrations/gotesting": {
+					Suites: map[string]net.TestManagementTestsResponseDataTests{
+						"reflections_test.go": {
+							Tests: map[string]net.TestManagementTestsResponseDataTestProperties{
+								"TestGetFieldPointerFrom": {
+									Properties: net.TestManagementTestsResponseDataTestPropertiesAttributes{
+										Quarantined:  true,
+										AttemptToFix: true,
+									},
+								},
+								"TestGetInternalTestArray": {
+									Properties: net.TestManagementTestsResponseDataTestPropertiesAttributes{
+										Disabled:     true,
+										AttemptToFix: true,
+									},
+								},
+							},
+						},
+						"testing_test.go": {
+							Tests: map[string]net.TestManagementTestsResponseDataTestProperties{
+								"TestMyTest01": {
+									Properties: net.TestManagementTestsResponseDataTestPropertiesAttributes{
+										Disabled: true,
+									},
+								},
+								"TestRetryWithFail": {
+									Properties: net.TestManagementTestsResponseDataTestPropertiesAttributes{
+										Quarantined: true,
+									},
+								},
+								"TestRetryWithPanic": {
+									Properties: net.TestManagementTestsResponseDataTestPropertiesAttributes{
+										Disabled:     true,
+										AttemptToFix: true,
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		})
+
+	defer server.Close()
+
+	// set a custom retry count
+	os.Setenv(constants.CIVisibilityTestManagementAttemptToFixRetriesEnvironmentVariable, "10")
+
+	// initialize the mock tracer for doing assertions on the finished spans
+	currentM = m
+	mTracer = integrations.InitializeCIVisibilityMock()
+
+	testRetryWithPanicRunNumber = -10 // this makes TestRetryWithPanic to always fail (required by this test)
+	exitCode := RunM(m)
+	if exitCode != 0 {
+		panic("expected the exit code to be 0. Got exit code: " + fmt.Sprintf("%d", exitCode))
+	}
+
+	// get all finished spans
+	finishedSpans := mTracer.FinishedSpans()
+
+	// Disabled test with an attempt to fix with 10 executions
+	testGetInternalTestArray := checkSpansByResourceName(finishedSpans, "reflections_test.go.TestGetInternalTestArray", 10)
+	checkSpansByTagValue(testGetInternalTestArray, constants.TestIsDisabled, "true", 10)               // Disabled
+	checkSpansByTagValue(testGetInternalTestArray, constants.TestIsAttempToFix, "true", 10)            // Is an attempt to fix
+	checkSpansByTagValue(testGetInternalTestArray, constants.TestIsRetry, "true", 9)                   // 9 retries
+	checkSpansByTagValue(testGetInternalTestArray, constants.TestRetryReason, "attempt_to_fix", 9)     // 9 retries with the attempt to fix reason
+	checkSpansByTagValue(testGetInternalTestArray, constants.TestAttemptToFixPassed, "true", 1)        // Attempt to fix passed (reported in the latest retry)
+	checkSpansByTagValue(testGetInternalTestArray, constants.TestHasFailedAllRetries, "true", 0)       // All retries failed = false (reported in the latest retry)
+	checkSpansByTagValue(testGetInternalTestArray, constants.TestStatus, constants.TestStatusPass, 10) // All tests passed
+
+	// Quaratined test with an attempt to fix with 10 executions
+	testGetFieldPointerFrom := checkSpansByResourceName(finishedSpans, "reflections_test.go.TestGetFieldPointerFrom", 10)
+	checkSpansByTagValue(testGetFieldPointerFrom, constants.TestIsQuarantined, "true", 10)            // Quarantined
+	checkSpansByTagValue(testGetFieldPointerFrom, constants.TestIsAttempToFix, "true", 10)            // Is an attempt to fix
+	checkSpansByTagValue(testGetFieldPointerFrom, constants.TestIsRetry, "true", 9)                   // 9 retries
+	checkSpansByTagValue(testGetFieldPointerFrom, constants.TestRetryReason, "attempt_to_fix", 9)     // 9 retries with the attempt to fix reason
+	checkSpansByTagValue(testGetFieldPointerFrom, constants.TestAttemptToFixPassed, "true", 1)        // Attempt to fix passed (reported in the latest retry)
+	checkSpansByTagValue(testGetFieldPointerFrom, constants.TestHasFailedAllRetries, "true", 0)       // All retries failed = false (reported in the latest retry)
+	checkSpansByTagValue(testGetFieldPointerFrom, constants.TestStatus, constants.TestStatusPass, 10) // All tests passed
+
+	// Disabled test without an attempt to fix (it just skipped and reported as skipped)
+	testMyTest01 := checkSpansByResourceName(finishedSpans, "testing_test.go.TestMyTest01", 1)
+	checkSpansByTagValue(testMyTest01, constants.TestIsDisabled, "true", 1)               // Disabled
+	checkSpansByTagValue(testMyTest01, constants.TestIsAttempToFix, "true", 0)            // Is not an attempt to fix
+	checkSpansByTagValue(testMyTest01, constants.TestIsRetry, "true", 0)                  // 0 retries
+	checkSpansByTagValue(testMyTest01, constants.TestRetryReason, "attempt_to_fix", 0)    // 0 retries with the attempt to fix reason
+	checkSpansByTagValue(testMyTest01, constants.TestHasFailedAllRetries, "true", 0)      // All retries failed (reported in the latest retry)
+	checkSpansByTagValue(testMyTest01, constants.TestAttemptToFixPassed, "true", 0)       // Attempt to fix passed false (reported in the latest retry)
+	checkSpansByTagValue(testMyTest01, constants.TestStatus, constants.TestStatusSkip, 1) // Because is not an attempt to fix we just skip it
+
+	// Quarantined test without an attempt to fix (it executed but reported as skipped)
+	testRetryWithFail := checkSpansByResourceName(finishedSpans, "testing_test.go.TestRetryWithFail", 1)
+	checkSpansByTagValue(testRetryWithFail, constants.TestIsQuarantined, "true", 1)            // Quarantined
+	checkSpansByTagValue(testRetryWithFail, constants.TestIsAttempToFix, "true", 0)            // Is not an attempt to fix
+	checkSpansByTagValue(testRetryWithFail, constants.TestIsRetry, "true", 0)                  // 0 retries
+	checkSpansByTagValue(testRetryWithFail, constants.TestRetryReason, "attempt_to_fix", 0)    // 0 retries with the attempt to fix reason
+	checkSpansByTagValue(testRetryWithFail, constants.TestHasFailedAllRetries, "true", 0)      // All retries failed (reported in the latest retry)
+	checkSpansByTagValue(testRetryWithFail, constants.TestAttemptToFixPassed, "true", 0)       // Attempt to fix passed false (reported in the latest retry)
+	checkSpansByTagValue(testRetryWithFail, constants.TestStatus, constants.TestStatusFail, 1) // Because is not an attempt to fix we execute it but don't report the status
+
+	// Disabled test with an attempt to fix with 10 executions
+	testRetryWithPanic := checkSpansByResourceName(finishedSpans, "testing_test.go.TestRetryWithPanic", 10)
+	checkSpansByTagValue(testRetryWithPanic, constants.TestIsDisabled, "true", 10)               // Disabled
+	checkSpansByTagValue(testRetryWithPanic, constants.TestIsAttempToFix, "true", 10)            // Is an attempt to fix
+	checkSpansByTagValue(testRetryWithPanic, constants.TestIsRetry, "true", 9)                   // 9 retries
+	checkSpansByTagValue(testRetryWithPanic, constants.TestRetryReason, "attempt_to_fix", 9)     // 9 retries with the attempt to fix reason
+	checkSpansByTagValue(testRetryWithPanic, constants.TestHasFailedAllRetries, "true", 1)       // All retries failed (reported in the latest retry)
+	checkSpansByTagValue(testRetryWithPanic, constants.TestAttemptToFixPassed, "true", 0)        // Attempt to fix passed false (reported in the latest retry)
+	checkSpansByTagValue(testRetryWithPanic, constants.TestStatus, constants.TestStatusFail, 10) // All tests passed
+
+	// check capabilities tags
+	checkCapabilitiesTags(finishedSpans)
 
 	fmt.Println("All tests passed.")
 	os.Exit(0)
@@ -574,6 +719,29 @@ func checkSpansByTagValue(finishedSpans []mocktracer.Span, tagName, tagValue str
 	return spans
 }
 
+func checkCapabilitiesTags(finishedSpans []mocktracer.Span) {
+	tests := getSpansWithType(finishedSpans, constants.SpanTypeTest)
+	numOfTests := len(tests)
+	if len(getSpansWithTagName(tests, constants.LibraryCapabilitiesTestImpactAnalysis)) != numOfTests {
+		panic(fmt.Sprintf("expected all test spans to have the %s tag", constants.LibraryCapabilitiesTestImpactAnalysis))
+	}
+	if len(getSpansWithTagName(tests, constants.LibraryCapabilitiesEarlyFlakeDetection)) != numOfTests {
+		panic(fmt.Sprintf("expected all test spans to have the %s tag", constants.LibraryCapabilitiesEarlyFlakeDetection))
+	}
+	if len(getSpansWithTagName(tests, constants.LibraryCapabilitiesAutoTestRetries)) != numOfTests {
+		panic(fmt.Sprintf("expected all test spans to have the %s tag", constants.LibraryCapabilitiesAutoTestRetries))
+	}
+	if len(getSpansWithTagName(tests, constants.LibraryCapabilitiesTestManagementQuarantine)) != numOfTests {
+		panic(fmt.Sprintf("expected all test spans to have the %s tag", constants.LibraryCapabilitiesTestManagementQuarantine))
+	}
+	if len(getSpansWithTagName(tests, constants.LibraryCapabilitiesTestManagementDisable)) != numOfTests {
+		panic(fmt.Sprintf("expected all test spans to have the %s tag", constants.LibraryCapabilitiesTestManagementDisable))
+	}
+	if len(getSpansWithTagName(tests, constants.LibraryCapabilitiesTestManagementAttemptToFix)) != numOfTests {
+		panic(fmt.Sprintf("expected all test spans to have the %s tag", constants.LibraryCapabilitiesTestManagementAttemptToFix))
+	}
+}
+
 type (
 	skippableResponse struct {
 		Meta skippableResponseMeta   `json:"meta"`
@@ -591,10 +759,15 @@ type (
 	}
 )
 
-func setUpHttpServer(flakyRetriesEnabled bool,
+func setUpHttpServer(
+	flakyRetriesEnabled bool,
 	knownTestsEnabled bool,
-	earlyFlakyDetectionEnabled bool, earlyFlakyDetectionData *net.KnownTestsResponseData,
-	itrEnabled bool, itrData []net.SkippableResponseDataAttributes) *httptest.Server {
+	earlyFlakyDetectionEnabled bool,
+	earlyFlakyDetectionData *net.KnownTestsResponseData,
+	itrEnabled bool,
+	itrData []net.SkippableResponseDataAttributes,
+	testManagement bool,
+	testManagementData *net.TestManagementTestsResponseDataModules) *httptest.Server {
 	enableKnownTests := knownTestsEnabled || earlyFlakyDetectionEnabled
 	// mock the settings api to enable automatic test retries
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -618,6 +791,9 @@ func setUpHttpServer(flakyRetriesEnabled bool,
 				TestsSkipping:           itrEnabled,
 				KnownTestsEnabled:       enableKnownTests,
 			}
+
+			response.Data.Attributes.TestManagement.Enabled = testManagement
+
 			response.Data.Attributes.EarlyFlakeDetection.Enabled = earlyFlakyDetectionEnabled
 			response.Data.Attributes.EarlyFlakeDetection.SlowTestRetries.FiveS = 10
 			response.Data.Attributes.EarlyFlakeDetection.SlowTestRetries.TenS = 5
@@ -662,6 +838,19 @@ func setUpHttpServer(flakyRetriesEnabled bool,
 					Attributes: data,
 				})
 			}
+			fmt.Printf("MockApi sending response: %v\n", response)
+			json.NewEncoder(w).Encode(&response)
+		} else if r.URL.Path == "/api/v2/test/libraries/test-management/tests" {
+			w.Header().Set("Content-Type", "application/json")
+			response := struct {
+				Data struct {
+					ID         string                                     `json:"id"`
+					Type       string                                     `json:"type"`
+					Attributes net.TestManagementTestsResponseDataModules `json:"attributes"`
+				} `json:"data,omitempty"`
+			}{}
+			response.Data.Type = "ci_app_libraries_tests"
+			response.Data.Attributes = *testManagementData
 			fmt.Printf("MockApi sending response: %v\n", response)
 			json.NewEncoder(w).Encode(&response)
 		} else {
