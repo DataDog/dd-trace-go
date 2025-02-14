@@ -23,21 +23,21 @@ func TestTelemetry(t *testing.T) {
 	}{
 		{
 			// if nothing is set, DD_TRACE_PROPAGATION_STYLE will be set to datadog,tracecontext
-			expectedInject:  "datadog,tracecontext",
-			expectedExtract: "datadog,tracecontext",
+			expectedInject:  "datadog,tracecontext,baggage",
+			expectedExtract: "datadog,tracecontext,baggage",
 		},
 		{
 			env: map[string]string{
 				"DD_TRACE_PROPAGATION_STYLE_EXTRACT": "datadog",
 			},
-			expectedInject:  "datadog,tracecontext",
+			expectedInject:  "datadog,tracecontext,baggage",
 			expectedExtract: "datadog",
 		},
 		{
 			env: map[string]string{
 				"DD_TRACE_PROPAGATION_STYLE_EXTRACT": "none",
 			},
-			expectedInject:  "datadog,tracecontext",
+			expectedInject:  "datadog,tracecontext,baggage",
 			expectedExtract: "",
 		},
 		{
@@ -55,7 +55,7 @@ func TestTelemetry(t *testing.T) {
 				"DD_TRACE_PROPAGATION_STYLE_EXTRACT": "",
 			},
 			expectedInject:  "tracecontext",
-			expectedExtract: "datadog,tracecontext",
+			expectedExtract: "datadog,tracecontext,baggage",
 		},
 		{
 			env: map[string]string{
