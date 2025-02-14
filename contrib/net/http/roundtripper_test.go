@@ -6,6 +6,7 @@
 package http
 
 import (
+	"context"
 	"encoding/base64"
 	"fmt"
 	"net/http"
@@ -23,6 +24,7 @@ import (
 
 	internal "github.com/DataDog/dd-trace-go/contrib/net/http/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/appsec/events"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/baggage"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
@@ -772,4 +774,35 @@ func TestAppsec(t *testing.T) {
 			// require.Contains(t, appsecJSON, `"span_id":`+strconv.FormatUint(requestSpan.SpanID(), 10))
 		})
 	}
+}
+
+func TestRoundTripperWithBaggage(t *testing.T) {
+	t.Setenv("DD_TRACE_PROPAGATION_STYLE", "datadog,tracecontext,baggage")
+	tracer.Start()
+	defer tracer.Stop()
+
+	var capturedHeaders http.Header
+
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedHeaders = r.Header.Clone()
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("Hello with Baggage!"))
+	}))
+	defer s.Close()
+
+	rt := WrapRoundTripper(http.DefaultTransport).(*roundTripper)
+
+	ctx := context.Background()
+	ctx = baggage.Set(ctx, "foo", "bar")
+	ctx = baggage.Set(ctx, "baz", "qux")
+
+	// Build the HTTP request with that context.
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, s.URL+"/baggage", nil)
+	assert.NoError(t, err)
+
+	resp, err := rt.RoundTrip(req)
+	assert.NoError(t, err)
+	defer resp.Body.Close()
+
+	assert.NotEmpty(t, capturedHeaders.Get("baggage"), "should have baggage header")
 }

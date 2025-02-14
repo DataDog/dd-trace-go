@@ -18,6 +18,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/baggage"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
@@ -111,6 +112,23 @@ func StartRequestSpan(r *http.Request, opts ...tracer.StartSpanOption) (*tracer.
 						tracer.WithSpanLinks(spanctx.SpanLinks())(ssCfg)
 					}
 					tracer.ChildOf(spanctx)(ssCfg)
+
+					var baggageMap map[string]string
+					spanctx.ForeachBaggageItem(func(k, v string) bool {
+						// Make the map only if we actually discover any baggage items.
+						if baggageMap == nil {
+							baggageMap = make(map[string]string)
+						}
+						baggageMap[k] = v
+						return true
+					})
+					if len(baggageMap) > 0 {
+						ctx := r.Context()
+						for k, v := range baggageMap {
+							ctx = baggage.Set(ctx, k, v)
+						}
+						r = r.WithContext(ctx)
+					}
 				}
 			}
 
