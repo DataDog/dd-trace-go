@@ -13,11 +13,9 @@ import (
 	"flag"
 	"fmt"
 	"log/slog"
-	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"slices"
 	"strings"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/version"
@@ -188,7 +186,11 @@ func run(dryRun bool, remote string, disablePush bool, root, version string, exc
 		return fmt.Errorf("failed to find modules: %w", err)
 	}
 	slog.Info("Found modules:", "count", len(modules))
-	slog.Debug("Found modules", "modules", slices.Collect(maps.Keys(modules)))
+	moduleKeys := make([]string, 0, len(modules))
+	for k := range modules {
+		moduleKeys = append(moduleKeys, k)
+	}
+	slog.Debug("Found modules", "modules", moduleKeys)
 
 	// Assumption: There is a go module in the root directory.
 	rootModule, err := readModule(filepath.Join(root, "go.mod"))
@@ -200,7 +202,11 @@ func run(dryRun bool, remote string, disablePush bool, root, version string, exc
 	// Filter modules to only include those that depend on the root module.
 	filteredModules := filterModules(modules, rootModule.Module.Path, excludedModules)
 	slog.Info("Filtered modules:", "count", len(filteredModules))
-	slog.Debug("Filtered modules", "modules", slices.Collect(maps.Keys(filteredModules)))
+	filteredKeys := make([]string, 0, len(filteredModules))
+	for k := range filteredModules {
+		filteredKeys = append(filteredKeys, k)
+	}
+	slog.Debug("Filtered modules", "modules", filteredKeys)
 
 	sortedModules, err := topologicalSort(buildDependencyGraph(filteredModules))
 	if err != nil {
@@ -217,11 +223,7 @@ func run(dryRun bool, remote string, disablePush bool, root, version string, exc
 		slog.Info("Processing module", "module", mod.Module.Path)
 
 		slog.Info("Updating dependencies", "module", mod.Module.Path)
-		if err := updateDependencies(dryRun, mod, version); err != nil {
-			return fmt.Errorf("failed to update dependencies: %w", err)
-		}
-
-		if err := modTidy(dryRun, mod); err != nil {
+		if err := updateDependencies(dryRun, rootModule, mod, version); err != nil {
 			return fmt.Errorf("failed to update dependencies: %w", err)
 		}
 
@@ -297,8 +299,8 @@ func pushTagIfMissing(dir, remote, tagName string) error {
 	return runCommand(dir, "git", "push", remote, tagName)
 }
 
-// updateDependencies edits the given module dependencies from dd-trace-go.
-func updateDependencies(dryRun bool, mod GoMod, version string) error {
+// updateDependencies edits the given module dependencies from the root module.
+func updateDependencies(dryRun bool, rootModule, mod GoMod, version string) error {
 	slog.Debug("Edit dd-trace-go dependencies", "module", mod.Module.Path)
 	if dryRun {
 		slog.Debug("Skipping editing dd-trace-go dependencies in dry-run mode")
@@ -306,8 +308,8 @@ func updateDependencies(dryRun bool, mod GoMod, version string) error {
 	}
 
 	for _, req := range mod.Require {
-		// Exclude no dd-trace-go dependencies.
-		if !strings.HasPrefix(req.Path, "github.com/DataDog/dd-trace-go") {
+		// Exclude dependencies that are not the root module.
+		if !strings.HasPrefix(req.Path, rootModule.Module.Path) {
 			continue
 		}
 		require := fmt.Sprintf("-require=%s@%s", req.Path, version)
@@ -315,21 +317,22 @@ func updateDependencies(dryRun bool, mod GoMod, version string) error {
 			return err
 		}
 	}
+
+	if err := syncDependencies(dryRun, mod); err != nil {
+		return fmt.Errorf("failed to sync dependencies: %w", err)
+	}
 	return nil
 }
 
-// modTidy updates the given module with 'go mod tidy'.
-func modTidy(dryRun bool, mod GoMod) error {
+// syncDependencies runs 'go mod tidy' on the given module.
+func syncDependencies(dryRun bool, mod GoMod) error {
 	slog.Debug("Running go mod tidy", "module", mod.Module.Path)
 	if dryRun {
 		slog.Debug("Skipping go mod tidy in dry-run mode")
 		return nil
 	}
 
-	if err := runCommand(mod.dir, "go", "mod", "tidy"); err != nil {
-		return err
-	}
-	return nil
+	return runCommand(mod.dir, "go", "mod", "tidy")
 }
 
 // commitChangesIfNeeded checks if there are any changes, and if so, commits them.
