@@ -8,7 +8,6 @@ package tracer
 import (
 	gocontext "context"
 	"encoding/binary"
-	"encoding/json"
 	"log/slog"
 	"math"
 	"os"
@@ -573,19 +572,7 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 	}
 
 	span.SpanLinks = append(span.SpanLinks, opts.SpanLinks...)
-
-	if opts.SpanEvents != nil {
-		if t.config.agent.spanEventsAvailable {
-			span.SpanEvents = toSpanEventsMsg(opts.SpanEvents, true)
-		} else {
-			b, err := json.Marshal(toSpanEventsMsg(opts.SpanEvents, false))
-			if err == nil {
-				span.setMeta("events", string(b))
-			} else {
-				log.Debug("Issue marshaling span events; events dropped from span meta\n%v", err)
-			}
-		}
-	}
+	span.SpanEvents = append(span.SpanEvents, opts.SpanEvents...)
 
 	if t.config.hostname != "" {
 		span.setMeta(keyHostname, t.config.hostname)

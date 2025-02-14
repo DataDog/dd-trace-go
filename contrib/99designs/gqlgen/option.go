@@ -6,13 +6,10 @@
 package gqlgen
 
 import (
-	"math"
-	"os"
-	"slices"
-	"strings"
-
+	internalgraphql "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/graphql"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
+	"math"
 )
 
 const defaultServiceName = "graphql"
@@ -33,17 +30,7 @@ func defaults(cfg *config) {
 	cfg.serviceName = namingschema.ServiceNameOverrideV0(defaultServiceName, defaultServiceName)
 	cfg.analyticsRate = globalconfig.AnalyticsRate()
 	cfg.tags = make(map[string]interface{})
-	if s := os.Getenv("DD_TRACE_GRAPHQL_ERROR_EXTENSIONS"); s != "" {
-		values := strings.Split(s, ",")
-		for _, v := range values {
-			cleanupVal := strings.TrimSpace(v)
-			if cleanupVal != "" {
-				cfg.errExtensions = append(cfg.errExtensions)
-			}
-		}
-		slices.Sort(cfg.errExtensions)
-		cfg.errExtensions = slices.Compact(cfg.errExtensions)
-	}
+	cfg.errExtensions = internalgraphql.ErrorExtensionsFromEnv()
 }
 
 // WithAnalytics enables or disables Trace Analytics for all started spans.
@@ -90,5 +77,12 @@ func WithCustomTag(key string, value interface{}) Option {
 			cfg.tags = make(map[string]interface{})
 		}
 		cfg.tags[key] = value
+	}
+}
+
+// WithErrorExtensions allows to configure the error extensions to include in the error span events.
+func WithErrorExtensions(errExtensions ...string) Option {
+	return func(cfg *config) {
+		cfg.errExtensions = internalgraphql.ParseErrorExtensions(errExtensions)
 	}
 }
