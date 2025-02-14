@@ -6,7 +6,6 @@
 package mocktracer // import "gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 
 import (
-	"encoding/json"
 	"fmt"
 	"sync"
 	"time"
@@ -47,6 +46,9 @@ type Span interface {
 
 	// Context returns the span's SpanContext.
 	Context() ddtrace.SpanContext
+
+	// Links returns the span's span links.
+	Links() []ddtrace.SpanLink
 
 	// Stringer allows pretty-printing the span's fields for debugging.
 	fmt.Stringer
@@ -207,7 +209,6 @@ func (s *mockspan) Finish(opts ...ddtrace.FinishOption) {
 	if cfg.NoDebugStack {
 		s.SetTag(ext.ErrorStack, "<debug stack disabled>")
 	}
-	s.serializeSpanLinksInMeta()
 	s.Lock()
 	defer s.Unlock()
 	if s.finished {
@@ -287,17 +288,13 @@ func (s *mockspan) Root() tracer.Span {
 	return root
 }
 
-func (s *mockspan) AddSpanLink(link ddtrace.SpanLink) {
-	s.links = append(s.links, link)
+// Links returns the span's span links.
+func (s *mockspan) Links() []ddtrace.SpanLink {
+	s.RLock()
+	defer s.RUnlock()
+	return s.links
 }
 
-func (s *mockspan) serializeSpanLinksInMeta() {
-	if len(s.links) == 0 {
-		return
-	}
-	spanLinkBytes, err := json.Marshal(s.links)
-	if err != nil {
-		return
-	}
-	s.tags["_dd.span_links"] = string(spanLinkBytes)
+func (s *mockspan) AddSpanLink(link ddtrace.SpanLink) {
+	s.links = append(s.links, link)
 }

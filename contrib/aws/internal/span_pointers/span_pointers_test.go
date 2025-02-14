@@ -7,12 +7,10 @@ package spanpointers
 
 import (
 	"context"
-	"encoding/json"
 	"github.com/aws/smithy-go/middleware"
 	smithyhttp "github.com/aws/smithy-go/transport/http"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"net/http"
@@ -159,19 +157,8 @@ func TestHandleS3Operation(t *testing.T) {
 			spans := mt.FinishedSpans()
 			if tt.expectSuccess {
 				require.Len(t, spans, 1)
-				meta := spans[0].Tags()
-
-				spanLinks, exists := meta["_dd.span_links"]
-				assert.True(t, exists, "Expected span links to be set")
-				assert.NotEmpty(t, spanLinks, "Expected span links to not be empty")
-
-				spanLinksStr, ok := spanLinks.(string)
-				assert.True(t, ok, "Expected span links to be a string")
-
-				var links []ddtrace.SpanLink
-				err := json.Unmarshal([]byte(spanLinksStr), &links)
-				require.NoError(t, err)
-				require.Len(t, links, 1)
+				links := spans[0].Links()
+				assert.NotEmpty(t, links, "Expected span links to not be empty")
 
 				attributes := links[0].Attributes
 				assert.Equal(t, S3PointerKind, attributes["ptr.kind"])
