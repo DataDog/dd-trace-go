@@ -3,6 +3,27 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2024 Datadog, Inc.
 
+// Package newtelemetry provides a telemetry client that is thread-safe burden-less telemetry client following the specification of the instrumentation telemetry from Datadog.
+// Specification here: https://github.com/DataDog/instrumentation-telemetry-api-docs/tree/main
+//
+// The telemetry package has 6 main capabilities:
+// - Metrics: Support for [Count], [Rate], [Gauge], [Distribution] metrics.
+// - Logs: Support Debug, Warn, Error logs with tags and stack traces via the subpackage [log] or the [Log] function.
+// - Product: Start, Stop and Startup errors reporting to the backend
+// - App Config: Register and change the configuration of the application and declare its origin
+// - Integration: Loading and errors
+// - Dependencies: Sending all the dependencies of the application to the backend (for SCA purposes for example)
+//
+// Each of these capabilities is exposed through the [Client] interface but mainly through the package level functions.
+// that mirror and call the global client that is started through the [StartApp] function.
+//
+// Before the [StartApp] function is called, all called to the global client will be recorded and replay
+// when the [StartApp] function is called synchronously. The telemetry client is allowed to record at most 512 calls.
+//
+// At the end of the app lifetime. If [tracer.Stop] is called, the client should be stopped with the [StopApp] function.
+// For all data to be flushed to the backend appropriately.
+//
+// Note: No public API is available for the dependencies payloads as this is does in-house with the `ClientConfig.DependencyLoader` function output.
 package newtelemetry
 
 import (
