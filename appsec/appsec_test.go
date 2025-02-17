@@ -54,13 +54,62 @@ func TestTrackUserLoginSuccessEvent(t *testing.T) {
 
 	t.Run("nil-context", func(t *testing.T) {
 		require.NotPanics(t, func() {
-			appsec.TrackUserLoginSuccessEvent(nil, "user id", map[string]string{"region": "us-east-1"}, tracer.WithUserName("username"))
+			appsec.TrackUserLoginSuccessEvent(context.Background(), "user id", map[string]string{"region": "us-east-1"}, tracer.WithUserName("username"))
 		})
 	})
 
 	t.Run("empty-context", func(t *testing.T) {
 		require.NotPanics(t, func() {
 			appsec.TrackUserLoginSuccessEvent(context.Background(), "user id", map[string]string{"region": "us-east-1"}, tracer.WithUserName("username"))
+		})
+	})
+}
+
+func TestTrackUserLoginSuccess(t *testing.T) {
+	t.Run("nominal-with-metadata", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		span, ctx := tracer.StartSpanFromContext(context.Background(), "example")
+		appsec.TrackUserLoginSuccess(ctx, "user id", "user login", map[string]string{"region": "us-east-1"}, tracer.WithUserName("username"))
+		span.Finish()
+
+		// Check the span contains the expected tags.
+		require.Len(t, mt.FinishedSpans(), 1)
+		finished := mt.FinishedSpans()[0]
+		expectedEventPrefix := "appsec.events.users.login.success."
+		require.Equal(t, true, finished.Tag(expectedEventPrefix+"track"))
+		require.Equal(t, "user id", finished.Tag("usr.id"))
+		require.Equal(t, "user login", finished.Tag("usr.login"))
+		require.Equal(t, "us-east-1", finished.Tag(expectedEventPrefix+"region"))
+		require.Equal(t, "username", finished.Tag("usr.name"))
+	})
+
+	t.Run("nominal-nil-metadata", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		span, ctx := tracer.StartSpanFromContext(context.Background(), "example")
+		appsec.TrackUserLoginSuccess(ctx, "user id", "user login", nil)
+		span.Finish()
+
+		// Check the span contains the expected tags.
+		require.Len(t, mt.FinishedSpans(), 1)
+		finished := mt.FinishedSpans()[0]
+		expectedEventPrefix := "appsec.events.users.login.success."
+		require.Equal(t, true, finished.Tag(expectedEventPrefix+"track"))
+		require.Equal(t, "user id", finished.Tag("usr.id"))
+	})
+
+	t.Run("nil-context", func(t *testing.T) {
+		require.NotPanics(t, func() {
+			appsec.TrackUserLoginSuccess(nil, "user id", "user login", map[string]string{"region": "us-east-1"}, tracer.WithUserName("username"))
+		})
+	})
+
+	t.Run("empty-context", func(t *testing.T) {
+		require.NotPanics(t, func() {
+			appsec.TrackUserLoginSuccess(context.Background(), "user id", "user login", map[string]string{"region": "us-east-1"}, tracer.WithUserName("username"))
 		})
 	})
 }
@@ -99,6 +148,45 @@ func TestTrackUserLoginFailureEvent(t *testing.T) {
 	t.Run("empty-context", func(t *testing.T) {
 		require.NotPanics(t, func() {
 			appsec.TrackUserLoginFailureEvent(context.Background(), "user id", false, nil)
+		})
+	})
+}
+
+func TestTrackUserLoginFailure(t *testing.T) {
+	t.Run("nominal", func(t *testing.T) {
+		test := func(userExists bool) func(t *testing.T) {
+			return func(t *testing.T) {
+				mt := mocktracer.Start()
+				defer mt.Stop()
+
+				span, ctx := tracer.StartSpanFromContext(context.Background(), "example")
+				appsec.TrackUserLoginFailure(ctx, "user id", "user login", userExists, map[string]string{"region": "us-east-1"})
+				span.Finish()
+
+				// Check the span contains the expected tags.
+				require.Len(t, mt.FinishedSpans(), 1)
+				finished := mt.FinishedSpans()[0]
+				expectedEventPrefix := "appsec.events.users.login.failure."
+				require.Equal(t, true, finished.Tag(expectedEventPrefix+"track"))
+				require.Equal(t, "user id", finished.Tag(expectedEventPrefix+"usr.id"))
+				require.Equal(t, "user login", finished.Tag(expectedEventPrefix+"usr.login"))
+				require.Equal(t, userExists, finished.Tag(expectedEventPrefix+"usr.exists"))
+				require.Equal(t, "us-east-1", finished.Tag(expectedEventPrefix+"region"))
+			}
+		}
+		t.Run("user-exists", test(true))
+		t.Run("user-not-exists", test(false))
+	})
+
+	t.Run("nil-context", func(t *testing.T) {
+		require.NotPanics(t, func() {
+			appsec.TrackUserLoginFailure(nil, "user id", "user login", false, nil)
+		})
+	})
+
+	t.Run("empty-context", func(t *testing.T) {
+		require.NotPanics(t, func() {
+			appsec.TrackUserLoginFailure(context.Background(), "user id", "user login", false, nil)
 		})
 	})
 }
@@ -163,6 +251,37 @@ func TestSetUser(t *testing.T) {
 		span, ctx := tracer.StartSpanFromContext(context.Background(), "example")
 		defer span.Finish()
 		err := appsec.SetUser(ctx, "usr.id")
+		require.Nil(t, err)
+	})
+}
+
+func TestSetAuthenticatedUser(t *testing.T) {
+	t.Run("early-return/appsec-disabled", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+		span, ctx := tracer.StartSpanFromContext(context.Background(), "example")
+		defer span.Finish()
+		err := appsec.SetAuthenticatedUser(ctx, "usr.id", "usr.login")
+		require.NoError(t, err)
+	})
+
+	privateAppsec.Start()
+	defer privateAppsec.Stop()
+	if !privateAppsec.Enabled() {
+		t.Skip("AppSec needs to be enabled for this test")
+	}
+
+	t.Run("early-return/nil-ctx", func(t *testing.T) {
+		err := appsec.SetAuthenticatedUser(nil, "usr.id", "usr.login")
+		require.NoError(t, err)
+	})
+
+	t.Run("no-early-return", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+		span, ctx := tracer.StartSpanFromContext(context.Background(), "example")
+		defer span.Finish()
+		err := appsec.SetAuthenticatedUser(ctx, "usr.id", "usr.login")
 		require.Nil(t, err)
 	})
 }
