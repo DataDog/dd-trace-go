@@ -11,6 +11,7 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"math"
 	"runtime"
 	"strings"
 	"time"
@@ -237,7 +238,10 @@ func (t *tslvTest) SetTestFunc(fn *runtime.Func) {
 				// get the line number of the start of the function literal
 				funcStartLine := fset.Position(funcLit.Body.Pos()).Line
 				// if the start line matches the known start line, record the end line
-				if funcStartLine == startLine {
+				// startLine is not so accurate because it is the line of the first instruction of the function (Go 1.24)
+				// so we need to check if the function literal is the one we are looking for (we are going to leave an error of 1 line)
+				if math.Abs(float64(funcStartLine-startLine)) <= 1 {
+					startLine = funcStartLine
 					endLine = fset.Position(funcLit.Body.End()).Line
 					return false // stop further inspection since we have found the function
 				}
@@ -248,6 +252,7 @@ func (t *tslvTest) SetTestFunc(fn *runtime.Func) {
 
 		// if we found an endLine we check is greater than the calculated startLine
 		if endLine >= startLine {
+			t.SetTag(constants.TestSourceStartLine, startLine)
 			t.SetTag(constants.TestSourceEndLine, endLine)
 		}
 

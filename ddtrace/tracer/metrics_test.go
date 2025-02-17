@@ -260,7 +260,7 @@ func TestTracerMetrics(t *testing.T) {
 
 	tracer.StartSpan("operation").Finish()
 	flush(1)
-	tg.Wait(assert, 5, 100*time.Millisecond)
+	tg.Wait(assert, 5, 500*time.Millisecond)
 
 	calls := tg.CallsByName()
 	counts := tg.Counts()

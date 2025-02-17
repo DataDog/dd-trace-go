@@ -16,6 +16,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/httptrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http/internal/config"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/baggage"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
@@ -72,6 +73,9 @@ func (rt *roundTripper) RoundTrip(req *http.Request) (res *http.Response, err er
 		rt.cfg.before(req, span)
 	}
 	r2 := req.Clone(ctx)
+	for k, v := range baggage.All(ctx) {
+		span.SetBaggageItem(k, v)
+	}
 	if rt.cfg.propagation {
 		// inject the span context into the http request copy
 		err = tracer.Inject(span.Context(), tracer.HTTPHeadersCarrier(r2.Header))

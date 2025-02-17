@@ -161,6 +161,31 @@ jobs:
         run: go mod tidy
         working-directory: ${{ github.workspace }}/dd-trace-go/internal/orchestrion/_integration
 
+      # Pull docker images ahead of time so the pulls of large images don't have to fit within the
+      # test timeout.
+      - name: Pull container images
+        # Docker is only supported on Linux runners at the moment
+        if: runner.os == 'Linux'
+        run: |-
+          # AWS DynamoDB Local is used to have a pretend AWS API endpoint
+          docker pull amazon/dynamodb-local:latest
+
+          # ElasticSearch images
+          docker pull docker.elastic.co/elasticsearch/elasticsearch:6.8.23
+          docker pull docker.elastic.co/elasticsearch/elasticsearch:7.17.24
+          docker pull docker.elastic.co/elasticsearch/elasticsearch:8.15.3
+
+          # Kafka service
+          docker pull confluentinc/confluent-local:7.5.0
+
+          # PostgreSQL service
+          docker pull docker.io/postgres:16-alpine
+
+          # Redis service
+          docker pull redis:7-alpine
+
+          # Vault service
+          docker pull vault:1.7.3
       # Finally, we run the test suite!
       - name: Run Tests
         shell: bash
