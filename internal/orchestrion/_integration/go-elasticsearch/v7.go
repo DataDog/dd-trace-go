@@ -22,6 +22,7 @@ type TestCaseV7 struct {
 }
 
 func (tc *TestCaseV7) Setup(ctx context.Context, t *testing.T) {
+	// Change the docker pull stage in .github/workflows/orchestrion.yml if you update this
 	tc.base.Setup(ctx, t, "docker.elastic.co/elasticsearch/elasticsearch:7.17.24", func(addr string, _ []byte) (esClient, error) {
 		return elasticsearch.NewClient(elasticsearch.Config{
 			Addresses: []string{addr},
