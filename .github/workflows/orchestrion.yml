@@ -164,6 +164,8 @@ jobs:
       # Pull docker images ahead of time so the pulls of large images don't have to fit within the
       # test timeout.
       - name: Pull container images
+        # Docker is only supported on Linux runners at the moment
+        if: runner.os == 'Linux'
         run: |-
           # AWS DynamoDB Local is used to have a pretend AWS API endpoint
           docker pull amazon/dynamodb-local:latest
