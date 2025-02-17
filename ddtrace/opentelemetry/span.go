@@ -34,7 +34,7 @@ type span struct {
 	finishOpts []tracer.FinishOption
 	statusInfo
 	*oteltracer
-	events []ddtrace.SpanEvent
+	events []spanEvent
 }
 
 func (s *span) TracerProvider() oteltrace.TracerProvider { return s.oteltracer.provider }
@@ -43,6 +43,12 @@ func (s *span) SetName(name string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.attributes[ext.SpanName] = strings.ToLower(name)
+}
+
+// spanEvent holds information about span events
+type spanEvent struct {
+	name    string
+	options []ddtrace.SpanEventOption
 }
 
 func (s *span) End(options ...oteltrace.SpanEndOption) {
@@ -70,10 +76,8 @@ func (s *span) End(options ...oteltrace.SpanEndOption) {
 	for k, v := range s.attributes {
 		s.DD.SetTag(k, v)
 	}
-	if s.events != nil {
-		if spanWithEvents, ok := s.DD.(tracer.SpanWithEvents); ok {
-			spanWithEvents.AddEvents(s.events...)
-		}
+	for _, evt := range s.events {
+		ddtrace.AddSpanEvent(s.DD, evt.name, evt.options...)
 	}
 	var finishCfg = oteltrace.NewSpanEndConfig(options...)
 	var opts []tracer.FinishOption
@@ -184,10 +188,12 @@ func (s *span) AddEvent(name string, opts ...oteltrace.EventOption) {
 	for _, a := range c.Attributes() {
 		attrs[string(a.Key)] = a.Value.AsInterface()
 	}
-	e := ddtrace.SpanEvent{
-		Name:       name,
-		Time:       c.Timestamp(),
-		Attributes: attrs,
+	e := spanEvent{
+		name: name,
+		options: []ddtrace.SpanEventOption{
+			ddtrace.WithSpanEventTimestamp(c.Timestamp()),
+			ddtrace.WithSpanEventAttributes(attrs),
+		},
 	}
 	s.events = append(s.events, e)
 }

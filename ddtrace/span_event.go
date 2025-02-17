@@ -7,13 +7,20 @@ package ddtrace
 
 import (
 	"time"
+
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
-// SpanEvent represent an event at an instant in time related to this span, but not necessarily during the span.
-type SpanEvent struct {
-	// Name is the name of event.
-	Name string
+// SpanWithEvents represents a Span that can include span events.
+type SpanWithEvents interface {
+	Span
 
+	// AddEvent adds the given event to the span.
+	AddEvent(name string, opts ...SpanEventOption)
+}
+
+// SpanEventConfig represent the configuration of a span event.
+type SpanEventConfig struct {
 	// Time is the time when the event happened.
 	Time time.Time
 
@@ -23,31 +30,29 @@ type SpanEvent struct {
 	Attributes map[string]any
 }
 
-// NewSpanEvent creates a new span event with the given name and attributes.
-func NewSpanEvent(name string, opts ...SpanEventOption) SpanEvent {
-	evt := SpanEvent{
-		Name: name,
-		Time: time.Now(),
+// AddSpanEvent attaches a new event to the given span.
+func AddSpanEvent(span Span, name string, opts ...SpanEventOption) {
+	withEvents, ok := span.(SpanWithEvents)
+	if !ok {
+		log.Debug("failed to add span event to the given span (unsupported span type: %T)", span)
+		return
 	}
-	for _, opt := range opts {
-		opt(&evt)
-	}
-	return evt
+	withEvents.AddEvent(name, opts...)
 }
 
 // SpanEventOption can be used to customize an event created with NewSpanEvent.
-type SpanEventOption func(evt *SpanEvent)
+type SpanEventOption func(cfg *SpanEventConfig)
 
 // WithSpanEventTimestamp sets the time when the span event occurred.
 func WithSpanEventTimestamp(tStamp time.Time) SpanEventOption {
-	return func(evt *SpanEvent) {
-		evt.Time = tStamp
+	return func(cfg *SpanEventConfig) {
+		cfg.Time = tStamp
 	}
 }
 
 // WithSpanEventAttributes sets the given attributes for the span event.
 func WithSpanEventAttributes(attributes map[string]any) SpanEventOption {
-	return func(evt *SpanEvent) {
-		evt.Attributes = attributes
+	return func(cfg *SpanEventConfig) {
+		cfg.Attributes = attributes
 	}
 }

@@ -7,7 +7,7 @@ package tracer
 
 import (
 	"golang.org/x/exp/constraints"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
+	
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
@@ -67,24 +67,6 @@ const (
 	spanEventArrayAttributeValueTypeInt    spanEventArrayAttributeValueType = 2
 	spanEventArrayAttributeValueTypeDouble spanEventArrayAttributeValueType = 3
 )
-
-func toSpanEventsMsg(events []ddtrace.SpanEvent, includeAttrs bool) []spanEvent {
-	res := make([]spanEvent, 0, len(events))
-
-	for _, evt := range events {
-		var attrs map[string]*spanEventAttribute
-		if includeAttrs {
-			attrs = toSpanEventAttributeMsg(evt.Attributes)
-		}
-		res = append(res, spanEvent{
-			Name:          evt.Name,
-			TimeUnixNano:  uint64(evt.Time.UnixNano()),
-			Attributes:    attrs,
-			RawAttributes: evt.Attributes,
-		})
-	}
-	return res
-}
 
 func toSpanEventAttributeMsg(attrs map[string]any) map[string]*spanEventAttribute {
 	if attrs == nil {

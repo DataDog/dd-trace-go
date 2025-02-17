@@ -63,21 +63,15 @@ type ErrorLocation struct {
 // Datadog specification.
 // errExtensions allows to include the given extensions field from the error as attributes in the span events.
 func AddErrorsAsSpanEvents(span tracer.Span, errs []Error, errExtensions []string) {
-	spanWithEvents, ok := span.(tracer.SpanWithEvents)
-	if !ok {
-		return
-	}
-	spanEvents := make([]ddtrace.SpanEvent, 0, len(errs))
 	ts := time.Now()
 	for _, err := range errs {
-		evt := ddtrace.NewSpanEvent(
+		ddtrace.AddSpanEvent(
+			span,
 			ext.GraphqlQueryErrorEvent,
 			ddtrace.WithSpanEventTimestamp(ts),
 			ddtrace.WithSpanEventAttributes(errToSpanEventAttributes(err, errExtensions)),
 		)
-		spanEvents = append(spanEvents, evt)
 	}
-	spanWithEvents.AddEvents(spanEvents...)
 }
 
 func errToSpanEventAttributes(gErr Error, errExtensions []string) map[string]any {

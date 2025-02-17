@@ -160,13 +160,13 @@ func TestError(t *testing.T) {
 
 	evt := events[0]
 	assert.Equal("dd.graphql.query.error", evt.Name)
-	assert.NotEmpty(evt.Time)
-	assert.NotEmpty(evt.Attributes["stacktrace"])
+	assert.NotEmpty(evt.Config.Time)
+	assert.NotEmpty(evt.Config.Attributes["stacktrace"])
 	assert.Equal(map[string]any{
 		"message":    "resolver error",
-		"stacktrace": evt.Attributes["stacktrace"],
+		"stacktrace": evt.Config.Attributes["stacktrace"],
 		"type":       "*gqlerror.Error",
-	}, evt.Attributes)
+	}, evt.Config.Attributes)
 }
 
 func TestObfuscation(t *testing.T) {

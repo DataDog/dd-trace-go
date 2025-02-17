@@ -16,10 +16,10 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 )
 
-func Test_toSpanEventsMsg(t *testing.T) {
+func Test_spanAddEvent(t *testing.T) {
 	type customType struct {
-		Field1 string
-		Field2 int
+		Field1 string `json:"field_1"`
+		Field2 int    `json:"field_2"`
 	}
 	attrs := map[string]any{
 		"key1":  "val1",
@@ -41,6 +41,8 @@ func Test_toSpanEventsMsg(t *testing.T) {
 			Field2: 2,
 		},
 	}
+	ts := time.Date(2025, 2, 12, 9, 0, 0, 0, time.UTC)
+
 	wantAttrs := map[string]*spanEventAttribute{
 		"key1": {Type: spanEventAttributeTypeString, StringValue: "val1"},
 		"key2": {Type: spanEventAttributeTypeInt, IntValue: 123},
@@ -83,23 +85,73 @@ func Test_toSpanEventsMsg(t *testing.T) {
 		}},
 		"key10": {Type: spanEventAttributeTypeDouble, DoubleValue: 123},
 	}
-	ts := time.Date(2025, 2, 12, 9, 0, 0, 0, time.UTC)
-	event := ddtrace.NewSpanEvent("test", ddtrace.WithSpanEventTimestamp(ts), ddtrace.WithSpanEventAttributes(attrs))
-	require.NotNil(t, event)
+	assertAttrsJSON := func(t *testing.T, attrs map[string]any) {
+		wantJSON := `{"key1":"val1","key10":123,"key11":{"hello":"world"},"key12":{"field_1":"field1","field_2":2},"key2":123,"key3":123,"key4":123,"key5":[1,2,3],"key6":[1,2,3],"key7":[true,false,true],"key8":["1","2","3"],"key9":[1.1,2.2,3.3]}`
+		b, err := json.Marshal(attrs)
+		require.NoError(t, err)
+		assert.Equal(t, wantJSON, string(b))
+	}
 
-	assert.Equal(t, "test", event.Name)
-	assert.Equal(t, ts, event.Time)
-	assert.Equal(t, attrs, event.Attributes)
+	t.Run("with native events support", func(t *testing.T) {
+		s := newBasicSpan("test")
+		s.supportsEvents = true
+		s.AddEvent("test-event-1", ddtrace.WithSpanEventTimestamp(ts), ddtrace.WithSpanEventAttributes(attrs))
+		s.AddEvent("test-event-2", ddtrace.WithSpanEventAttributes(attrs))
+		s.AddEvent("test-event-3")
+		s.Finish()
 
-	eventMsg := toSpanEventsMsg([]ddtrace.SpanEvent{event}, true)[0]
-	assert.Equal(t, "test", eventMsg.Name)
-	assert.EqualValues(t, ts.UnixNano(), eventMsg.TimeUnixNano)
-	assert.Equal(t, wantAttrs, eventMsg.Attributes)
-	assert.Equal(t, attrs, eventMsg.RawAttributes)
+		require.Len(t, s.SpanEvents, 3)
+		evt := s.SpanEvents[0]
+		assert.Equal(t, "test-event-1", evt.Name)
+		assert.EqualValues(t, ts.UnixNano(), evt.TimeUnixNano)
+		assert.Equal(t, wantAttrs, evt.Attributes)
+		assert.Nil(t, evt.RawAttributes)
 
-	b, err := json.Marshal(eventMsg)
-	require.NoError(t, err)
-	wantJSON := `{"name":"test","time_unix_nano":1739350800000000000,"attributes":{"key1":"val1","key10":123,"key11":{"hello":"world"},"key12":{"Field1":"field1","Field2":2},"key2":123,"key3":123,"key4":123,"key5":[1,2,3],"key6":[1,2,3],"key7":[true,false,true],"key8":["1","2","3"],"key9":[1.1,2.2,3.3]}}`
+		evt = s.SpanEvents[1]
+		assert.Equal(t, "test-event-2", evt.Name)
+		assert.Greater(t, int64(evt.TimeUnixNano), ts.UnixNano())
+		assert.Equal(t, wantAttrs, evt.Attributes)
+		assert.Nil(t, evt.RawAttributes)
 
-	assert.Equal(t, wantJSON, string(b))
+		evt = s.SpanEvents[2]
+		assert.Equal(t, "test-event-3", evt.Name)
+		assert.Greater(t, int64(evt.TimeUnixNano), ts.UnixNano())
+		assert.Nil(t, evt.Attributes)
+		assert.Nil(t, evt.RawAttributes)
+	})
+
+	t.Run("without native events support", func(t *testing.T) {
+		s := newBasicSpan("test")
+		s.supportsEvents = false
+		s.AddEvent("test-event-1", ddtrace.WithSpanEventTimestamp(ts), ddtrace.WithSpanEventAttributes(attrs))
+		s.AddEvent("test-event-2", ddtrace.WithSpanEventAttributes(attrs))
+		s.AddEvent("test-event-3")
+		s.Finish()
+
+		require.Empty(t, s.SpanEvents)
+		assert.NotEmpty(t, s.Meta["events"])
+
+		var spanEvents []spanEvent
+		err := json.Unmarshal([]byte(s.Meta["events"]), &spanEvents)
+		require.NoError(t, err)
+
+		require.Len(t, spanEvents, 3)
+		evt := spanEvents[0]
+		assert.Equal(t, "test-event-1", evt.Name)
+		assert.EqualValues(t, ts.UnixNano(), evt.TimeUnixNano)
+		assert.Nil(t, evt.Attributes)
+		assertAttrsJSON(t, evt.RawAttributes)
+
+		evt = spanEvents[1]
+		assert.Equal(t, "test-event-2", evt.Name)
+		assert.Greater(t, int64(evt.TimeUnixNano), ts.UnixNano())
+		assert.Nil(t, evt.Attributes)
+		assertAttrsJSON(t, evt.RawAttributes)
+
+		evt = spanEvents[2]
+		assert.Equal(t, "test-event-3", evt.Name)
+		assert.Greater(t, int64(evt.TimeUnixNano), ts.UnixNano())
+		assert.Nil(t, evt.Attributes)
+		assert.Nil(t, evt.RawAttributes)
+	})
 }

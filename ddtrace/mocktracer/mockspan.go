@@ -48,10 +48,16 @@ type Span interface {
 	Context() ddtrace.SpanContext
 
 	// Events returns the span's []SpanEvents.
-	Events() []ddtrace.SpanEvent
+	Events() []SpanEvent
 
 	// Stringer allows pretty-printing the span's fields for debugging.
 	fmt.Stringer
+}
+
+// SpanEvent represents a span event from a mockspan.
+type SpanEvent struct {
+	Name   string
+	Config ddtrace.SpanEventConfig
 }
 
 func newSpan(t *mocktracer, operationName string, cfg *ddtrace.StartSpanConfig) *mockspan {
@@ -111,7 +117,7 @@ type mockspan struct {
 	context   *spanContext
 	tracer    *mocktracer
 	links     []ddtrace.SpanLink
-	events    []ddtrace.SpanEvent
+	events    []SpanEvent
 }
 
 // SetTag sets a given tag on the span.
@@ -192,14 +198,21 @@ func (s *mockspan) SetBaggageItem(key, val string) {
 	return
 }
 
-// AddEvents implements tracer.SpanWithEvents.
-func (s *mockspan) AddEvents(events ...ddtrace.SpanEvent) {
+// AddEvent adds an event to the current span.
+func (s *mockspan) AddEvent(name string, opts ...ddtrace.SpanEventOption) {
+	cfg := ddtrace.SpanEventConfig{}
+	for _, opt := range opts {
+		opt(&cfg)
+	}
 	s.Lock()
 	defer s.Unlock()
-	s.events = append(s.events, events...)
+	s.events = append(s.events, SpanEvent{
+		Name:   name,
+		Config: cfg,
+	})
 }
 
-func (s *mockspan) Events() []ddtrace.SpanEvent {
+func (s *mockspan) Events() []SpanEvent {
 	return s.events
 }
 
