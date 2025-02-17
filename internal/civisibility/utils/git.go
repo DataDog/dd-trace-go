@@ -142,10 +142,10 @@ func execGitStringWithInput(commandType telemetry.CommandType, input string, arg
 }
 
 // getGitVersion retrieves the version of the Git executable installed on the system.
-func getGitVersion() (major int, minor int, patch int, error error) {
-	out, err := execGitString(telemetry.NotSpecifiedCommandsType, "--version")
-	if err != nil {
-		return 0, 0, 0, err
+func getGitVersion() (major int, minor int, patch int, err error) {
+	out, lerr := execGitString(telemetry.NotSpecifiedCommandsType, "--version")
+	if lerr != nil {
+		return 0, 0, 0, lerr
 	}
 	out = strings.TrimSpace(strings.ReplaceAll(out, "git version ", ""))
 	versionParts := strings.Split(out, ".")
