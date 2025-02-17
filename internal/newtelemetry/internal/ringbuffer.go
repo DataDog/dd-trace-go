@@ -146,7 +146,11 @@ func (rq *RingQueue[T]) Flush() []T {
 	buf := rq.getBufferLocked()
 	rq.mu.Unlock()
 
-	defer rq.releaseBuffer(buf)
+	// If the buffer is less than 12.5% full, we let the buffer get garbage collected because it's too big for the current throughput.
+	// Except when the buffer is at its minimum size.
+	if len(buf) == rq.BufferSizes.Min || count*8 >= len(buf) {
+		defer rq.releaseBuffer(buf)
+	}
 
 	copyBuf := make([]T, count)
 	for i := 0; i < count; i++ {
