@@ -97,8 +97,8 @@ func TestAppSec(t *testing.T) {
 
 		// Check for tags
 		span := finished[0]
-		require.Equal(t, true, span.Tag("appsec.event"))
-		require.Equal(t, true, span.Tag("appsec.blocked"))
+		require.Equal(t, "true", span.Tag("appsec.event"))
+		require.Equal(t, "true", span.Tag("appsec.blocked"))
 	})
 }
 
@@ -150,9 +150,9 @@ func TestBlockingWithUserRulesFile(t *testing.T) {
 
 		// Check for tags
 		span := finished[0]
-		require.Equal(t, 1, span.Tag("_dd.appsec.enabled"))
-		require.Equal(t, true, span.Tag("appsec.event"))
-		require.Equal(t, true, span.Tag("appsec.blocked"))
+		require.Equal(t, 1.0, span.Tag("_dd.appsec.enabled"))
+		require.Equal(t, "true", span.Tag("appsec.event"))
+		require.Equal(t, "true", span.Tag("appsec.blocked"))
 	})
 
 	t.Run("blocking-event-on-request-on-query", func(t *testing.T) {
@@ -189,8 +189,8 @@ func TestBlockingWithUserRulesFile(t *testing.T) {
 
 		// Check for tags
 		span := finished[0]
-		require.Equal(t, true, span.Tag("appsec.event"))
-		require.Equal(t, true, span.Tag("appsec.blocked"))
+		require.Equal(t, "true", span.Tag("appsec.event"))
+		require.Equal(t, "true", span.Tag("appsec.blocked"))
 	})
 
 	t.Run("blocking-event-on-request-on-cookies", func(t *testing.T) {
@@ -227,8 +227,8 @@ func TestBlockingWithUserRulesFile(t *testing.T) {
 
 		// Check for tags
 		span := finished[0]
-		require.Equal(t, true, span.Tag("appsec.event"))
-		require.Equal(t, true, span.Tag("appsec.blocked"))
+		require.Equal(t, "true", span.Tag("appsec.event"))
+		require.Equal(t, "true", span.Tag("appsec.blocked"))
 	})
 }
 
@@ -357,7 +357,7 @@ func TestXForwardedForHeaderClientIp(t *testing.T) {
 		require.Equal(t, "18.18.18.18", span.Tag("http.client_ip"))
 
 		// Appsec
-		require.Equal(t, 1, span.Tag("_dd.appsec.enabled"))
+		require.Equal(t, 1.0, span.Tag("_dd.appsec.enabled"))
 	})
 
 	t.Run("blocking-client-ip", func(t *testing.T) {
@@ -396,9 +396,9 @@ func TestXForwardedForHeaderClientIp(t *testing.T) {
 		// Check for tags
 		span := finished[0]
 		require.Equal(t, "1.2.3.4", span.Tag("http.client_ip"))
-		require.Equal(t, 1, span.Tag("_dd.appsec.enabled"))
-		require.Equal(t, true, span.Tag("appsec.event"))
-		require.Equal(t, true, span.Tag("appsec.blocked"))
+		require.Equal(t, 1.0, span.Tag("_dd.appsec.enabled"))
+		require.Equal(t, "true", span.Tag("appsec.event"))
+		require.Equal(t, "true", span.Tag("appsec.blocked"))
 	})
 }
 
