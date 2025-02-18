@@ -13,6 +13,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/appsec"
 	echotrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/labstack/echo.v4"
 	httptrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
@@ -77,7 +78,7 @@ func ExampleSetUser() {
 		// We use SetUser() here to associate the user ID to the request's span. The return value
 		// can then be checked to decide whether to block the request or not.
 		// If it should be blocked, early exit from the handler.
-		if err := appsec.SetAuthenticatedUser(r.Context(), userIDFromRequest(r), userLoginFromRequest(r)); err != nil {
+		if err := appsec.SetUser(r.Context(), userIDFromRequest(r), tracer.WithUserLogin(userLoginFromRequest(r))); err != nil {
 			return
 		}
 

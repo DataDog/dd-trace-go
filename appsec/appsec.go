@@ -13,6 +13,8 @@ package appsec
 
 import (
 	"context"
+	"maps"
+	"strconv"
 	"sync"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
@@ -49,26 +51,8 @@ func MonitorParsedHTTPBody(ctx context.Context, body any) error {
 // request handler's. The blocking response will be automatically sent by the
 // APM tracer middleware on use according to your blocking configuration.
 // This function always returns nil when appsec is disabled and doesn't block users.
-//
-// Deprecated: prefer using [SetAuthenticatedUser] which allows collecting the user's login on top of their ID.
 func SetUser(ctx context.Context, id string, opts ...tracer.UserMonitoringOption) error {
 	login, _, _ := getMetadata(opts)
-	return setUser(ctx, id, login, usersec.UserSet, opts)
-}
-
-// SetAuthenticatedUser wraps [tracer.SetUser] and extends it with user blocking capabilities.
-//
-// On top of associating the authenticated user information (login and user ID) with the service
-// entry span, it checks whether the given user ID is blocked, in which case it returns an error.
-//
-// A user ID is blocked when present in the configured deny-list of users to block at
-// https://app.datadoghq.com/security/appsec/denylist. When [SetAuthenticatedUser] returns an error,
-// the caller must immediately abort its execution and the request handler's. The blocking response
-// will be authomatically sent by the APM tracer middleware being used according to your blocking
-// configuration.
-//
-// This function always returns nil when AppSec features are disabled.
-func SetAuthenticatedUser(ctx context.Context, id string, login string, opts ...tracer.UserMonitoringOption) error {
 	return setUser(ctx, id, login, usersec.UserSet, opts)
 }
 
@@ -118,7 +102,7 @@ func setUser(ctx context.Context, id string, login string, userEventType usersec
 // Deprecated: use [TrackUserLoginSuccess] instead.
 func TrackUserLoginSuccessEvent(ctx context.Context, uid string, md map[string]string, opts ...tracer.UserMonitoringOption) error {
 	login, _, _ := getMetadata(opts)
-	return TrackUserLoginSuccess(ctx, uid, login, md, opts...)
+	return TrackUserLoginSuccess(ctx, login, uid, md, opts...)
 }
 
 // TrackUserLoginSuccess denotes a successful user login event, which is used
@@ -133,11 +117,22 @@ func TrackUserLoginSuccessEvent(ctx context.Context, uid string, md map[string]s
 //
 // The provided metata is attached to the successful user login event.
 //
-// This function calso calls [SetAuthenticatedUser] with the provided user ID
-// and login, as well as any provided [tracer.UserMonitoringOption]s, and
-// returns an error if the provided user ID is found to be on a configured deny
-// list. See the documentation for [SetAuthenticatedUser] for more information.
-func TrackUserLoginSuccess(ctx context.Context, uid string, login string, md map[string]string, opts ...tracer.UserMonitoringOption) error {
+// This function calso calls [SetUser] with the provided user ID and login, as
+// well as any provided [tracer.UserMonitoringOption]s, and returns an error if
+// the provided user ID is found to be on a configured deny list. See the
+// documentation for [SetUser] for more information.
+func TrackUserLoginSuccess(ctx context.Context, login string, uid string, md map[string]string, opts ...tracer.UserMonitoringOption) error {
+	// We need to make sure the metadata contains the correct information
+	md = maps.Clone(md)
+	if md == nil {
+		md = make(map[string]string, 2)
+	}
+	if uid == "" {
+		log.Warn("appsec: TrackUserLoginSuccess requires a non-empty user ID (uid) in order for user blocking to be effective")
+	} else {
+		md["usr.id"] = uid
+	}
+	md["usr.login"] = login
 	TrackCustomEvent(ctx, "users.login.success", md)
 	return setUser(ctx, uid, login, usersec.UserLoginSuccess, opts)
 }
@@ -153,9 +148,22 @@ func TrackUserLoginSuccess(ctx context.Context, uid string, login string, md map
 // Take-Over (ATO) monitoring, ultimately blocking the IP address and/or user id
 // associated to them.
 //
-// Deprecated: use [TrackUserLoginFailure] instead.
+// Deprecated: use [TrackUserLoginFailure] instead, as it clearly expects to
+// process a user login, and not a user ID (which may not be available in the
+// case of a login failure).
 func TrackUserLoginFailureEvent(ctx context.Context, uid string, exists bool, md map[string]string) {
-	TrackUserLoginFailure(ctx, uid, "", exists, md)
+	span := getRootSpan(ctx)
+	if span == nil {
+		return
+	}
+
+	span.SetTag("appsec.events.users.login.failure.usr.exists", exists)
+	span.SetTag("appsec.events.users.login.failure.usr.id", uid)
+
+	TrackCustomEvent(ctx, "users.login.failure", md)
+
+	op, _ := usersec.StartUserLoginOperation(ctx, usersec.UserLoginFailure, usersec.UserLoginOperationArgs{})
+	op.Finish(usersec.UserLoginOperationRes{UserID: uid})
 }
 
 // TrackUserLoginFailure denotes a failed user login event, which is used by
@@ -165,33 +173,31 @@ func TrackUserLoginFailureEvent(ctx context.Context, uid string, exists bool, md
 //
 // The login is the username that was provided by the user as part of
 // the authentication attempt, and a single user may have multiple different
-// logins (i.e; user name, email address, etc...). The user however has exactly
-// one user ID which canonically identifies them.
+// logins (i.e; user name, email address, etc...).
 //
 // The exists argument allows to distinguish whether the user for which a login
 // attempt failed exists in the system or not, which is usedul when sifting
 // through login activity in search for malicious behavior & compromise.
 //
 // The provided metata is attached to the failed user login event.
-func TrackUserLoginFailure(ctx context.Context, uid string, login string, exists bool, md map[string]string) {
+func TrackUserLoginFailure(ctx context.Context, login string, exists bool, md map[string]string) {
 	span := getRootSpan(ctx)
 	if span == nil {
 		return
 	}
 
-	// We need to do the first call to SetTag ourselves because the map taken by TrackCustomEvent is map[string]string
-	// and not map [string]any, so the `exists` boolean variable does not fit int
-	span.SetTag("appsec.events.users.login.failure.usr.exists", exists)
-	span.SetTag("appsec.events.users.login.failure.usr.id", uid)
-	span.SetTag("appsec.events.users.login.failure.usr.login", login)
+	// We need to make sure the metadata contains the correct information
+	md = maps.Clone(md)
+	if md == nil {
+		md = make(map[string]string, 2)
+	}
+	md["usr.exists"] = strconv.FormatBool(exists)
+	md["usr.login"] = login
 
 	TrackCustomEvent(ctx, "users.login.failure", md)
 
 	op, _ := usersec.StartUserLoginOperation(ctx, usersec.UserLoginFailure, usersec.UserLoginOperationArgs{})
-	op.Finish(usersec.UserLoginOperationRes{
-		UserID:    uid,
-		UserLogin: login,
-	})
+	op.Finish(usersec.UserLoginOperationRes{UserLogin: login})
 }
 
 // TrackCustomEvent sets a custom event as service entry span tags. This span is
@@ -207,7 +213,7 @@ func TrackCustomEvent(ctx context.Context, name string, md map[string]string) {
 	}
 
 	tagPrefix := "appsec.events." + name + "."
-	span.SetTag(tagPrefix+"track", true)
+	span.SetTag(tagPrefix+"track", "true")
 	span.SetTag(ext.SamplingPriority, ext.PriorityUserKeep)
 	for k, v := range md {
 		span.SetTag(tagPrefix+k, v)
