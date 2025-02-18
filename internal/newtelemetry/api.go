@@ -7,12 +7,12 @@
 // Specification here: https://github.com/DataDog/instrumentation-telemetry-api-docs/tree/main
 //
 // The telemetry package has 6 main capabilities:
-// - Metrics: Support for [Count], [Rate], [Gauge], [Distribution] metrics.
-// - Logs: Support Debug, Warn, Error logs with tags and stack traces via the subpackage [log] or the [Log] function.
-// - Product: Start, Stop and Startup errors reporting to the backend
-// - App Config: Register and change the configuration of the application and declare its origin
-// - Integration: Loading and errors
-// - Dependencies: Sending all the dependencies of the application to the backend (for SCA purposes for example)
+//   - Metrics: Support for [Count], [Rate], [Gauge], [Distribution] metrics.
+//   - Logs: Support Debug, Warn, Error logs with tags and stack traces via the subpackage [log] or the [Log] function.
+//   - Product: Start, Stop and Startup errors reporting to the backend
+//   - App Config: Register and change the configuration of the application and declare its origin
+//   - Integration: Loading and errors
+//   - Dependencies: Sending all the dependencies of the application to the backend (for SCA purposes for example)
 //
 // Each of these capabilities is exposed through the [Client] interface but mainly through the package level functions.
 // that mirror and call the global client that is started through the [StartApp] function.
@@ -36,9 +36,7 @@ import (
 // different products used by the same application
 type Namespace = transport.Namespace
 
-// Goland is having a hard time with the following const block, it keeps deleting the type
-//
-//goland:noinspection GoVarAndConstTypeMayBeOmitted
+//goland:noinspection GoVarAndConstTypeMayBeOmitted  Goland is having a hard time with the following const block, it keeps deleting the type
 const (
 	NamespaceGeneral      Namespace = transport.NamespaceGeneral
 	NamespaceTracers      Namespace = transport.NamespaceTracers
@@ -53,9 +51,7 @@ const (
 // Origin describes the source of a configuration change
 type Origin = transport.Origin
 
-// Goland is having a hard time with the following const block, it keeps deleting the type
-//
-//goland:noinspection GoVarAndConstTypeMayBeOmitted
+//goland:noinspection GoVarAndConstTypeMayBeOmitted Goland is having a hard time with the following const block, it keeps deleting the type
 const (
 	OriginDefault      Origin = transport.OriginDefault
 	OriginCode         Origin = transport.OriginCode
@@ -67,9 +63,7 @@ const (
 // LogLevel describes the level of a log message
 type LogLevel = transport.LogLevel
 
-// Goland is having a hard time with the following const block, it keeps deleting the type
-//
-//goland:noinspection GoVarAndConstTypeMayBeOmitted
+//goland:noinspection GoVarAndConstTypeMayBeOmitted Goland is having a hard time with the following const block, it keeps deleting the type
 const (
 	LogDebug LogLevel = transport.LogLevelDebug
 	LogWarn  LogLevel = transport.LogLevelWarn
@@ -80,9 +74,7 @@ const (
 // MetricHandle is used to reduce lock contention when submitting metrics.
 // This can also be used ephemerally to submit a single metric value like this:
 //
-// ```go
-// telemetry.metric(telemetry.Appsec, "my-count", map[string]string{"tag1": "true", "tag2": "1.0"}).Submit(1.0)
-// ```
+//	telemetry.metric(telemetry.Appsec, "my-count", map[string]string{"tag1": "true", "tag2": "1.0"}).Submit(1.0)
 type MetricHandle interface {
 	// Submit submits a value to the metric handle.
 	Submit(value float64)
@@ -164,10 +156,10 @@ type Client interface {
 	Flush()
 
 	// AppStart sends the telemetry necessary to signal that the app is starting.
-	// Preferred use via StartApp package level function
+	// Preferred use via [StartApp] package level function
 	AppStart()
 
 	// AppStop sends the telemetry necessary to signal that the app is stopping.
-	// Preferred use via StopApp package level function
+	// Preferred use via [StopApp] package level function
 	AppStop()
 }
