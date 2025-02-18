@@ -8,6 +8,7 @@ package graphql
 import (
 	"math"
 
+	internalgraphql "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/graphql"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
 )
@@ -20,6 +21,7 @@ type config struct {
 	analyticsRate  float64
 	omitTrivial    bool
 	traceVariables bool
+	errExtensions  []string
 }
 
 // Option represents an option that can be used customize the Tracer.
@@ -34,6 +36,7 @@ func defaults(cfg *config) {
 	} else {
 		cfg.analyticsRate = math.NaN()
 	}
+	cfg.errExtensions = internalgraphql.ErrorExtensionsFromEnv()
 }
 
 // WithServiceName sets the given service name for the client.
@@ -79,5 +82,12 @@ func WithOmitTrivial() Option {
 func WithTraceVariables() Option {
 	return func(cfg *config) {
 		cfg.traceVariables = true
+	}
+}
+
+// WithErrorExtensions allows to configure the error extensions to include in the error span events.
+func WithErrorExtensions(errExtensions ...string) Option {
+	return func(cfg *config) {
+		cfg.errExtensions = internalgraphql.ParseErrorExtensions(errExtensions)
 	}
 }

@@ -154,6 +154,19 @@ func TestError(t *testing.T) {
 	}
 	assert.NotNil(root)
 	assert.NotNil(root.Tag(ext.Error))
+
+	events := root.Events()
+	require.Len(t, events, 1)
+
+	evt := events[0]
+	assert.Equal("dd.graphql.query.error", evt.Name)
+	assert.NotEmpty(evt.Config.Time)
+	assert.NotEmpty(evt.Config.Attributes["stacktrace"])
+	assert.Equal(map[string]any{
+		"message":    "resolver error",
+		"stacktrace": evt.Config.Attributes["stacktrace"],
+		"type":       "*gqlerror.Error",
+	}, evt.Config.Attributes)
 }
 
 func TestObfuscation(t *testing.T) {
