@@ -7,7 +7,7 @@ package tracer
 
 import (
 	"golang.org/x/exp/constraints"
-	
+
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
