@@ -620,10 +620,9 @@ func (s *span) finish(finishTime int64) {
 				log.Error("Abandoned spans channel full, disregarding span.")
 			}
 		}
-		v, ok := t.spansFinished.Load(s.integration)
-		if !ok {
-			v, _ = t.spansFinished.LoadOrStore(s.integration, new(atomic.Int64))
-		}
+		v, _ := t.spansFinished.LoadOrCompute(s.integration, func() *atomic.Int64 {
+			return &atomic.Int64{}
+		})
 		v.Add(1)
 	}
 	if keep {

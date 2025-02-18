@@ -670,11 +670,12 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 			log.Error("Abandoned spans channel full, disregarding span.")
 		}
 	}
-	v, ok := t.spansStarted.Load(span.integration)
-	if !ok {
-		v, _ = t.spansStarted.LoadOrStore(span.integration, new(atomic.Int64))
-	}
+
+	v, _ := t.spansStarted.LoadOrCompute(span.integration, func() *atomic.Int64 {
+		return &atomic.Int64{}
+	})
 	v.Add(1)
+
 	return span
 }
 
