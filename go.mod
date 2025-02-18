@@ -1,6 +1,6 @@
 module github.com/DataDog/dd-trace-go/v2
 
-go 1.22.0
+go 1.23.0
 
 // This replace is a temporary workaround to deal with a breaking change here that is used by the datadog-agent
 // It can safely be removed once this PR is released: https://github.com/DataDog/datadog-agent/pull/33370

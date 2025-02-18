@@ -1,6 +1,6 @@
 module github.com/DataDog/dd-trace-go/contrib/database/sql/v2
 
-go 1.22.0
+go 1.23.0
 
 require (
 	github.com/DataDog/datadog-go/v5 v5.5.0
