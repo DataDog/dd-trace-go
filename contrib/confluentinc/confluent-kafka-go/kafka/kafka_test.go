@@ -94,6 +94,7 @@ func TestConsumerChannel(t *testing.T) {
 		assert.Equal(t, "confluentinc/confluent-kafka-go/kafka", s.Integration())
 		assert.Equal(t, ext.SpanKindConsumer, s.Tag(ext.SpanKind))
 		assert.Equal(t, "kafka", s.Tag(ext.MessagingSystem))
+		assert.Equal(t, "gotest", s.Tag("messaging.destination.name"))
 	}
 	for _, msg := range []*kafka.Message{msg1, msg2} {
 		p, ok := datastreams.PathwayFromContext(datastreams.ExtractFromBase64Carrier(context.Background(), NewMessageCarrier(msg)))
@@ -143,6 +144,7 @@ func TestConsumerFunctional(t *testing.T) {
 			assert.Equal(t, ext.SpanKindProducer, s0.Tag(ext.SpanKind))
 			assert.Equal(t, "kafka", s0.Tag(ext.MessagingSystem))
 			assert.Equal(t, "127.0.0.1", s0.Tag(ext.KafkaBootstrapServers))
+			assert.Equal(t, "gotest", s0.Tag("messaging.destination.name"))
 
 			s1 := spans[1] // consume
 			assert.Equal(t, "kafka.consume", s1.OperationName())
@@ -156,6 +158,7 @@ func TestConsumerFunctional(t *testing.T) {
 			assert.Equal(t, ext.SpanKindConsumer, s1.Tag(ext.SpanKind))
 			assert.Equal(t, "kafka", s1.Tag(ext.MessagingSystem))
 			assert.Equal(t, "127.0.0.1", s1.Tag(ext.KafkaBootstrapServers))
+			assert.Equal(t, "gotest", s1.Tag("messaging.destination.name"))
 
 			p, ok := datastreams.PathwayFromContext(datastreams.ExtractFromBase64Carrier(context.Background(), NewMessageCarrier(msg)))
 			assert.True(t, ok)
