@@ -982,9 +982,12 @@ func TestClientFlush(t *testing.T) {
 			config.DependencyLoader = test.clientConfig.DependencyLoader             // Don't use the default dependency loader
 			config.internalMetricsEnabled = test.clientConfig.internalMetricsEnabled // only enabled internal metrics when explicitly set
 			config.internalMetricsEnabled = false
+			config.FlushInterval = internal.Range[time.Duration]{Min: time.Hour, Max: time.Hour}
 			c, err := newClient(tracerConfig, config)
 			require.NoError(t, err)
-			defer c.Close()
+			t.Cleanup(func() {
+				c.Close()
+			})
 
 			recordWriter := &internal.RecordWriter{}
 			c.writer = recordWriter
