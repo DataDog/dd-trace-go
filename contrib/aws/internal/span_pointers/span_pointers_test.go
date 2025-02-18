@@ -167,9 +167,8 @@ func TestHandleS3Operation(t *testing.T) {
 				assert.Equal(t, tt.expectedHash, attributes["ptr.hash"])
 			} else {
 				require.Len(t, spans, 1)
-				tags := spans[0].Tags()
-				_, exists := tags["_dd.span_links"]
-				assert.False(t, exists, "Expected no span links to be set")
+				links := spans[0].Links()
+				assert.Empty(t, links, "Expected no span links to be set")
 			}
 			mt.Reset()
 		})
