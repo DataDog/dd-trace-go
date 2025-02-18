@@ -1,7 +1,7 @@
 name: "Bug Report (Low Priority)"
 description: "Create a public Bug Report. Note that these may not be addressed as quickly as the helpdesk and that looking up account information will be difficult."
 title: "[BUG]: "
-labels: bug
+labels: [bug]
 body:
   - type: input
     attributes:
