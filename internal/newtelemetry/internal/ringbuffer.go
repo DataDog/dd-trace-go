@@ -98,7 +98,7 @@ func (rq *RingQueue[T]) Enqueue(vals ...T) bool {
 	rq.mu.Lock()
 	defer rq.mu.Unlock()
 	if len(vals) == 0 {
-		return rq.IsFull()
+		return true
 	}
 
 	spaceLeft := true
