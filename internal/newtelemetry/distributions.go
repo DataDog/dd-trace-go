@@ -29,7 +29,7 @@ func (d *distributions) LoadOrStore(namespace Namespace, name string, tags []str
 		key:    key,
 		values: internal.NewRingQueueWithPool[float64](d.queueSize, d.pool),
 	})
-	if !loaded { // The metric is new: validate and log issues about it
+	if !loaded && !d.skipAllowlist { // The metric is new: validate and log issues about it
 		if err := validateMetricKey(namespace, kind, name, tags); err != nil {
 			log.Warn("telemetry: %v", err)
 		}

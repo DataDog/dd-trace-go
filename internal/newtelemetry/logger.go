@@ -80,7 +80,7 @@ func (logger *logger) Add(level LogLevel, text string, opts ...LogOption) {
 }
 
 func (logger *logger) Payload() transport.Payload {
-	var logs []transport.LogMessage
+	logs := make([]transport.LogMessage, 0, logger.store.Len()+1)
 	logger.store.Range(func(key loggerKey, value *loggerValue) bool {
 		logger.store.Delete(key)
 		logs = append(logs, transport.LogMessage{

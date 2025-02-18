@@ -43,7 +43,7 @@ func NewTicker(tickFunc TickFunc, interval Range[time.Duration]) *Ticker {
 			case <-ticker.ticker.C:
 				tickFunc()
 			case <-ticker.stopChan:
-				break
+				return
 			}
 		}
 	}()

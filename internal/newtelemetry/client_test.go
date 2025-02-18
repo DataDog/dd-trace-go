@@ -17,7 +17,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
-	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -1289,6 +1289,10 @@ func BenchmarkLogs(b *testing.B) {
 		HeartbeatInterval:         time.Hour,
 		ExtendedHeartbeatInterval: time.Hour,
 		AgentURL:                  "http://localhost:8126",
+		HTTPClient: &http.Client{
+			Timeout:   5 * time.Second,
+			Transport: noopTransport{},
+		},
 	}
 
 	b.Run("simple", func(b *testing.B) {
@@ -1296,7 +1300,10 @@ func BenchmarkLogs(b *testing.B) {
 		c, err := NewClient("test-service", "test-env", "1.0.0", clientConfig)
 		require.NoError(b, err)
 
-		defer c.Close()
+		b.Cleanup(func() {
+			c.Flush()
+			c.Close()
+		})
 
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
@@ -1309,7 +1316,10 @@ func BenchmarkLogs(b *testing.B) {
 		c, err := NewClient("test-service", "test-env", "1.0.0", clientConfig)
 		require.NoError(b, err)
 
-		defer c.Close()
+		b.Cleanup(func() {
+			c.Flush()
+			c.Close()
+		})
 
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
@@ -1322,7 +1332,10 @@ func BenchmarkLogs(b *testing.B) {
 		c, err := NewClient("test-service", "test-env", "1.0.0", clientConfig)
 		require.NoError(b, err)
 
-		defer c.Close()
+		b.Cleanup(func() {
+			c.Flush()
+			c.Close()
+		})
 
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
@@ -1337,11 +1350,9 @@ func (noopTransport) RoundTrip(*http.Request) (*http.Response, error) {
 	return &http.Response{StatusCode: http.StatusOK}, nil
 }
 
-func BenchmarkWorstCaseScenarioFloodLogging(b *testing.B) {
+func BenchmarkParallelLogs(b *testing.B) {
 	b.ReportAllocs()
-	nbSameLogs := 10
-	nbDifferentLogs := 100
-	nbGoroutines := 25
+	nbGoroutines := 5 * runtime.NumCPU()
 
 	clientConfig := ClientConfig{
 		HeartbeatInterval:         time.Hour,
@@ -1359,234 +1370,151 @@ func BenchmarkWorstCaseScenarioFloodLogging(b *testing.B) {
 	c, err := NewClient("test-service", "test-env", "1.0.0", clientConfig)
 	require.NoError(b, err)
 
-	defer c.Close()
+	b.Cleanup(func() {
+		c.Flush()
+		c.Close()
+	})
 
 	b.ResetTimer()
+	b.SetParallelism(nbGoroutines)
 
-	for x := 0; x < b.N; x++ {
-		var wg sync.WaitGroup
-
-		for i := 0; i < nbGoroutines; i++ {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				for j := 0; j < nbDifferentLogs; j++ {
-					for k := 0; k < nbSameLogs; k++ {
-						c.Log(LogDebug, "this is supposed to be a DEBUG log of representative length"+strconv.Itoa(i), WithTags([]string{"key:" + strconv.Itoa(j)}))
-					}
-				}
-			}()
+	var i atomic.Int64
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			i := int(i.Add(1)) % nbGoroutines
+			c.Log(LogDebug, "this is supposed to be a DEBUG log of representative length"+strconv.Itoa(i), WithTags([]string{"key:" + strconv.Itoa(i)}))
 		}
+	})
+}
 
-		wg.Wait()
+func benchMetrics(b *testing.B, getHandle, reusedHandle func(*testing.B, func(Client, string) MetricHandle)) {
+	for _, bc := range []struct {
+		name      string
+		newMetric func(Client, string) MetricHandle
+	}{
+		{"count", func(c Client, name string) MetricHandle { return c.Count(NamespaceGeneral, name, []string{"test:1"}) }},
+		{"gauge", func(c Client, name string) MetricHandle { return c.Gauge(NamespaceGeneral, name, []string{"test:1"}) }},
+		{"rate", func(c Client, name string) MetricHandle { return c.Rate(NamespaceGeneral, name, []string{"test:1"}) }},
+		{"distribution", func(c Client, name string) MetricHandle {
+			return c.Distribution(NamespaceGeneral, name, []string{"test:1"})
+		}},
+	} {
+		b.Run(bc.name, func(b *testing.B) {
+			b.Run("get-handle", func(b *testing.B) {
+				getHandle(b, bc.newMetric)
+			})
+
+			b.Run("handle-reused", func(b *testing.B) {
+				reusedHandle(b, bc.newMetric)
+			})
+		})
 	}
-
-	b.ReportMetric(float64(b.Elapsed().Nanoseconds()/int64(nbGoroutines*nbDifferentLogs*nbSameLogs*b.N)), "ns/log")
 }
 
 func BenchmarkMetrics(b *testing.B) {
-	b.ReportAllocs()
 	clientConfig := ClientConfig{
-		HeartbeatInterval:         time.Hour,
-		ExtendedHeartbeatInterval: time.Hour,
-		AgentURL:                  "http://localhost:8126",
-	}
-
-	b.Run("count+get-handle", func(b *testing.B) {
-		b.ReportAllocs()
-		c, err := NewClient("test-service", "test-env", "1.0.0", clientConfig)
-		require.NoError(b, err)
-
-		defer c.Close()
-
-		b.ResetTimer()
-		for i := 0; i < b.N; i++ {
-			c.Count(NamespaceGeneral, "logs_created", nil).Submit(1)
-		}
-	})
-
-	b.Run("count+handle-reused", func(b *testing.B) {
-		b.ReportAllocs()
-		c, err := NewClient("test-service", "test-env", "1.0.0", clientConfig)
-		require.NoError(b, err)
-
-		defer c.Close()
-
-		handle := c.Count(NamespaceGeneral, "logs_created", nil)
-
-		b.ResetTimer()
-		for i := 0; i < b.N; i++ {
-			handle.Submit(1)
-		}
-	})
-
-	b.Run("gauge+get-handle", func(b *testing.B) {
-		b.ReportAllocs()
-		c, err := NewClient("test-service", "test-env", "1.0.0", clientConfig)
-		require.NoError(b, err)
-
-		defer c.Close()
-
-		b.ResetTimer()
-		for i := 0; i < b.N; i++ {
-			c.Gauge(NamespaceTracers, "stats_buckets", nil).Submit(1)
-		}
-	})
-
-	b.Run("gauge+handle-reused", func(b *testing.B) {
-		b.ReportAllocs()
-		c, err := NewClient("test-service", "test-env", "1.0.0", clientConfig)
-		require.NoError(b, err)
-
-		defer c.Close()
-
-		handle := c.Gauge(NamespaceTracers, "stats_buckets", nil)
-
-		b.ResetTimer()
-		for i := 0; i < b.N; i++ {
-			handle.Submit(1)
-		}
-	})
-
-	b.Run("rate+get-handle", func(b *testing.B) {
-		b.ReportAllocs()
-		c, err := NewClient("test-service", "test-env", "1.0.0", clientConfig)
-		require.NoError(b, err)
-
-		defer c.Close()
-
-		b.ResetTimer()
-		for i := 0; i < b.N; i++ {
-			c.Rate(NamespaceTracers, "init_time", nil).Submit(1)
-		}
-	})
-
-	b.Run("rate+handle-reused", func(b *testing.B) {
-		b.ReportAllocs()
-		c, err := NewClient("test-service", "test-env", "1.0.0", clientConfig)
-		require.NoError(b, err)
-
-		defer c.Close()
-
-		handle := c.Rate(NamespaceTracers, "init_time", nil)
-
-		b.ResetTimer()
-		for i := 0; i < b.N; i++ {
-			handle.Submit(1)
-		}
-	})
-
-	b.Run("distribution+get-handle", func(b *testing.B) {
-		b.ReportAllocs()
-		c, err := NewClient("test-service", "test-env", "1.0.0", clientConfig)
-		require.NoError(b, err)
-
-		defer c.Close()
-
-		b.ResetTimer()
-		for i := 0; i < b.N; i++ {
-			c.Distribution(NamespaceGeneral, "init_time", nil).Submit(1)
-		}
-	})
-
-	b.Run("distribution+handle-reused", func(b *testing.B) {
-		b.ReportAllocs()
-		c, err := NewClient("test-service", "test-env", "1.0.0", clientConfig)
-		require.NoError(b, err)
-
-		defer c.Close()
-
-		handle := c.Distribution(NamespaceGeneral, "init_time", nil)
-
-		b.ResetTimer()
-		for i := 0; i < b.N; i++ {
-			handle.Submit(1)
-		}
-	})
-}
-
-func BenchmarkWorstCaseScenarioFloodMetrics(b *testing.B) {
-	nbSameMetric := 1000
-	nbDifferentMetrics := 50
-	nbGoroutines := 50
-
-	clientConfig := ClientConfig{
+		Debug:                     true,
 		HeartbeatInterval:         time.Hour,
 		ExtendedHeartbeatInterval: time.Hour,
 		FlushInterval:             internal.Range[time.Duration]{Min: time.Second, Max: time.Second},
-		DistributionsSize:         internal.Range[int]{Min: 256, Max: -1},
 		AgentURL:                  "http://localhost:8126",
 
 		// Empty transport to avoid sending data to the agent
 		HTTPClient: &http.Client{
-			Timeout:   5 * time.Second,
 			Transport: noopTransport{},
 		},
 	}
 
-	b.Run("get-handle", func(b *testing.B) {
+	benchMetrics(b, func(b *testing.B, f func(Client, string) MetricHandle) {
 		b.ReportAllocs()
 		c, err := NewClient("test-service", "test-env", "1.0.0", clientConfig)
 		require.NoError(b, err)
 
-		defer c.Close()
+		b.Cleanup(func() {
+			c.Flush()
+			c.Close()
+		})
 
 		b.ResetTimer()
-
-		for x := 0; x < b.N; x++ {
-			var wg sync.WaitGroup
-
-			for i := 0; i < nbGoroutines; i++ {
-				wg.Add(1)
-				go func() {
-					defer wg.Done()
-					for j := 0; j < nbDifferentMetrics; j++ {
-						metricName := "init_time_" + strconv.Itoa(j)
-						for k := 0; k < nbSameMetric; k++ {
-							c.Count(NamespaceGeneral, metricName, []string{"test:1"}).Submit(1)
-						}
-					}
-				}()
-			}
-
-			wg.Wait()
+		for i := 0; i < b.N; i++ {
+			f(c, "init_time").Submit(1)
 		}
-
-		b.ReportMetric(float64(b.Elapsed().Nanoseconds()/int64(nbGoroutines*nbDifferentMetrics*nbSameMetric*b.N)), "ns/point")
-	})
-
-	b.Run("handle-reused", func(b *testing.B) {
+	}, func(b *testing.B, f func(Client, string) MetricHandle) {
 		b.ReportAllocs()
 		c, err := NewClient("test-service", "test-env", "1.0.0", clientConfig)
 		require.NoError(b, err)
 
-		defer c.Close()
+		b.Cleanup(func() {
+			c.Flush()
+			c.Close()
+		})
 
 		b.ResetTimer()
+		handle := f(c, "init_time")
+		for i := 0; i < b.N; i++ {
+			handle.Submit(1)
+		}
+	})
+}
 
-		for x := 0; x < b.N; x++ {
-			var wg sync.WaitGroup
+func BenchmarkParallelMetrics(b *testing.B) {
+	nbGoroutines := 5 * runtime.NumCPU()
+	clientConfig := ClientConfig{
+		Debug:                     true,
+		HeartbeatInterval:         time.Hour,
+		ExtendedHeartbeatInterval: time.Hour,
+		FlushInterval:             internal.Range[time.Duration]{Min: time.Second, Max: time.Second},
+		AgentURL:                  "http://localhost:8126",
 
-			handles := make([]MetricHandle, nbDifferentMetrics)
-			for i := 0; i < nbDifferentMetrics; i++ {
-				handles[i] = c.Count(NamespaceGeneral, "init_time_"+strconv.Itoa(i), []string{"test:1"})
+		// Empty transport to avoid sending data to the agent
+		HTTPClient: &http.Client{
+			Transport: noopTransport{},
+		},
+	}
+
+	benchMetrics(b, func(b *testing.B, metric func(Client, string) MetricHandle) {
+		b.ReportAllocs()
+		c, err := NewClient("test-service", "test-env", "1.0.0", clientConfig)
+		require.NoError(b, err)
+
+		b.Cleanup(func() {
+			c.Flush()
+			c.Close()
+		})
+
+		b.ResetTimer()
+		b.SetParallelism(nbGoroutines)
+
+		var i atomic.Int64
+		b.RunParallel(func(pb *testing.PB) {
+			for pb.Next() {
+				metricName := "init_time_" + strconv.Itoa(int(i.Add(1))%nbGoroutines)
+				metric(c, metricName).Submit(1)
 			}
-			for i := 0; i < nbGoroutines; i++ {
-				wg.Add(1)
-				go func() {
-					defer wg.Done()
-					for j := 0; j < nbDifferentMetrics; j++ {
-						for k := 0; k < nbSameMetric; k++ {
-							handles[j].Submit(1)
-						}
-					}
-				}()
-			}
+		})
+	}, func(b *testing.B, metric func(Client, string) MetricHandle) {
+		b.ReportAllocs()
+		c, err := NewClient("test-service", "test-env", "1.0.0", clientConfig)
+		require.NoError(b, err)
 
-			wg.Wait()
+		b.Cleanup(func() {
+			c.Flush()
+			c.Close()
+		})
+
+		b.ResetTimer()
+		b.SetParallelism(nbGoroutines)
+
+		handles := make([]MetricHandle, nbGoroutines)
+		for i := 0; i < nbGoroutines; i++ {
+			handles[i] = metric(c, "init_time_"+strconv.Itoa(i))
 		}
 
-		b.ReportMetric(float64(b.Elapsed().Nanoseconds()/int64(nbGoroutines*nbDifferentMetrics*nbSameMetric*b.N)), "ns/point")
+		var i atomic.Int32
+		b.RunParallel(func(pb *testing.PB) {
+			for pb.Next() {
+				handles[int(i.Add(1))%nbGoroutines].Submit(1)
+			}
+		})
 	})
-
 }
