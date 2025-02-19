@@ -115,7 +115,7 @@ func TrackUserLoginSuccessEvent(ctx context.Context, uid string, md map[string]s
 // logins (i.e; user name, email address, etc...). The user however has exactly
 // one user ID which canonically identifies them.
 //
-// The provided metata is attached to the successful user login event.
+// The provided metadata is attached to the successful user login event.
 //
 // This function calso calls [SetUser] with the provided user ID and login, as
 // well as any provided [tracer.UserMonitoringOption]s, and returns an error if
@@ -128,7 +128,7 @@ func TrackUserLoginSuccess(ctx context.Context, login string, uid string, md map
 		md = make(map[string]string, 2)
 	}
 	if uid == "" {
-		log.Warn("appsec: TrackUserLoginSuccess requires a non-empty user ID (uid) in order for user blocking to be effective")
+		log.Error("appsec: TrackUserLoginSuccess requires a non-empty user ID (uid) in order for user blocking to be effective")
 	} else {
 		md["usr.id"] = uid
 	}
