@@ -25,6 +25,8 @@ func (*Feature) Stop() {}
 func NewUserSecFeature(cfg *config.Config, rootOp dyngo.Operation) (listener.Feature, error) {
 	if !cfg.SupportedAddresses.AnyOf(
 		addresses.UserIDAddr,
+		addresses.UserLoginAddr,
+		addresses.UserOrgAddr,
 		addresses.UserSessionIDAddr,
 		addresses.UserLoginSuccessAddr,
 		addresses.UserLoginFailureAddr) {
