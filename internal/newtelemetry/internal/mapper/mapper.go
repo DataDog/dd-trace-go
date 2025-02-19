@@ -6,7 +6,7 @@
 package mapper
 
 import (
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/newtelemetry/internal/transport"
+	"github.com/DataDog/dd-trace-go/v2/internal/newtelemetry/internal/transport"
 )
 
 // Mapper is an interface for transforming payloads to comply with different types of lifecycle events in the application.

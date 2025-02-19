@@ -13,10 +13,10 @@ import (
 	"sync/atomic"
 	"time"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/newtelemetry/internal"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/newtelemetry/internal/knownmetrics"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/newtelemetry/internal/transport"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/newtelemetry/internal"
+	"github.com/DataDog/dd-trace-go/v2/internal/newtelemetry/internal/knownmetrics"
+	"github.com/DataDog/dd-trace-go/v2/internal/newtelemetry/internal/transport"
 )
 
 // metricKey is used as a key in the metrics store hash map.

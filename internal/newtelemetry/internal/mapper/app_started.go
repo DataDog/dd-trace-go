@@ -6,8 +6,8 @@
 package mapper
 
 import (
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/newtelemetry/internal/transport"
+	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
+	"github.com/DataDog/dd-trace-go/v2/internal/newtelemetry/internal/transport"
 )
 
 type appStartedReducer struct {

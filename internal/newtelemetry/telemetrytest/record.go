@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/newtelemetry"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/newtelemetry/internal/transport"
+	"github.com/DataDog/dd-trace-go/v2/internal/newtelemetry"
+	"github.com/DataDog/dd-trace-go/v2/internal/newtelemetry/internal/transport"
 )
 
 type MetricKey struct {

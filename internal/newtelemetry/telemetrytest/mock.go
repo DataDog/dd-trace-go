@@ -7,7 +7,7 @@
 package telemetrytest
 
 import (
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/newtelemetry"
+	"github.com/DataDog/dd-trace-go/v2/internal/newtelemetry"
 
 	"github.com/stretchr/testify/mock"
 )

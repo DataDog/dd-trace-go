@@ -8,7 +8,7 @@ package log
 import (
 	"fmt"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/newtelemetry"
+	"github.com/DataDog/dd-trace-go/v2/internal/newtelemetry"
 )
 
 func divideArgs(args []any) ([]newtelemetry.LogOption, []any) {

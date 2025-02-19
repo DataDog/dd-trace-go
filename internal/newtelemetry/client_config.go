@@ -13,9 +13,9 @@ import (
 	"runtime/debug"
 	"time"
 
-	globalinternal "gopkg.in/DataDog/dd-trace-go.v1/internal"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/newtelemetry/internal"
+	globalinternal "github.com/DataDog/dd-trace-go/v2/internal"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/newtelemetry/internal"
 )
 
 type ClientConfig struct {

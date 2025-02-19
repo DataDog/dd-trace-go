@@ -10,8 +10,8 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/newtelemetry/internal"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/newtelemetry/internal"
 )
 
 // noopMetricHandle is a no-op implementation of a metric handle.

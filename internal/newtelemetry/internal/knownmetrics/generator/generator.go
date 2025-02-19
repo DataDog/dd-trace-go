@@ -19,8 +19,8 @@ import (
 	"slices"
 	"strings"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/newtelemetry/internal/knownmetrics"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/newtelemetry/internal/transport"
+	"github.com/DataDog/dd-trace-go/v2/internal/newtelemetry/internal/knownmetrics"
+	"github.com/DataDog/dd-trace-go/v2/internal/newtelemetry/internal/transport"
 )
 
 // This represents the base64-encoded URL of api.github.com to download the configuration file.
