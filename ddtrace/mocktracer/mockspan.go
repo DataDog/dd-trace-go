@@ -266,6 +266,8 @@ func (s *mockspan) SetUser(id string, opts ...tracer.UserMonitoringOption) {
 	}
 
 	root.SetTag("usr.id", id)
+	root.SetTag("usr.login", cfg.Login)
+	root.SetTag("usr.org", cfg.Org)
 	root.SetTag("usr.email", cfg.Email)
 	root.SetTag("usr.name", cfg.Name)
 	root.SetTag("usr.role", cfg.Role)
