@@ -9,7 +9,6 @@ import (
 	gocontext "context"
 	"encoding/binary"
 	"fmt"
-	"github.com/google/uuid"
 	"log/slog"
 	"math"
 	"os"
@@ -20,6 +19,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/google/uuid"
+
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
@@ -27,12 +28,14 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
 	appsecConfig "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/config"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/datastreams"
+	globalconfig "gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/hostname"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/remoteconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/samplernames"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/traceprof"
+	globalversion "gopkg.in/DataDog/dd-trace-go.v1/internal/version"
 
 	"github.com/DataDog/datadog-agent/pkg/obfuscate"
 	"github.com/DataDog/go-runtime-metrics-internal/pkg/runtimemetrics"
@@ -216,9 +219,9 @@ func storeConfig(c *config) {
 
 	metadata := TracerMetadata{
 		SchemaVersion:      1,
-		RuntimeId:          "TBD", ///< Where to get it?
+		RuntimeId:          globalconfig.RuntimeID(),
 		Language:           "golang",
-		Version:            "1.2.3",
+		Version:            globalversion.Tag,
 		Hostname:           c.hostname,
 		ServiceName:        c.serviceName,
 		ServiceEnvironment: c.env,
@@ -226,7 +229,10 @@ func storeConfig(c *config) {
 	}
 
 	data, _ := metadata.MarshalMsg(nil)
-	globalinternal.CreateMemfd(name, data)
+	_, err := globalinternal.CreateMemfd(name, data)
+	if err != nil {
+		log.Error("failed to store the configuration: %s", err)
+	}
 }
 
 // Stop stops the started tracer. Subsequent calls are valid but become no-op.
