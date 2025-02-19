@@ -620,10 +620,7 @@ func (s *span) finish(finishTime int64) {
 				log.Error("Abandoned spans channel full, disregarding span.")
 			}
 		}
-		v, _ := t.spansFinished.LoadOrCompute(s.integration, func() *atomic.Int64 {
-			return &atomic.Int64{}
-		})
-		v.Add(1)
+		t.spansFinished.Inc(s.integration)
 	}
 	if keep {
 		// a single kept span keeps the whole trace.

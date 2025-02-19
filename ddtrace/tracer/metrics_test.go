@@ -7,14 +7,13 @@ package tracer
 
 import (
 	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	globalinternal "gopkg.in/DataDog/dd-trace-go.v1/internal"
 
-	"github.com/puzpuzpuz/xsync/v3"
+	"github.com/felixge/countermap"
 	"github.com/stretchr/testify/assert"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/statsdtest"
@@ -293,8 +292,8 @@ func BenchmarkSpansMetrics(b *testing.B) {
 	}
 }
 
-func assertSpanMetricCountsAreZero(t *testing.T, metric *xsync.MapOf[string, *atomic.Int64]) {
-	metric.Range(func(_ string, value *atomic.Int64) bool {
-		return assert.Equal(t, int64(0), value.Load())
-	})
+func assertSpanMetricCountsAreZero(t *testing.T, metric countermap.CounterMap) {
+	for _, v := range metric.GetAndReset() {
+		assert.Equal(t, int64(0), v)
+	}
 }

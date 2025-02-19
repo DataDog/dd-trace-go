@@ -97,21 +97,18 @@ func (t *tracer) reportHealthMetricsAtInterval(interval time.Duration) {
 			// reset the count
 			// the Count() function reports the total number of event occurrences in one time interval. We reset
 			// our count to 0 regardless of if Count succeeded to cleanup before the next interval.
-			t.spansStarted.Range(func(key string, value *atomic.Int64) bool {
-				old := value.Swap(0)
-				t.statsd.Count("datadog.tracer.spans_started", old, []string{"integration:" + key}, 1)
-				return true
-			})
+
+			for k, v := range t.spansStarted.GetAndReset() {
+				t.statsd.Count("datadog.tracer.spans_started", v, []string{"integration:" + k}, 1)
+			}
 
 			// if there are finished spans, report the number of spans with their integration, then
 			// reset the count
 			// the Count() function reports the total number of event occurrences in one time interval. We reset
 			// our count to 0 regardless of if Count succeeded to cleanup before the next interval.
-			t.spansFinished.Range(func(key string, value *atomic.Int64) bool {
-				old := value.Swap(0)
-				t.statsd.Count("datadog.tracer.spans_finished", old, []string{"integration:" + key}, 1)
-				return true
-			})
+			for k, v := range t.spansFinished.GetAndReset() {
+				t.statsd.Count("datadog.tracer.spans_finished", v, []string{"integration:" + k}, 1)
+			}
 
 			t.statsd.Count("datadog.tracer.traces_dropped", int64(atomic.SwapUint32(&t.tracesDropped, 0)), []string{"reason:trace_too_large"}, 1)
 		case <-t.stop:

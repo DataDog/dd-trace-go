@@ -45,6 +45,7 @@ require (
 	github.com/emicklei/go-restful v2.16.0+incompatible
 	github.com/emicklei/go-restful/v3 v3.11.0
 	github.com/envoyproxy/go-control-plane v0.12.0
+	github.com/felixge/countermap v0.0.0-20221101200851-7d5970a8a0ad
 	github.com/garyburd/redigo v1.6.4
 	github.com/gin-gonic/gin v1.9.1
 	github.com/globalsign/mgo v0.0.0-20181015135952-eeefdecb41b8
@@ -125,6 +126,8 @@ require (
 	k8s.io/client-go v0.26.7
 	modernc.org/sqlite v1.28.0
 )
+
+require github.com/puzpuzpuz/xsync/v2 v2.2.0 // indirect
 
 require (
 	cloud.google.com/go v0.112.1 // indirect
@@ -252,7 +255,6 @@ require (
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
 	github.com/power-devops/perfstat v0.0.0-20220216144756-c35f1ee13d7c // indirect
-	github.com/puzpuzpuz/xsync/v3 v3.5.1
 	github.com/rcrowley/go-metrics v0.0.0-20201227073835-cf1acfcdf475 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
 	github.com/rivo/uniseg v0.4.4 // indirect
