@@ -17,7 +17,7 @@ require (
 	github.com/DataDog/datadog-agent/pkg/remoteconfig/state v0.58.0
 	github.com/DataDog/datadog-agent/pkg/trace v0.58.0
 	github.com/DataDog/datadog-go/v5 v5.5.0
-	github.com/DataDog/go-libddwaf/v3 v3.5.1
+	github.com/DataDog/go-libddwaf/v3 v3.5.3
 	github.com/DataDog/go-runtime-metrics-internal v0.0.4-0.20241206090539-a14610dc22b6
 	github.com/DataDog/gostackparse v0.7.0
 	github.com/DataDog/sketches-go v1.4.5
@@ -171,7 +171,7 @@ require (
 	github.com/eapache/go-resiliency v1.4.0 // indirect
 	github.com/eapache/go-xerial-snappy v0.0.0-20230731223053-c322873962e3 // indirect
 	github.com/eapache/queue v1.1.0 // indirect
-	github.com/ebitengine/purego v0.6.0-alpha.5 // indirect
+	github.com/ebitengine/purego v0.8.2 // indirect
 	github.com/elastic/elastic-transport-go/v8 v8.1.0 // indirect
 	github.com/envoyproxy/protoc-gen-validate v1.0.4 // indirect
 	github.com/fatih/color v1.16.0 // indirect
