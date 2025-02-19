@@ -29,7 +29,7 @@ require (
 	github.com/cihub/seelog v0.0.0-20170130134532-f561c5e57575 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/eapache/queue/v2 v2.0.0-20230407133247-75960ed334e4 // indirect
-	github.com/ebitengine/purego v0.6.0-alpha.5 // indirect
+	github.com/ebitengine/purego v0.8.2 // indirect
 	github.com/felixge/countermap v0.0.0-20221101200851-7d5970a8a0ad // indirect
 	github.com/go-ole/go-ole v1.2.6 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
