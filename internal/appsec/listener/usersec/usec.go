@@ -43,12 +43,18 @@ func (*Feature) OnFinish(op *usersec.UserLoginOperation, res usersec.UserLoginOp
 	case usersec.UserLoginSuccess:
 		builder = builder.WithUserLoginSuccess().
 			WithUserID(res.UserID).
+			WithUserLogin(res.UserLogin).
+			WithUserOrg(res.UserOrg).
 			WithUserSessionID(res.SessionID)
 	case usersec.UserLoginFailure:
 		builder = builder.WithUserLoginFailure().
-			WithUserID(res.UserID)
+			WithUserID(res.UserID).
+			WithUserLogin(res.UserLogin).
+			WithUserOrg(res.UserOrg)
 	case usersec.UserSet:
 		builder = builder.WithUserID(res.UserID).
+			WithUserLogin(res.UserLogin).
+			WithUserOrg(res.UserOrg).
 			WithUserSessionID(res.SessionID)
 	}
 

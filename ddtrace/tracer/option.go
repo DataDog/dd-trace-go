@@ -1446,6 +1446,8 @@ func setHeaderTags(headerAsTags []string) bool {
 // This configuration can be set by combining one or several UserMonitoringOption with a call to SetUser().
 type UserMonitoringConfig struct {
 	PropagateID bool
+	Login       string
+	Org         string
 	Email       string
 	Name        string
 	Role        string
@@ -1462,6 +1464,20 @@ type UserMonitoringOption func(*UserMonitoringConfig)
 func WithUserMetadata(key, value string) UserMonitoringOption {
 	return func(cfg *UserMonitoringConfig) {
 		cfg.Metadata[key] = value
+	}
+}
+
+// WithUserLogin returns the option setting the login of the authenticated user.
+func WithUserLogin(login string) UserMonitoringOption {
+	return func(cfg *UserMonitoringConfig) {
+		cfg.Login = login
+	}
+}
+
+// WithUserOrg returns the option setting the organization of the authenticated user.
+func WithUserOrg(org string) UserMonitoringOption {
+	return func(cfg *UserMonitoringConfig) {
+		cfg.Org = org
 	}
 }
 
