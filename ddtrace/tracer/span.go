@@ -350,6 +350,7 @@ func (s *Span) SetUser(id string, opts ...UserMonitoringOption) {
 
 	usrData := map[string]string{
 		keyUserID:        id,
+		keyUserLogin:     cfg.Login,
 		keyUserEmail:     cfg.Email,
 		keyUserName:      cfg.Name,
 		keyUserScope:     cfg.Scope,
@@ -877,6 +878,7 @@ const (
 // The following set of tags is used for user monitoring and set through calls to span.SetUser().
 const (
 	keyUserID        = "usr.id"
+	keyUserLogin     = "usr.login"
 	keyUserEmail     = "usr.email"
 	keyUserName      = "usr.name"
 	keyUserRole      = "usr.role"

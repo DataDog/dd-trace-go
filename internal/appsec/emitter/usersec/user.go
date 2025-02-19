@@ -29,6 +29,8 @@ type (
 	// UserLoginOperationRes is the user ID operation results.
 	UserLoginOperationRes struct {
 		UserID    string
+		UserLogin string
+		UserOrg   string
 		SessionID string
 		Success   bool
 	}
