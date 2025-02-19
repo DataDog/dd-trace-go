@@ -128,7 +128,6 @@ func TestClientFlush(t *testing.T) {
 		{
 			name: "extended-heartbeat-config",
 			clientConfig: ClientConfig{
-				HeartbeatInterval:         time.Nanosecond,
 				ExtendedHeartbeatInterval: time.Nanosecond,
 			},
 			when: func(c *client) {
@@ -148,7 +147,6 @@ func TestClientFlush(t *testing.T) {
 		{
 			name: "extended-heartbeat-integrations",
 			clientConfig: ClientConfig{
-				HeartbeatInterval:         time.Nanosecond,
 				ExtendedHeartbeatInterval: time.Nanosecond,
 			},
 			when: func(c *client) {
