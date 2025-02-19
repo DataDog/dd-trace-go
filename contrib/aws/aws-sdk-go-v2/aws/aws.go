@@ -12,6 +12,8 @@ import (
 	"strings"
 	"time"
 
+	spanpointers "github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go-v2/v2/internal/span_pointers"
+
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsmiddleware "github.com/aws/aws-sdk-go-v2/aws/middleware"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
@@ -117,10 +119,6 @@ func (mw *traceMiddleware) startTraceMiddleware(stack *middleware.Stack) error {
 
 		// Handle initialize and continue through the middleware chain.
 		out, metadata, err = next.HandleInitialize(spanctx, in)
-		if err != nil && (mw.cfg.errCheck == nil || mw.cfg.errCheck(err)) {
-			span.SetTag(ext.Error, err)
-		}
-		span.Finish()
 
 		return out, metadata, err
 	}), middleware.After)
@@ -349,6 +347,15 @@ func (mw *traceMiddleware) deserializeTraceMiddleware(stack *middleware.Stack) e
 		if requestID, ok := awsmiddleware.GetRequestIDMetadata(metadata); ok {
 			span.SetTag(ext.AWSRequestID, requestID)
 		}
+
+		// Create span pointers
+		serviceID := awsmiddleware.GetServiceID(ctx)
+		spanpointers.AddSpanPointers(serviceID, in, out, span)
+
+		if err != nil && (mw.cfg.errCheck == nil || mw.cfg.errCheck(err)) {
+			span.SetTag(ext.Error, err)
+		}
+		span.Finish()
 
 		return out, metadata, err
 	}), middleware.Before)

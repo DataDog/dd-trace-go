@@ -61,7 +61,7 @@ jobs:
         with:
           golangci_lint_flags: "--timeout 10m" # We are hitting timeout when there is no cache
           go_version: ${{ inputs.go-version }}
-          golangci_lint_version: v1.63.4
+          golangci_lint_version: v1.64.5
           fail_level: error
           reporter: github-pr-review
 
@@ -72,7 +72,7 @@ jobs:
         with:
           golangci_lint_flags: "--timeout 10m" # We are hitting timeout when there is no cache
           go_version: ${{ inputs.go-version }}
-          golangci_lint_version: v1.63.4
+          golangci_lint_version: v1.64.5
           fail_level: error
           reporter: github-pr-review
           workdir: internal/orchestrion/_integration

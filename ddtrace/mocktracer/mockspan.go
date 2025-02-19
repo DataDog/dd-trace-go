@@ -20,8 +20,9 @@ func newSpan(operationName string, cfg *tracer.StartSpanConfig) *tracer.Span {
 }
 
 type Span struct {
-	sp *tracer.Span
-	m  map[string]interface{}
+	sp    *tracer.Span
+	m     map[string]interface{}
+	links []tracer.SpanLink
 }
 
 func MockSpan(s *tracer.Span) *Span {
@@ -172,4 +173,13 @@ func (s *Span) Unwrap() *tracer.Span {
 
 func (s *Span) Context() *tracer.SpanContext {
 	return s.sp.Context()
+}
+
+// Links returns the span's span links.
+func (s *Span) Links() []tracer.SpanLink {
+	return s.links
+}
+
+func (s *Span) AddSpanLink(link tracer.SpanLink) {
+	s.links = append(s.links, link)
 }
