@@ -1,7 +1,3 @@
-name: Feature Request (Low Priority)
-description: Create a public Feature Request. Note that these may not be addressed as quickly as the helpdesk and that looking up account information will be difficult.
-title: "[FEATURE]: "
-labels: enhancement
 body:
   - type: input
     attributes:

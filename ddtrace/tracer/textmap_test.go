@@ -2224,11 +2224,11 @@ func TestOtelPropagator(t *testing.T) {
 		},
 		{
 			env:    "nonesense",
-			result: "datadog,tracecontext",
+			result: "datadog,tracecontext,baggage",
 		},
 		{
 			env:    "jaegar",
-			result: "datadog,tracecontext",
+			result: "datadog,tracecontext,baggage",
 		},
 	}
 	for _, test := range tests {
@@ -2637,4 +2637,176 @@ func FuzzStringMutator(f *testing.F) {
 			t.Fatalf("expected: %s, actual: %s", expected, actual)
 		}
 	})
+}
+
+func TestInjectBaggagePropagator(t *testing.T) {
+
+	assert := assert.New(t)
+
+	propagator := NewPropagator(&PropagatorConfig{
+		BaggageHeader: "baggage",
+		TraceHeader:   "tid",
+		ParentHeader:  "pid",
+	})
+	tracer := newTracer(WithPropagator(propagator))
+	defer tracer.Stop()
+
+	root := tracer.StartSpan("web.request").(*span)
+	root.SetBaggageItem("foo", "bar")
+	ctx := root.Context()
+	headers := http.Header{}
+
+	carrier := HTTPHeadersCarrier(headers)
+	err := tracer.Inject(ctx, carrier)
+	assert.Nil(err)
+
+	assert.Equal(headers.Get("baggage"), "foo=bar")
+}
+
+func TestExtractBaggagePropagator(t *testing.T) {
+	tracer := newTracer()
+	defer tracer.Stop()
+	headers := TextMapCarrier{
+		DefaultTraceIDHeader:  "4",
+		DefaultParentIDHeader: "1",
+		DefaultBaggageHeader:  "foo=bar",
+	}
+	s, err := tracer.Extract(headers)
+	assert.NoError(t, err)
+	got := make(map[string]string)
+	s.ForeachBaggageItem(func(k, v string) bool {
+		got[k] = v
+		return true
+	})
+	assert.Len(t, got, 1)
+	assert.Equal(t, "bar", got["foo"])
+}
+
+func TestInjectBaggagePropagatorEncoding(t *testing.T) {
+	assert := assert.New(t)
+
+	propagator := NewPropagator(&PropagatorConfig{
+		BaggageHeader: "baggage",
+		TraceHeader:   "tid",
+		ParentHeader:  "pid",
+	})
+	tracer := newTracer(WithPropagator(propagator))
+	defer tracer.Stop()
+
+	root := tracer.StartSpan("web.request").(*span)
+	ctx := root.Context()
+	ctx.(*spanContext).baggage = map[string]string{"userId": "Amélie", "serverNode": "DF 28"}
+	headers := http.Header{}
+
+	carrier := HTTPHeadersCarrier(headers)
+	err := tracer.Inject(ctx, carrier)
+	assert.Nil(err)
+	actualBaggage := headers.Get("baggage")
+	// Instead of checking equality of the whole string, assert that both key/value pairs are present.
+	assert.Contains(actualBaggage, "userId=Am%C3%A9lie")
+	assert.Contains(actualBaggage, "serverNode=DF+28")
+}
+
+func TestInjectBaggagePropagatorEncodingSpecialCharacters(t *testing.T) {
+	assert := assert.New(t)
+
+	propagator := NewPropagator(&PropagatorConfig{
+		BaggageHeader: "baggage",
+		TraceHeader:   "tid",
+		ParentHeader:  "pid",
+	})
+	tracer := newTracer(WithPropagator(propagator))
+	defer tracer.Stop()
+
+	root := tracer.StartSpan("web.request").(*span)
+	ctx := root.Context()
+	ctx.(*spanContext).baggage = map[string]string{",;\\()/:<=>?@[]{}": ",;\\"}
+	headers := http.Header{}
+
+	carrier := HTTPHeadersCarrier(headers)
+	err := tracer.Inject(ctx, carrier)
+	assert.Nil(err)
+
+	assert.Equal(headers.Get("baggage"), "%2C%3B%5C%28%29%2F%3A%3C%3D%3E%3F%40%5B%5D%7B%7D=%2C%3B%5C")
+}
+
+func TestExtractBaggagePropagatorDecoding(t *testing.T) {
+	tracer := newTracer()
+	defer tracer.Stop()
+	headers := TextMapCarrier{
+		DefaultTraceIDHeader:  "4",
+		DefaultParentIDHeader: "1",
+		DefaultBaggageHeader:  "userId=Am%C3%A9lie,serverNode=DF+28",
+	}
+	s, err := tracer.Extract(headers)
+	assert.NoError(t, err)
+	got := make(map[string]string)
+	s.ForeachBaggageItem(func(k, v string) bool {
+		got[k] = v
+		return true
+	})
+	assert.Len(t, got, 2)
+	assert.Equal(t, "Amélie", got["userId"])
+	assert.Equal(t, "DF 28", got["serverNode"])
+}
+
+func TestInjectBaggageMaxItems(t *testing.T) {
+	assert := assert.New(t)
+
+	propagator := NewPropagator(&PropagatorConfig{
+		BaggageHeader: "baggage",
+	})
+	tracer := newTracer(WithPropagator(propagator))
+	defer tracer.Stop()
+
+	root := tracer.StartSpan("web.request").(*span)
+	ctx := root.Context()
+
+	baggageItems := make(map[string]string)
+	for i := 0; i < baggageMaxItems+2; i++ {
+		baggageItems[fmt.Sprintf("key%d", i)] = fmt.Sprintf("val%d", i)
+	}
+
+	ctx.(*spanContext).baggage = baggageItems
+	headers := http.Header{}
+
+	carrier := HTTPHeadersCarrier(headers)
+	err := tracer.Inject(ctx, carrier)
+	assert.Nil(err)
+
+	headerValue := headers.Get("baggage")
+	items := strings.Split(headerValue, ",")
+	assert.Equal(baggageMaxItems, len(items))
+}
+
+func TestInjectBaggageMaxBytes(t *testing.T) {
+	assert := assert.New(t)
+
+	propagator := NewPropagator(&PropagatorConfig{
+		BaggageHeader: "baggage",
+	})
+	tracer := newTracer(WithPropagator(propagator))
+	defer tracer.Stop()
+
+	root := tracer.StartSpan("web.request").(*span)
+	ctx := root.Context()
+
+	baggageItems := make(map[string]string)
+	baggageItems = map[string]string{
+		"key0": "o",
+		"key1": strings.Repeat("a", baggageMaxBytes/3),
+		"key2": strings.Repeat("b", baggageMaxBytes/3),
+		"key3": strings.Repeat("c", baggageMaxBytes/3),
+	}
+
+	ctx.(*spanContext).baggage = baggageItems
+	headers := http.Header{}
+
+	carrier := HTTPHeadersCarrier(headers)
+	err := tracer.Inject(ctx, carrier)
+	assert.Nil(err)
+
+	headerValue := headers.Get("baggage")
+	headerSize := len([]byte(headerValue))
+	assert.LessOrEqual(headerSize, baggageMaxBytes)
 }

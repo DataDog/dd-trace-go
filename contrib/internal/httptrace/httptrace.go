@@ -10,14 +10,16 @@ package httptrace
 import (
 	"context"
 	"fmt"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 	"net/http"
 	"strconv"
 	"strings"
 	"sync"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
+
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/baggage"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
@@ -107,6 +109,23 @@ func StartRequestSpan(r *http.Request, opts ...ddtrace.StartSpanOption) (tracer.
 						tracer.WithSpanLinks(spanLinksCtx.SpanLinks())(ssCfg)
 					}
 					tracer.ChildOf(spanParentCtx)(ssCfg)
+
+					var baggageMap map[string]string
+					spanParentCtx.ForeachBaggageItem(func(k, v string) bool {
+						// Make the map only if we actually discover any baggage items.
+						if baggageMap == nil {
+							baggageMap = make(map[string]string)
+						}
+						baggageMap[k] = v
+						return true
+					})
+					if len(baggageMap) > 0 {
+						ctx := r.Context()
+						for k, v := range baggageMap {
+							ctx = baggage.Set(ctx, k, v)
+						}
+						r = r.WithContext(ctx)
+					}
 				}
 			}
 
