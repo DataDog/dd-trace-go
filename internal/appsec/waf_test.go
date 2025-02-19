@@ -870,9 +870,10 @@ func TestAttackerFingerprinting(t *testing.T) {
 	// Start and trace an HTTP server
 	mux := httptrace.NewServeMux()
 	mux.HandleFunc("/test", func(w http.ResponseWriter, r *http.Request) {
-		pAppsec.TrackUserLoginSuccessEvent(
+		pAppsec.TrackUserLoginSuccess(
 			r.Context(),
 			"toto",
+			"",
 			map[string]string{},
 			tracer.WithUserSessionID("sessionID"))
 

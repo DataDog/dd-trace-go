@@ -45,10 +45,23 @@ func (*Feature) OnFinish(op *usersec.UserLoginOperation, res usersec.UserLoginOp
 		WithUserOrg(res.UserOrg).
 		WithUserSessionID(res.SessionID)
 
-	if res.Success {
-		builder = builder.WithUserLoginSuccess()
-	} else {
-		builder = builder.WithUserLoginFailure()
+	switch op.EventType {
+	case usersec.UserLoginSuccess:
+		builder = builder.WithUserLoginSuccess().
+			WithUserID(res.UserID).
+			WithUserLogin(res.UserLogin).
+			WithUserOrg(res.UserOrg).
+			WithUserSessionID(res.SessionID)
+	case usersec.UserLoginFailure:
+		builder = builder.WithUserLoginFailure().
+			WithUserID(res.UserID).
+			WithUserLogin(res.UserLogin).
+			WithUserOrg(res.UserOrg)
+	case usersec.UserSet:
+		builder = builder.WithUserID(res.UserID).
+			WithUserLogin(res.UserLogin).
+			WithUserOrg(res.UserOrg).
+			WithUserSessionID(res.SessionID)
 	}
 
 	dyngo.EmitData(op, waf.RunEvent{

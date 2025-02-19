@@ -57,6 +57,7 @@ func SetUser(ctx context.Context, id string, opts ...tracer.UserMonitoringOption
 		log.Debug("appsec: could not retrieve span from context. User ID tag won't be set")
 		return nil
 	}
+
 	tracer.SetUser(s, id, opts...)
 	if !appsec.Enabled() {
 		appsecDisabledLog.Do(func() { log.Warn("appsec: not enabled. User blocking checks won't be performed.") })

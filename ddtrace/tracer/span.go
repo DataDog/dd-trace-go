@@ -881,6 +881,7 @@ const (
 	keyUserLogin     = "usr.login"
 	keyUserEmail     = "usr.email"
 	keyUserName      = "usr.name"
+	keyUserOrg       = "usr.org"
 	keyUserRole      = "usr.role"
 	keyUserScope     = "usr.scope"
 	keyUserSessionID = "usr.session_id"
