@@ -36,7 +36,7 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/hashicorp/consul/v2 v2.0.0-rc.2
 	github.com/DataDog/dd-trace-go/contrib/hashicorp/vault/v2 v2.0.0-rc.2
 	github.com/DataDog/dd-trace-go/contrib/julienschmidt/httprouter/v2 v2.0.0-rc.2
-	github.com/DataDog/dd-trace-go/contrib/labstack/echo.v4/v2 v2.0.0-rc.2
+	github.com/DataDog/dd-trace-go/contrib/labstack/echo.v4/v2 v2.0.0-rc.3
 	github.com/DataDog/dd-trace-go/contrib/net/http/v2 v2.0.0-rc.3
 	github.com/DataDog/dd-trace-go/contrib/olivere/elastic.v5/v2 v2.0.0-rc.2
 	github.com/DataDog/dd-trace-go/contrib/redis/go-redis.v9/v2 v2.0.0-rc.2
@@ -77,7 +77,7 @@ require (
 	github.com/hashicorp/consul/api v1.24.0
 	github.com/hashicorp/vault/api v1.9.2
 	github.com/julienschmidt/httprouter v1.3.0
-	github.com/labstack/echo/v4 v4.11.1
+	github.com/labstack/echo/v4 v4.13.3
 	github.com/lib/pq v1.10.2
 	github.com/redis/go-redis/v9 v9.1.0
 	github.com/segmentio/kafka-go v0.4.42
@@ -282,7 +282,7 @@ require (
 	golang.org/x/sync v0.10.0 // indirect
 	golang.org/x/sys v0.28.0 // indirect
 	golang.org/x/text v0.21.0 // indirect
-	golang.org/x/time v0.7.0 // indirect
+	golang.org/x/time v0.8.0 // indirect
 	golang.org/x/xerrors v0.0.0-20240903120638-7835f813f4da // indirect
 	google.golang.org/genproto v0.0.0-20240325203815-454cdb8f5daa // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20241015192408-796eee8c2d53 // indirect

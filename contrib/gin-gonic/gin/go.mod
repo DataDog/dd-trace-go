@@ -17,6 +17,8 @@ require (
 	github.com/DataDog/datadog-agent/pkg/util/log v0.59.0 // indirect
 	github.com/DataDog/datadog-agent/pkg/util/scrubber v0.59.0 // indirect
 	github.com/DataDog/datadog-go/v5 v5.5.0 // indirect
+	github.com/DataDog/dd-trace-go/contrib/labstack/echo.v4/v2 v2.0.0-rc.3 // indirect
+	github.com/DataDog/dd-trace-go/contrib/net/http/v2 v2.0.0-rc.3 // indirect
 	github.com/DataDog/go-libddwaf/v3 v3.5.1 // indirect
 	github.com/DataDog/go-runtime-metrics-internal v0.0.4-0.20241206090539-a14610dc22b6 // indirect
 	github.com/DataDog/go-sqllexer v0.0.16 // indirect
@@ -49,6 +51,7 @@ require (
 	github.com/hashicorp/go-sockaddr v1.0.7 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
 	github.com/klauspost/cpuid/v2 v2.2.5 // indirect
+	github.com/labstack/echo/v4 v4.13.3 // indirect
 	github.com/leodido/go-urn v1.2.4 // indirect
 	github.com/lufia/plan9stats v0.0.0-20220913051719-115f729f3c8c // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
@@ -88,7 +91,7 @@ require (
 	golang.org/x/net v0.33.0 // indirect
 	golang.org/x/sys v0.28.0 // indirect
 	golang.org/x/text v0.21.0 // indirect
-	golang.org/x/time v0.7.0 // indirect
+	golang.org/x/time v0.8.0 // indirect
 	golang.org/x/xerrors v0.0.0-20240903120638-7835f813f4da // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20241015192408-796eee8c2d53 // indirect
 	google.golang.org/grpc v1.69.0 // indirect
