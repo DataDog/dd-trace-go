@@ -18,12 +18,11 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/felixge/countermap"
-
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 	globalinternal "gopkg.in/DataDog/dd-trace-go.v1/internal"
+	utils "gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
 	appsecConfig "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/config"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/datastreams"
@@ -83,7 +82,7 @@ type tracer struct {
 
 	// These maps count the spans started and finished from
 	// each component, including contribs and "manual" spans.
-	spansStarted, spansFinished countermap.CounterMap
+	spansStarted, spansFinished utils.XSyncMapIntMap
 
 	// tracesDropped track metrics about traces as they are dropped
 	tracesDropped uint32
@@ -320,8 +319,8 @@ func newUnstartedTracer(opts ...StartOption) *tracer {
 		pid:              os.Getpid(),
 		logDroppedTraces: time.NewTicker(1 * time.Second),
 		stats:            newConcentrator(c, defaultStatsBucketSize, statsd),
-		spansStarted:     countermap.NewXSyncMapCounterMap(),
-		spansFinished:    countermap.NewXSyncMapCounterMap(),
+		spansStarted:     *utils.NewXSyncMapIntMap(),
+		spansFinished:    *utils.NewXSyncMapIntMap(),
 		obfuscator: obfuscate.NewObfuscator(obfuscate.Config{
 			SQL: obfuscate.SQLConfig{
 				TableNames:       c.agent.HasFlag("table_names"),

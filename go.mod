@@ -47,7 +47,6 @@ require (
 	github.com/emicklei/go-restful v2.16.0+incompatible
 	github.com/emicklei/go-restful/v3 v3.11.0
 	github.com/envoyproxy/go-control-plane v0.12.0
-	github.com/felixge/countermap v0.0.0-20221101200851-7d5970a8a0ad
 	github.com/garyburd/redigo v1.6.4
 	github.com/gin-gonic/gin v1.9.1
 	github.com/globalsign/mgo v0.0.0-20181015135952-eeefdecb41b8
@@ -128,8 +127,6 @@ require (
 	k8s.io/client-go v0.26.7
 	modernc.org/sqlite v1.28.0
 )
-
-require github.com/puzpuzpuz/xsync/v2 v2.2.0 // indirect
 
 require (
 	cloud.google.com/go v0.112.1 // indirect

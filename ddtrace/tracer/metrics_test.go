@@ -13,7 +13,6 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	globalinternal "gopkg.in/DataDog/dd-trace-go.v1/internal"
 
-	"github.com/felixge/countermap"
 	"github.com/stretchr/testify/assert"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/statsdtest"
@@ -292,7 +291,7 @@ func BenchmarkSpansMetrics(b *testing.B) {
 	}
 }
 
-func assertSpanMetricCountsAreZero(t *testing.T, metric countermap.CounterMap) {
+func assertSpanMetricCountsAreZero(t *testing.T, metric globalinternal.XSyncMapIntMap) {
 	for _, v := range metric.GetAndReset() {
 		assert.Equal(t, int64(0), v)
 	}
