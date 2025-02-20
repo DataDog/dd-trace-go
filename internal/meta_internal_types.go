@@ -16,3 +16,9 @@ type MetaStructValue struct {
 type PropagatingTagValue struct {
 	Value string
 }
+
+// TraceSourceTagValue is a custom type wrapper used to create the trace source (_dd.p.ts) tag that will
+// be propagated to downstream distributed traces via the `X-Datadog-Tags` HTTP header for example.
+type TraceSourceTagValue struct {
+	Value TraceSource
+}

@@ -207,6 +207,12 @@ func (s *span) SetTag(key string, value interface{}) {
 		if v, ok := value.(sharedinternal.PropagatingTagValue); ok {
 			s.context.trace.setPropagatingTag(key, v.Value)
 		}
+
+		// Add this trace source tag to propagating tags and to span tags
+		// reserved for internal use only
+		if v, ok := value.(sharedinternal.TraceSourceTagValue); ok {
+			s.context.trace.setTraceSourcePropagatingTag(key, v.Value)
+		}
 	}
 
 	// not numeric, not a string, not a fmt.Stringer, not a bool, and not an error
@@ -787,6 +793,8 @@ const (
 	keySingleSpanSamplingMPS = "_dd.span_sampling.max_per_second"
 	// keyPropagatedUserID holds the propagated user identifier, if user id propagation is enabled.
 	keyPropagatedUserID = "_dd.p.usr.id"
+	// keyPropagatedTraceSource holds a 2 character string representation of the product responsible for the span creation.
+	keyPropagatedTraceSource = "_dd.p.ts"
 	//keyTracerHostname holds the tracer detected hostname, only present when not connected over UDS to agent.
 	keyTracerHostname = "_dd.tracer_hostname"
 	// keyTraceID128 is the lowercase, hex encoded upper 64 bits of a 128-bit trace id, if present.

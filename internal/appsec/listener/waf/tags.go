@@ -74,4 +74,5 @@ func SetEventSpanTags(span trace.TagSetter) {
 	// Set the appsec.event tag needed by the appsec backend
 	span.SetTag("appsec.event", true)
 	span.SetTag("_dd.p.appsec", internal.PropagatingTagValue{Value: "1"})
+	span.SetTag("_dd.p.ts", internal.TraceSourceTagValue{Value: internal.ASMTraceSource})
 }
