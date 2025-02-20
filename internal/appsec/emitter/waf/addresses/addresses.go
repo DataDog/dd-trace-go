@@ -19,6 +19,8 @@ const (
 	ClientIPAddr = "http.client_ip"
 
 	UserIDAddr           = "usr.id"
+	UserLoginAddr        = "usr.login"
+	UserOrgAddr          = "usr.org"
 	UserSessionIDAddr    = "usr.session_id"
 	UserLoginSuccessAddr = "server.business_logic.users.login.success"
 	UserLoginFailureAddr = "server.business_logic.users.login.failure"

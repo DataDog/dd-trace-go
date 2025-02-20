@@ -18,7 +18,7 @@ require (
 	github.com/DataDog/datadog-agent/pkg/util/log v0.58.0 // indirect
 	github.com/DataDog/datadog-agent/pkg/util/scrubber v0.58.0 // indirect
 	github.com/DataDog/datadog-go/v5 v5.5.0 // indirect
-	github.com/DataDog/go-libddwaf/v3 v3.5.1 // indirect
+	github.com/DataDog/go-libddwaf/v3 v3.5.3 // indirect
 	github.com/DataDog/go-runtime-metrics-internal v0.0.4-0.20241206090539-a14610dc22b6 // indirect
 	github.com/DataDog/go-sqllexer v0.0.14 // indirect
 	github.com/DataDog/go-tuf v1.1.0-0.5.2 // indirect
@@ -29,7 +29,7 @@ require (
 	github.com/cihub/seelog v0.0.0-20170130134532-f561c5e57575 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/eapache/queue/v2 v2.0.0-20230407133247-75960ed334e4 // indirect
-	github.com/ebitengine/purego v0.6.0-alpha.5 // indirect
+	github.com/ebitengine/purego v0.8.2 // indirect
 	github.com/go-ole/go-ole v1.2.6 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang/protobuf v1.5.4 // indirect
