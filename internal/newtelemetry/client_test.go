@@ -128,11 +128,14 @@ func TestClientFlush(t *testing.T) {
 		{
 			name: "extended-heartbeat-config",
 			clientConfig: ClientConfig{
-				HeartbeatInterval:         time.Nanosecond,
 				ExtendedHeartbeatInterval: time.Nanosecond,
 			},
 			when: func(c *client) {
 				c.RegisterAppConfig("key", "value", OriginDefault)
+
+				// Make sure the limiter of the heartbeat is triggered
+				time.Sleep(time.Microsecond)
+				runtime.Gosched()
 			},
 			expect: func(t *testing.T, payloads []transport.Payload) {
 				payload := payloads[0]
@@ -148,11 +151,14 @@ func TestClientFlush(t *testing.T) {
 		{
 			name: "extended-heartbeat-integrations",
 			clientConfig: ClientConfig{
-				HeartbeatInterval:         time.Nanosecond,
 				ExtendedHeartbeatInterval: time.Nanosecond,
 			},
 			when: func(c *client) {
 				c.MarkIntegrationAsLoaded(Integration{Name: "test-integration", Version: "1.0.0"})
+
+				// Make sure the limiter of the heartbeat is triggered
+				time.Sleep(time.Microsecond)
+				runtime.Gosched()
 			},
 			expect: func(t *testing.T, payloads []transport.Payload) {
 				payload := payloads[0]
@@ -344,6 +350,10 @@ func TestClientFlush(t *testing.T) {
 			when: func(c *client) {
 				c.ProductStarted("test-product")
 				c.MarkIntegrationAsLoaded(Integration{Name: "test-integration", Version: "1.0.0"})
+
+				// Make sure the limiter of the heartbeat is triggered
+				time.Sleep(time.Microsecond)
+				runtime.Gosched()
 			},
 			expect: func(t *testing.T, payloads []transport.Payload) {
 				payload := payloads[0]
@@ -442,6 +452,10 @@ func TestClientFlush(t *testing.T) {
 			},
 			when: func(c *client) {
 				c.AppStart()
+
+				// Make sure the limiter of the heartbeat is triggered
+				time.Sleep(time.Microsecond)
+				runtime.Gosched()
 			},
 			expect: func(t *testing.T, payloads []transport.Payload) {
 				payload := payloads[0]

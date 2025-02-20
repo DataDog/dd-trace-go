@@ -25,6 +25,7 @@ type routerConfig struct {
 	ignoreRequest func(*http.Request) bool
 	queryParams   bool
 	headerTags    instrumentation.HeaderTags
+	isStatusError func(statusCode int) bool
 }
 
 // RouterOption describes options for the Gorilla mux integration.
@@ -138,5 +139,13 @@ func WithHeaderTags(headers []string) RouterOptionFn {
 func WithQueryParams() RouterOptionFn {
 	return func(cfg *routerConfig) {
 		cfg.queryParams = true
+	}
+}
+
+// WithStatusCheck specifies a function fn which reports whether the passed
+// statusCode should be considered an error.
+func WithStatusCheck(fn func(statusCode int) bool) RouterOptionFn {
+	return func(cfg *routerConfig) {
+		cfg.isStatusError = fn
 	}
 }
