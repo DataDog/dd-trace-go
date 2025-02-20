@@ -18,13 +18,13 @@ import (
 func NewDefaultMapper(heartbeatInterval, extendedHeartBeatInterval time.Duration) Mapper {
 	mapper := &defaultMapper{
 		heartbeatEnricher: heartbeatEnricher{
-			RL:                  rate.NewLimiter(rate.Every(heartbeatInterval), 1),
+			heartbeatRL:         rate.NewLimiter(rate.Every(heartbeatInterval), 1),
 			extendedHeartbeatRL: rate.NewLimiter(rate.Every(extendedHeartBeatInterval), 1),
 		},
 	}
 
 	// The rate limiter is initialized with a token, but we want the first heartbeat to be sent in one minute, so we consume the token
-	mapper.heartbeatEnricher.RL.Allow()
+	mapper.heartbeatEnricher.heartbeatRL.Allow()
 	mapper.heartbeatEnricher.extendedHeartbeatRL.Allow()
 	return mapper
 }
@@ -59,11 +59,11 @@ func (t *messageBatchReducer) Transform(payloads []transport.Payload) ([]transpo
 }
 
 type heartbeatEnricher struct {
-	RL                  *rate.Limiter
+	heartbeatRL         *rate.Limiter
 	extendedHeartbeatRL *rate.Limiter
 
 	extendedHeartbeat transport.AppExtendedHeartbeat
-	heartBeat         transport.AppHeartbeat
+	heartbeat         transport.AppHeartbeat
 }
 
 func (t *heartbeatEnricher) Transform(payloads []transport.Payload) ([]transport.Payload, Mapper) {
@@ -85,15 +85,14 @@ func (t *heartbeatEnricher) Transform(payloads []transport.Payload) ([]transport
 		}
 	}
 
-	if !t.RL.Allow() {
-		// We don't send anything
-		return payloads, t
-	}
-
 	if t.extendedHeartbeatRL.Allow() {
-		// We have an extended heartbeat to send
 		return append(payloads, t.extendedHeartbeat), t
 	}
 
-	return append(payloads, t.heartBeat), t
+	if t.heartbeatRL.Allow() {
+		return append(payloads, t.heartbeat), t
+	}
+
+	// We don't send anything
+	return payloads, t
 }
