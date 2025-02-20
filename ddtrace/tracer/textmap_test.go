@@ -16,16 +16,14 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/httpmem"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/samplernames"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
-
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 
 	"github.com/DataDog/datadog-go/v5/statsd"
 )
@@ -2092,7 +2090,7 @@ func TestNonePropagator(t *testing.T) {
 	t.Run("inject/none,b3", func(t *testing.T) {
 		t.Setenv(headerPropagationStyleInject, "none,b3")
 		tp := new(log.RecordLogger)
-		tp.Ignore("appsec: ", telemetry.LogPrefix)
+		tp.Ignore("appsec: ", "telemetry")
 		tracer := newTracer(WithLogger(tp), WithEnv("test"))
 		defer tracer.Stop()
 		// reinitializing to capture log output, since propagators are parsed before logger is set
@@ -2421,7 +2419,7 @@ func FuzzComposeTracestate(f *testing.F) {
 			if strings.HasSuffix(v, " ") {
 				t.Skipf("Skipping invalid tags")
 			}
-			totalLen += (len(k) + len(v))
+			totalLen += len(k) + len(v)
 			if totalLen > 128 {
 				break
 			}
