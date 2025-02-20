@@ -1,0 +1,88 @@
+# Unless explicitly stated otherwise all files in this repository are licensed
+# under the Apache License Version 2.0.
+# This product includes software developed at Datadog (https://www.datadoghq.com/).
+# Copyright 2023-present Datadog, Inc.
+---
+# yaml-language-server: $schema=https://datadoghq.dev/orchestrion/schema.json
+meta:
+  name: github.com/DataDog/dd-trace-go/contrib/julienschmidt/httprouter/v2
+  description: A high performance HTTP request router that scales well.
+
+aspects:
+  - id: Router.__dd_config
+    join-point:
+      struct-definition: github.com/julienschmidt/httprouter.Router
+    advice:
+      - inject-declarations:
+          imports:
+            tracing: "github.com/DataDog/dd-trace-go/contrib/julienschmidt/httprouter/v2/internal/tracing"
+          lang: go1.18
+          template: |-
+            type __dd_wRouter struct {
+              *Router
+            }
+
+            func __dd_wrapRouter(r *Router) tracing.Router {
+              return &__dd_wRouter{r}
+            }
+
+            func (w __dd_wRouter) Lookup(method string, path string) (any, []tracing.Param, bool) {
+              h, params, ok := w.Router.Lookup(method, path)
+              return h, __dd_wrapParams(params), ok
+            }
+
+            type __dd_wParam struct {
+              Param
+            }
+
+            func __dd_wrapParams(params Params) []tracing.Param {
+              wParams := make([]tracing.Param, len(params))
+              for i, p := range params {
+                wParams[i] = __dd_wParam{p}
+              }
+              return wParams
+            }
+
+            func (w __dd_wParam) GetKey() string {
+              return w.Key
+            }
+
+            func (w __dd_wParam) GetValue() string {
+              return w.Value
+            }
+
+            func __dd_init(r *Router) {
+              if r.__dd_config != nil {
+                return
+              }
+              r.__dd_config = tracing.NewConfig()
+              return
+            }
+
+      - add-struct-field:
+          name: __dd_config
+          type: "*github.com/DataDog/dd-trace-go/contrib/julienschmidt/httprouter/v2/internal/tracing.Config"
+
+  - id: Router.ServeHTTP
+    join-point:
+      function-body:
+        function:
+          - receiver: "*github.com/julienschmidt/httprouter.Router"
+          - name: ServeHTTP
+    advice:
+      - prepend-statements:
+          imports:
+            tracing:  "github.com/DataDog/dd-trace-go/contrib/julienschmidt/httprouter/v2/internal/tracing"
+          template: |-
+            {{- $r := .Function.Receiver -}}
+            {{- $w := .Function.Argument 0 -}}
+            {{- $req := .Function.Argument 1 -}}
+            __dd_init({{ $r }})
+
+            tw, treq, afterHandle, handled := tracing.BeforeHandle({{ $r }}.__dd_config, {{ $r }}, __dd_wrapRouter, {{ $w }}, {{ $req }})
+            {{ $w }} = tw
+            {{ $req }} = treq
+            defer afterHandle()
+            if handled {
+              return
+            }

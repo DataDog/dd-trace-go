@@ -5,6 +5,8 @@
 
 package orchestrion
 
+//go:generate go run ./generator
+
 // Orchestrion will change this at build-time
 //
 //dd:orchestrion-enabled

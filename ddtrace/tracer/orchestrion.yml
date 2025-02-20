@@ -5,9 +5,9 @@
 ---
 # yaml-language-server: $schema=https://datadoghq.dev/orchestrion/schema.json
 meta:
-  name: gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer
+  name: github.com/DataDog/dd-trace-go/v2/ddtrace/tracer
   description: |-
-    Automatically starts the gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer
+    Automatically starts the github.com/DataDog/dd-trace-go/v2/ddtrace/tracer
     at the start of the application, and closes it at exit of the main function.
 
     Adding the `//dd:span` directive on functions creates custom spans
@@ -50,7 +50,7 @@ aspects:
     advice:
       - inject-declarations:
           imports:
-            tracer: gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer
+            tracer: github.com/DataDog/dd-trace-go/v2/ddtrace/tracer
           # Note: it is valid to have multiple func init() in a single compile unit (e.g, `.go` file), in which case
           # they get executed in declaration order. This means it's okay for us to add a new init function if there is
           # already one in the file, but as it currently is appended AFTER all other declarations in the file, it means
@@ -62,7 +62,7 @@ aspects:
       # We need to stop the tracer at the end of `main` to ensure all spans are properly flushed.
       - prepend-statements:
           imports:
-            tracer: gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer
+            tracer: github.com/DataDog/dd-trace-go/v2/ddtrace/tracer
           template: |-
             defer tracer.Stop()
 
@@ -75,7 +75,7 @@ aspects:
       - prepend-statements:
           imports:
             context: context
-            tracer: gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer
+            tracer: github.com/DataDog/dd-trace-go/v2/ddtrace/tracer
           template: |-
             {{- $ctx := .Function.ArgumentOfType "context.Context" -}}
             {{- $req := .Function.ArgumentOfType "*net/http.Request" -}}

@@ -1,0 +1,58 @@
+# Unless explicitly stated otherwise all files in this repository are licensed
+# under the Apache License Version 2.0.
+# This product includes software developed at Datadog (https://www.datadoghq.com/).
+# Copyright 2023-present Datadog, Inc.
+---
+# yaml-language-server: $schema=https://datadoghq.dev/orchestrion/schema.json
+meta:
+  name: github.com/DataDog/dd-trace-go/contrib/gocql/gocql/v2
+  description: Package gocql implements a fast and robust Cassandra client for the Go programming language.
+
+aspects:
+  - id: ClusterConfig
+    join-point:
+      all-of:
+        - one-of:
+          - struct-literal:
+              type: github.com/gocql/gocql.ClusterConfig
+              match: pointer-only
+          - function-call: github.com/gocql/gocql.NewCluster
+        # Avoid circular dependency.
+        - not:
+            import-path: github.com/gocql/gocql
+    advice:
+      - wrap-expression:
+          imports:
+            gocql: github.com/gocql/gocql
+            gocqltrace: github.com/DataDog/dd-trace-go/contrib/gocql/gocql/v2
+          template: |-
+            func(cluster *gocql.ClusterConfig) *gocql.ClusterConfig {
+              obs := gocqltrace.NewObserver(cluster)
+              cluster.QueryObserver = obs
+              cluster.BatchObserver = obs
+              cluster.ConnectObserver = obs
+              return cluster
+            }({{ . }})
+
+  - id: '*ClusterConfig'
+    join-point:
+      all-of:
+        - struct-literal:
+            type: github.com/gocql/gocql.ClusterConfig
+            match: value-only
+        # Avoid circular dependency.
+        - not:
+            import-path: github.com/gocql/gocql
+    advice:
+      - wrap-expression:
+          imports:
+            gocql: github.com/gocql/gocql
+            gocqltrace: github.com/DataDog/dd-trace-go/contrib/gocql/gocql/v2
+          template: |-
+            func(cluster gocql.ClusterConfig) gocql.ClusterConfig {
+              obs := gocqltrace.NewObserver(&cluster)
+              cluster.QueryObserver = obs
+              cluster.BatchObserver = obs
+              cluster.ConnectObserver = obs
+              return cluster
+            }({{ . }})
