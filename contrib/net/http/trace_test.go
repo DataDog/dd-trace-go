@@ -432,7 +432,7 @@ func TestTraceAndServe(t *testing.T) {
 		assert.Len(spans, 1)
 		assert.Equal("500", spans[0].Tag(ext.HTTPCode))
 		// Confirm that the span is NOT marked as an error.
-		assert.Nil(spans[0].Tag(ext.Error))
+		assert.Nil(spans[0].Tag(ext.ErrorMsg))
 	})
 }
 

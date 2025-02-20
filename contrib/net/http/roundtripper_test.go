@@ -138,10 +138,10 @@ func TestRoundTripperErrors(t *testing.T) {
 		assert.Equal(t, "400: Bad Request", s.Tag(ext.ErrorMsg))
 		assert.Equal(t, "400", s.Tag(ext.HTTPCode))
 		s = spans[1] // 500 is not error
-		assert.Empty(t, s.Tag(ext.Error))
+		assert.Empty(t, s.Tag(ext.ErrorMsg))
 		assert.Equal(t, "500", s.Tag(ext.HTTPCode))
 		s = spans[2] // 200 is not error
-		assert.Empty(t, s.Tag(ext.Error))
+		assert.Empty(t, s.Tag(ext.ErrorMsg))
 		assert.Equal(t, "200", s.Tag(ext.HTTPCode))
 	})
 	t.Run("custom", func(t *testing.T) {
@@ -154,13 +154,13 @@ func TestRoundTripperErrors(t *testing.T) {
 		spans := mt.FinishedSpans()
 		assert.Len(t, spans, 3)
 		s := spans[0] // 400 is not error
-		assert.Empty(t, s.Tag(ext.Error))
+		assert.Empty(t, s.Tag(ext.ErrorMsg))
 		assert.Equal(t, "400", s.Tag(ext.HTTPCode))
 		s = spans[1] // 500 is error
 		assert.Equal(t, "500: Internal Server Error", s.Tag(ext.ErrorMsg))
 		assert.Equal(t, "500", s.Tag(ext.HTTPCode))
 		s = spans[2] // 200 is not error
-		assert.Empty(t, s.Tag(ext.Error))
+		assert.Empty(t, s.Tag(ext.ErrorMsg))
 		assert.Equal(t, "200", s.Tag(ext.HTTPCode))
 	})
 }
