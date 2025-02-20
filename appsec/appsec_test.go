@@ -32,6 +32,7 @@ func TestTrackUserLoginSuccessEvent(t *testing.T) {
 		require.Len(t, mt.FinishedSpans(), 1)
 		finished := mt.FinishedSpans()[0]
 		expectedEventPrefix := "appsec.events.users.login.success."
+		require.Equal(t, "true", finished.Tag("_dd."+expectedEventPrefix+"sdk"))
 		require.Equal(t, "true", finished.Tag(expectedEventPrefix+"track"))
 		require.Equal(t, ext.PriorityUserKeep, finished.Tag(ext.SamplingPriority))
 		require.Equal(t, "user id", finished.Tag("usr.id"))
@@ -82,6 +83,7 @@ func TestTrackUserLoginSuccess(t *testing.T) {
 		require.Len(t, mt.FinishedSpans(), 1)
 		finished := mt.FinishedSpans()[0]
 		expectedEventPrefix := "appsec.events.users.login.success."
+		require.Equal(t, "true", finished.Tag("_dd."+expectedEventPrefix+"sdk"))
 		require.Equal(t, "true", finished.Tag(expectedEventPrefix+"track"))
 		require.Equal(t, ext.PriorityUserKeep, finished.Tag(ext.SamplingPriority))
 		require.Equal(t, "user id", finished.Tag("usr.id"))
@@ -135,6 +137,7 @@ func TestTrackUserLoginFailureEvent(t *testing.T) {
 				require.Len(t, mt.FinishedSpans(), 1)
 				finished := mt.FinishedSpans()[0]
 				expectedEventPrefix := "appsec.events.users.login.failure."
+				require.Equal(t, "true", finished.Tag("_dd."+expectedEventPrefix+"sdk"))
 				require.Equal(t, "true", finished.Tag(expectedEventPrefix+"track"))
 				require.Equal(t, ext.PriorityUserKeep, finished.Tag(ext.SamplingPriority))
 				require.Equal(t, "user id", finished.Tag(expectedEventPrefix+"usr.id"))
@@ -174,6 +177,7 @@ func TestTrackUserLoginFailure(t *testing.T) {
 				require.Len(t, mt.FinishedSpans(), 1)
 				finished := mt.FinishedSpans()[0]
 				expectedEventPrefix := "appsec.events.users.login.failure."
+				require.Equal(t, "true", finished.Tag("_dd."+expectedEventPrefix+"sdk"))
 				require.Equal(t, "true", finished.Tag(expectedEventPrefix+"track"))
 				require.Equal(t, "user login", finished.Tag(expectedEventPrefix+"usr.login"))
 				require.Equal(t, strconv.FormatBool(userExists), finished.Tag(expectedEventPrefix+"usr.exists"))
