@@ -8,6 +8,8 @@ package internal
 import (
 	"sync"
 	"sync/atomic"
+
+	xsync "github.com/puzpuzpuz/xsync/v3"
 )
 
 // OtelTagsDelimeter is the separator between key-val pairs for OTEL env vars
@@ -67,4 +69,61 @@ func (l *LockMap) Get(k string) string {
 	l.RLock()
 	defer l.RUnlock()
 	return l.m[k]
+}
+
+// TODO(hannahkm): we only keep one of the following two implementations
+
+// XSyncMapCounterMap uses xsync protect counter increments and reads during
+// concurrent access.
+type XSyncMapCounterMap struct {
+	counts *xsync.MapOf[string, *xsync.Counter]
+}
+
+func NewXSyncMapCounterMap() *XSyncMapCounterMap {
+	return &XSyncMapCounterMap{counts: xsync.NewMapOf[string, *xsync.Counter]()}
+}
+
+func (cm *XSyncMapCounterMap) Inc(key string) {
+	val, _ := cm.counts.LoadOrCompute(key, func() *xsync.Counter {
+		return xsync.NewCounter()
+	})
+	val.Inc()
+}
+
+func (cm *XSyncMapCounterMap) GetAndReset() map[string]int64 {
+	ret := map[string]int64{}
+	cm.counts.Range(func(key string, counter *xsync.Counter) bool {
+		ret[key] = counter.Value()
+		cm.counts.Delete(key)
+		return true
+	})
+	return ret
+}
+
+// XSyncMapIntMap uses xsync and atomics to create a map for concurrent access.
+type XSyncMapIntMap struct {
+	counts *xsync.MapOf[string, *atomic.Int64]
+}
+
+func NewXSyncMapIntMap() *XSyncMapIntMap {
+	return &XSyncMapIntMap{
+		counts: xsync.NewMapOf[string, *atomic.Int64](),
+	}
+}
+
+func (cm *XSyncMapIntMap) Inc(key string) {
+	val, _ := cm.counts.LoadOrCompute(key, func() *atomic.Int64 {
+		return &atomic.Int64{}
+	})
+	val.Add(1)
+}
+
+func (cm *XSyncMapIntMap) GetAndReset() map[string]int64 {
+	ret := map[string]int64{}
+	cm.counts.Range(func(key string, value *atomic.Int64) bool {
+		ret[key] = int64(value.Load())
+		cm.counts.Delete(key)
+		return true
+	})
+	return ret
 }
