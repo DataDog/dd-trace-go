@@ -16,51 +16,47 @@ import (
 
 const componentName = "google.golang.org/protobuf"
 
+type operation string
+
+const (
+	deserializeOperation operation = "deserialization"
+	serializeOperation   operation = "serialization"
+)
+
 func init() {
 	telemetry.LoadIntegration(componentName)
 	tracer.MarkIntegrationImported(componentName)
 }
 
-// Unmarshal un-marshals a proto message and captures the schema used if a span is present in the context
-func Unmarshal(ctx context.Context, b []byte, m proto.Message) error {
+func attachSchemaOnSpan(ctx context.Context, m proto.Message, operation operation) {
 	span, ok := tracer.SpanFromContext(ctx)
+	if !ok {
+		return
+	}
 	// todo: How can I check if the span is a P1?
-	if ok {
-		weight := datastreams.SampleSchema()
-		if weight > 0 {
-			schema, name, err := getSchema(m)
-			if err == nil {
-				span.SetTag(schemaDefinition, schema)
-				span.SetTag(schemaID, datastreams.GetSchemaID(schema))
-				span.SetTag(schemaWeight, weight)
-				span.SetTag(schemaType, "protobuf")
-				span.SetTag(schemaOperation, "deserialization")
-				span.SetTag(ext.SamplingPriority, ext.PriorityUserKeep)
-				span.SetTag(schemaName, name)
-			}
+	weight := datastreams.SampleSchema()
+	if weight > 0 {
+		schema, name, err := getSchema(m)
+		if err == nil {
+			span.SetTag(schemaDefinition, schema)
+			span.SetTag(schemaID, datastreams.GetSchemaID(schema))
+			span.SetTag(schemaWeight, weight)
+			span.SetTag(schemaType, "protobuf")
+			span.SetTag(schemaOperation, operation)
+			span.SetTag(ext.SamplingPriority, ext.PriorityUserKeep)
+			span.SetTag(schemaName, name)
 		}
 	}
+}
+
+// Unmarshal un-marshals a proto message and captures the schema used if a span is present in the context
+func Unmarshal(ctx context.Context, b []byte, m proto.Message) error {
+	attachSchemaOnSpan(ctx, m, deserializeOperation)
 	return proto.Unmarshal(b, m)
 }
 
 // Marshal marshals a proto message and captures the schema used if a span is present in the context
 func Marshal(ctx context.Context, m proto.Message) (data []byte, err error) {
-	span, ok := tracer.SpanFromContext(ctx)
-	// todo: How can I check if the span is a P1?
-	if ok {
-		weight := datastreams.SampleSchema()
-		if weight > 0 {
-			schema, name, err := getSchema(m)
-			if err == nil {
-				span.SetTag(schemaDefinition, schema)
-				span.SetTag(schemaID, datastreams.GetSchemaID(schema))
-				span.SetTag(schemaWeight, weight)
-				span.SetTag(schemaType, "protobuf")
-				span.SetTag(schemaOperation, "serialization")
-				span.SetTag(ext.SamplingPriority, ext.PriorityUserKeep)
-				span.SetTag(schemaName, name)
-			}
-		}
-	}
+	attachSchemaOnSpan(ctx, m, serializeOperation)
 	return proto.Marshal(m)
 }
