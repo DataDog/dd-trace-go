@@ -207,7 +207,19 @@ func (c *client) Flush() {
 
 	nbBytes, err := c.flush(payloads)
 	if err != nil {
-		log.Warn("telemetry: error while flushing: %v", err)
+		// We check if the failure is about telemetry or appsec data to log the error at the right level
+		var dependenciesFound bool
+		for _, payload := range payloads {
+			if payload.RequestType() == transport.RequestTypeAppDependenciesLoaded {
+				dependenciesFound = true
+				break
+			}
+		}
+		if dependenciesFound {
+			log.Warn("appsec: error while flushing SCA Security Data: %v", err)
+		} else {
+			log.Debug("telemetry: error while flushing telemetry data: %v", err)
+		}
 	}
 
 	if c.clientConfig.Debug {
