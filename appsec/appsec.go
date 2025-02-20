@@ -212,6 +212,7 @@ func TrackCustomEvent(ctx context.Context, name string, md map[string]string) {
 	}
 
 	tagPrefix := "appsec.events." + name + "."
+	span.SetTag("_dd."+tagPrefix+"sdk", "true")
 	span.SetTag(tagPrefix+"track", "true")
 	span.SetTag(ext.SamplingPriority, ext.PriorityUserKeep)
 	for k, v := range md {

@@ -153,7 +153,9 @@ func Start(opts ...StartOption) {
 	if internal.Testing {
 		return // mock tracer active
 	}
-	defer telemetry.Time(telemetry.NamespaceGeneral, "init_time", nil, true)()
+	defer func(now time.Time) {
+		telemetry.Distribution(telemetry.NamespaceGeneral, "init_time", nil).Submit(float64(time.Since(now).Milliseconds()))
+	}(time.Now())
 	t := newTracer(opts...)
 	if !t.config.enabled.current {
 		// TODO: instrumentation telemetry client won't get started
@@ -188,10 +190,6 @@ func Start(opts ...StartOption) {
 		log.Warn("Remote config startup error: %s", err)
 	}
 
-	// start instrumentation telemetry unless it is disabled through the
-	// DD_INSTRUMENTATION_TELEMETRY_ENABLED env var
-	startTelemetry(t.config)
-
 	// appsec.Start() may use the telemetry client to report activation, so it is
 	// important this happens _AFTER_ startTelemetry() has been called, so the
 	// client is appropriately configured.
@@ -199,6 +197,10 @@ func Start(opts ...StartOption) {
 	appsecopts = append(appsecopts, t.config.appsecStartOptions...)
 	appsecopts = append(appsecopts, appsecConfig.WithRCConfig(cfg), appsecConfig.WithMetaStructAvailable(t.config.agent.metaStructAvailable))
 	appsec.Start(appsecopts...)
+
+	// start instrumentation telemetry unless it is disabled through the
+	// DD_INSTRUMENTATION_TELEMETRY_ENABLED env var
+	startTelemetry(t.config)
 
 	if t.config.logStartup {
 		logStartup(t)
