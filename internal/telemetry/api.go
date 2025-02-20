@@ -3,7 +3,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2024 Datadog, Inc.
 
-// Package newtelemetry provides a telemetry client that is thread-safe burden-less telemetry client following the specification of the instrumentation telemetry from Datadog.
+// Package telemetry provides a telemetry client that is thread-safe burden-less telemetry client following the specification of the instrumentation telemetry from Datadog.
 // Specification here: https://github.com/DataDog/instrumentation-telemetry-api-docs/tree/main
 //
 // The telemetry package has 6 main capabilities:
