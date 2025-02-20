@@ -7,8 +7,10 @@ package tracer
 
 import (
 	"fmt"
+	"os"
 	"strings"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 )
 
@@ -31,15 +33,8 @@ func startTelemetry(c *config) {
 		// Do not do extra work populating config data if instrumentation telemetry is disabled.
 		return
 	}
-	telemetry.GlobalClient.ApplyOps(
-		telemetry.WithService(c.serviceName),
-		telemetry.WithEnv(c.env),
-		telemetry.WithHTTPClient(c.httpClient),
-		// c.logToStdout is true if serverless is turned on
-		// c.ciVisibilityAgentless is true if ci visibility mode is turned on and agentless writer is configured
-		telemetry.WithURL(c.logToStdout || c.ciVisibilityAgentless, c.agentURL.String()),
-		telemetry.WithVersion(c.version),
-	)
+
+	telemetry.ProductStarted(telemetry.NamespaceTracers)
 	telemetryConfigs := []telemetry.Configuration{
 		{Name: "trace_debug_enabled", Value: c.debug},
 		{Name: "agent_feature_drop_p0s", Value: c.agent.DropP0s},
@@ -70,7 +65,7 @@ func startTelemetry(c *config) {
 		c.headerAsTags.toTelemetry(),
 		c.globalTags.toTelemetry(),
 		c.traceSampleRules.toTelemetry(),
-		telemetry.Sanitize(telemetry.Configuration{Name: "span_sample_rules", Value: c.spanRules}),
+		{Name: "span_sample_rules", Value: c.spanRules},
 	}
 	var peerServiceMapping []string
 	for key, value := range c.peerServiceMappings {
@@ -114,5 +109,18 @@ func startTelemetry(c *config) {
 		}
 	}
 	telemetryConfigs = append(telemetryConfigs, additionalConfigs...)
-	telemetry.GlobalClient.ProductChange(telemetry.NamespaceTracers, true, telemetryConfigs)
+	telemetry.RegisterAppConfigs(telemetryConfigs...)
+	cfg := telemetry.ClientConfig{
+		HTTPClient: c.httpClient,
+		AgentURL:   c.agentURL.String(),
+	}
+	if c.logToStdout || c.ciVisibilityAgentless {
+		cfg.APIKey = os.Getenv("DD_API_KEY")
+	}
+	client, err := telemetry.NewClient(c.serviceName, c.env, c.version, cfg)
+	if err != nil {
+		log.Debug("tracer: failed to create telemetry client: %v", err)
+		return
+	}
+	telemetry.StartApp(client)
 }

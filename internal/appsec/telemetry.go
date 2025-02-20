@@ -87,5 +87,11 @@ func (a *appsecTelemetry) emit() {
 		return
 	}
 
-	telemetry.GlobalClient.ProductChange(telemetry.NamespaceAppSec, a.enabled, a.configs)
+	if a.enabled {
+		telemetry.ProductStarted(telemetry.NamespaceAppSec)
+	} else {
+		telemetry.ProductStopped(telemetry.NamespaceAppSec)
+	}
+
+	telemetry.RegisterAppConfigs(a.configs...)
 }
