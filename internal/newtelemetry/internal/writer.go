@@ -191,21 +191,37 @@ func preBakeRequest(body *transport.Body, endpoint *http.Request) *http.Request 
 	return clonedEndpoint
 }
 
-// newRequest creates a new http.Request with the given payload and the necessary headers.
-func (w *writer) newRequest(endpoint *http.Request, payload transport.Payload) *http.Request {
+// setPayloadToBody sets the payload to the body of the writer and misc fields that are necessary for the payload to be sent.
+func (w *writer) setPayloadToBody(payload transport.Payload) {
 	w.body.SeqID++
 	w.body.TracerTime = time.Now().Unix()
 	w.body.RequestType = payload.RequestType()
 	w.body.Payload = payload
+}
 
+// newRequest creates a new http.Request with the given payload and the necessary headers.
+func (w *writer) newRequest(endpoint *http.Request, requestType transport.RequestType) *http.Request {
 	request := endpoint.Clone(context.Background())
-	request.Header.Set("DD-Telemetry-Request-Type", string(payload.RequestType()))
+	request.Header.Set("DD-Telemetry-Request-Type", string(requestType))
 
 	pipeReader, pipeWriter := io.Pipe()
 	request.Body = pipeReader
 	go func() {
+		var err error
+		defer func() {
+			// This should normally never happen but since we are encoding arbitrary data in client configuration values payload we need to be careful.
+			if panicValue := recover(); panicValue != nil {
+				log.Error("telemetry/writer: panic while encoding payload: %v", panicValue)
+				if err == nil {
+					panicErr, _ := panicValue.(error)   // check if we can use the panic value as an error
+					pipeWriter.CloseWithError(panicErr) // CloseWithError with nil as parameter is like Close()
+				}
+			}
+		}()
+
 		// No need to wait on this because the http client will close the pipeReader which will close the pipeWriter and finish the goroutine
-		pipeWriter.CloseWithError(json.NewEncoder(pipeWriter).Encode(w.body))
+		err = json.NewEncoder(pipeWriter).Encode(w.body)
+		pipeWriter.CloseWithError(err)
 	}()
 
 	return request
@@ -237,10 +253,13 @@ func (w *writer) Flush(payload transport.Payload) ([]EndpointRequestResult, erro
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
+	w.setPayloadToBody(payload)
+	requestType := payload.RequestType()
+
 	var results []EndpointRequestResult
 	for _, endpoint := range w.endpoints {
 		var (
-			request         = w.newRequest(endpoint, payload)
+			request         = w.newRequest(endpoint, requestType)
 			sumReaderCloser = &SumReaderCloser{ReadCloser: request.Body}
 			now             = time.Now()
 		)
