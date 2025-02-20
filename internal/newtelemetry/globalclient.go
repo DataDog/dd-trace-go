@@ -41,19 +41,17 @@ func StartApp(client Client) {
 		return
 	}
 
-	if GlobalClient() != nil {
+	if SwapClient(client) != nil {
 		log.Debug("telemetry: StartApp called multiple times, ignoring")
 		return
 	}
 
-	if SwapClient(client) == nil {
-		client.AppStart()
+	client.AppStart()
 
-		go func() {
-			client.Flush()
-			log.Debug("telemetry: successfully flushed the telemetry app-started payload")
-		}()
-	}
+	go func() {
+		client.Flush()
+		log.Debug("telemetry: successfully flushed the telemetry app-started payload")
+	}()
 }
 
 // SwapClient swaps the global client with the given client and Flush the old (*client).
@@ -95,8 +93,7 @@ func MockClient(client Client) func() {
 		return true
 	})
 
-	oldClient := GlobalClient()
-	SwapClient(client)
+	oldClient := SwapClient(client)
 	return func() {
 		SwapClient(oldClient)
 	}
