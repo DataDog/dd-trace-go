@@ -41,33 +41,37 @@ func StartApp(client Client) {
 		return
 	}
 
-	if GlobalClient() != nil {
+	if GlobalClient() != nil || SwapClient(client) != nil {
 		log.Debug("telemetry: StartApp called multiple times, ignoring")
 		return
 	}
-
-	SwapClient(client)
 
 	client.AppStart()
 
 	go func() {
 		client.Flush()
-		log.Debug("telemetry: sucessfully flushed the telemetry app-started payload")
+		log.Debug("telemetry: successfully flushed the telemetry app-started payload")
 	}()
 }
 
 // SwapClient swaps the global client with the given client and Flush the old (*client).
-func SwapClient(client Client) {
+func SwapClient(client Client) Client {
 	if Disabled() {
-		return
+		return nil
 	}
 
-	if oldClient := globalClient.Swap(&client); oldClient != nil && *oldClient != nil {
-		(*oldClient).Close()
+	oldClientPtr := globalClient.Swap(&client)
+	var oldClient Client
+	if oldClientPtr != nil && *oldClientPtr != nil {
+		oldClient = *oldClientPtr
+	}
+
+	if oldClient != nil {
+		oldClient.Close()
 	}
 
 	if client == nil {
-		return
+		return oldClient
 	}
 
 	globalClientRecorder.Replay(client)
@@ -76,6 +80,8 @@ func SwapClient(client Client) {
 		value.swap(value.maker(client))
 		return true
 	})
+
+	return oldClient
 }
 
 // MockClient swaps the global client with the given client and clears the recorder to make sure external calls are not replayed.
@@ -87,8 +93,7 @@ func MockClient(client Client) func() {
 		return true
 	})
 
-	oldClient := GlobalClient()
-	SwapClient(client)
+	oldClient := SwapClient(client)
 	return func() {
 		SwapClient(oldClient)
 	}
