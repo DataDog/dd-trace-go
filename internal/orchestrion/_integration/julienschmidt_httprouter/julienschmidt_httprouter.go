@@ -84,7 +84,7 @@ func (*TestCase) ExpectedTraces() trace.Traces {
 								"name":     "http.request",
 								"resource": "GET /ping",
 								"type":     "web",
-								"service":  "http.router",
+								"service":  "julienschmidt_httprouter.test",
 							},
 							Meta: map[string]string{
 								"component": "julienschmidt/httprouter",
