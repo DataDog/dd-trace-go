@@ -159,7 +159,7 @@ func TestHandleS3Operation(t *testing.T) {
 			if tt.expectSuccess {
 				require.Len(t, spans, 1)
 				links := spans[0].Links()
-				assert.NotEmpty(t, links, "Expected span links to not be empty")
+				require.NotEmpty(t, links, "Expected span links to not be empty")
 
 				attributes := links[0].Attributes
 				assert.Equal(t, S3PointerKind, attributes["ptr.kind"])
