@@ -24,7 +24,7 @@ aspects:
           type: "*ConfigMap"
       - inject-declarations:
           imports:
-            tracing: github.com/DataDog/dd-trace-go/v2/contrib/confluentinc/confluent-kafka-go/internal/tracing
+            tracing: github.com/DataDog/dd-trace-go/v2/contrib/confluentinc/confluent-kafka-go
             telemetry: github.com/DataDog/dd-trace-go/v2/internal/telemetry
             tracer: github.com/DataDog/dd-trace-go/v2/ddtrace/tracer
           lang: go1.18
@@ -233,7 +233,7 @@ aspects:
     advice:
       - prepend-statements:
           imports:
-            tracing: github.com/DataDog/dd-trace-go/v2/contrib/confluentinc/confluent-kafka-go/internal/tracing
+            tracing: github.com/DataDog/dd-trace-go/v2/contrib/confluentinc/confluent-kafka-go
           template: |-
             {{- $conf := .Function.Argument 0 -}}
             {{- $c := .Function.Result 0 -}}
@@ -254,7 +254,7 @@ aspects:
     advice:
       - prepend-statements:
           imports:
-            tracing: github.com/DataDog/dd-trace-go/v2/contrib/confluentinc/confluent-kafka-go/internal/tracing
+            tracing: github.com/DataDog/dd-trace-go/v2/contrib/confluentinc/confluent-kafka-go
           template: |-
             {{- $c := .Function.Receiver -}}
             __dd_initConsumer({{ $c }})
@@ -274,7 +274,7 @@ aspects:
     advice:
       - prepend-statements:
           imports:
-            tracing: github.com/DataDog/dd-trace-go/v2/contrib/confluentinc/confluent-kafka-go/internal/tracing
+            tracing: github.com/DataDog/dd-trace-go/v2/contrib/confluentinc/confluent-kafka-go
           template: |-
             {{- $c := .Function.Receiver -}}
             {{- $events := .Function.Result 0 -}}
@@ -293,7 +293,7 @@ aspects:
     advice:
       - prepend-statements:
           imports:
-            tracing: github.com/DataDog/dd-trace-go/v2/contrib/confluentinc/confluent-kafka-go/internal/tracing
+            tracing: github.com/DataDog/dd-trace-go/v2/contrib/confluentinc/confluent-kafka-go
           template: |-
             {{- $c := .Function.Receiver -}}
             {{- $event := .Function.Result 0 -}}
@@ -323,7 +323,7 @@ aspects:
     advice:
       - prepend-statements:
           imports:
-            tracing: github.com/DataDog/dd-trace-go/v2/contrib/confluentinc/confluent-kafka-go/internal/tracing
+            tracing: github.com/DataDog/dd-trace-go/v2/contrib/confluentinc/confluent-kafka-go
           template: |-
             {{- $c := .Function.Receiver -}}
             {{- $tps := .Function.Result 0 -}}
@@ -344,7 +344,7 @@ aspects:
     advice:
       - prepend-statements:
           imports:
-            tracing: github.com/DataDog/dd-trace-go/v2/contrib/confluentinc/confluent-kafka-go/internal/tracing
+            tracing: github.com/DataDog/dd-trace-go/v2/contrib/confluentinc/confluent-kafka-go
           template: |-
             {{- $c := .Function.Receiver -}}
             {{- $tps := .Function.Result 0 -}}
@@ -365,7 +365,7 @@ aspects:
     advice:
       - prepend-statements:
           imports:
-            tracing: github.com/DataDog/dd-trace-go/v2/contrib/confluentinc/confluent-kafka-go/internal/tracing
+            tracing: github.com/DataDog/dd-trace-go/v2/contrib/confluentinc/confluent-kafka-go
           template: |-
             {{- $c := .Function.Receiver -}}
             {{- $tps := .Function.Result 0 -}}
@@ -447,7 +447,7 @@ aspects:
     advice:
       - prepend-statements:
           imports:
-            tracing: github.com/DataDog/dd-trace-go/v2/contrib/confluentinc/confluent-kafka-go/internal/tracing
+            tracing: github.com/DataDog/dd-trace-go/v2/contrib/confluentinc/confluent-kafka-go
             tracer: github.com/DataDog/dd-trace-go/v2/ddtrace/tracer
           template: |-
             {{- $p := .Function.Receiver -}}
