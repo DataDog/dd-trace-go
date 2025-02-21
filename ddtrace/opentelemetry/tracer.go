@@ -15,6 +15,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 
+	"go.opentelemetry.io/otel/baggage"
 	oteltrace "go.opentelemetry.io/otel/trace"
 	"go.opentelemetry.io/otel/trace/noop"
 )
@@ -89,6 +90,12 @@ func (t *oteltracer) Start(ctx context.Context, spanName string, opts ...oteltra
 	// we have to record the attributes  locally.
 	// The span operation name will be calculated when it's ended.
 	s := tracer.StartSpan(spanName, ddopts...)
+	otelBaggage := baggage.FromContext(ctx)
+	if otelBaggage.Len() > 0 {
+		for _, member := range otelBaggage.Members() {
+			s.SetBaggageItem(member.Key(), member.Value())
+		}
+	}
 	os := oteltrace.Span(&span{
 		DD:         s,
 		oteltracer: t,
