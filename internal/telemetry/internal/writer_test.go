@@ -9,6 +9,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -210,4 +212,58 @@ func TestWriter_Flush_MultipleEndpoints(t *testing.T) {
 
 	assert.Equal(t, 2, marshalJSONCalled)
 	assert.True(t, payloadReceived2)
+}
+
+func TestWriterParallel(t *testing.T) {
+	config := WriterConfig{
+		TracerConfig: TracerConfig{
+			Service: "test-service",
+			Env:     "test-env",
+			Version: "1.0.0",
+		},
+	}
+
+	var (
+		marshalJSONCalled atomic.Int64
+		payloadReceived   atomic.Int64
+	)
+
+	payload := testPayload{
+		RequestTypeValue: "test",
+		marshalJSON: func() ([]byte, error) {
+			marshalJSONCalled.Add(1)
+			return []byte(`{"request_type":"test"}`), nil
+		},
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		payloadReceived.Add(1)
+		w.WriteHeader(http.StatusTeapot)
+	}))
+	defer server.Close()
+
+	req, err := http.NewRequest(http.MethodPost, server.URL, nil)
+	require.NoError(t, err)
+
+	// 2 endpoints that just happens to be the same
+	config.Endpoints = append(config.Endpoints, req)
+	config.Endpoints = append(config.Endpoints, req)
+
+	writer, _ := NewWriter(config)
+
+	const numRequests = 100
+	var wg sync.WaitGroup
+	wg.Add(numRequests)
+	for i := 0; i < numRequests; i++ {
+		go func() {
+			defer wg.Done()
+			_, err := writer.Flush(&payload)
+			require.Error(t, err)
+		}()
+	}
+
+	wg.Wait()
+
+	assert.EqualValues(t, numRequests*2, marshalJSONCalled.Load())
+	assert.EqualValues(t, numRequests*2, payloadReceived.Load())
 }
