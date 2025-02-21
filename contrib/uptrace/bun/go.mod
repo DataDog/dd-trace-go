@@ -2,6 +2,8 @@ module github.com/DataDog/dd-trace-go/contrib/uptrace/bun/v2
 
 go 1.23.0
 
+godebug x509negativeserial=1
+
 require (
 	github.com/DataDog/dd-trace-go/v2 v2.0.0-rc.3
 	github.com/go-sql-driver/mysql v1.6.0
