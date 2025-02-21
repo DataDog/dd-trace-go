@@ -70,7 +70,7 @@ func (*TestCase) ExpectedTraces() trace.Traces {
 			Children: trace.Traces{
 				{
 					Tags: map[string]any{
-						"name":     "http.request",
+						"name":     "vault.command",
 						"service":  "vault",
 						"resource": "GET /v1/secret/key",
 						"type":     "http",
