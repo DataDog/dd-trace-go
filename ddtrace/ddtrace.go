@@ -101,6 +101,9 @@ type SpanContext interface {
 	// baggage within this context. Iteration stops when the handler returns
 	// false.
 	ForeachBaggageItem(handler func(k, v string) bool)
+
+	// SamplingPriority returns the sampling priority of the trace and whether it's already set
+	SamplingPriority() (p int, ok bool)
 }
 
 // StartSpanOption is a configuration option that can be used with a Tracer's StartSpan method.

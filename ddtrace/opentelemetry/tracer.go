@@ -131,3 +131,11 @@ func (c *otelCtxToDDCtx) TraceID128() string {
 func (c *otelCtxToDDCtx) TraceID128Bytes() [16]byte {
 	return c.oc.TraceID()
 }
+
+// SamplingPriority returns the sampling priority of the trace and whether it's already set
+func (c *otelCtxToDDCtx) SamplingPriority() (p int, ok bool) {
+	if c.oc.IsSampled() {
+		return 1, true
+	}
+	return 0, true
+}

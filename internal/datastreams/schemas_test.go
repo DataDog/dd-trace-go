@@ -14,8 +14,10 @@ import (
 func TestSchemaSampler(t *testing.T) {
 	s := &schemaSampler{}
 	now := time.Now().UnixNano()
+	assert.True(t, s.shouldSampleSchema(now))
 	assert.Equal(t, int64(1), s.sampleSchema(now))
-	assert.Equal(t, int64(0), s.sampleSchema(now+10))
-	assert.Equal(t, int64(0), s.sampleSchema(now+10))
+	assert.False(t, s.shouldSampleSchema(now+10))
+	assert.False(t, s.shouldSampleSchema(now+10))
+	assert.True(t, s.shouldSampleSchema(now+schemaSampleIntervalNs))
 	assert.Equal(t, int64(3), s.sampleSchema(now+schemaSampleIntervalNs))
 }

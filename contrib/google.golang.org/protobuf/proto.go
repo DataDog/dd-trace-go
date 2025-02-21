@@ -8,7 +8,6 @@ package protobuf
 import (
 	"context"
 	"google.golang.org/protobuf/proto"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/datastreams"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
@@ -29,13 +28,19 @@ func init() {
 }
 
 func attachSchemaOnSpan(ctx context.Context, m proto.Message, operation operation) {
+	shouldSample := datastreams.ShouldSampleSchema()
+	if !shouldSample {
+		return
+	}
 	span, ok := tracer.SpanFromContext(ctx)
 	if !ok {
 		return
 	}
+	if p, ok := span.Context().SamplingPriority(); !ok || p < 1 {
+		return
+	}
 	// todo: How can I check if the span is a P1?
-	weight := datastreams.SampleSchema()
-	if weight > 0 {
+	if weight := datastreams.SampleSchema(); weight > 0 {
 		schema, name, err := getSchema(m)
 		if err == nil {
 			span.SetTag(schemaDefinition, schema)
@@ -43,7 +48,6 @@ func attachSchemaOnSpan(ctx context.Context, m proto.Message, operation operatio
 			span.SetTag(schemaWeight, weight)
 			span.SetTag(schemaType, "protobuf")
 			span.SetTag(schemaOperation, operation)
-			span.SetTag(ext.SamplingPriority, ext.PriorityUserKeep)
 			span.SetTag(schemaName, name)
 		}
 	}

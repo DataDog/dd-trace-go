@@ -34,8 +34,11 @@ func SampleSchema() (weight int64) {
 	return globalSchemaSampler.sampleSchema(time.Now().UnixNano())
 }
 
+func ShouldSampleSchema() (ok bool) {
+	return globalSchemaSampler.shouldSampleSchema(time.Now().UnixNano())
+}
+
 func (s *schemaSampler) sampleSchema(currentTimeNs int64) (weight int64) {
-	s.weight.Add(1)
 	lastSample := s.lastSampleMillis.Load()
 	if currentTimeNs >= lastSample+schemaSampleIntervalNs {
 		if s.lastSampleMillis.CompareAndSwap(lastSample, currentTimeNs) {
@@ -43,6 +46,15 @@ func (s *schemaSampler) sampleSchema(currentTimeNs int64) (weight int64) {
 		}
 	}
 	return 0
+}
+
+func (s *schemaSampler) shouldSampleSchema(currentTimeNs int64) bool {
+	s.weight.Add(1)
+	lastSample := s.lastSampleMillis.Load()
+	if currentTimeNs >= lastSample+schemaSampleIntervalNs {
+		return true
+	}
+	return false
 }
 
 func GetSchemaID(schema string) string {
