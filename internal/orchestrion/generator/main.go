@@ -235,10 +235,12 @@ func validateValidConfig(modules map[string]string) error {
 	if err := goCmd(tmp, "mod", "init", "github.com/DataDog/dd-trace-go.orchestrion"); err != nil {
 		return fmt.Errorf("init module: %w", err)
 	}
+	mods := []string{"edit"}
 	for name, path := range modules {
-		if err := goCmd(tmp, "mod", "edit", "-replace", name+"="+path); err != nil {
-			return fmt.Errorf("replace %s: %w", name, err)
-		}
+		mods = append(mods, "-require", name+"@"+version.Tag, "-replace", name+"="+path)
+	}
+	if err := goCmd(tmp, "mod", mods...); err != nil {
+		return fmt.Errorf("go mod %s: %w", mods, err)
 	}
 
 	if err := os.WriteFile(filepath.Join(tmp, "main.go"), []byte(mainGo), 0o644); err != nil {
