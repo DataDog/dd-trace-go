@@ -19,7 +19,7 @@ aspects:
     advice:
       - prepend-statements:
           imports:
-            tracing: github.com/DataDog/dd-trace-go/v2/contrib/cl.google.com/go/pubsub.v1/internal/tracingoud
+            tracing: github.com/DataDog/dd-trace-go/contrib/cloud.google.com/go/pubsub.v1/v2
           template: |-
             {{- $subscription := .Function.Receiver -}}
             {{- $handler := .Function.Argument 1 -}}
@@ -62,7 +62,7 @@ aspects:
     advice:
       - prepend-statements:
           imports:
-            tracing: github.com/DataDog/dd-trace-go/v2/contrib/cl.google.com/go/pubsub.v1/internal/tracingoud
+            tracing: github.com/DataDog/dd-trace-go/contrib/cloud.google.com/go/pubsub.v1/v2
           template: |-
             {{- $topic := .Function.Receiver -}}
             {{- $ctx := .Function.Argument 0 -}}
