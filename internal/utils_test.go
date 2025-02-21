@@ -67,20 +67,40 @@ func TestLockMapThrash(t *testing.T) {
 }
 
 func TestXSyncMapCounterMap(t *testing.T) {
-	assert := assert.New(t)
+	t.Run("basic", func(t *testing.T) {
+		assert := assert.New(t)
 
-	cm := NewXSyncMapCounterMap()
+		cm := NewXSyncMapCounterMap()
 
-	assert.Equal(map[string]int64{}, cm.GetAndReset())
+		assert.Equal(map[string]int64{}, cm.GetAndReset())
 
-	cm.Inc("a")
-	cm.Inc("b")
-	cm.Inc("a")
+		cm.Inc("a")
+		cm.Inc("b")
+		cm.Inc("a")
 
-	assert.Equal(map[string]int64{"a": 2, "b": 1}, cm.GetAndReset())
+		assert.Equal(map[string]int64{"a": 2, "b": 1}, cm.GetAndReset())
 
-	cm.Inc("a")
-	assert.Equal(map[string]int64{"a": 1}, cm.GetAndReset())
+		cm.Inc("a")
+		assert.Equal(map[string]int64{"a": 1}, cm.GetAndReset())
+	})
+
+	t.Run("concurrent", func(t *testing.T) {
+		assert := assert.New(t)
+
+		cm := NewXSyncMapCounterMap()
+
+		wg := sync.WaitGroup{}
+		for range 10 {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				cm.Inc("key")
+			}()
+		}
+		wg.Wait()
+
+		assert.Equal(map[string]int64{"key": 10}, cm.GetAndReset())
+	})
 }
 
 func BenchmarkXSyncMapCounterMap(b *testing.B) {
@@ -119,5 +139,21 @@ func BenchmarkXSyncMapCounterMap(b *testing.B) {
 			assert.Equal(b, int64(1), v)
 		}
 
+	})
+
+	b.Run("concurrent", func(b *testing.B) {
+		cm := NewXSyncMapCounterMap()
+
+		wg := sync.WaitGroup{}
+		for range b.N {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				cm.Inc("key")
+			}()
+		}
+		wg.Wait()
+
+		assert.Equal(b, map[string]int64{"key": int64(b.N)}, cm.GetAndReset())
 	})
 }
