@@ -19,7 +19,6 @@ aspects:
     advice:
       - inject-declarations:
           imports:
-            ddtrace: github.com/DataDog/dd-trace-go/v2/ddtrace
             http: net/http
             internal: github.com/DataDog/dd-trace-go/v2/internal
             telemetry: github.com/DataDog/dd-trace-go/v2/internal/telemetry
@@ -30,7 +29,7 @@ aspects:
               headerTags    *internal.LockMap
               resourceNamer func(*Router, *http.Request) string
               serviceName   string
-              spanOpts      []ddtrace.StartSpanOption
+              spanOpts      []tracer.StartSpanOption
             }
 
             func ddDefaultResourceNamer(router *Router, req *http.Request) string {
@@ -64,7 +63,6 @@ aspects:
     advice:
       - prepend-statements:
           imports:
-            ddtrace: github.com/DataDog/dd-trace-go/v2/ddtrace
             ext: github.com/DataDog/dd-trace-go/v2/ddtrace/ext
             globalconfig: github.com/DataDog/dd-trace-go/v2/internal/globalconfig
             http: net/http
@@ -86,7 +84,7 @@ aspects:
               {{ $res }}.__dd_config.ignoreRequest = func(*http.Request) bool { return false }
               {{ $res }}.__dd_config.resourceNamer = ddDefaultResourceNamer
               {{ $res }}.__dd_config.serviceName = namingschema.ServiceName("mux.router")
-              {{ $res }}.__dd_config.spanOpts = []ddtrace.StartSpanOption{
+              {{ $res }}.__dd_config.spanOpts = []tracer.StartSpanOption{
                 tracer.Tag(ext.Component, "gorilla/mux"),
                 tracer.Tag(ext.SpanKind, ext.SpanKindServer),
               }
