@@ -10,25 +10,20 @@
 // The motivation of this package is to support orchestrion, which cannot use the main package because it imports
 // the cloud.google.com/go/pubsub package, and since orchestrion modifies the library code itself,
 // this would cause an import cycle.
-package pubsub
+package tracing
 
 import (
 	"context"
 	"sync"
 	"time"
 
+	"github.com/DataDog/dd-trace-go/contrib/cloud.google.com/go/pubsub.v1/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 )
 
 const componentName = instrumentation.PackageGCPPubsub
-
-var instr *instrumentation.Instrumentation
-
-func init() {
-	instr = instrumentation.Load(instrumentation.PackageGCPPubsub)
-}
 
 type Message struct {
 	ID              string
@@ -47,10 +42,10 @@ type Subscription interface {
 	String() string
 }
 
-func TracePublish(ctx context.Context, topic Topic, msg *Message, opts ...Option) (context.Context, func(serverID string, err error)) {
-	cfg := defaultConfig()
+func TracePublish(ctx context.Context, topic Topic, msg *Message, opts ...config.Option) (context.Context, func(serverID string, err error)) {
+	cfg := config.Default()
 	for _, opt := range opts {
-		opt.apply(cfg)
+		opt.Apply(cfg)
 	}
 	spanOpts := []tracer.StartSpanOption{
 		tracer.ResourceName(topic.String()),
@@ -61,22 +56,22 @@ func TracePublish(ctx context.Context, topic Topic, msg *Message, opts ...Option
 		tracer.Tag(ext.SpanKind, ext.SpanKindProducer),
 		tracer.Tag(ext.MessagingSystem, ext.MessagingSystemGCPPubsub),
 	}
-	if cfg.serviceName != "" {
-		spanOpts = append(spanOpts, tracer.ServiceName(cfg.serviceName))
+	if cfg.ServiceName != "" {
+		spanOpts = append(spanOpts, tracer.ServiceName(cfg.ServiceName))
 	}
-	if cfg.measured {
+	if cfg.Measured {
 		spanOpts = append(spanOpts, tracer.Measured())
 	}
 	span, ctx := tracer.StartSpanFromContext(
 		ctx,
-		cfg.publishSpanName,
+		cfg.PublishSpanName,
 		spanOpts...,
 	)
 	if msg.Attributes == nil {
 		msg.Attributes = make(map[string]string)
 	}
 	if err := tracer.Inject(span.Context(), tracer.TextMapCarrier(msg.Attributes)); err != nil {
-		instr.Logger().Debug("contrib/cloud.google.com/go/pubsub.v1/trace: failed injecting tracing attributes: %v", err)
+		config.Logger().Debug("contrib/cloud.google.com/go/pubsub.v1/trace: failed injecting tracing attributes: %v", err)
 	}
 	span.SetTag("num_attributes", len(msg.Attributes))
 
@@ -90,12 +85,12 @@ func TracePublish(ctx context.Context, topic Topic, msg *Message, opts ...Option
 	return ctx, closeSpan
 }
 
-func TraceReceiveFunc(s Subscription, opts ...Option) func(ctx context.Context, msg *Message) (context.Context, func()) {
-	cfg := defaultConfig()
+func TraceReceiveFunc(s Subscription, opts ...config.Option) func(ctx context.Context, msg *Message) (context.Context, func()) {
+	cfg := config.Default()
 	for _, opt := range opts {
-		opt.apply(cfg)
+		opt.Apply(cfg)
 	}
-	instr.Logger().Debug("contrib/cloud.google.com/go/pubsub.v1/trace: Wrapping Receive Handler: %#v", cfg)
+	config.Logger().Debug("contrib/cloud.google.com/go/pubsub.v1/trace: Wrapping Receive Handler: %#v", cfg)
 	return func(ctx context.Context, msg *Message) (context.Context, func()) {
 		parentSpanCtx, _ := tracer.Extract(tracer.TextMapCarrier(msg.Attributes))
 		opts := []tracer.StartSpanOption{
@@ -111,17 +106,17 @@ func TraceReceiveFunc(s Subscription, opts ...Option) func(ctx context.Context, 
 			tracer.Tag(ext.MessagingSystem, ext.MessagingSystemGCPPubsub),
 			tracer.ChildOf(parentSpanCtx),
 		}
-		if cfg.serviceName != "" {
-			opts = append(opts, tracer.ServiceName(cfg.serviceName))
+		if cfg.ServiceName != "" {
+			opts = append(opts, tracer.ServiceName(cfg.ServiceName))
 		}
-		if cfg.measured {
+		if cfg.Measured {
 			opts = append(opts, tracer.Measured())
 		}
 		// If there are span links as a result of context extraction, add them as a StartSpanOption
 		if parentSpanCtx != nil && parentSpanCtx.SpanLinks() != nil {
 			opts = append(opts, tracer.WithSpanLinks(parentSpanCtx.SpanLinks()))
 		}
-		span, ctx := tracer.StartSpanFromContext(ctx, cfg.receiveSpanName, opts...)
+		span, ctx := tracer.StartSpanFromContext(ctx, cfg.ReceiveSpanName, opts...)
 		if msg.DeliveryAttempt != nil {
 			span.SetTag("delivery_attempt", *msg.DeliveryAttempt)
 		}
