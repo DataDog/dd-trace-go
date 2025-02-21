@@ -237,12 +237,8 @@ func validateValidConfig(modules map[string]string) error {
 	}
 	for name, path := range modules {
 		if err := goCmd(tmp, "mod", "edit", "-replace", name+"="+path); err != nil {
-			return fmt.Errorf("replace github.com/DataDog/dd-trace-go/v2: %w", err)
+			return fmt.Errorf("replace %s: %w", name, err)
 		}
-	}
-	// TODO: Remove before shipping
-	if err := goCmd(tmp, "mod", "edit", "-require", "github.com/DataDog/orchestrion@v1.1.0-rc.2"); err != nil {
-		return fmt.Errorf("require github.com/DataDog/orchestrion: %w", err)
 	}
 
 	if err := os.WriteFile(filepath.Join(tmp, "main.go"), []byte(mainGo), 0o644); err != nil {
@@ -256,7 +252,12 @@ func validateValidConfig(modules map[string]string) error {
 		return fmt.Errorf("go mod tidy: %w", err)
 	}
 
-	if err := goCmd(tmp, "run", "github.com/DataDog/orchestrion", "go", "run", "."); err != nil {
+	logFile := filepath.Join(tmp, "orchestrion.log")
+	fmt.Println("Orchestrion log file is:", logFile)
+	if err := goCmd(tmp, "run",
+		"github.com/DataDog/orchestrion", "-log-level=trace", "-log-file", logFile,
+		"go", "run", ".",
+	); err != nil {
 		return fmt.Errorf("go run: %w", err)
 	}
 
