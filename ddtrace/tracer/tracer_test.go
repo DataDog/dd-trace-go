@@ -26,6 +26,10 @@ import (
 
 	pb "github.com/DataDog/datadog-agent/pkg/proto/pbgo/trace"
 	"github.com/DataDog/datadog-go/v5/statsd"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"github.com/tinylib/msgp/msgp"
+
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
@@ -33,11 +37,6 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/statsdtest"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
-
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
-	"github.com/tinylib/msgp/msgp"
 )
 
 func (t *tracer) newEnvSpan(service, env string) *span {
@@ -712,7 +711,7 @@ func TestSamplingDecision(t *testing.T) {
 func TestTracerRuntimeMetrics(t *testing.T) {
 	t.Run("on", func(t *testing.T) {
 		tp := new(log.RecordLogger)
-		tp.Ignore("appsec: ", telemetry.LogPrefix)
+		tp.Ignore("appsec: ", "telemetry")
 		tracer := newTracer(WithRuntimeMetrics(), WithLogger(tp), WithDebugMode(true), WithEnv("test"))
 		defer tracer.Stop()
 		assert.Contains(t, tp.Logs()[0], "DEBUG: Runtime metrics enabled")
@@ -721,7 +720,7 @@ func TestTracerRuntimeMetrics(t *testing.T) {
 	t.Run("dd-env", func(t *testing.T) {
 		t.Setenv("DD_RUNTIME_METRICS_ENABLED", "true")
 		tp := new(log.RecordLogger)
-		tp.Ignore("appsec: ", telemetry.LogPrefix)
+		tp.Ignore("appsec: ", "telemetry")
 		tracer := newTracer(WithLogger(tp), WithDebugMode(true), WithEnv("test"))
 		defer tracer.Stop()
 		assert.Contains(t, tp.Logs()[0], "DEBUG: Runtime metrics enabled")
@@ -934,6 +933,78 @@ func TestPropagationDefaults(t *testing.T) {
 	assert.Equal(root.SpanID, child.ParentID)
 	assert.Equal(root.TraceID, child.ParentID)
 	assert.Equal(*child.context.trace.priority, -1.)
+}
+
+func TestPropagationDefaultIncludesBaggage(t *testing.T) {
+	assert := assert.New(t)
+
+	tracer := newTracer()
+	defer tracer.Stop()
+	root := tracer.StartSpan("web.request").(*span)
+	root.SetBaggageItem("foo", "bar")
+	root.SetTag(ext.SamplingPriority, -1)
+	ctx := root.Context().(*spanContext)
+	headers := http.Header{}
+
+	// inject the spanContext
+	carrier := HTTPHeadersCarrier(headers)
+	err := tracer.Inject(ctx, carrier)
+	assert.Nil(err)
+
+	tid := strconv.FormatUint(root.TraceID, 10)
+	pid := strconv.FormatUint(root.SpanID, 10)
+
+	assert.Equal(headers.Get(DefaultTraceIDHeader), tid)
+	assert.Equal(headers.Get(DefaultParentIDHeader), pid)
+	assert.Equal(headers.Get(DefaultPriorityHeader), "-1")
+	assert.Equal(headers.Get(DefaultBaggageHeader), "foo=bar")
+
+	// retrieve the spanContext
+	propagated, err := tracer.Extract(carrier)
+	assert.Nil(err)
+	pctx := propagated.(*spanContext)
+
+	// compare if there is a Context match
+	assert.Equal(ctx.traceID, pctx.traceID)
+	assert.Equal(ctx.spanID, pctx.spanID)
+	assert.Equal(*ctx.trace.priority, -1.)
+	assert.Equal(ctx.baggage, pctx.baggage)
+
+	// ensure a child can be created
+	child := tracer.StartSpan("db.query", ChildOf(propagated)).(*span)
+
+	assert.NotEqual(uint64(0), child.TraceID)
+	assert.NotEqual(uint64(0), child.SpanID)
+	assert.Equal(root.SpanID, child.ParentID)
+	assert.Equal(root.TraceID, child.ParentID)
+	assert.Equal(*child.context.trace.priority, -1.)
+}
+
+func TestPropagationStyleOnlyBaggage(t *testing.T) {
+	t.Setenv(headerPropagationStyle, "baggage")
+	assert := assert.New(t)
+
+	tracer := newTracer()
+	defer tracer.Stop()
+	root := tracer.StartSpan("web.request").(*span)
+	root.SetBaggageItem("foo", "bar")
+	ctx := root.Context().(*spanContext)
+	headers := http.Header{}
+
+	// inject the spanContext
+	carrier := HTTPHeadersCarrier(headers)
+	err := tracer.Inject(ctx, carrier)
+	assert.Nil(err)
+
+	assert.Equal(headers.Get(DefaultBaggageHeader), "foo=bar")
+
+	// retrieve the spanContext
+	propagated, err := tracer.Extract(carrier)
+	assert.Nil(err)
+	pctx := propagated.(*spanContext)
+
+	// compare if there is a Context match
+	assert.Equal(ctx.baggage, pctx.baggage)
 }
 
 func TestTracerSamplingPriorityPropagation(t *testing.T) {
@@ -1486,7 +1557,7 @@ func TestTracerRace(t *testing.T) {
 	// different orders, and modifying spans after creation.
 	for n := 0; n < total; n++ {
 		i := n // keep local copy
-		odd := ((i % 2) != 0)
+		odd := (i % 2) != 0
 		go func() {
 			if i%11 == 0 {
 				time.Sleep(time.Microsecond)
@@ -2189,12 +2260,13 @@ func startTestTracer(t testing.TB, opts ...StartOption) (trc *tracer, transport 
 // Mock Transport with a real Encoder
 type dummyTransport struct {
 	sync.RWMutex
-	traces spanLists
-	stats  []*pb.ClientStatsPayload
+	traces     spanLists
+	stats      []*pb.ClientStatsPayload
+	obfVersion int
 }
 
 func newDummyTransport() *dummyTransport {
-	return &dummyTransport{traces: spanLists{}}
+	return &dummyTransport{traces: spanLists{}, obfVersion: -1}
 }
 
 func (t *dummyTransport) Len() int {
@@ -2203,9 +2275,10 @@ func (t *dummyTransport) Len() int {
 	return len(t.traces)
 }
 
-func (t *dummyTransport) sendStats(p *pb.ClientStatsPayload) error {
+func (t *dummyTransport) sendStats(p *pb.ClientStatsPayload, obfVersion int) error {
 	t.Lock()
 	t.stats = append(t.stats, p)
+	t.obfVersion = obfVersion
 	t.Unlock()
 	return nil
 }
@@ -2214,6 +2287,12 @@ func (t *dummyTransport) Stats() []*pb.ClientStatsPayload {
 	t.RLock()
 	defer t.RUnlock()
 	return t.stats
+}
+
+func (t *dummyTransport) ObfuscationVersion() int {
+	t.RLock()
+	defer t.RUnlock()
+	return t.obfVersion
 }
 
 func (t *dummyTransport) send(p *payload) (io.ReadCloser, error) {

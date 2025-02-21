@@ -10,19 +10,20 @@ package httptrace
 import (
 	"context"
 	"fmt"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 	"net/http"
 	"strconv"
 	"strings"
 	"sync"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/baggage"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener/httpsec"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 )
 
 var (
@@ -44,10 +45,8 @@ func StartRequestSpan(r *http.Request, opts ...ddtrace.StartSpanOption) (tracer.
 	// we cannot track the configuration in newConfig because it's called during init() and the the telemetry client
 	// is not initialized yet
 	reportTelemetryConfigOnce.Do(func() {
-		telemetry.GlobalClient.ConfigChange([]telemetry.Configuration{
-			{Name: "inferred_proxy_services_enabled", Value: cfg.inferredProxyServicesEnabled},
-		})
-		log.Debug("internal/httptrace: telemetry.ConfigChange called with cfg: %v:", cfg)
+		telemetry.RegisterAppConfig("inferred_proxy_services_enabled", cfg.inferredProxyServicesEnabled, telemetry.OriginEnvVar)
+		log.Debug("internal/httptrace: telemetry.RegisterAppConfig called with cfg: %v", cfg)
 	})
 
 	var ipTags map[string]string
@@ -107,6 +106,23 @@ func StartRequestSpan(r *http.Request, opts ...ddtrace.StartSpanOption) (tracer.
 						tracer.WithSpanLinks(spanLinksCtx.SpanLinks())(ssCfg)
 					}
 					tracer.ChildOf(spanParentCtx)(ssCfg)
+
+					var baggageMap map[string]string
+					spanParentCtx.ForeachBaggageItem(func(k, v string) bool {
+						// Make the map only if we actually discover any baggage items.
+						if baggageMap == nil {
+							baggageMap = make(map[string]string)
+						}
+						baggageMap[k] = v
+						return true
+					})
+					if len(baggageMap) > 0 {
+						ctx := r.Context()
+						for k, v := range baggageMap {
+							ctx = baggage.Set(ctx, k, v)
+						}
+						r = r.WithContext(ctx)
+					}
 				}
 			}
 

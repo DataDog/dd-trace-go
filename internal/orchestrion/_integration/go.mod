@@ -1,13 +1,13 @@
 module github.com/DataDog/dd-trace-go/internal/orchestrion/_integration
 
-go 1.22.10
+go 1.23.0
 
 replace gopkg.in/DataDog/dd-trace-go.v1 => ../../..
 
 require (
 	cloud.google.com/go/pubsub v1.44.0
 	github.com/99designs/gqlgen v0.17.62
-	github.com/DataDog/go-libddwaf/v3 v3.5.1
+	github.com/DataDog/go-libddwaf/v3 v3.5.3
 	github.com/DataDog/orchestrion v1.0.4-0.20250203104009-f137fbec82f2
 	github.com/IBM/sarama v1.44.0
 	github.com/Shopify/sarama v1.38.1
@@ -144,7 +144,7 @@ require (
 	github.com/eapache/go-xerial-snappy v0.0.0-20230731223053-c322873962e3 // indirect
 	github.com/eapache/queue v1.1.0 // indirect
 	github.com/eapache/queue/v2 v2.0.0-20230407133247-75960ed334e4 // indirect
-	github.com/ebitengine/purego v0.8.1 // indirect
+	github.com/ebitengine/purego v0.8.2 // indirect
 	github.com/elastic/elastic-transport-go/v8 v8.4.0 // indirect
 	github.com/emicklei/go-restful/v3 v3.11.0 // indirect
 	github.com/envoyproxy/go-control-plane/envoy v1.32.3 // indirect

@@ -144,7 +144,7 @@ func (t *gqlTracer) InterceptOperation(ctx context.Context, next graphql.Operati
 
 func (t *gqlTracer) InterceptField(ctx context.Context, next graphql.Resolver) (res any, err error) {
 	opCtx := graphql.GetOperationContext(ctx)
-	if t.cfg.withoutTraceIntrospectionQuery && opCtx.OperationName == "IntrospectionQuery" {
+	if t.cfg.withoutTraceIntrospectionQuery && isIntrospectionQuery(opCtx) {
 		res, err = next(ctx)
 		return
 	}
@@ -242,6 +242,13 @@ func serverSpanName(octx *graphql.OperationContext) string {
 		nameV0 = fmt.Sprintf("%s.%s", ext.SpanTypeGraphQL, octx.Operation.Operation)
 	}
 	return namingschema.OpNameOverrideV0(namingschema.GraphqlServer, nameV0)
+}
+
+func isIntrospectionQuery(octx *graphql.OperationContext) bool {
+	if octx.Operation != nil {
+		return octx.Operation.Name == "IntrospectionQuery"
+	}
+	return octx.OperationName == "IntrospectionQuery"
 }
 
 // Ensure all of these interfaces are implemented.

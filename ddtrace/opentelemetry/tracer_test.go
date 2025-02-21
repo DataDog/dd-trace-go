@@ -195,14 +195,13 @@ func TestShutdownOnce(t *testing.T) {
 }
 
 func TestSpanTelemetry(t *testing.T) {
-	telemetryClient := new(telemetrytest.MockClient)
-	defer telemetry.MockGlobalClient(telemetryClient)()
+	telemetryClient := new(telemetrytest.RecordClient)
+	defer telemetry.MockClient(telemetryClient)()
 	tp := NewTracerProvider()
 	otel.SetTracerProvider(tp)
 	tr := otel.Tracer("")
 	_, _ = tr.Start(context.Background(), "otel.span")
-	telemetryClient.AssertCalled(t, "Count", telemetry.NamespaceTracers, "spans_created", 1.0, telemetryTags, true)
-	telemetryClient.AssertNumberOfCalls(t, "Count", 1)
+	assert.NotZero(t, telemetryClient.Count(telemetry.NamespaceTracers, "spans_created", telemetryTags).Get())
 }
 
 func TestConcurrentSetAttributes(_ *testing.T) {
