@@ -8,6 +8,7 @@ package internal
 import (
 	"context"
 	"math/rand"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -63,4 +64,60 @@ func TestLockMapThrash(t *testing.T) {
 	}
 	wg.Wait()
 	assert.Equal(t, len(lm.m), int(lm.c))
+}
+
+func TestXSyncMapCounterMap(t *testing.T) {
+	assert := assert.New(t)
+
+	cm := NewXSyncMapCounterMap()
+
+	assert.Equal(map[string]int64{}, cm.GetAndReset())
+
+	cm.Inc("a")
+	cm.Inc("b")
+	cm.Inc("a")
+
+	assert.Equal(map[string]int64{"a": 2, "b": 1}, cm.GetAndReset())
+
+	cm.Inc("a")
+	assert.Equal(map[string]int64{"a": 1}, cm.GetAndReset())
+}
+
+func BenchmarkXSyncMapCounterMap(b *testing.B) {
+	b.Run("base_case", func(b *testing.B) {
+		b.ReportAllocs()
+		n := 10
+		keys := make([]string, n)
+		for i := range keys {
+			keys[i] = "key-" + strconv.Itoa(i)
+		}
+
+		b.ResetTimer()
+		cm := NewXSyncMapCounterMap()
+		for i := 0; i < b.N; i++ {
+			cm.Inc(keys[i%n])
+		}
+
+		// Ensure that the values in the map are as expected (monotically decreasing)
+		counts := cm.GetAndReset()
+		for i := 1; i < n; i++ {
+			assert.LessOrEqual(b, counts[keys[i]], counts[keys[i-1]])
+		}
+	})
+
+	b.Run("worst_case", func(b *testing.B) {
+		b.ReportAllocs()
+		b.ResetTimer()
+		cm := NewXSyncMapCounterMap()
+		for i := 0; i < b.N; i++ {
+			cm.Inc("key-" + strconv.Itoa(i))
+		}
+
+		// Ensure all counts are exactly 1
+		counts := cm.GetAndReset()
+		for _, v := range counts {
+			assert.Equal(b, int64(1), v)
+		}
+
+	})
 }
