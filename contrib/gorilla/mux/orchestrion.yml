@@ -118,7 +118,7 @@ aspects:
               var (
                 match    RouteMatch
                 route    string
-                spanOpts = options.Copy({{ $r }}.__dd_config.spanOpts...)
+                spanOpts = options.Copy({{ $r }}.__dd_config.spanOpts)
               )
               if {{ $r }}.Match({{ $req }}, &match) && match.Route != nil {
                 if h, err := match.Route.GetHostTemplate(); err == nil {
