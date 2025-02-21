@@ -638,7 +638,7 @@ func TestClientQueryStringObfuscated(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		t.Setenv(envQueryStringRegexp, "")
+		t.Setenv(internal.EnvQueryStringRegexp, "")
 
 		rt := WrapRoundTripper(http.DefaultTransport)
 		client := &http.Client{
@@ -656,7 +656,7 @@ func TestClientQueryStringObfuscated(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		t.Setenv(envQueryStringRegexp, "^custom")
+		t.Setenv(internal.EnvQueryStringRegexp, "^custom")
 
 		rt := WrapRoundTripper(http.DefaultTransport)
 		client := &http.Client{

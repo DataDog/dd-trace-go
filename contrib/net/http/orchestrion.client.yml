@@ -48,139 +48,32 @@ aspects:
           - receiver: '*net/http.Transport'
     advice:
       - inject-declarations:
-          # We need to use go:linkname to refer to a number of declarations in order to avoid creating
+          # We need to use go:linkname to refer to a these declarations in order to avoid creating
           # circular dependencies, as these features have transitive dependencies on `net/http`...
-          imports:
-            context: context
-            ddtrace: github.com/DataDog/dd-trace-go/v2/ddtrace
-            os: os
           links:
-            - github.com/DataDog/dd-trace-go/v2/internal
-            - github.com/DataDog/dd-trace-go/v2/internal/appsec
-            - github.com/DataDog/dd-trace-go/v2/internal/appsec/emitter/httpsec
-            - github.com/DataDog/dd-trace-go/v2/ddtrace/tracer
-            - github.com/DataDog/dd-trace-go/v2/contrib/internal/httptrace
+            - github.com/DataDog/dd-trace-go/contrib/net/http/v2/internal/orchestrion
           template: |-
-            //go:linkname __dd_appsec_RASPEnabled github.com/DataDog/dd-trace-go/v2/internal/appsec.RASPEnabled
-            func __dd_appsec_RASPEnabled() bool
+            type ddAfterRoundTrip = func(*Response, error) (*Response, error)
 
-            //go:linkname __dd_httpsec_ProtectRoundTrip github.com/DataDog/dd-trace-go/v2/internal/appsec/emitter/httpsec.ProtectRoundTrip
-            func __dd_httpsec_ProtectRoundTrip(context.Context, string) error
-
-            //go:linkname __dd_tracer_SpanType github.com/DataDog/dd-trace-go/v2/ddtrace/tracer.SpanType
-            func __dd_tracer_SpanType(string) ddtrace.StartSpanOption
-
-            //go:linkname __dd_tracer_ResourceName github.com/DataDog/dd-trace-go/v2/ddtrace/tracer.ResourceName
-            func __dd_tracer_ResourceName(string) ddtrace.StartSpanOption
-
-            //go:linkname __dd_tracer_Tag github.com/DataDog/dd-trace-go/v2/ddtrace/tracer.Tag
-            func __dd_tracer_Tag(string, any) ddtrace.StartSpanOption
-
-            //go:linkname __dd_tracer_StartSpanFromContext github.com/DataDog/dd-trace-go/v2/ddtrace/tracer.StartSpanFromContext
-            func __dd_tracer_StartSpanFromContext(context.Context, string, ...ddtrace.StartSpanOption) (ddtrace.Span, context.Context)
-
-            //go:linkname __dd_tracer_WithError github.com/DataDog/dd-trace-go/v2/ddtrace/tracer.WithError
-            func __dd_tracer_WithError(error) ddtrace.FinishOption
-
-            //go:linkname __dd_tracer_Inject github.com/DataDog/dd-trace-go/v2/ddtrace/tracer.Inject
-            func __dd_tracer_Inject(ddtrace.SpanContext, any) error
-
-            //go:linkname __dd_httptrace_GetErrorCodesFromInput github.com/DataDog/dd-trace-go/v2/contrib/internal/httptrace.GetErrorCodesFromInput
-            func __dd_httptrace_GetErrorCodesFromInput(string) func(int) bool
-
-            //go:linkname __dd_httptrace_UrlFromRequest github.com/DataDog/dd-trace-go/v2/contrib/internal/httptrace.UrlFromRequest
-            func __dd_httptrace_UrlFromRequest(*Request, bool) string
-
-            //go:linkname __dd_internal_BoolEnv github.com/DataDog/dd-trace-go/v2/internal.BoolEnv
-            func __dd_internal_BoolEnv(string, bool) bool
-
-            type __dd_tracer_HTTPHeadersCarrier Header
-            func (c __dd_tracer_HTTPHeadersCarrier) Set(key, val string) {
-              Header(c).Set(key, val)
-            }
-
-            var __dd_isError = func(statusCode int) bool {
-              // Treat HTTP 4XX as errors
-              return statusCode >= 400 && statusCode < 500
-            }
-
-            var __dd_queryStringEnabled = __dd_internal_BoolEnv("DD_TRACE_HTTP_CLIENT_TAG_QUERY_STRING", true)
-
-            func init() {
-              v := os.Getenv("DD_TRACE_HTTP_CLIENT_ERROR_STATUSES")
-              if fn := __dd_httptrace_GetErrorCodesFromInput(v); fn != nil {
-                __dd_isError = fn
-              }
-            }
+            //go:linkname __dd_httptrace_ObserveRoundTrip github.com/DataDog/dd-trace-go/contrib/net/http/v2/internal/orchestrion.ObserveRoundTrip
+            func __dd_httptrace_ObserveRoundTrip(*Request) (*Request, ddAfterRoundTrip, error)
       - prepend-statements:
-          imports:
-            ddtrace: github.com/DataDog/dd-trace-go/v2/ddtrace
-            events: github.com/DataDog/dd-trace-go/v2/appsec/events
-            ext: github.com/DataDog/dd-trace-go/v2/ddtrace/ext
-            fmt: fmt
-            globalconfig: github.com/DataDog/dd-trace-go/v2/internal/globalconfig
-            math: math
-            namingschema: github.com/DataDog/dd-trace-go/v2/internal/namingschema
-            os: os
-            strconv: strconv
           template: |-
-            {{- /* Largely copied from https://github.com/DataDog/dd-trace-go/blob/v1.65.0-rc.2/contrib/net/http/roundtripper.go#L28-L104 */ -}}
             {{- $t := .Function.Receiver -}}
             {{- $req := .Function.Argument 0 -}}
             {{- $res := .Function.Result 0 -}}
             {{- $err := .Function.Result 1 -}}
             if !{{ $t }}.DD__tracer_internal {
-              resourceName := fmt.Sprintf("%s %s", {{ $req }}.Method, {{ $req }}.URL.Path)
-              spanName := namingschema.OpName(namingschema.HTTPClient)
-              // Copy the URL so we don't modify the outgoing request
-              url := *{{ $req }}.URL
-              url.User = nil // Don't include userinfo in the http.url tag
-              opts := []ddtrace.StartSpanOption{
-                __dd_tracer_SpanType(ext.SpanTypeHTTP),
-                __dd_tracer_ResourceName(resourceName),
-                __dd_tracer_Tag(ext.HTTPMethod, {{ $req }}.Method),
-                __dd_tracer_Tag(ext.HTTPURL, __dd_httptrace_UrlFromRequest({{ $req }}, __dd_queryStringEnabled)),
-                __dd_tracer_Tag(ext.Component, "net/http"),
-                __dd_tracer_Tag(ext.SpanKind, ext.SpanKindClient),
-                __dd_tracer_Tag(ext.NetworkDestinationName, url.Hostname()),
+              var (
+                __after__ ddAfterRoundTrip
+                __err__   error
+              )
+              {{ $req }}, __after__, __err__ = __dd_httptrace_ObserveRoundTrip({{ $req }})
+              if __err__ != nil {
+                return nil, __err__
               }
-              if analyticsRate := globalconfig.AnalyticsRate(); !math.IsNaN(analyticsRate) {
-                opts = append(opts, __dd_tracer_Tag(ext.EventSampleRate, analyticsRate))
-              }
-              if port, err := strconv.Atoi(url.Port()); err == nil {
-                opts = append(opts, __dd_tracer_Tag(ext.NetworkDestinationPort, port))
-              }
-              span, ctx := __dd_tracer_StartSpanFromContext({{ $req }}.Context(), spanName, opts...)
-              {{ $req }} = {{ $req }}.Clone(ctx)
-              defer func() {
-                if !events.IsSecurityError({{ $err }}) {
-                  span.Finish(__dd_tracer_WithError({{ $err }}))
-                } else {
-                  span.Finish()
-                }
-              }()
-
-              if {{ $err }} = __dd_tracer_Inject(span.Context(), __dd_tracer_HTTPHeadersCarrier({{ $req }}.Header)); {{ $err }} != nil {
-                fmt.Fprintf(os.Stderr, "contrib/net/http.Roundtrip: failed to inject http headers: %v\n", {{ $err }})
-              }
-
-              if __dd_appsec_RASPEnabled() {
-                if err := __dd_httpsec_ProtectRoundTrip(ctx, {{ $req }}.URL.String()); err != nil {
-                  return nil, err
-                }
-              }
-
-              defer func() {
-                if {{ $err }} != nil {
-                  span.SetTag("http.errors", {{ $err }}.Error())
-                  span.SetTag(ext.Error, {{ $err }})
-                } else {
-                  span.SetTag(ext.HTTPCode, strconv.Itoa({{ $res }}.StatusCode))
-                  if __dd_isError({{ $res }}.StatusCode) {
-                    span.SetTag("http.errors", {{ $res }}.Status)
-                    span.SetTag(ext.Error, fmt.Errorf("%d: %s", {{ $res }}.StatusCode, StatusText({{ $res }}.StatusCode)))
-                  }
-                }
+              defer func(){
+                {{ $res }}, {{ $err }} = __after__({{ $res }}, {{ $err }})
               }()
             }
 
