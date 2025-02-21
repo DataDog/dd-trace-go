@@ -108,8 +108,8 @@ aspects:
       - prepend-statements:
           imports:
             http: net/http
-            httptrace: github.com/DataDog/dd-trace-go/v2/contrib/net/http
-            httptraceinternal: github.com/DataDog/dd-trace-go/v2/contrib/internal/httptrace
+            httptrace: github.com/DataDog/dd-trace-go/contrib/net/http/v2
+            httptraceinternal: github.com/DataDog/dd-trace-go/v2/instrumentation/httptrace
             options: github.com/DataDog/dd-trace-go/v2/instrumentation/options
             tracer: github.com/DataDog/dd-trace-go/v2/ddtrace/tracer
           template: |-
