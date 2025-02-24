@@ -106,6 +106,7 @@ type EndpointRequestResult struct {
 type writer struct {
 	mu         sync.Mutex
 	body       *transport.Body
+	bodyMu     sync.Mutex
 	httpClient *http.Client
 	endpoints  []*http.Request
 }
@@ -193,6 +194,8 @@ func preBakeRequest(body *transport.Body, endpoint *http.Request) *http.Request 
 
 // setPayloadToBody sets the payload to the body of the writer and misc fields that are necessary for the payload to be sent.
 func (w *writer) setPayloadToBody(payload transport.Payload) {
+	w.bodyMu.Lock()
+	defer w.bodyMu.Unlock()
 	w.body.SeqID++
 	w.body.TracerTime = time.Now().Unix()
 	w.body.RequestType = payload.RequestType()
@@ -218,6 +221,10 @@ func (w *writer) newRequest(endpoint *http.Request, requestType transport.Reques
 				}
 			}
 		}()
+
+		// If a previous endpoint is still trying to marshall the body, we need to wait for it to realize the pipe is closed and exit.
+		w.bodyMu.Lock()
+		defer w.bodyMu.Unlock()
 
 		// No need to wait on this because the http client will close the pipeReader which will close the pipeWriter and finish the goroutine
 		err = json.NewEncoder(pipeWriter).Encode(w.body)
