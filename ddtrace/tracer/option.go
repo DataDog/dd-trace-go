@@ -1334,7 +1334,7 @@ func WithSpanID(id uint64) StartSpanOption {
 
 // ChildOf tells StartSpan to use the given span context as a parent for the created span.
 //
-// Deprecated: Use span.StartChild instead.
+// Deprecated: Use [Span.StartChild] instead.
 func ChildOf(ctx *SpanContext) StartSpanOption {
 	return func(cfg *StartSpanConfig) {
 		cfg.Parent = ctx
