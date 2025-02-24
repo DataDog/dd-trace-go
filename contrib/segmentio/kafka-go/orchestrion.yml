@@ -17,7 +17,7 @@ aspects:
       - inject-declarations:
           imports:
             tracing: github.com/DataDog/dd-trace-go/contrib/segmentio/kafka-go/v2/internal/tracing
-            ddtrace: github.com/DataDog/dd-trace-go/v2/ddtrace
+            tracer: github.com/DataDog/dd-trace-go/v2/ddtrace/tracer
             strings: strings
           template: |-
             type __dd_wMessage struct {
@@ -111,14 +111,12 @@ aspects:
               }
               r.__dd_tracer = tracing.NewTracer(kafkaCfg)
             }
-
-            type __dd_span = ddtrace.Span
       - add-struct-field:
           name: __dd_tracer
           type: "*github.com/DataDog/dd-trace-go/contrib/segmentio/kafka-go/v2/internal/tracing.Tracer"
       - add-struct-field:
           name: __dd_prevSpan
-          type: "__dd_span"
+          type: "*github.com/DataDog/dd-trace-go/v2/ddtrace/tracer.Span"
 
   - id: Reader.FetchMessage
     join-point:
@@ -196,7 +194,6 @@ aspects:
     advice:
       - prepend-statements:
           imports:
-            ddtrace: github.com/DataDog/dd-trace-go/v2/ddtrace
             tracing: github.com/DataDog/dd-trace-go/contrib/segmentio/kafka-go/v2/internal/tracing
             tracer: github.com/DataDog/dd-trace-go/v2/ddtrace/tracer
           # Here we pass a nil context to tracing.StartProduceSpan as the GLS modifies the context and makes the
@@ -207,7 +204,7 @@ aspects:
             {{- $ctx := .Function.Argument 0 -}}
             {{- $msgs := .Function.Argument 1 -}}
             {{- $err := .Function.Result 0 -}}
-            spans := make([]ddtrace.Span, len({{ $msgs }}))
+            spans := make([]*tracer.Span, len({{ $msgs }}))
             __dd_initWriter(w)
 
             var spanOpts []tracer.StartSpanOption
