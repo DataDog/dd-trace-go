@@ -7,6 +7,7 @@ import (
 	"go/token"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 )
@@ -36,8 +37,12 @@ func extractFromNode(node *ast.File) ([]funcSpec, []*typeSpec) {
 				case *ast.Ident:
 					typeName = t.Name
 				case *ast.StarExpr:
-					ident := t.X.(*ast.Ident)
-					typeName = ident.Name
+					switch ident := t.X.(type) {
+					case *ast.Ident:
+						typeName = ident.Name
+					case *ast.IndexListExpr:
+						// skip
+					}
 				}
 				if _, ok := types[typeName]; !ok {
 					continue
@@ -81,16 +86,13 @@ func (t typeSpec) String() string {
 	var b strings.Builder
 	b.WriteString("type ")
 	b.WriteString(t.name)
-	b.WriteString("\n")
 	for _, f := range t.fields {
-		b.WriteString("  ")
+		b.WriteString("\n  ")
 		b.WriteString(f.String())
-		b.WriteString("\n")
 	}
 	for _, f := range t.funcs {
-		b.WriteString("  ")
+		b.WriteString("\n  ")
 		b.WriteString(f.String())
-		b.WriteString("\n")
 	}
 	return b.String()
 }
@@ -155,6 +157,8 @@ func extractFromInterfaceType(interfaceType *ast.InterfaceType) []funcSpec {
 	return fields
 }
 
+const pathSeparator = string(filepath.Separator)
+
 func run(dir string) error {
 	var apiMap = make(map[string][]string)
 	fset := token.NewFileSet()
@@ -164,6 +168,10 @@ func run(dir string) error {
 			return err
 		}
 		if !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+			return nil
+		}
+		components := strings.Split(path, pathSeparator)
+		if slices.Contains(components, "internal") {
 			return nil
 		}
 
@@ -203,6 +211,7 @@ func run(dir string) error {
 		for _, entry := range apiMap[pkg] {
 			fmt.Println(entry)
 		}
+		fmt.Println()
 	}
 	return nil
 }

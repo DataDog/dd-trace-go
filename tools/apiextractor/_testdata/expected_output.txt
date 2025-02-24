@@ -3,7 +3,6 @@ func DummyFunc
 func DummyFuncWithParams
 type DummyInterface
   func ExportedMethod
-
 type DummyStruct
   field ExportedField
   func AnotherExportedMethod
