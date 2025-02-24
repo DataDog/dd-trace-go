@@ -61,6 +61,9 @@ func newClient(tracerConfig internal.TracerConfig, config ClientConfig) (*client
 			queueSize:     config.DistributionsSize,
 			pool:          internal.NewSyncPool(func() []float64 { return make([]float64, config.DistributionsSize.Min) }),
 		},
+		logger: logger{
+			maxDistinctLogs: config.MaxDistinctLogs,
+		},
 	}
 
 	client.dataSources = append(client.dataSources,
