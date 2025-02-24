@@ -115,7 +115,15 @@ func BenchmarkXSyncMapCounterMap(b *testing.B) {
 		b.ResetTimer()
 		cm := NewXSyncMapCounterMap()
 		for i := 0; i < b.N; i++ {
-			cm.Inc(keys[i%n])
+			// We increment the first key w 75% probability and the rest
+			// increment the rest of the keys.
+			// This is to benchmark the expected case of most spans starting
+			// from the same one integration, with less starting from other sources.
+			if i%4 == 0 {
+				cm.Inc(keys[i/4%n])
+			} else {
+				cm.Inc(keys[0])
+			}
 		}
 
 		// Ensure that the values in the map are as expected (monotically decreasing)
