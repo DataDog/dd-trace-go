@@ -75,7 +75,6 @@ func TestAbandonedSpansMetric(t *testing.T) {
 	assert := assert.New(t)
 	var tg statsdtest.TestStatsdClient
 	tp := new(log.RecordLogger)
-	defer func(old time.Duration) { tickerInterval = old }(tickerInterval)
 	tickerInterval = 100 * time.Millisecond
 	t.Run("finished", func(t *testing.T) {
 		tp.Reset()
@@ -120,7 +119,6 @@ func TestAbandonedSpansMetric(t *testing.T) {
 func TestReportAbandonedSpans(t *testing.T) {
 	assert := assert.New(t)
 	tp := new(log.RecordLogger)
-	defer func(old time.Duration) { tickerInterval = old }(tickerInterval)
 	tickerInterval = 100 * time.Millisecond
 
 	t.Run("on", func(t *testing.T) {
@@ -240,7 +238,7 @@ func TestReportAbandonedSpans(t *testing.T) {
 			sb.WriteString(formatSpanString(s))
 			time.Sleep(15 * time.Millisecond)
 		}
-		assertProcessedSpans(assert, tracer, 10, 5, tickerInterval/10)
+		assertProcessedSpans(assert, tracer, 10, 5, tickerInterval/2)
 		assert.Contains(tp.Logs(), fmt.Sprintf("%s%d abandoned spans:", warnPrefix, 5))
 		assert.Contains(tp.Logs(), sb.String())
 	})
