@@ -53,6 +53,7 @@ func (w *wrappedDispatcher) Run() {
 			tracer.Tag(ext.Component, componentName),
 			tracer.Tag(ext.SpanKind, ext.SpanKindConsumer),
 			tracer.Tag(ext.MessagingSystem, ext.MessagingSystemKafka),
+			tracer.Tag(ext.MessagingDestinationName, msg.Topic),
 			tracer.Measured(),
 		}
 		if !math.IsNaN(w.cfg.analyticsRate) {

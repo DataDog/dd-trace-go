@@ -23,7 +23,7 @@ func StartDynamoDBTestContainer(t testing.TB) (testcontainers.Container, string,
 	exposedPort := "8000/tcp"
 	req := testcontainers.GenericContainerRequest{
 		ContainerRequest: testcontainers.ContainerRequest{
-			Image:        "amazon/dynamodb-local:latest",
+			Image:        "amazon/dynamodb-local:latest", // Change the docker pull stage in .github/workflows/orchestrion.yml if you update this
 			ExposedPorts: []string{exposedPort},
 			WaitingFor:   wait.ForHTTP("").WithStatusCodeMatcher(func(int) bool { return true }),
 			WorkingDir:   "/home/dynamodblocal",

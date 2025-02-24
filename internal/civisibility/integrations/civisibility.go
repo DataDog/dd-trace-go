@@ -131,7 +131,7 @@ func ExitCiVisibility() {
 		log.Debug("civisibility: flushing and stopping tracer")
 		tracer.Flush()
 		tracer.Stop()
-		telemetry.GlobalClient.Stop()
+		telemetry.StopApp()
 		log.Debug("civisibility: done.")
 	}()
 	for _, v := range closeActions {

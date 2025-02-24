@@ -13,10 +13,10 @@ import (
 	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/constants"
 
 	"github.com/stretchr/testify/assert"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 )
 
 var mockTracer mocktracer.Tracer
@@ -309,8 +309,13 @@ func testAssertions(assert *assert.Assertions, now time.Time, testSpan mocktrace
 	// make sure we have both start and end line
 	assert.Contains(spanTags, constants.TestSourceStartLine)
 	assert.Contains(spanTags, constants.TestSourceEndLine)
+
 	// make sure the startLine < endLine
-	assert.Less(spanTags[constants.TestSourceStartLine].(int), spanTags[constants.TestSourceEndLine].(int))
+	if startLine, startLineOk := spanTags[constants.TestSourceStartLine].(int); startLineOk {
+		if endLine, endLineOk := spanTags[constants.TestSourceEndLine].(int); endLineOk {
+			assert.Less(startLine, endLine)
+		}
+	}
 
 	commonAssertions(assert, testSpan)
 }

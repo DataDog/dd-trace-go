@@ -10,6 +10,7 @@ package tracer
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"os"
 	"reflect"
@@ -89,6 +90,13 @@ type span struct {
 	pprofCtxRestore context.Context `msg:"-"` // contains pprof.WithLabel labels of the parent span (if any) that need to be restored when this span finishes
 
 	taskEnd func() // ends execution tracer (runtime/trace) task, if started
+}
+
+type SpanWithLinks interface {
+	ddtrace.Span
+
+	// AddSpanLink appends the given link to span's span links.
+	AddSpanLink(link ddtrace.SpanLink)
 }
 
 // Context yields the SpanContext for this Span. Note that the return
@@ -273,6 +281,8 @@ func (s *span) SetUser(id string, opts ...UserMonitoringOption) {
 
 	usrData := map[string]string{
 		keyUserID:        id,
+		keyUserLogin:     cfg.Login,
+		keyUserOrg:       cfg.Org,
 		keyUserEmail:     cfg.Email,
 		keyUserName:      cfg.Name,
 		keyUserScope:     cfg.Scope,
@@ -464,6 +474,27 @@ func (s *span) setMetric(key string, v float64) {
 	}
 }
 
+// AddSpanLink appends the given link to the span's span links.
+func (s *span) AddSpanLink(link ddtrace.SpanLink) {
+	s.SpanLinks = append(s.SpanLinks, link)
+}
+
+// serializeSpanLinksInMeta saves span links as a JSON string under `Span[meta][_dd.span_links]`.
+func (s *span) serializeSpanLinksInMeta() {
+	if len(s.SpanLinks) == 0 {
+		return
+	}
+	spanLinkBytes, err := json.Marshal(s.SpanLinks)
+	if err != nil {
+		log.Debug("Unable to marshal span links. Not adding span links to span meta.")
+		return
+	}
+	if s.Meta == nil {
+		s.Meta = make(map[string]string)
+	}
+	s.Meta["_dd.span_links"] = string(spanLinkBytes)
+}
+
 // Finish closes this Span (but not its children) providing the duration
 // of its part of the tracing session.
 func (s *span) Finish(opts ...ddtrace.FinishOption) {
@@ -513,6 +544,8 @@ func (s *span) Finish(opts ...ddtrace.FinishOption) {
 			}
 		}
 	}
+
+	s.serializeSpanLinksInMeta()
 
 	s.finish(t)
 	orchestrion.GLSPopValue(sharedinternal.ActiveSpanKey)
@@ -775,6 +808,8 @@ const (
 	keyUserID        = "usr.id"
 	keyUserEmail     = "usr.email"
 	keyUserName      = "usr.name"
+	keyUserLogin     = "usr.login"
+	keyUserOrg       = "usr.org"
 	keyUserRole      = "usr.role"
 	keyUserScope     = "usr.scope"
 	keyUserSessionID = "usr.session_id"

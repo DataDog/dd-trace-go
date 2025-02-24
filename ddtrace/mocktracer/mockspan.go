@@ -47,6 +47,9 @@ type Span interface {
 	// Context returns the span's SpanContext.
 	Context() ddtrace.SpanContext
 
+	// Links returns the span's span links.
+	Links() []ddtrace.SpanLink
+
 	// Stringer allows pretty-printing the span's fields for debugging.
 	fmt.Stringer
 }
@@ -254,6 +257,8 @@ func (s *mockspan) SetUser(id string, opts ...tracer.UserMonitoringOption) {
 	}
 
 	root.SetTag("usr.id", id)
+	root.SetTag("usr.login", cfg.Login)
+	root.SetTag("usr.org", cfg.Org)
 	root.SetTag("usr.email", cfg.Email)
 	root.SetTag("usr.name", cfg.Name)
 	root.SetTag("usr.role", cfg.Role)
@@ -283,4 +288,15 @@ func (s *mockspan) Root() tracer.Span {
 	}
 	root, _ := current.(*mockspan)
 	return root
+}
+
+// Links returns the span's span links.
+func (s *mockspan) Links() []ddtrace.SpanLink {
+	s.RLock()
+	defer s.RUnlock()
+	return s.links
+}
+
+func (s *mockspan) AddSpanLink(link ddtrace.SpanLink) {
+	s.links = append(s.links, link)
 }

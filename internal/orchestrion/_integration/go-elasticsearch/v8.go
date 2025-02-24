@@ -25,6 +25,7 @@ type TestCaseV8 struct {
 }
 
 func (tc *TestCaseV8) Setup(ctx context.Context, t *testing.T) {
+	// Change the docker pull stage in .github/workflows/orchestrion.yml if you update this
 	tc.base.Setup(ctx, t, "docker.elastic.co/elasticsearch/elasticsearch:8.15.3", func(addr string, caCert []byte) (esClient, error) {
 		// from v8, there's a certificate configured by default.
 		// we cannot configure directly in the elasticsearch.Config type as it makes a type assertion on the underlying
