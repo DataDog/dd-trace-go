@@ -31,7 +31,13 @@ func extractFromNode(node *ast.File) ([]funcSpec, []*typeSpec) {
 			if d.Recv == nil {
 				funcs = append(funcs, funcSpec(d.Name.Name))
 			} else {
-				typeName := d.Recv.List[0].Type.(*ast.Ident).Name
+				var typeName string
+				switch t := d.Recv.List[0].Type.(type) {
+				case *ast.Ident:
+					typeName = t.Name
+				case *ast.StarExpr:
+					typeName = t.X.(*ast.Ident).Name
+				}
 				typeFuncs := types[typeName].funcs
 				types[typeName].funcs = append(typeFuncs, funcSpec(d.Name.Name))
 			}
