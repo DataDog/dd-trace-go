@@ -21,6 +21,9 @@ func (d DummyStruct) ExportedMethod() {}
 // unexportedMethod is an unexported method
 func (d DummyStruct) unexportedMethod() {}
 
+// AnotherExportedMethod is another exported method
+func (d DummyStruct) AnotherExportedMethod() {}
+
 // DummyInterface is a dummy exported interface
 type DummyInterface interface {
 	// ExportedMethod is an exported method

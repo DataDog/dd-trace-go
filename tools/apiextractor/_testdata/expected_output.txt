@@ -1,10 +1,13 @@
 Package: .
 func DummyFunc
+func DummyFuncWithParams
+type DummyInterface
+  func ExportedMethod
+
 type DummyStruct
   field ExportedField
-func ExportedMethod
-type DummyInterface
-func DummyFuncWithParams
+  func AnotherExportedMethod
+  func ExportedMethod
 
 Package: package1
 func PublicFunc

@@ -11,75 +11,138 @@ import (
 	"strings"
 )
 
-func extractPublicAPI(dir string) ([]string, error) {
-	var api []string
-	fset := token.NewFileSet()
+type funcSpec string
 
-	err := filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-		if !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
-			return nil
-		}
-
-		node, err := parser.ParseFile(fset, path, nil, parser.ParseComments)
-		if err != nil {
-			return err
-		}
-
-		api = append(api, extractFromNode(node)...)
-		return nil
-	})
-
-	return api, err
+func (f funcSpec) String() string {
+	return fmt.Sprintf("func %s", string(f))
 }
 
-func extractFromNode(node *ast.File) []string {
-	var api []string
+func extractFromNode(node *ast.File) ([]funcSpec, []*typeSpec) {
+	var (
+		funcs []funcSpec
+		types = make(map[string]*typeSpec)
+	)
 	for _, decl := range node.Decls {
 		switch d := decl.(type) {
 		case *ast.FuncDecl:
 			if !d.Name.IsExported() {
 				continue
 			}
-			api = append(api, fmt.Sprintf("func %s", d.Name.Name))
+			if d.Recv == nil {
+				funcs = append(funcs, funcSpec(d.Name.Name))
+			} else {
+				typeName := d.Recv.List[0].Type.(*ast.Ident).Name
+				typeFuncs := types[typeName].funcs
+				types[typeName].funcs = append(typeFuncs, funcSpec(d.Name.Name))
+			}
 		case *ast.GenDecl:
 			if d.Tok != token.TYPE {
 				continue
 			}
-			api = append(api, extractFromGenDecl(d)...)
+			typ := extractFromGenDecl(d)
+			for _, t := range typ {
+				types[t.name] = t
+			}
 		}
 	}
-	return api
+	sort.Slice(funcs, func(i, j int) bool {
+		return funcs[i] < funcs[j]
+	})
+	var foundTypes []*typeSpec
+	for _, t := range types {
+		sort.Slice(t.funcs, func(i, j int) bool {
+			return t.funcs[i] < t.funcs[j]
+		})
+		foundTypes = append(foundTypes, t)
+	}
+	sort.Slice(foundTypes, func(i, j int) bool {
+		return foundTypes[i].name < foundTypes[j].name
+	})
+	return funcs, foundTypes
 }
 
-func extractFromGenDecl(d *ast.GenDecl) []string {
-	var api []string
+type typeSpec struct {
+	name   string
+	fields []fieldSpec
+	funcs  []funcSpec
+}
+
+func (t typeSpec) String() string {
+	var b strings.Builder
+	b.WriteString("type ")
+	b.WriteString(t.name)
+	b.WriteString("\n")
+	for _, f := range t.fields {
+		b.WriteString("  ")
+		b.WriteString(f.String())
+		b.WriteString("\n")
+	}
+	for _, f := range t.funcs {
+		b.WriteString("  ")
+		b.WriteString(f.String())
+		b.WriteString("\n")
+	}
+	return b.String()
+}
+
+type fieldSpec string
+
+func (f fieldSpec) String() string {
+	return fmt.Sprintf("field %s", string(f))
+}
+
+func extractFromGenDecl(d *ast.GenDecl) []*typeSpec {
+	var types []*typeSpec
 	for _, spec := range d.Specs {
-		typeSpec := spec.(*ast.TypeSpec)
-		if !typeSpec.Name.IsExported() {
+		typSpec := spec.(*ast.TypeSpec)
+		if !typSpec.Name.IsExported() {
 			continue
 		}
-		api = append(api, fmt.Sprintf("type %s", typeSpec.Name.Name))
-		if structType, ok := typeSpec.Type.(*ast.StructType); ok {
-			api = append(api, extractFromStructType(structType)...)
+		ts := &typeSpec{name: typSpec.Name.Name}
+		types = append(types, ts)
+		switch typ := typSpec.Type.(type) {
+		case *ast.StructType:
+			ts.fields = extractFromStructType(typ)
+			sort.Slice(ts.fields, func(i, j int) bool {
+				return ts.fields[i] < ts.fields[j]
+			})
+		case *ast.InterfaceType:
+			ts.funcs = extractFromInterfaceType(typ)
+			sort.Slice(ts.funcs, func(i, j int) bool {
+				return ts.funcs[i] < ts.funcs[j]
+			})
 		}
 	}
-	return api
+	return types
 }
 
-func extractFromStructType(structType *ast.StructType) []string {
-	var api []string
+func extractFromStructType(structType *ast.StructType) []fieldSpec {
+	var fields []fieldSpec
 	for _, field := range structType.Fields.List {
 		for _, name := range field.Names {
 			if !name.IsExported() {
 				continue
 			}
-			api = append(api, fmt.Sprintf("  field %s", name.Name))
+			fields = append(fields, fieldSpec(name.Name))
 		}
 	}
-	return api
+	return fields
+}
+
+func extractFromInterfaceType(interfaceType *ast.InterfaceType) []funcSpec {
+	var fields []funcSpec
+	for _, method := range interfaceType.Methods.List {
+		if len(method.Names) == 0 {
+			continue
+		}
+		for _, name := range method.Names {
+			if !name.IsExported() {
+				continue
+			}
+			fields = append(fields, funcSpec(name.Name))
+		}
+	}
+	return fields
 }
 
 func run(dir string) error {
@@ -104,7 +167,14 @@ func run(dir string) error {
 			return err
 		}
 
-		apiMap[relPath] = append(apiMap[relPath], extractFromNode(node)...)
+		funcs, types := extractFromNode(node)
+		// append to apiMap[relPath] the funcs and types' string representations
+		for _, f := range funcs {
+			apiMap[relPath] = append(apiMap[relPath], f.String())
+		}
+		for _, t := range types {
+			apiMap[relPath] = append(apiMap[relPath], t.String())
+		}
 		return nil
 	})
 
@@ -123,7 +193,6 @@ func run(dir string) error {
 		for _, entry := range apiMap[pkg] {
 			fmt.Println(entry)
 		}
-		fmt.Println()
 	}
 	return nil
 }
