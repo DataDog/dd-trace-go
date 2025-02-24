@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"github.com/DataDog/datadog-go/v5/statsd"
+
 	"github.com/DataDog/dd-trace-go/v2/ddtrace"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/internal/tracerstats"
@@ -33,7 +34,6 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/statsdtest"
-	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -717,7 +717,7 @@ func TestSamplingDecision(t *testing.T) {
 func TestTracerRuntimeMetrics(t *testing.T) {
 	t.Run("on", func(t *testing.T) {
 		tp := new(log.RecordLogger)
-		tp.Ignore("appsec: ", telemetry.LogPrefix)
+		tp.Ignore("appsec: ", "telemetry")
 		tracer, err := newTracer(WithRuntimeMetrics(), WithLogger(tp), WithDebugMode(true), WithEnv("test"))
 		defer tracer.Stop()
 		assert.NoError(t, err)
@@ -727,7 +727,7 @@ func TestTracerRuntimeMetrics(t *testing.T) {
 	t.Run("dd-env", func(t *testing.T) {
 		t.Setenv("DD_RUNTIME_METRICS_ENABLED", "true")
 		tp := new(log.RecordLogger)
-		tp.Ignore("appsec: ", telemetry.LogPrefix)
+		tp.Ignore("appsec: ", "telemetry")
 		tracer, err := newTracer(WithLogger(tp), WithDebugMode(true), WithEnv("test"))
 		defer tracer.Stop()
 		assert.NoError(t, err)
@@ -1604,7 +1604,7 @@ func TestTracerRace(t *testing.T) {
 	// different orders, and modifying spans after creation.
 	for n := 0; n < total; n++ {
 		i := n // keep local copy
-		odd := ((i % 2) != 0)
+		odd := (i % 2) != 0
 		go func() {
 			if i%11 == 0 {
 				time.Sleep(time.Microsecond)

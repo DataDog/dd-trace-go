@@ -20,7 +20,6 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/httpmem"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
-	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -2049,7 +2048,7 @@ func TestNonePropagator(t *testing.T) {
 	t.Run("inject/none,b3", func(t *testing.T) {
 		t.Setenv(headerPropagationStyleInject, "none,b3")
 		tp := new(log.RecordLogger)
-		tp.Ignore("appsec: ", telemetry.LogPrefix)
+		tp.Ignore("appsec: ", "telemetry")
 		tracer, err := newTracer(WithLogger(tp), WithEnv("test"))
 		assert.Nil(t, err)
 		defer tracer.Stop()
@@ -2382,7 +2381,7 @@ func FuzzComposeTracestate(f *testing.F) {
 			if strings.HasSuffix(v, " ") {
 				t.Skipf("Skipping invalid tags")
 			}
-			totalLen += (len(k) + len(v))
+			totalLen += len(k) + len(v)
 			if totalLen > 128 {
 				break
 			}

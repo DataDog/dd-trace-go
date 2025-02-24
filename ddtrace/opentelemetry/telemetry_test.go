@@ -22,7 +22,7 @@ func TestTelemetry(t *testing.T) {
 		expectedExtract string
 	}{
 		{
-			// if nothing is set, DD_TRACE_PROPAGATION_STYLE will be set to datadog,tracecontext
+			// if nothing is set, DD_TRACE_PROPAGATION_STYLE will be set to datadog,tracecontext,baggage
 			expectedInject:  "datadog,tracecontext,baggage",
 			expectedExtract: "datadog,tracecontext,baggage",
 		},
@@ -54,7 +54,7 @@ func TestTelemetry(t *testing.T) {
 				"DD_PROPAGATION_STYLE_INJECT":        "tracecontext",
 				"DD_TRACE_PROPAGATION_STYLE_EXTRACT": "",
 			},
-			expectedInject:  "tracecontext",
+			expectedInject:  "datadog,tracecontext,baggage", // default value
 			expectedExtract: "datadog,tracecontext,baggage",
 		},
 		{
@@ -63,7 +63,7 @@ func TestTelemetry(t *testing.T) {
 				"DD_PROPAGATION_STYLE_INJECT":        "datadog,tracecontext",
 				"DD_TRACE_PROPAGATION_STYLE_EXTRACT": "b3",
 			},
-			expectedInject:  "datadog,tracecontext",
+			expectedInject:  "datadog,tracecontext,baggage", // default value
 			expectedExtract: "b3",
 		},
 	}
@@ -73,16 +73,15 @@ func TestTelemetry(t *testing.T) {
 			for k, v := range test.env {
 				t.Setenv(k, v)
 			}
-			telemetryClient := new(telemetrytest.MockClient)
-			defer telemetry.MockGlobalClient(telemetryClient)()
+			telemetryClient := new(telemetrytest.RecordClient)
+			defer telemetry.MockClient(telemetryClient)()
 
 			p := NewTracerProvider()
 			p.Tracer("")
 			defer p.Shutdown()
 
-			assert.True(t, telemetryClient.Started)
-			telemetry.Check(t, telemetryClient.Configuration, "trace_propagation_style_inject", test.expectedInject)
-			telemetry.Check(t, telemetryClient.Configuration, "trace_propagation_style_extract", test.expectedExtract)
+			assert.Contains(t, telemetryClient.Configuration, telemetry.Configuration{Name: "trace_propagation_style_inject", Value: test.expectedInject})
+			assert.Contains(t, telemetryClient.Configuration, telemetry.Configuration{Name: "trace_propagation_style_extract", Value: test.expectedExtract})
 		})
 	}
 

@@ -291,7 +291,7 @@ func TestError(t *testing.T) {
 		assert.Len(spans, 1)
 		span = spans[0]
 		assertSpan(assert, *span, 500)
-		assert.Empty(span.Tag(ext.Error))
+		assert.Empty(span.Tag(ext.ErrorMsg))
 	})
 }
 

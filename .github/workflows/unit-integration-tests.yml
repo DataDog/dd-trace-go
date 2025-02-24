@@ -19,6 +19,7 @@ env:
   # our library builds with all of the Go versions we claim to support,
   # without having to download a newer one.
   GOTOOLCHAIN: local
+  GODEBUG: "x509negativeserial=1"
 
 permissions:
   contents: read

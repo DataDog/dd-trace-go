@@ -253,7 +253,7 @@ func TestWithStatusCheck(t *testing.T) {
 			assert.Equal(1, len(spans))
 
 			s := spans[0]
-			_, ok := s.Tag(ext.Error).(error)
+			_, ok := s.Tag(ext.ErrorMsg).(string)
 			assert.Equal(ht.hasErr, ok)
 		})
 	}

@@ -32,6 +32,7 @@ func (tr *Tracer) StartConsumeSpan(ctx context.Context, msg Message) *tracer.Spa
 		tracer.Tag(ext.Component, componentName),
 		tracer.Tag(ext.SpanKind, ext.SpanKindConsumer),
 		tracer.Tag(ext.MessagingSystem, ext.MessagingSystemKafka),
+		tracer.Tag(ext.MessagingDestinationName, msg.GetTopic()),
 		tracer.Measured(),
 	}
 	if tr.kafkaCfg.BootstrapServers != "" {
@@ -54,20 +55,21 @@ func (tr *Tracer) StartConsumeSpan(ctx context.Context, msg Message) *tracer.Spa
 }
 
 func (tr *Tracer) StartProduceSpan(ctx context.Context, writer Writer, msg Message, spanOpts ...tracer.StartSpanOption) *tracer.Span {
+	topic := writer.GetTopic()
+	if topic == "" {
+		topic = msg.GetTopic()
+	}
 	opts := []tracer.StartSpanOption{
 		tracer.ServiceName(tr.producerServiceName),
+		tracer.ResourceName("Produce Topic " + topic),
 		tracer.SpanType(ext.SpanTypeMessageProducer),
 		tracer.Tag(ext.Component, componentName),
 		tracer.Tag(ext.SpanKind, ext.SpanKindProducer),
 		tracer.Tag(ext.MessagingSystem, ext.MessagingSystemKafka),
+		tracer.Tag(ext.MessagingDestinationName, topic),
 	}
 	if tr.kafkaCfg.BootstrapServers != "" {
 		opts = append(opts, tracer.Tag(ext.KafkaBootstrapServers, tr.kafkaCfg.BootstrapServers))
-	}
-	if writer.GetTopic() != "" {
-		opts = append(opts, tracer.ResourceName("Produce Topic "+writer.GetTopic()))
-	} else {
-		opts = append(opts, tracer.ResourceName("Produce Topic "+msg.GetTopic()))
 	}
 	if !math.IsNaN(tr.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, tr.analyticsRate))

@@ -6,6 +6,7 @@
 package mocktracer // import "github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 
 import (
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -207,9 +208,16 @@ func (s *Span) Unwrap() *tracer.Span {
 
 // Links returns the span's span links.
 func (s *Span) Links() []tracer.SpanLink {
-	return s.links
+	payload := s.Tag("_dd.span_links")
+	if payload == nil {
+		return nil
+	}
+	// Unmarshal the JSON payload into the SpanLink slice.
+	var links []tracer.SpanLink
+	json.Unmarshal([]byte(payload.(string)), &links)
+	return links
 }
 
 func (s *Span) AddSpanLink(link tracer.SpanLink) {
-	s.links = append(s.links, link)
+	s.sp.AddSpanLink(link)
 }
