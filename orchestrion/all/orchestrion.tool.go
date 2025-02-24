@@ -55,6 +55,7 @@ import (
 	_ "github.com/DataDog/dd-trace-go/contrib/log/slog/v2"                                 // integration
 	_ "github.com/DataDog/dd-trace-go/contrib/net/http/v2"                                 // integration
 	_ "github.com/DataDog/dd-trace-go/contrib/redis/go-redis.v9/v2"                        // integration
+	_ "github.com/DataDog/dd-trace-go/contrib/segmentio/kafka-go/v2"                       // integration
 	_ "github.com/DataDog/dd-trace-go/contrib/sirupsen/logrus/v2"                          // integration
 	_ "github.com/DataDog/dd-trace-go/contrib/twitchtv/twirp/v2"                           // integration
 	_ "github.com/DataDog/dd-trace-go/v2/contrib/os"                                       // integration

@@ -3,7 +3,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2024 Datadog, Inc.
 
-package kafka
+package tracing
 
 import (
 	"context"
@@ -14,7 +14,7 @@ import (
 )
 
 func (tr *Tracer) SetConsumeDSMCheckpoint(msg Message) {
-	if !tr.cfg.dataStreamsEnabled || msg == nil {
+	if !tr.dataStreamsEnabled || msg == nil {
 		return
 	}
 	edges := []string{"direction:in", "topic:" + msg.GetTopic(), "type:kafka"}
@@ -39,7 +39,7 @@ func (tr *Tracer) SetConsumeDSMCheckpoint(msg Message) {
 }
 
 func (tr *Tracer) SetProduceDSMCheckpoint(msg Message, writer Writer) {
-	if !tr.cfg.dataStreamsEnabled || msg == nil {
+	if !tr.dataStreamsEnabled || msg == nil {
 		return
 	}
 
