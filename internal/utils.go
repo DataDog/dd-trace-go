@@ -93,7 +93,7 @@ func (cm *XSyncMapCounterMap) Inc(key string) {
 
 func (cm *XSyncMapCounterMap) GetAndReset() map[string]int64 {
 	ret := map[string]int64{}
-	cm.counts.Range(func(key string, counter *xsync.Counter) bool {
+	cm.counts.Range(func(key string, _ *xsync.Counter) bool {
 		v, ok := cm.counts.LoadAndDelete(key)
 		if ok {
 			ret[key] = v.Value()
