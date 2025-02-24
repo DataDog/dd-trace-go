@@ -111,12 +111,14 @@ aspects:
               }
               r.__dd_tracer = tracing.NewTracer(kafkaCfg)
             }
+
+            type __dd_tracer_Span = tracer.Span
       - add-struct-field:
           name: __dd_tracer
           type: "*github.com/DataDog/dd-trace-go/contrib/segmentio/kafka-go/v2/internal/tracing.Tracer"
       - add-struct-field:
           name: __dd_prevSpan
-          type: "*github.com/DataDog/dd-trace-go/v2/ddtrace/tracer.Span"
+          type: "*__dd_tracer_Span"
 
   - id: Reader.FetchMessage
     join-point:
