@@ -12,6 +12,8 @@ import (
 	"strings"
 	"time"
 
+	spanpointers "github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go-v2/v2/internal/span_pointers"
+
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsmiddleware "github.com/aws/aws-sdk-go-v2/aws/middleware"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
@@ -24,10 +26,11 @@ import (
 	"github.com/aws/smithy-go/middleware"
 	smithyhttp "github.com/aws/smithy-go/transport/http"
 
-	eventBridgeTracer "github.com/DataDog/dd-trace-go/v2/contrib/aws/eventbridge"
-	sfnTracer "github.com/DataDog/dd-trace-go/v2/contrib/aws/sfn"
-	snsTracer "github.com/DataDog/dd-trace-go/v2/contrib/aws/sns"
-	sqsTracer "github.com/DataDog/dd-trace-go/v2/contrib/aws/sqs"
+	eventBridgeTracer "github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go-v2/v2/eventbridge"
+	"github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go-v2/v2/internal"
+	sfnTracer "github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go-v2/v2/sfn"
+	snsTracer "github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go-v2/v2/sns"
+	sqsTracer "github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go-v2/v2/sqs"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
@@ -35,11 +38,7 @@ import (
 
 const componentName = "aws/aws-sdk-go-v2/aws"
 
-var instr *instrumentation.Instrumentation
-
-func init() {
-	instr = instrumentation.Load(instrumentation.PackageAWSSDKGoV2)
-}
+var instr = internal.Instr
 
 type spanTimestampKey struct{}
 
@@ -120,10 +119,6 @@ func (mw *traceMiddleware) startTraceMiddleware(stack *middleware.Stack) error {
 
 		// Handle initialize and continue through the middleware chain.
 		out, metadata, err = next.HandleInitialize(spanctx, in)
-		if err != nil && (mw.cfg.errCheck == nil || mw.cfg.errCheck(err)) {
-			span.SetTag(ext.Error, err)
-		}
-		span.Finish()
 
 		return out, metadata, err
 	}), middleware.After)
@@ -352,6 +347,15 @@ func (mw *traceMiddleware) deserializeTraceMiddleware(stack *middleware.Stack) e
 		if requestID, ok := awsmiddleware.GetRequestIDMetadata(metadata); ok {
 			span.SetTag(ext.AWSRequestID, requestID)
 		}
+
+		// Create span pointers
+		serviceID := awsmiddleware.GetServiceID(ctx)
+		spanpointers.AddSpanPointers(serviceID, in, out, span)
+
+		if err != nil && (mw.cfg.errCheck == nil || mw.cfg.errCheck(err)) {
+			span.SetTag(ext.Error, err)
+		}
+		span.Finish()
 
 		return out, metadata, err
 	}), middleware.Before)

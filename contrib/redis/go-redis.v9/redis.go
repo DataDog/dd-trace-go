@@ -76,7 +76,7 @@ func additionalTagOptions(client redis.UniversalClient) []tracer.StartSpanOption
 		opt := clientOptions.Options()
 		if opt.Addr == "FailoverClient" {
 			additionalTags = []tracer.StartSpanOption{
-				tracer.Tag("out.db", strconv.Itoa(opt.DB)),
+				tracer.Tag(ext.TargetDB, strconv.Itoa(opt.DB)),
 			}
 		} else {
 			host, port, err := net.SplitHostPort(opt.Addr)
@@ -87,7 +87,7 @@ func additionalTagOptions(client redis.UniversalClient) []tracer.StartSpanOption
 			additionalTags = []tracer.StartSpanOption{
 				tracer.Tag(ext.TargetHost, host),
 				tracer.Tag(ext.TargetPort, port),
-				tracer.Tag("out.db", strconv.Itoa(opt.DB)),
+				tracer.Tag(ext.TargetDB, strconv.Itoa(opt.DB)),
 			}
 		}
 	} else if clientOptions, ok := client.(clusterOptions); ok {

@@ -42,7 +42,7 @@ func (m *DatadogMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request, ne
 	if !math.IsNaN(m.cfg.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, m.cfg.analyticsRate))
 	}
-	span, ctx := httptrace.StartRequestSpan(r, opts...)
+	_, ctx, finishSpans := httptrace.StartRequestSpan(r, opts...)
 	defer func() {
 		// check if the responseWriter is of type negroni.ResponseWriter
 		var (
@@ -56,7 +56,7 @@ func (m *DatadogMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request, ne
 				opts = []tracer.FinishOption{tracer.WithError(fmt.Errorf("%d: %s", status, http.StatusText(status)))}
 			}
 		}
-		httptrace.FinishRequestSpan(span, status, m.cfg.isStatusError, opts...)
+		finishSpans(status, m.cfg.isStatusError, opts...)
 	}()
 
 	next(w, r.WithContext(ctx))

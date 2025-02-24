@@ -19,6 +19,7 @@ env:
   # our library builds with all of the Go versions we claim to support,
   # without having to download a newer one.
   GOTOOLCHAIN: local
+  GODEBUG: "x509negativeserial=1"
 
 permissions:
   contents: read
@@ -28,7 +29,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@f43a0e5ff2bd294095638e18286ca9a3d1956744 # v3.6.0
         with:
           ref: ${{ inputs.ref || github.ref }}
       - name: Setup Go 
@@ -36,7 +37,7 @@ jobs:
         with:
           go-version: ${{ inputs.go-version }}
       - name: Setup go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@f111f3307d8850f501ac008e886eec1fd1932a34 # v5.3.0
         with:
           go-version: stable
       - name: Copyright
@@ -48,19 +49,34 @@ jobs:
       group: "APM Larger Runners"
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@f43a0e5ff2bd294095638e18286ca9a3d1956744 # v3.6.0
         with:
           ref: ${{ inputs.ref || github.ref }}
 
       ## Disabled for v2 until the main PR is merged,
-      ## as it's too large for reviewdog: https://github.com/DataDog/dd-trace-go/actions/runs/8423412332/job/23064985838#step:3:94
-      # - name: golangci-lint
-      #   uses: reviewdog/action-golangci-lint@v2
-      #   with:
-      #     go_version: ${{ inputs.go-version }}
-      #     golangci_lint_version: v1.59.1
-      #     fail_on_error: true
-      #     reporter: github-pr-review
+      - name: golangci-lint
+        ## Disabled for v2 until the main PR is merged,
+        ## as it's too large for reviewdog: https://github.com/DataDog/dd-trace-go/actions/runs/8423412332/job/23064985838#step:3:94
+        if: false
+        uses: reviewdog/action-golangci-lint@dd3fda91790ca90e75049e5c767509dc0ec7d99b # v2.7.0
+        with:
+          golangci_lint_flags: "--timeout 10m" # We are hitting timeout when there is no cache
+          go_version: ${{ inputs.go-version }}
+          golangci_lint_version: v1.64.5
+          fail_level: error
+          reporter: github-pr-review
+
+      - name: golangci-lint (internal/orchestrion/_integration)
+        # Disable while Orchestrion is not ported to v2
+        if: false
+        uses: reviewdog/action-golangci-lint@dd3fda91790ca90e75049e5c767509dc0ec7d99b # v2.7.0
+        with:
+          golangci_lint_flags: "--timeout 10m" # We are hitting timeout when there is no cache
+          go_version: ${{ inputs.go-version }}
+          golangci_lint_version: v1.64.5
+          fail_level: error
+          reporter: github-pr-review
+          workdir: internal/orchestrion/_integration
 
   test-contrib:
     runs-on:
@@ -139,6 +155,12 @@ jobs:
         image: redis:3.2
         ports:
           - 6379:6379
+      valkey:
+        image: valkey/valkey:8
+        env:
+          VALKEY_EXTRA_FLAGS: "--port 6380 --requirepass password-for-default"
+        ports:
+          - 6380:6380
       elasticsearch2:
         image: elasticsearch:2
         env:
@@ -206,7 +228,7 @@ jobs:
           - 4566:4566
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@f43a0e5ff2bd294095638e18286ca9a3d1956744 # v3.6.0
         with:
           ref: ${{ inputs.ref || github.ref }}
 
@@ -292,7 +314,7 @@ jobs:
           - 8126:8126
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@f43a0e5ff2bd294095638e18286ca9a3d1956744 # v3.6.0
         with:
           ref: ${{ inputs.ref || github.ref }}
 

@@ -18,6 +18,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/osinfo"
+	telemetrylog "github.com/DataDog/dd-trace-go/v2/internal/telemetry/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/version"
 )
 
@@ -60,6 +61,7 @@ type startupInfo struct {
 	PropagationStyleInject      string                       `json:"propagation_style_inject"`  // Propagation style for inject
 	PropagationStyleExtract     string                       `json:"propagation_style_extract"` // Propagation style for extract
 	TracingAsTransport          bool                         `json:"tracing_as_transport"`      // Whether the tracer is disabled and other products are using it as a transport
+	DogstatsdAddr               string                       `json:"dogstatsd_address"`         // Destination of statsd payloads
 }
 
 // checkEndpoint tries to connect to the URL specified by endpoint.
@@ -149,6 +151,7 @@ func logStartup(t *tracer) {
 		PropagationStyleInject:      injectorNames,
 		PropagationStyleExtract:     extractorNames,
 		TracingAsTransport:          t.config.tracingAsTransport,
+		DogstatsdAddr:               t.config.dogstatsdAddr,
 	}
 
 	info.PropagationStyleInject = injectorNames
@@ -172,4 +175,5 @@ func logStartup(t *tracer) {
 		return
 	}
 	log.Info("DATADOG TRACER CONFIGURATION %s\n", string(bs))
+	telemetrylog.Debug("DATADOG TRACER CONFIGURATION %s\n", string(bs))
 }

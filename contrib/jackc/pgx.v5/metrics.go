@@ -33,6 +33,7 @@ var interval = 10 * time.Second
 
 // pollPoolStats calls (*pgxpool).Stats on the pool at a predetermined interval. It pushes the pool Stats off to the statsd client.
 func pollPoolStats(statsd instrumentation.StatsdClient, pool *pgxpool.Pool) {
+	// TODO: Create stop condition for pgx on db.Close
 	instr.Logger().Debug("contrib/jackc/pgx.v5: Traced pool connection found: Pool stats will be gathered and sent every %v.", interval)
 	for range time.NewTicker(interval).C {
 		instr.Logger().Debug("contrib/jackc/pgx.v5: Reporting pgxpool.Stat metrics...")

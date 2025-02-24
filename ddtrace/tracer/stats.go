@@ -20,6 +20,10 @@ import (
 	"github.com/DataDog/datadog-go/v5/statsd"
 )
 
+// tracerObfuscationVersion indicates which version of stats obfuscation logic we implement
+// In the future this can be pulled directly from our obfuscation import.
+var tracerObfuscationVersion = 1
+
 // defaultStatsBucketSize specifies the default span of time that will be
 // covered in one stats bucket.
 var defaultStatsBucketSize = (10 * time.Second).Nanoseconds()
@@ -70,12 +74,17 @@ func newConcentrator(c *config, bucketSize int64, statsdClient internal.StatsdCl
 		env = "unknown-env"
 		log.Debug("No DD Env found, normally the agent should have one")
 	}
+	gitCommitSha := ""
+	if c.ciVisibilityEnabled {
+		// We only have this data if we're in CI Visibility
+		gitCommitSha = utils.GetCITags()[constants.GitCommitSHA]
+	}
 	aggKey := stats.PayloadAggregationKey{
 		Hostname:     c.hostname,
 		Env:          env,
 		Version:      c.version,
 		ContainerID:  "", // This intentionally left empty as the Agent will attach the container ID only in certain situations.
-		GitCommitSha: utils.GetCITags()[constants.GitCommitSHA],
+		GitCommitSha: gitCommitSha,
 		ImageTag:     "",
 	}
 	spanConcentrator := stats.NewSpanConcentrator(sCfg, time.Now())
@@ -152,7 +161,11 @@ func (c *concentrator) runIngester() {
 }
 
 func (c *concentrator) newTracerStatSpan(s *Span, obfuscator *obfuscate.Obfuscator) (*tracerStatSpan, bool) {
-	statSpan, ok := c.spanConcentrator.NewStatSpan(s.service, obfuscatedResource(obfuscator, s.spanType, s.resource),
+	resource := s.resource
+	if c.shouldObfuscate() {
+		resource = obfuscatedResource(obfuscator, s.spanType, s.resource)
+	}
+	statSpan, ok := c.spanConcentrator.NewStatSpan(s.service, resource,
 		s.name, s.spanType, s.parentID, s.start, s.duration, s.error, s.meta, s.metrics, c.cfg.agent.peerTags)
 	if !ok {
 		return nil, false
@@ -162,6 +175,11 @@ func (c *concentrator) newTracerStatSpan(s *Span, obfuscator *obfuscate.Obfuscat
 		statSpan: statSpan,
 		origin:   origin,
 	}, true
+}
+
+func (c *concentrator) shouldObfuscate() bool {
+	// Obfuscate if agent reports an obfuscation version AND our version is at least as new
+	return c.cfg.agent.obfuscationVersion > 0 && c.cfg.agent.obfuscationVersion <= tracerObfuscationVersion
 }
 
 // add s into the concentrator's internal stats buckets.
@@ -199,6 +217,13 @@ const (
 func (c *concentrator) flushAndSend(timenow time.Time, includeCurrent bool) {
 	csps := c.spanConcentrator.Flush(timenow.UnixNano(), includeCurrent)
 
+	obfVersion := 0
+	if c.shouldObfuscate() {
+		obfVersion = tracerObfuscationVersion
+	} else {
+		log.Debug("Stats Obfuscation was skipped, agent will obfuscate (tracer %d, agent %d)", tracerObfuscationVersion, c.cfg.agent.obfuscationVersion)
+	}
+
 	if len(csps) == 0 {
 		// nothing to flush
 		return
@@ -209,7 +234,7 @@ func (c *concentrator) flushAndSend(timenow time.Time, includeCurrent bool) {
 	// compatible in case this ever changes we can just iterate through all of them.
 	for _, csp := range csps {
 		flushedBuckets += len(csp.Stats)
-		if err := c.cfg.transport.sendStats(csp); err != nil {
+		if err := c.cfg.transport.sendStats(csp, obfVersion); err != nil {
 			c.statsd().Incr("datadog.tracer.stats.flush_errors", nil, 1)
 			log.Error("Error sending stats payload: %v", err)
 		}

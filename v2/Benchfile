@@ -3,27 +3,29 @@
 require 'open3'
 
 def run_benchmark(bench_name, ref_package)
-	%w[main v2-dev].each do |ref|
+	%w[main dario.castane/langplat-168/bench-investigation].each do |ref|
 		system("git checkout #{ref}")
 
 		pkg_url = package_url(ref, ref_package)
-		stdout, stderr, status = Open3.capture3("go test -benchmem -run=^$ -count=100 -bench ^#{bench_name}$ #{pkg_url}")
-		if status.success?
-			# Unconditionally replace the v1 package URL with the v2 package URL.
-			# This is necessary because v1 and v2 has different import paths, and
-			# benchstat will not be able to match the benchmarks otherwise.
-			stdout.gsub!(pkg_url, package_url('v2-dev', ref_package))
-			File.write("/tmp/#{bench_name}-#{ref}.txt", stdout)
-		else
-			puts stderr
-		end
+		cpuprofile = "-cpuprofile /tmp/#{bench_name}-#{baseline_or_candidate(ref)}.cpu.pprof"
+		memprofile = "-memprofile /tmp/#{bench_name}-#{baseline_or_candidate(ref)}.mem.pprof"
+		filename = "/tmp/#{bench_name}-#{baseline_or_candidate(ref)}.txt"
+
+		stdout, stderr, status = Open3.capture3("go test -benchmem -run=^$ -count=100 -bench=. #{cpuprofile} #{memprofile} -bench ^#{bench_name}$ #{pkg_url}")
+		# Unconditionally replace the v1 package URL with the v2 package URL.
+		# This is necessary because v1 and v2 has different import paths, and
+		# benchstat will not be able to match the benchmarks otherwise.
+		stdout.gsub!(pkg_url, package_url('v2-dev', ref_package))
+		File.write(filename, stdout)
+
+		puts stderr unless status.success?
 	end
 
-	system("benchstat -table .config -row .fullname -col .file /tmp/#{bench_name}-main.txt /tmp/#{bench_name}-v2-dev.txt")
+	system("benchstat -table .config -row .fullname -col .file /tmp/#{bench_name}-baseline.txt /tmp/#{bench_name}-candidate.txt")
 end
 
 def package_url(ref, package)
-	if ref == 'v2-dev'
+	if ref != 'main'
 		if package.start_with?('contrib/')
 			"github.com/DataDog/dd-trace-go/#{package}/v2"
 		else
@@ -34,6 +36,11 @@ def package_url(ref, package)
 	else
 		"gopkg.in/DataDog/dd-trace-go.v1/#{package}"
 	end
+end
+
+def baseline_or_candidate(ref)
+	return 'baseline' if ref == 'main'
+	'candidate'
 end
 
 def benchmarks

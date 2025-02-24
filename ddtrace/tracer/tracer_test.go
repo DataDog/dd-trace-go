@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"github.com/DataDog/datadog-go/v5/statsd"
+
 	"github.com/DataDog/dd-trace-go/v2/ddtrace"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/internal/tracerstats"
@@ -33,7 +34,6 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/statsdtest"
-	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -717,7 +717,7 @@ func TestSamplingDecision(t *testing.T) {
 func TestTracerRuntimeMetrics(t *testing.T) {
 	t.Run("on", func(t *testing.T) {
 		tp := new(log.RecordLogger)
-		tp.Ignore("appsec: ", telemetry.LogPrefix)
+		tp.Ignore("appsec: ", "telemetry")
 		tracer, err := newTracer(WithRuntimeMetrics(), WithLogger(tp), WithDebugMode(true), WithEnv("test"))
 		defer tracer.Stop()
 		assert.NoError(t, err)
@@ -727,7 +727,7 @@ func TestTracerRuntimeMetrics(t *testing.T) {
 	t.Run("dd-env", func(t *testing.T) {
 		t.Setenv("DD_RUNTIME_METRICS_ENABLED", "true")
 		tp := new(log.RecordLogger)
-		tp.Ignore("appsec: ", telemetry.LogPrefix)
+		tp.Ignore("appsec: ", "telemetry")
 		tracer, err := newTracer(WithLogger(tp), WithDebugMode(true), WithEnv("test"))
 		defer tracer.Stop()
 		assert.NoError(t, err)
@@ -952,6 +952,78 @@ func TestPropagationDefaults(t *testing.T) {
 	assert.Equal(root.spanID, child.parentID)
 	assert.Equal(root.traceID, child.parentID)
 	assert.Equal(*child.context.trace.priority, -1.)
+}
+
+func TestPropagationDefaultIncludesBaggage(t *testing.T) {
+	assert := assert.New(t)
+
+	tracer, err := newTracer()
+	assert.NoError(err)
+	defer tracer.Stop()
+	root := tracer.StartSpan("web.request")
+	root.SetBaggageItem("foo", "bar")
+	root.SetTag(ext.ManualDrop, true)
+	ctx := root.Context()
+	headers := http.Header{}
+
+	// inject the spanContext
+	carrier := HTTPHeadersCarrier(headers)
+	err = tracer.Inject(ctx, carrier)
+	assert.Nil(err)
+
+	tid := strconv.FormatUint(root.traceID, 10)
+	pid := strconv.FormatUint(root.spanID, 10)
+
+	assert.Equal(headers.Get(DefaultTraceIDHeader), tid)
+	assert.Equal(headers.Get(DefaultParentIDHeader), pid)
+	assert.Equal(headers.Get(DefaultPriorityHeader), "-1")
+	assert.Equal(headers.Get(DefaultBaggageHeader), "foo=bar")
+
+	// retrieve the spanContext
+	propagated, err := tracer.Extract(carrier)
+	assert.Nil(err)
+
+	// compare if there is a Context match
+	assert.Equal(ctx.traceID, propagated.traceID)
+	assert.Equal(ctx.spanID, propagated.spanID)
+	assert.Equal(*ctx.trace.priority, -1.)
+	assert.Equal(ctx.baggage, propagated.baggage)
+
+	// ensure a child can be created
+	child := tracer.StartSpan("db.query", ChildOf(propagated))
+
+	assert.NotEqual(uint64(0), child.traceID)
+	assert.NotEqual(uint64(0), child.spanID)
+	assert.Equal(root.spanID, child.parentID)
+	assert.Equal(root.traceID, child.parentID)
+	assert.Equal(*child.context.trace.priority, -1.)
+}
+
+func TestPropagationStyleOnlyBaggage(t *testing.T) {
+	t.Setenv(headerPropagationStyle, "baggage")
+	assert := assert.New(t)
+
+	tracer, err := newTracer()
+	assert.NoError(err)
+	defer tracer.Stop()
+	root := tracer.StartSpan("web.request")
+	root.SetBaggageItem("foo", "bar")
+	ctx := root.Context()
+	headers := http.Header{}
+
+	// inject the spanContext
+	carrier := HTTPHeadersCarrier(headers)
+	err = tracer.Inject(ctx, carrier)
+	assert.Nil(err)
+
+	assert.Equal(headers.Get(DefaultBaggageHeader), "foo=bar")
+
+	// retrieve the spanContext
+	propagated, err := tracer.Extract(carrier)
+	assert.Nil(err)
+
+	// compare if there is a Context match
+	assert.Equal(ctx.baggage, propagated.baggage)
 }
 
 func TestTracerSamplingPriorityPropagation(t *testing.T) {
@@ -1532,7 +1604,7 @@ func TestTracerRace(t *testing.T) {
 	// different orders, and modifying spans after creation.
 	for n := 0; n < total; n++ {
 		i := n // keep local copy
-		odd := ((i % 2) != 0)
+		odd := (i % 2) != 0
 		go func() {
 			if i%11 == 0 {
 				time.Sleep(time.Microsecond)

@@ -13,7 +13,12 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
+
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/baggage"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
@@ -30,43 +35,120 @@ func init() {
 	instr = instrumentation.Load(instrumentation.PackageNetHTTP)
 }
 
+var reportTelemetryConfigOnce sync.Once
+
+type inferredSpanCreatedCtxKey struct{}
+
+type FinishSpanFunc = func(status int, errorFn func(int) bool, opts ...tracer.FinishOption)
+
 // StartRequestSpan starts an HTTP request span with the standard list of HTTP request span tags (http.method, http.url,
 // http.useragent). Any further span start option can be added with opts.
-func StartRequestSpan(r *http.Request, opts ...tracer.StartSpanOption) (*tracer.Span, context.Context) {
+func StartRequestSpan(r *http.Request, opts ...tracer.StartSpanOption) (*tracer.Span, context.Context, FinishSpanFunc) {
 	// Append our span options before the given ones so that the caller can "overwrite" them.
 	// TODO(): rework span start option handling (https://github.com/DataDog/dd-trace-go/issues/1352)
+
+	// we cannot track the configuration in newConfig because it's called during init() and the the telemetry client
+	// is not initialized yet
+	reportTelemetryConfigOnce.Do(func() {
+		telemetry.RegisterAppConfig("inferred_proxy_services_enabled", cfg.inferredProxyServicesEnabled, telemetry.OriginEnvVar)
+		log.Debug("internal/httptrace: telemetry.RegisterAppConfig called with cfg: %v", cfg)
+	})
 
 	var ipTags map[string]string
 	if cfg.traceClientIP {
 		ipTags, _ = httpsec.ClientIPTags(r.Header, true, r.RemoteAddr)
 	}
-	nopts := make([]tracer.StartSpanOption, 0, len(opts)+1)
-	nopts = append(nopts,
-		func(cfg *tracer.StartSpanConfig) {
-			if cfg.Tags == nil {
-				cfg.Tags = make(map[string]interface{}, len(ipTags)+6)
-			}
-			cfg.Tags[ext.SpanType] = ext.SpanTypeWeb
-			cfg.Tags[ext.HTTPMethod] = r.Method
-			cfg.Tags[ext.HTTPURL] = urlFromRequest(r)
-			cfg.Tags[ext.HTTPUserAgent] = r.UserAgent()
-			cfg.Tags["_dd.measured"] = 1
-			if r.Host != "" {
-				cfg.Tags["http.host"] = r.Host
-			}
-			if spanctx, err := tracer.Extract(tracer.HTTPHeadersCarrier(r.Header)); err == nil {
-				// If there are span links as a result of context extraction, add them as a StartSpanOption
-				if spanctx != nil && spanctx.SpanLinks() != nil {
-					tracer.WithSpanLinks(spanctx.SpanLinks())(cfg)
+
+	var inferredProxySpan *tracer.Span
+
+	if cfg.inferredProxyServicesEnabled {
+		inferredProxySpanCreated := false
+
+		if created, ok := r.Context().Value(inferredSpanCreatedCtxKey{}).(bool); ok {
+			inferredProxySpanCreated = created
+		}
+
+		if !inferredProxySpanCreated {
+			var inferredStartSpanOpts []tracer.StartSpanOption
+
+			requestProxyContext, err := extractInferredProxyContext(r.Header)
+			if err != nil {
+				log.Debug(err.Error())
+			} else {
+				spanParentCtx, spanParentErr := tracer.Extract(tracer.HTTPHeadersCarrier(r.Header))
+				if spanParentErr == nil {
+					if spanParentCtx != nil && spanParentCtx.SpanLinks() != nil {
+						inferredStartSpanOpts = append(inferredStartSpanOpts, tracer.WithSpanLinks(spanParentCtx.SpanLinks()))
+					}
 				}
-				tracer.ChildOf(spanctx)(cfg)
+				inferredProxySpan = startInferredProxySpan(requestProxyContext, spanParentCtx, inferredStartSpanOpts...)
 			}
+		}
+	}
+
+	nopts := make([]tracer.StartSpanOption, 0, len(opts)+1+len(ipTags))
+	nopts = append(nopts,
+		func(ssCfg *tracer.StartSpanConfig) {
+			if ssCfg.Tags == nil {
+				ssCfg.Tags = make(map[string]interface{})
+			}
+			ssCfg.Tags[ext.SpanType] = ext.SpanTypeWeb
+			ssCfg.Tags[ext.HTTPMethod] = r.Method
+			ssCfg.Tags[ext.HTTPURL] = UrlFromRequest(r, cfg.queryString)
+			ssCfg.Tags[ext.HTTPUserAgent] = r.UserAgent()
+			ssCfg.Tags["_dd.measured"] = 1
+			if r.Host != "" {
+				ssCfg.Tags["http.host"] = r.Host
+			}
+
+			if inferredProxySpan != nil {
+				tracer.ChildOf(inferredProxySpan.Context())(ssCfg)
+			} else {
+				if spanctx, err := tracer.Extract(tracer.HTTPHeadersCarrier(r.Header)); err == nil {
+					// If there are span links as a result of context extraction, add them as a StartSpanOption
+					if spanctx != nil && spanctx.SpanLinks() != nil {
+						tracer.WithSpanLinks(spanctx.SpanLinks())(ssCfg)
+					}
+					tracer.ChildOf(spanctx)(ssCfg)
+
+					var baggageMap map[string]string
+					spanctx.ForeachBaggageItem(func(k, v string) bool {
+						// Make the map only if we actually discover any baggage items.
+						if baggageMap == nil {
+							baggageMap = make(map[string]string)
+						}
+						baggageMap[k] = v
+						return true
+					})
+					if len(baggageMap) > 0 {
+						ctx := r.Context()
+						for k, v := range baggageMap {
+							ctx = baggage.Set(ctx, k, v)
+						}
+						r = r.WithContext(ctx)
+					}
+				}
+			}
+
 			for k, v := range ipTags {
-				cfg.Tags[k] = v
+				ssCfg.Tags[k] = v
 			}
 		})
+
 	nopts = append(nopts, opts...)
-	return tracer.StartSpanFromContext(r.Context(), instr.OperationName(instrumentation.ComponentServer, nil), nopts...)
+
+	var requestContext = r.Context()
+	if inferredProxySpan != nil {
+		requestContext = context.WithValue(r.Context(), inferredSpanCreatedCtxKey{}, true)
+	}
+
+	span, ctx := tracer.StartSpanFromContext(requestContext, instr.OperationName(instrumentation.ComponentServer, nil), nopts...)
+	return span, ctx, func(status int, errorFn func(int) bool, opts ...tracer.FinishOption) {
+		FinishRequestSpan(span, status, errorFn, opts...)
+		if inferredProxySpan != nil {
+			FinishRequestSpan(inferredProxySpan, status, errorFn, opts...)
+		}
+	}
 }
 
 // FinishRequestSpan finishes the given HTTP request span and sets the expected response-related tags such as the status
@@ -97,18 +179,19 @@ func FinishRequestSpan(s *tracer.Span, status int, errorFn func(int) bool, opts 
 	s.Finish(opts...)
 }
 
-// urlFromRequest returns the full URL from the HTTP request. If query params are collected, they are obfuscated granted
-// obfuscation is not disabled by the user (through DD_TRACE_OBFUSCATION_QUERY_STRING_REGEXP)
-// See https://docs.datadoghq.com/tracing/configure_data_security#redacting-the-query-in-the-url for more information.
-func urlFromRequest(r *http.Request) string {
+// UrlFromRequest returns the full URL from the HTTP request. If queryString is true, params are collected and they are obfuscated either by the default query string obfuscator or the custom obfuscator provided by the user (through DD_TRACE_OBFUSCATION_QUERY_STRING_REGEXP)
+// See https://docs.datadoghq.com/tracing/configure_data_security/?tab=net#redact-query-strings for more information.
+func UrlFromRequest(r *http.Request, queryString bool) string {
 	// Quoting net/http comments about net.Request.URL on server requests:
 	// "For most requests, fields other than Path and RawQuery will be
 	// empty. (See RFC 7230, Section 5.3)"
-	// This is why we don't rely on url.URL.String(), url.URL.Host, url.URL.Scheme, etc...
+	// This is why we can't rely entirely on url.URL.String(), url.URL.Host, url.URL.Scheme, etc...
 	var url string
 	path := r.URL.EscapedPath()
 	scheme := "http"
-	if r.TLS != nil {
+	if s := r.URL.Scheme; s != "" {
+		scheme = s
+	} else if r.TLS != nil {
 		scheme = "https"
 	}
 	if r.Host != "" {
@@ -117,7 +200,7 @@ func urlFromRequest(r *http.Request) string {
 		url = path
 	}
 	// Collect the query string if we are allowed to report it and obfuscate it if possible/allowed
-	if cfg.queryString && r.URL.RawQuery != "" {
+	if queryString && r.URL.RawQuery != "" {
 		query := r.URL.RawQuery
 		if cfg.queryStringRegexp != nil {
 			query = cfg.queryStringRegexp.ReplaceAllLiteralString(query, "<redacted>")

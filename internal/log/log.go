@@ -107,6 +107,8 @@ func UseLogger(l Logger) (undo func()) {
 	old := logger
 	logger = l
 	return func() {
+		mu.Lock()
+		defer mu.Unlock()
 		logger = old
 	}
 }

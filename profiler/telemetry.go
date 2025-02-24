@@ -6,6 +6,7 @@
 package profiler
 
 import (
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 )
 
@@ -24,15 +25,8 @@ func startTelemetry(c *config) {
 		_, ok := c.types[t]
 		return ok
 	}
-	telemetry.GlobalClient.ApplyOps(
-		telemetry.WithService(c.service),
-		telemetry.WithEnv(c.env),
-		telemetry.WithHTTPClient(c.httpClient),
-		telemetry.WithURL(c.agentless, c.agentURL),
-	)
-	telemetry.GlobalClient.ProductChange(
-		telemetry.NamespaceProfilers,
-		true,
+	telemetry.ProductStarted(telemetry.NamespaceProfilers)
+	telemetry.RegisterAppConfigs(
 		[]telemetry.Configuration{
 			{Name: "delta_profiles", Value: c.deltaProfiles},
 			{Name: "agentless", Value: c.agentless},
@@ -56,6 +50,18 @@ func startTelemetry(c *config) {
 			{Name: "num_custom_profiler_label_keys", Value: len(c.customProfilerLabels)},
 			{Name: "enabled", Value: c.enabled},
 			{Name: "flush_on_exit", Value: c.flushOnExit},
-		},
+		}...,
 	)
+	if telemetry.GlobalClient() == nil {
+		client, err := telemetry.NewClient(c.service, c.env, c.version, telemetry.ClientConfig{
+			HTTPClient: c.httpClient,
+			APIKey:     c.apiKey,
+			AgentURL:   c.agentURL,
+		})
+		if err != nil {
+			log.Debug("profiler: failed to create telemetry client: %v", err)
+			return
+		}
+		telemetry.StartApp(client)
+	}
 }

@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"reflect"
 	"runtime"
+	"slices"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -18,6 +19,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting/coverage"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/net"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/telemetry"
 )
 
@@ -168,6 +170,7 @@ func (ddm *M) executeInternalTest(testInfo *testingTInfo) func(*testing.T) {
 	settings := integrations.GetSettings()
 	coverageEnabled := settings.CodeCoverage
 	testSkippedByITR := false
+	testIsNew := true
 
 	// Check if the test is going to be skipped by ITR
 	if settings.ItrEnabled && settings.TestsSkipping {
@@ -180,6 +183,15 @@ func (ddm *M) executeInternalTest(testInfo *testingTInfo) func(*testing.T) {
 				}
 			}
 		}
+	}
+
+	// Check if the test is known
+	if settings.KnownTestsEnabled {
+		testIsKnown, testKnownDataOk := isKnownTest(&testInfo.commonInfo)
+		testIsNew = testKnownDataOk && !testIsKnown
+	} else {
+		// We don't mark any test as new if the feature is disabled
+		testIsNew = false
 	}
 
 	// Instrument the test function
@@ -204,7 +216,8 @@ func (ddm *M) executeInternalTest(testInfo *testingTInfo) func(*testing.T) {
 		// Set the CI Visibility test to the execution metadata
 		execMeta.test = test
 
-		// If the execution is for a new test we tag the test event from early flake detection
+		// If the execution is for a new test we tag the test event as new
+		execMeta.isANewTest = execMeta.isANewTest || testIsNew
 		if execMeta.isANewTest {
 			// Set the is new test tag
 			test.SetTag(constants.TestIsNew, "true")
@@ -214,6 +227,37 @@ func (ddm *M) executeInternalTest(testInfo *testingTInfo) func(*testing.T) {
 		if execMeta.isARetry {
 			// Set the retry tag
 			test.SetTag(constants.TestIsRetry, "true")
+
+			// If the execution is an EFD execution we tag the test event reason
+			if execMeta.isEFDExecution {
+				// Set the EFD as the retry reason
+				test.SetTag(constants.TestRetryReason, "efd")
+			} else if execMeta.isATRExecution {
+				// Set the ATR as the retry reason
+				test.SetTag(constants.TestRetryReason, "atr")
+			} else if execMeta.isAttemptToFix {
+				// Set the attempt to fix as the retry reason
+				test.SetTag(constants.TestRetryReason, "attempt_to_fix")
+			}
+		}
+
+		// If the test is an attempt to fix we tag the test event
+		if execMeta.isAttemptToFix {
+			test.SetTag(constants.TestIsAttempToFix, "true")
+		}
+
+		// If the test is quarantined we tag the test event
+		if execMeta.isQuarantined {
+			test.SetTag(constants.TestIsQuarantined, "true")
+		}
+
+		// If the test is disabled we tag the test event
+		if execMeta.isDisabled {
+			test.SetTag(constants.TestIsDisabled, "true")
+			if !execMeta.isAttemptToFix {
+				test.Close(integrations.ResultStatusSkip, integrations.WithTestSkipReason("Flaky test is disabled by Datadog"))
+				return
+			}
 		}
 
 		// Check if the test needs to be skipped by ITR
@@ -280,6 +324,9 @@ func (ddm *M) executeInternalTest(testInfo *testingTInfo) func(*testing.T) {
 				// Handle panic and set error information.
 				execMeta.panicData = r
 				execMeta.panicStacktrace = utils.GetStacktrace(1)
+				if execMeta.isARetry && execMeta.isLastRetry && execMeta.allRetriesFailed {
+					test.SetTag(constants.TestHasFailedAllRetries, "true")
+				}
 				test.SetError(integrations.WithErrorInfo("panic", fmt.Sprint(r), execMeta.panicStacktrace))
 				suite.SetTag(ext.Error, true)
 				module.SetTag(ext.Error, true)
@@ -294,6 +341,9 @@ func (ddm *M) executeInternalTest(testInfo *testingTInfo) func(*testing.T) {
 			} else {
 				// Normal finalization: determine the test result based on its state.
 				if t.Failed() {
+					if execMeta.isARetry && execMeta.isLastRetry && execMeta.allRetriesFailed {
+						test.SetTag(constants.TestHasFailedAllRetries, "true")
+					}
 					test.SetTag(ext.Error, true)
 					suite.SetTag(ext.Error, true)
 					module.SetTag(ext.Error, true)
@@ -301,6 +351,9 @@ func (ddm *M) executeInternalTest(testInfo *testingTInfo) func(*testing.T) {
 				} else if t.Skipped() {
 					test.Close(integrations.ResultStatusSkip)
 				} else {
+					if execMeta.isARetry && execMeta.isLastRetry && execMeta.allAttemptsPassed {
+						test.SetTag(constants.TestAttemptToFixPassed, "true")
+					}
 					test.Close(integrations.ResultStatusPass)
 				}
 
@@ -385,6 +438,19 @@ func (ddm *M) instrumentInternalBenchmarks(internalBenchmarks *[]testing.Interna
 // executeInternalBenchmark wraps the original benchmark function to include CI visibility instrumentation.
 func (ddm *M) executeInternalBenchmark(benchmarkInfo *testingBInfo) func(*testing.B) {
 	originalFunc := runtime.FuncForPC(reflect.Indirect(reflect.ValueOf(benchmarkInfo.originalFunc)).Pointer())
+
+	settings := integrations.GetSettings()
+	testIsNew := true
+
+	// Check if the test is known
+	if settings.KnownTestsEnabled {
+		testIsKnown, testKnownDataOk := isKnownTest(&benchmarkInfo.commonInfo)
+		testIsNew = testKnownDataOk && !testIsKnown
+	} else {
+		// We don't mark any test as new if the feature is disabled
+		testIsNew = false
+	}
+
 	instrumentedInternalFunc := func(b *testing.B) {
 
 		// decrement level
@@ -398,6 +464,12 @@ func (ddm *M) executeInternalBenchmark(benchmarkInfo *testingBInfo) func(*testin
 		suite := module.GetOrCreateSuite(benchmarkInfo.suiteName, integrations.WithTestSuiteStartTime(startTime))
 		test := suite.CreateTest(benchmarkInfo.testName, integrations.WithTestStartTime(startTime))
 		test.SetTestFunc(originalFunc)
+
+		// If the execution is for a new test we tag the test event as new
+		if testIsNew {
+			// Set the is new test tag
+			test.SetTag(constants.TestIsNew, "true")
+		}
 
 		// Run the original benchmark function.
 		var iPfOfB *benchmarkPrivateFields
@@ -527,4 +599,40 @@ func checkModuleAndSuite(module integrations.TestModule, suite integrations.Test
 	if atomic.AddInt32(modulesCounters[module.Name()], -1) <= 0 {
 		module.Close()
 	}
+}
+
+// isKnownTest checks if a test is a known test or a new one
+func isKnownTest(testInfo *commonInfo) (isKnown bool, hasKnownData bool) {
+	knownTestsData := integrations.GetKnownTests()
+	if knownTestsData != nil && len(knownTestsData.Tests) > 0 {
+		// Check if the test is a known test or a new one
+		if knownSuites, ok := knownTestsData.Tests[testInfo.moduleName]; ok {
+			if knownTests, ok := knownSuites[testInfo.suiteName]; ok {
+				return slices.Contains(knownTests, testInfo.testName), true
+			}
+		}
+
+		return false, true
+	}
+
+	return false, false
+}
+
+// getTestManagementData retrieves the test management data for a test
+func getTestManagementData(testInfo *commonInfo) (data *net.TestManagementTestsResponseDataTestPropertiesAttributes, hasTestManagementData bool) {
+	testManagementData := integrations.GetTestManagementTestsData()
+	if testManagementData != nil && len(testManagementData.Modules) > 0 {
+		// Check if the test is quarantined
+		if module, ok := testManagementData.Modules[testInfo.moduleName]; ok {
+			if suite, ok := module.Suites[testInfo.suiteName]; ok {
+				if test, ok := suite.Tests[testInfo.testName]; ok {
+					return &test.Properties, true
+				}
+			}
+		}
+
+		return nil, true
+	}
+
+	return nil, false
 }

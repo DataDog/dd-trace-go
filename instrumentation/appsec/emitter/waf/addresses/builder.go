@@ -47,7 +47,7 @@ func (b *RunAddressDataBuilder) WithHeadersNoCookies(headers map[string][]string
 
 func (b *RunAddressDataBuilder) WithCookies(cookies map[string][]string) *RunAddressDataBuilder {
 	if len(cookies) == 0 {
-		cookies = nil
+		return b
 	}
 	b.Persistent[ServerRequestCookiesAddr] = cookies
 	return b
@@ -106,6 +106,22 @@ func (b *RunAddressDataBuilder) WithUserID(id string) *RunAddressDataBuilder {
 		return b
 	}
 	b.Persistent[UserIDAddr] = id
+	return b
+}
+
+func (b *RunAddressDataBuilder) WithUserLogin(login string) *RunAddressDataBuilder {
+	if login == "" {
+		return b
+	}
+	b.Persistent[UserLoginAddr] = login
+	return b
+}
+
+func (b *RunAddressDataBuilder) WithUserOrg(org string) *RunAddressDataBuilder {
+	if org == "" {
+		return b
+	}
+	b.Persistent[UserOrgAddr] = org
 	return b
 }
 

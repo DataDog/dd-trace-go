@@ -4,5 +4,6 @@ linters:
   disable-all: true
   enable:
   - gofmt
+  - govet
   - revive
   - bodyclose

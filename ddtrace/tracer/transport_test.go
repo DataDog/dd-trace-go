@@ -394,3 +394,31 @@ func TestWithUDS(t *testing.T) {
 	assert.Len(rt.reqs, 1)
 	assert.Equal(hits, 2)
 }
+
+func TestExternalEnvironment(t *testing.T) {
+	t.Setenv("DD_EXTERNAL_ENV", "it-false,cn-nginx-webserver,pu-75a2b6d5-3949-4afb-ad0d-92ff0674e759")
+	assert := assert.New(t)
+	found := false
+	srv := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		extEnv := r.Header.Get("Datadog-External-Env")
+		if extEnv == "" {
+			return
+		}
+		assert.Equal("it-false,cn-nginx-webserver,pu-75a2b6d5-3949-4afb-ad0d-92ff0674e759", extEnv)
+		found = true
+	}))
+	defer srv.Close()
+
+	u, err := url.Parse(srv.URL)
+	assert.NoError(err)
+	c := &http.Client{}
+	trc, err := newTracer(WithAgentTimeout(2), WithAgentAddr(u.Host), WithHTTPClient(c))
+	assert.NoError(err)
+	defer trc.Stop()
+
+	p, err := encode(getTestTrace(1, 1))
+	assert.NoError(err)
+	_, err = trc.config.transport.send(p)
+	assert.NoError(err)
+	assert.True(found)
+}

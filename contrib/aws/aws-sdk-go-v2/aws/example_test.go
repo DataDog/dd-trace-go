@@ -24,7 +24,7 @@ import (
 func Example() {
 	awsCfg, err := awscfg.LoadDefaultConfig(context.Background())
 	if err != nil {
-		log.Fatalf(err.Error())
+		log.Fatal(err.Error())
 	}
 	awstrace.AppendMiddleware(&awsCfg)
 	sqsClient := sqs.NewFromConfig(awsCfg)

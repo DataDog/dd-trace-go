@@ -6,10 +6,12 @@
 package tracer_test
 
 import (
+	"testing"
+
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
+
 	"github.com/stretchr/testify/assert"
-	"testing"
 )
 
 type logRecord struct {
@@ -25,7 +27,7 @@ func TestAdaptLogger(t *testing.T) {
 			msg:   msg,
 		})
 	})
-	tracer.UseLogger(l)
+	defer log.UseLogger(l)()
 
 	log.Warn("warning\n")
 	log.Info("info\n")

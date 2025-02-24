@@ -6,6 +6,7 @@
 package mocktracer // import "github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 
 import (
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -20,8 +21,9 @@ func newSpan(operationName string, cfg *tracer.StartSpanConfig) *tracer.Span {
 }
 
 type Span struct {
-	sp *tracer.Span
-	m  map[string]interface{}
+	sp    *tracer.Span
+	m     map[string]interface{}
+	links []tracer.SpanLink
 }
 
 func MockSpan(s *tracer.Span) *Span {
@@ -128,6 +130,40 @@ func (s *Span) ParentID() uint64 {
 	return s.m[ext.MapSpanParentID].(uint64)
 }
 
+// Context returns the SpanContext of this Span.
+func (s *Span) Context() *tracer.SpanContext { return s.sp.Context() }
+
+// SetUser associates user information to the current trace which the
+// provided span belongs to. The options can be used to tune which user
+// bit of information gets monitored. This mockup only sets the user
+// information as span tags of the root span of the current trace.
+func (s *Span) SetUser(id string, opts ...tracer.UserMonitoringOption) {
+	root := s.sp.Root()
+	if root == nil {
+		return
+	}
+
+	cfg := tracer.UserMonitoringConfig{
+		Metadata: make(map[string]string),
+	}
+	for _, fn := range opts {
+		fn(&cfg)
+	}
+
+	root.SetTag("usr.id", id)
+	root.SetTag("usr.login", cfg.Login)
+	root.SetTag("usr.org", cfg.Org)
+	root.SetTag("usr.email", cfg.Email)
+	root.SetTag("usr.name", cfg.Name)
+	root.SetTag("usr.role", cfg.Role)
+	root.SetTag("usr.scope", cfg.Scope)
+	root.SetTag("usr.session_id", cfg.SessionID)
+
+	for k, v := range cfg.Metadata {
+		root.SetTag(fmt.Sprintf("usr.%s", k), v)
+	}
+}
+
 func (s *Span) SpanID() uint64 {
 	if s == nil {
 		return 0
@@ -170,6 +206,18 @@ func (s *Span) Unwrap() *tracer.Span {
 	return s.sp
 }
 
-func (s *Span) Context() *tracer.SpanContext {
-	return s.sp.Context()
+// Links returns the span's span links.
+func (s *Span) Links() []tracer.SpanLink {
+	payload := s.Tag("_dd.span_links")
+	if payload == nil {
+		return nil
+	}
+	// Unmarshal the JSON payload into the SpanLink slice.
+	var links []tracer.SpanLink
+	json.Unmarshal([]byte(payload.(string)), &links)
+	return links
+}
+
+func (s *Span) AddSpanLink(link tracer.SpanLink) {
+	s.sp.AddSpanLink(link)
 }

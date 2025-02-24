@@ -14,7 +14,7 @@ import (
 	"path"
 	"testing"
 
-	"github.com/DataDog/dd-trace-go/v2/tools/v2check/v2check"
+	"github.com/DataDog/dd-trace-go/tools/v2check/v2check"
 
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/analysistest"

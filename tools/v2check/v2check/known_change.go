@@ -173,7 +173,7 @@ func (DDTraceTypes) Probes() []Probe {
 			Is[*ast.ValueSpec],
 			Is[*ast.Field],
 		),
-		ImportedFrom("gopkg.in/Datadog/dd-trace-go.v1"),
+		ImportedFrom("gopkg.in/DataDog/dd-trace-go.v1"),
 		Not(DeclaresType[ddtrace.SpanContext]()),
 	}
 }

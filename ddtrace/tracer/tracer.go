@@ -185,7 +185,9 @@ var statsInterval = 10 * time.Second
 // any running tracer, meaning that calling it several times will result in a restart
 // of the tracer by replacing the current instance with a new one.
 func Start(opts ...StartOption) error {
-	defer telemetry.Time(telemetry.NamespaceGeneral, "init_time", nil, true)()
+	defer func(now time.Time) {
+		telemetry.Distribution(telemetry.NamespaceGeneral, "init_time", nil).Submit(float64(time.Since(now).Milliseconds()))
+	}(time.Now())
 	t, err := newTracer(opts...)
 	if err != nil {
 		return err
@@ -211,8 +213,6 @@ func Start(opts ...StartOption) error {
 		// DD_INSTRUMENTATION_TELEMETRY_ENABLED env var
 		startTelemetry(t.config)
 
-		// start appsec
-		appsec.Start(t.config.appsecStartOptions...)
 		globalinternal.SetTracerInitialized(true)
 		return nil
 	}
@@ -228,17 +228,18 @@ func Start(opts ...StartOption) error {
 		log.Warn("Remote config startup error: %s", err)
 	}
 
-	// start instrumentation telemetry unless it is disabled through the
-	// DD_INSTRUMENTATION_TELEMETRY_ENABLED env var
-	startTelemetry(t.config)
-
 	// appsec.Start() may use the telemetry client to report activation, so it is
 	// important this happens _AFTER_ startTelemetry() has been called, so the
 	// client is appropriately configured.
 	appsecopts := make([]appsecConfig.StartOption, 0, len(t.config.appsecStartOptions)+1)
 	appsecopts = append(appsecopts, t.config.appsecStartOptions...)
-	appsecopts = append(appsecopts, appsecConfig.WithRCConfig(cfg))
+	appsecopts = append(appsecopts, appsecConfig.WithRCConfig(cfg), appsecConfig.WithMetaStructAvailable(t.config.agent.metaStructAvailable))
 	appsec.Start(appsecopts...)
+
+	// start instrumentation telemetry unless it is disabled through the
+	// DD_INSTRUMENTATION_TELEMETRY_ENABLED env var
+	startTelemetry(t.config)
+
 	globalinternal.SetTracerInitialized(true)
 	return nil
 }
@@ -865,21 +866,23 @@ func (t *tracer) TracerConf() TracerConf {
 }
 
 func (t *tracer) Submit(s *Span) {
-	tc := t.TracerConf()
-	if !tc.Disabled {
-		// we have an active tracer
-		if t.config.canComputeStats() {
-			statSpan, shouldCalc := t.stats.newTracerStatSpan(s, t.obfuscator)
-			if shouldCalc {
-				// the agent supports computed stats
-				select {
-				case t.stats.In <- statSpan:
-					// ok
-				default:
-					log.Error("Stats channel full, disregarding span.")
-				}
-			}
-		}
+	if !t.config.enabled.current {
+		return
+	}
+	// we have an active tracer
+	if !t.config.canDropP0s() {
+		return
+	}
+	statSpan, shouldCalc := t.stats.newTracerStatSpan(s, t.obfuscator)
+	if !shouldCalc {
+		return
+	}
+	// the agent supports computed stats
+	select {
+	case t.stats.In <- statSpan:
+		// ok
+	default:
+		log.Error("Stats channel full, disregarding span.")
 	}
 }
 

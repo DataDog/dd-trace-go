@@ -69,7 +69,17 @@ const (
 	PackageUptraceBun              Package = "uptrace/bun"
 	PackageLogSlog                 Package = "log/slog"
 
+	PackageValkeyIoValkeyGo         Package = "valkey-io/valkey-go"
 	PackageEnvoyProxyGoControlPlane Package = "envoyproxy/go-control-plane"
+	PackageOS                       Package = "os"
+
+	// Deprecated packages
+	PackageEmickleiGoRestful Package = "emicklei/go-restful"
+	PackageGaryburdRedigo    Package = "garyburd/redigo"
+	PackageGopkgJinZhuGormV1 Package = "gopkg.in/jinzhu/gorm.v1"
+	PackageGojiV1Web         Package = "zenazn/goji.v1/web"
+	PackageJinzhuGorm        Package = "jinzhu/gorm"
+	PackageLabstackEcho      Package = "labstack/echo"
 )
 
 type Component int
@@ -93,6 +103,7 @@ type PackageInfo struct {
 	external bool
 
 	TracedPackage string
+	IsStdLib      bool
 	EnvVarPrefix  string
 
 	naming map[Component]componentNames
@@ -218,6 +229,7 @@ var packages = map[Package]PackageInfo{
 	},
 	PackageDatabaseSQL: {
 		TracedPackage: "database/sql",
+		IsStdLib:      true,
 		EnvVarPrefix:  "SQL",
 		naming: map[Component]componentNames{
 			ComponentDefault: {
@@ -449,6 +461,7 @@ var packages = map[Package]PackageInfo{
 
 	PackageNetHTTP: {
 		TracedPackage: "net/http",
+		IsStdLib:      true,
 		EnvVarPrefix:  "HTTP",
 		naming: map[Component]componentNames{
 			ComponentServer: {
@@ -733,9 +746,77 @@ var packages = map[Package]PackageInfo{
 	},
 	PackageLogSlog: {
 		TracedPackage: "log/slog",
+		IsStdLib:      true,
+	},
+	PackageValkeyIoValkeyGo: {
+		TracedPackage: "github.com/valkey-io/valkey-go",
+		EnvVarPrefix:  "VALKEY",
+		naming: map[Component]componentNames{
+			ComponentDefault: {
+				useDDServiceV0:     true,
+				buildServiceNameV0: staticName("valkey.client"),
+			},
+		},
 	},
 	PackageEnvoyProxyGoControlPlane: {
 		TracedPackage: "github.com/envoyproxy/go-control-plane",
+	},
+	PackageOS: {
+		TracedPackage: "os",
+	},
+	PackageEmickleiGoRestful: {
+		TracedPackage: "github.com/emicklei/go-restful",
+		EnvVarPrefix:  "RESTFUL",
+		naming: map[Component]componentNames{
+			ComponentServer: {
+				useDDServiceV0:     false,
+				buildServiceNameV0: staticName("go-restful"),
+				buildOpNameV0:      staticName("http.request"),
+				buildOpNameV1:      staticName("http.server.request"),
+			},
+		},
+	},
+	PackageGaryburdRedigo: {
+		TracedPackage: "github.com/garyburd/redigo",
+		EnvVarPrefix:  "REDIGO",
+		naming: map[Component]componentNames{
+			ComponentDefault: {
+				useDDServiceV0:     false,
+				buildServiceNameV0: staticName("redis.conn"),
+				buildOpNameV0:      staticName("redis.command"),
+				buildOpNameV1:      staticName("redis.command"),
+			},
+		},
+	},
+	PackageGopkgJinZhuGormV1: {
+		TracedPackage: "gopkg.in/jinzhu/gorm.v1",
+	},
+	PackageGojiV1Web: {
+		TracedPackage: "github.com/zenazn/goji/web",
+		EnvVarPrefix:  "GOJI",
+		naming: map[Component]componentNames{
+			ComponentServer: {
+				useDDServiceV0:     true,
+				buildServiceNameV0: staticName("http.router"),
+				buildOpNameV0:      staticName("http.request"),
+				buildOpNameV1:      staticName("http.server.request"),
+			},
+		},
+	},
+	PackageJinzhuGorm: {
+		TracedPackage: "github.com/jinzhu/gorm",
+	},
+	PackageLabstackEcho: {
+		TracedPackage: "github.com/labstack/echo",
+		EnvVarPrefix:  "ECHO",
+		naming: map[Component]componentNames{
+			ComponentServer: {
+				useDDServiceV0:     true,
+				buildServiceNameV0: staticName("echo"),
+				buildOpNameV0:      staticName("http.request"),
+				buildOpNameV1:      staticName("http.server.request"),
+			},
+		},
 	},
 }
 
@@ -781,10 +862,10 @@ func isAWSMessagingSendOp(awsService, awsOperation string) bool {
 }
 
 // GetPackages returns a map of Package to the corresponding instrumented module.
-func GetPackages() map[Package]string {
-	cp := make(map[Package]string)
+func GetPackages() map[Package]PackageInfo {
+	cp := make(map[Package]PackageInfo)
 	for pkg, info := range packages {
-		cp[pkg] = info.TracedPackage
+		cp[pkg] = info
 	}
 	return cp
 }
