@@ -32,23 +32,11 @@ func extractFromNode(node *ast.File) ([]funcSpec, []*typeSpec) {
 			if d.Recv == nil {
 				funcs = append(funcs, funcSpec(d.Name.Name))
 			} else {
-				var typeName string
-				switch t := d.Recv.List[0].Type.(type) {
-				case *ast.Ident:
-					typeName = t.Name
-				case *ast.StarExpr:
-					switch ident := t.X.(type) {
-					case *ast.Ident:
-						typeName = ident.Name
-					case *ast.IndexListExpr:
-						// skip
-					}
+				typeName := getTypeName(d.Recv.List[0].Type)
+				if _, ok := types[typeName]; ok {
+					typeFuncs := types[typeName].funcs
+					types[typeName].funcs = append(typeFuncs, funcSpec(d.Name.Name))
 				}
-				if _, ok := types[typeName]; !ok {
-					continue
-				}
-				typeFuncs := types[typeName].funcs
-				types[typeName].funcs = append(typeFuncs, funcSpec(d.Name.Name))
 			}
 		case *ast.GenDecl:
 			if d.Tok != token.TYPE {
@@ -74,6 +62,21 @@ func extractFromNode(node *ast.File) ([]funcSpec, []*typeSpec) {
 		return foundTypes[i].name < foundTypes[j].name
 	})
 	return funcs, foundTypes
+}
+
+func getTypeName(expr ast.Expr) string {
+	switch t := expr.(type) {
+	case *ast.Ident:
+		return t.Name
+	case *ast.StarExpr:
+		switch ident := t.X.(type) {
+		case *ast.Ident:
+			return ident.Name
+		case *ast.IndexListExpr:
+			// skip
+		}
+	}
+	return ""
 }
 
 type typeSpec struct {
