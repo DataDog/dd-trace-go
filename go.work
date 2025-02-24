@@ -68,6 +68,7 @@ use (
 	./internal/setup-smoke-test
 	./internal/traceprof/traceproftest
 	./orchestrion/all
+	./tools/apiextractor
 	./tools/autoreleasetagger
 	./tools/fixmodules
 	./tools/v2check

@@ -1,0 +1,18 @@
+Package: .
+func DummyFunc
+type DummyStruct
+  field ExportedField
+func ExportedMethod
+type DummyInterface
+func DummyFuncWithParams
+
+Package: package1
+func PublicFunc
+type PublicType
+  field PublicField
+
+Package: package2
+func PublicFunc2
+type PublicType2
+  field PublicField2
+
