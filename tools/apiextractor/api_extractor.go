@@ -36,7 +36,11 @@ func extractFromNode(node *ast.File) ([]funcSpec, []*typeSpec) {
 				case *ast.Ident:
 					typeName = t.Name
 				case *ast.StarExpr:
-					typeName = t.X.(*ast.Ident).Name
+					ident := t.X.(*ast.Ident)
+					typeName = ident.Name
+				}
+				if _, ok := types[typeName]; !ok {
+					continue
 				}
 				typeFuncs := types[typeName].funcs
 				types[typeName].funcs = append(typeFuncs, funcSpec(d.Name.Name))
