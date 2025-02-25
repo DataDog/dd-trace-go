@@ -281,6 +281,8 @@ func (s *span) SetUser(id string, opts ...UserMonitoringOption) {
 
 	usrData := map[string]string{
 		keyUserID:        id,
+		keyUserLogin:     cfg.Login,
+		keyUserOrg:       cfg.Org,
 		keyUserEmail:     cfg.Email,
 		keyUserName:      cfg.Name,
 		keyUserScope:     cfg.Scope,
@@ -809,6 +811,8 @@ const (
 	keyUserID        = "usr.id"
 	keyUserEmail     = "usr.email"
 	keyUserName      = "usr.name"
+	keyUserLogin     = "usr.login"
+	keyUserOrg       = "usr.org"
 	keyUserRole      = "usr.role"
 	keyUserScope     = "usr.scope"
 	keyUserSessionID = "usr.session_id"

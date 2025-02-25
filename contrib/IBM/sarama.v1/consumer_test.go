@@ -81,6 +81,7 @@ func TestWrapConsumer(t *testing.T) {
 		assert.Equal(t, "IBM/sarama", s.Tag(ext.Component))
 		assert.Equal(t, ext.SpanKindConsumer, s.Tag(ext.SpanKind))
 		assert.Equal(t, "kafka", s.Tag(ext.MessagingSystem))
+		assert.Equal(t, topic, s.Tag("messaging.destination.name"))
 
 		assertDSMConsumerPathway(t, topic, "", msg1, false)
 	}
@@ -100,6 +101,7 @@ func TestWrapConsumer(t *testing.T) {
 		assert.Equal(t, "IBM/sarama", s.Tag(ext.Component))
 		assert.Equal(t, ext.SpanKindConsumer, s.Tag(ext.SpanKind))
 		assert.Equal(t, "kafka", s.Tag(ext.MessagingSystem))
+		assert.Equal(t, topic, s.Tag("messaging.destination.name"))
 
 		assertDSMConsumerPathway(t, topic, "", msg2, false)
 	}
