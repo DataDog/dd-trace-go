@@ -153,13 +153,13 @@ jobs:
           - 9042:9042
         options: >-
           --name "cassandra"
-      gcp-pubsub:
-        image: gcr.io/google.com/cloudsdktool/google-cloud-cli:emulators
-        ports:
-          - 8085:8085
-        options: >-
-          --name "gcp-pubsub"
-          sh -c "gcloud beta emulators pubsub start --host-port=0.0.0.0:8085 --project=pstest"
+#      gcp-pubsub:
+#        image: gcr.io/google.com/cloudsdktool/google-cloud-cli:emulators
+#        ports:
+#          - 8085:8085
+#        options: >-
+#          --name "gcp-pubsub"
+#          sh -c "gcloud beta emulators pubsub start --host-port=0.0.0.0:8085 --project=pstest"
       vault:
         image: vault:1.7.3
         env:
