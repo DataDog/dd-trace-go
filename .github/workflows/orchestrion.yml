@@ -159,7 +159,7 @@ jobs:
           - 8085:8085
         options: >-
           --name "gcp-pubsub"
-          --entrypoint "/google-cloud-sdk/bin/gcloud beta emulators pubsub start --host-port=0.0.0.0:8085 --project=pstest"
+          sh -c "gcloud beta emulators pubsub start --host-port=0.0.0.0:8085 --project=pstest"
       vault:
         image: vault:1.7.3
         env:
