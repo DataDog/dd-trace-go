@@ -43,7 +43,9 @@ func (t *swappableMetricHandle) Submit(value float64) {
 			handle.Submit(value)
 		}) {
 			metricLogLossOnce.Do(func() {
-				log.Debug("telemetry: metric is losing values because the telemetry client has not been started yet, dropping telemetry data, please start the telemetry client earlier to avoid data loss")
+				msg := "telemetry: metric is losing values because the telemetry client has not been started yet, dropping telemetry data, please start the telemetry client earlier to avoid data loss"
+				log.Debug(msg)
+				Log(LogError, msg, WithStacktrace())
 			})
 		}
 		return

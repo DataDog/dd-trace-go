@@ -37,6 +37,7 @@ func (b *base) setup(_ context.Context, t *testing.T) {
 }
 
 func (b *base) run(ctx context.Context, t *testing.T) {
+	// TODO(darccio): check if this can be change to nil instead of metav1.ListOptions
 	_, err := b.client.CoreV1().Namespaces().List(ctx, metav1.ListOptions{})
 
 	// we should get an error here since our test server handler implementation doesn't return what the k8s client expects

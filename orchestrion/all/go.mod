@@ -265,7 +265,7 @@ require (
 	gopkg.in/ini.v1 v1.67.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	gorm.io/gorm v1.25.3 // indirect
-	k8s.io/apimachinery v0.31.4 // indirect
+	k8s.io/apimachinery v0.32.2 // indirect
 	k8s.io/client-go v0.31.4 // indirect
 	k8s.io/klog/v2 v2.130.1 // indirect
 	k8s.io/utils v0.0.0-20241210054802-24370beab758 // indirect

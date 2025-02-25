@@ -10,6 +10,7 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/telemetrytest"
+
 	"github.com/stretchr/testify/assert"
 )
 

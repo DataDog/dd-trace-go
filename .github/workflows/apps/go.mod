@@ -5,7 +5,7 @@ go 1.23.0
 require (
 	github.com/DataDog/dd-trace-go/v2 v2.0.0-rc.2
 	github.com/stretchr/testify v1.10.0
-	golang.org/x/mod v0.22.0
+	golang.org/x/mod v0.23.0
 )
 
 require (

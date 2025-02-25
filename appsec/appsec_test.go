@@ -32,11 +32,13 @@ func TestTrackUserLoginSuccess(t *testing.T) {
 		require.Len(t, mt.FinishedSpans(), 1)
 		finished := mt.FinishedSpans()[0]
 		expectedEventPrefix := "appsec.events.users.login.success."
+		require.Equal(t, "true", finished.Tag("_dd."+expectedEventPrefix+"sdk"))
 		require.Equal(t, "true", finished.Tag(expectedEventPrefix+"track"))
 		sp, _ := finished.Context().SamplingPriority()
+		require.Equal(t, "true", finished.Tag("_dd."+expectedEventPrefix+"sdk"))
+		require.Equal(t, "true", finished.Tag(expectedEventPrefix+"track"))
 		require.Equal(t, ext.PriorityUserKeep, sp)
 		require.Equal(t, "user id", finished.Tag("usr.id"))
-		require.Equal(t, "user login", finished.Tag("usr.login"))
 		require.Equal(t, "us-east-1", finished.Tag(expectedEventPrefix+"region"))
 		require.Equal(t, "username", finished.Tag("usr.name"))
 	})
@@ -87,8 +89,11 @@ func TestTrackUserLoginFailure(t *testing.T) {
 				require.Len(t, mt.FinishedSpans(), 1)
 				finished := mt.FinishedSpans()[0]
 				expectedEventPrefix := "appsec.events.users.login.failure."
+				sp, _ := finished.Context().SamplingPriority()
+				require.Equal(t, "true", finished.Tag("_dd."+expectedEventPrefix+"sdk"))
 				require.Equal(t, "true", finished.Tag(expectedEventPrefix+"track"))
-				require.Equal(t, "user login", finished.Tag(expectedEventPrefix+"usr.login"))
+				require.Equal(t, ext.PriorityUserKeep, sp)
+				require.Equal(t, "user id", finished.Tag(expectedEventPrefix+"usr.id"))
 				require.Equal(t, strconv.FormatBool(userExists), finished.Tag(expectedEventPrefix+"usr.exists"))
 				require.Equal(t, "us-east-1", finished.Tag(expectedEventPrefix+"region"))
 			}
