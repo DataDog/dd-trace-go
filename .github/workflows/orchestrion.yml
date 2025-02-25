@@ -96,6 +96,8 @@ jobs:
         image: amazon/dynamodb-local:latest
         ports:
           - 8000:8000
+        options: >-
+          --name "dynamodb"
       postgres:
         image: docker.io/postgres:16-alpine
         env:
@@ -104,16 +106,22 @@ jobs:
           POSTGRES_DB: postgres
         ports:
           - 5432:5432
+        options: >-
+          --name "postgres"
       redis:
         image: redis:7-alpine
         ports:
           - 6379:6379
+        options: >-
+          --name "redis"
       elasticsearch6:
         image: elasticsearch:6.8.23
         env:
           ES_JAVA_OPTS: "-Xms750m -Xmx750m" # https://github.com/10up/wp-local-docker/issues/6
         ports:
           - 9206:9200
+        options: >-
+          --name "elasticsearch6"
       elasticsearch7:
         image: elasticsearch:7.17.24
         env:
@@ -121,6 +129,8 @@ jobs:
           discovery.type: single-node
         ports:
           - 9207:9200
+        options: >-
+          --name "elasticsearch7"
       elasticsearch8:
         image: elasticsearch:8.15.3
         env:
@@ -129,22 +139,27 @@ jobs:
           xpack.security.enabled: false
         ports:
           - 9208:9200
-      mongo:
+        options: >-
+          --name "elasticsearch8"
+      mongodb:
         image: mongo:6.0.20
         ports:
           - 27017:27017
+        options: >-
+          --name "mongodb"
       cassandra:
         image: cassandra:4.1
         ports:
           - 9042:9042
+        options: >-
+          --name "cassandra"
       gcp-pubsub:
         image: gcr.io/google.com/cloudsdktool/google-cloud-cli:emulators
-        env:
-          PUBSUB_PROJECT_ID: pstest
-        options: >-
-          --entrypoint "gcloud beta emulators pubsub start --host-port=0.0.0.0:8085 --project=pstest"
         ports:
           - 8085:8085
+        options: >-
+          --name "gcp-pubsub"
+          --entrypoint "/google-cloud-sdk/bin/gcloud beta emulators pubsub start --host-port=0.0.0.0:8085 --project=pstest"
       vault:
         image: vault:1.7.3
         env:
@@ -152,7 +167,9 @@ jobs:
           VAULT_TOKEN: root
           VAULT_DEV_ROOT_TOKEN_ID: root
         ports:
-          - "8200:8200"
+          - 8200:8200
+        options: >-
+          --name "vault"
       kafka:
         image: confluentinc/confluent-local:7.5.0
         env:
@@ -174,6 +191,8 @@ jobs:
         ports:
           - 9092:9092
           - 9093:9093
+        options: >-
+          --name "kafka"
     steps:
       - name: Checkout Code
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
