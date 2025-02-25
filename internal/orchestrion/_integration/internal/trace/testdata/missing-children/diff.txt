@@ -1,0 +1,22 @@
+Root
+└── [±]  Span ID 1356288911239140451
+    ├── [=]  name     = "http.request"
+    ├── [=]  resource = "GET /"
+    ├── [=]  service  = "gorm"
+    ├── [=]  type     = "web"
+    └── _children
+        ├── [-]  At index 0 (no children to match from)
+        │   ├── name     = "gorm.query"
+        │   ├── resource = "SELECT * FROM `notes` WHERE user_id = ? AND `notes`.`deleted_at` IS NULL ORDER BY `notes`.`id` LIMIT 1"
+        │   ├── service  = "gorm.db"
+        │   ├── type     = "sql"
+        │   └── meta
+        │       └── component = "gorm.io/gorm.v1"
+        └── [-]  At index 1 (no children to match from)
+            ├── name     = "sqlite3.query"
+            ├── resource = "SELECT * FROM `notes` WHERE user_id = ? AND `notes`.`deleted_at` IS NULL ORDER BY `notes`.`id` LIMIT 1"
+            ├── service  = "sqlite3.db"
+            ├── type     = "sql"
+            └── meta
+                ├── component = "database/sql"
+                └── span.kind = "client"

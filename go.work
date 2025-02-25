@@ -64,8 +64,10 @@ use (
 	./internal/apps
 	./internal/contrib/validationtest
 	./internal/exectracetest
+	./internal/orchestrion/_integration
 	./internal/setup-smoke-test
 	./internal/traceprof/traceproftest
+	./orchestrion/all
 	./tools/apiextractor
 	./tools/autoreleasetagger
 	./tools/fixmodules

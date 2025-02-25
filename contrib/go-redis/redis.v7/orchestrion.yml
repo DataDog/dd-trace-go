@@ -1,0 +1,27 @@
+# Unless explicitly stated otherwise all files in this repository are licensed
+# under the Apache License Version 2.0.
+# This product includes software developed at Datadog (https://www.datadoghq.com/).
+# Copyright 2023-present Datadog, Inc.
+---
+# yaml-language-server: $schema=https://datadoghq.dev/orchestrion/schema.json
+meta:
+  name: github.com/DataDog/dd-trace-go/contrib/go-redis/redis.v7/v2
+  description: Redis client for Go.
+
+aspects:
+  - id: NewClient
+    join-point:
+      one-of:
+        - function-call: github.com/go-redis/redis/v7.NewClient
+        - function-call: github.com/go-redis/redis/v7.NewFailoverClient
+    advice:
+      - wrap-expression:
+          imports:
+            redis: github.com/go-redis/redis/v7
+            trace: github.com/DataDog/dd-trace-go/contrib/go-redis/redis.v7/v2
+          template: |-
+            func() (client *redis.Client) {
+              client = {{ . }}
+              trace.WrapClient(client)
+              return
+            }()

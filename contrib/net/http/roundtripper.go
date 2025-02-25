@@ -6,19 +6,10 @@
 package http
 
 import (
-	"fmt"
-	"math"
 	"net/http"
-	"os"
-	"strconv"
 
 	internal "github.com/DataDog/dd-trace-go/contrib/net/http/v2/internal/config"
-	"github.com/DataDog/dd-trace-go/v2/appsec/events"
-	"github.com/DataDog/dd-trace-go/v2/ddtrace/baggage"
-	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
-	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
-	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/httpsec"
-	"github.com/DataDog/dd-trace-go/v2/instrumentation/httptrace"
+	"github.com/DataDog/dd-trace-go/contrib/net/http/v2/internal/wrap"
 )
 
 type roundTripper struct {
@@ -26,83 +17,13 @@ type roundTripper struct {
 	cfg  *internal.RoundTripperConfig
 }
 
-func (rt *roundTripper) RoundTrip(req *http.Request) (res *http.Response, err error) {
-	if rt.cfg.IgnoreRequest(req) {
-		return rt.base.RoundTrip(req)
-	}
-	resourceName := rt.cfg.ResourceNamer(req)
-	spanName := rt.cfg.SpanNamer(req)
-	// Make a copy of the URL so we don't modify the outgoing request
-	url := *req.URL
-	url.User = nil // Do not include userinfo in the HTTPURL tag.
-	opts := []tracer.StartSpanOption{
-		tracer.SpanType(ext.SpanTypeHTTP),
-		tracer.ResourceName(resourceName),
-		tracer.Tag(ext.HTTPMethod, req.Method),
-		tracer.Tag(ext.HTTPURL, httptrace.UrlFromRequest(req, rt.cfg.QueryString)),
-		tracer.Tag(ext.Component, internal.ComponentName),
-		tracer.Tag(ext.SpanKind, ext.SpanKindClient),
-		tracer.Tag(ext.NetworkDestinationName, url.Hostname()),
-	}
-	if !math.IsNaN(rt.cfg.AnalyticsRate) {
-		opts = append(opts, tracer.Tag(ext.EventSampleRate, rt.cfg.AnalyticsRate))
-	}
-	if rt.cfg.ServiceName != "" {
-		opts = append(opts, tracer.ServiceName(rt.cfg.ServiceName))
-	}
-	if port, err := strconv.Atoi(url.Port()); err == nil {
-		opts = append(opts, tracer.Tag(ext.NetworkDestinationPort, port))
-	}
-	if len(rt.cfg.SpanOpts) > 0 {
-		opts = append(opts, rt.cfg.SpanOpts...)
-	}
-	span, ctx := tracer.StartSpanFromContext(req.Context(), spanName, opts...)
-	defer func() {
-		if rt.cfg.After != nil {
-			rt.cfg.After(res, span)
-		}
-		if !events.IsSecurityError(err) && (rt.cfg.ErrCheck == nil || rt.cfg.ErrCheck(err)) {
-			span.Finish(tracer.WithError(err))
-		} else {
-			span.Finish()
-		}
-	}()
-	if rt.cfg.Before != nil {
-		rt.cfg.Before(req, span)
-	}
-	r2 := req.Clone(ctx)
-	for k, v := range baggage.All(ctx) {
-		span.SetBaggageItem(k, v)
-	}
-	if rt.cfg.Propagation {
-		// inject the span context into the http request copy
-		err = tracer.Inject(span.Context(), tracer.HTTPHeadersCarrier(r2.Header))
-		if err != nil {
-			// this should never happen
-			fmt.Fprintf(os.Stderr, "contrib/net/http.Roundtrip: failed to inject http headers: %v\n", err)
-		}
-	}
-
-	if internal.Instrumentation.AppSecRASPEnabled() {
-		if err := httpsec.ProtectRoundTrip(ctx, r2.URL.String()); err != nil {
-			return nil, err
-		}
-	}
-
-	res, err = rt.base.RoundTrip(r2)
+func (rt *roundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	req, after, err := wrap.ObserveRoundTrip(rt.cfg, req)
 	if err != nil {
-		span.SetTag("http.errors", err.Error())
-		if rt.cfg.ErrCheck == nil || rt.cfg.ErrCheck(err) {
-			span.SetTag(ext.Error, err)
-		}
-	} else {
-		span.SetTag(ext.HTTPCode, strconv.Itoa(res.StatusCode))
-		if rt.cfg.IsStatusError(res.StatusCode) {
-			span.SetTag("http.errors", res.Status)
-			span.SetTag(ext.Error, fmt.Errorf("%d: %s", res.StatusCode, http.StatusText(res.StatusCode)))
-		}
+		return nil, err
 	}
-	return res, err
+	resp, err := rt.base.RoundTrip(req)
+	return after(resp, err)
 }
 
 // Unwrap returns the original http.RoundTripper.
