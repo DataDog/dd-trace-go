@@ -51,8 +51,9 @@ func TestSCAEnabled(t *testing.T) {
 
 			telemetryClient := new(telemetrytest.MockClient)
 			telemetryClient.On("RegisterAppConfig", EnvSCAEnabled, tc.expectedValue, telemetry.OriginEnvVar).Return()
+			defer telemetry.MockClient(telemetryClient)()
 
-			registerSCAAppConfigTelemetry(telemetryClient)
+			registerSCAAppConfigTelemetry()
 
 			if tc.telemetryExpected {
 				telemetryClient.AssertCalled(t, "RegisterAppConfig", EnvSCAEnabled, tc.expectedValue, telemetry.OriginEnvVar)
