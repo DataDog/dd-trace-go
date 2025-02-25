@@ -41,7 +41,9 @@ type (
 		derivatives map[string]any
 		// supportedAddresses is the set of addresses supported by the WAF.
 		supportedAddresses config.AddressSet
-		// mu protects the events, stacks, and derivatives, supportedAddresses slices.
+		// metrics the place that manages reporting for the current execution
+		metrics *ContextMetrics
+		// mu protects the events, stacks, and derivatives, supportedAddresses, eventRulesetVersion slices.
 		mu sync.Mutex
 		// logOnce is used to log a warning once when a request has too many WAF events via the built-in limiter or the max value.
 		logOnce sync.Once
@@ -86,14 +88,23 @@ func (op *ContextOperation) SetLimiter(limiter limiter.Limiter) {
 	op.limiter = limiter
 }
 
-func (op *ContextOperation) AddEvents(events ...any) {
+func (op *ContextOperation) SetMetricsInstance(metrics *ContextMetrics) {
+	op.metrics = metrics
+}
+
+func (op *ContextOperation) GetMetricsInstance() *ContextMetrics {
+	return op.metrics
+}
+
+// AddEvents adds WAF events to the operation and returns true if the operation has reached the maximum number of events, by the limiter or the max value.
+func (op *ContextOperation) AddEvents(events ...any) bool {
 	if len(events) == 0 {
-		return
+		return false
 	}
 
 	if !op.limiter.Allow() {
 		log.Error("appsec: too many WAF events, stopping further reporting")
-		return
+		return true
 	}
 
 	op.mu.Lock()
@@ -104,10 +115,11 @@ func (op *ContextOperation) AddEvents(events ...any) {
 		op.logOnce.Do(func() {
 			log.Warn("appsec: ignoring new WAF event due to the maximum number of security events per request was reached")
 		})
-		return
+		return true
 	}
 
 	op.events = append(op.events, events...)
+	return false
 }
 
 func (op *ContextOperation) AddStackTraces(stacks ...*stacktrace.Event) {

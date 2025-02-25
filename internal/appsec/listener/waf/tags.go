@@ -15,6 +15,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
+	telemetrylog "github.com/DataDog/dd-trace-go/v2/internal/telemetry/log"
 )
 
 const (
@@ -24,9 +25,11 @@ const (
 	eventRulesLoadedTag  = wafSpanTagPrefix + "event_rules.loaded"
 	eventRulesFailedTag  = wafSpanTagPrefix + "event_rules.error_count"
 	wafVersionTag        = wafSpanTagPrefix + "waf.version"
+	wafErrorTag          = wafSpanTagPrefix + "waf.error"
+	raspRuleEvalTag      = wafSpanTagPrefix + "rasp.rule.eval"
+	raspErrorTag         = wafSpanTagPrefix + "rasp.error"
 
-	// BlockedRequestTag used to convey whether a request is blocked
-	BlockedRequestTag = "appsec.blocked"
+	blockedRequestTag = "appsec.blocked"
 )
 
 // AddRulesMonitoringTags adds the tags related to security rules monitoring
@@ -50,9 +53,21 @@ func AddRulesMonitoringTags(th trace.TagSetter, wafDiags waf.Diagnostics) {
 }
 
 // AddWAFMonitoringTags adds the tags related to the monitoring of the Feature
-func AddWAFMonitoringTags(th trace.TagSetter, rulesVersion string, stats map[string]any) {
+func AddWAFMonitoringTags(th trace.TagSetter, metrics *emitter.ContextMetrics, rulesVersion string, stats map[string]any) {
 	// Rules version is set for every request to help the backend associate Feature duration metrics with rule version
 	th.SetTag(eventRulesVersionTag, rulesVersion)
+
+	if raspCallsCount := metrics.SumRASPCalls.Load(); raspCallsCount > 0 {
+		th.SetTag(raspRuleEvalTag, raspCallsCount)
+	}
+
+	if raspErrorsCount := metrics.SumRASPErrors.Load(); raspErrorsCount > 0 {
+		th.SetTag(raspErrorTag, raspErrorsCount)
+	}
+
+	if wafErrorsCount := metrics.SumWAFErrors.Load(); wafErrorsCount > 0 {
+		th.SetTag(wafErrorTag, wafErrorsCount)
+	}
 
 	// Report the stats sent by the Feature
 	for k, v := range stats {

@@ -7,6 +7,7 @@ package telemetrytest
 
 import (
 	"reflect"
+	"sort"
 	"strings"
 	"sync"
 	"testing"
@@ -69,6 +70,7 @@ func (r *RecordClient) metric(kind string, namespace telemetry.Namespace, name s
 		r.Metrics = make(map[MetricKey]*RecordMetricHandle)
 	}
 
+	sort.Strings(tags)
 	key := MetricKey{Namespace: namespace, Name: name, Tags: strings.Join(tags, ","), Kind: kind}
 	if _, ok := r.Metrics[key]; !ok {
 		r.Metrics[key] = &RecordMetricHandle{submit: submit, get: get}

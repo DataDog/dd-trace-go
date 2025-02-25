@@ -13,6 +13,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/listener"
 	waf "github.com/DataDog/go-libddwaf/v3"
 
+	telemetrylog "github.com/DataDog/dd-trace-go/v2/internal/telemetry/log"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/dyngo"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
@@ -77,7 +78,7 @@ func Start(opts ...config.StartOption) {
 		} else {
 			// DD_APPSEC_ENABLED is not set so we cannot know what the intent is here, we must log a
 			// debug message instead to avoid showing an error to APM-tracing-only users.
-			log.Debug("appsec: remote activation of threats detection cannot be enabled for the following reasons: %v", err)
+			telemetrylog.Error("appsec: remote activation of threats detection cannot be enabled for the following reasons: %v", err)
 		}
 		return
 	}
@@ -93,7 +94,7 @@ func Start(opts ...config.StartOption) {
 	// Start the remote configuration client
 	log.Debug("appsec: starting the remote configuration client")
 	if err := appsec.startRC(); err != nil {
-		log.Error("appsec: Remote config: disabled due to an instanciation error: %v", err)
+		telemetrylog.Error("appsec: Remote config: disabled due to an instanciation error: %v", err)
 	}
 
 	if mode == config.RCStandby {
@@ -117,6 +118,7 @@ func Start(opts ...config.StartOption) {
 // Implement the AppSec log message C1
 func logUnexpectedStartError(err error) {
 	log.Error("appsec: could not start because of an unexpected error: %v\nNo security activities will be collected. Please contact support at https://docs.datadoghq.com/help/ for help.", err)
+	telemetry.Log(telemetry.LogError, fmt.Sprintf("appsec: could not start because of an unexpected error: %v", err), telemetry.WithTags([]string{"product:appsec"}))
 }
 
 // Stop AppSec.

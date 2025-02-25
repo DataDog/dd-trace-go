@@ -40,3 +40,20 @@ func TestStartStop(t *testing.T) {
 	testutils.StartAppSec(t)
 	appsec.Stop()
 }
+
+func TestWafInitMetric(t *testing.T) {
+	t.Setenv("DD_APPSEC_RULES", "testdata/fp.json")
+	telemetryClient := new(telemetrytest.RecordClient)
+	telemetry.MockClient(telemetryClient)
+	appsec.Start()
+	defer appsec.Stop()
+	if !appsec.Enabled() {
+		t.Skip("AppSec is disabled")
+	}
+
+	assert.Equal(t, 1.0, telemetryClient.Count(telemetry.NamespaceAppSec, "waf.init", []string{
+		"success:true",
+		"waf_version:" + waf.Version(),
+		"event_rules_version:1.4.2",
+	}).Get())
+}

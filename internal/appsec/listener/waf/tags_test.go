@@ -44,7 +44,7 @@ func TestTagsTypes(t *testing.T) {
 		"waf.run":               12000,
 	}
 
-	AddWAFMonitoringTags(&th, "1.2.3", stats)
+	AddWAFMonitoringTags(&th, &emitter.ContextMetrics{}, "1.2.3", stats)
 
 	tags := th.Tags()
 	_, ok := tags[eventRulesErrorsTag].(string)

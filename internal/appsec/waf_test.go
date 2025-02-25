@@ -72,6 +72,9 @@ func TestCustomRules(t *testing.T) {
 			mt := mocktracer.Start()
 			defer mt.Stop()
 
+			telemetryClient := new(telemetrytest.RecordClient)
+			defer telemetry.SwapClient(telemetry.SwapClient(telemetryClient))
+
 			req, err := http.NewRequest(tc.method, srv.URL, nil)
 			require.NoError(t, err)
 
@@ -88,6 +91,16 @@ func TestCustomRules(t *testing.T) {
 				require.NotNil(t, event)
 				require.Contains(t, event, tc.ruleMatch)
 			}
+
+			assert.Equal(t, 1.0, telemetryClient.Count(telemetry.NamespaceAppSec, "waf.requests", []string{
+				"request_blocked:false",
+				"rule_triggered:" + strconv.FormatBool(tc.ruleMatch != ""),
+				"waf_timeout:false",
+				"rate_limited:false",
+				"waf_error:false",
+				"waf_version:" + waf.Version(),
+				"event_rules_version:1.4.2",
+			}).Get())
 		})
 	}
 }
@@ -413,6 +426,8 @@ func TestBlocking(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			mt := mocktracer.Start()
 			defer mt.Stop()
+			telemetryClient := new(telemetrytest.RecordClient)
+			defer telemetry.SwapClient(telemetry.SwapClient(telemetryClient))
 			req, err := http.NewRequest("POST", srv.URL+tc.endpoint, strings.NewReader(tc.reqBody))
 			require.NoError(t, err)
 			for k, v := range tc.headers {
@@ -434,6 +449,24 @@ func TestBlocking(t *testing.T) {
 				require.Len(t, spans, 1)
 				require.Contains(t, spans[0].Tag("_dd.appsec.json"), tc.ruleMatch)
 			}
+
+			metric := telemetryClient.Metrics[telemetrytest.MetricKey{
+				Namespace: telemetry.NamespaceAppSec,
+				Name:      "waf.requests",
+				Kind:      "count",
+				Tags: toTags(
+					"request_blocked:"+strconv.FormatBool(tc.status != 200),
+					"rule_triggered:"+strconv.FormatBool(tc.ruleMatch != ""),
+					"waf_timeout:false",
+					"rate_limited:false",
+					"waf_error:false",
+					"waf_version:"+waf.Version(),
+					"event_rules_version:1.4.2",
+				),
+			}]
+
+			require.NotNil(t, metric)
+			assert.Equal(t, 1.0, metric.Get())
 		})
 	}
 }
@@ -501,7 +534,113 @@ func TestAPISecurity(t *testing.T) {
 }
 
 func TestRASPSQLi(t *testing.T) {
-	t.Skip("TestRASPSQLi can be found in /contrib/database/sql/appsec_test.go as importing the contrib for database/sql would cause a circular dependency")
+	t.Setenv("DD_APPSEC_RULES", "testdata/rasp.json")
+	appsec.Start()
+	defer appsec.Stop()
+
+	if !appsec.RASPEnabled() {
+		t.Skip("RASP needs to be enabled for this test")
+	}
+	db, err := prepareSQLDB(10)
+	require.NoError(t, err)
+
+	// Setup the http server
+	mux := httptrace.NewServeMux()
+	mux.HandleFunc("/query", func(w http.ResponseWriter, r *http.Request) {
+		// Subsequent spans inherit their parent from context.
+		q := r.URL.Query().Get("query")
+		rows, err := db.QueryContext(r.Context(), q)
+		if events.IsSecurityError(err) {
+			return
+		}
+		if err == nil {
+			rows.Close()
+		}
+		w.Write([]byte("Hello World!\n"))
+	})
+	mux.HandleFunc("/exec", func(w http.ResponseWriter, r *http.Request) {
+		// Subsequent spans inherit their parent from context.
+		q := r.URL.Query().Get("query")
+		_, err := db.ExecContext(r.Context(), q)
+		if events.IsSecurityError(err) {
+			return
+		}
+		w.Write([]byte("Hello World!\n"))
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	for name, tc := range map[string]struct {
+		query string
+		err   error
+	}{
+		"no-error": {
+			query: url.QueryEscape("SELECT 1"),
+		},
+		"injection/SELECT": {
+			query: url.QueryEscape("SELECT * FROM users WHERE user=\"\" UNION ALL SELECT NULL;version()--"),
+			err:   &events.BlockingSecurityEvent{},
+		},
+		"injection/UPDATE": {
+			query: url.QueryEscape("UPDATE users SET pwd = \"root\" WHERE id = \"\" OR 1 = 1--"),
+			err:   &events.BlockingSecurityEvent{},
+		},
+		"injection/EXEC": {
+			query: url.QueryEscape("EXEC version(); DROP TABLE users--"),
+			err:   &events.BlockingSecurityEvent{},
+		},
+	} {
+		for _, endpoint := range []string{"/query", "/exec"} {
+			t.Run(name+endpoint, func(t *testing.T) {
+				// Start tracer and appsec
+				mt := mocktracer.Start()
+				defer mt.Stop()
+				telemetryClient := new(telemetrytest.RecordClient)
+				defer telemetry.SwapClient(telemetry.SwapClient(telemetryClient))
+
+				req, err := http.NewRequest("POST", srv.URL+endpoint+"?query="+tc.query, nil)
+				require.NoError(t, err)
+				res, err := srv.Client().Do(req)
+				require.NoError(t, err)
+				defer res.Body.Close()
+
+				spans := mt.FinishedSpans()
+
+				require.Len(t, spans, 2)
+
+				if tc.err != nil {
+					require.Equal(t, 403, res.StatusCode)
+
+					for _, sp := range spans {
+						switch sp.OperationName() {
+						case "http.request":
+							require.Contains(t, sp.Tag("_dd.appsec.json"), "rasp-942-100")
+						case "sqlite.query":
+							require.NotContains(t, sp.Tags(), "error")
+						}
+					}
+				} else {
+					require.Equal(t, 200, res.StatusCode)
+				}
+
+				assert.Equal(t, 1.0, telemetryClient.Count(telemetry.NamespaceAppSec, "rasp.rule.eval", []string{
+					"rule_type:sql_injection",
+					"waf_version:" + waf.Version(),
+					"event_rules_version:1.4.2",
+				}).Get())
+
+				if tc.err == nil {
+					return
+				}
+
+				assert.Equal(t, 1.0, telemetryClient.Count(telemetry.NamespaceAppSec, "rasp.rule.match", []string{
+					"rule_type:sql_injection",
+					"waf_version:" + waf.Version(),
+					"event_rules_version:1.4.2",
+				}).Get())
+			})
+		}
+	}
 }
 
 func TestRASPLFI(t *testing.T) {
@@ -575,6 +714,8 @@ func TestRASPLFI(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			mt := mocktracer.Start()
 			defer mt.Stop()
+			telemetryClient := new(telemetrytest.RecordClient)
+			defer telemetry.SwapClient(telemetry.SwapClient(telemetryClient))
 
 			req, err := http.NewRequest("GET", srv.URL+"?path="+tc.path+"&block="+strconv.FormatBool(tc.block), nil)
 			require.NoError(t, err)
@@ -592,6 +733,22 @@ func TestRASPLFI(t *testing.T) {
 			} else {
 				require.Equal(t, 204, res.StatusCode)
 			}
+
+			assert.Equal(t, 1.0, telemetryClient.Count(telemetry.NamespaceAppSec, "rasp.rule.eval", []string{
+				"rule_type:lfi",
+				"waf_version:" + waf.Version(),
+				"event_rules_version:1.4.2",
+			}).Get())
+
+			if !tc.block {
+				return
+			}
+
+			assert.Equal(t, 1.0, telemetryClient.Count(telemetry.NamespaceAppSec, "rasp.rule.match", []string{
+				"rule_type:lfi",
+				"waf_version:" + waf.Version(),
+				"event_rules_version:1.4.2",
+			}).Get())
 		})
 	}
 }
