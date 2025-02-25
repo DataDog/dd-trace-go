@@ -7,11 +7,13 @@ package waf
 
 import (
 	"encoding/json"
+	"strconv"
 
 	waf "github.com/DataDog/go-libddwaf/v3"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/trace"
@@ -50,14 +52,28 @@ func AddRulesMonitoringTags(th trace.TagSetter, wafDiags waf.Diagnostics) {
 	th.SetTag(ext.ManualKeep, samplernames.AppSec)
 }
 
+var truncationTelemetryMetrics = map[waf.TruncationReason]telemetry.MetricHandle{
+	waf.StringTooLong:     telemetry.Count(telemetry.NamespaceAppSec, "waf.input_truncated", []string{"truncation_reason+" + strconv.Itoa(int(waf.StringTooLong))}),
+	waf.ContainerTooLarge: telemetry.Count(telemetry.NamespaceAppSec, "waf.input_truncated", []string{"truncation_reason+" + strconv.Itoa(int(waf.ContainerTooLarge))}),
+	waf.ObjectTooDeep:     telemetry.Count(telemetry.NamespaceAppSec, "waf.input_truncated", []string{"truncation_reason+" + strconv.Itoa(int(waf.ObjectTooDeep))}),
+}
+
 // AddWAFMonitoringTags adds the tags related to the monitoring of the Feature
-func AddWAFMonitoringTags(th trace.TagSetter, rulesVersion string, stats map[string]any) {
+func AddWAFMonitoringTags(th trace.TagSetter, rulesVersion string, stats waf.Stats) {
 	// Rules version is set for every request to help the backend associate Feature duration metrics with rule version
 	th.SetTag(eventRulesVersionTag, rulesVersion)
 
 	// Report the stats sent by the Feature
-	for k, v := range stats {
-		th.SetTag(wafSpanTagPrefix+k, v)
+	metrics := stats.Metrics()
+	for key, value := range metrics {
+		th.SetTag(wafSpanTagPrefix+key, value)
+		// TODO: duration & duration_ext telemetry metrics
+	}
+
+	// Report the truncation metrics
+	for reason := range stats.Truncations {
+		truncationTelemetryMetrics[reason].Submit(1.0)
+		// TODO: input_truncated_value
 	}
 }
 

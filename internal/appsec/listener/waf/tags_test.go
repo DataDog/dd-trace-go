@@ -7,6 +7,7 @@ package waf
 
 import (
 	"testing"
+	"time"
 
 	waf "github.com/DataDog/go-libddwaf/v3"
 	"github.com/stretchr/testify/require"
@@ -34,17 +35,19 @@ func TestTagsTypes(t *testing.T) {
 
 	AddRulesMonitoringTags(&th, wafDiags)
 
-	stats := map[string]any{
-		"waf.duration":          10,
-		"rasp.duration":         10,
-		"waf.duration_ext":      20,
-		"rasp.duration_ext":     20,
-		"waf.timeouts":          0,
-		"waf.truncations.depth": []int{1, 2, 3},
-		"waf.run":               12000,
-	}
-
-	AddWAFMonitoringTags(&th, "1.2.3", stats)
+	AddWAFMonitoringTags(&th, "1.2.3", waf.Stats{
+		Timers: map[string]time.Duration{
+			"waf.run":           12 * time.Millisecond,
+			"waf.duration":      10 * time.Microsecond,
+			"rasp.duration":     10 * time.Microsecond,
+			"waf.duration_ext":  20 * time.Microsecond,
+			"rasp.duration_ext": 20 * time.Microsecond,
+		},
+		TimeoutCount: 1,
+		Truncations: map[waf.TruncationReason][]int{
+			waf.ObjectTooDeep: {1, 2, 3},
+		},
+	})
 
 	tags := th.Tags()
 	_, ok := tags[eventRulesErrorsTag].(string)
