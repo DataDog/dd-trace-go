@@ -113,9 +113,27 @@ func TestTraceSource_Set(t *testing.T) {
 				sources: []TraceSource{
 					APMTraceSource,
 					ASMTraceSource,
-					DBMTraceSource},
+					DBMTraceSource,
+				},
 			},
 			res: "13",
+		},
+		{
+			name: "DSM-DJM",
+			args: args{
+				sources: []TraceSource{
+					DSMTraceSource,
+					DJMTraceSource,
+				},
+			},
+			res: "0C",
+		},
+		{
+			name: "DBM",
+			args: args{
+				sources: []TraceSource{DBMTraceSource},
+			},
+			res: "10",
 		},
 	}
 	for _, tt := range tests {
@@ -192,11 +210,47 @@ func TestVerifyTraceSourceEnabled(t *testing.T) {
 			},
 			wantSources: map[TraceSource]bool{APMTraceSource: true, ASMTraceSource: true},
 		},
+		{
+			name: "04",
+			args: args{
+				hexStr: "04",
+			},
+			wantSources: map[TraceSource]bool{DSMTraceSource: true},
+		},
+		{
+			name: "05",
+			args: args{
+				hexStr: "05",
+			},
+			wantSources: map[TraceSource]bool{APMTraceSource: true, DSMTraceSource: true},
+		},
+		{
+			name: "08",
+			args: args{
+				hexStr: "08",
+			},
+			wantSources: map[TraceSource]bool{DJMTraceSource: true},
+		},
+		{
+			name: "0C",
+			args: args{
+				hexStr: "0C",
+			},
+			wantSources: map[TraceSource]bool{DSMTraceSource: true, DJMTraceSource: true},
+		},
+		{
+			name: "10",
+			args: args{
+				hexStr: "10",
+			},
+			wantSources: map[TraceSource]bool{DBMTraceSource: true},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			for k, v := range allSources {
-				assert.Equalf(t, tt.wantSources[v], VerifyTraceSourceEnabled(tt.args.hexStr, v), "Source %s should be %v", k, tt.wantSources[v])
+				assert.Equalf(t, tt.wantSources[v], VerifyTraceSourceEnabled(tt.args.hexStr, v), "Source %s should be %v for mask %s",
+					k, tt.wantSources[v], tt.args.hexStr)
 			}
 		})
 	}
