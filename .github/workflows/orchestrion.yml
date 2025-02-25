@@ -30,10 +30,8 @@ concurrency:
 jobs:
   generate:
     name: Verify generated files are up-to-date
-    # we don't want to run this job as Orchestrion doesn't support v2 yet
-    if: false
-    # revert to github.event_name == 'workflow_dispatch' || inputs.orchestrion-version == ''
-    # when orchestrion supports v2
+    # Don't run in workflow_call or workflow_dispatch
+    if: github.event_name == 'workflow_dispatch' || inputs.orchestrion-version == ''
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
@@ -45,14 +43,14 @@ jobs:
           cache: true
           cache-dependency-path: '**/go.mod'
       - name: Run generator
-        run: go generate ./internal/orchestrion/...
+        run: |-
+          go generate ./internal/orchestrion/...
+          go generate -tags=tools ./orchestrion/all/...
       - name: Check for changes
         run: git diff --exit-code
 
   go-versions-matrix:
     name: Go Versions Matrix
-    # we don't want to run this job as Orchestrion doesn't support v2 yet
-    if: false
     runs-on: ubuntu-latest
     outputs:
       json: ${{ steps.matrix.outputs.json }}
@@ -261,9 +259,7 @@ jobs:
     name: Orchestrion Integration Tests
     needs: integration-test
     runs-on: ubuntu-latest
-    # we don't want to run this job as Orchestrion doesn't support v2 yet
-    if: false
-    # Rever to success() || failure() when ready
+    if: success() || failure()
     steps:
       - name: Success
         if: needs.integration-test.result == 'success'

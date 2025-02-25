@@ -27,7 +27,10 @@ func SpanFromContext(ctx context.Context) (*Span, bool) {
 	}
 	v := orchestrion.WrapContext(ctx).Value(internal.ActiveSpanKey)
 	if s, ok := v.(*Span); ok {
-		return s, true
+		// We may have a nil *Span wrapped in an interface in the GLS context stack,
+		// in which case we need to act a if there was nothing (for else we'll
+		// forcefully un-do a [ChildOf] option if one was passed).
+		return s, s != nil
 	}
 	return nil, false
 }

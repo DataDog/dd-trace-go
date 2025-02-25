@@ -1,0 +1,41 @@
+# Unless explicitly stated otherwise all files in this repository are licensed
+# under the Apache License Version 2.0.
+# This product includes software developed at Datadog (https://www.datadoghq.com/).
+# Copyright 2023-present Datadog, Inc.
+---
+# yaml-language-server: $schema=https://datadoghq.dev/orchestrion/schema.json
+meta:
+  name: github.com/DataDog/dd-trace-go/contrib/google.golang.org/grpc/v2
+  description: The Go implementation of gRPC.
+
+aspects:
+  # Client Instrumentation
+  - id: Client
+    join-point:
+      one-of:
+        - function-call: google.golang.org/grpc.Dial
+        - function-call: google.golang.org/grpc.DialContext
+        - function-call: google.golang.org/grpc.NewClient
+    advice:
+      - append-args:
+          type: google.golang.org/grpc.DialOption
+          values:
+            - imports: &imports
+                grpc: google.golang.org/grpc
+                grpctrace: github.com/DataDog/dd-trace-go/contrib/google.golang.org/grpc/v2
+              template: grpc.WithChainStreamInterceptor(grpctrace.StreamClientInterceptor())
+            - imports: *imports
+              template: grpc.WithChainUnaryInterceptor(grpctrace.UnaryClientInterceptor())
+
+  # Server Instrumentation
+  - id: Server
+    join-point:
+      function-call: google.golang.org/grpc.NewServer
+    advice:
+      - append-args:
+          type: google.golang.org/grpc.ServerOption
+          values:
+            - imports: *imports
+              template: grpc.ChainStreamInterceptor(grpctrace.StreamServerInterceptor())
+            - imports: *imports
+              template: grpc.ChainUnaryInterceptor(grpctrace.UnaryServerInterceptor())
