@@ -1,7 +1,8 @@
 version: "3.3"  # optional since v1.27.0
 services:
   cassandra:
-    image: cassandra:3.11
+    container_name: cassandra
+    image: cassandra:4.1
     environment:
       JVM_OPTS: "-Xms750m -Xmx750m"
       CASSANDRA_CLUSTER_NAME: "dd-trace-go-test-cluster"
@@ -19,7 +20,8 @@ services:
     ports:
       - "3306:3306"
   postgres:
-    image: circleci/postgres:9.5
+    container_name: postgres
+    image: postgres:16-alpine
     environment:
       POSTGRES_PASSWORD: postgres
       POSTGRES_USER: postgres
@@ -38,7 +40,8 @@ services:
     ports:
       - "8500:8500"
   redis:
-    image: redis:3.2
+    container_name: redis
+    image: redis:7-alpine
     ports:
       - "6379:6379"
   valkey:
@@ -68,7 +71,8 @@ services:
         soft: 65536
         hard: 65536
   elasticsearch6:
-    image: elasticsearch:6.8.13
+    container_name: elasticsearch6
+    image: elasticsearch:6.8.23
     environment:
       http.port: 9202-9300
       discovery.type: single-node
@@ -80,13 +84,26 @@ services:
         soft: 65536
         hard: 65536
   elasticsearch7:
-    image: elasticsearch:7.14.1
+    container_name: elasticsearch7
+    image: elasticsearch:7.17.24
     environment:
       http.port: 9203-9300
       discovery.type: single-node
       ES_JAVA_OPTS: "-Xms750m -Xmx750m" # https://github.com/10up/wp-local-docker/issues/6
     ports:
       - "9203:9203"
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+  elasticsearch8:
+    container_name: elasticsearch8
+    image: elasticsearch:8.15.3
+    environment:
+      discovery.type: single-node
+      ES_JAVA_OPTS: "-Xms750m -Xmx750m" # https://github.com/10up/wp-local-docker/issues/6
+    ports:
+      - "9208:9202"
     ulimits:
       nofile:
         soft: 65536
@@ -112,7 +129,8 @@ services:
     ports:
       - "127.0.0.1:9126:9126"
   mongodb:
-    image: circleci/mongo:latest-ram
+    container_name: mongodb
+    image: mongo:6.0.20
     ports:
       - "27017:27017"
   memcached:
@@ -120,6 +138,7 @@ services:
     ports:
       - "11211:11211"
   kafka:
+    container_name: kafka
     image: confluentinc/confluent-local:7.5.0
     environment:
       KAFKA_LISTENERS: "PLAINTEXT://0.0.0.0:9093,BROKER://0.0.0.0:9092,CONTROLLER://0.0.0.0:9094"
@@ -139,7 +158,27 @@ services:
       KAFKA_CONTROLLER_LISTENER_NAMES: "CONTROLLER"
     ports:
       - "9092:9092"
+      - "9093:9093"
   localstack:
     image: localstack/localstack:latest
     ports:
       - "4566:4566"
+  dynamodb:
+    container_name: dynamodb
+    image: amazon/dynamodb-local:latest
+    ports:
+      - "8000:8000"
+  gcp-pubsub:
+    container_name: gcp-pubsub
+    image: gcr.io/google.com/cloudsdktool/google-cloud-cli:emulators
+    command: ["gcloud", "beta", "emulators", "pubsub", "start", "--host-port=0.0.0.0:8085", "--project=pstest"]
+    ports:
+      - "8085:8085"
+  vault:
+    container_name: vault
+    image: vault:1.7.3
+    environment:
+      VAULT_TOKEN: root
+      VAULT_DEV_ROOT_TOKEN_ID: root
+    ports:
+      - "8200:8200"

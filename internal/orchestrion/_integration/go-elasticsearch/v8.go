@@ -18,31 +18,36 @@ import (
 	"github.com/elastic/go-elasticsearch/v8"
 	"github.com/elastic/go-elasticsearch/v8/esapi"
 	"github.com/stretchr/testify/require"
+
+	"github.com/DataDog/dd-trace-go/internal/orchestrion/_integration/internal/containers"
 )
 
 type TestCaseV8 struct {
 	base
 }
 
-func (tc *TestCaseV8) Setup(ctx context.Context, t *testing.T) {
-	// Change the docker pull stage in .github/workflows/orchestrion.yml if you update this
-	tc.base.Setup(ctx, t, "docker.elastic.co/elasticsearch/elasticsearch:8.15.3", func(addr string, caCert []byte) (esClient, error) {
-		// from v8, there's a certificate configured by default.
-		// we cannot configure directly in the elasticsearch.Config type as it makes a type assertion on the underlying
-		// transport type, which fails for the *elastictrace.roundTripper type from our instrumentation package.
-		// https://github.com/elastic/elastic-transport-go/blob/main/elastictransport/elastictransport.go#L188-L191
-		caCertPool := x509.NewCertPool()
-		caCertPool.AppendCertsFromPEM(caCert)
+func (tc *TestCaseV8) Setup(_ context.Context, t *testing.T) {
+	containers.SkipIfProviderIsNotHealthy(t)
 
-		return elasticsearch.NewClient(elasticsearch.Config{
-			Addresses: []string{addr},
-			Transport: &http.Transport{
-				TLSClientConfig: &tls.Config{
-					RootCAs: caCertPool,
-				},
+	var err error
+	tc.container = containers.StartElasticsearchV8Container(t)
+
+	// from v8, there's a certificate configured by default.
+	// we cannot configure directly in the elasticsearch.Config type as it makes a type assertion on the underlying
+	// transport type, which fails for the *elastictrace.roundTripper type from our instrumentation package.
+	// https://github.com/elastic/elastic-transport-go/blob/main/elastictransport/elastictransport.go#L188-L191
+	caCertPool := x509.NewCertPool()
+	caCertPool.AppendCertsFromPEM(tc.container.Settings.CACert)
+
+	tc.client, err = elasticsearch.NewClient(elasticsearch.Config{
+		Addresses: []string{tc.container.Settings.Address},
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{
+				RootCAs: caCertPool,
 			},
-		})
+		},
 	})
+	require.NoError(t, err)
 }
 
 func (tc *TestCaseV8) Run(ctx context.Context, t *testing.T) {

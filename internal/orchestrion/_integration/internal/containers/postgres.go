@@ -9,60 +9,49 @@ package containers
 
 import (
 	"context"
-	"net/url"
 	"os"
 	"testing"
 
-	"github.com/docker/go-connections/nat"
 	"github.com/stretchr/testify/require"
+
 	"github.com/testcontainers/testcontainers-go"
-	"github.com/testcontainers/testcontainers-go/modules/redis"
+	testpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
 	"github.com/testcontainers/testcontainers-go/wait"
 )
 
-// StartRedisTestContainer starts a new Redis test container and returns the connection string.
-func StartRedisTestContainer(t testing.TB) (*redis.RedisContainer, string) {
+// StartPostgresContainer starts a new Postgres test container and returns the connection string.
+func StartPostgresContainer(t testing.TB) (*testpostgres.PostgresContainer, string) {
 	ctx := context.Background()
-	exposedPort := "6379/tcp"
-	waitReadyCmd := []string{
-		"redis-cli",
-		"ping",
-	}
 	opts := []testcontainers.ContainerCustomizer{
 		testcontainers.WithLogger(testcontainers.TestLogger(t)),
 		WithTestLogConsumer(t),
+		// https://golang.testcontainers.org/modules/postgres/#wait-strategies_1
 		testcontainers.WithWaitStrategy(
-			wait.ForAll(
-				wait.ForLog("* Ready to accept connections"),
-				wait.ForExposedPort(),
-				wait.ForListeningPort(nat.Port(exposedPort)),
-				wait.ForExec(waitReadyCmd),
-			),
+			wait.ForLog("database system is ready to accept connections").WithOccurrence(2),
+			wait.ForListeningPort("5432/tcp"),
 		),
 	}
 	if _, ok := os.LookupEnv("CI"); ok {
-		t.Log("attempting to reuse redis container in CI")
+		t.Log("attempting to reuse postgres container in CI")
 		opts = append(opts, testcontainers.CustomizeRequest(testcontainers.GenericContainerRequest{
 			ContainerRequest: testcontainers.ContainerRequest{
-				Name:     "redis",
+				Name:     "postgres",
 				Hostname: "localhost",
 			},
 			Started: true,
 			Reuse:   true,
 		}))
 	}
-	container, err := redis.Run(ctx,
-		"redis:7-alpine", // Change the docker pull stage in .github/workflows/orchestrion.yml if you update this
+
+	container, err := testpostgres.Run(ctx,
+		"docker.io/postgres:16-alpine", // Change the docker pull stage in .github/workflows/orchestrion.yml if you update this
 		opts...,
 	)
 	AssertTestContainersError(t, err)
 	RegisterContainerCleanup(t, container)
 
-	connStr, err := container.ConnectionString(ctx)
+	dbURL, err := container.ConnectionString(ctx, "sslmode=disable")
 	require.NoError(t, err)
 
-	redisURL, err := url.Parse(connStr)
-	require.NoError(t, err)
-
-	return container, redisURL.Host
+	return container, dbURL
 }

@@ -21,7 +21,7 @@ import (
 )
 
 const (
-	topic     = "gotest"
+	topic     = "shopify_sarama_default_test"
 	partition = int32(0)
 )
 

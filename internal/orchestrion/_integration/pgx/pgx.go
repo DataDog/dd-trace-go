@@ -10,17 +10,14 @@ package pgx
 import (
 	"context"
 	"testing"
-	"time"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/stretchr/testify/require"
+	testpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 
 	"github.com/DataDog/dd-trace-go/internal/orchestrion/_integration/internal/containers"
 	"github.com/DataDog/dd-trace-go/internal/orchestrion/_integration/internal/trace"
-	"github.com/jackc/pgx/v5"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
-	"github.com/testcontainers/testcontainers-go"
-	testpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
-	"github.com/testcontainers/testcontainers-go/wait"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
 
 type TestCase struct {
@@ -32,30 +29,11 @@ func (tc *TestCase) Setup(ctx context.Context, t *testing.T) {
 	containers.SkipIfProviderIsNotHealthy(t)
 
 	var err error
-	tc.container, err = testpostgres.Run(ctx,
-		"docker.io/postgres:16-alpine", // Change the docker pull stage in .github/workflows/orchestrion.yml if you update this
-		testcontainers.WithLogger(testcontainers.TestLogger(t)),
-		containers.WithTestLogConsumer(t),
-		// https://golang.testcontainers.org/modules/postgres/#wait-strategies_1
-		testcontainers.WithWaitStrategy(
-			wait.ForLog("database system is ready to accept connections").WithOccurrence(2),
-			wait.ForListeningPort("5432/tcp"),
-		),
-	)
-	containers.AssertTestContainersError(t, err)
-	containers.RegisterContainerCleanup(t, tc.container)
-
-	dbURL, err := tc.container.ConnectionString(ctx, "sslmode=disable")
-	require.NoError(t, err)
+	container, dbURL := containers.StartPostgresContainer(t)
+	tc.container = container
 
 	tc.conn, err = pgx.Connect(ctx, dbURL)
 	require.NoError(t, err)
-	t.Cleanup(func() {
-		// Using a new 10s-timeout context, as we may be running cleanup after the original context expired.
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-		assert.NoError(t, tc.conn.Close(ctx))
-	})
 }
 
 func (tc *TestCase) Run(ctx context.Context, t *testing.T) {

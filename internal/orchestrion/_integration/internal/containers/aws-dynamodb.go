@@ -9,6 +9,7 @@ package containers
 
 import (
 	"context"
+	"os"
 	"testing"
 
 	"github.com/docker/go-connections/nat"
@@ -38,6 +39,11 @@ func StartDynamoDBTestContainer(t testing.TB) (testcontainers.Container, string,
 		},
 		Started: true,
 		Logger:  testcontainers.TestLogger(t),
+	}
+	if _, ok := os.LookupEnv("CI"); ok {
+		t.Log("attempting to reuse dynamodb container in CI")
+		req.ContainerRequest.Name = "dynamodb"
+		req.Reuse = true
 	}
 
 	ctx := context.Background()
