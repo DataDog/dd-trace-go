@@ -8,6 +8,7 @@ package log
 import (
 	"fmt"
 
+	internallog "github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 )
 
