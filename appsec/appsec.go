@@ -90,7 +90,7 @@ func SetUser(ctx context.Context, id string, opts ...tracer.UserMonitoringOption
 // The provided metadata is attached to the successful user login event.
 //
 // This function calso calls [SetUser] with the provided user ID and login, as
-// well as any provided [tracer.UserMonitoringOption]s, and returns an error if
+// well as any provided [tracer.UserMonitoringOption], and returns an error if
 // the provided user ID is found to be on a configured deny list. See the
 // documentation for [SetUser] for more information.
 func TrackUserLoginSuccess(ctx context.Context, login string, uid string, md map[string]string, opts ...tracer.UserMonitoringOption) error {
