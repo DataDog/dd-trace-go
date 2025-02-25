@@ -13,16 +13,17 @@ import (
 	"github.com/DataDog/appsec-internal-go/limiter"
 	wafv3 "github.com/DataDog/go-libddwaf/v3"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener"
-
 	"gopkg.in/DataDog/dd-trace-go.v1/appsec/events"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/config"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/waf"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/waf/actions"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/stacktrace"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
+	telemetrylog "gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry/log"
 )
 
 type Feature struct {
@@ -46,13 +47,23 @@ func NewWAFFeature(cfg *config.Config, rootOp dyngo.Operation) (listener.Feature
 			return nil, fmt.Errorf("error while loading libddwaf: %w", err)
 		}
 		// 2. If there is an error and the loading is ok: log as an informative error where appsec can be used
-		log.Error("appsec: non-critical error while loading libddwaf: %v", err)
+		telemetrylog.Warn("appsec: non-critical error while loading libddwaf: %v", err, telemetry.WithTags([]string{"product:appsec"}))
 	}
 
 	newHandle, err := wafv3.NewHandle(cfg.RulesManager.Latest, cfg.Obfuscator.KeyRegex, cfg.Obfuscator.ValueRegex)
 	if err != nil {
 		return nil, err
 	}
+
+	telemetryMetricName := "waf.init"
+	if cfg.SupportedAddresses != nil { // If the supported addresses are set, it means that this is NOT the first time the WAF is loaded
+		telemetryMetricName = "waf.updates"
+	}
+
+	telemetry.Count(telemetry.NamespaceAppSec, telemetryMetricName, []string{
+		"waf_version:" + wafv3.Version(),
+		"event_rules_version:" + newHandle.Diagnostics().Version,
+	}).Submit(1)
 
 	cfg.SupportedAddresses = config.NewAddressSet(newHandle.Addresses())
 
@@ -86,6 +97,7 @@ func (waf *Feature) onStart(op *waf.ContextOperation, _ waf.ContextArgs) {
 	op.SwapContext(ctx)
 	op.SetLimiter(waf.limiter)
 	op.SetSupportedAddresses(waf.supportedAddrs)
+	op.SetEventRulesetVersion(waf.handle.Diagnostics().Version)
 
 	// Run the WAF with the given address data
 	dyngo.OnData(op, op.OnEvent)
@@ -120,7 +132,7 @@ func (waf *Feature) onFinish(op *waf.ContextOperation, _ waf.ContextRes) {
 
 	ctx.Close()
 
-	AddWAFMonitoringTags(op, waf.handle.Diagnostics().Version, ctx.Stats().Metrics())
+	AddWAFMonitoringTags(op, waf.handle.Diagnostics().Version, ctx.Stats())
 	if wafEvents := op.Events(); len(wafEvents) > 0 {
 		tagValue := map[string][]any{"triggers": wafEvents}
 		if waf.metaStructAvailable {
@@ -129,6 +141,7 @@ func (waf *Feature) onFinish(op *waf.ContextOperation, _ waf.ContextRes) {
 			op.SetSerializableTag("_dd.appsec.json", tagValue)
 		}
 	}
+
 	op.SetSerializableTags(op.Derivatives())
 	if stacks := op.StackTraces(); len(stacks) > 0 {
 		op.SetTag(stacktrace.SpanKey, stacktrace.GetSpanValue(stacks...))

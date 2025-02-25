@@ -41,7 +41,9 @@ type (
 		derivatives map[string]any
 		// supportedAddresses is the set of addresses supported by the WAF.
 		supportedAddresses config.AddressSet
-		// mu protects the events, stacks, and derivatives, supportedAddresses slices.
+		// eventRulesetVersion is the version of the event ruleset used by the WAF.
+		eventRulesetVersion string
+		// mu protects the events, stacks, and derivatives, supportedAddresses, eventRulesetVersion slices.
 		mu sync.Mutex
 		// logOnce is used to log a warning once when a request has too many WAF events via the built-in limiter or the max value.
 		logOnce sync.Once
@@ -84,6 +86,10 @@ func (op *ContextOperation) SwapContext(ctx *waf.Context) *waf.Context {
 
 func (op *ContextOperation) SetLimiter(limiter limiter.Limiter) {
 	op.limiter = limiter
+}
+
+func (op *ContextOperation) SetEventRulesetVersion(version string) {
+	op.eventRulesetVersion = version
 }
 
 func (op *ContextOperation) AddEvents(events ...any) {

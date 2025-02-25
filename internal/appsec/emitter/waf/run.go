@@ -9,11 +9,14 @@ import (
 	"context"
 	"errors"
 	"maps"
+	"strconv"
 
 	waf "github.com/DataDog/go-libddwaf/v3"
 	wafErrors "github.com/DataDog/go-libddwaf/v3/errors"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/waf/actions"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
+	telemetrylog "gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry/log"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/appsec/events"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
@@ -40,21 +43,39 @@ func (op *ContextOperation) Run(eventReceiver dyngo.Operation, addrs waf.RunAddr
 		})
 	}
 
+	telemetryTags := make([]string, 2, 6)
+	telemetryTags[0] = "waf_version:" + waf.Version()
+	telemetryTags[1] = "event_rules_version:" + op.eventRulesetVersion
+
+	var wafTimeout bool
 	result, err := ctx.Run(addrs)
 	if errors.Is(err, wafErrors.ErrTimeout) {
 		log.Debug("appsec: WAF timeout value reached: %v", err)
+		wafTimeout = true
 	} else if err != nil {
-		log.Error("appsec: unexpected WAF error: %v", err)
+		telemetrylog.Error("unexpected WAF error: %v", err, telemetry.WithTags([]string{
+			"product:appsec",
+			"waf_version:" + waf.Version(),
+			"event_rules_version:" + op.eventRulesetVersion,
+		}))
 	}
 
 	op.AddEvents(result.Events...)
 	op.AbsorbDerivatives(result.Derivatives)
 
-	actions.SendActionEvents(eventReceiver, result.Actions)
+	blocking := actions.SendActionEvents(eventReceiver, result.Actions)
 
 	if result.HasEvents() {
 		dyngo.EmitData(op, &SecurityEvent{})
 	}
+
+	telemetry.Count(telemetry.NamespaceAppSec, "waf.requests", []string{
+		"waf_version:" + waf.Version(),
+		"event_rules_version:" + op.eventRulesetVersion,
+		"request_blocked:" + strconv.FormatBool(blocking),
+		"rule_triggered:" + strconv.FormatBool(result.HasEvents()),
+		"waf_timeout:" + strconv.FormatBool(wafTimeout),
+	}).Submit(1)
 }
 
 // RunSimple runs the WAF with the given address data and returns an error that should be forwarded to the caller
