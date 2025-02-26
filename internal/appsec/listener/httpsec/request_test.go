@@ -14,9 +14,9 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/metadata"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener/waf"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/samplernames"
 )
@@ -230,7 +230,7 @@ func TestTags(t *testing.T) {
 							"manual.keep":     true,
 							"appsec.event":    true,
 							"_dd.origin":      "appsec",
-							"_dd.p.appsec":    internal.PropagatingTagValue{Value: "1"},
+							"_dd.p.ts":        internal.TraceSourceTagValue{Value: internal.ASMTraceSource},
 						})
 					}
 
