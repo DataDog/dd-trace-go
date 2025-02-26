@@ -25,6 +25,14 @@ services:
       POSTGRES_DB: postgres
     ports:
       - "5432:5432"
+  postgres14:
+    image: cimg/postgres:14.10
+    environment:
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_USER: postgres
+      POSTGRES_DB: postgres
+    ports:
+      - "5433:5432"
   mssql:
     image: mcr.microsoft.com/mssql/server:2019-latest
     environment:
