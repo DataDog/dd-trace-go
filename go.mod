@@ -71,13 +71,13 @@ require (
 	github.com/hashicorp/go-secure-stdlib/parseutil v0.1.7
 	github.com/hashicorp/vault/api v1.9.2
 	github.com/hashicorp/vault/sdk v0.9.2
-	github.com/jackc/pgx/v5 v5.6.0
+	github.com/jackc/pgx/v5 v5.7.1
 	github.com/jinzhu/gorm v1.9.16
 	github.com/jmoiron/sqlx v1.3.5
 	github.com/julienschmidt/httprouter v1.3.0
 	github.com/labstack/echo v3.3.10+incompatible
 	github.com/labstack/echo/v4 v4.11.1
-	github.com/lib/pq v1.10.2
+	github.com/lib/pq v1.10.9
 	github.com/mattn/go-sqlite3 v1.14.18
 	github.com/microsoft/go-mssqldb v0.21.0
 	github.com/miekg/dns v1.1.55
@@ -85,6 +85,9 @@ require (
 	github.com/opentracing/opentracing-go v1.2.0
 	github.com/redis/go-redis/v9 v9.1.0
 	github.com/richardartoul/molecule v1.0.1-0.20240531184615-7ca0df43c0b3
+	github.com/riverqueue/river v0.13.0
+	github.com/riverqueue/river/riverdriver/riverpgxv5 v0.13.0
+	github.com/riverqueue/river/rivertype v0.13.0
 	github.com/segmentio/kafka-go v0.4.42
 	github.com/sirupsen/logrus v1.9.3
 	github.com/spaolacci/murmur3 v1.1.0
@@ -220,8 +223,8 @@ require (
 	github.com/hashicorp/serf v0.10.1 // indirect
 	github.com/imdario/mergo v0.3.16 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
-	github.com/jackc/pgservicefile v0.0.0-20221227161230-091c0ba34f0a // indirect
-	github.com/jackc/puddle/v2 v2.2.1 // indirect
+	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
+	github.com/jackc/puddle/v2 v2.2.2 // indirect
 	github.com/jcmturner/aescts/v2 v2.0.0 // indirect
 	github.com/jcmturner/dnsutils/v2 v2.0.0 // indirect
 	github.com/jcmturner/gofork v1.7.6 // indirect
@@ -256,6 +259,8 @@ require (
 	github.com/power-devops/perfstat v0.0.0-20220216144756-c35f1ee13d7c // indirect
 	github.com/rcrowley/go-metrics v0.0.0-20201227073835-cf1acfcdf475 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
+	github.com/riverqueue/river/riverdriver v0.13.0 // indirect
+	github.com/riverqueue/river/rivershared v0.13.0 // indirect
 	github.com/rivo/uniseg v0.4.4 // indirect
 	github.com/ryanuber/go-glob v1.0.0 // indirect
 	github.com/secure-systems-lab/go-securesystemslib v0.7.0 // indirect
@@ -264,11 +269,12 @@ require (
 	github.com/spf13/pflag v1.0.5 // indirect
 	github.com/stretchr/objx v0.5.2 // indirect
 	github.com/tidwall/btree v1.6.0 // indirect
-	github.com/tidwall/gjson v1.16.0 // indirect
+	github.com/tidwall/gjson v1.18.0 // indirect
 	github.com/tidwall/grect v0.1.4 // indirect
 	github.com/tidwall/match v1.1.1 // indirect
 	github.com/tidwall/pretty v1.2.1 // indirect
 	github.com/tidwall/rtred v0.1.2 // indirect
+	github.com/tidwall/sjson v1.2.5 // indirect
 	github.com/tidwall/tinyqueue v0.1.1 // indirect
 	github.com/tklauser/go-sysconf v0.3.12 // indirect
 	github.com/tklauser/numcpus v0.6.1 // indirect
