@@ -1,6 +1,5 @@
 {
     "go.toolsEnvVars": {
-        "GOTOOLCHAIN": "go1.22.6",
         "CGO_CXXFLAGS_ALLOW": "-lpthread|-ltcmalloc",
         "CGO_CFLAGS_ALLOW": "-ltcmalloc",
         "CGO_CPPFLAGS": "-I/opt/homebrew/Cellar/rocksdb@6.20.3/6.20.3/include -I/opt/homebrew/Cellar/foundationdb-headers@6.2.30/6.2.30/include -I/opt/homebrew/opt/gperftools/include -DCMAKE_EXE_LINKER_FLAG"

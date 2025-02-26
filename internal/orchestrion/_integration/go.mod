@@ -89,44 +89,44 @@ require (
 	github.com/DataDog/datadog-agent/pkg/util/scrubber v0.64.0-rc.1 // indirect
 	github.com/DataDog/datadog-agent/pkg/version v0.64.0-rc.1 // indirect
 	github.com/DataDog/datadog-go/v5 v5.6.0 // indirect
-	github.com/DataDog/dd-trace-go/contrib/99designs/gqlgen/v2 v2.0.0-rc.3 // indirect
-	github.com/DataDog/dd-trace-go/contrib/IBM/sarama/v2 v2.0.0-rc.3 // indirect
-	github.com/DataDog/dd-trace-go/contrib/Shopify/sarama/v2 v2.0.0-rc.3 // indirect
-	github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go-v2/v2 v2.0.0-rc.3 // indirect
-	github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go/v2 v2.0.0-rc.3 // indirect
-	github.com/DataDog/dd-trace-go/contrib/cloud.google.com/go/pubsub.v1/v2 v2.0.0-rc.3 // indirect
-	github.com/DataDog/dd-trace-go/contrib/confluentinc/confluent-kafka-go/kafka.v2/v2 v2.0.0-rc.3 // indirect
-	github.com/DataDog/dd-trace-go/contrib/confluentinc/confluent-kafka-go/kafka/v2 v2.0.0-rc.3 // indirect
-	github.com/DataDog/dd-trace-go/contrib/database/sql/v2 v2.0.0-rc.3 // indirect
-	github.com/DataDog/dd-trace-go/contrib/elastic/go-elasticsearch.v6/v2 v2.0.0-rc.3 // indirect
-	github.com/DataDog/dd-trace-go/contrib/gin-gonic/gin/v2 v2.0.0-rc.3 // indirect
-	github.com/DataDog/dd-trace-go/contrib/go-chi/chi.v5/v2 v2.0.0-rc.3 // indirect
-	github.com/DataDog/dd-trace-go/contrib/go-chi/chi/v2 v2.0.0-rc.3 // indirect
-	github.com/DataDog/dd-trace-go/contrib/go-redis/redis.v7/v2 v2.0.0-rc.3 // indirect
-	github.com/DataDog/dd-trace-go/contrib/go-redis/redis.v8/v2 v2.0.0-rc.3 // indirect
-	github.com/DataDog/dd-trace-go/contrib/go-redis/redis/v2 v2.0.0-rc.3 // indirect
-	github.com/DataDog/dd-trace-go/contrib/go.mongodb.org/mongo-driver/v2 v2.0.0-rc.3 // indirect
-	github.com/DataDog/dd-trace-go/contrib/gocql/gocql/v2 v2.0.0-rc.3 // indirect
-	github.com/DataDog/dd-trace-go/contrib/gofiber/fiber.v2/v2 v2.0.0-rc.3 // indirect
-	github.com/DataDog/dd-trace-go/contrib/gomodule/redigo/v2 v2.0.0-rc.3 // indirect
-	github.com/DataDog/dd-trace-go/contrib/google.golang.org/grpc/v2 v2.0.0-rc.3 // indirect
-	github.com/DataDog/dd-trace-go/contrib/gorilla/mux/v2 v2.0.0-rc.3 // indirect
-	github.com/DataDog/dd-trace-go/contrib/gorm.io/gorm.v1/v2 v2.0.0-rc.3 // indirect
-	github.com/DataDog/dd-trace-go/contrib/graph-gophers/graphql-go/v2 v2.0.0-rc.3 // indirect
-	github.com/DataDog/dd-trace-go/contrib/graphql-go/graphql/v2 v2.0.0-rc.3 // indirect
-	github.com/DataDog/dd-trace-go/contrib/hashicorp/vault/v2 v2.0.0-rc.3 // indirect
-	github.com/DataDog/dd-trace-go/contrib/jackc/pgx.v5/v2 v2.0.0-rc.3 // indirect
-	github.com/DataDog/dd-trace-go/contrib/julienschmidt/httprouter/v2 v2.0.0-rc.3 // indirect
-	github.com/DataDog/dd-trace-go/contrib/k8s.io/client-go/v2 v2.0.0-rc.3 // indirect
-	github.com/DataDog/dd-trace-go/contrib/labstack/echo.v4/v2 v2.0.0-rc.3 // indirect
-	github.com/DataDog/dd-trace-go/contrib/log/slog/v2 v2.0.0-rc.3 // indirect
-	github.com/DataDog/dd-trace-go/contrib/net/http/v2 v2.0.0-rc.3 // indirect
-	github.com/DataDog/dd-trace-go/contrib/redis/go-redis.v9/v2 v2.0.0-rc.3 // indirect
-	github.com/DataDog/dd-trace-go/contrib/segmentio/kafka-go/v2 v2.0.0-rc.3 // indirect
-	github.com/DataDog/dd-trace-go/contrib/sirupsen/logrus/v2 v2.0.0-rc.3 // indirect
-	github.com/DataDog/dd-trace-go/contrib/twitchtv/twirp/v2 v2.0.0-rc.3 // indirect
-	github.com/DataDog/dd-trace-go/instrumentation/testutils/grpc/v2 v2.0.0-rc.3 // indirect
-	github.com/DataDog/dd-trace-go/v2 v2.0.0-rc.3 // indirect
+	github.com/DataDog/dd-trace-go/contrib/99designs/gqlgen/v2 v2.0.0-rc.3.0.20250226082715-6b718a68657e // indirect
+	github.com/DataDog/dd-trace-go/contrib/IBM/sarama/v2 v2.0.0-rc.3.0.20250226082715-6b718a68657e // indirect
+	github.com/DataDog/dd-trace-go/contrib/Shopify/sarama/v2 v2.0.0-rc.3.0.20250226082715-6b718a68657e // indirect
+	github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go-v2/v2 v2.0.0-rc.3.0.20250226082715-6b718a68657e // indirect
+	github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go/v2 v2.0.0-rc.3.0.20250226082715-6b718a68657e // indirect
+	github.com/DataDog/dd-trace-go/contrib/cloud.google.com/go/pubsub.v1/v2 v2.0.0-rc.3.0.20250226082715-6b718a68657e // indirect
+	github.com/DataDog/dd-trace-go/contrib/confluentinc/confluent-kafka-go/kafka.v2/v2 v2.0.0-rc.3.0.20250226082715-6b718a68657e // indirect
+	github.com/DataDog/dd-trace-go/contrib/confluentinc/confluent-kafka-go/kafka/v2 v2.0.0-rc.3.0.20250226082715-6b718a68657e // indirect
+	github.com/DataDog/dd-trace-go/contrib/database/sql/v2 v2.0.0-rc.3.0.20250226082715-6b718a68657e // indirect
+	github.com/DataDog/dd-trace-go/contrib/elastic/go-elasticsearch.v6/v2 v2.0.0-rc.3.0.20250226082715-6b718a68657e // indirect
+	github.com/DataDog/dd-trace-go/contrib/gin-gonic/gin/v2 v2.0.0-rc.3.0.20250226082715-6b718a68657e // indirect
+	github.com/DataDog/dd-trace-go/contrib/go-chi/chi.v5/v2 v2.0.0-rc.3.0.20250226082715-6b718a68657e // indirect
+	github.com/DataDog/dd-trace-go/contrib/go-chi/chi/v2 v2.0.0-rc.3.0.20250226082715-6b718a68657e // indirect
+	github.com/DataDog/dd-trace-go/contrib/go-redis/redis.v7/v2 v2.0.0-rc.3.0.20250226082715-6b718a68657e // indirect
+	github.com/DataDog/dd-trace-go/contrib/go-redis/redis.v8/v2 v2.0.0-rc.3.0.20250226082715-6b718a68657e // indirect
+	github.com/DataDog/dd-trace-go/contrib/go-redis/redis/v2 v2.0.0-rc.3.0.20250226082715-6b718a68657e // indirect
+	github.com/DataDog/dd-trace-go/contrib/go.mongodb.org/mongo-driver/v2 v2.0.0-rc.3.0.20250226082715-6b718a68657e // indirect
+	github.com/DataDog/dd-trace-go/contrib/gocql/gocql/v2 v2.0.0-rc.3.0.20250226082715-6b718a68657e // indirect
+	github.com/DataDog/dd-trace-go/contrib/gofiber/fiber.v2/v2 v2.0.0-rc.3.0.20250226082715-6b718a68657e // indirect
+	github.com/DataDog/dd-trace-go/contrib/gomodule/redigo/v2 v2.0.0-rc.3.0.20250226082715-6b718a68657e // indirect
+	github.com/DataDog/dd-trace-go/contrib/google.golang.org/grpc/v2 v2.0.0-rc.3.0.20250226082715-6b718a68657e // indirect
+	github.com/DataDog/dd-trace-go/contrib/gorilla/mux/v2 v2.0.0-rc.3.0.20250226082715-6b718a68657e // indirect
+	github.com/DataDog/dd-trace-go/contrib/gorm.io/gorm.v1/v2 v2.0.0-rc.3.0.20250226082715-6b718a68657e // indirect
+	github.com/DataDog/dd-trace-go/contrib/graph-gophers/graphql-go/v2 v2.0.0-rc.3.0.20250226082715-6b718a68657e // indirect
+	github.com/DataDog/dd-trace-go/contrib/graphql-go/graphql/v2 v2.0.0-rc.3.0.20250226082715-6b718a68657e // indirect
+	github.com/DataDog/dd-trace-go/contrib/hashicorp/vault/v2 v2.0.0-rc.3.0.20250226082715-6b718a68657e // indirect
+	github.com/DataDog/dd-trace-go/contrib/jackc/pgx.v5/v2 v2.0.0-rc.3.0.20250226082715-6b718a68657e // indirect
+	github.com/DataDog/dd-trace-go/contrib/julienschmidt/httprouter/v2 v2.0.0-rc.3.0.20250226082715-6b718a68657e // indirect
+	github.com/DataDog/dd-trace-go/contrib/k8s.io/client-go/v2 v2.0.0-rc.3.0.20250226082715-6b718a68657e // indirect
+	github.com/DataDog/dd-trace-go/contrib/labstack/echo.v4/v2 v2.0.0-rc.3.0.20250226082715-6b718a68657e // indirect
+	github.com/DataDog/dd-trace-go/contrib/log/slog/v2 v2.0.0-rc.3.0.20250226082715-6b718a68657e // indirect
+	github.com/DataDog/dd-trace-go/contrib/net/http/v2 v2.0.0-rc.3.0.20250226082715-6b718a68657e // indirect
+	github.com/DataDog/dd-trace-go/contrib/redis/go-redis.v9/v2 v2.0.0-rc.3.0.20250226082715-6b718a68657e // indirect
+	github.com/DataDog/dd-trace-go/contrib/segmentio/kafka-go/v2 v2.0.0-rc.3.0.20250226082715-6b718a68657e // indirect
+	github.com/DataDog/dd-trace-go/contrib/sirupsen/logrus/v2 v2.0.0-rc.3.0.20250226082715-6b718a68657e // indirect
+	github.com/DataDog/dd-trace-go/contrib/twitchtv/twirp/v2 v2.0.0-rc.3.0.20250226082715-6b718a68657e // indirect
+	github.com/DataDog/dd-trace-go/instrumentation/testutils/grpc/v2 v2.0.0-rc.3.0.20250226082715-6b718a68657e // indirect
+	github.com/DataDog/dd-trace-go/v2 v2.0.0-rc.3.0.20250226082715-6b718a68657e // indirect
 	github.com/DataDog/go-runtime-metrics-internal v0.0.4-0.20241206090539-a14610dc22b6 // indirect
 	github.com/DataDog/go-sqllexer v0.1.0 // indirect
 	github.com/DataDog/go-tuf v1.1.0-0.5.2 // indirect
@@ -138,14 +138,14 @@ require (
 	github.com/agnivade/levenshtein v1.2.0 // indirect
 	github.com/andybalholm/brotli v1.1.1 // indirect
 	github.com/apache/arrow/go/v15 v15.0.2 // indirect
-	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.6.7 // indirect
+	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.6.10 // indirect
 	github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.16.19 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/configsources v1.3.26 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.6.26 // indirect
-	github.com/aws/aws-sdk-go-v2/internal/ini v1.8.1 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/ini v1.8.3 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/v4a v1.3.26 // indirect
 	github.com/aws/aws-sdk-go-v2/service/eventbridge v1.36.1 // indirect
-	github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.12.1 // indirect
+	github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.12.3 // indirect
 	github.com/aws/aws-sdk-go-v2/service/internal/checksum v1.4.7 // indirect
 	github.com/aws/aws-sdk-go-v2/service/internal/endpoint-discovery v1.10.7 // indirect
 	github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.12.7 // indirect
@@ -158,7 +158,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/sso v1.24.5 // indirect
 	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.28.4 // indirect
 	github.com/aws/aws-sdk-go-v2/service/sts v1.33.0 // indirect
-	github.com/aws/smithy-go v1.22.1 // indirect
+	github.com/aws/smithy-go v1.22.3 // indirect
 	github.com/aymanbagabas/go-osc52/v2 v2.0.1 // indirect
 	github.com/bytedance/sonic v1.12.6 // indirect
 	github.com/bytedance/sonic/loader v0.2.1 // indirect
