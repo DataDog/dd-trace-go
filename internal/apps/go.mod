@@ -84,7 +84,7 @@ require (
 	github.com/stretchr/testify v1.10.0
 	golang.org/x/sys v0.30.0 // indirect
 	golang.org/x/time v0.9.0 // indirect
-	golang.org/x/xerrors v0.0.0-20240903120638-7835f813f4da // indirect
+	golang.org/x/xerrors v0.0.0-20231012003039-104605ab7028 // indirect
 	google.golang.org/protobuf v1.36.5 // indirect
 )
 

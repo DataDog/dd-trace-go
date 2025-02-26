@@ -4,6 +4,7 @@
 // Copyright 2025 Datadog, Inc.
 
 //go:generate go run github.com/DataDog/dd-trace-go/v2/internal/telemetry/internal/knownmetrics/generator
+
 package knownmetrics
 
 import (
