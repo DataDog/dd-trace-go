@@ -124,7 +124,8 @@ func setErrExtensions(result map[string]any, extensions map[string]any, whitelis
 
 func errExtensionMapValue(val any) (any, error) {
 	switch v := val.(type) {
-	case string, bool, int, uint, int64, uint64, uint8, uint16, uint32, uintptr, int8, int16, int32, float64, float32:
+	case string, bool, int, uint, int64, uint64, uint8, uint16, uint32, uintptr, int8, int16, int32, float64, float32,
+		[]string, []bool, []int, []uint, []int64, []uint64, []uint8, []uint16, []uint32, []uintptr, []int8, []int16, []int32, []float64, []float32:
 		return v, nil
 	default:
 		b, err := json.Marshal(val)
@@ -139,6 +140,7 @@ func errExtensionMapValue(val any) (any, error) {
 const defaultStackLength = 32
 
 // takeStacktrace takes a stack trace of maximum n entries, skipping the first skip entries.
+// This function is the same as ddtrace/tracer/span.go
 func takeStacktrace(n, skip uint) string {
 	if n == 0 {
 		n = defaultStackLength
