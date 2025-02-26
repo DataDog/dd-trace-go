@@ -209,16 +209,16 @@ jobs:
           case "${MODE}" in
           "DRIVER")
             echo "Starting test suite in DRIVER mode"
-            gotestsum --junitfile ${REPORT} -- ${{ github.workspace }}/dd-trace-go/.github/actions/test-orchestrion-driver-mode/run-orchestrion-tests.sh -v -coverprofile=coverage.txt -covermode=atomic
+            gotestsum --junitfile ${REPORT} -- ./.github/actions/test-orchestrion-driver-mode/run-orchestrion-tests.sh -v -coverprofile=coverage.txt -covermode=atomic
             ;;
           "TOOLEXEC")
             echo "Starting test suite in TOOLEXEC mode"
-            gotestsum --junitfile ${REPORT} --packages="./..." -- -shuffle=on -toolexec='orchestrion toolexec' -v -coverprofile=coverage.txt -covermode=atomic
+            gotestsum --junitfile ${REPORT} -- ./... -shuffle=on -toolexec='orchestrion toolexec' -v -coverprofile=coverage.txt -covermode=atomic
             ;;
           "GOFLAGS")
             echo "Starting test suite in GOFLAGS mode"
             export GOFLAGS="${GOFLAGS} '-toolexec=orchestrion toolexec'"
-            gotestsum --junitfile ${REPORT} --packages="./..." -- -shuffle=on -v -coverprofile=coverage.txt -covermode=atomic -timeout 15m
+            gotestsum --junitfile ${REPORT} -- ./... -shuffle=on -v -coverprofile=coverage.txt -covermode=atomic -timeout 15m
             ;;
           *)
             echo "Unknown mode: ${MODE}"
