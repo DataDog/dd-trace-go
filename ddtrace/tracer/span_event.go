@@ -30,11 +30,11 @@ type spanEvent struct {
 
 type spanEventAttribute struct {
 	Type        spanEventAttributeType   `msg:"type" json:"type"`
-	StringValue string                   `msg:"string_value" json:"string_value"`
-	BoolValue   bool                     `msg:"bool_value" json:"bool_value"`
-	IntValue    int64                    `msg:"int_value" json:"int_value"`
-	DoubleValue float64                  `msg:"double_value" json:"double_value"`
-	ArrayValue  *spanEventArrayAttribute `msg:"array_value" json:"array_value"`
+	StringValue string                   `msg:"string_value,omitempty"`
+	BoolValue   bool                     `msg:"bool_value,omitempty" `
+	IntValue    int64                    `msg:"int_value,omitempty" `
+	DoubleValue float64                  `msg:"double_value,omitempty"`
+	ArrayValue  *spanEventArrayAttribute `msg:"array_value,omitempty"`
 }
 
 type spanEventAttributeType int32
@@ -52,11 +52,11 @@ type spanEventArrayAttribute struct {
 }
 
 type spanEventArrayAttributeValue struct {
-	Type        spanEventArrayAttributeValueType `msg:"type" json:"type"`
-	StringValue string                           `msg:"string_value" json:"string_value"`
-	BoolValue   bool                             `msg:"bool_value" json:"bool_value"`
-	IntValue    int64                            `msg:"int_value" json:"int_value"`
-	DoubleValue float64                          `msg:"double_value" json:"double_value"`
+	Type        spanEventArrayAttributeValueType `msg:"type"`
+	StringValue string                           `msg:"string_value,omitempty"`
+	BoolValue   bool                             `msg:"bool_value,omitempty"`
+	IntValue    int64                            `msg:"int_value,omitempty"`
+	DoubleValue float64                          `msg:"double_value,omitempty"`
 }
 
 type spanEventArrayAttributeValueType int32
