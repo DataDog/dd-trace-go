@@ -16,6 +16,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	privateAppsec "github.com/DataDog/dd-trace-go/v2/internal/appsec"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -31,14 +32,15 @@ func TestTrackUserLoginSuccess(t *testing.T) {
 		// Check the span contains the expected tags.
 		require.Len(t, mt.FinishedSpans(), 1)
 		finished := mt.FinishedSpans()[0]
-		expectedEventPrefix := "appsec.events.users.login.success."
-		require.Equal(t, "true", finished.Tag(expectedEventPrefix+"track"))
 		sp, _ := finished.Context().SamplingPriority()
-		require.Equal(t, ext.PriorityUserKeep, sp)
-		require.Equal(t, "user id", finished.Tag("usr.id"))
-		require.Equal(t, "user login", finished.Tag("usr.login"))
-		require.Equal(t, "us-east-1", finished.Tag(expectedEventPrefix+"region"))
-		require.Equal(t, "username", finished.Tag("usr.name"))
+		assert.Equal(t, ext.PriorityUserKeep, sp, "span should have user keep (%d) priority (has: %d)", ext.PriorityUserKeep, sp)
+
+		expectedEventPrefix := "appsec.events.users.login.success."
+		assertTag(t, finished, expectedEventPrefix+"track", "true")
+		assertTag(t, finished, "usr.id", "user id")
+		assertTag(t, finished, "usr.login", "user login")
+		assertTag(t, finished, expectedEventPrefix+"region", "us-east-1")
+		assertTag(t, finished, "usr.name", "username")
 	})
 
 	t.Run("nominal-nil-metadata", func(t *testing.T) {
@@ -52,15 +54,18 @@ func TestTrackUserLoginSuccess(t *testing.T) {
 		// Check the span contains the expected tags.
 		require.Len(t, mt.FinishedSpans(), 1)
 		finished := mt.FinishedSpans()[0]
-		expectedEventPrefix := "appsec.events.users.login.success."
-		require.Equal(t, "true", finished.Tag(expectedEventPrefix+"track"))
+
 		sp, _ := finished.Context().SamplingPriority()
-		require.Equal(t, ext.PriorityUserKeep, sp)
-		require.Equal(t, "user id", finished.Tag("usr.id"))
+		assert.Equal(t, ext.PriorityUserKeep, sp, "span should have user keep (%d) priority (has: %d)", ext.PriorityUserKeep, sp)
+
+		expectedEventPrefix := "appsec.events.users.login.success."
+		assertTag(t, finished, expectedEventPrefix+"track", "true")
+		assertTag(t, finished, "usr.id", "user id")
 	})
 
 	t.Run("nil-context", func(t *testing.T) {
 		require.NotPanics(t, func() {
+			//lint:ignore SA1012 we are intentionally passing a nil context to verify incorrect use does not lead to panic
 			appsec.TrackUserLoginSuccess(nil, "user login", "user id", map[string]string{"region": "us-east-1"}, tracer.WithUserName("username"))
 		})
 	})
@@ -86,11 +91,15 @@ func TestTrackUserLoginFailure(t *testing.T) {
 				// Check the span contains the expected tags.
 				require.Len(t, mt.FinishedSpans(), 1)
 				finished := mt.FinishedSpans()[0]
+
+				sp, _ := finished.Context().SamplingPriority()
+				assert.Equal(t, ext.PriorityUserKeep, sp, "span should have user keep (%d) priority (has: %d)", ext.PriorityUserKeep, sp)
+
 				expectedEventPrefix := "appsec.events.users.login.failure."
-				require.Equal(t, "true", finished.Tag(expectedEventPrefix+"track"))
-				require.Equal(t, "user login", finished.Tag(expectedEventPrefix+"usr.login"))
-				require.Equal(t, strconv.FormatBool(userExists), finished.Tag(expectedEventPrefix+"usr.exists"))
-				require.Equal(t, "us-east-1", finished.Tag(expectedEventPrefix+"region"))
+				assertTag(t, finished, expectedEventPrefix+"track", "true")
+				assertTag(t, finished, expectedEventPrefix+"usr.login", "user login")
+				assertTag(t, finished, expectedEventPrefix+"usr.exists", strconv.FormatBool(userExists))
+				assertTag(t, finished, expectedEventPrefix+"region", "us-east-1")
 			}
 		}
 		t.Run("user-exists", test(true))
@@ -99,6 +108,7 @@ func TestTrackUserLoginFailure(t *testing.T) {
 
 	t.Run("nil-context", func(t *testing.T) {
 		require.NotPanics(t, func() {
+			//lint:ignore SA1012 we are intentionally passing a nil context to verify incorrect use does not lead to panic
 			appsec.TrackUserLoginFailure(nil, "user login", false, nil)
 		})
 	})
@@ -123,17 +133,20 @@ func TestCustomEvent(t *testing.T) {
 		// Check the span contains the expected tags.
 		require.Len(t, mt.FinishedSpans(), 1)
 		finished := mt.FinishedSpans()[0]
-		expectedEventPrefix := "appsec.events.my-custom-event."
-		require.Equal(t, "true", finished.Tag(expectedEventPrefix+"track"))
+
 		sp, _ := finished.Context().SamplingPriority()
-		require.Equal(t, ext.PriorityUserKeep, sp)
+		assert.Equal(t, ext.PriorityUserKeep, sp, "span should have user keep (%d) priority (has: %d)", ext.PriorityUserKeep, sp)
+
+		expectedEventPrefix := "appsec.events.my-custom-event."
+		assertTag(t, finished, expectedEventPrefix+"track", "true")
 		for k, v := range md {
-			require.Equal(t, v, finished.Tag(expectedEventPrefix+k))
+			assertTag(t, finished, expectedEventPrefix+k, v)
 		}
 	})
 
 	t.Run("nil-context", func(t *testing.T) {
 		require.NotPanics(t, func() {
+			//lint:ignore SA1012 we are intentionally passing a nil context to verify incorrect use does not lead to panic
 			appsec.TrackCustomEvent(nil, "my-custom-event", nil)
 		})
 	})
@@ -162,6 +175,7 @@ func TestSetUser(t *testing.T) {
 	}
 
 	t.Run("early-return/nil-ctx", func(t *testing.T) {
+		//lint:ignore SA1012 we are intentionally passing a nil context to verify incorrect use does not lead to panic
 		err := appsec.SetUser(nil, "usr.id")
 		require.NoError(t, err)
 	})
@@ -178,21 +192,21 @@ func TestSetUser(t *testing.T) {
 
 func ExampleTrackUserLoginSuccess() {
 	// Create an example span and set a user login success appsec event example to it.
-	span, ctx := tracer.StartSpanFromContext(context.Background(), "example")
+	span, ctx := tracer.StartSpanFromContext(context.TODO(), "example")
 	defer span.Finish()
 	appsec.TrackUserLoginSuccess(ctx, "login", "user id", map[string]string{"region": "us-east-1"}, tracer.WithUserName("username"))
 }
 
 func ExampleTrackUserLoginFailure() {
 	// Create an example span and set a user login failure appsec event example to it.
-	span, ctx := tracer.StartSpanFromContext(context.Background(), "example")
+	span, ctx := tracer.StartSpanFromContext(context.TODO(), "example")
 	defer span.Finish()
 	appsec.TrackUserLoginFailure(ctx, "login", false, nil)
 }
 
 func ExampleTrackCustomEvent() {
 	// Create an example span and set a custom appsec event example to it.
-	span, ctx := tracer.StartSpanFromContext(context.Background(), "example")
+	span, ctx := tracer.StartSpanFromContext(context.TODO(), "example")
 	defer span.Finish()
 	appsec.TrackCustomEvent(ctx, "my-custom-event", map[string]string{"region": "us-east-1"})
 

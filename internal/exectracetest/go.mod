@@ -5,7 +5,7 @@ go 1.23.0
 require (
 	github.com/DataDog/dd-trace-go/contrib/database/sql/v2 v2.0.0-rc.3
 	github.com/DataDog/dd-trace-go/v2 v2.0.0-rc.3
-	github.com/google/pprof v0.0.0-20241210010833-40e02aabc2ad
+	github.com/google/pprof v0.0.0-20241029153458-d1b30febd7db
 	github.com/mattn/go-sqlite3 v1.14.18
 	golang.org/x/exp v0.0.0-20250210185358-939b2ce775ac
 )
@@ -72,7 +72,7 @@ require (
 	golang.org/x/sys v0.30.0 // indirect
 	golang.org/x/text v0.22.0 // indirect
 	golang.org/x/time v0.9.0 // indirect
-	golang.org/x/xerrors v0.0.0-20240903120638-7835f813f4da // indirect
+	golang.org/x/xerrors v0.0.0-20231012003039-104605ab7028 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20250219182151-9fdb1cabc7b2 // indirect
 	google.golang.org/grpc v1.70.0 // indirect
 	google.golang.org/protobuf v1.36.5 // indirect

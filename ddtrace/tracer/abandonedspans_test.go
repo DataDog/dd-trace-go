@@ -40,13 +40,13 @@ func spanAge(s *Span) string {
 	return fmt.Sprintf("%d sec", (now()-s.start)/int64(time.Second))
 }
 
-func assertProcessedSpans(assert *assert.Assertions, t *tracer, startedSpans, finishedSpans int) {
+func assertProcessedSpans(assert *assert.Assertions, t *tracer, startedSpans, finishedSpans int, ticker time.Duration) {
 	d := t.abandonedSpansDebugger
 	cond := func() bool {
 		return atomic.LoadUint32(&d.addedSpans) >= uint32(startedSpans) &&
 			atomic.LoadUint32(&d.removedSpans) >= uint32(finishedSpans)
 	}
-	assert.Eventually(cond, 1*time.Second, 75*time.Millisecond)
+	assert.Eventually(cond, 1*time.Second, ticker)
 	// We expect logs to be generated when startedSpans and finishedSpans are different.
 	// At least there should be 3 lines: 1. debugger activation, 2. detected spans warn, and 3. the details.
 	if startedSpans == finishedSpans {
@@ -55,7 +55,7 @@ func assertProcessedSpans(assert *assert.Assertions, t *tracer, startedSpans, fi
 	cond = func() bool {
 		return len(t.config.logger.(*log.RecordLogger).Logs()) > 2
 	}
-	assert.Eventually(cond, 1*time.Second, 75*time.Millisecond)
+	assert.Eventually(cond, 1*time.Second, ticker)
 }
 
 func formatSpanString(s *Span) string {
@@ -85,7 +85,7 @@ func TestAbandonedSpansMetric(t *testing.T) {
 		defer stop()
 		s := tracer.StartSpan("operation", StartTime(spanStart))
 		s.Finish()
-		assertProcessedSpans(assert, tracer, 1, 1)
+		assertProcessedSpans(assert, tracer, 1, 1, tickerInterval/10)
 		assert.Empty(tg.GetCallsByName("datadog.tracer.abandoned_spans"))
 	})
 	t.Run("open", func(t *testing.T) {
@@ -96,7 +96,7 @@ func TestAbandonedSpansMetric(t *testing.T) {
 		assert.NoError(err)
 		defer stop()
 		tracer.StartSpan("operation", StartTime(spanStart), Tag(ext.Component, "some_integration_name"))
-		assertProcessedSpans(assert, tracer, 1, 0)
+		assertProcessedSpans(assert, tracer, 1, 0, tickerInterval/10)
 		calls := tg.GetCallsByName("datadog.tracer.abandoned_spans")
 		assert.Len(calls, 1)
 		call := calls[0]
@@ -112,7 +112,7 @@ func TestAbandonedSpansMetric(t *testing.T) {
 		sf := tracer.StartSpan("op", StartTime(spanStart))
 		sf.Finish()
 		s := tracer.StartSpan("op2", StartTime(spanStart))
-		assertProcessedSpans(assert, tracer, 2, 1)
+		assertProcessedSpans(assert, tracer, 2, 1, tickerInterval/10)
 		calls := tg.GetCallsByName("datadog.tracer.abandoned_spans")
 		assert.Len(calls, 1)
 		s.Finish()
@@ -122,7 +122,6 @@ func TestAbandonedSpansMetric(t *testing.T) {
 func TestReportAbandonedSpans(t *testing.T) {
 	assert := assert.New(t)
 	tp := new(log.RecordLogger)
-
 	tickerInterval = 100 * time.Millisecond
 
 	t.Run("on", func(t *testing.T) {
@@ -141,7 +140,7 @@ func TestReportAbandonedSpans(t *testing.T) {
 		defer stop()
 		s := tracer.StartSpan("operation", StartTime(spanStart))
 		s.Finish()
-		assertProcessedSpans(assert, tracer, 1, 1)
+		assertProcessedSpans(assert, tracer, 1, 1, tickerInterval/10)
 		expected := fmt.Sprintf("%s%s", warnPrefix, formatSpanString(s))
 		assert.NotContains(tp.Logs(), expected)
 	})
@@ -153,7 +152,7 @@ func TestReportAbandonedSpans(t *testing.T) {
 		assert.Nil(err)
 		defer stop()
 		s := tracer.StartSpan("operation", StartTime(spanStart))
-		assertProcessedSpans(assert, tracer, 1, 0)
+		assertProcessedSpans(assert, tracer, 1, 0, tickerInterval/10)
 		assert.Contains(tp.Logs(), fmt.Sprintf("%s%d abandoned spans:", warnPrefix, 1))
 		assert.Contains(tp.Logs(), fmt.Sprintf("%s%s", warnPrefix, formatSpanString(s)))
 	})
@@ -169,7 +168,7 @@ func TestReportAbandonedSpans(t *testing.T) {
 		s := tracer.StartSpan("op2", StartTime(spanStart))
 		notExpected := fmt.Sprintf("%s%s,%s,", warnPrefix, formatSpanString(sf), formatSpanString(s))
 		expected := fmt.Sprintf("%s%s", warnPrefix, formatSpanString(s))
-		assertProcessedSpans(assert, tracer, 2, 1)
+		assertProcessedSpans(assert, tracer, 2, 1, tickerInterval/10)
 		assert.Contains(tp.Logs(), fmt.Sprintf("%s%d abandoned spans:", warnPrefix, 1))
 		assert.NotContains(tp.Logs(), notExpected)
 		assert.Contains(tp.Logs(), expected)
@@ -187,7 +186,7 @@ func TestReportAbandonedSpans(t *testing.T) {
 		s2 := tracer.StartSpan("op2", StartTime(delayedStart))
 		notExpected := fmt.Sprintf("%s%s,%s,", warnPrefix, formatSpanString(s1), formatSpanString(s2))
 		expected := fmt.Sprintf("%s%s", warnPrefix, formatSpanString(s1))
-		assertProcessedSpans(assert, tracer, 2, 0)
+		assertProcessedSpans(assert, tracer, 2, 0, tickerInterval/10)
 		assert.Contains(tp.Logs(), fmt.Sprintf("%s%d abandoned spans:", warnPrefix, 1))
 		assert.NotContains(tp.Logs(), notExpected)
 		assert.Contains(tp.Logs(), expected)
@@ -206,7 +205,7 @@ func TestReportAbandonedSpans(t *testing.T) {
 		s2 := tracer.StartSpan("op2", StartTime(spanStart))
 		notExpected := fmt.Sprintf("%s%s,%s,", warnPrefix, formatSpanString(s1), formatSpanString(s2))
 		notExpected2 := fmt.Sprintf("%s%s,%s,", warnPrefix, formatSpanString(s1), formatSpanString(s2))
-		assertProcessedSpans(assert, tracer, 2, 0)
+		assertProcessedSpans(assert, tracer, 2, 0, tickerInterval/10)
 		assert.NotContains(tp.Logs(), notExpected)
 		assert.NotContains(tp.Logs(), notExpected2)
 	})
@@ -227,7 +226,7 @@ func TestReportAbandonedSpans(t *testing.T) {
 				sb.WriteString(formatSpanString(s))
 			}
 		}
-		assertProcessedSpans(assert, tracer, 10, 5)
+		assertProcessedSpans(assert, tracer, 10, 5, tickerInterval/10)
 		b := sb.String()
 		assert.Contains(tp.Logs(), b)
 	})
@@ -250,7 +249,7 @@ func TestReportAbandonedSpans(t *testing.T) {
 			sb.WriteString(formatSpanString(s))
 			time.Sleep(15 * time.Millisecond)
 		}
-		assertProcessedSpans(assert, tracer, 10, 5)
+		assertProcessedSpans(assert, tracer, 10, 5, tickerInterval/2)
 		assert.Contains(tp.Logs(), fmt.Sprintf("%s%d abandoned spans:", warnPrefix, 5))
 		assert.Contains(tp.Logs(), sb.String())
 	})
@@ -267,7 +266,7 @@ func TestReportAbandonedSpans(t *testing.T) {
 			s := tracer.StartSpan(fmt.Sprintf("operation%d", i), StartTime(spanStart))
 			sb.WriteString(formatSpanString(s))
 		}
-		assertProcessedSpans(assert, tracer, 5, 0)
+		assertProcessedSpans(assert, tracer, 5, 0, tickerInterval/10)
 		stop()
 		assert.Contains(tp.Logs(), fmt.Sprintf("%s%d abandoned spans:", warnPrefix, 5))
 		assert.Contains(tp.Logs(), sb.String())
@@ -284,7 +283,7 @@ func TestReportAbandonedSpans(t *testing.T) {
 		expected := fmt.Sprintf("%s%s", warnPrefix, formatSpanString(s))
 
 		assert.NotContains(tp.Logs(), expected)
-		assertProcessedSpans(assert, tracer, 1, 0)
+		assertProcessedSpans(assert, tracer, 1, 0, tickerInterval/10)
 		assert.Contains(tp.Logs(), expected)
 		s.Finish()
 	})
@@ -302,7 +301,7 @@ func TestReportAbandonedSpans(t *testing.T) {
 
 		s := tracer.StartSpan("operation", StartTime(spanStart))
 		msg := formatSpanString(s)
-		assertProcessedSpans(assert, tracer, 1, 0)
+		assertProcessedSpans(assert, tracer, 1, 0, tickerInterval/10)
 		stop()
 		assert.NotContains(tp.Logs(), msg)
 		assert.Contains(tp.Logs(), fmt.Sprintf("%sToo many abandoned spans. Truncating message.", warnPrefix))

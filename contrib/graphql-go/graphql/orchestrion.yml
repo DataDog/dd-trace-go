@@ -1,0 +1,17 @@
+# Unless explicitly stated otherwise all files in this repository are licensed
+# under the Apache License Version 2.0.
+# This product includes software developed at Datadog (https://www.datadoghq.com/).
+# Copyright 2023-present Datadog, Inc.
+---
+# yaml-language-server: $schema=https://datadoghq.dev/orchestrion/schema.json
+meta:
+  name: github.com/DataDog/dd-trace-go/contrib/graphql-go/graphql/v2
+  description: |-
+    An implementation of GraphQL in Go. Follows the official reference implementation [graphql-js](https://github.com/graphql/graphql-js).
+
+aspects:
+  - id: NewSchema
+    join-point:
+      function-call: github.com/graphql-go/graphql.NewSchema
+    advice:
+      - replace-function: github.com/DataDog/dd-trace-go/contrib/graphql-go/graphql/v2.NewSchema

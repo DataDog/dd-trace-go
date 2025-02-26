@@ -18,15 +18,6 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/options"
 )
 
-const (
-	// envClientQueryStringEnabled is the name of the env var used to specify whether query string collection is enabled for http client spans.
-	envClientQueryStringEnabled = "DD_TRACE_HTTP_CLIENT_TAG_QUERY_STRING"
-	// envClientErrorStatuses is the name of the env var that specifies error status codes on http client spans
-	envClientErrorStatuses = "DD_TRACE_HTTP_CLIENT_ERROR_STATUSES"
-	// envQueryStringRegexp is the name of the env var used to specify the regexp to use for query string obfuscation.
-	envQueryStringRegexp = "DD_TRACE_OBFUSCATION_QUERY_STRING_REGEXP"
-)
-
 // Option describes options for http.ServeMux.
 type Option = internal.Option
 
@@ -141,10 +132,10 @@ func newRoundTripperConfig() *internal.RoundTripperConfig {
 		CommonConfig:  sharedCfg,
 		Propagation:   true,
 		SpanNamer:     defaultSpanNamer,
-		QueryString:   options.GetBoolEnv(envClientQueryStringEnabled, true),
+		QueryString:   options.GetBoolEnv(internal.EnvClientQueryStringEnabled, true),
 		IsStatusError: isClientError,
 	}
-	v := os.Getenv(envClientErrorStatuses)
+	v := os.Getenv(internal.EnvClientErrorStatuses)
 	if fn := httptrace.GetErrorCodesFromInput(v); fn != nil {
 		rtConfig.IsStatusError = fn
 	}

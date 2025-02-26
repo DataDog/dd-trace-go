@@ -9,6 +9,9 @@ package pubsub
 import (
 	"context"
 
+	"github.com/DataDog/dd-trace-go/contrib/cloud.google.com/go/pubsub.v1/v2/internal/tracing"
+	_ "github.com/DataDog/dd-trace-go/v2/instrumentation" // Blank import to pass TestIntegrationEnabled test
+
 	"cloud.google.com/go/pubsub"
 )
 
@@ -20,7 +23,7 @@ import (
 // the span.
 func Publish(ctx context.Context, t *pubsub.Topic, msg *pubsub.Message, opts ...Option) *PublishResult {
 	traceMsg := newTraceMessage(msg)
-	ctx, closeSpan := TracePublish(ctx, t, traceMsg, opts...)
+	ctx, closeSpan := tracing.TracePublish(ctx, t, traceMsg, opts...)
 	msg.Attributes = traceMsg.Attributes
 
 	return &PublishResult{
@@ -47,7 +50,7 @@ func (r *PublishResult) Get(ctx context.Context) (string, error) {
 // extracts any tracing metadata attached to the received message, and starts a
 // receive span.
 func WrapReceiveHandler(s *pubsub.Subscription, f func(context.Context, *pubsub.Message), opts ...Option) func(context.Context, *pubsub.Message) {
-	traceFn := TraceReceiveFunc(s, opts...)
+	traceFn := tracing.TraceReceiveFunc(s, opts...)
 	return func(ctx context.Context, msg *pubsub.Message) {
 		ctx, closeSpan := traceFn(ctx, newTraceMessage(msg))
 		defer closeSpan()
@@ -55,11 +58,11 @@ func WrapReceiveHandler(s *pubsub.Subscription, f func(context.Context, *pubsub.
 	}
 }
 
-func newTraceMessage(msg *pubsub.Message) *Message {
+func newTraceMessage(msg *pubsub.Message) *tracing.Message {
 	if msg == nil {
 		return nil
 	}
-	return &Message{
+	return &tracing.Message{
 		ID:              msg.ID,
 		Data:            msg.Data,
 		OrderingKey:     msg.OrderingKey,

@@ -9,22 +9,17 @@ import (
 	"context"
 	"strings"
 
+	"github.com/DataDog/dd-trace-go/contrib/segmentio/kafka-go/v2/internal/tracing"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
-	"github.com/DataDog/dd-trace-go/v2/instrumentation"
+	_ "github.com/DataDog/dd-trace-go/v2/instrumentation" // Blank import to pass TestIntegrationEnabled test
 
 	"github.com/segmentio/kafka-go"
 )
 
-var instr *instrumentation.Instrumentation
-
-func init() {
-	instr = instrumentation.Load(instrumentation.PackageSegmentioKafkaGo)
-}
-
 // A Reader wraps a kafka.Reader.
 type Reader struct {
 	*kafka.Reader
-	tracer *Tracer
+	tracer *tracing.Tracer
 	prev   *tracer.Span
 }
 
@@ -38,15 +33,15 @@ func WrapReader(c *kafka.Reader, opts ...Option) *Reader {
 	wrapped := &Reader{
 		Reader: c,
 	}
-	cfg := KafkaConfig{}
+	cfg := tracing.KafkaConfig{}
 	if c.Config().Brokers != nil {
 		cfg.BootstrapServers = strings.Join(c.Config().Brokers, ",")
 	}
 	if c.Config().GroupID != "" {
 		cfg.ConsumerGroupID = c.Config().GroupID
 	}
-	wrapped.tracer = NewTracer(cfg, opts...)
-	instr.Logger().Debug("contrib/segmentio/kafka-go/kafka: Wrapping Reader: %#v", wrapped.tracer.cfg)
+	wrapped.tracer = tracing.NewTracer(cfg, opts...)
+	tracing.Logger().Debug("contrib/segmentio/kafka-go/kafka: Wrapping Reader: %#v", wrapped.tracer)
 	return wrapped
 }
 
@@ -96,7 +91,7 @@ func (r *Reader) FetchMessage(ctx context.Context) (kafka.Message, error) {
 // Writer wraps a kafka.Writer with tracing config data
 type KafkaWriter struct {
 	*kafka.Writer
-	tracer *Tracer
+	tracer *tracing.Tracer
 }
 
 // NewWriter calls kafka.NewWriter and wraps the resulting Producer.
@@ -109,12 +104,12 @@ func WrapWriter(w *kafka.Writer, opts ...Option) *KafkaWriter {
 	writer := &KafkaWriter{
 		Writer: w,
 	}
-	cfg := KafkaConfig{}
+	cfg := tracing.KafkaConfig{}
 	if w.Addr.String() != "" {
 		cfg.BootstrapServers = w.Addr.String()
 	}
-	writer.tracer = NewTracer(cfg, opts...)
-	instr.Logger().Debug("contrib/segmentio/kafka-go: Wrapping Writer: %#v", writer.tracer.kafkaCfg)
+	writer.tracer = tracing.NewTracer(cfg, opts...)
+	tracing.Logger().Debug("contrib/segmentio/kafka-go: Wrapping Writer: %#v", writer.tracer)
 	return writer
 }
 

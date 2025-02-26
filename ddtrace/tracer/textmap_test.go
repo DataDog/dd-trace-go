@@ -21,10 +21,9 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
 
+	"github.com/DataDog/datadog-go/v5/statsd"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"github.com/DataDog/datadog-go/v5/statsd"
 )
 
 const otelHeaderPropagationStyle = "OTEL_PROPAGATORS"

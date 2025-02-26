@@ -1,0 +1,35 @@
+# Unless explicitly stated otherwise all files in this repository are licensed
+# under the Apache License Version 2.0.
+# This product includes software developed at Datadog (https://www.datadoghq.com/).
+# Copyright 2023-present Datadog, Inc.
+---
+# yaml-language-server: $schema=https://datadoghq.dev/orchestrion/schema.json
+meta:
+  name: github.com/DataDog/dd-trace-go/contrib/k8s.io/client-go/v2/kubernetes
+  description: Go client for Kubernetes.
+
+aspects:
+  - id: rest.Config
+    join-point:
+      struct-literal:
+        type: k8s.io/client-go/rest.Config
+    advice:
+      - wrap-expression:
+          imports:
+            kubernetestrace: github.com/DataDog/dd-trace-go/contrib/k8s.io/client-go/v2/kubernetes
+            kubernetestransport: k8s.io/client-go/transport
+          template: |-
+            {{- .AST.Type -}}{
+              {{- $hasField := false -}}
+              {{ range .AST.Elts }}
+              {{- if eq .Key.Name "WrapTransport" }}
+              {{- $hasField = true -}}
+              WrapTransport: kubernetestransport.Wrappers({{ .Value }}, kubernetestrace.WrapRoundTripper),
+              {{- else -}}
+              {{ . }},
+              {{ end -}}
+              {{ end }}
+              {{- if not $hasField -}}
+              WrapTransport: kubernetestransport.Wrappers(nil, kubernetestrace.WrapRoundTripper),
+              {{- end }}
+            }
