@@ -82,6 +82,8 @@ jobs:
           - weblog-variant: net-http
             scenario: APPSEC_STANDALONE
           - weblog-variant: net-http
+            scenario: APPSEC_STANDALONE_V2
+          - weblog-variant: net-http
             scenario: APPSEC_META_STRUCT_DISABLED
           - weblog-variant: net-http
             scenario: APPSEC_CUSTOM_OBFUSCATION
