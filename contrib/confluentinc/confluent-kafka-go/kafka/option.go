@@ -19,8 +19,8 @@ type Option = v2.Option
 // WithContext sets the config context to ctx.
 // Deprecated: This is deprecated in favor of passing the context
 // via the message headers
-func WithContext(_ context.Context) Option {
-	return nil
+func WithContext(ctx context.Context) Option {
+	return v2.WithContext(ctx)
 }
 
 // WithServiceName sets the config service name to serviceName.
