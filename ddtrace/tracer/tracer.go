@@ -22,6 +22,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 	globalinternal "gopkg.in/DataDog/dd-trace-go.v1/internal"
+	utils "gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
 	appsecConfig "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/config"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/datastreams"
@@ -79,9 +80,12 @@ type tracer struct {
 	// pid of the process
 	pid int
 
-	// These integers track metrics about spans and traces as they are started,
-	// finished, and dropped
-	spansStarted, spansFinished, tracesDropped uint32
+	// These maps count the spans started and finished from
+	// each component, including contribs and "manual" spans.
+	spansStarted, spansFinished utils.XSyncMapCounterMap
+
+	// tracesDropped track metrics about traces as they are dropped
+	tracesDropped uint32
 
 	// Keeps track of the total number of traces dropped for accurate logging.
 	totalTracesDropped uint32
@@ -317,6 +321,8 @@ func newUnstartedTracer(opts ...StartOption) *tracer {
 		pid:              os.Getpid(),
 		logDroppedTraces: time.NewTicker(1 * time.Second),
 		stats:            newConcentrator(c, defaultStatsBucketSize, statsd),
+		spansStarted:     *utils.NewXSyncMapCounterMap(),
+		spansFinished:    *utils.NewXSyncMapCounterMap(),
 		obfuscator: obfuscate.NewObfuscator(obfuscate.Config{
 			SQL: obfuscate.SQLConfig{
 				TableNames:       c.agent.HasFlag("table_names"),
@@ -571,6 +577,7 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 		TraceID:      id,
 		Start:        startTime,
 		noDebugStack: t.config.noDebugStack,
+		integration:  "manual",
 	}
 
 	span.SpanLinks = append(span.SpanLinks, opts.SpanLinks...)
@@ -664,6 +671,8 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 			log.Error("Abandoned spans channel full, disregarding span.")
 		}
 	}
+	t.spansStarted.Inc(span.integration)
+
 	return span
 }
 
