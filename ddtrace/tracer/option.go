@@ -19,9 +19,6 @@ import (
 var (
 	// defaultMaxTagsHeaderLen specifies the default maximum length of the X-Datadog-Tags header value.
 	defaultMaxTagsHeaderLen = 128
-
-	// defaultRateLimit specifies the default trace rate limit used when DD_TRACE_RATE_LIMIT is not set.
-	defaultRateLimit = 100.0
 )
 
 // StartOption represents a function that can be provided as a parameter to Start.

@@ -29,19 +29,6 @@ func TestHTTPHeadersCarrierSet(t *testing.T) {
 
 const otelHeaderPropagationStyle = "OTEL_PROPAGATORS"
 
-func traceIDFrom64Bits(i uint64) traceID {
-	t := traceID{}
-	t.SetLower(i)
-	return t
-}
-
-func traceIDFrom128Bits(u, l uint64) traceID {
-	t := traceID{}
-	t.SetLower(l)
-	t.SetUpper(u)
-	return t
-}
-
 func TestHTTPHeadersCarrierForeachKey(t *testing.T) {
 	h := http.Header{}
 	h.Add("A", "x")

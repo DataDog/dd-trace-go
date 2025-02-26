@@ -417,7 +417,7 @@ func TestSpanLog(t *testing.T) {
 		sm := sa.Span.AsMap()
 		expect := fmt.Sprintf(`dd.service=tracer.test dd.env=testenv dd.trace_id=%q dd.span_id="87654321" dd.parent_id="0"`, sctx.TraceID128())
 		assert.Equal(expect, fmt.Sprintf("%v", span))
-		v, _ := sm[keyTraceID128]
+		v := sm[keyTraceID128]
 		assert.NotEmpty(v)
 	})
 }

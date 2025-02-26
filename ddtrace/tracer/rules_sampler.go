@@ -9,10 +9,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
-	"os"
 	"regexp"
 	"strings"
-	"sync"
 	"time"
 
 	v2 "github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
@@ -237,44 +235,7 @@ func SpanNameServiceMPSRule(name, service string, rate, limit float64) SamplingR
 type rateLimiter struct {
 	limiter *rate.Limiter
 
-	mu          sync.Mutex // guards below fields
-	prevTime    time.Time  // time at which prevAllowed and prevSeen were set
-	allowed     float64    // number of spans allowed in the current period
-	seen        float64    // number of spans seen in the current period
-	prevAllowed float64    // number of spans allowed in the previous period
-	prevSeen    float64    // number of spans seen in the previous period
-}
-
-// allowOne returns the rate limiter's decision to allow the span to be sampled, and the
-// effective rate at the time it is called. The effective rate is computed by averaging the rate
-// for the previous second with the current rate
-func (r *rateLimiter) allowOne(now time.Time) (bool, float64) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	if d := now.Sub(r.prevTime); d >= time.Second {
-		// enough time has passed to reset the counters
-		if d.Truncate(time.Second) == time.Second && r.seen > 0 {
-			// exactly one second, so update prev
-			r.prevAllowed = r.allowed
-			r.prevSeen = r.seen
-		} else {
-			// more than one second, so reset previous rate
-			r.prevAllowed = 0
-			r.prevSeen = 0
-		}
-		r.prevTime = now
-		r.allowed = 0
-		r.seen = 0
-	}
-
-	r.seen++
-	var sampled bool
-	if r.limiter.AllowN(now, 1) {
-		r.allowed++
-		sampled = true
-	}
-	er := (r.prevAllowed + r.allowed) / (r.prevSeen + r.seen)
-	return sampled, er
+	prevTime time.Time // time at which prevAllowed and prevSeen were set
 }
 
 // newSingleSpanRateLimiter returns a rate limiter which restricts the number of single spans sampled per second.
@@ -303,56 +264,6 @@ func globMatch(pattern string) *regexp.Regexp {
 	pattern = strings.Replace(pattern, "\\*", ".*", -1)
 	// pattern must match an entire string
 	return regexp.MustCompile(fmt.Sprintf("(?i)^%s$", pattern))
-}
-
-// samplingRulesFromEnv parses sampling rules from
-// the DD_TRACE_SAMPLING_RULES, DD_TRACE_SAMPLING_RULES_FILE
-// DD_SPAN_SAMPLING_RULES and DD_SPAN_SAMPLING_RULES_FILE environment variables.
-func samplingRulesFromEnv() (trace, span []SamplingRule, err error) {
-	var errs []string
-	defer func() {
-		if len(errs) != 0 {
-			err = fmt.Errorf("\n\t%s", strings.Join(errs, "\n\t"))
-		}
-	}()
-
-	rulesByType := func(spanType SamplingRuleType) (rules []SamplingRule, errs []string) {
-		env := fmt.Sprintf("DD_%s_SAMPLING_RULES", strings.ToUpper(spanType.String()))
-		rulesEnv := os.Getenv(fmt.Sprintf("DD_%s_SAMPLING_RULES", strings.ToUpper(spanType.String())))
-		rules, err := unmarshalSamplingRules([]byte(rulesEnv), spanType)
-		if err != nil {
-			errs = append(errs, err.Error())
-		}
-		rulesFile := os.Getenv(env + "_FILE")
-		if len(rules) != 0 {
-			if rulesFile != "" {
-				log.Warn("DIAGNOSTICS Error(s): %s is available and will take precedence over %s_FILE", env, env)
-			}
-			return rules, errs
-		}
-		if rulesFile == "" {
-			return rules, errs
-		}
-		rulesFromEnvFile, err := os.ReadFile(rulesFile)
-		if err != nil {
-			errs = append(errs, fmt.Sprintf("Couldn't read file from %s_FILE: %v", env, err))
-		}
-		rules, err = unmarshalSamplingRules(rulesFromEnvFile, spanType)
-		if err != nil {
-			errs = append(errs, err.Error())
-		}
-		return rules, errs
-	}
-
-	trace, tErrs := rulesByType(SamplingRuleTrace)
-	if len(tErrs) != 0 {
-		errs = append(errs, tErrs...)
-	}
-	span, sErrs := rulesByType(SamplingRuleSpan)
-	if len(sErrs) != 0 {
-		errs = append(errs, sErrs...)
-	}
-	return trace, span, err
 }
 
 func (sr *SamplingRule) UnmarshalJSON(b []byte) error {

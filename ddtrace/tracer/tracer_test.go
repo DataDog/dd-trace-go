@@ -30,6 +30,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func id128FromSpan(assert *assert.Assertions, ctx ddtrace.SpanContext) string {
@@ -78,9 +79,7 @@ func TestTracerStart(t *testing.T) {
 		Start()
 		defer Stop()
 		trc := internal.GetGlobalTracer().(internal.TracerV2Adapter).Tracer
-		if _, ok := trc.(v2.Tracer); !ok {
-			t.Fail()
-		}
+		require.NotNil(t, trc)
 	})
 
 	t.Run("dd_tracing_not_enabled", func(t *testing.T) {

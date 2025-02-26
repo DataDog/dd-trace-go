@@ -60,6 +60,26 @@ func TrackUserLoginSuccessEvent(ctx context.Context, uid string, md map[string]s
 	return v2.TrackUserLoginSuccessEvent(ctx, uid, md, opts...)
 }
 
+// TrackUserLoginSuccess denotes a successful user login event, which is used
+// by back-end side event monitoring, such as Account Take-Over (ATO)
+// monitoring, ultimately allowing IP address and/or user ID deny-lists to be
+// configured in order to block associated malicious activity.
+//
+// The login is the username that was provided by the user as part of
+// the authentication attempt, and a single user may have multiple different
+// logins (i.e; user name, email address, etc...). The user however has exactly
+// one user ID which canonically identifies them.
+//
+// The provided metadata is attached to the successful user login event.
+//
+// This function calso calls [SetUser] with the provided user ID and login, as
+// well as any provided [tracer.UserMonitoringOption]s, and returns an error if
+// the provided user ID is found to be on a configured deny list. See the
+// documentation for [SetUser] for more information.
+func TrackUserLoginSuccess(ctx context.Context, login string, uid string, md map[string]string, opts ...tracer.UserMonitoringOption) error {
+	return v2.TrackUserLoginSuccess(ctx, login, uid, md, opts...)
+}
+
 // TrackUserLoginFailureEvent sets a failed user login event, with the given
 // user id and the optional metadata, as service entry span tags. The exists
 // argument allows to distinguish whether the given user id actually exists or
@@ -93,22 +113,7 @@ func TrackUserLoginFailureEvent(ctx context.Context, uid string, exists bool, md
 //
 // The provided metata is attached to the failed user login event.
 func TrackUserLoginFailure(ctx context.Context, login string, exists bool, md map[string]string) {
-	if getRootSpan(ctx) == nil {
-		return
-	}
-
-	// We need to make sure the metadata contains the correct information
-	md = maps.Clone(md)
-	if md == nil {
-		md = make(map[string]string, 2)
-	}
-	md["usr.exists"] = strconv.FormatBool(exists)
-	md["usr.login"] = login
-
-	TrackCustomEvent(ctx, "users.login.failure", md)
-
-	op, _ := usersec.StartUserLoginOperation(ctx, usersec.UserLoginFailure, usersec.UserLoginOperationArgs{})
-	op.Finish(usersec.UserLoginOperationRes{UserLogin: login})
+	v2.TrackUserLoginFailure(ctx, login, exists, md)
 }
 
 // TrackCustomEvent sets a custom event as service entry span tags. This span is

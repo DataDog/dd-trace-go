@@ -188,12 +188,10 @@ func (msa MockspanV2Adapter) TraceID() uint64 {
 }
 
 // Links returns the span's span links.
-func (s *mockspan) Links() []ddtrace.SpanLink {
-	s.RLock()
-	defer s.RUnlock()
-	return s.links
+func (msa MockspanV2Adapter) Links() []ddtrace.SpanLink {
+	return msa.Span.Links()
 }
 
-func (s *mockspan) AddSpanLink(link ddtrace.SpanLink) {
-	s.links = append(s.links, link)
+func (msa MockspanV2Adapter) AddSpanLink(link ddtrace.SpanLink) {
+	msa.Span.AddSpanLink(link)
 }
