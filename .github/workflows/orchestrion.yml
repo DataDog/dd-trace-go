@@ -209,16 +209,16 @@ jobs:
           case "${MODE}" in
           "DRIVER")
             echo "Starting test suite in DRIVER mode"
-            gotestsum --junitfile ${REPORT} -- ./.github/actions/test-orchestrion-driver-mode/run-orchestrion-tests.sh -v -coverprofile=coverage.txt -covermode=atomic
+            gotestsum --junitfile ${REPORT} -- ../../../.github/actions/test-orchestrion-driver-mode/run-orchestrion-tests.sh
             ;;
           "TOOLEXEC")
             echo "Starting test suite in TOOLEXEC mode"
-            gotestsum --junitfile ${REPORT} -- ./... -shuffle=on -toolexec='orchestrion toolexec' -v -coverprofile=coverage.txt -covermode=atomic
+            gotestsum --junitfile ${REPORT} -- ./... -shuffle=on -toolexec='orchestrion toolexec' -coverprofile=coverage.txt -covermode=atomic -timeout 30m
             ;;
           "GOFLAGS")
             echo "Starting test suite in GOFLAGS mode"
             export GOFLAGS="${GOFLAGS} '-toolexec=orchestrion toolexec'"
-            gotestsum --junitfile ${REPORT} -- ./... -shuffle=on -v -coverprofile=coverage.txt -covermode=atomic -timeout 15m
+            gotestsum --junitfile ${REPORT} -- ./... -shuffle=on
             ;;
           *)
             echo "Unknown mode: ${MODE}"
@@ -228,7 +228,7 @@ jobs:
         env:
           MODE: ${{ matrix.mode }}
           # The "buildtag" tag is used in //dd:span integration tests
-          GOFLAGS: -timeout=30m ${{ matrix.runs-on == 'ubuntu' && '-p=4' || '' }} -tags=githubci${{ matrix.mode == 'DRIVER' && ',buildtag' || ''}}
+          GOFLAGS: -coverprofile=coverage.txt -covermode=atomic -timeout 30m ${{ matrix.runs-on == 'ubuntu' && '-p=4' || '' }} -tags=githubci${{ matrix.mode == 'DRIVER' && ',buildtag' || ''}}
           # Prevent auto-respawn, which is problematic with installs from commit SHA
           DD_ORCHESTRION_IS_GOMOD_VERSION: true
           # Ryuk is problematic with concurrent executions, and unnecessary in ephemeral environments like GHA.
