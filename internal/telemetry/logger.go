@@ -8,6 +8,7 @@ package telemetry
 import (
 	"runtime"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -55,9 +56,25 @@ type loggerValue struct {
 
 type logger struct {
 	store internal.SyncMap[loggerKey, *loggerValue]
+
+	distinctLogs       atomic.Int32
+	maxDistinctLogs    int32
+	onceMaxLogsReached sync.Once
 }
 
 func (logger *logger) Add(level LogLevel, text string, opts ...LogOption) {
+	if logger.distinctLogs.Load() >= logger.maxDistinctLogs {
+		logger.onceMaxLogsReached.Do(func() {
+			logger.add(LogError, "telemetry: log count exceeded maximum, dropping log", WithStacktrace())
+		})
+		return
+	}
+
+	logger.add(level, text, opts...)
+}
+
+func (logger *logger) add(level LogLevel, text string, opts ...LogOption) {
+
 	key := loggerKey{
 		message: text,
 		level:   level,
@@ -74,6 +91,7 @@ func (logger *logger) Add(level LogLevel, text string, opts ...LogOption) {
 		for _, opt := range opts {
 			opt(nil, value)
 		}
+		logger.distinctLogs.Add(1)
 	}
 
 	value.count.Add(1)
@@ -83,6 +101,7 @@ func (logger *logger) Payload() transport.Payload {
 	logs := make([]transport.LogMessage, 0, logger.store.Len()+1)
 	logger.store.Range(func(key loggerKey, value *loggerValue) bool {
 		logger.store.Delete(key)
+		logger.distinctLogs.Add(-1)
 		logs = append(logs, transport.LogMessage{
 			Message:    key.message,
 			Level:      key.level,

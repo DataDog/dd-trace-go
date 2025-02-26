@@ -35,6 +35,8 @@ import (
 // Namespace describes a product to distinguish telemetry coming from
 // different products used by the same application
 type Namespace = transport.Namespace
+type Origin = transport.Origin
+type LogLevel = transport.LogLevel
 
 //goland:noinspection GoVarAndConstTypeMayBeOmitted  Goland is having a hard time with the following const block, it keeps deleting the type
 const (
@@ -49,7 +51,6 @@ const (
 )
 
 // Origin describes the source of a configuration change
-type Origin = transport.Origin
 
 //goland:noinspection GoVarAndConstTypeMayBeOmitted Goland is having a hard time with the following const block, it keeps deleting the type
 const (
@@ -61,7 +62,6 @@ const (
 )
 
 // LogLevel describes the level of a log message
-type LogLevel = transport.LogLevel
 
 //goland:noinspection GoVarAndConstTypeMayBeOmitted Goland is having a hard time with the following const block, it keeps deleting the type
 const (

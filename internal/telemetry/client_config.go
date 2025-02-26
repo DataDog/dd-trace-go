@@ -74,6 +74,11 @@ type ClientConfig struct {
 	// The default value here will be 2MB to take into account the large inaccuracy in estimating the size of bodies
 	EarlyFlushPayloadSize int
 
+	// MaxDistributionsSize is the maximum number of logs with distinct message, level and tags that can be stored per flush window.
+	// If the limit is reached, logs will be dropped and a log will be sent to the backend about it
+	// The default value is 1024.
+	MaxDistinctLogs int32
+
 	// internalMetricsEnabled determines whether client stats metrics are sent via telemetry. Default to true.
 	internalMetricsEnabled bool
 }
@@ -128,6 +133,9 @@ var (
 		Min: 1 << 8,
 		Max: 1 << 14,
 	}
+
+	// defaultMaxDistinctLogs is the default maximum number of logs with distinct message, level and tags that can be stored in a flush windows. 1024 per minute is already plenty, it's just to avoid memory leaks.
+	defaultMaxDistinctLogs = int32(256)
 )
 
 func (config ClientConfig) validateConfig() error {
@@ -230,6 +238,10 @@ func defaultConfig(config ClientConfig) ClientConfig {
 
 	if config.DistributionsSize.Max == 0 {
 		config.DistributionsSize.Max = distributionsSize.Max
+	}
+
+	if config.MaxDistinctLogs == 0 {
+		config.MaxDistinctLogs = defaultMaxDistinctLogs
 	}
 
 	return config

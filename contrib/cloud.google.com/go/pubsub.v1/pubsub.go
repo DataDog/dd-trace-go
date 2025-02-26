@@ -9,8 +9,10 @@ package pubsub
 import (
 	"context"
 
-	"cloud.google.com/go/pubsub"
 	"github.com/DataDog/dd-trace-go/contrib/cloud.google.com/go/pubsub.v1/v2/internal/tracing"
+	_ "github.com/DataDog/dd-trace-go/v2/instrumentation" // Blank import to pass TestIntegrationEnabled test
+
+	"cloud.google.com/go/pubsub"
 )
 
 // Publish publishes a message on the specified topic and returns a PublishResult.

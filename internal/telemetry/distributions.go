@@ -6,6 +6,7 @@
 package telemetry
 
 import (
+	"fmt"
 	"sync"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
@@ -65,6 +66,7 @@ func (d *distribution) Submit(value float64) {
 	if !d.values.Enqueue(value) {
 		d.logLoss.Do(func() {
 			log.Debug("telemetry: distribution %q is losing values because the buffer is full", d.key.name)
+			Log(LogWarn, fmt.Sprintf("telemetry: distribution %s is losing values because the buffer is full", d.key), WithStacktrace())
 		})
 	}
 }
@@ -78,13 +80,11 @@ func (d *distribution) payload() transport.DistributionSeries {
 		return transport.DistributionSeries{}
 	}
 
-	data := transport.DistributionSeries{
+	return transport.DistributionSeries{
 		Metric:    d.key.name,
 		Namespace: d.key.namespace,
 		Tags:      d.key.SplitTags(),
 		Common:    knownmetrics.IsCommonMetric(d.key.namespace, d.key.kind, d.key.name),
 		Points:    d.values.Flush(),
 	}
-
-	return data
 }

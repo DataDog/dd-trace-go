@@ -11,6 +11,7 @@ import (
 
 	"github.com/DataDog/dd-trace-go/contrib/segmentio/kafka-go/v2/internal/tracing"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	_ "github.com/DataDog/dd-trace-go/v2/instrumentation" // Blank import to pass TestIntegrationEnabled test
 
 	"github.com/segmentio/kafka-go"
 )
