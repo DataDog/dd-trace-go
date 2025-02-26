@@ -41,6 +41,7 @@ jobs:
       matrix:
         weblog-variant:
           - net-http
+          - net-http-orchestrion
           - echo
           - chi
           - gin
