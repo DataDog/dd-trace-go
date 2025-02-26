@@ -17,12 +17,12 @@ import (
 	"strconv"
 	"sync"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/httpsec"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/usersec"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/httpsec"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec/emitter/usersec"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
 var appsecDisabledLog sync.Once
@@ -52,10 +52,6 @@ func MonitorParsedHTTPBody(ctx context.Context, body any) error {
 // APM tracer middleware on use according to your blocking configuration.
 // This function always returns nil when appsec is disabled and doesn't block users.
 func SetUser(ctx context.Context, id string, opts ...tracer.UserMonitoringOption) error {
-	return setUser(ctx, id, usersec.UserSet, opts)
-}
-
-func setUser(ctx context.Context, id string, userEventType usersec.UserEventType, opts []tracer.UserMonitoringOption) error {
 	s, ok := tracer.SpanFromContext(ctx)
 	if !ok {
 		log.Debug("appsec: could not retrieve span from context. User ID tag won't be set")
@@ -68,35 +64,17 @@ func setUser(ctx context.Context, id string, userEventType usersec.UserEventType
 		return nil
 	}
 
-	op, errPtr := usersec.StartUserLoginOperation(ctx, userEventType, usersec.UserLoginOperationArgs{})
+	op, errPtr := usersec.StartUserLoginOperation(ctx, usersec.UserLoginOperationArgs{})
 	login, userOrg, sessionID := getMetadata(opts)
 	op.Finish(usersec.UserLoginOperationRes{
 		UserID:    id,
 		UserLogin: login,
 		UserOrg:   userOrg,
 		SessionID: sessionID,
+		Success:   true,
 	})
 
 	return *errPtr
-}
-
-// TrackUserLoginSuccessEvent sets a successful user login event, with the given
-// user id and optional metadata, as service entry span tags. It also calls
-// SetUser() to set the currently authenticated user, along with the given
-// tracer.UserMonitoringOption options. As documented in SetUser(), an
-// error is returned when the given user ID is blocked by your denylist. Cf.
-// SetUser()'s documentation for more details.
-// The service entry span is obtained through the given Go context which should
-// contain the currently running span. This function does nothing when no span
-// is found in the given Go context and logs an error message instead.
-// Such events trigger the backend-side events monitoring, such as the Account
-// Take-Over (ATO) monitoring, ultimately blocking the IP address and/or user id
-// associated to them.
-//
-// Deprecated: use [TrackUserLoginSuccess] instead.
-func TrackUserLoginSuccessEvent(ctx context.Context, uid string, md map[string]string, opts ...tracer.UserMonitoringOption) error {
-	login, _, _ := getMetadata(opts)
-	return TrackUserLoginSuccess(ctx, login, uid, md, opts...)
 }
 
 // TrackUserLoginSuccess denotes a successful user login event, which is used
@@ -112,7 +90,7 @@ func TrackUserLoginSuccessEvent(ctx context.Context, uid string, md map[string]s
 // The provided metadata is attached to the successful user login event.
 //
 // This function calso calls [SetUser] with the provided user ID and login, as
-// well as any provided [tracer.UserMonitoringOption]s, and returns an error if
+// well as any provided [tracer.UserMonitoringOption], and returns an error if
 // the provided user ID is found to be on a configured deny list. See the
 // documentation for [SetUser] for more information.
 func TrackUserLoginSuccess(ctx context.Context, login string, uid string, md map[string]string, opts ...tracer.UserMonitoringOption) error {
@@ -132,38 +110,7 @@ func TrackUserLoginSuccess(ctx context.Context, login string, uid string, md map
 	}
 
 	TrackCustomEvent(ctx, "users.login.success", md)
-	return setUser(ctx, uid, usersec.UserLoginSuccess, append(opts, tracer.WithUserLogin(login)))
-}
-
-// TrackUserLoginFailureEvent sets a failed user login event, with the given
-// user id and the optional metadata, as service entry span tags. The exists
-// argument allows to distinguish whether the given user id actually exists or
-// not.
-// The service entry span is obtained through the given Go context which should
-// contain the currently running span. This function does nothing when no span
-// is found in the given Go context and logs an error message instead.
-// Such events trigger the backend-side events monitoring, such as the Account
-// Take-Over (ATO) monitoring, ultimately blocking the IP address and/or user id
-// associated to them.
-//
-// Deprecated: use [TrackUserLoginFailure] instead, as it clearly expects to
-// process a user login, and not a user ID (which may not be available in the
-// case of a login failure).
-func TrackUserLoginFailureEvent(ctx context.Context, uid string, exists bool, md map[string]string) {
-	span := getRootSpan(ctx)
-	if span == nil {
-		return
-	}
-
-	// We need to do the first call to SetTag ourselves because the map taken by TrackCustomEvent is map[string]string
-	// and not map [string]any, so the `exists` boolean variable does not fit int
-	span.SetTag("appsec.events.users.login.failure.usr.exists", exists)
-	span.SetTag("appsec.events.users.login.failure.usr.id", uid)
-
-	TrackCustomEvent(ctx, "users.login.failure", md)
-
-	op, _ := usersec.StartUserLoginOperation(ctx, usersec.UserLoginFailure, usersec.UserLoginOperationArgs{})
-	op.Finish(usersec.UserLoginOperationRes{UserID: uid})
+	return SetUser(ctx, uid, append(opts, tracer.WithUserLogin(login))...)
 }
 
 // TrackUserLoginFailure denotes a failed user login event, which is used by
@@ -195,8 +142,8 @@ func TrackUserLoginFailure(ctx context.Context, login string, exists bool, md ma
 
 	TrackCustomEvent(ctx, "users.login.failure", md)
 
-	op, _ := usersec.StartUserLoginOperation(ctx, usersec.UserLoginFailure, usersec.UserLoginOperationArgs{})
-	op.Finish(usersec.UserLoginOperationRes{UserLogin: login})
+	op, _ := usersec.StartUserLoginOperation(ctx, usersec.UserLoginOperationArgs{})
+	op.Finish(usersec.UserLoginOperationRes{UserLogin: login, Success: false})
 }
 
 // TrackCustomEvent sets a custom event as service entry span tags. This span is
@@ -214,28 +161,20 @@ func TrackCustomEvent(ctx context.Context, name string, md map[string]string) {
 	tagPrefix := "appsec.events." + name + "."
 	span.SetTag("_dd."+tagPrefix+"sdk", "true")
 	span.SetTag(tagPrefix+"track", "true")
-	span.SetTag(ext.SamplingPriority, ext.PriorityUserKeep)
+	span.SetTag(ext.ManualKeep, true)
 	for k, v := range md {
 		span.SetTag(tagPrefix+k, v)
 	}
 }
 
-// Return the root span from the span stored in the given Go context if it
-// implements the Root method. It returns nil otherwise.
-func getRootSpan(ctx context.Context) tracer.Span {
+// Return the root span from the span stored in the given Go context.
+func getRootSpan(ctx context.Context) *tracer.Span {
 	span, _ := tracer.SpanFromContext(ctx)
 	if span == nil {
 		log.Error("appsec: could not find a span in the given Go context")
 		return nil
 	}
-	type rooter interface {
-		Root() tracer.Span
-	}
-	if lrs, ok := span.(rooter); ok {
-		return lrs.Root()
-	}
-	log.Error("appsec: could not access the root span")
-	return nil
+	return span.Root()
 }
 
 func getMetadata(opts []tracer.UserMonitoringOption) (login string, org string, sessionID string) {

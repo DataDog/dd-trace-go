@@ -9,8 +9,14 @@ import (
 	"regexp"
 	"strings"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 )
+
+var instr *instrumentation.Instrumentation
+
+func init() {
+	instr = instrumentation.Load(instrumentation.PackageGoogleAPI)
+}
 
 type (
 	// A Tree is a prefix tree for matching endpoints based on http requests.
@@ -87,7 +93,7 @@ func (t *Tree) Get(hostname string, httpMethod string, httpPath string) (*Endpoi
 		if e.pathMatcher == nil {
 			pathMatcher, err := regexp.Compile(e.PathRegex)
 			if err != nil {
-				log.Warn("contrib/google.golang.org/api: failed to create regex: %s: %v", e.PathRegex, err)
+				instr.Logger().Warn("contrib/google.golang.org/api: failed to create regex: %s: %v", e.PathRegex, err)
 				continue
 			}
 			e.pathMatcher = pathMatcher

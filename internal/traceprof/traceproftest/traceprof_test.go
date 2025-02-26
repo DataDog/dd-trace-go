@@ -17,10 +17,10 @@ import (
 	"testing"
 	"time"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/traceprof"
-	pb "gopkg.in/DataDog/dd-trace-go.v1/internal/traceprof/testapp"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/internal/traceprof"
+	pb "github.com/DataDog/dd-trace-go/v2/internal/traceprof/testapp"
 
 	"github.com/stretchr/testify/require"
 )

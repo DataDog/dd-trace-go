@@ -5,7 +5,7 @@
 ---
 # yaml-language-server: $schema=https://datadoghq.dev/orchestrion/schema.json
 meta:
-  name: gopkg.in/DataDog/dd-trace-go.v1/contrib/graphql-go/graphql
+  name: github.com/DataDog/dd-trace-go/contrib/graphql-go/graphql/v2
   description: |-
     An implementation of GraphQL in Go. Follows the official reference implementation [graphql-js](https://github.com/graphql/graphql-js).
 
@@ -14,4 +14,4 @@ aspects:
     join-point:
       function-call: github.com/graphql-go/graphql.NewSchema
     advice:
-      - replace-function: gopkg.in/DataDog/dd-trace-go.v1/contrib/graphql-go/graphql.NewSchema
+      - replace-function: github.com/DataDog/dd-trace-go/contrib/graphql-go/graphql/v2.NewSchema

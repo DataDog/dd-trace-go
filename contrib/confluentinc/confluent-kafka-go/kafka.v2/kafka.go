@@ -4,27 +4,27 @@
 // Copyright 2016 Datadog, Inc.
 
 // Package kafka provides functions to trace the confluentinc/confluent-kafka-go package (https://github.com/confluentinc/confluent-kafka-go).
-package kafka // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/confluentinc/confluent-kafka-go/kafka.v2"
+package kafka // import "github.com/DataDog/dd-trace-go/contrib/confluentinc/confluent-kafka-go/kafka.v2/v2"
 
 import (
 	"time"
 
 	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/contrib/confluentinc/confluent-kafka-go/internal/tracing"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
+	tracing "github.com/DataDog/dd-trace-go/v2/contrib/confluentinc/confluent-kafka-go"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 )
 
 const (
-	ckgoVersion = tracing.CKGoVersion2
-	logPrefix   = "contrib/confluentinc/confluent-kafka-go/kafka.v2"
+	componentName = instrumentation.PackageConfluentKafkaGoV2
+	pkgPath       = "contrib/confluentinc/confluent-kafka-go/kafka.v2"
 )
 
+var instr *instrumentation.Instrumentation
+
 func init() {
-	telemetry.LoadIntegration(tracing.ComponentName(ckgoVersion))
-	tracer.MarkIntegrationImported(tracing.IntegrationName(ckgoVersion))
+	instr = instrumentation.Load(instrumentation.PackageConfluentKafkaGoV2)
 }
 
 func newKafkaTracer(opts ...Option) *tracing.KafkaTracer {
@@ -65,7 +65,7 @@ func WrapConsumer(c *kafka.Consumer, opts ...Option) *Consumer {
 		Consumer: c,
 		tracer:   newKafkaTracer(opts...),
 	}
-	log.Debug("%s: Wrapping Consumer: %#v", logPrefix, wrapped.tracer)
+	instr.Logger().Debug("%s: Wrapping Consumer: %#v", pkgPath, wrapped.tracer)
 	wrapped.events = tracing.WrapConsumeEventsChannel(wrapped.tracer, c.Events(), c, wrapEvent)
 	return wrapped
 }
@@ -168,7 +168,7 @@ func WrapProducer(p *kafka.Producer, opts ...Option) *Producer {
 		tracer:   newKafkaTracer(opts...),
 		events:   p.Events(),
 	}
-	log.Debug("%s: Wrapping Producer: %#v", logPrefix, wrapped.tracer)
+	instr.Logger().Debug("%s: Wrapping Producer: %#v", pkgPath, wrapped.tracer)
 	wrapped.produceChannel = tracing.WrapProduceChannel(wrapped.tracer, p.ProduceChannel(), wrapMessage)
 	if wrapped.tracer.DSMEnabled() {
 		wrapped.events = tracing.WrapProduceEventsChannel(wrapped.tracer, p.Events(), wrapEvent)

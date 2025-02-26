@@ -8,7 +8,7 @@ package utils
 import (
 	"testing"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/constants"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 
 	"github.com/stretchr/testify/assert"
 )

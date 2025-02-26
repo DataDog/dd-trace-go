@@ -13,7 +13,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/DataDog/dd-trace-go/internal/orchestrion/_integration/99designs.gqlgen/generated/graph/model"
+	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/99designs.gqlgen/generated/graph/model"
 )
 
 // TopLevel is the resolver for the topLevel field.

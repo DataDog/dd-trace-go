@@ -6,54 +6,74 @@
 package grpc
 
 import (
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
+	"math"
+
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 
 	"google.golang.org/grpc/codes"
 )
 
-const (
-	defaultClientServiceName = "grpc.client"
-	defaultServerServiceName = "grpc.server"
-)
+// Option describes options for the gRPC integration.
+type Option interface {
+	apply(*config)
+}
 
-// Option specifies a configuration option for the grpc package. Not all options apply
-// to all instrumented structures.
-type Option func(*config)
+// OptionFn represents options applicable to StreamClientInterceptor, UnaryClientInterceptor, StreamServerInterceptor,
+// UnaryServerInterceptor, NewClientStatsHandler and NewServerStatsHandler.
+type OptionFn func(*config)
+
+func (fn OptionFn) apply(cfg *config) {
+	fn(cfg)
+}
+
+type cachedServiceName struct {
+	value    string
+	getValue func() string
+}
+
+func newCachedServiceName(getValue func() string) *cachedServiceName {
+	c := &cachedServiceName{getValue: getValue}
+	// warmup cache
+	_ = c.String()
+	return c
+}
+
+func (cs *cachedServiceName) String() string {
+	if cs.value != "" {
+		return cs.value
+	}
+	svc := cs.getValue()
+	// cache only if the tracer has been started. This ensures we get the final value for service name, since this
+	// is where the tracer configuration is resolved (including env variables and tracer options).
+	if instr.TracerInitialized() {
+		cs.value = svc
+	}
+	return svc
+}
 
 type config struct {
-	serviceName         func() string
+	serviceName         *cachedServiceName
 	spanName            string
 	nonErrorCodes       map[codes.Code]bool
 	traceStreamCalls    bool
 	traceStreamMessages bool
 	noDebugStack        bool
-	ignoredMethods      map[string]struct{}
 	untracedMethods     map[string]struct{}
 	withMetadataTags    bool
 	ignoredMetadata     map[string]struct{}
 	withRequestTags     bool
 	withErrorDetailTags bool
-	spanOpts            []ddtrace.StartSpanOption
+	spanOpts            []tracer.StartSpanOption
 	tags                map[string]interface{}
 }
-
-// InterceptorOption represents an option that can be passed to the grpc unary
-// client and server interceptors.
-// InterceptorOption is deprecated in favor of Option.
-type InterceptorOption = Option
 
 func defaults(cfg *config) {
 	cfg.traceStreamCalls = true
 	cfg.traceStreamMessages = true
 	cfg.nonErrorCodes = map[codes.Code]bool{codes.Canceled: true}
-	// cfg.spanOpts = append(cfg.spanOpts, tracer.AnalyticsRate(globalconfig.AnalyticsRate()))
-	if internal.BoolEnv("DD_TRACE_GRPC_ANALYTICS_ENABLED", false) {
-		cfg.spanOpts = append(cfg.spanOpts, tracer.AnalyticsRate(1.0))
+	if rate := instr.AnalyticsRate(false); !math.IsNaN(rate) {
+		cfg.spanOpts = append(cfg.spanOpts, tracer.AnalyticsRate(rate))
 	}
 	cfg.ignoredMetadata = map[string]struct{}{
 		"x-datadog-trace-id":          {},
@@ -63,37 +83,33 @@ func defaults(cfg *config) {
 }
 
 func clientDefaults(cfg *config) {
-	sn := namingschema.ServiceNameOverrideV0(defaultClientServiceName, defaultClientServiceName)
-	cfg.serviceName = func() string { return sn }
-	cfg.spanName = namingschema.OpName(namingschema.GRPCClient)
+	cfg.serviceName = newCachedServiceName(func() string {
+		return instr.ServiceName(instrumentation.ComponentClient, nil)
+	})
+	cfg.spanName = instr.OperationName(instrumentation.ComponentClient, nil)
 	defaults(cfg)
 }
 
 func serverDefaults(cfg *config) {
-	// We check for a configured service name, so we don't break users who are incorrectly creating their server
-	// before the call `tracer.Start()`
-	if globalconfig.ServiceName() != "" {
-		sn := namingschema.ServiceName(defaultServerServiceName)
-		cfg.serviceName = func() string { return sn }
-	} else {
-		log.Warn("No global service name was detected. GRPC Server may have been created before calling tracer.Start(). Will dynamically fetch service name for every span. " +
-			"Note this may have a slight performance cost, it is always recommended to start the tracer before initializing any traced packages.\n")
-		cfg.serviceName = func() string { return namingschema.ServiceName(defaultServerServiceName) }
-	}
-	cfg.spanName = namingschema.OpName(namingschema.GRPCServer)
+	cfg.serviceName = newCachedServiceName(func() string {
+		return instr.ServiceName(instrumentation.ComponentServer, nil)
+	})
+	cfg.spanName = instr.OperationName(instrumentation.ComponentServer, nil)
 	defaults(cfg)
 }
 
-// WithServiceName sets the given service name for the intercepted client.
-func WithServiceName(name string) Option {
+// WithService sets the given service name for the intercepted client.
+func WithService(name string) OptionFn {
 	return func(cfg *config) {
-		cfg.serviceName = func() string { return name }
+		cfg.serviceName = newCachedServiceName(func() string {
+			return name
+		})
 	}
 }
 
 // WithStreamCalls enables or disables tracing of streaming calls. This option does not apply to the
 // stats handler.
-func WithStreamCalls(enabled bool) Option {
+func WithStreamCalls(enabled bool) OptionFn {
 	return func(cfg *config) {
 		cfg.traceStreamCalls = enabled
 	}
@@ -101,23 +117,23 @@ func WithStreamCalls(enabled bool) Option {
 
 // WithStreamMessages enables or disables tracing of streaming messages. This option does not apply
 // to the stats handler.
-func WithStreamMessages(enabled bool) Option {
+func WithStreamMessages(enabled bool) OptionFn {
 	return func(cfg *config) {
 		cfg.traceStreamMessages = enabled
 	}
 }
 
 // NoDebugStack disables debug stacks for traces with errors. This is useful in situations
-// where errors are frequent and the overhead of calling debug.Stack may affect performance.
-func NoDebugStack() Option {
+// where errors are frequent, and the overhead of calling debug.Stack may affect performance.
+func NoDebugStack() OptionFn {
 	return func(cfg *config) {
 		cfg.noDebugStack = true
 	}
 }
 
-// NonErrorCodes determines the list of codes which will not be considered errors in instrumentation.
+// NonErrorCodes determines the list of codes that will not be considered errors in instrumentation.
 // This call overrides the default handling of codes.Canceled as a non-error.
-func NonErrorCodes(cs ...codes.Code) InterceptorOption {
+func NonErrorCodes(cs ...codes.Code) OptionFn {
 	return func(cfg *config) {
 		cfg.nonErrorCodes = make(map[codes.Code]bool, len(cs))
 		for _, c := range cs {
@@ -127,7 +143,7 @@ func NonErrorCodes(cs ...codes.Code) InterceptorOption {
 }
 
 // WithAnalytics enables Trace Analytics for all started spans.
-func WithAnalytics(on bool) Option {
+func WithAnalytics(on bool) OptionFn {
 	return func(cfg *config) {
 		if on {
 			WithSpanOptions(tracer.AnalyticsRate(1.0))(cfg)
@@ -137,7 +153,7 @@ func WithAnalytics(on bool) Option {
 
 // WithAnalyticsRate sets the sampling rate for Trace Analytics events
 // correlated to started spans.
-func WithAnalyticsRate(rate float64) Option {
+func WithAnalyticsRate(rate float64) OptionFn {
 	return func(cfg *config) {
 		if rate >= 0.0 && rate <= 1.0 {
 			WithSpanOptions(tracer.AnalyticsRate(rate))(cfg)
@@ -145,24 +161,9 @@ func WithAnalyticsRate(rate float64) Option {
 	}
 }
 
-// WithIgnoredMethods specifies full methods to be ignored by the server side interceptor.
-// When an incoming request's full method is in ms, no spans will be created.
-//
-// Deprecated: This is deprecated in favor of WithUntracedMethods which applies to both
-// the server side and client side interceptors.
-func WithIgnoredMethods(ms ...string) Option {
-	ims := make(map[string]struct{}, len(ms))
-	for _, e := range ms {
-		ims[e] = struct{}{}
-	}
-	return func(cfg *config) {
-		cfg.ignoredMethods = ims
-	}
-}
-
 // WithUntracedMethods specifies full methods to be ignored by the server side and client
 // side interceptors. When a request's full method is in ms, no spans will be created.
-func WithUntracedMethods(ms ...string) Option {
+func WithUntracedMethods(ms ...string) OptionFn {
 	ums := make(map[string]struct{}, len(ms))
 	for _, e := range ms {
 		ums[e] = struct{}{}
@@ -173,7 +174,7 @@ func WithUntracedMethods(ms ...string) Option {
 }
 
 // WithMetadataTags specifies whether gRPC metadata should be added to spans as tags.
-func WithMetadataTags() Option {
+func WithMetadataTags() OptionFn {
 	return func(cfg *config) {
 		cfg.withMetadataTags = true
 	}
@@ -181,7 +182,7 @@ func WithMetadataTags() Option {
 
 // WithIgnoredMetadata specifies keys to be ignored while tracing the metadata. Must be used
 // in conjunction with WithMetadataTags.
-func WithIgnoredMetadata(ms ...string) Option {
+func WithIgnoredMetadata(ms ...string) OptionFn {
 	return func(cfg *config) {
 		for _, e := range ms {
 			cfg.ignoredMetadata[e] = struct{}{}
@@ -190,21 +191,21 @@ func WithIgnoredMetadata(ms ...string) Option {
 }
 
 // WithRequestTags specifies whether gRPC requests should be added to spans as tags.
-func WithRequestTags() Option {
+func WithRequestTags() OptionFn {
 	return func(cfg *config) {
 		cfg.withRequestTags = true
 	}
 }
 
 // WithErrorDetailTags specifies whether gRPC responses details contain should be added to spans as tags.
-func WithErrorDetailTags() Option {
+func WithErrorDetailTags() OptionFn {
 	return func(cfg *config) {
 		cfg.withErrorDetailTags = true
 	}
 }
 
 // WithCustomTag will attach the value to the span tagged by the key.
-func WithCustomTag(key string, value interface{}) Option {
+func WithCustomTag(key string, value interface{}) OptionFn {
 	return func(cfg *config) {
 		if cfg.tags == nil {
 			cfg.tags = make(map[string]interface{})
@@ -213,9 +214,9 @@ func WithCustomTag(key string, value interface{}) Option {
 	}
 }
 
-// WithSpanOptions defines a set of additional ddtrace.StartSpanOption to be added
+// WithSpanOptions defines a set of additional tracer.StartSpanOption to be added
 // to spans started by the integration.
-func WithSpanOptions(opts ...ddtrace.StartSpanOption) Option {
+func WithSpanOptions(opts ...tracer.StartSpanOption) OptionFn {
 	return func(cfg *config) {
 		cfg.spanOpts = append(cfg.spanOpts, opts...)
 	}

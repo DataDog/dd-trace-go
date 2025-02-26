@@ -8,10 +8,14 @@ package http_test
 import (
 	"net/http"
 
-	httptrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http"
+	httptrace "github.com/DataDog/dd-trace-go/contrib/net/http/v2"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 )
 
 func Example() {
+	tracer.Start()
+	defer tracer.Stop()
+
 	mux := httptrace.NewServeMux()
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("Hello World!\n"))
@@ -20,7 +24,10 @@ func Example() {
 }
 
 func Example_withServiceName() {
-	mux := httptrace.NewServeMux(httptrace.WithServiceName("my-service"))
+	tracer.Start()
+	defer tracer.Stop()
+
+	mux := httptrace.NewServeMux(httptrace.WithService("my-service"))
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("Hello World!\n"))
 	})
@@ -28,6 +35,9 @@ func Example_withServiceName() {
 }
 
 func ExampleTraceAndServe() {
+	tracer.Start()
+	defer tracer.Stop()
+
 	mux := http.NewServeMux()
 	mux.Handle("/", traceMiddleware(mux, http.HandlerFunc(Index)))
 	http.ListenAndServe(":8080", mux)
@@ -39,6 +49,9 @@ func Index(w http.ResponseWriter, _ *http.Request) {
 
 // ExampleWrapClient provides an example of how to connect an incoming request span to an outgoing http call.
 func ExampleWrapClient() {
+	tracer.Start()
+	defer tracer.Stop()
+
 	mux := httptrace.NewServeMux()
 	// Note that `WrapClient` modifies the passed in Client, so all other users of DefaultClient in this example will have a traced http Client
 	c := httptrace.WrapClient(http.DefaultClient)

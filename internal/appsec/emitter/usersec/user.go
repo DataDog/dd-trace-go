@@ -7,20 +7,15 @@ package usersec
 
 import (
 	"context"
-	"sync"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/appsec/events"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/appsec/events"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/dyngo"
 )
 
 const errorLog = `
 appsec: user login monitoring ignored: could not find the http handler instrumentation metadata in the request context:
-	the request handler is not being monitored by a middleware function or the provided context is not the expected request context.
-	If the user has been blocked using remote rules, blocking will still be enforced but it will not be reported.
+	the request handler is not being monitored by a middleware function or the provided context is not the expected request context
 `
-
-var errorLogOnce sync.Once
 
 type (
 	// UserEventType is the type of user event, such as a successful login or a failed login or any other authenticated request.
@@ -33,8 +28,7 @@ type (
 		EventType UserEventType
 	}
 	// UserLoginOperationArgs is the user ID operation arguments.
-	UserLoginOperationArgs struct {
-	}
+	UserLoginOperationArgs struct{}
 
 	// UserLoginOperationRes is the user ID operation results.
 	UserLoginOperationRes struct {
@@ -42,6 +36,7 @@ type (
 		UserLogin string
 		UserOrg   string
 		SessionID string
+		Success   bool
 	}
 )
 
@@ -54,13 +49,9 @@ const (
 	UserSet
 )
 
-func StartUserLoginOperation(ctx context.Context, eventType UserEventType, args UserLoginOperationArgs) (*UserLoginOperation, *error) {
-	parent, ok := dyngo.FromContext(ctx)
-	if !ok { // Nothing will be reported in this case, but we can still block so we don't return
-		errorLogOnce.Do(func() { log.Error(errorLog) })
-	}
-
-	op := &UserLoginOperation{Operation: dyngo.NewOperation(parent), EventType: eventType}
+func StartUserLoginOperation(ctx context.Context, args UserLoginOperationArgs) (*UserLoginOperation, *error) {
+	parent, _ := dyngo.FromContext(ctx)
+	op := &UserLoginOperation{Operation: dyngo.NewOperation(parent)}
 	var err error
 	dyngo.OnData(op, func(e *events.BlockingSecurityEvent) { err = e })
 	dyngo.StartOperation(op, args)

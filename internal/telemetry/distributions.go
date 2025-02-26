@@ -9,10 +9,10 @@ import (
 	"fmt"
 	"sync"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry/internal"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry/internal/knownmetrics"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry/internal/transport"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/internal"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/internal/knownmetrics"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/internal/transport"
 )
 
 type distributions struct {
