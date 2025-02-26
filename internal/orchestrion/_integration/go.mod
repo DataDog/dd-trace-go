@@ -7,7 +7,7 @@ replace gopkg.in/DataDog/dd-trace-go.v1 => ../../..
 require (
 	cloud.google.com/go/pubsub v1.44.0
 	github.com/99designs/gqlgen v0.17.62
-	github.com/DataDog/go-libddwaf/v3 v3.5.3
+	github.com/DataDog/go-libddwaf/v3 v3.5.4-0.20250226122403-41059e9a2160
 	github.com/DataDog/orchestrion v1.0.4-0.20250203104009-f137fbec82f2
 	github.com/IBM/sarama v1.44.0
 	github.com/Shopify/sarama v1.38.1
