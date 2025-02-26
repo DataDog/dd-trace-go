@@ -71,6 +71,8 @@ jobs:
           go run ./internal/orchestrion/matrix >> "${GITHUB_OUTPUT}"
 
   integration-test:
+    env:
+      REPORT: ${{ github.workspace }}/dd-trace-go/internal/orchestrion/_integration/gotestsum-report.xml # path to where test results will be saved
     needs: [go-versions-matrix]
     strategy:
       fail-fast: false
@@ -194,6 +196,9 @@ jobs:
         if: runner.os == 'Linux'
         run: sudo sysctl vm.overcommit_memory=1
 
+      - name: Install gotestsum
+        run: go install gotest.tools/gotestsum@latest
+
       # Finally, we run the test suite!
       - name: Run Tests
         shell: bash
@@ -204,16 +209,16 @@ jobs:
           case "${MODE}" in
           "DRIVER")
             echo "Starting test suite in DRIVER mode"
-            orchestrion go test -shuffle=on ./...
+            gotestsum --junitfile ${REPORT} -- ${ github.workspace }/dd-trace-go/.github/actions/test-orchestrion-driver-mode/run-orchestrion-tests.sh
             ;;
           "TOOLEXEC")
             echo "Starting test suite in TOOLEXEC mode"
-            go test -shuffle=on -toolexec='orchestrion toolexec' ./...
+            gotestsum --junitfile ${REPORT} --packages="./..." -- -shuffle=on -toolexec='orchestrion toolexec' -v -coverprofile=coverage.txt -covermode=atomic -timeout 15m
             ;;
           "GOFLAGS")
             echo "Starting test suite in GOFLAGS mode"
             export GOFLAGS="${GOFLAGS} '-toolexec=orchestrion toolexec'"
-            go test -shuffle=on ./...
+            gotestsum --junitfile ${REPORT} --packages="./..." -- -shuffle=on -v -coverprofile=coverage.txt -covermode=atomic -timeout 15m
             ;;
           *)
             echo "Unknown mode: ${MODE}"
@@ -245,6 +250,14 @@ jobs:
         run: |-
           set -euo pipefail
           echo "version=$(echo '${{ steps.setup-go.outputs.go-version }}' | cut -d'.' -f1,2)" >> "${GITHUB_OUTPUT}"
+      - name: Upload the results to Datadog CI App
+        if: always()
+        continue-on-error: true
+        uses: ./.github/actions/dd-ci-upload
+        with:
+          dd-api-key: ${{ secrets.DD_CI_API_KEY }}
+          files: ${{ env.REPORT }}
+          tags: go:${{ inputs.go-version }},arch:${{ runner.arch }},os:${{ runner.os }},distribution:${{ runner.distribution }}
       - name: Upload coverage report
         if: inputs.collect-coverage
         uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4.6.0
