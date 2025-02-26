@@ -213,7 +213,7 @@ jobs:
             ;;
           "TOOLEXEC")
             echo "Starting test suite in TOOLEXEC mode"
-            gotestsum --junitfile ${REPORT} -- ./... -shuffle=on -toolexec='orchestrion toolexec' -coverprofile=coverage.txt -covermode=atomic -timeout 30m
+            gotestsum --junitfile ${REPORT} -- ./... -shuffle=on -toolexec='orchestrion toolexec' -coverprofile=coverage.txt -covermode=atomic -timeout=30m
             ;;
           "GOFLAGS")
             echo "Starting test suite in GOFLAGS mode"
@@ -228,7 +228,7 @@ jobs:
         env:
           MODE: ${{ matrix.mode }}
           # The "buildtag" tag is used in //dd:span integration tests
-          GOFLAGS: -coverprofile=coverage.txt -covermode=atomic -timeout 30m ${{ matrix.runs-on == 'ubuntu' && '-p=4' || '' }} -tags=githubci${{ matrix.mode == 'DRIVER' && ',buildtag' || ''}}
+          GOFLAGS: -coverprofile=coverage.txt -covermode=atomic -timeout=30m ${{ matrix.runs-on == 'ubuntu' && '-p=4' || '' }} -tags=githubci${{ matrix.mode == 'DRIVER' && ',buildtag' || ''}}
           # Prevent auto-respawn, which is problematic with installs from commit SHA
           DD_ORCHESTRION_IS_GOMOD_VERSION: true
           # Ryuk is problematic with concurrent executions, and unnecessary in ephemeral environments like GHA.
