@@ -19,7 +19,7 @@ type Option = v2.Option
 // WithContext sets the config context to ctx.
 // Deprecated: This is deprecated in favor of passing the context
 // via the message headers
-func WithContext(ctx context.Context) Option {
+func WithContext(_ context.Context) Option {
 	return nil
 }
 

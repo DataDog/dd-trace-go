@@ -98,8 +98,8 @@ func produceThenConsume(t *testing.T, consumerAction consumerActionFn, producerO
 		backlogs := mt.SentDSMBacklogs()
 		toMap := func(b []internaldsm.Backlog) map[string]struct{} {
 			m := make(map[string]struct{})
-			for _, b := range backlogs {
-				m[strings.Join(b.Tags, "")] = struct{}{}
+			for _, v := range b {
+				m[strings.Join(v.Tags, "")] = struct{}{}
 			}
 			return m
 		}

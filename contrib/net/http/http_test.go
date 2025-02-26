@@ -42,7 +42,7 @@ func TestWithHeaderTags(t *testing.T) {
 		assert := assert.New(t)
 		assert.Equal(len(spans), 1)
 		s := spans[0]
-		headerTags.Iter(func(header string, tag string) {
+		headerTags.Iter(func(_ string, tag string) {
 			assert.NotContains(s.Tags(), tag)
 		})
 	})
