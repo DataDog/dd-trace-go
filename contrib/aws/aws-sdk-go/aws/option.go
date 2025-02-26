@@ -6,66 +6,33 @@
 package aws
 
 import (
-	"math"
-
-	"gopkg.in/DataDog/dd-trace-go.v1/internal"
+	v2 "github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go/v2/aws"
 )
 
-type config struct {
-	serviceName   string
-	analyticsRate float64
-	errCheck      func(err error) bool
-}
-
 // Option represents an option that can be passed to Dial.
-type Option func(*config)
-
-func defaults(cfg *config) {
-	// cfg.analyticsRate = globalconfig.AnalyticsRate()
-	if internal.BoolEnv("DD_TRACE_AWS_ANALYTICS_ENABLED", false) {
-		cfg.analyticsRate = 1.0
-	} else {
-		cfg.analyticsRate = math.NaN()
-	}
-}
+type Option = v2.Option
 
 // WithServiceName sets the given service name for the dialled connection.
 // When the service name is not explicitly set it will be inferred based on the
 // request to AWS.
 func WithServiceName(name string) Option {
-	return func(cfg *config) {
-		cfg.serviceName = name
-	}
+	return v2.WithService(name)
 }
 
 // WithAnalytics enables Trace Analytics for all started spans.
 func WithAnalytics(on bool) Option {
-	return func(cfg *config) {
-		if on {
-			cfg.analyticsRate = 1.0
-		} else {
-			cfg.analyticsRate = math.NaN()
-		}
-	}
+	return v2.WithAnalytics(on)
 }
 
 // WithAnalyticsRate sets the sampling rate for Trace Analytics events
 // correlated to started spans.
 func WithAnalyticsRate(rate float64) Option {
-	return func(cfg *config) {
-		if rate >= 0.0 && rate <= 1.0 {
-			cfg.analyticsRate = rate
-		} else {
-			cfg.analyticsRate = math.NaN()
-		}
-	}
+	return v2.WithAnalyticsRate(rate)
 }
 
 // WithErrorCheck specifies a function fn which determines whether the passed
 // error should be marked as an error. The fn is called whenever an aws operation
 // finishes with an error.
 func WithErrorCheck(fn func(err error) bool) Option {
-	return func(cfg *config) {
-		cfg.errCheck = fn
-	}
+	return v2.WithErrorCheck(fn)
 }

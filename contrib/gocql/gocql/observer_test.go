@@ -151,7 +151,7 @@ func TestObserver_Query(t *testing.T) {
 			assert.Equal(t, "cassandra.query", querySpan.OperationName())
 			assert.Equal(t, wantResource, querySpan.Tag(ext.ResourceName))
 			assert.Equal(t, wantService, querySpan.Tag(ext.ServiceName))
-			assert.Equal(t, wantRowCount, querySpan.Tag(ext.CassandraRowCount))
+			assert.Equal(t, float64(wantRowCount), querySpan.Tag(ext.CassandraRowCount))
 
 			if tc.wantErrTag {
 				assert.NotNil(t, querySpan.Tag(ext.Error))

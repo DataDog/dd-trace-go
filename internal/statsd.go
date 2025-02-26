@@ -5,13 +5,7 @@
 
 package internal
 
-import (
-	"time"
-
-	"github.com/DataDog/datadog-go/v5/statsd"
-)
-
-const DefaultDogstatsdAddr = "localhost:8125"
+import "time"
 
 type StatsdClient interface {
 	Incr(name string, tags []string, rate float64) error
@@ -23,16 +17,4 @@ type StatsdClient interface {
 	Timing(name string, value time.Duration, tags []string, rate float64) error
 	Flush() error
 	Close() error
-}
-
-// NewStatsdClient returns a new statsd client with the provided address and globaltags
-func NewStatsdClient(addr string, globalTags []string) (StatsdClient, error) {
-	if addr == "" {
-		addr = DefaultDogstatsdAddr
-	}
-	client, err := statsd.NewDirect(addr, statsd.WithMaxMessagesPerPayload(40), statsd.WithTags(globalTags))
-	if err != nil {
-		return &statsd.NoOpClientDirect{}, err
-	}
-	return client, nil
 }

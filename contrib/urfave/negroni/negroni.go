@@ -7,75 +7,13 @@
 package negroni
 
 import (
-	"fmt"
-	"math"
-	"net/http"
-
-	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/httptrace"
-	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/options"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
-
-	"github.com/urfave/negroni"
+	v2 "github.com/DataDog/dd-trace-go/contrib/urfave/negroni/v2"
 )
 
-const componentName = "urfave/negroni"
-
-func init() {
-	telemetry.LoadIntegration(componentName)
-	tracer.MarkIntegrationImported("github.com/urfave/negroni")
-}
-
 // DatadogMiddleware returns middleware that will trace incoming requests.
-type DatadogMiddleware struct {
-	cfg *config
-}
-
-func (m *DatadogMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
-	opts := options.Copy(m.cfg.spanOpts...) // opts must be a copy of m.cfg.spanOpts, locally scoped, to avoid races.
-	opts = append(opts,
-		tracer.ServiceName(m.cfg.serviceName),
-		tracer.ResourceName(m.cfg.resourceNamer(r)),
-		httptrace.HeaderTagsFromRequest(r, m.cfg.headerTags))
-	if !math.IsNaN(m.cfg.analyticsRate) {
-		opts = append(opts, tracer.Tag(ext.EventSampleRate, m.cfg.analyticsRate))
-	}
-	_, ctx, finishSpans := httptrace.StartRequestSpan(r, opts...)
-	defer func() {
-		// check if the responseWriter is of type negroni.ResponseWriter
-		var (
-			status int
-			opts   []tracer.FinishOption
-		)
-		responseWriter, ok := w.(negroni.ResponseWriter)
-		if ok {
-			status = responseWriter.Status()
-			if m.cfg.isStatusError(status) {
-				opts = []tracer.FinishOption{tracer.WithError(fmt.Errorf("%d: %s", status, http.StatusText(status)))}
-			}
-		}
-		finishSpans(status, m.cfg.isStatusError, opts...)
-	}()
-
-	next(w, r.WithContext(ctx))
-}
+type DatadogMiddleware = v2.DatadogMiddleware
 
 // Middleware create the negroni middleware that will trace incoming requests
 func Middleware(opts ...Option) *DatadogMiddleware {
-	cfg := new(config)
-	defaults(cfg)
-	for _, fn := range opts {
-		fn(cfg)
-	}
-	cfg.spanOpts = append(cfg.spanOpts, tracer.Tag(ext.Component, componentName))
-	cfg.spanOpts = append(cfg.spanOpts, tracer.Tag(ext.SpanKind, ext.SpanKindServer))
-	log.Debug("contrib/urgave/negroni: Configuring Middleware: %#v", cfg)
-
-	m := DatadogMiddleware{
-		cfg: cfg,
-	}
-
-	return &m
+	return v2.Middleware(opts...)
 }
