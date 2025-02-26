@@ -13,12 +13,12 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-const logPrefixRegexp = `Datadog Tracer v[0-9]+\.[0-9]+\.[0-9]+(-((rc|beta)\.[0-9]+|dev))?`
+const logPrefixRegexp = `Datadog Tracer v[0-9]+\.[0-9]+\.[0-9]+(-(rc\.[0-9]+|dev))?`
 
 func TestLogSamplingRules(t *testing.T) {
 	assert := assert.New(t)
 	tp := new(log.RecordLogger)
-	tp.Ignore("appsec: ", "Instrumentation telemetry: ")
+	tp.Ignore("appsec: ", "telemetry")
 	t.Setenv("DD_TRACE_SAMPLING_RULES", `[{"service": "some.service", "sample_rate": 0.234}, {"service": "other.service"}, {"service": "last.service", "sample_rate": 0.56}, {"odd": "pairs"}, {"sample_rate": 9.10}]`)
 	_, stop := startTestTracer(t, WithLogger(tp), WithEnv("test"))
 	defer stop()
@@ -34,7 +34,7 @@ func TestLogFormat(t *testing.T) {
 	tracer, stop := startTestTracer(t, WithLogger(tp), WithRuntimeMetrics(), WithDebugMode(true))
 	defer stop()
 	tp.Reset()
-	tp.Ignore("appsec: ", "Instrumentation telemetry: ")
+	tp.Ignore("appsec: ", "telemetry")
 	tracer.StartSpan("test", ServiceName("test-service"), ResourceName("/"), WithSpanID(12345))
 	assert.Len(tp.Logs(), 1)
 	assert.Regexp(logPrefixRegexp+` DEBUG: Started Span: dd.trace_id="12345" dd.span_id="12345" dd.parent_id="0", Operation: test, Resource: /, Tags: map.*, map.*`, tp.Logs()[0])

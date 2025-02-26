@@ -47,6 +47,9 @@ type Span interface {
 	// Context returns the span's SpanContext.
 	Context() ddtrace.SpanContext
 
+	// Links returns the span's span links.
+	Links() []ddtrace.SpanLink
+
 	// Stringer allows pretty-printing the span's fields for debugging.
 	fmt.Stringer
 }
@@ -182,4 +185,15 @@ func (msa MockspanV2Adapter) Tags() map[string]interface{} {
 // TraceID implements Span.
 func (msa MockspanV2Adapter) TraceID() uint64 {
 	return msa.Span.TraceID()
+}
+
+// Links returns the span's span links.
+func (s *mockspan) Links() []ddtrace.SpanLink {
+	s.RLock()
+	defer s.RUnlock()
+	return s.links
+}
+
+func (s *mockspan) AddSpanLink(link ddtrace.SpanLink) {
+	s.links = append(s.links, link)
 }

@@ -111,6 +111,9 @@ jobs:
           # Service Extensions System Tests
           - scenario: EXTERNAL_PROCESSING
           - scenario: EXTERNAL_PROCESSING_BLOCKING
+          # Telemetry
+          - scenario: TELEMETRY_APP_STARTED_PRODUCTS_DISABLED
+            weblog-variant: net-http
 
       fail-fast: false
     env:

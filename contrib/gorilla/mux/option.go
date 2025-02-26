@@ -74,3 +74,9 @@ func WithHeaderTags(headers []string) RouterOption {
 func WithQueryParams() RouterOption {
 	return v2.WithQueryParams()
 }
+
+// WithStatusCheck specifies a function fn which reports whether the passed
+// statusCode should be considered an error.
+func WithStatusCheck(fn func(statusCode int) bool) RouterOption {
+	return v2.WithStatusCheck(fn)
+}

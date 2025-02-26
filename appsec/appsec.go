@@ -30,7 +30,7 @@ func MonitorParsedHTTPBody(ctx context.Context, body any) error {
 	return v2.MonitorParsedHTTPBody(ctx, body)
 }
 
-// SetUser wraps tracer.SetUser() and extends it with user blocking.
+// SetUser wraps [tracer.SetUser] and extends it with user blocking.
 // On top of associating the authenticated user information to the service entry span,
 // it checks whether the given user ID is blocked or not by returning an error when it is.
 // A user ID is blocked when it is present in your denylist of users to block at https://app.datadoghq.com/security/appsec/denylist
@@ -54,6 +54,8 @@ func SetUser(ctx context.Context, id string, opts ...tracer.UserMonitoringOption
 // Such events trigger the backend-side events monitoring, such as the Account
 // Take-Over (ATO) monitoring, ultimately blocking the IP address and/or user id
 // associated to them.
+//
+// Deprecated: use [TrackUserLoginSuccess] instead.
 func TrackUserLoginSuccessEvent(ctx context.Context, uid string, md map[string]string, opts ...tracer.UserMonitoringOption) error {
 	return v2.TrackUserLoginSuccessEvent(ctx, uid, md, opts...)
 }
@@ -68,8 +70,45 @@ func TrackUserLoginSuccessEvent(ctx context.Context, uid string, md map[string]s
 // Such events trigger the backend-side events monitoring, such as the Account
 // Take-Over (ATO) monitoring, ultimately blocking the IP address and/or user id
 // associated to them.
+//
+// Deprecated: use [TrackUserLoginFailure] instead, as it clearly expects to
+// process a user login, and not a user ID (which may not be available in the
+// case of a login failure).
 func TrackUserLoginFailureEvent(ctx context.Context, uid string, exists bool, md map[string]string) {
 	v2.TrackUserLoginFailureEvent(ctx, uid, exists, md)
+}
+
+// TrackUserLoginFailure denotes a failed user login event, which is used by
+// back-end side event monitoring, such as Account Take-Over (ATO) monitoring,
+// ultimately allowing IP address and/or user ID deny-lists to be configured in
+// order to block associated malicious activity.
+//
+// The login is the username that was provided by the user as part of
+// the authentication attempt, and a single user may have multiple different
+// logins (i.e; user name, email address, etc...).
+//
+// The exists argument allows to distinguish whether the user for which a login
+// attempt failed exists in the system or not, which is usedul when sifting
+// through login activity in search for malicious behavior & compromise.
+//
+// The provided metata is attached to the failed user login event.
+func TrackUserLoginFailure(ctx context.Context, login string, exists bool, md map[string]string) {
+	if getRootSpan(ctx) == nil {
+		return
+	}
+
+	// We need to make sure the metadata contains the correct information
+	md = maps.Clone(md)
+	if md == nil {
+		md = make(map[string]string, 2)
+	}
+	md["usr.exists"] = strconv.FormatBool(exists)
+	md["usr.login"] = login
+
+	TrackCustomEvent(ctx, "users.login.failure", md)
+
+	op, _ := usersec.StartUserLoginOperation(ctx, usersec.UserLoginFailure, usersec.UserLoginOperationArgs{})
+	op.Finish(usersec.UserLoginOperationRes{UserLogin: login})
 }
 
 // TrackCustomEvent sets a custom event as service entry span tags. This span is
