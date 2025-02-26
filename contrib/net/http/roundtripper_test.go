@@ -733,10 +733,10 @@ func TestAppsec(t *testing.T) {
 			require.NoError(t, err)
 
 			TraceAndServe(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				req, err := http.NewRequest("GET", "http://169.254.169.254", nil)
+				req, err := http.NewRequestWithContext(r.Context(), "GET", "http://169.254.169.254", nil)
 				require.NoError(t, err)
 
-				resp, err := client.RoundTrip(req.WithContext(r.Context()))
+				resp, err := client.RoundTrip(req)
 
 				if enabled {
 					require.True(t, events.IsSecurityError(err))
