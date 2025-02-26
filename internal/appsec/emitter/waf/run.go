@@ -43,16 +43,24 @@ func (op *ContextOperation) Run(eventReceiver dyngo.Operation, addrs waf.RunAddr
 		})
 	}
 
-	telemetryTags := make([]string, 2, 6)
-	telemetryTags[0] = "waf_version:" + waf.Version()
-	telemetryTags[1] = "event_rules_version:" + op.eventRulesetVersion
-
 	var wafTimeout bool
 	result, err := ctx.Run(addrs)
 	if errors.Is(err, wafErrors.ErrTimeout) {
 		log.Debug("appsec: WAF timeout value reached: %v", err)
 		wafTimeout = true
 	} else if err != nil {
+		errCode := -127
+		if code := wafErrors.ToWafErrorCode(err); code != 0 {
+			errCode = code
+		}
+
+		// End's up doing a count on either waf.error or rasp.error depending on the scope
+		telemetry.Count(telemetry.NamespaceAppSec, string(addrs.Scope)+".error", []string{
+			"waf_version:" + waf.Version(),
+			"event_rules_version:" + op.eventRulesetVersion,
+			"error_code:" + strconv.Itoa(errCode),
+		})
+
 		telemetrylog.Error("unexpected WAF error: %v", err, telemetry.WithTags([]string{
 			"product:appsec",
 			"waf_version:" + waf.Version(),
@@ -60,7 +68,7 @@ func (op *ContextOperation) Run(eventReceiver dyngo.Operation, addrs waf.RunAddr
 		}))
 	}
 
-	op.AddEvents(result.Events...)
+	rateLimited := op.AddEvents(result.Events...)
 	op.AbsorbDerivatives(result.Derivatives)
 
 	blocking := actions.SendActionEvents(eventReceiver, result.Actions)
@@ -69,12 +77,18 @@ func (op *ContextOperation) Run(eventReceiver dyngo.Operation, addrs waf.RunAddr
 		dyngo.EmitData(op, &SecurityEvent{})
 	}
 
+	if addrs.Scope == waf.RASPScope { // Don't send this telemetry if this is a call for RASP
+		return
+	}
+
 	telemetry.Count(telemetry.NamespaceAppSec, "waf.requests", []string{
 		"waf_version:" + waf.Version(),
 		"event_rules_version:" + op.eventRulesetVersion,
 		"request_blocked:" + strconv.FormatBool(blocking),
 		"rule_triggered:" + strconv.FormatBool(result.HasEvents()),
 		"waf_timeout:" + strconv.FormatBool(wafTimeout),
+		"rate_limited:" + strconv.FormatBool(rateLimited),
+		"waf_error:" + strconv.FormatBool(err != nil),
 	}).Submit(1)
 }
 

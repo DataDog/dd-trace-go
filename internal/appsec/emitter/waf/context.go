@@ -92,14 +92,15 @@ func (op *ContextOperation) SetEventRulesetVersion(version string) {
 	op.eventRulesetVersion = version
 }
 
-func (op *ContextOperation) AddEvents(events ...any) {
+// AddEvents adds WAF events to the operation and returns true if the operation has reached the maximum number of events, by the limiter or the max value.
+func (op *ContextOperation) AddEvents(events ...any) bool {
 	if len(events) == 0 {
-		return
+		return false
 	}
 
 	if !op.limiter.Allow() {
 		log.Error("appsec: too many WAF events, stopping further reporting")
-		return
+		return true
 	}
 
 	op.mu.Lock()
@@ -110,10 +111,11 @@ func (op *ContextOperation) AddEvents(events ...any) {
 		op.logOnce.Do(func() {
 			log.Warn("appsec: ignoring new WAF event due to the maximum number of security events per request was reached")
 		})
-		return
+		return true
 	}
 
 	op.events = append(op.events, events...)
+	return false
 }
 
 func (op *ContextOperation) AddStackTraces(stacks ...*stacktrace.Event) {

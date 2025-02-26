@@ -7,6 +7,7 @@ package waf
 
 import (
 	"fmt"
+	"strconv"
 	"sync"
 	"time"
 
@@ -33,6 +34,8 @@ type Feature struct {
 	supportedAddrs  config.AddressSet
 	reportRulesTags sync.Once
 
+	telemetry *Telemetry
+
 	// Determine if we can use [internal.MetaStructValue] to delegate the WAF events serialization to the trace writer
 	// or if we have to use the [SerializableTag] method to serialize the events
 	metaStructAvailable bool
@@ -51,19 +54,26 @@ func NewWAFFeature(cfg *config.Config, rootOp dyngo.Operation) (listener.Feature
 	}
 
 	newHandle, err := wafv3.NewHandle(cfg.RulesManager.Latest, cfg.Obfuscator.KeyRegex, cfg.Obfuscator.ValueRegex)
-	if err != nil {
-		return nil, err
-	}
 
 	telemetryMetricName := "waf.init"
 	if cfg.SupportedAddresses != nil { // If the supported addresses are set, it means that this is NOT the first time the WAF is loaded
 		telemetryMetricName = "waf.updates"
 	}
 
+	var eventRulesVersion string
+	if newHandle != nil {
+		eventRulesVersion = newHandle.Diagnostics().Version
+	}
+
 	telemetry.Count(telemetry.NamespaceAppSec, telemetryMetricName, []string{
 		"waf_version:" + wafv3.Version(),
-		"event_rules_version:" + newHandle.Diagnostics().Version,
+		"event_rules_version:" + eventRulesVersion,
+		"success:" + strconv.FormatBool(err == nil),
 	}).Submit(1)
+
+	if err != nil {
+		return nil, err
+	}
 
 	cfg.SupportedAddresses = config.NewAddressSet(newHandle.Addresses())
 
@@ -75,6 +85,7 @@ func NewWAFFeature(cfg *config.Config, rootOp dyngo.Operation) (listener.Feature
 		timeout:             cfg.WAFTimeout,
 		limiter:             tokenTicker,
 		supportedAddrs:      cfg.SupportedAddresses,
+		telemetry:           NewTelemetryHandler(eventRulesVersion),
 		metaStructAvailable: cfg.MetaStructAvailable,
 	}
 

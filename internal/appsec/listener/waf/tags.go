@@ -14,6 +14,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
+	telemetrylog "gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry/log"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/trace"
@@ -58,8 +59,22 @@ var truncationTelemetryMetrics = map[waf.TruncationReason]telemetry.MetricHandle
 	waf.ObjectTooDeep:     telemetry.Count(telemetry.NamespaceAppSec, "waf.input_truncated", []string{"truncation_reason+" + strconv.Itoa(int(waf.ObjectTooDeep))}),
 }
 
+func truncationReasonToString(reason waf.TruncationReason) string {
+	switch reason {
+	case waf.ObjectTooDeep:
+		return "container_size"
+	case waf.ContainerTooLarge:
+		return "container_size"
+	case waf.StringTooLong:
+		return "string_length"
+	default:
+		telemetrylog.Error("unknown truncation reason: %d", reason, telemetry.WithTags([]string{"product:appsec"}))
+		return ""
+	}
+}
+
 // AddWAFMonitoringTags adds the tags related to the monitoring of the Feature
-func AddWAFMonitoringTags(th trace.TagSetter, rulesVersion string, stats waf.Stats) {
+func AddWAFMonitoringTags(telemetry *Telemetry, th trace.TagSetter, rulesVersion string, stats waf.Stats) {
 	// Rules version is set for every request to help the backend associate Feature duration metrics with rule version
 	th.SetTag(eventRulesVersionTag, rulesVersion)
 
@@ -67,11 +82,16 @@ func AddWAFMonitoringTags(th trace.TagSetter, rulesVersion string, stats waf.Sta
 	metrics := stats.Metrics()
 	for key, value := range metrics {
 		th.SetTag(wafSpanTagPrefix+key, value)
+		if metric, ok := telemetry.Metrics.WafRunMetrics[key]; ok {
+
+			metric.Submit(float64(value))
+		}
 		// TODO: duration & duration_ext telemetry metrics
 	}
 
 	// Report the truncation metrics
-	for reason := range stats.Truncations {
+	for reason, sizes := range stats.Truncations {
+		th.SetTag(wafSpanTagPrefix+truncationReasonToString(reason), max(0, sizes...))
 		truncationTelemetryMetrics[reason].Submit(1.0)
 		// TODO: input_truncated_value
 	}
