@@ -155,6 +155,9 @@ jobs:
           go build -cover -covermode=atomic -coverpkg="github.com/DataDog/orchestrion/..." "-o=${bin}" "github.com/DataDog/orchestrion"
           echo "GOCOVERDIR=$(mktemp -d)" >> "${GITHUB_ENV}"
         working-directory: ${{ github.workspace }}/dd-trace-go/internal/orchestrion/_integration
+      - name: Install gotestsum
+        run: go install gotest.tools/gotestsum@latest
+        working-directory: ${{ github.workspace }}/dd-trace-go/internal/orchestrion/_integration
 
       # Run a `go mod tidy` because GitHub will run this on a candidate merge commit, and if there
       # have been dependecy updates on the `main` branch, the `go.mod` and `go.sum` files for the
@@ -196,9 +199,6 @@ jobs:
         if: runner.os == 'Linux'
         run: sudo sysctl vm.overcommit_memory=1
 
-      - name: Install gotestsum
-        run: go install gotest.tools/gotestsum@latest
-
       # Finally, we run the test suite!
       - name: Run Tests
         shell: bash
@@ -209,11 +209,11 @@ jobs:
           case "${MODE}" in
           "DRIVER")
             echo "Starting test suite in DRIVER mode"
-            gotestsum --junitfile ${REPORT} -- ${ github.workspace }/dd-trace-go/.github/actions/test-orchestrion-driver-mode/run-orchestrion-tests.sh
+            gotestsum --junitfile ${REPORT} -- ${{ github.workspace }}/dd-trace-go/.github/actions/test-orchestrion-driver-mode/run-orchestrion-tests.sh -v -coverprofile=coverage.txt -covermode=atomic
             ;;
           "TOOLEXEC")
             echo "Starting test suite in TOOLEXEC mode"
-            gotestsum --junitfile ${REPORT} --packages="./..." -- -shuffle=on -toolexec='orchestrion toolexec' -v -coverprofile=coverage.txt -covermode=atomic -timeout 15m
+            gotestsum --junitfile ${REPORT} --packages="./..." -- -shuffle=on -toolexec='orchestrion toolexec' -v -coverprofile=coverage.txt -covermode=atomic
             ;;
           "GOFLAGS")
             echo "Starting test suite in GOFLAGS mode"
