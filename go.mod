@@ -2,6 +2,8 @@ module gopkg.in/DataDog/dd-trace-go.v1
 
 go 1.23.0
 
+godebug x509negativeserial=1
+
 require (
 	github.com/DataDog/dd-trace-go/contrib/99designs/gqlgen/v2 v2.0.0-rc.3.0.20250226082715-6b718a68657e
 	github.com/DataDog/dd-trace-go/contrib/IBM/sarama/v2 v2.0.0-rc.3.0.20250226082715-6b718a68657e

@@ -101,10 +101,11 @@ func TestAppendMiddleware(t *testing.T) {
 			AppendMiddleware(&awsCfg)
 
 			sqsClient := sqs.NewFromConfig(awsCfg)
-			sqsClient.SendMessage(context.Background(), &sqs.SendMessageInput{
+			_, err := sqsClient.SendMessage(context.Background(), &sqs.SendMessageInput{
 				MessageBody: aws.String("foobar"),
 				QueueUrl:    aws.String("https://sqs.us-west-2.amazonaws.com/123456789012/MyQueueName"),
 			})
+			require.NoError(t, err)
 
 			spans := mt.FinishedSpans()
 
