@@ -27,13 +27,13 @@ func Test(t *testing.T) {
 		Fields: graphql.Fields{
 			"hello": {
 				Type: graphql.String,
-				Resolve: func(p graphql.ResolveParams) (any, error) {
+				Resolve: func(_ graphql.ResolveParams) (any, error) {
 					return "Hello, world!", nil
 				},
 			},
 			"helloNonTrivial": {
 				Type: graphql.String,
-				Resolve: func(p graphql.ResolveParams) (any, error) {
+				Resolve: func(_ graphql.ResolveParams) (any, error) {
 					return "Hello, world!", nil
 				},
 			},
@@ -278,7 +278,7 @@ func newTestServer(t *testing.T, opts ...Option) *httptest.Server {
 				"withError": &graphql.Field{
 					Args: graphql.FieldConfigArgument{},
 					Type: graphql.ID,
-					Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+					Resolve: func(_ graphql.ResolveParams) (interface{}, error) {
 						return nil, customError{
 							message: "test error",
 							extensions: map[string]any{
