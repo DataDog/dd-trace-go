@@ -72,7 +72,7 @@ jobs:
 
   integration-test:
     env:
-      REPORT: ${{ github.workspace }}/dd-trace-go/internal/orchestrion/_integration/gotestsum-report.xml # path to where test results will be saved
+      REPORT: orchestrion-gotestsum-report.xml # path to where test results will be saved
     needs: [go-versions-matrix]
     strategy:
       fail-fast: false
@@ -155,14 +155,20 @@ jobs:
           go build -cover -covermode=atomic -coverpkg="github.com/DataDog/orchestrion/..." "-o=${bin}" "github.com/DataDog/orchestrion"
           echo "GOCOVERDIR=$(mktemp -d)" >> "${GITHUB_ENV}"
         working-directory: ${{ github.workspace }}/dd-trace-go/internal/orchestrion/_integration
-      - name: Install gotestsum
-        run: go install gotest.tools/gotestsum@latest
-        working-directory: ${{ github.workspace }}/dd-trace-go/internal/orchestrion/_integration
-
       - name: Checkout
         uses: actions/checkout@ee0669bd1cc54295c223e0bb666b733df41de1c5 # v2.7.0
         with:
-          ref: ${{ inputs.ref || github.ref }}
+          path: ${{ github.workspace }}/dd-trace-go
+          repository: ${{ inputs.orchestrion-version != '' && 'DataDog/dd-trace-go' || github.repository }}
+          ref: ${{ inputs.orchestrion-version != '' && 'main' || github.sha }}
+      - uses: actions/setup-go@6edd4406fa81c3da01a34fa6f6343087c207a568 # v3.5.0
+        with:
+          go-version: ${{ inputs.go-version }}
+          check-latest: true
+          cache: true
+      - name: Install gotestsum
+        run: go install gotest.tools/gotestsum@latest
+        working-directory: ${{ github.workspace }}/dd-trace-go/internal/orchestrion/_integration
 
       # Run a `go mod tidy` because GitHub will run this on a candidate merge commit, and if there
       # have been dependecy updates on the `main` branch, the `go.mod` and `go.sum` files for the
