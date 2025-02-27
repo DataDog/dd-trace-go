@@ -155,17 +155,6 @@ jobs:
           go build -cover -covermode=atomic -coverpkg="github.com/DataDog/orchestrion/..." "-o=${bin}" "github.com/DataDog/orchestrion"
           echo "GOCOVERDIR=$(mktemp -d)" >> "${GITHUB_ENV}"
         working-directory: ${{ github.workspace }}/dd-trace-go/internal/orchestrion/_integration
-      - name: Checkout
-        uses: actions/checkout@ee0669bd1cc54295c223e0bb666b733df41de1c5 # v2.7.0
-        with:
-          path: ${{ github.workspace }}/dd-trace-go
-          repository: ${{ inputs.orchestrion-version != '' && 'DataDog/dd-trace-go' || github.repository }}
-          ref: ${{ inputs.orchestrion-version != '' && 'main' || github.sha }}
-      - uses: actions/setup-go@6edd4406fa81c3da01a34fa6f6343087c207a568 # v3.5.0
-        with:
-          go-version: ${{ inputs.go-version }}
-          check-latest: true
-          cache: true
       - name: Install gotestsum
         run: go install gotest.tools/gotestsum@latest
         working-directory: ${{ github.workspace }}/dd-trace-go/internal/orchestrion/_integration
@@ -209,6 +198,19 @@ jobs:
       - name: Enable memory overcommit
         if: runner.os == 'Linux'
         run: sudo sysctl vm.overcommit_memory=1
+
+      # Checkout and prepare for uploading to Datadog CI
+      - name: Checkout
+        uses: actions/checkout@ee0669bd1cc54295c223e0bb666b733df41de1c5 # v2.7.0
+        with:
+          path: ${{ github.workspace }}/dd-trace-go
+          repository: ${{ inputs.orchestrion-version != '' && 'DataDog/dd-trace-go' || github.repository }}
+          ref: ${{ inputs.orchestrion-version != '' && 'main' || github.sha }}
+      - uses: actions/setup-go@6edd4406fa81c3da01a34fa6f6343087c207a568 # v3.5.0
+        with:
+          go-version: ${{ inputs.go-version }}
+          check-latest: true
+          cache: true
 
       # Finally, we run the test suite!
       - name: Run Tests
