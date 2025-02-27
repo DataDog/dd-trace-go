@@ -213,12 +213,12 @@ jobs:
             ;;
           "TOOLEXEC")
             echo "Starting test suite in TOOLEXEC mode"
-            gotestsum --junitfile ${{env.REPORT}} -shuffle=on -toolexec='orchestrion toolexec' ./...
+            gotestsum --junitfile ${{env.REPORT}} -- -shuffle=on -toolexec='orchestrion toolexec' ./...
             ;;
           "GOFLAGS")
             echo "Starting test suite in GOFLAGS mode"
             export GOFLAGS="${GOFLAGS} '-toolexec=orchestrion toolexec'"
-            gotestsum --junitfile ${{env.REPORT}} -shuffle=on ./...
+            gotestsum --junitfile ${{env.REPORT}} -- -shuffle=on ./...
             ;;
           *)
             echo "Unknown mode: ${MODE}"
