@@ -209,7 +209,7 @@ jobs:
           case "${MODE}" in
           "DRIVER")
             echo "Starting test suite in DRIVER mode"
-            orchestrion go test -shuffle=on ./...
+            gotestsum --junitfile ${{env.REPORT}} ./run-orchestrion-tests.sh
             ;;
           "TOOLEXEC")
             echo "Starting test suite in TOOLEXEC mode"
