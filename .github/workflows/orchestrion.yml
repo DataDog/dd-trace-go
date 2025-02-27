@@ -163,13 +163,6 @@ jobs:
         uses: actions/checkout@ee0669bd1cc54295c223e0bb666b733df41de1c5 # v2.7.0
         with:
           ref: ${{ inputs.ref || github.ref }}
-      - uses: actions/setup-go@6edd4406fa81c3da01a34fa6f6343087c207a568 # v3.5.0
-        with:
-          go-version: ${{ inputs.go-version }}
-          check-latest: true
-          cache: true
-      - name: Install gotestsum
-        run: go install gotest.tools/gotestsum@latest
 
       # Run a `go mod tidy` because GitHub will run this on a candidate merge commit, and if there
       # have been dependecy updates on the `main` branch, the `go.mod` and `go.sum` files for the
