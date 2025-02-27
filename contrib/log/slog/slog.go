@@ -10,12 +10,12 @@ import (
 	"context"
 	"io"
 	"log/slog"
-	"os"
 	"strconv"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/options"
 )
 
 var cfg = newConfig()
@@ -37,7 +37,7 @@ type config struct {
 
 func newConfig() *config {
 	return &config{
-		log128bits: os.Getenv("DD_TRACE_128_BIT_TRACEID_LOGGING_ENABLED") != "false",
+		log128bits: options.GetBoolEnv("DD_TRACE_128_BIT_TRACEID_LOGGING_ENABLED", true),
 	}
 }
 
