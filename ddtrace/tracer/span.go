@@ -85,6 +85,7 @@ type span struct {
 	noDebugStack bool         `msg:"-"` // disables debug stack traces
 	finished     bool         `msg:"-"` // true if the span has been submitted to a tracer. Can only be read/modified if the trace is locked.
 	context      *spanContext `msg:"-"` // span propagation context
+	integration  string       `msg:"-"` // where the span was started from, such as a specific contrib or "manual"
 
 	pprofCtxActive  context.Context `msg:"-"` // contains pprof.WithLabel labels to tell the profiler more about this span
 	pprofCtxRestore context.Context `msg:"-"` // contains pprof.WithLabel labels of the parent span (if any) that need to be restored when this span finishes
@@ -136,6 +137,11 @@ func (s *span) SetTag(key string, value interface{}) {
 			noDebugStack: s.noDebugStack,
 		})
 		return
+	case ext.Component:
+		integration, ok := value.(string)
+		if ok {
+			s.integration = integration
+		}
 	}
 	if v, ok := value.(bool); ok {
 		s.setTagBool(key, v)
@@ -616,6 +622,7 @@ func (s *span) finish(finishTime int64) {
 				log.Error("Abandoned spans channel full, disregarding span.")
 			}
 		}
+		t.spansFinished.Inc(s.integration)
 	}
 	if keep {
 		// a single kept span keeps the whole trace.
