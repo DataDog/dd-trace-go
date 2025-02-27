@@ -162,6 +162,9 @@ func applyAdditionalFeaturesToTestFunc(f func(*testing.T), testInfo *commonInfo)
 	// Apply additional features
 	settings := integrations.GetSettings()
 
+	// ensure that the additional features are initialized
+	_ = integrations.GetKnownTests()
+
 	// Check if we have something to do, if not we bail out
 	if !settings.TestManagement.Enabled && !settings.FlakyTestRetriesEnabled && !settings.EarlyFlakeDetection.Enabled {
 		return f
