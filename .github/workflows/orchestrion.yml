@@ -209,16 +209,16 @@ jobs:
           case "${MODE}" in
           "DRIVER")
             echo "Starting test suite in DRIVER mode"
-            gotestsum --junitfile ${REPORT} -- ./run-orchestrion-tests.sh
+            orchestrion go test -shuffle=on ./...
             ;;
           "TOOLEXEC")
             echo "Starting test suite in TOOLEXEC mode"
-            gotestsum --junitfile ${REPORT} ./... -- -shuffle=on -toolexec='orchestrion toolexec'
+            go test -shuffle=on -toolexec='orchestrion toolexec' ./...
             ;;
           "GOFLAGS")
             echo "Starting test suite in GOFLAGS mode"
             export GOFLAGS="${GOFLAGS} '-toolexec=orchestrion toolexec'"
-            gotestsum --junitfile ${REPORT} ./... -- -shuffle=on
+            go test -shuffle=on ./...
             ;;
           *)
             echo "Unknown mode: ${MODE}"
@@ -228,7 +228,7 @@ jobs:
         env:
           MODE: ${{ matrix.mode }}
           # The "buildtag" tag is used in //dd:span integration tests
-          GOFLAGS: -coverprofile=coverage.txt -covermode=atomic -timeout=30m ${{ matrix.runs-on == 'ubuntu' && '-p=4' || '' }} -tags=githubci${{ matrix.mode == 'DRIVER' && ',buildtag' || ''}}
+          GOFLAGS: -timeout=30m ${{ matrix.runs-on == 'ubuntu' && '-p=4' || '' }} -tags=githubci${{ matrix.mode == 'DRIVER' && ',buildtag' || ''}}
           # Prevent auto-respawn, which is problematic with installs from commit SHA
           DD_ORCHESTRION_IS_GOMOD_VERSION: true
           # Ryuk is problematic with concurrent executions, and unnecessary in ephemeral environments like GHA.
