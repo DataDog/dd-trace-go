@@ -18,6 +18,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/osinfo"
+	telemetrylog "gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
 )
 
@@ -170,4 +171,5 @@ func logStartup(t *tracer) {
 		return
 	}
 	log.Info("DATADOG TRACER CONFIGURATION %s\n", string(bs))
+	telemetrylog.Debug("DATADOG TRACER CONFIGURATION %s\n", string(bs))
 }

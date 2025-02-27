@@ -29,6 +29,7 @@ type routerConfig struct {
 	ignoreRequest func(*http.Request) bool
 	queryParams   bool
 	headerTags    *internal.LockMap
+	isStatusError func(statusCode int) bool
 }
 
 // RouterOption represents an option that can be passed to NewRouter.
@@ -138,5 +139,13 @@ func WithHeaderTags(headers []string) RouterOption {
 func WithQueryParams() RouterOption {
 	return func(cfg *routerConfig) {
 		cfg.queryParams = true
+	}
+}
+
+// WithStatusCheck specifies a function fn which reports whether the passed
+// statusCode should be considered an error.
+func WithStatusCheck(fn func(statusCode int) bool) RouterOption {
+	return func(cfg *routerConfig) {
+		cfg.isStatusError = fn
 	}
 }

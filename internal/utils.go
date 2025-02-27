@@ -8,6 +8,8 @@ package internal
 import (
 	"sync"
 	"sync/atomic"
+
+	xsync "github.com/puzpuzpuz/xsync/v3"
 )
 
 // OtelTagsDelimeter is the separator between key-val pairs for OTEL env vars
@@ -67,4 +69,36 @@ func (l *LockMap) Get(k string) string {
 	l.RLock()
 	defer l.RUnlock()
 	return l.m[k]
+}
+
+// XSyncMapCounterMap uses xsync protect counter increments and reads during
+// concurrent access.
+// Implementation and related tests were taken/inspired by felixge/countermap
+// https://github.com/felixge/countermap/pull/2
+type XSyncMapCounterMap struct {
+	counts *xsync.MapOf[string, *xsync.Counter]
+}
+
+func NewXSyncMapCounterMap() *XSyncMapCounterMap {
+	return &XSyncMapCounterMap{counts: xsync.NewMapOf[string, *xsync.Counter]()}
+}
+
+func (cm *XSyncMapCounterMap) Inc(key string) {
+	val, ok := cm.counts.Load(key)
+	if !ok {
+		val, _ = cm.counts.LoadOrStore(key, xsync.NewCounter())
+	}
+	val.Inc()
+}
+
+func (cm *XSyncMapCounterMap) GetAndReset() map[string]int64 {
+	ret := map[string]int64{}
+	cm.counts.Range(func(key string, _ *xsync.Counter) bool {
+		v, ok := cm.counts.LoadAndDelete(key)
+		if ok {
+			ret[key] = v.Value()
+		}
+		return true
+	})
+	return ret
 }

@@ -25,7 +25,7 @@ func StartKafkaTestContainer(t testing.TB) (*kafka.KafkaContainer, string) {
 	exposedPort := "9093/tcp"
 
 	container, err := kafka.Run(ctx,
-		"confluentinc/confluent-local:7.5.0",
+		"confluentinc/confluent-local:7.5.0", // Change the docker pull stage in .github/workflows/orchestrion.yml if you update this
 		kafka.WithClusterID("test-cluster"),
 		WithTestLogConsumer(t),
 		testcontainers.WithWaitStrategy(

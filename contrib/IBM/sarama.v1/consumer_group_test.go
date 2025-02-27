@@ -98,6 +98,7 @@ func TestWrapConsumerGroupHandler(t *testing.T) {
 	assert.Equal(t, "IBM/sarama", s0.Tag(ext.Component))
 	assert.Equal(t, ext.SpanKindProducer, s0.Tag(ext.SpanKind))
 	assert.Equal(t, "kafka", s0.Tag(ext.MessagingSystem))
+	assert.Equal(t, topic, s0.Tag("messaging.destination.name"))
 
 	assertDSMProducerPathway(t, topic, produceMsg)
 
@@ -111,6 +112,7 @@ func TestWrapConsumerGroupHandler(t *testing.T) {
 	assert.Equal(t, "IBM/sarama", s1.Tag(ext.Component))
 	assert.Equal(t, ext.SpanKindConsumer, s1.Tag(ext.SpanKind))
 	assert.Equal(t, "kafka", s1.Tag(ext.MessagingSystem))
+	assert.Equal(t, topic, s1.Tag("messaging.destination.name"))
 
 	assertDSMConsumerPathway(t, topic, groupID, consumeMsg, true)
 

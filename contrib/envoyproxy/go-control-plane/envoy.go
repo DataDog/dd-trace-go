@@ -350,7 +350,7 @@ func doBlockResponse(writer *fakeResponseWriter) *envoyextproc.ProcessingRespons
 				Headers: &envoyextproc.HeaderMutation{
 					SetHeaders: headersMutation,
 				},
-				Body: string(writer.body),
+				Body: writer.body,
 				GrpcStatus: &envoyextproc.GrpcStatus{
 					Status: 0,
 				},

@@ -51,6 +51,7 @@ func TestSyncProducer(t *testing.T) {
 		assert.Equal(t, "IBM/sarama", s.Tag(ext.Component))
 		assert.Equal(t, ext.SpanKindProducer, s.Tag(ext.SpanKind))
 		assert.Equal(t, "kafka", s.Tag(ext.MessagingSystem))
+		assert.Equal(t, topic, s.Tag("messaging.destination.name"))
 
 		assertDSMProducerPathway(t, topic, msg1)
 	}
@@ -94,6 +95,7 @@ func TestSyncProducerSendMessages(t *testing.T) {
 		assert.Equal(t, "IBM/sarama", s.Tag(ext.Component))
 		assert.Equal(t, ext.SpanKindProducer, s.Tag(ext.SpanKind))
 		assert.Equal(t, "kafka", s.Tag(ext.MessagingSystem))
+		assert.Equal(t, topic, s.Tag("messaging.destination.name"))
 	}
 
 	for _, msg := range []*sarama.ProducerMessage{msg1, msg2} {
@@ -144,6 +146,7 @@ func TestWrapAsyncProducer(t *testing.T) {
 			assert.Equal(t, "IBM/sarama", s.Tag(ext.Component))
 			assert.Equal(t, ext.SpanKindProducer, s.Tag(ext.SpanKind))
 			assert.Equal(t, "kafka", s.Tag(ext.MessagingSystem))
+			assert.Equal(t, topic, s.Tag("messaging.destination.name"))
 
 			assertDSMProducerPathway(t, topic, msg1)
 		}
@@ -184,6 +187,7 @@ func TestWrapAsyncProducer(t *testing.T) {
 			assert.Equal(t, "IBM/sarama", s.Tag(ext.Component))
 			assert.Equal(t, ext.SpanKindProducer, s.Tag(ext.SpanKind))
 			assert.Equal(t, "kafka", s.Tag(ext.MessagingSystem))
+			assert.Equal(t, topic, s.Tag("messaging.destination.name"))
 
 			assertDSMProducerPathway(t, topic, msg1)
 		}

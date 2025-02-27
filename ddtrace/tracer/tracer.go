@@ -22,6 +22,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 	globalinternal "gopkg.in/DataDog/dd-trace-go.v1/internal"
+	utils "gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
 	appsecConfig "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/config"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/datastreams"
@@ -79,9 +80,12 @@ type tracer struct {
 	// pid of the process
 	pid int
 
-	// These integers track metrics about spans and traces as they are started,
-	// finished, and dropped
-	spansStarted, spansFinished, tracesDropped uint32
+	// These maps count the spans started and finished from
+	// each component, including contribs and "manual" spans.
+	spansStarted, spansFinished utils.XSyncMapCounterMap
+
+	// tracesDropped track metrics about traces as they are dropped
+	tracesDropped uint32
 
 	// Keeps track of the total number of traces dropped for accurate logging.
 	totalTracesDropped uint32
@@ -149,7 +153,9 @@ func Start(opts ...StartOption) {
 	if internal.Testing {
 		return // mock tracer active
 	}
-	defer telemetry.Time(telemetry.NamespaceGeneral, "init_time", nil, true)()
+	defer func(now time.Time) {
+		telemetry.Distribution(telemetry.NamespaceGeneral, "init_time", nil).Submit(float64(time.Since(now).Milliseconds()))
+	}(time.Now())
 	t := newTracer(opts...)
 	if !t.config.enabled.current {
 		// TODO: instrumentation telemetry client won't get started
@@ -184,10 +190,6 @@ func Start(opts ...StartOption) {
 		log.Warn("Remote config startup error: %s", err)
 	}
 
-	// start instrumentation telemetry unless it is disabled through the
-	// DD_INSTRUMENTATION_TELEMETRY_ENABLED env var
-	startTelemetry(t.config)
-
 	// appsec.Start() may use the telemetry client to report activation, so it is
 	// important this happens _AFTER_ startTelemetry() has been called, so the
 	// client is appropriately configured.
@@ -195,6 +197,10 @@ func Start(opts ...StartOption) {
 	appsecopts = append(appsecopts, t.config.appsecStartOptions...)
 	appsecopts = append(appsecopts, appsecConfig.WithRCConfig(cfg), appsecConfig.WithMetaStructAvailable(t.config.agent.metaStructAvailable))
 	appsec.Start(appsecopts...)
+
+	// start instrumentation telemetry unless it is disabled through the
+	// DD_INSTRUMENTATION_TELEMETRY_ENABLED env var
+	startTelemetry(t.config)
 
 	if t.config.logStartup {
 		logStartup(t)
@@ -315,6 +321,8 @@ func newUnstartedTracer(opts ...StartOption) *tracer {
 		pid:              os.Getpid(),
 		logDroppedTraces: time.NewTicker(1 * time.Second),
 		stats:            newConcentrator(c, defaultStatsBucketSize, statsd),
+		spansStarted:     *utils.NewXSyncMapCounterMap(),
+		spansFinished:    *utils.NewXSyncMapCounterMap(),
 		obfuscator: obfuscate.NewObfuscator(obfuscate.Config{
 			SQL: obfuscate.SQLConfig{
 				TableNames:       c.agent.HasFlag("table_names"),
@@ -569,6 +577,7 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 		TraceID:        id,
 		Start:          startTime,
 		noDebugStack:   t.config.noDebugStack,
+		integration:    "manual",
 		supportsEvents: t.config.agent.spanEventsAvailable,
 	}
 
@@ -663,6 +672,8 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 			log.Error("Abandoned spans channel full, disregarding span.")
 		}
 	}
+	t.spansStarted.Inc(span.integration)
+
 	return span
 }
 

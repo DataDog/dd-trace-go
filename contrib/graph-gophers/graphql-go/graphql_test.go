@@ -108,6 +108,7 @@ func Test(t *testing.T) {
 			assert.Equal(t, "graphql.field", s.OperationName())
 			assert.Equal(t, "graphql.field", s.Tag(ext.ResourceName))
 			assert.Equal(t, "graph-gophers/graphql-go", s.Tag(ext.Component))
+			assert.Equal(t, componentName, s.Integration())
 		}
 		{
 			s := spans[helloSpanIndex]
@@ -118,6 +119,7 @@ func Test(t *testing.T) {
 			assert.Equal(t, "graphql.field", s.OperationName())
 			assert.Equal(t, "graphql.field", s.Tag(ext.ResourceName))
 			assert.Equal(t, "graph-gophers/graphql-go", s.Tag(ext.Component))
+			assert.Equal(t, componentName, s.Integration())
 		}
 		{
 			s := spans[2]
@@ -128,6 +130,7 @@ func Test(t *testing.T) {
 			assert.Equal(t, "graphql.request", s.OperationName())
 			assert.Equal(t, "graphql.request", s.Tag(ext.ResourceName))
 			assert.Equal(t, "graph-gophers/graphql-go", s.Tag(ext.Component))
+			assert.Equal(t, componentName, s.Integration())
 		}
 	})
 	t.Run("WithOmitTrivial", func(t *testing.T) {
@@ -148,6 +151,7 @@ func Test(t *testing.T) {
 			assert.Equal(t, "graphql.field", s.OperationName())
 			assert.Equal(t, "graphql.field", s.Tag(ext.ResourceName))
 			assert.Equal(t, "graph-gophers/graphql-go", s.Tag(ext.Component))
+			assert.Equal(t, componentName, s.Integration())
 		}
 		{
 			s := spans[1]
@@ -158,6 +162,7 @@ func Test(t *testing.T) {
 			assert.Equal(t, "graphql.request", s.OperationName())
 			assert.Equal(t, "graphql.request", s.Tag(ext.ResourceName))
 			assert.Equal(t, "graph-gophers/graphql-go", s.Tag(ext.Component))
+			assert.Equal(t, componentName, s.Integration())
 		}
 	})
 }

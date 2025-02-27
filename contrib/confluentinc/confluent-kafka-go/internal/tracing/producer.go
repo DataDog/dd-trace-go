@@ -57,6 +57,7 @@ func (tr *KafkaTracer) StartProduceSpan(msg Message) ddtrace.Span {
 		tracer.Tag(ext.SpanKind, ext.SpanKindProducer),
 		tracer.Tag(ext.MessagingSystem, ext.MessagingSystemKafka),
 		tracer.Tag(ext.MessagingKafkaPartition, msg.GetTopicPartition().GetPartition()),
+		tracer.Tag(ext.MessagingDestinationName, msg.GetTopicPartition().GetTopic()),
 	}
 	if tr.bootstrapServers != "" {
 		opts = append(opts, tracer.Tag(ext.KafkaBootstrapServers, tr.bootstrapServers))

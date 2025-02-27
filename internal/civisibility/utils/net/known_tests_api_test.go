@@ -68,7 +68,7 @@ func TestKnownTestsApiRequest(t *testing.T) {
 }
 
 func TestKnownTestsApiRequestFailToUnmarshal(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		http.Error(w, "failed to read body", http.StatusBadRequest)
 	}))
 	defer server.Close()

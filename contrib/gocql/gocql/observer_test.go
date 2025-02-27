@@ -390,6 +390,7 @@ func TestObserver_Connect(t *testing.T) {
 				assert.Equal(t, wantService, span.Tag(ext.ServiceName))
 
 				assert.Equal(t, "gocql/gocql", span.Tag(ext.Component))
+				assert.Equal(t, componentName, span.Integration())
 				assert.Equal(t, ext.SpanKindClient, span.Tag(ext.SpanKind))
 				assert.Equal(t, "cassandra", span.Tag(ext.DBSystem))
 				assert.Equal(t, "127.0.0.1:9042,127.0.0.1:9043", span.Tag(ext.CassandraContactPoints))
@@ -429,6 +430,7 @@ func assertCommonTags(t *testing.T, span mocktracer.Span) {
 
 	assert.Equal(t, "trace", span.Tag(ext.CassandraKeyspace))
 	assert.Equal(t, "gocql/gocql", span.Tag(ext.Component))
+	assert.Equal(t, componentName, span.Integration())
 	assert.Equal(t, ext.SpanKindClient, span.Tag(ext.SpanKind))
 	assert.Equal(t, "cassandra", span.Tag(ext.DBSystem))
 	assert.Equal(t, "127.0.0.1:9042,127.0.0.1:9043", span.Tag(ext.CassandraContactPoints))

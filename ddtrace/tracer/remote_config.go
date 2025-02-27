@@ -186,7 +186,7 @@ func (t *tracer) onRemoteConfigUpdate(u remoteconfig.ProductUpdate) map[string]s
 		}
 		if len(telemConfigs) > 0 {
 			log.Debug("Reporting %d configuration changes to telemetry", len(telemConfigs))
-			telemetry.GlobalClient.ConfigChange(telemConfigs)
+			telemetry.RegisterAppConfigs(telemConfigs...)
 		}
 		return statuses
 	}
@@ -244,7 +244,7 @@ func (t *tracer) onRemoteConfigUpdate(u remoteconfig.ProductUpdate) map[string]s
 	}
 	if len(telemConfigs) > 0 {
 		log.Debug("Reporting %d configuration changes to telemetry", len(telemConfigs))
-		telemetry.GlobalClient.ConfigChange(telemConfigs)
+		telemetry.RegisterAppConfigs(telemConfigs...)
 	}
 	return statuses
 }
