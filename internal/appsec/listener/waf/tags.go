@@ -7,17 +7,14 @@ package waf
 
 import (
 	"encoding/json"
-	"strconv"
 
-	waf "github.com/DataDog/go-libddwaf/v3"
-
-	"gopkg.in/DataDog/dd-trace-go.v1/internal"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
-	telemetrylog "gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry/log"
+	"github.com/DataDog/go-libddwaf/v3"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/trace"
+	emitter "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/waf"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/samplernames"
 )
 
@@ -28,9 +25,11 @@ const (
 	eventRulesLoadedTag  = wafSpanTagPrefix + "event_rules.loaded"
 	eventRulesFailedTag  = wafSpanTagPrefix + "event_rules.error_count"
 	wafVersionTag        = wafSpanTagPrefix + "waf.version"
+	wafErrorTag          = wafSpanTagPrefix + "waf.error"
+	raspRuleEvalTag      = wafSpanTagPrefix + "rasp.rule_eval"
+	raspErrorTag         = wafSpanTagPrefix + "rasp.error"
 
-	// BlockedRequestTag used to convey whether a request is blocked
-	BlockedRequestTag = "appsec.blocked"
+	blockedRequestTag = "appsec.blocked"
 )
 
 // AddRulesMonitoringTags adds the tags related to security rules monitoring
@@ -53,47 +52,26 @@ func AddRulesMonitoringTags(th trace.TagSetter, wafDiags waf.Diagnostics) {
 	th.SetTag(ext.ManualKeep, samplernames.AppSec)
 }
 
-var truncationTelemetryMetrics = map[waf.TruncationReason]telemetry.MetricHandle{
-	waf.StringTooLong:     telemetry.Count(telemetry.NamespaceAppSec, "waf.input_truncated", []string{"truncation_reason+" + strconv.Itoa(int(waf.StringTooLong))}),
-	waf.ContainerTooLarge: telemetry.Count(telemetry.NamespaceAppSec, "waf.input_truncated", []string{"truncation_reason+" + strconv.Itoa(int(waf.ContainerTooLarge))}),
-	waf.ObjectTooDeep:     telemetry.Count(telemetry.NamespaceAppSec, "waf.input_truncated", []string{"truncation_reason+" + strconv.Itoa(int(waf.ObjectTooDeep))}),
-}
-
-func truncationReasonToString(reason waf.TruncationReason) string {
-	switch reason {
-	case waf.ObjectTooDeep:
-		return "container_size"
-	case waf.ContainerTooLarge:
-		return "container_size"
-	case waf.StringTooLong:
-		return "string_length"
-	default:
-		telemetrylog.Error("unknown truncation reason: %d", reason, telemetry.WithTags([]string{"product:appsec"}))
-		return ""
-	}
-}
-
 // AddWAFMonitoringTags adds the tags related to the monitoring of the Feature
-func AddWAFMonitoringTags(telemetry *Telemetry, th trace.TagSetter, rulesVersion string, stats waf.Stats) {
+func AddWAFMonitoringTags(th trace.TagSetter, metrics *emitter.Metrics, rulesVersion string, stats map[string]any) {
 	// Rules version is set for every request to help the backend associate Feature duration metrics with rule version
 	th.SetTag(eventRulesVersionTag, rulesVersion)
 
-	// Report the stats sent by the Feature
-	metrics := stats.Metrics()
-	for key, value := range metrics {
-		th.SetTag(wafSpanTagPrefix+key, value)
-		if metric, ok := telemetry.Metrics.WafRunMetrics[key]; ok {
-
-			metric.Submit(float64(value))
-		}
-		// TODO: duration & duration_ext telemetry metrics
+	if raspCallsCount := metrics.SumRASPCalls(); raspCallsCount > 0 {
+		th.SetTag(raspRuleEvalTag, raspCallsCount)
 	}
 
-	// Report the truncation metrics
-	for reason, sizes := range stats.Truncations {
-		th.SetTag(wafSpanTagPrefix+truncationReasonToString(reason), max(0, sizes...))
-		truncationTelemetryMetrics[reason].Submit(1.0)
-		// TODO: input_truncated_value
+	if raspErrorsCount := metrics.SumRASPErrors(); raspErrorsCount > 0 {
+		th.SetTag(raspErrorTag, raspErrorsCount)
+	}
+
+	if wafErrorsCount := metrics.SumWAFErrors(); wafErrorsCount > 0 {
+		th.SetTag(wafErrorTag, wafErrorsCount)
+	}
+
+	// Report the stats sent by the Feature
+	for k, v := range stats {
+		th.SetTag(wafSpanTagPrefix+k, v)
 	}
 }
 

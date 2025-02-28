@@ -7,7 +7,6 @@ package waf
 
 import (
 	"fmt"
-	"strconv"
 	"sync"
 	"time"
 
@@ -34,7 +33,7 @@ type Feature struct {
 	supportedAddrs  config.AddressSet
 	reportRulesTags sync.Once
 
-	telemetry *Telemetry
+	telemetryMetrics waf.Metrics
 
 	// Determine if we can use [internal.MetaStructValue] to delegate the WAF events serialization to the trace writer
 	// or if we have to use the [SerializableTag] method to serialize the events
@@ -54,23 +53,7 @@ func NewWAFFeature(cfg *config.Config, rootOp dyngo.Operation) (listener.Feature
 	}
 
 	newHandle, err := wafv3.NewHandle(cfg.RulesManager.Latest, cfg.Obfuscator.KeyRegex, cfg.Obfuscator.ValueRegex)
-
-	telemetryMetricName := "waf.init"
-	if cfg.SupportedAddresses != nil { // If the supported addresses are set, it means that this is NOT the first time the WAF is loaded
-		telemetryMetricName = "waf.updates"
-	}
-
-	var eventRulesVersion string
-	if newHandle != nil {
-		eventRulesVersion = newHandle.Diagnostics().Version
-	}
-
-	telemetry.Count(telemetry.NamespaceAppSec, telemetryMetricName, []string{
-		"waf_version:" + wafv3.Version(),
-		"event_rules_version:" + eventRulesVersion,
-		"success:" + strconv.FormatBool(err == nil),
-	}).Submit(1)
-
+	telemetryMetrics := waf.NewMetricsInstance(newHandle, err)
 	if err != nil {
 		return nil, err
 	}
@@ -85,7 +68,7 @@ func NewWAFFeature(cfg *config.Config, rootOp dyngo.Operation) (listener.Feature
 		timeout:             cfg.WAFTimeout,
 		limiter:             tokenTicker,
 		supportedAddrs:      cfg.SupportedAddresses,
-		telemetry:           NewTelemetryHandler(eventRulesVersion),
+		telemetryMetrics:    telemetryMetrics,
 		metaStructAvailable: cfg.MetaStructAvailable,
 	}
 
@@ -108,7 +91,7 @@ func (waf *Feature) onStart(op *waf.ContextOperation, _ waf.ContextArgs) {
 	op.SwapContext(ctx)
 	op.SetLimiter(waf.limiter)
 	op.SetSupportedAddresses(waf.supportedAddrs)
-	op.SetEventRulesetVersion(waf.handle.Diagnostics().Version)
+	op.SetMetricsInstance(waf.telemetryMetrics)
 
 	// Run the WAF with the given address data
 	dyngo.OnData(op, op.OnEvent)
@@ -120,7 +103,7 @@ func (*Feature) SetupActionHandlers(op *waf.ContextOperation) {
 	// Set the blocking tag on the operation when a blocking event is received
 	dyngo.OnData(op, func(*events.BlockingSecurityEvent) {
 		log.Debug("appsec: blocking event detected")
-		op.SetTag(BlockedRequestTag, true)
+		op.SetTag(blockedRequestTag, true)
 	})
 
 	// Register the stacktrace if one is requested by a WAF action
@@ -143,7 +126,9 @@ func (waf *Feature) onFinish(op *waf.ContextOperation, _ waf.ContextRes) {
 
 	ctx.Close()
 
-	AddWAFMonitoringTags(op, waf.handle.Diagnostics().Version, ctx.Stats())
+	stats := ctx.Stats()
+	AddWAFMonitoringTags(op, op.GetMetricsInstance(), waf.handle.Diagnostics().Version, stats.Metrics())
+	waf.telemetryMetrics.IncWafStats(stats)
 	if wafEvents := op.Events(); len(wafEvents) > 0 {
 		tagValue := map[string][]any{"triggers": wafEvents}
 		if waf.metaStructAvailable {

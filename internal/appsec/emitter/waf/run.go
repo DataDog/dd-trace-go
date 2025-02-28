@@ -9,17 +9,13 @@ import (
 	"context"
 	"errors"
 	"maps"
-	"strconv"
 
 	waf "github.com/DataDog/go-libddwaf/v3"
 	wafErrors "github.com/DataDog/go-libddwaf/v3/errors"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/waf/actions"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
-	telemetrylog "gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry/log"
-
 	"gopkg.in/DataDog/dd-trace-go.v1/appsec/events"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/waf/actions"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
@@ -43,53 +39,29 @@ func (op *ContextOperation) Run(eventReceiver dyngo.Operation, addrs waf.RunAddr
 		})
 	}
 
-	var wafTimeout bool
 	result, err := ctx.Run(addrs)
-	if errors.Is(err, wafErrors.ErrTimeout) {
+	if err == wafErrors.ErrTimeout {
 		log.Debug("appsec: WAF timeout value reached: %v", err)
-		wafTimeout = true
-	} else if err != nil {
-		errCode := -127
-		if code := wafErrors.ToWafErrorCode(err); code != 0 {
-			errCode = code
-		}
-
-		// End's up doing a count on either waf.error or rasp.error depending on the scope
-		telemetry.Count(telemetry.NamespaceAppSec, string(addrs.Scope)+".error", []string{
-			"waf_version:" + waf.Version(),
-			"event_rules_version:" + op.eventRulesetVersion,
-			"error_code:" + strconv.Itoa(errCode),
-		})
-
-		telemetrylog.Error("unexpected WAF error: %v", err, telemetry.WithTags([]string{
-			"product:appsec",
-			"waf_version:" + waf.Version(),
-			"event_rules_version:" + op.eventRulesetVersion,
-		}))
 	}
 
-	rateLimited := op.AddEvents(result.Events...)
-	op.AbsorbDerivatives(result.Derivatives)
+	op.metrics.IncWafError(addrs, err)
 
+	wafTimeout := errors.Is(err, wafErrors.ErrTimeout)
+	rateLimited := op.AddEvents(result.Events...)
 	blocking := actions.SendActionEvents(eventReceiver, result.Actions)
+	op.AbsorbDerivatives(result.Derivatives)
 
 	if result.HasEvents() {
 		dyngo.EmitData(op, &SecurityEvent{})
 	}
 
-	if addrs.Scope == waf.RASPScope { // Don't send this telemetry if this is a call for RASP
-		return
-	}
-
-	telemetry.Count(telemetry.NamespaceAppSec, "waf.requests", []string{
-		"waf_version:" + waf.Version(),
-		"event_rules_version:" + op.eventRulesetVersion,
-		"request_blocked:" + strconv.FormatBool(blocking),
-		"rule_triggered:" + strconv.FormatBool(result.HasEvents()),
-		"waf_timeout:" + strconv.FormatBool(wafTimeout),
-		"rate_limited:" + strconv.FormatBool(rateLimited),
-		"waf_error:" + strconv.FormatBool(err != nil),
-	}).Submit(1)
+	op.metrics.IncWafRequests(addrs, CountWafRequests{
+		requestBlocked: blocking,
+		ruleTriggered:  result.HasEvents(),
+		wafTimeout:     wafTimeout,
+		rateLimited:    rateLimited,
+		wafError:       err != nil && !wafTimeout,
+	})
 }
 
 // RunSimple runs the WAF with the given address data and returns an error that should be forwarded to the caller

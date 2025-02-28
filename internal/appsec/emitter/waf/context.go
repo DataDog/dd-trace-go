@@ -16,11 +16,10 @@ import (
 	waf "github.com/DataDog/go-libddwaf/v3"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/config"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/stacktrace"
-
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/trace"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/stacktrace"
 )
 
 type (
@@ -41,8 +40,8 @@ type (
 		derivatives map[string]any
 		// supportedAddresses is the set of addresses supported by the WAF.
 		supportedAddresses config.AddressSet
-		// eventRulesetVersion is the version of the event ruleset used by the WAF.
-		eventRulesetVersion string
+		// metrics the place that manages reporting for the current execution
+		metrics Metrics
 		// mu protects the events, stacks, and derivatives, supportedAddresses, eventRulesetVersion slices.
 		mu sync.Mutex
 		// logOnce is used to log a warning once when a request has too many WAF events via the built-in limiter or the max value.
@@ -88,8 +87,12 @@ func (op *ContextOperation) SetLimiter(limiter limiter.Limiter) {
 	op.limiter = limiter
 }
 
-func (op *ContextOperation) SetEventRulesetVersion(version string) {
-	op.eventRulesetVersion = version
+func (op *ContextOperation) SetMetricsInstance(metrics Metrics) {
+	op.metrics = metrics
+}
+
+func (op *ContextOperation) GetMetricsInstance() *Metrics {
+	return &op.metrics
 }
 
 // AddEvents adds WAF events to the operation and returns true if the operation has reached the maximum number of events, by the limiter or the max value.
