@@ -209,16 +209,16 @@ jobs:
           case "${MODE}" in
           "DRIVER")
             echo "Starting test suite in DRIVER mode"
-            gotestsum --junitfile ${{env.REPORT}} ./run-orchestrion-tests.sh
+            gotestsum --junitfile ${REPORT} ./run-orchestrion-tests.sh
             ;;
           "TOOLEXEC")
             echo "Starting test suite in TOOLEXEC mode"
-            gotestsum --junitfile ${{env.REPORT}} -- -shuffle=on -toolexec='orchestrion toolexec' ./...
+            gotestsum --junitfile ${REPORT} -- -shuffle=on -toolexec='orchestrion toolexec' ./...
             ;;
           "GOFLAGS")
             echo "Starting test suite in GOFLAGS mode"
             export GOFLAGS="${GOFLAGS} '-toolexec=orchestrion toolexec'"
-            gotestsum --junitfile ${{env.REPORT}} -- -shuffle=on ./...
+            gotestsum --junitfile ${REPORT} -- -shuffle=on ./...
             ;;
           *)
             echo "Unknown mode: ${MODE}"
@@ -263,11 +263,6 @@ jobs:
         with:
           repository: ${{ github.repository }}
           ref: ${{ github.ref }}
-      - uses: actions/setup-go@f111f3307d8850f501ac008e886eec1fd1932a34 # v5.3.0
-        with:
-          go-version: ${{ matrix.go-version }}
-          check-latest: true
-          cache-dependency-path: '**/go.mod'
       - name: Upload the results to Datadog CI App
         if: always()
         continue-on-error: true
