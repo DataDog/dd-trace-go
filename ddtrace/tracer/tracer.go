@@ -746,8 +746,8 @@ func (t *tracer) Inject(ctx ddtrace.SpanContext, carrier interface{}) error {
 
 	if t.config.tracingAsTransport {
 		// in tracing as transport mode, only propagate when there is an upstream appsec event
-		// TODO: replace with _dd.p.ts in the next iteration standardizing this for other products, comparing enabled products in `t.config` with their corresponding `_dd.p.ts` bitfields
-		if ctx, ok := ctx.(*spanContext); ok && ctx.trace != nil && ctx.trace.propagatingTag("_dd.p.appsec") != "1" {
+		if ctx, ok := ctx.(*spanContext); ok && ctx.trace != nil &&
+			!globalinternal.VerifyTraceSourceEnabled(ctx.trace.propagatingTag(keyPropagatedTraceSource), globalinternal.ASMTraceSource) {
 			return nil
 		}
 	}
@@ -794,8 +794,8 @@ func (t *tracer) Extract(carrier interface{}) (ddtrace.SpanContext, error) {
 	ctx, err := t.config.propagator.Extract(carrier)
 	if t.config.tracingAsTransport {
 		// in tracing as transport mode, reset upstream sampling decision to make sure we keep 1 trace/minute
-		// TODO: replace with _dd.p.ts in the next iteration standardizing this for other products, comparing enabled products in `t.config` with their corresponding `_dd.p.ts` bitfields
-		if ctx, ok := ctx.(*spanContext); ok && ctx.trace.propagatingTag("_dd.p.appsec") != "1" {
+		if ctx, ok := ctx.(*spanContext); ok && ctx.trace != nil &&
+			!globalinternal.VerifyTraceSourceEnabled(ctx.trace.propagatingTag(keyPropagatedTraceSource), globalinternal.ASMTraceSource) {
 			ctx.trace.priority = nil
 		}
 	}
