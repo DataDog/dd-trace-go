@@ -109,8 +109,8 @@ func (cm *XSyncMapCounterMap) GetAndReset() map[string]int64 {
 // into a float64 to avoid losing precision. If it succeeds in converting, toFloat64
 // returns the value and true, otherwise 0 and false.
 func ToFloat64(value any) (f float64, ok bool) {
-	const max = (int64(1) << 53) - 1
-	const min = -max
+	const maxFloat = (int64(1) << 53) - 1
+	const minFloat = -maxFloat
 	// If any other type is added here, remember to add it to the type switch in
 	// the `span.SetTag` function to handle pointers to these supported types.
 	switch i := value.(type) {
@@ -129,7 +129,7 @@ func ToFloat64(value any) (f float64, ok bool) {
 	case int32:
 		return float64(i), true
 	case int64:
-		if i > max || i < min {
+		if i > maxFloat || i < minFloat {
 			return 0, false
 		}
 		return float64(i), true
@@ -140,7 +140,7 @@ func ToFloat64(value any) (f float64, ok bool) {
 	case uint32:
 		return float64(i), true
 	case uint64:
-		if i > uint64(max) {
+		if i > uint64(maxFloat) {
 			return 0, false
 		}
 		return float64(i), true
