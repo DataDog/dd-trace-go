@@ -15,7 +15,10 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/options"
 )
+
+var cfg = newConfig()
 
 func init() {
 	_ = instrumentation.Load(instrumentation.PackageLogSlog)
@@ -26,6 +29,16 @@ var _ slog.Handler = (*handler)(nil)
 type group struct {
 	name  string
 	attrs []slog.Attr
+}
+
+type config struct {
+	log128bits bool
+}
+
+func newConfig() *config {
+	return &config{
+		log128bits: options.GetBoolEnv("DD_TRACE_128_BIT_TRACEID_LOGGING_ENABLED", true),
+	}
 }
 
 // NewJSONHandler is a convenience function that returns a *slog.JSONHandler logger enhanced with
@@ -59,7 +72,13 @@ func (h *handler) Handle(ctx context.Context, rec slog.Record) error {
 	// set them at the root level.
 	span, ok := tracer.SpanFromContext(ctx)
 	if ok && span.Context().TraceID() != tracer.TraceIDZero {
-		traceID := span.Context().TraceID()
+		var traceID string
+		if cfg.log128bits {
+			traceID = span.Context().TraceID()
+		} else {
+			traceID = strconv.FormatUint(span.Context().TraceIDLower(), 10)
+		}
+
 		spanID := strconv.FormatUint(span.Context().SpanID(), 10)
 
 		attrs := []slog.Attr{

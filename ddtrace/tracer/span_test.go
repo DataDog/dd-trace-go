@@ -841,7 +841,7 @@ func TestSpanLog(t *testing.T) {
 		assert.Nil(err)
 		defer stop()
 		span := tracer.StartSpan("test.request")
-		expect := fmt.Sprintf(`dd.trace_id="%d" dd.span_id="%d" dd.parent_id="0"`, span.traceID, span.spanID)
+		expect := fmt.Sprintf(`dd.trace_id="%s" dd.span_id="%d" dd.parent_id="0"`, span.context.TraceID(), span.spanID)
 		assert.Equal(expect, fmt.Sprintf("%v", span))
 	}
 	t.Run("noservice_first", noServiceTest)
@@ -852,7 +852,7 @@ func TestSpanLog(t *testing.T) {
 		assert.Nil(err)
 		defer stop()
 		span := tracer.StartSpan("test.request")
-		expect := fmt.Sprintf(`dd.service=tracer.test dd.trace_id="%d" dd.span_id="%d" dd.parent_id="0"`, span.traceID, span.spanID)
+		expect := fmt.Sprintf(`dd.service=tracer.test dd.trace_id="%s" dd.span_id="%d" dd.parent_id="0"`, span.context.TraceID(), span.spanID)
 		assert.Equal(expect, fmt.Sprintf("%v", span))
 	})
 
@@ -862,7 +862,7 @@ func TestSpanLog(t *testing.T) {
 		assert.Nil(err)
 		defer stop()
 		span := tracer.StartSpan("test.request")
-		expect := fmt.Sprintf(`dd.service=tracer.test dd.env=testenv dd.trace_id="%d" dd.span_id="%d" dd.parent_id="0"`, span.traceID, span.spanID)
+		expect := fmt.Sprintf(`dd.service=tracer.test dd.env=testenv dd.trace_id="%s" dd.span_id="%d" dd.parent_id="0"`, span.context.TraceID(), span.spanID)
 		assert.Equal(expect, fmt.Sprintf("%v", span))
 	})
 
@@ -872,7 +872,7 @@ func TestSpanLog(t *testing.T) {
 		assert.Nil(err)
 		defer stop()
 		span := tracer.StartSpan("test.request")
-		expect := fmt.Sprintf(`dd.service=tracer.test dd.version=1.2.3 dd.trace_id="%d" dd.span_id="%d" dd.parent_id="0"`, span.traceID, span.spanID)
+		expect := fmt.Sprintf(`dd.service=tracer.test dd.version=1.2.3 dd.trace_id="%s" dd.span_id="%d" dd.parent_id="0"`, span.context.TraceID(), span.spanID)
 		assert.Equal(expect, fmt.Sprintf("%v", span))
 	})
 
@@ -882,7 +882,7 @@ func TestSpanLog(t *testing.T) {
 		assert.Nil(err)
 		defer stop()
 		span := tracer.StartSpan("test.request")
-		expect := fmt.Sprintf(`dd.service=tracer.test dd.env=testenv dd.version=1.2.3 dd.trace_id="%d" dd.span_id="%d" dd.parent_id="0"`, span.traceID, span.spanID)
+		expect := fmt.Sprintf(`dd.service=tracer.test dd.env=testenv dd.version=1.2.3 dd.trace_id="%s" dd.span_id="%d" dd.parent_id="0"`, span.context.TraceID(), span.spanID)
 		assert.Equal(expect, fmt.Sprintf("%v", span))
 	})
 
@@ -895,7 +895,7 @@ func TestSpanLog(t *testing.T) {
 		assert.Nil(err)
 		defer stop()
 		span := tracer.StartSpan("test.request", ServiceName("subservice name"))
-		expect := fmt.Sprintf(`dd.service=tracer.test dd.env=testenv dd.version=1.2.3 dd.trace_id="%d" dd.span_id="%d" dd.parent_id="0"`, span.traceID, span.spanID)
+		expect := fmt.Sprintf(`dd.service=tracer.test dd.env=testenv dd.version=1.2.3 dd.trace_id="%s" dd.span_id="%d" dd.parent_id="0"`, span.context.TraceID(), span.spanID)
 		assert.Equal(expect, fmt.Sprintf("%v", span))
 	})
 
@@ -908,7 +908,7 @@ func TestSpanLog(t *testing.T) {
 		assert.Nil(err)
 		defer stop()
 		span := tracer.StartSpan("test.request")
-		expect := fmt.Sprintf(`dd.service=tracer.test dd.env=testenv dd.version=1.2.3 dd.trace_id="%d" dd.span_id="%d" dd.parent_id="0"`, span.traceID, span.spanID)
+		expect := fmt.Sprintf(`dd.service=tracer.test dd.env=testenv dd.version=1.2.3 dd.trace_id="%s" dd.span_id="%d" dd.parent_id="0"`, span.context.TraceID(), span.spanID)
 		assert.Equal(expect, fmt.Sprintf("%v", span))
 	})
 
@@ -918,7 +918,7 @@ func TestSpanLog(t *testing.T) {
 		assert.Nil(err)
 		defer stop()
 		span := tracer.StartSpan("test.request")
-		expect := fmt.Sprintf(`%%!b(tracer.Span=dd.service=tracer.test dd.version=1.2.3 dd.trace_id="%d" dd.span_id="%d" dd.parent_id="0")`, span.traceID, span.spanID)
+		expect := fmt.Sprintf(`%%!b(tracer.Span=dd.service=tracer.test dd.version=1.2.3 dd.trace_id="%s" dd.span_id="%d" dd.parent_id="0")`, span.context.TraceID(), span.spanID)
 		assert.Equal(expect, fmt.Sprintf("%b", span))
 	})
 
@@ -929,7 +929,7 @@ func TestSpanLog(t *testing.T) {
 		span := tracer.StartSpan("test.request")
 		stop()
 		// no service, env, or version after the tracer is stopped
-		expect := fmt.Sprintf(`dd.trace_id="%d" dd.span_id="%d" dd.parent_id="0"`, span.traceID, span.spanID)
+		expect := fmt.Sprintf(`dd.trace_id="%s" dd.span_id="%d" dd.parent_id="0"`, span.context.TraceID(), span.spanID)
 		assert.Equal(expect, fmt.Sprintf("%v", span))
 	})
 
@@ -944,32 +944,27 @@ func TestSpanLog(t *testing.T) {
 		stop()
 		// service is not included: it is cleared when we stop the tracer
 		// env, version are included: it reads the environment variable when there is no tracer
-		expect := fmt.Sprintf(`dd.env=testenv dd.version=1.2.3 dd.trace_id="%d" dd.span_id="%d" dd.parent_id="0"`, span.traceID, span.spanID)
+		expect := fmt.Sprintf(`dd.env=testenv dd.version=1.2.3 dd.trace_id="%s" dd.span_id="%d" dd.parent_id="0"`, span.context.TraceID(), span.spanID)
 		assert.Equal(expect, fmt.Sprintf("%v", span))
 	})
 
-	t.Run("128-bit-generation-only", func(t *testing.T) {
-		// Generate 128 bit trace ids, but don't log them. So only the lower
-		// 64 bits should be logged in decimal form.
-		// DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED is true by default
-		// DD_TRACE_128_BIT_TRACEID_LOGGING_ENABLED is false by default
+	t.Run("128-bit-logging-default", func(t *testing.T) {
+		// Generate and log 128 bit trace ids by default
 		assert := assert.New(t)
 		tracer, _, _, stop, err := startTestTracer(t, WithService("tracer.test"), WithEnv("testenv"))
 		assert.Nil(err)
 		defer stop()
 		span := tracer.StartSpan("test.request")
-		span.traceID = 12345678
 		span.spanID = 87654321
 		span.Finish()
-		expect := `dd.service=tracer.test dd.env=testenv dd.trace_id="12345678" dd.span_id="87654321" dd.parent_id="0"`
+		expect := fmt.Sprintf(`dd.service=tracer.test dd.env=testenv dd.trace_id=%q dd.span_id="87654321" dd.parent_id="0"`, span.context.TraceID())
 		assert.Equal(expect, fmt.Sprintf("%v", span))
 	})
 
 	t.Run("128-bit-logging-only", func(t *testing.T) {
-		// Logging 128-bit trace ids is enabled, but it's not present in
+		// Logging 128-bit trace ids is enabled, but 128bit format is not present in
 		// the span. So only the lower 64 bits should be logged in decimal form.
 		t.Setenv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", "false")
-		t.Setenv("DD_TRACE_128_BIT_TRACEID_LOGGING_ENABLED", "true")
 		assert := assert.New(t)
 		tracer, _, _, stop, err := startTestTracer(t, WithService("tracer.test"), WithEnv("testenv"))
 		assert.Nil(err)
@@ -1003,7 +998,6 @@ func TestSpanLog(t *testing.T) {
 	t.Run("128-bit-logging-with-small-upper-bits", func(t *testing.T) {
 		// Logging 128-bit trace ids is enabled, and a 128-bit trace id, so
 		// a quoted 32 byte hex string should be printed for the dd.trace_id.
-		t.Setenv("DD_TRACE_128_BIT_TRACEID_LOGGING_ENABLED", "true")
 		t.Setenv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", "false")
 		assert := assert.New(t)
 		tracer, _, _, stop, err := startTestTracer(t, WithService("tracer.test"), WithEnv("testenv"))
@@ -1018,9 +1012,8 @@ func TestSpanLog(t *testing.T) {
 	})
 
 	t.Run("128-bit-logging-with-empty-upper-bits", func(t *testing.T) {
-		// Logging 128-bit trace ids is enabled, and but the upper 64 bits
+		// Logging 128-bit trace ids is enabled, but the upper 64 bits
 		// are empty, so the dd.trace_id should be printed as raw digits (not hex).
-		t.Setenv("DD_TRACE_128_BIT_TRACEID_LOGGING_ENABLED", "true")
 		t.Setenv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", "false")
 		assert := assert.New(t)
 		tracer, _, _, stop, err := startTestTracer(t, WithService("tracer.test"), WithEnv("testenv"))
@@ -1032,6 +1025,22 @@ func TestSpanLog(t *testing.T) {
 		assert.Equal(`dd.service=tracer.test dd.env=testenv dd.trace_id="87654321" dd.span_id="87654321" dd.parent_id="0"`, fmt.Sprintf("%v", span))
 		v, _ := getMeta(span, keyTraceID128)
 		assert.Equal("", v)
+	})
+
+	t.Run("128-bit-logging-disabled", func(t *testing.T) {
+		// Only the lower 64 bits should be logged in decimal form.
+		// DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED is true by default
+		t.Setenv("DD_TRACE_128_BIT_TRACEID_LOGGING_ENABLED", "false")
+		assert := assert.New(t)
+		tracer, _, _, stop, err := startTestTracer(t, WithService("tracer.test"), WithEnv("testenv"))
+		defer stop()
+		assert.Nil(err)
+		span := tracer.StartSpan("test.request")
+		span.traceID = 12345678
+		span.spanID = 87654321
+		span.Finish()
+		expect := `dd.service=tracer.test dd.env=testenv dd.trace_id="12345678" dd.span_id="87654321" dd.parent_id="0"`
+		assert.Equal(expect, fmt.Sprintf("%v", span))
 	})
 }
 
