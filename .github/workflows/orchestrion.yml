@@ -209,7 +209,7 @@ jobs:
           case "${MODE}" in
           "DRIVER")
             echo "Starting test suite in DRIVER mode"
-            gotestsum --junitfile ${REPORT} ./run-orchestrion-tests.sh
+            gotestsum --junitfile ${REPORT} --raw-command -- ./run-orchestrion-tests.sh
             ;;
           "TOOLEXEC")
             echo "Starting test suite in TOOLEXEC mode"
@@ -270,7 +270,7 @@ jobs:
         with:
           dd-api-key: ${{ secrets.DD_CI_API_KEY }}
           files: ${{ env.REPORT }}
-          tags: go:${{ inputs.go-version }},arch:${{ runner.arch }},os:${{ runner.os }},distribution:${{ runner.distribution }}
+          tags: go:${{ steps.setup-go.outputs.go-version }},arch:${{ runner.arch }},os:${{ runner.os }},distribution:${{ runner.distribution }}
 
   # This is a simple join point to make it easy to set up branch protection rules in GitHub.
   integration-test-done:
