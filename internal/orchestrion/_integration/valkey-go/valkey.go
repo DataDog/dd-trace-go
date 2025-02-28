@@ -26,7 +26,7 @@ type TestCase struct {
 
 func (tc *TestCase) Setup(ctx context.Context, t *testing.T) {
 	containers.SkipIfProviderIsNotHealthy(t)
-	valkeyContainer, err := testvalkey.Run(ctx, "valkey/valkey:latest")
+	valkeyContainer, err := testvalkey.Run(ctx, "valkey/valkey:8-alpine")
 	require.NoError(t, err)
 	require.NoError(t, valkeyContainer.Start(ctx), "failed to start a valkey container")
 	endpoint, err := valkeyContainer.Endpoint(ctx, "http")
