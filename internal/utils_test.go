@@ -2,11 +2,11 @@
 // under the Apache License Version 2.0.
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
-
 package internal
 
 import (
 	"context"
+	"fmt"
 	"math/rand"
 	"strconv"
 	"strings"
@@ -24,7 +24,6 @@ func BenchmarkIter(b *testing.B) {
 		m.Iter(func(key string, val string) {})
 	}
 }
-
 func TestLockMapThrash(t *testing.T) {
 	wg := sync.WaitGroup{}
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
@@ -65,7 +64,6 @@ func TestLockMapThrash(t *testing.T) {
 	wg.Wait()
 	assert.Equal(t, len(lm.m), int(lm.c))
 }
-
 func TestXSyncMapCounterMap(t *testing.T) {
 	t.Run("basic", func(t *testing.T) {
 		assert := assert.New(t)
@@ -102,7 +100,6 @@ func TestXSyncMapCounterMap(t *testing.T) {
 		assert.Equal(map[string]int64{"key": 10}, cm.GetAndReset())
 	})
 }
-
 func BenchmarkXSyncMapCounterMap(b *testing.B) {
 	b.Run("base_case", func(b *testing.B) {
 		b.ReportAllocs()
@@ -164,4 +161,48 @@ func BenchmarkXSyncMapCounterMap(b *testing.B) {
 
 		assert.Equal(b, map[string]int64{"key": int64(b.N)}, cm.GetAndReset())
 	})
+}
+
+func TestToFloat64(t *testing.T) {
+	const (
+		intUpperLimit = int64(1) << 53
+		intLowerLimit = -intUpperLimit
+	)
+
+	for i, tt := range [...]struct {
+		value interface{}
+		f     float64
+		ok    bool
+	}{
+		0:  {1, 1, true},
+		1:  {byte(1), 1, true},
+		2:  {int(1), 1, true},
+		3:  {int16(1), 1, true},
+		4:  {int32(1), 1, true},
+		5:  {int64(1), 1, true},
+		6:  {uint(1), 1, true},
+		7:  {uint16(1), 1, true},
+		8:  {uint32(1), 1, true},
+		9:  {uint64(1), 1, true},
+		10: {"a", 0, false},
+		11: {float32(1.25), 1.25, true},
+		12: {float64(1.25), 1.25, true},
+		13: {intUpperLimit, 0, false},
+		14: {intUpperLimit + 1, 0, false},
+		15: {intUpperLimit - 1, float64(intUpperLimit - 1), true},
+		16: {intLowerLimit, 0, false},
+		17: {intLowerLimit - 1, 0, false},
+		18: {intLowerLimit + 1, float64(intLowerLimit + 1), true},
+		19: {-1024, -1024.0, true},
+	} {
+		t.Run(fmt.Sprintf("%d", i), func(t *testing.T) {
+			f, ok := ToFloat64(tt.value)
+			if ok != tt.ok {
+				t.Fatalf("expected ok: %t", tt.ok)
+			}
+			if f != tt.f {
+				t.Fatalf("expected: %#v, got: %#v", tt.f, f)
+			}
+		})
+	}
 }

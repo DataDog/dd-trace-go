@@ -161,7 +161,7 @@ func (s *span) SetTag(key string, value interface{}) {
 		s.setMeta(key, v)
 		return
 	}
-	if v, ok := toFloat64(value); ok {
+	if v, ok := sharedinternal.ToFloat64(value); ok {
 		s.setMetric(key, v)
 		return
 	}
@@ -192,7 +192,7 @@ func (s *span) SetTag(key string, value interface{}) {
 			for i := 0; i < slice.Len(); i++ {
 				key := fmt.Sprintf("%s.%d", key, i)
 				v := slice.Index(i)
-				if num, ok := toFloat64(v.Interface()); ok {
+				if num, ok := sharedinternal.ToFloat64(v.Interface()); ok {
 					s.setMetric(key, num)
 				} else {
 					s.setMeta(key, fmt.Sprintf("%v", v))
