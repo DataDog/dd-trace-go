@@ -28,6 +28,8 @@ runs:
       shell: bash
       run: echo "DD_CI_CLI_BUILD=linux-x64" >> $GITHUB_ENV
 
+    - run: echo "Working directory: ${PWD}"
+
     - name: Datadog CI CLI cache
       id: dd-ci-cli-cache
       uses: actions/cache@v3
