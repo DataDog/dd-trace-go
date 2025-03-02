@@ -124,6 +124,8 @@ require (
 	modernc.org/sqlite v1.28.0
 )
 
+require github.com/Masterminds/semver/v3 v3.3.1 // indirect
+
 require (
 	cloud.google.com/go v0.112.1 // indirect
 	cloud.google.com/go/compute/metadata v0.5.2 // indirect
