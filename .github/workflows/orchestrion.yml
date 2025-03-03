@@ -184,6 +184,9 @@ jobs:
           # Redis service
           docker pull redis:7-alpine
 
+          # Valkey service
+          docker pull valkey/valkey:8-alpine
+
           # Vault service
           docker pull vault:1.7.3
 

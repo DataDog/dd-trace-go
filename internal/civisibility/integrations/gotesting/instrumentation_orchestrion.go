@@ -282,6 +282,12 @@ func instrumentSetErrorInfo(tb testing.TB, errType string, errMessage string, sk
 	ciTestItem := getTestMetadata(tb)
 	if ciTestItem != nil && ciTestItem.test != nil && ciTestItem.error.CompareAndSwap(0, 1) {
 		ciTestItem.test.SetError(integrations.WithErrorInfo(errType, errMessage, utils.GetStacktrace(2+skip)))
+
+		// Ensure to close the test with error before CI visibility exits. In CI visibility mode, we try to never lose data.
+		// If the test gets closed sooner (perhaps with another status), then this will be a noop call
+		integrations.PushCiVisibilityCloseAction(func() {
+			ciTestItem.test.Close(integrations.ResultStatusFail)
+		})
 	}
 }
 
