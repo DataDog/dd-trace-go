@@ -67,7 +67,6 @@ var BaseRASPTags = map[addresses.RASPRuleType][]string{
 
 // NewMetricsInstance creates a new Metrics struct and submit the `waf.init` or `waf.updates` metric. To be called with the raw results of the WAF handle initialization
 func NewMetricsInstance(newHandle *waf.Handle, errIn error) Metrics {
-
 	var eventRulesVersion string
 	if newHandle != nil {
 		eventRulesVersion = newHandle.Diagnostics().Version
@@ -217,7 +216,7 @@ func (t *Metrics) IncWafRequests(addrs waf.RunAddressData, tags CountWafRequests
 				blockTag,
 			}, t.baseRASPTags[ruleType]...)).Submit(1)
 		}
-	case waf.DefaultScope:
+	case waf.DefaultScope, "":
 		if metric, ok := t.wafRequestsCounts[tags]; ok {
 			metric.Submit(1)
 		}
@@ -245,7 +244,7 @@ func (t *Metrics) IncWafError(addrs waf.RunAddressData, in error) {
 			telemetrylog.Error("unexpected call to RASPRuleTypeFromAddressSet: %v", in, telemetry.WithTags([]string{"product:appsec"}))
 		}
 		t.raspError(in, ruleType)
-	case waf.DefaultScope:
+	case waf.DefaultScope, "":
 		t.wafError(in)
 	default:
 		telemetrylog.Error("unexpected scope name: %v", addrs.Scope, telemetry.WithTags([]string{"product:appsec"}))
