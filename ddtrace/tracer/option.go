@@ -17,6 +17,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"runtime/debug"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -308,6 +309,9 @@ type config struct {
 
 	// traceRateLimitPerSecond specifies the rate limit for traces.
 	traceRateLimitPerSecond float64
+
+	// disabledIntegrations specifies the list of integrations to disable.
+	disabledIntegrations []string
 }
 
 // orchestrionConfig contains Orchestrion configuration.
@@ -393,6 +397,14 @@ func newConfig(opts ...StartOption) *config {
 		WithFeatureFlags(strings.FieldsFunc(v, func(r rune) bool {
 			return r == ',' || r == ' '
 		})...)(c)
+	}
+	if v := os.Getenv("DD_TRACE_DISABLED_INTEGRATIONS"); v != "" {
+		disabledIntegrations := strings.Split(v, ",")
+		slices.Sort(disabledIntegrations)
+		disabledIntegrations = slices.Compact(disabledIntegrations)
+		c.disabledIntegrations = disabledIntegrations
+		// TODO: validate the values are correct integration names
+		globalconfig.SetDisabledIntegrations(disabledIntegrations)
 	}
 	if v := getDDorOtelConfig("service"); v != "" {
 		c.serviceName = v
