@@ -18,6 +18,7 @@ import (
 	"testing"
 	"time"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/contrib/google.golang.org/grpc/internal/testserver"
 	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/lists"
 	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/namingschematest"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
@@ -72,7 +73,7 @@ func TestUnary(t *testing.T) {
 
 			span, ctx := tracer.StartSpanFromContext(context.Background(), "a", tracer.ServiceName("b"), tracer.ResourceName("c"))
 
-			resp, err := client.Ping(ctx, &FixtureRequest{Name: tt.message})
+			resp, err := client.Ping(ctx, &testserver.FixtureRequest{Name: tt.message})
 			span.Finish()
 			if tt.error {
 				assert.Error(err)
@@ -113,11 +114,11 @@ func TestUnary(t *testing.T) {
 			assert.Equal(componentName, clientSpan.Integration())
 			assert.Equal(ext.SpanKindClient, clientSpan.Tag(ext.SpanKind))
 			assert.Equal("grpc", clientSpan.Tag(ext.RPCSystem))
-			assert.Equal("grpc.Fixture", clientSpan.Tag(ext.RPCService))
-			assert.Equal("/grpc.Fixture/Ping", clientSpan.Tag(ext.GRPCFullMethod))
+			assert.Equal("testserver.Fixture", clientSpan.Tag(ext.RPCService))
+			assert.Equal("/testserver.Fixture/Ping", clientSpan.Tag(ext.GRPCFullMethod))
 
 			assert.Equal("grpc", serverSpan.Tag(ext.ServiceName))
-			assert.Equal("/grpc.Fixture/Ping", serverSpan.Tag(ext.ResourceName))
+			assert.Equal("/testserver.Fixture/Ping", serverSpan.Tag(ext.ResourceName))
 			assert.Equal(tt.wantCode.String(), serverSpan.Tag(tagCode))
 			assert.Equal(rootSpan.TraceID(), serverSpan.TraceID())
 			assert.Equal(methodKindUnary, serverSpan.Tag(tagMethodKind))
@@ -125,20 +126,20 @@ func TestUnary(t *testing.T) {
 			assert.Equal("google.golang.org/grpc", serverSpan.Tag(ext.Component))
 			assert.Equal(ext.SpanKindServer, serverSpan.Tag(ext.SpanKind))
 			assert.Equal("grpc", serverSpan.Tag(ext.RPCSystem))
-			assert.Equal("grpc.Fixture", serverSpan.Tag(ext.RPCService))
-			assert.Equal("/grpc.Fixture/Ping", serverSpan.Tag(ext.GRPCFullMethod))
+			assert.Equal("testserver.Fixture", serverSpan.Tag(ext.RPCService))
+			assert.Equal("/testserver.Fixture/Ping", serverSpan.Tag(ext.GRPCFullMethod))
 		})
 	}
 }
 
 func TestStreaming(t *testing.T) {
 	// creates a stream, then sends/recvs two pings, then closes the stream
-	runPings := func(t *testing.T, ctx context.Context, client FixtureClient) {
+	runPings := func(t *testing.T, ctx context.Context, client testserver.FixtureClient) {
 		stream, err := client.StreamPing(ctx)
 		assert.NoError(t, err)
 
 		for i := 0; i < 2; i++ {
-			err = stream.Send(&FixtureRequest{Name: "pass"})
+			err = stream.Send(&testserver.FixtureRequest{Name: "pass"})
 			assert.NoError(t, err)
 
 			resp, err := stream.Recv()
@@ -170,7 +171,7 @@ func TestStreaming(t *testing.T) {
 					"expected service name to be grpc in span: %v",
 					span)
 				assert.Equal(t, "grpc", span.Tag(ext.RPCSystem))
-				assert.Equal(t, "/grpc.Fixture/StreamPing", span.Tag(ext.GRPCFullMethod))
+				assert.Equal(t, "/testserver.Fixture/StreamPing", span.Tag(ext.GRPCFullMethod))
 			}
 			switch span.OperationName() {
 			case "grpc.client":
@@ -194,9 +195,9 @@ func TestStreaming(t *testing.T) {
 				}
 				assert.Equal(t, wantCode.String(), span.Tag(tagCode),
 					"expected grpc code to be set in span: %v", span)
-				assert.Equal(t, "/grpc.Fixture/StreamPing", span.Tag(ext.ResourceName),
+				assert.Equal(t, "/testserver.Fixture/StreamPing", span.Tag(ext.ResourceName),
 					"expected resource name to be set in span: %v", span)
-				assert.Equal(t, "/grpc.Fixture/StreamPing", span.Tag(tagMethodName),
+				assert.Equal(t, "/testserver.Fixture/StreamPing", span.Tag(tagMethodName),
 					"expected grpc method name to be set in span: %v", span)
 			}
 
@@ -329,7 +330,7 @@ func TestSpanTree(t *testing.T) {
 			//   root span -> client Ping span -> server Ping span -> child span
 			rootSpan, ctx := tracer.StartSpanFromContext(context.Background(), "root")
 			client := rig.client
-			resp, err := client.Ping(ctx, &FixtureRequest{Name: "child"})
+			resp, err := client.Ping(ctx, &testserver.FixtureRequest{Name: "child"})
 			assert.NoError(err)
 			assert.Equal("child", resp.Message)
 			rootSpan.Finish()
@@ -346,8 +347,8 @@ func TestSpanTree(t *testing.T) {
 
 		assert.Zero(0, rootSpan.ParentID())
 		assertSpan(t, serverPingChildSpan, serverPingSpan, "child", "child")
-		assertSpan(t, serverPingSpan, clientPingSpan, "grpc.server", "/grpc.Fixture/Ping")
-		assertSpan(t, clientPingSpan, rootSpan, "grpc.client", "/grpc.Fixture/Ping")
+		assertSpan(t, serverPingSpan, clientPingSpan, "grpc.server", "/testserver.Fixture/Ping")
+		assertSpan(t, clientPingSpan, rootSpan, "grpc.client", "/testserver.Fixture/Ping")
 	})
 
 	t.Run("stream", func(t *testing.T) {
@@ -371,7 +372,7 @@ func TestSpanTree(t *testing.T) {
 			ctx = metadata.AppendToOutgoingContext(ctx, "custom_metadata_key", "custom_metadata_value")
 			stream, err := client.StreamPing(ctx)
 			assert.NoError(err)
-			err = stream.SendMsg(&FixtureRequest{Name: "break"})
+			err = stream.SendMsg(&testserver.FixtureRequest{Name: "break"})
 			assert.NoError(err)
 			resp, err := stream.Recv()
 			assert.Nil(err)
@@ -410,16 +411,16 @@ func TestSpanTree(t *testing.T) {
 		require.NotNil(t, serverStreamSpan)
 
 		assert.Zero(rootSpan.ParentID())
-		assertSpan(t, clientStreamSpan, rootSpan, "grpc.client", "/grpc.Fixture/StreamPing")
-		assertSpan(t, serverStreamSpan, clientStreamSpan, "grpc.server", "/grpc.Fixture/StreamPing")
+		assertSpan(t, clientStreamSpan, rootSpan, "grpc.client", "/testserver.Fixture/StreamPing")
+		assertSpan(t, serverStreamSpan, clientStreamSpan, "grpc.server", "/testserver.Fixture/StreamPing")
 		var clientSpans, serverSpans int
 		var reqMsgFound bool
 		for _, ms := range messageSpans {
 			if ms.ParentID() == clientStreamSpan.SpanID() {
-				assertSpan(t, ms, clientStreamSpan, "grpc.message", "/grpc.Fixture/StreamPing")
+				assertSpan(t, ms, clientStreamSpan, "grpc.message", "/testserver.Fixture/StreamPing")
 				clientSpans++
 			} else {
-				assertSpan(t, ms, serverStreamSpan, "grpc.message", "/grpc.Fixture/StreamPing")
+				assertSpan(t, ms, serverStreamSpan, "grpc.message", "/testserver.Fixture/StreamPing")
 				serverSpans++
 				if !reqMsgFound {
 					assert.Equal("{\"name\":\"break\"}", ms.Tag(tagRequest))
@@ -447,7 +448,7 @@ func TestPass(t *testing.T) {
 
 	ctx := context.Background()
 	ctx = metadata.AppendToOutgoingContext(ctx, "test-key", "test-value")
-	resp, err := client.Ping(ctx, &FixtureRequest{Name: "pass"})
+	resp, err := client.Ping(ctx, &testserver.FixtureRequest{Name: "pass"})
 	assert.Nil(err)
 	assert.Equal("passed", resp.Message)
 
@@ -458,13 +459,13 @@ func TestPass(t *testing.T) {
 	assert.Nil(s.Tag(ext.Error))
 	assert.Equal("grpc.server", s.OperationName())
 	assert.Equal("grpc", s.Tag(ext.ServiceName))
-	assert.Equal("/grpc.Fixture/Ping", s.Tag(ext.ResourceName))
+	assert.Equal("/testserver.Fixture/Ping", s.Tag(ext.ResourceName))
 	assert.Equal(ext.AppTypeRPC, s.Tag(ext.SpanType))
 	assert.NotContains(s.Tags(), tagRequest)
 	assert.NotContains(s.Tags(), tagMetadataPrefix+"test-key")
 	assert.True(s.FinishTime().Sub(s.StartTime()) >= 0)
 	assert.Equal("grpc", s.Tag(ext.RPCSystem))
-	assert.Equal("/grpc.Fixture/Ping", s.Tag(ext.GRPCFullMethod))
+	assert.Equal("/testserver.Fixture/Ping", s.Tag(ext.GRPCFullMethod))
 	assert.Equal(codes.OK.String(), s.Tag(tagCode))
 }
 
@@ -481,7 +482,7 @@ func TestPreservesMetadata(t *testing.T) {
 	ctx := context.Background()
 	ctx = metadata.AppendToOutgoingContext(ctx, "test-key", "test-value")
 	span, ctx := tracer.StartSpanFromContext(ctx, "x", tracer.ServiceName("y"), tracer.ResourceName("z"))
-	rig.client.Ping(ctx, &FixtureRequest{Name: "pass"})
+	rig.client.Ping(ctx, &testserver.FixtureRequest{Name: "pass"})
 	span.Finish()
 
 	md := rig.fixtureServer.lastRequestMetadata.Load().(metadata.MD)
@@ -511,7 +512,7 @@ func TestStreamSendsErrorCode(t *testing.T) {
 	stream, err := rig.client.StreamPing(ctx)
 	require.NoError(t, err, "no error should be returned after creating stream client")
 
-	err = stream.Send(&FixtureRequest{Name: "invalid"})
+	err = stream.Send(&testserver.FixtureRequest{Name: "invalid"})
 	require.NoError(t, err, "no error should be returned after sending message")
 
 	resp, err := stream.Recv()
@@ -542,11 +543,11 @@ func TestStreamSendsErrorCode(t *testing.T) {
 
 // fixtureServer a dummy implementation of our grpc fixtureServer.
 type fixtureServer struct {
-	UnimplementedFixtureServer
+	testserver.UnimplementedFixtureServer
 	lastRequestMetadata atomic.Value
 }
 
-func (s *fixtureServer) StreamPing(stream Fixture_StreamPingServer) (err error) {
+func (s *fixtureServer) StreamPing(stream testserver.Fixture_StreamPingServer) (err error) {
 	for {
 		msg, err := stream.Recv()
 		if err != nil {
@@ -569,7 +570,7 @@ func (s *fixtureServer) StreamPing(stream Fixture_StreamPingServer) (err error) 
 	}
 }
 
-func (s *fixtureServer) Ping(ctx context.Context, in *FixtureRequest) (*FixtureReply, error) {
+func (s *fixtureServer) Ping(ctx context.Context, in *testserver.FixtureRequest) (*testserver.FixtureReply, error) {
 	if md, ok := metadata.FromIncomingContext(ctx); ok {
 		s.lastRequestMetadata.Store(md)
 	}
@@ -577,24 +578,24 @@ func (s *fixtureServer) Ping(ctx context.Context, in *FixtureRequest) (*FixtureR
 	case in.Name == "child":
 		span, _ := tracer.StartSpanFromContext(ctx, "child")
 		span.Finish()
-		return &FixtureReply{Message: "child"}, nil
+		return &testserver.FixtureReply{Message: "child"}, nil
 	case in.Name == "disabled":
 		if _, ok := tracer.SpanFromContext(ctx); ok {
 			panic("should be disabled")
 		}
-		return &FixtureReply{Message: "disabled"}, nil
+		return &testserver.FixtureReply{Message: "disabled"}, nil
 	case in.Name == "invalid":
 		return nil, status.Error(codes.InvalidArgument, "invalid")
 	case in.Name == "errorDetails":
 		s, _ := status.New(codes.Unknown, "unknown").
-			WithDetails(&FixtureReply{Message: "a"}, &FixtureReply{Message: "b"})
+			WithDetails(&testserver.FixtureReply{Message: "a"}, &testserver.FixtureReply{Message: "b"})
 		return nil, s.Err()
 	}
-	return &FixtureReply{Message: "passed"}, nil
+	return &testserver.FixtureReply{Message: "passed"}, nil
 }
 
 // ensure it's a fixtureServer
-var _ FixtureServer = &fixtureServer{}
+var _ testserver.FixtureServer = &fixtureServer{}
 
 // rig contains all of the servers and connections we'd need for a
 // grpc integration test
@@ -604,7 +605,7 @@ type rig struct {
 	port          string
 	listener      net.Listener
 	conn          *grpc.ClientConn
-	client        FixtureClient
+	client        testserver.FixtureClient
 }
 
 func (r *rig) Close() error {
@@ -618,7 +619,7 @@ func newRigWithInterceptors(
 ) (*rig, error) {
 	server := grpc.NewServer(serverInterceptors...)
 	fixtureSrv := new(fixtureServer)
-	RegisterFixtureServer(server, fixtureSrv)
+	testserver.RegisterFixtureServer(server, fixtureSrv)
 
 	li, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -638,7 +639,7 @@ func newRigWithInterceptors(
 		port:          port,
 		server:        server,
 		conn:          conn,
-		client:        NewFixtureClient(conn),
+		client:        testserver.NewFixtureClient(conn),
 	}, err
 }
 
@@ -676,7 +677,7 @@ func TestAnalyticsSettings(t *testing.T) {
 		defer func() { assert.NoError(t, rig.Close()) }()
 
 		client := rig.client
-		resp, err := client.Ping(context.Background(), &FixtureRequest{Name: "pass"})
+		resp, err := client.Ping(context.Background(), &testserver.FixtureRequest{Name: "pass"})
 		assert.Nil(t, err)
 		assert.Equal(t, "passed", resp.Message)
 
@@ -761,15 +762,15 @@ func TestIgnoredMethods(t *testing.T) {
 		}{
 			{ignore: []string{}, exp: 2},
 			{ignore: []string{"/some/endpoint"}, exp: 2},
-			{ignore: []string{"/grpc.Fixture/Ping"}, exp: 1},
-			{ignore: []string{"/grpc.Fixture/Ping", "/additional/endpoint"}, exp: 1},
+			{ignore: []string{"/testserver.Fixture/Ping"}, exp: 1},
+			{ignore: []string{"/testserver.Fixture/Ping", "/additional/endpoint"}, exp: 1},
 		} {
 			rig, err := newRig(true, WithIgnoredMethods(c.ignore...))
 			if err != nil {
 				t.Fatalf("error setting up rig: %s", err)
 			}
 			client := rig.client
-			resp, err := client.Ping(context.Background(), &FixtureRequest{Name: "pass"})
+			resp, err := client.Ping(context.Background(), &testserver.FixtureRequest{Name: "pass"})
 			assert.Nil(t, err)
 			assert.Equal(t, "passed", resp.Message)
 
@@ -791,8 +792,8 @@ func TestIgnoredMethods(t *testing.T) {
 			// server span: 1 send + 2 recv(OK + EOF) + 1 stream finish(EOF)
 			{ignore: []string{}, exp: 7},
 			{ignore: []string{"/some/endpoint"}, exp: 7},
-			{ignore: []string{"/grpc.Fixture/StreamPing"}, exp: 3},
-			{ignore: []string{"/grpc.Fixture/StreamPing", "/additional/endpoint"}, exp: 3},
+			{ignore: []string{"/testserver.Fixture/StreamPing"}, exp: 3},
+			{ignore: []string{"/testserver.Fixture/StreamPing", "/additional/endpoint"}, exp: 3},
 		} {
 			rig, err := newRig(true, WithIgnoredMethods(c.ignore...))
 			if err != nil {
@@ -804,7 +805,7 @@ func TestIgnoredMethods(t *testing.T) {
 			stream, err := client.StreamPing(ctx)
 			assert.NoError(t, err)
 
-			err = stream.Send(&FixtureRequest{Name: "pass"})
+			err = stream.Send(&testserver.FixtureRequest{Name: "pass"})
 			assert.NoError(t, err)
 
 			resp, err := stream.Recv()
@@ -834,15 +835,15 @@ func TestUntracedMethods(t *testing.T) {
 		}{
 			{ignore: []string{}, exp: 2},
 			{ignore: []string{"/some/endpoint"}, exp: 2},
-			{ignore: []string{"/grpc.Fixture/Ping"}, exp: 0},
-			{ignore: []string{"/grpc.Fixture/Ping", "/additional/endpoint"}, exp: 0},
+			{ignore: []string{"/testserver.Fixture/Ping"}, exp: 0},
+			{ignore: []string{"/testserver.Fixture/Ping", "/additional/endpoint"}, exp: 0},
 		} {
 			rig, err := newRig(true, WithUntracedMethods(c.ignore...))
 			if err != nil {
 				t.Fatalf("error setting up rig: %s", err)
 			}
 			client := rig.client
-			resp, err := client.Ping(context.Background(), &FixtureRequest{Name: "pass"})
+			resp, err := client.Ping(context.Background(), &testserver.FixtureRequest{Name: "pass"})
 			assert.Nil(t, err)
 			assert.Equal(t, "passed", resp.Message)
 
@@ -864,8 +865,8 @@ func TestUntracedMethods(t *testing.T) {
 			// server span: 1 send + 2 recv(OK + EOF) + 1 stream finish(EOF)
 			{ignore: []string{}, exp: 7},
 			{ignore: []string{"/some/endpoint"}, exp: 7},
-			{ignore: []string{"/grpc.Fixture/StreamPing"}, exp: 0},
-			{ignore: []string{"/grpc.Fixture/StreamPing", "/additional/endpoint"}, exp: 0},
+			{ignore: []string{"/testserver.Fixture/StreamPing"}, exp: 0},
+			{ignore: []string{"/testserver.Fixture/StreamPing", "/additional/endpoint"}, exp: 0},
 		} {
 			rig, err := newRig(true, WithUntracedMethods(c.ignore...))
 			if err != nil {
@@ -877,7 +878,7 @@ func TestUntracedMethods(t *testing.T) {
 			stream, err := client.StreamPing(ctx)
 			assert.NoError(t, err)
 
-			err = stream.Send(&FixtureRequest{Name: "pass"})
+			err = stream.Send(&testserver.FixtureRequest{Name: "pass"})
 			assert.NoError(t, err)
 
 			resp, err := stream.Recv()
@@ -915,7 +916,7 @@ func TestIgnoredMetadata(t *testing.T) {
 		ctx := context.Background()
 		ctx = metadata.AppendToOutgoingContext(ctx, "test-key", "test-value", "test-key2", "test-value2")
 		span, ctx := tracer.StartSpanFromContext(ctx, "x", tracer.ServiceName("y"), tracer.ResourceName("z"))
-		rig.client.Ping(ctx, &FixtureRequest{Name: "pass"})
+		rig.client.Ping(ctx, &testserver.FixtureRequest{Name: "pass"})
 		span.Finish()
 
 		spans := mt.FinishedSpans()
@@ -949,7 +950,7 @@ func TestSpanOpts(t *testing.T) {
 			t.Fatalf("error setting up rig: %s", err)
 		}
 		client := rig.client
-		resp, err := client.Ping(context.Background(), &FixtureRequest{Name: "pass"})
+		resp, err := client.Ping(context.Background(), &testserver.FixtureRequest{Name: "pass"})
 		assert.Nil(t, err)
 		assert.Equal(t, "passed", resp.Message)
 
@@ -976,7 +977,7 @@ func TestSpanOpts(t *testing.T) {
 		stream, err := client.StreamPing(ctx)
 		assert.NoError(t, err)
 
-		err = stream.Send(&FixtureRequest{Name: "pass"})
+		err = stream.Send(&testserver.FixtureRequest{Name: "pass"})
 		assert.NoError(t, err)
 
 		resp, err := stream.Recv()
@@ -1014,7 +1015,7 @@ func TestCustomTag(t *testing.T) {
 		}
 		ctx := context.Background()
 		span, ctx := tracer.StartSpanFromContext(ctx, "x", tracer.ServiceName("y"), tracer.ResourceName("z"))
-		rig.client.Ping(ctx, &FixtureRequest{Name: "pass"})
+		rig.client.Ping(ctx, &testserver.FixtureRequest{Name: "pass"})
 		span.Finish()
 
 		spans := mt.FinishedSpans()
@@ -1098,7 +1099,7 @@ func TestWithErrorDetailTags(t *testing.T) {
 		}
 		ctx := context.Background()
 		span, ctx := tracer.StartSpanFromContext(ctx, "x", tracer.ServiceName("y"), tracer.ResourceName("z"))
-		rig.client.Ping(ctx, &FixtureRequest{Name: "errorDetails"})
+		rig.client.Ping(ctx, &testserver.FixtureRequest{Name: "errorDetails"})
 		span.Finish()
 
 		spans := mt.FinishedSpans()
@@ -1150,12 +1151,12 @@ func getGenSpansFn(traceClient, traceServer bool) namingschematest.GenSpansFn {
 		rig, err := newRigWithInterceptors(serverInterceptors, clientInterceptors)
 		require.NoError(t, err)
 		defer func() { assert.NoError(t, rig.Close()) }()
-		_, err = rig.client.Ping(context.Background(), &FixtureRequest{Name: "pass"})
+		_, err = rig.client.Ping(context.Background(), &testserver.FixtureRequest{Name: "pass"})
 		require.NoError(t, err)
 
 		stream, err := rig.client.StreamPing(context.Background())
 		require.NoError(t, err)
-		err = stream.Send(&FixtureRequest{Name: "break"})
+		err = stream.Send(&testserver.FixtureRequest{Name: "break"})
 		require.NoError(t, err)
 		_, err = stream.Recv()
 		require.NoError(t, err)
@@ -1322,7 +1323,7 @@ func TestIssue2050(t *testing.T) {
 	tracer.Start(tracer.WithHTTPClient(httpClient))
 	defer tracer.Stop()
 
-	_, err = rig.client.Ping(context.Background(), &FixtureRequest{Name: "pass"})
+	_, err = rig.client.Ping(context.Background(), &testserver.FixtureRequest{Name: "pass"})
 	require.NoError(t, err)
 
 	select {
