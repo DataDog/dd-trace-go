@@ -9,6 +9,7 @@ import (
 	"context"
 	"testing"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/contrib/google.golang.org/grpc/internal/testserver"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
@@ -32,7 +33,7 @@ func TestServerStatsHandler(t *testing.T) {
 
 	mt := mocktracer.Start()
 	defer mt.Stop()
-	_, err = server.client.Ping(context.Background(), &FixtureRequest{Name: "name"})
+	_, err = server.client.Ping(context.Background(), &testserver.FixtureRequest{Name: "name"})
 	assert.NoError(err)
 
 	waitForSpans(mt, 1)
@@ -48,12 +49,12 @@ func TestServerStatsHandler(t *testing.T) {
 	assert.Equal(ext.AppTypeRPC, tags["span.type"])
 	assert.Equal(codes.OK.String(), tags["grpc.code"])
 	assert.Equal(serviceName, tags["service.name"])
-	assert.Equal("/grpc.Fixture/Ping", tags["resource.name"])
-	assert.Equal("/grpc.Fixture/Ping", tags[tagMethodName])
+	assert.Equal("/testserver.Fixture/Ping", tags["resource.name"])
+	assert.Equal("/testserver.Fixture/Ping", tags[tagMethodName])
 	assert.Equal(1, tags["_dd.measured"])
 	assert.Equal("bar", tags["foo"])
 	assert.Equal("grpc", tags[ext.RPCSystem])
-	assert.Equal("/grpc.Fixture/Ping", tags[ext.GRPCFullMethod])
+	assert.Equal("/testserver.Fixture/Ping", tags[ext.GRPCFullMethod])
 	assert.Equal(ext.SpanKindServer, tags[ext.SpanKind])
 }
 
