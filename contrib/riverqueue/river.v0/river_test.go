@@ -2,6 +2,7 @@ package river
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -224,6 +225,320 @@ func TestPropagationWithServiceName(t *testing.T) {
 	assert.Len(t, spans, 3, "wrong number of spans")
 	assert.Equal(t, "insert.service", spans[0].Tag(ext.ServiceName))
 	assert.Equal(t, "worker.service", spans[2].Tag(ext.ServiceName))
+}
+
+func TestPropagationNoParentSpan(t *testing.T) {
+	ctx, mt, driver := setup(t)
+
+	var (
+		called         = false
+		spanID         uint64
+		traceID        uint64
+		jobID          int64
+		jobScheduledAt time.Time
+		jobMetadata    string
+	)
+	worker := testWorker{f: func(ctx context.Context, job *river.Job[jobArg]) error {
+		assert.False(t, called, "work called twice")
+		assert.Equal(t, "data", job.Args.Data)
+		span, ok := tracer.SpanFromContext(ctx)
+		assert.True(t, ok, "no span")
+		spanID = span.Context().SpanID()
+		traceID = span.Context().TraceID()
+		jobID = job.ID
+		jobScheduledAt = job.ScheduledAt
+		jobMetadata = string(job.Metadata)
+		called = true
+		return nil
+	}}
+	workers := river.NewWorkers()
+	require.NoError(t, river.AddWorkerSafely(workers, worker))
+
+	client, err := river.NewClient(driver, &river.Config{
+		TestOnly:            true,
+		MaxAttempts:         1,
+		JobTimeout:          1 * time.Second,
+		JobInsertMiddleware: []rivertype.JobInsertMiddleware{NewInsertMiddleware()},
+		Workers:             workers,
+		WorkerMiddleware:    []rivertype.WorkerMiddleware{NewWorkerMiddleware()},
+		Queues:              map[string]river.QueueConfig{river.QueueDefault: {MaxWorkers: 1}},
+	})
+	require.NoError(t, err)
+	t.Cleanup(stopClientF(t, client))
+
+	// no parent span
+	_, err = client.Insert(ctx, jobArg{Data: "data"}, &river.InsertOpts{})
+	assert.NoError(t, err)
+
+	events, _ := client.Subscribe(river.EventKindJobCompleted, river.EventKindJobFailed)
+	assert.NoError(t, client.Start(context.Background()))
+	select {
+	case event := <-events:
+		assert.Equal(t, river.EventKindJobCompleted, event.Kind)
+		assert.True(t, called, "work not called")
+	case <-ctx.Done():
+		require.Fail(t, "did not receive event before timeout")
+	}
+
+	spans := mt.FinishedSpans()
+	assert.Len(t, spans, 2, "wrong number of spans")
+	assert.Equal(t, "river.insert", spans[0].OperationName())
+	assert.Equal(t, "river.work", spans[1].OperationName())
+
+	assert.Equal(t, spans[0].TraceID(), spans[0].SpanID())
+	assert.Equal(t, traceID, spans[0].TraceID())
+	assert.Equal(t, map[string]interface{}{
+		ext.SpanType:        ext.SpanTypeMessageProducer,
+		ext.Component:       "riverqueue/river.v0",
+		ext.SpanKind:        ext.SpanKindProducer,
+		ext.MessagingSystem: "river",
+		ext.ResourceName:    "river.insert_many",
+	}, spans[0].Tags())
+
+	assert.Equal(t, spans[0].SpanID(), spans[1].ParentID())
+	assert.Equal(t, traceID, spans[1].TraceID())
+	assert.Equal(t, spanID, spans[1].SpanID())
+	assert.Equal(t, map[string]interface{}{
+		ext.SpanType:             ext.SpanTypeMessageConsumer,
+		ext.Component:            "riverqueue/river.v0",
+		ext.SpanKind:             ext.SpanKindConsumer,
+		ext.MessagingSystem:      "river",
+		ext.ResourceName:         "kind",
+		"river_job.id":           jobID,
+		"river_job.scheduled_at": jobScheduledAt,
+		"river_job.queue":        "default",
+		"river_job.kind":         "kind",
+		"river_job.attempt":      1,
+	}, spans[1].Tags())
+
+	assert.JSONEq(t,
+		fmt.Sprintf(`{"x-datadog-parent-id":"%d", "x-datadog-trace-id":"%d"}`,
+			spans[0].SpanID(), spans[0].TraceID()),
+		jobMetadata)
+}
+
+func TestPropagationNoInsertSpan(t *testing.T) {
+	ctx, mt, driver := setup(t)
+
+	var (
+		called         = false
+		spanID         uint64
+		traceID        uint64
+		jobID          int64
+		jobScheduledAt time.Time
+		jobMetadata    string
+	)
+	worker := testWorker{f: func(ctx context.Context, job *river.Job[jobArg]) error {
+		assert.False(t, called, "work called twice")
+		assert.Equal(t, "data", job.Args.Data)
+		span, ok := tracer.SpanFromContext(ctx)
+		assert.True(t, ok, "no span")
+		spanID = span.Context().SpanID()
+		traceID = span.Context().TraceID()
+		jobID = job.ID
+		jobScheduledAt = job.ScheduledAt
+		jobMetadata = string(job.Metadata)
+		called = true
+		return nil
+	}}
+	workers := river.NewWorkers()
+	require.NoError(t, river.AddWorkerSafely(workers, worker))
+
+	client, err := river.NewClient(driver, &river.Config{
+		TestOnly:            true,
+		MaxAttempts:         1,
+		JobTimeout:          1 * time.Second,
+		JobInsertMiddleware: nil, // no tracing on JobInsert
+		Workers:             workers,
+		WorkerMiddleware:    []rivertype.WorkerMiddleware{NewWorkerMiddleware()},
+		Queues:              map[string]river.QueueConfig{river.QueueDefault: {MaxWorkers: 1}},
+	})
+	require.NoError(t, err)
+	t.Cleanup(stopClientF(t, client))
+
+	_, err = client.Insert(ctx, jobArg{Data: "data"}, &river.InsertOpts{})
+	assert.NoError(t, err)
+
+	events, _ := client.Subscribe(river.EventKindJobCompleted, river.EventKindJobFailed)
+	assert.NoError(t, client.Start(context.Background()))
+	select {
+	case event := <-events:
+		assert.Equal(t, river.EventKindJobCompleted, event.Kind)
+		assert.True(t, called, "work not called")
+	case <-ctx.Done():
+		require.Fail(t, "did not receive event before timeout")
+	}
+
+	spans := mt.FinishedSpans()
+	assert.Len(t, spans, 1, "wrong number of spans")
+	assert.Equal(t, "river.work", spans[0].OperationName())
+
+	assert.Equal(t, traceID, spans[0].TraceID())
+	assert.Equal(t, spanID, spans[0].SpanID())
+	assert.Equal(t, map[string]interface{}{
+		ext.SpanType:             ext.SpanTypeMessageConsumer,
+		ext.Component:            "riverqueue/river.v0",
+		ext.SpanKind:             ext.SpanKindConsumer,
+		ext.MessagingSystem:      "river",
+		ext.ResourceName:         "kind",
+		"river_job.id":           jobID,
+		"river_job.scheduled_at": jobScheduledAt,
+		"river_job.queue":        "default",
+		"river_job.kind":         "kind",
+		"river_job.attempt":      1,
+	}, spans[0].Tags())
+
+	assert.JSONEq(t, `{}`, jobMetadata)
+}
+
+func TestWorkerError(t *testing.T) {
+	ctx, mt, driver := setup(t)
+
+	var (
+		called         = false
+		spanID         uint64
+		traceID        uint64
+		jobID          int64
+		jobScheduledAt time.Time
+		jobMetadata    string
+		workErr        = errors.New("worker error")
+	)
+	worker := testWorker{f: func(ctx context.Context, job *river.Job[jobArg]) error {
+		assert.False(t, called, "work called twice")
+		assert.Equal(t, "data", job.Args.Data)
+		span, ok := tracer.SpanFromContext(ctx)
+		assert.True(t, ok, "no span")
+		spanID = span.Context().SpanID()
+		traceID = span.Context().TraceID()
+		jobID = job.ID
+		jobScheduledAt = job.ScheduledAt
+		jobMetadata = string(job.Metadata)
+		called = true
+		return workErr
+	}}
+	workers := river.NewWorkers()
+	require.NoError(t, river.AddWorkerSafely(workers, worker))
+
+	client, err := river.NewClient(driver, &river.Config{
+		TestOnly:            true,
+		MaxAttempts:         1,
+		JobTimeout:          1 * time.Second,
+		JobInsertMiddleware: nil,
+		Workers:             workers,
+		WorkerMiddleware:    []rivertype.WorkerMiddleware{NewWorkerMiddleware()},
+		Queues:              map[string]river.QueueConfig{river.QueueDefault: {MaxWorkers: 1}},
+	})
+	require.NoError(t, err)
+	t.Cleanup(stopClientF(t, client))
+
+	_, err = client.Insert(ctx, jobArg{Data: "data"}, &river.InsertOpts{})
+	assert.NoError(t, err)
+
+	events, _ := client.Subscribe(river.EventKindJobCompleted, river.EventKindJobFailed)
+	assert.NoError(t, client.Start(context.Background()))
+	select {
+	case event := <-events:
+		assert.Equal(t, river.EventKindJobFailed, event.Kind)
+		assert.True(t, called, "work not called")
+	case <-ctx.Done():
+		require.Fail(t, "did not receive event before timeout")
+	}
+
+	spans := mt.FinishedSpans()
+	assert.Len(t, spans, 1, "wrong number of spans")
+	assert.Equal(t, "river.work", spans[0].OperationName())
+
+	assert.Equal(t, traceID, spans[0].TraceID())
+	assert.Equal(t, spanID, spans[0].SpanID())
+	assert.Equal(t, map[string]interface{}{
+		ext.SpanType:             ext.SpanTypeMessageConsumer,
+		ext.Component:            "riverqueue/river.v0",
+		ext.SpanKind:             ext.SpanKindConsumer,
+		ext.MessagingSystem:      "river",
+		ext.ResourceName:         "kind",
+		"river_job.id":           jobID,
+		"river_job.scheduled_at": jobScheduledAt,
+		"river_job.queue":        "default",
+		"river_job.kind":         "kind",
+		"river_job.attempt":      1,
+		ext.Error:                workErr,
+	}, spans[0].Tags())
+
+	assert.JSONEq(t, `{}`, jobMetadata)
+}
+
+func TestAdditionalMetadata(t *testing.T) {
+	ctx, mt, driver := setup(t)
+
+	var (
+		jobMetadata string
+	)
+	worker := testWorker{f: func(ctx context.Context, job *river.Job[jobArg]) error {
+		jobMetadata = string(job.Metadata)
+		return nil
+	}}
+	workers := river.NewWorkers()
+	require.NoError(t, river.AddWorkerSafely(workers, worker))
+
+	client, err := river.NewClient(driver, &river.Config{
+		TestOnly:            true,
+		MaxAttempts:         1,
+		JobTimeout:          1 * time.Second,
+		JobInsertMiddleware: []rivertype.JobInsertMiddleware{NewInsertMiddleware()},
+		Workers:             workers,
+		WorkerMiddleware:    []rivertype.WorkerMiddleware{NewWorkerMiddleware()},
+		Queues:              map[string]river.QueueConfig{river.QueueDefault: {MaxWorkers: 1}},
+	})
+	require.NoError(t, err)
+	t.Cleanup(stopClientF(t, client))
+
+	_, err = client.Insert(ctx, jobArg{Data: "data"}, &river.InsertOpts{
+		Metadata: []byte(`{"key":"value"}`), // additional metadata
+	})
+	assert.NoError(t, err)
+
+	events, _ := client.Subscribe(river.EventKindJobCompleted, river.EventKindJobFailed)
+	assert.NoError(t, client.Start(context.Background()))
+	select {
+	case event := <-events:
+		assert.Equal(t, river.EventKindJobCompleted, event.Kind)
+	case <-ctx.Done():
+		require.Fail(t, "did not receive event before timeout")
+	}
+
+	spans := mt.FinishedSpans()
+	assert.Len(t, spans, 2, "wrong number of spans")
+	assert.Equal(t, "river.insert", spans[0].OperationName())
+	assert.Equal(t, "river.work", spans[1].OperationName())
+
+	assert.JSONEq(t,
+		fmt.Sprintf(`{"x-datadog-parent-id":"%d", "x-datadog-trace-id":"%d","key":"value"}`,
+			spans[0].SpanID(), spans[0].TraceID()),
+		jobMetadata)
+}
+
+func TestInvalidMetadata(t *testing.T) {
+	ctx, mt, driver := setup(t)
+
+	client, err := river.NewClient(driver, &river.Config{
+		TestOnly:            true,
+		MaxAttempts:         1,
+		JobTimeout:          1 * time.Second,
+		JobInsertMiddleware: []rivertype.JobInsertMiddleware{NewInsertMiddleware()},
+	})
+	require.NoError(t, err)
+	t.Cleanup(stopClientF(t, client))
+
+	_, err = client.Insert(ctx, jobArg{Data: "data"}, &river.InsertOpts{
+		Metadata: []byte(`invalid json`),
+	})
+	assert.Error(t, err)
+
+	spans := mt.FinishedSpans()
+	assert.Len(t, spans, 1, "wrong number of spans")
+	assert.Equal(t, "river.insert", spans[0].OperationName())
+
+	assert.ErrorIs(t, err, spans[0].Tags()[ext.Error].(error))
 }
 
 func setup(t *testing.T) (context.Context, mocktracer.Tracer, *riverpgxv5.Driver) {
