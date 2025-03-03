@@ -140,7 +140,7 @@ func TestPropagation(t *testing.T) {
 	span.Finish()
 
 	events, _ := client.Subscribe(river.EventKindJobCompleted, river.EventKindJobFailed)
-	assert.NoError(t, client.Start(context.Background()))
+	require.NoError(t, client.Start(context.Background()))
 	select {
 	case event := <-events:
 		assert.Equal(t, river.EventKindJobCompleted, event.Kind)
@@ -213,7 +213,7 @@ func TestPropagationWithServiceName(t *testing.T) {
 	span.Finish()
 
 	events, _ := client.Subscribe(river.EventKindJobCompleted, river.EventKindJobFailed)
-	assert.NoError(t, client.Start(context.Background()))
+	require.NoError(t, client.Start(context.Background()))
 	select {
 	case event := <-events:
 		assert.Equal(t, river.EventKindJobCompleted, event.Kind)
@@ -271,7 +271,7 @@ func TestPropagationNoParentSpan(t *testing.T) {
 	assert.NoError(t, err)
 
 	events, _ := client.Subscribe(river.EventKindJobCompleted, river.EventKindJobFailed)
-	assert.NoError(t, client.Start(context.Background()))
+	require.NoError(t, client.Start(context.Background()))
 	select {
 	case event := <-events:
 		assert.Equal(t, river.EventKindJobCompleted, event.Kind)
@@ -360,7 +360,7 @@ func TestPropagationNoInsertSpan(t *testing.T) {
 	assert.NoError(t, err)
 
 	events, _ := client.Subscribe(river.EventKindJobCompleted, river.EventKindJobFailed)
-	assert.NoError(t, client.Start(context.Background()))
+	require.NoError(t, client.Start(context.Background()))
 	select {
 	case event := <-events:
 		assert.Equal(t, river.EventKindJobCompleted, event.Kind)
@@ -435,7 +435,7 @@ func TestWorkerError(t *testing.T) {
 	assert.NoError(t, err)
 
 	events, _ := client.Subscribe(river.EventKindJobCompleted, river.EventKindJobFailed)
-	assert.NoError(t, client.Start(context.Background()))
+	require.NoError(t, client.Start(context.Background()))
 	select {
 	case event := <-events:
 		assert.Equal(t, river.EventKindJobFailed, event.Kind)
@@ -498,7 +498,7 @@ func TestAdditionalMetadata(t *testing.T) {
 	assert.NoError(t, err)
 
 	events, _ := client.Subscribe(river.EventKindJobCompleted, river.EventKindJobFailed)
-	assert.NoError(t, client.Start(context.Background()))
+	require.NoError(t, client.Start(context.Background()))
 	select {
 	case event := <-events:
 		assert.Equal(t, river.EventKindJobCompleted, event.Kind)
