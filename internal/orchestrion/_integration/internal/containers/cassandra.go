@@ -9,60 +9,46 @@ package containers
 
 import (
 	"context"
-	"net/url"
+	"net"
 	"os"
 	"testing"
 
-	"github.com/docker/go-connections/nat"
 	"github.com/stretchr/testify/require"
 	"github.com/testcontainers/testcontainers-go"
-	"github.com/testcontainers/testcontainers-go/modules/redis"
-	"github.com/testcontainers/testcontainers-go/wait"
+	"github.com/testcontainers/testcontainers-go/modules/cassandra"
 )
 
-// StartRedisTestContainer starts a new Redis test container and returns the connection string.
-func StartRedisTestContainer(t testing.TB) (*redis.RedisContainer, string) {
+// StartCassandraContainer starts a new Cassandra test container and returns the host and port.
+func StartCassandraContainer(t testing.TB) (*cassandra.CassandraContainer, string, string) {
 	ctx := context.Background()
-	exposedPort := "6379/tcp"
-	waitReadyCmd := []string{
-		"redis-cli",
-		"ping",
-	}
 	opts := []testcontainers.ContainerCustomizer{
 		testcontainers.WithLogger(testcontainers.TestLogger(t)),
 		WithTestLogConsumer(t),
-		testcontainers.WithWaitStrategy(
-			wait.ForAll(
-				wait.ForLog("* Ready to accept connections"),
-				wait.ForExposedPort(),
-				wait.ForListeningPort(nat.Port(exposedPort)),
-				wait.ForExec(waitReadyCmd),
-			),
-		),
 	}
 	if _, ok := os.LookupEnv("CI"); ok {
-		t.Log("attempting to reuse redis container in CI")
+		t.Log("attempting to reuse cassandra container in CI")
 		opts = append(opts, testcontainers.CustomizeRequest(testcontainers.GenericContainerRequest{
 			ContainerRequest: testcontainers.ContainerRequest{
-				Name:     "redis",
+				Name:     "cassandra",
 				Hostname: "localhost",
 			},
 			Started: true,
 			Reuse:   true,
 		}))
 	}
-	container, err := redis.Run(ctx,
-		"redis:7-alpine", // Change the docker pull stage in .github/workflows/orchestrion.yml if you update this
+
+	container, err := cassandra.Run(ctx,
+		"cassandra:4.1", // Change the docker pull stage in .github/workflows/orchestrion.yml if you update this
 		opts...,
 	)
 	AssertTestContainersError(t, err)
 	RegisterContainerCleanup(t, container)
 
-	connStr, err := container.ConnectionString(ctx)
+	hostPort, err := container.ConnectionHost(ctx)
 	require.NoError(t, err)
 
-	redisURL, err := url.Parse(connStr)
+	host, port, err := net.SplitHostPort(hostPort)
 	require.NoError(t, err)
 
-	return container, redisURL.Host
+	return container, host, port
 }
