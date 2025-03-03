@@ -225,9 +225,9 @@ aspects:
           imports:
             testing: testing
           links:
-            - gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/integrations/gotesting
+            - github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting
           template: |-
-            //go:linkname __dd_civisibility_instrumentTestifySuiteRun gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/integrations/gotesting.instrumentTestifySuiteRun
+            //go:linkname __dd_civisibility_instrumentTestifySuiteRun github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting.instrumentTestifySuiteRun
             func __dd_civisibility_instrumentTestifySuiteRun(*testing.T, interface{})
       - prepend-statements:
           template: |-
