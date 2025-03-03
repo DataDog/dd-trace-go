@@ -26,7 +26,7 @@ const (
 	eventRulesFailedTag  = wafSpanTagPrefix + "event_rules.error_count"
 	wafVersionTag        = wafSpanTagPrefix + "waf.version"
 	wafErrorTag          = wafSpanTagPrefix + "waf.error"
-	raspRuleEvalTag      = wafSpanTagPrefix + "rasp.rule_eval"
+	raspRuleEvalTag      = wafSpanTagPrefix + "rasp.rule.eval"
 	raspErrorTag         = wafSpanTagPrefix + "rasp.error"
 
 	blockedRequestTag = "appsec.blocked"

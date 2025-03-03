@@ -9,6 +9,7 @@ import (
 	"errors"
 	"strconv"
 	"sync"
+	"sync/atomic"
 
 	waf "github.com/DataDog/go-libddwaf/v3"
 	wafErrors "github.com/DataDog/go-libddwaf/v3/errors"
@@ -24,12 +25,23 @@ import (
 var newHandleTelemetryMetric = "waf.init"
 var changeToWafUpdates sync.Once
 
-type CountWafRequests struct {
+// RequestsMilestones is a list of things that can happen as a result of a waf call. They are stacked for each requests
+// and used as tags to the telemetry metric `waf.requests`.
+// TODO: add request_excluded and block_failure to the mix once we have the capability to track them
+type RequestsMilestones struct {
 	requestBlocked bool
 	ruleTriggered  bool
 	wafTimeout     bool
 	rateLimited    bool
 	wafError       bool
+}
+
+func (r *RequestsMilestones) Merge(rq RequestsMilestones) {
+	r.requestBlocked = r.requestBlocked || rq.requestBlocked
+	r.ruleTriggered = r.ruleTriggered || rq.ruleTriggered
+	r.wafTimeout = r.wafTimeout || rq.wafTimeout
+	r.rateLimited = r.rateLimited || rq.rateLimited
+	r.wafError = r.wafError || rq.wafError
 }
 
 // Metrics is a struct that holds all the telemetry metrics for the WAF that lives and die alongside with the WAF handle
@@ -46,16 +58,21 @@ type Metrics struct {
 	wafRunMetrics map[string]telemetry.MetricHandle
 
 	// wafRequestsCounts holds the telemetry metrics for the `waf.requests` metric
-	wafRequestsCounts map[CountWafRequests]telemetry.MetricHandle
+	wafRequestsCounts map[RequestsMilestones]telemetry.MetricHandle
 	// raspRuleEval holds the telemetry metrics for the `rasp.rule_eval` metric by rule type
 	raspRuleEval map[addresses.RASPRuleType]telemetry.MetricHandle
 
-	// raspRuleEvalSum is the sum of all the RASP errors that happened during the request
-	raspRuleEvalSum int
-	// wafErrorsSum is the sum of all the WAF errors that happened during the request
-	wafErrorsSum int
-	// raspErrorsSum is the sum of all the RASP errors that happened during the request
-	raspErrorsSum int
+	// currentRequest i
+	currentRequest struct {
+		// raspRuleEvalSum is the sum of all the RASP errors that happened during the request
+		raspRuleEvalSum uint32
+		// wafErrorsSum is the sum of all the WAF errors that happened during the request
+		wafErrorsSum uint32
+		// raspErrorsSum is the sum of all the RASP errors that happened during the request
+		raspErrorsSum uint32
+		// wafRequestsCounts holds the sum of telemetry metrics for the `waf.requests` metric
+		milestones RequestsMilestones
+	}
 }
 
 var BaseRASPTags = map[addresses.RASPRuleType][]string{
@@ -97,14 +114,13 @@ func NewMetricsInstance(newHandle *waf.Handle, errIn error) Metrics {
 
 	// Build the waf.requests matrix
 	// Some actually don't make sense but adding all of them manually would definitely add human mistakes to the mix
-	// TODO: add request_excluded and block_failure to the mix once we have the capability to track them
-	wafRequestMetrics := make(map[CountWafRequests]telemetry.MetricHandle, 2^5)
+	wafRequestMetrics := make(map[RequestsMilestones]telemetry.MetricHandle, 2^5)
 	for _, requestBlocked := range []bool{true, false} {
 		for _, ruleTriggered := range []bool{true, false} {
 			for _, wafTimeout := range []bool{true, false} {
 				for _, rateLimited := range []bool{true, false} {
 					for _, wafError := range []bool{true, false} {
-						wafRequestMetrics[CountWafRequests{
+						wafRequestMetrics[RequestsMilestones{
 							requestBlocked: requestBlocked,
 							ruleTriggered:  ruleTriggered,
 							wafTimeout:     wafTimeout,
@@ -113,9 +129,9 @@ func NewMetricsInstance(newHandle *waf.Handle, errIn error) Metrics {
 						}] = telemetry.Count(telemetry.NamespaceAppSec, "waf.requests", append([]string{
 							"request_blocked:" + strconv.FormatBool(requestBlocked),
 							"rule_triggered:" + strconv.FormatBool(ruleTriggered),
-							"timeout:" + strconv.FormatBool(wafTimeout),
+							"waf_timeout:" + strconv.FormatBool(wafTimeout),
 							"rate_limited:" + strconv.FormatBool(rateLimited),
-							"error:" + strconv.FormatBool(wafError),
+							"waf_error:" + strconv.FormatBool(wafError),
 						}, baseTags...))
 					}
 				}
@@ -155,17 +171,17 @@ func NewMetricsInstance(newHandle *waf.Handle, errIn error) Metrics {
 
 // SumRASPCalls returns the sum of all the RASP calls made by the WAF whatever the rasp rule type it is.
 func (t *Metrics) SumRASPCalls() float64 {
-	return float64(t.raspRuleEvalSum)
+	return float64(atomic.LoadUint32(&t.currentRequest.raspRuleEvalSum))
 }
 
 // SumWAFErrors returns the sum of all the WAF errors
 func (t *Metrics) SumWAFErrors() float64 {
-	return float64(t.wafErrorsSum)
+	return float64(atomic.LoadUint32(&t.currentRequest.wafErrorsSum))
 }
 
 // SumRASPErrors returns the sum of all the RASP errors
 func (t *Metrics) SumRASPErrors() float64 {
-	return float64(t.raspErrorsSum)
+	return float64(atomic.LoadUint32(&t.currentRequest.raspErrorsSum))
 }
 
 // IncWafStats increment the metrics for the WAF run stats at the end of each waf context lifecycle
@@ -192,13 +208,15 @@ func (t *Metrics) IncWafStats(stats waf.Stats) {
 			distMetric.Submit(float64(size))
 		}
 	}
+
+	t.wafRequestsCounts[t.currentRequest.milestones].Submit(1)
 }
 
 // IncWafRequests increment the metric count `waf.requests` with the given tags at the end of each waf run
-func (t *Metrics) IncWafRequests(addrs waf.RunAddressData, tags CountWafRequests) {
+func (t *Metrics) IncWafRequests(addrs waf.RunAddressData, tags RequestsMilestones) {
 	switch addrs.Scope {
 	case waf.RASPScope:
-		t.raspRuleEvalSum++
+		atomic.AddUint32(&t.currentRequest.raspRuleEvalSum, 1)
 		ruleType, ok := addresses.RASPRuleTypeFromAddressSet(addrs)
 		if !ok {
 			telemetrylog.Error("unexpected call to RASPRuleTypeFromAddressSet", telemetry.WithTags([]string{"product:appsec"}))
@@ -217,9 +235,7 @@ func (t *Metrics) IncWafRequests(addrs waf.RunAddressData, tags CountWafRequests
 			}, t.baseRASPTags[ruleType]...)).Submit(1)
 		}
 	case waf.DefaultScope, "":
-		if metric, ok := t.wafRequestsCounts[tags]; ok {
-			metric.Submit(1)
-		}
+		t.currentRequest.milestones.requestBlocked = tags.requestBlocked
 	default:
 		telemetrylog.Error("unexpected scope name: %v", addrs.Scope, telemetry.WithTags([]string{"product:appsec"}))
 	}
@@ -252,7 +268,7 @@ func (t *Metrics) IncWafError(addrs waf.RunAddressData, in error) {
 }
 
 func (t *Metrics) wafError(in error) {
-	t.wafErrorsSum++
+	atomic.AddUint32(&t.currentRequest.wafErrorsSum, 1)
 	errCode := -127
 	if code := wafErrors.ToWafErrorCode(in); code != 0 {
 		errCode = code
@@ -264,7 +280,7 @@ func (t *Metrics) wafError(in error) {
 }
 
 func (t *Metrics) raspError(in error, ruleType addresses.RASPRuleType) {
-	t.raspErrorsSum++
+	atomic.AddUint32(&t.currentRequest.raspErrorsSum, 1)
 	errCode := -127
 	if code := wafErrors.ToWafErrorCode(in); code != 0 {
 		errCode = code
