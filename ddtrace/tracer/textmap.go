@@ -1454,7 +1454,7 @@ func (*propagatorBaggage) extractTextMap(reader TextMapReader) (ddtrace.SpanCont
 		pair = strings.TrimSpace(pair)
 		if !strings.Contains(pair, "=") {
 			// If a pair doesn't contain '=', treat it as invalid.
-			return nil, fmt.Errorf("Invalid baggage item: %s", pair)
+			return nil, fmt.Errorf("invalid baggage item: %s", pair)
 		}
 
 		keyValue := strings.SplitN(pair, "=", 2)
@@ -1464,7 +1464,7 @@ func (*propagatorBaggage) extractTextMap(reader TextMapReader) (ddtrace.SpanCont
 		decKey, errKey := url.QueryUnescape(rawKey)
 		decVal, errVal := url.QueryUnescape(rawValue)
 		if errKey != nil || errVal != nil {
-			return nil, fmt.Errorf("Invalid baggage item: %s", pair)
+			return nil, fmt.Errorf("invalid baggage item: %s", pair)
 		}
 		ctx.baggage[decKey] = decVal
 	}

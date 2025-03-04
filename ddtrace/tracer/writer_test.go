@@ -114,7 +114,7 @@ func TestLogWriter(t *testing.T) {
 		v := struct{ Traces [][]map[string]interface{} }{}
 		d := json.NewDecoder(&buf)
 		err = d.Decode(&v)
-		assert.NoError(err, string(buf.Bytes()))
+		assert.NoError(err, buf.String())
 		assert.Len(v.Traces, 20, "Expected 20 traces, but have %d", len(v.Traces))
 		for _, t := range v.Traces {
 			assert.Len(t, 2, "Expected 2 spans, but have %d", len(t))

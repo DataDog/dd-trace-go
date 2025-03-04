@@ -457,7 +457,7 @@ func Test257CharacterDDTracestateLengh(t *testing.T) {
 	// iterating through propagatingTags map doesn't guarantee order in tracestate header
 	ddTag := strings.SplitN(headers[tracestateHeader], ",", 2)[0]
 	assert.Contains(ddTag, "s:2")
-	assert.Regexp(regexp.MustCompile("dd=[\\w:,]+"), ddTag)
+	assert.Regexp(regexp.MustCompile(`dd=[\w:,]+`), ddTag)
 	assert.LessOrEqual(len(ddTag), 256) // one of the propagated tags will not be propagated
 }
 
@@ -2586,7 +2586,7 @@ func BenchmarkComposeTracestate(b *testing.B) {
 
 func TestStringMutator(t *testing.T) {
 	sm := &stringMutator{}
-	rx := regexp.MustCompile(",|~|;|[^\\x21-\\x7E]+")
+	rx := regexp.MustCompile(`,|~|;|[^\x21-\x7E]+`)
 	tc := []struct {
 		name  string
 		input string
@@ -2623,7 +2623,7 @@ func TestStringMutator(t *testing.T) {
 }
 
 func FuzzStringMutator(f *testing.F) {
-	rx := regexp.MustCompile(",|~|;|[^\\x21-\\x7E]+")
+	rx := regexp.MustCompile(`,|~|;|[^\x21-\x7E]+`)
 	f.Add("a,b;c~~~~d;")
 	f.Add("a,b👍👍👍;c~d👍;")
 	f.Add("=")
@@ -2789,8 +2789,7 @@ func TestInjectBaggageMaxBytes(t *testing.T) {
 	root := tracer.StartSpan("web.request").(*span)
 	ctx := root.Context()
 
-	baggageItems := make(map[string]string)
-	baggageItems = map[string]string{
+	baggageItems := map[string]string{
 		"key0": "o",
 		"key1": strings.Repeat("a", baggageMaxBytes/3),
 		"key2": strings.Repeat("b", baggageMaxBytes/3),

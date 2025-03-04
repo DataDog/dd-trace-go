@@ -99,7 +99,7 @@ func parseProvenance(p string) (provenance, error) {
 			return v, nil
 		}
 	}
-	return Customer, fmt.Errorf("Invalid Provenance: \"%v\"", p)
+	return Customer, fmt.Errorf("invalid provenance: \"%v\"", p)
 }
 
 // SamplingRule is used for applying sampling rates to spans that match

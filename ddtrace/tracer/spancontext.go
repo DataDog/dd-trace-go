@@ -18,7 +18,6 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
-	ginternal "gopkg.in/DataDog/dd-trace-go.v1/internal"
 	sharedinternal "gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/samplernames"
@@ -423,7 +422,7 @@ func (t *trace) setTraceTags(s *span, tr *tracer) {
 	for k, v := range t.propagatingTags {
 		s.setMeta(k, v)
 	}
-	for k, v := range ginternal.GetTracerGitMetadataTags() {
+	for k, v := range sharedinternal.GetTracerGitMetadataTags() {
 		s.setMeta(k, v)
 	}
 	if s.context != nil && s.context.traceID.HasUpper() {
