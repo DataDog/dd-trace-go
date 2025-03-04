@@ -20,6 +20,10 @@ import (
 	"github.com/DataDog/datadog-go/v5/statsd"
 )
 
+// tracerObfuscationVersion indicates which version of stats obfuscation logic we implement
+// In the future this can be pulled directly from our obfuscation import.
+var tracerObfuscationVersion = 1
+
 // defaultStatsBucketSize specifies the default span of time that will be
 // covered in one stats bucket.
 var defaultStatsBucketSize = (10 * time.Second).Nanoseconds()
@@ -157,7 +161,11 @@ func (c *concentrator) runIngester() {
 }
 
 func (c *concentrator) newTracerStatSpan(s *span, obfuscator *obfuscate.Obfuscator) (*tracerStatSpan, bool) {
-	statSpan, ok := c.spanConcentrator.NewStatSpan(s.Service, obfuscatedResource(obfuscator, s.Type, s.Resource),
+	resource := s.Resource
+	if c.shouldObfuscate() {
+		resource = obfuscatedResource(obfuscator, s.Type, s.Resource)
+	}
+	statSpan, ok := c.spanConcentrator.NewStatSpan(s.Service, resource,
 		s.Name, s.Type, s.ParentID, s.Start, s.Duration, s.Error, s.Meta, s.Metrics, c.cfg.agent.peerTags)
 	if !ok {
 		return nil, false
@@ -167,6 +175,11 @@ func (c *concentrator) newTracerStatSpan(s *span, obfuscator *obfuscate.Obfuscat
 		statSpan: statSpan,
 		origin:   origin,
 	}, true
+}
+
+func (c *concentrator) shouldObfuscate() bool {
+	// Obfuscate if agent reports an obfuscation version AND our version is at least as new
+	return c.cfg.agent.obfuscationVersion > 0 && c.cfg.agent.obfuscationVersion <= tracerObfuscationVersion
 }
 
 // add s into the concentrator's internal stats buckets.
@@ -204,6 +217,13 @@ const (
 func (c *concentrator) flushAndSend(timenow time.Time, includeCurrent bool) {
 	csps := c.spanConcentrator.Flush(timenow.UnixNano(), includeCurrent)
 
+	obfVersion := 0
+	if c.shouldObfuscate() {
+		obfVersion = tracerObfuscationVersion
+	} else {
+		log.Debug("Stats Obfuscation was skipped, agent will obfuscate (tracer %d, agent %d)", tracerObfuscationVersion, c.cfg.agent.obfuscationVersion)
+	}
+
 	if len(csps) == 0 {
 		// nothing to flush
 		return
@@ -214,7 +234,7 @@ func (c *concentrator) flushAndSend(timenow time.Time, includeCurrent bool) {
 	// compatible in case this ever changes we can just iterate through all of them.
 	for _, csp := range csps {
 		flushedBuckets += len(csp.Stats)
-		if err := c.cfg.transport.sendStats(csp); err != nil {
+		if err := c.cfg.transport.sendStats(csp, obfVersion); err != nil {
 			c.statsd().Incr("datadog.tracer.stats.flush_errors", nil, 1)
 			log.Error("Error sending stats payload: %v", err)
 		}

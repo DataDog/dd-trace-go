@@ -17,6 +17,7 @@ import (
 	_ "unsafe"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/constants"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/integrations"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/integrations/gotesting/coverage"
@@ -47,9 +48,15 @@ func instrumentTestingM(m *testing.M) func(exitCode int) {
 	session = integrations.CreateTestSession(integrations.WithTestSessionFramework(testFramework, runtime.Version()))
 
 	settings := integrations.GetSettings()
-	if settings != nil && settings.CodeCoverage {
-		// Initialize the runtime coverage if enabled.
-		coverage.InitializeCoverage(m)
+	if settings != nil {
+		if settings.CodeCoverage {
+			// Initialize the runtime coverage if enabled.
+			coverage.InitializeCoverage(m)
+		}
+		if settings.TestManagement.Enabled && internal.BoolEnv(constants.CIVisibilityTestManagementEnabledEnvironmentVariable, true) {
+			// Set the test management tag if enabled.
+			session.SetTag(constants.TestManagementEnabled, "true")
+		}
 	}
 
 	ddm := (*M)(m)
@@ -164,12 +171,13 @@ func instrumentTestingTFunc(f func(*testing.T)) func(*testing.T) {
 		if testPrivateFields != nil && testPrivateFields.parent != nil {
 			parentExecMeta := getTestMetadataFromPointer(*testPrivateFields.parent)
 			if parentExecMeta != nil {
-				if parentExecMeta.isANewTest {
-					execMeta.isANewTest = true
-				}
-				if parentExecMeta.isARetry {
-					execMeta.isARetry = true
-				}
+				execMeta.isANewTest = execMeta.isANewTest || parentExecMeta.isANewTest
+				execMeta.isARetry = execMeta.isARetry || parentExecMeta.isARetry
+				execMeta.isEFDExecution = execMeta.isEFDExecution || parentExecMeta.isEFDExecution
+				execMeta.isATRExecution = execMeta.isATRExecution || parentExecMeta.isATRExecution
+				execMeta.isQuarantined = execMeta.isQuarantined || parentExecMeta.isQuarantined
+				execMeta.isDisabled = execMeta.isDisabled || parentExecMeta.isDisabled
+				execMeta.isAttemptToFix = execMeta.isAttemptToFix || parentExecMeta.isAttemptToFix
 			}
 		}
 
@@ -186,11 +194,41 @@ func instrumentTestingTFunc(f func(*testing.T)) func(*testing.T) {
 		if execMeta.isARetry {
 			// Set the retry tag
 			test.SetTag(constants.TestIsRetry, "true")
+
+			// If the execution is an EFD execution we tag the test event reason
+			if execMeta.isEFDExecution {
+				// Set the EFD as the retry reason
+				test.SetTag(constants.TestRetryReason, "efd")
+			} else if execMeta.isATRExecution {
+				// Set the ATR as the retry reason
+				test.SetTag(constants.TestRetryReason, "atr")
+			} else if execMeta.isAttemptToFix {
+				// Set the attempt to fix as the retry reason
+				test.SetTag(constants.TestRetryReason, "attempt_to_fix")
+			}
+		}
+
+		// If the test is an attempt to fix we tag the test event
+		if execMeta.isAttemptToFix {
+			test.SetTag(constants.TestIsAttempToFix, "true")
+		}
+
+		// If the test is quarantined we tag the test event
+		if execMeta.isQuarantined {
+			test.SetTag(constants.TestIsQuarantined, "true")
+		}
+
+		// If the test is disabled we tag the test event
+		if execMeta.isDisabled {
+			test.SetTag(constants.TestIsDisabled, "true")
 		}
 
 		defer func() {
 			if r := recover(); r != nil {
 				// Handle panic and set error information.
+				if execMeta.isARetry && execMeta.isLastRetry && execMeta.allRetriesFailed {
+					test.SetTag(constants.TestHasFailedAllRetries, "true")
+				}
 				test.SetError(integrations.WithErrorInfo("panic", fmt.Sprint(r), utils.GetStacktrace(1)))
 				test.Close(integrations.ResultStatusFail)
 				checkModuleAndSuite(module, suite)
@@ -204,6 +242,9 @@ func instrumentTestingTFunc(f func(*testing.T)) func(*testing.T) {
 			} else {
 				// Normal finalization: determine the test result based on its state.
 				if t.Failed() {
+					if execMeta.isARetry && execMeta.isLastRetry && execMeta.allRetriesFailed {
+						test.SetTag(constants.TestHasFailedAllRetries, "true")
+					}
 					test.SetTag(ext.Error, true)
 					suite.SetTag(ext.Error, true)
 					module.SetTag(ext.Error, true)
@@ -211,6 +252,9 @@ func instrumentTestingTFunc(f func(*testing.T)) func(*testing.T) {
 				} else if t.Skipped() {
 					test.Close(integrations.ResultStatusSkip)
 				} else {
+					if execMeta.isARetry && execMeta.isLastRetry && execMeta.allAttemptsPassed {
+						test.SetTag(constants.TestAttemptToFixPassed, "true")
+					}
 					test.Close(integrations.ResultStatusPass)
 				}
 				checkModuleAndSuite(module, suite)
@@ -238,6 +282,12 @@ func instrumentSetErrorInfo(tb testing.TB, errType string, errMessage string, sk
 	ciTestItem := getTestMetadata(tb)
 	if ciTestItem != nil && ciTestItem.test != nil && ciTestItem.error.CompareAndSwap(0, 1) {
 		ciTestItem.test.SetError(integrations.WithErrorInfo(errType, errMessage, utils.GetStacktrace(2+skip)))
+
+		// Ensure to close the test with error before CI visibility exits. In CI visibility mode, we try to never lose data.
+		// If the test gets closed sooner (perhaps with another status), then this will be a noop call
+		integrations.PushCiVisibilityCloseAction(func() {
+			ciTestItem.test.Close(integrations.ResultStatusFail)
+		})
 	}
 }
 

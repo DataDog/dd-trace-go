@@ -34,6 +34,7 @@ func TestNewSpan(t *testing.T) {
 		assert.NotNil(s.context)
 		assert.NotZero(s.context.spanID)
 		assert.Equal(s.context.spanID, s.context.traceID)
+		assert.Equal("manual", s.Integration())
 	})
 
 	t.Run("options", func(t *testing.T) {
@@ -65,6 +66,17 @@ func TestNewSpan(t *testing.T) {
 		assert.Equal(uint64(2), s.context.traceID)
 		assert.Equal(baggage, s.context.baggage)
 	})
+	t.Run("custom_integration", func(t *testing.T) {
+		tr := new(mocktracer)
+		tags := make(map[string]interface{})
+		tags[ext.Component] = "integrationName"
+		opts := &ddtrace.StartSpanConfig{Tags: tags}
+		s := newSpan(tr, "opname", opts)
+
+		assert := assert.New(t)
+		assert.NotNil(s.context)
+		assert.Equal("integrationName", s.Integration())
+	})
 }
 
 func TestSpanSetTag(t *testing.T) {
@@ -73,7 +85,7 @@ func TestSpanSetTag(t *testing.T) {
 	s.SetTag("c", "d")
 
 	assert := assert.New(t)
-	assert.Len(s.Tags(), 3)
+	assert.Len(s.Tags(), 4)
 	assert.Equal("http.request", s.Tag(ext.ResourceName))
 	assert.Equal("b", s.Tag("a"))
 	assert.Equal("d", s.Tag("c"))
@@ -86,6 +98,14 @@ func TestSpanSetTagPriority(t *testing.T) {
 	s.SetTag(ext.SamplingPriority, -1)
 	assert.True(s.context.hasSamplingPriority())
 	assert.Equal(-1, s.context.samplingPriority())
+}
+
+func TestSpanSetTagComponent(t *testing.T) {
+	assert := assert.New(t)
+	s := basicSpan("http.request")
+	assert.Equal(s.Integration(), "manual")
+	s.SetTag(ext.Component, "custom")
+	assert.Equal(s.Integration(), "custom")
 }
 
 func TestSpanTagImmutability(t *testing.T) {

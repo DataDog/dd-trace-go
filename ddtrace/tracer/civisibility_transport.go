@@ -192,7 +192,7 @@ func (t *ciVisibilityTransport) send(p *payload) (body io.ReadCloser, err error)
 // Returns:
 //
 //	An error indicating that stats are not supported.
-func (t *ciVisibilityTransport) sendStats(*pb.ClientStatsPayload) error {
+func (t *ciVisibilityTransport) sendStats(*pb.ClientStatsPayload, int) error {
 	// Stats are not supported by CI Visibility agentless / EVP proxy.
 	return nil
 }

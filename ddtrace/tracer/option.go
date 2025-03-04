@@ -589,8 +589,7 @@ func newConfig(opts ...StartOption) *config {
 	globalTagsOrigin := c.globalTags.cfgOrigin
 	c.initGlobalTags(c.globalTags.get(), globalTagsOrigin)
 
-	// TODO: change the name once APM Platform RFC is approved
-	if internal.BoolEnv("DD_EXPERIMENTAL_APPSEC_STANDALONE_ENABLED", false) {
+	if !internal.BoolEnv("DD_APM_TRACING_ENABLED", true) {
 		// Enable tracing as transport layer mode
 		// This means to stop sending trace metrics, send one trace per minute and those force-kept by other products
 		// using the tracer as transport layer for their data. And finally adding the _dd.apm.enabled=0 tag to all traces
@@ -729,6 +728,9 @@ type agentFeatures struct {
 
 	// metaStructAvailable reports whether the trace-agent can receive spans with the `meta_struct` field.
 	metaStructAvailable bool
+
+	// obfuscationVersion reports the trace-agent's version of obfuscation logic. A value of 0 means this field wasn't present.
+	obfuscationVersion int
 }
 
 // HasFlag reports whether the agent has set the feat feature flag.
@@ -755,12 +757,13 @@ func loadAgentFeatures(agentDisabled bool, agentURL *url.URL, httpClient *http.C
 	}
 	defer resp.Body.Close()
 	type infoResponse struct {
-		Endpoints      []string `json:"endpoints"`
-		ClientDropP0s  bool     `json:"client_drop_p0s"`
-		FeatureFlags   []string `json:"feature_flags"`
-		PeerTags       []string `json:"peer_tags"`
-		SpanMetaStruct bool     `json:"span_meta_structs"`
-		Config         struct {
+		Endpoints          []string `json:"endpoints"`
+		ClientDropP0s      bool     `json:"client_drop_p0s"`
+		FeatureFlags       []string `json:"feature_flags"`
+		PeerTags           []string `json:"peer_tags"`
+		SpanMetaStruct     bool     `json:"span_meta_structs"`
+		ObfuscationVersion int      `json:"obfuscation_version"`
+		Config             struct {
 			StatsdPort int `json:"statsd_port"`
 		} `json:"config"`
 	}
@@ -775,6 +778,7 @@ func loadAgentFeatures(agentDisabled bool, agentURL *url.URL, httpClient *http.C
 	features.StatsdPort = info.Config.StatsdPort
 	features.metaStructAvailable = info.SpanMetaStruct
 	features.peerTags = info.PeerTags
+	features.obfuscationVersion = info.ObfuscationVersion
 	for _, endpoint := range info.Endpoints {
 		switch endpoint {
 		case "/v0.6/stats":
@@ -1441,6 +1445,8 @@ func setHeaderTags(headerAsTags []string) bool {
 // This configuration can be set by combining one or several UserMonitoringOption with a call to SetUser().
 type UserMonitoringConfig struct {
 	PropagateID bool
+	Login       string
+	Org         string
 	Email       string
 	Name        string
 	Role        string
@@ -1457,6 +1463,20 @@ type UserMonitoringOption func(*UserMonitoringConfig)
 func WithUserMetadata(key, value string) UserMonitoringOption {
 	return func(cfg *UserMonitoringConfig) {
 		cfg.Metadata[key] = value
+	}
+}
+
+// WithUserLogin returns the option setting the login of the authenticated user.
+func WithUserLogin(login string) UserMonitoringOption {
+	return func(cfg *UserMonitoringConfig) {
+		cfg.Login = login
+	}
+}
+
+// WithUserOrg returns the option setting the organization of the authenticated user.
+func WithUserOrg(org string) UserMonitoringOption {
+	return func(cfg *UserMonitoringConfig) {
+		cfg.Org = org
 	}
 }
 
