@@ -24,9 +24,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener/httpsec"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 )
 
 var (
@@ -104,13 +102,11 @@ func StartRequestSpan(r *http.Request, opts ...ddtrace.StartSpanOption) (tracer.
 				tracer.ChildOf(inferredProxySpan.Context())(ssCfg)
 			} else {
 				spanParentCtx, spanParentErr := tracer.Extract(tracer.HTTPHeadersCarrier(r.Header))
-				tracer.ChildOf(spanParentCtx)(ssCfg)
 				if spanParentErr == nil {
-					
 					if spanLinksCtx, spanLinksOk := spanParentCtx.(ddtrace.SpanContextWithLinks); spanLinksOk {
 						tracer.WithSpanLinks(spanLinksCtx.SpanLinks())(ssCfg)
 					}
-					
+					tracer.ChildOf(spanParentCtx)(ssCfg)
 					var baggageMap map[string]string
 					spanParentCtx.ForeachBaggageItem(func(k, v string) bool {
 						// Make the map only if we actually discover any baggage items.
