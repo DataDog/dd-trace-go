@@ -102,7 +102,7 @@ func TestSpansStartedTags(t *testing.T) {
 
 		tracer.StartSpan("operation").Finish()
 		flush(1)
-		tg.Wait(assert, 1, 100*time.Millisecond)
+		tg.Wait(assert, 3, 100*time.Millisecond)
 		assertSpanMetricCountsAreZero(t, tracer.spansStarted)
 
 		counts := tg.Counts()
@@ -121,7 +121,7 @@ func TestSpansStartedTags(t *testing.T) {
 		tracer.StartSpan("operation", Tag(ext.Component, "contrib")).Finish()
 		flush(1)
 
-		tg.Wait(assert, 1, 100*time.Millisecond)
+		tg.Wait(assert, 3, 100*time.Millisecond)
 		assertSpanMetricCountsAreZero(t, tracer.spansStarted)
 
 		counts := tg.Counts()
@@ -145,7 +145,7 @@ func TestSpansFinishedTags(t *testing.T) {
 
 		tracer.StartSpan("operation").Finish()
 		flush(1)
-		tg.Wait(assert, 1, 100*time.Millisecond)
+		tg.Wait(assert, 3, 100*time.Millisecond)
 		assertSpanMetricCountsAreZero(t, tracer.spansFinished)
 
 		counts := tg.Counts()
@@ -164,7 +164,7 @@ func TestSpansFinishedTags(t *testing.T) {
 		tracer.StartSpan("operation", Tag(ext.Component, "contrib")).Finish()
 		flush(1)
 
-		tg.Wait(assert, 1, 100*time.Millisecond)
+		tg.Wait(assert, 3, 100*time.Millisecond)
 		assertSpanMetricCountsAreZero(t, tracer.spansFinished)
 
 		counts := tg.Counts()
@@ -201,14 +201,15 @@ func TestMultipleSpanIntegrationTags(t *testing.T) {
 		tracer.StartSpan("operation", Tag(ext.Component, "contrib")).Finish()
 	}
 	flush(10)
-	tg.Wait(assert, 10, 100*time.Millisecond)
+	time.Sleep(300 * time.Millisecond)
+	tg.Wait(assert, 30, 100*time.Millisecond)
+
+	assertSpanMetricCountsAreZero(t, tracer.spansStarted)
+	assertSpanMetricCountsAreZero(t, tracer.spansFinished)
 
 	counts := tg.Counts()
 	assert.Equal(int64(10), counts["datadog.tracer.spans_started"])
 	assert.Equal(int64(10), counts["datadog.tracer.spans_finished"])
-
-	assertSpanMetricCountsAreZero(t, tracer.spansStarted)
-	assertSpanMetricCountsAreZero(t, tracer.spansFinished)
 
 	startCalls := statsdtest.FilterCallsByName(tg.CountCalls(), "datadog.tracer.spans_started")
 	assert.Equal(int64(5), tg.CountCallsByTag(startCalls, "integration:manual"))
@@ -243,16 +244,15 @@ func TestHealthMetricsRaceCondition(t *testing.T) {
 	}
 	wg.Wait()
 	flush(5)
-	tg.Wait(assert, 10, 100*time.Millisecond)
-	time.Sleep(150 * time.Millisecond)
-
-	counts := tg.Counts()
-	// fmt.Printf("counts = %+v\n", counts)
-	assert.Equal(int64(5), counts["datadog.tracer.spans_started"])
-	assert.Equal(int64(5), counts["datadog.tracer.spans_finished"])
+	time.Sleep(300 * time.Millisecond)
+	tg.Wait(assert, 15, 100*time.Millisecond)
 
 	assertSpanMetricCountsAreZero(t, tracer.spansStarted)
 	assertSpanMetricCountsAreZero(t, tracer.spansFinished)
+
+	counts := tg.Counts()
+	assert.Equal(int64(5), counts["datadog.tracer.spans_started"])
+	assert.Equal(int64(5), counts["datadog.tracer.spans_finished"])
 }
 
 func TestTracerMetrics(t *testing.T) {

@@ -85,19 +85,11 @@ func NewXSyncMapCounterMap() *XSyncMapCounterMap {
 }
 
 func (cm *XSyncMapCounterMap) Inc(key string) {
-	// val, ok := cm.counts.Load(key)
-	// if !ok {
-	// 	val, _ = cm.counts.LoadOrStore(key, xsync.NewCounter())
-	// }
-	// val.Inc()
-
-	cm.counts.Compute(key, func(old *xsync.Counter, loaded bool) (*xsync.Counter, bool) {
-		if !loaded {
-			old = xsync.NewCounter()
-		}
-		old.Inc()
-		return old, false
-	})
+	val, ok := cm.counts.Load(key)
+	if !ok {
+		val, _ = cm.counts.LoadOrStore(key, xsync.NewCounter())
+	}
+	val.Inc()
 }
 
 func (cm *XSyncMapCounterMap) GetAndReset() map[string]int64 {
