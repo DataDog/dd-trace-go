@@ -24,7 +24,6 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/internal/tracerstats"
 	globalinternal "github.com/DataDog/dd-trace-go/v2/internal"
-	utils "github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec"
 	appsecConfig "github.com/DataDog/dd-trace-go/v2/internal/appsec/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/datastreams"
@@ -128,7 +127,7 @@ type tracer struct {
 
 	// These maps count the spans started and finished from
 	// each component, including contribs and "manual" spans.
-	spansStarted, spansFinished utils.XSyncMapCounterMap
+	spansStarted, spansFinished globalinternal.XSyncMapCounterMap
 
 	// tracesDropped track metrics about traces as they are dropped
 	tracesDropped uint32
@@ -389,8 +388,8 @@ func newUnstartedTracer(opts ...StartOption) (*tracer, error) {
 		pid:              os.Getpid(),
 		logDroppedTraces: time.NewTicker(1 * time.Second),
 		stats:            newConcentrator(c, defaultStatsBucketSize, statsd),
-		spansStarted:     *utils.NewXSyncMapCounterMap(),
-		spansFinished:    *utils.NewXSyncMapCounterMap(),
+		spansStarted:     *globalinternal.NewXSyncMapCounterMap(),
+		spansFinished:    *globalinternal.NewXSyncMapCounterMap(),
 		obfuscator: obfuscate.NewObfuscator(obfuscate.Config{
 			SQL: obfuscate.SQLConfig{
 				TableNames:       c.agent.HasFlag("table_names"),
