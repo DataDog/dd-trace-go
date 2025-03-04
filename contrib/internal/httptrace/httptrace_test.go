@@ -404,15 +404,11 @@ func TestStartRequestSpanMergedBaggage(t *testing.T) {
 	req.Header.Set("baggage", "header_key=header_value,another_header=another_value")
 
 	// Start the request span, which will extract header baggage and merge it with the context's baggage.
-	span, _, _ := StartRequestSpan(req)
+	span, ctx, _ := StartRequestSpan(req)
 	span.Finish()
 
 	// Retrieve the merged baggage from the span's context.
-	mergedBaggage := make(map[string]string)
-	span.Context().ForeachBaggageItem(func(k, v string) bool {
-		mergedBaggage[k] = v
-		return true
-	})
+	mergedBaggage := baggage.All(ctx)
 
 	// Verify that both pre-set and header baggage items are present.
 	assert.Equal(t, "pre_value", mergedBaggage["pre_key"], "should contain pre-set baggage")

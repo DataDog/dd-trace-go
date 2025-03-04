@@ -104,12 +104,8 @@ func StartRequestSpan(r *http.Request, opts ...ddtrace.StartSpanOption) (tracer.
 				tracer.ChildOf(inferredProxySpan.Context())(ssCfg)
 			} else {
 				spanParentCtx, spanParentErr := tracer.Extract(tracer.HTTPHeadersCarrier(r.Header))
+				tracer.ChildOf(spanParentCtx)(ssCfg)
 				if spanParentErr == nil {
-					if spanLinksCtx, spanLinksOk := spanParentCtx.(ddtrace.SpanContextWithLinks); spanLinksOk {
-						tracer.WithSpanLinks(spanLinksCtx.SpanLinks())(ssCfg)
-					}
-					tracer.ChildOf(spanParentCtx)(ssCfg)
-
 					var baggageMap map[string]string
 					spanParentCtx.ForeachBaggageItem(func(k, v string) bool {
 						// Make the map only if we actually discover any baggage items.
@@ -128,6 +124,11 @@ func StartRequestSpan(r *http.Request, opts ...ddtrace.StartSpanOption) (tracer.
 						}
 						r = r.WithContext(ctx)
 					}
+
+					if spanLinksCtx, spanLinksOk := spanParentCtx.(ddtrace.SpanContextWithLinks); spanLinksOk {
+						tracer.WithSpanLinks(spanLinksCtx.SpanLinks())(ssCfg)
+					}
+
 				}
 			}
 
