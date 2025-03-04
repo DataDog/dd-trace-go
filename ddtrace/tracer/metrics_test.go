@@ -201,7 +201,7 @@ func TestMultipleSpanIntegrationTags(t *testing.T) {
 		tracer.StartSpan("operation", Tag(ext.Component, "contrib")).Finish()
 	}
 	flush(10)
-	time.Sleep(300 * time.Millisecond)
+	time.Sleep(500 * time.Millisecond)
 	tg.Wait(assert, 30, 100*time.Millisecond)
 
 	assertSpanMetricCountsAreZero(t, tracer.spansStarted)
@@ -244,7 +244,7 @@ func TestHealthMetricsRaceCondition(t *testing.T) {
 	}
 	wg.Wait()
 	flush(5)
-	time.Sleep(300 * time.Millisecond)
+	time.Sleep(1500 * time.Millisecond)
 	tg.Wait(assert, 15, 100*time.Millisecond)
 
 	assertSpanMetricCountsAreZero(t, tracer.spansStarted)
