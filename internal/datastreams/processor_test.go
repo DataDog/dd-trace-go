@@ -197,6 +197,109 @@ func TestProcessor(t *testing.T) {
 			TracerVersion: version.Tag,
 			Lang:          "go",
 		}}, got)
+
+	t.Run("test_service_name_override", func(t *testing.T) {
+		p := NewProcessor(nil, "env", "service", "v1", &url.URL{Scheme: "http", Host: "agent-address"}, nil)
+		tp := time.Now().Truncate(bucketDuration)
+		p.add(statsPoint{
+			serviceName:    "service1",
+			edgeTags:       []string{"type:edge-1"},
+			hash:           2,
+			parentHash:     1,
+			timestamp:      tp.UnixNano(),
+			pathwayLatency: time.Second.Nanoseconds(),
+			edgeLatency:    time.Second.Nanoseconds(),
+			payloadSize:    1,
+		})
+		p.add(statsPoint{
+			serviceName:    "service2",
+			edgeTags:       []string{"type:edge-1"},
+			hash:           2,
+			parentHash:     1,
+			timestamp:      tp.UnixNano(),
+			pathwayLatency: (5 * time.Second).Nanoseconds(),
+			edgeLatency:    (2 * time.Second).Nanoseconds(),
+			payloadSize:    2,
+		})
+		got := sortedPayloads(p.flush(tp.Add(bucketDuration)))
+		assert.Equal(t, map[string]StatsPayload{
+			"service1": {
+				Env:     "env",
+				Service: "service1",
+				Version: "v1",
+				Stats: []StatsBucket{
+					{
+						Start:    uint64(tp1.Add(-10 * time.Second).UnixNano()),
+						Duration: uint64(bucketDuration.Nanoseconds()),
+						Stats: []StatsPoint{{
+							EdgeTags:       []string{"type:edge-1"},
+							Hash:           2,
+							ParentHash:     1,
+							PathwayLatency: buildSketch(1),
+							EdgeLatency:    buildSketch(1),
+							PayloadSize:    buildSketch(1),
+							TimestampType:  "origin",
+						}},
+						Backlogs: []Backlog{},
+					},
+					{
+						Start:    uint64(tp1.UnixNano()),
+						Duration: uint64(bucketDuration.Nanoseconds()),
+						Stats: []StatsPoint{{
+							EdgeTags:       []string{"type:edge-1"},
+							Hash:           2,
+							ParentHash:     1,
+							PathwayLatency: buildSketch(1),
+							EdgeLatency:    buildSketch(1),
+							PayloadSize:    buildSketch(1),
+							TimestampType:  "current",
+						}},
+						Backlogs: []Backlog{},
+					},
+				},
+				TracerVersion: version.Tag,
+				Lang:          "go",
+			},
+			"service2": {
+				Env:     "env",
+				Service: "service2",
+				Version: "v1",
+				Stats: []StatsBucket{
+					{
+						Start:    uint64(tp1.Add(-10 * time.Second).UnixNano()),
+						Duration: uint64(bucketDuration.Nanoseconds()),
+						Stats: []StatsPoint{{
+							EdgeTags:       []string{"type:edge-1"},
+							Hash:           2,
+							ParentHash:     1,
+							PathwayLatency: buildSketch(5),
+							EdgeLatency:    buildSketch(2),
+							PayloadSize:    buildSketch(2),
+							TimestampType:  "origin",
+						}},
+						Backlogs: []Backlog{},
+					},
+					{
+						Start:    uint64(tp1.UnixNano()),
+						Duration: uint64(bucketDuration.Nanoseconds()),
+						Stats: []StatsPoint{{
+							EdgeTags:       []string{"type:edge-1"},
+							Hash:           2,
+							ParentHash:     1,
+							PathwayLatency: buildSketch(5),
+							EdgeLatency:    buildSketch(2),
+							PayloadSize:    buildSketch(2),
+							TimestampType:  "current",
+						}},
+						Backlogs: []Backlog{},
+					},
+				},
+				TracerVersion: version.Tag,
+				Lang:          "go",
+			},
+		}, got)
+	})
+
 }
 
 func TestSetCheckpoint(t *testing.T) {
