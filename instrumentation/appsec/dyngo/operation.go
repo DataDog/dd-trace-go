@@ -22,6 +22,7 @@ package dyngo
 
 import (
 	"context"
+	"runtime"
 	"sync"
 	"sync/atomic"
 
@@ -330,16 +331,12 @@ func addDataListener[T any](b *dataBroadcaster, l DataListener[T]) {
 	b.listeners[key] = append(b.listeners[key], l)
 }
 
-func (b *dataBroadcaster) clear() {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	b.listeners = nil
-}
-
 func emitData[T any](b *dataBroadcaster, v T) {
 	defer func() {
 		if r := recover(); r != nil {
-			LogError("appsec: recovered from an unexpected panic from an event listener: %+v", r)
+			var buf [4_096]byte
+			n := runtime.Stack(buf[:], false)
+			LogError("appsec: recovered from an unexpected panic from a data listener (for %T): %+v\n%s", v, r, string(buf[:n]))
 		}
 	}()
 	b.mu.RLock()
@@ -370,7 +367,9 @@ func (r *eventRegister) clear() {
 func emitEvent[O Operation, T any](r *eventRegister, op O, v T) {
 	defer func() {
 		if r := recover(); r != nil {
-			LogError("appsec: recovered from an unexpected panic from an event listener: %+v", r)
+			var buf [4_096]byte
+			n := runtime.Stack(buf[:], false)
+			LogError("appsec: recovered from an unexpected panic from an event listener (for %T): %+v\n%s", v, r, string(buf[:n]))
 		}
 	}()
 	r.mu.RLock()

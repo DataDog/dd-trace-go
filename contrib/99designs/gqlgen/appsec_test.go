@@ -12,6 +12,7 @@ import (
 	"os"
 	"path"
 	"testing"
+	"time"
 
 	"github.com/99designs/gqlgen/client"
 	"github.com/99designs/gqlgen/graphql"
@@ -131,6 +132,44 @@ func TestAppSec(t *testing.T) {
 				require.ElementsMatch(t, ids, []string{"test-rule-001", "test-rule-002"})
 			})
 		}
+	})
+
+	t.Run("subscription", func(t *testing.T) {
+		schema := gqlparser.MustLoadSchema(&ast.Source{Input: `type Time {
+			unixTime: Int!
+		}
+		type Subscription {
+			currentTime: Time!
+		}`})
+
+		server := handler.New(&graphql.ExecutableSchemaMock{
+			ExecFunc:   execSubscriptionFunc,
+			SchemaFunc: func() *ast.Schema { return schema },
+		})
+		server.Use(NewTracer())
+		server.AddTransport(transport.Websocket{})
+
+		client := client.New(server)
+
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		now := time.Now().Unix()
+		sub := client.Websocket(`subscription { currentTime { unixTime } }`)
+		var resp struct {
+			CurrentTime struct {
+				UnixTime int64 `json:"unixTime"`
+			} `json:"currentTime"`
+		}
+		require.NoError(t, sub.Next(&resp))
+		require.LessOrEqual(t, now, resp.CurrentTime.UnixTime)
+		require.NoError(t, sub.Close())
+
+		spans := mt.FinishedSpans()
+		require.Len(t, spans, 3)
+		require.Equal(t, "graphql.read", spans[0].OperationName())
+		require.Equal(t, "graphql.parse", spans[1].OperationName())
+		require.Equal(t, "graphql.validate", spans[2].OperationName())
 	})
 }
 
@@ -327,5 +366,34 @@ func execFunc(ctx context.Context) graphql.ResponseHandler {
 		}
 	default:
 		return graphql.OneShot(graphql.ErrorResponse(ctx, "not implemented"))
+	}
+}
+
+func execSubscriptionFunc(ctx context.Context) graphql.ResponseHandler {
+	op := graphql.GetOperationContext(ctx)
+
+	if op.Operation.Operation != ast.Subscription {
+		return graphql.OneShot(graphql.ErrorResponse(ctx, "not implemented"))
+	}
+
+	return func(ctx context.Context) *graphql.Response {
+		fields := graphql.CollectFields(op, op.Operation.SelectionSet, []string{"Subscription"})
+		resp := make(map[string]any)
+		for _, field := range fields {
+			switch field.Name {
+			case "currentTime":
+				resp["currentTime"] = map[string]int64{
+					"unixTime": time.Now().Unix(),
+				}
+			default:
+				return graphql.ErrorResponse(ctx, "unknown field: %s", field.Name)
+			}
+		}
+
+		data, err := json.Marshal(resp)
+		if err != nil {
+			return graphql.ErrorResponse(ctx, "failed to marshal response: %v", err)
+		}
+		return &graphql.Response{Data: data}
 	}
 }

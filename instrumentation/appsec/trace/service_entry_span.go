@@ -128,6 +128,9 @@ func (op *ServiceEntrySpanOperation) OnSpanTagEvent(tag SpanTag) {
 
 func StartServiceEntrySpanOperation(ctx context.Context, span TagSetter) (*ServiceEntrySpanOperation, context.Context) {
 	parent, _ := dyngo.FromContext(ctx)
+	if span == nil {
+		span = NoopTagSetter{}
+	}
 	op := &ServiceEntrySpanOperation{
 		Operation: dyngo.NewOperation(parent),
 		jsonTags:  make(map[string]any, 2),
@@ -138,7 +141,7 @@ func StartServiceEntrySpanOperation(ctx context.Context, span TagSetter) (*Servi
 
 func (op *ServiceEntrySpanOperation) Finish() {
 	span := op.tagSetter
-	if _, ok := span.(*NoopTagSetter); ok { // If the span is a NoopTagSetter or is nil, we don't need to set any tags
+	if _, ok := span.(NoopTagSetter); ok { // If the span is a NoopTagSetter or is nil, we don't need to set any tags
 		return
 	}
 
