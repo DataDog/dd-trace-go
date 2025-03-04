@@ -34,6 +34,10 @@ func (k metricKey) SplitTags() []string {
 	return strings.Split(k.tags, ",")
 }
 
+func (k metricKey) String() string {
+	return fmt.Sprintf("%s.%s.%s.%s", k.namespace, k.kind, k.name, k.tags)
+}
+
 func validateMetricKey(namespace Namespace, kind transport.MetricType, name string, tags []string) error {
 	if len(name) == 0 {
 		return fmt.Errorf("metric name with tags %v should be empty", tags)
