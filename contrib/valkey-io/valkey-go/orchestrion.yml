@@ -5,7 +5,7 @@
 ---
 # yaml-language-server: $schema=https://datadoghq.dev/orchestrion/schema.json
 meta:
-  name: gopkg.in/DataDog/dd-trace-go.v1/contrib/valkey-go
+  name: github.com/DataDog/dd-trace-go/contrib/valkey-io/valkey-go/v2
   description: Valkey client for Go.
 
 aspects:
@@ -16,6 +16,6 @@ aspects:
     advice:
       - wrap-expression:
           imports:
-            valkeytrace: gopkg.in/DataDog/dd-trace-go.v1/contrib/valkey-go
+            valkeytrace: github.com/DataDog/dd-trace-go/contrib/valkey-io/valkey-go/v2
           template: |-
             valkeytrace.NewClient({{ index .AST.Args 0 }})

@@ -56,12 +56,11 @@ func (tc *TestCase) ExpectedTraces() trace.Traces {
 				{
 					Tags: map[string]any{
 						"name":     "valkey.command",
-						"service":  "valkey.client",
+						"service":  "valkey-go.test",
 						"resource": "SET",
 						"type":     "valkey",
 					},
 					Meta: map[string]string{
-						"_dd.base_service":           "valkey-go.test",
 						"component":                  "valkey-io/valkey-go",
 						"db.system":                  "valkey",
 						"db.valkey.client.cache.hit": "false",
@@ -73,12 +72,11 @@ func (tc *TestCase) ExpectedTraces() trace.Traces {
 				{
 					Tags: map[string]any{
 						"name":     "valkey.command",
-						"service":  "valkey.client",
+						"service":  "valkey-go.test",
 						"resource": "GET",
 						"type":     "valkey",
 					},
 					Meta: map[string]string{
-						"_dd.base_service":           "valkey-go.test",
 						"component":                  "valkey-io/valkey-go",
 						"db.system":                  "valkey",
 						"db.valkey.client.cache.hit": "false",
