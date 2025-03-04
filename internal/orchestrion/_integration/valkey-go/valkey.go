@@ -12,12 +12,12 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/DataDog/dd-trace-go/internal/orchestrion/_integration/internal/containers"
-	"github.com/DataDog/dd-trace-go/internal/orchestrion/_integration/internal/trace"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/containers"
+	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/trace"
 	"github.com/stretchr/testify/require"
 	testvalkey "github.com/testcontainers/testcontainers-go/modules/valkey"
 	"github.com/valkey-io/valkey-go"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
 
 type TestCase struct {
