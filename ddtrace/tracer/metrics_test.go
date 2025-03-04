@@ -97,10 +97,11 @@ func TestSpansStartedTags(t *testing.T) {
 
 	t.Run("default", func(t *testing.T) {
 		assert := assert.New(t)
-		tracer, _, _, stop := startTestTracer(t, withStatsdClient(&tg))
+		tracer, _, flush, stop := startTestTracer(t, withStatsdClient(&tg))
 		defer stop()
 
 		tracer.StartSpan("operation").Finish()
+		flush(1)
 		tg.Wait(assert, 1, 100*time.Millisecond)
 		assertSpanMetricCountsAreZero(t, tracer.spansStarted)
 
@@ -114,11 +115,11 @@ func TestSpansStartedTags(t *testing.T) {
 	t.Run("custom_integration", func(t *testing.T) {
 		tg.Reset()
 		assert := assert.New(t)
-		tracer, _, _, stop := startTestTracer(t, withStatsdClient(&tg))
+		tracer, _, flush, stop := startTestTracer(t, withStatsdClient(&tg))
 		defer stop()
 
-		sp := tracer.StartSpan("operation", Tag(ext.Component, "contrib"))
-		defer sp.Finish()
+		tracer.StartSpan("operation", Tag(ext.Component, "contrib")).Finish()
+		flush(1)
 
 		tg.Wait(assert, 1, 100*time.Millisecond)
 		assertSpanMetricCountsAreZero(t, tracer.spansStarted)
@@ -139,10 +140,11 @@ func TestSpansFinishedTags(t *testing.T) {
 
 	t.Run("default", func(t *testing.T) {
 		assert := assert.New(t)
-		tracer, _, _, stop := startTestTracer(t, withStatsdClient(&tg))
+		tracer, _, flush, stop := startTestTracer(t, withStatsdClient(&tg))
 		defer stop()
 
 		tracer.StartSpan("operation").Finish()
+		flush(1)
 		tg.Wait(assert, 1, 100*time.Millisecond)
 		assertSpanMetricCountsAreZero(t, tracer.spansFinished)
 
@@ -156,10 +158,11 @@ func TestSpansFinishedTags(t *testing.T) {
 	t.Run("custom_integration", func(t *testing.T) {
 		tg.Reset()
 		assert := assert.New(t)
-		tracer, _, _, stop := startTestTracer(t, withStatsdClient(&tg))
+		tracer, _, flush, stop := startTestTracer(t, withStatsdClient(&tg))
 		defer stop()
 
 		tracer.StartSpan("operation", Tag(ext.Component, "contrib")).Finish()
+		flush(1)
 
 		tg.Wait(assert, 1, 100*time.Millisecond)
 		assertSpanMetricCountsAreZero(t, tracer.spansFinished)
@@ -238,12 +241,13 @@ func TestHealthMetricsRaceCondition(t *testing.T) {
 			sp.Finish()
 		}()
 	}
-	time.Sleep(150 * time.Millisecond)
+	wg.Wait()
 	flush(5)
 	tg.Wait(assert, 10, 100*time.Millisecond)
-	wg.Wait()
+	time.Sleep(150 * time.Millisecond)
 
 	counts := tg.Counts()
+	// fmt.Printf("counts = %+v\n", counts)
 	assert.Equal(int64(5), counts["datadog.tracer.spans_started"])
 	assert.Equal(int64(5), counts["datadog.tracer.spans_finished"])
 
