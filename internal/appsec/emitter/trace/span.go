@@ -54,7 +54,7 @@ func StartSpanOperation(ctx context.Context) (*SpanOperation, context.Context) {
 }
 
 func (op *SpanOperation) Finish(span TagSetter) {
-	if _, ok := span.(*NoopTagSetter); ok { // If the span is a NoopTagSetter or is nil, we don't need to set any tags
+	if _, ok := span.(NoopTagSetter); ok || span == nil { // If the span is a NoopTagSetter or is nil, we don't need to set any tags
 		return
 	}
 

@@ -337,7 +337,7 @@ func emitData[T any](b *dataBroadcaster, v T) {
 		if r := recover(); r != nil {
 			var buf [4_096]byte
 			n := runtime.Stack(buf[:], false)
-			LogError("appsec: recovered from an unexpected panic from an data listener (for %T): %+v\n%s", v, r, string(buf[:n]))
+			LogError("appsec: recovered from an unexpected panic from a data listener (for %T): %+v\n%s", v, r, string(buf[:n]))
 		}
 	}()
 	b.mu.RLock()
