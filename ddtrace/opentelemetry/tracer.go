@@ -11,11 +11,12 @@ import (
 	"encoding/hex"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/baggage"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 
-	"go.opentelemetry.io/otel/baggage"
+	otelbaggage "go.opentelemetry.io/otel/baggage"
 	oteltrace "go.opentelemetry.io/otel/trace"
 	"go.opentelemetry.io/otel/trace/noop"
 )
@@ -90,12 +91,30 @@ func (t *oteltracer) Start(ctx context.Context, spanName string, opts ...oteltra
 	// we have to record the attributes  locally.
 	// The span operation name will be calculated when it's ended.
 	s := tracer.StartSpan(spanName, ddopts...)
-	otelBaggage := baggage.FromContext(ctx)
-	if otelBaggage.Len() > 0 {
-		for _, member := range otelBaggage.Members() {
+
+	// Get the current OpenTelemetry baggage.
+	otelBag := otelbaggage.FromContext(ctx)
+	// Get the ddtrace baggage as a map[string]string.
+	ddBaggageMap := baggage.All(ctx)
+
+	// Merge the two baggage maps.
+	// If there are conflicts, the OpenTelemetry baggage wins.
+	if len(ddBaggageMap) > 0 || otelBag.Len() > 0 {
+		var members []otelbaggage.Member
+		for key, value := range ddBaggageMap {
+			member, _ := otelbaggage.NewMember(key, value)
+			members = append(members, member)
+		}
+		for _, member := range otelBag.Members() {
+			members = append(members, member)
+		}
+		mergedBag, _ := otelbaggage.New(members...)
+		for _, member := range mergedBag.Members() {
 			s.SetBaggageItem(member.Key(), member.Value())
 		}
+		ctx = otelbaggage.ContextWithBaggage(ctx, mergedBag)
 	}
+
 	os := oteltrace.Span(&span{
 		DD:         s,
 		oteltracer: t,
