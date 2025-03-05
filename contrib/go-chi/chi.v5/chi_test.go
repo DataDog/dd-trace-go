@@ -326,7 +326,7 @@ func TestPropagation(t *testing.T) {
 
 	router := chi.NewRouter()
 	router.Use(Middleware(WithService("foobar")))
-	router.Get("/user/{id}", func(_ http.ResponseWriter, _ *http.Request) {
+	router.Get("/user/{id}", func(_ http.ResponseWriter, r *http.Request) {
 		span, ok := tracer.SpanFromContext(r.Context())
 		assert.True(ok)
 		assert.Equal(mocktracer.MockSpan(span).ParentID(), mocktracer.MockSpan(pspan).SpanID())

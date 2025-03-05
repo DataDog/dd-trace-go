@@ -248,7 +248,7 @@ func TestError(t *testing.T) {
 		mt.Reset()
 
 		code = 500
-		router.Get("/500", func(_ http.ResponseWriter, _ *http.Request) {
+		router.Get("/500", func(w http.ResponseWriter, _ *http.Request) {
 			http.Error(w, fmt.Sprintf("%d!", code), code)
 		})
 		r = httptest.NewRequest("GET", "/500", nil)
