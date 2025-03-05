@@ -95,19 +95,17 @@ func (t *oteltracer) Start(ctx context.Context, spanName string, opts ...oteltra
 	// Get the current OpenTelemetry baggage.
 	otelBag := otelbaggage.FromContext(ctx)
 	// Get the ddtrace baggage as a map[string]string.
-	ddBaggageMap := baggage.All(ctx)
+	ddBag := baggage.All(ctx)
 
 	// Merge the two baggage maps.
 	// If there are conflicts, the OpenTelemetry baggage wins.
-	if len(ddBaggageMap) > 0 || otelBag.Len() > 0 {
+	if len(ddBag) > 0 || otelBag.Len() > 0 {
 		var members []otelbaggage.Member
-		for key, value := range ddBaggageMap {
+		for key, value := range ddBag {
 			member, _ := otelbaggage.NewMember(key, value)
 			members = append(members, member)
 		}
-		for _, member := range otelBag.Members() {
-			members = append(members, member)
-		}
+		members = append(members, otelBag.Members()...)
 		mergedBag, _ := otelbaggage.New(members...)
 		for _, member := range mergedBag.Members() {
 			s.SetBaggageItem(member.Key(), member.Value())
