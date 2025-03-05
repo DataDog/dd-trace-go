@@ -27,7 +27,7 @@ func defaultConfig() *config {
 }
 
 // WithRawCommand can be used to set a tag `valkey.raw_command` in the created spans (disabled by default).
-// Warning: please note the datadog-agent currently does not support obfuscation for this tag, so use this at your own risk.
+// Warning: please note the datadog-agent v7.63.0 or below does not support obfuscation for this tag, so use this at your own risk.
 func WithRawCommand(rawCommand bool) Option {
 	return func(cfg *config) {
 		cfg.rawCommand = rawCommand
