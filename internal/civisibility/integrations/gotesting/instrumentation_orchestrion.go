@@ -14,7 +14,7 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
-	_ "unsafe"
+	_ "unsafe" // required blank import to run orchestrion
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/internal"

@@ -3,6 +3,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2025 Datadog, Inc.
 
+//nolint:revive
 package civisibility
 
 // Let's import all the internal package so we can enable the go:linkname directive over the internal packages
