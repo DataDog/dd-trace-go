@@ -429,7 +429,7 @@ func newConfig(opts ...StartOption) *config {
 	c.runtimeMetricsV2 = internal.BoolEnv("DD_RUNTIME_METRICS_V2_ENABLED", false)
 	c.debug = internal.BoolVal(getDDorOtelConfig("debugMode"), false)
 	c.logDirectory = os.Getenv("DD_TRACE_LOG_DIRECTORY")
-	c.enabled = newDynamicConfig("tracing_enabled", internal.BoolVal(getDDorOtelConfig("enabled"), true), func(b bool) bool { return true }, equal[bool])
+	c.enabled = newDynamicConfig("tracing_enabled", internal.BoolVal(getDDorOtelConfig("enabled"), true), func(_ bool) bool { return true }, equal[bool])
 	if _, ok := os.LookupEnv("DD_TRACE_ENABLED"); ok {
 		c.enabled.cfgOrigin = telemetry.OriginEnvVar
 	}
@@ -660,7 +660,7 @@ func udsClient(socketPath string, timeout time.Duration) *http.Client {
 	return &http.Client{
 		Transport: &http.Transport{
 			Proxy: http.ProxyFromEnvironment,
-			DialContext: func(ctx context.Context, network, address string) (net.Conn, error) {
+			DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
 				return defaultDialer.DialContext(ctx, "unix", (&net.UnixAddr{
 					Name: socketPath,
 					Net:  "unix",
@@ -913,7 +913,7 @@ func WithLogger(logger ddtrace.Logger) StartOption {
 // To learn more about priority sampling, please visit:
 // https://docs.datadoghq.com/tracing/getting_further/trace_sampling_and_storage/#priority-sampling-for-distributed-tracing
 func WithPrioritySampling() StartOption {
-	return func(c *config) {
+	return func(_ *config) {
 		// This is now enabled by default.
 	}
 }
@@ -1113,7 +1113,7 @@ func WithUDS(socketPath string) StartOption {
 // WithAnalytics allows specifying whether Trace Search & Analytics should be enabled
 // for integrations.
 func WithAnalytics(on bool) StartOption {
-	return func(cfg *config) {
+	return func(_ *config) {
 		if on {
 			globalconfig.SetAnalyticsRate(1.0)
 		} else {
@@ -1199,7 +1199,7 @@ func WithHostname(name string) StartOption {
 // WithTraceEnabled allows specifying whether tracing will be enabled
 func WithTraceEnabled(enabled bool) StartOption {
 	return func(c *config) {
-		c.enabled = newDynamicConfig("tracing_enabled", enabled, func(b bool) bool { return true }, equal[bool])
+		c.enabled = newDynamicConfig("tracing_enabled", enabled, func(_ bool) bool { return true }, equal[bool])
 	}
 }
 
@@ -1368,7 +1368,7 @@ func StartTime(t time.Time) StartSpanOption {
 // float64 between 0 and 1 where 0.5 would represent 50% of events.
 func AnalyticsRate(rate float64) StartSpanOption {
 	if math.IsNaN(rate) {
-		return func(cfg *ddtrace.StartSpanConfig) {}
+		return func(_ *ddtrace.StartSpanConfig) {}
 	}
 	return Tag(ext.EventSampleRate, rate)
 }

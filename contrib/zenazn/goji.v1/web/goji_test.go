@@ -30,7 +30,7 @@ func TestNoRouter(t *testing.T) {
 
 	m := web.New()
 	m.Use(Middleware(WithServiceName("my-router")))
-	m.Get("/user/:id", func(c web.C, w http.ResponseWriter, r *http.Request) {
+	m.Get("/user/:id", func(_ web.C, w http.ResponseWriter, _ *http.Request) {
 		w.Write([]byte("OK"))
 	})
 	r := httptest.NewRequest("GET", "/user/123", nil)
@@ -106,7 +106,7 @@ func TestError(t *testing.T) {
 	m.Use(Middleware(WithServiceName("my-router")))
 	code := 500
 	wantErr := fmt.Sprintf("%d: %s", code, http.StatusText(code))
-	m.Get("/err", func(w http.ResponseWriter, r *http.Request) {
+	m.Get("/err", func(w http.ResponseWriter, _ *http.Request) {
 		http.Error(w, fmt.Sprintf("%d!", code), code)
 	})
 	r := httptest.NewRequest("GET", "/err", nil)
@@ -142,7 +142,7 @@ func TestPropagation(t *testing.T) {
 	tracer.Inject(pspan.Context(), tracer.HTTPHeadersCarrier(r.Header))
 	m := web.New()
 	m.Use(Middleware(WithServiceName("my-router")))
-	m.Get("/user/:id", func(w http.ResponseWriter, r *http.Request) {
+	m.Get("/user/:id", func(_ http.ResponseWriter, r *http.Request) {
 		span, ok := tracer.SpanFromContext(r.Context())
 		assert.True(ok)
 		assert.Equal(span.(mocktracer.Span).ParentID(), pspan.(mocktracer.Span).SpanID())
@@ -158,7 +158,7 @@ func TestOptions(t *testing.T) {
 	assertRate := func(t *testing.T, mt mocktracer.Tracer, rate interface{}, opts ...Option) {
 		m := web.New()
 		m.Use(Middleware(opts...))
-		m.Get("/user/:id", func(w http.ResponseWriter, r *http.Request) {
+		m.Get("/user/:id", func(_ http.ResponseWriter, r *http.Request) {
 			_, ok := tracer.SpanFromContext(r.Context())
 			assert.True(t, ok)
 		})
@@ -223,7 +223,7 @@ func TestNoDebugStack(t *testing.T) {
 
 	m := web.New()
 	m.Use(Middleware(NoDebugStack()))
-	m.Get("/user/:id", func(w http.ResponseWriter, r *http.Request) {
+	m.Get("/user/:id", func(w http.ResponseWriter, _ *http.Request) {
 		http.Error(w, "failed", http.StatusInternalServerError)
 	})
 
@@ -252,7 +252,7 @@ func TestNamingSchema(t *testing.T) {
 
 		mux := web.New()
 		mux.Use(Middleware(opts...))
-		mux.Get("/200", func(w http.ResponseWriter, r *http.Request) {
+		mux.Get("/200", func(w http.ResponseWriter, _ *http.Request) {
 			_, err := w.Write([]byte("ok"))
 			require.NoError(t, err)
 		})

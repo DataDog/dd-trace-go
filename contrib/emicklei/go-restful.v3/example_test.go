@@ -31,7 +31,7 @@ func Example() {
 
 	// set endpoint
 	ws.Route(ws.GET("/hello").To(
-		func(request *restful.Request, response *restful.Response) {
+		func(_ *restful.Request, response *restful.Response) {
 			io.WriteString(response, "world")
 		}))
 	restful.Add(ws)
@@ -47,7 +47,7 @@ func Example_spanFromContext() {
 	))
 
 	ws.Route(ws.GET("/image/encode").To(
-		func(request *restful.Request, response *restful.Response) {
+		func(request *restful.Request, _ *restful.Response) {
 			// create a child span to track operation timing.
 			encodeSpan, _ := tracer.StartSpanFromContext(request.Request.Context(), "image.encode")
 			// encode a image

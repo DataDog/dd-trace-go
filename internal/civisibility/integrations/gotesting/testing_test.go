@@ -118,7 +118,7 @@ func TestRetryWithFail(t *testing.T) {
 }
 
 //dd:test.unskippable
-func TestNormalPassingAfterRetryAlwaysFail(t *testing.T) {}
+func TestNormalPassingAfterRetryAlwaysFail(_ *testing.T) {}
 
 var run int
 

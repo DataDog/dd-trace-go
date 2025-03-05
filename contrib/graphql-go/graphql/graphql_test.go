@@ -23,13 +23,13 @@ func Test(t *testing.T) {
 		Fields: graphql.Fields{
 			"hello": {
 				Type: graphql.String,
-				Resolve: func(p graphql.ResolveParams) (any, error) {
+				Resolve: func(_ graphql.ResolveParams) (any, error) {
 					return "Hello, world!", nil
 				},
 			},
 			"helloNonTrivial": {
 				Type: graphql.String,
-				Resolve: func(p graphql.ResolveParams) (any, error) {
+				Resolve: func(_ graphql.ResolveParams) (any, error) {
 					return "Hello, world!", nil
 				},
 			},

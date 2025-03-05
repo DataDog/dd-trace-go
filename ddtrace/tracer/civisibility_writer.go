@@ -92,7 +92,7 @@ func (w *ciVisibilityTraceWriter) flush() {
 	w.payload = newCiVisibilityPayload()
 
 	go func(p *ciVisibilityPayload) {
-		defer func(start time.Time) {
+		defer func(_ time.Time) {
 			// Once the payload has been used, clear the buffer for garbage
 			// collection to avoid a memory leak when references to this object
 			// may still be kept by faulty transport implementations or the

@@ -70,7 +70,7 @@ func StartRequestSpan(r *http.Request, opts ...ddtrace.StartSpanOption) (tracer.
 
 			requestProxyContext, err := extractInferredProxyContext(r.Header)
 			if err != nil {
-				log.Debug(err.Error())
+				log.Debug("%s\n", err.Error())
 			} else {
 				spanParentCtx, spanParentErr := tracer.Extract(tracer.HTTPHeadersCarrier(r.Header))
 				if spanParentErr == nil {

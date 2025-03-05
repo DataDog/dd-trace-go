@@ -24,19 +24,19 @@ import (
 )
 
 func TestDB(t *testing.T) {
-	testAction(t, "CompactRange", func(mt mocktracer.Tracer, db *DB) {
+	testAction(t, "CompactRange", func(_ mocktracer.Tracer, db *DB) {
 		db.CompactRange(util.Range{})
 	})
 
-	testAction(t, "Delete", func(mt mocktracer.Tracer, db *DB) {
+	testAction(t, "Delete", func(_ mocktracer.Tracer, db *DB) {
 		db.Delete([]byte("hello"), nil)
 	})
 
-	testAction(t, "Has", func(mt mocktracer.Tracer, db *DB) {
+	testAction(t, "Has", func(_ mocktracer.Tracer, db *DB) {
 		db.Has([]byte("hello"), nil)
 	})
 
-	testAction(t, "Get", func(mt mocktracer.Tracer, db *DB) {
+	testAction(t, "Get", func(_ mocktracer.Tracer, db *DB) {
 		db.Get([]byte("hello"), nil)
 	})
 
@@ -55,7 +55,7 @@ func TestDB(t *testing.T) {
 		assert.Equal(t, spans[0].TraceID(), spans[1].TraceID())
 	})
 
-	testAction(t, "Write", func(mt mocktracer.Tracer, db *DB) {
+	testAction(t, "Write", func(_ mocktracer.Tracer, db *DB) {
 		var batch leveldb.Batch
 		batch.Put([]byte("hello"), []byte("world"))
 		db.Write(&batch, nil)
@@ -63,7 +63,7 @@ func TestDB(t *testing.T) {
 }
 
 func TestSnapshot(t *testing.T) {
-	testAction(t, "Get", func(mt mocktracer.Tracer, db *DB) {
+	testAction(t, "Get", func(_ mocktracer.Tracer, db *DB) {
 		snapshot, err := db.GetSnapshot()
 		assert.NoError(t, err)
 		defer snapshot.Release()
@@ -92,13 +92,13 @@ func TestSnapshot(t *testing.T) {
 }
 
 func TestTransaction(t *testing.T) {
-	testAction(t, "Commit", func(mt mocktracer.Tracer, db *DB) {
+	testAction(t, "Commit", func(_ mocktracer.Tracer, db *DB) {
 		transaction, err := db.OpenTransaction()
 		assert.NoError(t, err)
 		transaction.Commit()
 	})
 
-	testAction(t, "Get", func(mt mocktracer.Tracer, db *DB) {
+	testAction(t, "Get", func(_ mocktracer.Tracer, db *DB) {
 		transaction, err := db.OpenTransaction()
 		assert.NoError(t, err)
 		defer transaction.Discard()
@@ -127,7 +127,7 @@ func TestTransaction(t *testing.T) {
 }
 
 func TestIterator(t *testing.T) {
-	testAction(t, "Iterator", func(mt mocktracer.Tracer, db *DB) {
+	testAction(t, "Iterator", func(_ mocktracer.Tracer, db *DB) {
 		iterator := db.NewIterator(nil, nil)
 		iterator.Release()
 	})

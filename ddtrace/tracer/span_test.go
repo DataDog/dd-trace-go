@@ -9,13 +9,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
@@ -358,18 +359,17 @@ func (t *testMsgpStruct) MarshalMsg(_ []byte) ([]byte, error) {
 }
 
 func TestSpanSetTagError(t *testing.T) {
-	assert := assert.New(t)
 
 	t.Run("off", func(t *testing.T) {
 		span := newBasicSpan("web.request")
 		span.setTagError(errors.New("error value with no trace"), errorConfig{noDebugStack: true})
-		assert.Empty(span.Meta[ext.ErrorStack])
+		assert.Empty(t, span.Meta[ext.ErrorStack])
 	})
 
 	t.Run("on", func(t *testing.T) {
 		span := newBasicSpan("web.request")
 		span.setTagError(errors.New("error value with trace"), errorConfig{noDebugStack: false})
-		assert.NotEmpty(span.Meta[ext.ErrorStack])
+		assert.NotEmpty(t, span.Meta[ext.ErrorStack])
 	})
 }
 
@@ -406,7 +406,7 @@ func TestTraceManualKeepAndManualDrop(t *testing.T) {
 func TestTraceManualKeepRace(t *testing.T) {
 	const numGoroutines = 100
 
-	t.Run("SetTag", func(t *testing.T) {
+	t.Run("SetTag", func(_ *testing.T) {
 		tracer := newTracer()
 		defer tracer.Stop()
 		rootSpan := tracer.newRootSpan("root span", "my service", "my resource")
@@ -426,7 +426,7 @@ func TestTraceManualKeepRace(t *testing.T) {
 	})
 
 	// setting the tag using a StartSpan option has the same race
-	t.Run("StartSpanOption", func(t *testing.T) {
+	t.Run("StartSpanOption", func(_ *testing.T) {
 		tracer := newTracer()
 		defer tracer.Stop()
 		rootSpan := tracer.newRootSpan("root span", "my service", "my resource")

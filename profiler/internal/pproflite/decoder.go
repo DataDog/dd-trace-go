@@ -90,9 +90,8 @@ func (d *Decoder) FieldEach(fn func(Field) error, filter ...FieldDecoder) error 
 			return false, err
 		} else if err := fn(decoder); err != nil {
 			return false, err
-		} else {
-			return true, nil
 		}
+		return true, nil
 	})
 }
 

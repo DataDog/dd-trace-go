@@ -286,7 +286,7 @@ func FuzzExtract(f *testing.F) {
 	for _, tc := range testCases {
 		f.Add(tc.query)
 	}
-	f.Fuzz(func(t *testing.T, q string) {
+	f.Fuzz(func(_ *testing.T, q string) {
 		carrier := SQLCommentCarrier{Query: q}
 		carrier.Extract() // make sure it doesn't panic
 	})

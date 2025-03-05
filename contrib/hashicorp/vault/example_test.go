@@ -49,7 +49,7 @@ func ExampleNewHTTPClient_withOptions() {
 func ExampleWrapHTTPClient() {
 	// We use a custom *http.Client to talk to Vault.
 	c := &http.Client{
-		CheckRedirect: func(r *http.Request, via []*http.Request) error {
+		CheckRedirect: func(_ *http.Request, via []*http.Request) error {
 			if len(via) > 5 {
 				return fmt.Errorf("won't perform more that 5 redirects")
 			}
@@ -72,7 +72,7 @@ func ExampleWrapHTTPClient() {
 func ExampleWrapHTTPClient_withOptions() {
 	// We use a custom *http.Client to talk to Vault.
 	c := &http.Client{
-		CheckRedirect: func(r *http.Request, via []*http.Request) error {
+		CheckRedirect: func(_ *http.Request, via []*http.Request) error {
 			if len(via) > 5 {
 				return fmt.Errorf("won't perform more that 5 redirects")
 			}

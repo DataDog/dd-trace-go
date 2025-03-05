@@ -76,21 +76,21 @@ func TestConnect(t *testing.T) {
 	}{
 		{
 			name: "pool",
-			newConnCreator: func(t *testing.T, prev *pgxMockTracer) createConnFn {
+			newConnCreator: func(_ *testing.T, _ *pgxMockTracer) createConnFn {
 				opts := append(tracingAllDisabled(), WithTraceConnect(true))
 				return newPoolCreator(nil, opts...)
 			},
 		},
 		{
 			name: "conn",
-			newConnCreator: func(t *testing.T, prev *pgxMockTracer) createConnFn {
+			newConnCreator: func(_ *testing.T, _ *pgxMockTracer) createConnFn {
 				opts := append(tracingAllDisabled(), WithTraceConnect(true))
 				return newConnCreator(nil, nil, opts...)
 			},
 		},
 		{
 			name: "conn_with_options",
-			newConnCreator: func(t *testing.T, prev *pgxMockTracer) createConnFn {
+			newConnCreator: func(_ *testing.T, _ *pgxMockTracer) createConnFn {
 				opts := append(tracingAllDisabled(), WithTraceConnect(true))
 				return newConnCreator(nil, &pgx.ParseConfigOptions{}, opts...)
 			},

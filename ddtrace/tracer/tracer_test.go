@@ -217,7 +217,7 @@ func TestTracerStart(t *testing.T) {
 		}
 	})
 
-	t.Run("deadlock/api", func(t *testing.T) {
+	t.Run("deadlock/api", func(_ *testing.T) {
 		Stop()
 		Stop()
 
@@ -1108,13 +1108,12 @@ func TestTracerSpanGlobalTags(t *testing.T) {
 }
 
 func TestTracerSpanServiceMappings(t *testing.T) {
-	assert := assert.New(t)
 
 	t.Run("WithServiceMapping", func(t *testing.T) {
 		tracer := newTracer(WithServiceName("initial_service"), WithServiceMapping("initial_service", "new_service"))
 		defer tracer.Stop()
 		s := tracer.StartSpan("web.request").(*span)
-		assert.Equal("new_service", s.Service)
+		assert.Equal(t, "new_service", s.Service)
 
 	})
 
@@ -1123,7 +1122,7 @@ func TestTracerSpanServiceMappings(t *testing.T) {
 		defer tracer.Stop()
 		s := tracer.StartSpan("web.request", ServiceName("initial_service")).(*span)
 		child := tracer.StartSpan("db.query", ChildOf(s.Context())).(*span)
-		assert.Equal("new_service", child.Service)
+		assert.Equal(t, "new_service", child.Service)
 
 	})
 
@@ -1131,7 +1130,7 @@ func TestTracerSpanServiceMappings(t *testing.T) {
 		tracer := newTracer(WithServiceMapping("initial_service", "new_service"))
 		defer tracer.Stop()
 		s := tracer.StartSpan("web.request", ServiceName("initial_service")).(*span)
-		assert.Equal("new_service", s.Service)
+		assert.Equal(t, "new_service", s.Service)
 
 	})
 
@@ -1139,19 +1138,18 @@ func TestTracerSpanServiceMappings(t *testing.T) {
 		tracer := newTracer(WithServiceMapping("initial_service", "new_service"))
 		defer tracer.Stop()
 		s := tracer.StartSpan("web.request", Tag("service.name", "initial_service")).(*span)
-		assert.Equal("new_service", s.Service)
+		assert.Equal(t, "new_service", s.Service)
 	})
 
 	t.Run("globalTags", func(t *testing.T) {
 		tracer := newTracer(WithGlobalTag("service.name", "initial_service"), WithServiceMapping("initial_service", "new_service"))
 		defer tracer.Stop()
 		s := tracer.StartSpan("web.request").(*span)
-		assert.Equal("new_service", s.Service)
+		assert.Equal(t, "new_service", s.Service)
 	})
 }
 
 func TestTracerNoDebugStack(t *testing.T) {
-	assert := assert.New(t)
 
 	t.Run("Finish", func(t *testing.T) {
 		tracer := newTracer(WithDebugStack(false))
@@ -1159,7 +1157,7 @@ func TestTracerNoDebugStack(t *testing.T) {
 		s := tracer.StartSpan("web.request").(*span)
 		err := errors.New("test error")
 		s.Finish(WithError(err))
-		assert.Empty(s.Meta[ext.ErrorStack])
+		assert.Empty(t, s.Meta[ext.ErrorStack])
 	})
 
 	t.Run("SetTag", func(t *testing.T) {
@@ -1168,7 +1166,7 @@ func TestTracerNoDebugStack(t *testing.T) {
 		s := tracer.StartSpan("web.request").(*span)
 		err := errors.New("error value with no trace")
 		s.SetTag(ext.Error, err)
-		assert.Empty(s.Meta[ext.ErrorStack])
+		assert.Empty(t, s.Meta[ext.ErrorStack])
 	})
 }
 
@@ -1273,7 +1271,7 @@ func TestTracerSampler(t *testing.T) {
 
 func TestTracerPrioritySampler(t *testing.T) {
 	assert := assert.New(t)
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte(`{
 			"rate_by_service":{
@@ -2562,7 +2560,7 @@ func TestUserMonitoring(t *testing.T) {
 
 	// This tests data races for trace.propagatingTags reads/writes through public API.
 	// The Go data race detector should not complain when running the test with '-race'.
-	t.Run("data-race", func(t *testing.T) {
+	t.Run("data-race", func(_ *testing.T) {
 		wg := &sync.WaitGroup{}
 		wg.Add(2)
 

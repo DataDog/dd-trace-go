@@ -405,7 +405,7 @@ func TestRegister(_ *testing.T) {
 }
 
 func TestNamingSchema(t *testing.T) {
-	newGenSpansFunc := func(t *testing.T, driverName string, registerOverride bool) namingschematest.GenSpansFn {
+	newGenSpansFunc := func(driverName string, registerOverride bool) namingschematest.GenSpansFn {
 		return func(t *testing.T, serviceOverride string) []mocktracer.Span {
 			var registerOpts []RegisterOption
 			// serviceOverride has higher priority than the registerOverride parameter.
@@ -452,7 +452,7 @@ func TestNamingSchema(t *testing.T) {
 		}
 	}
 	t.Run("SQLServer", func(t *testing.T) {
-		genSpans := newGenSpansFunc(t, "sqlserver", false)
+		genSpans := newGenSpansFunc("sqlserver", false)
 		assertOpV0 := func(t *testing.T, spans []mocktracer.Span) {
 			require.Len(t, spans, 2)
 			assert.Equal(t, "sqlserver.query", spans[0].OperationName())
@@ -472,7 +472,7 @@ func TestNamingSchema(t *testing.T) {
 		t.Run("SpanName", namingschematest.NewSpanNameTest(genSpans, assertOpV0, assertOpV1))
 	})
 	t.Run("Postgres", func(t *testing.T) {
-		genSpans := newGenSpansFunc(t, "postgres", false)
+		genSpans := newGenSpansFunc("postgres", false)
 		assertOpV0 := func(t *testing.T, spans []mocktracer.Span) {
 			require.Len(t, spans, 2)
 			assert.Equal(t, "postgres.query", spans[0].OperationName())
@@ -492,7 +492,7 @@ func TestNamingSchema(t *testing.T) {
 		t.Run("SpanName", namingschematest.NewSpanNameTest(genSpans, assertOpV0, assertOpV1))
 	})
 	t.Run("PostgresWithRegisterOverride", func(t *testing.T) {
-		genSpans := newGenSpansFunc(t, "postgres", true)
+		genSpans := newGenSpansFunc("postgres", true)
 		assertOpV0 := func(t *testing.T, spans []mocktracer.Span) {
 			require.Len(t, spans, 2)
 			assert.Equal(t, "postgres.query", spans[0].OperationName())
@@ -515,7 +515,7 @@ func TestNamingSchema(t *testing.T) {
 		t.Run("SpanName", namingschematest.NewSpanNameTest(genSpans, assertOpV0, assertOpV1))
 	})
 	t.Run("MySQL", func(t *testing.T) {
-		genSpans := newGenSpansFunc(t, "mysql", false)
+		genSpans := newGenSpansFunc("mysql", false)
 		assertOpV0 := func(t *testing.T, spans []mocktracer.Span) {
 			require.Len(t, spans, 2)
 			assert.Equal(t, "mysql.query", spans[0].OperationName())

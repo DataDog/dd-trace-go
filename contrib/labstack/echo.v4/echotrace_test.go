@@ -157,7 +157,7 @@ func TestError(t *testing.T) {
 
 	// setup
 	router := echo.New()
-	router.HTTPErrorHandler = func(err error, c echo.Context) {
+	router.HTTPErrorHandler = func(_ error, _ echo.Context) {
 		handlerCalled++
 	}
 	router.Use(Middleware(WithServiceName("foobar")))
@@ -201,7 +201,7 @@ func TestErrorHandling(t *testing.T) {
 
 	// setup
 	router := echo.New()
-	router.HTTPErrorHandler = func(err error, ctx echo.Context) {
+	router.HTTPErrorHandler = func(_ error, ctx echo.Context) {
 		ctx.Response().WriteHeader(http.StatusInternalServerError)
 	}
 	router.Use(Middleware(WithServiceName("foobar")))
@@ -239,27 +239,27 @@ func TestStatusError(t *testing.T) {
 		isStatusError             func(statusCode int) bool
 		err                       error
 		code                      string
-		handler                   func(c echo.Context) error
+		handler                   func(_ echo.Context) error
 		envServerErrorStatusesVal string
 	}{
 		{
 			err:  errors.New("oh no"),
 			code: "500",
-			handler: func(c echo.Context) error {
+			handler: func(_ echo.Context) error {
 				return errors.New("oh no")
 			},
 		},
 		{
 			err:  echo.NewHTTPError(http.StatusInternalServerError, "my error message"),
 			code: "500",
-			handler: func(c echo.Context) error {
+			handler: func(_ echo.Context) error {
 				return echo.NewHTTPError(http.StatusInternalServerError, "my error message")
 			},
 		},
 		{
 			err:  nil,
 			code: "400",
-			handler: func(c echo.Context) error {
+			handler: func(_ echo.Context) error {
 				return echo.NewHTTPError(http.StatusBadRequest, "my error message")
 			},
 		},
@@ -267,7 +267,7 @@ func TestStatusError(t *testing.T) {
 			isStatusError: func(statusCode int) bool { return statusCode >= 400 && statusCode < 500 },
 			err:           nil,
 			code:          "500",
-			handler: func(c echo.Context) error {
+			handler: func(_ echo.Context) error {
 				return errors.New("oh no")
 			},
 		},
@@ -275,7 +275,7 @@ func TestStatusError(t *testing.T) {
 			isStatusError: func(statusCode int) bool { return statusCode >= 400 && statusCode < 500 },
 			err:           nil,
 			code:          "500",
-			handler: func(c echo.Context) error {
+			handler: func(_ echo.Context) error {
 				return echo.NewHTTPError(http.StatusInternalServerError, "my error message")
 			},
 		},
@@ -283,7 +283,7 @@ func TestStatusError(t *testing.T) {
 			isStatusError: func(statusCode int) bool { return statusCode >= 400 },
 			err:           echo.NewHTTPError(http.StatusBadRequest, "my error message"),
 			code:          "400",
-			handler: func(c echo.Context) error {
+			handler: func(_ echo.Context) error {
 				return echo.NewHTTPError(http.StatusBadRequest, "my error message")
 			},
 		},
@@ -310,7 +310,7 @@ func TestStatusError(t *testing.T) {
 			isStatusError: nil,
 			err:           echo.NewHTTPError(http.StatusInternalServerError, "my error message"),
 			code:          "500",
-			handler: func(c echo.Context) error {
+			handler: func(_ echo.Context) error {
 				return echo.NewHTTPError(http.StatusInternalServerError, "my error message")
 			},
 			envServerErrorStatusesVal: "500",
@@ -320,7 +320,7 @@ func TestStatusError(t *testing.T) {
 			isStatusError: func(statusCode int) bool { return statusCode == 400 },
 			err:           echo.NewHTTPError(http.StatusBadRequest, "my error message"),
 			code:          "400",
-			handler: func(c echo.Context) error {
+			handler: func(_ echo.Context) error {
 				return echo.NewHTTPError(http.StatusBadRequest, "my error message")
 			},
 			envServerErrorStatusesVal: "500",
@@ -330,7 +330,7 @@ func TestStatusError(t *testing.T) {
 			isStatusError: func(statusCode int) bool { return statusCode == 400 },
 			err:           nil,
 			code:          "500",
-			handler: func(c echo.Context) error {
+			handler: func(_ echo.Context) error {
 				return echo.NewHTTPError(http.StatusInternalServerError, "my error message")
 			},
 		},
@@ -443,7 +443,7 @@ func TestIgnoreRequestFunc(t *testing.T) {
 	var called, traced bool
 
 	// setup
-	ignoreRequestFunc := func(c echo.Context) bool {
+	ignoreRequestFunc := func(_ echo.Context) bool {
 		return true
 	}
 	router := echo.New()
@@ -519,7 +519,7 @@ func TestWithErrorTranslator(t *testing.T) {
 }
 
 func TestNamingSchema(t *testing.T) {
-	genSpans := namingschematest.GenSpansFn(func(t *testing.T, serviceOverride string) []mocktracer.Span {
+	genSpans := namingschematest.GenSpansFn(func(_ *testing.T, serviceOverride string) []mocktracer.Span {
 		var opts []Option
 		if serviceOverride != "" {
 			opts = append(opts, WithServiceName(serviceOverride))
@@ -680,7 +680,7 @@ func TestWithErrorCheck(t *testing.T) {
 			name: "ignore-none",
 			err:  errors.New("any error"),
 			opts: []Option{
-				WithErrorCheck(func(err error) bool {
+				WithErrorCheck(func(_ error) bool {
 					return true
 				}),
 			},
@@ -690,7 +690,7 @@ func TestWithErrorCheck(t *testing.T) {
 			name: "ignore-all",
 			err:  errors.New("any error"),
 			opts: []Option{
-				WithErrorCheck(func(err error) bool {
+				WithErrorCheck(func(_ error) bool {
 					return false
 				}),
 			},
@@ -708,7 +708,7 @@ func TestWithErrorCheck(t *testing.T) {
 				WithStatusCheck(func(statusCode int) bool {
 					return statusCode == http.StatusNotFound
 				}),
-				WithErrorCheck(func(err error) bool {
+				WithErrorCheck(func(_ error) bool {
 					return false
 				}),
 			},

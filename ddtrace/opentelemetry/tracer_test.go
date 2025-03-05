@@ -121,7 +121,6 @@ func TestSpanContext(t *testing.T) {
 }
 
 func TestForceFlush(t *testing.T) {
-	assert := assert.New(t)
 	const (
 		UNSET = iota
 		ERROR
@@ -139,6 +138,7 @@ func TestForceFlush(t *testing.T) {
 	}
 	for _, tc := range testData {
 		t.Run(fmt.Sprintf("Flush success: %t", tc.flushed), func(t *testing.T) {
+			assert := assert.New(t)
 			tp, payloads, cleanup := mockTracerProvider(t)
 			defer cleanup()
 
@@ -166,13 +166,14 @@ func TestForceFlush(t *testing.T) {
 	}
 
 	t.Run("Flush after shutdown", func(t *testing.T) {
+		assert := assert.New(t)
 		tp := NewTracerProvider()
 		otel.SetTracerProvider(tp)
 		testLog := new(log.RecordLogger)
 		defer log.UseLogger(testLog)()
 
 		tp.stopped = 1
-		tp.ForceFlush(time.Second, func(ok bool) {})
+		tp.ForceFlush(time.Second, func(_ bool) {})
 
 		logs := testLog.Logs()
 		assert.Contains(logs[len(logs)-1], "Cannot perform (*TracerProvider).Flush since the tracer is already stopped")
@@ -216,7 +217,7 @@ func TestConcurrentSetAttributes(_ *testing.T) {
 	for i := 0; i < 100; i++ {
 		wg.Add(1)
 		i := i
-		go func(val int) {
+		go func(_ int) {
 			defer wg.Done()
 			span.SetAttributes(attribute.Float64("workerID", float64(i)))
 		}(i)
