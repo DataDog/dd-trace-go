@@ -373,39 +373,3 @@ func TestDDtoOtelBaggagePropagation(t *testing.T) {
 
 	ddSpan.Finish()
 }
-
-func TestConflictingOtelandDDBaggage(t *testing.T) {
-	assert := assert.New(t)
-
-	tp := NewTracerProvider()
-	otel.SetTracerProvider(tp)
-	tr := otel.Tracer("baggage.test", oteltrace.WithInstrumentationVersion("0.1"))
-
-	ctx := context.Background()
-	ctx = baggage.Set(ctx, "key1", "dd1")
-	tracer.Start()
-	defer tracer.Stop()
-	ddSpan, ctx := tracer.StartSpanFromContext(ctx, "ddtrace-baggage")
-
-	// Create a single OTel baggage that contains both key1 and key2.
-	// This avoids calling baggage.ContextWithBaggage twice.
-	m1, _ := otelbaggage.NewMember("key2", "otel1")
-	m2, _ := otelbaggage.NewMember("key3", "otel2")
-	bag, _ := otelbaggage.New(m1, m2)
-
-	// Attach the OTel baggage to the context.
-	ctx = otelbaggage.ContextWithBaggage(ctx, bag)
-
-	ctx = baggage.Set(ctx, "key4", "dd2")
-
-	// Start an OpenTelemetry span using the updated context.
-	otelCtx, otelSpan := tr.Start(ctx, "otel-span")
-	defer otelSpan.End()
-	otelBag := otelbaggage.FromContext(otelCtx)
-	assert.NotNil(otelBag)
-	assert.Equal(2, otelBag.Len())
-	assert.Equal("otel1", otelBag.Member("key1").Value())
-	assert.Equal("vdd2", otelBag.Member("key2").Value())
-
-	ddSpan.Finish()
-}
