@@ -88,8 +88,8 @@ aspects:
             //go:linkname __dd_httptrace_GetErrorCodesFromInput gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/httptrace.GetErrorCodesFromInput
             func __dd_httptrace_GetErrorCodesFromInput(string) func(int) bool
 
-            //go:linkname __dd_httptrace_UrlFromRequest gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/httptrace.UrlFromRequest
-            func __dd_httptrace_UrlFromRequest(*Request, bool) string
+            //go:linkname __dd_httptrace_URLFromRequest gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/httptrace.URLFromRequest
+            func __dd_httptrace_URLFromRequest(*Request, bool) string
 
             //go:linkname __dd_internal_BoolEnv gopkg.in/DataDog/dd-trace-go.v1/internal.BoolEnv
             func __dd_internal_BoolEnv(string, bool) bool
