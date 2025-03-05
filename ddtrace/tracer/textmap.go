@@ -591,7 +591,7 @@ func overrideDatadogParentID(ctx, w3cCtx, ddCtx *spanContext) {
 	ctx.spanID = w3cCtx.spanID
 	if w3cCtx.reparentID != "" {
 		ctx.reparentID = w3cCtx.reparentID
-	} else if ddCtx != nil {
+	} else {
 		// NIT: could be done without using fmt.Sprintf? Is it worth it?
 		ctx.reparentID = fmt.Sprintf("%016x", ddCtx.SpanID())
 	}
