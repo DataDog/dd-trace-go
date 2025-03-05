@@ -62,7 +62,7 @@ func convertRemoteSamplingRules(rules *[]rcSamplingRule) *[]SamplingRule {
 	}
 	var convertedRules []SamplingRule
 	for _, rule := range *rules {
-		if rule.Tags != nil && len(rule.Tags) != 0 {
+		if rule.Tags != nil {
 			tags := make(map[string]*regexp.Regexp, len(rule.Tags))
 			tagsStrs := make(map[string]string, len(rule.Tags))
 			for _, tag := range rule.Tags {
