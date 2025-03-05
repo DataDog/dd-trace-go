@@ -1688,9 +1688,9 @@ func TestSetGlobalSampleRate(t *testing.T) {
 }
 
 func TestSampleTagsRootOnly(t *testing.T) {
-	assert := assert.New(t)
 
 	t.Run("no-ctx-propagation", func(t *testing.T) {
+		assert := assert.New(t)
 		Start(WithSamplingRules(TraceSamplingRules(
 			Rule{Tags: map[string]string{"tag": "20"}, Rate: 1},
 			Rule{ResourceGlob: "root"},
@@ -1731,6 +1731,7 @@ func TestSampleTagsRootOnly(t *testing.T) {
 	})
 
 	t.Run("with-ctx-propagation", func(t *testing.T) {
+		assert := assert.New(t)
 		Start(WithSamplingRules(TraceSamplingRules(
 			Rule{Tags: map[string]string{"tag": "20"}, Rate: 1},
 			Rule{Tags: nil, ResourceGlob: "root"},

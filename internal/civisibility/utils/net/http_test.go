@@ -422,7 +422,7 @@ func TestSendRequestWithCustomHeaders(t *testing.T) {
 
 func TestSendRequestWithTimeout(t *testing.T) {
 	// Mock server that delays response
-	mockSlowHandler := func(w http.ResponseWriter, r *http.Request) {
+	mockSlowHandler := func(w http.ResponseWriter, _ *http.Request) {
 		time.Sleep(5 * time.Second) // Delay longer than the client timeout
 		w.WriteHeader(http.StatusOK)
 	}
@@ -445,7 +445,7 @@ func TestSendRequestWithTimeout(t *testing.T) {
 
 func TestSendRequestWithMaxRetriesExceeded(t *testing.T) {
 	// Mock server that always returns a 500 error
-	mockAlwaysFailHandler := func(w http.ResponseWriter, r *http.Request) {
+	mockAlwaysFailHandler := func(w http.ResponseWriter, _ *http.Request) {
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 	}
 
@@ -473,7 +473,7 @@ func TestSendRequestWithMaxRetriesExceeded(t *testing.T) {
 
 func TestGzipResponseDecompressionHandling(t *testing.T) {
 	// Mock server that returns a gzip-compressed response
-	mockGzipResponseHandler := func(w http.ResponseWriter, r *http.Request) {
+	mockGzipResponseHandler := func(w http.ResponseWriter, _ *http.Request) {
 		originalResponse := `{"message": "Hello, Gzip!"}`
 		var buf bytes.Buffer
 		gzipWriter := gzip.NewWriter(&buf)
@@ -609,7 +609,7 @@ func TestResponseUnmarshalWithUnsupportedFormat(t *testing.T) {
 }
 
 func TestSendRequestWithUnsupportedResponseFormat(t *testing.T) {
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set(HeaderContentType, "application/xml")
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("<data>test</data>"))
@@ -677,7 +677,7 @@ func TestSendRequestWithBodySerializationError(t *testing.T) {
 
 func TestSendRequestWithCompressedResponse(t *testing.T) {
 	// Server that returns a compressed response
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set(HeaderContentType, ContentTypeJSON)
 		w.Header().Set(HeaderContentEncoding, ContentEncodingGzip)
 		var buf bytes.Buffer
@@ -710,7 +710,7 @@ func TestSendRequestWithCompressedResponse(t *testing.T) {
 
 func TestSendRequestWithRetryAfterHeader(t *testing.T) {
 	attempts := 0
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		if attempts == 0 {
 			w.Header().Set(HeaderRateLimitReset, "1") // Wait 1 second
 			w.WriteHeader(HTTPStatusTooManyRequests)
@@ -748,7 +748,7 @@ func TestSendRequestWithRetryAfterHeader(t *testing.T) {
 
 func TestSendRequestWithInvalidRetryAfterHeader(t *testing.T) {
 	attempts := 0
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		if attempts == 0 {
 			w.Header().Set(HeaderRateLimitReset, "invalid") // Invalid value
 			w.WriteHeader(HTTPStatusTooManyRequests)
@@ -799,7 +799,7 @@ func TestSendRequestWithContextTimeout(t *testing.T) {
 	}
 
 	// Server that sleeps longer than client timeout
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		time.Sleep(100 * time.Millisecond)
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -817,7 +817,7 @@ func TestSendRequestWithContextTimeout(t *testing.T) {
 
 func TestSendRequestWithRateLimitButNoResetHeader(t *testing.T) {
 	attempts := 0
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		if attempts < 2 {
 			w.WriteHeader(HTTPStatusTooManyRequests)
 			attempts++
@@ -847,7 +847,7 @@ func TestSendRequestWithRateLimitButNoResetHeader(t *testing.T) {
 }
 
 func TestSendRequestWhenServerClosesConnection(t *testing.T) {
-	ts := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	ts := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		h1 := w.(http.Hijacker)
 		conn, _, _ := h1.Hijack()
 		conn.Close()

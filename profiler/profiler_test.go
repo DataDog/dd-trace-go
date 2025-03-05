@@ -213,7 +213,7 @@ func TestStartWithoutStopReconfigures(t *testing.T) {
 func TestStopLatency(t *testing.T) {
 	received := make(chan struct{})
 	stop := make(chan struct{})
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
 		select {
 		case received <- struct{}{}:
 		default:
@@ -274,7 +274,7 @@ func TestFlushAndStop(t *testing.T) {
 func TestFlushAndStopTimeout(t *testing.T) {
 	uploadTimeout := 1 * time.Second
 	var requests atomic.Int32
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 		if h := r.Header.Get("DD-Telemetry-Request-Type"); len(h) > 0 {
 			return
 		}

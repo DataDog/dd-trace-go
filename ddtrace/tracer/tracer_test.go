@@ -199,7 +199,7 @@ func TestTracerStart(t *testing.T) {
 		}
 	})
 
-	t.Run("deadlock/api", func(t *testing.T) {
+	t.Run("deadlock/api", func(_ *testing.T) {
 		Stop()
 		Stop()
 
@@ -1133,74 +1133,72 @@ func TestTracerSpanGlobalTags(t *testing.T) {
 }
 
 func TestTracerSpanServiceMappings(t *testing.T) {
-	assert := assert.New(t)
 
 	t.Run("WithServiceMapping", func(t *testing.T) {
 		tracer, err := newTracer(WithService("initial_service"), WithServiceMapping("initial_service", "new_service"))
 		defer tracer.Stop()
-		assert.Nil(err)
+		assert.Nil(t, err)
 		s := tracer.StartSpan("web.request")
-		assert.Equal("new_service", s.service)
+		assert.Equal(t, "new_service", s.service)
 
 	})
 
 	t.Run("child", func(t *testing.T) {
 		tracer, err := newTracer(WithServiceMapping("initial_service", "new_service"))
 		defer tracer.Stop()
-		assert.Nil(err)
+		assert.Nil(t, err)
 		s := tracer.StartSpan("web.request", ServiceName("initial_service"))
 		child := tracer.StartSpan("db.query", ChildOf(s.Context()))
-		assert.Equal("new_service", child.service)
+		assert.Equal(t, "new_service", child.service)
 
 	})
 
 	t.Run("StartSpanOption", func(t *testing.T) {
 		tracer, err := newTracer(WithServiceMapping("initial_service", "new_service"))
 		defer tracer.Stop()
-		assert.Nil(err)
+		assert.Nil(t, err)
 		s := tracer.StartSpan("web.request", ServiceName("initial_service"))
-		assert.Equal("new_service", s.service)
+		assert.Equal(t, "new_service", s.service)
 
 	})
 
 	t.Run("tag", func(t *testing.T) {
 		tracer, err := newTracer(WithServiceMapping("initial_service", "new_service"))
 		defer tracer.Stop()
-		assert.Nil(err)
+		assert.Nil(t, err)
 		s := tracer.StartSpan("web.request", Tag("service.name", "initial_service"))
-		assert.Equal("new_service", s.service)
+		assert.Equal(t, "new_service", s.service)
 	})
 
 	t.Run("globalTags", func(t *testing.T) {
 		tracer, err := newTracer(WithGlobalTag("service.name", "initial_service"), WithServiceMapping("initial_service", "new_service"))
 		defer tracer.Stop()
-		assert.Nil(err)
+		assert.Nil(t, err)
 		s := tracer.StartSpan("web.request")
-		assert.Equal("new_service", s.service)
+		assert.Equal(t, "new_service", s.service)
 	})
 }
 
 func TestTracerNoDebugStack(t *testing.T) {
-	assert := assert.New(t)
 
 	t.Run("Finish", func(t *testing.T) {
 		tracer, err := newTracer(WithDebugStack(false))
 		defer tracer.Stop()
-		assert.Nil(err)
+		assert.Nil(t, err)
 		s := tracer.StartSpan("web.request")
 		err = errors.New("test error")
 		s.Finish(WithError(err))
-		assert.Empty(s.meta[ext.ErrorStack])
+		assert.Empty(t, s.meta[ext.ErrorStack])
 	})
 
 	t.Run("SetTag", func(t *testing.T) {
 		tracer, err := newTracer(WithDebugStack(false))
 		defer tracer.Stop()
-		assert.Nil(err)
+		assert.Nil(t, err)
 		s := tracer.StartSpan("web.request")
 		err = errors.New("error value with no trace")
 		s.SetTag(ext.Error, err)
-		assert.Empty(s.meta[ext.ErrorStack])
+		assert.Empty(t, s.meta[ext.ErrorStack])
 	})
 }
 
@@ -1310,7 +1308,7 @@ func TestTracerSampler(t *testing.T) {
 
 func TestTracerPrioritySampler(t *testing.T) {
 	assert := assert.New(t)
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte(`{
 			"rate_by_service":{
@@ -2556,7 +2554,7 @@ func TestUserMonitoring(t *testing.T) {
 
 	// This tests data races for trace.propagatingTags reads/writes through public API.
 	// The Go data race detector should not complain when running the test with '-race'.
-	t.Run("data-race", func(t *testing.T) {
+	t.Run("data-race", func(_ *testing.T) {
 		wg := &sync.WaitGroup{}
 		wg.Add(2)
 

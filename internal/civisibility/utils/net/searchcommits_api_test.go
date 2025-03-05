@@ -67,7 +67,7 @@ func TestSearchCommitsApiRequest(t *testing.T) {
 }
 
 func TestSearchCommitsApiRequestFailToUnmarshal(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		http.Error(w, "failed to read body", http.StatusBadRequest)
 	}))
 	defer server.Close()
@@ -86,7 +86,7 @@ func TestSearchCommitsApiRequestFailToUnmarshal(t *testing.T) {
 }
 
 func TestSearchCommitsApiRequestFailToGet(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		http.Error(w, "internal processing error", http.StatusInternalServerError)
 	}))
 	defer server.Close()

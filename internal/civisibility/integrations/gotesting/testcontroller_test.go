@@ -63,11 +63,9 @@ func TestMain(m *testing.M) {
 				if exiterr, ok := err.(*exec.ExitError); ok {
 					fmt.Printf("Scenario %s failed with exit code: %d\n", v, exiterr.ExitCode())
 					os.Exit(exiterr.ExitCode())
-				} else {
-					fmt.Printf("cmd.Run: %v\n", err)
-					os.Exit(1)
 				}
-				break
+				fmt.Printf("cmd.Run: %v\n", err)
+				os.Exit(1)
 			}
 		}
 	}

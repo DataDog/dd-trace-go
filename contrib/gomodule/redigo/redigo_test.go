@@ -291,9 +291,9 @@ func TestDoWithTimeout(t *testing.T) {
 }
 
 func TestDo(t *testing.T) {
-	assert := assert.New(t)
 
 	t.Run("do", func(t *testing.T) {
+		assert := assert.New(t)
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
@@ -307,6 +307,7 @@ func TestDo(t *testing.T) {
 	})
 
 	t.Run("do", func(t *testing.T) {
+		assert := assert.New(t)
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
@@ -321,9 +322,9 @@ func TestDo(t *testing.T) {
 }
 
 func TestDoContext(t *testing.T) {
-	assert := assert.New(t)
 
 	t.Run("do context", func(t *testing.T) {
+		assert := assert.New(t)
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
@@ -337,6 +338,7 @@ func TestDoContext(t *testing.T) {
 	})
 
 	t.Run("do context with parent", func(t *testing.T) {
+		assert := assert.New(t)
 		const parentSpanID = uint64(1)
 
 		mt := mocktracer.Start()
@@ -357,6 +359,7 @@ func TestDoContext(t *testing.T) {
 	})
 
 	t.Run("do context with timeout", func(t *testing.T) {
+		assert := assert.New(t)
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
@@ -376,6 +379,7 @@ func TestDoContext(t *testing.T) {
 	})
 
 	t.Run("do context with timeout - canceled", func(t *testing.T) {
+		assert := assert.New(t)
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
@@ -393,6 +397,7 @@ func TestDoContext(t *testing.T) {
 	})
 
 	t.Run("do context with timeout - deadline exceeded", func(t *testing.T) {
+		assert := assert.New(t)
 		mt := mocktracer.Start()
 		defer mt.Stop()
 

@@ -22,7 +22,7 @@ func withAppSec(next echo.HandlerFunc, span trace.TagSetter) echo.HandlerFunc {
 			params[n] = c.Param(n)
 		}
 		var err error
-		handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		handler := http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 			c.SetRequest(r)
 			err = next(c)
 			// If the error is a monitoring one, it means appsec actions will take care of writing the response

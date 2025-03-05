@@ -218,7 +218,8 @@ func TestResourceNamer(t *testing.T) {
 	assert.Equal("GET", s.Tag(ext.HTTPMethod))
 	assert.Equal("http://example.com"+url, s.Tag(ext.HTTPURL))
 	assert.Equal("testvalue", s.Tag("testkey"))
-	assert.Zero(s.Tag(ext.ErrorMsg))
+	assert.Equal(nil, s.Tag(ext.Error))
+	assert.Equal(componentName, s.Integration())
 }
 
 func TestTrailingSlashRoutesWithBehaviorRedirect301(t *testing.T) {

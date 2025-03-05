@@ -236,7 +236,7 @@ func TestControlFlow(t *testing.T) {
 					c.Abort()
 				},
 			},
-			handler: func(c *gin.Context) {
+			handler: func(_ *gin.Context) {
 				// Do nothing so that the calling middleware can handle the response.
 			},
 			test: func(t *testing.T, rec *httptest.ResponseRecorder, mt mocktracer.Tracer) {

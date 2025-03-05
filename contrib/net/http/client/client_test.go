@@ -37,6 +37,7 @@ func TestGet(t *testing.T) {
 				res, err := Get(ctx, validURL)
 				require.NoError(t, err)
 				require.Equal(t, 200, res.StatusCode)
+				res.Body.Close()
 			},
 		)
 	})
@@ -52,6 +53,7 @@ func TestGet(t *testing.T) {
 				res, err := Get(ctx, invalidURL)
 				require.Error(t, err)
 				require.Nil(t, res)
+				res.Body.Close()
 			},
 		)
 	})
@@ -71,6 +73,7 @@ func TestHead(t *testing.T) {
 				res, err := Head(ctx, validURL)
 				require.NoError(t, err)
 				require.Equal(t, 200, res.StatusCode)
+				res.Body.Close()
 			},
 		)
 	})
@@ -86,6 +89,7 @@ func TestHead(t *testing.T) {
 				res, err := Head(ctx, invalidURL)
 				require.Error(t, err)
 				require.Nil(t, res)
+				res.Body.Close()
 			},
 		)
 	})
@@ -112,6 +116,7 @@ func TestPost(t *testing.T) {
 				res, err := Post(ctx, validURL, contentType, bytes.NewReader(body))
 				require.NoError(t, err)
 				require.Equal(t, 200, res.StatusCode)
+				res.Body.Close()
 			},
 		)
 	})
@@ -127,6 +132,7 @@ func TestPost(t *testing.T) {
 				res, err := Post(ctx, invalidURL, contentType, bytes.NewReader(body))
 				require.Error(t, err)
 				require.Nil(t, res)
+				res.Body.Close()
 			},
 		)
 	})
@@ -155,6 +161,7 @@ func TestPostForm(t *testing.T) {
 				res, err := PostForm(ctx, validURL, values)
 				require.NoError(t, err)
 				require.Equal(t, 200, res.StatusCode)
+				res.Body.Close()
 			},
 		)
 	})
@@ -170,6 +177,7 @@ func TestPostForm(t *testing.T) {
 				res, err := PostForm(ctx, invalidURL, values)
 				require.Error(t, err)
 				require.Nil(t, res)
+				res.Body.Close()
 			},
 		)
 	})

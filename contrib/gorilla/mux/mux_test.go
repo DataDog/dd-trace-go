@@ -235,7 +235,7 @@ func TestWithStatusCheck(t *testing.T) {
 		{
 			name:          "with-statuscheck",
 			hasErr:        false,
-			isStatusError: func(statusCode int) bool { return false },
+			isStatusError: func(_ int) bool { return false },
 		},
 	} {
 		t.Run(ht.name, func(t *testing.T) {
@@ -422,13 +422,13 @@ func router() http.Handler {
 }
 
 func errorHandler(code int) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		http.Error(w, fmt.Sprintf("%d!", code), code)
 	})
 }
 
 func okHandler() http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Write([]byte("200!\n"))
 	})
 }
@@ -442,11 +442,11 @@ func TestAppSec(t *testing.T) {
 
 	// Start and trace an HTTP server with some testing routes
 	router := NewRouter()
-	router.HandleFunc("/path0.0/{myPathParam0}/path0.1/{myPathParam1}/path0.2/{myPathParam2}/path0.3/{myPathParam3}", func(w http.ResponseWriter, r *http.Request) {
+	router.HandleFunc("/path0.0/{myPathParam0}/path0.1/{myPathParam1}/path0.2/{myPathParam2}/path0.3/{myPathParam3}", func(w http.ResponseWriter, _ *http.Request) {
 		_, err := w.Write([]byte("Hello World!\n"))
 		require.NoError(t, err)
 	})
-	router.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+	router.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
 		_, err := w.Write([]byte("Hello World!\n"))
 		require.NoError(t, err)
 	})

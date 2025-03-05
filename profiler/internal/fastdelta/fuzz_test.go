@@ -16,7 +16,7 @@ import (
 // for the possibility that the profile format changes in some way, or violates
 // any hard-coded assumptions.
 func FuzzDelta(f *testing.F) {
-	f.Fuzz(func(t *testing.T, b []byte) {
+	f.Fuzz(func(_ *testing.T, b []byte) {
 		dc := fastdelta.NewDeltaComputer()
 		dc.Delta(b, io.Discard)
 	})

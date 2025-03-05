@@ -68,7 +68,7 @@ func TestHTTPHeadersCarrierForeachKeyError(t *testing.T) {
 	h := http.Header{}
 	h.Add("A", "x")
 	h.Add("B", "y")
-	got := HTTPHeadersCarrier(h).ForeachKey(func(k, v string) error {
+	got := HTTPHeadersCarrier(h).ForeachKey(func(k, _ string) error {
 		if k == "B" {
 			return want
 		}
@@ -99,7 +99,7 @@ func TestTextMapCarrierForeachKey(t *testing.T) {
 func TestTextMapCarrierForeachKeyError(t *testing.T) {
 	m := map[string]string{"A": "x", "B": "y"}
 	want := errors.New("random error")
-	got := TextMapCarrier(m).ForeachKey(func(k, v string) error {
+	got := TextMapCarrier(m).ForeachKey(func(_, _ string) error {
 		return want
 	})
 	assert.Equal(t, got, want)
@@ -594,7 +594,7 @@ func TestTextMapPropagator(t *testing.T) {
 func TestEnvVars(t *testing.T) {
 	var testEnvs []map[string]string
 
-	s, c := httpmem.ServerAndClient(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	s, c := httpmem.ServerAndClient(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(404)
 	}))
 	defer s.Close()
@@ -1917,7 +1917,7 @@ func TestTraceContextPrecedence(t *testing.T) {
 
 // Assert that span links are generated only when trace headers contain divergent trace IDs
 func TestSpanLinks(t *testing.T) {
-	s, c := httpmem.ServerAndClient(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	s, c := httpmem.ServerAndClient(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(404)
 	}))
 	defer s.Close()
@@ -2014,7 +2014,7 @@ func TestW3CExtractsBaggage(t *testing.T) {
 	s, err := tracer.Extract(headers)
 	assert.NoError(t, err)
 	found := false
-	s.ForeachBaggageItem(func(k, v string) bool {
+	s.ForeachBaggageItem(func(k, _ string) bool {
 		if k == "something" {
 			found = true
 			return false
@@ -2459,7 +2459,7 @@ func FuzzParseTraceparent(f *testing.F) {
 }
 
 func FuzzExtractTraceID128(f *testing.F) {
-	f.Fuzz(func(t *testing.T, v string) {
+	f.Fuzz(func(_ *testing.T, v string) {
 		ctx := new(SpanContext)
 		extractTraceID128(ctx, v) // make sure it doesn't panic
 	})

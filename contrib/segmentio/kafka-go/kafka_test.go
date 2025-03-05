@@ -157,7 +157,7 @@ func genIntegrationTestSpans(t *testing.T, mt mocktracer.Tracer, writerOp func(t
 	writtenMessages := []kafka.Message{}
 
 	kw := testWriter()
-	kw.Completion = func(messages []kafka.Message, err error) {
+	kw.Completion = func(messages []kafka.Message, _ error) {
 		writtenMessages = append(writtenMessages, messages...)
 	}
 	w := WrapWriter(kw, writerOpts...)
