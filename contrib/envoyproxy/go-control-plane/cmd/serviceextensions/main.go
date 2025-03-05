@@ -46,7 +46,7 @@ type serviceExtensionConfig struct {
 func loadConfig() serviceExtensionConfig {
 	extensionPortInt := internal.IntEnv("DD_SERVICE_EXTENSION_PORT", 443)
 	healthcheckPortInt := internal.IntEnv("DD_SERVICE_EXTENSION_HEALTHCHECK_PORT", 80)
-	extensionHostStr := internal.IpEnv("DD_SERVICE_EXTENSION_HOST", net.IP{0, 0, 0, 0}).String()
+	extensionHostStr := internal.IPEnv("DD_SERVICE_EXTENSION_HOST", net.IP{0, 0, 0, 0}).String()
 
 	extensionPortStr := strconv.FormatInt(int64(extensionPortInt), 10)
 	healthcheckPortStr := strconv.FormatInt(int64(healthcheckPortInt), 10)

@@ -90,7 +90,7 @@ func StartRequestSpan(r *http.Request, opts ...ddtrace.StartSpanOption) (tracer.
 			}
 			ssCfg.Tags[ext.SpanType] = ext.SpanTypeWeb
 			ssCfg.Tags[ext.HTTPMethod] = r.Method
-			ssCfg.Tags[ext.HTTPURL] = UrlFromRequest(r, cfg.queryString)
+			ssCfg.Tags[ext.HTTPURL] = URLFromRequest(r, cfg.queryString)
 			ssCfg.Tags[ext.HTTPUserAgent] = r.UserAgent()
 			ssCfg.Tags["_dd.measured"] = 1
 			if r.Host != "" {
@@ -175,9 +175,9 @@ func FinishRequestSpan(s tracer.Span, status int, errorFn func(int) bool, opts .
 	s.Finish(opts...)
 }
 
-// UrlFromRequest returns the full URL from the HTTP request. If queryString is true, params are collected and they are obfuscated either by the default query string obfuscator or the custom obfuscator provided by the user (through DD_TRACE_OBFUSCATION_QUERY_STRING_REGEXP)
+// URLFromRequest returns the full URL from the HTTP request. If queryString is true, params are collected and they are obfuscated either by the default query string obfuscator or the custom obfuscator provided by the user (through DD_TRACE_OBFUSCATION_QUERY_STRING_REGEXP)
 // See https://docs.datadoghq.com/tracing/configure_data_security/?tab=net#redact-query-strings for more information.
-func UrlFromRequest(r *http.Request, queryString bool) string {
+func URLFromRequest(r *http.Request, queryString bool) string {
 	// Quoting net/http comments about net.Request.URL on server requests:
 	// "For most requests, fields other than Path and RawQuery will be
 	// empty. (See RFC 7230, Section 5.3)"
