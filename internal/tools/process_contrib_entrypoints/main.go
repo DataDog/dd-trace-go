@@ -3,22 +3,18 @@ package main
 //go:generate go run main.go ../../../contrib
 
 import (
-	"bytes"
 	"fmt"
 	"go/parser"
 	"go/token"
 	"log"
 	"os"
 	"path/filepath"
-	"slices"
+	"sort"
 	"strings"
 
 	"github.com/dave/dst"
 	"github.com/dave/dst/decorator"
-	"github.com/dave/dst/decorator/resolver/goast"
-	"github.com/dave/dst/decorator/resolver/guess"
 	"github.com/dave/dst/dstutil"
-	"github.com/hashicorp/go-multierror"
 )
 
 func getGoDirs(rootDir string) ([]string, error) {
@@ -38,13 +34,31 @@ func getGoDirs(rootDir string) ([]string, error) {
 	dirPaths := make([]string, 0, len(paths))
 	for dir, _ := range paths {
 		if strings.Contains(dir, "/internal") {
-			log.Printf("ignoring internal package: %s\n", dir)
+			// ignore internal packages
 			continue
 		}
 		dirPaths = append(dirPaths, dir)
 	}
-	slices.Sort(dirPaths)
+	sort.Slice(dirPaths, func(i, j int) bool {
+		partsI := splitPath(strings.ToLower(dirPaths[i]))
+		partsJ := splitPath(strings.ToLower(dirPaths[j]))
+
+		// Compare each part of the path recursively
+		for k := 0; k < len(partsI) && k < len(partsJ); k++ {
+			if partsI[k] != partsJ[k] {
+				return partsI[k] < partsJ[k]
+			}
+		}
+
+		// If one path is a subpath of the other, the shorter one should come first
+		return len(partsI) < len(partsJ)
+	})
 	return dirPaths, nil
+}
+
+// splitPath splits a path into its components (directories and filename)
+func splitPath(p string) []string {
+	return strings.Split(strings.Trim(filepath.Clean(p), "/"), "/")
 }
 
 func processDir(dir string) error {
@@ -63,7 +77,7 @@ func processDir(dir string) error {
 		}
 
 		for fPath, _ := range pkg.Files {
-			if err := processFile(fPath); err != nil {
+			if err := processFile(fPath, pkg); err != nil {
 				log.Fatal(err)
 			}
 		}
@@ -71,62 +85,44 @@ func processDir(dir string) error {
 	return nil
 }
 
-func processFile(fPath string) error {
-	if strings.HasSuffix(fPath, "_gen.go") {
-		return nil
-	}
+func processFile(fPath string, pkg *dst.Package) error {
+	fileUpdates := make(map[string][]updateNodeFunc)
 
-	content, err := os.ReadFile(fPath)
+	err := loadAndModifyFile(fPath, func(cur *dstutil.Cursor) (bool, bool) {
+		fn, ok := cur.Node().(*dst.FuncDecl)
+		if !ok {
+			return false, true
+		}
+
+		// no need to iterate deeper after this point
+		extraUpdates, changed, err := processFunc(fn, pkg, fPath)
+		if err != nil {
+			log.Printf("failed to process func %q: %v\n", fn.Name.Name, err)
+			return false, false
+		}
+		for k, v := range extraUpdates {
+			fileUpdates[k] = append(fileUpdates[k], v)
+		}
+		return changed, false
+	})
 	if err != nil {
 		return err
 	}
 
-	fset := token.NewFileSet()
-	astFile, err := parser.ParseFile(fset, fPath, content, parser.ParseComments)
-	if err != nil {
-		return fmt.Errorf("error parsing content in %s: %w", fPath, err)
-	}
-
-	dec := decorator.NewDecoratorWithImports(fset, fPath, goast.New())
-	f, err := dec.DecorateFile(astFile)
-	if err != nil {
-		log.Printf("error decorating file %s (skipping file): %v", fPath, err)
-		return nil
-	}
-
-	changed := false
-	dstutil.Apply(f, func(c *dstutil.Cursor) bool {
-		fn, ok := c.Node().(*dst.FuncDecl)
-		if !ok {
-			return true
+	for f, updates := range fileUpdates {
+		for _, u := range updates {
+			err := loadAndModifyFile(f, u)
+			if err != nil {
+				return err
+			}
 		}
-
-		ch, err := processFunc(fn, fPath)
-		if err != nil {
-			log.Printf("failed to process func %q: %v\n", fn.Name.Name, err)
-			return true
-		}
-		if ch {
-			changed = true
-		}
-
-		return false
-	}, nil)
-
-	if changed {
-		restorer := decorator.NewRestorerWithImports(fPath, guess.New())
-		var buf bytes.Buffer
-		if err := restorer.Fprint(&buf, f); err != nil {
-			log.Fatal(err)
-		}
-		return os.WriteFile(fPath, buf.Bytes(), 0755)
 	}
 
 	return nil
 }
 
 type Processor interface {
-	Apply(fn *dst.FuncDecl, args ...string) error
+	Apply(fn *dst.FuncDecl, pkg *dst.Package, fPath string, args ...string) (map[string]updateNodeFunc, error)
 }
 
 var processors = map[string]Processor{
@@ -137,10 +133,8 @@ var processors = map[string]Processor{
 	"ddtrace:entrypoint:ignore":           entrypointIgnore{},
 }
 
-func processFunc(fn *dst.FuncDecl, fPath string) (bool, error) {
-	allErrors := &multierror.Error{}
+func processFunc(fn *dst.FuncDecl, pkg *dst.Package, fPath string) (map[string]updateNodeFunc, bool, error) {
 	comments := fn.Decorations().Start
-	changed := false
 	name := fn.Name.Name
 
 	for _, comment := range comments {
@@ -152,16 +146,16 @@ func processFunc(fn *dst.FuncDecl, fPath string) (bool, error) {
 
 		p, ok := processors[cmd]
 		if !ok {
-			allErrors = multierror.Append(allErrors, fmt.Errorf("unknown ddtrace:entrypoint comment: %s", comment))
-			continue
+			return nil, false, fmt.Errorf("unknown ddtrace:entrypoint comment: %s", comment)
 		}
-		if err := p.Apply(fn, args...); err != nil {
-			allErrors = multierror.Append(allErrors, err)
-		} else {
-			changed = true
+
+		extraUpdates, err := p.Apply(fn, pkg, fPath, args...)
+		if err != nil {
+			return nil, false, err
 		}
+		return extraUpdates, true, nil
 	}
-	return changed, allErrors.ErrorOrNil()
+	return nil, false, nil
 }
 
 func parseDDTraceEntrypointComment(comment string) (string, []string, bool) {
@@ -180,6 +174,11 @@ func parseDDTraceEntrypointComment(comment string) (string, []string, bool) {
 
 func main() {
 	rootDir := "../../../contrib"
+	args := os.Args[1:]
+	if len(args) > 0 && args[0] != "" {
+		rootDir = args[0]
+	}
+
 	goDirs, err := getGoDirs(rootDir)
 	if err != nil {
 		log.Fatal(err)

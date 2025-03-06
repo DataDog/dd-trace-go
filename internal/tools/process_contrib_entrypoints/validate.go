@@ -7,13 +7,12 @@ import (
 	"github.com/hashicorp/go-multierror"
 	"go/token"
 	"strings"
-	"unicode"
 )
 
 func validatePackage(pkg *dst.Package) error {
 	err := &multierror.Error{}
 
-	var allConsts []*dst.GenDecl
+	var allConstsAndVars []*dst.GenDecl
 	var allPublicFuncs []*dst.FuncDecl
 	for fName, f := range pkg.Files {
 		if strings.HasSuffix(fName, "_test.go") || strings.HasSuffix(fName, "_example.go") {
@@ -22,10 +21,7 @@ func validatePackage(pkg *dst.Package) error {
 		for _, decl := range f.Decls {
 			switch t := decl.(type) {
 			case *dst.FuncDecl:
-				shouldSkip := !unicode.IsUpper(rune(t.Name.Name[0])) || // ignore private functions
-					//strings.HasPrefix(t.Name.Name, "Test") || // ignore tests
-					//strings.HasPrefix(t.Name.Name, "Example") || // ignore examples
-					//strings.HasPrefix(t.Name.Name, "Benchmark") || // ignore examples
+				shouldSkip := !isPublicFunction(t) || // ignore private functions
 					t.Recv != nil || // ignore methods
 					isFunctionalOption(t) // ignore functional options
 
@@ -35,16 +31,16 @@ func validatePackage(pkg *dst.Package) error {
 				allPublicFuncs = append(allPublicFuncs, t)
 
 			case *dst.GenDecl:
-				if t.Tok == token.CONST {
-					allConsts = append(allConsts, t)
+				if t.Tok == token.CONST || t.Tok == token.VAR {
+					allConstsAndVars = append(allConstsAndVars, t)
 				}
 			}
 		}
 	}
 
 	foundComponentName := false
-	for _, c := range allConsts {
-		if isTargetConst(c, "componentName") {
+	for _, c := range allConstsAndVars {
+		if isTargetConstOrVar(c, "componentName") {
 			foundComponentName = true
 			break
 		}
@@ -75,8 +71,8 @@ func validatePackage(pkg *dst.Package) error {
 	return err.ErrorOrNil()
 }
 
-func isTargetConst(decl *dst.GenDecl, targetName string) bool {
-	if decl.Tok != token.CONST {
+func isTargetConstOrVar(decl *dst.GenDecl, targetName string) bool {
+	if decl.Tok != token.CONST && decl.Tok != token.VAR {
 		return false
 	}
 	if len(decl.Specs) == 0 {
