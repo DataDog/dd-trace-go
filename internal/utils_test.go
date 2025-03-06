@@ -107,7 +107,7 @@ func TestXSyncMapCounterMap(t *testing.T) {
 		assert := assert.New(t)
 		cm := NewXSyncMapCounterMap()
 		wg := sync.WaitGroup{}
-		var v atomic.Int64
+		var val atomic.Int64
 		for range 10 {
 			wg.Add(2)
 			go func() {
@@ -117,11 +117,15 @@ func TestXSyncMapCounterMap(t *testing.T) {
 
 			go func() {
 				defer wg.Done()
-				v.Add(cm.GetAndReset()["key"])
+				v, ok := cm.GetAndReset()["key"]
+				if ok {
+					val.Add(v)
+				}
+
 			}()
 		}
 		wg.Wait()
-		assert.Equal(int64(10), v.Load())
+		assert.Equal(int64(10), val.Load())
 	})
 }
 func BenchmarkXSyncMapCounterMap(b *testing.B) {
@@ -192,7 +196,7 @@ func BenchmarkXSyncMapCounterMap(b *testing.B) {
 	b.Run("concurrent with reset", func(b *testing.B) {
 		cm := NewXSyncMapCounterMap()
 		wg := sync.WaitGroup{}
-		var v atomic.Int64
+		var val atomic.Int64
 		b.ReportAllocs()
 		b.ResetTimer()
 		for range b.N {
@@ -204,11 +208,15 @@ func BenchmarkXSyncMapCounterMap(b *testing.B) {
 
 			go func() {
 				defer wg.Done()
-				v.Add(cm.GetAndReset()["key"])
+				v, ok := cm.GetAndReset()["key"]
+				if ok {
+					val.Add(v)
+				}
 			}()
 		}
 		wg.Wait()
-		assert.Equal(b, int64(b.N), v.Load())
+		time.Sleep(200 * time.Millisecond)
+		assert.Equal(b, int64(b.N), val.Load())
 	})
 }
 
