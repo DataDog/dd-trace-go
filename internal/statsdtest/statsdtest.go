@@ -192,7 +192,7 @@ func (tg *TestStatsdClient) TimingCalls() []TestStatsdCall {
 	tg.mu.RLock()
 	defer tg.mu.RUnlock()
 	c := make([]TestStatsdCall, len(tg.timingCalls))
-	copy(c, tg.countCalls)
+	copy(c, tg.timingCalls)
 	return c
 }
 
