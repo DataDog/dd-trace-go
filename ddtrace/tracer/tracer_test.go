@@ -2270,7 +2270,8 @@ func BenchmarkStartSpanConcurrent(b *testing.B) {
 			for n := 0; n < b.N; n++ {
 				s, ok := SpanFromContext(ctx)
 				if !ok {
-					b.Fatal("no span")
+					b.Error("no span")
+					return
 				}
 				StartSpan("op", ChildOf(s.Context()))
 			}
