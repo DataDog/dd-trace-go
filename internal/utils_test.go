@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -64,6 +65,7 @@ func TestLockMapThrash(t *testing.T) {
 	wg.Wait()
 	assert.Equal(t, len(lm.m), int(lm.c))
 }
+
 func TestXSyncMapCounterMap(t *testing.T) {
 	t.Run("basic", func(t *testing.T) {
 		assert := assert.New(t)
@@ -93,11 +95,33 @@ func TestXSyncMapCounterMap(t *testing.T) {
 			go func() {
 				defer wg.Done()
 				cm.Inc("key")
+				cm.Inc("key2")
 			}()
 		}
 		wg.Wait()
 
-		assert.Equal(map[string]int64{"key": 10}, cm.GetAndReset())
+		assert.Equal(map[string]int64{"key": 10, "key2": 10}, cm.GetAndReset())
+	})
+
+	t.Run("concurrent with reset", func(t *testing.T) {
+		assert := assert.New(t)
+		cm := NewXSyncMapCounterMap()
+		wg := sync.WaitGroup{}
+		var v atomic.Int64
+		for range 10 {
+			wg.Add(2)
+			go func() {
+				defer wg.Done()
+				cm.Inc("key")
+			}()
+
+			go func() {
+				defer wg.Done()
+				v.Add(cm.GetAndReset()["key"])
+			}()
+		}
+		wg.Wait()
+		assert.Equal(int64(10), v.Load())
 	})
 }
 func BenchmarkXSyncMapCounterMap(b *testing.B) {
@@ -148,18 +172,43 @@ func BenchmarkXSyncMapCounterMap(b *testing.B) {
 
 	b.Run("concurrent", func(b *testing.B) {
 		cm := NewXSyncMapCounterMap()
-
 		wg := sync.WaitGroup{}
+
+		b.ReportAllocs()
+		b.ResetTimer()
 		for range b.N {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
 				cm.Inc("key")
+				cm.Inc("key2")
 			}()
 		}
 		wg.Wait()
 
-		assert.Equal(b, map[string]int64{"key": int64(b.N)}, cm.GetAndReset())
+		assert.Equal(b, map[string]int64{"key": int64(b.N), "key2": int64(b.N)}, cm.GetAndReset())
+	})
+
+	b.Run("concurrent with reset", func(b *testing.B) {
+		cm := NewXSyncMapCounterMap()
+		wg := sync.WaitGroup{}
+		var v atomic.Int64
+		b.ReportAllocs()
+		b.ResetTimer()
+		for range b.N {
+			wg.Add(2)
+			go func() {
+				defer wg.Done()
+				cm.Inc("key")
+			}()
+
+			go func() {
+				defer wg.Done()
+				v.Add(cm.GetAndReset()["key"])
+			}()
+		}
+		wg.Wait()
+		assert.Equal(b, int64(b.N), v.Load())
 	})
 }
 

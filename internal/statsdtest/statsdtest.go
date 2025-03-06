@@ -234,6 +234,25 @@ func (tg *TestStatsdClient) CallsByName() map[string]int {
 	return counts
 }
 
+func (tg *TestStatsdClient) ValsByName() map[string]float64 {
+	tg.mu.RLock()
+	defer tg.mu.RUnlock()
+	counts := make(map[string]float64)
+	for _, c := range tg.gaugeCalls {
+		counts[c.name] += c.floatVal
+	}
+	for _, c := range tg.incrCalls {
+		counts[c.name] += float64(c.intVal)
+	}
+	for _, c := range tg.countCalls {
+		counts[c.name] += float64(c.intVal)
+	}
+	for _, c := range tg.timingCalls {
+		counts[c.name] += float64(c.timeVal)
+	}
+	return counts
+}
+
 // GetCallsByName returns a slice of TestStatsdCalls with the provided name on the TestStatsdClient
 // It's useful if you want to use any TestStatsdCall method calls on the result(s)
 func (tg *TestStatsdClient) GetCallsByName(name string) (calls []TestStatsdCall) {
