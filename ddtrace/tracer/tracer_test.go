@@ -2186,7 +2186,6 @@ func BenchmarkStartSpanConcurrent(b *testing.B) {
 	var wgready sync.WaitGroup
 	start := make(chan struct{})
 	for i := 0; i < 10; i++ {
-		err := make(chan struct{}, 1)
 		wg.Add(1)
 		wgready.Add(1)
 		go func() {
@@ -2198,18 +2197,12 @@ func BenchmarkStartSpanConcurrent(b *testing.B) {
 			for n := 0; n < b.N; n++ {
 				s, ok := SpanFromContext(ctx)
 				if !ok {
-					<-err
+					b.Error("no span")
+					return
 				}
 				StartSpan("op", ChildOf(s.Context()))
 			}
 		}()
-
-		select {
-		case <-err:
-			b.Fatal("no span")
-		default:
-			continue
-		}
 	}
 	wgready.Wait()
 	b.ResetTimer()
