@@ -448,6 +448,7 @@ func assertCommonTags(t *testing.T, s *mocktracer.Span) {
 	assert.Equal(t, ext.SpanTypeSQL, s.Tag(ext.SpanType))
 	assert.Equal(t, ext.DBSystemPostgreSQL, s.Tag(ext.DBSystem))
 	assert.Equal(t, string(instrumentation.PackageJackcPGXV5), s.Tag(ext.Component))
+	assert.Equal(t, string(instrumentation.PackageJackcPGXV5), s.Integration())
 	assert.Equal(t, ext.SpanKindClient, s.Tag(ext.SpanKind))
 	assert.Equal(t, "127.0.0.1", s.Tag(ext.NetworkDestinationName))
 	assert.Equal(t, float64(5432), s.Tag(ext.NetworkDestinationPort))

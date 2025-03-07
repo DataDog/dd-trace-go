@@ -13,6 +13,7 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 
 	consul "github.com/hashicorp/consul/api"
 	"github.com/stretchr/testify/assert"
@@ -99,6 +100,7 @@ func TestKV(t *testing.T) {
 			assert.Equal("consul", span.Tag(ext.ServiceName))
 			assert.Equal(key, span.Tag("consul.key"))
 			assert.Equal("hashicorp/consul", span.Tag(ext.Component))
+			assert.Equal(instrumentation.PackageHashicorpConsulAPI, span.Integration())
 			assert.Equal(ext.SpanKindClient, span.Tag(ext.SpanKind))
 			assert.Equal("127.0.0.1", span.Tag(ext.NetworkDestinationName))
 			assert.Equal(ext.DBSystemConsulKV, span.Tag(ext.DBSystem))

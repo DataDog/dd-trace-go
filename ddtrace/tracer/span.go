@@ -115,6 +115,7 @@ type Span struct {
 	noDebugStack bool         `msg:"-"` // disables debug stack traces
 	finished     bool         `msg:"-"` // true if the span has been submitted to a tracer. Can only be read/modified if the trace is locked.
 	context      *SpanContext `msg:"-"` // span propagation context
+	integration  string       `msg:"-"` // where the span was started from, such as a specific contrib or "manual"
 
 	pprofCtxActive  context.Context `msg:"-"` // contains pprof.WithLabel labels to tell the profiler more about this span
 	pprofCtxRestore context.Context `msg:"-"` // contains pprof.WithLabel labels of the parent span (if any) that need to be restored when this span finishes
@@ -173,6 +174,11 @@ func (s *Span) SetTag(key string, value interface{}) {
 			noDebugStack: s.noDebugStack,
 		})
 		return
+	case ext.Component:
+		integration, ok := value.(string)
+		if ok {
+			s.integration = integration
+		}
 	}
 	if v, ok := value.(bool); ok {
 		s.setTagBool(key, v)
@@ -192,7 +198,7 @@ func (s *Span) SetTag(key string, value interface{}) {
 		s.setMeta(key, v)
 		return
 	}
-	if v, ok := toFloat64(value); ok {
+	if v, ok := sharedinternal.ToFloat64(value); ok {
 		s.setMetric(key, v)
 		return
 	}
@@ -227,7 +233,7 @@ func (s *Span) SetTag(key string, value interface{}) {
 			for i := 0; i < slice.Len(); i++ {
 				key := fmt.Sprintf("%s.%d", key, i)
 				v := slice.Index(i)
-				if num, ok := toFloat64(v.Interface()); ok {
+				if num, ok := sharedinternal.ToFloat64(v.Interface()); ok {
 					s.setMetric(key, num)
 				} else {
 					s.setMeta(key, fmt.Sprintf("%v", v))
@@ -249,10 +255,10 @@ func (s *Span) SetTag(key string, value interface{}) {
 			return
 		}
 
-		// Add this tag to propagating tags and to span tags
+		// Add this trace source tag to propagating tags and to span tags
 		// reserved for internal use only
-		if v, ok := value.(sharedinternal.PropagatingTagValue); ok {
-			s.context.trace.setPropagatingTag(key, v.Value)
+		if v, ok := value.(sharedinternal.TraceSourceTagValue); ok {
+			s.context.trace.setTraceSourcePropagatingTag(key, v.Value)
 		}
 	}
 
@@ -686,6 +692,7 @@ func (s *Span) finish(finishTime int64) {
 			// the tracer supports debugging abandoned spans
 			t.submitAbandonedSpan(s, true)
 		}
+		t.spansFinished.Inc(s.integration)
 	}
 	if keep {
 		// a single kept span keeps the whole trace.
@@ -863,6 +870,9 @@ const (
 	keySingleSpanSamplingMPS = "_dd.span_sampling.max_per_second"
 	// keyPropagatedUserID holds the propagated user identifier, if user id propagation is enabled.
 	keyPropagatedUserID = "_dd.p.usr.id"
+	// keyPropagatedTraceSource holds a 2 character hexadecimal string representation of the product responsible
+	// for the span creation.
+	keyPropagatedTraceSource = "_dd.p.ts"
 	// keyTraceID128 is the lowercase, hex encoded upper 64 bits of a 128-bit trace id, if present.
 	keyTraceID128 = "_dd.p.tid"
 	// keySpanAttributeSchemaVersion holds the selected DD_TRACE_SPAN_ATTRIBUTE_SCHEMA version.

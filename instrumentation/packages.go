@@ -72,6 +72,7 @@ const (
 	PackageValkeyIoValkeyGo         Package = "valkey-io/valkey-go"
 	PackageEnvoyProxyGoControlPlane Package = "envoyproxy/go-control-plane"
 	PackageOS                       Package = "os"
+	PackageRedisRueidis             Package = "redis/rueidis"
 
 	// Deprecated packages
 	PackageEmickleiGoRestful Package = "emicklei/go-restful"
@@ -592,6 +593,18 @@ var packages = map[Package]PackageInfo{
 	},
 	PackageRedisGoRedisV9: {
 		TracedPackage: "github.com/redis/go-redis/v9",
+		EnvVarPrefix:  "REDIS",
+		naming: map[Component]componentNames{
+			ComponentDefault: {
+				useDDServiceV0:     true,
+				buildServiceNameV0: staticName("redis.client"),
+				buildOpNameV0:      staticName("redis.command"),
+				buildOpNameV1:      staticName("redis.command"),
+			},
+		},
+	},
+	PackageRedisRueidis: {
+		TracedPackage: "github.com/redis/rueidis",
 		EnvVarPrefix:  "REDIS",
 		naming: map[Component]componentNames{
 			ComponentDefault: {

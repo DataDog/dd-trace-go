@@ -16,6 +16,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils"
 	sqltest "github.com/DataDog/dd-trace-go/v2/instrumentation/testutils/sql"
 
@@ -216,6 +217,7 @@ func TestCallbacks(t *testing.T) {
 		a.Equal(ext.SpanTypeSQL, span.Tag(ext.SpanType))
 		a.Equal(queryText, span.Tag(ext.ResourceName))
 		a.Equal("gorm.io/gorm.v1", span.Tag(ext.Component))
+		a.Equal(instrumentation.PackageGormIOGormV1, span.Integration())
 		a.Equal(parentSpan.Context().SpanID(), span.ParentID())
 
 		for _, s := range spans {
@@ -253,6 +255,7 @@ func TestCallbacks(t *testing.T) {
 		a.Equal(ext.SpanTypeSQL, span.Tag(ext.SpanType))
 		a.Equal(queryText, span.Tag(ext.ResourceName))
 		a.Equal("gorm.io/gorm.v1", span.Tag(ext.Component))
+		a.Equal(instrumentation.PackageGormIOGormV1, span.Integration())
 		a.Equal(parentSpan.Context().SpanID(), span.ParentID())
 
 		for _, s := range spans {
@@ -311,6 +314,7 @@ func TestCallbacks(t *testing.T) {
 		a.Equal(ext.SpanTypeSQL, span.Tag(ext.SpanType))
 		a.Equal(queryText, span.Tag(ext.ResourceName))
 		a.Equal("gorm.io/gorm.v1", span.Tag(ext.Component))
+		a.Equal(instrumentation.PackageGormIOGormV1, span.Integration())
 		a.Equal(parentSpan.Context().SpanID(), span.ParentID())
 
 		for _, s := range spans {
@@ -349,6 +353,7 @@ func TestCallbacks(t *testing.T) {
 		a.Equal(ext.SpanTypeSQL, span.Tag(ext.SpanType))
 		a.Equal(queryText, span.Tag(ext.ResourceName))
 		a.Equal("gorm.io/gorm.v1", span.Tag(ext.Component))
+		a.Equal(instrumentation.PackageGormIOGormV1, span.Integration())
 		a.Equal(parentSpan.Context().SpanID(), span.ParentID())
 
 		for _, s := range spans {

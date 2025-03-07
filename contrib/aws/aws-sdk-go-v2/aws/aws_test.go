@@ -103,6 +103,7 @@ func TestAppendMiddleware(t *testing.T) {
 			assert.Equal(t, server.URL+"/", s.Tag(ext.HTTPURL))
 			assert.Equal(t, "aws/aws-sdk-go-v2/aws", s.Tag(ext.Component))
 			assert.Equal(t, ext.SpanKindClient, s.Tag(ext.SpanKind))
+			assert.Equal(t, componentName, s.Integration())
 		})
 	}
 }
@@ -178,6 +179,7 @@ func TestAppendMiddlewareSqsDeleteMessage(t *testing.T) {
 			assert.Equal(t, server.URL+"/", s.Tag(ext.HTTPURL))
 			assert.Equal(t, "aws/aws-sdk-go-v2/aws", s.Tag(ext.Component))
 			assert.Equal(t, ext.SpanKindClient, s.Tag(ext.SpanKind))
+			assert.Equal(t, componentName, s.Integration())
 		})
 	}
 }
@@ -253,6 +255,7 @@ func TestAppendMiddlewareSqsReceiveMessage(t *testing.T) {
 			assert.Equal(t, server.URL+"/", s.Tag(ext.HTTPURL))
 			assert.Equal(t, "aws/aws-sdk-go-v2/aws", s.Tag(ext.Component))
 			assert.Equal(t, ext.SpanKindClient, s.Tag(ext.SpanKind))
+			assert.Equal(t, componentName, s.Integration())
 		})
 	}
 }
@@ -384,6 +387,7 @@ func TestAppendMiddlewareS3ListObjects(t *testing.T) {
 			assert.Equal(t, server.URL+"/MyBucketName", s.Tag(ext.HTTPURL))
 			assert.Equal(t, "aws/aws-sdk-go-v2/aws", s.Tag(ext.Component))
 			assert.Equal(t, ext.SpanKindClient, s.Tag(ext.SpanKind))
+			assert.Equal(t, componentName, s.Integration())
 		})
 	}
 }
@@ -479,6 +483,7 @@ func TestAppendMiddlewareSnsPublish(t *testing.T) {
 			assert.Equal(t, server.URL+"/", s.Tag(ext.HTTPURL))
 			assert.Equal(t, "aws/aws-sdk-go-v2/aws", s.Tag(ext.Component))
 			assert.Equal(t, ext.SpanKindClient, s.Tag(ext.SpanKind))
+			assert.Equal(t, componentName, s.Integration())
 
 			// Check for trace context injection
 			assert.NotNil(t, tt.publishInput.MessageAttributes)
@@ -571,6 +576,7 @@ func TestAppendMiddlewareDynamodbGetItem(t *testing.T) {
 			assert.Equal(t, server.URL+"/", s.Tag(ext.HTTPURL))
 			assert.Equal(t, "aws/aws-sdk-go-v2/aws", s.Tag(ext.Component))
 			assert.Equal(t, ext.SpanKindClient, s.Tag(ext.SpanKind))
+			assert.Equal(t, componentName, s.Integration())
 		})
 	}
 }
@@ -644,6 +650,7 @@ func TestAppendMiddlewareKinesisPutRecord(t *testing.T) {
 			assert.Equal(t, server.URL+"/", s.Tag(ext.HTTPURL))
 			assert.Equal(t, "aws/aws-sdk-go-v2/aws", s.Tag(ext.Component))
 			assert.Equal(t, ext.SpanKindClient, s.Tag(ext.SpanKind))
+			assert.Equal(t, componentName, s.Integration())
 		})
 	}
 }
@@ -715,6 +722,7 @@ func TestAppendMiddlewareEventBridgePutRule(t *testing.T) {
 			assert.Equal(t, server.URL+"/", s.Tag(ext.HTTPURL))
 			assert.Equal(t, "aws/aws-sdk-go-v2/aws", s.Tag(ext.Component))
 			assert.Equal(t, ext.SpanKindClient, s.Tag(ext.SpanKind))
+			assert.Equal(t, componentName, s.Integration())
 		})
 	}
 }
@@ -842,6 +850,7 @@ func TestAppendMiddlewareSfnDescribeStateMachine(t *testing.T) {
 			assert.Equal(t, server.URL+"/", s.Tag(ext.HTTPURL))
 			assert.Equal(t, "aws/aws-sdk-go-v2/aws", s.Tag(ext.Component))
 			assert.Equal(t, ext.SpanKindClient, s.Tag(ext.SpanKind))
+			assert.Equal(t, componentName, s.Integration())
 		})
 	}
 }

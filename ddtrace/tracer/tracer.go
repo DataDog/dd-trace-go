@@ -19,9 +19,12 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/internal/tracerstats"
 	globalinternal "github.com/DataDog/dd-trace-go/v2/internal"
+	utils "github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec"
 	appsecConfig "github.com/DataDog/dd-trace-go/v2/internal/appsec/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/datastreams"
@@ -31,6 +34,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/traceprof"
+	globalversion "github.com/DataDog/dd-trace-go/v2/internal/version"
 
 	"github.com/DataDog/datadog-agent/pkg/obfuscate"
 	"github.com/DataDog/go-runtime-metrics-internal/pkg/runtimemetrics"
@@ -121,6 +125,13 @@ type tracer struct {
 
 	// wg waits for all goroutines to exit when stopping.
 	wg sync.WaitGroup
+
+	// These maps count the spans started and finished from
+	// each component, including contribs and "manual" spans.
+	spansStarted, spansFinished utils.XSyncMapCounterMap
+
+	// tracesDropped track metrics about traces as they are dropped
+	tracesDropped uint32
 
 	// Keeps track of the total number of traces dropped for accurate logging.
 	totalTracesDropped uint32
@@ -244,6 +255,28 @@ func Start(opts ...StartOption) error {
 	return nil
 }
 
+func storeConfig(c *config) {
+	uuid, _ := uuid.NewRandom()
+	name := fmt.Sprintf("datadog-tracer-info-%s", uuid.String()[0:8])
+
+	metadata := TracerMetadata{
+		SchemaVersion:      1,
+		RuntimeId:          globalconfig.RuntimeID(),
+		Language:           "golang",
+		Version:            globalversion.Tag,
+		Hostname:           c.hostname,
+		ServiceName:        c.serviceName,
+		ServiceEnvironment: c.env,
+		ServiceVersion:     c.version,
+	}
+
+	data, _ := metadata.MarshalMsg(nil)
+	_, err := globalinternal.CreateMemfd(name, data)
+	if err != nil {
+		log.Error("failed to store the configuration: %s", err)
+	}
+}
+
 // Stop stops the started tracer. Subsequent calls are valid but become no-op.
 func Stop() {
 	SetGlobalTracer(&NoopTracer{})
@@ -356,6 +389,8 @@ func newUnstartedTracer(opts ...StartOption) (*tracer, error) {
 		pid:              os.Getpid(),
 		logDroppedTraces: time.NewTicker(1 * time.Second),
 		stats:            newConcentrator(c, defaultStatsBucketSize, statsd),
+		spansStarted:     *utils.NewXSyncMapCounterMap(),
+		spansFinished:    *utils.NewXSyncMapCounterMap(),
 		obfuscator: obfuscate.NewObfuscator(obfuscate.Config{
 			SQL: obfuscate.SQLConfig{
 				TableNames:       c.agent.HasFlag("table_names"),
@@ -599,12 +634,13 @@ func SpanStart(operationName string, options ...StartSpanOption) *Span {
 	}
 	// span defaults
 	span := &Span{
-		name:     operationName,
-		service:  "",
-		resource: operationName,
-		spanID:   id,
-		traceID:  id,
-		start:    startTime,
+		name:        operationName,
+		service:     "",
+		resource:    operationName,
+		spanID:      id,
+		traceID:     id,
+		start:       startTime,
+		integration: "manual",
 	}
 
 	span.spanLinks = append(span.spanLinks, opts.SpanLinks...)
@@ -719,6 +755,8 @@ func (t *tracer) StartSpan(operationName string, options ...StartSpanOption) *Sp
 		span.setMetric(keySpanAttributeSchemaVersion, float64(t.config.spanAttributeSchemaVersion))
 	}
 	span.setMetric(ext.Pid, float64(t.pid))
+	t.spansStarted.Inc(span.integration)
+
 	return span
 }
 
@@ -727,25 +765,25 @@ func (t *tracer) StartSpan(operationName string, options ...StartSpanOption) *Sp
 // found in ctx are restored. Additionally, this func informs the profiler how
 // many times each endpoint is called.
 func (t *tracer) applyPPROFLabels(ctx gocontext.Context, span *Span) {
-	var labels []string
+	// Important: The label keys are ordered alphabetically to take advantage of
+	// an upstream optimization that landed in go1.24.  This results in ~10%
+	// better performance on BenchmarkStartSpan. See
+	// https://go-review.googlesource.com/c/go/+/574516 for more information.
+	labels := make([]string, 0, 3*2 /* 3 key value pairs */)
+	localRootSpan := span.Root()
+	if t.config.profilerHotspots && localRootSpan != nil {
+		labels = append(labels, traceprof.LocalRootSpanID, strconv.FormatUint(localRootSpan.spanID, 10))
+	}
 	if t.config.profilerHotspots {
-		// allocate the max-length slice to avoid growing it later
-		labels = make([]string, 0, 6)
 		labels = append(labels, traceprof.SpanID, strconv.FormatUint(span.spanID, 10))
 	}
-	// nil checks might not be needed, but better be safe than sorry
-	if localRootSpan := span.Root(); localRootSpan != nil {
-		if t.config.profilerHotspots {
-			labels = append(labels, traceprof.LocalRootSpanID, strconv.FormatUint(localRootSpan.spanID, 10))
-		}
-		if t.config.profilerEndpoints && spanResourcePIISafe(localRootSpan) {
-			labels = append(labels, traceprof.TraceEndpoint, localRootSpan.resource)
-			if span == localRootSpan {
-				// Inform the profiler of endpoint hits. This is used for the unit of
-				// work feature. We can't use APM stats for this since the stats don't
-				// have enough cardinality (e.g. runtime-id tags are missing).
-				traceprof.GlobalEndpointCounter().Inc(localRootSpan.resource)
-			}
+	if t.config.profilerEndpoints && spanResourcePIISafe(localRootSpan) && localRootSpan != nil {
+		labels = append(labels, traceprof.TraceEndpoint, localRootSpan.resource)
+		if span == localRootSpan {
+			// Inform the profiler of endpoint hits. This is used for the unit of
+			// work feature. We can't use APM stats for this since the stats don't
+			// have enough cardinality (e.g. runtime-id tags are missing).
+			traceprof.GlobalEndpointCounter().Inc(localRootSpan.resource)
 		}
 	}
 	if len(labels) > 0 {
@@ -793,8 +831,8 @@ func (t *tracer) Inject(ctx *SpanContext, carrier interface{}) error {
 
 	if t.config.tracingAsTransport {
 		// in tracing as transport mode, only propagate when there is an upstream appsec event
-		// TODO: replace with _dd.p.ts in the next iteration standardizing this for other products, comparing enabled products in `t.config` with their corresponding `_dd.p.ts` bitfields
-		if ctx.trace != nil && ctx.trace.propagatingTag("_dd.p.appsec") != "1" {
+		if ctx.trace != nil &&
+			!globalinternal.VerifyTraceSourceEnabled(ctx.trace.propagatingTag(keyPropagatedTraceSource), globalinternal.ASMTraceSource) {
 			return nil
 		}
 	}
@@ -840,8 +878,8 @@ func (t *tracer) Extract(carrier interface{}) (*SpanContext, error) {
 	ctx, err := t.config.propagator.Extract(carrier)
 	if t.config.tracingAsTransport && ctx != nil {
 		// in tracing as transport mode, reset upstream sampling decision to make sure we keep 1 trace/minute
-		// TODO: replace with _dd.p.ts in the next iteration standardizing this for other products, comparing enabled products in `t.config` with their corresponding `_dd.p.ts` bitfields
-		if ctx.trace != nil && ctx.trace.propagatingTag("_dd.p.appsec") != "1" {
+		if ctx.trace != nil &&
+			!globalinternal.VerifyTraceSourceEnabled(ctx.trace.propagatingTag(keyPropagatedTraceSource), globalinternal.ASMTraceSource) {
 			ctx.trace.priority = nil
 		}
 	}

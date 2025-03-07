@@ -16,6 +16,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils"
 
 	"github.com/gocql/gocql"
@@ -89,6 +90,7 @@ func TestErrorWrapper(t *testing.T) {
 	assert.Equal(span.Tag(ext.CassandraConsistencyLevel), "QUORUM")
 	assert.Equal(span.Tag(ext.CassandraPaginated), "false")
 	assert.Equal(span.Tag(ext.Component), "gocql/gocql")
+	assert.Equal(instrumentation.PackageGoCQL, span.Integration())
 	assert.Equal(span.Tag(ext.SpanKind), ext.SpanKindClient)
 	assert.Equal(span.Tag(ext.DBSystem), "cassandra")
 	assert.NotContains(span.Tags(), ext.CassandraContactPoints)
@@ -137,6 +139,7 @@ func TestChildWrapperSpan(t *testing.T) {
 	assert.Equal(childSpan.Tag(ext.ResourceName), "SELECT * FROM trace.person")
 	assert.Equal(childSpan.Tag(ext.CassandraKeyspace), "trace")
 	assert.Equal(childSpan.Tag(ext.Component), "gocql/gocql")
+	assert.Equal(instrumentation.PackageGoCQL, childSpan.Integration())
 	assert.Equal(childSpan.Tag(ext.SpanKind), ext.SpanKindClient)
 	assert.Equal(childSpan.Tag(ext.DBSystem), "cassandra")
 	assert.NotContains(childSpan.Tags(), ext.CassandraContactPoints)
@@ -377,6 +380,7 @@ func TestIterScanner(t *testing.T) {
 	assert.Equal(childSpan.Tag(ext.ResourceName), "SELECT * from trace.person")
 	assert.Equal(childSpan.Tag(ext.CassandraKeyspace), "trace")
 	assert.Equal(childSpan.Tag(ext.Component), "gocql/gocql")
+	assert.Equal(instrumentation.PackageGoCQL, childSpan.Integration())
 	assert.Equal(childSpan.Tag(ext.SpanKind), ext.SpanKindClient)
 	assert.Equal(childSpan.Tag(ext.DBSystem), "cassandra")
 	assert.NotContains(childSpan.Tags(), ext.CassandraContactPoints)
@@ -423,6 +427,7 @@ func TestBatch(t *testing.T) {
 	assert.Equal(childSpan.Tag(ext.ResourceName), "BatchInsert")
 	assert.Equal(childSpan.Tag(ext.CassandraKeyspace), "trace")
 	assert.Equal(childSpan.Tag(ext.Component), "gocql/gocql")
+	assert.Equal(instrumentation.PackageGoCQL, childSpan.Integration())
 	assert.Equal(childSpan.Tag(ext.SpanKind), ext.SpanKindClient)
 	assert.Equal(childSpan.Tag(ext.DBSystem), "cassandra")
 	assert.NotContains(childSpan.Tags(), ext.CassandraContactPoints)

@@ -7,6 +7,7 @@ package statsdtest // import "github.com/DataDog/dd-trace-go/v2/internal/statsdt
 
 import (
 	"fmt"
+	"slices"
 	"sync"
 	"time"
 
@@ -270,6 +271,18 @@ func FilterCallsByName(calls []TestStatsdCall, name string) []TestStatsdCall {
 		}
 	}
 	return matches
+}
+
+func (tg *TestStatsdClient) CountCallsByTag(calls []TestStatsdCall, tag string) int64 {
+	tg.mu.RLock()
+	defer tg.mu.RUnlock()
+	var count int64
+	for _, c := range calls {
+		if slices.Equal(c.tags, []string{tag}) {
+			count += c.intVal
+		}
+	}
+	return count
 }
 
 func (tg *TestStatsdClient) Counts() map[string]int64 {
