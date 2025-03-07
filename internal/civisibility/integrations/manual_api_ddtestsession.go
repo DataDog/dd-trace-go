@@ -108,9 +108,14 @@ func CreateTestSession(options ...TestSessionStartOption) TestSession {
 	if utils.GetCodeOwners() != nil {
 		testingEventType = append(testingEventType, telemetry.HasCodeOwnerEventType...)
 	}
-	if _, hasCiProvider := utils.GetCITags()[constants.CIProviderName]; !hasCiProvider {
+
+	ciProviderName, hasCiProvider := utils.GetCITags()[constants.CIProviderName]
+	if !hasCiProvider {
 		testingEventType = append(testingEventType, telemetry.UnsupportedCiEventType...)
 	}
+
+	// Write test session telemetry
+	telemetry.TestSession(ciProviderName)
 	telemetry.EventCreated(s.framework, testingEventType)
 	return s
 }

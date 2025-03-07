@@ -13,6 +13,29 @@ const (
 	UnknownFramework   TestingFramework = "test_framework:unknown"
 )
 
+// TestSessionEventType is a type for test session event types
+type TestSessionType []string
+
+var (
+	AppVeyorTestSessionType       TestSessionType = []string{"provider:appveyor"}
+	AzurePipelinesTestSessionType TestSessionType = []string{"provider:azp"}
+	BitbucketTestSessionType      TestSessionType = []string{"provider:bitbucket"}
+	BitRiseTestSessionType        TestSessionType = []string{"provider:bitrise"}
+	BuildKiteTestSessionType      TestSessionType = []string{"provider:buildkite"}
+	CircleCiTestSessionType       TestSessionType = []string{"provider:circleci"}
+	CodeFreshTestSessionType      TestSessionType = []string{"provider:codefresh"}
+	GithubActionsTestSessionType  TestSessionType = []string{"provider:githubactions"}
+	GitlabTestSessionType         TestSessionType = []string{"provider:gitlab"}
+	JenkinsTestSessionType        TestSessionType = []string{"provider:jenkins"}
+	TeamcityTestSessionType       TestSessionType = []string{"provider:teamcity"}
+	TravisCiTestSessionType       TestSessionType = []string{"provider:travisci"}
+	BuddyCiTestSessionType        TestSessionType = []string{"provider:buddyci"}
+	AwsCodePipelineSessionType    TestSessionType = []string{"provider:aws"}
+	UnsupportedTestSessionType    TestSessionType = []string{"provider:unsupported"}
+
+	IsAutoInstrumentationTestSessionType TestSessionType = []string{"auto_injected:true"}
+)
+
 // TestingEventType is a type for testing event types
 type TestingEventType []string
 
