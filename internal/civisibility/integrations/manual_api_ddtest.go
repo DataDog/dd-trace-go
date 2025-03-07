@@ -143,6 +143,21 @@ func (t *tslvTest) Close(status TestResultStatus, options ...TestCloseOption) {
 	if t.ctx.Value(constants.TestType) == constants.TestTypeBenchmark {
 		testingEventType = append(testingEventType, telemetry.IsBenchmarkEventType...)
 	}
+	if t.ctx.Value(constants.TestIsAttempToFix) == "true" {
+		testingEventType = append(testingEventType, telemetry.IsAttemptToFixEventType...)
+	}
+	if t.ctx.Value(constants.TestIsQuarantined) == "true" {
+		testingEventType = append(testingEventType, telemetry.IsQuarantinedEventType...)
+	}
+	if t.ctx.Value(constants.TestIsDisabled) == "true" {
+		testingEventType = append(testingEventType, telemetry.IsDisabledEventType...)
+	}
+	if t.ctx.Value(constants.TestHasFailedAllRetries) == "true" {
+		testingEventType = append(testingEventType, telemetry.HasFailedAllRetriesEventType...)
+	}
+	if retryReason, ok := t.ctx.Value(constants.TestRetryReason).(string); ok {
+		testingEventType = append(testingEventType, []string{fmt.Sprintf("retry_reason:%s", retryReason)}...)
+	}
 	telemetry.EventFinished(t.suite.module.framework, testingEventType)
 }
 
@@ -155,6 +170,16 @@ func (t *tslvTest) SetTag(key string, value interface{}) {
 		t.ctx = context.WithValue(t.ctx, constants.TestIsRetry, value)
 	} else if key == constants.TestEarlyFlakeDetectionRetryAborted {
 		t.ctx = context.WithValue(t.ctx, constants.TestEarlyFlakeDetectionRetryAborted, value)
+	} else if key == constants.TestIsAttempToFix {
+		t.ctx = context.WithValue(t.ctx, constants.TestIsAttempToFix, value)
+	} else if key == constants.TestIsQuarantined {
+		t.ctx = context.WithValue(t.ctx, constants.TestIsQuarantined, value)
+	} else if key == constants.TestIsDisabled {
+		t.ctx = context.WithValue(t.ctx, constants.TestIsDisabled, value)
+	} else if key == constants.TestHasFailedAllRetries {
+		t.ctx = context.WithValue(t.ctx, constants.TestHasFailedAllRetries, value)
+	} else if key == constants.TestRetryReason {
+		t.ctx = context.WithValue(t.ctx, constants.TestRetryReason, value)
 	}
 }
 

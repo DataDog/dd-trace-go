@@ -7,6 +7,9 @@ package net
 
 import (
 	"fmt"
+	"time"
+
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/utils/telemetry"
 )
 
 const (
@@ -77,9 +80,28 @@ func (c *client) GetTestManagementTests() (*TestManagementTestsResponseDataModul
 	}
 
 	request := c.getPostRequestConfig(testManagementTestsURLPath, body)
+	if request.Compressed {
+		telemetry.TestManagementTestsRequest(telemetry.CompressedRequestCompressedType)
+	} else {
+		telemetry.TestManagementTestsRequest(telemetry.UncompressedRequestCompressedType)
+	}
+
+	startTime := time.Now()
 	response, err := c.handler.SendRequest(*request)
+	telemetry.TestManagementTestsRequestMs(float64(time.Since(startTime).Milliseconds()))
+
 	if err != nil {
+		telemetry.TestManagementTestsRequestErrors(telemetry.NetworkErrorType)
 		return nil, fmt.Errorf("sending known tests request: %s", err.Error())
+	}
+
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		telemetry.TestManagementTestsRequestErrors(telemetry.GetErrorTypeFromStatusCode(response.StatusCode))
+	}
+	if response.Compressed {
+		telemetry.TestManagementTestsResponseBytes(telemetry.CompressedResponseCompressedType, float64(len(response.Body)))
+	} else {
+		telemetry.TestManagementTestsResponseBytes(telemetry.UncompressedResponseCompressedType, float64(len(response.Body)))
 	}
 
 	var responseObject testManagementTestsResponse
@@ -88,5 +110,20 @@ func (c *client) GetTestManagementTests() (*TestManagementTestsResponseDataModul
 		return nil, fmt.Errorf("unmarshalling test management tests response: %s", err.Error())
 	}
 
+	testCount := 0
+	if responseObject.Data.Attributes.Modules != nil {
+		for _, module := range responseObject.Data.Attributes.Modules {
+			if module.Suites == nil {
+				continue
+			}
+			for _, suite := range module.Suites {
+				if suite.Tests == nil {
+					continue
+				}
+				testCount += len(suite.Tests)
+			}
+		}
+	}
+	telemetry.TestManagementTestsResponseTests(float64(testCount))
 	return &responseObject.Data.Attributes, nil
 }
