@@ -256,3 +256,15 @@ func KnownTestsRequest(requestCompressed RequestCompressedType) {
 func KnownTestsRequestErrors(errorType ErrorType) {
 	telemetry.Count(telemetry.NamespaceCIVisibility, "known_tests.request_errors", removeEmptyStrings(errorType)).Submit(1.0)
 }
+
+// TestManagementTestsRequest the number of requests sent to the test management tests endpoint, tagged by the request compressed type.
+func TestManagementTestsRequest(requestCompressed RequestCompressedType) {
+	telemetry.Count(telemetry.NamespaceCIVisibility, "test_management_tests.request", removeEmptyStrings([]string{
+		string(requestCompressed),
+	})).Submit(1.0)
+}
+
+// TestManagementTestsRequestErrors the number of requests sent to the test management tests endpoint that errored, tagged by the error type.
+func TestManagementTestsRequestErrors(errorType ErrorType) {
+	telemetry.Count(telemetry.NamespaceCIVisibility, "test_management_tests.request_errors", removeEmptyStrings(errorType)).Submit(1.0)
+}
