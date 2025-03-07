@@ -124,7 +124,10 @@ func TestXSyncMapCounterMap(t *testing.T) {
 
 			}()
 		}
-		wg.Wait()
+		v, ok := cm.GetAndReset()["key"]
+		if ok {
+			val.Add(v)
+		}
 		assert.Equal(int64(10), val.Load())
 	})
 }
@@ -215,6 +218,10 @@ func BenchmarkXSyncMapCounterMap(b *testing.B) {
 			}()
 		}
 		wg.Wait()
+		v, ok := cm.GetAndReset()["key"]
+		if ok {
+			val.Add(v)
+		}
 		time.Sleep(200 * time.Millisecond)
 		assert.Equal(b, int64(b.N), val.Load())
 	})
