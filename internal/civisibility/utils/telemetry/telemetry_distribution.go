@@ -102,3 +102,20 @@ func KnownTestsResponseBytes(responseCompressedType ResponseCompressedType, valu
 func KnownTestsResponseTests(value float64) {
 	telemetry.Distribution(telemetry.NamespaceCIVisibility, "known_tests.response_tests", nil).Submit(value)
 }
+
+// TestManagementTestsRequestMs records the time it takes to get the response of the test management tests endpoint request in ms by CI Visibility.
+func TestManagementTestsRequestMs(value float64) {
+	telemetry.Distribution(telemetry.NamespaceCIVisibility, "test_management_tests.request_ms", nil).Submit(value)
+}
+
+// TestManagementTestsResponseBytes records the number of bytes received by the endpoint. Tagged with a boolean flag set to true if response body is compressed.
+func TestManagementTestsResponseBytes(responseCompressedType ResponseCompressedType, value float64) {
+	telemetry.Distribution(telemetry.NamespaceCIVisibility, "test_management_tests.response_bytes", removeEmptyStrings([]string{
+		string(responseCompressedType),
+	})).Submit(value)
+}
+
+// TestManagementTestsResponseTests records the number of tests in the response of the test management tests endpoint by CI Visibility.
+func TestManagementTestsResponseTests(value float64) {
+	telemetry.Distribution(telemetry.NamespaceCIVisibility, "test_management_tests.response_tests", nil).Submit(value)
+}

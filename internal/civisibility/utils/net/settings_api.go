@@ -132,6 +132,9 @@ func (c *client) GetSettings() (*SettingsResponseData, error) {
 	if responseObject.Data.Attributes.FlakyTestRetriesEnabled {
 		settingsResponseType = append(settingsResponseType, telemetry.FlakyTestRetriesEnabledSettingsResponseType...)
 	}
+	if responseObject.Data.Attributes.TestManagement.Enabled {
+		settingsResponseType = append(settingsResponseType, telemetry.TestManagementEnabledSettingsResponseType...)
+	}
 	telemetry.GitRequestsSettingsResponse(settingsResponseType)
 	return &responseObject.Data.Attributes, nil
 }
