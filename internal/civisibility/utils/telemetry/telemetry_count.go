@@ -6,6 +6,8 @@
 package telemetry
 
 import (
+	utils "gopkg.in/DataDog/dd-trace-go.v1/internal"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/constants"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 )
 
@@ -42,6 +44,50 @@ func GetErrorTypeFromStatusCode(statusCode int) ErrorType {
 			return StatusCodeErrorType
 		}
 	}
+}
+
+func getProviderTestSessionTypeFromProviderString(provider string) TestSessionType {
+	switch provider {
+	case "appveyor":
+		return AppVeyorTestSessionType
+	case "azurepipelines":
+		return AzurePipelinesTestSessionType
+	case "bitbucket":
+		return BitbucketTestSessionType
+	case "bitrise":
+		return BitRiseTestSessionType
+	case "buildkite":
+		return BuildKiteTestSessionType
+	case "circleci":
+		return CircleCiTestSessionType
+	case "codefresh":
+		return CodeFreshTestSessionType
+	case "github":
+		return GithubActionsTestSessionType
+	case "gitlab":
+		return GitlabTestSessionType
+	case "jenkins":
+		return JenkinsTestSessionType
+	case "teamcity":
+		return TeamcityTestSessionType
+	case "travisci":
+		return TravisCiTestSessionType
+	case "buddy":
+		return BuddyCiTestSessionType
+	case "awscodepipeline":
+		return AwsCodePipelineSessionType
+	default:
+		return UnsupportedTestSessionType
+	}
+}
+
+func TestSession(providerName string) {
+	var tags []string
+	tags = append(tags, getProviderTestSessionTypeFromProviderString(providerName)...)
+	if utils.BoolEnv(constants.CIVisibilityAutoInstrumentationProviderEnvironmentVariable, false) {
+		tags = append(tags, IsAutoInstrumentationTestSessionType...)
+	}
+	telemetry.Count(telemetry.NamespaceCIVisibility, "test_session", removeEmptyStrings(tags)).Submit(1.0)
 }
 
 // EventCreated the number of events created by CI Visibility
