@@ -8,11 +8,12 @@ package waf
 import (
 	"encoding/json"
 
-	waf "github.com/DataDog/go-libddwaf/v3"
+	"github.com/DataDog/go-libddwaf/v3"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/trace"
+	emitter "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/waf"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/samplernames"
 )
@@ -24,9 +25,11 @@ const (
 	eventRulesLoadedTag  = wafSpanTagPrefix + "event_rules.loaded"
 	eventRulesFailedTag  = wafSpanTagPrefix + "event_rules.error_count"
 	wafVersionTag        = wafSpanTagPrefix + "waf.version"
+	wafErrorTag          = wafSpanTagPrefix + "waf.error"
+	raspRuleEvalTag      = wafSpanTagPrefix + "rasp.rule.eval"
+	raspErrorTag         = wafSpanTagPrefix + "rasp.error"
 
-	// BlockedRequestTag used to convey whether a request is blocked
-	BlockedRequestTag = "appsec.blocked"
+	blockedRequestTag = "appsec.blocked"
 )
 
 // AddRulesMonitoringTags adds the tags related to security rules monitoring
@@ -50,9 +53,21 @@ func AddRulesMonitoringTags(th trace.TagSetter, wafDiags waf.Diagnostics) {
 }
 
 // AddWAFMonitoringTags adds the tags related to the monitoring of the Feature
-func AddWAFMonitoringTags(th trace.TagSetter, rulesVersion string, stats map[string]any) {
+func AddWAFMonitoringTags(th trace.TagSetter, metrics *emitter.Metrics, rulesVersion string, stats map[string]any) {
 	// Rules version is set for every request to help the backend associate Feature duration metrics with rule version
 	th.SetTag(eventRulesVersionTag, rulesVersion)
+
+	if raspCallsCount := metrics.SumRASPCalls(); raspCallsCount > 0 {
+		th.SetTag(raspRuleEvalTag, raspCallsCount)
+	}
+
+	if raspErrorsCount := metrics.SumRASPErrors(); raspErrorsCount > 0 {
+		th.SetTag(raspErrorTag, raspErrorsCount)
+	}
+
+	if wafErrorsCount := metrics.SumWAFErrors(); wafErrorsCount > 0 {
+		th.SetTag(wafErrorTag, wafErrorsCount)
+	}
 
 	// Report the stats sent by the Feature
 	for k, v := range stats {
