@@ -12,7 +12,9 @@ import (
 	"testing"
 	"time"
 
+	otelbaggage "go.opentelemetry.io/otel/baggage"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/baggage"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
@@ -311,4 +313,62 @@ func BenchmarkOTelConcurrentTracing(b *testing.B) {
 			}()
 		}
 	}
+}
+
+func TestOteltoDDBaggagePropagation(t *testing.T) {
+	assert := assert.New(t)
+
+	// Create a baggage with a key/value pair using the OTel baggage API.
+	m, err := otelbaggage.NewMember("testKey", "testValue")
+	assert.NoError(err)
+	bag, err := otelbaggage.New(m)
+	assert.NoError(err)
+
+	// Create a context that includes the baggage.
+	ctx := otelbaggage.ContextWithBaggage(context.Background(), bag)
+
+	tp := NewTracerProvider()
+	otel.SetTracerProvider(tp)
+	tr := otel.Tracer("baggage.test", oteltrace.WithInstrumentationVersion("0.1"))
+
+	ctx, _ = tr.Start(ctx, "baggage.span")
+
+	ddSpan, ok := tracer.SpanFromContext(ctx)
+	assert.True(ok)
+
+	// Verify that the baggage item was propagated to the Datadog span.
+	baggageValue := ddSpan.BaggageItem("testKey")
+	assert.Equal("testValue", baggageValue)
+	value, _ := baggage.Get(ctx, "testKey")
+	assert.Equal("testValue", value)
+}
+
+func TestDDtoOtelBaggagePropagation(t *testing.T) {
+	assert := assert.New(t)
+
+	// Set up the tracer provider and tracer.
+	tp := NewTracerProvider()
+	otel.SetTracerProvider(tp)
+	_ = otel.Tracer("baggage.test", oteltrace.WithInstrumentationVersion("0.1"))
+
+	ctx := context.Background()
+	tracer.Start()
+	defer tracer.Stop()
+	ddSpan, ctx := tracer.StartSpanFromContext(ctx, "ddtrace-baggage")
+
+	// Set baggage items on the ddtrace span.
+	baggaggeCtx := baggage.Set(ctx, "key1", "value1")
+	baggaggeCtx = baggage.Set(baggaggeCtx, "key2", "value2")
+
+	otelTracer := otel.Tracer("baggage.test", oteltrace.WithInstrumentationVersion("0.1"))
+	otelCtx, otelSpan := otelTracer.Start(baggaggeCtx, "otel-span")
+	defer otelSpan.End()
+
+	otelBag := otelbaggage.FromContext(otelCtx)
+	assert.NotNil(otelBag)
+	assert.Equal(2, otelBag.Len())
+	assert.Equal("value1", otelBag.Member("key1").Value())
+	assert.Equal("value2", otelBag.Member("key2").Value())
+
+	ddSpan.Finish()
 }
