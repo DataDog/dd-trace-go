@@ -55,8 +55,8 @@ func (fn OptionFn) apply(cfg *Tracer) {
 	fn(cfg)
 }
 
-// WithServiceName sets the Tracer service name to serviceName.
-func WithServiceName(serviceName string) Option {
+// WithService sets the Tracer service name to serviceName.
+func WithService(serviceName string) Option {
 	return OptionFn(func(tr *Tracer) {
 		tr.consumerServiceName = serviceName
 		tr.producerServiceName = serviceName

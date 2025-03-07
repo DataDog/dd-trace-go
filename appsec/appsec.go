@@ -52,6 +52,10 @@ func MonitorParsedHTTPBody(ctx context.Context, body any) error {
 // APM tracer middleware on use according to your blocking configuration.
 // This function always returns nil when appsec is disabled and doesn't block users.
 func SetUser(ctx context.Context, id string, opts ...tracer.UserMonitoringOption) error {
+	return setUser(ctx, id, usersec.UserSet, opts)
+}
+
+func setUser(ctx context.Context, id string, userEventType usersec.UserEventType, opts []tracer.UserMonitoringOption) error {
 	s, ok := tracer.SpanFromContext(ctx)
 	if !ok {
 		log.Debug("appsec: could not retrieve span from context. User ID tag won't be set")
@@ -64,7 +68,7 @@ func SetUser(ctx context.Context, id string, opts ...tracer.UserMonitoringOption
 		return nil
 	}
 
-	op, errPtr := usersec.StartUserLoginOperation(ctx, usersec.UserLoginOperationArgs{})
+	op, errPtr := usersec.StartUserLoginOperation(ctx, userEventType, usersec.UserLoginOperationArgs{})
 	login, userOrg, sessionID := getMetadata(opts)
 	op.Finish(usersec.UserLoginOperationRes{
 		UserID:    id,
@@ -90,7 +94,7 @@ func SetUser(ctx context.Context, id string, opts ...tracer.UserMonitoringOption
 // The provided metadata is attached to the successful user login event.
 //
 // This function calso calls [SetUser] with the provided user ID and login, as
-// well as any provided [tracer.UserMonitoringOption], and returns an error if
+// well as any provided [tracer.UserMonitoringOption]s, and returns an error if
 // the provided user ID is found to be on a configured deny list. See the
 // documentation for [SetUser] for more information.
 func TrackUserLoginSuccess(ctx context.Context, login string, uid string, md map[string]string, opts ...tracer.UserMonitoringOption) error {
@@ -110,7 +114,7 @@ func TrackUserLoginSuccess(ctx context.Context, login string, uid string, md map
 	}
 
 	TrackCustomEvent(ctx, "users.login.success", md)
-	return SetUser(ctx, uid, append(opts, tracer.WithUserLogin(login))...)
+	return setUser(ctx, uid, usersec.UserLoginSuccess, append(opts, tracer.WithUserLogin(login)))
 }
 
 // TrackUserLoginFailure denotes a failed user login event, which is used by
@@ -142,8 +146,8 @@ func TrackUserLoginFailure(ctx context.Context, login string, exists bool, md ma
 
 	TrackCustomEvent(ctx, "users.login.failure", md)
 
-	op, _ := usersec.StartUserLoginOperation(ctx, usersec.UserLoginOperationArgs{})
-	op.Finish(usersec.UserLoginOperationRes{UserLogin: login, Success: false})
+	op, _ := usersec.StartUserLoginOperation(ctx, usersec.UserLoginFailure, usersec.UserLoginOperationArgs{})
+	op.Finish(usersec.UserLoginOperationRes{UserLogin: login})
 }
 
 // TrackCustomEvent sets a custom event as service entry span tags. This span is

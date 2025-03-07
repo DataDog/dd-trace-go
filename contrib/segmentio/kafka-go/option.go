@@ -24,7 +24,7 @@ type OptionFn = tracing.OptionFn
 
 // WithService sets the config service name to serviceName.
 func WithService(serviceName string) Option {
-	return tracing.WithServiceName(serviceName)
+	return tracing.WithService(serviceName)
 }
 
 // WithAnalytics enables Trace Analytics for all started spans.

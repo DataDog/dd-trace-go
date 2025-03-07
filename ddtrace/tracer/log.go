@@ -153,10 +153,6 @@ func logStartup(t *tracer) {
 		TracingAsTransport:          t.config.tracingAsTransport,
 		DogstatsdAddr:               t.config.dogstatsdAddr,
 	}
-
-	info.PropagationStyleInject = injectorNames
-	info.PropagationStyleExtract = extractorNames
-
 	if _, _, err := samplingRulesFromEnv(); err != nil {
 		info.SamplingRulesError = fmt.Sprintf("%s", err)
 	}

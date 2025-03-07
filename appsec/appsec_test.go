@@ -36,6 +36,7 @@ func TestTrackUserLoginSuccess(t *testing.T) {
 		assert.Equal(t, ext.PriorityUserKeep, sp, "span should have user keep (%d) priority (has: %d)", ext.PriorityUserKeep, sp)
 
 		expectedEventPrefix := "appsec.events.users.login.success."
+		assertTag(t, finished, "_dd."+expectedEventPrefix+"sdk", "true")
 		assertTag(t, finished, expectedEventPrefix+"track", "true")
 		assertTag(t, finished, "usr.id", "user id")
 		assertTag(t, finished, "usr.login", "user login")
@@ -96,6 +97,7 @@ func TestTrackUserLoginFailure(t *testing.T) {
 				assert.Equal(t, ext.PriorityUserKeep, sp, "span should have user keep (%d) priority (has: %d)", ext.PriorityUserKeep, sp)
 
 				expectedEventPrefix := "appsec.events.users.login.failure."
+				assertTag(t, finished, "_dd."+expectedEventPrefix+"sdk", "true")
 				assertTag(t, finished, expectedEventPrefix+"track", "true")
 				assertTag(t, finished, expectedEventPrefix+"usr.login", "user login")
 				assertTag(t, finished, expectedEventPrefix+"usr.exists", strconv.FormatBool(userExists))

@@ -15,6 +15,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"math"
 	"math/rand/v2"
 	"net/http"
@@ -131,12 +132,7 @@ func (m *MemoryStore) List() (vehicles []*Vehicle) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
-	mv := make([]string, 0, len(m.vehicles))
-	for key := range m.vehicles {
-		mv = append(mv, key)
-	}
-	slices.Sort(mv)
-	for _, key := range mv {
+	for _, key := range slices.Sorted(maps.Keys(m.vehicles)) {
 		vehicles = append(vehicles, m.vehicles[key].Copy())
 	}
 	return vehicles

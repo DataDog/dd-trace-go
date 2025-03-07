@@ -14,7 +14,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 )
 
-type queryConfig struct {
+type config struct {
 	serviceName, resourceName            string
 	querySpanName, batchSpanName         string
 	noDebugStack                         bool
@@ -27,18 +27,18 @@ type queryConfig struct {
 
 // WrapOption describes options for the Cassandra integration.
 type WrapOption interface {
-	apply(queryConfig *queryConfig)
+	apply(*config)
 }
 
 // WrapOptionFn represents options applicable to NewCluster, Query.WithWrapOptions and Batch.WithWrapOptions.
-type WrapOptionFn func(config *queryConfig)
+type WrapOptionFn func(config *config)
 
-func (fn WrapOptionFn) apply(cfg *queryConfig) {
+func (fn WrapOptionFn) apply(cfg *config) {
 	fn(cfg)
 }
 
-func defaultConfig() *queryConfig {
-	cfg := &queryConfig{
+func defaultConfig() *config {
+	cfg := &config{
 		traceQuery:   true,
 		traceBatch:   true,
 		traceConnect: true,
@@ -62,7 +62,7 @@ func defaultConfig() *queryConfig {
 
 // WithService sets the given service name for the returned query.
 func WithService(name string) WrapOptionFn {
-	return func(cfg *queryConfig) {
+	return func(cfg *config) {
 		cfg.serviceName = name
 	}
 }
@@ -74,14 +74,14 @@ func WithService(name string) WrapOptionFn {
 // call, which can be costly when called repeatedly. Using WithResourceName will
 // avoid that call. Under normal circumstances, it is safe to rely on the default.
 func WithResourceName(name string) WrapOptionFn {
-	return func(cfg *queryConfig) {
+	return func(cfg *config) {
 		cfg.resourceName = name
 	}
 }
 
 // WithAnalytics enables Trace Analytics for all started spans.
 func WithAnalytics(on bool) WrapOptionFn {
-	return func(cfg *queryConfig) {
+	return func(cfg *config) {
 		if on {
 			cfg.analyticsRate = 1.0
 		} else {
@@ -93,7 +93,7 @@ func WithAnalytics(on bool) WrapOptionFn {
 // WithAnalyticsRate sets the sampling rate for Trace Analytics events
 // correlated to started spans.
 func WithAnalyticsRate(rate float64) WrapOptionFn {
-	return func(cfg *queryConfig) {
+	return func(cfg *config) {
 		if rate >= 0.0 && rate <= 1.0 {
 			cfg.analyticsRate = rate
 		} else {
@@ -106,12 +106,12 @@ func WithAnalyticsRate(rate float64) WrapOptionFn {
 // with an error. This is useful in situations where errors are frequent and
 // performance is critical.
 func NoDebugStack() WrapOptionFn {
-	return func(cfg *queryConfig) {
+	return func(cfg *config) {
 		cfg.noDebugStack = true
 	}
 }
 
-func (c *queryConfig) shouldIgnoreError(err error) bool {
+func (c *config) shouldIgnoreError(err error) bool {
 	return c != nil && c.errCheck != nil && !c.errCheck(err)
 }
 
@@ -119,7 +119,7 @@ func (c *queryConfig) shouldIgnoreError(err error) bool {
 // error should be marked as an error. The fn is called whenever a CQL request
 // finishes with an error.
 func WithErrorCheck(fn func(err error) bool) WrapOptionFn {
-	return func(cfg *queryConfig) {
+	return func(cfg *config) {
 		// When the error is explicitly marked as not-an-error, that is
 		// when this errCheck function returns false, the APM code will
 		// just skip the error and pretend the span was successful.
@@ -135,7 +135,7 @@ func WithErrorCheck(fn func(err error) bool) WrapOptionFn {
 
 // WithCustomTag will attach the value to the span tagged by the key.
 func WithCustomTag(key string, value interface{}) WrapOptionFn {
-	return func(cfg *queryConfig) {
+	return func(cfg *config) {
 		if cfg.customTags == nil {
 			cfg.customTags = make(map[string]interface{})
 		}
@@ -146,7 +146,7 @@ func WithCustomTag(key string, value interface{}) WrapOptionFn {
 // WithTraceQuery will enable tracing for queries (default is true).
 // This option only takes effect in CreateTracedSession and NewObserver.
 func WithTraceQuery(enabled bool) WrapOptionFn {
-	return func(cfg *queryConfig) {
+	return func(cfg *config) {
 		cfg.traceQuery = enabled
 	}
 }
@@ -154,7 +154,7 @@ func WithTraceQuery(enabled bool) WrapOptionFn {
 // WithTraceBatch will enable tracing for batches (default is true).
 // This option only takes effect in CreateTracedSession and NewObserver.
 func WithTraceBatch(enabled bool) WrapOptionFn {
-	return func(cfg *queryConfig) {
+	return func(cfg *config) {
 		cfg.traceBatch = enabled
 	}
 }
@@ -162,7 +162,7 @@ func WithTraceBatch(enabled bool) WrapOptionFn {
 // WithTraceConnect will enable tracing for connections (default is true).
 // This option only takes effect in CreateTracedSession and NewObserver.
 func WithTraceConnect(enabled bool) WrapOptionFn {
-	return func(cfg *queryConfig) {
+	return func(cfg *config) {
 		cfg.traceConnect = enabled
 	}
 }
