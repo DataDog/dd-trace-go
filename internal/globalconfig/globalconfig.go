@@ -24,13 +24,14 @@ var cfg = &config{
 }
 
 type config struct {
-	mu            sync.RWMutex
-	analyticsRate float64
-	serviceName   string
-	runtimeID     string
-	headersAsTags *internal.LockMap
-	dogstatsdAddr string
-	statsTags     []string
+	mu                   sync.RWMutex
+	analyticsRate        float64
+	serviceName          string
+	runtimeID            string
+	headersAsTags        *internal.LockMap
+	dogstatsdAddr        string
+	statsTags            []string
+	disabledIntegrations map[string]struct{}
 }
 
 // AnalyticsRate returns the sampling rate at which events should be marked. It uses
@@ -119,6 +120,24 @@ func HeaderTag(header string) string {
 // SetHeaderTag adds config for header `from` with tag value `to`
 func SetHeaderTag(from, to string) {
 	cfg.headersAsTags.Set(from, to)
+}
+
+// SetDisabledIntegrations configures a list of integrations that are disabled.
+func SetDisabledIntegrations(disabledIntegrations []string) {
+	cfg.mu.Lock()
+	defer cfg.mu.Unlock()
+	cfg.disabledIntegrations = make(map[string]struct{})
+	for _, name := range disabledIntegrations {
+		cfg.disabledIntegrations[name] = struct{}{}
+	}
+}
+
+// IntegrationDisabled returns whether an integration is disabled or not.
+func IntegrationDisabled(name string) bool {
+	cfg.mu.RLock()
+	defer cfg.mu.RUnlock()
+	_, ok := cfg.disabledIntegrations[name]
+	return ok
 }
 
 // HeaderTagsLen returns the length of globalconfig's headersAsTags map, 0 for empty map
