@@ -107,7 +107,7 @@ func TestXSyncMapCounterMap(t *testing.T) {
 		assert := assert.New(t)
 		cm := NewXSyncMapCounterMap()
 		wg := sync.WaitGroup{}
-		var val atomic.Int64
+		val := &atomic.Int64{}
 		for range 10 {
 			wg.Add(2)
 			go func() {
@@ -124,6 +124,8 @@ func TestXSyncMapCounterMap(t *testing.T) {
 
 			}()
 		}
+		wg.Wait()
+		time.Sleep(100 * time.Millisecond)
 		v, ok := cm.GetAndReset()["key"]
 		if ok {
 			val.Add(v)
@@ -199,7 +201,7 @@ func BenchmarkXSyncMapCounterMap(b *testing.B) {
 	b.Run("concurrent with reset", func(b *testing.B) {
 		cm := NewXSyncMapCounterMap()
 		wg := sync.WaitGroup{}
-		var val atomic.Int64
+		val := &atomic.Int64{}
 		b.ReportAllocs()
 		b.ResetTimer()
 		for range b.N {
