@@ -7,6 +7,7 @@ package spanpointers
 
 import (
 	"context"
+	awsmiddleware "github.com/aws/aws-sdk-go-v2/aws/middleware"
 	"github.com/aws/smithy-go/middleware"
 	smithyhttp "github.com/aws/smithy-go/transport/http"
 	"github.com/stretchr/testify/assert"
@@ -126,6 +127,7 @@ func TestHandleS3Operation(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := context.Background()
 			span, ctx := tracer.StartSpanFromContext(ctx, "test.s3.operation")
+			ctx = awsmiddleware.SetServiceID(ctx, "S3")
 
 			// Create request
 			reqURL, _ := url.Parse("https://" + tt.bucket + ".s3.region.amazonaws.com/" + tt.key)
@@ -152,7 +154,7 @@ func TestHandleS3Operation(t *testing.T) {
 				RawResponse: res,
 			}
 
-			AddSpanPointers("S3", in, out, span)
+			AddSpanPointers(ctx, in, out, span)
 			span.Finish()
 			spans := mt.FinishedSpans()
 			if tt.expectSuccess {
