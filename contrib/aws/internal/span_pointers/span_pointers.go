@@ -11,11 +11,13 @@ import (
 	"encoding/hex"
 	awsmiddleware "github.com/aws/aws-sdk-go-v2/aws/middleware"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
+	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"github.com/aws/smithy-go/middleware"
 	smithyhttp "github.com/aws/smithy-go/transport/http"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"sort"
 	"strings"
 )
 
@@ -105,7 +107,85 @@ func handleS3Operation(in middleware.DeserializeInput, out middleware.Deserializ
 }
 
 func handleDynamoDbOperation(ctx context.Context, span tracer.Span) {
-	// TODO
+	spanWithLinks, ok := span.(tracer.SpanWithLinks)
+	if !ok {
+		return
+	}
+
+	// Retrieve table name from context
+	tableNameVal := ctx.Value(DynamoDbTableName{})
+	if tableNameVal == nil {
+		// This could be a DynamoDB operation that's not supported by span pointers,
+		// so we return without logging anything.
+		return
+	}
+	tableName, ok := tableNameVal.(string)
+	if !ok {
+		return
+	}
+
+	// Retrieve key map from context
+	keyMapVal := ctx.Value(DynamoDbKeyMap{})
+	if keyMapVal == nil {
+		return
+	}
+	keyMap, ok := keyMapVal.(map[string]types.AttributeValue)
+	if !ok || len(keyMap) == 0 {
+		return
+	}
+
+	// Hash calculation rules: https://github.com/DataDog/dd-span-pointer-rules/blob/main/AWS/DynamoDB/Item/README.md
+	var componentsToHash []string
+
+	// Extract and sort the keys
+	keys := make([]string, 0, len(keyMap))
+	for k := range keyMap {
+		keys = append(keys, k)
+	}
+
+	if len(keys) == 1 {
+		keyName := keys[0]
+		keyValue := attributeValueToString(keyMap[keyName])
+
+		componentsToHash = []string{tableName, keyName, keyValue, "", ""}
+	} else {
+		sort.Strings(keys)
+		key1 := keys[0]
+		key2 := keys[1]
+		value1 := attributeValueToString(keyMap[key1])
+		value2 := attributeValueToString(keyMap[key2])
+
+		componentsToHash = []string{tableName, key1, value1, key2, value2}
+	}
+
+	hash := generatePointerHash(componentsToHash)
+	link := ddtrace.SpanLink{
+		TraceID: 0,
+		SpanID:  0,
+		Attributes: map[string]string{
+			"ptr.kind":  S3PointerKind,
+			"ptr.dir":   PointerDownDirection,
+			"ptr.hash":  hash,
+			"link.kind": LinkKind,
+		},
+	}
+
+	spanWithLinks.AddSpanLink(link)
+}
+
+// DynamoDb values can only be string, number, or binary
+func attributeValueToString(attr types.AttributeValue) string {
+	switch v := attr.(type) {
+	case *types.AttributeValueMemberS:
+		return v.Value
+	case *types.AttributeValueMemberN:
+		return v.Value
+	case *types.AttributeValueMemberB:
+		// Convert binary data to string using UTF-8 encoding (Go's default)
+		return string(v.Value)
+	default:
+		return ""
+	}
 }
 
 // generatePointerHash generates a unique hash from an array of strings by joining them with | before hashing.
