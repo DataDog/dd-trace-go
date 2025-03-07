@@ -24,9 +24,9 @@ import (
 )
 
 const (
-	topicA        = "topic-A"
-	topicB        = "topic-B"
-	consumerGroup = "group-A"
+	topicA        = "segmentio_kafka_topic-A"
+	topicB        = "segmentio_kafka_topic-B"
+	consumerGroup = "segmentio_kafka_group-A"
 )
 
 type TestCase struct {
@@ -126,7 +126,7 @@ func (*TestCase) ExpectedTraces() trace.Traces {
 						"name":     "kafka.produce",
 						"type":     "queue",
 						"service":  "kafka",
-						"resource": "Produce Topic topic-A",
+						"resource": "Produce Topic " + topicA,
 					},
 					Meta: map[string]string{
 						"span.kind": "producer",
@@ -138,7 +138,7 @@ func (*TestCase) ExpectedTraces() trace.Traces {
 								"name":     "kafka.consume",
 								"type":     "queue",
 								"service":  "kafka",
-								"resource": "Consume Topic topic-A",
+								"resource": "Consume Topic " + topicA,
 							},
 							Meta: map[string]string{
 								"span.kind": "consumer",
@@ -152,7 +152,7 @@ func (*TestCase) ExpectedTraces() trace.Traces {
 						"name":     "kafka.produce",
 						"type":     "queue",
 						"service":  "kafka",
-						"resource": "Produce Topic topic-B",
+						"resource": "Produce Topic " + topicB,
 					},
 					Meta: map[string]string{
 						"span.kind": "producer",
@@ -164,7 +164,7 @@ func (*TestCase) ExpectedTraces() trace.Traces {
 								"name":     "kafka.consume",
 								"type":     "queue",
 								"service":  "kafka",
-								"resource": "Consume Topic topic-B",
+								"resource": "Consume Topic " + topicB,
 							},
 							Meta: map[string]string{
 								"span.kind": "consumer",
@@ -178,7 +178,7 @@ func (*TestCase) ExpectedTraces() trace.Traces {
 						"name":     "kafka.produce",
 						"type":     "queue",
 						"service":  "kafka",
-						"resource": "Produce Topic topic-B",
+						"resource": "Produce Topic " + topicB,
 					},
 					Meta: map[string]string{
 						"span.kind": "producer",
