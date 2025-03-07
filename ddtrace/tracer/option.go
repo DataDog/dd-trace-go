@@ -87,6 +87,7 @@ var contribIntegrations = map[string]struct {
 	"gopkg.in/olivere/elastic.v5":                   {"Elasticsearch v5", false},
 	"gopkg.in/olivere/elastic.v3":                   {"Elasticsearch v3", false},
 	"github.com/redis/go-redis/v9":                  {"Redis v9", false},
+	"github.com/redis/rueidis":                      {"Rueidis", false},
 	"github.com/segmentio/kafka-go":                 {"Kafka v0", false},
 	"github.com/IBM/sarama":                         {"IBM sarama", false},
 	"github.com/Shopify/sarama":                     {"Shopify sarama", false},
