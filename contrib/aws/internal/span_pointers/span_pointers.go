@@ -27,6 +27,7 @@ const (
 	SpanPointerHashLengthBytes = 16
 	PointerDownDirection       = "d"
 	LinkKind                   = "span-pointer"
+	DynamoDbPointerKind        = "aws.dynamodb.item"
 	S3PointerKind              = "aws.s3.object"
 )
 
@@ -39,6 +40,7 @@ type DynamoDbTableName struct{}
 type DynamoDbKeyMap struct{}
 
 func AddSpanPointers(context context.Context, in middleware.DeserializeInput, out middleware.DeserializeOutput, span tracer.Span) {
+	// TODO(@nhulston) after refactoring S3, in/out can be removed
 	serviceID := awsmiddleware.GetServiceID(context)
 	switch serviceID {
 	case "S3":
@@ -163,7 +165,7 @@ func handleDynamoDbOperation(ctx context.Context, span tracer.Span) {
 		TraceID: 0,
 		SpanID:  0,
 		Attributes: map[string]string{
-			"ptr.kind":  S3PointerKind,
+			"ptr.kind":  DynamoDbPointerKind,
 			"ptr.dir":   PointerDownDirection,
 			"ptr.hash":  hash,
 			"link.kind": LinkKind,
