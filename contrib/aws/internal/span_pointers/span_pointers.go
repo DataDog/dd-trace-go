@@ -50,7 +50,7 @@ func AddSpanPointers(context context.Context, in middleware.DeserializeInput, ou
 	}
 }
 
-func SetDynamoDbParamsOnContext(params interface{}, spanctx context.Context) context.Context {
+func SetDynamoDbParamsOnContext(spanctx context.Context, params interface{}) context.Context {
 	switch params := params.(type) {
 	case *dynamodb.UpdateItemInput:
 		spanctx = context.WithValue(spanctx, DynamoDbTableName{}, *params.TableName)

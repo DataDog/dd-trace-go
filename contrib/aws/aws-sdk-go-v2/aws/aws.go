@@ -122,7 +122,7 @@ func (mw *traceMiddleware) startTraceMiddleware(stack *middleware.Stack) error {
 		case "SFN":
 			sfnTracer.EnrichOperation(span, in, operation)
 		case "DynamoDB":
-			spanctx = spanpointers.SetDynamoDbParamsOnContext(in.Parameters, spanctx)
+			spanctx = spanpointers.SetDynamoDbParamsOnContext(spanctx, in.Parameters)
 		}
 
 		// Handle initialize and continue through the middleware chain.
