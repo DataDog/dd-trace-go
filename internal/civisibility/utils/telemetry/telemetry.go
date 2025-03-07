@@ -45,12 +45,16 @@ var (
 	ModuleEventType  TestingEventType = []string{"event_type:module"}
 	SessionEventType TestingEventType = []string{"event_type:session"}
 
-	UnsupportedCiEventType TestingEventType = []string{"is_unsupported_ci"}
-	HasCodeOwnerEventType  TestingEventType = []string{"has_codeowner"}
-	IsNewEventType         TestingEventType = []string{"is_new:true"}
-	IsRetryEventType       TestingEventType = []string{"is_retry:true"}
-	EfdAbortSlowEventType  TestingEventType = []string{"early_flake_detection_abort_reason:slow"}
-	IsBenchmarkEventType   TestingEventType = []string{"is_benchmark"}
+	UnsupportedCiEventType       TestingEventType = []string{"is_unsupported_ci"}
+	HasCodeOwnerEventType        TestingEventType = []string{"has_codeowner"}
+	IsNewEventType               TestingEventType = []string{"is_new:true"}
+	IsRetryEventType             TestingEventType = []string{"is_retry:true"}
+	EfdAbortSlowEventType        TestingEventType = []string{"early_flake_detection_abort_reason:slow"}
+	IsBenchmarkEventType         TestingEventType = []string{"is_benchmark"}
+	IsAttemptToFixEventType      TestingEventType = []string{"is_attempt_to_fix:true"}
+	IsQuarantinedEventType       TestingEventType = []string{"is_quarantined:true"}
+	IsDisabledEventType          TestingEventType = []string{"is_disabled:true"}
+	HasFailedAllRetriesEventType TestingEventType = []string{"has_failed_all_retries:true"}
 )
 
 // CoverageLibraryType is a type for coverage library types
@@ -140,6 +144,7 @@ var (
 	ItrSkipEnabledSettingsResponseType          SettingsResponseType = []string{"itrskip_enabled"}
 	EfdEnabledSettingsResponseType              SettingsResponseType = []string{"early_flake_detection_enabled:true"}
 	FlakyTestRetriesEnabledSettingsResponseType SettingsResponseType = []string{"flaky_test_retries_enabled:true"}
+	TestManagementEnabledSettingsResponseType   SettingsResponseType = []string{"test_management_enabled:true"}
 )
 
 // removeEmptyStrings removes empty string values inside an array or use the same if not empty string is found.
