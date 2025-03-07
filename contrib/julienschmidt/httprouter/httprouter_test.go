@@ -199,7 +199,7 @@ func handler500(w http.ResponseWriter, _ *http.Request, _ httprouter.Params) {
 }
 
 func TestNamingSchema(t *testing.T) {
-	genSpans := namingschematest.GenSpansFn(func(t *testing.T, serviceOverride string) []mocktracer.Span {
+	genSpans := namingschematest.GenSpansFn(func(_ *testing.T, serviceOverride string) []mocktracer.Span {
 		var opts []RouterOption
 		if serviceOverride != "" {
 			opts = append(opts, WithServiceName(serviceOverride))

@@ -181,7 +181,7 @@ func TestNewClient(t *testing.T) {
 			opts: []Option{
 				WithRawCommand(true),
 			},
-			runTest: func(t *testing.T, ctx context.Context, client valkey.Client) {
+			runTest: func(_ *testing.T, ctx context.Context, client valkey.Client) {
 				ctxWithTimeout, cancel := context.WithTimeout(ctx, time.Nanosecond)
 				client.DoMulti(
 					ctxWithTimeout,
@@ -217,7 +217,7 @@ func TestNewClient(t *testing.T) {
 				ctxWithTimeout, cancel := context.WithTimeout(ctx, time.Millisecond)
 				require.EqualError(t,
 					context.DeadlineExceeded,
-					client.Receive(ctxWithTimeout, client.B().Subscribe().Channel("test_channel").Build(), func(msg valkey.PubSubMessage) {}).Error(),
+					client.Receive(ctxWithTimeout, client.B().Subscribe().Channel("test_channel").Build(), func(_ valkey.PubSubMessage) {}).Error(),
 				)
 				cancel()
 			},

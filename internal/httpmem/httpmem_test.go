@@ -13,7 +13,7 @@ import (
 )
 
 func TestServerAndClient(t *testing.T) {
-	s, c := httpmem.ServerAndClient(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	s, c := httpmem.ServerAndClient(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {}))
 	defer s.Close()
 	r, err := http.NewRequest("GET", "http://foo/bar", nil)
 	if err != nil {
@@ -27,7 +27,7 @@ func TestServerAndClient(t *testing.T) {
 }
 
 func TestServerClosed(t *testing.T) {
-	s, c := httpmem.ServerAndClient(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	s, c := httpmem.ServerAndClient(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {}))
 	s.Close()
 	r, err := http.NewRequest("GET", "http://foo/bar", nil)
 	if err != nil {

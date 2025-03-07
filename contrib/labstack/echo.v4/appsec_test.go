@@ -262,7 +262,7 @@ func TestControlFlow(t *testing.T) {
 			name: "middleware-first/middleware-aborts-before-handler",
 			middlewares: []echo.MiddlewareFunc{
 				Middleware(),
-				func(next echo.HandlerFunc) echo.HandlerFunc {
+				func(_ echo.HandlerFunc) echo.HandlerFunc {
 					return func(c echo.Context) error {
 						c.String(middlewareResponseStatus, middlewareResponseBody)
 						return echo.NewHTTPError(middlewareResponseStatus, "middleware abort")
@@ -365,7 +365,7 @@ func TestControlFlow(t *testing.T) {
 					}
 				},
 			},
-			handler: func(c echo.Context) error {
+			handler: func(_ echo.Context) error {
 				return nil
 			},
 			test: func(t *testing.T, rec *httptest.ResponseRecorder, mt mocktracer.Tracer, err error) {
@@ -398,7 +398,7 @@ func TestControlFlow(t *testing.T) {
 				},
 				Middleware(),
 			},
-			handler: func(c echo.Context) error {
+			handler: func(_ echo.Context) error {
 				// Do nothing so that the calling middleware can handle the response.
 				return nil
 			},
@@ -427,7 +427,7 @@ func TestControlFlow(t *testing.T) {
 					}
 				},
 				func(echo.HandlerFunc) echo.HandlerFunc {
-					return func(c echo.Context) error {
+					return func(_ echo.Context) error {
 						// Make sure echo doesn't call the next middleware when the
 						// previous one returns an error.
 						panic("unexpected control flow")

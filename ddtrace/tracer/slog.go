@@ -25,7 +25,7 @@ type slogHandler struct {
 	goas []groupOrAttrs
 }
 
-func (h slogHandler) Enabled(ctx context.Context, lvl slog.Level) bool {
+func (h slogHandler) Enabled(_ context.Context, lvl slog.Level) bool {
 	if lvl <= slog.LevelDebug {
 		return log.DebugEnabled()
 	}
@@ -34,7 +34,7 @@ func (h slogHandler) Enabled(ctx context.Context, lvl slog.Level) bool {
 	return true
 }
 
-func (h slogHandler) Handle(ctx context.Context, r slog.Record) error {
+func (h slogHandler) Handle(_ context.Context, r slog.Record) error {
 	goas := h.goas
 
 	if r.NumAttrs() == 0 {

@@ -3,6 +3,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
+//nolint:revive
 package http
 
 // Import "./internal/orchestrion" and "./client" so that they're present in the

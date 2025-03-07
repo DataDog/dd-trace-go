@@ -60,7 +60,7 @@ func TestKubernetes(t *testing.T) {
 	mt := mocktracer.Start()
 	defer mt.Stop()
 
-	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Write([]byte("Hello World"))
 	}))
 	defer s.Close()
@@ -96,7 +96,7 @@ func TestKubernetes(t *testing.T) {
 
 func TestAnalyticsSettings(t *testing.T) {
 	assertRate := func(t *testing.T, mt mocktracer.Tracer, rate interface{}, opts ...httptrace.RoundTripperOption) {
-		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			w.Write([]byte("Hello World"))
 		}))
 		defer srv.Close()

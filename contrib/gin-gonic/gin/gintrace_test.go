@@ -398,16 +398,16 @@ func TestAnalyticsSettings(t *testing.T) {
 }
 
 func TestResourceNamerSettings(t *testing.T) {
-	assert := assert.New(t)
 	mt := mocktracer.Start()
 	defer mt.Stop()
 
 	staticName := "foo"
-	staticNamer := func(c *gin.Context) string {
+	staticNamer := func(_ *gin.Context) string {
 		return staticName
 	}
 
 	t.Run("default", func(t *testing.T) {
+		assert := assert.New(t)
 		defer mt.Reset()
 
 		router := gin.New()
@@ -426,6 +426,7 @@ func TestResourceNamerSettings(t *testing.T) {
 	})
 
 	t.Run("custom", func(t *testing.T) {
+		assert := assert.New(t)
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
@@ -652,7 +653,7 @@ func TestServiceName(t *testing.T) {
 }
 
 func TestNamingSchema(t *testing.T) {
-	genSpans := namingschematest.GenSpansFn(func(t *testing.T, serviceOverride string) []mocktracer.Span {
+	genSpans := namingschematest.GenSpansFn(func(_ *testing.T, serviceOverride string) []mocktracer.Span {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 

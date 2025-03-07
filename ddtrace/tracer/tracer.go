@@ -25,7 +25,6 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 	globalinternal "gopkg.in/DataDog/dd-trace-go.v1/internal"
-	utils "gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
 	appsecConfig "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/config"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/datastreams"
@@ -87,7 +86,7 @@ type tracer struct {
 
 	// These maps count the spans started and finished from
 	// each component, including contribs and "manual" spans.
-	spansStarted, spansFinished utils.XSyncMapCounterMap
+	spansStarted, spansFinished globalinternal.XSyncMapCounterMap
 
 	// tracesDropped track metrics about traces as they are dropped
 	tracesDropped uint32
@@ -223,9 +222,9 @@ func storeConfig(c *config) {
 	uuid, _ := uuid.NewRandom()
 	name := fmt.Sprintf("datadog-tracer-info-%s", uuid.String()[0:8])
 
-	metadata := TracerMetadata{
+	metadata := Metadata{
 		SchemaVersion:      1,
-		RuntimeId:          globalconfig.RuntimeID(),
+		RuntimeID:          globalconfig.RuntimeID(),
 		Language:           "golang",
 		Version:            globalversion.Tag,
 		Hostname:           c.hostname,
@@ -353,8 +352,8 @@ func newUnstartedTracer(opts ...StartOption) *tracer {
 		pid:              os.Getpid(),
 		logDroppedTraces: time.NewTicker(1 * time.Second),
 		stats:            newConcentrator(c, defaultStatsBucketSize, statsd),
-		spansStarted:     *utils.NewXSyncMapCounterMap(),
-		spansFinished:    *utils.NewXSyncMapCounterMap(),
+		spansStarted:     *globalinternal.NewXSyncMapCounterMap(),
+		spansFinished:    *globalinternal.NewXSyncMapCounterMap(),
 		obfuscator: obfuscate.NewObfuscator(obfuscate.Config{
 			SQL: obfuscate.SQLConfig{
 				TableNames:       c.agent.HasFlag("table_names"),

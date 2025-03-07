@@ -48,17 +48,6 @@ func (b *bucket[K, T]) add(k K, v T) {
 	b.index[k] = e
 }
 
-func (b *bucket[K, T]) get(k K) (T, bool) {
-	e, ok := b.index[k]
-	if !ok {
-		// Compiler trick to return any zero value in generic code.
-		// https://stackoverflow.com/a/70589302
-		var zero T
-		return zero, ok
-	}
-	return e.Value.(T), ok
-}
-
 func (b *bucket[K, T]) remove(k K) {
 	e, ok := b.index[k]
 	if !ok {

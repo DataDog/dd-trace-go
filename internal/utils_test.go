@@ -21,7 +21,7 @@ func BenchmarkIter(b *testing.B) {
 	m := NewLockMap(nil)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		m.Iter(func(key string, val string) {})
+		m.Iter(func(_ string, _ string) {})
 	}
 }
 func TestLockMapThrash(t *testing.T) {
