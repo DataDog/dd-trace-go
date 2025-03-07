@@ -6,8 +6,11 @@
 package spanpointers
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	awsmiddleware "github.com/aws/aws-sdk-go-v2/aws/middleware"
+	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/smithy-go/middleware"
 	smithyhttp "github.com/aws/smithy-go/transport/http"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
@@ -27,11 +30,33 @@ const (
 
 var separatorBytes = []byte("|")
 
-func AddSpanPointers(serviceID string, in middleware.DeserializeInput, out middleware.DeserializeOutput, span tracer.Span) {
+// DynamoDbTableName is a context key for storing DynamoDB table name
+type DynamoDbTableName struct{}
+
+// DynamoDbKeyMap is a context key for storing DynamoDB key map
+type DynamoDbKeyMap struct{}
+
+func AddSpanPointers(context context.Context, in middleware.DeserializeInput, out middleware.DeserializeOutput, span tracer.Span) {
+	serviceID := awsmiddleware.GetServiceID(context)
 	switch serviceID {
 	case "S3":
 		handleS3Operation(in, out, span)
+	case "DynamoDB":
+		handleDynamoDbOperation(context, span)
 	}
+}
+
+func SetDynamoDbParamsOnContext(params interface{}, spanctx context.Context) context.Context {
+	switch params := params.(type) {
+	case *dynamodb.UpdateItemInput:
+		spanctx = context.WithValue(spanctx, DynamoDbTableName{}, *params.TableName)
+		spanctx = context.WithValue(spanctx, DynamoDbKeyMap{}, params.Key)
+	case *dynamodb.DeleteItemInput:
+		spanctx = context.WithValue(spanctx, DynamoDbTableName{}, *params.TableName)
+		spanctx = context.WithValue(spanctx, DynamoDbKeyMap{}, params.Key)
+	}
+
+	return spanctx
 }
 
 func handleS3Operation(in middleware.DeserializeInput, out middleware.DeserializeOutput, span tracer.Span) {
@@ -64,13 +89,10 @@ func handleS3Operation(in middleware.DeserializeInput, out middleware.Deserializ
 	hash := generatePointerHash(components)
 
 	link := ddtrace.SpanLink{
-		// We leave trace_id, span_id, trade_id_high, tracestate, and flags as 0 or empty.
+		// We leave trace_id and span_id as 0.
 		// The Datadog frontend will use `ptr.hash` to find the linked span.
-		TraceID:     0,
-		SpanID:      0,
-		TraceIDHigh: 0,
-		Flags:       0,
-		Tracestate:  "",
+		TraceID: 0,
+		SpanID:  0,
 		Attributes: map[string]string{
 			"ptr.kind":  S3PointerKind,
 			"ptr.dir":   PointerDownDirection,
@@ -80,6 +102,10 @@ func handleS3Operation(in middleware.DeserializeInput, out middleware.Deserializ
 	}
 
 	spanWithLinks.AddSpanLink(link)
+}
+
+func handleDynamoDbOperation(ctx context.Context, span tracer.Span) {
+	// TODO
 }
 
 // generatePointerHash generates a unique hash from an array of strings by joining them with | before hashing.
