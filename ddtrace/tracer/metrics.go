@@ -6,10 +6,8 @@
 package tracer
 
 import (
-	"fmt"
 	"runtime"
 	"runtime/debug"
-	"strconv"
 	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/internal/tracerstats"
@@ -112,12 +110,6 @@ func (t *tracer) reportHealthMetricsAtInterval(interval time.Duration) {
 				t.statsd.Count("datadog.tracer.spans_finished", v, []string{"integration:" + k}, 1)
 			}
 
-			t.statsd.Count("datadog.tracer.dropped_p0_traces", int64(tracerstats.Count(tracerstats.AgentDroppedP0Traces)),
-				[]string{fmt.Sprintf("partial:%s", strconv.FormatBool(tracerstats.Count(tracerstats.PartialTraces) > 0))}, 1)
-			t.statsd.Count("datadog.tracer.dropped_p0_spans", int64(tracerstats.Count(tracerstats.AgentDroppedP0Spans)), nil, 1)
-
-			t.statsd.Count("datadog.tracer.spans_started", int64(tracerstats.Count(tracerstats.SpanStarted)), nil, 1)
-			t.statsd.Count("datadog.tracer.spans_finished", int64(tracerstats.Count(tracerstats.SpansFinished)), nil, 1)
 			t.statsd.Count("datadog.tracer.traces_dropped", int64(tracerstats.Count(tracerstats.TracesDropped)), []string{"reason:trace_too_large"}, 1)
 		case <-t.stop:
 			return
