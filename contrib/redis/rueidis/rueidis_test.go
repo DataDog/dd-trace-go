@@ -174,7 +174,7 @@ func TestNewClient(t *testing.T) {
 			opts: []Option{
 				WithRawCommand(true),
 			},
-			runTest: func(t *testing.T, ctx context.Context, client rueidis.Client) {
+			runTest: func(_ *testing.T, ctx context.Context, client rueidis.Client) {
 				ctxWithTimeout, cancel := context.WithTimeout(ctx, time.Nanosecond)
 				client.DoMulti(
 					ctxWithTimeout,
