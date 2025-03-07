@@ -4,7 +4,7 @@ go 1.23.0
 
 require (
 	github.com/DataDog/dd-trace-go/contrib/google.golang.org/grpc/v2 v2.0.0-rc.3
-	github.com/DataDog/dd-trace-go/v2 v2.0.0-rc.3
+	github.com/DataDog/dd-trace-go/v2 v2.0.0-rc.4
 	github.com/envoyproxy/go-control-plane v0.13.1
 	github.com/gorilla/mux v1.8.1
 	github.com/stretchr/testify v1.10.0
