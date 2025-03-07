@@ -79,7 +79,7 @@ jobs:
           - weblog-variant: net-http
             scenario: APPSEC_LOW_WAF_TIMEOUT
           - weblog-variant: net-http
-            scenario: APPSEC_STANDALONE
+            scenario: APPSEC_STANDALONE_V2
           - weblog-variant: net-http
             scenario: APPSEC_META_STRUCT_DISABLED
           - weblog-variant: net-http

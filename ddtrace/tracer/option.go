@@ -591,8 +591,7 @@ func newConfig(opts ...StartOption) (*config, error) {
 	globalTagsOrigin := c.globalTags.cfgOrigin
 	c.initGlobalTags(c.globalTags.get(), globalTagsOrigin)
 
-	// TODO: change the name once APM Platform RFC is approved
-	if internal.BoolEnv("DD_EXPERIMENTAL_APPSEC_STANDALONE_ENABLED", false) {
+	if !internal.BoolEnv("DD_APM_TRACING_ENABLED", true) {
 		// Enable tracing as transport layer mode
 		// This means to stop sending trace metrics, send one trace per minute and those force-kept by other products
 		// using the tracer as transport layer for their data. And finally adding the _dd.apm.enabled=0 tag to all traces

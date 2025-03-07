@@ -230,7 +230,7 @@ func TestTags(t *testing.T) {
 							"manual.keep":     true,
 							"appsec.event":    true,
 							"_dd.origin":      "appsec",
-							"_dd.p.appsec":    internal.PropagatingTagValue{Value: "1"},
+							"_dd.p.ts":        internal.TraceSourceTagValue{Value: internal.ASMTraceSource},
 						})
 					}
 
