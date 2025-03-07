@@ -36,7 +36,7 @@ func TestOptions(t *testing.T) {
 				assert.Equal(ext.SpanTypeGraphQL, root.Tag(ext.SpanType))
 				assert.Equal("99designs/gqlgen", root.Tag(ext.Component))
 				assert.Nil(root.Tag(ext.EventSampleRate))
-				assert.Equal(componentName, root.Integration())
+				assert.Equal(string(componentName), root.Integration())
 			},
 		},
 		"WithService": {
