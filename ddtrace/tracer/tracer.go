@@ -258,9 +258,9 @@ func storeConfig(c *config) {
 	uuid, _ := uuid.NewRandom()
 	name := fmt.Sprintf("datadog-tracer-info-%s", uuid.String()[0:8])
 
-	metadata := TracerMetadata{
+	metadata := Metadata{
 		SchemaVersion:      1,
-		RuntimeId:          globalconfig.RuntimeID(),
+		RuntimeID:          globalconfig.RuntimeID(),
 		Language:           "golang",
 		Version:            globalversion.Tag,
 		Hostname:           c.hostname,
