@@ -25,8 +25,9 @@ func TestGeneratePointerHash(t *testing.T) {
 		components   []string
 		expectedHash string
 	}{
+		// S3 Tests
 		{
-			name: "basic values",
+			name: "s3 basic values",
 			components: []string{
 				"some-bucket",
 				"some-key.data",
@@ -35,7 +36,7 @@ func TestGeneratePointerHash(t *testing.T) {
 			expectedHash: "e721375466d4116ab551213fdea08413",
 		},
 		{
-			name: "non-ascii key",
+			name: "s3 non-ascii key",
 			components: []string{
 				"some-bucket",
 				"some-key.你好",
@@ -44,13 +45,47 @@ func TestGeneratePointerHash(t *testing.T) {
 			expectedHash: "d1333a04b9928ab462b5c6cadfa401f4",
 		},
 		{
-			name: "multipart-upload",
+			name: "s3 multipart-upload",
 			components: []string{
 				"some-bucket",
 				"some-key.data",
 				"ab12ef34-5",
 			},
 			expectedHash: "2b90dffc37ebc7bc610152c3dc72af9f",
+		},
+		// DynamoDB tests
+		{
+			name: "dynamodb one string primary key",
+			components: []string{
+				"some-table",
+				"some-key",
+				"some-value",
+				"",
+				"",
+			},
+			expectedHash: "7f1aee721472bcb48701d45c7c7f7821",
+		},
+		{
+			name: "dynamodb one number primary key",
+			components: []string{
+				"some-table",
+				"some-key",
+				"123.456",
+				"",
+				"",
+			},
+			expectedHash: "434a6dba3997ce4dbbadc98d87a0cc24",
+		},
+		{
+			name: "dynamodb string and number primary key",
+			components: []string{
+				"some-table",
+				"other-key",
+				"123",
+				"some-key",
+				"some-value",
+			},
+			expectedHash: "7aa1b80b0e49bd2078a5453399f4dd67",
 		},
 	}
 
