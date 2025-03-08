@@ -608,10 +608,8 @@ var packages = map[Package]PackageInfo{
 		EnvVarPrefix:  "REDIS",
 		naming: map[Component]componentNames{
 			ComponentDefault: {
-				useDDServiceV0:     true,
-				buildServiceNameV0: staticName("redis.client"),
-				buildOpNameV0:      staticName("redis.command"),
-				buildOpNameV1:      staticName("redis.command"),
+				buildOpNameV0: staticName("redis.command"),
+				buildOpNameV1: staticName("redis.command"),
 			},
 		},
 	},

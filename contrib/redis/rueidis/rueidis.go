@@ -20,10 +20,6 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 )
 
-const (
-	defaultServiceName = "redis.client"
-)
-
 var instr *instrumentation.Instrumentation
 
 func init() {
