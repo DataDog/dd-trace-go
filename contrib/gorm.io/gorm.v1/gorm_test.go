@@ -217,7 +217,7 @@ func TestCallbacks(t *testing.T) {
 		a.Equal(ext.SpanTypeSQL, span.Tag(ext.SpanType))
 		a.Equal(queryText, span.Tag(ext.ResourceName))
 		a.Equal("gorm.io/gorm.v1", span.Tag(ext.Component))
-		a.Equal(instrumentation.PackageGormIOGormV1, span.Integration())
+		a.Equal(string(instrumentation.PackageGormIOGormV1), span.Integration())
 		a.Equal(parentSpan.Context().SpanID(), span.ParentID())
 
 		for _, s := range spans {
@@ -255,7 +255,7 @@ func TestCallbacks(t *testing.T) {
 		a.Equal(ext.SpanTypeSQL, span.Tag(ext.SpanType))
 		a.Equal(queryText, span.Tag(ext.ResourceName))
 		a.Equal("gorm.io/gorm.v1", span.Tag(ext.Component))
-		a.Equal(instrumentation.PackageGormIOGormV1, span.Integration())
+		a.Equal(string(instrumentation.PackageGormIOGormV1), span.Integration())
 		a.Equal(parentSpan.Context().SpanID(), span.ParentID())
 
 		for _, s := range spans {
@@ -314,7 +314,7 @@ func TestCallbacks(t *testing.T) {
 		a.Equal(ext.SpanTypeSQL, span.Tag(ext.SpanType))
 		a.Equal(queryText, span.Tag(ext.ResourceName))
 		a.Equal("gorm.io/gorm.v1", span.Tag(ext.Component))
-		a.Equal(instrumentation.PackageGormIOGormV1, span.Integration())
+		a.Equal(string(instrumentation.PackageGormIOGormV1), span.Integration())
 		a.Equal(parentSpan.Context().SpanID(), span.ParentID())
 
 		for _, s := range spans {
@@ -353,7 +353,7 @@ func TestCallbacks(t *testing.T) {
 		a.Equal(ext.SpanTypeSQL, span.Tag(ext.SpanType))
 		a.Equal(queryText, span.Tag(ext.ResourceName))
 		a.Equal("gorm.io/gorm.v1", span.Tag(ext.Component))
-		a.Equal(instrumentation.PackageGormIOGormV1, span.Integration())
+		a.Equal(string(instrumentation.PackageGormIOGormV1), span.Integration())
 		a.Equal(parentSpan.Context().SpanID(), span.ParentID())
 
 		for _, s := range spans {
