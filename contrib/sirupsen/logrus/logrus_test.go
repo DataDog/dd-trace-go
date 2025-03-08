@@ -29,3 +29,22 @@ func TestFire(t *testing.T) {
 	assert.Equal(t, uint64(1234), e.Data["dd.trace_id"])
 	assert.Equal(t, uint64(1234), e.Data["dd.span_id"])
 }
+
+func TestDDLogInjectionDisabled(t *testing.T) {
+	t.Setenv(logInjection, "false")
+	// Re-initialize to account for race condition between setting env var in the test and reading it in the contrib
+	cfg = newConfig()
+
+	tracer.Start()
+	defer tracer.Stop()
+	_, sctx := tracer.StartSpanFromContext(context.Background(), "testSpan", tracer.WithSpanID(1234))
+
+	hook := &DDContextLogHook{}
+	e := logrus.NewEntry(logrus.New())
+	e.Context = sctx
+	err := hook.Fire(e)
+
+	assert.NoError(t, err)
+	assert.NotContains(t, e.Data, "dd.trace_id")
+	assert.NotContains(t, e.Data, "dd.span_id")
+}
