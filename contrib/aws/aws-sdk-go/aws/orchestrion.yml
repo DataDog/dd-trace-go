@@ -5,7 +5,7 @@
 ---
 # yaml-language-server: $schema=https://datadoghq.dev/orchestrion/schema.json
 meta:
-  name: gopkg.in/DataDog/dd-trace-go.v1/contrib/aws/aws-sdk-go/aws
+  name: github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go/v2/aws
   description: The official AWS SDK for Go
 
 aspects:
@@ -15,7 +15,7 @@ aspects:
     advice:
       - wrap-expression:
           imports:
-            awstrace: gopkg.in/DataDog/dd-trace-go.v1/contrib/aws/aws-sdk-go/aws
+            awstrace: github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go/v2/aws
             session: github.com/aws/aws-sdk-go/aws/session
           template: |-
             func(sess *session.Session, err error) (*session.Session, error) {

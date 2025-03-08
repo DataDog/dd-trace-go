@@ -5,18 +5,20 @@
 
 package pubsub
 
-import (
-	"gopkg.in/DataDog/dd-trace-go.v1/contrib/cloud.google.com/go/pubsub.v1/internal/tracing"
-)
+import "github.com/DataDog/dd-trace-go/contrib/cloud.google.com/go/pubsub.v1/v2/internal/tracing"
 
-// Option is used to customize spans started by WrapReceiveHandler or Publish.
+// Option describes options for the Pub/Sub integration.
 type Option = tracing.Option
 
-// Deprecated: ReceiveOption has been deprecated in favor of Option.
-type ReceiveOption = Option
+// OptionFn represents options applicable to WrapReceiveHandler or Publish.
+type OptionFn = tracing.OptionFn
 
-// WithServiceName sets the service name tag for traces started by WrapReceiveHandler or Publish.
-var WithServiceName = tracing.WithServiceName
+// WithService sets the service name tag for traces started by WrapReceiveHandler or Publish.
+func WithService(serviceName string) Option {
+	return tracing.WithService(serviceName)
+}
 
 // WithMeasured sets the measured tag for traces started by WrapReceiveHandler or Publish.
-var WithMeasured = tracing.WithMeasured
+func WithMeasured() Option {
+	return tracing.WithMeasured()
+}

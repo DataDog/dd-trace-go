@@ -12,10 +12,10 @@ import (
 	"strings"
 	"time"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/constants"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/utils"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/utils/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/telemetry"
 )
 
 // Test Session

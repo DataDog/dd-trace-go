@@ -15,10 +15,10 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/metadata"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener/waf"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/samplernames"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/internal"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec/listener/waf"
+	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
 )
 
 func TestClientIP(t *testing.T) {

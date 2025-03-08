@@ -18,13 +18,13 @@ import (
 	"sync"
 	"time"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/hostname"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/osinfo"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry/internal/transport"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
+	"github.com/DataDog/dd-trace-go/v2/internal"
+	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
+	"github.com/DataDog/dd-trace-go/v2/internal/hostname"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/osinfo"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/internal/transport"
+	"github.com/DataDog/dd-trace-go/v2/internal/version"
 )
 
 // We copy the transport to avoid using the default one, as it might be

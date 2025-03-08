@@ -13,13 +13,12 @@ import (
 	"testing"
 	"time"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 )
 
 func TestTraceAndServe(t *testing.T) {
@@ -53,7 +52,9 @@ func TestTraceAndServe(t *testing.T) {
 		assert.Equal("GET", span.Tag(ext.HTTPMethod))
 		assert.Equal("/path?<redacted>", span.Tag(ext.HTTPURL))
 		assert.Equal("503", span.Tag(ext.HTTPCode))
-		assert.Equal("503: Service Unavailable", span.Tag(ext.Error).(error).Error())
+		assert.Equal("503: Service Unavailable", span.Tag(ext.ErrorMsg))
+		assert.Equal("server", span.Tag(ext.SpanKind))
+		assert.Equal("net/http", span.Tag(ext.Component))
 	})
 
 	t.Run("custom", func(t *testing.T) {
@@ -89,7 +90,9 @@ func TestTraceAndServe(t *testing.T) {
 		assert.Equal("GET", span.Tag(ext.HTTPMethod))
 		assert.Equal("/path?<redacted>", span.Tag(ext.HTTPURL))
 		assert.Equal("503", span.Tag(ext.HTTPCode))
-		assert.Equal("503: Service Unavailable", span.Tag(ext.Error).(error).Error())
+		assert.Equal("503: Service Unavailable", span.Tag(ext.ErrorMsg))
+		assert.Equal("server", span.Tag(ext.SpanKind))
+		assert.Equal("net/http", span.Tag(ext.Component))
 	})
 
 	t.Run("query-params", func(t *testing.T) {
@@ -171,7 +174,7 @@ func TestTraceAndServe(t *testing.T) {
 			Resource: "resource",
 		})
 
-		var p, c mocktracer.Span
+		var p, c *mocktracer.Span
 		spans := mt.FinishedSpans()
 		assert.Len(spans, 2)
 		if spans[0].OperationName() == "parent" {
@@ -206,7 +209,7 @@ func TestTraceAndServe(t *testing.T) {
 			Resource: "resource",
 		})
 
-		var p, c mocktracer.Span
+		var p, c *mocktracer.Span
 		spans := mt.FinishedSpans()
 		assert.Len(spans, 2)
 		if spans[0].OperationName() == "parent" {
@@ -269,6 +272,8 @@ func TestTraceAndServe(t *testing.T) {
 		assert.Equal("GET", span.Tag(ext.HTTPMethod))
 		assert.Equal("/path?<redacted>", span.Tag(ext.HTTPURL))
 		assert.Equal("200", span.Tag(ext.HTTPCode))
+		assert.Equal("server", span.Tag(ext.SpanKind))
+		assert.Equal("net/http", span.Tag(ext.Component))
 	})
 
 	t.Run("noconfig", func(t *testing.T) {
@@ -292,12 +297,46 @@ func TestTraceAndServe(t *testing.T) {
 		assert.True(called)
 		assert.Len(spans, 1)
 		assert.Equal(ext.SpanTypeWeb, span.Tag(ext.SpanType))
-		assert.Nil(span.Tag(ext.ServiceName)) // This is nil since mocktracer does not behave like the actual tracer, which will set a default.
+		assert.Equal("", span.Tag(ext.ServiceName)) // This is nil since mocktracer does not behave like the actual tracer, which will set a default.
 		assert.Equal("http.request", span.Tag(ext.ResourceName))
 		assert.Nil(span.Tag(ext.HTTPRoute))
 		assert.Equal("GET", span.Tag(ext.HTTPMethod))
 		assert.Equal("/path?<redacted>", span.Tag(ext.HTTPURL))
 		assert.Equal("200", span.Tag(ext.HTTPCode))
+		assert.Equal("server", span.Tag(ext.SpanKind))
+		assert.Equal("net/http", span.Tag(ext.Component))
+	})
+
+	t.Run("override kind and component", func(t *testing.T) {
+		mt := mocktracer.Start()
+		assert := assert.New(t)
+		defer mt.Stop()
+
+		called := false
+		w := httptest.NewRecorder()
+		r, err := http.NewRequest("GET", "/path?token=value", nil)
+		assert.NoError(err)
+		handler := func(w http.ResponseWriter, r *http.Request) {
+			_, ok := w.(http.Hijacker)
+			assert.False(ok)
+			called = true
+		}
+		customOpts := []tracer.StartSpanOption{tracer.Tag(ext.SpanKind, "custom.kind"), tracer.Tag(ext.Component, "custom.component")}
+		TraceAndServe(http.HandlerFunc(handler), w, r, &ServeConfig{SpanOpts: customOpts})
+		spans := mt.FinishedSpans()
+		span := spans[0]
+
+		assert.True(called)
+		assert.Len(spans, 1)
+		assert.Equal(ext.SpanTypeWeb, span.Tag(ext.SpanType))
+		assert.Equal("", span.Tag(ext.ServiceName)) // This is nil since mocktracer does not behave like the actual tracer, which will set a default.
+		assert.Equal("http.request", span.Tag(ext.ResourceName))
+		assert.Nil(span.Tag(ext.HTTPRoute))
+		assert.Equal("GET", span.Tag(ext.HTTPMethod))
+		assert.Equal("/path?<redacted>", span.Tag(ext.HTTPURL))
+		assert.Equal("200", span.Tag(ext.HTTPCode))
+		assert.Equal("custom.kind", span.Tag(ext.SpanKind))
+		assert.Equal("custom.component", span.Tag(ext.Component))
 	})
 
 	t.Run("integrationLevelErrorHandling", func(t *testing.T) {
@@ -318,7 +357,7 @@ func TestTraceAndServe(t *testing.T) {
 		spans := mt.FinishedSpans()
 		assert.Len(spans, 1)
 		assert.Equal("400", spans[0].Tag(ext.HTTPCode))
-		assert.Equal("400: Bad Request", spans[0].Tag(ext.Error).(error).Error())
+		assert.Equal("400: Bad Request", spans[0].Tag(ext.ErrorMsg))
 	})
 
 	t.Run("envLevelErrorHandling", func(t *testing.T) {
@@ -345,7 +384,7 @@ func TestTraceAndServe(t *testing.T) {
 		spans := mt.FinishedSpans()
 		assert.Len(spans, 1)
 		assert.Equal("500", spans[0].Tag(ext.HTTPCode))
-		assert.Equal("500: Internal Server Error", spans[0].Tag(ext.Error).(error).Error())
+		assert.Equal("500: Internal Server Error", spans[0].Tag(ext.ErrorMsg))
 	})
 
 	t.Run("integrationOverridesEnvConfig", func(t *testing.T) {
@@ -373,7 +412,7 @@ func TestTraceAndServe(t *testing.T) {
 		spans := mt.FinishedSpans()
 		assert.Len(spans, 1)
 		assert.Equal("400", spans[0].Tag(ext.HTTPCode))
-		assert.Equal("400: Bad Request", spans[0].Tag(ext.Error).(error).Error())
+		assert.Equal("400: Bad Request", spans[0].Tag(ext.ErrorMsg))
 
 		// Reset the tracer
 		mt.Reset()
@@ -393,7 +432,7 @@ func TestTraceAndServe(t *testing.T) {
 		assert.Len(spans, 1)
 		assert.Equal("500", spans[0].Tag(ext.HTTPCode))
 		// Confirm that the span is NOT marked as an error.
-		assert.Nil(spans[0].Tag(ext.Error))
+		assert.Nil(spans[0].Tag(ext.ErrorMsg))
 	})
 }
 
@@ -496,8 +535,8 @@ func BenchmarkTraceAndServe(b *testing.B) {
 	cfg := ServeConfig{
 		Service:     "service-name",
 		Resource:    "resource-name",
-		FinishOpts:  []ddtrace.FinishOption{},
-		SpanOpts:    []ddtrace.StartSpanOption{},
+		FinishOpts:  []tracer.FinishOption{},
+		SpanOpts:    []tracer.StartSpanOption{},
 		QueryParams: false,
 	}
 	b.ResetTimer()

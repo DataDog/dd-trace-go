@@ -14,7 +14,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/DataDog/dd-trace-go/internal/orchestrion/_integration/internal/trace"
+	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/trace"
 	"github.com/graph-gophers/graphql-go"
 	"github.com/graph-gophers/graphql-go/relay"
 	"github.com/stretchr/testify/require"
@@ -96,7 +96,7 @@ func (*TestCase) ExpectedTraces() trace.Traces {
 							Tags: map[string]any{
 								"name":     "graphql.request",
 								"resource": "graphql.request",
-								"service":  "graphql.server",
+								"service":  "graphql",
 							},
 							Meta: map[string]string{
 								"component":     "graph-gophers/graphql-go",
@@ -107,7 +107,7 @@ func (*TestCase) ExpectedTraces() trace.Traces {
 									Tags: map[string]any{
 										"name":     "graphql.field",
 										"resource": "graphql.field",
-										"service":  "graphql.server",
+										"service":  "graphql",
 									},
 									Meta: map[string]string{
 										"component":     "graph-gophers/graphql-go",
