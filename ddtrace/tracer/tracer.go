@@ -6,6 +6,8 @@
 package tracer
 
 import (
+	"os"
+
 	v2 "github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
@@ -16,6 +18,10 @@ import (
 // any running tracer, meaning that calling it several times will result in a restart
 // of the tracer by replacing the current instance with a new one.
 func Start(opts ...StartOption) {
+	// Workaround to make sure our v1 shim behaves like the previous v1 tracer.
+	if os.Getenv("DD_TRACE_128_BIT_TRACEID_LOGGING_ENABLED") == "" {
+		os.Setenv("DD_TRACE_128_BIT_TRACEID_LOGGING_ENABLED", "false")
+	}
 	v2.Start(opts...)
 }
 

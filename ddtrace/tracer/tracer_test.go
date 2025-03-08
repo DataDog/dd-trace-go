@@ -1049,6 +1049,6 @@ func TestExecutionTraceSpanTagged(t *testing.T) {
 // NOTE: This function does set the global tracer, which is required for
 // most finish span/flushing operations to work as expected.
 func newTracer(opts ...StartOption) ddtrace.Tracer {
-	v2.Start(opts...)
+	Start(opts...)
 	return internal.GetGlobalTracer()
 }

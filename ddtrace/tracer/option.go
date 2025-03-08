@@ -491,16 +491,12 @@ func WithUserMetadata(key, value string) UserMonitoringOption {
 
 // WithUserLogin returns the option setting the login of the authenticated user.
 func WithUserLogin(login string) UserMonitoringOption {
-	return func(cfg *UserMonitoringConfig) {
-		cfg.Login = login
-	}
+	return v2.WithUserLogin(login)
 }
 
 // WithUserOrg returns the option setting the organization of the authenticated user.
 func WithUserOrg(org string) UserMonitoringOption {
-	return func(cfg *UserMonitoringConfig) {
-		cfg.Org = org
-	}
+	return v2.WithUserOrg(org)
 }
 
 // WithUserEmail returns the option setting the email of the authenticated user.
