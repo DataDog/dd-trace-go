@@ -77,30 +77,43 @@ func (l *LockMap) Get(k string) string {
 // Implementation and related tests were taken/inspired by felixge/countermap
 // https://github.com/felixge/countermap/pull/2
 type XSyncMapCounterMap struct {
-	counts *xsync.MapOf[string, *xsync.Counter]
+	mu     sync.Mutex
+	counts [2]*xsync.MapOf[string, *xsync.Counter]
+	index  int
 }
 
 func NewXSyncMapCounterMap() *XSyncMapCounterMap {
-	return &XSyncMapCounterMap{counts: xsync.NewMapOf[string, *xsync.Counter]()}
+	return &XSyncMapCounterMap{
+		counts: [2]*xsync.MapOf[string, *xsync.Counter]{xsync.NewMapOf[string, *xsync.Counter](), xsync.NewMapOf[string, *xsync.Counter]()},
+	}
 }
 
 func (cm *XSyncMapCounterMap) Inc(key string) {
-	val, ok := cm.counts.Load(key)
-	if !ok {
-		val, _ = cm.counts.LoadOrStore(key, xsync.NewCounter())
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
+	val, loaded := cm.counts[cm.index].LoadOrCompute(key, func() *xsync.Counter {
+		c := xsync.NewCounter()
+		c.Inc()
+		return c
+	})
+	if loaded {
+		val.Inc()
 	}
-	val.Inc()
 }
 
 func (cm *XSyncMapCounterMap) GetAndReset() map[string]int64 {
 	ret := map[string]int64{}
-	cm.counts.Range(func(key string, _ *xsync.Counter) bool {
-		v, ok := cm.counts.LoadAndDelete(key)
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
+	cm.index = cm.index ^ 1 // swap index value between 0 and 1
+	cm.counts[cm.index].Range(func(key string, _ *xsync.Counter) bool {
+		v, ok := cm.counts[cm.index].Load(key)
 		if ok {
 			ret[key] = v.Value()
 		}
 		return true
 	})
+	cm.counts[cm.index].Clear()
 	return ret
 }
 
