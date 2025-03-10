@@ -14,6 +14,7 @@ package tracing
 
 import (
 	"context"
+	telemetrylog "gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry/log"
 	"sync"
 	"time"
 
@@ -77,7 +78,7 @@ func TracePublish(ctx context.Context, topic Topic, msg *Message, opts ...Option
 		msg.Attributes = make(map[string]string)
 	}
 	if err := tracer.Inject(span.Context(), tracer.TextMapCarrier(msg.Attributes)); err != nil {
-		log.Debug("contrib/cloud.google.com/go/pubsub.v1/trace: failed injecting tracing attributes: %v", err)
+		telemetrylog.Error("contrib/cloud.google.com/go/pubsub.v1/trace: failed injecting tracing attributes: %v", err)
 	}
 	span.SetTag("num_attributes", len(msg.Attributes))
 

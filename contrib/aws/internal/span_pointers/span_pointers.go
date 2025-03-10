@@ -12,7 +12,7 @@ import (
 	smithyhttp "github.com/aws/smithy-go/transport/http"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	telemetrylog "gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry/log"
 	"strings"
 )
 
@@ -55,7 +55,7 @@ func handleS3Operation(in middleware.DeserializeInput, out middleware.Deserializ
 	// the AWS SDK sometimes wraps the eTag in quotes
 	etag := strings.Trim(res.Header.Get("ETag"), "\"")
 	if key == "" || bucket == "" || etag == "" {
-		log.Debug("Unable to create S3 span pointer because required fields could not be found.")
+		telemetrylog.Error("Unable to create S3 span pointer because required fields could not be found.")
 		return
 	}
 

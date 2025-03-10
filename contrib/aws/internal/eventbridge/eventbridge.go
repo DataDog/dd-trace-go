@@ -13,7 +13,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/eventbridge/types"
 	"github.com/aws/smithy-go/middleware"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	telemetrylog "gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry/log"
 	"strconv"
 	"time"
 )
@@ -35,7 +35,7 @@ func EnrichOperation(span tracer.Span, in middleware.InitializeInput, operation 
 func handlePutEvents(span tracer.Span, in middleware.InitializeInput) {
 	params, ok := in.Parameters.(*eventbridge.PutEventsInput)
 	if !ok {
-		log.Debug("Unable to read PutEvents params")
+		telemetrylog.Error("Unable to read PutEvents params")
 		return
 	}
 
@@ -43,7 +43,7 @@ func handlePutEvents(span tracer.Span, in middleware.InitializeInput) {
 	carrier := tracer.TextMapCarrier{}
 	err := tracer.Inject(span.Context(), carrier)
 	if err != nil {
-		log.Debug("Unable to inject trace context: %s", err)
+		telemetrylog.Error("Unable to inject trace context: %s", err)
 		return
 	}
 
@@ -53,7 +53,7 @@ func handlePutEvents(span tracer.Span, in middleware.InitializeInput) {
 
 	carrierJSON, err := json.Marshal(carrier)
 	if err != nil {
-		log.Debug("Unable to marshal trace context: %s", err)
+		telemetrylog.Error("Unable to marshal trace context: %s", err)
 		return
 	}
 
@@ -88,7 +88,7 @@ func injectTraceContext(baseTraceContext string, entryPtr *types.PutEventsReques
 
 	// Basic JSON structure validation
 	if len(detail) < 2 || detail[len(detail)-1] != '}' {
-		log.Debug("Unable to parse detail JSON. Not injecting trace context into EventBridge payload.")
+		telemetrylog.Error("Unable to parse detail JSON. Not injecting trace context into EventBridge payload.")
 		return
 	}
 
@@ -104,7 +104,7 @@ func injectTraceContext(baseTraceContext string, entryPtr *types.PutEventsReques
 
 	// Check sizes
 	if len(newDetail) > maxSizeBytes {
-		log.Debug("Payload size too large to pass context")
+		telemetrylog.Error("Payload size too large to pass context")
 		return
 	}
 

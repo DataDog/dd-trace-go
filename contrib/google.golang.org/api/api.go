@@ -18,6 +18,7 @@ package api // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/google.golang.org
 import (
 	_ "embed"
 	"encoding/json"
+	"fmt"
 	"math"
 	"net/http"
 
@@ -42,9 +43,15 @@ const componentName = "google.golang.org/api"
 var apiEndpointsTree *tree.Tree
 
 func init() {
-	telemetry.LoadIntegration(componentName)
+	tr, err := initAPIEndpointsTree()
+	apiEndpointsTree = tr
+	if err != nil {
+		log.Warn(err.Error())
+		telemetry.LoadIntegrationFailed(componentName, err)
+	} else {
+		telemetry.LoadIntegration(componentName)
+	}
 	tracer.MarkIntegrationImported(componentName)
-	initAPIEndpointsTree()
 }
 
 func loadEndpointsFromJSON() ([]*tree.Endpoint, error) {
@@ -55,18 +62,16 @@ func loadEndpointsFromJSON() ([]*tree.Endpoint, error) {
 	return apiEndpoints, nil
 }
 
-func initAPIEndpointsTree() {
+func initAPIEndpointsTree() (*tree.Tree, error) {
 	apiEndpoints, err := loadEndpointsFromJSON()
 	if err != nil {
-		log.Warn("contrib/google.golang.org/api: failed load json endpoints: %v", err)
-		return
+		return nil, fmt.Errorf("contrib/google.golang.org/api: failed load json endpoints: %w", err)
 	}
 	tr, err := tree.New(apiEndpoints...)
 	if err != nil {
-		log.Warn("contrib/google.golang.org/api: failed to create endpoints tree: %v", err)
-		return
+		return nil, fmt.Errorf("contrib/google.golang.org/api: failed to create endpoints tree: %w", err)
 	}
-	apiEndpointsTree = tr
+	return tr, nil
 }
 
 // NewClient creates a new oauth http client suitable for use with the google

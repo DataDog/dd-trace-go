@@ -212,6 +212,17 @@ func LoadIntegration(integration string) {
 	})
 }
 
+// LoadIntegrationFailed marks an integration as loaded with error in the telemetry client. If telemetry is disabled, it will do nothing.
+// If the telemetry client has not started yet, it will record the action and replay it once the client is started.
+func LoadIntegrationFailed(integration string, err error) {
+	globalClientCall(func(client Client) {
+		client.MarkIntegrationAsLoaded(Integration{
+			Name:  integration,
+			Error: err.Error(),
+		})
+	})
+}
+
 var globalClientLogLossOnce sync.Once
 
 // globalClientCall takes a function that takes a Client and calls it with the global client if it exists.

@@ -12,7 +12,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/sns/types"
 	"github.com/aws/smithy-go/middleware"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	telemetrylog "gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry/log"
 )
 
 const (
@@ -32,13 +32,13 @@ func EnrichOperation(span tracer.Span, in middleware.InitializeInput, operation 
 func handlePublish(span tracer.Span, in middleware.InitializeInput) {
 	params, ok := in.Parameters.(*sns.PublishInput)
 	if !ok {
-		log.Debug("Unable to read PublishInput params")
+		telemetrylog.Error("Unable to read PublishInput params")
 		return
 	}
 
 	traceContext, err := getTraceContext(span)
 	if err != nil {
-		log.Debug("Unable to get trace context: %s", err.Error())
+		telemetrylog.Error("Unable to get trace context: %s", err.Error())
 		return
 	}
 
@@ -52,13 +52,13 @@ func handlePublish(span tracer.Span, in middleware.InitializeInput) {
 func handlePublishBatch(span tracer.Span, in middleware.InitializeInput) {
 	params, ok := in.Parameters.(*sns.PublishBatchInput)
 	if !ok {
-		log.Debug("Unable to read PublishBatch params")
+		telemetrylog.Error("Unable to read PublishBatch params")
 		return
 	}
 
 	traceContext, err := getTraceContext(span)
 	if err != nil {
-		log.Debug("Unable to get trace context: %s", err.Error())
+		telemetrylog.Error("Unable to get trace context: %s", err.Error())
 		return
 	}
 
@@ -97,7 +97,7 @@ func injectTraceContext(traceContext types.MessageAttributeValue, messageAttribu
 	// https://docs.aws.amazon.com/sns/latest/dg/sns-message-attributes.html
 	// Only inject if there's room.
 	if len(messageAttributes) >= maxMessageAttributes {
-		log.Info("Cannot inject trace context: message already has maximum allowed attributes")
+		telemetrylog.Error("Cannot inject trace context: message already has maximum allowed attributes")
 		return
 	}
 

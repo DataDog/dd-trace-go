@@ -6,12 +6,12 @@
 package internal // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/database/sql/internal"
 
 import (
+	telemetrylog "gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry/log"
 	"net"
 	"net/url"
 	"strings"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
 // ParseDSN parses various supported DSN types into a map of key/value pairs which can be used as valid tags.
@@ -21,19 +21,19 @@ func ParseDSN(driverName, dsn string) (meta map[string]string, err error) {
 	case "mysql":
 		meta, err = parseMySQLDSN(dsn)
 		if err != nil {
-			log.Debug("Error parsing DSN for mysql: %v", err)
+			telemetrylog.Error("Error parsing DSN for mysql: %v", err)
 			return
 		}
 	case "postgres", "pgx":
 		meta, err = parsePostgresDSN(dsn)
 		if err != nil {
-			log.Debug("Error parsing DSN for postgres: %v", err)
+			telemetrylog.Error("Error parsing DSN for postgres: %v", err)
 			return
 		}
 	case "sqlserver":
 		meta, err = parseSQLServerDSN(dsn)
 		if err != nil {
-			log.Debug("Error parsing DSN for sqlserver: %v", err)
+			telemetrylog.Error("Error parsing DSN for sqlserver: %v", err)
 			return
 		}
 	default:
@@ -41,7 +41,7 @@ func ParseDSN(driverName, dsn string) (meta map[string]string, err error) {
 		u, e := url.Parse(dsn)
 		if e != nil {
 			// dsn is not a valid URL, so just ignore
-			log.Debug("Error parsing driver name from DSN: %v", e)
+			telemetrylog.Error("Error parsing driver name from DSN: %v", e)
 			return
 		}
 		if driverName != u.Scheme {

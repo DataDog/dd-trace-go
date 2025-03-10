@@ -8,6 +8,7 @@ package sql // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/database/sql"
 import (
 	"context"
 	"database/sql/driver"
+	telemetrylog "gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry/log"
 	"math"
 	"time"
 
@@ -18,7 +19,6 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/sqlsec"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
 var _ driver.Conn = (*TracedConn)(nil)
@@ -300,7 +300,7 @@ func (tc *TracedConn) injectComments(ctx context.Context, query string, mode tra
 	carrier := tracer.SQLCommentCarrier{Query: query, Mode: mode, DBServiceName: tc.cfg.serviceName, PeerDBHostname: tc.meta[ext.TargetHost], PeerDBName: tc.meta[ext.DBName], PeerService: tc.providedPeerService(ctx)}
 	if err := carrier.Inject(spanCtx); err != nil {
 		// this should never happen
-		log.Warn("contrib/database/sql: failed to inject query comments: %v", err)
+		telemetrylog.Error("contrib/database/sql: failed to inject query comments: %v", err)
 	}
 	return carrier.Query, carrier.SpanID
 }

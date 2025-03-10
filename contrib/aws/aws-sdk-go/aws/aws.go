@@ -30,6 +30,7 @@ import (
 	"github.com/aws/aws-sdk-go/service/sfn"
 	"github.com/aws/aws-sdk-go/service/sns"
 	"github.com/aws/aws-sdk-go/service/sqs"
+	telemetrylog "gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry/log"
 )
 
 const componentName = "aws/aws-sdk-go/aws"
@@ -183,7 +184,7 @@ func extraTagsForService(req *request.Request) map[string]interface{} {
 		return nil
 	}
 	if err != nil {
-		log.Debug("failed to extract tags for AWS service %q: %v", service, err)
+		telemetrylog.Debug("failed to extract tags for AWS service %q: %v", service, err)
 		return nil
 	}
 	return extraTags

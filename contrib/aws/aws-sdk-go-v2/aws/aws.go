@@ -17,7 +17,6 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 
@@ -37,6 +36,7 @@ import (
 	sfnTracer "gopkg.in/DataDog/dd-trace-go.v1/contrib/aws/internal/sfn"
 	snsTracer "gopkg.in/DataDog/dd-trace-go.v1/contrib/aws/internal/sns"
 	sqsTracer "gopkg.in/DataDog/dd-trace-go.v1/contrib/aws/internal/sqs"
+	telemetrylog "gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry/log"
 )
 
 const componentName = "aws/aws-sdk-go-v2/aws"
@@ -102,7 +102,8 @@ func (mw *traceMiddleware) startTraceMiddleware(stack *middleware.Stack) error {
 		}
 		k, v, err := resourceNameFromParams(in, serviceID)
 		if err != nil {
-			log.Debug("Error: %v", err)
+			telemetrylog.Debug("Error: %v", err)
+
 		} else {
 			opts = append(opts, tracer.Tag(k, v))
 		}

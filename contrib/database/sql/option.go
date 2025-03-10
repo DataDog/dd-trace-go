@@ -8,6 +8,7 @@ package sql
 import (
 	"database/sql/driver"
 	"fmt"
+	telemetrylog "gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry/log"
 	"math"
 	"os"
 	"reflect"
@@ -45,7 +46,7 @@ func (c *config) checkStatsdRequired() {
 			c.statsdClient = sc
 			log.Debug("Metrics from the database/sql contrib will be sent to %v", globalconfig.DogstatsdAddr())
 		} else {
-			log.Warn("Error creating statsd client for database/sql contrib; DB Stats disabled: %v", err)
+			telemetrylog.Error("Error creating statsd client for database/sql contrib; DB Stats disabled: %v", err)
 			c.dbStats = false
 		}
 	}

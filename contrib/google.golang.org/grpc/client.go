@@ -7,6 +7,7 @@ package grpc
 
 import (
 	"context"
+	telemetrylog "gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry/log"
 	"net"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/contrib/google.golang.org/internal/grpcutil"
@@ -16,7 +17,6 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/grpclog"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/peer"
 )
@@ -229,7 +229,7 @@ func injectSpanIntoContext(ctx context.Context) context.Context {
 	}
 	if err := tracer.Inject(span.Context(), grpcutil.MDCarrier(md)); err != nil {
 		// in practice this error should never really happen
-		grpclog.Warningf("ddtrace: failed to inject the span context into the gRPC metadata: %v", err)
+		telemetrylog.Warn("ddtrace: failed to inject the span context into the gRPC metadata: %v", err)
 	}
 	return metadata.NewOutgoingContext(ctx, md)
 }
