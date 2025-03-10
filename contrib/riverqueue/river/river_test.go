@@ -182,7 +182,7 @@ func TestPropagation(t *testing.T) {
 		jobMetadata)
 }
 
-func TestPropagationWithServiceName(t *testing.T) {
+func TestPropagationWithService(t *testing.T) {
 	ctx, mt, driver := setup(t)
 
 	worker := testWorker{f: func(ctx context.Context, job *river.Job[jobArg]) error { return nil }}
@@ -193,9 +193,9 @@ func TestPropagationWithServiceName(t *testing.T) {
 		TestOnly:            true,
 		MaxAttempts:         1,
 		JobTimeout:          1 * time.Second,
-		JobInsertMiddleware: []rivertype.JobInsertMiddleware{NewInsertMiddleware(WithServiceName("insert.service"))},
+		JobInsertMiddleware: []rivertype.JobInsertMiddleware{NewInsertMiddleware(WithService("insert.service"))},
 		Workers:             workers,
-		WorkerMiddleware:    []rivertype.WorkerMiddleware{NewWorkerMiddleware(WithServiceName("worker.service"))},
+		WorkerMiddleware:    []rivertype.WorkerMiddleware{NewWorkerMiddleware(WithService("worker.service"))},
 		Queues:              map[string]river.QueueConfig{river.QueueDefault: {MaxWorkers: 1}},
 	})
 	require.NoError(t, err)

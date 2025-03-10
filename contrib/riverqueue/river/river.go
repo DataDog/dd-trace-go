@@ -40,8 +40,8 @@ func NewInsertMiddleware(opts ...Option) *InsertMiddleware {
 		tracer.Tag(ext.Component, componentName),
 		tracer.Tag(ext.SpanKind, ext.SpanKindProducer),
 		tracer.Tag(ext.MessagingSystem, "river"))
-	if cfg.serviceName != "" {
-		cfg.spanOpts = append(cfg.spanOpts, tracer.ServiceName(cfg.serviceName))
+	if cfg.service != "" {
+		cfg.spanOpts = append(cfg.spanOpts, tracer.ServiceName(cfg.service))
 	}
 	if cfg.measured {
 		cfg.spanOpts = append(cfg.spanOpts, tracer.Measured())
@@ -87,8 +87,8 @@ func NewWorkerMiddleware(opts ...Option) *WorkerMiddleware {
 		tracer.Tag(ext.Component, componentName),
 		tracer.Tag(ext.SpanKind, ext.SpanKindConsumer),
 		tracer.Tag(ext.MessagingSystem, "river"))
-	if cfg.serviceName != "" {
-		cfg.spanOpts = append(cfg.spanOpts, tracer.ServiceName(cfg.serviceName))
+	if cfg.service != "" {
+		cfg.spanOpts = append(cfg.spanOpts, tracer.ServiceName(cfg.service))
 	}
 	if cfg.measured {
 		cfg.spanOpts = append(cfg.spanOpts, tracer.Measured())

@@ -6,7 +6,7 @@ import (
 )
 
 type config struct {
-	serviceName    string
+	service        string
 	insertSpanName string
 	workSpanName   string
 	measured       bool
@@ -15,7 +15,7 @@ type config struct {
 
 func defaultConfig() *config {
 	return &config{
-		serviceName:    namingschema.ServiceNameOverrideV0("", ""),
+		service:        namingschema.ServiceNameOverrideV0("", ""),
 		insertSpanName: "river.insert",
 		workSpanName:   "river.work",
 		measured:       false,
@@ -25,10 +25,10 @@ func defaultConfig() *config {
 // Option is used to customize spans started by InsertMiddleware or WorkerMiddleware.
 type Option func(cfg *config)
 
-// WithServiceName sets the service name tag for traces started by InsertMiddleware or WorkerMiddleware.
-func WithServiceName(serviceName string) Option {
+// WithService sets the service name tag for traces started by InsertMiddleware or WorkerMiddleware.
+func WithService(service string) Option {
 	return func(cfg *config) {
-		cfg.serviceName = serviceName
+		cfg.service = service
 	}
 }
 
