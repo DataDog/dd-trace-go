@@ -9,8 +9,6 @@ package globalconfig
 
 import (
 	_ "unsafe" // required by go:linkname
-
-	_ "github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 )
 
 //go:linkname RuntimeID github.com/DataDog/dd-trace-go/v2/internal/globalconfig.RuntimeID
