@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/trace"
+	emitter "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/waf"
 )
 
 const (
@@ -44,7 +45,7 @@ func TestTagsTypes(t *testing.T) {
 		"waf.run":               12000,
 	}
 
-	AddWAFMonitoringTags(&th, "1.2.3", stats)
+	AddWAFMonitoringTags(&th, &emitter.Metrics{}, "1.2.3", stats)
 
 	tags := th.Tags()
 	_, ok := tags[eventRulesErrorsTag].(string)
