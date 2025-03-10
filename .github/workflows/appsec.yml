@@ -230,7 +230,7 @@ jobs:
             golang:${{ matrix.go-version }}-${{ matrix.distribution }}
       - name: Install pre-requisites on Alpine
         if: matrix.distribution == 'alpine'
-        run: sudo docker exec -i test.runner apk add gcc musl-dev libc6-compat
+        run: sudo docker exec -i test.runner apk add gcc musl-dev libc6-compat git
       - name: Output go env
         run: sudo docker exec -i test.runner go env
       - name: Ensure go.mod is up to date
