@@ -12,8 +12,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry/internal"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry/internal/transport"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/internal"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/internal/transport"
 )
 
 // WithTags returns a LogOption that sets the tags for the telemetry log message. Tags are key-value pairs that are then

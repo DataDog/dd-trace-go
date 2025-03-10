@@ -60,13 +60,3 @@ func TestGetLocalGitData(t *testing.T) {
 	assert.NotEmpty(t, data.CommitterDate)
 	assert.NotEmpty(t, data.CommitMessage)
 }
-
-func TestGetLastLocalGitCommitShas(t *testing.T) {
-	shas := GetLastLocalGitCommitShas()
-	assert.NotEmpty(t, shas)
-}
-
-func TestUnshallowGitRepository(t *testing.T) {
-	_, err := UnshallowGitRepository()
-	assert.NoError(t, err)
-}

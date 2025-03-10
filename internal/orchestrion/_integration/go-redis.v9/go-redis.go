@@ -12,15 +12,15 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/DataDog/dd-trace-go/internal/orchestrion/_integration/internal/containers"
-	"github.com/DataDog/dd-trace-go/internal/orchestrion/_integration/internal/trace"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/containers"
+	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/trace"
 	"github.com/cenkalti/backoff/v4"
 	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	testredis "github.com/testcontainers/testcontainers-go/modules/redis"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
 
 type TestCase struct {

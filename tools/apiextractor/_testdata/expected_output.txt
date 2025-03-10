@@ -1,0 +1,20 @@
+Package: .
+func DummyFunc
+func DummyFuncWithParams
+type DummyInterface
+  func ExportedMethod
+type DummyStruct
+  field ExportedField
+  func AnotherExportedMethod
+  func ExportedMethod
+
+Package: package1
+func PublicFunc
+type PublicType
+  field PublicField
+
+Package: package2
+func PublicFunc2
+type PublicType2
+  field PublicField2
+

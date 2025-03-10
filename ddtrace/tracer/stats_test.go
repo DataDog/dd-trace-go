@@ -14,9 +14,9 @@ import (
 
 	"github.com/DataDog/datadog-agent/pkg/obfuscate"
 	"github.com/DataDog/datadog-go/v5/statsd"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/constants"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/utils"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/statsdtest"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
+	"github.com/DataDog/dd-trace-go/v2/internal/statsdtest"
 )
 
 func TestAlignTs(t *testing.T) {
@@ -28,17 +28,17 @@ func TestAlignTs(t *testing.T) {
 
 func TestConcentrator(t *testing.T) {
 	bucketSize := int64(500_000)
-	s1 := span{
-		Name:     "http.request",
-		Start:    time.Now().UnixNano() + 3*bucketSize,
-		Duration: 1,
-		Metrics:  map[string]float64{keyMeasured: 1},
+	s1 := Span{
+		name:     "http.request",
+		start:    time.Now().UnixNano() + 3*bucketSize,
+		duration: 1,
+		metrics:  map[string]float64{keyMeasured: 1},
 	}
-	s2 := span{
-		Name:     "sql.query",
-		Start:    time.Now().UnixNano() + 4*bucketSize,
-		Duration: 1,
-		Metrics:  map[string]float64{keyMeasured: 1},
+	s2 := Span{
+		name:     "sql.query",
+		start:    time.Now().UnixNano() + 4*bucketSize,
+		duration: 1,
+		metrics:  map[string]float64{keyMeasured: 1},
 	}
 	t.Run("start-stop", func(t *testing.T) {
 		assert := assert.New(t)
@@ -157,13 +157,13 @@ func TestShouldObfuscate(t *testing.T) {
 
 func TestObfuscation(t *testing.T) {
 	bucketSize := int64(500_000)
-	s1 := span{
-		Name:     "redis-query",
-		Start:    time.Now().UnixNano() + 3*bucketSize,
-		Duration: 1,
-		Metrics:  map[string]float64{keyMeasured: 1},
-		Type:     "redis",
-		Resource: "GET somekey",
+	s1 := Span{
+		name:     "redis-query",
+		start:    time.Now().UnixNano() + 3*bucketSize,
+		duration: 1,
+		metrics:  map[string]float64{keyMeasured: 1},
+		spanType: "redis",
+		resource: "GET somekey",
 	}
 	tsp := newDummyTransport()
 	c := newConcentrator(&config{transport: tsp, env: "someEnv", agent: agentFeatures{obfuscationVersion: 2}}, bucketSize, &statsd.NoOpClientDirect{})

@@ -10,13 +10,12 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/namingschematest"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-
 	"github.com/dimfeld/httptreemux/v5"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 )
 
 func TestHttpTracer200(t *testing.T) {
@@ -43,7 +42,7 @@ func TestHttpTracer200(t *testing.T) {
 	assert.Equal("GET", s.Tag(ext.HTTPMethod))
 	assert.Equal("http://example.com"+url, s.Tag(ext.HTTPURL))
 	assert.Equal("testvalue", s.Tag("testkey"))
-	assert.Equal(nil, s.Tag(ext.Error))
+	assert.Zero(s.Tag(ext.ErrorMsg))
 	assert.Equal("/200", s.Tag(ext.HTTPRoute))
 	assert.Equal(componentName, s.Integration())
 }
@@ -72,7 +71,7 @@ func TestHttpTracer404(t *testing.T) {
 	assert.Equal("GET", s.Tag(ext.HTTPMethod))
 	assert.Equal("http://example.com"+url, s.Tag(ext.HTTPURL))
 	assert.Equal("testvalue", s.Tag("testkey"))
-	assert.Equal(nil, s.Tag(ext.Error))
+	assert.Zero(s.Tag(ext.ErrorMsg))
 	assert.Equal(componentName, s.Integration())
 	assert.NotContains(s.Tags(), ext.HTTPRoute)
 }
@@ -101,7 +100,7 @@ func TestHttpTracer500(t *testing.T) {
 	assert.Equal("GET", s.Tag(ext.HTTPMethod))
 	assert.Equal("http://example.com"+url, s.Tag(ext.HTTPURL))
 	assert.Equal("testvalue", s.Tag("testkey"))
-	assert.Equal("500: Internal Server Error", s.Tag(ext.Error).(error).Error())
+	assert.Equal("500: Internal Server Error", s.Tag(ext.ErrorMsg))
 	assert.Equal("/500", s.Tag(ext.HTTPRoute))
 	assert.Equal(componentName, s.Integration())
 }
@@ -175,7 +174,7 @@ func TestDefaultResourceNamer(t *testing.T) {
 			assert.Equal("200", s.Tag(ext.HTTPCode))
 			assert.Equal(tc.method, s.Tag(ext.HTTPMethod))
 			assert.Equal("http://example.com"+tc.url, s.Tag(ext.HTTPURL))
-			assert.Equal(nil, s.Tag(ext.Error))
+			assert.Zero(s.Tag(ext.ErrorMsg))
 			assert.Equal(tc.path, s.Tag(ext.HTTPRoute))
 			assert.Equal(componentName, s.Integration())
 		})
@@ -193,7 +192,7 @@ func TestResourceNamer(t *testing.T) {
 	defer mt.Stop()
 
 	router := New(
-		WithServiceName("my-service"),
+		WithService("my-service"),
 		WithSpanOptions(tracer.Tag("testkey", "testvalue")),
 		WithResourceNamer(staticNamer),
 	)
@@ -219,28 +218,7 @@ func TestResourceNamer(t *testing.T) {
 	assert.Equal("GET", s.Tag(ext.HTTPMethod))
 	assert.Equal("http://example.com"+url, s.Tag(ext.HTTPURL))
 	assert.Equal("testvalue", s.Tag("testkey"))
-	assert.Equal(nil, s.Tag(ext.Error))
-	assert.Equal(componentName, s.Integration())
-}
-
-func TestNamingSchema(t *testing.T) {
-	genSpans := namingschematest.GenSpansFn(func(t *testing.T, serviceOverride string) []mocktracer.Span {
-		var opts []RouterOption
-		if serviceOverride != "" {
-			opts = append(opts, WithServiceName(serviceOverride))
-		}
-		mt := mocktracer.Start()
-		defer mt.Stop()
-
-		mux := New(opts...)
-		mux.GET("/200", handler200)
-		r := httptest.NewRequest("GET", "/200", nil)
-		w := httptest.NewRecorder()
-		mux.ServeHTTP(w, r)
-
-		return mt.FinishedSpans()
-	})
-	namingschematest.NewHTTPServerTest(genSpans, "http.router")(t)
+	assert.Zero(s.Tag(ext.ErrorMsg))
 }
 
 func TestTrailingSlashRoutesWithBehaviorRedirect301(t *testing.T) {
@@ -250,7 +228,7 @@ func TestTrailingSlashRoutesWithBehaviorRedirect301(t *testing.T) {
 		defer mt.Stop()
 
 		router := New(
-			WithServiceName("my-service"),
+			WithService("my-service"),
 			WithSpanOptions(tracer.Tag("testkey", "testvalue")),
 		)
 		router.RedirectBehavior = httptreemux.Redirect301 // default
@@ -276,7 +254,7 @@ func TestTrailingSlashRoutesWithBehaviorRedirect301(t *testing.T) {
 		assert.Equal("GET", s.Tag(ext.HTTPMethod))
 		assert.Equal("http://example.com/api/paramvalue", s.Tag(ext.HTTPURL))
 		assert.Equal("testvalue", s.Tag("testkey"))
-		assert.Nil(s.Tag(ext.Error))
+		assert.Zero(s.Tag(ext.ErrorMsg))
 		assert.NotContains(s.Tags(), ext.HTTPRoute)
 		assert.Equal(componentName, s.Integration())
 	})
@@ -287,7 +265,7 @@ func TestTrailingSlashRoutesWithBehaviorRedirect301(t *testing.T) {
 		defer mt.Stop()
 
 		router := New(
-			WithServiceName("my-service"),
+			WithService("my-service"),
 			WithSpanOptions(tracer.Tag("testkey", "testvalue")),
 		)
 		router.GET("/api/:parameter", handler200)         // without trailing slash
@@ -312,7 +290,7 @@ func TestTrailingSlashRoutesWithBehaviorRedirect301(t *testing.T) {
 		assert.Equal("GET", s.Tag(ext.HTTPMethod))
 		assert.Equal("http://example.com/api/paramvalue/", s.Tag(ext.HTTPURL))
 		assert.Equal("testvalue", s.Tag("testkey"))
-		assert.Nil(s.Tag(ext.Error))
+		assert.Zero(s.Tag(ext.ErrorMsg))
 		assert.Contains(s.Tags(), ext.HTTPRoute)
 		assert.Equal(componentName, s.Integration())
 	})
@@ -323,7 +301,7 @@ func TestTrailingSlashRoutesWithBehaviorRedirect301(t *testing.T) {
 		defer mt.Stop()
 
 		router := New(
-			WithServiceName("my-service"),
+			WithService("my-service"),
 			WithSpanOptions(tracer.Tag("testkey", "testvalue")),
 		)
 		router.GET("/api/:parameter/", handler200)        // with trailing slash
@@ -348,7 +326,7 @@ func TestTrailingSlashRoutesWithBehaviorRedirect301(t *testing.T) {
 		assert.Equal("GET", s.Tag(ext.HTTPMethod))
 		assert.Equal("http://example.com/api/paramvalue", s.Tag(ext.HTTPURL))
 		assert.Equal("testvalue", s.Tag("testkey"))
-		assert.Nil(s.Tag(ext.Error))
+		assert.Zero(s.Tag(ext.ErrorMsg))
 		assert.Contains(s.Tags(), ext.HTTPRoute)
 		assert.Equal(componentName, s.Integration())
 	})
@@ -361,7 +339,7 @@ func TestTrailingSlashRoutesWithBehaviorRedirect307(t *testing.T) {
 		defer mt.Stop()
 
 		router := New(
-			WithServiceName("my-service"),
+			WithService("my-service"),
 			WithSpanOptions(tracer.Tag("testkey", "testvalue")),
 		)
 		router.RedirectBehavior = httptreemux.Redirect307
@@ -387,7 +365,7 @@ func TestTrailingSlashRoutesWithBehaviorRedirect307(t *testing.T) {
 		assert.Equal("GET", s.Tag(ext.HTTPMethod))
 		assert.Equal("http://example.com/api/paramvalue", s.Tag(ext.HTTPURL))
 		assert.Equal("testvalue", s.Tag("testkey"))
-		assert.Nil(s.Tag(ext.Error))
+		assert.Zero(s.Tag(ext.ErrorMsg))
 		assert.NotContains(s.Tags(), ext.HTTPRoute)
 		assert.Equal(componentName, s.Integration())
 	})
@@ -398,7 +376,7 @@ func TestTrailingSlashRoutesWithBehaviorRedirect307(t *testing.T) {
 		defer mt.Stop()
 
 		router := New(
-			WithServiceName("my-service"),
+			WithService("my-service"),
 			WithSpanOptions(tracer.Tag("testkey", "testvalue")),
 		)
 		router.GET("/api/:parameter", handler200) // without trailing slash
@@ -423,7 +401,7 @@ func TestTrailingSlashRoutesWithBehaviorRedirect307(t *testing.T) {
 		assert.Equal("GET", s.Tag(ext.HTTPMethod))
 		assert.Equal("http://example.com/api/paramvalue/", s.Tag(ext.HTTPURL))
 		assert.Equal("testvalue", s.Tag("testkey"))
-		assert.Nil(s.Tag(ext.Error))
+		assert.Zero(s.Tag(ext.ErrorMsg))
 		assert.Contains(s.Tags(), ext.HTTPRoute)
 		assert.Equal(componentName, s.Integration())
 	})
@@ -434,7 +412,7 @@ func TestTrailingSlashRoutesWithBehaviorRedirect307(t *testing.T) {
 		defer mt.Stop()
 
 		router := New(
-			WithServiceName("my-service"),
+			WithService("my-service"),
 			WithSpanOptions(tracer.Tag("testkey", "testvalue")),
 		)
 		router.GET("/api/:parameter/", handler200) // with trailing slash
@@ -459,7 +437,7 @@ func TestTrailingSlashRoutesWithBehaviorRedirect307(t *testing.T) {
 		assert.Equal("GET", s.Tag(ext.HTTPMethod))
 		assert.Equal("http://example.com/api/paramvalue", s.Tag(ext.HTTPURL))
 		assert.Equal("testvalue", s.Tag("testkey"))
-		assert.Nil(s.Tag(ext.Error))
+		assert.Zero(s.Tag(ext.ErrorMsg))
 		assert.Contains(s.Tags(), ext.HTTPRoute)
 		assert.Equal(componentName, s.Integration())
 	})
@@ -472,7 +450,7 @@ func TestTrailingSlashRoutesWithBehaviorRedirect308(t *testing.T) {
 		defer mt.Stop()
 
 		router := New(
-			WithServiceName("my-service"),
+			WithService("my-service"),
 			WithSpanOptions(tracer.Tag("testkey", "testvalue")),
 		)
 		router.RedirectBehavior = httptreemux.Redirect308
@@ -498,7 +476,7 @@ func TestTrailingSlashRoutesWithBehaviorRedirect308(t *testing.T) {
 		assert.Equal("GET", s.Tag(ext.HTTPMethod))
 		assert.Equal("http://example.com/api/paramvalue", s.Tag(ext.HTTPURL))
 		assert.Equal("testvalue", s.Tag("testkey"))
-		assert.Nil(s.Tag(ext.Error))
+		assert.Zero(s.Tag(ext.ErrorMsg))
 		assert.NotContains(s.Tags(), ext.HTTPRoute)
 		assert.Equal(componentName, s.Integration())
 	})
@@ -509,7 +487,7 @@ func TestTrailingSlashRoutesWithBehaviorRedirect308(t *testing.T) {
 		defer mt.Stop()
 
 		router := New(
-			WithServiceName("my-service"),
+			WithService("my-service"),
 			WithSpanOptions(tracer.Tag("testkey", "testvalue")),
 		)
 		router.GET("/api/:parameter", handler200) // without trailing slash
@@ -534,7 +512,7 @@ func TestTrailingSlashRoutesWithBehaviorRedirect308(t *testing.T) {
 		assert.Equal("GET", s.Tag(ext.HTTPMethod))
 		assert.Equal("http://example.com/api/paramvalue/", s.Tag(ext.HTTPURL))
 		assert.Equal("testvalue", s.Tag("testkey"))
-		assert.Nil(s.Tag(ext.Error))
+		assert.Zero(s.Tag(ext.ErrorMsg))
 		assert.Contains(s.Tags(), ext.HTTPRoute)
 		assert.Equal(componentName, s.Integration())
 	})
@@ -545,7 +523,7 @@ func TestTrailingSlashRoutesWithBehaviorRedirect308(t *testing.T) {
 		defer mt.Stop()
 
 		router := New(
-			WithServiceName("my-service"),
+			WithService("my-service"),
 			WithSpanOptions(tracer.Tag("testkey", "testvalue")),
 		)
 		router.GET("/api/:parameter/", handler200) // with trailing slash
@@ -570,7 +548,7 @@ func TestTrailingSlashRoutesWithBehaviorRedirect308(t *testing.T) {
 		assert.Equal("GET", s.Tag(ext.HTTPMethod))
 		assert.Equal("http://example.com/api/paramvalue", s.Tag(ext.HTTPURL))
 		assert.Equal("testvalue", s.Tag("testkey"))
-		assert.Nil(s.Tag(ext.Error))
+		assert.Zero(s.Tag(ext.ErrorMsg))
 		assert.Contains(s.Tags(), ext.HTTPRoute)
 		assert.Equal(componentName, s.Integration())
 	})
@@ -583,7 +561,7 @@ func TestTrailingSlashRoutesWithBehaviorUseHandler(t *testing.T) {
 		defer mt.Stop()
 
 		router := New(
-			WithServiceName("my-service"),
+			WithService("my-service"),
 			WithSpanOptions(tracer.Tag("testkey", "testvalue")),
 		)
 		router.RedirectBehavior = httptreemux.UseHandler
@@ -609,7 +587,7 @@ func TestTrailingSlashRoutesWithBehaviorUseHandler(t *testing.T) {
 		assert.Equal("GET", s.Tag(ext.HTTPMethod))
 		assert.Equal("http://example.com/api/paramvalue", s.Tag(ext.HTTPURL))
 		assert.Equal("testvalue", s.Tag("testkey"))
-		assert.Nil(s.Tag(ext.Error))
+		assert.Zero(s.Tag(ext.ErrorMsg))
 		assert.NotContains(s.Tags(), ext.HTTPRoute)
 		assert.Equal(componentName, s.Integration())
 	})
@@ -620,7 +598,7 @@ func TestTrailingSlashRoutesWithBehaviorUseHandler(t *testing.T) {
 		defer mt.Stop()
 
 		router := New(
-			WithServiceName("my-service"),
+			WithService("my-service"),
 			WithSpanOptions(tracer.Tag("testkey", "testvalue")),
 		)
 		router.GET("/api/:parameter", handler200) // without trailing slash
@@ -645,7 +623,7 @@ func TestTrailingSlashRoutesWithBehaviorUseHandler(t *testing.T) {
 		assert.Equal("GET", s.Tag(ext.HTTPMethod))
 		assert.Equal("http://example.com/api/paramvalue/", s.Tag(ext.HTTPURL))
 		assert.Equal("testvalue", s.Tag("testkey"))
-		assert.Nil(s.Tag(ext.Error))
+		assert.Zero(s.Tag(ext.ErrorMsg))
 		assert.Contains(s.Tags(), ext.HTTPRoute)
 		assert.Equal(componentName, s.Integration())
 	})
@@ -656,7 +634,7 @@ func TestTrailingSlashRoutesWithBehaviorUseHandler(t *testing.T) {
 		defer mt.Stop()
 
 		router := New(
-			WithServiceName("my-service"),
+			WithService("my-service"),
 			WithSpanOptions(tracer.Tag("testkey", "testvalue")),
 		)
 		router.GET("/api/:parameter/", handler200) // with trailing slash
@@ -681,7 +659,7 @@ func TestTrailingSlashRoutesWithBehaviorUseHandler(t *testing.T) {
 		assert.Equal("GET", s.Tag(ext.HTTPMethod))
 		assert.Equal("http://example.com/api/paramvalue", s.Tag(ext.HTTPURL))
 		assert.Equal("testvalue", s.Tag("testkey"))
-		assert.Nil(s.Tag(ext.Error))
+		assert.Zero(s.Tag(ext.ErrorMsg))
 		assert.Contains(s.Tags(), ext.HTTPRoute)
 		assert.Equal(componentName, s.Integration())
 	})
@@ -920,7 +898,7 @@ func TestRouterRedirectEnabled(t *testing.T) {
 
 func router() http.Handler {
 	router := New(
-		WithServiceName("my-service"),
+		WithService("my-service"),
 		WithSpanOptions(tracer.Tag("testkey", "testvalue")),
 	)
 

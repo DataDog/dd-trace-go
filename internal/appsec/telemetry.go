@@ -8,8 +8,8 @@ package appsec
 import (
 	"runtime"
 
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 	waf "github.com/DataDog/go-libddwaf/v3"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 )
 
 // cgoEnabled is true if cgo is enabled, false otherwise.

@@ -9,9 +9,9 @@ import (
 	"context"
 	"log"
 
-	pubsubtrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/cloud.google.com/go/pubsub.v1"
-
 	"cloud.google.com/go/pubsub"
+
+	pubsubtrace "github.com/DataDog/dd-trace-go/contrib/cloud.google.com/go/pubsub.v1/v2"
 )
 
 func ExamplePublish() {
