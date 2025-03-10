@@ -159,7 +159,7 @@ func TestPropagation(t *testing.T) {
 	assert.Equal(t, uint64(42), spans[0].TraceID())
 	assert.Equal(t, map[string]interface{}{
 		ext.SpanType:        ext.SpanTypeMessageProducer,
-		ext.Component:       "riverqueue/river.v0",
+		ext.Component:       "riverqueue/river",
 		ext.SpanKind:        ext.SpanKindProducer,
 		ext.MessagingSystem: "river",
 		ext.ServiceName:     nil,
@@ -171,7 +171,7 @@ func TestPropagation(t *testing.T) {
 	assert.Equal(t, spanID, spans[2].SpanID())
 	assert.Equal(t, map[string]interface{}{
 		ext.SpanType:             ext.SpanTypeMessageConsumer,
-		ext.Component:            "riverqueue/river.v0",
+		ext.Component:            "riverqueue/river",
 		ext.SpanKind:             ext.SpanKindConsumer,
 		ext.MessagingSystem:      "river",
 		ext.ResourceName:         "kind",
@@ -289,7 +289,7 @@ func TestPropagationNoParentSpan(t *testing.T) {
 	assert.Equal(t, traceID, spans[0].TraceID())
 	assert.Equal(t, map[string]interface{}{
 		ext.SpanType:        ext.SpanTypeMessageProducer,
-		ext.Component:       "riverqueue/river.v0",
+		ext.Component:       "riverqueue/river",
 		ext.SpanKind:        ext.SpanKindProducer,
 		ext.MessagingSystem: "river",
 		ext.ResourceName:    "river.insert_many",
@@ -300,7 +300,7 @@ func TestPropagationNoParentSpan(t *testing.T) {
 	assert.Equal(t, spanID, spans[1].SpanID())
 	assert.Equal(t, map[string]interface{}{
 		ext.SpanType:             ext.SpanTypeMessageConsumer,
-		ext.Component:            "riverqueue/river.v0",
+		ext.Component:            "riverqueue/river",
 		ext.SpanKind:             ext.SpanKindConsumer,
 		ext.MessagingSystem:      "river",
 		ext.ResourceName:         "kind",
@@ -377,7 +377,7 @@ func TestPropagationNoInsertSpan(t *testing.T) {
 	assert.Equal(t, spanID, spans[0].SpanID())
 	assert.Equal(t, map[string]interface{}{
 		ext.SpanType:             ext.SpanTypeMessageConsumer,
-		ext.Component:            "riverqueue/river.v0",
+		ext.Component:            "riverqueue/river",
 		ext.SpanKind:             ext.SpanKindConsumer,
 		ext.MessagingSystem:      "river",
 		ext.ResourceName:         "kind",
@@ -452,7 +452,7 @@ func TestWorkerError(t *testing.T) {
 	assert.Equal(t, spanID, spans[0].SpanID())
 	assert.Equal(t, map[string]interface{}{
 		ext.SpanType:             ext.SpanTypeMessageConsumer,
-		ext.Component:            "riverqueue/river.v0",
+		ext.Component:            "riverqueue/river",
 		ext.SpanKind:             ext.SpanKindConsumer,
 		ext.MessagingSystem:      "river",
 		ext.ResourceName:         "kind",

@@ -17,7 +17,7 @@ import (
 )
 
 const (
-	componentName = "riverqueue/river.v0"
+	componentName = "riverqueue/river"
 )
 
 func init() {
@@ -46,7 +46,7 @@ func NewInsertMiddleware(opts ...Option) *InsertMiddleware {
 	if cfg.measured {
 		cfg.spanOpts = append(cfg.spanOpts, tracer.Measured())
 	}
-	log.Debug("contrib/riverqueue/river.v0/river: Configuring Insert Middleware: %#v", cfg)
+	log.Debug("contrib/riverqueue/river/river: Configuring Insert Middleware: %#v", cfg)
 	return &InsertMiddleware{cfg: cfg}
 }
 
@@ -93,7 +93,7 @@ func NewWorkerMiddleware(opts ...Option) *WorkerMiddleware {
 	if cfg.measured {
 		cfg.spanOpts = append(cfg.spanOpts, tracer.Measured())
 	}
-	log.Debug("contrib/riverqueue/river.v0/river: Configuring Worker Middleware: %#v", cfg)
+	log.Debug("contrib/riverqueue/river/river: Configuring Worker Middleware: %#v", cfg)
 	return &WorkerMiddleware{cfg: cfg}
 }
 
@@ -108,7 +108,7 @@ func (m *WorkerMiddleware) Work(ctx context.Context, job *rivertype.JobRow, doIn
 	)
 
 	if carrier, err := metadataToCarrier(job.Metadata); err != nil {
-		log.Debug("contrib/riverqueue/river.v0/river: Failed to parse job metadata: %v", err)
+		log.Debug("contrib/riverqueue/river/river: Failed to parse job metadata: %v", err)
 	} else {
 		if parentSpanCtx, err := tracer.Extract(carrier); err == nil { // if NO error
 			opts = append(opts, tracer.ChildOf(parentSpanCtx))
@@ -131,18 +131,18 @@ func (m *WorkerMiddleware) Work(ctx context.Context, job *rivertype.JobRow, doIn
 func tryInjectSpanContext(spanCtx ddtrace.SpanContext, params *rivertype.JobInsertParams) {
 	carrier, err := metadataToCarrier(params.Metadata)
 	if err != nil {
-		log.Debug("contrib/riverqueue/river.v0/river: Failed to parse job metadata: %v", err)
+		log.Debug("contrib/riverqueue/river/river: Failed to parse job metadata: %v", err)
 		return
 	}
 
 	if err := tracer.Inject(spanCtx, carrier); err != nil {
-		log.Debug("contrib/riverqueue/river.v0/river: Failed to inject span context into job metadata: %v", err)
+		log.Debug("contrib/riverqueue/river/river: Failed to inject span context into job metadata: %v", err)
 		return
 	}
 
 	metadataWithCtx, err := json.Marshal(carrier)
 	if err != nil {
-		log.Debug("contrib/riverqueue/river.v0/river: Failed to marshal carrier: %v", err)
+		log.Debug("contrib/riverqueue/river/river: Failed to marshal carrier: %v", err)
 		return
 	}
 	params.Metadata = metadataWithCtx
