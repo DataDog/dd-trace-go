@@ -1,4 +1,4 @@
-version: "3.3"  # optional since v1.27.0
+version: "3.3" # optional since v1.27.0
 services:
   cassandra:
     image: cassandra:3.11
@@ -91,6 +91,14 @@ services:
       nofile:
         soft: 65536
         hard: 65536
+  opensearch2:
+    image: public.ecr.aws/opensearchproject/opensearch:2
+    environment:
+      discovery.type: single-node
+      OPENSEARCH_INITIAL_ADMIN_PASSWORD: ADMIN-passw0rd
+      DISABLE_SECURITY_PLUGIN: "true"
+    ports:
+      - 9212:9200
   datadog-agent:
     image: datadog/docker-dd-agent
     environment:

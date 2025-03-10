@@ -34,6 +34,7 @@ const (
 
 	// db
 	ElasticSearchOutbound
+	OpenSearchOutbound
 	MongoDBOutbound
 	CassandraOutbound
 	LevelDBOutbound
@@ -79,6 +80,8 @@ func opV1(t IntegrationType) string {
 	// Database
 	case ElasticSearchOutbound:
 		return "elasticsearch.query"
+	case OpenSearchOutbound:
+		return "opensearch.query"
 	case MongoDBOutbound:
 		return "mongodb.query"
 	case CassandraOutbound:
@@ -123,6 +126,8 @@ func opV0(t IntegrationType) string {
 		return "redis.command"
 	case ElasticSearchOutbound:
 		return "elasticsearch.query"
+	case OpenSearchOutbound:
+		return "opensearch.query"
 	case MongoDBOutbound:
 		return "mongodb.query"
 	case CassandraOutbound:

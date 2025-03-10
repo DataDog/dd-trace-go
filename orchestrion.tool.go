@@ -50,6 +50,7 @@ import (
 	_ "gopkg.in/DataDog/dd-trace-go.v1/contrib/labstack/echo.v4"                         // integration
 	_ "gopkg.in/DataDog/dd-trace-go.v1/contrib/log/slog"                                 // integration
 	_ "gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http"                                 // integration
+	_ "gopkg.in/DataDog/dd-trace-go.v1/contrib/opensearch-project/opensearch-go.v4"      // integration
 	_ "gopkg.in/DataDog/dd-trace-go.v1/contrib/os"                                       // integration
 	_ "gopkg.in/DataDog/dd-trace-go.v1/contrib/redis/go-redis.v9"                        // integration
 	_ "gopkg.in/DataDog/dd-trace-go.v1/contrib/redis/rueidis"                            // integration

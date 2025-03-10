@@ -175,6 +175,9 @@ jobs:
           docker pull docker.elastic.co/elasticsearch/elasticsearch:7.17.24
           docker pull docker.elastic.co/elasticsearch/elasticsearch:8.15.3
 
+          # OpenSearch images
+          docker pull public.ecr.aws/opensearchproject/opensearch:2
+
           # Kafka service
           docker pull confluentinc/confluent-local:7.5.0
 
