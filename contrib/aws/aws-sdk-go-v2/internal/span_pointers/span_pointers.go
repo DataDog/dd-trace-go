@@ -105,11 +105,6 @@ func handleS3Operation(in middleware.DeserializeInput, out middleware.Deserializ
 }
 
 func handleDynamoDbOperation(ctx context.Context, span *tracer.Span) {
-	spanWithLinks, ok := span.(tracer.SpanWithLinks)
-	if !ok {
-		return
-	}
-
 	// Retrieve table name from context
 	tableNameVal := ctx.Value(DynamoDbTableName{})
 	if tableNameVal == nil {
@@ -157,7 +152,7 @@ func handleDynamoDbOperation(ctx context.Context, span *tracer.Span) {
 	}
 
 	hash := generatePointerHash(componentsToHash)
-	link := ddtrace.SpanLink{
+	link := tracer.SpanLink{
 		TraceID: 0,
 		SpanID:  0,
 		Attributes: map[string]string{
@@ -168,7 +163,7 @@ func handleDynamoDbOperation(ctx context.Context, span *tracer.Span) {
 		},
 	}
 
-	spanWithLinks.AddSpanLink(link)
+	span.AddSpanLink(link)
 }
 
 // DynamoDb values can only be string, number, or binary
