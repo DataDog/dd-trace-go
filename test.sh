@@ -5,6 +5,7 @@ contrib=""
 sleeptime=30
 unset INTEGRATION
 unset DD_APPSEC_ENABLED
+export CGO_ENABLED=0
 
 if [[ $# -eq 0 ]]; then
 	echo "Use the -h flag for help"
@@ -84,15 +85,15 @@ if [[ "$INTEGRATION" != "" ]]; then
 	## Make sure we shut down the docker containers on exit.
 	function finish {
 		echo Cleaning up...
-		docker-compose down
+		docker compose down
 	}
 	trap finish EXIT
 	if [[ "$contrib" != "" ]]; then
 		## Start these now so they'll be ready by the time we run integration tests.
-		docker-compose up -d
+		docker compose up -d
 	else
 		## If we're not testing contrib, we only need the trace agent.
-		docker-compose up -d datadog-agent
+		docker compose up -d datadog-agent
 	fi
 fi
 
@@ -111,6 +112,10 @@ if [[ "$contrib" != "" ]]; then
 		sleep $sleeptime
 	fi
 
-	PACKAGE_NAMES=$(go list ./contrib/... | grep -v -e google.golang.org/api)
+	PACKAGE_NAMES=$(go list ./contrib/... | grep -v -e google.golang.org/api | grep -v -e confluentinc/confluent-kafka-go/kafka)
 	nice -n20 gotestsum --junitfile ./gotestsum-report.xml -- -race -v  -coverprofile=contrib_coverage.txt -covermode=atomic $PACKAGE_NAMES
+
+	export CGO_ENABLED=1
+	PACKAGE_NAMES=$(go list ./contrib/... | grep -e confluentinc/confluent-kafka-go/kafka)
+	nice -n20 gotestsum --junitfile ./gotestsum-report.kafka.xml -- -race -v  -coverprofile=contrib_coverage.txt -covermode=atomic $PACKAGE_NAMES
 fi

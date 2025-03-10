@@ -6,29 +6,11 @@
 package profiler
 
 import (
-	"context"
-	"encoding/json"
-	"fmt"
-	"net"
 	"net/http"
-	"net/url"
-	"os"
-	"path/filepath"
 	"runtime"
-	"strconv"
-	"strings"
 	"time"
-	"unicode"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/osinfo"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/traceprof"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
-	"gopkg.in/DataDog/dd-trace-go.v1/profiler/internal/immutable"
-
-	"github.com/DataDog/datadog-go/v5/statsd"
+	v2 "github.com/DataDog/dd-trace-go/v2/profiler"
 )
 
 const (
@@ -57,248 +39,12 @@ const (
 	DefaultUploadTimeout = 10 * time.Second
 )
 
-const (
-	defaultAPIURL    = "https://intake.profile.datadoghq.com/v1/input"
-	defaultAgentHost = "localhost"
-	defaultAgentPort = "8126"
-)
-
-var defaultClient = &http.Client{
-	// We copy the transport to avoid using the default one, as it might be
-	// augmented with tracing and we don't want these calls to be recorded.
-	// See https://golang.org/pkg/net/http/#DefaultTransport .
-	Transport: &http.Transport{
-		Proxy: http.ProxyFromEnvironment,
-		DialContext: (&net.Dialer{
-			Timeout:   30 * time.Second,
-			KeepAlive: 30 * time.Second,
-			DualStack: true,
-		}).DialContext,
-		MaxIdleConns:          100,
-		IdleConnTimeout:       90 * time.Second,
-		TLSHandshakeTimeout:   10 * time.Second,
-		ExpectContinueTimeout: 1 * time.Second,
-	},
-}
-
-var defaultProfileTypes = []ProfileType{MetricsProfile, CPUProfile, HeapProfile}
-
-type config struct {
-	apiKey    string
-	agentless bool
-	// targetURL is the upload destination URL. It will be set by the profiler on start to either apiURL or agentURL
-	// based on the other options.
-	targetURL            string
-	apiURL               string // apiURL is the Datadog intake API URL
-	agentURL             string // agentURL is the Datadog agent profiling URL
-	service, env         string
-	version              string
-	hostname             string
-	statsd               StatsdClient
-	httpClient           *http.Client
-	tags                 immutable.StringSlice
-	customProfilerLabels []string
-	types                map[ProfileType]struct{}
-	period               time.Duration
-	cpuDuration          time.Duration
-	cpuProfileRate       int
-	uploadTimeout        time.Duration
-	maxGoroutinesWait    int
-	mutexFraction        int
-	blockRate            int
-	outputDir            string
-	deltaProfiles        bool
-	logStartup           bool
-	traceConfig          executionTraceConfig
-	endpointCountEnabled bool
-	enabled              bool
-	flushOnExit          bool
-}
-
-// logStartup records the configuration to the configured logger in JSON format
-func logStartup(c *config) {
-	var enabledProfiles []string
-	for t := range c.types {
-		enabledProfiles = append(enabledProfiles, t.String())
-	}
-	info := map[string]any{
-		"date":                       time.Now().Format(time.RFC3339),
-		"os_name":                    osinfo.OSName(),
-		"os_version":                 osinfo.OSVersion(),
-		"version":                    version.Tag,
-		"lang":                       "Go",
-		"lang_version":               runtime.Version(),
-		"hostname":                   c.hostname,
-		"delta_profiles":             c.deltaProfiles,
-		"service":                    c.service,
-		"env":                        c.env,
-		"target_url":                 c.targetURL,
-		"agentless":                  c.agentless,
-		"tags":                       c.tags.Slice(),
-		"profile_period":             c.period.String(),
-		"enabled_profiles":           enabledProfiles,
-		"cpu_duration":               c.cpuDuration.String(),
-		"cpu_profile_rate":           c.cpuProfileRate,
-		"block_profile_rate":         c.blockRate,
-		"mutex_profile_fraction":     c.mutexFraction,
-		"max_goroutines_wait":        c.maxGoroutinesWait,
-		"upload_timeout":             c.uploadTimeout.String(),
-		"execution_trace_enabled":    c.traceConfig.Enabled,
-		"execution_trace_period":     c.traceConfig.Period.String(),
-		"execution_trace_size_limit": c.traceConfig.Limit,
-		"endpoint_count_enabled":     c.endpointCountEnabled,
-		"custom_profiler_label_keys": c.customProfilerLabels,
-		"enabled":                    c.enabled,
-		"flush_on_exit":              c.flushOnExit,
-	}
-	b, err := json.Marshal(info)
-	if err != nil {
-		log.Error("Marshaling profiler configuration: %s", err)
-		return
-	}
-	log.Info("Profiler configuration: %s\n", b)
-}
-
-func urlForSite(site string) (string, error) {
-	u := fmt.Sprintf("https://intake.profile.%s/v1/input", site)
-	_, err := url.Parse(u)
-	return u, err
-}
-
-// isAPIKeyValid reports whether the given string is a structurally valid API key
-func isAPIKeyValid(key string) bool {
-	if len(key) != 32 {
-		return false
-	}
-	for _, c := range key {
-		if c > unicode.MaxASCII || (!unicode.IsLower(c) && !unicode.IsNumber(c)) {
-			return false
-		}
-	}
-	return true
-}
-
-func (c *config) addProfileType(t ProfileType) {
-	if c.types == nil {
-		c.types = make(map[ProfileType]struct{})
-	}
-	c.types[t] = struct{}{}
-}
-
-func defaultConfig() (*config, error) {
-	c := config{
-		apiURL:               defaultAPIURL,
-		service:              filepath.Base(os.Args[0]),
-		statsd:               &statsd.NoOpClient{},
-		httpClient:           defaultClient,
-		period:               DefaultPeriod,
-		cpuDuration:          DefaultDuration,
-		blockRate:            DefaultBlockRate,
-		mutexFraction:        DefaultMutexFraction,
-		uploadTimeout:        DefaultUploadTimeout,
-		maxGoroutinesWait:    1000, // arbitrary value, should limit STW to ~30ms
-		deltaProfiles:        internal.BoolEnv("DD_PROFILING_DELTA", true),
-		logStartup:           internal.BoolEnv("DD_TRACE_STARTUP_LOGS", true),
-		endpointCountEnabled: internal.BoolEnv(traceprof.EndpointCountEnvVar, false),
-	}
-	c.tags = c.tags.Append(fmt.Sprintf("process_id:%d", os.Getpid()))
-	for _, t := range defaultProfileTypes {
-		c.addProfileType(t)
-	}
-
-	url := internal.AgentURLFromEnv()
-	if url.Scheme == "unix" {
-		WithUDS(url.Path)(&c)
-	} else {
-		c.agentURL = url.String() + "/profiling/v1/input"
-	}
-	// If DD_PROFILING_ENABLED is set to "auto", the profiler's activation will be determined by
-	// the Datadog admission controller, so we set it to true.
-	if os.Getenv("DD_PROFILING_ENABLED") == "auto" {
-		c.enabled = true
-	} else {
-		c.enabled = internal.BoolEnv("DD_PROFILING_ENABLED", true)
-	}
-	if v := os.Getenv("DD_PROFILING_UPLOAD_TIMEOUT"); v != "" {
-		d, err := time.ParseDuration(v)
-		if err != nil {
-			return nil, fmt.Errorf("DD_PROFILING_UPLOAD_TIMEOUT: %s", err)
-		}
-		WithUploadTimeout(d)(&c)
-	}
-	if v := os.Getenv("DD_API_KEY"); v != "" {
-		WithAPIKey(v)(&c)
-	}
-	if internal.BoolEnv("DD_PROFILING_AGENTLESS", false) {
-		WithAgentlessUpload()(&c)
-	}
-	if v := os.Getenv("DD_SITE"); v != "" {
-		WithSite(v)(&c)
-	}
-	if v := os.Getenv("DD_ENV"); v != "" {
-		WithEnv(v)(&c)
-	}
-	if v := os.Getenv("DD_SERVICE"); v != "" {
-		WithService(v)(&c)
-	}
-	if v := os.Getenv("DD_VERSION"); v != "" {
-		WithVersion(v)(&c)
-	}
-	c.flushOnExit = internal.BoolEnv("DD_PROFILING_FLUSH_ON_EXIT", false)
-
-	tags := make(map[string]string)
-	if v := os.Getenv("DD_TAGS"); v != "" {
-		tags = internal.ParseTagString(v)
-		internal.CleanGitMetadataTags(tags)
-	}
-	for key, val := range internal.GetGitMetadataTags() {
-		tags[key] = val
-	}
-	for key, val := range tags {
-		if val != "" {
-			WithTags(key + ":" + val)(&c)
-		} else {
-			WithTags(key)(&c)
-		}
-	}
-
-	WithTags(
-		"profiler_version:"+version.Tag,
-		"runtime_version:"+strings.TrimPrefix(runtime.Version(), "go"),
-		"runtime_compiler:"+runtime.Compiler,
-		"runtime_arch:"+runtime.GOARCH,
-		"runtime_os:"+runtime.GOOS,
-		"runtime-id:"+globalconfig.RuntimeID(),
-	)(&c)
-	// not for public use
-	if v := os.Getenv("DD_PROFILING_URL"); v != "" {
-		WithURL(v)(&c)
-	}
-	// not for public use
-	if v := os.Getenv("DD_PROFILING_OUTPUT_DIR"); v != "" {
-		withOutputDir(v)(&c)
-	}
-	if v := os.Getenv("DD_PROFILING_WAIT_PROFILE_MAX_GOROUTINES"); v != "" {
-		n, err := strconv.Atoi(v)
-		if err != nil {
-			return nil, fmt.Errorf("DD_PROFILING_WAIT_PROFILE_MAX_GOROUTINES: %s", err)
-		}
-		c.maxGoroutinesWait = n
-	}
-
-	// Experimental feature: Go execution trace (runtime/trace) recording.
-	c.traceConfig.Refresh()
-	return &c, nil
-}
-
 // An Option is used to configure the profiler's behaviour.
-type Option func(*config)
+type Option = v2.Option
 
 // WithAgentAddr specifies the address to use when reaching the Datadog Agent.
 func WithAgentAddr(hostport string) Option {
-	return func(cfg *config) {
-		cfg.agentURL = "http://" + hostport + "/profiling/v1/input"
-	}
+	return v2.WithAgentAddr(hostport)
 }
 
 // WithAPIKey sets the Datadog API Key and takes precedence over the DD_API_KEY
@@ -309,9 +55,7 @@ func WithAgentAddr(hostport string) Option {
 // you need to set it up, or use WithAgentAddr to specify the hostport location
 // of the agent. See WithAgentlessUpload for more information.
 func WithAPIKey(key string) Option {
-	return func(cfg *config) {
-		cfg.apiKey = key
-	}
+	return nil
 }
 
 // WithAgentlessUpload is currently for internal usage only and not officially
@@ -319,9 +63,7 @@ func WithAPIKey(key string) Option {
 // you to do so. It allows to skip the agent and talk to the Datadog API
 // directly using the provided API key.
 func WithAgentlessUpload() Option {
-	return func(cfg *config) {
-		cfg.agentless = true
-	}
+	return nil
 }
 
 // WithDeltaProfiles specifies if delta profiles are enabled. The default value
@@ -329,30 +71,22 @@ func WithAgentlessUpload() Option {
 // environment variable that can be set to "true" or "false" as well. See
 // https://dtdg.co/go-delta-profile-docs for more information.
 func WithDeltaProfiles(enabled bool) Option {
-	return func(cfg *config) {
-		cfg.deltaProfiles = enabled
-	}
+	return v2.WithDeltaProfiles(enabled)
 }
 
 // WithURL specifies the HTTP URL for the Datadog Profiling API.
 func WithURL(url string) Option {
-	return func(cfg *config) {
-		cfg.apiURL = url
-	}
+	return v2.WithURL(url)
 }
 
 // WithPeriod specifies the interval at which to collect profiles.
 func WithPeriod(d time.Duration) Option {
-	return func(cfg *config) {
-		cfg.period = d
-	}
+	return v2.WithPeriod(d)
 }
 
 // CPUDuration specifies the length at which to collect CPU profiles.
 func CPUDuration(d time.Duration) Option {
-	return func(cfg *config) {
-		cfg.cpuDuration = d
-	}
+	return v2.CPUDuration(d)
 }
 
 // CPUProfileRate sets the sampling frequency for CPU profiling. A sample will
@@ -365,9 +99,7 @@ func CPUDuration(d time.Duration) Option {
 // profile has finished". This is a known issue, but the rate will still be set
 // correctly and CPU profiling will work.
 func CPUProfileRate(hz int) Option {
-	return func(cfg *config) {
-		cfg.cpuProfileRate = hz
-	}
+	return v2.CPUProfileRate(hz)
 }
 
 // MutexProfileFraction turns on mutex profiles with rate indicating the fraction
@@ -376,10 +108,7 @@ func CPUProfileRate(hz int) Option {
 // Setting an aggressive rate can hurt performance.
 // For more information on this value, check runtime.SetMutexProfileFraction.
 func MutexProfileFraction(rate int) Option {
-	return func(cfg *config) {
-		cfg.addProfileType(MutexProfile)
-		cfg.mutexFraction = rate
-	}
+	return v2.MutexProfileFraction(rate)
 }
 
 // BlockProfileRate turns on block profiles with the given rate. We do not
@@ -387,61 +116,39 @@ func MutexProfileFraction(rate int) Option {
 // information. The rate is given in nanoseconds and a block event with a given
 // duration has a min(duration/rate, 1) chance of getting sampled.
 func BlockProfileRate(rate int) Option {
-	return func(cfg *config) {
-		cfg.addProfileType(BlockProfile)
-		cfg.blockRate = rate
-	}
+	return v2.BlockProfileRate(rate)
 }
 
 // WithProfileTypes specifies the profile types to be collected by the profiler.
 func WithProfileTypes(types ...ProfileType) Option {
-	return func(cfg *config) {
-		// reset the types and only use what the user has specified
-		for k := range cfg.types {
-			delete(cfg.types, k)
-		}
-		cfg.addProfileType(MetricsProfile) // always report metrics
-		for _, t := range types {
-			cfg.addProfileType(t)
-		}
-	}
+	return v2.WithProfileTypes(types...)
 }
 
 // WithService specifies the service name to attach to a profile.
 func WithService(name string) Option {
-	return func(cfg *config) {
-		cfg.service = name
-	}
+	return v2.WithService(name)
 }
 
 // WithEnv specifies the environment to which these profiles should be registered.
 func WithEnv(env string) Option {
-	return func(cfg *config) {
-		cfg.env = env
-	}
+	return v2.WithEnv(env)
 }
 
 // WithVersion specifies the service version tag to attach to profiles
 func WithVersion(version string) Option {
-	return func(cfg *config) {
-		cfg.version = version
-	}
+	return v2.WithVersion(version)
 }
 
 // WithTags specifies a set of tags to be attached to the profiler. These may help
 // filter the profiling view based on various information.
 func WithTags(tags ...string) Option {
-	return func(cfg *config) {
-		cfg.tags = cfg.tags.Append(tags...)
-	}
+	return v2.WithTags(tags...)
 }
 
 // WithStatsd specifies an optional statsd client to use for metrics. By default,
 // no metrics are sent.
 func WithStatsd(client StatsdClient) Option {
-	return func(cfg *config) {
-		cfg.statsd = client
-	}
+	return v2.WithStatsd(client)
 }
 
 // WithUploadTimeout specifies the timeout to use for uploading profiles. The
@@ -449,128 +156,39 @@ func WithStatsd(client StatsdClient) Option {
 // DD_PROFILING_UPLOAD_TIMEOUT env variable. Using a negative value or 0 will
 // cause an error when starting the profiler.
 func WithUploadTimeout(d time.Duration) Option {
-	return func(cfg *config) {
-		cfg.uploadTimeout = d
-	}
+	return v2.WithUploadTimeout(d)
 }
 
 // WithSite specifies the datadog site (datadoghq.com, datadoghq.eu, etc.)
 // which profiles will be sent to.
 func WithSite(site string) Option {
-	return func(cfg *config) {
-		u, err := urlForSite(site)
-		if err != nil {
-			log.Error("profiler: invalid site provided, using %s (%s)", defaultAPIURL, err)
-			return
-		}
-		cfg.apiURL = u
-	}
+	return v2.WithSite(site)
 }
 
 // WithHTTPClient specifies the HTTP client to use when submitting profiles to Site.
 // In general, using this method is only necessary if you have need to customize the
 // transport layer, for instance when using a unix domain socket.
 func WithHTTPClient(client *http.Client) Option {
-	return func(cfg *config) {
-		cfg.httpClient = client
-	}
+	return v2.WithHTTPClient(client)
 }
 
 // WithUDS configures the HTTP client to dial the Datadog Agent via the specified Unix Domain Socket path.
 func WithUDS(socketPath string) Option {
-	return func(c *config) {
-		// The HTTP client needs a valid URL. The host portion of the
-		// url in particular can't just be the socket path, or else that
-		// will be interpreted as part of the request path and the
-		// request will fail.  Clean up the path here so we get
-		// something resembling the desired path in any profiler logs.
-		// TODO: copied from ddtrace/tracer, but is this correct?
-		cleanPath := fmt.Sprintf("UDS_%s", strings.NewReplacer(":", "_", "/", "_", `\`, "_").Replace(socketPath))
-		c.agentURL = "http://" + cleanPath + "/profiling/v1/input"
-		WithHTTPClient(&http.Client{
-			Transport: &http.Transport{
-				DialContext: func(_ context.Context, _, _ string) (net.Conn, error) {
-					return net.Dial("unix", socketPath)
-				},
-			},
-		})(c)
-	}
-}
-
-// withOutputDir writes a copy of all uploaded profiles to the given
-// directory. This is intended for local development or debugging uploading
-// issues. The directory will keep growing, no cleanup is performed.
-func withOutputDir(dir string) Option {
-	return func(cfg *config) {
-		cfg.outputDir = dir
-	}
+	return v2.WithUDS(socketPath)
 }
 
 // WithLogStartup toggles logging the configuration of the profiler to standard
 // error when profiling is started. The configuration is logged in a JSON
 // format. This option is enabled by default.
 func WithLogStartup(enabled bool) Option {
-	return func(cfg *config) {
-		cfg.logStartup = enabled
-	}
+	return v2.WithLogStartup(enabled)
 }
 
 // WithHostname sets the hostname which will be added to uploaded profiles
 // through the "host:<hostname>" tag. If no hostname is given, the hostname will
 // default to the output of os.Hostname()
 func WithHostname(hostname string) Option {
-	return func(cfg *config) {
-		cfg.hostname = hostname
-	}
-}
-
-// executionTraceConfig controls how often, and for how long, runtime execution
-// traces are collected.
-type executionTraceConfig struct {
-	// Enabled indicates whether execution tracing is enabled.
-	Enabled bool
-	// Period is the amount of time between traces.
-	Period time.Duration
-	// Limit is the desired upper bound, in bytes, of a collected trace.
-	// Traces may be slightly larger than this limit due to flushing pending
-	// buffers at the end of tracing.
-	//
-	// We attempt to record for a full profiling period. The size limit of
-	// the trace is a better proxy for overhead (it scales with the number
-	// of events recorded) than duration, so we use that to decide when to
-	// stop tracing.
-	Limit int
-
-	// warned is checked to prevent spamming a log every minute if the trace
-	// config is invalid
-	warned bool
-}
-
-// executionTraceEnabledDefault depends on the Go version and CPU architecture,
-// see go_lt_1_21.go and this [article][] for more details.
-//
-// [article]: https://blog.felixge.de/waiting-for-go1-21-execution-tracing-with-less-than-one-percent-overhead/
-var executionTraceEnabledDefault = runtime.GOARCH == "arm64" || runtime.GOARCH == "amd64"
-
-// Refresh updates the execution trace configuration to reflect any run-time
-// changes to the configuration environment variables, applying defaults as
-// needed.
-func (e *executionTraceConfig) Refresh() {
-	e.Enabled = internal.BoolEnv("DD_PROFILING_EXECUTION_TRACE_ENABLED", executionTraceEnabledDefault)
-	e.Period = internal.DurationEnv("DD_PROFILING_EXECUTION_TRACE_PERIOD", 15*time.Minute)
-	e.Limit = internal.IntEnv("DD_PROFILING_EXECUTION_TRACE_LIMIT_BYTES", defaultExecutionTraceSizeLimit)
-
-	if e.Enabled && (e.Period == 0 || e.Limit == 0) {
-		if !e.warned {
-			e.warned = true
-			log.Warn("Invalid execution trace config, enabled is true but size limit or frequency is 0. Disabling execution trace.")
-		}
-		e.Enabled = false
-		return
-	}
-	// If the config is valid, reset e.warned so we'll print another warning
-	// if it's udpated to be invalid
-	e.warned = false
+	return v2.WithHostname(hostname)
 }
 
 // WithCustomProfilerLabelKeys specifies [profiler label] keys which should be
@@ -583,7 +201,11 @@ func (e *executionTraceConfig) Refresh() {
 //
 // [profiler label]: https://rakyll.org/profiler-labels/
 func WithCustomProfilerLabelKeys(keys ...string) Option {
-	return func(cfg *config) {
-		cfg.customProfilerLabels = append(cfg.customProfilerLabels, keys...)
-	}
+	return v2.WithCustomProfilerLabelKeys(keys...)
 }
+
+// executionTraceEnabledDefault depends on the Go version and CPU architecture,
+// see go_lt_1_21.go and this [article][] for more details.
+//
+// [article]: https://blog.felixge.de/waiting-for-go1-21-execution-tracing-with-less-than-one-percent-overhead/
+var executionTraceEnabledDefault = runtime.GOARCH == "arm64" || runtime.GOARCH == "amd64"
