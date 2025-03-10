@@ -29,6 +29,7 @@ type config struct {
 	serviceName         func() string
 	spanName            string
 	nonErrorCodes       map[codes.Code]bool
+	errCheck            func(method string, err error) bool
 	traceStreamCalls    bool
 	traceStreamMessages bool
 	noDebugStack        bool
@@ -123,6 +124,15 @@ func NonErrorCodes(cs ...codes.Code) InterceptorOption {
 		for _, c := range cs {
 			cfg.nonErrorCodes[c] = true
 		}
+	}
+}
+
+// WithErrorCheck sets a custom function to determine whether an error should not be considered as an error for tracing purposes.
+// This function is evaluated when an error occurs, and if it returns true, the error will not be recorded in the trace.
+// f: A function taking the gRPC method and error as arguments, returning a boolean to indicate if the error should be ignored.
+func WithErrorCheck(f func(method string, err error) bool) Option {
+	return func(cfg *config) {
+		cfg.errCheck = f
 	}
 }
 

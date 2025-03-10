@@ -667,6 +667,205 @@ func waitForSpans(mt mocktracer.Tracer, sz int) {
 	}
 }
 
+func TestWithErrorCheck(t *testing.T) {
+	t.Run("unary", func(t *testing.T) {
+		for name, tt := range map[string]struct {
+			errCheck    func(method string, err error) bool
+			message     string
+			withError   bool
+			wantCode    string
+			wantMessage string
+		}{
+			"Invalid_with_no_error": {
+				message: "invalid",
+				errCheck: func(method string, err error) bool {
+					if err == nil {
+						return true
+					}
+
+					errCode := status.Code(err)
+					if errCode == codes.InvalidArgument && method == "/grpc.Fixture/Ping" {
+						return true
+					}
+
+					return false
+				},
+				withError:   false,
+				wantCode:    codes.InvalidArgument.String(),
+				wantMessage: "invalid",
+			},
+			"Invalid_with_error": {
+				message: "invalid",
+				errCheck: func(method string, err error) bool {
+					if err == nil {
+						return true
+					}
+
+					errCode := status.Code(err)
+					if errCode == codes.InvalidArgument && method == "/some/endpoint" {
+						return true
+					}
+
+					return false
+				},
+				withError:   true,
+				wantCode:    codes.InvalidArgument.String(),
+				wantMessage: "invalid",
+			},
+			"Invalid_with_error_without_errCheck": {
+				message:     "invalid",
+				errCheck:    nil,
+				withError:   true,
+				wantCode:    codes.InvalidArgument.String(),
+				wantMessage: "invalid",
+			},
+		} {
+			t.Run(name, func(t *testing.T) {
+				mt := mocktracer.Start()
+				defer mt.Stop()
+
+				var ops []Option
+				if tt.errCheck != nil {
+					ops = append(ops, WithErrorCheck(tt.errCheck))
+				}
+				rig, err := newRig(true, ops...)
+				if err != nil {
+					t.Fatalf("error setting up rig: %s", err)
+				}
+
+				client := rig.client
+				_, err = client.Ping(context.Background(), &FixtureRequest{Name: tt.message})
+				assert.Error(t, err)
+				assert.Equal(t, tt.wantCode, status.Code(err).String())
+				assert.Equal(t, tt.wantMessage, status.Convert(err).Message())
+
+				spans := mt.FinishedSpans()
+				assert.Len(t, spans, 2)
+
+				var serverSpan, clientSpan mocktracer.Span
+
+				for _, s := range spans {
+					// order of traces in buffer is not garanteed
+					switch s.OperationName() {
+					case "grpc.server":
+						serverSpan = s
+					case "grpc.client":
+						clientSpan = s
+					}
+				}
+
+				if tt.withError {
+					assert.NotNil(t, clientSpan.Tag(ext.Error))
+					assert.NotNil(t, serverSpan.Tag(ext.Error))
+				} else {
+					assert.Nil(t, clientSpan.Tag(ext.Error))
+					assert.Nil(t, serverSpan.Tag(ext.Error))
+				}
+
+				rig.Close()
+				mt.Reset()
+			})
+		}
+	})
+
+	t.Run("stream", func(t *testing.T) {
+		for name, tt := range map[string]struct {
+			errCheck    func(method string, err error) bool
+			message     string
+			withError   bool
+			wantCode    string
+			wantMessage string
+		}{
+			"Invalid_with_no_error": {
+				message: "invalid",
+				errCheck: func(method string, err error) bool {
+					if err == nil {
+						return true
+					}
+
+					errCode := status.Code(err)
+					if errCode == codes.InvalidArgument && method == "/grpc.Fixture/StreamPing" {
+						return true
+					}
+
+					return false
+				},
+				withError:   false,
+				wantCode:    codes.InvalidArgument.String(),
+				wantMessage: "invalid",
+			},
+			"Invalid_with_error": {
+				message: "invalid",
+				errCheck: func(method string, err error) bool {
+					if err == nil {
+						return true
+					}
+
+					errCode := status.Code(err)
+					if errCode == codes.InvalidArgument && method == "/some/endpoint" {
+						return true
+					}
+
+					return false
+				},
+				withError:   true,
+				wantCode:    codes.InvalidArgument.String(),
+				wantMessage: "invalid",
+			},
+			"Invalid_with_error_without_errCheck": {
+				message:     "invalid",
+				errCheck:    nil,
+				withError:   true,
+				wantCode:    codes.InvalidArgument.String(),
+				wantMessage: "invalid",
+			},
+		} {
+			t.Run(name, func(t *testing.T) {
+				mt := mocktracer.Start()
+				defer mt.Stop()
+				var opts []Option
+				if tt.errCheck != nil {
+					opts = append(opts, WithErrorCheck(tt.errCheck))
+				}
+				rig, err := newRig(true, opts...)
+				if err != nil {
+					t.Fatalf("error setting up rig: %s", err)
+				}
+
+				ctx, done := context.WithCancel(context.Background())
+				client := rig.client
+				stream, err := client.StreamPing(ctx)
+				assert.NoError(t, err)
+
+				err = stream.Send(&FixtureRequest{Name: tt.message})
+				assert.NoError(t, err)
+
+				_, err = stream.Recv()
+				assert.Error(t, err)
+				assert.Equal(t, tt.wantCode, status.Code(err).String())
+				assert.Equal(t, tt.wantMessage, status.Convert(err).Message())
+
+				assert.NoError(t, stream.CloseSend())
+				done() // close stream from client side
+				rig.Close()
+
+				waitForSpans(mt, 5)
+
+				spans := mt.FinishedSpans()
+				assert.Len(t, spans, 5)
+
+				for _, s := range spans {
+					if s.Tag(ext.Error) != nil && !tt.withError {
+						assert.FailNow(t, "expected no error tag on the span")
+					}
+				}
+
+				mt.Reset()
+			})
+		}
+	})
+}
+
 func TestAnalyticsSettings(t *testing.T) {
 	assertRate := func(t *testing.T, mt mocktracer.Tracer, rate interface{}, opts ...InterceptorOption) {
 		rig, err := newRig(true, opts...)
