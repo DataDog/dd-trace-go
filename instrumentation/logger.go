@@ -5,7 +5,10 @@
 
 package instrumentation
 
-import "github.com/DataDog/dd-trace-go/v2/internal/log"
+import (
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	telemetrylog "github.com/DataDog/dd-trace-go/v2/internal/telemetry/log"
+)
 
 type Logger interface {
 	Debug(msg string, args ...any)
@@ -18,6 +21,7 @@ type logger struct{}
 
 func (l logger) Debug(msg string, args ...any) {
 	log.Debug(msg, args...)
+	telemetrylog.Debug(msg, args...)
 }
 
 func (l logger) Info(msg string, args ...any) {
@@ -26,8 +30,10 @@ func (l logger) Info(msg string, args ...any) {
 
 func (l logger) Warn(msg string, args ...any) {
 	log.Warn(msg, args...)
+	telemetrylog.Warn(msg, args...)
 }
 
 func (l logger) Error(msg string, args ...any) {
 	log.Error(msg, args...)
+	telemetrylog.Error(msg, args...)
 }
