@@ -8,7 +8,7 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/99designs/gqlgen/v2 v2.0.0-rc.4.0.20250308211530-12d9c0087a1d
 	github.com/DataDog/dd-trace-go/contrib/IBM/sarama/v2 v2.0.0-rc.4.0.20250308211530-12d9c0087a1d
 	github.com/DataDog/dd-trace-go/contrib/Shopify/sarama/v2 v2.0.0-rc.4.0.20250308211530-12d9c0087a1d
-	github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go-v2/v2 v2.0.0-rc.4.0.20250308211530-12d9c0087a1d
+	github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go-v2/v2 v2.0.0-rc.4.0.20250310114247-179ed64d324a
 	github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go/v2 v2.0.0-rc.4.0.20250308211530-12d9c0087a1d
 	github.com/DataDog/dd-trace-go/contrib/bradfitz/gomemcache/v2 v2.0.0-rc.4.0.20250308211530-12d9c0087a1d
 	github.com/DataDog/dd-trace-go/contrib/cloud.google.com/go/pubsub.v1/v2 v2.0.0-rc.4.0.20250308211530-12d9c0087a1d
@@ -49,6 +49,7 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/net/http/v2 v2.0.0-rc.4.0.20250308211530-12d9c0087a1d
 	github.com/DataDog/dd-trace-go/contrib/olivere/elastic.v5/v2 v2.0.0-rc.4.0.20250308211530-12d9c0087a1d
 	github.com/DataDog/dd-trace-go/contrib/redis/go-redis.v9/v2 v2.0.0-rc.4.0.20250308211530-12d9c0087a1d
+	github.com/DataDog/dd-trace-go/contrib/redis/rueidis/v2 v2.0.0-rc.4
 	github.com/DataDog/dd-trace-go/contrib/segmentio/kafka-go/v2 v2.0.0-rc.4.0.20250308211530-12d9c0087a1d
 	github.com/DataDog/dd-trace-go/contrib/sirupsen/logrus/v2 v2.0.0-rc.4.0.20250308211530-12d9c0087a1d
 	github.com/DataDog/dd-trace-go/contrib/syndtr/goleveldb/v2 v2.0.0-rc.4.0.20250308211530-12d9c0087a1d
@@ -69,15 +70,15 @@ require (
 	github.com/IBM/sarama v1.40.0
 	github.com/Shopify/sarama v1.38.1
 	github.com/aws/aws-sdk-go v1.44.327
-	github.com/aws/aws-sdk-go-v2 v1.23.0
-	github.com/aws/aws-sdk-go-v2/config v1.25.3
-	github.com/aws/aws-sdk-go-v2/service/dynamodb v1.25.2
-	github.com/aws/aws-sdk-go-v2/service/eventbridge v1.25.0
-	github.com/aws/aws-sdk-go-v2/service/kinesis v1.22.2
-	github.com/aws/aws-sdk-go-v2/service/s3 v1.43.0
-	github.com/aws/aws-sdk-go-v2/service/sfn v1.22.1
-	github.com/aws/aws-sdk-go-v2/service/sns v1.25.2
-	github.com/aws/aws-sdk-go-v2/service/sqs v1.28.1
+	github.com/aws/aws-sdk-go-v2 v1.20.3
+	github.com/aws/aws-sdk-go-v2/config v1.18.35
+	github.com/aws/aws-sdk-go-v2/service/dynamodb v1.21.4
+	github.com/aws/aws-sdk-go-v2/service/eventbridge v1.20.4
+	github.com/aws/aws-sdk-go-v2/service/kinesis v1.18.4
+	github.com/aws/aws-sdk-go-v2/service/s3 v1.38.4
+	github.com/aws/aws-sdk-go-v2/service/sfn v1.19.4
+	github.com/aws/aws-sdk-go-v2/service/sns v1.21.4
+	github.com/aws/aws-sdk-go-v2/service/sqs v1.24.4
 	github.com/bradfitz/gomemcache v0.0.0-20230611145640-acc696258285
 	github.com/confluentinc/confluent-kafka-go v1.9.2
 	github.com/confluentinc/confluent-kafka-go/v2 v2.4.0
@@ -122,6 +123,7 @@ require (
 	github.com/miekg/dns v1.1.55
 	github.com/opentracing/opentracing-go v1.2.0
 	github.com/redis/go-redis/v9 v9.1.0
+	github.com/redis/rueidis v1.0.55
 	github.com/segmentio/kafka-go v0.4.42
 	github.com/sirupsen/logrus v1.9.3
 	github.com/stretchr/testify v1.10.0
@@ -160,11 +162,6 @@ require (
 )
 
 require (
-	github.com/DataDog/dd-trace-go/contrib/redis/rueidis/v2 v2.0.0-rc.4
-	github.com/redis/rueidis v1.0.55
-)
-
-require (
 	cloud.google.com/go v0.112.1 // indirect
 	cloud.google.com/go/compute/metadata v0.5.2 // indirect
 	cloud.google.com/go/iam v1.1.7 // indirect
@@ -188,22 +185,22 @@ require (
 	github.com/agnivade/levenshtein v1.1.1 // indirect
 	github.com/andybalholm/brotli v1.0.6 // indirect
 	github.com/armon/go-metrics v0.4.1 // indirect
-	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.6.10 // indirect
-	github.com/aws/aws-sdk-go-v2/credentials v1.16.2 // indirect
-	github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.14.4 // indirect
-	github.com/aws/aws-sdk-go-v2/internal/configsources v1.2.3 // indirect
-	github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.5.3 // indirect
-	github.com/aws/aws-sdk-go-v2/internal/ini v1.8.3 // indirect
-	github.com/aws/aws-sdk-go-v2/internal/v4a v1.2.3 // indirect
-	github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.12.3 // indirect
-	github.com/aws/aws-sdk-go-v2/service/internal/checksum v1.2.3 // indirect
-	github.com/aws/aws-sdk-go-v2/service/internal/endpoint-discovery v1.8.3 // indirect
-	github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.10.3 // indirect
-	github.com/aws/aws-sdk-go-v2/service/internal/s3shared v1.16.3 // indirect
-	github.com/aws/aws-sdk-go-v2/service/sso v1.17.2 // indirect
-	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.20.0 // indirect
-	github.com/aws/aws-sdk-go-v2/service/sts v1.25.3 // indirect
-	github.com/aws/smithy-go v1.22.3 // indirect
+	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.4.13 // indirect
+	github.com/aws/aws-sdk-go-v2/credentials v1.13.34 // indirect
+	github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.13.10 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/configsources v1.1.40 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.4.34 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/ini v1.3.41 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/v4a v1.1.3 // indirect
+	github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.9.14 // indirect
+	github.com/aws/aws-sdk-go-v2/service/internal/checksum v1.1.35 // indirect
+	github.com/aws/aws-sdk-go-v2/service/internal/endpoint-discovery v1.7.34 // indirect
+	github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.9.34 // indirect
+	github.com/aws/aws-sdk-go-v2/service/internal/s3shared v1.15.3 // indirect
+	github.com/aws/aws-sdk-go-v2/service/sso v1.13.4 // indirect
+	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.15.4 // indirect
+	github.com/aws/aws-sdk-go-v2/service/sts v1.21.4 // indirect
+	github.com/aws/smithy-go v1.22.1 // indirect
 	github.com/bytedance/sonic v1.12.0 // indirect
 	github.com/bytedance/sonic/loader v0.2.0 // indirect
 	github.com/cenkalti/backoff/v3 v3.2.2 // indirect
