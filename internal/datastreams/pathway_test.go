@@ -40,6 +40,7 @@ func TestPathway(t *testing.T) {
 		assert.Equal(t, start, p.PathwayStart())
 		assert.Equal(t, end, p.EdgeStart())
 		assert.Equal(t, statsPoint{
+			serviceName:    "service-1",
 			edgeTags:       nil,
 			hash:           hash1,
 			parentHash:     0,
@@ -48,6 +49,7 @@ func TestPathway(t *testing.T) {
 			edgeLatency:    0,
 		}, processor.in.poll(time.Second).point)
 		assert.Equal(t, statsPoint{
+			serviceName:    "service-1",
 			edgeTags:       []string{"topic:topic1"},
 			hash:           hash2,
 			parentHash:     hash1,
@@ -56,6 +58,7 @@ func TestPathway(t *testing.T) {
 			edgeLatency:    middle.Sub(start).Nanoseconds(),
 		}, processor.in.poll(time.Second).point)
 		assert.Equal(t, statsPoint{
+			serviceName:    "service-1",
 			edgeTags:       []string{"topic:topic2"},
 			hash:           hash3,
 			parentHash:     hash2,
