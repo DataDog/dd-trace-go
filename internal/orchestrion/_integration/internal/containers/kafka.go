@@ -10,6 +10,7 @@ package containers
 import (
 	"context"
 	"fmt"
+	"os"
 	"testing"
 
 	"github.com/docker/go-connections/nat"
@@ -24,8 +25,7 @@ func StartKafkaTestContainer(t testing.TB) (*kafka.KafkaContainer, string) {
 	ctx := context.Background()
 	exposedPort := "9093/tcp"
 
-	container, err := kafka.Run(ctx,
-		"confluentinc/confluent-local:7.5.0", // Change the docker pull stage in .github/workflows/orchestrion.yml if you update this
+	opts := []testcontainers.ContainerCustomizer{
 		kafka.WithClusterID("test-cluster"),
 		WithTestLogConsumer(t),
 		testcontainers.WithWaitStrategy(
@@ -37,6 +37,21 @@ func StartKafkaTestContainer(t testing.TB) (*kafka.KafkaContainer, string) {
 				wait.ForExec(checkTopicExistsCmd("topic-B")),
 			),
 		),
+	}
+	if _, ok := os.LookupEnv("CI"); ok {
+		t.Log("attempting to reuse kafka container in CI")
+		opts = append(opts, testcontainers.CustomizeRequest(testcontainers.GenericContainerRequest{
+			ContainerRequest: testcontainers.ContainerRequest{
+				Name:     "kafka",
+				Hostname: "localhost",
+			},
+			Started: true,
+			Reuse:   true,
+		}))
+	}
+	container, err := kafka.Run(ctx,
+		"confluentinc/confluent-local:7.5.0", // Change the docker pull stage in .github/workflows/orchestrion.yml if you update this
+		opts...,
 	)
 	AssertTestContainersError(t, err)
 	RegisterContainerCleanup(t, container)

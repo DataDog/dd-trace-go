@@ -9,7 +9,6 @@ package mongo
 
 import (
 	"context"
-	"net/url"
 	"testing"
 	"time"
 
@@ -17,7 +16,6 @@ import (
 	"github.com/DataDog/dd-trace-go/internal/orchestrion/_integration/internal/trace"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/testcontainers/testcontainers-go"
 	testmongo "github.com/testcontainers/testcontainers-go/modules/mongodb"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
@@ -33,19 +31,8 @@ type TestCase struct {
 func (tc *TestCase) Setup(ctx context.Context, t *testing.T) {
 	containers.SkipIfProviderIsNotHealthy(t)
 
-	var err error
-	tc.server, err = testmongo.Run(ctx,
-		"mongo:6",
-		testcontainers.WithLogger(testcontainers.TestLogger(t)),
-		containers.WithTestLogConsumer(t),
-	)
-	containers.AssertTestContainersError(t, err)
-	containers.RegisterContainerCleanup(t, tc.server)
-
-	mongoURI, err := tc.server.ConnectionString(ctx)
-	require.NoError(t, err)
-	_, err = url.Parse(mongoURI)
-	require.NoError(t, err)
+	var mongoURI string
+	tc.server, mongoURI = containers.StartMongoDBContainer(t)
 
 	opts := options.Client()
 	opts.ApplyURI(mongoURI)
