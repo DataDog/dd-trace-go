@@ -52,6 +52,8 @@ type Span interface {
 
 	// Stringer allows pretty-printing the span's fields for debugging.
 	fmt.Stringer
+
+	Integration() string
 }
 
 type MockspanV2Adapter struct {
@@ -194,4 +196,9 @@ func (msa MockspanV2Adapter) Links() []ddtrace.SpanLink {
 
 func (msa MockspanV2Adapter) AddSpanLink(link ddtrace.SpanLink) {
 	msa.Span.AddSpanLink(link)
+}
+
+// Integration returns the component from which the mockspan was created.
+func (msa MockspanV2Adapter) Integration() string {
+	return msa.Span.Integration()
 }

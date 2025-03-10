@@ -108,6 +108,7 @@ func TestUnary(t *testing.T) {
 			assert.Equal(rootSpan.TraceID(), clientSpan.TraceID())
 			assert.Equal(methodKindUnary, clientSpan.Tag(tagMethodKind))
 			assert.Equal("google.golang.org/grpc", clientSpan.Tag(ext.Component))
+			assert.Equal("google.golang.org/grpc", clientSpan.Integration())
 			assert.Equal(ext.SpanKindClient, clientSpan.Tag(ext.SpanKind))
 			assert.Equal("grpc", clientSpan.Tag(ext.RPCSystem))
 			assert.Equal("grpc.Fixture", clientSpan.Tag(ext.RPCService))
@@ -203,16 +204,19 @@ func TestStreaming(t *testing.T) {
 					" expected component to be grpc-go in span %v", span)
 				assert.Equal(t, ext.SpanKindClient, span.Tag(ext.SpanKind),
 					" expected spankind to be client in span %v", span)
+				assert.Equal(t, "google.golang.org/grpc", span.Integration())
 			case "grpc.server":
 				assert.Equal(t, "google.golang.org/grpc", span.Tag(ext.Component),
 					" expected component to be grpc-go in span %v", span)
 				assert.Equal(t, ext.SpanKindServer, span.Tag(ext.SpanKind),
 					" expected spankind to be server in span %v, %v", span, span.OperationName())
+				assert.Equal(t, "google.golang.org/grpc", span.Integration())
 			case "grpc.message":
 				assert.Equal(t, "google.golang.org/grpc", span.Tag(ext.Component),
 					" expected component to be grpc-go in span %v", span)
 				assert.NotContains(t, span.Tags(), ext.SpanKind,
 					" expected no spankind tag to be in span %v", span)
+				assert.Equal(t, "google.golang.org/grpc", span.Integration())
 			}
 
 		}

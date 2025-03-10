@@ -137,6 +137,8 @@ github.com/DataDog/dd-trace-go/contrib/olivere/elastic.v5/v2 v2.0.0-rc.4.0.20250
 github.com/DataDog/dd-trace-go/contrib/olivere/elastic.v5/v2 v2.0.0-rc.4.0.20250308211530-12d9c0087a1d/go.mod h1:bq7/3fma/O8AhUdeTeTzsxRsh5jv51dbF3lBN/pVtfI=
 github.com/DataDog/dd-trace-go/contrib/redis/go-redis.v9/v2 v2.0.0-rc.4.0.20250308211530-12d9c0087a1d h1:+GJpZUCVBolK6dlz/07s/KZB5Oujy5sgs367pQTm08Q=
 github.com/DataDog/dd-trace-go/contrib/redis/go-redis.v9/v2 v2.0.0-rc.4.0.20250308211530-12d9c0087a1d/go.mod h1:y+C+q6y2aJCdbj8i2m8YHetSjxYpKhbqaI9p7j1Qdj4=
+github.com/DataDog/dd-trace-go/contrib/redis/rueidis/v2 v2.0.0-rc.4 h1:6dvGmnXaNAYUDiY4HbVkDScIWYxjbJNCQrYerL8SSYQ=
+github.com/DataDog/dd-trace-go/contrib/redis/rueidis/v2 v2.0.0-rc.4/go.mod h1:yVhMM6pdwG4QUyVW5JReujiYk4AvZYxSJHQfwItzNec=
 github.com/DataDog/dd-trace-go/contrib/segmentio/kafka-go/v2 v2.0.0-rc.4.0.20250308211530-12d9c0087a1d h1:suEeoZMAr8r7sChzQYZtcVweB0JeBV3GE5f1MznUUsM=
 github.com/DataDog/dd-trace-go/contrib/segmentio/kafka-go/v2 v2.0.0-rc.4.0.20250308211530-12d9c0087a1d/go.mod h1:vjBhHqaYdIntQUoXozM2GcaoHGduMivuS3GGnxIlKyE=
 github.com/DataDog/dd-trace-go/contrib/sirupsen/logrus/v2 v2.0.0-rc.4.0.20250308211530-12d9c0087a1d h1:vk6q3HbNQUUFFzIKpQ3bnhSv0qCGcqrCnZwaXGXdx3s=
@@ -962,6 +964,8 @@ github.com/rcrowley/go-metrics v0.0.0-20201227073835-cf1acfcdf475 h1:N/ElC8H3+5X
 github.com/rcrowley/go-metrics v0.0.0-20201227073835-cf1acfcdf475/go.mod h1:bCqnVzQkZxMG4s8nGwiZ5l3QUCyqpo9Y+/ZMZ9VjZe4=
 github.com/redis/go-redis/v9 v9.1.0 h1:137FnGdk+EQdCbye1FW+qOEcY5S+SpY9T0NiuqvtfMY=
 github.com/redis/go-redis/v9 v9.1.0/go.mod h1:urWj3He21Dj5k4TK1y59xH8Uj6ATueP8AH1cY3lZl4c=
+github.com/redis/rueidis v1.0.55 h1:PrRv6eETcanBgYVNdwxn6RyUaPfxN6H+b5jUA4mfpkw=
+github.com/redis/rueidis v1.0.55/go.mod h1:cr7ILwt1AqyMRfjWlA9Orubj6gp1xzn1DPyhmrhv/x0=
 github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec h1:W09IVJc94icq4NjY3clb7Lk8O1qJ8BdBEF8z0ibU0rE=
 github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec/go.mod h1:qqbHyh8v60DhA7CoWK5oRCqLrMHRGoxYCSS9EjAz6Eo=
 github.com/richardartoul/molecule v1.0.1-0.20240531184615-7ca0df43c0b3 h1:4+LEVOB87y175cLJC/mbsgKmoDOjrBldtXvioEy96WY=

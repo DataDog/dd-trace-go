@@ -47,6 +47,7 @@ func TestHttpTracer200(t *testing.T) {
 	assert.Equal("testvalue", s.Tag("testkey"))
 	assert.Equal(nil, s.Tag(ext.Error))
 	assert.Equal("julienschmidt/httprouter", s.Tag(ext.Component))
+	assert.Equal("julienschmidt/httprouter", s.Integration())
 	assert.Equal(ext.SpanKindServer, s.Tag(ext.SpanKind))
 }
 
@@ -77,6 +78,7 @@ func TestHttpTracer200WithPathParameter(t *testing.T) {
 	assert.Equal("testvalue", s.Tag("testkey"))
 	assert.Equal(nil, s.Tag(ext.Error))
 	assert.Equal("julienschmidt/httprouter", s.Tag(ext.Component))
+	assert.Equal("julienschmidt/httprouter", s.Integration())
 	assert.Equal(ext.SpanKindServer, s.Tag(ext.SpanKind))
 }
 
@@ -107,6 +109,7 @@ func TestHttpTracer500(t *testing.T) {
 	assert.Equal("testvalue", s.Tag("testkey"))
 	assert.Equal("500: Internal Server Error", s.Tag(ext.Error).(error).Error())
 	assert.Equal("julienschmidt/httprouter", s.Tag(ext.Component))
+	assert.Equal("julienschmidt/httprouter", s.Integration())
 	assert.Equal(ext.SpanKindServer, s.Tag(ext.SpanKind))
 }
 

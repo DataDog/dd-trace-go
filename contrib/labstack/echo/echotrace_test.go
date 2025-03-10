@@ -173,6 +173,7 @@ func TestTrace200(t *testing.T) {
 	assert.Equal("GET", span.Tag(ext.HTTPMethod))
 	assert.Equal(root.Context().SpanID(), span.ParentID())
 	assert.Equal("labstack/echo", span.Tag(ext.Component))
+	assert.Equal(componentName, span.Integration())
 	assert.Equal(ext.SpanKindServer, span.Tag(ext.SpanKind))
 
 	assert.Equal("http://example.com/user/123", span.Tag(ext.HTTPURL))
@@ -222,6 +223,7 @@ func TestTraceAnalytics(t *testing.T) {
 	assert.Equal(1.0, span.Tag(ext.EventSampleRate))
 	assert.Equal(root.Context().SpanID(), span.ParentID())
 	assert.Equal("labstack/echo", span.Tag(ext.Component))
+	assert.Equal(componentName, span.Integration())
 	assert.Equal(ext.SpanKindServer, span.Tag(ext.SpanKind))
 
 	assert.Equal("http://example.com/user/123", span.Tag(ext.HTTPURL))
@@ -265,6 +267,7 @@ func TestError(t *testing.T) {
 	require.NotNil(t, span.Tag(ext.Error))
 	assert.Equal(wantErr.Error(), span.Tag(ext.ErrorMsg))
 	assert.Equal("labstack/echo", span.Tag(ext.Component))
+	assert.Equal(componentName, span.Integration())
 	assert.Equal(ext.SpanKindServer, span.Tag(ext.SpanKind))
 }
 
@@ -306,6 +309,7 @@ func TestErrorHandling(t *testing.T) {
 	require.NotNil(t, span.Tag(ext.Error))
 	assert.Equal(wantErr.Error(), span.Tag(ext.ErrorMsg))
 	assert.Equal("labstack/echo", span.Tag(ext.Component))
+	assert.Equal(componentName, span.Integration())
 	assert.Equal(ext.SpanKindServer, span.Tag(ext.SpanKind))
 }
 
@@ -508,6 +512,7 @@ func TestNoDebugStack(t *testing.T) {
 	assert.Equal(wantErr.Error(), span.Tag(ext.ErrorMsg))
 	assert.Equal("<debug stack disabled>", span.Tag(ext.ErrorStack))
 	assert.Equal("labstack/echo", span.Tag(ext.Component))
+	assert.Equal(componentName, span.Integration())
 	assert.Equal(ext.SpanKindServer, span.Tag(ext.SpanKind))
 }
 

@@ -90,6 +90,7 @@ func TestAWS(t *testing.T) {
 		assert.Equal(t, "aws/aws-sdk-go/aws", s.Tag(ext.Component))
 		assert.Equal(t, ext.SpanKindClient, s.Tag(ext.SpanKind))
 		assert.NotNil(t, s.Tag("aws.request_id"))
+		assert.Equal(t, "aws/aws-sdk-go/aws", s.Integration())
 	})
 
 	t.Run("ec2", func(t *testing.T) {
@@ -117,6 +118,7 @@ func TestAWS(t *testing.T) {
 		assert.Equal(t, "http://ec2.us-west-2.amazonaws.com/", s.Tag(ext.HTTPURL))
 		assert.Equal(t, "aws/aws-sdk-go/aws", s.Tag(ext.Component))
 		assert.Equal(t, ext.SpanKindClient, s.Tag(ext.SpanKind))
+		assert.Equal(t, "aws/aws-sdk-go/aws", s.Integration())
 	})
 }
 

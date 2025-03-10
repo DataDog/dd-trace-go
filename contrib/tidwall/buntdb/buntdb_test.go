@@ -432,6 +432,7 @@ func testUpdate(t *testing.T, name string, f func(tx *Tx) error) {
 	assert.Equal(t, "buntdb", spans[0].Tag(ext.ServiceName))
 	assert.Equal(t, "buntdb.query", spans[0].OperationName())
 	assert.Equal(t, "tidwall/buntdb", spans[0].Tag(ext.Component))
+	assert.Equal(t, "tidwall/buntdb", spans[0].Integration())
 	assert.Equal(t, ext.SpanKindClient, spans[0].Tag(ext.SpanKind))
 	assert.Equal(t, "buntdb", spans[0].Tag(ext.DBSystem))
 }
@@ -453,6 +454,7 @@ func testView(t *testing.T, name string, f func(tx *Tx) error) {
 	assert.Equal(t, "buntdb", spans[0].Tag(ext.ServiceName))
 	assert.Equal(t, "buntdb.query", spans[0].OperationName())
 	assert.Equal(t, "tidwall/buntdb", spans[0].Tag(ext.Component))
+	assert.Equal(t, "tidwall/buntdb", spans[0].Integration())
 	assert.Equal(t, ext.SpanKindClient, spans[0].Tag(ext.SpanKind))
 	assert.Equal(t, "buntdb", spans[0].Tag(ext.DBSystem))
 }

@@ -86,6 +86,7 @@ func TestTrace200(t *testing.T) {
 	assert.Equal("http://example.com/user/123", span.Tag(ext.HTTPURL))
 	assert.Equal(ext.SpanKindServer, span.Tag(ext.SpanKind))
 	assert.Equal("gin-gonic/gin", span.Tag(ext.Component))
+	assert.Equal("gin-gonic/gin", span.Integration())
 }
 
 func TestTraceDefaultResponse(t *testing.T) {
@@ -125,6 +126,7 @@ func TestTraceDefaultResponse(t *testing.T) {
 	assert.Equal("http://example.com/user/123", span.Tag(ext.HTTPURL))
 	assert.Equal(ext.SpanKindServer, span.Tag(ext.SpanKind))
 	assert.Equal("gin-gonic/gin", span.Tag(ext.Component))
+	assert.Equal("gin-gonic/gin", span.Integration())
 }
 
 func TestTraceMultipleResponses(t *testing.T) {
@@ -167,6 +169,7 @@ func TestTraceMultipleResponses(t *testing.T) {
 	assert.Equal("http://example.com/user/123", span.Tag(ext.HTTPURL))
 	assert.Equal(ext.SpanKindServer, span.Tag(ext.SpanKind))
 	assert.Equal("gin-gonic/gin", span.Tag(ext.Component))
+	assert.Equal("gin-gonic/gin", span.Integration())
 }
 
 func TestError(t *testing.T) {
@@ -208,6 +211,7 @@ func TestError(t *testing.T) {
 		assert.Equal("500: Internal Server Error", span.Tag(ext.ErrorMsg))
 		assert.Equal(ext.SpanKindServer, span.Tag(ext.SpanKind))
 		assert.Equal("gin-gonic/gin", span.Tag(ext.Component))
+		assert.Equal("gin-gonic/gin", span.Integration())
 	})
 
 	t.Run("client error", func(*testing.T) {
@@ -239,6 +243,7 @@ func TestError(t *testing.T) {
 		assert.Equal(nil, span.Tag(ext.Error))
 		assert.Equal(ext.SpanKindServer, span.Tag(ext.SpanKind))
 		assert.Equal("gin-gonic/gin", span.Tag(ext.Component))
+		assert.Equal("gin-gonic/gin", span.Integration())
 	})
 }
 
@@ -273,6 +278,7 @@ func TestHTML(t *testing.T) {
 	for _, s := range spans {
 		assert.Equal("foobar", s.Tag(ext.ServiceName), s.String())
 		assert.Equal("gin-gonic/gin", s.Tag(ext.Component))
+		assert.Equal("gin-gonic/gin", s.Integration())
 	}
 
 	var tspan mocktracer.Span
