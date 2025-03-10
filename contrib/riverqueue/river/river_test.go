@@ -100,11 +100,9 @@ func TestPropagation(t *testing.T) {
 	ctx, mt, driver := setup(t)
 
 	var (
-		called         = false
-		spanID         uint64
-		jobID          int64
-		jobScheduledAt time.Time
-		jobMetadata    string
+		called      = false
+		spanID      uint64
+		jobMetadata string
 	)
 	worker := testWorker{f: func(ctx context.Context, job *river.Job[jobArg]) error {
 		assert.False(t, called, "work called twice")
@@ -113,8 +111,6 @@ func TestPropagation(t *testing.T) {
 		assert.True(t, ok, "no span")
 		assert.Equal(t, uint64(42), span.Context().TraceID(), "wrong trace id")
 		spanID = span.Context().SpanID()
-		jobID = job.ID
-		jobScheduledAt = job.ScheduledAt
 		jobMetadata = string(job.Metadata)
 		called = true
 		return nil
@@ -170,16 +166,14 @@ func TestPropagation(t *testing.T) {
 	assert.Equal(t, uint64(42), spans[2].TraceID())
 	assert.Equal(t, spanID, spans[2].SpanID())
 	assert.Equal(t, map[string]interface{}{
-		ext.SpanType:             ext.SpanTypeMessageConsumer,
-		ext.Component:            "riverqueue/river",
-		ext.SpanKind:             ext.SpanKindConsumer,
-		ext.MessagingSystem:      "river",
-		ext.ResourceName:         "kind",
-		"river_job.id":           jobID,
-		"river_job.scheduled_at": jobScheduledAt,
-		"river_job.queue":        "default",
-		"river_job.kind":         "kind",
-		"river_job.attempt":      1,
+		ext.SpanType:        ext.SpanTypeMessageConsumer,
+		ext.Component:       "riverqueue/river",
+		ext.SpanKind:        ext.SpanKindConsumer,
+		ext.MessagingSystem: "river",
+		ext.ResourceName:    "kind",
+		"river_job.queue":   "default",
+		"river_job.kind":    "kind",
+		"river_job.attempt": 1,
 	}, spans[2].Tags())
 
 	assert.JSONEq(t,
@@ -231,12 +225,10 @@ func TestPropagationNoParentSpan(t *testing.T) {
 	ctx, mt, driver := setup(t)
 
 	var (
-		called         = false
-		spanID         uint64
-		traceID        uint64
-		jobID          int64
-		jobScheduledAt time.Time
-		jobMetadata    string
+		called      = false
+		spanID      uint64
+		traceID     uint64
+		jobMetadata string
 	)
 	worker := testWorker{f: func(ctx context.Context, job *river.Job[jobArg]) error {
 		assert.False(t, called, "work called twice")
@@ -245,8 +237,6 @@ func TestPropagationNoParentSpan(t *testing.T) {
 		assert.True(t, ok, "no span")
 		spanID = span.Context().SpanID()
 		traceID = span.Context().TraceID()
-		jobID = job.ID
-		jobScheduledAt = job.ScheduledAt
 		jobMetadata = string(job.Metadata)
 		called = true
 		return nil
@@ -299,16 +289,14 @@ func TestPropagationNoParentSpan(t *testing.T) {
 	assert.Equal(t, traceID, spans[1].TraceID())
 	assert.Equal(t, spanID, spans[1].SpanID())
 	assert.Equal(t, map[string]interface{}{
-		ext.SpanType:             ext.SpanTypeMessageConsumer,
-		ext.Component:            "riverqueue/river",
-		ext.SpanKind:             ext.SpanKindConsumer,
-		ext.MessagingSystem:      "river",
-		ext.ResourceName:         "kind",
-		"river_job.id":           jobID,
-		"river_job.scheduled_at": jobScheduledAt,
-		"river_job.queue":        "default",
-		"river_job.kind":         "kind",
-		"river_job.attempt":      1,
+		ext.SpanType:        ext.SpanTypeMessageConsumer,
+		ext.Component:       "riverqueue/river",
+		ext.SpanKind:        ext.SpanKindConsumer,
+		ext.MessagingSystem: "river",
+		ext.ResourceName:    "kind",
+		"river_job.queue":   "default",
+		"river_job.kind":    "kind",
+		"river_job.attempt": 1,
 	}, spans[1].Tags())
 
 	assert.JSONEq(t,
@@ -321,12 +309,10 @@ func TestPropagationNoInsertSpan(t *testing.T) {
 	ctx, mt, driver := setup(t)
 
 	var (
-		called         = false
-		spanID         uint64
-		traceID        uint64
-		jobID          int64
-		jobScheduledAt time.Time
-		jobMetadata    string
+		called      = false
+		spanID      uint64
+		traceID     uint64
+		jobMetadata string
 	)
 	worker := testWorker{f: func(ctx context.Context, job *river.Job[jobArg]) error {
 		assert.False(t, called, "work called twice")
@@ -335,8 +321,6 @@ func TestPropagationNoInsertSpan(t *testing.T) {
 		assert.True(t, ok, "no span")
 		spanID = span.Context().SpanID()
 		traceID = span.Context().TraceID()
-		jobID = job.ID
-		jobScheduledAt = job.ScheduledAt
 		jobMetadata = string(job.Metadata)
 		called = true
 		return nil
@@ -376,16 +360,14 @@ func TestPropagationNoInsertSpan(t *testing.T) {
 	assert.Equal(t, traceID, spans[0].TraceID())
 	assert.Equal(t, spanID, spans[0].SpanID())
 	assert.Equal(t, map[string]interface{}{
-		ext.SpanType:             ext.SpanTypeMessageConsumer,
-		ext.Component:            "riverqueue/river",
-		ext.SpanKind:             ext.SpanKindConsumer,
-		ext.MessagingSystem:      "river",
-		ext.ResourceName:         "kind",
-		"river_job.id":           jobID,
-		"river_job.scheduled_at": jobScheduledAt,
-		"river_job.queue":        "default",
-		"river_job.kind":         "kind",
-		"river_job.attempt":      1,
+		ext.SpanType:        ext.SpanTypeMessageConsumer,
+		ext.Component:       "riverqueue/river",
+		ext.SpanKind:        ext.SpanKindConsumer,
+		ext.MessagingSystem: "river",
+		ext.ResourceName:    "kind",
+		"river_job.queue":   "default",
+		"river_job.kind":    "kind",
+		"river_job.attempt": 1,
 	}, spans[0].Tags())
 
 	assert.JSONEq(t, `{}`, jobMetadata)
@@ -395,13 +377,11 @@ func TestWorkerError(t *testing.T) {
 	ctx, mt, driver := setup(t)
 
 	var (
-		called         = false
-		spanID         uint64
-		traceID        uint64
-		jobID          int64
-		jobScheduledAt time.Time
-		jobMetadata    string
-		workErr        = errors.New("worker error")
+		called      = false
+		spanID      uint64
+		traceID     uint64
+		jobMetadata string
+		workErr     = errors.New("worker error")
 	)
 	worker := testWorker{f: func(ctx context.Context, job *river.Job[jobArg]) error {
 		assert.False(t, called, "work called twice")
@@ -410,8 +390,6 @@ func TestWorkerError(t *testing.T) {
 		assert.True(t, ok, "no span")
 		spanID = span.Context().SpanID()
 		traceID = span.Context().TraceID()
-		jobID = job.ID
-		jobScheduledAt = job.ScheduledAt
 		jobMetadata = string(job.Metadata)
 		called = true
 		return workErr
@@ -451,17 +429,15 @@ func TestWorkerError(t *testing.T) {
 	assert.Equal(t, traceID, spans[0].TraceID())
 	assert.Equal(t, spanID, spans[0].SpanID())
 	assert.Equal(t, map[string]interface{}{
-		ext.SpanType:             ext.SpanTypeMessageConsumer,
-		ext.Component:            "riverqueue/river",
-		ext.SpanKind:             ext.SpanKindConsumer,
-		ext.MessagingSystem:      "river",
-		ext.ResourceName:         "kind",
-		"river_job.id":           jobID,
-		"river_job.scheduled_at": jobScheduledAt,
-		"river_job.queue":        "default",
-		"river_job.kind":         "kind",
-		"river_job.attempt":      1,
-		ext.Error:                workErr,
+		ext.SpanType:        ext.SpanTypeMessageConsumer,
+		ext.Component:       "riverqueue/river",
+		ext.SpanKind:        ext.SpanKindConsumer,
+		ext.MessagingSystem: "river",
+		ext.ResourceName:    "kind",
+		"river_job.queue":   "default",
+		"river_job.kind":    "kind",
+		"river_job.attempt": 1,
+		ext.Error:           workErr,
 	}, spans[0].Tags())
 
 	assert.JSONEq(t, `{}`, jobMetadata)

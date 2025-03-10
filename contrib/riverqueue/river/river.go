@@ -100,8 +100,6 @@ func NewWorkerMiddleware(opts ...Option) *WorkerMiddleware {
 func (m *WorkerMiddleware) Work(ctx context.Context, job *rivertype.JobRow, doInner func(ctx context.Context) error) (doInnerErr error) {
 	opts := append(options.Copy(m.cfg.spanOpts...),
 		tracer.ResourceName(job.Kind),
-		tracer.Tag("river_job.id", job.ID),
-		tracer.Tag("river_job.scheduled_at", job.ScheduledAt),
 		tracer.Tag("river_job.queue", job.Queue),
 		tracer.Tag("river_job.kind", job.Kind),
 		tracer.Tag("river_job.attempt", job.Attempt),
