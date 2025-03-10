@@ -32,8 +32,8 @@ func WithRawCommand(rawCommand bool) Option {
 	}
 }
 
-// WithServiceName sets the given service name for the client.
-func WithServiceName(name string) Option {
+// WithService sets the given service name for the client.
+func WithService(name string) Option {
 	return func(cfg *config) {
 		cfg.serviceName = name
 	}
