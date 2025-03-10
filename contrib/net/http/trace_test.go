@@ -32,7 +32,7 @@ func TestTraceAndServe(t *testing.T) {
 		w := httptest.NewRecorder()
 		r, err := http.NewRequest("GET", "/path?token=value", nil)
 		assert.NoError(err)
-		handler := func(w http.ResponseWriter, r *http.Request) {
+		handler := func(w http.ResponseWriter, _ *http.Request) {
 			_, ok := w.(http.Hijacker)
 			assert.False(ok)
 			http.Error(w, "some error", http.StatusServiceUnavailable)
@@ -68,7 +68,7 @@ func TestTraceAndServe(t *testing.T) {
 		}{httptest.NewRecorder()}
 		r, err := http.NewRequest("GET", "/path?token=value", nil)
 		assert.NoError(err)
-		handler := func(w http.ResponseWriter, r *http.Request) {
+		handler := func(w http.ResponseWriter, _ *http.Request) {
 			_, ok := w.(http.Hijacker)
 			assert.False(ok)
 			http.Error(w, "some error", http.StatusServiceUnavailable)
@@ -101,7 +101,7 @@ func TestTraceAndServe(t *testing.T) {
 		w := httptest.NewRecorder()
 		r, err := http.NewRequest("GET", "/path?token=value&id=1", nil)
 		assert.NoError(err)
-		handler := func(w http.ResponseWriter, r *http.Request) {
+		handler := func(_ http.ResponseWriter, _ *http.Request) {
 			called = true
 		}
 		TraceAndServe(http.HandlerFunc(handler), w, r, &ServeConfig{
@@ -119,7 +119,7 @@ func TestTraceAndServe(t *testing.T) {
 	t.Run("Hijacker,Flusher,CloseNotifier", func(t *testing.T) {
 		assert := assert.New(t)
 		called := false
-		handler := func(w http.ResponseWriter, r *http.Request) {
+		handler := func(w http.ResponseWriter, _ *http.Request) {
 			_, ok := w.(http.Hijacker)
 			assert.True(ok, "ResponseWriter should implement http.Hijacker")
 			_, ok = w.(http.Flusher)
@@ -152,7 +152,7 @@ func TestTraceAndServe(t *testing.T) {
 		defer mt.Stop()
 
 		called := false
-		handler := func(w http.ResponseWriter, r *http.Request) {
+		handler := func(_ http.ResponseWriter, _ *http.Request) {
 			called = true
 		}
 
@@ -189,7 +189,7 @@ func TestTraceAndServe(t *testing.T) {
 		defer mt.Stop()
 
 		called := false
-		handler := func(w http.ResponseWriter, r *http.Request) {
+		handler := func(_ http.ResponseWriter, _ *http.Request) {
 			called = true
 		}
 
@@ -223,7 +223,7 @@ func TestTraceAndServe(t *testing.T) {
 		assert := assert.New(t)
 		defer mt.Stop()
 
-		handler := func(w http.ResponseWriter, r *http.Request) {
+		handler := func(w http.ResponseWriter, _ *http.Request) {
 			w.WriteHeader(http.StatusOK)
 			w.WriteHeader(http.StatusInternalServerError)
 		}
@@ -249,7 +249,7 @@ func TestTraceAndServe(t *testing.T) {
 		w := httptest.NewRecorder()
 		r, err := http.NewRequest("GET", "/path?token=value", nil)
 		assert.NoError(err)
-		handler := func(w http.ResponseWriter, r *http.Request) {
+		handler := func(w http.ResponseWriter, _ *http.Request) {
 			_, ok := w.(http.Hijacker)
 			assert.False(ok)
 			called = true
@@ -280,7 +280,7 @@ func TestTraceAndServe(t *testing.T) {
 		w := httptest.NewRecorder()
 		r, err := http.NewRequest("GET", "/path?token=value", nil)
 		assert.NoError(err)
-		handler := func(w http.ResponseWriter, r *http.Request) {
+		handler := func(w http.ResponseWriter, _ *http.Request) {
 			_, ok := w.(http.Hijacker)
 			assert.False(ok)
 			called = true
@@ -305,7 +305,7 @@ func TestTraceAndServe(t *testing.T) {
 		assert := assert.New(t)
 		defer mt.Stop()
 
-		handler := func(w http.ResponseWriter, r *http.Request) {
+		handler := func(w http.ResponseWriter, _ *http.Request) {
 			w.WriteHeader(http.StatusBadRequest)
 		}
 		r, err := http.NewRequest("GET", "/", nil)
@@ -333,7 +333,7 @@ func TestTraceAndServe(t *testing.T) {
 			Resource: "resource",
 		}
 
-		handler := func(w http.ResponseWriter, r *http.Request) {
+		handler := func(w http.ResponseWriter, _ *http.Request) {
 			w.WriteHeader(http.StatusInternalServerError) // 500
 		}
 
@@ -361,7 +361,7 @@ func TestTraceAndServe(t *testing.T) {
 		}
 
 		// Test a 400 response, which should be reported as an error
-		handler400 := func(w http.ResponseWriter, r *http.Request) {
+		handler400 := func(w http.ResponseWriter, _ *http.Request) {
 			w.WriteHeader(http.StatusBadRequest) // 400
 		}
 
@@ -380,7 +380,7 @@ func TestTraceAndServe(t *testing.T) {
 
 		// Test a 500 response, which should NOT be reported as an error,
 		// even though the environment variable says 500 is an error.
-		handler500 := func(w http.ResponseWriter, r *http.Request) {
+		handler500 := func(w http.ResponseWriter, _ *http.Request) {
 			w.WriteHeader(http.StatusInternalServerError) // 500
 		}
 
@@ -398,7 +398,7 @@ func TestTraceAndServe(t *testing.T) {
 }
 
 func TestTraceAndServeHost(t *testing.T) {
-	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
 	t.Run("on", func(t *testing.T) {

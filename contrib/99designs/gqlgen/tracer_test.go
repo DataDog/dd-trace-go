@@ -272,11 +272,11 @@ func newTestClient(t *testing.T, h *testserver.TestServer, tracer graphql.Handle
 }
 
 func TestInterceptOperation(t *testing.T) {
-	assertions := assert.New(t)
 	graphqlTestSrv := testserver.New()
 	c := newTestClient(t, graphqlTestSrv, NewTracer())
 
 	t.Run("intercept operation with graphQL Query", func(t *testing.T) {
+		assertions := assert.New(t)
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
@@ -302,6 +302,7 @@ func TestInterceptOperation(t *testing.T) {
 	})
 
 	t.Run("intercept operation with graphQL Mutation", func(t *testing.T) {
+		assertions := assert.New(t)
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
@@ -328,6 +329,7 @@ func TestInterceptOperation(t *testing.T) {
 	})
 
 	t.Run("intercept operation with graphQL Subscription", func(t *testing.T) {
+		assertions := assert.New(t)
 		mt := mocktracer.Start()
 		defer mt.Stop()
 

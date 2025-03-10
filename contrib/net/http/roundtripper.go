@@ -41,7 +41,7 @@ func (rt *roundTripper) RoundTrip(req *http.Request) (res *http.Response, err er
 		tracer.SpanType(ext.SpanTypeHTTP),
 		tracer.ResourceName(resourceName),
 		tracer.Tag(ext.HTTPMethod, req.Method),
-		tracer.Tag(ext.HTTPURL, httptrace.UrlFromRequest(req, rt.cfg.queryString)),
+		tracer.Tag(ext.HTTPURL, httptrace.URLFromRequest(req, rt.cfg.queryString)),
 		tracer.Tag(ext.Component, config.ComponentName),
 		tracer.Tag(ext.SpanKind, ext.SpanKindClient),
 		tracer.Tag(ext.NetworkDestinationName, url.Hostname()),

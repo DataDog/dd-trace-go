@@ -60,9 +60,9 @@ func TestPayloadIntegrity(t *testing.T) {
 // TestPayloadDecode ensures that whatever we push into the payload can
 // be decoded by the codec.
 func TestPayloadDecode(t *testing.T) {
-	assert := assert.New(t)
 	for _, n := range []int{10, 1 << 10} {
 		t.Run(strconv.Itoa(n), func(t *testing.T) {
+			assert := assert.New(t)
 			p := newPayload()
 			for i := 0; i < n; i++ {
 				p.push(newSpanList(i%5 + 1))

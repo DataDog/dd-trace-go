@@ -60,8 +60,8 @@ func DurationEnv(key string, def time.Duration) time.Duration {
 	return v
 }
 
-// IpEnv returns the valid IP value of an environment variable, or def otherwise.
-func IpEnv(key string, def net.IP) net.IP {
+// IPEnv returns the valid IP value of an environment variable, or def otherwise.
+func IPEnv(key string, def net.IP) net.IP {
 	vv, ok := os.LookupEnv(key)
 	if !ok {
 		return def

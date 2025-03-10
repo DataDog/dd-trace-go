@@ -7,7 +7,6 @@ package gotesting
 
 import (
 	"fmt"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/utils/net"
 	"reflect"
 	"runtime"
 	"slices"
@@ -20,6 +19,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/integrations"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/integrations/gotesting/coverage"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/utils"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/utils/net"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/utils/telemetry"
 )
 
@@ -272,10 +272,10 @@ func (ddm *M) executeInternalTest(testInfo *testingTInfo) func(*testing.T) {
 				checkModuleAndSuite(module, suite)
 				t.Skip(constants.SkippedByITRReason)
 				return
-			} else {
-				test.SetTag(constants.TestForcedToRun, "true")
-				telemetry.ITRForcedRun(telemetry.TestEventType)
 			}
+			test.SetTag(constants.TestForcedToRun, "true")
+			telemetry.ITRForcedRun(telemetry.TestEventType)
+
 		}
 
 		// Check if the coverage is enabled

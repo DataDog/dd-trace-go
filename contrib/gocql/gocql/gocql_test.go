@@ -229,7 +229,7 @@ func TestErrNotFound(t *testing.T) {
 	var name string
 	var age int
 
-	t.Run("default", func(t *testing.T) {
+	t.Run("default", func(_ *testing.T) {
 		tq := WrapQuery(q,
 			WithServiceName("TestServiceName"),
 			// By default, not using WithErrorCheck, any error is an error from tracing POV
@@ -248,7 +248,7 @@ func TestErrNotFound(t *testing.T) {
 		assert.NotNil(span.Tag(ext.Error), "trace is marked as an error, default behavior")
 	})
 
-	t.Run("WithErrorCheck", func(t *testing.T) {
+	t.Run("WithErrorCheck", func(_ *testing.T) {
 		tq := WrapQuery(q,
 			WithServiceName("TestServiceName"),
 			// Typical use of WithErrorCheck -> do not return errors when the error is

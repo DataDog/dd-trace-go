@@ -313,12 +313,12 @@ func TestSpanSetStatus(t *testing.T) {
 }
 
 func TestSpanAddEvent(t *testing.T) {
-	assert := assert.New(t)
 	_, _, cleanup := mockTracerProvider(t)
 	tr := otel.Tracer("")
 	defer cleanup()
 
 	t.Run("event with attributes", func(t *testing.T) {
+		assert := assert.New(t)
 		_, sp := tr.Start(context.Background(), "span_event")
 		// When no timestamp option is provided, otel will generate a timestamp for the event
 		// We can't know the exact time that the event is added, but we can create start and end "bounds" and assert
@@ -355,6 +355,7 @@ func TestSpanAddEvent(t *testing.T) {
 		}
 	})
 	t.Run("event with timestamp", func(t *testing.T) {
+		assert := assert.New(t)
 		_, sp := tr.Start(context.Background(), "span_event")
 		// generate micro and nano second timestamps
 		now := time.Now()
@@ -370,6 +371,7 @@ func TestSpanAddEvent(t *testing.T) {
 		assert.Equal(timeMicro*1000, e.TimeUnixNano)
 	})
 	t.Run("mulitple events", func(t *testing.T) {
+		assert := assert.New(t)
 		_, sp := tr.Start(context.Background(), "sp")
 		now := time.Now()
 		sp.AddEvent("evt1", oteltrace.WithTimestamp(now))

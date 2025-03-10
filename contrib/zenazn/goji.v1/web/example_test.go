@@ -21,7 +21,7 @@ func ExampleMiddleware() {
 	// Otherwise the resource is only the method ("GET", "POST", etc.)
 	goji.Use(goji.DefaultMux.Router)
 	goji.Use(webtrace.Middleware())
-	goji.Get("/hello", func(c web.C, w http.ResponseWriter, r *http.Request) {
+	goji.Get("/hello", func(_ web.C, w http.ResponseWriter, _ *http.Request) {
 		fmt.Fprintf(w, "Why hello there!")
 	})
 	goji.Serve()

@@ -336,7 +336,7 @@ func doBlockResponse(writer *fakeResponseWriter) *envoyextproc.ProcessingRespons
 		})
 	}
 
-	var int32StatusCode int32 = 0
+	var int32StatusCode int32
 	if writer.status > 0 && writer.status <= math.MaxInt32 {
 		int32StatusCode = int32(writer.status)
 	}

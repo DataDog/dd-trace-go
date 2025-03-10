@@ -73,7 +73,7 @@ func testAsyncSpanRace(t *testing.T) {
 
 	for i := 0; i < 100; i++ {
 		// The test has 100 iterations because it is not easy to reproduce the race.
-		t.Run("", func(t *testing.T) {
+		t.Run("", func(_ *testing.T) {
 			root, ctx := StartSpanFromContext(context.Background(), "root", Tag(ext.SamplingPriority, ext.PriorityUserKeep))
 			var wg sync.WaitGroup
 			done := make(chan struct{})
@@ -222,10 +222,8 @@ func TestPartialFlush(t *testing.T) {
 
 		root := tracer.StartSpan("root")
 		root.(*span).context.trace.setTag("someTraceTag", "someValue")
-		var children []*span
 		for i := 0; i < 10; i++ { // create 10 child spans to ensure some aren't sampled
 			child := tracer.StartSpan(fmt.Sprintf("child%d", i), ChildOf(root.Context()))
-			children = append(children, child.(*span))
 			child.Finish()
 		}
 	})
@@ -798,7 +796,7 @@ func TestSpanContextIterator(t *testing.T) {
 func TestSpanContextIteratorBreak(t *testing.T) {
 	got := make(map[string]string)
 	ctx := spanContext{baggage: map[string]string{"key": "value"}}
-	ctx.ForeachBaggageItem(func(k, v string) bool {
+	ctx.ForeachBaggageItem(func(_, _ string) bool {
 		return false
 	})
 
@@ -808,7 +806,7 @@ func TestSpanContextIteratorBreak(t *testing.T) {
 func BenchmarkBaggageItemPresent(b *testing.B) {
 	ctx := spanContext{baggage: map[string]string{"key": "value"}, hasBaggage: 1}
 	for n := 0; n < b.N; n++ {
-		ctx.ForeachBaggageItem(func(k, v string) bool {
+		ctx.ForeachBaggageItem(func(_, _ string) bool {
 			return true
 		})
 	}
@@ -817,7 +815,7 @@ func BenchmarkBaggageItemPresent(b *testing.B) {
 func BenchmarkBaggageItemEmpty(b *testing.B) {
 	ctx := spanContext{}
 	for n := 0; n < b.N; n++ {
-		ctx.ForeachBaggageItem(func(k, v string) bool {
+		ctx.ForeachBaggageItem(func(_, _ string) bool {
 			return true
 		})
 	}

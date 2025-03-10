@@ -46,7 +46,7 @@ type serviceExtensionConfig struct {
 func loadConfig() serviceExtensionConfig {
 	extensionPortInt := internal.IntEnv("DD_SERVICE_EXTENSION_PORT", 443)
 	healthcheckPortInt := internal.IntEnv("DD_SERVICE_EXTENSION_HEALTHCHECK_PORT", 80)
-	extensionHostStr := internal.IpEnv("DD_SERVICE_EXTENSION_HOST", net.IP{0, 0, 0, 0}).String()
+	extensionHostStr := internal.IPEnv("DD_SERVICE_EXTENSION_HOST", net.IP{0, 0, 0, 0}).String()
 
 	extensionPortStr := strconv.FormatInt(int64(extensionPortInt), 10)
 	healthcheckPortStr := strconv.FormatInt(int64(healthcheckPortInt), 10)
@@ -105,7 +105,7 @@ func startService(config serviceExtensionConfig) error {
 
 func startHealthCheck(ctx context.Context, config serviceExtensionConfig) error {
 	muxServer := mux.NewRouter()
-	muxServer.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+	muxServer.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte(`{"status": "ok", "library": {"language": "golang", "version": "` + version.Tag + `"}}`))

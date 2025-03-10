@@ -18,17 +18,18 @@ import (
 )
 
 func TestHTTPHeadersCarrierSet(t *testing.T) {
-	assert := assert.New(t)
 	fcc := &HTTPHeadersCarrier{
 		ReqHeader: new(fasthttp.RequestHeader),
 	}
 	t.Run("key-val", func(t *testing.T) {
+		assert := assert.New(t)
 		// add one item
 		fcc.Set("k1", "v1")
 		assert.Len(fcc.ReqHeader.PeekAll("k1"), 1)
 		assert.Equal("v1", string(fcc.ReqHeader.Peek("k1")))
 	})
 	t.Run("key-multival", func(t *testing.T) {
+		assert := assert.New(t)
 		// add a second value, ensure the second value overwrites the first
 		fcc.Set("k1", "v1")
 		fcc.Set("k1", "v2")
@@ -37,6 +38,7 @@ func TestHTTPHeadersCarrierSet(t *testing.T) {
 		assert.Equal("v2", string(vals[0]))
 	})
 	t.Run("multi-key", func(t *testing.T) {
+		assert := assert.New(t)
 		// // add a second key
 		fcc.Set("k1", "v1")
 		fcc.Set("k2", "v21")
@@ -44,6 +46,7 @@ func TestHTTPHeadersCarrierSet(t *testing.T) {
 		assert.Equal("v21", string(fcc.ReqHeader.Peek("k2")))
 	})
 	t.Run("case insensitive", func(t *testing.T) {
+		assert := assert.New(t)
 		// new key
 		fcc.Set("K3", "v31")
 		assert.Equal("v31", string(fcc.ReqHeader.Peek("k3")))
@@ -71,7 +74,7 @@ func TestHTTPHeadersCarrierForeachKey(t *testing.T) {
 	fcc := &HTTPHeadersCarrier{
 		ReqHeader: h,
 	}
-	err := fcc.ForeachKey(func(k, v string) error {
+	err := fcc.ForeachKey(func(k, _ string) error {
 		delete(headers, k)
 		return nil
 	})

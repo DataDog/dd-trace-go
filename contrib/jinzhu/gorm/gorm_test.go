@@ -124,7 +124,6 @@ type Product struct {
 }
 
 func TestCallbacks(t *testing.T) {
-	assert := assert.New(t)
 	mt := mocktracer.Start()
 	defer mt.Stop()
 
@@ -137,6 +136,7 @@ func TestCallbacks(t *testing.T) {
 	db.AutoMigrate(&Product{})
 
 	t.Run("create", func(t *testing.T) {
+		assert := assert.New(t)
 		parentSpan, ctx := tracer.StartSpanFromContext(context.Background(), "http.request",
 			tracer.ServiceName("fake-http-server"),
 			tracer.SpanType(ext.SpanTypeWeb),
@@ -163,6 +163,7 @@ func TestCallbacks(t *testing.T) {
 	})
 
 	t.Run("query", func(t *testing.T) {
+		assert := assert.New(t)
 		parentSpan, ctx := tracer.StartSpanFromContext(context.Background(), "http.request",
 			tracer.ServiceName("fake-http-server"),
 			tracer.SpanType(ext.SpanTypeWeb),
@@ -190,6 +191,7 @@ func TestCallbacks(t *testing.T) {
 	})
 
 	t.Run("update", func(t *testing.T) {
+		assert := assert.New(t)
 		parentSpan, ctx := tracer.StartSpanFromContext(context.Background(), "http.request",
 			tracer.ServiceName("fake-http-server"),
 			tracer.SpanType(ext.SpanTypeWeb),
@@ -218,6 +220,7 @@ func TestCallbacks(t *testing.T) {
 	})
 
 	t.Run("delete", func(t *testing.T) {
+		assert := assert.New(t)
 		parentSpan, ctx := tracer.StartSpanFromContext(context.Background(), "http.request",
 			tracer.ServiceName("fake-http-server"),
 			tracer.SpanType(ext.SpanTypeWeb),

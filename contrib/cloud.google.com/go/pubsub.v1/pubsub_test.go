@@ -107,7 +107,7 @@ func TestPropagationWithServiceName(t *testing.T) {
 	span.Finish()
 
 	// Subscriber
-	err = sub.Receive(ctx, WrapReceiveHandler(sub, func(ctx context.Context, msg *pubsub.Message) {
+	err = sub.Receive(ctx, WrapReceiveHandler(sub, func(_ context.Context, msg *pubsub.Message) {
 		msg.Ack()
 		cancel()
 	}, WithServiceName("example.service")))
@@ -254,7 +254,7 @@ func TestNamingSchema(t *testing.T) {
 		_, err := Publish(ctx, topic, &pubsub.Message{Data: []byte("hello"), OrderingKey: "xxx"}, opts...).Get(ctx)
 		require.NoError(t, err)
 
-		err = sub.Receive(ctx, WrapReceiveHandler(sub, func(ctx context.Context, msg *pubsub.Message) {
+		err = sub.Receive(ctx, WrapReceiveHandler(sub, func(_ context.Context, msg *pubsub.Message) {
 			msg.Ack()
 			cancel()
 		}, opts...))

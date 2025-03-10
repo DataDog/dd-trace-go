@@ -144,7 +144,7 @@ func TestTransportResponse(t *testing.T) {
 			assert := assert.New(t)
 			ln, err := net.Listen("tcp4", "localhost:0")
 			assert.Nil(err)
-			go http.Serve(ln, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			go http.Serve(ln, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				w.WriteHeader(tt.status)
 				w.Write([]byte(tt.body))
 			}))
@@ -177,7 +177,7 @@ func TestTraceCountHeader(t *testing.T) {
 	}
 
 	var hits int
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 		hits++
 		if r.URL.Path == "/info" {
 			return
@@ -225,7 +225,7 @@ func TestCustomTransport(t *testing.T) {
 	assert := assert.New(t)
 
 	var hits int
-	srv := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
 		hits++
 	}))
 	defer srv.Close()
@@ -245,19 +245,19 @@ func TestCustomTransport(t *testing.T) {
 
 type ErrTransport struct{}
 
-func (t *ErrTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+func (t *ErrTransport) RoundTrip(_ *http.Request) (*http.Response, error) {
 	return nil, fmt.Errorf("error in RoundTripper")
 }
 
 type ErrResponseTransport struct{}
 
-func (t *ErrResponseTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+func (t *ErrResponseTransport) RoundTrip(_ *http.Request) (*http.Response, error) {
 	return &http.Response{StatusCode: 400}, nil
 }
 
 type OkTransport struct{}
 
-func (t *OkTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+func (t *OkTransport) RoundTrip(_ *http.Request) (*http.Response, error) {
 	return &http.Response{StatusCode: 200}, nil
 }
 
@@ -376,7 +376,7 @@ func TestWithUDS(t *testing.T) {
 		t.Fatal(err)
 	}
 	var hits int
-	srv := http.Server{Handler: http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+	srv := http.Server{Handler: http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
 		hits++
 	})}
 	go srv.Serve(unixListener)

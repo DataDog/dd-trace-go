@@ -68,9 +68,9 @@ func TestCiVisibilityPayloadIntegrity(t *testing.T) {
 // TestCiVisibilityPayloadDecode ensures that whatever we push into the payload can
 // be decoded by the codec.
 func TestCiVisibilityPayloadDecode(t *testing.T) {
-	assert := assert.New(t)
 	for _, n := range []int{10, 1 << 10} {
 		t.Run(strconv.Itoa(n), func(t *testing.T) {
+			assert := assert.New(t)
 			p := newCiVisibilityPayload()
 			for i := 0; i < n; i++ {
 				list := newCiVisibilityEventsList(i%5 + 1)

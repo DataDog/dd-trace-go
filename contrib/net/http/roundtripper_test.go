@@ -64,10 +64,10 @@ func TestRoundTripper(t *testing.T) {
 	defer s.Close()
 
 	rt := WrapRoundTripper(http.DefaultTransport,
-		WithBefore(func(req *http.Request, span ddtrace.Span) {
+		WithBefore(func(_ *http.Request, span ddtrace.Span) {
 			span.SetTag("CalledBefore", true)
 		}),
-		WithAfter(func(res *http.Response, span ddtrace.Span) {
+		WithAfter(func(_ *http.Response, span ddtrace.Span) {
 			span.SetTag("CalledAfter", true)
 		}))
 
@@ -173,7 +173,7 @@ func TestRoundTripperNetworkError(t *testing.T) {
 	defer mt.Stop()
 
 	done := make(chan struct{})
-	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	s := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 		_, err := tracer.Extract(tracer.HTTPHeadersCarrier(r.Header))
 		assert.NoError(t, err)
 		<-done
@@ -182,10 +182,10 @@ func TestRoundTripperNetworkError(t *testing.T) {
 	defer close(done)
 
 	rt := WrapRoundTripper(http.DefaultTransport,
-		WithBefore(func(req *http.Request, span ddtrace.Span) {
+		WithBefore(func(_ *http.Request, span ddtrace.Span) {
 			span.SetTag("CalledBefore", true)
 		}),
-		WithAfter(func(res *http.Response, span ddtrace.Span) {
+		WithAfter(func(_ *http.Response, span ddtrace.Span) {
 			span.SetTag("CalledAfter", true)
 		}))
 
@@ -216,7 +216,7 @@ func TestRoundTripperNetworkError(t *testing.T) {
 func TestRoundTripperNetworkErrorWithErrorCheck(t *testing.T) {
 	failedRequest := func(t *testing.T, mt mocktracer.Tracer, forwardErr bool, _ ...RoundTripperOption) mocktracer.Span {
 		done := make(chan struct{})
-		s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		s := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 			_, err := tracer.Extract(tracer.HTTPHeadersCarrier(r.Header))
 			assert.NoError(t, err)
 			<-done
@@ -225,7 +225,7 @@ func TestRoundTripperNetworkErrorWithErrorCheck(t *testing.T) {
 		defer close(done)
 
 		rt := WrapRoundTripper(http.DefaultTransport,
-			RTWithErrorCheck(func(err error) bool {
+			RTWithErrorCheck(func(_ error) bool {
 				return forwardErr
 			}))
 
@@ -266,7 +266,7 @@ func TestRoundTripperCredentials(t *testing.T) {
 	defer mt.Stop()
 
 	var auth string
-	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	s := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 		if enc, ok := r.Header["Authorization"]; ok {
 			encoded := strings.TrimPrefix(enc[0], "Basic ")
 			if b64, err := base64.StdEncoding.DecodeString(encoded); err == nil {
@@ -278,10 +278,10 @@ func TestRoundTripperCredentials(t *testing.T) {
 	defer s.Close()
 
 	rt := WrapRoundTripper(http.DefaultTransport,
-		WithBefore(func(req *http.Request, span ddtrace.Span) {
+		WithBefore(func(_ *http.Request, span ddtrace.Span) {
 			span.SetTag("CalledBefore", true)
 		}),
-		WithAfter(func(res *http.Response, span ddtrace.Span) {
+		WithAfter(func(_ *http.Response, span ddtrace.Span) {
 			span.SetTag("CalledAfter", true)
 		}))
 
@@ -319,7 +319,7 @@ func TestWrapClient(t *testing.T) {
 
 func TestRoundTripperAnalyticsSettings(t *testing.T) {
 	assertRate := func(t *testing.T, mt mocktracer.Tracer, rate interface{}, opts ...RoundTripperOption) {
-		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			w.WriteHeader(http.StatusOK)
 		}))
 		defer srv.Close()
@@ -411,7 +411,7 @@ func TestRoundTripperIgnoreRequest(t *testing.T) {
 	mt := mocktracer.Start()
 	defer mt.Stop()
 
-	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Write([]byte("Hello World"))
 	}))
 	defer s.Close()
@@ -466,7 +466,7 @@ func TestRoundTripperURLWithoutPort(t *testing.T) {
 }
 
 func TestServiceName(t *testing.T) {
-	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Write([]byte("Hello World"))
 	}))
 	defer s.Close()
@@ -510,7 +510,7 @@ func TestServiceName(t *testing.T) {
 }
 
 func TestResourceNamer(t *testing.T) {
-	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Write([]byte("Hello World"))
 	}))
 	defer s.Close()
@@ -550,7 +550,7 @@ func TestResourceNamer(t *testing.T) {
 }
 
 func TestSpanOptions(t *testing.T) {
-	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("")) }))
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.Write([]byte("")) }))
 	defer s.Close()
 
 	tagKey := "foo"
@@ -570,7 +570,7 @@ func TestSpanOptions(t *testing.T) {
 }
 
 func TestClientQueryStringCollected(t *testing.T) {
-	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Write([]byte("Hello World"))
 	}))
 	defer s.Close()
@@ -631,7 +631,7 @@ func TestClientQueryStringCollected(t *testing.T) {
 }
 
 func TestClientQueryStringObfuscated(t *testing.T) {
-	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Write([]byte("Hello World"))
 	}))
 	defer s.Close()
@@ -728,7 +728,7 @@ func TestClientNamingSchema(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("")) }))
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.Write([]byte("")) }))
 		defer srv.Close()
 
 		c := WrapClient(&http.Client{}, opts...)
@@ -789,7 +789,7 @@ func TestAppsec(t *testing.T) {
 			r, err := http.NewRequest("GET", "?value=169.254.169.254", nil)
 			require.NoError(t, err)
 
-			TraceAndServe(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			TraceAndServe(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 				req, err := http.NewRequest("GET", "http://169.254.169.254", nil)
 				require.NoError(t, err)
 
