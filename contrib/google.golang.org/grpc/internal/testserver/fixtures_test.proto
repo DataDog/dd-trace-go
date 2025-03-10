@@ -3,9 +3,9 @@ syntax = "proto3";
 option java_multiple_files = true;
 option java_package = "io.grpc.examples.testgrpc";
 option java_outer_classname = "TestGRPCProto";
-option go_package = "gopkg.in/DataDog/dd-trace-go.v1/contrib/google.golang.org/grpc";
+option go_package = "gopkg.in/DataDog/dd-trace-go.v1/contrib/google.golang.org/internal/testserver";
 
-package grpc;
+package testserver;
 
 service Fixture {
   rpc Ping (FixtureRequest) returns (FixtureReply) {}
