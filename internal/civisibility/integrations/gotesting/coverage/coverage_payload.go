@@ -12,9 +12,9 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/tinylib/msgp/msgp"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/utils/telemetry"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
 // coveragePayload is a slim copy of the payload struct from the tracer package.

@@ -8,19 +8,22 @@ package kafka
 import (
 	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/contrib/confluentinc/confluent-kafka-go/internal/tracing"
+	tracing "github.com/DataDog/dd-trace-go/v2/contrib/confluentinc/confluent-kafka-go"
 )
 
-// An Option customizes the config.
+// Option describes an option for the Kafka integration.
 type Option = tracing.Option
+
+// OptionFn represents options applicable to NewConsumer, NewProducer, WrapConsumer and WrapProducer.
+type OptionFn = tracing.OptionFn
 
 // WithContext sets the config context to ctx.
 // Deprecated: This is deprecated in favor of passing the context
 // via the message headers
 var WithContext = tracing.WithContext
 
-// WithServiceName sets the config service name to serviceName.
-var WithServiceName = tracing.WithServiceName
+// WithService sets the config service name to serviceName.
+var WithService = tracing.WithService
 
 // WithAnalytics enables Trace Analytics for all started spans.
 var WithAnalytics = tracing.WithAnalytics

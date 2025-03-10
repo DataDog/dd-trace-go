@@ -11,10 +11,15 @@ import (
 
 	"github.com/graphql-go/graphql"
 	"github.com/graphql-go/handler"
-	ddgraphql "gopkg.in/DataDog/dd-trace-go.v1/contrib/graphql-go/graphql"
+
+	ddgraphql "github.com/DataDog/dd-trace-go/contrib/graphql-go/graphql/v2"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 )
 
 func Example() {
+	tracer.Start()
+	defer tracer.Stop()
+
 	schema, err := ddgraphql.NewSchema(graphql.SchemaConfig{
 		Query: graphql.NewObject(graphql.ObjectConfig{
 			Name: "Query",

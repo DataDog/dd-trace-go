@@ -11,11 +11,11 @@ import (
 	"slices"
 	"sync"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/constants"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/utils"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/utils/net"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/net"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
 const (

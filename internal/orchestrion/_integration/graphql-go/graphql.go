@@ -14,7 +14,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/DataDog/dd-trace-go/internal/orchestrion/_integration/internal/trace"
+	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/trace"
 	"github.com/graphql-go/graphql"
 	"github.com/graphql-go/handler"
 	"github.com/stretchr/testify/require"
@@ -95,7 +95,7 @@ func (*TestCase) ExpectedTraces() trace.Traces {
 							Tags: map[string]any{
 								"name":     "graphql.server",
 								"resource": "graphql.server",
-								"service":  "graphql.server",
+								"service":  "graphql",
 								"type":     "graphql",
 							},
 							Meta: map[string]string{
@@ -107,7 +107,7 @@ func (*TestCase) ExpectedTraces() trace.Traces {
 									Tags: map[string]any{
 										"name":     "graphql.parse",
 										"resource": "graphql.parse",
-										"service":  "graphql.server",
+										"service":  "graphql",
 										"type":     "graphql",
 									},
 									Meta: map[string]string{
@@ -119,7 +119,7 @@ func (*TestCase) ExpectedTraces() trace.Traces {
 									Tags: map[string]any{
 										"name":     "graphql.validate",
 										"resource": "graphql.validate",
-										"service":  "graphql.server",
+										"service":  "graphql",
 										"type":     "graphql",
 									},
 									Meta: map[string]string{
@@ -132,7 +132,7 @@ func (*TestCase) ExpectedTraces() trace.Traces {
 									Tags: map[string]any{
 										"name":     "graphql.execute",
 										"resource": "graphql.execute",
-										"service":  "graphql.server",
+										"service":  "graphql",
 										"type":     "graphql",
 									},
 									Meta: map[string]string{
@@ -145,7 +145,7 @@ func (*TestCase) ExpectedTraces() trace.Traces {
 											Tags: map[string]any{
 												"name":     "graphql.resolve",
 												"resource": "Query.hello",
-												"service":  "graphql.server",
+												"service":  "graphql",
 												"type":     "graphql",
 											},
 											Meta: map[string]string{

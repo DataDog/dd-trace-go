@@ -11,7 +11,7 @@ import (
 	waf "github.com/DataDog/go-libddwaf/v3"
 	"github.com/stretchr/testify/require"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/trace"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/trace"
 )
 
 const (

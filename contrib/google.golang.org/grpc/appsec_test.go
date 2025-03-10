@@ -11,11 +11,13 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"strings"
 	"testing"
 
-	pappsec "gopkg.in/DataDog/dd-trace-go.v1/appsec"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
+	"github.com/DataDog/dd-trace-go/instrumentation/testutils/grpc/v2/fixturepb"
+	"github.com/DataDog/dd-trace-go/v2/appsec"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -27,13 +29,13 @@ import (
 
 func TestAppSec(t *testing.T) {
 	t.Setenv("DD_APPSEC_WAF_TIMEOUT", "1h") // Functionally unlimited
-	appsec.Start()
-	defer appsec.Stop()
-	if !appsec.Enabled() {
+	testutils.StartAppSec(t)
+
+	if !instr.AppSecEnabled() {
 		t.Skip("appsec disabled")
 	}
 
-	setup := func(t *testing.T) (FixtureClient, mocktracer.Tracer, func()) {
+	setup := func(t *testing.T) (fixturepb.FixtureClient, mocktracer.Tracer, func()) {
 		rig, err := newAppsecRig(t, false)
 		require.NoError(t, err)
 
@@ -51,7 +53,7 @@ func TestAppSec(t *testing.T) {
 
 		// Send a XSS attack in the payload along with the canary value in the RPC metadata
 		ctx := metadata.NewOutgoingContext(context.Background(), metadata.Pairs("dd-canary", "dd-test-scanner-log"))
-		res, err := client.Ping(ctx, &FixtureRequest{Name: "<script>window.location;</script>"})
+		res, err := client.Ping(ctx, &fixturepb.FixtureRequest{Name: "<script>window.location;</script>"})
 		// Check that the handler was properly called
 		require.NoError(t, err)
 		require.Equal(t, "passed", res.Message)
@@ -76,9 +78,8 @@ func TestAppSec(t *testing.T) {
 		require.NoError(t, err)
 
 		// Send a XSS attack
-		if err := stream.Send(&FixtureRequest{Name: "<script>window.location;</script>"}); err != io.EOF {
-			require.NoError(t, err)
-		}
+		err = stream.Send(&fixturepb.FixtureRequest{Name: "<script>window.location;</script>"})
+		require.NoError(t, err)
 
 		// Check that the handler was properly called
 		res, err := stream.Recv()
@@ -87,9 +88,8 @@ func TestAppSec(t *testing.T) {
 
 		for i := 0; i < 5; i++ { // Fire multiple times, each time should result in a detected event
 			// Send a SQLi attack
-			if err := stream.Send(&FixtureRequest{Name: fmt.Sprintf("-%[1]d' and %[1]d=%[1]d union select * from users--", i)}); err != io.EOF {
-				require.NoError(t, err)
-			}
+			err = stream.Send(&fixturepb.FixtureRequest{Name: fmt.Sprintf("-%[1]d' and %[1]d=%[1]d union select * from users--", i)})
+			require.NoError(t, err)
 
 			// Check that the handler was properly called
 			res, err = stream.Recv()
@@ -137,13 +137,104 @@ func TestAppSec(t *testing.T) {
 // Test that http blocking works by using custom rules/rules data
 func TestBlocking(t *testing.T) {
 	t.Setenv("DD_APPSEC_RULES", "../../../internal/appsec/testdata/blocking.json")
-	appsec.Start()
-	defer appsec.Stop()
-	if !appsec.Enabled() {
+	testutils.StartAppSec(t)
+	if !instr.AppSecEnabled() {
 		t.Skip("appsec disabled")
 	}
 
-	setup := func() (FixtureClient, mocktracer.Tracer, func()) {
+	setup := func() (fixturepb.FixtureClient, mocktracer.Tracer, func()) {
+		rig, err := newRig(false)
+		require.NoError(t, err)
+
+		mt := mocktracer.Start()
+
+		return rig.client, mt, func() {
+			rig.Close()
+			mt.Stop()
+		}
+	}
+
+	t.Run("unary-block", func(t *testing.T) {
+		client, mt, cleanup := setup()
+		defer cleanup()
+
+		// Send a XSS attack in the payload along with the canary value in the RPC metadata
+		ctx := metadata.NewOutgoingContext(context.Background(), metadata.Pairs("dd-canary", "dd-test-scanner-log", "x-client-ip", "1.2.3.4"))
+		reply, err := client.Ping(ctx, &fixturepb.FixtureRequest{Name: "<script>alert('xss');</script>"})
+
+		require.Nil(t, reply)
+		require.Equal(t, codes.Aborted, status.Code(err))
+
+		finished := mt.FinishedSpans()
+		require.Len(t, finished, 1)
+		// The request should have the attack attempts
+		event, _ := finished[0].Tag("_dd.appsec.json").(string)
+		require.NotNil(t, event)
+		require.True(t, strings.Contains(event, "blk-001-001"))
+	})
+
+	t.Run("unary-no-block", func(t *testing.T) {
+		client, _, cleanup := setup()
+		defer cleanup()
+
+		// Send a XSS attack in the payload along with the canary value in the RPC metadata
+		ctx := metadata.NewOutgoingContext(context.Background(), metadata.Pairs("dd-canary", "dd-test-scanner-log", "x-client-ip", "1.2.3.5"))
+		reply, err := client.Ping(ctx, &fixturepb.FixtureRequest{Name: "<script>alert('xss');</script>"})
+
+		require.Equal(t, "passed", reply.Message)
+		require.Equal(t, codes.OK, status.Code(err))
+	})
+
+	t.Run("stream-block", func(t *testing.T) {
+		client, mt, cleanup := setup()
+		defer cleanup()
+
+		ctx := metadata.NewOutgoingContext(context.Background(), metadata.Pairs("dd-canary", "dd-test-scanner-log", "x-client-ip", "1.2.3.4"))
+		stream, err := client.StreamPing(ctx)
+		require.NoError(t, err)
+		reply, err := stream.Recv()
+
+		require.Equal(t, codes.Aborted, status.Code(err))
+		require.Nil(t, reply)
+
+		finished := mt.FinishedSpans()
+		require.Len(t, finished, 1)
+		// The request should have the attack attempts
+		event, _ := finished[0].Tag("_dd.appsec.json").(string)
+		require.NotNil(t, event)
+		require.True(t, strings.Contains(event, "blk-001-001"))
+	})
+
+	t.Run("stream-no-block", func(t *testing.T) {
+		client, _, cleanup := setup()
+		defer cleanup()
+
+		ctx := metadata.NewOutgoingContext(context.Background(), metadata.Pairs("dd-canary", "dd-test-scanner-log", "x-client-ip", "1.2.3.5"))
+		stream, err := client.StreamPing(ctx)
+		require.NoError(t, err)
+
+		// Send a XSS attack
+		err = stream.Send(&fixturepb.FixtureRequest{Name: "<script>alert('xss');</script>"})
+		require.NoError(t, err)
+		reply, err := stream.Recv()
+		require.Equal(t, codes.OK, status.Code(err))
+		require.Equal(t, "passed", reply.Message)
+
+		err = stream.CloseSend()
+		require.NoError(t, err)
+	})
+
+}
+
+// Test that user blocking works by using custom rules/rules data
+func TestUserBlocking(t *testing.T) {
+	t.Setenv("DD_APPSEC_RULES", "../../../internal/appsec/testdata/blocking.json")
+	testutils.StartAppSec(t)
+	if !instr.AppSecEnabled() {
+		t.Skip("appsec disabled")
+	}
+
+	setup := func() (fixturepb.FixtureClient, mocktracer.Tracer, func()) {
 		rig, err := newAppsecRig(t, false)
 		require.NoError(t, err)
 
@@ -188,7 +279,7 @@ func TestBlocking(t *testing.T) {
 		} {
 			t.Run(tc.name, func(t *testing.T) {
 				// Helper assertion function to run for the unary and stream tests
-				withClient := func(t *testing.T, do func(client FixtureClient)) {
+				withClient := func(t *testing.T, do func(client fixturepb.FixtureClient)) {
 					client, mt, cleanup := setup()
 					defer cleanup()
 
@@ -209,16 +300,16 @@ func TestBlocking(t *testing.T) {
 				}
 
 				t.Run("unary", func(t *testing.T) {
-					withClient(t, func(client FixtureClient) {
+					withClient(t, func(client fixturepb.FixtureClient) {
 						ctx := metadata.NewOutgoingContext(context.Background(), tc.md)
-						reply, err := client.Ping(ctx, &FixtureRequest{Name: tc.message})
+						reply, err := client.Ping(ctx, &fixturepb.FixtureRequest{Name: tc.message})
 						require.Nil(t, reply)
 						require.Equal(t, codes.Aborted, status.Code(err))
 					})
 				})
 
 				t.Run("stream", func(t *testing.T) {
-					withClient(t, func(client FixtureClient) {
+					withClient(t, func(client fixturepb.FixtureClient) {
 						ctx := metadata.NewOutgoingContext(context.Background(), tc.md)
 
 						// Open the stream
@@ -227,7 +318,7 @@ func TestBlocking(t *testing.T) {
 						defer func() { assert.NoError(t, stream.CloseSend()) }()
 
 						// Send a message
-						if err := stream.Send(&FixtureRequest{Name: tc.message}); err != io.EOF {
+						if err := stream.Send(&fixturepb.FixtureRequest{Name: tc.message}); err != io.EOF {
 							require.NoError(t, err)
 						}
 
@@ -247,13 +338,12 @@ func TestPasslist(t *testing.T) {
 	// but only one of them is passlisted (custom-1 is passlisted, custom-2 is not and must trigger).
 	t.Setenv("DD_APPSEC_RULES", "../../../internal/appsec/testdata/passlist.json")
 
-	appsec.Start()
-	defer appsec.Stop()
-	if !appsec.Enabled() {
+	testutils.StartAppSec(t)
+	if !instr.AppSecEnabled() {
 		t.Skip("appsec disabled")
 	}
 
-	setup := func(t *testing.T) (FixtureClient, mocktracer.Tracer, func()) {
+	setup := func(t *testing.T) (fixturepb.FixtureClient, mocktracer.Tracer, func()) {
 		rig, err := newAppsecRig(t, false)
 		require.NoError(t, err)
 
@@ -271,7 +361,7 @@ func TestPasslist(t *testing.T) {
 
 		// Send the payload triggering the sec event thanks to the "zouzou" value in the RPC metadata
 		ctx := metadata.NewOutgoingContext(context.Background(), metadata.Pairs("dd-canary", "zouzou"))
-		res, err := client.Ping(ctx, &FixtureRequest{Name: "hello"})
+		res, err := client.Ping(ctx, &fixturepb.FixtureRequest{Name: "hello"})
 
 		// Check that the handler was properly called
 		require.NoError(t, err)
@@ -298,7 +388,7 @@ func TestPasslist(t *testing.T) {
 
 		// Send some messages
 		for i := 0; i < 5; i++ {
-			if err := stream.Send(&FixtureRequest{Name: "hello"}); err != io.EOF {
+			if err := stream.Send(&fixturepb.FixtureRequest{Name: "hello"}); err != io.EOF {
 				require.NoError(t, err)
 			}
 
@@ -325,15 +415,15 @@ func TestPasslist(t *testing.T) {
 }
 
 func newAppsecRig(t *testing.T, traceClient bool, interceptorOpts ...Option) (*appsecRig, error) {
-	interceptorOpts = append([]InterceptorOption{WithServiceName("grpc")}, interceptorOpts...)
+	interceptorOpts = append([]Option{WithService("grpc")}, interceptorOpts...)
 
 	server := grpc.NewServer(
 		grpc.UnaryInterceptor(UnaryServerInterceptor(interceptorOpts...)),
 		grpc.StreamInterceptor(StreamServerInterceptor(interceptorOpts...)),
 	)
 
-	fixtureServer := new(appsecFixtureServer)
-	RegisterFixtureServer(server, fixtureServer)
+	fixtureServer := &appsecFixtureServer{s: fixturepb.NewFixtureServer()}
+	fixturepb.RegisterFixtureServer(server, fixtureServer)
 
 	li, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -360,7 +450,7 @@ func newAppsecRig(t *testing.T, traceClient bool, interceptorOpts ...Option) (*a
 		port:          port,
 		server:        server,
 		conn:          conn,
-		client:        NewFixtureClient(conn),
+		client:        fixturepb.NewFixtureClient(conn),
 	}, err
 }
 
@@ -372,7 +462,7 @@ type appsecRig struct {
 	port          string
 	listener      net.Listener
 	conn          *grpc.ClientConn
-	client        FixtureClient
+	client        fixturepb.FixtureClient
 }
 
 func (r *appsecRig) Close() error {
@@ -381,26 +471,26 @@ func (r *appsecRig) Close() error {
 }
 
 type appsecFixtureServer struct {
-	UnimplementedFixtureServer
-	s fixtureServer
+	fixturepb.UnimplementedFixtureServer
+	s *fixturepb.FixtureSrv
 }
 
-func (s *appsecFixtureServer) StreamPing(stream Fixture_StreamPingServer) (err error) {
+func (s *appsecFixtureServer) StreamPing(stream fixturepb.Fixture_StreamPingServer) (err error) {
 	ctx := stream.Context()
 	md, _ := metadata.FromIncomingContext(ctx)
 	ids := md.Get("user-id")
 	if len(ids) > 0 {
-		if err := pappsec.SetUser(ctx, ids[0]); err != nil {
+		if err := appsec.SetUser(ctx, ids[0]); err != nil {
 			return err
 		}
 	}
 	return s.s.StreamPing(stream)
 }
-func (s *appsecFixtureServer) Ping(ctx context.Context, in *FixtureRequest) (*FixtureReply, error) {
+func (s *appsecFixtureServer) Ping(ctx context.Context, in *fixturepb.FixtureRequest) (*fixturepb.FixtureReply, error) {
 	md, _ := metadata.FromIncomingContext(ctx)
 	ids := md.Get("user-id")
 	if len(ids) > 0 {
-		if err := pappsec.SetUser(ctx, ids[0]); err != nil {
+		if err := appsec.SetUser(ctx, ids[0]); err != nil {
 			return nil, err
 		}
 	}

@@ -9,8 +9,8 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
 	xsync "github.com/puzpuzpuz/xsync/v3"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/samplernames"
 )
 
 // OtelTagsDelimeter is the separator between key-val pairs for OTEL env vars

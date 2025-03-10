@@ -10,7 +10,7 @@ import (
 	"strconv"
 	"strings"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/samplernames"
+	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
 )
 
 // parseUint64 parses a uint64 from either an unsigned 64 bit base-10 string

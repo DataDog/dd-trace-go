@@ -10,41 +10,41 @@ import (
 	"math"
 	"net/http"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/normalizer"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 )
-
-const defaultServiceName = "negroni.router"
 
 type config struct {
 	serviceName   string
-	spanOpts      []ddtrace.StartSpanOption // additional span options to be applied
+	spanOpts      []tracer.StartSpanOption // additional span options to be applied
 	analyticsRate float64
 	isStatusError func(statusCode int) bool
 	resourceNamer func(r *http.Request) string
-	headerTags    *internal.LockMap
+	headerTags    instrumentation.HeaderTags
 }
 
-// Option represents an option that can be passed to NewRouter.
-type Option func(*config)
+// Option describes options for the Negroni integration.
+type Option interface {
+	apply(*config)
+}
+
+// OptionFn represents options applicable to Middleware.
+type OptionFn func(*config)
+
+func (fn OptionFn) apply(cfg *config) {
+	fn(cfg)
+}
 
 func defaults(cfg *config) {
-	cfg.serviceName = namingschema.ServiceName(defaultServiceName)
-	if internal.BoolEnv("DD_TRACE_NEGRONI_ANALYTICS_ENABLED", false) {
-		cfg.analyticsRate = 1.0
-	} else {
-		cfg.analyticsRate = globalconfig.AnalyticsRate()
-	}
-	cfg.headerTags = globalconfig.HeaderTagMap()
+	cfg.serviceName = instr.ServiceName(instrumentation.ComponentServer, nil)
+	cfg.analyticsRate = instr.AnalyticsRate(true)
+	cfg.headerTags = instr.HTTPHeadersAsTags()
 	cfg.isStatusError = isServerError
 	cfg.resourceNamer = defaultResourceNamer
 }
 
-// WithServiceName sets the given service name for the router.
-func WithServiceName(name string) Option {
+// WithService sets the given service name for the router.
+func WithService(name string) OptionFn {
 	return func(cfg *config) {
 		cfg.serviceName = name
 	}
@@ -52,14 +52,14 @@ func WithServiceName(name string) Option {
 
 // WithSpanOptions applies the given set of options to the spans started
 // by the router.
-func WithSpanOptions(opts ...ddtrace.StartSpanOption) Option {
+func WithSpanOptions(opts ...tracer.StartSpanOption) OptionFn {
 	return func(cfg *config) {
 		cfg.spanOpts = opts
 	}
 }
 
 // WithAnalytics enables Trace Analytics for all started spans.
-func WithAnalytics(on bool) Option {
+func WithAnalytics(on bool) OptionFn {
 	return func(cfg *config) {
 		if on {
 			cfg.analyticsRate = 1.0
@@ -71,7 +71,7 @@ func WithAnalytics(on bool) Option {
 
 // WithAnalyticsRate sets the sampling rate for Trace Analytics events
 // correlated to started spans.
-func WithAnalyticsRate(rate float64) Option {
+func WithAnalyticsRate(rate float64) OptionFn {
 	return func(cfg *config) {
 		if rate >= 0.0 && rate <= 1.0 {
 			cfg.analyticsRate = rate
@@ -83,7 +83,7 @@ func WithAnalyticsRate(rate float64) Option {
 
 // WithStatusCheck specifies a function fn which reports whether the passed
 // statusCode should be considered an error.
-func WithStatusCheck(fn func(statusCode int) bool) Option {
+func WithStatusCheck(fn func(statusCode int) bool) OptionFn {
 	return func(cfg *config) {
 		cfg.isStatusError = fn
 	}
@@ -95,7 +95,7 @@ func isServerError(statusCode int) bool {
 
 // WithResourceNamer specifies a function which will be used to obtain a resource name for a given
 // negroni request, using the request's context.
-func WithResourceNamer(namer func(r *http.Request) string) Option {
+func WithResourceNamer(namer func(r *http.Request) string) OptionFn {
 	return func(cfg *config) {
 		cfg.resourceNamer = namer
 	}
@@ -109,9 +109,8 @@ func defaultResourceNamer(_ *http.Request) string {
 // Warning:
 // Using this feature can risk exposing sensitive data such as authorization tokens to Datadog.
 // Special headers can not be sub-selected. E.g., an entire Cookie header would be transmitted, without the ability to choose specific Cookies.
-func WithHeaderTags(headers []string) Option {
-	headerTagsMap := normalizer.HeaderTagSlice(headers)
+func WithHeaderTags(headers []string) OptionFn {
 	return func(cfg *config) {
-		cfg.headerTags = internal.NewLockMap(headerTagsMap)
+		cfg.headerTags = instrumentation.NewHeaderTags(headers)
 	}
 }

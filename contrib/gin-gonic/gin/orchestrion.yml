@@ -5,7 +5,7 @@
 ---
 # yaml-language-server: $schema=https://datadoghq.dev/orchestrion/schema.json
 meta:
-  name: gopkg.in/DataDog/dd-trace-go.v1/contrib/gin-gonic/gin
+  name: github.com/DataDog/dd-trace-go/contrib/gin-gonic/gin/v2
   description: Gin is a web framework written in Go.
 
 aspects:
@@ -18,7 +18,7 @@ aspects:
       - wrap-expression:
           imports:
             gin: github.com/gin-gonic/gin
-            gintrace: gopkg.in/DataDog/dd-trace-go.v1/contrib/gin-gonic/gin
+            gintrace: github.com/DataDog/dd-trace-go/contrib/gin-gonic/gin/v2
           template: |-
             func() *gin.Engine {
               e := {{ . }}

@@ -5,7 +5,7 @@
 ---
 # yaml-language-server: $schema=https://datadoghq.dev/orchestrion/schema.json
 meta:
-  name: gopkg.in/DataDog/dd-trace-go.v1/contrib/redis/go-redis.v9
+  name: github.com/DataDog/dd-trace-go/contrib/redis/go-redis.v9/v2
   description: Redis client for Go.
 
 aspects:
@@ -18,7 +18,7 @@ aspects:
       - wrap-expression:
           imports:
             redis: github.com/redis/go-redis/v9
-            trace: gopkg.in/DataDog/dd-trace-go.v1/contrib/redis/go-redis.v9
+            trace: github.com/DataDog/dd-trace-go/contrib/redis/go-redis.v9/v2
           template: |-
             func() (client *redis.Client) {
               client = {{ . }}

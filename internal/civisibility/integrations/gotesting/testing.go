@@ -7,7 +7,6 @@ package gotesting
 
 import (
 	"fmt"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/utils/net"
 	"reflect"
 	"runtime"
 	"slices"
@@ -15,12 +14,13 @@ import (
 	"testing"
 	"time"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/constants"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/integrations"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/integrations/gotesting/coverage"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/utils"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/utils/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting/coverage"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/net"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/telemetry"
 )
 
 const (

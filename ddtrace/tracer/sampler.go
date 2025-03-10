@@ -11,15 +11,14 @@ import (
 	"math"
 	"sync"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/samplernames"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
 )
 
-// Sampler is the generic interface of any sampler. It must be safe for concurrent use.
+// Sampler is an interface for sampling traces.
 type Sampler interface {
 	// Sample returns true if the given span should be sampled.
-	Sample(span Span) bool
+	Sample(span *Span) bool
 }
 
 // RateSampler is a sampler implementation which randomly selects spans using a
@@ -35,6 +34,24 @@ type RateSampler interface {
 	SetRate(rate float64)
 }
 
+type customSampler struct {
+	s Sampler
+}
+
+// Rate implements RateSampler.
+func (*customSampler) Rate() float64 {
+	return 1.0
+}
+
+// SetRate implements RateSampler.
+func (*customSampler) SetRate(_ float64) {
+	// noop
+}
+
+func (s *customSampler) Sample(span *Span) bool {
+	return s.s.Sample(span)
+}
+
 // rateSampler samples from a sample rate.
 type rateSampler struct {
 	sync.RWMutex
@@ -46,6 +63,12 @@ func NewAllSampler() RateSampler { return NewRateSampler(1) }
 
 // NewRateSampler returns an initialized RateSampler with a given sample rate.
 func NewRateSampler(rate float64) RateSampler {
+	if rate > 1.0 {
+		rate = 1.0
+	}
+	if rate < 0.0 {
+		rate = 0.0
+	}
 	return &rateSampler{rate: rate}
 }
 
@@ -67,18 +90,17 @@ func (r *rateSampler) SetRate(rate float64) {
 const knuthFactor = uint64(1111111111111111111)
 
 // Sample returns true if the given span should be sampled.
-func (r *rateSampler) Sample(spn ddtrace.Span) bool {
+func (r *rateSampler) Sample(s *Span) bool {
 	if r.rate == 1 {
 		// fast path
 		return true
 	}
-	s, ok := spn.(*span)
-	if !ok {
+	if s == nil {
 		return false
 	}
 	r.RLock()
 	defer r.RUnlock()
-	return sampledByRate(s.TraceID, r.rate)
+	return sampledByRate(s.traceID, r.rate)
 }
 
 // sampledByRate verifies if the number n should be sampled at the specified
@@ -127,8 +149,8 @@ func (ps *prioritySampler) readRatesJSON(rc io.ReadCloser) error {
 
 // getRate returns the sampling rate to be used for the given span. Callers must
 // guard the span.
-func (ps *prioritySampler) getRate(spn *span) float64 {
-	key := "service:" + spn.Service + ",env:" + spn.Meta[ext.Environment]
+func (ps *prioritySampler) getRate(spn *Span) float64 {
+	key := "service:" + spn.service + ",env:" + spn.meta[ext.Environment]
 	ps.mu.RLock()
 	defer ps.mu.RUnlock()
 	if rate, ok := ps.rates[key]; ok {
@@ -139,9 +161,9 @@ func (ps *prioritySampler) getRate(spn *span) float64 {
 
 // apply applies sampling priority to the given span. Caller must ensure it is safe
 // to modify the span.
-func (ps *prioritySampler) apply(spn *span) {
+func (ps *prioritySampler) apply(spn *Span) {
 	rate := ps.getRate(spn)
-	if sampledByRate(spn.TraceID, rate) {
+	if sampledByRate(spn.traceID, rate) {
 		spn.setSamplingPriority(ext.PriorityAutoKeep, samplernames.AgentRate)
 	} else {
 		spn.setSamplingPriority(ext.PriorityAutoReject, samplernames.AgentRate)

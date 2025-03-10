@@ -5,7 +5,7 @@
     "meta": {
       "_dd.base_service": "gorm",
       "_dd.git.commit.sha": "b5dcde5cf0fc321057d75b253f162bedaa99f8d8",
-      "_dd.go_path": "github.com/DataDog/dd-trace-go/internal/orchestrion/_integration/gorm",
+      "_dd.go_path": "github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/gorm",
       "_dd.p.dm": "-1",
       "_dd.p.tid": "66695f4300000000",
       "component": "database/sql",
@@ -40,7 +40,7 @@
     "meta": {
       "_dd.base_service": "gorm",
       "_dd.git.commit.sha": "b5dcde5cf0fc321057d75b253f162bedaa99f8d8",
-      "_dd.go_path": "github.com/DataDog/dd-trace-go/internal/orchestrion/_integration/gorm",
+      "_dd.go_path": "github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/gorm",
       "_dd.p.dm": "-1",
       "_dd.p.tid": "66695f4300000000",
       "component": "database/sql",
@@ -75,7 +75,7 @@
     "meta": {
       "_dd.base_service": "gorm",
       "_dd.git.commit.sha": "b5dcde5cf0fc321057d75b253f162bedaa99f8d8",
-      "_dd.go_path": "github.com/DataDog/dd-trace-go/internal/orchestrion/_integration/gorm",
+      "_dd.go_path": "github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/gorm",
       "_dd.p.dm": "-1",
       "_dd.p.tid": "66695f4300000000",
       "component": "database/sql",
@@ -164,7 +164,7 @@
     "error": 0,
     "meta": {
       "_dd.git.commit.sha": "b5dcde5cf0fc321057d75b253f162bedaa99f8d8",
-      "_dd.go_path": "github.com/DataDog/dd-trace-go/internal/orchestrion/_integration/gorm",
+      "_dd.go_path": "github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/gorm",
       "_dd.p.dm": "-1",
       "_dd.p.tid": "66695f4400000000",
       "component": "net/http",
@@ -471,7 +471,7 @@
     "error": 0,
     "meta": {
       "_dd.git.commit.sha": "b5dcde5cf0fc321057d75b253f162bedaa99f8d8",
-      "_dd.go_path": "github.com/DataDog/dd-trace-go/internal/orchestrion/_integration/gorm",
+      "_dd.go_path": "github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/gorm",
       "_dd.p.dm": "-1",
       "_dd.p.tid": "66695f4300000000",
       "function-name": "setup",

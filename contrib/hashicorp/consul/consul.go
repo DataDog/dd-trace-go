@@ -9,20 +9,17 @@ import (
 	"context"
 	"math"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 
 	consul "github.com/hashicorp/consul/api"
 )
 
-const componentName = "hashicorp/consul"
+var instr *instrumentation.Instrumentation
 
 func init() {
-	telemetry.LoadIntegration(componentName)
-	tracer.MarkIntegrationImported("github.com/hashicorp/consul/api")
+	instr = instrumentation.Load(instrumentation.PackageHashicorpConsulAPI)
 }
 
 // Client wraps the regular *consul.Client and augments it with tracing. Use NewClient to initialize it.
@@ -48,9 +45,9 @@ func WrapClient(c *consul.Client, opts ...ClientOption) *Client {
 	cfg := new(clientConfig)
 	defaults(cfg)
 	for _, fn := range opts {
-		fn(cfg)
+		fn.apply(cfg)
 	}
-	log.Debug("contrib/hashicorp/consul: Wrapping Client: %#v", cfg)
+	instr.Logger().Debug("contrib/hashicorp/consul: Wrapping Client: %#v", cfg)
 	return &Client{c, cfg, context.Background()}
 }
 
@@ -72,13 +69,13 @@ func (c *Client) KV() *KV {
 	return &KV{c.Client.KV(), c.config, c.ctx}
 }
 
-func (k *KV) startSpan(resourceName string, key string) ddtrace.Span {
-	opts := []ddtrace.StartSpanOption{
+func (k *KV) startSpan(resourceName string, key string) *tracer.Span {
+	opts := []tracer.StartSpanOption{
 		tracer.ResourceName(resourceName),
 		tracer.ServiceName(k.config.serviceName),
 		tracer.SpanType(ext.SpanTypeConsul),
 		tracer.Tag("consul.key", key),
-		tracer.Tag(ext.Component, componentName),
+		tracer.Tag(ext.Component, instrumentation.PackageHashicorpConsulAPI),
 		tracer.Tag(ext.SpanKind, ext.SpanKindClient),
 		tracer.Tag(ext.DBSystem, ext.DBSystemConsulKV),
 	}

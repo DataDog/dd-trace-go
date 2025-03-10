@@ -10,9 +10,8 @@ import (
 	"math"
 	"testing"
 
+	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
 	"github.com/stretchr/testify/assert"
-
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/samplernames"
 )
 
 func TestParseUint64(t *testing.T) {

@@ -18,10 +18,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/DataDog/dd-trace-go/internal/orchestrion/_integration/internal/net"
+	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/net"
 	"github.com/google/uuid"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 )
 
 type MockAgent struct {
@@ -126,7 +126,7 @@ func (a *MockAgent) NewSession(t testing.TB) (session *Session, err error) {
 	t.Logf("Started test session with ID %s\n", session.token.String())
 	tracer.Start(
 		tracer.WithAgentAddr(fmt.Sprintf("127.0.0.1:%d", a.port)),
-		tracer.WithHTTPRoundTripper(session),
+		tracer.WithHTTPClient(&http.Client{Transport: session}),
 		tracer.WithSampler(tracer.NewAllSampler()),
 		tracer.WithLogStartup(false),
 		tracer.WithLogger(testLogger{t}),

@@ -8,17 +8,17 @@ package appsec
 import (
 	"errors"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener/graphqlsec"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener/grpcsec"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener/httpsec"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener/ossec"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener/sqlsec"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener/trace"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener/usersec"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener/waf"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/dyngo"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec/listener"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec/listener/graphqlsec"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec/listener/grpcsec"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec/listener/httpsec"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec/listener/ossec"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec/listener/sqlsec"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec/listener/trace"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec/listener/usersec"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec/listener/waf"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
 var features = []listener.NewFeature{

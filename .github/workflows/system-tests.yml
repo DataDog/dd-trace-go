@@ -48,7 +48,6 @@ jobs:
         scenario:
           - DEFAULT
           - INTEGRATIONS
-          - INTEGRATIONS_AWS
           - CROSSED_TRACING_LIBRARIES
           - APPSEC_DISABLED
           - APPSEC_BLOCKING
@@ -132,7 +131,7 @@ jobs:
         uses: actions/checkout@f43a0e5ff2bd294095638e18286ca9a3d1956744 # v3.6.0
         with:
           repository: 'DataDog/system-tests'
-          ref: ${{ inputs.ref }}
+          ref: refs/heads/dario.castane/AIT-3705/dd-trace-go.v2
 
       - name: Checkout dd-trace-go
         uses: actions/checkout@f43a0e5ff2bd294095638e18286ca9a3d1956744 # v3.6.0

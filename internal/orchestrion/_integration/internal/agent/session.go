@@ -12,8 +12,8 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/google/uuid"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
 
 type Session struct {

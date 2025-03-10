@@ -5,7 +5,7 @@
 ---
 # yaml-language-server: $schema=https://datadoghq.dev/orchestrion/schema.json
 meta:
-  name: gopkg.in/DataDog/dd-trace-go.v1/contrib/go-chi/chi
+  name: github.com/DataDog/dd-trace-go/contrib/go-chi/chi/v2
   description: chi is a lightweight, idiomatic and composable router for building Go HTTP services.
 
 aspects:
@@ -24,7 +24,7 @@ aspects:
       - wrap-expression:
           imports:
             chi: github.com/go-chi/chi
-            chitrace: gopkg.in/DataDog/dd-trace-go.v1/contrib/go-chi/chi
+            chitrace: github.com/DataDog/dd-trace-go/contrib/go-chi/chi/v2
           template: |-
             func() *chi.Mux {
               mux := {{ . }}

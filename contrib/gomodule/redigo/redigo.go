@@ -16,20 +16,19 @@ import (
 	"strconv"
 	"time"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 
-	redis "github.com/gomodule/redigo/redis"
+	"github.com/gomodule/redigo/redis"
 )
 
 const componentName = "gomodule/redigo"
 
+var instr *instrumentation.Instrumentation
+
 func init() {
-	telemetry.LoadIntegration(componentName)
-	tracer.MarkIntegrationImported("github.com/gomodule/redigo")
+	instr = instrumentation.Load(instrumentation.PackageRedigo)
 }
 
 // Conn is an implementation of the redis.Conn interface that supports tracing
@@ -70,7 +69,7 @@ func parseOptions(options ...interface{}) ([]redis.DialOption, *dialConfig) {
 		case redis.DialOption:
 			dialOpts = append(dialOpts, o)
 		case DialOption:
-			o(cfg)
+			o.apply(cfg)
 		}
 	}
 	return dialOpts, cfg
@@ -97,7 +96,7 @@ func wrapConn(c redis.Conn, p *params) redis.Conn {
 // The set of supported options must be either of type redis.DialOption or this package's DialOption.
 func Dial(network, address string, options ...interface{}) (redis.Conn, error) {
 	dialOpts, cfg := parseOptions(options...)
-	log.Debug("contrib/gomodule/redigo: Dialing %s %s, %#v", network, address, cfg)
+	instr.Logger().Debug("contrib/gomodule/redigo: Dialing %s %s, %#v", network, address, cfg)
 	c, err := redis.Dial(network, address, dialOpts...)
 	if err != nil {
 		return nil, err
@@ -114,7 +113,7 @@ func Dial(network, address string, options ...interface{}) (redis.Conn, error) {
 // The set of supported options must be either of type redis.DialOption or this package's DialOption.
 func DialContext(ctx context.Context, network, address string, options ...interface{}) (redis.Conn, error) {
 	dialOpts, cfg := parseOptions(options...)
-	log.Debug("contrib/gomodule/redigo: Dialing with context %s %s, %#v", network, address, cfg)
+	instr.Logger().Debug("contrib/gomodule/redigo: Dialing with context %s %s, %#v", network, address, cfg)
 	c, err := redis.DialContext(ctx, network, address, dialOpts...)
 	if err != nil {
 		return nil, err
@@ -133,7 +132,7 @@ func DialContext(ctx context.Context, network, address string, options ...interf
 // The returned redis.Conn is traced.
 func DialURL(rawurl string, options ...interface{}) (redis.Conn, error) {
 	dialOpts, cfg := parseOptions(options...)
-	log.Debug("contrib/gomodule/redigo: Dialing %s, %#v", rawurl, cfg)
+	instr.Logger().Debug("contrib/gomodule/redigo: Dialing %s, %#v", rawurl, cfg)
 	u, err := url.Parse(rawurl)
 	if err != nil {
 		return Conn{}, err
@@ -153,8 +152,8 @@ func DialURL(rawurl string, options ...interface{}) (redis.Conn, error) {
 }
 
 // newChildSpan creates a span inheriting from the given context. It adds to the span useful metadata about the traced Redis connection
-func newChildSpan(ctx context.Context, p *params) ddtrace.Span {
-	opts := []ddtrace.StartSpanOption{
+func newChildSpan(ctx context.Context, p *params) *tracer.Span {
+	opts := []tracer.StartSpanOption{
 		tracer.SpanType(ext.SpanTypeRedis),
 		tracer.ServiceName(p.config.serviceName),
 		tracer.Tag(ext.Component, componentName),

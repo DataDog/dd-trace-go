@@ -27,7 +27,7 @@ import (
 	"github.com/google/pprof/profile"
 	exptrace "golang.org/x/exp/trace"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 )
 
 type discardLogger struct{}
@@ -143,7 +143,7 @@ func TestSpanDoubleFinish(t *testing.T) {
 // TODO: move database/sql tests here? likely requires copying over contrib/sql/internal.MockDriver
 
 func TestExecutionTraceSpans(t *testing.T) {
-	var root, child tracer.Span
+	var root, child *tracer.Span
 	_, execTrace := collectTestData(t, func() {
 		tracer.Start(tracer.WithLogger(discardLogger{}))
 		defer tracer.Stop()

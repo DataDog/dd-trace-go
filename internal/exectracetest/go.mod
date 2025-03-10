@@ -1,12 +1,13 @@
-module gopkg.in/DataDog/dd-trace-go.v1/internal/exectracetest
+module github.com/DataDog/dd-trace-go/internal/exectracetest/v2
 
 go 1.23.0
 
 require (
+	github.com/DataDog/dd-trace-go/contrib/database/sql/v2 v2.0.0-rc.4
+	github.com/DataDog/dd-trace-go/v2 v2.0.0-rc.4
 	github.com/google/pprof v0.0.0-20241029153458-d1b30febd7db
 	github.com/mattn/go-sqlite3 v1.14.18
 	golang.org/x/exp v0.0.0-20250210185358-939b2ce775ac
-	gopkg.in/DataDog/dd-trace-go.v1 v1.70.3
 )
 
 require (
@@ -36,9 +37,9 @@ require (
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang/protobuf v1.5.4 // indirect
 	github.com/google/uuid v1.6.0 // indirect
-	github.com/hashicorp/go-secure-stdlib/parseutil v0.1.7 // indirect
+	github.com/hashicorp/go-secure-stdlib/parseutil v0.1.8 // indirect
 	github.com/hashicorp/go-secure-stdlib/strutil v0.1.2 // indirect
-	github.com/hashicorp/go-sockaddr v1.0.2 // indirect
+	github.com/hashicorp/go-sockaddr v1.0.7 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
 	github.com/lufia/plan9stats v0.0.0-20240226150601-1dcf7310316a // indirect
 	github.com/mitchellh/mapstructure v1.5.1-0.20231216201459-8508981c8b6c // indirect
@@ -80,5 +81,6 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
-// use local version of dd-trace-go
-replace gopkg.in/DataDog/dd-trace-go.v1 => ../..
+replace github.com/DataDog/dd-trace-go/contrib/database/sql/v2 => ../../contrib/database/sql
+
+replace github.com/DataDog/dd-trace-go/v2 => ../..

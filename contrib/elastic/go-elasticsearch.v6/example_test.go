@@ -9,8 +9,8 @@ import (
 	"log"
 	"strings"
 
-	elastictrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/elastic/go-elasticsearch.v6"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	elastictrace "github.com/DataDog/dd-trace-go/contrib/elastic/go-elasticsearch.v6/v2"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 
 	elasticsearch "github.com/elastic/go-elasticsearch/v8"
 	"github.com/elastic/go-elasticsearch/v8/esapi"
@@ -18,7 +18,7 @@ import (
 
 func Example_v8() {
 	cfg := elasticsearch.Config{
-		Transport: elastictrace.NewRoundTripper(elastictrace.WithServiceName("my-es-service")),
+		Transport: elastictrace.NewRoundTripper(elastictrace.WithService("my-es-service")),
 		Addresses: []string{
 			"http://127.0.0.1:9200",
 		},

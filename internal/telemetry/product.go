@@ -8,7 +8,7 @@ package telemetry
 import (
 	"sync"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry/internal/transport"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/internal/transport"
 )
 
 type products struct {

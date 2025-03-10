@@ -5,7 +5,7 @@
 ---
 # yaml-language-server: $schema=https://datadoghq.dev/orchestrion/schema.json
 meta:
-  name: gopkg.in/DataDog/dd-trace-go.v1/contrib/gocql/gocql
+  name: github.com/DataDog/dd-trace-go/contrib/gocql/gocql/v2
   description: Package gocql implements a fast and robust Cassandra client for the Go programming language.
 
 aspects:
@@ -24,7 +24,7 @@ aspects:
       - wrap-expression:
           imports:
             gocql: github.com/gocql/gocql
-            gocqltrace: gopkg.in/DataDog/dd-trace-go.v1/contrib/gocql/gocql
+            gocqltrace: github.com/DataDog/dd-trace-go/contrib/gocql/gocql/v2
           template: |-
             func(cluster *gocql.ClusterConfig) *gocql.ClusterConfig {
               obs := gocqltrace.NewObserver(cluster)
@@ -47,7 +47,7 @@ aspects:
       - wrap-expression:
           imports:
             gocql: github.com/gocql/gocql
-            gocqltrace: gopkg.in/DataDog/dd-trace-go.v1/contrib/gocql/gocql
+            gocqltrace: github.com/DataDog/dd-trace-go/contrib/gocql/gocql/v2
           template: |-
             func(cluster gocql.ClusterConfig) gocql.ClusterConfig {
               obs := gocqltrace.NewObserver(&cluster)
