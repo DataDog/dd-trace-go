@@ -471,18 +471,17 @@ func (t *testMsgpStruct) MarshalMsg(_ []byte) ([]byte, error) {
 }
 
 func TestSpanSetTagError(t *testing.T) {
-	assert := assert.New(t)
 
 	t.Run("off", func(t *testing.T) {
 		span := newBasicSpan("web.request")
 		span.setTagError(errors.New("error value with no trace"), errorConfig{noDebugStack: true})
-		assert.Empty(span.meta[ext.ErrorStack])
+		assert.Empty(t, span.meta[ext.ErrorStack])
 	})
 
 	t.Run("on", func(t *testing.T) {
 		span := newBasicSpan("web.request")
 		span.setTagError(errors.New("error value with trace"), errorConfig{noDebugStack: false})
-		assert.NotEmpty(span.meta[ext.ErrorStack])
+		assert.NotEmpty(t, span.meta[ext.ErrorStack])
 	})
 }
 
@@ -542,7 +541,7 @@ func TestTraceManualKeepRace(t *testing.T) {
 	})
 
 	// setting the tag using a StartSpan option has the same race
-	t.Run("StartSpanOption", func(t *testing.T) {
+	t.Run("StartSpanOption", func(_ *testing.T) {
 		tracer, err := newTracer()
 		defer tracer.Stop()
 		assert.NoError(t, err)

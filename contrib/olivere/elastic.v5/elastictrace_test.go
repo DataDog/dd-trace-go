@@ -236,7 +236,7 @@ func TestQuantize(t *testing.T) {
 
 func TestResourceNamerSettings(t *testing.T) {
 	staticName := "static resource name"
-	staticNamer := func(url, method string) string {
+	staticNamer := func(_, _ string) string {
 		return staticName
 	}
 

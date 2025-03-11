@@ -63,11 +63,9 @@ func TestMain(m *testing.M) {
 				if exiterr, ok := err.(*exec.ExitError); ok {
 					fmt.Printf("Scenario %s failed with exit code: %d\n", v, exiterr.ExitCode())
 					os.Exit(exiterr.ExitCode())
-				} else {
-					fmt.Printf("cmd.Run: %v\n", err)
-					os.Exit(1)
 				}
-				break
+				fmt.Printf("cmd.Run: %v\n", err)
+				os.Exit(1)
 			}
 		}
 	}
@@ -77,7 +75,7 @@ func TestMain(m *testing.M) {
 
 func runFlakyTestRetriesTests(m *testing.M) {
 	// mock the settings api to enable automatic test retries
-	server := setUpHttpServer(true, true, false, &net.KnownTestsResponseData{
+	server := setUpHTTPServer(true, true, false, &net.KnownTestsResponseData{
 		Tests: net.KnownTestsResponseDataModules{
 			"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting": net.KnownTestsResponseDataSuites{
 				"reflections_test.go": []string{
@@ -180,7 +178,7 @@ func runFlakyTestRetriesTests(m *testing.M) {
 
 func runEarlyFlakyTestDetectionTests(m *testing.M) {
 	// mock the settings api to enable automatic test retries
-	server := setUpHttpServer(false, true, true, &net.KnownTestsResponseData{
+	server := setUpHTTPServer(false, true, true, &net.KnownTestsResponseData{
 		Tests: net.KnownTestsResponseDataModules{
 			"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting": net.KnownTestsResponseDataSuites{
 				"reflections_test.go": []string{
@@ -279,7 +277,7 @@ func runEarlyFlakyTestDetectionTests(m *testing.M) {
 
 func runFlakyTestRetriesWithEarlyFlakyTestDetectionTests(m *testing.M) {
 	// mock the settings api to enable automatic test retries
-	server := setUpHttpServer(true, true, true, &net.KnownTestsResponseData{
+	server := setUpHTTPServer(true, true, true, &net.KnownTestsResponseData{
 		Tests: net.KnownTestsResponseDataModules{
 			"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting": net.KnownTestsResponseDataSuites{
 				"reflections_test.go": []string{
@@ -396,7 +394,7 @@ func runFlakyTestRetriesWithEarlyFlakyTestDetectionTests(m *testing.M) {
 
 func runIntelligentTestRunnerTests(m *testing.M) {
 	// mock the settings api to enable automatic test retries
-	server := setUpHttpServer(true, true, false, nil, true, []net.SkippableResponseDataAttributes{
+	server := setUpHTTPServer(true, true, false, nil, true, []net.SkippableResponseDataAttributes{
 		{
 			Suite: "testing_test.go",
 			Name:  "TestMyTest01",
@@ -518,7 +516,7 @@ func runIntelligentTestRunnerTests(m *testing.M) {
 
 func runTestManagementTests(m *testing.M) {
 	// mock the settings api to enable quarantine and disable tests
-	server := setUpHttpServer(false, false, false, nil, false, nil, true,
+	server := setUpHTTPServer(false, false, false, nil, false, nil, true,
 		&net.TestManagementTestsResponseDataModules{
 			Modules: map[string]net.TestManagementTestsResponseDataSuites{
 				"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting": {
@@ -759,7 +757,7 @@ type (
 	}
 )
 
-func setUpHttpServer(
+func setUpHTTPServer(
 	flakyRetriesEnabled bool,
 	knownTestsEnabled bool,
 	earlyFlakyDetectionEnabled bool,

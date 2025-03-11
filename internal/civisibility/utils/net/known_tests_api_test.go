@@ -87,7 +87,7 @@ func TestKnownTestsApiRequestFailToUnmarshal(t *testing.T) {
 }
 
 func TestKnownTestsApiRequestFailToGet(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		http.Error(w, "internal processing error", http.StatusInternalServerError)
 	}))
 	defer server.Close()

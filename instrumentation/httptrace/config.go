@@ -73,10 +73,10 @@ func QueryStringRegexp() *regexp.Regexp {
 		return nil
 	} else if r, err := regexp.Compile(s); err == nil {
 		return r
-	} else {
-		log.Error("Could not compile regexp from %s. Using default regexp instead.", EnvQueryStringRegexp)
-		return defaultQueryStringRegexp
 	}
+	log.Error("Could not compile regexp from %s. Using default regexp instead.", EnvQueryStringRegexp)
+	return defaultQueryStringRegexp
+
 }
 
 // GetErrorCodesFromInput parses a comma-separated string s to determine which codes are to be considered errors

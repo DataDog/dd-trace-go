@@ -44,6 +44,6 @@ func TestTestifyLikeTest(t *testing.T) {
 func (s *MySuite) TestMySuite() {
 	t := (*T)(s.T)
 	t.Log("This is a test")
-	t.Run("sub01", func(t *testing.T) {
+	t.Run("sub01", func(_ *testing.T) {
 	})
 }

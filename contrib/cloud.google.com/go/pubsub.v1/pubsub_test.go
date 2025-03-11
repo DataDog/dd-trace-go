@@ -113,7 +113,7 @@ func TestPropagationWithServiceName(t *testing.T) {
 	span.Finish()
 
 	// Subscriber
-	err = sub.Receive(ctx, WrapReceiveHandler(sub, func(ctx context.Context, msg *pubsub.Message) {
+	err = sub.Receive(ctx, WrapReceiveHandler(sub, func(_ context.Context, msg *pubsub.Message) {
 		msg.Ack()
 		cancel()
 	}, WithService("example.service")))

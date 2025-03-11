@@ -94,7 +94,7 @@ func TestTestManagementTestsApiRequest(t *testing.T) {
 // TestTestManagementTestsApiRequestFailToUnmarshal simulates a failure in the unmarshal of the response.
 func TestTestManagementTestsApiRequestFailToUnmarshal(t *testing.T) {
 	// The server returns a malformed JSON to trigger an unmarshal error.
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set(HeaderContentType, ContentTypeJSON)
 		_, _ = w.Write([]byte(`{"invalid": "json"`)) // JSON malformado
 	}))
@@ -118,7 +118,7 @@ func TestTestManagementTestsApiRequestFailToUnmarshal(t *testing.T) {
 // TestTestManagementTestsApiRequestFailToGet simulates a failure in the call to the endpoint.
 func TestTestManagementTestsApiRequestFailToGet(t *testing.T) {
 	// The server responds with an HTTP 500 error.
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		http.Error(w, "internal processing error", http.StatusInternalServerError)
 	}))
 	defer server.Close()

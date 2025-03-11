@@ -47,7 +47,7 @@ func TestChildSpan(t *testing.T) {
 func TestWithHeaderTags(t *testing.T) {
 	setupReq := func(opts ...Option) *http.Request {
 		mux := http.NewServeMux()
-		mux.HandleFunc("/test", func(w http.ResponseWriter, r *http.Request) {
+		mux.HandleFunc("/test", func(w http.ResponseWriter, _ *http.Request) {
 			w.Write([]byte("test"))
 		})
 		router := negroni.New()
@@ -243,7 +243,7 @@ func TestError(t *testing.T) {
 
 		// a handler with an error and make the requests
 		mux := http.NewServeMux()
-		mux.HandleFunc("/err", func(w http.ResponseWriter, r *http.Request) {
+		mux.HandleFunc("/err", func(w http.ResponseWriter, _ *http.Request) {
 			http.Error(w, fmt.Sprintf("%d!", code), code)
 		})
 		router.UseHandler(mux)
@@ -279,7 +279,7 @@ func TestError(t *testing.T) {
 		code := 404
 		// a handler with an error and make the requests
 		mux := http.NewServeMux()
-		mux.HandleFunc("/err", func(w http.ResponseWriter, r *http.Request) {
+		mux.HandleFunc("/err", func(w http.ResponseWriter, _ *http.Request) {
 			http.Error(w, fmt.Sprintf("%d!", code), code)
 		})
 		router.UseHandler(mux)
@@ -315,7 +315,7 @@ func TestError(t *testing.T) {
 
 		// a handler with an error and make the requests
 		mux := http.NewServeMux()
-		mux.HandleFunc("/404", func(w http.ResponseWriter, r *http.Request) {
+		mux.HandleFunc("/404", func(w http.ResponseWriter, _ *http.Request) {
 			http.Error(w, fmt.Sprintf("%d!", code), code)
 		})
 		router.UseHandler(mux)
@@ -337,7 +337,7 @@ func TestError(t *testing.T) {
 		mt.Reset()
 
 		code = 500
-		mux.HandleFunc("/500", func(w http.ResponseWriter, r *http.Request) {
+		mux.HandleFunc("/500", func(w http.ResponseWriter, _ *http.Request) {
 			http.Error(w, fmt.Sprintf("%d!", code), code)
 		})
 		r = httptest.NewRequest("GET", "/500", nil)
@@ -360,7 +360,7 @@ func TestGetSpanNotInstrumented(t *testing.T) {
 	assert := assert.New(t)
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("/user", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/user", func(_ http.ResponseWriter, _ *http.Request) {
 	})
 
 	router := negroni.New()
@@ -406,7 +406,7 @@ func TestAnalyticsSettings(t *testing.T) {
 		router.Use(Middleware(opts...))
 
 		mux := http.NewServeMux()
-		mux.HandleFunc("/user", func(w http.ResponseWriter, r *http.Request) {
+		mux.HandleFunc("/user", func(_ http.ResponseWriter, r *http.Request) {
 			_, ok := tracer.SpanFromContext(r.Context())
 			assert.True(t, ok)
 		})
