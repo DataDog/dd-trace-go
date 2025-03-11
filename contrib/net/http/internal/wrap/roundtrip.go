@@ -45,7 +45,7 @@ func ObserveRoundTrip(cfg *config.RoundTripperConfig, req *http.Request) (*http.
 		tracer.SpanType(ext.SpanTypeHTTP),
 		tracer.ResourceName(resourceName),
 		tracer.Tag(ext.HTTPMethod, req.Method),
-		tracer.Tag(ext.HTTPURL, httptrace.UrlFromRequest(req, cfg.QueryString)),
+		tracer.Tag(ext.HTTPURL, httptrace.URLFromRequest(req, cfg.QueryString)),
 		tracer.Tag(ext.Component, config.ComponentName),
 		tracer.Tag(ext.SpanKind, ext.SpanKindClient),
 		tracer.Tag(ext.NetworkDestinationName, url.Hostname()),

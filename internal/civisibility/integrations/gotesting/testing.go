@@ -272,10 +272,9 @@ func (ddm *M) executeInternalTest(testInfo *testingTInfo) func(*testing.T) {
 				checkModuleAndSuite(module, suite)
 				t.Skip(constants.SkippedByITRReason)
 				return
-			} else {
-				test.SetTag(constants.TestForcedToRun, "true")
-				telemetry.ITRForcedRun(telemetry.TestEventType)
 			}
+			test.SetTag(constants.TestForcedToRun, "true")
+			telemetry.ITRForcedRun(telemetry.TestEventType)
 		}
 
 		// Check if the coverage is enabled

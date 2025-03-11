@@ -323,7 +323,7 @@ func TestLen(t *testing.T) {
 func TestNearby(t *testing.T) {
 	testView(t, "Nearby", func(tx *Tx) error {
 		var arr []string
-		err := tx.Nearby("test-spatial-index", "[3 3]", func(key, value string, distance float64) bool {
+		err := tx.Nearby("test-spatial-index", "[3 3]", func(key, value string, _ float64) bool {
 			arr = append(arr, key, value)
 			return false
 		})

@@ -38,7 +38,7 @@ func runTransportTest(t *testing.T, agentless, shouldSetAPIKey bool) {
 
 	remainingEvents := 1000 + 10 + 1
 	var hits int
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 		hits++
 		metaLang := r.Header.Get("Datadog-Meta-Lang")
 		assert.NotNil(metaLang)

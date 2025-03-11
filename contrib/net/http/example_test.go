@@ -17,7 +17,7 @@ func Example() {
 	defer tracer.Stop()
 
 	mux := httptrace.NewServeMux()
-	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
 		w.Write([]byte("Hello World!\n"))
 	})
 	http.ListenAndServe(":8080", mux)
@@ -28,7 +28,7 @@ func Example_withServiceName() {
 	defer tracer.Stop()
 
 	mux := httptrace.NewServeMux(httptrace.WithService("my-service"))
-	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
 		w.Write([]byte("Hello World!\n"))
 	})
 	http.ListenAndServe(":8080", mux)

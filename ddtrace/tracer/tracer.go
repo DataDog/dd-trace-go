@@ -19,12 +19,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/google/uuid"
-
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/internal/tracerstats"
 	globalinternal "github.com/DataDog/dd-trace-go/v2/internal"
-	utils "github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec"
 	appsecConfig "github.com/DataDog/dd-trace-go/v2/internal/appsec/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/datastreams"
@@ -34,7 +31,6 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/traceprof"
-	globalversion "github.com/DataDog/dd-trace-go/v2/internal/version"
 
 	"github.com/DataDog/datadog-agent/pkg/obfuscate"
 	"github.com/DataDog/go-runtime-metrics-internal/pkg/runtimemetrics"
@@ -128,10 +124,7 @@ type tracer struct {
 
 	// These maps count the spans started and finished from
 	// each component, including contribs and "manual" spans.
-	spansStarted, spansFinished utils.XSyncMapCounterMap
-
-	// tracesDropped track metrics about traces as they are dropped
-	tracesDropped uint32
+	spansStarted, spansFinished globalinternal.XSyncMapCounterMap
 
 	// Keeps track of the total number of traces dropped for accurate logging.
 	totalTracesDropped uint32
@@ -255,28 +248,6 @@ func Start(opts ...StartOption) error {
 	return nil
 }
 
-func storeConfig(c *config) {
-	uuid, _ := uuid.NewRandom()
-	name := fmt.Sprintf("datadog-tracer-info-%s", uuid.String()[0:8])
-
-	metadata := TracerMetadata{
-		SchemaVersion:      1,
-		RuntimeId:          globalconfig.RuntimeID(),
-		Language:           "golang",
-		Version:            globalversion.Tag,
-		Hostname:           c.hostname,
-		ServiceName:        c.serviceName,
-		ServiceEnvironment: c.env,
-		ServiceVersion:     c.version,
-	}
-
-	data, _ := metadata.MarshalMsg(nil)
-	_, err := globalinternal.CreateMemfd(name, data)
-	if err != nil {
-		log.Error("failed to store the configuration: %s", err)
-	}
-}
-
 // Stop stops the started tracer. Subsequent calls are valid but become no-op.
 func Stop() {
 	SetGlobalTracer(&NoopTracer{})
@@ -389,8 +360,8 @@ func newUnstartedTracer(opts ...StartOption) (*tracer, error) {
 		pid:              os.Getpid(),
 		logDroppedTraces: time.NewTicker(1 * time.Second),
 		stats:            newConcentrator(c, defaultStatsBucketSize, statsd),
-		spansStarted:     *utils.NewXSyncMapCounterMap(),
-		spansFinished:    *utils.NewXSyncMapCounterMap(),
+		spansStarted:     *globalinternal.NewXSyncMapCounterMap(),
+		spansFinished:    *globalinternal.NewXSyncMapCounterMap(),
 		obfuscator: obfuscate.NewObfuscator(obfuscate.Config{
 			SQL: obfuscate.SQLConfig{
 				TableNames:       c.agent.HasFlag("table_names"),

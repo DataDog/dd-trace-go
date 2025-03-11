@@ -38,11 +38,11 @@ const (
 	// and helps identify the resource that the request is targeting.
 	ProxyHeaderPath = "X-Dd-Proxy-Path"
 
-	// ProxyHeaderHttpMethod is the header used to indicate the HTTP method
+	// ProxyHeaderHTTPMethod is the header used to indicate the HTTP method
 	// of the request (e.g., GET, POST, PUT, DELETE). This value corresponds
 	// to 'context.httpMethod' in AWS API Gateway, and provides the method
 	// used to make the request.
-	ProxyHeaderHttpMethod = "X-Dd-Proxy-Httpmethod"
+	ProxyHeaderHTTPMethod = "X-Dd-Proxy-Httpmethod"
 
 	// ProxyHeaderDomain is the header used to indicate the AWS domain name
 	// handling the request. This value corresponds to 'context.domainName'
@@ -96,7 +96,7 @@ func extractInferredProxyContext(headers http.Header) (*proxyContext, error) {
 	}
 
 	pc := proxyContext{
-		method:          headers.Get(ProxyHeaderHttpMethod),
+		method:          headers.Get(ProxyHeaderHTTPMethod),
 		path:            headers.Get(ProxyHeaderPath),
 		stage:           headers.Get(ProxyHeaderStage),
 		domainName:      headers.Get(ProxyHeaderDomain),

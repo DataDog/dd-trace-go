@@ -21,7 +21,7 @@ func ServerAndClient(h http.Handler) (*http.Server, *http.Client) {
 	p := newConnPool()
 	c := &http.Client{
 		Transport: &http.Transport{
-			DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+			DialContext: func(_ context.Context, _, _ string) (net.Conn, error) {
 				return p.NewConn()
 			},
 		},

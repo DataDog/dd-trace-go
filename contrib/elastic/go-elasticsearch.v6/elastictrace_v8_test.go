@@ -133,7 +133,7 @@ func TestClientV8Failure(t *testing.T) {
 
 func TestResourceNamerSettingsV8(t *testing.T) {
 	staticName := "static resource name"
-	staticNamer := func(url, method string) string {
+	staticNamer := func(_, _ string) string {
 		return staticName
 	}
 

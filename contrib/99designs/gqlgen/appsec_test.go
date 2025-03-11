@@ -301,7 +301,7 @@ func execFunc(ctx context.Context) graphql.ResponseHandler {
 					Field:  field,
 					Args:   field.ArgumentMap(op.Variables),
 				})
-				fieldVal, err := op.ResolverMiddleware(ctx, func(ctx context.Context) (any, error) {
+				fieldVal, err := op.ResolverMiddleware(ctx, func(_ context.Context) (any, error) {
 					switch field.Name {
 					case "topLevel":
 						arg := field.Arguments.ForName("id")
@@ -336,7 +336,7 @@ func execFunc(ctx context.Context) graphql.ResponseHandler {
 							Field:  nested,
 							Args:   nested.ArgumentMap(op.Variables),
 						})
-						nestedVal, err := op.ResolverMiddleware(ctx, func(ctx context.Context) (any, error) {
+						nestedVal, err := op.ResolverMiddleware(ctx, func(_ context.Context) (any, error) {
 							switch nested.Name {
 							case "nested":
 								arg := nested.Arguments.ForName("id")

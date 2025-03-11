@@ -281,7 +281,7 @@ func TestErrorHandling(t *testing.T) {
 
 	// setup
 	router := echo.New()
-	router.HTTPErrorHandler = func(err error, ctx echo.Context) {
+	router.HTTPErrorHandler = func(_ error, ctx echo.Context) {
 		ctx.Response().WriteHeader(http.StatusInternalServerError)
 	}
 	router.Use(Middleware(WithService("foobar")))
@@ -320,27 +320,27 @@ func TestStatusError(t *testing.T) {
 		isStatusError             func(statusCode int) bool
 		err                       error
 		code                      string
-		handler                   func(c echo.Context) error
+		handler                   func(_ echo.Context) error
 		envServerErrorStatusesVal string
 	}{
 		{
 			err:  errors.New("oh no"),
 			code: "500",
-			handler: func(c echo.Context) error {
+			handler: func(_ echo.Context) error {
 				return errors.New("oh no")
 			},
 		},
 		{
 			err:  echo.NewHTTPError(http.StatusInternalServerError, "my error message"),
 			code: "500",
-			handler: func(c echo.Context) error {
+			handler: func(_ echo.Context) error {
 				return echo.NewHTTPError(http.StatusInternalServerError, "my error message")
 			},
 		},
 		{
 			err:  nil,
 			code: "400",
-			handler: func(c echo.Context) error {
+			handler: func(_ echo.Context) error {
 				return echo.NewHTTPError(http.StatusBadRequest, "my error message")
 			},
 		},
@@ -348,7 +348,7 @@ func TestStatusError(t *testing.T) {
 			isStatusError: func(statusCode int) bool { return statusCode >= 400 && statusCode < 500 },
 			err:           nil,
 			code:          "500",
-			handler: func(c echo.Context) error {
+			handler: func(_ echo.Context) error {
 				return errors.New("oh no")
 			},
 		},
@@ -356,7 +356,7 @@ func TestStatusError(t *testing.T) {
 			isStatusError: func(statusCode int) bool { return statusCode >= 400 && statusCode < 500 },
 			err:           nil,
 			code:          "500",
-			handler: func(c echo.Context) error {
+			handler: func(_ echo.Context) error {
 				return echo.NewHTTPError(http.StatusInternalServerError, "my error message")
 			},
 		},
@@ -364,7 +364,7 @@ func TestStatusError(t *testing.T) {
 			isStatusError: func(statusCode int) bool { return statusCode >= 400 },
 			err:           echo.NewHTTPError(http.StatusBadRequest, "my error message"),
 			code:          "400",
-			handler: func(c echo.Context) error {
+			handler: func(_ echo.Context) error {
 				return echo.NewHTTPError(http.StatusBadRequest, "my error message")
 			},
 		},
@@ -391,7 +391,7 @@ func TestStatusError(t *testing.T) {
 			isStatusError: nil,
 			err:           echo.NewHTTPError(http.StatusInternalServerError, "my error message"),
 			code:          "500",
-			handler: func(c echo.Context) error {
+			handler: func(_ echo.Context) error {
 				return echo.NewHTTPError(http.StatusInternalServerError, "my error message")
 			},
 			envServerErrorStatusesVal: "500",
@@ -401,7 +401,7 @@ func TestStatusError(t *testing.T) {
 			isStatusError: func(statusCode int) bool { return statusCode == 400 },
 			err:           echo.NewHTTPError(http.StatusBadRequest, "my error message"),
 			code:          "400",
-			handler: func(c echo.Context) error {
+			handler: func(_ echo.Context) error {
 				return echo.NewHTTPError(http.StatusBadRequest, "my error message")
 			},
 			envServerErrorStatusesVal: "500",
@@ -411,7 +411,7 @@ func TestStatusError(t *testing.T) {
 			isStatusError: func(statusCode int) bool { return statusCode == 400 },
 			err:           nil,
 			code:          "500",
-			handler: func(c echo.Context) error {
+			handler: func(_ echo.Context) error {
 				return echo.NewHTTPError(http.StatusInternalServerError, "my error message")
 			},
 		},
@@ -516,6 +516,88 @@ func TestNoDebugStack(t *testing.T) {
 	assert.Equal(ext.SpanKindServer, span.Tag(ext.SpanKind))
 }
 
+func TestIgnoreRequestFunc(t *testing.T) {
+	assert := assert.New(t)
+	mt := mocktracer.Start()
+	defer mt.Stop()
+	var called, traced bool
+
+	// setup
+	ignoreRequestFunc := func(_ echo.Context) bool {
+		return true
+	}
+	router := echo.New()
+	router.Use(Middleware(WithIgnoreRequest(ignoreRequestFunc)))
+
+	// a handler with an error and make the requests
+	router.GET("/err", func(c echo.Context) error {
+		_, traced = tracer.SpanFromContext(c.Request().Context())
+		called = true
+		return nil
+	})
+	r := httptest.NewRequest("GET", "/err", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, r)
+
+	// verify the error is correct and the stacktrace is disabled
+	assert.True(called)
+	assert.False(traced)
+
+	spans := mt.FinishedSpans()
+	assert.Len(spans, 0)
+}
+
+type testCustomError struct {
+	TestCode int
+}
+
+// Error satisfies the apierror interface
+func (e *testCustomError) Error() string {
+	return "test"
+}
+
+func TestWithErrorTranslator(t *testing.T) {
+	assert := assert.New(t)
+	mt := mocktracer.Start()
+	defer mt.Stop()
+	var called, traced bool
+
+	// setup
+	translateError := func(e error) (*echo.HTTPError, bool) {
+		return &echo.HTTPError{
+			Message: e.(*testCustomError).Error(),
+			Code:    e.(*testCustomError).TestCode,
+		}, true
+	}
+	router := echo.New()
+	router.Use(Middleware(WithErrorTranslator(translateError)))
+
+	// a handler with an error and make the requests
+	router.GET("/err", func(c echo.Context) error {
+		_, traced = tracer.SpanFromContext(c.Request().Context())
+		called = true
+		return &testCustomError{
+			TestCode: 401,
+		}
+	})
+	r := httptest.NewRequest("GET", "/err", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, r)
+
+	// verify the error is correct and the stacktrace is disabled
+	assert.True(called)
+	assert.True(traced)
+
+	spans := mt.FinishedSpans()
+	require.Len(t, spans, 1)
+	span := spans[0]
+	assert.Equal("http.request", span.OperationName())
+	assert.Equal(ext.SpanTypeWeb, span.Tag(ext.SpanType))
+	assert.Contains(span.Tag(ext.ResourceName), "/err")
+	assert.Equal("401", span.Tag(ext.HTTPCode))
+	assert.Equal("GET", span.Tag(ext.HTTPMethod))
+}
+
 func TestWithErrorCheck(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -569,7 +651,7 @@ func TestWithErrorCheck(t *testing.T) {
 			name: "ignore-none",
 			err:  errors.New("any error"),
 			opts: []Option{
-				WithErrorCheck(func(err error) bool {
+				WithErrorCheck(func(_ error) bool {
 					return true
 				}),
 			},
@@ -579,7 +661,7 @@ func TestWithErrorCheck(t *testing.T) {
 			name: "ignore-all",
 			err:  errors.New("any error"),
 			opts: []Option{
-				WithErrorCheck(func(err error) bool {
+				WithErrorCheck(func(_ error) bool {
 					return false
 				}),
 			},
@@ -597,7 +679,7 @@ func TestWithErrorCheck(t *testing.T) {
 				WithStatusCheck(func(statusCode int) bool {
 					return statusCode == http.StatusNotFound
 				}),
-				WithErrorCheck(func(err error) bool {
+				WithErrorCheck(func(_ error) bool {
 					return false
 				}),
 			},

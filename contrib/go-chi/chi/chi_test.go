@@ -34,7 +34,7 @@ func TestChildSpan(t *testing.T) {
 
 	router := chi.NewRouter()
 	router.Use(Middleware(WithService("foobar")))
-	router.Get("/user/{id}", func(w http.ResponseWriter, r *http.Request) {
+	router.Get("/user/{id}", func(_ http.ResponseWriter, r *http.Request) {
 		_, ok := tracer.SpanFromContext(r.Context())
 		assert.True(ok)
 	})
@@ -100,7 +100,7 @@ func TestTrace200(t *testing.T) {
 
 		router := chi.NewRouter()
 		router.Use(Middleware(WithService("foobar")))
-		router.Get("/user/{id}", func(w http.ResponseWriter, r *http.Request) {
+		router.Get("/user/{id}", func(_ http.ResponseWriter, r *http.Request) {
 			span, ok := tracer.SpanFromContext(r.Context())
 			assert.True(ok)
 			assert.Equal(mocktracer.MockSpan(span).Tag(ext.ServiceName), "foobar")
@@ -127,7 +127,7 @@ func TestError(t *testing.T) {
 		code := 500
 
 		// a handler with an error and make the requests
-		router.Get("/err", func(w http.ResponseWriter, r *http.Request) {
+		router.Get("/err", func(w http.ResponseWriter, _ *http.Request) {
 			http.Error(w, fmt.Sprintf("%d!", code), code)
 		})
 		r := httptest.NewRequest("GET", "/err", nil)
@@ -161,7 +161,7 @@ func TestError(t *testing.T) {
 		))
 		code := 404
 		// a handler with an error and make the requests
-		router.Get("/err", func(w http.ResponseWriter, r *http.Request) {
+		router.Get("/err", func(w http.ResponseWriter, _ *http.Request) {
 			http.Error(w, fmt.Sprintf("%d!", code), code)
 		})
 		r := httptest.NewRequest("GET", "/err", nil)
@@ -193,7 +193,7 @@ func TestError(t *testing.T) {
 			WithService("foobar")))
 		code := 200
 		// a handler with an error and make the requests
-		router.Get("/err", func(w http.ResponseWriter, r *http.Request) {
+		router.Get("/err", func(w http.ResponseWriter, _ *http.Request) {
 			http.Error(w, fmt.Sprintf("%d!", code), code)
 		})
 		r := httptest.NewRequest("GET", "/err", nil)
@@ -227,7 +227,7 @@ func TestError(t *testing.T) {
 		))
 		code := 404
 		// a handler with an error and make the requests
-		router.Get("/404", func(w http.ResponseWriter, r *http.Request) {
+		router.Get("/404", func(w http.ResponseWriter, _ *http.Request) {
 			http.Error(w, fmt.Sprintf("%d!", code), code)
 		})
 		r := httptest.NewRequest("GET", "/404", nil)
@@ -248,7 +248,7 @@ func TestError(t *testing.T) {
 		mt.Reset()
 
 		code = 500
-		router.Get("/500", func(w http.ResponseWriter, r *http.Request) {
+		router.Get("/500", func(w http.ResponseWriter, _ *http.Request) {
 			http.Error(w, fmt.Sprintf("%d!", code), code)
 		})
 		r = httptest.NewRequest("GET", "/500", nil)
@@ -272,7 +272,7 @@ func TestWithHeaderTags(t *testing.T) {
 		router := chi.NewRouter()
 		router.Use(Middleware(opts...))
 
-		router.Get("/test", func(w http.ResponseWriter, r *http.Request) {
+		router.Get("/test", func(w http.ResponseWriter, _ *http.Request) {
 			w.Write([]byte("test"))
 		})
 		r := httptest.NewRequest("GET", "/test", nil)
@@ -383,7 +383,7 @@ func TestPropagation(t *testing.T) {
 
 	router := chi.NewRouter()
 	router.Use(Middleware(WithService("foobar")))
-	router.Get("/user/{id}", func(w http.ResponseWriter, r *http.Request) {
+	router.Get("/user/{id}", func(_ http.ResponseWriter, r *http.Request) {
 		span, ok := tracer.SpanFromContext(r.Context())
 		assert.True(ok)
 		assert.Equal(mocktracer.MockSpan(span).ParentID(), mocktracer.MockSpan(pspan).SpanID())
@@ -396,7 +396,7 @@ func TestAnalyticsSettings(t *testing.T) {
 	assertRate := func(t *testing.T, mt mocktracer.Tracer, rate interface{}, opts ...Option) {
 		router := chi.NewRouter()
 		router.Use(Middleware(opts...))
-		router.Get("/user/{id}", func(w http.ResponseWriter, r *http.Request) {
+		router.Get("/user/{id}", func(_ http.ResponseWriter, r *http.Request) {
 			_, ok := tracer.SpanFromContext(r.Context())
 			assert.True(t, ok)
 		})
@@ -459,11 +459,11 @@ func TestIgnoreRequest(t *testing.T) {
 		}),
 	))
 
-	router.Get("/ok", func(w http.ResponseWriter, r *http.Request) {
+	router.Get("/ok", func(w http.ResponseWriter, _ *http.Request) {
 		w.Write([]byte("ok"))
 	})
 
-	router.Get("/skip", func(w http.ResponseWriter, r *http.Request) {
+	router.Get("/skip", func(w http.ResponseWriter, _ *http.Request) {
 		w.Write([]byte("skip"))
 	})
 
@@ -489,11 +489,11 @@ func TestAppSec(t *testing.T) {
 
 	// Start and trace an HTTP server with some testing routes
 	router := chi.NewRouter().With(Middleware())
-	router.HandleFunc("/path0.0/{myPathParam0}/path0.1/{myPathParam1}/path0.2/{myPathParam2}/path0.3/*", func(w http.ResponseWriter, r *http.Request) {
+	router.HandleFunc("/path0.0/{myPathParam0}/path0.1/{myPathParam1}/path0.2/{myPathParam2}/path0.3/*", func(w http.ResponseWriter, _ *http.Request) {
 		_, err := w.Write([]byte("Hello World!\n"))
 		require.NoError(t, err)
 	})
-	router.HandleFunc("/*", func(w http.ResponseWriter, r *http.Request) {
+	router.HandleFunc("/*", func(w http.ResponseWriter, _ *http.Request) {
 		_, err := w.Write([]byte("Hello World!\n"))
 		require.NoError(t, err)
 	})
@@ -594,10 +594,10 @@ func TestCustomResourceName(t *testing.T) {
 	defer mt.Stop()
 
 	router := chi.NewRouter()
-	router.Use(Middleware(WithService("service-name"), WithResourceNamer(func(r *http.Request) string {
+	router.Use(Middleware(WithService("service-name"), WithResourceNamer(func(_ *http.Request) string {
 		return "custom-resource-name"
 	})))
-	router.Get("/user/{id}", func(w http.ResponseWriter, r *http.Request) {
+	router.Get("/user/{id}", func(_ http.ResponseWriter, r *http.Request) {
 		_, ok := tracer.SpanFromContext(r.Context())
 		assert.True(ok)
 	})
@@ -619,7 +619,7 @@ func TestUnknownResourceName(t *testing.T) {
 
 	router := chi.NewRouter()
 	router.Use(Middleware(WithService("service-name")))
-	router.Get("/user/{id}", func(w http.ResponseWriter, r *http.Request) {
+	router.Get("/user/{id}", func(_ http.ResponseWriter, r *http.Request) {
 		_, ok := tracer.SpanFromContext(r.Context())
 		assert.True(ok)
 	})

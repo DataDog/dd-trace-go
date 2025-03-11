@@ -140,7 +140,7 @@ func mapMetrics(ot string) (string, error) {
 	if ot == "none" {
 		return "false", nil
 	}
-	return "", fmt.Errorf("The following configuration is not supported: OTEL_METRICS_EXPORTER=%v", ot)
+	return "", fmt.Errorf("the following configuration is not supported: OTEL_METRICS_EXPORTER=%v", ot)
 }
 
 // mapLogLevel maps OTEL_LOG_LEVEL to DD_TRACE_DEBUG
@@ -148,7 +148,7 @@ func mapLogLevel(ot string) (string, error) {
 	if strings.TrimSpace(strings.ToLower(ot)) == "debug" {
 		return "true", nil
 	}
-	return "", fmt.Errorf("The following configuration is not supported: OTEL_LOG_LEVEL=%v", ot)
+	return "", fmt.Errorf("the following configuration is not supported: OTEL_LOG_LEVEL=%v", ot)
 }
 
 // mapEnabled maps OTEL_TRACES_EXPORTER to DD_TRACE_ENABLED
@@ -156,7 +156,7 @@ func mapEnabled(ot string) (string, error) {
 	if strings.TrimSpace(strings.ToLower(ot)) == "none" {
 		return "false", nil
 	}
-	return "", fmt.Errorf("The following configuration is not supported: OTEL_METRICS_EXPORTER=%v", ot)
+	return "", fmt.Errorf("the following configuration is not supported: OTEL_METRICS_EXPORTER=%v", ot)
 }
 
 // mapSampleRate maps OTEL_TRACES_SAMPLER to DD_TRACE_SAMPLE_RATE

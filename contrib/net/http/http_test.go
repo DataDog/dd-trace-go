@@ -394,7 +394,7 @@ func TestAnalyticsSettings(t *testing.T) {
 			assert.Equal(t, rate, s.Tag(ext.EventSampleRate))
 		},
 		"WrapHandler": func(t *testing.T, mt mocktracer.Tracer, rate interface{}, opts ...Option) {
-			f := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			f := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				message := "Hello \n"
 				w.Write([]byte(message))
 			})
@@ -515,11 +515,11 @@ func handler200(w http.ResponseWriter, _ *http.Request) {
 	w.Write([]byte("OK\n"))
 }
 
-func handler500(w http.ResponseWriter, r *http.Request) {
+func handler500(w http.ResponseWriter, _ *http.Request) {
 	http.Error(w, "500!", http.StatusInternalServerError)
 }
 
-func handler400(w http.ResponseWriter, r *http.Request) {
+func handler400(w http.ResponseWriter, _ *http.Request) {
 	http.Error(w, "400!", http.StatusBadRequest)
 }
 

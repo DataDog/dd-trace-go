@@ -344,7 +344,7 @@ func TestURLTag(t *testing.T) {
 			if tc.port != "" {
 				r.Host += ":" + tc.port
 			}
-			url := UrlFromRequest(&r, true)
+			url := URLFromRequest(&r, true)
 			require.Equal(t, tc.expectedURL, url)
 		})
 	}
