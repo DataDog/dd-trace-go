@@ -3,6 +3,8 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2024 Datadog, Inc.
 
+//go:build goexperiment.synctest
+
 package net
 
 import (
@@ -854,10 +856,13 @@ func TestSendRequestWithInvalidRetryAfterHeader(t *testing.T) {
 }
 
 func TestExponentialBackoffWithMaxDelay(t *testing.T) {
-	start := time.Now()
-	exponentialBackoff(10, 1*time.Second) // Should be limited to maxDelay (10s)
-	duration := time.Since(start)
-	assert.LessOrEqual(t, duration, 11*time.Second)
+	synctest.Run(func() {
+		start := time.Now()
+		exponentialBackoff(10, 1*time.Second) // Should be limited to maxDelay (10s)
+		synctest.Wait()
+		duration := time.Since(start)
+		assert.LessOrEqual(t, duration, 11*time.Second)
+	})
 }
 
 func TestSendRequestWithContextTimeout(t *testing.T) {
