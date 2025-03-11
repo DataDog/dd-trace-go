@@ -299,14 +299,17 @@ func TestRateLimitHandlingWithoutResetHeader(t *testing.T) {
 		Backoff:    1 * time.Second,
 	}
 
-	start := time.Now()
-	response, err := handler.SendRequest(config)
-	elapsed := time.Since(start)
+	synctest.Run(func() {
+		start := time.Now()
+		response, err := handler.SendRequest(config)
+		synctest.Wait()
+		elapsed := time.Since(start)
 
-	// With exponential backoff fallback, the minimum elapsed time should be at least 3 seconds (1s + 2s)
-	assert.Error(t, err)
-	assert.Nil(t, response)
-	assert.True(t, elapsed >= 3*time.Second, "Expected at least 3 seconds due to exponential backoff delay")
+		// With exponential backoff fallback, the minimum elapsed time should be at least 3 seconds (1s + 2s)
+		assert.Error(t, err)
+		assert.Nil(t, response)
+		assert.True(t, elapsed >= 3*time.Second, "Expected at least 3 seconds due to exponential backoff delay")
+	})
 }
 
 func TestSendRequestWithInvalidURL(t *testing.T) {
