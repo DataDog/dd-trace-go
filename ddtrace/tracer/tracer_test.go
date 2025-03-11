@@ -1745,8 +1745,8 @@ func TestPushTrace(t *testing.T) {
 	tp := new(log.RecordLogger)
 	log.UseLogger(tp)
 	tracer, err := newUnstartedTracer()
-	defer tracer.statsd.Close()
 	assert.Nil(err)
+	defer tracer.statsd.Close()
 	trace := []*Span{
 		{
 			name:     "pylons.request",
@@ -2698,6 +2698,7 @@ func TestExecutionTraceSpanTagged(t *testing.T) {
 func wasteA(d time.Duration) {
 	start := time.Now()
 	for start.Add(d).Before(time.Now()) {
+		//lint:ignore S1039 We are intentionally creating empty prints
 		_ = fmt.Sprint("waste")
 	}
 }
@@ -2705,6 +2706,7 @@ func wasteA(d time.Duration) {
 func wasteB(d time.Duration) {
 	start := time.Now()
 	for start.Add(d).Before(time.Now()) {
+		//lint:ignore S1039 We are intentionally creating empty prints
 		_ = fmt.Sprint("waste")
 	}
 }
@@ -2712,6 +2714,7 @@ func wasteB(d time.Duration) {
 func wasteC(d time.Duration) {
 	start := time.Now()
 	for start.Add(d).Before(time.Now()) {
+		//lint:ignore S1039 We are intentionally creating empty prints
 		_ = fmt.Sprint("waste")
 	}
 }
