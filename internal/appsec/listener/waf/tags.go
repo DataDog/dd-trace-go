@@ -10,12 +10,11 @@ import (
 
 	waf "github.com/DataDog/go-libddwaf/v3"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/trace"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/samplernames"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/trace"
+	"github.com/DataDog/dd-trace-go/v2/internal"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
 )
 
 const (
@@ -73,5 +72,5 @@ func SetEventSpanTags(span trace.TagSetter) {
 	span.SetTag("_dd.origin", "appsec")
 	// Set the appsec.event tag needed by the appsec backend
 	span.SetTag("appsec.event", true)
-	span.SetTag("_dd.p.appsec", internal.PropagatingTagValue{Value: "1"})
+	span.SetTag("_dd.p.ts", internal.TraceSourceTagValue{Value: internal.ASMTraceSource})
 }

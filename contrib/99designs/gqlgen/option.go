@@ -8,11 +8,8 @@ package gqlgen
 import (
 	"math"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 )
-
-const defaultServiceName = "graphql"
 
 type config struct {
 	serviceName                       string
@@ -22,17 +19,26 @@ type config struct {
 	tags                              map[string]interface{}
 }
 
-// An Option configures the gqlgen integration.
-type Option func(cfg *config)
+// An Option describes options for the gqlgen integration.
+type Option interface {
+	apply(*config)
+}
+
+// OptionFn represents an option that can be passed to gqlgen tracer.
+type OptionFn func(*config)
+
+func (fn OptionFn) apply(cfg *config) {
+	fn(cfg)
+}
 
 func defaults(cfg *config) {
-	cfg.serviceName = namingschema.ServiceNameOverrideV0(defaultServiceName, defaultServiceName)
-	cfg.analyticsRate = globalconfig.AnalyticsRate()
+	cfg.serviceName = instr.ServiceName(instrumentation.ComponentDefault, nil)
+	cfg.analyticsRate = instr.AnalyticsRate(false)
 	cfg.tags = make(map[string]interface{})
 }
 
 // WithAnalytics enables or disables Trace Analytics for all started spans.
-func WithAnalytics(on bool) Option {
+func WithAnalytics(on bool) OptionFn {
 	if on {
 		return WithAnalyticsRate(1.0)
 	}
@@ -40,21 +46,21 @@ func WithAnalytics(on bool) Option {
 }
 
 // WithAnalyticsRate sets the sampling rate for Trace Analytics events correlated to started spans.
-func WithAnalyticsRate(rate float64) Option {
+func WithAnalyticsRate(rate float64) OptionFn {
 	return func(cfg *config) {
 		cfg.analyticsRate = rate
 	}
 }
 
-// WithServiceName sets the given service name for the gqlgen server.
-func WithServiceName(name string) Option {
+// WithService sets the given service name for the gqlgen server.
+func WithService(name string) OptionFn {
 	return func(cfg *config) {
 		cfg.serviceName = name
 	}
 }
 
 // WithoutTraceIntrospectionQuery skips creating spans for fields when the operation name is IntrospectionQuery.
-func WithoutTraceIntrospectionQuery() Option {
+func WithoutTraceIntrospectionQuery() OptionFn {
 	return func(cfg *config) {
 		cfg.withoutTraceIntrospectionQuery = true
 	}
@@ -62,14 +68,14 @@ func WithoutTraceIntrospectionQuery() Option {
 
 // WithoutTraceTrivialResolvedFields skips creating spans for fields that have a trivial resolver.
 // For example, a field resolved from an object w/o requiring a custom method is considered trivial.
-func WithoutTraceTrivialResolvedFields() Option {
+func WithoutTraceTrivialResolvedFields() OptionFn {
 	return func(cfg *config) {
 		cfg.withoutTraceTrivialResolvedFields = true
 	}
 }
 
 // WithCustomTag will attach the value to the span tagged by the key.
-func WithCustomTag(key string, value interface{}) Option {
+func WithCustomTag(key string, value interface{}) OptionFn {
 	return func(cfg *config) {
 		if cfg.tags == nil {
 			cfg.tags = make(map[string]interface{})

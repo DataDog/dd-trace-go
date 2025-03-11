@@ -58,6 +58,7 @@ jobs:
         run: |-
           go get -u -t $PACKAGES
           go mod tidy
+          for d in `find . -iname go.mod | xargs -n1 dirname`; do pushd $d; go mod tidy; popd; done;
       - name: Install requested go-libddwaf version
         if: github.event_name == 'workflow_call' && inputs.go-libddwaf-ref != ''
         run: |-
@@ -65,6 +66,12 @@ jobs:
           go mod tidy
       - name: Compile dd-trace-go
         run: go build $PACKAGES
+      - name: Test contribs (v2)
+        # It needs to run before "Test dd-trace-go" to avoid TestTelemetryEnabled tests to fail.
+        run: |
+          go install gotest.tools/gotestsum@latest
+          mkdir -p $TEST_RESULTS
+          ./.github/workflows/apps/test-contrib-submodules.sh smoke
       - name: Test dd-trace-go
         env:
           DD_APPSEC_WAF_TIMEOUT: 1h
@@ -87,7 +94,7 @@ jobs:
           ref: ${{ inputs.ref || github.ref }}
       - uses: actions/setup-go@6edd4406fa81c3da01a34fa6f6343087c207a568 # v3.5.0
         with:
-          go-version: "1.22"
+          go-version: "1.23"
           cache: true
       - name: go mod tidy
         run: |-
@@ -110,7 +117,7 @@ jobs:
       matrix:
         # TODO: cross-compilation from/to different hardware architectures once
         #       github provides native ARM runners.
-        go: [ "1.22", "1.23" ]
+        go: [ "1.23", "1.24" ]
         build-env: [ alpine, bookworm, bullseye ]
         build-with-cgo: [ 0, 1 ]
         deployment-env: [ alpine, debian11, debian12, al2, al2023, busybox, scratch ]

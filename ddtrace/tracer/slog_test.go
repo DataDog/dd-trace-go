@@ -9,8 +9,8 @@ import (
 	"log/slog"
 	"testing"
 
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/stretchr/testify/require"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
 func Test_slogHandler(t *testing.T) {
@@ -37,9 +37,17 @@ func Test_slogHandler(t *testing.T) {
 	l.Error("error test", "n", 3)
 	log.Flush() // needed to get the error log flushed
 
+	// Check that chaining works as expected.
+	l = l.With("baz", "qux")
+	l = l.WithGroup("c").WithGroup("d")
+	l.Info("info test", "n", 1)
+
+	log.Flush()
+
 	// Check that the logs were written correctly.
-	require.Len(t, rl.Logs(), 3)
+	require.Len(t, rl.Logs(), 4)
 	require.Contains(t, rl.Logs()[0], "info test foo=bar a.b.n=1")
 	require.Contains(t, rl.Logs()[1], "warn test foo=bar a.b.n=2")
 	require.Contains(t, rl.Logs()[2], "error test foo=bar a.b.n=3")
+	require.Contains(t, rl.Logs()[3], "info test foo=bar a.b.baz=qux a.b.c.d.n=1")
 }

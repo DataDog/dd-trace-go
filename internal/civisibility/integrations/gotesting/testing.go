@@ -14,12 +14,13 @@ import (
 	"testing"
 	"time"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/constants"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/integrations"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/integrations/gotesting/coverage"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/utils"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/utils/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting/coverage"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/net"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/telemetry"
 )
 
 const (
@@ -234,6 +235,28 @@ func (ddm *M) executeInternalTest(testInfo *testingTInfo) func(*testing.T) {
 			} else if execMeta.isATRExecution {
 				// Set the ATR as the retry reason
 				test.SetTag(constants.TestRetryReason, "atr")
+			} else if execMeta.isAttemptToFix {
+				// Set the attempt to fix as the retry reason
+				test.SetTag(constants.TestRetryReason, "attempt_to_fix")
+			}
+		}
+
+		// If the test is an attempt to fix we tag the test event
+		if execMeta.isAttemptToFix {
+			test.SetTag(constants.TestIsAttempToFix, "true")
+		}
+
+		// If the test is quarantined we tag the test event
+		if execMeta.isQuarantined {
+			test.SetTag(constants.TestIsQuarantined, "true")
+		}
+
+		// If the test is disabled we tag the test event
+		if execMeta.isDisabled {
+			test.SetTag(constants.TestIsDisabled, "true")
+			if !execMeta.isAttemptToFix {
+				test.Close(integrations.ResultStatusSkip, integrations.WithTestSkipReason("Flaky test is disabled by Datadog"))
+				return
 			}
 		}
 
@@ -301,6 +324,9 @@ func (ddm *M) executeInternalTest(testInfo *testingTInfo) func(*testing.T) {
 				// Handle panic and set error information.
 				execMeta.panicData = r
 				execMeta.panicStacktrace = utils.GetStacktrace(1)
+				if execMeta.isARetry && execMeta.isLastRetry && execMeta.allRetriesFailed {
+					test.SetTag(constants.TestHasFailedAllRetries, "true")
+				}
 				test.SetError(integrations.WithErrorInfo("panic", fmt.Sprint(r), execMeta.panicStacktrace))
 				suite.SetTag(ext.Error, true)
 				module.SetTag(ext.Error, true)
@@ -315,6 +341,9 @@ func (ddm *M) executeInternalTest(testInfo *testingTInfo) func(*testing.T) {
 			} else {
 				// Normal finalization: determine the test result based on its state.
 				if t.Failed() {
+					if execMeta.isARetry && execMeta.isLastRetry && execMeta.allRetriesFailed {
+						test.SetTag(constants.TestHasFailedAllRetries, "true")
+					}
 					test.SetTag(ext.Error, true)
 					suite.SetTag(ext.Error, true)
 					module.SetTag(ext.Error, true)
@@ -322,6 +351,9 @@ func (ddm *M) executeInternalTest(testInfo *testingTInfo) func(*testing.T) {
 				} else if t.Skipped() {
 					test.Close(integrations.ResultStatusSkip)
 				} else {
+					if execMeta.isARetry && execMeta.isLastRetry && execMeta.allAttemptsPassed {
+						test.SetTag(constants.TestAttemptToFixPassed, "true")
+					}
 					test.Close(integrations.ResultStatusPass)
 				}
 
@@ -584,4 +616,23 @@ func isKnownTest(testInfo *commonInfo) (isKnown bool, hasKnownData bool) {
 	}
 
 	return false, false
+}
+
+// getTestManagementData retrieves the test management data for a test
+func getTestManagementData(testInfo *commonInfo) (data *net.TestManagementTestsResponseDataTestPropertiesAttributes, hasTestManagementData bool) {
+	testManagementData := integrations.GetTestManagementTestsData()
+	if testManagementData != nil && len(testManagementData.Modules) > 0 {
+		// Check if the test is quarantined
+		if module, ok := testManagementData.Modules[testInfo.moduleName]; ok {
+			if suite, ok := module.Suites[testInfo.suiteName]; ok {
+				if test, ok := suite.Tests[testInfo.testName]; ok {
+					return &test.Properties, true
+				}
+			}
+		}
+
+		return nil, true
+	}
+
+	return nil, false
 }

@@ -19,21 +19,23 @@ import (
 	"context"
 	"database/sql"
 	"database/sql/driver"
+	"os"
 	"reflect"
 	"sync"
 	"time"
 
-	sqlinternal "gopkg.in/DataDog/dd-trace-go.v1/contrib/database/sql/internal"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
+	sqlinternal "github.com/DataDog/dd-trace-go/contrib/database/sql/v2/internal"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 )
 
-const componentName = "database/sql"
+const componentName = instrumentation.PackageDatabaseSQL
+
+var instr *instrumentation.Instrumentation
+
+var testMode *bool
 
 func init() {
-	telemetry.LoadIntegration(componentName)
-	tracer.MarkIntegrationImported(componentName)
+	instr = instrumentation.Load(instrumentation.PackageDatabaseSQL)
 }
 
 // registeredDrivers holds a registry of all drivers registered via the sqltrace package.
@@ -112,19 +114,28 @@ func (d *driverRegistry) unregister(name string) {
 // Register tells the sql integration package about the driver that we will be tracing. If used, it
 // must be called before Open. It uses the driverName suffixed with ".db" as the default service
 // name.
-func Register(driverName string, driver driver.Driver, opts ...RegisterOption) {
+func Register(driverName string, driver driver.Driver, opts ...Option) {
 	if driver == nil {
 		panic("sqltrace: Register driver is nil")
 	}
+	if testMode == nil {
+		_, ok := os.LookupEnv("__DD_TRACE_SQL_TEST")
+		testMode = &ok
+	}
+	testModeEnabled := *testMode
 	if registeredDrivers.isRegistered(driverName) {
 		// already registered, don't change things
-		return
+		if !testModeEnabled {
+			return
+		}
+		// if we are in test mode, just unregister the driver and replace it
+		unregister(driverName)
 	}
 
 	cfg := new(config)
 	defaults(cfg, driverName, nil)
 	processOptions(cfg, driverName, driver, "", opts...)
-	log.Debug("contrib/database/sql: Registering driver: %s %#v", driverName, cfg)
+	instr.Logger().Debug("contrib/database/sql: Registering driver: %s %#v", driverName, cfg)
 	registeredDrivers.add(driverName, driver, cfg)
 }
 
@@ -259,7 +270,7 @@ func Open(driverName, dataSourceName string, opts ...Option) (*sql.DB, error) {
 
 func processOptions(cfg *config, driverName string, driver driver.Driver, dsn string, opts ...Option) {
 	for _, fn := range opts {
-		fn(cfg)
+		fn.apply(cfg)
 	}
 	cfg.checkDBMPropagation(driverName, driver, dsn)
 	cfg.checkStatsdRequired()

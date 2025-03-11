@@ -28,13 +28,13 @@ var telemetryTags = []string{"integration_name:otel"}
 type oteltracer struct {
 	noop.Tracer // https://pkg.go.dev/go.opentelemetry.io/otel/trace#hdr-API_Implementations
 	provider    *TracerProvider
-	DD          ddtrace.Tracer
+	DD          tracer.Tracer
 }
 
 func (t *oteltracer) Start(ctx context.Context, spanName string, opts ...oteltrace.SpanStartOption) (context.Context, oteltrace.Span) {
 	var ssConfig = oteltrace.NewSpanStartConfig(opts...)
 	// OTel name is akin to resource name in Datadog
-	var ddopts = []ddtrace.StartSpanOption{tracer.ResourceName(spanName)}
+	var ddopts = []tracer.StartSpanOption{tracer.ResourceName(spanName)}
 	if !ssConfig.NewRoot() {
 		if s, ok := tracer.SpanFromContext(ctx); ok {
 			// if the span originates from the Datadog tracer,
@@ -43,7 +43,7 @@ func (t *oteltracer) Start(ctx context.Context, spanName string, opts ...oteltra
 		} else if sctx := oteltrace.SpanFromContext(ctx).SpanContext(); sctx.IsValid() {
 			// if the span doesn't originate from the Datadog tracer,
 			// use SpanContextW3C implementation struct to pass span context information
-			ddopts = append(ddopts, tracer.ChildOf(&otelCtxToDDCtx{sctx}))
+			ddopts = append(ddopts, tracer.ChildOf(tracer.FromGenericCtx(&otelCtxToDDCtx{sctx})))
 		}
 	}
 	if t := ssConfig.Timestamp(); !t.IsZero() {
@@ -52,29 +52,33 @@ func (t *oteltracer) Start(ctx context.Context, spanName string, opts ...oteltra
 	if k := ssConfig.SpanKind(); k != 0 {
 		ddopts = append(ddopts, tracer.Tag(ext.SpanKind, k.String()))
 	}
-	telemetry.GlobalClient.Count(telemetry.NamespaceTracers, "spans_created", 1.0, telemetryTags, true)
-	var cfg ddtrace.StartSpanConfig
+	telemetry.Count(telemetry.NamespaceTracers, "spans_created", telemetryTags).Submit(1.0)
+	var cfg tracer.StartSpanConfig
 	cfg.Tags = make(map[string]interface{})
-	for _, attr := range ssConfig.Attributes() {
-		cfg.Tags[string(attr.Key)] = attr.Value.AsInterface()
-	}
 	if opts, ok := spanOptionsFromContext(ctx); ok {
 		ddopts = append(ddopts, opts...)
 		for _, o := range opts {
 			o(&cfg)
 		}
 	}
+	for _, attr := range ssConfig.Attributes() {
+		k := string(attr.Key)
+		if _, ok := cfg.Tags[k]; ok {
+			continue
+		}
+		cfg.Tags[k] = attr.Value.AsInterface()
+	}
 	// Add provide OTel Span Links to the underlying Datadog span.
 	if len(ssConfig.Links()) > 0 {
-		links := make([]ddtrace.SpanLink, 0, len(ssConfig.Links()))
+		links := make([]tracer.SpanLink, 0, len(ssConfig.Links()))
 		for _, link := range ssConfig.Links() {
 			ctx := otelCtxToDDCtx{link.SpanContext}
 			attrs := make(map[string]string, len(link.Attributes))
 			for _, attr := range link.Attributes {
 				attrs[string(attr.Key)] = attr.Value.Emit()
 			}
-			links = append(links, ddtrace.SpanLink{
-				TraceID:     ctx.TraceID(),
+			links = append(links, tracer.SpanLink{
+				TraceID:     ctx.TraceIDLower(),
 				TraceIDHigh: ctx.TraceIDUpper(),
 				SpanID:      ctx.SpanID(),
 				Tracestate:  link.SpanContext.TraceState().String(),
@@ -130,14 +134,23 @@ type otelCtxToDDCtx struct {
 	oc oteltrace.SpanContext
 }
 
-func (c *otelCtxToDDCtx) TraceID() uint64 {
+func (c *otelCtxToDDCtx) TraceID() string {
 	id := c.oc.TraceID()
-	return binary.BigEndian.Uint64(id[8:])
+	return hex.EncodeToString(id[:])
 }
 
 func (c *otelCtxToDDCtx) TraceIDUpper() uint64 {
 	id := c.oc.TraceID()
 	return binary.BigEndian.Uint64(id[:8])
+}
+
+func (c *otelCtxToDDCtx) TraceIDBytes() [16]byte {
+	return c.oc.TraceID()
+}
+
+func (c *otelCtxToDDCtx) TraceIDLower() uint64 {
+	tid := c.oc.TraceID()
+	return binary.BigEndian.Uint64(tid[8:])
 }
 
 func (c *otelCtxToDDCtx) SpanID() uint64 {
@@ -146,12 +159,3 @@ func (c *otelCtxToDDCtx) SpanID() uint64 {
 }
 
 func (c *otelCtxToDDCtx) ForeachBaggageItem(_ func(k, v string) bool) {}
-
-func (c *otelCtxToDDCtx) TraceID128() string {
-	id := c.oc.TraceID()
-	return hex.EncodeToString(id[:])
-}
-
-func (c *otelCtxToDDCtx) TraceID128Bytes() [16]byte {
-	return c.oc.TraceID()
-}

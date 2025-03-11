@@ -9,30 +9,27 @@
 // https://godoc.org/github.com/graph-gophers/graphql-go/trace subpackage.
 // Create a new Tracer with `NewTracer` and pass it as an additional option to
 // `MustParseSchema`.
-package graphql // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/graph-gophers/graphql-go"
+package graphql // import "github.com/DataDog/dd-trace-go/contrib/graph-gophers/graphql-go/v2"
 
 import (
 	"context"
 	"fmt"
 	"math"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	ddtracer "gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/graphqlsec"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	ddtracer "github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/graphqlsec"
 
 	"github.com/graph-gophers/graphql-go/errors"
 	"github.com/graph-gophers/graphql-go/introspection"
 	"github.com/graph-gophers/graphql-go/trace/tracer"
 )
 
-const componentName = "graph-gophers/graphql-go"
+var instr *instrumentation.Instrumentation
 
 func init() {
-	telemetry.LoadIntegration(componentName)
-	ddtracer.MarkIntegrationImported("github.com/graph-gophers/graphql-go")
+	instr = instrumentation.Load(instrumentation.PackageGraphGophersGraphQLGo)
 }
 
 const (
@@ -53,11 +50,11 @@ var _ tracer.Tracer = (*Tracer)(nil)
 
 // TraceQuery traces a GraphQL query.
 func (t *Tracer) TraceQuery(ctx context.Context, queryString, operationName string, variables map[string]interface{}, _ map[string]*introspection.Type) (context.Context, tracer.QueryFinishFunc) {
-	opts := []ddtrace.StartSpanOption{
+	opts := []ddtracer.StartSpanOption{
 		ddtracer.ServiceName(t.cfg.serviceName),
 		ddtracer.Tag(tagGraphqlQuery, queryString),
 		ddtracer.Tag(tagGraphqlOperationName, operationName),
-		ddtracer.Tag(ext.Component, componentName),
+		ddtracer.Tag(ext.Component, instrumentation.PackageGraphGophersGraphQLGo),
 		ddtracer.Measured(),
 	}
 	if t.cfg.traceVariables {
@@ -102,11 +99,11 @@ func (t *Tracer) TraceField(ctx context.Context, _, typeName, fieldName string, 
 	if t.cfg.omitTrivial && trivial {
 		return ctx, func(queryError *errors.QueryError) {}
 	}
-	opts := []ddtrace.StartSpanOption{
+	opts := []ddtracer.StartSpanOption{
 		ddtracer.ServiceName(t.cfg.serviceName),
 		ddtracer.Tag(tagGraphqlField, fieldName),
 		ddtracer.Tag(tagGraphqlType, typeName),
-		ddtracer.Tag(ext.Component, componentName),
+		ddtracer.Tag(ext.Component, instrumentation.PackageGraphGophersGraphQLGo),
 		ddtracer.Measured(),
 	}
 	if t.cfg.traceVariables {
@@ -143,9 +140,9 @@ func NewTracer(opts ...Option) tracer.Tracer {
 	cfg := new(config)
 	defaults(cfg)
 	for _, opt := range opts {
-		opt(cfg)
+		opt.apply(cfg)
 	}
-	log.Debug("contrib/graph-gophers/graphql-go: Configuring Graphql Tracer: %#v", cfg)
+	instr.Logger().Debug("contrib/graph-gophers/graphql-go: Configuring Graphql Tracer: %#v", cfg)
 	return &Tracer{
 		cfg: cfg,
 	}

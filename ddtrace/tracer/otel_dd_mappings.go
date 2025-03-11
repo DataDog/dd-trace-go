@@ -9,9 +9,9 @@ import (
 	"os"
 	"strings"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/internal"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 )
 
 // otelDDEnv contains env vars from both dd (DD) and ot (OTEL) that map to the same tracer configuration
@@ -94,13 +94,13 @@ func getDDorOtelConfig(configName string) string {
 		if val != "" {
 			log.Warn("Both %v and %v are set, using %v=%v", config.ot, config.dd, config.dd, val)
 			telemetryTags := []string{ddPrefix + strings.ToLower(config.dd), otelPrefix + strings.ToLower(config.ot)}
-			telemetry.GlobalClient.Count(telemetry.NamespaceTracers, "otel.env.hiding", 1.0, telemetryTags, true)
+			telemetry.Count(telemetry.NamespaceTracers, "otel.env.hiding", telemetryTags).Submit(1)
 		} else {
 			v, err := config.remapper(otVal)
 			if err != nil {
 				log.Warn("%v", err)
 				telemetryTags := []string{ddPrefix + strings.ToLower(config.dd), otelPrefix + strings.ToLower(config.ot)}
-				telemetry.GlobalClient.Count(telemetry.NamespaceTracers, "otel.env.invalid", 1.0, telemetryTags, true)
+				telemetry.Count(telemetry.NamespaceTracers, "otel.env.invalid", telemetryTags).Submit(1)
 			}
 			val = v
 		}

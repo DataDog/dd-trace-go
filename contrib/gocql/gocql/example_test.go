@@ -11,14 +11,14 @@ import (
 
 	"github.com/gocql/gocql"
 
-	gocqltrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/gocql/gocql"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	gocqltrace "github.com/DataDog/dd-trace-go/contrib/gocql/gocql/v2"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 )
 
 func ExampleNewCluster() {
 	// Initialise a wrapped Cassandra session and create a query.
-	cluster := gocqltrace.NewCluster([]string{"127.0.0.1:9043"}, gocqltrace.WithServiceName("ServiceName"))
+	cluster := gocqltrace.NewCluster([]string{"127.0.0.1:9043"}, gocqltrace.WithService("ServiceName"))
 	session, _ := cluster.CreateSession()
 	query := session.Query("CREATE KEYSPACE if not exists trace WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor': 1}")
 
@@ -43,7 +43,7 @@ func ExampleCreateTracedSession() {
 	cluster.Keyspace = "my-keyspace"
 
 	// Create a new traced session using any number of options
-	session, err := gocqltrace.CreateTracedSession(cluster, gocqltrace.WithServiceName("ServiceName"))
+	session, err := gocqltrace.CreateTracedSession(cluster, gocqltrace.WithService("ServiceName"))
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -75,7 +75,7 @@ func ExampleNewObserver() {
 		log.Fatal(err)
 	}
 	// Create a new observer using same set of options as gocqltrace.CreateTracedSession.
-	obs := gocqltrace.NewObserver(cluster, gocqltrace.WithServiceName("ServiceName"))
+	obs := gocqltrace.NewObserver(cluster, gocqltrace.WithService("ServiceName"))
 
 	// Attach the observer to queries / batches individually.
 	tracedQuery := session.Query("SELECT something FROM somewhere").Observer(obs)

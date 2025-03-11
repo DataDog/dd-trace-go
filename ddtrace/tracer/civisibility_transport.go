@@ -13,15 +13,16 @@ import (
 	"net/http"
 	"os"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 
 	pb "github.com/DataDog/datadog-agent/pkg/proto/pbgo/trace"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/constants"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/utils/telemetry"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
+	"github.com/DataDog/dd-trace-go/v2/internal"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/version"
 )
 
 // Constants for CI Visibility API paths and subdomains.
@@ -106,6 +107,7 @@ func newCiVisibilityTransport(config *config) *ciVisibilityTransport {
 		defaultHeaders["X-Datadog-EVP-Subdomain"] = TestCycleSubdomain
 		testCycleURL = fmt.Sprintf("%s/%s/%s", config.agentURL.String(), EvpProxyPath, TestCyclePath)
 	}
+	log.Debug("ciVisibilityTransport: creating transport instance [agentless: %v, testcycleurl: %v]", agentlessEnabled, testCycleURL)
 
 	log.Debug("ciVisibilityTransport: creating transport instance [agentless: %v, testcycleurl: %v]", agentlessEnabled, testCycleURL)
 
@@ -156,9 +158,11 @@ func (t *ciVisibilityTransport) send(p *payload) (body io.ReadCloser, err error)
 	for header, value := range t.headers {
 		req.Header.Set(header, value)
 	}
+	req.Header.Set("Content-Length", strconv.Itoa(buffer.Len()))
 	if t.agentless {
 		req.Header.Set("Content-Encoding", "gzip")
 	}
+	log.Debug("ciVisibilityTransport: sending transport request: %v bytes", buffer.Len())
 
 	log.Debug("ciVisibilityTransport: sending transport request: %v bytes", buffer.Len())
 	startTime := time.Now()
@@ -192,7 +196,7 @@ func (t *ciVisibilityTransport) send(p *payload) (body io.ReadCloser, err error)
 // Returns:
 //
 //	An error indicating that stats are not supported.
-func (t *ciVisibilityTransport) sendStats(*pb.ClientStatsPayload) error {
+func (t *ciVisibilityTransport) sendStats(*pb.ClientStatsPayload, int) error {
 	// Stats are not supported by CI Visibility agentless / EVP proxy.
 	return nil
 }

@@ -11,14 +11,15 @@ import (
 	"context"
 	"testing"
 
-	"github.com/DataDog/dd-trace-go/internal/orchestrion/_integration/internal/containers"
-	"github.com/DataDog/dd-trace-go/internal/orchestrion/_integration/internal/trace"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/containers"
+	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/trace"
+	"github.com/cenkalti/backoff/v4"
 	"github.com/go-redis/redis/v8"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	testredis "github.com/testcontainers/testcontainers-go/modules/redis"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
 
 type TestCase struct {
@@ -37,7 +38,22 @@ func (tc *TestCase) Setup(_ context.Context, t *testing.T) {
 	container, addr := containers.StartRedisTestContainer(t)
 	tc.server = container
 
-	tc.Client = redis.NewClient(&redis.Options{Addr: addr})
+	// Wait for a successful Ping to the server, so we're sure it's up and running.
+	require.NoError(t,
+		backoff.Retry(
+			func() error {
+				tc.Client = redis.NewClient(&redis.Options{Addr: addr})
+				if err := tc.Client.Ping(context.Background()).Err(); err != nil {
+					// There was an error, so we'll re-cycle the client entirely...
+					tc.Client.Close()
+					tc.Client = nil
+					return err
+				}
+				return nil
+			},
+			backoff.NewExponentialBackOff(),
+		),
+	)
 	t.Cleanup(func() { assert.NoError(t, tc.Client.Close()) })
 }
 

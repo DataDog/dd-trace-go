@@ -8,19 +8,18 @@ package httpsec
 import (
 	"math/rand"
 
-	"github.com/DataDog/appsec-internal-go/appsec"
+	internal "github.com/DataDog/appsec-internal-go/appsec"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener"
-
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/config"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/httpsec"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/waf/addresses"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/dyngo"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/httpsec"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/waf/addresses"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec/config"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec/listener"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
 type Feature struct {
-	APISec appsec.APISecConfig
+	APISec internal.APISecConfig
 }
 
 func (*Feature) String() string {

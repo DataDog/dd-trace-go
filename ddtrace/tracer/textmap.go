@@ -8,15 +8,16 @@ package tracer
 import (
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
+	"sync/atomic"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/samplernames"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/internal"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
 )
 
 // HTTPHeadersCarrier wraps an http.Header as a TextMapWriter and TextMapReader, allowing
@@ -69,9 +70,6 @@ const (
 	headerPropagationStyleInject  = "DD_TRACE_PROPAGATION_STYLE_INJECT"
 	headerPropagationStyleExtract = "DD_TRACE_PROPAGATION_STYLE_EXTRACT"
 	headerPropagationStyle        = "DD_TRACE_PROPAGATION_STYLE"
-
-	headerPropagationStyleInjectDeprecated  = "DD_PROPAGATION_STYLE_INJECT"  // deprecated
-	headerPropagationStyleExtractDeprecated = "DD_PROPAGATION_STYLE_EXTRACT" // deprecated
 )
 
 const (
@@ -90,6 +88,10 @@ const (
 	// DefaultPriorityHeader specifies the key that will be used in HTTP headers
 	// or text maps to store the sampling priority value.
 	DefaultPriorityHeader = "x-datadog-sampling-priority"
+
+	// DefaultBaggageHeader specifies the key that will be used in HTTP headers
+	// or text maps to store the baggage value.
+	DefaultBaggageHeader = "baggage"
 )
 
 // originHeader specifies the name of the header indicating the origin of the trace.
@@ -127,6 +129,10 @@ type PropagatorConfig struct {
 	// B3 specifies if B3 headers should be added for trace propagation.
 	// See https://github.com/openzipkin/b3-propagation
 	B3 bool
+
+	// BaggageHeader specifies the map key that will be used to store the baggage key-value pairs.
+	// It defaults to DefaultBaggageHeader.
+	BaggageHeader string
 }
 
 // NewPropagator returns a new propagator which uses TextMap to inject
@@ -136,9 +142,8 @@ type PropagatorConfig struct {
 // The inject and extract propagators are determined using environment variables
 // with the following order of precedence:
 //  1. DD_TRACE_PROPAGATION_STYLE_INJECT
-//  2. DD_PROPAGATION_STYLE_INJECT (deprecated)
-//  3. DD_TRACE_PROPAGATION_STYLE (applies to both inject and extract)
-//  4. If none of the above, use default values
+//  2. DD_TRACE_PROPAGATION_STYLE (applies to both inject and extract)
+//  3. If none of the above, use default values
 func NewPropagator(cfg *PropagatorConfig, propagators ...Propagator) Propagator {
 	if cfg == nil {
 		cfg = new(PropagatorConfig)
@@ -155,6 +160,9 @@ func NewPropagator(cfg *PropagatorConfig, propagators ...Propagator) Propagator 
 	if cfg.PriorityHeader == "" {
 		cfg.PriorityHeader = DefaultPriorityHeader
 	}
+	if cfg.BaggageHeader == "" {
+		cfg.BaggageHeader = DefaultBaggageHeader
+	}
 	cp := new(chainedPropagator)
 	cp.onlyExtractFirst = internal.BoolEnv("DD_TRACE_PROPAGATION_EXTRACT_FIRST", false)
 	if len(propagators) > 0 {
@@ -163,17 +171,7 @@ func NewPropagator(cfg *PropagatorConfig, propagators ...Propagator) Propagator 
 		return cp
 	}
 	injectorsPs := os.Getenv(headerPropagationStyleInject)
-	if injectorsPs == "" {
-		if injectorsPs = os.Getenv(headerPropagationStyleInjectDeprecated); injectorsPs != "" {
-			log.Warn("%v is deprecated. Please use %v or %v instead.\n", headerPropagationStyleInjectDeprecated, headerPropagationStyleInject, headerPropagationStyle)
-		}
-	}
 	extractorsPs := os.Getenv(headerPropagationStyleExtract)
-	if extractorsPs == "" {
-		if extractorsPs = os.Getenv(headerPropagationStyleExtractDeprecated); extractorsPs != "" {
-			log.Warn("%v is deprecated. Please use %v or %v instead.\n", headerPropagationStyleExtractDeprecated, headerPropagationStyleExtract, headerPropagationStyle)
-		}
-	}
 	cp.injectors, cp.injectorNames = getPropagators(cfg, injectorsPs)
 	cp.extractors, cp.extractorsNames = getPropagators(cfg, extractorsPs)
 	return cp
@@ -196,8 +194,8 @@ type chainedPropagator struct {
 // a warning and be ignored.
 func getPropagators(cfg *PropagatorConfig, ps string) ([]Propagator, string) {
 	dd := &propagator{cfg}
-	defaultPs := []Propagator{dd, &propagatorW3c{}}
-	defaultPsName := "datadog,tracecontext"
+	defaultPs := []Propagator{dd, &propagatorW3c{}, &propagatorBaggage{}}
+	defaultPsName := "datadog,tracecontext,baggage"
 	if cfg.B3 {
 		defaultPs = append(defaultPs, &propagatorB3{})
 		defaultPsName += ",b3"
@@ -227,6 +225,9 @@ func getPropagators(cfg *PropagatorConfig, ps string) ([]Propagator, string) {
 		case "tracecontext":
 			list = append(list, &propagatorW3c{})
 			listNames = append(listNames, v)
+		case "baggage":
+			list = append(list, &propagatorBaggage{})
+			listNames = append(listNames, v)
 		case "b3", "b3multi":
 			if !cfg.B3 {
 				// propagatorB3 hasn't already been added, add a new one.
@@ -252,7 +253,10 @@ func getPropagators(cfg *PropagatorConfig, ps string) ([]Propagator, string) {
 // Inject defines the Propagator to propagate SpanContext data
 // out of the current process. The implementation propagates the
 // TraceID and the current active SpanID, as well as the Span baggage.
-func (p *chainedPropagator) Inject(spanCtx ddtrace.SpanContext, carrier interface{}) error {
+func (p *chainedPropagator) Inject(spanCtx *SpanContext, carrier interface{}) error {
+	if spanCtx == nil {
+		return ErrInvalidSpanContext
+	}
 	for _, v := range p.injectors {
 		err := v.Inject(spanCtx, carrier)
 		if err != nil {
@@ -270,13 +274,21 @@ func (p *chainedPropagator) Inject(spanCtx ddtrace.SpanContext, carrier interfac
 // Furthermore, if we have already successfully extracted a trace context and a
 // subsequent trace context has conflicting trace information, such information will
 // be relayed in the returned SpanContext with a SpanLink.
-func (p *chainedPropagator) Extract(carrier interface{}) (ddtrace.SpanContext, error) {
-	var ctx ddtrace.SpanContext
-	var links []ddtrace.SpanLink
+func (p *chainedPropagator) Extract(carrier interface{}) (*SpanContext, error) {
+	var ctx *SpanContext
+	var links []SpanLink
 
 	for _, v := range p.extractors {
 		firstExtract := (ctx == nil) // ctx stores the most recently extracted ctx across iterations; if it's nil, no extractor has run yet
 		extractedCtx, err := v.Extract(carrier)
+
+		// If the extractor is the baggage propagator and its baggage is empty,
+		// treat it as if nothing was extracted.
+		if _, ok := v.(*propagatorBaggage); ok {
+			if len(extractedCtx.baggage) == 0 {
+				extractedCtx = nil
+			}
+		}
 
 		if firstExtract {
 			if err != nil {
@@ -292,29 +304,26 @@ func (p *chainedPropagator) Extract(carrier interface{}) (ddtrace.SpanContext, e
 			}
 			ctx = extractedCtx
 		} else { // A local trace context has already been extracted
-			extractedCtx2, ok1 := extractedCtx.(*spanContext)
-			ctx2, ok2 := ctx.(*spanContext)
+			extractedCtx2 := extractedCtx
+			ctx2 := ctx
 			// If we can't cast to spanContext, we can't propgate tracestate or create span links
-			if !ok1 || !ok2 {
-				continue
-			}
-			if extractedCtx2.TraceID128() == ctx2.TraceID128() {
+			if extractedCtx2.TraceID() == ctx2.TraceID() {
 				if pW3C, ok := v.(*propagatorW3c); ok {
 					pW3C.propagateTracestate(ctx2, extractedCtx2)
 					// If trace IDs match but span IDs do not, use spanID from `*propagatorW3c` extractedCtx for parenting
 					if extractedCtx2.SpanID() != ctx2.SpanID() {
-						var ddCtx *spanContext
+						var ddCtx *SpanContext
 						// Grab the datadog-propagated spancontext again
 						if ddp := getDatadogPropagator(p); ddp != nil {
 							if ddSpanCtx, err := ddp.Extract(carrier); err == nil {
-								ddCtx, _ = ddSpanCtx.(*spanContext)
+								ddCtx = ddSpanCtx
 							}
 						}
 						overrideDatadogParentID(ctx2, extractedCtx2, ddCtx)
 					}
 				}
-			} else { // Trace IDs do not match - create span links
-				link := ddtrace.SpanLink{TraceID: extractedCtx2.TraceID(), SpanID: extractedCtx2.SpanID(), TraceIDHigh: extractedCtx2.TraceIDUpper(), Attributes: map[string]string{"reason": "terminated_context", "context_headers": getPropagatorName(v)}}
+			} else if extractedCtx2 != nil { // Trace IDs do not match - create span links
+				link := SpanLink{TraceID: extractedCtx2.TraceIDLower(), SpanID: extractedCtx2.SpanID(), TraceIDHigh: extractedCtx2.TraceIDUpper(), Attributes: map[string]string{"reason": "terminated_context", "context_headers": getPropagatorName(v)}}
 				if trace := extractedCtx2.trace; trace != nil {
 					if flags := uint32(*trace.priority); flags > 0 { // Set the flags based on the sampling priority
 						link.Flags = 1
@@ -326,13 +335,22 @@ func (p *chainedPropagator) Extract(carrier interface{}) (ddtrace.SpanContext, e
 				links = append(links, link)
 			}
 		}
+
+		if _, ok := v.(*propagatorBaggage); ok && extractedCtx != nil {
+			if len(extractedCtx.baggage) > 0 {
+				ctx.baggage = extractedCtx.baggage
+				atomic.StoreUint32(&ctx.hasBaggage, 1)
+			}
+
+		}
 	}
+
 	// 0 successful extractions
 	if ctx == nil {
 		return nil, ErrSpanContextNotFound
 	}
-	if spCtx, ok := ctx.(*spanContext); ok && len(links) > 0 {
-		spCtx.spanLinks = links
+	if len(links) > 0 {
+		ctx.spanLinks = links
 	}
 	log.Debug("Extracted span context: %#v", ctx)
 	return ctx, nil
@@ -348,6 +366,8 @@ func getPropagatorName(p Propagator) string {
 		return "b3"
 	case *propagatorW3c:
 		return "tracecontext"
+	case *propagatorBaggage:
+		return "baggage"
 	default:
 		return ""
 	}
@@ -359,7 +379,13 @@ func getPropagatorName(p Propagator) string {
 // provided by the given *spanContext. If it matches, then the tracestate
 // will be re-composed based on the composition of the given *spanContext,
 // but will include the non-DD vendors in the W3C trace context's tracestate.
-func (p *propagatorW3c) propagateTracestate(ctx *spanContext, w3cCtx *spanContext) {
+func (p *propagatorW3c) propagateTracestate(ctx *SpanContext, w3cCtx *SpanContext) {
+	if w3cCtx == nil {
+		return // It's not valid, so ignore it.
+	}
+	if ctx.TraceID() != w3cCtx.TraceID() {
+		return // The trace-ids must match.
+	}
 	if w3cCtx.trace == nil {
 		return // this shouldn't happen, since it should have a propagating tag already
 	}
@@ -382,7 +408,10 @@ type propagator struct {
 	cfg *PropagatorConfig
 }
 
-func (p *propagator) Inject(spanCtx ddtrace.SpanContext, carrier interface{}) error {
+func (p *propagator) Inject(spanCtx *SpanContext, carrier interface{}) error {
+	if spanCtx == nil {
+		return ErrInvalidSpanContext
+	}
 	switch c := carrier.(type) {
 	case TextMapWriter:
 		return p.injectTextMap(spanCtx, c)
@@ -391,9 +420,9 @@ func (p *propagator) Inject(spanCtx ddtrace.SpanContext, carrier interface{}) er
 	}
 }
 
-func (p *propagator) injectTextMap(spanCtx ddtrace.SpanContext, writer TextMapWriter) error {
-	ctx, ok := spanCtx.(*spanContext)
-	if !ok || ctx.traceID.Empty() || ctx.spanID == 0 {
+func (p *propagator) injectTextMap(spanCtx *SpanContext, writer TextMapWriter) error {
+	ctx := spanCtx
+	if ctx.traceID.Empty() || ctx.spanID == 0 {
 		return ErrInvalidSpanContext
 	}
 	// propagate the TraceID and the current active SpanID
@@ -425,7 +454,7 @@ func (p *propagator) injectTextMap(spanCtx ddtrace.SpanContext, writer TextMapWr
 }
 
 // marshalPropagatingTags marshals all propagating tags included in ctx to a comma separated string
-func (p *propagator) marshalPropagatingTags(ctx *spanContext) string {
+func (p *propagator) marshalPropagatingTags(ctx *SpanContext) string {
 	var sb strings.Builder
 	if ctx.trace == nil {
 		return ""
@@ -461,7 +490,7 @@ func (p *propagator) marshalPropagatingTags(ctx *spanContext) string {
 	return sb.String()
 }
 
-func (p *propagator) Extract(carrier interface{}) (ddtrace.SpanContext, error) {
+func (p *propagator) Extract(carrier interface{}) (*SpanContext, error) {
 	switch c := carrier.(type) {
 	case TextMapReader:
 		return p.extractTextMap(c)
@@ -470,8 +499,8 @@ func (p *propagator) Extract(carrier interface{}) (ddtrace.SpanContext, error) {
 	}
 }
 
-func (p *propagator) extractTextMap(reader TextMapReader) (ddtrace.SpanContext, error) {
-	var ctx spanContext
+func (p *propagator) extractTextMap(reader TextMapReader) (*SpanContext, error) {
+	var ctx SpanContext
 	err := reader.ForeachKey(func(k, v string) error {
 		var err error
 		key := strings.ToLower(k)
@@ -548,7 +577,7 @@ func getDatadogPropagator(cp *chainedPropagator) *propagator {
 // overrideDatadogParentID overrides the span ID of a context with the ID extracted from tracecontext headers.
 // If the reparenting ID is not set on the context, the span ID from datadog headers is used.
 // spanContexts are passed by reference to avoid copying lock value in spanContext type
-func overrideDatadogParentID(ctx, w3cCtx, ddCtx *spanContext) {
+func overrideDatadogParentID(ctx, w3cCtx, ddCtx *SpanContext) {
 	if ctx == nil || w3cCtx == nil || ddCtx == nil {
 		return
 	}
@@ -562,7 +591,7 @@ func overrideDatadogParentID(ctx, w3cCtx, ddCtx *spanContext) {
 }
 
 // unmarshalPropagatingTags unmarshals tags from v into ctx
-func unmarshalPropagatingTags(ctx *spanContext, v string) {
+func unmarshalPropagatingTags(ctx *SpanContext, v string) {
 	if ctx.trace == nil {
 		ctx.trace = newTrace()
 	}
@@ -581,7 +610,7 @@ func unmarshalPropagatingTags(ctx *spanContext, v string) {
 
 // setPropagatingTag adds the key value pair to the map of propagating tags on the trace,
 // creating the map if one is not initialized.
-func setPropagatingTag(ctx *spanContext, k, v string) {
+func setPropagatingTag(ctx *SpanContext, k, v string) {
 	if ctx.trace == nil {
 		// extractors initialize a new spanContext, so the trace might be nil
 		ctx.trace = newTrace()
@@ -600,7 +629,10 @@ const (
 // using B3 headers. Only TextMap carriers are supported.
 type propagatorB3 struct{}
 
-func (p *propagatorB3) Inject(spanCtx ddtrace.SpanContext, carrier interface{}) error {
+func (p *propagatorB3) Inject(spanCtx *SpanContext, carrier interface{}) error {
+	if spanCtx == nil {
+		return ErrInvalidSpanContext
+	}
 	switch c := carrier.(type) {
 	case TextMapWriter:
 		return p.injectTextMap(spanCtx, c)
@@ -609,19 +641,18 @@ func (p *propagatorB3) Inject(spanCtx ddtrace.SpanContext, carrier interface{}) 
 	}
 }
 
-func (*propagatorB3) injectTextMap(spanCtx ddtrace.SpanContext, writer TextMapWriter) error {
-	ctx, ok := spanCtx.(*spanContext)
-	if !ok || ctx.traceID.Empty() || ctx.spanID == 0 {
+func (*propagatorB3) injectTextMap(spanCtx *SpanContext, writer TextMapWriter) error {
+	if spanCtx == nil {
+		return ErrInvalidSpanContext
+	}
+	ctx := spanCtx
+	if ctx.traceID.Empty() || ctx.spanID == 0 {
 		return ErrInvalidSpanContext
 	}
 	if !ctx.traceID.HasUpper() { // 64-bit trace id
 		writer.Set(b3TraceIDHeader, fmt.Sprintf("%016x", ctx.traceID.Lower()))
 	} else { // 128-bit trace id
-		var w3Cctx ddtrace.SpanContextW3C
-		if w3Cctx, ok = spanCtx.(ddtrace.SpanContextW3C); !ok {
-			return ErrInvalidSpanContext
-		}
-		writer.Set(b3TraceIDHeader, w3Cctx.TraceID128())
+		writer.Set(b3TraceIDHeader, ctx.TraceID())
 	}
 	writer.Set(b3SpanIDHeader, fmt.Sprintf("%016x", ctx.spanID))
 	if p, ok := ctx.SamplingPriority(); ok {
@@ -634,7 +665,7 @@ func (*propagatorB3) injectTextMap(spanCtx ddtrace.SpanContext, writer TextMapWr
 	return nil
 }
 
-func (p *propagatorB3) Extract(carrier interface{}) (ddtrace.SpanContext, error) {
+func (p *propagatorB3) Extract(carrier interface{}) (*SpanContext, error) {
 	switch c := carrier.(type) {
 	case TextMapReader:
 		return p.extractTextMap(c)
@@ -643,8 +674,8 @@ func (p *propagatorB3) Extract(carrier interface{}) (ddtrace.SpanContext, error)
 	}
 }
 
-func (*propagatorB3) extractTextMap(reader TextMapReader) (ddtrace.SpanContext, error) {
-	var ctx spanContext
+func (*propagatorB3) extractTextMap(reader TextMapReader) (*SpanContext, error) {
+	var ctx SpanContext
 	err := reader.ForeachKey(func(k, v string) error {
 		var err error
 		key := strings.ToLower(k)
@@ -681,7 +712,10 @@ func (*propagatorB3) extractTextMap(reader TextMapReader) (ddtrace.SpanContext, 
 // using B3 headers. Only TextMap carriers are supported.
 type propagatorB3SingleHeader struct{}
 
-func (p *propagatorB3SingleHeader) Inject(spanCtx ddtrace.SpanContext, carrier interface{}) error {
+func (p *propagatorB3SingleHeader) Inject(spanCtx *SpanContext, carrier interface{}) error {
+	if spanCtx == nil {
+		return ErrInvalidSpanContext
+	}
 	switch c := carrier.(type) {
 	case TextMapWriter:
 		return p.injectTextMap(spanCtx, c)
@@ -690,9 +724,12 @@ func (p *propagatorB3SingleHeader) Inject(spanCtx ddtrace.SpanContext, carrier i
 	}
 }
 
-func (*propagatorB3SingleHeader) injectTextMap(spanCtx ddtrace.SpanContext, writer TextMapWriter) error {
-	ctx, ok := spanCtx.(*spanContext)
-	if !ok || ctx.traceID.Empty() || ctx.spanID == 0 {
+func (*propagatorB3SingleHeader) injectTextMap(spanCtx *SpanContext, writer TextMapWriter) error {
+	if spanCtx == nil {
+		return ErrInvalidSpanContext
+	}
+	ctx := spanCtx
+	if ctx.traceID.Empty() || ctx.spanID == 0 {
 		return ErrInvalidSpanContext
 	}
 	sb := strings.Builder{}
@@ -700,11 +737,7 @@ func (*propagatorB3SingleHeader) injectTextMap(spanCtx ddtrace.SpanContext, writ
 	if !ctx.traceID.HasUpper() { // 64-bit trace id
 		traceID = fmt.Sprintf("%016x", ctx.traceID.Lower())
 	} else { // 128-bit trace id
-		var w3Cctx ddtrace.SpanContextW3C
-		if w3Cctx, ok = spanCtx.(ddtrace.SpanContextW3C); !ok {
-			return ErrInvalidSpanContext
-		}
-		traceID = w3Cctx.TraceID128()
+		traceID = ctx.TraceID()
 	}
 	sb.WriteString(fmt.Sprintf("%s-%016x", traceID, ctx.spanID))
 	if p, ok := ctx.SamplingPriority(); ok {
@@ -718,7 +751,7 @@ func (*propagatorB3SingleHeader) injectTextMap(spanCtx ddtrace.SpanContext, writ
 	return nil
 }
 
-func (p *propagatorB3SingleHeader) Extract(carrier interface{}) (ddtrace.SpanContext, error) {
+func (p *propagatorB3SingleHeader) Extract(carrier interface{}) (*SpanContext, error) {
 	switch c := carrier.(type) {
 	case TextMapReader:
 		return p.extractTextMap(c)
@@ -727,8 +760,8 @@ func (p *propagatorB3SingleHeader) Extract(carrier interface{}) (ddtrace.SpanCon
 	}
 }
 
-func (*propagatorB3SingleHeader) extractTextMap(reader TextMapReader) (ddtrace.SpanContext, error) {
-	var ctx spanContext
+func (*propagatorB3SingleHeader) extractTextMap(reader TextMapReader) (*SpanContext, error) {
+	var ctx SpanContext
 	err := reader.ForeachKey(func(k, v string) error {
 		var err error
 		key := strings.ToLower(k)
@@ -748,9 +781,9 @@ func (*propagatorB3SingleHeader) extractTextMap(reader TextMapReader) (ddtrace.S
 					case "":
 						break
 					case "1", "d": // Treat 'debug' traces as priority 1
-						ctx.setSamplingPriority(1, samplernames.Unknown)
+						ctx.setSamplingPriority(ext.PriorityAutoKeep, samplernames.Unknown)
 					case "0":
-						ctx.setSamplingPriority(0, samplernames.Unknown)
+						ctx.setSamplingPriority(ext.PriorityAutoReject, samplernames.Unknown)
 					default:
 						return ErrSpanContextCorrupted
 					}
@@ -780,7 +813,10 @@ const (
 // using W3C tracecontext/traceparent headers. Only TextMap carriers are supported.
 type propagatorW3c struct{}
 
-func (p *propagatorW3c) Inject(spanCtx ddtrace.SpanContext, carrier interface{}) error {
+func (p *propagatorW3c) Inject(spanCtx *SpanContext, carrier interface{}) error {
+	if spanCtx == nil {
+		return ErrInvalidSpanContext
+	}
 	switch c := carrier.(type) {
 	case TextMapWriter:
 		return p.injectTextMap(spanCtx, c)
@@ -797,9 +833,12 @@ func (p *propagatorW3c) Inject(spanCtx ddtrace.SpanContext, carrier interface{})
 // which is equal to 00000001 when no other flag is present.
 // tracestateHeader is a comma-separated list of list-members with a <key>=<value> format,
 // where each list-member is managed by a vendor or instrumentation library.
-func (*propagatorW3c) injectTextMap(spanCtx ddtrace.SpanContext, writer TextMapWriter) error {
-	ctx, ok := spanCtx.(*spanContext)
-	if !ok || ctx.traceID.Empty() || ctx.spanID == 0 {
+func (*propagatorW3c) injectTextMap(spanCtx *SpanContext, writer TextMapWriter) error {
+	if spanCtx == nil {
+		return ErrInvalidSpanContext
+	}
+	ctx := spanCtx
+	if ctx.traceID.Empty() || ctx.spanID == 0 {
 		return ErrInvalidSpanContext
 	}
 	flags := ""
@@ -813,9 +852,7 @@ func (*propagatorW3c) injectTextMap(spanCtx ddtrace.SpanContext, writer TextMapW
 	var traceID string
 	if ctx.traceID.HasUpper() {
 		setPropagatingTag(ctx, keyTraceID128, ctx.traceID.UpperHex())
-		if w3Cctx, ok := spanCtx.(ddtrace.SpanContextW3C); ok {
-			traceID = w3Cctx.TraceID128()
-		}
+		traceID = ctx.TraceID()
 	} else {
 		traceID = fmt.Sprintf("%032x", ctx.traceID)
 		if ctx.trace != nil {
@@ -988,7 +1025,7 @@ func isValidID(id string) bool {
 // which holds the values of the sampling decision(`s:<value>`), origin(`o:<origin>`),
 // the last parent ID of a Datadog span (`p:<parent_id>`),
 // and propagated tags prefixed with `t.`(e.g. _dd.p.usr.id:usr_id tag will become `t.usr.id:usr_id`).
-func composeTracestate(ctx *spanContext, priority int, oldState string) string {
+func composeTracestate(ctx *SpanContext, priority int, oldState string) string {
 	var (
 		b  strings.Builder
 		sm = &stringMutator{}
@@ -1055,7 +1092,7 @@ func composeTracestate(ctx *spanContext, priority int, oldState string) string {
 	return b.String()
 }
 
-func (p *propagatorW3c) Extract(carrier interface{}) (ddtrace.SpanContext, error) {
+func (p *propagatorW3c) Extract(carrier interface{}) (*SpanContext, error) {
 	switch c := carrier.(type) {
 	case TextMapReader:
 		return p.extractTextMap(c)
@@ -1064,10 +1101,10 @@ func (p *propagatorW3c) Extract(carrier interface{}) (ddtrace.SpanContext, error
 	}
 }
 
-func (*propagatorW3c) extractTextMap(reader TextMapReader) (ddtrace.SpanContext, error) {
+func (*propagatorW3c) extractTextMap(reader TextMapReader) (*SpanContext, error) {
 	var parentHeader string
 	var stateHeader string
-	var ctx spanContext
+	var ctx SpanContext
 	ctx.isRemote = true
 	// to avoid parsing tracestate header(s) if traceparent is invalid
 	if err := reader.ForeachKey(func(k, v string) error {
@@ -1109,7 +1146,7 @@ func (*propagatorW3c) extractTextMap(reader TextMapReader) (ddtrace.SpanContext,
 // Currently, Go tracer doesn't support 128-bit traceIDs, so the full traceID (32 hex-encoded digits) must be
 // stored into a field that is accessible from the span’s context. TraceId will be parsed from the least significant 16
 // hex-encoded digits into a 64-bit number.
-func parseTraceparent(ctx *spanContext, header string) error {
+func parseTraceparent(ctx *SpanContext, header string) error {
 	nonWordCutset := "_-\t \n"
 	header = strings.ToLower(strings.Trim(header, "\t -"))
 	headerLen := len(header)
@@ -1186,7 +1223,7 @@ func parseTraceparent(ctx *spanContext, header string) error {
 // `origin` = `o`
 // `last parent` = `p`
 // `_dd.p.` prefix = `t.`
-func parseTracestate(ctx *spanContext, header string) {
+func parseTracestate(ctx *SpanContext, header string) {
 	if header == "" {
 		// The W3C spec says tracestate can be empty but should avoid sending it.
 		// https://www.w3.org/TR/trace-context-1/#tracestate-header-field-values
@@ -1228,11 +1265,11 @@ func parseTracestate(ctx *spanContext, header string) {
 				}
 				if parentP == 1 && stateP <= 0 {
 					// Auto keep (1) and set the decision maker to default
-					ctx.setSamplingPriority(1, samplernames.Default)
+					ctx.setSamplingPriority(ext.PriorityAutoKeep, samplernames.Default)
 				}
 				if parentP == 0 && stateP > 0 {
 					// Auto drop (0) and drop the decision maker
-					ctx.setSamplingPriority(0, samplernames.Unknown)
+					ctx.setSamplingPriority(ext.PriorityAutoReject, samplernames.Unknown)
 					dropDM = true
 				}
 			} else if key == "p" {
@@ -1254,7 +1291,7 @@ func parseTracestate(ctx *spanContext, header string) {
 // extractTraceID128 extracts the trace id from v and populates the traceID
 // field, and the traceID128 field (if applicable) of the provided ctx,
 // returning an error if v is invalid.
-func extractTraceID128(ctx *spanContext, v string) error {
+func extractTraceID128(ctx *SpanContext, v string) error {
 	if len(v) > 32 {
 		v = v[len(v)-32:]
 	}
@@ -1275,4 +1312,164 @@ func extractTraceID128(ctx *spanContext, v string) error {
 		return ErrSpanContextCorrupted
 	}
 	return nil
+}
+
+const (
+	baggageMaxItems     = 64
+	baggageMaxBytes     = 8192
+	safeCharactersKey   = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!#$%&'*+-.^_`|~"
+	safeCharactersValue = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!#$%&'()*+-./:<>?@[]^_`{|}~"
+)
+
+// encodeKey encodes a key with the specified safe characters
+func encodeKey(key string) string {
+	return urlEncode(strings.TrimSpace(key), safeCharactersKey)
+}
+
+// encodeValue encodes a value with the specified safe characters
+func encodeValue(value string) string {
+	return urlEncode(strings.TrimSpace(value), safeCharactersValue)
+}
+
+// urlEncode performs percent-encoding while respecting the safe characters
+func urlEncode(input string, safeCharacters string) string {
+	var encoded strings.Builder
+	for _, c := range input {
+		if strings.ContainsRune(safeCharacters, c) {
+			encoded.WriteRune(c)
+		} else {
+			encoded.WriteString(url.QueryEscape(string(c)))
+		}
+	}
+	return encoded.String()
+}
+
+// propagatorBaggage implements Propagator and injects/extracts span contexts
+// using baggage headers.
+type propagatorBaggage struct{}
+
+func (p *propagatorBaggage) Inject(spanCtx *SpanContext, carrier interface{}) error {
+	switch c := carrier.(type) {
+	case TextMapWriter:
+		return p.injectTextMap(spanCtx, c)
+	default:
+		return ErrInvalidCarrier
+	}
+}
+
+// injectTextMap propagates baggage items from the span context into the writer,
+// in the format of a single HTTP "baggage" header. Baggage consists of key=value pairs,
+// separated by commas. This function enforces a maximum number of baggage items and a maximum overall size.
+// If either limit is exceeded, excess items or bytes are dropped, and a warning is logged.
+//
+// Example of a single "baggage" header:
+// baggage: foo=bar,baz=qux
+//
+// Each key and value pair is encoded and added to the existing baggage header in <key>=<value> format,
+// joined together by commas,
+func (*propagatorBaggage) injectTextMap(ctx *SpanContext, writer TextMapWriter) error {
+	if ctx == nil {
+		return nil
+	}
+
+	// Copy the baggage map under the read lock to avoid data races.
+	ctx.mu.RLock()
+	baggageCopy := make(map[string]string, len(ctx.baggage))
+	for k, v := range ctx.baggage {
+		baggageCopy[k] = v
+	}
+	ctx.mu.RUnlock()
+
+	// If the baggage is empty, do nothing.
+	if len(baggageCopy) == 0 {
+		return nil
+	}
+
+	baggageItems := make([]string, 0, len(baggageCopy))
+	totalSize := 0
+	count := 0
+
+	for key, value := range baggageCopy {
+		if count >= baggageMaxItems {
+			log.Warn("Baggage item limit exceeded. Only the first %d items will be propagated.", baggageMaxItems)
+			break
+		}
+
+		encodedKey := encodeKey(key)
+		encodedValue := encodeValue(value)
+		item := fmt.Sprintf("%s=%s", encodedKey, encodedValue)
+
+		itemSize := len(item)
+		if count > 0 {
+			itemSize++ // account for the comma separator
+		}
+
+		if totalSize+itemSize > baggageMaxBytes {
+			log.Warn("Baggage size limit exceeded. Only the first %d bytes will be propagated.", baggageMaxBytes)
+			break
+		}
+
+		baggageItems = append(baggageItems, item)
+		totalSize += itemSize
+		count++
+	}
+
+	if len(baggageItems) > 0 {
+		writer.Set("baggage", strings.Join(baggageItems, ","))
+	}
+
+	return nil
+}
+
+func (p *propagatorBaggage) Extract(carrier interface{}) (*SpanContext, error) {
+	switch c := carrier.(type) {
+	case TextMapReader:
+		return p.extractTextMap(c)
+	default:
+		return nil, ErrInvalidCarrier
+	}
+}
+
+func (*propagatorBaggage) extractTextMap(reader TextMapReader) (*SpanContext, error) {
+	var baggageHeader string
+	var ctx SpanContext
+	err := reader.ForeachKey(func(k, v string) error {
+		if strings.ToLower(k) == "baggage" {
+			baggageHeader = v
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	ctx.baggage = make(map[string]string)
+
+	if baggageHeader == "" {
+		return &ctx, nil
+	}
+
+	pairs := strings.Split(baggageHeader, ",")
+	for _, pair := range pairs {
+		pair = strings.TrimSpace(pair)
+		if !strings.Contains(pair, "=") {
+			// If a pair doesn't contain '=', treat it as invalid.
+			return nil, fmt.Errorf("Invalid baggage item: %s", pair)
+		}
+
+		keyValue := strings.SplitN(pair, "=", 2)
+		rawKey := strings.TrimSpace(keyValue[0])
+		rawValue := strings.TrimSpace(keyValue[1])
+
+		decKey, errKey := url.QueryUnescape(rawKey)
+		decVal, errVal := url.QueryUnescape(rawValue)
+		if errKey != nil || errVal != nil {
+			return nil, fmt.Errorf("Invalid baggage item: %s", pair)
+		}
+		ctx.baggage[decKey] = decVal
+	}
+	if len(ctx.baggage) > 0 {
+		atomic.StoreUint32(&ctx.hasBaggage, 1)
+	}
+	return &ctx, nil
 }

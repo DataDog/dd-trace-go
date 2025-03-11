@@ -17,8 +17,8 @@ import (
 	"sync"
 	"time"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/utils/telemetry"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
 // MaxPackFileSizeInMb is the maximum size of a pack file in megabytes.
@@ -142,10 +142,10 @@ func execGitStringWithInput(commandType telemetry.CommandType, input string, arg
 }
 
 // getGitVersion retrieves the version of the Git executable installed on the system.
-func getGitVersion() (major int, minor int, patch int, error error) {
-	out, err := execGitString(telemetry.NotSpecifiedCommandsType, "--version")
-	if err != nil {
-		return 0, 0, 0, err
+func getGitVersion() (major int, minor int, patch int, err error) {
+	out, lerr := execGitString(telemetry.NotSpecifiedCommandsType, "--version")
+	if lerr != nil {
+		return 0, 0, 0, lerr
 	}
 	out = strings.TrimSpace(strings.ReplaceAll(out, "git version ", ""))
 	versionParts := strings.Split(out, ".")
@@ -190,21 +190,21 @@ func getLocalGitData() (localGitData, error) {
 	log.Debug("civisibility.git: getting the absolute path to the Git directory")
 	out, err := execGitString(telemetry.NotSpecifiedCommandsType, "rev-parse", "--absolute-git-dir")
 	if err == nil {
-		gitData.SourceRoot = strings.ReplaceAll(out, ".git", "")
+		gitData.SourceRoot = strings.ReplaceAll(strings.Trim(string(out), "\n"), ".git", "")
 	}
 
 	// Extract the repository URL
 	log.Debug("civisibility.git: getting the repository URL")
 	out, err = execGitString(telemetry.GetRepositoryCommandsType, "ls-remote", "--get-url")
 	if err == nil {
-		gitData.RepositoryURL = filterSensitiveInfo(out)
+		gitData.RepositoryURL = filterSensitiveInfo(strings.Trim(string(out), "\n"))
 	}
 
 	// Extract the current branch name
 	log.Debug("civisibility.git: getting the current branch name")
 	out, err = execGitString(telemetry.GetBranchCommandsType, "rev-parse", "--abbrev-ref", "HEAD")
 	if err == nil {
-		gitData.Branch = out
+		gitData.Branch = strings.Trim(string(out), "\n")
 	}
 
 	// Get commit details from the latest commit using git log (git log -1 --pretty='%H","%aI","%an","%ae","%cI","%cn","%ce","%B')
@@ -215,7 +215,7 @@ func getLocalGitData() (localGitData, error) {
 	}
 
 	// Split the output into individual components
-	outArray := strings.Split(out, "\",\"")
+	outArray := strings.Split(string(out), "\",\"")
 	if len(outArray) < 8 {
 		return gitData, errors.New("git log failed")
 	}

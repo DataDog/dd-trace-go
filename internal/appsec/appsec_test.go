@@ -10,9 +10,10 @@ import (
 	"strconv"
 	"testing"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/config"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec/config"
 
 	waf "github.com/DataDog/go-libddwaf/v3"
 	"github.com/stretchr/testify/assert"
@@ -36,6 +37,6 @@ func TestStartStop(t *testing.T) {
 	// Use t.Setenv() to automatically restore the initial env var value, if set
 	t.Setenv(config.EnvEnabled, "")
 	os.Unsetenv(config.EnvEnabled)
-	appsec.Start()
+	testutils.StartAppSec(t)
 	appsec.Stop()
 }

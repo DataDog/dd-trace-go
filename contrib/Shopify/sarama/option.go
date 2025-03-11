@@ -8,8 +8,7 @@ package sarama
 import (
 	"math"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 )
 
 const defaultServiceName = "kafka"
@@ -25,27 +24,31 @@ type config struct {
 }
 
 func defaults(cfg *config) {
-	cfg.consumerServiceName = namingschema.ServiceName(defaultServiceName)
-	cfg.producerServiceName = namingschema.ServiceNameOverrideV0(defaultServiceName, defaultServiceName)
+	cfg.consumerServiceName = instr.ServiceName(instrumentation.ComponentConsumer, nil)
+	cfg.producerServiceName = instr.ServiceName(instrumentation.ComponentProducer, nil)
 
-	cfg.consumerSpanName = namingschema.OpName(namingschema.KafkaInbound)
-	cfg.producerSpanName = namingschema.OpName(namingschema.KafkaOutbound)
+	cfg.consumerSpanName = instr.OperationName(instrumentation.ComponentConsumer, nil)
+	cfg.producerSpanName = instr.OperationName(instrumentation.ComponentProducer, nil)
 
-	cfg.dataStreamsEnabled = internal.BoolEnv("DD_DATA_STREAMS_ENABLED", false)
+	cfg.dataStreamsEnabled = instr.DataStreamsEnabled()
 
-	// cfg.analyticsRate = globalconfig.AnalyticsRate()
-	if internal.BoolEnv("DD_TRACE_SARAMA_ANALYTICS_ENABLED", false) {
-		cfg.analyticsRate = 1.0
-	} else {
-		cfg.analyticsRate = math.NaN()
-	}
+	cfg.analyticsRate = instr.AnalyticsRate(false)
 }
 
-// An Option is used to customize the config for the sarama tracer.
-type Option func(cfg *config)
+// Option describes options for the Sarama integration.
+type Option interface {
+	apply(*config)
+}
 
-// WithServiceName sets the given service name for the intercepted client.
-func WithServiceName(name string) Option {
+// OptionFn represents options applicable to WrapConsumer, WrapPartitionConsumer, WrapAsyncProducer and WrapSyncProducer.
+type OptionFn func(*config)
+
+func (fn OptionFn) apply(cfg *config) {
+	fn(cfg)
+}
+
+// WithService sets the given service name for the intercepted client.
+func WithService(name string) OptionFn {
 	return func(cfg *config) {
 		cfg.consumerServiceName = name
 		cfg.producerServiceName = name
@@ -53,21 +56,21 @@ func WithServiceName(name string) Option {
 }
 
 // WithDataStreams enables the Data Streams monitoring product features: https://www.datadoghq.com/product/data-streams-monitoring/
-func WithDataStreams() Option {
+func WithDataStreams() OptionFn {
 	return func(cfg *config) {
 		cfg.dataStreamsEnabled = true
 	}
 }
 
 // WithGroupID tags the produced data streams metrics with the given groupID (aka consumer group)
-func WithGroupID(groupID string) Option {
+func WithGroupID(groupID string) OptionFn {
 	return func(cfg *config) {
 		cfg.groupID = groupID
 	}
 }
 
 // WithAnalytics enables Trace Analytics for all started spans.
-func WithAnalytics(on bool) Option {
+func WithAnalytics(on bool) OptionFn {
 	return func(cfg *config) {
 		if on {
 			cfg.analyticsRate = 1.0
@@ -79,7 +82,7 @@ func WithAnalytics(on bool) Option {
 
 // WithAnalyticsRate sets the sampling rate for Trace Analytics events
 // correlated to started spans.
-func WithAnalyticsRate(rate float64) Option {
+func WithAnalyticsRate(rate float64) OptionFn {
 	return func(cfg *config) {
 		if rate >= 0.0 && rate <= 1.0 {
 			cfg.analyticsRate = rate

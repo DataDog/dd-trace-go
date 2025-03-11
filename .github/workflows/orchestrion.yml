@@ -43,7 +43,9 @@ jobs:
           cache: true
           cache-dependency-path: '**/go.mod'
       - name: Run generator
-        run: go generate ./internal/orchestrion/...
+        run: |-
+          go generate ./internal/orchestrion/...
+          go generate -tags=tools ./orchestrion/all/...
       - name: Check for changes
         run: git diff --exit-code
 
@@ -160,6 +162,42 @@ jobs:
       - name: Run 'go mod tidy'
         run: go mod tidy
         working-directory: ${{ github.workspace }}/dd-trace-go/internal/orchestrion/_integration
+
+      # Pull docker images ahead of time so the pulls of large images don't have to fit within the
+      # test timeout.
+      - name: Pull container images
+        # Docker is only supported on Linux runners at the moment
+        if: runner.os == 'Linux'
+        run: |-
+          # AWS DynamoDB Local is used to have a pretend AWS API endpoint
+          docker pull amazon/dynamodb-local:latest
+
+          # ElasticSearch images
+          docker pull docker.elastic.co/elasticsearch/elasticsearch:6.8.23
+          docker pull docker.elastic.co/elasticsearch/elasticsearch:7.17.24
+          docker pull docker.elastic.co/elasticsearch/elasticsearch:8.15.3
+
+          # Kafka service
+          docker pull confluentinc/confluent-local:7.5.0
+
+          # PostgreSQL service
+          docker pull docker.io/postgres:16-alpine
+
+          # Redis service
+          docker pull redis:7-alpine
+
+          # Valkey service
+          docker pull valkey/valkey:8-alpine
+
+          # Vault service
+          docker pull vault:1.7.3
+
+      # Enable VM overcommit memory, which is essential to ensure smooth operations of the Redis
+      # servers. This VM setting is not namespaced, so changing it on the host also affects all
+      # containerized workloads (which our Redis service is).
+      - name: Enable memory overcommit
+        if: runner.os == 'Linux'
+        run: sudo sysctl vm.overcommit_memory=1
 
       # Finally, we run the test suite!
       - name: Run Tests

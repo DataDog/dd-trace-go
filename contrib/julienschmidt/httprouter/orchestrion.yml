@@ -5,7 +5,7 @@
 ---
 # yaml-language-server: $schema=https://datadoghq.dev/orchestrion/schema.json
 meta:
-  name: gopkg.in/DataDog/dd-trace-go.v1/contrib/julienschmidt/httprouter
+  name: github.com/DataDog/dd-trace-go/contrib/julienschmidt/httprouter/v2
   description: A high performance HTTP request router that scales well.
 
 aspects:
@@ -15,7 +15,7 @@ aspects:
     advice:
       - inject-declarations:
           imports:
-            tracing: "gopkg.in/DataDog/dd-trace-go.v1/contrib/julienschmidt/httprouter/internal/tracing"
+            tracing: "github.com/DataDog/dd-trace-go/contrib/julienschmidt/httprouter/v2/internal/tracing"
           lang: go1.18
           template: |-
             type __dd_wRouter struct {
@@ -61,7 +61,7 @@ aspects:
 
       - add-struct-field:
           name: __dd_config
-          type: "*gopkg.in/DataDog/dd-trace-go.v1/contrib/julienschmidt/httprouter/internal/tracing.Config"
+          type: "*github.com/DataDog/dd-trace-go/contrib/julienschmidt/httprouter/v2/internal/tracing.Config"
 
   - id: Router.ServeHTTP
     join-point:
@@ -72,7 +72,7 @@ aspects:
     advice:
       - prepend-statements:
           imports:
-            tracing:  "gopkg.in/DataDog/dd-trace-go.v1/contrib/julienschmidt/httprouter/internal/tracing"
+            tracing:  "github.com/DataDog/dd-trace-go/contrib/julienschmidt/httprouter/v2/internal/tracing"
           template: |-
             {{- $r := .Function.Receiver -}}
             {{- $w := .Function.Argument 0 -}}

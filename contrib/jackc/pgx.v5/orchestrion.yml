@@ -5,7 +5,7 @@
 ---
 # yaml-language-server: $schema=https://datadoghq.dev/orchestrion/schema.json
 meta:
-  name: gopkg.in/DataDog/dd-trace-go.v1/contrib/jackc/pgx.v5
+  name: github.com/DataDog/dd-trace-go/contrib/jackc/pgx.v5/v2
   description: PostgreSQL driver and toolkit for Go.
 
 aspects:
@@ -19,7 +19,7 @@ aspects:
               - import-path: github.com/jackc/pgx/v5/pgxpool
     advice:
       - replace-function:
-          gopkg.in/DataDog/dd-trace-go.v1/contrib/jackc/pgx.v5.Connect
+          github.com/DataDog/dd-trace-go/contrib/jackc/pgx.v5/v2.Connect
 
   - id: ConnectConfig
     join-point:
@@ -31,7 +31,7 @@ aspects:
               - import-path: github.com/jackc/pgx/v5/pgxpool
     advice:
       - replace-function:
-          gopkg.in/DataDog/dd-trace-go.v1/contrib/jackc/pgx.v5.ConnectConfig
+          github.com/DataDog/dd-trace-go/contrib/jackc/pgx.v5/v2.ConnectConfig
 
   - id: pgxpool.New
     join-point:
@@ -43,7 +43,7 @@ aspects:
               - import-path: github.com/jackc/pgx/v5/pgxpool
     advice:
       - replace-function:
-          gopkg.in/DataDog/dd-trace-go.v1/contrib/jackc/pgx.v5.NewPool
+          github.com/DataDog/dd-trace-go/contrib/jackc/pgx.v5/v2.NewPool
 
   - id: pgxpool.NewWithConfig
     join-point:
@@ -55,4 +55,4 @@ aspects:
               - import-path: github.com/jackc/pgx/v5/pgxpool
     advice:
       - replace-function:
-          gopkg.in/DataDog/dd-trace-go.v1/contrib/jackc/pgx.v5.NewPoolWithConfig
+          github.com/DataDog/dd-trace-go/contrib/jackc/pgx.v5/v2.NewPoolWithConfig

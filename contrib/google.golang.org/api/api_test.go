@@ -13,9 +13,9 @@ import (
 	"strings"
 	"testing"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -65,6 +65,7 @@ func TestBooks(t *testing.T) {
 	assert.Equal(t, "GET", s0.Tag(ext.HTTPMethod))
 	assert.Equal(t, svc.BasePath+"books/v1/users/montana.banana/bookshelves?alt=json&prettyPrint=false", s0.Tag(ext.HTTPURL))
 	assert.Equal(t, "google.golang.org/api", s0.Tag(ext.Component))
+	assert.Equal(t, componentName, s0.Integration())
 	assert.Equal(t, ext.SpanKindClient, s0.Tag(ext.SpanKind))
 }
 
@@ -90,6 +91,7 @@ func TestCivicInfo(t *testing.T) {
 	assert.Equal(t, "GET", s0.Tag(ext.HTTPMethod))
 	assert.Equal(t, svc.BasePath+"civicinfo/v2/representatives?alt=json&prettyPrint=false", s0.Tag(ext.HTTPURL))
 	assert.Equal(t, "google.golang.org/api", s0.Tag(ext.Component))
+	assert.Equal(t, componentName, s0.Integration())
 	assert.Equal(t, ext.SpanKindClient, s0.Tag(ext.SpanKind))
 }
 
@@ -117,6 +119,7 @@ func TestURLShortener(t *testing.T) {
 	assert.Equal(t, "GET", s0.Tag(ext.HTTPMethod))
 	assert.Equal(t, "https://www.googleapis.com/urlshortener/v1/url/history?alt=json&prettyPrint=false", s0.Tag(ext.HTTPURL))
 	assert.Equal(t, "google.golang.org/api", s0.Tag(ext.Component))
+	assert.Equal(t, componentName, s0.Integration())
 	assert.Equal(t, ext.SpanKindClient, s0.Tag(ext.SpanKind))
 }
 
@@ -142,6 +145,7 @@ func TestWithEndpointMetadataDisabled(t *testing.T) {
 	assert.Equal(t, "GET", s0.Tag(ext.HTTPMethod))
 	assert.Equal(t, svc.BasePath+"civicinfo/v2/representatives?alt=json&prettyPrint=false", s0.Tag(ext.HTTPURL))
 	assert.Equal(t, "google.golang.org/api", s0.Tag(ext.Component))
+	assert.Equal(t, componentName, s0.Integration())
 	assert.Equal(t, ext.SpanKindClient, s0.Tag(ext.SpanKind))
 }
 
@@ -170,9 +174,7 @@ func TestAnalyticsSettings(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		rate := globalconfig.AnalyticsRate()
-		defer globalconfig.SetAnalyticsRate(rate)
-		globalconfig.SetAnalyticsRate(0.4)
+		testutils.SetGlobalAnalyticsRate(t, 0.4)
 
 		assertRate(t, mt, 0.4)
 	})
@@ -195,9 +197,7 @@ func TestAnalyticsSettings(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		rate := globalconfig.AnalyticsRate()
-		defer globalconfig.SetAnalyticsRate(rate)
-		globalconfig.SetAnalyticsRate(0.4)
+		testutils.SetGlobalAnalyticsRate(t, 0.4)
 
 		assertRate(t, mt, 0.23, WithAnalyticsRate(0.23))
 	})

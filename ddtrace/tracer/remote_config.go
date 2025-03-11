@@ -14,10 +14,10 @@ import (
 	"sync"
 	"time"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/remoteconfig"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/remoteconfig"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 
 	"github.com/DataDog/datadog-agent/pkg/remoteconfig/state"
 )
@@ -186,7 +186,7 @@ func (t *tracer) onRemoteConfigUpdate(u remoteconfig.ProductUpdate) map[string]s
 		}
 		if len(telemConfigs) > 0 {
 			log.Debug("Reporting %d configuration changes to telemetry", len(telemConfigs))
-			telemetry.GlobalClient.ConfigChange(telemConfigs)
+			telemetry.RegisterAppConfigs(telemConfigs...)
 		}
 		return statuses
 	}
@@ -244,7 +244,7 @@ func (t *tracer) onRemoteConfigUpdate(u remoteconfig.ProductUpdate) map[string]s
 	}
 	if len(telemConfigs) > 0 {
 		log.Debug("Reporting %d configuration changes to telemetry", len(telemConfigs))
-		telemetry.GlobalClient.ConfigChange(telemConfigs)
+		telemetry.RegisterAppConfigs(telemConfigs...)
 	}
 	return statuses
 }

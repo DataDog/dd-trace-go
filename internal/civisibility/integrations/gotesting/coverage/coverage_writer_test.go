@@ -10,8 +10,8 @@ import (
 	"io"
 	"testing"
 
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/net"
 	"github.com/stretchr/testify/assert"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/utils/net"
 )
 
 func TestNewCoverageWriter(t *testing.T) {
@@ -77,6 +77,7 @@ type MockClient struct {
 	GetCommitsFunc                    func(localCommits []string) ([]string, error)
 	SendPackFilesFunc                 func(commitSha string, packFiles []string) (bytes int64, err error)
 	GetSkippableTestsFunc             func() (correlationId string, skippables map[string]map[string][]net.SkippableResponseDataAttributes, err error)
+	GetTestManagementTestsFunc        func() (*net.TestManagementTestsResponseDataModules, error)
 }
 
 func (m *MockClient) SendCoveragePayload(ciTestCovPayload io.Reader) error {
@@ -105,4 +106,8 @@ func (m *MockClient) SendPackFiles(commitSha string, packFiles []string) (bytes 
 
 func (m *MockClient) GetSkippableTests() (_ string, _ map[string]map[string][]net.SkippableResponseDataAttributes, err error) {
 	return m.GetSkippableTestsFunc()
+}
+
+func (m *MockClient) GetTestManagementTests() (*net.TestManagementTestsResponseDataModules, error) {
+	return m.GetTestManagementTestsFunc()
 }

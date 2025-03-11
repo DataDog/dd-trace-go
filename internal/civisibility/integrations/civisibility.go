@@ -13,13 +13,13 @@ import (
 	"sync"
 	"syscall"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/constants"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/utils"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/internal"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 )
 
 // ciVisibilityCloseAction defines an action to be executed when CI visibility is closing.
@@ -131,7 +131,7 @@ func ExitCiVisibility() {
 		log.Debug("civisibility: flushing and stopping tracer")
 		tracer.Flush()
 		tracer.Stop()
-		telemetry.GlobalClient.Stop()
+		telemetry.StopApp()
 		log.Debug("civisibility: done.")
 	}()
 	for _, v := range closeActions {

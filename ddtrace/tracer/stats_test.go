@@ -12,10 +12,11 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
+	"github.com/DataDog/datadog-agent/pkg/obfuscate"
 	"github.com/DataDog/datadog-go/v5/statsd"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/constants"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/utils"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/statsdtest"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
+	"github.com/DataDog/dd-trace-go/v2/internal/statsdtest"
 )
 
 func TestAlignTs(t *testing.T) {
@@ -27,17 +28,17 @@ func TestAlignTs(t *testing.T) {
 
 func TestConcentrator(t *testing.T) {
 	bucketSize := int64(500_000)
-	s1 := span{
-		Name:     "http.request",
-		Start:    time.Now().UnixNano() + 3*bucketSize,
-		Duration: 1,
-		Metrics:  map[string]float64{keyMeasured: 1},
+	s1 := Span{
+		name:     "http.request",
+		start:    time.Now().UnixNano() + 3*bucketSize,
+		duration: 1,
+		metrics:  map[string]float64{keyMeasured: 1},
 	}
-	s2 := span{
-		Name:     "sql.query",
-		Start:    time.Now().UnixNano() + 4*bucketSize,
-		Duration: 1,
-		Metrics:  map[string]float64{keyMeasured: 1},
+	s2 := Span{
+		name:     "sql.query",
+		start:    time.Now().UnixNano() + 4*bucketSize,
+		duration: 1,
+		metrics:  map[string]float64{keyMeasured: 1},
 	}
 	t.Run("start-stop", func(t *testing.T) {
 		assert := assert.New(t)
@@ -119,7 +120,7 @@ func TestConcentrator(t *testing.T) {
 		// stats should be sent if the concentrator is stopped
 		t.Run("stop", func(t *testing.T) {
 			transport := newDummyTransport()
-			c := newConcentrator(&config{transport: transport}, 500000, &statsd.NoOpClientDirect{})
+			c := newConcentrator(&config{transport: transport}, 500_000, &statsd.NoOpClientDirect{})
 			assert.Len(t, transport.Stats(), 0)
 			ss1, ok := c.newTracerStatSpan(&s1, nil)
 			assert.True(t, ok)
@@ -129,4 +130,56 @@ func TestConcentrator(t *testing.T) {
 			assert.NotEmpty(t, transport.Stats())
 		})
 	})
+}
+
+func TestShouldObfuscate(t *testing.T) {
+	bucketSize := int64(500_000)
+	tsp := newDummyTransport()
+	for _, params := range []struct {
+		name                    string
+		tracerVersion           int
+		agentVersion            int
+		expectedShouldObfuscate bool
+	}{
+		{name: "version equal", tracerVersion: 2, agentVersion: 2, expectedShouldObfuscate: true},
+		{name: "agent version missing", tracerVersion: 2, agentVersion: 0, expectedShouldObfuscate: false},
+		{name: "agent version older", tracerVersion: 2, agentVersion: 1, expectedShouldObfuscate: true},
+		{name: "agent version newer", tracerVersion: 2, agentVersion: 3, expectedShouldObfuscate: false},
+	} {
+		t.Run(params.name, func(t *testing.T) {
+			c := newConcentrator(&config{transport: tsp, env: "someEnv", agent: agentFeatures{obfuscationVersion: params.agentVersion}}, bucketSize, &statsd.NoOpClientDirect{})
+			defer func(oldVersion int) { tracerObfuscationVersion = oldVersion }(tracerObfuscationVersion)
+			tracerObfuscationVersion = params.tracerVersion
+			assert.Equal(t, params.expectedShouldObfuscate, c.shouldObfuscate())
+		})
+	}
+}
+
+func TestObfuscation(t *testing.T) {
+	bucketSize := int64(500_000)
+	s1 := Span{
+		name:     "redis-query",
+		start:    time.Now().UnixNano() + 3*bucketSize,
+		duration: 1,
+		metrics:  map[string]float64{keyMeasured: 1},
+		spanType: "redis",
+		resource: "GET somekey",
+	}
+	tsp := newDummyTransport()
+	c := newConcentrator(&config{transport: tsp, env: "someEnv", agent: agentFeatures{obfuscationVersion: 2}}, bucketSize, &statsd.NoOpClientDirect{})
+	defer func(oldVersion int) { tracerObfuscationVersion = oldVersion }(tracerObfuscationVersion)
+	tracerObfuscationVersion = 2
+
+	assert.Len(t, tsp.Stats(), 0)
+	ss1, ok := c.newTracerStatSpan(&s1, obfuscate.NewObfuscator(obfuscate.Config{}))
+	assert.True(t, ok)
+	c.Start()
+	c.In <- ss1
+	c.Stop()
+	actualStats := tsp.Stats()
+	assert.Len(t, actualStats, 1)
+	assert.Len(t, actualStats[0].Stats, 1)
+	assert.Len(t, actualStats[0].Stats[0].Stats, 1)
+	assert.Equal(t, 2, tsp.obfVersion)
+	assert.Equal(t, "GET", actualStats[0].Stats[0].Stats[0].Resource)
 }

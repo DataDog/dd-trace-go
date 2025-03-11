@@ -11,13 +11,13 @@ import (
 	"context"
 	"testing"
 
-	"github.com/DataDog/dd-trace-go/internal/orchestrion/_integration/internal/containers"
-	"github.com/DataDog/dd-trace-go/internal/orchestrion/_integration/internal/trace"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/containers"
+	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/trace"
 	"github.com/hashicorp/vault/api"
 	"github.com/stretchr/testify/require"
 	"github.com/testcontainers/testcontainers-go"
 	testvault "github.com/testcontainers/testcontainers-go/modules/vault"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
 
 type TestCase struct {
@@ -30,7 +30,7 @@ func (tc *TestCase) Setup(ctx context.Context, t *testing.T) {
 
 	var err error
 	tc.server, err = testvault.Run(ctx,
-		"vault:1.7.3",
+		"vault:1.7.3", // Change the docker pull stage in .github/workflows/orchestrion.yml if you update this
 		testcontainers.WithLogger(testcontainers.TestLogger(t)),
 		containers.WithTestLogConsumer(t),
 		testvault.WithToken("root"),
@@ -70,7 +70,7 @@ func (*TestCase) ExpectedTraces() trace.Traces {
 			Children: trace.Traces{
 				{
 					Tags: map[string]any{
-						"name":     "http.request",
+						"name":     "vault.command",
 						"service":  "vault",
 						"resource": "GET /v1/secret/key",
 						"type":     "http",

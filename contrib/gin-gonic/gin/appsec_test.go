@@ -13,19 +13,17 @@ import (
 	"strings"
 	"testing"
 
-	pappsec "gopkg.in/DataDog/dd-trace-go.v1/appsec"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
-
+	"github.com/DataDog/dd-trace-go/v2/appsec"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 )
 
 func TestAppSec(t *testing.T) {
-	appsec.Start()
-	defer appsec.Stop()
-	if !appsec.Enabled() {
+	testutils.StartAppSec(t)
+	if !instr.AppSecEnabled() {
 		t.Skip("appsec disabled")
 	}
 
@@ -38,7 +36,7 @@ func TestAppSec(t *testing.T) {
 		c.String(200, "Hello Params!\n")
 	})
 	r.Any("/body", func(c *gin.Context) {
-		pappsec.MonitorParsedHTTPBody(c.Request.Context(), "$globals")
+		appsec.MonitorParsedHTTPBody(c.Request.Context(), "$globals")
 		c.String(200, "Hello Body!\n")
 	})
 
@@ -149,8 +147,7 @@ func TestAppSec(t *testing.T) {
 }
 
 func TestControlFlow(t *testing.T) {
-	appsec.Start()
-	defer appsec.Stop()
+	testutils.StartAppSec(t)
 	middlewareResponseBody := "Hello Middleware"
 	middlewareResponseStatus := 433
 	handlerResponseBody := "Hello Handler"
@@ -351,6 +348,7 @@ func TestControlFlow(t *testing.T) {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			mt := mocktracer.Start()
+			defer mt.Stop()
 			// Create a Gin router
 			router := gin.New()
 			// Setup the middleware
@@ -373,9 +371,8 @@ func TestControlFlow(t *testing.T) {
 func TestBlocking(t *testing.T) {
 	t.Setenv("DD_APPSEC_RULES", "../../../internal/appsec/testdata/blocking.json")
 
-	appsec.Start()
-	defer appsec.Stop()
-	if !appsec.Enabled() {
+	testutils.StartAppSec(t)
+	if !instr.AppSecEnabled() {
 		t.Skip("AppSec needs to be enabled for this test")
 	}
 

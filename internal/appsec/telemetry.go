@@ -8,8 +8,8 @@ package appsec
 import (
 	"runtime"
 
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 	waf "github.com/DataDog/go-libddwaf/v3"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 )
 
 // cgoEnabled is true if cgo is enabled, false otherwise.
@@ -87,5 +87,11 @@ func (a *appsecTelemetry) emit() {
 		return
 	}
 
-	telemetry.GlobalClient.ProductChange(telemetry.NamespaceAppSec, a.enabled, a.configs)
+	if a.enabled {
+		telemetry.ProductStarted(telemetry.NamespaceAppSec)
+	} else {
+		telemetry.ProductStopped(telemetry.NamespaceAppSec)
+	}
+
+	telemetry.RegisterAppConfigs(a.configs...)
 }

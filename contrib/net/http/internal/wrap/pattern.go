@@ -13,7 +13,7 @@ import (
 	"sync"
 	"unicode"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	internal "github.com/DataDog/dd-trace-go/contrib/net/http/v2/internal/config"
 )
 
 // patternRoute returns the route part of a go1.22 style ServeMux pattern. I.e.
@@ -55,7 +55,7 @@ func getPatternNames(pattern string) []string {
 	segments, err := parsePatternNames(pattern)
 	if err != nil {
 		// Ignore the error: Something as gone wrong, but we are not eager to find out why.
-		log.Debug("contrib/net/http: failed to parse mux path pattern %q: %v", pattern, err)
+		internal.Instrumentation.Logger().Debug("contrib/net/http: failed to parse mux path pattern %q: %v", pattern, err)
 		// here we fallthrough instead of returning to load a nil value into the cache to avoid reparsing the pattern.
 	}
 

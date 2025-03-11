@@ -26,14 +26,14 @@ import (
 	"testing"
 	"time"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/httpmem"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/orchestrion"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/traceprof"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/httpmem"
+	"github.com/DataDog/dd-trace-go/v2/internal"
+	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion"
+	"github.com/DataDog/dd-trace-go/v2/internal/traceprof"
+	"github.com/DataDog/dd-trace-go/v2/internal/version"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -110,41 +110,56 @@ func TestStart(t *testing.T) {
 		mu.Unlock()
 	})
 
-	t.Run("options/GoodAPIKey/Agent", func(t *testing.T) {
+	t.Run("Agent/GoodAPIKey", func(t *testing.T) {
+		t.Setenv("DD_API_KEY", "12345678901234567890123456789012")
 		rl := &log.RecordLogger{}
 		defer log.UseLogger(rl)()
 
-		err := Start(WithAPIKey("12345678901234567890123456789012"))
+		err := Start()
 		defer Stop()
 		assert.Nil(t, err)
 		assert.Equal(t, activeProfiler.cfg.agentURL, activeProfiler.cfg.targetURL)
 		// The package should log a warning that using an API has no
 		// effect unless uploading directly to Datadog (i.e. agentless)
 		assert.LessOrEqual(t, 1, len(rl.Logs()))
-		assert.Contains(t, strings.Join(rl.Logs(), " "), "profiler.WithAPIKey")
+		assert.Contains(t, strings.Join(rl.Logs(), " "), "DD_API_KEY")
 	})
 
-	t.Run("options/GoodAPIKey/Agentless", func(t *testing.T) {
+	t.Run("Agentless/GoodAPIKey", func(t *testing.T) {
+		t.Setenv("DD_PROFILING_AGENTLESS", "True")
+		t.Setenv("DD_API_KEY", "12345678901234567890123456789012")
 		rl := &log.RecordLogger{}
 		defer log.UseLogger(rl)()
 
-		err := Start(
-			WithAPIKey("12345678901234567890123456789012"),
-			WithAgentlessUpload(),
-		)
+		err := Start()
 		defer Stop()
 		assert.Nil(t, err)
 		assert.Equal(t, activeProfiler.cfg.apiURL, activeProfiler.cfg.targetURL)
 		// The package should log a warning that agentless upload is not
 		// officially supported, so prefer not to use it
 		assert.LessOrEqual(t, 1, len(rl.Logs()))
-		assert.Contains(t, strings.Join(rl.Logs(), " "), "profiler.WithAgentlessUpload")
+		assert.Contains(t, strings.Join(rl.Logs(), " "), "Agentless")
 	})
 
-	t.Run("options/BadAPIKey", func(t *testing.T) {
-		err := Start(WithAPIKey("aaaa"), WithAgentlessUpload())
+	t.Run("Agentless/NoAPIKey", func(t *testing.T) {
+		t.Setenv("DD_PROFILING_AGENTLESS", "True")
+		err := Start()
 		defer Stop()
 		assert.NotNil(t, err)
+		assert.Contains(t, err.Error(), "Agentless upload requires a valid API key")
+
+		// Check that mu gets unlocked, even if newProfiler() returns an error.
+		mu.Lock()
+		mu.Unlock()
+	})
+
+	t.Run("Agentless/BadAPIKey", func(t *testing.T) {
+		t.Setenv("DD_PROFILING_AGENTLESS", "True")
+		t.Setenv("DD_API_KEY", "aaaa")
+		err := Start()
+		defer Stop()
+		assert.NotNil(t, err)
+		assert.Contains(t, err.Error(), "Agentless upload requires a valid API key")
 
 		// Check that mu gets unlocked, even if newProfiler() returns an error.
 		mu.Lock()

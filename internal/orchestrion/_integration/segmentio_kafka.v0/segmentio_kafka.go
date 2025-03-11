@@ -10,17 +10,18 @@ package segmentio_kafka_v0
 import (
 	"context"
 	"errors"
+	"sync"
 	"testing"
 	"time"
 
-	"github.com/DataDog/dd-trace-go/internal/orchestrion/_integration/internal/containers"
-	"github.com/DataDog/dd-trace-go/internal/orchestrion/_integration/internal/trace"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/containers"
+	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/trace"
 	"github.com/cenkalti/backoff/v4"
 	"github.com/segmentio/kafka-go"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	kafkatest "github.com/testcontainers/testcontainers-go/modules/kafka"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
 
 const (
@@ -30,20 +31,14 @@ const (
 )
 
 type TestCase struct {
-	kafka  *kafkatest.KafkaContainer
-	addr   string
-	writer *kafka.Writer
+	kafka *kafkatest.KafkaContainer
+	addr  string
 }
 
 func (tc *TestCase) Setup(_ context.Context, t *testing.T) {
 	containers.SkipIfProviderIsNotHealthy(t)
 
 	tc.kafka, tc.addr = containers.StartKafkaTestContainer(t)
-
-	tc.writer = &kafka.Writer{
-		Addr:     kafka.TCP(tc.addr),
-		Balancer: &kafka.LeastBytes{},
-	}
 }
 
 func (tc *TestCase) newReader(topic string) *kafka.Reader {
@@ -84,7 +79,13 @@ func (tc *TestCase) produce(ctx context.Context, t *testing.T) {
 	}
 	err := backoff.Retry(
 		func() error {
-			err := tc.writer.WriteMessages(ctx, messages...)
+			writer := &kafka.Writer{
+				Addr:     kafka.TCP(tc.addr),
+				Balancer: &kafka.LeastBytes{},
+			}
+			defer func() { require.NoError(t, writer.Close()) }()
+
+			err := writer.WriteMessages(ctx, messages...)
 			if !errors.Is(err, kafka.UnknownTopicOrPartition) {
 				return backoff.Permanent(err)
 			}
@@ -93,25 +94,41 @@ func (tc *TestCase) produce(ctx context.Context, t *testing.T) {
 		backoff.NewExponentialBackOff(),
 	)
 	require.NoError(t, err)
-	require.NoError(t, tc.writer.Close())
 }
 
-func (tc *TestCase) consume(ctx context.Context, t *testing.T) {
-	readerA := tc.newReader(topicA)
-	m, err := readerA.ReadMessage(ctx)
-	require.NoError(t, err)
-	assert.Equal(t, "Hello World!", string(m.Value))
-	assert.Equal(t, "Key-A", string(m.Key))
-	require.NoError(t, readerA.Close())
+func (tc *TestCase) consume(_ context.Context, t *testing.T) {
+	ctx := context.Background() // Diregard local trace context as it'd override the propagated one
 
-	readerB := tc.newReader(topicB)
-	m, err = readerB.FetchMessage(ctx)
-	require.NoError(t, err)
-	assert.Equal(t, "Second message", string(m.Value))
-	assert.Equal(t, "Key-A", string(m.Key))
-	err = readerB.CommitMessages(ctx, m)
-	require.NoError(t, err)
-	require.NoError(t, readerB.Close())
+	// We consume from separate goroutines to blur out the goroutine local storage's context weaving, more accurately
+	// simulating "real-world" usage of the Kafka client.
+	var wg sync.WaitGroup
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+
+		readerA := tc.newReader(topicA)
+		defer func() { require.NoError(t, readerA.Close()) }()
+		m, err := readerA.ReadMessage(ctx)
+		require.NoError(t, err)
+		assert.Equal(t, "Hello World!", string(m.Value))
+		assert.Equal(t, "Key-A", string(m.Key))
+	}()
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+
+		readerB := tc.newReader(topicB)
+		defer func() { require.NoError(t, readerB.Close()) }()
+		m, err := readerB.FetchMessage(ctx)
+		require.NoError(t, err)
+		assert.Equal(t, "Second message", string(m.Value))
+		assert.Equal(t, "Key-A", string(m.Key))
+		err = readerB.CommitMessages(ctx, m)
+		require.NoError(t, err)
+	}()
+	wg.Wait()
 }
 
 func (*TestCase) ExpectedTraces() trace.Traces {
@@ -130,7 +147,7 @@ func (*TestCase) ExpectedTraces() trace.Traces {
 					},
 					Meta: map[string]string{
 						"span.kind": "producer",
-						"component": "segmentio/kafka.go.v0",
+						"component": "segmentio/kafka-go",
 					},
 					Children: trace.Traces{
 						{
@@ -142,7 +159,7 @@ func (*TestCase) ExpectedTraces() trace.Traces {
 							},
 							Meta: map[string]string{
 								"span.kind": "consumer",
-								"component": "segmentio/kafka.go.v0",
+								"component": "segmentio/kafka-go",
 							},
 						},
 					},
@@ -156,7 +173,7 @@ func (*TestCase) ExpectedTraces() trace.Traces {
 					},
 					Meta: map[string]string{
 						"span.kind": "producer",
-						"component": "segmentio/kafka.go.v0",
+						"component": "segmentio/kafka-go",
 					},
 					Children: trace.Traces{
 						{
@@ -168,7 +185,7 @@ func (*TestCase) ExpectedTraces() trace.Traces {
 							},
 							Meta: map[string]string{
 								"span.kind": "consumer",
-								"component": "segmentio/kafka.go.v0",
+								"component": "segmentio/kafka-go",
 							},
 						},
 					},
@@ -182,7 +199,7 @@ func (*TestCase) ExpectedTraces() trace.Traces {
 					},
 					Meta: map[string]string{
 						"span.kind": "producer",
-						"component": "segmentio/kafka.go.v0",
+						"component": "segmentio/kafka-go",
 					},
 					Children: nil,
 				},

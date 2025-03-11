@@ -12,10 +12,11 @@ import (
 	"os"
 	"testing"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils"
 
 	_ "github.com/go-sql-driver/mysql"
 	_ "github.com/lib/pq"
@@ -112,6 +113,7 @@ func TestSelect(t *testing.T) {
 			assert.Equal("bun.query", spans[0].OperationName())
 			assert.Equal("http.request", spans[1].OperationName())
 			assert.Equal("uptrace/bun", spans[0].Tag(ext.Component))
+			assert.Equal(string(instrumentation.PackageUptraceBun), spans[0].Integration())
 			assert.Equal(ext.DBSystemOtherSQL, spans[0].Tag(ext.DBSystem))
 			mt.Reset()
 		})
@@ -146,14 +148,13 @@ func TestServiceName(t *testing.T) {
 		assert.Equal("bun.db", spans[0].Tag(ext.ServiceName))
 		assert.Equal("fake-http-server", spans[1].Tag(ext.ServiceName))
 		assert.Equal("uptrace/bun", spans[0].Tag(ext.Component))
+		assert.Equal(string(instrumentation.PackageUptraceBun), spans[0].Integration())
 		assert.Equal(ext.DBSystemOtherSQL, spans[0].Tag(ext.DBSystem))
 		assert.Equal(spans[0].ParentID(), spans[1].SpanID())
 	})
 
 	t.Run("global", func(t *testing.T) {
-		prevName := globalconfig.ServiceName()
-		defer globalconfig.SetServiceName(prevName)
-		globalconfig.SetServiceName("global-service")
+		testutils.SetGlobalServiceName(t, "global-service")
 
 		assert := assert.New(t)
 		mt := mocktracer.Start()
@@ -181,6 +182,7 @@ func TestServiceName(t *testing.T) {
 		assert.Equal("global-service", spans[0].Tag(ext.ServiceName))
 		assert.Equal("fake-http-server", spans[1].Tag(ext.ServiceName))
 		assert.Equal("uptrace/bun", spans[0].Tag(ext.Component))
+		assert.Equal(string(instrumentation.PackageUptraceBun), spans[0].Integration())
 		assert.Equal(ext.DBSystemOtherSQL, spans[0].Tag(ext.DBSystem))
 	})
 
@@ -211,6 +213,7 @@ func TestServiceName(t *testing.T) {
 		assert.Equal("my-service-name", spans[0].Tag(ext.ServiceName))
 		assert.Equal("fake-http-server", spans[1].Tag(ext.ServiceName))
 		assert.Equal("uptrace/bun", spans[0].Tag(ext.Component))
+		assert.Equal(string(instrumentation.PackageUptraceBun), spans[0].Integration())
 		assert.Equal(ext.DBSystemOtherSQL, spans[0].Tag(ext.DBSystem))
 	})
 }

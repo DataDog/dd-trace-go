@@ -3,15 +3,16 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
-package statsdtest // import "gopkg.in/DataDog/dd-trace-go.v1/internal/statsdtest"
+package statsdtest // import "github.com/DataDog/dd-trace-go/v2/internal/statsdtest"
 
 import (
 	"fmt"
+	"slices"
 	"sync"
 	"time"
 
+	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/stretchr/testify/assert"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 )
 
 type callType int64
@@ -270,6 +271,18 @@ func FilterCallsByName(calls []TestStatsdCall, name string) []TestStatsdCall {
 		}
 	}
 	return matches
+}
+
+func (tg *TestStatsdClient) CountCallsByTag(calls []TestStatsdCall, tag string) int64 {
+	tg.mu.RLock()
+	defer tg.mu.RUnlock()
+	var count int64
+	for _, c := range calls {
+		if slices.Equal(c.tags, []string{tag}) {
+			count += c.intVal
+		}
+	}
+	return count
 }
 
 func (tg *TestStatsdClient) Counts() map[string]int64 {

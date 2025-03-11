@@ -13,8 +13,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/DataDog/dd-trace-go/internal/orchestrion/_integration/internal/net"
-	"github.com/DataDog/dd-trace-go/internal/orchestrion/_integration/internal/trace"
+	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/net"
+	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/trace"
 	"github.com/julienschmidt/httprouter"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -84,7 +84,7 @@ func (*TestCase) ExpectedTraces() trace.Traces {
 								"name":     "http.request",
 								"resource": "GET /ping",
 								"type":     "web",
-								"service":  "http.router",
+								"service":  "julienschmidt_httprouter.test",
 							},
 							Meta: map[string]string{
 								"component": "julienschmidt/httprouter",

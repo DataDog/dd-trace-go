@@ -8,13 +8,13 @@ package chi
 import (
 	"net/http"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/httpsec"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/httpsec"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/trace"
 
 	"github.com/go-chi/chi/v5"
 )
 
-func withAppsec(next http.Handler, r *http.Request, span tracer.Span, cfg *httpsec.Config) http.Handler {
+func withAppsec(next http.Handler, r *http.Request, span trace.TagSetter, cfg *httpsec.Config) http.Handler {
 	rctx := chi.RouteContext(r.Context())
 	if rctx == nil {
 		return httpsec.WrapHandler(next, span, nil, cfg)
