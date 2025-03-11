@@ -3,7 +3,7 @@ name: APM Parametric Tests
 on:
   workflow_call: # allows to reuse this workflow
     inputs:
-      ref:
+      branch_ref:
         description: 'The branch to run the workflow on'
         required: true
         type: string
@@ -18,7 +18,13 @@ on:
     branches:
       - "**"
   merge_group:
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'System Tests ref/tag/branch'
+        required: true
+        default: main
+        type: string
   schedule:
     - cron:  '00 04 * * 2-6'
 
