@@ -275,7 +275,6 @@ func (ddm *M) executeInternalTest(testInfo *testingTInfo) func(*testing.T) {
 			}
 			test.SetTag(constants.TestForcedToRun, "true")
 			telemetry.ITRForcedRun(telemetry.TestEventType)
-
 		}
 
 		// Check if the coverage is enabled
