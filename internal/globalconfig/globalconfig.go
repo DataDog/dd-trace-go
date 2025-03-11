@@ -9,6 +9,8 @@ package globalconfig
 
 import (
 	_ "unsafe" // required by go:linkname
+
+	_ "github.com/DataDog/dd-trace-go/v2/ddtrace/tracer" // revive:disable-line:blank-imports
 )
 
 //go:linkname RuntimeID github.com/DataDog/dd-trace-go/v2/internal/globalconfig.RuntimeID

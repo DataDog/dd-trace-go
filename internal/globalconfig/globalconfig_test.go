@@ -9,8 +9,6 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-
-	_ "github.com/DataDog/dd-trace-go/v2/ddtrace/tracer" // required by go:linkname
 )
 
 func TestRuntimeID(t *testing.T) {
