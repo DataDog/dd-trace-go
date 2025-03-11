@@ -7,15 +7,19 @@ package usersec
 
 import (
 	"context"
+	"sync"
 
 	"github.com/DataDog/dd-trace-go/v2/appsec/events"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/dyngo"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
 const errorLog = `
 appsec: user login monitoring ignored: could not find the http handler instrumentation metadata in the request context:
 	the request handler is not being monitored by a middleware function or the provided context is not the expected request context
 `
+
+var errorLogOnce sync.Once
 
 type (
 	// UserEventType is the type of user event, such as a successful login or a failed login or any other authenticated request.
@@ -49,9 +53,13 @@ const (
 	UserSet
 )
 
-func StartUserLoginOperation(ctx context.Context, args UserLoginOperationArgs) (*UserLoginOperation, *error) {
-	parent, _ := dyngo.FromContext(ctx)
-	op := &UserLoginOperation{Operation: dyngo.NewOperation(parent)}
+func StartUserLoginOperation(ctx context.Context, eventType UserEventType, args UserLoginOperationArgs) (*UserLoginOperation, *error) {
+	parent, ok := dyngo.FromContext(ctx)
+	if !ok { // Nothing will be reported in this case, but we can still block so we don't return
+		errorLogOnce.Do(func() { log.Error(errorLog) })
+	}
+
+	op := &UserLoginOperation{Operation: dyngo.NewOperation(parent), EventType: eventType}
 	var err error
 	dyngo.OnData(op, func(e *events.BlockingSecurityEvent) { err = e })
 	dyngo.StartOperation(op, args)

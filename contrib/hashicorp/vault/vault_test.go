@@ -17,6 +17,7 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 
 	"github.com/hashicorp/vault/api"
 	"github.com/stretchr/testify/assert"
@@ -143,6 +144,7 @@ func testMountReadWrite(c *api.Client, t *testing.T) {
 		assert.Nil(span.Tag(ext.ErrorMsg))
 		assert.Nil(span.Tag("vault.namespace"))
 		assert.Equal("hashicorp/vault", span.Tag(ext.Component))
+		assert.Equal(string(instrumentation.PackageHashicorpVaultAPI), span.Integration())
 		assert.Equal(ext.SpanKindClient, span.Tag(ext.SpanKind))
 		assert.Equal(hostname, span.Tag(ext.NetworkDestinationName))
 	})
@@ -172,6 +174,7 @@ func testMountReadWrite(c *api.Client, t *testing.T) {
 		assert.Nil(span.Tag(ext.ErrorMsg))
 		assert.Nil(span.Tag("vault.namespace"))
 		assert.Equal("hashicorp/vault", span.Tag(ext.Component))
+		assert.Equal(string(instrumentation.PackageHashicorpVaultAPI), span.Integration())
 		assert.Equal(ext.SpanKindClient, span.Tag(ext.SpanKind))
 		assert.Equal(hostname, span.Tag(ext.NetworkDestinationName))
 	})
@@ -208,6 +211,7 @@ func testMountReadWrite(c *api.Client, t *testing.T) {
 		assert.Nil(span.Tag(ext.ErrorMsg))
 		assert.Nil(span.Tag("vault.namespace"))
 		assert.Equal("hashicorp/vault", span.Tag(ext.Component))
+		assert.Equal(string(instrumentation.PackageHashicorpVaultAPI), span.Integration())
 		assert.Equal(ext.SpanKindClient, span.Tag(ext.SpanKind))
 		assert.Equal(hostname, span.Tag(ext.NetworkDestinationName))
 	})
@@ -253,6 +257,7 @@ func TestReadError(t *testing.T) {
 	assert.NotNil(span.Tag(ext.ErrorMsg))
 	assert.Nil(span.Tag("vault.namespace"))
 	assert.Equal("hashicorp/vault", span.Tag(ext.Component))
+	assert.Equal(string(instrumentation.PackageHashicorpVaultAPI), span.Integration())
 	assert.Equal(ext.SpanKindClient, span.Tag(ext.SpanKind))
 	assert.Equal(hostname, span.Tag(ext.NetworkDestinationName))
 }
@@ -302,6 +307,7 @@ func TestNamespace(t *testing.T) {
 		assert.Nil(span.Tag(ext.ErrorMsg))
 		assert.Equal(namespace, span.Tag("vault.namespace"))
 		assert.Equal("hashicorp/vault", span.Tag(ext.Component))
+		assert.Equal(string(instrumentation.PackageHashicorpVaultAPI), span.Integration())
 		assert.Equal(ext.SpanKindClient, span.Tag(ext.SpanKind))
 		assert.Equal(hostname, span.Tag(ext.NetworkDestinationName))
 	})
@@ -336,6 +342,7 @@ func TestNamespace(t *testing.T) {
 		assert.Nil(span.Tag(ext.ErrorMsg))
 		assert.Equal(namespace, span.Tag("vault.namespace"))
 		assert.Equal("hashicorp/vault", span.Tag(ext.Component))
+		assert.Equal(string(instrumentation.PackageHashicorpVaultAPI), span.Integration())
 		assert.Equal(ext.SpanKindClient, span.Tag(ext.SpanKind))
 		assert.Equal(hostname, span.Tag(ext.NetworkDestinationName))
 	})

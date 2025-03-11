@@ -13,6 +13,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils"
 
 	"github.com/stretchr/testify/assert"
@@ -432,6 +433,7 @@ func testUpdate(t *testing.T, name string, f func(tx *Tx) error) {
 	assert.Equal(t, "buntdb", spans[0].Tag(ext.ServiceName))
 	assert.Equal(t, "buntdb.query", spans[0].OperationName())
 	assert.Equal(t, "tidwall/buntdb", spans[0].Tag(ext.Component))
+	assert.Equal(t, string(instrumentation.PackageTidwallBuntDB), spans[0].Integration())
 	assert.Equal(t, ext.SpanKindClient, spans[0].Tag(ext.SpanKind))
 	assert.Equal(t, "buntdb", spans[0].Tag(ext.DBSystem))
 }
@@ -453,6 +455,7 @@ func testView(t *testing.T, name string, f func(tx *Tx) error) {
 	assert.Equal(t, "buntdb", spans[0].Tag(ext.ServiceName))
 	assert.Equal(t, "buntdb.query", spans[0].OperationName())
 	assert.Equal(t, "tidwall/buntdb", spans[0].Tag(ext.Component))
+	assert.Equal(t, string(instrumentation.PackageTidwallBuntDB), spans[0].Integration())
 	assert.Equal(t, ext.SpanKindClient, spans[0].Tag(ext.SpanKind))
 	assert.Equal(t, "buntdb", spans[0].Tag(ext.DBSystem))
 }

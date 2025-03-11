@@ -54,7 +54,7 @@ var (
 
 // Observer implements gocql observer interfaces to support tracing.
 type Observer struct {
-	cfg                  *queryConfig
+	cfg                  *config
 	clusterContactPoints string
 }
 

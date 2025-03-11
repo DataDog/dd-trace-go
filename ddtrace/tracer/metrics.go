@@ -6,10 +6,8 @@
 package tracer
 
 import (
-	"fmt"
 	"runtime"
 	"runtime/debug"
-	"strconv"
 	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/internal/tracerstats"
@@ -95,12 +93,23 @@ func (t *tracer) reportHealthMetricsAtInterval(interval time.Duration) {
 	for {
 		select {
 		case <-ticker.C:
-			t.statsd.Count("datadog.tracer.dropped_p0_traces", int64(tracerstats.Count(tracerstats.AgentDroppedP0Traces)),
-				[]string{fmt.Sprintf("partial:%s", strconv.FormatBool(tracerstats.Count(tracerstats.PartialTraces) > 0))}, 1)
-			t.statsd.Count("datadog.tracer.dropped_p0_spans", int64(tracerstats.Count(tracerstats.AgentDroppedP0Spans)), nil, 1)
+			// if there are started spans, report the number of spans with their integration, then
+			// reset the count
+			// the Count() function reports the total number of event occurrences in one time interval. We reset
+			// our count to 0 regardless of if Count succeeded to cleanup before the next interval.
 
-			t.statsd.Count("datadog.tracer.spans_started", int64(tracerstats.Count(tracerstats.SpanStarted)), nil, 1)
-			t.statsd.Count("datadog.tracer.spans_finished", int64(tracerstats.Count(tracerstats.SpansFinished)), nil, 1)
+			for k, v := range t.spansStarted.GetAndReset() {
+				t.statsd.Count("datadog.tracer.spans_started", v, []string{"integration:" + k}, 1)
+			}
+
+			// if there are finished spans, report the number of spans with their integration, then
+			// reset the count
+			// the Count() function reports the total number of event occurrences in one time interval. We reset
+			// our count to 0 regardless of if Count succeeded to cleanup before the next interval.
+			for k, v := range t.spansFinished.GetAndReset() {
+				t.statsd.Count("datadog.tracer.spans_finished", v, []string{"integration:" + k}, 1)
+			}
+
 			t.statsd.Count("datadog.tracer.traces_dropped", int64(tracerstats.Count(tracerstats.TracesDropped)), []string{"reason:trace_too_large"}, 1)
 		case <-t.stop:
 			return

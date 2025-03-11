@@ -60,6 +60,6 @@ func TrackUserLoginFailureEvent(ctx context.Context, uid string, exists bool, md
 
 	TrackCustomEvent(ctx, "users.login.failure", md)
 
-	op, _ := usersec.StartUserLoginOperation(ctx, usersec.UserLoginOperationArgs{})
+	op, _ := usersec.StartUserLoginOperation(ctx, usersec.UserLoginFailure, usersec.UserLoginOperationArgs{})
 	op.Finish(usersec.UserLoginOperationRes{UserID: uid, Success: false})
 }

@@ -1,14 +1,9 @@
 #!/usr/bin/env bash
-set -e
 
 contrib=""
 sleeptime=10
 unset INTEGRATION
 unset DD_APPSEC_ENABLED
-
-if [[ $# -eq 0 ]]; then
-	echo "Use the -h flag for help"
-fi
 
 if [[ "$(uname -s)" = 'Darwin' && "$(uname -m)" = 'arm64' ]]; then
   # Needed to run integration tests on Apple Silicon
@@ -116,11 +111,14 @@ if [[ "$contrib" != "" ]]; then
   find . -mindepth 2 -type f -name go.mod | while read -r go_mod_path; do
     dir=$(dirname "$go_mod_path")
 	[ "$dir" = "./tools/v2check/_stage" ] && continue
+	[ "$dir" = "./tools/autoreleasetagger/testdata/root" ] && continue
+	[ "$dir" = "./tools/autoreleasetagger/testdata/root/moduleA" ] && continue
+	[ "$dir" = "./tools/autoreleasetagger/testdata/root/moduleB" ] && continue
 
     cd "$dir"
     echo testing "$dir"
     pkgs=$(go list ./... | grep -v -e google.golang.org/api | tr '\n' ' ' | sed 's/ $//g')
-    pkg_id=$(echo "$pkgs" | head -n1 | sed 's/\//_/g')
+    pkg_id=$(echo "$pkgs" | head -n1 | sed 's#github.com/DataDog/dd-trace-go/v2##g;s/\//_/g')
     if [[ -z "$pkg_id" ]]; then
       cd - > /dev/null
       continue

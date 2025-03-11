@@ -21,6 +21,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 )
 
 const errMsg = "This is an error!"
@@ -121,7 +122,8 @@ func TestTrace200(t *testing.T) {
 	assert.Equal("200", span.Tag(ext.HTTPCode))
 	assert.Equal("GET", span.Tag(ext.HTTPMethod))
 	assert.Equal(addr+"/any", span.Tag(ext.HTTPURL))
-	assert.Equal(string(component), span.Tag(ext.Component))
+	assert.Equal(string(instrumentation.PackageValyalaFastHTTP), span.Tag(ext.Component))
+	assert.Equal(string(instrumentation.PackageValyalaFastHTTP), span.Integration())
 	assert.Equal(ext.SpanKindServer, span.Tag(ext.SpanKind))
 }
 

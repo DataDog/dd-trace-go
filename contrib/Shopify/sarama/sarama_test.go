@@ -14,6 +14,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 
 	"github.com/Shopify/sarama"
 	"github.com/stretchr/testify/assert"
@@ -76,6 +77,7 @@ func TestConsumer(t *testing.T) {
 		assert.Equal(t, "queue", s.Tag(ext.SpanType))
 		assert.Equal(t, "kafka.consume", s.OperationName())
 		assert.Equal(t, "Shopify/sarama", s.Tag(ext.Component))
+		assert.Equal(t, string(instrumentation.PackageShopifySarama), s.Integration())
 		assert.Equal(t, ext.SpanKindConsumer, s.Tag(ext.SpanKind))
 		assert.Equal(t, "kafka", s.Tag(ext.MessagingSystem))
 
@@ -100,6 +102,7 @@ func TestConsumer(t *testing.T) {
 		assert.Equal(t, "queue", s.Tag(ext.SpanType))
 		assert.Equal(t, "kafka.consume", s.OperationName())
 		assert.Equal(t, "Shopify/sarama", s.Tag(ext.Component))
+		assert.Equal(t, string(instrumentation.PackageShopifySarama), s.Integration())
 		assert.Equal(t, ext.SpanKindConsumer, s.Tag(ext.SpanKind))
 		assert.Equal(t, "kafka", s.Tag(ext.MessagingSystem))
 
@@ -160,6 +163,7 @@ func TestSyncProducer(t *testing.T) {
 		assert.Equal(t, float64(0), s.Tag(ext.MessagingKafkaPartition))
 		assert.Equal(t, float64(0), s.Tag("offset"))
 		assert.Equal(t, "Shopify/sarama", s.Tag(ext.Component))
+		assert.Equal(t, string(instrumentation.PackageShopifySarama), s.Integration())
 		assert.Equal(t, ext.SpanKindProducer, s.Tag(ext.SpanKind))
 		assert.Equal(t, "kafka", s.Tag(ext.MessagingSystem))
 
@@ -223,6 +227,7 @@ func TestSyncProducerSendMessages(t *testing.T) {
 		assert.Equal(t, "kafka.produce", s.OperationName())
 		assert.Equal(t, float64(0), s.Tag(ext.MessagingKafkaPartition))
 		assert.Equal(t, "Shopify/sarama", s.Tag(ext.Component))
+		assert.Equal(t, string(instrumentation.PackageShopifySarama), s.Integration())
 		assert.Equal(t, ext.SpanKindProducer, s.Tag(ext.SpanKind))
 		assert.Equal(t, "kafka", s.Tag(ext.MessagingSystem))
 	}
@@ -277,6 +282,7 @@ func TestAsyncProducer(t *testing.T) {
 			assert.Nil(t, s.Tag("offset"))
 
 			assert.Equal(t, "Shopify/sarama", s.Tag(ext.Component))
+			assert.Equal(t, string(instrumentation.PackageShopifySarama), s.Integration())
 			assert.Equal(t, ext.SpanKindProducer, s.Tag(ext.SpanKind))
 			assert.Equal(t, "kafka", s.Tag(ext.MessagingSystem))
 
@@ -321,6 +327,7 @@ func TestAsyncProducer(t *testing.T) {
 			assert.Equal(t, float64(0), s.Tag(ext.MessagingKafkaPartition))
 			assert.Equal(t, float64(0), s.Tag("offset"))
 			assert.Equal(t, "Shopify/sarama", s.Tag(ext.Component))
+			assert.Equal(t, string(instrumentation.PackageShopifySarama), s.Integration())
 			assert.Equal(t, ext.SpanKindProducer, s.Tag(ext.SpanKind))
 			assert.Equal(t, "kafka", s.Tag(ext.MessagingSystem))
 

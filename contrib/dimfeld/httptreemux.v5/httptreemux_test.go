@@ -44,6 +44,7 @@ func TestHttpTracer200(t *testing.T) {
 	assert.Equal("testvalue", s.Tag("testkey"))
 	assert.Zero(s.Tag(ext.ErrorMsg))
 	assert.Equal("/200", s.Tag(ext.HTTPRoute))
+	assert.Equal(componentName, s.Integration())
 }
 
 func TestHttpTracer404(t *testing.T) {
@@ -71,6 +72,7 @@ func TestHttpTracer404(t *testing.T) {
 	assert.Equal("http://example.com"+url, s.Tag(ext.HTTPURL))
 	assert.Equal("testvalue", s.Tag("testkey"))
 	assert.Zero(s.Tag(ext.ErrorMsg))
+	assert.Equal(componentName, s.Integration())
 	assert.NotContains(s.Tags(), ext.HTTPRoute)
 }
 
@@ -100,6 +102,7 @@ func TestHttpTracer500(t *testing.T) {
 	assert.Equal("testvalue", s.Tag("testkey"))
 	assert.Equal("500: Internal Server Error", s.Tag(ext.ErrorMsg))
 	assert.Equal("/500", s.Tag(ext.HTTPRoute))
+	assert.Equal(componentName, s.Integration())
 }
 
 func TestDefaultResourceNamer(t *testing.T) {
@@ -173,6 +176,7 @@ func TestDefaultResourceNamer(t *testing.T) {
 			assert.Equal("http://example.com"+tc.url, s.Tag(ext.HTTPURL))
 			assert.Zero(s.Tag(ext.ErrorMsg))
 			assert.Equal(tc.path, s.Tag(ext.HTTPRoute))
+			assert.Equal(componentName, s.Integration())
 		})
 	}
 }
@@ -252,6 +256,7 @@ func TestTrailingSlashRoutesWithBehaviorRedirect301(t *testing.T) {
 		assert.Equal("testvalue", s.Tag("testkey"))
 		assert.Zero(s.Tag(ext.ErrorMsg))
 		assert.NotContains(s.Tags(), ext.HTTPRoute)
+		assert.Equal(componentName, s.Integration())
 	})
 
 	t.Run("GET /api/:parameter", func(t *testing.T) {
@@ -287,6 +292,7 @@ func TestTrailingSlashRoutesWithBehaviorRedirect301(t *testing.T) {
 		assert.Equal("testvalue", s.Tag("testkey"))
 		assert.Zero(s.Tag(ext.ErrorMsg))
 		assert.Contains(s.Tags(), ext.HTTPRoute)
+		assert.Equal(componentName, s.Integration())
 	})
 
 	t.Run("GET /api/:parameter/", func(t *testing.T) {
@@ -322,6 +328,7 @@ func TestTrailingSlashRoutesWithBehaviorRedirect301(t *testing.T) {
 		assert.Equal("testvalue", s.Tag("testkey"))
 		assert.Zero(s.Tag(ext.ErrorMsg))
 		assert.Contains(s.Tags(), ext.HTTPRoute)
+		assert.Equal(componentName, s.Integration())
 	})
 }
 
@@ -360,6 +367,7 @@ func TestTrailingSlashRoutesWithBehaviorRedirect307(t *testing.T) {
 		assert.Equal("testvalue", s.Tag("testkey"))
 		assert.Zero(s.Tag(ext.ErrorMsg))
 		assert.NotContains(s.Tags(), ext.HTTPRoute)
+		assert.Equal(componentName, s.Integration())
 	})
 
 	t.Run("GET /api/:parameter", func(t *testing.T) {
@@ -395,6 +403,7 @@ func TestTrailingSlashRoutesWithBehaviorRedirect307(t *testing.T) {
 		assert.Equal("testvalue", s.Tag("testkey"))
 		assert.Zero(s.Tag(ext.ErrorMsg))
 		assert.Contains(s.Tags(), ext.HTTPRoute)
+		assert.Equal(componentName, s.Integration())
 	})
 
 	t.Run("GET /api/:parameter/", func(t *testing.T) {
@@ -430,6 +439,7 @@ func TestTrailingSlashRoutesWithBehaviorRedirect307(t *testing.T) {
 		assert.Equal("testvalue", s.Tag("testkey"))
 		assert.Zero(s.Tag(ext.ErrorMsg))
 		assert.Contains(s.Tags(), ext.HTTPRoute)
+		assert.Equal(componentName, s.Integration())
 	})
 }
 
@@ -468,6 +478,7 @@ func TestTrailingSlashRoutesWithBehaviorRedirect308(t *testing.T) {
 		assert.Equal("testvalue", s.Tag("testkey"))
 		assert.Zero(s.Tag(ext.ErrorMsg))
 		assert.NotContains(s.Tags(), ext.HTTPRoute)
+		assert.Equal(componentName, s.Integration())
 	})
 
 	t.Run("GET /api/:parameter", func(t *testing.T) {
@@ -503,6 +514,7 @@ func TestTrailingSlashRoutesWithBehaviorRedirect308(t *testing.T) {
 		assert.Equal("testvalue", s.Tag("testkey"))
 		assert.Zero(s.Tag(ext.ErrorMsg))
 		assert.Contains(s.Tags(), ext.HTTPRoute)
+		assert.Equal(componentName, s.Integration())
 	})
 
 	t.Run("GET /api/:parameter/", func(t *testing.T) {
@@ -538,6 +550,7 @@ func TestTrailingSlashRoutesWithBehaviorRedirect308(t *testing.T) {
 		assert.Equal("testvalue", s.Tag("testkey"))
 		assert.Zero(s.Tag(ext.ErrorMsg))
 		assert.Contains(s.Tags(), ext.HTTPRoute)
+		assert.Equal(componentName, s.Integration())
 	})
 }
 
@@ -576,6 +589,7 @@ func TestTrailingSlashRoutesWithBehaviorUseHandler(t *testing.T) {
 		assert.Equal("testvalue", s.Tag("testkey"))
 		assert.Zero(s.Tag(ext.ErrorMsg))
 		assert.NotContains(s.Tags(), ext.HTTPRoute)
+		assert.Equal(componentName, s.Integration())
 	})
 
 	t.Run("GET /api/:parameter", func(t *testing.T) {
@@ -611,6 +625,7 @@ func TestTrailingSlashRoutesWithBehaviorUseHandler(t *testing.T) {
 		assert.Equal("testvalue", s.Tag("testkey"))
 		assert.Zero(s.Tag(ext.ErrorMsg))
 		assert.Contains(s.Tags(), ext.HTTPRoute)
+		assert.Equal(componentName, s.Integration())
 	})
 
 	t.Run("GET /api/:parameter/", func(t *testing.T) {
@@ -646,6 +661,7 @@ func TestTrailingSlashRoutesWithBehaviorUseHandler(t *testing.T) {
 		assert.Equal("testvalue", s.Tag("testkey"))
 		assert.Zero(s.Tag(ext.ErrorMsg))
 		assert.Contains(s.Tags(), ext.HTTPRoute)
+		assert.Equal(componentName, s.Integration())
 	})
 }
 

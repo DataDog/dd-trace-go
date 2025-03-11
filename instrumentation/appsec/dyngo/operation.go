@@ -369,7 +369,7 @@ func emitEvent[O Operation, T any](r *eventRegister, op O, v T) {
 		if r := recover(); r != nil {
 			var buf [4_096]byte
 			n := runtime.Stack(buf[:], false)
-			LogError("appsec: recovered from an unexpected panic from an event listener (for %T): %+v\n%s", v, r, string(buf[:n]))
+			LogError("appsec: recovered from an unexpected panic from an event listener (%T > %T): %+v\n%s", op, v, r, string(buf[:n]))
 		}
 	}()
 	r.mu.RLock()

@@ -17,8 +17,6 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 )
 
-const component = instrumentation.PackageValyalaFastHTTP
-
 var instr *instrumentation.Instrumentation
 
 func init() {
@@ -65,7 +63,7 @@ func WrapHandler(h fasthttp.RequestHandler, opts ...Option) fasthttp.RequestHand
 
 func defaultSpanOptions(fctx *fasthttp.RequestCtx) []tracer.StartSpanOption {
 	opts := []tracer.StartSpanOption{
-		tracer.Tag(ext.Component, component),
+		tracer.Tag(ext.Component, instrumentation.PackageValyalaFastHTTP),
 		tracer.Tag(ext.SpanKind, ext.SpanKindServer),
 		tracer.SpanType(ext.SpanTypeWeb),
 		tracer.Tag(ext.HTTPMethod, string(fctx.Method())),

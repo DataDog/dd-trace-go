@@ -109,7 +109,7 @@ func (s *Session) NewBatch(typ gocql.BatchType) *Batch {
 
 // params contains fields and metadata useful for command tracing
 type params struct {
-	config               *queryConfig
+	config               *config
 	keyspace             string
 	paginated            bool
 	skipPaginated        bool

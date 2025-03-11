@@ -221,3 +221,8 @@ func (s *Span) Links() []tracer.SpanLink {
 func (s *Span) AddSpanLink(link tracer.SpanLink) {
 	s.sp.AddSpanLink(link)
 }
+
+// Integration returns the component from which the mockspan was created.
+func (s *Span) Integration() string {
+	return s.Tag(ext.Component).(string)
+}

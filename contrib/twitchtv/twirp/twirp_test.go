@@ -15,6 +15,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils"
 
 	"github.com/stretchr/testify/assert"
@@ -82,6 +83,7 @@ func TestClient(t *testing.T) {
 		assert.Equal("Method", span.Tag("twirp.method"))
 		assert.Equal("200", span.Tag(ext.HTTPCode))
 		assert.Equal("twitchtv/twirp", span.Tag(ext.Component))
+		assert.Equal(string(instrumentation.PackageTwitchTVTwirp), span.Integration())
 		assert.Equal(ext.SpanKindClient, span.Tag(ext.SpanKind))
 		assert.Equal("twirp", span.Tag(ext.RPCSystem))
 		assert.Equal("Example", span.Tag(ext.RPCService))
@@ -114,6 +116,7 @@ func TestClient(t *testing.T) {
 		assert.Equal("500", span.Tag(ext.HTTPCode))
 		assert.Equal("500: Internal Server Error", span.Tag(ext.ErrorMsg))
 		assert.Equal("twitchtv/twirp", span.Tag(ext.Component))
+		assert.Equal(string(instrumentation.PackageTwitchTVTwirp), span.Integration())
 		assert.Equal(ext.SpanKindClient, span.Tag(ext.SpanKind))
 		assert.Equal("twirp", span.Tag(ext.RPCSystem))
 		assert.Equal("Example", span.Tag(ext.RPCService))
@@ -145,6 +148,7 @@ func TestClient(t *testing.T) {
 		assert.Equal("Method", span.Tag("twirp.method"))
 		assert.Equal(context.DeadlineExceeded.Error(), span.Tag(ext.ErrorMsg))
 		assert.Equal("twitchtv/twirp", span.Tag(ext.Component))
+		assert.Equal(string(instrumentation.PackageTwitchTVTwirp), span.Integration())
 		assert.Equal(ext.SpanKindClient, span.Tag(ext.SpanKind))
 		assert.Equal("twirp", span.Tag(ext.RPCSystem))
 		assert.Equal("Example", span.Tag(ext.RPCService))
@@ -196,6 +200,7 @@ func TestServerHooks(t *testing.T) {
 		assert.Equal("Method", span.Tag("twirp.method"))
 		assert.Equal("200", span.Tag(ext.HTTPCode))
 		assert.Equal("twitchtv/twirp", span.Tag(ext.Component))
+		assert.Equal(string(instrumentation.PackageTwitchTVTwirp), span.Integration())
 		assert.Equal("twirp", span.Tag(ext.RPCSystem))
 		assert.Equal("Example", span.Tag(ext.RPCService))
 		assert.Equal("Method", span.Tag(ext.RPCMethod))
@@ -219,6 +224,7 @@ func TestServerHooks(t *testing.T) {
 		assert.Equal("500", span.Tag(ext.HTTPCode))
 		assert.Equal("twirp error internal: something bad or unexpected happened", span.Tag(ext.ErrorMsg))
 		assert.Equal("twitchtv/twirp", span.Tag(ext.Component))
+		assert.Equal(string(instrumentation.PackageTwitchTVTwirp), span.Integration())
 		assert.Equal("twirp", span.Tag(ext.RPCSystem))
 		assert.Equal("Example", span.Tag(ext.RPCService))
 		assert.Equal("Method", span.Tag(ext.RPCMethod))
@@ -255,6 +261,7 @@ func TestServerHooks(t *testing.T) {
 		assert.Equal("500", span.Tag(ext.HTTPCode))
 		assert.Equal("twirp error internal: something bad or unexpected happened", span.Tag(ext.ErrorMsg))
 		assert.Equal("twitchtv/twirp", span.Tag(ext.Component))
+		assert.Equal(string(instrumentation.PackageTwitchTVTwirp), span.Integration())
 		assert.Equal("twirp", span.Tag(ext.RPCSystem))
 		assert.Equal("Example", span.Tag(ext.RPCService))
 		assert.Equal("Method", span.Tag(ext.RPCMethod))
