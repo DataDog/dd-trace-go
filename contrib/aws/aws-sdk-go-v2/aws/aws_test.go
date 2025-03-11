@@ -12,7 +12,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"os"
 	"strings"
 	"testing"
 
@@ -31,31 +30,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
-
-func newIntegrationTestConfig(t *testing.T, opts ...Option) aws.Config {
-	if _, ok := os.LookupEnv("INTEGRATION"); !ok {
-		t.Skip("🚧 Skipping integration test (INTEGRATION environment variable is not set)")
-	}
-	awsEndpoint := "http://localhost:4566" // use localstack
-	awsRegion := "us-east-1"
-
-	customResolver := aws.EndpointResolverWithOptionsFunc(func(_, _ string, _ ...interface{}) (aws.Endpoint, error) {
-		return aws.Endpoint{
-			PartitionID:   "aws",
-			URL:           awsEndpoint,
-			SigningRegion: awsRegion,
-		}, nil
-	})
-	cfg, err := awsconfig.LoadDefaultConfig(
-		context.Background(),
-		awsconfig.WithRegion(awsRegion),
-		awsconfig.WithEndpointResolverWithOptions(customResolver),
-		awsconfig.WithCredentialsProvider(aws.AnonymousCredentials{}),
-	)
-	require.NoError(t, err, "failed to load AWS config")
-	AppendMiddleware(&cfg, opts...)
-	return cfg
-}
 
 func TestAppendMiddleware(t *testing.T) {
 	tests := []struct {
