@@ -7,15 +7,6 @@ package kafka
 
 import "github.com/DataDog/dd-trace-go/contrib/segmentio/kafka-go/v2/internal/tracing"
 
-type config struct {
-	consumerServiceName string
-	producerServiceName string
-	consumerSpanName    string
-	producerSpanName    string
-	analyticsRate       float64
-	dataStreamsEnabled  bool
-}
-
 // Option describes options for the Kafka integration.
 type Option = tracing.Option
 
