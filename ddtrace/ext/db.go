@@ -32,6 +32,7 @@ const (
 	DBSystemOtherSQL      = "other_sql"
 	DBSystemElasticsearch = "elasticsearch"
 	DBSystemRedis         = "redis"
+	DBSystemValkey        = "valkey"
 	DBSystemMongoDB       = "mongodb"
 	DBSystemCassandra     = "cassandra"
 	DBSystemConsulKV      = "consul"
@@ -55,6 +56,39 @@ const (
 const (
 	// RedisDatabaseIndex indicates the Redis database index connected to.
 	RedisDatabaseIndex = "db.redis.database_index"
+
+	// RedisRawCommand allows to set the raw command for tags.
+	RedisRawCommand = "redis.raw_command"
+
+	// RedisClientCacheHit is the remaining TTL in seconds of client side cache.
+	RedisClientCacheHit = "db.redis.client.cache.hit"
+
+	// RedisClientCacheTTL captures the Time-To-Live (TTL) of a cached entry in the client.
+	RedisClientCacheTTL = "db.redis.client.cache.ttl"
+
+	// RedisClientCachePTTL is the remaining PTTL in seconds of client side cache.
+	RedisClientCachePTTL = "db.redis.client.cache.pttl"
+
+	// RedisClientCachePXAT is the remaining PXAT in seconds of client side cache.
+	RedisClientCachePXAT = "db.redis.client.cache.pxat"
+)
+
+// Valkey tags.
+const (
+	// ValkeyRawCommand allows to set the raw command for tags.
+	ValkeyRawCommand = "valkey.raw_command"
+
+	// ValkeyClientCacheHit is the remaining TTL in seconds of client side cache.
+	ValkeyClientCacheHit = "db.valkey.client.cache.hit"
+
+	// ValkeyClientCacheTTL captures the Time-To-Live (TTL) of a cached entry in the client.
+	ValkeyClientCacheTTL = "db.valkey.client.cache.ttl"
+
+	// ValkeyClientCachePTTL is the remaining PTTL in seconds of client side cache.
+	ValkeyClientCachePTTL = "db.valkey.client.cache.pttl"
+
+	// ValkeyClientCachePXAT is the remaining PXAT in seconds of client side cache.
+	ValkeyClientCachePXAT = "db.valkey.client.cache.pxat"
 )
 
 // Cassandra tags.

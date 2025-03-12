@@ -109,6 +109,22 @@ func (b *RunAddressDataBuilder) WithUserID(id string) *RunAddressDataBuilder {
 	return b
 }
 
+func (b *RunAddressDataBuilder) WithUserLogin(login string) *RunAddressDataBuilder {
+	if login == "" {
+		return b
+	}
+	b.Persistent[UserLoginAddr] = login
+	return b
+}
+
+func (b *RunAddressDataBuilder) WithUserOrg(org string) *RunAddressDataBuilder {
+	if org == "" {
+		return b
+	}
+	b.Persistent[UserOrgAddr] = org
+	return b
+}
+
 func (b *RunAddressDataBuilder) WithUserSessionID(id string) *RunAddressDataBuilder {
 	if id == "" {
 		return b

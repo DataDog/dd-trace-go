@@ -27,10 +27,16 @@ func SpanFromContext(ctx context.Context) (Span, bool) {
 		return &traceinternal.NoopSpan{}, false
 	}
 	v := orchestrion.WrapContext(ctx).Value(internal.ActiveSpanKey)
-	if s, ok := v.(ddtrace.Span); ok {
+	switch s := v.(type) {
+	case *traceinternal.NoopSpan:
+		return s, false
+	case traceinternal.NoopSpan:
+		return s, false
+	case ddtrace.Span:
 		return s, true
+	default:
+		return traceinternal.NoopSpan{}, false
 	}
-	return &traceinternal.NoopSpan{}, false
 }
 
 // StartSpanFromContext returns a new span with the given operation name and options. If a span

@@ -186,7 +186,7 @@ func (t *tracer) onRemoteConfigUpdate(u remoteconfig.ProductUpdate) map[string]s
 		}
 		if len(telemConfigs) > 0 {
 			log.Debug("Reporting %d configuration changes to telemetry", len(telemConfigs))
-			telemetry.GlobalClient.ConfigChange(telemConfigs)
+			telemetry.RegisterAppConfigs(telemConfigs...)
 		}
 		return statuses
 	}
@@ -199,20 +199,6 @@ func (t *tracer) onRemoteConfigUpdate(u remoteconfig.ProductUpdate) map[string]s
 		if err := json.Unmarshal(raw, &c); err != nil {
 			log.Debug("Error while unmarshalling payload for %s: %v. Configuration won't be applied.", path, err)
 			statuses[path] = state.ApplyStatus{State: state.ApplyStateError, Error: err.Error()}
-			continue
-		}
-		if c.ServiceTarget.Service != t.config.serviceName {
-			log.Debug(
-				"Skipping config for service %s. Current service is %s",
-				c.ServiceTarget.Service,
-				t.config.serviceName,
-			)
-			statuses[path] = state.ApplyStatus{State: state.ApplyStateError, Error: "service mismatch"}
-			continue
-		}
-		if c.ServiceTarget.Env != t.config.env {
-			log.Debug("Skipping config for env %s. Current env is %s", c.ServiceTarget.Env, t.config.env)
-			statuses[path] = state.ApplyStatus{State: state.ApplyStateError, Error: "env mismatch"}
 			continue
 		}
 		statuses[path] = state.ApplyStatus{State: state.ApplyStateAcknowledged}
@@ -244,7 +230,7 @@ func (t *tracer) onRemoteConfigUpdate(u remoteconfig.ProductUpdate) map[string]s
 	}
 	if len(telemConfigs) > 0 {
 		log.Debug("Reporting %d configuration changes to telemetry", len(telemConfigs))
-		telemetry.GlobalClient.ConfigChange(telemConfigs)
+		telemetry.RegisterAppConfigs(telemConfigs...)
 	}
 	return statuses
 }

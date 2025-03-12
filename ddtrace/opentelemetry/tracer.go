@@ -50,7 +50,7 @@ func (t *oteltracer) Start(ctx context.Context, spanName string, opts ...oteltra
 	if k := ssConfig.SpanKind(); k != 0 {
 		ddopts = append(ddopts, tracer.Tag(ext.SpanKind, k.String()))
 	}
-	telemetry.GlobalClient.Count(telemetry.NamespaceTracers, "spans_created", 1.0, telemetryTags, true)
+	telemetry.Count(telemetry.NamespaceTracers, "spans_created", telemetryTags).Submit(1.0)
 	var cfg ddtrace.StartSpanConfig
 	cfg.Tags = make(map[string]interface{})
 	for _, attr := range ssConfig.Attributes() {

@@ -29,6 +29,7 @@ go.sum
 /internal/datastreams           @Datadog/data-streams-monitoring @DataDog/apm-go
 
 # civisibility
+/civisibility                   @DataDog/ci-app-libraries @DataDog/apm-go
 /internal/civisibility          @DataDog/ci-app-libraries @DataDog/apm-go
 
 # Gitlab configuration

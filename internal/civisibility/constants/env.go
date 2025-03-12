@@ -37,4 +37,13 @@ const (
 
 	// CIVisibilityTotalFlakyRetryCountEnvironmentVariable indicates the maximum number of retry attempts for the entire session.
 	CIVisibilityTotalFlakyRetryCountEnvironmentVariable = "DD_CIVISIBILITY_TOTAL_FLAKY_RETRY_COUNT"
+
+	// CIVisibilityTestManagementEnabledEnvironmentVariable indicates if the test management feature is enabled.
+	CIVisibilityTestManagementEnabledEnvironmentVariable = "DD_TEST_MANAGEMENT_ENABLED"
+
+	// CIVisibilityTestManagementAttemptToFixRetriesEnvironmentVariable indicates the maximum number of retries for the attempt to fix a test.
+	CIVisibilityTestManagementAttemptToFixRetriesEnvironmentVariable = "DD_TEST_MANAGEMENT_ATTEMPT_TO_FIX_RETRIES"
+
+	// CIVisibilityAutoInstrumentationProviderEnvironmentVariable indicates that the auto-instrumentation script was used.
+	CIVisibilityAutoInstrumentationProviderEnvironmentVariable = "DD_CIVISIBILITY_AUTO_INSTRUMENTATION_PROVIDER"
 )

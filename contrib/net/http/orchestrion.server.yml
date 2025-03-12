@@ -1,0 +1,34 @@
+# Unless explicitly stated otherwise all files in this repository are licensed
+# under the Apache License Version 2.0.
+# This product includes software developed at Datadog (https://www.datadoghq.com/).
+# Copyright 2023-present Datadog, Inc.
+---
+# yaml-language-server: $schema=https://datadoghq.dev/orchestrion/schema.json
+meta:
+  name: gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http.Server
+  description: HTTP server implementation.
+
+aspects:
+  - id: Server.Serve
+    join-point:
+      function-body:
+        function:
+          - receiver: '*net/http.Server'
+          - name: Serve
+    advice:
+      - inject-declarations:
+          # We need to use go:linkname to refer to a number of declarations in order to avoid creating
+          # circular dependencies, as these features have transitive dependencies on `net/http`...
+          links:
+            - gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http
+          template: |-
+            //go:linkname __dd_contrib_net_http_internal_orchestrion_WrapHandler gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http/internal/orchestrion.WrapHandler
+            func __dd_contrib_net_http_internal_orchestrion_WrapHandler(Handler) Handler
+      - prepend-statements:
+          template: |-
+            {{- $srv := .Function.Receiver -}}
+            if {{ $srv }}.Handler == nil {
+              {{ $srv }}.Handler = __dd_contrib_net_http_internal_orchestrion_WrapHandler(DefaultServeMux)
+            } else {
+              {{ $srv }}.Handler = __dd_contrib_net_http_internal_orchestrion_WrapHandler({{ $srv }}.Handler)
+            }

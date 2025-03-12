@@ -110,13 +110,14 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	spanopts = append(spanopts, httptraceinternal.HeaderTagsFromRequest(req, r.config.headerTags))
 	resource := r.config.resourceNamer(r, req)
 	httptrace.TraceAndServe(r.Router, w, req, &httptrace.ServeConfig{
-		Service:     r.config.serviceName,
-		Resource:    resource,
-		FinishOpts:  r.config.finishOpts,
-		SpanOpts:    spanopts,
-		QueryParams: r.config.queryParams,
-		RouteParams: match.Vars,
-		Route:       route,
+		Service:       r.config.serviceName,
+		Resource:      resource,
+		FinishOpts:    r.config.finishOpts,
+		SpanOpts:      spanopts,
+		QueryParams:   r.config.queryParams,
+		RouteParams:   match.Vars,
+		Route:         route,
+		IsStatusError: r.config.isStatusError,
 	})
 }
 

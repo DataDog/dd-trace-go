@@ -45,7 +45,7 @@ func ExampleConnect() {
 	}
 }
 
-func ExamplePool() {
+func ExampleNewPool() {
 	ctx := context.TODO()
 
 	// The pgxpool uses the same tracer and is exposed the same way.

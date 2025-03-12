@@ -41,6 +41,12 @@ services:
     image: redis:3.2
     ports:
       - "6379:6379"
+  valkey:
+    image: valkey/valkey:8
+    environment:
+      VALKEY_EXTRA_FLAGS: "--port 6380 --requirepass password-for-default"
+    ports:
+      - "6380:6380"
   elasticsearch2:
     image: elasticsearch:2
     environment:

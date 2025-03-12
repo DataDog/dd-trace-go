@@ -61,6 +61,7 @@ func (tr *KafkaTracer) StartConsumeSpan(msg Message) ddtrace.Span {
 		tracer.Tag(ext.Component, ComponentName(tr.ckgoVersion)),
 		tracer.Tag(ext.SpanKind, ext.SpanKindConsumer),
 		tracer.Tag(ext.MessagingSystem, ext.MessagingSystemKafka),
+		tracer.Tag(ext.MessagingDestinationName, msg.GetTopicPartition().GetTopic()),
 		tracer.Measured(),
 	}
 	if tr.bootstrapServers != "" {

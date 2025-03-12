@@ -15,10 +15,8 @@ func WrapContext(ctx context.Context) context.Context {
 		return ctx
 	}
 
-	if ctx != nil {
-		if _, ok := ctx.(*glsContext); ok { // avoid (some) double wrapping
-			return ctx
-		}
+	if _, ok := ctx.(*glsContext); ok { // avoid (some) double wrapping
+		return ctx
 	}
 
 	if ctx == nil {
