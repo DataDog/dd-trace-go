@@ -577,7 +577,9 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 				// Inherit the context.Context from parent span if it was propagated
 				// using ChildOf() rather than StartSpanFromContext(), see
 				// applyPPROFLabels() below.
+				ctx.span.RLock()
 				pprofContext = ctx.span.pprofCtxActive
+				ctx.span.RUnlock()
 			}
 		} else if p, ok := opts.Parent.(ddtrace.SpanContextW3C); ok {
 			context = &spanContext{
@@ -720,19 +722,25 @@ func (t *tracer) applyPPROFLabels(ctx gocontext.Context, span *span) {
 	labels := make([]string, 0, 3*2 /* 3 key value pairs */)
 	localRootSpan := span.root()
 	if t.config.profilerHotspots && localRootSpan != nil {
+		localRootSpan.RLock()
 		labels = append(labels, traceprof.LocalRootSpanID, strconv.FormatUint(localRootSpan.SpanID, 10))
+		localRootSpan.RUnlock()
 	}
 	if t.config.profilerHotspots {
 		labels = append(labels, traceprof.SpanID, strconv.FormatUint(span.SpanID, 10))
 	}
-	if t.config.profilerEndpoints && spanResourcePIISafe(localRootSpan) && localRootSpan != nil {
-		labels = append(labels, traceprof.TraceEndpoint, localRootSpan.Resource)
-		if span == localRootSpan {
-			// Inform the profiler of endpoint hits. This is used for the unit of
-			// work feature. We can't use APM stats for this since the stats don't
-			// have enough cardinality (e.g. runtime-id tags are missing).
-			traceprof.GlobalEndpointCounter().Inc(localRootSpan.Resource)
+	if t.config.profilerEndpoints && localRootSpan != nil {
+		localRootSpan.RLock()
+		if spanResourcePIISafe(localRootSpan) {
+			labels = append(labels, traceprof.TraceEndpoint, localRootSpan.Resource)
+			if span == localRootSpan {
+				// Inform the profiler of endpoint hits. This is used for the unit of
+				// work feature. We can't use APM stats for this since the stats don't
+				// have enough cardinality (e.g. runtime-id tags are missing).
+				traceprof.GlobalEndpointCounter().Inc(localRootSpan.Resource)
+			}
 		}
+		localRootSpan.RUnlock()
 	}
 	if len(labels) > 0 {
 		span.pprofCtxRestore = ctx
