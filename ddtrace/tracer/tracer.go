@@ -12,6 +12,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 )
 
 // Start starts the tracer with the given set of options. It will stop and replace
@@ -22,6 +23,8 @@ func Start(opts ...StartOption) {
 	if os.Getenv("DD_TRACE_128_BIT_TRACEID_LOGGING_ENABLED") == "" {
 		os.Setenv("DD_TRACE_128_BIT_TRACEID_LOGGING_ENABLED", "false")
 	}
+	// Workaround to pull globalconfig.RuntimeID() into the shim's context.
+	_ = globalconfig.RuntimeID()
 	v2.Start(opts...)
 }
 
