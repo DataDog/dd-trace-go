@@ -324,6 +324,33 @@ typedef struct {
 	size_t files_len;
 } topt_TestCoverage;
 
+// topt_TestManagementTestProperties holds properties for a test managed by the test management system.
+// Fields:
+//   - module_name: The name of the module containing the test.
+//   - suite_name: The name of the suite containing the test.
+//   - test_name: The name of the test.
+//   - quarantined: A Bool indicating if the test is quarantined.
+//   - disabled: A Bool indicating if the test is disabled.
+//   - attempt_to_fix: A Bool indicating if the test should be attempted to fix.
+typedef struct {
+	char* module_name;
+	char* suite_name;
+	char* test_name;
+	Bool quarantined;
+	Bool disabled;
+	Bool attempt_to_fix;
+} topt_TestManagementTestProperties;
+
+// topt_TestManagementTestPropertiesArray is a collection of test properties from the Test Management feature.
+// Fields:
+//   - data: Pointer to an array of topt_TestManagementTestProperties.
+//   - len: The length of the array.
+// Used by topt_get_test_management_tests to return a list of test properties.
+typedef struct {
+	topt_TestManagementTestProperties* data;
+	size_t len;
+} topt_TestManagementTestPropertiesArray;
+
 // topt_SpanStartOptions provides configuration for starting a new span (a timing/trace operation).
 // Fields:
 //   - operation_name: The name of the operation represented by the span.
@@ -409,13 +436,14 @@ import (
 // *******************************************************************************************************************
 
 const (
-	topt_KeyValuePair_Size     = C.size_t(unsafe.Sizeof(C.topt_KeyValuePair{}))
-	topt_KeyNumberPair_Size    = C.size_t(unsafe.Sizeof(C.topt_KeyNumberPair{}))
-	topt_KnownTest_Size        = C.size_t(unsafe.Sizeof(C.topt_KnownTest{}))
-	topt_SkippableTest_Size    = C.size_t(unsafe.Sizeof(C.topt_SkippableTest{}))
-	topt_TestCoverageFile_Size = C.size_t(unsafe.Sizeof(C.topt_TestCoverageFile{}))
-	topt_TestCoverage_Size     = C.size_t(unsafe.Sizeof(C.topt_TestCoverage{}))
-	topt_MockSpan_Size         = C.size_t(unsafe.Sizeof(C.topt_MockSpan{}))
+	topt_KeyValuePair_Size                 = C.size_t(unsafe.Sizeof(C.topt_KeyValuePair{}))
+	topt_KeyNumberPair_Size                = C.size_t(unsafe.Sizeof(C.topt_KeyNumberPair{}))
+	topt_KnownTest_Size                    = C.size_t(unsafe.Sizeof(C.topt_KnownTest{}))
+	topt_SkippableTest_Size                = C.size_t(unsafe.Sizeof(C.topt_SkippableTest{}))
+	topt_TestCoverageFile_Size             = C.size_t(unsafe.Sizeof(C.topt_TestCoverageFile{}))
+	topt_TestCoverage_Size                 = C.size_t(unsafe.Sizeof(C.topt_TestCoverage{}))
+	topt_TestManagementTestProperties_Size = C.size_t(unsafe.Sizeof(C.topt_TestManagementTestProperties{}))
+	topt_MockSpan_Size                     = C.size_t(unsafe.Sizeof(C.topt_MockSpan{}))
 )
 
 type (
@@ -842,6 +870,71 @@ func topt_send_code_coverage_payload(coverages *C.topt_TestCoverage, coverages_l
 	if err == nil {
 		encodedBuf.Write(jsonbytes)
 		exports.client.SendCoveragePayloadWithFormat(encodedBuf, net.FormatJSON)
+	}
+}
+
+// topt_get_test_management_tests retrieves a list of tests managed by the test management system.
+//
+// Returns:
+//   - topt_TestManagementTestPropertiesArray: A struct containing a dynamically allocated array of topt_TestManagementTestProperties along with its length.
+//
+// Use topt_free_test_management_tests to free the allocated memory.
+//
+//export topt_get_test_management_tests
+func topt_get_test_management_tests() C.topt_TestManagementTestPropertiesArray {
+	var testProperties []C.topt_TestManagementTestProperties
+	attrs := civisibility.GetTestManagementTestsData()
+	if attrs.Modules != nil {
+		for moduleName, module := range attrs.Modules {
+			if module.Suites == nil {
+				continue
+			}
+			for suiteName, suite := range module.Suites {
+				if suite.Tests == nil {
+					continue
+				}
+				for testName, test := range suite.Tests {
+					testProperties = append(testProperties, C.topt_TestManagementTestProperties{
+						module_name:    C.CString(moduleName),
+						suite_name:     C.CString(suiteName),
+						test_name:      C.CString(testName),
+						quarantined:    toBool(test.Properties.Quarantined),
+						disabled:       toBool(test.Properties.Disabled),
+						attempt_to_fix: toBool(test.Properties.AttemptToFix),
+					})
+				}
+			}
+		}
+	}
+
+	cTestProperties := unsafe.Pointer(C.malloc(C.size_t(len(testProperties)) * topt_TestManagementTestProperties_Size))
+	for i, testProperty := range testProperties {
+		*(*C.topt_TestManagementTestProperties)(unsafe.Add(cTestProperties, C.size_t(i)*topt_TestManagementTestProperties_Size)) = testProperty
+	}
+
+	return C.topt_TestManagementTestPropertiesArray{
+		data: (*C.topt_TestManagementTestProperties)(cTestProperties),
+		len:  C.size_t(len(testProperties)),
+	}
+}
+
+// topt_free_test_management_tests frees the memory allocated by topt_get_test_management_tests.
+//
+// Parameters:
+//   - testProperties: The topt_TestManagementTestPropertiesArray previously returned by topt_get_test_management_tests.
+//
+// This function should be called after you are done using the test management tests array to avoid memory leaks.
+//
+//export topt_free_test_management_tests
+func topt_free_test_management_tests(testProperties C.topt_TestManagementTestPropertiesArray) {
+	if testProperties.data != nil {
+		for i := C.size_t(0); i < testProperties.len; i++ {
+			testProperty := *(*C.topt_TestManagementTestProperties)(unsafe.Add(unsafe.Pointer(testProperties.data), i*topt_TestManagementTestProperties_Size))
+			C.free(unsafe.Pointer(testProperty.module_name))
+			C.free(unsafe.Pointer(testProperty.suite_name))
+			C.free(unsafe.Pointer(testProperty.test_name))
+		}
+		C.free(unsafe.Pointer(testProperties.data))
 	}
 }
 
