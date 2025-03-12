@@ -2,12 +2,32 @@
     {
         "namespace": "appsec",
         "type": "count",
+        "name": "api_security.missing_route"
+    },
+    {
+        "namespace": "appsec",
+        "type": "count",
+        "name": "api_security.request.no_schema"
+    },
+    {
+        "namespace": "appsec",
+        "type": "count",
+        "name": "api_security.request.schema"
+    },
+    {
+        "namespace": "appsec",
+        "type": "count",
         "name": "instrum.user_auth.missing_user_id"
     },
     {
         "namespace": "appsec",
         "type": "count",
         "name": "instrum.user_auth.missing_user_login"
+    },
+    {
+        "namespace": "appsec",
+        "type": "count",
+        "name": "rasp.error"
     },
     {
         "namespace": "appsec",
@@ -22,12 +42,27 @@
     {
         "namespace": "appsec",
         "type": "count",
+        "name": "rasp.rule.skipped"
+    },
+    {
+        "namespace": "appsec",
+        "type": "count",
         "name": "rasp.timeout"
     },
     {
         "namespace": "appsec",
         "type": "count",
+        "name": "sdk.event"
+    },
+    {
+        "namespace": "appsec",
+        "type": "count",
         "name": "waf.config_errors"
+    },
+    {
+        "namespace": "appsec",
+        "type": "count",
+        "name": "waf.error"
     },
     {
         "namespace": "appsec",
@@ -48,6 +83,16 @@
         "namespace": "appsec",
         "type": "count",
         "name": "waf.updates"
+    },
+    {
+        "namespace": "appsec",
+        "type": "distribution",
+        "name": "rasp.duration"
+    },
+    {
+        "namespace": "appsec",
+        "type": "distribution",
+        "name": "rasp.duration_ext"
     },
     {
         "namespace": "appsec",
@@ -242,6 +287,16 @@
     {
         "namespace": "civisibility",
         "type": "count",
+        "name": "test_management_tests.request"
+    },
+    {
+        "namespace": "civisibility",
+        "type": "count",
+        "name": "test_management_tests.request_errors"
+    },
+    {
+        "namespace": "civisibility",
+        "type": "count",
         "name": "test_session"
     },
     {
@@ -370,6 +425,21 @@
         "name": "known_tests.response_tests"
     },
     {
+        "namespace": "civisibility",
+        "type": "distribution",
+        "name": "test_management_tests.request_ms"
+    },
+    {
+        "namespace": "civisibility",
+        "type": "distribution",
+        "name": "test_management_tests.response_bytes"
+    },
+    {
+        "namespace": "civisibility",
+        "type": "distribution",
+        "name": "test_management_tests.response_tests"
+    },
+    {
         "namespace": "general",
         "type": "count",
         "name": "logs_created"
@@ -437,6 +507,31 @@
     {
         "namespace": "mlobs",
         "type": "count",
+        "name": "activate_distributed_headers"
+    },
+    {
+        "namespace": "mlobs",
+        "type": "count",
+        "name": "annotations"
+    },
+    {
+        "namespace": "mlobs",
+        "type": "count",
+        "name": "dropped_eval_events"
+    },
+    {
+        "namespace": "mlobs",
+        "type": "count",
+        "name": "dropped_span_events"
+    },
+    {
+        "namespace": "mlobs",
+        "type": "count",
+        "name": "evals_submitted"
+    },
+    {
+        "namespace": "mlobs",
+        "type": "count",
         "name": "evaluators.error"
     },
     {
@@ -452,12 +547,52 @@
     {
         "namespace": "mlobs",
         "type": "count",
+        "name": "inject_distributed_headers"
+    },
+    {
+        "namespace": "mlobs",
+        "type": "count",
+        "name": "product_enabled"
+    },
+    {
+        "namespace": "mlobs",
+        "type": "count",
+        "name": "span.finished"
+    },
+    {
+        "namespace": "mlobs",
+        "type": "count",
         "name": "span.start"
+    },
+    {
+        "namespace": "mlobs",
+        "type": "count",
+        "name": "spans_exported"
+    },
+    {
+        "namespace": "mlobs",
+        "type": "count",
+        "name": "user_flush"
     },
     {
         "namespace": "mlobs",
         "type": "distribution",
         "name": "evaluators.rule_sample_rate"
+    },
+    {
+        "namespace": "mlobs",
+        "type": "distribution",
+        "name": "init_time"
+    },
+    {
+        "namespace": "mlobs",
+        "type": "distribution",
+        "name": "span.raw_size"
+    },
+    {
+        "namespace": "mlobs",
+        "type": "distribution",
+        "name": "span.size"
     },
     {
         "namespace": "profilers",
@@ -703,6 +838,11 @@
         "namespace": "tracers",
         "type": "count",
         "name": "otel.env.unsupported"
+    },
+    {
+        "namespace": "tracers",
+        "type": "count",
+        "name": "public_api.called"
     },
     {
         "namespace": "tracers",
