@@ -9,50 +9,15 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
-	"os"
 	"regexp"
-	"strconv"
 	"strings"
-	"sync"
 	"time"
 
-	"golang.org/x/time/rate"
-
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
+	v2 "github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/samplernames"
+
+	"golang.org/x/time/rate"
 )
-
-// rulesSampler holds instances of trace sampler and single span sampler, that are configured with the given set of rules.
-type rulesSampler struct {
-	// traceRulesSampler samples trace spans based on a user-defined set of rules and might impact sampling decision of the trace.
-	traces *traceRulesSampler
-
-	// singleSpanRulesSampler samples individual spans based on a separate user-defined set of rules and
-	// cannot impact the trace sampling decision.
-	spans *singleSpanRulesSampler
-}
-
-// newRulesSampler configures a *rulesSampler instance using the given set of rules.
-// Rules are split between trace and single span sampling rules according to their type.
-// Such rules are user-defined through environment variable or WithSamplingRules option.
-// Invalid rules or environment variable values are tolerated, by logging warnings and then ignoring them.
-func newRulesSampler(traceRules, spanRules []SamplingRule, traceSampleRate, rateLimitPerSecond float64) *rulesSampler {
-	return &rulesSampler{
-		traces: newTraceRulesSampler(traceRules, traceSampleRate, rateLimitPerSecond),
-		spans:  newSingleSpanRulesSampler(spanRules),
-	}
-}
-
-func (r *rulesSampler) SampleTrace(s *span) bool { return r.traces.sampleRules(s) }
-
-func (r *rulesSampler) SampleTraceGlobalRate(s *span) bool { return r.traces.sampleGlobalRate(s) }
-
-func (r *rulesSampler) SampleSpan(s *span) bool { return r.spans.apply(s) }
-
-func (r *rulesSampler) HasSpanRules() bool { return r.spans.enabled() }
-
-func (r *rulesSampler) TraceRateLimit() (float64, bool) { return r.traces.limit() }
 
 type provenance int32
 
@@ -134,81 +99,8 @@ type SamplingRule struct {
 	globRule *jsonRule
 }
 
-// Poor-man's comparison of two regex for equality without resorting to fancy symbolic computation.
-// The result is false negative: whenever the function returns true, we know the two regex must be
-// equal. The reverse is not true. Two regex can be equivalent while reported as not.
-// This is good for use as an indication of optimization that applies when two regex are equals.
-func regexEqualsFalseNegative(a, b *regexp.Regexp) bool {
-	if (a == nil) != (b == nil) {
-		return false
-	}
-	if a == nil {
-		return true
-	}
-	return a.String() == b.String()
-}
-
-func (sr *SamplingRule) EqualsFalseNegative(other *SamplingRule) bool {
-	if (sr == nil) != (other == nil) {
-		return false
-	}
-	if sr == nil {
-		return true
-	}
-	if sr.Rate != other.Rate || sr.ruleType != other.ruleType ||
-		!regexEqualsFalseNegative(sr.Service, other.Service) ||
-		!regexEqualsFalseNegative(sr.Name, other.Name) ||
-		!regexEqualsFalseNegative(sr.Resource, other.Resource) ||
-		len(sr.Tags) != len(other.Tags) {
-		return false
-	}
-	for k, v := range sr.Tags {
-		if vo, ok := other.Tags[k]; !ok || !regexEqualsFalseNegative(v, vo) {
-			return false
-		}
-	}
-	return true
-}
-
-// match returns true when the span's details match all the expected values in the rule.
-func (sr *SamplingRule) match(s *span) bool {
-	if sr.Service != nil && !sr.Service.MatchString(s.Service) {
-		return false
-	}
-	if sr.Name != nil && !sr.Name.MatchString(s.Name) {
-		return false
-	}
-	if sr.Resource != nil && !sr.Resource.MatchString(s.Resource) {
-		return false
-	}
-	s.Lock()
-	defer s.Unlock()
-	if sr.Tags != nil {
-		for k, regex := range sr.Tags {
-			if regex == nil {
-				continue
-			}
-			if s.Meta != nil {
-				v, ok := s.Meta[k]
-				if ok && regex.MatchString(v) {
-					continue
-				}
-			}
-			if s.Metrics != nil {
-				v, ok := s.Metrics[k]
-				// sampling on numbers with floating point is not supported,
-				// thus 'math.Floor(v) != v'
-				if !ok || math.Floor(v) != v || !regex.MatchString(strconv.FormatFloat(v, 'g', -1, 64)) {
-					return false
-				}
-			}
-		}
-	}
-	return true
-}
-
 // SamplingRuleType represents a type of sampling rule spans are matched against.
-type SamplingRuleType int
+type SamplingRuleType = v2.SamplingRuleType
 
 const (
 	SamplingRuleUndefined SamplingRuleType = 0
@@ -216,26 +108,15 @@ const (
 	// SamplingRuleTrace specifies a sampling rule that applies to the entire trace if any spans satisfy the criteria.
 	// If a sampling rule is of type SamplingRuleTrace, such rule determines the sampling rate to apply
 	// to trace spans. If a span matches that rule, it will impact the trace sampling decision.
-	SamplingRuleTrace = iota
+	SamplingRuleTrace = v2.SamplingRuleTrace
 
 	// SamplingRuleSpan specifies a sampling rule that applies to a single span without affecting the entire trace.
 	// If a sampling rule is of type SamplingRuleSingleSpan, such rule determines the sampling rate to apply
 	// to individual spans. If a span matches a rule, it will NOT impact the trace sampling decision.
 	// In the case that a trace is dropped and thus not sent to the Agent, spans kept on account
 	// of matching SamplingRuleSingleSpan rules must be conveyed separately.
-	SamplingRuleSpan
+	SamplingRuleSpan = v2.SamplingRuleSpan
 )
-
-func (sr SamplingRuleType) String() string {
-	switch sr {
-	case SamplingRuleTrace:
-		return "trace"
-	case SamplingRuleSpan:
-		return "span"
-	default:
-		return ""
-	}
-}
 
 // ServiceRule returns a SamplingRule that applies the provided sampling rate
 // to spans that match the service name provided.
@@ -349,294 +230,12 @@ func SpanNameServiceMPSRule(name, service string, rate, limit float64) SamplingR
 	}
 }
 
-// traceRulesSampler allows a user-defined list of rules to apply to traces.
-// These rules can match based on the span's Service, Name or both.
-// When making a sampling decision, the rules are checked in order until
-// a match is found.
-// If a match is found, the rate from that rule is used.
-// If no match is found, and the DD_TRACE_SAMPLE_RATE environment variable
-// was set to a valid rate, that value is used.
-// Otherwise, the rules sampler didn't apply to the span, and the decision
-// is passed to the priority sampler.
-//
-// The rate is used to determine if the span should be sampled, but an upper
-// limit can be defined using the DD_TRACE_RATE_LIMIT environment variable.
-// Its value is the number of spans to sample per second.
-// Spans that matched the rules but exceeded the rate limit are not sampled.
-type traceRulesSampler struct {
-	m          sync.RWMutex
-	rules      []SamplingRule // the rules to match spans with
-	globalRate float64        // a rate to apply when no rules match a span
-	limiter    *rateLimiter   // used to limit the volume of spans sampled
-}
-
-// newTraceRulesSampler configures a *traceRulesSampler instance using the given set of rules.
-// Invalid rules or environment variable values are tolerated, by logging warnings and then ignoring them.
-func newTraceRulesSampler(rules []SamplingRule, traceSampleRate, rateLimitPerSecond float64) *traceRulesSampler {
-	return &traceRulesSampler{
-		rules:      rules,
-		globalRate: traceSampleRate,
-		limiter:    newRateLimiter(rateLimitPerSecond),
-	}
-}
-
-func (rs *traceRulesSampler) enabled() bool {
-	rs.m.RLock()
-	defer rs.m.RUnlock()
-	return len(rs.rules) > 0 || !math.IsNaN(rs.globalRate)
-}
-
-// EqualsFalseNegative tests whether two sets of the rules are the same.
-// This returns result that can be false negative. If the result is true, then the two sets of rules
-// are guaranteed to be the same.
-// On the other hand, false can be returned while the two rulesets are logically the same.
-// This function can be used to detect optimization opportunities when two rulesets are the same.
-// For example, an update of one ruleset is not needed if it's the same as the previous one.
-func EqualsFalseNegative(a, b []SamplingRule) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i, r := range a {
-		if !r.EqualsFalseNegative(&b[i]) {
-			return false
-		}
-	}
-	return true
-}
-
-// setGlobalSampleRate sets the global sample rate to the given value.
-// Returns whether the value was changed or not.
-func (rs *traceRulesSampler) setGlobalSampleRate(rate float64) bool {
-	if rate < 0.0 || rate > 1.0 {
-		log.Warn("Ignoring trace sample rate %f: value out of range [0,1]", rate)
-		return false
-	}
-	rs.m.Lock()
-	defer rs.m.Unlock()
-	if math.IsNaN(rs.globalRate) && math.IsNaN(rate) {
-		// NaN is not considered equal to any number, including itself.
-		// It should be compared with math.IsNaN
-		return false
-	}
-	if rs.globalRate == rate {
-		return false
-	}
-	rs.globalRate = rate
-	return true
-}
-
-// Assumes the new rules are different from the old rules.
-func (rs *traceRulesSampler) setTraceSampleRules(rules []SamplingRule) bool {
-	if EqualsFalseNegative(rs.rules, rules) {
-		return false
-	}
-	rs.rules = rules
-	return true
-}
-
-// sampleGlobalRate applies the global trace sampling rate to the span. If the rate is Nan,
-// the function return false, then it returns false and the span is not
-// modified.
-func (rs *traceRulesSampler) sampleGlobalRate(span *span) bool {
-	if !rs.enabled() {
-		// short path when disabled
-		return false
-	}
-
-	rs.m.RLock()
-	rate := rs.globalRate
-	rs.m.RUnlock()
-
-	if math.IsNaN(rate) {
-		return false
-	}
-
-	// global rate is a degenerated case of rule rate.
-	// Technically speaking, global rate also has two possible provenance: local or remote.
-	// We just apply the the sampler name corresponding to local rule rate because global rate is
-	// being deprecated in favor of sampling rules.
-	// Note that this just preserves an existing behavior even though it is not correct.
-	sampler := samplernames.RuleRate
-	rs.applyRate(span, rate, time.Now(), sampler)
-	return true
-}
-
-// sampleRules uses the sampling rules to determine the sampling rate for the
-// provided span. If the rules don't match, then it returns false and the span is not
-// modified.
-func (rs *traceRulesSampler) sampleRules(span *span) bool {
-	if !rs.enabled() {
-		// short path when disabled
-		return false
-	}
-
-	var matched bool
-	rs.m.RLock()
-	rate := rs.globalRate
-	rs.m.RUnlock()
-	sampler := samplernames.RuleRate
-	for _, rule := range rs.rules {
-		if rule.match(span) {
-			matched = true
-			rate = rule.Rate
-			if rule.Provenance == Customer {
-				sampler = samplernames.RemoteUserRule
-			} else if rule.Provenance == Dynamic {
-				sampler = samplernames.RemoteDynamicRule
-			}
-			break
-		}
-	}
-	if !matched {
-		// no matching rule or global rate, so we want to fall back
-		// to priority sampling
-		return false
-	}
-
-	rs.applyRate(span, rate, time.Now(), sampler)
-	return true
-}
-
-func (rs *traceRulesSampler) applyRate(span *span, rate float64, now time.Time, sampler samplernames.SamplerName) {
-	span.Lock()
-	defer span.Unlock()
-
-	span.setMetric(keyRulesSamplerAppliedRate, rate)
-	delete(span.Metrics, keySamplingPriorityRate)
-	if !sampledByRate(span.TraceID, rate) {
-		span.setSamplingPriorityLocked(ext.PriorityUserReject, sampler)
-		return
-	}
-
-	sampled, rate := rs.limiter.allowOne(now)
-	if sampled {
-		span.setSamplingPriorityLocked(ext.PriorityUserKeep, sampler)
-	} else {
-		span.setSamplingPriorityLocked(ext.PriorityUserReject, sampler)
-	}
-	span.setMetric(keyRulesSamplerLimiterRate, rate)
-}
-
-// limit returns the rate limit set in the rules sampler, controlled by DD_TRACE_RATE_LIMIT, and
-// true if rules sampling is enabled. If not present it returns math.NaN() and false.
-func (rs *traceRulesSampler) limit() (float64, bool) {
-	if rs.enabled() {
-		return float64(rs.limiter.limiter.Limit()), true
-	}
-	return math.NaN(), false
-}
-
-// newRateLimiter returns a rate limiter which restricts the number of traces sampled per second.
-// The limit is DD_TRACE_RATE_LIMIT if set, `defaultRateLimit` otherwise.
-func newRateLimiter(ratePerSecond float64) *rateLimiter {
-	return &rateLimiter{
-		limiter:  rate.NewLimiter(rate.Limit(ratePerSecond), int(math.Ceil(ratePerSecond))),
-		prevTime: time.Now(),
-	}
-}
-
-// singleSpanRulesSampler allows a user-defined list of rules to apply to spans
-// to sample single spans.
-// These rules match based on the span's Service and Name. If empty value is supplied
-// to either Service or Name field, it will default to "*", allow all.
-// When making a sampling decision, the rules are checked in order until
-// a match is found.
-// If a match is found, the rate from that rule is used.
-// If no match is found, no changes or further sampling is applied to the spans.
-// The rate is used to determine if the span should be sampled, but an upper
-// limit can be defined using the max_per_second field when supplying the rule.
-// If max_per_second is absent in the rule, the default is allow all.
-// Its value is the max number of spans to sample per second.
-// Spans that matched the rules but exceeded the rate limit are not sampled.
-type singleSpanRulesSampler struct {
-	rules []SamplingRule // the rules to match spans with
-}
-
-// newSingleSpanRulesSampler configures a *singleSpanRulesSampler instance using the given set of rules.
-// Invalid rules or environment variable values are tolerated, by logging warnings and then ignoring them.
-func newSingleSpanRulesSampler(rules []SamplingRule) *singleSpanRulesSampler {
-	return &singleSpanRulesSampler{
-		rules: rules,
-	}
-}
-
-func (rs *singleSpanRulesSampler) enabled() bool {
-	return len(rs.rules) > 0
-}
-
-// apply uses the sampling rules to determine the sampling rate for the
-// provided span. If the rules don't match, then it returns false and the span is not
-// modified.
-func (rs *singleSpanRulesSampler) apply(span *span) bool {
-	for _, rule := range rs.rules {
-		if rule.match(span) {
-			rate := rule.Rate
-			span.setMetric(keyRulesSamplerAppliedRate, rate)
-			if !sampledByRate(span.SpanID, rate) {
-				return false
-			}
-			var sampled bool
-			if rule.limiter != nil {
-				sampled, rate = rule.limiter.allowOne(nowTime())
-				if !sampled {
-					return false
-				}
-			}
-			delete(span.Metrics, keySamplingPriorityRate)
-			span.setMetric(keySpanSamplingMechanism, float64(samplernames.SingleSpan))
-			span.setMetric(keySingleSpanSamplingRuleRate, rate)
-			if rule.MaxPerSecond != 0 {
-				span.setMetric(keySingleSpanSamplingMPS, rule.MaxPerSecond)
-			}
-			return true
-		}
-	}
-	return false
-}
-
 // rateLimiter is a wrapper on top of golang.org/x/time/rate which implements a rate limiter but also
 // returns the effective rate of allowance.
 type rateLimiter struct {
 	limiter *rate.Limiter
 
-	mu          sync.Mutex // guards below fields
-	prevTime    time.Time  // time at which prevAllowed and prevSeen were set
-	allowed     float64    // number of spans allowed in the current period
-	seen        float64    // number of spans seen in the current period
-	prevAllowed float64    // number of spans allowed in the previous period
-	prevSeen    float64    // number of spans seen in the previous period
-}
-
-// allowOne returns the rate limiter's decision to allow the span to be sampled, and the
-// effective rate at the time it is called. The effective rate is computed by averaging the rate
-// for the previous second with the current rate
-func (r *rateLimiter) allowOne(now time.Time) (bool, float64) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	if d := now.Sub(r.prevTime); d >= time.Second {
-		// enough time has passed to reset the counters
-		if d.Truncate(time.Second) == time.Second && r.seen > 0 {
-			// exactly one second, so update prev
-			r.prevAllowed = r.allowed
-			r.prevSeen = r.seen
-		} else {
-			// more than one second, so reset previous rate
-			r.prevAllowed = 0
-			r.prevSeen = 0
-		}
-		r.prevTime = now
-		r.allowed = 0
-		r.seen = 0
-	}
-
-	r.seen++
-	var sampled bool
-	if r.limiter.AllowN(now, 1) {
-		r.allowed++
-		sampled = true
-	}
-	er := (r.prevAllowed + r.allowed) / (r.prevSeen + r.seen)
-	return sampled, er
+	prevTime time.Time // time at which prevAllowed and prevSeen were set
 }
 
 // newSingleSpanRateLimiter returns a rate limiter which restricts the number of single spans sampled per second.
@@ -665,56 +264,6 @@ func globMatch(pattern string) *regexp.Regexp {
 	pattern = strings.Replace(pattern, "\\*", ".*", -1)
 	// pattern must match an entire string
 	return regexp.MustCompile(fmt.Sprintf("(?i)^%s$", pattern))
-}
-
-// samplingRulesFromEnv parses sampling rules from
-// the DD_TRACE_SAMPLING_RULES, DD_TRACE_SAMPLING_RULES_FILE
-// DD_SPAN_SAMPLING_RULES and DD_SPAN_SAMPLING_RULES_FILE environment variables.
-func samplingRulesFromEnv() (trace, span []SamplingRule, err error) {
-	var errs []string
-	defer func() {
-		if len(errs) != 0 {
-			err = fmt.Errorf("\n\t%s", strings.Join(errs, "\n\t"))
-		}
-	}()
-
-	rulesByType := func(spanType SamplingRuleType) (rules []SamplingRule, errs []string) {
-		env := fmt.Sprintf("DD_%s_SAMPLING_RULES", strings.ToUpper(spanType.String()))
-		rulesEnv := os.Getenv(fmt.Sprintf("DD_%s_SAMPLING_RULES", strings.ToUpper(spanType.String())))
-		rules, err := unmarshalSamplingRules([]byte(rulesEnv), spanType)
-		if err != nil {
-			errs = append(errs, err.Error())
-		}
-		rulesFile := os.Getenv(env + "_FILE")
-		if len(rules) != 0 {
-			if rulesFile != "" {
-				log.Warn("DIAGNOSTICS Error(s): %s is available and will take precedence over %s_FILE", env, env)
-			}
-			return rules, errs
-		}
-		if rulesFile == "" {
-			return rules, errs
-		}
-		rulesFromEnvFile, err := os.ReadFile(rulesFile)
-		if err != nil {
-			errs = append(errs, fmt.Sprintf("Couldn't read file from %s_FILE: %v", env, err))
-		}
-		rules, err = unmarshalSamplingRules(rulesFromEnvFile, spanType)
-		if err != nil {
-			errs = append(errs, err.Error())
-		}
-		return rules, errs
-	}
-
-	trace, tErrs := rulesByType(SamplingRuleTrace)
-	if len(tErrs) != 0 {
-		errs = append(errs, tErrs...)
-	}
-	span, sErrs := rulesByType(SamplingRuleSpan)
-	if len(sErrs) != 0 {
-		errs = append(errs, sErrs...)
-	}
-	return trace, span, err
 }
 
 func (sr *SamplingRule) UnmarshalJSON(b []byte) error {

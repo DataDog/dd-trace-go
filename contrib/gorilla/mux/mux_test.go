@@ -7,24 +7,18 @@ package mux
 
 import (
 	"fmt"
-	"io"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
 	"strings"
 	"testing"
 
-	pappsec "gopkg.in/DataDog/dd-trace-go.v1/appsec"
-	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/namingschematest"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/normalizer"
 
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 func TestHttpTracer(t *testing.T) {
@@ -104,7 +98,7 @@ func TestHttpTracer(t *testing.T) {
 			assert.Equal(ht.wantResource, s.Tag(ext.ResourceName))
 			assert.Equal(ext.SpanKindServer, s.Tag(ext.SpanKind))
 			assert.Equal("gorilla/mux", s.Tag(ext.Component))
-			assert.Equal(componentName, s.Integration())
+			assert.Equal("gorilla/mux", s.Integration())
 			if ht.wantRoute != "" {
 				assert.Equal(ht.wantRoute, s.Tag(ext.HTTPRoute))
 			} else {
@@ -150,66 +144,32 @@ func TestWithHeaderTags(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 		htArgs := []string{"h!e@a-d.e*r", "2header", "3header"}
+		headerTags := instrumentation.NewHeaderTags(htArgs)
+
 		setupReq()
 		spans := mt.FinishedSpans()
 		assert := assert.New(t)
 		assert.Equal(len(spans), 1)
 		s := spans[0]
-		for _, arg := range htArgs {
-			_, tag := normalizer.HeaderTag(arg)
+		headerTags.Iter(func(_ string, tag string) {
 			assert.NotContains(s.Tags(), tag)
-		}
+		})
 	})
 	t.Run("integration", func(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
 		htArgs := []string{"h!e@a-d.e*r", "2header:tag"}
+		headerTags := instrumentation.NewHeaderTags(htArgs)
 		r := setupReq(WithHeaderTags(htArgs))
 		spans := mt.FinishedSpans()
 		assert := assert.New(t)
 		assert.Equal(len(spans), 1)
 		s := spans[0]
 
-		for _, arg := range htArgs {
-			header, tag := normalizer.HeaderTag(arg)
+		headerTags.Iter(func(header string, tag string) {
 			assert.Equal(strings.Join(r.Header.Values(header), ","), s.Tags()[tag])
-		}
-	})
-	t.Run("global", func(t *testing.T) {
-		mt := mocktracer.Start()
-		defer mt.Stop()
-
-		header, tag := normalizer.HeaderTag("3header")
-		globalconfig.SetHeaderTag(header, tag)
-
-		r := setupReq()
-		spans := mt.FinishedSpans()
-		assert := assert.New(t)
-		assert.Equal(len(spans), 1)
-		s := spans[0]
-
-		assert.Equal(strings.Join(r.Header.Values(header), ","), s.Tags()[tag])
-	})
-	t.Run("override", func(t *testing.T) {
-		mt := mocktracer.Start()
-		defer mt.Stop()
-
-		globalH, globalT := normalizer.HeaderTag("3header")
-		globalconfig.SetHeaderTag(globalH, globalT)
-
-		htArgs := []string{"h!e@a-d.e*r", "2header:tag"}
-		r := setupReq(WithHeaderTags(htArgs))
-		spans := mt.FinishedSpans()
-		assert := assert.New(t)
-		assert.Equal(len(spans), 1)
-		s := spans[0]
-
-		for _, arg := range htArgs {
-			header, tag := normalizer.HeaderTag(arg)
-			assert.Equal(strings.Join(r.Header.Values(header), ","), s.Tags()[tag])
-		}
-		assert.NotContains(s.Tags(), globalT)
+		})
 	})
 }
 
@@ -328,17 +288,6 @@ func TestAnalyticsSettings(t *testing.T) {
 		assertRate(t, mt, nil)
 	})
 
-	t.Run("global", func(t *testing.T) {
-		mt := mocktracer.Start()
-		defer mt.Stop()
-
-		rate := globalconfig.AnalyticsRate()
-		defer globalconfig.SetAnalyticsRate(rate)
-		globalconfig.SetAnalyticsRate(0.4)
-
-		assertRate(t, mt, 0.4)
-	})
-
 	t.Run("enabled", func(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
@@ -351,17 +300,6 @@ func TestAnalyticsSettings(t *testing.T) {
 		defer mt.Stop()
 
 		assertRate(t, mt, nil, WithAnalytics(false))
-	})
-
-	t.Run("override", func(t *testing.T) {
-		mt := mocktracer.Start()
-		defer mt.Stop()
-
-		rate := globalconfig.AnalyticsRate()
-		defer globalconfig.SetAnalyticsRate(rate)
-		globalconfig.SetAnalyticsRate(0.4)
-
-		assertRate(t, mt, 0.23, WithAnalyticsRate(0.23))
 	})
 }
 
@@ -440,154 +378,4 @@ func okHandler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("200!\n"))
 	})
-}
-
-func TestAppSec(t *testing.T) {
-	appsec.Start()
-	defer appsec.Stop()
-
-	if !appsec.Enabled() {
-		t.Skip("appsec disabled")
-	}
-
-	// Start and trace an HTTP server with some testing routes
-	router := NewRouter()
-	router.HandleFunc("/path0.0/{myPathParam0}/path0.1/{myPathParam1}/path0.2/{myPathParam2}/path0.3/{myPathParam3}", func(w http.ResponseWriter, r *http.Request) {
-		_, err := w.Write([]byte("Hello World!\n"))
-		require.NoError(t, err)
-	})
-	router.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		_, err := w.Write([]byte("Hello World!\n"))
-		require.NoError(t, err)
-	})
-	router.HandleFunc("/body", func(w http.ResponseWriter, r *http.Request) {
-		pappsec.MonitorParsedHTTPBody(r.Context(), "$globals")
-		_, err := w.Write([]byte("Hello Body!\n"))
-		require.NoError(t, err)
-	})
-
-	srv := httptest.NewServer(router)
-	defer srv.Close()
-
-	// Test an LFI attack via path parameters
-	t.Run("request-uri", func(t *testing.T) {
-		mt := mocktracer.Start()
-		defer mt.Stop()
-		// Send an LFI attack (according to appsec rule id crs-930-110)
-		req, err := http.NewRequest("POST", srv.URL+"/../../../secret.txt", nil)
-		if err != nil {
-			panic(err)
-		}
-		res, err := srv.Client().Do(req)
-		require.NoError(t, err)
-		defer res.Body.Close()
-		// Check that the server behaved as intended (404 after the 301)
-		require.Equal(t, http.StatusNotFound, res.StatusCode)
-		// The span should contain the security event
-		finished := mt.FinishedSpans()
-		require.Len(t, finished, 2) // 301 + 404
-
-		// The first 301 redirection should contain the attack via the request uri
-		event := finished[0].Tag("_dd.appsec.json").(string)
-		require.NotNil(t, event)
-		require.True(t, strings.Contains(event, "server.request.uri.raw"))
-		require.True(t, strings.Contains(event, "crs-930-110"))
-		// The second request should contain the event via the referrer header
-		event = finished[1].Tag("_dd.appsec.json").(string)
-		require.NotNil(t, event)
-		require.True(t, strings.Contains(event, "server.request.headers.no_cookies"))
-		require.True(t, strings.Contains(event, "crs-930-110"))
-	})
-
-	// Test a security scanner attack via path parameters
-	t.Run("path-params", func(t *testing.T) {
-		mt := mocktracer.Start()
-		defer mt.Stop()
-		// Send a security scanner attack (according to appsec rule id crs-913-120)
-		req, err := http.NewRequest("POST", srv.URL+"/path0.0/param0/path0.1/param1/path0.2/appscan_fingerprint/path0.3/param3", nil)
-		if err != nil {
-			panic(err)
-		}
-		res, err := srv.Client().Do(req)
-		require.NoError(t, err)
-		defer res.Body.Close()
-		// Check that the handler was properly called
-		b, err := io.ReadAll(res.Body)
-		require.NoError(t, err)
-		require.Equal(t, "Hello World!\n", string(b))
-		require.Equal(t, http.StatusOK, res.StatusCode)
-		// The span should contain the security event
-		finished := mt.FinishedSpans()
-		require.Len(t, finished, 1)
-		event := finished[0].Tag("_dd.appsec.json").(string)
-		require.NotNil(t, event)
-		require.True(t, strings.Contains(event, "crs-913-120"))
-		require.True(t, strings.Contains(event, "myPathParam2"))
-		require.True(t, strings.Contains(event, "server.request.path_params"))
-	})
-
-	t.Run("response-status", func(t *testing.T) {
-		mt := mocktracer.Start()
-		defer mt.Stop()
-
-		req, err := http.NewRequest("POST", srv.URL+"/etc/", nil)
-		if err != nil {
-			panic(err)
-		}
-		res, err := srv.Client().Do(req)
-		require.NoError(t, err)
-		defer res.Body.Close()
-		require.Equal(t, 404, res.StatusCode)
-
-		finished := mt.FinishedSpans()
-		require.Len(t, finished, 1)
-		event := finished[0].Tag("_dd.appsec.json").(string)
-		require.NotNil(t, event)
-		require.True(t, strings.Contains(event, "server.response.status"))
-		require.True(t, strings.Contains(event, "nfd-000-001"))
-	})
-
-	// Test a PHP injection attack via request parsed body
-	t.Run("SDK-body", func(t *testing.T) {
-		mt := mocktracer.Start()
-		defer mt.Stop()
-
-		req, err := http.NewRequest("POST", srv.URL+"/body", nil)
-		if err != nil {
-			panic(err)
-		}
-		res, err := srv.Client().Do(req)
-		require.NoError(t, err)
-		defer res.Body.Close()
-		// Check that the handler was properly called
-		b, err := io.ReadAll(res.Body)
-		require.NoError(t, err)
-		require.Equal(t, "Hello Body!\n", string(b))
-
-		finished := mt.FinishedSpans()
-		require.Len(t, finished, 1)
-		event := finished[0].Tag("_dd.appsec.json")
-		require.NotNil(t, event)
-		require.True(t, strings.Contains(event.(string), "crs-933-130"))
-	})
-}
-
-func TestNamingSchema(t *testing.T) {
-	genSpans := namingschematest.GenSpansFn(func(t *testing.T, serviceOverride string) []mocktracer.Span {
-		var opts []RouterOption
-		if serviceOverride != "" {
-			opts = append(opts, WithServiceName(serviceOverride))
-		}
-		mt := mocktracer.Start()
-		defer mt.Stop()
-
-		mux := NewRouter(opts...)
-		mux.Handle("/200", okHandler())
-		req := httptest.NewRequest("GET", "/200", nil)
-		w := httptest.NewRecorder()
-		mux.ServeHTTP(w, req)
-
-		return mt.FinishedSpans()
-	})
-	namingschematest.NewHTTPServerTest(genSpans, "mux.router")(t)
 }

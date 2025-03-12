@@ -14,12 +14,11 @@ import (
 	"testing"
 	"time"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/namingschematest"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils"
 	"github.com/gocql/gocql"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -84,14 +83,14 @@ func TestErrorWrapper(t *testing.T) {
 	assert.Len(spans, 1)
 	span := spans[0]
 
-	assert.Equal(span.Tag(ext.Error).(error), err)
+	assert.Equal(span.Tag(ext.ErrorMsg), err.Error())
 	assert.Equal(span.OperationName(), "cassandra.query")
 	assert.Equal(span.Tag(ext.ResourceName), "CREATE KEYSPACE")
 	assert.Equal(span.Tag(ext.ServiceName), "ServiceName")
 	assert.Equal(span.Tag(ext.CassandraConsistencyLevel), "QUORUM")
 	assert.Equal(span.Tag(ext.CassandraPaginated), "false")
 	assert.Equal(span.Tag(ext.Component), "gocql/gocql")
-	assert.Equal(componentName, span.Integration())
+	assert.Equal(span.Tag(ext.Component), span.Integration())
 	assert.Equal(span.Tag(ext.SpanKind), ext.SpanKindClient)
 	assert.Equal(span.Tag(ext.DBSystem), "cassandra")
 	assert.NotContains(span.Tags(), ext.CassandraContactPoints)
@@ -140,7 +139,7 @@ func TestChildWrapperSpan(t *testing.T) {
 	assert.Equal(childSpan.Tag(ext.ResourceName), "SELECT * FROM trace.person")
 	assert.Equal(childSpan.Tag(ext.CassandraKeyspace), "trace")
 	assert.Equal(childSpan.Tag(ext.Component), "gocql/gocql")
-	assert.Equal(componentName, childSpan.Integration())
+	assert.Equal(childSpan.Tag(ext.Component), childSpan.Integration())
 	assert.Equal(childSpan.Tag(ext.SpanKind), ext.SpanKindClient)
 	assert.Equal(childSpan.Tag(ext.DBSystem), "cassandra")
 	assert.NotContains(childSpan.Tags(), ext.CassandraContactPoints)
@@ -305,7 +304,7 @@ func TestAnalyticsSettings(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		assertRate(t, mt, globalconfig.AnalyticsRate())
+		assertRate(t, mt, math.NaN())
 	})
 
 	t.Run("global", func(t *testing.T) {
@@ -313,9 +312,7 @@ func TestAnalyticsSettings(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		rate := globalconfig.AnalyticsRate()
-		defer globalconfig.SetAnalyticsRate(rate)
-		globalconfig.SetAnalyticsRate(0.4)
+		testutils.SetGlobalAnalyticsRate(t, 0.4)
 
 		assertRate(t, mt, 0.4)
 	})
@@ -338,9 +335,7 @@ func TestAnalyticsSettings(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		rate := globalconfig.AnalyticsRate()
-		defer globalconfig.SetAnalyticsRate(rate)
-		globalconfig.SetAnalyticsRate(0.4)
+		testutils.SetGlobalAnalyticsRate(t, 0.4)
 
 		assertRate(t, mt, 0.23, WithAnalyticsRate(0.23))
 	})
@@ -387,7 +382,7 @@ func TestIterScanner(t *testing.T) {
 	assert.Equal(childSpan.Tag(ext.ResourceName), "SELECT * from trace.person")
 	assert.Equal(childSpan.Tag(ext.CassandraKeyspace), "trace")
 	assert.Equal(childSpan.Tag(ext.Component), "gocql/gocql")
-	assert.Equal(componentName, childSpan.Integration())
+	assert.Equal(childSpan.Tag(ext.Component), childSpan.Integration())
 	assert.Equal(childSpan.Tag(ext.SpanKind), ext.SpanKindClient)
 	assert.Equal(childSpan.Tag(ext.DBSystem), "cassandra")
 	assert.NotContains(childSpan.Tags(), ext.CassandraContactPoints)
@@ -434,7 +429,7 @@ func TestBatch(t *testing.T) {
 	assert.Equal(childSpan.Tag(ext.ResourceName), "BatchInsert")
 	assert.Equal(childSpan.Tag(ext.CassandraKeyspace), "trace")
 	assert.Equal(childSpan.Tag(ext.Component), "gocql/gocql")
-	assert.Equal(componentName, childSpan.Integration())
+	assert.Equal(childSpan.Tag(ext.Component), childSpan.Integration())
 	assert.Equal(childSpan.Tag(ext.SpanKind), ext.SpanKindClient)
 	assert.Equal(childSpan.Tag(ext.DBSystem), "cassandra")
 	assert.NotContains(childSpan.Tags(), ext.CassandraContactPoints)
@@ -566,52 +561,4 @@ func TestWithCustomTag(t *testing.T) {
 		assert.Equal(t, "cassandra.batch", s0.OperationName())
 		assert.Equal(t, "value", s0.Tag("custom_tag"))
 	})
-}
-
-func TestNamingSchema(t *testing.T) {
-	genSpans := namingschematest.GenSpansFn(func(t *testing.T, serviceOverride string) []mocktracer.Span {
-		var opts []WrapOption
-		if serviceOverride != "" {
-			opts = append(opts, WithServiceName(serviceOverride))
-		}
-		mt := mocktracer.Start()
-		defer mt.Stop()
-
-		cluster := newTracedCassandraCluster(opts...)
-		session, err := cluster.CreateSession()
-		require.NoError(t, err)
-
-		stmt := "INSERT INTO trace.person (name, age, description) VALUES (?, ?, ?)"
-
-		// generate query span
-		err = session.Query(stmt, "name", 30, "description").Exec()
-		require.NoError(t, err)
-
-		// generate batch span
-		tb := session.NewBatch(gocql.UnloggedBatch)
-
-		tb.Query(stmt, "Kate", 80, "Cassandra's sister running in kubernetes")
-		tb.Query(stmt, "Lucas", 60, "Another person")
-		err = tb.ExecuteBatch(session.Session)
-		require.NoError(t, err)
-
-		return mt.FinishedSpans()
-	})
-	assertOpV0 := func(t *testing.T, spans []mocktracer.Span) {
-		require.Len(t, spans, 2)
-		assert.Equal(t, "cassandra.query", spans[0].OperationName())
-		assert.Equal(t, "cassandra.batch", spans[1].OperationName())
-	}
-	assertOpV1 := func(t *testing.T, spans []mocktracer.Span) {
-		require.Len(t, spans, 2)
-		assert.Equal(t, "cassandra.query", spans[0].OperationName())
-		assert.Equal(t, "cassandra.query", spans[1].OperationName())
-	}
-	wantServiceNameV0 := namingschematest.ServiceNameAssertions{
-		WithDefaults:             []string{"gocql.query", "gocql.query"},
-		WithDDService:            []string{"gocql.query", "gocql.query"},
-		WithDDServiceAndOverride: []string{namingschematest.TestServiceOverride, namingschematest.TestServiceOverride},
-	}
-	t.Run("ServiceName", namingschematest.NewServiceNameTest(genSpans, wantServiceNameV0))
-	t.Run("SpanName", namingschematest.NewSpanNameTest(genSpans, assertOpV0, assertOpV1))
 }

@@ -9,14 +9,13 @@ import (
 	"context"
 	"io"
 	"net/http"
-	"regexp"
 	"strings"
 	"testing"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/api/books/v1"
@@ -65,7 +64,7 @@ func TestBooks(t *testing.T) {
 	assert.Equal(t, "GET", s0.Tag(ext.HTTPMethod))
 	assert.Equal(t, svc.BasePath+"books/v1/users/montana.banana/bookshelves?alt=json&prettyPrint=false", s0.Tag(ext.HTTPURL))
 	assert.Equal(t, "google.golang.org/api", s0.Tag(ext.Component))
-	assert.Equal(t, componentName, s0.Integration())
+	assert.Equal(t, "google.golang.org/api", s0.Integration())
 	assert.Equal(t, ext.SpanKindClient, s0.Tag(ext.SpanKind))
 }
 
@@ -91,7 +90,7 @@ func TestCivicInfo(t *testing.T) {
 	assert.Equal(t, "GET", s0.Tag(ext.HTTPMethod))
 	assert.Equal(t, svc.BasePath+"civicinfo/v2/representatives?alt=json&prettyPrint=false", s0.Tag(ext.HTTPURL))
 	assert.Equal(t, "google.golang.org/api", s0.Tag(ext.Component))
-	assert.Equal(t, componentName, s0.Integration())
+	assert.Equal(t, "google.golang.org/api", s0.Integration())
 	assert.Equal(t, ext.SpanKindClient, s0.Tag(ext.SpanKind))
 }
 
@@ -119,7 +118,7 @@ func TestURLShortener(t *testing.T) {
 	assert.Equal(t, "GET", s0.Tag(ext.HTTPMethod))
 	assert.Equal(t, "https://www.googleapis.com/urlshortener/v1/url/history?alt=json&prettyPrint=false", s0.Tag(ext.HTTPURL))
 	assert.Equal(t, "google.golang.org/api", s0.Tag(ext.Component))
-	assert.Equal(t, componentName, s0.Integration())
+	assert.Equal(t, "google.golang.org/api", s0.Integration())
 	assert.Equal(t, ext.SpanKindClient, s0.Tag(ext.SpanKind))
 }
 
@@ -145,7 +144,7 @@ func TestWithEndpointMetadataDisabled(t *testing.T) {
 	assert.Equal(t, "GET", s0.Tag(ext.HTTPMethod))
 	assert.Equal(t, svc.BasePath+"civicinfo/v2/representatives?alt=json&prettyPrint=false", s0.Tag(ext.HTTPURL))
 	assert.Equal(t, "google.golang.org/api", s0.Tag(ext.Component))
-	assert.Equal(t, componentName, s0.Integration())
+	assert.Equal(t, "google.golang.org/api", s0.Integration())
 	assert.Equal(t, ext.SpanKindClient, s0.Tag(ext.SpanKind))
 }
 
@@ -174,9 +173,7 @@ func TestAnalyticsSettings(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		rate := globalconfig.AnalyticsRate()
-		defer globalconfig.SetAnalyticsRate(rate)
-		globalconfig.SetAnalyticsRate(0.4)
+		testutils.SetGlobalAnalyticsRate(t, 0.4)
 
 		assertRate(t, mt, 0.4)
 	})
@@ -199,9 +196,7 @@ func TestAnalyticsSettings(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		rate := globalconfig.AnalyticsRate()
-		defer globalconfig.SetAnalyticsRate(rate)
-		globalconfig.SetAnalyticsRate(0.4)
+		testutils.SetGlobalAnalyticsRate(t, 0.4)
 
 		assertRate(t, mt, 0.23, WithAnalyticsRate(0.23))
 	})
@@ -218,23 +213,5 @@ func BenchmarkWrapRoundTripper(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		svc.Bookshelves.List("montana.banana").Do()
-	}
-}
-
-func BenchmarkInitApiEndpointsTree(b *testing.B) {
-	b.ReportAllocs()
-
-	for i := 0; i < b.N; i++ {
-		initAPIEndpointsTree()
-	}
-}
-
-func TestTreeRegex(t *testing.T) {
-	apiEndpoints, err := loadEndpointsFromJSON()
-	require.NoError(t, err)
-
-	for _, e := range apiEndpoints {
-		_, err := regexp.Compile(e.PathRegex)
-		assert.NoErrorf(t, err, "pathRegexp: %s", e.PathRegex)
 	}
 }
