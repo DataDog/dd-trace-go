@@ -147,26 +147,14 @@ var (
 	TestManagementEnabledSettingsResponseType   SettingsResponseType = []string{"test_management_enabled:true"}
 )
 
-// removeEmptyStrings removes empty string values inside an array or use the same if not empty string is found.
+// removeEmptyStrings removes empty string values from a slice.
 func removeEmptyStrings(s []string) []string {
-	var r []string
-	hasSpace := false
-	for i, str := range s {
-		if str == "" && r == nil {
-			if i > 0 {
-				r = s[:i]
-			}
-			hasSpace = true
-			continue
-		}
-		if hasSpace {
-			r = append(r, str)
+	n := 0
+	for _, str := range s {
+		if str != "" {
+			s[n] = str
+			n++
 		}
 	}
-
-	if r == nil {
-		r = s
-	}
-
-	return r
+	return s[:n]
 }
