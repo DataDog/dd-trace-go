@@ -13,15 +13,15 @@ import (
 	"time"
 
 	"cloud.google.com/go/pubsub"
-	"github.com/DataDog/dd-trace-go/internal/orchestrion/_integration/internal/containers"
-	"github.com/DataDog/dd-trace-go/internal/orchestrion/_integration/internal/trace"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/modules/gcloud"
 	"google.golang.org/api/option"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
+
+	"github.com/DataDog/dd-trace-go/internal/orchestrion/_integration/internal/containers"
+	"github.com/DataDog/dd-trace-go/internal/orchestrion/_integration/internal/trace"
 )
 
 const (
@@ -40,16 +40,7 @@ func (tc *TestCase) Setup(ctx context.Context, t *testing.T) {
 	containers.SkipIfProviderIsNotHealthy(t)
 
 	var err error
-
-	tc.container, err = gcloud.RunPubsub(ctx,
-		"gcr.io/google.com/cloudsdktool/google-cloud-cli:emulators",
-		gcloud.WithProjectID("pstest-orchestrion"),
-		testcontainers.WithLogger(testcontainers.TestLogger(t)),
-		containers.WithTestLogConsumer(t),
-	)
-	containers.AssertTestContainersError(t, err)
-	containers.RegisterContainerCleanup(t, tc.container)
-
+	tc.container = containers.StartGCPPubsubContainer(t)
 	projectID := tc.container.Settings.ProjectID
 
 	//orchestrion:ignore
@@ -115,7 +106,7 @@ func (tc *TestCase) ExpectedTraces() trace.Traces {
 			Tags: map[string]any{
 				"name":     "pubsub.publish",
 				"type":     "queue",
-				"resource": "projects/pstest-orchestrion/topics/pstest-orchestrion-topic",
+				"resource": "projects/pstest/topics/pstest-orchestrion-topic",
 				"service":  "gcp_pubsub.test",
 			},
 			Meta: map[string]string{
@@ -128,7 +119,7 @@ func (tc *TestCase) ExpectedTraces() trace.Traces {
 					Tags: map[string]any{
 						"name":     "pubsub.receive",
 						"type":     "queue",
-						"resource": "projects/pstest-orchestrion/subscriptions/pstest-orchestrion-subscription",
+						"resource": "projects/pstest/subscriptions/pstest-orchestrion-subscription",
 						"service":  "gcp_pubsub.test",
 					},
 					Meta: map[string]string{
