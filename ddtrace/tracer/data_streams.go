@@ -25,7 +25,8 @@ func SetDataStreamsCheckpoint(ctx context.Context, edgeTags ...string) (outCtx c
 // To learn more about the data streams product, see: https://docs.datadoghq.com/data_streams/go/
 func SetDataStreamsCheckpointWithParams(ctx context.Context, params options.CheckpointParams, edgeTags ...string) (outCtx context.Context, ok bool) {
 	ps := v2options.CheckpointParams{
-		PayloadSize: params.PayloadSize,
+		PayloadSize:     params.PayloadSize,
+		ServiceOverride: params.ServiceOverride,
 	}
 	return v2.SetDataStreamsCheckpointWithParams(ctx, ps, edgeTags...)
 }
