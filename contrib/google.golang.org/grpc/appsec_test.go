@@ -14,6 +14,7 @@ import (
 	"testing"
 
 	pappsec "gopkg.in/DataDog/dd-trace-go.v1/appsec"
+	"gopkg.in/DataDog/dd-trace-go.v1/contrib/google.golang.org/grpc/internal/testserver"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
 
@@ -33,7 +34,7 @@ func TestAppSec(t *testing.T) {
 		t.Skip("appsec disabled")
 	}
 
-	setup := func(t *testing.T) (FixtureClient, mocktracer.Tracer, func()) {
+	setup := func(t *testing.T) (testserver.FixtureClient, mocktracer.Tracer, func()) {
 		rig, err := newAppsecRig(t, false)
 		require.NoError(t, err)
 
@@ -51,7 +52,7 @@ func TestAppSec(t *testing.T) {
 
 		// Send a XSS attack in the payload along with the canary value in the RPC metadata
 		ctx := metadata.NewOutgoingContext(context.Background(), metadata.Pairs("dd-canary", "dd-test-scanner-log"))
-		res, err := client.Ping(ctx, &FixtureRequest{Name: "<script>window.location;</script>"})
+		res, err := client.Ping(ctx, &testserver.FixtureRequest{Name: "<script>window.location;</script>"})
 		// Check that the handler was properly called
 		require.NoError(t, err)
 		require.Equal(t, "passed", res.Message)
@@ -76,7 +77,7 @@ func TestAppSec(t *testing.T) {
 		require.NoError(t, err)
 
 		// Send a XSS attack
-		if err := stream.Send(&FixtureRequest{Name: "<script>window.location;</script>"}); err != io.EOF {
+		if err := stream.Send(&testserver.FixtureRequest{Name: "<script>window.location;</script>"}); err != io.EOF {
 			require.NoError(t, err)
 		}
 
@@ -87,7 +88,7 @@ func TestAppSec(t *testing.T) {
 
 		for i := 0; i < 5; i++ { // Fire multiple times, each time should result in a detected event
 			// Send a SQLi attack
-			if err := stream.Send(&FixtureRequest{Name: fmt.Sprintf("-%[1]d' and %[1]d=%[1]d union select * from users--", i)}); err != io.EOF {
+			if err := stream.Send(&testserver.FixtureRequest{Name: fmt.Sprintf("-%[1]d' and %[1]d=%[1]d union select * from users--", i)}); err != io.EOF {
 				require.NoError(t, err)
 			}
 
@@ -143,7 +144,7 @@ func TestBlocking(t *testing.T) {
 		t.Skip("appsec disabled")
 	}
 
-	setup := func() (FixtureClient, mocktracer.Tracer, func()) {
+	setup := func() (testserver.FixtureClient, mocktracer.Tracer, func()) {
 		rig, err := newAppsecRig(t, false)
 		require.NoError(t, err)
 
@@ -188,7 +189,7 @@ func TestBlocking(t *testing.T) {
 		} {
 			t.Run(tc.name, func(t *testing.T) {
 				// Helper assertion function to run for the unary and stream tests
-				withClient := func(t *testing.T, do func(client FixtureClient)) {
+				withClient := func(t *testing.T, do func(client testserver.FixtureClient)) {
 					client, mt, cleanup := setup()
 					defer cleanup()
 
@@ -209,16 +210,16 @@ func TestBlocking(t *testing.T) {
 				}
 
 				t.Run("unary", func(t *testing.T) {
-					withClient(t, func(client FixtureClient) {
+					withClient(t, func(client testserver.FixtureClient) {
 						ctx := metadata.NewOutgoingContext(context.Background(), tc.md)
-						reply, err := client.Ping(ctx, &FixtureRequest{Name: tc.message})
+						reply, err := client.Ping(ctx, &testserver.FixtureRequest{Name: tc.message})
 						require.Nil(t, reply)
 						require.Equal(t, codes.Aborted, status.Code(err))
 					})
 				})
 
 				t.Run("stream", func(t *testing.T) {
-					withClient(t, func(client FixtureClient) {
+					withClient(t, func(client testserver.FixtureClient) {
 						ctx := metadata.NewOutgoingContext(context.Background(), tc.md)
 
 						// Open the stream
@@ -227,7 +228,7 @@ func TestBlocking(t *testing.T) {
 						defer func() { assert.NoError(t, stream.CloseSend()) }()
 
 						// Send a message
-						if err := stream.Send(&FixtureRequest{Name: tc.message}); err != io.EOF {
+						if err := stream.Send(&testserver.FixtureRequest{Name: tc.message}); err != io.EOF {
 							require.NoError(t, err)
 						}
 
@@ -253,7 +254,7 @@ func TestPasslist(t *testing.T) {
 		t.Skip("appsec disabled")
 	}
 
-	setup := func(t *testing.T) (FixtureClient, mocktracer.Tracer, func()) {
+	setup := func(t *testing.T) (testserver.FixtureClient, mocktracer.Tracer, func()) {
 		rig, err := newAppsecRig(t, false)
 		require.NoError(t, err)
 
@@ -271,7 +272,7 @@ func TestPasslist(t *testing.T) {
 
 		// Send the payload triggering the sec event thanks to the "zouzou" value in the RPC metadata
 		ctx := metadata.NewOutgoingContext(context.Background(), metadata.Pairs("dd-canary", "zouzou"))
-		res, err := client.Ping(ctx, &FixtureRequest{Name: "hello"})
+		res, err := client.Ping(ctx, &testserver.FixtureRequest{Name: "hello"})
 
 		// Check that the handler was properly called
 		require.NoError(t, err)
@@ -298,7 +299,7 @@ func TestPasslist(t *testing.T) {
 
 		// Send some messages
 		for i := 0; i < 5; i++ {
-			if err := stream.Send(&FixtureRequest{Name: "hello"}); err != io.EOF {
+			if err := stream.Send(&testserver.FixtureRequest{Name: "hello"}); err != io.EOF {
 				require.NoError(t, err)
 			}
 
@@ -333,7 +334,7 @@ func newAppsecRig(t *testing.T, traceClient bool, interceptorOpts ...Option) (*a
 	)
 
 	fixtureServer := new(appsecFixtureServer)
-	RegisterFixtureServer(server, fixtureServer)
+	testserver.RegisterFixtureServer(server, fixtureServer)
 
 	li, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -360,7 +361,7 @@ func newAppsecRig(t *testing.T, traceClient bool, interceptorOpts ...Option) (*a
 		port:          port,
 		server:        server,
 		conn:          conn,
-		client:        NewFixtureClient(conn),
+		client:        testserver.NewFixtureClient(conn),
 	}, err
 }
 
@@ -372,7 +373,7 @@ type appsecRig struct {
 	port          string
 	listener      net.Listener
 	conn          *grpc.ClientConn
-	client        FixtureClient
+	client        testserver.FixtureClient
 }
 
 func (r *appsecRig) Close() error {
@@ -381,11 +382,11 @@ func (r *appsecRig) Close() error {
 }
 
 type appsecFixtureServer struct {
-	UnimplementedFixtureServer
+	testserver.UnimplementedFixtureServer
 	s fixtureServer
 }
 
-func (s *appsecFixtureServer) StreamPing(stream Fixture_StreamPingServer) (err error) {
+func (s *appsecFixtureServer) StreamPing(stream testserver.Fixture_StreamPingServer) (err error) {
 	ctx := stream.Context()
 	md, _ := metadata.FromIncomingContext(ctx)
 	ids := md.Get("user-id")
@@ -396,7 +397,7 @@ func (s *appsecFixtureServer) StreamPing(stream Fixture_StreamPingServer) (err e
 	}
 	return s.s.StreamPing(stream)
 }
-func (s *appsecFixtureServer) Ping(ctx context.Context, in *FixtureRequest) (*FixtureReply, error) {
+func (s *appsecFixtureServer) Ping(ctx context.Context, in *testserver.FixtureRequest) (*testserver.FixtureReply, error) {
 	md, _ := metadata.FromIncomingContext(ctx)
 	ids := md.Get("user-id")
 	if len(ids) > 0 {
