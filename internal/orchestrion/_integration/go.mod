@@ -50,7 +50,7 @@ require (
 	cloud.google.com/go/pubsub v1.44.0
 	github.com/99designs/gqlgen v0.17.62
 	github.com/DataDog/dd-trace-go/orchestrion/all/v2 v2.1.0-dev
-	github.com/DataDog/dd-trace-go/v2 v2.1.0-dev
+	github.com/DataDog/dd-trace-go/v2 v2.0.0-rc.5
 	github.com/DataDog/go-libddwaf/v3 v3.5.3
 	github.com/DataDog/orchestrion v1.1.0-rc.3
 	github.com/IBM/sarama v1.44.0
