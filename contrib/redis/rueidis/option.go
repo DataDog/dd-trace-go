@@ -19,5 +19,5 @@ func WithRawCommand(rawCommand bool) Option {
 
 // WithServiceName sets the given service name for the client.
 func WithServiceName(name string) Option {
-	return v2.WithServiceName(name)
+	return v2.WithService(name)
 }
