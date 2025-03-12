@@ -4,7 +4,7 @@ go 1.23.0
 
 require (
 	github.com/DataDog/dd-trace-go/instrumentation/testutils/grpc/v2 v2.1.0-dev
-	github.com/DataDog/dd-trace-go/v2 v2.1.0-dev
+	github.com/DataDog/dd-trace-go/v2 v2.0.0-rc.5
 	github.com/stretchr/testify v1.10.0
 	github.com/tinylib/msgp v1.2.5
 	google.golang.org/grpc v1.70.0
