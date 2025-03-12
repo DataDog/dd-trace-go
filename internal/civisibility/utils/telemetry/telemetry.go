@@ -149,12 +149,13 @@ var (
 
 // removeEmptyStrings removes empty string values from a slice.
 func removeEmptyStrings(s []string) []string {
+	result := make([]string, len(s))
 	n := 0
 	for _, str := range s {
 		if str != "" {
-			s[n] = str
+			result[n] = str
 			n++
 		}
 	}
-	return s[:n]
+	return result[:n]
 }
