@@ -7,11 +7,11 @@
 // +build civisibility_native
 
 // static libraries:
-// CGO_LDFLAGS_ALLOW=".*" GOOS=darwin GOARCH=arm64 CGO_ENABLED=1 go build -tags civisibility_native -buildmode=c-archive -o ./darwin-arm64/libcivisibility.a *.go
-// CGO_LDFLAGS_ALLOW=".*" GOOS=darwin GOARCH=amd64 CGO_ENABLED=1 go build -tags civisibility_native -buildmode=c-archive -o ./darwin-amd64/libcivisibility.a *.go
-// CGO_LDFLAGS_ALLOW=".*" GOOS=windows GOARCH=amd64 CGO_ENABLED=1 CC=x86_64-w64-mingw32-gcc go build -tags civisibility_native -buildmode=c-archive -o ./windows-amd64/civisibility.lib *.go
-// CGO_LDFLAGS_ALLOW=".*" GOOS=linux GOARCH=arm64 CGO_ENABLED=1 CC=aarch64-linux-gnu-gcc go build -tags civisibility_native -buildmode=c-archive -o /tmp/lima/linux-arm64/libcivisibility.a *.go
-// CGO_LDFLAGS_ALLOW=".*" GOOS=linux GOARCH=amd64 CGO_ENABLED=1 CC=x86_64-linux-gnu-gcc go build -tags civisibility_native -buildmode=c-archive -o /tmp/lima/linux-amd64/libcivisibility.a *.go
+// CGO_LDFLAGS_ALLOW=".*" GOOS=darwin GOARCH=arm64 CGO_ENABLED=1 go build -tags civisibility_native -buildmode=c-archive -o ./macos-arm64-libcivisibility/libcivisibility.a *.go
+// CGO_LDFLAGS_ALLOW=".*" GOOS=darwin GOARCH=amd64 CGO_ENABLED=1 go build -tags civisibility_native -buildmode=c-archive -o ./macos-x64-libcivisibility/libcivisibility.a *.go
+// CGO_LDFLAGS_ALLOW=".*" GOOS=windows GOARCH=amd64 CGO_ENABLED=1 CC=x86_64-w64-mingw32-gcc go build -tags civisibility_native -buildmode=c-archive -o ./windows-x64-libcivisibility/civisibility.lib *.go
+// CGO_LDFLAGS_ALLOW=".*" GOOS=linux GOARCH=arm64 CGO_ENABLED=1 CC=aarch64-linux-gnu-gcc go build -tags civisibility_native -buildmode=c-archive -o /tmp/lima/linux-arm64-libcivisibility/libcivisibility.a *.go
+// CGO_LDFLAGS_ALLOW=".*" GOOS=linux GOARCH=amd64 CGO_ENABLED=1 CC=x86_64-linux-gnu-gcc go build -tags civisibility_native -buildmode=c-archive -o /tmp/lima/linux-x64-libcivisibility/libcivisibility.a *.go
 
 // dynamic libraries:
 // CGO_LDFLAGS_ALLOW=".*" GOOS=android CGO_ENABLED=1 CC=$NDK_ROOT/toolchains/llvm/prebuilt/darwin-x86_64/bin/aarch64-linux-android21-clang go build -tags civisibility_native -buildmode=c-shared -o ./android-aarch64/libcivisibility.so *.go
