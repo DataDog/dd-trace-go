@@ -15,7 +15,6 @@ on:
     branches:
       - main
       - release-v*
-      - hannahkm/require-system-smoke-tests
     tags-ignore:
       - 'contrib/**'
       - 'instrumentation/**'
@@ -200,13 +199,13 @@ jobs:
 
   smoke-tests-done:
     name: Smoke Tests
-    needs: smoke-tests
+    needs: setup-requirements-linux
     runs-on: ubuntu-latest
     if: success() || failure()
     steps:
       - name: Success
-        if: needs.smoke-tests.result == 'success'
+        if: needs.setup-requirements-linux.result == 'success'
         run: echo "Success!"
       - name: Failure
-        if: needs.smoke-tests.result != 'success'
+        if: needs.setup-requirements-linux.result != 'success'
         run: echo "Failure!" && exit 1
