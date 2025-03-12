@@ -11,6 +11,7 @@ on:
     branches:
       - main
       - release-v*
+      - hannahkm/require-system-smoke-tests
     tags-ignore:
       - 'contrib/**'
       - 'instrumentation/**'
@@ -162,3 +163,16 @@ jobs:
         with:
           name: logs_${{ matrix.weblog-variant }}_${{ matrix.scenario }}
           path: artifact.tar.gz
+
+  system-tests-done:
+    name: System Tests
+    needs: system-tests
+    runs-on: ubuntu-latest
+    if: success() || failure()
+    steps:
+      - name: Success
+        if: needs.system-tests.result == 'success'
+        run: echo "Success!"
+      - name: Failure
+        if: needs.system-tests.result != 'success'
+        run: echo "Failure!" && exit 1

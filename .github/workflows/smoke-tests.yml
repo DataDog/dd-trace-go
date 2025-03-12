@@ -15,6 +15,7 @@ on:
     branches:
       - main
       - release-v*
+      - hannahkm/require-system-smoke-tests
     tags-ignore:
       - 'contrib/**'
       - 'instrumentation/**'
@@ -196,3 +197,16 @@ jobs:
             go_libddwaf_ref=${{ inputs.go-libddwaf-ref }}
       - name: Test
         run: docker run -p7777:7777 --rm smoke-test
+
+  smoke-tests-done:
+    name: Smoke Tests
+    needs: smoke-tests
+    runs-on: ubuntu-latest
+    if: success() || failure()
+    steps:
+      - name: Success
+        if: needs.smoke-tests.result == 'success'
+        run: echo "Success!"
+      - name: Failure
+        if: needs.smoke-tests.result != 'success'
+        run: echo "Failure!" && exit 1
