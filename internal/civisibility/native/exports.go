@@ -206,6 +206,15 @@ typedef struct {
 	int faulty_session_threshold;
 } topt_SettingsEarlyFlakeDetection;
 
+// topt_SettingsTestManagement holds configuration for test management features.
+// Fields:
+//  - enabled: Boolean indicating if test management is enabled.
+//  - attempt_to_fix_retries: Number of retries to attempt fixing a test.
+typedef struct {
+	Bool enabled;
+	int attempt_to_fix_retries;
+} topt_SettingsTestManagement;
+
 // topt_SettingsResponse returns the library’s current configuration and feature toggles.
 // Fields:
 //   - code_coverage: Boolean indicating if code coverage is enabled.
@@ -214,6 +223,8 @@ typedef struct {
 //   - itr_enabled: Boolean indicating if Intelligent Test Runner (ITR) is enabled.
 //   - require_git: Boolean indicating if Git repository context is required.
 //   - tests_skipping: Boolean indicating if test skipping is enabled.
+//	 - known_tests_enabled: Boolean indicating if known tests are enabled.
+//   - test_management: Contains test management settings.
 //   - unused01 ... unused05: Reserved for future use.
 typedef struct {
 	Bool code_coverage;
@@ -222,6 +233,8 @@ typedef struct {
 	Bool itr_enabled;
 	Bool require_git;
 	Bool tests_skipping;
+	Bool known_tests_enabled;
+	topt_SettingsTestManagement test_management;
 	// Unused fields
 	void* unused01;
 	void* unused02;
@@ -618,6 +631,11 @@ func topt_get_settings() C.topt_SettingsResponse {
 			itr_enabled:                toBool(false),
 			require_git:                toBool(false),
 			tests_skipping:             toBool(false),
+			known_tests_enabled:        toBool(false),
+			test_management: C.topt_SettingsTestManagement{
+				enabled:                toBool(false),
+				attempt_to_fix_retries: 0,
+			},
 		}
 	}
 
@@ -637,6 +655,11 @@ func topt_get_settings() C.topt_SettingsResponse {
 		itr_enabled:                toBool(settings.ItrEnabled),
 		require_git:                toBool(settings.RequireGit),
 		tests_skipping:             toBool(settings.TestsSkipping),
+		known_tests_enabled:        toBool(settings.KnownTestsEnabled),
+		test_management: C.topt_SettingsTestManagement{
+			enabled:                toBool(settings.TestManagement.Enabled),
+			attempt_to_fix_retries: C.int(settings.TestManagement.AttemptToFixRetries),
+		},
 	}
 }
 
@@ -663,7 +686,7 @@ func topt_get_flaky_test_retries_settings() C.topt_FlakyTestRetriesSettings {
 	}
 }
 
-// topt_get_known_tests returns an array of known tests collected from the early flake detection settings.
+// topt_get_known_tests returns an array of known tests.
 //
 // Returns:
 //   - topt_KnownTestArray: A struct holding a dynamically allocated array of topt_KnownTest elements along with its length.
@@ -673,7 +696,7 @@ func topt_get_flaky_test_retries_settings() C.topt_FlakyTestRetriesSettings {
 //export topt_get_known_tests
 func topt_get_known_tests() C.topt_KnownTestArray {
 	var knownTests []C.topt_KnownTest
-	for moduleName, module := range civisibility.GetEarlyFlakeDetectionSettings().Tests {
+	for moduleName, module := range civisibility.GetKnownTests().Tests {
 		for suiteName, suite := range module {
 			for _, testName := range suite {
 				knownTests = append(knownTests, C.topt_KnownTest{
