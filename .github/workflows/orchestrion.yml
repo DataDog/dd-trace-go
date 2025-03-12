@@ -180,6 +180,9 @@ jobs:
           # Kafka service
           docker pull confluentinc/confluent-local:7.5.0
 
+          # OpenSearch images
+          docker pull public.ecr.aws/opensearchproject/opensearch:2
+
           # PostgreSQL service
           docker pull docker.io/postgres:16-alpine
 
