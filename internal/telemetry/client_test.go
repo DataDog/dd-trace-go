@@ -3,6 +3,8 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2025 Datadog, Inc.
 
+//go:build goexperiment.synctest
+
 package telemetry
 
 import (
@@ -19,6 +21,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/stretchr/testify/assert"
@@ -1223,45 +1226,49 @@ func TestClientEnd2End(t *testing.T) {
 }
 
 func TestHeartBeatInterval(t *testing.T) {
-	startTime := time.Now()
-	payloadtimes := make([]time.Duration, 0, 32)
-	c, err := NewClient("test-service", "test-env", "1.0.0", ClientConfig{
-		AgentURL:          "http://localhost:8126",
-		HeartbeatInterval: 2 * time.Second,
-		HTTPClient: &http.Client{
-			Timeout: 5 * time.Second,
-			Transport: &testRoundTripper{
-				t: t,
-				roundTrip: func(_ *http.Request) (*http.Response, error) {
-					payloadtimes = append(payloadtimes, time.Since(startTime))
-					startTime = time.Now()
-					return &http.Response{
-						StatusCode: http.StatusOK,
-					}, nil
+	synctest.Run(func() {
+		startTime := time.Now()
+		payloadtimes := make([]time.Duration, 0, 32)
+		c, err := NewClient("test-service", "test-env", "1.0.0", ClientConfig{
+			AgentURL:          "http://localhost:8126",
+			HeartbeatInterval: 2 * time.Second,
+			HTTPClient: &http.Client{
+				Timeout: 5 * time.Second,
+				Transport: &testRoundTripper{
+					t: t,
+					roundTrip: func(_ *http.Request) (*http.Response, error) {
+						payloadtimes = append(payloadtimes, time.Since(startTime))
+						startTime = time.Now()
+						return &http.Response{
+							StatusCode: http.StatusOK,
+						}, nil
+					},
 				},
 			},
-		},
+		})
+		require.NoError(t, err)
+		synctest.Wait()
+		defer c.Close()
+
+		for i := 0; i < 10; i++ {
+			c.Log(LogError, "test")
+			time.Sleep(1 * time.Second)
+			synctest.Wait()
+		}
+
+		// 10 seconds have passed, we should have sent 5 heartbeats
+
+		c.Flush()
+		c.Close()
+
+		require.InDelta(t, 5, len(payloadtimes), 1)
+		sum := 0.0
+		for _, d := range payloadtimes {
+			sum += d.Seconds()
+		}
+
+		assert.InDelta(t, 2, sum/5, 0.1)
 	})
-	require.NoError(t, err)
-	defer c.Close()
-
-	for i := 0; i < 10; i++ {
-		c.Log(LogError, "test")
-		time.Sleep(1 * time.Second)
-	}
-
-	// 10 seconds have passed, we should have sent 5 heartbeats
-
-	c.Flush()
-	c.Close()
-
-	require.InDelta(t, 5, len(payloadtimes), 1)
-	sum := 0.0
-	for _, d := range payloadtimes {
-		sum += d.Seconds()
-	}
-
-	assert.InDelta(t, 2, sum/5, 0.1)
 }
 
 func TestSendingFailures(t *testing.T) {
