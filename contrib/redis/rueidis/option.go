@@ -13,6 +13,7 @@ import (
 type config struct {
 	rawCommand  bool
 	serviceName string
+	errCheck    func(err error) bool
 }
 
 // Option represents an option that can be used to create or wrap a client.
@@ -37,5 +38,13 @@ func WithRawCommand(rawCommand bool) Option {
 func WithServiceName(name string) Option {
 	return func(cfg *config) {
 		cfg.serviceName = name
+	}
+}
+
+// WithErrorCheck specifies a function fn which determines whether the passed
+// error should be marked as an error.
+func WithErrorCheck(fn func(err error) bool) Option {
+	return func(cfg *config) {
+		cfg.errCheck = fn
 	}
 }
