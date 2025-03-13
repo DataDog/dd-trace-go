@@ -57,6 +57,7 @@ type (
 		workingDirectory   string
 		repositoryURL      string
 		commitSha          string
+		commitMessage      string
 		branchName         string
 		testConfigurations testConfigurations
 		headers            map[string]string
@@ -248,6 +249,7 @@ func NewClientWithServiceNameAndSubdomain(serviceName, subdomain string) Client 
 		workingDirectory: ciTags[constants.CIWorkspacePath],
 		repositoryURL:    ciTags[constants.GitRepositoryURL],
 		commitSha:        ciTags[constants.GitCommitSHA],
+		commitMessage:    ciTags[constants.GitCommitMessage],
 		branchName:       bName,
 		testConfigurations: testConfigurations{
 			OsPlatform:     ciTags[constants.OSPlatform],
