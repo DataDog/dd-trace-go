@@ -21,19 +21,35 @@ type logger struct{}
 
 func (l logger) Debug(msg string, args ...any) {
 	log.Debug(msg, args...)
-	telemetrylog.Debug(msg, args...)
+	if hasErrors(args...) {
+		telemetrylog.Debug(msg, args...)
+	}
 }
 
 func (l logger) Info(msg string, args ...any) {
 	log.Info(msg, args...)
+	if hasErrors(args...) {
+		telemetrylog.Debug(msg, args...)
+	}
 }
 
 func (l logger) Warn(msg string, args ...any) {
 	log.Warn(msg, args...)
-	telemetrylog.Warn(msg, args...)
+	if hasErrors(args...) {
+		telemetrylog.Warn(msg, args...)
+	}
 }
 
 func (l logger) Error(msg string, args ...any) {
 	log.Error(msg, args...)
 	telemetrylog.Error(msg, args...)
+}
+
+func hasErrors(args ...any) bool {
+	for _, arg := range args {
+		if _, ok := arg.(error); ok {
+			return true
+		}
+	}
+	return false
 }
