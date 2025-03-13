@@ -60,6 +60,9 @@ func NewClient(clientOption valkey.ClientOption, opts ...Option) (valkey.Client,
 	for _, fn := range opts {
 		fn(cfg)
 	}
+	if cfg.errCheck == nil {
+		cfg.errCheck = defaultErrCheck
+	}
 	tClient := &client{
 		client:  valkeyClient,
 		cfg:     cfg,
@@ -80,14 +83,14 @@ func (c *client) Do(ctx context.Context, cmd valkey.Completed) valkey.ValkeyResu
 	span, ctx := c.startSpan(ctx, processCommand(&cmd))
 	resp := c.client.Do(ctx, cmd)
 	setClientCacheTags(span, resp)
-	span.Finish(tracer.WithError(resp.Error()))
+	c.finishSpan(span, resp.Error())
 	return resp
 }
 
 func (c *client) DoMulti(ctx context.Context, multi ...valkey.Completed) []valkey.ValkeyResult {
 	span, ctx := c.startSpan(ctx, processCommandMulti(multi))
 	resp := c.client.DoMulti(ctx, multi...)
-	c.finishSpan(span, firstError(resp))
+	c.finishSpan(span, firstError(c.cfg.errCheck, resp))
 	return resp
 }
 
@@ -109,7 +112,7 @@ func (c *client) DoCache(ctx context.Context, cmd valkey.Cacheable, ttl time.Dur
 func (c *client) DoMultiCache(ctx context.Context, multi ...valkey.CacheableTTL) []valkey.ValkeyResult {
 	span, ctx := c.startSpan(ctx, processCommandMultiCache(multi))
 	resp := c.client.DoMultiCache(ctx, multi...)
-	c.finishSpan(span, firstError(resp))
+	c.finishSpan(span, firstError(c.cfg.errCheck, resp))
 	return resp
 }
 
@@ -207,7 +210,7 @@ func (c *client) startSpan(ctx context.Context, cmd command) (tracer.Span, conte
 
 func (c *client) finishSpan(span tracer.Span, err error) {
 	var opts []tracer.FinishOption
-	if err != nil && !valkey.IsValkeyNil(err) {
+	if c.cfg.errCheck(err) {
 		opts = append(opts, tracer.WithError(err))
 	}
 	span.Finish(opts...)
@@ -267,9 +270,9 @@ func multiCommand(cmds []command) command {
 	}
 }
 
-func firstError(s []valkey.ValkeyResult) error {
+func firstError(errCheck func(error) bool, s []valkey.ValkeyResult) error {
 	for _, result := range s {
-		if err := result.Error(); err != nil && !valkey.IsValkeyNil(err) {
+		if err := result.Error(); errCheck(err) {
 			return err
 		}
 	}
