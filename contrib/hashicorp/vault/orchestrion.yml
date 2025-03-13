@@ -5,7 +5,7 @@
 ---
 # yaml-language-server: $schema=https://datadoghq.dev/orchestrion/schema.json
 meta:
-  name: gopkg.in/DataDog/dd-trace-go.v1/contrib/hashicorp/vault
+  name: github.com/DataDog/dd-trace-go/contrib/hashicorp/vault/v2
   description: Official package for interacting with a Vault server.
 
 aspects:
@@ -16,7 +16,7 @@ aspects:
     advice:
       - wrap-expression:
           imports:
-            vaulttrace: gopkg.in/DataDog/dd-trace-go.v1/contrib/hashicorp/vault
+            vaulttrace: github.com/DataDog/dd-trace-go/contrib/hashicorp/vault/v2
           template: |-
             {{- .AST.Type -}}{
               {{- $hasField := false -}}

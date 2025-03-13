@@ -18,9 +18,9 @@
 //		"github.com/aws/aws-sdk-go-v2/service/s3"
 //		"github.com/aws/aws-sdk-go-v2/service/sqs"
 //
-//		awstrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/aws/aws-sdk-go-v2/aws"
-//		"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-//		"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+//		awstrace "github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go-v2/v2/aws"
+//		"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+//		"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 //	)
 //
 //	func Example() {

@@ -9,7 +9,7 @@
 package ddspan
 
 import (
-	"github.com/DataDog/dd-trace-go/internal/orchestrion/_integration/internal/trace"
+	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/trace"
 )
 
 func (*TestCase) ExpectedTraces() trace.Traces {

@@ -4,14 +4,14 @@
 // Copyright 2023 Datadog, Inc.
 package tracer
 
-// TracerMetadata represents the configuration of the tracer.
+// Metadata represents the configuration of the tracer.
 //
 //go:generate msgp -unexported -marshal=true -o=tracer_metadata_msgp.go -tests=false
-type TracerMetadata struct {
+type Metadata struct {
 	// Version of the schema.
 	SchemaVersion uint8 `msg:"schema_version"`
 	// Runtime UUID.
-	RuntimeId string `msg:"runtime_id"`
+	RuntimeID string `msg:"runtime_id"`
 	// Programming language of the tracer.
 	Language string `msg:"tracer_language"`
 	// Version of the tracer

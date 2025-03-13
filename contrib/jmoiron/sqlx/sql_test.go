@@ -11,9 +11,9 @@ import (
 	"os"
 	"testing"
 
-	sqltrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/database/sql"
-	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/sqltest"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
+	sqltrace "github.com/DataDog/dd-trace-go/contrib/database/sql/v2"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	sqltest "github.com/DataDog/dd-trace-go/v2/instrumentation/testutils/sql"
 
 	mssql "github.com/denisenkom/go-mssqldb"
 	"github.com/go-sql-driver/mysql"
@@ -36,7 +36,7 @@ func TestMain(m *testing.M) {
 }
 
 func TestMySQL(t *testing.T) {
-	sqltrace.Register("mysql", &mysql.MySQLDriver{}, sqltrace.WithServiceName("mysql-test"))
+	sqltrace.Register("mysql", &mysql.MySQLDriver{}, sqltrace.WithService("mysql-test"))
 	dbx, err := Open("mysql", "test:test@tcp(127.0.0.1:3306)/test")
 	if err != nil {
 		log.Fatal(err)
@@ -111,8 +111,8 @@ func TestSQLServer(t *testing.T) {
 }
 
 func TestOpenWithOptions(t *testing.T) {
-	sqltrace.Register("mysql", &mysql.MySQLDriver{}, sqltrace.WithServiceName("mysql-test"))
-	dbx, err := Open("mysql", "test:test@tcp(127.0.0.1:3306)/test", sqltrace.WithServiceName("other-service"))
+	sqltrace.Register("mysql", &mysql.MySQLDriver{}, sqltrace.WithService("mysql-test"))
+	dbx, err := Open("mysql", "test:test@tcp(127.0.0.1:3306)/test", sqltrace.WithService("other-service"))
 	if err != nil {
 		log.Fatal(err)
 	}

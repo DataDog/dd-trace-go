@@ -9,10 +9,10 @@ import (
 	"sync"
 	"sync/atomic"
 
-	globalinternal "gopkg.in/DataDog/dd-trace-go.v1/internal"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry/internal"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry/internal/transport"
+	globalinternal "github.com/DataDog/dd-trace-go/v2/internal"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/internal"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/internal/transport"
 )
 
 var (
@@ -226,7 +226,7 @@ func globalClientCall(fun func(client Client)) {
 		if !globalClientRecorder.Record(fun) {
 			globalClientLogLossOnce.Do(func() {
 				msg := "telemetry: global client recorder queue is full, dropping telemetry data, please start the telemetry client earlier to avoid data loss"
-				log.Debug(msg)
+				log.Debug("%s\n", msg)
 				Log(LogError, msg, WithStacktrace())
 			})
 		}

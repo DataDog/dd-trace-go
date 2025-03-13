@@ -14,10 +14,10 @@ import (
 	"sync"
 	"time"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/remoteconfig"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/remoteconfig"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 
 	"github.com/DataDog/datadog-agent/pkg/remoteconfig/state"
 )
@@ -62,7 +62,7 @@ func convertRemoteSamplingRules(rules *[]rcSamplingRule) *[]SamplingRule {
 	}
 	var convertedRules []SamplingRule
 	for _, rule := range *rules {
-		if rule.Tags != nil && len(rule.Tags) != 0 {
+		if rule.Tags != nil {
 			tags := make(map[string]*regexp.Regexp, len(rule.Tags))
 			tagsStrs := make(map[string]string, len(rule.Tags))
 			for _, tag := range rule.Tags {
@@ -219,11 +219,11 @@ func (t *tracer) onRemoteConfigUpdate(u remoteconfig.ProductUpdate) map[string]s
 			telemConfigs = append(telemConfigs, t.config.globalTags.toTelemetry())
 		}
 		if c.LibConfig.Enabled != nil {
-			if t.config.enabled.current == true && *c.LibConfig.Enabled == false {
+			if t.config.enabled.current && !*c.LibConfig.Enabled {
 				log.Debug("Disabled APM Tracing through RC. Restart the service to enable it.")
 				t.config.enabled.handleRC(c.LibConfig.Enabled)
 				telemConfigs = append(telemConfigs, t.config.enabled.toTelemetry())
-			} else if t.config.enabled.current == false && *c.LibConfig.Enabled == true {
+			} else if !t.config.enabled.current && *c.LibConfig.Enabled {
 				log.Debug("APM Tracing is disabled. Restart the service to enable it.")
 			}
 		}

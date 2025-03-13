@@ -59,9 +59,8 @@ func (z *ciTestCyclePayload) DecodeMsg(dc *msgp.Reader) (err error) {
 					err = msgp.WrapError(err, "Metadata", za0001)
 					return
 				}
-				if za0002 == nil {
-					za0002 = make(map[string]string, zb0003)
-				} else if len(za0002) > 0 {
+				za0002 = make(map[string]string, zb0003)
+				if len(za0002) > 0 {
 					for key := range za0002 {
 						delete(za0002, key)
 					}
@@ -654,7 +653,6 @@ func (z *tslvSpan) EncodeMsg(en *msgp.Writer) (err error) {
 	// check for omitted fields
 	zb0001Len := uint32(16)
 	var zb0001Mask uint16 /* 16 bits */
-	_ = zb0001Mask
 	if z.SessionID == 0 {
 		zb0001Len--
 		zb0001Mask |= 0x1

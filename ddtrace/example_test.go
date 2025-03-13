@@ -12,13 +12,9 @@ import (
 	"os/signal"
 	"syscall"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/opentracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-
-	opentracing "github.com/opentracing/opentracing-go"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 )
 
 // The below example illustrates a simple use case using the "tracer" package,
@@ -43,15 +39,10 @@ func Example_datadog() {
 	defer span.Finish()
 
 	// Create a child of it, computing the time needed to read a file.
-	child := tracer.StartSpan("read.file", tracer.ChildOf(span.Context()))
+	child := span.StartChild("read.file")
 	child.SetTag(ext.ResourceName, "test.json")
 
-	// If you are using 128 bit trace ids and want to generate the high
-	// order bits, cast the span's context to ddtrace.SpanContextW3C.
-	// See Issue #1677
-	if w3Cctx, ok := child.Context().(ddtrace.SpanContextW3C); ok {
-		fmt.Printf("128 bit trace id = %s\n", w3Cctx.TraceID128())
-	}
+	fmt.Printf("128 bit trace id = %s\n", child.Context().TraceID())
 
 	// Perform an operation.
 	_, err := os.ReadFile("~/test.json")
@@ -62,19 +53,6 @@ func Example_datadog() {
 	if err != nil {
 		log.Fatal(err)
 	}
-}
-
-// The below example illustrates how to set up an opentracing.Tracer using Datadog's
-// tracer.
-func Example_opentracing() {
-	// Start a Datadog tracer, optionally providing a set of options,
-	// returning an opentracing.Tracer which wraps it.
-	t := opentracer.New(tracer.WithAgentAddr("host:port"))
-	defer tracer.Stop() // important for data integrity (flushes any leftovers)
-
-	// Use it with the Opentracing API. The (already started) Datadog tracer
-	// may be used in parallel with the Opentracing API if desired.
-	opentracing.SetGlobalTracer(t)
 }
 
 // The code below illustrates a scenario of how one could use a mock tracer in tests

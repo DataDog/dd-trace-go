@@ -10,20 +10,23 @@ import (
 	"log"
 	"net/http"
 
-	restfultrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/emicklei/go-restful.v3"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	restfultrace "github.com/DataDog/dd-trace-go/contrib/emicklei/go-restful.v3/v2"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 
 	"github.com/emicklei/go-restful/v3"
 )
 
 // To start tracing requests, add the trace filter to your go-restful router.
 func Example() {
+	tracer.Start()
+	defer tracer.Stop()
+
 	// create new go-restful service
 	ws := new(restful.WebService)
 
 	// create the Datadog filter
 	filter := restfultrace.FilterFunc(
-		restfultrace.WithServiceName("my-service"),
+		restfultrace.WithService("my-service"),
 	)
 
 	// use it
@@ -31,7 +34,7 @@ func Example() {
 
 	// set endpoint
 	ws.Route(ws.GET("/hello").To(
-		func(request *restful.Request, response *restful.Response) {
+		func(_ *restful.Request, response *restful.Response) {
 			io.WriteString(response, "world")
 		}))
 	restful.Add(ws)
@@ -41,13 +44,16 @@ func Example() {
 }
 
 func Example_spanFromContext() {
+	tracer.Start()
+	defer tracer.Stop()
+
 	ws := new(restful.WebService)
 	ws.Filter(restfultrace.FilterFunc(
-		restfultrace.WithServiceName("my-service"),
+		restfultrace.WithService("my-service"),
 	))
 
 	ws.Route(ws.GET("/image/encode").To(
-		func(request *restful.Request, response *restful.Response) {
+		func(request *restful.Request, _ *restful.Response) {
 			// create a child span to track operation timing.
 			encodeSpan, _ := tracer.StartSpanFromContext(request.Request.Context(), "image.encode")
 			// encode a image

@@ -55,8 +55,9 @@ RUN if [ "${go_libddwaf_ref}" != "" ]; then \
 RUN go mod tidy
 
 ARG build_with_vendoring
+ARG go
 RUN set -ex; if [ "$build_with_vendoring" = "y" ]; then \
-      go mod vendor; \
+      go work vendor; \
     fi
 ARG build_tags
 RUN go env && go build -v -tags "$build_tags" -o smoke-test .

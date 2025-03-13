@@ -12,8 +12,11 @@ for file in "$@"; do
         # we might try to report gotestsum-report.xml multiple times, so don't
         # calculate codeowners more times than we need
         if [[ "$p" =~ \<testcase && ! "$p" =~ "file=" ]]; then
-            class=$(echo "$p" | grep -o '.v1/[^"]*"')
-            file_name=$(echo "${class:3}" | sed 's/.$//') # trim off the edges to get the path
+            # in v2, some of our paths contain a "/v2" before the subdirectory path, but
+            # the contribs do not. We optionally remove it.
+            class=$(echo "$p" | sed "s|/v2||")
+            class=$(echo "$class" | grep -o 'dd-trace-go/[^"]*"')
+            file_name=$(echo "${class:11}" | sed 's/.$//') # trim off the edges to get the path
             new_line=$(echo "$p" | sed "s|<testcase \([^>]*\)>|<testcase \1 file=\"$file_name\">|")
             echo "$new_line" >> "$temp_file"
         else 

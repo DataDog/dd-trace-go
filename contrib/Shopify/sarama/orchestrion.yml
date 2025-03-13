@@ -5,7 +5,7 @@
 ---
 # yaml-language-server: $schema=https://datadoghq.dev/orchestrion/schema.json
 meta:
-  name: gopkg.in/DataDog/dd-trace-go.v1/contrib/Shopify/sarama
+  name: github.com/DataDog/dd-trace-go/contrib/Shopify/sarama/v2
   description: Sarama is a Go library for Apache Kafka
 
 aspects:
@@ -17,7 +17,7 @@ aspects:
     advice:
       - wrap-expression:
           imports:
-            saramatrace: gopkg.in/DataDog/dd-trace-go.v1/contrib/Shopify/sarama
+            saramatrace: github.com/DataDog/dd-trace-go/contrib/Shopify/sarama/v2
             sarama: github.com/Shopify/sarama
           template: |-
             func(c sarama.Consumer, err error) (sarama.Consumer, error) {
@@ -35,7 +35,7 @@ aspects:
     advice:
       - wrap-expression:
           imports:
-            saramatrace: gopkg.in/DataDog/dd-trace-go.v1/contrib/Shopify/sarama
+            saramatrace: github.com/DataDog/dd-trace-go/contrib/Shopify/sarama/v2
             sarama: github.com/Shopify/sarama
           template: |-
             {{- $cfg := .Function.ArgumentOfType "sarama.Config" -}}
@@ -61,7 +61,7 @@ aspects:
     advice:
       - wrap-expression:
           imports:
-            saramatrace: gopkg.in/DataDog/dd-trace-go.v1/contrib/Shopify/sarama
+            saramatrace: github.com/DataDog/dd-trace-go/contrib/Shopify/sarama/v2
             sarama: github.com/Shopify/sarama
           template: |-
             {{- $cfg := .Function.ArgumentOfType "sarama.Config" -}}
