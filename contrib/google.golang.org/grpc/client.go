@@ -14,7 +14,6 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/grpclog"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/peer"
 )
@@ -226,8 +225,7 @@ func injectSpanIntoContext(ctx context.Context) context.Context {
 		md = metadata.MD{}
 	}
 	if err := tracer.Inject(span.Context(), grpcutil.MDCarrier(md)); err != nil {
-		// in practice this error should never really happen
-		grpclog.Warningf("ddtrace: failed to inject the span context into the gRPC metadata: %v", err)
+		instr.Logger().Warn("ddtrace: failed to inject the span context into the gRPC metadata: %v", err)
 	}
 	return metadata.NewOutgoingContext(ctx, md)
 }

@@ -34,7 +34,7 @@ func Load(pkg Package) *Instrumentation {
 
 	return &Instrumentation{
 		pkg:    pkg,
-		logger: logger{},
+		logger: newLogger(pkg),
 		info:   info,
 	}
 }
