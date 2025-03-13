@@ -307,9 +307,10 @@ func updateDependencies(dryRun bool, rootModule, mod GoMod, version string) erro
 		return nil
 	}
 
+	prefix := strings.Replace(rootModule.Module.Path, "/v2", "", 1)
 	for _, req := range mod.Require {
-		// Exclude dependencies that are not the root module.
-		if !strings.HasPrefix(req.Path, rootModule.Module.Path) {
+		// Exclude dependencies that are not part of dd-trace-go.
+		if !strings.HasPrefix(req.Path, prefix) {
 			continue
 		}
 		require := fmt.Sprintf("-require=%s@%s", req.Path, version)
