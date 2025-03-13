@@ -27,6 +27,9 @@ import (
 	"github.com/gorilla/mux"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
+
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec"
+	config2 "github.com/DataDog/dd-trace-go/v2/internal/appsec/config"
 )
 
 // AppsecCalloutExtensionService defines the struct that follows the ExternalProcessorServer interface.
@@ -78,7 +81,7 @@ func main() {
 func startService(config serviceExtensionConfig) error {
 	var extensionService AppsecCalloutExtensionService
 
-	tracer.Start(tracer.WithAppSecEnabled(true))
+	appsec.Start(config2.WithBlockingUnavailable(true))
 	defer tracer.Stop()
 	// TODO: Enable ASM standalone mode when it is developed (should be done for Q4 2024)
 
