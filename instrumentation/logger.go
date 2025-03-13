@@ -6,8 +6,9 @@
 package instrumentation
 
 import (
+	"fmt"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
-	telemetrylog "github.com/DataDog/dd-trace-go/v2/internal/telemetry/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 )
 
 type Logger interface {
@@ -17,32 +18,40 @@ type Logger interface {
 	Error(msg string, args ...any)
 }
 
-type logger struct{}
+type logger struct {
+	logOpts []telemetry.LogOption
+}
+
+func newLogger(pkg Package) *logger {
+	return &logger{
+		logOpts: []telemetry.LogOption{telemetry.WithTags([]string{"integration:" + string(pkg)})},
+	}
+}
 
 func (l logger) Debug(msg string, args ...any) {
 	log.Debug(msg, args...)
 	if hasErrors(args...) {
-		telemetrylog.Debug(msg, args...)
+		telemetry.Log(telemetry.LogError, fmt.Sprintf(msg, args...), l.logOpts...)
 	}
 }
 
 func (l logger) Info(msg string, args ...any) {
 	log.Info(msg, args...)
 	if hasErrors(args...) {
-		telemetrylog.Debug(msg, args...)
+		telemetry.Log(telemetry.LogError, fmt.Sprintf(msg, args...), l.logOpts...)
 	}
 }
 
 func (l logger) Warn(msg string, args ...any) {
 	log.Warn(msg, args...)
 	if hasErrors(args...) {
-		telemetrylog.Warn(msg, args...)
+		telemetry.Log(telemetry.LogError, fmt.Sprintf(msg, args...), l.logOpts...)
 	}
 }
 
 func (l logger) Error(msg string, args ...any) {
 	log.Error(msg, args...)
-	telemetrylog.Error(msg, args...)
+	telemetry.Log(telemetry.LogError, fmt.Sprintf(msg, args...), l.logOpts...)
 }
 
 func hasErrors(args ...any) bool {

@@ -7,6 +7,8 @@ package log
 
 import (
 	"fmt"
+
+	internallog "github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 )
 
@@ -32,12 +34,12 @@ func Debug(format string, args ...any) {
 	log(telemetry.LogDebug, format, args)
 }
 
-// Warn sends a telemetry payload with a warning log message to the backend.
+// Warn sends a telemetry payload with a warning log message to the backend and the console as a debug log.
 func Warn(format string, args ...any) {
 	log(telemetry.LogWarn, format, args)
 }
 
-// Error sends a telemetry payload with an error log message to the backend.
+// Error sends a telemetry payload with an error log message to the backend and the console as a debug log.
 func Error(format string, args ...any) {
 	log(telemetry.LogError, format, args)
 }
@@ -45,4 +47,8 @@ func Error(format string, args ...any) {
 func log(lvl telemetry.LogLevel, format string, args []any) {
 	opts, fmtArgs := divideArgs(args)
 	telemetry.Log(lvl, fmt.Sprintf(format, fmtArgs...), opts...)
+
+	if lvl != telemetry.LogDebug {
+		internallog.Debug(format, fmtArgs...)
+	}
 }
