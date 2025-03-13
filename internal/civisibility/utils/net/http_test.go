@@ -318,15 +318,17 @@ func TestGzipDecompressionError(t *testing.T) {
 }
 
 func TestExponentialBackoffDelays(t *testing.T) {
-	start := time.Now()
+	synctest.Run(func() {
+		start := time.Now()
 
-	// Simulate exponential backoff with 3 retries and 1-second initial delay
-	for i := 0; i < 3; i++ {
-		exponentialBackoff(i, 1*time.Second)
-	}
+		// Simulate exponential backoff with 3 retries and 1-second initial delay
+		for i := 0; i < 3; i++ {
+			exponentialBackoff(i, 1*time.Second)
+		}
 
-	elapsed := time.Since(start)
-	assert.True(t, elapsed >= 7*time.Second, "Expected at least 7 seconds due to exponential backoff")
+		elapsed := time.Since(start)
+		assert.True(t, elapsed >= 7*time.Second, "Expected at least 7 seconds due to exponential backoff")
+	})
 }
 
 func TestCreateMultipartFormDataWithUnsupportedContentType(t *testing.T) {
