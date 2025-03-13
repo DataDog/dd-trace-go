@@ -74,11 +74,15 @@ func TestAppendMiddleware(t *testing.T) {
 			AppendMiddleware(&awsCfg)
 
 			sqsClient := sqs.NewFromConfig(awsCfg)
-			// TODO(darccio): assert.NoError
-			sqsClient.SendMessage(context.Background(), &sqs.SendMessageInput{
+			_, err := sqsClient.SendMessage(context.Background(), &sqs.SendMessageInput{
 				MessageBody: aws.String("foobar"),
 				QueueUrl:    aws.String("https://sqs.us-west-2.amazonaws.com/123456789012/MyQueueName"),
 			})
+			if tt.expectedStatusCode == 200 {
+				require.NoError(t, err)
+			} else {
+				require.Error(t, err)
+			}
 
 			spans := mt.FinishedSpans()
 			require.Len(t, spans, 1)
@@ -151,10 +155,15 @@ func TestAppendMiddlewareSqsDeleteMessage(t *testing.T) {
 			AppendMiddleware(&awsCfg)
 
 			sqsClient := sqs.NewFromConfig(awsCfg)
-			sqsClient.DeleteMessage(context.Background(), &sqs.DeleteMessageInput{
+			_, err := sqsClient.DeleteMessage(context.Background(), &sqs.DeleteMessageInput{
 				QueueUrl:      aws.String("https://sqs.us-west-2.amazonaws.com/123456789012/MyQueueName"),
 				ReceiptHandle: aws.String("foobar"),
 			})
+			if tt.expectedStatusCode == 200 {
+				require.NoError(t, err)
+			} else {
+				require.Error(t, err)
+			}
 
 			spans := mt.FinishedSpans()
 			require.Len(t, spans, 1)
@@ -227,9 +236,14 @@ func TestAppendMiddlewareSqsReceiveMessage(t *testing.T) {
 			AppendMiddleware(&awsCfg)
 
 			sqsClient := sqs.NewFromConfig(awsCfg)
-			sqsClient.ReceiveMessage(context.Background(), &sqs.ReceiveMessageInput{
+			_, err := sqsClient.ReceiveMessage(context.Background(), &sqs.ReceiveMessageInput{
 				QueueUrl: aws.String("https://sqs.us-west-2.amazonaws.com/123456789012/MyQueueName"),
 			})
+			if tt.expectedStatusCode == 200 {
+				require.NoError(t, err)
+			} else {
+				require.Error(t, err)
+			}
 
 			spans := mt.FinishedSpans()
 			require.Len(t, spans, 1)
@@ -363,9 +377,14 @@ func TestAppendMiddlewareS3ListObjects(t *testing.T) {
 			AppendMiddleware(&awsCfg)
 
 			s3Client := s3.NewFromConfig(awsCfg)
-			s3Client.ListObjects(context.Background(), &s3.ListObjectsInput{
+			_, err := s3Client.ListObjects(context.Background(), &s3.ListObjectsInput{
 				Bucket: aws.String("MyBucketName"),
 			})
+			if tt.expectedStatusCode == 200 {
+				require.NoError(t, err)
+			} else {
+				require.Error(t, err)
+			}
 
 			spans := mt.FinishedSpans()
 			require.Len(t, spans, 1)
@@ -461,7 +480,12 @@ func TestAppendMiddlewareSnsPublish(t *testing.T) {
 			AppendMiddleware(&awsCfg)
 
 			snsClient := sns.NewFromConfig(awsCfg)
-			snsClient.Publish(context.Background(), tt.publishInput)
+			_, err := snsClient.Publish(context.Background(), tt.publishInput)
+			if tt.expectedStatusCode == 200 {
+				require.NoError(t, err)
+			} else {
+				require.Error(t, err)
+			}
 
 			spans := mt.FinishedSpans()
 			require.Len(t, spans, 1)
@@ -494,7 +518,7 @@ func TestAppendMiddlewareSnsPublish(t *testing.T) {
 
 			// Decode and verify the injected trace context
 			var traceContext map[string]string
-			err := json.Unmarshal(ddAttr.BinaryValue, &traceContext)
+			err = json.Unmarshal(ddAttr.BinaryValue, &traceContext)
 			assert.NoError(t, err)
 			assert.Contains(t, traceContext, "x-datadog-trace-id")
 			assert.Contains(t, traceContext, "x-datadog-parent-id")
@@ -624,11 +648,16 @@ func TestAppendMiddlewareKinesisPutRecord(t *testing.T) {
 			AppendMiddleware(&awsCfg)
 
 			kinesisClient := kinesis.NewFromConfig(awsCfg)
-			kinesisClient.PutRecord(context.Background(), &kinesis.PutRecordInput{
+			_, err := kinesisClient.PutRecord(context.Background(), &kinesis.PutRecordInput{
 				StreamName:   aws.String("my-kinesis-stream"),
 				Data:         []byte("Hello, Kinesis!"),
 				PartitionKey: aws.String("my-partition-key"),
 			})
+			if tt.expectedStatusCode == 200 {
+				require.NoError(t, err)
+			} else {
+				require.Error(t, err)
+			}
 
 			spans := mt.FinishedSpans()
 			require.Len(t, spans, 1)
@@ -698,9 +727,14 @@ func TestAppendMiddlewareEventBridgePutRule(t *testing.T) {
 			AppendMiddleware(&awsCfg)
 
 			eventbridgeClient := eventbridge.NewFromConfig(awsCfg)
-			eventbridgeClient.PutRule(context.Background(), &eventbridge.PutRuleInput{
+			_, err := eventbridgeClient.PutRule(context.Background(), &eventbridge.PutRuleInput{
 				Name: aws.String("my-event-rule-name"),
 			})
+			if tt.expectedStatusCode == 200 {
+				require.NoError(t, err)
+			} else {
+				require.Error(t, err)
+			}
 
 			spans := mt.FinishedSpans()
 			require.Len(t, spans, 1)
@@ -826,9 +860,14 @@ func TestAppendMiddlewareSfnDescribeStateMachine(t *testing.T) {
 			AppendMiddleware(&awsCfg)
 
 			sfnClient := sfn.NewFromConfig(awsCfg)
-			sfnClient.DescribeStateMachine(context.Background(), &sfn.DescribeStateMachineInput{
+			_, err := sfnClient.DescribeStateMachine(context.Background(), &sfn.DescribeStateMachineInput{
 				StateMachineArn: aws.String("arn:aws:states:us-west-2:123456789012:stateMachine:HelloWorld-StateMachine"),
 			})
+			if tt.expectedStatusCode == 200 {
+				require.NoError(t, err)
+			} else {
+				require.Error(t, err)
+			}
 
 			spans := mt.FinishedSpans()
 			require.Len(t, spans, 1)
