@@ -3,7 +3,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2024 Datadog, Inc.
 
-package go_control_plane
+package gocontrolplane
 
 import (
 	"context"
@@ -335,7 +335,7 @@ func doBlockResponse(writer *fakeResponseWriter) *envoyextproc.ProcessingRespons
 		})
 	}
 
-	var int32StatusCode int32 = 0
+	var int32StatusCode int32
 	if writer.status > 0 && writer.status <= math.MaxInt32 {
 		int32StatusCode = int32(writer.status)
 	}

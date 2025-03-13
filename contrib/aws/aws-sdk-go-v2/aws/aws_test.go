@@ -57,7 +57,7 @@ func TestAppendMiddleware(t *testing.T) {
 			server := mockAWS(tt.expectedStatusCode)
 			defer server.Close()
 
-			resolver := aws.EndpointResolverFunc(func(service, region string) (aws.Endpoint, error) {
+			resolver := aws.EndpointResolverFunc(func(_, _ string) (aws.Endpoint, error) {
 				return aws.Endpoint{
 					PartitionID:   "aws",
 					URL:           server.URL,
@@ -134,7 +134,7 @@ func TestAppendMiddlewareSqsDeleteMessage(t *testing.T) {
 			server := mockAWS(tt.expectedStatusCode)
 			defer server.Close()
 
-			resolver := aws.EndpointResolverFunc(func(service, region string) (aws.Endpoint, error) {
+			resolver := aws.EndpointResolverFunc(func(_, _ string) (aws.Endpoint, error) {
 				return aws.Endpoint{
 					PartitionID:   "aws",
 					URL:           server.URL,
@@ -210,7 +210,7 @@ func TestAppendMiddlewareSqsReceiveMessage(t *testing.T) {
 			server := mockAWS(tt.expectedStatusCode)
 			defer server.Close()
 
-			resolver := aws.EndpointResolverFunc(func(service, region string) (aws.Endpoint, error) {
+			resolver := aws.EndpointResolverFunc(func(_, _ string) (aws.Endpoint, error) {
 				return aws.Endpoint{
 					PartitionID:   "aws",
 					URL:           server.URL,
@@ -268,7 +268,7 @@ func TestAppendMiddlewareSqsSendMessage(t *testing.T) {
 	server := mockAWS(expectedStatusCode)
 	defer server.Close()
 
-	resolver := aws.EndpointResolverFunc(func(service, region string) (aws.Endpoint, error) {
+	resolver := aws.EndpointResolverFunc(func(_, _ string) (aws.Endpoint, error) {
 		return aws.Endpoint{
 			PartitionID:   "aws",
 			URL:           server.URL,
@@ -346,7 +346,7 @@ func TestAppendMiddlewareS3ListObjects(t *testing.T) {
 			server := mockAWS(tt.expectedStatusCode)
 			defer server.Close()
 
-			resolver := aws.EndpointResolverFunc(func(service, region string) (aws.Endpoint, error) {
+			resolver := aws.EndpointResolverFunc(func(_, _ string) (aws.Endpoint, error) {
 				return aws.Endpoint{
 					PartitionID:   "aws",
 					URL:           server.URL,
@@ -444,7 +444,7 @@ func TestAppendMiddlewareSnsPublish(t *testing.T) {
 			server := mockAWS(tt.expectedStatusCode)
 			defer server.Close()
 
-			resolver := aws.EndpointResolverFunc(func(service, region string) (aws.Endpoint, error) {
+			resolver := aws.EndpointResolverFunc(func(_, _ string) (aws.Endpoint, error) {
 				return aws.Endpoint{
 					PartitionID:   "aws",
 					URL:           server.URL,
@@ -530,7 +530,7 @@ func TestAppendMiddlewareDynamodbGetItem(t *testing.T) {
 			server := mockAWS(tt.expectedStatusCode)
 			defer server.Close()
 
-			resolver := aws.EndpointResolverFunc(func(service, region string) (aws.Endpoint, error) {
+			resolver := aws.EndpointResolverFunc(func(_, _ string) (aws.Endpoint, error) {
 				return aws.Endpoint{
 					PartitionID:   "aws",
 					URL:           server.URL,
@@ -607,7 +607,7 @@ func TestAppendMiddlewareKinesisPutRecord(t *testing.T) {
 			server := mockAWS(tt.expectedStatusCode)
 			defer server.Close()
 
-			resolver := aws.EndpointResolverFunc(func(service, region string) (aws.Endpoint, error) {
+			resolver := aws.EndpointResolverFunc(func(_, _ string) (aws.Endpoint, error) {
 				return aws.Endpoint{
 					PartitionID:   "aws",
 					URL:           server.URL,
@@ -681,7 +681,7 @@ func TestAppendMiddlewareEventBridgePutRule(t *testing.T) {
 			server := mockAWS(tt.expectedStatusCode)
 			defer server.Close()
 
-			resolver := aws.EndpointResolverFunc(func(service, region string) (aws.Endpoint, error) {
+			resolver := aws.EndpointResolverFunc(func(_, _ string) (aws.Endpoint, error) {
 				return aws.Endpoint{
 					PartitionID:   "aws",
 					URL:           server.URL,
@@ -735,7 +735,7 @@ func TestAppendMiddlewareEventBridgePutEvents(t *testing.T) {
 	server := mockAWS(expectedStatusCode)
 	defer server.Close()
 
-	resolver := aws.EndpointResolverFunc(func(service, region string) (aws.Endpoint, error) {
+	resolver := aws.EndpointResolverFunc(func(_, _ string) (aws.Endpoint, error) {
 		return aws.Endpoint{
 			PartitionID:   "aws",
 			URL:           server.URL,
@@ -809,7 +809,7 @@ func TestAppendMiddlewareSfnDescribeStateMachine(t *testing.T) {
 			server := mockAWS(tt.expectedStatusCode)
 			defer server.Close()
 
-			resolver := aws.EndpointResolverFunc(func(service, region string) (aws.Endpoint, error) {
+			resolver := aws.EndpointResolverFunc(func(_, _ string) (aws.Endpoint, error) {
 				return aws.Endpoint{
 					PartitionID:   "aws",
 					URL:           server.URL,
@@ -859,7 +859,7 @@ func TestAppendMiddleware_WithNoTracer(t *testing.T) {
 	server := mockAWS(200)
 	defer server.Close()
 
-	resolver := aws.EndpointResolverFunc(func(service, region string) (aws.Endpoint, error) {
+	resolver := aws.EndpointResolverFunc(func(_, _ string) (aws.Endpoint, error) {
 		return aws.Endpoint{
 			PartitionID:   "aws",
 			URL:           server.URL,
@@ -883,7 +883,7 @@ func TestAppendMiddleware_WithNoTracer(t *testing.T) {
 
 func mockAWS(statusCode int) *httptest.Server {
 	return httptest.NewServer(http.HandlerFunc(
-		func(w http.ResponseWriter, r *http.Request) {
+		func(w http.ResponseWriter, _ *http.Request) {
 			w.Header().Set("X-Amz-RequestId", "test_req")
 			w.WriteHeader(statusCode)
 			w.Write([]byte(`{}`))
@@ -942,7 +942,7 @@ func TestAppendMiddleware_WithOpts(t *testing.T) {
 			server := mockAWS(200)
 			defer server.Close()
 
-			resolver := aws.EndpointResolverFunc(func(service, region string) (aws.Endpoint, error) {
+			resolver := aws.EndpointResolverFunc(func(_, _ string) (aws.Endpoint, error) {
 				return aws.Endpoint{
 					PartitionID:   "aws",
 					URL:           server.URL,
@@ -995,7 +995,7 @@ func TestHTTPCredentials(t *testing.T) {
 	require.NoError(t, err)
 	u.User = url.UserPassword("myuser", "mypassword")
 
-	resolver := aws.EndpointResolverFunc(func(service, region string) (aws.Endpoint, error) {
+	resolver := aws.EndpointResolverFunc(func(_, _ string) (aws.Endpoint, error) {
 		return aws.Endpoint{
 			PartitionID:   "aws",
 			URL:           u.String(),
@@ -1038,13 +1038,13 @@ func TestWithErrorCheck(t *testing.T) {
 		},
 		{
 			name: "with errCheck true",
-			opts: []Option{WithErrorCheck(func(err error) bool {
+			opts: []Option{WithErrorCheck(func(_ error) bool {
 				return true
 			})},
 			errExist: true,
 		}, {
 			name: "with errCheck false",
-			opts: []Option{WithErrorCheck(func(err error) bool {
+			opts: []Option{WithErrorCheck(func(_ error) bool {
 				return false
 			})},
 			errExist: false,
@@ -1058,7 +1058,7 @@ func TestWithErrorCheck(t *testing.T) {
 			server := mockAWS(400)
 			defer server.Close()
 
-			resolver := aws.EndpointResolverFunc(func(service, region string) (aws.Endpoint, error) {
+			resolver := aws.EndpointResolverFunc(func(_, _ string) (aws.Endpoint, error) {
 				return aws.Endpoint{
 					PartitionID:   "aws",
 					URL:           server.URL,

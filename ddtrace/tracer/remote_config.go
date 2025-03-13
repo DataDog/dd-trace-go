@@ -62,7 +62,7 @@ func convertRemoteSamplingRules(rules *[]rcSamplingRule) *[]SamplingRule {
 	}
 	var convertedRules []SamplingRule
 	for _, rule := range *rules {
-		if rule.Tags != nil && len(rule.Tags) != 0 {
+		if rule.Tags != nil {
 			tags := make(map[string]*regexp.Regexp, len(rule.Tags))
 			tagsStrs := make(map[string]string, len(rule.Tags))
 			for _, tag := range rule.Tags {
@@ -201,20 +201,6 @@ func (t *tracer) onRemoteConfigUpdate(u remoteconfig.ProductUpdate) map[string]s
 			statuses[path] = state.ApplyStatus{State: state.ApplyStateError, Error: err.Error()}
 			continue
 		}
-		if c.ServiceTarget.Service != t.config.serviceName {
-			log.Debug(
-				"Skipping config for service %s. Current service is %s",
-				c.ServiceTarget.Service,
-				t.config.serviceName,
-			)
-			statuses[path] = state.ApplyStatus{State: state.ApplyStateError, Error: "service mismatch"}
-			continue
-		}
-		if c.ServiceTarget.Env != t.config.env {
-			log.Debug("Skipping config for env %s. Current env is %s", c.ServiceTarget.Env, t.config.env)
-			statuses[path] = state.ApplyStatus{State: state.ApplyStateError, Error: "env mismatch"}
-			continue
-		}
 		statuses[path] = state.ApplyStatus{State: state.ApplyStateAcknowledged}
 		updated := t.config.traceSampleRate.handleRC(c.LibConfig.SamplingRate)
 		if updated {
@@ -233,11 +219,11 @@ func (t *tracer) onRemoteConfigUpdate(u remoteconfig.ProductUpdate) map[string]s
 			telemConfigs = append(telemConfigs, t.config.globalTags.toTelemetry())
 		}
 		if c.LibConfig.Enabled != nil {
-			if t.config.enabled.current == true && *c.LibConfig.Enabled == false {
+			if t.config.enabled.current && !*c.LibConfig.Enabled {
 				log.Debug("Disabled APM Tracing through RC. Restart the service to enable it.")
 				t.config.enabled.handleRC(c.LibConfig.Enabled)
 				telemConfigs = append(telemConfigs, t.config.enabled.toTelemetry())
-			} else if t.config.enabled.current == false && *c.LibConfig.Enabled == true {
+			} else if !t.config.enabled.current && *c.LibConfig.Enabled {
 				log.Debug("APM Tracing is disabled. Restart the service to enable it.")
 			}
 		}

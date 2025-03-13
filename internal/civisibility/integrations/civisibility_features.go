@@ -134,12 +134,12 @@ func ensureAdditionalFeaturesInitialization(serviceName string) {
 		}()
 
 		// set the default values for the additional tags
-		additionalTags[constants.LibraryCapabilitiesEarlyFlakeDetection] = "false"
-		additionalTags[constants.LibraryCapabilitiesAutoTestRetries] = "false"
-		additionalTags[constants.LibraryCapabilitiesTestImpactAnalysis] = "false"
-		additionalTags[constants.LibraryCapabilitiesTestManagementQuarantine] = "false"
-		additionalTags[constants.LibraryCapabilitiesTestManagementDisable] = "false"
-		additionalTags[constants.LibraryCapabilitiesTestManagementAttemptToFix] = "false"
+		additionalTags[constants.LibraryCapabilitiesEarlyFlakeDetection] = "1"
+		additionalTags[constants.LibraryCapabilitiesAutoTestRetries] = "1"
+		additionalTags[constants.LibraryCapabilitiesTestImpactAnalysis] = "1"
+		additionalTags[constants.LibraryCapabilitiesTestManagementQuarantine] = "1"
+		additionalTags[constants.LibraryCapabilitiesTestManagementDisable] = "1"
+		additionalTags[constants.LibraryCapabilitiesTestManagementAttemptToFix] = "2"
 
 		// mutex to protect the additional tags map
 		var aTagsMutex sync.Mutex
@@ -164,7 +164,6 @@ func ensureAdditionalFeaturesInitialization(serviceName string) {
 					ciVisibilityKnownTests = *ciEfdData
 					log.Debug("civisibility: known tests data loaded.")
 				}
-				setAdditionalTags(constants.LibraryCapabilitiesEarlyFlakeDetection, "true")
 			} else {
 				// "known_tests_enabled" parameter works as a kill-switch for EFD, so if “known_tests_enabled” is false it
 				// will disable EFD even if “early_flake_detection.enabled” is set to true (which should not happen normally,
@@ -188,7 +187,6 @@ func ensureAdditionalFeaturesInitialization(serviceName string) {
 						RemainingTotalRetryCount: totalRetriesCount,
 					}
 					log.Debug("civisibility: automatic test retries enabled [retryCount: %v, totalRetryCount: %v]", retryCount, totalRetriesCount)
-					setAdditionalTags(constants.LibraryCapabilitiesAutoTestRetries, "true")
 				} else {
 					log.Warn("civisibility: flaky test retries was disabled by the environment variable")
 					ciVisibilitySettings.FlakyTestRetriesEnabled = false
@@ -210,7 +208,6 @@ func ensureAdditionalFeaturesInitialization(serviceName string) {
 					setAdditionalTags(constants.ItrCorrelationIDTag, correlationID)
 					ciVisibilitySkippables = skippableTests
 				}
-				setAdditionalTags(constants.LibraryCapabilitiesTestImpactAnalysis, "true")
 			}
 			wg.Done()
 		}()
@@ -233,9 +230,6 @@ func ensureAdditionalFeaturesInitialization(serviceName string) {
 						ciVisibilityTestManagementTests = *testManagementTests
 						log.Debug("civisibility: test management loaded [attemptToFixRetries: %v]", ciVisibilitySettings.TestManagement.AttemptToFixRetries)
 					}
-					setAdditionalTags(constants.LibraryCapabilitiesTestManagementQuarantine, "true")
-					setAdditionalTags(constants.LibraryCapabilitiesTestManagementDisable, "true")
-					setAdditionalTags(constants.LibraryCapabilitiesTestManagementAttemptToFix, "true")
 				} else {
 					ciVisibilitySettings.TestManagement.Enabled = false
 					log.Warn("civisibility: test management was disabled by the environment variable")

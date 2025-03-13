@@ -309,13 +309,13 @@ func TestReportAbandonedSpans(t *testing.T) {
 }
 
 func TestDebugAbandonedSpansOff(t *testing.T) {
-	assert := assert.New(t)
 	tp := new(log.RecordLogger)
 	tracer, _, _, stop, err := startTestTracer(t, WithLogger(tp))
-	assert.Nil(err)
+	assert.Nil(t, err)
 	defer stop()
 
 	t.Run("default", func(t *testing.T) {
+		assert := assert.New(t)
 		assert.False(tracer.config.debugAbandonedSpans)
 		assert.Equal(time.Duration(0), tracer.config.spanTimeout)
 		expected := "Abandoned spans logs enabled."

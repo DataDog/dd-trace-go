@@ -225,7 +225,7 @@ func TestHTTPCredentials(t *testing.T) {
 	require.NoError(t, err)
 	u.User = url.UserPassword("myuser", "mypassword")
 
-	resolver := endpoints.ResolverFunc(func(service, region string, opts ...func(*endpoints.Options)) (endpoints.ResolvedEndpoint, error) {
+	resolver := endpoints.ResolverFunc(func(_, _ string, _ ...func(*endpoints.Options)) (endpoints.ResolvedEndpoint, error) {
 		return endpoints.ResolvedEndpoint{
 			PartitionID:   "aws",
 			URL:           u.String(),
@@ -284,7 +284,7 @@ func TestWithErrorCheck(t *testing.T) {
 	}
 
 	t.Run("defaults", testOpts(true))
-	t.Run("errcheck", testOpts(false, WithErrorCheck(func(err error) bool {
+	t.Run("errcheck", testOpts(false, WithErrorCheck(func(_ error) bool {
 		return false
 	})))
 }

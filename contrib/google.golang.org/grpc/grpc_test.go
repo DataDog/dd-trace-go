@@ -943,12 +943,12 @@ func BenchmarkUnaryServerInterceptor(b *testing.B) {
 		tracer.WithServiceVersion("0.1.2"))
 	defer tracer.Stop()
 
-	doNothingOKGRPCHandler := func(ctx context.Context, req interface{}) (interface{}, error) {
+	doNothingOKGRPCHandler := func(_ context.Context, _ interface{}) (interface{}, error) {
 		return nil, nil
 	}
 
 	unknownErr := status.Error(codes.Unknown, "some unknown error")
-	doNothingErrorGRPCHandler := func(ctx context.Context, req interface{}) (interface{}, error) {
+	doNothingErrorGRPCHandler := func(_ context.Context, _ interface{}) (interface{}, error) {
 		return nil, unknownErr
 	}
 

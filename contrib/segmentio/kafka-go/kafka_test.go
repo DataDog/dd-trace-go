@@ -157,7 +157,7 @@ func genIntegrationTestSpans(t *testing.T, mt mocktracer.Tracer, writerOp func(t
 	writtenMessages := []kafka.Message{}
 
 	kw := testWriter()
-	kw.Completion = func(messages []kafka.Message, err error) {
+	kw.Completion = func(messages []kafka.Message, _ error) {
 		writtenMessages = append(writtenMessages, messages...)
 	}
 	w := WrapWriter(kw, writerOpts...)
@@ -225,7 +225,7 @@ func TestReadMessageFunctional(t *testing.T) {
 	assert.Equal(t, "queue", s0.Tag(ext.SpanType))
 	assert.Equal(t, float64(0), s0.Tag(ext.MessagingKafkaPartition))
 	assert.Equal(t, "segmentio/kafka-go", s0.Tag(ext.Component))
-	assert.Equal(t, "segmentio/kafka.go.v0", s0.Integration())
+	assert.Equal(t, "segmentio/kafka-go", s0.Integration())
 	assert.Equal(t, ext.SpanKindProducer, s0.Tag(ext.SpanKind))
 	assert.Equal(t, "kafka", s0.Tag(ext.MessagingSystem))
 	assert.Equal(t, "localhost:9092,localhost:9093,localhost:9094", s0.Tag(ext.KafkaBootstrapServers))
@@ -247,7 +247,7 @@ func TestReadMessageFunctional(t *testing.T) {
 	assert.Equal(t, "queue", s1.Tag(ext.SpanType))
 	assert.Equal(t, float64(0), s1.Tag(ext.MessagingKafkaPartition))
 	assert.Equal(t, "segmentio/kafka-go", s1.Tag(ext.Component))
-	assert.Equal(t, "segmentio/kafka.go.v0", s1.Integration())
+	assert.Equal(t, "segmentio/kafka-go", s1.Integration())
 	assert.Equal(t, ext.SpanKindConsumer, s1.Tag(ext.SpanKind))
 	assert.Equal(t, "kafka", s1.Tag(ext.MessagingSystem))
 	assert.Equal(t, "localhost:9092,localhost:9093,localhost:9094", s1.Tag(ext.KafkaBootstrapServers))
@@ -313,7 +313,7 @@ func TestFetchMessageFunctional(t *testing.T) {
 	assert.Equal(t, "queue", s0.Tag(ext.SpanType))
 	assert.Equal(t, float64(0), s0.Tag(ext.MessagingKafkaPartition))
 	assert.Equal(t, "segmentio/kafka-go", s0.Tag(ext.Component))
-	assert.Equal(t, "segmentio/kafka.go.v0", s0.Integration())
+	assert.Equal(t, "segmentio/kafka-go", s0.Integration())
 	assert.Equal(t, ext.SpanKindProducer, s0.Tag(ext.SpanKind))
 	assert.Equal(t, "kafka", s0.Tag(ext.MessagingSystem))
 	assert.Equal(t, "localhost:9092,localhost:9093,localhost:9094", s0.Tag(ext.KafkaBootstrapServers))
@@ -335,7 +335,7 @@ func TestFetchMessageFunctional(t *testing.T) {
 	assert.Equal(t, "queue", s1.Tag(ext.SpanType))
 	assert.Equal(t, float64(0), s1.Tag(ext.MessagingKafkaPartition))
 	assert.Equal(t, "segmentio/kafka-go", s1.Tag(ext.Component))
-	assert.Equal(t, "segmentio/kafka.go.v0", s1.Integration())
+	assert.Equal(t, "segmentio/kafka-go", s1.Integration())
 	assert.Equal(t, ext.SpanKindConsumer, s1.Tag(ext.SpanKind))
 	assert.Equal(t, "kafka", s1.Tag(ext.MessagingSystem))
 	assert.Equal(t, "localhost:9092,localhost:9093,localhost:9094", s1.Tag(ext.KafkaBootstrapServers))

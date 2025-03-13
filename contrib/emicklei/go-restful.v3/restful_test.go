@@ -26,7 +26,7 @@ func TestWithHeaderTags(t *testing.T) {
 	setupReq := func(opts ...Option) *http.Request {
 		ws := new(restful.WebService)
 		ws.Filter(FilterFunc(opts...))
-		ws.Route(ws.GET("/test").To(func(request *restful.Request, response *restful.Response) {
+		ws.Route(ws.GET("/test").To(func(_ *restful.Request, response *restful.Response) {
 			response.Write([]byte("test"))
 		}))
 
@@ -163,7 +163,7 @@ func TestError(t *testing.T) {
 
 	ws := new(restful.WebService)
 	ws.Filter(FilterFunc())
-	ws.Route(ws.GET("/err").To(func(request *restful.Request, response *restful.Response) {
+	ws.Route(ws.GET("/err").To(func(_ *restful.Request, response *restful.Response) {
 		response.WriteError(500, wantErr)
 	}))
 
@@ -202,7 +202,7 @@ func TestPropagation(t *testing.T) {
 
 	ws := new(restful.WebService)
 	ws.Filter(FilterFunc())
-	ws.Route(ws.GET("/user/{id}").To(func(request *restful.Request, response *restful.Response) {
+	ws.Route(ws.GET("/user/{id}").To(func(request *restful.Request, _ *restful.Response) {
 		span, ok := tracer.SpanFromContext(request.Request.Context())
 		assert.True(ok)
 		assert.Equal(mocktracer.MockSpan(span).ParentID(), mocktracer.MockSpan(pspan).SpanID())
@@ -218,7 +218,7 @@ func TestAnalyticsSettings(t *testing.T) {
 	assertRate := func(t *testing.T, mt mocktracer.Tracer, rate float64, opts ...Option) {
 		ws := new(restful.WebService)
 		ws.Filter(FilterFunc(opts...))
-		ws.Route(ws.GET("/user/{id}").To(func(request *restful.Request, response *restful.Response) {}))
+		ws.Route(ws.GET("/user/{id}").To(func(_ *restful.Request, _ *restful.Response) {}))
 
 		container := restful.NewContainer()
 		container.Add(ws)

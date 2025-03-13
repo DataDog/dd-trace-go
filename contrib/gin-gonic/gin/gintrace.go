@@ -83,9 +83,8 @@ func HTML(c *gin.Context, code int, name string, obj interface{}) {
 			err := fmt.Errorf("error rendering tmpl:%s: %s", name, r)
 			span.Finish(tracer.WithError(err))
 			panic(r)
-		} else {
-			span.Finish()
 		}
+		span.Finish()
 	}()
 	c.HTML(code, name, obj)
 }

@@ -7,7 +7,7 @@ import (
 )
 
 // DecodeMsg implements msgp.Decodable
-func (z *TracerMetadata) DecodeMsg(dc *msgp.Reader) (err error) {
+func (z *Metadata) DecodeMsg(dc *msgp.Reader) (err error) {
 	var field []byte
 	_ = field
 	var zb0001 uint32
@@ -31,9 +31,9 @@ func (z *TracerMetadata) DecodeMsg(dc *msgp.Reader) (err error) {
 				return
 			}
 		case "runtime_id":
-			z.RuntimeId, err = dc.ReadString()
+			z.RuntimeID, err = dc.ReadString()
 			if err != nil {
-				err = msgp.WrapError(err, "RuntimeId")
+				err = msgp.WrapError(err, "RuntimeID")
 				return
 			}
 		case "tracer_language":
@@ -84,7 +84,7 @@ func (z *TracerMetadata) DecodeMsg(dc *msgp.Reader) (err error) {
 }
 
 // EncodeMsg implements msgp.Encodable
-func (z *TracerMetadata) EncodeMsg(en *msgp.Writer) (err error) {
+func (z *Metadata) EncodeMsg(en *msgp.Writer) (err error) {
 	// map header, size 8
 	// write "schema_version"
 	err = en.Append(0x88, 0xae, 0x73, 0x63, 0x68, 0x65, 0x6d, 0x61, 0x5f, 0x76, 0x65, 0x72, 0x73, 0x69, 0x6f, 0x6e)
@@ -101,9 +101,9 @@ func (z *TracerMetadata) EncodeMsg(en *msgp.Writer) (err error) {
 	if err != nil {
 		return
 	}
-	err = en.WriteString(z.RuntimeId)
+	err = en.WriteString(z.RuntimeID)
 	if err != nil {
-		err = msgp.WrapError(err, "RuntimeId")
+		err = msgp.WrapError(err, "RuntimeID")
 		return
 	}
 	// write "tracer_language"
@@ -170,7 +170,7 @@ func (z *TracerMetadata) EncodeMsg(en *msgp.Writer) (err error) {
 }
 
 // MarshalMsg implements msgp.Marshaler
-func (z *TracerMetadata) MarshalMsg(b []byte) (o []byte, err error) {
+func (z *Metadata) MarshalMsg(b []byte) (o []byte, err error) {
 	o = msgp.Require(b, z.Msgsize())
 	// map header, size 8
 	// string "schema_version"
@@ -178,7 +178,7 @@ func (z *TracerMetadata) MarshalMsg(b []byte) (o []byte, err error) {
 	o = msgp.AppendUint8(o, z.SchemaVersion)
 	// string "runtime_id"
 	o = append(o, 0xaa, 0x72, 0x75, 0x6e, 0x74, 0x69, 0x6d, 0x65, 0x5f, 0x69, 0x64)
-	o = msgp.AppendString(o, z.RuntimeId)
+	o = msgp.AppendString(o, z.RuntimeID)
 	// string "tracer_language"
 	o = append(o, 0xaf, 0x74, 0x72, 0x61, 0x63, 0x65, 0x72, 0x5f, 0x6c, 0x61, 0x6e, 0x67, 0x75, 0x61, 0x67, 0x65)
 	o = msgp.AppendString(o, z.Language)
@@ -201,7 +201,7 @@ func (z *TracerMetadata) MarshalMsg(b []byte) (o []byte, err error) {
 }
 
 // UnmarshalMsg implements msgp.Unmarshaler
-func (z *TracerMetadata) UnmarshalMsg(bts []byte) (o []byte, err error) {
+func (z *Metadata) UnmarshalMsg(bts []byte) (o []byte, err error) {
 	var field []byte
 	_ = field
 	var zb0001 uint32
@@ -225,9 +225,9 @@ func (z *TracerMetadata) UnmarshalMsg(bts []byte) (o []byte, err error) {
 				return
 			}
 		case "runtime_id":
-			z.RuntimeId, bts, err = msgp.ReadStringBytes(bts)
+			z.RuntimeID, bts, err = msgp.ReadStringBytes(bts)
 			if err != nil {
-				err = msgp.WrapError(err, "RuntimeId")
+				err = msgp.WrapError(err, "RuntimeID")
 				return
 			}
 		case "tracer_language":
@@ -279,7 +279,7 @@ func (z *TracerMetadata) UnmarshalMsg(bts []byte) (o []byte, err error) {
 }
 
 // Msgsize returns an upper bound estimate of the number of bytes occupied by the serialized message
-func (z *TracerMetadata) Msgsize() (s int) {
-	s = 1 + 15 + msgp.Uint8Size + 11 + msgp.StringPrefixSize + len(z.RuntimeId) + 16 + msgp.StringPrefixSize + len(z.Language) + 15 + msgp.StringPrefixSize + len(z.Version) + 9 + msgp.StringPrefixSize + len(z.Hostname) + 13 + msgp.StringPrefixSize + len(z.ServiceName) + 12 + msgp.StringPrefixSize + len(z.ServiceEnvironment) + 16 + msgp.StringPrefixSize + len(z.ServiceVersion)
+func (z *Metadata) Msgsize() (s int) {
+	s = 1 + 15 + msgp.Uint8Size + 11 + msgp.StringPrefixSize + len(z.RuntimeID) + 16 + msgp.StringPrefixSize + len(z.Language) + 15 + msgp.StringPrefixSize + len(z.Version) + 9 + msgp.StringPrefixSize + len(z.Hostname) + 13 + msgp.StringPrefixSize + len(z.ServiceName) + 12 + msgp.StringPrefixSize + len(z.ServiceEnvironment) + 16 + msgp.StringPrefixSize + len(z.ServiceVersion)
 	return
 }

@@ -277,7 +277,7 @@ func (s *Span) AddLink(spanContext *SpanContext, attributes map[string]string) {
 	if hasSamplingDecision && samplingDecision >= ext.PriorityAutoKeep {
 		flags = uint32(1<<31 | 1)
 	} else if hasSamplingDecision {
-		flags = uint32(1<<31 | 0)
+		flags = uint32(1 << 31)
 	} else {
 		flags = uint32(0)
 	}

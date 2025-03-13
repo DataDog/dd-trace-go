@@ -318,8 +318,8 @@ func TestSubscribe(t *testing.T) {
 	client, err = newClient(DefaultClientConfig())
 	require.NoError(t, err)
 
-	var callback Callback = func(updates map[string]ProductUpdate) map[string]rc.ApplyStatus { return nil }
-	var pCallback ProductCallback = func(u ProductUpdate) map[string]rc.ApplyStatus { return nil }
+	var callback Callback = func(_ map[string]ProductUpdate) map[string]rc.ApplyStatus { return nil }
+	var pCallback ProductCallback = func(_ ProductUpdate) map[string]rc.ApplyStatus { return nil }
 
 	err = Subscribe("my-product", pCallback)
 	require.NoError(t, err)
@@ -360,7 +360,7 @@ func TestNewUpdateRequest(t *testing.T) {
 	require.NoError(t, err)
 	err = RegisterCapability(ASMActivation)
 	require.NoError(t, err)
-	err = Subscribe("my-second-product", func(u ProductUpdate) map[string]rc.ApplyStatus { return nil }, APMTracingSampleRate)
+	err = Subscribe("my-second-product", func(_ ProductUpdate) map[string]rc.ApplyStatus { return nil }, APMTracingSampleRate)
 	require.NoError(t, err)
 
 	b, err := client.newUpdateRequest()
@@ -393,7 +393,7 @@ func TestAsync(t *testing.T) {
 		capability := Capability(rand.Uint32() % 10)
 		wg.Add(1)
 		go func() {
-			callback := func(update ProductUpdate) map[string]rc.ApplyStatus { return nil }
+			callback := func(_ ProductUpdate) map[string]rc.ApplyStatus { return nil }
 			Subscribe(product, callback, capability)
 			wg.Done()
 		}()
@@ -432,7 +432,7 @@ func TestAsync(t *testing.T) {
 	}
 
 	// Callbacks
-	callback := func(updates map[string]ProductUpdate) map[string]rc.ApplyStatus { return nil }
+	callback := func(_ map[string]ProductUpdate) map[string]rc.ApplyStatus { return nil }
 	for i := 0; i < iterations; i++ {
 		wg.Add(1)
 		go func() {

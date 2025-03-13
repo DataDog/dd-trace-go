@@ -68,7 +68,7 @@ func TestHTTPHeadersCarrierForeachKeyError(t *testing.T) {
 	h := http.Header{}
 	h.Add("A", "x")
 	h.Add("B", "y")
-	got := HTTPHeadersCarrier(h).ForeachKey(func(k, v string) error {
+	got := HTTPHeadersCarrier(h).ForeachKey(func(k, _ string) error {
 		if k == "B" {
 			return want
 		}
@@ -99,7 +99,7 @@ func TestTextMapCarrierForeachKey(t *testing.T) {
 func TestTextMapCarrierForeachKeyError(t *testing.T) {
 	m := map[string]string{"A": "x", "B": "y"}
 	want := errors.New("random error")
-	got := TextMapCarrier(m).ForeachKey(func(k, v string) error {
+	got := TextMapCarrier(m).ForeachKey(func(_, _ string) error {
 		return want
 	})
 	assert.Equal(t, got, want)
@@ -443,7 +443,7 @@ func Test257CharacterDDTracestateLengh(t *testing.T) {
 	// iterating through propagatingTags map doesn't guarantee order in tracestate header
 	ddTag := strings.SplitN(headers[tracestateHeader], ",", 2)[0]
 	assert.Contains(ddTag, "s:2")
-	assert.Regexp(regexp.MustCompile("dd=[\\w:,]+"), ddTag)
+	assert.Regexp(regexp.MustCompile(`dd=[\w:,]+`), ddTag)
 	assert.LessOrEqual(len(ddTag), 256) // one of the propagated tags will not be propagated
 }
 
@@ -594,7 +594,7 @@ func TestTextMapPropagator(t *testing.T) {
 func TestEnvVars(t *testing.T) {
 	var testEnvs []map[string]string
 
-	s, c := httpmem.ServerAndClient(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	s, c := httpmem.ServerAndClient(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(404)
 	}))
 	defer s.Close()
@@ -1917,7 +1917,7 @@ func TestTraceContextPrecedence(t *testing.T) {
 
 // Assert that span links are generated only when trace headers contain divergent trace IDs
 func TestSpanLinks(t *testing.T) {
-	s, c := httpmem.ServerAndClient(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	s, c := httpmem.ServerAndClient(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(404)
 	}))
 	defer s.Close()
@@ -2014,7 +2014,7 @@ func TestW3CExtractsBaggage(t *testing.T) {
 	s, err := tracer.Extract(headers)
 	assert.NoError(t, err)
 	found := false
-	s.ForeachBaggageItem(func(k, v string) bool {
+	s.ForeachBaggageItem(func(k, _ string) bool {
 		if k == "something" {
 			found = true
 			return false
@@ -2459,7 +2459,7 @@ func FuzzParseTraceparent(f *testing.F) {
 }
 
 func FuzzExtractTraceID128(f *testing.F) {
-	f.Fuzz(func(t *testing.T, v string) {
+	f.Fuzz(func(_ *testing.T, v string) {
 		ctx := new(SpanContext)
 		extractTraceID128(ctx, v) // make sure it doesn't panic
 	})
@@ -2550,7 +2550,7 @@ func BenchmarkComposeTracestate(b *testing.B) {
 
 func TestStringMutator(t *testing.T) {
 	sm := &stringMutator{}
-	rx := regexp.MustCompile(",|~|;|[^\\x21-\\x7E]+")
+	rx := regexp.MustCompile(`,|~|;|[^\x21-\x7E]+`)
 	tc := []struct {
 		name  string
 		input string
@@ -2587,7 +2587,7 @@ func TestStringMutator(t *testing.T) {
 }
 
 func FuzzStringMutator(f *testing.F) {
-	rx := regexp.MustCompile(",|~|;|[^\\x21-\\x7E]+")
+	rx := regexp.MustCompile(`,|~|;|[^\x21-\x7E]+`)
 	f.Add("a,b;c~~~~d;")
 	f.Add("a,b👍👍👍;c~d👍;")
 	f.Add("=")
@@ -2760,8 +2760,7 @@ func TestInjectBaggageMaxBytes(t *testing.T) {
 	root := tracer.StartSpan("web.request")
 	ctx := root.Context()
 
-	baggageItems := make(map[string]string)
-	baggageItems = map[string]string{
+	baggageItems := map[string]string{
 		"key0": "o",
 		"key1": strings.Repeat("a", baggageMaxBytes/3),
 		"key2": strings.Repeat("b", baggageMaxBytes/3),

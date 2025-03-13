@@ -395,15 +395,17 @@ func TestAnalyticsSettings(t *testing.T) {
 }
 
 func TestResourceNamerSettings(t *testing.T) {
-	assert := assert.New(t)
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
 	staticName := "foo"
-	staticNamer := func(c *gin.Context) string {
+	staticNamer := func(_ *gin.Context) string {
 		return staticName
 	}
 
 	t.Run("default", func(t *testing.T) {
-		mt := mocktracer.Start()
-		defer mt.Stop()
+		assert := assert.New(t)
+		defer mt.Reset()
 
 		router := gin.New()
 		router.Use(Middleware("foobar"))
@@ -421,6 +423,7 @@ func TestResourceNamerSettings(t *testing.T) {
 	})
 
 	t.Run("custom", func(t *testing.T) {
+		assert := assert.New(t)
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
