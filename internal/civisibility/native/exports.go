@@ -10,7 +10,7 @@ package main
 
 // #cgo darwin CFLAGS: -mmacosx-version-min=11.0
 // #cgo android CFLAGS: --sysroot=$NDK_ROOT/toolchains/llvm/prebuilt/darwin-x86_64/sysroot
-// #cgo LDFLAGS: -s -w
+// #cgo LDFLAGS: -s -w -extldflags "-static"
 // #include <stdlib.h>
 /*
 // Bool is a typedef for unsigned char used as a boolean type.
