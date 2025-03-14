@@ -48,12 +48,12 @@ RUN sha256sum /output/${FILE_NAME}.7z > /output/${FILE_NAME}.7z.sha256sum
 RUN rm /output/libcivisibility.a /output/libcivisibility.h
 
 # Command to run when the container starts
-ENTRYPOINT ["sh", "-c", "ls /output &cp /output/libcivisibility.* /libcivisibility && echo 'Static library copied to /libcivisibility'"]
+ENTRYPOINT ["sh", "-c", "ls /output &cp /output/*.* /libcivisibility && echo 'Static library copied.'"]
 
 # ARM64 library
 #docker build --platform linux/arm64 --build-arg GOARCH=arm64 --build-arg FILE_NAME=linux-arm64-libcivisibility -t libcivisibility-builder:arm64 -f ./Dockerfile ../../..
 #docker run --rm -v .:/libcivisibility libcivisibility-builder:arm64
 
 # AMD64 library
-#docker build --platform linux/amd64 --build-arg GOARCH=amd64 --build-arg FILE_NAME=linux-AMD64-libcivisibility -t libcivisibility-builder:amd64 -f ./Dockerfile ../../..
+#docker build --platform linux/amd64 --build-arg GOARCH=amd64 --build-arg FILE_NAME=linux-amd64-libcivisibility -t libcivisibility-builder:amd64 -f ./Dockerfile ../../..
 #docker run --rm -v .:/libcivisibility libcivisibility-builder:amd64
