@@ -14,6 +14,8 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/config"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/telemetrytest"
 
 	waf "github.com/DataDog/go-libddwaf/v3"
 	"github.com/stretchr/testify/assert"
@@ -39,4 +41,21 @@ func TestStartStop(t *testing.T) {
 	os.Unsetenv(config.EnvEnabled)
 	testutils.StartAppSec(t)
 	appsec.Stop()
+}
+
+func TestWafInitMetric(t *testing.T) {
+	t.Setenv("DD_APPSEC_RULES", "testdata/fp.json")
+	telemetryClient := new(telemetrytest.RecordClient)
+	telemetry.MockClient(telemetryClient)
+	appsec.Start()
+	defer appsec.Stop()
+	if !appsec.Enabled() {
+		t.Skip("AppSec is disabled")
+	}
+
+	assert.Equal(t, 1.0, telemetryClient.Count(telemetry.NamespaceAppSec, "waf.init", []string{
+		"success:true",
+		"waf_version:" + waf.Version(),
+		"event_rules_version:1.4.2",
+	}).Get())
 }
