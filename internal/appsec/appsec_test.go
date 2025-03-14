@@ -14,6 +14,8 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/config"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/telemetrytest"
 
 	waf "github.com/DataDog/go-libddwaf/v3"
 	"github.com/stretchr/testify/assert"

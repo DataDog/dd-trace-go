@@ -18,7 +18,6 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/appsec/events"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/dyngo"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
-	telemetrylog "github.com/DataDog/dd-trace-go/v2/internal/telemetry/log"
 )
 
 // Run runs the WAF with the given address data and sends the results to the event receiver

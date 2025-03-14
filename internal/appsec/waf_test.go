@@ -7,9 +7,13 @@ package appsec_test
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
+	"fmt"
 	"io"
 	"io/fs"
+	"log"
+	"math/rand"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -20,7 +24,9 @@ import (
 
 	internal "github.com/DataDog/appsec-internal-go/appsec"
 	waf "github.com/DataDog/go-libddwaf/v3"
+	"github.com/stretchr/testify/assert"
 
+	sqltrace "github.com/DataDog/dd-trace-go/contrib/database/sql/v2"
 	pAppsec "github.com/DataDog/dd-trace-go/v2/appsec"
 	"github.com/DataDog/dd-trace-go/v2/appsec/events"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
@@ -32,6 +38,8 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/config"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/telemetrytest"
 
 	"github.com/stretchr/testify/require"
 )
@@ -450,23 +458,15 @@ func TestBlocking(t *testing.T) {
 				require.Contains(t, spans[0].Tag("_dd.appsec.json"), tc.ruleMatch)
 			}
 
-			metric := telemetryClient.Metrics[telemetrytest.MetricKey{
-				Namespace: telemetry.NamespaceAppSec,
-				Name:      "waf.requests",
-				Kind:      "count",
-				Tags: toTags(
-					"request_blocked:"+strconv.FormatBool(tc.status != 200),
-					"rule_triggered:"+strconv.FormatBool(tc.ruleMatch != ""),
-					"waf_timeout:false",
-					"rate_limited:false",
-					"waf_error:false",
-					"waf_version:"+waf.Version(),
-					"event_rules_version:1.4.2",
-				),
-			}]
-
-			require.NotNil(t, metric)
-			assert.Equal(t, 1.0, metric.Get())
+			assert.Equal(t, 1.0, telemetryClient.Count(telemetry.NamespaceAppSec, "waf.requests", []string{
+				"request_blocked:" + strconv.FormatBool(tc.status != 200),
+				"rule_triggered:" + strconv.FormatBool(tc.ruleMatch != ""),
+				"waf_timeout:false",
+				"rate_limited:false",
+				"waf_error:false",
+				"waf_version:" + waf.Version(),
+				"event_rules_version:1.4.2",
+			}).Get())
 		})
 	}
 }
@@ -531,6 +531,55 @@ func TestAPISecurity(t *testing.T) {
 		require.Nil(t, spans[0].Tag("_dd.appsec.s.req.query"))
 		require.Nil(t, spans[0].Tag("_dd.appsec.s.req.body"))
 	})
+}
+
+func prepareSQLDB(nbEntries int) (*sql.DB, error) {
+	const tables = `
+CREATE TABLE user (
+   id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+   name  text NOT NULL,
+   email text NOT NULL,
+   password text NOT NULL
+);
+CREATE TABLE product (
+   id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+   name  text NOT NULL,
+   category  text NOT NULL,
+   price  int NOT NULL
+);
+`
+	db, err := sqltrace.Open("sqlite", ":memory:", sqltrace.WithErrorCheck(func(err error) bool {
+		return err != nil
+	}))
+	if err != nil {
+		log.Fatalln("unexpected sql.Open error:", err)
+	}
+
+	if _, err := db.Exec(tables); err != nil {
+		return nil, err
+	}
+
+	for i := 0; i < nbEntries; i++ {
+		_, err := db.Exec(
+			"INSERT INTO user (name, email, password) VALUES (?, ?, ?)",
+			fmt.Sprintf("User#%d", i),
+			fmt.Sprintf("user%d@mail.com", i),
+			fmt.Sprintf("secret-password#%d", i))
+		if err != nil {
+			return nil, err
+		}
+
+		_, err = db.Exec(
+			"INSERT INTO product (name, category, price) VALUES (?, ?, ?)",
+			fmt.Sprintf("Product %d", i),
+			"sneaker",
+			rand.Intn(500))
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return db, nil
 }
 
 func TestRASPSQLi(t *testing.T) {

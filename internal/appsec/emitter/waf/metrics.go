@@ -10,14 +10,14 @@ import (
 	"strconv"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	waf "github.com/DataDog/go-libddwaf/v3"
 	wafErrors "github.com/DataDog/go-libddwaf/v3/errors"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/waf/addresses"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
-	telemetrylog "gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry/log"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/waf/addresses"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
+	telemetrylog "github.com/DataDog/dd-trace-go/v2/internal/telemetry/log"
 )
 
 // newHandleTelemetryMetric is the name of the metric that will be used to track the initialization of the WAF handle
@@ -45,10 +45,10 @@ type HandleMetrics struct {
 	truncationCounts map[waf.TruncationReason]telemetry.MetricHandle
 	// truncationDistributions holds the telemetry metrics for the `waf.truncated_value_size` metric
 	truncationDistributions map[waf.TruncationReason]telemetry.MetricHandle
-	// wafRunMetrics holds the telemetry metrics for the `rasp.timeout`, `rasp.duration`, `rasp.duration_ext`, `waf.duration`, `waf.duration_ext` metrics
-	// than are returned as-is by go-libddwaf
-	wafRunMetrics map[string]telemetry.MetricHandle
-
+	// wafTimerDistributions holds the telemetry metrics for the `rasp.timeout`, `rasp.duration`, `rasp.duration_ext`, `waf.duration`, `waf.duration_ext` metrics
+	wafTimerDistributions map[string]telemetry.MetricHandle
+	// raspTimeoutCount holds the telemetry metrics for the rasp.timeout metrics since there is not waf.timeout metric
+	raspTimeoutCount telemetry.MetricHandle
 	// wafRequestsCounts holds the telemetry metrics for the `waf.requests` metric
 	wafRequestsCounts map[RequestMilestones]telemetry.MetricHandle
 	// raspRuleEval holds the telemetry metrics for the `rasp.rule_eval` metric by rule type
@@ -137,13 +137,13 @@ func NewMetricsInstance(newHandle *waf.Handle, errIn error) HandleMetrics {
 			waf.ContainerTooLarge: telemetry.Distribution(telemetry.NamespaceAppSec, "waf.truncated_value_size", []string{"truncation_reason:" + strconv.Itoa(int(waf.ContainerTooLarge))}),
 			waf.ObjectTooDeep:     telemetry.Distribution(telemetry.NamespaceAppSec, "waf.truncated_value_size", []string{"truncation_reason:" + strconv.Itoa(int(waf.ObjectTooDeep))}),
 		},
-		wafRunMetrics: map[string]telemetry.MetricHandle{
-			"rasp.timeout":      telemetry.Count(telemetry.NamespaceAppSec, "rasp.timeout", baseTags),
+		wafTimerDistributions: map[string]telemetry.MetricHandle{
 			"rasp.duration":     telemetry.Distribution(telemetry.NamespaceAppSec, "rasp.duration", baseTags),
 			"rasp.duration_ext": telemetry.Distribution(telemetry.NamespaceAppSec, "rasp.duration_ext", baseTags),
 			"waf.duration":      telemetry.Distribution(telemetry.NamespaceAppSec, "waf.duration", baseTags),
 			"waf.duration_ext":  telemetry.Distribution(telemetry.NamespaceAppSec, "waf.duration_ext", baseTags),
 		},
+		raspTimeoutCount:  telemetry.Count(telemetry.NamespaceAppSec, "rasp.timeout", baseTags),
 		wafRequestsCounts: wafRequestMetrics,
 		raspRuleEval:      raspRuleEval,
 	}
@@ -171,18 +171,19 @@ type ContextMetrics struct {
 
 // RegisterStats increment the metrics for the WAF run stats at the end of each waf context lifecycle
 func (m *ContextMetrics) RegisterStats(stats waf.Stats) {
-	// Add metrics like `waf.duration` and `rasp.duration_ext`
-	for key, value := range stats.Metrics() {
-		metric, ok := m.wafRunMetrics[key]
-		if !ok {
+	// Add metrics `{waf,rasp}.duration[_ext]`
+	for key, value := range stats.Timers {
+		metric, found := m.wafTimerDistributions[key]
+		if !found {
 			continue
 		}
-		val, ok := internal.ToFloat64(value)
-		if !ok {
-			telemetrylog.Error("could not convert metric value to float64: %v (of type %T)", value, value, telemetry.WithTags([]string{"product:appsec"}))
-			continue
-		}
-		metric.Submit(val)
+
+		// The metrics should be in microseconds
+		metric.Submit(float64(value.Nanoseconds()) / float64(time.Microsecond))
+	}
+
+	if stats.TimeoutRASPCount > 0 {
+		m.raspTimeoutCount.Submit(float64(stats.TimeoutRASPCount))
 	}
 
 	// If truncations during encoding happened, increment the `waf.input_truncated` and `waf.truncated_value_size` metrics

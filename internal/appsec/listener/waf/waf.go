@@ -22,6 +22,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/listener"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/stacktrace"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 	telemetrylog "github.com/DataDog/dd-trace-go/v2/internal/telemetry/log"
 )
 
@@ -127,8 +128,9 @@ func (waf *Feature) onFinish(op *waf.ContextOperation, _ waf.ContextRes) {
 
 	stats := ctx.Stats()
 	metrics := op.GetMetricsInstance()
-	AddWAFMonitoringTags(op, metrics, waf.handle.Diagnostics().Version, stats.Metrics())
+	AddWAFMonitoringTags(op, metrics, waf.handle.Diagnostics().Version, stats)
 	metrics.RegisterStats(stats)
+
 	if wafEvents := op.Events(); len(wafEvents) > 0 {
 		tagValue := map[string][]any{"triggers": wafEvents}
 		if waf.metaStructAvailable {
