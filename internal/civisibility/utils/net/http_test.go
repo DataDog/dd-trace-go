@@ -286,27 +286,33 @@ func TestSendMultipartFormDataRequestWithGzipCompression(t *testing.T) {
 }
 
 func TestRateLimitHandlingWithRetries(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(mockRateLimitHandler))
-	defer server.Close()
+	synctest.Run(func() {
+		fn := http.HandlerFunc(mockRateLimitHandler)
+		ph := newPipeServer(fn)
+		defer ph.close()
 
-	handler := NewRequestHandler()
-	config := RequestConfig{
-		Method:     "GET", // No body needed for GET
-		URL:        server.URL,
-		Compressed: true, // Enable gzip compression for GET
-		MaxRetries: 2,
-		Backoff:    1 * time.Second, // Exponential backoff fallback
-	}
+		handler := NewRequestHandler()
+		handler.Client.Transport = ph.Transport()
+		config := RequestConfig{
+			Method:     "GET", // No body needed for GET
+			URL:        "http://test-server",
+			Compressed: true, // Enable gzip compression for GET
+			MaxRetries: 2,
+			Backoff:    1 * time.Second, // Exponential backoff fallback
+		}
 
-	start := time.Now()
-	response, err := handler.SendRequest(config)
-	elapsed := time.Since(start)
+		start := time.Now()
+		response, err := handler.SendRequest(config)
+		synctest.Wait()
+		elapsed := time.Since(start)
+		synctest.Wait()
 
-	// Since the rate limit is set to reset after 2 seconds, and we retry twice,
-	// the minimum elapsed time should be at least 4 seconds (2s for each retry).
-	assert.Error(t, err)
-	assert.Nil(t, response)
-	assert.True(t, elapsed >= 4*time.Second, "Expected at least 4 seconds due to rate limit retry delay")
+		// Since the rate limit is set to reset after 2 seconds, and we retry twice,
+		// the minimum elapsed time should be at least 4 seconds (2s for each retry).
+		assert.Error(t, err)
+		assert.Nil(t, response)
+		assert.True(t, elapsed >= 4*time.Second, "Expected at least 4 seconds due to rate limit retry delay")
+	})
 }
 
 func TestGzipDecompressionError(t *testing.T) {
