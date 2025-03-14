@@ -13,5 +13,9 @@ import (
 	_ "github.com/DataDog/dd-trace-go/v2/ddtrace/tracer" // revive:disable-line:blank-imports
 )
 
-//go:linkname RuntimeID github.com/DataDog/dd-trace-go/v2/internal/globalconfig.RuntimeID
-func RuntimeID() string
+//go:linkname runtimeID github.com/DataDog/dd-trace-go/v2/internal/globalconfig.RuntimeID
+func runtimeID() string
+
+func RuntimeID() string {
+	return runtimeID()
+}
