@@ -54,19 +54,21 @@ func (m *InsertMiddleware) InsertMany(
 	ctx context.Context,
 	manyParams []*rivertype.JobInsertParams,
 	doInner func(ctx context.Context) ([]*rivertype.JobInsertResult, error),
-) (results []*rivertype.JobInsertResult, doInnerErr error) {
+) (results []*rivertype.JobInsertResult, err error) {
 	opts := append(options.Copy(m.cfg.spanOpts...),
 		tracer.ResourceName("river.insert_many"),
 	)
 
 	span, ctx := tracer.StartSpanFromContext(ctx, m.cfg.insertSpanName, opts...)
 	defer func() {
-		span.Finish(tracer.WithError(doInnerErr))
+		span.Finish(tracer.WithError(err))
 	}()
 	spanCtx := span.Context()
 
 	for _, params := range manyParams {
-		tryInjectSpanContext(spanCtx, params)
+		if err = injectSpanContext(spanCtx, params); err != nil {
+			return nil, err
+		}
 	}
 
 	return doInner(ctx)
@@ -97,7 +99,7 @@ func NewWorkerMiddleware(opts ...Option) *WorkerMiddleware {
 	return &WorkerMiddleware{cfg: cfg}
 }
 
-func (m *WorkerMiddleware) Work(ctx context.Context, job *rivertype.JobRow, doInner func(ctx context.Context) error) (doInnerErr error) {
+func (m *WorkerMiddleware) Work(ctx context.Context, job *rivertype.JobRow, doInner func(ctx context.Context) error) (err error) {
 	opts := append(options.Copy(m.cfg.spanOpts...),
 		tracer.ResourceName(job.Kind),
 		tracer.Tag("river_job.queue", job.Queue),
@@ -105,45 +107,44 @@ func (m *WorkerMiddleware) Work(ctx context.Context, job *rivertype.JobRow, doIn
 		tracer.Tag("river_job.attempt", job.Attempt),
 	)
 
-	if carrier, err := metadataToCarrier(job.Metadata); err != nil {
-		log.Debug("contrib/riverqueue/river/river: Failed to parse job metadata: %v", err)
-	} else {
-		if parentSpanCtx, err := tracer.Extract(carrier); err == nil { // if NO error
-			opts = append(opts, tracer.ChildOf(parentSpanCtx))
-			if linksCtx, ok := parentSpanCtx.(ddtrace.SpanContextWithLinks); ok {
-				if spanLinks := linksCtx.SpanLinks(); spanLinks != nil {
-					opts = append(opts, tracer.WithSpanLinks(linksCtx.SpanLinks()))
-				}
+	carrier, err := metadataToCarrier(job.Metadata)
+	if err != nil {
+		return err
+	}
+
+	if parentSpanCtx, err := tracer.Extract(carrier); err == nil { // if NO error
+		opts = append(opts, tracer.ChildOf(parentSpanCtx))
+		if linksCtx, ok := parentSpanCtx.(ddtrace.SpanContextWithLinks); ok {
+			if spanLinks := linksCtx.SpanLinks(); spanLinks != nil {
+				opts = append(opts, tracer.WithSpanLinks(linksCtx.SpanLinks()))
 			}
 		}
 	}
 
 	span, ctx := tracer.StartSpanFromContext(ctx, m.cfg.workSpanName, opts...)
 	defer func() {
-		span.Finish(tracer.WithError(doInnerErr))
+		span.Finish(tracer.WithError(err))
 	}()
 
 	return doInner(ctx)
 }
 
-func tryInjectSpanContext(spanCtx ddtrace.SpanContext, params *rivertype.JobInsertParams) {
+func injectSpanContext(spanCtx ddtrace.SpanContext, params *rivertype.JobInsertParams) (err error) {
 	carrier, err := metadataToCarrier(params.Metadata)
 	if err != nil {
-		log.Debug("contrib/riverqueue/river/river: Failed to parse job metadata: %v", err)
-		return
+		return err
 	}
 
 	if err := tracer.Inject(spanCtx, carrier); err != nil {
-		log.Debug("contrib/riverqueue/river/river: Failed to inject span context into job metadata: %v", err)
-		return
+		return fmt.Errorf("failed to inject span context into job metadata: %v", err)
 	}
 
 	metadataWithCtx, err := json.Marshal(carrier)
 	if err != nil {
-		log.Debug("contrib/riverqueue/river/river: Failed to marshal carrier: %v", err)
-		return
+		return fmt.Errorf("failed to marshal carrier: %v", err)
 	}
 	params.Metadata = metadataWithCtx
+	return err
 }
 
 func metadataToCarrier(metadata []byte) (jsonCarrier, error) {
