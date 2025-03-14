@@ -32,6 +32,7 @@ const (
 	DBSystemOtherSQL      = "other_sql"
 	DBSystemElasticsearch = "elasticsearch"
 	DBSystemRedis         = "redis"
+	DBSystemOpensearch    = "opensearch"
 	DBSystemValkey        = "valkey"
 	DBSystemMongoDB       = "mongodb"
 	DBSystemCassandra     = "cassandra"
@@ -116,4 +117,19 @@ const (
 
 	// CassandraHostID represents the host ID for this operation.
 	CassandraHostID = "db.cassandra.host.id"
+)
+
+// OpenSearch tags.
+const (
+	// OpenSearchMethod is HTTP method used in the request.
+	OpenSearchMethod = "opensearch.method"
+
+	// OpenSearchURL is the URL of the request.
+	OpenSearchURL = "opensearch.url"
+
+	// OpenSearchParams is the query parameters of the request.
+	OpenSearchParams = "opensearch.params"
+
+	// OpenSearchBody is the body of the request.
+	OpenSearchBody = "opensearch.body"
 )
