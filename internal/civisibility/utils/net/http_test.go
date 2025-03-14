@@ -3,6 +3,8 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2024 Datadog, Inc.
 
+//go:build goexperiment.synctest
+
 package net
 
 import (
@@ -284,27 +286,33 @@ func TestSendMultipartFormDataRequestWithGzipCompression(t *testing.T) {
 }
 
 func TestRateLimitHandlingWithRetries(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(mockRateLimitHandler))
-	defer server.Close()
+	synctest.Run(func() {
+		fn := http.HandlerFunc(mockRateLimitHandler)
+		ph := newPipeServer(fn)
+		defer ph.close()
 
-	handler := NewRequestHandler()
-	config := RequestConfig{
-		Method:     "GET", // No body needed for GET
-		URL:        server.URL,
-		Compressed: true, // Enable gzip compression for GET
-		MaxRetries: 2,
-		Backoff:    1 * time.Second, // Exponential backoff fallback
-	}
+		handler := NewRequestHandler()
+		handler.Client.Transport = ph.Transport()
+		config := RequestConfig{
+			Method:     "GET", // No body needed for GET
+			URL:        "http://test-server",
+			Compressed: true, // Enable gzip compression for GET
+			MaxRetries: 2,
+			Backoff:    1 * time.Second, // Exponential backoff fallback
+		}
 
-	start := time.Now()
-	response, err := handler.SendRequest(config)
-	elapsed := time.Since(start)
+		start := time.Now()
+		response, err := handler.SendRequest(config)
+		synctest.Wait()
+		elapsed := time.Since(start)
+		synctest.Wait()
 
-	// Since the rate limit is set to reset after 2 seconds, and we retry twice,
-	// the minimum elapsed time should be at least 4 seconds (2s for each retry).
-	assert.Error(t, err)
-	assert.Nil(t, response)
-	assert.True(t, elapsed >= 4*time.Second, "Expected at least 4 seconds due to rate limit retry delay")
+		// Since the rate limit is set to reset after 2 seconds, and we retry twice,
+		// the minimum elapsed time should be at least 4 seconds (2s for each retry).
+		assert.Error(t, err)
+		assert.Nil(t, response)
+		assert.True(t, elapsed >= 4*time.Second, "Expected at least 4 seconds due to rate limit retry delay")
+	})
 }
 
 func TestGzipDecompressionError(t *testing.T) {
@@ -316,15 +324,17 @@ func TestGzipDecompressionError(t *testing.T) {
 }
 
 func TestExponentialBackoffDelays(t *testing.T) {
-	start := time.Now()
+	synctest.Run(func() {
+		start := time.Now()
 
-	// Simulate exponential backoff with 3 retries and 1-second initial delay
-	for i := 0; i < 3; i++ {
-		exponentialBackoff(i, 1*time.Second)
-	}
+		// Simulate exponential backoff with 3 retries and 1-second initial delay
+		for i := 0; i < 3; i++ {
+			exponentialBackoff(i, 1*time.Second)
+		}
 
-	elapsed := time.Since(start)
-	assert.True(t, elapsed >= 7*time.Second, "Expected at least 7 seconds due to exponential backoff")
+		elapsed := time.Since(start)
+		assert.True(t, elapsed >= 7*time.Second, "Expected at least 7 seconds due to exponential backoff")
+	})
 }
 
 func TestCreateMultipartFormDataWithUnsupportedContentType(t *testing.T) {
@@ -359,14 +369,17 @@ func TestRateLimitHandlingWithoutResetHeader(t *testing.T) {
 		Backoff:    1 * time.Second,
 	}
 
-	start := time.Now()
-	response, err := handler.SendRequest(config)
-	elapsed := time.Since(start)
+	synctest.Run(func() {
+		start := time.Now()
+		response, err := handler.SendRequest(config)
+		synctest.Wait()
+		elapsed := time.Since(start)
 
-	// With exponential backoff fallback, the minimum elapsed time should be at least 3 seconds (1s + 2s)
-	assert.Error(t, err)
-	assert.Nil(t, response)
-	assert.True(t, elapsed >= 3*time.Second, "Expected at least 3 seconds due to exponential backoff delay")
+		// With exponential backoff fallback, the minimum elapsed time should be at least 3 seconds (1s + 2s)
+		assert.Error(t, err)
+		assert.Nil(t, response)
+		assert.True(t, elapsed >= 3*time.Second, "Expected at least 3 seconds due to exponential backoff delay")
+	})
 }
 
 func TestSendRequestWithInvalidURL(t *testing.T) {
@@ -854,10 +867,13 @@ func TestSendRequestWithInvalidRetryAfterHeader(t *testing.T) {
 }
 
 func TestExponentialBackoffWithMaxDelay(t *testing.T) {
-	start := time.Now()
-	exponentialBackoff(10, 1*time.Second) // Should be limited to maxDelay (10s)
-	duration := time.Since(start)
-	assert.LessOrEqual(t, duration, 11*time.Second)
+	synctest.Run(func() {
+		start := time.Now()
+		exponentialBackoff(10, 1*time.Second) // Should be limited to maxDelay (10s)
+		synctest.Wait()
+		duration := time.Since(start)
+		assert.LessOrEqual(t, duration, 11*time.Second)
+	})
 }
 
 func TestSendRequestWithContextTimeout(t *testing.T) {
