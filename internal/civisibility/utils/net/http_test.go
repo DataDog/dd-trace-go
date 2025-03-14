@@ -8,11 +8,14 @@ package net
 import (
 	"bytes"
 	"compress/gzip"
+	"context"
 	"encoding/json"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/stretchr/testify/assert"
@@ -421,26 +424,69 @@ func TestSendRequestWithCustomHeaders(t *testing.T) {
 }
 
 func TestSendRequestWithTimeout(t *testing.T) {
-	// Mock server that delays response
-	mockSlowHandler := func(w http.ResponseWriter, r *http.Request) {
-		time.Sleep(5 * time.Second) // Delay longer than the client timeout
-		w.WriteHeader(http.StatusOK)
-	}
+	synctest.Run(func() {
+		// Create a channel to coordinate between the dialer and server
+		type connPair struct {
+			client, server net.Conn
+		}
+		newConn := make(chan connPair)
 
-	server := httptest.NewServer(http.HandlerFunc(mockSlowHandler))
-	defer server.Close()
+		// Create a custom transport that creates a new pipe for each request
+		transport := &http.Transport{
+			DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+				// Create a new pipe for each connection
+				srvConn, cliConn := net.Pipe()
 
-	handler := NewRequestHandler()
-	handler.Client.Timeout = 2 * time.Second // Set client timeout to 2 seconds
+				// Send the server connection to be handled
+				newConn <- connPair{client: cliConn, server: srvConn}
 
-	config := RequestConfig{
-		Method: "GET",
-		URL:    server.URL,
-	}
+				return cliConn, nil
+			},
+		}
 
-	response, err := handler.SendRequest(config)
-	assert.Error(t, err)
-	assert.Nil(t, response)
+		handler := NewRequestHandler()
+		handler.Client.Transport = transport
+		handler.Client.Timeout = 2 * time.Second
+
+		// Channel to signal the simulated server goroutine to stop
+		done := make(chan struct{})
+		defer close(done)
+
+		// Start a goroutine that simulates all server connections
+		go func() {
+			for {
+				select {
+				case <-done:
+					return
+				case pair := <-newConn:
+					// Handle each new connection in its own goroutine
+					go func(srvConn net.Conn) {
+						defer srvConn.Close()
+
+						// Sleep to simulate slow processing
+						time.Sleep(5 * time.Second)
+
+						w := httptest.NewRecorder()
+						w.Header().Set("Content-Type", "application/json")
+						w.WriteHeader(http.StatusOK)
+						w.Write([]byte("{}"))
+
+						w.Result().Write(srvConn)
+					}(pair.server)
+				}
+			}
+		}()
+
+		config := RequestConfig{
+			Method: "GET",
+			URL:    "http://test-server",
+		}
+
+		response, err := handler.SendRequest(config)
+		synctest.Wait()
+		assert.Error(t, err)
+		assert.Nil(t, response)
+	})
 }
 
 func TestSendRequestWithMaxRetriesExceeded(t *testing.T) {
