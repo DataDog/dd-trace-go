@@ -12,6 +12,8 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
 // Start starts the tracer with the given set of options. It will stop and replace
@@ -21,6 +23,11 @@ func Start(opts ...StartOption) {
 	// Workaround to make sure our v1 shim behaves like the previous v1 tracer.
 	if os.Getenv("DD_TRACE_128_BIT_TRACEID_LOGGING_ENABLED") == "" {
 		os.Setenv("DD_TRACE_128_BIT_TRACEID_LOGGING_ENABLED", "false")
+	}
+	// Workaround to force globalconfig to be present in the binary.
+	// The condition makes no sense, but it makes sure that the compiler don't optimize it away.
+	if !log.DebugEnabled() {
+		log.Debug("%s", globalconfig.RuntimeID())
 	}
 	v2.Start(opts...)
 }
