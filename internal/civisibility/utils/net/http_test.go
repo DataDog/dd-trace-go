@@ -6,6 +6,7 @@
 package net
 
 import (
+	"bufio"
 	"bytes"
 	"compress/gzip"
 	"context"
@@ -97,6 +98,65 @@ func mockRateLimitHandler(w http.ResponseWriter, _ *http.Request) {
 	// Set the rate limit reset time to 2 seconds
 	w.Header().Set(HeaderRateLimitReset, "2")
 	http.Error(w, "Too Many Requests", HTTPStatusTooManyRequests)
+}
+
+// pipeServer acts like an http server with a pipe-based transport
+type pipeServer struct {
+	handler http.Handler
+	conns   chan connPair
+	done    chan struct{}
+}
+
+type connPair struct {
+	client, server net.Conn
+}
+
+func newPipeServer(h http.HandlerFunc) *pipeServer {
+	ph := &pipeServer{
+		handler: h,
+		conns:   make(chan connPair),
+		done:    make(chan struct{}),
+	}
+	go ph.serve()
+	return ph
+}
+
+func (ph *pipeServer) serve() {
+	for {
+		select {
+		case <-ph.done:
+			return
+		case pair := <-ph.conns:
+			go ph.handleConn(pair.server)
+		}
+	}
+}
+
+func (ph *pipeServer) handleConn(conn net.Conn) {
+	defer conn.Close()
+	// Convert the connection into a response writer and request
+	req, err := http.ReadRequest(bufio.NewReader(conn))
+	if err != nil {
+		return
+	}
+	w := httptest.NewRecorder()
+	ph.handler.ServeHTTP(w, req)
+	w.Result().Write(conn)
+}
+
+func (ph *pipeServer) close() {
+	close(ph.done)
+}
+
+// Transport returns an http.Transport that dials through pipes to this handler
+func (ph *pipeServer) Transport() *http.Transport {
+	return &http.Transport{
+		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+			client, server := net.Pipe()
+			ph.conns <- connPair{client: client, server: server}
+			return client, nil
+		},
+	}
 }
 
 // Test Suite
@@ -425,57 +485,20 @@ func TestSendRequestWithCustomHeaders(t *testing.T) {
 
 func TestSendRequestWithTimeout(t *testing.T) {
 	synctest.Run(func() {
-		// Create a channel to coordinate between the dialer and server
-		type connPair struct {
-			client, server net.Conn
+		// Mock server that delays response
+		slowHandler := func(w http.ResponseWriter, r *http.Request) {
+			time.Sleep(5 * time.Second)
+			w.WriteHeader(http.StatusOK)
 		}
-		newConn := make(chan connPair)
 
-		// Create a custom transport that creates a new pipe for each request
-		transport := &http.Transport{
-			DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
-				// Create a new pipe for each connection
-				srvConn, cliConn := net.Pipe()
-
-				// Send the server connection to be handled
-				newConn <- connPair{client: cliConn, server: srvConn}
-
-				return cliConn, nil
-			},
-		}
+		// pipe based server allowing us to simulate an http server
+		// and leverage the synctest feature.
+		ph := newPipeServer(slowHandler)
+		defer ph.close()
 
 		handler := NewRequestHandler()
-		handler.Client.Transport = transport
+		handler.Client.Transport = ph.Transport()
 		handler.Client.Timeout = 2 * time.Second
-
-		// Channel to signal the simulated server goroutine to stop
-		done := make(chan struct{})
-		defer close(done)
-
-		// Start a goroutine that simulates all server connections
-		go func() {
-			for {
-				select {
-				case <-done:
-					return
-				case pair := <-newConn:
-					// Handle each new connection in its own goroutine
-					go func(srvConn net.Conn) {
-						defer srvConn.Close()
-
-						// Sleep to simulate slow processing
-						time.Sleep(5 * time.Second)
-
-						w := httptest.NewRecorder()
-						w.Header().Set("Content-Type", "application/json")
-						w.WriteHeader(http.StatusOK)
-						w.Write([]byte("{}"))
-
-						w.Result().Write(srvConn)
-					}(pair.server)
-				}
-			}
-		}()
 
 		config := RequestConfig{
 			Method: "GET",
