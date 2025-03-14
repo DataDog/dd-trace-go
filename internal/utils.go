@@ -81,15 +81,19 @@ type XSyncMapCounterMap struct {
 }
 
 func NewXSyncMapCounterMap() *XSyncMapCounterMap {
-	return &XSyncMapCounterMap{counts: xsync.NewMapOf[string, *xsync.Counter]()}
+	return &XSyncMapCounterMap{
+		counts: xsync.NewMapOf[string, *xsync.Counter](),
+	}
 }
 
 func (cm *XSyncMapCounterMap) Inc(key string) {
-	val, ok := cm.counts.Load(key)
-	if !ok {
-		val, _ = cm.counts.LoadOrStore(key, xsync.NewCounter())
-	}
-	val.Inc()
+	cm.counts.Compute(key, func(v *xsync.Counter, loaded bool) (*xsync.Counter, bool) {
+		if !loaded {
+			v = xsync.NewCounter()
+		}
+		v.Inc()
+		return v, false
+	})
 }
 
 func (cm *XSyncMapCounterMap) GetAndReset() map[string]int64 {
