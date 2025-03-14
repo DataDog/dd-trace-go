@@ -1,8 +1,8 @@
 package river
 
 import (
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 )
 
 type config struct {
@@ -15,9 +15,9 @@ type config struct {
 
 func defaultConfig() *config {
 	return &config{
-		service:        namingschema.ServiceNameOverrideV0("", ""),
-		insertSpanName: "river.insert",
-		workSpanName:   "river.work",
+		service:        instr.ServiceName(instrumentation.ComponentConsumer, nil),
+		insertSpanName: instr.OperationName(instrumentation.ComponentProducer, nil),
+		workSpanName:   instr.OperationName(instrumentation.ComponentConsumer, nil),
 		measured:       false,
 	}
 }

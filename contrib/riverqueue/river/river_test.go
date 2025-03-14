@@ -2,10 +2,12 @@ package river
 
 import (
 	"context"
+	"encoding/binary"
+	"encoding/json"
 	"errors"
-	"fmt"
 	"log"
 	"os"
+	"strconv"
 	"testing"
 	"time"
 
@@ -18,9 +20,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 )
 
 const (
@@ -96,22 +98,35 @@ func TestMain(m *testing.M) {
 	os.Exit(code)
 }
 
+func lowerEqual(t *testing.T, id uint64, tid [16]byte) {
+	assert.Equal(t, id, binary.BigEndian.Uint64(tid[8:]))
+}
+
+func metadataToMap(t *testing.T, v []byte) map[string]any {
+	t.Helper()
+	var m map[string]any
+	if err := json.Unmarshal(v, &m); err != nil {
+		t.Errorf("error unmarshal metadata: %v", err)
+	}
+	return m
+}
+
 func TestPropagation(t *testing.T) {
 	ctx, mt, driver := setup(t)
 
 	var (
 		called      = false
 		spanID      uint64
-		jobMetadata string
+		jobMetadata []byte
 	)
 	worker := testWorker{f: func(ctx context.Context, job *river.Job[jobArg]) error {
 		assert.False(t, called, "work called twice")
 		assert.Equal(t, "data", job.Args.Data)
 		span, ok := tracer.SpanFromContext(ctx)
 		assert.True(t, ok, "no span")
-		assert.Equal(t, uint64(42), span.Context().TraceID(), "wrong trace id")
+		lowerEqual(t, uint64(42), span.Context().TraceIDBytes())
 		spanID = span.Context().SpanID()
-		jobMetadata = string(job.Metadata)
+		jobMetadata = job.Metadata
 		called = true
 		return nil
 	}}
@@ -147,39 +162,41 @@ func TestPropagation(t *testing.T) {
 
 	spans := mt.FinishedSpans()
 	assert.Len(t, spans, 3, "wrong number of spans")
-	assert.Equal(t, "river.insert", spans[0].OperationName())
+	assert.Equal(t, "river.send", spans[0].OperationName())
 	assert.Equal(t, "propagation-test", spans[1].OperationName())
-	assert.Equal(t, "river.work", spans[2].OperationName())
+	assert.Equal(t, "river.process", spans[2].OperationName())
 
-	assert.Equal(t, spans[1].SpanID(), spans[0].ParentID())
-	assert.Equal(t, uint64(42), spans[0].TraceID())
-	assert.Equal(t, map[string]interface{}{
-		ext.SpanType:        ext.SpanTypeMessageProducer,
-		ext.Component:       "riverqueue/river",
-		ext.SpanKind:        ext.SpanKindProducer,
-		ext.MessagingSystem: "river",
-		ext.ServiceName:     nil,
-		ext.ResourceName:    "river.insert_many",
-	}, spans[0].Tags())
+	s0 := spans[0]
+	assert.Equal(t, spans[1].SpanID(), s0.ParentID())
+	assert.Equal(t, uint64(42), s0.TraceID())
+	assert.Equal(t, ext.SpanTypeMessageProducer, s0.Tag(ext.SpanType))
+	assert.Equal(t, "riverqueue/river", s0.Tag(ext.Component))
+	assert.Equal(t, "riverqueue/river", s0.Integration())
+	assert.Equal(t, ext.SpanKindProducer, s0.Tag(ext.SpanKind))
+	assert.Equal(t, "river", s0.Tag(ext.MessagingSystem))
+	assert.Equal(t, "river", s0.Tag(ext.ServiceName))
+	assert.Equal(t, "river.insert_many", s0.Tag(ext.ResourceName))
+	assert.Equal(t, "river.send", s0.Tag(ext.SpanName))
 
-	assert.Equal(t, spans[0].SpanID(), spans[2].ParentID())
-	assert.Equal(t, uint64(42), spans[2].TraceID())
-	assert.Equal(t, spanID, spans[2].SpanID())
-	assert.Equal(t, map[string]interface{}{
-		ext.SpanType:        ext.SpanTypeMessageConsumer,
-		ext.Component:       "riverqueue/river",
-		ext.SpanKind:        ext.SpanKindConsumer,
-		ext.MessagingSystem: "river",
-		ext.ResourceName:    "kind",
-		"river_job.queue":   "default",
-		"river_job.kind":    "kind",
-		"river_job.attempt": 1,
-	}, spans[2].Tags())
+	s2 := spans[2]
+	assert.Equal(t, s0.SpanID(), s2.ParentID())
+	assert.Equal(t, uint64(42), s2.TraceID())
+	assert.Equal(t, spanID, s2.SpanID())
+	assert.Equal(t, ext.SpanTypeMessageConsumer, s2.Tag(ext.SpanType))
+	assert.Equal(t, "riverqueue/river", s2.Tag(ext.Component))
+	assert.Equal(t, "riverqueue/river", s2.Integration())
+	assert.Equal(t, ext.SpanKindConsumer, s2.Tag(ext.SpanKind))
+	assert.Equal(t, "river", s2.Tag(ext.MessagingSystem))
+	assert.Equal(t, "river", s2.Tag(ext.ServiceName))
+	assert.Equal(t, "kind", s2.Tag(ext.ResourceName))
+	assert.Equal(t, "river.process", s2.Tag(ext.SpanName))
+	assert.Equal(t, "default", s2.Tag("river_job.queue"))
+	assert.Equal(t, "kind", s2.Tag("river_job.kind"))
+	assert.Equal(t, float64(1), s2.Tag("river_job.attempt"))
 
-	assert.JSONEq(t,
-		fmt.Sprintf(`{"x-datadog-parent-id":"%d", "x-datadog-trace-id":"%d"}`,
-			spans[0].SpanID(), spans[0].TraceID()),
-		jobMetadata)
+	meta := metadataToMap(t, jobMetadata)
+	assert.Equal(t, strconv.FormatUint(s0.SpanID(), 10), meta["x-datadog-parent-id"])
+	assert.Equal(t, strconv.FormatUint(s0.TraceID(), 10), meta["x-datadog-trace-id"])
 }
 
 func TestPropagationWithService(t *testing.T) {
@@ -227,8 +244,8 @@ func TestPropagationNoParentSpan(t *testing.T) {
 	var (
 		called      = false
 		spanID      uint64
-		traceID     uint64
-		jobMetadata string
+		traceID     string
+		jobMetadata []byte
 	)
 	worker := testWorker{f: func(ctx context.Context, job *river.Job[jobArg]) error {
 		assert.False(t, called, "work called twice")
@@ -237,7 +254,7 @@ func TestPropagationNoParentSpan(t *testing.T) {
 		assert.True(t, ok, "no span")
 		spanID = span.Context().SpanID()
 		traceID = span.Context().TraceID()
-		jobMetadata = string(job.Metadata)
+		jobMetadata = job.Metadata
 		called = true
 		return nil
 	}}
@@ -272,37 +289,40 @@ func TestPropagationNoParentSpan(t *testing.T) {
 
 	spans := mt.FinishedSpans()
 	assert.Len(t, spans, 2, "wrong number of spans")
-	assert.Equal(t, "river.insert", spans[0].OperationName())
-	assert.Equal(t, "river.work", spans[1].OperationName())
+	assert.Equal(t, "river.send", spans[0].OperationName())
+	assert.Equal(t, "river.process", spans[1].OperationName())
 
-	assert.Equal(t, spans[0].TraceID(), spans[0].SpanID())
-	assert.Equal(t, traceID, spans[0].TraceID())
-	assert.Equal(t, map[string]interface{}{
-		ext.SpanType:        ext.SpanTypeMessageProducer,
-		ext.Component:       "riverqueue/river",
-		ext.SpanKind:        ext.SpanKindProducer,
-		ext.MessagingSystem: "river",
-		ext.ResourceName:    "river.insert_many",
-	}, spans[0].Tags())
+	s0 := spans[0]
+	assert.Equal(t, s0.TraceID(), s0.SpanID())
+	assert.Equal(t, traceID, s0.Context().TraceID())
+	assert.Equal(t, ext.SpanTypeMessageProducer, s0.Tag(ext.SpanType))
+	assert.Equal(t, "riverqueue/river", s0.Tag(ext.Component))
+	assert.Equal(t, "riverqueue/river", s0.Integration())
+	assert.Equal(t, ext.SpanKindProducer, s0.Tag(ext.SpanKind))
+	assert.Equal(t, "river", s0.Tag(ext.MessagingSystem))
+	assert.Equal(t, "river", s0.Tag(ext.ServiceName))
+	assert.Equal(t, "river.insert_many", s0.Tag(ext.ResourceName))
+	assert.Equal(t, "river.send", s0.Tag(ext.SpanName))
 
-	assert.Equal(t, spans[0].SpanID(), spans[1].ParentID())
-	assert.Equal(t, traceID, spans[1].TraceID())
-	assert.Equal(t, spanID, spans[1].SpanID())
-	assert.Equal(t, map[string]interface{}{
-		ext.SpanType:        ext.SpanTypeMessageConsumer,
-		ext.Component:       "riverqueue/river",
-		ext.SpanKind:        ext.SpanKindConsumer,
-		ext.MessagingSystem: "river",
-		ext.ResourceName:    "kind",
-		"river_job.queue":   "default",
-		"river_job.kind":    "kind",
-		"river_job.attempt": 1,
-	}, spans[1].Tags())
+	s1 := spans[1]
+	assert.Equal(t, s0.SpanID(), s1.ParentID())
+	assert.Equal(t, traceID, s1.Context().TraceID())
+	assert.Equal(t, spanID, s1.SpanID())
+	assert.Equal(t, ext.SpanTypeMessageConsumer, s1.Tag(ext.SpanType))
+	assert.Equal(t, "riverqueue/river", s1.Tag(ext.Component))
+	assert.Equal(t, "riverqueue/river", s1.Integration())
+	assert.Equal(t, ext.SpanKindConsumer, s1.Tag(ext.SpanKind))
+	assert.Equal(t, "river", s1.Tag(ext.MessagingSystem))
+	assert.Equal(t, "river", s1.Tag(ext.ServiceName))
+	assert.Equal(t, "kind", s1.Tag(ext.ResourceName))
+	assert.Equal(t, "river.process", s1.Tag(ext.SpanName))
+	assert.Equal(t, "default", s1.Tag("river_job.queue"))
+	assert.Equal(t, "kind", s1.Tag("river_job.kind"))
+	assert.Equal(t, float64(1), s1.Tag("river_job.attempt"))
 
-	assert.JSONEq(t,
-		fmt.Sprintf(`{"x-datadog-parent-id":"%d", "x-datadog-trace-id":"%d"}`,
-			spans[0].SpanID(), spans[0].TraceID()),
-		jobMetadata)
+	meta := metadataToMap(t, jobMetadata)
+	assert.Equal(t, strconv.FormatUint(s0.SpanID(), 10), meta["x-datadog-parent-id"])
+	assert.Equal(t, strconv.FormatUint(s0.TraceID(), 10), meta["x-datadog-trace-id"])
 }
 
 func TestPropagationNoInsertSpan(t *testing.T) {
@@ -311,7 +331,7 @@ func TestPropagationNoInsertSpan(t *testing.T) {
 	var (
 		called      = false
 		spanID      uint64
-		traceID     uint64
+		traceID     string
 		jobMetadata string
 	)
 	worker := testWorker{f: func(ctx context.Context, job *river.Job[jobArg]) error {
@@ -355,22 +375,24 @@ func TestPropagationNoInsertSpan(t *testing.T) {
 
 	spans := mt.FinishedSpans()
 	assert.Len(t, spans, 1, "wrong number of spans")
-	assert.Equal(t, "river.work", spans[0].OperationName())
+	assert.Equal(t, "river.process", spans[0].OperationName())
 
-	assert.Equal(t, traceID, spans[0].TraceID())
-	assert.Equal(t, spanID, spans[0].SpanID())
-	assert.Equal(t, map[string]interface{}{
-		ext.SpanType:        ext.SpanTypeMessageConsumer,
-		ext.Component:       "riverqueue/river",
-		ext.SpanKind:        ext.SpanKindConsumer,
-		ext.MessagingSystem: "river",
-		ext.ResourceName:    "kind",
-		"river_job.queue":   "default",
-		"river_job.kind":    "kind",
-		"river_job.attempt": 1,
-	}, spans[0].Tags())
+	s0 := spans[0]
+	assert.Equal(t, traceID, s0.Context().TraceID())
+	assert.Equal(t, spanID, s0.SpanID())
+	assert.Equal(t, ext.SpanTypeMessageConsumer, s0.Tag(ext.SpanType))
+	assert.Equal(t, "riverqueue/river", s0.Tag(ext.Component))
+	assert.Equal(t, "riverqueue/river", s0.Integration())
+	assert.Equal(t, ext.SpanKindConsumer, s0.Tag(ext.SpanKind))
+	assert.Equal(t, "river", s0.Tag(ext.MessagingSystem))
+	assert.Equal(t, "river", s0.Tag(ext.ServiceName))
+	assert.Equal(t, "kind", s0.Tag(ext.ResourceName))
+	assert.Equal(t, "river.process", s0.Tag(ext.SpanName))
+	assert.Equal(t, "default", s0.Tag("river_job.queue"))
+	assert.Equal(t, "kind", s0.Tag("river_job.kind"))
+	assert.Equal(t, float64(1), s0.Tag("river_job.attempt"))
 
-	assert.JSONEq(t, `{}`, jobMetadata)
+	assert.Equal(t, `{}`, jobMetadata)
 }
 
 func TestWorkerError(t *testing.T) {
@@ -379,7 +401,7 @@ func TestWorkerError(t *testing.T) {
 	var (
 		called      = false
 		spanID      uint64
-		traceID     uint64
+		traceID     string
 		jobMetadata string
 		workErr     = errors.New("worker error")
 	)
@@ -424,33 +446,35 @@ func TestWorkerError(t *testing.T) {
 
 	spans := mt.FinishedSpans()
 	assert.Len(t, spans, 1, "wrong number of spans")
-	assert.Equal(t, "river.work", spans[0].OperationName())
+	assert.Equal(t, "river.process", spans[0].OperationName())
 
-	assert.Equal(t, traceID, spans[0].TraceID())
-	assert.Equal(t, spanID, spans[0].SpanID())
-	assert.Equal(t, map[string]interface{}{
-		ext.SpanType:        ext.SpanTypeMessageConsumer,
-		ext.Component:       "riverqueue/river",
-		ext.SpanKind:        ext.SpanKindConsumer,
-		ext.MessagingSystem: "river",
-		ext.ResourceName:    "kind",
-		"river_job.queue":   "default",
-		"river_job.kind":    "kind",
-		"river_job.attempt": 1,
-		ext.Error:           workErr,
-	}, spans[0].Tags())
+	s0 := spans[0]
+	assert.Equal(t, traceID, s0.Context().TraceID())
+	assert.Equal(t, spanID, s0.SpanID())
+	assert.Equal(t, ext.SpanTypeMessageConsumer, s0.Tag(ext.SpanType))
+	assert.Equal(t, "riverqueue/river", s0.Tag(ext.Component))
+	assert.Equal(t, "riverqueue/river", s0.Integration())
+	assert.Equal(t, ext.SpanKindConsumer, s0.Tag(ext.SpanKind))
+	assert.Equal(t, "river", s0.Tag(ext.MessagingSystem))
+	assert.Equal(t, "river", s0.Tag(ext.ServiceName))
+	assert.Equal(t, "kind", s0.Tag(ext.ResourceName))
+	assert.Equal(t, "river.process", s0.Tag(ext.SpanName))
+	assert.Equal(t, "default", s0.Tag("river_job.queue"))
+	assert.Equal(t, "kind", s0.Tag("river_job.kind"))
+	assert.Equal(t, float64(1), s0.Tag("river_job.attempt"))
+	assert.Equal(t, workErr.Error(), s0.Tag(ext.ErrorMsg))
 
-	assert.JSONEq(t, `{}`, jobMetadata)
+	assert.Equal(t, `{}`, jobMetadata)
 }
 
 func TestAdditionalMetadata(t *testing.T) {
 	ctx, mt, driver := setup(t)
 
 	var (
-		jobMetadata string
+		jobMetadata []byte
 	)
 	worker := testWorker{f: func(ctx context.Context, job *river.Job[jobArg]) error {
-		jobMetadata = string(job.Metadata)
+		jobMetadata = job.Metadata
 		return nil
 	}}
 	workers := river.NewWorkers()
@@ -484,13 +508,12 @@ func TestAdditionalMetadata(t *testing.T) {
 
 	spans := mt.FinishedSpans()
 	assert.Len(t, spans, 2, "wrong number of spans")
-	assert.Equal(t, "river.insert", spans[0].OperationName())
-	assert.Equal(t, "river.work", spans[1].OperationName())
+	assert.Equal(t, "river.send", spans[0].OperationName())
+	assert.Equal(t, "river.process", spans[1].OperationName())
 
-	assert.JSONEq(t,
-		fmt.Sprintf(`{"x-datadog-parent-id":"%d", "x-datadog-trace-id":"%d","key":"value"}`,
-			spans[0].SpanID(), spans[0].TraceID()),
-		jobMetadata)
+	meta := metadataToMap(t, jobMetadata)
+	assert.Equal(t, strconv.FormatUint(spans[0].SpanID(), 10), meta["x-datadog-parent-id"])
+	assert.Equal(t, strconv.FormatUint(spans[0].TraceID(), 10), meta["x-datadog-trace-id"])
 }
 
 func TestInvalidMetadata(t *testing.T) {
@@ -512,9 +535,9 @@ func TestInvalidMetadata(t *testing.T) {
 
 	spans := mt.FinishedSpans()
 	assert.Len(t, spans, 1, "wrong number of spans")
-	assert.Equal(t, "river.insert", spans[0].OperationName())
+	assert.Equal(t, "river.send", spans[0].OperationName())
 
-	assert.ErrorIs(t, err, spans[0].Tags()[ext.Error].(error))
+	assert.Equal(t, err.Error(), spans[0].Tags()[ext.ErrorMsg])
 }
 
 func setup(t *testing.T) (context.Context, mocktracer.Tracer, *riverpgxv5.Driver) {

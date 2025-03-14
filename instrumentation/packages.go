@@ -68,6 +68,7 @@ const (
 	PackageGorillaMux              Package = "gorilla/mux"
 	PackageUptraceBun              Package = "uptrace/bun"
 	PackageLogSlog                 Package = "log/slog"
+	PackageRiverqueueRiver         Package = "riverqueue/river"
 
 	PackageValkeyIoValkeyGo         Package = "valkey-io/valkey-go"
 	PackageEnvoyProxyGoControlPlane Package = "envoyproxy/go-control-plane"
@@ -828,6 +829,24 @@ var packages = map[Package]PackageInfo{
 				buildServiceNameV0: staticName("echo"),
 				buildOpNameV0:      staticName("http.request"),
 				buildOpNameV1:      staticName("http.server.request"),
+			},
+		},
+	},
+	PackageRiverqueueRiver: {
+		TracedPackage: "github.com/riverqueue/river",
+		EnvVarPrefix:  "RIVER",
+		naming: map[Component]componentNames{
+			ComponentConsumer: {
+				useDDServiceV0:     false,
+				buildServiceNameV0: staticName("river"),
+				buildOpNameV0:      staticName("river.process"),
+				buildOpNameV1:      staticName("river.process"),
+			},
+			ComponentProducer: {
+				useDDServiceV0:     false,
+				buildServiceNameV0: staticName("river"),
+				buildOpNameV0:      staticName("river.send"),
+				buildOpNameV1:      staticName("river.send"),
 			},
 		},
 	},
