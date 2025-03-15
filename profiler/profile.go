@@ -191,6 +191,7 @@ var profileTypes = map[ProfileType]profileType{
 		Collect: func(p *profiler) ([]byte, error) {
 			p.lastTrace = time.Now()
 			buf := new(bytes.Buffer)
+			buf.Grow(p.cfg.traceConfig.Limit)
 			lt := newLimitedTraceCollector(buf, int64(p.cfg.traceConfig.Limit))
 			if err := trace.Start(lt); err != nil {
 				return nil, err
