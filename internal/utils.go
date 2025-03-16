@@ -77,9 +77,9 @@ func (l *LockMap) Get(k string) string {
 // Implementation and related tests were taken/inspired by felixge/countermap
 // https://github.com/felixge/countermap/pull/2
 type XSyncMapCounterMap struct {
-	counts [2]*xsync.MapOf[string, *xsync.Counter]
-	mu     sync.Mutex
-	index  int
+	counts  [2]*xsync.MapOf[string, *xsync.Counter]
+	mu, muD sync.Mutex
+	index   int
 }
 
 func NewXSyncMapCounterMap() *XSyncMapCounterMap {
@@ -103,14 +103,16 @@ func (cm *XSyncMapCounterMap) Inc(key string) {
 }
 
 func (cm *XSyncMapCounterMap) swap() int {
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
 	old := cm.index
 	cm.index = cm.index ^ 1
 	return old
 }
 
 func (cm *XSyncMapCounterMap) GetAndReset() map[string]int64 {
-	cm.mu.Lock()
-	defer cm.mu.Unlock()
+	cm.muD.Lock()
+	defer cm.muD.Unlock()
 	ret := map[string]int64{}
 	i := cm.swap()
 	cm.counts[i].Range(func(key string, _ *xsync.Counter) bool {
