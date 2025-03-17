@@ -313,6 +313,7 @@ func (p *profiler) collect(ticker <-chan time.Time) {
 		}
 		p.seq++
 
+		clear(completed)
 		completed = completed[:0]
 		// We need to increment pendingProfiles for every non-CPU
 		// profile _before_ entering the next loop so that we know CPU
