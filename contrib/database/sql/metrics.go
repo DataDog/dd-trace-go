@@ -62,7 +62,6 @@ func statsTags(c *config) []string {
 	if c.serviceName != "" {
 		tags = append(tags, "service:"+c.serviceName)
 	}
-	// TODO: grab tracer config's env and hostname for globaltags
 	for k, v := range c.tags {
 		if vstr, ok := v.(string); ok {
 			tags = append(tags, k+":"+vstr)

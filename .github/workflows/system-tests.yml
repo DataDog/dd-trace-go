@@ -82,6 +82,8 @@ jobs:
           - weblog-variant: net-http
             scenario: APPSEC_STANDALONE
           - weblog-variant: net-http
+            scenario: APPSEC_STANDALONE_V2
+          - weblog-variant: net-http
             scenario: APPSEC_META_STRUCT_DISABLED
           - weblog-variant: net-http
             scenario: APPSEC_CUSTOM_OBFUSCATION
@@ -160,3 +162,16 @@ jobs:
         with:
           name: logs_${{ matrix.weblog-variant }}_${{ matrix.scenario }}
           path: artifact.tar.gz
+
+  system-tests-done:
+    name: System Tests
+    needs: system-tests
+    runs-on: ubuntu-latest
+    if: success() || failure()
+    steps:
+      - name: Success
+        if: needs.system-tests.result == 'success'
+        run: echo "Success!"
+      - name: Failure
+        if: needs.system-tests.result != 'success'
+        run: echo "Failure!" && exit 1

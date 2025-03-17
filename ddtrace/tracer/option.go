@@ -87,6 +87,7 @@ var contribIntegrations = map[string]struct {
 	"gopkg.in/olivere/elastic.v5":                   {"Elasticsearch v5", false},
 	"gopkg.in/olivere/elastic.v3":                   {"Elasticsearch v3", false},
 	"github.com/redis/go-redis/v9":                  {"Redis v9", false},
+	"github.com/redis/rueidis":                      {"Rueidis", false},
 	"github.com/segmentio/kafka-go":                 {"Kafka v0", false},
 	"github.com/IBM/sarama":                         {"IBM sarama", false},
 	"github.com/Shopify/sarama":                     {"Shopify sarama", false},
@@ -589,8 +590,7 @@ func newConfig(opts ...StartOption) *config {
 	globalTagsOrigin := c.globalTags.cfgOrigin
 	c.initGlobalTags(c.globalTags.get(), globalTagsOrigin)
 
-	// TODO: change the name once APM Platform RFC is approved
-	if internal.BoolEnv("DD_EXPERIMENTAL_APPSEC_STANDALONE_ENABLED", false) {
+	if !internal.BoolEnv("DD_APM_TRACING_ENABLED", true) {
 		// Enable tracing as transport layer mode
 		// This means to stop sending trace metrics, send one trace per minute and those force-kept by other products
 		// using the tracer as transport layer for their data. And finally adding the _dd.apm.enabled=0 tag to all traces

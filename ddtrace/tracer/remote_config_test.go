@@ -542,8 +542,8 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 			"path": []byte(`{"lib_config": {}, "service_target": {"service": "other-service", "env": "my-env"}}`),
 		}
 		applyStatus := tracer.onRemoteConfigUpdate(input)
-		require.Equal(t, state.ApplyStateError, applyStatus["path"].State)
-		require.Equal(t, "service mismatch", applyStatus["path"].Error)
+		require.Equal(t, state.ApplyStateAcknowledged, applyStatus["path"].State)
+		require.Empty(t, applyStatus["path"].Error)
 
 		// Telemetry
 		for _, cfg := range telemetryClient.Configuration {
@@ -564,8 +564,8 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 			"path": []byte(`{"lib_config": {}, "service_target": {"service": "my-service", "env": "other-env"}}`),
 		}
 		applyStatus := tracer.onRemoteConfigUpdate(input)
-		require.Equal(t, state.ApplyStateError, applyStatus["path"].State)
-		require.Equal(t, "env mismatch", applyStatus["path"].Error)
+		require.Equal(t, state.ApplyStateAcknowledged, applyStatus["path"].State)
+		require.Empty(t, applyStatus["path"].Error)
 
 		// Telemetry
 		for _, cfg := range telemetryClient.Configuration {
