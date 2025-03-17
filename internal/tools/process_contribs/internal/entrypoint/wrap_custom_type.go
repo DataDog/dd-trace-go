@@ -105,6 +105,9 @@ func (e entrypointWrapCustomType) Apply(fn *dst.FuncDecl, fCtx FunctionContext, 
 			}
 		}
 	}
+	if wrappedField == "" {
+		return nil, fmt.Errorf("could not find wrapped field in type: %s", wrappedTypeName)
+	}
 
 	pkgPath, ok := findPackage(typePkg, fCtx.Package.Files[fCtx.FilePath])
 	if !ok {
@@ -239,14 +242,8 @@ func disabledMethod(typeName, methodName, wrappedField string) codegen.UpdateNod
 func findPackage(name string, f *dst.File) (string, bool) {
 	for _, imp := range f.Imports {
 		p, _ := strconv.Unquote(imp.Path.Value)
-		if imp.Name != nil && imp.Name.Name == name {
-			return p, true
-		}
-		parts := strings.Split(p, "/")
-		last := parts[len(parts)-1]
-		found := (isVersion(last) && parts[len(parts)-2] == name) || last == name
-		if found {
-			return p, true
+		if p == name {
+			return name, true
 		}
 	}
 	return "", false

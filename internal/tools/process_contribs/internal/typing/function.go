@@ -3,7 +3,7 @@ package typing
 import (
 	"fmt"
 	"github.com/dave/dst"
-	"path/filepath"
+	"golang.org/x/mod/semver"
 	"strconv"
 	"strings"
 	"unicode"
@@ -45,8 +45,11 @@ func (v Variable) WithoutFullPath() string {
 	if strings.HasPrefix(v.Type, "*") {
 		res += "*"
 	}
-	base := filepath.Base(pkg)
-	// TODO: missing last part of path
+	parts := strings.Split(pkg, "/")
+	base := parts[len(parts)-1]
+	if semver.IsValid(base) {
+		base = parts[len(parts)-2]
+	}
 	return res + base + "." + name
 }
 
