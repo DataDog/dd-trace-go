@@ -1,14 +1,16 @@
-package main
+package entrypoint
 
 import (
 	"fmt"
+	"github.com/DataDog/dd-trace-go/internal/tools/process_contribs/internal/codegen"
+	"github.com/DataDog/dd-trace-go/internal/tools/process_contribs/internal/typing"
 	"github.com/dave/dst"
 )
 
 type entrypointWrap struct{}
 
-func (e entrypointWrap) Apply(fn *dst.FuncDecl, _ *dst.Package, _ string, _ ...string) (map[string]updateNodeFunc, error) {
-	s := getFunctionSignature(fn)
+func (e entrypointWrap) Apply(fn *dst.FuncDecl, fCtx FunctionContext, args map[string]string) (map[string]codegen.UpdateNodeFunc, error) {
+	s := typing.GetFunctionSignature(fn)
 
 	newReturns := make([]string, len(s.Returns))
 	for i, ret := range s.Returns {
@@ -32,8 +34,8 @@ func (e entrypointWrap) Apply(fn *dst.FuncDecl, _ *dst.Package, _ string, _ ...s
 		}
 	}
 
-	removePreviousInjectedCode(fn)
-	newLines := earlyReturnStatement(integrationDisabledCallExpr(), newReturns)
+	codegen.RemoveFunctionInjectedBlocks(fn)
+	newLines := codegen.EarlyReturnStatement(codegen.IntegrationDisabledCall(), newReturns)
 	fn.Body.List = append([]dst.Stmt{newLines}, fn.Body.List...)
 	return nil, nil
 }

@@ -1,4 +1,4 @@
-module github.com/DataDog/dd-trace-go/internal/tools/gen_disable_integrations
+module github.com/DataDog/dd-trace-go/internal/tools/process_contribs
 
 go 1.23.5
 

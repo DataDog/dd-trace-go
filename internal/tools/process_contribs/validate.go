@@ -3,10 +3,13 @@ package main
 import (
 	"errors"
 	"fmt"
-	"github.com/dave/dst"
-	"github.com/hashicorp/go-multierror"
+	"github.com/DataDog/dd-trace-go/internal/tools/process_contribs/internal/entrypoint"
 	"go/token"
 	"strings"
+
+	"github.com/DataDog/dd-trace-go/internal/tools/process_contribs/internal/typing"
+	"github.com/dave/dst"
+	"github.com/hashicorp/go-multierror"
 )
 
 func validatePackage(pkg *dst.Package) error {
@@ -21,7 +24,7 @@ func validatePackage(pkg *dst.Package) error {
 		for _, decl := range f.Decls {
 			switch t := decl.(type) {
 			case *dst.FuncDecl:
-				shouldSkip := !isPublicFunction(t) || // ignore private functions
+				shouldSkip := !typing.IsPublicFunction(t) || // ignore private functions
 					t.Recv != nil || // ignore methods
 					isFunctionalOption(t) // ignore functional options
 
@@ -53,7 +56,7 @@ func validatePackage(pkg *dst.Package) error {
 		foundEntrypointComment := false
 		comments := fn.Decorations().Start
 		for _, c := range comments {
-			_, _, ok := parseDDTraceEntrypointComment(c)
+			_, ok := entrypoint.ParseComment(c)
 			if ok {
 				if foundEntrypointComment {
 					err = multierror.Append(err, fmt.Errorf("public function %s has multiple entrypoint comments", fn.Name.Name))
@@ -91,7 +94,7 @@ func isTargetConstOrVar(decl *dst.GenDecl, targetName string) bool {
 }
 
 func isFunctionalOption(fn *dst.FuncDecl) bool {
-	s := getFunctionSignature(fn)
+	s := typing.GetFunctionSignature(fn)
 	// functional options return exactly 1 result
 	if len(s.Returns) != 1 {
 		return false

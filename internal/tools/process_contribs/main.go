@@ -15,6 +15,9 @@ import (
 	"github.com/dave/dst"
 	"github.com/dave/dst/decorator"
 	"github.com/dave/dst/dstutil"
+
+	"github.com/DataDog/dd-trace-go/internal/tools/process_contribs/internal/codegen"
+	"github.com/DataDog/dd-trace-go/internal/tools/process_contribs/internal/entrypoint"
 )
 
 func getGoDirs(rootDir string) ([]string, error) {
@@ -63,10 +66,12 @@ func splitPath(p string) []string {
 
 func processDir(dir string) error {
 	fset := token.NewFileSet()
-	pkgs, err := decorator.ParseDir(fset, dir, nil, parser.ParseComments)
+	dec := decorator.NewDecorator(fset)
+	pkgs, err := dec.ParseDir(dir, nil, parser.ParseComments)
 	if err != nil {
 		return fmt.Errorf("failed to parse dir: %w", err)
 	}
+
 	for name, pkg := range pkgs {
 		if strings.HasSuffix(name, "_test") || name == "main" {
 			continue
@@ -76,8 +81,14 @@ func processDir(dir string) error {
 			continue
 		}
 
-		for fPath, _ := range pkg.Files {
-			if err := processFile(fPath, pkg); err != nil {
+		for fPath, f := range pkg.Files {
+			fCtx := entrypoint.FunctionContext{
+				FilePath:    fPath,
+				File:        f,
+				Package:     pkg,
+				AllPackages: pkgs,
+			}
+			if err := processFile(fCtx); err != nil {
 				log.Fatal(err)
 			}
 		}
@@ -85,17 +96,17 @@ func processDir(dir string) error {
 	return nil
 }
 
-func processFile(fPath string, pkg *dst.Package) error {
-	fileUpdates := make(map[string][]updateNodeFunc)
+func processFile(fCtx entrypoint.FunctionContext) error {
+	fileUpdates := make(map[string][]codegen.UpdateNodeFunc)
 
-	err := loadAndModifyFile(fPath, func(cur *dstutil.Cursor) (bool, bool) {
+	err := codegen.UpdateFile(fCtx.FilePath, func(cur *dstutil.Cursor) (bool, bool) {
 		fn, ok := cur.Node().(*dst.FuncDecl)
 		if !ok {
 			return false, true
 		}
 
 		// no need to iterate deeper after this point
-		extraUpdates, changed, err := processFunc(fn, pkg, fPath)
+		extraUpdates, changed, err := processFunc(fn, fCtx)
 		if err != nil {
 			log.Printf("failed to process func %q: %v\n", fn.Name.Name, err)
 			return false, false
@@ -111,7 +122,7 @@ func processFile(fPath string, pkg *dst.Package) error {
 
 	for f, updates := range fileUpdates {
 		for _, u := range updates {
-			err := loadAndModifyFile(f, u)
+			err := codegen.UpdateFile(f, u)
 			if err != nil {
 				return err
 			}
@@ -121,35 +132,23 @@ func processFile(fPath string, pkg *dst.Package) error {
 	return nil
 }
 
-type Processor interface {
-	Apply(fn *dst.FuncDecl, pkg *dst.Package, fPath string, args ...string) (map[string]updateNodeFunc, error)
-}
-
-var processors = map[string]Processor{
-	"ddtrace:entrypoint:wrap":             entrypointWrap{},
-	"ddtrace:entrypoint:modify-struct":    entrypointModifyStruct{},
-	"ddtrace:entrypoint:create-hooks":     entrypointCreateHooks{},
-	"ddtrace:entrypoint:wrap-custom-type": entrypointWrapCustomType{},
-	"ddtrace:entrypoint:ignore":           entrypointIgnore{},
-}
-
-func processFunc(fn *dst.FuncDecl, pkg *dst.Package, fPath string) (map[string]updateNodeFunc, bool, error) {
+func processFunc(fn *dst.FuncDecl, fCtx entrypoint.FunctionContext) (map[string]codegen.UpdateNodeFunc, bool, error) {
 	comments := fn.Decorations().Start
 	name := fn.Name.Name
 
-	for _, comment := range comments {
-		cmd, args, ok := parseDDTraceEntrypointComment(comment)
+	for _, raw := range comments {
+		comment, ok := entrypoint.ParseComment(raw)
 		if !ok {
 			continue
 		}
-		log.Printf("file: %s | function: %s | command: %s | args: %v\n", fPath, name, cmd, args)
+		log.Printf("file: %s | function: %s | entrypoint: %s | args: %v\n", fCtx.FilePath, name, comment.Command, comment.Arguments)
 
-		p, ok := processors[cmd]
+		p, ok := entrypoint.AllEntrypoints[comment.Command]
 		if !ok {
 			return nil, false, fmt.Errorf("unknown ddtrace:entrypoint comment: %s", comment)
 		}
 
-		extraUpdates, err := p.Apply(fn, pkg, fPath, args...)
+		extraUpdates, err := p.Apply(fn, fCtx, comment.Arguments)
 		if err != nil {
 			return nil, false, err
 		}
@@ -158,22 +157,8 @@ func processFunc(fn *dst.FuncDecl, pkg *dst.Package, fPath string) (map[string]u
 	return nil, false, nil
 }
 
-func parseDDTraceEntrypointComment(comment string) (string, []string, bool) {
-	content := strings.TrimPrefix(comment, "//")
-	if len(content) == 0 {
-		return "", nil, false
-	}
-	content = strings.TrimLeft(content, " ")
-	parts := strings.SplitN(content, " ", 2)
-	cmd, args := parts[0], parts[1:]
-	if !strings.HasPrefix(cmd, "ddtrace:entrypoint") {
-		return "", nil, false
-	}
-	return cmd, args, true
-}
-
 func main() {
-	rootDir := "../../../contrib"
+	rootDir := "../../../contrib/dimfeld"
 	args := os.Args[1:]
 	if len(args) > 0 && args[0] != "" {
 		rootDir = args[0]

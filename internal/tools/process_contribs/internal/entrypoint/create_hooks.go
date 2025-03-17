@@ -1,12 +1,13 @@
-package main
+package entrypoint
 
 import (
 	"fmt"
 	"github.com/dave/dst"
-	"github.com/dave/dst/decorator"
-	"go/parser"
 	"go/token"
 	"strings"
+
+	"github.com/DataDog/dd-trace-go/internal/tools/process_contribs/internal/codegen"
+	"github.com/DataDog/dd-trace-go/internal/tools/process_contribs/internal/typing"
 )
 
 type entrypointCreateHooks struct{}
@@ -17,14 +18,14 @@ type entrypointCreateHooks struct{}
 // 1. add a new field `disabled bool` in the custom type
 // 2. get the value of disabled and store it in the struct
 // 3. loop over all the exported methods and find out how to do a no-op when disabled = true
-func (e entrypointCreateHooks) Apply(fn *dst.FuncDecl, pkg *dst.Package, fPath string, _ ...string) (map[string]updateNodeFunc, error) {
-	s := getFunctionSignature(fn)
+func (e entrypointCreateHooks) Apply(fn *dst.FuncDecl, fCtx FunctionContext, args map[string]string) (map[string]codegen.UpdateNodeFunc, error) {
+	s := typing.GetFunctionSignature(fn)
 	if len(s.Returns) == 0 || len(s.Returns) > 2 || (len(s.Returns) == 2 && s.Returns[1].Type != "error") {
 		return nil, fmt.Errorf("unexpected return type (only know how to handle single result or result/error): %v", s.Returns)
 	}
-	
+
 	noopType := "noopHooks"
-	_, _, ok := findTypeDeclFile(pkg, noopType)
+	_, _, ok := findTypeDeclFile(fCtx.Package, noopType)
 	if !ok {
 		return nil, fmt.Errorf("type %s needs to be defined for ddtrace:entrypoint:create-hooks", noopType)
 	}
@@ -34,8 +35,8 @@ func (e entrypointCreateHooks) Apply(fn *dst.FuncDecl, pkg *dst.Package, fPath s
 		newReturns = append(newReturns, "nil")
 	}
 
-	removePreviousInjectedCode(fn)
-	newLines := earlyReturnStatement(integrationDisabledCallExpr(), newReturns)
+	codegen.RemoveFunctionInjectedBlocks(fn)
+	newLines := codegen.EarlyReturnStatement(codegen.IntegrationDisabledCall(), newReturns)
 	fn.Body.List = append([]dst.Stmt{newLines}, fn.Body.List...)
 
 	return nil, nil
@@ -72,25 +73,4 @@ func findStructType(decl dst.Decl, targetType string) *dst.StructType {
 	}
 
 	return nil
-}
-
-// 📌 Helper function: Parse a Go statement string and extract dst.Stmt
-func parseStmtFromString(stmtStr string) dst.Stmt {
-	// Wrap the statement inside a temporary function
-	tempSource := fmt.Sprintf("package temp\nfunc tempFunc() { %s }", stmtStr)
-
-	// Parse it into a dst.File
-	fset := token.NewFileSet()
-	file, err := decorator.ParseFile(fset, "", tempSource, parser.ParseComments)
-	if err != nil {
-		panic(err)
-	}
-
-	// Extract the first statement from the function body
-	funcDecl, ok := file.Decls[0].(*dst.FuncDecl)
-	if !ok || len(funcDecl.Body.List) == 0 {
-		panic("Failed to extract statement from parsed file")
-	}
-
-	return funcDecl.Body.List[0]
 }
