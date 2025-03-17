@@ -54,6 +54,7 @@ import (
 	_ "github.com/DataDog/dd-trace-go/contrib/labstack/echo.v4/v2"                         // integration
 	_ "github.com/DataDog/dd-trace-go/contrib/log/slog/v2"                                 // integration
 	_ "github.com/DataDog/dd-trace-go/contrib/net/http/v2"                                 // integration
+	_ "github.com/DataDog/dd-trace-go/contrib/opensearch-project/opensearch-go.v4/v2"      // integration
 	_ "github.com/DataDog/dd-trace-go/contrib/redis/go-redis.v9/v2"                        // integration
 	_ "github.com/DataDog/dd-trace-go/contrib/redis/rueidis/v2"                            // integration
 	_ "github.com/DataDog/dd-trace-go/contrib/segmentio/kafka-go/v2"                       // integration
