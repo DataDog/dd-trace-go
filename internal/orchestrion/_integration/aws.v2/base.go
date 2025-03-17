@@ -9,6 +9,7 @@ package awsv2
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/containers"
@@ -20,20 +21,21 @@ import (
 )
 
 type base struct {
-	server testcontainers.Container
-	cfg    aws.Config
-	host   string
-	port   string
+	server   testcontainers.Container
+	cfg      aws.Config
+	endpoint string
 }
 
 func (b *base) setup(_ context.Context, t *testing.T) {
 	containers.SkipIfProviderIsNotHealthy(t)
 
-	b.server, b.host, b.port = containers.StartDynamoDBTestContainer(t)
+	var host, port string
+	b.server, host, port = containers.StartDynamoDBTestContainer(t)
+	b.endpoint = fmt.Sprintf("http://%s:%s", host, port)
 }
 
 func (b *base) run(ctx context.Context, t *testing.T) {
-	ddb := dynamodb.NewFromConfig(b.cfg)
+	ddb := dynamodb.NewFromConfig(b.cfg, func(o *dynamodb.Options) { o.BaseEndpoint = &b.endpoint })
 	_, err := ddb.ListTables(ctx, nil)
 	require.NoError(t, err)
 }

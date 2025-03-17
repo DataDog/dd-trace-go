@@ -136,10 +136,15 @@ func (p *profiler) lookupProfile(name string, w io.Writer, debug int) error {
 	return prof.WriteTo(w, debug)
 }
 
+var (
+	errProfilingNotSupportedInAWSLambda = errors.New("profiling is not supported in AWS Lambda runtimes")
+	errAgentlessUploadRequiresAPIKey    = errors.New("agentless upload requires a valid API key - set the DD_API_KEY env variable to configure one")
+)
+
 // newProfiler creates a new, unstarted profiler.
 func newProfiler(opts ...Option) (*profiler, error) {
 	if os.Getenv("AWS_LAMBDA_FUNCTION_NAME") != "" {
-		return nil, errors.New("profiling not supported in AWS Lambda runtimes")
+		return nil, errProfilingNotSupportedInAWSLambda
 	}
 	cfg, err := defaultConfig()
 	if err != nil {
@@ -159,7 +164,7 @@ func newProfiler(opts ...Option) (*profiler, error) {
 	// DD_PROFILING_AGENTLESS can be set to enable it for testing and debugging.
 	if cfg.agentless {
 		if !isAPIKeyValid(cfg.apiKey) {
-			return nil, errors.New("Agentless upload requires a valid API key. Use the DD_API_KEY env variable to set it")
+			return nil, errAgentlessUploadRequiresAPIKey
 		}
 		// Always warn people against using this mode for now. All customers should
 		// use agent based uploading at this point.
