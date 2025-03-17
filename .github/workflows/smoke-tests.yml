@@ -203,3 +203,16 @@ jobs:
             go_libddwaf_ref=${{ inputs.go-libddwaf-ref }}
       - name: Test
         run: docker run -p7777:7777 --rm smoke-test
+
+  smoke-tests-done:
+    name: Smoke Tests
+    needs: setup-requirements-linux
+    runs-on: ubuntu-latest
+    if: success() || failure()
+    steps:
+      - name: Success
+        if: needs.setup-requirements-linux.result == 'success'
+        run: echo "Success!"
+      - name: Failure
+        if: needs.setup-requirements-linux.result != 'success'
+        run: echo "Failure!" && exit 1
