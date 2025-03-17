@@ -58,7 +58,7 @@ func startTelemetry(c *config) {
 		{Name: "profiling_endpoints_enabled", Value: c.profilerEndpoints},
 		{Name: "trace_span_attribute_schema", Value: c.spanAttributeSchemaVersion},
 		{Name: "trace_peer_service_defaults_enabled", Value: c.peerServiceDefaultsEnabled},
-		{Name: "orchestrion_enabled", Value: c.orchestrionCfg.Enabled},
+		{Name: "orchestrion_enabled", Value: c.orchestrionCfg.Enabled, Origin: telemetry.OriginCode},
 		{Name: "trace_enabled", Value: c.enabled.current, Origin: c.enabled.cfgOrigin},
 		{Name: "trace_log_directory", Value: c.logDirectory},
 		c.traceSampleRate.toTelemetry(),
@@ -104,9 +104,7 @@ func startTelemetry(c *config) {
 				Value: fmt.Sprintf("rate:%f_maxPerSecond:%f", rule.Rate, rule.MaxPerSecond)})
 	}
 	if c.orchestrionCfg.Enabled {
-		for k, v := range c.orchestrionCfg.Metadata {
-			telemetryConfigs = append(telemetryConfigs, telemetry.Configuration{Name: "orchestrion_" + k, Value: v})
-		}
+		telemetryConfigs = append(telemetryConfigs, telemetry.Configuration{Name: "orchestrion_version", Value: c.orchestrionCfg.Metadata.Version, Origin: telemetry.OriginCode})
 	}
 	telemetryConfigs = append(telemetryConfigs, additionalConfigs...)
 	telemetry.RegisterAppConfigs(telemetryConfigs...)

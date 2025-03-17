@@ -114,8 +114,24 @@ func (m *metrics) LoadOrStore(namespace Namespace, kind transport.MetricType, na
 	return handle
 }
 
+//orchestrion:version
+const orchestrionVersion = ""
+
 func (m *metrics) Payload() transport.Payload {
-	series := make([]transport.MetricData, 0, m.store.Len())
+	series := make([]transport.MetricData, 0, m.store.Len()+1)
+
+	if orchestrionVersion != "" {
+		// Orchestrion was used to instrument the application, so we'll report a
+		// telemetry gauge metric to indicate that, so we can track usage.
+		series = append(series, transport.MetricData{
+			Namespace: NamespaceTracers,
+			Metric:    "orchestrion.enabled",
+			Type:      transport.GaugeMetric,
+			Tags:      []string{"version:" + orchestrionVersion},
+			Points:    [][2]any{{time.Now().Unix(), 1}},
+		})
+	}
+
 	m.store.Range(func(_ metricKey, handle metricHandle) bool {
 		if payload := handle.Payload(); payload.Type != "" {
 			series = append(series, payload)

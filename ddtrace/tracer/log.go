@@ -82,6 +82,9 @@ func checkEndpoint(c *http.Client, endpoint string) error {
 	return nil
 }
 
+//orchestrion:version
+const orchestrionVersion string = ""
+
 // logStartup generates a startupInfo for a tracer and writes it to the log in
 // JSON format.
 func logStartup(t *tracer) {
@@ -115,6 +118,11 @@ func logStartup(t *tracer) {
 		agentURL = t.config.transport.endpoint()
 	}
 
+	var orchestrionMd *orchestrionMetadata
+	if orchestrionVersion != "" {
+		orchestrionMd = &orchestrionMetadata{Version: orchestrionVersion}
+	}
+
 	info := startupInfo{
 		Date:                        time.Now().Format(time.RFC3339),
 		OSName:                      osinfo.OSName(),
@@ -146,7 +154,7 @@ func logStartup(t *tracer) {
 		AppSec:                      appsec.Enabled(),
 		PartialFlushEnabled:         t.config.partialFlushEnabled,
 		PartialFlushMinSpans:        t.config.partialFlushMinSpans,
-		Orchestrion:                 t.config.orchestrionCfg,
+		Orchestrion:                 orchestrionConfig{Enabled: orchestrionVersion != "", Metadata: orchestrionMd},
 		FeatureFlags:                featureFlags,
 		PropagationStyleInject:      injectorNames,
 		PropagationStyleExtract:     extractorNames,
