@@ -271,6 +271,7 @@ jobs:
         if: always()
         continue-on-error: true
         uses: ./.github/actions/dd-ci-upload
+        working-directory: ${{ github.workspace }}/dd-trace-go/internal/orchestrion/_integration
         with:
           dd-api-key: ${{ secrets.DD_CI_API_KEY }}
           files: ${{ env.REPORT }}
