@@ -9,7 +9,6 @@ package awsv2
 
 import (
 	"context"
-	"fmt"
 	"testing"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/trace"
@@ -27,7 +26,6 @@ func (tc *TestCaseNewConfig) Setup(ctx context.Context, t *testing.T) {
 	cfg := aws.NewConfig()
 	cfg.Region = "test-region-1337"
 	cfg.Credentials = credentials.NewStaticCredentialsProvider("NOTANACCESSKEY", "NOTASECRETKEY", "")
-	cfg.BaseEndpoint = aws.String(fmt.Sprintf("http://%s:%s", tc.host, tc.port))
 	tc.cfg = *cfg
 }
 
