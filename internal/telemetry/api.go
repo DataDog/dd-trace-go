@@ -162,4 +162,7 @@ type Client interface {
 	// AppStop sends the telemetry necessary to signal that the app is stopping.
 	// Preferred use via [StopApp] package level function
 	AppStop()
+
+	// AddFlushTicker adds a function that is called at each telemetry Flush. By default, every minute
+	AddFlushTicker(ticker func(Client))
 }

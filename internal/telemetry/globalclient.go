@@ -212,6 +212,13 @@ func LoadIntegration(integration string) {
 	})
 }
 
+// AddFlushTicker adds a function that is called at each telemetry Flush. By default, every minute
+func AddFlushTicker(ticker func(Client)) {
+	globalClientCall(func(client Client) {
+		client.AddFlushTicker(ticker)
+	})
+}
+
 var globalClientLogLossOnce sync.Once
 
 // globalClientCall takes a function that takes a Client and calls it with the global client if it exists.
