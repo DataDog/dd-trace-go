@@ -91,6 +91,8 @@ func NewXSyncMapCounterMap() *XSyncMapCounterMap {
 	}
 }
 
+// Inc takes a key and increases the value of that key by 1. If the key does not already
+// exist in the map, it initializes a new counter and sets its value to 1.
 func (cm *XSyncMapCounterMap) Inc(key string) {
 	cm.mu.Lock()
 	defer cm.mu.Unlock()
@@ -102,6 +104,9 @@ func (cm *XSyncMapCounterMap) Inc(key string) {
 	val.Inc()
 }
 
+// swap switches the value of index between 0 and 1. This allows Inc() and GetAndReset()
+// to access different maps to prevent race conditions. It returns the old value of index
+// to be used.
 func (cm *XSyncMapCounterMap) swap() int {
 	cm.mu.Lock()
 	defer cm.mu.Unlock()
@@ -110,18 +115,21 @@ func (cm *XSyncMapCounterMap) swap() int {
 	return old
 }
 
+// GetAndReset() returns a map representation of the current values in the XSyncMapCounterMap,
+// then deletes all key value pairs from the map.
 func (cm *XSyncMapCounterMap) GetAndReset() map[string]int64 {
 	cm.muD.Lock()
 	defer cm.muD.Unlock()
 	ret := map[string]int64{}
 	i := cm.swap()
 	cm.counts[i].Range(func(key string, _ *xsync.Counter) bool {
-		v, ok := cm.counts[i].LoadAndDelete(key)
+		v, ok := cm.counts[i].Load(key)
 		if ok {
 			ret[key] = v.Value()
 		}
 		return true
 	})
+	cm.counts[i].Clear()
 	return ret
 }
 
