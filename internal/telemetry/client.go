@@ -214,10 +214,11 @@ func (c *client) Flush() {
 	// We call the flushTickerFuncs before flushing the data for data sources
 	{
 		c.flushTickerFuncsMu.Lock()
+		defer c.flushTickerFuncsMu.Unlock()
+
 		for _, f := range c.flushTickerFuncs {
 			f(c)
 		}
-		c.flushTickerFuncsMu.Unlock()
 	}
 
 	payloads := make([]transport.Payload, 0, 8)
