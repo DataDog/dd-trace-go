@@ -389,6 +389,72 @@ func TestStartRequestSpanWithBaggage(t *testing.T) {
 	assert.Equal(t, "value2", spanBm["key2"])
 }
 
+func TestExtractReferrerHost(t *testing.T) {
+	tests := []struct {
+		name     string
+		referrer string
+		expected string
+	}{
+		{
+			name:     "valid URL with host",
+			referrer: "https://example.com/path",
+			expected: "example.com",
+		},
+		{
+			name:     "valid URL with subdomain",
+			referrer: "https://sub.example.com/path",
+			expected: "sub.example.com",
+		},
+		{
+			name:     "valid URL with port",
+			referrer: "https://example.com:8080/path",
+			expected: "example.com",
+		},
+		{
+			name:     "empty referrer",
+			referrer: "",
+			expected: "",
+		},
+		{
+			name:     "invalid URL",
+			referrer: "not a url",
+			expected: "",
+		},
+		{
+			name:     "URL without scheme",
+			referrer: "example.com/path",
+			expected: "",
+		},
+		{
+			name:     "URL with IPv6 and port",
+			referrer: "https://[2001:db8::1]:8080/path",
+			expected: "2001:db8::1",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := extractReferrerHost(tt.referrer)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+func TestReferrerHostSpanTag(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	r := httptest.NewRequest(http.MethodGet, "/test", nil)
+	r.Header.Set("referer", "https://example.com/path")
+
+	s, _, _ := StartRequestSpan(r, HeaderTagsFromRequest(r, internal.NewLockMap(nil)))
+	s.Finish()
+
+	spans := mt.FinishedSpans()
+	require.Len(t, spans, 1)
+	assert.Equal(t, "example.com", spans[0].Tag("http.referrer_hostname"))
+}
+
 func TestStartRequestSpanMergedBaggage(t *testing.T) {
 	t.Setenv("DD_TRACE_PROPAGATION_STYLE", "datadog,tracecontext,baggage")
 	tracer.Start()

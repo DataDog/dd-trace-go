@@ -10,7 +10,9 @@ package httptrace
 import (
 	"context"
 	"fmt"
+	"net"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"sync"
@@ -218,12 +220,41 @@ func URLFromRequest(r *http.Request, queryString bool) string {
 	return url
 }
 
+// extractReferrerHost extracts the host from a referrer URL
+func extractReferrerHost(referrer string) string {
+	if referrer == "" {
+		return ""
+	}
+	// Try to parse the URL
+	u, err := url.Parse(referrer)
+	if err != nil {
+		return ""
+	}
+	// Split host and port, and return only the host part
+	host, _, err := net.SplitHostPort(u.Host)
+	if err != nil {
+		// If there's no port, just return the host
+		return u.Host
+	}
+	return host
+}
+
 // HeaderTagsFromRequest matches req headers to user-defined list of header tags
 // and creates span tags based on the header tag target and the req header value
 func HeaderTagsFromRequest(req *http.Request, headerTags instrumentation.HeaderTags) tracer.StartSpanOption {
 	var tags []struct {
 		key string
 		val string
+	}
+
+	// Handle referer header separately
+	if referer := req.Header.Get("referer"); referer != "" {
+		if host := extractReferrerHost(referer); host != "" {
+			tags = append(tags, struct {
+				key string
+				val string
+			}{ext.HTTPReferrerHostname, host})
+		}
 	}
 
 	headerTags.Iter(func(header, tag string) {
