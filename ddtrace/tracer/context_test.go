@@ -77,6 +77,23 @@ func TestStartSpanFromContext(t *testing.T) {
 	assert.Equal("/", st.Tag(ext.ResourceName))
 }
 
+func TestStartSpanFromContextDefault(t *testing.T) {
+	_, stop := startTestTracer(t)
+	defer stop()
+
+	assert := assert.New(t)
+	root, ctx := StartSpanFromContext(context.TODO(), "http.request")
+	assert.NotNil(root)
+	mRoot := mocktracer.MockSpan(root.(traceinternal.SpanV2Adapter).Span)
+	assert.Equal("http.request", mRoot.OperationName())
+	span, _ := StartSpanFromContext(ctx, "db.query")
+	assert.NotNil(span)
+	mSpan := mocktracer.MockSpan(span.(traceinternal.SpanV2Adapter).Span)
+	assert.Equal("db.query", mSpan.OperationName())
+	assert.Equal(mSpan.TraceID(), mRoot.TraceID())
+	assert.NotEqual(mSpan.SpanID(), mRoot.SpanID())
+}
+
 func TestStartSpanFromContextRace(t *testing.T) {
 	_, stop := startTestTracer(t)
 	defer stop()
