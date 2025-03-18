@@ -116,6 +116,7 @@ func (m *metrics) LoadOrStore(namespace Namespace, kind transport.MetricType, na
 
 func (m *metrics) Payload() transport.Payload {
 	series := make([]transport.MetricData, 0, m.store.Len())
+
 	m.store.Range(func(_ metricKey, handle metricHandle) bool {
 		if payload := handle.Payload(); payload.Type != "" {
 			series = append(series, payload)
