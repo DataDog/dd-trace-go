@@ -117,6 +117,10 @@ type client struct {
 
 	// payloadQueue is used when we cannot flush previously built payload for multiple reasons.
 	payloadQueue *internal.RingQueue[transport.Payload]
+
+	// flushTickerFuncs are functions that are called just before flushing the data to the backend.
+	flushTickerFuncs   []func(Client)
+	flushTickerFuncsMu sync.Mutex
 }
 
 func (c *client) Log(level LogLevel, text string, options ...LogOption) {
@@ -181,6 +185,12 @@ func (c *client) RegisterAppConfigs(kvs ...Configuration) {
 	}
 }
 
+func (c *client) AddFlushTicker(f func(Client)) {
+	c.flushTickerFuncsMu.Lock()
+	defer c.flushTickerFuncsMu.Unlock()
+	c.flushTickerFuncs = append(c.flushTickerFuncs, f)
+}
+
 func (c *client) Config() ClientConfig {
 	return c.clientConfig
 }
@@ -200,6 +210,15 @@ func (c *client) Flush() {
 			SwapClient(nil)
 		}
 	}()
+
+	// We call the flushTickerFuncs before flushing the data for data sources
+	{
+		c.flushTickerFuncsMu.Lock()
+		for _, f := range c.flushTickerFuncs {
+			f(c)
+		}
+		c.flushTickerFuncsMu.Unlock()
+	}
 
 	payloads := make([]transport.Payload, 0, 8)
 	for _, ds := range c.dataSources {

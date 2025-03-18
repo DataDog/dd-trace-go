@@ -189,6 +189,9 @@ func (r *RecordClient) AppStop() {
 	r.Stopped = true
 }
 
+func (r *RecordClient) AddFlushTicker(func(telemetry.Client)) {
+}
+
 func CheckConfig(t *testing.T, cfgs []telemetry.Configuration, key string, value any) {
 	t.Helper()
 	for _, c := range cfgs {
