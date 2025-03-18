@@ -188,23 +188,23 @@ func getLocalGitData() (localGitData, error) {
 
 	// Extract the absolute path to the Git directory
 	log.Debug("civisibility.git: getting the absolute path to the Git directory")
-	out, err := execGitString(telemetry.NotSpecifiedCommandsType, "rev-parse", "--absolute-git-dir")
+	out, err := execGitString(telemetry.NotSpecifiedCommandsType, "rev-parse", "--show-toplevel")
 	if err == nil {
-		gitData.SourceRoot = strings.ReplaceAll(strings.Trim(string(out), "\n"), ".git", "")
+		gitData.SourceRoot = out
 	}
 
 	// Extract the repository URL
 	log.Debug("civisibility.git: getting the repository URL")
 	out, err = execGitString(telemetry.GetRepositoryCommandsType, "ls-remote", "--get-url")
 	if err == nil {
-		gitData.RepositoryURL = filterSensitiveInfo(strings.Trim(string(out), "\n"))
+		gitData.RepositoryURL = filterSensitiveInfo(out)
 	}
 
 	// Extract the current branch name
 	log.Debug("civisibility.git: getting the current branch name")
 	out, err = execGitString(telemetry.GetBranchCommandsType, "rev-parse", "--abbrev-ref", "HEAD")
 	if err == nil {
-		gitData.Branch = strings.Trim(string(out), "\n")
+		gitData.Branch = out
 	}
 
 	// Get commit details from the latest commit using git log (git log -1 --pretty='%H","%aI","%an","%ae","%cI","%cn","%ce","%B')
@@ -215,7 +215,7 @@ func getLocalGitData() (localGitData, error) {
 	}
 
 	// Split the output into individual components
-	outArray := strings.Split(string(out), "\",\"")
+	outArray := strings.Split(out, "\",\"")
 	if len(outArray) < 8 {
 		return gitData, errors.New("git log failed")
 	}
