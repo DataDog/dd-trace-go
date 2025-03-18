@@ -13,6 +13,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/puzpuzpuz/xsync/v3"
+
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/internal/knownmetrics"
@@ -74,7 +76,7 @@ type metricHandle interface {
 }
 
 type metrics struct {
-	store         internal.SyncMap[metricKey, metricHandle]
+	store         *xsync.MapOf[metricKey, metricHandle]
 	pool          *internal.SyncPool[*metricPoint]
 	skipAllowlist bool // Debugging feature to skip the allowlist of known metrics
 }
@@ -89,17 +91,16 @@ func (m *metrics) LoadOrStore(namespace Namespace, kind transport.MetricType, na
 	)
 	switch kind {
 	case transport.CountMetric:
-		handle, loaded = m.store.LoadOrStore(key, &count{metric: metric{key: key, pool: m.pool}})
+		handle, loaded = m.store.LoadOrCompute(key, func() metricHandle { return &count{metric: metric{key: key, pool: m.pool}} })
 	case transport.GaugeMetric:
-		handle, loaded = m.store.LoadOrStore(key, &gauge{metric: metric{key: key, pool: m.pool}})
+		handle, loaded = m.store.LoadOrCompute(key, func() metricHandle { return &gauge{metric: metric{key: key, pool: m.pool}} })
 	case transport.RateMetric:
-		handle, loaded = m.store.LoadOrStore(key, &rate{count: count{metric: metric{key: key, pool: m.pool}}})
-		if !loaded {
-			// Initialize the interval start for rate metrics
-			r := handle.(*rate)
+		handle, loaded = m.store.LoadOrCompute(key, func() metricHandle {
+			rate := &rate{count: count{metric: metric{key: key, pool: m.pool}}}
 			now := time.Now()
-			r.intervalStart.Store(&now)
-		}
+			rate.intervalStart.Store(&now)
+			return rate
+		})
 	default:
 		log.Warn("telemetry: unknown metric type %q", kind)
 		return nil
@@ -115,8 +116,7 @@ func (m *metrics) LoadOrStore(namespace Namespace, kind transport.MetricType, na
 }
 
 func (m *metrics) Payload() transport.Payload {
-	series := make([]transport.MetricData, 0, m.store.Len())
-
+	series := make([]transport.MetricData, 0, m.store.Size())
 	m.store.Range(func(_ metricKey, handle metricHandle) bool {
 		if payload := handle.Payload(); payload.Type != "" {
 			series = append(series, payload)
