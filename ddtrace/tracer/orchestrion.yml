@@ -55,10 +55,7 @@ aspects:
           # they get executed in declaration order. This means it's okay for us to add a new init function if there is
           # already one in the file, but as it currently is appended AFTER all other declarations in the file, it means
           # that it will be executed last (tracing contents of previous init functions will not be possible).
-          template: |-
-            func init() {
-              tracer.Start(tracer.WithOrchestrion(map[string]string{"version": {{printf "%q" Version}}}))
-            }
+          template: func init() { tracer.Start() }
       # We need to stop the tracer at the end of `main` to ensure all spans are properly flushed.
       - prepend-statements:
           imports:

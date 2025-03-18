@@ -151,11 +151,15 @@ func TestTelemetryEnabled(t *testing.T) {
 		telemetryClient := new(telemetrytest.RecordClient)
 		defer telemetry.MockClient(telemetryClient)()
 
-		Start(WithOrchestrion(map[string]string{"k1": "v1", "k2": "v2"}))
+		Start(func(c *config) {
+			c.orchestrionCfg = orchestrionConfig{
+				Enabled:  true,
+				Metadata: &orchestrionMetadata{Version: "v1337.42.0-phony"},
+			}
+		})
 		defer Stop()
 
 		telemetrytest.CheckConfig(t, telemetryClient.Configuration, "orchestrion_enabled", true)
-		telemetrytest.CheckConfig(t, telemetryClient.Configuration, "orchestrion_k1", "v1")
-		telemetrytest.CheckConfig(t, telemetryClient.Configuration, "orchestrion_k2", "v2")
+		telemetrytest.CheckConfig(t, telemetryClient.Configuration, "orchestrion_version", "v1337.42.0-phony")
 	})
 }
