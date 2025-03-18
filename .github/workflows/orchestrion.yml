@@ -271,10 +271,9 @@ jobs:
         if: always()
         continue-on-error: true
         uses: ./.github/actions/dd-ci-upload
-        working-directory: ${{ github.workspace }}/dd-trace-go/internal/orchestrion/_integration
         with:
           dd-api-key: ${{ secrets.DD_CI_API_KEY }}
-          files: ${{ env.REPORT }}
+          files: ${{ github.workspace }}/dd-trace-go/internal/orchestrion/_integration/${{ env.REPORT }}
           tags: go:${{ steps.setup-go.outputs.go-version }},arch:${{ runner.arch }},os:${{ runner.os }},distribution:${{ runner.distribution }}
 
   # This is a simple join point to make it easy to set up branch protection rules in GitHub.
