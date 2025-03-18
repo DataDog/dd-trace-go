@@ -17,7 +17,6 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
-	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion"
 	"github.com/DataDog/dd-trace-go/v2/internal/osinfo"
 	telemetrylog "github.com/DataDog/dd-trace-go/v2/internal/telemetry/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/version"
@@ -116,11 +115,6 @@ func logStartup(t *tracer) {
 		agentURL = t.config.transport.endpoint()
 	}
 
-	var orchestrionMd *orchestrionMetadata
-	if orchestrion.Enabled() {
-		orchestrionMd = &orchestrionMetadata{Version: orchestrion.Version}
-	}
-
 	info := startupInfo{
 		Date:                        time.Now().Format(time.RFC3339),
 		OSName:                      osinfo.OSName(),
@@ -152,7 +146,7 @@ func logStartup(t *tracer) {
 		AppSec:                      appsec.Enabled(),
 		PartialFlushEnabled:         t.config.partialFlushEnabled,
 		PartialFlushMinSpans:        t.config.partialFlushMinSpans,
-		Orchestrion:                 orchestrionConfig{Enabled: orchestrion.Enabled(), Metadata: orchestrionMd},
+		Orchestrion:                 t.config.orchestrionCfg,
 		FeatureFlags:                featureFlags,
 		PropagationStyleInject:      injectorNames,
 		PropagationStyleExtract:     extractorNames,

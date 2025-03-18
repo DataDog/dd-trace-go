@@ -152,8 +152,10 @@ func TestTelemetryEnabled(t *testing.T) {
 		defer telemetry.MockClient(telemetryClient)()
 
 		Start(func(c *config) {
-			c.orchestrionCfg.Enabled = true
-			c.orchestrionCfg.Metadata.Version = "v1337.42.0-phony"
+			c.orchestrionCfg = orchestrionConfig{
+				Enabled:  true,
+				Metadata: &orchestrionMetadata{Version: "v1337.42.0-phony"},
+			}
 		})
 		defer Stop()
 
