@@ -55,6 +55,29 @@ func IsCommonMetric(namespace transport.Namespace, typ transport.MetricType, nam
 	return slices.Contains(commonMetrics, decl)
 }
 
+// Size returns the total number of known metrics, including common and golang metrics
+func Size() int {
+	return len(commonMetrics) + len(golangMetrics)
+}
+
+// SizeWithFilter returns the total number of known metrics, including common and golang metrics, that pass the given filter
+func SizeWithFilter(filter func(Declaration) bool) int {
+	size := 0
+	for _, decl := range commonMetrics {
+		if filter(decl) {
+			size++
+		}
+	}
+
+	for _, decl := range golangMetrics {
+		if filter(decl) {
+			size++
+		}
+	}
+
+	return size
+}
+
 // IsLanguageMetric returns true if the given metric name is a known Go language metric by the backend
 // This is linked to the generated golang_metrics.json file. If you added new metrics to the backend, you should rerun the generator.
 func IsLanguageMetric(typ transport.MetricType, name string) bool {
