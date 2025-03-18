@@ -17,6 +17,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion"
 	"github.com/DataDog/dd-trace-go/v2/internal/osinfo"
 	telemetrylog "github.com/DataDog/dd-trace-go/v2/internal/telemetry/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/version"
@@ -82,9 +83,6 @@ func checkEndpoint(c *http.Client, endpoint string) error {
 	return nil
 }
 
-//orchestrion:version
-const orchestrionVersion string = ""
-
 // logStartup generates a startupInfo for a tracer and writes it to the log in
 // JSON format.
 func logStartup(t *tracer) {
@@ -119,8 +117,8 @@ func logStartup(t *tracer) {
 	}
 
 	var orchestrionMd *orchestrionMetadata
-	if orchestrionVersion != "" {
-		orchestrionMd = &orchestrionMetadata{Version: orchestrionVersion}
+	if orchestrion.Enabled() {
+		orchestrionMd = &orchestrionMetadata{Version: orchestrion.Version}
 	}
 
 	info := startupInfo{
@@ -154,7 +152,7 @@ func logStartup(t *tracer) {
 		AppSec:                      appsec.Enabled(),
 		PartialFlushEnabled:         t.config.partialFlushEnabled,
 		PartialFlushMinSpans:        t.config.partialFlushMinSpans,
-		Orchestrion:                 orchestrionConfig{Enabled: orchestrionVersion != "", Metadata: orchestrionMd},
+		Orchestrion:                 orchestrionConfig{Enabled: orchestrion.Enabled(), Metadata: orchestrionMd},
 		FeatureFlags:                featureFlags,
 		PropagationStyleInject:      injectorNames,
 		PropagationStyleExtract:     extractorNames,
