@@ -214,7 +214,7 @@ jobs:
             echo "Starting test suite in DRIVER mode"
             if [[ "${{ matrix.runs-on }}" == 'windows' ]]; then
               echo "windows mode"
-              gotestsum --junitfile ${XML_PATH} --raw-command -- wsl ./run-orchestrion-tests.sh
+              gotestsum --junitfile ${XML_PATH} --raw-command -- ./run-orchestrion-tests.bat
             else
               echo "other"
               gotestsum --junitfile ${XML_PATH} --raw-command -- ./run-orchestrion-tests.sh
