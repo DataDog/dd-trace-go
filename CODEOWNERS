@@ -38,3 +38,4 @@ go.sum
 
 # Orchestrion
 /internal/orchestrion           @DataDog/apm-orchestrion @DataDog/apm-go
+/**/orchestrion.yml             @DataDog/apm-orchestrion @DataDog/apm-go
