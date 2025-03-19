@@ -10,7 +10,6 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/baggage"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
@@ -103,16 +102,57 @@ func (t *oteltracer) Start(ctx context.Context, spanName string, opts ...oteltra
 
 	// Merge the two baggage maps.
 	// If there are conflicts, the OpenTelemetry baggage wins.
-	if len(ddBag) > 0 || otelBag.Len() > 0 {
+	var mergedBag otelbaggage.Baggage
+	switch {
+	case len(ddBag) == 0 && otelBag.Len() > 0:
+		// Only OpenTelemetry baggage exists.
+		mergedBag = otelBag
+	case otelBag.Len() == 0 && len(ddBag) > 0:
+		// Only Datadog baggage exists; convert it.
 		var members []otelbaggage.Member
 		for key, value := range ddBag {
 			member, _ := otelbaggage.NewMember(key, value)
 			members = append(members, member)
 		}
-		members = append(members, otelBag.Members()...)
-		mergedBag, _ := otelbaggage.New(members...)
-		for _, member := range mergedBag.Members() {
-			s.SetBaggageItem(member.Key(), member.Value())
+		mergedBag, _ = otelbaggage.New(members...)
+	case len(ddBag) > 0 && otelBag.Len() > 0:
+		// Both baggage maps exist.
+		// Merge the smaller one into the larger one; OpenTelemetry baggage wins on conflicts.
+		if len(ddBag) <= otelBag.Len() {
+			// ddBag is smaller: start with otelBag and add missing ddBag items.
+			members := otelBag.Members()
+			otelKeys := make(map[string]struct{}, otelBag.Len())
+			for _, m := range otelBag.Members() {
+				otelKeys[m.Key()] = struct{}{}
+			}
+			for key, value := range ddBag {
+				if _, exists := otelKeys[key]; !exists {
+					member, _ := otelbaggage.NewMember(key, value)
+					members = append(members, member)
+				}
+			}
+			mergedBag, _ = otelbaggage.New(members...)
+		} else {
+			// otelBag is smaller: start with ddBag converted to members, then override with otelBag.
+			mergedMap := make(map[string]otelbaggage.Member, len(ddBag)+otelBag.Len())
+			for key, value := range ddBag {
+				member, _ := otelbaggage.NewMember(key, value)
+				mergedMap[key] = member
+			}
+			for _, m := range otelBag.Members() {
+				mergedMap[m.Key()] = m // otelBag value wins on conflict
+			}
+			var members []otelbaggage.Member
+			for _, member := range mergedMap {
+				members = append(members, member)
+			}
+			mergedBag, _ = otelbaggage.New(members...)
+		}
+	}
+	if mergedBag.Len() > 0 {
+		for _, m := range mergedBag.Members() {
+			s.SetBaggageItem(m.Key(), m.Value())
+			ctx = baggage.Set(ctx, m.Key(), m.Value())
 		}
 		ctx = otelbaggage.ContextWithBaggage(ctx, mergedBag)
 	}

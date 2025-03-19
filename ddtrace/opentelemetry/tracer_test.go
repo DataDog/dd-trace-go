@@ -32,7 +32,7 @@ func TestGetTracer(t *testing.T) {
 	assert := assert.New(t)
 	tp := NewTracerProvider()
 	tr := tp.Tracer("ot")
-	dd := tracer.GetGlobalTracer()
+	dd := internal.GetGlobalTracer()
 	ott, ok := tr.(*oteltracer)
 	assert.True(ok)
 	assert.Equal(ott.DD, dd)
@@ -71,7 +71,9 @@ func TestSpanWithNewRoot(t *testing.T) {
 	assert.True(ok)
 	assert.Equal(got, child.(*span).DD)
 
-	assert.NotEqual(noopParent.Context().TraceID(), child.SpanContext().TraceID())
+	var parentBytes oteltrace.TraceID
+	uint64ToByte(noopParent.Context().TraceID(), parentBytes[:])
+	assert.NotEqual(parentBytes, child.SpanContext().TraceID())
 }
 
 func TestSpanWithoutNewRoot(t *testing.T) {
@@ -81,8 +83,8 @@ func TestSpanWithoutNewRoot(t *testing.T) {
 
 	parent, ddCtx := tracer.StartSpanFromContext(context.Background(), "otel.child")
 	_, child := tr.Start(ddCtx, "otel.child")
-	parentCtxW3C := parent.Context()
-	assert.Equal(parentCtxW3C.TraceIDBytes(), [16]byte(child.SpanContext().TraceID()))
+	parentCtxW3C := parent.Context().(ddtrace.SpanContextW3C)
+	assert.Equal(parentCtxW3C.TraceID128Bytes(), [16]byte(child.SpanContext().TraceID()))
 }
 
 func TestTracerOptions(t *testing.T) {
@@ -369,4 +371,31 @@ func TestDDtoOtelBaggagePropagation(t *testing.T) {
 	assert.Equal("value2", otelBag.Member("key2").Value())
 
 	ddSpan.Finish()
+}
+
+func TestOtelBaggagePrecedence(t *testing.T) {
+	assert := assert.New(t)
+
+	// Set up Datadog baggage first
+	ctx := context.Background()
+	ctx = baggage.Set(ctx, "testKey", "ddValue")
+
+	// Set up OpenTelemetry baggage with the same key but different value
+	m, _ := otelbaggage.NewMember("testKey", "otelValue")
+	bag, _ := otelbaggage.New(m)
+	ctx = otelbaggage.ContextWithBaggage(ctx, bag)
+
+	// Create tracer and start span
+	tp := NewTracerProvider()
+	otel.SetTracerProvider(tp)
+	tr := otel.Tracer("baggage.test")
+	ctx, span := tr.Start(ctx, "baggage.span")
+	defer span.End()
+
+	// Verify that OpenTelemetry value takes precedence
+	ddSpan, ok := tracer.SpanFromContext(ctx)
+	assert.True(ok)
+	assert.Equal("otelValue", ddSpan.BaggageItem("testKey"))
+	value, _ := baggage.Get(ctx, "testKey")
+	assert.Equal("otelValue", value)
 }
