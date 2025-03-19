@@ -72,7 +72,7 @@ jobs:
 
   integration-test:
     env:
-      REPORT: ${{ runner.temp }}/orchestrion-gotestsum-report.xml # path to where test results will be saved
+      REPORT: orchestrion-gotestsum-report.xml # path to where test results will be saved
     needs: [go-versions-matrix]
     strategy:
       fail-fast: false
@@ -212,16 +212,16 @@ jobs:
           case "${MODE}" in
           "DRIVER")
             echo "Starting test suite in DRIVER mode"
-            gotestsum --junitfile ${REPORT} --raw-command -- ./run-orchestrion-tests.sh
+            gotestsum --junitfile ${XML_PATH} --raw-command -- ./run-orchestrion-tests.sh
             ;;
           "TOOLEXEC")
             echo "Starting test suite in TOOLEXEC mode"
-            gotestsum --junitfile ${REPORT} -- -shuffle=on -toolexec='orchestrion toolexec' ./...
+            gotestsum --junitfile ${XML_PATH} -- -shuffle=on -toolexec='orchestrion toolexec' ./...
             ;;
           "GOFLAGS")
             echo "Starting test suite in GOFLAGS mode"
             export GOFLAGS="${GOFLAGS} '-toolexec=orchestrion toolexec'"
-            gotestsum --junitfile ${REPORT} -- -shuffle=on ./...
+            gotestsum --junitfile ${XML_PATH} -- -shuffle=on ./...
             ;;
           *)
             echo "Unknown mode: ${MODE}"
@@ -236,6 +236,7 @@ jobs:
           DD_ORCHESTRION_IS_GOMOD_VERSION: true
           # Ryuk is problematic with concurrent executions, and unnecessary in ephemeral environments like GHA.
           TESTCONTAINERS_RYUK_DISABLED: true
+          XML_PATH: ${{ runner.temp }}/${{ env.REPORT }}
 
       # If in workflow_call, we collected coverage data we need to upload
       - name: Consolidate coverage report
@@ -272,7 +273,7 @@ jobs:
         uses: ./.github/actions/dd-ci-upload
         with:
           dd-api-key: ${{ secrets.DD_CI_API_KEY }}
-          files: ${{ env.REPORT }}
+          files: ${{ runner.temp }}/${{ env.REPORT }}
           tags: go:${{ steps.setup-go.outputs.go-version }},arch:${{ runner.arch }},os:${{ runner.os }},distribution:${{ runner.distribution }}
 
   # This is a simple join point to make it easy to set up branch protection rules in GitHub.
