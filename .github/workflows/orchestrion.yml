@@ -212,7 +212,11 @@ jobs:
           case "${MODE}" in
           "DRIVER")
             echo "Starting test suite in DRIVER mode"
-            gotestsum --junitfile ${XML_PATH} --raw-command -- ./run-orchestrion-tests.sh
+            if [[ matrix.runs-on == 'windows' ]]; then
+              gotestsum --junitfile ${XML_PATH} --raw-command -- wsl ./run-orchestrion-tests.sh
+            else
+              gotestsum --junitfile ${XML_PATH} --raw-command -- ./run-orchestrion-tests.sh
+            fi
             ;;
           "TOOLEXEC")
             echo "Starting test suite in TOOLEXEC mode"
