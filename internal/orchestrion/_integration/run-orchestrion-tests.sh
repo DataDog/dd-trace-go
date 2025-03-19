@@ -1,3 +1,0 @@
-#!/bin/bash
-
-orchestrion go test -json -shuffle=on ./...
