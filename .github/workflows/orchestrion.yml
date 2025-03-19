@@ -72,7 +72,7 @@ jobs:
 
   integration-test:
     env:
-      REPORT: orchestrion-gotestsum-report.xml # path to where test results will be saved
+      REPORT: ${{ runner.temp }}/orchestrion-gotestsum-report.xml # path to where test results will be saved
     needs: [go-versions-matrix]
     strategy:
       fail-fast: false
@@ -227,7 +227,6 @@ jobs:
             echo "Unknown mode: ${MODE}"
             ;;
           esac
-          ls && pwd
         working-directory: ${{ github.workspace }}/dd-trace-go/internal/orchestrion/_integration
         env:
           MODE: ${{ matrix.mode }}
@@ -273,7 +272,7 @@ jobs:
         uses: ./.github/actions/dd-ci-upload
         with:
           dd-api-key: ${{ secrets.DD_CI_API_KEY }}
-          files: ${{ github.workspace }}/dd-trace-go/internal/orchestrion/_integration/${{ env.REPORT }}
+          files: ${{ env.REPORT }}
           tags: go:${{ steps.setup-go.outputs.go-version }},arch:${{ runner.arch }},os:${{ runner.os }},distribution:${{ runner.distribution }}
 
   # This is a simple join point to make it easy to set up branch protection rules in GitHub.
