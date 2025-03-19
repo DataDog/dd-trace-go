@@ -227,7 +227,7 @@ jobs:
             echo "Unknown mode: ${MODE}"
             ;;
           esac
-          echo ls && pwd
+          ls && pwd
         working-directory: ${{ github.workspace }}/dd-trace-go/internal/orchestrion/_integration
         env:
           MODE: ${{ matrix.mode }}
