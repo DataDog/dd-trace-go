@@ -188,9 +188,9 @@ func getLocalGitData() (localGitData, error) {
 
 	// Extract the absolute path to the Git directory
 	log.Debug("civisibility.git: getting the absolute path to the Git directory")
-	out, err := execGitString(telemetry.NotSpecifiedCommandsType, "rev-parse", "--absolute-git-dir")
+	out, err := execGitString(telemetry.NotSpecifiedCommandsType, "rev-parse", "--show-toplevel")
 	if err == nil {
-		gitData.SourceRoot = strings.ReplaceAll(out, ".git", "")
+		gitData.SourceRoot = out
 	}
 
 	// Extract the repository URL
