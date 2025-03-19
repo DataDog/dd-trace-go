@@ -20,7 +20,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
@@ -305,13 +304,22 @@ func (s *Span) setSamplingPriority(priority int, sampler samplernames.SamplerNam
 // root returns the root span of the span's trace. The return value shouldn't be
 // nil as long as the root span is valid and not finished.
 func (s *Span) Root() *Span {
-	if s == nil || s.context == nil {
+	if s == nil {
 		return nil
 	}
-	if s.context.trace == nil {
+	t := s.trace()
+	return t.rootSpan()
+}
+
+func (s *Span) trace() *trace {
+	if s.context == nil {
 		return nil
 	}
-	return s.context.trace.root
+
+	s.context.mu.RLock()
+	defer s.context.mu.RUnlock()
+
+	return s.context.trace
 }
 
 // SetUser associates user information to the current trace which the
@@ -329,8 +337,12 @@ func (s *Span) SetUser(id string, opts ...UserMonitoringOption) {
 	for _, fn := range opts {
 		fn(&cfg)
 	}
-	root := s.Root()
-	trace := root.context.trace
+
+	var (
+		trace = s.trace()
+		root  = trace.rootSpan()
+	)
+
 	root.Lock()
 	defer root.Unlock()
 	// We don't lock spans when flushing, so we could have a data race when
@@ -339,6 +351,8 @@ func (s *Span) SetUser(id string, opts ...UserMonitoringOption) {
 	if root.finished {
 		return
 	}
+
+	s.context.mu.Lock()
 	if cfg.PropagateID {
 		// Delete usr.id from the tags since _dd.p.usr.id takes precedence
 		delete(root.meta, keyUserID)
@@ -353,6 +367,7 @@ func (s *Span) SetUser(id string, opts ...UserMonitoringOption) {
 		}
 		delete(root.meta, keyPropagatedUserID)
 	}
+	s.context.mu.Unlock()
 
 	usrData := map[string]string{
 		keyUserID:        id,
@@ -400,19 +415,21 @@ func (s *Span) setSamplingPriorityLocked(priority int, sampler samplernames.Samp
 // This method is not safe for concurrent use.
 func (s *Span) setTagError(value interface{}, cfg errorConfig) {
 	setError := func(yes bool) {
+		s.context.mu.Lock()
+		defer s.context.mu.Unlock()
 		if yes {
 			if s.error == 0 {
 				// new error
-				atomic.AddInt32(&s.context.errors, 1)
+				s.context.errors++
 			}
 			s.error = 1
-		} else {
-			if s.error > 0 {
-				// flip from active to inactive
-				atomic.AddInt32(&s.context.errors, -1)
-			}
-			s.error = 0
+			return
 		}
+		if s.error > 0 {
+			// flip from active to inactive
+			s.context.errors--
+		}
+		s.error = 0
 	}
 	if s.finished {
 		return
@@ -629,7 +646,13 @@ func (s *Span) Finish(opts ...FinishOption) {
 
 	if s.Root() == s {
 		if tr, ok := GetGlobalTracer().(*tracer); ok && tr.rulesSampling.traces.enabled() {
-			if !s.context.trace.isLocked() && s.context.trace.propagatingTag(keyDecisionMaker) != "-4" {
+			var (
+				t        = s.trace()
+				isLocked = t.isLocked()
+				decision = t.propagatingTag(keyDecisionMaker)
+			)
+
+			if !isLocked && decision != "-4" {
 				tr.rulesSampling.SampleTrace(s)
 			}
 		}
@@ -696,7 +719,7 @@ func (s *Span) finish(finishTime int64) {
 	}
 	if keep {
 		// a single kept span keeps the whole trace.
-		s.context.trace.keep()
+		s.keep()
 	}
 	if log.DebugEnabled() {
 		// avoid allocating the ...interface{} argument if debug logging is disabled
@@ -710,6 +733,21 @@ func (s *Span) finish(finishTime int64) {
 		// point are attributed correctly.
 		pprof.SetGoroutineLabels(s.pprofCtxRestore)
 	}
+}
+
+func (s *Span) keep() {
+	s.context.mu.RLock()
+	defer s.context.mu.RUnlock()
+
+	s.context.trace.keep()
+}
+
+func (s *Span) drop() {
+	s.context.mu.RLock()
+	defer s.context.mu.RUnlock()
+
+	s.context.trace.drop()
+	s.context.trace.setSamplingPriority(ext.PriorityAutoReject, samplernames.RuleRate)
 }
 
 // textNonParsable specifies the text that will be assigned to resources for which the resource
@@ -744,7 +782,11 @@ func shouldKeep(s *Span) bool {
 		// positive sampling priorities stay
 		return true
 	}
-	if atomic.LoadInt32(&s.context.errors) > 0 {
+
+	s.context.mu.RLock()
+	defer s.context.mu.RUnlock()
+
+	if s.context.errors > 0 {
 		// traces with any span containing an error get kept
 		return true
 	}

@@ -28,7 +28,6 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/remoteconfig"
-	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/traceprof"
 
@@ -919,8 +918,7 @@ func (t *tracer) sample(span *Span) {
 	}
 	sampler := t.config.sampler
 	if !sampler.Sample(span) {
-		span.context.trace.drop()
-		span.context.trace.setSamplingPriority(ext.PriorityAutoReject, samplernames.RuleRate)
+		span.drop()
 		return
 	}
 	if sampler.Rate() < 1 {
