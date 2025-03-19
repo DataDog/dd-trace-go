@@ -11,6 +11,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/httpsec"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/net/http/pattern"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/options"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec"
 )
@@ -68,7 +69,16 @@ func BeforeHandle(cfg *ServeConfig, w http.ResponseWriter, r *http.Request) (htt
 	afterHandle := closeSpan
 	handled := false
 	if appsec.Enabled() {
-		secW, secReq, secAfterHandle, secHandled := httpsec.BeforeHandle(rw, rt, span, cfg.RouteParams, nil)
+		appsecConfig := &httpsec.Config{
+			RouteForRequest: func(r *http.Request) string {
+				if cfg.Route != "" {
+					return cfg.Route
+				}
+				return pattern.Route(r.Pattern)
+			},
+		}
+
+		secW, secReq, secAfterHandle, secHandled := httpsec.BeforeHandle(rw, rt, span, cfg.RouteParams, appsecConfig)
 		afterHandle = func() {
 			secAfterHandle()
 			closeSpan()

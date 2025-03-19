@@ -12,6 +12,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/httptrace"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/net/http/pattern"
 )
 
 // ServeMux is an HTTP request multiplexer that traces all the incoming requests.
@@ -45,8 +46,8 @@ func (mux *ServeMux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// get the resource associated to this request
-	_, pattern := mux.Handler(r)
-	route := patternRoute(pattern)
+	_, pttrn := mux.Handler(r)
+	route := pattern.Route(pttrn)
 	resource := mux.cfg.ResourceNamer(r)
 	if resource == "" {
 		resource = r.Method + " " + route
@@ -60,6 +61,6 @@ func (mux *ServeMux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		SpanOpts:      so,
 		Route:         route,
 		IsStatusError: mux.cfg.IsStatusError,
-		RouteParams:   patternValues(pattern, r),
+		RouteParams:   pattern.PathParameters(pttrn, r),
 	})
 }

@@ -3,22 +3,22 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2025 Datadog, Inc.
 
-package wrap
+package pattern
 
 import (
 	"errors"
 	"fmt"
 	"net/http"
 	"strings"
-	"sync"
 	"unicode"
 
-	internal "github.com/DataDog/dd-trace-go/contrib/net/http/v2/internal/config"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/puzpuzpuz/xsync/v3"
 )
 
-// patternRoute returns the route part of a go1.22 style ServeMux pattern. I.e.
+// Route returns the route part of a go1.22 style ServeMux pattern. I.e.
 // it returns "/foo" for the pattern "/foo" as well as the pattern "GET /foo".
-func patternRoute(s string) string {
+func Route(s string) string {
 	// Support go1.22 serve mux patterns: [METHOD ][HOST]/[PATH]
 	// Consider any text before a space or tab to be the method of the pattern.
 	// See net/http.parsePattern and the link below for more information.
@@ -29,14 +29,12 @@ func patternRoute(s string) string {
 	return s
 }
 
-var patternSegmentsCache sync.Map // map[string][]string
-
-// patternValues return the path parameter values and names from the request.
-func patternValues(pattern string, request *http.Request) map[string]string {
+// PathParameters return the path parameter values and names from the request.
+func PathParameters(pattern string, request *http.Request) map[string]string {
 	if pattern == "" {
 		return nil
 	}
-	names := getPatternNames(pattern)
+	names := patternNames(pattern)
 	res := make(map[string]string, len(names))
 	for _, name := range names {
 		res[name] = request.PathValue(name)
@@ -44,23 +42,19 @@ func patternValues(pattern string, request *http.Request) map[string]string {
 	return res
 }
 
-func getPatternNames(pattern string) []string {
-	if v, ok := patternSegmentsCache.Load(pattern); ok {
-		if v == nil {
-			return nil
+var patternSegmentsCache = xsync.NewMapOf[string, []string]()
+
+func patternNames(pattern string) []string {
+	v, _ := patternSegmentsCache.LoadOrCompute(pattern, func() []string {
+		segments, err := parsePatternNames(pattern)
+		if err != nil {
+			// Ignore the error: Something as gone wrong, but we are not eager to find out why.
+			log.Debug("instrumentation/net/http/pattern: failed to parse mux path pattern %q: %v", pattern, err)
+			// here we fallthrough instead of returning to load a nil value into the cache to avoid reparsing the pattern.
 		}
-		return v.([]string)
-	}
-
-	segments, err := parsePatternNames(pattern)
-	if err != nil {
-		// Ignore the error: Something as gone wrong, but we are not eager to find out why.
-		internal.Instrumentation.Logger().Debug("contrib/net/http: failed to parse mux path pattern %q: %v", pattern, err)
-		// here we fallthrough instead of returning to load a nil value into the cache to avoid reparsing the pattern.
-	}
-
-	patternSegmentsCache.Store(pattern, segments)
-	return segments
+		return segments
+	})
+	return v
 }
 
 // parsePatternNames returns the names of the wildcards in the pattern.
