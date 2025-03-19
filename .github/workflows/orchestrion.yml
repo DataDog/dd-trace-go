@@ -212,7 +212,7 @@ jobs:
           case "${MODE}" in
           "DRIVER")
             echo "Starting test suite in DRIVER mode"
-            gotestsum --junitfile ${XML_PATH} --raw-command -- ${DRIVER_FILE}
+            gotestsum --junitfile ${XML_PATH} --raw-command -- '${DRIVER_FILE} 2>&1'
             ;;
           "TOOLEXEC")
             echo "Starting test suite in TOOLEXEC mode"
