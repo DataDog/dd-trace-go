@@ -23,9 +23,16 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/emitter/usersec"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 )
 
 var appsecDisabledLog sync.Once
+
+type CollectionMode string
+
+const (
+	CollectionModeSDK CollectionMode = "sdk"
+)
 
 // MonitorParsedHTTPBody runs the security monitoring rules on the given *parsed*
 // HTTP request body and returns if the HTTP request is suspicious and configured to be blocked.
@@ -52,20 +59,24 @@ func MonitorParsedHTTPBody(ctx context.Context, body any) error {
 // APM tracer middleware on use according to your blocking configuration.
 // This function always returns nil when appsec is disabled and doesn't block users.
 func SetUser(ctx context.Context, id string, opts ...tracer.UserMonitoringOption) error {
-	return setUser(ctx, id, usersec.UserSet, opts)
+	return setUser(ctx, id, usersec.UserSet, CollectionModeSDK, opts)
 }
 
-func setUser(ctx context.Context, id string, userEventType usersec.UserEventType, opts []tracer.UserMonitoringOption) error {
+func setUser(ctx context.Context, id string, userEventType usersec.UserEventType, collectionMode CollectionMode, opts []tracer.UserMonitoringOption) error {
 	s, ok := tracer.SpanFromContext(ctx)
 	if !ok {
-		log.Debug("appsec: could not retrieve span from context. User ID tag won't be set")
+		log.Debug("appsec: user event monitoring SDK: could not retrieve span from context. User ID tag won't be set")
 		return nil
 	}
 
 	tracer.SetUser(s, id, opts...)
+
+	// Record that the user collection mode is SDK
+	s.Root().SetTag("_dd.appsec.user.collection_mode", collectionMode)
+
 	if !appsec.Enabled() {
 		appsecDisabledLog.Do(func() { log.Warn("appsec: not enabled. User blocking checks won't be performed.") })
-		return nil
+		// Not returning here, as we still want to record the relevant span tags (just no WAF call).
 	}
 
 	op, errPtr := usersec.StartUserLoginOperation(ctx, userEventType, usersec.UserLoginOperationArgs{})
@@ -98,6 +109,8 @@ func setUser(ctx context.Context, id string, userEventType usersec.UserEventType
 // the provided user ID is found to be on a configured deny list. See the
 // documentation for [SetUser] for more information.
 func TrackUserLoginSuccess(ctx context.Context, login string, uid string, md map[string]string, opts ...tracer.UserMonitoringOption) error {
+	telemetry.Count(telemetry.NamespaceAppSec, "sdk.event", []string{"event_type:login_success", "sdk_version:v2"}).Submit(1)
+
 	// We need to make sure the metadata contains the correct `usr.id` and
 	// `usr.login` values, so we clone the metadata map and set these two.
 	md = maps.Clone(md)
@@ -105,16 +118,12 @@ func TrackUserLoginSuccess(ctx context.Context, login string, uid string, md map
 		md = make(map[string]string, 2)
 	}
 	md["usr.login"] = login
-	if uid == "" {
-		// Warn if no user ID was provided, as this is necessary for user blocking
-		// to be possible...
-		log.Error("appsec: TrackUserLoginSuccess requires a non-empty user ID (uid) in order for user blocking to be effective")
-	} else {
+	if uid != "" {
 		md["usr.id"] = uid
 	}
 
 	TrackCustomEvent(ctx, "users.login.success", md)
-	return setUser(ctx, uid, usersec.UserLoginSuccess, append(opts, tracer.WithUserLogin(login)))
+	return setUser(ctx, uid, usersec.UserLoginSuccess, CollectionModeSDK, append(opts, tracer.WithUserLogin(login)))
 }
 
 // TrackUserLoginFailure denotes a failed user login event, which is used by
@@ -132,9 +141,7 @@ func TrackUserLoginSuccess(ctx context.Context, login string, uid string, md map
 //
 // The provided metata is attached to the failed user login event.
 func TrackUserLoginFailure(ctx context.Context, login string, exists bool, md map[string]string) {
-	if getRootSpan(ctx) == nil {
-		return
-	}
+	telemetry.Count(telemetry.NamespaceAppSec, "sdk.event", []string{"event_type:login_failure", "sdk_version:v2"}).Submit(1)
 
 	// We need to make sure the metadata contains the correct information
 	md = maps.Clone(md)
@@ -157,6 +164,8 @@ func TrackUserLoginFailure(ctx context.Context, login string, exists bool, md ma
 // Such events trigger the backend-side events monitoring ultimately blocking
 // the IP address and/or user id associated to them.
 func TrackCustomEvent(ctx context.Context, name string, md map[string]string) {
+	telemetry.Count(telemetry.NamespaceAppSec, "sdk.event", []string{"event_type:custom", "sdk_version:v1"}).Submit(1)
+
 	span := getRootSpan(ctx)
 	if span == nil {
 		return
@@ -175,7 +184,7 @@ func TrackCustomEvent(ctx context.Context, name string, md map[string]string) {
 func getRootSpan(ctx context.Context) *tracer.Span {
 	span, _ := tracer.SpanFromContext(ctx)
 	if span == nil {
-		log.Error("appsec: could not find a span in the given Go context")
+		log.Warn("appsec: user event monitoring SDK: could not find a span in the provided context.Context")
 		return nil
 	}
 	return span.Root()
