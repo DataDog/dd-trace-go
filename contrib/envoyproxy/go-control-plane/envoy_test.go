@@ -33,7 +33,7 @@ func TestAppSec(t *testing.T) {
 	}
 
 	setup := func() (envoyextproc.ExternalProcessorClient, mocktracer.Tracer, func()) {
-		rig, err := newEnvoyAppsecRig(t, false)
+		rig, err := newEnvoyAppsecRig(t, false, false)
 		require.NoError(t, err)
 
 		mt := mocktracer.Start()
@@ -110,7 +110,7 @@ func TestBlockingWithUserRulesFile(t *testing.T) {
 	}
 
 	setup := func() (envoyextproc.ExternalProcessorClient, mocktracer.Tracer, func()) {
-		rig, err := newEnvoyAppsecRig(t, false)
+		rig, err := newEnvoyAppsecRig(t, false, false)
 		require.NoError(t, err)
 
 		mt := mocktracer.Start()
@@ -234,7 +234,7 @@ func TestBlockingWithUserRulesFile(t *testing.T) {
 
 func TestGeneratedSpan(t *testing.T) {
 	setup := func() (envoyextproc.ExternalProcessorClient, mocktracer.Tracer, func()) {
-		rig, err := newEnvoyAppsecRig(t, false)
+		rig, err := newEnvoyAppsecRig(t, false, false)
 		require.NoError(t, err)
 
 		mt := mocktracer.Start()
@@ -271,6 +271,7 @@ func TestGeneratedSpan(t *testing.T) {
 		require.Equal(t, "GET /resource-span", span.Tag("resource.name"))
 		require.Equal(t, "server", span.Tag("span.kind"))
 		require.Equal(t, "Mistake Not...", span.Tag("http.useragent"))
+		require.Equal(t, "envoyproxy/go-control-plane", span.Tag("component"))
 	})
 
 	t.Run("span-with-injected-context", func(t *testing.T) {
@@ -306,6 +307,7 @@ func TestGeneratedSpan(t *testing.T) {
 		require.Equal(t, "GET /resource-span", span.Tag("resource.name"))
 		require.Equal(t, "server", span.Tag("span.kind"))
 		require.Equal(t, "Mistake Not...", span.Tag("http.useragent"))
+		require.Equal(t, "envoyproxy/go-control-plane", span.Tag("component"))
 
 		// Check for trace context
 		require.Equal(t, "00000000000000000000000000003039", span.Context().TraceID())
@@ -321,7 +323,7 @@ func TestXForwardedForHeaderClientIp(t *testing.T) {
 	}
 
 	setup := func() (envoyextproc.ExternalProcessorClient, mocktracer.Tracer, func()) {
-		rig, err := newEnvoyAppsecRig(t, false)
+		rig, err := newEnvoyAppsecRig(t, false, false)
 		require.NoError(t, err)
 
 		mt := mocktracer.Start()
@@ -409,7 +411,7 @@ func TestMalformedEnvoyProcessing(t *testing.T) {
 	}
 
 	setup := func() (envoyextproc.ExternalProcessorClient, mocktracer.Tracer, func()) {
-		rig, err := newEnvoyAppsecRig(t, false)
+		rig, err := newEnvoyAppsecRig(t, false, false)
 		require.NoError(t, err)
 
 		mt := mocktracer.Start()
@@ -448,15 +450,63 @@ func TestMalformedEnvoyProcessing(t *testing.T) {
 	})
 }
 
-func newEnvoyAppsecRig(t *testing.T, traceClient bool, interceptorOpts ...ddgrpc.Option) (*envoyAppsecRig, error) {
+func TestAppSecAsGCPServiceExtension(t *testing.T) {
+	testutils.StartAppSec(t)
+	if !instr.AppSecEnabled() {
+		t.Skip("appsec disabled")
+	}
+
+	setup := func() (envoyextproc.ExternalProcessorClient, mocktracer.Tracer, func()) {
+		rig, err := newEnvoyAppsecRig(t, false, true)
+		require.NoError(t, err)
+
+		mt := mocktracer.Start()
+
+		return rig.client, mt, func() {
+			rig.Close()
+			mt.Stop()
+		}
+	}
+
+	t.Run("gcp-se-component-monitoring-event-on-request", func(t *testing.T) {
+		client, mt, cleanup := setup()
+		defer cleanup()
+
+		ctx := context.Background()
+		stream, err := client.Process(ctx)
+		require.NoError(t, err)
+
+		end2EndStreamRequest(t, stream, "/", "GET", map[string]string{"User-Agent": "dd-test-scanner-log"}, map[string]string{}, false)
+
+		err = stream.CloseSend()
+		require.NoError(t, err)
+		stream.Recv() // to flush the spans
+
+		finished := mt.FinishedSpans()
+		require.Len(t, finished, 1)
+		checkForAppsecEvent(t, finished, map[string]int{"ua0-600-55x": 1})
+
+		// Check for component tag
+		span := finished[0]
+		require.Equal(t, "gcp-service-extension", span.Tag("component"))
+	})
+}
+
+func newEnvoyAppsecRig(t *testing.T, traceClient bool, isGCPServiceExtension bool, interceptorOpts ...ddgrpc.Option) (*envoyAppsecRig, error) {
 	t.Helper()
 
 	interceptorOpts = append([]ddgrpc.Option{ddgrpc.WithService("grpc")}, interceptorOpts...)
 
 	server := grpc.NewServer()
-
 	fixtureServer := new(envoyFixtureServer)
-	appsecSrv := AppsecEnvoyExternalProcessorServer(fixtureServer)
+
+	var appsecSrv envoyextproc.ExternalProcessorServer
+	if isGCPServiceExtension {
+		appsecSrv = AppsecEnvoyExternalProcessorServerGCPServiceExtension(fixtureServer)
+	} else {
+		appsecSrv = AppsecEnvoyExternalProcessorServer(fixtureServer)
+	}
+
 	envoyextproc.RegisterExternalProcessorServer(server, appsecSrv)
 
 	li, err := net.Listen("tcp", "127.0.0.1:0")
