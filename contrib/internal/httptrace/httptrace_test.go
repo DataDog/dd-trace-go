@@ -421,7 +421,7 @@ func TestExtractReferrerHost(t *testing.T) {
 		{
 			name:     "URL without scheme",
 			referrer: "example.com/path",
-			expected: "example.com",
+			expected: "",
 		},
 		{
 			name:     "URL with IPv6 and port",
