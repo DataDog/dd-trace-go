@@ -236,6 +236,7 @@ jobs:
           DD_ORCHESTRION_IS_GOMOD_VERSION: true
           # Ryuk is problematic with concurrent executions, and unnecessary in ephemeral environments like GHA.
           TESTCONTAINERS_RYUK_DISABLED: true
+          # To enable sharing the reported JUnit XML, we need to save it into the temporary, shared directory by GHA.
           XML_PATH: ${{ runner.temp }}/${{ env.REPORT }}
 
       # If in workflow_call, we collected coverage data we need to upload
@@ -261,7 +262,7 @@ jobs:
           name: coverage-integration+${{ matrix.mode }}+go${{ steps.go.outputs.version }}+${{ runner.os }}+${{ runner.arch }}
           path: ${{ github.workspace }}/orchestrion/coverage/integration.out
 
-            # Checkout and prepare for uploading to Datadog CI
+      # Checkout and prepare for uploading to Datadog CI
       - name: Checkout
         uses: actions/checkout@ee0669bd1cc54295c223e0bb666b733df41de1c5 # v2.7.0
         with:

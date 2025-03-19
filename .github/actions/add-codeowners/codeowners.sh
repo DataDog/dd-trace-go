@@ -18,8 +18,6 @@ for file in "$@"; do
             echo "$new_line" >> "$temp_file"
         else 
             echo "$p" >> "$temp_file"
-
-        echo "$p"
         fi
     done < $file
 
