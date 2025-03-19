@@ -216,10 +216,6 @@ func extractReferrerHost(referrer string) string {
 	if referrer == "" {
 		return ""
 	}
-	// Add a default scheme if none is present to ensure proper URL parsing
-	if !strings.Contains(referrer, "://") {
-		referrer = "http://" + referrer
-	}
 	// Try to parse the URL
 	u, err := url.Parse(referrer)
 	if err != nil {
