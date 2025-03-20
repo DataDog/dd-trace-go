@@ -3,70 +3,66 @@ package entrypoint
 import (
 	"errors"
 	"fmt"
-	"github.com/DataDog/dd-trace-go/internal/tools/process_contribs/internal/codegen"
-	"github.com/DataDog/dd-trace-go/internal/tools/process_contribs/internal/typing"
+	"github.com/DataDog/dd-trace-go/internal/tools/process_contribs/internal/dsthelpers"
+	"github.com/DataDog/dd-trace-go/internal/tools/process_contribs/internal/typechecker"
 	"github.com/dave/dst"
-	"go/types"
+	"github.com/dave/dst/dstutil"
 )
 
 type entrypointMirrorPackage struct{}
 
-func (e entrypointMirrorPackage) Apply(fn *dst.FuncDecl, fCtx FunctionContext, args map[string]string) (map[string]codegen.UpdateNodeFunc, error) {
-	pkg := args["pkg"]
-	if pkg == "" {
+func (e entrypointMirrorPackage) Apply(fn typechecker.Function, pkg typechecker.Package, args map[string]string) (typechecker.ApplyFunc, error) {
+	mirroredPkg := args["pkg"]
+	if mirroredPkg == "" {
 		rawArgs := args["__raw_args"]
 		if rawArgs != "" {
-			pkg = rawArgs
+			mirroredPkg = rawArgs
 		} else {
 			return nil, errors.New("package cannot be empty")
 		}
 	}
 
-	pkgFunctions, err := typing.LoadExternalPublicFunctions(pkg)
+	tracedPkg, err := typechecker.LoadExternalPackage(mirroredPkg)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to load package: %w", err)
 	}
 
-	var found *types.Func
-	for _, pkgFn := range pkgFunctions {
-		if pkgFn.Name() == fn.Name.Name {
-			found = pkgFn
-			break
-		}
-	}
-	if found == nil {
-		return nil, fmt.Errorf("function %s not found in package %s", fn.Name.Name, pkg)
+	tracedPkgFn, ok := tracedPkg.Function(fn.Type.Name())
+	if !ok {
+		return nil, fmt.Errorf("function %s not found in package %s", fn.Type.Name(), mirroredPkg)
 	}
 
-	s := typing.GetFunctionSignature(fn)
-
-	numArgs := found.Signature().Params().Len()
-	diff := len(s.Arguments) - numArgs
+	tracedNumArgs := tracedPkgFn.Type.Signature().Params().Len()
+	contribNumArgs := fn.Type.Signature().Params().Len()
+	diff := contribNumArgs - tracedNumArgs
 	if diff > 1 || diff < -1 {
-		return nil, fmt.Errorf("unexpected number of arguments for %s (want: %d, got: %d)",
-			found.String(),
-			numArgs,
-			len(s.Arguments))
+		return nil, fmt.Errorf("incompatible signatures (ours: %s | theirs: %s)",
+			fn.Type.String(),
+			tracedPkgFn.Type.String(),
+		)
 	}
 
 	var fnArgs []string
-	for i := 0; i < numArgs; i++ {
-		pkgArg := found.Signature().Params().At(i)
-		arg := s.Arguments[i]
-		if arg.Type != pkgArg.Type().String() {
-			return nil, fmt.Errorf("argument types don't match for %s.%s argument %d (want: %s, got: %s)",
-				found.Pkg().Path(),
-				found.Name(),
-				i+1,
-				pkgArg.Type().String(),
-				arg.Type,
+	for i := 0; i < tracedNumArgs; i++ {
+		pkgArg := tracedPkgFn.Type.Signature().Params().At(i)
+		arg := fn.Type.Signature().Params().At(i)
+		if arg.Type().String() != pkgArg.Type().String() {
+			return nil, fmt.Errorf("incompatible signatures (ours: %s | theirs: %s)",
+				fn.Type.String(),
+				tracedPkgFn.Type.String(),
 			)
 		}
-		fnArgs = append(fnArgs, arg.Name)
+		fnArgs = append(fnArgs, arg.Name())
 	}
 
-	codegen.RemoveFunctionInjectedBlocks(fn)
-	newLines := codegen.EarlyReturnFuncCall(codegen.IntegrationDisabledCall(), found, fnArgs)
-	fn.Body.List = append([]dst.Stmt{newLines}, fn.Body.List...)
-	return nil, nil
+	changes := func(cur *dstutil.Cursor) (changed bool, cont bool) {
+		if cur.Node() == fn.Node {
+			dsthelpers.FunctionRemoveInjectedBlocks(fn.Node)
+			newLines := dsthelpers.StatementEarlyReturnFuncCall(dsthelpers.ExpressionIntegrationDisabled(), tracedPkgFn.Type, fnArgs)
+			fn.Node.Body.List = append([]dst.Stmt{newLines}, fn.Node.Body.List...)
+			return true, false
+		}
+		return false, true
+	}
+	return changes, nil
 }

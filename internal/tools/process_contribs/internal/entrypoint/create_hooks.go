@@ -2,12 +2,10 @@ package entrypoint
 
 import (
 	"fmt"
+	"github.com/DataDog/dd-trace-go/internal/tools/process_contribs/internal/dsthelpers"
+	"github.com/DataDog/dd-trace-go/internal/tools/process_contribs/internal/typechecker"
 	"github.com/dave/dst"
-	"go/token"
-	"strings"
-
-	"github.com/DataDog/dd-trace-go/internal/tools/process_contribs/internal/codegen"
-	"github.com/DataDog/dd-trace-go/internal/tools/process_contribs/internal/typing"
+	"github.com/dave/dst/dstutil"
 )
 
 type entrypointCreateHooks struct{}
@@ -18,59 +16,37 @@ type entrypointCreateHooks struct{}
 // 1. add a new field `disabled bool` in the custom type
 // 2. get the value of disabled and store it in the struct
 // 3. loop over all the exported methods and find out how to do a no-op when disabled = true
-func (e entrypointCreateHooks) Apply(fn *dst.FuncDecl, fCtx FunctionContext, args map[string]string) (map[string]codegen.UpdateNodeFunc, error) {
-	s := typing.GetFunctionSignature(fn)
-	if len(s.Returns) == 0 || len(s.Returns) > 2 || (len(s.Returns) == 2 && s.Returns[1].Type != "error") {
-		return nil, fmt.Errorf("unexpected return type (only know how to handle single result or result/error): %v", s.Returns)
+func (e entrypointCreateHooks) Apply(fn typechecker.Function, pkg typechecker.Package, args map[string]string) (typechecker.ApplyFunc, error) {
+	s := fn.Type.Signature()
+
+	isIncompatible :=
+		s.Results().Len() == 0 ||
+			s.Results().Len() > 2 ||
+			(s.Results().Len() == 2 && s.Results().At(1).Type().String() != "error")
+
+	if isIncompatible {
+		return nil, fmt.Errorf("unexpected return type (only know how to handle single result or result/error): %s", s.Results().String())
 	}
 
-	noopType := "noopHooks"
-	_, _, ok := findTypeDeclFile(fCtx.Package, noopType)
+	noopType := "noopTracer"
+	_, ok := pkg.Struct(noopType)
 	if !ok {
-		return nil, fmt.Errorf("type %s needs to be defined for ddtrace:entrypoint:create-hooks", noopType)
+		return nil, fmt.Errorf("type %s not found in package", noopType)
 	}
 
-	newReturns := []string{"&noopHooks{}"}
-	if len(s.Returns) == 2 {
+	newReturns := []string{"&noopTracer{}"}
+	if s.Results().Len() == 2 {
 		newReturns = append(newReturns, "nil")
 	}
 
-	codegen.RemoveFunctionInjectedBlocks(fn)
-	newLines := codegen.EarlyReturnStatement(codegen.IntegrationDisabledCall(), newReturns)
-	fn.Body.List = append([]dst.Stmt{newLines}, fn.Body.List...)
-
-	return nil, nil
-}
-
-func findTypeDeclFile(pkg *dst.Package, targetType string) (*dst.StructType, string, bool) {
-	for fPath, f := range pkg.Files {
-		for _, decl := range f.Decls {
-			if structType := findStructType(decl, targetType); structType != nil {
-				return structType, fPath, true
-			}
+	changes := func(cur *dstutil.Cursor) (changed bool, cont bool) {
+		if cur.Node() == fn.Node {
+			dsthelpers.FunctionRemoveInjectedBlocks(fn.Node)
+			newLines := dsthelpers.StatementEarlyReturn(dsthelpers.ExpressionIntegrationDisabled(), newReturns)
+			fn.Node.Body.List = append([]dst.Stmt{newLines}, fn.Node.Body.List...)
+			return true, false
 		}
+		return false, true
 	}
-	return nil, "", false
-}
-
-func findStructType(decl dst.Decl, targetType string) *dst.StructType {
-	structName := strings.TrimPrefix(targetType, "*")
-	genDecl, ok := decl.(*dst.GenDecl)
-	if !ok {
-		return nil
-	}
-	if genDecl.Tok != token.TYPE {
-		return nil
-	}
-	for _, spec := range genDecl.Specs {
-		if typeSpec, ok := spec.(*dst.TypeSpec); ok {
-			if structType, ok := typeSpec.Type.(*dst.StructType); ok {
-				if typeSpec.Name.Name == structName {
-					return structType
-				}
-			}
-		}
-	}
-
-	return nil
+	return changes, nil
 }

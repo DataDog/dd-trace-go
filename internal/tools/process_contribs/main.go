@@ -3,9 +3,6 @@ package main
 //go:generate go run main.go ../../../contrib
 
 import (
-	"fmt"
-	"go/parser"
-	"go/token"
 	"log"
 	"os"
 	"path/filepath"
@@ -13,11 +10,10 @@ import (
 	"strings"
 
 	"github.com/dave/dst"
-	"github.com/dave/dst/decorator"
-	"github.com/dave/dst/dstutil"
 
-	"github.com/DataDog/dd-trace-go/internal/tools/process_contribs/internal/codegen"
+	"github.com/DataDog/dd-trace-go/internal/tools/process_contribs/internal/comment"
 	"github.com/DataDog/dd-trace-go/internal/tools/process_contribs/internal/entrypoint"
+	"github.com/DataDog/dd-trace-go/internal/tools/process_contribs/internal/typechecker"
 )
 
 func getGoDirs(rootDir string) ([]string, error) {
@@ -65,100 +61,59 @@ func splitPath(p string) []string {
 }
 
 func processDir(dir string) error {
-	fset := token.NewFileSet()
-	dec := decorator.NewDecorator(fset)
-	pkgs, err := dec.ParseDir(dir, nil, parser.ParseComments)
-	if err != nil {
-		return fmt.Errorf("failed to parse dir: %w", err)
-	}
-
-	for name, pkg := range pkgs {
-		if strings.HasSuffix(name, "_test") || name == "main" {
-			continue
-		}
-		if err := validatePackage(pkg); err != nil {
-			log.Printf("package \"%s.%s\" failed validation: %v\n", dir, name, err)
-			continue
-		}
-
-		for fPath, f := range pkg.Files {
-			fCtx := entrypoint.FunctionContext{
-				FilePath:    fPath,
-				File:        f,
-				Package:     pkg,
-				AllPackages: pkgs,
-			}
-			if err := processFile(fCtx); err != nil {
-				log.Fatal(err)
-			}
-		}
-	}
-	return nil
-}
-
-func processFile(fCtx entrypoint.FunctionContext) error {
-	fileUpdates := make(map[string][]codegen.UpdateNodeFunc)
-
-	err := codegen.UpdateFile(fCtx.FilePath, func(cur *dstutil.Cursor) (bool, bool) {
-		fn, ok := cur.Node().(*dst.FuncDecl)
-		if !ok {
-			return false, true
-		}
-
-		// no need to iterate deeper after this point
-		extraUpdates, changed, err := processFunc(fn, fCtx)
-		if err != nil {
-			log.Printf("failed to process func %q: %v\n", fn.Name.Name, err)
-			return false, false
-		}
-		for k, v := range extraUpdates {
-			fileUpdates[k] = append(fileUpdates[k], v)
-		}
-		return changed, false
-	})
+	pkg, err := typechecker.LoadPackage(dir)
 	if err != nil {
 		return err
 	}
 
-	for f, updates := range fileUpdates {
-		for _, u := range updates {
-			err := codegen.UpdateFile(f, u)
-			if err != nil {
-				return err
-			}
+	if err := pkg.Validate(); err != nil {
+		log.Printf("[package: %s] package %q failed validation: %v\n", pkg.Path(), pkg.Name(), err)
+		return nil
+	}
+
+	for _, fn := range pkg.Functions(false) {
+		e, c, ok := getEntrypoint(fn.Node)
+		if !ok {
+			continue
 		}
+		changes, err := e.Apply(fn, pkg, c.Arguments)
+		if err != nil {
+			log.Printf("[package: %s | function: %s | entrypoint: %s] failed to apply entrypoint: %v", pkg.Path(), fn.Type.Name(), c.Command, err)
+			continue
+		}
+		if changes != nil {
+			log.Printf("[package: %s | function: %s | entrypoint: %s] succesfully applied changes", pkg.Path(), fn.Type.Name(), c.Command)
+			pkg.ApplyChanges(changes)
+		}
+	}
+	if err := pkg.Save(); err != nil {
+		return err
 	}
 
 	return nil
 }
 
-func processFunc(fn *dst.FuncDecl, fCtx entrypoint.FunctionContext) (map[string]codegen.UpdateNodeFunc, bool, error) {
+func getEntrypoint(fn *dst.FuncDecl) (entrypoint.Entrypoint, comment.Comment, bool) {
 	comments := fn.Decorations().Start
-	name := fn.Name.Name
 
 	for _, raw := range comments {
-		comment, ok := entrypoint.ParseComment(raw)
+		c, ok := comment.ParseComment(raw)
 		if !ok {
 			continue
 		}
-		log.Printf("file: %s | function: %s | entrypoint: %s | args: %v\n", fCtx.FilePath, name, comment.Command, comment.Arguments)
 
-		p, ok := entrypoint.AllEntrypoints[comment.Command]
+		p, ok := entrypoint.AllEntrypoints[c.Command]
 		if !ok {
-			return nil, false, fmt.Errorf("unknown ddtrace:entrypoint comment: %s", comment)
+			log.Printf("unknown ddtrace:entrypoint comment: %s", raw)
+			continue
 		}
-
-		extraUpdates, err := p.Apply(fn, fCtx, comment.Arguments)
-		if err != nil {
-			return nil, false, err
-		}
-		return extraUpdates, true, nil
+		return p, c, true
 	}
-	return nil, false, nil
+	return nil, comment.Comment{}, false
 }
 
 func main() {
-	rootDir := "../../../contrib/dimfeld"
+	rootDir := "../../../contrib/confluentinc"
 	args := os.Args[1:]
 	if len(args) > 0 && args[0] != "" {
 		rootDir = args[0]

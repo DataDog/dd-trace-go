@@ -2,14 +2,13 @@ package entrypoint
 
 import (
 	"errors"
-	"github.com/DataDog/dd-trace-go/internal/tools/process_contribs/internal/codegen"
-	"github.com/dave/dst"
+	"github.com/DataDog/dd-trace-go/internal/tools/process_contribs/internal/typechecker"
 	"log"
 )
 
 type entrypointIgnore struct{}
 
-func (e entrypointIgnore) Apply(fn *dst.FuncDecl, fCtx FunctionContext, args map[string]string) (map[string]codegen.UpdateNodeFunc, error) {
+func (e entrypointIgnore) Apply(fn typechecker.Function, pkg typechecker.Package, args map[string]string) (typechecker.ApplyFunc, error) {
 	reason := args["reason"]
 	if reason == "" {
 		rawArgs := args["__raw_args"]
@@ -19,6 +18,6 @@ func (e entrypointIgnore) Apply(fn *dst.FuncDecl, fCtx FunctionContext, args map
 			return nil, errors.New("reason cannot be empty")
 		}
 	}
-	log.Printf("ignoring entrypoint function (reason: %s)", reason)
+	log.Printf("[package: %s | function: %s | entrypoint: %s] ignoring entrypoint function: %s", pkg.Path(), fn.Type.Name(), "ignore", reason)
 	return nil, nil
 }

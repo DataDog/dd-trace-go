@@ -2,281 +2,185 @@ package entrypoint
 
 import (
 	"fmt"
-	"github.com/DataDog/dd-trace-go/internal/tools/process_contribs/internal/codegen"
-	"github.com/DataDog/dd-trace-go/internal/tools/process_contribs/internal/typing"
+	"github.com/DataDog/dd-trace-go/internal/tools/process_contribs/internal/dsthelpers"
+	"github.com/DataDog/dd-trace-go/internal/tools/process_contribs/internal/typechecker"
 	"github.com/dave/dst"
 	"github.com/dave/dst/dstutil"
-	"go/token"
-	"go/types"
-	"golang.org/x/mod/semver"
 	"slices"
-	"strconv"
 	"strings"
-	"unicode"
 )
 
 type entrypointWrapCustomType struct{}
 
-// strategy:
+// Apply does the following:
+//
 // 1. add a new field `disabled bool` in the custom type
 // 2. get the value of disabled and store it in the struct
 // 3. loop over the methods that match from the original argument and the return one
 // 4. in all those methods, add the if check and call the original without doing anything if disabled = true
-func (e entrypointWrapCustomType) Apply(fn *dst.FuncDecl, fCtx FunctionContext, args map[string]string) (map[string]codegen.UpdateNodeFunc, error) {
+func (e entrypointWrapCustomType) Apply(fn typechecker.Function, pkg typechecker.Package, args map[string]string) (typechecker.ApplyFunc, error) {
 	skipMethods := strings.Split(args["skip-methods"], ",")
+	s := fn.Type.Signature()
 
-	s := typing.GetFunctionSignature(fn)
-	if len(s.Returns) == 0 || len(s.Returns) > 2 || (len(s.Returns) == 2 && s.Returns[1].Type != "error") {
-		return nil, fmt.Errorf("unexpected return type (only know how to handle single result or result/error): %v", s.Returns)
+	incompatibleSignature :=
+		s.Results().Len() == 0 ||
+			s.Results().Len() > 2 ||
+			(s.Results().Len() == 2 && s.Results().At(1).Type().String() != "error")
+
+	if incompatibleSignature {
+		return nil, fmt.Errorf("incompatible function signature (only know how to handle single result or result/error): %s", s.Results().String())
 	}
-	customType := s.Returns[0].Type
 
-	customTypeDecl, customTypeFile, ok := findTypeDeclFile(fCtx.Package, customType)
+	customType, ok := pkg.Struct(s.Results().At(0).Type().String())
 	if !ok {
-		return nil, fmt.Errorf("could not find type definition for %s", customType)
+		return nil, fmt.Errorf("struct type definition not found: %s", customType)
 	}
 
 	// check if a field disabled already exists, without the inject comments
-	for _, f := range customTypeDecl.Fields.List {
-		if typing.GetFieldName(f) == "disabled" && !typing.IsInjectedField(f) {
-			return nil, fmt.Errorf("type declaration %q already has a struct field named \"disabled\"", customType)
+	for i := 0; i < customType.DefinitionType.NumFields(); i++ {
+		field := customType.DefinitionType.Field(i)
+		dstField := customType.DefinitionNode.Fields.List[i]
+
+		if field.Name() == "disabled" && !dsthelpers.FieldIsInjected(dstField) {
+			return nil, fmt.Errorf("type declaration %q already has a struct field named \"disabled\"", customType.Type)
 		}
 	}
 
-	changes := map[string]codegen.UpdateNodeFunc{
-		customTypeFile: addDisabledField(customType),
+	// Add disabled field to struct
+	changes := e.addDisabledField(customType)
+
+	// Prepend code in entrypoint function
+	changes = changes.Chain(e.prependEntrypointFunctionCode(pkg, fn))
+
+	// Prepend code in all public methods
+	customMethodsChange, err := e.prependCustomMethodsCode(pkg, fn, customType, skipMethods)
+	if err != nil {
+		return nil, err
 	}
+	changes = changes.Chain(customMethodsChange)
 
-	customTypeReturnName := addNamedReturn(fn, 0, "result")
+	return changes, nil
+}
 
-	codegen.RemoveFunctionInjectedBlocks(fn)
+func (e entrypointWrapCustomType) prependEntrypointFunctionCode(pkg typechecker.Package, fn typechecker.Function) typechecker.ApplyFunc {
+	customTypeRetName := dsthelpers.FunctionSetReturnName(fn.Node, pkg, 0, "result")
 
 	tmpl := `defer func() {
 	if {{.Name}} != nil {
 		{{.Name}}.disabled = disabled
 	}
 }()`
-	stmt := codegen.RawStatement(tmpl, map[string]any{"Name": customTypeReturnName})
-	newLines := &dst.BlockStmt{
-		List: []dst.Stmt{
-			&dst.AssignStmt{ // disabled := globalconfig.IntegrationDisabled(componentName)
-				Lhs: []dst.Expr{
-					&dst.Ident{Name: "disabled"},
-				},
-				Tok: token.DEFINE,
-				Rhs: []dst.Expr{
-					codegen.IntegrationDisabledCall(),
-				},
-			},
-			stmt,
-		},
-		Decs: dst.BlockStmtDecorations{
-			NodeDecs: codegen.InjectComments(),
-		},
-	}
 
-	changes[fCtx.FilePath] = changes[fCtx.FilePath].Chain(func(cur *dstutil.Cursor) (changed bool, cont bool) {
-		funcDecl, ok := cur.Node().(*dst.FuncDecl)
-		if !ok {
-			return false, false
-		}
-		if fn.Name.Name == funcDecl.Name.Name {
-			funcDecl.Body.List = append([]dst.Stmt{newLines}, funcDecl.Body.List...)
+	assignStmt := dsthelpers.StatementAssignVariable("disabled", dsthelpers.ExpressionIntegrationDisabled())
+	deferStmt := dsthelpers.StatementFromTemplate(tmpl, map[string]any{"Name": customTypeRetName})
+
+	newLines := dsthelpers.StatementWithGenCodeDecorations(
+		assignStmt,
+		deferStmt,
+	)
+
+	return func(cur *dstutil.Cursor) (changed bool, cont bool) {
+		if cur.Node() == fn.Node {
+			dsthelpers.FunctionRemoveInjectedBlocks(fn.Node)
+			fn.Node.Body.List = append([]dst.Stmt{newLines}, fn.Node.Body.List...)
 			return true, false
-		}
-		return false, false
-	})
-
-	publicMethods := typing.FindPublicMethods(fCtx.Package, customType)
-
-	typePkg, typeName, ok := s.Arguments[0].SplitPackageType()
-	if !ok {
-		return nil, fmt.Errorf("expected first function argument to be an external type: %s", s.String())
-	}
-	wrappedTypeName := s.Arguments[0].WithoutFullPath()
-
-	wrappedField := ""
-	for _, f := range customTypeDecl.Fields.List {
-		if typing.GetExpressionType(f.Type) == wrappedTypeName {
-			if len(f.Names) > 0 {
-				wrappedField = f.Names[0].Name
-			} else {
-				wrappedField = typeName
-			}
-		}
-	}
-	if wrappedField == "" {
-		return nil, fmt.Errorf("could not find wrapped field in type: %s", wrappedTypeName)
-	}
-
-	pkgPath, ok := findPackage(typePkg, fCtx.Package.Files[fCtx.FilePath])
-	if !ok {
-		return nil, fmt.Errorf("could not find package in imports: %s", typePkg)
-	}
-
-	originalType, err := typing.LoadExternalType(pkgPath, typeName)
-	if err != nil {
-		return nil, err
-	}
-
-	//methodsByName := map[string]*types.Func{}
-	//for i := 0; i < originalType.NumMethods(); i++ {
-	//	method := originalType.Method(i)
-	//	if method.Exported() {
-	//		methodsByName[method.Name()] = method
-	//	}
-	//}
-	methodsByName := getPublicMethods(originalType)
-
-	for f, methods := range publicMethods {
-		for _, m := range methods {
-			methodName := m.Name.Name
-			if slices.Contains(skipMethods, methodName) {
-				continue
-			}
-			_, ok := methodsByName[methodName]
-			if !ok {
-				return nil, fmt.Errorf("method not found in original type %s: %s", originalType.String(), methodName)
-			}
-			changes[f] = changes[f].Chain(disabledMethod(customType, methodName, wrappedField))
-		}
-	}
-
-	return changes, nil
-}
-
-func addDisabledField(structType string) codegen.UpdateNodeFunc {
-	return func(cur *dstutil.Cursor) (bool, bool) {
-		if genDecl, ok := cur.Node().(*dst.GenDecl); ok {
-			if t := findStructType(genDecl, structType); t != nil {
-				field := &dst.Field{
-					Names: []*dst.Ident{dst.NewIdent("disabled")},
-					Type:  dst.NewIdent("bool"),
-					Decs: dst.FieldDecorations{
-						NodeDecs: codegen.InjectComments(),
-					},
-				}
-				codegen.RemoveStructInjectedFields(t, []string{"disabled"})
-				codegen.AddStructField(t, field)
-				return true, false
-			}
-			return false, true
 		}
 		return false, true
 	}
 }
 
-func addNamedReturn(fn *dst.FuncDecl, argIdx int, prefix string) string {
-	customTypeRet := fn.Type.Results.List[argIdx]
-	retName := prefix
-	if len(customTypeRet.Names) > 0 {
-		retName = customTypeRet.Names[0].Name
-	} else {
-		for i, ret := range fn.Type.Results.List {
-			name := typing.GetAvailableVariableName(fn, "result")
-			if i == 0 {
-				retName = name
-			}
-			ret.Names = append(ret.Names, &dst.Ident{Name: name})
+func (e entrypointWrapCustomType) addDisabledField(customType typechecker.Struct) typechecker.ApplyFunc {
+	newField := dsthelpers.FieldWithGenCodeDecorations("disabled", "bool")
+
+	return func(cur *dstutil.Cursor) (changed bool, cont bool) {
+		if cur.Node() == customType.Node {
+			dsthelpers.StructRemoveFields(customType.Node, "disabled")
+			dsthelpers.StructAddFields(customType.Node, newField)
+			return true, false
 		}
+		return false, true
 	}
-	return retName
 }
 
-func disabledMethod(typeName, methodName, wrappedField string) codegen.UpdateNodeFunc {
-	return func(cur *dstutil.Cursor) (bool, bool) {
-		// inject stuff in the method
-		funcDecl, ok := cur.Node().(*dst.FuncDecl)
+func (e entrypointWrapCustomType) prependCustomMethodsCode(pkg typechecker.Package, entrypointFunc typechecker.Function, customType typechecker.Struct, skipMethods []string) (typechecker.ApplyFunc, error) {
+	s := entrypointFunc.Type.Signature()
+	customTypeName := customType.Type.Obj().Name()
+
+	publicMethods := pkg.Methods(customTypeName, true, false)
+
+	// the original type should be either embedded or a field in the custom type
+	originalType := s.Params().At(0).Type()
+	embeddedFieldName := ""
+	for f := range customType.DefinitionType.Fields() {
+		if f.Type().String() == originalType.String() {
+			embeddedFieldName = f.Name()
+			break
+		}
+	}
+	if embeddedFieldName == "" {
+		return nil, fmt.Errorf("could not find original type in any of the fields from custom type: %s", customType.Type.String())
+	}
+
+	originalPkgPath, originalTypeName := typechecker.ExtractPackageAndName(originalType)
+
+	originalTypePkg, err := typechecker.LoadExternalPackage(originalPkgPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load package: %w", err)
+	}
+
+	originalTypePublicMethods := originalTypePkg.Methods(originalTypeName, true, true)
+
+	changes := make(typechecker.MultiApplyFunc, 0)
+	for name, _ := range publicMethods {
+		if slices.Contains(skipMethods, name) {
+			continue
+		}
+		_, ok := originalTypePublicMethods[name]
 		if !ok {
-			return false, false
+			return nil, fmt.Errorf("method not found in original type %s: %s", originalType, name)
 		}
-		if funcDecl.Name.Name != methodName {
-			return false, false
+		m, ok := pkg.Method(customTypeName, name)
+		if !ok {
+			return nil, fmt.Errorf("method not found: %s", name)
 		}
-		if len(funcDecl.Recv.List) == 0 {
-			return false, false
-		}
-		recv := funcDecl.Recv.List[0]
-		t := typing.GetExpressionType(recv.Type)
-		if t != typeName {
-			return false, false
-		}
+		changes = append(changes, e.disabledMethod(pkg, m, embeddedFieldName))
+	}
 
-		recvName := ""
-		if len(recv.Names) > 0 {
-			recvName = recv.Names[0].Name
-		} else {
-			recvName = typing.GetAvailableVariableName(funcDecl, "r")
-			recv.Names = append(recv.Names, &dst.Ident{Name: recvName})
-		}
+	return changes.Merge(), nil
+}
 
-		s := typing.GetFunctionSignature(funcDecl)
-		var retLines []string
-		if len(s.Returns) > 0 {
-			retLines = append(retLines, "return {{.Receiver}}.{{.Original}}.{{.MethodName}}({{.MethodArgs}})")
-		} else {
-			retLines = append(retLines, "{{.Receiver}}.{{.Original}}.{{.MethodName}}({{.MethodArgs}})", "return")
-		}
+func (e entrypointWrapCustomType) disabledMethod(pkg typechecker.Package, method typechecker.Method, fieldName string) typechecker.ApplyFunc {
+	recvName := dsthelpers.FunctionSetReceiverName(method.Function.Node, pkg.FunctionAvailableIdent(method.Function.Node, "r"))
 
-		code := fmt.Sprintf(`if {{.Receiver}}.disabled {
+	var retLines []string
+	if method.Function.Type.Signature().Results().Len() > 0 {
+		retLines = append(retLines, "return {{.Receiver}}.{{.Field}}.{{.MethodName}}({{.MethodArgs}})")
+	} else {
+		retLines = append(retLines, "{{.Receiver}}.{{.Field}}.{{.MethodName}}({{.MethodArgs}})", "return")
+	}
+
+	tpl := fmt.Sprintf(`if {{.Receiver}}.disabled {
 	%s
 }`, strings.Join(retLines, "\n\t"))
 
-		var rets []string
-		for _, ret := range s.Arguments {
-			rets = append(rets, ret.Name)
+	var rets []string
+	for arg := range method.Function.Type.Signature().Params().Variables() {
+		rets = append(rets, arg.Name())
+	}
+	stmt := dsthelpers.StatementFromTemplate(tpl, map[string]any{
+		"Receiver":   recvName,
+		"Field":      fieldName,
+		"MethodName": method.Function.Node.Name.Name,
+		"MethodArgs": strings.Join(rets, ", "),
+	})
+	newLines := dsthelpers.StatementWithDecorations(stmt)
+
+	return func(cur *dstutil.Cursor) (changed bool, cont bool) {
+		if cur.Node() != method.Function.Node {
+			return false, true
 		}
-		stmt := codegen.RawStatement(code, map[string]any{
-			"Receiver":   recvName,
-			"Original":   wrappedField,
-			"MethodName": methodName,
-			"MethodArgs": strings.Join(rets, ", "),
-		})
-		codegen.RemoveFunctionInjectedBlocks(funcDecl)
-		newLines := codegen.InjectCommentsBlock(stmt)
-		funcDecl.Body.List = append([]dst.Stmt{newLines}, funcDecl.Body.List...)
+		dsthelpers.FunctionRemoveInjectedBlocks(method.Function.Node)
+		method.Function.Node.Body.List = append([]dst.Stmt{newLines}, method.Function.Node.Body.List...)
 		return true, false
 	}
-}
-
-func findPackage(name string, f *dst.File) (string, bool) {
-	for _, imp := range f.Imports {
-		p, _ := strconv.Unquote(imp.Path.Value)
-		if p == name {
-			return name, true
-		}
-	}
-	return "", false
-}
-
-func isVersion(segment string) bool {
-	return semver.IsValid(segment)
-}
-
-func getPublicMethods(t *types.Named) map[string]*types.Func {
-	methodsByName := map[string]*types.Func{}
-
-	// Get inherited methods from embedded types
-	mset := types.NewMethodSet(t)
-	for i := 0; i < mset.Len(); i++ {
-		method := mset.At(i).Obj().(*types.Func)
-		if isExported(method.Name()) {
-			methodsByName[method.Name()] = method
-		}
-	}
-
-	// Get methods declared on *types.Named
-	for i := 0; i < t.NumMethods(); i++ {
-		method := t.Method(i)
-		if isExported(method.Name()) {
-			methodsByName[method.Name()] = method
-		}
-	}
-
-	return methodsByName
-}
-
-// isExported checks if a name is public (exported)
-func isExported(name string) bool {
-	return unicode.IsUpper([]rune(name)[0])
 }

@@ -2,29 +2,34 @@ package entrypoint
 
 import (
 	"fmt"
-	"github.com/DataDog/dd-trace-go/internal/tools/process_contribs/internal/codegen"
-	"github.com/DataDog/dd-trace-go/internal/tools/process_contribs/internal/typing"
+	"github.com/DataDog/dd-trace-go/internal/tools/process_contribs/internal/dsthelpers"
+	"github.com/DataDog/dd-trace-go/internal/tools/process_contribs/internal/typechecker"
 	"github.com/dave/dst"
+	"github.com/dave/dst/dstutil"
 )
 
 type entrypointWrap struct{}
 
-func (e entrypointWrap) Apply(fn *dst.FuncDecl, fCtx FunctionContext, args map[string]string) (map[string]codegen.UpdateNodeFunc, error) {
-	s := typing.GetFunctionSignature(fn)
+func (e entrypointWrap) Apply(fn typechecker.Function, _ typechecker.Package, _ map[string]string) (typechecker.ApplyFunc, error) {
+	s := fn.Type.Signature()
 
-	newReturns := make([]string, len(s.Returns))
-	for i, ret := range s.Returns {
-		if ret.Type == "error" {
+	newReturns := make([]string, s.Results().Len())
+	for i := 0; i < s.Results().Len(); i++ {
+		ret := s.Results().At(i)
+
+		if ret.Type().String() == "error" {
 			newReturns[i] = "nil"
 			continue
 		}
+
 		found := false
-		for _, arg := range s.Arguments {
-			if arg.Type == ret.Type {
-				if arg.Name == "" {
-					return nil, fmt.Errorf("cannot return %s, argument does not have a name", arg.Type)
+		for j := 0; j < s.Params().Len(); j++ {
+			arg := s.Params().At(j)
+			if arg.Type().String() == ret.Type().String() {
+				if arg.Name() == "" {
+					return nil, fmt.Errorf("cannot return %s, argument does not have a name", arg.Type().String())
 				}
-				newReturns[i] = arg.Name
+				newReturns[i] = arg.Name()
 				found = true
 				break
 			}
@@ -34,8 +39,14 @@ func (e entrypointWrap) Apply(fn *dst.FuncDecl, fCtx FunctionContext, args map[s
 		}
 	}
 
-	codegen.RemoveFunctionInjectedBlocks(fn)
-	newLines := codegen.EarlyReturnStatement(codegen.IntegrationDisabledCall(), newReturns)
-	fn.Body.List = append([]dst.Stmt{newLines}, fn.Body.List...)
-	return nil, nil
+	changes := func(cur *dstutil.Cursor) (changed bool, cont bool) {
+		if cur.Node() == fn.Node {
+			dsthelpers.FunctionRemoveInjectedBlocks(fn.Node)
+			newLines := dsthelpers.StatementEarlyReturn(dsthelpers.ExpressionIntegrationDisabled(), newReturns)
+			fn.Node.Body.List = append([]dst.Stmt{newLines}, fn.Node.Body.List...)
+			return true, false
+		}
+		return false, true
+	}
+	return changes, nil
 }
