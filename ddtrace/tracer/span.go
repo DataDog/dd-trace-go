@@ -57,18 +57,6 @@ type errorConfig struct {
 	stackSkip    uint
 }
 
-func (t spanList) Lock() {
-	for i := range t {
-		t[i].Lock()
-	}
-}
-
-func (t spanList) Unlock() {
-	for i := range t {
-		t[i].Unlock()
-	}
-}
-
 // AsMap places tags and span properties into a map and returns it.
 //
 // Note that this is not performant, nor are spans guaranteed to have all of their
@@ -612,6 +600,16 @@ func (s *Span) Finish(opts ...FinishOption) {
 	if s == nil {
 		return
 	}
+	// TODO: migrate finished to atomic
+	s.Lock()
+	finished := s.finished
+	if finished {
+		s.Unlock()
+		return
+	}
+	s.finished = true
+	s.Unlock()
+
 	t := now()
 	if len(opts) > 0 {
 		cfg := FinishConfig{
@@ -699,10 +697,6 @@ func (s *Span) finish(finishTime int64) {
 	// We don't lock spans when flushing, so we could have a data race when
 	// modifying a span as it's being flushed. This protects us against that
 	// race, since spans are marked `finished` before we flush them.
-	if s.finished {
-		// already finished
-		return
-	}
 	if s.duration == 0 {
 		s.duration = finishTime - s.start
 	}
