@@ -73,6 +73,10 @@ func (sc *spanContext) samplingPriority() int {
 	return sc.priority
 }
 
+func (sc *spanContext) SamplingPriority() (p int, ok bool) {
+	return sc.samplingPriority(), true
+}
+
 var mockIDSource uint64 = 123
 
 func nextID() uint64 { return atomic.AddUint64(&mockIDSource, 1) }
