@@ -401,12 +401,6 @@ func (s *Span) StartChild(operationName string, opts ...StartSpanOption) *Span {
 // setSamplingPriorityLocked updates the sampling priority.
 // It also updates the trace's sampling priority.
 func (s *Span) setSamplingPriorityLocked(priority int, sampler samplernames.SamplerName) {
-	// We don't lock spans when flushing, so we could have a data race when
-	// modifying a span as it's being flushed. This protects us against that
-	// race, since spans are marked `finished` before we flush them.
-	if s.finished {
-		return
-	}
 	s.setMetric(keySamplingPriority, float64(priority))
 	s.context.setSamplingPriority(priority, sampler)
 }
@@ -430,9 +424,6 @@ func (s *Span) setTagError(value interface{}, cfg errorConfig) {
 			s.context.errors--
 		}
 		s.error = 0
-	}
-	if s.finished {
-		return
 	}
 	switch v := value.(type) {
 	case bool:
@@ -600,15 +591,13 @@ func (s *Span) Finish(opts ...FinishOption) {
 	if s == nil {
 		return
 	}
-	// TODO: migrate finished to atomic
+
 	s.Lock()
-	finished := s.finished
-	if finished {
+	if s.finished {
 		s.Unlock()
 		return
 	}
 	s.finished = true
-	s.Unlock()
 
 	t := now()
 	if len(opts) > 0 {
@@ -622,20 +611,17 @@ func (s *Span) Finish(opts ...FinishOption) {
 			t = cfg.FinishTime.UnixNano()
 		}
 		if cfg.NoDebugStack {
-			s.Lock()
 			delete(s.meta, ext.ErrorStack)
-			s.Unlock()
 		}
 		if cfg.Error != nil {
-			s.Lock()
 			s.setTagError(cfg.Error, errorConfig{
 				noDebugStack: cfg.NoDebugStack,
 				stackFrames:  cfg.StackFrames,
 				stackSkip:    cfg.SkipStackFrames,
 			})
-			s.Unlock()
 		}
 	}
+	s.serializeSpanLinksInMeta()
 
 	if s.goExecTraced && rt.IsEnabled() {
 		// Only tag spans as traced if they both started & ended with
@@ -644,15 +630,16 @@ func (s *Span) Finish(opts ...FinishOption) {
 		// execution traces, but there's really nothing we can do in
 		// those cases since execution tracing tasks aren't recorded in
 		// traces if they started before the trace.
-		s.SetTag("go_execution_traced", "yes")
+		s.setMeta("go_execution_traced", "yes")
 	} else if s.goExecTraced {
 		// If the span started with tracing enabled, but tracing wasn't
 		// enabled when the span finished, we still have some data to
 		// show. If tracing wasn't enabled when the span started, we
 		// won't have data in the execution trace to identify it so
 		// there's nothign we can show.
-		s.SetTag("go_execution_traced", "partial")
+		s.setMeta("go_execution_traced", "partial")
 	}
+	s.Unlock()
 
 	if s.Root() == s {
 		if tr, ok := GetGlobalTracer().(*tracer); ok && tr.rulesSampling.traces.enabled() {
@@ -667,8 +654,6 @@ func (s *Span) Finish(opts ...FinishOption) {
 			}
 		}
 	}
-
-	s.serializeSpanLinksInMeta()
 
 	s.finish(t)
 	orchestrion.GLSPopValue(sharedinternal.ActiveSpanKey)
