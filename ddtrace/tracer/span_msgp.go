@@ -182,6 +182,9 @@ func (z *Span) DecodeMsg(dc *msgp.Reader) (err error) {
 
 // EncodeMsg implements msgp.Encodable
 func (z *Span) EncodeMsg(en *msgp.Writer) (err error) {
+	z.Lock()
+	defer z.Unlock()
+
 	// omitempty: check for empty values
 	zb0001Len := uint32(14)
 	var zb0001Mask uint16 /* 14 bits */
