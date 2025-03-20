@@ -37,7 +37,7 @@ jobs:
     uses: DataDog/dd-trace-go/.github/workflows/parametric-tests.yml@v2-dev
     secrets: inherit
     with:
-      ref: refs/heads/v2-dev
+      branch_ref: refs/heads/v2-dev
 
   smoke-v2:
     uses: DataDog/dd-trace-go/.github/workflows/smoke-tests.yml@v2-dev
