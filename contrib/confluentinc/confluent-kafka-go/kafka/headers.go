@@ -15,6 +15,8 @@ import (
 type MessageCarrier = tracing.MessageCarrier
 
 // NewMessageCarrier creates a new MessageCarrier.
+//
+//ddtrace:entrypoint:ignore reason:"Not relevant"
 func NewMessageCarrier(msg *kafka.Message) MessageCarrier {
 	return tracing.NewMessageCarrier(wrapMessage(msg))
 }

@@ -10,6 +10,7 @@ package globalconfig
 import (
 	"math"
 	"os"
+	"slices"
 	"sync"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
@@ -130,6 +131,18 @@ func SetDisabledIntegrations(disabledIntegrations []string) {
 	for _, name := range disabledIntegrations {
 		cfg.disabledIntegrations[name] = struct{}{}
 	}
+}
+
+// DisabledIntegrations returns the list of disabled integrations.
+func DisabledIntegrations() []string {
+	cfg.mu.RLock()
+	defer cfg.mu.RUnlock()
+	disabledIntegrations := make([]string, 0, len(cfg.disabledIntegrations))
+	for i := range cfg.disabledIntegrations {
+		disabledIntegrations = append(disabledIntegrations, i)
+	}
+	slices.Sort(disabledIntegrations)
+	return disabledIntegrations
 }
 
 // IntegrationDisabled returns whether an integration is disabled or not.

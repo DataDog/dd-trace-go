@@ -9,8 +9,11 @@ package http // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http"
 import (
 	"net/http"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http/internal/config"
 	"gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http/internal/wrap"
 )
+
+const componentName = config.ComponentName
 
 // ServeMux is an HTTP request multiplexer that traces all the incoming requests.
 type ServeMux = wrap.ServeMux

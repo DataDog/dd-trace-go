@@ -7,14 +7,14 @@ package gqlgen
 
 import "github.com/99designs/gqlgen/graphql"
 
-var _ graphql.HandlerExtension = &noopHooks{}
+var _ graphql.HandlerExtension = &noopTracer{}
 
-type noopHooks struct{}
+type noopTracer struct{}
 
-func (h *noopHooks) ExtensionName() string {
+func (*noopTracer) ExtensionName() string {
 	return "DatadogTracingNoop"
 }
 
-func (h *noopHooks) Validate(_ graphql.ExecutableSchema) error {
+func (*noopTracer) Validate(_ graphql.ExecutableSchema) error {
 	return nil
 }

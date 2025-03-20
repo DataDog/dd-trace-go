@@ -257,6 +257,8 @@ const spanTagsKey contextKey = 0 // map[string]string
 
 // WithSpanTags creates a new context containing the given set of tags. They will be added
 // to any query created with the returned context.
+//
+//ddtrace:entrypoint:ignore not relevant
 func WithSpanTags(ctx context.Context, tags map[string]string) context.Context {
 	return context.WithValue(ctx, spanTagsKey, tags)
 }

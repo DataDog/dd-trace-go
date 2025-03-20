@@ -24,11 +24,11 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 )
 
-const componentName = "cloud.google.com/go/pubsub.v1"
+const ComponentName = "cloud.google.com/go/pubsub.v1"
 
 func init() {
-	telemetry.LoadIntegration(componentName)
-	tracer.MarkIntegrationImported(componentName)
+	telemetry.LoadIntegration(ComponentName)
+	tracer.MarkIntegrationImported(ComponentName)
 }
 
 type Message struct {
@@ -58,7 +58,7 @@ func TracePublish(ctx context.Context, topic Topic, msg *Message, opts ...Option
 		tracer.SpanType(ext.SpanTypeMessageProducer),
 		tracer.Tag("message_size", len(msg.Data)),
 		tracer.Tag("ordering_key", msg.OrderingKey),
-		tracer.Tag(ext.Component, componentName),
+		tracer.Tag(ext.Component, ComponentName),
 		tracer.Tag(ext.SpanKind, ext.SpanKindProducer),
 		tracer.Tag(ext.MessagingSystem, ext.MessagingSystemGCPPubsub),
 	}
@@ -107,7 +107,7 @@ func TraceReceiveFunc(s Subscription, opts ...Option) func(ctx context.Context, 
 			tracer.Tag("ordering_key", msg.OrderingKey),
 			tracer.Tag("message_id", msg.ID),
 			tracer.Tag("publish_time", msg.PublishTime.String()),
-			tracer.Tag(ext.Component, componentName),
+			tracer.Tag(ext.Component, ComponentName),
 			tracer.Tag(ext.SpanKind, ext.SpanKindConsumer),
 			tracer.Tag(ext.MessagingSystem, ext.MessagingSystemGCPPubsub),
 			tracer.ChildOf(parentSpanCtx),

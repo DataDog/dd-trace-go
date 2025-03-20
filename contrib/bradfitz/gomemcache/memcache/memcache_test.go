@@ -180,6 +180,30 @@ func TestAnalyticsSettings(t *testing.T) {
 	})
 }
 
+func TestDisabledIntegration(t *testing.T) {
+	li := makeFakeServer(t)
+	defer li.Close()
+	addr := li.Addr().String()
+
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	prev := globalconfig.DisabledIntegrations()
+	globalconfig.SetDisabledIntegrations([]string{"bradfitz/gomemcache/memcache"})
+	defer func() {
+		globalconfig.SetDisabledIntegrations(prev)
+	}()
+	
+	client := getClient(addr)
+	defer client.DeleteAll()
+
+	err := client.Add(&memcache.Item{Key: "key1", Value: []byte("value1")})
+	require.NoError(t, err)
+
+	spans := mt.FinishedSpans()
+	require.Len(t, spans, 0)
+}
+
 func TestNamingSchema(t *testing.T) {
 	li := makeFakeServer(t)
 	defer li.Close()
