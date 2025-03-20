@@ -43,18 +43,26 @@ func (op *ContextOperation) Run(eventReceiver dyngo.Operation, addrs waf.RunAddr
 	result, err := ctx.Run(addrs)
 	if errors.Is(err, wafErrors.ErrTimeout) {
 		log.Debug("appsec: WAF timeout value reached: %v", err)
-	} else if err != nil {
-		log.Error("appsec: unexpected WAF error: %v", err)
 	}
 
-	op.AddEvents(result.Events...)
-	op.AbsorbDerivatives(result.Derivatives)
+	op.metrics.IncWafError(addrs, err)
 
-	actions.SendActionEvents(eventReceiver, result.Actions)
+	wafTimeout := errors.Is(err, wafErrors.ErrTimeout)
+	rateLimited := op.AddEvents(result.Events...)
+	blocking := actions.SendActionEvents(eventReceiver, result.Actions)
+	op.AbsorbDerivatives(result.Derivatives)
 
 	if result.HasEvents() {
 		dyngo.EmitData(op, &SecurityEvent{})
 	}
+
+	op.metrics.RegisterWafRun(addrs, RequestMilestones{
+		requestBlocked: blocking,
+		ruleTriggered:  result.HasEvents(),
+		wafTimeout:     wafTimeout,
+		rateLimited:    rateLimited,
+		wafError:       err != nil && !wafTimeout,
+	})
 }
 
 // RunSimple runs the WAF with the given address data and returns an error that should be forwarded to the caller
