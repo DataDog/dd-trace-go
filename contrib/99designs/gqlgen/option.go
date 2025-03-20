@@ -9,6 +9,7 @@ import (
 	"math"
 
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
+	instrgraphql "github.com/DataDog/dd-trace-go/v2/instrumentation/graphql"
 )
 
 type config struct {
@@ -17,6 +18,7 @@ type config struct {
 	withoutTraceIntrospectionQuery    bool
 	withoutTraceTrivialResolvedFields bool
 	tags                              map[string]interface{}
+	errExtensions                     []string
 }
 
 // An Option describes options for the gqlgen integration.
@@ -35,6 +37,7 @@ func defaults(cfg *config) {
 	cfg.serviceName = instr.ServiceName(instrumentation.ComponentDefault, nil)
 	cfg.analyticsRate = instr.AnalyticsRate(false)
 	cfg.tags = make(map[string]interface{})
+	cfg.errExtensions = internalgraphql.ErrorExtensionsFromEnv()
 }
 
 // WithAnalytics enables or disables Trace Analytics for all started spans.
@@ -81,5 +84,12 @@ func WithCustomTag(key string, value interface{}) OptionFn {
 			cfg.tags = make(map[string]interface{})
 		}
 		cfg.tags[key] = value
+	}
+}
+
+// WithErrorExtensions allows to configure the error extensions to include in the error span events.
+func WithErrorExtensions(errExtensions ...string) OptionFn {
+	return func(cfg *config) {
+		cfg.errExtensions = instrgraphql.ParseErrorExtensions(errExtensions)
 	}
 }
