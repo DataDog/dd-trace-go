@@ -86,6 +86,16 @@ jobs:
             scenario: APPSEC_META_STRUCT_DISABLED
           - weblog-variant: net-http
             scenario: APPSEC_CUSTOM_OBFUSCATION
+          - weblog-variant: net-http
+            scenario: APPSEC_WAF_TELEMETRY
+          - weblog-variant: net-http
+            scenario: TELEMETRY_APP_STARTED_PRODUCTS_DISABLED
+          - weblog-variant: net-http
+            scenario: TELEMETRY_LOG_GENERATION_DISABLED
+          - weblog-variant: net-http
+            scenario: TELEMETRY_METRIC_GENERATION_ENABLED
+          - weblog-variant: net-http
+            scenario: TELEMETRY_METRIC_GENERATION_DISABLED
           # APM scenarios requiring specific environment settings
           - scenario: APM_TRACING_E2E
             env:

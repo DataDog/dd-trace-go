@@ -7,12 +7,14 @@ package waf
 
 import (
 	"encoding/json"
+	"time"
 
 	waf "github.com/DataDog/go-libddwaf/v3"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/trace"
 	"github.com/DataDog/dd-trace-go/v2/internal"
+	emitter "github.com/DataDog/dd-trace-go/v2/internal/appsec/emitter/waf"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
 )
@@ -24,9 +26,14 @@ const (
 	eventRulesLoadedTag  = wafSpanTagPrefix + "event_rules.loaded"
 	eventRulesFailedTag  = wafSpanTagPrefix + "event_rules.error_count"
 	wafVersionTag        = wafSpanTagPrefix + "waf.version"
+	wafErrorTag          = wafSpanTagPrefix + "waf.error"
+	wafTimeoutTag        = wafSpanTagPrefix + "waf.timeouts"
+	raspRuleEvalTag      = wafSpanTagPrefix + "rasp.rule.eval"
+	raspErrorTag         = wafSpanTagPrefix + "rasp.error"
+	raspTimeoutTag       = wafSpanTagPrefix + "rasp.timeout"
+	truncationTagPrefix  = wafSpanTagPrefix + "truncated."
 
-	// BlockedRequestTag used to convey whether a request is blocked
-	BlockedRequestTag = "appsec.blocked"
+	blockedRequestTag = "appsec.blocked"
 )
 
 // AddRulesMonitoringTags adds the tags related to security rules monitoring
@@ -49,14 +56,38 @@ func AddRulesMonitoringTags(th trace.TagSetter, wafDiags waf.Diagnostics) {
 	th.SetTag(ext.ManualKeep, samplernames.AppSec)
 }
 
-// AddWAFMonitoringTags adds the tags related to the monitoring of the Feature
-func AddWAFMonitoringTags(th trace.TagSetter, rulesVersion string, stats map[string]any) {
+// AddWAFMonitoringTags adds the tags related to the monitoring of the WAF
+func AddWAFMonitoringTags(th trace.TagSetter, metrics *emitter.ContextMetrics, rulesVersion string, stats waf.Stats) {
 	// Rules version is set for every request to help the backend associate Feature duration metrics with rule version
 	th.SetTag(eventRulesVersionTag, rulesVersion)
 
-	// Report the stats sent by the Feature
-	for k, v := range stats {
-		th.SetTag(wafSpanTagPrefix+k, v)
+	if raspCallsCount := metrics.SumRASPCalls.Load(); raspCallsCount > 0 {
+		th.SetTag(raspRuleEvalTag, raspCallsCount)
+	}
+
+	if raspErrorsCount := metrics.SumRASPErrors.Load(); raspErrorsCount > 0 {
+		th.SetTag(raspErrorTag, raspErrorsCount)
+	}
+
+	if wafErrorsCount := metrics.SumWAFErrors.Load(); wafErrorsCount > 0 {
+		th.SetTag(wafErrorTag, wafErrorsCount)
+	}
+
+	// Add metrics like `waf.duration` and `rasp.duration_ext`
+	for key, value := range stats.Timers {
+		th.SetTag(wafSpanTagPrefix+key, float64(value.Nanoseconds())/float64(time.Microsecond))
+	}
+
+	if stats.TimeoutCount > 0 {
+		th.SetTag(wafTimeoutTag, stats.TimeoutCount)
+	}
+
+	if stats.TimeoutRASPCount > 0 {
+		th.SetTag(raspTimeoutTag, stats.TimeoutRASPCount)
+	}
+
+	for reason, truncations := range stats.Truncations {
+		th.SetTag(truncationTagPrefix+string(reason), truncations)
 	}
 }
 
