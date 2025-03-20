@@ -57,6 +57,18 @@ type errorConfig struct {
 	stackSkip    uint
 }
 
+func (t spanList) Lock() {
+	for i := range t {
+		t[i].Lock()
+	}
+}
+
+func (t spanList) Unlock() {
+	for i := range t {
+		t[i].Unlock()
+	}
+}
+
 // AsMap places tags and span properties into a map and returns it.
 //
 // Note that this is not performant, nor are spans guaranteed to have all of their
