@@ -203,25 +203,31 @@ jobs:
         run: sudo sysctl vm.overcommit_memory=1
 
       # Finally, we run the test suite!
+      # To avoid false negatives with failing tests, we do not run our CI Visibility `gotestsum`. Doing so would mark our
+      # failure tests as real failures in the backend.
       - name: Run Tests
         shell: bash
         run: |-
           echo "Working directory: ${PWD}"
           orchestrion version
+          PACKAGE_NAMES=$(go list ./... | grep -v /civisibility)
 
           case "${MODE}" in
           "DRIVER")
             echo "Starting test suite in DRIVER mode"
-            gotestsum --junitfile ${XML_PATH} --raw-command -- orchestrion go test -json -shuffle=on ./...
+            gotestsum --junitfile ${XML_PATH} --raw-command -- orchestrion go test -json -shuffle=on $PACKAGE_NAMES
+            orchestrion go test -json -shuffle=on ./civisibility
             ;;
           "TOOLEXEC")
             echo "Starting test suite in TOOLEXEC mode"
-            gotestsum --junitfile ${XML_PATH} -- -shuffle=on -toolexec='orchestrion toolexec' ./...
+            gotestsum --junitfile ${XML_PATH} -- -shuffle=on -toolexec='orchestrion toolexec' $PACKAGE_NAMES
+            go test -shuffle=on -toolexec='orchestrion toolexec' ./civisibility
             ;;
           "GOFLAGS")
             echo "Starting test suite in GOFLAGS mode"
             export GOFLAGS="${GOFLAGS} '-toolexec=orchestrion toolexec'"
-            gotestsum --junitfile ${XML_PATH} -- -shuffle=on ./...
+            gotestsum --junitfile ${XML_PATH} -- -shuffle=on $PACKAGE_NAMES
+            go test -shuffle=on ./civisibility
             ;;
           *)
             echo "Unknown mode: ${MODE}"
