@@ -335,12 +335,6 @@ func WithStatsComputation(enabled bool) StartOption {
 	return v2.WithStatsComputation(enabled)
 }
 
-// WithOrchestrion configures Orchestrion's auto-instrumentation metadata.
-// This option is only intended to be used by Orchestrion https://github.com/DataDog/orchestrion
-func WithOrchestrion(metadata map[string]string) StartOption {
-	return v2.WithOrchestrion(metadata)
-}
-
 // StartSpanOption is a configuration option for StartSpan. It is aliased in order
 // to help godoc group all the functions returning it together. It is considered
 // more correct to refer to it as the type as the origin, ddtrace.StartSpanOption.

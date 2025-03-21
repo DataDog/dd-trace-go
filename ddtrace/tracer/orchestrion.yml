@@ -57,7 +57,7 @@ aspects:
           # that it will be executed last (tracing contents of previous init functions will not be possible).
           template: |-
             func init() {
-              tracer.Start(tracer.WithOrchestrion(map[string]string{"version": {{printf "%q" Version}}}))
+              tracer.Start()
             }
       # We need to stop the tracer at the end of `main` to ensure all spans are properly flushed.
       - prepend-statements:
