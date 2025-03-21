@@ -2696,3 +2696,25 @@ func TestExecutionTraceSpanTagged(t *testing.T) {
 	assert.Equal(t, partialSpan.Meta["go_execution_traced"], "partial")
 	assert.NotContains(t, untracedSpan.Meta, "go_execution_traced")
 }
+
+func TestPPROFLabelRootSpanRace(t *testing.T) {
+	tracer, _, _, stop := startTestTracer(t)
+	defer stop()
+	parent := tracer.StartSpan("parent")
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for i := 0; i < 1000; i++ {
+			tracer.StartSpan("child", ChildOf(parent.Context()))
+		}
+	}()
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for i := 0; i < 1000; i++ {
+			parent.SetTag(ext.ResourceName, "x")
+		}
+	}()
+	wg.Wait()
+}
