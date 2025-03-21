@@ -201,6 +201,10 @@ func (c *client) Nodes() map[string]rueidis.Client {
 	return nodes
 }
 
+func (c *client) Mode() rueidis.ClientMode {
+	return c.client.Mode()
+}
+
 type dedicatedClient struct {
 	*client
 	dedicatedClient rueidis.DedicatedClient
