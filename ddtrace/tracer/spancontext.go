@@ -301,12 +301,16 @@ func (c *SpanContext) baggageItem(key string) string {
 }
 
 func (c *SpanContext) copyFrom(other *SpanContext) {
-	c.mu.RLock()
+	c.mu.Lock()
+	other.mu.RLock()
+
 	c.traceID.SetUpper(other.traceID.Upper())
 	c.trace = other.trace
 	c.origin = other.origin
 	c.errors = other.errors
-	c.mu.RUnlock()
+
+	other.mu.RUnlock()
+	c.mu.Unlock()
 
 	other.ForeachBaggageItem(func(k, v string) bool {
 		c.setBaggageItem(k, v)
