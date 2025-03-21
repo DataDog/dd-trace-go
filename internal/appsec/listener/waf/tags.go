@@ -75,7 +75,7 @@ func AddWAFMonitoringTags(th trace.TagSetter, metrics *emitter.ContextMetrics, r
 
 	// Add metrics like `waf.duration` and `rasp.duration_ext`
 	for key, value := range stats.Timers {
-		th.SetTag(wafSpanTagPrefix+key, float64(value.Nanoseconds())/float64(time.Microsecond))
+		th.SetTag(wafSpanTagPrefix+key, float64(value.Nanoseconds())/float64(time.Microsecond.Nanoseconds()))
 	}
 
 	if stats.TimeoutCount > 0 {

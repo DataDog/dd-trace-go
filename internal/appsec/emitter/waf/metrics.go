@@ -146,6 +146,12 @@ type ContextMetrics struct {
 }
 
 // RegisterStats increment the metrics for the WAF run stats at the end of each waf context lifecycle
+// It registers the metrics:
+// - `rasp.duration` and `rasp.duration_ext` for the RASP scope using [waf.Stats.Timers]
+// - `waf.duration` and `waf.duration_ext` for the WAF scope using [waf.Stats.Timers]
+// - `rasp.timeout` for the RASP scope using [waf.Stats.TimeoutRASPCount]
+// - `waf.input_truncated` and `waf.truncated_value_size` for the truncations using [waf.Stats.Truncations]
+// - `waf.requests` for the milestones using [ContextMetrics.Milestones]
 func (m *ContextMetrics) RegisterStats(stats waf.Stats) {
 	// Add metrics `{waf,rasp}.duration[_ext]`
 	for key, value := range stats.Timers {
@@ -155,7 +161,7 @@ func (m *ContextMetrics) RegisterStats(stats waf.Stats) {
 		}
 
 		// The metrics should be in microseconds
-		metric.Submit(float64(value.Nanoseconds()) / float64(time.Microsecond))
+		metric.Submit(float64(value.Nanoseconds()) / float64(time.Microsecond.Nanoseconds()))
 	}
 
 	if stats.TimeoutRASPCount > 0 {
@@ -195,6 +201,10 @@ func (m *ContextMetrics) incWafRequestsCounts() {
 }
 
 // RegisterWafRun register the different outputs of the WAF for the `waf.requests` and also directly increment the `rasp.rule.match` and `rasp.rule.eval` metrics.
+// It registers the metrics:
+// - `rasp.rule.match`
+// - `rasp.rule.eval`
+// - accumulate data to set `waf.requests` by the end of the waf context
 func (m *ContextMetrics) RegisterWafRun(addrs waf.RunAddressData, tags RequestMilestones) {
 	switch addrs.Scope {
 	case waf.RASPScope:
@@ -238,6 +248,9 @@ func (m *ContextMetrics) RegisterWafRun(addrs waf.RunAddressData, tags RequestMi
 }
 
 // IncWafError should be called if go-libddwaf.(*Context).Run() returns an error to increments metrics linked to WAF errors
+// It registers the metrics:
+// - `waf.error`
+// - `rasp.error`
 func (m *ContextMetrics) IncWafError(addrs waf.RunAddressData, in error) {
 	if in == nil {
 		return
@@ -263,9 +276,13 @@ func (m *ContextMetrics) IncWafError(addrs waf.RunAddressData, in error) {
 	}
 }
 
+// defaultWafErrorCode is the default error code if the error does not implement [waf.RunError]
+// meaning if the error actual come for the bindings and not from the WAF itself
+const defaultWafErrorCode = -127
+
 func (m *ContextMetrics) wafError(in error) {
 	m.SumWAFErrors.Add(1)
-	errCode := -127 // Default error code if the error does not implement [waf.RunError]
+	errCode := defaultWafErrorCode
 	if code := wafErrors.ToWafErrorCode(in); code != 0 {
 		errCode = code
 	}
@@ -277,7 +294,7 @@ func (m *ContextMetrics) wafError(in error) {
 
 func (m *ContextMetrics) raspError(in error, ruleType addresses.RASPRuleType) {
 	m.SumRASPErrors.Add(1)
-	errCode := -127 // Default error code if the error does not implement [waf.RunError]
+	errCode := defaultWafErrorCode
 	if code := wafErrors.ToWafErrorCode(in); code != 0 {
 		errCode = code
 	}
