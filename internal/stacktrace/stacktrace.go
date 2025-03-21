@@ -12,12 +12,12 @@ import (
 	"os"
 	"regexp"
 	"runtime"
+	"strconv"
 	"strings"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 
 	"github.com/eapache/queue/v2"
-	"github.com/hashicorp/go-secure-stdlib/parseutil"
 )
 
 var (
@@ -45,7 +45,7 @@ const (
 
 func init() {
 	if env := os.Getenv(envStackTraceEnabled); env != "" {
-		if e, err := parseutil.ParseBool(env); err == nil {
+		if e, err := strconv.ParseBool(env); err == nil {
 			enabled = e
 		} else {
 			log.Error("Failed to parse %s env var as boolean: %v (using default value: %v)", envStackTraceEnabled, err, enabled)
@@ -58,7 +58,7 @@ func init() {
 			return
 		}
 
-		if depth, err := parseutil.SafeParseInt(env); err == nil {
+		if depth, err := strconv.Atoi(env); err == nil {
 			defaultMaxDepth = depth
 		} else {
 			if depth <= 0 {
