@@ -14,14 +14,14 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
-	_ "unsafe"
+	_ "unsafe" // required blank import to run orchestrion
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/constants"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/integrations"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/integrations/gotesting/coverage"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/utils"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/internal"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting/coverage"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
 )
 
 // ******************************************************************************************************************
@@ -38,7 +38,7 @@ func instrumentTestingM(m *testing.M) func(exitCode int) {
 	// Check if CI Visibility was disabled using the kill switch before trying to initialize it
 	atomic.StoreInt32(&ciVisibilityEnabledValue, -1)
 	if !isCiVisibilityEnabled() || !testing.Testing() {
-		return func(exitCode int) {}
+		return func(_ int) {}
 	}
 
 	// Initialize CI Visibility
@@ -239,26 +239,26 @@ func instrumentTestingTFunc(f func(*testing.T)) func(*testing.T) {
 					integrations.ExitCiVisibility()
 				}
 				panic(r)
-			} else {
-				// Normal finalization: determine the test result based on its state.
-				if t.Failed() {
-					if execMeta.isARetry && execMeta.isLastRetry && execMeta.allRetriesFailed {
-						test.SetTag(constants.TestHasFailedAllRetries, "true")
-					}
-					test.SetTag(ext.Error, true)
-					suite.SetTag(ext.Error, true)
-					module.SetTag(ext.Error, true)
-					test.Close(integrations.ResultStatusFail)
-				} else if t.Skipped() {
-					test.Close(integrations.ResultStatusSkip)
-				} else {
-					if execMeta.isARetry && execMeta.isLastRetry && execMeta.allAttemptsPassed {
-						test.SetTag(constants.TestAttemptToFixPassed, "true")
-					}
-					test.Close(integrations.ResultStatusPass)
-				}
-				checkModuleAndSuite(module, suite)
 			}
+			// Normal finalization: determine the test result based on its state.
+			if t.Failed() {
+				if execMeta.isARetry && execMeta.isLastRetry && execMeta.allRetriesFailed {
+					test.SetTag(constants.TestHasFailedAllRetries, "true")
+				}
+				test.SetTag(ext.Error, true)
+				suite.SetTag(ext.Error, true)
+				module.SetTag(ext.Error, true)
+				test.Close(integrations.ResultStatusFail)
+			} else if t.Skipped() {
+				test.Close(integrations.ResultStatusSkip)
+			} else {
+				if execMeta.isARetry && execMeta.isLastRetry && execMeta.allAttemptsPassed {
+					test.SetTag(constants.TestAttemptToFixPassed, "true")
+				}
+				test.Close(integrations.ResultStatusPass)
+			}
+			checkModuleAndSuite(module, suite)
+
 		}()
 
 		// Execute the original test function.

@@ -9,14 +9,16 @@ import (
 	"fmt"
 	"sync"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry/internal"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry/internal/knownmetrics"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry/internal/transport"
+	"github.com/puzpuzpuz/xsync/v3"
+
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/internal"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/internal/knownmetrics"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/internal/transport"
 )
 
 type distributions struct {
-	store         internal.SyncMap[metricKey, *distribution]
+	store         *xsync.MapOf[metricKey, *distribution]
 	pool          *internal.SyncPool[[]float64]
 	queueSize     internal.Range[int]
 	skipAllowlist bool // Debugging feature to skip the allowlist of known metrics
@@ -26,9 +28,11 @@ type distributions struct {
 func (d *distributions) LoadOrStore(namespace Namespace, name string, tags []string) MetricHandle {
 	kind := transport.DistMetric
 	key := newMetricKey(namespace, kind, name, tags)
-	handle, loaded := d.store.LoadOrStore(key, &distribution{
-		key:    key,
-		values: internal.NewRingQueueWithPool[float64](d.queueSize, d.pool),
+	handle, loaded := d.store.LoadOrCompute(key, func() *distribution {
+		return &distribution{
+			key:    key,
+			values: internal.NewRingQueueWithPool[float64](d.queueSize, d.pool),
+		}
 	})
 	if !loaded && !d.skipAllowlist { // The metric is new: validate and log issues about it
 		if err := validateMetricKey(namespace, kind, name, tags); err != nil {
@@ -40,7 +44,7 @@ func (d *distributions) LoadOrStore(namespace Namespace, name string, tags []str
 }
 
 func (d *distributions) Payload() transport.Payload {
-	series := make([]transport.DistributionSeries, 0, d.store.Len())
+	series := make([]transport.DistributionSeries, 0, d.store.Size())
 	d.store.Range(func(_ metricKey, handle *distribution) bool {
 		if payload := handle.payload(); payload.Namespace != "" {
 			series = append(series, payload)

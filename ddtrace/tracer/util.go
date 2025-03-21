@@ -10,7 +10,7 @@ import (
 	"strconv"
 	"strings"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/samplernames"
+	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
 )
 
 // parseUint64 parses a uint64 from either an unsigned 64 bit base-10 string
@@ -81,38 +81,37 @@ func parsePropagatableTraceTags(s string) (map[string]string, error) {
 func dereference(value any) any {
 	// Falling into one of the cases will dereference the pointer and return the
 	// value of the pointer. It adds one allocation due to casting.
-	switch value.(type) {
+	switch v := value.(type) {
 	case *bool:
-		return dereferenceGeneric(value.(*bool))
+		return dereferenceGeneric(v)
 	case *string:
-		return dereferenceGeneric(value.(*string))
+		return dereferenceGeneric(v)
 	// Supported type by toFloat64
 	case *byte:
-		return dereferenceGeneric(value.(*byte))
+		return dereferenceGeneric(v)
 	case *float32:
-		return dereferenceGeneric(value.(*float32))
+		return dereferenceGeneric(v)
 	case *float64:
-		return dereferenceGeneric(value.(*float64))
+		return dereferenceGeneric(v)
 	case *int:
-		return dereferenceGeneric(value.(*int))
+		return dereferenceGeneric(v)
 	case *int8:
-		return dereferenceGeneric(value.(*int8))
+		return dereferenceGeneric(v)
 	case *int16:
-		return dereferenceGeneric(value.(*int16))
+		return dereferenceGeneric(v)
 	case *int32:
-		return dereferenceGeneric(value.(*int32))
+		return dereferenceGeneric(v)
 	case *int64:
-		return dereferenceGeneric(value.(*int64))
+		return dereferenceGeneric(v)
 	case *uint:
-		return dereferenceGeneric(value.(*uint))
+		return dereferenceGeneric(v)
 	case *uint16:
-		return dereferenceGeneric(value.(*uint16))
+		return dereferenceGeneric(v)
 	case *uint32:
-		return dereferenceGeneric(value.(*uint32))
+		return dereferenceGeneric(v)
 	case *uint64:
-		return dereferenceGeneric(value.(*uint64))
+		return dereferenceGeneric(v)
 	case *samplernames.SamplerName:
-		v := value.(*samplernames.SamplerName)
 		if v == nil {
 			return samplernames.Unknown
 		}

@@ -43,7 +43,9 @@ jobs:
           cache: true
           cache-dependency-path: '**/go.mod'
       - name: Run generator
-        run: go generate ./internal/orchestrion/...
+        run: |-
+          go generate ./internal/orchestrion/...
+          go generate -tags=tools ./orchestrion/all/...
       - name: Check for changes
         run: git diff --exit-code
 

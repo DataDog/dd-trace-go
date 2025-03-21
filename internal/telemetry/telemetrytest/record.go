@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry/internal/transport"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/internal/transport"
 )
 
 type MetricKey struct {
@@ -187,6 +187,9 @@ func (r *RecordClient) AppStop() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.Stopped = true
+}
+
+func (r *RecordClient) AddFlushTicker(func(telemetry.Client)) {
 }
 
 func CheckConfig(t *testing.T, cfgs []telemetry.Configuration, key string, value any) {

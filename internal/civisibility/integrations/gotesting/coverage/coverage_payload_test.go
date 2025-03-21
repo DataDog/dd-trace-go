@@ -8,11 +8,12 @@ package coverage
 import (
 	"bytes"
 	"encoding/json"
-	"github.com/stretchr/testify/assert"
-	"github.com/tinylib/msgp/msgp"
 	"io"
 	"strconv"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/tinylib/msgp/msgp"
 )
 
 func newCoverageData(n int) []*ciTestCoverageData {
@@ -60,9 +61,9 @@ func TestCoveragePayloadIntegrity(t *testing.T) {
 // TestCoveragePayloadDecode ensures that whatever we push into the payload can
 // be decoded by the codec.
 func TestCoveragePayloadDecode(t *testing.T) {
-	assert := assert.New(t)
 	for _, n := range []int{10, 1 << 10} {
 		t.Run(strconv.Itoa(n), func(t *testing.T) {
+			assert := assert.New(t)
 			p := newCoveragePayload()
 			for i := 0; i < n; i++ {
 				list := newCoverageData(i%5 + 1)

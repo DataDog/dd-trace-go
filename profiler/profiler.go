@@ -18,10 +18,10 @@ import (
 	"sync"
 	"time"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/traceprof"
-	"gopkg.in/DataDog/dd-trace-go.v1/profiler/internal/immutable"
+	"github.com/DataDog/dd-trace-go/v2/internal"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/traceprof"
+	"github.com/DataDog/dd-trace-go/v2/profiler/internal/immutable"
 )
 
 // outChannelSize specifies the size of the profile output channel.
@@ -136,10 +136,15 @@ func (p *profiler) lookupProfile(name string, w io.Writer, debug int) error {
 	return prof.WriteTo(w, debug)
 }
 
+var (
+	errProfilingNotSupportedInAWSLambda = errors.New("profiling is not supported in AWS Lambda runtimes")
+	errAgentlessUploadRequiresAPIKey    = errors.New("agentless upload requires a valid API key - set the DD_API_KEY env variable to configure one")
+)
+
 // newProfiler creates a new, unstarted profiler.
 func newProfiler(opts ...Option) (*profiler, error) {
 	if os.Getenv("AWS_LAMBDA_FUNCTION_NAME") != "" {
-		return nil, errors.New("profiling not supported in AWS Lambda runtimes")
+		return nil, errProfilingNotSupportedInAWSLambda
 	}
 	cfg, err := defaultConfig()
 	if err != nil {
@@ -156,14 +161,14 @@ func newProfiler(opts ...Option) (*profiler, error) {
 		cfg.addProfileType(expGoroutineWaitProfile)
 	}
 	// Agentless upload is disabled by default as of v1.30.0, but
-	// WithAgentlessUpload can be used to enable it for testing and debugging.
+	// DD_PROFILING_AGENTLESS can be set to enable it for testing and debugging.
 	if cfg.agentless {
 		if !isAPIKeyValid(cfg.apiKey) {
-			return nil, errors.New("profiler.WithAgentlessUpload requires a valid API key. Use profiler.WithAPIKey or the DD_API_KEY env variable to set it")
+			return nil, errAgentlessUploadRequiresAPIKey
 		}
 		// Always warn people against using this mode for now. All customers should
 		// use agent based uploading at this point.
-		log.Warn("profiler.WithAgentlessUpload is currently for internal usage only and not officially supported.")
+		log.Warn("Agentless upload is currently for internal usage only and not officially supported.")
 		cfg.targetURL = cfg.apiURL
 	} else {
 		// Historically people could use an API Key to enable agentless uploading.
@@ -172,7 +177,7 @@ func newProfiler(opts ...Option) (*profiler, error) {
 		// key configured, we warn the customers that this is probably a
 		// misconfiguration.
 		if cfg.apiKey != "" {
-			log.Warn("You are currently setting profiler.WithAPIKey or the DD_API_KEY env variable, but as of dd-trace-go v1.30.0 this value is getting ignored by the profiler. Please see the profiler.WithAPIKey go docs and verify that your integration is still working. If you can't remove DD_API_KEY from your environment, you can use WithAPIKey(\"\") to silence this warning.")
+			log.Warn("You are currently setting the DD_API_KEY env variable, but as of dd-trace-go v1.30.0 this value is getting ignored by the profiler. Please verify that your integration is still working.")
 		}
 		cfg.targetURL = cfg.agentURL
 	}

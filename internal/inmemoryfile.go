@@ -7,6 +7,6 @@
 
 package internal
 
-func CreateMemfd(name string, data []byte) (int, error) {
+func CreateMemfd(_ string, _ []byte) (int, error) {
 	return 0, nil
 }

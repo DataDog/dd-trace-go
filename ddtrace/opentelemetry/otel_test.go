@@ -29,7 +29,7 @@ func TestHttpDistributedTrace(t *testing.T) {
 
 	sctx, rootSpan := tr.Start(context.Background(), "testRootSpan")
 
-	w := otelhttp.NewHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	w := otelhttp.NewHandler(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 		receivedSpan := oteltrace.SpanFromContext(r.Context())
 		assert.Equal(rootSpan.SpanContext().TraceID(), receivedSpan.SpanContext().TraceID())
 	}), "testOperation")

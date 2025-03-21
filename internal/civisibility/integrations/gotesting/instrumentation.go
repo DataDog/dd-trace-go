@@ -15,10 +15,10 @@ import (
 	"time"
 	"unsafe"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/constants"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/integrations"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/utils/net"
+	"github.com/DataDog/dd-trace-go/v2/internal"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/net"
 )
 
 type (
@@ -91,10 +91,10 @@ func isCiVisibilityEnabled() bool {
 		if internal.BoolEnv(constants.CIVisibilityEnabledEnvironmentVariable, false) {
 			atomic.StoreInt32(&ciVisibilityEnabledValue, 1)
 			return true
-		} else {
-			atomic.StoreInt32(&ciVisibilityEnabledValue, 0)
-			return false
 		}
+		atomic.StoreInt32(&ciVisibilityEnabledValue, 0)
+		return false
+
 	}
 
 	return enabledValue == 1
@@ -213,17 +213,17 @@ func applyFlakyTestRetriesAdditionalFeature(targetFunc func(*testing.T)) (func(*
 				t:                 t,
 				initialRetryCount: flakyRetrySettings.RetryCount,
 				adjustRetryCount:  nil, // No adjustRetryCount
-				isLastRetry: func(executionIndex int, remainingRetries int64) bool {
+				isLastRetry: func(_ int, remainingRetries int64) bool {
 					t.Helper()
 					return remainingRetries == 1 || atomic.LoadInt64(&flakyRetrySettings.RemainingTotalRetryCount) == 1
 				},
-				shouldRetry: func(ptrToLocalT *testing.T, executionIndex int, remainingRetries int64) bool {
+				shouldRetry: func(ptrToLocalT *testing.T, _ int, remainingRetries int64) bool {
 					ptrToLocalT.Helper()
 					t.Helper()
 					// Decide whether to retry
 					return ptrToLocalT.Failed() && remainingRetries >= 0 && atomic.LoadInt64(&flakyRetrySettings.RemainingTotalRetryCount) >= 0
 				},
-				perExecution: func(ptrToLocalT *testing.T, executionIndex int, duration time.Duration) {
+				perExecution: func(ptrToLocalT *testing.T, executionIndex int, _ time.Duration) {
 					ptrToLocalT.Helper()
 					t.Helper()
 					if executionIndex > 0 {
@@ -269,7 +269,7 @@ func applyFlakyTestRetriesAdditionalFeature(targetFunc func(*testing.T)) (func(*
 						}
 					}
 				},
-				execMetaAdjust: func(execMeta *testExecutionMetadata, executionIndex int) {
+				execMetaAdjust: func(execMeta *testExecutionMetadata, _ int) {
 					t.Helper()
 					execMeta.allRetriesFailed = atomic.LoadInt32(&allRetriesFailed) == 1
 					// Set the flag ATR execution to true
@@ -314,16 +314,16 @@ func applyEarlyFlakeDetectionAdditionalFeature(testInfo *commonInfo, targetFunc 
 				}
 				return 0
 			},
-			isLastRetry: func(executionIndex int, remainingRetries int64) bool {
+			isLastRetry: func(_ int, remainingRetries int64) bool {
 				t.Helper()
 				return remainingRetries == 1
 			},
-			shouldRetry: func(ptrToLocalT *testing.T, executionIndex int, remainingRetries int64) bool {
+			shouldRetry: func(ptrToLocalT *testing.T, _ int, remainingRetries int64) bool {
 				ptrToLocalT.Helper()
 				t.Helper()
 				return remainingRetries >= 0
 			},
-			perExecution: func(ptrToLocalT *testing.T, executionIndex int, duration time.Duration) {
+			perExecution: func(ptrToLocalT *testing.T, _ int, _ time.Duration) {
 				ptrToLocalT.Helper()
 				t.Helper()
 				if !ptrToLocalT.Failed() {
@@ -338,7 +338,7 @@ func applyEarlyFlakeDetectionAdditionalFeature(testInfo *commonInfo, targetFunc 
 					testPassCount++
 				}
 			},
-			onRetryEnd: func(t *testing.T, executionIndex int, lastPtrToLocalT *testing.T) {
+			onRetryEnd: func(t *testing.T, executionIndex int, _ *testing.T) {
 				t.Helper()
 				// Update test status based on collected counts
 				tCommonPrivates := getTestPrivateFields(t)
@@ -367,7 +367,7 @@ func applyEarlyFlakeDetectionAdditionalFeature(testInfo *commonInfo, targetFunc 
 					fmt.Printf("  [ %v after %v retries by Datadog's early flake detection ]\n", status, executionIndex)
 				}
 			},
-			execMetaAdjust: func(execMeta *testExecutionMetadata, executionIndex int) {
+			execMetaAdjust: func(execMeta *testExecutionMetadata, _ int) {
 				t.Helper()
 				execMeta.allRetriesFailed = atomic.LoadInt32(&allRetriesFailed) == 1
 				// Set the flag new test to true
@@ -585,12 +585,12 @@ func applyTestManagementTestsFeature(testInfo *commonInfo, targetFunc func(*test
 			t:                 t,
 			initialRetryCount: retryCount,
 			adjustRetryCount:  nil, // No adjustment based on duration.
-			isLastRetry: func(executionIndex int, remainingRetries int64) bool {
+			isLastRetry: func(_ int, remainingRetries int64) bool {
 				t.Helper()
 				// When no retries remain, we're on the last attempt.
 				return remainingRetries == 1
 			},
-			shouldRetry: func(ptrToLocalT *testing.T, executionIndex int, remainingRetries int64) bool {
+			shouldRetry: func(ptrToLocalT *testing.T, _ int, remainingRetries int64) bool {
 				ptrToLocalT.Helper()
 				t.Helper()
 
@@ -601,7 +601,7 @@ func applyTestManagementTestsFeature(testInfo *commonInfo, targetFunc func(*test
 				}
 				return false
 			},
-			perExecution: func(ptrToLocalT *testing.T, executionIndex int, duration time.Duration) {
+			perExecution: func(ptrToLocalT *testing.T, executionIndex int, _ time.Duration) {
 				ptrToLocalT.Helper()
 				t.Helper()
 
@@ -624,13 +624,13 @@ func applyTestManagementTestsFeature(testInfo *commonInfo, targetFunc func(*test
 					t.Logf("Attemp to fix retry: %d/%d [%s]", executionIndex+1, retryCount, status)
 				}
 			},
-			onRetryEnd: func(t *testing.T, executionIndex int, lastPtrToLocalT *testing.T) {
+			onRetryEnd: func(t *testing.T, _ int, _ *testing.T) {
 				t.Helper()
 				if isDisabled || isQuarantined {
 					t.SkipNow()
 				}
 			},
-			execMetaAdjust: func(execMeta *testExecutionMetadata, executionIndex int) {
+			execMetaAdjust: func(execMeta *testExecutionMetadata, _ int) {
 				t.Helper()
 
 				// Mark that this test execution used an additional feature wrapper.

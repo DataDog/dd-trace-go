@@ -49,7 +49,7 @@ docker run --rm -v $(pwd):/app -w /app golangci/golangci-lint:v1.63.3 golangci-l
 
 ### Integrations
 
-Please view our contrib [README.md](contrib/README.md) for information on new integrations. If you need support for a new integration, please file an issue to discuss before opening a PR.
+Please view our contrib [README.md](contrib/README.md) for information on integrations. If you need support for a new integration, please file an issue to discuss before opening a PR.
 
 ### Go Modules
 

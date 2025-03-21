@@ -5,7 +5,7 @@
 ---
 # yaml-language-server: $schema=https://datadoghq.dev/orchestrion/schema.json
 meta:
-  name: gopkg.in/DataDog/dd-trace-go.v1/contrib/gorilla/mux
+  name: github.com/DataDog/dd-trace-go/contrib/gorilla/mux/v2
   description: Package gorilla/mux implements a request router and dispatcher for matching incoming requests to their respective handler.
 
 aspects:
@@ -19,18 +19,17 @@ aspects:
     advice:
       - inject-declarations:
           imports:
-            ddtrace: gopkg.in/DataDog/dd-trace-go.v1/ddtrace
             http: net/http
-            internal: gopkg.in/DataDog/dd-trace-go.v1/internal
-            telemetry: gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry
-            tracer: gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer
+            internal: github.com/DataDog/dd-trace-go/v2/internal
+            telemetry: github.com/DataDog/dd-trace-go/v2/internal/telemetry
+            tracer: github.com/DataDog/dd-trace-go/v2/ddtrace/tracer
           template: |-
             type ddRouterConfig struct {
               ignoreRequest func(*http.Request) bool
               headerTags    *internal.LockMap
               resourceNamer func(*Router, *http.Request) string
               serviceName   string
-              spanOpts      []ddtrace.StartSpanOption
+              spanOpts      []tracer.StartSpanOption
             }
 
             func ddDefaultResourceNamer(router *Router, req *http.Request) string {
@@ -64,14 +63,13 @@ aspects:
     advice:
       - prepend-statements:
           imports:
-            ddtrace: gopkg.in/DataDog/dd-trace-go.v1/ddtrace
-            ext: gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext
-            globalconfig: gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig
+            ext: github.com/DataDog/dd-trace-go/v2/ddtrace/ext
+            globalconfig: github.com/DataDog/dd-trace-go/v2/internal/globalconfig
             http: net/http
-            internal: gopkg.in/DataDog/dd-trace-go.v1/internal
+            internal: github.com/DataDog/dd-trace-go/v2/internal
             math: math
-            namingschema: gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema
-            tracer: gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer
+            namingschema: github.com/DataDog/dd-trace-go/v2/internal/namingschema
+            tracer: github.com/DataDog/dd-trace-go/v2/ddtrace/tracer
           template: |-
             {{- $res := .Function.Result 0 -}}
             defer func() {
@@ -86,7 +84,7 @@ aspects:
               {{ $res }}.__dd_config.ignoreRequest = func(*http.Request) bool { return false }
               {{ $res }}.__dd_config.resourceNamer = ddDefaultResourceNamer
               {{ $res }}.__dd_config.serviceName = namingschema.ServiceName("mux.router")
-              {{ $res }}.__dd_config.spanOpts = []ddtrace.StartSpanOption{
+              {{ $res }}.__dd_config.spanOpts = []tracer.StartSpanOption{
                 tracer.Tag(ext.Component, "gorilla/mux"),
                 tracer.Tag(ext.SpanKind, ext.SpanKindServer),
               }
@@ -108,10 +106,10 @@ aspects:
       - prepend-statements:
           imports:
             http: net/http
-            httptrace: gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http
-            httptraceinternal: gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/httptrace
-            options: gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/options
-            tracer: gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer
+            httptrace: github.com/DataDog/dd-trace-go/contrib/net/http/v2
+            httptraceinternal: github.com/DataDog/dd-trace-go/v2/instrumentation/httptrace
+            options: github.com/DataDog/dd-trace-go/v2/instrumentation/options
+            tracer: github.com/DataDog/dd-trace-go/v2/ddtrace/tracer
           template: |-
             {{- $r := .Function.Receiver -}}
             {{- $w := .Function.Argument 0 -}}
@@ -120,7 +118,7 @@ aspects:
               var (
                 match    RouteMatch
                 route    string
-                spanOpts = options.Copy({{ $r }}.__dd_config.spanOpts...)
+                spanOpts = options.Copy({{ $r }}.__dd_config.spanOpts)
               )
               if {{ $r }}.Match({{ $req }}, &match) && match.Route != nil {
                 if h, err := match.Route.GetHostTemplate(); err == nil {
