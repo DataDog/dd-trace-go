@@ -11,10 +11,11 @@ import (
 	"os"
 	"strings"
 
+	"github.com/go-viper/mapstructure/v2"
+
 	"github.com/DataDog/dd-trace-go/v2/appsec/events"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/dyngo"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
-	"github.com/mitchellh/mapstructure"
 )
 
 // blockedTemplateJSON is the default JSON template used to write responses for blocked requests
