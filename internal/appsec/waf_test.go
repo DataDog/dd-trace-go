@@ -633,6 +633,7 @@ func TestRASPLFI(t *testing.T) {
 			}
 
 			assert.Equal(t, 1.0, telemetryClient.Count(telemetry.NamespaceAppSec, "rasp.rule.match", []string{
+				"block:success",
 				"rule_type:lfi",
 				"waf_version:" + waf.Version(),
 				"event_rules_version:1.4.2",
