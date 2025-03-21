@@ -39,9 +39,20 @@ type responseWriter struct {
 	statusCode int
 }
 
+func (rw *responseWriter) Write(b []byte) (int, error) {
+	if rw.statusCode == 0 {
+		rw.statusCode = http.StatusOK
+	}
+	return rw.ResponseWriter.Write(b)
+}
+
 func (rw *responseWriter) WriteHeader(code int) {
 	rw.statusCode = code
 	rw.ResponseWriter.WriteHeader(code)
+}
+
+func (rw *responseWriter) Status() int {
+	return rw.statusCode
 }
 
 // ServeHTTP dispatches the request to the handler
@@ -53,9 +64,10 @@ func (mux *ServeMux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	_, route := mux.Handler(r)
 
 	resource := r.Method + " " + route
-	so := make([]tracer.StartSpanOption, len(mux.spanOpts), len(mux.spanOpts)+1)
+	so := make([]tracer.StartSpanOption, len(mux.spanOpts), len(mux.spanOpts)+2)
 	copy(so, mux.spanOpts)
 	so = append(so, tracer.ResourceName(resource))
+	so = append(so, tracer.Tag(ext.HTTPRoute, route))
 
 	rw := &responseWriter{ResponseWriter: w}
 	span, ctx, finishSpans := httptrace.StartRequestSpan(r, so...)
@@ -64,7 +76,9 @@ func (mux *ServeMux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}()
 	var h http.Handler = mux.ServeMux
 	if appsec.Enabled() {
-		h = httpsec.WrapHandler(h, span, nil, nil)
+		h = httpsec.WrapHandler(h, span, nil, &httpsec.Config{
+			RouteForRequest: func(*http.Request) string { return route },
+		})
 	}
 	h.ServeHTTP(rw, r.WithContext(ctx))
 }
