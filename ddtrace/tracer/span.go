@@ -566,6 +566,13 @@ func (s *Span) setMetric(key string, v float64) {
 
 // AddSpanLink appends the given link to the span's span links.
 func (s *Span) AddSpanLink(link SpanLink) {
+	s.Lock()
+	defer s.Unlock()
+
+	if s.finished {
+		return
+	}
+
 	s.spanLinks = append(s.spanLinks, link)
 }
 
