@@ -15,15 +15,22 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	privateAppsec "github.com/DataDog/dd-trace-go/v2/internal/appsec"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/telemetrytest"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func TestTrackUserLoginSuccess(t *testing.T) {
+
 	t.Run("nominal-with-metadata", func(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
+
+		var telemetryRecorder telemetrytest.RecordClient
+		restoreTelemetry := telemetry.MockClient(&telemetryRecorder)
+		defer restoreTelemetry()
 
 		span, ctx := tracer.StartSpanFromContext(context.Background(), "example")
 		appsec.TrackUserLoginSuccess(ctx, "user login", "user id", map[string]string{"region": "us-east-1"}, tracer.WithUserName("username"))
@@ -42,11 +49,19 @@ func TestTrackUserLoginSuccess(t *testing.T) {
 		assertTag(t, finished, "usr.login", "user login")
 		assertTag(t, finished, expectedEventPrefix+"region", "us-east-1")
 		assertTag(t, finished, "usr.name", "username")
+
+		metric := telemetryRecorder.Metrics[telemetrytest.MetricKey{Namespace: telemetry.NamespaceAppSec, Name: "sdk.event", Kind: "count", Tags: "event_type:login_success,sdk_version:v2"}]
+		require.NotNil(t, metric)
+		assert.EqualValues(t, 1, metric.Get())
 	})
 
 	t.Run("nominal-nil-metadata", func(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
+
+		var telemetryRecorder telemetrytest.RecordClient
+		restoreTelemetry := telemetry.MockClient(&telemetryRecorder)
+		defer restoreTelemetry()
 
 		span, ctx := tracer.StartSpanFromContext(context.Background(), "example")
 		appsec.TrackUserLoginSuccess(ctx, "user login", "user id", nil)
@@ -62,18 +77,38 @@ func TestTrackUserLoginSuccess(t *testing.T) {
 		expectedEventPrefix := "appsec.events.users.login.success."
 		assertTag(t, finished, expectedEventPrefix+"track", "true")
 		assertTag(t, finished, "usr.id", "user id")
+
+		metric := telemetryRecorder.Metrics[telemetrytest.MetricKey{Namespace: telemetry.NamespaceAppSec, Name: "sdk.event", Kind: "count", Tags: "event_type:login_success,sdk_version:v2"}]
+		require.NotNil(t, metric)
+		assert.EqualValues(t, 1, metric.Get())
 	})
 
 	t.Run("nil-context", func(t *testing.T) {
+		var telemetryRecorder telemetrytest.RecordClient
+		restoreTelemetry := telemetry.MockClient(&telemetryRecorder)
+		defer restoreTelemetry()
+
 		require.NotPanics(t, func() {
 			//lint:ignore SA1012 we are intentionally passing a nil context to verify incorrect use does not lead to panic
 			appsec.TrackUserLoginSuccess(nil, "user login", "user id", map[string]string{"region": "us-east-1"}, tracer.WithUserName("username"))
+
+			metric := telemetryRecorder.Metrics[telemetrytest.MetricKey{Namespace: telemetry.NamespaceAppSec, Name: "sdk.event", Kind: "count", Tags: "event_type:login_success,sdk_version:v2"}]
+			require.NotNil(t, metric)
+			assert.EqualValues(t, 1, metric.Get())
 		})
 	})
 
 	t.Run("empty-context", func(t *testing.T) {
+		var telemetryRecorder telemetrytest.RecordClient
+		restoreTelemetry := telemetry.MockClient(&telemetryRecorder)
+		defer restoreTelemetry()
+
 		require.NotPanics(t, func() {
 			appsec.TrackUserLoginSuccess(context.Background(), "user login", "user id", map[string]string{"region": "us-east-1"}, tracer.WithUserName("username"))
+
+			metric := telemetryRecorder.Metrics[telemetrytest.MetricKey{Namespace: telemetry.NamespaceAppSec, Name: "sdk.event", Kind: "count", Tags: "event_type:login_success,sdk_version:v2"}]
+			require.NotNil(t, metric)
+			assert.EqualValues(t, 1, metric.Get())
 		})
 	})
 }
@@ -84,6 +119,10 @@ func TestTrackUserLoginFailure(t *testing.T) {
 			return func(t *testing.T) {
 				mt := mocktracer.Start()
 				defer mt.Stop()
+
+				var telemetryRecorder telemetrytest.RecordClient
+				restoreTelemetry := telemetry.MockClient(&telemetryRecorder)
+				defer restoreTelemetry()
 
 				span, ctx := tracer.StartSpanFromContext(context.Background(), "example")
 				appsec.TrackUserLoginFailure(ctx, "user login", userExists, map[string]string{"region": "us-east-1"})
@@ -102,6 +141,10 @@ func TestTrackUserLoginFailure(t *testing.T) {
 				assertTag(t, finished, expectedEventPrefix+"usr.login", "user login")
 				assertTag(t, finished, expectedEventPrefix+"usr.exists", strconv.FormatBool(userExists))
 				assertTag(t, finished, expectedEventPrefix+"region", "us-east-1")
+
+				metric := telemetryRecorder.Metrics[telemetrytest.MetricKey{Namespace: telemetry.NamespaceAppSec, Name: "sdk.event", Kind: "count", Tags: "event_type:login_failure,sdk_version:v2"}]
+				require.NotNil(t, metric)
+				assert.EqualValues(t, 1, metric.Get())
 			}
 		}
 		t.Run("user-exists", test(true))
@@ -109,15 +152,31 @@ func TestTrackUserLoginFailure(t *testing.T) {
 	})
 
 	t.Run("nil-context", func(t *testing.T) {
+		var telemetryRecorder telemetrytest.RecordClient
+		restoreTelemetry := telemetry.MockClient(&telemetryRecorder)
+		defer restoreTelemetry()
+
 		require.NotPanics(t, func() {
 			//lint:ignore SA1012 we are intentionally passing a nil context to verify incorrect use does not lead to panic
 			appsec.TrackUserLoginFailure(nil, "user login", false, nil)
+
+			metric := telemetryRecorder.Metrics[telemetrytest.MetricKey{Namespace: telemetry.NamespaceAppSec, Name: "sdk.event", Kind: "count", Tags: "event_type:login_failure,sdk_version:v2"}]
+			require.NotNil(t, metric)
+			assert.EqualValues(t, 1, metric.Get())
 		})
 	})
 
 	t.Run("empty-context", func(t *testing.T) {
+		var telemetryRecorder telemetrytest.RecordClient
+		restoreTelemetry := telemetry.MockClient(&telemetryRecorder)
+		defer restoreTelemetry()
+
 		require.NotPanics(t, func() {
 			appsec.TrackUserLoginFailure(context.Background(), "user login", false, nil)
+
+			metric := telemetryRecorder.Metrics[telemetrytest.MetricKey{Namespace: telemetry.NamespaceAppSec, Name: "sdk.event", Kind: "count", Tags: "event_type:login_failure,sdk_version:v2"}]
+			require.NotNil(t, metric)
+			assert.EqualValues(t, 1, metric.Get())
 		})
 	})
 }
@@ -126,6 +185,10 @@ func TestCustomEvent(t *testing.T) {
 	t.Run("nominal", func(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
+
+		var telemetryRecorder telemetrytest.RecordClient
+		restoreTelemetry := telemetry.MockClient(&telemetryRecorder)
+		defer restoreTelemetry()
 
 		span, ctx := tracer.StartSpanFromContext(context.Background(), "example")
 		md := map[string]string{"key-1": "value 1", "key-2": "value 2", "key-3": "value 3"}
@@ -144,19 +207,39 @@ func TestCustomEvent(t *testing.T) {
 		for k, v := range md {
 			assertTag(t, finished, expectedEventPrefix+k, v)
 		}
+
+		metric := telemetryRecorder.Metrics[telemetrytest.MetricKey{Namespace: telemetry.NamespaceAppSec, Name: "sdk.event", Kind: "count", Tags: "event_type:custom,sdk_version:v1"}]
+		require.NotNil(t, metric)
+		assert.EqualValues(t, 1, metric.Get())
 	})
 
 	t.Run("nil-context", func(t *testing.T) {
+		var telemetryRecorder telemetrytest.RecordClient
+		restoreTelemetry := telemetry.MockClient(&telemetryRecorder)
+		defer restoreTelemetry()
+
 		require.NotPanics(t, func() {
 			//lint:ignore SA1012 we are intentionally passing a nil context to verify incorrect use does not lead to panic
 			appsec.TrackCustomEvent(nil, "my-custom-event", nil)
 		})
+
+		metric := telemetryRecorder.Metrics[telemetrytest.MetricKey{Namespace: telemetry.NamespaceAppSec, Name: "sdk.event", Kind: "count", Tags: "event_type:custom,sdk_version:v1"}]
+		require.NotNil(t, metric)
+		assert.EqualValues(t, 1, metric.Get())
 	})
 
 	t.Run("empty-context", func(t *testing.T) {
+		var telemetryRecorder telemetrytest.RecordClient
+		restoreTelemetry := telemetry.MockClient(&telemetryRecorder)
+		defer restoreTelemetry()
+
 		require.NotPanics(t, func() {
 			appsec.TrackCustomEvent(context.Background(), "my-custom-event", nil)
 		})
+
+		metric := telemetryRecorder.Metrics[telemetrytest.MetricKey{Namespace: telemetry.NamespaceAppSec, Name: "sdk.event", Kind: "count", Tags: "event_type:custom,sdk_version:v1"}]
+		require.NotNil(t, metric)
+		assert.EqualValues(t, 1, metric.Get())
 	})
 }
 
@@ -164,10 +247,16 @@ func TestSetUser(t *testing.T) {
 	t.Run("early-return/appsec-disabled", func(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
-		span, ctx := tracer.StartSpanFromContext(context.Background(), "example")
-		defer span.Finish()
-		err := appsec.SetUser(ctx, "usr.id")
-		require.NoError(t, err)
+
+		func() {
+			span, ctx := tracer.StartSpanFromContext(context.Background(), "example")
+			defer span.Finish()
+			err := appsec.SetUser(ctx, "usr.id")
+			require.NoError(t, err)
+		}()
+
+		finished := mt.FinishedSpans()[0]
+		assertTag(t, finished, "_dd.appsec.user.collection_mode", "sdk")
 	})
 
 	privateAppsec.Start()
