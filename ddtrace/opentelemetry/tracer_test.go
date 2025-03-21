@@ -12,6 +12,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DataDog/dd-trace-go/v2/ddtrace"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/baggage"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
@@ -20,6 +22,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
+	otelbaggage "go.opentelemetry.io/otel/baggage"
 	oteltrace "go.opentelemetry.io/otel/trace"
 	"go.opentelemetry.io/otel/trace/noop"
 )
@@ -28,7 +31,7 @@ func TestGetTracer(t *testing.T) {
 	assert := assert.New(t)
 	tp := NewTracerProvider()
 	tr := tp.Tracer("ot")
-	dd := tracer.GetGlobalTracer()
+	dd := internal.GetGlobalTracer()
 	ott, ok := tr.(*oteltracer)
 	assert.True(ok)
 	assert.Equal(ott.DD, dd)
@@ -67,7 +70,9 @@ func TestSpanWithNewRoot(t *testing.T) {
 	assert.True(ok)
 	assert.Equal(got, child.(*span).DD)
 
-	assert.NotEqual(noopParent.Context().TraceID(), child.SpanContext().TraceID())
+	var parentBytes oteltrace.TraceID
+	uint64ToByte(noopParent.Context().TraceID(), parentBytes[:])
+	assert.NotEqual(parentBytes, child.SpanContext().TraceID())
 }
 
 func TestSpanWithoutNewRoot(t *testing.T) {
@@ -77,8 +82,8 @@ func TestSpanWithoutNewRoot(t *testing.T) {
 
 	parent, ddCtx := tracer.StartSpanFromContext(context.Background(), "otel.child")
 	_, child := tr.Start(ddCtx, "otel.child")
-	parentCtxW3C := parent.Context()
-	assert.Equal(parentCtxW3C.TraceIDBytes(), [16]byte(child.SpanContext().TraceID()))
+	parentCtxW3C := parent.Context().(ddtrace.SpanContextW3C)
+	assert.Equal(parentCtxW3C.TraceID128Bytes(), [16]byte(child.SpanContext().TraceID()))
 }
 
 func TestTracerOptions(t *testing.T) {
@@ -308,4 +313,89 @@ func BenchmarkOTelConcurrentTracing(b *testing.B) {
 			}()
 		}
 	}
+}
+
+func TestOteltoDDBaggagePropagation(t *testing.T) {
+	assert := assert.New(t)
+
+	// Create a baggage with a key/value pair using the OTel baggage API.
+	m, err := otelbaggage.NewMember("testKey", "testValue")
+	assert.NoError(err)
+	bag, err := otelbaggage.New(m)
+	assert.NoError(err)
+
+	// Create a context that includes the baggage.
+	ctx := otelbaggage.ContextWithBaggage(context.Background(), bag)
+
+	tp := NewTracerProvider()
+	otel.SetTracerProvider(tp)
+	tr := otel.Tracer("baggage.test", oteltrace.WithInstrumentationVersion("0.1"))
+
+	ctx, _ = tr.Start(ctx, "baggage.span")
+
+	ddSpan, ok := tracer.SpanFromContext(ctx)
+	assert.True(ok)
+
+	// Verify that the baggage item was propagated to the Datadog span.
+	baggageValue := ddSpan.BaggageItem("testKey")
+	assert.Equal("testValue", baggageValue)
+	value, _ := baggage.Get(ctx, "testKey")
+	assert.Equal("testValue", value)
+}
+
+func TestDDtoOtelBaggagePropagation(t *testing.T) {
+	assert := assert.New(t)
+
+	// Set up the tracer provider and tracer.
+	tp := NewTracerProvider()
+	otel.SetTracerProvider(tp)
+	_ = otel.Tracer("baggage.test", oteltrace.WithInstrumentationVersion("0.1"))
+
+	ctx := context.Background()
+	tracer.Start()
+	defer tracer.Stop()
+	ddSpan, ctx := tracer.StartSpanFromContext(ctx, "ddtrace-baggage")
+
+	// Set baggage items on the ddtrace span.
+	baggaggeCtx := baggage.Set(ctx, "key1", "value1")
+	baggaggeCtx = baggage.Set(baggaggeCtx, "key2", "value2")
+
+	otelTracer := otel.Tracer("baggage.test", oteltrace.WithInstrumentationVersion("0.1"))
+	otelCtx, otelSpan := otelTracer.Start(baggaggeCtx, "otel-span")
+	defer otelSpan.End()
+
+	otelBag := otelbaggage.FromContext(otelCtx)
+	assert.NotNil(otelBag)
+	assert.Equal(2, otelBag.Len())
+	assert.Equal("value1", otelBag.Member("key1").Value())
+	assert.Equal("value2", otelBag.Member("key2").Value())
+
+	ddSpan.Finish()
+}
+
+func TestOtelBaggagePrecedence(t *testing.T) {
+	assert := assert.New(t)
+
+	// Set up Datadog baggage first
+	ctx := context.Background()
+	ctx = baggage.Set(ctx, "testKey", "ddValue")
+
+	// Set up OpenTelemetry baggage with the same key but different value
+	m, _ := otelbaggage.NewMember("testKey", "otelValue")
+	bag, _ := otelbaggage.New(m)
+	ctx = otelbaggage.ContextWithBaggage(ctx, bag)
+
+	// Create tracer and start span
+	tp := NewTracerProvider()
+	otel.SetTracerProvider(tp)
+	tr := otel.Tracer("baggage.test")
+	ctx, span := tr.Start(ctx, "baggage.span")
+	defer span.End()
+
+	// Verify that OpenTelemetry value takes precedence
+	ddSpan, ok := tracer.SpanFromContext(ctx)
+	assert.True(ok)
+	assert.Equal("otelValue", ddSpan.BaggageItem("testKey"))
+	value, _ := baggage.Get(ctx, "testKey")
+	assert.Equal("otelValue", value)
 }
