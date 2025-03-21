@@ -174,6 +174,9 @@ func newSpanContext(span *Span, parent *SpanContext) *SpanContext {
 		context.traceID.SetUpper(tUp)
 	}
 	if context.trace == nil {
+		// TODO: potential optimization, add the span to the trace here
+		// instead of in the trace.push method. Remember to replicate the telemetry
+		// collection logic if you do this.
 		context.trace = newTrace()
 	}
 	if context.trace.root == nil {
@@ -301,12 +304,12 @@ func (c *SpanContext) baggageItem(key string) string {
 }
 
 func (c *SpanContext) copyFrom(other *SpanContext) {
-	c.mu.RLock()
+	other.mu.RLock()
 	c.traceID.SetUpper(other.traceID.Upper())
 	c.trace = other.trace
 	c.origin = other.origin
 	c.errors = other.errors
-	c.mu.RUnlock()
+	other.mu.RUnlock()
 
 	other.ForeachBaggageItem(func(k, v string) bool {
 		c.setBaggageItem(k, v)
