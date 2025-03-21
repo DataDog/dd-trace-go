@@ -76,7 +76,8 @@ func TestCustomRules(t *testing.T) {
 			defer mt.Stop()
 
 			telemetryClient := new(telemetrytest.RecordClient)
-			defer telemetry.SwapClient(telemetry.SwapClient(telemetryClient))
+			prevClient := telemetry.SwapClient(telemetryClient)
+			defer telemetry.SwapClient(prevClient)
 
 			req, err := http.NewRequest(tc.method, srv.URL, nil)
 			require.NoError(t, err)
@@ -430,7 +431,8 @@ func TestBlocking(t *testing.T) {
 			mt := mocktracer.Start()
 			defer mt.Stop()
 			telemetryClient := new(telemetrytest.RecordClient)
-			defer telemetry.SwapClient(telemetry.SwapClient(telemetryClient))
+			prevClient := telemetry.SwapClient(telemetryClient)
+			defer telemetry.SwapClient(prevClient)
 			req, err := http.NewRequest("POST", srv.URL+tc.endpoint, strings.NewReader(tc.reqBody))
 			require.NoError(t, err)
 			for k, v := range tc.headers {
@@ -600,7 +602,8 @@ func TestRASPLFI(t *testing.T) {
 			mt := mocktracer.Start()
 			defer mt.Stop()
 			telemetryClient := new(telemetrytest.RecordClient)
-			defer telemetry.SwapClient(telemetry.SwapClient(telemetryClient))
+			prevClient := telemetry.SwapClient(telemetryClient)
+			defer telemetry.SwapClient(prevClient)
 
 			req, err := http.NewRequest("GET", srv.URL+"?path="+tc.path+"&block="+strconv.FormatBool(tc.block), nil)
 			require.NoError(t, err)
