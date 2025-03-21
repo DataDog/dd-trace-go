@@ -52,9 +52,11 @@ import (
 	_ "gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http"                                 // integration
 	_ "gopkg.in/DataDog/dd-trace-go.v1/contrib/os"                                       // integration
 	_ "gopkg.in/DataDog/dd-trace-go.v1/contrib/redis/go-redis.v9"                        // integration
+	_ "gopkg.in/DataDog/dd-trace-go.v1/contrib/redis/rueidis"                            // integration
 	_ "gopkg.in/DataDog/dd-trace-go.v1/contrib/segmentio/kafka.go.v0"                    // integration
 	_ "gopkg.in/DataDog/dd-trace-go.v1/contrib/sirupsen/logrus"                          // integration
 	_ "gopkg.in/DataDog/dd-trace-go.v1/contrib/twitchtv/twirp"                           // integration
+	_ "gopkg.in/DataDog/dd-trace-go.v1/contrib/valkey-go"                                // integration
 	_ "gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"                                   // integration
 	_ "gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/integrations/gotesting"     // integration
 	_ "gopkg.in/DataDog/dd-trace-go.v1/profiler"                                         // integration
