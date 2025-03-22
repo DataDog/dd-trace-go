@@ -145,7 +145,7 @@ func startGPRCSsl(ctx context.Context, service extproc.ExternalProcessorServer, 
 	grpcCredentials := credentials.NewServerTLSFromCert(&cert)
 	grpcServer := grpc.NewServer(grpc.Creds(grpcCredentials))
 
-	appsecEnvoyExternalProcessorServer := gocontrolplane.AppsecEnvoyExternalProcessorServer(service)
+	appsecEnvoyExternalProcessorServer := gocontrolplane.AppsecEnvoyExternalProcessorServerGCPServiceExtension(service)
 
 	go func() {
 		<-ctx.Done()
