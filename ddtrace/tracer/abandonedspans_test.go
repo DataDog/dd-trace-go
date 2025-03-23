@@ -21,12 +21,12 @@ import (
 )
 
 var warnPrefix = fmt.Sprintf("Datadog Tracer %v WARN: ", version.Tag)
-var spanStart = time.Date(2023, time.August, 18, 0, 0, 0, 0, time.UTC)
+var spanStartTime = time.Date(2023, time.August, 18, 0, 0, 0, 0, time.UTC)
 
 // setTestTime() sets the current time, which will be used to calculate the
 // duration of abandoned spans.
 func setTestTime() func() {
-	current := spanStart.UnixNano() + 10*time.Minute.Nanoseconds() // use a fixed time instead of now
+	current := spanStartTime.UnixNano() + 10*time.Minute.Nanoseconds() // use a fixed time instead of now
 	now = func() int64 { return current }
 
 	return func() {
@@ -83,7 +83,7 @@ func TestAbandonedSpansMetric(t *testing.T) {
 		tracer, _, _, stop, err := startTestTracer(t, WithLogger(tp), WithDebugSpansMode(500*time.Millisecond), withStatsdClient(&tg))
 		assert.NoError(err)
 		defer stop()
-		s := tracer.StartSpan("operation", StartTime(spanStart))
+		s := tracer.StartSpan("operation", StartTime(spanStartTime))
 		s.Finish()
 		assertProcessedSpans(assert, tracer, 1, 1, tickerInterval/10)
 		assert.Empty(tg.GetCallsByName("datadog.tracer.abandoned_spans"))
@@ -95,7 +95,7 @@ func TestAbandonedSpansMetric(t *testing.T) {
 		tracer, _, _, stop, err := startTestTracer(t, WithLogger(tp), WithDebugSpansMode(500*time.Millisecond), withStatsdClient(&tg))
 		assert.NoError(err)
 		defer stop()
-		tracer.StartSpan("operation", StartTime(spanStart), Tag(ext.Component, "some_integration_name"))
+		tracer.StartSpan("operation", StartTime(spanStartTime), Tag(ext.Component, "some_integration_name"))
 		assertProcessedSpans(assert, tracer, 1, 0, tickerInterval/10)
 		calls := tg.GetCallsByName("datadog.tracer.abandoned_spans")
 		assert.Len(calls, 1)
@@ -109,9 +109,9 @@ func TestAbandonedSpansMetric(t *testing.T) {
 		tracer, _, _, stop, err := startTestTracer(t, WithLogger(tp), WithDebugSpansMode(500*time.Millisecond), withStatsdClient(&tg))
 		assert.NoError(err)
 		defer stop()
-		sf := tracer.StartSpan("op", StartTime(spanStart))
+		sf := tracer.StartSpan("op", StartTime(spanStartTime))
 		sf.Finish()
-		s := tracer.StartSpan("op2", StartTime(spanStart))
+		s := tracer.StartSpan("op2", StartTime(spanStartTime))
 		assertProcessedSpans(assert, tracer, 2, 1, tickerInterval/10)
 		calls := tg.GetCallsByName("datadog.tracer.abandoned_spans")
 		assert.Len(calls, 1)
@@ -138,7 +138,7 @@ func TestReportAbandonedSpans(t *testing.T) {
 		tracer, _, _, stop, err := startTestTracer(t, WithLogger(tp), WithDebugSpansMode(500*time.Millisecond))
 		assert.Nil(err)
 		defer stop()
-		s := tracer.StartSpan("operation", StartTime(spanStart))
+		s := tracer.StartSpan("operation", StartTime(spanStartTime))
 		s.Finish()
 		assertProcessedSpans(assert, tracer, 1, 1, tickerInterval/10)
 		expected := fmt.Sprintf("%s%s", warnPrefix, formatSpanString(s))
@@ -151,7 +151,7 @@ func TestReportAbandonedSpans(t *testing.T) {
 		tracer, _, _, stop, err := startTestTracer(t, WithLogger(tp), WithDebugSpansMode(500*time.Millisecond))
 		assert.Nil(err)
 		defer stop()
-		s := tracer.StartSpan("operation", StartTime(spanStart))
+		s := tracer.StartSpan("operation", StartTime(spanStartTime))
 		assertProcessedSpans(assert, tracer, 1, 0, tickerInterval/10)
 		assert.Contains(tp.Logs(), fmt.Sprintf("%s%d abandoned spans:", warnPrefix, 1))
 		assert.Contains(tp.Logs(), fmt.Sprintf("%s%s", warnPrefix, formatSpanString(s)))
@@ -163,9 +163,9 @@ func TestReportAbandonedSpans(t *testing.T) {
 		tracer, _, _, stop, err := startTestTracer(t, WithLogger(tp), WithDebugSpansMode(500*time.Millisecond))
 		assert.Nil(err)
 		defer stop()
-		sf := tracer.StartSpan("op", StartTime(spanStart))
+		sf := tracer.StartSpan("op", StartTime(spanStartTime))
 		sf.Finish()
-		s := tracer.StartSpan("op2", StartTime(spanStart))
+		s := tracer.StartSpan("op2", StartTime(spanStartTime))
 		notExpected := fmt.Sprintf("%s%s,%s,", warnPrefix, formatSpanString(sf), formatSpanString(s))
 		expected := fmt.Sprintf("%s%s", warnPrefix, formatSpanString(s))
 		assertProcessedSpans(assert, tracer, 2, 1, tickerInterval/10)
@@ -181,8 +181,8 @@ func TestReportAbandonedSpans(t *testing.T) {
 		tracer, _, _, stop, err := startTestTracer(t, WithLogger(tp), WithDebugSpansMode(3*time.Minute))
 		assert.Nil(err)
 		defer stop()
-		s1 := tracer.StartSpan("op", StartTime(spanStart))
-		delayedStart := spanStart.Add(8 * time.Minute)
+		s1 := tracer.StartSpan("op", StartTime(spanStartTime))
+		delayedStart := spanStartTime.Add(8 * time.Minute)
 		s2 := tracer.StartSpan("op2", StartTime(delayedStart))
 		notExpected := fmt.Sprintf("%s%s,%s,", warnPrefix, formatSpanString(s1), formatSpanString(s2))
 		expected := fmt.Sprintf("%s%s", warnPrefix, formatSpanString(s1))
@@ -200,9 +200,9 @@ func TestReportAbandonedSpans(t *testing.T) {
 		tracer, _, _, stop, err := startTestTracer(t, WithLogger(tp), WithDebugSpansMode(10*time.Minute))
 		assert.Nil(err)
 		defer stop()
-		delayedStart := spanStart.Add(1 * time.Minute)
+		delayedStart := spanStartTime.Add(1 * time.Minute)
 		s1 := tracer.StartSpan("op", StartTime(delayedStart))
-		s2 := tracer.StartSpan("op2", StartTime(spanStart))
+		s2 := tracer.StartSpan("op2", StartTime(spanStartTime))
 		notExpected := fmt.Sprintf("%s%s,%s,", warnPrefix, formatSpanString(s1), formatSpanString(s2))
 		notExpected2 := fmt.Sprintf("%s%s,%s,", warnPrefix, formatSpanString(s1), formatSpanString(s2))
 		assertProcessedSpans(assert, tracer, 2, 0, tickerInterval/10)
@@ -219,7 +219,7 @@ func TestReportAbandonedSpans(t *testing.T) {
 		var sb strings.Builder
 		sb.WriteString(warnPrefix)
 		for i := 0; i < 10; i++ {
-			s := tracer.StartSpan(fmt.Sprintf("operation%d", i), StartTime(spanStart))
+			s := tracer.StartSpan(fmt.Sprintf("operation%d", i), StartTime(spanStartTime))
 			if i%2 == 0 {
 				s.Finish()
 			} else {
@@ -240,12 +240,12 @@ func TestReportAbandonedSpans(t *testing.T) {
 		var sb strings.Builder
 		sb.WriteString(warnPrefix)
 		for i := 0; i < 5; i++ {
-			s := tracer.StartSpan(fmt.Sprintf("operation%d", i), StartTime(spanStart))
+			s := tracer.StartSpan(fmt.Sprintf("operation%d", i), StartTime(spanStartTime))
 			s.Finish()
 			time.Sleep(15 * time.Millisecond)
 		}
 		for i := 0; i < 5; i++ {
-			s := tracer.StartSpan(fmt.Sprintf("operation2-%d", i), StartTime(spanStart))
+			s := tracer.StartSpan(fmt.Sprintf("operation2-%d", i), StartTime(spanStartTime))
 			sb.WriteString(formatSpanString(s))
 			time.Sleep(15 * time.Millisecond)
 		}
@@ -263,7 +263,7 @@ func TestReportAbandonedSpans(t *testing.T) {
 		sb.WriteString(warnPrefix)
 
 		for i := 0; i < 5; i++ {
-			s := tracer.StartSpan(fmt.Sprintf("operation%d", i), StartTime(spanStart))
+			s := tracer.StartSpan(fmt.Sprintf("operation%d", i), StartTime(spanStartTime))
 			sb.WriteString(formatSpanString(s))
 		}
 		assertProcessedSpans(assert, tracer, 5, 0, tickerInterval/10)
@@ -279,7 +279,7 @@ func TestReportAbandonedSpans(t *testing.T) {
 		assert.Nil(err)
 		defer stop()
 
-		s := tracer.StartSpan("operation", StartTime(spanStart))
+		s := tracer.StartSpan("operation", StartTime(spanStartTime))
 		expected := fmt.Sprintf("%s%s", warnPrefix, formatSpanString(s))
 
 		assert.NotContains(tp.Logs(), expected)
@@ -299,7 +299,7 @@ func TestReportAbandonedSpans(t *testing.T) {
 			logSize = 9000
 		}()
 
-		s := tracer.StartSpan("operation", StartTime(spanStart))
+		s := tracer.StartSpan("operation", StartTime(spanStartTime))
 		msg := formatSpanString(s)
 		assertProcessedSpans(assert, tracer, 1, 0, tickerInterval/10)
 		stop()
@@ -319,7 +319,7 @@ func TestDebugAbandonedSpansOff(t *testing.T) {
 		assert.False(tracer.config.debugAbandonedSpans)
 		assert.Equal(time.Duration(0), tracer.config.spanTimeout)
 		expected := "Abandoned spans logs enabled."
-		s := tracer.StartSpan("operation", StartTime(spanStart))
+		s := tracer.StartSpan("operation", StartTime(spanStartTime))
 		time.Sleep(100 * time.Millisecond)
 		assert.NotContains(tp.Logs(), expected)
 		s.Finish()

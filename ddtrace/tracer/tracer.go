@@ -564,7 +564,7 @@ func (t *tracer) pushChunk(trace *Chunk) {
 	}
 }
 
-func SpanStart(operationName string, options ...StartSpanOption) *Span {
+func spanStart(operationName string, options ...StartSpanOption) *Span {
 	var opts StartSpanConfig
 	for _, fn := range options {
 		fn(&opts)
@@ -665,7 +665,7 @@ func (t *tracer) StartSpan(operationName string, options ...StartSpanOption) *Sp
 	if !t.config.enabled.current {
 		return nil
 	}
-	span := SpanStart(operationName, options...)
+	span := spanStart(operationName, options...)
 	if span.service == "" {
 		span.service = t.config.serviceName
 	}
