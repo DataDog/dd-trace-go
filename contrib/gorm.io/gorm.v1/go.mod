@@ -13,9 +13,9 @@ require (
 	github.com/microsoft/go-mssqldb v0.21.0
 	github.com/stretchr/testify v1.10.0
 	gorm.io/driver/mysql v1.0.1
-	gorm.io/driver/postgres v1.4.6
+	gorm.io/driver/postgres v1.5.5
 	gorm.io/driver/sqlserver v1.4.2
-	gorm.io/gorm v1.25.3
+	gorm.io/gorm v1.25.5
 )
 
 require (
