@@ -3,7 +3,7 @@ module github.com/DataDog/dd-trace-go/contrib/twitchtv/twirp/v2
 go 1.23.0
 
 require (
-	github.com/DataDog/dd-trace-go/v2 v2.0.0-rc.4.0.20250319180005-4316fa368973
+	github.com/DataDog/dd-trace-go/v2 v2.0.0-rc.9
 	github.com/stretchr/testify v1.10.0
 	github.com/twitchtv/twirp v8.1.3+incompatible
 )
