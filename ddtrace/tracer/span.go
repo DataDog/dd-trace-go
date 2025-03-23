@@ -45,18 +45,6 @@ type (
 	spanLists []spanList
 )
 
-func (sl spanList) Lock() {
-	for i := range sl {
-		sl[i].Lock()
-	}
-}
-
-func (sl spanList) Unlock() {
-	for i := range sl {
-		sl[i].Unlock()
-	}
-}
-
 var (
 	_ msgp.Encodable = (*spanList)(nil)
 	_ msgp.Decodable = (*spanLists)(nil)
