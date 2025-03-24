@@ -29,6 +29,7 @@ const (
 	ServerIOFSFileAddr    = "server.io.fs.file"
 	ServerDBStatementAddr = "server.db.statement"
 	ServerDBTypeAddr      = "server.db.system"
+	ServerSysExecCmd      = "server.sys.exec.cmd"
 
 	GRPCServerMethodAddr                   = "grpc.server.method"
 	GRPCServerRequestMetadataAddr          = "grpc.server.request.metadata"

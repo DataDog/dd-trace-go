@@ -29,7 +29,8 @@ import (
 	envoytypes "github.com/envoyproxy/go-control-plane/envoy/type/v3"
 )
 
-const componentName = "envoyproxy/go-control-plane"
+const componentNameEnvoy = "envoyproxy/go-control-plane"
+const componentNameGCPServiceExtension = "gcp-service-extension"
 
 var instr *instrumentation.Instrumentation
 
@@ -40,11 +41,16 @@ func init() {
 // appsecEnvoyExternalProcessorServer is a server that implements the Envoy ExternalProcessorServer interface.
 type appsecEnvoyExternalProcessorServer struct {
 	envoyextproc.ExternalProcessorServer
+	isGCPServiceExtension bool
 }
 
 // AppsecEnvoyExternalProcessorServer creates and returns a new instance of appsecEnvoyExternalProcessorServer.
 func AppsecEnvoyExternalProcessorServer(userImplementation envoyextproc.ExternalProcessorServer) envoyextproc.ExternalProcessorServer {
-	return &appsecEnvoyExternalProcessorServer{userImplementation}
+	return &appsecEnvoyExternalProcessorServer{userImplementation, false}
+}
+
+func AppsecEnvoyExternalProcessorServerGCPServiceExtension(userImplementation envoyextproc.ExternalProcessorServer) envoyextproc.ExternalProcessorServer {
+	return &appsecEnvoyExternalProcessorServer{userImplementation, true}
 }
 
 type currentRequest struct {
@@ -117,7 +123,7 @@ func (s *appsecEnvoyExternalProcessorServer) Process(processServer envoyextproc.
 
 		switch v := processingRequest.Request.(type) {
 		case *envoyextproc.ProcessingRequest_RequestHeaders:
-			processingResponse, currentRequest, blocked, err = processRequestHeaders(ctx, v)
+			processingResponse, currentRequest, blocked, err = processRequestHeaders(ctx, v, s.isGCPServiceExtension)
 		case *envoyextproc.ProcessingRequest_ResponseHeaders:
 			processingResponse, err = processResponseHeaders(v, currentRequest)
 			currentRequest = nil // Request is done, reset the current request
@@ -193,12 +199,19 @@ func envoyExternalProcessingRequestTypeAssert(req *envoyextproc.ProcessingReques
 	}
 }
 
-func processRequestHeaders(ctx context.Context, req *envoyextproc.ProcessingRequest_RequestHeaders) (*envoyextproc.ProcessingResponse, *currentRequest, bool, error) {
+func processRequestHeaders(ctx context.Context, req *envoyextproc.ProcessingRequest_RequestHeaders, isGCPServiceExtension bool) (*envoyextproc.ProcessingResponse, *currentRequest, bool, error) {
 	instr.Logger().Debug("external_processing: received request headers: %v\n", req.RequestHeaders)
 
 	request, err := newRequest(ctx, req)
 	if err != nil {
 		return nil, nil, false, status.Errorf(codes.InvalidArgument, "Error processing request headers from ext_proc: %v", err)
+	}
+
+	var spanComponentName string
+	if isGCPServiceExtension {
+		spanComponentName = componentNameGCPServiceExtension
+	} else {
+		spanComponentName = componentNameEnvoy
 	}
 
 	var blocked bool
@@ -207,7 +220,7 @@ func processRequestHeaders(ctx context.Context, req *envoyextproc.ProcessingRequ
 		Resource: request.Method + " " + path.Clean(request.URL.Path),
 		SpanOpts: []tracer.StartSpanOption{
 			tracer.Tag(ext.SpanKind, ext.SpanKindServer),
-			tracer.Tag(ext.Component, componentName),
+			tracer.Tag(ext.Component, spanComponentName),
 		},
 	}, fakeResponseWriter, request)
 
