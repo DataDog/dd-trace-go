@@ -16,7 +16,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/DataDog/dd-trace-go/v2/ddtrace"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
@@ -62,10 +61,10 @@ type ErrorLocation struct {
 // AddErrorsAsSpanEvents attaches the given graphql errors to the span as span events, according to the standard
 // Datadog specification.
 // errExtensions allows to include the given extensions field from the error as attributes in the span events.
-func AddErrorsAsSpanEvents(span tracer.Span, errs []Error, errExtensions []string) {
+func AddErrorsAsSpanEvents(span *tracer.Span, errs []Error, errExtensions []string) {
 	ts := time.Now()
 	for _, err := range errs {
-		span.AddSpanEvent(
+		span.AddEvent(
 			ext.GraphqlQueryErrorEvent,
 			tracer.WithSpanEventTimestamp(ts),
 			tracer.WithSpanEventAttributes(errToSpanEventAttributes(err, errExtensions)),

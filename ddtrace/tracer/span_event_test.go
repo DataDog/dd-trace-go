@@ -14,7 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func Test_spanAddEvent(t *testing.T) {
+func TestSpanAddEvent(t *testing.T) {
 	type customType struct {
 		Field1 string `json:"field_1"`
 		Field2 int    `json:"field_2"`
@@ -93,9 +93,9 @@ func Test_spanAddEvent(t *testing.T) {
 	t.Run("with native events support", func(t *testing.T) {
 		s := newBasicSpan("test")
 		s.supportsEvents = true
-		s.AddSpanEvent("test-event-1", WithSpanEventTimestamp(ts), WithSpanEventAttributes(attrs))
-		s.AddSpanEvent("test-event-2", WithSpanEventAttributes(attrs))
-		s.AddSpanEvent("test-event-3")
+		s.AddEvent("test-event-1", WithSpanEventTimestamp(ts), WithSpanEventAttributes(attrs))
+		s.AddEvent("test-event-2", WithSpanEventAttributes(attrs))
+		s.AddEvent("test-event-3")
 		s.Finish()
 
 		require.Len(t, s.spanEvents, 3)
@@ -121,9 +121,9 @@ func Test_spanAddEvent(t *testing.T) {
 	t.Run("without native events support", func(t *testing.T) {
 		s := newBasicSpan("test")
 		s.supportsEvents = false
-		s.AddSpanEvent("test-event-1", WithSpanEventTimestamp(ts), WithSpanEventAttributes(attrs))
-		s.AddSpanEvent("test-event-2", WithSpanEventAttributes(attrs))
-		s.AddSpanEvent("test-event-3")
+		s.AddEvent("test-event-1", WithSpanEventTimestamp(ts), WithSpanEventAttributes(attrs))
+		s.AddEvent("test-event-2", WithSpanEventAttributes(attrs))
+		s.AddEvent("test-event-3")
 		s.Finish()
 
 		require.Empty(t, s.spanEvents)

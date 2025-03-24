@@ -37,7 +37,7 @@ func defaults(cfg *config) {
 	cfg.serviceName = instr.ServiceName(instrumentation.ComponentDefault, nil)
 	cfg.analyticsRate = instr.AnalyticsRate(false)
 	cfg.tags = make(map[string]interface{})
-	cfg.errExtensions = internalgraphql.ErrorExtensionsFromEnv()
+	cfg.errExtensions = instrgraphql.ErrorExtensionsFromEnv()
 }
 
 // WithAnalytics enables or disables Trace Analytics for all started spans.

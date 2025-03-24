@@ -239,20 +239,20 @@ func TestErrorsAsSpanEvents(t *testing.T) {
 
 	s0 := spans[3]
 	assert.Equal(t, "graphql.execute", s0.OperationName())
-	assert.NotNil(t, s0.Tag(ext.Error))
+	assert.NotNil(t, s0.Tag(ext.ErrorMsg))
 
 	events := s0.Events()
 	require.Len(t, events, 1)
 
 	evt := events[0]
 	assert.Equal(t, "dd.graphql.query.error", evt.Name)
-	assert.NotEmpty(t, evt.Config.Time)
-	assert.NotEmpty(t, evt.Config.Attributes["stacktrace"])
-	assert.Equal(t, map[string]any{
+	assert.NotEmpty(t, evt.TimeUnixNano)
+	assert.NotEmpty(t, evt.Attributes["stacktrace"])
+	evt.AssertAttributes(t, map[string]any{
 		"message":          "test error",
 		"path":             []string{"withError"},
 		"location":         []string{"1:3"},
-		"stacktrace":       evt.Config.Attributes["stacktrace"],
+		"stacktrace":       evt.Attributes["stacktrace"],
 		"type":             "gqlerrors.FormattedError",
 		"extensions.str":   "1",
 		"extensions.int":   1,
@@ -260,7 +260,7 @@ func TestErrorsAsSpanEvents(t *testing.T) {
 		"extensions.bool":  true,
 		"extensions.slice": []string{"1", "2"},
 		"extensions.unsupported_type_stringified": "[1,\"foo\"]",
-	}, evt.Config.Attributes)
+	})
 
 	// the rest of the spans should not have span events
 	for _, s := range spans {

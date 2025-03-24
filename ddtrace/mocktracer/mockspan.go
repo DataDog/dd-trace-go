@@ -8,10 +8,14 @@ package mocktracer // import "github.com/DataDog/dd-trace-go/v2/ddtrace/mocktrac
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"testing"
 	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
 func newSpan(operationName string, cfg *tracer.StartSpanConfig) *tracer.Span {
@@ -94,6 +98,8 @@ func extractTags(src, m map[string]interface{}) {
 		case ext.MapSpanParentID:
 			continue
 		case ext.MapSpanError:
+			continue
+		case ext.MapSpanEvents:
 			continue
 		}
 		m[k] = v
@@ -220,6 +226,44 @@ func (s *Span) Links() []tracer.SpanLink {
 
 func (s *Span) AddSpanLink(link tracer.SpanLink) {
 	s.sp.AddSpanLink(link)
+}
+
+// SpanEvent represents a span event from a mockspan.
+type SpanEvent struct {
+	Name         string         `json:"name"`
+	TimeUnixNano uint64         `json:"time_unix_nano"`
+	Attributes   map[string]any `json:"attributes"`
+}
+
+// AssertAttributes compares the given attributes with the current event ones.
+// The comparison is made against the JSON representation of both, since the data comes from
+// the span.AsMap() function which provides the JSON representation of the events, and some types
+// could have changed (e.g. 1 could be transformed to 1.0 after marshal/unmarshal).
+func (s SpanEvent) AssertAttributes(t *testing.T, wantAttrs map[string]any) {
+	t.Helper()
+	want, err := json.Marshal(wantAttrs)
+	require.NoError(t, err)
+	got, err := json.Marshal(s.Attributes)
+	require.NoError(t, err)
+	assert.Equal(t, string(want), string(got))
+}
+
+// Events returns the current span events.
+func (s *Span) Events() []SpanEvent {
+	if s == nil {
+		return nil
+	}
+	eventsJSON, ok := s.m[ext.MapSpanEvents].(string)
+	if !ok {
+		return nil
+	}
+
+	var events []SpanEvent
+	if err := json.Unmarshal([]byte(eventsJSON), &events); err != nil {
+		log.Error("mocktracer: failed to unmarshal span events: %v", err)
+		return nil
+	}
+	return events
 }
 
 // Integration returns the component from which the mockspan was created.

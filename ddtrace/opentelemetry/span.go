@@ -78,7 +78,7 @@ func (s *span) End(options ...oteltrace.SpanEndOption) {
 		s.DD.SetTag(k, v)
 	}
 	for _, evt := range s.events {
-		s.DD.AddSpanEvent(s.DD, evt.name, evt.options...)
+		s.DD.AddEvent(evt.name, evt.options...)
 	}
 	var finishCfg = oteltrace.NewSpanEndConfig(options...)
 	var opts []tracer.FinishOption

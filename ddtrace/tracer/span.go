@@ -87,7 +87,25 @@ func (s *Span) AsMap() map[string]interface{} {
 	m[ext.MapSpanTraceID] = s.traceID
 	m[ext.MapSpanParentID] = s.parentID
 	m[ext.MapSpanError] = s.error
+	if events := s.spanEventsAsJSONString(); events != "" {
+		m[ext.MapSpanEvents] = events
+	}
 	return m
+}
+
+func (s *Span) spanEventsAsJSONString() string {
+	if !s.supportsEvents {
+		return s.meta["events"]
+	}
+	if s.spanEvents == nil {
+		return ""
+	}
+	events, err := json.Marshal(s.spanEvents)
+	if err != nil {
+		log.Error("failed to marshal span events: %v", err)
+		return ""
+	}
+	return string(events)
 }
 
 // Span represents a computation. Callers must call Finish when a Span is
@@ -903,36 +921,8 @@ func (s *Span) Format(f fmt.State, c rune) {
 	}
 }
 
-// SpanEventConfig represent the configuration of a span event.
-type SpanEventConfig struct {
-	// Time is the time when the event happened.
-	Time time.Time
-
-	// Attributes is a map of string to attribute.
-	// Only the following types are supported:
-	//   string, integer (any), boolean, float (any), []string, []integer (any), []boolean, []float (any)
-	Attributes map[string]any
-}
-
-// SpanEventOption can be used to customize an event created with NewSpanEvent.
-type SpanEventOption func(cfg *SpanEventConfig)
-
-// WithSpanEventTimestamp sets the time when the span event occurred.
-func WithSpanEventTimestamp(tStamp time.Time) SpanEventOption {
-	return func(cfg *SpanEventConfig) {
-		cfg.Time = tStamp
-	}
-}
-
-// WithSpanEventAttributes sets the given attributes for the span event.
-func WithSpanEventAttributes(attributes map[string]any) SpanEventOption {
-	return func(cfg *SpanEventConfig) {
-		cfg.Attributes = attributes
-	}
-}
-
-// AddSpanEvent attaches a new event to the current span.
-func (s *Span) AddSpanEvent(name string, opts ...SpanEventOption) {
+// AddEvent attaches a new event to the current span.
+func (s *Span) AddEvent(name string, opts ...SpanEventOption) {
 	if s.finished {
 		return
 	}

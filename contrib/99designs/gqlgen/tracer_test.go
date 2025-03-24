@@ -13,6 +13,7 @@ import (
 	"github.com/99designs/gqlgen/graphql/handler/testserver"
 	"github.com/99designs/gqlgen/graphql/handler/transport"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	internaltestserver "github.com/DataDog/dd-trace-go/contrib/99designs/gqlgen/v2/internal/testserver"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
@@ -159,7 +160,7 @@ func TestError(t *testing.T) {
 			root = span
 		}
 	}
-	assert.NotNil(root)
+	require.NotNil(t, root)
 	assert.NotNil(root.Tag(ext.ErrorMsg))
 
 	events := root.Events()
@@ -167,13 +168,13 @@ func TestError(t *testing.T) {
 
 	evt := events[0]
 	assert.Equal("dd.graphql.query.error", evt.Name)
-	assert.NotEmpty(evt.Config.Time)
-	assert.NotEmpty(evt.Config.Attributes["stacktrace"])
+	assert.NotEmpty(evt.TimeUnixNano)
+	assert.NotEmpty(evt.Attributes["stacktrace"])
 	assert.Equal(map[string]any{
 		"message":    "resolver error",
-		"stacktrace": evt.Config.Attributes["stacktrace"],
+		"stacktrace": evt.Attributes["stacktrace"],
 		"type":       "*gqlerror.Error",
-	}, evt.Config.Attributes)
+	}, evt.Attributes)
 }
 
 func TestObfuscation(t *testing.T) {
@@ -333,27 +334,29 @@ func TestErrorsAsSpanEvents(t *testing.T) {
 
 	s0 := spans[4]
 	assert.Equal(t, "graphql.query", s0.OperationName())
-	assert.NotNil(t, s0.Tag(ext.Error))
+	assert.NotNil(t, s0.Tag(ext.ErrorMsg))
 
 	events := s0.Events()
 	require.Len(t, events, 1)
 
 	evt := events[0]
 	assert.Equal(t, "dd.graphql.query.error", evt.Name)
-	assert.NotEmpty(t, evt.Config.Time)
-	assert.NotEmpty(t, evt.Config.Attributes["stacktrace"])
-	assert.Equal(t, map[string]any{
+	assert.NotEmpty(t, evt.TimeUnixNano)
+	assert.NotEmpty(t, evt.Attributes["stacktrace"])
+
+	wantAttrs := map[string]any{
 		"message":          "test error",
-		"path":             []string{"withError"},
-		"stacktrace":       evt.Config.Attributes["stacktrace"],
+		"path":             []any{"withError"},
+		"stacktrace":       evt.Attributes["stacktrace"],
 		"type":             "*gqlerror.Error",
 		"extensions.str":   "1",
 		"extensions.int":   1,
 		"extensions.float": 1.1,
 		"extensions.bool":  true,
-		"extensions.slice": []string{"1", "2"},
+		"extensions.slice": []any{"1", "2"},
 		"extensions.unsupported_type_stringified": "[1,\"foo\"]",
-	}, evt.Config.Attributes)
+	}
+	evt.AssertAttributes(t, wantAttrs)
 
 	// the rest of the spans should not have span events
 	for _, s := range spans {
