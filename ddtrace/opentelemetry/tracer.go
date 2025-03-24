@@ -98,7 +98,6 @@ func (t *oteltracer) Start(ctx context.Context, spanName string, opts ...oteltra
 	// Merge baggage from otel and dd and update the context.
 	if mergedBag, err := mergeBaggageFromContext(ctx); err == nil && mergedBag.Len() > 0 {
 		for _, m := range mergedBag.Members() {
-			s.SetBaggageItem(m.Key(), m.Value())
 			ctx = baggage.Set(ctx, m.Key(), m.Value())
 		}
 		ctx = otelbaggage.ContextWithBaggage(ctx, mergedBag)
@@ -120,19 +119,24 @@ func (t *oteltracer) Start(ctx context.Context, spanName string, opts ...oteltra
 func mergeBaggageFromContext(ctx context.Context) (otelbaggage.Baggage, error) {
 	otelBag := otelbaggage.FromContext(ctx)
 	ddBag := baggage.All(ctx)
+	lenDDBag := len(ddBag)
+	lenOtelBag := otelBag.Len()
 
 	switch {
-	case len(ddBag) == 0 && otelBag.Len() > 0:
+	case lenDDBag == 0 && lenOtelBag > 0:
 		return otelBag, nil
-	case otelBag.Len() == 0 && len(ddBag) > 0:
+	case lenOtelBag == 0 && lenDDBag > 0:
 		return convertDDBaggage(ddBag)
-	case len(ddBag) > 0 && otelBag.Len() > 0:
-		if len(ddBag) <= otelBag.Len() {
+	case lenDDBag > 0 && lenOtelBag > 0:
+		if lenDDBag <= lenOtelBag {
 			return mergeDDBagIntoOtel(otelBag, ddBag)
 		}
 		return mergeOtelBagIntoDD(otelBag, ddBag)
 	}
-	emptyBag, _ := otelbaggage.New()
+	emptyBag, err := otelbaggage.New()
+	if err != nil {
+		return otelbaggage.Baggage{}, err
+	}
 	return emptyBag, nil
 }
 
@@ -140,7 +144,10 @@ func mergeBaggageFromContext(ctx context.Context) (otelbaggage.Baggage, error) {
 func convertDDBaggage(ddBag map[string]string) (otelbaggage.Baggage, error) {
 	var members []otelbaggage.Member
 	for key, value := range ddBag {
-		member, _ := otelbaggage.NewMember(key, value)
+		member, err := otelbaggage.NewMember(key, value)
+		if err != nil {
+			return otelbaggage.Baggage{}, err
+		}
 		members = append(members, member)
 	}
 	return otelbaggage.New(members...)

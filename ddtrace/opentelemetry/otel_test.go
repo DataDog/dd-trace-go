@@ -55,32 +55,52 @@ func TestHttpDistributedTrace(t *testing.T) {
 	assert.Equal("HTTP GET", p[1][1]["resource"])
 }
 
-func TestHttpDistributedTraceWithBaggage(t *testing.T) {
+// setupBaggageContext creates a context with both OpenTelemetry and Datadog baggage
+func setupBaggageContext(t *testing.T) (context.Context, oteltrace.Span) {
 	assert := assert.New(t)
-	req := require.New(t)
 	tp, _, cleanup := mockTracerProvider(t)
-	defer cleanup()
+	t.Cleanup(cleanup)
 	otel.SetTracerProvider(tp)
 	otel.SetTextMapPropagator(propagation.Baggage{})
 	tr := tp.Tracer("")
-	ctx := context.Background()
-	otelMember, _ := otelbaggage.NewMember("otel-key", "otel-value")
-	otelBag, _ := otelbaggage.New(otelMember)
-	ctx = otelbaggage.ContextWithBaggage(ctx, otelBag)
-	ctx = ddBaggage.Set(ctx, "dd-key", "dd-value")
-	sctx, rootSpan := tr.Start(ctx, "testRootSpan")
-	defer rootSpan.End()
 
+	ctx := context.Background()
+	otelMember, err := otelbaggage.NewMember("otel-key", "otel-value")
+	assert.NoError(err)
+	otelBag, err := otelbaggage.New(otelMember)
+	assert.NoError(err)
+	ctx = otelbaggage.ContextWithBaggage(ctx, otelBag)
+	ctx = ddbaggage.Set(ctx, "dd-key", "dd-value")
+
+	sctx, rootSpan := tr.Start(ctx, "testRootSpan")
+	return sctx, rootSpan
+}
+
+// setupTestServer creates a test HTTP server that captures baggage headers
+func setupTestServer(t *testing.T) (*httptest.Server, *string) {
 	var extractedBaggage string
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Capture the injected baggage header.
 		extractedBaggage = r.Header.Get("baggage")
 		w.WriteHeader(http.StatusOK)
 	})
 	wrappedHandler := otelhttp.NewHandler(handler, "testOperation")
 	testServer := httptest.NewServer(wrappedHandler)
-	defer testServer.Close()
+	t.Cleanup(testServer.Close)
+	return testServer, &extractedBaggage
+}
 
+func TestHttpDistributedTraceWithBaggage(t *testing.T) {
+	assert := assert.New(t)
+	req := require.New(t)
+
+	// Setup context with baggage
+	sctx, rootSpan := setupBaggageContext(t)
+	defer rootSpan.End()
+
+	// Setup test server
+	testServer, extractedBaggage := setupTestServer(t)
+
+	// Make HTTP request with baggage context
 	client := http.Client{Transport: otelhttp.NewTransport(nil)}
 	httpReq, err := http.NewRequestWithContext(sctx, http.MethodGet, testServer.URL, nil)
 	req.NoError(err)
@@ -88,16 +108,17 @@ func TestHttpDistributedTraceWithBaggage(t *testing.T) {
 	req.NoError(err)
 	req.NoError(resp.Body.Close())
 
+	// Verify baggage propagation
 	carrier := propagation.MapCarrier{}
 	otel.GetTextMapPropagator().Inject(sctx, carrier)
 
-	// Check that the injected "baggage" header includes both baggage items.
+	// Check that the injected "baggage" header includes both baggage items
 	injectedBaggage, ok := carrier["baggage"]
 	req.True(ok, "baggage header must be present in the injected carrier")
 	assert.Contains(injectedBaggage, "otel-key=otel-value")
 	assert.Contains(injectedBaggage, "dd-key=dd-value")
 
-	// Also verify that the HTTP server received the merged baggage header.
-	assert.Contains(extractedBaggage, "otel-key=otel-value")
-	assert.Contains(extractedBaggage, "dd-key=dd-value")
+	// Verify that the HTTP server received the merged baggage header
+	assert.Contains(*extractedBaggage, "otel-key=otel-value")
+	assert.Contains(*extractedBaggage, "dd-key=dd-value")
 }
