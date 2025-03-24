@@ -18,6 +18,7 @@ import (
 	"strings"
 	"testing"
 
+	pb "github.com/DataDog/datadog-agent/pkg/proto/pbgo/trace"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	traceinternal "gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
@@ -422,4 +423,35 @@ func TestExternalEnvironment(t *testing.T) {
 	_, err = trc.config.transport.send(p)
 	assert.NoError(err)
 	assert.True(found)
+}
+
+func TestDefaultHeaders(t *testing.T) {
+	assert := assert.New(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/info" {
+			return
+		}
+		assert.Equal(r.Header.Get("Datadog-Meta-Lang"), "go")
+		assert.NotEqual(r.Header.Get("Datadog-Meta-Lang-Version"), "")
+		assert.NotEqual(r.Header.Get("Datadog-Meta-Lang-Interpreter"), "")
+		assert.NotEqual(r.Header.Get("Datadog-Meta-Tracer-Version"), "")
+		assert.Equal(r.Header.Get("Content-Type"), "application/msgpack")
+	}))
+	defer srv.Close()
+
+	u, err := url.Parse(srv.URL)
+	assert.NoError(err)
+	c := &http.Client{}
+	trc := newTracer(WithAgentTimeout(2), WithAgentAddr(u.Host), WithHTTPClient(c))
+	defer trc.Stop()
+
+	// Test traces endpoint
+	p, err := encode(getTestTrace(1, 1))
+	assert.NoError(err)
+	_, err = trc.config.transport.send(p)
+	assert.NoError(err)
+
+	// Now stats endpoint
+	err = trc.config.transport.sendStats(&pb.ClientStatsPayload{})
+	assert.NoError(err)
 }

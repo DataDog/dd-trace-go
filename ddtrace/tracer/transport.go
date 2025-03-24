@@ -124,6 +124,9 @@ func (t *httpTransport) sendStats(p *pb.ClientStatsPayload) error {
 	if err != nil {
 		return err
 	}
+	for header, value := range t.headers {
+		req.Header.Set(header, value)
+	}
 	resp, err := t.client.Do(req)
 	if err != nil {
 		return err
