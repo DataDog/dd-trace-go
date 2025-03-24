@@ -162,7 +162,14 @@ func newSpanContext(span *Span, parent *SpanContext) *SpanContext {
 
 	context.traceID.SetLower(span.traceID)
 	if parent != nil {
-		context.copyFrom(parent)
+		context.traceID.SetUpper(parent.traceID.Upper())
+		context.trace = parent.trace
+		context.origin = parent.origin
+		context.errors = parent.errors
+		parent.ForeachBaggageItem(func(k, v string) bool {
+			context.setBaggageItem(k, v)
+			return true
+		})
 	} else if sharedinternal.BoolEnv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", true) {
 		// add 128 bit trace id, if enabled, formatted as big-endian:
 		// <32-bit unix seconds> <32 bits of zero> <64 random bits>
@@ -255,9 +262,6 @@ func (c *SpanContext) ForeachBaggageItem(handler func(k, v string) bool) {
 
 // sets the sampling priority and decision maker (based on `sampler`).
 func (c *SpanContext) setSamplingPriority(p int, sampler samplernames.SamplerName) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
 	if c.trace == nil {
 		c.trace = newTrace()
 	}
@@ -268,14 +272,7 @@ func (c *SpanContext) setSamplingPriority(p int, sampler samplernames.SamplerNam
 }
 
 func (c *SpanContext) SamplingPriority() (p int, ok bool) {
-	if c == nil {
-		return 0, false
-	}
-
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-
-	if c.trace == nil {
+	if c == nil || c.trace == nil {
 		return 0, false
 	}
 	return c.trace.samplingPriority()
@@ -292,39 +289,16 @@ func (c *SpanContext) setBaggageItem(key, val string) {
 }
 
 func (c *SpanContext) baggageItem(key string) string {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
 	if atomic.LoadUint32(&c.hasBaggage) == 0 {
 		return ""
 	}
+	c.mu.RLock()
+	defer c.mu.RUnlock()
 	return c.baggage[key]
 }
 
-func (c *SpanContext) copyFrom(other *SpanContext) {
-	c.mu.Lock()
-	other.mu.RLock()
-
-	c.traceID.SetUpper(other.traceID.Upper())
-	c.trace = other.trace
-	c.origin = other.origin
-	c.errors = other.errors
-
-	other.mu.RUnlock()
-	c.mu.Unlock()
-
-	other.ForeachBaggageItem(func(k, v string) bool {
-		c.setBaggageItem(k, v)
-		return true
-	})
-}
-
 // finish marks this span as finished in the trace.
-func (c *SpanContext) finish() {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-
-	c.trace.finishedOne(c.span)
-}
+func (c *SpanContext) finish() { c.trace.finishedOne(c.span) }
 
 // samplingDecision is the decision to send a trace to the agent or not.
 type samplingDecision uint32
@@ -401,12 +375,10 @@ func (t *trace) setSamplingPriority(p int, sampler samplernames.SamplerName) boo
 }
 
 func (t *trace) keep() {
-	// TODO: consider using atomic types
 	atomic.CompareAndSwapUint32((*uint32)(&t.samplingDecision), uint32(decisionNone), uint32(decisionKeep))
 }
 
 func (t *trace) drop() {
-	// TODO: consider using atomic types
 	atomic.CompareAndSwapUint32((*uint32)(&t.samplingDecision), uint32(decisionNone), uint32(decisionDrop))
 }
 
@@ -612,17 +584,6 @@ func (t *trace) finishedOne(s *Span) {
 func (t *trace) finishChunk(tr Tracer, ch *Chunk) {
 	tr.SubmitChunk(ch)
 	t.finished = 0 // important, because a buffer can be used for several flushes
-}
-
-func (t *trace) rootSpan() *Span {
-	if t == nil {
-		return nil
-	}
-
-	t.mu.RLock()
-	defer t.mu.RUnlock()
-
-	return t.root
 }
 
 // setPeerService sets the peer.service, _dd.peer.service.source, and _dd.peer.service.remapped_from
