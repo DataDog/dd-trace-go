@@ -11,7 +11,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	ddBaggage "github.com/DataDog/dd-trace-go/v2/ddtrace/baggage"
+	ddbaggage "github.com/DataDog/dd-trace-go/v2/ddtrace/baggage"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
