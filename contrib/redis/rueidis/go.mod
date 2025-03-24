@@ -81,6 +81,6 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
-replace github.com/valkey-io/valkey-go => github.com/valkey-io/valkey-go v1.0.52
+replace github.com/redis/rueidis => github.com/redis/rueidis v1.0.52
 
 replace github.com/DataDog/dd-trace-go/v2 => ../../..
