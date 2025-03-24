@@ -477,7 +477,7 @@ func (rs *traceRulesSampler) sampleRules(span *span) bool {
 	sampler := samplernames.RuleRate
 	for _, rule := range rs.rules {
 		match := rule.match(span)
-		log.Debug("match: %v, rule: %+v, span: %+v", rule.String(), span.String())
+		log.Debug("match: %v, rule: %s, span: %s", rule.String(), span.String())
 		if match {
 			matched = true
 			rate = rule.Rate
@@ -572,7 +572,7 @@ func (rs *singleSpanRulesSampler) enabled() bool {
 func (rs *singleSpanRulesSampler) apply(span *span) bool {
 	for _, rule := range rs.rules {
 		match := rule.match(span)
-		log.Debug("match: %v, rule: %+v, span: %+v", rule.String(), span.String())
+		log.Debug("match: %v, rule: %s, span: %s", rule.String(), span.String())
 		if match {
 			rate := rule.Rate
 			span.setMetric(keyRulesSamplerAppliedRate, rate)

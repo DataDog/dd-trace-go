@@ -502,9 +502,11 @@ type chunk struct {
 
 // sampleChunk applies single-span sampling to the provided trace.
 func (t *tracer) sampleChunk(c *chunk) {
+	log.Debug("chunk spans: %d", len(c.spans))
 	if len(c.spans) > 0 {
 		if p, ok := c.spans[0].context.SamplingPriority(); ok && p > 0 {
 			// The trace is kept, no need to run single span sampling rules.
+			log.Debug("priority: %v, span: %s", p, c.spans[0].String())
 			return
 		}
 	}
