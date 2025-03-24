@@ -124,6 +124,9 @@ func (t *httpTransport) sendStats(p *pb.ClientStatsPayload, tracerObfuscationVer
 	if err != nil {
 		return err
 	}
+	for header, value := range t.headers {
+		req.Header.Set(header, value)
+	}
 	if tracerObfuscationVersion > 0 {
 		req.Header.Set(obfuscationVersionHeader, strconv.Itoa(tracerObfuscationVersion))
 	}
