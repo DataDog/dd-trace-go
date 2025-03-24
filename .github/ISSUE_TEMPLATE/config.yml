@@ -9,3 +9,6 @@ contact_links:
   - name: Feature Request (Low Priority)
     url: https://github.com/DataDog/dd-trace-go/discussions/new?category=feature-request
     about: Start a discussion about a Feature Request in GitHub discussions. This helps prioritization and allows you to provide additional information in public.
+  - name: Other Discussion (Low Priority)
+    url: https://github.com/DataDog/dd-trace-go/discussions/new
+    about: Start a new GitHub discussions about any other topic.
