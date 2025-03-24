@@ -180,6 +180,15 @@ func (b *RunAddressDataBuilder) WithDBType(driver string) *RunAddressDataBuilder
 	return b
 }
 
+func (b *RunAddressDataBuilder) WithSysExecCmd(cmd []string) *RunAddressDataBuilder {
+	if len(cmd) == 0 {
+		return b
+	}
+	b.Ephemeral[ServerSysExecCmd] = cmd
+	b.Scope = waf.RASPScope
+	return b
+}
+
 func (b *RunAddressDataBuilder) WithGRPCMethod(method string) *RunAddressDataBuilder {
 	if method == "" {
 		return b

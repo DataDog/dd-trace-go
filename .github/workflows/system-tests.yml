@@ -86,6 +86,8 @@ jobs:
             scenario: APPSEC_META_STRUCT_DISABLED
           - weblog-variant: net-http
             scenario: APPSEC_CUSTOM_OBFUSCATION
+          - weblog-variant: net-http
+            scenario: APPSEC_WAF_TELEMETRY
           # APM scenarios requiring specific environment settings
           - scenario: APM_TRACING_E2E
             env:
@@ -113,9 +115,14 @@ jobs:
           - scenario: EXTERNAL_PROCESSING
           - scenario: EXTERNAL_PROCESSING_BLOCKING
           # Telemetry
-          - scenario: TELEMETRY_APP_STARTED_PRODUCTS_DISABLED
-            weblog-variant: net-http
-
+          - weblog-variant: net-http
+            scenario: TELEMETRY_APP_STARTED_PRODUCTS_DISABLED
+          - weblog-variant: net-http
+            scenario: TELEMETRY_LOG_GENERATION_DISABLED
+          - weblog-variant: net-http
+            scenario: TELEMETRY_METRIC_GENERATION_ENABLED
+          - weblog-variant: net-http
+            scenario: TELEMETRY_METRIC_GENERATION_DISABLED
       fail-fast: false
     env:
       TEST_LIBRARY: golang
@@ -161,3 +168,16 @@ jobs:
         with:
           name: logs_${{ matrix.weblog-variant }}_${{ matrix.scenario }}
           path: artifact.tar.gz
+
+  system-tests-done:
+    name: System Tests
+    needs: system-tests
+    runs-on: ubuntu-latest
+    if: success() || failure()
+    steps:
+      - name: Success
+        if: needs.system-tests.result == 'success'
+        run: echo "Success!"
+      - name: Failure
+        if: needs.system-tests.result != 'success'
+        run: echo "Failure!" && exit 1
