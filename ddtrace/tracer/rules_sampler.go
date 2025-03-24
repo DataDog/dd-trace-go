@@ -476,7 +476,9 @@ func (rs *traceRulesSampler) sampleRules(span *span) bool {
 	rs.m.RUnlock()
 	sampler := samplernames.RuleRate
 	for _, rule := range rs.rules {
-		if rule.match(span) {
+		match := rule.match(span)
+		log.Debug("match: %v, rule: %+v, span: %+v", rule.String(), span.String())
+		if match {
 			matched = true
 			rate = rule.Rate
 			if rule.Provenance == Customer {
