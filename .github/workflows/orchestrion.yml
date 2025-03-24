@@ -73,6 +73,8 @@ jobs:
           go run ./internal/orchestrion/matrix >> "${GITHUB_OUTPUT}"
 
   integration-test:
+    env:
+      REPORT: orchestrion-gotestsum-report.xml # path to where test results will be saved
     needs: [go-versions-matrix]
     strategy:
       fail-fast: false
@@ -155,6 +157,9 @@ jobs:
           go build -cover -covermode=atomic -coverpkg="github.com/DataDog/orchestrion/..." "-o=${bin}" "github.com/DataDog/orchestrion"
           echo "GOCOVERDIR=$(mktemp -d)" >> "${GITHUB_ENV}"
         working-directory: ${{ github.workspace }}/dd-trace-go/internal/orchestrion/_integration
+      - name: Install gotestsum
+        run: go install gotest.tools/gotestsum@latest
+        working-directory: ${{ github.workspace }}/dd-trace-go/internal/orchestrion/_integration
 
       # Run a `go mod tidy` because GitHub will run this on a candidate merge commit, and if there
       # have been dependecy updates on the `main` branch, the `go.mod` and `go.sum` files for the
@@ -200,25 +205,31 @@ jobs:
         run: sudo sysctl vm.overcommit_memory=1
 
       # Finally, we run the test suite!
+      # To avoid false negatives with failing tests, we do not run our CI Visibility `gotestsum`. Doing so would mark our
+      # failure tests as real failures in the backend.
       - name: Run Tests
         shell: bash
         run: |-
           echo "Working directory: ${PWD}"
           orchestrion version
+          PACKAGE_NAMES=$(go list ./... | grep -v /civisibility)
 
           case "${MODE}" in
           "DRIVER")
             echo "Starting test suite in DRIVER mode"
-            orchestrion go test -shuffle=on ./...
+            gotestsum --junitfile ${XML_PATH} --raw-command -- orchestrion go test -json -shuffle=on $PACKAGE_NAMES
+            orchestrion go test -json -shuffle=on ./civisibility
             ;;
           "TOOLEXEC")
             echo "Starting test suite in TOOLEXEC mode"
-            go test -shuffle=on -toolexec='orchestrion toolexec' ./...
+            gotestsum --junitfile ${XML_PATH} -- -shuffle=on -toolexec='orchestrion toolexec' $PACKAGE_NAMES
+            go test -shuffle=on -toolexec='orchestrion toolexec' ./civisibility
             ;;
           "GOFLAGS")
             echo "Starting test suite in GOFLAGS mode"
             export GOFLAGS="${GOFLAGS} '-toolexec=orchestrion toolexec'"
-            go test -shuffle=on ./...
+            gotestsum --junitfile ${XML_PATH} -- -shuffle=on $PACKAGE_NAMES
+            go test -shuffle=on ./civisibility
             ;;
           *)
             echo "Unknown mode: ${MODE}"
@@ -233,6 +244,8 @@ jobs:
           DD_ORCHESTRION_IS_GOMOD_VERSION: true
           # Ryuk is problematic with concurrent executions, and unnecessary in ephemeral environments like GHA.
           TESTCONTAINERS_RYUK_DISABLED: true
+          # To enable sharing the reported JUnit XML, we need to save it into the temporary, shared directory by GHA.
+          XML_PATH: ${{ runner.temp }}${{ matrix.runs-on == 'windows' && '\' || '/' }}${{ env.REPORT }}
 
       # If in workflow_call, we collected coverage data we need to upload
       - name: Consolidate coverage report
@@ -256,6 +269,21 @@ jobs:
         with:
           name: coverage-integration+${{ matrix.mode }}+go${{ steps.go.outputs.version }}+${{ runner.os }}+${{ runner.arch }}
           path: ${{ github.workspace }}/orchestrion/coverage/integration.out
+
+      # Checkout and prepare for uploading to Datadog CI
+      - name: Checkout
+        uses: actions/checkout@ee0669bd1cc54295c223e0bb666b733df41de1c5 # v2.7.0
+        with:
+          repository: ${{ github.repository }}
+          ref: ${{ github.ref }}
+      - name: Upload the results to Datadog CI App
+        if: always()
+        continue-on-error: true
+        uses: ./.github/actions/dd-ci-upload
+        with:
+          dd-api-key: ${{ secrets.DD_CI_API_KEY }}
+          files: ${{ runner.temp }}${{ matrix.runs-on == 'windows' && '\' || '/' }}${{ env.REPORT }}
+          tags: go:${{ steps.setup-go.outputs.go-version }},arch:${{ runner.arch }},os:${{ runner.os }},distribution:${{ runner.distribution }}
 
   # This is a simple join point to make it easy to set up branch protection rules in GitHub.
   integration-test-done:
