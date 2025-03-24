@@ -244,7 +244,7 @@ func HeaderTagsFromRequest(req *http.Request, headerCfg *internal.LockMap) ddtra
 			tags = append(tags, struct {
 				key string
 				val string
-			}{"http.referrer_host", host})
+			}{ext.HTTPReferrerHostname, host})
 		}
 	}
 

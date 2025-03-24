@@ -437,3 +437,18 @@ func TestExtractReferrerHost(t *testing.T) {
 		})
 	}
 }
+
+func TestReferrerHostSpanTag(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	r := httptest.NewRequest(http.MethodGet, "/test", nil)
+	r.Header.Set("referer", "https://example.com/path")
+
+	s, _, _ := StartRequestSpan(r, HeaderTagsFromRequest(r, internal.NewLockMap(nil)))
+	s.Finish()
+
+	spans := mt.FinishedSpans()
+	require.Len(t, spans, 1)
+	assert.Equal(t, "example.com", spans[0].Tag("http.referrer_hostname"))
+}
