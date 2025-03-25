@@ -9,7 +9,6 @@ import (
 	"context"
 	"encoding/binary"
 	"encoding/hex"
-	"fmt"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/baggage"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
@@ -100,7 +99,6 @@ func (t *oteltracer) Start(ctx context.Context, spanName string, opts ...oteltra
 	// Merge baggage from otel and dd, update Datadog baggage, and update the context.
 	mergedBag := mergeBaggageFromContext(ctx)
 	for _, m := range mergedBag.Members() {
-		fmt.Println("MTOFF: On dd baggage, setting", m.Key())
 		ctx = baggage.Set(ctx, m.Key(), m.Value())
 	}
 	ctx = otelbaggage.ContextWithBaggage(ctx, mergedBag)
