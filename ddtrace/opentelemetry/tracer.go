@@ -9,11 +9,13 @@ import (
 	"context"
 	"encoding/binary"
 	"encoding/hex"
+	"fmt"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/baggage"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/log"
 
 	otelbaggage "go.opentelemetry.io/otel/baggage"
 	oteltrace "go.opentelemetry.io/otel/trace"
@@ -95,13 +97,14 @@ func (t *oteltracer) Start(ctx context.Context, spanName string, opts ...oteltra
 	// The span operation name will be calculated when it's ended.
 	s := tracer.StartSpan(spanName, ddopts...)
 
-	// Merge baggage from otel and dd and update the context.
-	if mergedBag, err := mergeBaggageFromContext(ctx); err == nil && mergedBag.Len() > 0 {
-		for _, m := range mergedBag.Members() {
-			ctx = baggage.Set(ctx, m.Key(), m.Value())
-		}
-		ctx = otelbaggage.ContextWithBaggage(ctx, mergedBag)
+	// Merge baggage from otel and dd, update Datadog baggage, and update the context.
+	mergedBag := mergeBaggageFromContext(ctx)
+	for _, m := range mergedBag.Members() {
+		fmt.Println("MTOFF: On dd baggage, setting", m.Key())
+		ctx = baggage.Set(ctx, m.Key(), m.Value())
 	}
+	ctx = otelbaggage.ContextWithBaggage(ctx, mergedBag)
+
 	os := oteltrace.Span(&span{
 		DD:         s,
 		oteltracer: t,
@@ -115,77 +118,24 @@ func (t *oteltracer) Start(ctx context.Context, spanName string, opts ...oteltra
 	return ctx, os
 }
 
-// mergeBaggageFromContext consolidates baggage from OpenTelemetry and Datadog sources.
-func mergeBaggageFromContext(ctx context.Context) (otelbaggage.Baggage, error) {
+// mergeBaggageFromContext merges Datadog baggage found on the context into the OpenTelemetry baggage found on the context.
+// adding key-value pairs only if the key doesn't already exist in the OpenTelemetry baggage. It ensures no existing values are overwritten.
+func mergeBaggageFromContext(ctx context.Context) otelbaggage.Baggage {
 	otelBag := otelbaggage.FromContext(ctx)
-	ddBag := baggage.All(ctx)
-	lenDDBag := len(ddBag)
-	lenOtelBag := otelBag.Len()
-
-	switch {
-	case lenDDBag == 0 && lenOtelBag > 0:
-		return otelBag, nil
-	case lenOtelBag == 0 && lenDDBag > 0:
-		return convertDDBaggage(ddBag)
-	case lenDDBag > 0 && lenOtelBag > 0:
-		if lenDDBag <= lenOtelBag {
-			return mergeDDBagIntoOtel(otelBag, ddBag)
-		}
-		return mergeOtelBagIntoDD(otelBag, ddBag)
-	}
-	emptyBag, err := otelbaggage.New()
-	if err != nil {
-		return otelbaggage.Baggage{}, err
-	}
-	return emptyBag, nil
-}
-
-// convertDDBaggage converts a Datadog baggage map into an OpenTelemetry baggage.
-func convertDDBaggage(ddBag map[string]string) (otelbaggage.Baggage, error) {
-	var members []otelbaggage.Member
-	for key, value := range ddBag {
-		member, err := otelbaggage.NewMember(key, value)
-		if err != nil {
-			return otelbaggage.Baggage{}, err
-		}
-		members = append(members, member)
-	}
-	return otelbaggage.New(members...)
-}
-
-// mergeDDBagIntoOtel merges Datadog baggage into the existing OpenTelemetry baggage,
-// adding only keys that are missing in the OpenTelemetry baggage.
-func mergeDDBagIntoOtel(otelBag otelbaggage.Baggage, ddBag map[string]string) (otelbaggage.Baggage, error) {
-	members := otelBag.Members()
-	otelKeys := make(map[string]struct{}, otelBag.Len())
-	for _, m := range otelBag.Members() {
-		otelKeys[m.Key()] = struct{}{}
-	}
-	for key, value := range ddBag {
-		if _, exists := otelKeys[key]; !exists {
-			member, _ := otelbaggage.NewMember(key, value)
-			members = append(members, member)
+	for key, value := range baggage.All(ctx) {
+		if otelBag.Member(key).Value() == "" {
+			member, err := otelbaggage.NewMemberRaw(key, value)
+			if err == nil {
+				b, err := otelBag.SetMember(member)
+				if err == nil {
+					otelBag = b
+				} else {
+					log.Debug("Error adding baggage member with key", key, "; dropping")
+				}
+			}
 		}
 	}
-	return otelbaggage.New(members...)
-}
-
-// mergeOtelBagIntoDD merges OpenTelemetry baggage into a Datadog baggage map,
-// overriding keys with the OpenTelemetry values in case of conflict.
-func mergeOtelBagIntoDD(otelBag otelbaggage.Baggage, ddBag map[string]string) (otelbaggage.Baggage, error) {
-	mergedMap := make(map[string]otelbaggage.Member, len(ddBag)+otelBag.Len())
-	for key, value := range ddBag {
-		member, _ := otelbaggage.NewMember(key, value)
-		mergedMap[key] = member
-	}
-	for _, m := range otelBag.Members() {
-		mergedMap[m.Key()] = m
-	}
-	var members []otelbaggage.Member
-	for _, member := range mergedMap {
-		members = append(members, member)
-	}
-	return otelbaggage.New(members...)
+	return otelBag
 }
 
 type otelCtxToDDCtx struct {
