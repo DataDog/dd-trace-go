@@ -1,4 +1,4 @@
-go 1.23.0 // Go version must match the lowest supported version, not the highest, with format X.Y.
+go 1.24.1 // Go version must match the lowest supported version, not the highest, with format X.Y.
 
 use (
 	.
@@ -69,7 +69,9 @@ use (
 	./orchestrion/all
 	./tools/apiextractor
 	./tools/autoreleasetagger
+	./tools/checkcopyright
 	./tools/fixmodules
+	./tools/isolatecontrib
 	./tools/v2check
 	./tools/v2check/_stage
 )
