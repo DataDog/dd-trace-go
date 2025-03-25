@@ -9,5 +9,5 @@ require (
 
 replace (
 	example.com/root => ../
-	example.com/root/moduleA => ../moduleA
+	example.com/root/moduleA => ./../moduleA
 )

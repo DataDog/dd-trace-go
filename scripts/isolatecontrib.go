@@ -3,6 +3,9 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2023 Datadog, Inc.
 
+//go:build ignore
+// +build ignore
+
 package main
 
 import (
@@ -28,7 +31,7 @@ require (
 
 func main() {
 	if len(os.Args) != 3 {
-		panic("usage: go run main.go <contrib-path> <dependency-path>")
+		panic("usage: go run checkcopyright.go <contrib-path> <dependency-path>")
 	}
 	var (
 		contribPath    = path.Clean(os.Args[1])
