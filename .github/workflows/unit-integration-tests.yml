@@ -42,7 +42,7 @@ jobs:
           go-version: stable
       - name: Copyright
         run: |
-          go run checkcopyright.go
+          go run ./tools/checkcopyright
 
   lint:
     runs-on:
