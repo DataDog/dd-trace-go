@@ -75,7 +75,7 @@ func handleS3Operation(in middleware.DeserializeInput, out middleware.Deserializ
 		},
 	}
 
-	span.AddSpanLink(link)
+	span.AddLink(link)
 }
 
 // generatePointerHash generates a unique hash from an array of strings by joining them with | before hashing.
