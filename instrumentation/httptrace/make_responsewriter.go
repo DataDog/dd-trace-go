@@ -16,20 +16,55 @@ package main
 import (
 	"os"
 	"text/template"
-
-	"github.com/DataDog/dd-trace-go/v2/contrib/internal/lists"
 )
 
 func main() {
 	interfaces := []string{"Flusher", "Pusher", "CloseNotifier", "Hijacker"}
 	var combos [][][]string
 	for pick := len(interfaces); pick > 0; pick-- {
-		combos = append(combos, lists.Combinations(interfaces, pick))
+		combos = append(combos, combinations(interfaces, pick))
 	}
 	template.Must(template.New("").Parse(tpl)).Execute(os.Stdout, map[string]interface{}{
 		"Interfaces":   interfaces,
 		"Combinations": combos,
 	})
+}
+
+// combinations returns all possible unique selections of size `pick` of a list
+// of strings for which order does not matter
+//
+// an example:
+//
+//	Combinations([cat, dog, bird], 2):
+//	  [cat] -> Combinations([dog, bird], 1)
+//	    [cat, dog]
+//	    [cat, bird]
+//	  [dog] -> Combinations([bird], 1)
+//	    [dog, bird]
+//	  [bird] -> Combinations([], 0)
+//	    n/a
+func combinations(list []string, pick int) (all [][]string) {
+	switch pick {
+	case 0:
+		// nothing to do
+	case 1:
+		for i := range list {
+			all = append(all, list[i:i+1])
+		}
+	default:
+		// we recursively find combinations by taking each item in the list
+		// and then finding the combinations at (pick-1) for the remaining
+		// items in the list
+		// the reason we start at [i+1:], is because the order of the items in
+		// the list doesn't matter, so this will remove all the duplicates we
+		// would get otherwise
+		for i := range list {
+			for _, next := range combinations(list[i+1:], pick-1) {
+				all = append(all, append([]string{list[i]}, next...))
+			}
+		}
+	}
+	return all
 }
 
 var tpl = `// Unless explicitly stated otherwise all files in this repository are licensed
