@@ -97,8 +97,8 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
-replace github.com/DataDog/dd-trace-go/v2 => ../../..
-
 // Pin Shopify/sarama to the last version available to avoid breaking changes
 // caused by the IBM/sarama fork.
 replace github.com/Shopify/sarama => github.com/Shopify/sarama v1.38.1
+
+replace github.com/DataDog/dd-trace-go/v2 => ../../..
