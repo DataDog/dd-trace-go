@@ -207,11 +207,28 @@ func TestSpanFinishTwice(t *testing.T) {
 	span.Finish()
 	tracer.awaitPayload(t, 1)
 
+	// check that the span does not have any span links serialized
+	// spans don't have span links by default and they are serialized in the meta map
+	// as part of the Finish call
+	assert.Zero(span.meta["_dd.span_links"])
+
+	// manipulate the span
+	span.AddSpanLink(SpanLink{
+		TraceID: span.traceID,
+		SpanID:  span.spanID,
+		Attributes: map[string]string{
+			"manual.keep": "true",
+		},
+	})
+
 	previousDuration := span.duration
 	time.Sleep(wait)
 	span.Finish()
+
 	assert.Equal(previousDuration, span.duration)
-	tracer.awaitPayload(t, 1)
+	assert.Zero(span.meta["_dd.span_links"])
+
+	tracer.awaitPayload(t, 1) // this checks that no other span was seen by the tracerWriter
 }
 
 func TestShouldDrop(t *testing.T) {
