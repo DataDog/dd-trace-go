@@ -17,19 +17,19 @@ Before running the tool, ensure you have updated the version according to the [R
 Run the following command to tag the release:
 
 ```sh
-go run ./tools/autoreleasetagger -root ../..
+go run ./scripts/autoreleasetagger -root ../..
 ```
 
 Dry run: Simulate the tagging process to check for potential issues.
 
 ```sh
-go run ./tools/autoreleasetagger -dry-run -root ../..
+go run ./scripts/autoreleasetagger -dry-run -root ../..
 ```
 
 Run without pushing tags: Tag all the modules to release but don't push them.
 
 ```sh
-go run ./tools/autoreleasetagger -disable-push -root ../..
+go run ./scripts/autoreleasetagger -disable-push -root ../..
 ```
 
 ## 📖 Help

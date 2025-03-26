@@ -5,8 +5,6 @@
 
 package http // import "github.com/DataDog/dd-trace-go/contrib/net/http/v2"
 
-//go:generate sh -c "go run ./internal/make_responsewriter | gofmt > trace_gen.go"
-
 import (
 	"net/http"
 
