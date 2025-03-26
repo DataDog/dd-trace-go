@@ -25,9 +25,17 @@ import (
 	"strings"
 )
 
+var (
+	projectRoot string
+	verbose     bool
+)
+
 func init() {
+	flag.StringVar(&projectRoot, "root", ".", "Path to the project root (default: \".\")")
+	flag.BoolVar(&verbose, "verbose", false, "Run in verbose mode (default: false)")
+
 	flag.Usage = func() {
-		fmt.Fprintf(os.Stderr, "Usage: %s <root> [fix-dir]\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "Usage: go run ./tools/fixmodules -root=<path> <fix-dir>\n")
 		flag.PrintDefaults()
 	}
 }
@@ -77,22 +85,26 @@ type (
 
 func main() {
 	flag.Parse()
-	if flag.NArg() < 1 || flag.NArg() > 2 {
+	if flag.NArg() != 1 {
+		fmt.Fprintln(os.Stderr, "Error: <fix-dir> is required and must be a single argument")
+		flag.Usage()
+		os.Exit(2)
+	}
+	if projectRoot == "" {
+		fmt.Fprintln(os.Stderr, "Error: -root cannot be empty")
 		flag.Usage()
 		os.Exit(2)
 	}
 
-	root, err := filepath.Abs(flag.Arg(0))
+	root, err := filepath.Abs(projectRoot)
 	if err != nil {
 		log.Fatal(err)
 	}
 	if resolved, err := os.Readlink(root); err == nil {
 		root = resolved
 	}
-	fixDir := flag.Arg(1)
-	if fixDir == "" {
-		fixDir = root
-	}
+
+	fixDir := flag.Arg(0)
 	fixDir, err = filepath.Abs(fixDir)
 	if err != nil {
 		log.Fatal(err)
@@ -102,8 +114,8 @@ func main() {
 	}
 
 	goVersion := getProjectGoVersion(root)
-	log.Printf("using go version globally %s\n", goVersion)
-	log.Printf("finding modules recursively from %s\n", fixDir)
+	debugLog("using go version globally %s\n", goVersion)
+	debugLog("finding modules recursively from %s\n", fixDir)
 
 	fixModules, err := findModules(fixDir)
 	if err != nil {
@@ -162,9 +174,9 @@ func main() {
 			return cmp.Compare(a.Old.Path, b.Old.Path)
 		})
 
-		log.Printf("adding module replaces %q\n", modPath)
+		debugLog("adding module replaces %q\n", modPath)
 		for _, r := range replaces {
-			log.Printf("  %s => %s\n", r.Old.Path, r.New.Path)
+			debugLog("  %s => %s\n", r.Old.Path, r.New.Path)
 		}
 		if err := fixModule(allModules, mod, goVersion, replaces); err != nil {
 			log.Fatal(err)
@@ -388,4 +400,11 @@ func getProjectGoVersion(root string) string {
 		panic(err)
 	}
 	return f.Go.Version
+}
+
+func debugLog(format string, v ...any) {
+	if !verbose {
+		return
+	}
+	log.Printf(format, v...)
 }
