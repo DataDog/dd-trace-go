@@ -48,5 +48,5 @@ const (
 	CIVisibilityAutoInstrumentationProviderEnvironmentVariable = "DD_CIVISIBILITY_AUTO_INSTRUMENTATION_PROVIDER"
 
 	// CIVisibilityEnvironmentDataFilePath is the environment variable that holds the path to the file containing the environmental data.
-	CIVisibilityEnvironmentDataFilePath = "DD_CIVISIBILITY_ENV_DATA_FILE"
+	CIVisibilityEnvironmentDataFilePath = "DD_TEST_OPTIMIZATION_ENV_DATA_FILE"
 )
