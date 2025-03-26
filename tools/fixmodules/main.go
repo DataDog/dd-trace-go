@@ -209,35 +209,51 @@ func readModule(path string) (GoMod, error) {
 }
 
 func fixModule(mods map[string]GoMod, mod GoMod, goVersion string, replaces []Replace) error {
+	var drop []Replace
+	add := append([]Replace{}, replaces...)
+
 	// first, clean previous local replaces
-	for _, replace := range mod.Replace {
-		if _, ok := mods[replace.Old.Path]; ok {
-			args := []string{
-				"mod",
-				"edit",
-				fmt.Sprintf("-dropreplace=%s", replace.Old.Path),
+	for _, existingReplace := range mod.Replace {
+		if _, ok := mods[existingReplace.Old.Path]; ok {
+			found := false
+			for i, newReplace := range add {
+				if newReplace == existingReplace {
+					found = true
+					add = append(add[:i], add[i+1:]...)
+					break
+				}
 			}
-			cmd := exec.Command("go", args...)
-			cmd.Stderr = os.Stderr
-			cmd.Dir = mod.dir
-			if err := cmd.Run(); err != nil {
-				return fmt.Errorf("'go mod edit' dropreplace failed: %w", err)
+			if !found {
+				drop = append(drop, existingReplace)
 			}
 		}
 	}
 
-	// after cleaning up, add the necessary local replaces
-	for _, replace := range replaces {
-		args := []string{
-			"mod",
-			"edit",
-			fmt.Sprintf("-replace=%s=%s", replace.Old.Path, replace.New.Path),
+	if len(drop) > 0 {
+		var args []string
+		args = append(args, "mod", "edit")
+		for _, replace := range drop {
+			args = append(args, fmt.Sprintf("-dropreplace=%s", replace.Old.Path))
 		}
 		cmd := exec.Command("go", args...)
 		cmd.Stderr = os.Stderr
 		cmd.Dir = mod.dir
 		if err := cmd.Run(); err != nil {
-			return fmt.Errorf("'go mod edit' replace failed: %w", err)
+			return fmt.Errorf("'go mod edit' dropreplace failed: %w", err)
+		}
+	}
+
+	if len(add) > 0 {
+		var args []string
+		args = append(args, "mod", "edit")
+		for _, replace := range add {
+			args = append(args, fmt.Sprintf("-replace=%s=%s", replace.Old.Path, replace.New.Path))
+		}
+		cmd := exec.Command("go", args...)
+		cmd.Stderr = os.Stderr
+		cmd.Dir = mod.dir
+		if err := cmd.Run(); err != nil {
+			return fmt.Errorf("command %q failed: %w", cmd.String(), err)
 		}
 	}
 
