@@ -9,13 +9,17 @@ import (
 	"encoding/json"
 	"fmt"
 	"time"
+	_ "unsafe"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 )
 
+//go:linkname spanStart github.com/DataDog/dd-trace-go/v2/ddtrace/tracer.spanStart
+func spanStart(operationName string, options ...tracer.StartSpanOption) *tracer.Span
+
 func newSpan(operationName string, cfg *tracer.StartSpanConfig) *tracer.Span {
-	return tracer.SpanStart(operationName, func(c *tracer.StartSpanConfig) {
+	return spanStart(operationName, func(c *tracer.StartSpanConfig) {
 		*c = *cfg
 	})
 }

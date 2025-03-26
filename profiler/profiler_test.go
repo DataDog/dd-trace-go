@@ -143,13 +143,13 @@ func TestStart(t *testing.T) {
 
 	t.Run("Agentless/NoAPIKey", func(t *testing.T) {
 		t.Setenv("DD_PROFILING_AGENTLESS", "True")
+		t.Setenv("DD_API_KEY", "") // In case one is present in the environment...
 		err := Start()
 		defer Stop()
-		assert.NotNil(t, err)
-		assert.Contains(t, err.Error(), "Agentless upload requires a valid API key")
+		assert.ErrorIs(t, err, errAgentlessUploadRequiresAPIKey)
 
 		// Check that mu gets unlocked, even if newProfiler() returns an error.
-		mu.Lock()
+		require.True(t, mu.TryLock())
 		mu.Unlock()
 	})
 
@@ -158,11 +158,10 @@ func TestStart(t *testing.T) {
 		t.Setenv("DD_API_KEY", "aaaa")
 		err := Start()
 		defer Stop()
-		assert.NotNil(t, err)
-		assert.Contains(t, err.Error(), "Agentless upload requires a valid API key")
+		assert.ErrorIs(t, err, errAgentlessUploadRequiresAPIKey)
 
 		// Check that mu gets unlocked, even if newProfiler() returns an error.
-		mu.Lock()
+		require.True(t, mu.TryLock())
 		mu.Unlock()
 	})
 
@@ -170,7 +169,7 @@ func TestStart(t *testing.T) {
 		t.Setenv("AWS_LAMBDA_FUNCTION_NAME", "my-function-name")
 		err := Start()
 		defer Stop()
-		assert.NotNil(t, err)
+		assert.ErrorIs(t, err, errProfilingNotSupportedInAWSLambda)
 	})
 }
 

@@ -85,6 +85,8 @@ func TestNewClient(t *testing.T) {
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
+			t.Setenv("DD_API_KEY", "") // In case one is present in the environment...
+
 			c, err := NewClient(test.tracerConfig.Service, test.tracerConfig.Env, test.tracerConfig.Version, test.clientConfig)
 			if err == nil {
 				defer c.Close()

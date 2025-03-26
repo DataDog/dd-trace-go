@@ -13,9 +13,9 @@ require (
 	github.com/microsoft/go-mssqldb v0.21.0
 	github.com/stretchr/testify v1.10.0
 	gorm.io/driver/mysql v1.0.1
-	gorm.io/driver/postgres v1.5.7
+	gorm.io/driver/postgres v1.5.5
 	gorm.io/driver/sqlserver v1.4.2
-	gorm.io/gorm v1.25.7
+	gorm.io/gorm v1.25.5
 )
 
 require (
@@ -29,7 +29,7 @@ require (
 	github.com/DataDog/datadog-agent/pkg/util/scrubber v0.64.0-rc.1 // indirect
 	github.com/DataDog/datadog-agent/pkg/version v0.64.0-rc.1 // indirect
 	github.com/DataDog/datadog-go/v5 v5.6.0 // indirect
-	github.com/DataDog/go-libddwaf/v3 v3.5.3 // indirect
+	github.com/DataDog/go-libddwaf/v3 v3.5.4 // indirect
 	github.com/DataDog/go-runtime-metrics-internal v0.0.4-0.20241206090539-a14610dc22b6 // indirect
 	github.com/DataDog/go-sqllexer v0.1.0 // indirect
 	github.com/DataDog/go-tuf v1.1.0-0.5.2 // indirect

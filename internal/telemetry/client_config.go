@@ -63,7 +63,8 @@ type ClientConfig struct {
 	// DistributionsSize is the size of the distribution queue. Default range is [2^8, 2^14].
 	DistributionsSize internal.Range[int]
 
-	// Debug enables debug mode for the telemetry client and sent it to the backend so it logs the request
+	// Debug enables debug mode for the telemetry client and sent it to the backend so it logs the request. The
+	// DD_TELEMETRY_DEBUG environment variable, when set to a truthy value, overrides this setting.
 	Debug bool
 
 	// APIKey is the API key to use for sending telemetry to the agentless endpoint. (using DD_API_KEY env var by default)
@@ -160,6 +161,8 @@ func (config ClientConfig) validateConfig() error {
 
 // defaultConfig returns a ClientConfig with default values set.
 func defaultConfig(config ClientConfig) ClientConfig {
+	config.Debug = config.Debug || globalinternal.BoolEnv("DD_TELEMETRY_DEBUG", false)
+
 	if config.AgentlessURL == "" {
 		config.AgentlessURL = agentlessURL
 	}

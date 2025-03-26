@@ -8,6 +8,7 @@ package actions
 import (
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/dyngo"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	telemetrylog "github.com/DataDog/dd-trace-go/v2/internal/telemetry/log"
 )
 
 type (
@@ -34,18 +35,22 @@ func registerActionHandler(aType string, handler actionHandler) {
 // SendActionEvents sends the relevant actions to the operation's data listener.
 // It returns true if at least one of those actions require interrupting the request handler
 // When SDKError is not nil, this error is sent to the op with EmitData so that the invoked SDK can return it
-func SendActionEvents(op dyngo.Operation, actions map[string]any) {
+// returns whenever the request should be interrupted
+func SendActionEvents(op dyngo.Operation, actions map[string]any) bool {
+	var blocked bool
 	for aType, params := range actions {
 		log.Debug("appsec: processing %s action with params %v", aType, params)
 		params, ok := params.(map[string]any)
 		if !ok {
-			log.Debug("appsec: could not cast action params to map[string]any from %T", params)
+			telemetrylog.Error("appsec: could not cast action params to map[string]any from %T", params)
 			continue
 		}
 
+		blocked = blocked || aType == "block_request"
+
 		actionHandler, ok := actionHandlers[aType]
 		if !ok {
-			log.Debug("appsec: unknown action type `%s`", aType)
+			telemetrylog.Error("appsec: unknown action type `%s`", aType)
 			continue
 		}
 
@@ -53,4 +58,6 @@ func SendActionEvents(op dyngo.Operation, actions map[string]any) {
 			a.EmitData(op)
 		}
 	}
+
+	return blocked
 }

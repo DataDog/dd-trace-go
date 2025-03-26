@@ -11,6 +11,7 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/emitter/usersec"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 )
 
 // TrackUserLoginSuccessEvent sets a successful user login event, with the given
@@ -29,6 +30,8 @@ import (
 // Deprecated: use [TrackUserLoginSuccess] instead. It requires collection of
 // the user login, which is useful for detecting account takeover attacks.
 func TrackUserLoginSuccessEvent(ctx context.Context, uid string, md map[string]string, opts ...tracer.UserMonitoringOption) error {
+	telemetry.Count(telemetry.NamespaceAppSec, "sdk.event", []string{"event_type:login_success", "sdk_version:v1"}).Submit(1)
+
 	login, _, _ := getMetadata(opts)
 	return TrackUserLoginSuccess(ctx, login, uid, md, opts...)
 }
@@ -48,6 +51,8 @@ func TrackUserLoginSuccessEvent(ctx context.Context, uid string, md map[string]s
 // which is what is available during a failed login attempt, instead of the user
 // ID, which is oftern not (especially when the user does not exist).
 func TrackUserLoginFailureEvent(ctx context.Context, uid string, exists bool, md map[string]string) {
+	telemetry.Count(telemetry.NamespaceAppSec, "sdk.event", []string{"event_type:login_failure", "sdk_version:v1"}).Submit(1)
+
 	span := getRootSpan(ctx)
 	if span == nil {
 		return

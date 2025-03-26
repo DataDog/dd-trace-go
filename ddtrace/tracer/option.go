@@ -310,13 +310,19 @@ type config struct {
 }
 
 // orchestrionConfig contains Orchestrion configuration.
-type orchestrionConfig struct {
-	// Enabled indicates whether this tracer was instanciated via Orchestrion.
-	Enabled bool `json:"enabled"`
+type (
+	orchestrionConfig struct {
+		// Enabled indicates whether this tracer was instanciated via Orchestrion.
+		Enabled bool `json:"enabled"`
 
-	// Metadata holds Orchestrion specific metadata (e.g orchestrion version, mode (toolexec or manual) etc..)
-	Metadata map[string]string `json:"metadata,omitempty"`
-}
+		// Metadata holds Orchestrion specific metadata (e.g orchestrion version, mode (toolexec or manual) etc..)
+		Metadata *orchestrionMetadata `json:"metadata,omitempty"`
+	}
+	orchestrionMetadata struct {
+		// Version is the version of the orchestrion tool that was used to instrument the application.
+		Version string `json:"version,omitempty"`
+	}
+)
 
 // HasFeature reports whether feature f is enabled.
 func (c *config) HasFeature(f string) bool {
@@ -1269,15 +1275,6 @@ func WithPartialFlushing(numSpans int) StartOption {
 func WithStatsComputation(enabled bool) StartOption {
 	return func(c *config) {
 		c.statsComputationEnabled = enabled
-	}
-}
-
-// WithOrchestrion configures Orchestrion's auto-instrumentation metadata.
-// This option is only intended to be used by Orchestrion https://github.com/DataDog/orchestrion
-func WithOrchestrion(metadata map[string]string) StartOption {
-	return func(c *config) {
-		c.orchestrionCfg.Enabled = true
-		c.orchestrionCfg.Metadata = metadata
 	}
 }
 
