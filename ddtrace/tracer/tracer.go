@@ -31,6 +31,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/traceprof"
+	"github.com/google/uuid"
 
 	"github.com/DataDog/datadog-agent/pkg/obfuscate"
 	"github.com/DataDog/go-runtime-metrics-internal/pkg/runtimemetrics"
@@ -248,8 +249,8 @@ func Start(opts ...StartOption) error {
 	// determine if the process is instrumented with a tracer and to retrive
 	// relevant tracing information.
 	storeConfig(t.config)
-  
-  globalinternal.SetTracerInitialized(true)
+
+	globalinternal.SetTracerInitialized(true)
 	return nil
 }
 
