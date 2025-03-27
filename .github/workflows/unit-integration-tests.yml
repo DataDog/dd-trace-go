@@ -57,6 +57,9 @@ jobs:
         uses: ./.github/actions/setup-go
         with:
           go-version: ${{ inputs.go-version }}
+      - name: Install go tools
+        run: |-
+          ./scripts/install_tools.sh
       - name: Run generator
         run: |-
           go generate ./...
@@ -77,7 +80,7 @@ jobs:
           go-version: ${{ inputs.go-version }}
       - name: Run fixmodules
         run: |-
-          go run ./tools/fixmodules -root=. .
+          ./scripts/fix_modules.sh
       - name: Check for changes
         run: git diff --exit-code
 
