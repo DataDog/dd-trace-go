@@ -57,6 +57,9 @@ jobs:
         uses: ./.github/actions/setup-go
         with:
           go-version: ${{ inputs.go-version }}
+      - name: Install go tools
+        run: |-
+          ./scripts/install_tools.sh
       - name: Run generator
         run: |-
           go generate ./...
