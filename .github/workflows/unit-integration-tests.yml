@@ -80,7 +80,7 @@ jobs:
           go-version: ${{ inputs.go-version }}
       - name: Run fixmodules
         run: |-
-          go run ./tools/fixmodules -root=. .
+          ./scripts/fix_modules.sh
       - name: Check for changes
         run: git diff --exit-code
 
