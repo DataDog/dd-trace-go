@@ -56,7 +56,7 @@ jobs:
       - name: Setup Go
         uses: ./.github/actions/setup-go
         with:
-          go-version: ${{ inputs.go-version }
+          go-version: ${{ inputs.go-version }}
       - name: Run generator
         run: |-
           go generate ./...
@@ -74,7 +74,7 @@ jobs:
       - name: Setup Go
         uses: ./.github/actions/setup-go
         with:
-          go-version: ${{ inputs.go-version }
+          go-version: ${{ inputs.go-version }}
       - name: Run fixmodules
         run: |-
           go run ./tools/fixmodules -root=. .
