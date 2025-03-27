@@ -7,6 +7,7 @@ package httpsec
 
 import (
 	"math/rand"
+	"net/netip"
 
 	internal "github.com/DataDog/appsec-internal-go/appsec"
 
@@ -37,8 +38,13 @@ func NewHTTPSecFeature(config *config.Config, rootOp dyngo.Operation) (listener.
 		addresses.ServerRequestPathParamsAddr,
 		addresses.ServerRequestBodyAddr,
 		addresses.ServerResponseStatusAddr,
-		addresses.ServerResponseHeadersNoCookiesAddr) {
-		return nil, nil
+		addresses.ServerResponseHeadersNoCookiesAddr,
+		addresses.ClientIPAddr,
+	) {
+		// We extract headers even when the security features are not enabled...
+		feature := &BasicFeature{}
+		dyngo.On(rootOp, feature.OnRequest)
+		return feature, nil
 	}
 
 	feature := &Feature{
@@ -51,14 +57,7 @@ func NewHTTPSecFeature(config *config.Config, rootOp dyngo.Operation) (listener.
 }
 
 func (feature *Feature) OnRequest(op *httpsec.HandlerOperation, args httpsec.HandlerOperationArgs) {
-	tags, ip := ClientIPTags(args.Headers, true, args.RemoteAddr)
-	log.Debug("appsec: http client ip detection returned `%s` given the http headers `%v`", ip, args.Headers)
-
-	op.SetStringTags(tags)
-	headers := headersRemoveCookies(args.Headers)
-	headers["host"] = []string{args.Host}
-
-	setRequestHeadersTags(op, headers)
+	headers, ip := extractHeaders(op, args)
 
 	op.Run(op,
 		addresses.NewAddressesBuilder().
@@ -92,4 +91,29 @@ func (feature *Feature) OnResponse(op *httpsec.HandlerOperation, resp httpsec.Ha
 // allows extracting schemas
 func (feature *Feature) canExtractSchemas() bool {
 	return feature.APISec.Enabled && feature.APISec.SampleRate >= rand.Float64()
+}
+
+type BasicFeature struct{}
+
+func (*BasicFeature) String() string {
+	return "HTTP Header Extraction"
+}
+
+func (*BasicFeature) Stop() {}
+
+func (*BasicFeature) OnRequest(op *httpsec.HandlerOperation, args httpsec.HandlerOperationArgs) {
+	_, _ = extractHeaders(op, args)
+}
+
+func extractHeaders(op *httpsec.HandlerOperation, args httpsec.HandlerOperationArgs) (map[string][]string, netip.Addr) {
+	tags, ip := ClientIPTags(args.Headers, true, args.RemoteAddr)
+	log.Debug("appsec: http client ip detection returned `%s` given the http headers `%v`", ip, args.Headers)
+
+	op.SetStringTags(tags)
+	headers := headersRemoveCookies(args.Headers)
+	headers["host"] = []string{args.Host}
+
+	setRequestHeadersTags(op, headers)
+
+	return headers, ip
 }
