@@ -31,6 +31,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/traceprof"
+	"github.com/DataDog/dd-trace-go/v2/internal/version"
 	"github.com/google/uuid"
 
 	"github.com/DataDog/datadog-agent/pkg/obfuscate"
@@ -258,11 +259,11 @@ func storeConfig(c *config) {
 	uuid, _ := uuid.NewRandom()
 	name := fmt.Sprintf("datadog-tracer-info-%s", uuid.String()[0:8])
 
-	metadata := TracerMetadata{
+	metadata := Metadata{
 		SchemaVersion:      1,
-		RuntimeId:          globalconfig.RuntimeID(),
+		RuntimeID:          globalconfig.RuntimeID(),
 		Language:           "go",
-		Version:            globalversion.Tag,
+		Version:            version.Tag,
 		Hostname:           c.hostname,
 		ServiceName:        c.serviceName,
 		ServiceEnvironment: c.env,
