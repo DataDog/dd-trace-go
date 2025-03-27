@@ -244,8 +244,35 @@ func Start(opts ...StartOption) error {
 	// DD_INSTRUMENTATION_TELEMETRY_ENABLED env var
 	startTelemetry(t.config)
 
-	globalinternal.SetTracerInitialized(true)
+	// store the configuration in an in-memory file, allowing it to be read to
+	// determine if the process is instrumented with a tracer and to retrive
+	// relevant tracing information.
+	storeConfig(t.config)
+  
+  globalinternal.SetTracerInitialized(true)
 	return nil
+}
+
+func storeConfig(c *config) {
+	uuid, _ := uuid.NewRandom()
+	name := fmt.Sprintf("datadog-tracer-info-%s", uuid.String()[0:8])
+
+	metadata := TracerMetadata{
+		SchemaVersion:      1,
+		RuntimeId:          globalconfig.RuntimeID(),
+		Language:           "go",
+		Version:            globalversion.Tag,
+		Hostname:           c.hostname,
+		ServiceName:        c.serviceName,
+		ServiceEnvironment: c.env,
+		ServiceVersion:     c.version,
+	}
+
+	data, _ := metadata.MarshalMsg(nil)
+	_, err := globalinternal.CreateMemfd(name, data)
+	if err != nil {
+		log.Error("failed to store the configuration: %s", err)
+	}
 }
 
 // Stop stops the started tracer. Subsequent calls are valid but become no-op.
