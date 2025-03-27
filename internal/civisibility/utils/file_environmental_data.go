@@ -10,7 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	_ "unsafe"
+	_ "unsafe" // required for go:linkname
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/constants"
 	logger "gopkg.in/DataDog/dd-trace-go.v1/internal/log"
