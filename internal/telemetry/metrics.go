@@ -46,13 +46,13 @@ func validateMetricKey(namespace Namespace, kind transport.MetricType, name stri
 	}
 
 	if !knownmetrics.IsKnownMetric(namespace, kind, name) {
-		return fmt.Errorf("metric name %q of kind %q in namespace %q is not a known metric, please update the list of metrics name or check that you wrote the name correctly. "+
+		return fmt.Errorf("metric name %q of kind %q in namespace %q is not a known metric, please update the list of metric names running ./scripts/gen_known_metrics.sh or check that you wrote the name correctly. "+
 			"The metric will still be sent", name, string(kind), namespace)
 	}
 
 	for _, tag := range tags {
 		if len(tag) == 0 {
-			return fmt.Errorf("metric %q has should not have empty tags", name)
+			return fmt.Errorf("metric %q should not have empty tags", name)
 		}
 
 		if strings.Contains(tag, ",") {
