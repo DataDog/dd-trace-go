@@ -37,6 +37,7 @@ require (
 	github.com/ebitengine/purego v0.8.2 // indirect
 	github.com/go-jose/go-jose/v3 v3.0.3 // indirect
 	github.com/go-ole/go-ole v1.3.0 // indirect
+	github.com/go-viper/mapstructure/v2 v2.2.1 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang/protobuf v1.5.4 // indirect
 	github.com/google/uuid v1.6.0 // indirect
@@ -94,11 +95,11 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
-replace github.com/DataDog/dd-trace-go/contrib/net/http/v2 => ../../net/http
-
-replace github.com/DataDog/dd-trace-go/v2 => ../../..
-
 // Pin github.com/armon/go-metrics to the last version available to avoid breaking changes
 // due to the migration to github.com/hashicorp/go-metrics.
 // This will be a no-op once hashicorp/vault/api is updated to use the new go-metrics package.
 replace github.com/armon/go-metrics => github.com/armon/go-metrics v0.4.1
+
+replace github.com/DataDog/dd-trace-go/contrib/net/http/v2 => ../../net/http
+
+replace github.com/DataDog/dd-trace-go/v2 => ../../..

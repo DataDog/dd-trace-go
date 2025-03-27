@@ -25,9 +25,17 @@ import (
 	"strings"
 )
 
+var (
+	projectRoot string
+	verbose     bool
+)
+
 func init() {
+	flag.StringVar(&projectRoot, "root", ".", "Path to the project root (default: \".\")")
+	flag.BoolVar(&verbose, "verbose", false, "Run in verbose mode (default: false)")
+
 	flag.Usage = func() {
-		fmt.Fprintf(os.Stderr, "Usage: %s <root> [fix-dir]\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "Usage: go run ./tools/fixmodules -root=<path> <fix-dir>\n")
 		flag.PrintDefaults()
 	}
 }
@@ -77,22 +85,26 @@ type (
 
 func main() {
 	flag.Parse()
-	if flag.NArg() < 1 || flag.NArg() > 2 {
+	if flag.NArg() != 1 {
+		fmt.Fprintln(os.Stderr, "Error: <fix-dir> is required and must be a single argument")
+		flag.Usage()
+		os.Exit(2)
+	}
+	if projectRoot == "" {
+		fmt.Fprintln(os.Stderr, "Error: -root cannot be empty")
 		flag.Usage()
 		os.Exit(2)
 	}
 
-	root, err := filepath.Abs(flag.Arg(0))
+	root, err := filepath.Abs(projectRoot)
 	if err != nil {
 		log.Fatal(err)
 	}
 	if resolved, err := os.Readlink(root); err == nil {
 		root = resolved
 	}
-	fixDir := flag.Arg(1)
-	if fixDir == "" {
-		fixDir = root
-	}
+
+	fixDir := flag.Arg(0)
 	fixDir, err = filepath.Abs(fixDir)
 	if err != nil {
 		log.Fatal(err)
@@ -102,8 +114,8 @@ func main() {
 	}
 
 	goVersion := getProjectGoVersion(root)
-	log.Printf("using go version globally %s\n", goVersion)
-	log.Printf("finding modules recursively from %s\n", fixDir)
+	debugLog("using go version globally %s\n", goVersion)
+	debugLog("finding modules recursively from %s\n", fixDir)
 
 	fixModules, err := findModules(fixDir)
 	if err != nil {
@@ -162,9 +174,9 @@ func main() {
 			return cmp.Compare(a.Old.Path, b.Old.Path)
 		})
 
-		log.Printf("adding module replaces %q\n", modPath)
+		debugLog("adding module replaces %q\n", modPath)
 		for _, r := range replaces {
-			log.Printf("  %s => %s\n", r.Old.Path, r.New.Path)
+			debugLog("  %s => %s\n", r.Old.Path, r.New.Path)
 		}
 		if err := fixModule(allModules, mod, goVersion, replaces); err != nil {
 			log.Fatal(err)
@@ -209,35 +221,51 @@ func readModule(path string) (GoMod, error) {
 }
 
 func fixModule(mods map[string]GoMod, mod GoMod, goVersion string, replaces []Replace) error {
+	var drop []Replace
+	add := append([]Replace{}, replaces...)
+
 	// first, clean previous local replaces
-	for _, replace := range mod.Replace {
-		if _, ok := mods[replace.Old.Path]; ok {
-			args := []string{
-				"mod",
-				"edit",
-				fmt.Sprintf("-dropreplace=%s", replace.Old.Path),
+	for _, existingReplace := range mod.Replace {
+		if _, ok := mods[existingReplace.Old.Path]; ok {
+			found := false
+			for i, newReplace := range add {
+				if newReplace == existingReplace {
+					found = true
+					add = append(add[:i], add[i+1:]...)
+					break
+				}
 			}
-			cmd := exec.Command("go", args...)
-			cmd.Stderr = os.Stderr
-			cmd.Dir = mod.dir
-			if err := cmd.Run(); err != nil {
-				return fmt.Errorf("'go mod edit' dropreplace failed: %w", err)
+			if !found {
+				drop = append(drop, existingReplace)
 			}
 		}
 	}
 
-	// after cleaning up, add the necessary local replaces
-	for _, replace := range replaces {
-		args := []string{
-			"mod",
-			"edit",
-			fmt.Sprintf("-replace=%s=%s", replace.Old.Path, replace.New.Path),
+	if len(drop) > 0 {
+		var args []string
+		args = append(args, "mod", "edit")
+		for _, replace := range drop {
+			args = append(args, fmt.Sprintf("-dropreplace=%s", replace.Old.Path))
 		}
 		cmd := exec.Command("go", args...)
 		cmd.Stderr = os.Stderr
 		cmd.Dir = mod.dir
 		if err := cmd.Run(); err != nil {
-			return fmt.Errorf("'go mod edit' replace failed: %w", err)
+			return fmt.Errorf("'go mod edit' dropreplace failed: %w", err)
+		}
+	}
+
+	if len(add) > 0 {
+		var args []string
+		args = append(args, "mod", "edit")
+		for _, replace := range add {
+			args = append(args, fmt.Sprintf("-replace=%s=%s", replace.Old.Path, replace.New.Path))
+		}
+		cmd := exec.Command("go", args...)
+		cmd.Stderr = os.Stderr
+		cmd.Dir = mod.dir
+		if err := cmd.Run(); err != nil {
+			return fmt.Errorf("command %q failed: %w", cmd.String(), err)
 		}
 	}
 
@@ -372,4 +400,11 @@ func getProjectGoVersion(root string) string {
 		panic(err)
 	}
 	return f.Go.Version
+}
+
+func debugLog(format string, v ...any) {
+	if !verbose {
+		return
+	}
+	log.Printf(format, v...)
 }

@@ -85,9 +85,10 @@ func (z *StackFrame) DecodeMsg(dc *msgp.Reader) (err error) {
 
 // EncodeMsg implements msgp.Encodable
 func (z *StackFrame) EncodeMsg(en *msgp.Writer) (err error) {
-	// omitempty: check for empty values
+	// check for omitted fields
 	zb0001Len := uint32(8)
 	var zb0001Mask uint8 /* 8 bits */
+	_ = zb0001Mask
 	if z.Text == "" {
 		zb0001Len--
 		zb0001Mask |= 0x2
@@ -121,101 +122,102 @@ func (z *StackFrame) EncodeMsg(en *msgp.Writer) (err error) {
 	if err != nil {
 		return
 	}
-	if zb0001Len == 0 {
-		return
-	}
-	// write "id"
-	err = en.Append(0xa2, 0x69, 0x64)
-	if err != nil {
-		return
-	}
-	err = en.WriteUint32(z.Index)
-	if err != nil {
-		err = msgp.WrapError(err, "Index")
-		return
-	}
-	if (zb0001Mask & 0x2) == 0 { // if not empty
-		// write "text"
-		err = en.Append(0xa4, 0x74, 0x65, 0x78, 0x74)
+
+	// skip if no fields are to be emitted
+	if zb0001Len != 0 {
+		// write "id"
+		err = en.Append(0xa2, 0x69, 0x64)
 		if err != nil {
 			return
 		}
-		err = en.WriteString(z.Text)
+		err = en.WriteUint32(z.Index)
 		if err != nil {
-			err = msgp.WrapError(err, "Text")
+			err = msgp.WrapError(err, "Index")
 			return
 		}
-	}
-	if (zb0001Mask & 0x4) == 0 { // if not empty
-		// write "file"
-		err = en.Append(0xa4, 0x66, 0x69, 0x6c, 0x65)
-		if err != nil {
-			return
+		if (zb0001Mask & 0x2) == 0 { // if not omitted
+			// write "text"
+			err = en.Append(0xa4, 0x74, 0x65, 0x78, 0x74)
+			if err != nil {
+				return
+			}
+			err = en.WriteString(z.Text)
+			if err != nil {
+				err = msgp.WrapError(err, "Text")
+				return
+			}
 		}
-		err = en.WriteString(z.File)
-		if err != nil {
-			err = msgp.WrapError(err, "File")
-			return
+		if (zb0001Mask & 0x4) == 0 { // if not omitted
+			// write "file"
+			err = en.Append(0xa4, 0x66, 0x69, 0x6c, 0x65)
+			if err != nil {
+				return
+			}
+			err = en.WriteString(z.File)
+			if err != nil {
+				err = msgp.WrapError(err, "File")
+				return
+			}
 		}
-	}
-	if (zb0001Mask & 0x8) == 0 { // if not empty
-		// write "line"
-		err = en.Append(0xa4, 0x6c, 0x69, 0x6e, 0x65)
-		if err != nil {
-			return
+		if (zb0001Mask & 0x8) == 0 { // if not omitted
+			// write "line"
+			err = en.Append(0xa4, 0x6c, 0x69, 0x6e, 0x65)
+			if err != nil {
+				return
+			}
+			err = en.WriteUint32(z.Line)
+			if err != nil {
+				err = msgp.WrapError(err, "Line")
+				return
+			}
 		}
-		err = en.WriteUint32(z.Line)
-		if err != nil {
-			err = msgp.WrapError(err, "Line")
-			return
+		if (zb0001Mask & 0x10) == 0 { // if not omitted
+			// write "column"
+			err = en.Append(0xa6, 0x63, 0x6f, 0x6c, 0x75, 0x6d, 0x6e)
+			if err != nil {
+				return
+			}
+			err = en.WriteUint32(z.Column)
+			if err != nil {
+				err = msgp.WrapError(err, "Column")
+				return
+			}
 		}
-	}
-	if (zb0001Mask & 0x10) == 0 { // if not empty
-		// write "column"
-		err = en.Append(0xa6, 0x63, 0x6f, 0x6c, 0x75, 0x6d, 0x6e)
-		if err != nil {
-			return
+		if (zb0001Mask & 0x20) == 0 { // if not omitted
+			// write "namespace"
+			err = en.Append(0xa9, 0x6e, 0x61, 0x6d, 0x65, 0x73, 0x70, 0x61, 0x63, 0x65)
+			if err != nil {
+				return
+			}
+			err = en.WriteString(z.Namespace)
+			if err != nil {
+				err = msgp.WrapError(err, "Namespace")
+				return
+			}
 		}
-		err = en.WriteUint32(z.Column)
-		if err != nil {
-			err = msgp.WrapError(err, "Column")
-			return
+		if (zb0001Mask & 0x40) == 0 { // if not omitted
+			// write "class_name"
+			err = en.Append(0xaa, 0x63, 0x6c, 0x61, 0x73, 0x73, 0x5f, 0x6e, 0x61, 0x6d, 0x65)
+			if err != nil {
+				return
+			}
+			err = en.WriteString(z.ClassName)
+			if err != nil {
+				err = msgp.WrapError(err, "ClassName")
+				return
+			}
 		}
-	}
-	if (zb0001Mask & 0x20) == 0 { // if not empty
-		// write "namespace"
-		err = en.Append(0xa9, 0x6e, 0x61, 0x6d, 0x65, 0x73, 0x70, 0x61, 0x63, 0x65)
-		if err != nil {
-			return
-		}
-		err = en.WriteString(z.Namespace)
-		if err != nil {
-			err = msgp.WrapError(err, "Namespace")
-			return
-		}
-	}
-	if (zb0001Mask & 0x40) == 0 { // if not empty
-		// write "class_name"
-		err = en.Append(0xaa, 0x63, 0x6c, 0x61, 0x73, 0x73, 0x5f, 0x6e, 0x61, 0x6d, 0x65)
-		if err != nil {
-			return
-		}
-		err = en.WriteString(z.ClassName)
-		if err != nil {
-			err = msgp.WrapError(err, "ClassName")
-			return
-		}
-	}
-	if (zb0001Mask & 0x80) == 0 { // if not empty
-		// write "function"
-		err = en.Append(0xa8, 0x66, 0x75, 0x6e, 0x63, 0x74, 0x69, 0x6f, 0x6e)
-		if err != nil {
-			return
-		}
-		err = en.WriteString(z.Function)
-		if err != nil {
-			err = msgp.WrapError(err, "Function")
-			return
+		if (zb0001Mask & 0x80) == 0 { // if not omitted
+			// write "function"
+			err = en.Append(0xa8, 0x66, 0x75, 0x6e, 0x63, 0x74, 0x69, 0x6f, 0x6e)
+			if err != nil {
+				return
+			}
+			err = en.WriteString(z.Function)
+			if err != nil {
+				err = msgp.WrapError(err, "Function")
+				return
+			}
 		}
 	}
 	return
@@ -224,9 +226,10 @@ func (z *StackFrame) EncodeMsg(en *msgp.Writer) (err error) {
 // MarshalMsg implements msgp.Marshaler
 func (z *StackFrame) MarshalMsg(b []byte) (o []byte, err error) {
 	o = msgp.Require(b, z.Msgsize())
-	// omitempty: check for empty values
+	// check for omitted fields
 	zb0001Len := uint32(8)
 	var zb0001Mask uint8 /* 8 bits */
+	_ = zb0001Mask
 	if z.Text == "" {
 		zb0001Len--
 		zb0001Mask |= 0x2
@@ -257,46 +260,47 @@ func (z *StackFrame) MarshalMsg(b []byte) (o []byte, err error) {
 	}
 	// variable map header, size zb0001Len
 	o = append(o, 0x80|uint8(zb0001Len))
-	if zb0001Len == 0 {
-		return
-	}
-	// string "id"
-	o = append(o, 0xa2, 0x69, 0x64)
-	o = msgp.AppendUint32(o, z.Index)
-	if (zb0001Mask & 0x2) == 0 { // if not empty
-		// string "text"
-		o = append(o, 0xa4, 0x74, 0x65, 0x78, 0x74)
-		o = msgp.AppendString(o, z.Text)
-	}
-	if (zb0001Mask & 0x4) == 0 { // if not empty
-		// string "file"
-		o = append(o, 0xa4, 0x66, 0x69, 0x6c, 0x65)
-		o = msgp.AppendString(o, z.File)
-	}
-	if (zb0001Mask & 0x8) == 0 { // if not empty
-		// string "line"
-		o = append(o, 0xa4, 0x6c, 0x69, 0x6e, 0x65)
-		o = msgp.AppendUint32(o, z.Line)
-	}
-	if (zb0001Mask & 0x10) == 0 { // if not empty
-		// string "column"
-		o = append(o, 0xa6, 0x63, 0x6f, 0x6c, 0x75, 0x6d, 0x6e)
-		o = msgp.AppendUint32(o, z.Column)
-	}
-	if (zb0001Mask & 0x20) == 0 { // if not empty
-		// string "namespace"
-		o = append(o, 0xa9, 0x6e, 0x61, 0x6d, 0x65, 0x73, 0x70, 0x61, 0x63, 0x65)
-		o = msgp.AppendString(o, z.Namespace)
-	}
-	if (zb0001Mask & 0x40) == 0 { // if not empty
-		// string "class_name"
-		o = append(o, 0xaa, 0x63, 0x6c, 0x61, 0x73, 0x73, 0x5f, 0x6e, 0x61, 0x6d, 0x65)
-		o = msgp.AppendString(o, z.ClassName)
-	}
-	if (zb0001Mask & 0x80) == 0 { // if not empty
-		// string "function"
-		o = append(o, 0xa8, 0x66, 0x75, 0x6e, 0x63, 0x74, 0x69, 0x6f, 0x6e)
-		o = msgp.AppendString(o, z.Function)
+
+	// skip if no fields are to be emitted
+	if zb0001Len != 0 {
+		// string "id"
+		o = append(o, 0xa2, 0x69, 0x64)
+		o = msgp.AppendUint32(o, z.Index)
+		if (zb0001Mask & 0x2) == 0 { // if not omitted
+			// string "text"
+			o = append(o, 0xa4, 0x74, 0x65, 0x78, 0x74)
+			o = msgp.AppendString(o, z.Text)
+		}
+		if (zb0001Mask & 0x4) == 0 { // if not omitted
+			// string "file"
+			o = append(o, 0xa4, 0x66, 0x69, 0x6c, 0x65)
+			o = msgp.AppendString(o, z.File)
+		}
+		if (zb0001Mask & 0x8) == 0 { // if not omitted
+			// string "line"
+			o = append(o, 0xa4, 0x6c, 0x69, 0x6e, 0x65)
+			o = msgp.AppendUint32(o, z.Line)
+		}
+		if (zb0001Mask & 0x10) == 0 { // if not omitted
+			// string "column"
+			o = append(o, 0xa6, 0x63, 0x6f, 0x6c, 0x75, 0x6d, 0x6e)
+			o = msgp.AppendUint32(o, z.Column)
+		}
+		if (zb0001Mask & 0x20) == 0 { // if not omitted
+			// string "namespace"
+			o = append(o, 0xa9, 0x6e, 0x61, 0x6d, 0x65, 0x73, 0x70, 0x61, 0x63, 0x65)
+			o = msgp.AppendString(o, z.Namespace)
+		}
+		if (zb0001Mask & 0x40) == 0 { // if not omitted
+			// string "class_name"
+			o = append(o, 0xaa, 0x63, 0x6c, 0x61, 0x73, 0x73, 0x5f, 0x6e, 0x61, 0x6d, 0x65)
+			o = msgp.AppendString(o, z.ClassName)
+		}
+		if (zb0001Mask & 0x80) == 0 { // if not omitted
+			// string "function"
+			o = append(o, 0xa8, 0x66, 0x75, 0x6e, 0x63, 0x74, 0x69, 0x6f, 0x6e)
+			o = msgp.AppendString(o, z.Function)
+		}
 	}
 	return
 }

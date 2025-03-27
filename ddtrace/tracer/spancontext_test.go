@@ -80,14 +80,30 @@ func testAsyncSpanRace(t *testing.T) {
 	for i := 0; i < 100; i++ {
 		// The test has 100 iterations because it is not easy to reproduce the race.
 		t.Run("", func(_ *testing.T) {
+			var (
+				wg, finishes sync.WaitGroup
+				done         = make(chan struct{})
+			)
 			root, ctx := StartSpanFromContext(context.Background(), "root", Tag(ext.ManualKeep, true))
-			var wg sync.WaitGroup
-			done := make(chan struct{})
+			finishes.Add(2)
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				<-done
-				root.Finish()
+				for i := 0; i < 500; i++ {
+					// Spamming Finish to emulate concurrent Finish calls.
+					root.Finish()
+				}
+
+				// Syncing the finishes to ensure the rest of the test is executed after the Finish calls.
+				finishes.Done()
+				finishes.Wait()
+
+				// Closing will attempt trigger the goroutines at approximately the same time.
+				// Closing it in the test function will cause a data race that doesn't happen in the wild.
+				// Here it's simulating the real Finish flow, as the meta/metrics iteration happen after
+				// the span is pushed to the tracer's t.out channel.
+				close(done)
+
 				for i := 0; i < 500; i++ {
 					for range root.metrics {
 						// this range simulates iterating over the metrics map
@@ -99,8 +115,14 @@ func testAsyncSpanRace(t *testing.T) {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				<-done
-				root.Finish()
+				for i := 0; i < 500; i++ {
+					// Spamming Finish to emulate concurrent Finish calls.
+					root.Finish()
+				}
+
+				finishes.Done()
+				finishes.Wait()
+
 				for i := 0; i < 500; i++ {
 					for range root.meta {
 						// this range simulates iterating over the meta map
@@ -120,8 +142,6 @@ func testAsyncSpanRace(t *testing.T) {
 					child.Finish()
 				}
 			}()
-			// closing will attempt trigger the two goroutines at approximately the same time.
-			close(done)
 			wg.Wait()
 		})
 	}

@@ -107,12 +107,6 @@ func generateRootConfig(rootDir string) (map[string]string, error) {
 	if err != nil {
 		return nil, fmt.Errorf("listing packages to import: %w", err)
 	}
-
-	// Add the instrumentation/testutils/grpc/v2 module to the identified modules.
-	// Adding the package to the paths causes issues.
-	instTestutilsGRPC := "github.com/DataDog/dd-trace-go/instrumentation/testutils/grpc/v2"
-	modules[instTestutilsGRPC] = filepath.Join(rootDir, "instrumentation", "testutils", "grpc")
-
 	// Sort to ensure consistent ordering...
 	slices.Sort(paths)
 
