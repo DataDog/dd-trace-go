@@ -5,7 +5,7 @@ go 1.23.0
 require (
 	cloud.google.com/go/pubsub v1.44.0
 	github.com/99designs/gqlgen v0.17.62
-	github.com/DataDog/dd-trace-go/orchestrion/all/v2 v2.0.0-rc.9
+	github.com/DataDog/dd-trace-go/orchestrion/all/v2 v2.0.0-rc.10
 	github.com/DataDog/dd-trace-go/v2 v2.0.0-rc.10
 	github.com/DataDog/go-libddwaf/v3 v3.5.4
 	github.com/DataDog/orchestrion v1.2.0
