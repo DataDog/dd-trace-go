@@ -8,6 +8,7 @@ package gotesting
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -773,6 +774,8 @@ func setUpHTTPServer(
 
 		// Settings request
 		if r.URL.Path == "/api/v2/libraries/tests/services/setting" {
+			body, _ := io.ReadAll(r.Body)
+			fmt.Printf("MockApi received body: %s\n", body)
 			w.Header().Set("Content-Type", "application/json")
 			response := struct {
 				Data struct {
@@ -801,6 +804,8 @@ func setUpHTTPServer(
 			fmt.Printf("MockApi sending response: %v\n", response)
 			json.NewEncoder(w).Encode(&response)
 		} else if enableKnownTests && r.URL.Path == "/api/v2/ci/libraries/tests" {
+			body, _ := io.ReadAll(r.Body)
+			fmt.Printf("MockApi received body: %s\n", body)
 			w.Header().Set("Content-Type", "application/json")
 			response := struct {
 				Data struct {
@@ -817,11 +822,15 @@ func setUpHTTPServer(
 			fmt.Printf("MockApi sending response: %v\n", response)
 			json.NewEncoder(w).Encode(&response)
 		} else if r.URL.Path == "/api/v2/git/repository/search_commits" {
+			body, _ := io.ReadAll(r.Body)
+			fmt.Printf("MockApi received body: %s\n", body)
 			w.Header().Set("Content-Type", "application/json")
 			w.Write([]byte("{}"))
 		} else if r.URL.Path == "/api/v2/git/repository/packfile" {
 			w.WriteHeader(http.StatusAccepted)
 		} else if itrEnabled && r.URL.Path == "/api/v2/ci/tests/skippable" {
+			body, _ := io.ReadAll(r.Body)
+			fmt.Printf("MockApi received body: %s\n", body)
 			w.Header().Set("Content-Type", "application/json")
 			response := skippableResponse{
 				Meta: skippableResponseMeta{
@@ -839,6 +848,8 @@ func setUpHTTPServer(
 			fmt.Printf("MockApi sending response: %v\n", response)
 			json.NewEncoder(w).Encode(&response)
 		} else if r.URL.Path == "/api/v2/test/libraries/test-management/tests" {
+			body, _ := io.ReadAll(r.Body)
+			fmt.Printf("MockApi received body: %s\n", body)
 			w.Header().Set("Content-Type", "application/json")
 			response := struct {
 				Data struct {

@@ -115,6 +115,8 @@ func (mw *traceMiddleware) startTraceMiddleware(stack *middleware.Stack) error {
 			eventBridgeTracer.EnrichOperation(span, in, operation)
 		case "SFN":
 			sfnTracer.EnrichOperation(span, in, operation)
+		case "DynamoDB":
+			spanctx = spanpointers.SetDynamoDbParamsOnContext(spanctx, in.Parameters)
 		}
 
 		// Handle initialize and continue through the middleware chain.
@@ -349,8 +351,7 @@ func (mw *traceMiddleware) deserializeTraceMiddleware(stack *middleware.Stack) e
 		}
 
 		// Create span pointers
-		serviceID := awsmiddleware.GetServiceID(ctx)
-		spanpointers.AddSpanPointers(serviceID, in, out, span)
+		spanpointers.AddSpanPointers(ctx, in, out, span)
 
 		if err != nil && (mw.cfg.errCheck == nil || mw.cfg.errCheck(err)) {
 			span.SetTag(ext.Error, err)

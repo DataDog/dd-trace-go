@@ -86,8 +86,29 @@ func AddWAFMonitoringTags(th trace.TagSetter, metrics *emitter.ContextMetrics, r
 		th.SetTag(raspTimeoutTag, stats.TimeoutRASPCount)
 	}
 
-	for reason, truncations := range stats.Truncations {
-		th.SetTag(truncationTagPrefix+string(reason), truncations)
+	addTruncationTags(th, stats)
+}
+
+// addTruncationTags adds the span tags related to the truncations
+func addTruncationTags(th trace.TagSetter, stats waf.Stats) {
+	wafMaxTruncationsMapSize := max(len(stats.Truncations), len(stats.TruncationsRASP))
+	if wafMaxTruncationsMapSize == 0 {
+		return
+	}
+
+	wafMaxTruncationsMap := make(map[waf.TruncationReason]int, wafMaxTruncationsMapSize)
+	for reason, list := range stats.Truncations {
+		wafMaxTruncationsMap[reason] = max(0, len(list))
+	}
+
+	for reason, list := range stats.TruncationsRASP {
+		wafMaxTruncationsMap[reason] = max(wafMaxTruncationsMap[reason], len(list))
+	}
+
+	for reason, count := range wafMaxTruncationsMap {
+		if count > 0 {
+			th.SetTag(truncationTagPrefix+reason.String(), count)
+		}
 	}
 }
 

@@ -306,6 +306,9 @@ func createCITagsMap() map[string]string {
 		}
 	}
 
+	// Apply environmental data if is available
+	applyEnvironmentalDataIfRequired(localTags)
+
 	log.Debug("civisibility: workspace directory: %v", localTags[constants.CIWorkspacePath])
 	log.Debug("civisibility: common tags created with %v items", len(localTags))
 	return localTags

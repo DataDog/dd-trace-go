@@ -20,7 +20,7 @@ on:
       - 'instrumentation/**'
   schedule: # nightly
     - cron: "0 0 * * *"
-  workflow_dispatch: {} # manually
+  workflow_dispatch: { } # manually
   pull_request:
     branches:
       - '**'
@@ -98,8 +98,16 @@ jobs:
           cache: true
       - name: go mod tidy
         run: |-
+          # generate orchestrion integration test suite go.mod file
+          go generate -tags=tools ./orchestrion/all/...
+
+          # run go.mod tidy on all go.mod files
           find -name go.mod -execdir go mod tidy \;
           git diff --exit-code
+
+          # We dont to actually sync dependencies, just check if the go.work.sum file is up-to-date
+          go work sync
+          git diff --exit-code -- go.work.sum
 
   # TODO: macos setup requirements (xcode tools installation, etc.)
   setup-requirements-linux:
@@ -203,3 +211,16 @@ jobs:
             go_libddwaf_ref=${{ inputs.go-libddwaf-ref }}
       - name: Test
         run: docker run -p7777:7777 --rm smoke-test
+
+  smoke-tests-done:
+    name: Smoke Tests
+    needs: setup-requirements-linux
+    runs-on: ubuntu-latest
+    if: success() || failure()
+    steps:
+      - name: Success
+        if: needs.setup-requirements-linux.result == 'success'
+        run: echo "Success!"
+      - name: Failure
+        if: needs.setup-requirements-linux.result != 'success'
+        run: echo "Failure!" && exit 1
