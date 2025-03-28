@@ -241,13 +241,6 @@ func (c *spanContext) baggageItem(key string) string {
 	return c.baggage[key]
 }
 
-func (c *spanContext) meta(key string) (val string, ok bool) {
-	c.span.RLock()
-	defer c.span.RUnlock()
-	val, ok = c.span.Meta[key]
-	return val, ok
-}
-
 // finish marks this span as finished in the trace.
 func (c *spanContext) finish() { c.trace.finishedOne(c.span) }
 
@@ -419,9 +412,6 @@ func (t *trace) push(sp *span) {
 		t.setSamplingPriorityLocked(int(v), samplernames.Unknown)
 	}
 	t.spans = append(t.spans, sp)
-	if haveTracer {
-		atomic.AddUint32(&tr.spansStarted, 1)
-	}
 }
 
 // setTraceTags sets all "trace level" tags on the provided span
@@ -504,7 +494,7 @@ func (t *trace) finishedOne(s *span) {
 		return // The trace hasn't completed and partial flushing will not occur
 	}
 	log.Debug("Partial flush triggered with %d finished spans", t.finished)
-	telemetry.GlobalClient.Count(telemetry.NamespaceTracers, "trace_partial_flush.count", 1, []string{"reason:large_trace"}, true)
+	telemetry.Count(telemetry.NamespaceTracers, "trace_partial_flush.count", []string{"reason:large_trace"}).Submit(1)
 	finishedSpans := make([]*span, 0, t.finished)
 	leftoverSpans := make([]*span, 0, len(t.spans)-t.finished)
 	for _, s2 := range t.spans {
@@ -514,9 +504,8 @@ func (t *trace) finishedOne(s *span) {
 			leftoverSpans = append(leftoverSpans, s2)
 		}
 	}
-	// TODO: (Support MetricKindDist) Re-enable these when we actually support `MetricKindDist`
-	//telemetry.GlobalClient.Record(telemetry.NamespaceTracers, telemetry.MetricKindDist, "trace_partial_flush.spans_closed", float64(len(finishedSpans)), nil, true)
-	//telemetry.GlobalClient.Record(telemetry.NamespaceTracers, telemetry.MetricKindDist, "trace_partial_flush.spans_remaining", float64(len(leftoverSpans)), nil, true)
+	telemetry.Distribution(telemetry.NamespaceTracers, "trace_partial_flush.spans_closed", nil).Submit(float64(len(finishedSpans)))
+	telemetry.Distribution(telemetry.NamespaceTracers, "trace_partial_flush.spans_remaining", nil).Submit(float64(len(leftoverSpans)))
 	finishedSpans[0].setMetric(keySamplingPriority, *t.priority)
 	if s != t.spans[0] {
 		// Make sure the first span in the chunk has the trace-level tags
@@ -530,7 +519,6 @@ func (t *trace) finishedOne(s *span) {
 }
 
 func (t *trace) finishChunk(tr *tracer, ch *chunk) {
-	atomic.AddUint32(&tr.spansFinished, uint32(len(ch.spans)))
 	tr.pushChunk(ch)
 	t.finished = 0 // important, because a buffer can be used for several flushes
 }

@@ -227,9 +227,11 @@ func TestReadMessageFunctional(t *testing.T) {
 	assert.Equal(t, "queue", s0.Tag(ext.SpanType))
 	assert.Equal(t, 0, s0.Tag(ext.MessagingKafkaPartition))
 	assert.Equal(t, "segmentio/kafka.go.v0", s0.Tag(ext.Component))
+	assert.Equal(t, "segmentio/kafka.go.v0", s0.Integration())
 	assert.Equal(t, ext.SpanKindProducer, s0.Tag(ext.SpanKind))
 	assert.Equal(t, "kafka", s0.Tag(ext.MessagingSystem))
 	assert.Equal(t, "localhost:9092,localhost:9093,localhost:9094", s0.Tag(ext.KafkaBootstrapServers))
+	assert.Equal(t, testTopic, s0.Tag("messaging.destination.name"))
 
 	p, ok := datastreams.PathwayFromContext(datastreams.ExtractFromBase64Carrier(context.Background(), tracing.NewMessageCarrier(wrapMessage(&writtenMessages[0]))))
 	assert.True(t, ok)
@@ -247,9 +249,11 @@ func TestReadMessageFunctional(t *testing.T) {
 	assert.Equal(t, "queue", s1.Tag(ext.SpanType))
 	assert.Equal(t, 0, s1.Tag(ext.MessagingKafkaPartition))
 	assert.Equal(t, "segmentio/kafka.go.v0", s1.Tag(ext.Component))
+	assert.Equal(t, "segmentio/kafka.go.v0", s1.Integration())
 	assert.Equal(t, ext.SpanKindConsumer, s1.Tag(ext.SpanKind))
 	assert.Equal(t, "kafka", s1.Tag(ext.MessagingSystem))
 	assert.Equal(t, "localhost:9092,localhost:9093,localhost:9094", s1.Tag(ext.KafkaBootstrapServers))
+	assert.Equal(t, testTopic, s1.Tag("messaging.destination.name"))
 
 	// context propagation
 	assert.Equal(t, s0.SpanID(), s1.ParentID(), "consume span should be child of the produce span")
@@ -311,9 +315,11 @@ func TestFetchMessageFunctional(t *testing.T) {
 	assert.Equal(t, "queue", s0.Tag(ext.SpanType))
 	assert.Equal(t, 0, s0.Tag(ext.MessagingKafkaPartition))
 	assert.Equal(t, "segmentio/kafka.go.v0", s0.Tag(ext.Component))
+	assert.Equal(t, "segmentio/kafka.go.v0", s0.Integration())
 	assert.Equal(t, ext.SpanKindProducer, s0.Tag(ext.SpanKind))
 	assert.Equal(t, "kafka", s0.Tag(ext.MessagingSystem))
 	assert.Equal(t, "localhost:9092,localhost:9093,localhost:9094", s0.Tag(ext.KafkaBootstrapServers))
+	assert.Equal(t, testTopic, s0.Tag("messaging.destination.name"))
 
 	p, ok := datastreams.PathwayFromContext(datastreams.ExtractFromBase64Carrier(context.Background(), tracing.NewMessageCarrier(wrapMessage(&writtenMessages[0]))))
 	assert.True(t, ok)
@@ -331,9 +337,11 @@ func TestFetchMessageFunctional(t *testing.T) {
 	assert.Equal(t, "queue", s1.Tag(ext.SpanType))
 	assert.Equal(t, 0, s1.Tag(ext.MessagingKafkaPartition))
 	assert.Equal(t, "segmentio/kafka.go.v0", s1.Tag(ext.Component))
+	assert.Equal(t, "segmentio/kafka.go.v0", s1.Integration())
 	assert.Equal(t, ext.SpanKindConsumer, s1.Tag(ext.SpanKind))
 	assert.Equal(t, "kafka", s1.Tag(ext.MessagingSystem))
 	assert.Equal(t, "localhost:9092,localhost:9093,localhost:9094", s1.Tag(ext.KafkaBootstrapServers))
+	assert.Equal(t, testTopic, s1.Tag("messaging.destination.name"))
 
 	// context propagation
 	assert.Equal(t, s0.SpanID(), s1.ParentID(), "consume span should be child of the produce span")

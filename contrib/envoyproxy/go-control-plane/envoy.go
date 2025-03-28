@@ -11,6 +11,7 @@ import (
 	"io"
 	"math"
 	"net/http"
+	"path"
 	"strings"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/httptrace"
@@ -204,6 +205,7 @@ func processRequestHeaders(ctx context.Context, req *envoyextproc.ProcessingRequ
 	var blocked bool
 	fakeResponseWriter := newFakeResponseWriter()
 	wrappedResponseWriter, request, afterHandle, blocked := httptrace.BeforeHandle(&httptrace.ServeConfig{
+		Resource: request.Method + " " + path.Clean(request.URL.Path),
 		SpanOpts: []ddtrace.StartSpanOption{
 			tracer.Tag(ext.SpanKind, ext.SpanKindServer),
 			tracer.Tag(ext.Component, componentName),
@@ -271,6 +273,14 @@ func propagationRequestHeaderMutation(span ddtrace.Span) (*envoyextproc.Processi
 
 func processResponseHeaders(res *envoyextproc.ProcessingRequest_ResponseHeaders, currentRequest *currentRequest) (*envoyextproc.ProcessingResponse, error) {
 	log.Debug("external_processing: received response headers: %v\n", res.ResponseHeaders)
+
+	if currentRequest == nil {
+		// Can happen when a malformed request is sent to Envoy (with no header), the request is never sent to the External Processor and directly passed to the server
+		// However the response of the server (which is valid) is sent to the External Processor and fail to be processed
+		log.Warn("external_processing: can't process the response: envoy never sent the beginning of the request, this is a known issue" +
+			" and can happen when a malformed request is sent to Envoy where the header Host is missing. See link to issue https://github.com/envoyproxy/envoy/issues/38022")
+		return nil, status.Errorf(codes.InvalidArgument, "Error processing response headers from ext_proc: can't process the response")
+	}
 
 	if err := createFakeResponseWriter(currentRequest.wrappedResponseWriter, res); err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "Error processing response headers from ext_proc: %v", err)
@@ -340,7 +350,7 @@ func doBlockResponse(writer *fakeResponseWriter) *envoyextproc.ProcessingRespons
 				Headers: &envoyextproc.HeaderMutation{
 					SetHeaders: headersMutation,
 				},
-				Body: string(writer.body),
+				Body: writer.body,
 				GrpcStatus: &envoyextproc.GrpcStatus{
 					Status: 0,
 				},

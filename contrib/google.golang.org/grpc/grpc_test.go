@@ -110,6 +110,7 @@ func TestUnary(t *testing.T) {
 			assert.Equal(rootSpan.TraceID(), clientSpan.TraceID())
 			assert.Equal(methodKindUnary, clientSpan.Tag(tagMethodKind))
 			assert.Equal("google.golang.org/grpc", clientSpan.Tag(ext.Component))
+			assert.Equal(componentName, clientSpan.Integration())
 			assert.Equal(ext.SpanKindClient, clientSpan.Tag(ext.SpanKind))
 			assert.Equal("grpc", clientSpan.Tag(ext.RPCSystem))
 			assert.Equal("grpc.Fixture", clientSpan.Tag(ext.RPCService))
@@ -205,16 +206,19 @@ func TestStreaming(t *testing.T) {
 					" expected component to be grpc-go in span %v", span)
 				assert.Equal(t, ext.SpanKindClient, span.Tag(ext.SpanKind),
 					" expected spankind to be client in span %v", span)
+				assert.Equal(t, componentName, span.Integration())
 			case "grpc.server":
 				assert.Equal(t, "google.golang.org/grpc", span.Tag(ext.Component),
 					" expected component to be grpc-go in span %v", span)
 				assert.Equal(t, ext.SpanKindServer, span.Tag(ext.SpanKind),
 					" expected spankind to be server in span %v, %v", span, span.OperationName())
+				assert.Equal(t, componentName, span.Integration())
 			case "grpc.message":
 				assert.Equal(t, "google.golang.org/grpc", span.Tag(ext.Component),
 					" expected component to be grpc-go in span %v", span)
 				assert.NotContains(t, span.Tags(), ext.SpanKind,
 					" expected no spankind tag to be in span %v", span)
+				assert.Equal(t, componentName, span.Integration())
 			}
 
 		}
@@ -520,20 +524,20 @@ func TestStreamSendsErrorCode(t *testing.T) {
 	// to flush the spans
 	_, _ = stream.Recv()
 
-	containsErrorCode := false
 	spans := mt.FinishedSpans()
 
-	// check if at least one span has error code
+	// check if at least one span with spank.kind=server has error code
+	var span mocktracer.Span
 	for _, s := range spans {
-		if s.Tag(tagCode) == wantCode {
-			containsErrorCode = true
+		if s.Tag(tagCode) != wantCode {
+			continue
 		}
+		if s.Tag(ext.SpanKind) != ext.SpanKindServer {
+			continue
+		}
+		span = s
 	}
-	assert.True(t, containsErrorCode, "at least one span should contain error code, the spans were:\n%v", spans)
-
-	// ensure that last span contains error code also
-	gotLastSpanCode := spans[len(spans)-1].Tag(tagCode)
-	assert.Equal(t, wantCode, gotLastSpanCode, "last span should contain error code")
+	assert.NotNilf(t, span, "at least one span should contain error code, the spans were:\n%v", spans)
 }
 
 // fixtureServer a dummy implementation of our grpc fixtureServer.

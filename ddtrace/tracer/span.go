@@ -10,6 +10,7 @@ package tracer
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"os"
 	"reflect"
@@ -79,16 +80,26 @@ type span struct {
 	ParentID   uint64             `msg:"parent_id"`             // identifier of the span's direct parent
 	Error      int32              `msg:"error"`                 // error status of the span; 0 means no errors
 	SpanLinks  []ddtrace.SpanLink `msg:"span_links,omitempty"`  // links to other spans
+	SpanEvents []spanEvent        `msg:"span_events,omitempty"` // events produced related to his span
 
-	goExecTraced bool         `msg:"-"`
-	noDebugStack bool         `msg:"-"` // disables debug stack traces
-	finished     bool         `msg:"-"` // true if the span has been submitted to a tracer. Can only be read/modified if the trace is locked.
-	context      *spanContext `msg:"-"` // span propagation context
+	goExecTraced   bool         `msg:"-"`
+	noDebugStack   bool         `msg:"-"` // disables debug stack traces
+	finished       bool         `msg:"-"` // true if the span has been submitted to a tracer. Can only be read/modified if the trace is locked.
+	context        *spanContext `msg:"-"` // span propagation context
+	integration    string       `msg:"-"` // where the span was started from, such as a specific contrib or "manual"
+	supportsEvents bool         `msg:"-"` // whether the span supports native span events or not
 
 	pprofCtxActive  context.Context `msg:"-"` // contains pprof.WithLabel labels to tell the profiler more about this span
 	pprofCtxRestore context.Context `msg:"-"` // contains pprof.WithLabel labels of the parent span (if any) that need to be restored when this span finishes
 
 	taskEnd func() // ends execution tracer (runtime/trace) task, if started
+}
+
+type SpanWithLinks interface {
+	ddtrace.Span
+
+	// AddSpanLink appends the given link to span's span links.
+	AddSpanLink(link ddtrace.SpanLink)
 }
 
 // Context yields the SpanContext for this Span. Note that the return
@@ -128,6 +139,11 @@ func (s *span) SetTag(key string, value interface{}) {
 			noDebugStack: s.noDebugStack,
 		})
 		return
+	case ext.Component:
+		integration, ok := value.(string)
+		if ok {
+			s.integration = integration
+		}
 	}
 	if v, ok := value.(bool); ok {
 		s.setTagBool(key, v)
@@ -147,7 +163,7 @@ func (s *span) SetTag(key string, value interface{}) {
 		s.setMeta(key, v)
 		return
 	}
-	if v, ok := toFloat64(value); ok {
+	if v, ok := sharedinternal.ToFloat64(value); ok {
 		s.setMetric(key, v)
 		return
 	}
@@ -178,7 +194,7 @@ func (s *span) SetTag(key string, value interface{}) {
 			for i := 0; i < slice.Len(); i++ {
 				key := fmt.Sprintf("%s.%d", key, i)
 				v := slice.Index(i)
-				if num, ok := toFloat64(v.Interface()); ok {
+				if num, ok := sharedinternal.ToFloat64(v.Interface()); ok {
 					s.setMetric(key, num)
 				} else {
 					s.setMeta(key, fmt.Sprintf("%v", v))
@@ -192,6 +208,12 @@ func (s *span) SetTag(key string, value interface{}) {
 		if v, ok := value.(sharedinternal.MetaStructValue); ok {
 			s.setMetaStruct(key, v.Value)
 			return
+		}
+
+		// Add this trace source tag to propagating tags and to span tags
+		// reserved for internal use only
+		if v, ok := value.(sharedinternal.TraceSourceTagValue); ok {
+			s.context.trace.setTraceSourcePropagatingTag(key, v.Value)
 		}
 	}
 
@@ -267,6 +289,8 @@ func (s *span) SetUser(id string, opts ...UserMonitoringOption) {
 
 	usrData := map[string]string{
 		keyUserID:        id,
+		keyUserLogin:     cfg.Login,
+		keyUserOrg:       cfg.Org,
 		keyUserEmail:     cfg.Email,
 		keyUserName:      cfg.Name,
 		keyUserScope:     cfg.Scope,
@@ -458,6 +482,49 @@ func (s *span) setMetric(key string, v float64) {
 	}
 }
 
+// AddSpanLink appends the given link to the span's span links.
+func (s *span) AddSpanLink(link ddtrace.SpanLink) {
+	s.SpanLinks = append(s.SpanLinks, link)
+}
+
+// serializeSpanLinksInMeta saves span links as a JSON string under `Span[meta][_dd.span_links]`.
+func (s *span) serializeSpanLinksInMeta() {
+	if len(s.SpanLinks) == 0 {
+		return
+	}
+	spanLinkBytes, err := json.Marshal(s.SpanLinks)
+	if err != nil {
+		log.Debug("Unable to marshal span links. Not adding span links to span meta.")
+		return
+	}
+	if s.Meta == nil {
+		s.Meta = make(map[string]string)
+	}
+	s.Meta["_dd.span_links"] = string(spanLinkBytes)
+}
+
+// serializeSpanEvents sets the span events from the current span in the correct transport, depending on whether the
+// agent supports the native method or not.
+func (s *span) serializeSpanEvents() {
+	if len(s.SpanEvents) == 0 {
+		return
+	}
+	// if span events are natively supported by the agent, there's nothing to do
+	// as the events will be already included when the span is serialized.
+	if s.supportsEvents {
+		return
+	}
+	// otherwise, we need to serialize them as a string tag and remove them from the struct
+	// so they are not sent twice.
+	b, err := json.Marshal(s.SpanEvents)
+	s.SpanEvents = nil
+	if err != nil {
+		log.Debug("Unable to marshal span events; events dropped from span meta\n%v", err)
+		return
+	}
+	s.Meta["events"] = string(b)
+}
+
 // Finish closes this Span (but not its children) providing the duration
 // of its part of the tracing session.
 func (s *span) Finish(opts ...ddtrace.FinishOption) {
@@ -507,6 +574,9 @@ func (s *span) Finish(opts ...ddtrace.FinishOption) {
 			}
 		}
 	}
+
+	s.serializeSpanLinksInMeta()
+	s.serializeSpanEvents()
 
 	s.finish(t)
 	orchestrion.GLSPopValue(sharedinternal.ActiveSpanKey)
@@ -577,6 +647,7 @@ func (s *span) finish(finishTime int64) {
 				log.Error("Abandoned spans channel full, disregarding span.")
 			}
 		}
+		t.spansFinished.Inc(s.integration)
 	}
 	if keep {
 		// a single kept span keeps the whole trace.
@@ -716,6 +787,37 @@ func (s *span) Format(f fmt.State, c rune) {
 	}
 }
 
+// AddEvent attaches a new event to the current span.
+func (s *span) AddEvent(name string, opts ...ddtrace.SpanEventOption) {
+	if s.finished {
+		return
+	}
+	cfg := ddtrace.SpanEventConfig{}
+	for _, opt := range opts {
+		opt(&cfg)
+	}
+	if cfg.Time.IsZero() {
+		cfg.Time = time.Now()
+	}
+	event := spanEvent{
+		Name:         name,
+		TimeUnixNano: uint64(cfg.Time.UnixNano()),
+	}
+	if s.supportsEvents {
+		event.Attributes = toSpanEventAttributeMsg(cfg.Attributes)
+	} else {
+		event.RawAttributes = cfg.Attributes
+	}
+	s.SpanEvents = append(s.SpanEvents, event)
+}
+
+func getMeta(s *span, key string) (string, bool) {
+	s.RLock()
+	defer s.RUnlock()
+	val, ok := s.Meta[key]
+	return val, ok
+}
+
 const (
 	keySamplingPriority     = "_sampling_priority_v1"
 	keySamplingPriorityRate = "_dd.agent_psr"
@@ -743,6 +845,9 @@ const (
 	keySingleSpanSamplingMPS = "_dd.span_sampling.max_per_second"
 	// keyPropagatedUserID holds the propagated user identifier, if user id propagation is enabled.
 	keyPropagatedUserID = "_dd.p.usr.id"
+	// keyPropagatedTraceSource holds a 2 character hexadecimal string representation of the product responsible
+	// for the span creation.
+	keyPropagatedTraceSource = "_dd.p.ts"
 	//keyTracerHostname holds the tracer detected hostname, only present when not connected over UDS to agent.
 	keyTracerHostname = "_dd.tracer_hostname"
 	// keyTraceID128 is the lowercase, hex encoded upper 64 bits of a 128-bit trace id, if present.
@@ -762,6 +867,8 @@ const (
 	keyUserID        = "usr.id"
 	keyUserEmail     = "usr.email"
 	keyUserName      = "usr.name"
+	keyUserLogin     = "usr.login"
+	keyUserOrg       = "usr.org"
 	keyUserRole      = "usr.role"
 	keyUserScope     = "usr.scope"
 	keyUserSessionID = "usr.session_id"

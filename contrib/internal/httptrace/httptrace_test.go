@@ -97,7 +97,7 @@ func TestConfiguredErrorStatuses(t *testing.T) {
 		statuses := []int{0, 200, 400, 500}
 		r := httptest.NewRequest(http.MethodGet, "/test", nil)
 		for i, status := range statuses {
-			sp, _ := StartRequestSpan(r)
+			sp, _, _ := StartRequestSpan(r)
 			FinishRequestSpan(sp, status, nil)
 			spans := mt.FinishedSpans()
 			require.Len(t, spans, i+1)
@@ -125,7 +125,7 @@ func TestConfiguredErrorStatuses(t *testing.T) {
 		ResetCfg()
 
 		r := httptest.NewRequest(http.MethodGet, "/test", nil)
-		sp, _ := StartRequestSpan(r)
+		sp, _, _ := StartRequestSpan(r)
 		FinishRequestSpan(sp, 0, nil)
 		spans := mt.FinishedSpans()
 		require.Len(t, spans, 1)
@@ -153,7 +153,7 @@ func TestHeaderTagsFromRequest(t *testing.T) {
 
 	hs := []string{"header1:tag1", "header2:tag2", "header3:tag3", "x-datadog-header:tag4"}
 	ht := internal.NewLockMap(normalizer.HeaderTagSlice(hs))
-	s, _ := StartRequestSpan(r, HeaderTagsFromRequest(r, ht))
+	s, _, _ := StartRequestSpan(r, HeaderTagsFromRequest(r, ht))
 	s.Finish()
 	spans := mt.FinishedSpans()
 	require.Len(t, spans, 1)
@@ -167,7 +167,7 @@ func TestStartRequestSpan(t *testing.T) {
 	mt := mocktracer.Start()
 	defer mt.Stop()
 	r := httptest.NewRequest(http.MethodGet, "/somePath", nil)
-	s, _ := StartRequestSpan(r)
+	s, _, _ := StartRequestSpan(r)
 	s.Finish()
 	spans := mt.FinishedSpans()
 	require.Len(t, spans, 1)
@@ -237,7 +237,7 @@ func TestTraceClientIPFlag(t *testing.T) {
 
 			r := httptest.NewRequest(http.MethodGet, "/somePath", nil)
 			r.RemoteAddr = tc.remoteAddr
-			s, _ := StartRequestSpan(r)
+			s, _, _ := StartRequestSpan(r)
 			s.Finish()
 			spans := mt.FinishedSpans()
 			targetSpan := spans[0]
@@ -345,7 +345,7 @@ func TestURLTag(t *testing.T) {
 			if tc.port != "" {
 				r.Host += ":" + tc.port
 			}
-			url := urlFromRequest(&r)
+			url := UrlFromRequest(&r, true)
 			require.Equal(t, tc.expectedURL, url)
 		})
 	}
@@ -370,4 +370,22 @@ func BenchmarkStartRequestSpan(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		StartRequestSpan(r, opts...)
 	}
+}
+
+func TestStartRequestSpanWithBaggage(t *testing.T) {
+	t.Setenv("DD_TRACE_PROPAGATION_STYLE", "datadog,tracecontext,baggage")
+	tracer.Start()
+	defer tracer.Stop()
+
+	r := httptest.NewRequest(http.MethodGet, "/somePath", nil)
+	r.Header.Set("baggage", "key1=value1,key2=value2")
+	s, _, _ := StartRequestSpan(r)
+	s.Finish()
+	spanBm := make(map[string]string)
+	s.Context().ForeachBaggageItem(func(k, v string) bool {
+		spanBm[k] = v
+		return true
+	})
+	assert.Equal(t, "value1", spanBm["key1"])
+	assert.Equal(t, "value2", spanBm["key2"])
 }

@@ -30,7 +30,7 @@ runs:
 
     - name: Datadog CI CLI cache
       id: dd-ci-cli-cache
-      uses: actions/cache@v3
+      uses: actions/cache@2f8e54208210a422b2efd51efaa6bd6d7ca8920f # v3.4.3
       with:
         path: ./datadog-ci
         key: datadog-ci-cli-${{ env.DD_CI_CLI_BUILD }}
@@ -41,6 +41,10 @@ runs:
       run: |
         curl -L --fail "https://github.com/DataDog/datadog-ci/releases/latest/download/datadog-ci_${{ env.DD_CI_CLI_BUILD }}" --output datadog-ci    
         chmod +x datadog-ci
+
+    - name: Add CodeOwners to JUnit files
+      shell: bash
+      run: ./.github/actions/add-codeowners/codeowners.sh ${{ inputs.files }}
 
     - name: Upload the JUnit files
       shell: bash

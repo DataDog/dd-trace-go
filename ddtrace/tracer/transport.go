@@ -18,7 +18,6 @@ import (
 	"time"
 
 	pb "github.com/DataDog/datadog-agent/pkg/proto/pbgo/trace"
-
 	traceinternal "gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
@@ -56,12 +55,13 @@ func defaultHTTPClient(timeout time.Duration) *http.Client {
 }
 
 const (
-	defaultHostname    = "localhost"
-	defaultPort        = "8126"
-	defaultAddress     = defaultHostname + ":" + defaultPort
-	defaultURL         = "http://" + defaultAddress
-	defaultHTTPTimeout = 10 * time.Second        // defines the current timeout before giving up with the send process
-	traceCountHeader   = "X-Datadog-Trace-Count" // header containing the number of traces in the payload
+	defaultHostname          = "localhost"
+	defaultPort              = "8126"
+	defaultAddress           = defaultHostname + ":" + defaultPort
+	defaultURL               = "http://" + defaultAddress
+	defaultHTTPTimeout       = 10 * time.Second              // defines the current timeout before giving up with the send process
+	traceCountHeader         = "X-Datadog-Trace-Count"       // header containing the number of traces in the payload
+	obfuscationVersionHeader = "Datadog-Obfuscation-Version" // header containing the version of obfuscation used, if any
 )
 
 // transport is an interface for communicating data to the agent.
@@ -70,7 +70,8 @@ type transport interface {
 	// It returns a non-nil response body when no error occurred.
 	send(p *payload) (body io.ReadCloser, err error)
 	// sendStats sends the given stats payload to the agent.
-	sendStats(s *pb.ClientStatsPayload) error
+	// tracerObfuscationVersion is the version of obfuscation applied (0 if none was applied)
+	sendStats(s *pb.ClientStatsPayload, tracerObfuscationVersion int) error
 	// endpoint returns the URL to which the transport will send traces.
 	endpoint() string
 }
@@ -104,6 +105,9 @@ func newHTTPTransport(url string, client *http.Client) *httpTransport {
 	if eid := internal.EntityID(); eid != "" {
 		defaultHeaders["Datadog-Entity-ID"] = eid
 	}
+	if extEnv := internal.ExternalEnvironment(); extEnv != "" {
+		defaultHeaders["Datadog-External-Env"] = extEnv
+	}
 	return &httpTransport{
 		traceURL: fmt.Sprintf("%s/v0.4/traces", url),
 		statsURL: fmt.Sprintf("%s/v0.6/stats", url),
@@ -112,7 +116,7 @@ func newHTTPTransport(url string, client *http.Client) *httpTransport {
 	}
 }
 
-func (t *httpTransport) sendStats(p *pb.ClientStatsPayload) error {
+func (t *httpTransport) sendStats(p *pb.ClientStatsPayload, tracerObfuscationVersion int) error {
 	var buf bytes.Buffer
 	if err := msgp.Encode(&buf, p); err != nil {
 		return err
@@ -120,6 +124,12 @@ func (t *httpTransport) sendStats(p *pb.ClientStatsPayload) error {
 	req, err := http.NewRequest("POST", t.statsURL, &buf)
 	if err != nil {
 		return err
+	}
+	for header, value := range t.headers {
+		req.Header.Set(header, value)
+	}
+	if tracerObfuscationVersion > 0 {
+		req.Header.Set(obfuscationVersionHeader, strconv.Itoa(tracerObfuscationVersion))
 	}
 	resp, err := t.client.Do(req)
 	if err != nil {
@@ -151,14 +161,18 @@ func (t *httpTransport) send(p *payload) (body io.ReadCloser, err error) {
 	}
 	req.Header.Set(traceCountHeader, strconv.Itoa(p.itemCount()))
 	req.Header.Set(headerComputedTopLevel, "yes")
-	if t, ok := traceinternal.GetGlobalTracer().(*tracer); ok {
-		if t.config.canComputeStats() {
+	var tr *tracer
+	var haveTracer bool
+	if tr, haveTracer = traceinternal.GetGlobalTracer().(*tracer); haveTracer {
+		if tr.config.tracingAsTransport || tr.config.canComputeStats() {
+			// tracingAsTransport uses this header to disable the trace agent's stats computation
+			// while making canComputeStats() always false to also disable client stats computation.
 			req.Header.Set("Datadog-Client-Computed-Stats", "yes")
 		}
-		droppedTraces := int(atomic.SwapUint32(&t.droppedP0Traces, 0))
-		partialTraces := int(atomic.SwapUint32(&t.partialTraces, 0))
-		droppedSpans := int(atomic.SwapUint32(&t.droppedP0Spans, 0))
-		if stats := t.statsd; stats != nil {
+		droppedTraces := int(atomic.SwapUint32(&tr.droppedP0Traces, 0))
+		partialTraces := int(atomic.SwapUint32(&tr.partialTraces, 0))
+		droppedSpans := int(atomic.SwapUint32(&tr.droppedP0Spans, 0))
+		if stats := tr.statsd; stats != nil {
 			stats.Count("datadog.tracer.dropped_p0_traces", int64(droppedTraces),
 				[]string{fmt.Sprintf("partial:%s", strconv.FormatBool(partialTraces > 0))}, 1)
 			stats.Count("datadog.tracer.dropped_p0_spans", int64(droppedSpans), nil, 1)
@@ -168,9 +182,11 @@ func (t *httpTransport) send(p *payload) (body io.ReadCloser, err error) {
 	}
 	response, err := t.client.Do(req)
 	if err != nil {
+		reportAPIErrorsMetric(haveTracer, response, err, tr)
 		return nil, err
 	}
 	if code := response.StatusCode; code >= 400 {
+		reportAPIErrorsMetric(haveTracer, response, err, tr)
 		// error, check the body for context information and
 		// return a nice error.
 		msg := make([]byte, 1000)
@@ -183,6 +199,20 @@ func (t *httpTransport) send(p *payload) (body io.ReadCloser, err error) {
 		return nil, fmt.Errorf("%s", txt)
 	}
 	return response.Body, nil
+}
+
+func reportAPIErrorsMetric(haveTracer bool, response *http.Response, err error, t *tracer) {
+	if !haveTracer {
+		return
+	}
+	var reason string
+	if err != nil {
+		reason = "network_failure"
+	}
+	if response != nil {
+		reason = fmt.Sprintf("server_response_%d", response.StatusCode)
+	}
+	t.statsd.Incr("datadog.tracer.api.errors", []string{"reason:" + reason}, 1)
 }
 
 func (t *httpTransport) endpoint() string {

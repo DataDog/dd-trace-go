@@ -29,20 +29,22 @@ import (
 
 const (
 	// DefaultMaxRetries is the default number of retries for a request.
-	DefaultMaxRetries int = 5
+	DefaultMaxRetries int = 3
 	// DefaultBackoff is the default backoff time for a request.
-	DefaultBackoff time.Duration = 150 * time.Millisecond
+	DefaultBackoff time.Duration = 100 * time.Millisecond
 )
 
 type (
 	// Client is an interface for sending requests to the Datadog backend.
 	Client interface {
 		GetSettings() (*SettingsResponseData, error)
-		GetEarlyFlakeDetectionData() (*EfdResponseData, error)
+		GetKnownTests() (*KnownTestsResponseData, error)
 		GetCommits(localCommits []string) ([]string, error)
 		SendPackFiles(commitSha string, packFiles []string) (bytes int64, err error)
 		SendCoveragePayload(ciTestCovPayload io.Reader) error
+		SendCoveragePayloadWithFormat(ciTestCovPayload io.Reader, format string) error
 		GetSkippableTests() (correlationID string, skippables map[string]map[string][]SkippableResponseDataAttributes, err error)
+		GetTestManagementTests() (*TestManagementTestsResponseDataModules, error)
 	}
 
 	// client is a client for sending requests to the Datadog backend.
@@ -55,6 +57,7 @@ type (
 		workingDirectory   string
 		repositoryURL      string
 		commitSha          string
+		commitMessage      string
 		branchName         string
 		testConfigurations testConfigurations
 		headers            map[string]string
@@ -125,17 +128,19 @@ func NewClientWithServiceNameAndSubdomain(serviceName, subdomain string) Client 
 	defaultHeaders := map[string]string{}
 	var baseURL string
 	var requestHandler *RequestHandler
+	var agentURL *url.URL
+	var apiKeyValue string
 
 	agentlessEnabled := internal.BoolEnv(constants.CIVisibilityAgentlessEnabledEnvironmentVariable, false)
 	if agentlessEnabled {
 		// Agentless mode is enabled.
-		APIKeyValue := os.Getenv(constants.APIKeyEnvironmentVariable)
-		if APIKeyValue == "" {
+		apiKeyValue = os.Getenv(constants.APIKeyEnvironmentVariable)
+		if apiKeyValue == "" {
 			log.Error("An API key is required for agentless mode. Use the DD_API_KEY env variable to set it")
 			return nil
 		}
 
-		defaultHeaders["dd-api-key"] = APIKeyValue
+		defaultHeaders["dd-api-key"] = apiKeyValue
 
 		// Check for a custom agentless URL.
 		agentlessURL := os.Getenv(constants.CIVisibilityAgentlessURLEnvironmentVariable)
@@ -158,7 +163,7 @@ func NewClientWithServiceNameAndSubdomain(serviceName, subdomain string) Client 
 		// Use agent mode with the EVP proxy.
 		defaultHeaders["X-Datadog-EVP-Subdomain"] = subdomain
 
-		agentURL := internal.AgentURLFromEnv()
+		agentURL = internal.AgentURLFromEnv()
 		if agentURL.Scheme == "unix" {
 			// If we're connecting over UDS we can just rely on the agent to provide the hostname
 			log.Debug("connecting to agent over unix, do not set hostname on any traces")
@@ -204,20 +209,35 @@ func NewClientWithServiceNameAndSubdomain(serviceName, subdomain string) Client 
 
 	if !telemetry.Disabled() {
 		telemetryInit.Do(func() {
-			telemetry.GlobalClient.ApplyOps(
-				telemetry.WithService(serviceName),
-				telemetry.WithEnv(environment),
-				telemetry.WithHTTPClient(requestHandler.Client),
-				telemetry.WithURL(agentlessEnabled, baseURL),
-				telemetry.SyncFlushOnStop(),
+			telemetry.ProductStarted(telemetry.NamespaceCIVisibility)
+			telemetry.RegisterAppConfigs(
+				telemetry.Configuration{Name: "service", Value: serviceName},
+				telemetry.Configuration{Name: "env", Value: environment},
+				telemetry.Configuration{Name: "agentless", Value: agentlessEnabled},
+				telemetry.Configuration{Name: "test_session_name", Value: ciTags[constants.TestSessionName]},
 			)
-			telemetry.GlobalClient.ProductChange(telemetry.NamespaceCiVisibility, true, []telemetry.Configuration{
-				telemetry.StringConfig("service", serviceName),
-				telemetry.StringConfig("env", environment),
-				telemetry.BoolConfig("agentless", agentlessEnabled),
-				telemetry.StringConfig("test_session_name", ciTags[constants.TestSessionName]),
-			})
+			if telemetry.GlobalClient() != nil {
+				return
+			}
+			cfg := telemetry.ClientConfig{
+				HTTPClient: requestHandler.Client,
+				APIKey:     apiKeyValue,
+			}
+			if agentURL != nil {
+				cfg.AgentURL = agentURL.String()
+			}
+			client, err := telemetry.NewClient(serviceName, environment, os.Getenv("DD_VERSION"), cfg)
+			if err != nil {
+				log.Debug("civisibility: failed to create telemetry client: %v", err)
+				return
+			}
+			telemetry.StartApp(client)
 		})
+	}
+
+	bName := ciTags[constants.GitBranch]
+	if bName == "" {
+		bName = "auto:git-detached-head"
 	}
 
 	return &client{
@@ -229,7 +249,8 @@ func NewClientWithServiceNameAndSubdomain(serviceName, subdomain string) Client 
 		workingDirectory: ciTags[constants.CIWorkspacePath],
 		repositoryURL:    ciTags[constants.GitRepositoryURL],
 		commitSha:        ciTags[constants.GitCommitSHA],
-		branchName:       ciTags[constants.GitBranch],
+		commitMessage:    ciTags[constants.GitCommitMessage],
+		branchName:       bName,
 		testConfigurations: testConfigurations{
 			OsPlatform:     ciTags[constants.OSPlatform],
 			OsVersion:      ciTags[constants.OSVersion],

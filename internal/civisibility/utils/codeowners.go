@@ -73,20 +73,38 @@ func GetCodeOwners() *CodeOwners {
 			filepath.Join(v, ".docs", "CODEOWNERS"),
 		}
 		for _, path := range paths {
-			if _, err := os.Stat(path); err == nil {
-				codeowners, err = NewCodeOwners(path)
-				if err == nil {
-					if logger.DebugEnabled() {
-						logger.Debug("civisibility: codeowner file '%v' was loaded successfully.", path)
-					}
-					return codeowners
-				}
-				logger.Debug("Error parsing codeowners: %s", err)
+			if cow, err := parseCodeOwners(path); err == nil {
+				codeowners = cow
+				return codeowners
 			}
 		}
 	}
 
+	// If the codeowners file is not found, let's try a last resort by looking in the current directory (for standalone test binaries)
+	for _, path := range []string{"CODEOWNERS", filepath.Join(filepath.Dir(os.Args[0]), "CODEOWNERS")} {
+		if cow, err := parseCodeOwners(path); err == nil {
+			codeowners = cow
+			return codeowners
+		}
+	}
+
 	return nil
+}
+
+// parseCodeOwners reads and parses the CODEOWNERS file located at the given filePath.
+func parseCodeOwners(filePath string) (*CodeOwners, error) {
+	if _, err := os.Stat(filePath); err != nil {
+		return nil, err
+	}
+	cow, err := NewCodeOwners(filePath)
+	if err == nil {
+		if logger.DebugEnabled() {
+			logger.Debug("civisibility: codeowner file '%v' was loaded successfully.", filePath)
+		}
+		return cow, nil
+	}
+	logger.Debug("Error parsing codeowners: %s", err)
+	return nil, err
 }
 
 // NewCodeOwners creates a new instance of CodeOwners by parsing a CODEOWNERS file located at the given filePath.

@@ -8,6 +8,7 @@ package tracer
 import (
 	gocontext "context"
 	"encoding/binary"
+	"fmt"
 	"log/slog"
 	"math"
 	"os"
@@ -18,19 +19,24 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/google/uuid"
+
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 	globalinternal "gopkg.in/DataDog/dd-trace-go.v1/internal"
+	utils "gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
 	appsecConfig "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/config"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/datastreams"
+	globalconfig "gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/hostname"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/remoteconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/samplernames"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/traceprof"
+	globalversion "gopkg.in/DataDog/dd-trace-go.v1/internal/version"
 
 	"github.com/DataDog/datadog-agent/pkg/obfuscate"
 	"github.com/DataDog/go-runtime-metrics-internal/pkg/runtimemetrics"
@@ -79,9 +85,12 @@ type tracer struct {
 	// pid of the process
 	pid int
 
-	// These integers track metrics about spans and traces as they are started,
-	// finished, and dropped
-	spansStarted, spansFinished, tracesDropped uint32
+	// These maps count the spans started and finished from
+	// each component, including contribs and "manual" spans.
+	spansStarted, spansFinished utils.XSyncMapCounterMap
+
+	// tracesDropped track metrics about traces as they are dropped
+	tracesDropped uint32
 
 	// Keeps track of the total number of traces dropped for accurate logging.
 	totalTracesDropped uint32
@@ -149,7 +158,9 @@ func Start(opts ...StartOption) {
 	if internal.Testing {
 		return // mock tracer active
 	}
-	defer telemetry.Time(telemetry.NamespaceGeneral, "init_time", nil, true)()
+	defer func(now time.Time) {
+		telemetry.Distribution(telemetry.NamespaceGeneral, "init_time", nil).Submit(float64(time.Since(now).Milliseconds()))
+	}(time.Now())
 	t := newTracer(opts...)
 	if !t.config.enabled.current {
 		// TODO: instrumentation telemetry client won't get started
@@ -159,9 +170,6 @@ func Start(opts ...StartOption) {
 		return
 	}
 	internal.SetGlobalTracer(t)
-	if t.config.logStartup {
-		logStartup(t)
-	}
 	if t.dataStreams != nil {
 		t.dataStreams.Start()
 	}
@@ -172,8 +180,6 @@ func Start(opts ...StartOption) {
 		// DD_INSTRUMENTATION_TELEMETRY_ENABLED env var
 		startTelemetry(t.config)
 
-		// start appsec
-		appsec.Start(t.config.appsecStartOptions...)
 		_ = t.hostname() // Prime the hostname cache
 		return
 	}
@@ -189,18 +195,50 @@ func Start(opts ...StartOption) {
 		log.Warn("Remote config startup error: %s", err)
 	}
 
-	// start instrumentation telemetry unless it is disabled through the
-	// DD_INSTRUMENTATION_TELEMETRY_ENABLED env var
-	startTelemetry(t.config)
-
 	// appsec.Start() may use the telemetry client to report activation, so it is
 	// important this happens _AFTER_ startTelemetry() has been called, so the
 	// client is appropriately configured.
 	appsecopts := make([]appsecConfig.StartOption, 0, len(t.config.appsecStartOptions)+1)
 	appsecopts = append(appsecopts, t.config.appsecStartOptions...)
-	appsecopts = append(appsecopts, appsecConfig.WithRCConfig(cfg))
+	appsecopts = append(appsecopts, appsecConfig.WithRCConfig(cfg), appsecConfig.WithMetaStructAvailable(t.config.agent.metaStructAvailable))
 	appsec.Start(appsecopts...)
+
+	// start instrumentation telemetry unless it is disabled through the
+	// DD_INSTRUMENTATION_TELEMETRY_ENABLED env var
+	startTelemetry(t.config)
+
+	if t.config.logStartup {
+		logStartup(t)
+	}
+
+	// store the configuration in an in-memory file, allowing it to be read to
+	// determine if the process is instrumented with a tracer and to retrive
+	// relevant tracing information.
+	storeConfig(t.config)
+
 	_ = t.hostname() // Prime the hostname cache
+}
+
+func storeConfig(c *config) {
+	uuid, _ := uuid.NewRandom()
+	name := fmt.Sprintf("datadog-tracer-info-%s", uuid.String()[0:8])
+
+	metadata := TracerMetadata{
+		SchemaVersion:      1,
+		RuntimeId:          globalconfig.RuntimeID(),
+		Language:           "go",
+		Version:            globalversion.Tag,
+		Hostname:           c.hostname,
+		ServiceName:        c.serviceName,
+		ServiceEnvironment: c.env,
+		ServiceVersion:     c.version,
+	}
+
+	data, _ := metadata.MarshalMsg(nil)
+	_, err := globalinternal.CreateMemfd(name, data)
+	if err != nil {
+		log.Error("failed to store the configuration: %s", err)
+	}
 }
 
 // Stop stops the started tracer. Subsequent calls are valid but become no-op.
@@ -280,7 +318,8 @@ func newUnstartedTracer(opts ...StartOption) *tracer {
 	if spans != nil {
 		c.spanRules = spans
 	}
-	rulesSampler := newRulesSampler(c.traceRules, c.spanRules, c.globalSampleRate)
+
+	rulesSampler := newRulesSampler(c.traceRules, c.spanRules, c.globalSampleRate, c.traceRateLimitPerSecond)
 	c.traceSampleRate = newDynamicConfig("trace_sample_rate", c.globalSampleRate, rulesSampler.traces.setGlobalSampleRate, equal[float64])
 	// If globalSampleRate returns NaN, it means the environment variable was not set or valid.
 	// We could always set the origin to "env_var" inconditionally, but then it wouldn't be possible
@@ -314,6 +353,8 @@ func newUnstartedTracer(opts ...StartOption) *tracer {
 		pid:              os.Getpid(),
 		logDroppedTraces: time.NewTicker(1 * time.Second),
 		stats:            newConcentrator(c, defaultStatsBucketSize, statsd),
+		spansStarted:     *utils.NewXSyncMapCounterMap(),
+		spansFinished:    *utils.NewXSyncMapCounterMap(),
 		obfuscator: obfuscate.NewObfuscator(obfuscate.Config{
 			SQL: obfuscate.SQLConfig{
 				TableNames:       c.agent.HasFlag("table_names"),
@@ -373,7 +414,7 @@ func newTracer(opts ...StartOption) *tracer {
 	t.wg.Add(1)
 	go func() {
 		defer t.wg.Done()
-		t.reportHealthMetrics(statsInterval)
+		t.reportHealthMetricsAtInterval(statsInterval)
 	}()
 	t.stats.Start()
 	return t
@@ -423,7 +464,9 @@ func (t *tracer) worker(tick <-chan time.Time) {
 			t.statsd.Incr("datadog.tracer.flush_triggered", []string{"reason:invoked"}, 1)
 			t.traceWriter.flush()
 			t.statsd.Flush()
-			t.stats.flushAndSend(time.Now(), withCurrentBucket)
+			if !t.config.tracingAsTransport {
+				t.stats.flushAndSend(time.Now(), withCurrentBucket)
+			}
 			// TODO(x): In reality, the traceWriter.flush() call is not synchronous
 			// when using the agent traceWriter. However, this functionality is used
 			// in Lambda so for that purpose this mechanism should suffice.
@@ -559,13 +602,15 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 	}
 	// span defaults
 	span := &span{
-		Name:         operationName,
-		Service:      t.config.serviceName,
-		Resource:     operationName,
-		SpanID:       id,
-		TraceID:      id,
-		Start:        startTime,
-		noDebugStack: t.config.noDebugStack,
+		Name:           operationName,
+		Service:        t.config.serviceName,
+		Resource:       operationName,
+		SpanID:         id,
+		TraceID:        id,
+		Start:          startTime,
+		noDebugStack:   t.config.noDebugStack,
+		integration:    "manual",
+		supportsEvents: t.config.agent.spanEventsAvailable,
 	}
 
 	span.SpanLinks = append(span.SpanLinks, opts.SpanLinks...)
@@ -659,6 +704,8 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 			log.Error("Abandoned spans channel full, disregarding span.")
 		}
 	}
+	t.spansStarted.Inc(span.integration)
+
 	return span
 }
 
@@ -667,25 +714,25 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 // found in ctx are restored. Additionally, this func informs the profiler how
 // many times each endpoint is called.
 func (t *tracer) applyPPROFLabels(ctx gocontext.Context, span *span) {
-	var labels []string
+	// Important: The label keys are ordered alphabetically to take advantage of
+	// an upstream optimization that landed in go1.24.  This results in ~10%
+	// better performance on BenchmarkStartSpan. See
+	// https://go-review.googlesource.com/c/go/+/574516 for more information.
+	labels := make([]string, 0, 3*2 /* 3 key value pairs */)
+	localRootSpan := span.root()
+	if t.config.profilerHotspots && localRootSpan != nil {
+		labels = append(labels, traceprof.LocalRootSpanID, strconv.FormatUint(localRootSpan.SpanID, 10))
+	}
 	if t.config.profilerHotspots {
-		// allocate the max-length slice to avoid growing it later
-		labels = make([]string, 0, 6)
 		labels = append(labels, traceprof.SpanID, strconv.FormatUint(span.SpanID, 10))
 	}
-	// nil checks might not be needed, but better be safe than sorry
-	if localRootSpan := span.root(); localRootSpan != nil {
-		if t.config.profilerHotspots {
-			labels = append(labels, traceprof.LocalRootSpanID, strconv.FormatUint(localRootSpan.SpanID, 10))
-		}
-		if t.config.profilerEndpoints && spanResourcePIISafe(localRootSpan) {
-			labels = append(labels, traceprof.TraceEndpoint, localRootSpan.Resource)
-			if span == localRootSpan {
-				// Inform the profiler of endpoint hits. This is used for the unit of
-				// work feature. We can't use APM stats for this since the stats don't
-				// have enough cardinality (e.g. runtime-id tags are missing).
-				traceprof.GlobalEndpointCounter().Inc(localRootSpan.Resource)
-			}
+	if t.config.profilerEndpoints && spanResourcePIISafe(localRootSpan) && localRootSpan != nil {
+		labels = append(labels, traceprof.TraceEndpoint, localRootSpan.Resource)
+		if span == localRootSpan {
+			// Inform the profiler of endpoint hits. This is used for the unit of
+			// work feature. We can't use APM stats for this since the stats don't
+			// have enough cardinality (e.g. runtime-id tags are missing).
+			traceprof.GlobalEndpointCounter().Inc(localRootSpan.Resource)
 		}
 	}
 	if len(labels) > 0 {
@@ -729,6 +776,15 @@ func (t *tracer) Inject(ctx ddtrace.SpanContext, carrier interface{}) error {
 	if !t.config.enabled.current {
 		return nil
 	}
+
+	if t.config.tracingAsTransport {
+		// in tracing as transport mode, only propagate when there is an upstream appsec event
+		if ctx, ok := ctx.(*spanContext); ok && ctx.trace != nil &&
+			!globalinternal.VerifyTraceSourceEnabled(ctx.trace.propagatingTag(keyPropagatedTraceSource), globalinternal.ASMTraceSource) {
+			return nil
+		}
+	}
+
 	t.updateSampling(ctx)
 	return t.config.propagator.Inject(ctx, carrier)
 }
@@ -768,7 +824,15 @@ func (t *tracer) Extract(carrier interface{}) (ddtrace.SpanContext, error) {
 	if !t.config.enabled.current {
 		return internal.NoopSpanContext{}, nil
 	}
-	return t.config.propagator.Extract(carrier)
+	ctx, err := t.config.propagator.Extract(carrier)
+	if t.config.tracingAsTransport {
+		// in tracing as transport mode, reset upstream sampling decision to make sure we keep 1 trace/minute
+		if ctx, ok := ctx.(*spanContext); ok && ctx.trace != nil &&
+			!globalinternal.VerifyTraceSourceEnabled(ctx.trace.propagatingTag(keyPropagatedTraceSource), globalinternal.ASMTraceSource) {
+			ctx.trace.priority = nil
+		}
+	}
+	return ctx, err
 }
 
 // sampleRateMetricKey is the metric key holding the applied sample rate. Has to be the same as the Agent.

@@ -14,7 +14,6 @@ import (
 	"fmt"
 	"math"
 	"net/http"
-	"strconv"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/httptrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/options"
@@ -65,16 +64,14 @@ func Middleware(opts ...Option) echo.MiddlewareFunc {
 				finishOpts = []tracer.FinishOption{tracer.NoDebugStack()}
 			}
 
-			span, ctx := httptrace.StartRequestSpan(request, opts...)
-			defer func() {
-				span.Finish(finishOpts...)
-			}()
+			_, ctx, finishSpans := httptrace.StartRequestSpan(request, opts...)
 
 			// pass the span through the request context
 			c.SetRequest(request.WithContext(ctx))
 
 			// serve the request to the next middleware
 			err := next(c)
+			var echoStatus int
 			if err != nil {
 				// It is impossible to determine what the final status code of a request is in echo.
 				// This is the best we can do.
@@ -83,25 +80,28 @@ func Middleware(opts ...Option) echo.MiddlewareFunc {
 					if cfg.isStatusError(echoErr.Code) {
 						finishOpts = append(finishOpts, tracer.WithError(err))
 					}
-					span.SetTag(ext.HTTPCode, strconv.Itoa(echoErr.Code))
+					echoStatus = echoErr.Code
 				} else {
 					// Any error that is not an *echo.HTTPError will be treated as an error with 500 status code.
 					if cfg.isStatusError(500) {
 						finishOpts = append(finishOpts, tracer.WithError(err))
 					}
-					span.SetTag(ext.HTTPCode, "500")
+					echoStatus = 500
 				}
 			} else if status := c.Response().Status; status > 0 {
 				if cfg.isStatusError(status) {
 					finishOpts = append(finishOpts, tracer.WithError(fmt.Errorf("%d: %s", status, http.StatusText(status))))
 				}
-				span.SetTag(ext.HTTPCode, strconv.Itoa(status))
+				echoStatus = status
 			} else {
 				if cfg.isStatusError(200) {
 					finishOpts = append(finishOpts, tracer.WithError(fmt.Errorf("%d: %s", 200, http.StatusText(200))))
 				}
-				span.SetTag(ext.HTTPCode, "200")
+				echoStatus = 200
 			}
+			defer func() {
+				finishSpans(echoStatus, cfg.isStatusError, finishOpts...)
+			}()
 			return err
 		}
 	}

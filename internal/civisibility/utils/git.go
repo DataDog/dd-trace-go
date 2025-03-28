@@ -142,10 +142,10 @@ func execGitStringWithInput(commandType telemetry.CommandType, input string, arg
 }
 
 // getGitVersion retrieves the version of the Git executable installed on the system.
-func getGitVersion() (major int, minor int, patch int, error error) {
-	out, err := execGitString(telemetry.NotSpecifiedCommandsType, "--version")
-	if err != nil {
-		return 0, 0, 0, err
+func getGitVersion() (major int, minor int, patch int, err error) {
+	out, lerr := execGitString(telemetry.NotSpecifiedCommandsType, "--version")
+	if lerr != nil {
+		return 0, 0, 0, lerr
 	}
 	out = strings.TrimSpace(strings.ReplaceAll(out, "git version ", ""))
 	versionParts := strings.Split(out, ".")
@@ -188,9 +188,9 @@ func getLocalGitData() (localGitData, error) {
 
 	// Extract the absolute path to the Git directory
 	log.Debug("civisibility.git: getting the absolute path to the Git directory")
-	out, err := execGitString(telemetry.NotSpecifiedCommandsType, "rev-parse", "--absolute-git-dir")
+	out, err := execGitString(telemetry.NotSpecifiedCommandsType, "rev-parse", "--show-toplevel")
 	if err == nil {
-		gitData.SourceRoot = strings.ReplaceAll(out, ".git", "")
+		gitData.SourceRoot = out
 	}
 
 	// Extract the repository URL

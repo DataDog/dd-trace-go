@@ -47,13 +47,28 @@ type Span interface {
 	// Context returns the span's SpanContext.
 	Context() ddtrace.SpanContext
 
+	// Links returns the span's span links.
+	Links() []ddtrace.SpanLink
+
+	// Events returns the span's span events.
+	Events() []SpanEvent
+
 	// Stringer allows pretty-printing the span's fields for debugging.
 	fmt.Stringer
+
+	Integration() string
+}
+
+// SpanEvent represents a span event from a mockspan.
+type SpanEvent struct {
+	Name   string
+	Config ddtrace.SpanEventConfig
 }
 
 func newSpan(t *mocktracer, operationName string, cfg *ddtrace.StartSpanConfig) *mockspan {
 	if cfg.Tags == nil {
 		cfg.Tags = make(map[string]interface{})
+		cfg.Tags[ext.Component] = "manual"
 	}
 	if cfg.Tags[ext.ResourceName] == nil {
 		cfg.Tags[ext.ResourceName] = operationName
@@ -102,12 +117,14 @@ type mockspan struct {
 	tags         map[string]interface{}
 	finishTime   time.Time
 	finished     bool
+	integration  string
 
 	startTime time.Time
 	parentID  uint64
 	context   *spanContext
 	tracer    *mocktracer
 	links     []ddtrace.SpanLink
+	events    []SpanEvent
 }
 
 // SetTag sets a given tag on the span.
@@ -126,6 +143,11 @@ func (s *mockspan) SetTag(key string, value interface{}) {
 			s.context.setSamplingPriority(p)
 		case float64:
 			s.context.setSamplingPriority(int(p))
+		}
+	}
+	if key == ext.Component {
+		if v, ok := value.(string); ok {
+			s.integration = v
 		}
 	}
 	s.tags[key] = value
@@ -186,6 +208,24 @@ func (s *mockspan) BaggageItem(key string) string {
 func (s *mockspan) SetBaggageItem(key, val string) {
 	s.context.setBaggageItem(key, val)
 	return
+}
+
+// AddEvent adds an event to the current span.
+func (s *mockspan) AddEvent(name string, opts ...ddtrace.SpanEventOption) {
+	cfg := ddtrace.SpanEventConfig{}
+	for _, opt := range opts {
+		opt(&cfg)
+	}
+	s.Lock()
+	defer s.Unlock()
+	s.events = append(s.events, SpanEvent{
+		Name:   name,
+		Config: cfg,
+	})
+}
+
+func (s *mockspan) Events() []SpanEvent {
+	return s.events
 }
 
 // Finish finishes the current span with the given options.
@@ -254,6 +294,8 @@ func (s *mockspan) SetUser(id string, opts ...tracer.UserMonitoringOption) {
 	}
 
 	root.SetTag("usr.id", id)
+	root.SetTag("usr.login", cfg.Login)
+	root.SetTag("usr.org", cfg.Org)
 	root.SetTag("usr.email", cfg.Email)
 	root.SetTag("usr.name", cfg.Name)
 	root.SetTag("usr.role", cfg.Role)
@@ -283,4 +325,20 @@ func (s *mockspan) Root() tracer.Span {
 	}
 	root, _ := current.(*mockspan)
 	return root
+}
+
+// Links returns the span's span links.
+func (s *mockspan) Links() []ddtrace.SpanLink {
+	s.RLock()
+	defer s.RUnlock()
+	return s.links
+}
+
+func (s *mockspan) AddSpanLink(link ddtrace.SpanLink) {
+	s.links = append(s.links, link)
+}
+
+// Integration returns the component from which the mockspan was created.
+func (s *mockspan) Integration() string {
+	return s.integration
 }

@@ -11,6 +11,7 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"math"
 	"runtime"
 	"strings"
 	"time"
@@ -142,6 +143,21 @@ func (t *tslvTest) Close(status TestResultStatus, options ...TestCloseOption) {
 	if t.ctx.Value(constants.TestType) == constants.TestTypeBenchmark {
 		testingEventType = append(testingEventType, telemetry.IsBenchmarkEventType...)
 	}
+	if t.ctx.Value(constants.TestIsAttempToFix) == "true" {
+		testingEventType = append(testingEventType, telemetry.IsAttemptToFixEventType...)
+	}
+	if t.ctx.Value(constants.TestIsQuarantined) == "true" {
+		testingEventType = append(testingEventType, telemetry.IsQuarantinedEventType...)
+	}
+	if t.ctx.Value(constants.TestIsDisabled) == "true" {
+		testingEventType = append(testingEventType, telemetry.IsDisabledEventType...)
+	}
+	if t.ctx.Value(constants.TestHasFailedAllRetries) == "true" {
+		testingEventType = append(testingEventType, telemetry.HasFailedAllRetriesEventType...)
+	}
+	if retryReason, ok := t.ctx.Value(constants.TestRetryReason).(string); ok {
+		testingEventType = append(testingEventType, []string{fmt.Sprintf("retry_reason:%s", retryReason)}...)
+	}
 	telemetry.EventFinished(t.suite.module.framework, testingEventType)
 }
 
@@ -154,6 +170,16 @@ func (t *tslvTest) SetTag(key string, value interface{}) {
 		t.ctx = context.WithValue(t.ctx, constants.TestIsRetry, value)
 	} else if key == constants.TestEarlyFlakeDetectionRetryAborted {
 		t.ctx = context.WithValue(t.ctx, constants.TestEarlyFlakeDetectionRetryAborted, value)
+	} else if key == constants.TestIsAttempToFix {
+		t.ctx = context.WithValue(t.ctx, constants.TestIsAttempToFix, value)
+	} else if key == constants.TestIsQuarantined {
+		t.ctx = context.WithValue(t.ctx, constants.TestIsQuarantined, value)
+	} else if key == constants.TestIsDisabled {
+		t.ctx = context.WithValue(t.ctx, constants.TestIsDisabled, value)
+	} else if key == constants.TestHasFailedAllRetries {
+		t.ctx = context.WithValue(t.ctx, constants.TestHasFailedAllRetries, value)
+	} else if key == constants.TestRetryReason {
+		t.ctx = context.WithValue(t.ctx, constants.TestRetryReason, value)
 	}
 }
 
@@ -237,7 +263,10 @@ func (t *tslvTest) SetTestFunc(fn *runtime.Func) {
 				// get the line number of the start of the function literal
 				funcStartLine := fset.Position(funcLit.Body.Pos()).Line
 				// if the start line matches the known start line, record the end line
-				if funcStartLine == startLine {
+				// startLine is not so accurate because it is the line of the first instruction of the function (Go 1.24)
+				// so we need to check if the function literal is the one we are looking for (we are going to leave an error of 1 line)
+				if math.Abs(float64(funcStartLine-startLine)) <= 1 {
+					startLine = funcStartLine
 					endLine = fset.Position(funcLit.Body.End()).Line
 					return false // stop further inspection since we have found the function
 				}
@@ -248,6 +277,7 @@ func (t *tslvTest) SetTestFunc(fn *runtime.Func) {
 
 		// if we found an endLine we check is greater than the calculated startLine
 		if endLine >= startLine {
+			t.SetTag(constants.TestSourceStartLine, startLine)
 			t.SetTag(constants.TestSourceEndLine, endLine)
 		}
 

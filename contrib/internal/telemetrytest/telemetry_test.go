@@ -8,13 +8,16 @@ import (
 	"encoding/json"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+
 	"gopkg.in/DataDog/dd-trace-go.v1/contrib/gorilla/mux"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry/telemetrytest"
 
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -22,17 +25,17 @@ import (
 // sends the correct data to the telemetry client.
 func TestIntegrationInfo(t *testing.T) {
 	// mux.NewRouter() uses the net/http and gorilla/mux integration
-	mux.NewRouter()
-	integrations := telemetry.Integrations()
-	require.Len(t, integrations, 2)
-	assert.Equal(t, integrations[0].Name, "net/http")
-	assert.True(t, integrations[0].Enabled)
-	assert.Equal(t, integrations[1].Name, "gorilla/mux")
-	assert.True(t, integrations[1].Enabled)
+	client := new(telemetrytest.RecordClient)
+	telemetry.StartApp(client)
+	_ = mux.NewRouter()
+
+	assert.Contains(t, client.Integrations, telemetry.Integration{Name: "net/http", Version: "", Error: ""})
+	assert.Contains(t, client.Integrations, telemetry.Integration{Name: "gorilla/mux", Version: "", Error: ""})
 }
 
 type contribPkg struct {
 	ImportPath string
+	Root       string
 	Name       string
 	Imports    []string
 	Dir        string
@@ -83,7 +86,12 @@ func TestTelemetryEnabled(t *testing.T) {
 		packages = append(packages, out)
 	}
 	for _, pkg := range packages {
-		if strings.Contains(pkg.ImportPath, "/test") || strings.Contains(pkg.ImportPath, "/internal") {
+		if strings.Contains(pkg.ImportPath, "/test") || strings.Contains(pkg.ImportPath, "/internal") || strings.Contains(pkg.ImportPath, "/cmd") {
+			continue
+		}
+		sep := string(os.PathSeparator)
+		p := strings.Replace(pkg.Dir, pkg.Root, filepath.Join("..", ".."), 1)
+		if strings.Contains(p, filepath.Join(sep, "contrib", "net", "http", "client")) || strings.Contains(p, filepath.Join(sep, "contrib", "os")) {
 			continue
 		}
 		if !pkg.hasTelemetryImport(t) {

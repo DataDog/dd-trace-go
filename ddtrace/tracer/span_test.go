@@ -6,8 +6,10 @@
 package tracer
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"runtime"
 	"strings"
 	"sync"
@@ -855,7 +857,7 @@ func TestSpanLog(t *testing.T) {
 		span.Finish()
 		expect := fmt.Sprintf(`dd.service=tracer.test dd.env=testenv dd.trace_id=%q dd.span_id="87654321" dd.parent_id="0"`, span.context.TraceID128())
 		assert.Equal(expect, fmt.Sprintf("%v", span))
-		v, _ := span.context.meta(keyTraceID128)
+		v, _ := getMeta(span, keyTraceID128)
 		assert.NotEmpty(v)
 	})
 
@@ -871,7 +873,7 @@ func TestSpanLog(t *testing.T) {
 		span.context.traceID.SetUpper(1)
 		span.Finish()
 		assert.Equal(`dd.service=tracer.test dd.env=testenv dd.trace_id="00000000000000010000000005397fb1" dd.span_id="87654321" dd.parent_id="0"`, fmt.Sprintf("%v", span))
-		v, _ := span.context.meta(keyTraceID128)
+		v, _ := getMeta(span, keyTraceID128)
 		assert.Equal("0000000000000001", v)
 	})
 
@@ -887,7 +889,7 @@ func TestSpanLog(t *testing.T) {
 		span.Finish()
 		assert.False(span.context.traceID.HasUpper()) // it should not have generated upper bits
 		assert.Equal(`dd.service=tracer.test dd.env=testenv dd.trace_id="87654321" dd.span_id="87654321" dd.parent_id="0"`, fmt.Sprintf("%v", span))
-		v, _ := span.context.meta(keyTraceID128)
+		v, _ := getMeta(span, keyTraceID128)
 		assert.Equal("", v)
 	})
 }
@@ -1051,6 +1053,27 @@ func BenchmarkSetTagField(b *testing.B) {
 	}
 }
 
+func BenchmarkSerializeSpanLinksInMeta(b *testing.B) {
+	span := newBasicSpan("bench.span")
+
+	span.AddSpanLink(ddtrace.SpanLink{SpanID: 123, TraceID: 456})
+	span.AddSpanLink(ddtrace.SpanLink{SpanID: 789, TraceID: 101})
+
+	// Sample span pointer
+	attributes := map[string]string{
+		"link.kind": "span-pointer",
+		"ptr.dir":   "d",
+		"ptr.hash":  "eb29cb7d923f904f02bd8b3d85e228ed",
+		"ptr.kind":  "aws.s3.object",
+	}
+	span.AddSpanLink(ddtrace.SpanLink{TraceID: 0, SpanID: 0, Attributes: attributes})
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		span.serializeSpanLinksInMeta()
+	}
+}
+
 type boomError struct{}
 
 func (e *boomError) Error() string { return "boom" }
@@ -1091,4 +1114,44 @@ func testConcurrentSpanSetTag(t *testing.T) {
 		}()
 	}
 	wg.Wait()
+}
+
+func TestSpanLinksInMeta(t *testing.T) {
+	t.Run("no_links", func(t *testing.T) {
+		tracer := newTracer()
+		defer tracer.Stop()
+
+		sp := tracer.StartSpan("test-no-links")
+		sp.Finish()
+
+		internalSpan := sp.(*span)
+		_, ok := internalSpan.Meta["_dd.span_links"]
+		assert.False(t, ok, "Expected no _dd.span_links in Meta.")
+	})
+
+	t.Run("with_links", func(t *testing.T) {
+		tracer := newTracer()
+		defer tracer.Stop()
+
+		sp, ok := tracer.StartSpan("test-with-links").(SpanWithLinks)
+		require.True(t, ok, "Span does not implement SpanWithLinks interface")
+
+		sp.AddSpanLink(ddtrace.SpanLink{SpanID: 123, TraceID: 456})
+		sp.AddSpanLink(ddtrace.SpanLink{SpanID: 789, TraceID: 012})
+		sp.Finish()
+
+		internalSpan := sp.(*span)
+		raw, ok := internalSpan.Meta["_dd.span_links"]
+		require.True(t, ok, "Expected _dd.span_links in Meta after adding links.")
+
+		var links []ddtrace.SpanLink
+		err := json.Unmarshal([]byte(raw), &links)
+		require.NoError(t, err, "Failed to unmarshal links JSON")
+		require.Len(t, links, 2, "Expected 2 links in _dd.span_links JSON")
+
+		assert.Equal(t, uint64(123), links[0].SpanID)
+		assert.Equal(t, uint64(456), links[0].TraceID)
+		assert.Equal(t, uint64(789), links[1].SpanID)
+		assert.Equal(t, uint64(012), links[1].TraceID)
+	})
 }

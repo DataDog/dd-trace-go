@@ -6,6 +6,7 @@
 package gotesting
 
 import (
+	"context"
 	"errors"
 	"io"
 	"reflect"
@@ -200,7 +201,7 @@ func getTestParentPrivateFields(t *testing.T) *commonPrivateFields {
 
 // contextMatcher is collection of required private fields from testing.context.match
 type contextMatcher struct {
-	mu       *sync.RWMutex
+	mu       *sync.Mutex
 	subNames *map[string]int32
 }
 
@@ -211,10 +212,10 @@ func (c *contextMatcher) ClearSubNames() {
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.subNames == nil {
+	if c.subNames == nil || *c.subNames == nil {
 		return
 	}
-	*c.subNames = map[string]int32{}
+	clear(*c.subNames)
 }
 
 // getTestContextMatcherPrivateFields is a method to retrieve all required privates field from
@@ -223,7 +224,11 @@ func getTestContextMatcherPrivateFields(t *testing.T) *contextMatcher {
 	indirectValue := reflect.Indirect(reflect.ValueOf(t))
 	contextMember := indirectValue.FieldByName("context")
 	if !contextMember.IsValid() {
-		return nil
+		// In 1.24 they changed the name of the field to tstate
+		contextMember = indirectValue.FieldByName("tstate")
+		if !contextMember.IsValid() {
+			return nil
+		}
 	}
 	contextMember = contextMember.Elem()
 	matchMember := contextMember.FieldByName("match")
@@ -234,7 +239,7 @@ func getTestContextMatcherPrivateFields(t *testing.T) *contextMatcher {
 
 	fields := &contextMatcher{}
 	if ptr, err := getFieldPointerFromValue(matchMember, "mu"); err == nil && ptr != nil {
-		fields.mu = (*sync.RWMutex)(ptr)
+		fields.mu = (*sync.Mutex)(ptr)
 	}
 	if ptr, err := getFieldPointerFromValue(matchMember, "subNames"); err == nil && ptr != nil {
 		fields.subNames = (*map[string]int32)(ptr)
@@ -281,6 +286,13 @@ func copyTestWithoutParent(source *testing.T, target *testing.T) {
 
 	_ = copyFieldUsingPointers[bool](source, target, "isEnvSet")
 	_ = copyFieldUsingPointers[unsafe.Pointer](source, target, "context") // For running tests and subtests.
+
+	// New 1.24 fields
+	_ = copyFieldUsingPointers[context.Context](source, target, "ctx")
+	_ = copyFieldUsingPointers[context.CancelFunc](source, target, "cancelCtx")
+
+	_ = copyFieldUsingPointers[bool](source, target, "denyParallel")
+	_ = copyFieldUsingPointers[unsafe.Pointer](source, target, "tstate") // For running tests and subtests.
 }
 
 // ****************

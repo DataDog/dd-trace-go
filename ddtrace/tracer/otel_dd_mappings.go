@@ -94,13 +94,13 @@ func getDDorOtelConfig(configName string) string {
 		if val != "" {
 			log.Warn("Both %v and %v are set, using %v=%v", config.ot, config.dd, config.dd, val)
 			telemetryTags := []string{ddPrefix + strings.ToLower(config.dd), otelPrefix + strings.ToLower(config.ot)}
-			telemetry.GlobalClient.Count(telemetry.NamespaceTracers, "otel.env.hiding", 1.0, telemetryTags, true)
+			telemetry.Count(telemetry.NamespaceTracers, "otel.env.hiding", telemetryTags).Submit(1)
 		} else {
 			v, err := config.remapper(otVal)
 			if err != nil {
-				log.Warn(err.Error())
+				log.Warn("%v", err)
 				telemetryTags := []string{ddPrefix + strings.ToLower(config.dd), otelPrefix + strings.ToLower(config.ot)}
-				telemetry.GlobalClient.Count(telemetry.NamespaceTracers, "otel.env.invalid", 1.0, telemetryTags, true)
+				telemetry.Count(telemetry.NamespaceTracers, "otel.env.invalid", telemetryTags).Submit(1)
 			}
 			val = v
 		}

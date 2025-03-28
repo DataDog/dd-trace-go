@@ -18,9 +18,9 @@ type (
 	// ServiceEntrySpanOperation is a dyngo.Operation that holds a the first span of a service. Usually a http or grpc span.
 	ServiceEntrySpanOperation struct {
 		dyngo.Operation
-		tags     map[string]any
-		jsonTags map[string]any
-		mu       sync.Mutex
+		jsonTags  map[string]any
+		tagSetter TagSetter
+		mu        sync.Mutex
 	}
 
 	// ServiceEntrySpanArgs is the arguments for a ServiceEntrySpanOperation
@@ -52,7 +52,7 @@ func (ServiceEntrySpanArgs) IsArgOf(*ServiceEntrySpanOperation) {}
 func (op *ServiceEntrySpanOperation) SetTag(key string, value any) {
 	op.mu.Lock()
 	defer op.mu.Unlock()
-	op.tags[key] = value
+	op.tagSetter.SetTag(key, value)
 }
 
 // SetSerializableTag adds the key/value pair to the tags to add to the service entry span.
@@ -76,7 +76,7 @@ func (op *ServiceEntrySpanOperation) SetSerializableTags(tags map[string]any) {
 func (op *ServiceEntrySpanOperation) setSerializableTag(key string, value any) {
 	switch value.(type) {
 	case string, int8, int16, int32, int64, uint8, uint16, uint32, uint64, float32, float64, bool:
-		op.tags[key] = value
+		op.tagSetter.SetTag(key, value)
 	default:
 		op.jsonTags[key] = value
 	}
@@ -87,7 +87,7 @@ func (op *ServiceEntrySpanOperation) SetTags(tags map[string]any) {
 	op.mu.Lock()
 	defer op.mu.Unlock()
 	for k, v := range tags {
-		op.tags[k] = v
+		op.tagSetter.SetTag(k, v)
 	}
 }
 
@@ -96,7 +96,7 @@ func (op *ServiceEntrySpanOperation) SetStringTags(tags map[string]string) {
 	op.mu.Lock()
 	defer op.mu.Unlock()
 	for k, v := range tags {
-		op.tags[k] = v
+		op.tagSetter.SetTag(k, v)
 	}
 }
 
@@ -126,17 +126,22 @@ func (op *ServiceEntrySpanOperation) OnSpanTagEvent(tag SpanTag) {
 	op.SetTag(tag.Key, tag.Value)
 }
 
-func StartServiceEntrySpanOperation(ctx context.Context) (*ServiceEntrySpanOperation, context.Context) {
+func StartServiceEntrySpanOperation(ctx context.Context, span TagSetter) (*ServiceEntrySpanOperation, context.Context) {
 	parent, _ := dyngo.FromContext(ctx)
+	if span == nil {
+		// Ensure we have a non-nil tagSetter going forward, so we don't have to check all the time.
+		span = NoopTagSetter{}
+	}
 	op := &ServiceEntrySpanOperation{
 		Operation: dyngo.NewOperation(parent),
-		tags:      make(map[string]any),
-		jsonTags:  make(map[string]any),
+		jsonTags:  make(map[string]any, 2),
+		tagSetter: span,
 	}
 	return op, dyngo.StartAndRegisterOperation(ctx, op, ServiceEntrySpanArgs{})
 }
 
-func (op *ServiceEntrySpanOperation) Finish(span TagSetter) {
+func (op *ServiceEntrySpanOperation) Finish() {
+	span := op.tagSetter
 	if _, ok := span.(*NoopTagSetter); ok { // If the span is a NoopTagSetter or is nil, we don't need to set any tags
 		return
 	}
@@ -144,14 +149,11 @@ func (op *ServiceEntrySpanOperation) Finish(span TagSetter) {
 	op.mu.Lock()
 	defer op.mu.Unlock()
 
-	for k, v := range op.tags {
-		span.SetTag(k, v)
-	}
-
 	for k, v := range op.jsonTags {
 		strValue, err := json.Marshal(v)
 		if err != nil {
 			log.Debug("appsec: failed to marshal tag %s: %v", k, err)
+			continue
 		}
 		span.SetTag(k, string(strValue))
 	}

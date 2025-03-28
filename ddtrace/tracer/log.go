@@ -18,6 +18,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/osinfo"
+	telemetrylog "gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
 )
 
@@ -59,6 +60,8 @@ type startupInfo struct {
 	FeatureFlags                []string                     `json:"feature_flags"`
 	PropagationStyleInject      string                       `json:"propagation_style_inject"`  // Propagation style for inject
 	PropagationStyleExtract     string                       `json:"propagation_style_extract"` // Propagation style for extract
+	TracingAsTransport          bool                         `json:"tracing_as_transport"`      // Whether the tracer is disabled and other products are using it as a transport
+	DogstatsdAddr               string                       `json:"dogstatsd_address"`         // Destination of statsd payloads
 }
 
 // checkEndpoint tries to connect to the URL specified by endpoint.
@@ -147,6 +150,8 @@ func logStartup(t *tracer) {
 		FeatureFlags:                featureFlags,
 		PropagationStyleInject:      injectorNames,
 		PropagationStyleExtract:     extractorNames,
+		TracingAsTransport:          t.config.tracingAsTransport,
+		DogstatsdAddr:               t.config.dogstatsdAddr,
 	}
 	if _, _, err := samplingRulesFromEnv(); err != nil {
 		info.SamplingRulesError = fmt.Sprintf("%s", err)
@@ -166,4 +171,5 @@ func logStartup(t *tracer) {
 		return
 	}
 	log.Info("DATADOG TRACER CONFIGURATION %s\n", string(bs))
+	telemetrylog.Debug("DATADOG TRACER CONFIGURATION %s\n", string(bs))
 }

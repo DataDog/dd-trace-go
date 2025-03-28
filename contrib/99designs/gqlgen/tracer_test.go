@@ -8,6 +8,7 @@ package gqlgen
 import (
 	"testing"
 
+	internaltestserver "gopkg.in/DataDog/dd-trace-go.v1/contrib/99designs/gqlgen/internal/testserver"
 	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/lists"
 	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/namingschematest"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
@@ -39,6 +40,7 @@ func TestOptions(t *testing.T) {
 				assert.Equal(ext.SpanTypeGraphQL, root.Tag(ext.SpanType))
 				assert.Equal("99designs/gqlgen", root.Tag(ext.Component))
 				assert.Nil(root.Tag(ext.EventSampleRate))
+				assert.Equal(componentName, root.Integration())
 			},
 		},
 		"WithServiceName": {
@@ -110,22 +112,30 @@ func TestOptions(t *testing.T) {
 
 	// WithoutTraceIntrospectionQuery tested here since we are specifically checking against an IntrosepctionQuery operation.
 	query = `query IntrospectionQuery { __schema { queryType { name } } }`
+	testFunc := func(assert *assert.Assertions, spans []mocktracer.Span) {
+		var hasFieldSpan bool
+		for _, span := range spans {
+			if span.OperationName() == fieldOp {
+				hasFieldSpan = true
+				break
+			}
+		}
+		assert.Equal(false, hasFieldSpan)
+	}
 	for name, tt := range map[string]struct {
 		tracerOpts []Option
+		clientOpts []client.Option
 		test       func(assert *assert.Assertions, spans []mocktracer.Span)
 	}{
-		"WithoutTraceIntrospectionQuery": {
+		"WithoutTraceIntrospectionQuery with OperationName": {
 			tracerOpts: []Option{WithoutTraceIntrospectionQuery()},
-			test: func(assert *assert.Assertions, spans []mocktracer.Span) {
-				var hasFieldSpan bool
-				for _, span := range spans {
-					if span.OperationName() == fieldOp {
-						hasFieldSpan = true
-						break
-					}
-				}
-				assert.Equal(false, hasFieldSpan)
-			},
+			clientOpts: []client.Option{client.Operation("IntrospectionQuery")},
+			test:       testFunc,
+		},
+		"WithoutTraceIntrospectionQuery without OperationName": {
+			tracerOpts: []Option{WithoutTraceIntrospectionQuery()},
+			clientOpts: []client.Option{},
+			test:       testFunc,
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -133,7 +143,7 @@ func TestOptions(t *testing.T) {
 			mt := mocktracer.Start()
 			defer mt.Stop()
 			c := newTestClient(t, testserver.New(), NewTracer(tt.tracerOpts...))
-			c.MustPost(query, &testServerResponse{}, client.Operation("IntrospectionQuery"))
+			c.MustPost(query, &testServerResponse{}, tt.clientOpts...)
 			tt.test(assert, mt.FinishedSpans())
 		})
 	}
@@ -154,6 +164,19 @@ func TestError(t *testing.T) {
 	}
 	assert.NotNil(root)
 	assert.NotNil(root.Tag(ext.Error))
+
+	events := root.Events()
+	require.Len(t, events, 1)
+
+	evt := events[0]
+	assert.Equal("dd.graphql.query.error", evt.Name)
+	assert.NotEmpty(evt.Config.Time)
+	assert.NotEmpty(evt.Config.Attributes["stacktrace"])
+	assert.Equal(map[string]any{
+		"message":    "resolver error",
+		"stacktrace": evt.Config.Attributes["stacktrace"],
+		"type":       "*gqlerror.Error",
+	}, evt.Config.Attributes)
 }
 
 func TestObfuscation(t *testing.T) {
@@ -348,4 +371,48 @@ func TestInterceptOperation(t *testing.T) {
 		assertions.NotNil(root)
 		assertions.Nil(root.Tag(ext.Error))
 	})
+}
+
+func TestErrorsAsSpanEvents(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	_, c := internaltestserver.New(t, NewTracer(WithErrorExtensions("str", "float", "int", "bool", "slice", "unsupported_type_stringified")))
+	err := c.Post(`{ withError }`, &testServerResponse{})
+	require.Error(t, err)
+
+	spans := mt.FinishedSpans()
+	require.Len(t, spans, 5)
+
+	s0 := spans[4]
+	assert.Equal(t, "graphql.query", s0.OperationName())
+	assert.NotNil(t, s0.Tag(ext.Error))
+
+	events := s0.Events()
+	require.Len(t, events, 1)
+
+	evt := events[0]
+	assert.Equal(t, "dd.graphql.query.error", evt.Name)
+	assert.NotEmpty(t, evt.Config.Time)
+	assert.NotEmpty(t, evt.Config.Attributes["stacktrace"])
+	assert.Equal(t, map[string]any{
+		"message":          "test error",
+		"path":             []string{"withError"},
+		"stacktrace":       evt.Config.Attributes["stacktrace"],
+		"type":             "*gqlerror.Error",
+		"extensions.str":   "1",
+		"extensions.int":   1,
+		"extensions.float": 1.1,
+		"extensions.bool":  true,
+		"extensions.slice": []string{"1", "2"},
+		"extensions.unsupported_type_stringified": "[1,\"foo\"]",
+	}, evt.Config.Attributes)
+
+	// the rest of the spans should not have span events
+	for _, s := range spans {
+		if s.OperationName() == "graphql.query" {
+			continue
+		}
+		assert.Emptyf(t, s.Events(), "span %s should not have span events", s.OperationName())
+	}
 }

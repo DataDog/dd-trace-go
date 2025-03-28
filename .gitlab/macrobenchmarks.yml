@@ -1,7 +1,7 @@
 variables:
-  BENCHMARKS_CI_IMAGE: 486234852809.dkr.ecr.us-east-1.amazonaws.com/ci/benchmarking-platform:go-go-prof-app
+  BENCHMARKS_CI_IMAGE: 486234852809.dkr.ecr.us-east-1.amazonaws.com/ci/benchmarking-platform:go-go-prof-app-and-serviceextensions-0001
 
-.benchmarks:
+.benchmarks-default:
   stage: macrobenchmarks
   needs: []
   tags: ["runner:apm-k8s-same-cpu"]
@@ -56,72 +56,18 @@ variables:
 # 2. Rebuild image in Gitlab CI (build-images CI job in https://gitlab.ddbuild.io/DataDog/apm-reliability/benchmarking-platform/-/pipelines?page=1&scope=all&ref=go%2Fgo-prof-app)
 #
 
-.go123-benchmarks:
-  extends: .benchmarks
+.go124-benchmarks:
+  extends: .benchmarks-default
   variables:
-    GO_VERSION: "1.23.0"
+    GO_VERSION: "1.24.0"
 
-.go122-benchmarks:
-  extends: .benchmarks
+.go123-benchmarks:
+  extends: .benchmarks-default
   variables:
-    GO_VERSION: "1.22.5"
+    GO_VERSION: "1.23.6"
 
 #
 # Specific macrobenchmark configurations are below
-
-go122-baseline:
-  extends: .go122-benchmarks
-  variables:
-    ENABLE_DDPROF: "false"
-    ENABLE_TRACING: "false"
-    ENABLE_PROFILING: "false"
-    ENABLE_APPSEC: "false"
-    DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
-
-go122-only-trace:
-  extends: .go122-benchmarks
-  variables:
-    ENABLE_DDPROF: "false"
-    ENABLE_TRACING: "true"
-    ENABLE_PROFILING: "false"
-    ENABLE_APPSEC: "false"
-    DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
-
-go122-only-profile:
-  extends: .go122-benchmarks
-  variables:
-    ENABLE_DDPROF: "false"
-    ENABLE_TRACING: "false"
-    ENABLE_PROFILING: "true"
-    ENABLE_APPSEC: "false"
-    DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
-
-go122-profile-trace:
-  extends: .go122-benchmarks
-  variables:
-    ENABLE_DDPROF: "false"
-    ENABLE_TRACING: "true"
-    ENABLE_PROFILING: "true"
-    ENABLE_APPSEC: "false"
-    DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
-
-go122-trace-asm:
-  extends: .go122-benchmarks
-  variables:
-    ENABLE_DDPROF: "false"
-    ENABLE_TRACING: "true"
-    ENABLE_PROFILING: "false"
-    ENABLE_APPSEC: "true"
-    DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
-
-go122-profile-trace-asm:
-  extends: .go122-benchmarks
-  variables:
-    ENABLE_DDPROF: "false"
-    ENABLE_TRACING: "true"
-    ENABLE_PROFILING: "true"
-    ENABLE_APPSEC: "true"
-    DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
 
 go123-baseline:
   extends: .go123-benchmarks
@@ -140,6 +86,16 @@ go123-only-trace:
     ENABLE_PROFILING: "false"
     ENABLE_APPSEC: "false"
     DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
+
+go123-only-trace-with-runtime-metrics:
+  extends: .go123-benchmarks
+  variables:
+    ENABLE_DDPROF: "false"
+    ENABLE_TRACING: "true"
+    ENABLE_PROFILING: "false"
+    ENABLE_APPSEC: "false"
+    DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
+    DD_RUNTIME_METRICS_ENABLED: "true"
 
 go123-only-profile:
   extends: .go123-benchmarks
@@ -176,3 +132,148 @@ go123-profile-trace-asm:
     ENABLE_PROFILING: "true"
     ENABLE_APPSEC: "true"
     DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
+
+go124-baseline:
+  extends: .go124-benchmarks
+  variables:
+    ENABLE_DDPROF: "false"
+    ENABLE_TRACING: "false"
+    ENABLE_PROFILING: "false"
+    ENABLE_APPSEC: "false"
+    DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
+
+go124-only-trace:
+  extends: .go124-benchmarks
+  variables:
+    ENABLE_DDPROF: "false"
+    ENABLE_TRACING: "true"
+    ENABLE_PROFILING: "false"
+    ENABLE_APPSEC: "false"
+    DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
+
+go124-only-trace-with-runtime-metrics:
+  extends: .go124-benchmarks
+  variables:
+    ENABLE_DDPROF: "false"
+    ENABLE_TRACING: "true"
+    ENABLE_PROFILING: "false"
+    ENABLE_APPSEC: "false"
+    DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
+    DD_RUNTIME_METRICS_ENABLED: "true"
+
+go124-only-profile:
+  extends: .go124-benchmarks
+  variables:
+    ENABLE_DDPROF: "false"
+    ENABLE_TRACING: "false"
+    ENABLE_PROFILING: "true"
+    ENABLE_APPSEC: "false"
+    DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
+
+go124-profile-trace:
+  extends: .go124-benchmarks
+  variables:
+    ENABLE_DDPROF: "false"
+    ENABLE_TRACING: "true"
+    ENABLE_PROFILING: "true"
+    ENABLE_APPSEC: "false"
+    DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
+
+go124-trace-asm:
+  extends: .go124-benchmarks
+  variables:
+    ENABLE_DDPROF: "false"
+    ENABLE_TRACING: "true"
+    ENABLE_PROFILING: "false"
+    ENABLE_APPSEC: "true"
+    DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
+
+go124-profile-trace-asm:
+  extends: .go124-benchmarks
+  variables:
+    ENABLE_DDPROF: "false"
+    ENABLE_TRACING: "true"
+    ENABLE_PROFILING: "true"
+    ENABLE_APPSEC: "true"
+    DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
+
+#
+# Macro benchmarks for Service Extensions
+# (using Envoy External Processing)
+#
+
+.benchmarks-serviceextensions:
+  stage: macrobenchmarks
+  needs: []
+  tags: ["runner:apm-k8s-same-cpu"]
+  timeout: 1h
+  rules:
+    - if: $CI_COMMIT_REF_NAME == "main"
+      when: always
+    - when: manual
+  # If you have a problem with Gitlab cache, see Troubleshooting section in Benchmarking Platform docs
+  image: $BENCHMARKS_CI_IMAGE
+  script:
+    - git clone --branch go/go-prof-app https://gitlab-ci-token:${CI_JOB_TOKEN}@gitlab.ddbuild.io/DataDog/benchmarking-platform platform && cd platform
+    - bp-runner bp-runner.envoy_serviceextension.yml --debug
+  artifacts:
+    name: "artifacts"
+    when: always
+    paths:
+      - platform/artifacts-se/
+    expire_in: 3 months
+  variables:
+    FF_USE_LEGACY_KUBERNETES_EXECUTION_STRATEGY: "true" # Important tweak for stability of benchmarks
+    GO_VERSION: "1.23.0"
+    ARTIFACTS_DIR: "./artifacts-se"
+
+  # Workaround: Currently we're not running the benchmarks on every PR, but GitHub still shows them as pending.
+  # By marking the benchmarks as allow_failure, this should go away. (This workaround should be removed once the
+  # benchmarks get changed to run on every PR)
+  allow_failure: true
+
+  retry:
+    max: 2
+    when:
+      - unknown_failure
+      - data_integrity_failure
+      - runner_system_failure
+      - scheduler_failure
+      - api_failure
+
+# Scenario with external processor, webserver without tracer
+se-ext_proc-appsec:
+  extends: .benchmarks-serviceextensions
+  variables:
+    EXT_PROC: true
+    ENABLE_APPSEC: true
+    TRACER: false
+
+se-ext_proc-only-tracing:
+  extends: .benchmarks-serviceextensions
+  variables:
+    EXT_PROC: true
+    ENABLE_APPSEC: false
+    TRACER: false
+
+# Scenarios without external processor, webserver with tracer
+se-tracer-no-ext_proc-appsec:
+  extends: .benchmarks-serviceextensions
+  variables:
+    EXT_PROC: false
+    ENABLE_APPSEC: true
+    TRACER: true
+
+se-tracer-no-ext_proc-only-tracing:
+  extends: .benchmarks-serviceextensions
+  variables:
+    EXT_PROC: false
+    ENABLE_APPSEC: false
+    TRACER: true
+
+# Scenario without tracer, only direct connection through envoy to the webserver
+se-no-tracer-no-ext_proc:
+  extends: .benchmarks-serviceextensions
+  variables:
+    EXT_PROC: false
+    TRACER: false
