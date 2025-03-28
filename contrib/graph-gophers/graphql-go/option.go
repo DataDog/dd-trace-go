@@ -9,6 +9,7 @@ import (
 	"math"
 
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
+	instrgraphql "github.com/DataDog/dd-trace-go/v2/instrumentation/graphql"
 )
 
 const defaultServiceName = "graphql.server"
@@ -19,6 +20,7 @@ type config struct {
 	analyticsRate  float64
 	omitTrivial    bool
 	traceVariables bool
+	errExtensions  []string
 }
 
 // Option describes options for the GraphQL-Go integration.
@@ -37,6 +39,7 @@ func defaults(cfg *config) {
 	cfg.serviceName = instr.ServiceName(instrumentation.ComponentDefault, nil)
 	cfg.querySpanName = instr.OperationName(instrumentation.ComponentDefault, nil)
 	cfg.analyticsRate = instr.AnalyticsRate(false)
+	cfg.errExtensions = instrgraphql.ErrorExtensionsFromEnv()
 }
 
 // WithService sets the given service name for the client.
@@ -82,5 +85,12 @@ func WithOmitTrivial() OptionFn {
 func WithTraceVariables() OptionFn {
 	return func(cfg *config) {
 		cfg.traceVariables = true
+	}
+}
+
+// WithErrorExtensions allows to configure the error extensions to include in the error span events.
+func WithErrorExtensions(errExtensions ...string) OptionFn {
+	return func(cfg *config) {
+		cfg.errExtensions = instrgraphql.ParseErrorExtensions(errExtensions)
 	}
 }

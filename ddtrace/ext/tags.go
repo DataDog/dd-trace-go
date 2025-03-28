@@ -135,4 +135,7 @@ const (
 
 	// MapSpanError is used by Span.AsMap to store the span error value.
 	MapSpanError = "_ddtrace.span_error"
+
+	// MapSpanEvents is used by Span.AsMap to store the spanEvents value.
+	MapSpanEvents = "_ddtrace.span_events"
 )

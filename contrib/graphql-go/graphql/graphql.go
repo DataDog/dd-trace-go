@@ -15,6 +15,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/graphqlsec"
+	instrgraphql "github.com/DataDog/dd-trace-go/v2/instrumentation/graphql"
 
 	"github.com/graphql-go/graphql"
 	"github.com/graphql-go/graphql/gqlerrors"
@@ -196,6 +197,7 @@ func (i datadogExtension) ExecutionDidStart(ctx context.Context) (context.Contex
 	})
 	return ctx, func(result *graphql.Result) {
 		err := toError(result.Errors)
+		instrgraphql.AddErrorsAsSpanEvents(span, toGraphqlErrors(result.Errors), i.config.errExtensions)
 		defer func() {
 			defer data.finish(result.Data, err)
 			span.Finish(tracer.WithError(err))
@@ -304,4 +306,25 @@ func toError(errs []gqlerrors.FormattedError) error {
 	default:
 		return fmt.Errorf("%w (and %d more errors)", errs[0], count-1)
 	}
+}
+
+func toGraphqlErrors(errs []gqlerrors.FormattedError) []instrgraphql.Error {
+	res := make([]instrgraphql.Error, 0, len(errs))
+	for _, err := range errs {
+		locs := make([]instrgraphql.ErrorLocation, 0, len(err.Locations))
+		for _, loc := range err.Locations {
+			locs = append(locs, instrgraphql.ErrorLocation{
+				Line:   loc.Line,
+				Column: loc.Column,
+			})
+		}
+		res = append(res, instrgraphql.Error{
+			OriginalErr: err,
+			Message:     err.Message,
+			Locations:   locs,
+			Path:        err.Path,
+			Extensions:  err.Extensions,
+		})
+	}
+	return res
 }

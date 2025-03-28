@@ -703,6 +703,7 @@ func (t *tracer) StartSpan(operationName string, options ...StartSpanOption) *Sp
 	if t.config.hostname != "" {
 		span.setMeta(keyHostname, t.config.hostname)
 	}
+	span.supportsEvents = t.config.agent.spanEventsAvailable
 
 	// add global tags
 	for k, v := range t.config.globalTags.get() {
