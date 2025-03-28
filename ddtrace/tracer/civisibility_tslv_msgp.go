@@ -59,8 +59,9 @@ func (z *ciTestCyclePayload) DecodeMsg(dc *msgp.Reader) (err error) {
 					err = msgp.WrapError(err, "Metadata", za0001)
 					return
 				}
-				za0002 = make(map[string]string, zb0003)
-				if len(za0002) > 0 {
+				if za0002 == nil {
+					za0002 = make(map[string]string, zb0003)
+				} else if len(za0002) > 0 {
 					for key := range za0002 {
 						delete(za0002, key)
 					}
