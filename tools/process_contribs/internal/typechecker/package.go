@@ -104,15 +104,15 @@ func (p *Package) Validate() error {
 		}
 	}
 
-	foundComponentName := false
+	foundInstr := false
 	for _, c := range allConstsAndVars {
-		if isTargetConstOrVar(c, "componentName") {
-			foundComponentName = true
+		if isTargetConstOrVar(c, "instr") {
+			foundInstr = true
 			break
 		}
 	}
-	if !foundComponentName {
-		err = multierror.Append(err, errors.New("const componentName package-level declaration not found"))
+	if !foundInstr {
+		err = multierror.Append(err, errors.New("\"instr\" package-level declaration not found"))
 	}
 
 	for _, fn := range allPublicFuncs {

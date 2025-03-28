@@ -159,3 +159,12 @@ func (i *Instrumentation) HTTPHeadersAsTags() HeaderTags {
 func (i *Instrumentation) ActiveSpanKey() any {
 	return internal.ActiveSpanKey
 }
+
+func (i *Instrumentation) Disabled() bool {
+	// TODO
+	// either:
+	// internal.BoolEnv("DD_TRACE_"+i.info.EnvVarPrefix+"_INTEGRATION_DISABLED", false)
+	// or:
+	// check if internal.SliceEnv("DD_TRACE_DISABLED_INTEGRATIONS") contains i.pkg
+	return false
+}

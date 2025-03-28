@@ -72,4 +72,5 @@ use (
 	./tools/fixmodules
 	./tools/v2check
 	./tools/v2check/_stage
+	./tools/process_contribs
 )

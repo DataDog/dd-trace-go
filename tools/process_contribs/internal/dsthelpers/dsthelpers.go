@@ -16,7 +16,6 @@ import (
 const (
 	commentStartGenCode = "//ddtrace:gen-entrypoint:start"
 	commentEndGenCode   = "//ddtrace:gen-entrypoint:end"
-	globalconfigImport  = "gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 )
 
 func FieldIsInjected(f *dst.Field) bool {
@@ -235,15 +234,11 @@ func StatementWithGenCodeDecorations(statements ...dst.Stmt) *dst.BlockStmt {
 
 func ExpressionIntegrationDisabled() *dst.CallExpr {
 	return &dst.CallExpr{
-		Fun: &dst.Ident{
-			Name: "IntegrationDisabled",
-			Path: globalconfigImport,
+		Fun: &dst.SelectorExpr{
+			X:   &dst.Ident{Name: "instr"},
+			Sel: &dst.Ident{Name: "Disabled"},
 		},
-		Args: []dst.Expr{
-			&dst.Ident{
-				Name: "componentName",
-			},
-		},
+		Args: []dst.Expr{},
 	}
 }
 
