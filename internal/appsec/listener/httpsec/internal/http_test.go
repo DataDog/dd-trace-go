@@ -19,6 +19,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/config"
 	listener "github.com/DataDog/dd-trace-go/v2/internal/appsec/listener/httpsec"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/listener/waf"
+	libddwaf "github.com/DataDog/go-libddwaf/v3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -33,6 +34,10 @@ var (
 )
 
 func TestFeature_headerCollection(t *testing.T) {
+	if ok, err := libddwaf.Health(); !ok {
+		t.Skipf("Skipping tests because libddwaf is not available: %v", err)
+	}
+
 	appsec.Start()
 	defer appsec.Stop()
 
