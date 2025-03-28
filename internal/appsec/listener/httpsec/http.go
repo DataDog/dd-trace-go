@@ -6,9 +6,8 @@
 package httpsec
 
 import (
-	"math/rand"
-
-	internal "github.com/DataDog/appsec-internal-go/appsec"
+	"github.com/DataDog/appsec-internal-go/apisec"
+	"github.com/DataDog/appsec-internal-go/appsec"
 
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/dyngo"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/httpsec"
@@ -19,7 +18,7 @@ import (
 )
 
 type Feature struct {
-	APISec internal.APISecConfig
+	APISec appsec.APISecConfig
 }
 
 func (*Feature) String() string {
@@ -81,15 +80,20 @@ func (feature *Feature) OnResponse(op *httpsec.HandlerOperation, resp httpsec.Ha
 		WithResponseHeadersNoCookies(headers).
 		WithResponseStatus(resp.StatusCode)
 
-	if feature.canExtractSchemas() {
+	if feature.shouldExtractShema(op, resp.StatusCode) {
 		builder = builder.ExtractSchema()
 	}
 
 	op.Run(op, builder.Build())
 }
 
-// canExtractSchemas checks that API Security is enabled and that sampling rate
+// shouldExtractShema checks that API Security is enabled and that sampling rate
 // allows extracting schemas
-func (feature *Feature) canExtractSchemas() bool {
-	return feature.APISec.Enabled && feature.APISec.SampleRate >= rand.Float64()
+func (feature *Feature) shouldExtractShema(op *httpsec.HandlerOperation, statusCode int) bool {
+	return feature.APISec.Enabled &&
+		feature.APISec.Sampler.DecisionFor(apisec.SamplingKey{
+			Method:     op.Method(),
+			Route:      op.Route(),
+			StatusCode: statusCode,
+		})
 }
