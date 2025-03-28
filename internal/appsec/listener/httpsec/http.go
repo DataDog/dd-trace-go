@@ -16,7 +16,6 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/waf/addresses"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/listener"
-	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
 type Feature struct {
@@ -111,7 +110,6 @@ func (*BasicFeature) OnResponse(op *httpsec.HandlerOperation, resp httpsec.Handl
 
 func extractRequestHeaders(op *httpsec.HandlerOperation, args httpsec.HandlerOperationArgs) (map[string][]string, netip.Addr) {
 	tags, ip := ClientIPTags(args.Headers, true, args.RemoteAddr)
-	log.Debug("appsec: http client ip detection returned `%s` given the http headers `%v`", ip, args.Headers)
 
 	op.SetStringTags(tags)
 	headers := headersRemoveCookies(args.Headers)
