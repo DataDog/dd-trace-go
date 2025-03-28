@@ -145,6 +145,11 @@ func (s *appsecEnvoyExternalProcessorServer) Process(processServer envoyextproc.
 			return status.Errorf(codes.Unknown, "Error sending response (probably because of an Envoy timeout): %v", err)
 		}
 
+		if currentRequest == nil {
+			instr.Logger().Debug("external_processing: request fully analyzed, end the stream")
+			return nil
+		}
+
 		if !blocked {
 			continue
 		}
