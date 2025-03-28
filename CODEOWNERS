@@ -7,8 +7,10 @@
 # team and can be reviewed by anybody with the appropriate permissions. This is
 # meant to avoid pinging all of @DataDog/dd-trace-go-guild for every PR that
 # changes one of these files.
-go.mod
-go.sum
+**/go.mod
+**/go.sum
+go.work
+go.work.sum
 
 # tracing
 /contrib                        @DataDog/apm-go @Datadog/apm-idm-go

@@ -12,12 +12,12 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/DataDog/dd-trace-go/internal/orchestrion/_integration/internal/containers"
-	"github.com/DataDog/dd-trace-go/internal/orchestrion/_integration/internal/trace"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/containers"
+	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/trace"
 	"github.com/stretchr/testify/require"
 	testvalkey "github.com/testcontainers/testcontainers-go/modules/valkey"
 	"github.com/valkey-io/valkey-go"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
 
 type TestCase struct {
@@ -56,12 +56,11 @@ func (tc *TestCase) ExpectedTraces() trace.Traces {
 				{
 					Tags: map[string]any{
 						"name":     "valkey.command",
-						"service":  "valkey.client",
+						"service":  "valkey-go.test",
 						"resource": "SET",
 						"type":     "valkey",
 					},
 					Meta: map[string]string{
-						"_dd.base_service":           "valkey-go.test",
 						"component":                  "valkey-io/valkey-go",
 						"db.system":                  "valkey",
 						"db.valkey.client.cache.hit": "false",
@@ -73,12 +72,11 @@ func (tc *TestCase) ExpectedTraces() trace.Traces {
 				{
 					Tags: map[string]any{
 						"name":     "valkey.command",
-						"service":  "valkey.client",
+						"service":  "valkey-go.test",
 						"resource": "GET",
 						"type":     "valkey",
 					},
 					Meta: map[string]string{
-						"_dd.base_service":           "valkey-go.test",
 						"component":                  "valkey-io/valkey-go",
 						"db.system":                  "valkey",
 						"db.valkey.client.cache.hit": "false",

@@ -6,7 +6,7 @@
 package mapper
 
 import (
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry/internal/transport"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/internal/transport"
 )
 
 // NewAppClosingMapper returns a new Mapper that appends an AppClosing payload to the given payloads and calls the underlying Mapper with it.

@@ -10,8 +10,8 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry/internal"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/internal"
 )
 
 // noopMetricHandle is a no-op implementation of a metric handle.
@@ -44,7 +44,7 @@ func (t *swappableMetricHandle) Submit(value float64) {
 		}) {
 			metricLogLossOnce.Do(func() {
 				msg := "telemetry: metric is losing values because the telemetry client has not been started yet, dropping telemetry data, please start the telemetry client earlier to avoid data loss"
-				log.Debug(msg)
+				log.Debug("%s\n", msg)
 				Log(LogError, msg, WithStacktrace())
 			})
 		}

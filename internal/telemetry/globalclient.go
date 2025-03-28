@@ -9,10 +9,13 @@ import (
 	"sync"
 	"sync/atomic"
 
-	globalinternal "gopkg.in/DataDog/dd-trace-go.v1/internal"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry/internal"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry/internal/transport"
+	"github.com/puzpuzpuz/xsync/v3"
+
+	globalinternal "github.com/DataDog/dd-trace-go/v2/internal"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/internal"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/internal/knownmetrics"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/internal/transport"
 )
 
 var (
@@ -22,7 +25,7 @@ var (
 	globalClientRecorder = internal.NewRecorder[Client]()
 
 	// metricsHandleSwappablePointers contains all the swappableMetricHandle, used to replay actions done before the actual MetricHandle is set
-	metricsHandleSwappablePointers internal.SyncMap[metricKey, *swappableMetricHandle]
+	metricsHandleSwappablePointers = xsync.NewMapOf[metricKey, *swappableMetricHandle](xsync.WithPresize(knownmetrics.Size()))
 )
 
 // GlobalClient returns the global telemetry client.
@@ -47,11 +50,7 @@ func StartApp(client Client) {
 	}
 
 	client.AppStart()
-
-	go func() {
-		client.Flush()
-		log.Debug("telemetry: successfully flushed the telemetry app-started payload")
-	}()
+	go client.Flush()
 }
 
 // SwapClient swaps the global client with the given client and Flush the old (*client).
@@ -88,10 +87,7 @@ func SwapClient(client Client) Client {
 // It returns a function that can be used to swap back the global client
 func MockClient(client Client) func() {
 	globalClientRecorder.Clear()
-	metricsHandleSwappablePointers.Range(func(key metricKey, _ *swappableMetricHandle) bool {
-		metricsHandleSwappablePointers.Delete(key)
-		return true
-	})
+	metricsHandleSwappablePointers.Clear()
 
 	oldClient := SwapClient(client)
 	return func() {
@@ -212,6 +208,13 @@ func LoadIntegration(integration string) {
 	})
 }
 
+// AddFlushTicker adds a function that is called at each telemetry Flush. By default, every minute
+func AddFlushTicker(ticker func(Client)) {
+	globalClientCall(func(client Client) {
+		client.AddFlushTicker(ticker)
+	})
+}
+
 var globalClientLogLossOnce sync.Once
 
 // globalClientCall takes a function that takes a Client and calls it with the global client if it exists.
@@ -226,7 +229,7 @@ func globalClientCall(fun func(client Client)) {
 		if !globalClientRecorder.Record(fun) {
 			globalClientLogLossOnce.Do(func() {
 				msg := "telemetry: global client recorder queue is full, dropping telemetry data, please start the telemetry client earlier to avoid data loss"
-				log.Debug(msg)
+				log.Debug("%s\n", msg)
 				Log(LogError, msg, WithStacktrace())
 			})
 		}
@@ -243,30 +246,30 @@ func globalClientNewMetric(namespace Namespace, kind transport.MetricType, name 
 		return noopMetricHandleInstance
 	}
 
-	maker := func(client Client) MetricHandle {
-		switch kind {
-		case transport.CountMetric:
-			return client.Count(namespace, name, tags)
-		case transport.RateMetric:
-			return client.Rate(namespace, name, tags)
-		case transport.GaugeMetric:
-			return client.Gauge(namespace, name, tags)
-		case transport.DistMetric:
-			return client.Distribution(namespace, name, tags)
-		}
-		log.Warn("telemetry: unknown metric type %q", kind)
-		return nil
-	}
 	key := newMetricKey(namespace, kind, name, tags)
-	wrapper := &swappableMetricHandle{maker: maker}
-	if client := globalClient.Load(); client == nil || *client == nil {
-		wrapper.recorder = internal.NewRecorder[MetricHandle]()
-	}
-	hotPtr, loaded := metricsHandleSwappablePointers.LoadOrStore(key, wrapper)
-	if !loaded {
+	hotPtr, _ := metricsHandleSwappablePointers.LoadOrCompute(key, func() *swappableMetricHandle {
+		maker := func(client Client) MetricHandle {
+			switch kind {
+			case transport.CountMetric:
+				return client.Count(namespace, name, tags)
+			case transport.RateMetric:
+				return client.Rate(namespace, name, tags)
+			case transport.GaugeMetric:
+				return client.Gauge(namespace, name, tags)
+			case transport.DistMetric:
+				return client.Distribution(namespace, name, tags)
+			}
+			log.Warn("telemetry: unknown metric type %q", kind)
+			return nil
+		}
+		wrapper := &swappableMetricHandle{maker: maker}
+		if client := globalClient.Load(); client == nil || *client == nil {
+			wrapper.recorder = internal.NewRecorder[MetricHandle]()
+		}
 		globalClientCall(func(client Client) {
-			hotPtr.swap(maker(client))
+			wrapper.swap(maker(client))
 		})
-	}
+		return wrapper
+	})
 	return hotPtr
 }

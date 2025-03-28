@@ -1,0 +1,42 @@
+name: Update supported integration versions doc
+on:
+  workflow_run:
+    # Every time we run smoke tests, we check what version of each library was used to run the tests and this will
+    # be used as the latest supported version in our docs.
+    workflows: [ "Smoke Tests" ]
+    branches: [ main ]
+    types:
+      - completed
+
+concurrency:
+  # Automatically cancel previous runs if a new one is triggered to conserve resources.
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  on-smoke-tests-success:
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: write
+      pull-requests: write
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: echo 'Smoke Tests workflow passed'
+      - run: go run .github/workflows/apps/gen_supported_versions_doc.go
+      - run: git diff
+      # note: This will only run when there *are* changes to integration versions
+      - name: Create Pull Request
+        id: pr
+        uses: peter-evans/create-pull-request@v6
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          branch: "update-latest-supported-versions"
+          commit-message: "docs: update latest supported integration versions doc"
+          base: main
+          title: "docs: update latest supported integration versions doc"
+          labels: changelog/no-changelog
+          body: "Test"

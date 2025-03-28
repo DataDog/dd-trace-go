@@ -29,7 +29,7 @@ package telemetry
 import (
 	"io"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry/internal/transport"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/internal/transport"
 )
 
 // Namespace describes a product to distinguish telemetry coming from
@@ -162,4 +162,7 @@ type Client interface {
 	// AppStop sends the telemetry necessary to signal that the app is stopping.
 	// Preferred use via [StopApp] package level function
 	AppStop()
+
+	// AddFlushTicker adds a function that is called at each telemetry Flush. By default, every minute
+	AddFlushTicker(ticker func(Client))
 }

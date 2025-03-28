@@ -8,10 +8,10 @@ package tracer
 import (
 	"runtime"
 	"runtime/debug"
-	"sync/atomic"
 	"time"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/internal/tracerstats"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
 // defaultMetricsReportInterval specifies the interval at which runtime metrics will
@@ -110,7 +110,7 @@ func (t *tracer) reportHealthMetricsAtInterval(interval time.Duration) {
 				t.statsd.Count("datadog.tracer.spans_finished", v, []string{"integration:" + k}, 1)
 			}
 
-			t.statsd.Count("datadog.tracer.traces_dropped", int64(atomic.SwapUint32(&t.tracesDropped, 0)), []string{"reason:trace_too_large"}, 1)
+			t.statsd.Count("datadog.tracer.traces_dropped", int64(tracerstats.Count(tracerstats.TracesDropped)), []string{"reason:trace_too_large"}, 1)
 		case <-t.stop:
 			return
 		}

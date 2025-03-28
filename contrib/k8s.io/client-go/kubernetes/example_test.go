@@ -9,7 +9,8 @@ import (
 	"context"
 	"fmt"
 
-	kubernetestrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/k8s.io/client-go/kubernetes"
+	kubernetestrace "github.com/DataDog/dd-trace-go/contrib/k8s.io/client-go/v2/kubernetes"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 
 	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
@@ -18,6 +19,9 @@ import (
 )
 
 func Example() {
+	tracer.Start()
+	defer tracer.Stop()
+
 	cfg, err := rest.InClusterConfig()
 	if err != nil {
 		panic(err.Error())
