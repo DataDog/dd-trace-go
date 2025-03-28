@@ -107,6 +107,7 @@ func TestCustomRules(t *testing.T) {
 				"waf_error:false",
 				"waf_version:" + waf.Version(),
 				"event_rules_version:1.4.2",
+				"input_truncated:false",
 			}).Get())
 		})
 	}
@@ -466,6 +467,7 @@ func TestBlocking(t *testing.T) {
 				"waf_error:false",
 				"waf_version:" + waf.Version(),
 				"event_rules_version:1.4.2",
+				"input_truncated:false",
 			}).Get())
 		})
 	}
