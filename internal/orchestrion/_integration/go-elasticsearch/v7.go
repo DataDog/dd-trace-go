@@ -15,19 +15,23 @@ import (
 	"github.com/elastic/go-elasticsearch/v7"
 	"github.com/elastic/go-elasticsearch/v7/esapi"
 	"github.com/stretchr/testify/require"
+
+	"github.com/DataDog/dd-trace-go/internal/orchestrion/_integration/internal/containers"
 )
 
 type TestCaseV7 struct {
 	base
 }
 
-func (tc *TestCaseV7) Setup(ctx context.Context, t *testing.T) {
-	// Change the docker pull stage in .github/workflows/orchestrion.yml if you update this
-	tc.base.Setup(ctx, t, "docker.elastic.co/elasticsearch/elasticsearch:7.17.24", func(addr string, _ []byte) (esClient, error) {
-		return elasticsearch.NewClient(elasticsearch.Config{
-			Addresses: []string{addr},
-		})
+func (tc *TestCaseV7) Setup(_ context.Context, t *testing.T) {
+	containers.SkipIfProviderIsNotHealthy(t)
+
+	var err error
+	tc.container = containers.StartElasticsearchV7Container(t)
+	tc.client, err = elasticsearch.NewClient(elasticsearch.Config{
+		Addresses: []string{tc.container.Settings.Address},
 	})
+	require.NoError(t, err)
 }
 
 func (tc *TestCaseV7) Run(ctx context.Context, t *testing.T) {

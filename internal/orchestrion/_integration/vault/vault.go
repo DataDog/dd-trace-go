@@ -15,7 +15,6 @@ import (
 	"github.com/DataDog/dd-trace-go/internal/orchestrion/_integration/internal/trace"
 	"github.com/hashicorp/vault/api"
 	"github.com/stretchr/testify/require"
-	"github.com/testcontainers/testcontainers-go"
 	testvault "github.com/testcontainers/testcontainers-go/modules/vault"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
@@ -28,16 +27,7 @@ type TestCase struct {
 func (tc *TestCase) Setup(ctx context.Context, t *testing.T) {
 	containers.SkipIfProviderIsNotHealthy(t)
 
-	var err error
-	tc.server, err = testvault.Run(ctx,
-		"vault:1.7.3", // Change the docker pull stage in .github/workflows/orchestrion.yml if you update this
-		testcontainers.WithLogger(testcontainers.TestLogger(t)),
-		containers.WithTestLogConsumer(t),
-		testvault.WithToken("root"),
-	)
-	containers.AssertTestContainersError(t, err)
-	containers.RegisterContainerCleanup(t, tc.server)
-
+	tc.server = containers.StartVaultContainer(t)
 	addr, err := tc.server.HttpHostAddress(ctx)
 	if err != nil {
 		defer tc.server.Terminate(ctx)

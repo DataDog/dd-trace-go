@@ -9,6 +9,7 @@ package containers
 
 import (
 	"context"
+	"os"
 	"testing"
 	"time"
 
@@ -19,6 +20,10 @@ import (
 // RegisterContainerCleanup registers a function to terminate the provided container to be executed after the test finishes.
 func RegisterContainerCleanup(t testing.TB, container testcontainers.Container) {
 	t.Cleanup(func() {
+		if _, ok := os.LookupEnv("CI"); ok {
+			t.Log("skipping container cleanup in CI environment")
+			return
+		}
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
 		assert.NoError(t, container.Terminate(ctx))
