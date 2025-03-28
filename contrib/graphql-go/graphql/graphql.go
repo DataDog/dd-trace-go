@@ -11,6 +11,7 @@ import (
 	"math"
 	"reflect"
 
+	internalgraphql "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/graphql"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
@@ -199,6 +200,7 @@ func (i datadogExtension) ExecutionDidStart(ctx context.Context) (context.Contex
 	})
 	return ctx, func(result *graphql.Result) {
 		err := toError(result.Errors)
+		internalgraphql.AddErrorsAsSpanEvents(span, toGraphqlErrors(result.Errors), i.config.errExtensions)
 		defer func() {
 			defer data.finish(result.Data, err)
 			span.Finish(tracer.WithError(err))
@@ -307,4 +309,25 @@ func toError(errs []gqlerrors.FormattedError) error {
 	default:
 		return fmt.Errorf("%w (and %d more errors)", errs[0], count-1)
 	}
+}
+
+func toGraphqlErrors(errs []gqlerrors.FormattedError) []internalgraphql.Error {
+	res := make([]internalgraphql.Error, 0, len(errs))
+	for _, err := range errs {
+		locs := make([]internalgraphql.ErrorLocation, 0, len(err.Locations))
+		for _, loc := range err.Locations {
+			locs = append(locs, internalgraphql.ErrorLocation{
+				Line:   loc.Line,
+				Column: loc.Column,
+			})
+		}
+		res = append(res, internalgraphql.Error{
+			OriginalErr: err,
+			Message:     err.Message,
+			Locations:   locs,
+			Path:        err.Path,
+			Extensions:  err.Extensions,
+		})
+	}
+	return res
 }

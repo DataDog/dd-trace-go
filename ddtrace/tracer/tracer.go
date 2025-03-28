@@ -602,14 +602,15 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 	}
 	// span defaults
 	span := &span{
-		Name:         operationName,
-		Service:      t.config.serviceName,
-		Resource:     operationName,
-		SpanID:       id,
-		TraceID:      id,
-		Start:        startTime,
-		noDebugStack: t.config.noDebugStack,
-		integration:  "manual",
+		Name:           operationName,
+		Service:        t.config.serviceName,
+		Resource:       operationName,
+		SpanID:         id,
+		TraceID:        id,
+		Start:          startTime,
+		noDebugStack:   t.config.noDebugStack,
+		integration:    "manual",
+		supportsEvents: t.config.agent.spanEventsAvailable,
 	}
 
 	span.SpanLinks = append(span.SpanLinks, opts.SpanLinks...)
