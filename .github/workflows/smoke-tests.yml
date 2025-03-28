@@ -105,8 +105,8 @@ jobs:
           find -name go.mod -execdir go mod tidy \;
           git diff --exit-code
 
-          # We dont to actually sync dependencies, just check if the go.work.sum file is up-to-date
-          go work sync
+          # This specific command allows us to not run `go work sync` but still make sure the go.work.sum file is up to date
+          go list -m all
           git diff --exit-code -- go.work.sum
 
   # TODO: macos setup requirements (xcode tools installation, etc.)
