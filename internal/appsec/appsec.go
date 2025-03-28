@@ -38,9 +38,6 @@ func RASPEnabled() bool {
 // Start AppSec when enabled is enabled by both using the appsec build tag and
 // setting the environment variable DD_APPSEC_ENABLED to true.
 func Start(opts ...config.StartOption) {
-	telemetry := newAppsecTelemetry()
-	defer telemetry.emit()
-
 	startConfig := config.NewStartConfig(opts...)
 
 	// AppSec can start either:
@@ -54,19 +51,8 @@ func Start(opts ...config.StartOption) {
 		return
 	}
 
-	switch modeOrigin {
-	case config.OriginEnvVar:
-		telemetry.addEnvConfig("DD_APPSEC_ENABLED", mode == config.ForcedOn)
-		if mode == config.ForcedOff {
-			log.Debug("appsec: disabled by the configuration: set the environment variable DD_APPSEC_ENABLED to true to enable it")
-			return
-		}
-	case config.OriginExplicitOption:
-		telemetry.addCodeConfig("WithEnablementMode", mode)
-	}
-
-	// In any case, if we're forced off, we no longer have any business here...
 	if mode == config.ForcedOff {
+		log.Debug("appsec: disabled by the configuration: set the environment variable DD_APPSEC_ENABLED to true to enable it")
 		return
 	}
 
@@ -108,11 +94,17 @@ func Start(opts ...config.StartOption) {
 			return
 		}
 		log.Debug("appsec: awaiting for possible remote activation")
-	} else if err := appsec.start(telemetry); err != nil { // AppSec is specifically enabled
+		setActiveAppSec(appsec)
+		return
+	}
+
+	if err := appsec.start(); err != nil { // AppSec is specifically enabled
 		logUnexpectedStartError(err)
 		appsec.stopRC()
 		return
 	}
+
+	registerAppsecStartTelemetry(mode, modeOrigin)
 	setActiveAppSec(appsec)
 }
 
@@ -156,7 +148,7 @@ func newAppSec(cfg *config.Config) *appsec {
 }
 
 // Start AppSec by registering its security protections according to the configured the security rules.
-func (a *appsec) start(telemetry *appsecTelemetry) error {
+func (a *appsec) start() error {
 	// Load the waf to catch early errors if any
 	if ok, err := waf.Load(); err != nil {
 		// 1. If there is an error and the loading is not ok: log as an unexpected error case and quit appsec
@@ -183,7 +175,6 @@ func (a *appsec) start(telemetry *appsecTelemetry) error {
 	// TODO: log the config like the APM tracer does but we first need to define
 	//   an user-friendly string representation of our config and its sources
 
-	telemetry.setEnabled()
 	return nil
 }
 
@@ -192,10 +183,8 @@ func (a *appsec) stop() {
 	if !a.started {
 		return
 	}
-	telemetry := newAppsecTelemetry()
-	defer telemetry.emit()
-
 	a.started = false
+	registerAppsecStopTelemetry()
 	// Disable RC blocking first so that the following is guaranteed not to be concurrent anymore.
 	a.disableRCBlocking()
 
