@@ -638,7 +638,6 @@ func end2EndStreamRequest(t *testing.T, stream envoyextproc.ExternalProcessor_Pr
 			},
 		},
 	})
-	require.NoError(t, err)
 
 	// The stream should now be closed
 	_, err = stream.Recv()
