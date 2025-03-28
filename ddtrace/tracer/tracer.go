@@ -226,7 +226,7 @@ func storeConfig(c *config) {
 	metadata := TracerMetadata{
 		SchemaVersion:      1,
 		RuntimeId:          globalconfig.RuntimeID(),
-		Language:           "golang",
+		Language:           "go",
 		Version:            globalversion.Tag,
 		Hostname:           c.hostname,
 		ServiceName:        c.serviceName,
