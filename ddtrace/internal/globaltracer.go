@@ -102,3 +102,8 @@ func (NoopSpanContext) TraceID() uint64 { return 0 }
 
 // ForeachBaggageItem implements ddtrace.SpanContext.
 func (NoopSpanContext) ForeachBaggageItem(_ func(k, v string) bool) {}
+
+// SamplingPriority returns the sampling priority of the trace and whether it's already set
+func (NoopSpanContext) SamplingPriority() (p int, ok bool) {
+	return 0, false
+}
