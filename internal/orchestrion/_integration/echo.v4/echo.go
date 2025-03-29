@@ -18,6 +18,7 @@ import (
 	"github.com/labstack/echo/v4"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
 
 type TestCase struct {
@@ -29,9 +30,14 @@ func (tc *TestCase) Setup(_ context.Context, t *testing.T) {
 	tc.Echo = echo.New()
 	tc.Echo.Logger.SetOutput(io.Discard)
 
-	tc.Echo.GET("/ping", func(c echo.Context) error {
+	//dd:span
+	handlerFunc := func(c echo.Context) error {
+		span, _ := tracer.SpanFromContext(c.Request().Context())
+		span.SetTag("foo", "bar")
 		return c.JSON(http.StatusOK, map[string]any{"message": "pong"})
-	})
+	}
+
+	tc.Echo.GET("/ping", handlerFunc)
 	tc.addr = fmt.Sprintf("127.0.0.1:%d", net.FreePort(t))
 
 	go func() { assert.ErrorIs(t, tc.Echo.Start(tc.addr), http.ErrServerClosed) }()
@@ -90,6 +96,19 @@ func (tc *TestCase) ExpectedTraces() trace.Traces {
 								"http.url":  httpUrl,
 								"component": "labstack/echo.v4",
 								"span.kind": "server",
+							},
+							Children: trace.Traces{
+								{
+									Tags: map[string]any{
+										"name":     "handlerFunc",
+										"service":  "echo",
+										"resource": "",
+										"type":     "",
+									},
+									Meta: map[string]string{
+										"foo": "bar",
+									},
+								},
 							},
 						},
 					},
