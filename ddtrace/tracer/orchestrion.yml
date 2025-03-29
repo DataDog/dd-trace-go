@@ -79,12 +79,17 @@ aspects:
           template: |-
             {{- $ctx := .Function.ArgumentOfType "context.Context" -}}
             {{- $req := .Function.ArgumentOfType "*net/http.Request" -}}
+            {{- $echoCtx := .Function.ArgumentOfType "echo.Context" -}}
             {{- if (eq $ctx "") -}}
               {{- $ctx = "ctx" -}}
               ctx := {{- with $req -}}
                 {{ $req }}.Context()
               {{- else -}}
-                context.TODO()
+                {{- with $echoCtx -}}
+                  {{ $echoCtx }}.Request().Context()
+                {{- else -}}
+                  context.TODO()
+                {{- end -}}
               {{- end }}
             {{ end -}}
 
@@ -112,6 +117,10 @@ aspects:
             )
             {{- with $req }}
               {{ $req }} = {{ $req }}.WithContext({{ $ctx }})
+            {{- else -}}
+              {{- with $echoCtx }}
+                {{ $echoCtx }}.SetRequest({{ $echoCtx }}.Request().WithContext({{ $ctx }}))
+              {{- end -}}
             {{- end }}
 
             {{ with .Function.ResultOfType "error" -}}
