@@ -192,7 +192,7 @@ func (tg *TestStatsdClient) TimingCalls() []TestStatsdCall {
 	tg.mu.RLock()
 	defer tg.mu.RUnlock()
 	c := make([]TestStatsdCall, len(tg.timingCalls))
-	copy(c, tg.countCalls)
+	copy(c, tg.timingCalls)
 	return c
 }
 
@@ -230,6 +230,25 @@ func (tg *TestStatsdClient) CallsByName() map[string]int {
 	}
 	for _, c := range tg.timingCalls {
 		counts[c.name]++
+	}
+	return counts
+}
+
+func (tg *TestStatsdClient) ValsByName() map[string]float64 {
+	tg.mu.RLock()
+	defer tg.mu.RUnlock()
+	counts := make(map[string]float64)
+	for _, c := range tg.gaugeCalls {
+		counts[c.name] += c.floatVal
+	}
+	for _, c := range tg.incrCalls {
+		counts[c.name] += float64(c.intVal)
+	}
+	for _, c := range tg.countCalls {
+		counts[c.name] += float64(c.intVal)
+	}
+	for _, c := range tg.timingCalls {
+		counts[c.name] += float64(c.timeVal)
 	}
 	return counts
 }
