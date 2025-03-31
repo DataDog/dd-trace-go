@@ -128,7 +128,7 @@ type Span struct {
 	parentID   uint64             `msg:"parent_id"`             // identifier of the span's direct parent
 	error      int32              `msg:"error"`                 // error status of the span; 0 means no errors
 	spanLinks  []SpanLink         `msg:"span_links,omitempty"`  // links to other spans
-	spanEvents []spanEvent        `msg:"span_events,omitempty"` // events produced related to his span
+	spanEvents []spanEvent        `msg:"span_events,omitempty"` // events produced related to this span
 
 	goExecTraced   bool         `msg:"-"`
 	noDebugStack   bool         `msg:"-"` // disables debug stack traces
