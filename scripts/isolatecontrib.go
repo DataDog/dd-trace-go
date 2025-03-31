@@ -31,7 +31,7 @@ require (
 
 func main() {
 	if len(os.Args) != 3 {
-		panic("usage: go run checkcopyright.go <contrib-path> <dependency-path>")
+		panic("usage: go run isolatecontrib.go <contrib-path> <dependency-path>")
 	}
 	var (
 		contribPath    = path.Clean(os.Args[1])
