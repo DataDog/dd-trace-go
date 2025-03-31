@@ -70,9 +70,6 @@ use (
 	./orchestrion/all
 	./scripts/apiextractor
 	./scripts/autoreleasetagger
-	./scripts/autoreleasetagger/testdata/root
-	./scripts/autoreleasetagger/testdata/root/moduleA
-	./scripts/autoreleasetagger/testdata/root/moduleB
 	./scripts/fixmodules
 	./tools/v2check
 	./tools/v2check/_stage
