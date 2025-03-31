@@ -88,7 +88,25 @@ func (s *Span) AsMap() map[string]interface{} {
 	m[ext.MapSpanTraceID] = s.traceID
 	m[ext.MapSpanParentID] = s.parentID
 	m[ext.MapSpanError] = s.error
+	if events := s.spanEventsAsJSONString(); events != "" {
+		m[ext.MapSpanEvents] = events
+	}
 	return m
+}
+
+func (s *Span) spanEventsAsJSONString() string {
+	if !s.supportsEvents {
+		return s.meta["events"]
+	}
+	if s.spanEvents == nil {
+		return ""
+	}
+	events, err := json.Marshal(s.spanEvents)
+	if err != nil {
+		log.Error("failed to marshal span events: %v", err)
+		return ""
+	}
+	return string(events)
 }
 
 // Span represents a computation. Callers must call Finish when a Span is
@@ -110,12 +128,14 @@ type Span struct {
 	parentID   uint64             `msg:"parent_id"`             // identifier of the span's direct parent
 	error      int32              `msg:"error"`                 // error status of the span; 0 means no errors
 	spanLinks  []SpanLink         `msg:"span_links,omitempty"`  // links to other spans
+	spanEvents []spanEvent        `msg:"span_events,omitempty"` // events produced related to this span
 
-	goExecTraced bool         `msg:"-"`
-	noDebugStack bool         `msg:"-"` // disables debug stack traces
-	finished     bool         `msg:"-"` // true if the span has been submitted to a tracer. Can only be read/modified if the trace is locked.
-	context      *SpanContext `msg:"-"` // span propagation context
-	integration  string       `msg:"-"` // where the span was started from, such as a specific contrib or "manual"
+	goExecTraced   bool         `msg:"-"`
+	noDebugStack   bool         `msg:"-"` // disables debug stack traces
+	finished       bool         `msg:"-"` // true if the span has been submitted to a tracer. Can only be read/modified if the trace is locked.
+	context        *SpanContext `msg:"-"` // span propagation context
+	integration    string       `msg:"-"` // where the span was started from, such as a specific contrib or "manual"
+	supportsEvents bool         `msg:"-"` // whether the span supports native span events or not
 
 	pprofCtxActive  context.Context `msg:"-"` // contains pprof.WithLabel labels to tell the profiler more about this span
 	pprofCtxRestore context.Context `msg:"-"` // contains pprof.WithLabel labels of the parent span (if any) that need to be restored when this span finishes
@@ -265,31 +285,6 @@ func (s *Span) SetTag(key string, value interface{}) {
 
 	// not numeric, not a string, not a fmt.Stringer, not a bool, and not an error
 	s.setMeta(key, fmt.Sprint(value))
-}
-
-// AddLink sets a casuality link to another span via a spanContext. It also
-// stores details about the link in an attributes map.
-func (s *Span) AddLink(spanContext *SpanContext, attributes map[string]string) {
-	traceIDHex := spanContext.TraceID()
-	traceIDHigh, _ := strconv.ParseUint(traceIDHex[:8], 16, 64)
-
-	samplingDecision, hasSamplingDecision := spanContext.SamplingPriority()
-	var flags uint32
-	if hasSamplingDecision && samplingDecision >= ext.PriorityAutoKeep {
-		flags = uint32(1<<31 | 1)
-	} else if hasSamplingDecision {
-		flags = uint32(1 << 31)
-	} else {
-		flags = uint32(0)
-	}
-
-	s.spanLinks = append(s.spanLinks, SpanLink{
-		TraceID:     spanContext.TraceIDLower(),
-		TraceIDHigh: traceIDHigh,
-		SpanID:      spanContext.SpanID(),
-		Attributes:  attributes,
-		Flags:       flags,
-	})
 }
 
 // setSamplingPriority locks the span, then updates the sampling priority.
@@ -557,8 +552,8 @@ func (s *Span) setMetric(key string, v float64) {
 	}
 }
 
-// AddSpanLink appends the given link to the span's span links.
-func (s *Span) AddSpanLink(link SpanLink) {
+// AddLink appends the given link to the span's span links.
+func (s *Span) AddLink(link SpanLink) {
 	s.spanLinks = append(s.spanLinks, link)
 }
 
@@ -576,6 +571,28 @@ func (s *Span) serializeSpanLinksInMeta() {
 		s.meta = make(map[string]string)
 	}
 	s.meta["_dd.span_links"] = string(spanLinkBytes)
+}
+
+// serializeSpanEvents sets the span events from the current span in the correct transport, depending on whether the
+// agent supports the native method or not.
+func (s *Span) serializeSpanEvents() {
+	if len(s.spanEvents) == 0 {
+		return
+	}
+	// if span events are natively supported by the agent, there's nothing to do
+	// as the events will be already included when the span is serialized.
+	if s.supportsEvents {
+		return
+	}
+	// otherwise, we need to serialize them as a string tag and remove them from the struct
+	// so they are not sent twice.
+	b, err := json.Marshal(s.spanEvents)
+	s.spanEvents = nil
+	if err != nil {
+		log.Debug("Unable to marshal span events; events dropped from span meta\n%v", err)
+		return
+	}
+	s.meta["events"] = string(b)
 }
 
 // Finish closes this Span (but not its children) providing the duration
@@ -642,6 +659,7 @@ func (s *Span) Finish(opts ...FinishOption) {
 	}
 
 	s.serializeSpanLinksInMeta()
+	s.serializeSpanEvents()
 
 	s.finish(t)
 	orchestrion.GLSPopValue(sharedinternal.ActiveSpanKey)
@@ -840,6 +858,30 @@ func (s *Span) Format(f fmt.State, c rune) {
 	default:
 		fmt.Fprintf(f, "%%!%c(tracer.Span=%v)", c, s)
 	}
+}
+
+// AddEvent attaches a new event to the current span.
+func (s *Span) AddEvent(name string, opts ...SpanEventOption) {
+	if s.finished {
+		return
+	}
+	cfg := SpanEventConfig{}
+	for _, opt := range opts {
+		opt(&cfg)
+	}
+	if cfg.Time.IsZero() {
+		cfg.Time = time.Now()
+	}
+	event := spanEvent{
+		Name:         name,
+		TimeUnixNano: uint64(cfg.Time.UnixNano()),
+	}
+	if s.supportsEvents {
+		event.Attributes = toSpanEventAttributeMsg(cfg.Attributes)
+	} else {
+		event.RawAttributes = cfg.Attributes
+	}
+	s.spanEvents = append(s.spanEvents, event)
 }
 
 func getMeta(s *Span, key string) (string, bool) {

@@ -19,13 +19,15 @@ import (
 	"math"
 	"time"
 
-	"github.com/99designs/gqlgen/graphql"
-	"github.com/vektah/gqlparser/v2/ast"
-
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/graphqlsec"
+	instrgraphql "github.com/DataDog/dd-trace-go/v2/instrumentation/graphql"
+
+	"github.com/99designs/gqlgen/graphql"
+	"github.com/vektah/gqlparser/v2/ast"
+	"github.com/vektah/gqlparser/v2/gqlerror"
 )
 
 const componentName = instrumentation.Package99DesignsGQLGen
@@ -89,11 +91,12 @@ func (t *gqlTracer) InterceptOperation(ctx context.Context, next graphql.Operati
 	return func(ctx context.Context) *graphql.Response {
 		response := responseHandler(ctx)
 		if span != nil {
-			var err error
+			var spanErr error
 			if len(response.Errors) > 0 {
-				err = response.Errors
+				spanErr = response.Errors
+				instrgraphql.AddErrorsAsSpanEvents(span, toGraphqlErrors(response.Errors), t.cfg.errExtensions)
 			}
-			defer span.Finish(tracer.WithError(err))
+			defer span.Finish(tracer.WithError(spanErr))
 		}
 
 		var (
@@ -235,3 +238,28 @@ var _ interface {
 	graphql.FieldInterceptor
 	graphql.ResponseInterceptor
 } = &gqlTracer{}
+
+func toGraphqlErrors(errs gqlerror.List) []instrgraphql.Error {
+	res := make([]instrgraphql.Error, 0, len(errs))
+	for _, err := range errs {
+		locs := make([]instrgraphql.ErrorLocation, 0, len(err.Locations))
+		for _, loc := range err.Locations {
+			locs = append(locs, instrgraphql.ErrorLocation{
+				Line:   loc.Line,
+				Column: loc.Column,
+			})
+		}
+		errPath := make([]any, 0, len(err.Path))
+		for _, p := range err.Path {
+			errPath = append(errPath, p)
+		}
+		res = append(res, instrgraphql.Error{
+			OriginalErr: err,
+			Message:     err.Message,
+			Locations:   locs,
+			Path:        errPath,
+			Extensions:  err.Extensions,
+		})
+	}
+	return res
+}

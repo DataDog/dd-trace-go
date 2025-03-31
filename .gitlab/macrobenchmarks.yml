@@ -87,6 +87,16 @@ go123-only-trace:
     ENABLE_APPSEC: "false"
     DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
 
+go123-only-trace-with-runtime-metrics:
+  extends: .go123-benchmarks
+  variables:
+    ENABLE_DDPROF: "false"
+    ENABLE_TRACING: "true"
+    ENABLE_PROFILING: "false"
+    ENABLE_APPSEC: "false"
+    DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
+    DD_RUNTIME_METRICS_ENABLED: "true"
+
 go123-only-profile:
   extends: .go123-benchmarks
   variables:
@@ -140,6 +150,16 @@ go124-only-trace:
     ENABLE_PROFILING: "false"
     ENABLE_APPSEC: "false"
     DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
+
+go124-only-trace-with-runtime-metrics:
+  extends: .go124-benchmarks
+  variables:
+    ENABLE_DDPROF: "false"
+    ENABLE_TRACING: "true"
+    ENABLE_PROFILING: "false"
+    ENABLE_APPSEC: "false"
+    DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
+    DD_RUNTIME_METRICS_ENABLED: "true"
 
 go124-only-profile:
   extends: .go124-benchmarks

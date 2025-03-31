@@ -3,6 +3,9 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
+//go:build scripts
+// +build scripts
+
 package main
 
 import (
@@ -13,7 +16,6 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
-	"golang.org/x/mod/modfile"
 	"io/fs"
 	"log"
 	"os"
@@ -23,6 +25,8 @@ import (
 	"slices"
 	"sort"
 	"strings"
+
+	"golang.org/x/mod/modfile"
 )
 
 var (
