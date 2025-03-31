@@ -119,7 +119,7 @@ jobs:
           cache: true
           cache-dependency-path: |-
             ${{ github.workspace }}/dd-trace-go/internal/orchestrion/_integration/go.mod
-            ${{ github.workspace }}/orchestrion/go.mod
+            ${{ github.workspace }}/orchestrion/all/go.mod
 
       # ddapm-test-agent is used to observe side effects from the tracer during integration tests.
       - name: Set up Python
