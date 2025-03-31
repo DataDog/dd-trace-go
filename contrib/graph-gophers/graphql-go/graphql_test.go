@@ -19,12 +19,40 @@ import (
 	"github.com/graph-gophers/graphql-go"
 	"github.com/graph-gophers/graphql-go/relay"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 type testResolver struct{}
 
 func (*testResolver) Hello() string                    { return "Hello, world!" }
 func (*testResolver) HelloNonTrivial() (string, error) { return "Hello, world!", nil }
+func (*testResolver) WithError() (*graphql.ID, error) {
+	return nil, customError{
+		message: "test error",
+		extensions: map[string]any{
+			"int":                          1,
+			"float":                        1.1,
+			"str":                          "1",
+			"bool":                         true,
+			"slice":                        []string{"1", "2"},
+			"unsupported_type_stringified": []any{1, "foo"},
+			"not_captured":                 "nope",
+		},
+	}
+}
+
+type customError struct {
+	message    string
+	extensions map[string]any
+}
+
+func (e customError) Error() string {
+	return e.message
+}
+
+func (e customError) Extensions() map[string]any {
+	return e.extensions
+}
 
 const testServerSchema = `
 	schema {
@@ -33,6 +61,7 @@ const testServerSchema = `
 	type Query {
 		hello: String!
 		helloNonTrivial: String!
+		withError: ID
 	}
 `
 
@@ -187,4 +216,52 @@ func TestAnalyticsSettings(t *testing.T) {
 
 		assertRate(t, mt, 0.23, WithAnalyticsRate(0.23))
 	})
+}
+
+func TestErrorsAsSpanEvents(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	srv := newTestServer(WithErrorExtensions("str", "float", "int", "bool", "slice", "unsupported_type_stringified"))
+	defer srv.Close()
+
+	q := `{"query": "{ withError }"}`
+	resp, err := http.Post(srv.URL, "application/json", strings.NewReader(q))
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	spans := mt.FinishedSpans()
+	require.Len(t, spans, 2)
+
+	s0 := spans[1]
+	assert.Equal(t, "graphql.request", s0.OperationName())
+	assert.NotNil(t, s0.Tag(ext.ErrorMsg))
+
+	events := s0.Events()
+	require.Len(t, events, 1)
+
+	evt := events[0]
+	assert.Equal(t, "dd.graphql.query.error", evt.Name)
+	assert.NotEmpty(t, evt.TimeUnixNano)
+	assert.NotEmpty(t, evt.Attributes["stacktrace"])
+	evt.AssertAttributes(t, map[string]any{
+		"message":          "test error",
+		"path":             []string{"withError"},
+		"stacktrace":       evt.Attributes["stacktrace"],
+		"type":             "*errors.QueryError",
+		"extensions.str":   "1",
+		"extensions.int":   1,
+		"extensions.float": 1.1,
+		"extensions.bool":  true,
+		"extensions.slice": []string{"1", "2"},
+		"extensions.unsupported_type_stringified": "[1,\"foo\"]",
+	})
+
+	// the rest of the spans should not have span events
+	for _, s := range spans {
+		if s.OperationName() == "graphql.request" {
+			continue
+		}
+		assert.Emptyf(t, s.Events(), "span %s should not have span events", s.OperationName())
+	}
 }

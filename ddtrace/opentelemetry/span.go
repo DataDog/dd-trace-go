@@ -7,7 +7,6 @@ package opentelemetry
 
 import (
 	"encoding/binary"
-	"encoding/json"
 	"errors"
 	"strconv"
 	"strings"
@@ -49,9 +48,8 @@ func (s *span) SetName(name string) {
 
 // spanEvent holds information about span events
 type spanEvent struct {
-	Name         string                 `json:"name"`
-	TimeUnixNano int64                  `json:"time_unix_nano"`
-	Attributes   map[string]interface{} `json:"attributes,omitempty"`
+	name    string
+	options []tracer.SpanEventOption
 }
 
 func (s *span) End(options ...oteltrace.SpanEndOption) {
@@ -79,13 +77,8 @@ func (s *span) End(options ...oteltrace.SpanEndOption) {
 	for k, v := range s.attributes {
 		s.DD.SetTag(k, v)
 	}
-	if s.events != nil {
-		b, err := json.Marshal(s.events)
-		if err == nil {
-			s.DD.SetTag("events", string(b))
-		} else {
-			log.Debug("Issue marshaling span events; events dropped from span meta\n%v", err)
-		}
+	for _, evt := range s.events {
+		s.DD.AddEvent(evt.name, evt.options...)
 	}
 	var finishCfg = oteltrace.NewSpanEndConfig(options...)
 	var opts []tracer.FinishOption
@@ -204,9 +197,11 @@ func (s *span) AddEvent(name string, opts ...oteltrace.EventOption) {
 		attrs[string(a.Key)] = a.Value.AsInterface()
 	}
 	e := spanEvent{
-		Name:         name,
-		TimeUnixNano: c.Timestamp().UnixNano(),
-		Attributes:   attrs,
+		name: name,
+		options: []tracer.SpanEventOption{
+			tracer.WithSpanEventTimestamp(c.Timestamp()),
+			tracer.WithSpanEventAttributes(attrs),
+		},
 	}
 	s.events = append(s.events, e)
 }

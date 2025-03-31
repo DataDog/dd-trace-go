@@ -169,6 +169,25 @@ func (z *Span) DecodeMsg(dc *msgp.Reader) (err error) {
 					return
 				}
 			}
+		case "span_events":
+			var zb0005 uint32
+			zb0005, err = dc.ReadArrayHeader()
+			if err != nil {
+				err = msgp.WrapError(err, "spanEvents")
+				return
+			}
+			if cap(z.spanEvents) >= int(zb0005) {
+				z.spanEvents = (z.spanEvents)[:zb0005]
+			} else {
+				z.spanEvents = make([]spanEvent, zb0005)
+			}
+			for za0006 := range z.spanEvents {
+				err = z.spanEvents[za0006].DecodeMsg(dc)
+				if err != nil {
+					err = msgp.WrapError(err, "spanEvents", za0006)
+					return
+				}
+			}
 		default:
 			err = dc.Skip()
 			if err != nil {
@@ -183,8 +202,8 @@ func (z *Span) DecodeMsg(dc *msgp.Reader) (err error) {
 // EncodeMsg implements msgp.Encodable
 func (z *Span) EncodeMsg(en *msgp.Writer) (err error) {
 	// check for omitted fields
-	zb0001Len := uint32(14)
-	var zb0001Mask uint16 /* 14 bits */
+	zb0001Len := uint32(15)
+	var zb0001Mask uint16 /* 15 bits */
 	_ = zb0001Mask
 	if z.meta == nil {
 		zb0001Len--
@@ -197,6 +216,10 @@ func (z *Span) EncodeMsg(en *msgp.Writer) (err error) {
 	if z.spanLinks == nil {
 		zb0001Len--
 		zb0001Mask |= 0x2000
+	}
+	if z.spanEvents == nil {
+		zb0001Len--
+		zb0001Mask |= 0x4000
 	}
 	// variable map header, size zb0001Len
 	err = en.Append(0x80 | uint8(zb0001Len))
@@ -383,6 +406,25 @@ func (z *Span) EncodeMsg(en *msgp.Writer) (err error) {
 				}
 			}
 		}
+		if (zb0001Mask & 0x4000) == 0 { // if not omitted
+			// write "span_events"
+			err = en.Append(0xab, 0x73, 0x70, 0x61, 0x6e, 0x5f, 0x65, 0x76, 0x65, 0x6e, 0x74, 0x73)
+			if err != nil {
+				return
+			}
+			err = en.WriteArrayHeader(uint32(len(z.spanEvents)))
+			if err != nil {
+				err = msgp.WrapError(err, "spanEvents")
+				return
+			}
+			for za0006 := range z.spanEvents {
+				err = z.spanEvents[za0006].EncodeMsg(en)
+				if err != nil {
+					err = msgp.WrapError(err, "spanEvents", za0006)
+					return
+				}
+			}
+		}
 	}
 	return
 }
@@ -406,6 +448,10 @@ func (z *Span) Msgsize() (s int) {
 	s += 8 + msgp.Uint64Size + 9 + msgp.Uint64Size + 10 + msgp.Uint64Size + 6 + msgp.Int32Size + 11 + msgp.ArrayHeaderSize
 	for za0005 := range z.spanLinks {
 		s += z.spanLinks[za0005].Msgsize()
+	}
+	s += 12 + msgp.ArrayHeaderSize
+	for za0006 := range z.spanEvents {
+		s += z.spanEvents[za0006].Msgsize()
 	}
 	return
 }
