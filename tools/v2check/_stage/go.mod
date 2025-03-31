@@ -3,7 +3,7 @@ module github.com/DataDog/dd-trace-go/tools/v2check/_stage
 go 1.23.0
 
 require (
-	github.com/DataDog/dd-trace-go/v2 v2.0.0-rc.9
+	github.com/DataDog/dd-trace-go/v2 v2.1.0-dev
 	gopkg.in/DataDog/dd-trace-go.v1 v1.71.1
 )
 
@@ -31,6 +31,7 @@ require (
 	github.com/eapache/queue/v2 v2.0.0-20230407133247-75960ed334e4 // indirect
 	github.com/ebitengine/purego v0.8.2 // indirect
 	github.com/go-ole/go-ole v1.3.0 // indirect
+	github.com/go-viper/mapstructure/v2 v2.2.1 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang/protobuf v1.5.4 // indirect
 	github.com/google/uuid v1.6.0 // indirect
