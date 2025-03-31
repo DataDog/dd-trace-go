@@ -79,7 +79,7 @@ func errToSpanEventAttributes(gErr Error, errExtensions []string) map[string]any
 		"stacktrace": takeStacktrace(0, 0),
 	}
 	if locs := parseErrLocations(gErr.Locations); len(locs) > 0 {
-		res["location"] = locs
+		res["locations"] = locs
 	}
 	if errPath := parseErrPath(gErr.Path); len(errPath) > 0 {
 		res["path"] = errPath

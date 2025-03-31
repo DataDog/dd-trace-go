@@ -73,7 +73,7 @@ func TestAddErrorsAsSpanEvents(t *testing.T) {
 	wantAttrs1 := map[string]any{
 		"message":         "message 1",
 		"type":            "*errors.errorString",
-		"location":        []string{"1:2", "100:200"},
+		"locations":       []string{"1:2", "100:200"},
 		"stacktrace":      events[0].Attributes["stacktrace"],
 		"path":            []string{"1", "2", "3", "4", "5", "6"},
 		"extensions.ext1": "ext1",
@@ -88,7 +88,7 @@ func TestAddErrorsAsSpanEvents(t *testing.T) {
 	wantAttrs2 := map[string]any{
 		"message":         "message 2",
 		"type":            "*errors.errorString",
-		"location":        []string{"2:3", "200:300"},
+		"locations":       []string{"2:3", "200:300"},
 		"stacktrace":      events[1].Attributes["stacktrace"],
 		"path":            []string{"1", "2", "3", "4", "5", "6"},
 		"extensions.ext1": "ext1",
