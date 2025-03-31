@@ -444,6 +444,4 @@ replace github.com/DataDog/dd-trace-go/contrib/valkey-io/valkey-go/v2 => ../../.
 
 replace github.com/DataDog/dd-trace-go/orchestrion/all/v2 => ../../../orchestrion/all
 
-replace github.com/DataDog/dd-trace-go/instrumentation/testutils/grpc/v2 => ../../../instrumentation/testutils/grpc
-
 replace github.com/DataDog/dd-trace-go/v2 => ../../..
