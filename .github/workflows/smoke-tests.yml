@@ -95,7 +95,7 @@ jobs:
         with:
           go-version: "1.23"
           cache: true
-      - name: go mod tidy
+      - name: Run generate scripts and check diff
         run: |-
           ./scripts/generate.sh
           ./scripts/fix_modules.sh
