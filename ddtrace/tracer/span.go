@@ -267,31 +267,6 @@ func (s *Span) SetTag(key string, value interface{}) {
 	s.setMeta(key, fmt.Sprint(value))
 }
 
-// AddLink sets a casuality link to another span via a spanContext. It also
-// stores details about the link in an attributes map.
-func (s *Span) AddLink(spanContext *SpanContext, attributes map[string]string) {
-	traceIDHex := spanContext.TraceID()
-	traceIDHigh, _ := strconv.ParseUint(traceIDHex[:8], 16, 64)
-
-	samplingDecision, hasSamplingDecision := spanContext.SamplingPriority()
-	var flags uint32
-	if hasSamplingDecision && samplingDecision >= ext.PriorityAutoKeep {
-		flags = uint32(1<<31 | 1)
-	} else if hasSamplingDecision {
-		flags = uint32(1 << 31)
-	} else {
-		flags = uint32(0)
-	}
-
-	s.spanLinks = append(s.spanLinks, SpanLink{
-		TraceID:     spanContext.TraceIDLower(),
-		TraceIDHigh: traceIDHigh,
-		SpanID:      spanContext.SpanID(),
-		Attributes:  attributes,
-		Flags:       flags,
-	})
-}
-
 // setSamplingPriority locks the span, then updates the sampling priority.
 // It also updates the trace's sampling priority.
 func (s *Span) setSamplingPriority(priority int, sampler samplernames.SamplerName) {
@@ -557,8 +532,8 @@ func (s *Span) setMetric(key string, v float64) {
 	}
 }
 
-// AddSpanLink appends the given link to the span's span links.
-func (s *Span) AddSpanLink(link SpanLink) {
+// AddLink appends the given link to the span's span links.
+func (s *Span) AddLink(link SpanLink) {
 	s.spanLinks = append(s.spanLinks, link)
 }
 
