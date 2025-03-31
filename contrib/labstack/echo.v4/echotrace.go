@@ -82,8 +82,15 @@ func Middleware(opts ...Option) echo.MiddlewareFunc {
 			}
 			// serve the request to the next middleware
 			err := next(c)
+
 			var echoStatus int
-			if err != nil && !shouldIgnoreError(cfg, err) {
+			switch {
+			// If we have an ignoreResponseFunc, use it to see if we proceed with
+			// tracing
+			case cfg.ignoreResponseFunc != nil && cfg.ignoreResponseFunc(c):
+				return err
+
+			case err != nil && !shouldIgnoreError(cfg, err):
 				// It is impossible to determine what the final status code of a request is in echo.
 				// This is the best we can do.
 				if echoErr, ok := cfg.translateError(err); ok {
@@ -99,14 +106,17 @@ func Middleware(opts ...Option) echo.MiddlewareFunc {
 					}
 					echoStatus = 500
 				}
-			} else if status := c.Response().Status; status > 0 {
+
+			case c.Response().Status > 0:
+				status := c.Response().Status
 				if cfg.isStatusError(status) {
 					if statusErr := errorFromStatusCode(status); !shouldIgnoreError(cfg, statusErr) {
 						finishOpts = append(finishOpts, tracer.WithError(statusErr))
 					}
 				}
 				echoStatus = status
-			} else {
+
+			default:
 				if cfg.isStatusError(200) {
 					if statusErr := errorFromStatusCode(200); !shouldIgnoreError(cfg, statusErr) {
 						finishOpts = append(finishOpts, tracer.WithError(statusErr))

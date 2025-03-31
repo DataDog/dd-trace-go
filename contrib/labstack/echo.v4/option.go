@@ -25,15 +25,16 @@ const defaultServiceName = "echo"
 const envServerErrorStatuses = "DD_TRACE_HTTP_SERVER_ERROR_STATUSES"
 
 type config struct {
-	serviceName       string
-	analyticsRate     float64
-	noDebugStack      bool
-	ignoreRequestFunc IgnoreRequestFunc
-	isStatusError     func(statusCode int) bool
-	translateError    func(err error) (*echo.HTTPError, bool)
-	headerTags        *internal.LockMap
-	errCheck          func(error) bool
-	tags              map[string]interface{}
+	serviceName        string
+	analyticsRate      float64
+	noDebugStack       bool
+	ignoreRequestFunc  IgnoreRequestFunc
+	ignoreResponseFunc IgnoreResponseFunc
+	isStatusError      func(statusCode int) bool
+	translateError     func(err error) (*echo.HTTPError, bool)
+	headerTags         *internal.LockMap
+	errCheck           func(error) bool
+	tags               map[string]interface{}
 }
 
 // Option represents an option that can be passed to Middleware.
@@ -41,6 +42,9 @@ type Option func(*config)
 
 // IgnoreRequestFunc determines if tracing will be skipped for a request.
 type IgnoreRequestFunc func(c echo.Context) bool
+
+// IgnoreResponseFunc determines if tracing will be skipped for a response.
+type IgnoreResponseFunc func(c echo.Context) bool
 
 func defaults(cfg *config) {
 	cfg.serviceName = namingschema.ServiceName(defaultServiceName)
@@ -105,6 +109,14 @@ func NoDebugStack() Option {
 func WithIgnoreRequest(ignoreRequestFunc IgnoreRequestFunc) Option {
 	return func(cfg *config) {
 		cfg.ignoreRequestFunc = ignoreRequestFunc
+	}
+}
+
+// WithIgnoreResponse sets a function which determines if tracing will be
+// skipped for a given response.
+func WithIgnoreResponse(ignoreResponseFunc IgnoreResponseFunc) Option {
+	return func(cfg *config) {
+		cfg.ignoreResponseFunc = ignoreResponseFunc
 	}
 }
 
