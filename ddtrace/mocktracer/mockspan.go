@@ -8,11 +8,12 @@ package mocktracer // import "github.com/DataDog/dd-trace-go/v2/ddtrace/mocktrac
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 	"testing"
 	"time"
 	_ "unsafe"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
@@ -54,10 +55,6 @@ func (s *Span) SetTag(k string, v interface{}) {
 	}
 	s.m[k] = v
 	s.sp.SetTag(k, v)
-}
-
-func (s *Span) AddLink(spanContext *tracer.SpanContext, attributes map[string]string) {
-	s.sp.AddLink(spanContext, attributes)
 }
 
 func (s *Span) Tag(k string) interface{} {
@@ -226,10 +223,6 @@ func (s *Span) Links() []tracer.SpanLink {
 	var links []tracer.SpanLink
 	json.Unmarshal([]byte(payload.(string)), &links)
 	return links
-}
-
-func (s *Span) AddSpanLink(link tracer.SpanLink) {
-	s.sp.AddSpanLink(link)
 }
 
 // SpanEvent represents a span event from a mockspan.

@@ -43,7 +43,7 @@ jobs:
           go-version: stable
       - name: Copyright
         run: |
-          go run checkcopyright.go
+          go run ./scripts/checkcopyright.go
 
   generate:
     name: Verify generated files are up-to-date
@@ -62,7 +62,7 @@ jobs:
           ./scripts/install_tools.sh
       - name: Run generator
         run: |-
-          go generate ./...
+          ./scripts/generate.sh
       - name: Check for changes
         run: git diff --exit-code
 

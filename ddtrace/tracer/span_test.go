@@ -118,36 +118,7 @@ func TestSpanContext(t *testing.T) {
 	assert.NotNil(span.Context())
 }
 
-func TestAddSpanLink(t *testing.T) {
-	assert := assert.New(t)
-
-	rootSpan := newSpan("root", "service", "res", 123, 456, 0)
-	linkedSpan := newSpan("linked", "service", "res", 1, 2, 0)
-
-	attrs := map[string]string{"key1": "val1"}
-	rootSpan.AddLink(linkedSpan.Context(), attrs)
-
-	assert.Equal(len(rootSpan.spanLinks), 1)
-	// Test adding a link with attributes
-	spanLink := rootSpan.spanLinks[0]
-	assert.Equal(spanLink.TraceID, uint64(0x2))
-	assert.Equal(spanLink.SpanID, uint64(0x1))
-	assert.Equal(spanLink.Attributes["key1"], "val1")
-	assert.Equal(spanLink.Tracestate, "")
-	assert.Equal(spanLink.Flags, uint32(0))
-
-	// Test adding a link with a sampling decision
-	linkedSpanSampled := newSpan("linked_sampled", "service", "res", 3, 4, 0)
-	linkedSpanSampled.Context().setSamplingPriority(ext.PriorityUserKeep, samplernames.Manual)
-	rootSpan.AddLink(linkedSpanSampled.Context(), map[string]string{})
-	assert.Equal(len(rootSpan.spanLinks), 2)
-	spanLinkSampled := rootSpan.spanLinks[1]
-	assert.Equal(spanLinkSampled.TraceID, uint64(0x4))
-	assert.Equal(spanLinkSampled.SpanID, uint64(0x3))
-	assert.Equal(spanLinkSampled.Flags, uint32(2147483649))
-}
-
-func BenchmarkAddSpanLink(b *testing.B) {
+func BenchmarkAddLink(b *testing.B) {
 	rootSpan := newSpan("root", "service", "res", 123, 456, 0)
 	spanContext := newSpanContext(rootSpan, nil)
 	attrs := map[string]string{"key1": "val1"}
@@ -160,7 +131,7 @@ func BenchmarkAddSpanLink(b *testing.B) {
 
 	b.ResetTimer()
 	for n := 0; n < b.N; n++ {
-		rootSpan.AddSpanLink(link)
+		rootSpan.AddLink(link)
 	}
 }
 
@@ -213,7 +184,7 @@ func TestSpanFinishTwice(t *testing.T) {
 	assert.Zero(span.meta["_dd.span_links"])
 
 	// manipulate the span
-	span.AddSpanLink(SpanLink{
+	span.AddLink(SpanLink{
 		TraceID: span.traceID,
 		SpanID:  span.spanID,
 		Attributes: map[string]string{
@@ -1266,8 +1237,8 @@ func BenchmarkSetTagField(b *testing.B) {
 func BenchmarkSerializeSpanLinksInMeta(b *testing.B) {
 	span := newBasicSpan("bench.span")
 
-	span.AddSpanLink(SpanLink{SpanID: 123, TraceID: 456})
-	span.AddSpanLink(SpanLink{SpanID: 789, TraceID: 101})
+	span.AddLink(SpanLink{SpanID: 123, TraceID: 456})
+	span.AddLink(SpanLink{SpanID: 789, TraceID: 101})
 
 	// Sample span pointer
 	attributes := map[string]string{
@@ -1276,7 +1247,7 @@ func BenchmarkSerializeSpanLinksInMeta(b *testing.B) {
 		"ptr.hash":  "eb29cb7d923f904f02bd8b3d85e228ed",
 		"ptr.kind":  "aws.s3.object",
 	}
-	span.AddSpanLink(SpanLink{TraceID: 0, SpanID: 0, Attributes: attributes})
+	span.AddLink(SpanLink{TraceID: 0, SpanID: 0, Attributes: attributes})
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -1348,8 +1319,8 @@ func TestSpanLinksInMeta(t *testing.T) {
 
 		sp := tracer.StartSpan("test-with-links")
 
-		sp.AddSpanLink(SpanLink{SpanID: 123, TraceID: 456})
-		sp.AddSpanLink(SpanLink{SpanID: 789, TraceID: 012})
+		sp.AddLink(SpanLink{SpanID: 123, TraceID: 456})
+		sp.AddLink(SpanLink{SpanID: 789, TraceID: 012})
 		sp.Finish()
 
 		internalSpan := sp
