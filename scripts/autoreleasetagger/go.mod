@@ -1,4 +1,4 @@
-module github.com/DataDog/dd-trace-go/v2/tools/autoreleasetagger
+module github.com/DataDog/dd-trace-go/v2/scripts/autoreleasetagger
 
 go 1.23.0
 

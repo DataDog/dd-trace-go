@@ -52,10 +52,6 @@ func (s *Span) SetTag(k string, v interface{}) {
 	s.sp.SetTag(k, v)
 }
 
-func (s *Span) AddLink(spanContext *tracer.SpanContext, attributes map[string]string) {
-	s.sp.AddLink(spanContext, attributes)
-}
-
 func (s *Span) Tag(k string) interface{} {
 	if s == nil {
 		return nil
@@ -220,10 +216,6 @@ func (s *Span) Links() []tracer.SpanLink {
 	var links []tracer.SpanLink
 	json.Unmarshal([]byte(payload.(string)), &links)
 	return links
-}
-
-func (s *Span) AddSpanLink(link tracer.SpanLink) {
-	s.sp.AddSpanLink(link)
 }
 
 // Integration returns the component from which the mockspan was created.
