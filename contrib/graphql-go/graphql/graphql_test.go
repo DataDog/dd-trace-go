@@ -251,7 +251,7 @@ func TestErrorsAsSpanEvents(t *testing.T) {
 	evt.AssertAttributes(t, map[string]any{
 		"message":          "test error",
 		"path":             []string{"withError"},
-		"location":         []string{"1:3"},
+		"locations":        []string{"1:3"},
 		"stacktrace":       evt.Attributes["stacktrace"],
 		"type":             "gqlerrors.FormattedError",
 		"extensions.str":   "1",
