@@ -9,12 +9,12 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	awsmiddleware "github.com/aws/aws-sdk-go-v2/aws/middleware"
-	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
-	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"sort"
 	"strings"
 
+	awsmiddleware "github.com/aws/aws-sdk-go-v2/aws/middleware"
+	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
+	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"github.com/aws/smithy-go/middleware"
 	smithyhttp "github.com/aws/smithy-go/transport/http"
 
@@ -163,7 +163,7 @@ func handleDynamoDbOperation(ctx context.Context, span *tracer.Span) {
 		},
 	}
 
-	span.AddSpanLink(link)
+	span.AddLink(link)
 }
 
 // DynamoDb values can only be string, number, or binary

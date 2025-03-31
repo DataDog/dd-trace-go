@@ -118,7 +118,7 @@ func TestSpanContext(t *testing.T) {
 	assert.NotNil(span.Context())
 }
 
-func BenchmarkAddSpanLink(b *testing.B) {
+func BenchmarkAddLink(b *testing.B) {
 	rootSpan := newSpan("root", "service", "res", 123, 456, 0)
 	spanContext := newSpanContext(rootSpan, nil)
 	attrs := map[string]string{"key1": "val1"}
@@ -184,7 +184,7 @@ func TestSpanFinishTwice(t *testing.T) {
 	assert.Zero(span.meta["_dd.span_links"])
 
 	// manipulate the span
-	span.AddSpanLink(SpanLink{
+	span.AddLink(SpanLink{
 		TraceID: span.traceID,
 		SpanID:  span.spanID,
 		Attributes: map[string]string{
