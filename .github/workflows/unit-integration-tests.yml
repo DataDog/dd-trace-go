@@ -62,7 +62,7 @@ jobs:
           ./scripts/install_tools.sh
       - name: Run generator
         run: |-
-          go generate ./...
+          ./scripts/generate.sh
       - name: Check for changes
         run: git diff --exit-code
 

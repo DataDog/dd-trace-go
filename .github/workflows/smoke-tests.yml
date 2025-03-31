@@ -77,9 +77,8 @@ jobs:
           DD_APPSEC_WAF_TIMEOUT: 1h
         run: go test $PACKAGES
 
-  go-mod-tidy:
-    # Run go mod tidy to ensure that all go.mod and go.sum files are up-to-date.
-    name: 'go mod tidy smoke test'
+  check-gen-files:
+    name: Check generated files and go mod files are up-to-date.
     runs-on: ubuntu-latest
     env:
       # Users may build our library with GOTOOLCHAIN=local. If they do, and our
@@ -98,16 +97,9 @@ jobs:
           cache: true
       - name: go mod tidy
         run: |-
-          # generate orchestrion integration test suite go.mod file
-          go generate -tags=tools ./orchestrion/all/...
-
-          # run go.mod tidy on all go.mod files
-          find -name go.mod -execdir go mod tidy \;
+          ./scripts/generate.sh
+          ./scripts/fix_modules.sh
           git diff --exit-code
-
-          # We dont to actually sync dependencies, just check if the go.work.sum file is up-to-date
-          go work sync
-          git diff --exit-code -- go.work.sum
 
   # TODO: macos setup requirements (xcode tools installation, etc.)
   setup-requirements-linux:
