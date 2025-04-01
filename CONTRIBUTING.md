@@ -51,7 +51,7 @@ docker run --rm -v $(pwd):/app -w /app golangci/golangci-lint:v1.63.3 golangci-l
 
 #### Favor string concatenation and string builders over fmt.Sprintf and its variants
 
-fmt.Sprintf(https://pkg.go.dev/fmt#Sprintf) can introduce unnecessary overhead when building a string. Favor simple string concatenation, `a + "b" + c`, or [string builders](https://pkg.go.dev/strings#Builder) over `fmt.Sprintf` when possible, especially in hot paths. 
+[fmt.Sprintf](https://pkg.go.dev/fmt#Sprintf) can introduce unnecessary overhead when building a string. Favor simple string concatenation, `a + "b" + c`, or [string builders](https://pkg.go.dev/strings#Builder) over `fmt.Sprintf` when possible, especially in hot paths. 
 Sample PR: https://github.com/DataDog/dd-trace-go/pull/3365
 
 ### Integrations
