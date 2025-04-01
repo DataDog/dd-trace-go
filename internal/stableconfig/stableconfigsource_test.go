@@ -6,31 +6,38 @@
 package stableconfig
 
 import (
+	"os"
 	"testing"
 
 	"github.com/zeebo/assert"
 )
 
-func TestFileContentsToConfig(t *testing.T) {
-	t.Run("simple failure", func(t *testing.T) {
-		data := `
-		a: Easy!
-		b:
-		  c: 2
-		  d: [3, 4]
-		`
-		scfg := fileContentsToConfig([]byte(data), "test.yml")
-		assert.DeepEqual(t, scfg, emptyStableConfig())
-	})
-	t.Run("simple success", func(t *testing.T) {
-		data := `
+const (
+	simpleInvalidYaml = `
+a: Easy!
+b:
+  c: 2
+  d: [3, 4]
+`
+
+	simpleValidYaml = `
 config_id: 67890
 apm_configuration_default:
     DD_KEY_1: value_1
     "DD_KEY_2": "value_2"
 
 `
-		scfg := fileContentsToConfig([]byte(data), "test.yml")
+
+	simpleEmptyYaml = ``
+)
+
+func TestFileContentsToConfig(t *testing.T) {
+	t.Run("simple failure", func(t *testing.T) {
+		scfg := fileContentsToConfig([]byte(simpleInvalidYaml), "test.yml")
+		assert.DeepEqual(t, scfg, emptyStableConfig())
+	})
+	t.Run("simple success", func(t *testing.T) {
+		scfg := fileContentsToConfig([]byte(simpleValidYaml), "test.yml")
 		assert.Equal(t, scfg.Id, 67890)
 		assert.Equal(t, len(scfg.Config), 2)
 		assert.Equal(t, scfg.Config["DD_KEY_1"], "value_1")
@@ -58,8 +65,24 @@ apm_configuration_default:
 		assert.Equal(t, scfg.Id, -1)
 	})
 	t.Run("success with empty contents", func(t *testing.T) {
-		data := ``
-		scfg := fileContentsToConfig([]byte(data), "test.yml")
+		scfg := fileContentsToConfig([]byte(simpleEmptyYaml), "test.yml")
 		assert.DeepEqual(t, scfg, emptyStableConfig())
+	})
+}
+
+func TestParseFile(t *testing.T) {
+	t.Run("file doesn't exist", func(t *testing.T) {
+		scfg := ParseFile("test.yml")
+		assert.DeepEqual(t, scfg, emptyStableConfig())
+	})
+	t.Run("success", func(t *testing.T) {
+		err := os.WriteFile("test.yml", []byte(simpleValidYaml), 0644)
+		assert.NoError(t, err)
+		defer os.Remove("test.yml")
+		scfg := ParseFile("test.yml")
+		assert.Equal(t, scfg.Id, 67890)
+		assert.Equal(t, len(scfg.Config), 2)
+		assert.Equal(t, scfg.Config["DD_KEY_1"], "value_1")
+		assert.Equal(t, scfg.Config["DD_KEY_2"], "value_2")
 	})
 }
