@@ -5,6 +5,10 @@
 
 package stableconfig
 
-func GetConfig(envvar string) {
+func GetLocalConfig(envvar string) {
+	// return the result of stable config if exists, else return the result of envvar
+}
+
+func GetFleetConfig(envvar string) {
 	// return the result of stable config if exists, else return the result of envvar
 }

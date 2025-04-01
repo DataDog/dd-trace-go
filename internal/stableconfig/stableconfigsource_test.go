@@ -34,7 +34,7 @@ apm_configuration_default:
 func TestFileContentsToConfig(t *testing.T) {
 	t.Run("simple failure", func(t *testing.T) {
 		scfg := fileContentsToConfig([]byte(simpleInvalidYaml), "test.yml")
-		assert.DeepEqual(t, scfg, emptyStableConfig())
+		assert.True(t, scfg.IsEmpty())
 	})
 	t.Run("simple success", func(t *testing.T) {
 		scfg := fileContentsToConfig([]byte(simpleValidYaml), "test.yml")
@@ -66,14 +66,14 @@ apm_configuration_default:
 	})
 	t.Run("success with empty contents", func(t *testing.T) {
 		scfg := fileContentsToConfig([]byte(simpleEmptyYaml), "test.yml")
-		assert.DeepEqual(t, scfg, emptyStableConfig())
+		assert.True(t, scfg.IsEmpty())
 	})
 }
 
 func TestParseFile(t *testing.T) {
 	t.Run("file doesn't exist", func(t *testing.T) {
 		scfg := ParseFile("test.yml")
-		assert.DeepEqual(t, scfg, emptyStableConfig())
+		assert.True(t, scfg.IsEmpty())
 	})
 	t.Run("success", func(t *testing.T) {
 		err := os.WriteFile("test.yml", []byte(simpleValidYaml), 0644)

@@ -11,6 +11,7 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/stableconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 )
 
@@ -86,7 +87,13 @@ func getDDorOtelConfig(configName string) string {
 	if !ok {
 		panic(fmt.Sprintf("Programming Error: %v not found in supported configurations", configName))
 	}
-
+	var checkStableCfg bool
+	if config.dd == "DD_RUNTIME_METRICS_ENABLED" {
+		checkStableCfg = true
+		if v := stableconfig.FleetConfig.Get(config.dd); v != "" {
+			return v
+		}
+	}
 	val := os.Getenv(config.dd)
 	if otVal := os.Getenv(config.ot); otVal != "" {
 		ddPrefix := "config_datadog:"
@@ -103,6 +110,11 @@ func getDDorOtelConfig(configName string) string {
 				telemetry.Count(telemetry.NamespaceTracers, "otel.env.invalid", telemetryTags).Submit(1)
 			}
 			val = v
+		}
+	}
+	if val == "" && checkStableCfg {
+		if v := stableconfig.LocalConfig.Get(config.dd); v != "" {
+			return v
 		}
 	}
 	return val
