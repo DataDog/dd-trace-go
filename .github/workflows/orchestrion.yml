@@ -272,7 +272,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@ee0669bd1cc54295c223e0bb666b733df41de1c5 # v2.7.0
         with:
-          repository: ${{ github.repository }}
+          repository: 'DataDog/dd-trace-go'
           ref: ${{ github.ref }}
       - name: Upload the results to Datadog CI App
         if: always()
