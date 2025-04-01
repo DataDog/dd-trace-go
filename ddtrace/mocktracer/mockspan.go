@@ -194,10 +194,6 @@ func (msa MockspanV2Adapter) Links() []ddtrace.SpanLink {
 	return msa.Span.Links()
 }
 
-func (msa MockspanV2Adapter) AddSpanLink(link ddtrace.SpanLink) {
-	msa.Span.AddSpanLink(link)
-}
-
 // Integration returns the component from which the mockspan was created.
 func (msa MockspanV2Adapter) Integration() string {
 	return msa.Span.Integration()
