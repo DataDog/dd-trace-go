@@ -19,13 +19,13 @@ const (
 	fleetFilePath = "/etc/datadog-agent/managed/datadog-agent/stable/application_monitoring.yaml"
 )
 
-var localConfig *stableConfigSource = &stableConfigSource{
+var LocalConfig *stableConfigSource = &stableConfigSource{
 	filePath: localFilePath,
 	origin:   telemetry.OriginLocalStableConfig,
 	config:   &stableConfig{},
 }
 
-var fleetConfig *stableConfigSource = &stableConfigSource{
+var FleetConfig *stableConfigSource = &stableConfigSource{
 	filePath: fleetFilePath,
 	origin:   telemetry.OriginFleetStableConfig,
 	config:   &stableConfig{},
@@ -35,6 +35,10 @@ type stableConfigSource struct {
 	filePath string
 	origin   telemetry.Origin
 	config   *stableConfig
+}
+
+func (s *stableConfigSource) Get(key string) string {
+	return s.config.get(key)
 }
 
 func ParseFile(filePath string) stableConfig {
@@ -53,9 +57,6 @@ func fileContentsToConfig(data []byte, fileName string) stableConfig {
 	err := yaml.Unmarshal(data, &scfg)
 	if err != nil {
 		log.Warn("Parsing stable config file" + fileName + "failed due to error: " + err.Error())
-		return emptyStableConfig()
-	}
-	if scfg.Config == nil && scfg.Id == 0 {
 		return emptyStableConfig()
 	}
 	if scfg.Config == nil {

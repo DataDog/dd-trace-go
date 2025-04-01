@@ -345,7 +345,6 @@ func newConfig(opts ...StartOption) (*config, error) {
 	c := new(config)
 	c.sampler = NewAllSampler()
 	sampleRate := math.NaN()
-	// MTOFF: BEGIN ENVVARS
 	if r := getDDorOtelConfig("sampleRate"); r != "" {
 		var err error
 		sampleRate, err = strconv.ParseFloat(r, 64)
@@ -493,15 +492,12 @@ func newConfig(opts ...StartOption) (*config, error) {
 		internal.ForEachStringTag(v, internal.DDTagsDelimiter, func(key, val string) { c.peerServiceMappings[key] = val })
 	}
 	c.retryInterval = time.Millisecond
-	// MTOFF: (KIND OF) END ENVVARS
-	// MTOFF: BEGIN PROGRAMMATIC OPTS
 	for _, fn := range opts {
 		if fn == nil {
 			continue
 		}
 		fn(c)
 	}
-	// MTOFF: END PROGRAMMATIC OPTS
 	if c.agentURL == nil {
 		c.agentURL = internal.AgentURLFromEnv()
 	}

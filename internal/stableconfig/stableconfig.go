@@ -10,6 +10,14 @@ type stableConfig struct {
 	Id     int               `yaml:"config_id,omitempty"`
 }
 
+func (s *stableConfig) get(key string) string {
+	return s.Config[key]
+}
+
+func (s *stableConfig) isEmpty() bool {
+	return s.Id == -1 && len(s.Config) == 0
+}
+
 func emptyStableConfig() stableConfig {
 	return stableConfig{
 		Config: make(map[string]string, 0),
