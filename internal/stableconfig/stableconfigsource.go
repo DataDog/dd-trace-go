@@ -6,7 +6,6 @@
 package stableconfig
 
 import (
-	"fmt"
 	"os"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
@@ -53,8 +52,6 @@ func fileContentsToConfig(data []byte, fileName string) stableConfig {
 	var scfg stableConfig
 	err := yaml.Unmarshal(data, &scfg)
 	if err != nil {
-		fmt.Println("mtoff, err", err.Error())
-		// log about it
 		log.Warn("Parsing stable config file" + fileName + "failed due to error: " + err.Error())
 		return emptyStableConfig()
 	}
