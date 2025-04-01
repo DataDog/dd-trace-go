@@ -11,11 +11,6 @@ on:
         type: boolean
         default: false
         required: false
-      dd-ci-api-key:
-        description: API key required to upload data to DataDog CI
-        type: string
-        default: ''
-        required: false
   pull_request:
   merge_group:
   push:
