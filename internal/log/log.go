@@ -7,6 +7,7 @@
 package log
 
 import (
+	"bytes"
 	"fmt"
 	"log"
 	"os"
@@ -48,7 +49,26 @@ const (
 	LevelError
 )
 
-var prefixMsg = fmt.Sprintf("Datadog Tracer %s", version.Tag)
+var (
+	prefixMsg  = fmt.Sprintf("Datadog Tracer %s", version.Tag)
+	bufferPool = sync.Pool{
+		New: func() interface{} {
+			return &bytes.Buffer{}
+		},
+	}
+)
+
+func getBuffer() *bytes.Buffer {
+	return bufferPool.Get().(*bytes.Buffer)
+}
+
+func putBuffer(b *bytes.Buffer) {
+	if b.Cap() > 1<<10 {
+		return
+	}
+	b.Reset()
+	bufferPool.Put(b)
+}
 
 // Logger implementations are able to log given messages that the tracer might
 // output. This interface is duplicated here to avoid a cyclic dependency
@@ -284,13 +304,17 @@ func flushLocked() {
 }
 
 func printMsg(lvl Level, format string, a ...interface{}) {
-	var b strings.Builder
-	b.Grow(len(prefixMsg) + 1 + len(lvl.String()) + 2 + len(format))
+	var (
+		b     = getBuffer()
+		level = lvl.String()
+	)
+	b.Grow(len(prefixMsg) + 1 + len(level) + 2 + (len(format) * 3)) // `len(format) * 3` is a generous estimate of the number of bytes added by fmt.Sprintf
 	b.WriteString(prefixMsg)
 	b.WriteString(" ")
-	b.WriteString(lvl.String())
+	b.WriteString(level)
 	b.WriteString(": ")
 	b.WriteString(fmt.Sprintf(format, a...))
+
 	mu.RLock()
 	if ll, ok := logger.(interface {
 		LogL(lvl Level, msg string)
@@ -300,7 +324,8 @@ func printMsg(lvl Level, format string, a ...interface{}) {
 		ll.LogL(lvl, b.String())
 	}
 	mu.RUnlock()
-	b.Reset()
+
+	putBuffer(b)
 }
 
 type defaultLogger struct{ l *log.Logger }
