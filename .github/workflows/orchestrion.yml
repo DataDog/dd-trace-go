@@ -114,9 +114,6 @@ jobs:
     name: Integration Test (${{ matrix.runs-on }} | ${{ matrix.go-version }} | ${{ matrix.mode }})
     runs-on: ${{ matrix.runs-on == 'ubuntu' && fromJson('{"labels":"ubuntu-16-core-latest","group":"Large Runner Shared Public"}') || (matrix.runs-on == 'windows' && fromJson('{"labels":"windows-shared-8core","group":"LARGE WINDOWS SHARED"}')) || format('{0}-latest', matrix.runs-on) }}
     steps:
-      - name: Debug SERVICES_JSON
-        run: echo "${{ fromJSON(needs.service-containers.outputs.services_json) }}"
-
       - name: Checkout Code
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
@@ -264,8 +261,6 @@ jobs:
           TESTCONTAINERS_RYUK_DISABLED: true
           # To enable sharing the reported JUnit XML, we need to save it into the temporary, shared directory by GHA.
           XML_PATH: ${{ runner.temp }}${{ matrix.runs-on == 'windows' && '\' || '/' }}${{ env.REPORT }}
-          ACTIONS_STEP_DEBUG: true
-          ACTIONS_RUNNER_DEBUG: true
 
       # If in workflow_call, we collected coverage data we need to upload
       - name: Consolidate coverage report
