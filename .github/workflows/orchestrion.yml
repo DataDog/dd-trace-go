@@ -88,7 +88,7 @@ jobs:
           echo "SERVICES_JSON=$(jq -c . ./internal/orchestrion/_integration/ci-services.json)" >> "$GITHUB_ENV"
 
   integration-test:
-    services: ${{ fromJSON(matrix.runs-on == 'ubuntu' && needs.set-services.outputs.services_json || '{}') }}
+    services: ${{ fromJSON(matrix.runs-on == 'ubuntu' && needs.service-containers.outputs.services_json || '{}') }}
     env:
       REPORT: orchestrion-gotestsum-report.xml # path to where test results will be saved
     needs:
@@ -205,9 +205,6 @@ jobs:
 
           # PostgreSQL service
           docker pull docker.io/postgres:16-alpine
-
-          # Redis service
-          docker pull redis:7-alpine
 
           # Valkey service
           docker pull valkey/valkey:8-alpine
