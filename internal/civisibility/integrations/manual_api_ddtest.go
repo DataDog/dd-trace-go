@@ -287,6 +287,11 @@ func (t *tslvTest) SetTestFunc(fn *runtime.Func) {
 			telemetry.ITRUnskippable(telemetry.TestEventType)
 			t.ctx = context.WithValue(t.ctx, constants.TestUnskippable, true)
 		}
+
+		// if impacted tests analyzer was loaded, we run it
+		if analyzer := GetImpactedTestsAnalyzer(); analyzer != nil {
+			analyzer.ProcessImpactedTest(t.Name(), t.span)
+		}
 	}
 
 	// get the codeowner of the function

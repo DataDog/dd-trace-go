@@ -104,6 +104,7 @@ const (
 	GetLocalCommitsCommandsType CommandType = "command:get_local_commits"
 	GetObjectsCommandsType      CommandType = "command:get_objects"
 	PackObjectsCommandsType     CommandType = "command:pack_objects"
+	Diff                        CommandType = "command:diff"
 )
 
 // CommandExitCodeType is a type for command exit codes
