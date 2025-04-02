@@ -300,7 +300,6 @@ func printMsg(lvl Level, format string, a ...interface{}) {
 		ll.LogL(lvl, b.String())
 	}
 	mu.RUnlock()
-	b.Reset()
 }
 
 type defaultLogger struct{ l *log.Logger }
