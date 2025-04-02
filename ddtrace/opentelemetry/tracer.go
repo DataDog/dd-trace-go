@@ -10,13 +10,15 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
-
+	otelbaggage "go.opentelemetry.io/otel/baggage"
 	oteltrace "go.opentelemetry.io/otel/trace"
 	"go.opentelemetry.io/otel/trace/noop"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/baggage"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 )
 
 var _ oteltrace.Tracer = (*oteltracer)(nil)
@@ -89,6 +91,14 @@ func (t *oteltracer) Start(ctx context.Context, spanName string, opts ...oteltra
 	// we have to record the attributes  locally.
 	// The span operation name will be calculated when it's ended.
 	s := tracer.StartSpan(spanName, ddopts...)
+
+	// Merge baggage from otel and dd, update Datadog baggage, and update the context.
+	mergedBag := mergeBaggageFromContext(ctx)
+	for _, m := range mergedBag.Members() {
+		ctx = baggage.Set(ctx, m.Key(), m.Value())
+	}
+	ctx = otelbaggage.ContextWithBaggage(ctx, mergedBag)
+
 	os := oteltrace.Span(&span{
 		DD:         s,
 		oteltracer: t,
@@ -100,6 +110,26 @@ func (t *oteltracer) Start(ctx context.Context, spanName string, opts ...oteltra
 	// Wrap the span in OpenTelemetry and Datadog contexts to propagate span context values
 	ctx = oteltrace.ContextWithSpan(tracer.ContextWithSpan(ctx, s), os)
 	return ctx, os
+}
+
+// mergeBaggageFromContext merges Datadog baggage found on the context into the OpenTelemetry baggage found on the context.
+// adding key-value pairs only if the key doesn't already exist in the OpenTelemetry baggage. It ensures no existing values are overwritten.
+func mergeBaggageFromContext(ctx context.Context) otelbaggage.Baggage {
+	otelBag := otelbaggage.FromContext(ctx)
+	for key, value := range baggage.All(ctx) {
+		if otelBag.Member(key).Value() == "" {
+			member, err := otelbaggage.NewMemberRaw(key, value)
+			if err == nil {
+				b, err := otelBag.SetMember(member)
+				if err == nil {
+					otelBag = b
+				} else {
+					log.Debug("Error adding baggage member with key %s; dropping", key)
+				}
+			}
+		}
+	}
+	return otelBag
 }
 
 type otelCtxToDDCtx struct {
