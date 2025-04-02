@@ -12,7 +12,7 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/log"
 	"github.com/puzpuzpuz/xsync/v3"
 )
 
@@ -49,7 +49,8 @@ func patternNames(pattern string) []string {
 		segments, err := parsePatternNames(pattern)
 		if err != nil {
 			// Ignore the error: Something as gone wrong, but we are not eager to find out why.
-			log.Debug("instrumentation/net/http/pattern: failed to parse mux path pattern %q: %v", pattern, err)
+			// We will just log it as a telemetry logs warning (and Debug to the user-facing log).
+			log.Warn("instrumentation/net/http/pattern: failed to parse mux path pattern %q: %v", pattern, err)
 			// here we fallthrough instead of returning to load a nil value into the cache to avoid reparsing the pattern.
 		}
 		return segments
