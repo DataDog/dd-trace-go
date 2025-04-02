@@ -7,8 +7,10 @@
 # team and can be reviewed by anybody with the appropriate permissions. This is
 # meant to avoid pinging all of @DataDog/dd-trace-go-guild for every PR that
 # changes one of these files.
-go.mod
-go.sum
+**/go.mod
+**/go.sum
+go.work
+go.work.sum
 
 # tracing
 /contrib                        @DataDog/apm-go @Datadog/apm-idm-go
@@ -35,3 +37,7 @@ go.sum
 # Gitlab configuration
 .gitlab-ci.yml                  @DataDog/dd-trace-go-guild @DataDog/apm-core-reliability-and-performance @DataDog/apm-go
 /.gitlab-ci                     @DataDog/dd-trace-go-guild @DataDog/apm-core-reliability-and-performance @DataDog/apm-go
+
+# Orchestrion
+/internal/orchestrion           @DataDog/apm-orchestrion @DataDog/apm-go
+/**/orchestrion.yml             @DataDog/apm-orchestrion @DataDog/apm-go

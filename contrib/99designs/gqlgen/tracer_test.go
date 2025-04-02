@@ -13,7 +13,9 @@ import (
 	"github.com/99designs/gqlgen/graphql/handler/testserver"
 	"github.com/99designs/gqlgen/graphql/handler/transport"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
+	internaltestserver "github.com/DataDog/dd-trace-go/contrib/99designs/gqlgen/v2/internal/testserver"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 )
@@ -158,8 +160,21 @@ func TestError(t *testing.T) {
 			root = span
 		}
 	}
-	assert.NotNil(root)
+	require.NotNil(t, root)
 	assert.NotNil(root.Tag(ext.ErrorMsg))
+
+	events := root.Events()
+	require.Len(t, events, 1)
+
+	evt := events[0]
+	assert.Equal("dd.graphql.query.error", evt.Name)
+	assert.NotEmpty(evt.TimeUnixNano)
+	assert.NotEmpty(evt.Attributes["stacktrace"])
+	assert.Equal(map[string]any{
+		"message":    "resolver error",
+		"stacktrace": evt.Attributes["stacktrace"],
+		"type":       "*gqlerror.Error",
+	}, evt.Attributes)
 }
 
 func TestObfuscation(t *testing.T) {
@@ -304,4 +319,50 @@ func TestInterceptOperation(t *testing.T) {
 		assertions.NotNil(root)
 		assertions.Nil(root.Tag(ext.ErrorMsg))
 	})
+}
+
+func TestErrorsAsSpanEvents(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	_, c := internaltestserver.New(t, NewTracer(WithErrorExtensions("str", "float", "int", "bool", "slice", "unsupported_type_stringified")))
+	err := c.Post(`{ withError }`, &testServerResponse{})
+	require.Error(t, err)
+
+	spans := mt.FinishedSpans()
+	require.Len(t, spans, 5)
+
+	s0 := spans[4]
+	assert.Equal(t, "graphql.query", s0.OperationName())
+	assert.NotNil(t, s0.Tag(ext.ErrorMsg))
+
+	events := s0.Events()
+	require.Len(t, events, 1)
+
+	evt := events[0]
+	assert.Equal(t, "dd.graphql.query.error", evt.Name)
+	assert.NotEmpty(t, evt.TimeUnixNano)
+	assert.NotEmpty(t, evt.Attributes["stacktrace"])
+
+	wantAttrs := map[string]any{
+		"message":          "test error",
+		"path":             []any{"withError"},
+		"stacktrace":       evt.Attributes["stacktrace"],
+		"type":             "*gqlerror.Error",
+		"extensions.str":   "1",
+		"extensions.int":   1,
+		"extensions.float": 1.1,
+		"extensions.bool":  true,
+		"extensions.slice": []any{"1", "2"},
+		"extensions.unsupported_type_stringified": "[1,\"foo\"]",
+	}
+	evt.AssertAttributes(t, wantAttrs)
+
+	// the rest of the spans should not have span events
+	for _, s := range spans {
+		if s.OperationName() == "graphql.query" {
+			continue
+		}
+		assert.Emptyf(t, s.Events(), "span %s should not have span events", s.OperationName())
+	}
 }

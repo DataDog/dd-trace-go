@@ -38,6 +38,15 @@ func New(t testing.TB) (*MockAgent, error) {
 		err   error
 	)
 
+	ctx := context.Background()
+	if t, ok := t.(*testing.T); ok {
+		// If this is a [*testing.T] with a known deadline, use it to automatically
+		// terminate the test agent once the test has timed out.
+		if deadline, ok := t.Deadline(); ok {
+			ctx, _ = context.WithDeadline(ctx, deadline)
+		}
+	}
+
 	ddapmTestAgent, _ := exec.LookPath("ddapm-test-agent")
 	if ddapmTestAgent == "" {
 		t.Log("No ddapm-test-agent found in $PATH, installing into a python venv...")
@@ -63,23 +72,36 @@ func New(t testing.TB) (*MockAgent, error) {
 		ddapmTestAgent = filepath.Join(venvBin, "ddapm-test-agent")
 	}
 
-	agent.port = net.FreePort(t)
-	t.Logf("Starting %s on port %d\n", ddapmTestAgent, agent.port)
-	var ctx context.Context
-	ctx, agent.processCancel = context.WithCancel(context.Background())
-	agent.process = exec.CommandContext(
-		ctx,
-		ddapmTestAgent,
-		fmt.Sprintf("--port=%d", agent.port),
-	)
-	agent.process.Stdout = os.Stdout
-	agent.process.Stderr = os.Stderr
+	// There is a possible race condition on the port number, so we'll retry
+	for {
+		agent.port = net.FreePort(t)
+		t.Logf("Starting %s on port %d\n", ddapmTestAgent, agent.port)
+		ctx, agent.processCancel = context.WithCancel(ctx)
+		agent.process = exec.CommandContext(
+			ctx,
+			ddapmTestAgent,
+			fmt.Sprintf("--port=%d", agent.port),
+		)
+		stdout, ready := newMonitorReady(os.Stdout)
+		agent.process.Stdout = stdout
+		agent.process.Stderr = os.Stderr
 
-	if err = agent.process.Start(); err != nil {
-		return nil, err
+		if err = agent.process.Start(); err != nil {
+			return nil, err
+		}
+
+		select {
+		case ok := <-ready:
+			if ok {
+				return &agent, nil
+			}
+			// If the process was not dead yet, signal it to stop...
+			agent.processCancel()
+		case <-ctx.Done():
+			agent.processCancel()
+			return nil, ctx.Err()
+		}
 	}
-
-	return &agent, nil
 }
 
 func (a *MockAgent) NewSession(t testing.TB) (session *Session, err error) {

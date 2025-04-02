@@ -67,9 +67,10 @@ func (z *Event) DecodeMsg(dc *msgp.Reader) (err error) {
 
 // EncodeMsg implements msgp.Encodable
 func (z *Event) EncodeMsg(en *msgp.Writer) (err error) {
-	// omitempty: check for empty values
+	// check for omitted fields
 	zb0001Len := uint32(5)
 	var zb0001Mask uint8 /* 5 bits */
+	_ = zb0001Mask
 	if z.Type == "" {
 		zb0001Len--
 		zb0001Mask |= 0x1
@@ -91,66 +92,67 @@ func (z *Event) EncodeMsg(en *msgp.Writer) (err error) {
 	if err != nil {
 		return
 	}
-	if zb0001Len == 0 {
-		return
-	}
-	if (zb0001Mask & 0x1) == 0 { // if not empty
-		// write "type"
-		err = en.Append(0xa4, 0x74, 0x79, 0x70, 0x65)
+
+	// skip if no fields are to be emitted
+	if zb0001Len != 0 {
+		if (zb0001Mask & 0x1) == 0 { // if not omitted
+			// write "type"
+			err = en.Append(0xa4, 0x74, 0x79, 0x70, 0x65)
+			if err != nil {
+				return
+			}
+			err = en.WriteString(z.Type)
+			if err != nil {
+				err = msgp.WrapError(err, "Type")
+				return
+			}
+		}
+		if (zb0001Mask & 0x2) == 0 { // if not omitted
+			// write "language"
+			err = en.Append(0xa8, 0x6c, 0x61, 0x6e, 0x67, 0x75, 0x61, 0x67, 0x65)
+			if err != nil {
+				return
+			}
+			err = en.WriteString(z.Language)
+			if err != nil {
+				err = msgp.WrapError(err, "Language")
+				return
+			}
+		}
+		if (zb0001Mask & 0x4) == 0 { // if not omitted
+			// write "id"
+			err = en.Append(0xa2, 0x69, 0x64)
+			if err != nil {
+				return
+			}
+			err = en.WriteString(z.ID)
+			if err != nil {
+				err = msgp.WrapError(err, "ID")
+				return
+			}
+		}
+		if (zb0001Mask & 0x8) == 0 { // if not omitted
+			// write "message"
+			err = en.Append(0xa7, 0x6d, 0x65, 0x73, 0x73, 0x61, 0x67, 0x65)
+			if err != nil {
+				return
+			}
+			err = en.WriteString(z.Message)
+			if err != nil {
+				err = msgp.WrapError(err, "Message")
+				return
+			}
+		}
+		// write "frames"
+		err = en.Append(0xa6, 0x66, 0x72, 0x61, 0x6d, 0x65, 0x73)
 		if err != nil {
 			return
 		}
-		err = en.WriteString(z.Type)
+		err = z.Frames.EncodeMsg(en)
 		if err != nil {
-			err = msgp.WrapError(err, "Type")
+			err = msgp.WrapError(err, "Frames")
 			return
 		}
-	}
-	if (zb0001Mask & 0x2) == 0 { // if not empty
-		// write "language"
-		err = en.Append(0xa8, 0x6c, 0x61, 0x6e, 0x67, 0x75, 0x61, 0x67, 0x65)
-		if err != nil {
-			return
-		}
-		err = en.WriteString(z.Language)
-		if err != nil {
-			err = msgp.WrapError(err, "Language")
-			return
-		}
-	}
-	if (zb0001Mask & 0x4) == 0 { // if not empty
-		// write "id"
-		err = en.Append(0xa2, 0x69, 0x64)
-		if err != nil {
-			return
-		}
-		err = en.WriteString(z.ID)
-		if err != nil {
-			err = msgp.WrapError(err, "ID")
-			return
-		}
-	}
-	if (zb0001Mask & 0x8) == 0 { // if not empty
-		// write "message"
-		err = en.Append(0xa7, 0x6d, 0x65, 0x73, 0x73, 0x61, 0x67, 0x65)
-		if err != nil {
-			return
-		}
-		err = en.WriteString(z.Message)
-		if err != nil {
-			err = msgp.WrapError(err, "Message")
-			return
-		}
-	}
-	// write "frames"
-	err = en.Append(0xa6, 0x66, 0x72, 0x61, 0x6d, 0x65, 0x73)
-	if err != nil {
-		return
-	}
-	err = z.Frames.EncodeMsg(en)
-	if err != nil {
-		err = msgp.WrapError(err, "Frames")
-		return
 	}
 	return
 }
@@ -158,9 +160,10 @@ func (z *Event) EncodeMsg(en *msgp.Writer) (err error) {
 // MarshalMsg implements msgp.Marshaler
 func (z *Event) MarshalMsg(b []byte) (o []byte, err error) {
 	o = msgp.Require(b, z.Msgsize())
-	// omitempty: check for empty values
+	// check for omitted fields
 	zb0001Len := uint32(5)
 	var zb0001Mask uint8 /* 5 bits */
+	_ = zb0001Mask
 	if z.Type == "" {
 		zb0001Len--
 		zb0001Mask |= 0x1
@@ -179,35 +182,36 @@ func (z *Event) MarshalMsg(b []byte) (o []byte, err error) {
 	}
 	// variable map header, size zb0001Len
 	o = append(o, 0x80|uint8(zb0001Len))
-	if zb0001Len == 0 {
-		return
-	}
-	if (zb0001Mask & 0x1) == 0 { // if not empty
-		// string "type"
-		o = append(o, 0xa4, 0x74, 0x79, 0x70, 0x65)
-		o = msgp.AppendString(o, z.Type)
-	}
-	if (zb0001Mask & 0x2) == 0 { // if not empty
-		// string "language"
-		o = append(o, 0xa8, 0x6c, 0x61, 0x6e, 0x67, 0x75, 0x61, 0x67, 0x65)
-		o = msgp.AppendString(o, z.Language)
-	}
-	if (zb0001Mask & 0x4) == 0 { // if not empty
-		// string "id"
-		o = append(o, 0xa2, 0x69, 0x64)
-		o = msgp.AppendString(o, z.ID)
-	}
-	if (zb0001Mask & 0x8) == 0 { // if not empty
-		// string "message"
-		o = append(o, 0xa7, 0x6d, 0x65, 0x73, 0x73, 0x61, 0x67, 0x65)
-		o = msgp.AppendString(o, z.Message)
-	}
-	// string "frames"
-	o = append(o, 0xa6, 0x66, 0x72, 0x61, 0x6d, 0x65, 0x73)
-	o, err = z.Frames.MarshalMsg(o)
-	if err != nil {
-		err = msgp.WrapError(err, "Frames")
-		return
+
+	// skip if no fields are to be emitted
+	if zb0001Len != 0 {
+		if (zb0001Mask & 0x1) == 0 { // if not omitted
+			// string "type"
+			o = append(o, 0xa4, 0x74, 0x79, 0x70, 0x65)
+			o = msgp.AppendString(o, z.Type)
+		}
+		if (zb0001Mask & 0x2) == 0 { // if not omitted
+			// string "language"
+			o = append(o, 0xa8, 0x6c, 0x61, 0x6e, 0x67, 0x75, 0x61, 0x67, 0x65)
+			o = msgp.AppendString(o, z.Language)
+		}
+		if (zb0001Mask & 0x4) == 0 { // if not omitted
+			// string "id"
+			o = append(o, 0xa2, 0x69, 0x64)
+			o = msgp.AppendString(o, z.ID)
+		}
+		if (zb0001Mask & 0x8) == 0 { // if not omitted
+			// string "message"
+			o = append(o, 0xa7, 0x6d, 0x65, 0x73, 0x73, 0x61, 0x67, 0x65)
+			o = msgp.AppendString(o, z.Message)
+		}
+		// string "frames"
+		o = append(o, 0xa6, 0x66, 0x72, 0x61, 0x6d, 0x65, 0x73)
+		o, err = z.Frames.MarshalMsg(o)
+		if err != nil {
+			err = msgp.WrapError(err, "Frames")
+			return
+		}
 	}
 	return
 }

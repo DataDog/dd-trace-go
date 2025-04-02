@@ -22,6 +22,8 @@ import (
 	waf "github.com/DataDog/go-libddwaf/v3"
 
 	"github.com/DataDog/appsec-internal-go/apisec"
+	"github.com/stretchr/testify/assert"
+
 	pAppsec "github.com/DataDog/dd-trace-go/v2/appsec"
 	"github.com/DataDog/dd-trace-go/v2/appsec/events"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
@@ -33,9 +35,10 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/config"
-
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/telemetrytest"
+
 	"github.com/stretchr/testify/require"
 )
 
@@ -75,6 +78,10 @@ func TestCustomRules(t *testing.T) {
 			mt := mocktracer.Start()
 			defer mt.Stop()
 
+			telemetryClient := new(telemetrytest.RecordClient)
+			prevClient := telemetry.SwapClient(telemetryClient)
+			defer telemetry.SwapClient(prevClient)
+
 			req, err := http.NewRequest(tc.method, srv.URL, nil)
 			require.NoError(t, err)
 
@@ -91,6 +98,16 @@ func TestCustomRules(t *testing.T) {
 				require.NotNil(t, event)
 				require.Contains(t, event, tc.ruleMatch)
 			}
+
+			assert.Equal(t, 1.0, telemetryClient.Count(telemetry.NamespaceAppSec, "waf.requests", []string{
+				"request_blocked:false",
+				"rule_triggered:" + strconv.FormatBool(tc.ruleMatch != ""),
+				"waf_timeout:false",
+				"rate_limited:false",
+				"waf_error:false",
+				"waf_version:" + waf.Version(),
+				"event_rules_version:1.4.2",
+			}).Get())
 		})
 	}
 }
@@ -416,6 +433,9 @@ func TestBlocking(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			mt := mocktracer.Start()
 			defer mt.Stop()
+			telemetryClient := new(telemetrytest.RecordClient)
+			prevClient := telemetry.SwapClient(telemetryClient)
+			defer telemetry.SwapClient(prevClient)
 			req, err := http.NewRequest("POST", srv.URL+tc.endpoint, strings.NewReader(tc.reqBody))
 			require.NoError(t, err)
 			for k, v := range tc.headers {
@@ -437,6 +457,16 @@ func TestBlocking(t *testing.T) {
 				require.Len(t, spans, 1)
 				require.Contains(t, spans[0].Tag("_dd.appsec.json"), tc.ruleMatch)
 			}
+
+			assert.Equal(t, 1.0, telemetryClient.Count(telemetry.NamespaceAppSec, "waf.requests", []string{
+				"request_blocked:" + strconv.FormatBool(tc.status != 200),
+				"rule_triggered:" + strconv.FormatBool(tc.ruleMatch != ""),
+				"waf_timeout:false",
+				"rate_limited:false",
+				"waf_error:false",
+				"waf_version:" + waf.Version(),
+				"event_rules_version:1.4.2",
+			}).Get())
 		})
 	}
 }
@@ -537,10 +567,6 @@ func TestAPISecurity(t *testing.T) {
 	})
 }
 
-func TestRASPSQLi(t *testing.T) {
-	t.Skip("TestRASPSQLi can be found in /contrib/database/sql/appsec_test.go as importing the contrib for database/sql would cause a circular dependency")
-}
-
 func TestRASPLFI(t *testing.T) {
 	t.Setenv("DD_APPSEC_RULES", "testdata/rasp.json")
 	testutils.StartAppSec(t)
@@ -612,6 +638,9 @@ func TestRASPLFI(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			mt := mocktracer.Start()
 			defer mt.Stop()
+			telemetryClient := new(telemetrytest.RecordClient)
+			prevClient := telemetry.SwapClient(telemetryClient)
+			defer telemetry.SwapClient(prevClient)
 
 			req, err := http.NewRequest("GET", srv.URL+"?path="+tc.path+"&block="+strconv.FormatBool(tc.block), nil)
 			require.NoError(t, err)
@@ -629,6 +658,23 @@ func TestRASPLFI(t *testing.T) {
 			} else {
 				require.Equal(t, 204, res.StatusCode)
 			}
+
+			assert.Equal(t, 1.0, telemetryClient.Count(telemetry.NamespaceAppSec, "rasp.rule.eval", []string{
+				"rule_type:lfi",
+				"waf_version:" + waf.Version(),
+				"event_rules_version:1.4.2",
+			}).Get())
+
+			if !tc.block {
+				return
+			}
+
+			assert.Equal(t, 1.0, telemetryClient.Count(telemetry.NamespaceAppSec, "rasp.rule.match", []string{
+				"block:success",
+				"rule_type:lfi",
+				"waf_version:" + waf.Version(),
+				"event_rules_version:1.4.2",
+			}).Get())
 		})
 	}
 }

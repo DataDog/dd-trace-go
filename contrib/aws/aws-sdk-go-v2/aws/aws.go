@@ -12,8 +12,6 @@ import (
 	"strings"
 	"time"
 
-	spanpointers "github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go-v2/v2/internal/span_pointers"
-
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsmiddleware "github.com/aws/aws-sdk-go-v2/aws/middleware"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
@@ -26,11 +24,12 @@ import (
 	"github.com/aws/smithy-go/middleware"
 	smithyhttp "github.com/aws/smithy-go/transport/http"
 
-	eventBridgeTracer "github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go-v2/v2/eventbridge"
 	"github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go-v2/v2/internal"
-	sfnTracer "github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go-v2/v2/sfn"
-	snsTracer "github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go-v2/v2/sns"
-	sqsTracer "github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go-v2/v2/sqs"
+	eventBridgeTracer "github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go-v2/v2/internal/eventbridge"
+	sfnTracer "github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go-v2/v2/internal/sfn"
+	snsTracer "github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go-v2/v2/internal/sns"
+	"github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go-v2/v2/internal/spanpointers"
+	sqsTracer "github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go-v2/v2/internal/sqs"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
@@ -115,6 +114,8 @@ func (mw *traceMiddleware) startTraceMiddleware(stack *middleware.Stack) error {
 			eventBridgeTracer.EnrichOperation(span, in, operation)
 		case "SFN":
 			sfnTracer.EnrichOperation(span, in, operation)
+		case "DynamoDB":
+			spanctx = spanpointers.SetDynamoDbParamsOnContext(spanctx, in.Parameters)
 		}
 
 		// Handle initialize and continue through the middleware chain.
@@ -349,8 +350,7 @@ func (mw *traceMiddleware) deserializeTraceMiddleware(stack *middleware.Stack) e
 		}
 
 		// Create span pointers
-		serviceID := awsmiddleware.GetServiceID(ctx)
-		spanpointers.AddSpanPointers(serviceID, in, out, span)
+		spanpointers.AddSpanPointers(ctx, in, out, span)
 
 		if err != nil && (mw.cfg.errCheck == nil || mw.cfg.errCheck(err)) {
 			span.SetTag(ext.Error, err)

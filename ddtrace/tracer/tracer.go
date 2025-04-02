@@ -31,6 +31,8 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/traceprof"
+	"github.com/DataDog/dd-trace-go/v2/internal/version"
+	"github.com/google/uuid"
 
 	"github.com/DataDog/datadog-agent/pkg/obfuscate"
 	"github.com/DataDog/go-runtime-metrics-internal/pkg/runtimemetrics"
@@ -244,8 +246,35 @@ func Start(opts ...StartOption) error {
 	// DD_INSTRUMENTATION_TELEMETRY_ENABLED env var
 	startTelemetry(t.config)
 
+	// store the configuration in an in-memory file, allowing it to be read to
+	// determine if the process is instrumented with a tracer and to retrive
+	// relevant tracing information.
+	storeConfig(t.config)
+
 	globalinternal.SetTracerInitialized(true)
 	return nil
+}
+
+func storeConfig(c *config) {
+	uuid, _ := uuid.NewRandom()
+	name := fmt.Sprintf("datadog-tracer-info-%s", uuid.String()[0:8])
+
+	metadata := Metadata{
+		SchemaVersion:      1,
+		RuntimeID:          globalconfig.RuntimeID(),
+		Language:           "go",
+		Version:            version.Tag,
+		Hostname:           c.hostname,
+		ServiceName:        c.serviceName,
+		ServiceEnvironment: c.env,
+		ServiceVersion:     c.version,
+	}
+
+	data, _ := metadata.MarshalMsg(nil)
+	_, err := globalinternal.CreateMemfd(name, data)
+	if err != nil {
+		log.Error("failed to store the configuration: %s", err)
+	}
 }
 
 // Stop stops the started tracer. Subsequent calls are valid but become no-op.
@@ -565,7 +594,7 @@ func (t *tracer) pushChunk(trace *Chunk) {
 	}
 }
 
-func SpanStart(operationName string, options ...StartSpanOption) *Span {
+func spanStart(operationName string, options ...StartSpanOption) *Span {
 	var opts StartSpanConfig
 	for _, fn := range options {
 		fn(&opts)
@@ -666,7 +695,7 @@ func (t *tracer) StartSpan(operationName string, options ...StartSpanOption) *Sp
 	if !t.config.enabled.current {
 		return nil
 	}
-	span := SpanStart(operationName, options...)
+	span := spanStart(operationName, options...)
 	if span.service == "" {
 		span.service = t.config.serviceName
 	}
@@ -674,6 +703,7 @@ func (t *tracer) StartSpan(operationName string, options ...StartSpanOption) *Sp
 	if t.config.hostname != "" {
 		span.setMeta(keyHostname, t.config.hostname)
 	}
+	span.supportsEvents = t.config.agent.spanEventsAvailable
 
 	// add global tags
 	for k, v := range t.config.globalTags.get() {
