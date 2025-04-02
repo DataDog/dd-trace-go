@@ -10,6 +10,7 @@ package containers
 import (
 	"context"
 	"net/url"
+	"os"
 	"testing"
 
 	"github.com/docker/go-connections/nat"
@@ -28,8 +29,7 @@ func StartRedisTestContainer(t testing.TB) (*redis.RedisContainer, string) {
 		"ping",
 	}
 
-	container, err := redis.Run(ctx,
-		"redis:7-alpine", // Change the docker pull stage in .github/workflows/orchestrion.yml if you update this
+	opts := []testcontainers.ContainerCustomizer{
 		testcontainers.WithLogger(testcontainers.TestLogger(t)),
 		WithTestLogConsumer(t),
 		testcontainers.WithWaitStrategy(
@@ -40,6 +40,21 @@ func StartRedisTestContainer(t testing.TB) (*redis.RedisContainer, string) {
 				wait.ForExec(waitReadyCmd),
 			),
 		),
+	}
+	if _, ok := os.LookupEnv("CI"); ok {
+		t.Log("attempting to reuse redis container in CI")
+		opts = append(opts, testcontainers.CustomizeRequest(testcontainers.GenericContainerRequest{
+			ContainerRequest: testcontainers.ContainerRequest{
+				Name:     "redis",
+				Hostname: "localhost",
+			},
+			Started: true,
+			Reuse:   true,
+		}))
+	}
+	container, err := redis.Run(ctx,
+		"redis:7-alpine", // Change the docker pull stage in .github/workflows/orchestrion.yml if you update this
+		opts...,
 	)
 	AssertTestContainersError(t, err)
 	RegisterContainerCleanup(t, container)
