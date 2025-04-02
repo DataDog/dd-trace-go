@@ -11,6 +11,10 @@ on:
         type: boolean
         default: false
         required: false
+      dd-api-key:
+        description: API key required to push data to DataDog CI
+        type: string
+        required: false
   pull_request:
   merge_group:
   push:
@@ -279,7 +283,7 @@ jobs:
         continue-on-error: true
         uses: ./.github/actions/dd-ci-upload
         with:
-          dd-api-key: ${{ secrets.DD_CI_API_KEY }}
+          dd-api-key: ${{ inputs.dd-api-key || secrets.DD_CI_API_KEY }}
           files: ${{ runner.temp }}${{ matrix.runs-on == 'windows' && '\' || '/' }}${{ env.REPORT }}
           tags: go:${{ steps.setup-go.outputs.go-version }},arch:${{ runner.arch }},os:${{ runner.os }},distribution:${{ runner.distribution }}
 
