@@ -3,5 +3,10 @@
     "image": "redis:7-alpine",
     "ports": ["6379:6379"],
     "options": "--name \"redis\""
+  },
+  "valkey": {
+    "image": "valkey/valkey:8-alpine",
+    "ports": ["6380:6379"],
+    "options": "--name \"valkey\""
   }
 }
