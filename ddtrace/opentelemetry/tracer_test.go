@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/baggage"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
@@ -22,6 +23,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
+	otelbaggage "go.opentelemetry.io/otel/baggage"
 	oteltrace "go.opentelemetry.io/otel/trace"
 	"go.opentelemetry.io/otel/trace/noop"
 )
@@ -311,4 +313,88 @@ func BenchmarkOTelConcurrentTracing(b *testing.B) {
 			}()
 		}
 	}
+}
+
+func TestMergeOtelDDBaggage(t *testing.T) {
+	t.Run("otelBag and ddBag contain members", func(t *testing.T) {
+		assert := assert.New(t)
+
+		// Set up Datadog baggage first
+		ctx := context.Background()
+		ctx = baggage.Set(ctx, "testKey1", "ddValue1")
+		ctx = baggage.Set(ctx, "testKey2", "ddValue2")
+
+		// Set up OpenTelemetry baggage with one key that duplicated dd baggage, and one unique key
+		m1, err := otelbaggage.NewMember("testKey1", "otelValue1")
+		assert.NoError(err)
+		m2, err := otelbaggage.NewMember("testKey3", "otelValue3")
+		assert.NoError(err)
+		bag, err := otelbaggage.New(m1, m2)
+		assert.NoError(err)
+		ctx = otelbaggage.ContextWithBaggage(ctx, bag)
+
+		// Create tracer and start span
+		tp := NewTracerProvider()
+		otel.SetTracerProvider(tp)
+		tr := otel.Tracer("baggage.test")
+		ctx, span := tr.Start(ctx, "baggage.span")
+		defer span.End()
+
+		// Check DD Baggage API
+		value, ok := baggage.Get(ctx, "testKey1")
+		assert.True(ok)
+		assert.Equal("otelValue1", value) // Otel takes precedence on key conflict
+		value, ok = baggage.Get(ctx, "testKey2")
+		assert.True(ok)
+		assert.Equal("ddValue2", value)
+		value, ok = baggage.Get(ctx, "testKey3")
+		assert.True(ok)
+		assert.Equal("otelValue3", value)
+
+		otelBag := otelbaggage.FromContext(ctx)
+		assert.Equal("otelValue1", otelBag.Member("testKey1").Value())
+		assert.Equal("ddValue2", otelBag.Member("testKey2").Value())
+		assert.Equal("otelValue3", otelBag.Member("testKey3").Value())
+	})
+	t.Run("otelBag empty", func(t *testing.T) {
+		assert := assert.New(t)
+
+		// Set up Datadog baggage
+		ctx := context.Background()
+		ctx = baggage.Set(ctx, "testKey", "ddValue")
+
+		// Create tracer and start span
+		tp := NewTracerProvider()
+		otel.SetTracerProvider(tp)
+		tr := otel.Tracer("baggage.test")
+		ctx, span := tr.Start(ctx, "baggage.span")
+		defer span.End()
+
+		// Assert dd key is retrievable via otel baggage API
+		otelBag := otelbaggage.FromContext(ctx)
+		assert.Equal("ddValue", otelBag.Member("testKey").Value())
+	})
+	t.Run("ddBag empty", func(t *testing.T) {
+		assert := assert.New(t)
+
+		// Set up OpenTelemetry baggage
+		ctx := context.Background()
+		m, err := otelbaggage.NewMember("testKey", "otelValue")
+		assert.NoError(err)
+		bag, err := otelbaggage.New(m)
+		assert.NoError(err)
+		ctx = otelbaggage.ContextWithBaggage(ctx, bag)
+
+		// Create tracer and start span
+		tp := NewTracerProvider()
+		otel.SetTracerProvider(tp)
+		tr := otel.Tracer("baggage.test")
+		ctx, span := tr.Start(ctx, "baggage.span")
+		defer span.End()
+
+		// Assert otel key is retrievable via dd baggage API
+		value, ok := baggage.Get(ctx, "testKey")
+		assert.True(ok)
+		assert.Equal("otelValue", value)
+	})
 }

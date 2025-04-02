@@ -6,16 +6,14 @@
 # yaml-language-server: $schema=https://datadoghq.dev/orchestrion/schema.json
 meta:
   name: gopkg.in/DataDog/dd-trace-go.v1/contrib/redis/rueidis
-  description: Redis client for Go.
+  description: A fast Golang Redis client that does auto pipelining and supports server-assisted client-side caching.
 
 aspects:
   - id: NewClient
     join-point:
-      one-of:
-        - function-call: github.com/redis/rueidis.NewClient
+      function-call: github.com/redis/rueidis.NewClient
     advice:
       - wrap-expression:
           imports:
             rueidistrace: gopkg.in/DataDog/dd-trace-go.v1/contrib/redis/rueidis
-          template: |-
-           rueidistrace.NewClient({{ index .AST.Args 0 }})
+          template: rueidistrace.NewClient({{ index .AST.Args 0 }})

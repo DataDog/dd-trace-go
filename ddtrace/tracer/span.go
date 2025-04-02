@@ -80,12 +80,14 @@ type span struct {
 	ParentID   uint64             `msg:"parent_id"`             // identifier of the span's direct parent
 	Error      int32              `msg:"error"`                 // error status of the span; 0 means no errors
 	SpanLinks  []ddtrace.SpanLink `msg:"span_links,omitempty"`  // links to other spans
+	SpanEvents []spanEvent        `msg:"span_events,omitempty"` // events produced related to his span
 
-	goExecTraced bool         `msg:"-"`
-	noDebugStack bool         `msg:"-"` // disables debug stack traces
-	finished     bool         `msg:"-"` // true if the span has been submitted to a tracer. Can only be read/modified if the trace is locked.
-	context      *spanContext `msg:"-"` // span propagation context
-	integration  string       `msg:"-"` // where the span was started from, such as a specific contrib or "manual"
+	goExecTraced   bool         `msg:"-"`
+	noDebugStack   bool         `msg:"-"` // disables debug stack traces
+	finished       bool         `msg:"-"` // true if the span has been submitted to a tracer. Can only be read/modified if the trace is locked.
+	context        *spanContext `msg:"-"` // span propagation context
+	integration    string       `msg:"-"` // where the span was started from, such as a specific contrib or "manual"
+	supportsEvents bool         `msg:"-"` // whether the span supports native span events or not
 
 	pprofCtxActive  context.Context `msg:"-"` // contains pprof.WithLabel labels to tell the profiler more about this span
 	pprofCtxRestore context.Context `msg:"-"` // contains pprof.WithLabel labels of the parent span (if any) that need to be restored when this span finishes
@@ -501,6 +503,28 @@ func (s *span) serializeSpanLinksInMeta() {
 	s.Meta["_dd.span_links"] = string(spanLinkBytes)
 }
 
+// serializeSpanEvents sets the span events from the current span in the correct transport, depending on whether the
+// agent supports the native method or not.
+func (s *span) serializeSpanEvents() {
+	if len(s.SpanEvents) == 0 {
+		return
+	}
+	// if span events are natively supported by the agent, there's nothing to do
+	// as the events will be already included when the span is serialized.
+	if s.supportsEvents {
+		return
+	}
+	// otherwise, we need to serialize them as a string tag and remove them from the struct
+	// so they are not sent twice.
+	b, err := json.Marshal(s.SpanEvents)
+	s.SpanEvents = nil
+	if err != nil {
+		log.Debug("Unable to marshal span events; events dropped from span meta\n%v", err)
+		return
+	}
+	s.Meta["events"] = string(b)
+}
+
 // Finish closes this Span (but not its children) providing the duration
 // of its part of the tracing session.
 func (s *span) Finish(opts ...ddtrace.FinishOption) {
@@ -552,6 +576,7 @@ func (s *span) Finish(opts ...ddtrace.FinishOption) {
 	}
 
 	s.serializeSpanLinksInMeta()
+	s.serializeSpanEvents()
 
 	s.finish(t)
 	orchestrion.GLSPopValue(sharedinternal.ActiveSpanKey)
@@ -760,6 +785,30 @@ func (s *span) Format(f fmt.State, c rune) {
 	default:
 		fmt.Fprintf(f, "%%!%c(ddtrace.Span=%v)", c, s)
 	}
+}
+
+// AddEvent attaches a new event to the current span.
+func (s *span) AddEvent(name string, opts ...ddtrace.SpanEventOption) {
+	if s.finished {
+		return
+	}
+	cfg := ddtrace.SpanEventConfig{}
+	for _, opt := range opts {
+		opt(&cfg)
+	}
+	if cfg.Time.IsZero() {
+		cfg.Time = time.Now()
+	}
+	event := spanEvent{
+		Name:         name,
+		TimeUnixNano: uint64(cfg.Time.UnixNano()),
+	}
+	if s.supportsEvents {
+		event.Attributes = toSpanEventAttributeMsg(cfg.Attributes)
+	} else {
+		event.RawAttributes = cfg.Attributes
+	}
+	s.SpanEvents = append(s.SpanEvents, event)
 }
 
 func getMeta(s *span, key string) (string, bool) {
