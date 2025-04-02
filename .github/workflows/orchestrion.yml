@@ -91,7 +91,9 @@ jobs:
     services: ${{ fromJSON(matrix.runs-on == 'ubuntu' && needs.set-services.outputs.services_json || '{}') }}
     env:
       REPORT: orchestrion-gotestsum-report.xml # path to where test results will be saved
-    needs: [go-versions-matrix]
+    needs:
+      - go-versions-matrix
+      - service-containers
     strategy:
       fail-fast: false
       matrix:
