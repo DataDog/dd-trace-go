@@ -8,6 +8,7 @@ package tracer
 import (
 	gocontext "context"
 	"encoding/binary"
+	"fmt"
 	"log/slog"
 	"math"
 	"os"
@@ -18,6 +19,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/google/uuid"
+
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
@@ -26,12 +29,14 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
 	appsecConfig "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/config"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/datastreams"
+	globalconfig "gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/hostname"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/remoteconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/samplernames"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/traceprof"
+	globalversion "gopkg.in/DataDog/dd-trace-go.v1/internal/version"
 
 	"github.com/DataDog/datadog-agent/pkg/obfuscate"
 	"github.com/DataDog/go-runtime-metrics-internal/pkg/runtimemetrics"
@@ -206,7 +211,34 @@ func Start(opts ...StartOption) {
 		logStartup(t)
 	}
 
+	// store the configuration in an in-memory file, allowing it to be read to
+	// determine if the process is instrumented with a tracer and to retrive
+	// relevant tracing information.
+	storeConfig(t.config)
+
 	_ = t.hostname() // Prime the hostname cache
+}
+
+func storeConfig(c *config) {
+	uuid, _ := uuid.NewRandom()
+	name := fmt.Sprintf("datadog-tracer-info-%s", uuid.String()[0:8])
+
+	metadata := TracerMetadata{
+		SchemaVersion:      1,
+		RuntimeId:          globalconfig.RuntimeID(),
+		Language:           "go",
+		Version:            globalversion.Tag,
+		Hostname:           c.hostname,
+		ServiceName:        c.serviceName,
+		ServiceEnvironment: c.env,
+		ServiceVersion:     c.version,
+	}
+
+	data, _ := metadata.MarshalMsg(nil)
+	_, err := globalinternal.CreateMemfd(name, data)
+	if err != nil {
+		log.Error("failed to store the configuration: %s", err)
+	}
 }
 
 // Stop stops the started tracer. Subsequent calls are valid but become no-op.
@@ -570,14 +602,15 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 	}
 	// span defaults
 	span := &span{
-		Name:         operationName,
-		Service:      t.config.serviceName,
-		Resource:     operationName,
-		SpanID:       id,
-		TraceID:      id,
-		Start:        startTime,
-		noDebugStack: t.config.noDebugStack,
-		integration:  "manual",
+		Name:           operationName,
+		Service:        t.config.serviceName,
+		Resource:       operationName,
+		SpanID:         id,
+		TraceID:        id,
+		Start:          startTime,
+		noDebugStack:   t.config.noDebugStack,
+		integration:    "manual",
+		supportsEvents: t.config.agent.spanEventsAvailable,
 	}
 
 	span.SpanLinks = append(span.SpanLinks, opts.SpanLinks...)

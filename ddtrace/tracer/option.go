@@ -87,6 +87,7 @@ var contribIntegrations = map[string]struct {
 	"gopkg.in/olivere/elastic.v5":                   {"Elasticsearch v5", false},
 	"gopkg.in/olivere/elastic.v3":                   {"Elasticsearch v3", false},
 	"github.com/redis/go-redis/v9":                  {"Redis v9", false},
+	"github.com/redis/rueidis":                      {"Rueidis", false},
 	"github.com/segmentio/kafka-go":                 {"Kafka v0", false},
 	"github.com/IBM/sarama":                         {"IBM sarama", false},
 	"github.com/Shopify/sarama":                     {"Shopify sarama", false},
@@ -731,6 +732,9 @@ type agentFeatures struct {
 
 	// obfuscationVersion reports the trace-agent's version of obfuscation logic. A value of 0 means this field wasn't present.
 	obfuscationVersion int
+
+	// spanEvents reports whether the trace-agent can receive spans with the `span_events` field.
+	spanEventsAvailable bool
 }
 
 // HasFlag reports whether the agent has set the feat feature flag.
@@ -763,6 +767,7 @@ func loadAgentFeatures(agentDisabled bool, agentURL *url.URL, httpClient *http.C
 		PeerTags           []string `json:"peer_tags"`
 		SpanMetaStruct     bool     `json:"span_meta_structs"`
 		ObfuscationVersion int      `json:"obfuscation_version"`
+		SpanEvents         bool     `json:"span_events"`
 		Config             struct {
 			StatsdPort int `json:"statsd_port"`
 		} `json:"config"`
@@ -779,6 +784,7 @@ func loadAgentFeatures(agentDisabled bool, agentURL *url.URL, httpClient *http.C
 	features.metaStructAvailable = info.SpanMetaStruct
 	features.peerTags = info.PeerTags
 	features.obfuscationVersion = info.ObfuscationVersion
+	features.spanEventsAvailable = info.SpanEvents
 	for _, endpoint := range info.Endpoints {
 		switch endpoint {
 		case "/v0.6/stats":
