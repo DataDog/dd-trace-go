@@ -8,11 +8,13 @@ package valkey
 import (
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/options"
+	"github.com/valkey-io/valkey-go"
 )
 
 type config struct {
 	rawCommand  bool
 	serviceName string
+	errCheck    func(err error) bool
 }
 
 // Option represents an option that can be used to create or wrap a client.
@@ -23,6 +25,9 @@ func defaultConfig() *config {
 		// Do not include the raw command by default since it could contain sensitive data.
 		rawCommand:  options.GetBoolEnv("DD_TRACE_VALKEY_RAW_COMMAND", false),
 		serviceName: instr.ServiceName(instrumentation.ComponentClient, nil),
+		errCheck: func(err error) bool {
+			return err != nil && !valkey.IsValkeyNil(err)
+		},
 	}
 }
 
@@ -38,5 +43,13 @@ func WithRawCommand(rawCommand bool) Option {
 func WithService(name string) Option {
 	return func(cfg *config) {
 		cfg.serviceName = name
+	}
+}
+
+// WithErrorCheck specifies a function fn which determines whether the passed
+// error should be marked as an error.
+func WithErrorCheck(fn func(err error) bool) Option {
+	return func(cfg *config) {
+		cfg.errCheck = fn
 	}
 }
