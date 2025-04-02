@@ -6,6 +6,7 @@
 package httptrace
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -14,6 +15,7 @@ import (
 	"strconv"
 	"testing"
 
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/baggage"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
@@ -384,4 +386,31 @@ func TestStartRequestSpanWithBaggage(t *testing.T) {
 	})
 	assert.Equal(t, "value1", spanBm["key1"])
 	assert.Equal(t, "value2", spanBm["key2"])
+}
+
+func TestStartRequestSpanMergedBaggage(t *testing.T) {
+	t.Setenv("DD_TRACE_PROPAGATION_STYLE", "datadog,tracecontext,baggage")
+	tracer.Start()
+	defer tracer.Stop()
+
+	// Create a base context with pre-set baggage.
+	baseCtx := baggage.Set(context.Background(), "pre_key", "pre_value")
+
+	// Create an HTTP request with that context.
+	req := httptest.NewRequest(http.MethodGet, "/somePath", nil).WithContext(baseCtx)
+
+	// Set the baggage header with additional baggage items.
+	req.Header.Set("baggage", "header_key=header_value,another_header=another_value")
+
+	// Start the request span, which will extract header baggage and merge it with the context's baggage.
+	span, ctx, _ := StartRequestSpan(req)
+	span.Finish()
+
+	// Retrieve the merged baggage from the span's context.
+	mergedBaggage := baggage.All(ctx)
+
+	// Verify that both pre-set and header baggage items are present.
+	assert.Equal(t, "pre_value", mergedBaggage["pre_key"], "should contain pre-set baggage")
+	assert.Equal(t, "header_value", mergedBaggage["header_key"], "should contain header baggage")
+	assert.Equal(t, "another_value", mergedBaggage["another_header"], "should contain header baggage")
 }
