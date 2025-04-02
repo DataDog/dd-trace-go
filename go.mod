@@ -5,7 +5,7 @@ go 1.23.0
 godebug x509negativeserial=1
 
 require (
-	github.com/DataDog/appsec-internal-go v1.10.1-0.20250319170616-cf70774cc39c
+	github.com/DataDog/appsec-internal-go v1.11.0
 	github.com/DataDog/datadog-agent/pkg/obfuscate v0.64.0-rc.1
 	github.com/DataDog/datadog-agent/pkg/proto v0.64.0-rc.1
 	github.com/DataDog/datadog-agent/pkg/remoteconfig/state v0.64.0-rc.1

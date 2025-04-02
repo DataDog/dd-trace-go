@@ -282,6 +282,8 @@ github.com/BurntSushi/toml v1.2.1/go.mod h1:CxXYINrC8qIiEnFrOxCa7Jy5BFHlXnUU2pbi
 github.com/BurntSushi/toml v1.4.0 h1:kuoIxZQy2WRRk1pttg9asf+WVv6tWQuBNVmK8+nqPr0=
 github.com/BurntSushi/toml v1.4.0/go.mod h1:ukJfTF/6rtPPRCnwkur4qwRxa8vTRFBF0uk2lLoLwho=
 github.com/BurntSushi/xgb v0.0.0-20160522181843-27f122750802 h1:1BDTz0u9nC3//pOCMdNH+CiXJVYJh5UQNCOBG7jbELc=
+github.com/DataDog/appsec-internal-go v1.11.0 h1:ntSePlOw0LYqGSgHaci97z//AD+y6aEz2FgsWB6qZ9Q=
+github.com/DataDog/appsec-internal-go v1.11.0/go.mod h1:8DsHQdz1ERLfki5I+tVfFahDzQFVQBlEHQ/ixAWDyxc=
 github.com/DataDog/datadog-agent/comp/trace/compression/def v0.64.0-rc.1 h1:yjO0qOUDDjC6i+w7eKGpXkkgPkpGP6D3ln1clFav62s=
 github.com/DataDog/datadog-agent/comp/trace/compression/def v0.64.0-rc.1/go.mod h1:+BnlaBR5kMqTFYwDEc1QW0f6zvLJKnwBAUbeC68HaVs=
 github.com/DataDog/datadog-agent/comp/trace/compression/impl-gzip v0.64.0-rc.1 h1:Rx2o4Sk1IwkpZbZu5PoLaai8rQjegwJ/eieEjryaU10=
