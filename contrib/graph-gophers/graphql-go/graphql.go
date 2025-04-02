@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"math"
 
+	internalgraphql "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/graphql"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	ddtracer "gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
@@ -91,6 +92,7 @@ func (t *Tracer) TraceQuery(ctx context.Context, queryString, operationName stri
 		default:
 			err = fmt.Errorf("%s (and %d more errors)", errs[0], n-1)
 		}
+		internalgraphql.AddErrorsAsSpanEvents(span, toGraphqlErrors(errs), t.cfg.errExtensions)
 		defer span.Finish(ddtracer.WithError(err))
 		defer request.Finish(graphqlsec.RequestOperationRes{Error: err})
 		query.Finish(graphqlsec.ExecutionOperationRes{Error: err})
@@ -100,7 +102,7 @@ func (t *Tracer) TraceQuery(ctx context.Context, queryString, operationName stri
 // TraceField traces a GraphQL field access.
 func (t *Tracer) TraceField(ctx context.Context, _, typeName, fieldName string, trivial bool, arguments map[string]interface{}) (context.Context, tracer.FieldFinishFunc) {
 	if t.cfg.omitTrivial && trivial {
-		return ctx, func(queryError *errors.QueryError) {}
+		return ctx, func(_ *errors.QueryError) {}
 	}
 	opts := []ddtrace.StartSpanOption{
 		ddtracer.ServiceName(t.cfg.serviceName),
@@ -149,4 +151,25 @@ func NewTracer(opts ...Option) tracer.Tracer {
 	return &Tracer{
 		cfg: cfg,
 	}
+}
+
+func toGraphqlErrors(errs []*errors.QueryError) []internalgraphql.Error {
+	res := make([]internalgraphql.Error, 0, len(errs))
+	for _, err := range errs {
+		locs := make([]internalgraphql.ErrorLocation, 0, len(err.Locations))
+		for _, loc := range err.Locations {
+			locs = append(locs, internalgraphql.ErrorLocation{
+				Line:   loc.Line,
+				Column: loc.Column,
+			})
+		}
+		res = append(res, internalgraphql.Error{
+			OriginalErr: err,
+			Message:     err.Message,
+			Locations:   locs,
+			Path:        err.Path,
+			Extensions:  err.Extensions,
+		})
+	}
+	return res
 }

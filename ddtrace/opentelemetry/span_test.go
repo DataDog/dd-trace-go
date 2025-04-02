@@ -338,11 +338,16 @@ func TestSpanAddEvent(t *testing.T) {
 		// Assert event exists under span events
 		assert.Len(dd.events, 1)
 		e := dd.events[0]
-		assert.Equal(e.Name, "My event!")
+		assert.Equal(e.name, "My event!")
+
+		cfg := ddtrace.SpanEventConfig{}
+		for _, opt := range e.options {
+			opt(&cfg)
+		}
 		// assert event timestamp is [around] the expected time
-		assert.True((e.TimeUnixNano) >= timeStartBound && e.TimeUnixNano <= timeEndBound)
+		assert.True((cfg.Time.UnixNano()) >= timeStartBound && cfg.Time.UnixNano() <= timeEndBound)
 		// Assert both attributes exist on the event
-		assert.Len(e.Attributes, 3)
+		assert.Len(cfg.Attributes, 3)
 		// Assert attribute key-value fields
 		// note that attribute.Int("pid", 4328) created an attribute with value int64(4328), hence why the `want` is in int64 format
 		wantAttrs := map[string]interface{}{
@@ -351,7 +356,7 @@ func TestSpanAddEvent(t *testing.T) {
 			"condition": false,
 		}
 		for k, v := range wantAttrs {
-			assert.True(attributesContains(e.Attributes, k, v))
+			assert.True(attributesContains(cfg.Attributes, k, v))
 		}
 	})
 	t.Run("event with timestamp", func(t *testing.T) {
@@ -366,8 +371,13 @@ func TestSpanAddEvent(t *testing.T) {
 		dd := sp.(*span)
 		assert.Len(dd.events, 1)
 		e := dd.events[0]
+
+		cfg := ddtrace.SpanEventConfig{}
+		for _, opt := range e.options {
+			opt(&cfg)
+		}
 		// assert resulting timestamp is in nanoseconds
-		assert.Equal(timeMicro*1000, e.TimeUnixNano)
+		assert.Equal(timeMicro*1000, cfg.Time.UnixNano())
 	})
 	t.Run("mulitple events", func(t *testing.T) {
 		_, sp := tr.Start(context.Background(), "sp")
