@@ -363,6 +363,20 @@ func UnshallowGitRepository() (bool, error) {
 	return true, nil
 }
 
+// GetGitDiff retrieves the diff between two Git commits using the `git diff` command.
+func GetGitDiff(baseCommit, headCommit string) (string, error) {
+	// git diff -U0 --word-diff=porcelain {baseCommit} {headCommit}
+	log.Debug("civisibility.git: getting the diff between %s and %s", baseCommit, headCommit)
+	out, err := execGitString(telemetry.Diff, "diff", "-U0", "--word-diff=porcelain", baseCommit, headCommit)
+	if err != nil {
+		return "", fmt.Errorf("civisibility.git: error getting the diff: %s", err.Error())
+	}
+	if out == "" {
+		return "", fmt.Errorf("civisibility.git: error getting the diff: empty output")
+	}
+	return out, nil
+}
+
 // filterSensitiveInfo removes sensitive information from a given URL using a regular expression.
 // It replaces the user credentials part of the URL (if present) with an empty string.
 //

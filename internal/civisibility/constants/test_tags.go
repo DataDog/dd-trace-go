@@ -128,6 +128,9 @@ const (
 
 	// TestManagementEnabled indicates that the test management feature is enabled
 	TestManagementEnabled = "test.test_management.enabled"
+
+	// TestIsModified indicates that the test is modified
+	TestIsModified = "test.is_modified"
 )
 
 // Define valid test status types.
