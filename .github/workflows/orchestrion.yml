@@ -85,7 +85,7 @@ jobs:
       - name: Define Services JSON
         id: set-services
         run: |
-          echo "SERVICES_JSON=$(cat ./internal/orchestrion/_integration/ci-services.json)" >> "$GITHUB_ENV"
+          echo "SERVICES_JSON=$(jq -c . ./internal/orchestrion/_integration/ci-services.json)" >> "$GITHUB_ENV"
 
   integration-test:
     services: ${{ fromJSON(matrix.runs-on == 'ubuntu' && needs.set-services.outputs.services_json || '{}') }}
