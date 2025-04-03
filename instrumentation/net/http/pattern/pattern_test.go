@@ -3,19 +3,25 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2025 Datadog, Inc.
 
-package wrap
+package pattern
 
 import (
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
-	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
-	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
-func TestPathParams(t *testing.T) {
+func TestPathParameters(t *testing.T) {
+	t.Run("blank", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/foo/123", nil)
+		assert.Equal(t, "", req.Pattern)
+		require.Nil(t, PathParameters(req.Pattern, req))
+	})
+
 	for _, tt := range []struct {
 		name     string
 		pattern  string
@@ -66,10 +72,10 @@ func TestPathParams(t *testing.T) {
 		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			mux := NewServeMux()
+			mux := http.NewServeMux()
 			mux.HandleFunc(tt.pattern, func(_ http.ResponseWriter, r *http.Request) {
 				_, pattern := mux.Handler(r)
-				params := patternValues(pattern, r)
+				params := PathParameters(pattern, r)
 				assert.Equal(t, tt.expected, params)
 			})
 
@@ -80,7 +86,7 @@ func TestPathParams(t *testing.T) {
 	}
 }
 
-func TestPatternNames(t *testing.T) {
+func TestParsePatternNames(t *testing.T) {
 	tests := []struct {
 		pattern  string
 		expected []string
@@ -133,34 +139,31 @@ func TestPatternNames(t *testing.T) {
 }
 
 func TestServeMuxGo122Patterns(t *testing.T) {
-	mt := mocktracer.Start()
-	defer mt.Stop()
-
 	// A mux with go1.21 patterns ("/bar") and go1.22 patterns ("GET /foo")
-	mux := NewServeMux()
-	mux.HandleFunc("/bar", func(_ http.ResponseWriter, _ *http.Request) {})
-	mux.HandleFunc("GET /foo", func(_ http.ResponseWriter, _ *http.Request) {})
+	mux := http.NewServeMux()
+	handler := func(w http.ResponseWriter, r *http.Request) {
+		route := Route(r.Pattern)
+		w.Write([]byte(route))
+	}
+	mux.HandleFunc("/bar/{id}", handler)
+	mux.HandleFunc("GET /foo/{id}/baz", handler)
 
-	// Try to hit both routes
-	barW := httptest.NewRecorder()
-	mux.ServeHTTP(barW, httptest.NewRequest("GET", "/bar", nil))
-	fooW := httptest.NewRecorder()
-	mux.ServeHTTP(fooW, httptest.NewRequest("GET", "/foo", nil))
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
 
-	// Assert the number of spans
-	assert := assert.New(t)
-	spans := mt.FinishedSpans()
-	assert.Equal(2, len(spans))
+	// Check for the /bar route
+	res, err := srv.Client().Get(srv.URL + "/bar/1337")
+	require.NoError(t, err)
+	body, err := io.ReadAll(res.Body)
+	res.Body.Close()
+	require.NoError(t, err)
+	require.Equal(t, "/bar/{id}", string(body))
 
-	// Check the /bar span
-	barSpan := spans[0]
-	assert.Equal(http.StatusOK, barW.Code)
-	assert.Equal("/bar", barSpan.Tag(ext.HTTPRoute))
-	assert.Equal("GET /bar", barSpan.Tag(ext.ResourceName))
-
-	// Check the /foo span
-	fooSpan := spans[1]
-	assert.Equal(http.StatusOK, fooW.Code)
-	assert.Equal("/foo", fooSpan.Tag(ext.HTTPRoute))
-	assert.Equal("GET /foo", fooSpan.Tag(ext.ResourceName))
+	// Check for the /foo route
+	res, err = srv.Client().Get(srv.URL + "/foo/42/baz")
+	require.NoError(t, err)
+	body, err = io.ReadAll(res.Body)
+	res.Body.Close()
+	require.NoError(t, err)
+	require.Equal(t, "/foo/{id}/baz", string(body))
 }

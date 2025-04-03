@@ -217,7 +217,8 @@ func processRequestHeaders(ctx context.Context, req *envoyextproc.ProcessingRequ
 	var blocked bool
 	fakeResponseWriter := newFakeResponseWriter()
 	wrappedResponseWriter, request, afterHandle, blocked := httptrace.BeforeHandle(&httptrace.ServeConfig{
-		Resource: request.Method + " " + path.Clean(request.URL.Path),
+		Framework: "github.com/envoyproxy/go-control-plane/envoy/service/ext_proc/v3",
+		Resource:  request.Method + " " + path.Clean(request.URL.Path),
 		SpanOpts: []tracer.StartSpanOption{
 			tracer.Tag(ext.SpanKind, ext.SpanKindServer),
 			tracer.Tag(ext.Component, spanComponentName),
