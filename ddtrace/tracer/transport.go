@@ -11,6 +11,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
@@ -97,6 +98,7 @@ func newHTTPTransport(url string, client *http.Client) *httpTransport {
 		"Datadog-Meta-Lang-Version":     strings.TrimPrefix(runtime.Version(), "go"),
 		"Datadog-Meta-Lang-Interpreter": runtime.Compiler + "-" + runtime.GOARCH + "-" + runtime.GOOS,
 		"Datadog-Meta-Tracer-Version":   version.Tag,
+		"X-Datadog-Process-Tags":        "binary_name:" + filepath.Base(os.Args[0]),
 		"Content-Type":                  "application/msgpack",
 	}
 	if cid := internal.ContainerID(); cid != "" {
