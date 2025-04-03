@@ -73,22 +73,17 @@ func (l *LockMap) Get(k string) string {
 }
 
 type state struct {
-	counters    *xsync.MapOf[string, *xsync.Counter]
-	inFlightOps *atomic.Int64
-	cond        *sync.Cond
+	counters *xsync.MapOf[string, *xsync.Counter]
 }
 
 func newState() *state {
 	return &state{
-		counters:    xsync.NewMapOf[string, *xsync.Counter](),
-		inFlightOps: &atomic.Int64{},
-		cond:        sync.NewCond(&sync.Mutex{}),
+		counters: xsync.NewMapOf[string, *xsync.Counter](),
 	}
 }
 
 func (s *state) reset() {
 	s.counters.Clear()
-	s.inFlightOps.Store(0)
 }
 
 type CounterMap struct {
@@ -100,6 +95,9 @@ type CounterMap struct {
 
 	// Pool for state objects to reduce GC pressure
 	statePool sync.Pool
+
+	inFlightOps *atomic.Int64
+	cond        *sync.Cond
 }
 
 func NewCounterMap() *CounterMap {
@@ -110,6 +108,8 @@ func NewCounterMap() *CounterMap {
 				return newState()
 			},
 		},
+		inFlightOps: &atomic.Int64{},
+		cond:        sync.NewCond(&sync.Mutex{}),
 	}
 	cm.activeState.Store(cm.getStateFromPool())
 	return cm
@@ -123,20 +123,19 @@ func (cm *CounterMap) getStateFromPool() *state {
 }
 
 func (cm *CounterMap) Inc(key string) {
-	cm.mu.Lock()
+	// Mark operation as in-flight.
+	cm.inFlightOps.Add(1)
+
 	// Get the current active state.
 	state := cm.activeState.Load()
-	// Mark operation as in-flight on this state.
-	state.inFlightOps.Add(1)
-	cm.mu.Unlock()
 
 	defer func() {
 		// Remove operation from in-flight list.
 		// If this was the last in-flight operation, signal waiters
-		if state.inFlightOps.Add(-1) == 0 {
-			state.cond.L.Lock()
-			state.cond.Signal()
-			state.cond.L.Unlock()
+		if cm.inFlightOps.Add(-1) == 0 {
+			cm.cond.L.Lock()
+			cm.cond.Signal()
+			cm.cond.L.Unlock()
 		}
 	}()
 
@@ -161,18 +160,17 @@ func (cm *CounterMap) GetAndReset() map[string]int64 {
 	cm.mu.Lock()
 	defer cm.mu.Unlock()
 
+	// Atomically swap the states.
 	// Create a new empty state for new increments from the pool.
 	newState := cm.getStateFromPool()
-
-	// Atomically swap the states.
 	oldState := cm.activeState.Swap(newState)
 
 	// Wait for all in-flight operations on the old map to complete.
-	oldState.cond.L.Lock()
-	for oldState.inFlightOps.Load() > 0 {
-		oldState.cond.Wait() // Releases the lock while waiting.
+	cm.cond.L.Lock()
+	for cm.inFlightOps.Load() > 0 {
+		cm.cond.Wait() // Releases the lock while waiting.
 	}
-	oldState.cond.L.Unlock()
+	cm.cond.L.Unlock()
 
 	// Process the old state - no more in-flight operations on it.
 	res := make(map[string]int64)
