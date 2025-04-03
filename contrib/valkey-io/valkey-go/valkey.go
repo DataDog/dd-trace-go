@@ -156,6 +156,10 @@ func (c *client) Nodes() map[string]valkey.Client {
 	return nodes
 }
 
+func (c *client) Mode() valkey.ClientMode {
+	return c.client.Mode()
+}
+
 var (
 	_ valkey.DedicatedClient = (*dedicatedClient)(nil)
 )

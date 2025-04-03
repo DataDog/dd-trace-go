@@ -6,7 +6,6 @@
 package tracer
 
 import (
-	"encoding/json"
 	"golang.org/x/exp/constraints"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
@@ -27,54 +26,6 @@ type spanEvent struct {
 
 	// RawAttributes is used when native span event serialization is not supported by the agent.
 	RawAttributes map[string]any `msg:"-" json:"attributes,omitempty"`
-}
-
-func (e *spanEvent) MarshalJSON() ([]byte, error) {
-	type spanEventJSON struct {
-		Name         string         `json:"name"`
-		TimeUnixNano uint64         `json:"time_unix_nano"`
-		Attributes   map[string]any `json:"attributes,omitempty"`
-	}
-	marshalEvt := &spanEventJSON{
-		Name:         e.Name,
-		TimeUnixNano: e.TimeUnixNano,
-	}
-	if e.RawAttributes != nil || e.Attributes == nil {
-		marshalEvt.Attributes = e.RawAttributes
-	} else {
-		marshalEvt.Attributes = make(map[string]any, len(e.Attributes))
-
-		for k, v := range e.Attributes {
-			var val any
-			switch v.Type {
-			case spanEventAttributeTypeString:
-				val = v.StringValue
-			case spanEventAttributeTypeBool:
-				val = v.BoolValue
-			case spanEventAttributeTypeInt:
-				val = v.IntValue
-			case spanEventAttributeTypeDouble:
-				val = v.DoubleValue
-			case spanEventAttributeTypeArray:
-				arr := make([]any, 0, len(v.ArrayValue.Values))
-				for _, arrVal := range v.ArrayValue.Values {
-					switch arrVal.Type {
-					case spanEventArrayAttributeValueTypeString:
-						arr = append(arr, arrVal.StringValue)
-					case spanEventArrayAttributeValueTypeBool:
-						arr = append(arr, arrVal.BoolValue)
-					case spanEventArrayAttributeValueTypeInt:
-						arr = append(arr, arrVal.IntValue)
-					case spanEventArrayAttributeValueTypeDouble:
-						arr = append(arr, arrVal.DoubleValue)
-					}
-				}
-				val = arr
-			}
-			marshalEvt.Attributes[k] = val
-		}
-	}
-	return json.Marshal(marshalEvt)
 }
 
 type spanEventAttribute struct {
