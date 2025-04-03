@@ -52,14 +52,14 @@ require (
 	cloud.google.com/go/pubsub v1.37.0 // indirect
 	github.com/99designs/gqlgen v0.17.36 // indirect
 	github.com/DataDog/appsec-internal-go v1.11.2 // indirect
-	github.com/DataDog/datadog-agent/comp/core/tagger/origindetection v0.64.2 // indirect
-	github.com/DataDog/datadog-agent/pkg/obfuscate v0.64.2 // indirect
-	github.com/DataDog/datadog-agent/pkg/proto v0.64.2 // indirect
-	github.com/DataDog/datadog-agent/pkg/remoteconfig/state v0.64.2 // indirect
-	github.com/DataDog/datadog-agent/pkg/trace v0.64.2 // indirect
-	github.com/DataDog/datadog-agent/pkg/util/log v0.64.2 // indirect
-	github.com/DataDog/datadog-agent/pkg/util/scrubber v0.64.2 // indirect
-	github.com/DataDog/datadog-agent/pkg/version v0.64.2 // indirect
+	github.com/DataDog/datadog-agent/comp/core/tagger/origindetection v0.64.1 // indirect
+	github.com/DataDog/datadog-agent/pkg/obfuscate v0.64.1 // indirect
+	github.com/DataDog/datadog-agent/pkg/proto v0.64.1 // indirect
+	github.com/DataDog/datadog-agent/pkg/remoteconfig/state v0.64.1 // indirect
+	github.com/DataDog/datadog-agent/pkg/trace v0.64.1 // indirect
+	github.com/DataDog/datadog-agent/pkg/util/log v0.64.1 // indirect
+	github.com/DataDog/datadog-agent/pkg/util/scrubber v0.64.1 // indirect
+	github.com/DataDog/datadog-agent/pkg/version v0.64.1 // indirect
 	github.com/DataDog/datadog-go/v5 v5.6.0 // indirect
 	github.com/DataDog/go-libddwaf/v3 v3.5.4 // indirect
 	github.com/DataDog/go-runtime-metrics-internal v0.0.4-0.20250319104955-81009b9bad14 // indirect
@@ -212,7 +212,7 @@ require (
 	github.com/puzpuzpuz/xsync/v3 v3.5.1 // indirect
 	github.com/rcrowley/go-metrics v0.0.0-20201227073835-cf1acfcdf475 // indirect
 	github.com/redis/go-redis/v9 v9.1.0 // indirect
-	github.com/redis/rueidis v1.0.52 // indirect
+	github.com/redis/rueidis v1.0.56 // indirect
 	github.com/richardartoul/molecule v1.0.1-0.20240531184615-7ca0df43c0b3 // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/rs/zerolog v1.34.0 // indirect
@@ -231,7 +231,7 @@ require (
 	github.com/twitchyliquid64/golang-asm v0.15.1 // indirect
 	github.com/ugorji/go/codec v1.2.11 // indirect
 	github.com/urfave/cli/v2 v2.27.6 // indirect
-	github.com/valkey-io/valkey-go v1.0.52 // indirect
+	github.com/valkey-io/valkey-go v1.0.56 // indirect
 	github.com/valyala/bytebufferpool v1.0.0 // indirect
 	github.com/valyala/fasthttp v1.51.0 // indirect
 	github.com/valyala/fasttemplate v1.2.2 // indirect
