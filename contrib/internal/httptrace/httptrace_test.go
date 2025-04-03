@@ -358,6 +358,7 @@ func BenchmarkStartRequestSpan(b *testing.B) {
 		b.Errorf("Failed to create request: %v", err)
 		return
 	}
+	// Avoid (NoopTracer) StartSpan warning log
 	log.UseLogger(log.DiscardLogger{})
 	opts := []ddtrace.StartSpanOption{
 		tracer.ServiceName("SomeService"),
