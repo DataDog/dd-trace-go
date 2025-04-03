@@ -72,36 +72,122 @@ func (l *LockMap) Get(k string) string {
 	return l.m[k]
 }
 
-// XSyncMapCounterMap uses xsync protect counter increments and reads during
-// concurrent access.
-// Implementation and related tests were taken/inspired by felixge/countermap
-// https://github.com/felixge/countermap/pull/2
-type XSyncMapCounterMap struct {
-	counts *xsync.MapOf[string, *xsync.Counter]
+type state struct {
+	counters    *xsync.MapOf[string, *xsync.Counter]
+	inFlightOps *atomic.Int64
+	cond        *sync.Cond
 }
 
-func NewXSyncMapCounterMap() *XSyncMapCounterMap {
-	return &XSyncMapCounterMap{counts: xsync.NewMapOf[string, *xsync.Counter]()}
-}
-
-func (cm *XSyncMapCounterMap) Inc(key string) {
-	val, ok := cm.counts.Load(key)
-	if !ok {
-		val, _ = cm.counts.LoadOrStore(key, xsync.NewCounter())
+func newState() *state {
+	return &state{
+		counters:    xsync.NewMapOf[string, *xsync.Counter](),
+		inFlightOps: &atomic.Int64{},
+		cond:        sync.NewCond(&sync.Mutex{}),
 	}
-	val.Inc()
 }
 
-func (cm *XSyncMapCounterMap) GetAndReset() map[string]int64 {
-	ret := map[string]int64{}
-	cm.counts.Range(func(key string, _ *xsync.Counter) bool {
-		v, ok := cm.counts.LoadAndDelete(key)
-		if ok {
-			ret[key] = v.Value()
+func (s *state) reset() {
+	s.counters.Clear()
+	s.inFlightOps.Store(0)
+}
+
+type CounterMap struct {
+	// Pointer to the active state - allows atomic swapping.
+	activeState atomic.Pointer[state]
+
+	// Prevents concurrent GetAndReset operations.
+	mu *sync.RWMutex
+
+	// Pool for state objects to reduce GC pressure
+	statePool sync.Pool
+}
+
+func NewCounterMap() *CounterMap {
+	cm := &CounterMap{
+		mu: &sync.RWMutex{},
+		statePool: sync.Pool{
+			New: func() any {
+				return newState()
+			},
+		},
+	}
+	cm.activeState.Store(cm.getStateFromPool())
+	return cm
+}
+
+// getStateFromPool retrieves a state from the pool or creates a new one
+func (cm *CounterMap) getStateFromPool() *state {
+	s := cm.statePool.Get().(*state)
+	s.reset()
+	return s
+}
+
+func (cm *CounterMap) Inc(key string) {
+	cm.mu.Lock()
+	// Get the current active state.
+	state := cm.activeState.Load()
+	// Mark operation as in-flight on this state.
+	state.inFlightOps.Add(1)
+	cm.mu.Unlock()
+
+	defer func() {
+		// Remove operation from in-flight list.
+		// If this was the last in-flight operation, signal waiters
+		if state.inFlightOps.Add(-1) == 0 {
+			state.cond.L.Lock()
+			state.cond.Signal()
+			state.cond.L.Unlock()
+		}
+	}()
+
+	// Try to load existing counter.
+	counter, loaded := state.counters.Load(key)
+	if !loaded {
+		// Create a new counter.
+		counter = xsync.NewCounter()
+		actual, loaded := state.counters.LoadOrStore(key, counter)
+		if loaded {
+			// Another goroutine beat us to it, use their counter.
+			counter = actual
+		}
+	}
+
+	// Increment the counter.
+	counter.Inc()
+}
+
+func (cm *CounterMap) GetAndReset() map[string]int64 {
+	// Ensure only one GetAndReset operation runs at a time.
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
+
+	// Create a new empty state for new increments from the pool.
+	newState := cm.getStateFromPool()
+
+	// Atomically swap the states.
+	oldState := cm.activeState.Swap(newState)
+
+	// Wait for all in-flight operations on the old map to complete.
+	oldState.cond.L.Lock()
+	for oldState.inFlightOps.Load() > 0 {
+		oldState.cond.Wait() // Releases the lock while waiting.
+	}
+	oldState.cond.L.Unlock()
+
+	// Process the old state - no more in-flight operations on it.
+	res := make(map[string]int64)
+	oldState.counters.Range(func(key string, _ *xsync.Counter) bool {
+		value, loaded := oldState.counters.Load(key)
+		if loaded {
+			res[key] = value.Value()
 		}
 		return true
 	})
-	return ret
+
+	// Return the old state to the pool.
+	cm.statePool.Put(oldState)
+
+	return res
 }
 
 // ToFloat64 attempts to convert value into a float64. If the value is an integer

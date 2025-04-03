@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -64,11 +65,11 @@ func TestLockMapThrash(t *testing.T) {
 	wg.Wait()
 	assert.Equal(t, len(lm.m), int(lm.c))
 }
-func TestXSyncMapCounterMap(t *testing.T) {
+func TestCounterMap(t *testing.T) {
 	t.Run("basic", func(t *testing.T) {
 		assert := assert.New(t)
 
-		cm := NewXSyncMapCounterMap()
+		cm := NewCounterMap()
 
 		assert.Equal(map[string]int64{}, cm.GetAndReset())
 
@@ -85,7 +86,7 @@ func TestXSyncMapCounterMap(t *testing.T) {
 	t.Run("concurrent", func(t *testing.T) {
 		assert := assert.New(t)
 
-		cm := NewXSyncMapCounterMap()
+		cm := NewCounterMap()
 
 		wg := sync.WaitGroup{}
 		for range 10 {
@@ -99,8 +100,37 @@ func TestXSyncMapCounterMap(t *testing.T) {
 
 		assert.Equal(map[string]int64{"key": 10}, cm.GetAndReset())
 	})
+
+	t.Run("concurrent with reset", func(t *testing.T) {
+		assert := assert.New(t)
+		cm := NewCounterMap()
+		wg := sync.WaitGroup{}
+		val := &atomic.Int64{}
+		for range 10 {
+			wg.Add(2)
+			go func() {
+				defer wg.Done()
+				cm.Inc("key")
+			}()
+
+			go func() {
+				defer wg.Done()
+				v, ok := cm.GetAndReset()["key"]
+				if ok {
+					val.Add(v)
+				}
+
+			}()
+		}
+		wg.Wait()
+		v, ok := cm.GetAndReset()["key"]
+		if ok {
+			val.Add(v)
+		}
+		assert.Equal(int64(10), val.Load())
+	})
 }
-func BenchmarkXSyncMapCounterMap(b *testing.B) {
+func BenchmarkCounterMap(b *testing.B) {
 	b.Run("base_case", func(b *testing.B) {
 		b.ReportAllocs()
 		n := 10
@@ -110,7 +140,7 @@ func BenchmarkXSyncMapCounterMap(b *testing.B) {
 		}
 
 		b.ResetTimer()
-		cm := NewXSyncMapCounterMap()
+		cm := NewCounterMap()
 		for i := 0; i < b.N; i++ {
 			// We increment the first key w 75% probability and the rest
 			// increment the rest of the keys.
@@ -133,7 +163,7 @@ func BenchmarkXSyncMapCounterMap(b *testing.B) {
 	b.Run("worst_case", func(b *testing.B) {
 		b.ReportAllocs()
 		b.ResetTimer()
-		cm := NewXSyncMapCounterMap()
+		cm := NewCounterMap()
 		for i := 0; i < b.N; i++ {
 			cm.Inc("key-" + strconv.Itoa(i))
 		}
@@ -147,7 +177,7 @@ func BenchmarkXSyncMapCounterMap(b *testing.B) {
 	})
 
 	b.Run("concurrent", func(b *testing.B) {
-		cm := NewXSyncMapCounterMap()
+		cm := NewCounterMap()
 
 		wg := sync.WaitGroup{}
 		for range b.N {
@@ -160,6 +190,35 @@ func BenchmarkXSyncMapCounterMap(b *testing.B) {
 		wg.Wait()
 
 		assert.Equal(b, map[string]int64{"key": int64(b.N)}, cm.GetAndReset())
+	})
+
+	b.Run("concurrent with reset", func(b *testing.B) {
+		cm := NewCounterMap()
+		wg := sync.WaitGroup{}
+		val := &atomic.Int64{}
+		b.ReportAllocs()
+		b.ResetTimer()
+		for range b.N {
+			wg.Add(2)
+			go func() {
+				defer wg.Done()
+				cm.Inc("key")
+			}()
+
+			go func() {
+				defer wg.Done()
+				v, ok := cm.GetAndReset()["key"]
+				if ok {
+					val.Add(v)
+				}
+			}()
+		}
+		wg.Wait()
+		v, ok := cm.GetAndReset()["key"]
+		if ok {
+			val.Add(v)
+		}
+		assert.Equal(b, int64(b.N), val.Load())
 	})
 }
 

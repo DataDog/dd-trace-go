@@ -301,7 +301,7 @@ func BenchmarkSpansMetrics(b *testing.B) {
 	}
 }
 
-func assertSpanMetricCountsAreZero(t *testing.T, metric globalinternal.XSyncMapCounterMap) {
+func assertSpanMetricCountsAreZero(t *testing.T, metric *globalinternal.CounterMap) {
 	for _, v := range metric.GetAndReset() {
 		assert.Equal(t, int64(0), v)
 	}
