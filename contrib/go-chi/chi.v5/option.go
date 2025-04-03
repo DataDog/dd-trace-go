@@ -50,6 +50,7 @@ func defaults(cfg *config) {
 	cfg.resourceNamer = nil
 	cfg.appsecDisabled = false
 
+	cfg.appsecConfig.Framework = "github.com/go-chi/chi/v5"
 	cfg.appsecConfig.RouteForRequest = func(r *http.Request) string {
 		return cfg.modifyResourceName(chi.RouteContext(r.Context()).RoutePattern())
 	}

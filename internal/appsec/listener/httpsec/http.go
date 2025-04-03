@@ -6,6 +6,8 @@
 package httpsec
 
 import (
+	"strings"
+
 	"github.com/DataDog/appsec-internal-go/apisec"
 	"github.com/DataDog/appsec-internal-go/appsec"
 
@@ -15,6 +17,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/listener"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 )
 
 type Feature struct {
@@ -85,6 +88,15 @@ func (feature *Feature) OnResponse(op *httpsec.HandlerOperation, resp httpsec.Ha
 	}
 
 	op.Run(op, builder.Build())
+
+	metric := "no_schema"
+	for k := range op.Derivatives() {
+		if strings.HasPrefix(k, "_dd.appsec.s.") {
+			metric = "schema"
+			break
+		}
+	}
+	telemetry.Count(telemetry.NamespaceAppSec, "api_security.request."+metric, []string{"framework:" + op.Framework()}).Submit(1)
 }
 
 // shouldExtractShema checks that API Security is enabled and that sampling rate

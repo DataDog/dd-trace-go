@@ -18,6 +18,8 @@ import (
 
 // ServeConfig specifies the tracing configuration when using TraceAndServe.
 type ServeConfig struct {
+	// Framework is the name of the framework or library being used (optional).
+	Framework string
 	// Service specifies the service name to use. If left blank, the global service name
 	// will be inherited.
 	Service string
@@ -70,6 +72,7 @@ func BeforeHandle(cfg *ServeConfig, w http.ResponseWriter, r *http.Request) (htt
 	handled := false
 	if appsec.Enabled() {
 		appsecConfig := &httpsec.Config{
+			Framework: cfg.Framework,
 			RouteForRequest: func(r *http.Request) string {
 				if cfg.Route != "" {
 					return cfg.Route

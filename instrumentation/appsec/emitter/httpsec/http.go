@@ -22,6 +22,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/waf/addresses"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/trace"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/emitter/waf"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 )
 
 // HandlerOperation type representing an HTTP operation. It must be created with
@@ -34,6 +35,8 @@ type (
 		// wafContextOwner indicates if the waf.ContextOperation was started by us or not and if we need to close it.
 		wafContextOwner bool
 
+		// framework is the name of the framework or library that started the operation.
+		framework string
 		// method is the HTTP method for the current handler operation.
 		method string
 		// route is the HTTP route for the current handler operation (or the URL if no route is available).
@@ -42,6 +45,7 @@ type (
 
 	// HandlerOperationArgs is the HTTP handler operation arguments.
 	HandlerOperationArgs struct {
+		Framework    string // Optional: name of the framework or library being used
 		Method       string
 		RequestURI   string
 		RequestRoute string // the HTTP route for the current handler operation, if available
@@ -73,11 +77,13 @@ func StartOperation(ctx context.Context, args HandlerOperationArgs, span trace.T
 		Operation:        dyngo.NewOperation(wafOp),
 		ContextOperation: wafOp,
 		wafContextOwner:  !found, // If we started the parent operation, we finish it, otherwise we don't
+		framework:        args.Framework,
 		method:           args.Method,
 		route:            args.RequestRoute,
 	}
 	if op.route == "" {
 		// If there is no route, use the request URI instead
+		telemetry.Count(telemetry.NamespaceAppSec, "api_security.missing_route", []string{"framework:" + args.Framework}).Submit(1)
 		op.route = args.RequestURI
 	}
 
@@ -88,6 +94,11 @@ func StartOperation(ctx context.Context, args HandlerOperationArgs, span trace.T
 	})
 
 	return op, &action, dyngo.StartAndRegisterOperation(ctx, op, args)
+}
+
+// Framework returns the name of the framework or library that started the operation.
+func (op *HandlerOperation) Framework() string {
+	return op.framework
 }
 
 // Method returns the HTTP method for the current handler operation.
@@ -160,6 +171,7 @@ func BeforeHandle(
 	}
 
 	op, blockAtomic, ctx := StartOperation(r.Context(), HandlerOperationArgs{
+		Framework:    opts.Framework,
 		Method:       r.Method,
 		RequestURI:   r.RequestURI,
 		RequestRoute: opts.RouteForRequest(r),

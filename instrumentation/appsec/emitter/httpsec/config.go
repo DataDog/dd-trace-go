@@ -12,6 +12,8 @@ import (
 )
 
 type Config struct {
+	// Framework is the name of the framework or library being used (optional).
+	Framework string
 	// OnBlock is a list of callbacks to be invoked when a block decision is made.
 	OnBlock []func()
 	// ResponseHeaderCopier provides a way to access response headers for reading
