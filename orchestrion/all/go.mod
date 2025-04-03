@@ -42,7 +42,7 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/twitchtv/twirp/v2 v2.1.0-dev
 	github.com/DataDog/dd-trace-go/contrib/valkey-io/valkey-go/v2 v2.1.0-dev
 	github.com/DataDog/dd-trace-go/v2 v2.1.0-dev
-	github.com/DataDog/orchestrion v1.3.0
+	github.com/DataDog/orchestrion v1.3.1
 )
 
 require (
@@ -144,7 +144,7 @@ require (
 	github.com/golang/snappy v0.0.4 // indirect
 	github.com/gomodule/redigo v1.8.9 // indirect
 	github.com/google/go-tpm v0.9.3 // indirect
-	github.com/google/pprof v0.0.0-20241029153458-d1b30febd7db // indirect
+	github.com/google/pprof v0.0.0-20250317173921-a4b03ec1a45e // indirect
 	github.com/google/s2a-go v0.1.7 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/googleapis/enterprise-certificate-proxy v0.3.2 // indirect
@@ -158,7 +158,7 @@ require (
 	github.com/hashicorp/go-multierror v1.1.1 // indirect
 	github.com/hashicorp/go-retryablehttp v0.7.7 // indirect
 	github.com/hashicorp/go-rootcerts v1.0.2 // indirect
-	github.com/hashicorp/go-secure-stdlib/parseutil v0.1.8 // indirect
+	github.com/hashicorp/go-secure-stdlib/parseutil v0.2.0 // indirect
 	github.com/hashicorp/go-secure-stdlib/strutil v0.1.2 // indirect
 	github.com/hashicorp/go-sockaddr v1.0.7 // indirect
 	github.com/hashicorp/go-uuid v1.0.3 // indirect
@@ -286,7 +286,7 @@ require (
 	gopkg.in/ini.v1 v1.67.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	gorm.io/gorm v1.25.5 // indirect
-	k8s.io/apimachinery v0.32.2 // indirect
+	k8s.io/apimachinery v0.32.3 // indirect
 	k8s.io/client-go v0.31.4 // indirect
 	k8s.io/klog/v2 v2.130.1 // indirect
 	k8s.io/utils v0.0.0-20241210054802-24370beab758 // indirect
