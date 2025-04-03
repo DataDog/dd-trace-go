@@ -42,7 +42,7 @@ require (
 	github.com/labstack/echo/v4 v4.13.3
 	github.com/mattn/go-sqlite3 v1.14.22
 	github.com/redis/go-redis/v9 v9.7.0
-	github.com/redis/rueidis v1.0.55
+	github.com/redis/rueidis v1.0.56
 	github.com/segmentio/kafka-go v0.4.42
 	github.com/sirupsen/logrus v1.9.3
 	github.com/stretchr/testify v1.10.0
@@ -58,7 +58,7 @@ require (
 	github.com/testcontainers/testcontainers-go/modules/vault v0.34.0
 	github.com/tinylib/msgp v1.2.5
 	github.com/twitchtv/twirp v8.1.3+incompatible
-	github.com/valkey-io/valkey-go v1.0.52
+	github.com/valkey-io/valkey-go v1.0.56
 	github.com/vektah/gqlparser/v2 v2.5.21
 	github.com/xlab/treeprint v1.2.0
 	go.mongodb.org/mongo-driver v1.17.1
